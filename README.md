@@ -159,4 +159,12 @@ The project ships with a regression suite (Node + Python) covering the projectio
 
 ---
 
+TripleCrown is licensed under the **[PolyForm Noncommercial License 1.0.0](./LICENSE)**.
+
+In plain terms: you're free to use, run, modify, and share it for any **noncommercial** purpose — personal use, hobby projects, research, study, and use by nonprofits, schools, or government. **Commercial use requires a separate license from the copyright holder.** The project author retains all rights not granted by that license.
+
+This isn't legal advice; the [full license text](./LICENSE) governs.
+
+---
+
 *TripleCrown is a personal projection tool and is not affiliated with the NFL, Sleeper, FantasyPros, or OverTheCap. Data from those sources is used under their respective terms for personal, non-commercial use.*
