@@ -368,13 +368,26 @@ SHARP_SOS_URL = "https://www.sharpfootballanalysis.com/analysis/nfl-strength-of-
 # Columns where a LOWER value is better (so rank 1 = lowest). Everything else: higher=better.
 # Matched by case-insensitive substring against the column header.
 SHARP_LOWER_IS_BETTER = [
-    "sec/play", "seconds per play", "sack rate", "pressure rate allowed", "pressure rate",
-    "sacks allowed", "stuffed", "stuff rate", "negative", "int", "giveaway", "turnover",
-    "3 down", "pass rush", "blitz",  # defensive-ish leakage guards; harmless if absent
+    "sec/play", "seconds per play", "sack rate", "pressure rate allowed",
+    "sacks allowed", "stuffed", "negative", "int", "giveaway", "turnover",
+    "3 down", "pass rush", "ypt allowed", "yards before contact",
+]
+
+# Columns where a HIGHER value is better even though the header might otherwise look defensive.
+# These override the lower-is-better rules when both match the same text.
+SHARP_HIGHER_IS_BETTER = [
+    "points per drive",
+    "pressure rate",
+    "no blitz pressure rate",
+    # "yards before contact",
+    "rush stuff rate",
+    "blitz rate",
 ]
 
 def _sharp_col_lower_better(col):
     c = col.lower()
+    if any(k in c for k in SHARP_HIGHER_IS_BETTER):
+        return False
     return any(k in c for k in SHARP_LOWER_IS_BETTER)
 
 def _parse_sharp_table(html):

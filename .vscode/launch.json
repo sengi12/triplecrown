@@ -7,6 +7,15 @@
       "name": "Launch my cool app",
       "url": "http://localhost:8000",
       "file": "${workspaceFolder}/index.html"
-    }
+    },
+  //   {
+  //     "name": "Python: Current File",
+  //     "type": "python",
+  //     "request": "launch",
+  //     "program": "build_seed.py",
+  //     "console": "integratedTerminal",
+  //     // "args": [""],
+  //     "justMyCode": true
+  // }
   ]
 }
