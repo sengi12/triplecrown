@@ -268,6 +268,29 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
 .draft-live::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--accent);
   animation:pulse 1.4s infinite;}
 @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+/* Sleeper league picker (username → league list) */
+.lp-panel{padding:14px;border-bottom:1px solid var(--border);background:var(--surface2);}
+.lp-row{display:flex;gap:8px;align-items:center;}
+.lp-input{flex:1;min-width:0;padding:8px 11px;border-radius:7px;border:1px solid var(--border);
+  background:var(--surface);color:var(--text);font-size:13px;}
+.lp-input:focus{outline:none;border-color:var(--accent);}
+.lp-hint{font-size:10.5px;color:var(--muted);margin-top:8px;}
+.lp-error{font-size:11px;color:#ff6a6a;background:rgba(255,90,90,.1);border:1px solid rgba(255,90,90,.25);
+  border-radius:6px;padding:7px 10px;margin-top:9px;}
+.lp-user{display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:10px;color:var(--muted);}
+.lp-avatar{width:22px;height:22px;border-radius:50%;}
+.lp-league-list{display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto;}
+.lp-league{display:flex;align-items:center;gap:10px;width:100%;text-align:left;cursor:pointer;
+  padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--surface);
+  color:var(--text);transition:border-color .12s,background .12s;}
+.lp-league:hover:not(:disabled){border-color:var(--accent);background:var(--surface3);}
+.lp-league:disabled{opacity:.5;cursor:default;}
+.lp-lg-avatar{width:30px;height:30px;border-radius:7px;flex-shrink:0;object-fit:cover;}
+.lp-lg-blank{display:flex;align-items:center;justify-content:center;background:var(--surface3);font-size:14px;}
+.lp-lg-main{flex:1;min-width:0;}
+.lp-lg-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.lp-lg-meta{font-size:10.5px;color:var(--muted);margin-top:1px;}
+.lp-lg-go{font-size:11px;font-weight:700;color:var(--accent);flex-shrink:0;}
 .season-readonly{padding:8px 12px;background:rgba(74,158,255,.08);border:1px solid rgba(74,158,255,.2);
   border-radius:7px;font-size:11px;color:#6ab8ff;margin-bottom:12px;display:flex;align-items:center;gap:7px;}
 .ref-year{font-size:11px;font-weight:700;color:var(--info);background:rgba(74,158,255,.12);
@@ -407,6 +430,10 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
 
 
 
+
+
+
+
 // ═══ TRIPLECROWN_SEED_START ═══ (build_seed.py / bake_seed.py replace this whole block)
 // SEED_DATA intentionally empty — TripleCrown pulls 2026 projections live from Sleeper
 // on first load (or load a prebuilt triplecrown_seed.json via the 📦 Seed button, or bake
@@ -432,6 +459,12 @@ const SLEEPER_WEEKLY_URL = (pid,season)=>`https://api.sleeper.com/stats/nfl/play
 const SLEEPER_PICKS_URL = (draftId)=>`https://api.sleeper.app/v1/draft/${draftId}/picks`;
 const SLEEPER_DRAFT_URL = (draftId)=>`https://api.sleeper.app/v1/draft/${draftId}`;
 const SLEEPER_HEADSHOT = (pid)=>`https://sleepercdn.com/content/nfl/players/${pid}.jpg`;
+// League-linking (username → leagues → draft) endpoints. All read-only, no auth token.
+const SLEEPER_USER_URL   = (name)=>`https://api.sleeper.app/v1/user/${encodeURIComponent(name)}`;
+const SLEEPER_STATE_URL  = 'https://api.sleeper.app/v1/state/nfl';
+const SLEEPER_LEAGUES_URL= (userId,season)=>`https://api.sleeper.app/v1/user/${userId}/leagues/nfl/${season}`;
+const SLEEPER_LG_DRAFTS_URL=(leagueId)=>`https://api.sleeper.app/v1/league/${leagueId}/drafts`;
+const SLEEPER_AVATAR_THUMB=(id)=>`https://sleepercdn.com/avatars/thumbs/${id}`;
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Week-range filtering (reference seasons only) — lets the user drag a dual
@@ -2252,6 +2285,7 @@ function ecrNormName(s){
 // Which ECR table to read for the current format. Superflex uses the half-PPR superflex
 // page by default; dynasty/std/ppr/half each have their own.
 function ecrTableFor(fmt){
+  if(fmt==='dynasty_superflex') return ECR.dynasty_superflex || ECR.dynasty || ECR.superflex || {};
   if(fmt==='superflex') return ECR.superflex || ECR.superflex_ppr || {};
   if(fmt==='dynasty')   return ECR.dynasty || {};
   if(fmt==='std')       return ECR.std || {};
@@ -2396,7 +2430,7 @@ function renderRankings(){
       <div class="th-stack">${l1}${l2?`<br>${l2}`:''}${a?(rankSortDir<0?' ↓':' ↑'):''}</div></th>`;};
   // Dynasty tab only: three extra columns (Age / APY / Free-Agency year) right after TM.
   // FA is highlighted red when it's the very next season (contracts expiring soonest).
-  const isDynasty = rankFormat==='dynasty';
+  const isDynasty = rankFormat==='dynasty' || rankFormat==='dynasty_superflex';
   const nextYear = PROJ_SEASON + 1;
   const rows=view.map(p=>{
     const ecrTxt = p.ecr!=null ? p.ecr : '—';
@@ -2425,7 +2459,12 @@ function renderRankings(){
     <td class="grp-rec">${cell(p.receiving_targets)}</td><td class="grp-rec-mid">${cell(p.receptions)}</td><td class="grp-rec-mid">${cell(p.receiving_yards)}</td><td class="grp-rec-end">${cell(p.receiving_tds)}</td>
     <td class="grp-pass">${cell(p.passing_attempts)}</td><td class="grp-pass-mid">${cell(p.passing_yards)}</td><td class="grp-pass-mid">${cell(p.passing_tds)}</td><td class="grp-pass-end">${cell(p.interceptions_thrown)}</td>
   </tr>`}).join('');
-  const fmtBtns=[['ppr','Full PPR'],['half_ppr','Half PPR'],['std','Standard'],['superflex','Superflex'],['dynasty','Dynasty']]
+  const fmtList=[['ppr','Full PPR'],['half_ppr','Half PPR'],['std','Standard'],['superflex','Superflex'],['dynasty','Dynasty']];
+  // Dynasty-Superflex isn't a default button (it's auto-selected when you link a dynasty
+  // 2QB/SF league), but show it as an active pill when it's the current format so the user
+  // sees and can toggle it.
+  if(rankFormat==='dynasty_superflex') fmtList.push(['dynasty_superflex','Dynasty SF']);
+  const fmtBtns=fmtList
     .map(([f,l])=>`<button class="format-btn ${rankFormat===f?'active':''}" onclick="setRankFormat('${f}')">${l}</button>`).join('');
   const posBtns=['ALL','QB','RB','WR','TE','FLEX'].map(pos=>
     `<button class="pos-filter-btn ${rankPosFilter===pos?'active':''}" onclick="setPosFilter('${pos}')">${pos}</button>`).join('');
@@ -2465,6 +2504,7 @@ function renderRankings(){
             <input type="checkbox" ${hideDrafted?'checked':''} onchange="toggleHideDrafted()"> hide drafted</label>
           <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="stopDraftFollow()">Stop</button>
         </div></div>` : ''}
+      ${(!following && leaguePickerState.open) ? renderLeaguePicker() : ''}
       <div style="padding:11px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);flex-wrap:wrap">
         <span style="font-size:11px;color:var(--muted);font-weight:700">FORMAT (ECR)</span>
         <div class="format-toggle">${fmtBtns}</div>
@@ -2472,7 +2512,8 @@ function renderRankings(){
         <div class="pos-filter">${posBtns}</div>
         ${ecrNote}
         <span style="font-size:11px;font-weight:700;margin-left:auto">${view.length} players</span>
-        ${following?'':`<button class="btn btn-ghost btn-sm" onclick="promptDraftFollow()">📡 Follow Draft</button>`}
+        ${following?'':`<button class="btn btn-accent btn-sm" onclick="openLeaguePicker()">🔗 Link Sleeper League</button>
+        <button class="btn btn-ghost btn-sm" onclick="promptDraftFollow()" title="Follow a live or mock draft by its ID">Paste draft ID</button>`}
         <button class="btn btn-ghost btn-sm" onclick="exportRankingsCSV()">⬇ CSV</button>
       </div>
       <div class="rank-table-wrap" style="max-height:calc(100vh - 320px)">
@@ -2495,6 +2536,7 @@ const FORMAT_PRESETS={
   std:      {receptions:0.0},
   superflex:{receptions:0.5},  // half-PPR superflex by default (matches the FantasyPros page we pull)
   dynasty:  {receptions:0.5},  // dynasty half-PPR overall
+  dynasty_superflex:{receptions:0.5},  // dynasty + superflex/2QB (QBs valued highest)
 };
 // Selecting a format applies its scoring and re-sorts by ECR (the FantasyPros rank for that format).
 function setRankFormat(f){
@@ -2503,13 +2545,13 @@ function setRankFormat(f){
   if(preset){ Object.assign(scoringSettings,preset); }
   rankSortKey='ecr'; rankSortDir=-1;
   renderRankings();
-  toast(`${({ppr:'Full PPR',half_ppr:'Half PPR',std:'Standard',superflex:'Superflex',dynasty:'Dynasty'})[f]} — ECR + scoring applied`,'ok');
+  toast(`${formatLabel(f)} — ECR + scoring applied`,'ok');
 }
 // When the user edits the reception value directly, keep the format label in sync so the
 // ECR table matches: 1.0→Full PPR, 0.5→Half PPR, 0→Standard. (Superflex/Dynasty are only
 // set via their buttons since they change the ranking pool, not just the reception value.)
 function syncFormatFromScoring(){
-  if(rankFormat==='superflex'||rankFormat==='dynasty') return; // these aren't pure reception-value formats
+  if(rankFormat==='superflex'||rankFormat==='dynasty'||rankFormat==='dynasty_superflex') return; // these aren't pure reception-value formats
   const r=scoringSettings.receptions;
   let f = r>=1 ? 'ppr' : r>=0.25 ? 'half_ppr' : 'std';
   if(f!==rankFormat){ rankFormat=f;
@@ -2535,7 +2577,7 @@ function recalcRankings(){
 }
 function exportRankingsCSV(){
   let all=buildPlayerList();all.sort((a,b)=>b.fpts-a.fpts);
-  const dyn = rankFormat==='dynasty';
+  const dyn = rankFormat==='dynasty' || rankFormat==='dynasty_superflex';
   const keys=['ecr','tier','fpts','pos','name','team',
     ...(dyn?['age','apy','fa']:[]),
     'rushing_attempts','rushing_yards','ypc','rushing_tds',
@@ -3551,6 +3593,261 @@ function handleSeedLoad(e){
 // ═════════════════════════════════════════════════════════════════════════════
 // Live draft follow (Sleeper draft picks)
 // ═════════════════════════════════════════════════════════════════════════════
+// ── Link a Sleeper draft by username (FantasyPros-style) ────────────────────
+// Flow: user types their Sleeper username → we resolve their user_id → list their
+// leagues for the current season → they pick one → we resolve that league's draft
+// and, if it's still open (pre_draft/drafting), start following it. All calls are
+// read-only and need no auth. Mock drafts have no league, so those still use the
+// manual draft-ID box (promptDraftFollow).
+let leaguePickerState = { open:false, loading:false, user:null, season:null, leagues:[], error:null };
+
+// Derive a human scoring label from a league's per-reception value.
+function leagueScoringLabel(sc){
+  if(!sc) return '';
+  const rec = sc.rec;
+  if(rec==null) return '';
+  if(rec>=1) return 'PPR';
+  if(rec>0)  return 'Half-PPR';
+  return 'Standard';
+}
+// Is this a superflex/2-QB league? (roster_positions contains SUPER_FLEX or 2+ QB.)
+function leagueIsSuperflex(rp){
+  if(!Array.isArray(rp)) return false;
+  if(rp.includes('SUPER_FLEX')) return true;
+  return rp.filter(x=>x==='QB').length>=2;
+}
+
+// Convert a Sleeper `scoring_settings` object (per-stat point values, e.g. pass_yd:0.04)
+// onto our scoringSettings model (which uses "yards per point" for the yardage fields).
+// Sleeper gives points-per-yard; we invert to yards-per-point. Returns true if applied.
+// Only the fields our projection model actually scores are mapped — kicker/DEF/IDP and the
+// many bonus lines don't affect skill-player fantasy points here, so they're ignored.
+function applySleeperScoring(sc){
+  if(!sc || typeof sc!=='object') return false;
+  // Sleeper stores some values as imprecise floats (e.g. rec_yd 0.10000000149...), which
+  // becomes 9.9999998 after we invert to yards-per-point. `clean` snaps a number to 2
+  // decimals and, if it's within a hair of a whole/half, to that — killing the float noise
+  // while still allowing genuinely custom scoring.
+  const clean=(x)=>{
+    const r2=Math.round(x*100)/100;               // 2-decimal precision
+    const rHalf=Math.round(x*2)/2;                 // nearest 0.5
+    if(Math.abs(x-Math.round(x))<1e-6) return Math.round(x);  // essentially an integer
+    if(Math.abs(x-rHalf)<1e-6) return rHalf;       // essentially a half
+    return r2;
+  };
+  const num=(v,d)=>{ const n=Number(v); return isFinite(n)?clean(n):d; };
+  const perYardToYdg=(v,fallback)=>{ const n=Number(v); return (isFinite(n)&&n>0) ? clean(1/n) : fallback; };
+  const s=scoringSettings;
+  // Passing
+  if(sc.pass_yd!=null) s.passing_yards_yardage = perYardToYdg(sc.pass_yd, s.passing_yards_yardage);
+  if(sc.pass_td!=null) s.passing_touchdowns = num(sc.pass_td, s.passing_touchdowns);
+  if(sc.pass_int!=null) s.interceptions_thrown = num(sc.pass_int, s.interceptions_thrown);
+  if(sc.pass_att!=null) s.passing_attempts = num(sc.pass_att, s.passing_attempts);
+  if(sc.pass_cmp!=null) s.passing_completions = num(sc.pass_cmp, s.passing_completions);
+  // Rushing
+  if(sc.rush_yd!=null) s.rushing_yards_yardage = perYardToYdg(sc.rush_yd, s.rushing_yards_yardage);
+  if(sc.rush_td!=null) s.rushing_touchdowns = num(sc.rush_td, s.rushing_touchdowns);
+  if(sc.rush_att!=null) s.rushing_attempts = num(sc.rush_att, s.rushing_attempts);
+  // Receiving
+  if(sc.rec_yd!=null) s.receiving_yards_yardage = perYardToYdg(sc.rec_yd, s.receiving_yards_yardage);
+  if(sc.rec_td!=null) s.receiving_touchdowns = num(sc.rec_td, s.receiving_touchdowns);
+  if(sc.rec!=null) s.receptions = num(sc.rec, s.receptions);
+  // Fumbles: Sleeper splits fum_lost (offensive player losing it) from fum; use fum_lost.
+  if(sc.fum_lost!=null) s.fumbles_lost = num(sc.fum_lost, s.fumbles_lost);
+  return true;
+}
+
+// Pick the rankings ECR format that best matches a linked league. Superflex/2QB take
+// priority (they change the player pool), then the reception value maps to ppr/half/std.
+// A dynasty league (draft scoring_type starting "dynasty" OR type===2) prefers the dynasty
+// board. `rp` = roster_positions, `draftScoringType` = draft.metadata.scoring_type (optional),
+// `leagueType` = league.settings.type (2 = keeper/dynasty on Sleeper).
+function detectLeagueFormat(sc, rp, draftScoringType, leagueType){
+  const rec = sc && sc.rec!=null ? Number(sc.rec) : 0.5;
+  const isSF = leagueIsSuperflex(rp) || (draftScoringType && /2qb|superflex/i.test(draftScoringType));
+  const isDynasty = (draftScoringType && /^dynasty/i.test(draftScoringType)) || leagueType===2;
+  // A dynasty league that's ALSO superflex/2QB (e.g. Sleeper scoring_type "dynasty_2qb")
+  // wants the dynasty-superflex board, which values QBs far higher than 1QB dynasty.
+  if(isDynasty && isSF) return 'dynasty_superflex';
+  if(isDynasty) return 'dynasty';
+  if(isSF)      return 'superflex';
+  if(rec>=1)    return 'ppr';
+  if(rec>=0.25) return 'half_ppr';
+  return 'std';
+}
+// Human label for a ranking format (used in toasts + the active-format note).
+const FORMAT_LABELS={ppr:'Full PPR',half_ppr:'Half PPR',std:'Standard',superflex:'Superflex',dynasty:'Dynasty',dynasty_superflex:'Dynasty Superflex'};
+function formatLabel(f){ return FORMAT_LABELS[f]||f; }
+
+async function resolveSleeperUser(username){
+  const u = await sleeperFetch(SLEEPER_USER_URL(username.trim()));
+  if(!u || !u.user_id) throw new Error('No such Sleeper username');
+  return u;   // { user_id, username, display_name, avatar }
+}
+async function fetchCurrentSeason(){
+  try{ const s=await sleeperFetch(SLEEPER_STATE_URL); return (s&&(s.league_season||s.season))||String(PROJ_SEASON); }
+  catch(e){ return String(PROJ_SEASON); }
+}
+// Fetch the user's leagues for `season`; if none come back, fall back one year so
+// there's still something to show in the off-season (leagues roll over late).
+async function fetchUserLeagues(userId, season){
+  let leagues = await sleeperFetch(SLEEPER_LEAGUES_URL(userId, season)) || [];
+  let usedSeason = season;
+  if(!leagues.length){
+    const prev = String(parseInt(season,10)-1);
+    const older = await sleeperFetch(SLEEPER_LEAGUES_URL(userId, prev)) || [];
+    if(older.length){ leagues = older; usedSeason = prev; }
+  }
+  return { leagues, usedSeason };
+}
+
+// Resolve the best draft_id to follow for a league. The league record already carries
+// a top-level draft_id (the current/most-recent draft); for dynasty leagues that may have
+// several, /drafts returns them most-recent-first. We take the most recent, then read the
+// draft object to learn its status so we can tell "linkable" (pre_draft/drafting) from
+// "already done" (complete).
+async function resolveLeagueDraft(league){
+  let draftId = league.draft_id || null;
+  // For leagues that might have multiple drafts (e.g. dynasty), prefer the freshest one.
+  try{
+    const drafts = await sleeperFetch(SLEEPER_LG_DRAFTS_URL(league.league_id));
+    if(Array.isArray(drafts) && drafts.length){
+      // Sorted most-recent first per Sleeper docs; prefer an open one if present.
+      const open = drafts.find(d=>d.status==='pre_draft'||d.status==='drafting');
+      draftId = (open||drafts[0]).draft_id || draftId;
+    }
+  }catch(e){ /* fall back to league.draft_id */ }
+  if(!draftId) return { draftId:null, status:null, scoringType:null };
+  let status=null, scoringType=null;
+  try{
+    const d=await sleeperFetch(SLEEPER_DRAFT_URL(draftId));
+    status=d&&d.status;
+    scoringType = d&&d.metadata&&d.metadata.scoring_type || null;
+  }catch(e){}
+  return { draftId, status, scoringType };
+}
+
+// UI entry point — open the username prompt / league list.
+function openLeaguePicker(){
+  leaguePickerState = { open:true, loading:false, user:null, season:null, leagues:[], error:null };
+  renderRankings();
+}
+function closeLeaguePicker(){
+  leaguePickerState.open=false;
+  renderRankings();
+}
+async function submitLeagueUsername(){
+  const inp=document.getElementById('lpUsername');
+  const username=inp?inp.value.trim():'';
+  if(!username){ toast('Enter your Sleeper username','err'); return; }
+  leaguePickerState.loading=true; leaguePickerState.error=null; renderRankings();
+  try{
+    const user=await resolveSleeperUser(username);
+    const season=await fetchCurrentSeason();
+    const { leagues, usedSeason }=await fetchUserLeagues(user.user_id, season);
+    leaguePickerState.user=user;
+    leaguePickerState.season=usedSeason;
+    leaguePickerState.leagues=leagues;
+    leaguePickerState.loading=false;
+    if(!leagues.length) leaguePickerState.error='No NFL leagues found for this account.';
+    renderRankings();
+  }catch(e){
+    leaguePickerState.loading=false;
+    leaguePickerState.error = /No such/.test(e.message)? 'Username not found on Sleeper.' : `Couldn't reach Sleeper (${e.message}).`;
+    renderRankings();
+  }
+}
+// User clicked a league in the list → resolve its draft and either follow it or explain
+// that its draft is already complete. On success we also adopt the league's full scoring
+// settings and switch the rankings to the matching format (PPR/Half/Std/Superflex/Dynasty).
+async function pickLeague(idx){
+  const lg=leaguePickerState.leagues[idx]; if(!lg) return;
+  leaguePickerState.loading=true; renderRankings();
+  const { draftId:did, status, scoringType }=await resolveLeagueDraft(lg);
+  leaguePickerState.loading=false;
+  if(!did){ toast(`No draft found for "${lg.name}"`,'err'); renderRankings(); return; }
+
+  // Adopt the league's scoring + format regardless of whether the draft is followable —
+  // even a completed-draft league is useful to score your rankings the way that league does.
+  const applied = applySleeperScoring(lg.scoring_settings);
+  const fmt = detectLeagueFormat(lg.scoring_settings, lg.roster_positions, scoringType, lg.settings&&lg.settings.type);
+  if(fmt){
+    rankFormat=fmt;
+    const preset=FORMAT_PRESETS[fmt];
+    // Superflex/Dynasty presets set a reception default; but the league's real reception
+    // value (from applySleeperScoring) is more accurate, so re-assert it after the preset.
+    if(preset) Object.assign(scoringSettings,preset);
+    if(applied && lg.scoring_settings && lg.scoring_settings.rec!=null){
+      scoringSettings.receptions = Number(lg.scoring_settings.rec);
+    }
+  }
+
+  if(status==='complete'){
+    // Draft's done — can't follow it, but we DID apply the scoring/format above.
+    leaguePickerState.error=`"${lg.name}"'s draft is already complete, so there's nothing live to follow — but I applied its scoring & format to your rankings. For a live or mock draft, use the “Paste draft ID” option.`;
+    rankSortKey='ecr'; rankSortDir=-1;
+    renderRankings();
+    toast(`Applied ${lg.name} scoring (${formatLabel(fmt)}) ✓`,'ok');
+    return;
+  }
+  // pre_draft or drafting (or unknown-but-present) → link it via existing follow machinery.
+  draftId=did;
+  leaguePickerState.open=false;
+  rankSortKey='ecr'; rankSortDir=-1;
+  startDraftFollow();
+  toast(`Linked to ${lg.name} · ${formatLabel(fmt)} scoring applied ✓`,'ok');
+}
+
+// Render the league-picker panel (username input, then the list of the user's leagues).
+function renderLeaguePicker(){
+  const st=leaguePickerState;
+  const head=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <b style="font-size:13px">🔗 Link a Sleeper league</b>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="closeLeaguePicker()">✕</button>
+    </div>`;
+  const errRow = st.error?`<div class="lp-error">${st.error}</div>`:'';
+
+  // Stage 1: ask for username (shown until we have a resolved user with leagues).
+  if(!st.user){
+    return `<div class="lp-panel">${head}
+      <div class="lp-row">
+        <input id="lpUsername" class="lp-input" type="text" placeholder="Your Sleeper username"
+               ${st.loading?'disabled':''} onkeydown="if(event.key==='Enter')submitLeagueUsername()">
+        <button class="btn btn-accent btn-sm" ${st.loading?'disabled':''} onclick="submitLeagueUsername()">
+          ${st.loading?'Looking…':'Find my leagues'}</button>
+      </div>
+      ${errRow}
+      <div class="lp-hint">We only read your public league list — no password or login needed.</div>
+    </div>`;
+  }
+
+  // Stage 2: show the user's leagues to pick from.
+  const who = st.user.display_name||st.user.username||'';
+  const avatar = st.user.avatar?`<img src="${SLEEPER_AVATAR_THUMB(st.user.avatar)}" class="lp-avatar" onerror="this.style.display='none'">`:'';
+  const rows = (st.leagues||[]).map((lg,i)=>{
+    const size = lg.total_rosters||(lg.settings&&lg.settings.num_teams)||'?';
+    const scoring = leagueScoringLabel(lg.scoring_settings);
+    const sf = leagueIsSuperflex(lg.roster_positions)?' · SF':'';
+    const lgAv = lg.avatar?`<img src="${SLEEPER_AVATAR_THUMB(lg.avatar)}" class="lp-lg-avatar" onerror="this.style.display='none'">`:'<div class="lp-lg-avatar lp-lg-blank">🏈</div>';
+    return `<button class="lp-league" ${st.loading?'disabled':''} onclick="pickLeague(${i})">
+      ${lgAv}
+      <div class="lp-lg-main">
+        <div class="lp-lg-name">${lg.name||'Unnamed league'}</div>
+        <div class="lp-lg-meta">${size} teams${scoring?' · '+scoring:''}${sf} · ${lg.season||''}</div>
+      </div>
+      <span class="lp-lg-go">Link →</span>
+    </button>`;
+  }).join('');
+  return `<div class="lp-panel">${head}
+    <div class="lp-user">${avatar}<span>Signed in as <b>${who}</b></span>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openLeaguePicker()">Change</button></div>
+    ${errRow}
+    ${st.loading?'<div class="lp-hint">Resolving draft…</div>':''}
+    <div class="lp-league-list">${rows||'<div class="lp-hint">No leagues found.</div>'}</div>
+    <div class="lp-hint">Following a mock draft? Use “Paste draft ID” instead — mocks aren’t tied to a league.</div>
+  </div>`;
+}
+
 function promptDraftFollow(){
   const raw=prompt('Paste a Sleeper draft ID or draft URL to follow live:\n(e.g. 1234567890 or https://sleeper.com/draft/nfl/1234567890)');
   if(!raw) return;
@@ -3584,6 +3881,10 @@ async function pollDraft(){
   }catch(e){ /* keep polling quietly */ }
 }
 function toggleHideDrafted(){ hideDrafted=!hideDrafted; renderRankings(); }
+
+
+
+
 
 
 

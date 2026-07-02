@@ -76,6 +76,7 @@ FANTASYPROS_URLS = {
     "ppr":       "https://www.fantasypros.com/nfl/rankings/ppr-cheatsheets.php",
     "std":       "https://www.fantasypros.com/nfl/rankings/consensus-cheatsheets.php",
     "dynasty":   "https://www.fantasypros.com/nfl/rankings/dynasty-overall.php",
+    "dynasty_superflex": "https://www.fantasypros.com/nfl/rankings/dynasty-superflex.php",
     "superflex":      "https://www.fantasypros.com/nfl/rankings/half-point-ppr-superflex-cheatsheets.php",
     "superflex_ppr":  "https://www.fantasypros.com/nfl/rankings/ppr-superflex-cheatsheets.php",
 }
