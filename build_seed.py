@@ -311,6 +311,7 @@ SHARP_URLS = {
     "tendencies":     "https://www.sharpfootballanalysis.com/stats-nfl/nfl-offensive-tendencies-stats/",
     # Defensive tables (lesser priority, categorized separately in the app)
     "defensive_line":       "https://www.sharpfootballanalysis.com/stats-nfl/nfl-defensive-line-stats/",
+    "defensive":            "https://www.sharpfootballanalysis.com/stats-nfl/nfl-defensive-stats/",
     "defensive_tendencies": "https://www.sharpfootballanalysis.com/stats-nfl/nfl-defensive-tendencies/",
     "coverage_schemes":     "https://www.sharpfootballanalysis.com/stats-nfl/nfl-coverage-schemes/",
     "coverage_by_position": "https://www.sharpfootballanalysis.com/stats-nfl/nfl-coverage-stats-by-position/",
@@ -323,6 +324,7 @@ SHARP_TITLES = {
     "personnel":      "Personnel",
     "tendencies":     "Tendencies",
     "defensive_line":       "Defensive Line",
+    "defensive":            "Defensive Metrics",
     "defensive_tendencies": "Defensive Tendencies",
     "coverage_schemes":     "Coverage Schemes",
     "coverage_by_position": "Coverage by Position",
@@ -331,7 +333,7 @@ SHARP_TITLES = {
 SHARP_CATEGORY = {
     "offensive_line":"offense", "offense":"offense", "pace":"offense",
     "personnel":"offense", "tendencies":"offense",
-    "defensive_line":"defense", "defensive_tendencies":"defense",
+    "defensive":"defense", "defensive_line":"defense", "defensive_tendencies":"defense",
     "coverage_schemes":"defense", "coverage_by_position":"defense",
 }
 # Team NICKNAME (as shown in most Sharp stat tables) → our team code.
@@ -367,27 +369,85 @@ SHARP_SOS_URL = "https://www.sharpfootballanalysis.com/analysis/nfl-strength-of-
 
 # Columns where a LOWER value is better (so rank 1 = lowest). Everything else: higher=better.
 # Matched by case-insensitive substring against the column header.
-SHARP_LOWER_IS_BETTER = [
-    "sec/play", "seconds per play", "sack rate", "pressure rate allowed",
-    "sacks allowed", "stuffed", "negative", "int", "giveaway", "turnover",
-    "3 down", "pass rush", "ypt allowed", "yards before contact",
+SHARP_OFF_LOWER_IS_BETTER = [
+    "pressure rate allowed", 
+    "no blitz pressure rate allowed", 
+    "rush stuff rate",
+    "sec/play",
+    "sec/play last 5",
 ]
 
 # Columns where a HIGHER value is better even though the header might otherwise look defensive.
 # These override the lower-is-better rules when both match the same text.
-SHARP_HIGHER_IS_BETTER = [
+SHARP_OFF_HIGHER_IS_BETTER = [
+    "yards before contact per rb rush",
+    "time to throw",
+    "epa/play",
+    "yards/play",
+    "yards per play",
+    "y/pl last 5",
     "points per drive",
+    "explosive play rate",
+    "down conversion rate",
+    "neutral db rate",
+    "neutral db rate last 5",
+    "off plays/g",
+    "total plays/g",
+    "3wr rate",
+    "3wr rate last 5",
+    "multi te rate",
+    "multi rb rate",
+    "motion rate",
+    "play action rate",
+    "airyards/att",
+    "shotgun rate",
+    "nohuddle rate",
+]
+
+# Columns where a LOWER value is better (so rank 1 = lowest). Everything else: higher=better.
+# Defensive stats that are "good" when low (e.g. yards/play allowed, points/play allowed, etc.)
+SHARP_DEF_LOWER_IS_BETTER = [
+    "yards before contact per rb rush",
+    "ypt allowed wr",
+    "ypt allowed te",
+    "ypt allowed rb",
+    "ypt allowed outside",
+    "ypt allowed slot",
+    "yards per play allowed",
+    "y/pl last 5",
+    "points per drive allowed",
+    "explosive play rate allowed",
+    "down conversion rate allowed",
+]
+
+# Columns where a HIGHER value is better.
+# Defensive stats that are "good" when high (e.g. pressure rate, blitz rate, etc.)
+SHARP_DEF_HIGHER_IS_BETTER = [
     "pressure rate",
     "no blitz pressure rate",
     "rush stuff rate",
     "blitz rate",
+    "light box rate",
+    "heavy box rate",
+    "sub package rate",
+    "man rate",
+    "zone rate",
+    "middle closed rate",
+    "middle open rate",
+    "epa/play",
 ]
 
-def _sharp_col_lower_better(col):
+def _sharp_off_col_lower_better(col):
     c = col.lower()
-    if any(k in c for k in SHARP_HIGHER_IS_BETTER):
+    if any(c in k for k in SHARP_OFF_HIGHER_IS_BETTER):
         return False
-    return any(k in c for k in SHARP_LOWER_IS_BETTER)
+    return any(k in c for k in SHARP_OFF_LOWER_IS_BETTER)
+
+def _sharp_def_col_lower_better(col):
+    c = col.lower()
+    if any(c in k for k in SHARP_DEF_HIGHER_IS_BETTER):
+        return False
+    return any(k in c for k in SHARP_DEF_LOWER_IS_BETTER)
 
 def _parse_sharp_table(html):
     """Parse the first real data <table> on a Sharp page into (headers, rows-of-cells)
@@ -472,7 +532,10 @@ def fetch_sharp_table(key, url, refresh):
         teams[code] = {"values": values, "ranks": {}}
     # Compute 1..32 rank per column (1 = best), respecting per-column direction.
     for col, pairs in raw_by_col.items():
-        lower_better = _sharp_col_lower_better(col)
+        if SHARP_CATEGORY[key] == "offense":
+            lower_better = _sharp_off_col_lower_better(col)
+        else:
+            lower_better = _sharp_def_col_lower_better(col)
         ordered = sorted(pairs, key=lambda cv: cv[1], reverse=not lower_better)
         for rank, (code, _v) in enumerate(ordered, start=1):
             if code in teams:
