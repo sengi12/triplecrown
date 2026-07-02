@@ -379,7 +379,6 @@ SHARP_HIGHER_IS_BETTER = [
     "points per drive",
     "pressure rate",
     "no blitz pressure rate",
-    # "yards before contact",
     "rush stuff rate",
     "blitz rate",
 ]
