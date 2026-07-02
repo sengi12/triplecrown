@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-bake_seed.py — embed an triplecrown_seed.json straight into triplecrown.html.
+bake_seed.py — embed an triplecrown_seed.json straight into index.html.
 
 Why: opening the app from a phone (or by double-clicking the file) uses the file://
 protocol, where the browser blocks fetch() for security — so the app can't auto-load
@@ -10,7 +10,7 @@ you can email/AirDrop to your phone and open anywhere, fully offline, ECR and al
 
 Usage:
     python bake_seed.py
-        → reads ./triplecrown_seed.json + ./triplecrown.html,
+        → reads ./triplecrown_seed.json + ./index.html,
           writes ./ff_projections_baked.html
 
     python bake_seed.py --seed path/to/seed.json --html path/to/app.html --out my_app.html
@@ -25,7 +25,7 @@ END   = "// ═══ TRIPLECROWN_SEED_END ═══"
 def main():
     ap = argparse.ArgumentParser(description="Embed a seed JSON into the TripleCrown HTML.")
     ap.add_argument("--seed", default="triplecrown_seed.json", help="seed JSON from build_seed.py")
-    ap.add_argument("--html", default="triplecrown.html", help="the app HTML to bake into")
+    ap.add_argument("--html", default="index.html", help="the app HTML to bake into")
     ap.add_argument("--out",  default=None, help="output file (default: <html>_baked.html)")
     args = ap.parse_args()
 
@@ -68,7 +68,7 @@ def main():
 
     if START not in html or END not in html:
         sys.exit("ERROR: could not find the TRIPLECROWN_SEED markers in the HTML.\n"
-                 "Make sure you're using a current triplecrown.html (the one with the\n"
+                 "Make sure you're using a current index.html (the one with the\n"
                  "// ═══ TRIPLECROWN_SEED_START ═══ block near the top of its <script>).")
 
     pattern = re.compile(re.escape(START) + r".*?" + re.escape(END), re.DOTALL)
