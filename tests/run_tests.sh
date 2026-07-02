@@ -105,6 +105,9 @@ run_js_test test_scoring_apply    "Sleeper scoring→model conversion + format d
 run_js_test test_rounding        "Sleeper scoring float-noise rounding (clean 10/25, preserves custom values)"
 run_js_test test_pick_applies_scoring "Linking a league applies its full scoring & switches format"
 run_js_test test_dynasty_sf       "Dynasty-superflex format detection (dynasty_2qb) + graceful ECR fallback"
+run_js_test test_sharp_app       "Advanced Stats (Warren Sharp): per-team cards, league-wide sortable table, rank badges"
+run_js_test test_sharp_edge      "Advanced Stats edge cases (empty seed, missing team, no-team fallback)"
+run_js_test test_sos_defense    "SOS chart/table, defensive tables, Offense-Defense toggle, % on rate cols, full team names"
 run_js_test test_history_path  "Prebuilt seed HISTORY path produces correct splits"
 run_js_test test_snap_fallback "Snap-data-missing fallback counts games correctly"
 run_js_test test_weekrange     "Week-range slider aggregation (Tucker Kraft hot stretch)"
@@ -124,7 +127,7 @@ echo ""
 PYBUILD="$DIR/../build_seed.py"
 if [ -f "$DIR/test_flacco_split.py" ] && [ -f "$PYBUILD" ]; then
   echo "═══ Python tests ═══"
-  for pyt in test_flacco_split test_ecr_py test_bake test_ecr_extract test_otc_extract; do
+  for pyt in test_flacco_split test_ecr_py test_bake test_ecr_extract test_otc_extract test_sharp_scrape test_sos_scrape; do
     [ -f "$DIR/${pyt}.py" ] || continue
     output=$(python3 "$DIR/${pyt}.py" 2>&1) || true
     p=$(echo "$output" | grep -ciE "PASS" || true)

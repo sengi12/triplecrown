@@ -18,6 +18,9 @@ seed = {
     "history": {}, "history_seasons": ["2025"],
     "ecr": {"half_ppr": {"joe burrow": {"rank_ecr": 40, "tier": 5, "age": 29}}},
     "contracts": {"joe burrow": {"age": 29, "apy": 55000000, "fa": 2030, "pos": "QB"}},
+    "sharp": {"offense": {"title": "Offensive Metrics", "columns": ["EPA/Play"], "teams": {"CIN": {"values": {"EPA/Play": 0.1}, "ranks": {"EPA/Play": 5}}}}},
+    "sos": {"CIN": {"rank": 3, "win_total": 9.5, "name": "Cincinnati Bengals"}},
+    "team_names": {"CIN": "Cincinnati Bengals"},
 }
 
 with tempfile.TemporaryDirectory() as d:
@@ -37,6 +40,8 @@ with tempfile.TemporaryDirectory() as d:
     has_data = '"passing_yards":4800' in baked
     has_ecr = '"rank_ecr":40' in baked
     has_contracts = '"apy":55000000' in baked and 'SEED_CONTRACTS' in baked
+    has_sharp = 'SEED_SHARP' in baked and 'Offensive Metrics' in baked
+    has_sos = 'SEED_SOS' in baked and 'SEED_TEAM_NAMES' in baked and 'Cincinnati Bengals' in baked
     # markers still present (so it can be re-baked)
     has_markers = "TRIPLECROWN_SEED_START" in baked and "TRIPLECROWN_SEED_END" in baked
     # only ONE seed block (no duplicate)
@@ -47,5 +52,7 @@ with tempfile.TemporaryDirectory() as d:
     print(f"Markers preserved: {has_markers}")
     print(f"Single seed block: {one_block}")
     print(f"Embedded contracts: {has_contracts}")
-    ok = has_data and has_ecr and has_contracts and has_markers and one_block
+    print(f"Embedded sharp: {has_sharp}")
+    print(f"Embedded SOS+names: {has_sos}")
+    ok = has_data and has_ecr and has_contracts and has_sharp and has_sos and has_markers and one_block
     print("RESULT:", "PASS" if ok else "FAIL")

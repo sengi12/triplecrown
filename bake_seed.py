@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-bake_seed.py — embed an triplecrown_seed.json straight into index.html.
+bake_seed.py — embed an triplecrown_seed.json straight into triplecrown.html.
 
 Why: opening the app from a phone (or by double-clicking the file) uses the file://
 protocol, where the browser blocks fetch() for security — so the app can't auto-load
@@ -10,8 +10,8 @@ you can email/AirDrop to your phone and open anywhere, fully offline, ECR and al
 
 Usage:
     python bake_seed.py
-        → reads ./triplecrown_seed.json + ./index.html,
-          writes ./index_baked.html
+        → reads ./triplecrown_seed.json + ./triplecrown.html,
+          writes ./ff_projections_baked.html
 
     python bake_seed.py --seed path/to/seed.json --html path/to/app.html --out my_app.html
 
@@ -25,7 +25,7 @@ END   = "// ═══ TRIPLECROWN_SEED_END ═══"
 def main():
     ap = argparse.ArgumentParser(description="Embed a seed JSON into the TripleCrown HTML.")
     ap.add_argument("--seed", default="triplecrown_seed.json", help="seed JSON from build_seed.py")
-    ap.add_argument("--html", default="index.html", help="the app HTML to bake into")
+    ap.add_argument("--html", default="triplecrown.html", help="the app HTML to bake into")
     ap.add_argument("--out",  default=None, help="output file (default: <html>_baked.html)")
     args = ap.parse_args()
 
@@ -46,6 +46,9 @@ def main():
     hseas   = seed.get("history_seasons", [])
     ecr     = seed.get("ecr", {})
     contracts = seed.get("contracts", {})
+    sharp = seed.get("sharp", {})
+    sos = seed.get("sos", {})
+    team_names = seed.get("team_names", {})
 
     # Build the replacement block. Compact JSON keeps the file smaller.
     j = lambda o: json.dumps(o, separators=(",", ":"), ensure_ascii=False)
@@ -57,12 +60,15 @@ def main():
         f"const SEED_HISTORY_SEASONS = {j(hseas)};\n"
         f"const SEED_ECR = {j(ecr)};\n"
         f"const SEED_CONTRACTS = {j(contracts)};\n"
+        f"const SEED_SHARP = {j(sharp)};\n"
+        f"const SEED_SOS = {j(sos)};\n"
+        f"const SEED_TEAM_NAMES = {j(team_names)};\n"
         f"{END}"
     )
 
     if START not in html or END not in html:
         sys.exit("ERROR: could not find the TRIPLECROWN_SEED markers in the HTML.\n"
-                 "Make sure you're using a current index.html (the one with the\n"
+                 "Make sure you're using a current triplecrown.html (the one with the\n"
                  "// ═══ TRIPLECROWN_SEED_START ═══ block near the top of its <script>).")
 
     pattern = re.compile(re.escape(START) + r".*?" + re.escape(END), re.DOTALL)
@@ -84,6 +90,8 @@ def main():
     else:
         print("  • ECR ranks: (none)")
     print(f"  • contracts (dynasty Age/APY/FA): {len(contracts)} players" if contracts else "  • contracts: (none)")
+    print(f"  • Sharp advanced stats: {len(sharp)} tables" if sharp else "  • Sharp advanced stats: (none)")
+    print(f"  • Strength of schedule: {len(sos)} teams" if sos else "  • Strength of schedule: (none)")
     print(f"\nOpen {out} on your phone — double-click or AirDrop/email it. No server, no CORS.")
 
 if __name__ == "__main__":

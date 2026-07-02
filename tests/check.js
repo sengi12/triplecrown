@@ -12,6 +12,7 @@
 
 
 
+
 // ═══ TRIPLECROWN_SEED_START ═══ (build_seed.py / bake_seed.py replace this whole block)
 // SEED_DATA intentionally empty — TripleCrown pulls 2026 projections live from Sleeper
 // on first load (or load a prebuilt triplecrown_seed.json via the 📦 Seed button, or bake
@@ -22,6 +23,9 @@ const SEED_HISTORY = {};
 const SEED_HISTORY_SEASONS = [];
 const SEED_ECR = {};
 const SEED_CONTRACTS = {};
+const SEED_SHARP = {};
+const SEED_SOS = {};
+const SEED_TEAM_NAMES = {};
 // ═══ TRIPLECROWN_SEED_END ═══
 
 
@@ -247,6 +251,16 @@ let HISTORY_SEASONS = (typeof SEED_HISTORY_SEASONS!=='undefined') ? SEED_HISTORY
 let ECR = (typeof SEED_ECR!=='undefined') ? SEED_ECR : {};
 // OverTheCap contracts (dynasty only): {nameKey:{age,apy,fa,pos}}
 let CONTRACTS = (typeof SEED_CONTRACTS!=='undefined') ? SEED_CONTRACTS : {};
+// Warren Sharp advanced offensive stats (read-only reference): {tableKey:{columns,title,teams:{CODE:{values,ranks}}}}
+let SHARP = (typeof SEED_SHARP!=='undefined') ? SEED_SHARP : {};
+// 2026 Strength of Schedule: {CODE:{rank, win_total, name}}
+let SOS = (typeof SEED_SOS!=='undefined') ? SEED_SOS : {};
+// Full team display names: {CODE:"Cincinnati Bengals"}
+let TEAM_NAMES = (typeof SEED_TEAM_NAMES!=='undefined') ? SEED_TEAM_NAMES : {};
+let sharpCategory = 'offense';   // 'offense' | 'defense' — which side to show in league-wide view
+let sharpTable = null;      // which Sharp table is active in the league-wide view (set on first render)
+let sharpSortCol = null;    // active sort column in league-wide view
+let sharpSortDir = 1;       // 1 = best-first (rank asc), -1 = worst-first
 let activeSeason = 'proj';   // 'proj' = working projections, or a year string for read-only reference
 let sleeperPlayers = null;   // cached Sleeper player DB (id → meta), fetched once
 let sleeperPlayersPromise = null;   // shared in-flight promise so concurrent callers dedupe
@@ -655,12 +669,15 @@ function selectTeam(t){
 function setPhase(p){
   // The per-team "Rankings" phase tab is team-scoped; the header 🏆 button is league-wide.
   if(p==='Rankings') rankScope='team';
+  // The Advanced tab is per-team; if no team is selected, fall back to the league-wide view.
+  if(p==='Advanced' && !currentTeam){ showSharpLeague(); return; }
   currentPhase=p;renderContent();
 }
 function showFullRankings(){ rankScope='all'; currentPhase='Rankings'; renderContent(); }
 
 function renderContent(){
   if(currentPhase==='Rankings'){renderRankings();return;}
+  if(currentPhase==='AdvancedLeague'){renderSharpLeague();return;}
   if(!currentTeam){document.getElementById('content').innerHTML=emptyHTML();return;}
   const t=currentTeam,state=userProj[t];
   const tabs=tabBar();
@@ -668,6 +685,7 @@ function renderContent(){
   if(currentPhase==='QB') body=renderQB(t,state);
   else if(currentPhase==='Passing'){initPassingShares(t);body=renderPassing(t,state);}
   else if(currentPhase==='Rushing'){initRushingShares(t);body=renderRushing(t,state);}
+  else if(currentPhase==='Advanced') body=renderTeamAdvanced(t);
   const prev=TEAMS[TEAMS.indexOf(t)-1],next=TEAMS[TEAMS.indexOf(t)+1];
   const isRef = activeSeason!=='proj';
   const recKey = `${activeSeason}:${t}`;
@@ -680,11 +698,14 @@ function renderContent(){
        ${canUndo(t)?`<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="undoTeam('${t}')" title="Undo the last working-set change for ${t}">↶ Undo last copy</button>`:''}
        <button class="btn btn-accent btn-sm" ${canUndo(t)?'':'style="margin-left:auto"'} onclick="copyTeamToWorking('${t}')">⤵ Copy team to ${PROJ_SEASON} working set</button></div>`
     : '';
+  const sos = SOS && SOS[t];
+  const sosBadge = sos ? `<span class="team-sos">SOS: <b>${ordinal(sos.rank)}</b>${sos.win_total!=null?` · Vegas Win Total: <b>${sos.win_total}</b>`:''}</span>` : '';
   document.getElementById('content').innerHTML=`
     <div class="team-header">
       <img src="${NFL_LOGO(t)}" class="team-logo-lg" alt="${t}" onerror="this.style.opacity='.25'">
-      <div><div class="team-abbr">${t} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}</div>
-        <div class="team-qb-name">${(state.qbs&&state.qbs.length)?state.qbs.map(q=>q.name).join(' / '):'No projected QB'}${recStr?` · ${recStr}`:''}</div></div>
+      <div><div class="team-abbr team-fullname">${teamDisplayName(t)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}</div>
+        <div class="team-qb-name">${(state.qbs&&state.qbs.length)?state.qbs.map(q=>q.name).join(' / '):'No projected QB'}${recStr?` · ${recStr}`:''}</div>
+        ${sosBadge?`<div class="team-sos-row">${sosBadge}</div>`:''}</div>
       <div class="team-nav">
         <button id="undoBtn" class="btn btn-ghost undo-btn ${canUndo(t)?'':'disabled'}" ${canUndo(t)?'':'disabled'} onclick="undoTeam('${t}')" title="Undo last working-set change to ${t}">↶ ${isRef?'Undo':'Undo'}<span id="undoCount">${canUndo(t)?' '+undoStacks[t].length:''}</span></button>
         ${prev?`<button class="btn btn-ghost" onclick="selectTeam('${prev}')">← ${prev}</button>`:''}
@@ -699,8 +720,13 @@ function renderContent(){
   updateUndoButton();
 }
 function tabBar(){
-  return [['QB','⚡ QB'],['Passing','🎯 Targets'],['Rushing','💨 Rushing'],['Rankings','🏆 Rankings']]
-    .map(([p,l])=>`<button class="phase-tab ${currentPhase===p?'active':''}" onclick="setPhase('${p}')">${l}</button>`).join('');
+  const hasSharp = (SHARP && Object.keys(SHARP).length>0) || (SOS && Object.keys(SOS).length>0);
+  const tabs=[['QB','⚡ QB'],['Passing','🎯 Targets'],['Rushing','💨 Rushing']];
+  if(hasSharp) tabs.push(['Advanced','📊 Advanced Stats']);
+  tabs.push(['Rankings','🏆 Rankings']);
+  // Treat the league-wide advanced view as the same visual tab as the per-team one.
+  const phaseForTab = (currentPhase==='AdvancedLeague') ? 'Advanced' : currentPhase;
+  return tabs.map(([p,l])=>`<button class="phase-tab ${phaseForTab===p?'active':''}" onclick="setPhase('${p}')">${l}</button>`).join('');
 }
 function emptyHTML(){return`<div class="empty"><div class="empty-icon">🏈</div>
   <div class="empty-title">Select a team to begin</div>
@@ -1963,6 +1989,255 @@ function buildPlayerList(){
   return list;
 }
 
+// ── Advanced Stats (Warren Sharp) ───────────────────────────────────────────
+// Read-only reference. Two views: a per-team card (this team's row across all Sharp
+// tables, with league rank 1–32 per stat), and a league-wide sortable table view.
+// None of this touches projections.
+function sharpHasData(){ return SHARP && Object.keys(SHARP).length>0; }
+// Full team name for team pages (e.g. "Cincinnati Bengals"); falls back to the code.
+function teamDisplayName(code){ return (TEAM_NAMES && TEAM_NAMES[code]) || code; }
+// 1 → "1st", 2 → "2nd", 22 → "22nd", etc.
+function ordinal(n){
+  if(n==null) return '';
+  const s=n%100;
+  const suff=(s>=11&&s<=13)?'th':(n%10===1)?'st':(n%10===2)?'nd':(n%10===3)?'rd':'th';
+  return n+suff;
+}
+function sharpRankClass(rank){
+  if(rank==null) return '';
+  if(rank<=8)  return 'sr-good';    // top quarter
+  if(rank<=16) return 'sr-okhi';
+  if(rank<=24) return 'sr-oklo';
+  return 'sr-bad';                  // bottom quarter
+}
+function sharpRankBadge(rank){
+  if(rank==null) return '';
+  const suff = (rank%10===1&&rank!==11)?'st':(rank%10===2&&rank!==12)?'nd':(rank%10===3&&rank!==13)?'rd':'th';
+  return `<span class="sr-badge ${sharpRankClass(rank)}">${rank}${suff}</span>`;
+}
+function fmtSharpVal(v, isPct){
+  if(v==null) return '—';
+  if(typeof v!=='number') return v;
+  const s = Number.isInteger(v) ? String(v) : v.toFixed(1);
+  return isPct ? s+'%' : s;
+}
+// Is a column a percentage in the given table? (build_seed flags these in pct_cols.)
+function sharpColIsPct(tbl, col){
+  return !!(tbl && Array.isArray(tbl.pct_cols) && tbl.pct_cols.includes(col));
+}
+
+// Per-team advanced view: one card per Sharp table, each showing this team's value + rank.
+function renderTeamAdvanced(team){
+  const hasSharp=sharpHasData(), hasSOS=SOS&&Object.keys(SOS).length>0;
+  if(!hasSharp && !hasSOS){
+    return `<div class="empty"><div class="empty-icon">📊</div>
+      <div class="empty-title">No advanced stats loaded</div>
+      <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed to populate Warren Sharp advanced stats.</div></div>`;
+  }
+  const cardFor=(key)=>{
+    const tbl=SHARP[key];
+    const row=tbl.teams&&tbl.teams[team];
+    if(!row) return `<div class="sr-card"><div class="sr-card-title">${tbl.title||key}</div>
+      <div class="sr-empty">No data for ${teamDisplayName(team)}</div></div>`;
+    const lines = tbl.columns.map(col=>{
+      const v=row.values?row.values[col]:null;
+      const r=row.ranks?row.ranks[col]:null;
+      return `<div class="sr-stat">
+        <div class="sr-stat-label">${col}</div>
+        <div class="sr-stat-val">${fmtSharpVal(v, sharpColIsPct(tbl,col))}</div>
+        <div class="sr-stat-rank">${sharpRankBadge(r)}</div>
+      </div>`;
+    }).join('');
+    return `<div class="sr-card">
+      <div class="sr-card-title">${tbl.title||key}</div>
+      <div class="sr-stat-grid">${lines}</div>
+    </div>`;
+  };
+  const keys=Object.keys(SHARP);
+  const offKeys=keys.filter(k=>(SHARP[k].category||'offense')==='offense');
+  const defKeys=keys.filter(k=>SHARP[k].category==='defense');
+  const section=(label,ks)=> ks.length ? `<div class="sr-section-head">${label}</div>
+    <div class="sr-card-grid">${ks.map(cardFor).join('')}</div>` : '';
+  // SOS summary strip
+  const sos=SOS && SOS[team];
+  const sosStrip = sos ? `<div class="sr-sos-strip">
+    <span class="sr-sos-rank ${sharpRankClass(sos.rank)}">${ordinal(sos.rank)}</span>
+    <div><div class="sr-sos-label">2026 Strength of Schedule</div>
+      <div class="sr-sos-sub">${sos.win_total!=null?`Vegas win total <b>${sos.win_total}</b> · `:''}rank ${sos.rank} of 32 (1 = easiest)</div></div>
+    <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showSharpLeague('sos')">See SOS chart →</button>
+  </div>` : '';
+  return `<div class="sr-team-wrap">
+    <div class="sr-note">📊 <b>Warren Sharp</b> advanced stats · previous season · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showSharpLeague()">🌐 View league-wide tables →</button></div>
+    ${sosStrip}
+    ${section('🏈 Offense', offKeys)}
+    ${section('🛡️ Defense', defKeys)}
+    <div class="sr-source">Source: sharpfootballanalysis.com — for informational use.</div>
+  </div>`;
+}
+
+// League-wide advanced view: pick a table, see all 32 teams, sortable by any column.
+function showSharpLeague(target){
+  rankScope='all'; currentPhase='AdvancedLeague';
+  if(target==='sos'){ sharpTable='__sos__'; sharpSortCol=null; sharpSortDir=1; }
+  renderContent();
+}
+function setSharpTable(key){ sharpTable=key; sharpSortCol=null; renderSharpLeague(); }
+function setSharpCategory(cat){
+  sharpCategory=cat;
+  // Jump to the first table in the newly selected category.
+  const keys=Object.keys(SHARP).filter(k=>(SHARP[k].category||'offense')===cat);
+  if(keys.length){ sharpTable=keys[0]; sharpSortCol=null; }
+  renderSharpLeague();
+}
+function sortSharpBy(col){
+  if(sharpSortCol===col){ sharpSortDir*=-1; } else { sharpSortCol=col; sharpSortDir=1; }
+  renderSharpLeague();
+}
+function renderSharpLeague(){
+  const host=document.getElementById('content'); if(!host) return;
+  const hasSharp=sharpHasData(), hasSOS=SOS&&Object.keys(SOS).length>0;
+  if(!hasSharp && !hasSOS){
+    host.innerHTML=`<div class="phase-tabs">${tabBar()}</div>
+      <div class="empty"><div class="empty-icon">📊</div><div class="empty-title">No advanced stats loaded</div>
+      <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed.</div></div>`;
+    return;
+  }
+  const headerBar=`
+    <div class="team-header sr-league-header">
+      <div><div class="team-abbr">📊 Advanced Stats — League-Wide</div>
+        <div class="team-qb-name">Warren Sharp · click any column to sort (best→worst)</div></div>
+      <div class="team-nav">
+        ${currentTeam?`<button class="btn btn-ghost" onclick="setPhase('Advanced')">← ${teamDisplayName(currentTeam)} card</button>`:''}
+        <button class="btn btn-ghost" onclick="setPhase('Rankings')">🏆 Rankings</button></div>
+    </div>
+    <div class="phase-tabs">${tabBar()}</div>`;
+
+  // The SOS view is its own "table" selection.
+  if(sharpTable==='__sos__' && hasSOS){
+    host.innerHTML = headerBar + renderCategoryTabs() + renderSOSView();
+    return;
+  }
+
+  const keys=Object.keys(SHARP).filter(k=>(SHARP[k].category||'offense')===sharpCategory);
+  if(!sharpTable || sharpTable==='__sos__' || !SHARP[sharpTable] || (SHARP[sharpTable].category||'offense')!==sharpCategory){
+    sharpTable = keys[0];
+  }
+  if(!sharpTable){ // no tables in this category
+    host.innerHTML = headerBar + renderCategoryTabs() + `<div class="sr-desc">No tables in this category.</div>`;
+    return;
+  }
+  const tbl=SHARP[sharpTable];
+  const cols=tbl.columns;
+  let rows=Object.keys(tbl.teams).map(code=>({code, ...tbl.teams[code]}));
+  const sortCol = sharpSortCol || cols[0];
+  rows.sort((a,b)=>{
+    const ra=a.ranks?a.ranks[sortCol]:null, rb=b.ranks?b.ranks[sortCol]:null;
+    if(ra==null && rb==null) return 0;
+    if(ra==null) return 1;
+    if(rb==null) return -1;
+    return (ra-rb)*sharpSortDir;
+  });
+  const tableTabs = keys.map(k=>`<button class="sr-tab ${k===sharpTable?'active':''}" onclick="setSharpTable('${k}')">${SHARP[k].title||k}</button>`).join('');
+  const head = `<th class="sr-th-team">TEAM</th>`+cols.map(c=>{
+    const active = c===sortCol;
+    const arrow = active ? (sharpSortDir>0?' ▲':' ▼') : '';
+    return `<th class="sr-th ${active?'active':''}" onclick="sortSharpBy('${c.replace(/'/g,"\\'")}')" title="Sort by ${c}">${c}${arrow}</th>`;
+  }).join('');
+  const body = rows.map(r=>{
+    const cells = cols.map(c=>{
+      const v=r.values?r.values[c]:null, rk=r.ranks?r.ranks[c]:null;
+      return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${fmtSharpVal(v, sharpColIsPct(tbl,c))}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
+    }).join('');
+    return `<tr><td class="sr-td-team"><img src="${NFL_LOGO(r.code)}" class="sr-logo" onerror="this.style.display='none'">${r.code}</td>${cells}</tr>`;
+  }).join('');
+  host.innerHTML = headerBar + renderCategoryTabs() + `
+    <div class="sr-league-tabs">${tableTabs}</div>
+    <div class="sr-desc">${tbl.title} — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
+    <div class="card" style="padding:0;overflow-x:auto">
+      <table class="sr-league-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+    </div>
+    <div class="sr-source">Source: sharpfootballanalysis.com — for informational use.</div>`;
+}
+
+// Offense / Defense / SOS category selector row for the league-wide view.
+function renderCategoryTabs(){
+  const hasOff=Object.keys(SHARP).some(k=>(SHARP[k].category||'offense')==='offense');
+  const hasDef=Object.keys(SHARP).some(k=>SHARP[k].category==='defense');
+  const hasSOS=SOS&&Object.keys(SOS).length>0;
+  const isSOS = sharpTable==='__sos__';
+  const btn=(cat,label,active,onclick)=>`<button class="sr-cat ${active?'active':''}" onclick="${onclick}">${label}</button>`;
+  let out='<div class="sr-cat-row">';
+  if(hasOff) out+=btn('offense','🏈 Offense', !isSOS && sharpCategory==='offense', "setSharpCategory('offense')");
+  if(hasDef) out+=btn('defense','🛡️ Defense', !isSOS && sharpCategory==='defense', "setSharpCategory('defense')");
+  if(hasSOS) out+=btn('sos','📅 Strength of Schedule', isSOS, "showSharpLeague('sos')");
+  out+='</div>';
+  return out;
+}
+
+// The Strength-of-Schedule view: a recreation of Sharp's descending-diagonal chart
+// (easiest at top-left → hardest at bottom-right, split by the league-average line),
+// plus the full sortable table beneath it.
+function renderSOSView(){
+  const entries=Object.keys(SOS).map(code=>({code, ...SOS[code]})).filter(e=>e.rank!=null);
+  entries.sort((a,b)=>a.rank-b.rank);
+  const n=entries.length||32;
+  // Chart geometry
+  const W=920, H=430, padL=30, padR=30, padT=52, padB=30;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  const x=(rank)=> padL + (plotW*(rank-1)/(n-1));
+  const y=(rank)=> padT + (plotH*(rank-1)/(n-1));   // diagonal: rank 1 top-left → rank n bottom-right
+  const midRank=(n+1)/2;
+  const midY=y(midRank);
+  const logos=entries.map(e=>{
+    const cx=x(e.rank), cy=y(e.rank);
+    return `<image href="${NFL_LOGO(e.code)}" x="${cx-13}" y="${cy-13}" width="26" height="26">
+      <title>${e.name||e.code} — SOS ${ordinal(e.rank)}, Vegas win total ${e.win_total}</title></image>
+      <text x="${cx}" y="${cy+22}" class="sos-rank-lbl" text-anchor="middle">${e.rank}</text>`;
+  }).join('');
+  const chart=`<svg viewBox="0 0 ${W} ${H}" class="sos-chart" preserveAspectRatio="xMidYMid meet">
+    <rect x="${padL}" y="${padT}" width="${plotW}" height="${midY-padT}" class="sos-band-easy"/>
+    <rect x="${padL}" y="${midY}" width="${plotW}" height="${padT+plotH-midY}" class="sos-band-hard"/>
+    <line x1="${padL}" y1="${midY}" x2="${padL+plotW}" y2="${midY}" class="sos-midline"/>
+    <text x="${padL+plotW-4}" y="${midY-6}" class="sos-band-lbl" text-anchor="end">EASIER THAN AVG ▲</text>
+    <text x="${padL+plotW-4}" y="${midY+16}" class="sos-band-lbl" text-anchor="end">HARDER THAN AVG ▼</text>
+    <text x="${padL}" y="34" class="sos-title">2026 NFL Strength of Schedule</text>
+    <text x="${padL}" y="48" class="sos-sub">Based on Vegas Forecasted Win Totals · easiest (1) → hardest (${n})</text>
+    ${logos}
+  </svg>`;
+  // Table beneath
+  let sortDir=sharpSortDir;
+  const sortCol=sharpSortCol||'rank';
+  const rows=entries.slice().sort((a,b)=>{
+    let av,bv;
+    if(sortCol==='win_total'){ av=a.win_total; bv=b.win_total; }
+    else { av=a.rank; bv=b.rank; }
+    if(av==null&&bv==null)return 0; if(av==null)return 1; if(bv==null)return -1;
+    return (av-bv)*sortDir;
+  });
+  const th=(col,label)=>{
+    const active=sortCol===col; const arrow=active?(sortDir>0?' ▲':' ▼'):'';
+    return `<th class="sr-th ${active?'active':''}" onclick="sortSOSBy('${col}')">${label}${arrow}</th>`;
+  };
+  const body=rows.map(e=>`<tr>
+    <td class="sr-td-team"><img src="${NFL_LOGO(e.code)}" class="sr-logo" onerror="this.style.display='none'">${teamDisplayName(e.code)}</td>
+    <td class="sr-td ${sharpRankClass(e.rank)}"><span class="sr-td-val">${ordinal(e.rank)}</span></td>
+    <td class="sr-td"><span class="sr-td-val">${e.win_total!=null?e.win_total:'—'}</span></td>
+  </tr>`).join('');
+  return `<div class="sr-desc">2026 strength of schedule, based on Vegas win totals. Rank 1 = easiest slate, ${n} = hardest.</div>
+    <div class="card sos-card">${chart}</div>
+    <div class="card" style="padding:0;overflow-x:auto;margin-top:12px">
+      <table class="sr-league-table sos-table"><thead><tr>
+        <th class="sr-th-team">TEAM</th>${th('rank','2026 SOS RANK')}${th('win_total','VEGAS WIN TOTAL')}
+      </tr></thead><tbody>${body}</tbody></table>
+    </div>
+    <div class="sr-source">Source: sharpfootballanalysis.com — for informational use.</div>`;
+}
+function sortSOSBy(col){
+  if(sharpSortCol===col){ sharpSortDir*=-1; } else { sharpSortCol=col; sharpSortDir=1; }
+  renderSharpLeague();
+}
+
 function renderRankings(){
   let all=buildPlayerList();
   // Team-scoped rankings (from a team's Rankings tab) show only that team's players.
@@ -2489,6 +2764,9 @@ async function tryAutoLoadSeed(){
     let got=false;
     if(j.ecr){ ECR=j.ecr; got=true; }
     if(j.contracts){ CONTRACTS=j.contracts; got=true; }
+    if(j.sharp){ SHARP=j.sharp; got=true; }
+    if(j.sos){ SOS=j.sos; got=true; }
+    if(j.team_names){ TEAM_NAMES=j.team_names; got=true; }
     // Only adopt prebuilt projections/history if present and non-trivial.
     if(j.seed && Object.keys(j.seed).length){
       SEED=j.seed; projSeed=SEED; seasonStatsCache={proj:SEED}; rosterMergedTeams.clear();
@@ -3147,6 +3425,9 @@ function handleSeedLoad(e){
       if(!hasSeed && !hasECR) throw new Error('Not an triplecrown_seed.json (no "seed" projections or "ecr" data found)');
       if(j.ecr) ECR=j.ecr;   // FantasyPros ECR (replaces ADP) — set FIRST so it survives even if seed is empty
       if(j.contracts) CONTRACTS=j.contracts;   // OverTheCap contracts (dynasty Age/APY/FA)
+      if(j.sharp) SHARP=j.sharp;   // Warren Sharp advanced offensive stats
+      if(j.sos) SOS=j.sos;   // 2026 strength of schedule
+      if(j.team_names) TEAM_NAMES=j.team_names;   // full team display names
       if(hasSeed){
         SEED=j.seed; rosterMergedTeams.clear();
         HISTORY=j.history||{};
@@ -3459,6 +3740,7 @@ async function pollDraft(){
   }catch(e){ /* keep polling quietly */ }
 }
 function toggleHideDrafted(){ hideDrafted=!hideDrafted; renderRankings(); }
+
 
 
 

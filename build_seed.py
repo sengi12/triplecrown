@@ -297,6 +297,234 @@ def build_contracts(refresh):
     return contracts
 
 
+# ── Warren Sharp advanced offensive stats (sharpfootballanalysis.com) ────────────
+# Read-only reference tables for the "Advanced Stats" tab: previous-season offensive
+# metrics + pace/personnel/tendencies/O-line, plus league ranks per column. These pages
+# are plain HTML tables keyed by team NICKNAME (e.g. "Rams"), so we map nickname → our
+# team code. Like ECR/contracts, they can't be fetched from the browser (no CORS), so we
+# scrape here and bake the result into the seed as SEED_SHARP.
+SHARP_URLS = {
+    "offensive_line": "https://www.sharpfootballanalysis.com/stats-nfl/nfl-offensive-line-stats/",
+    "offense":        "https://www.sharpfootballanalysis.com/stats-nfl/nfl-offensive-stats/",
+    "pace":           "https://www.sharpfootballanalysis.com/stats-nfl/nfl-team-pace-stats/",
+    "personnel":      "https://www.sharpfootballanalysis.com/stats-nfl/nfl-offensive-personnel/",
+    "tendencies":     "https://www.sharpfootballanalysis.com/stats-nfl/nfl-offensive-tendencies-stats/",
+    # Defensive tables (lesser priority, categorized separately in the app)
+    "defensive_line":       "https://www.sharpfootballanalysis.com/stats-nfl/nfl-defensive-line-stats/",
+    "defensive_tendencies": "https://www.sharpfootballanalysis.com/stats-nfl/nfl-defensive-tendencies/",
+    "coverage_schemes":     "https://www.sharpfootballanalysis.com/stats-nfl/nfl-coverage-schemes/",
+    "coverage_by_position": "https://www.sharpfootballanalysis.com/stats-nfl/nfl-coverage-stats-by-position/",
+}
+# Friendly titles for the app's table toggle.
+SHARP_TITLES = {
+    "offensive_line": "Offensive Line",
+    "offense":        "Offensive Metrics",
+    "pace":           "Pace",
+    "personnel":      "Personnel",
+    "tendencies":     "Tendencies",
+    "defensive_line":       "Defensive Line",
+    "defensive_tendencies": "Defensive Tendencies",
+    "coverage_schemes":     "Coverage Schemes",
+    "coverage_by_position": "Coverage by Position",
+}
+# Which side of the ball each table belongs to (for the app's Offense/Defense grouping).
+SHARP_CATEGORY = {
+    "offensive_line":"offense", "offense":"offense", "pace":"offense",
+    "personnel":"offense", "tendencies":"offense",
+    "defensive_line":"defense", "defensive_tendencies":"defense",
+    "coverage_schemes":"defense", "coverage_by_position":"defense",
+}
+# Team NICKNAME (as shown in most Sharp stat tables) → our team code.
+NICK_TO_CODE = {
+    "cardinals":"ARI","falcons":"ATL","ravens":"BAL","bills":"BUF","panthers":"CAR",
+    "bears":"CHI","bengals":"CIN","browns":"CLE","cowboys":"DAL","broncos":"DEN",
+    "lions":"DET","packers":"GB","texans":"HOU","colts":"IND","jaguars":"JAX",
+    "chiefs":"KC","chargers":"LAC","rams":"LAR","raiders":"LV","dolphins":"MIA",
+    "vikings":"MIN","patriots":"NE","saints":"NO","giants":"NYG","jets":"NYJ",
+    "eagles":"PHI","steelers":"PIT","seahawks":"SEA","49ers":"SF","buccaneers":"TB",
+    "titans":"TEN","commanders":"WAS",
+}
+# Full team name (as shown on the SOS page) → our team code. Also emitted to the app so
+# team pages can show "Cincinnati Bengals" instead of "CIN".
+FULLNAME_TO_CODE = {
+    "arizona cardinals":"ARI","atlanta falcons":"ATL","baltimore ravens":"BAL",
+    "buffalo bills":"BUF","carolina panthers":"CAR","chicago bears":"CHI",
+    "cincinnati bengals":"CIN","cleveland browns":"CLE","dallas cowboys":"DAL",
+    "denver broncos":"DEN","detroit lions":"DET","green bay packers":"GB",
+    "houston texans":"HOU","indianapolis colts":"IND","jacksonville jaguars":"JAX",
+    "kansas city chiefs":"KC","los angeles chargers":"LAC","los angeles rams":"LAR",
+    "las vegas raiders":"LV","miami dolphins":"MIA","minnesota vikings":"MIN",
+    "new england patriots":"NE","new orleans saints":"NO","new york giants":"NYG",
+    "new york jets":"NYJ","philadelphia eagles":"PHI","pittsburgh steelers":"PIT",
+    "seattle seahawks":"SEA","san francisco 49ers":"SF","tampa bay buccaneers":"TB",
+    "tennessee titans":"TEN","washington commanders":"WAS",
+}
+# code → full display name (inverse of the above) for the app.
+CODE_TO_FULLNAME = {v: k.title().replace("Ny ","NY ").replace("Lv ","LV ") for k, v in FULLNAME_TO_CODE.items()}
+# fix a couple of title-case quirks
+CODE_TO_FULLNAME["SF"] = "San Francisco 49ers"
+SHARP_SOS_URL = "https://www.sharpfootballanalysis.com/analysis/nfl-strength-of-schedule/"
+
+# Columns where a LOWER value is better (so rank 1 = lowest). Everything else: higher=better.
+# Matched by case-insensitive substring against the column header.
+SHARP_LOWER_IS_BETTER = [
+    "sec/play", "seconds per play", "sack rate", "pressure rate allowed", "pressure rate",
+    "sacks allowed", "stuffed", "stuff rate", "negative", "int", "giveaway", "turnover",
+    "3 down", "pass rush", "blitz",  # defensive-ish leakage guards; harmless if absent
+]
+
+def _sharp_col_lower_better(col):
+    c = col.lower()
+    return any(k in c for k in SHARP_LOWER_IS_BETTER)
+
+def _parse_sharp_table(html):
+    """Parse the first real data <table> on a Sharp page into (headers, rows-of-cells)
+    using only stdlib regex — mirrors the user's BeautifulSoup parser without the dep."""
+    # Grab the first <table>...</table> (their stat table is the first on the page body).
+    m = _re.search(r"<table[^>]*>(.*?)</table>", html, _re.DOTALL | _re.IGNORECASE)
+    if not m:
+        return [], []
+    tbl = m.group(1)
+    # Headers: prefer <thead> ths; fall back to first row's th/td.
+    headers = []
+    thead = _re.search(r"<thead[^>]*>(.*?)</thead>", tbl, _re.DOTALL | _re.IGNORECASE)
+    header_src = thead.group(1) if thead else tbl
+    for th in _re.findall(r"<th[^>]*>(.*?)</th>", header_src, _re.DOTALL | _re.IGNORECASE):
+        headers.append(_strip_tags(th))
+    # Body rows
+    body = _re.search(r"<tbody[^>]*>(.*?)</tbody>", tbl, _re.DOTALL | _re.IGNORECASE)
+    body_src = body.group(1) if body else tbl
+    rows = []
+    for tr in _re.findall(r"<tr[^>]*>(.*?)</tr>", body_src, _re.DOTALL | _re.IGNORECASE):
+        cells = [_strip_tags(td) for td in _re.findall(r"<td[^>]*>(.*?)</td>", tr, _re.DOTALL | _re.IGNORECASE)]
+        if cells and (not headers or len(cells) == len(headers)):
+            rows.append(cells)
+    return headers, rows
+
+def _sharp_cell_num(text):
+    """Return a float if the cell is numeric (handles %, commas), else None."""
+    t = (text or "").strip().rstrip("%").replace(",", "").strip()
+    if t == "":
+        return None
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
+def _sharp_col_is_rate(col):
+    """Columns whose values are percentages — the app appends % at display time.
+    We DON'T bake % into the stored number so ranking/sorting stay numeric."""
+    c = (col or "").lower()
+    return "rate" in c or "%" in c or "share" in c or col.strip().endswith("%")
+
+def _sharp_row_code(name):
+    """Map a Sharp table's team cell (nickname OR full name) to our code."""
+    n = (name or "").strip().lower()
+    return NICK_TO_CODE.get(n) or FULLNAME_TO_CODE.get(n)
+
+def fetch_sharp_table(key, url, refresh):
+    """Scrape one Sharp page → {columns, title, category, pct_cols, teams:{CODE:{values,ranks}}}."""
+    cache_path = os.path.join(CACHE_DIR, "sharp", f"{key}.json")
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    if not refresh and os.path.exists(cache_path):
+        print(f"  → sharp {key}: using cache")
+        with open(cache_path) as f:
+            return json.load(f)
+    print(f"  → fetching sharp {key} ...", end="", flush=True)
+    try:
+        req = request.Request(url, headers=UA)
+        with request.urlopen(req, timeout=60) as r:
+            html = r.read().decode("utf-8", "replace")
+    except Exception as e:
+        print(f" FAILED ({type(e).__name__}: {e}) — skipping {key}")
+        return None
+    headers, rows = _parse_sharp_table(html)
+    if not headers or not rows:
+        print(" no table found — skipping")
+        return None
+    # First column is the team name; the rest are stat columns.
+    stat_cols = headers[1:]
+    pct_cols = [c for c in stat_cols if _sharp_col_is_rate(c)]
+    teams = {}
+    raw_by_col = {c: [] for c in stat_cols}  # (code, value) for ranking
+    for cells in rows:
+        code = _sharp_row_code(cells[0])
+        if not code:
+            continue
+        values = {}
+        for ci, col in enumerate(stat_cols):
+            v = _sharp_cell_num(cells[ci + 1])
+            values[col] = v
+            if v is not None:
+                raw_by_col[col].append((code, v))
+        teams[code] = {"values": values, "ranks": {}}
+    # Compute 1..32 rank per column (1 = best), respecting per-column direction.
+    for col, pairs in raw_by_col.items():
+        lower_better = _sharp_col_lower_better(col)
+        ordered = sorted(pairs, key=lambda cv: cv[1], reverse=not lower_better)
+        for rank, (code, _v) in enumerate(ordered, start=1):
+            if code in teams:
+                teams[code]["ranks"][col] = rank
+    out = {"columns": stat_cols, "title": SHARP_TITLES.get(key, key),
+           "category": SHARP_CATEGORY.get(key, "offense"), "pct_cols": pct_cols, "teams": teams}
+    print(f" ok ({len(teams)} teams, {len(stat_cols)} cols, {SHARP_CATEGORY.get(key,'offense')})")
+    with open(cache_path, "w") as f:
+        json.dump(out, f)
+    return out
+
+def build_sharp(refresh):
+    """Build {tableKey: {columns, title, teams:{CODE:{values,ranks}}}} across all pages."""
+    sharp = {}
+    for key, url in SHARP_URLS.items():
+        tbl = fetch_sharp_table(key, url, refresh)
+        if tbl:
+            sharp[key] = tbl
+    if not sharp:
+        print("\n  ⚠ WARNING: no Warren Sharp stats fetched — the Advanced Stats tab will be empty.")
+    else:
+        cols = sum(len(t["columns"]) for t in sharp.values())
+        print(f"\n  Sharp advanced stats loaded: {len(sharp)} tables, {cols} total columns")
+    return sharp
+
+
+def build_sos(refresh):
+    """Scrape the 2026 Strength of Schedule table → {CODE:{rank, win_total, name}}.
+    The SOS page uses FULL team names and columns: SOS Ranking | Team | Vegas Win Total."""
+    cache_path = os.path.join(CACHE_DIR, "sharp", "sos.json")
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    if not refresh and os.path.exists(cache_path):
+        print("  → SOS: using cache")
+        with open(cache_path) as f:
+            return json.load(f)
+    print("  → fetching strength of schedule ...", end="", flush=True)
+    try:
+        req = request.Request(SHARP_SOS_URL, headers=UA)
+        with request.urlopen(req, timeout=60) as r:
+            html = r.read().decode("utf-8", "replace")
+    except Exception as e:
+        print(f" FAILED ({type(e).__name__}: {e})")
+        return {}
+    headers, rows = _parse_sharp_table(html)
+    # Expected headers: ["2026 SOS Ranking", "Team", "2026 Vegas Win Total"]
+    out = {}
+    for cells in rows:
+        if len(cells) < 3:
+            continue
+        rank = _sharp_cell_num(cells[0])
+        code = _sharp_row_code(cells[1])
+        win_total = _sharp_cell_num(cells[2])
+        if code and rank is not None:
+            out[code] = {"rank": int(rank), "win_total": win_total,
+                         "name": CODE_TO_FULLNAME.get(code, code)}
+    if not out:
+        print(" no SOS table found")
+    else:
+        print(f" ok ({len(out)} teams)")
+        with open(cache_path, "w") as f:
+            json.dump(out, f)
+    return out
+
+
 def cached(name, url, label, refresh):
     path = os.path.join(CACHE_DIR, name)
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -625,17 +853,21 @@ def main():
     for yr in range(args.season-1, args.season-1-args.history, -1):
         stats_by_season[str(yr)] = build_stats_index(yr, args.refresh)
 
-    print("\nStep 4/6: per-team history (QB weekly splits for traded players)")
+    print("\nStep 4/8: per-team history (QB weekly splits for traded players)")
     history = build_history(players, stats_by_season, args.refresh)
 
-    print("\nStep 5/6: assembling seed")
+    print("\nStep 5/8: assembling seed")
     seed, history = assemble(players, proj_idx, stats_by_season, history, args.season)
 
-    print("\nStep 6/7: FantasyPros ECR (replaces ADP)")
+    print("\nStep 6/8: FantasyPros ECR (replaces ADP)")
     ecr = build_ecr(args.refresh)
 
-    print("\nStep 7/7: OverTheCap contracts (dynasty age/APY/FA)")
+    print("\nStep 7/8: OverTheCap contracts (dynasty age/APY/FA)")
     contracts = build_contracts(args.refresh)
+
+    print("\nStep 8/8: Warren Sharp advanced stats (offense + defense) & strength of schedule")
+    sharp = build_sharp(args.refresh)
+    sos = build_sos(args.refresh)
 
     # Keep only seasons that actually returned stats (older years may be unavailable).
     nonempty_seasons = sorted([s for s, idx in stats_by_season.items() if idx], reverse=True)
@@ -644,7 +876,7 @@ def main():
         print(f"  (note: no data returned for {', '.join(missing)} — omitting those tabs)")
 
     # Emit the JS the app embeds
-    BUILDER_VERSION = "2.3-contracts"   # bump when aggregation logic changes
+    BUILDER_VERSION = "2.5-sharp-sos"   # bump when aggregation logic changes
     out_js = "triplecrown_seed.js"
     with open(out_js, "w") as f:
         f.write("// Auto-generated by build_seed.py — do not edit by hand.\n")
@@ -655,12 +887,16 @@ def main():
         f.write(f"const SEED_HISTORY_SEASONS = {json.dumps(nonempty_seasons)};\n")
         f.write(f"const SEED_ECR = {json.dumps(ecr, separators=(',',':'))};\n")
         f.write(f"const SEED_CONTRACTS = {json.dumps(contracts, separators=(',',':'))};\n")
+        f.write(f"const SEED_SHARP = {json.dumps(sharp, separators=(',',':'))};\n")
+        f.write(f"const SEED_SOS = {json.dumps(sos, separators=(',',':'))};\n")
+        f.write(f"const SEED_TEAM_NAMES = {json.dumps(CODE_TO_FULLNAME, separators=(',',':'))};\n")
     # Also emit the raw seed json for reference
     with open("triplecrown_seed.json", "w") as f:
         json.dump({"season": args.season, "builder_version": BUILDER_VERSION,
                    "seed": seed, "history": history,
                    "history_seasons": nonempty_seasons, "ecr": ecr,
-                   "contracts": contracts}, f, indent=2)
+                   "contracts": contracts, "sharp": sharp, "sos": sos,
+                   "team_names": CODE_TO_FULLNAME}, f, indent=2)
 
     nplayers = sum(len(seed[t][p]) for t in seed for p in seed[t])
     print(f"\nDone (builder {BUILDER_VERSION}). {nplayers} players across {len(TEAMS)} teams.")
