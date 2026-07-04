@@ -310,8 +310,8 @@ SHARP_URLS = {
     "personnel":      "https://www.sharpfootballanalysis.com/stats-nfl/nfl-offensive-personnel/",
     "tendencies":     "https://www.sharpfootballanalysis.com/stats-nfl/nfl-offensive-tendencies-stats/",
     # Defensive tables (lesser priority, categorized separately in the app)
-    "defensive_line":       "https://www.sharpfootballanalysis.com/stats-nfl/nfl-defensive-line-stats/",
     "defensive":            "https://www.sharpfootballanalysis.com/stats-nfl/nfl-defensive-stats/",
+    "defensive_line":       "https://www.sharpfootballanalysis.com/stats-nfl/nfl-defensive-line-stats/",
     "defensive_tendencies": "https://www.sharpfootballanalysis.com/stats-nfl/nfl-defensive-tendencies/",
     "coverage_schemes":     "https://www.sharpfootballanalysis.com/stats-nfl/nfl-coverage-schemes/",
     "coverage_by_position": "https://www.sharpfootballanalysis.com/stats-nfl/nfl-coverage-stats-by-position/",
@@ -370,13 +370,12 @@ SHARP_SOS_URL = "https://www.sharpfootballanalysis.com/analysis/nfl-strength-of-
 # Columns where a LOWER value is better (so rank 1 = lowest). Everything else: higher=better.
 # Matched by case-insensitive substring against the column header.
 SHARP_OFF_LOWER_IS_BETTER = [
-    "pressure rate allowed", 
-    "no blitz pressure rate allowed", 
+    "pressure rate allowed",
+    "no blitz pressure rate allowed",
     "rush stuff rate",
     "sec/play",
     "sec/play last 5",
 ]
-
 # Columns where a HIGHER value is better even though the header might otherwise look defensive.
 # These override the lower-is-better rules when both match the same text.
 SHARP_OFF_HIGHER_IS_BETTER = [
@@ -403,7 +402,6 @@ SHARP_OFF_HIGHER_IS_BETTER = [
     "shotgun rate",
     "nohuddle rate",
 ]
-
 # Columns where a LOWER value is better (so rank 1 = lowest). Everything else: higher=better.
 # Defensive stats that are "good" when low (e.g. yards/play allowed, points/play allowed, etc.)
 SHARP_DEF_LOWER_IS_BETTER = [
@@ -419,7 +417,6 @@ SHARP_DEF_LOWER_IS_BETTER = [
     "explosive play rate allowed",
     "down conversion rate allowed",
 ]
-
 # Columns where a HIGHER value is better.
 # Defensive stats that are "good" when high (e.g. pressure rate, blitz rate, etc.)
 SHARP_DEF_HIGHER_IS_BETTER = [
@@ -598,6 +595,522 @@ def build_sos(refresh):
         with open(cache_path, "w") as f:
             json.dump(out, f)
     return out
+
+
+# ── NFL coordinators (Wikipedia) + head-coach playcaller list ────────────────────
+# Wikipedia lists current OCs/DCs with a "Previous coaching position" column that names
+# the coach's PRIOR team and role — the key to the app's Coordinators tab. When a team has
+# a brand-new (Since == projection season) coordinator who came from ANOTHER NFL team, the
+# app can carry that former team's tendencies/personnel over as a forecast. When the
+# coordinator has been in place since a PRIOR year (or was promoted internally), last
+# season's stats already apply, so we just surface the name.
+#
+# Quirk: the coordinator NAME renders blank in the table cell (it's a stub link), but each
+# row has a citation whose text contains the name ("Ravens Hire Declan Doyle as Offensive
+# Coordinator"). Citations appear in row order, so we pair them up.
+WIKI_OC_TITLE = "List_of_current_NFL_offensive_coordinators"
+WIKI_DC_TITLE = "List_of_current_NFL_defensive_coordinators"
+# MediaWiki parse API → rendered HTML of the page. The coordinators table is a standard
+# <table class="wikitable"> whose cells (Team | Coordinator | Since | Previous position)
+# contain the actual text — far more reliable than scraping raw wikitext or citations.
+WIKI_API = ("https://en.wikipedia.org/w/api.php?action=parse&page={title}"
+            "&prop=text&format=json&formatversion=2&redirects=1")
+
+# Head coaches who are their team's primary offensive playcaller. When true, the app notes
+# that the OC is less pivotal (the HC drives the scheme). Maintained by hand each season.
+# (Requested design: a short, clearly-labeled, editable list — accurate over heuristics.)
+HC_PLAYCALLERS = {
+    "CIN": "Zac Taylor", "LAR": "Sean McVay", "SF": "Kyle Shanahan", "BUF": "Joe Brady",
+    "MIA": "Mike McDaniel", "GB": "Matt LaFleur",
+    "LV": "Klint Kubiak", "NO": "Kellen Moore", "DEN": "Sean Payton",
+    "ARI": "Mike LaFleur", "MIN": "Kevin O'Connell", "KC": "Andy Reid", 
+    "PIT": "Mike McCarthy", 
+    "JAX": "Liam Coen", "CHI": "Ben Johnson",
+    "IND": "Shane Steichen", "CLE": "Todd Monken", "CAR": "Dave Canales", "ATL": "Kevin Stefanski"
+    
+    # NOTE: verify/adjust each offseason — playcalling duties shift year to year.
+}
+
+def _norm_team_name_to_code(text):
+    """Find an NFL team in free text and return its code (checks full names first, then
+    nicknames). Returns (code, matched_full_name) or (None, None)."""
+    t = (text or "").lower()
+    for full, code in FULLNAME_TO_CODE.items():
+        if full in t:
+            return code, full
+    for nick, code in NICK_TO_CODE.items():
+        # word-ish boundary so "rams" doesn't match inside other words
+        if _re.search(r"\b" + _re.escape(nick) + r"\b", t):
+            return code, nick
+    return None, None
+
+def _parse_prev_position(prev_text):
+    """From e.g. 'Chicago Bears offensive coordinator (2025)' or 'Miami Dolphins head
+    coach (2022–2025)' extract (prev_code, role_label, years). Role is normalized to one
+    of: head coach / offensive coordinator / defensive coordinator / <verbatim>."""
+    if not prev_text:
+        return {"prev_code": None, "prev_team_name": None, "role": None, "years": None}
+    code, matched = _norm_team_name_to_code(prev_text)
+    low = prev_text.lower()
+    # Strip the team name and trailing (years) so we're classifying just the role phrase.
+    role_txt = prev_text
+    if matched:
+        role_txt = _re.sub(_re.escape(matched), "", role_txt, flags=_re.IGNORECASE).strip()
+    role_txt = _re.sub(r"\s*\([^)]*\)\s*$", "", role_txt).strip()
+    role_txt = _re.sub(r"\s+", " ", role_txt).strip(" ,-–—")
+    rl = role_txt.lower()
+    # Qualified titles must win over the bare title (e.g. "assistant head coach" must NOT be
+    # collapsed to "head coach"; "interim head coach", "co-offensive coordinator" preserved).
+    QUALIFIERS = ("assistant", "interim", "associate", "co-", "co ", "passing game",
+                  "run game", "senior", "acting")
+    has_qualifier = any(q in rl for q in QUALIFIERS)
+    if has_qualifier:
+        # Keep the coach's actual descriptive title verbatim (cleaned).
+        role = role_txt
+    elif "head coach" in rl:
+        role = "head coach"
+    elif "offensive coordinator" in rl:
+        role = "offensive coordinator"
+    elif "defensive coordinator" in rl:
+        role = "defensive coordinator"
+    else:
+        role = role_txt or None
+    ym = _re.search(r"\(([^)]*)\)\s*$", prev_text)
+    years = ym.group(1) if ym else None
+    return {"prev_code": code, "prev_team_name": (CODE_TO_FULLNAME.get(code) if code else None),
+            "role": role, "years": years}
+
+def _extract_coord_names_from_citations(raw):
+    """Pull coordinator names from citation text in row order. Patterns like
+    'name X as (offensive|defensive) coordinator', 'Hire X as', 'promote X to', etc."""
+    names = []
+    # Citations live after the table; capture quoted headlines and dig names out.
+    for m in _re.finditer(r'"([^"]{6,160})"', raw):
+        head = m.group(1)
+        hl = head.lower()
+        if "coordinator" not in hl:
+            continue
+        # A capitalized 2–3 word name, following a hire/name/promote verb OR preceding a
+        # role phrase. Two passes: verb-led, then role-trailing.
+        name = None
+        pat = _re.search(r"(?i:name[sd]?|hire[sd]?|promote[sd]?|add[sd]?|sign[sd]?|"
+                         r"agree to terms with|hiring|expected to hire)\s+"
+                         r"([A-Z][A-Za-z.'’-]+(?:\s+[A-Z][A-Za-z.'’-]+){1,2})", head)
+        if pat:
+            name = pat.group(1).strip()
+        else:
+            # e.g. "... Phillips as new O-coordinator" — grab the capitalized run before
+            # 'as' or before 'offensive/defensive coordinator'.
+            pat2 = _re.search(r"([A-Z][A-Za-z.'’-]+(?:\s+[A-Z][A-Za-z.'’-]+){1,2})\s+"
+                              r"(?i:as\b|offensive coordinator|defensive coordinator)", head)
+            if pat2:
+                name = pat2.group(1).strip()
+        # Trim a leading team word or stray verb that sometimes gets captured
+        # (e.g. "Chargers Name X", "Hire X").
+        if name:
+            _VERBS={"hire","hires","hired","name","names","named","promote","promotes",
+                    "promoted","add","adds","added","sign","signs","signed","hiring"}
+            toks=name.split()
+            while len(toks)>=3 and (toks[0].lower() in NICK_TO_CODE or toks[0].lower() in _VERBS):
+                toks=toks[1:]
+            # also handle a single leading verb leaving exactly a 2-word name
+            if len(toks)>=3 and toks[0].lower() in _VERBS:
+                toks=toks[1:]
+            # strip trailing role words the capitalized run may have swept up
+            _TAIL={"offensive","defensive","coordinator","coach","as","new","interim"}
+            while len(toks)>=3 and toks[-1].lower() in _TAIL:
+                toks=toks[:-1]
+            name=" ".join(toks)
+        names.append(name)
+    return names
+
+def _fetch_wiki_html(title, refresh, label):
+    """Fetch a page's rendered HTML via the MediaWiki parse API and return (table_html, full_html).
+    The parse API returns JSON: {parse:{text:"<...rendered html...>"}}."""
+    cache_path = os.path.join(CACHE_DIR, "coordinators", f"{title}.html")
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    if not refresh and os.path.exists(cache_path):
+        print(f"  → {label}: using cache")
+        with open(cache_path, encoding="utf-8") as f:
+            return f.read()
+    api_url = WIKI_API.format(title=title)
+    print(f"  → fetching {label} (MediaWiki API) ...", end="", flush=True)
+    try:
+        req = request.Request(api_url, headers=UA)
+        with request.urlopen(req, timeout=60) as r:
+            payload = json.loads(r.read().decode("utf-8", "replace"))
+        html = payload.get("parse", {}).get("text", "")
+        if isinstance(html, dict):   # older formatversion returns {"*": "..."}
+            html = html.get("*", "")
+        print(" ok")
+        with open(cache_path, "w", encoding="utf-8") as f:
+            f.write(html)
+        return html
+    except Exception as e:
+        print(f" FAILED ({type(e).__name__}: {e})")
+        return None
+
+def _parse_wikitable(html):
+    """Parse Wikipedia's coordinator wikitables into (headers, rows). Handles the fact that
+    these pages have TWO data tables — one for the AFC and one for the NFC — by reading ALL
+    tables whose opening tag mentions "wikitable" and concatenating their rows. Also (a) skips
+    infobox/navbox tables that appear first, and (b) reads BOTH <th> and <td> cells per row,
+    since Wikipedia renders the leading Team column as a <th> that a td-only parser would drop."""
+    if not html:
+        return [], []
+    # Collect the inner HTML of every wikitable on the page (AFC table, NFC table, ...).
+    wikitables = []
+    for m in _re.finditer(r"<table\b([^>]*)>(.*?)</table>", html, _re.DOTALL | _re.IGNORECASE):
+        attrs, inner = m.group(1), m.group(2)
+        if "wikitable" in attrs.lower():
+            wikitables.append(inner)
+    if not wikitables:
+        # Fall back to the largest table on the page (most likely the data table).
+        tables = _re.findall(r"<table\b[^>]*>(.*?)</table>", html, _re.DOTALL | _re.IGNORECASE)
+        if not tables:
+            return [], []
+        wikitables = [max(tables, key=len)]
+    headers = []
+    rows = []
+    for tbl in wikitables:
+        for tr in _re.findall(r"<tr\b[^>]*>(.*?)</tr>", tbl, _re.DOTALL | _re.IGNORECASE):
+            # Read cells in document order, whether th or td.
+            cells = [_strip_tags(c) for c in _re.findall(r"<t[hd]\b[^>]*>(.*?)</t[hd]>", tr, _re.DOTALL | _re.IGNORECASE)]
+            if not cells:
+                continue
+            # A header row is all-<th> with no <td>. Capture the first as the column headers;
+            # any later header rows (e.g. the NFC table repeats them) are skipped, not treated
+            # as data.
+            is_header_row = bool(_re.search(r"<th\b", tr, _re.IGNORECASE)) and not _re.search(r"<td\b", tr, _re.IGNORECASE)
+            if is_header_row:
+                if not headers:
+                    headers = cells
+                continue
+            rows.append(cells)
+    return headers, rows
+
+def _parse_coordinator_page(html, side, proj_season):
+    """Parse a coordinators page's rendered HTML into {CODE: {name, since, prev_*, ...}}.
+    Reads the wikitable (Team | Coordinator | Since | Previous coaching position). The
+    Coordinator cell holds the name directly in the API HTML."""
+    if not html:
+        return {}
+    headers, rows = _parse_wikitable(html)
+    # Fallback name source if a Coordinator cell is ever blank.
+    cite_names = _extract_coord_names_from_citations(html)
+    # Locate columns by header text when possible (robust to column reordering); else assume
+    # the canonical order Team | Coordinator | Since | Previous.
+    def col_idx(*names):
+        for i, h in enumerate(headers):
+            hl = (h or "").lower()
+            if any(n in hl for n in names):
+                return i
+        return None
+    i_team = col_idx("team")
+    i_name = col_idx("coordinator", "name")
+    i_since = col_idx("since", "tenure", "hired")
+    i_prev = col_idx("previous", "prior", "former")
+    out = {}
+    row_i = 0
+    for cells in rows:
+        if len(cells) < 3:
+            continue
+        team_cell = cells[i_team] if i_team is not None and i_team < len(cells) else cells[0]
+        name_cell = cells[i_name] if i_name is not None and i_name < len(cells) else (cells[1] if len(cells) > 1 else "")
+        since_cell = cells[i_since] if i_since is not None and i_since < len(cells) else (cells[2] if len(cells) > 2 else "")
+        prev_cell = cells[i_prev] if i_prev is not None and i_prev < len(cells) else (cells[3] if len(cells) > 3 else "")
+        code, _m = _norm_team_name_to_code(team_cell)
+        if not code:
+            continue
+        ym = _re.search(r"(20\d{2})", since_cell or "")
+        since = int(ym.group(1)) if ym else None
+        nm = (name_cell or "").strip() or None
+        if not nm and row_i < len(cite_names):
+            nm = cite_names[row_i]
+        row_i += 1
+        prev = _parse_prev_position(prev_cell)
+        is_new = (since == proj_season)
+        internal = (prev.get("prev_code") == code)
+        carryover = (not is_new) or internal
+        out[code] = {
+            "name": nm, "since": since, "side": side,
+            "prev_code": prev["prev_code"], "prev_team_name": prev["prev_team_name"],
+            "prev_role": prev["role"], "prev_years": prev["years"],
+            "is_new": is_new, "internal": internal, "carryover": carryover,
+        }
+    return out
+
+def build_coordinators(proj_season, refresh):
+    """Build {CODE: {offense:{...}, defense:{...}}} from Wikipedia's OC/DC lists."""
+    oc_html = _fetch_wiki_html(WIKI_OC_TITLE, refresh, "offensive coordinators (Wikipedia)")
+    dc_html = _fetch_wiki_html(WIKI_DC_TITLE, refresh, "defensive coordinators (Wikipedia)")
+    oc = _parse_coordinator_page(oc_html, "offense", proj_season)
+    dc = _parse_coordinator_page(dc_html, "defense", proj_season)
+    coords = {}
+    for code in set(list(oc.keys()) + list(dc.keys())):
+        coords[code] = {}
+        if code in oc: coords[code]["offense"] = oc[code]
+        if code in dc: coords[code]["defense"] = dc[code]
+    if not coords:
+        print("\n  ⚠ WARNING: no coordinator data parsed from Wikipedia — the Coordinators")
+        print("    tab will be hidden. (No internet, page layout changed, or parse miss.)")
+    else:
+        n_new = sum(1 for c in coords.values()
+                    for s in ("offense","defense") if c.get(s,{}).get("is_new") and not c.get(s,{}).get("internal"))
+        print(f"\n  Coordinators loaded: {len(coords)} teams "
+              f"({n_new} brand-new from another team → get a carryover Coordinators tab)")
+    return coords
+
+
+WIKI_HC_TITLE = "List_of_current_NFL_head_coaches"
+
+def build_head_coach_history(proj_season, refresh):
+    """Scrape Wikipedia's current-head-coaches table → {CODE: {name, since, prev_code,
+    prev_team_name, prev_role, prev_years, is_new}}. This reuses the same table/row parser
+    as the coordinator pages (Team | Coach | Since | Previous position). It exists so that
+    when a team's HEAD COACH is the primary playcaller (per HC_PLAYCALLERS) AND is new for
+    the projection season, the app can carry over the HC's FORMER team's offensive scheme —
+    because with a playcalling HC the scheme travels with the coach, not the coordinator."""
+    hc_html = _fetch_wiki_html(WIKI_HC_TITLE, refresh, "head coaches (Wikipedia)")
+    # Parse with the shared coordinator parser; side label is nominal here ("head").
+    hc = _parse_coordinator_page(hc_html, "head", proj_season)
+    # Keep only the fields the app needs (drop the coordinator-specific carryover flags,
+    # which don't apply the same way to a head coach).
+    out = {}
+    for code, d in hc.items():
+        out[code] = {
+            "name": d.get("name"), "since": d.get("since"),
+            "prev_code": d.get("prev_code"), "prev_team_name": d.get("prev_team_name"),
+            "prev_role": d.get("prev_role"), "prev_years": d.get("prev_years"),
+            "is_new": d.get("is_new"),
+        }
+    if out:
+        n_new_from = sum(1 for d in out.values() if d.get("is_new") and d.get("prev_code") and d["prev_code"] != None)
+        print(f"  Head-coach history loaded: {len(out)} coaches ({n_new_from} new this season with a former team)")
+    else:
+        print("\n  ⚠ WARNING: no head-coach history parsed from Wikipedia — playcaller-HC")
+        print("    scheme carryover will fall back to the coordinator's former team.")
+    return out
+
+
+# ── New Additions (Spotrac offseason: free agency, draft, trades) ─────────────────
+# Spotrac gates plain requests (403), so we send a full browser-like header set — that's
+# enough from a normal machine/IP (no headless browser needed). One page per team contains
+# all three tables we want; we locate them by the nav-tab labels (FREE AGENTS → #tabN,
+# DRAFT → #tabN) and the "accordion-traded" section (Traded Assets).
+SPOTRAC_TEAM = {  # our code → Spotrac's team slug
+    "ARI":"ari","ATL":"atl","BAL":"bal","BUF":"buf","CAR":"car","CHI":"chi","CIN":"cin",
+    "CLE":"cle","DAL":"dal","DEN":"den","DET":"det","GB":"gb","HOU":"hou","IND":"ind",
+    "JAX":"jax","KC":"kc","LAC":"lac","LAR":"lar","LV":"lv","MIA":"mia","MIN":"min",
+    "NE":"ne","NO":"no","NYG":"nyg","NYJ":"nyj","PHI":"phi","PIT":"pit","SEA":"sea",
+    "SF":"sf","TB":"tb","TEN":"ten","WAS":"was",
+}
+SPOTRAC_URL = ("https://www.spotrac.com/nfl/offseason/spending/_/year/{year}/team/{slug}")
+SPOTRAC_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.spotrac.com/nfl/",
+    "Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Site": "same-origin",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+def _spot_money_to_millions(text):
+    """'$60,000,000' → 60.0 (in millions); '' / '-' → None."""
+    if not text: return None
+    m = _re.search(r"\$?\s*([\d,]+(?:\.\d+)?)", text)
+    if not m: return None
+    try:
+        return round(int(m.group(1).replace(",", "")) / 1_000_000, 2)
+    except ValueError:
+        try: return round(float(m.group(1).replace(",", "")) / 1_000_000, 2)
+        except ValueError: return None
+
+def _spot_row_cells(tr_html):
+    return [_strip_tags(c) for c in _re.findall(r"<td[^>]*>(.*?)</td>", tr_html, _re.DOTALL | _re.IGNORECASE)]
+
+def _spot_player_name(tr_html):
+    m = _re.search(r'/nfl/player/\d+"[^>]*>\s*([^<]+?)\s*</a>', tr_html, _re.DOTALL)
+    return m.group(1).strip() if m else None
+
+def _spot_table_in_pane(html, tab_id):
+    """Return the <table> HTML inside the tab-pane div with id=tab_id, or None."""
+    m = _re.search(r'id="' + _re.escape(tab_id) + r'"', html)
+    if not m: return None
+    ts = html.find("<table", m.start())
+    if ts < 0: return None
+    te = html.find("</table>", ts)
+    return html[ts:te] if te > ts else None
+
+def _spot_find_tab_id(html, label):
+    """Find the nav-link href="#tabN" whose visible text matches label (e.g. 'FREE AGENTS')."""
+    for m in _re.finditer(r'href="#(tab\d+)"[^>]*>(.*?)</a>', html, _re.DOTALL | _re.IGNORECASE):
+        txt = _re.sub(r"\s+", " ", _re.sub(r"<[^>]+>", "", m.group(2))).strip().lower()
+        if txt == label.lower():
+            return m.group(1)
+    return None
+
+def _parse_signing_table(table_html, kind):
+    """Free-agents / draft table → list of {player, pos, years, value_m, aav_m, signed}.
+    Columns (both): Player | Pos | (blank) | Sign Team | Years | Value | AAV | ... | Signed."""
+    if not table_html: return []
+    out = []
+    for tr in _re.findall(r"<tr[^>]*>(.*?)</tr>", table_html, _re.DOTALL | _re.IGNORECASE):
+        name = _spot_player_name(tr)
+        if not name: continue
+        cells = _spot_row_cells(tr)
+        if len(cells) < 6: continue
+        pos = cells[1].strip()
+        years = None
+        ym = _re.search(r"\d+", cells[4] or "")
+        if ym: years = int(ym.group(0))
+        value_m = _spot_money_to_millions(cells[5])
+        aav_m = _spot_money_to_millions(cells[6]) if len(cells) > 6 else None
+        signed = cells[-1].strip() if cells else None
+        out.append({"player": name, "pos": pos, "years": years,
+                    "value_m": value_m, "aav_m": aav_m, "signed": signed, "kind": kind})
+    out.sort(key=lambda r: (r["value_m"] is None, -(r["value_m"] or 0)))
+    return out
+
+def _parse_traded_table(table_html):
+    """Traded Assets → list of {player, pos, to_team, cap_m, date, detail}.
+    Columns: Player | Pos | (blank) | To Team | Cap Acquired | Date | Detail."""
+    if not table_html: return []
+    out = []
+    for tr in _re.findall(r"<tr[^>]*>(.*?)</tr>", table_html, _re.DOTALL | _re.IGNORECASE):
+        name = _spot_player_name(tr)
+        if not name: continue
+        cells = _spot_row_cells(tr)
+        if len(cells) < 5: continue
+        pos = cells[1].strip()
+        cap_m = _spot_money_to_millions(cells[4]) if len(cells) > 4 else None
+        date = cells[5].strip() if len(cells) > 5 else None
+        detail = ""
+        # The trade detail is the last non-empty cell (a sentence like "Traded to ...").
+        for c in reversed(cells):
+            cc = c.strip()
+            if len(cc) > 20 and ("trade" in cc.lower() or "for" in cc.lower()):
+                detail = cc; break
+        out.append({"player": name, "pos": pos, "cap_m": cap_m, "date": date, "detail": detail})
+    out.sort(key=lambda r: (r["cap_m"] is None, -(r["cap_m"] or 0)))
+    return out
+
+def _spot_dest_team_from_cell(raw_cell):
+    """The 'Sign Team' cell of a Free-Agents-Lost row shows where the player went, as two
+    logos separated by an arrow then the destination code as text (e.g.
+    <img .../cin.png> &rarr; <img .../jets1.png> NYJ). The clean team CODE after the arrow is
+    the reliable signal — logo filenames don't always match the code (e.g. jets1.png). We
+    read the text-code after the arrow first, and only fall back to the last logo."""
+    if not raw_cell: return None
+    txt = _strip_tags(raw_cell)
+    m = _re.search(r"(?:&rarr;|→|->|&#8594;)\s*([A-Z]{2,3})\b", txt)
+    if m:
+        code = m.group(1)
+        # normalize via reverse Spotrac slug map if needed (codes here are already ours)
+        return code
+    # Fallback: last logo filename (works when it matches a known slug).
+    imgs = _re.findall(r'/images/thumb/([a-z0-9]+)\.png', raw_cell, _re.IGNORECASE)
+    if imgs:
+        cand = imgs[-1].upper()
+        for our, slug in SPOTRAC_TEAM.items():
+            if slug.upper() == cand:
+                return our
+        # strip trailing digits (jets1 → JETS won't map, so give up gracefully)
+        return None
+    return None
+
+def _parse_losses_table(table_html):
+    """Free Agents Lost → list of {player, pos, to_team, years, value_m, aav_m, signed}.
+    Same columns as the signings tables, but the 'Sign Team' cell shows the DESTINATION
+    team (where the player signed) rather than this team."""
+    if not table_html: return []
+    out = []
+    for tr in _re.findall(r"<tr[^>]*>(.*?)</tr>", table_html, _re.DOTALL | _re.IGNORECASE):
+        name = _spot_player_name(tr)
+        if not name: continue
+        # need raw cells to dig the destination logo out of the sign-team column
+        raw_cells = _re.findall(r"<td[^>]*>(.*?)</td>", tr, _re.DOTALL | _re.IGNORECASE)
+        cells = [_strip_tags(c) for c in raw_cells]
+        if len(cells) < 6: continue
+        pos = cells[1].strip()
+        # Sign-team column: index 3 (after player, pos, blank). Get destination team.
+        to_team = _spot_dest_team_from_cell(raw_cells[3]) if len(raw_cells) > 3 else None
+        years = None
+        ym = _re.search(r"\d+", cells[4] or "")
+        if ym: years = int(ym.group(0))
+        value_m = _spot_money_to_millions(cells[5])
+        aav_m = _spot_money_to_millions(cells[6]) if len(cells) > 6 else None
+        signed = cells[-1].strip() if cells else None
+        out.append({"player": name, "pos": pos, "to_team": to_team, "years": years,
+                    "value_m": value_m, "aav_m": aav_m, "signed": signed})
+    out.sort(key=lambda r: (r["value_m"] is None, -(r["value_m"] or 0)))
+    return out
+
+def fetch_team_additions(code, year, refresh):
+    slug = SPOTRAC_TEAM.get(code)
+    if not slug: return None
+    cache_path = os.path.join(CACHE_DIR, "spotrac", f"{code}_{year}.json")
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    if not refresh and os.path.exists(cache_path):
+        with open(cache_path) as f: return json.load(f)
+    url = SPOTRAC_URL.format(year=year, slug=slug)
+    try:
+        req = request.Request(url, headers=SPOTRAC_HEADERS)
+        with request.urlopen(req, timeout=60) as r:
+            html = r.read().decode("utf-8", "replace")
+    except Exception as e:
+        print(f"    {code}: FAILED ({type(e).__name__})", end="")
+        return None
+    fa_id = _spot_find_tab_id(html, "FREE AGENTS")
+    dr_id = _spot_find_tab_id(html, "DRAFT")
+    free_agents = _parse_signing_table(_spot_table_in_pane(html, fa_id), "free_agent") if fa_id else []
+    draft = _parse_signing_table(_spot_table_in_pane(html, dr_id), "draft") if dr_id else []
+    # Traded Assets lives in the accordion-traded section.
+    trades = []
+    tm = _re.search(r'accordion-traded', html)
+    if tm:
+        ts = html.find("<table", tm.start()); te = html.find("</table>", ts)
+        if ts > 0 and te > ts:
+            trades = _parse_traded_table(html[ts:te])
+    # Free Agents Lost lives in the accordion-falost section (same table shape as signings,
+    # but the sign-team column shows where the player went).
+    losses = []
+    lm = _re.search(r'accordion-falost', html)
+    if lm:
+        ts = html.find("<table", lm.start()); te = html.find("</table>", ts)
+        if ts > 0 and te > ts:
+            losses = _parse_losses_table(html[ts:te])
+    out = {"free_agents": free_agents, "draft": draft, "trades": trades,
+           "free_agents_lost": losses}
+    with open(cache_path, "w") as f: json.dump(out, f)
+    return out
+
+def build_additions(year, refresh):
+    """Build {CODE: {free_agents, draft, trades, free_agents_lost}} from Spotrac."""
+    print("  Fetching Spotrac offseason roster changes per team ...")
+    additions = {}
+    n_ok = 0
+    for code in TEAMS:
+        data = fetch_team_additions(code, year, refresh)
+        if data and (data["free_agents"] or data["draft"] or data["trades"]
+                     or data.get("free_agents_lost")):
+            additions[code] = data
+            n_ok += 1
+        # gentle pacing so we don't hammer the site
+        if not refresh:
+            pass
+    if not additions:
+        print("\n  ⚠ WARNING: no Spotrac data fetched — the Roster Changes tab will be hidden.")
+        print("    (Spotrac may be blocking this machine's requests, or the layout changed.)")
+    else:
+        nfa = sum(len(a["free_agents"]) for a in additions.values())
+        ndr = sum(len(a["draft"]) for a in additions.values())
+        ntr = sum(len(a["trades"]) for a in additions.values())
+        nlost = sum(len(a.get("free_agents_lost", [])) for a in additions.values())
+        print(f"  Roster Changes loaded: {n_ok} teams · {nfa} FA signings, {ndr} draft picks, "
+              f"{ntr} trades, {nlost} FA losses")
+    return additions
 
 
 def cached(name, url, label, refresh):
@@ -943,6 +1456,10 @@ def main():
     print("\nStep 8/8: Warren Sharp advanced stats (offense + defense) & strength of schedule")
     sharp = build_sharp(args.refresh)
     sos = build_sos(args.refresh)
+    coordinators = build_coordinators(args.season, args.refresh)
+    hc_history = build_head_coach_history(args.season, args.refresh)
+    print("\n  New Additions (Spotrac free agency / draft / trades)")
+    additions = build_additions(args.season, args.refresh)
 
     # Keep only seasons that actually returned stats (older years may be unavailable).
     nonempty_seasons = sorted([s for s, idx in stats_by_season.items() if idx], reverse=True)
@@ -951,7 +1468,7 @@ def main():
         print(f"  (note: no data returned for {', '.join(missing)} — omitting those tabs)")
 
     # Emit the JS the app embeds
-    BUILDER_VERSION = "2.5-sharp-sos"   # bump when aggregation logic changes
+    BUILDER_VERSION = "2.9-roster-changes"   # bump when aggregation logic changes
     out_js = "triplecrown_seed.js"
     with open(out_js, "w") as f:
         f.write("// Auto-generated by build_seed.py — do not edit by hand.\n")
@@ -965,13 +1482,20 @@ def main():
         f.write(f"const SEED_SHARP = {json.dumps(sharp, separators=(',',':'))};\n")
         f.write(f"const SEED_SOS = {json.dumps(sos, separators=(',',':'))};\n")
         f.write(f"const SEED_TEAM_NAMES = {json.dumps(CODE_TO_FULLNAME, separators=(',',':'))};\n")
+        f.write(f"const SEED_COORDINATORS = {json.dumps(coordinators, separators=(',',':'))};\n")
+        f.write(f"const SEED_HC_HISTORY = {json.dumps(hc_history, separators=(',',':'))};\n")
+        f.write(f"const SEED_ADDITIONS = {json.dumps(additions, separators=(',',':'))};\n")
+        f.write(f"const SEED_HC_PLAYCALLERS = {json.dumps(HC_PLAYCALLERS, separators=(',',':'))};\n")
+        f.write(f"const SEED_SHARP_SEASON = {args.season-1};\n")
     # Also emit the raw seed json for reference
     with open("triplecrown_seed.json", "w") as f:
         json.dump({"season": args.season, "builder_version": BUILDER_VERSION,
                    "seed": seed, "history": history,
                    "history_seasons": nonempty_seasons, "ecr": ecr,
                    "contracts": contracts, "sharp": sharp, "sos": sos,
-                   "team_names": CODE_TO_FULLNAME}, f, indent=2)
+                   "team_names": CODE_TO_FULLNAME, "coordinators": coordinators,
+                   "hc_history": hc_history, "additions": additions,
+                   "hc_playcallers": HC_PLAYCALLERS, "sharp_season": args.season-1}, f, indent=2)
 
     nplayers = sum(len(seed[t][p]) for t in seed for p in seed[t])
     print(f"\nDone (builder {BUILDER_VERSION}). {nplayers} players across {len(TEAMS)} teams.")

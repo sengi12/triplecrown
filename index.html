@@ -237,13 +237,21 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
 .sr-desc{font-size:11px;color:var(--muted);margin:6px 2px 10px;}
 .sr-league-table{width:100%;border-collapse:collapse;font-size:11.5px;}
 .sr-league-table th{position:sticky;top:0;background:var(--surface2);z-index:1;}
-.sr-th-team{text-align:left;padding:9px 10px;font-size:10px;color:var(--muted);font-weight:800;}
+/* Freeze the TEAM column so it stays visible when scrolling horizontally on mobile. The
+   top-left header cell must sit above both axes (z-index 3); the team header is sticky on
+   both top and left; team body cells are sticky on the left. */
+.sr-th-team{text-align:left;padding:9px 10px;font-size:10px;color:var(--muted);font-weight:800;
+  position:sticky;left:0;z-index:3;background:var(--surface2);}
+.sr-td-team{padding:7px 10px;font-weight:800;font-size:12px;
+  border-bottom:1px solid rgba(255,255,255,.04);white-space:nowrap;
+  position:sticky;left:0;z-index:2;background:var(--surface2);}
+.sr-td-team-inner{display:flex;align-items:center;gap:7px;}
+/* subtle divider so the frozen column reads as separate from the scrolling stats */
+.sr-th-team,.sr-td-team{border-right:1px solid var(--border);}
 .sr-th{padding:9px 8px;font-size:9.5px;color:var(--muted);font-weight:700;cursor:pointer;
   white-space:nowrap;text-align:center;user-select:none;border-bottom:1px solid var(--border);}
 .sr-th:hover{color:var(--text);background:var(--surface3);}
 .sr-th.active{color:var(--accent);}
-.sr-td-team{display:flex;align-items:center;gap:7px;padding:7px 10px;font-weight:800;font-size:12px;
-  border-bottom:1px solid rgba(255,255,255,.04);white-space:nowrap;}
 .sr-logo{width:20px;height:20px;object-fit:contain;}
 .sr-td{text-align:center;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.04);}
 .sr-td-val{font-family:var(--mono);font-weight:700;font-size:12px;display:block;}
@@ -253,11 +261,71 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
 .sr-td.sr-oklo{background:rgba(240,180,80,.06);}
 .sr-td.sr-bad{background:rgba(255,90,90,.08);}
 .sr-league-table tbody tr:hover td{background:var(--surface3);}
+/* on hover, the frozen team cell needs an opaque bg too (else scrolling cells show through) */
+.sr-league-table tbody tr:hover .sr-td-team{background:var(--surface3);}
 /* Full team name + SOS in team header */
 .team-fullname{font-size:20px;font-weight:800;letter-spacing:-.01em;}
 .team-sos-row{margin-top:3px;}
 .team-sos{font-size:11px;color:var(--muted);}
 .team-sos b{color:var(--text);font-weight:800;}
+/* Head coach line in team header */
+.team-hc{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted);margin-top:4px;flex-wrap:wrap;}
+.team-hc b{color:var(--text);font-weight:700;}
+.team-hc-img{width:22px;height:22px;border-radius:50%;object-fit:cover;background:var(--surface3);}
+.team-hc-label{font-size:9px;font-weight:800;letter-spacing:.05em;color:var(--muted);
+  background:var(--surface3);padding:1px 5px;border-radius:4px;}
+.team-hc-loading{opacity:.5;font-style:italic;}
+.hc-caller{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:800;
+  color:#00d4aa;background:rgba(0,212,170,.13);padding:2px 7px;border-radius:5px;cursor:help;}
+/* Coordinator inline labels on section heads */
+.coord-inline{font-size:11px;font-weight:600;color:var(--muted);margin-left:8px;}
+.coord-inline b{color:var(--text);}
+.coord-new-tag{display:inline-block;font-size:9px;font-weight:800;color:#e0b060;
+  background:rgba(240,180,80,.14);padding:1px 6px;border-radius:4px;margin-left:4px;vertical-align:middle;}
+/* Coordinator carryover block */
+.coord-carry-wrap{border:1px solid rgba(240,180,80,.3);background:rgba(240,180,80,.05);
+  border-radius:12px;padding:14px 16px;margin-bottom:16px;}
+.coord-carry-head{font-size:13px;font-weight:800;color:#e0b060;margin-bottom:5px;}
+.coord-carry-note{font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5;}
+.coord-carry-note b{color:var(--text);}
+.coord-carry-block{margin-top:12px;}
+.coord-carry-title{font-size:12.5px;margin-bottom:3px;}
+.coord-carry-title b{color:var(--text);}
+.coord-side{display:inline-block;font-size:10px;font-weight:800;color:var(--accent);
+  background:var(--surface3);padding:2px 7px;border-radius:5px;margin-right:6px;}
+.coord-carry-sub{font-size:10.5px;color:var(--muted);margin-bottom:8px;}
+/* ── New Additions (Spotrac) ── */
+.add-wrap{display:flex;flex-direction:column;gap:16px;}
+.add-note{padding:11px 14px;background:rgba(0,212,170,.07);border:1px solid rgba(0,212,170,.22);
+  border-radius:9px;font-size:11.5px;color:var(--muted);line-height:1.5;}
+.add-note b{color:var(--text);}
+.add-section{background:var(--surface2);border:1px solid var(--border);border-radius:11px;padding:12px 14px;max-width:100%;overflow:hidden;}
+.add-table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;}
+.add-section-head{font-size:13px;font-weight:800;color:var(--text);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.add-count{font-size:11px;font-weight:800;color:var(--accent);background:var(--surface3);
+  padding:1px 8px;border-radius:10px;}
+.add-table{width:100%;border-collapse:collapse;font-size:12px;}
+.add-table th{text-align:left;font-size:9.5px;font-weight:800;color:var(--muted);letter-spacing:.04em;
+  padding:5px 8px;border-bottom:1px solid var(--border);}
+.add-table td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:top;}
+.add-table tbody tr:last-child td{border-bottom:none;}
+.add-table tbody tr:hover td{background:var(--surface3);}
+.add-th-player{min-width:120px;}
+.add-player{font-weight:700;color:var(--text);white-space:nowrap;}
+.add-pos{display:inline-block;font-size:9.5px;font-weight:800;color:var(--muted);
+  background:var(--surface3);padding:1px 6px;border-radius:4px;}
+.add-num{text-align:right;font-family:var(--mono);white-space:nowrap;}
+.add-table th.add-num{text-align:right;}
+.add-val{font-weight:800;color:var(--text);}
+.add-aav{color:var(--muted);font-size:11px;}
+.add-detail{font-size:10.5px;color:var(--muted);line-height:1.45;min-width:200px;}
+.add-trade-table .add-th-player{min-width:110px;}
+.add-empty{font-size:11px;color:var(--muted);font-style:italic;padding:4px 2px;}
+.add-losses-section{border-color:rgba(240,120,120,.22);background:rgba(240,120,120,.04);}
+.add-losses-sub{font-size:10.5px;color:var(--muted);margin:-4px 0 8px;}
+.add-dest{white-space:nowrap;color:var(--muted);}
+.add-dest b{color:var(--text);}
+.add-loss-val{color:#e08a8a;}
 /* Per-team advanced: section heads + SOS strip */
 .sr-section-head{font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;
   letter-spacing:.05em;margin:16px 2px 8px;}
@@ -427,7 +495,16 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
 }
 /* Make the app usable in both orientations and avoid horizontal page scroll */
 *{-webkit-tap-highlight-color:transparent;}
-.rank-table-wrap{overflow-x:auto;}
+/* Global guard against horizontal page scroll: a single too-wide child otherwise makes the
+   whole page pan sideways on touch. Lock the page horizontally; wide content scrolls in its
+   own container instead (see .sr-table-scroll, .add-table wrappers, etc.). */
+html,body{max-width:100%;overflow-x:hidden;}
+*{box-sizing:border-box;}
+.content{min-width:0;max-width:100%;}
+.content > *{max-width:100%;}
+/* Any raw table inside content becomes horizontally scrollable rather than page-widening. */
+.sr-team-wrap,.add-wrap,.coord-carry-wrap,.sr-card-grid,.stats-grid,.scoring-grid{max-width:100%;}
+.rank-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
 
 /* ── Week-range dual slider (reference seasons) ── */
 .week-range-card{background:var(--surface2);border:1px solid var(--border);border-radius:9px;
@@ -515,6 +592,13 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
 
 
 
+
+
+
+
+
+
+
 // ═══ TRIPLECROWN_SEED_START ═══ (build_seed.py / bake_seed.py replace this whole block)
 // SEED_DATA intentionally empty — TripleCrown pulls 2026 projections live from Sleeper
 // on first load (or load a prebuilt triplecrown_seed.json via the 📦 Seed button, or bake
@@ -528,6 +612,11 @@ const SEED_CONTRACTS = {};
 const SEED_SHARP = {};
 const SEED_SOS = {};
 const SEED_TEAM_NAMES = {};
+const SEED_COORDINATORS = {};
+const SEED_HC_PLAYCALLERS = {};
+const SEED_HC_HISTORY = {};
+const SEED_ADDITIONS = {};
+const SEED_SHARP_SEASON = 2025;
 // ═══ TRIPLECROWN_SEED_END ═══
 
 
@@ -759,6 +848,20 @@ let SHARP = (typeof SEED_SHARP!=='undefined') ? SEED_SHARP : {};
 let SOS = (typeof SEED_SOS!=='undefined') ? SEED_SOS : {};
 // Full team display names: {CODE:"Cincinnati Bengals"}
 let TEAM_NAMES = (typeof SEED_TEAM_NAMES!=='undefined') ? SEED_TEAM_NAMES : {};
+// Coordinators (from Wikipedia via seed): {CODE:{offense:{...},defense:{...}}}
+let COORDINATORS = (typeof SEED_COORDINATORS!=='undefined') ? SEED_COORDINATORS : {};
+// Head coaches who call their own plays: {CODE:"Name"}
+let HC_PLAYCALLERS = (typeof SEED_HC_PLAYCALLERS!=='undefined') ? SEED_HC_PLAYCALLERS : {};
+// Head-coach history (Wikipedia via seed): {CODE:{name,since,prev_code,prev_role,prev_years,is_new}}
+// Used so a playcalling HC who's new this season carries over their FORMER team's scheme.
+let HC_HISTORY = (typeof SEED_HC_HISTORY!=='undefined') ? SEED_HC_HISTORY : {};
+// New Additions (Spotrac via seed): {CODE:{free_agents:[...],draft:[...],trades:[...]}}
+let ADDITIONS = (typeof SEED_ADDITIONS!=='undefined') ? SEED_ADDITIONS : {};
+// Which season the Sharp advanced stats describe (projection season − 1).
+let SHARP_SEASON = (typeof SEED_SHARP_SEASON!=='undefined') ? SEED_SHARP_SEASON : (PROJ_SEASON-1);
+// Head coaches fetched live from ESPN this session: {CODE:{name,headshot,experience}|null}
+let headCoaches = {};
+let hcInFlight = {};
 let sharpCategory = 'offense';   // 'offense' | 'defense' — which side to show in league-wide view
 let sharpTable = null;      // which Sharp table is active in the league-wide view (set on first render)
 let sharpSortCol = null;    // active sort column in league-wide view
@@ -1188,6 +1291,7 @@ function renderContent(){
   else if(currentPhase==='Passing'){initPassingShares(t);body=renderPassing(t,state);}
   else if(currentPhase==='Rushing'){initRushingShares(t);body=renderRushing(t,state);}
   else if(currentPhase==='Advanced') body=renderTeamAdvanced(t);
+  else if(currentPhase==='Additions') body=renderTeamAdditions(t);
   const prev=TEAMS[TEAMS.indexOf(t)-1],next=TEAMS[TEAMS.indexOf(t)+1];
   const isRef = activeSeason!=='proj';
   const recKey = `${activeSeason}:${t}`;
@@ -1202,11 +1306,22 @@ function renderContent(){
     : '';
   const sos = SOS && SOS[t];
   const sosBadge = sos ? `<span class="team-sos">SOS: <b>${ordinal(sos.rank)}</b>${sos.win_total!=null?` · Vegas Win Total: <b>${sos.win_total}</b>`:''}</span>` : '';
+  // Head coach (live from ESPN). Kick off the fetch if we haven't yet; the render re-runs
+  // when it resolves. Show a compact line under the QBs, flagging offensive-playcaller HCs.
+  if(headCoaches[t]===undefined) fetchHeadCoach(t);
+  const hc=headCoaches[t];
+  const hcCaller = hcIsPlaycaller(t);
+  const hcLine = hc ? `<div class="team-hc">
+      ${hc.headshot?`<img src="${hc.headshot}" class="team-hc-img" onerror="this.style.display='none'">`:''}
+      <span class="team-hc-label">HC</span> <b>${hc.name}</b>${hc.experience!=null?` · yr ${hc.experience}`:''}
+      ${hcCaller?`<span class="hc-caller" title="This head coach is the team's primary offensive playcaller — the OC is less pivotal for scheme continuity.">🎧 Primary playcaller</span>`:''}
+    </div>` : (headCoaches[t]===null?'':`<div class="team-hc team-hc-loading">Loading head coach…</div>`);
   document.getElementById('content').innerHTML=`
     <div class="team-header">
       <img src="${NFL_LOGO(t)}" class="team-logo-lg" alt="${t}" onerror="this.style.opacity='.25'">
       <div><div class="team-abbr team-fullname">${teamDisplayName(t)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}</div>
         <div class="team-qb-name">${(state.qbs&&state.qbs.length)?state.qbs.map(q=>q.name).join(' / '):'No projected QB'}${recStr?` · ${recStr}`:''}</div>
+        ${hcLine}
         ${sosBadge?`<div class="team-sos-row">${sosBadge}</div>`:''}</div>
       <div class="team-nav">
         <button id="undoBtn" class="btn btn-ghost undo-btn ${canUndo(t)?'':'disabled'}" ${canUndo(t)?'':'disabled'} onclick="undoTeam('${t}')" title="Undo last working-set change to ${t}">↶ ${isRef?'Undo':'Undo'}<span id="undoCount">${canUndo(t)?' '+undoStacks[t].length:''}</span></button>
@@ -1225,6 +1340,8 @@ function tabBar(){
   const hasSharp = (SHARP && Object.keys(SHARP).length>0) || (SOS && Object.keys(SOS).length>0);
   const tabs=[['QB','⚡ QB'],['Passing','🎯 Targets'],['Rushing','💨 Rushing']];
   if(hasSharp) tabs.push(['Advanced','📊 Advanced Stats']);
+  // "New Additions" appears when the currently-selected team has Spotrac data.
+  if(currentTeam && ADDITIONS && ADDITIONS[currentTeam]) tabs.push(['Additions','🔄 Roster Changes']);
   tabs.push(['Rankings','🏆 Rankings']);
   // Treat the league-wide advanced view as the same visual tab as the per-team one.
   const phaseForTab = (currentPhase==='AdvancedLeague') ? 'Advanced' : currentPhase;
@@ -2520,7 +2637,15 @@ function sharpRankBadge(rank){
 function fmtSharpVal(v, isPct){
   if(v==null) return '—';
   if(typeof v!=='number') return v;
-  const s = Number.isInteger(v) ? String(v) : v.toFixed(1);
+  let s;
+  if(Number.isInteger(v)){
+    s = String(v);
+  } else {
+    // Small-magnitude metrics (e.g. EPA/Play, ~ -0.25..0.25) need 2 decimals — 1 decimal
+    // collapses meaningful differences (0.19 → 0.2). Larger stats read fine at 1 decimal.
+    const dp = (Math.abs(v) < 1 && !isPct) ? 2 : 1;
+    s = v.toFixed(dp);
+  }
   return isPct ? s+'%' : s;
 }
 // Is a column a percentage in the given table? (build_seed flags these in pct_cols.)
@@ -2528,19 +2653,148 @@ function sharpColIsPct(tbl, col){
   return !!(tbl && Array.isArray(tbl.pct_cols) && tbl.pct_cols.includes(col));
 }
 
+// ── New Additions (Spotrac offseason: free agency, draft, trades) ────────────
+// Read-only per-team view tying the 2025 weaknesses to how the team addressed them.
+function fmtMillions(m){
+  if(m==null) return '—';
+  // Show up to 2 decimals but drop trailing zeros: 60 → $60M, 40.25 → $40.25M, 12.01 → $12.01M.
+  const s = Number.isInteger(m) ? String(m) : parseFloat(m.toFixed(2)).toString();
+  return '$'+s+'M';
+}
+function renderTeamAdditions(team){
+  const a = ADDITIONS && ADDITIONS[team];
+  if(!a){
+    return `<div class="empty"><div class="empty-icon">✨</div>
+      <div class="empty-title">No additions data loaded</div>
+      <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed to populate Spotrac offseason additions.</div></div>`;
+  }
+  const posBadge=(p)=>p?`<span class="add-pos">${p}</span>`:'';
+  // Free agency + draft share a layout (player, pos, years, value).
+  const signingTable=(rows, kind)=>{
+    if(!rows||!rows.length) return `<div class="add-empty">No ${kind==='draft'?'draft picks':'free-agent signings'} listed.</div>`;
+    const body=rows.map(r=>`<tr>
+      <td class="add-player">${r.player}</td>
+      <td>${posBadge(r.pos)}</td>
+      <td class="add-num">${r.years!=null?r.years+' yr':'—'}</td>
+      <td class="add-num add-val">${fmtMillions(r.value_m)}</td>
+      <td class="add-num add-aav">${fmtMillions(r.aav_m)}</td>
+    </tr>`).join('');
+    return `<div class="add-table-scroll"><table class="add-table"><thead><tr>
+      <th class="add-th-player">PLAYER</th><th>POS</th><th class="add-num">TERM</th>
+      <th class="add-num">TOTAL</th><th class="add-num">AAV</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  };
+  const tradeTable=(rows)=>{
+    if(!rows||!rows.length) return `<div class="add-empty">No trade acquisitions listed.</div>`;
+    const body=rows.map(r=>`<tr>
+      <td class="add-player">${r.player}</td>
+      <td>${posBadge(r.pos)}</td>
+      <td class="add-num add-val">${fmtMillions(r.cap_m)}</td>
+      <td class="add-detail">${r.detail||'—'}</td>
+    </tr>`).join('');
+    return `<div class="add-table-scroll"><table class="add-table add-trade-table"><thead><tr>
+      <th class="add-th-player">PLAYER</th><th>POS</th><th class="add-num">CAP ACQ.</th>
+      <th>TRADE DETAIL</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  };
+  const count=(n)=>`<span class="add-count">${n}</span>`;
+  // Free Agents Lost — players who left in free agency, with where they went.
+  const lossTable=(rows)=>{
+    if(!rows||!rows.length) return `<div class="add-empty">No free agents lost.</div>`;
+    const body=rows.map(r=>`<tr>
+      <td class="add-player">${r.player}</td>
+      <td>${posBadge(r.pos)}</td>
+      <td class="add-dest">${r.to_team?`→ <b>${r.to_team}</b>`:'—'}</td>
+      <td class="add-num">${r.years!=null?r.years+' yr':'—'}</td>
+      <td class="add-num add-val add-loss-val">${fmtMillions(r.value_m)}</td>
+      <td class="add-num add-aav">${fmtMillions(r.aav_m)}</td>
+    </tr>`).join('');
+    return `<div class="add-table-scroll"><table class="add-table"><thead><tr>
+      <th class="add-th-player">PLAYER</th><th>POS</th><th>SIGNED WITH</th>
+      <th class="add-num">TERM</th><th class="add-num">TOTAL</th><th class="add-num">AAV</th>
+      </tr></thead><tbody>${body}</tbody></table></div>`;
+  };
+  return `<div class="add-wrap">
+    <div class="add-note">🔄 <b>${teamDisplayName(team)}</b> ${PROJ_SEASON} roster changes — additions via free agency, the draft, and trades, plus notable departures. Sorted by contract/cap value. Pair this with the ${SHARP_SEASON} Advanced Stats to see how weaknesses were addressed — and where new holes may have opened.</div>
+
+    <div class="add-section">
+      <div class="add-section-head">💰 Free Agency ${count((a.free_agents||[]).length)}</div>
+      ${signingTable(a.free_agents,'fa')}
+    </div>
+
+    <div class="add-section">
+      <div class="add-section-head">🎯 Draft ${count((a.draft||[]).length)}</div>
+      ${signingTable(a.draft,'draft')}
+    </div>
+
+    <div class="add-section">
+      <div class="add-section-head">🔄 Trades ${count((a.trades||[]).length)}</div>
+      ${tradeTable(a.trades)}
+    </div>
+
+    <div class="add-section add-losses-section">
+      <div class="add-section-head">📉 Notable Losses ${count((a.free_agents_lost||[]).length)}</div>
+      <div class="add-losses-sub">Free agents who signed elsewhere this offseason.</div>
+      ${lossTable(a.free_agents_lost)}
+    </div>
+
+    <div class="sr-source">Source: spotrac.com — ${PROJ_SEASON} offseason · for informational use.</div>
+  </div>`;
+}
+
 // Per-team advanced view: one card per Sharp table, each showing this team's value + rank.
+// Coordinator helpers -------------------------------------------------------
+function coordFor(team, side){ return COORDINATORS && COORDINATORS[team] && COORDINATORS[team][side]; }
+// A coordinator "carries over" another team's scheme when they're brand-new this season
+// AND came from another NFL team. Those get the Coordinators tab.
+function coordCarriesOver(c){ return !!(c && c.is_new && !c.internal && c.prev_code); }
+// Head-coach history entry (former team/role), from the seed.
+function hcHistFor(team){ return HC_HISTORY && HC_HISTORY[team]; }
+// When the HEAD COACH is the primary playcaller AND is new this season AND came from another
+// NFL team, the OFFENSIVE scheme travels with the HC — so the carryover source is the HC's
+// former team, not the OC's. Returns a carryover-source object shaped like a coordinator
+// (name, prev_code, prev_role, prev_years) or null.
+function playcallerHCOffenseSource(team){
+  if(!hcIsPlaycaller(team)) return null;
+  const h=hcHistFor(team);
+  if(!h) return null;
+  if(!(h.is_new && h.prev_code)) return null;   // must be new this season, from another team
+  // Guard: if the HC's "former team" is this same team (rare data quirk), no carryover.
+  if(h.prev_code===team) return null;
+  return { name:h.name||(HC_PLAYCALLERS&&HC_PLAYCALLERS[team])||'Head coach', prev_code:h.prev_code,
+           prev_role:h.prev_role||'head coach', prev_years:h.prev_years, is_new:true, internal:false,
+           _fromHC:true };
+}
+function teamHasCarryover(team){
+  const o=coordFor(team,'offense'), d=coordFor(team,'defense');
+  return coordCarriesOver(o) || coordCarriesOver(d);
+}
+// Short inline label for a coordinator next to a section head.
+function coordInlineLabel(c, sideWord){
+  if(!c) return '';
+  if(!c.name) return '';
+  if(coordCarriesOver(c)){
+    const role = c.prev_role || 'coordinator';
+    return `<span class="coord-inline coord-new" title="New ${sideWord} coordinator for ${PROJ_SEASON}">
+      ${sideWord==='offensive'?'OC':'DC'}: <b>${c.name}</b> <span class="coord-new-tag">NEW · from ${teamDisplayName(c.prev_code)} ${role}</span></span>`;
+  }
+  // carryover/internal: last season's stats apply directly
+  const since = c.since?` · since ${c.since}`:'';
+  return `<span class="coord-inline">${sideWord==='offensive'?'OC':'DC'}: <b>${c.name}</b>${since}</span>`;
+}
+
 function renderTeamAdvanced(team){
   const hasSharp=sharpHasData(), hasSOS=SOS&&Object.keys(SOS).length>0;
-  if(!hasSharp && !hasSOS){
+  const hasCoord = COORDINATORS && COORDINATORS[team];
+  if(!hasSharp && !hasSOS && !hasCoord){
     return `<div class="empty"><div class="empty-icon">📊</div>
       <div class="empty-title">No advanced stats loaded</div>
       <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed to populate Warren Sharp advanced stats.</div></div>`;
   }
-  const cardFor=(key)=>{
-    const tbl=SHARP[key];
-    const row=tbl.teams&&tbl.teams[team];
+  const cardFor=(key, srcTeam)=>{
+    const tbl=SHARP[key]; if(!tbl) return '';
+    const useTeam = srcTeam||team;
+    const row=tbl.teams&&tbl.teams[useTeam];
     if(!row) return `<div class="sr-card"><div class="sr-card-title">${tbl.title||key}</div>
-      <div class="sr-empty">No data for ${teamDisplayName(team)}</div></div>`;
+      <div class="sr-empty">No data for ${teamDisplayName(useTeam)}</div></div>`;
     const lines = tbl.columns.map(col=>{
       const v=row.values?row.values[col]:null;
       const r=row.ranks?row.ranks[col]:null;
@@ -2558,23 +2812,85 @@ function renderTeamAdvanced(team){
   const keys=Object.keys(SHARP);
   const offKeys=keys.filter(k=>(SHARP[k].category||'offense')==='offense');
   const defKeys=keys.filter(k=>SHARP[k].category==='defense');
-  const section=(label,ks)=> ks.length ? `<div class="sr-section-head">${label}</div>
-    <div class="sr-card-grid">${ks.map(cardFor).join('')}</div>` : '';
+  const oc=coordFor(team,'offense'), dc=coordFor(team,'defense');
+  const section=(label,ks,coordLbl)=> ks.length ? `<div class="sr-section-head">${label} ${coordLbl||''}</div>
+    <div class="sr-card-grid">${ks.map(k=>cardFor(k)).join('')}</div>` : '';
   // SOS summary strip
   const sos=SOS && SOS[team];
   const sosStrip = sos ? `<div class="sr-sos-strip">
     <span class="sr-sos-rank ${sharpRankClass(sos.rank)}">${ordinal(sos.rank)}</span>
-    <div><div class="sr-sos-label">2026 Strength of Schedule</div>
+    <div><div class="sr-sos-label">${PROJ_SEASON} Strength of Schedule</div>
       <div class="sr-sos-sub">${sos.win_total!=null?`Vegas win total <b>${sos.win_total}</b> · `:''}rank ${sos.rank} of 32 (1 = easiest)</div></div>
     <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showSharpLeague('sos')">See SOS chart →</button>
   </div>` : '';
+  // Carryover coordinators → a highlighted section that pulls the former team's scheme stats.
+  const carryBlock = renderCoordinatorCarryover(team, cardFor);
   return `<div class="sr-team-wrap">
-    <div class="sr-note">📊 <b>Warren Sharp</b> advanced stats · previous season · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
+    <div class="sr-note">📊 <b>Warren Sharp</b> advanced stats · <b>${SHARP_SEASON} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
       <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showSharpLeague()">🌐 View league-wide tables →</button></div>
     ${sosStrip}
-    ${section('🏈 Offense', offKeys)}
-    ${section('🛡️ Defense', defKeys)}
-    <div class="sr-source">Source: sharpfootballanalysis.com — for informational use.</div>
+    ${carryBlock}
+    ${section('🏈 Offense', offKeys, coordInlineLabel(oc,'offensive'))}
+    ${section('🛡️ Defense', defKeys, coordInlineLabel(dc,'defensive'))}
+    <div class="sr-source">Source: sharpfootballanalysis.com (${SHARP_SEASON} season) · coordinators via Wikipedia — for informational use.</div>
+  </div>`;
+}
+
+// The Coordinators carryover block: when a NEW coordinator came from another NFL team, show
+// their former team's carry-over scheme stats (tendencies + personnel for OC; tendencies +
+// coverage for DC — the aspects that travel with a coordinator), clearly labeled.
+function renderCoordinatorCarryover(team, cardFor){
+  const oc=coordFor(team,'offense'), dc=coordFor(team,'defense');
+  const blocks=[];
+  // OFFENSE: when the head coach is the primary playcaller and is new-from-another-team, the
+  // scheme travels with the HC → carry over the HC's former team. Otherwise use the OC.
+  const hcSrc = playcallerHCOffenseSource(team);
+  const offSrc = hcSrc || (coordCarriesOver(oc) ? oc : null);
+  if(offSrc){
+    // Offensive scheme travels most in tendencies + personnel.
+    const wantTitles=['Tendencies','Personnel'];
+    const ks=Object.keys(SHARP).filter(k=>(SHARP[k].category||'offense')==='offense'
+      && wantTitles.some(w=>(SHARP[k].title||'').toLowerCase().includes(w.toLowerCase())));
+    blocks.push(coordCarryCard('offensive', offSrc, ks, cardFor));
+  }
+  if(coordCarriesOver(dc)){
+    // Defensive scheme travels most in tendencies + coverage SCHEMES (not the
+    // coverage-by-position table, which is more about personnel matchups than scheme).
+    const wantTitles=['Tendencies','Coverage Schemes'];
+    const ks=Object.keys(SHARP).filter(k=>{
+      if(SHARP[k].category!=='defense') return false;
+      const title=(SHARP[k].title||'').toLowerCase();
+      if(title.includes('by position')) return false;   // exclude Coverage by Position
+      return wantTitles.some(w=>title.includes(w.toLowerCase()));
+    });
+    blocks.push(coordCarryCard('defensive', dc, ks, cardFor));
+  }
+  if(!blocks.length) return '';
+  return `<div class="coord-carry-wrap">
+    <div class="coord-carry-head">🔄 New coordinator scheme carryover</div>
+    <div class="coord-carry-note">A brand-new coordinator arrived for ${PROJ_SEASON}. Below are their <b>former team's</b> ${SHARP_SEASON} scheme stats — the tendencies &amp; personnel that tend to travel with a coordinator. Use as a forecast for how this unit may shift.</div>
+    ${blocks.join('')}
+  </div>`;
+}
+function coordCarryCard(sideWord, c, ks, cardFor){
+  const from = teamDisplayName(c.prev_code);
+  const roleNote = c.prev_role
+    ? `previously <b>${from} ${c.prev_role}</b>${c.prev_years?` (${c.prev_years})`:''}`
+    : `previously with <b>${from}</b>`;
+  const cards = ks.length ? ks.map(k=>cardFor(k, c.prev_code)).join('')
+    : `<div class="sr-empty">No carry-over tables available for ${from}.</div>`;
+  // When the offensive source is a play-calling head coach, label it as such (the scheme
+  // follows the HC, not the OC).
+  const badge = c._fromHC ? '🎧 New play-calling HC'
+    : (sideWord==='offensive' ? '🏈 New OC' : '🛡️ New DC');
+  const schemeOwner = c._fromHC ? 'play-calling head coach' : `${sideWord} coordinator`;
+  return `<div class="coord-carry-block">
+    <div class="coord-carry-title">
+      <span class="coord-side">${badge}</span>
+      <b>${c.name||'(name unavailable)'}</b> — ${roleNote}
+    </div>
+    <div class="coord-carry-sub">Showing ${from}'s ${SHARP_SEASON} ${sideWord} scheme (${ks.map(k=>SHARP[k].title).join(' · ')||'—'}) — the tendencies &amp; personnel that travel with a ${schemeOwner}:</div>
+    <div class="sr-card-grid">${cards}</div>
   </div>`;
 }
 
@@ -2608,7 +2924,7 @@ function renderSharpLeague(){
   const headerBar=`
     <div class="team-header sr-league-header">
       <div><div class="team-abbr">📊 Advanced Stats — League-Wide</div>
-        <div class="team-qb-name">Warren Sharp · click any column to sort (best→worst)</div></div>
+        <div class="team-qb-name">Warren Sharp · <b>${SHARP_SEASON} season</b> · click any column to sort (best→worst)</div></div>
       <div class="team-nav">
         ${currentTeam?`<button class="btn btn-ghost" onclick="setPhase('Advanced')">← ${teamDisplayName(currentTeam)} card</button>`:''}
         <button class="btn btn-ghost" onclick="setPhase('Rankings')">🏆 Rankings</button></div>
@@ -2651,11 +2967,11 @@ function renderSharpLeague(){
       const v=r.values?r.values[c]:null, rk=r.ranks?r.ranks[c]:null;
       return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${fmtSharpVal(v, sharpColIsPct(tbl,c))}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
     }).join('');
-    return `<tr><td class="sr-td-team"><img src="${NFL_LOGO(r.code)}" class="sr-logo" onerror="this.style.display='none'">${r.code}</td>${cells}</tr>`;
+    return `<tr><td class="sr-td-team"><span class="sr-td-team-inner"><img src="${NFL_LOGO(r.code)}" class="sr-logo" onerror="this.style.display='none'">${r.code}</span></td>${cells}</tr>`;
   }).join('');
   host.innerHTML = headerBar + renderCategoryTabs() + `
     <div class="sr-league-tabs">${tableTabs}</div>
-    <div class="sr-desc">${tbl.title} — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
+    <div class="sr-desc">${tbl.title} · <b>${SHARP_SEASON} season</b> — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
     <div class="card" style="padding:0;overflow-x:auto">
       <table class="sr-league-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
     </div>
@@ -2722,7 +3038,7 @@ function renderSOSView(){
     return `<th class="sr-th ${active?'active':''}" onclick="sortSOSBy('${col}')">${label}${arrow}</th>`;
   };
   const body=rows.map(e=>`<tr>
-    <td class="sr-td-team"><img src="${NFL_LOGO(e.code)}" class="sr-logo" onerror="this.style.display='none'">${teamDisplayName(e.code)}</td>
+    <td class="sr-td-team"><span class="sr-td-team-inner"><img src="${NFL_LOGO(e.code)}" class="sr-logo" onerror="this.style.display='none'">${teamDisplayName(e.code)}</span></td>
     <td class="sr-td ${sharpRankClass(e.rank)}"><span class="sr-td-val">${ordinal(e.rank)}</span></td>
     <td class="sr-td"><span class="sr-td-val">${e.win_total!=null?e.win_total:'—'}</span></td>
   </tr>`).join('');
@@ -3269,6 +3585,11 @@ async function tryAutoLoadSeed(){
     if(j.sharp){ SHARP=j.sharp; got=true; }
     if(j.sos){ SOS=j.sos; got=true; }
     if(j.team_names){ TEAM_NAMES=j.team_names; got=true; }
+    if(j.coordinators){ COORDINATORS=j.coordinators; got=true; }
+    if(j.hc_playcallers){ HC_PLAYCALLERS=j.hc_playcallers; got=true; }
+    if(j.hc_history){ HC_HISTORY=j.hc_history; got=true; }
+    if(j.additions){ ADDITIONS=j.additions; got=true; }
+    if(j.sharp_season){ SHARP_SEASON=j.sharp_season; got=true; }
     // Only adopt prebuilt projections/history if present and non-trivial.
     if(j.seed && Object.keys(j.seed).length){
       SEED=j.seed; projSeed=SEED; seasonStatsCache={proj:SEED}; rosterMergedTeams.clear();
@@ -3826,6 +4147,47 @@ async function fetchTeamRecord(season,team){
   }catch(e){ espnRecordCache[key]=''; return null; }
 }
 
+// ── Head coach (live from ESPN) ─────────────────────────────────────────────
+// Endpoint chain (per team): /seasons/{season}/teams/{id}/coaches → items[].$ref →
+// fetch that ref → {firstName,lastName,headshot,experience}. Browser-reachable (ESPN
+// core API is CORS-open), so this runs live and shows even without a seed loaded.
+const ESPN_COACHES_URL=(season,tid)=>`https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/${season}/teams/${tid}/coaches?lang=en&region=us`;
+function fixEspnRef(u){ return (u||'').replace(/^http:/,'https:'); }
+async function fetchHeadCoach(team){
+  if(headCoaches[team]!==undefined) return headCoaches[team];
+  if(hcInFlight[team]) return hcInFlight[team];
+  const tid=ESPN_TEAM_ID[team]; if(!tid){ headCoaches[team]=null; return null; }
+  const season=PROJ_SEASON;
+  hcInFlight[team]=(async()=>{
+    try{
+      const list=await sleeperFetch(ESPN_COACHES_URL(season,tid));
+      const ref = list && list.items && list.items[0] && list.items[0].$ref;
+      if(!ref){ headCoaches[team]=null; return null; }
+      const c=await sleeperFetch(fixEspnRef(ref));
+      if(!c){ headCoaches[team]=null; return null; }
+      const hc={
+        name: `${c.firstName||''} ${c.lastName||''}`.trim(),
+        headshot: (c.headshot&&c.headshot.href)||null,
+        experience: c.experience!=null ? c.experience : null,
+      };
+      headCoaches[team]=hc;
+      if(currentTeam===team) renderContent();
+      return hc;
+    }catch(e){ headCoaches[team]=null; return null; }
+    finally{ delete hcInFlight[team]; }
+  })();
+  return hcInFlight[team];
+}
+// Is this team's head coach also the primary offensive playcaller?
+function hcIsPlaycaller(team){
+  const nm=HC_PLAYCALLERS&&HC_PLAYCALLERS[team];
+  if(!nm) return false;
+  const hc=headCoaches[team];
+  // If we have the live HC name, confirm it matches; otherwise trust the list.
+  if(hc&&hc.name) return hc.name.toLowerCase()===String(nm).toLowerCase();
+  return true;
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // Copy reference-season stats into the working (projection) set
 // ═════════════════════════════════════════════════════════════════════════════
@@ -3930,6 +4292,11 @@ function handleSeedLoad(e){
       if(j.sharp) SHARP=j.sharp;   // Warren Sharp advanced offensive stats
       if(j.sos) SOS=j.sos;   // 2026 strength of schedule
       if(j.team_names) TEAM_NAMES=j.team_names;   // full team display names
+      if(j.coordinators) COORDINATORS=j.coordinators;   // OC/DC from Wikipedia
+      if(j.hc_playcallers) HC_PLAYCALLERS=j.hc_playcallers;   // HC-as-playcaller list
+      if(j.hc_history) HC_HISTORY=j.hc_history;   // HC former-team history
+      if(j.additions) ADDITIONS=j.additions;   // Spotrac new additions
+      if(j.sharp_season) SHARP_SEASON=j.sharp_season;   // season the Sharp stats describe
       if(hasSeed){
         SEED=j.seed; rosterMergedTeams.clear();
         HISTORY=j.history||{};
@@ -4242,6 +4609,13 @@ async function pollDraft(){
   }catch(e){ /* keep polling quietly */ }
 }
 function toggleHideDrafted(){ hideDrafted=!hideDrafted; renderRankings(); }
+
+
+
+
+
+
+
 
 
 

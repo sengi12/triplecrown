@@ -49,6 +49,11 @@ def main():
     sharp = seed.get("sharp", {})
     sos = seed.get("sos", {})
     team_names = seed.get("team_names", {})
+    coordinators = seed.get("coordinators", {})
+    hc_playcallers = seed.get("hc_playcallers", {})
+    hc_history = seed.get("hc_history", {})
+    additions = seed.get("additions", {})
+    sharp_season = seed.get("sharp_season", "")
 
     # Build the replacement block. Compact JSON keeps the file smaller.
     j = lambda o: json.dumps(o, separators=(",", ":"), ensure_ascii=False)
@@ -63,6 +68,11 @@ def main():
         f"const SEED_SHARP = {j(sharp)};\n"
         f"const SEED_SOS = {j(sos)};\n"
         f"const SEED_TEAM_NAMES = {j(team_names)};\n"
+        f"const SEED_COORDINATORS = {j(coordinators)};\n"
+        f"const SEED_HC_PLAYCALLERS = {j(hc_playcallers)};\n"
+        f"const SEED_HC_HISTORY = {j(hc_history)};\n"
+        f"const SEED_ADDITIONS = {j(additions)};\n"
+        f"const SEED_SHARP_SEASON = {sharp_season or 0};\n"
         f"{END}"
     )
 
@@ -92,6 +102,7 @@ def main():
     print(f"  • contracts (dynasty Age/APY/FA): {len(contracts)} players" if contracts else "  • contracts: (none)")
     print(f"  • Sharp advanced stats: {len(sharp)} tables" if sharp else "  • Sharp advanced stats: (none)")
     print(f"  • Strength of schedule: {len(sos)} teams" if sos else "  • Strength of schedule: (none)")
+    print(f"  • Coordinators: {len(coordinators)} teams" if coordinators else "  • Coordinators: (none)")
     print(f"\nOpen {out} on your phone — double-click or AirDrop/email it. No server, no CORS.")
 
 if __name__ == "__main__":
