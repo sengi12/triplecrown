@@ -167,4 +167,4 @@ This isn't legal advice; the [full license text](./LICENSE) governs.
 
 ---
 
-*TripleCrown is a personal projection tool and is not affiliated with the NFL, Sleeper, FantasyPros, OverTheCap or Warren Sharp. Data from those sources is used under their respective terms for personal, non-commercial use.*
+*TripleCrown is a personal projection tool and is not affiliated with the NFL, Sleeper, FantasyPros, OverTheCap, Spotrac or Warren Sharp. Data from those sources is used under their respective terms for personal, non-commercial use.*
