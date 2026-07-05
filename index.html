@@ -12,7 +12,7 @@
   --border:#2d3748;--border2:#374151;
   --accent:#00d4aa;--accent2:#4a9eff;
   --text:#e6edf3;--muted:#7d8590;--muted2:#9ca3af;
-  --qb:#ff6b35;--wr:#4a9eff;--rb:#00d4aa;--te:#c084fc;
+  --qb:#ff4d6a;--wr:#56a5ff;--rb:#00cf9f;--te:#ffc94d;
   --danger:#f85149;--success:#3fb950;--warn:#d29922;--info:#4a9eff;
   --font:'SF Pro Display','Segoe UI',system-ui,sans-serif;
   --mono:'SF Mono','Fira Code',monospace;
@@ -81,10 +81,87 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
   display:flex;align-items:center;justify-content:center;font-size:15px;}
 .pos-badge{font-size:9px;font-weight:900;padding:2px 5px;border-radius:4px;
   letter-spacing:.5px;flex-shrink:0;}
-.pos-QB{background:rgba(255,107,53,.18);color:var(--qb);}
-.pos-RB{background:rgba(0,212,170,.18);color:var(--rb);}
-.pos-WR{background:rgba(74,158,255,.18);color:var(--wr);}
-.pos-TE{background:rgba(192,132,252,.18);color:var(--te);}
+.pos-QB{background:rgba(255,77,106,.18);color:var(--qb);}
+.pos-RB{background:rgba(0,207,159,.18);color:var(--rb);}
+.pos-WR{background:rgba(86,165,255,.18);color:var(--wr);}
+.pos-TE{background:rgba(255,201,77,.18);color:var(--te);}
+/* ── Player card modal ── */
+.pcard-overlay{position:fixed;inset:0;background:rgba(0,0,0,.66);z-index:1000;
+  display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;
+  overflow-y:auto;-webkit-overflow-scrolling:touch;backdrop-filter:blur(2px);}
+.pcard{background:var(--surface);border:1px solid var(--border);border-radius:16px;
+  width:100%;max-width:560px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);
+  animation:pcardIn .18s ease;}
+@keyframes pcardIn{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
+.pcard-hero{position:relative;padding:18px 18px 14px;display:flex;gap:14px;align-items:center;
+  background:linear-gradient(135deg,var(--surface2),var(--surface));overflow:hidden;}
+/* faint team logo watermark in the hero */
+.pcard-hero-logo{position:absolute;right:-14px;top:50%;transform:translateY(-50%);
+  width:130px;height:130px;background-size:contain;background-repeat:no-repeat;
+  background-position:center;opacity:.16;pointer-events:none;filter:saturate(1.2);}
+.pcard-hero-img{width:74px;height:74px;border-radius:12px;object-fit:cover;
+  background:var(--surface3);flex-shrink:0;position:relative;z-index:1;
+  box-shadow:0 2px 10px rgba(0,0,0,.35);}
+.pcard-hero-main{flex:1;min-width:0;position:relative;z-index:1;}
+.pcard-name{font-size:20px;font-weight:900;line-height:1.05;color:#fff;
+  text-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+.pcard-jersey{font-size:13px;font-weight:800;color:rgba(255,255,255,.7);}
+.pcard-sub{margin-top:3px;display:flex;align-items:center;gap:7px;font-size:12px;color:rgba(255,255,255,.85);}
+.pcard-team{font-weight:700;text-shadow:0 1px 3px rgba(0,0,0,.5);}
+.pcard-meta{display:flex;gap:16px;margin-top:9px;flex-wrap:wrap;}
+.pcard-meta-empty{opacity:.55;}
+.pcard-opp-inner{display:inline-flex;align-items:center;gap:3px;justify-content:center;}
+.pcard-opp-logo{width:15px;height:15px;object-fit:contain;vertical-align:middle;}
+.pcard-at{font-weight:800;color:var(--muted);}
+.pcard-vs{font-weight:700;color:var(--muted);font-size:9px;}
+.pcard-meta-item{display:flex;flex-direction:column;}
+.pcard-meta-label{font-size:8.5px;font-weight:800;letter-spacing:.06em;color:rgba(255,255,255,.7);}
+.pcard-meta-val{font-size:15px;font-weight:800;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.4);}
+.pcard-close{position:absolute;top:12px;right:12px;width:30px;height:30px;border-radius:50%;
+  background:var(--surface3);border:none;color:var(--text);font-size:16px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;line-height:1;}
+.pcard-close:hover{background:var(--border);}
+.pcard-body{padding:8px 12px 16px;max-height:62vh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+.pcard-season{margin-top:12px;}
+.pcard-season-title{font-size:13px;font-weight:800;color:var(--text);margin:6px 2px 6px;
+  position:sticky;top:0;background:var(--surface);padding:4px 0;z-index:2;}
+.pcard-loading{padding:20px;text-align:center;color:var(--muted);font-size:12px;}
+.pcard-table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.pcard-table{border-collapse:separate;border-spacing:0;font-size:11px;width:100%;}
+.pcard-table th{font-size:8.5px;font-weight:800;color:var(--muted);letter-spacing:.03em;
+  padding:2px 4px;text-align:center;white-space:nowrap;}
+.pcard-table th.pcard-grp{color:var(--text);font-size:9px;border-bottom:1px solid var(--border);padding-bottom:3px;}
+.pcard-th-wk{text-align:left!important;}
+/* Freeze the WK and OPP columns so the game stays identified while scrolling stats right.
+   With border-spacing:0 the offsets are exact; each frozen cell keeps an opaque background. */
+.pcard-table th:nth-child(1),.pcard-table td:nth-child(1){position:sticky;left:0;z-index:2;
+  background:var(--surface);min-width:34px;width:34px;}
+.pcard-table th:nth-child(2),.pcard-table td:nth-child(2){position:sticky;left:34px;z-index:2;
+  background:var(--surface);min-width:56px;}
+/* header cells sit above body cells on both axes */
+.pcard-table thead th:nth-child(1){z-index:4;}
+.pcard-table thead th:nth-child(2){z-index:4;}
+.pcard-table thead th{position:sticky;top:0;background:var(--surface);z-index:3;}
+/* divider so the frozen pair reads as separate from the scrolling stats */
+.pcard-table th:nth-child(2),.pcard-table td:nth-child(2){box-shadow:1px 0 0 var(--border);}
+.pcard-cell{padding:6px 7px;text-align:center;border-radius:6px;font-weight:700;font-family:var(--mono);
+  background:var(--surface3);white-space:nowrap;min-width:34px;}
+.pcard-table td{padding:3px 3px;}
+.pcard-wk{font-weight:800;color:var(--muted);text-align:left;padding-left:4px!important;white-space:nowrap;}
+.pcard-opp{font-weight:800;text-align:center;white-space:nowrap;padding:0 6px!important;}
+.pcard-opp.home{color:var(--text);} .pcard-opp.away{color:var(--muted);}
+.pcard-cell.g{background:rgba(0,207,159,.22);color:#8effdf;}
+.pcard-cell.y{background:rgba(255,201,77,.20);color:#ffd98a;}
+.pcard-cell.r{background:rgba(255,90,90,.20);color:#ff9d9d;}
+.pcard-cell.bye{background:var(--surface2);color:var(--muted);font-weight:600;}
+.pcard-total-row .pcard-wk{color:var(--accent);font-weight:900;}
+.pcard-total-row .pcard-opp{color:var(--muted);font-weight:700;font-size:9.5px;}
+.pcard-total-cell{background:var(--surface2)!important;color:var(--text)!important;
+  font-weight:800;border-top:2px solid var(--border);}
+.pcard-src{font-size:9.5px;color:var(--muted);text-align:center;padding:10px 0 2px;}
+.clickable-player{cursor:pointer;}
+.clickable-player img{cursor:pointer;}
+.clickable-player:hover{text-decoration:underline;text-decoration-color:var(--muted);text-underline-offset:2px;}
 .player-name-block{flex:1;min-width:0;}
 .player-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .player-sub{font-size:10px;color:var(--muted);}
@@ -325,6 +402,7 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
 .add-losses-sub{font-size:10.5px;color:var(--muted);margin:-4px 0 8px;}
 .add-dest{white-space:nowrap;color:var(--muted);}
 .add-dest b{color:var(--text);}
+.add-dest-logo{width:16px;height:16px;object-fit:contain;vertical-align:middle;margin:0 3px;}
 .add-loss-val{color:#e08a8a;}
 /* Per-team advanced: section heads + SOS strip */
 .sr-section-head{font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;
@@ -599,6 +677,17 @@ html,body{max-width:100%;overflow-x:hidden;}
 
 
 
+
+
+
+
+
+
+
+
+
+
+
 // ═══ TRIPLECROWN_SEED_START ═══ (build_seed.py / bake_seed.py replace this whole block)
 // SEED_DATA intentionally empty — TripleCrown pulls 2026 projections live from Sleeper
 // on first load (or load a prebuilt triplecrown_seed.json via the 📦 Seed button, or bake
@@ -624,6 +713,32 @@ const SEED_SHARP_SEASON = 2025;
 // Constants & URLs
 // ─────────────────────────────────────────────────────────────────────────────
 const NFL_LOGO = t => `https://static.www.nfl.com/t_headshot_desktop/f_auto/league/api/clubs/logos/${t==='JAX'?'JAC':t}`;
+// Primary team colors (the dominant color of each club, matching their logos). Fixed set of
+// 32, so a lookup is instant, correct, CORS-free, and works in the offline baked file.
+const TEAM_COLORS = {
+  ARI:'#97233F', ATL:'#A71930', BAL:'#241773', BUF:'#00338D', CAR:'#0085CA',
+  CHI:'#0B162A', CIN:'#FB4F14', CLE:'#311D00', DAL:'#003594', DEN:'#FB4F14',
+  DET:'#0076B6', GB:'#203731', HOU:'#03202F', IND:'#002C5F', JAX:'#006778',
+  KC:'#E31837', LAC:'#0080C6', LAR:'#003594', LV:'#000000', MIA:'#008E97',
+  MIN:'#4F2683', NE:'#002244', NO:'#D3BC8D', NYG:'#0B2265', NYJ:'#125740',
+  PHI:'#004C54', PIT:'#FFB612', SEA:'#002244', SF:'#AA0000', TB:'#D50A0A',
+  TEN:'#0C2340', WAS:'#5A1414',
+};
+function teamColor(t){ return TEAM_COLORS[t] || '#2b2f3a'; }
+// Relative luminance (0..1) of a hex color, for choosing readable text over it.
+function _hexLum(hex){
+  const m=/^#?([0-9a-f]{6})$/i.exec(hex||''); if(!m) return 0;
+  const n=parseInt(m[1],16), r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+  const f=c=>{c/=255; return c<=0.03928?c/12.92:Math.pow((c+0.055)/1.055,2.4);};
+  return 0.2126*f(r)+0.7152*f(g)+0.0722*f(b);
+}
+// A darkened version of a hex color (mix toward black by `amt` 0..1), for light team colors.
+function _darken(hex, amt){
+  const m=/^#?([0-9a-f]{6})$/i.exec(hex||''); if(!m) return hex;
+  const n=parseInt(m[1],16); let r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+  r=Math.round(r*(1-amt)); g=Math.round(g*(1-amt)); b=Math.round(b*(1-amt));
+  return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');
+}
 // Sleeper APIs (browser can reach these directly; container cannot)
 const SLEEPER_PLAYERS_URL = 'https://api.sleeper.app/v1/players/nfl';
 const SLEEPER_PROJ_URL = (season)=>`https://api.sleeper.com/projections/nfl/${season}?season_type=regular&grouping=season`;
@@ -1380,9 +1495,9 @@ function renderQB(team,state){
         const gms=Math.round(q.games||0);
         const active = i===idx;
         return `<div class="snap-row" style="${active?'border:1px solid var(--qb)':''}">
-          ${imgTag(hsURL(q),'player-headshot')}
+          <span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${imgTag(hsURL(q),'player-headshot')}</span>
           <div class="snap-info" style="flex:1">
-            <div style="font-size:12px;font-weight:700">${q.name}
+            <div style="font-size:12px;font-weight:700"><span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${q.name}</span>
               ${q.games_played?`<span style="font-size:9px;color:var(--muted);font-weight:500">· actually played ${Math.round(q.games_played)}</span>`:''}</div>
             <div style="font-size:10px;color:var(--muted)" id="wl-sub-${i}">${gms} games · ${perGame(q,'passing_yards').toFixed(1)} pass yds/gm</div>
           </div>
@@ -1400,9 +1515,9 @@ function renderQB(team,state){
     <div class="card-title">${qb.name} — Passing ${isMulti?`<span style="font-size:9px;color:var(--muted)">(editing QB${idx+1} of ${state.qbs.length})</span>`:''}</div>
     ${isMulti?`<div class="qb-tab-bar">${state.qbs.map((q,i)=>
       `<button class="qb-tab ${i===idx?'active':''}" onclick="setActiveQB(${i})">${q.name.split(' ').pop()}</button>`).join('')}</div>`:''}
-    <div class="player-row">${imgTag(hsURL(qb),'player-headshot')}
+    <div class="player-row"><span class="clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${imgTag(hsURL(qb),'player-headshot')}</span>
       <span class="pos-badge pos-QB">QB${idx+1}</span>
-      <div class="player-name-block"><div class="player-name">${qb.name}</div>
+      <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${qb.name}</div>
         <div class="player-sub">${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?`ECR ${e.rank_ecr}`:'';})()}${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?' · ':'';})()}<span id="qb-games-sub">${games}</span> games projected</div></div></div>
     <div class="alert alert-info" style="margin-bottom:11px"><span class="alert-icon">📈</span>
       <div>These are this QB's totals across <b>${games} games</b>. Adjust <b>Games Played</b> above to extrapolate a full-season pace (e.g. an 8-game stint scaled to 17), and the stats below scale with it.</div></div>
@@ -1600,8 +1715,8 @@ function renderPassDerived(team,state,subTabs,metric){
     const projYds=Math.round(projTgts*(p.ypt||9));
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
-        ${imgSm(hsURL(p))}<span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name" title="${p.name}">${p.name}</span>
+        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsURL(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
+        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>
         <span class="share-pct" id="dp-${i}">${pct}%</span>
         <span class="share-vol" id="dv-${i}">${v.toLocaleString()} ${label}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -1698,9 +1813,9 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row">
         <div class="share-dot" style="background:${col}"></div>
-        ${imgSm(hsURL(p))}
+        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsURL(p))}</span>
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name" title="${p.name}">${p.name}</span>
+        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>
         <span class="share-pct" id="pp-${i}">${pct}%</span>
         <span class="share-vol" id="pt-${i}">${projTgts} tgt</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking('${p.player_id}','${p.pos}')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
@@ -1777,8 +1892,8 @@ function renderPassTDs(team,state,totalTDs,subTabs){
     const projTDs=(p.td_share*totalTDs).toFixed(1);
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
-        ${imgSm(hsURL(p))}<span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name" title="${p.name}">${p.name}</span>
+        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsURL(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
+        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>
         <span class="share-pct" id="tdp-${i}">${pct}%</span>
         <span class="share-vol">proj TDs</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -1831,8 +1946,8 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
     const tds=(p.td_share*totalTDs).toFixed(1);
     return `<div class="share-block" id="rblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
-        ${imgSm(hsURL(p))}<span class="pos-badge pos-RB">RB</span>
-        <span class="share-name" title="${p.name}">${p.name}</span>
+        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsURL(p))}</span><span class="pos-badge pos-RB">RB</span>
+        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>
         <span class="share-pct" id="rp-${i}">${pct}%</span>
         <span class="share-vol" id="ra-${i}">${att} att</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking('${p.player_id}','RB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
@@ -1880,8 +1995,8 @@ function renderRushTDs(team,state,subTabs){
     const projTDs=(p.td_share*totalTDs).toFixed(1);
     return `<div class="share-block" id="rblk-${i}"><div class="share-row">
         <div class="share-dot" style="background:${col}"></div>
-        ${imgSm(hsURL(p))}<span class="pos-badge pos-RB">RB</span>
-        <span class="share-name" title="${p.name}">${p.name}</span>
+        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsURL(p))}</span><span class="pos-badge pos-RB">RB</span>
+        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>
         <span class="share-pct" id="rtdp-${i}">${pct}%</span>
         <span class="share-vol">proj TDs</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -2655,6 +2770,406 @@ function sharpColIsPct(tbl, col){
 
 // ── New Additions (Spotrac offseason: free agency, draft, trades) ────────────
 // Read-only per-team view tying the 2025 weaknesses to how the team addressed them.
+// ── Player card modal ───────────────────────────────────────────────────────
+// Clicking any player name opens a card showing per-game stats by season, colored
+// green/yellow/red relative to positional expectations. QB is implemented first; other
+// positions fall back to a generic set until their schemas are added.
+//
+// Each column: {key, label, get(row,ctx)->number|null, color(v)->'g'|'y'|'r'|'' , fmt}.
+// Thresholds are per-GAME (weekly) values tuned to fantasy relevance; users can eyeball
+// and we can adjust. Higher-is-better unless the color fn says otherwise (INT is inverted).
+function _tri(v, goodAt, okAt){ // higher is better
+  if(v==null) return '';
+  if(v>=goodAt) return 'g';
+  if(v>=okAt) return 'y';
+  return 'r';
+}
+function _triLow(v, goodBelow, okBelow){ // lower is better (e.g. INT)
+  if(v==null) return '';
+  if(v<=goodBelow) return 'g';
+  if(v<=okBelow) return 'y';
+  return 'r';
+}
+// Column keys are unique per column (e.g. p_yd vs ru_yd vs re_yd) so a position can repeat a
+// stat label like "YD"/"TD" across PASSING/RUSHING/RECEIVING groups. `label` is what shows.
+const _C = {
+  fpts: {key:'fpts', label:'FPTS', fmt:v=>v==null?'–':v.toFixed(1), color:v=>_tri(v,18,10)},
+  snp:  {key:'snp',  label:'SNP%', fmt:v=>v==null?'–':Math.round(v), color:v=>_tri(v,70,45)},
+  rank: {key:'rank', label:'RANK', fmt:v=>v==null?'–':v, color:v=>v==null?'':_triLow(v,12,28)},
+};
+const PCARD_SCHEMA = {
+  QB: {
+    group:[['FANTASY',3],['PASSING',10],['RUSHING',4]],
+    cols:[
+      {..._C.fpts, grp:0}, {..._C.snp, grp:0}, {..._C.rank, grp:0},
+      {key:'p_att', label:'ATT', grp:1, color:v=>_tri(v,35,25)},
+      {key:'p_cmp', label:'CMP', grp:1, color:v=>_tri(v,24,16)},
+      {key:'p_cmp_pct',label:'PCT', grp:1, fmt:v=>v==null?'–':(Number.isInteger(v)?v:v.toFixed(1)), color:v=>_tri(v,68,58)},
+      {key:'p_yd',  label:'YD',  grp:1, color:v=>_tri(v,275,200)},
+      {key:'p_lng', label:'LNG', grp:1, color:v=>_tri(v,40,20)},
+      {key:'p_rtg', label:'RTG', grp:1, fmt:v=>v==null?'–':(Number.isInteger(v)?v:v.toFixed(1)), color:v=>_tri(v,100,85)},
+      {key:'p_rz_att',label:'RZ',  grp:1, color:v=>_tri(v,4,2)},
+      {key:'p_td',  label:'TD',  grp:1, color:v=>_tri(v,2,1)},
+      {key:'p_int', label:'INT', grp:1, color:v=>_triLow(v,0,1)},
+      {key:'p_sack',label:'SACK',grp:1, color:v=>_triLow(v,1,3)},
+      {key:'ru_att',label:'ATT', grp:2, color:()=>''},
+      {key:'ru_yd', label:'YD',  grp:2, color:v=>_tri(v,40,15)},
+      {key:'ru_ypc',label:'YPC', grp:2, fmt:v=>v==null?'–':(Number.isInteger(v)?v:v.toFixed(2)), color:v=>_tri(v,5,3.5)},
+      {key:'ru_td', label:'TD',  grp:2, color:v=>_tri(v,1,0.5)},
+    ],
+  },
+  RB: {
+    group:[['FANTASY',3],['RUSHING',6],['RECEIVING',6]],
+    cols:[
+      {..._C.fpts, grp:0}, {..._C.snp, grp:0}, {..._C.rank, grp:0},
+      {key:'ru_att',label:'ATT', grp:1, color:()=>''},
+      {key:'ru_yd', label:'YD',  grp:1, color:v=>_tri(v,80,45)},
+      {key:'ru_ypc',label:'YPC', grp:1, fmt:v=>v==null?'–':(Number.isInteger(v)?v:v.toFixed(2)), color:v=>_tri(v,4.5,3.5)},
+      {key:'ru_lng',label:'LNG', grp:1, color:v=>_tri(v,20,10)},
+      {key:'ru_rz_att',label:'RZ', grp:1, color:v=>_tri(v,2,1)},
+      {key:'ru_td', label:'TD',  grp:1, color:v=>_tri(v,1,0.5)},
+      {key:'re_tar',label:'TAR', grp:2, color:v=>_tri(v,5,3)},
+      {key:'re_rec',label:'REC', grp:2, color:v=>_tri(v,4,2)},
+      {key:'re_yd', label:'YD',  grp:2, color:v=>_tri(v,40,20)},
+      {key:'re_ypt',label:'YPT', grp:2, fmt:v=>v==null?'–':(Number.isInteger(v)?v:v.toFixed(2)), color:v=>_tri(v,8,5)},
+      {key:'re_ypc',label:'YPC', grp:2, fmt:v=>v==null?'–':(Number.isInteger(v)?v:v.toFixed(2)), color:v=>_tri(v,9,6)},
+      {key:'re_td', label:'TD',  grp:2, color:v=>_tri(v,1,0.5)},
+    ],
+  },
+  WR: {
+    group:[['FANTASY',3],['RECEIVING',9],['RUSHING',4]],
+    cols:[
+      {..._C.fpts, grp:0}, {..._C.snp, grp:0}, {..._C.rank, grp:0},
+      {key:'re_tar',label:'TAR', grp:1, color:v=>_tri(v,8,5)},
+      {key:'re_rec',label:'REC', grp:1, color:v=>_tri(v,6,4)},
+      {key:'re_yd', label:'YD',  grp:1, color:v=>_tri(v,80,50)},
+      {key:'re_ypt',label:'YPT', grp:1, fmt:v=>v==null?'–':(Number.isInteger(v)?v:v.toFixed(2)), color:v=>_tri(v,9,6)},
+      {key:'re_ypc',label:'YPC', grp:1, fmt:v=>v==null?'–':(Number.isInteger(v)?v:v.toFixed(2)), color:v=>_tri(v,14,10)},
+      {key:'re_air',label:'AIR', grp:1, color:v=>_tri(v,80,40)},
+      {key:'re_lng',label:'LNG', grp:1, color:v=>_tri(v,25,15)},
+      {key:'re_rz_tgt',label:'RZ', grp:1, color:v=>_tri(v,2,1)},
+      {key:'re_td', label:'TD',  grp:1, color:v=>_tri(v,1,0.5)},
+      {key:'ru_att',label:'ATT', grp:2, color:()=>''},
+      {key:'ru_yd', label:'YD',  grp:2, color:v=>_tri(v,20,8)},
+      {key:'ru_ypc',label:'YPC', grp:2, fmt:v=>v==null?'–':(Number.isInteger(v)?v:v.toFixed(2)), color:v=>_tri(v,7,4)},
+      {key:'ru_td', label:'TD',  grp:2, color:v=>_tri(v,1,0.5)},
+    ],
+  },
+};
+// TE uses the same schema as WR for now.
+PCARD_SCHEMA.TE = PCARD_SCHEMA.WR;
+// Format a Sleeper height (total inches as number/string, or an already-formatted string)
+// into feet'inches" (e.g. 76 → 6'4"). Returns '–' if unknown.
+function _fmtHeight(h){
+  if(h==null||h==='') return '–';
+  const s=String(h).trim();
+  if(s.includes("'")) return s;                 // already like 6'4"
+  const inches=parseInt(s,10);
+  if(isNaN(inches)||inches<=0) return '–';
+  return `${Math.floor(inches/12)}'${inches%12}"`;
+}
+// Pick the Sleeper positional-rank field that matches the currently-selected ranking format.
+// Sleeper exposes pos_rank_std / pos_rank_half_ppr / pos_rank_ppr; superflex/dynasty formats
+// have no dedicated rank, so we map them to their nearest points basis (ppr / half_ppr).
+function pcardRankKey(){
+  switch(rankFormat){
+    case 'std': return 'pos_rank_std';
+    case 'ppr': return 'pos_rank_ppr';
+    case 'superflex': return 'pos_rank_ppr';       // SF is PPR-based in most leagues
+    case 'dynasty': return 'pos_rank_half_ppr';
+    case 'dynasty_superflex': return 'pos_rank_ppr';
+    case 'half_ppr':
+    default: return 'pos_rank_half_ppr';
+  }
+}
+// Pull per-game values for a position from a Sleeper weekly stats row. Keys match the schema.
+function pcardRowValues(pos, s, ctx){
+  s = s||{};
+  const ru_att=s.rush_att||0, ru_yd=s.rush_yd||0, ru_td=s.rush_td||0;
+  const re_tar=s.rec_tgt||0, re_rec=s.rec||0, re_yd=s.rec_yd||0, re_td=s.rec_td||0;
+  const base = { fpts: ctx.fpts, snp: ctx.snp, rank: ctx.rank };
+  const rushing = {
+    ru_att, ru_yd, ru_td,
+    ru_ypc: ru_att>0 ? Math.round(ru_yd/ru_att*100)/100 : (ru_yd?0:null),
+    ru_lng: s.rush_lng!=null ? s.rush_lng : null,
+    ru_rz_att: s.rush_rz_att!=null ? s.rush_rz_att : 0,
+  };
+  const receiving = {
+    re_tar, re_rec, re_yd, re_td,
+    re_ypt: re_tar>0 ? Math.round(re_yd/re_tar*100)/100 : (re_yd?0:null),
+    re_ypc: re_rec>0 ? Math.round(re_yd/re_rec*100)/100 : (re_yd?0:null),
+    re_air: s.rec_air_yd!=null ? s.rec_air_yd : null,
+    re_lng: s.rec_lng!=null ? s.rec_lng : null,
+    re_rz_tgt: s.rec_rz_tgt!=null ? s.rec_rz_tgt : 0,
+  };
+  if(pos==='QB'){
+    const pcmp=s.pass_cmp||0, patt=s.pass_att||0;
+    return {...base,
+      p_att: patt, p_cmp: pcmp, p_yd: s.pass_yd||0, p_td: s.pass_td||0, p_int: s.pass_int||0,
+      p_cmp_pct: (s.cmp_pct!=null) ? s.cmp_pct : (patt>0 ? Math.round(pcmp/patt*1000)/10 : null),
+      p_lng: s.pass_lng!=null ? s.pass_lng : null,
+      p_rtg: s.pass_rtg!=null ? s.pass_rtg : null,
+      p_rz_att: s.pass_rz_att!=null ? s.pass_rz_att : 0,
+      p_sack: s.pass_sack!=null ? s.pass_sack : 0,
+      ...rushing };
+  }
+  if(pos==='RB' || pos==='WR' || pos==='TE'){
+    return {...base, ...rushing, ...receiving};
+  }
+  return base;
+}
+// Compute a single game's fantasy points from the user's scoring settings.
+function pcardFptsFromStats(s){
+  s=s||{}; const sc=scoringSettings;
+  let pts=0;
+  const perYd=(ydPer, yd)=> (ydPer&&ydPer>0)? (yd/ydPer) : 0;
+  pts += perYd(sc.passing_yards_yardage, s.pass_yd||0);
+  pts += (s.pass_td||0)*(sc.passing_touchdowns||0);
+  pts += (s.pass_int||0)*(sc.interceptions_thrown||0);
+  pts += perYd(sc.rushing_yards_yardage, s.rush_yd||0);
+  pts += (s.rush_td||0)*(sc.rushing_touchdowns||0);
+  pts += perYd(sc.receiving_yards_yardage, s.rec_yd||0);
+  pts += (s.rec||0)*(sc.receptions||0);
+  pts += (s.rec_td||0)*(sc.receiving_touchdowns||0);
+  pts += (s.pass_att!=null?(s.pass_att*(sc.passing_attempts||0)):0);
+  pts += (s.fum_lost||0)*(sc.fumbles_lost||0);
+  return Math.round(pts*100)/100;
+}
+
+let pcardOpen=false;
+// Build a safe attribute string for openPlayerCard(...) — single-quoted JS args so it can sit
+// inside a double-quoted onclick="" attribute without breaking it. Escapes quotes/backslashes.
+function pcardArg(s){
+  return "'" + String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;') + "'";
+}
+function pcardOnclick(idOrName, pos, team){
+  return `openPlayerCard(${pcardArg(idOrName)},${pcardArg(pos)},${pcardArg(team)})`;
+}
+function openPlayerCard(nameOrId, pos, team){
+  // Ensure the Sleeper player map is available (needed for metadata + id resolution).
+  if(!sleeperPlayers){
+    loadSleeperPlayers(true).then(()=>openPlayerCard(nameOrId,pos,team)).catch(()=>{
+      toast('Player data still loading — try again in a moment','err');
+    });
+    return;
+  }
+  // Resolve a player_id: accept an id directly, or resolve from name(+pos).
+  let pid = null;
+  if(nameOrId && /^\d+$/.test(String(nameOrId))) pid = String(nameOrId);
+  else pid = resolvePlayerId(nameOrId, pos);
+  if(!pid){ toast('No stats available for that player','err'); return; }
+  pcardOpen=true;
+  renderPlayerCardShell(pid, pos, team);
+  loadPlayerCardData(pid, pos, team);
+}
+function closePlayerCard(){
+  pcardOpen=false;
+  const el=document.getElementById('pcardOverlay'); if(el) el.remove();
+}
+function renderPlayerCardShell(pid, pos, team){
+  const p = (sleeperPlayers&&sleeperPlayers[pid]) || {};
+  const name = p.name || 'Player';
+  const posc = pos || p.pos || '';
+  const tm = team || p.team || '';
+  // Age: show one decimal if the source has one (e.g. 29.5), else whole.
+  const age = (p.age!=null) ? (Number.isInteger(p.age)?p.age:(Math.round(p.age*10)/10)) : '–';
+  const exp = p.years_exp!=null ? (p.years_exp===0?'R':p.years_exp) : '–';
+  // Height: Sleeper stores total inches (e.g. "76") or sometimes a string; render as 6'4".
+  const height = _fmtHeight(p.height);
+  const weight = p.weight!=null && p.weight!=='' ? `${p.weight} lbs` : '–';
+  const college = p.college || '–';
+  const jersey = (p.number!=null && p.number!=='') ? `#${p.number}` : '';
+  const overlay = document.getElementById('pcardOverlay');
+  let tc = teamColor(tm);
+  // A few team primaries are light (e.g. PIT gold, NO gold); darken those so the white hero
+  // text stays legible while keeping the hue recognizable.
+  if(_hexLum(tc) > 0.4) tc = _darken(tc, 0.45);
+  const heroStyle = tm ? `background:linear-gradient(135deg, ${tc} 0%, ${tc} 42%, var(--surface) 100%);` : '';
+  const metaItem=(label,val)=> (val==null||val==='–'||val==='') ?
+    `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val pcard-meta-empty">–</span></div>` :
+    `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val">${val}</span></div>`;
+  const html = `
+    <div class="pcard" onclick="event.stopPropagation()">
+      <div class="pcard-hero" style="${heroStyle}">
+        <div class="pcard-hero-logo" style="${tm?`background-image:url('${NFL_LOGO(tm)}')`:''}"></div>
+        <img src="${hsURL({player_id:pid,pos:posc})}" class="pcard-hero-img" onerror="this.style.visibility='hidden'">
+        <div class="pcard-hero-main">
+          <div class="pcard-name">${name}${jersey?`<span class="pcard-jersey">${jersey}</span>`:''}</div>
+          <div class="pcard-sub">${posc?`<span class="pos-badge pos-${posc}">${posc}</span>`:''}${tm?`<span class="pcard-team">${teamDisplayName(tm)}</span>`:''}</div>
+          <div class="pcard-meta">
+            ${metaItem('AGE', age)}
+            ${metaItem('HT', height)}
+            ${metaItem('WT', weight)}
+            ${metaItem('EXP', exp)}
+            ${metaItem('COLLEGE', college)}
+          </div>
+        </div>
+        <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">✕</button>
+      </div>
+      <div class="pcard-body" id="pcardBody">
+        <div class="pcard-loading">Loading game logs…</div>
+      </div>
+    </div>`;
+  if(overlay){ overlay.innerHTML=html; }
+  else {
+    const div=document.createElement('div');
+    div.id='pcardOverlay'; div.className='pcard-overlay';
+    div.onclick=closePlayerCard;
+    div.innerHTML=html;
+    document.body.appendChild(div);
+  }
+}
+async function loadPlayerCardData(pid, pos, team){
+  const posc = pos || (sleeperPlayers&&sleeperPlayers[pid]&&sleeperPlayers[pid].pos) || 'QB';
+  const body = document.getElementById('pcardBody');
+  if(!body) return;
+  // QB/RB/WR/TE are supported; anything else (K/DEF/etc.) has no game-log schema.
+  if(!PCARD_SCHEMA[posc]){
+    body.innerHTML = `<div class="pcard-loading">Game logs aren't available for ${posc}.</div>`;
+    return;
+  }
+  const seasons = (HISTORY_SEASONS&&HISTORY_SEASONS.length)? HISTORY_SEASONS.slice() : [];
+  if(!seasons.length){
+    body.innerHTML = `<div class="pcard-loading">No historical seasons loaded. Load a 📦 seed with history to see game logs.</div>`;
+    return;
+  }
+  try{
+    const perSeason = await Promise.all(seasons.map(async s=>({season:s, weekly:await fetchPlayerWeekly(pid, s)})));
+    if(!pcardOpen) return; // user closed it while loading
+    let out='';
+    for(const {season, weekly} of perSeason){
+      const rows = pcardSeasonRows(weekly, posc);
+      if(!rows.length) continue;
+      out += renderPcardSeason(season, rows, posc);
+    }
+    if(!out) out = `<div class="pcard-loading">No game data found for this player.</div>`;
+    out += `<div class="pcard-src">Per-game stats via Sleeper · FPTS uses your current scoring settings.</div>`;
+    body.innerHTML = out;
+  }catch(e){
+    body.innerHTML = `<div class="pcard-loading">Couldn't load game logs. Check your connection and try again.</div>`;
+  }
+}
+// Build sorted weekly rows for one season from Sleeper weekly data.
+function pcardSeasonRows(weekly, pos){
+  const rows=[];
+  for(const wk in (weekly||{})){
+    const wn=parseInt(wk); if(isNaN(wn)) continue;
+    const row=weekly[wk]; if(!row||typeof row!=='object') continue;
+    const s=row.stats||{};
+    const opp=row.opponent||row.opp||null;
+    const team=row.team||null;
+    // Sleeper marks home/away; if unavailable we just show the opp code.
+    // Sleeper's weekly row has an is_away_team boolean; prefer it, with a game_id fallback.
+    const isAway = (typeof row.is_away_team==='boolean') ? row.is_away_team
+      : ((row.game_id && team && opp) ? (row.game_id.indexOf(team)>row.game_id.indexOf(opp)) : (row.home_or_away==='away'));
+    const gp=s.gp||0;
+    const snp = (('off_snp' in s)&&('tm_off_snp' in s)&&s.tm_off_snp>0)? Math.round(s.off_snp/s.tm_off_snp*1000)/10 : null;
+    const rankKey = pcardRankKey();
+    const rank = (gp>0 && s[rankKey]!=null) ? s[rankKey] : null;
+    rows.push({wk:wn, opp, isAway, gp, bye:(gp===0 && !opp), stats:s,
+      fpts: gp>0?pcardFptsFromStats(s):null, snp: gp>0?snp:null, rank});
+  }
+  rows.sort((a,b)=>a.wk-b.wk);
+  return rows;
+}
+// Compute season totals from the weekly rows. Counting stats sum; "longest" takes the max;
+// derived rates (YPC/YPT/CMP%) are recomputed from the summed components; FPTS sums; RANK
+// isn't meaningful as a season total, so it's left blank in the totals row.
+function pcardSeasonTotals(rows, pos){
+  const t={}; // raw summed stats
+  const SUM=['pass_cmp','pass_att','pass_yd','pass_td','pass_int','pass_rz_att','pass_sack',
+    'rush_att','rush_yd','rush_td','rush_rz_att','rec_tgt','rec','rec_yd','rec_td',
+    'rec_air_yd','rec_rz_tgt'];
+  const MAX=['pass_lng','rush_lng','rec_lng'];
+  let fptsSum=0, games=0, snpSum=0, snpN=0;
+  for(const r of rows){
+    if(r.bye || r.gp===0) continue;
+    games++;
+    const s=r.stats||{};
+    for(const k of SUM) t[k]=(t[k]||0)+(s[k]||0);
+    for(const k of MAX) t[k]=Math.max(t[k]||0, s[k]||0);
+    if(r.fpts!=null) fptsSum+=r.fpts;
+    if(r.snp!=null){ snpSum+=r.snp; snpN++; }
+  }
+  if(!games) return null;
+  // Build a synthetic "stats" object and derive a value map via pcardRowValues, then override
+  // the rate fields with totals-based recomputes.
+  const avgSnp = snpN? Math.round(snpSum/snpN*10)/10 : null;
+  const vals = pcardRowValues(pos, t, {fpts: Math.round(fptsSum*10)/10, snp: avgSnp, rank: null});
+  // recompute rates from season totals (pcardRowValues already does this since it divides
+  // summed components), and set pass rating / cmp% cleanly:
+  if(pos==='QB'){
+    vals.p_cmp_pct = t.pass_att>0 ? Math.round(t.pass_cmp/t.pass_att*1000)/10 : null;
+    vals.p_rtg = _passerRating(t);   // season passer rating from totals
+    vals.p_lng = t.pass_lng||null;
+  }
+  vals._games=games;
+  return vals;
+}
+// NFL passer rating from cumulative pass stats (used for the QB season-totals row).
+function _passerRating(t){
+  const att=t.pass_att||0; if(!att) return null;
+  const cmp=t.pass_cmp||0, yd=t.pass_yd||0, td=t.pass_td||0, intc=t.pass_int||0;
+  let a=((cmp/att)-0.3)*5, b=((yd/att)-3)*0.25, c=(td/att)*20, d=2.375-((intc/att)*25);
+  const cl=x=>Math.max(0,Math.min(2.375,x));
+  a=cl(a);b=cl(b);c=cl(c);d=cl(d);
+  return Math.round(((a+b+c+d)/6*100)*10)/10;
+}
+function renderPcardSeason(season, rows, pos){
+  const schema=PCARD_SCHEMA[pos]; if(!schema) return '';
+  // group header row
+  const grpCells = schema.group.map(([label,span])=>`<th class="pcard-grp" colspan="${span}">${label}</th>`).join('<th></th>');
+  const colHead = schema.cols.map((c,i)=>{
+    const prev=schema.cols[i-1];
+    const sep = (prev && prev.grp!==c.grp) ? '<th></th>' : '';
+    return sep+`<th>${c.label}</th>`;
+  }).join('');
+  const bodyRows = rows.map(r=>{
+    if(r.bye){
+      const spans = schema.cols.map((c,i)=>{
+        const prev=schema.cols[i-1]; const sep=(prev&&prev.grp!==c.grp)?'<td></td>':'';
+        return sep+`<td class="pcard-cell bye">–</td>`;
+      }).join('');
+      return `<tr><td class="pcard-wk">${r.wk}</td><td class="pcard-opp">BYE</td>${spans}</tr>`;
+    }
+    const ctx={ fpts:r.fpts, snp:r.snp, rank:r.rank };
+    const vals=pcardRowValues(pos, r.stats, ctx);
+    const cells = schema.cols.map((c,i)=>{
+      const prev=schema.cols[i-1]; const sep=(prev&&prev.grp!==c.grp)?'<td></td>':'';
+      const v=vals[c.key];
+      const cls=c.color?c.color(v):'';
+      return sep+`<td class="pcard-cell ${cls}">${c.fmt?c.fmt(v):(v==null?'–':v)}</td>`;
+    }).join('');
+    const oppTxt = r.opp
+      ? `<span class="pcard-opp-inner">${r.isAway?'<span class="pcard-at">@</span>':'<span class="pcard-vs">vs</span>'}<img src="${NFL_LOGO(r.opp)}" class="pcard-opp-logo" onerror="this.style.display='none'"><span>${r.opp}</span></span>`
+      : '–';
+    return `<tr><td class="pcard-wk">${r.wk}</td><td class="pcard-opp ${r.isAway?'away':'home'}">${oppTxt}</td>${cells}</tr>`;
+  }).join('');
+  // Season totals row (uncolored, bold) — counting stats summed, rates recomputed, LNG maxed.
+  let totalsRow='';
+  const tot=pcardSeasonTotals(rows, pos);
+  if(tot){
+    const tcells = schema.cols.map((c,i)=>{
+      const prev=schema.cols[i-1]; const sep=(prev&&prev.grp!==c.grp)?'<td></td>':'';
+      // RANK has no meaningful season total; show a dash.
+      const v = (c.key==='rank') ? null : tot[c.key];
+      return sep+`<td class="pcard-cell pcard-total-cell">${v==null?'–':(c.fmt?c.fmt(v):v)}</td>`;
+    }).join('');
+    totalsRow = `<tr class="pcard-total-row"><td class="pcard-wk">TOT</td>
+      <td class="pcard-opp">${tot._games}g</td>${tcells}</tr>`;
+  }
+  return `<div class="pcard-season">
+    <div class="pcard-season-title">${season}</div>
+    <div class="pcard-table-scroll"><table class="pcard-table">
+      <thead>
+        <tr><th></th><th></th>${grpCells}</tr>
+        <tr><th class="pcard-th-wk">WK</th><th>OPP</th>${colHead}</tr>
+      </thead>
+      <tbody>${bodyRows}${totalsRow}</tbody>
+    </table></div>
+  </div>`;
+}
+
 function fmtMillions(m){
   if(m==null) return '—';
   // Show up to 2 decimals but drop trailing zeros: 60 → $60M, 40.25 → $40.25M, 12.01 → $12.01M.
@@ -2668,12 +3183,22 @@ function renderTeamAdditions(team){
       <div class="empty-title">No additions data loaded</div>
       <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed to populate Spotrac offseason additions.</div></div>`;
   }
-  const posBadge=(p)=>p?`<span class="add-pos">${p}</span>`:'';
+  // Highlight fantasy-relevant offensive positions (QB/RB/WR/TE) with the same Sleeper-style
+  // colors as the Rankings page; leave defensive/other positions neutral so skill players pop.
+  const FANTASY_POS = {QB:1, RB:1, WR:1, TE:1};
+  const posBadge=(p)=>{
+    if(!p) return '';
+    const up = String(p).toUpperCase().trim();
+    // Some players list multiple (e.g. "RB/WR"); color by the first fantasy pos found.
+    const first = up.split(/[\/,\s]+/).find(x=>FANTASY_POS[x]) || up;
+    if(FANTASY_POS[first]) return `<span class="pos-badge pos-${first}">${p}</span>`;
+    return `<span class="add-pos">${p}</span>`;
+  };
   // Free agency + draft share a layout (player, pos, years, value).
   const signingTable=(rows, kind)=>{
     if(!rows||!rows.length) return `<div class="add-empty">No ${kind==='draft'?'draft picks':'free-agent signings'} listed.</div>`;
     const body=rows.map(r=>`<tr>
-      <td class="add-player">${r.player}</td>
+      <td class="add-player clickable-player" onclick="${pcardOnclick(r.player, r.pos, '')}">${r.player}</td>
       <td>${posBadge(r.pos)}</td>
       <td class="add-num">${r.years!=null?r.years+' yr':'—'}</td>
       <td class="add-num add-val">${fmtMillions(r.value_m)}</td>
@@ -2686,7 +3211,7 @@ function renderTeamAdditions(team){
   const tradeTable=(rows)=>{
     if(!rows||!rows.length) return `<div class="add-empty">No trade acquisitions listed.</div>`;
     const body=rows.map(r=>`<tr>
-      <td class="add-player">${r.player}</td>
+      <td class="add-player clickable-player" onclick="${pcardOnclick(r.player, r.pos, '')}">${r.player}</td>
       <td>${posBadge(r.pos)}</td>
       <td class="add-num add-val">${fmtMillions(r.cap_m)}</td>
       <td class="add-detail">${r.detail||'—'}</td>
@@ -2700,9 +3225,9 @@ function renderTeamAdditions(team){
   const lossTable=(rows)=>{
     if(!rows||!rows.length) return `<div class="add-empty">No free agents lost.</div>`;
     const body=rows.map(r=>`<tr>
-      <td class="add-player">${r.player}</td>
+      <td class="add-player clickable-player" onclick="${pcardOnclick(r.player, r.pos, '')}">${r.player}</td>
       <td>${posBadge(r.pos)}</td>
-      <td class="add-dest">${r.to_team?`→ <b>${r.to_team}</b>`:'—'}</td>
+      <td class="add-dest">${r.to_team?`→ <img src="${NFL_LOGO(r.to_team)}" class="add-dest-logo" onerror="this.style.display='none'"><b>${r.to_team}</b>`:'—'}</td>
       <td class="add-num">${r.years!=null?r.years+' yr':'—'}</td>
       <td class="add-num add-val add-loss-val">${fmtMillions(r.value_m)}</td>
       <td class="add-num add-aav">${fmtMillions(r.aav_m)}</td>
@@ -3123,7 +3648,7 @@ function renderRankings(){
     <td class="c-tier">${tier!=null?`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`:''}</td>
     <td class="fpts">${p.fpts.toFixed(1)}</td>
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
-    <td class="c-player"><div style="display:flex;align-items:center;gap:6px">${imgTag(hsURL(p),'rank-hs','🏈')}<span class="rank-name">${p.name}</span></div></td>
+    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsURL(p),'rank-hs','🏈')}<span class="rank-name">${p.name}</span></div></td>
     <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" onerror="this.style.display='none'"> ${p.team}</td>
     ${contractCells}
     <td class="grp-rush">${cell(p.rushing_attempts)}</td><td class="grp-rush-mid">${cell(p.rushing_yards)}</td><td class="grp-rush-mid">${ypc?`<span class="num">${ypc}</span>`:''}</td><td class="grp-rush-end">${cell(p.rushing_tds)}</td>
@@ -3543,6 +4068,8 @@ renderSidebar();
 // FantasyPros ECR (and any prebuilt projections/history) load automatically without a
 // manual 📦 click. This works when the file is served over http(s); on a bare file://
 // open the browser blocks it (CORS), and we silently fall back to the live Sleeper pull.
+// Close the player card on Escape.
+if(document&&document.addEventListener) document.addEventListener('keydown', e=>{ if(e.key==='Escape' && pcardOpen) closePlayerCard(); });
 (function boot(){
   const hasEmbeddedProj = SEED && Object.keys(SEED).some(t=>SEED[t] && (SEED[t].QB.length||SEED[t].RB.length||SEED[t].WR.length||SEED[t].TE.length));
   const hasEmbeddedECR  = ECR && Object.keys(ECR).some(f=>ECR[f] && Object.keys(ECR[f]).length);
@@ -3661,6 +4188,8 @@ async function loadSleeperPlayers(silent){
       slim[pid] = {
         player_id:pid, name:`${p.first_name||''} ${p.last_name||''}`.trim(),
         pos:p.position, team:p.team||null, age:p.age||null, years_exp:p.years_exp,
+        height:p.height||null, weight:p.weight||null, college:p.college||null,
+        number:(p.number!=null?p.number:null),
       };
     }
     sleeperPlayers = slim;
@@ -4609,6 +5138,17 @@ async function pollDraft(){
   }catch(e){ /* keep polling quietly */ }
 }
 function toggleHideDrafted(){ hideDrafted=!hideDrafted; renderRankings(); }
+
+
+
+
+
+
+
+
+
+
+
 
 
 
