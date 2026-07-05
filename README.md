@@ -24,7 +24,7 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
 - **Roster changes.** A per-team **Roster Changes** tab pulls the offseason's free-agent signings, draft picks, trades, and notable free-agent losses from Spotrac — sorted by contract value — so you can see how a team addressed last season's weaknesses (and where new holes may have opened).
 - **Reference past seasons.** Click any prior season to view real stats, read-only, without touching your working projections. A **week-range slider** lets you filter a player's stats to a stretch of games — e.g. a receiver's hot start before an injury — and see how they compared to the rest of the team over just those weeks.
 - **Copy last season into your working set.** Pull a team's (or a single player's) prior-season line into your current projections as a starting point, with per-team **undo**.
-- **Live draft follow.** Point it at a Sleeper draft and drafted players are marked/hidden on your board in real time.
+- **Live draft follow.** Point it at a Sleeper draft and drafted players are marked/hidden on your board in real time. Also follows your drafted team as you draft them!
 - **Works offline.** Bake a data snapshot into the HTML and open it on your phone — no server, no CORS, fully offline.
 
 ---
