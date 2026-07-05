@@ -1,11 +1,17 @@
 import json, os, subprocess, sys, tempfile, re
 
 test_dir = os.path.dirname(os.path.abspath(__file__))
-bake = os.path.join(test_dir, "..", "bake_seed.py")
-html = os.path.join(test_dir, "..", "triplecrown.html")
+# Deliverables live in /mnt/user-data/outputs; fall back to ../ for local layouts.
+OUT = "/mnt/user-data/outputs"
+bake = os.path.join(OUT, "bake_seed.py")
+html = os.path.join(OUT, "index.html")
+if not os.path.exists(bake):
+    bake = os.path.join(test_dir, "..", "bake_seed.py")
+if not os.path.exists(html):
+    html = os.path.join(test_dir, "..", "index.html")
 
 if not os.path.exists(bake) or not os.path.exists(html):
-    print("SKIP: bake_seed.py or triplecrown.html not found")
+    print("SKIP: bake_seed.py or index.html not found")
     sys.exit(0)
 
 # Build a tiny seed

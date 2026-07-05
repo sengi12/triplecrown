@@ -26,7 +26,7 @@ for cells in rows:
         if v is not None: raw[col].append((code,v))
     teams[code]={"values":vals,"ranks":{}}
 for col,pairs in raw.items():
-    lb=bs._sharp_col_lower_better(col)
+    lb=bs._sharp_off_col_lower_better(col)
     for rank,(code,_v) in enumerate(sorted(pairs,key=lambda cv:cv[1],reverse=not lb),1):
         teams[code]["ranks"][col]=rank
 
@@ -37,6 +37,6 @@ ok &= teams['CLE']['ranks']['EPA/Play']==4                # lowest = last
 ok &= teams['CIN']['ranks']['Sec/Play']==1                # LOWER sec/play is better → CIN 26.5 = 1
 ok &= teams['CLE']['ranks']['Sec/Play']==4                # 30.2 slowest = worst
 ok &= teams['LAR']['values']['Yards Per Play']==6.2
-print("Sec/Play lower-is-better:", bs._sharp_col_lower_better('Sec/Play'))
-print("EPA/Play lower-is-better:", bs._sharp_col_lower_better('EPA/Play'))
+print("Sec/Play lower-is-better:", bs._sharp_off_col_lower_better('Sec/Play'))
+print("EPA/Play lower-is-better:", bs._sharp_off_col_lower_better('EPA/Play'))
 print("RESULT:","PASS" if ok else "FAIL")

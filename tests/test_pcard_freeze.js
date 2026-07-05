@@ -1,0 +1,11 @@
+const fs=require('fs');
+const html=fs.readFileSync('/mnt/user-data/outputs/index.html','utf8');
+let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
+console.log('=== WK + OPP columns frozen (sticky) ===');
+chk(/\.pcard-table th:nth-child\(1\),\.pcard-table td:nth-child\(1\)\{position:sticky;left:0/.test(html),'col 1 (WK) sticky left:0');
+chk(/\.pcard-table th:nth-child\(2\),\.pcard-table td:nth-child\(2\)\{position:sticky;left:34px/.test(html),'col 2 (OPP) sticky left:34px');
+chk(/thead th:nth-child\(1\)\{z-index:4;\}/.test(html),'WK header above both axes');
+chk(/thead th:nth-child\(2\)\{z-index:4;\}/.test(html),'OPP header above both axes');
+chk(html.includes('box-shadow:1px 0 0 var(--border)'),'divider after frozen pair');
+chk(html.includes('border-spacing:0'),'border-spacing 0 for exact offsets');
+console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

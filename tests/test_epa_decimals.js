@@ -1,0 +1,20 @@
+const path=require('path');
+const elStore={};
+function mkEl(id){if(!elStore[id])elStore[id]={innerHTML:'',style:{},value:'',classList:{add(){},remove(){},toggle(){}},setAttribute(){},getAttribute(){return '';},appendChild(){},querySelectorAll:()=>[],addEventListener(){}};return elStore[id];}
+global.document={getElementById:(id)=>mkEl(id),querySelector:()=>null,querySelectorAll:()=>[],createElement:()=>({style:{},appendChild(){}}),body:{}};
+global.window={};global.Chart=function(){return{destroy(){}}};global.confirm=()=>true;global.btoa=s=>s;global.FileReader=function(){};global.Range=function(){};global.AbortController=class{constructor(){this.signal={}}abort(){}};
+const code=require('fs').readFileSync(path.join(__dirname,'check.js'),'utf8');
+const f=new Function(code+'return {fmtSharpVal};')().fmtSharpVal;
+let pass=0,total=0;const t=(got,want,l)=>{total++;const p=got===want;if(p)pass++;console.log((p?'  PASS':'  FAIL')+': '+l+' → '+got+(p?'':' (want '+want+')'));};
+console.log('=== EPA/small-magnitude values show 2 decimals ===');
+t(f(0.19,false),'0.19','EPA 0.19 keeps 2dp');
+t(f(-0.05,false),'-0.05','EPA -0.05 keeps 2dp');
+t(f(0.2,false),'0.20','EPA 0.2 shows 0.20');
+console.log('=== larger values stay 1 decimal ===');
+t(f(6.2,false),'6.2','yards/play 6.2');
+t(f(2.8,false),'2.8','points/drive 2.8');
+t(f(64,false),'64','plays 64 integer');
+console.log('=== percentages unaffected ===');
+t(f(28.5,true),'28.5%','rate 28.5%');
+t(f(70,true),'70%','rate 70%');
+console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

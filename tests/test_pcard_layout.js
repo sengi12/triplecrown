@@ -1,0 +1,11 @@
+const fs=require('fs');
+let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
+const html=fs.readFileSync('/mnt/user-data/outputs/index.html','utf8');
+console.log('=== Player card: fixed hero + single scroll region (close always reachable) ===');
+chk(/\.pcard\{[^}]*flex-direction:column;max-height:calc\(100vh - 48px\)/.test(html),'card is height-capped flex column');
+chk(/\.pcard-hero\{position:relative;flex-shrink:0/.test(html),'hero is non-shrinking fixed child');
+chk(/\.pcard-body\{[^}]*flex:1;min-height:0;overflow-y:auto/.test(html),'body is the sole scroll region');
+chk(/\.pcard-overlay\{[^}]*align-items:center[^}]*\}/.test(html),'overlay centers card (no double-scroll)');
+console.log('=== Black-bar fix: season title not sticky ===');
+chk(!/\.pcard-season-title\{[^}]*position:sticky/.test(html),'season title no longer sticky');
+console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

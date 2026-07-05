@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-bake_seed.py — embed an triplecrown_seed.json straight into index.html.
+bake_seed.py — embed triplecrown_seed.json straight into the TripleCrown app (index.html).
 
 Why: opening the app from a phone (or by double-clicking the file) uses the file://
 protocol, where the browser blocks fetch() for security — so the app can't auto-load
 triplecrown_seed.json next to it. The fix is to bake the seed *into* the HTML as plain
 JavaScript constants. Then there's no network request at all: one self-contained file
-you can email/AirDrop to your phone and open anywhere, fully offline, ECR and all.
+you can email/AirDrop to your phone and open anywhere, fully offline, advanced stats and all.
 
 Usage:
     python bake_seed.py
         → reads ./triplecrown_seed.json + ./index.html,
-          writes ./ff_projections_baked.html
+          writes ./index_baked.html
 
     python bake_seed.py --seed path/to/seed.json --html path/to/app.html --out my_app.html
 
@@ -23,7 +23,7 @@ START = "// ═══ TRIPLECROWN_SEED_START ═══"
 END   = "// ═══ TRIPLECROWN_SEED_END ═══"
 
 def main():
-    ap = argparse.ArgumentParser(description="Embed a seed JSON into the TripleCrown HTML.")
+    ap = argparse.ArgumentParser(description="Embed a seed JSON into the TripleCrown app HTML.")
     ap.add_argument("--seed", default="triplecrown_seed.json", help="seed JSON from build_seed.py")
     ap.add_argument("--html", default="index.html", help="the app HTML to bake into")
     ap.add_argument("--out",  default=None, help="output file (default: <html>_baked.html)")
@@ -103,6 +103,8 @@ def main():
     print(f"  • Sharp advanced stats: {len(sharp)} tables" if sharp else "  • Sharp advanced stats: (none)")
     print(f"  • Strength of schedule: {len(sos)} teams" if sos else "  • Strength of schedule: (none)")
     print(f"  • Coordinators: {len(coordinators)} teams" if coordinators else "  • Coordinators: (none)")
+    print(f"  • Head-coach history: {len(hc_history)} coaches" if hc_history else "  • Head-coach history: (none)")
+    print(f"  • Roster changes (Spotrac): {len(additions)} teams" if additions else "  • Roster changes: (none)")
     print(f"\nOpen {out} on your phone — double-click or AirDrop/email it. No server, no CORS.")
 
 if __name__ == "__main__":
