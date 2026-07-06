@@ -3160,8 +3160,9 @@ const PCARD_SCHEMA = {
       {..._C.fpts, grp:0}, {..._C.snp, grp:0}, {..._C.rank, grp:0},
       {key:'p_att', label:'ATT', grp:1, color:v=>_tri(v,35,25)},
       {key:'p_cmp', label:'CMP', grp:1, color:v=>_tri(v,24,16)},
-      {key:'p_cmp_pct',label:'PCT', grp:1, fmt:v=>v==null?'–':(Number.isInteger(v)?v:v.toFixed(1)), color:v=>_tri(v,68,58)},
+      {key:'p_cmp_pct',label:'PCT', grp:1, fmt: v => v == null ? '–':(typeof v === 'string'?(v.endsWith('%')?v:v+'%'):(Number.isFinite(v)&& Number.isInteger(v)?`${v}%`:`${Number(v).toFixed(1)}%`)),color: v => _tri(v,68,58)},
       {key:'p_yd',  label:'YD',  grp:1, color:v=>_tri(v,275,200)},
+      {key:'p_air_yd',  label:'AIR',  grp:1, color:v=>_tri(v,150,100)},
       {key:'p_lng', label:'LNG', grp:1, color:v=>_tri(v,40,20)},
       {key:'p_rtg', label:'RTG', grp:1, fmt:v=>v==null?'–':(Number.isInteger(v)?v:v.toFixed(1)), color:v=>_tri(v,100,85)},
       {key:'p_rz_att',label:'RZ',  grp:1, color:v=>_tri(v,4,2)},
@@ -3171,6 +3172,7 @@ const PCARD_SCHEMA = {
       {key:'ru_att',label:'ATT', grp:2, color:()=>''},
       {key:'ru_yd', label:'YD',  grp:2, color:v=>_tri(v,40,15)},
       {key:'ru_ypc',label:'YPC', grp:2, fmt:v=>v==null?'–':(Number.isInteger(v)?v:v.toFixed(2)), color:v=>_tri(v,5,3.5)},
+      {key:'ru_rz_att',label:'RZ', grp:2, color:v=>_tri(v,2,1)},
       {key:'ru_td', label:'TD',  grp:2, color:v=>_tri(v,1,0.5)},
     ],
   },
@@ -3261,7 +3263,7 @@ function pcardRowValues(pos, s, ctx){
   if(pos==='QB'){
     const pcmp=s.pass_cmp||0, patt=s.pass_att||0;
     return {...base,
-      p_att: patt, p_cmp: pcmp, p_yd: s.pass_yd||0, p_td: s.pass_td||0, p_int: s.pass_int||0,
+      p_att: patt, p_cmp: pcmp, p_yd: s.pass_yd||0, p_air_yd: s.pass_air_yd||0, p_td: s.pass_td||0, p_int: s.pass_int||0,
       p_cmp_pct: (s.cmp_pct!=null) ? s.cmp_pct : (patt>0 ? Math.round(pcmp/patt*1000)/10 : null),
       p_lng: s.pass_lng!=null ? s.pass_lng : null,
       p_rtg: s.pass_rtg!=null ? s.pass_rtg : null,
@@ -3433,7 +3435,7 @@ function pcardSeasonRows(weekly, pos){
 // isn't meaningful as a season total, so it's left blank in the totals row.
 function pcardSeasonTotals(rows, pos){
   const t={}; // raw summed stats
-  const SUM=['pass_cmp','pass_att','pass_yd','pass_td','pass_int','pass_rz_att','pass_sack',
+  const SUM=['pass_cmp','pass_att','pass_yd', 'pass_air_yd','pass_td','pass_int','pass_rz_att','pass_sack',
     'rush_att','rush_yd','rush_td','rush_rz_att','rec_tgt','rec','rec_yd','rec_td',
     'rec_air_yd','rec_rz_tgt'];
   const MAX=['pass_lng','rush_lng','rec_lng'];
