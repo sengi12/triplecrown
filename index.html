@@ -263,6 +263,10 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
 .rankings-table.grouped .num{font-family:var(--mono);font-size:11px;}
 .rankings-table.grouped .rank-name{font-weight:700;font-size:12px;}
 .c-ecr{font-weight:800;font-family:var(--mono);color:var(--accent);}
+.c-vor{text-align:center;font-family:var(--mono);}
+.vor-val{font-weight:800;font-size:11.5px;}
+.vor-pos{color:#00d4aa;}
+.vor-neg{color:var(--muted);}
 .c-tier .tier-pill{display:inline-block;min-width:17px;padding:1px 5px;border-radius:5px;
   font-size:10px;font-weight:900;color:#0b0e13;}
 /* group accent: a left border + faint tint marks where each stat group starts */
@@ -662,6 +666,20 @@ html,body{max-width:100%;overflow-x:hidden;}
   letter-spacing:.05em;margin:10px 0 4px;}
 .rt-switch-head{font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;
   letter-spacing:.05em;margin:12px 0 5px;}
+/* VONA on-the-clock advisory */
+.vona-box{background:var(--surface2);border:1px solid var(--border);border-radius:10px;
+  padding:10px 12px;margin-bottom:10px;}
+.vona-head{font-size:12px;font-weight:800;margin-bottom:2px;}
+.vona-sub{font-size:11px;color:var(--muted);margin-bottom:8px;}
+.vona-rows{display:flex;flex-direction:column;gap:4px;}
+.vona-row{display:flex;align-items:center;gap:9px;padding:4px 7px;border-radius:7px;background:var(--surface);}
+.vona-row.vona-filled{opacity:.55;}
+.vona-best{font-size:12px;font-weight:700;flex:1;}
+.vona-drop{font-family:var(--mono);font-weight:800;font-size:12px;}
+.vona-hot .vona-drop{color:#ff6b6b;}
+.vona-warm .vona-drop{color:#fbbf24;}
+.vona-cool .vona-drop{color:var(--muted);}
+.vona-legend{font-size:9.5px;color:var(--muted);margin-top:7px;font-style:italic;}
 .rt-switcher{display:flex;flex-wrap:wrap;gap:5px;}
 .rt-teamchip{width:30px;height:30px;border-radius:7px;border:1px solid var(--border);
   background:var(--surface2);color:var(--muted);cursor:pointer;font-size:11px;font-weight:700;}
@@ -734,6 +752,9 @@ html,body{max-width:100%;overflow-x:hidden;}
 <input type="file" id="importFile" accept=".json" style="display:none" onchange="handleImport(event)">
 <input type="file" id="seedFile" accept=".json" style="display:none" onchange="handleSeedLoad(event)">
 <script>
+
+
+
 
 
 
@@ -1036,6 +1057,7 @@ let passingSubTab = 'targets';
 let rushingSubTab = 'carries';
 let pieChart = null;
 let rankSortKey = 'ecr';
+let VOR_BASELINE = {};   // {QB,RB,WR,TE} replacement-level fpts from the last VOR computation
 let rankSortDir = -1;
 let rankFormat = 'half_ppr';   // std | ppr | half_ppr | superflex | dynasty (matches default 0.5 PPR scoring)
 let rankPosFilter = 'ALL';
@@ -2941,12 +2963,113 @@ function buildPlayerList(){
     p.ecr=ecrFor(p);
     p.ecr_tier=ecrTierFor(p);
     p.ypc = (p.rushing_attempts>0) ? p.rushing_yards/p.rushing_attempts : 0;
+    // Attach ADP (all formats) from the base seed entry so VONA can model who others draft.
+    const be = basePlayerEntry(p.team, p.pos, p.name, p.player_id);
+    p.adp = be && be.adp!=null ? be.adp : 999;
+    p.adp_ppr = be && be.adp_ppr!=null ? be.adp_ppr : 999;
+    p.adp_half_ppr = be && be.adp_half_ppr!=null ? be.adp_half_ppr : 999;
+    p.adp_2qb = be && be.adp_2qb!=null ? be.adp_2qb : 999;
     const c=contractEntry(p);
     p.age = c && c.age!=null ? c.age : null;
     p.apy = c && c.apy!=null ? c.apy : null;
     p.fa  = c && c.fa!=null ? c.fa : null;
   });
+  computeVOR(list);   // scarcity-aware value over replacement (last-starter baseline)
   return list;
+}
+// Find a player's base seed entry (for ADP etc.) by id first, then name+team.
+function basePlayerEntry(team, pos, name, pid){
+  const pool=[...getBase(team,'QB'),...getBase(team,'RB'),...getBase(team,'WR'),...getBase(team,'TE')];
+  if(pid){ const byId=pool.find(x=>x.player_id===pid); if(byId) return byId; }
+  return pool.find(x=>x.name===name) || null;
+}
+// Return the ADP value appropriate to the active scoring format (used for VONA's "who will
+// be drafted before my next pick" model). Superflex/2QB formats boost QBs, so use adp_2qb;
+// PPR/half/standard pick the matching column; falls back to the generic adp.
+function adpFor(p){
+  const f=rankFormat;
+  let v;
+  if(f==='superflex'||f==='dynasty_superflex') v=p.adp_2qb;
+  else if(f==='ppr') v=p.adp_ppr;
+  else if(f==='half_ppr') v=p.adp_half_ppr;
+  else if(f==='std') v=p.adp;
+  else v=p.adp_ppr;   // dynasty (non-SF) → ppr board as the closest proxy
+  if(v==null||v>=999){ v=p.adp_ppr!=null&&p.adp_ppr<999?p.adp_ppr:(p.adp!=null&&p.adp<999?p.adp:999); }
+  return v;
+}
+// ── Value Over Replacement (VOR) ────────────────────────────────────────────
+// Rank players by points ABOVE a replacement-level player at their position, rather than by
+// raw points — which is what makes scoring settings and league shape matter realistically
+// (an elite RB's edge over a waiver RB is bigger than an elite QB's edge over a waiver QB).
+//
+// Replacement level = the "last starter" at each position across the whole league, derived
+// from the actual roster shape: starters at each position PLUS the share of FLEX/superflex
+// demand that lands on that position given YOUR projections. We simulate filling every team's
+// starting lineup from the projection pool (best-first), and the last player consumed at each
+// position sets that position's baseline. Everything is scoring-independent because it all
+// flows from each player's fpts under the current scoring.
+function leagueStarterCounts(){
+  // Determine per-position starter demand across the league from the linked draft/lineup
+  // (falls back to a standard 12-team lineup).
+  const teams = (draftMeta && draftMeta.settings && draftMeta.settings.teams) || 12;
+  // base starter slots per team
+  const base = { QB:1, RB:2, WR:2, TE:1 };
+  let flex=0, superflex=0;
+  if(draftLineup && draftLineup.length){
+    const c={QB:0,RB:0,WR:0,TE:0,FLEX:0,SUPER_FLEX:0};
+    draftLineup.forEach(s=>{ if(c[s]!=null) c[s]++; else if(s==='WRRB_FLEX'||s==='REC_FLEX') c.FLEX++; });
+    base.QB=c.QB||1; base.RB=c.RB||2; base.WR=c.WR||2; base.TE=c.TE||1;
+    flex=c.FLEX; superflex=c.SUPER_FLEX;
+  } else {
+    flex=1;  // standard single flex default
+  }
+  return { teams, base, flex, superflex };
+}
+function computeVOR(list){
+  if(!list||!list.length) return;
+  const { teams, base, flex, superflex } = leagueStarterCounts();
+  // Pools sorted by projected points (best first) per position.
+  const byPos={QB:[],RB:[],WR:[],TE:[]};
+  list.forEach(p=>{ if(byPos[p.pos]) byPos[p.pos].push(p); });
+  Object.keys(byPos).forEach(k=>byPos[k].sort((a,b)=>b.fpts-a.fpts));
+  // Fill dedicated starter slots first.
+  const used={QB:base.QB*teams, RB:base.RB*teams, WR:base.WR*teams, TE:base.TE*teams};
+  // FLEX demand (RB/WR/TE): consume best remaining across those positions.
+  let flexLeft=flex*teams;
+  const flexIdx={RB:used.RB, WR:used.WR, TE:used.TE};
+  while(flexLeft>0){
+    // pick the position whose NEXT available player has the highest fpts
+    let bestPos=null, bestVal=-Infinity;
+    ['RB','WR','TE'].forEach(pos=>{
+      const nx=byPos[pos][flexIdx[pos]];
+      if(nx && nx.fpts>bestVal){ bestVal=nx.fpts; bestPos=pos; }
+    });
+    if(!bestPos) break;
+    flexIdx[bestPos]++; used[bestPos]++; flexLeft--;
+  }
+  // SUPERFLEX demand (QB/RB/WR/TE): usually consumed by QBs.
+  let sfLeft=superflex*teams;
+  const sfIdx={QB:used.QB, RB:used.RB, WR:used.WR, TE:used.TE};
+  while(sfLeft>0){
+    let bestPos=null, bestVal=-Infinity;
+    ['QB','RB','WR','TE'].forEach(pos=>{
+      const nx=byPos[pos][sfIdx[pos]];
+      if(nx && nx.fpts>bestVal){ bestVal=nx.fpts; bestPos=pos; }
+    });
+    if(!bestPos) break;
+    sfIdx[bestPos]++; used[bestPos]++; sfLeft--;
+  }
+  // Replacement baseline per position = fpts of the LAST starter consumed (index used-1),
+  // clamped to the pool. Store both the baseline and each player's VOR.
+  const baseline={};
+  ['QB','RB','WR','TE'].forEach(pos=>{
+    const pool=byPos[pos];
+    if(!pool.length){ baseline[pos]=0; return; }
+    const idx=Math.min(Math.max(used[pos]-1,0), pool.length-1);
+    baseline[pos]=pool[idx].fpts;
+  });
+  VOR_BASELINE=baseline;
+  list.forEach(p=>{ p.vor = (baseline[p.pos]!=null) ? +(p.fpts-baseline[p.pos]).toFixed(1) : 0; });
 }
 
 // ── Advanced Stats (Warren Sharp) ───────────────────────────────────────────
@@ -3910,7 +4033,7 @@ function renderRankings(){
       }
     }
   }
-  const totalCols = 3 + 3 + (isDynasty?3:0) + 4 + 4 + 4;  // ecr,tier,fpts,pos,name,tm + groups
+  const totalCols = 3 + 4 + (isDynasty?3:0) + 4 + 4 + 4;  // ecr,tier,fpts,vor,pos,name,tm + groups
   const pickLineRow=(round)=>`<tr class="rank-pickline"><td colspan="${totalCols}">
     <span class="rank-pickline-lbl">▸ Your pick ${round==1?'(next up)':`#${round}`} projected here</span></td></tr>`;
 
@@ -3942,6 +4065,7 @@ function renderRankings(){
     <td class="c-ecr">${ecrTxt}</td>
     <td class="c-tier">${tier!=null?`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`:''}</td>
     <td class="fpts">${p.fpts.toFixed(1)}</td>
+    <td class="c-vor"><span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${p.vor>0?'+':''}${p.vor!=null?p.vor.toFixed(1):'—'}</span></td>
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
     <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsURL(p),'rank-hs','🏈')}<span class="rank-name">${p.name}</span></div></td>
     <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" onerror="this.style.display='none'"> ${p.team}</td>
@@ -4013,7 +4137,7 @@ function renderRankings(){
       </div>
       <div class="rank-table-wrap" style="max-height:calc(100vh - 320px)">
       <table class="rankings-table grouped"><thead><tr>
-        ${th('ecr','ECR','','c-ecr')}${th('ecr_tier','TIER','','c-tier')}${th('fpts','FPTS','')}
+        ${th('ecr','ECR','','c-ecr')}${th('ecr_tier','TIER','','c-tier')}${th('fpts','FPTS','')}${th('vor','VOR','','c-vor')}
         ${th('pos','POS','')}${th('name','PLAYER','','c-player')}${th('team','TM','','c-team')}
         ${isDynasty?`${th('age','AGE','','c-age',true)}${th('apy','APY','','c-apy')}${th('fa','FA','','c-fa')}`:''}
         ${th('rushing_attempts','RUSH','ATT','grp-rush',true)}${th('rushing_yards','RUSH','YDS','grp-rush-mid')}${th('ypc','YPC','','grp-rush-mid')}${th('rushing_tds','RUSH','TDS','grp-rush-end')}
@@ -5804,10 +5928,36 @@ function renderTrackerPanel(viewSlot){
     const mine = s===mySlot ? ' rt-mine' : '';
     switcher+=`<button class="rt-teamchip ${active}${mine}" onclick="viewTrackerSlot(${s})" title="${slotOwnerName(s)}">${s===mySlot?'★ ':''}${s}</button>`;
   }
+  // VONA advisory — only for MY roster, only while a live draft is running.
+  let advisory='';
+  if(viewSlot===mySlot && draftId){
+    const v=computeVONA();
+    if(v && v.rows.length){
+      const fmtP=(p)=> p ? `${p.name.split(' ').slice(-1)[0]} (${p.pos})` : '—';
+      const chips=v.rows.slice(0,4).map((r,i)=>{
+        const cls = r.dropoff>=25?'vona-hot':r.dropoff>=12?'vona-warm':'vona-cool';
+        const star = (i===0 && r.need) ? '★ ' : '';
+        return `<div class="vona-row ${r.need?'':'vona-filled'} ${cls}">
+          <span class="rt-slot ${slotClass(r.pos)}">${r.pos}</span>
+          <span class="vona-best">${fmtP(r.bestNow)}</span>
+          <span class="vona-drop" title="VOR drop-off before your next pick">${star}−${r.dropoff}</span>
+        </div>`;
+      }).join('');
+      const rec=v.rows[0];
+      const recTxt = rec ? `Biggest value cliff: <b>${rec.pos}</b> (−${rec.dropoff} before your next pick${v.gap>0?`, in ${v.gap}`:''})` : '';
+      advisory=`<div class="vona-box">
+        <div class="vona-head">📊 On-the-clock advice ${v.onClock?'· <b style="color:var(--accent)">YOU\u2019RE UP</b> (drop to your next pick)':`· next pick in ${v.gap}`}</div>
+        <div class="vona-sub">${recTxt}</div>
+        <div class="vona-rows">${chips}</div>
+        <div class="vona-legend">VOR drop = value you lose at each position if you wait. Bigger = draft now.</div>
+      </div>`;
+    }
+  }
   return `<div class="rt-panel">
     <div class="rt-panel-head">
       <span class="rt-panel-title">${viewSlot===mySlot?'★ My roster':slotOwnerName(viewSlot)} <span class="rt-panel-slot">· seat ${viewSlot}</span></span>
     </div>
+    ${advisory}
     ${needsLine}
     <div class="rt-lineup">${rows}${benchRows}</div>
     <div class="rt-switch-head">View another team</div>
@@ -5875,6 +6025,80 @@ function picksUntilMyTurn(slot){
   }
   return null;
 }
+// ── VONA: Value Over Next Available ─────────────────────────────────────────
+// The on-the-clock advisory. For each position, compares the best player available NOW
+// (by your VOR) against the best you're PROJECTED to have at your next pick — modeling that
+// the picks between now and then take the top undrafted players by market ADP. A big drop
+// means that position's value is about to evaporate: draft it now. Small drop means you can
+// safely wait and address it on the way back.
+//   dropoff[pos] = bestNowVOR - bestAtNextTurnVOR
+// Returns a sorted array (biggest drop first) of { pos, bestNow, bestNext, dropoff, need }.
+function computeVONA(){
+  if(mySlot==null) return null;
+  let gap = picksUntilMyTurn(mySlot);              // picks between now and my next turn
+  if(gap==null) return null;
+  const onClock = (gap===0);
+  // If I'm ON THE CLOCK right now (gap 0), the useful question is what I'd lose by NOT taking
+  // a position this pick — i.e. the drop to my pick AFTER this one. So look one full turn ahead.
+  if(onClock){
+    const ups = myUpcomingPickNumbers(mySlot);     // [thisPick, nextPick, ...] global numbers
+    if(ups.length>=2){ gap = ups[1]-ups[0]-1; }     // players taken between this pick and the next
+    else gap = 0;
+  }
+  const list = buildPlayerList();
+  // available = undrafted
+  const avail = list.filter(p=>!draftedIds[p.player_id]);
+  if(!avail.length) return null;
+  // Model who'll be gone before my next pick. The best predictor of what other drafters do is
+  // market ADP — but ADP can be sparse/absent in the offseason (all 999). Detect that and fall
+  // back to VOR order (the highest-value players are the ones that get taken). We also blend:
+  // sort by ADP when it's real, else by VOR descending.
+  const realAdpCount = avail.filter(p=>adpFor(p)<999).length;
+  const useAdp = realAdpCount >= Math.max(5, gap);   // enough ADP data to be meaningful
+  const draftOrder = [...avail].sort((a,b)=>{
+    if(useAdp){
+      const da=adpFor(a), db=adpFor(b);
+      if(da!==db) return da-db;
+      return (b.vor||0)-(a.vor||0);   // tie-break equal ADP by value
+    }
+    return (b.vor||0)-(a.vor||0);     // no ADP → pure value order
+  });
+  const goneSet = new Set(draftOrder.slice(0, gap).map(p=>p.player_id||p.name));
+  const afterAvail = avail.filter(p=>!goneSet.has(p.player_id||p.name));
+  // my open starting needs (positions with an unfilled starter slot)
+  const myPicks = (draftPicksBySlot[mySlot])||[];
+  const { needs } = fillLineup(myPicks);
+  const needPos = new Set();
+  needs.forEach(s=>{
+    if(s==='QB'||s==='RB'||s==='WR'||s==='TE') needPos.add(s);
+    else if(s==='FLEX'||s==='WRRB_FLEX'||s==='REC_FLEX'){ needPos.add('RB'); needPos.add('WR'); needPos.add('TE'); }
+    else if(s==='SUPER_FLEX'){ needPos.add('QB'); needPos.add('RB'); needPos.add('WR'); needPos.add('TE'); }
+  });
+  const bestBy=(pool,pos)=> pool.filter(p=>p.pos===pos).sort((a,b)=>(b.vor||0)-(a.vor||0))[0]||null;
+  const out=[];
+  ['QB','RB','WR','TE'].forEach(pos=>{
+    const now=bestBy(avail,pos);
+    const next=bestBy(afterAvail,pos);
+    if(!now) return;
+    const bestNowVOR = now.vor||0;
+    const bestNextVOR = next ? (next.vor||0) : 0;
+    out.push({
+      pos,
+      bestNow: now, bestNext: next,
+      dropoff: +(bestNowVOR - bestNextVOR).toFixed(1),
+      need: needPos.size===0 ? true : needPos.has(pos),   // if all starters filled, everything is "bench value"
+    });
+  });
+  // Prioritize positions you still need, then by biggest drop-off.
+  out.sort((a,b)=>{
+    if(a.need!==b.need) return a.need? -1:1;
+    return b.dropoff-a.dropoff;
+  });
+  return { gap, rows: out, usedAdp: useAdp, onClock };
+}
+
+
+
 
 
 
