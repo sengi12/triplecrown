@@ -715,7 +715,7 @@ html,body{max-width:100%;overflow-x:hidden;}
   <div class="logo">Triple<span>Crown</span></div>
   <div class="scenario-bar">
     <span class="scenario-label">Scenario:</span>
-    <input class="scenario-name" id="scenarioName" type="text" value="2026 Projections" maxlength="50"/>
+    <input class="scenario-name" id="scenarioName" type="text" value="${PROJ_SEASON} Projections" maxlength="50"/>
   </div>
   <div class="progress-wrap">
     <div class="progress-text" id="progressText">0/32 teams</div>
@@ -753,56 +753,6 @@ html,body{max-width:100%;overflow-x:hidden;}
 <input type="file" id="importFile" accept=".json" style="display:none" onchange="handleImport(event)">
 <input type="file" id="seedFile" accept=".json" style="display:none" onchange="handleSeedLoad(event)">
 <script>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 // ═══ TRIPLECROWN_SEED_START ═══ (build_seed.py / bake_seed.py replace this whole block)
 // SEED_DATA intentionally empty — TripleCrown pulls 2026 projections live from Sleeper
@@ -1023,6 +973,7 @@ const PCOLORS = ['#4a9eff','#00d4aa','#ff6b35','#c084fc','#fbbf24','#f472b6',
 const SEASON_GAMES = 17;
 const TARGET_RATE = 0.95; // targets ≈ pass attempts × this
 const PROJ_SEASON = (typeof SEED_SEASON!=='undefined') ? SEED_SEASON : 2026;
+document.getElementById('scenarioName').value = PROJ_SEASON + ' Projections';
 
 function hsURL(p){
   if(!p) return '';
@@ -3778,9 +3729,18 @@ function coordCarryCard(sideWord, c, ks, cardFor){
 }
 
 // League-wide advanced view: pick a table, see all 32 teams, sortable by any column.
-function showSharpLeague(target){
+async function showSharpLeague(target){
   rankScope='all'; currentPhase='AdvancedLeague';
   if(target==='sos'){ sharpTable='__sos__'; sharpSortCol=null; sharpSortDir=1; }
+  if(sharpTable==='__sos__' && !_sosSchedLoaded && !_sosSchedLoading){
+    _sosSchedLoading = true;
+    try {
+      await Promise.all(Object.keys(SOS).map(code => fetchTeamSchedule(code)));
+      _sosSchedLoaded = true;
+    } finally {
+      _sosSchedLoading = false;
+    }
+  }
   renderContent();
 }
 function setSharpTable(key){ sharpTable=key; sharpSortCol=null; renderSharpLeague(); }
@@ -3937,7 +3897,7 @@ function renderSOSView(){
     <line x1="${padL}" y1="${midY}" x2="${padL+plotW}" y2="${midY}" class="sos-midline"/>
     <text x="${padL+plotW-4}" y="${midY-6}" class="sos-band-lbl" text-anchor="end">EASIER SLATE ▲</text>
     <text x="${padL+plotW-4}" y="${midY+16}" class="sos-band-lbl" text-anchor="end">HARDER SLATE ▼</text>
-    <text x="${padL}" y="34" class="sos-title">2026 NFL Strength of Schedule</text>
+    <text x="${padL}" y="34" class="sos-title">${PROJ_SEASON} NFL Strength of Schedule</text>
     <text x="${padL}" y="48" class="sos-sub">${subline}</text>
     ${logos}
   </svg>`;
@@ -3960,11 +3920,11 @@ function renderSOSView(){
     <td class="sr-td ${sharpRankClass(e.rank)}"><span class="sr-td-val">${ordinal(e.rank)}</span></td>
     <td class="sr-td"><span class="sr-td-val">${e.win_total!=null?e.win_total:'—'}</span></td>
   </tr>`).join('');
-  return `<div class="sr-desc">2026 strength of schedule, based on Vegas win totals. Rank 1 = easiest slate, ${n} = hardest.</div>
+  return `<div class="sr-desc">${PROJ_SEASON} strength of schedule, based on Vegas win totals. Rank 1 = easiest slate, ${n} = hardest.</div>
     <div class="card sos-card">${chart}</div>
     <div class="card" style="padding:0;overflow-x:auto;margin-top:12px">
       <table class="sr-league-table sos-table"><thead><tr>
-        <th class="sr-th-team">TEAM</th>${th('rank','2026 SOS RANK')}${th('win_total','VEGAS WIN TOTAL')}
+        <th class="sr-th-team">TEAM</th>${th('rank',PROJ_SEASON+' SOS RANK')}${th('win_total','VEGAS WIN TOTAL')}
       </tr></thead><tbody>${body}</tbody></table>
     </div>
     <div class="sr-source">Source: sharpfootballanalysis.com — for informational use.</div>`;
@@ -4386,7 +4346,7 @@ function buildOutput(){
     const totalPassTDs=teamPassTDs(state);
     state.qbs.forEach(qb=>{
       const bp=getBase(team,'QB').find(x=>x.name===qb.name)||getBase(team,'QB')[0]||{};
-      out.push({season:'2025',analyst_name:analyst,name:qb.name,fantasy_position:'QB',team,
+      out.push({season:PROJ_SEASON,analyst_name:analyst,name:qb.name,fantasy_position:'QB',team,
         headshot:qb.headshot||null,slug:qb.slug||null,
         passing_yards:Math.round(qb.passing_yards),passing_touchdowns:Math.round(qb.passing_tds),
         passing_attempts:Math.round(qb.passing_attempts),passing_completions:Math.round(qb.passing_completions),
@@ -4396,7 +4356,7 @@ function buildOutput(){
         rushing_yards_per_attempt:qb.qb_rush_attempts>0?+(qb.qb_rush_yards/qb.qb_rush_attempts).toFixed(2):0,
         receptions:0,receiving_yards:0,receiving_touchdowns:0,receiving_targets:'0',receiving_yards_per_reception:0,
         fumbles_lost:0,adp:bp.adp||999,adp_ppr:bp.adp_ppr||999,adp_half_ppr:bp.adp_half_ppr||999,adp_2qb:bp.adp_2qb||999,
-        bye_week:bp.bye_week||null,risk:bp.risk||5,upside:bp.upside||5});
+        bye_week:bp.bye_week||null});
     });
     if(state.passing_shares){
       state.passing_shares.forEach(p=>{
@@ -4409,12 +4369,12 @@ function buildOutput(){
         const rec={receptions:projRec,receiving_yards:projYds,receiving_touchdowns:projTDs,
           receiving_targets:projTgts.toString(),receiving_yards_per_reception:projRec>0?+(projYds/projRec).toFixed(2):0};
         if(ex>=0) Object.assign(out[ex],rec);
-        else out.push({season:'2025',analyst_name:analyst,name:p.name,fantasy_position:p.pos,team,
+        else out.push({season:PROJ_SEASON,analyst_name:analyst,name:p.name,fantasy_position:p.pos,team,
           headshot:p.headshot||null,slug:p.slug||null,
           passing_yards:0,passing_touchdowns:0,passing_attempts:0,passing_completions:0,interceptions_thrown:0,
           rushing_yards:bp.rushing_yards||0,rushing_touchdowns:0,rushing_attempts:bp.rushing_attempts||0,rushing_yards_per_attempt:0,
           ...rec,fumbles_lost:0,adp:bp.adp||999,adp_ppr:bp.adp_ppr||999,adp_half_ppr:bp.adp_half_ppr||999,adp_2qb:bp.adp_2qb||999,
-          bye_week:bp.bye_week||null,risk:bp.risk||5,upside:bp.upside||5});
+          bye_week:bp.bye_week||null});
       });
     }
     if(state.rushing.shares){
@@ -4429,12 +4389,12 @@ function buildOutput(){
         const rush={rushing_yards:yds,rushing_touchdowns:tds,rushing_attempts:att,
           rushing_yards_per_attempt:att>0?+(yds/att).toFixed(2):0};
         if(ex>=0) Object.assign(out[ex],rush);
-        else out.push({season:'2025',analyst_name:analyst,name:p.name,fantasy_position:'RB',team,
+        else out.push({season:PROJ_SEASON,analyst_name:analyst,name:p.name,fantasy_position:'RB',team,
           headshot:p.headshot||null,slug:p.slug||null,
           passing_yards:0,passing_touchdowns:0,passing_attempts:0,passing_completions:0,interceptions_thrown:0,
           ...rush,receptions:0,receiving_yards:0,receiving_touchdowns:0,receiving_targets:'0',receiving_yards_per_reception:0,
           fumbles_lost:0,adp:bp.adp||999,adp_ppr:bp.adp_ppr||999,adp_half_ppr:bp.adp_half_ppr||999,adp_2qb:bp.adp_2qb||999,
-          bye_week:bp.bye_week||null,risk:bp.risk||5,upside:bp.upside||5});
+          bye_week:bp.bye_week||null});
       });
     }
   });
