@@ -176,6 +176,12 @@ The project ships with a regression suite (Node + Python) covering the projectio
 
 ---
 
+## To Do
+- [ ] Add KTC values / graphs for Dynasty
+- [ ] Add FantasyPros-esque feature to sync league and compare rosters
+- [ ] Add Coaching History (HCs, OCs, DCs)
+- [ ] Re-organize Warren Sharp Adv Stats
+
 ## License
 
 TripleCrown is licensed under the **[PolyForm Noncommercial License 1.0.0](./LICENSE)**.

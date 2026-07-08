@@ -11,6 +11,11 @@
 DIR="$(cd "$(dirname "$0")" && pwd)"
 HTML="${1:-$DIR/../index.html}"
 
+# Tee ALL output to a log file so results can be inspected/grepped after a single run
+# (no need to run the suite twice). Overwritten each run; latest results always at this path.
+LOG="$DIR/last_run.log"
+exec > >(tee "$LOG") 2>&1
+
 if [ ! -f "$HTML" ]; then
   echo "ERROR: HTML file not found: $HTML"
   echo "Usage: ./run_tests.sh [path/../index.html]"
@@ -106,6 +111,8 @@ run_js_test test_rounding        "Sleeper scoring float-noise rounding (clean 10
 run_js_test test_pick_applies_scoring "Linking a league applies its full scoring & switches format"
 run_js_test test_dynasty_sf       "Dynasty-superflex format detection (dynasty_2qb) + graceful ECR fallback"
 run_js_test test_sharp_app       "Advanced Stats (Warren Sharp): per-team cards, league-wide sortable table, rank badges"
+run_js_test test_sumer          "Advanced (SumerSports) rankings: season gating, name lookup, data-driven columns, formatting"
+run_js_test test_college_card   "Rookie college player cards (ESPN gamelog): data-driven cols, AVG→YPC, opponent logos, team tag, totals"
 run_js_test test_epa_decimals   "EPA/Play shows 2 decimals for small-magnitude values; larger stats stay 1dp"
 run_js_test test_sharp_edge      "Advanced Stats edge cases (empty seed, missing team, no-team fallback)"
 run_js_test test_sos_defense    "SOS chart/table, defensive tables, Offense-Defense toggle, % on rate cols, full team names"
@@ -154,7 +161,7 @@ echo ""
 PYBUILD="$DIR/../build_seed.py"
 if [ -f "$DIR/test_flacco_split.py" ] && [ -f "$PYBUILD" ]; then
   echo "═══ Python tests ═══"
-  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_scrape test_sos_scrape test_spotrac_scrape test_roster_truth; do
+  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_scrape test_sos_scrape test_spotrac_scrape test_roster_truth test_sumer_scrape; do
     [ -f "$DIR/${pyt}.py" ] || continue
     output=$(python3 "$DIR/${pyt}.py" 2>&1) || true
     p=$(echo "$output" | grep -ciE "PASS" || true)
@@ -183,5 +190,6 @@ else
   echo "  ✗ ${FAIL} FAILED, ${PASS} passed, ${TOTAL} assertions, ${SKIP} skipped"
 fi
 echo "═══════════════════════════════════════════════════"
+echo "  (full output logged to $LOG)"
 
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

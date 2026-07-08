@@ -71,6 +71,7 @@ def fetch(url, label):
 # player_name, player_team_id, player_position_id and player_age. We fetch each format
 # and build {format: {playerKey: {rank_ecr, tier, age}}} for the app to consume.
 import re as _re
+from html.parser import HTMLParser as _HTMLParser
 FANTASYPROS_URLS = {
     "half_ppr":  "https://www.fantasypros.com/nfl/rankings/half-point-ppr-cheatsheets.php",
     "ppr":       "https://www.fantasypros.com/nfl/rankings/ppr-cheatsheets.php",
@@ -297,6 +298,175 @@ def build_contracts(refresh):
     return contracts
 
 
+# ── SumerSports advanced per-player stats (sumersports.com) ──────────────────────
+# Per-player advanced metrics by position (QB/RB/WR/TE), for the "Advanced (SumerSports)"
+# toggle on the rankings page. The pages are server-side rendered (the stat <table> is in the
+# raw HTML), so stdlib fetch + a light parse is enough — but the browser can't reach them
+# (no CORS), so we scrape here and bake the result into the seed as SEED_SUMER.
+#
+# Reference-season only: these stats exist for completed seasons (2022-2025 as of now), so we
+# bake one table per position PER SEASON. The app shows them only when viewing a matching
+# reference season (never on the 2026 projections, never for seasons without data).
+SUMER_POS_URLS = {
+    "QB": "https://sumersports.com/players/quarterback/",
+    "RB": "https://sumersports.com/players/running-back/",
+    "WR": "https://sumersports.com/players/wide-receiver/",
+    "TE": "https://sumersports.com/players/tight-end/",
+}
+# Seasons to bundle. SumerSports only publishes 2022+ (subject to change); missing seasons
+# are simply omitted so the app never shows an empty tab for them.
+SUMER_SEASONS = [2025, 2024, 2023, 2022]
+# Columns that identify the row rather than being a stat — dropped from the stat set. The rest
+# (whatever the page shows for that position) become the ordered `columns` the app renders.
+SUMER_META_COLS = {"Player Name", "Season", "Team", "Position", "Rank"}
+# Refinement splits (When Leading / Red Zone / vs. Man / box counts / …). We only bake the base
+# (overall) table for now, but keep the option map here so specific refinements can be added
+# later by passing `refinement=` through fetch_sumer_table (URL: ?refinement=<value>&season=YYYY).
+SUMER_REFINEMENTS = {
+    "QB": ["when_leading", "when_trailing", "red_zone", "non_garbage_time", "late_down",
+           "play_action", "pure_dropback", "vs_man", "vs_zone", "blitzed", "pressured"],
+    "WR": ["when_leading", "when_trailing", "red_zone", "non_garbage_time", "late_down",
+           "vs_man", "vs_zone"],
+    "TE": ["when_leading", "when_trailing", "red_zone", "non_garbage_time", "late_down",
+           "vs_man", "vs_zone"],
+    "RB": ["when_leading", "when_trailing", "red_zone", "non_garbage_time", "late_down",
+           "early_downs", "zone-concepts", "duo-concepts", "gap-concepts",
+           "under-7-box-defenders", "7-box-defenders", "8-plus-box-defenders"],
+}
+
+class _SumerTableParser(_HTMLParser):
+    """Parse the first <table> on a SumerSports page into (headers, rows-of-cells).
+    Uses stdlib html.parser so `<thead>` isn't mistaken for a `<th>` (a naive regex on
+    `<th[^>]*>` matches `<thead>` too)."""
+    def __init__(self):
+        super().__init__()
+        self._in_table = False
+        self._cell = False
+        self._buf = ""
+        self._row = []
+        self.headers = []
+        self.rows = []
+    def handle_starttag(self, tag, attrs):
+        if tag == "table":
+            self._in_table = True
+        elif self._in_table and tag in ("th", "td"):
+            self._cell = True
+            self._buf = ""
+        elif self._in_table and tag == "tr":
+            self._row = []
+    def handle_endtag(self, tag):
+        if tag == "table":
+            self._in_table = False
+        elif self._in_table and tag in ("th", "td"):
+            self._cell = False
+            self._row.append(self._buf.strip())
+        elif self._in_table and tag == "tr" and self._row:
+            if not self.headers and any(self._row):
+                self.headers = self._row[:]
+            else:
+                self.rows.append(self._row[:])
+    def handle_data(self, data):
+        if self._cell:
+            self._buf += data
+
+def _sumer_num(raw):
+    """Parse a SumerSports cell into a number when possible (strip commas + %), else the
+    trimmed string. Percentages keep their numeric magnitude (e.g. '35.82%' -> 35.82)."""
+    s = (raw or "").strip()
+    if not s or s in ("-", "—", "N/A"):
+        return None
+    t = s.replace(",", "").replace("%", "").strip()
+    try:
+        return float(t) if ("." in t or "%" in s) else int(t)
+    except ValueError:
+        return s
+
+def fetch_sumer_table(pos, season, refresh, refinement=None):
+    """Fetch one SumerSports position page for a season → a data-driven table dict:
+        {columns:[...], pct_cols:[...], players:{nameKey:{values:[...], team, rank}}}
+    or None if the page couldn't be fetched/parsed. `refinement` is reserved for future
+    splits (red_zone, when_trailing, …); None = the base overall table."""
+    tag = refinement or "base"
+    cache_path = os.path.join(CACHE_DIR, "sumer", f"{pos}_{season}_{tag}.json")
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    if not refresh and os.path.exists(cache_path):
+        print(f"  → sumer {pos} {season} ({tag}): using cache")
+        with open(cache_path) as f:
+            return json.load(f)
+    url = SUMER_POS_URLS[pos] + f"?season={season}"
+    if refinement:
+        url += f"&refinement={refinement}"
+    print(f"  → fetching sumer {pos} {season} ({tag}) ...", end="", flush=True)
+    try:
+        req = request.Request(url, headers=UA)
+        with request.urlopen(req, timeout=60) as r:
+            html = r.read().decode("utf-8", "replace")
+    except Exception as e:
+        print(f" FAILED ({type(e).__name__}: {e})")
+        return None
+    p = _SumerTableParser()
+    p.feed(html)
+    if not p.headers or not p.rows:
+        print(" no table")
+        return None
+    headers = p.headers
+    # Stat columns = every header that isn't a row-identifier. Preserve page order.
+    stat_cols = [h for h in headers if h not in SUMER_META_COLS]
+    name_i = headers.index("Player Name") if "Player Name" in headers else 0
+    season_i = headers.index("Season") if "Season" in headers else None
+    stat_idx = [headers.index(h) for h in stat_cols]
+    players = {}
+    pct = set()
+    for cells in p.rows:
+        if len(cells) < len(headers):
+            continue
+        # Row season may differ from the requested one on some pages — trust the request.
+        raw_name = cells[name_i]
+        m = _re.match(r"^\s*(\d+)\.\s*", raw_name)
+        rank = int(m.group(1)) if m else None
+        name = _re.sub(r"^\s*\d+\.\s*", "", raw_name).strip()
+        key = _norm_name(name)
+        if not key:
+            continue
+        values = []
+        for ci, col in zip(stat_idx, stat_cols):
+            raw = cells[ci]
+            if "%" in raw:
+                pct.add(col)
+            values.append(_sumer_num(raw))
+        players[key] = {"values": values, "team": "", "rank": rank}
+    if not players:
+        print(" empty")
+        return None
+    out = {"columns": stat_cols, "pct_cols": sorted(pct), "players": players}
+    print(f" ok ({len(players)} players, {len(stat_cols)} cols)")
+    with open(cache_path, "w") as f:
+        json.dump(out, f)
+    return out
+
+def build_sumer(refresh):
+    """Build {season: {POS: {columns, pct_cols, players}}} across QB/RB/WR/TE for each
+    completed season we can fetch. Seasons/positions that fail are simply omitted so the
+    app never renders an empty advanced tab."""
+    sumer = {}
+    for season in SUMER_SEASONS:
+        per_pos = {}
+        for pos in SUMER_POS_URLS:
+            tbl = fetch_sumer_table(pos, season, refresh)
+            if tbl and tbl.get("players"):
+                per_pos[pos] = tbl
+        if per_pos:
+            sumer[str(season)] = per_pos
+    seasons = sorted(sumer.keys(), reverse=True)
+    if not sumer:
+        print("\n  ⚠ WARNING: no SumerSports data fetched — the Advanced (SumerSports) toggle")
+        print("    won't appear. (No internet, site blocked, or layout changed.)")
+    else:
+        per = ", ".join(f"{s}:{sum(len(t['players']) for t in sumer[s].values())}" for s in seasons)
+        print(f"\n  SumerSports loaded — players per season: {per}")
+    return sumer
+
+
 # ── Warren Sharp advanced offensive stats (sharpfootballanalysis.com) ────────────
 # Read-only reference tables for the "Advanced Stats" tab: previous-season offensive
 # metrics + pace/personnel/tendencies/O-line, plus league ranks per column. These pages
@@ -304,11 +474,11 @@ def build_contracts(refresh):
 # team code. Like ECR/contracts, they can't be fetched from the browser (no CORS), so we
 # scrape here and bake the result into the seed as SEED_SHARP.
 SHARP_URLS = {
-    "offensive_line": "https://www.sharpfootballanalysis.com/stats-nfl/nfl-offensive-line-stats/",
     "offense":        "https://www.sharpfootballanalysis.com/stats-nfl/nfl-offensive-stats/",
-    "pace":           "https://www.sharpfootballanalysis.com/stats-nfl/nfl-team-pace-stats/",
-    "personnel":      "https://www.sharpfootballanalysis.com/stats-nfl/nfl-offensive-personnel/",
+    "offensive_line": "https://www.sharpfootballanalysis.com/stats-nfl/nfl-offensive-line-stats/",
     "tendencies":     "https://www.sharpfootballanalysis.com/stats-nfl/nfl-offensive-tendencies-stats/",
+    "personnel":      "https://www.sharpfootballanalysis.com/stats-nfl/nfl-offensive-personnel/",
+    "pace":           "https://www.sharpfootballanalysis.com/stats-nfl/nfl-team-pace-stats/",
     # Defensive tables (lesser priority, categorized separately in the app)
     "defensive":            "https://www.sharpfootballanalysis.com/stats-nfl/nfl-defensive-stats/",
     "defensive_line":       "https://www.sharpfootballanalysis.com/stats-nfl/nfl-defensive-line-stats/",
@@ -318,23 +488,29 @@ SHARP_URLS = {
 }
 # Friendly titles for the app's table toggle.
 SHARP_TITLES = {
-    "offensive_line": "Offensive Line",
     "offense":        "Offensive Metrics",
-    "pace":           "Pace",
-    "personnel":      "Personnel",
+    "offensive_line": "Offensive Line",
     "tendencies":     "Tendencies",
-    "defensive_line":       "Defensive Line",
+    "personnel":      "Personnel",
+    "pace":           "Pace",
     "defensive":            "Defensive Metrics",
+    "defensive_line":       "Defensive Line",
     "defensive_tendencies": "Defensive Tendencies",
     "coverage_schemes":     "Coverage Schemes",
     "coverage_by_position": "Coverage by Position",
 }
 # Which side of the ball each table belongs to (for the app's Offense/Defense grouping).
 SHARP_CATEGORY = {
-    "offensive_line":"offense", "offense":"offense", "pace":"offense",
-    "personnel":"offense", "tendencies":"offense",
-    "defensive":"defense", "defensive_line":"defense", "defensive_tendencies":"defense",
-    "coverage_schemes":"defense", "coverage_by_position":"defense",
+    "offense":"offense",
+    "offensive_line":"offense",
+    "tendencies":"offense",
+    "personnel":"offense",
+    "pace":"offense",
+    "defensive":"defense",
+    "defensive_line":"defense",
+    "defensive_tendencies":"defense",
+    "coverage_schemes":"defense",
+    "coverage_by_position":"defense",
 }
 # Team NICKNAME (as shown in most Sharp stat tables) → our team code.
 NICK_TO_CODE = {
@@ -1514,6 +1690,10 @@ def main():
     print("\n  New Additions (Spotrac free agency / draft / trades)")
     additions = build_additions(args.season, args.refresh)
 
+    print("\n  SumerSports advanced per-player stats (QB/RB/WR/TE, per season)")
+    sumer = build_sumer(args.refresh)
+    sumer_seasons = sorted(sumer.keys(), reverse=True)
+
     # Keep only seasons that actually returned stats (older years may be unavailable).
     nonempty_seasons = sorted([s for s, idx in stats_by_season.items() if idx], reverse=True)
     if len(nonempty_seasons) < len(stats_by_season):
@@ -1540,6 +1720,8 @@ def main():
         f.write(f"const SEED_ADDITIONS = {json.dumps(additions, separators=(',',':'))};\n")
         f.write(f"const SEED_HC_PLAYCALLERS = {json.dumps(HC_PLAYCALLERS, separators=(',',':'))};\n")
         f.write(f"const SEED_SHARP_SEASON = {args.season-1};\n")
+        f.write(f"const SEED_SUMER = {json.dumps(sumer, separators=(',',':'))};\n")
+        f.write(f"const SEED_SUMER_SEASONS = {json.dumps(sumer_seasons)};\n")
     # Also emit the raw seed json for reference
     with open("triplecrown_seed.json", "w") as f:
         json.dump({"season": args.season, "builder_version": BUILDER_VERSION,
@@ -1548,7 +1730,8 @@ def main():
                    "contracts": contracts, "sharp": sharp, "sos": sos,
                    "team_names": CODE_TO_FULLNAME, "coordinators": coordinators,
                    "hc_history": hc_history, "additions": additions,
-                   "hc_playcallers": HC_PLAYCALLERS, "sharp_season": args.season-1}, f, indent=2)
+                   "hc_playcallers": HC_PLAYCALLERS, "sharp_season": args.season-1,
+                   "sumer": sumer, "sumer_seasons": sumer_seasons}, f, indent=2)
 
     nplayers = sum(len(seed[t][p]) for t in seed for p in seed[t])
     print(f"\nDone (builder {BUILDER_VERSION}). {nplayers} players across {len(TEAMS)} teams.")

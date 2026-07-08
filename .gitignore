@@ -3,3 +3,5 @@ triplecrown_cache
 *.tgz
 __pycache__
 projections
+# Test runner output log
+tests/last_run.log
