@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TripleCrown — Projection Builder</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+@@CSS_PARTIALS@@
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="logo">Triple<span>Crown</span></div>
+  <div class="scenario-bar">
+    <span class="scenario-label">Scenario:</span>
+    <input class="scenario-name" id="scenarioName" type="text" value="${PROJ_SEASON} Projections" maxlength="50"/>
+  </div>
+  <div class="progress-wrap">
+    <div class="progress-text" id="progressText">0/32 teams</div>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+  </div>
+  <div class="hdr-right">
+    <button class="btn btn-ghost" onclick="refreshFromSleeper()" title="Pull live projections from Sleeper">↻ Sleeper</button>
+    <button class="btn btn-ghost" onclick="triggerSeedLoad()" title="Load triplecrown_seed.json from build_seed.py">📦 Seed</button>
+    <button class="btn btn-ghost" onclick="triggerImport()">⬆ Import</button>
+    <button class="btn btn-ghost" onclick="exportJSON()">⬇ JSON</button>
+    <button class="btn btn-ghost" onclick="exportCSV()">⬇ CSV</button>
+    <button class="btn btn-ghost" onclick="showFullRankings()">🏆 Full Rankings</button>
+    <button class="btn btn-ghost" onclick="resetAll()">↺ Reset</button>
+  </div>
+</div>
+<div class="season-bar">
+  <span class="season-label">Season</span>
+  <div id="seasonTabs" style="display:flex;gap:6px;flex-shrink:0;"></div>
+  <div class="season-spacer"></div>
+  <span class="sleeper-badge">data: Sleeper</span>
+</div>
+<div class="main">
+  <div class="sidebar" id="sidebar"></div>
+  <div class="content" id="content">
+    <div class="empty">
+      <div class="empty-icon">🏈</div>
+      <div class="empty-title">Select a team to begin</div>
+      <div class="empty-body">Work through each team's QB output, receiver target &amp; TD share,
+      and RB rushing distribution. Use the season tabs to reference prior years, ↻ Sleeper to pull
+      live projections, 📦 Seed to load a prebuilt file, and 🏆 Rankings to see fantasy scores and follow a live draft.</div>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+<input type="file" id="importFile" accept=".json" style="display:none" onchange="handleImport(event)">
+<input type="file" id="seedFile" accept=".json" style="display:none" onchange="handleSeedLoad(event)">
+<script>
+@@JS_PARTIALS@@
+</script>
+</body>
+</html>

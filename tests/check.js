@@ -280,6 +280,10 @@ let rankAdvanced = false; // rankings "Adv. Metrics" (SumerSports) view — swap
 // Per-position minimum-volume filter for the Adv. Metrics view (0 = no filter). Rate stats
 // like YPRR / EPADrop are noisy on tiny samples, so a floor keeps the board meaningful.
 let sumerMin = { QB:0, WRTE:0, RB:0 };   // QB→min Plays, WRTE→min Routes Run, RB→min Rushes
+// "Situational" split for the Adv. Metrics view (null = Standard/overall). When set to a
+// SumerSports refinement value (e.g. 'red_zone'), the stat columns read that game-situation
+// split instead of the overall season table. Only ever applied on the Adv. Metrics view.
+let sumerRefinement = null;
 // ═════════════════════════════════════════════════════════════════════════════
 // Session persistence (localStorage) — auto-saves your working projections so they
 // survive a refresh/close. Only the EDITABLE state is stored (working projections,
@@ -2125,9 +2129,52 @@ function sumerSeasonKey(){
   return (activeSeason!=='proj' && SUMER && SUMER[activeSeason]) ? String(activeSeason) : null;
 }
 function sumerAvailable(){ return !!sumerSeasonKey(); }
+// Ordered list + display labels for the "Situational" refinement dropdown (SumerSports splits).
+// Order is the sequence shown in the dropdown; only the refinements a position actually tracks
+// (present in its baked `refinements` map) are offered.
+const SUMER_REFINE_ORDER = ["when_leading","when_trailing","red_zone","non_garbage_time",
+  "late_down","early_downs","play_action","pure_dropback","vs_man","vs_zone","blitzed","pressured",
+  "zone-concepts","duo-concepts","gap-concepts","under-7-box-defenders","7-box-defenders","8-plus-box-defenders"];
+const SUMER_REFINE_LABELS = {
+  when_leading:"When Leading", when_trailing:"When Trailing", red_zone:"Red Zone",
+  non_garbage_time:"Non-Garbage Time", late_down:"Late Downs", early_downs:"Early Downs",
+  play_action:"Play Action", pure_dropback:"Pure Dropback", vs_man:"vs. Man",
+  vs_zone:"vs. Zone", blitzed:"When Blitzed", pressured:"When Pressured",
+  "zone-concepts":"Zone Concepts", "duo-concepts":"Duo Concepts", "gap-concepts":"Gap Concepts",
+  "under-7-box-defenders":"Light Box (<7)", "7-box-defenders":"7-Man Box", "8-plus-box-defenders":"Stacked Box (8+)",
+};
+// The situational refinements available for the current position filter. Single position → its
+// own baked refinements; ALL/FLEX → the refinements COMMON to every position in view (so a split
+// the dropdown offers is guaranteed to exist for each row's position). Ordered per SUMER_REFINE_ORDER.
+function sumerRefinementsForFilter(){
+  const k=sumerSeasonKey(); if(!k) return [];
+  const s=SUMER[k]; const pos=rankPosFilter;
+  const refsOf=(pp)=> (s[pp] && s[pp].refinements) ? Object.keys(s[pp].refinements) : [];
+  let avail;
+  if(pos==='QB'||pos==='RB'||pos==='WR'||pos==='TE'){
+    avail=new Set(refsOf(pos));
+  } else {
+    const posList=(pos==='FLEX')?['RB','WR','TE']:['QB','RB','WR','TE'];
+    const lists=posList.map(refsOf).filter(l=>l.length);
+    if(!lists.length) return [];
+    let common=lists[0].slice();
+    for(let i=1;i<lists.length;i++) common=common.filter(x=>lists[i].includes(x));
+    avail=new Set(common);
+  }
+  return SUMER_REFINE_ORDER.filter(r=>avail.has(r));
+}
 function sumerTableFor(pos){
   const k=sumerSeasonKey(); if(!k) return null;
-  const s=SUMER[k]; return (s && s[pos]) ? s[pos] : null;
+  const s=SUMER[k]; const base=(s && s[pos]) ? s[pos] : null;
+  if(!base) return null;
+  // Situational view: swap in the selected refinement's table (its own columns/pct/players),
+  // falling back to the base table when this position doesn't track the chosen split.
+  if(sumerRefinement && base.refinements && base.refinements[sumerRefinement]){
+    const r=base.refinements[sumerRefinement];
+    return {columns:r.columns||base.columns, pct_cols:r.pct_cols||base.pct_cols,
+            players:r.players, refinements:base.refinements};
+  }
+  return base;
 }
 // A player's Sumer row for the active reference season (matched by normalized name), or null.
 function sumerEntry(p){
@@ -2139,14 +2186,13 @@ function sumerEntry(p){
 // (so mixed-position rows never render blank columns for a stat a position doesn't track).
 function sumerColumnsForFilter(){
   const k=sumerSeasonKey(); if(!k) return null;
-  const s=SUMER[k];
   const pos=rankPosFilter;
   if(pos==='QB'||pos==='RB'||pos==='WR'||pos==='TE'){
-    const t=s[pos]; return t ? {cols:t.columns.slice(), pct:new Set(t.pct_cols||[]), single:pos} : null;
+    const t=sumerTableFor(pos); return t ? {cols:t.columns.slice(), pct:new Set(t.pct_cols||[]), single:pos} : null;
   }
   // ALL / FLEX → intersection of columns across the positions in view (FLEX excludes QB).
   const posList = (pos==='FLEX') ? ['RB','WR','TE'] : ['QB','RB','WR','TE'];
-  const tables = posList.map(pp=>s[pp]).filter(Boolean);
+  const tables = posList.map(pp=>sumerTableFor(pp)).filter(Boolean);
   if(!tables.length) return null;
   let common = tables[0].columns.slice();
   const pct = new Set();
@@ -2187,6 +2233,24 @@ function fmtAPY(v){
   if(v>=1e6) return '$'+(v/1e6).toFixed(1).replace(/\.0$/,'')+'M';
   if(v>=1e3) return '$'+Math.round(v/1e3)+'K';
   return '$'+v;
+}
+// A compact contract band for the top of a player card, built from the baked OverTheCap data
+// (already loaded in CONTRACTS — no network). Shows APY, derived length, total value, guaranteed
+// and free-agency year. Returns '' when we have no contract for the player (rendered nowhere).
+function contractSummaryHTML(name){
+  if(!hasContracts() || !name) return '';
+  const c = CONTRACTS[ecrNormName(name)];
+  if(!c || (c.apy==null && c.total==null && c.fa==null)) return '';
+  const parts=[];
+  if(c.apy!=null) parts.push(`<span><b>${fmtAPY(c.apy)}</b><span class="muted">/yr</span></span>`);
+  const sub=[];
+  const yrs = (c.total!=null && c.apy>0) ? Math.round(c.total/c.apy) : null;
+  if(yrs) sub.push(`${yrs} yr${yrs===1?'':'s'}`);
+  if(c.total!=null) sub.push(`${fmtAPY(c.total)} total`);
+  if(sub.length) parts.push(`<span class="muted">${sub.join(' · ')}</span>`);
+  if(c.gtd!=null) parts.push(`<span class="muted">${fmtAPY(c.gtd)} gtd</span>`);
+  if(c.fa!=null) parts.push(`<span class="pcard-ct-fa">FA <b>${c.fa}</b></span>`);
+  return `<div class="pcard-contract"><span class="pcard-contract-lbl">CONTRACT</span>${parts.join('')}</div>`;
 }
 
 function buildPlayerList(){
@@ -2656,6 +2720,7 @@ function renderPlayerCardShell(pid, pos, team){
   const metaItem=(label,val)=> (val==null||val==='–'||val==='') ?
     `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val pcard-meta-empty">–</span></div>` :
     `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val">${val}</span></div>`;
+  const contractBand = contractSummaryHTML(name);
   const html = `
     <div class="pcard" onclick="event.stopPropagation()">
       <div class="pcard-hero" style="${heroStyle}">
@@ -2671,9 +2736,12 @@ function renderPlayerCardShell(pid, pos, team){
             ${metaItem('EXP', exp)}
             ${metaItem('COLLEGE', college)}
           </div>
+          <div class="pcard-hero-draft" id="pcardHeroDraft"></div>
         </div>
         <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">✕</button>
       </div>
+      ${contractBand}
+      <div class="pcard-tabs" id="pcardTabs"></div>
       <div class="pcard-body" id="pcardBody">
         <div class="pcard-loading">Loading game logs…</div>
       </div>
@@ -2687,36 +2755,79 @@ function renderPlayerCardShell(pid, pos, team){
     document.body.appendChild(div);
   }
 }
+// Player-card stats source: 'pro' (NFL career — Sleeper weekly for skill players, ESPN nfl for
+// defense/other) or 'college' (ESPN college gamelog). Rookies default to college (no NFL games
+// yet); every player can toggle to see their college production. The college feed is only fetched
+// when that tab is opened, so it adds no cost to the default view.
+let pcardState = null;        // {pid, posc, team, isSkill}
+let pcardStatsMode = 'pro';
+let pcardToken = 0;           // bumped on each source switch so a slow in-flight load can't clobber a newer one
 async function loadPlayerCardData(pid, pos, team){
   const posc = pos || (sleeperPlayers&&sleeperPlayers[pid]&&sleeperPlayers[pid].pos) || 'QB';
+  const isSkill = ['QB','RB','WR','TE'].includes(posc);
+  pcardState = {pid, posc, team, isSkill};
+  // Rookies have no NFL game log yet → default to their college stats; everyone else to the pros.
+  pcardStatsMode = isRookiePlayer(pid) ? 'college' : 'pro';
+  loadPcardDraft(pid);            // draft summary fills the hero banner (independent of stat source)
+  renderPcardStatTabs();
+  pcardLoadStats(pcardStatsMode);
+}
+// Fetch the player's draft summary once and drop it into the hero banner at the top of the card,
+// independent of which stats source is showing. Uses the cached ESPN athlete-id + draft lookups.
+async function loadPcardDraft(pid){
+  try{
+    const aid = await resolveEspnAthleteId(pid, (sleeperPlayers[pid]||{}).name);
+    const info = aid ? await fetchEspnDraftInfo(aid) : null;
+    const el = document.getElementById('pcardHeroDraft');
+    if(el && pcardOpen) el.innerHTML = espnDraftHero(info);
+  }catch(e){ /* leave the banner blank on failure */ }
+}
+// Render (or refresh) the NFL / College source toggle above the card body.
+function renderPcardStatTabs(){
+  const el = document.getElementById('pcardTabs');
+  if(!el || !pcardState) return;
+  const tab=(mode,label)=>`<button class="pcard-tab ${pcardStatsMode===mode?'active':''}" onclick="setPcardStatsMode('${mode}')">${label}</button>`;
+  el.innerHTML = tab('pro','NFL') + tab('college','College');
+}
+// Switch the card's stat source and reload the body from the matching feed.
+function setPcardStatsMode(mode){
+  if(!pcardState || pcardStatsMode===mode) return;
+  pcardStatsMode = mode;
+  renderPcardStatTabs();
+  pcardLoadStats(mode);
+}
+// Dispatch the body render for the chosen source. College always uses the ESPN college gamelog;
+// pro uses Sleeper weekly (skill) or the ESPN nfl gamelog (defense / other).
+function pcardLoadStats(mode){
+  if(!pcardState) return;
+  pcardToken++;
+  const {pid, posc, isSkill} = pcardState;
   const body = document.getElementById('pcardBody');
   if(!body) return;
-  // Rookies haven't played an NFL game yet → show their ESPN college game logs instead.
-  // Skill rookies use offensive schema; defensive rookies use the defensive schema.
-  const isSkill = ['QB','RB','WR','TE'].includes(posc);
-  if(isRookiePlayer(pid)){
+  if(mode==='college'){
     return loadEspnCardData(pid, posc, body, {league:'college-football', def:!isSkill});
-  }
-  // Defensive / kicker veterans have no Sleeper-history schema → pull their NFL game logs from ESPN.
-  if(isSkill && !PCARD_SCHEMA[posc]){
-    body.innerHTML = `<div class="pcard-loading">Game logs aren't available for ${posc}.</div>`;
-    return;
   }
   if(!isSkill){
     return loadEspnCardData(pid, posc, body, {league:'nfl', def:true});
   }
+  if(!PCARD_SCHEMA[posc]){
+    body.innerHTML = `<div class="pcard-loading">Game logs aren't available for ${posc}.</div>`;
+    return;
+  }
+  return loadSleeperCareerStats(pid, posc, body);
+}
+// NFL career game logs for a skill player, from Sleeper's per-season weekly data.
+async function loadSleeperCareerStats(pid, posc, body){
+  const tok = pcardToken;
   const seasons = (HISTORY_SEASONS&&HISTORY_SEASONS.length)? HISTORY_SEASONS.slice() : [];
   if(!seasons.length){
     body.innerHTML = `<div class="pcard-loading">No historical seasons loaded. Load a 📦 seed with history to see game logs.</div>`;
     return;
   }
-  // Draft info shows on EVERY card — resolve the ESPN athlete id (Sleeper's espn_id, else name
-  // search) and fetch draft round/pick in parallel with the game logs, then prepend the banner.
-  const draftPromise = resolveEspnAthleteId(pid, (sleeperPlayers[pid]||{}).name)
-    .then(aid => aid ? fetchEspnDraftInfo(aid) : null).catch(()=>null);
+  body.innerHTML = `<div class="pcard-loading">Loading game logs…</div>`;
   try{
     const perSeason = await Promise.all(seasons.map(async s=>({season:s, weekly:await fetchPlayerWeekly(pid, s)})));
-    if(!pcardOpen) return; // user closed it while loading
+    if(!pcardOpen || tok!==pcardToken) return; // closed or switched sources while loading
     let out='';
     for(const {season, weekly} of perSeason){
       const rows = pcardSeasonRows(weekly, posc);
@@ -2724,12 +2835,10 @@ async function loadPlayerCardData(pid, pos, team){
       out += renderPcardSeason(season, rows, posc);
     }
     if(!out) out = `<div class="pcard-loading">No game data found for this player.</div>`;
-    const draftInfo = await draftPromise;
-    out = espnDraftLine(draftInfo) + out;   // draft round/pick (or "Undrafted") at the top
     out += `<div class="pcard-src">Per-game stats via Sleeper · FPTS uses your current scoring settings.</div>`;
-    body.innerHTML = out;
+    if(pcardOpen && tok===pcardToken) body.innerHTML = out;
   }catch(e){
-    body.innerHTML = `<div class="pcard-loading">Couldn't load game logs. Check your connection and try again.</div>`;
+    if(pcardOpen && tok===pcardToken) body.innerHTML = `<div class="pcard-loading">Couldn't load game logs. Check your connection and try again.</div>`;
   }
 }
 // Build sorted weekly rows for one season from Sleeper weekly data.
@@ -2932,17 +3041,17 @@ async function fetchEspnDraftInfo(aid){
   }catch(e){ espnDraftCache[aid] = null; }
   return espnDraftCache[aid];
 }
-// A compact "Drafted 2026 · Rd 5, Pk 161 · KC" line (or "Undrafted") for the player card.
-function espnDraftLine(info){
+// Compact draft summary for the card's top banner (hero): "DRAFT 2021 · Rd 1, Pk 5 · CIN" or
+// "Undrafted". Returns '' when the draft lookup was unavailable (network) so nothing shows.
+function espnDraftHero(info){
   if(!info) return '';
   if(info.undrafted){
-    return `<div class="pcard-draft"><span class="pcard-draft-lbl">DRAFT</span><span class="muted">Undrafted</span></div>`;
+    return `<span class="pcard-hero-draft-line"><span class="pcard-draft-lbl">DRAFT</span><span class="muted">Undrafted</span></span>`;
   }
-  const logo = info.teamCode ? `<img src="${NFL_LOGO(info.teamCode)}" class="pcard-season-logo" onerror="this.style.display='none'">` : '';
-  const team = info.teamCode ? `${logo}${info.teamCode}` : '';
-  return `<div class="pcard-draft"><span class="pcard-draft-lbl">DRAFT</span>
-    <span>${info.year} · <span class="muted">Round</span> ${info.round}, <span class="muted">Pick</span> ${info.selection}</span>
-    ${team?`<span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px">${team}</span>`:''}</div>`;
+  const logo = info.teamCode ? `<img src="${NFL_LOGO(info.teamCode)}" class="pcard-hero-draft-logo" onerror="this.style.display='none'">` : '';
+  const team = info.teamCode ? `<span class="pcard-hero-draft-team">${logo}${info.teamCode}</span>` : '';
+  return `<span class="pcard-hero-draft-line"><span class="pcard-draft-lbl">DRAFT</span>
+    <span>${info.year} · <span class="muted">Rd</span> ${info.round}, <span class="muted">Pk</span> ${info.selection}</span>${team}</span>`;
 }
 // Which stat group a gamelog column belongs to (from ESPN's machine `name`). Defensive players
 // reuse the same INT/SACK/FUM names as offense but with opposite meaning, so `def` picks the
@@ -3002,11 +3111,25 @@ function espnColor(name, v, def){
   }
 }
 function cfbNum(s){ const n=parseFloat(String(s==null?'':s).replace(/,/g,'')); return isNaN(n)?null:n; }
+// Map an ESPN postseason event note to a compact playoff-round abbreviation (NFL). Regular-season
+// events have no note (→ null, week number shown). AFC/NFC come straight from the note text, so
+// the conference is always correct without needing the team's division.
+function playoffAbbr(note){
+  const n = note||'';
+  if(!n) return null;
+  if(/super\s*bowl/i.test(n)) return 'SB';
+  if(/wild\s*card/i.test(n)) return 'WC';
+  if(/divisional/i.test(n)) return 'DIV';
+  if(/afc\s*champ/i.test(n)) return 'AFC';
+  if(/nfc\s*champ/i.test(n)) return 'NFC';
+  return null;
+}
 // Load + render a player's ESPN game logs into the card body. Rookies use their college-football
 // gamelog; defensive veterans use the nfl gamelog. Both are data-driven — ESPN returns the right
 // columns per position, so we render whatever it gives (offense or defense), colored per game.
 async function loadEspnCardData(pid, posc, body, opts){
   opts = opts||{};
+  const tok = pcardToken;
   const league = opts.league || 'college-football';
   const def = !!opts.def;
   body.innerHTML = `<div class="pcard-loading">Loading ${league==='nfl'?'':'college '}game logs…</div>`;
@@ -3018,10 +3141,7 @@ async function loadEspnCardData(pid, posc, body, opts){
   }
   pcardApplyEspnHeadshot(aid, league);   // fill in an ESPN photo if Sleeper had none
   try{
-    const [base, draftInfo] = await Promise.all([
-      fetchEspnGamelog(aid, league, null),   // default → latest season + season list
-      fetchEspnDraftInfo(aid),               // draft round/pick (shown at the top of the card)
-    ]);
+    const base = await fetchEspnGamelog(aid, league, null);   // default → latest season + season list
     if(!pcardOpen) return;
     let seasons = [];
     for(const f of (base.filters||[])){ if(f.name==='season') seasons=(f.options||[]).map(o=>o.value); }
@@ -3040,9 +3160,8 @@ async function loadEspnCardData(pid, posc, body, opts){
       out += renderEspnSeason(season, gl, {def, league});
     }
     if(!out) out = `<div class="pcard-loading">No game data found for this player.</div>`;
-    out = espnDraftLine(draftInfo) + out;   // draft round/pick banner at the top
     out += `<div class="pcard-src">${league==='nfl'?'NFL':'College'} per-game stats via ESPN${def?'':' · AVG shown as YPC'}.</div>`;
-    body.innerHTML = out;
+    if(pcardOpen && tok===pcardToken) body.innerHTML = out;
   }catch(e){
     body.innerHTML = `<div class="pcard-loading">Couldn't load game logs. Check your connection and try again.</div>`;
   }
@@ -3067,7 +3186,7 @@ function renderEspnSeason(season, gl, opts){
     const opp=e.opponent||{};
     const tm=e.team||{};
     if(tm.abbreviation) teamMap.set(tm.abbreviation, tm.logo||(tm.id?(league==='nfl'?`https://a.espncdn.com/i/teamlogos/nfl/500/${(tm.abbreviation||'').toLowerCase()}.png`:NCAA_LOGO(tm.id)):''));
-    rows.push({ week:e.week, date:e.gameDate, atVs:e.atVs||'vs',
+    rows.push({ week:e.week, date:e.gameDate, atVs:e.atVs||'vs', note:e.eventNote||'',
       oppAbbr:opp.abbreviation||'', oppLogo:opp.logo||(opp.id?NCAA_LOGO(opp.id):''), stats });
   });
   if(!rows.length) return '';
@@ -3095,7 +3214,11 @@ function renderEspnSeason(season, gl, opts){
     const oppTxt = r.oppAbbr
       ? `<span class="pcard-opp-inner">${r.atVs==='@'?'<span class="pcard-at">@</span>':'<span class="pcard-vs">vs</span>'}${r.oppLogo?`<img src="${r.oppLogo}" class="pcard-opp-logo" onerror="this.style.display='none'">`:''}<span>${r.oppAbbr}</span></span>`
       : '–';
-    return `<tr><td class="pcard-wk">${r.week!=null?r.week:''}</td><td class="pcard-opp ${r.atVs==='@'?'away':'home'}">${oppTxt}</td>${cells}</tr>`;
+    // Postseason games show the round (WC/DIV/AFC/NFC/SB) in place of a week number.
+    const po = playoffAbbr(r.note);
+    const wkCell = po ? `<td class="pcard-wk pcard-wk-po" title="${r.note}">${po}</td>`
+                      : `<td class="pcard-wk">${r.week!=null?r.week:''}</td>`;
+    return `<tr>${wkCell}<td class="pcard-opp ${r.atVs==='@'?'away':'home'}">${oppTxt}</td>${cells}</tr>`;
   }).join('');
   // Season totals row (uncolored, like the NFL cards).
   const totals = cfbSeasonTotals(rows, names);
@@ -3814,6 +3937,9 @@ function renderRankings(){
   // columns are replaced by this season's Sumer metrics for the selected position (or the
   // columns common to the positions in view for ALL/FLEX). Falls back to standard silently
   // if there's no usable column set.
+  // Situational split is only meaningful on the Adv. Metrics view; drop a stale selection that
+  // the current season/position no longer offers so the table + dropdown stay in sync.
+  if(rankAdvanced && sumerRefinement && !sumerRefinementsForFilter().includes(sumerRefinement)) sumerRefinement=null;
   const sumerView = (rankAdvanced && sumerAvailable()) ? sumerColumnsForFilter() : null;
   const advActive = !!sumerView;
   const nStatCols = advActive ? sumerView.cols.length : 12;
@@ -3926,8 +4052,18 @@ function renderRankings(){
        </div>`
     : '';
   const minInputs = advActive ? sumerMinInputs() : '';
+  // "Situational" dropdown — Adv. Metrics only. Swaps the stat columns to a SumerSports
+  // game-situation split (Red Zone / When Trailing / vs. Man / box counts …) for the season.
+  const refineOpts = advActive ? sumerRefinementsForFilter() : [];
+  const situationalSelect = (advActive && refineOpts.length)
+    ? `<span style="font-size:11px;color:var(--muted);font-weight:700;margin-left:8px">SITUATIONAL</span>
+       <select class="sumer-situational" onchange="setSumerRefinement(this.value)" title="Filter Adv. Metrics by game situation">
+         <option value=""${!sumerRefinement?' selected':''}>Standard</option>
+         ${refineOpts.map(r=>`<option value="${r}"${sumerRefinement===r?' selected':''}>${SUMER_REFINE_LABELS[r]||r}</option>`).join('')}
+       </select>`
+    : '';
   const advNote = advActive
-    ? `<span class="ecr-missing" style="color:var(--muted)">📊 SumerSports advanced ${sumerSeasonKey()} stats${sumerView.single?'':' · common columns (pick a position for the full set)'}</span>`
+    ? `<span class="ecr-missing" style="color:var(--muted)">📊 SumerSports advanced ${sumerSeasonKey()} stats${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}${sumerView.single?'':' · common columns (pick a position for the full set)'}</span>`
     : '';
   const ecrNote = hasECR() ? '' : `<span class="ecr-missing">⚠ No FantasyPros ECR loaded — run build_seed.py and load the 📦 seed to populate ECR/Tier</span>`;
   document.getElementById('content').innerHTML=`
@@ -3975,6 +4111,7 @@ function renderRankings(){
         <span style="font-size:11px;color:var(--muted);font-weight:700;margin-left:8px">POSITION</span>
         <div class="pos-filter">${posBtns}</div>
         ${advToggle}
+        ${situationalSelect}
         ${minInputs}
         ${advNote}
         ${ecrNote}
@@ -4082,6 +4219,7 @@ function setPosFilter(p){rankPosFilter=p;renderRankings();}
 // Toggle the SumerSports advanced stat columns on the rankings page.
 function setRankAdvanced(v){
   rankAdvanced=!!v;
+  if(!rankAdvanced) sumerRefinement=null;   // leaving Adv. Metrics clears the situational split
   // Advanced columns sort high→low; reset to the first advanced column (or ECR when leaving).
   if(rankAdvanced){
     const sv=sumerColumnsForFilter();
@@ -4090,6 +4228,14 @@ function setRankAdvanced(v){
   } else if(rankSortKey.startsWith('sumer:')){
     rankSortKey='ecr'; rankSortDir=-1;
   }
+  renderRankings();
+}
+// Select a "Situational" refinement (game-situation split) for the Adv. Metrics view. Empty
+// value = Standard (overall). Re-sort onto the first column so the board reflects the split.
+function setSumerRefinement(val){
+  sumerRefinement = val || null;
+  const sv=sumerColumnsForFilter();
+  if(sv) { rankSortKey='sumer:'+sv.cols[0]; rankSortDir=-1; }
   renderRankings();
 }
 // Build the minimum-volume input(s) for the Adv. Metrics view, matched to the position filter:

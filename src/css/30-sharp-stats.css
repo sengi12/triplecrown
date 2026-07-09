@@ -1,0 +1,89 @@
+/* ── Advanced Stats (Warren Sharp) ── */
+.sr-note{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 13px;margin-bottom:12px;
+  background:rgba(0,212,170,.07);border:1px solid rgba(0,212,170,.22);border-radius:8px;
+  font-size:11.5px;color:var(--muted);}
+.sr-note b{color:var(--text);}
+.sr-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;}
+.sr-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:13px 15px;}
+.sr-card-title{font-size:12.5px;font-weight:800;color:var(--accent);margin-bottom:10px;
+  text-transform:uppercase;letter-spacing:.03em;}
+.sr-stat-grid{display:flex;flex-direction:column;gap:2px;}
+.sr-stat{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;
+  padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);}
+.sr-stat:last-child{border-bottom:none;}
+.sr-stat-label{font-size:11.5px;color:var(--muted);}
+.sr-stat-val{font-size:13px;font-weight:700;font-family:var(--mono);color:var(--text);text-align:right;min-width:48px;}
+.sr-stat-rank{min-width:42px;text-align:right;}
+.sr-badge{display:inline-block;font-size:10px;font-weight:800;padding:2px 6px;border-radius:5px;font-family:var(--mono);}
+.sr-good{background:rgba(0,212,170,.16);color:#00d4aa;}
+.sr-okhi{background:rgba(120,200,120,.13);color:#8fd18f;}
+.sr-oklo{background:rgba(240,180,80,.13);color:#e0b060;}
+.sr-bad{background:rgba(255,90,90,.14);color:#ff6a6a;}
+.sr-empty{font-size:11px;color:var(--muted);font-style:italic;}
+.sr-source{font-size:10px;color:var(--muted);margin-top:12px;opacity:.7;}
+.sr-league-header{align-items:center;}
+.sr-league-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 6px;}
+.sr-tab{padding:6px 13px;font-size:11px;font-weight:700;cursor:pointer;border-radius:7px;
+  border:1px solid var(--border);background:var(--surface);color:var(--muted);transition:all .12s;}
+.sr-tab:hover{border-color:var(--accent);color:var(--text);}
+.sr-tab.active{background:var(--accent);color:#08110e;border-color:var(--accent);}
+.sr-desc{font-size:11px;color:var(--muted);margin:6px 2px 10px;}
+.sr-league-table{width:100%;border-collapse:collapse;font-size:11.5px;}
+.sr-league-table th{position:sticky;top:0;background:var(--surface2);z-index:1;}
+/* Freeze the TEAM column so it stays visible when scrolling horizontally on mobile. The
+   top-left header cell must sit above both axes (z-index 3); the team header is sticky on
+   both top and left; team body cells are sticky on the left. */
+.sr-th-team{text-align:left;padding:9px 10px;font-size:10px;color:var(--muted);font-weight:800;
+  position:sticky;left:0;z-index:3;background:var(--surface2);}
+.sr-td-team{padding:7px 10px;font-weight:800;font-size:12px;
+  border-bottom:1px solid rgba(255,255,255,.04);white-space:nowrap;
+  position:sticky;left:0;z-index:2;background:var(--surface2);}
+.sr-td-team-inner{display:flex;align-items:center;gap:7px;}
+/* subtle divider so the frozen column reads as separate from the scrolling stats */
+.sr-th-team,.sr-td-team{border-right:1px solid var(--border);}
+.sr-th{padding:9px 8px;font-size:9.5px;color:var(--muted);font-weight:700;cursor:pointer;
+  white-space:nowrap;text-align:center;user-select:none;border-bottom:1px solid var(--border);}
+.sr-th:hover{color:var(--text);background:var(--surface3);}
+.sr-th.active{color:var(--accent);}
+.sr-logo{width:20px;height:20px;object-fit:contain;}
+.sr-td{text-align:center;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.04);}
+.sr-td-val{font-family:var(--mono);font-weight:700;font-size:12px;display:block;}
+.sr-td-rank{font-size:8.5px;opacity:.7;display:block;margin-top:1px;}
+.sr-td.sr-good{background:rgba(0,212,170,.10);}
+.sr-td.sr-okhi{background:rgba(120,200,120,.06);}
+.sr-td.sr-oklo{background:rgba(240,180,80,.06);}
+.sr-td.sr-bad{background:rgba(255,90,90,.08);}
+.sr-league-table tbody tr:hover td{background:var(--surface3);}
+/* on hover, the frozen team cell needs an opaque bg too (else scrolling cells show through) */
+.sr-league-table tbody tr:hover .sr-td-team{background:var(--surface3);}
+/* Full team name + SOS in team header */
+.team-fullname{font-size:20px;font-weight:800;letter-spacing:-.01em;}
+.team-sos-row{margin-top:3px;}
+.team-sos{font-size:11px;color:var(--muted);}
+.team-sos b{color:var(--text);font-weight:800;}
+/* Head coach line in team header */
+.team-hc{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted);margin-top:4px;flex-wrap:wrap;}
+.team-hc b{color:var(--text);font-weight:700;}
+.team-hc-img{width:22px;height:22px;border-radius:50%;object-fit:cover;background:var(--surface3);}
+.team-hc-label{font-size:9px;font-weight:800;letter-spacing:.05em;color:var(--muted);
+  background:var(--surface3);padding:1px 5px;border-radius:4px;}
+.team-hc-loading{opacity:.5;font-style:italic;}
+.hc-caller{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:800;
+  color:#00d4aa;background:rgba(0,212,170,.13);padding:2px 7px;border-radius:5px;cursor:help;}
+/* Coordinator inline labels on section heads */
+.coord-inline{font-size:11px;font-weight:600;color:var(--muted);margin-left:8px;}
+.coord-inline b{color:var(--text);}
+.coord-new-tag{display:inline-block;font-size:9px;font-weight:800;color:#e0b060;
+  background:rgba(240,180,80,.14);padding:1px 6px;border-radius:4px;margin-left:4px;vertical-align:middle;}
+/* Coordinator carryover block */
+.coord-carry-wrap{border:1px solid rgba(240,180,80,.3);background:rgba(240,180,80,.05);
+  border-radius:12px;padding:14px 16px;margin-bottom:16px;}
+.coord-carry-head{font-size:13px;font-weight:800;color:#e0b060;margin-bottom:5px;}
+.coord-carry-note{font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5;}
+.coord-carry-note b{color:var(--text);}
+.coord-carry-block{margin-top:12px;}
+.coord-carry-title{font-size:12.5px;margin-bottom:3px;}
+.coord-carry-title b{color:var(--text);}
+.coord-side{display:inline-block;font-size:10px;font-weight:800;color:var(--accent);
+  background:var(--surface3);padding:2px 7px;border-radius:5px;margin-right:6px;}
+.coord-carry-sub{font-size:10.5px;color:var(--muted);margin-bottom:8px;}

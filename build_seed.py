@@ -203,17 +203,32 @@ def build_ecr(refresh):
     return ecr
 
 
-# ── OverTheCap contracts (age / APY / free-agency year) — for the Dynasty rankings tab ──
-# The dynasty view benefits from a realistic picture of how long a player stays with their
-# team, so we pull each position's contract table from OverTheCap. The tables are plain HTML
-# (no JS), so stdlib + a light regex parse is enough — no BeautifulSoup dependency.
+# ── OverTheCap contracts (age / APY / total / guaranteed / free-agency year) ──
+# Powers the Dynasty rankings Age/APY/FA columns AND the player-card contract band. Every
+# OverTheCap position page shares the same 8-column table, so we pull all of them (not just the
+# fantasy skill positions) — the card can then show a contract for any player. The tables are
+# plain HTML (no JS), so stdlib + a light regex parse is enough — no BeautifulSoup dependency.
 # Columns on the page: player, team, age, total value, avg/year (APY), total guaranteed,
 # fully guaranteed, free agency (year the current deal expires → player hits FA).
 OTC_URLS = {
-    "QB": "https://overthecap.com/position/quarterback",
-    "RB": "https://overthecap.com/position/running-back",
-    "WR": "https://overthecap.com/position/wide-receiver",
-    "TE": "https://overthecap.com/position/tight-end",
+    "QB":   "https://overthecap.com/position/quarterback",
+    "RB":   "https://overthecap.com/position/running-back",
+    "FB":   "https://overthecap.com/position/fullback",
+    "WR":   "https://overthecap.com/position/wide-receiver",
+    "TE":   "https://overthecap.com/position/tight-end",
+    "LT":   "https://overthecap.com/position/left-tackle",
+    "LG":   "https://overthecap.com/position/left-guard",
+    "C":    "https://overthecap.com/position/center",
+    "RG":   "https://overthecap.com/position/right-guard",
+    "RT":   "https://overthecap.com/position/right-tackle",
+    "IDL":  "https://overthecap.com/position/interior-defensive-line",
+    "EDGE": "https://overthecap.com/position/edge-rusher",
+    "LB":   "https://overthecap.com/position/linebacker",
+    "CB":   "https://overthecap.com/position/cornerback",
+    "S":    "https://overthecap.com/position/safety",
+    "K":    "https://overthecap.com/position/kicker",
+    "P":    "https://overthecap.com/position/punter",
+    "LS":   "https://overthecap.com/position/long-snapper",
 }
 
 def _strip_tags(s):
@@ -228,8 +243,18 @@ def _parse_otc_table(html):
             rows.append([_strip_tags(c) for c in cells])
     return rows
 
+def _otc_money(raw):
+    """Parse an OverTheCap dollar cell ('$64,000,000') → int dollars, or None."""
+    m = _re.search(r"[\d,]+", (raw or "").replace("$", ""))
+    if not m:
+        return None
+    try:
+        return int(m.group().replace(",", ""))
+    except Exception:
+        return None
+
 def fetch_otc_contracts(pos, url, refresh):
-    """Fetch one OverTheCap position page → {nameKey: {age, apy, fa}}."""
+    """Fetch one OverTheCap position page → {nameKey: {age, apy, fa, total, gtd}}."""
     cache_path = os.path.join(CACHE_DIR, "contracts", f"{pos}.json")
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     if not refresh and os.path.exists(cache_path):
@@ -254,35 +279,28 @@ def fetch_otc_contracts(pos, url, refresh):
         key = _norm_name(name)
         if not key:
             continue
-        age_raw = cells[2]
-        apy_raw = cells[4]
-        fa_raw = cells[7]
         # age → int if possible
         age = None
-        m = _re.search(r"\d+", age_raw)
+        m = _re.search(r"\d+", cells[2])
         if m:
             age = int(m.group())
-        # APY → normalized numeric dollars (strip $ and commas)
-        apy = None
-        m = _re.search(r"[\d,]+", apy_raw.replace("$", ""))
-        if m:
-            try:
-                apy = int(m.group().replace(",", ""))
-            except Exception:
-                apy = None
+        # APY / total value / total guaranteed → normalized numeric dollars (strip $ and commas)
+        apy = _otc_money(cells[4])
+        total = _otc_money(cells[3])
+        gtd = _otc_money(cells[5])
         # free agency → the 4-digit year the player becomes a free agent
         fa = None
-        m = _re.search(r"(20\d{2})", fa_raw)
+        m = _re.search(r"(20\d{2})", cells[7])
         if m:
             fa = int(m.group(1))
-        out[key] = {"age": age, "apy": apy, "fa": fa}
+        out[key] = {"age": age, "apy": apy, "fa": fa, "total": total, "gtd": gtd}
     print(f" ok ({len(out)} players)")
     with open(cache_path, "w") as f:
         json.dump(out, f)
     return out
 
 def build_contracts(refresh):
-    """Build {nameKey: {age, apy, fa, pos}} merged across all positions."""
+    """Build {nameKey: {age, apy, fa, total, gtd, pos}} merged across all positions."""
     contracts = {}
     for pos, url in OTC_URLS.items():
         tbl = fetch_otc_contracts(pos, url, refresh)
@@ -294,7 +312,7 @@ def build_contracts(refresh):
         print("\n  ⚠ WARNING: no contract data fetched from OverTheCap — the Dynasty tab's")
         print("    Age/APY/FA columns will be blank. (No internet, OTC blocked, or layout changed.)")
     else:
-        print(f"\n  Contracts loaded: {total} players (age/APY/free-agency year)")
+        print(f"\n  Contracts loaded: {total} players (age/APY/total/guaranteed/free-agency year)")
     return contracts
 
 
@@ -319,9 +337,11 @@ SUMER_SEASONS = [2025, 2024, 2023, 2022]
 # Columns that identify the row rather than being a stat — dropped from the stat set. The rest
 # (whatever the page shows for that position) become the ordered `columns` the app renders.
 SUMER_META_COLS = {"Player Name", "Season", "Team", "Position", "Rank"}
-# Refinement splits (When Leading / Red Zone / vs. Man / box counts / …). We only bake the base
-# (overall) table for now, but keep the option map here so specific refinements can be added
-# later by passing `refinement=` through fetch_sumer_table (URL: ?refinement=<value>&season=YYYY).
+# Refinement splits (When Leading / Red Zone / vs. Man / box counts / …) — the game-situation
+# filters SumerSports exposes as its "Refinement" dropdown. We bake one extra table per
+# refinement per position/season (URL: ?refinement=<value>&season=YYYY) so the app's
+# "Situational" dropdown can swap the Adv. Metrics columns to a specific split. Values below
+# are the exact refinement query values the site accepts for each position (verified live).
 SUMER_REFINEMENTS = {
     "QB": ["when_leading", "when_trailing", "red_zone", "non_garbage_time", "late_down",
            "play_action", "pure_dropback", "vs_man", "vs_zone", "blitzed", "pressured"],
@@ -384,10 +404,11 @@ def _sumer_num(raw):
 def fetch_sumer_table(pos, season, refresh, refinement=None):
     """Fetch one SumerSports position page for a season → a data-driven table dict:
         {columns:[...], pct_cols:[...], players:{nameKey:{values:[...], team, rank}}}
-    or None if the page couldn't be fetched/parsed. `refinement` is reserved for future
-    splits (red_zone, when_trailing, …); None = the base overall table."""
+    or None if the page couldn't be fetched/parsed. `refinement` selects a game-situation
+    split (red_zone, when_trailing, …) via the site's ?refinement= param; None = base overall."""
     tag = refinement or "base"
-    cache_path = os.path.join(CACHE_DIR, "sumer", f"{pos}_{season}_{tag}.json")
+    # Organize sumer files into per-season subfolders (like weekly): sumer/<season>/<pos>_<tag>.json
+    cache_path = os.path.join(CACHE_DIR, "sumer", str(season), f"{pos}_{tag}.json")
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     if not refresh and os.path.exists(cache_path):
         print(f"  → sumer {pos} {season} ({tag}): using cache")
@@ -422,8 +443,6 @@ def fetch_sumer_table(pos, season, refresh, refinement=None):
             continue
         # Row season may differ from the requested one on some pages — trust the request.
         raw_name = cells[name_i]
-        m = _re.match(r"^\s*(\d+)\.\s*", raw_name)
-        rank = int(m.group(1)) if m else None
         name = _re.sub(r"^\s*\d+\.\s*", "", raw_name).strip()
         key = _norm_name(name)
         if not key:
@@ -434,7 +453,9 @@ def fetch_sumer_table(pos, season, refresh, refinement=None):
             if "%" in raw:
                 pct.add(col)
             values.append(_sumer_num(raw))
-        players[key] = {"values": values, "team": "", "rank": rank}
+        # Only the ordered `values` are consumed by the app (matched to `columns` by index);
+        # the site's rank prefix + the empty team cell are dropped to keep the seed lean.
+        players[key] = {"values": values}
     if not players:
         print(" empty")
         return None
@@ -445,15 +466,27 @@ def fetch_sumer_table(pos, season, refresh, refinement=None):
     return out
 
 def build_sumer(refresh):
-    """Build {season: {POS: {columns, pct_cols, players}}} across QB/RB/WR/TE for each
-    completed season we can fetch. Seasons/positions that fail are simply omitted so the
-    app never renders an empty advanced tab."""
+    """Build {season: {POS: {columns, pct_cols, players, refinements:{...}}}} across QB/RB/WR/TE
+    for each completed season we can fetch. Each position also carries a `refinements` map of
+    game-situation splits (When Leading / Red Zone / vs. Man / box counts …) keyed by the site's
+    refinement value, each holding its own {columns, pct_cols, players}. Seasons/positions/
+    refinements that fail are simply omitted so the app never renders an empty advanced tab."""
     sumer = {}
     for season in SUMER_SEASONS:
         per_pos = {}
         for pos in SUMER_POS_URLS:
             tbl = fetch_sumer_table(pos, season, refresh)
             if tbl and tbl.get("players"):
+                # Situational refinements ride along inside the base table (best-effort — any
+                # that fail to fetch/parse are dropped so the base view is never blocked).
+                refis = {}
+                for r in SUMER_REFINEMENTS.get(pos, []):
+                    rt = fetch_sumer_table(pos, season, refresh, refinement=r)
+                    if rt and rt.get("players"):
+                        refis[r] = rt
+                if refis:
+                    tbl = dict(tbl)
+                    tbl["refinements"] = refis
                 per_pos[pos] = tbl
         if per_pos:
             sumer[str(season)] = per_pos
@@ -1722,7 +1755,9 @@ def main():
         f.write(f"const SEED_SHARP_SEASON = {args.season-1};\n")
         f.write(f"const SEED_SUMER = {json.dumps(sumer, separators=(',',':'))};\n")
         f.write(f"const SEED_SUMER_SEASONS = {json.dumps(sumer_seasons)};\n")
-    # Also emit the raw seed json for reference
+    # Emit the raw seed json the app loads (compact — no indentation. Pretty-printing this
+    # file more than doubled it; the app fetches + JSON.parses it, so compact = smaller
+    # download and faster parse with identical data).
     with open("triplecrown_seed.json", "w") as f:
         json.dump({"season": args.season, "builder_version": BUILDER_VERSION,
                    "seed": seed, "history": history,
@@ -1731,7 +1766,7 @@ def main():
                    "team_names": CODE_TO_FULLNAME, "coordinators": coordinators,
                    "hc_history": hc_history, "additions": additions,
                    "hc_playcallers": HC_PLAYCALLERS, "sharp_season": args.season-1,
-                   "sumer": sumer, "sumer_seasons": sumer_seasons}, f, indent=2)
+                   "sumer": sumer, "sumer_seasons": sumer_seasons}, f, separators=(",", ":"))
 
     nplayers = sum(len(seed[t][p]) for t in seed for p in seed[t])
     print(f"\nDone (builder {BUILDER_VERSION}). {nplayers} players across {len(TEAMS)} teams.")

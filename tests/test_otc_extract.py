@@ -21,15 +21,23 @@ for cells in rows:
     if len(cells) < 8: continue
     key = bs._norm_name(cells[0])
     age = int(re.search(r'\d+', cells[2]).group())
-    apy = int(re.search(r'[\d,]+', cells[4].replace('$','')).group().replace(',',''))
+    apy = bs._otc_money(cells[4])
+    total = bs._otc_money(cells[3])
+    gtd = bs._otc_money(cells[5])
     fa = int(re.search(r'20\d{2}', cells[7]).group())
-    out[key] = {'age':age,'apy':apy,'fa':fa}
+    out[key] = {'age':age,'apy':apy,'fa':fa,'total':total,'gtd':gtd}
 
 print("Parsed:", {k: out[k] for k in out})
 # Pittman Jr. must normalize to "michael pittman" (matching the app's ecrNormName)
 ok = (out.get('jamarr chase',{}).get('fa')==2030 and
+      out.get('jamarr chase',{}).get('total')==161000000 and
+      out.get('jamarr chase',{}).get('gtd')==112000000 and
       out.get('michael pittman',{}).get('fa')==2027 and
       out.get('michael pittman',{}).get('apy')==23333333 and
+      out.get('michael pittman',{}).get('total')==70000000 and
+      out.get('michael pittman',{}).get('gtd')==40000000 and
       out.get('michael pittman',{}).get('age')==27 and
       len(out)==2)   # the <th>-only row must be ignored
+# _otc_money edge cases
+ok = ok and bs._otc_money('')  is None and bs._otc_money('$1,234')==1234
 print("RESULT:", "PASS" if ok else "FAIL")

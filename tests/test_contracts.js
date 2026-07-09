@@ -9,7 +9,7 @@ const path=require('path');
 const code=fs.readFileSync(path.join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   assembleSeed, normalizeSleeperRow, ensureTeam, initPassingShares, buildPlayerList,
-  contractEntry, hasContracts, fmtAPY, ecrNormName,
+  contractEntry, hasContracts, fmtAPY, ecrNormName, contractSummaryHTML,
   setSEED:(s)=>{SEED=s;projSeed=s;seasonStatsCache.proj=s;workingProj={};userProj=workingProj;activeSeason='proj';},
   setContracts:(c)=>{CONTRACTS=c;},
   setFormat:(f)=>{rankFormat=f;},
@@ -63,3 +63,19 @@ const hasAgeHeader_half = htmlHalf.includes('>AGE');
 console.log('AGE header in half_ppr:', hasAgeHeader_half, '(expect false)');
 console.log('AGE header in dynasty:', hasAgeHeader_dyn, '(expect true)');
 console.log('RESULT:', !hasAgeHeader_half && hasAgeHeader_dyn?'PASS (columns dynasty-only)':'FAIL');
+
+console.log('\n=== TEST 5: contract summary band (player-card top section) ===');
+app.setContracts({
+  'patrick mahomes':{age:31,apy:64000000,fa:2034,total:448000000,gtd:182800000,pos:'QB'},
+  'no deal guy':{age:25,apy:null,fa:null,total:null,gtd:null,pos:'WR'}
+});
+const band=app.contractSummaryHTML('Patrick Mahomes');
+console.log(band);
+const ok5main = band.includes('$64M') && band.includes('7 yrs') && band.includes('$448M total')
+  && band.includes('$182.8M gtd') && band.includes('FA') && band.includes('2034');
+const ok5none = app.contractSummaryHTML('Unknown Player')==='';   // no contract on file → no band
+const ok5null = app.contractSummaryHTML('No Deal Guy')==='';       // all-null contract → no band
+const ok5derive = app.contractSummaryHTML('Patrick Mahomes').includes('7 yrs'); // 448M/64M → 7
+console.log('band renders APY/len/total/gtd/FA:', ok5main);
+console.log('missing & all-null → empty:', ok5none && ok5null);
+console.log('RESULT:', ok5main && ok5none && ok5null && ok5derive?'PASS (contract band)':'FAIL');

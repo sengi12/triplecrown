@@ -1,0 +1,49 @@
+/* ───────────────────────── Mobile / responsive ───────────────────────── */
+@media (max-width: 760px){
+  .main{flex-direction:column;height:auto;}
+  .sidebar{width:100%;min-width:0;max-height:none;border-right:none;
+    border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;overflow-x:auto;padding:6px;}
+  .sidebar-section{width:100%;padding:4px 8px 1px;}
+  .team-item{flex:0 0 auto;padding:6px 9px;font-size:11px;}
+  .team-item .team-rec{display:none;}
+  .content{padding:12px 12px 40px;height:auto;overflow-y:visible;}
+  .main{height:auto;}
+  body,html{height:auto;overflow-y:auto;}
+  .team-header{flex-wrap:wrap;gap:8px;}
+  .team-nav{margin-left:0;width:100%;justify-content:space-between;}
+  .team-logo-lg{width:42px;height:42px;}
+  .pie-section{flex-direction:column;align-items:stretch;gap:10px;}
+  .pie-wrap{align-self:center;}
+  .stats-grid{grid-template-columns:repeat(2,1fr);}
+  .phase-tabs{overflow-x:auto;}
+  .phase-tab{flex:0 0 auto;}
+  .sub-tabs{overflow-x:auto;}
+  .sub-tab{flex:0 0 auto;white-space:nowrap;}
+  .hdr{flex-wrap:wrap;gap:6px;padding:8px 12px;}
+  .hdr-right{width:100%;margin-left:0;}
+  .scoring-grid{grid-template-columns:repeat(2,1fr)!important;}
+  .share-stats{flex-wrap:wrap;gap:6px 10px;}
+  .rank-table{font-size:10px;}
+  .format-btn,.pos-filter-btn{padding:5px 8px;font-size:10px;}
+  .discrepancy-note,.vacated-note{font-size:10.5px;}
+  .season-bar{padding:6px 10px;}
+}
+@media (max-width: 420px){
+  .stats-grid{grid-template-columns:1fr 1fr;}
+  .content{padding:9px 9px 40px;}
+  .card{padding:11px;}
+  .share-name{max-width:90px;}
+}
+/* Make the app usable in both orientations and avoid horizontal page scroll */
+*{-webkit-tap-highlight-color:transparent;}
+/* Global guard against horizontal page scroll: a single too-wide child otherwise makes the
+   whole page pan sideways on touch. Lock the page horizontally; wide content scrolls in its
+   own container instead (see .sr-table-scroll, .add-table wrappers, etc.). */
+html,body{max-width:100%;overflow-x:hidden;}
+*{box-sizing:border-box;}
+.content{min-width:0;max-width:100%;}
+.content > *{max-width:100%;}
+/* Any raw table inside content becomes horizontally scrollable rather than page-widening. */
+.sr-team-wrap,.add-wrap,.coord-carry-wrap,.sr-card-grid,.stats-grid,.scoring-grid{max-width:100%;}
+.rank-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+

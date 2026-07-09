@@ -16,6 +16,14 @@ HTML="${1:-$DIR/../index.html}"
 LOG="$DIR/last_run.log"
 exec > >(tee "$LOG") 2>&1
 
+# Step 0: If the app is maintained as src/ partials, rebuild the single-file index.html first
+# so the tests always run against the source of truth (build.py concatenation is byte-identical).
+if [ "$HTML" = "$DIR/../index.html" ] && [ -f "$DIR/../build.py" ] && [ -d "$DIR/../src" ]; then
+  echo "═══ Building index.html from src/ ═══"
+  python3 "$DIR/../build.py" || { echo "✗ build failed"; exit 1; }
+  echo ""
+fi
+
 if [ ! -f "$HTML" ]; then
   echo "ERROR: HTML file not found: $HTML"
   echo "Usage: ./run_tests.sh [path/../index.html]"

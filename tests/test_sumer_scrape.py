@@ -47,6 +47,33 @@ ok &= bs._sumer_num("")   is None
 ok &= bs._sumer_num("-")  is None
 ok &= bs._sumer_num("1,793")==1793
 
+# ── build_sumer bakes situational refinements per position (no network) ────────
+# Monkeypatch fetch_sumer_table so build_sumer runs offline. Base + two good refinements +
+# one that fails (returns None) → the failing one is dropped, base stays intact.
+def fake_fetch(pos, season, refresh, refinement=None):
+    if refinement=="broken":
+        return None
+    tag = refinement or "base"
+    return {"columns":["Routes Run"], "pct_cols":[],
+            "players":{"jaxon smithnjigba":{"values":[tag], "team":"", "rank":1}}}
+_orig_fetch, _orig_seasons, _orig_urls, _orig_refis = (
+    bs.fetch_sumer_table, bs.SUMER_SEASONS, bs.SUMER_POS_URLS, bs.SUMER_REFINEMENTS)
+try:
+    bs.fetch_sumer_table = fake_fetch
+    bs.SUMER_SEASONS = [2025]
+    bs.SUMER_POS_URLS = {"WR": "u"}
+    bs.SUMER_REFINEMENTS = {"WR": ["red_zone", "when_leading", "broken"]}
+    res = bs.build_sumer(refresh=True)
+finally:
+    (bs.fetch_sumer_table, bs.SUMER_SEASONS, bs.SUMER_POS_URLS, bs.SUMER_REFINEMENTS) = (
+        _orig_fetch, _orig_seasons, _orig_urls, _orig_refis)
+wr = res["2025"]["WR"]
+ok &= "refinements" in wr
+ok &= set(wr["refinements"].keys()) == {"red_zone", "when_leading"}   # failed "broken" dropped
+ok &= wr["players"]["jaxon smithnjigba"]["values"] == ["base"]         # base table preserved
+ok &= wr["refinements"]["red_zone"]["players"]["jaxon smithnjigba"]["values"] == ["red_zone"]
+print("baked refinements:", sorted(wr.get("refinements", {}).keys()))
+
 print("stat_cols:", stat_cols)
 print("Jaxon values:", jsn)
 print("pct cols:", sorted(pct))

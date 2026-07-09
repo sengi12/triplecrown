@@ -1,0 +1,37 @@
+/* ── Grouped rankings table (ECR / Tier / FPTS / stat groups) ── */
+.rankings-table.grouped{font-size:11.5px;}
+.rankings-table.grouped th,.rankings-table.grouped td{padding:5px 7px;text-align:center;}
+.rankings-table.grouped th.c-player,.rankings-table.grouped td.c-player,
+.rankings-table.grouped th.c-team,.rankings-table.grouped td.c-team{text-align:left;}
+.rankings-table.grouped .th-stack{line-height:1.15;text-align:center;}
+.rankings-table.grouped .num{font-family:var(--mono);font-size:11px;}
+.rankings-table.grouped .rank-name{font-weight:700;font-size:12px;}
+.c-ecr{font-weight:800;font-family:var(--mono);color:var(--accent);}
+.c-vor{text-align:center;font-family:var(--mono);}
+.vor-val{font-weight:800;font-size:11.5px;}
+.vor-pos{color:#00d4aa;}
+.vor-neg{color:var(--muted);}
+.c-tier .tier-pill{display:inline-block;min-width:17px;padding:1px 5px;border-radius:5px;
+  font-size:10px;font-weight:900;color:#0b0e13;}
+/* group accent: a left border + faint tint marks where each stat group starts */
+.grp-start,.grp-rush,.grp-rec,.grp-pass{border-left:2px solid var(--border);}
+/* Rushing = green-ish, Receiving = blue-ish, Passing = amber-ish (subtle) */
+.grp-rush,.grp-rush-mid,.grp-rush-end{background:rgba(0,212,170,.045);}
+.grp-rush{border-left:2px solid rgba(0,212,170,.5);}
+.grp-rec,.grp-rec-mid,.grp-rec-end{background:rgba(91,155,255,.05);}
+.grp-rec{border-left:2px solid rgba(91,155,255,.5);}
+.grp-pass,.grp-pass-mid,.grp-pass-end{background:rgba(251,191,36,.05);}
+.grp-pass{border-left:2px solid rgba(251,191,36,.5);}
+.rankings-table.grouped tr:hover .grp-rush,.rankings-table.grouped tr:hover .grp-rush-mid,.rankings-table.grouped tr:hover .grp-rush-end{background:rgba(0,212,170,.1);}
+.rankings-table.grouped tr:hover .grp-rec,.rankings-table.grouped tr:hover .grp-rec-mid,.rankings-table.grouped tr:hover .grp-rec-end{background:rgba(91,155,255,.11);}
+.rankings-table.grouped tr:hover .grp-pass,.rankings-table.grouped tr:hover .grp-pass-mid,.rankings-table.grouped tr:hover .grp-pass-end{background:rgba(251,191,36,.11);}
+/* Advanced (SumerSports) stat columns — a subtle teal tint distinct from the rush/rec/pass groups. */
+.grp-adv{background:rgba(74,158,255,.05);}
+.rankings-table.grouped tr:hover .grp-adv{background:rgba(74,158,255,.11);}
+.ecr-missing{font-size:10.5px;color:var(--warn);font-weight:600;}
+/* Dynasty contract columns: Age / APY / Free-Agency year */
+.c-age .num{color:var(--text);}
+.c-apy .num{color:var(--muted);font-size:10.5px;}
+.c-fa .num{color:var(--text);}
+.c-fa.fa-soon{background:rgba(255,90,90,.14);}
+.c-fa.fa-soon .num{color:#ff6a6a;font-weight:900;}

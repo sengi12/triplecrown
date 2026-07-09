@@ -10,9 +10,9 @@ global.confirm=()=>true;global.btoa=s=>Buffer.from(s,'binary').toString('base64'
 const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
-  renderEspnSeason, espnStatGroup, espnColor, cfbNum, cfbSeasonTotals, pcardSeasonTeamTag,
+  renderEspnSeason, espnStatGroup, espnColor, cfbNum, cfbSeasonTotals, pcardSeasonTeamTag, playoffAbbr,
   isRookiePlayer, resolveEspnAthleteId, NCAA_LOGO, ESPN_HEADSHOT,
-  normalizeEspnDraft, espnDraftLine, renderDepthChart, buildDepthRows,
+  normalizeEspnDraft, espnDraftHero, renderDepthChart, buildDepthRows,
   setPlayers:(p)=>{sleeperPlayers=p;}, setIdCache:(c)=>{espnAthleteIdCache=c;},
   setRosters:(t,r)=>{espnRosters[t]=r;}, setDepth:(t,r)=>{espnDepth[t]=r;},
 };`)();
@@ -91,10 +91,16 @@ const dgl = {
   filters:[{name:'season',options:[{value:'2024'}]}],
   seasonTypes:[{displayName:'2024 Regular Season',categories:[{events:[
     {eventId:'d1',stats:['8','5','3','1','1','6','0','0','1','0','0','1','12','12.0','0','12','2']},
+  ]}]},
+  {displayName:'2024 Postseason',categories:[{events:[
+    {eventId:'d2',stats:['6','4','2','2','1','8','0','0','0','1','0','0','0','0.0','0','0','1']},
   ]}]}],
   events:{
     d1:{id:'d1',week:1,gameDate:'2024-09-08T00:00:00Z',atVs:'@',
         opponent:{abbreviation:'DAL',logo:'https://a.espncdn.com/i/teamlogos/nfl/500/dal.png'},
+        team:{abbreviation:'GB',id:'9',logo:'https://a.espncdn.com/i/teamlogos/nfl/500/gb.png'}},
+    d2:{id:'d2',week:2,gameDate:'2025-01-18T00:00:00Z',atVs:'vs',eventNote:'AFC Divisional Playoffs',
+        opponent:{abbreviation:'HOU',logo:'https://a.espncdn.com/i/teamlogos/nfl/500/hou.png'},
         team:{abbreviation:'GB',id:'9',logo:'https://a.espncdn.com/i/teamlogos/nfl/500/gb.png'}},
   },
 };
@@ -109,6 +115,18 @@ chk('def: AVG kept (not YPC)', />AVG</.test(dhtml) && !/YPC/.test(dhtml));
 chk('def: NFL team logo used', /nfl\/500\/gb\.png/.test(dhtml));
 chk('def: green cells colored', /pcard-cell g/.test(dhtml));
 chk('def: totalTackles 8 shown', />8</.test(dhtml));
+chk('def: postseason WK shows DIV', /pcard-wk pcard-wk-po[^>]*>DIV</.test(dhtml));
+chk('def: playoff round title tooltip', /title="AFC Divisional Playoffs"/.test(dhtml));
+chk('def: regular-season game keeps week number', /pcard-wk"[^>]*>1</.test(dhtml));
+
+console.log('\n=== TEST 4b: playoffAbbr (postseason round labels) ===');
+chk('Super Bowl LIX → SB', app.playoffAbbr('Super Bowl LIX')==='SB');
+chk('AFC Championship → AFC', app.playoffAbbr('AFC Championship')==='AFC');
+chk('NFC Championship → NFC', app.playoffAbbr('NFC Championship')==='NFC');
+chk('AFC Divisional Playoffs → DIV', app.playoffAbbr('AFC Divisional Playoffs')==='DIV');
+chk('NFC Wild Card → WC', app.playoffAbbr('NFC Wild Card')==='WC');
+chk('regular season (no note) → null', app.playoffAbbr('')===null && app.playoffAbbr(null)===null);
+chk('unknown note → null (keep week)', app.playoffAbbr('NFL London Games')===null);
 
 console.log('\n=== TEST 5: cfbSeasonTotals (sum / max long / recomputed YPC) ===');
 const rows=[
@@ -138,7 +156,7 @@ chk('NCAA_LOGO builds url', app.NCAA_LOGO('9')==='https://a.espncdn.com/i/teamlo
 chk('ESPN_HEADSHOT nfl url', app.ESPN_HEADSHOT('nfl','123')==='https://a.espncdn.com/i/headshots/nfl/players/full/123.png');
 chk('ESPN_HEADSHOT college url', app.ESPN_HEADSHOT('college-football','9')==='https://a.espncdn.com/i/headshots/college-football/players/full/9.png');
 
-console.log('\n=== TEST 7b: normalizeEspnDraft + espnDraftLine ===');
+console.log('\n=== TEST 7b: normalizeEspnDraft + espnDraftHero ===');
 const draftJson={draft:{displayText:'Year: 2026 Round: 5 Pick: 161',round:5,year:2026,selection:161,
   team:{$ref:'http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/teams/12?lang=en&region=us'}}};
 const nd=app.normalizeEspnDraft(draftJson);
@@ -148,12 +166,12 @@ chk('draft: pick parsed', nd.selection===161);
 chk('draft: team id 12 → KC', nd.teamCode==='KC');
 chk('draft: loaded-but-no-draft → undrafted sentinel', app.normalizeEspnDraft({}).undrafted===true);
 chk('draft: null input → null (unavailable)', app.normalizeEspnDraft(null)===null);
-const dl=app.espnDraftLine(nd);
+const dl=app.espnDraftHero(nd);
 chk('draftLine: shows year/round/pick', /2026/.test(dl) && /5/.test(dl) && /161/.test(dl));
 chk('draftLine: DRAFT label', /pcard-draft-lbl/.test(dl) && /DRAFT/.test(dl));
 chk('draftLine: KC logo + code', /clubs\/logos\/KC/.test(dl) && /KC/.test(dl));
-chk('draftLine: undrafted → shows "Undrafted"', /Undrafted/.test(app.espnDraftLine({undrafted:true})));
-chk('draftLine: empty when null', app.espnDraftLine(null)==='');
+chk('draftLine: undrafted → shows "Undrafted"', /Undrafted/.test(app.espnDraftHero({undrafted:true})));
+chk('draftLine: empty when null', app.espnDraftHero(null)==='');
 
 console.log('\n=== TEST 7c: buildDepthRows (order, rank sort, holder skip) ===');
 const R='http://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2026/athletes/';
