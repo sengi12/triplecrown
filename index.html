@@ -5701,6 +5701,7 @@ async function tryAutoLoadSeed(){
     if(j.additions){ ADDITIONS=j.additions; got=true; }
     if(j.sharp_season){ SHARP_SEASON=j.sharp_season; got=true; }
     if(j.sumer){ SUMER=j.sumer; SUMER_SEASONS=j.sumer_seasons||Object.keys(j.sumer); got=true; }
+    if(j.ktc){ KTC=j.ktc; got=true; }   // KeepTradeCut dynasty player-page slugs (player-card links)
     // Only adopt prebuilt projections/history if present and non-trivial.
     if(j.seed && Object.keys(j.seed).length){
       SEED=j.seed; projSeed=SEED; seasonStatsCache={proj:SEED}; rosterMergedTeams.clear();
