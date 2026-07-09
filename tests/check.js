@@ -3136,45 +3136,60 @@ function isRookiePlayer(pid){
   const p = sleeperPlayers && sleeperPlayers[pid];
   return !!(p && p.years_exp===0);
 }
-// Resolve a player's global ESPN athlete id. Prefers Sleeper's espn_id; falls back to an ESPN
-// name search (the numeric id lives in the result's uid as `a:<id>` / in its web link).
-async function resolveEspnAthleteId(pid, name, league){
-  const lg = league || 'nfl';
-  const ck = `${pid}:${lg}`;
-  if(espnAthleteIdCache[ck]!=null) return espnAthleteIdCache[ck] || null;
-  const p = sleeperPlayers && sleeperPlayers[pid];
-  // Sleeper's espn_id is an NFL athlete id; only safe to short-circuit for NFL lookups.
-  if(lg==='nfl' && p && p.espn_id){ espnAthleteIdCache[ck]=p.espn_id; return p.espn_id; }
-  // For college logs, ESPN exposes an authoritative linked college athlete id on the NFL record.
-  if(lg==='college-football' && p && p.espn_id){
-    const core = await fetchEspnCoreAthlete(String(p.espn_id));
-    const cref = core && core.collegeAthlete && core.collegeAthlete.$ref;
-    const cm = /\/athletes\/(\d+)/.exec(cref||'');
-    if(cm){ espnAthleteIdCache[ck]=cm[1]; return cm[1]; }
-  }
-  const nm = name || (p && p.name) || '';
-  if(!nm){ espnAthleteIdCache[ck]=''; return null; }
+// Search ESPN for an athlete id by name, preferring the wanted league (uid `~l:<id>~`: 28=NFL,
+// 23=college). Returns an exact-league match when found, else the first player id seen (so a
+// last-resort lookup still resolves *something*). `null` when the search returns no player.
+async function searchEspnAthleteId(nm, wantLeagueId){
   try{
     const s = await sleeperFetch(ESPN_SEARCH_URL(nm));
     const results = (s && s.results) || [];
-    const wantLeagueId = lg==='college-football' ? '23' : '28';
     let fallbackId = null;
     for(const r of results){
       if(r.type!=='player') continue;
       for(const it of (r.contents||[])){
         const uid = it.uid||'';
-        let m = /a:(\d+)/.exec(it.uid||'');
+        let m = /a:(\d+)/.exec(uid);
         if(!m){ m = /\/id\/(\d+)\//.exec((it.link&&it.link.web)||''); }
         if(!m) continue;
         if(!fallbackId) fallbackId = m[1];
         const lm = /~l:(\d+)~/.exec(uid);
-        if(lm && lm[1]===wantLeagueId){ espnAthleteIdCache[ck]=m[1]; return m[1]; }
+        if(lm && lm[1]===wantLeagueId) return m[1];
       }
     }
-    if(fallbackId){ espnAthleteIdCache[ck]=fallbackId; return fallbackId; }
-  }catch(e){ /* search blocked/failed — fall through to unresolved */ }
-  espnAthleteIdCache[ck]='';
-  return null;
+    return fallbackId;
+  }catch(e){ /* search blocked/failed */ return null; }
+}
+// Resolve a player's ESPN athlete id for a league. NFL: Sleeper's espn_id, else an NFL name
+// search. College: ESPN's IDs differ by sport, and a raw college name search often matches a
+// *different* same-named player (or one with no games), so we route through the NFL athlete
+// record's authoritative `collegeAthlete` link — resolving the NFL id first (via espn_id OR a
+// name search, so players without a Sleeper espn_id still work) — and only fall back to a
+// college name search when there's no NFL record to follow.
+async function resolveEspnAthleteId(pid, name, league){
+  const lg = league || 'nfl';
+  const ck = `${pid}:${lg}`;
+  if(espnAthleteIdCache[ck]!=null) return espnAthleteIdCache[ck] || null;
+  const p = sleeperPlayers && sleeperPlayers[pid];
+  const nm = name || (p && p.name) || '';
+  if(lg==='college-football'){
+    const nflId = await resolveEspnAthleteId(pid, nm, 'nfl');   // espn_id or NFL name search
+    if(nflId){
+      const core = await fetchEspnCoreAthlete(String(nflId));
+      const cref = core && core.collegeAthlete && core.collegeAthlete.$ref;
+      const cm = /\/athletes\/(\d+)/.exec(cref||'');
+      if(cm){ espnAthleteIdCache[ck]=cm[1]; return cm[1]; }
+    }
+    // No NFL record / no linked college athlete — last-resort direct college name search.
+    const cid = nm ? await searchEspnAthleteId(nm, '23') : null;
+    espnAthleteIdCache[ck] = cid || '';
+    return cid || null;
+  }
+  // Sleeper's espn_id is an NFL athlete id.
+  if(p && p.espn_id){ espnAthleteIdCache[ck]=p.espn_id; return p.espn_id; }
+  if(!nm){ espnAthleteIdCache[ck]=''; return null; }
+  const id = await searchEspnAthleteId(nm, '28');
+  espnAthleteIdCache[ck] = id || '';
+  return id || null;
 }
 async function fetchEspnGamelog(aid, league, season){
   const key = `${league}:${aid}:${season||'_'}`;
