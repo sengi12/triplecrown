@@ -2901,7 +2901,7 @@ async function loadPlayerCardData(pid, pos, team){
 // independent of which stats source is showing. Uses the cached ESPN athlete-id + draft lookups.
 async function loadPcardDraft(pid){
   try{
-    const aid = await resolveEspnAthleteId(pid, (sleeperPlayers[pid]||{}).name);
+    const aid = await resolveEspnAthleteId(pid, (sleeperPlayers[pid]||{}).name, 'nfl');
     const info = aid ? await fetchEspnDraftInfo(aid) : null;
     const el = document.getElementById('pcardHeroDraft');
     if(el && pcardOpen) el.innerHTML = espnDraftHero(info);
@@ -3116,9 +3116,10 @@ const ESPN_SEARCH_URL = q => `https://site.web.api.espn.com/apis/search/v2?query
 const ESPN_GAMELOG_URL = (league,aid,season) => `https://site.api.espn.com/apis/common/v3/sports/football/${league}/athletes/${aid}/gamelog${season?`?season=${season}`:''}`;
 // ESPN core athlete record — carries draft info ({year, round, selection, team.$ref}).
 const ESPN_CORE_ATHLETE_URL = (season,aid) => `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/${season}/athletes/${aid}?lang=en&region=us`;
-let espnAthleteIdCache = {};   // sleeper pid -> ESPN athlete id ('' = looked up, none found)
+let espnAthleteIdCache = {};   // `${pid}:${league}` -> ESPN athlete id ('' = looked up, none found)
 let espnGamelogCache = {};     // `${league}:${aid}:${season}` -> gamelog json
 let espnDraftCache = {};       // aid -> {year,round,selection,teamCode} | null
+let espnCoreAthleteCache = {}; // nfl aid -> core athlete json | null
 
 function pcardRetryHtml(msg){
   return `<div class="pcard-loading pcard-loading-retry"><span>${msg}</span><button class="pcard-retry-btn" onclick="retryPlayerCardData()">Refresh</button></div>`;
@@ -3126,7 +3127,9 @@ function pcardRetryHtml(msg){
 
 // Clear per-player ESPN lookup caches so a retry can recover from transient failures.
 function clearEspnCardCaches(pid){
-  if(pid!=null) delete espnAthleteIdCache[pid];
+  if(pid==null) return;
+  delete espnAthleteIdCache[`${pid}:nfl`];
+  delete espnAthleteIdCache[`${pid}:college-football`];
 }
 
 function isRookiePlayer(pid){
@@ -3135,25 +3138,42 @@ function isRookiePlayer(pid){
 }
 // Resolve a player's global ESPN athlete id. Prefers Sleeper's espn_id; falls back to an ESPN
 // name search (the numeric id lives in the result's uid as `a:<id>` / in its web link).
-async function resolveEspnAthleteId(pid, name){
-  if(espnAthleteIdCache[pid]!=null) return espnAthleteIdCache[pid] || null;
+async function resolveEspnAthleteId(pid, name, league){
+  const lg = league || 'nfl';
+  const ck = `${pid}:${lg}`;
+  if(espnAthleteIdCache[ck]!=null) return espnAthleteIdCache[ck] || null;
   const p = sleeperPlayers && sleeperPlayers[pid];
-  if(p && p.espn_id){ espnAthleteIdCache[pid]=p.espn_id; return p.espn_id; }
+  // Sleeper's espn_id is an NFL athlete id; only safe to short-circuit for NFL lookups.
+  if(lg==='nfl' && p && p.espn_id){ espnAthleteIdCache[ck]=p.espn_id; return p.espn_id; }
+  // For college logs, ESPN exposes an authoritative linked college athlete id on the NFL record.
+  if(lg==='college-football' && p && p.espn_id){
+    const core = await fetchEspnCoreAthlete(String(p.espn_id));
+    const cref = core && core.collegeAthlete && core.collegeAthlete.$ref;
+    const cm = /\/athletes\/(\d+)/.exec(cref||'');
+    if(cm){ espnAthleteIdCache[ck]=cm[1]; return cm[1]; }
+  }
   const nm = name || (p && p.name) || '';
-  if(!nm){ espnAthleteIdCache[pid]=''; return null; }
+  if(!nm){ espnAthleteIdCache[ck]=''; return null; }
   try{
     const s = await sleeperFetch(ESPN_SEARCH_URL(nm));
     const results = (s && s.results) || [];
+    const wantLeagueId = lg==='college-football' ? '23' : '28';
+    let fallbackId = null;
     for(const r of results){
       if(r.type!=='player') continue;
       for(const it of (r.contents||[])){
+        const uid = it.uid||'';
         let m = /a:(\d+)/.exec(it.uid||'');
         if(!m){ m = /\/id\/(\d+)\//.exec((it.link&&it.link.web)||''); }
-        if(m){ espnAthleteIdCache[pid]=m[1]; return m[1]; }
+        if(!m) continue;
+        if(!fallbackId) fallbackId = m[1];
+        const lm = /~l:(\d+)~/.exec(uid);
+        if(lm && lm[1]===wantLeagueId){ espnAthleteIdCache[ck]=m[1]; return m[1]; }
       }
     }
+    if(fallbackId){ espnAthleteIdCache[ck]=fallbackId; return fallbackId; }
   }catch(e){ /* search blocked/failed — fall through to unresolved */ }
-  espnAthleteIdCache[pid]='';
+  espnAthleteIdCache[ck]='';
   return null;
 }
 async function fetchEspnGamelog(aid, league, season){
@@ -3162,6 +3182,13 @@ async function fetchEspnGamelog(aid, league, season){
   const data = await sleeperFetch(ESPN_GAMELOG_URL(league, aid, season));
   espnGamelogCache[key] = data;
   return data;
+}
+async function fetchEspnCoreAthlete(aid){
+  if(espnCoreAthleteCache[aid]!==undefined) return espnCoreAthleteCache[aid];
+  try{
+    espnCoreAthleteCache[aid] = await sleeperFetch(ESPN_CORE_ATHLETE_URL(PROJ_SEASON, aid));
+  }catch(e){ espnCoreAthleteCache[aid] = null; }
+  return espnCoreAthleteCache[aid];
 }
 // Normalize ESPN's core-athlete `draft` object into {year, round, selection, teamCode}, or
 // {undrafted:true} when the athlete record loaded but carries no draft (a true UDFA), or null
@@ -3276,7 +3303,7 @@ async function loadEspnCardData(pid, posc, body, opts){
   const league = opts.league || 'college-football';
   const def = !!opts.def;
   body.innerHTML = `<div class="pcard-loading">Loading ${league==='nfl'?'':'college '}game logs…</div>`;
-  const aid = await resolveEspnAthleteId(pid, (sleeperPlayers[pid]||{}).name);
+  const aid = await resolveEspnAthleteId(pid, (sleeperPlayers[pid]||{}).name, league);
   if(!pcardOpen) return;
   if(!aid){
     body.innerHTML = pcardRetryHtml('No ESPN stats found for this player yet.');

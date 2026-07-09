@@ -298,7 +298,7 @@ async function loadPlayerCardData(pid, pos, team){
 // independent of which stats source is showing. Uses the cached ESPN athlete-id + draft lookups.
 async function loadPcardDraft(pid){
   try{
-    const aid = await resolveEspnAthleteId(pid, (sleeperPlayers[pid]||{}).name);
+    const aid = await resolveEspnAthleteId(pid, (sleeperPlayers[pid]||{}).name, 'nfl');
     const info = aid ? await fetchEspnDraftInfo(aid) : null;
     const el = document.getElementById('pcardHeroDraft');
     if(el && pcardOpen) el.innerHTML = espnDraftHero(info);
