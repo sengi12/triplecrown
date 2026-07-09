@@ -25,6 +25,7 @@ function handleSeedLoad(e){
       if(j.additions) ADDITIONS=j.additions;   // Spotrac roster changes
       if(j.sharp_season) SHARP_SEASON=j.sharp_season;   // season the Sharp stats describe
       if(j.sumer){ SUMER=j.sumer; SUMER_SEASONS=j.sumer_seasons||Object.keys(j.sumer); }   // SumerSports advanced per-player stats
+      if(j.ktc) KTC=j.ktc;   // KeepTradeCut dynasty player-page slugs (player-card links)
       if(hasSeed){
         SEED=j.seed; rosterMergedTeams.clear();
         HISTORY=j.history||{};

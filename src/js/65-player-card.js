@@ -243,6 +243,7 @@ function renderPlayerCardShell(pid, pos, team){
     `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val pcard-meta-empty">–</span></div>` :
     `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val">${val}</span></div>`;
   const contractBand = contractSummaryHTML(name);
+  const ktcBand = ktcLinkHTML(name, posc);
   const html = `
     <div class="pcard" onclick="event.stopPropagation()">
       <div class="pcard-hero" style="${heroStyle}">
@@ -261,6 +262,7 @@ function renderPlayerCardShell(pid, pos, team){
           <div class="pcard-hero-draft" id="pcardHeroDraft"></div>
         </div>
         <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">✕</button>
+        ${ktcBand}
       </div>
       ${contractBand}
       <div class="pcard-tabs" id="pcardTabs"></div>

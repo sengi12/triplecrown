@@ -23,6 +23,9 @@ const SEED_SHARP_SEASON = 2025;
 // baked in by build_seed.py / loaded from triplecrown_seed.json.
 const SEED_SUMER = {};
 const SEED_SUMER_SEASONS = [];
+// KeepTradeCut dynasty player-page slugs, {nameKey:{slug,pos}} — baked in / loaded from seed.
+// Used to link a player card straight to their KTC dynasty page. Empty by default.
+const SEED_KTC = {};
 // ═══ TRIPLECROWN_SEED_END ═══
 
 
@@ -75,6 +78,11 @@ const SLEEPER_LEAGUES_URL= (userId,season)=>`https://api.sleeper.app/v1/user/${u
 const SLEEPER_LG_DRAFTS_URL=(leagueId)=>`https://api.sleeper.app/v1/league/${leagueId}/drafts`;
 const SLEEPER_AVATAR_THUMB=(id)=>`https://sleepercdn.com/avatars/thumbs/${id}`;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Embedded image assets (base64 data URIs → self-contained, render offline / from file://)
+// ─────────────────────────────────────────────────────────────────────────────
+// KeepTradeCut logo mark (their favicon-96), shown as the player-card KTC link icon.
+const KTC_ICON = 'data:image/png;base64,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';
 // ═════════════════════════════════════════════════════════════════════════════
 // Week-range filtering (reference seasons only) — lets the user drag a dual
 // slider to see what a WR/RB/TE put up over just a stretch of weeks (e.g. Tucker
@@ -492,6 +500,8 @@ let SHARP_SEASON = (typeof SEED_SHARP_SEASON!=='undefined') ? SEED_SHARP_SEASON 
 // when viewing a season that has data (2022-2025), never on projections or seasons without data.
 let SUMER = (typeof SEED_SUMER!=='undefined') ? SEED_SUMER : {};
 let SUMER_SEASONS = (typeof SEED_SUMER_SEASONS!=='undefined') ? SEED_SUMER_SEASONS : [];
+// KeepTradeCut dynasty player-page slugs (player-card links): {nameKey:{slug,pos}}
+let KTC = (typeof SEED_KTC!=='undefined') ? SEED_KTC : {};
 // Head coaches fetched live from ESPN this session: {CODE:{name,headshot,experience}|null}
 let headCoaches = {};
 let hcInFlight = {};
@@ -2378,6 +2388,26 @@ function contractSummaryHTML(name){
   return `<div class="pcard-contract"><span class="pcard-contract-lbl">CONTRACT</span>${parts.join('')}</div>`;
 }
 
+// ── KeepTradeCut dynasty link (player card) ──────────────────────────────────
+// KTC (keeptradecut.com) crowd-sources dynasty trade values. The seed bakes a {nameKey:{slug,pos}}
+// map, so we can deep-link a player straight to their KTC page. Position-guarded so a same-named
+// player on the other side of the ball doesn't borrow a skill player's link. Returns null on miss.
+function ktcEntry(name, pos){
+  if(!KTC || !name) return null;
+  const e = KTC[ecrNormName(name)];
+  if(!e || !e.slug) return null;
+  if(pos && e.pos && e.pos!==pos) return null;   // position mismatch → not the same player
+  return e;
+}
+// A small KTC icon link for the player-card hero (bottom-right). Opens the player's KTC dynasty
+// page in a new tab. Returns '' when we have no KTC slug for them (so nothing renders).
+function ktcLinkHTML(name, pos){
+  const e = ktcEntry(name, pos);
+  if(!e) return '';
+  const url = `https://keeptradecut.com/dynasty-rankings/players/${e.slug}`;
+  return `<a class="pcard-ktc" href="${url}" target="_blank" rel="noopener noreferrer" aria-label="View ${name} on KeepTradeCut (opens in a new tab)" title="View on KeepTradeCut — dynasty trade value"><img src="${KTC_ICON}" class="pcard-ktc-img" alt="KeepTradeCut"></a>`;
+}
+
 function buildPlayerList(){
   const list=[];
   // Auto-populate: make sure every team with seed data is initialized so all players
@@ -2846,6 +2876,7 @@ function renderPlayerCardShell(pid, pos, team){
     `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val pcard-meta-empty">–</span></div>` :
     `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val">${val}</span></div>`;
   const contractBand = contractSummaryHTML(name);
+  const ktcBand = ktcLinkHTML(name, posc);
   const html = `
     <div class="pcard" onclick="event.stopPropagation()">
       <div class="pcard-hero" style="${heroStyle}">
@@ -2864,6 +2895,7 @@ function renderPlayerCardShell(pid, pos, team){
           <div class="pcard-hero-draft" id="pcardHeroDraft"></div>
         </div>
         <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">✕</button>
+        ${ktcBand}
       </div>
       ${contractBand}
       <div class="pcard-tabs" id="pcardTabs"></div>
@@ -5645,6 +5677,7 @@ function handleSeedLoad(e){
       if(j.additions) ADDITIONS=j.additions;   // Spotrac roster changes
       if(j.sharp_season) SHARP_SEASON=j.sharp_season;   // season the Sharp stats describe
       if(j.sumer){ SUMER=j.sumer; SUMER_SEASONS=j.sumer_seasons||Object.keys(j.sumer); }   // SumerSports advanced per-player stats
+      if(j.ktc) KTC=j.ktc;   // KeepTradeCut dynasty player-page slugs (player-card links)
       if(hasSeed){
         SEED=j.seed; rosterMergedTeams.clear();
         HISTORY=j.history||{};

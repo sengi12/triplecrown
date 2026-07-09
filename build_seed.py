@@ -316,11 +316,102 @@ def build_contracts(refresh):
     return contracts
 
 
+# ── KeepTradeCut dynasty player IDs (keeptradecut.com) ───────────────────────
+# KTC is a popular crowd-sourced dynasty trade-value site. Its dynasty-rankings page embeds a
+# `var playersArray = [...]` of every ranked dynasty asset, each carrying a ready-made URL slug
+# (e.g. "bijan-robinson-1414"). We bake a {nameKey: {slug, pos}} map so a player card can link
+# straight to that player's KTC page (opened in a new tab) for at-a-glance dynasty value/trend.
+# Not browser-reachable (CORS / bot protection), so — like the other pulled sources — we fetch
+# it here and bundle the result into the seed. A miss (no match) simply hides the link.
+KTC_URL = "https://keeptradecut.com/dynasty-rankings"
+KTC_POS_KEEP = {"QB", "RB", "WR", "TE"}
+
+def _extract_js_array(html, varname):
+    """Extract a `var <varname> = [ ... ]` JSON array from page HTML via bracket-counting
+    (robust against brackets/quotes inside the data). Returns the parsed list, or None."""
+    i = html.find(varname)
+    if i < 0:
+        return None
+    start = html.find("[", i)
+    if start < 0:
+        return None
+    depth = 0
+    in_str = False
+    esc = False
+    for j in range(start, len(html)):
+        c = html[j]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        else:
+            if c == '"':
+                in_str = True
+            elif c == "[":
+                depth += 1
+            elif c == "]":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(html[start:j + 1])
+                    except Exception:
+                        return None
+    return None
+
+def parse_ktc_players(html):
+    """Parse KTC's embedded playersArray HTML → {nameKey: {slug, pos}} for skill players."""
+    arr = _extract_js_array(html, "playersArray")
+    out = {}
+    for p in (arr or []):
+        pos = p.get("position")
+        slug = p.get("slug")
+        name = p.get("playerName")
+        if pos not in KTC_POS_KEEP or not slug or not name:
+            continue
+        key = _norm_name(name)
+        if key:
+            out[key] = {"slug": slug, "pos": pos}
+    return out
+
+def build_ktc(refresh):
+    """Fetch KTC dynasty rankings → {nameKey: {slug, pos}} for skill players (QB/RB/WR/TE)."""
+    cache_path = os.path.join(CACHE_DIR, "ktc", "players.json")
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    if not refresh and os.path.exists(cache_path):
+        print("  → KTC: using cache")
+        with open(cache_path) as f:
+            return json.load(f)
+    print("  → fetching KeepTradeCut dynasty rankings ...", end="", flush=True)
+    try:
+        req = request.Request(KTC_URL, headers=UA)
+        with request.urlopen(req, timeout=60) as r:
+            raw = r.read()
+        # Some responses arrive gzip-encoded; decode when the magic bytes are present.
+        if raw[:2] == b"\x1f\x8b":
+            import gzip, io
+            raw = gzip.GzipFile(fileobj=io.BytesIO(raw)).read()
+        html = raw.decode("utf-8", "replace")
+    except Exception as e:
+        print(f" FAILED ({type(e).__name__}: {e}) — KTC links will be omitted")
+        return {}
+    out = parse_ktc_players(html)
+    if not out:
+        print(" FAILED (couldn't parse playersArray) — KTC links will be omitted")
+        return {}
+    print(f" ok ({len(out)} players)")
+    with open(cache_path, "w") as f:
+        json.dump(out, f)
+    return out
+
+
 # ── SumerSports advanced per-player stats (sumersports.com) ──────────────────────
 # Per-player advanced metrics by position (QB/RB/WR/TE), for the "Advanced (SumerSports)"
 # toggle on the rankings page. The pages are server-side rendered (the stat <table> is in the
 # raw HTML), so stdlib fetch + a light parse is enough — but the browser can't reach them
-# (no CORS), so we scrape here and bake the result into the seed as SEED_SUMER.
+# (no CORS), so we pull here and bake the result into the seed as SEED_SUMER.
 #
 # Reference-season only: these stats exist for completed seasons (2022-2025 as of now), so we
 # bake one table per position PER SEASON. The app shows them only when viewing a matching
@@ -505,7 +596,7 @@ def build_sumer(refresh):
 # metrics + pace/personnel/tendencies/O-line, plus league ranks per column. These pages
 # are plain HTML tables keyed by team NICKNAME (e.g. "Rams"), so we map nickname → our
 # team code. Like ECR/contracts, they can't be fetched from the browser (no CORS), so we
-# scrape here and bake the result into the seed as SEED_SHARP.
+# pull here and bake the result into the seed as SEED_SHARP.
 SHARP_URLS = {
     "offense":        "https://www.sharpfootballanalysis.com/stats-nfl/nfl-offensive-stats/",
     "offensive_line": "https://www.sharpfootballanalysis.com/stats-nfl/nfl-offensive-line-stats/",
@@ -701,7 +792,7 @@ def _sharp_row_code(name):
     return NICK_TO_CODE.get(n) or FULLNAME_TO_CODE.get(n)
 
 def fetch_sharp_table(key, url, refresh):
-    """Scrape one Sharp page → {columns, title, category, pct_cols, teams:{CODE:{values,ranks}}}."""
+    """Pull one Sharp page → {columns, title, category, pct_cols, teams:{CODE:{values,ranks}}}."""
     cache_path = os.path.join(CACHE_DIR, "sharp", f"{key}.json")
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     if not refresh and os.path.exists(cache_path):
@@ -769,7 +860,7 @@ def build_sharp(refresh):
 
 
 def build_sos(refresh):
-    """Scrape the 2026 Strength of Schedule table → {CODE:{rank, win_total, name}}.
+    """Pull the 2026 Strength of Schedule table → {CODE:{rank, win_total, name}}.
     The SOS page uses FULL team names and columns: SOS Ranking | Team | Vegas Win Total."""
     cache_path = os.path.join(CACHE_DIR, "sharp", "sos.json")
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
@@ -821,7 +912,7 @@ WIKI_OC_TITLE = "List_of_current_NFL_offensive_coordinators"
 WIKI_DC_TITLE = "List_of_current_NFL_defensive_coordinators"
 # MediaWiki parse API → rendered HTML of the page. The coordinators table is a standard
 # <table class="wikitable"> whose cells (Team | Coordinator | Since | Previous position)
-# contain the actual text — far more reliable than scraping raw wikitext or citations.
+# contain the actual text — far more reliable than pulling raw wikitext or citations.
 WIKI_API = ("https://en.wikipedia.org/w/api.php?action=parse&page={title}"
             "&prop=text&format=json&formatversion=2&redirects=1")
 
@@ -1074,7 +1165,7 @@ def build_coordinators(proj_season, refresh):
 WIKI_HC_TITLE = "List_of_current_NFL_head_coaches"
 
 def build_head_coach_history(proj_season, refresh):
-    """Scrape Wikipedia's current-head-coaches table → {CODE: {name, since, prev_code,
+    """Pull Wikipedia's current-head-coaches table → {CODE: {name, since, prev_code,
     prev_team_name, prev_role, prev_years, is_new}}. This reuses the same table/row parser
     as the coordinator pages (Team | Coach | Since | Previous position). It exists so that
     when a team's HEAD COACH is the primary playcaller (per HC_PLAYCALLERS) AND is new for
@@ -1727,6 +1818,9 @@ def main():
     sumer = build_sumer(args.refresh)
     sumer_seasons = sorted(sumer.keys(), reverse=True)
 
+    print("\n  KeepTradeCut dynasty player IDs (player-card links)")
+    ktc = build_ktc(args.refresh)
+
     # Keep only seasons that actually returned stats (older years may be unavailable).
     nonempty_seasons = sorted([s for s, idx in stats_by_season.items() if idx], reverse=True)
     if len(nonempty_seasons) < len(stats_by_season):
@@ -1755,6 +1849,7 @@ def main():
         f.write(f"const SEED_SHARP_SEASON = {args.season-1};\n")
         f.write(f"const SEED_SUMER = {json.dumps(sumer, separators=(',',':'))};\n")
         f.write(f"const SEED_SUMER_SEASONS = {json.dumps(sumer_seasons)};\n")
+        f.write(f"const SEED_KTC = {json.dumps(ktc, separators=(',',':'))};\n")
     # Emit the raw seed json the app loads (compact — no indentation. Pretty-printing this
     # file more than doubled it; the app fetches + JSON.parses it, so compact = smaller
     # download and faster parse with identical data).
@@ -1766,7 +1861,7 @@ def main():
                    "team_names": CODE_TO_FULLNAME, "coordinators": coordinators,
                    "hc_history": hc_history, "additions": additions,
                    "hc_playcallers": HC_PLAYCALLERS, "sharp_season": args.season-1,
-                   "sumer": sumer, "sumer_seasons": sumer_seasons}, f, separators=(",", ":"))
+                   "sumer": sumer, "sumer_seasons": sumer_seasons, "ktc": ktc}, f, separators=(",", ":"))
 
     nplayers = sum(len(seed[t][p]) for t in seed for p in seed[t])
     print(f"\nDone (builder {BUILDER_VERSION}). {nplayers} players across {len(TEAMS)} teams.")

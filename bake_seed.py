@@ -54,6 +54,9 @@ def main():
     hc_history = seed.get("hc_history", {})
     additions = seed.get("additions", {})
     sharp_season = seed.get("sharp_season", "")
+    sumer = seed.get("sumer", {})
+    sumer_seasons = seed.get("sumer_seasons", [])
+    ktc = seed.get("ktc", {})
 
     # Build the replacement block. Compact JSON keeps the file smaller.
     j = lambda o: json.dumps(o, separators=(",", ":"), ensure_ascii=False)
@@ -73,6 +76,9 @@ def main():
         f"const SEED_HC_HISTORY = {j(hc_history)};\n"
         f"const SEED_ADDITIONS = {j(additions)};\n"
         f"const SEED_SHARP_SEASON = {sharp_season or 0};\n"
+        f"const SEED_SUMER = {j(sumer)};\n"
+        f"const SEED_SUMER_SEASONS = {j(sumer_seasons)};\n"
+        f"const SEED_KTC = {j(ktc)};\n"
         f"{END}"
     )
 

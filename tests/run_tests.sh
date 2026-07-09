@@ -163,13 +163,14 @@ run_js_test test_ecr_load      "Seed load populates ECR (incl. ECR-only seeds, t
 run_js_test test_copy_undo     "Undo for copy-to-working actions (cross-team Pittman case, seed+working revert)"
 run_js_test test_copy_noroster "Copy-from-prev-season works when roster unverifiable (seed-only, no Sleeper DB)"
 run_js_test test_contracts     "Dynasty contract columns (Age/APY/FA, next-year FA red, dynasty-only)"
+run_js_test test_ktc           "KeepTradeCut player-card link: slug lookup, URL build, position guard, misses"
 
 # Step 4: Python tests
 echo ""
 PYBUILD="$DIR/../build_seed.py"
 if [ -f "$DIR/test_flacco_split.py" ] && [ -f "$PYBUILD" ]; then
   echo "═══ Python tests ═══"
-  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_scrape test_sos_scrape test_spotrac_scrape test_roster_truth test_sumer_scrape; do
+  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_spotrac_pull test_roster_truth test_sumer_pull test_ktc_pull; do
     [ -f "$DIR/${pyt}.py" ] || continue
     output=$(python3 "$DIR/${pyt}.py" 2>&1) || true
     p=$(echo "$output" | grep -ciE "PASS" || true)

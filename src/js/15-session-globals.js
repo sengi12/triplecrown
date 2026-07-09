@@ -101,6 +101,8 @@ let SHARP_SEASON = (typeof SEED_SHARP_SEASON!=='undefined') ? SEED_SHARP_SEASON 
 // when viewing a season that has data (2022-2025), never on projections or seasons without data.
 let SUMER = (typeof SEED_SUMER!=='undefined') ? SEED_SUMER : {};
 let SUMER_SEASONS = (typeof SEED_SUMER_SEASONS!=='undefined') ? SEED_SUMER_SEASONS : [];
+// KeepTradeCut dynasty player-page slugs (player-card links): {nameKey:{slug,pos}}
+let KTC = (typeof SEED_KTC!=='undefined') ? SEED_KTC : {};
 // Head coaches fetched live from ESPN this session: {CODE:{name,headshot,experience}|null}
 let headCoaches = {};
 let hcInFlight = {};

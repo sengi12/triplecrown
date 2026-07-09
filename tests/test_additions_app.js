@@ -7,7 +7,7 @@ const app=new Function(code+`return {
   renderTeamAdditions, tabBar, fmtMillions,
   setAdd:(a)=>{ADDITIONS=a;}, setNames:(n)=>{TEAM_NAMES=n;}, setTeam:(t)=>{currentTeam=t;} };`)();
 
-// Real parsed Bengals additions (from the scraper output)
+// Real parsed Bengals additions (from the pull output)
 const ADD={CIN:{
   free_agents:[
     {player:'Boye Mafe',pos:'OLB',years:3,value_m:60.0,aav_m:20.0,signed:'Mar 09, 2026'},

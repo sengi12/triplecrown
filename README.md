@@ -192,7 +192,7 @@ bake_seed.py  --embeds-->  index_baked.html   rankings scored to your league
 
 ## Tests
 
-The project ships with a regression suite (Node + Python) covering the projection math, QB games model, week-range filtering, ECR/format sync, Sleeper league linking + scoring detection, dynasty contracts, per-team undo, copy-to-working, Sharp advanced-stat scraping and display, strength of schedule, coordinator/head-coach parsing and scheme carryover, Spotrac roster-change parsing, red-zone rankings, SumerSports advanced metrics + situational splits, player cards (ESPN gamelogs, contract/draft summaries, college stats, playoff-round labels), mobile layout, seed loading/baking, and the season-switching edge cases.
+The project ships with a regression suite (Node + Python) covering the projection math, QB games model, week-range filtering, ECR/format sync, Sleeper league linking + scoring detection, dynasty contracts, per-team undo, copy-to-working, Sharp advanced-stat pulling and display, strength of schedule, coordinator/head-coach parsing and scheme carryover, Spotrac roster-change parsing, red-zone rankings, SumerSports advanced metrics + situational splits, player cards (ESPN gamelogs, contract/draft summaries, college stats, playoff-round labels), mobile layout, seed loading/baking, and the season-switching edge cases.
 
 ```bash
 ./run_tests.sh index.html
@@ -202,7 +202,6 @@ The project ships with a regression suite (Node + Python) covering the projectio
 
 ## To Do
 - [ ] Add SumerSport Personnel statistics for full teams in past seasons (tie to OCs, DCs)
-- [ ] Add KTC values / graphs for Dynasty
 - [ ] Add FantasyPros-esque feature to sync league and compare rosters
 - [ ] Add Coaching History (HCs, OCs, DCs)
 

@@ -22,5 +22,8 @@ const SEED_SHARP_SEASON = 2025;
 // baked in by build_seed.py / loaded from triplecrown_seed.json.
 const SEED_SUMER = {};
 const SEED_SUMER_SEASONS = [];
+// KeepTradeCut dynasty player-page slugs, {nameKey:{slug,pos}} — baked in / loaded from seed.
+// Used to link a player card straight to their KTC dynasty page. Empty by default.
+const SEED_KTC = {};
 // ═══ TRIPLECROWN_SEED_END ═══
 

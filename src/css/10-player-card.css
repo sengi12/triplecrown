@@ -63,6 +63,13 @@
   background:rgba(0,212,170,.13);padding:2px 6px;border-radius:4px;}
 .pcard-contract .muted{color:var(--muted);font-weight:600;}
 .pcard-ct-fa{margin-left:auto;}
+/* KTC dynasty link — small icon badge tucked into the hero's bottom-right corner. */
+.pcard-ktc{position:absolute;right:10px;bottom:10px;z-index:5;width:26px;height:26px;border-radius:7px;
+  display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.9);
+  box-shadow:0 2px 8px rgba(0,0,0,.35);transition:transform .12s,box-shadow .12s;
+  -webkit-tap-highlight-color:rgba(255,255,255,.2);}
+.pcard-ktc:hover{transform:translateY(-1px) scale(1.06);box-shadow:0 4px 12px rgba(0,0,0,.45);}
+.pcard-ktc-img{width:18px;height:18px;object-fit:contain;display:block;}
 .pcard-tabs{display:flex;gap:4px;margin:8px 2px 2px;}
 .pcard-tab{flex:0 0 auto;padding:5px 15px;font-size:10.5px;font-weight:800;letter-spacing:.03em;cursor:pointer;
   border:1px solid var(--border);background:var(--surface2);color:var(--muted);border-radius:7px;transition:all .15s;}

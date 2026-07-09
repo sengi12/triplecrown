@@ -175,6 +175,26 @@ function contractSummaryHTML(name){
   return `<div class="pcard-contract"><span class="pcard-contract-lbl">CONTRACT</span>${parts.join('')}</div>`;
 }
 
+// ── KeepTradeCut dynasty link (player card) ──────────────────────────────────
+// KTC (keeptradecut.com) crowd-sources dynasty trade values. The seed bakes a {nameKey:{slug,pos}}
+// map, so we can deep-link a player straight to their KTC page. Position-guarded so a same-named
+// player on the other side of the ball doesn't borrow a skill player's link. Returns null on miss.
+function ktcEntry(name, pos){
+  if(!KTC || !name) return null;
+  const e = KTC[ecrNormName(name)];
+  if(!e || !e.slug) return null;
+  if(pos && e.pos && e.pos!==pos) return null;   // position mismatch → not the same player
+  return e;
+}
+// A small KTC icon link for the player-card hero (bottom-right). Opens the player's KTC dynasty
+// page in a new tab. Returns '' when we have no KTC slug for them (so nothing renders).
+function ktcLinkHTML(name, pos){
+  const e = ktcEntry(name, pos);
+  if(!e) return '';
+  const url = `https://keeptradecut.com/dynasty-rankings/players/${e.slug}`;
+  return `<a class="pcard-ktc" href="${url}" target="_blank" rel="noopener noreferrer" aria-label="View ${name} on KeepTradeCut (opens in a new tab)" title="View on KeepTradeCut — dynasty trade value"><img src="${KTC_ICON}" class="pcard-ktc-img" alt="KeepTradeCut"></a>`;
+}
+
 function buildPlayerList(){
   const list=[];
   // Auto-populate: make sure every team with seed data is initialized so all players
