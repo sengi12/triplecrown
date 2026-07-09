@@ -318,6 +318,13 @@ function setPcardStatsMode(mode){
   renderPcardStatTabs();
   pcardLoadStats(mode);
 }
+// Retry the current card's stat load after a transient ESPN/network failure.
+function retryPlayerCardData(){
+  if(!pcardState) return;
+  const pid = pcardState.pid;
+  if(typeof clearEspnCardCaches==='function') clearEspnCardCaches(pid);
+  pcardLoadStats(pcardStatsMode);
+}
 // Dispatch the body render for the chosen source. College always uses the ESPN college gamelog;
 // pro uses Sleeper weekly (skill) or the ESPN nfl gamelog (defense / other).
 function pcardLoadStats(mode){
@@ -360,7 +367,9 @@ async function loadSleeperCareerStats(pid, posc, body){
     out += `<div class="pcard-src">Per-game stats via Sleeper · FPTS uses your current scoring settings.</div>`;
     if(pcardOpen && tok===pcardToken) body.innerHTML = out;
   }catch(e){
-    if(pcardOpen && tok===pcardToken) body.innerHTML = `<div class="pcard-loading">Couldn't load game logs. Check your connection and try again.</div>`;
+    if(pcardOpen && tok===pcardToken){
+      body.innerHTML = `<div class="pcard-loading pcard-loading-retry"><span>Couldn't load game logs. Check your connection and try again.</span><button class="pcard-retry-btn" onclick="retryPlayerCardData()">Refresh</button></div>`;
+    }
   }
 }
 // Build sorted weekly rows for one season from Sleeper weekly data.

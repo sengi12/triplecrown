@@ -42,6 +42,7 @@ function copyTeamToWorking(team){
   activeSeason='proj'; userProj=workingProj; SEED=ps; currentTeam=team;
   dirtySinceImport=true;
   ensureTeam(team);
+  saveSession();
   renderSeasonTabs(); renderSidebar(); renderContent();
   const filterNote = (!canFilter) ? ' (roster unverified — copied all; ↻ Sleeper to refine)' : (skipped?` · skipped ${skipped} no longer on roster`:'');
   toast(`Copied ${copied} ${team} player${copied===1?'':'s'} from ${refSeason}${filterNote} ✓`,'ok');
@@ -51,6 +52,7 @@ function copyTeamToWorking(team){
 // projected to play for THIS season (falls back to their historical team).
 function copyPlayerToWorking(pid,pos){
   if(activeSeason==='proj') return;
+  const refSeason=activeSeason;
   const refSeasonSeed=seasonStatsCache[activeSeason]||{};
   let src=null;
   const rt=currentTeam;
@@ -75,10 +77,13 @@ function copyPlayerToWorking(pid,pos){
   const ex=arr.findIndex(p=>p.player_id===pid);
   if(ex>=0) arr[ex]=copy; else arr.push(copy);
   delete workingProj[destTeam];   // rebuild that working team to include the copied line
+  activeSeason='proj'; userProj=workingProj; SEED=ps; currentTeam=destTeam;
   dirtySinceImport=true;
-  const sameTeam = destTeam===currentTeam;
+  const sameTeam = destTeam===rt;
+  ensureTeam(destTeam);
   saveSession();
-  toast(`Copied ${src.name}'s ${activeSeason} line → ${destTeam} working set ✓${sameTeam?' · ↶ undo above':` · ↶ undo on ${destTeam}'s page`}`,'ok');
+  renderSeasonTabs(); renderSidebar(); renderContent();
+  toast(`Copied ${src.name}'s ${refSeason} line → ${destTeam} working set ✓${sameTeam?' · back on the live build view':` · switched to ${destTeam} ${PROJ_SEASON} view`}`,'ok');
   updateUndoButton();
 }
 

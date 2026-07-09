@@ -9,11 +9,12 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   assembleSeed, normalizeSleeperRow, ensureTeam, initPassingShares, teamTargetPool, teamRecYardsPool,
+  weekFilterPaceButton, weekFilterPaceText,
   setSEED:(s)=>{SEED=s;projSeed=s;seasonStatsCache.proj=s;workingProj={};userProj=workingProj;activeSeason='2025';referenceProj=workingProj;},
   selectTeam:t=>{currentTeam=t;ensureTeam(t);},
-  setWeekFilterDirect:(team,lo,hi,skillData,qbPool)=>{
+  setWeekFilterDirect:(team,lo,hi,skillData,qbPool,qbData)=>{
     const st=userProj[team];
-    st.weekFilter=[lo,hi]; st.weekFilterData=skillData; st.weekFilterQBPool=qbPool;
+    st.weekFilter=[lo,hi]; st.weekFilterData=skillData; st.weekFilterQBPool=qbPool; st.weekFilterQBData=qbData||null;
     st.passing_shares=null; initPassingShares(team);
   },
   getProj:()=>userProj };
@@ -39,13 +40,30 @@ console.log('\n=== Apply week 1-9 filter (Kraft hot stretch, QB also windowed) =
 const skillData={'9484':{receiving_targets:44,receptions:32,receiving_yards:489,receiving_tds:6,rushing_attempts:1,rushing_yards:3,rushing_tds:0,games_played:8}};
 // QB pool for weeks 1-9 only (smaller subset of season)
 const qbPoolFiltered={pass_yards:2100, pass_att:290, pass_tds:15, comp:200};
-app.setWeekFilterDirect('GB',1,9,skillData,qbPoolFiltered);
+const qbData={'q':{pass_yards:2100, pass_att:290, pass_td:15, comp:200, pass_int:7, rush_att:48, rush_yards:260, rush_td:3, games_played:8}};
+app.setWeekFilterDirect('GB',1,9,skillData,qbPoolFiltered,qbData);
 
 const kraftFiltered=st.passing_shares.find(p=>p.name==='Tucker Kraft');
 console.log('Kraft windowed targets:', kraftFiltered.baseline_targets, '(expect 44)');
 console.log('Kraft windowed yards:', kraftFiltered.baseline_yards, '(expect 489)');
 console.log('Pool (rec yds available) now:', app.teamRecYardsPool(st), '(expect 2100, the QB windowed total)');
 console.log('Kraft share of windowed pool:', (kraftFiltered.share*100).toFixed(1)+'%');
+const paceBtn=app.weekFilterPaceButton(st,'9484','rec');
+const qbPaceBtn=app.weekFilterPaceButton(st,'q','qb');
+const paceText=app.weekFilterPaceText(st,'9484','rec');
+console.log('Kraft pace button present:', /pace-info-btn/.test(paceBtn));
+console.log('Kraft pace button opens a persistent popover:', /toggleWeekFilterPace\(/.test(paceBtn));
+console.log('Kraft pace text references 17-game pace + weeks + sample games:', /17-game pace/.test(paceText) && /weeks 1-9/.test(paceText) && /8 games/.test(paceText));
+console.log('QB pace button includes pass and rush pace source text:', /toggleWeekFilterPace\(/.test(qbPaceBtn) && /pass yds/.test(app.weekFilterPaceText(st,'q','qb')) && /rush yds/.test(app.weekFilterPaceText(st,'q','qb')));
+const okMain = kraftFiltered.baseline_targets===44 && kraftFiltered.baseline_yards===489 && app.teamRecYardsPool(st)===2100
+  && /pace-info-btn/.test(paceBtn) && /toggleWeekFilterPace\(/.test(paceBtn) && /17-game pace/.test(paceText)
+  && /pass yds/.test(app.weekFilterPaceText(st,'q','qb'));
 
-const ok = kraftFiltered.baseline_targets===44 && kraftFiltered.baseline_yards===489 && app.teamRecYardsPool(st)===2100;
+console.log('\n=== Apply week 13-14 filter (QB missed whole window) ===');
+const zeroQbData={'q':{pass_yards:0, pass_att:0, pass_td:0, comp:0, pass_int:0, rush_att:0, rush_yards:0, rush_td:0, games_played:0}};
+app.setWeekFilterDirect('GB',13,14,{}, {pass_yards:0, pass_att:0, pass_tds:0, comp:0}, zeroQbData);
+const okZero = app.weekFilterPaceButton(st,'q','qb')==='';
+console.log('Zero-game QB pace button hidden:', okZero);
+
+const ok = okMain && okZero;
 console.log('\nRESULT:', ok?'PASS (week filter flows through pools + shares correctly)':'FAIL');

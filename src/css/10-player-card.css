@@ -75,6 +75,10 @@
 .pcard-hero-draft-logo{width:15px;height:15px;object-fit:contain;vertical-align:middle;}
 .pcard-hero-draft-team{display:inline-flex;align-items:center;gap:4px;}
 .pcard-loading{padding:20px;text-align:center;color:var(--muted);font-size:12px;}
+.pcard-loading-retry{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;}
+.pcard-retry-btn{height:24px;padding:0 10px;border-radius:999px;border:1px solid var(--border);
+  background:var(--surface2);color:var(--text);font-size:11px;font-weight:700;cursor:pointer;}
+.pcard-retry-btn:hover{border-color:var(--accent);color:var(--accent);}
 .pcard-table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
 .pcard-table{border-collapse:separate;border-spacing:0;font-size:11px;width:100%;}
 .pcard-table th{font-size:8.5px;font-weight:800;color:var(--muted);letter-spacing:.03em;
@@ -171,6 +175,18 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
   flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;}
 .share-name{font-size:12px;font-weight:600;flex:1;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pace-info-wrap{position:relative;display:inline-flex;flex:0 0 auto;}
+.pace-info-btn{width:18px;height:18px;border-radius:999px;border:1px solid var(--border);background:var(--surface3);
+  color:var(--muted);font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;
+  cursor:help;flex:0 0 auto;padding:0;line-height:1;}
+.pace-info-btn:hover{border-color:var(--accent);color:var(--accent);}
+.pace-info-pop{position:absolute;top:24px;right:0;z-index:25;min-width:260px;max-width:340px;padding:9px 10px;
+  background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 14px 36px rgba(0,0,0,.35);
+  white-space:normal;color:var(--text);font-size:11px;line-height:1.45;user-select:text;-webkit-user-select:text;}
+.pace-info-pop-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+.pace-info-pop-lbl{font-size:9px;font-weight:800;letter-spacing:.05em;color:var(--accent);text-transform:uppercase;}
+.pace-info-pop-close{margin-left:auto;background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;font-weight:800;padding:0 2px;}
+.pace-info-pop-body{white-space:normal;word-break:break-word;}
 .share-pct{font-size:12px;font-weight:800;font-family:var(--mono);width:42px;text-align:right;flex-shrink:0;}
 .share-vol{font-size:10px;color:var(--muted);font-family:var(--mono);width:46px;text-align:right;flex-shrink:0;}
 .share-stats{display:flex;gap:8px;padding-left:30px;flex-wrap:wrap;align-items:center;}

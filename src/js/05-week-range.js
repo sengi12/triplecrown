@@ -36,6 +36,30 @@ function sumWeeklyRange(weekly, team, fromWk, toWk){
   return out;
 }
 
+// QB version of sumWeeklyRange: passing + rushing totals over the requested window, restricted
+// to the same team so a traded player's split doesn't blend multiple rosters together.
+function sumWeeklyRangeQB(weekly, team, fromWk, toWk){
+  const out = {pass_yards:0, pass_att:0, pass_td:0, comp:0, pass_int:0,
+               rush_att:0, rush_yards:0, rush_td:0, games_played:0};
+  for(const wk in (weekly||{})){
+    const wn = parseInt(wk);
+    if(isNaN(wn) || wn<fromWk || wn>toWk) continue;
+    const row = weekly[wk];
+    if(!row || typeof row!=='object' || row.team!==team) continue;
+    const s = row.stats||{};
+    if(s.gp) out.games_played += s.gp;
+    out.pass_yards += s.pass_yd||0;
+    out.pass_att   += s.pass_att||0;
+    out.pass_td    += s.pass_td||0;
+    out.comp       += s.pass_cmp||0;
+    out.pass_int   += s.pass_int||0;
+    out.rush_att   += s.rush_att||0;
+    out.rush_yards += s.rush_yd||0;
+    out.rush_td    += s.rush_td||0;
+  }
+  return out;
+}
+
 // Fetch + cache weekly data for every WR/RB/TE on a team's roster (reference season),
 // then build {player_id -> filtered totals} for the given week window. Players whose
 // fetch fails just fall back to season totals (handled by the caller).
@@ -49,6 +73,21 @@ async function buildWeekFilterData(team, season, fromWk, toWk){
   for(const r of results){
     if(r.status!=='fulfilled'||!r.value||!r.value.weekly) continue;
     data[r.value.pid]=sumWeeklyRange(r.value.weekly, team, fromWk, toWk);
+  }
+  return data;
+}
+
+// Per-QB filtered totals for the active week window. The passing/rushing tabs already use the
+// aggregated QB pool; this finer map powers the QB phase itself and the 17-game pace tooltip.
+async function buildWeekFilterQBData(team, season, fromWk, toWk){
+  const qbs=getBase(team,'QB').filter(p=>p.player_id);
+  const results = await Promise.allSettled(
+    qbs.map(p=>fetchPlayerWeekly(p.player_id, season).then(w=>({pid:p.player_id, weekly:w})))
+  );
+  const data={};
+  for(const r of results){
+    if(r.status!=='fulfilled'||!r.value||!r.value.weekly) continue;
+    data[r.value.pid]=sumWeeklyRangeQB(r.value.weekly, team, fromWk, toWk);
   }
   return data;
 }
@@ -91,6 +130,70 @@ function applyWeekFilterOverrides(list, filterData){
   });
 }
 
+// HTML-escape a string that is going into a title="..." attribute.
+function escAttr(s){
+  return String(s==null?'':s)
+    .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+    .replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+// Close any open 17-game pace popovers.
+function closeWeekFilterPacePops(){
+  if(!document || !document.querySelectorAll) return;
+  document.querySelectorAll('.pace-info-pop').forEach(el=>el.remove());
+}
+// Toggle a persistent, selectable popover containing the 17-game pace text so the user can
+// copy it without racing a hover tooltip.
+function toggleWeekFilterPace(btn, text){
+  if(!btn || !btn.parentNode) return;
+  const wrap = btn.parentNode;
+  const existing = wrap.querySelector ? wrap.querySelector('.pace-info-pop') : null;
+  if(existing){ existing.remove(); return; }
+  closeWeekFilterPacePops();
+  const pop = document.createElement('div');
+  pop.className='pace-info-pop';
+  pop.onclick=(e)=>e.stopPropagation();
+  pop.innerHTML = `<div class="pace-info-pop-head">
+      <span class="pace-info-pop-lbl">17-game pace</span>
+      <button class="pace-info-pop-close" onclick="this.closest('.pace-info-pop').remove()" aria-label="Close">✕</button>
+    </div>
+    <div class="pace-info-pop-body">${escAttr(text)}</div>`;
+  wrap.appendChild(pop);
+}
+if(document && document.addEventListener){
+  document.addEventListener('click', e=>{
+    const t=e.target;
+    if(t && t.closest && t.closest('.pace-info-wrap')) return;
+    closeWeekFilterPacePops();
+  });
+}
+// 17-game pace helper shown beside a player's name when a historical week window is active.
+// Scale from GAMES PLAYED in the filtered sample, not week span, so missed games/injuries are
+// represented realistically. Returns '' when no filtered sample is available.
+function weekFilterPaceText(state, pid, mode){
+  if(activeSeason==='proj' || !state || !isWeekFilterActive(state) || !pid) return '';
+  const src = (mode==='qb') ? (state.weekFilterQBData && state.weekFilterQBData[pid])
+                            : (state.weekFilterData && state.weekFilterData[pid]);
+  if(!src || !src.games_played) return '';
+  const [lo,hi]=state.weekFilter||[1,18];
+  const gp=src.games_played;
+  const scale=v=>Math.round((v||0)/gp*SEASON_GAMES);
+  let parts=[];
+  if(mode==='qb'){
+    parts=[`${scale(src.pass_yards).toLocaleString()} pass yds`, `${scale(src.pass_td)} pass TD`, `${scale(src.pass_att)} att`,
+           `${scale(src.rush_att)} rush att`, `${scale(src.rush_yards)} rush yds`, `${scale(src.rush_td)} rush TD`];
+  } else if(mode==='rush'){
+    parts=[`${scale(src.rushing_attempts)} att`, `${scale(src.rushing_yards).toLocaleString()} rush yds`, `${scale(src.rushing_tds)} rush TD`];
+  } else {
+    parts=[`${scale(src.receiving_targets)} tgt`, `${scale(src.receptions)} rec`, `${scale(src.receiving_yards).toLocaleString()} rec yds`, `${scale(src.receiving_tds)} rec TD`];
+  }
+  return `17-game pace from weeks ${lo}-${hi} (${gp} game${gp===1?'':'s'}): ${parts.join(' · ')}`;
+}
+function weekFilterPaceButton(state, pid, mode){
+  const text = weekFilterPaceText(state, pid, mode);
+  if(!text) return '';
+  return `<span class="pace-info-wrap"><button class="pace-info-btn" onclick="toggleWeekFilterPace(this, ${pcardArg(text)})" aria-label="Show 17-game pace">i</button></span>`;
+}
+
 function isWeekFilterActive(state){
   return !!(state.weekFilter && (state.weekFilter[0]>1 || state.weekFilter[1]<18));
 }
@@ -102,12 +205,14 @@ async function applyWeekRange(team, fromWk, toWk){
   state.weekFilterLoading=true;
   renderContent();
   try{
-    const [skillData, qbPool] = await Promise.all([
+    const [skillData, qbPool, qbData] = await Promise.all([
       buildWeekFilterData(team, activeSeason, fromWk, toWk),
       buildWeekFilterQBPool(team, activeSeason, fromWk, toWk),
+      buildWeekFilterQBData(team, activeSeason, fromWk, toWk),
     ]);
     state.weekFilterData=skillData;
     state.weekFilterQBPool=qbPool;
+    state.weekFilterQBData=qbData;
     state.weekFilterLoading=false;
     state.passing_shares=null; state.rushing.shares=null;  // force rebuild from filtered data
     initPassingShares(team); initRushingShares(team);
@@ -120,7 +225,7 @@ async function applyWeekRange(team, fromWk, toWk){
 }
 function resetWeekRange(team){
   const state=userProj[team]; if(!state) return;
-  state.weekFilter=null; state.weekFilterData=null; state.weekFilterQBPool=null;
+  state.weekFilter=null; state.weekFilterData=null; state.weekFilterQBPool=null; state.weekFilterQBData=null;
   state.passing_shares=null; state.rushing.shares=null;
   initPassingShares(team); initRushingShares(team);
   renderContent();

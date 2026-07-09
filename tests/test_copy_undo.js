@@ -15,6 +15,7 @@ const app=new Function(code+`return {
   setCurrentTeam:(t)=>{currentTeam=t;},
   setSleeper:(p)=>{sleeperPlayers=p;},
   getWorkingProj:()=>workingProj, getActiveSeason:()=>activeSeason,
+  getCurrentTeam:()=>currentTeam,
   getUndoStackLen:(t)=>(undoStacks[t]||[]).length };
 `)();
 
@@ -41,13 +42,13 @@ console.log('Before copy — PIT undo stack:', app.getUndoStackLen('PIT'), '| wo
 app.copyPlayerToWorking('pittman','WR');
 console.log('PIT undo stack depth right after copy (expect 1, even though we were viewing IND):', app.getUndoStackLen('PIT'));
 console.log('IND undo stack depth (expect 0 — IND working set untouched):', app.getUndoStackLen('IND'));
-// Now simulate the user clicking back to the "2026 Proj" tab and opening PIT (real UI flow)
-app.backToProj();
+console.log('Auto-switched back to proj view:', app.getActiveSeason()==='proj');
+console.log('Current team switched to PIT:', app.getCurrentTeam()==='PIT');
 app.ensureTeam('PIT'); app.initPassingShares('PIT');
 const pitWorking=app.getWorkingProj()['PIT'];
 const pittmanOnPit = pitWorking.passing_shares.find(p=>p.name==='Michael Pittman');
 console.log('Pittman on PIT working set with real stats:', pittmanOnPit?`${pittmanOnPit.baseline_targets} tgt (expect >0)`:'MISSING');
-console.log('RESULT:', app.canUndo('PIT') && !app.canUndo('IND') && pittmanOnPit && pittmanOnPit.baseline_targets>0 ? 'PASS (undo tracked on destination team, data copied correctly)' : 'FAIL');
+console.log('RESULT:', app.canUndo('PIT') && !app.canUndo('IND') && app.getActiveSeason()==='proj' && app.getCurrentTeam()==='PIT' && pittmanOnPit && pittmanOnPit.baseline_targets>0 ? 'PASS (undo tracked on destination team, data copied correctly)' : 'FAIL');
 
 console.log('\n=== TEST 2: undo reverts BOTH the working set AND the underlying seed roster row ===');
 app.setCurrentTeam('PIT');  // realistic: undo button only ever fires for the currently-displayed team

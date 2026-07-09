@@ -8,26 +8,45 @@ function renderQB(team,state){
       <div>No projected QB found for ${team} in this dataset. This can happen with historical
       seasons or sparse projections. Switch seasons or pull live ${PROJ_SEASON} projections.</div></div></div>`;
   }
-  const isMulti=state.qbs.length>1;
-  const idx=Math.min(state.activeQB||0, state.qbs.length-1);
-  const qb=state.qbs[idx];
+  // Historical week-window active? Render a filtered QB view (totals + gp) without touching the
+  // underlying projection state. This lets hurt/partial-season QB stretches be explored like the
+  // WR/RB/TE tabs while keeping the working set intact.
+  const qbs = (activeSeason!=='proj' && isWeekFilterActive(state) && state.weekFilterQBData)
+    ? state.qbs.map(q=>{
+        const f=q.player_id && state.weekFilterQBData[q.player_id];
+        // Important: a QB can legitimately have ZERO games in the filtered window (injury / bye /
+        // benching). In that case we must show a zeroed filtered slice, not fall back to the full-
+        // season line, or the UI falsely claims he played his season-long total during the stretch.
+        if(!f) return q;
+        return Object.assign({}, q, {
+          passing_yards:f.pass_yards, passing_tds:f.pass_td, passing_attempts:f.pass_att,
+          passing_completions:f.comp, interceptions_thrown:f.pass_int,
+          qb_rush_yards:f.rush_yards, qb_rush_tds:f.rush_td, qb_rush_attempts:f.rush_att,
+          games_played:(f.games_played||0), games:(f.games_played||0), base_games:(f.games_played||1),
+        });
+      })
+    : state.qbs;
+  const isMulti=qbs.length>1;
+  const idx=Math.min(state.activeQB||0, qbs.length-1);
+  const qb=qbs[idx];
   const seed=getBase(team,'QB').find(q=>q.name===qb.name)||getBase(team,'QB')[0]||{};
   const compPct=qb.passing_attempts>0?(qb.passing_completions/qb.passing_attempts*100).toFixed(1):'0';
   const ypa=qb.passing_attempts>0?(qb.passing_yards/qb.passing_attempts).toFixed(2):'-';
-  const teamGames=state.qbs.reduce((s,q)=>s+(q.games||0),0);
+  const teamGames=qbs.reduce((s,q)=>s+(q.games||0),0);
   const overBudget = teamGames > SEASON_GAMES + 0.5;
+  const weekSlider=weekRangeSliderHTML(team,state);
   // Workload card: per-QB Games (0–17) slider. Drives pace extrapolation. A QB at 0
   // games contributes nothing to team totals but keeps his per-game pace for later.
   const workloadCard = `
     <div class="card">
       <div class="card-title">QB Workload ${isMulti?'<span class="split-badge">SPLIT SQUAD</span>':''}</div>
-      ${state.qbs.map((q,i)=>{
+      ${qbs.map((q,i)=>{
         const gms=Math.round(q.games||0);
         const active = i===idx;
         return `<div class="snap-row" style="${active?'border:1px solid var(--qb)':''}">
           <span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${imgTag(hsURL(q),'player-headshot')}</span>
           <div class="snap-info" style="flex:1">
-            <div style="font-size:12px;font-weight:700"><span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${q.name}</span>
+            <div style="font-size:12px;font-weight:700"><span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${q.name}</span>${weekFilterPaceButton(state,q.player_id,'qb')}
               ${q.games_played?`<span style="font-size:9px;color:var(--muted);font-weight:500">· actually played ${Math.round(q.games_played)}</span>`:''}</div>
             <div style="font-size:10px;color:var(--muted)" id="wl-sub-${i}">${gms} games · ${perGame(q,'passing_yards').toFixed(1)} pass yds/gm</div>
           </div>
@@ -41,13 +60,14 @@ function renderQB(team,state){
       </div>
     </div>`;
   const games=Math.round(qb.games||0);
-  return `${workloadCard}<div class="card">
+  return `${weekSlider}${workloadCard}<div class="card">
     <div class="card-title">${qb.name} — Passing ${isMulti?`<span style="font-size:9px;color:var(--muted)">(editing QB${idx+1} of ${state.qbs.length})</span>`:''}</div>
     ${isMulti?`<div class="qb-tab-bar">${state.qbs.map((q,i)=>
       `<button class="qb-tab ${i===idx?'active':''}" onclick="setActiveQB(${i})">${q.name.split(' ').pop()}</button>`).join('')}</div>`:''}
     <div class="player-row"><span class="clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${imgTag(hsURL(qb),'player-headshot')}</span>
       <span class="pos-badge pos-QB">QB${idx+1}</span>
       <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${qb.name}</div>
+        ${weekFilterPaceButton(state,qb.player_id,'qb')}
         <div class="player-sub">${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?`ECR ${e.rank_ecr}`:'';})()}${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?' · ':'';})()}<span id="qb-games-sub">${games}</span> games projected</div></div></div>
     <div class="alert alert-info" style="margin-bottom:11px"><span class="alert-icon">📈</span>
       <div>These are this QB's totals across <b>${games} games</b>. Adjust <b>Games Played</b> above to extrapolate a full-season pace (e.g. an 8-game stint scaled to 17), and the stats below scale with it.</div></div>

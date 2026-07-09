@@ -15,6 +15,15 @@ let espnAthleteIdCache = {};   // sleeper pid -> ESPN athlete id ('' = looked up
 let espnGamelogCache = {};     // `${league}:${aid}:${season}` -> gamelog json
 let espnDraftCache = {};       // aid -> {year,round,selection,teamCode} | null
 
+function pcardRetryHtml(msg){
+  return `<div class="pcard-loading pcard-loading-retry"><span>${msg}</span><button class="pcard-retry-btn" onclick="retryPlayerCardData()">Refresh</button></div>`;
+}
+
+// Clear per-player ESPN lookup caches so a retry can recover from transient failures.
+function clearEspnCardCaches(pid){
+  if(pid!=null) delete espnAthleteIdCache[pid];
+}
+
 function isRookiePlayer(pid){
   const p = sleeperPlayers && sleeperPlayers[pid];
   return !!(p && p.years_exp===0);
@@ -165,7 +174,7 @@ async function loadEspnCardData(pid, posc, body, opts){
   const aid = await resolveEspnAthleteId(pid, (sleeperPlayers[pid]||{}).name);
   if(!pcardOpen) return;
   if(!aid){
-    body.innerHTML = `<div class="pcard-loading">No ESPN stats found for this player yet.</div>`;
+    body.innerHTML = pcardRetryHtml('No ESPN stats found for this player yet.');
     return;
   }
   pcardApplyEspnHeadshot(aid, league);   // fill in an ESPN photo if Sleeper had none
@@ -192,7 +201,7 @@ async function loadEspnCardData(pid, posc, body, opts){
     out += `<div class="pcard-src">${league==='nfl'?'NFL':'College'} per-game stats via ESPN${def?'':' · AVG shown as YPC'}.</div>`;
     if(pcardOpen && tok===pcardToken) body.innerHTML = out;
   }catch(e){
-    body.innerHTML = `<div class="pcard-loading">Couldn't load game logs. Check your connection and try again.</div>`;
+    body.innerHTML = pcardRetryHtml("Couldn't load game logs. Check your connection and try again.");
   }
 }
 // Render one season table from an ESPN gamelog payload (data-driven, colored per game).

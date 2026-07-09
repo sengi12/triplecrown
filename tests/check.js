@@ -113,6 +113,30 @@ function sumWeeklyRange(weekly, team, fromWk, toWk){
   return out;
 }
 
+// QB version of sumWeeklyRange: passing + rushing totals over the requested window, restricted
+// to the same team so a traded player's split doesn't blend multiple rosters together.
+function sumWeeklyRangeQB(weekly, team, fromWk, toWk){
+  const out = {pass_yards:0, pass_att:0, pass_td:0, comp:0, pass_int:0,
+               rush_att:0, rush_yards:0, rush_td:0, games_played:0};
+  for(const wk in (weekly||{})){
+    const wn = parseInt(wk);
+    if(isNaN(wn) || wn<fromWk || wn>toWk) continue;
+    const row = weekly[wk];
+    if(!row || typeof row!=='object' || row.team!==team) continue;
+    const s = row.stats||{};
+    if(s.gp) out.games_played += s.gp;
+    out.pass_yards += s.pass_yd||0;
+    out.pass_att   += s.pass_att||0;
+    out.pass_td    += s.pass_td||0;
+    out.comp       += s.pass_cmp||0;
+    out.pass_int   += s.pass_int||0;
+    out.rush_att   += s.rush_att||0;
+    out.rush_yards += s.rush_yd||0;
+    out.rush_td    += s.rush_td||0;
+  }
+  return out;
+}
+
 // Fetch + cache weekly data for every WR/RB/TE on a team's roster (reference season),
 // then build {player_id -> filtered totals} for the given week window. Players whose
 // fetch fails just fall back to season totals (handled by the caller).
@@ -126,6 +150,21 @@ async function buildWeekFilterData(team, season, fromWk, toWk){
   for(const r of results){
     if(r.status!=='fulfilled'||!r.value||!r.value.weekly) continue;
     data[r.value.pid]=sumWeeklyRange(r.value.weekly, team, fromWk, toWk);
+  }
+  return data;
+}
+
+// Per-QB filtered totals for the active week window. The passing/rushing tabs already use the
+// aggregated QB pool; this finer map powers the QB phase itself and the 17-game pace tooltip.
+async function buildWeekFilterQBData(team, season, fromWk, toWk){
+  const qbs=getBase(team,'QB').filter(p=>p.player_id);
+  const results = await Promise.allSettled(
+    qbs.map(p=>fetchPlayerWeekly(p.player_id, season).then(w=>({pid:p.player_id, weekly:w})))
+  );
+  const data={};
+  for(const r of results){
+    if(r.status!=='fulfilled'||!r.value||!r.value.weekly) continue;
+    data[r.value.pid]=sumWeeklyRangeQB(r.value.weekly, team, fromWk, toWk);
   }
   return data;
 }
@@ -168,6 +207,70 @@ function applyWeekFilterOverrides(list, filterData){
   });
 }
 
+// HTML-escape a string that is going into a title="..." attribute.
+function escAttr(s){
+  return String(s==null?'':s)
+    .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
+    .replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+// Close any open 17-game pace popovers.
+function closeWeekFilterPacePops(){
+  if(!document || !document.querySelectorAll) return;
+  document.querySelectorAll('.pace-info-pop').forEach(el=>el.remove());
+}
+// Toggle a persistent, selectable popover containing the 17-game pace text so the user can
+// copy it without racing a hover tooltip.
+function toggleWeekFilterPace(btn, text){
+  if(!btn || !btn.parentNode) return;
+  const wrap = btn.parentNode;
+  const existing = wrap.querySelector ? wrap.querySelector('.pace-info-pop') : null;
+  if(existing){ existing.remove(); return; }
+  closeWeekFilterPacePops();
+  const pop = document.createElement('div');
+  pop.className='pace-info-pop';
+  pop.onclick=(e)=>e.stopPropagation();
+  pop.innerHTML = `<div class="pace-info-pop-head">
+      <span class="pace-info-pop-lbl">17-game pace</span>
+      <button class="pace-info-pop-close" onclick="this.closest('.pace-info-pop').remove()" aria-label="Close">✕</button>
+    </div>
+    <div class="pace-info-pop-body">${escAttr(text)}</div>`;
+  wrap.appendChild(pop);
+}
+if(document && document.addEventListener){
+  document.addEventListener('click', e=>{
+    const t=e.target;
+    if(t && t.closest && t.closest('.pace-info-wrap')) return;
+    closeWeekFilterPacePops();
+  });
+}
+// 17-game pace helper shown beside a player's name when a historical week window is active.
+// Scale from GAMES PLAYED in the filtered sample, not week span, so missed games/injuries are
+// represented realistically. Returns '' when no filtered sample is available.
+function weekFilterPaceText(state, pid, mode){
+  if(activeSeason==='proj' || !state || !isWeekFilterActive(state) || !pid) return '';
+  const src = (mode==='qb') ? (state.weekFilterQBData && state.weekFilterQBData[pid])
+                            : (state.weekFilterData && state.weekFilterData[pid]);
+  if(!src || !src.games_played) return '';
+  const [lo,hi]=state.weekFilter||[1,18];
+  const gp=src.games_played;
+  const scale=v=>Math.round((v||0)/gp*SEASON_GAMES);
+  let parts=[];
+  if(mode==='qb'){
+    parts=[`${scale(src.pass_yards).toLocaleString()} pass yds`, `${scale(src.pass_td)} pass TD`, `${scale(src.pass_att)} att`,
+           `${scale(src.rush_att)} rush att`, `${scale(src.rush_yards)} rush yds`, `${scale(src.rush_td)} rush TD`];
+  } else if(mode==='rush'){
+    parts=[`${scale(src.rushing_attempts)} att`, `${scale(src.rushing_yards).toLocaleString()} rush yds`, `${scale(src.rushing_tds)} rush TD`];
+  } else {
+    parts=[`${scale(src.receiving_targets)} tgt`, `${scale(src.receptions)} rec`, `${scale(src.receiving_yards).toLocaleString()} rec yds`, `${scale(src.receiving_tds)} rec TD`];
+  }
+  return `17-game pace from weeks ${lo}-${hi} (${gp} game${gp===1?'':'s'}): ${parts.join(' · ')}`;
+}
+function weekFilterPaceButton(state, pid, mode){
+  const text = weekFilterPaceText(state, pid, mode);
+  if(!text) return '';
+  return `<span class="pace-info-wrap"><button class="pace-info-btn" onclick="toggleWeekFilterPace(this, ${pcardArg(text)})" aria-label="Show 17-game pace">i</button></span>`;
+}
+
 function isWeekFilterActive(state){
   return !!(state.weekFilter && (state.weekFilter[0]>1 || state.weekFilter[1]<18));
 }
@@ -179,12 +282,14 @@ async function applyWeekRange(team, fromWk, toWk){
   state.weekFilterLoading=true;
   renderContent();
   try{
-    const [skillData, qbPool] = await Promise.all([
+    const [skillData, qbPool, qbData] = await Promise.all([
       buildWeekFilterData(team, activeSeason, fromWk, toWk),
       buildWeekFilterQBPool(team, activeSeason, fromWk, toWk),
+      buildWeekFilterQBData(team, activeSeason, fromWk, toWk),
     ]);
     state.weekFilterData=skillData;
     state.weekFilterQBPool=qbPool;
+    state.weekFilterQBData=qbData;
     state.weekFilterLoading=false;
     state.passing_shares=null; state.rushing.shares=null;  // force rebuild from filtered data
     initPassingShares(team); initRushingShares(team);
@@ -197,7 +302,7 @@ async function applyWeekRange(team, fromWk, toWk){
 }
 function resetWeekRange(team){
   const state=userProj[team]; if(!state) return;
-  state.weekFilter=null; state.weekFilterData=null; state.weekFilterQBPool=null;
+  state.weekFilter=null; state.weekFilterData=null; state.weekFilterQBPool=null; state.weekFilterQBData=null;
   state.passing_shares=null; state.rushing.shares=null;
   initPassingShares(team); initRushingShares(team);
   renderContent();
@@ -910,26 +1015,45 @@ function renderQB(team,state){
       <div>No projected QB found for ${team} in this dataset. This can happen with historical
       seasons or sparse projections. Switch seasons or pull live ${PROJ_SEASON} projections.</div></div></div>`;
   }
-  const isMulti=state.qbs.length>1;
-  const idx=Math.min(state.activeQB||0, state.qbs.length-1);
-  const qb=state.qbs[idx];
+  // Historical week-window active? Render a filtered QB view (totals + gp) without touching the
+  // underlying projection state. This lets hurt/partial-season QB stretches be explored like the
+  // WR/RB/TE tabs while keeping the working set intact.
+  const qbs = (activeSeason!=='proj' && isWeekFilterActive(state) && state.weekFilterQBData)
+    ? state.qbs.map(q=>{
+        const f=q.player_id && state.weekFilterQBData[q.player_id];
+        // Important: a QB can legitimately have ZERO games in the filtered window (injury / bye /
+        // benching). In that case we must show a zeroed filtered slice, not fall back to the full-
+        // season line, or the UI falsely claims he played his season-long total during the stretch.
+        if(!f) return q;
+        return Object.assign({}, q, {
+          passing_yards:f.pass_yards, passing_tds:f.pass_td, passing_attempts:f.pass_att,
+          passing_completions:f.comp, interceptions_thrown:f.pass_int,
+          qb_rush_yards:f.rush_yards, qb_rush_tds:f.rush_td, qb_rush_attempts:f.rush_att,
+          games_played:(f.games_played||0), games:(f.games_played||0), base_games:(f.games_played||1),
+        });
+      })
+    : state.qbs;
+  const isMulti=qbs.length>1;
+  const idx=Math.min(state.activeQB||0, qbs.length-1);
+  const qb=qbs[idx];
   const seed=getBase(team,'QB').find(q=>q.name===qb.name)||getBase(team,'QB')[0]||{};
   const compPct=qb.passing_attempts>0?(qb.passing_completions/qb.passing_attempts*100).toFixed(1):'0';
   const ypa=qb.passing_attempts>0?(qb.passing_yards/qb.passing_attempts).toFixed(2):'-';
-  const teamGames=state.qbs.reduce((s,q)=>s+(q.games||0),0);
+  const teamGames=qbs.reduce((s,q)=>s+(q.games||0),0);
   const overBudget = teamGames > SEASON_GAMES + 0.5;
+  const weekSlider=weekRangeSliderHTML(team,state);
   // Workload card: per-QB Games (0–17) slider. Drives pace extrapolation. A QB at 0
   // games contributes nothing to team totals but keeps his per-game pace for later.
   const workloadCard = `
     <div class="card">
       <div class="card-title">QB Workload ${isMulti?'<span class="split-badge">SPLIT SQUAD</span>':''}</div>
-      ${state.qbs.map((q,i)=>{
+      ${qbs.map((q,i)=>{
         const gms=Math.round(q.games||0);
         const active = i===idx;
         return `<div class="snap-row" style="${active?'border:1px solid var(--qb)':''}">
           <span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${imgTag(hsURL(q),'player-headshot')}</span>
           <div class="snap-info" style="flex:1">
-            <div style="font-size:12px;font-weight:700"><span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${q.name}</span>
+            <div style="font-size:12px;font-weight:700"><span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${q.name}</span>${weekFilterPaceButton(state,q.player_id,'qb')}
               ${q.games_played?`<span style="font-size:9px;color:var(--muted);font-weight:500">· actually played ${Math.round(q.games_played)}</span>`:''}</div>
             <div style="font-size:10px;color:var(--muted)" id="wl-sub-${i}">${gms} games · ${perGame(q,'passing_yards').toFixed(1)} pass yds/gm</div>
           </div>
@@ -943,13 +1067,14 @@ function renderQB(team,state){
       </div>
     </div>`;
   const games=Math.round(qb.games||0);
-  return `${workloadCard}<div class="card">
+  return `${weekSlider}${workloadCard}<div class="card">
     <div class="card-title">${qb.name} — Passing ${isMulti?`<span style="font-size:9px;color:var(--muted)">(editing QB${idx+1} of ${state.qbs.length})</span>`:''}</div>
     ${isMulti?`<div class="qb-tab-bar">${state.qbs.map((q,i)=>
       `<button class="qb-tab ${i===idx?'active':''}" onclick="setActiveQB(${i})">${q.name.split(' ').pop()}</button>`).join('')}</div>`:''}
     <div class="player-row"><span class="clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${imgTag(hsURL(qb),'player-headshot')}</span>
       <span class="pos-badge pos-QB">QB${idx+1}</span>
       <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${qb.name}</div>
+        ${weekFilterPaceButton(state,qb.player_id,'qb')}
         <div class="player-sub">${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?`ECR ${e.rank_ecr}`:'';})()}${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?' · ':'';})()}<span id="qb-games-sub">${games}</span> games projected</div></div></div>
     <div class="alert alert-info" style="margin-bottom:11px"><span class="alert-icon">📈</span>
       <div>These are this QB's totals across <b>${games} games</b>. Adjust <b>Games Played</b> above to extrapolate a full-season pace (e.g. an 8-game stint scaled to 17), and the stats below scale with it.</div></div>
@@ -1195,7 +1320,7 @@ function renderPassDerived(team,state,subTabs,metric){
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsURL(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>
+        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rec')}
         <span class="share-pct" id="dp-${i}">${pct}%</span>
         <span class="share-vol" id="dv-${i}">${v.toLocaleString()} ${label}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -1294,7 +1419,7 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsURL(p))}</span>
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>
+        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rec')}
         <span class="share-pct" id="pp-${i}">${pct}%</span>
         <span class="share-vol" id="pt-${i}">${projTgts} tgt</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking('${p.player_id}','${p.pos}')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
@@ -1426,7 +1551,7 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
     return `<div class="share-block" id="rblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsURL(p))}</span><span class="pos-badge pos-RB">RB</span>
-        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>
+        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rush')}
         <span class="share-pct" id="rp-${i}">${pct}%</span>
         <span class="share-vol" id="ra-${i}">${att} att</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking('${p.player_id}','RB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
@@ -1476,7 +1601,7 @@ function renderRushTDs(team,state,subTabs){
     return `<div class="share-block" id="rblk-${i}"><div class="share-row">
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsURL(p))}</span><span class="pos-badge pos-RB">RB</span>
-        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>
+        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rush')}
         <span class="share-pct" id="rtdp-${i}">${pct}%</span>
         <span class="share-vol">proj TDs</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -2796,6 +2921,13 @@ function setPcardStatsMode(mode){
   renderPcardStatTabs();
   pcardLoadStats(mode);
 }
+// Retry the current card's stat load after a transient ESPN/network failure.
+function retryPlayerCardData(){
+  if(!pcardState) return;
+  const pid = pcardState.pid;
+  if(typeof clearEspnCardCaches==='function') clearEspnCardCaches(pid);
+  pcardLoadStats(pcardStatsMode);
+}
 // Dispatch the body render for the chosen source. College always uses the ESPN college gamelog;
 // pro uses Sleeper weekly (skill) or the ESPN nfl gamelog (defense / other).
 function pcardLoadStats(mode){
@@ -2838,7 +2970,9 @@ async function loadSleeperCareerStats(pid, posc, body){
     out += `<div class="pcard-src">Per-game stats via Sleeper · FPTS uses your current scoring settings.</div>`;
     if(pcardOpen && tok===pcardToken) body.innerHTML = out;
   }catch(e){
-    if(pcardOpen && tok===pcardToken) body.innerHTML = `<div class="pcard-loading">Couldn't load game logs. Check your connection and try again.</div>`;
+    if(pcardOpen && tok===pcardToken){
+      body.innerHTML = `<div class="pcard-loading pcard-loading-retry"><span>Couldn't load game logs. Check your connection and try again.</span><button class="pcard-retry-btn" onclick="retryPlayerCardData()">Refresh</button></div>`;
+    }
   }
 }
 // Build sorted weekly rows for one season from Sleeper weekly data.
@@ -2985,6 +3119,15 @@ const ESPN_CORE_ATHLETE_URL = (season,aid) => `https://sports.core.api.espn.com/
 let espnAthleteIdCache = {};   // sleeper pid -> ESPN athlete id ('' = looked up, none found)
 let espnGamelogCache = {};     // `${league}:${aid}:${season}` -> gamelog json
 let espnDraftCache = {};       // aid -> {year,round,selection,teamCode} | null
+
+function pcardRetryHtml(msg){
+  return `<div class="pcard-loading pcard-loading-retry"><span>${msg}</span><button class="pcard-retry-btn" onclick="retryPlayerCardData()">Refresh</button></div>`;
+}
+
+// Clear per-player ESPN lookup caches so a retry can recover from transient failures.
+function clearEspnCardCaches(pid){
+  if(pid!=null) delete espnAthleteIdCache[pid];
+}
 
 function isRookiePlayer(pid){
   const p = sleeperPlayers && sleeperPlayers[pid];
@@ -3136,7 +3279,7 @@ async function loadEspnCardData(pid, posc, body, opts){
   const aid = await resolveEspnAthleteId(pid, (sleeperPlayers[pid]||{}).name);
   if(!pcardOpen) return;
   if(!aid){
-    body.innerHTML = `<div class="pcard-loading">No ESPN stats found for this player yet.</div>`;
+    body.innerHTML = pcardRetryHtml('No ESPN stats found for this player yet.');
     return;
   }
   pcardApplyEspnHeadshot(aid, league);   // fill in an ESPN photo if Sleeper had none
@@ -3163,7 +3306,7 @@ async function loadEspnCardData(pid, posc, body, opts){
     out += `<div class="pcard-src">${league==='nfl'?'NFL':'College'} per-game stats via ESPN${def?'':' · AVG shown as YPC'}.</div>`;
     if(pcardOpen && tok===pcardToken) body.innerHTML = out;
   }catch(e){
-    body.innerHTML = `<div class="pcard-loading">Couldn't load game logs. Check your connection and try again.</div>`;
+    body.innerHTML = pcardRetryHtml("Couldn't load game logs. Check your connection and try again.");
   }
 }
 // Render one season table from an ESPN gamelog payload (data-driven, colored per game).
@@ -5388,6 +5531,7 @@ function copyTeamToWorking(team){
   activeSeason='proj'; userProj=workingProj; SEED=ps; currentTeam=team;
   dirtySinceImport=true;
   ensureTeam(team);
+  saveSession();
   renderSeasonTabs(); renderSidebar(); renderContent();
   const filterNote = (!canFilter) ? ' (roster unverified — copied all; ↻ Sleeper to refine)' : (skipped?` · skipped ${skipped} no longer on roster`:'');
   toast(`Copied ${copied} ${team} player${copied===1?'':'s'} from ${refSeason}${filterNote} ✓`,'ok');
@@ -5397,6 +5541,7 @@ function copyTeamToWorking(team){
 // projected to play for THIS season (falls back to their historical team).
 function copyPlayerToWorking(pid,pos){
   if(activeSeason==='proj') return;
+  const refSeason=activeSeason;
   const refSeasonSeed=seasonStatsCache[activeSeason]||{};
   let src=null;
   const rt=currentTeam;
@@ -5421,10 +5566,13 @@ function copyPlayerToWorking(pid,pos){
   const ex=arr.findIndex(p=>p.player_id===pid);
   if(ex>=0) arr[ex]=copy; else arr.push(copy);
   delete workingProj[destTeam];   // rebuild that working team to include the copied line
+  activeSeason='proj'; userProj=workingProj; SEED=ps; currentTeam=destTeam;
   dirtySinceImport=true;
-  const sameTeam = destTeam===currentTeam;
+  const sameTeam = destTeam===rt;
+  ensureTeam(destTeam);
   saveSession();
-  toast(`Copied ${src.name}'s ${activeSeason} line → ${destTeam} working set ✓${sameTeam?' · ↶ undo above':` · ↶ undo on ${destTeam}'s page`}`,'ok');
+  renderSeasonTabs(); renderSidebar(); renderContent();
+  toast(`Copied ${src.name}'s ${refSeason} line → ${destTeam} working set ✓${sameTeam?' · back on the live build view':` · switched to ${destTeam} ${PROJ_SEASON} view`}`,'ok');
   updateUndoButton();
 }
 
