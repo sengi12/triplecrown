@@ -300,9 +300,10 @@ async function refreshFromSleeper(bootRestore){
         <div class="empty-icon">⚠️</div><div class="empty-title">Couldn't reach Sleeper</div>
         <div class="empty-body">The live pull was blocked (often browser CORS when opening the file directly).
         Two easy fixes:<br><br>
-        <b>1.</b> Run <code>python build_seed.py</code> locally, then click <b>📦 Seed</b> and load the generated
-        <code>triplecrown_seed.json</code>.<br>
-        <b>2.</b> Or serve the file over http (e.g. <code>python -m http.server</code>) and click <b>↻ Sleeper</b> to retry.</div></div>`;
+        <b>1.</b> Serve the file over http (e.g. <code>python -m http.server</code>) so it can reach Sleeper,
+        then hit <b>↺ Reset</b> to retry.<br>
+        <b>2.</b> Or run <code>python build_seed.py</code> and host the generated <code>triplecrown_seed.json</code>
+        next to the app — it auto-loads on open.</div></div>`;
     }
   }
 }

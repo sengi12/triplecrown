@@ -21,13 +21,19 @@
     <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
   </div>
   <div class="hdr-right">
-    <button class="btn btn-ghost" onclick="refreshFromSleeper()" title="Pull live projections from Sleeper">↻ Sleeper</button>
+    <!--@@SEED_UI@@-->
     <button class="btn btn-ghost" onclick="triggerSeedLoad()" title="Load triplecrown_seed.json from build_seed.py">📦 Seed</button>
+    <!--@@/SEED_UI@@-->
     <button class="btn btn-ghost" onclick="triggerImport()">⬆ Import</button>
-    <button class="btn btn-ghost" onclick="exportJSON()">⬇ JSON</button>
-    <button class="btn btn-ghost" onclick="exportCSV()">⬇ CSV</button>
+    <div class="hdr-menu-wrap">
+      <button class="btn btn-ghost" onclick="toggleDownloadMenu(event)" aria-haspopup="true" title="Download your projections as JSON or CSV">⬇ Download ▾</button>
+      <div class="hdr-menu" id="downloadMenu" hidden>
+        <button class="hdr-menu-item" onclick="exportJSON()">JSON</button>
+        <button class="hdr-menu-item" onclick="exportCSV()">CSV</button>
+      </div>
+    </div>
     <button class="btn btn-ghost" onclick="showFullRankings()">🏆 Full Rankings</button>
-    <button class="btn btn-ghost" onclick="resetAll()">↺ Reset</button>
+    <button class="btn btn-ghost" onclick="resetAll()" title="Reset all edits and pull the latest Sleeper projections">↺ Reset</button>
   </div>
 </div>
 <div class="season-bar">
@@ -43,14 +49,16 @@
       <div class="empty-icon">🏈</div>
       <div class="empty-title">Select a team to begin</div>
       <div class="empty-body">Work through each team's QB output, receiver target &amp; TD share,
-      and RB rushing distribution. Use the season tabs to reference prior years, ↻ Sleeper to pull
-      live projections, 📦 Seed to load a prebuilt file, and 🏆 Rankings to see fantasy scores and follow a live draft.</div>
+      and RB rushing distribution. Use the season tabs to reference prior years, ↺ Reset to pull
+      the latest live projections, and 🏆 Rankings to see fantasy scores and follow a live draft.</div>
     </div>
   </div>
 </div>
 <div id="toast"></div>
 <input type="file" id="importFile" accept=".json" style="display:none" onchange="handleImport(event)">
+<!--@@SEED_UI@@-->
 <input type="file" id="seedFile" accept=".json" style="display:none" onchange="handleSeedLoad(event)">
+<!--@@/SEED_UI@@-->
 <script>
 @@JS_PARTIALS@@
 </script>

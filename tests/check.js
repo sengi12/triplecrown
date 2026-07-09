@@ -4752,30 +4752,35 @@ function exportCSV(){
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Two-stage reset
+// Download format menu (one ⬇ Download button → choose JSON or CSV)
 // ─────────────────────────────────────────────────────────────────────────────
-function resetAll(){
-  if(importedSnapshot && dirtySinceImport){
-    // Stage 1: revert to imported snapshot
-    if(!confirm('Reset all edits back to the imported projection set?')) return;
-    userProj=deepCopy(importedSnapshot);
-    if(activeSeason==='proj') workingProj=userProj;
-    dirtySinceImport=false;
-    saveSession();   // persist the reverted state so a refresh keeps it
-    renderSidebar();
-    if(currentTeam&&userProj[currentTeam]) renderContent(); else renderContent();
-    toast('Reverted to imported projections ✓','ok');
-    return;
+function toggleDownloadMenu(e){
+  if(e) e.stopPropagation();
+  const m=document.getElementById('downloadMenu'); if(!m) return;
+  if(m.hasAttribute('hidden')){
+    m.removeAttribute('hidden');
+    // Close on the next outside click (this handler runs on bubble, so the opening click
+    // — which we stopped above — won't immediately re-close it). A menu-item click bubbles
+    // here too, so picking a format closes the menu after the export fires.
+    setTimeout(()=>document.addEventListener('click', closeDownloadMenu, {once:true}), 0);
+  } else {
+    closeDownloadMenu();
   }
-  // Stage 2 (or no import): full reset to seed
-  const msg=importedSnapshot?'Clear the imported set and reset everything to base seed data?':'Reset all projections to base seed data?';
-  if(!confirm(msg)) return;
-  userProj={}; workingProj=userProj; importedSnapshot=null; dirtySinceImport=false; currentTeam=null;
-  undoStacks={};
-  clearSession();   // wipe the saved session so a refresh starts clean from the seed
-  renderSidebar();
-  document.getElementById('content').innerHTML=emptyHTML();
-  toast('Reset to base seed ✓','ok');
+}
+function closeDownloadMenu(){
+  const m=document.getElementById('downloadMenu'); if(m) m.setAttribute('hidden','');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reset — clear all edits and re-pull the latest Sleeper projections
+// ─────────────────────────────────────────────────────────────────────────────
+async function resetAll(){
+  if(!confirm('Reset all projections and pull the latest projections from Sleeper?\n\nThis clears your current edits and imported/loaded data.')) return;
+  userProj={}; workingProj=userProj; importedSnapshot=null; dirtySinceImport=false;
+  currentTeam=null; undoStacks={};
+  clearSession();   // wipe the saved session so the fresh pull isn't overwritten on next boot
+  // refreshFromSleeper resets the working set to the fresh seed, re-renders, and toasts.
+  await refreshFromSleeper();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -5175,9 +5180,10 @@ async function refreshFromSleeper(bootRestore){
         <div class="empty-icon">⚠️</div><div class="empty-title">Couldn't reach Sleeper</div>
         <div class="empty-body">The live pull was blocked (often browser CORS when opening the file directly).
         Two easy fixes:<br><br>
-        <b>1.</b> Run <code>python build_seed.py</code> locally, then click <b>📦 Seed</b> and load the generated
-        <code>triplecrown_seed.json</code>.<br>
-        <b>2.</b> Or serve the file over http (e.g. <code>python -m http.server</code>) and click <b>↻ Sleeper</b> to retry.</div></div>`;
+        <b>1.</b> Serve the file over http (e.g. <code>python -m http.server</code>) so it can reach Sleeper,
+        then hit <b>↺ Reset</b> to retry.<br>
+        <b>2.</b> Or run <code>python build_seed.py</code> and host the generated <code>triplecrown_seed.json</code>
+        next to the app — it auto-loads on open.</div></div>`;
     }
   }
 }
