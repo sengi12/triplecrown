@@ -20,14 +20,28 @@ const ROUTE_TREE_SHAPES = {
   "HITCH/CURL":        {o:'los', p:[[0,0],[0,5.5],[-1.2,4.6]],     label:'Hitch',     anc:'end',    dx:-7, dy:1},
   "QUICK OUT":         {o:'los', p:[[0,0],[0,3],[3,3]],            label:'Quick Out', anc:'start',  dx:6,  dy:3},
   "SLANT":             {o:'los', p:[[0,0],[0,1.2],[-3,3.4]],       label:'Slant',     anc:'end',    dx:-6, dy:-1},
-  "SHALLOW CROSS/DRAG":{o:'los', p:[[0,0],[0,1.2],[-5.5,2]],         label:'Drag',      anc:'end',    dx:-6, dy:4},
-  "SCREEN":            {o:'los', p:[[0,0],[0,-0.4],[-3,-0.8]],        label:'Screen',    anc:'end',  dx:-6,  dy:4},
+  "CROSS":             {o:'los', p:[[0,0],[0,7.5],[-6,10.3]],      label:'Cross',     anc:'end',    dx:15, dy:-10},
+  "SHALLOW CROSS/DRAG":{o:'los', p:[[0,0],[0,1.2],[-5.5,2]],       label:'Drag',      anc:'end',    dx:-6, dy:4},
+  "SCREEN":            {o:'los', p:[[0,0],[0,-0.4],[-3,-0.8]],     label:'Screen',    anc:'end',    dx:-6,  dy:4},
   "SWING":             {o:'bf',  p:[[0,-2.7],[-4,-2.5],[-7,-1.4]], label:'Swing',     anc:'start',  dx:-20,  dy:35},
-  "TEXAS/ANGLE":       {o:'bf',  p:[[0,-2.7],[4,-0.7],[1,1.7]], label:'Texas',     anc:'start',    dx:45, dy:50},
+  "TEXAS/ANGLE":       {o:'bf',  p:[[0,-2.7],[4,-0.7],[1,1.7]],    label:'Texas',     anc:'start',  dx:45, dy:50},
 };
 // Draw order: least-run underneath, most-run on top (so hot routes read clearly).
 const ROUTE_TREE_ORDER = ["GO","POST","CORNER","DEEP OUT","IN/DIG","WHEEL","HITCH/CURL","QUICK OUT",
-  "SLANT","SHALLOW CROSS/DRAG","SCREEN","SWING","TEXAS/ANGLE"];
+  "SLANT","CROSS","SHALLOW CROSS/DRAG","SCREEN","SWING","TEXAS/ANGLE"];
+
+// Some nflverse route tags are shorter/raw versions of the compact labels we already show.
+// Normalize them onto the existing shapes so the tree stays readable without adding more nodes.
+const ROUTE_TREE_ALIASES = {
+  "HITCH": "HITCH/CURL",
+  "IN": "IN/DIG",
+  "OUT": "DEEP OUT",
+  "FLAT": "QUICK OUT",
+};
+
+function _routeTreeKey(k){
+  return ROUTE_TREE_ALIASES[k] || k;
+}
 
 let pcardRouteSeason = null;   // selected season in the Routes tab (reset per card)
 
@@ -65,16 +79,25 @@ function routeTreeSVG(rt){
   const tree=rt.tree||{}, total=rt.total||Object.values(tree).reduce((a,b)=>a+b,0)||1;
   const tdByRoute=rt.route_tds||{};
   const tdKnown=_routeTdKnown(rt);
-  const present = ROUTE_TREE_ORDER.filter(k=>tree[k]>0 && ROUTE_TREE_SHAPES[k]);
-  const maxN = Math.max(1, ...present.map(k=>tree[k]));
+  const rawKeys = Object.keys(tree);
+  const presentMap = {};
+  for(const rawKey of rawKeys){
+    const key=_routeTreeKey(rawKey);
+    if(!ROUTE_TREE_SHAPES[key]) continue;
+    if(!presentMap[key]) presentMap[key]={count:0, tds:0};
+    presentMap[key].count += +tree[rawKey] || 0;
+    if(tdKnown) presentMap[key].tds += +tdByRoute[rawKey] || 0;
+  }
+  const present = ROUTE_TREE_ORDER.filter(k=>presentMap[k] && presentMap[k].count>0 && ROUTE_TREE_SHAPES[k]);
+  const maxN = Math.max(1, ...present.map(k=>presentMap[k].count));
   const hasBf = present.some(k=>ROUTE_TREE_SHAPES[k].o==='bf');
   // Field backdrop + yard lines every 5 yards up to ~15.
   let yard='';
   for(let y=5;y<=15;y+=5){ const py=PY(y); yard+=`<line x1="24" y1="${py}" x2="${W-24}" y2="${py}" class="rt-yard"/>`; }
   // Per-route render geometry.
   const items = present.map(k=>{
-    const sh=ROUTE_TREE_SHAPES[k], n=tree[k], pct=100*n/total, ratio=n/maxN;
-    const tds=tdKnown ? (tdByRoute[k]||0) : null;
+    const sh=ROUTE_TREE_SHAPES[k], n=presentMap[k].count, pct=100*n/total, ratio=n/maxN;
+    const tds=tdKnown ? presentMap[k].tds : null;
     const col=_routeHeat(ratio), w=+(2.4+ratio*5).toFixed(2);
     const pts=sh.p.map(([x,y])=>[PX(x),PY(y)]);
     const end=pts[pts.length-1], prev=pts[pts.length-2];
@@ -136,10 +159,18 @@ function routeTreeList(rt){
   const tree=rt.tree||{}, total=rt.total||1;
   const tdByRoute=rt.route_tds||{};
   const tdKnown=_routeTdKnown(rt);
-  const rows=Object.entries(tree).sort((a,b)=>b[1]-a[1]);
-  const maxN=Math.max(1,...rows.map(r=>r[1]));
-  return `<div class="rt-list">`+rows.map(([k,n])=>{
-    const pct=100*n/total, col=_routeHeat(n/maxN), label=(ROUTE_TREE_SHAPES[k]||{}).label||k, tds=tdKnown ? (tdByRoute[k]||0) : null;
+  const rowsMap = {};
+  for(const [rawKey, rawCount] of Object.entries(tree)){
+    const key=_routeTreeKey(rawKey);
+    if(!ROUTE_TREE_SHAPES[key]) continue;
+    if(!rowsMap[key]) rowsMap[key]={count:0, tds:0};
+    rowsMap[key].count += +rawCount || 0;
+    if(tdKnown) rowsMap[key].tds += +tdByRoute[rawKey] || 0;
+  }
+  const rows=Object.entries(rowsMap).sort((a,b)=>b[1].count-a[1].count);
+  const maxN=Math.max(1,...rows.map(r=>r[1].count));
+  return `<div class="rt-list">`+rows.map(([k,v])=>{
+    const n=v.count, pct=100*n/total, col=_routeHeat(n/maxN), label=(ROUTE_TREE_SHAPES[k]||{}).label||k, tds=tdKnown ? v.tds : null;
     return `<div class="rt-list-row">`+
       `<span class="rt-list-name">${label}</span>`+
       `<span class="rt-list-bar"><span class="rt-list-fill" style="width:${(100*n/maxN).toFixed(0)}%;background:${col}"></span></span>`+

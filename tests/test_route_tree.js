@@ -20,8 +20,8 @@ const app=new Function(code+`return {
 const NFLVERSE={
   "2025":{routes:{ "jamarr chase":{pos:"WR", total:100, tree:{
     "HITCH/CURL":20,"GO":15,"DEEP OUT":12,"IN/DIG":9,"SCREEN":8,"POST":7,"CORNER":6,
-    "SLANT":10,"QUICK OUT":5,"SWING":5,"TEXAS/ANGLE":3 },
-    route_tds:{"HITCH/CURL":2,"GO":4,"DEEP OUT":1,"SLANT":1}, total_tds:8 }}},
+    "SLANT":10,"CROSS":13,"QUICK OUT":5,"SWING":5,"TEXAS/ANGLE":3 },
+    route_tds:{"HITCH/CURL":2,"GO":4,"DEEP OUT":1,"SLANT":1,"CROSS":3}, total_tds:11 }}},
   "2024":{routes:{ "jamarr chase":{pos:"WR", total:80, tree:{
     "HITCH/CURL":25,"GO":20,"DEEP OUT":20,"SLANT":15 },
     route_tds:{"GO":2,"SLANT":1}, total_tds:3 }}},
@@ -57,7 +57,8 @@ chk('backfield marker present (swing/angle run)', svg.includes('rt-origin-bf'));
 chk('LOS + receiver origin drawn', svg.includes('rt-los') && svg.includes('rt-origin'));
 // A route NOT run should not appear (Wheel absent from the fixture).
 chk('unrun route omitted (Wheel)', !svg.includes('>Wheel<'));
-chk('SVG includes TD tags for scoring routes', svg.includes('4 TD') && svg.includes('2 TD'));
+chk('SVG includes TD tags for scoring routes', svg.includes('4 TD') && svg.includes('3 TD'));
+chk('Cross route is rendered as a visible tree branch', svg.includes('Cross'));
 
 console.log('\n=== TEST 4: heat scale ===');
 chk('rare route = cool hue, hot route = warm hue',
@@ -67,7 +68,7 @@ console.log('\n=== TEST 5: ranked list ===');
 const list=app.routeTreeList(rt);
 chk('one list row per route', (list.match(/rt-list-row/g)||[]).length===nRoutes);
 chk('list shows Hitch 20.0%', list.includes('20.0%'));
-chk('list shows TD counts by route', list.includes('4 TD') && list.includes('0 TD'));
+chk('list shows TD counts by route', list.includes('4 TD') && list.includes('3 TD'));
 
 console.log('\n=== TEST 6: tab body + season switching ===');
 app.resetRouteSeason();
@@ -76,7 +77,7 @@ const body=app.renderPcardRoutes('1');
 chk('defaults to latest season (2025 active)', body.includes('rt-season-btn active') && body.includes('>2025</button>'));
 chk('body has two season buttons', (body.match(/rt-season-btn/g)||[]).length===2);
 chk('body embeds svg + list', body.includes('<svg') && body.includes('rt-list'));
-chk('summary includes total route TDs', body.includes('8 TD on charted routes'));
+chk('summary includes total route TDs', body.includes('11 TD on charted routes'));
 chk('default selected season = 2025', String(app.getRouteSeason())==='2025');
 app.setPcardRouteSeason('2024');
 chk('switch updates selected season', String(app.getRouteSeason())==='2024');
