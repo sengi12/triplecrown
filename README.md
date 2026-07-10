@@ -208,7 +208,7 @@ The project ships with a regression suite (Node + Python) covering the projectio
 ---
 
 ## To Do
-- [ ] Include more advanced personnel statistics tied to OCs and DCs
+- [ ] Add 13 personnel to the tables
 - [ ] Add FantasyPros-esque feature to sync league and compare rosters
 - [ ] Add Coaching History (HCs, OCs, DCs)
 

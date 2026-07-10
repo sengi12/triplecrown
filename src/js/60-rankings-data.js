@@ -99,6 +99,7 @@ function setAdvSource(src){
   advSource=src;
   sharpTable=null; sharpSortCol=null;   // reset table selection for the new source
   if(currentPhase==='AdvancedLeague' && typeof renderSharpLeague==='function') renderSharpLeague();
+  else if(currentPhase==='Advanced' && typeof renderContent==='function') renderContent();
   else if(currentPhase==='Rankings') renderRankings();
 }
 // Ordered list + display labels for the "Situational" refinement dropdown (SumerSports splits).
@@ -440,11 +441,18 @@ function nflverseSharpTables(){
     offense:{title:'Offensive Metrics',category:'offense'},
     defense:{title:'Defensive Metrics',category:'defense'},
     tendencies:{title:'Tendencies',category:'offense'},
+    offensive_line:{title:'O-Line',category:'offense'},
     pace:{title:'Pace',category:'offense'},
     personnel:{title:'Personnel',category:'offense'},
     coverage:{title:'Coverage (man/zone)',category:'defense'},
+    def_tendencies:{title:'Defensive Tendencies',category:'defense'},
+    defensive_line:{title:'Pass Rush & Run D',category:'defense'},
   };
-  const PCT=['Explosive Play Rate','Down Conversion Rate','Shotgun Rate','NoHuddle Rate','3WR Rate','Multi TE Rate','Man Rate','Zone Rate'];
+  const PCT=['Explosive Play Rate','Down Conversion Rate','Shotgun Rate','NoHuddle Rate','3WR Rate','Multi TE Rate','Man Rate','Zone Rate',
+    'Motion Rate','Play Action Rate','RPO Rate','Screen Rate','Trick Play Rate','Drop Rate','Blitz Rate',
+    'Pressure Rate Allowed','Rush Stuff Rate','Pressure Rate','No Blitz Pressure Rate',
+    '11 Personnel','12 Personnel','21 Personnel','Multi RB Rate','Sub Package Rate','Nickel Rate','Dime+ Rate',
+    'Neutral DB Rate','Neutral DB Rate Last 5','Middle Closed Rate','Middle Open Rate','Cover 1','Cover 2','Cover 3'];
   const out={};
   for(const k in t){
     const m=META[k]||{title:k,category:'offense'};

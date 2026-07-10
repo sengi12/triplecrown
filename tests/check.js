@@ -2334,6 +2334,7 @@ function setAdvSource(src){
   advSource=src;
   sharpTable=null; sharpSortCol=null;   // reset table selection for the new source
   if(currentPhase==='AdvancedLeague' && typeof renderSharpLeague==='function') renderSharpLeague();
+  else if(currentPhase==='Advanced' && typeof renderContent==='function') renderContent();
   else if(currentPhase==='Rankings') renderRankings();
 }
 // Ordered list + display labels for the "Situational" refinement dropdown (SumerSports splits).
@@ -2675,11 +2676,18 @@ function nflverseSharpTables(){
     offense:{title:'Offensive Metrics',category:'offense'},
     defense:{title:'Defensive Metrics',category:'defense'},
     tendencies:{title:'Tendencies',category:'offense'},
+    offensive_line:{title:'O-Line',category:'offense'},
     pace:{title:'Pace',category:'offense'},
     personnel:{title:'Personnel',category:'offense'},
     coverage:{title:'Coverage (man/zone)',category:'defense'},
+    def_tendencies:{title:'Defensive Tendencies',category:'defense'},
+    defensive_line:{title:'Pass Rush & Run D',category:'defense'},
   };
-  const PCT=['Explosive Play Rate','Down Conversion Rate','Shotgun Rate','NoHuddle Rate','3WR Rate','Multi TE Rate','Man Rate','Zone Rate'];
+  const PCT=['Explosive Play Rate','Down Conversion Rate','Shotgun Rate','NoHuddle Rate','3WR Rate','Multi TE Rate','Man Rate','Zone Rate',
+    'Motion Rate','Play Action Rate','RPO Rate','Screen Rate','Trick Play Rate','Drop Rate','Blitz Rate',
+    'Pressure Rate Allowed','Rush Stuff Rate','Pressure Rate','No Blitz Pressure Rate',
+    '11 Personnel','12 Personnel','21 Personnel','Multi RB Rate','Sub Package Rate','Nickel Rate','Dime+ Rate',
+    'Neutral DB Rate','Neutral DB Rate Last 5','Middle Closed Rate','Middle Open Rate','Cover 1','Cover 2','Cover 3'];
   const out={};
   for(const k in t){
     const m=META[k]||{title:k,category:'offense'};
@@ -3271,11 +3279,11 @@ const ROUTE_TREE_SHAPES = {
   "HITCH/CURL":        {o:'los', p:[[0,0],[0,5.5],[-1.2,4.6]],     label:'Hitch',     anc:'end',    dx:-7, dy:1},
   "QUICK OUT":         {o:'los', p:[[0,0],[0,3],[3,3]],            label:'Quick Out', anc:'start',  dx:6,  dy:3},
   "SLANT":             {o:'los', p:[[0,0],[0,1.2],[-3,3.4]],       label:'Slant',     anc:'end',    dx:-6, dy:-1},
-  "CROSS":             {o:'los', p:[[0,0],[0,7.5],[-6,10.3]],       label:'Cross',     anc:'end',    dx:15, dy:-10},
-  "SHALLOW CROSS/DRAG":{o:'los', p:[[0,0],[0,1.2],[-5.5,2]],         label:'Drag',      anc:'end',    dx:-6, dy:4},
-  "SCREEN":            {o:'los', p:[[0,0],[0,-0.4],[-3,-0.8]],        label:'Screen',    anc:'end',  dx:-6,  dy:4},
+  "CROSS":             {o:'los', p:[[0,0],[0,7.5],[-6,10.3]],      label:'Cross',     anc:'end',    dx:15, dy:-10},
+  "SHALLOW CROSS/DRAG":{o:'los', p:[[0,0],[0,1.2],[-5.5,2]],       label:'Drag',      anc:'end',    dx:-6, dy:4},
+  "SCREEN":            {o:'los', p:[[0,0],[0,-0.4],[-3,-0.8]],     label:'Screen',    anc:'end',    dx:-6,  dy:4},
   "SWING":             {o:'bf',  p:[[0,-2.7],[-4,-2.5],[-7,-1.4]], label:'Swing',     anc:'start',  dx:-20,  dy:35},
-  "TEXAS/ANGLE":       {o:'bf',  p:[[0,-2.7],[4,-0.7],[1,1.7]], label:'Texas',     anc:'start',    dx:45, dy:50},
+  "TEXAS/ANGLE":       {o:'bf',  p:[[0,-2.7],[4,-0.7],[1,1.7]],    label:'Texas',     anc:'start',  dx:45, dy:50},
 };
 // Draw order: least-run underneath, most-run on top (so hot routes read clearly).
 const ROUTE_TREE_ORDER = ["GO","POST","CORNER","DEEP OUT","IN/DIG","WHEEL","HITCH/CURL","QUICK OUT",
@@ -4105,8 +4113,16 @@ function renderTeamAdvanced(team){
       <div class="empty-title">No advanced stats loaded</div>
       <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed to populate advanced team stats.</div></div>`;
   }
+  // Curated (Warren Sharp) vs nflverse-computed, same toggle as the league-wide view.
+  const SRC=activeSharp();
+  const nfvOn = advSource==='nflverse';
+  const srcToggle = nflverseSharpAvailable()
+    ? `<div class="format-toggle" style="margin-left:auto">
+         <button class="format-btn ${!nfvOn?'active':''}" onclick="setAdvSource('scraped')" title="Curated season advanced stats">Curated</button>
+         <button class="format-btn ${nfvOn?'active':''}" onclick="setAdvSource('nflverse')" title="Computed from nflverse play-by-play">nflverse</button>
+       </div>` : '';
   const cardFor=(key, srcTeam)=>{
-    const tbl=SHARP[key]; if(!tbl) return '';
+    const tbl=SRC[key]; if(!tbl) return '';
     const useTeam = srcTeam||team;
     const row=tbl.teams&&tbl.teams[useTeam];
     if(!row) return `<div class="sr-card"><div class="sr-card-title">${tbl.title||key}</div>
@@ -4125,9 +4141,9 @@ function renderTeamAdvanced(team){
       <div class="sr-stat-grid">${lines}</div>
     </div>`;
   };
-  const keys=Object.keys(SHARP);
-  const offKeys=keys.filter(k=>(SHARP[k].category||'offense')==='offense');
-  const defKeys=keys.filter(k=>SHARP[k].category==='defense');
+  const keys=Object.keys(SRC);
+  const offKeys=keys.filter(k=>(SRC[k].category||'offense')==='offense');
+  const defKeys=keys.filter(k=>SRC[k].category==='defense');
   const oc=coordFor(team,'offense'), dc=coordFor(team,'defense');
   const section=(label,ks,coordLbl)=> ks.length ? `<div class="sr-section-head">${label} ${coordLbl||''}</div>
     <div class="sr-card-grid">${ks.map(k=>cardFor(k)).join('')}</div>` : '';
@@ -4141,14 +4157,16 @@ function renderTeamAdvanced(team){
   </div>` : '';
   // Carryover coordinators → a highlighted section that pulls the former team's scheme stats.
   const carryBlock = renderCoordinatorCarryover(team, cardFor);
+  const srcLabel = nfvOn ? 'nflverse (computed from play-by-play)' : 'Curated season stats';
   return `<div class="sr-team-wrap">
-    <div class="sr-note">📊 <b>Advanced team stats</b> · <b>${SHARP_SEASON} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
-      <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showSharpLeague()">🌐 View league-wide tables →</button></div>
+    <div class="sr-note">📊 <b>Advanced team stats</b> · ${srcLabel} · <b>${SHARP_SEASON} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
+      ${srcToggle}
+      <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="showSharpLeague()">🌐 View league-wide tables →</button></div>
     ${sosStrip}
     ${carryBlock}
     ${section('🏈 Offense', offKeys, coordInlineLabel(oc,'offensive'))}
     ${section('🛡️ Defense', defKeys, coordInlineLabel(dc,'defensive'))}
-    <div class="sr-source">${SHARP_SEASON} season · coordinators via Wikipedia — for informational use.</div>
+    <div class="sr-source">${SHARP_SEASON} season · ${nfvOn?'computed from nflverse play-by-play (nflfastR)':'coordinators via Wikipedia'} — for informational use.</div>
   </div>`;
 }
 
@@ -4156,6 +4174,7 @@ function renderTeamAdvanced(team){
 // their former team's carry-over scheme stats (tendencies + personnel for OC; tendencies +
 // coverage for DC — the aspects that travel with a coordinator), clearly labeled.
 function renderCoordinatorCarryover(team, cardFor){
+  const SRC=activeSharp();
   const oc=coordFor(team,'offense'), dc=coordFor(team,'defense');
   const blocks=[];
   // OFFENSE: when the head coach is the primary playcaller and is new-from-another-team, the
@@ -4165,17 +4184,17 @@ function renderCoordinatorCarryover(team, cardFor){
   if(offSrc){
     // Offensive scheme travels most in tendencies + personnel.
     const wantTitles=['Tendencies','Personnel'];
-    const ks=Object.keys(SHARP).filter(k=>(SHARP[k].category||'offense')==='offense'
-      && wantTitles.some(w=>(SHARP[k].title||'').toLowerCase().includes(w.toLowerCase())));
+    const ks=Object.keys(SRC).filter(k=>(SRC[k].category||'offense')==='offense'
+      && wantTitles.some(w=>(SRC[k].title||'').toLowerCase().includes(w.toLowerCase())));
     blocks.push(coordCarryCard('offensive', offSrc, ks, cardFor));
   }
   if(coordCarriesOver(dc)){
     // Defensive scheme travels most in tendencies + coverage SCHEMES (not the
     // coverage-by-position table, which is more about personnel matchups than scheme).
-    const wantTitles=['Tendencies','Coverage Schemes'];
-    const ks=Object.keys(SHARP).filter(k=>{
-      if(SHARP[k].category!=='defense') return false;
-      const title=(SHARP[k].title||'').toLowerCase();
+    const wantTitles=['Tendencies','Coverage'];
+    const ks=Object.keys(SRC).filter(k=>{
+      if(SRC[k].category!=='defense') return false;
+      const title=(SRC[k].title||'').toLowerCase();
       if(title.includes('by position')) return false;   // exclude Coverage by Position
       return wantTitles.some(w=>title.includes(w.toLowerCase()));
     });
@@ -4189,6 +4208,7 @@ function renderCoordinatorCarryover(team, cardFor){
   </div>`;
 }
 function coordCarryCard(sideWord, c, ks, cardFor){
+  const SRC=activeSharp();
   const from = teamDisplayName(c.prev_code);
   const roleNote = c.prev_role
     ? `previously <b>${from} ${c.prev_role}</b>${c.prev_years?` (${c.prev_years})`:''}`
@@ -4205,7 +4225,7 @@ function coordCarryCard(sideWord, c, ks, cardFor){
       <span class="coord-side">${badge}</span>
       <b>${c.name||'(name unavailable)'}</b> — ${roleNote}
     </div>
-    <div class="coord-carry-sub">Showing ${from}'s ${SHARP_SEASON} ${sideWord} scheme (${ks.map(k=>SHARP[k].title).join(' · ')||'—'}) — the tendencies &amp; personnel that travel with a ${schemeOwner}:</div>
+    <div class="coord-carry-sub">Showing ${from}'s ${SHARP_SEASON} ${sideWord} scheme (${ks.map(k=>SRC[k].title).join(' · ')||'—'}) — the tendencies &amp; personnel that travel with a ${schemeOwner}:</div>
     <div class="sr-card-grid">${cards}</div>
   </div>`;
 }

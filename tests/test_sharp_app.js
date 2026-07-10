@@ -9,6 +9,9 @@ const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   renderTeamAdvanced, renderSharpLeague, setSharpTable, sortSharpBy, tabBar, sharpRankBadge, fmtSharpVal,
   setSharp:(s)=>{SHARP=s;},
+  setNflverse:(n)=>{NFLVERSE=n;},
+  setAdvSourceVar:(s)=>{advSource=s;},
+  setSharpSeasonVar:(y)=>{SHARP_SEASON=y;},
   setTeam:(t)=>{currentTeam=t;},
   setPhaseVar:(p)=>{currentPhase=p;},
   getContent:()=>document.getElementById('content').innerHTML,
@@ -76,5 +79,20 @@ app.sortSharpBy('Off Plays/G');
 html=app.getContent();
 const j_CIN=html.indexOf('>CIN<'), j_LAR=html.indexOf('>LAR<'), j_CLE=html.indexOf('>CLE<');
 chk(j_CIN<j_LAR && j_LAR<j_CLE,'sorted by Off Plays/G rank (CIN<LAR<CLE)');
+
+console.log('\n=== TEST 6: per-team curated/nflverse source toggle ===');
+app.setSharp(SHARP);
+app.setSharpSeasonVar(2024);
+app.setNflverse({'2024':{team:{
+  tendencies:{columns:['Motion Rate'],teams:{CIN:{values:{'Motion Rate':50.1},ranks:{'Motion Rate':5}}}},
+}}});
+app.setAdvSourceVar('scraped');
+let t6=app.renderTeamAdvanced('CIN');
+chk(t6.includes("setAdvSource('nflverse')"),'team view shows curated/nflverse toggle when nflverse data present');
+chk(t6.includes('Offensive Metrics'),'curated source still shows Sharp tables');
+app.setAdvSourceVar('nflverse');
+t6=app.renderTeamAdvanced('CIN');
+chk(t6.includes('Motion Rate'),'toggling to nflverse swaps in nflverse team tables');
+app.setAdvSourceVar('scraped');
 
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));
