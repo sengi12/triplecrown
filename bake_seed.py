@@ -57,6 +57,7 @@ def main():
     sumer = seed.get("sumer", {})
     sumer_seasons = seed.get("sumer_seasons", [])
     ktc = seed.get("ktc", {})
+    nflverse = seed.get("nflverse", {})
 
     # Build the replacement block. Compact JSON keeps the file smaller.
     j = lambda o: json.dumps(o, separators=(",", ":"), ensure_ascii=False)
@@ -79,6 +80,7 @@ def main():
         f"const SEED_SUMER = {j(sumer)};\n"
         f"const SEED_SUMER_SEASONS = {j(sumer_seasons)};\n"
         f"const SEED_KTC = {j(ktc)};\n"
+        f"const SEED_NFLVERSE = {j(nflverse)};\n"
         f"{END}"
     )
 

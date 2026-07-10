@@ -292,6 +292,7 @@ async function loadPlayerCardData(pid, pos, team){
   pcardState = {pid, posc, team, isSkill};
   // Rookies have no NFL game log yet → default to their college stats; everyone else to the pros.
   pcardStatsMode = isRookiePlayer(pid) ? 'college' : 'pro';
+  pcardRouteSeason = null;        // reset the Routes-tab season for the new player
   loadPcardDraft(pid);            // draft summary fills the hero banner (independent of stat source)
   renderPcardStatTabs();
   pcardLoadStats(pcardStatsMode);
@@ -311,7 +312,10 @@ function renderPcardStatTabs(){
   const el = document.getElementById('pcardTabs');
   if(!el || !pcardState) return;
   const tab=(mode,label)=>`<button class="pcard-tab ${pcardStatsMode===mode?'active':''}" onclick="setPcardStatsMode('${mode}')">${label}</button>`;
-  el.innerHTML = tab('pro','NFL') + tab('college','College');
+  // The Routes tab only appears for skill players with baked nflverse route data.
+  const routesTab = (pcardState.isSkill && typeof pcardRoutesAvailable==='function' && pcardRoutesAvailable(pcardState.pid))
+    ? tab('routes','Routes') : '';
+  el.innerHTML = tab('pro','NFL') + tab('college','College') + routesTab;
 }
 // Switch the card's stat source and reload the body from the matching feed.
 function setPcardStatsMode(mode){
@@ -335,6 +339,10 @@ function pcardLoadStats(mode){
   const {pid, posc, isSkill} = pcardState;
   const body = document.getElementById('pcardBody');
   if(!body) return;
+  if(mode==='routes'){
+    body.innerHTML = renderPcardRoutes(pid);
+    return;
+  }
   if(mode==='college'){
     return loadEspnCardData(pid, posc, body, {league:'college-football', def:!isSkill});
   }

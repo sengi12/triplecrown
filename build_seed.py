@@ -666,6 +666,10 @@ CODE_TO_FULLNAME = {v: k.title().replace("Ny ","NY ").replace("Lv ","LV ") for k
 # fix a couple of title-case quirks
 CODE_TO_FULLNAME["SF"] = "San Francisco 49ers"
 SHARP_SOS_URL = "https://www.sharpfootballanalysis.com/analysis/nfl-strength-of-schedule/"
+# nflverse public schedule (plain CSV, stdlib-readable) — used to compute our OWN strength-of-
+# schedule ranking from the sum of each team's opponents' Vegas win totals.
+NFLDATA_GAMES_URL = "https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv"
+SCHED_TO_SEED = {"LA": "LAR"}   # nflverse schedule codes that differ from the seed's codes
 
 # Columns where a LOWER value is better (so rank 1 = lowest). Everything else: higher=better.
 # Matched by case-insensitive substring against the column header.
@@ -859,9 +863,51 @@ def build_sharp(refresh):
     return sharp
 
 
-def build_sos(refresh):
-    """Pull the 2026 Strength of Schedule table → {CODE:{rank, win_total, name}}.
-    The SOS page uses FULL team names and columns: SOS Ranking | Team | Vegas Win Total."""
+def _sos_opponent_ranks(win_totals, season, refresh):
+    """Our own SOS: sum each team's opponents' Vegas win totals from the real schedule, then rank
+    ascending (1 = easiest slate). Returns {CODE:{opp_win_total, opp_games, rank}} or {} on failure.
+    Uses the nflverse schedule CSV (stdlib csv reader — no pandas needed)."""
+    import csv, io
+    cache_path = os.path.join(CACHE_DIR, "sharp", f"schedule_{season}.csv")
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    text = None
+    if not refresh and os.path.exists(cache_path):
+        with open(cache_path, encoding="utf-8") as f:
+            text = f.read()
+    if text is None:
+        try:
+            req = request.Request(NFLDATA_GAMES_URL, headers=UA)
+            with request.urlopen(req, timeout=60) as r:
+                text = r.read().decode("utf-8", "replace")
+            with open(cache_path, "w", encoding="utf-8") as f:
+                f.write(text)
+        except Exception as e:
+            print(f"  (SOS schedule fetch failed: {type(e).__name__}: {e})")
+            return {}
+    opps = {}
+    for row in csv.DictReader(io.StringIO(text)):
+        if str(row.get("season")) != str(season) or row.get("game_type") != "REG":
+            continue
+        h = SCHED_TO_SEED.get(row["home_team"], row["home_team"])
+        a = SCHED_TO_SEED.get(row["away_team"], row["away_team"])
+        opps.setdefault(h, []).append(a)
+        opps.setdefault(a, []).append(h)
+    if not opps:
+        return {}
+    out = {}
+    for code, ol in opps.items():
+        vals = [win_totals[o] for o in ol if win_totals.get(o) is not None]
+        out[code] = {"opp_win_total": round(sum(vals), 1), "opp_games": len(vals)}
+    for i, code in enumerate(sorted(out, key=lambda c: out[c]["opp_win_total"])):
+        out[code]["rank"] = i + 1
+    return out
+
+
+def build_sos(refresh, season=2026):
+    """Strength of schedule → {CODE:{rank, win_total, opp_win_total, name}}.
+    Vegas win totals come from the scraped table; the RANK is our own calculation = the sum of
+    each team's opponents' win totals (rank 1 = easiest). Falls back to the scraped rank only if
+    the schedule can't be fetched."""
     cache_path = os.path.join(CACHE_DIR, "sharp", "sos.json")
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     if not refresh and os.path.exists(cache_path):
@@ -890,10 +936,21 @@ def build_sos(refresh):
                          "name": CODE_TO_FULLNAME.get(code, code)}
     if not out:
         print(" no SOS table found")
+        return out
+    # Replace the scraped rank with our own opponent-win-total ranking.
+    win_totals = {c: out[c]["win_total"] for c in out if out[c].get("win_total") is not None}
+    ours = _sos_opponent_ranks(win_totals, season, refresh)
+    if ours:
+        for c in out:
+            if c in ours:
+                out[c]["rank"] = ours[c]["rank"]
+                out[c]["opp_win_total"] = ours[c]["opp_win_total"]
+                out[c]["opp_games"] = ours[c]["opp_games"]
+        print(f" ok ({len(out)} teams, own opponent-win-total ranking)")
     else:
-        print(f" ok ({len(out)} teams)")
-        with open(cache_path, "w") as f:
-            json.dump(out, f)
+        print(f" ok ({len(out)} teams, scraped ranking — schedule unavailable)")
+    with open(cache_path, "w") as f:
+        json.dump(out, f)
     return out
 
 
@@ -1780,6 +1837,12 @@ def main():
     ap.add_argument("--history", type=int, default=5,
                     help="prior seasons of stats to bundle (default 5; e.g. --history 10 for ten years)")
     ap.add_argument("--refresh", action="store_true", help="ignore caches, re-download")
+    ap.add_argument("--nflverse", action="store_true",
+                    help="also compute nflverse advanced metrics (opt-in; requires pandas) and add "
+                         "them as a parallel 'nflverse' seed block for A/B comparison with Sharp/Sumer")
+    ap.add_argument("--sumer", action="store_true",
+                    help="also scrape SumerSports advanced per-player stats into the seed (opt-in; "
+                         "the app now defaults to nflverse for advanced metrics, so this is only for A/B analysis)")
     args = ap.parse_args()
 
     print(f"TripleCrown seed builder — projections {args.season}, last {args.history} seasons of stats\n")
@@ -1808,15 +1871,20 @@ def main():
 
     print("\nStep 8/8: Warren Sharp advanced stats (offense + defense) & strength of schedule")
     sharp = build_sharp(args.refresh)
-    sos = build_sos(args.refresh)
+    sos = build_sos(args.refresh, args.season)
     coordinators = build_coordinators(args.season, args.refresh)
     hc_history = build_head_coach_history(args.season, args.refresh)
     print("\n  New Additions (Spotrac free agency / draft / trades)")
     additions = build_additions(args.season, args.refresh)
 
-    print("\n  SumerSports advanced per-player stats (QB/RB/WR/TE, per season)")
-    sumer = build_sumer(args.refresh)
-    sumer_seasons = sorted(sumer.keys(), reverse=True)
+    # SumerSports is now opt-in only (--sumer). nflverse advanced metrics are the app's default
+    # advanced source, so we no longer bake the scraped SumerSports tables into the seed. The
+    # scraper + cache stay available for our own A/B analysis.
+    sumer, sumer_seasons = {}, []
+    if args.sumer:
+        print("\n  SumerSports advanced per-player stats (opt-in — QB/RB/WR/TE, per season)")
+        sumer = build_sumer(args.refresh)
+        sumer_seasons = sorted(sumer.keys(), reverse=True)
 
     print("\n  KeepTradeCut dynasty player IDs (player-card links)")
     ktc = build_ktc(args.refresh)
@@ -1826,6 +1894,22 @@ def main():
     if len(nonempty_seasons) < len(stats_by_season):
         missing = sorted(set(stats_by_season) - set(nonempty_seasons), reverse=True)
         print(f"  (note: no data returned for {', '.join(missing)} — omitting those tabs)")
+
+    # Opt-in, additive, dependency-isolated: nflverse-computed advanced metrics for A/B comparison.
+    # Imported lazily so the default (stdlib-only) build never touches pandas.
+    nflverse = {}
+    if args.nflverse:
+        print("\n  nflverse advanced metrics (opt-in, additive — requires pandas)")
+        try:
+            import nflverse_stats as _nfl
+            if not _nfl.HAVE_PANDAS:
+                print("    ⚠ pandas not installed — skipping nflverse metrics (the rest of the seed is unaffected)")
+            else:
+                # Cover the same seasons we normally fetch history for (automated for future use).
+                nflverse = _nfl.build_nflverse(nonempty_seasons)
+        except Exception as e:
+            print(f"    ⚠ nflverse metrics failed: {type(e).__name__}: {e}")
+
 
     # Emit the JS the app embeds
     BUILDER_VERSION = "2.12-adp-fix"   # bump when aggregation logic changes
@@ -1850,6 +1934,7 @@ def main():
         f.write(f"const SEED_SUMER = {json.dumps(sumer, separators=(',',':'))};\n")
         f.write(f"const SEED_SUMER_SEASONS = {json.dumps(sumer_seasons)};\n")
         f.write(f"const SEED_KTC = {json.dumps(ktc, separators=(',',':'))};\n")
+        f.write(f"const SEED_NFLVERSE = {json.dumps(nflverse, separators=(',',':'))};\n")
     # Emit the raw seed json the app loads (compact — no indentation. Pretty-printing this
     # file more than doubled it; the app fetches + JSON.parses it, so compact = smaller
     # download and faster parse with identical data).
@@ -1861,7 +1946,8 @@ def main():
                    "team_names": CODE_TO_FULLNAME, "coordinators": coordinators,
                    "hc_history": hc_history, "additions": additions,
                    "hc_playcallers": HC_PLAYCALLERS, "sharp_season": args.season-1,
-                   "sumer": sumer, "sumer_seasons": sumer_seasons, "ktc": ktc}, f, separators=(",", ":"))
+                   "sumer": sumer, "sumer_seasons": sumer_seasons, "ktc": ktc,
+                   "nflverse": nflverse}, f, separators=(",", ":"))
 
     nplayers = sum(len(seed[t][p]) for t in seed for p in seed[t])
     print(f"\nDone (builder {BUILDER_VERSION}). {nplayers} players across {len(TEAMS)} teams.")

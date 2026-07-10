@@ -1,5 +1,6 @@
-import importlib.util
-spec = importlib.util.spec_from_file_location("build_seed", "/tmp/build_seed_edit.py")
+import importlib.util, os
+_BS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build_seed.py")
+spec = importlib.util.spec_from_file_location("build_seed", _BS)
 bs = importlib.util.module_from_spec(spec); spec.loader.exec_module(bs)
 
 # Rendered wikitable HTML as the MediaWiki API returns it — names ARE in the Coordinator cell

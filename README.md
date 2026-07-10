@@ -201,7 +201,7 @@ The project ships with a regression suite (Node + Python) covering the projectio
 ---
 
 ## To Do
-- [ ] Add SumerSport Personnel statistics for full teams in past seasons (tie to OCs, DCs)
+- [ ] Include more advanced personnel statistics tied to OCs and DCs
 - [ ] Add FantasyPros-esque feature to sync league and compare rosters
 - [ ] Add Coaching History (HCs, OCs, DCs)
 

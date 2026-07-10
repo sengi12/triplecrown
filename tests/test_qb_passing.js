@@ -7,10 +7,10 @@ const app=new Function(code+'return { PCARD_SCHEMA, pcardRowValues, pcardSeasonT
 app.setScoring({passing_yards_yardage:25,passing_touchdowns:6,interceptions_thrown:-2,rushing_yards_yardage:10,rushing_touchdowns:6,receiving_yards_yardage:10,receptions:0.5,receiving_touchdowns:6,passing_attempts:0,fumbles_lost:-2});
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
-console.log('=== QB PASSING group order: ATT|CMP|PCT|YD|LNG|RTG|RZ|TD (+INT,SACK) ===');
+console.log('=== QB PASSING group order: ATT|CMP|PCT|YD|AIR|LNG|RTG|RZ|TD (+INT,SACK) ===');
 const passingCols=app.PCARD_SCHEMA.QB.cols.filter(c=>c.grp===1).map(c=>c.label);
 console.log('  order:', passingCols.join(' | '));
-chk(passingCols.slice(0,8).join(',')==='ATT,CMP,PCT,YD,LNG,RTG,RZ,TD','first 8 match requested order');
+chk(passingCols.slice(0,9).join(',')==='ATT,CMP,PCT,YD,AIR,LNG,RTG,RZ,TD','first 9 match requested order');
 chk(app.PCARD_SCHEMA.QB.group.filter(g=>g[0]==='PASSING').length===1,'single PASSING group');
 chk(!app.PCARD_SCHEMA.QB.group.some(g=>g[0]==='ADV PASSING'),'no separate ADV PASSING group');
 

@@ -158,6 +158,19 @@ function toggleWeekFilterPace(btn, text){
     </div>
     <div class="pace-info-pop-body">${escAttr(text)}</div>`;
   wrap.appendChild(pop);
+  // Position as viewport-fixed and clamp so it never runs off-screen (mobile or narrow desktop).
+  // Prefer right-aligned to the button and below it; flip above / clamp to the edges as needed.
+  try{
+    const M=8, vw=window.innerWidth, vh=window.innerHeight;
+    const br=btn.getBoundingClientRect(), pr=pop.getBoundingClientRect();
+    let left=br.right-pr.width;
+    if(left+pr.width>vw-M) left=vw-M-pr.width;
+    if(left<M) left=M;
+    let top=br.bottom+6;
+    if(top+pr.height>vh-M) top=br.top-pr.height-6;   // flip above when no room below
+    if(top<M) top=M;
+    pop.style.position='fixed'; pop.style.left=left+'px'; pop.style.top=top+'px'; pop.style.right='auto';
+  }catch(e){ /* positioning is best-effort; CSS fallback still shows it */ }
 }
 if(document && document.addEventListener){
   document.addEventListener('click', e=>{
@@ -165,6 +178,8 @@ if(document && document.addEventListener){
     if(t && t.closest && t.closest('.pace-info-wrap')) return;
     closeWeekFilterPacePops();
   });
+  // The popover is viewport-fixed, so close it on scroll to avoid it detaching from its button.
+  if(typeof window!=='undefined' && window.addEventListener) window.addEventListener('scroll', closeWeekFilterPacePops, true);
 }
 // 17-game pace helper shown beside a player's name when a historical week window is active.
 // Scale from GAMES PLAYED in the filtered sample, not week span, so missed games/injuries are

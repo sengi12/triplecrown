@@ -26,6 +26,9 @@ const SEED_SUMER_SEASONS = [];
 // KeepTradeCut dynasty player-page slugs, {nameKey:{slug,pos}} — baked in / loaded from seed.
 // Used to link a player card straight to their KTC dynasty page. Empty by default.
 const SEED_KTC = {};
+// nflverse-computed advanced metrics (opt-in `build_seed.py --nflverse`): a parallel A/B source
+// shaped like Sharp (team tables) + Sumer (QB/RB player tables). Empty unless built with --nflverse.
+const SEED_NFLVERSE = {};
 // ═══ TRIPLECROWN_SEED_END ═══
 
 
@@ -243,6 +246,19 @@ function toggleWeekFilterPace(btn, text){
     </div>
     <div class="pace-info-pop-body">${escAttr(text)}</div>`;
   wrap.appendChild(pop);
+  // Position as viewport-fixed and clamp so it never runs off-screen (mobile or narrow desktop).
+  // Prefer right-aligned to the button and below it; flip above / clamp to the edges as needed.
+  try{
+    const M=8, vw=window.innerWidth, vh=window.innerHeight;
+    const br=btn.getBoundingClientRect(), pr=pop.getBoundingClientRect();
+    let left=br.right-pr.width;
+    if(left+pr.width>vw-M) left=vw-M-pr.width;
+    if(left<M) left=M;
+    let top=br.bottom+6;
+    if(top+pr.height>vh-M) top=br.top-pr.height-6;   // flip above when no room below
+    if(top<M) top=M;
+    pop.style.position='fixed'; pop.style.left=left+'px'; pop.style.top=top+'px'; pop.style.right='auto';
+  }catch(e){ /* positioning is best-effort; CSS fallback still shows it */ }
 }
 if(document && document.addEventListener){
   document.addEventListener('click', e=>{
@@ -250,6 +266,8 @@ if(document && document.addEventListener){
     if(t && t.closest && t.closest('.pace-info-wrap')) return;
     closeWeekFilterPacePops();
   });
+  // The popover is viewport-fixed, so close it on scroll to avoid it detaching from its button.
+  if(typeof window!=='undefined' && window.addEventListener) window.addEventListener('scroll', closeWeekFilterPacePops, true);
 }
 // 17-game pace helper shown beside a player's name when a historical week window is active.
 // Scale from GAMES PLAYED in the filtered sample, not week span, so missed games/injuries are
@@ -502,6 +520,10 @@ let SUMER = (typeof SEED_SUMER!=='undefined') ? SEED_SUMER : {};
 let SUMER_SEASONS = (typeof SEED_SUMER_SEASONS!=='undefined') ? SEED_SUMER_SEASONS : [];
 // KeepTradeCut dynasty player-page slugs (player-card links): {nameKey:{slug,pos}}
 let KTC = (typeof SEED_KTC!=='undefined') ? SEED_KTC : {};
+// nflverse-computed advanced metrics (opt-in A/B source): {season:{team:{...}, players:{QB,RB}}}
+let NFLVERSE = (typeof SEED_NFLVERSE!=='undefined') ? SEED_NFLVERSE : {};
+// Which data source powers the advanced tables (Sharp/Sumer vs nflverse): 'scraped' | 'nflverse'
+let advSource = 'scraped';
 // Head coaches fetched live from ESPN this session: {CODE:{name,headshot,experience}|null}
 let headCoaches = {};
 let hcInFlight = {};
@@ -2260,22 +2282,77 @@ function hasECR(){ const t=ecrTableFor(rankFormat); return t && Object.keys(t).l
 // The data is fully data-driven: each position table carries its own ordered `columns` +
 // `pct_cols`, so the app renders whatever the seed provides (and future refinements slot in).
 function sumerSeasonKey(){
-  // activeSeason is 'proj' or a year string; return the year only when we have Sumer data for it.
-  return (activeSeason!=='proj' && SUMER && SUMER[activeSeason]) ? String(activeSeason) : null;
+  // activeSeason is 'proj' or a year string; return the year only when we have adv data for it.
+  const D=advSumerData();
+  return (activeSeason!=='proj' && D && D[activeSeason]) ? String(activeSeason) : null;
 }
 function sumerAvailable(){ return !!sumerSeasonKey(); }
+// Does the nflverse A/B source have data for a season?
+function nflverseHasSeason(season){ return !!(NFLVERSE && NFLVERSE[String(season)]); }
+// Columns that are percentages in the nflverse player tables (for correct formatting).
+function _nflversePct(cols){
+  const pct=['Scramble %','Sack %','Success %','Comp %','TFL %','Explosive %','First Down %','Catch %','Target Share'];
+  return cols.filter(c=>pct.includes(c));
+}
+// The advanced player-stats map {season:{pos:{columns,players,pct_cols,refinements}}}.
+// SumerSports was retired as a source — these are now always computed from nflverse play-by-play,
+// carrying each position's situational `refinements` (with per-refinement pct_cols) through.
+// Memoized by NFLVERSE identity: the adapted structure is built ONCE (not per player row per
+// render), so the rankings "Adv. Metrics" view has no per-render rebuild latency. The cache
+// auto-invalidates when a new seed reassigns NFLVERSE (object identity changes).
+let _advSumerCache=null, _advSumerCacheSrc=null;
+function advSumerData(){
+  if(_advSumerCacheSrc===NFLVERSE) return _advSumerCache||{};
+  _advSumerCacheSrc = NFLVERSE;
+  if(!NFLVERSE){ _advSumerCache={}; return _advSumerCache; }
+  const out={};
+  for(const s in NFLVERSE){
+    const pl=(NFLVERSE[s]&&NFLVERSE[s].players)||{};
+    const tbl={};
+    ['QB','RB','WR','TE'].forEach(pos=>{
+      const t=pl[pos];
+      if(!(t&&t.columns)) return;
+      const entry={columns:t.columns, players:t.players, pct_cols:_nflversePct(t.columns)};
+      if(t.refinements){
+        entry.refinements={};
+        for(const r in t.refinements){
+          const rt=t.refinements[r];
+          entry.refinements[r]={columns:rt.columns||t.columns, players:rt.players,
+                                pct_cols:_nflversePct(rt.columns||t.columns)};
+        }
+      }
+      tbl[pos]=entry;
+    });
+    if(Object.keys(tbl).length) out[s]=tbl;
+  }
+  _advSumerCache=out;
+  return out;
+}
+// Switch the advanced-stats data source and re-render whichever advanced view is open.
+function setAdvSource(src){
+  if(advSource===src) return;
+  advSource=src;
+  sharpTable=null; sharpSortCol=null;   // reset table selection for the new source
+  if(currentPhase==='AdvancedLeague' && typeof renderSharpLeague==='function') renderSharpLeague();
+  else if(currentPhase==='Rankings') renderRankings();
+}
 // Ordered list + display labels for the "Situational" refinement dropdown (SumerSports splits).
 // Order is the sequence shown in the dropdown; only the refinements a position actually tracks
 // (present in its baked `refinements` map) are offered.
 const SUMER_REFINE_ORDER = ["when_leading","when_trailing","red_zone","non_garbage_time",
+  "1st_down","2nd_down","3rd_down","4th_down",
   "late_down","early_downs","play_action","pure_dropback","vs_man","vs_zone","blitzed","pressured",
-  "zone-concepts","duo-concepts","gap-concepts","under-7-box-defenders","7-box-defenders","8-plus-box-defenders"];
+  "zone-concepts","duo-concepts","gap-concepts",
+  "light_box","7_box","stacked_box",
+  "under-7-box-defenders","7-box-defenders","8-plus-box-defenders"];
 const SUMER_REFINE_LABELS = {
   when_leading:"When Leading", when_trailing:"When Trailing", red_zone:"Red Zone",
   non_garbage_time:"Non-Garbage Time", late_down:"Late Downs", early_downs:"Early Downs",
+  "1st_down":"1st Down", "2nd_down":"2nd Down", "3rd_down":"3rd Down", "4th_down":"4th Down",
   play_action:"Play Action", pure_dropback:"Pure Dropback", vs_man:"vs. Man",
   vs_zone:"vs. Zone", blitzed:"When Blitzed", pressured:"When Pressured",
   "zone-concepts":"Zone Concepts", "duo-concepts":"Duo Concepts", "gap-concepts":"Gap Concepts",
+  light_box:"Light Box (<7)", "7_box":"7-Man Box", stacked_box:"Stacked Box (8+)",
   "under-7-box-defenders":"Light Box (<7)", "7-box-defenders":"7-Man Box", "8-plus-box-defenders":"Stacked Box (8+)",
 };
 // The situational refinements available for the current position filter. Single position → its
@@ -2283,7 +2360,7 @@ const SUMER_REFINE_LABELS = {
 // the dropdown offers is guaranteed to exist for each row's position). Ordered per SUMER_REFINE_ORDER.
 function sumerRefinementsForFilter(){
   const k=sumerSeasonKey(); if(!k) return [];
-  const s=SUMER[k]; const pos=rankPosFilter;
+  const s=advSumerData()[k]; const pos=rankPosFilter;
   const refsOf=(pp)=> (s[pp] && s[pp].refinements) ? Object.keys(s[pp].refinements) : [];
   let avail;
   if(pos==='QB'||pos==='RB'||pos==='WR'||pos==='TE'){
@@ -2300,7 +2377,7 @@ function sumerRefinementsForFilter(){
 }
 function sumerTableFor(pos){
   const k=sumerSeasonKey(); if(!k) return null;
-  const s=SUMER[k]; const base=(s && s[pos]) ? s[pos] : null;
+  const s=advSumerData()[k]; const base=(s && s[pos]) ? s[pos] : null;
   if(!base) return null;
   // Situational view: swap in the selected refinement's table (its own columns/pct/players),
   // falling back to the base table when this position doesn't track the chosen split.
@@ -2588,7 +2665,36 @@ function computeVOR(list){
 // Read-only reference. Two views: a per-team card (this team's row across all Sharp
 // tables, with league rank 1–32 per stat), and a league-wide sortable table view.
 // None of this touches projections.
-function sharpHasData(){ return SHARP && Object.keys(SHARP).length>0; }
+function sharpHasData(){ return activeSharp() && Object.keys(activeSharp()).length>0; }
+// Adapt the nflverse team tables for SHARP_SEASON into the Sharp-shaped dict the league view
+// renders (adds title/category/pct_cols). Returns {} when no nflverse data for that season.
+function nflverseSharpTables(){
+  const t=(NFLVERSE && NFLVERSE[String(SHARP_SEASON)] && NFLVERSE[String(SHARP_SEASON)].team) || null;
+  if(!t) return {};
+  const META={
+    offense:{title:'Offensive Metrics',category:'offense'},
+    defense:{title:'Defensive Metrics',category:'defense'},
+    tendencies:{title:'Tendencies',category:'offense'},
+    pace:{title:'Pace',category:'offense'},
+    personnel:{title:'Personnel',category:'offense'},
+    coverage:{title:'Coverage (man/zone)',category:'defense'},
+  };
+  const PCT=['Explosive Play Rate','Down Conversion Rate','Shotgun Rate','NoHuddle Rate','3WR Rate','Multi TE Rate','Man Rate','Zone Rate'];
+  const out={};
+  for(const k in t){
+    const m=META[k]||{title:k,category:'offense'};
+    out[k]={columns:t[k].columns, title:m.title, category:m.category,
+            pct_cols:(t[k].columns||[]).filter(c=>PCT.includes(c)), teams:t[k].teams};
+  }
+  return out;
+}
+// The active source for the league-wide Advanced Stats tables: Warren Sharp or nflverse.
+function activeSharp(){
+  if(advSource==='nflverse'){ const n=nflverseSharpTables(); if(Object.keys(n).length) return n; }
+  return SHARP;
+}
+// True when the nflverse A/B source can back the league-wide Advanced Stats view.
+function nflverseSharpAvailable(){ return Object.keys(nflverseSharpTables()).length>0; }
 // Full team name for team pages (e.g. "Cincinnati Bengals"); falls back to the code.
 function teamDisplayName(code){ return (TEAM_NAMES && TEAM_NAMES[code]) || code; }
 // 1 → "1st", 2 → "2nd", 22 → "22nd", etc.
@@ -2925,6 +3031,7 @@ async function loadPlayerCardData(pid, pos, team){
   pcardState = {pid, posc, team, isSkill};
   // Rookies have no NFL game log yet → default to their college stats; everyone else to the pros.
   pcardStatsMode = isRookiePlayer(pid) ? 'college' : 'pro';
+  pcardRouteSeason = null;        // reset the Routes-tab season for the new player
   loadPcardDraft(pid);            // draft summary fills the hero banner (independent of stat source)
   renderPcardStatTabs();
   pcardLoadStats(pcardStatsMode);
@@ -2944,7 +3051,10 @@ function renderPcardStatTabs(){
   const el = document.getElementById('pcardTabs');
   if(!el || !pcardState) return;
   const tab=(mode,label)=>`<button class="pcard-tab ${pcardStatsMode===mode?'active':''}" onclick="setPcardStatsMode('${mode}')">${label}</button>`;
-  el.innerHTML = tab('pro','NFL') + tab('college','College');
+  // The Routes tab only appears for skill players with baked nflverse route data.
+  const routesTab = (pcardState.isSkill && typeof pcardRoutesAvailable==='function' && pcardRoutesAvailable(pcardState.pid))
+    ? tab('routes','Routes') : '';
+  el.innerHTML = tab('pro','NFL') + tab('college','College') + routesTab;
 }
 // Switch the card's stat source and reload the body from the matching feed.
 function setPcardStatsMode(mode){
@@ -2968,6 +3078,10 @@ function pcardLoadStats(mode){
   const {pid, posc, isSkill} = pcardState;
   const body = document.getElementById('pcardBody');
   if(!body) return;
+  if(mode==='routes'){
+    body.innerHTML = renderPcardRoutes(pid);
+    return;
+  }
   if(mode==='college'){
     return loadEspnCardData(pid, posc, body, {league:'college-football', def:!isSkill});
   }
@@ -3135,6 +3249,172 @@ function pcardSeasonTeamTag(rows){
   return teams.length ? ` <span class="pcard-season-team">· ${teams.map(t=>`<img src="${NFL_LOGO(t)}" class="pcard-season-logo" onerror="this.style.display='none'">${t}`).join(' / ')}</span>` : '';
 }
 
+// ── Route tree (player-card "Routes" tab) ────────────────────────────────────
+// nflverse participation tags each pass play with the route the TARGETED receiver ran, so
+// counting those per receiver gives a "routes run when targeted" distribution — exactly what a
+// route tree draws. The seed bakes it as NFLVERSE[season].routes[normName] = {pos,total,tree}.
+//
+// The tree is drawn PFF-style: routes fan out from the receiver at the line of scrimmage, each
+// coloured + weighted by how often it was run (a heat map), and labelled with its share. Swing
+// and Angle (Texas) routes start from the BACKFIELD, below the LOS, so they read as RB releases
+// rather than being forced onto the WR's release point.
+
+// Each route: o=origin ('los' | 'bf'=backfield), p=waypoints in field units (x:+right, y:+downfield
+// in yards from the LOS spot), label, anc=text-anchor, dx/dy=label nudge (px) off the endpoint.
+const ROUTE_TREE_SHAPES = {
+  "GO":                {o:'los', p:[[0,0],[0,14]],                 label:'Go',        anc:'middle', dx:0,  dy:-9},
+  "POST":              {o:'los', p:[[0,0],[0,9],[-4,13]],          label:'Post',      anc:'end',    dx:-4, dy:-5},
+  "CORNER":            {o:'los', p:[[0,0],[0,9],[4,13]],           label:'Corner',    anc:'start',  dx:4,  dy:-5},
+  "DEEP OUT":          {o:'los', p:[[0,0],[0,7.5],[4,7.5]],        label:'Out',       anc:'start',  dx:6,  dy:3},
+  "IN/DIG":            {o:'los', p:[[0,0],[0,7],[-5,7]],           label:'Dig',       anc:'end',    dx:-6, dy:3},
+  "WHEEL":             {o:'los', p:[[0,0],[2.6,1],[3.4,9]],        label:'Wheel',     anc:'start',  dx:6,  dy:0},
+  "HITCH/CURL":        {o:'los', p:[[0,0],[0,5.5],[-1.2,4.6]],     label:'Hitch',     anc:'end',    dx:-7, dy:1},
+  "QUICK OUT":         {o:'los', p:[[0,0],[0,3],[3,3]],            label:'Quick Out', anc:'start',  dx:6,  dy:3},
+  "SLANT":             {o:'los', p:[[0,0],[0,1.2],[-3,3.4]],       label:'Slant',     anc:'end',    dx:-6, dy:-1},
+  "SHALLOW CROSS/DRAG":{o:'los', p:[[0,0],[0,1.2],[-6,2]],         label:'Drag',      anc:'end',    dx:-6, dy:4},
+  "SCREEN":            {o:'los', p:[[0,0],[0,-0.4],[-3,-0.8]],        label:'Screen',    anc:'end',  dx:-6,  dy:4},
+  "SWING":             {o:'bf',  p:[[0,-2.7],[-4,-2.5],[-7,-1.4]], label:'Swing',     anc:'end',  dx:-6,  dy:-3},
+  "TEXAS/ANGLE":       {o:'bf',  p:[[0,-2.7],[4,-0.7],[1,1.7]], label:'Texas',     anc:'start',    dx:6, dy:3},
+};
+// Draw order: least-run underneath, most-run on top (so hot routes read clearly).
+const ROUTE_TREE_ORDER = ["GO","POST","CORNER","DEEP OUT","IN/DIG","WHEEL","HITCH/CURL","QUICK OUT",
+  "SLANT","SHALLOW CROSS/DRAG","SCREEN","SWING","TEXAS/ANGLE"];
+
+let pcardRouteSeason = null;   // selected season in the Routes tab (reset per card)
+
+// Seasons (desc) for which this player has a baked route tree.
+function pcardRouteSeasons(normName){
+  if(typeof NFLVERSE==='undefined' || !NFLVERSE) return [];
+  return Object.keys(NFLVERSE)
+    .filter(s=>{ const r=NFLVERSE[s]&&NFLVERSE[s].routes; return r && r[normName]; })
+    .sort((a,b)=>b-a);
+}
+function _pcardNorm(pid){
+  const p=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[pid])||{};
+  return ecrNormName(p.name||'');
+}
+// Does the player have any baked route data? (gates the Routes tab).
+function pcardRoutesAvailable(pid){
+  return pcardRouteSeasons(_pcardNorm(pid)).length>0;
+}
+
+// Heat colour for a route by its share of the max route (blue = rare → red = most-run).
+function _routeHeat(ratio){
+  const hue = Math.round(210 - Math.max(0,Math.min(1,ratio))*198);
+  return `hsl(${hue},85%,60%)`;
+}
+
+// The SVG route tree for one season's distribution.
+function routeTreeSVG(rt){
+  const W=360, H=440, cx=180, losY=340, sx=15, sy=20;
+  const PX = x => +(cx + x*sx).toFixed(1);
+  const PY = y => +(losY - y*sy).toFixed(1);
+  const tree=rt.tree||{}, total=rt.total||Object.values(tree).reduce((a,b)=>a+b,0)||1;
+  const present = ROUTE_TREE_ORDER.filter(k=>tree[k]>0 && ROUTE_TREE_SHAPES[k]);
+  const maxN = Math.max(1, ...present.map(k=>tree[k]));
+  const hasBf = present.some(k=>ROUTE_TREE_SHAPES[k].o==='bf');
+  // Field backdrop + yard lines every 5 yards up to ~15.
+  let yard='';
+  for(let y=5;y<=15;y+=5){ const py=PY(y); yard+=`<line x1="24" y1="${py}" x2="${W-24}" y2="${py}" class="rt-yard"/>`; }
+  // Per-route render geometry.
+  const items = present.map(k=>{
+    const sh=ROUTE_TREE_SHAPES[k], n=tree[k], pct=100*n/total, ratio=n/maxN;
+    const col=_routeHeat(ratio), w=+(2.4+ratio*5).toFixed(2);
+    const pts=sh.p.map(([x,y])=>[PX(x),PY(y)]);
+    const end=pts[pts.length-1], prev=pts[pts.length-2];
+    const ang=Math.atan2(end[1]-prev[1], end[0]-prev[0]);
+    const side = sh.anc==='end'?'L' : (sh.anc==='start'?'R':'C');
+    return {sh,n,pct,ratio,col,w,pts,end,ang,side};
+  });
+  // Draw least-run first so the hot routes sit on top; each route ends in an arrowhead.
+  let paths='';
+  for(const it of items.slice().sort((a,b)=>a.n-b.n)){
+    paths+=`<polyline points="${it.pts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${it.col}" stroke-width="${it.w}" stroke-linejoin="round" stroke-linecap="round" opacity="0.95"/>`;
+    const [ex,ey]=it.end, a=it.ang, aLen=8+it.ratio*3, aW=3.4+it.ratio*1.8;
+    const tip=[ex+Math.cos(a)*aLen*0.5, ey+Math.sin(a)*aLen*0.5];
+    const back=[ex-Math.cos(a)*aLen*0.5, ey-Math.sin(a)*aLen*0.5];
+    const b1=[back[0]+Math.cos(a+Math.PI/2)*aW, back[1]+Math.sin(a+Math.PI/2)*aW];
+    const b2=[back[0]+Math.cos(a-Math.PI/2)*aW, back[1]+Math.sin(a-Math.PI/2)*aW];
+    paths+=`<polygon points="${tip[0].toFixed(1)},${tip[1].toFixed(1)} ${b1[0].toFixed(1)},${b1[1].toFixed(1)} ${b2[0].toFixed(1)},${b2[1].toFixed(1)}" fill="${it.col}"/>`;
+  }
+  // Label placement with a vertical de-collision pass per side (left / right / centre), so the
+  // lower clusters (Slant/Angle/Drag …) don't stack on top of each other. A thin leader line is
+  // drawn to any label that had to be nudged away from its route's endpoint.
+  const MINGAP=14;
+  const placeCol = list => {
+    list.forEach(it=>{ it.lx=+(it.end[0]+it.sh.dx).toFixed(1); it.ly0=it.end[1]+it.sh.dy; it.ly=it.ly0; });
+    list.sort((a,b)=>a.ly-b.ly);
+    for(let i=1;i<list.length;i++) if(list[i].ly < list[i-1].ly+MINGAP) list[i].ly=list[i-1].ly+MINGAP;
+    if(list.length){
+      const over=list[list.length-1].ly-(H-10);
+      if(over>0) list.forEach(it=>it.ly-=over);
+      const under=16-list[0].ly;
+      if(under>0) list.forEach(it=>it.ly+=under);
+    }
+  };
+  placeCol(items.filter(i=>i.side==='L'));
+  placeCol(items.filter(i=>i.side==='R'));
+  placeCol(items.filter(i=>i.side==='C'));
+  let labels='';
+  for(const it of items){
+    if(Math.abs(it.ly-it.ly0)>3)
+      labels+=`<line x1="${it.end[0]}" y1="${it.end[1]}" x2="${it.lx}" y2="${(it.ly-3).toFixed(1)}" class="rt-leader"/>`;
+    labels+=`<text x="${it.lx}" y="${it.ly.toFixed(1)}" text-anchor="${it.sh.anc}" class="rt-label">`+
+            `<tspan class="rt-label-name">${it.sh.label}</tspan> <tspan class="rt-label-pct" fill="${it.col}">${it.pct.toFixed(1)}%</tspan></text>`;
+  }
+  // LOS + origin markers.
+  const losLine=`<line x1="20" y1="${losY}" x2="${W-20}" y2="${losY}" class="rt-los"/>`;
+  const wrDot=`<circle cx="${PX(0)}" cy="${PY(0)}" r="5.5" class="rt-origin"/>`;
+  const bfDot=hasBf?`<circle cx="${PX(0)}" cy="${PY(-2.7)}" r="4" class="rt-origin-bf"/>`+
+    `<line x1="${PX(0)}" y1="${PY(-2.7)}" x2="${PX(0)}" y2="${PY(-0.2)}" class="rt-bf-stem"/>`:'';
+  const losTag=`<text x="${W-22}" y="${losY-5}" text-anchor="end" class="rt-los-tag">LOS</text>`;
+  const bfTag=hasBf?`<text x="${PX(0)}" y="${PY(-2.7)+16}" text-anchor="middle" class="rt-bf-tag">backfield</text>`:'';
+  return `<svg viewBox="0 0 ${W} ${H}" class="rt-svg" role="img" aria-label="Route tree">`+
+    `<rect x="0" y="0" width="${W}" height="${H}" class="rt-field"/>`+
+    yard+losLine+losTag+paths+wrDot+bfDot+bfTag+labels+`</svg>`;
+}
+
+// Ranked list beneath the tree — exact counts + share, coloured to match the tree.
+function routeTreeList(rt){
+  const tree=rt.tree||{}, total=rt.total||1;
+  const rows=Object.entries(tree).sort((a,b)=>b[1]-a[1]);
+  const maxN=Math.max(1,...rows.map(r=>r[1]));
+  return `<div class="rt-list">`+rows.map(([k,n])=>{
+    const pct=100*n/total, col=_routeHeat(n/maxN), label=(ROUTE_TREE_SHAPES[k]||{}).label||k;
+    return `<div class="rt-list-row">`+
+      `<span class="rt-list-name">${label}</span>`+
+      `<span class="rt-list-bar"><span class="rt-list-fill" style="width:${(100*n/maxN).toFixed(0)}%;background:${col}"></span></span>`+
+      `<span class="rt-list-n">${n}</span><span class="rt-list-pct">${pct.toFixed(1)}%</span></div>`;
+  }).join('')+`</div>`;
+}
+
+// The full Routes-tab body: season selector + tree + list.
+function renderPcardRoutes(pid){
+  const norm=_pcardNorm(pid);
+  const seasons=pcardRouteSeasons(norm);
+  if(!seasons.length) return `<div class="pcard-loading">No route data for this player.</div>`;
+  if(pcardRouteSeason==null || !seasons.includes(String(pcardRouteSeason))) pcardRouteSeason=seasons[0];
+  const rt=NFLVERSE[pcardRouteSeason].routes[norm];
+  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===String(pcardRouteSeason)?'active':''}" onclick="setPcardRouteSeason('${s}')">${s}</button>`).join('');
+  const topRoute=Object.entries(rt.tree||{}).sort((a,b)=>b[1]-a[1])[0];
+  const topLabel=topRoute?((ROUTE_TREE_SHAPES[topRoute[0]]||{}).label||topRoute[0]):'–';
+  return `
+    <div class="rt-wrap">
+      <div class="rt-head">
+        <div class="rt-seasons">${seasonBtns}</div>
+        <div class="rt-summary">${rt.total} routes charted · most-run <b>${topLabel}</b></div>
+      </div>
+      ${routeTreeSVG(rt)}
+      ${routeTreeList(rt)}
+      <div class="pcard-src">Route types via nflverse participation charting (route run when targeted, ${pcardRouteSeason} regular season).</div>
+    </div>`;
+}
+// Switch the Routes-tab season and re-render just the body.
+function setPcardRouteSeason(s){
+  pcardRouteSeason=s;
+  const body=document.getElementById('pcardBody');
+  if(body && pcardState) body.innerHTML=renderPcardRoutes(pcardState.pid);
+}
 // ── Rookie college stats (ESPN) ─────────────────────────────────────────────
 // Rookies have no NFL game log yet, so their player card shows their COLLEGE game logs from
 // ESPN instead. We resolve the player's global ESPN athlete id (Sleeper's espn_id when present,
@@ -3728,7 +4008,7 @@ function renderTeamAdditions(team){
 
     ${renderDepthChart(team)}
 
-    <div class="sr-source">Source: spotrac.com — ${PROJ_SEASON} offseason · depth chart via ESPN · for informational use.</div>
+    <div class="sr-source">${PROJ_SEASON} offseason moves · depth chart via ESPN · for informational use.</div>
   </div>`;
 }
 
@@ -3779,7 +4059,7 @@ function renderTeamAdvanced(team){
   if(!hasSharp && !hasSOS && !hasCoord){
     return `<div class="empty"><div class="empty-icon">📊</div>
       <div class="empty-title">No advanced stats loaded</div>
-      <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed to populate Warren Sharp advanced stats.</div></div>`;
+      <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed to populate advanced team stats.</div></div>`;
   }
   const cardFor=(key, srcTeam)=>{
     const tbl=SHARP[key]; if(!tbl) return '';
@@ -3818,13 +4098,13 @@ function renderTeamAdvanced(team){
   // Carryover coordinators → a highlighted section that pulls the former team's scheme stats.
   const carryBlock = renderCoordinatorCarryover(team, cardFor);
   return `<div class="sr-team-wrap">
-    <div class="sr-note">📊 <b>Warren Sharp</b> advanced stats · <b>${SHARP_SEASON} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
+    <div class="sr-note">📊 <b>Advanced team stats</b> · <b>${SHARP_SEASON} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
       <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showSharpLeague()">🌐 View league-wide tables →</button></div>
     ${sosStrip}
     ${carryBlock}
     ${section('🏈 Offense', offKeys, coordInlineLabel(oc,'offensive'))}
     ${section('🛡️ Defense', defKeys, coordInlineLabel(dc,'defensive'))}
-    <div class="sr-source">Source: sharpfootballanalysis.com (${SHARP_SEASON} season) · coordinators via Wikipedia — for informational use.</div>
+    <div class="sr-source">${SHARP_SEASON} season · coordinators via Wikipedia — for informational use.</div>
   </div>`;
 }
 
@@ -3890,15 +4170,9 @@ function coordCarryCard(sideWord, c, ks, cardFor){
 async function showSharpLeague(target){
   rankScope='all'; currentPhase='AdvancedLeague';
   if(target==='sos'){ sharpTable='__sos__'; sharpSortCol=null; sharpSortDir=1; }
-  if(sharpTable==='__sos__' && !_sosSchedLoaded && !_sosSchedLoading){
-    _sosSchedLoading = true;
-    try {
-      await Promise.all(Object.keys(SOS).map(code => fetchTeamSchedule(code)));
-      _sosSchedLoaded = true;
-    } finally {
-      _sosSchedLoading = false;
-    }
-  }
+  // Render immediately. Opponent win totals are baked into the seed; when they aren't (older
+  // seed), renderSOSView() itself kicks off the schedule fetch in the background and re-renders
+  // on arrival — so we never block the SOS view on a network round-trip.
   renderContent();
 }
 function setSharpTable(key){ sharpTable=key; sharpSortCol=null; renderSharpLeague(); }
@@ -3915,6 +4189,7 @@ function sortSharpBy(col){
 }
 function renderSharpLeague(){
   const host=document.getElementById('content'); if(!host) return;
+  const SRC=activeSharp();
   const hasSharp=sharpHasData(), hasSOS=SOS&&Object.keys(SOS).length>0;
   if(!hasSharp && !hasSOS){
     host.innerHTML=`<div class="phase-tabs">${tabBar()}</div>
@@ -3922,11 +4197,19 @@ function renderSharpLeague(){
       <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed.</div></div>`;
     return;
   }
+  const nfvOn = advSource==='nflverse';
+  const srcToggle = nflverseSharpAvailable()
+    ? `<div class="format-toggle" style="margin-right:6px">
+         <button class="format-btn ${!nfvOn?'active':''}" onclick="setAdvSource('scraped')" title="Curated season advanced stats">Curated</button>
+         <button class="format-btn ${nfvOn?'active':''}" onclick="setAdvSource('nflverse')" title="Computed from nflverse play-by-play">nflverse</button>
+       </div>` : '';
+  const srcLabel = nfvOn ? `nflverse (computed)` : `Curated season stats`;
   const headerBar=`
     <div class="team-header sr-league-header">
       <div><div class="team-abbr">📊 Advanced Stats — League-Wide</div>
-        <div class="team-qb-name">Warren Sharp · <b>${SHARP_SEASON} season</b> · click any column to sort (best→worst)</div></div>
+        <div class="team-qb-name">${srcLabel} · <b>${SHARP_SEASON} season</b> · click any column to sort (best→worst)</div></div>
       <div class="team-nav">
+        ${srcToggle}
         ${currentTeam?`<button class="btn btn-ghost" onclick="setPhase('Advanced')">← ${teamDisplayName(currentTeam)} card</button>`:''}
         <button class="btn btn-ghost" onclick="setPhase('Rankings')">🏆 Rankings</button></div>
     </div>
@@ -3938,15 +4221,15 @@ function renderSharpLeague(){
     return;
   }
 
-  const keys=Object.keys(SHARP).filter(k=>(SHARP[k].category||'offense')===sharpCategory);
-  if(!sharpTable || sharpTable==='__sos__' || !SHARP[sharpTable] || (SHARP[sharpTable].category||'offense')!==sharpCategory){
+  const keys=Object.keys(SRC).filter(k=>(SRC[k].category||'offense')===sharpCategory);
+  if(!sharpTable || sharpTable==='__sos__' || !SRC[sharpTable] || (SRC[sharpTable].category||'offense')!==sharpCategory){
     sharpTable = keys[0];
   }
   if(!sharpTable){ // no tables in this category
     host.innerHTML = headerBar + renderCategoryTabs() + `<div class="sr-desc">No tables in this category.</div>`;
     return;
   }
-  const tbl=SHARP[sharpTable];
+  const tbl=SRC[sharpTable];
   const cols=tbl.columns;
   let rows=Object.keys(tbl.teams).map(code=>({code, ...tbl.teams[code]}));
   const sortCol = sharpSortCol || cols[0];
@@ -3957,7 +4240,7 @@ function renderSharpLeague(){
     if(rb==null) return -1;
     return (ra-rb)*sharpSortDir;
   });
-  const tableTabs = keys.map(k=>`<button class="sr-tab ${k===sharpTable?'active':''}" onclick="setSharpTable('${k}')">${SHARP[k].title||k}</button>`).join('');
+  const tableTabs = keys.map(k=>`<button class="sr-tab ${k===sharpTable?'active':''}" onclick="setSharpTable('${k}')">${SRC[k].title||k}</button>`).join('');
   const head = `<th class="sr-th-team">TEAM</th>`+cols.map(c=>{
     const active = c===sortCol;
     const arrow = active ? (sharpSortDir>0?' ▲':' ▼') : '';
@@ -3976,13 +4259,14 @@ function renderSharpLeague(){
     <div class="card" style="padding:0;overflow-x:auto">
       <table class="sr-league-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
     </div>
-    <div class="sr-source">Source: sharpfootballanalysis.com — for informational use.</div>`;
+    <div class="sr-source">${advSource==='nflverse'?'Computed from nflverse play-by-play (nflfastR).':'Curated season advanced stats — for informational use.'}</div>`;
 }
 
 // Offense / Defense / SOS category selector row for the league-wide view.
 function renderCategoryTabs(){
-  const hasOff=Object.keys(SHARP).some(k=>(SHARP[k].category||'offense')==='offense');
-  const hasDef=Object.keys(SHARP).some(k=>SHARP[k].category==='defense');
+  const SRC=activeSharp();
+  const hasOff=Object.keys(SRC).some(k=>(SRC[k].category||'offense')==='offense');
+  const hasDef=Object.keys(SRC).some(k=>SRC[k].category==='defense');
   const hasSOS=SOS&&Object.keys(SOS).length>0;
   const isSOS = sharpTable==='__sos__';
   const btn=(cat,label,active,onclick)=>`<button class="sr-cat ${active?'active':''}" onclick="${onclick}">${label}</button>`;
@@ -3998,13 +4282,13 @@ function renderCategoryTabs(){
 // (easiest at top-left → hardest at bottom-right, split by the league-average line),
 // plus the full sortable table beneath it.
 function renderSOSView(){
-  const entries=Object.keys(SOS).map(code=>({code, ...SOS[code]})).filter(e=>e.rank!=null);
-  entries.sort((a,b)=>a.rank-b.rank);
+  const entries=Object.keys(SOS).map(code=>({code, ...SOS[code]})).filter(e=>e.rank!=null||SOS[code].opp_win_total!=null);
   const n=entries.length||32;
 
-  // Kick off schedule fetches (once) so we can sum each team's opponents' win totals.
-  // When they land we re-render into the arc; until then we show the rank diagonal.
-  if(!_sosSchedLoading && !_sosSchedLoaded){
+  // Opponent win-total sum drives OUR ranking. Prefer the value baked into the seed; only when it
+  // is absent (older seed) do we fetch each team's schedule live and sum it in the browser.
+  const baked = entries.length>0 && entries.every(e=>e.opp_win_total!=null);
+  if(!baked && !_sosSchedLoading && !_sosSchedLoaded){
     _sosSchedLoading=true;
     Promise.all(entries.map(e=>fetchTeamSchedule(e.code))).then(()=>{
       _sosSchedLoaded=true; _sosSchedLoading=false;
@@ -4012,14 +4296,19 @@ function renderSOSView(){
     }).catch(()=>{ _sosSchedLoading=false; });
   }
 
-  // Attach each team's summed-opponent-win-total (the schedule-difficulty metric).
+  // Attach each team's summed-opponent-win-total (baked, else live).
   let haveOppData=false, minT=Infinity, maxT=-Infinity;
   entries.forEach(e=>{
-    const o=opponentWinTotal(e.code);
-    e.oppTotal = o ? o.total : null;
-    e.oppGames = o ? o.games : 0;
+    if(e.opp_win_total!=null){ e.oppTotal=e.opp_win_total; e.oppGames=e.opp_games||17; }
+    else { const o=opponentWinTotal(e.code); e.oppTotal=o?o.total:null; e.oppGames=o?o.games:0; }
     if(e.oppTotal!=null){ haveOppData=true; if(e.oppTotal<minT)minT=e.oppTotal; if(e.oppTotal>maxT)maxT=e.oppTotal; }
   });
+  // OUR ranking: sort by summed opponent win total ascending (1 = easiest slate). Overrides any
+  // scraped rank once every team has an opponent total; until then the existing order stands.
+  if(entries.every(e=>e.oppTotal!=null)){
+    entries.slice().sort((a,b)=>a.oppTotal-b.oppTotal).forEach((e,i)=>{ e.rank=i+1; });
+  }
+  entries.sort((a,b)=>a.rank-b.rank);
 
   // Chart geometry
   const W=920, H=430, padL=30, padR=30, padT=52, padB=30;
@@ -4065,6 +4354,7 @@ function renderSOSView(){
   const rows=entries.slice().sort((a,b)=>{
     let av,bv;
     if(sortCol==='win_total'){ av=a.win_total; bv=b.win_total; }
+    else if(sortCol==='opp'){ av=a.oppTotal; bv=b.oppTotal; }
     else { av=a.rank; bv=b.rank; }
     if(av==null&&bv==null)return 0; if(av==null)return 1; if(bv==null)return -1;
     return (av-bv)*sortDir;
@@ -4076,16 +4366,17 @@ function renderSOSView(){
   const body=rows.map(e=>`<tr>
     <td class="sr-td-team"><span class="sr-td-team-inner"><img src="${NFL_LOGO(e.code)}" class="sr-logo" onerror="this.style.display='none'">${teamDisplayName(e.code)}</span></td>
     <td class="sr-td ${sharpRankClass(e.rank)}"><span class="sr-td-val">${ordinal(e.rank)}</span></td>
+    <td class="sr-td"><span class="sr-td-val">${e.oppTotal!=null?e.oppTotal.toFixed(1):'—'}</span></td>
     <td class="sr-td"><span class="sr-td-val">${e.win_total!=null?e.win_total:'—'}</span></td>
   </tr>`).join('');
-  return `<div class="sr-desc">${PROJ_SEASON} strength of schedule, based on Vegas win totals. Rank 1 = easiest slate, ${n} = hardest.</div>
+  return `<div class="sr-desc">${PROJ_SEASON} strength of schedule — our own ranking by the <b>sum of each team's opponents' Vegas win totals</b>. Rank 1 = easiest slate, ${n} = hardest.</div>
     <div class="card sos-card">${chart}</div>
     <div class="card" style="padding:0;overflow-x:auto;margin-top:12px">
       <table class="sr-league-table sos-table"><thead><tr>
-        <th class="sr-th-team">TEAM</th>${th('rank',PROJ_SEASON+' SOS RANK')}${th('win_total','VEGAS WIN TOTAL')}
+        <th class="sr-th-team">TEAM</th>${th('rank',PROJ_SEASON+' SOS RANK')}${th('opp','OPP WIN TOTAL')}${th('win_total','VEGAS WIN TOTAL')}
       </tr></thead><tbody>${body}</tbody></table>
     </div>
-    <div class="sr-source">Source: sharpfootballanalysis.com — for informational use.</div>`;
+    <div class="sr-source">Rank = sum of opponents' ${PROJ_SEASON} Vegas win totals · schedule via nflverse — for informational use.</div>`;
 }
 function sortSOSBy(col){
   if(sharpSortCol===col){ sharpSortDir*=-1; } else { sharpSortCol=col; sharpSortDir=1; }
@@ -4258,19 +4549,20 @@ function renderRankings(){
     .map(([s,l])=>`<button class="format-btn ${curScoring===s?'active':''}" onclick="setScoringAxis('${s}')">${l}</button>`).join('');
   const posBtns=['ALL','QB','RB','WR','TE','FLEX'].map(pos=>
     `<button class="pos-filter-btn ${rankPosFilter===pos?'active':''}" onclick="setPosFilter('${pos}')">${pos}</button>`).join('');
-  // Advanced (SumerSports) toggle — only when the current view is a reference season we have
-  // Sumer data for (2022-2025). Switches the stat columns to advanced per-player metrics.
+  // Advanced-metrics toggle — only on a reference season nflverse has player data for
+  // (2022-2025). Switches the stat columns to advanced per-player metrics (computed from
+  // nflverse play-by-play; SumerSports was retired as a source).
   const sumerOn = sumerAvailable();
   const advToggle = sumerOn
     ? `<span style="font-size:11px;color:var(--muted);font-weight:700;margin-left:8px">STATS</span>
        <div class="format-toggle">
          <button class="format-btn ${!rankAdvanced?'active':''}" onclick="setRankAdvanced(false)">Standard</button>
-         <button class="format-btn ${rankAdvanced?'active':''}" onclick="setRankAdvanced(true)" title="SumerSports advanced ${sumerSeasonKey()} metrics">Adv. Metrics</button>
+         <button class="format-btn ${rankAdvanced?'active':''}" onclick="setRankAdvanced(true)" title="nflverse advanced ${sumerSeasonKey()} metrics">Adv. Metrics</button>
        </div>`
     : '';
   const minInputs = advActive ? sumerMinInputs() : '';
-  // "Situational" dropdown — Adv. Metrics only. Swaps the stat columns to a SumerSports
-  // game-situation split (Red Zone / When Trailing / vs. Man / box counts …) for the season.
+  // "Situational" dropdown — Adv. Metrics only. Swaps the stat columns to a game-situation
+  // split (Red Zone / When Trailing / vs. Man / per-down / box counts …) for the season.
   const refineOpts = advActive ? sumerRefinementsForFilter() : [];
   const situationalSelect = (advActive && refineOpts.length)
     ? `<span style="font-size:11px;color:var(--muted);font-weight:700;margin-left:8px">SITUATIONAL</span>
@@ -4280,7 +4572,7 @@ function renderRankings(){
        </select>`
     : '';
   const advNote = advActive
-    ? `<span class="ecr-missing" style="color:var(--muted)">📊 SumerSports advanced ${sumerSeasonKey()} stats${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}${sumerView.single?'':' · common columns (pick a position for the full set)'}</span>`
+    ? `<span class="ecr-missing" style="color:var(--muted)">📊 nflverse advanced ${sumerSeasonKey()} stats${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}${sumerView.single?'':' · common columns (pick a position for the full set)'}${((sumerRefinement==='vs_man'||sumerRefinement==='vs_zone'))?' · coverage counts approximate, rates accurate':''}</span>`
     : '';
   const ecrNote = hasECR() ? '' : `<span class="ecr-missing">⚠ No FantasyPros ECR loaded — run build_seed.py and load the 📦 seed to populate ECR/Tier</span>`;
   document.getElementById('content').innerHTML=`
@@ -4858,6 +5150,7 @@ async function tryAutoLoadSeed(){
     if(j.sharp_season){ SHARP_SEASON=j.sharp_season; got=true; }
     if(j.sumer){ SUMER=j.sumer; SUMER_SEASONS=j.sumer_seasons||Object.keys(j.sumer); got=true; }
     if(j.ktc){ KTC=j.ktc; got=true; }   // KeepTradeCut dynasty player-page slugs (player-card links)
+    if(j.nflverse){ NFLVERSE=j.nflverse; got=true; }   // nflverse advanced metrics (opt-in A/B source)
     // Only adopt prebuilt projections/history if present and non-trivial.
     if(j.seed && Object.keys(j.seed).length){
       SEED=j.seed; projSeed=SEED; seasonStatsCache={proj:SEED}; rosterMergedTeams.clear();
@@ -5685,6 +5978,7 @@ function handleSeedLoad(e){
       if(j.sharp_season) SHARP_SEASON=j.sharp_season;   // season the Sharp stats describe
       if(j.sumer){ SUMER=j.sumer; SUMER_SEASONS=j.sumer_seasons||Object.keys(j.sumer); }   // SumerSports advanced per-player stats
       if(j.ktc) KTC=j.ktc;   // KeepTradeCut dynasty player-page slugs (player-card links)
+      if(j.nflverse) NFLVERSE=j.nflverse;   // nflverse advanced metrics (opt-in A/B source)
       if(hasSeed){
         SEED=j.seed; rosterMergedTeams.clear();
         HISTORY=j.history||{};

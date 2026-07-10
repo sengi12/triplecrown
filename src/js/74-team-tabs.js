@@ -80,7 +80,7 @@ function renderTeamAdditions(team){
 
     ${renderDepthChart(team)}
 
-    <div class="sr-source">Source: spotrac.com — ${PROJ_SEASON} offseason · depth chart via ESPN · for informational use.</div>
+    <div class="sr-source">${PROJ_SEASON} offseason moves · depth chart via ESPN · for informational use.</div>
   </div>`;
 }
 
@@ -131,7 +131,7 @@ function renderTeamAdvanced(team){
   if(!hasSharp && !hasSOS && !hasCoord){
     return `<div class="empty"><div class="empty-icon">📊</div>
       <div class="empty-title">No advanced stats loaded</div>
-      <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed to populate Warren Sharp advanced stats.</div></div>`;
+      <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed to populate advanced team stats.</div></div>`;
   }
   const cardFor=(key, srcTeam)=>{
     const tbl=SHARP[key]; if(!tbl) return '';
@@ -170,13 +170,13 @@ function renderTeamAdvanced(team){
   // Carryover coordinators → a highlighted section that pulls the former team's scheme stats.
   const carryBlock = renderCoordinatorCarryover(team, cardFor);
   return `<div class="sr-team-wrap">
-    <div class="sr-note">📊 <b>Warren Sharp</b> advanced stats · <b>${SHARP_SEASON} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
+    <div class="sr-note">📊 <b>Advanced team stats</b> · <b>${SHARP_SEASON} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
       <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showSharpLeague()">🌐 View league-wide tables →</button></div>
     ${sosStrip}
     ${carryBlock}
     ${section('🏈 Offense', offKeys, coordInlineLabel(oc,'offensive'))}
     ${section('🛡️ Defense', defKeys, coordInlineLabel(dc,'defensive'))}
-    <div class="sr-source">Source: sharpfootballanalysis.com (${SHARP_SEASON} season) · coordinators via Wikipedia — for informational use.</div>
+    <div class="sr-source">${SHARP_SEASON} season · coordinators via Wikipedia — for informational use.</div>
   </div>`;
 }
 

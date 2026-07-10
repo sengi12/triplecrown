@@ -47,22 +47,77 @@ function hasECR(){ const t=ecrTableFor(rankFormat); return t && Object.keys(t).l
 // The data is fully data-driven: each position table carries its own ordered `columns` +
 // `pct_cols`, so the app renders whatever the seed provides (and future refinements slot in).
 function sumerSeasonKey(){
-  // activeSeason is 'proj' or a year string; return the year only when we have Sumer data for it.
-  return (activeSeason!=='proj' && SUMER && SUMER[activeSeason]) ? String(activeSeason) : null;
+  // activeSeason is 'proj' or a year string; return the year only when we have adv data for it.
+  const D=advSumerData();
+  return (activeSeason!=='proj' && D && D[activeSeason]) ? String(activeSeason) : null;
 }
 function sumerAvailable(){ return !!sumerSeasonKey(); }
+// Does the nflverse A/B source have data for a season?
+function nflverseHasSeason(season){ return !!(NFLVERSE && NFLVERSE[String(season)]); }
+// Columns that are percentages in the nflverse player tables (for correct formatting).
+function _nflversePct(cols){
+  const pct=['Scramble %','Sack %','Success %','Comp %','TFL %','Explosive %','First Down %','Catch %','Target Share'];
+  return cols.filter(c=>pct.includes(c));
+}
+// The advanced player-stats map {season:{pos:{columns,players,pct_cols,refinements}}}.
+// SumerSports was retired as a source — these are now always computed from nflverse play-by-play,
+// carrying each position's situational `refinements` (with per-refinement pct_cols) through.
+// Memoized by NFLVERSE identity: the adapted structure is built ONCE (not per player row per
+// render), so the rankings "Adv. Metrics" view has no per-render rebuild latency. The cache
+// auto-invalidates when a new seed reassigns NFLVERSE (object identity changes).
+let _advSumerCache=null, _advSumerCacheSrc=null;
+function advSumerData(){
+  if(_advSumerCacheSrc===NFLVERSE) return _advSumerCache||{};
+  _advSumerCacheSrc = NFLVERSE;
+  if(!NFLVERSE){ _advSumerCache={}; return _advSumerCache; }
+  const out={};
+  for(const s in NFLVERSE){
+    const pl=(NFLVERSE[s]&&NFLVERSE[s].players)||{};
+    const tbl={};
+    ['QB','RB','WR','TE'].forEach(pos=>{
+      const t=pl[pos];
+      if(!(t&&t.columns)) return;
+      const entry={columns:t.columns, players:t.players, pct_cols:_nflversePct(t.columns)};
+      if(t.refinements){
+        entry.refinements={};
+        for(const r in t.refinements){
+          const rt=t.refinements[r];
+          entry.refinements[r]={columns:rt.columns||t.columns, players:rt.players,
+                                pct_cols:_nflversePct(rt.columns||t.columns)};
+        }
+      }
+      tbl[pos]=entry;
+    });
+    if(Object.keys(tbl).length) out[s]=tbl;
+  }
+  _advSumerCache=out;
+  return out;
+}
+// Switch the advanced-stats data source and re-render whichever advanced view is open.
+function setAdvSource(src){
+  if(advSource===src) return;
+  advSource=src;
+  sharpTable=null; sharpSortCol=null;   // reset table selection for the new source
+  if(currentPhase==='AdvancedLeague' && typeof renderSharpLeague==='function') renderSharpLeague();
+  else if(currentPhase==='Rankings') renderRankings();
+}
 // Ordered list + display labels for the "Situational" refinement dropdown (SumerSports splits).
 // Order is the sequence shown in the dropdown; only the refinements a position actually tracks
 // (present in its baked `refinements` map) are offered.
 const SUMER_REFINE_ORDER = ["when_leading","when_trailing","red_zone","non_garbage_time",
+  "1st_down","2nd_down","3rd_down","4th_down",
   "late_down","early_downs","play_action","pure_dropback","vs_man","vs_zone","blitzed","pressured",
-  "zone-concepts","duo-concepts","gap-concepts","under-7-box-defenders","7-box-defenders","8-plus-box-defenders"];
+  "zone-concepts","duo-concepts","gap-concepts",
+  "light_box","7_box","stacked_box",
+  "under-7-box-defenders","7-box-defenders","8-plus-box-defenders"];
 const SUMER_REFINE_LABELS = {
   when_leading:"When Leading", when_trailing:"When Trailing", red_zone:"Red Zone",
   non_garbage_time:"Non-Garbage Time", late_down:"Late Downs", early_downs:"Early Downs",
+  "1st_down":"1st Down", "2nd_down":"2nd Down", "3rd_down":"3rd Down", "4th_down":"4th Down",
   play_action:"Play Action", pure_dropback:"Pure Dropback", vs_man:"vs. Man",
   vs_zone:"vs. Zone", blitzed:"When Blitzed", pressured:"When Pressured",
   "zone-concepts":"Zone Concepts", "duo-concepts":"Duo Concepts", "gap-concepts":"Gap Concepts",
+  light_box:"Light Box (<7)", "7_box":"7-Man Box", stacked_box:"Stacked Box (8+)",
   "under-7-box-defenders":"Light Box (<7)", "7-box-defenders":"7-Man Box", "8-plus-box-defenders":"Stacked Box (8+)",
 };
 // The situational refinements available for the current position filter. Single position → its
@@ -70,7 +125,7 @@ const SUMER_REFINE_LABELS = {
 // the dropdown offers is guaranteed to exist for each row's position). Ordered per SUMER_REFINE_ORDER.
 function sumerRefinementsForFilter(){
   const k=sumerSeasonKey(); if(!k) return [];
-  const s=SUMER[k]; const pos=rankPosFilter;
+  const s=advSumerData()[k]; const pos=rankPosFilter;
   const refsOf=(pp)=> (s[pp] && s[pp].refinements) ? Object.keys(s[pp].refinements) : [];
   let avail;
   if(pos==='QB'||pos==='RB'||pos==='WR'||pos==='TE'){
@@ -87,7 +142,7 @@ function sumerRefinementsForFilter(){
 }
 function sumerTableFor(pos){
   const k=sumerSeasonKey(); if(!k) return null;
-  const s=SUMER[k]; const base=(s && s[pos]) ? s[pos] : null;
+  const s=advSumerData()[k]; const base=(s && s[pos]) ? s[pos] : null;
   if(!base) return null;
   // Situational view: swap in the selected refinement's table (its own columns/pct/players),
   // falling back to the base table when this position doesn't track the chosen split.
@@ -375,7 +430,36 @@ function computeVOR(list){
 // Read-only reference. Two views: a per-team card (this team's row across all Sharp
 // tables, with league rank 1–32 per stat), and a league-wide sortable table view.
 // None of this touches projections.
-function sharpHasData(){ return SHARP && Object.keys(SHARP).length>0; }
+function sharpHasData(){ return activeSharp() && Object.keys(activeSharp()).length>0; }
+// Adapt the nflverse team tables for SHARP_SEASON into the Sharp-shaped dict the league view
+// renders (adds title/category/pct_cols). Returns {} when no nflverse data for that season.
+function nflverseSharpTables(){
+  const t=(NFLVERSE && NFLVERSE[String(SHARP_SEASON)] && NFLVERSE[String(SHARP_SEASON)].team) || null;
+  if(!t) return {};
+  const META={
+    offense:{title:'Offensive Metrics',category:'offense'},
+    defense:{title:'Defensive Metrics',category:'defense'},
+    tendencies:{title:'Tendencies',category:'offense'},
+    pace:{title:'Pace',category:'offense'},
+    personnel:{title:'Personnel',category:'offense'},
+    coverage:{title:'Coverage (man/zone)',category:'defense'},
+  };
+  const PCT=['Explosive Play Rate','Down Conversion Rate','Shotgun Rate','NoHuddle Rate','3WR Rate','Multi TE Rate','Man Rate','Zone Rate'];
+  const out={};
+  for(const k in t){
+    const m=META[k]||{title:k,category:'offense'};
+    out[k]={columns:t[k].columns, title:m.title, category:m.category,
+            pct_cols:(t[k].columns||[]).filter(c=>PCT.includes(c)), teams:t[k].teams};
+  }
+  return out;
+}
+// The active source for the league-wide Advanced Stats tables: Warren Sharp or nflverse.
+function activeSharp(){
+  if(advSource==='nflverse'){ const n=nflverseSharpTables(); if(Object.keys(n).length) return n; }
+  return SHARP;
+}
+// True when the nflverse A/B source can back the league-wide Advanced Stats view.
+function nflverseSharpAvailable(){ return Object.keys(nflverseSharpTables()).length>0; }
 // Full team name for team pages (e.g. "Cincinnati Bengals"); falls back to the code.
 function teamDisplayName(code){ return (TEAM_NAMES && TEAM_NAMES[code]) || code; }
 // 1 → "1st", 2 → "2nd", 22 → "22nd", etc.

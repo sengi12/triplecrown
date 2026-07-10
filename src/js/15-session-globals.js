@@ -103,6 +103,10 @@ let SUMER = (typeof SEED_SUMER!=='undefined') ? SEED_SUMER : {};
 let SUMER_SEASONS = (typeof SEED_SUMER_SEASONS!=='undefined') ? SEED_SUMER_SEASONS : [];
 // KeepTradeCut dynasty player-page slugs (player-card links): {nameKey:{slug,pos}}
 let KTC = (typeof SEED_KTC!=='undefined') ? SEED_KTC : {};
+// nflverse-computed advanced metrics (opt-in A/B source): {season:{team:{...}, players:{QB,RB}}}
+let NFLVERSE = (typeof SEED_NFLVERSE!=='undefined') ? SEED_NFLVERSE : {};
+// Which data source powers the advanced tables (Sharp/Sumer vs nflverse): 'scraped' | 'nflverse'
+let advSource = 'scraped';
 // Head coaches fetched live from ESPN this session: {CODE:{name,headshot,experience}|null}
 let headCoaches = {};
 let hcInFlight = {};

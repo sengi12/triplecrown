@@ -163,19 +163,20 @@ function renderRankings(){
     .map(([s,l])=>`<button class="format-btn ${curScoring===s?'active':''}" onclick="setScoringAxis('${s}')">${l}</button>`).join('');
   const posBtns=['ALL','QB','RB','WR','TE','FLEX'].map(pos=>
     `<button class="pos-filter-btn ${rankPosFilter===pos?'active':''}" onclick="setPosFilter('${pos}')">${pos}</button>`).join('');
-  // Advanced (SumerSports) toggle — only when the current view is a reference season we have
-  // Sumer data for (2022-2025). Switches the stat columns to advanced per-player metrics.
+  // Advanced-metrics toggle — only on a reference season nflverse has player data for
+  // (2022-2025). Switches the stat columns to advanced per-player metrics (computed from
+  // nflverse play-by-play; SumerSports was retired as a source).
   const sumerOn = sumerAvailable();
   const advToggle = sumerOn
     ? `<span style="font-size:11px;color:var(--muted);font-weight:700;margin-left:8px">STATS</span>
        <div class="format-toggle">
          <button class="format-btn ${!rankAdvanced?'active':''}" onclick="setRankAdvanced(false)">Standard</button>
-         <button class="format-btn ${rankAdvanced?'active':''}" onclick="setRankAdvanced(true)" title="SumerSports advanced ${sumerSeasonKey()} metrics">Adv. Metrics</button>
+         <button class="format-btn ${rankAdvanced?'active':''}" onclick="setRankAdvanced(true)" title="nflverse advanced ${sumerSeasonKey()} metrics">Adv. Metrics</button>
        </div>`
     : '';
   const minInputs = advActive ? sumerMinInputs() : '';
-  // "Situational" dropdown — Adv. Metrics only. Swaps the stat columns to a SumerSports
-  // game-situation split (Red Zone / When Trailing / vs. Man / box counts …) for the season.
+  // "Situational" dropdown — Adv. Metrics only. Swaps the stat columns to a game-situation
+  // split (Red Zone / When Trailing / vs. Man / per-down / box counts …) for the season.
   const refineOpts = advActive ? sumerRefinementsForFilter() : [];
   const situationalSelect = (advActive && refineOpts.length)
     ? `<span style="font-size:11px;color:var(--muted);font-weight:700;margin-left:8px">SITUATIONAL</span>
@@ -185,7 +186,7 @@ function renderRankings(){
        </select>`
     : '';
   const advNote = advActive
-    ? `<span class="ecr-missing" style="color:var(--muted)">📊 SumerSports advanced ${sumerSeasonKey()} stats${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}${sumerView.single?'':' · common columns (pick a position for the full set)'}</span>`
+    ? `<span class="ecr-missing" style="color:var(--muted)">📊 nflverse advanced ${sumerSeasonKey()} stats${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}${sumerView.single?'':' · common columns (pick a position for the full set)'}${((sumerRefinement==='vs_man'||sumerRefinement==='vs_zone'))?' · coverage counts approximate, rates accurate':''}</span>`
     : '';
   const ecrNote = hasECR() ? '' : `<span class="ecr-missing">⚠ No FantasyPros ECR loaded — run build_seed.py and load the 📦 seed to populate ECR/Tier</span>`;
   document.getElementById('content').innerHTML=`

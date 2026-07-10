@@ -1,5 +1,6 @@
-// Advanced (SumerSports) rankings integration: season gating, name-matched lookup,
+// Advanced (nflverse) rankings integration: season gating, name-matched lookup,
 // data-driven columns (single position + ALL/FLEX intersection), value read, formatting.
+// (SumerSports was retired as a source; the same rankings machinery now reads the nflverse block.)
 const elStore={};
 function mkEl(id){if(!elStore[id])elStore[id]={innerHTML:'',style:{},textContent:'',value:'',classList:{add(){},remove(){}},children:[],appendChild(){},querySelectorAll:()=>[]};return elStore[id];}
 global.document={getElementById:(id)=>mkEl(id),querySelector:()=>null,querySelectorAll:()=>[],createElement:()=>({click(){},style:{},appendChild(){}}),activeElement:null,body:{appendChild(){},removeChild(){}}};
@@ -12,13 +13,13 @@ const app=new Function(code+`return {
   ecrNormName, fmtSumer,
   sumerSeasonKey, sumerAvailable, sumerTableFor, sumerEntry, sumerColumnsForFilter, sumerValue,
   sumerBucket, sumerVolCol, sumerRefinementsForFilter,
-  setSumer:(s)=>{SUMER=s;}, setSeason:(s)=>{activeSeason=s;}, setPos:(p)=>{rankPosFilter=p;},
+  setNflverse:(n)=>{NFLVERSE=n;}, setSeason:(s)=>{activeSeason=s;}, setPos:(p)=>{rankPosFilter=p;},
   setRefine:(r)=>{sumerRefinement=r;},
 };`)();
 
-// A tiny two-season, multi-position SUMER fixture in the seed's shape. The 2025 tables also
+// A tiny two-season, multi-position fixture in the seed's shape. The 2025 tables also
 // carry `refinements` (situational splits) so the "Situational" dropdown logic is exercised.
-const SUMER={
+const ADV={
   "2025":{
     WR:{columns:["Routes Run","Target Share","Total EPA","YPRR"], pct_cols:["Target Share"],
         players:{ "jaxon smithnjigba":{values:[497,35.82,141.85,3.61],team:"",rank:1} },
@@ -64,7 +65,10 @@ const SUMER={
         players:{ "jaxon smithnjigba":{values:[500,25.0,80.0,2.0],team:"",rank:9} }},
   },
 };
-app.setSumer(SUMER);
+// The advanced source is now the nflverse block: NFLVERSE[season].players[pos] = {columns,players,refinements}.
+const NFLVERSE={};
+for(const s in ADV){ NFLVERSE[s]={players:ADV[s]}; }
+app.setNflverse(NFLVERSE);
 
 let pass=0,fail=0;
 function chk(name,cond){ if(cond){pass++;console.log('  PASS',name);} else {fail++;console.log('  FAIL',name);} }
