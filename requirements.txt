@@ -1,0 +1,14 @@
+# Core TripleCrown build/test flow is stdlib-only:
+#   python build.py
+#   python build_seed.py
+#   python bake_seed.py
+#
+# These packages are only needed for the optional helper/analysis scripts
+# currently checked into the repo.
+
+# nflverse analysis + route helper scripts
+pandas>=2.2
+pyarrow>=16.0
+
+# Browser automation helper (sis_search.py)
+selenium>=4.6

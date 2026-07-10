@@ -1,0 +1,896 @@
+#!/usr/bin/env python3
+"""
+nflverse_stats.py — PROTOTYPE (dependency-isolated)
+───────────────────────────────────────────────────
+Compute team advanced-metric tables from nflverse play-by-play (nflfastR) and compare them
+to the Warren Sharp tables already baked into triplecrown_seed.json.
+
+This is an experiment to see how much of the Sharp "Offensive/Defensive Metrics" tables we
+could self-compute instead of scraping. It is NOT wired into build_seed.py — it's standalone.
+
+Requires pandas (already needed for nflverse data). If pandas isn't installed, importing this
+module degrades gracefully: HAVE_PANDAS is False and team_metrics() raises a clear message, so
+the stdlib-only seed builder is never affected.
+
+Usage:
+    python nflverse_stats.py            # compute 2025 + compare to seed's Sharp 2025 tables
+    python nflverse_stats.py 2024       # a different season
+"""
+import os, sys, json, hashlib
+
+try:
+    import pandas as pd
+    HAVE_PANDAS = True
+except Exception:
+    pd = None
+    HAVE_PANDAS = False
+
+CACHE_DIR = "triplecrown_cache"
+PBP_URL = "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_{season}.csv.gz"
+PFR_PASS_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_season_pass.csv"
+PFR_RUSH_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_season_rush.csv"
+NGS_PASS_URL = "https://github.com/nflverse/nflverse-data/releases/download/nextgen_stats/ngs_passing.csv.gz"
+# Columns we actually need (usecols keeps the ~370-col file fast + small in memory).
+PBP_COLS = [
+    "game_id", "season", "season_type", "week", "posteam", "defteam", "play_type",
+    "pass", "rush", "epa", "success", "yards_gained",
+    "fixed_drive", "fixed_drive_result", "series_result", "down",
+    "shotgun", "no_huddle", "air_yards", "vegas_wp",
+]
+# nflverse team codes that differ from the seed's codes.
+NFLVERSE_TO_SEED = {"LA": "LAR", "OAK": "LV", "SD": "LAC", "STL": "LAR"}
+PART_URL = "https://github.com/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_{season}.csv"
+NGS_RUSH_URL = "https://github.com/nflverse/nflverse-data/releases/download/nextgen_stats/ngs_rushing.csv.gz"
+ROSTER_URL = "https://github.com/nflverse/nflverse-data/releases/download/rosters/roster_{season}.csv"
+
+_NAME_MAP = {}
+
+def _nflverse_cache_dir():
+    d = os.path.join(CACHE_DIR, "nflverse")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+def _nflverse_cache_subdir(*parts):
+    d = os.path.join(_nflverse_cache_dir(), *parts)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+def _md5_cache_path(url):
+    """Stable local cache path for a remote nflverse asset, keyed by URL md5.
+
+    We treat anything already in the cache as current; the md5 is only used to
+    derive a collision-resistant filename from the URL.
+    """
+    digest = hashlib.md5(url.encode("utf-8")).hexdigest()
+    base = os.path.basename(url.split("?", 1)[0]) or "asset.csv"
+    return os.path.join(_nflverse_cache_subdir("raw", "aux"), f"{digest}_{base}")
+
+def _legacy_md5_cache_path(url):
+    digest = hashlib.md5(url.encode("utf-8")).hexdigest()
+    base = os.path.basename(url.split("?", 1)[0]) or "asset.csv"
+    return os.path.join(_nflverse_cache_dir(), f"{digest}_{base}")
+
+def _cache_remote(url, label=None):
+    """Download a remote nflverse asset once, then always reuse the cached file."""
+    path = _md5_cache_path(url)
+    legacy = _legacy_md5_cache_path(url)
+    if os.path.exists(legacy) and not os.path.exists(path):
+        os.replace(legacy, path)
+    if not os.path.exists(path):
+        import urllib.request
+        tag = label or os.path.basename(url)
+        print(f"  → downloading {tag} …", end="", flush=True)
+        urllib.request.urlretrieve(url, path)
+        print(" ok")
+    return path
+
+def _pickle_cache_path(kind, payload):
+    """Stable pickle path for a parsed DataFrame cache.
+
+    `payload` should fully describe the parsed shape (source + columns/options), so
+    a pickle can be safely reused across runs without re-reading the CSV.
+    """
+    digest = hashlib.md5(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+    return os.path.join(_nflverse_cache_subdir("parsed", kind), f"{digest}.pkl")
+
+def _legacy_pickle_cache_path(kind, payload):
+    digest = hashlib.md5(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+    return os.path.join(_nflverse_cache_dir(), f"{kind}_{digest}.pkl")
+
+def _name_map(season):
+    """gsis player id → normalized full name (pbp only carries abbreviated names like 'A.Rodgers')."""
+    if season not in _NAME_MAP:
+        r = _aux_csv(ROSTER_URL.format(season=season), usecols=["gsis_id", "full_name"])
+        _NAME_MAP[season] = {gid: _norm(nm) for gid, nm in zip(r["gsis_id"], r["full_name"]) if isinstance(gid, str)}
+    return _NAME_MAP[season]
+
+import re as _re
+def _norm(name):
+    """Normalize a player name to the seed's key convention (matches build_seed._norm_name)."""
+    s = (name or "").lower()
+    s = _re.sub(r"[.'\-]", "", s)
+    s = _re.sub(r"\s+(jr|sr|ii|iii|iv|v)$", "", s)
+    return _re.sub(r"\s+", " ", s).strip()
+
+def _cache_pbp(season):
+    """Download the season's pbp csv.gz once to the local cache; return the path."""
+    d = _nflverse_cache_subdir("raw", "pbp")
+    path = os.path.join(d, f"pbp_{season}.csv.gz")
+    legacy = os.path.join(_nflverse_cache_dir(), f"pbp_{season}.csv.gz")
+    if os.path.exists(legacy) and not os.path.exists(path):
+        os.replace(legacy, path)
+    if not os.path.exists(path):
+        import urllib.request
+        url = PBP_URL.format(season=season)
+        print(f"  → downloading pbp {season} …", end="", flush=True)
+        urllib.request.urlretrieve(url, path)
+        print(" ok")
+    return path
+
+def _load_pbp(season, cols=None):
+    key = (season, tuple(cols) if cols else None)
+    if key not in _PBP_DF_CACHE:
+        csv_path = _cache_pbp(season)
+        usecols = list(cols) if cols else list(PBP_COLS)
+        payload = {"season": season, "cols": usecols}
+        pkl_path = _pickle_cache_path("pbp", payload)
+        legacy_pkl = _legacy_pickle_cache_path("pbp", payload)
+        if os.path.exists(legacy_pkl) and not os.path.exists(pkl_path):
+            os.replace(legacy_pkl, pkl_path)
+        if os.path.exists(pkl_path):
+            _PBP_DF_CACHE[key] = pd.read_pickle(pkl_path)
+        else:
+            df = pd.read_csv(csv_path, compression="gzip", usecols=usecols, low_memory=False)
+            df.to_pickle(pkl_path)
+            _PBP_DF_CACHE[key] = df
+    return _PBP_DF_CACHE[key]
+
+_PBP_DF_CACHE = {}
+_AUX_CACHE = {}
+def _aux_csv(url, **kw):
+    """Memoized pd.read_csv for season-level auxiliary tables (NGS/PFR/participation/FTN).
+
+    Assets are cached on disk by URL md5, then memoized in-memory by read options,
+    so repeated builds neither re-download nor re-parse the same files unnecessarily.
+    """
+    key = (url, tuple(kw.get("usecols") or ()), kw.get("compression"))
+    if key not in _AUX_CACHE:
+        csv_path = _cache_remote(url)
+        payload = {
+            "url": url,
+            "usecols": list(kw.get("usecols") or []),
+            "compression": kw.get("compression"),
+        }
+        pkl_path = _pickle_cache_path("aux", payload)
+        legacy_pkl = _legacy_pickle_cache_path("aux", payload)
+        if os.path.exists(legacy_pkl) and not os.path.exists(pkl_path):
+            os.replace(legacy_pkl, pkl_path)
+        if os.path.exists(pkl_path):
+            _AUX_CACHE[key] = pd.read_pickle(pkl_path)
+        else:
+            df = pd.read_csv(csv_path, **kw)
+            df.to_pickle(pkl_path)
+            _AUX_CACHE[key] = df
+    return _AUX_CACHE[key]
+
+# Map a drive's final result to points scored by the offense on that drive (approximation:
+# TD ≈ 6.97 expected points with the PAT, FG = 3). Everything else (punt/downs/INT/fumble) = 0.
+def _drive_points(result):
+    r = str(result)
+    if r == "Touchdown":
+        return 6.97
+    if r == "Field goal":
+        return 3.0
+    return 0.0
+
+def _side_table(plays, team_col, last5_weeks, defense=False):
+    """Aggregate the 6 Sharp-shaped metrics for one side of the ball (posteam or defteam).
+
+    NOTE: we intentionally use ALL regular-season pass/run plays (no garbage-time / win-probability
+    filter). Empirically that matches Sharp's published EPA/Play closest (adding a wp band raised the
+    mean error from ~0.015 to ~0.025); the small residual is Sharp's 2-dp rounding + their own EPA model.
+
+    For DEFENSE, Sharp stores EPA/Play as "EPA prevented" (higher = better defense), so we negate the
+    raw EPA-allowed. The other defensive columns stay as raw "allowed" values (lower = better).
+    """
+    plays = plays.copy()
+    plays["explosive"] = plays["yards_gained"] >= 20
+    g = plays.groupby(team_col)
+    epa = g["epa"].mean()
+    if defense:
+        epa = -epa
+    ypl = g["yards_gained"].mean()
+    # Yards/play over the last 5 weeks of the season (Sharp's "Y/PL Last 5")
+    l5 = plays[plays["week"].isin(last5_weeks)].groupby(team_col)["yards_gained"].mean()
+    # Explosive = any play of 20+ yards (matches Sharp's ~7% scale better than 20-pass/10-rush)
+    expl = g["explosive"].mean() * 100
+    # Points per drive from drive results
+    dr = plays.dropna(subset=["fixed_drive"]).copy()
+    dr["dpts"] = dr["fixed_drive_result"].map(_drive_points)
+    per_drive = dr.groupby([team_col, "game_id", "fixed_drive"])["dpts"].first().reset_index()
+    ppd = per_drive.groupby(team_col)["dpts"].mean()
+    # "Down/series conversion": share of series that end in a first down or TD
+    sc = plays.dropna(subset=["series_result"]).copy()
+    sc["conv"] = sc["series_result"].isin(["First down", "Touchdown"])
+    # one row per series would need series ids; approximate at play level (close enough for ranks)
+    dconv = sc.groupby(team_col)["conv"].mean() * 100
+    out = pd.DataFrame({
+        "EPA/Play": epa.round(3),
+        "Yards Per Play": ypl.round(2),
+        "Y/PL Last 5": l5.round(2),
+        "Points Per Drive": ppd.round(2),
+        "Explosive Play Rate": expl.round(1),
+        "Down Conversion Rate": dconv.round(1),
+    })
+    return out
+
+def team_metrics(season):
+    """Return (offense_df, defense_df) of the 6 Sharp-shaped columns, indexed by team code."""
+    if not HAVE_PANDAS:
+        raise RuntimeError("pandas is required for nflverse_stats; install it or skip this module.")
+    pbp = _load_pbp(season)
+    # Regular season only, to match Sharp's tables (pbp includes postseason).
+    if "season_type" in pbp.columns:
+        pbp = pbp[pbp["season_type"] == "REG"]
+    plays = pbp[(pbp["play_type"].isin(["pass", "run"])) & pbp["posteam"].notna()].copy()
+    # Normalize team codes to the seed's convention (LA→LAR, etc.).
+    plays["posteam"] = plays["posteam"].replace(NFLVERSE_TO_SEED)
+    plays["defteam"] = plays["defteam"].replace(NFLVERSE_TO_SEED)
+    weeks = sorted(plays["week"].dropna().unique())
+    last5 = weeks[-5:]
+    off = _side_table(plays, "posteam", last5)
+    dfn = _side_table(plays, "defteam", last5, defense=True)
+    return off, dfn
+
+# ── O-Line / Tendencies / Pace (pbp + PFR + NGS) ─────────────────────────────
+def _pfr_pass_team(season):
+    """Team-level pressure rate allowed (from PFR advanced passing)."""
+    df = _aux_csv(PFR_PASS_URL)
+    df = df[(df["season"] == season) & (df["team"] != "2TM")].copy()
+    df["team"] = df["team"].replace(NFLVERSE_TO_SEED)
+    g = df.groupby("team")
+    att = g["pass_attempts"].sum()
+    pressure = g["times_pressured"].sum() / att * 100
+    return pd.DataFrame({"Pressure Rate Allowed": pressure.round(1)})
+
+def _pfr_rush_team(season):
+    """Team-level yards before contact per rush (from PFR advanced rushing)."""
+    df = _aux_csv(PFR_RUSH_URL)
+    tmcol = "tm" if "tm" in df.columns else "team"
+    df = df[(df["season"] == season) & (df[tmcol] != "2TM")].copy()
+    df[tmcol] = df[tmcol].replace(NFLVERSE_TO_SEED)
+    # Only RBs (Sharp's metric is "per RB rush").
+    if "pos" in df.columns:
+        df = df[df["pos"] == "RB"]
+    g = df.groupby(tmcol)
+    ybc = g["ybc"].sum() / g["att"].sum()
+    return pd.DataFrame({"Yards Before Contact Per RB Rush": ybc.round(2)})
+
+def _ngs_pass_team(season):
+    """Team-level average time to throw (from Next Gen Stats, season totals week==0)."""
+    df = _aux_csv(NGS_PASS_URL, compression="gzip")
+    df = df[(df["season"] == season) & (df["season_type"] == "REG") & (df["week"] == 0)].copy()
+    df["team_abbr"] = df["team_abbr"].replace(NFLVERSE_TO_SEED)
+    # Weight each QB's time-to-throw by pass attempts, aggregate to team.
+    df["w"] = df["avg_time_to_throw"] * df["attempts"]
+    g = df.groupby("team_abbr")
+    ttt = g["w"].sum() / g["attempts"].sum()
+    return pd.DataFrame({"Time to Throw": ttt.round(2)})
+
+def team_extended(season):
+    """Compute O-Line / Tendencies / Pace columns (the ones nflverse can supply) per team."""
+    if not HAVE_PANDAS:
+        raise RuntimeError("pandas is required for nflverse_stats.")
+    pbp = _load_pbp(season)
+    if "season_type" in pbp.columns:
+        pbp = pbp[pbp["season_type"] == "REG"]
+    p = pbp[(pbp["play_type"].isin(["pass", "run"])) & pbp["posteam"].notna()].copy()
+    p["posteam"] = p["posteam"].replace(NFLVERSE_TO_SEED)
+    games = p.groupby("posteam")["game_id"].nunique()
+    g = p.groupby("posteam")
+    # Tendencies (pbp)
+    shotgun = g["shotgun"].mean() * 100
+    nohuddle = g["no_huddle"].mean() * 100
+    passes = p[p["pass"] == 1]
+    airatt = passes.dropna(subset=["air_yards"]).groupby("posteam")["air_yards"].mean()
+    # Pace (pbp)
+    off_plays_g = g.size() / games
+    neutral = p[(p["vegas_wp"] > 0.20) & (p["vegas_wp"] < 0.80)]
+    neutral_db = neutral.groupby("posteam")["pass"].mean() * 100
+    # O-Line rush stuff (pbp): share of rushes for <= 0 yards
+    rush = p[p["rush"] == 1].copy()
+    rush["stuff"] = rush["yards_gained"] <= 0
+    stuff = rush.groupby("posteam")["stuff"].mean() * 100
+    out = pd.DataFrame({
+        "Shotgun Rate": shotgun.round(1),
+        "NoHuddle Rate": nohuddle.round(1),
+        "AirYards/Att": airatt.round(2),
+        "Off Plays/G": off_plays_g.round(1),
+        "Neutral DB Rate": neutral_db.round(1),
+        "Rush Stuff Rate": stuff.round(1),
+    })
+    # Join PFR + NGS derived columns
+    for fn in (_pfr_pass_team, _pfr_rush_team, _ngs_pass_team):
+        try:
+            out = out.join(fn(season))
+        except Exception as e:
+            print(f"  (skipped {fn.__name__}: {type(e).__name__})")
+    return out
+
+# ── SumerSports-style player tables (pbp + NGS + PFR + participation) ─────────
+_QB_COLS = ["season_type", "game_id", "play_id", "passer_player_id", "passer_player_name", "rusher_player_id",
+            "qb_dropback", "qb_scramble", "sack", "complete_pass", "pass_attempt",
+            "passing_yards", "pass_touchdown", "interception", "air_yards", "epa",
+            "success", "rushing_yards", "rush_touchdown", "rush", "yards_gained", "touchdown"]
+
+def sumer_qb(season, min_plays=150, refinement=None):
+    """Per-QB advanced table keyed by normalized name — compare to Sumer's QB table."""
+    pbp = _load_pbp(season, _QB_COLS)
+    pbp = pbp[pbp["season_type"] == "REG"]
+    names = _name_map(season)
+    # Per-QB average time to throw from Next Gen Stats (season totals, week==0).
+    try:
+        ngs = _aux_csv(NGS_PASS_URL, compression="gzip")
+        ngs = ngs[(ngs["season"] == season) & (ngs["season_type"] == "REG") & (ngs["week"] == 0)]
+        ttt = dict(zip(ngs["player_gsis_id"], ngs["avg_time_to_throw"]))
+    except Exception:
+        ttt = {}
+    db = pbp[pbp["qb_dropback"] == 1].copy()
+    # QB id per dropback: the passer, or (on a scramble) the rusher.
+    db["qb"] = db["passer_player_id"].fillna(db["rusher_player_id"])
+    db = db.dropna(subset=["qb"])
+    if refinement:
+        db = _refine_filter(db, season, refinement)
+    gd = db.groupby("qb")
+    rows = {}
+    eff_min = 25 if refinement else min_plays   # situational splits have far fewer dropbacks
+    for qid, d in gd:
+        dropbacks = len(d)
+        if dropbacks < eff_min:
+            continue
+        att = d["pass_attempt"].sum()
+        scr_mask = d["qb_scramble"] == 1
+        scr = int(scr_mask.sum())
+        sacks = d["sack"].sum()
+        # Sumer files QB scrambles as RUSHING (yards/EPA/TD), though nflfastR logs them as dropbacks.
+        scr_epa = d.loc[scr_mask, "epa"].sum()
+        scr_yds = d.loc[scr_mask, "yards_gained"].sum()
+        scr_td = d.loc[scr_mask, "touchdown"].sum()
+        # designed QB runs (non-scramble rushes by this player)
+        runs = pbp[(pbp["rush"] == 1) & (pbp["qb_scramble"] != 1) & (pbp["rusher_player_id"] == qid)]
+        plays = dropbacks + len(runs)
+        pass_epa = d["epa"].sum() - scr_epa       # scramble EPA moves to rushing
+        rush_epa = runs["epa"].sum() + scr_epa
+        rush_yds = int(runs["rushing_yards"].sum() + scr_yds)
+        rush_td = int(runs["rush_touchdown"].sum() + scr_td)
+        name = names.get(qid)
+        if not name:
+            continue
+        rows[name] = {
+            "Plays": plays,
+            "Total EPA": round(pass_epa + rush_epa, 2),
+            "EPA/Play": round((pass_epa + rush_epa) / plays, 3) if plays else None,
+            "Pass EPA": round(pass_epa, 1),
+            "Rush EPA": round(rush_epa, 1),
+            "Scramble %": round(scr / plays * 100, 2) if plays else None,
+            "Sack %": round(sacks / dropbacks * 100, 2) if dropbacks else None,
+            "Success %": round(d["success"].mean() * 100, 2),
+            "ADoT": round(d[d["pass_attempt"] == 1]["air_yards"].mean(), 2),
+            "Comp %": round(d["complete_pass"].sum() / att * 100, 2) if att else None,
+            "Pass Yards": int(d["passing_yards"].sum()),
+            "Time To Throw": round(ttt[qid], 2) if qid in ttt and pd.notna(ttt[qid]) else None,
+            "Pass TD": int(d["pass_touchdown"].sum()),
+            "INT": int(d["interception"].sum()),
+            "YPA": round(d["passing_yards"].sum() / att, 2) if att else None,
+            "Rush Yards": rush_yds,
+            "Rush TD": rush_td,
+        }
+    return rows
+
+def _first_name(df, qid):
+    """Best-effort display name for a player id from the passer name column."""
+    m = df[df["passer_player_id"] == qid]["passer_player_name"]
+    return m.iloc[0] if len(m) else str(qid)
+
+_RB_COLS = ["season_type", "game_id", "play_id", "rusher_player_id", "rusher_player_name",
+            "receiver_player_id", "receiver_player_name", "rush", "pass", "rush_attempt",
+            "rushing_yards", "rush_touchdown", "epa", "success", "first_down_rush",
+            "tackled_for_loss", "complete_pass", "receiving_yards", "yards_after_catch",
+            "pass_touchdown", "posteam"]
+
+def sumer_rb(season, min_rush=40, refinement=None):
+    """Per-RB advanced table keyed by normalized name — compare to Sumer's RB table."""
+    pbp = _load_pbp(season, _RB_COLS)
+    pbp = pbp[pbp["season_type"] == "REG"]
+    names = _name_map(season)
+    ru = pbp[(pbp["rush"] == 1) & pbp["rusher_player_id"].notna()].copy()
+    if refinement:
+        ru = _refine_filter(ru, season, refinement)
+    # Yards after contact per RB (PFR advanced rushing, keyed by normalized name).
+    try:
+        pfr = _aux_csv(PFR_RUSH_URL)
+        pfr = pfr[pfr["season"] == season]
+        yac_contact = {_norm(n): v for n, v in zip(pfr["player"], pfr["yac"])}
+    except Exception:
+        yac_contact = {}
+    # Target share: player targets / team targets (pass attempts with a receiver).
+    tgt = pbp[pbp["receiver_player_id"].notna()]
+    team_tgts = tgt.groupby("posteam").size().to_dict()
+    player_tgts = tgt.groupby("receiver_player_id").size().to_dict()
+    player_team = tgt.groupby("receiver_player_id")["posteam"].agg(
+        lambda s: s.mode().iloc[0] if len(s.mode()) else None).to_dict()
+    g = ru.groupby("rusher_player_id")
+    rows = {}
+    eff_min = 8 if refinement else min_rush   # situational splits have far fewer carries
+    for rid, d in g:
+        att = len(d)
+        if att < eff_min:
+            continue
+        name = names.get(rid)
+        if not name:
+            continue
+        yds = d["rushing_yards"].sum()
+        rec = pbp[(pbp["complete_pass"] == 1) & (pbp["receiver_player_id"] == rid)]
+        rows[name] = {
+            "Rushes": att,
+            "EPA/Rush": round(d["epa"].mean(), 3),
+            "Total EPA": round(d["epa"].sum(), 2),
+            "Rush Yards": int(yds),
+            "Rush TD": int(d["rush_touchdown"].sum()),
+            "Yards Per Carry": round(yds / att, 2),
+            "Yards After Contact": int(yac_contact[name]) if name in yac_contact and pd.notna(yac_contact[name]) else None,
+            "Success %": round(d["success"].mean() * 100, 2),
+            "TFL %": round(d["tackled_for_loss"].mean() * 100, 2),
+            "Explosive %": round((d["rushing_yards"] >= 15).mean() * 100, 2),
+            "First Down %": round(d["first_down_rush"].mean() * 100, 2),
+            "Receptions": int(len(rec)),
+            "Rec. Yards": int(rec["receiving_yards"].sum()),
+            "Rec. TDs": int(rec["pass_touchdown"].sum()),
+            "YAC": int(rec["yards_after_catch"].sum()),
+            "Target Share": round(player_tgts.get(rid, 0) / team_tgts.get(player_team.get(rid), 1) * 100, 2) if rid in player_team else None,
+        }
+    return rows
+
+# ── WR/TE tables — routes run via participation (on-field for a dropback) ─────
+# "Routes run" isn't a raw column anywhere; it's derived: a receiver who's on the field
+# (in offense_players) for a QB dropback is credited a route. This matches Sumer's Routes Run
+# to ~1% for WRs; TEs run slightly high because it can't detect a TE who stayed in to block.
+_ROUTES_CACHE, _POS_CACHE, _CTX_CACHE = {}, {}, {}
+_REC_COLS = ["season_type", "game_id", "play_id", "receiver_player_id", "complete_pass",
+             "receiving_yards", "yards_after_catch", "air_yards", "pass_touchdown", "epa",
+             "posteam", "pass"]
+_WRTE_COLS = ["Routes Run", "Receptions", "Rec. Yards", "Target Share", "Touchdowns",
+              "YAC", "ADoT", "Catch %", "Total EPA", "Targets/Route Run", "YPRR"]
+
+# Situational refinements → the play-context columns each needs. Per-down splits are granular
+# (1st–4th) as requested. Coverage splits (vs man/zone) match Sumer's rates but not raw counts
+# (NGS vs PFF classification). Play-action needs FTN (2022+); box splits are RB-only.
+FTN_URL = "https://github.com/nflverse/nflverse-data/releases/download/ftn_charting/ftn_charting_{season}.csv"
+REFINEMENTS = ["1st_down", "2nd_down", "3rd_down", "4th_down", "red_zone", "when_leading",
+               "when_trailing", "non_garbage_time", "vs_man", "vs_zone", "play_action",
+               "pure_dropback", "blitzed", "pressured"]
+REFINEMENTS_RB = ["light_box", "7_box", "stacked_box"]
+
+def _play_context(season):
+    """Per-play context (down/field/score/wp + participation coverage/pressure/box + FTN PA),
+    indexed by (game_id, play_id). Cached; used to filter plays for situational refinements."""
+    if season in _CTX_CACHE:
+        return _CTX_CACHE[season]
+    pbp = _load_pbp(season, ["game_id", "play_id", "season_type", "down", "yardline_100",
+                             "score_differential", "vegas_wp"])
+    pbp = pbp[pbp["season_type"] == "REG"]
+    try:
+        part = _aux_csv(PART_URL.format(season=season),
+                        usecols=["nflverse_game_id", "play_id", "defense_man_zone_type",
+                                 "was_pressure", "number_of_pass_rushers", "defenders_in_box"])
+        pbp = pbp.merge(part, left_on=["game_id", "play_id"],
+                        right_on=["nflverse_game_id", "play_id"], how="left")
+    except Exception:
+        for c in ("defense_man_zone_type", "was_pressure", "number_of_pass_rushers", "defenders_in_box"):
+            pbp[c] = None
+    try:  # FTN play-action (2022+ only)
+        ftn = _aux_csv(FTN_URL.format(season=season),
+                       usecols=["nflverse_game_id", "nflverse_play_id", "is_play_action"])
+        pbp = pbp.merge(ftn, left_on=["game_id", "play_id"],
+                        right_on=["nflverse_game_id", "nflverse_play_id"], how="left")
+    except Exception:
+        pbp["is_play_action"] = None
+    _CTX_CACHE[season] = pbp.set_index(["game_id", "play_id"])
+    return _CTX_CACHE[season]
+
+def _refine_mask(d, ref):
+    """Boolean mask selecting plays that match a refinement (d carries the context columns)."""
+    if ref == "1st_down": return d["down"] == 1
+    if ref == "2nd_down": return d["down"] == 2
+    if ref == "3rd_down": return d["down"] == 3
+    if ref == "4th_down": return d["down"] == 4
+    if ref == "red_zone": return d["yardline_100"] <= 20
+    if ref == "when_leading": return d["score_differential"] > 0
+    if ref == "when_trailing": return d["score_differential"] < 0
+    if ref == "non_garbage_time": return (d["vegas_wp"] > 0.05) & (d["vegas_wp"] < 0.95)
+    if ref == "vs_man": return d["defense_man_zone_type"] == "MAN_COVERAGE"
+    if ref == "vs_zone": return d["defense_man_zone_type"] == "ZONE_COVERAGE"
+    if ref == "pressured": return d["was_pressure"] == True   # noqa: E712
+    if ref == "blitzed": return d["number_of_pass_rushers"] >= 5
+    if ref == "play_action": return d["is_play_action"] == True   # noqa: E712
+    if ref == "pure_dropback": return d["is_play_action"] == False   # noqa: E712
+    if ref == "light_box": return d["defenders_in_box"] < 7
+    if ref == "7_box": return d["defenders_in_box"] == 7
+    if ref == "stacked_box": return d["defenders_in_box"] >= 8
+    return pd.Series(True, index=d.index)
+
+def _refine_filter(df, season, ref):
+    """Filter a play DataFrame (with game_id, play_id) to a refinement's matching plays."""
+    if not ref:
+        return df
+    ctx = _play_context(season)
+    joined = df.merge(ctx.reset_index()[["game_id", "play_id", "down", "yardline_100",
+                      "score_differential", "vegas_wp", "defense_man_zone_type", "was_pressure",
+                      "number_of_pass_rushers", "defenders_in_box", "is_play_action"]],
+                      on=["game_id", "play_id"], how="left", suffixes=("", "_ctx"))
+    return joined[_refine_mask(joined, ref).fillna(False)]
+
+def _routes_map(season, refinement=None):
+    """gsis id → routes run (times on the field for a regular-season QB dropback), optionally
+    restricted to a situational refinement's dropbacks."""
+    key = (season, refinement)
+    if key in _ROUTES_CACHE:
+        return _ROUTES_CACHE[key]
+    part = _aux_csv(PART_URL.format(season=season),
+                    usecols=["nflverse_game_id", "play_id", "offense_players"])
+    pbp = _load_pbp(season, ["game_id", "play_id", "qb_dropback", "season_type"])
+    pbp = pbp[pbp["season_type"] == "REG"]
+    m = part.merge(pbp, left_on=["nflverse_game_id", "play_id"], right_on=["game_id", "play_id"])
+    db = m[(m["qb_dropback"] == 1) & m["offense_players"].notna()].copy()
+    if refinement:
+        db = _refine_filter(db, season, refinement)
+    db["ids"] = db["offense_players"].str.findall(r"00-\d+")
+    _ROUTES_CACHE[key] = db.explode("ids").groupby("ids").size().to_dict()
+    return _ROUTES_CACHE[key]
+
+def _pos_map(season):
+    """gsis id → roster position (to split receivers into WR / TE)."""
+    if season not in _POS_CACHE:
+        r = _aux_csv(ROSTER_URL.format(season=season), usecols=["gsis_id", "position"])
+        _POS_CACHE[season] = {g: p for g, p in zip(r["gsis_id"], r["position"]) if isinstance(g, str)}
+    return _POS_CACHE[season]
+
+def _receivers(season, min_targets=15, refinement=None):
+    """Per-receiver Sumer-shaped table (routes via participation), keyed by gsis id. When a
+    refinement is given, targets and routes are both restricted to that situation."""
+    pbp = _load_pbp(season, _REC_COLS)
+    pbp = pbp[pbp["season_type"] == "REG"]
+    tgt = pbp[pbp["receiver_player_id"].notna()].copy()
+    if refinement:
+        tgt = _refine_filter(tgt, season, refinement)
+    team_tgts = tgt.groupby("posteam").size().to_dict()
+    routes = _routes_map(season, refinement)
+    names = _name_map(season)
+    pos = _pos_map(season)
+    rows = {}
+    eff_min = 5 if refinement else min_targets   # situational splits have far fewer targets
+    for rid, d in tgt.groupby("receiver_player_id"):
+        tgts = len(d)
+        if tgts < eff_min:
+            continue
+        name = names.get(rid)
+        if not name:
+            continue
+        rec = int(d["complete_pass"].sum())
+        ry = int(d["receiving_yards"].sum())
+        rr = int(routes.get(rid, 0))
+        team = d["posteam"].mode().iloc[0] if len(d["posteam"].mode()) else None
+        rows[rid] = {
+            "name": name, "pos": pos.get(rid),
+            "Routes Run": rr,
+            "Receptions": rec,
+            "Rec. Yards": ry,
+            "Target Share": round(tgts / team_tgts.get(team, 1) * 100, 2) if team else None,
+            "Touchdowns": int(d["pass_touchdown"].sum()),
+            "YAC": int(d["yards_after_catch"].sum()),
+            "ADoT": round(d["air_yards"].mean(), 2),
+            "Catch %": round(rec / tgts * 100, 2),
+            "Total EPA": round(d["epa"].sum(), 2),
+            "Targets/Route Run": round(tgts / rr, 2) if rr else None,
+            "YPRR": round(ry / rr, 2) if rr else None,
+        }
+    return rows
+
+def _receivers_pos(season, pos, refinement=None):
+    return {r["name"]: {c: r[c] for c in _WRTE_COLS}
+            for r in _receivers(season, refinement=refinement).values() if r["pos"] == pos}
+
+def sumer_wr(season, refinement=None):
+    """Per-WR advanced table (incl. routes/YPRR) — compare to Sumer's WR table."""
+    return _receivers_pos(season, "WR", refinement)
+
+def sumer_te(season, refinement=None):
+    """Per-TE advanced table — TE routes run slightly high (can't detect stay-in-to-block)."""
+    return _receivers_pos(season, "TE", refinement)
+
+# ── Route tree — route-type distribution when targeted (participation `route`) ─
+# nflverse participation carries a `route` label on each pass play = the route the TARGETED
+# receiver ran. Counting those per receiver gives a "routes run when targeted" distribution,
+# which is exactly what a route tree visualizes. (This is when-targeted, not all routes run.)
+ROUTE_TYPES = ["SCREEN", "SWING", "SHALLOW CROSS/DRAG", "SLANT", "QUICK OUT", "HITCH/CURL",
+               "TEXAS/ANGLE", "IN/DIG", "DEEP OUT", "WHEEL", "POST", "CORNER", "GO"]
+
+def route_trees(season, min_routes=12):
+    """{normalized_name: {'pos','total','tree':{ROUTE:count}}} for pass-catchers with enough
+    labeled targets. `total` counts only targets that carry a route label."""
+    pbp = _load_pbp(season, ["game_id", "play_id", "season_type", "receiver_player_id", "pass_touchdown"])
+    pbp = pbp[(pbp["season_type"] == "REG") & pbp["receiver_player_id"].notna()]
+    part = _aux_csv(PART_URL.format(season=season),
+                    usecols=["nflverse_game_id", "play_id", "route"])
+    m = pbp.merge(part, left_on=["game_id", "play_id"],
+                  right_on=["nflverse_game_id", "play_id"], how="left")
+    m = m[m["route"].notna()]
+    names, pos = _name_map(season), _pos_map(season)
+    out = {}
+    for rid, d in m.groupby("receiver_player_id"):
+        name = names.get(rid)
+        if not name or len(d) < min_routes:
+            continue
+        tree = d["route"].value_counts().to_dict()
+        route_tds = d.groupby("route")["pass_touchdown"].sum().to_dict()
+        out[name] = {
+            "pos": pos.get(rid),
+            "total": int(len(d)),
+            "total_tds": int(d["pass_touchdown"].sum()),
+            "tree": {k: int(v) for k, v in tree.items()},
+            "route_tds": {k: int(route_tds.get(k, 0)) for k in tree.keys()},
+        }
+    return out
+
+# ── Participation-based coverage + personnel (the newly-unlocked charting) ────
+def coverage_personnel(season):
+    """Team man/zone coverage rates (defense) + 3WR / multi-TE personnel rates (offense)."""
+    part = _aux_csv(PART_URL.format(season=season),
+                    usecols=["nflverse_game_id", "play_id", "defense_man_zone_type",
+                             "defense_coverage_type", "offense_personnel"])
+    pbp = _load_pbp(season, ["game_id", "play_id", "posteam", "defteam", "season_type", "play_type"])
+    pbp = pbp[pbp["season_type"] == "REG"]
+    m = part.merge(pbp, left_on=["nflverse_game_id", "play_id"], right_on=["game_id", "play_id"])
+    m["posteam"] = m["posteam"].replace(NFLVERSE_TO_SEED)
+    m["defteam"] = m["defteam"].replace(NFLVERSE_TO_SEED)
+    # Coverage (defense): man vs zone rate on charted dropbacks
+    mz = m.dropna(subset=["defense_man_zone_type"]).copy()
+    mz["man"] = mz["defense_man_zone_type"] == "MAN_COVERAGE"
+    man = mz.groupby("defteam")["man"].mean() * 100
+    cover = pd.DataFrame({"Man Rate": man.round(1), "Zone Rate": (100 - man).round(1)})
+    # Personnel (offense): 3WR rate, multi-TE rate from the personnel string
+    pp = m.dropna(subset=["offense_personnel"]).copy()
+    pp["wr"] = pp["offense_personnel"].str.extract(r"(\d+)\s*WR").astype(float)
+    pp["te"] = pp["offense_personnel"].str.extract(r"(\d+)\s*TE").astype(float)
+    pp = pp[pp["play_type"].isin(["pass", "run"])]
+    wr3 = pp.assign(x=pp["wr"] >= 3).groupby("posteam")["x"].mean() * 100
+    mte = pp.assign(x=pp["te"] >= 2).groupby("posteam")["x"].mean() * 100
+    pers = pd.DataFrame({"3WR Rate": wr3.round(1), "Multi TE Rate": mte.round(1)})
+    return cover, pers
+
+# ── Seed block builder (opt-in `--nflverse` addition, non-destructive) ────────
+# Emits a parallel `nflverse` block shaped like the existing Sharp (team values/ranks) and
+# Sumer (player values-list) tables, so the app can A/B them against the scraped originals.
+# Only the high-fidelity columns validated against Sharp/Sumer are included.
+_DEF_LOWER_BETTER = ["Yards Per Play", "Y/PL Last 5", "Points Per Drive",
+                     "Explosive Play Rate", "Down Conversion Rate"]
+
+def _shape_team(df, lower_better=()):
+    cols = list(df.columns)
+    ranks = {c: df[c].rank(ascending=(c in lower_better), method="min") for c in cols}
+    teams = {}
+    for code, row in df.iterrows():
+        teams[code] = {
+            "values": {c: (None if pd.isna(row[c]) else round(float(row[c]), 3)) for c in cols},
+            "ranks": {c: (None if pd.isna(ranks[c][code]) else int(ranks[c][code])) for c in cols},
+        }
+    return {"columns": cols, "teams": teams}
+
+def _shape_players(rows):
+    if not rows:
+        return {"columns": [], "players": {}}
+    cols = list(next(iter(rows.values())).keys())
+    return {"columns": cols, "players": {n: {"values": [r.get(c) for c in cols]} for n, r in rows.items()}}
+
+# Which situational refinements each position table exposes. Coverage/pressure/PA are pass concepts
+# (QB/WR/TE); RB gets box counts + downs/game-state. Per-down splits are granular (1st–4th).
+_REF_PASS = REFINEMENTS                                  # downs + game-state + coverage/pressure/PA
+_REF_RB = ["1st_down", "2nd_down", "3rd_down", "4th_down", "red_zone",
+           "when_leading", "when_trailing", "non_garbage_time"] + REFINEMENTS_RB
+
+def _players_with_refs(builder, season, refs):
+    """Base player table plus a `refinements` sub-dict (one shaped table per situation).
+    Empty refinements (e.g. play-action pre-2022 with no FTN data) are skipped."""
+    base = _shape_players(builder(season))
+    rdict = {}
+    for r in refs:
+        try:
+            shaped = _shape_players(builder(season, refinement=r))
+        except Exception:
+            continue
+        if shaped["players"]:
+            rdict[r] = shaped
+    if rdict:
+        base["refinements"] = rdict
+    return base
+
+def build_nflverse_season(season):
+    """Full nflverse block for one season: Sharp-shaped team tables + Sumer-shaped player tables
+    (each with situational `refinements`)."""
+    off, dfn = team_metrics(season)
+    ext = team_extended(season)
+    cover, pers = coverage_personnel(season)
+    team = {
+        "offense": _shape_team(off),
+        "defense": _shape_team(dfn, lower_better=_DEF_LOWER_BETTER),
+        "tendencies": _shape_team(ext[["Shotgun Rate", "NoHuddle Rate", "AirYards/Att"]]),
+        "pace": _shape_team(ext[["Off Plays/G"]]),
+        "personnel": _shape_team(pers),
+        "coverage": _shape_team(cover),   # rank-solid but values differ from Sharp — flagged
+    }
+    players = {
+        "QB": _players_with_refs(sumer_qb, season, _REF_PASS),
+        "RB": _players_with_refs(sumer_rb, season, _REF_RB),
+        "WR": _players_with_refs(sumer_wr, season, _REF_PASS),
+        "TE": _players_with_refs(sumer_te, season, _REF_PASS),
+    }
+    return {"team": team, "players": players, "routes": route_trees(season)}
+
+def build_nflverse(seasons):
+    """Build the additive nflverse block for the given seasons (skips failures gracefully)."""
+    if not HAVE_PANDAS:
+        return {}
+    out = {}
+    for s in seasons:
+        try:
+            out[str(s)] = build_nflverse_season(int(s))
+            print(f"    → nflverse {s}: ok")
+        except Exception as e:
+            print(f"    → nflverse {s}: FAILED ({type(e).__name__}: {e})")
+    return out
+
+# ── Comparison against the baked Sharp tables ────────────────────────────────
+def _spearman(a, b):
+    """Rank correlation without scipy: Pearson on the rank vectors."""
+    ra = pd.Series(a).rank(); rb = pd.Series(b).rank()
+    return ra.corr(rb)
+
+def compare(season):
+    off, dfn = team_metrics(season)
+    seed = json.load(open("triplecrown_seed.json"))
+    sharp = seed.get("sharp", {})
+    sseason = seed.get("sharp_season")
+    print(f"\nComputed nflverse season: {season}  |  seed Sharp season: {sseason}")
+    if str(sseason) != str(season):
+        print("  ⚠ seasons differ — compare ranks with that in mind.")
+    for tbl_key, comp, label, higher_better in [
+        ("offense", off, "OFFENSE", True),
+        ("defensive", dfn, "DEFENSE (allowed)", False),
+    ]:
+        tbl = sharp.get(tbl_key)
+        if not tbl:
+            continue
+        teams = tbl["teams"]
+        cols = comp.columns.tolist()
+        print(f"\n══════════ {label} — nflverse vs Sharp ({tbl_key}) ══════════")
+        # Build aligned frames on the intersection of teams
+        codes = [c for c in comp.index if c in teams]
+        for col in cols:
+            ours = {c: comp.loc[c, col] for c in codes}
+            # Sharp column name may differ slightly for defense ("Yards Per Play Allowed" etc.)
+            scol = col
+            if col not in tbl["columns"]:
+                # try the "Allowed" variant
+                cand = [x for x in tbl["columns"] if x.startswith(col.split(" Last")[0])]
+                scol = cand[0] if cand else None
+            if not scol or scol not in tbl["columns"]:
+                print(f"  {col:22} — no matching Sharp column")
+                continue
+            theirs = {c: teams[c]["values"].get(scol) for c in codes if teams[c]["values"].get(scol) is not None}
+            common = [c for c in codes if c in theirs]
+            if len(common) < 10:
+                print(f"  {col:22} — too few overlapping teams")
+                continue
+            rho = _spearman([ours[c] for c in common], [theirs[c] for c in common])
+            print(f"  {col:22} rank ρ = {rho:+.2f}")
+    # Spot check: top-5 offenses by our EPA vs Sharp EPA rank
+    print("\n── Spot check: our EPA/Play leaders vs Sharp EPA/Play rank ──")
+    seed_off = sharp.get("offense", {}).get("teams", {})
+    top = off.sort_values("EPA/Play", ascending=False).head(8)
+    for code, row in top.iterrows():
+        srank = seed_off.get(code, {}).get("ranks", {}).get("EPA/Play")
+        sval = seed_off.get(code, {}).get("values", {}).get("EPA/Play")
+        print(f"  {code}: ours EPA/Play {row['EPA/Play']:+.3f}  |  Sharp value {sval}  rank {srank}")
+
+    # ── Extended tables: O-Line / Tendencies / Pace ──
+    ext = team_extended(season)
+    print("\n══════════ EXTENDED (O-Line / Tendencies / Pace) — nflverse vs Sharp ══════════")
+    for tbl_key in ["offensive_line", "tendencies", "pace"]:
+        tbl = sharp.get(tbl_key)
+        if not tbl:
+            continue
+        teams = tbl["teams"]
+        print(f"\n  [{tbl_key}] Sharp cols: {tbl['columns']}")
+        codes = [c for c in ext.index if c in teams]
+        for col in ext.columns:
+            if col not in tbl["columns"]:
+                continue
+            ours = {c: ext.loc[c, col] for c in codes if pd.notna(ext.loc[c, col])}
+            theirs = {c: teams[c]["values"].get(col) for c in ours if teams[c]["values"].get(col) is not None}
+            common = [c for c in ours if c in theirs]
+            if len(common) < 10:
+                continue
+            rho = _spearman([ours[c] for c in common], [theirs[c] for c in common])
+            # sample values for the first team
+            c0 = common[0]
+            print(f"    {col:28} rank ρ = {rho:+.2f}   e.g. {c0}: ours {ours[c0]} / Sharp {theirs[c0]}")
+
+def _sumer_players(seed, season, pos):
+    node = seed.get("sumer", {}).get(str(season), {}).get(pos, {})
+    cols = node.get("columns", [])
+    out = {}
+    for name, row in node.get("players", {}).items():
+        out[name] = dict(zip(cols, row["values"]))
+    return out
+
+def compare_sumer(season):
+    seed = json.load(open("triplecrown_seed.json"))
+    for pos, builder in [("QB", sumer_qb), ("RB", sumer_rb), ("WR", sumer_wr), ("TE", sumer_te)]:
+        ours = builder(season)
+        theirs = _sumer_players(seed, season, pos)
+        common = [n for n in ours if n in theirs]
+        print(f"\n══════════ SUMER {pos} — nflverse vs Sumer ({len(common)} players matched) ══════════")
+        if not common:
+            continue
+        cols = [c for c in ours[common[0]] if c in next(iter(theirs.values()))]
+        for col in cols:
+            pairs = [(ours[n][col], theirs[n][col]) for n in common
+                     if ours[n].get(col) is not None and theirs[n].get(col) is not None]
+            if len(pairs) < 8:
+                continue
+            a = [p[0] for p in pairs]; b = [p[1] for p in pairs]
+            rho = _spearman(a, b)
+            mae = sum(abs(x - y) for x, y in pairs) / len(pairs)
+            print(f"  {col:14} ρ={rho:+.2f}  MAE={mae:8.2f}")
+        # spot check one well-known player
+        for probe in ["josh allen", "lamar jackson", "drake maye", "saquon barkley", "bijan robinson"]:
+            if probe in common:
+                print(f"    e.g. {probe}: ours {ours[probe]} \n         Sumer {theirs[probe]}")
+                break
+
+def compare_participation(season):
+    seed = json.load(open("triplecrown_seed.json"))
+    sharp = seed.get("sharp", {})
+    cover, pers = coverage_personnel(season)
+    print("\n══════════ COVERAGE + PERSONNEL (participation) — nflverse vs Sharp ══════════")
+    for tbl_key, comp in [("coverage_schemes", cover), ("personnel", pers)]:
+        tbl = sharp.get(tbl_key)
+        if not tbl:
+            continue
+        teams = tbl["teams"]
+        print(f"\n  [{tbl_key}] Sharp cols: {tbl['columns']}")
+        codes = [c for c in comp.index if c in teams]
+        for col in comp.columns:
+            if col not in tbl["columns"]:
+                continue
+            ours = {c: comp.loc[c, col] for c in codes if pd.notna(comp.loc[c, col])}
+            theirs = {c: teams[c]["values"].get(col) for c in ours if teams[c]["values"].get(col) is not None}
+            common = [c for c in ours if c in theirs]
+            if len(common) < 10:
+                continue
+            rho = _spearman([ours[c] for c in common], [theirs[c] for c in common])
+            c0 = common[0]
+            print(f"    {col:16} rank ρ = {rho:+.2f}   e.g. {c0}: ours {ours[c0]} / Sharp {theirs[c0]}")
+
+if __name__ == "__main__":
+    if not HAVE_PANDAS:
+        sys.exit("pandas not installed — this prototype needs it (the seed builder does not).")
+    season = int(sys.argv[1]) if len(sys.argv) > 1 else 2025
+    mode = sys.argv[2] if len(sys.argv) > 2 else "all"
+    if mode in ("all", "sharp"):
+        compare(season)
+    if mode in ("all", "sumer"):
+        compare_sumer(season)
+    if mode in ("all", "coverage"):
+        compare_participation(season)
+
