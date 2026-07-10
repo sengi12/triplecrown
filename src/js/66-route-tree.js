@@ -20,10 +20,10 @@ const ROUTE_TREE_SHAPES = {
   "HITCH/CURL":        {o:'los', p:[[0,0],[0,5.5],[-1.2,4.6]],     label:'Hitch',     anc:'end',    dx:-7, dy:1},
   "QUICK OUT":         {o:'los', p:[[0,0],[0,3],[3,3]],            label:'Quick Out', anc:'start',  dx:6,  dy:3},
   "SLANT":             {o:'los', p:[[0,0],[0,1.2],[-3,3.4]],       label:'Slant',     anc:'end',    dx:-6, dy:-1},
-  "SHALLOW CROSS/DRAG":{o:'los', p:[[0,0],[0,1.2],[-6,2]],         label:'Drag',      anc:'end',    dx:-6, dy:4},
+  "SHALLOW CROSS/DRAG":{o:'los', p:[[0,0],[0,1.2],[-5.5,2]],         label:'Drag',      anc:'end',    dx:-6, dy:4},
   "SCREEN":            {o:'los', p:[[0,0],[0,-0.4],[-3,-0.8]],        label:'Screen',    anc:'end',  dx:-6,  dy:4},
-  "SWING":             {o:'bf',  p:[[0,-2.7],[-4,-2.5],[-7,-1.4]], label:'Swing',     anc:'end',  dx:-6,  dy:-3},
-  "TEXAS/ANGLE":       {o:'bf',  p:[[0,-2.7],[4,-0.7],[1,1.7]], label:'Texas',     anc:'start',    dx:6, dy:3},
+  "SWING":             {o:'bf',  p:[[0,-2.7],[-4,-2.5],[-7,-1.4]], label:'Swing',     anc:'start',  dx:-20,  dy:35},
+  "TEXAS/ANGLE":       {o:'bf',  p:[[0,-2.7],[4,-0.7],[1,1.7]], label:'Texas',     anc:'start',    dx:45, dy:50},
 };
 // Draw order: least-run underneath, most-run on top (so hot routes read clearly).
 const ROUTE_TREE_ORDER = ["GO","POST","CORNER","DEEP OUT","IN/DIG","WHEEL","HITCH/CURL","QUICK OUT",
@@ -53,12 +53,18 @@ function _routeHeat(ratio){
   return `hsl(${hue},85%,60%)`;
 }
 
+function _routeTdKnown(rt){
+  return rt && (rt.total_tds!=null || (rt.route_tds && Object.keys(rt.route_tds).length>0));
+}
+
 // The SVG route tree for one season's distribution.
 function routeTreeSVG(rt){
   const W=360, H=440, cx=180, losY=340, sx=15, sy=20;
   const PX = x => +(cx + x*sx).toFixed(1);
   const PY = y => +(losY - y*sy).toFixed(1);
   const tree=rt.tree||{}, total=rt.total||Object.values(tree).reduce((a,b)=>a+b,0)||1;
+  const tdByRoute=rt.route_tds||{};
+  const tdKnown=_routeTdKnown(rt);
   const present = ROUTE_TREE_ORDER.filter(k=>tree[k]>0 && ROUTE_TREE_SHAPES[k]);
   const maxN = Math.max(1, ...present.map(k=>tree[k]));
   const hasBf = present.some(k=>ROUTE_TREE_SHAPES[k].o==='bf');
@@ -68,12 +74,13 @@ function routeTreeSVG(rt){
   // Per-route render geometry.
   const items = present.map(k=>{
     const sh=ROUTE_TREE_SHAPES[k], n=tree[k], pct=100*n/total, ratio=n/maxN;
+    const tds=tdKnown ? (tdByRoute[k]||0) : null;
     const col=_routeHeat(ratio), w=+(2.4+ratio*5).toFixed(2);
     const pts=sh.p.map(([x,y])=>[PX(x),PY(y)]);
     const end=pts[pts.length-1], prev=pts[pts.length-2];
     const ang=Math.atan2(end[1]-prev[1], end[0]-prev[0]);
     const side = sh.anc==='end'?'L' : (sh.anc==='start'?'R':'C');
-    return {sh,n,pct,ratio,col,w,pts,end,ang,side};
+    return {sh,n,pct,ratio,tds,col,w,pts,end,ang,side};
   });
   // Draw least-run first so the hot routes sit on top; each route ends in an arrowhead.
   let paths='';
@@ -108,8 +115,9 @@ function routeTreeSVG(rt){
   for(const it of items){
     if(Math.abs(it.ly-it.ly0)>3)
       labels+=`<line x1="${it.end[0]}" y1="${it.end[1]}" x2="${it.lx}" y2="${(it.ly-3).toFixed(1)}" class="rt-leader"/>`;
-    labels+=`<text x="${it.lx}" y="${it.ly.toFixed(1)}" text-anchor="${it.sh.anc}" class="rt-label">`+
-            `<tspan class="rt-label-name">${it.sh.label}</tspan> <tspan class="rt-label-pct" fill="${it.col}">${it.pct.toFixed(1)}%</tspan></text>`;
+        labels+=`<text x="${it.lx}" y="${it.ly.toFixed(1)}" text-anchor="${it.sh.anc}" class="rt-label">`+
+          `<tspan class="rt-label-name">${it.sh.label}</tspan> <tspan class="rt-label-pct" fill="${it.col}">${it.pct.toFixed(1)}%</tspan>`+
+            `${it.tds>0?` <tspan class="rt-label-td">${it.tds} TD</tspan>`:''}</text>`;
   }
   // LOS + origin markers.
   const losLine=`<line x1="20" y1="${losY}" x2="${W-20}" y2="${losY}" class="rt-los"/>`;
@@ -126,14 +134,16 @@ function routeTreeSVG(rt){
 // Ranked list beneath the tree — exact counts + share, coloured to match the tree.
 function routeTreeList(rt){
   const tree=rt.tree||{}, total=rt.total||1;
+  const tdByRoute=rt.route_tds||{};
+  const tdKnown=_routeTdKnown(rt);
   const rows=Object.entries(tree).sort((a,b)=>b[1]-a[1]);
   const maxN=Math.max(1,...rows.map(r=>r[1]));
   return `<div class="rt-list">`+rows.map(([k,n])=>{
-    const pct=100*n/total, col=_routeHeat(n/maxN), label=(ROUTE_TREE_SHAPES[k]||{}).label||k;
+    const pct=100*n/total, col=_routeHeat(n/maxN), label=(ROUTE_TREE_SHAPES[k]||{}).label||k, tds=tdKnown ? (tdByRoute[k]||0) : null;
     return `<div class="rt-list-row">`+
       `<span class="rt-list-name">${label}</span>`+
       `<span class="rt-list-bar"><span class="rt-list-fill" style="width:${(100*n/maxN).toFixed(0)}%;background:${col}"></span></span>`+
-      `<span class="rt-list-n">${n}</span><span class="rt-list-pct">${pct.toFixed(1)}%</span></div>`;
+      `<span class="rt-list-n">${n}</span><span class="rt-list-pct">${pct.toFixed(1)}%</span><span class="rt-list-td">${tds==null?'—':`${tds} TD`}</span></div>`;
   }).join('')+`</div>`;
 }
 
@@ -144,14 +154,17 @@ function renderPcardRoutes(pid){
   if(!seasons.length) return `<div class="pcard-loading">No route data for this player.</div>`;
   if(pcardRouteSeason==null || !seasons.includes(String(pcardRouteSeason))) pcardRouteSeason=seasons[0];
   const rt=NFLVERSE[pcardRouteSeason].routes[norm];
+  const tdKnown=_routeTdKnown(rt);
   const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===String(pcardRouteSeason)?'active':''}" onclick="setPcardRouteSeason('${s}')">${s}</button>`).join('');
   const topRoute=Object.entries(rt.tree||{}).sort((a,b)=>b[1]-a[1])[0];
   const topLabel=topRoute?((ROUTE_TREE_SHAPES[topRoute[0]]||{}).label||topRoute[0]):'–';
+  const totalTds = tdKnown ? ((rt.total_tds!=null) ? rt.total_tds : Object.values(rt.route_tds||{}).reduce((a,b)=>a+(+b||0),0)) : null;
+  const tdSummary = tdKnown ? `${totalTds} TD on charted routes` : 'TD route data unavailable in this seed';
   return `
     <div class="rt-wrap">
       <div class="rt-head">
         <div class="rt-seasons">${seasonBtns}</div>
-        <div class="rt-summary">${rt.total} routes charted · most-run <b>${topLabel}</b></div>
+        <div class="rt-summary">${rt.total} routes charted · ${tdSummary} · most-run <b>${topLabel}</b></div>
       </div>
       ${routeTreeSVG(rt)}
       ${routeTreeList(rt)}

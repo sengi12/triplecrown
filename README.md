@@ -70,6 +70,13 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
   <img src="./images/player_cards.png" alt="Centered Image">
 </div>
 
+- **Player Cards.** Every Player that was targeted on routes in the past five seasons has a dedicated tab on their player cards that showcases their route trees. This feature shows what routes receivers tend to run more as they progress in their careers and adds more context to routes run as well as target totals to really showcase what type of receiver this player is.
+
+<!-- Center align -->
+<div align="center">
+  <img src="./images/route_tree.png" alt="Centered Image">
+</div>
+
 ---
 
 ## Quick start
