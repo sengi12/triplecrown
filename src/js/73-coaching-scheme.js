@@ -8,6 +8,15 @@ let _schemeEscBound = false;
 const _SCHEME_SCRIPT_OPEN = '<scr' + 'ipt>';
 const _SCHEME_SCRIPT_CLOSE = '</scr' + 'ipt>';
 
+function _schemeEscHtml(s){
+  return String(s==null?'':s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+
 function _schemeSeasons(team){
   if(!team || !NFLVERSE) return [];
   return Object.keys(NFLVERSE)
@@ -25,6 +34,69 @@ function _schemePreferredSeason(team){
   if(activeSeason!=='proj' && seasons.includes(String(activeSeason))) return String(activeSeason);
   if(SHARP_SEASON!=null && seasons.includes(String(SHARP_SEASON))) return String(SHARP_SEASON);
   return seasons[0];
+}
+
+function _schemePlaycallerHC(team){
+  return !!(HC_PLAYCALLERS && HC_PLAYCALLERS[team]);
+}
+
+function _schemeOcSource(team){
+  if(!team) return null;
+  const hc = HC_HISTORY && HC_HISTORY[team];
+  if(_schemePlaycallerHC(team) && hc && hc.is_new && hc.prev_code && hc.prev_code!==team){
+    return {
+      name: hc.name || HC_PLAYCALLERS[team] || 'Head coach',
+      since: hc.since,
+      is_new: true,
+      prev_code: hc.prev_code,
+      prev_role: hc.prev_role || 'head coach',
+      prev_years: hc.prev_years,
+      _fromHC: true,
+    };
+  }
+  const oc = COORDINATORS && COORDINATORS[team] && COORDINATORS[team].offense;
+  if(!oc || !oc.name) return null;
+  return {
+    name: oc.name,
+    since: oc.since,
+    is_new: !!(oc.is_new && !oc.internal && oc.prev_code),
+    prev_code: oc.prev_code || null,
+    prev_role: oc.prev_role || 'coordinator',
+    prev_years: oc.prev_years,
+    _fromHC: false,
+  };
+}
+
+function _schemeSeasonsForTeam(team){
+  if(!team || !NFLVERSE) return [];
+  return Object.keys(NFLVERSE)
+    .filter(s=>{
+      const b = NFLVERSE[s] && NFLVERSE[s].coaching_scheme && NFLVERSE[s].coaching_scheme[team];
+      return !!(b && b.views);
+    })
+    .sort((a,b)=>parseInt(b,10)-parseInt(a,10));
+}
+
+function _schemeOcCallout(team){
+  const src = _schemeOcSource(team);
+  if(!src) return '';
+  const roleTag = src._fromHC ? 'Play-calling HC' : 'OC';
+  const since = src.since ? ` · since ${src.since}` : '';
+  if(!src.is_new || !src.prev_code){
+    return `<div class="scheme-oc-callout"><span class="scheme-oc-pill">${roleTag}</span><b>${_schemeEscHtml(src.name)}</b>${since}</div>`;
+  }
+  const prev = src.prev_code;
+  const prevName = teamDisplayName(prev);
+  const seasons = _schemeSeasonsForTeam(prev);
+  const links = seasons.length
+    ? `<div class="scheme-oc-links">${seasons.map(s=>`<button class="scheme-oc-link" onclick="openTeamCoachingScheme('${prev}',{season:'${s}',from:'${team}'})">${prev} ${s}</button>`).join('')}</div>`
+    : `<span class="scheme-oc-missing">No prior-team coaching scheme seasons loaded.</span>`;
+  return `<div class="scheme-oc-callout">
+    <div><span class="scheme-oc-pill new">NEW ${roleTag}</span><b>${_schemeEscHtml(src.name)}</b>${since}
+      <span class="scheme-oc-note">from ${prevName}${src.prev_role?` (${_schemeEscHtml(src.prev_role)})`:''}${src.prev_years?` · ${_schemeEscHtml(String(src.prev_years))}`:''}</span>
+    </div>
+    ${links}
+  </div>`;
 }
 
 function _schemePayload(team, seasonPref){
@@ -230,6 +302,7 @@ function _renderTeamCoachingScheme(){
         <div>
           <div class="scheme-title">${teamDisplayName(schemeTeam)} Coaching Scheme</div>
           <div class="scheme-subtitle">Interactive playsheet · nflverse charting · ${p.season} regular season</div>
+          ${_schemeOcCallout(schemeTeam)}
         </div>
       </div>
       <div class="scheme-loading">Loading playsheet template…</div>
@@ -260,8 +333,11 @@ function openTeamCoachingScheme(team, initialView){
   if(!team) return;
   schemeOverlayOpen = true;
   schemeTeam = team;
-  schemeSeason = _schemePreferredSeason(team);
-  void initialView; // route preserved for compatibility with existing onclick hooks
+  if(initialView && typeof initialView==='object' && initialView.season!=null){
+    schemeSeason = String(initialView.season);
+  }else{
+    schemeSeason = _schemePreferredSeason(team);
+  }
   // Coaching-scheme payloads live in a lazy-loaded nflverse sidecar. Fetch it first (hosted
   // first-open), showing a loading shell, then render the interactive playsheet.
   if(typeof ensureNflverseSection==='function' && !nflverseSectionReady('coaching_scheme')){
