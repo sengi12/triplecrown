@@ -10,7 +10,8 @@ function setSharpTable(key){ sharpTable=key; sharpSortCol=null; renderSharpLeagu
 function setSharpCategory(cat){
   sharpCategory=cat;
   // Jump to the first table in the newly selected category.
-  const keys=Object.keys(SHARP).filter(k=>(SHARP[k].category||'offense')===cat);
+  const SRC=activeSharp();
+  const keys=Object.keys(SRC).filter(k=>(SRC[k].category||'offense')===cat);
   if(keys.length){ sharpTable=keys[0]; sharpSortCol=null; }
   renderSharpLeague();
 }
@@ -28,19 +29,12 @@ function renderSharpLeague(){
       <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed.</div></div>`;
     return;
   }
-  const nfvOn = advSource==='nflverse';
-  const srcToggle = nflverseSharpAvailable()
-    ? `<div class="format-toggle" style="margin-right:6px">
-         <button class="format-btn ${!nfvOn?'active':''}" onclick="setAdvSource('scraped')" title="Curated season advanced stats">Curated</button>
-         <button class="format-btn ${nfvOn?'active':''}" onclick="setAdvSource('nflverse')" title="Computed from nflverse play-by-play">nflverse</button>
-       </div>` : '';
-  const srcLabel = nfvOn ? `nflverse (computed)` : `Curated season stats`;
+  const srcLabel = `nflverse (computed)`;
   const headerBar=`
     <div class="team-header sr-league-header">
       <div><div class="team-abbr">📊 Advanced Stats — League-Wide</div>
         <div class="team-qb-name">${srcLabel} · <b>${SHARP_SEASON} season</b> · click any column to sort (best→worst)</div></div>
       <div class="team-nav">
-        ${srcToggle}
         ${currentTeam?`<button class="btn btn-ghost" onclick="setPhase('Advanced')">← ${teamDisplayName(currentTeam)} card</button>`:''}
         <button class="btn btn-ghost" onclick="setPhase('Rankings')">🏆 Rankings</button></div>
     </div>
@@ -90,7 +84,7 @@ function renderSharpLeague(){
     <div class="card" style="padding:0;overflow-x:auto">
       <table class="sr-league-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
     </div>
-    <div class="sr-source">${advSource==='nflverse'?'Computed from nflverse play-by-play (nflfastR).':'Curated season advanced stats — for informational use.'}</div>`;
+    <div class="sr-source">Computed from nflverse play-by-play (nflfastR).</div>`;
 }
 
 // Offense / Defense / SOS category selector row for the league-wide view.

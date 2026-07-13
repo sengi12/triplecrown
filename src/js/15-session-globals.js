@@ -105,8 +105,8 @@ let SUMER_SEASONS = (typeof SEED_SUMER_SEASONS!=='undefined') ? SEED_SUMER_SEASO
 let KTC = (typeof SEED_KTC!=='undefined') ? SEED_KTC : {};
 // nflverse-computed advanced metrics (opt-in A/B source): {season:{team:{...}, players:{QB,RB}}}
 let NFLVERSE = (typeof SEED_NFLVERSE!=='undefined') ? SEED_NFLVERSE : {};
-// Which data source powers the advanced tables (Sharp/Sumer vs nflverse): 'scraped' | 'nflverse'
-let advSource = 'scraped';
+// Advanced team tables are now nflverse-only (the old curated toggle was retired).
+let advSource = 'nflverse';
 // Head coaches fetched live from ESPN this session: {CODE:{name,headshot,experience}|null}
 let headCoaches = {};
 let hcInFlight = {};

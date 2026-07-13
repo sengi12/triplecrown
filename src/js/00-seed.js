@@ -28,5 +28,10 @@ const SEED_KTC = {};
 // nflverse-computed advanced metrics (opt-in `build_seed.py --nflverse`): a parallel A/B source
 // shaped like Sharp (team tables) + Sumer (QB/RB player tables). Empty unless built with --nflverse.
 const SEED_NFLVERSE = {};
+// Heavy nflverse sections split into lazy-loaded sidecars (def_weekly, coaching_scheme). Empty in
+// the shipped/online build (fetched on demand from triplecrown_seed.def_weekly.json /
+// triplecrown_seed.coaching.json); re-embedded by bake_seed.py for the offline/baked file.
+const SEED_NFLVERSE_DEF_WEEKLY = {};
+const SEED_NFLVERSE_COACHING = {};
 // ═══ TRIPLECROWN_SEED_END ═══
 

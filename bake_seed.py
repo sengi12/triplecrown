@@ -59,6 +59,28 @@ def main():
     ktc = seed.get("ktc", {})
     nflverse = seed.get("nflverse", {})
 
+    # Heavy nflverse sections live in sidecar files (build_seed.py splits them out so the hosted
+    # app can lazy-load them). For a self-contained offline/baked file we re-embed them, since
+    # file:// can't fetch. Read them next to the main seed if present.
+    def _sidecar(path):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                return json.load(fh)
+        except Exception:
+            return {}
+
+    seed_dir = os.path.dirname(os.path.abspath(args.seed))
+    nflverse_def_weekly = _sidecar(os.path.join(seed_dir, "triplecrown_seed.def_weekly.json"))
+    nflverse_coaching = _sidecar(os.path.join(seed_dir, "triplecrown_seed.coaching.json"))
+    # Fallback: if an older single-file seed still carries these inline, lift them out.
+    if not nflverse_def_weekly or not nflverse_coaching:
+        for _s, _blk in (nflverse.items() if isinstance(nflverse, dict) else []):
+            if isinstance(_blk, dict):
+                if not nflverse_def_weekly and "def_weekly" in _blk:
+                    nflverse_def_weekly.setdefault(_s, _blk.get("def_weekly"))
+                if not nflverse_coaching and "coaching_scheme" in _blk:
+                    nflverse_coaching.setdefault(_s, _blk.get("coaching_scheme"))
+
     # Build the replacement block. Compact JSON keeps the file smaller.
     j = lambda o: json.dumps(o, separators=(",", ":"), ensure_ascii=False)
     block = (
@@ -81,6 +103,8 @@ def main():
         f"const SEED_SUMER_SEASONS = {j(sumer_seasons)};\n"
         f"const SEED_KTC = {j(ktc)};\n"
         f"const SEED_NFLVERSE = {j(nflverse)};\n"
+        f"const SEED_NFLVERSE_DEF_WEEKLY = {j(nflverse_def_weekly)};\n"
+        f"const SEED_NFLVERSE_COACHING = {j(nflverse_coaching)};\n"
         f"{END}"
     )
 

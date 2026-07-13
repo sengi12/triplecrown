@@ -95,9 +95,11 @@ function advSumerData(){
 }
 // Switch the advanced-stats data source and re-render whichever advanced view is open.
 function setAdvSource(src){
-  if(advSource===src) return;
-  advSource=src;
-  sharpTable=null; sharpSortCol=null;   // reset table selection for the new source
+  // Advanced Stats source switching was removed; keep this for backward-compat calls.
+  if(src!=='nflverse') return;
+  if(advSource==='nflverse') return;
+  advSource='nflverse';
+  sharpTable=null; sharpSortCol=null;
   if(currentPhase==='AdvancedLeague' && typeof renderSharpLeague==='function') renderSharpLeague();
   else if(currentPhase==='Advanced' && typeof renderContent==='function') renderContent();
   else if(currentPhase==='Rankings') renderRankings();
@@ -451,7 +453,7 @@ function nflverseSharpTables(){
   const PCT=['Explosive Play Rate','Down Conversion Rate','Shotgun Rate','NoHuddle Rate','3WR Rate','Multi TE Rate','Man Rate','Zone Rate',
     'Motion Rate','Play Action Rate','RPO Rate','Screen Rate','Trick Play Rate','Drop Rate','Blitz Rate',
     'Pressure Rate Allowed','Rush Stuff Rate','Pressure Rate','No Blitz Pressure Rate',
-    '11 Personnel','12 Personnel','21 Personnel','Multi RB Rate','Sub Package Rate','Nickel Rate','Dime+ Rate',
+    '11 Personnel','12 Personnel','13 Personnel','21 Personnel','Multi RB Rate','Sub Package Rate','Nickel Rate','Dime+ Rate',
     'Neutral DB Rate','Neutral DB Rate Last 5','Middle Closed Rate','Middle Open Rate','Cover 1','Cover 2','Cover 3'];
   const out={};
   for(const k in t){
@@ -463,8 +465,7 @@ function nflverseSharpTables(){
 }
 // The active source for the league-wide Advanced Stats tables: Warren Sharp or nflverse.
 function activeSharp(){
-  if(advSource==='nflverse'){ const n=nflverseSharpTables(); if(Object.keys(n).length) return n; }
-  return SHARP;
+  return nflverseSharpTables();
 }
 // True when the nflverse A/B source can back the league-wide Advanced Stats view.
 function nflverseSharpAvailable(){ return Object.keys(nflverseSharpTables()).length>0; }

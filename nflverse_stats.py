@@ -30,6 +30,8 @@ PBP_URL = "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_
 PFR_PASS_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_season_pass.csv"
 PFR_RUSH_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_season_rush.csv"
 PFR_DEF_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_season_def.csv"
+PFR_DEF_WEEK_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_def_{season}.parquet"
+PLAYERS_PARQUET_URL = "https://github.com/nflverse/nflverse-data/releases/download/players/players.parquet"
 NGS_PASS_URL = "https://github.com/nflverse/nflverse-data/releases/download/nextgen_stats/ngs_passing.csv.gz"
 # Columns we actually need (usecols keeps the ~370-col file fast + small in memory).
 PBP_COLS = [
@@ -38,13 +40,30 @@ PBP_COLS = [
     "fixed_drive", "fixed_drive_result", "series_result", "down",
     "shotgun", "no_huddle", "air_yards", "vegas_wp",
 ]
+_QB_ZONE_COLS = [
+    "season_type", "posteam", "pass_attempt", "sack", "complete_pass", "yards_gained",
+    "pass_touchdown", "interception", "air_yards", "pass_location", "two_point_attempt",
+    "passer_player_id",
+]
+_RB_FAN_COLS = [
+    "season_type", "posteam", "rush_attempt", "qb_scramble", "two_point_attempt",
+    "run_location", "run_gap", "yards_gained", "success", "rusher_player_id",
+]
 # nflverse team codes that differ from the seed's codes.
 NFLVERSE_TO_SEED = {"LA": "LAR", "OAK": "LV", "SD": "LAC", "STL": "LAR"}
+TEAMS = [
+    "ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE", "DAL", "DEN", "DET", "GB",
+    "HOU", "IND", "JAX", "KC", "LAC", "LAR", "LV", "MIA", "MIN", "NE", "NO", "NYG",
+    "NYJ", "PHI", "PIT", "SEA", "SF", "TB", "TEN", "WAS",
+]
 PART_URL = "https://github.com/nflverse/nflverse-data/releases/download/pbp_participation/pbp_participation_{season}.csv"
 NGS_RUSH_URL = "https://github.com/nflverse/nflverse-data/releases/download/nextgen_stats/ngs_rushing.csv.gz"
 ROSTER_URL = "https://github.com/nflverse/nflverse-data/releases/download/rosters/roster_{season}.csv"
 
 _NAME_MAP = {}
+_OL_GRADES_BY_TEAM = None
+_OL_GRADES_BY_PLAYER = None
+_PFR_TO_GSIS = None
 
 # URLs that failed to download this run (e.g. FTN charting before 2022). Cached so we don't
 # retry the same 404 dozens of times across refinement/receiver loops.
@@ -125,6 +144,17 @@ def _norm(name):
     s = _re.sub(r"\s+(jr|sr|ii|iii|iv|v)$", "", s)
     return _re.sub(r"\s+", " ", s).strip()
 
+def _passer_rating_df(df):
+    """Official NFL passer rating for a set of attempts (or None for empty input)."""
+    att = len(df)
+    if att == 0:
+        return None
+    a = max(0.0, min(2.375, (df["complete_pass"].sum() / att - 0.3) * 5))
+    b = max(0.0, min(2.375, (df["yards_gained"].sum() / att - 3) * 0.25))
+    c = min(2.375, df["pass_touchdown"].sum() / att * 20)
+    d = max(0.0, 2.375 - df["interception"].sum() / att * 25)
+    return round((a + b + c + d) / 6 * 100, 1)
+
 def _cache_pbp(season):
     """Download the season's pbp csv.gz once to the local cache; return the path."""
     d = _nflverse_cache_subdir("raw", "pbp")
@@ -160,6 +190,7 @@ def _load_pbp(season, cols=None):
 
 _PBP_DF_CACHE = {}
 _AUX_CACHE = {}
+_AUX_PARQUET_CACHE = {}
 def _aux_csv(url, **kw):
     """Memoized pd.read_csv for season-level auxiliary tables (NGS/PFR/participation/FTN).
 
@@ -188,6 +219,14 @@ def _aux_csv(url, **kw):
             df.to_pickle(pkl_path)
             _AUX_CACHE[key] = df
     return _AUX_CACHE[key]
+
+def _aux_parquet(url, columns=None):
+    """Memoized pd.read_parquet for remote parquet assets (PFR weekly, players map)."""
+    key = (url, tuple(columns or ()))
+    if key not in _AUX_PARQUET_CACHE:
+        path = _cache_remote(url)
+        _AUX_PARQUET_CACHE[key] = pd.read_parquet(path, columns=columns)
+    return _AUX_PARQUET_CACHE[key]
 
 # Map a drive's final result to points scored by the offense on that drive (approximation:
 # TD ≈ 6.97 expected points with the PAT, FG = 3). Everything else (punt/downs/INT/fumble) = 0.
@@ -784,8 +823,12 @@ ROUTE_TYPES = ["SCREEN", "SWING", "SHALLOW CROSS/DRAG", "SLANT", "QUICK OUT", "H
 
 def route_trees(season, min_routes=12):
     """{normalized_name: {'pos','total','tree':{ROUTE:count}}} for pass-catchers with enough
-    labeled targets. `total` counts only targets that carry a route label."""
-    pbp = _load_pbp(season, ["game_id", "play_id", "season_type", "receiver_player_id", "pass_touchdown"])
+    labeled targets. `total` counts only targets that carry a route label. Includes optional
+    per-route receiving outputs (TD/rec/yds/PPR FP) for richer route-tree displays."""
+    pbp = _load_pbp(season, [
+        "game_id", "play_id", "season_type", "receiver_player_id", "pass_touchdown",
+        "complete_pass", "receiving_yards"
+    ])
     pbp = pbp[(pbp["season_type"] == "REG") & pbp["receiver_player_id"].notna()]
     part = _aux_csv(PART_URL.format(season=season),
                     usecols=["nflverse_game_id", "play_id", "route"])
@@ -800,12 +843,430 @@ def route_trees(season, min_routes=12):
             continue
         tree = d["route"].value_counts().to_dict()
         route_tds = d.groupby("route")["pass_touchdown"].sum().to_dict()
+        route_rec = d.groupby("route")["complete_pass"].sum().to_dict()
+        route_yds = d.groupby("route")["receiving_yards"].sum().to_dict()
         out[name] = {
             "pos": pos.get(rid),
             "total": int(len(d)),
             "total_tds": int(d["pass_touchdown"].sum()),
+            "total_rec": int(d["complete_pass"].sum()),
+            "total_yds": int(d["receiving_yards"].sum()),
             "tree": {k: int(v) for k, v in tree.items()},
             "route_tds": {k: int(route_tds.get(k, 0)) for k in tree.keys()},
+            "route_rec": {k: int(route_rec.get(k, 0)) for k in tree.keys()},
+            "route_yds": {k: int(route_yds.get(k, 0)) for k in tree.keys()},
+        }
+    return out
+
+def qb_passing_zones(season, min_attempts=25):
+    """Per-QB NGS-style passer-rating zone matrix keyed by normalized full name.
+
+    Zones are left/middle/right x behind/short/inter/deep, with each cell carrying
+    QB rating, league average for that zone, and attempt counts.
+    """
+    pbp = _load_pbp(season, _QB_ZONE_COLS)
+    pbp = pbp[pbp["season_type"] == "REG"]
+    att = pbp[(pbp["pass_attempt"] == 1) & (pbp["sack"] == 0)
+              & (pbp["two_point_attempt"] == 0) & pbp["pass_location"].notna()
+              & pbp["passer_player_id"].notna()].copy()
+    if att.empty:
+        return {}
+    att["posteam"] = att["posteam"].replace(NFLVERSE_TO_SEED)
+    att["depth"] = pd.cut(att["air_yards"], bins=[-100, -0.5, 9.5, 19.5, 100],
+                          labels=["behind", "short", "inter", "deep"])
+    row_order = ["deep", "inter", "short", "behind"]
+    col_order = ["left", "middle", "right"]
+    names = _name_map(season)
+    out = {}
+    for qid, qb in att.groupby("passer_player_id"):
+        if len(qb) < min_attempts:
+            continue
+        name = names.get(qid)
+        if not name:
+            continue
+        zones = {}
+        for depth in row_order:
+            zones[depth] = {}
+            for loc in col_order:
+                lg = att[(att["depth"] == depth) & (att["pass_location"] == loc)]
+                me = qb[(qb["depth"] == depth) & (qb["pass_location"] == loc)]
+                zones[depth][loc] = {
+                    "rating": _passer_rating_df(me),
+                    "league_avg": _passer_rating_df(lg),
+                    "attempts": int(len(me)),
+                }
+        comp_pct = round(float(qb["complete_pass"].mean() * 100), 1) if len(qb) else None
+        out[name] = {
+            "team": (qb["posteam"].mode().iloc[0] if len(qb["posteam"].mode()) else None),
+            "totals": {
+                "passer_rating": _passer_rating_df(qb),
+                "comp_pct": comp_pct,
+                "yards": int(qb["yards_gained"].sum()),
+                "td": int(qb["pass_touchdown"].sum()),
+                "int": int(qb["interception"].sum()),
+                "attempts": int(len(qb)),
+            },
+            "zones": zones,
+        }
+    return out
+
+
+def _ol_grades_by_team():
+    """Team/slot → latest OL grades from the local validated grades CSV.
+
+    Returns {TEAM:{LT|LG|C|RG|RT:{name,run_grade,pass_grade,pass_snaps}}}.
+    """
+    global _OL_GRADES_BY_TEAM
+    if _OL_GRADES_BY_TEAM is not None:
+        return _OL_GRADES_BY_TEAM
+    out = {}
+    path = os.path.join(os.path.dirname(__file__), "claude", "ol_grades_final.csv")
+    if not os.path.exists(path):
+        _OL_GRADES_BY_TEAM = out
+        return out
+    try:
+        g = pd.read_csv(path, usecols=["name", "team", "slot", "run_grade", "pass_grade", "pass_snaps"])
+    except Exception:
+        _OL_GRADES_BY_TEAM = out
+        return out
+    g["team"] = g["team"].astype(str).str.strip().str.upper()
+    g["slot"] = g["slot"].astype(str).str.strip().str.upper()
+    g = g[g["team"].isin(TEAMS) & g["slot"].isin(["LT", "LG", "C", "RG", "RT"])]
+    if g.empty:
+        _OL_GRADES_BY_TEAM = out
+        return out
+    g["pass_snaps"] = pd.to_numeric(g["pass_snaps"], errors="coerce").fillna(0)
+    g = g.sort_values(["team", "slot", "pass_snaps"], ascending=[True, True, False])
+    best = g.groupby(["team", "slot"], as_index=False).first()
+    for _, r in best.iterrows():
+        tm = r["team"]
+        sl = r["slot"]
+        out.setdefault(tm, {})[sl] = {
+            "name": r["name"] if pd.notna(r["name"]) else None,
+            "run_grade": r["run_grade"] if pd.notna(r["run_grade"]) else None,
+            "pass_grade": r["pass_grade"] if pd.notna(r["pass_grade"]) else None,
+            "pass_snaps": int(r["pass_snaps"]),
+        }
+    _OL_GRADES_BY_TEAM = out
+    return out
+
+
+def _ol_grades_by_player():
+    """Normalized player-name lookup for OL grade cards.
+
+    Returns {normName:{team,slot,pos,pass_grade,pass_pctile,pass_conf,pass_snaps,
+            run_grade,run_pctile,run_conf,poa_carries,shared_credit,penalty_rate,
+            allpro_recent,career_ap1,career_pb,consensus_flag,market_pctile}}.
+    """
+    global _OL_GRADES_BY_PLAYER
+    if _OL_GRADES_BY_PLAYER is not None:
+        return _OL_GRADES_BY_PLAYER
+    out = {}
+    path = os.path.join(os.path.dirname(__file__), "claude", "ol_grades_final.csv")
+    if not os.path.exists(path):
+        _OL_GRADES_BY_PLAYER = out
+        return out
+    cols = [
+        "name", "team", "slot", "pos",
+        "pass_grade", "pass_pctile", "pass_conf", "pass_snaps",
+        "run_grade", "run_pctile", "run_conf", "poa_carries",
+        "shared_credit", "penalty_rate", "allpro_recent", "career_ap1", "career_pb",
+        "consensus_flag", "market_pctile",
+    ]
+    try:
+        g = pd.read_csv(path, usecols=cols)
+    except Exception:
+        _OL_GRADES_BY_PLAYER = out
+        return out
+    if g.empty:
+        _OL_GRADES_BY_PLAYER = out
+        return out
+    g["name"] = g["name"].astype(str).str.strip()
+    g["team"] = g["team"].astype(str).str.strip().str.upper()
+    g["slot"] = g["slot"].astype(str).str.strip().str.upper()
+    g["pass_snaps"] = pd.to_numeric(g["pass_snaps"], errors="coerce").fillna(0)
+    g = g[(g["name"] != "") & g["team"].isin(TEAMS) & g["slot"].isin(["LT", "LG", "C", "RG", "RT"])]
+    if g.empty:
+        _OL_GRADES_BY_PLAYER = out
+        return out
+    # If a name appears multiple times, keep the highest-snap record.
+    g = g.sort_values(["name", "pass_snaps"], ascending=[True, False]).groupby("name", as_index=False).first()
+    for _, r in g.iterrows():
+        name = r.get("name")
+        key = _norm(name)
+        if not key:
+            continue
+        def _v(col):
+            v = r.get(col)
+            return None if pd.isna(v) else v
+        out[key] = {
+            "name": _v("name"),
+            "team": _v("team"),
+            "slot": _v("slot"),
+            "pos": _v("pos"),
+            "pass_grade": _v("pass_grade"),
+            "pass_pctile": _v("pass_pctile"),
+            "pass_conf": _v("pass_conf"),
+            "pass_snaps": (None if _v("pass_snaps") is None else int(_v("pass_snaps"))),
+            "run_grade": _v("run_grade"),
+            "run_pctile": _v("run_pctile"),
+            "run_conf": _v("run_conf"),
+            "poa_carries": _v("poa_carries"),
+            "shared_credit": _v("shared_credit"),
+            "penalty_rate": _v("penalty_rate"),
+            "allpro_recent": _v("allpro_recent"),
+            "career_ap1": _v("career_ap1"),
+            "career_pb": _v("career_pb"),
+            "consensus_flag": _v("consensus_flag"),
+            "market_pctile": _v("market_pctile"),
+        }
+    _OL_GRADES_BY_PLAYER = out
+    return out
+
+
+def _pfr_to_gsis_map():
+    """Build once: PFR player id → GSIS id from nflverse players parquet."""
+    global _PFR_TO_GSIS
+    if _PFR_TO_GSIS is not None:
+        return _PFR_TO_GSIS
+    out = {}
+    try:
+        pl = _aux_parquet(PLAYERS_PARQUET_URL)
+    except Exception:
+        _PFR_TO_GSIS = out
+        return out
+    pfr_cols = [c for c in pl.columns if "pfr" in c and pl[c].notna().any()]
+    if not pfr_cols or "gsis_id" not in pl.columns:
+        _PFR_TO_GSIS = out
+        return out
+    pcol = pfr_cols[0]
+    w = pl[[pcol, "gsis_id"]].dropna().drop_duplicates(pcol)
+    out = {str(r[pcol]): str(r["gsis_id"]) for _, r in w.iterrows()}
+    _PFR_TO_GSIS = out
+    return out
+
+
+def defensive_weekly_players(season):
+    """Per-defender weekly logs (DL/LB/DB groups) for player-card use.
+
+    Returns {normName:{name,team,pos,group,weeks:[...],totals:{...}}}.
+    """
+    try:
+        wk = _aux_parquet(PFR_DEF_WEEK_URL.format(season=season))
+    except Exception:
+        return {}
+    if wk is None or wk.empty:
+        return {}
+    wk = wk[wk["game_type"] == "REG"].copy()
+    if wk.empty:
+        return {}
+    # Map PFR weekly rows to GSIS ids so we can bind to roster position/name consistently.
+    p2g = _pfr_to_gsis_map()
+    wk["gsis_id"] = wk["pfr_player_id"].astype(str).map(p2g)
+    wk = wk[wk["gsis_id"].notna()].copy()
+    if wk.empty:
+        return {}
+
+    roster = _aux_csv(ROSTER_URL.format(season=season), usecols=["gsis_id", "full_name", "position", "team"])
+    if roster.empty:
+        return {}
+    roster = roster.dropna(subset=["gsis_id"]).drop_duplicates("gsis_id")
+    rmap = roster.set_index("gsis_id")
+
+    def _grp(pos):
+        p = str(pos or "").upper()
+        if p in {"DE", "DT", "NT", "DL"}:
+            return "DL"
+        if p in {"LB", "MLB", "OLB", "ILB", "WLB", "SLB"}:
+            return "LB"
+        if p in {"DB", "CB", "S", "SS", "FS"}:
+            return "DB"
+        return None
+
+    rows = []
+    stat_cols = [
+        "def_targets", "def_completions_allowed", "def_yards_allowed", "def_receiving_td_allowed",
+        "def_passer_rating_allowed", "def_adot", "def_yards_after_catch", "def_times_blitzed",
+        "def_times_hurried", "def_times_hitqb", "def_sacks", "def_pressures",
+        "def_tackles_combined", "def_missed_tackles", "def_missed_tackle_pct", "def_ints",
+    ]
+    have = [c for c in stat_cols if c in wk.columns]
+    base_cols = ["gsis_id", "week", "team", "opponent", "pfr_player_name"] + have
+    for _, r in wk[base_cols].iterrows():
+        gid = r["gsis_id"]
+        if gid not in rmap.index:
+            continue
+        rr = rmap.loc[gid]
+        pos = rr.get("position")
+        grp = _grp(pos)
+        if grp is None:
+            continue
+        nm = rr.get("full_name") if pd.notna(rr.get("full_name")) else r.get("pfr_player_name")
+        if not nm or pd.isna(nm):
+            continue
+        team = str(r.get("team") or rr.get("team") or "").upper()
+        team = NFLVERSE_TO_SEED.get(team, team)
+        rec = {
+            "gsis_id": gid,
+            "name": str(nm),
+            "team": team,
+            "pos": str(pos or "").upper(),
+            "group": grp,
+            "week": int(r.get("week") or 0),
+            "opp": NFLVERSE_TO_SEED.get(str(r.get("opponent") or "").upper(), str(r.get("opponent") or "").upper()),
+        }
+        for c in have:
+            v = r.get(c)
+            rec[c] = None if pd.isna(v) else float(v)
+        rows.append(rec)
+    if not rows:
+        return {}
+
+    out = {}
+    for rec in rows:
+        key = _norm(rec["name"])
+        if not key:
+            continue
+        d = out.setdefault(key, {
+            "name": rec["name"],
+            "team": rec["team"],
+            "pos": rec["pos"],
+            "group": rec["group"],
+            "weeks": [],
+            "totals": {},
+        })
+        d["weeks"].append({
+            "week": rec["week"],
+            "team": rec["team"],
+            "opp": rec["opp"],
+            "targets": rec.get("def_targets"),
+            "cmp_allowed": rec.get("def_completions_allowed"),
+            "yds_allowed": rec.get("def_yards_allowed"),
+            "td_allowed": rec.get("def_receiving_td_allowed"),
+            "rating_allowed": rec.get("def_passer_rating_allowed"),
+            "adot": rec.get("def_adot"),
+            "yac_allowed": rec.get("def_yards_after_catch"),
+            "blitzes": rec.get("def_times_blitzed"),
+            "hurries": rec.get("def_times_hurried"),
+            "qb_hits": rec.get("def_times_hitqb"),
+            "sacks": rec.get("def_sacks"),
+            "pressures": rec.get("def_pressures"),
+            "tackles": rec.get("def_tackles_combined"),
+            "missed_tackles": rec.get("def_missed_tackles"),
+            "missed_tackle_pct": rec.get("def_missed_tackle_pct"),
+            "ints": rec.get("def_ints"),
+        })
+
+    # Stable per-player order and compact totals for summary cards.
+    sum_fields = [
+        "targets", "cmp_allowed", "yds_allowed", "td_allowed", "yac_allowed", "blitzes", "hurries",
+        "qb_hits", "sacks", "pressures", "tackles", "missed_tackles", "ints",
+    ]
+    mean_fields = ["rating_allowed", "adot", "missed_tackle_pct"]
+
+    # Compact encoding to keep the seed small (this table is the largest nflverse block):
+    #   • drop the per-week `team` (identical to the player-level team; the card reader uses
+    #     rec.team, never w.team),
+    #   • encode whole-number floats as ints (5.0 → 5), round others to 2dp,
+    #   • omit None/absent stat fields entirely — the player-card reader renders a missing
+    #     value exactly like null ('–'), so this is display-identical while much smaller.
+    # Zeros are preserved (a recorded 0 is meaningful and still renders '0').
+    def _num(v):
+        if v is None:
+            return None
+        if isinstance(v, float):
+            return int(v) if v == int(v) else round(v, 2)
+        return v
+
+    def _pack_week(w):
+        packed = {}
+        for k, v in w.items():
+            if k == "team" or v is None:
+                continue
+            packed[k] = _num(v)
+        return packed
+
+    for key, d in out.items():
+        d["weeks"] = sorted(d["weeks"], key=lambda w: int(w.get("week") or 0))
+        t = {"games": len(d["weeks"])}
+        for f in sum_fields:
+            vals = [w.get(f) for w in d["weeks"] if w.get(f) is not None]
+            t[f] = (None if not vals else round(float(sum(vals)), 2))
+        for f in mean_fields:
+            vals = [w.get(f) for w in d["weeks"] if w.get(f) is not None]
+            t[f] = (None if not vals else round(float(sum(vals) / len(vals)), 2))
+        d["totals"] = {k: _num(v) for k, v in t.items() if v is not None}
+        d["weeks"] = [_pack_week(w) for w in d["weeks"]]
+    return out
+
+
+def _rb_lane(loc, gap):
+    if loc == "middle":
+        return "MID"
+    side = "L" if loc == "left" else ("R" if loc == "right" else None)
+    gmap = {"end": "E", "tackle": "T", "guard": "G"}
+    return (side + gmap.get(gap, "")) if side and gap in gmap else None
+
+
+def rb_rushing_fans(season, min_attempts=20, min_lane_attempts=3):
+    """Per-RB rushing fan payload keyed by normalized player name.
+
+    Includes lane-level rushing efficiency vs league lane averages plus OL grade cards.
+    """
+    pbp = _load_pbp(season, _RB_FAN_COLS)
+    runs = pbp[(pbp["season_type"] == "REG") & (pbp["rush_attempt"] == 1)
+               & (pbp["qb_scramble"] == 0) & (pbp["two_point_attempt"] == 0)
+               & pbp["run_location"].notna() & pbp["rusher_player_id"].notna()].copy()
+    if runs.empty:
+        return {}
+    runs["posteam"] = runs["posteam"].replace(NFLVERSE_TO_SEED)
+    runs["lane"] = runs.apply(lambda r: _rb_lane(r["run_location"], r.get("run_gap")), axis=1)
+    runs = runs[runs["lane"].notna()]
+    if runs.empty:
+        return {}
+    lanes_order = ["LE", "LT", "LG", "MID", "RG", "RT", "RE"]
+    lg_lane_ypc = runs.groupby("lane")["yards_gained"].mean().to_dict()
+    names = _name_map(season)
+    ol_cards = _ol_grades_by_team()
+    out = {}
+    for rid, rb in runs.groupby("rusher_player_id"):
+        if len(rb) < min_attempts:
+            continue
+        name = names.get(rid)
+        if not name:
+            continue
+        team = rb["posteam"].mode().iloc[0] if len(rb["posteam"].mode()) else None
+        lanes = {}
+        for lane in lanes_order:
+            g = rb[rb["lane"] == lane]
+            if len(g) < min_lane_attempts:
+                continue
+            ypc = float(g["yards_gained"].mean())
+            succ = float(g["success"].mean() * 100) if g["success"].notna().any() else None
+            ly = lg_lane_ypc.get(lane)
+            lanes[lane] = {
+                "attempts": int(len(g)),
+                "ypc": round(ypc, 2),
+                "success_rate": (None if succ is None else round(succ, 1)),
+                "league_ypc": (None if ly is None else round(float(ly), 2)),
+                "ypc_diff": (None if ly is None else round(ypc - float(ly), 2)),
+            }
+        if not lanes:
+            continue
+        att = int(len(rb))
+        yds = int(rb["yards_gained"].sum())
+        ypc = round(yds / att, 2) if att else None
+        succ = (None if not rb["success"].notna().any() else round(float(rb["success"].mean() * 100), 1))
+        out[name] = {
+            "team": team,
+            "totals": {
+                "attempts": att,
+                "yards": yds,
+                "ypc": ypc,
+                "success_rate": succ,
+            },
+            "lanes": lanes,
+            "line": ol_cards.get(team, {}),
         }
     return out
 
@@ -872,12 +1333,14 @@ def personnel_groups(season):
     o["te"] = o["offense_personnel"].map(lambda s: ocache[s].get("TE", 0))
     o["p11"] = ((o["backs"] == 1) & (o["te"] == 1)).astype(float)
     o["p12"] = ((o["backs"] == 1) & (o["te"] == 2)).astype(float)
+    o["p13"] = ((o["backs"] == 1) & (o["te"] == 3)).astype(float)
     o["p21"] = ((o["backs"] == 2) & (o["te"] == 1)).astype(float)
     o["multirb"] = (o["backs"] >= 2).astype(float)
     go = o.groupby("posteam")
     off = pd.DataFrame({
         "11 Personnel": (go["p11"].mean() * 100).round(1),
         "12 Personnel": (go["p12"].mean() * 100).round(1),
+        "13 Personnel": (go["p13"].mean() * 100).round(1),
         "21 Personnel": (go["p21"].mean() * 100).round(1),
         "Multi RB Rate": (go["multirb"].mean() * 100).round(1),
     })
@@ -896,6 +1359,241 @@ def personnel_groups(season):
         "Dime+ Rate": (gd["dime"].mean() * 100).round(1),
     })
     return off, dfn
+
+
+def _scheme_parse_personnel(s):
+    """'1 RB, 1 TE, 3 WR' -> (backs, te, wr, ol)."""
+    if not isinstance(s, str):
+        return None
+    nums = {pos: int(nn) for nn, pos in _re.findall(r"(\d+)\s+([A-Z]+)", s)}
+    b = nums.get("RB", 0) + nums.get("FB", 0)
+    t = nums.get("TE", 0)
+    w = nums.get("WR", 0)
+    ol = nums.get("T", 0) + nums.get("G", 0) + nums.get("C", 0)
+    if b > 3 or t > 4 or w > 5:
+        return None
+    return b, t, w, ol
+
+
+def _scheme_align(row):
+    f = row.get("offense_formation")
+    if f == "PISTOL":
+        return "pistol"
+    if f == "SHOTGUN":
+        return "gun"
+    if f == "UNDER CENTER":
+        return "uc"
+    return "gun" if row.get("shotgun") == 1 else "uc"
+
+
+def _scheme_lane(row):
+    loc = row.get("run_location")
+    gap = row.get("run_gap")
+    if loc == "middle":
+        return "MID"
+    if pd.isna(loc):
+        return None
+    side = "L" if loc == "left" else ("R" if loc == "right" else None)
+    gmap = {"end": "E", "tackle": "T", "guard": "G"}
+    return (side + gmap.get(gap, "")) if side and gap in gmap else None
+
+
+def _scheme_name_from_group(b, t, align, ol):
+    jumbo = " JUMBO" if ol >= 6 else ""
+    if b == 0:
+        return ("EMPTY" if align != "uc" else "EMPTY UC") + jumbo
+    if align == "uc":
+        return ("I-FORM" if b >= 2 else "SINGLE BACK") + jumbo
+    if align == "pistol":
+        return "PISTOL" + jumbo
+    return "SHOTGUN" + jumbo
+
+
+def coaching_scheme(season, min_group_plays=4, max_groups=8):
+    """Team coaching-scheme visualization payload keyed by team code.
+
+    Produces compact per-team view buckets (all/PA/motion/no-huddle/down) with top personnel
+    groups, pass-run tendencies, route leaders by slot, and top run lanes.
+    """
+    pbp_cols = [
+        "game_id", "play_id", "posteam", "play_type", "pass", "rush_attempt", "qb_scramble",
+        "epa", "success", "down", "season_type", "shotgun", "run_location", "run_gap",
+        "receiver_player_id",
+    ]
+    pbp = _load_pbp(season, pbp_cols)
+    pbp = pbp[(pbp["season_type"] == "REG") & pbp["play_type"].isin(["pass", "run"])].copy()
+    if pbp.empty:
+        return {}
+    part = _aux_csv(PART_URL.format(season=season),
+                    usecols=["nflverse_game_id", "play_id", "offense_personnel", "offense_formation", "route"])
+    try:
+        ftn = _aux_csv(FTN_URL.format(season=season),
+                       usecols=["nflverse_game_id", "nflverse_play_id", "is_motion", "is_play_action", "is_no_huddle"])
+    except Exception:
+        ftn = pd.DataFrame(columns=["nflverse_game_id", "nflverse_play_id", "is_motion", "is_play_action", "is_no_huddle"])
+
+    d = pbp.merge(part, left_on=["game_id", "play_id"], right_on=["nflverse_game_id", "play_id"], how="inner")
+    if len(ftn):
+        d = d.merge(ftn, left_on=["game_id", "play_id"], right_on=["nflverse_game_id", "nflverse_play_id"], how="left")
+    else:
+        d["is_motion"] = False
+        d["is_play_action"] = False
+        d["is_no_huddle"] = False
+    d["posteam"] = d["posteam"].replace(NFLVERSE_TO_SEED)
+
+    pr = d["offense_personnel"].apply(_scheme_parse_personnel)
+    d = d[pr.notna()].copy()
+    if d.empty:
+        return {}
+    pr = pr[pr.notna()]
+    d["backs"] = [x[0] for x in pr]
+    d["te"] = [x[1] for x in pr]
+    d["wr"] = [x[2] for x in pr]
+    d["ol"] = [x[3] for x in pr]
+    d["p"] = d["backs"].astype(str) + d["te"].astype(str)
+    d["align"] = d.apply(_scheme_align, axis=1)
+    d["lane"] = d.apply(_scheme_lane, axis=1)
+
+    roster = _aux_csv(ROSTER_URL.format(season=season), usecols=["gsis_id", "full_name", "position", "team"]).drop_duplicates("gsis_id")
+    rmap = roster.set_index("gsis_id") if len(roster) else pd.DataFrame()
+
+    def _lname(pid):
+        if pid is None or pd.isna(pid) or len(rmap) == 0 or pid not in rmap.index:
+            return "—"
+        nm = str(rmap.at[pid, "full_name"] or "").strip()
+        if not nm:
+            return "—"
+        bits = nm.split()
+        return bits[-1] if bits else nm
+
+    def _slots_for_team(df_team):
+        pass_rows = df_team[df_team["pass"] == 1]
+        tgt = pass_rows["receiver_player_id"].dropna().value_counts()
+        rush = df_team[(df_team["rush_attempt"] == 1) & (df_team["qb_scramble"] == 0)]["receiver_player_id"].dropna().value_counts()
+        if len(rush) == 0:
+            rush = df_team[(df_team["rush_attempt"] == 1) & (df_team["qb_scramble"] == 0)]["receiver_player_id"].value_counts()
+
+        def _top(counts, want, k):
+            out = []
+            for pid in counts.index:
+                if pid is None or pd.isna(pid) or len(rmap) == 0 or pid not in rmap.index:
+                    continue
+                pos = str(rmap.at[pid, "position"] or "").upper()
+                if pos in want:
+                    out.append(pid)
+                if len(out) >= k:
+                    break
+            return out
+
+        wrs = _top(tgt, {"WR"}, 4)
+        tes = _top(tgt, {"TE"}, 2)
+        rbs = _top(rush, {"RB", "FB"}, 2)
+        slots = {}
+        names = {}
+        for i, pid in enumerate(wrs):
+            slots[f"WR{i+1}"] = pid; names[str(pid)] = _lname(pid)
+        for i, pid in enumerate(tes):
+            slots[f"TE{i+1}"] = pid; names[str(pid)] = _lname(pid)
+        for i, pid in enumerate(rbs):
+            slots[f"RB{i+1}"] = pid; names[str(pid)] = _lname(pid)
+        return slots, names
+
+    out = {}
+    for team, dt in d.groupby("posteam"):
+        if team not in TEAMS:
+            continue
+        slots, names = _slots_for_team(dt)
+        pass_all = dt[(dt["pass"] == 1) & dt["route"].notna() & (dt["route"] != "")]
+
+        # season-level route fallback by player id
+        season_routes = {}
+        for slot, pid in slots.items():
+            g = pass_all[pass_all["receiver_player_id"] == pid]
+            if len(g):
+                vc = g["route"].value_counts()
+                season_routes[pid] = [[str(k), round(100 * float(v) / len(g), 1)] for k, v in vc.head(9).items()]
+
+        pool = {(p, a): gg for (p, a), gg in dt.groupby(["p", "align"])}
+
+        def assign_for(slot, pid, pcode, align):
+            if pid is None:
+                return {"slot": slot, "name": "—", "routes": []}
+            gg = pool.get((pcode, align))
+            fr = []
+            if gg is not None and len(gg):
+                pg = gg[(gg["pass"] == 1) & (gg["receiver_player_id"] == pid) & gg["route"].notna() & (gg["route"] != "")]
+                if len(pg) >= 2:
+                    vc = pg["route"].value_counts()
+                    fr = [[str(k), round(100 * float(v) / len(pg), 1)] for k, v in vc.head(9).items()]
+            if not fr:
+                fr = season_routes.get(pid, [])
+            return {"slot": slot, "name": names.get(str(pid), _lname(pid)), "routes": fr}
+
+        def summarize(dfv):
+            if dfv is None or not len(dfv):
+                return {"total": 0, "groups": []}
+            total = int(len(dfv))
+            groups = []
+            for (pcode, align, b, t, w, ol), g in dfv.groupby(["p", "align", "backs", "te", "wr", "ol"]):
+                n = int(len(g))
+                if n < min_group_plays:
+                    continue
+                gp = g[g["pass"] == 1]
+                gr = g[g["pass"] == 0]
+                runs = g[(g["rush_attempt"] == 1) & (g["qb_scramble"] == 0) & g["lane"].notna()]
+                lanes = []
+                for lane, lg in runs.groupby("lane"):
+                    lanes.append([str(lane), int(len(lg)), round(float(lg["epa"].mean()), 2)])
+                lanes.sort(key=lambda x: -x[1])
+                assigns = []
+                for i in range(int(w)):
+                    assigns.append(assign_for(f"WR{i+1}", slots.get(f"WR{i+1}"), pcode, align))
+                for i in range(int(t)):
+                    assigns.append(assign_for(f"TE{i+1}", slots.get(f"TE{i+1}"), pcode, align))
+                for i in range(int(b)):
+                    assigns.append(assign_for(f"RB{i+1}", slots.get(f"RB{i+1}"), pcode, align))
+                groups.append({
+                    "p": str(pcode),
+                    "align": str(align),
+                    "name": _scheme_name_from_group(int(b), int(t), str(align), int(ol)),
+                    "backs": int(b), "te": int(t), "wr": int(w), "ol": int(ol),
+                    "n": n,
+                    "share": round(100 * n / total, 1),
+                    "pass_rate": round(100 * float(g["pass"].mean()), 1),
+                    "epa": round(float(g["epa"].mean()), 3),
+                    "succ": round(100 * float(g["success"].mean()), 1),
+                    "np": int(len(gp)),
+                    "ep": (None if not len(gp) else round(float(gp["epa"].mean()), 3)),
+                    "sp": (None if not len(gp) else round(100 * float(gp["success"].mean()), 1)),
+                    "nr": int(len(gr)),
+                    "er": (None if not len(gr) else round(float(gr["epa"].mean()), 3)),
+                    "sr": (None if not len(gr) else round(100 * float(gr["success"].mean()), 1)),
+                    "assigns": assigns,
+                    "lanes": lanes[:3],
+                })
+            groups.sort(key=lambda x: -x["n"])
+            return {"total": total, "groups": groups[:max_groups]}
+
+        views = {
+            "all": summarize(dt),
+            "pa": summarize(dt[dt["is_play_action"] == True]),  # noqa: E712
+            "motion": summarize(dt[dt["is_motion"] == True]),   # noqa: E712
+            "nohuddle": summarize(dt[dt["is_no_huddle"] == True]),  # noqa: E712
+            "down1": summarize(dt[dt["down"] == 1]),
+            "down2": summarize(dt[dt["down"] == 2]),
+            "down3": summarize(dt[dt["down"] == 3]),
+            "down4": summarize(dt[dt["down"] == 4]),
+        }
+        views = {k: v for k, v in views.items() if v.get("total", 0) > 0 and len(v.get("groups", [])) > 0}
+        if not views:
+            continue
+        out[team] = {
+            "team": team,
+            "slots": {k: str(v) for k, v in slots.items()},
+            "names": names,
+            "views": views,
+        }
+    return out
 
 # ── Seed block builder (opt-in `--nflverse` addition, non-destructive) ────────
 # Emits a parallel `nflverse` block shaped like the existing Sharp (team values/ranks) and
@@ -970,7 +1668,7 @@ def build_nflverse_season(season):
     # Personnel: base 3WR/multi-TE (coverage_personnel) + 11/12/21 + multi-RB grouping rates.
     if off_pers is not None:
         pers = pers.join(off_pers)
-    pers_cols = ["11 Personnel", "12 Personnel", "21 Personnel", "3WR Rate", "Multi TE Rate", "Multi RB Rate"]
+    pers_cols = ["11 Personnel", "12 Personnel", "13 Personnel", "21 Personnel", "3WR Rate", "Multi TE Rate", "Multi RB Rate"]
     pers_cols = [c for c in pers_cols if c in pers.columns]
     # Defensive tendencies: FTN blitz + personnel sub-package/nickel/dime+.
     dtend = None
@@ -983,7 +1681,7 @@ def build_nflverse_season(season):
     team = {
         "offense": _shape_team(off),
         "defense": _shape_team(dfn, lower_better=_DEF_LOWER_BETTER),
-        "tendencies": _shape_team(ext[tend_cols]),
+        "tendencies": _shape_team(ext[tend_cols], lower_better=["Drop Rate"]),
         "pace": _shape_team(team_pace(season), lower_better=["Sec/Play", "Sec/Play Last 5"]),
         "personnel": _shape_team(pers[pers_cols]),
         "coverage": _shape_team(cover),   # man/zone solid; MOFC/MOFO validated ρ≈0.8 vs Sharp
@@ -1008,7 +1706,16 @@ def build_nflverse_season(season):
         "WR": _players_with_refs(sumer_wr, season, _REF_PASS),
         "TE": _players_with_refs(sumer_te, season, _REF_PASS),
     }
-    return {"team": team, "players": players, "routes": route_trees(season)}
+    return {
+        "team": team,
+        "players": players,
+        "routes": route_trees(season),
+        "qb_passing": qb_passing_zones(season),
+        "rb_fan": rb_rushing_fans(season),
+        "ol_players": _ol_grades_by_player(),
+        "def_weekly": defensive_weekly_players(season),
+        "coaching_scheme": coaching_scheme(season),
+    }
 
 def build_nflverse(seasons):
     """Build the additive nflverse block for the given seasons (skips failures gracefully)."""

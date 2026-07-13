@@ -289,10 +289,17 @@ let pcardToken = 0;           // bumped on each source switch so a slow in-fligh
 async function loadPlayerCardData(pid, pos, team){
   const posc = pos || (sleeperPlayers&&sleeperPlayers[pid]&&sleeperPlayers[pid].pos) || 'QB';
   const isSkill = ['QB','RB','WR','TE'].includes(posc);
-  pcardState = {pid, posc, team, isSkill};
+  const isOl = ['LT','LG','C','RG','RT','OL','G','T','OT','OG'].includes(posc);
+  const isDefense = ['DE','DT','NT','DL','LB','MLB','OLB','ILB','WLB','SLB','DB','CB','S','FS','SS'].includes(posc);
+  pcardState = {pid, posc, team, isSkill, isOl, isDefense};
   // Rookies have no NFL game log yet → default to their college stats; everyone else to the pros.
-  pcardStatsMode = isRookiePlayer(pid) ? 'college' : 'pro';
+  pcardStatsMode = (isOl && typeof pcardOlAvailable==='function' && pcardOlAvailable(pid))
+    ? 'olgrades'
+    : (isRookiePlayer(pid) ? 'college' : 'pro');
   pcardRouteSeason = null;        // reset the Routes-tab season for the new player
+  pcardQbPassingSeason = null;    // reset the Passing Chart season for the new player
+  pcardRbFanSeason = null;        // reset the Rushing Fan season for the new player
+  pcardOlSeason = null;           // reset the OL Grades season for the new player
   loadPcardDraft(pid);            // draft summary fills the hero banner (independent of stat source)
   renderPcardStatTabs();
   pcardLoadStats(pcardStatsMode);
@@ -315,7 +322,13 @@ function renderPcardStatTabs(){
   // The Routes tab only appears for skill players with baked nflverse route data.
   const routesTab = (pcardState.isSkill && typeof pcardRoutesAvailable==='function' && pcardRoutesAvailable(pcardState.pid))
     ? tab('routes','Routes') : '';
-  el.innerHTML = tab('pro','NFL') + tab('college','College') + routesTab;
+  const passingTab = (pcardState.posc==='QB' && typeof pcardQbPassingAvailable==='function' && pcardQbPassingAvailable(pcardState.pid))
+    ? tab('passing','Passing Chart') : '';
+  const rbFanTab = (pcardState.posc==='RB' && typeof pcardRbFanAvailable==='function' && pcardRbFanAvailable(pcardState.pid))
+    ? tab('rbfan','Rushing Fan') : '';
+  const olTab = (pcardState.isOl && typeof pcardOlAvailable==='function' && pcardOlAvailable(pcardState.pid))
+    ? tab('olgrades','OL Grades') : '';
+  el.innerHTML = tab('pro','NFL') + tab('college','College') + passingTab + rbFanTab + olTab + routesTab;
 }
 // Switch the card's stat source and reload the body from the matching feed.
 function setPcardStatsMode(mode){
@@ -343,8 +356,57 @@ function pcardLoadStats(mode){
     body.innerHTML = renderPcardRoutes(pid);
     return;
   }
+  if(mode==='passing'){
+    if(typeof renderPcardQbPassing==='function'){
+      body.innerHTML = renderPcardQbPassing(pid);
+      return;
+    }
+    body.innerHTML = `<div class="pcard-loading">Passing chart unavailable in this build.</div>`;
+    return;
+  }
+  if(mode==='rbfan'){
+    if(typeof renderPcardRbFan==='function'){
+      body.innerHTML = renderPcardRbFan(pid);
+      return;
+    }
+    body.innerHTML = `<div class="pcard-loading">Rushing fan unavailable in this build.</div>`;
+    return;
+  }
+  if(mode==='olgrades'){
+    if(typeof renderPcardOlGrades==='function'){
+      body.innerHTML = renderPcardOlGrades(pid);
+      return;
+    }
+    body.innerHTML = `<div class="pcard-loading">OL grades unavailable in this build.</div>`;
+    return;
+  }
+  if(mode==='defweekly'){
+    if(typeof renderPcardDefWeekly==='function'){
+      body.innerHTML = renderPcardDefWeekly(pid);
+      return;
+    }
+    body.innerHTML = `<div class="pcard-loading">Defensive weekly data unavailable in this build.</div>`;
+    return;
+  }
   if(mode==='college'){
     return loadEspnCardData(pid, posc, body, {league:'college-football', def:!isSkill});
+  }
+  if(mode==='pro' && pcardState.isDefense && typeof pcardDefWeeklyAvailable==='function' && pcardDefWeeklyAvailable(pid) && typeof renderPcardDefWeekly==='function'){
+    body.innerHTML = renderPcardDefWeekly(pid);
+    return;
+  }
+  // Defensive weekly logs live in a lazy-loaded nflverse sidecar. If it isn't in memory yet
+  // (hosted first-open), fetch it, then re-render this tab. Falls through to the ESPN gamelog
+  // only if the sidecar genuinely has no data for this player.
+  if(mode==='pro' && pcardState.isDefense && typeof ensureNflverseSection==='function'
+     && !nflverseSectionReady('def_weekly')){
+    body.innerHTML = `<div class="pcard-loading">Loading defensive weekly stats…</div>`;
+    const tok = pcardToken;
+    ensureNflverseSection('def_weekly').then(()=>{
+      if(tok!==pcardToken || !pcardOpen || !pcardState || pcardState.pid!==pid) return;
+      pcardLoadStats(mode);
+    });
+    return;
   }
   if(!isSkill){
     return loadEspnCardData(pid, posc, body, {league:'nfl', def:true});

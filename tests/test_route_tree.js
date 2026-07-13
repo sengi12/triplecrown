@@ -9,7 +9,7 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   ecrNormName, ROUTE_TREE_SHAPES, ROUTE_TREE_ORDER, _routeHeat,
-  pcardRouteSeasons, pcardRoutesAvailable, routeTreeSVG, routeTreeList, renderPcardRoutes, setPcardRouteSeason,
+  pcardRouteSeasons, pcardRoutesAvailable, routeTreeSVG, routeTreeList, renderPcardRoutes, setPcardRouteSeason, setPcardRouteMetric,
   setNflverse:(n)=>{NFLVERSE=n;}, setPlayers:(p)=>{sleeperPlayers=p;},
   setPcardState:(s)=>{pcardState=s;}, setPcardOpen:()=>{pcardOpen=true;},
   getRouteSeason:()=>pcardRouteSeason, resetRouteSeason:()=>{pcardRouteSeason=null;},
@@ -21,10 +21,14 @@ const NFLVERSE={
   "2025":{routes:{ "jamarr chase":{pos:"WR", total:100, tree:{
     "HITCH/CURL":20,"GO":15,"DEEP OUT":12,"IN/DIG":9,"SCREEN":8,"POST":7,"CORNER":6,
     "SLANT":10,"CROSS":13,"QUICK OUT":5,"SWING":5,"TEXAS/ANGLE":3 },
-    route_tds:{"HITCH/CURL":2,"GO":4,"DEEP OUT":1,"SLANT":1,"CROSS":3}, total_tds:11 }}},
+    route_tds:{"HITCH/CURL":2,"GO":4,"DEEP OUT":1,"SLANT":1,"CROSS":3}, total_tds:11,
+    route_rec:{"HITCH/CURL":11,"GO":7,"DEEP OUT":6,"IN/DIG":5,"SCREEN":7,"POST":4,"CORNER":3,"SLANT":6,"CROSS":8,"QUICK OUT":3,"SWING":4,"TEXAS/ANGLE":2}, total_rec:66,
+    route_yds:{"HITCH/CURL":120,"GO":330,"DEEP OUT":140,"IN/DIG":110,"SCREEN":64,"POST":130,"CORNER":95,"SLANT":92,"CROSS":176,"QUICK OUT":33,"SWING":28,"TEXAS/ANGLE":31}, total_yds:1349 }}},
   "2024":{routes:{ "jamarr chase":{pos:"WR", total:80, tree:{
     "HITCH/CURL":25,"GO":20,"DEEP OUT":20,"SLANT":15 },
-    route_tds:{"GO":2,"SLANT":1}, total_tds:3 }}},
+    route_tds:{"GO":2,"SLANT":1}, total_tds:3,
+    route_rec:{"HITCH/CURL":12,"GO":8,"DEEP OUT":9,"SLANT":7}, total_rec:36,
+    route_yds:{"HITCH/CURL":110,"GO":260,"DEEP OUT":170,"SLANT":88}, total_yds:628 }}},
   "2023":{routes:{}},
 };
 const PLAYERS={ "1":{name:"Ja'Marr Chase",pos:"WR"}, "2":{name:"Nobody Here",pos:"WR"} };
@@ -76,12 +80,17 @@ app.setPcardState({pid:'1', posc:'WR', isSkill:true});
 const body=app.renderPcardRoutes('1');
 chk('defaults to latest season (2025 active)', body.includes('rt-season-btn active') && body.includes('>2025</button>'));
 chk('body has two season buttons', (body.match(/rt-season-btn/g)||[]).length===2);
+chk('body has metric toggle buttons', (body.match(/rt-metric-btn/g)||[]).length===3);
 chk('body embeds svg + list', body.includes('<svg') && body.includes('rt-list'));
 chk('summary includes total route TDs', body.includes('11 TD on charted routes'));
 chk('default selected season = 2025', String(app.getRouteSeason())==='2025');
+app.setPcardRouteMetric('yds');
+chk('metric toggle updates summary to yards', app.getBody().includes('1349 yd charted-route yards'));
+chk('metric toggle updates list values to yard totals', app.getBody().includes('330 yd'));
 app.setPcardRouteSeason('2024');
 chk('switch updates selected season', String(app.getRouteSeason())==='2024');
 chk('re-render wrote 2024 tree to body', app.getBody().includes('>2024</button>') && app.getBody().includes('<svg'));
+app.setPcardRouteMetric('td');
 chk('season switch updates TD summary', app.getBody().includes('3 TD on charted routes'));
 
 console.log('\nRESULT:', fail===0 ? `PASS (${pass} checks)` : `FAIL (${fail}/${pass+fail})`);

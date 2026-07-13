@@ -9,23 +9,24 @@ const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   renderTeamAdvanced, renderSharpLeague, setSharpCategory, setSharpTable, showSharpLeague,
   sortSOSBy, fmtSharpVal, sharpColIsPct, teamDisplayName, ordinal, tabBar,
-  setSharp:(s)=>{SHARP=s;}, setSOS:(s)=>{SOS=s;}, setNames:(n)=>{TEAM_NAMES=n;},
+  setNflverse:(n)=>{NFLVERSE=n;}, setSharpSeason:(y)=>{SHARP_SEASON=y;},
+  setSOS:(s)=>{SOS=s;}, setNames:(n)=>{TEAM_NAMES=n;},
   setTeam:(t)=>{currentTeam=t;}, setPhaseVar:(p)=>{currentPhase=p;},
   getContent:()=>document.getElementById('content').innerHTML,
   getSharpTable:()=>sharpTable, getCategory:()=>sharpCategory };
 `)();
 
 // Offense + Defense tables + SOS + names
-const SHARP={
-  offense:{title:'Offensive Metrics',category:'offense',pct_cols:['Explosive Play Rate'],columns:['EPA/Play','Explosive Play Rate'],teams:{
+const NFLV={'2025':{team:{
+  offense:{columns:['EPA/Play','Explosive Play Rate'],teams:{
     CIN:{values:{'EPA/Play':0.1,'Explosive Play Rate':6.5},ranks:{'EPA/Play':10,'Explosive Play Rate':8}},
     CHI:{values:{'EPA/Play':-0.05,'Explosive Play Rate':5.0},ranks:{'EPA/Play':22,'Explosive Play Rate':20}},
   }},
-  defensive_line:{title:'Defensive Line',category:'defense',pct_cols:['Pressure Rate'],columns:['Pressure Rate','Sacks'],teams:{
+  defensive_line:{columns:['Pressure Rate','Sacks'],teams:{
     CIN:{values:{'Pressure Rate':22.0,'Sacks':40},ranks:{'Pressure Rate':15,'Sacks':12}},
     CHI:{values:{'Pressure Rate':25.0,'Sacks':48},ranks:{'Pressure Rate':5,'Sacks':4}},
   }},
-};
+}}};
 const SOS={
   CIN:{rank:3,win_total:9.5,name:'Cincinnati Bengals'},
   CHI:{rank:27,win_total:9.5,name:'Chicago Bears'},
@@ -39,8 +40,8 @@ const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.lo
 console.log('=== TEST 1: % on rate columns, plain otherwise ===');
 chk(app.fmtSharpVal(6.5,true)==='6.5%','rate value gets %');
 chk(app.fmtSharpVal(40,false)==='40','non-rate value no %');
-chk(app.sharpColIsPct(SHARP.defensive_line,'Pressure Rate')===true,'Pressure Rate flagged as pct');
-chk(app.sharpColIsPct(SHARP.defensive_line,'Sacks')===false,'Sacks not pct');
+chk(app.sharpColIsPct({pct_cols:['Pressure Rate']},'Pressure Rate')===true,'Pressure Rate flagged as pct');
+chk(app.sharpColIsPct({pct_cols:['Pressure Rate']},'Sacks')===false,'Sacks not pct');
 
 console.log('\n=== TEST 2: full team name + ordinal ===');
 app.setNames(NAMES);
@@ -49,7 +50,7 @@ chk(app.teamDisplayName('XXX')==='XXX','falls back to code');
 chk(app.ordinal(27)==='27th' && app.ordinal(1)==='1st' && app.ordinal(3)==='3rd','ordinals');
 
 console.log('\n=== TEST 3: per-team header shows full name + SOS ===');
-app.setSharp(SHARP); app.setSOS(SOS); app.setTeam('CHI'); app.setPhaseVar('QB');
+app.setSharpSeason(2025); app.setNflverse(NFLV); app.setSOS(SOS); app.setTeam('CHI'); app.setPhaseVar('QB');
 // renderContent path builds the header; call renderTeamAdvanced to check SOS strip + sections
 app.setNames({CIN:'Cincinnati Bengals',CHI:'Chicago Bears',DET:'Detroit Lions',DAL:'Dallas Cowboys'});
 const advMissing=app.renderTeamAdvanced('DAL');
@@ -62,7 +63,7 @@ chk(adv.includes('🛡️ Defense'),'Defense section head');
 chk(adv.includes('%'),'percentage rendered somewhere (rate col)');
 
 console.log('\n=== TEST 4: league-wide Offense/Defense category toggle ===');
-app.setPhaseVar('AdvancedLeague'); app.setSharp(SHARP); app.setSOS(SOS);
+app.setPhaseVar('AdvancedLeague'); app.setNflverse(NFLV); app.setSOS(SOS);
 app.setSharpCategory('offense');
 let html=app.getContent();
 chk(html.includes('Offensive Metrics'),'offense category shows offense table');
@@ -70,7 +71,7 @@ chk(!html.includes('Defensive Line')||html.indexOf('Defensive Line')>html.indexO
 app.setSharpCategory('defense');
 html=app.getContent();
 chk(app.getCategory()==='defense','switched to defense');
-chk(html.includes('Defensive Line'),'defense table shown');
+chk(html.includes('Pass Rush & Run D'),'defense table shown');
 chk(html.includes('Pressure Rate'),'defensive columns shown');
 chk(html.includes('%'),'defensive rate col shows %');
 

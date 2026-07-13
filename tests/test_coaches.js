@@ -19,7 +19,7 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   fetchHeadCoach, hcIsPlaycaller, renderTeamAdvanced, coordCarriesOver, coordInlineLabel, coordFor,
-  setCoord:(c)=>{COORDINATORS=c;}, setPlaycallers:(p)=>{HC_PLAYCALLERS=p;}, setSharp:(s)=>{SHARP=s;},
+  setCoord:(c)=>{COORDINATORS=c;}, setPlaycallers:(p)=>{HC_PLAYCALLERS=p;}, setNflverse:(n)=>{NFLVERSE=n;},
   setNames:(n)=>{TEAM_NAMES=n;}, setSharpSeason:(y)=>{SHARP_SEASON=y;},
   getHC:(t)=>headCoaches[t], setHC:(t,v)=>{headCoaches[t]=v;} };
 `)();
@@ -28,11 +28,11 @@ let pass=0,total=0;
 const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
 const NAMES={CIN:'Cincinnati Bengals',BAL:'Baltimore Ravens',CHI:'Chicago Bears',LAC:'Los Angeles Chargers',MIA:'Miami Dolphins'};
-const SHARP={
-  offense:{title:'Offensive Metrics',category:'offense',pct_cols:[],columns:['EPA/Play'],teams:{CHI:{values:{'EPA/Play':0.1},ranks:{'EPA/Play':8}},MIA:{values:{'EPA/Play':0.05},ranks:{'EPA/Play':14}}}},
-  tendencies:{title:'Tendencies',category:'offense',pct_cols:['Play Action Rate'],columns:['Play Action Rate'],teams:{CHI:{values:{'Play Action Rate':28},ranks:{'Play Action Rate':5}},MIA:{values:{'Play Action Rate':22},ranks:{'Play Action Rate':18}}}},
-  personnel:{title:'Personnel',category:'offense',pct_cols:['3WR Rate'],columns:['3WR Rate'],teams:{CHI:{values:{'3WR Rate':70},ranks:{'3WR Rate':10}},MIA:{values:{'3WR Rate':82},ranks:{'3WR Rate':2}}}},
-};
+const NFLV={'2025':{team:{
+  offense:{columns:['EPA/Play'],teams:{CHI:{values:{'EPA/Play':0.1},ranks:{'EPA/Play':8}},MIA:{values:{'EPA/Play':0.05},ranks:{'EPA/Play':14}}}},
+  tendencies:{columns:['Play Action Rate'],teams:{CHI:{values:{'Play Action Rate':28},ranks:{'Play Action Rate':5}},MIA:{values:{'Play Action Rate':22},ranks:{'Play Action Rate':18}}}},
+  personnel:{columns:['3WR Rate'],teams:{CHI:{values:{'3WR Rate':70},ranks:{'3WR Rate':10}},MIA:{values:{'3WR Rate':82},ranks:{'3WR Rate':2}}}},
+}}};
 const COORD={
   CIN:{offense:{name:'Dan Pitcher',since:2024,is_new:false,internal:true,carryover:true,prev_code:'CIN',prev_role:'quarterbacks coach'}},
   BAL:{offense:{name:'Declan Doyle',since:2026,is_new:true,internal:false,carryover:false,prev_code:'CHI',prev_role:'offensive coordinator',prev_years:'2025'}},
@@ -67,9 +67,10 @@ app.setPlaycallers({CIN:'Zac Taylor'});
   const balLbl=app.coordInlineLabel(COORD.BAL.offense,'offensive');
   chk(balLbl.includes('Declan Doyle')&&balLbl.includes('NEW'),'Ravens: name + NEW tag');
   chk(balLbl.includes('Chicago Bears'),'Ravens: shows former team');
+  chk(balLbl.includes("openTeamCoachingScheme('BAL')") || balLbl.includes('openTeamCoachingScheme'), 'Ravens: coordinator label opens coaching scheme');
 
   console.log('\n=== TEST 5: carryover block pulls former team stats ===');
-  app.setSharp(SHARP); app.setSharpSeason(2025);
+  app.setNflverse(NFLV); app.setSharpSeason(2025);
   const balHtml=app.renderTeamAdvanced('BAL');
   chk(balHtml.includes('New coordinator scheme carryover'),'carryover block present');
   chk(balHtml.includes('Declan Doyle'),'shows new OC name');
@@ -88,6 +89,7 @@ app.setPlaycallers({CIN:'Zac Taylor'});
   const cinHtml=app.renderTeamAdvanced('CIN');
   chk(!cinHtml.includes('New coordinator scheme carryover'),'no carryover block for internal promotion');
   chk(cinHtml.includes('Dan Pitcher'),'still shows OC name inline');
+  chk(cinHtml.includes("openTeamCoachingScheme('CIN')") || cinHtml.includes('openTeamCoachingScheme'), 'advanced section embeds coaching scheme trigger');
 
   console.log('\n=== TEST 8: season labels ===');
   chk(cinHtml.includes('2025 season'),'advanced note shows 2025 season');

@@ -112,17 +112,31 @@ function teamHasCarryover(team){
   return coordCarriesOver(o) || coordCarriesOver(d);
 }
 // Short inline label for a coordinator next to a section head.
-function coordInlineLabel(c, sideWord){
-  if(!c) return '';
-  if(!c.name) return '';
-  if(coordCarriesOver(c)){
-    const role = c.prev_role || 'coordinator';
-    return `<span class="coord-inline coord-new" title="New ${sideWord} coordinator for ${PROJ_SEASON}">
-      ${sideWord==='offensive'?'OC':'DC'}: <b>${c.name}</b> <span class="coord-new-tag">NEW · from ${teamDisplayName(c.prev_code)} ${role}</span></span>`;
+function coordInlineLabel(a,b,c){
+  // Backward-compatible signature: (coord, sideWord) or (team, coord, sideWord)
+  let team = (typeof a==='string' && b && typeof b==='object') ? a : (c || currentTeam);
+  const coord = (typeof a==='string' && b && typeof b==='object') ? b : a;
+  const sideWord = (typeof a==='string' && b && typeof b==='object') ? c : b;
+  // Legacy callers may pass only the coordinator object; infer the team by object identity.
+  if(!team && coord && COORDINATORS){
+    for(const code in COORDINATORS){
+      const row = COORDINATORS[code]||{};
+      if(row.offense===coord || row.defense===coord){ team = code; break; }
+    }
+  }
+  const attrs = team
+    ? `class="coord-inline scheme-open" role="button" tabindex="0" title="Open coaching scheme visualization" onclick="openTeamCoachingScheme('${team}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${team}');}"`
+    : `class="coord-inline"`;
+  if(!coord) return '';
+  if(!coord.name) return '';
+  if(coordCarriesOver(coord)){
+    const role = coord.prev_role || 'coordinator';
+    return `<span ${attrs}>
+      ${sideWord==='offensive'?'OC':'DC'}: <b>${coord.name}</b> <span class="coord-new-tag">NEW · from ${teamDisplayName(coord.prev_code)} ${role}</span></span>`;
   }
   // carryover/internal: last season's stats apply directly
-  const since = c.since?` · since ${c.since}`:'';
-  return `<span class="coord-inline">${sideWord==='offensive'?'OC':'DC'}: <b>${c.name}</b>${since}</span>`;
+  const since = coord.since?` · since ${coord.since}`:'';
+  return `<span ${attrs}>${sideWord==='offensive'?'OC':'DC'}: <b>${coord.name}</b>${since}</span>`;
 }
 
 function renderTeamAdvanced(team){
@@ -133,14 +147,7 @@ function renderTeamAdvanced(team){
       <div class="empty-title">No advanced stats loaded</div>
       <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed to populate advanced team stats.</div></div>`;
   }
-  // Curated (Warren Sharp) vs nflverse-computed, same toggle as the league-wide view.
   const SRC=activeSharp();
-  const nfvOn = advSource==='nflverse';
-  const srcToggle = nflverseSharpAvailable()
-    ? `<div class="format-toggle" style="margin-left:auto">
-         <button class="format-btn ${!nfvOn?'active':''}" onclick="setAdvSource('scraped')" title="Curated season advanced stats">Curated</button>
-         <button class="format-btn ${nfvOn?'active':''}" onclick="setAdvSource('nflverse')" title="Computed from nflverse play-by-play">nflverse</button>
-       </div>` : '';
   const cardFor=(key, srcTeam)=>{
     const tbl=SRC[key]; if(!tbl) return '';
     const useTeam = srcTeam||team;
@@ -177,16 +184,15 @@ function renderTeamAdvanced(team){
   </div>` : '';
   // Carryover coordinators → a highlighted section that pulls the former team's scheme stats.
   const carryBlock = renderCoordinatorCarryover(team, cardFor);
-  const srcLabel = nfvOn ? 'nflverse (computed from play-by-play)' : 'Curated season stats';
+  const srcLabel = 'nflverse (computed from play-by-play)';
   return `<div class="sr-team-wrap">
     <div class="sr-note">📊 <b>Advanced team stats</b> · ${srcLabel} · <b>${SHARP_SEASON} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
-      ${srcToggle}
       <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="showSharpLeague()">🌐 View league-wide tables →</button></div>
     ${sosStrip}
     ${carryBlock}
-    ${section('🏈 Offense', offKeys, coordInlineLabel(oc,'offensive'))}
-    ${section('🛡️ Defense', defKeys, coordInlineLabel(dc,'defensive'))}
-    <div class="sr-source">${SHARP_SEASON} season · ${nfvOn?'computed from nflverse play-by-play (nflfastR)':'coordinators via Wikipedia'} — for informational use.</div>
+    ${section('🏈 Offense', offKeys, coordInlineLabel(team,oc,'offensive'))}
+    ${section('🛡️ Defense', defKeys, coordInlineLabel(team,dc,'defensive'))}
+    <div class="sr-source">${SHARP_SEASON} season · computed from nflverse play-by-play (nflfastR) — for informational use.</div>
   </div>`;
 }
 

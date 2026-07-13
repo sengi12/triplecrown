@@ -71,15 +71,15 @@ function renderContent(){
   if(headCoaches[t]===undefined) fetchHeadCoach(t);
   const hc=headCoaches[t];
   const hcCaller = hcIsPlaycaller(t);
-  const hcLine = hc ? `<div class="team-hc">
+  const hcLine = hc ? `<div class="team-hc scheme-open" role="button" tabindex="0" title="Open coaching scheme visualization" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">
       ${hc.headshot?`<img src="${hc.headshot}" class="team-hc-img" onerror="this.style.display='none'">`:''}
       <span class="team-hc-label">HC</span> <b>${hc.name}</b>${hc.experience!=null?` · yr ${hc.experience}`:''}
       ${hcCaller?`<span class="hc-caller" title="This head coach is the team's primary offensive playcaller — the OC is less pivotal for scheme continuity.">🎧 Primary playcaller</span>`:''}
     </div>` : (headCoaches[t]===null?'':`<div class="team-hc team-hc-loading">Loading head coach…</div>`);
   document.getElementById('content').innerHTML=`
     <div class="team-header">
-      <img src="${NFL_LOGO(t)}" class="team-logo-lg" alt="${t}" onerror="this.style.opacity='.25'">
-      <div><div class="team-abbr team-fullname">${teamDisplayName(t)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}</div>
+      <img src="${NFL_LOGO(t)}" class="team-logo-lg scheme-open" alt="${t}" title="Open coaching scheme visualization" onclick="openTeamCoachingScheme('${t}')" onerror="this.style.opacity='.25'">
+      <div><div class="team-abbr team-fullname scheme-open" role="button" tabindex="0" title="Open coaching scheme visualization" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">${teamDisplayName(t)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}</div>
         <div class="team-qb-name">${(state.qbs&&state.qbs.length)?state.qbs.map(q=>q.name).join(' / '):'No projected QB'}${recStr?` · ${recStr}`:''}</div>
         ${hcLine}
         ${sosBadge?`<div class="team-sos-row">${sosBadge}</div>`:''}</div>
@@ -90,14 +90,15 @@ function renderContent(){
       </div>
     </div>
     ${seasonBanner}
-    <div class="phase-tabs">${tabs}</div>${body}`;
+    <div class="phase-tabs">${tabs}</div>${body}
+    <div id="schemeOverlayHost"></div>`;
   if(currentPhase==='Passing') initPie(t,'pass');
   else if(currentPhase==='Rushing') initPie(t,'rush');
   initSliders();
   updateUndoButton();
 }
 function tabBar(){
-  const hasSharp = (SHARP && Object.keys(SHARP).length>0) || (SOS && Object.keys(SOS).length>0);
+  const hasSharp = (typeof sharpHasData==='function' ? sharpHasData() : false) || (SOS && Object.keys(SOS).length>0);
   const tabs=[['QB','⚡ QB'],['Passing','🎯 Targets'],['Rushing','💨 Rushing']];
   if(hasSharp) tabs.push(['Advanced','📊 Advanced Stats']);
   // "Roster Changes" appears when the currently-selected team has Spotrac data.

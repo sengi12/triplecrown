@@ -343,7 +343,7 @@ async function tryAutoLoadSeed(){
     if(j.sharp_season){ SHARP_SEASON=j.sharp_season; got=true; }
     if(j.sumer){ SUMER=j.sumer; SUMER_SEASONS=j.sumer_seasons||Object.keys(j.sumer); got=true; }
     if(j.ktc){ KTC=j.ktc; got=true; }   // KeepTradeCut dynasty player-page slugs (player-card links)
-    if(j.nflverse){ NFLVERSE=j.nflverse; got=true; }   // nflverse advanced metrics (opt-in A/B source)
+    if(j.nflverse){ NFLVERSE=j.nflverse; if(typeof resetNflverseLazy==='function') resetNflverseLazy(); got=true; }   // nflverse advanced metrics (opt-in A/B source; heavy sections lazy-load)
     // Only adopt prebuilt projections/history if present and non-trivial.
     if(j.seed && Object.keys(j.seed).length){
       SEED=j.seed; projSeed=SEED; seasonStatsCache={proj:SEED}; rosterMergedTeams.clear();

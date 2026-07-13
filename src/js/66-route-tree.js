@@ -44,6 +44,44 @@ function _routeTreeKey(k){
 }
 
 let pcardRouteSeason = null;   // selected season in the Routes tab (reset per card)
+let pcardRouteMetric = 'td';   // selected metric in Routes tab (td|yds|rec)
+
+const ROUTE_TREE_METRICS = {
+  td:  {label:'TD share',      short:'TD',         map:'route_tds', total:'total_tds', digits:0, unit:' TD', summary:'on charted routes'},
+  yds: {label:'Yardage share', short:'Yards',      map:'route_yds', total:'total_yds', digits:0, unit:' yd', summary:'charted-route yards'},
+  rec: {label:'Reception share',short:'Receptions',map:'route_rec', total:'total_rec', digits:0, unit:' rec',summary:'charted-route receptions'},
+};
+
+function _routeMetricKnown(rt, metric){
+  const m=ROUTE_TREE_METRICS[metric]||ROUTE_TREE_METRICS.td;
+  const map=rt&&rt[m.map];
+  if(map && Object.keys(map).length>0) return true;
+  if(rt && rt[m.total]!=null) return true;
+  return false;
+}
+
+function _routeMetricValueByRaw(rt, rawKey, metric){
+  const m=ROUTE_TREE_METRICS[metric]||ROUTE_TREE_METRICS.td;
+  const map=rt&&rt[m.map];
+  if(map && map[rawKey]!=null) return +map[rawKey]||0;
+  return null;
+}
+
+function _routeMetricTotal(rt, metric, fallbackMap){
+  const m=ROUTE_TREE_METRICS[metric]||ROUTE_TREE_METRICS.td;
+  if(rt && rt[m.total]!=null) return +rt[m.total]||0;
+  const map=rt&&rt[m.map];
+  if(map && Object.keys(map).length) return Object.values(map).reduce((a,b)=>a+(+b||0),0);
+  if(fallbackMap) return Object.values(fallbackMap).reduce((a,b)=>a+b,0);
+  return 0;
+}
+
+function _fmtRouteMetricValue(v, metric){
+  if(v==null) return '—';
+  const m=ROUTE_TREE_METRICS[metric]||ROUTE_TREE_METRICS.td;
+  const n=(m.digits>0)?(+v).toFixed(m.digits):String(Math.round(+v||0));
+  return `${n}${m.unit}`;
+}
 
 // Seasons (desc) for which this player has a baked route tree.
 function pcardRouteSeasons(normName){
@@ -67,28 +105,28 @@ function _routeHeat(ratio){
   return `hsl(${hue},85%,60%)`;
 }
 
-function _routeTdKnown(rt){
-  return rt && (rt.total_tds!=null || (rt.route_tds && Object.keys(rt.route_tds).length>0));
-}
-
 // The SVG route tree for one season's distribution.
-function routeTreeSVG(rt){
+function routeTreeSVG(rt, metric){
+  metric=ROUTE_TREE_METRICS[metric]?metric:'td';
   const W=360, H=440, cx=180, losY=340, sx=15, sy=20;
   const PX = x => +(cx + x*sx).toFixed(1);
   const PY = y => +(losY - y*sy).toFixed(1);
   const tree=rt.tree||{}, total=rt.total||Object.values(tree).reduce((a,b)=>a+b,0)||1;
-  const tdByRoute=rt.route_tds||{};
-  const tdKnown=_routeTdKnown(rt);
+  const metricKnown=_routeMetricKnown(rt, metric);
   const rawKeys = Object.keys(tree);
   const presentMap = {};
   for(const rawKey of rawKeys){
     const key=_routeTreeKey(rawKey);
     if(!ROUTE_TREE_SHAPES[key]) continue;
-    if(!presentMap[key]) presentMap[key]={count:0, tds:0};
+    if(!presentMap[key]) presentMap[key]={count:0, metric:0};
     presentMap[key].count += +tree[rawKey] || 0;
-    if(tdKnown) presentMap[key].tds += +tdByRoute[rawKey] || 0;
+    if(metricKnown){
+      const mv=_routeMetricValueByRaw(rt, rawKey, metric);
+      if(mv!=null) presentMap[key].metric += mv;
+    }
   }
   const present = ROUTE_TREE_ORDER.filter(k=>presentMap[k] && presentMap[k].count>0 && ROUTE_TREE_SHAPES[k]);
+  const metricTotal=metricKnown ? _routeMetricTotal(rt, metric, presentMap) : 0;
   const maxN = Math.max(1, ...present.map(k=>presentMap[k].count));
   const hasBf = present.some(k=>ROUTE_TREE_SHAPES[k].o==='bf');
   // Field backdrop + yard lines every 5 yards up to ~15.
@@ -96,14 +134,15 @@ function routeTreeSVG(rt){
   for(let y=5;y<=15;y+=5){ const py=PY(y); yard+=`<line x1="24" y1="${py}" x2="${W-24}" y2="${py}" class="rt-yard"/>`; }
   // Per-route render geometry.
   const items = present.map(k=>{
-    const sh=ROUTE_TREE_SHAPES[k], n=presentMap[k].count, pct=100*n/total, ratio=n/maxN;
-    const tds=tdKnown ? presentMap[k].tds : null;
+    const sh=ROUTE_TREE_SHAPES[k], n=presentMap[k].count;
+    const metricV=presentMap[k].metric;
+    const pct=100*n/total, ratio=n/maxN;
     const col=_routeHeat(ratio), w=+(2.4+ratio*5).toFixed(2);
     const pts=sh.p.map(([x,y])=>[PX(x),PY(y)]);
     const end=pts[pts.length-1], prev=pts[pts.length-2];
     const ang=Math.atan2(end[1]-prev[1], end[0]-prev[0]);
     const side = sh.anc==='end'?'L' : (sh.anc==='start'?'R':'C');
-    return {sh,n,pct,ratio,tds,col,w,pts,end,ang,side};
+    return {sh,n,pct,ratio,col,w,pts,end,ang,side,metricV};
   });
   // Draw least-run first so the hot routes sit on top; each route ends in an arrowhead.
   let paths='';
@@ -138,9 +177,13 @@ function routeTreeSVG(rt){
   for(const it of items){
     if(Math.abs(it.ly-it.ly0)>3)
       labels+=`<line x1="${it.end[0]}" y1="${it.end[1]}" x2="${it.lx}" y2="${(it.ly-3).toFixed(1)}" class="rt-leader"/>`;
+    let metricTag='';
+    if(metricKnown){
+      if(metric==='td' && it.metricV>0) metricTag=` <tspan class="rt-label-td">${Math.round(it.metricV)} TD</tspan>`;
+      else if(metric!=='td' && it.metricV>0) metricTag=` <tspan class="rt-label-alt">${_fmtRouteMetricValue(it.metricV, metric)}</tspan>`;
+    }
         labels+=`<text x="${it.lx}" y="${it.ly.toFixed(1)}" text-anchor="${it.sh.anc}" class="rt-label">`+
-          `<tspan class="rt-label-name">${it.sh.label}</tspan> <tspan class="rt-label-pct" fill="${it.col}">${it.pct.toFixed(1)}%</tspan>`+
-            `${it.tds>0?` <tspan class="rt-label-td">${it.tds} TD</tspan>`:''}</text>`;
+          `<tspan class="rt-label-name">${it.sh.label}</tspan> <tspan class="rt-label-pct" fill="${it.col}">${it.pct.toFixed(1)}%</tspan>${metricTag}</text>`;
   }
   // LOS + origin markers.
   const losLine=`<line x1="20" y1="${losY}" x2="${W-20}" y2="${losY}" class="rt-los"/>`;
@@ -155,26 +198,40 @@ function routeTreeSVG(rt){
 }
 
 // Ranked list beneath the tree — exact counts + share, coloured to match the tree.
-function routeTreeList(rt){
+function routeTreeList(rt, metric){
+  metric=ROUTE_TREE_METRICS[metric]?metric:'td';
   const tree=rt.tree||{}, total=rt.total||1;
-  const tdByRoute=rt.route_tds||{};
-  const tdKnown=_routeTdKnown(rt);
+  const metricKnown=_routeMetricKnown(rt, metric);
   const rowsMap = {};
   for(const [rawKey, rawCount] of Object.entries(tree)){
     const key=_routeTreeKey(rawKey);
     if(!ROUTE_TREE_SHAPES[key]) continue;
-    if(!rowsMap[key]) rowsMap[key]={count:0, tds:0};
+    if(!rowsMap[key]) rowsMap[key]={count:0, metric:0};
     rowsMap[key].count += +rawCount || 0;
-    if(tdKnown) rowsMap[key].tds += +tdByRoute[rawKey] || 0;
+    if(metricKnown){
+      const mv=_routeMetricValueByRaw(rt, rawKey, metric);
+      if(mv!=null) rowsMap[key].metric += mv;
+    }
   }
-  const rows=Object.entries(rowsMap).sort((a,b)=>b[1].count-a[1].count);
-  const maxN=Math.max(1,...rows.map(r=>r[1].count));
+  const valueFor = row => row[1].count;
+  const rows=Object.entries(rowsMap).sort((a,b)=>valueFor(b)-valueFor(a));
+  const maxN=Math.max(1,...rows.map(valueFor));
+  const metricShort=(ROUTE_TREE_METRICS[metric]||ROUTE_TREE_METRICS.td).short;
+  const metricClass = metric==='td' ? 'rt-list-td' : 'rt-list-val';
   return `<div class="rt-list">`+rows.map(([k,v])=>{
-    const n=v.count, pct=100*n/total, col=_routeHeat(n/maxN), label=(ROUTE_TREE_SHAPES[k]||{}).label||k, tds=tdKnown ? v.tds : null;
+    const n=v.count;
+    const metricV=v.metric;
+    const pct=100*n/total;
+    const col=_routeHeat(n/maxN);
+    const label=(ROUTE_TREE_SHAPES[k]||{}).label||k;
+    let metricTxt='—';
+    if(metricKnown){
+      metricTxt=_fmtRouteMetricValue(metricV, metric);
+    }
     return `<div class="rt-list-row">`+
       `<span class="rt-list-name">${label}</span>`+
       `<span class="rt-list-bar"><span class="rt-list-fill" style="width:${(100*n/maxN).toFixed(0)}%;background:${col}"></span></span>`+
-      `<span class="rt-list-n">${n}</span><span class="rt-list-pct">${pct.toFixed(1)}%</span><span class="rt-list-td">${tds==null?'—':`${tds} TD`}</span></div>`;
+      `<span class="rt-list-n">${n}</span><span class="rt-list-pct">${pct.toFixed(1)}%</span><span class="${metricClass}" title="${metricShort}">${metricTxt}</span></div>`;
   }).join('')+`</div>`;
 }
 
@@ -185,26 +242,45 @@ function renderPcardRoutes(pid){
   if(!seasons.length) return `<div class="pcard-loading">No route data for this player.</div>`;
   if(pcardRouteSeason==null || !seasons.includes(String(pcardRouteSeason))) pcardRouteSeason=seasons[0];
   const rt=NFLVERSE[pcardRouteSeason].routes[norm];
-  const tdKnown=_routeTdKnown(rt);
+  if(!ROUTE_TREE_METRICS[pcardRouteMetric]) pcardRouteMetric='td';
   const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===String(pcardRouteSeason)?'active':''}" onclick="setPcardRouteSeason('${s}')">${s}</button>`).join('');
+  const metricBtns=Object.entries(ROUTE_TREE_METRICS).map(([k,m])=>{
+    const known=_routeMetricKnown(rt,k);
+    const active=(k===pcardRouteMetric)?'active':'';
+    const dis=known?'':'disabled';
+    const ttl=known?`Show ${m.label}`:`${m.short} data unavailable for this season`;
+    return `<button class="rt-metric-btn ${active}" ${dis} title="${ttl}" onclick="setPcardRouteMetric('${k}')">${m.short}</button>`;
+  }).join('');
   const topRoute=Object.entries(rt.tree||{}).sort((a,b)=>b[1]-a[1])[0];
   const topLabel=topRoute?((ROUTE_TREE_SHAPES[topRoute[0]]||{}).label||topRoute[0]):'–';
-  const totalTds = tdKnown ? ((rt.total_tds!=null) ? rt.total_tds : Object.values(rt.route_tds||{}).reduce((a,b)=>a+(+b||0),0)) : null;
-  const tdSummary = tdKnown ? `${totalTds} TD on charted routes` : 'TD route data unavailable in this seed';
+  const metricCfg=ROUTE_TREE_METRICS[pcardRouteMetric];
+  const metricKnown=_routeMetricKnown(rt, pcardRouteMetric);
+  const metricTotal=metricKnown ? _routeMetricTotal(rt, pcardRouteMetric) : null;
+  const metricSummary = metricKnown
+    ? `${_fmtRouteMetricValue(metricTotal, pcardRouteMetric)} ${metricCfg.summary}`
+    : `${metricCfg.short} route data unavailable in this seed`;
   return `
     <div class="rt-wrap">
       <div class="rt-head">
         <div class="rt-seasons">${seasonBtns}</div>
-        <div class="rt-summary">${rt.total} routes charted · ${tdSummary} · most-run <b>${topLabel}</b></div>
+        <div class="rt-metrics">${metricBtns}</div>
+        <div class="rt-summary">${rt.total} routes charted · ${metricSummary} · most-run <b>${topLabel}</b></div>
       </div>
-      ${routeTreeSVG(rt)}
-      ${routeTreeList(rt)}
+      ${routeTreeSVG(rt, pcardRouteMetric)}
+      ${routeTreeList(rt, pcardRouteMetric)}
       <div class="pcard-src">Route types via nflverse participation charting (route run when targeted, ${pcardRouteSeason} regular season).</div>
     </div>`;
 }
 // Switch the Routes-tab season and re-render just the body.
 function setPcardRouteSeason(s){
   pcardRouteSeason=s;
+  const body=document.getElementById('pcardBody');
+  if(body && pcardState) body.innerHTML=renderPcardRoutes(pcardState.pid);
+}
+
+function setPcardRouteMetric(metric){
+  if(!ROUTE_TREE_METRICS[metric]) return;
+  pcardRouteMetric=metric;
   const body=document.getElementById('pcardBody');
   if(body && pcardState) body.innerHTML=renderPcardRoutes(pcardState.pid);
 }

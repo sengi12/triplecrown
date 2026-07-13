@@ -1911,6 +1911,20 @@ def main():
             print(f"    ⚠ nflverse metrics failed: {type(e).__name__}: {e}")
 
 
+    # Split the two largest, rarely-viewed nflverse blocks (def_weekly, coaching_scheme) out of
+    # the main seed into sidecar files. The app lazy-loads them on demand (opening a defensive
+    # player card / a team's coaching-scheme modal) so the initial seed load stays lean & fast.
+    # The baked/offline build re-embeds them (see bake_seed.py) since file:// can't fetch.
+    nflverse_def_weekly = {}
+    nflverse_coaching = {}
+    for _s, _blk in nflverse.items():
+        if isinstance(_blk, dict):
+            if "def_weekly" in _blk:
+                nflverse_def_weekly[_s] = _blk.pop("def_weekly")
+            if "coaching_scheme" in _blk:
+                nflverse_coaching[_s] = _blk.pop("coaching_scheme")
+
+
     # Emit the JS the app embeds
     BUILDER_VERSION = "2.12-adp-fix"   # bump when aggregation logic changes
     out_js = "triplecrown_seed.js"
@@ -1935,6 +1949,8 @@ def main():
         f.write(f"const SEED_SUMER_SEASONS = {json.dumps(sumer_seasons)};\n")
         f.write(f"const SEED_KTC = {json.dumps(ktc, separators=(',',':'))};\n")
         f.write(f"const SEED_NFLVERSE = {json.dumps(nflverse, separators=(',',':'))};\n")
+        f.write(f"const SEED_NFLVERSE_DEF_WEEKLY = {json.dumps(nflverse_def_weekly, separators=(',',':'))};\n")
+        f.write(f"const SEED_NFLVERSE_COACHING = {json.dumps(nflverse_coaching, separators=(',',':'))};\n")
     # Emit the raw seed json the app loads (compact — no indentation. Pretty-printing this
     # file more than doubled it; the app fetches + JSON.parses it, so compact = smaller
     # download and faster parse with identical data).
@@ -1948,6 +1964,13 @@ def main():
                    "hc_playcallers": HC_PLAYCALLERS, "sharp_season": args.season-1,
                    "sumer": sumer, "sumer_seasons": sumer_seasons, "ktc": ktc,
                    "nflverse": nflverse}, f, separators=(",", ":"))
+    # Sidecar files — lazy-loaded by the app on demand (hosted). Only written when non-empty.
+    if nflverse_def_weekly:
+        with open("triplecrown_seed.def_weekly.json", "w") as f:
+            json.dump(nflverse_def_weekly, f, separators=(",", ":"))
+    if nflverse_coaching:
+        with open("triplecrown_seed.coaching.json", "w") as f:
+            json.dump(nflverse_coaching, f, separators=(",", ":"))
 
     nplayers = sum(len(seed[t][p]) for t in seed for p in seed[t])
     print(f"\nDone (builder {BUILDER_VERSION}). {nplayers} players across {len(TEAMS)} teams.")

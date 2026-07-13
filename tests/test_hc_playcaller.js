@@ -5,19 +5,19 @@ global.window={getSelection:()=>({removeAllRanges(){},addRange(){}})};global.Cha
 const fs=require('fs');const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   renderTeamAdvanced, playcallerHCOffenseSource, hcIsPlaycaller,
-  setSharp:(s)=>{SHARP=s;}, setCoord:(c)=>{COORDINATORS=c;}, setNames:(n)=>{TEAM_NAMES=n;},
+  setNflverse:(n)=>{NFLVERSE=n;}, setCoord:(c)=>{COORDINATORS=c;}, setNames:(n)=>{TEAM_NAMES=n;},
   setSharpSeason:(y)=>{SHARP_SEASON=y;}, setHC:(t,v)=>{headCoaches[t]=v;},
   setPlaycallers:(p)=>{HC_PLAYCALLERS=p;}, setHCHist:(h)=>{HC_HISTORY=h;} };`)();
 
 let pass=0,total=0; const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
 // Sharp offensive tables incl tendencies + personnel; Cleveland (Stefanski's former team) has data
-const SHARP={
-  offense:{title:'Offensive Metrics',category:'offense',pct_cols:[],columns:['EPA/Play'],teams:{ATL:{values:{'EPA/Play':0.02},ranks:{'EPA/Play':18}},CLE:{values:{'EPA/Play':-0.05},ranks:{'EPA/Play':25}}}},
-  tendencies:{title:'Offensive Tendencies',category:'offense',pct_cols:['Play Action Rate'],columns:['Play Action Rate'],teams:{ATL:{values:{'Play Action Rate':24},ranks:{'Play Action Rate':14}},CLE:{values:{'Play Action Rate':31},ranks:{'Play Action Rate':3}}}},
-  personnel:{title:'Personnel',category:'offense',pct_cols:['3WR Rate'],columns:['3WR Rate'],teams:{ATL:{values:{'3WR Rate':60},ranks:{'3WR Rate':22}},CLE:{values:{'3WR Rate':75},ranks:{'3WR Rate':7}}}},
-};
-app.setSharp(SHARP); app.setNames({ATL:'Atlanta Falcons',CLE:'Cleveland Browns',DET:'Detroit Lions'}); app.setSharpSeason(2025);
+const NFLV={'2025':{team:{
+  offense:{columns:['EPA/Play'],teams:{ATL:{values:{'EPA/Play':0.02},ranks:{'EPA/Play':18}},CLE:{values:{'EPA/Play':-0.05},ranks:{'EPA/Play':25}},DET:{values:{'EPA/Play':0.07},ranks:{'EPA/Play':11}}}},
+  tendencies:{columns:['Play Action Rate'],teams:{ATL:{values:{'Play Action Rate':24},ranks:{'Play Action Rate':14}},CLE:{values:{'Play Action Rate':31},ranks:{'Play Action Rate':3}},DET:{values:{'Play Action Rate':27},ranks:{'Play Action Rate':9}}}},
+  personnel:{columns:['3WR Rate'],teams:{ATL:{values:{'3WR Rate':60},ranks:{'3WR Rate':22}},CLE:{values:{'3WR Rate':75},ranks:{'3WR Rate':7}},DET:{values:{'3WR Rate':72},ranks:{'3WR Rate':12}}}},
+}}};
+app.setNflverse(NFLV); app.setNames({ATL:'Atlanta Falcons',CLE:'Cleveland Browns',DET:'Detroit Lions'}); app.setSharpSeason(2025);
 app.setHC('ATL',{name:'Kevin Stefanski',experience:7}); app.setHC('DET',{name:'Dan Campbell',experience:5});
 
 console.log('=== TEST 1: playcaller-HC offense source resolves to HC former team ===');

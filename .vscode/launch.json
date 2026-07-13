@@ -2,20 +2,28 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "type": "chrome",
-      "request": "launch",
-      "name": "Launch my cool app",
-      "url": "http://localhost:8000",
-      "file": "${workspaceFolder}/index.html"
+      "name":"Python Debugger: Current File",
+      "type":"debugpy",
+      "python": "/Users/sengi/.pyenv/versions/3.11.9/envs/nfl/bin/python",
+      "request":"launch",
+      "program":"${file}",
+      "console":"integratedTerminal"
     },
-  //   {
-  //     "name": "Python: Current File",
-  //     "type": "python",
-  //     "request": "launch",
-  //     "program": "build_seed.py",
-  //     "console": "integratedTerminal",
-  //     // "args": [""],
-  //     "justMyCode": true
-  // }
+    // {
+    //   "type": "chrome",
+    //   "request": "launch",
+    //   "name": "Launch my cool app",
+    //   "url": "http://localhost:8000",
+    //   "file": "${workspaceFolder}/index.html"
+    // },
+    // {
+    //   "name": "Python: Current File",
+    //   "type": "python",
+    //   "request": "launch",
+    //   "program": "build_seed.py",
+    //   "console": "integratedTerminal",
+    //   // "args": [""],
+    //   "justMyCode": true
+    // }
   ]
 }
