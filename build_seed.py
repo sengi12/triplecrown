@@ -11,7 +11,9 @@ Usage:
     python build_seed.py                 # build 2026 projections + 5 prior seasons of stats
     python build_seed.py --season 2026   # choose the projection season
     python build_seed.py --history 5     # how many prior seasons of stats to bundle
-    python build_seed.py --refresh       # ignore caches and re-download everything
+    python build_seed.py --refresh       # re-download volatile core data (Sleeper + ECR) only
+    python build_seed.py --refresh-web   # also re-scrape stable web sources (Sharp, SoS, OTC…)
+    python build_seed.py --refresh-all   # refresh everything (old --refresh behavior)
 
 Mirrors the caching approach in draft.py's update_players(): the big players
 payload is fetched once and saved to players.json, then reused.
@@ -1837,7 +1839,18 @@ def main():
     ap.add_argument("--season", type=int, default=2026, help="projection season (default 2026)")
     ap.add_argument("--history", type=int, default=5,
                     help="prior seasons of stats to bundle (default 5; e.g. --history 10 for ten years)")
-    ap.add_argument("--refresh", action="store_true", help="ignore caches, re-download")
+    ap.add_argument("--refresh", action="store_true",
+                    help="re-download volatile core data (Sleeper players/projections/stats + "
+                         "FantasyPros ECR). Stable scraped sources (Sharp, SoS, contracts, "
+                         "coordinators, additions…) stay cached — use --refresh-web for those.")
+    ap.add_argument("--refresh-web", action="store_true",
+                    help="also re-scrape the slow, season-stable web sources (Warren Sharp, "
+                         "strength of schedule, OverTheCap contracts, Wikipedia coordinators/head "
+                         "coaches, Spotrac additions, KeepTradeCut, SumerSports)")
+    ap.add_argument("--refresh-nflverse", action="store_true",
+                    help="rebuild the nflverse advanced-metrics block and OL grades cache")
+    ap.add_argument("--refresh-all", action="store_true",
+                    help="refresh everything (equivalent to the old --refresh: core + web + nflverse)")
     ap.add_argument("--nflverse", dest="nflverse", action="store_true", default=True,
                     help="compute nflverse advanced metrics (default: on; requires pandas) and add "
                         "them as a parallel 'nflverse' seed block")
@@ -1848,37 +1861,45 @@ def main():
                          "the app now defaults to nflverse for advanced metrics, so this is only for A/B analysis)")
     args = ap.parse_args()
 
+    # Granular refresh: a plain --refresh only re-pulls volatile core data (Sleeper + ECR);
+    # the slow, season-stable web scrapes (Sharp, SoS, contracts, coordinators, additions,
+    # KTC, Sumer) stay cached unless --refresh-web/--refresh-all is given. nflverse (incl. the
+    # OL grades model) rebuilds only on --refresh-nflverse/--refresh-all.
+    core_refresh = args.refresh or args.refresh_all
+    web_refresh = args.refresh_web or args.refresh_all
+    nflverse_refresh = args.refresh_nflverse or args.refresh_all
+
     print(f"TripleCrown seed builder — projections {args.season}, last {args.history} seasons of stats\n")
     print("Step 1/6: players")
-    players = get_players(args.refresh)
+    players = get_players(core_refresh)
 
     print("\nStep 2/6: projections")
-    proj_idx = build_projection_index(args.season, args.refresh)
+    proj_idx = build_projection_index(args.season, core_refresh)
 
     print(f"\nStep 3/6: historical stats ({args.season-args.history}–{args.season-1})")
     stats_by_season = {}
     for yr in range(args.season-1, args.season-1-args.history, -1):
-        stats_by_season[str(yr)] = build_stats_index(yr, args.refresh)
+        stats_by_season[str(yr)] = build_stats_index(yr, core_refresh)
 
     print("\nStep 4/8: per-team history (QB weekly splits for traded players)")
-    history = build_history(players, stats_by_season, args.refresh)
+    history = build_history(players, stats_by_season, core_refresh)
 
     print("\nStep 5/8: assembling seed")
     seed, history = assemble(players, proj_idx, stats_by_season, history, args.season)
 
     print("\nStep 6/8: FantasyPros ECR (replaces ADP)")
-    ecr = build_ecr(args.refresh)
+    ecr = build_ecr(core_refresh)
 
     print("\nStep 7/8: OverTheCap contracts (dynasty age/APY/FA)")
-    contracts = build_contracts(args.refresh)
+    contracts = build_contracts(web_refresh)
 
     print("\nStep 8/8: Warren Sharp advanced stats (offense + defense) & strength of schedule")
-    sharp = build_sharp(args.refresh)
-    sos = build_sos(args.refresh, args.season)
-    coordinators = build_coordinators(args.season, args.refresh)
-    hc_history = build_head_coach_history(args.season, args.refresh)
+    sharp = build_sharp(web_refresh)
+    sos = build_sos(web_refresh, args.season)
+    coordinators = build_coordinators(args.season, web_refresh)
+    hc_history = build_head_coach_history(args.season, web_refresh)
     print("\n  New Additions (Spotrac free agency / draft / trades)")
-    additions = build_additions(args.season, args.refresh)
+    additions = build_additions(args.season, web_refresh)
 
     # SumerSports is now opt-in only (--sumer). nflverse advanced metrics are the app's default
     # advanced source, so we no longer bake the scraped SumerSports tables into the seed unless
@@ -1886,11 +1907,11 @@ def main():
     sumer, sumer_seasons = {}, []
     if args.sumer:
         print("\n  SumerSports advanced per-player stats (opt-in — QB/RB/WR/TE, per season)")
-        sumer = build_sumer(args.refresh)
+        sumer = build_sumer(web_refresh)
         sumer_seasons = sorted(sumer.keys(), reverse=True)
 
     print("\n  KeepTradeCut dynasty player IDs (player-card links)")
-    ktc = build_ktc(args.refresh)
+    ktc = build_ktc(web_refresh)
 
     # Keep only seasons that actually returned stats (older years may be unavailable).
     nonempty_seasons = sorted([s for s, idx in stats_by_season.items() if idx], reverse=True)
@@ -1909,7 +1930,7 @@ def main():
                 print("    ⚠ pandas not installed — skipping nflverse metrics (the rest of the seed is unaffected)")
             else:
                 # Cover the same seasons we normally fetch history for (automated for future use).
-                nflverse = _nfl.build_nflverse(nonempty_seasons, refresh=args.refresh)
+                nflverse = _nfl.build_nflverse(nonempty_seasons, refresh=nflverse_refresh)
         except Exception as e:
             print(f"    ⚠ nflverse metrics failed: {type(e).__name__}: {e}")
     else:

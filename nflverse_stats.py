@@ -64,6 +64,7 @@ _NAME_MAP = {}
 _OL_GRADES_BY_TEAM = None
 _OL_GRADES_BY_PLAYER = None
 _PFR_TO_GSIS = None
+_OL_GRADES_CACHE_CSV = None
 
 # URLs that failed to download this run (e.g. FTN charting before 2022). Cached so we don't
 # retry the same 404 dozens of times across refinement/receiver loops.
@@ -78,6 +79,76 @@ def _nflverse_cache_subdir(*parts):
     d = os.path.join(_nflverse_cache_dir(), *parts)
     os.makedirs(d, exist_ok=True)
     return d
+
+def _repo_root():
+    return os.path.dirname(__file__)
+
+def _legacy_ol_csv_path():
+    return os.path.join(_repo_root(), "claude", "ol_grades_final.csv")
+
+def _ol_grades_cache_csv_path(seasons):
+    payload = {
+        "seasons": [int(s) for s in sorted(int(x) for x in seasons)],
+        "schema": "ol_grades_pipeline_cache_v1",
+    }
+    digest = hashlib.md5(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+    return os.path.join(_nflverse_cache_subdir("derived", "ol_grades"), f"{digest}.csv")
+
+def _ol_grades_source_csv_path():
+    global _OL_GRADES_CACHE_CSV
+    if _OL_GRADES_CACHE_CSV and os.path.exists(_OL_GRADES_CACHE_CSV):
+        return _OL_GRADES_CACHE_CSV
+    legacy = _legacy_ol_csv_path()
+    return legacy if os.path.exists(legacy) else None
+
+def _ensure_ol_grades_cache(seasons, refresh=False):
+    """Generate (or reuse) the derived OL grades CSV from ol_grades_pipeline.
+
+    Runs the grading model in-process (not via subprocess) so real tracebacks surface and
+    the downloaded nflverse parquet files persist in the shared cache dir for fast rebuilds.
+    Returns the absolute path to the CSV when available, else None.
+    """
+    global _OL_GRADES_CACHE_CSV, _OL_GRADES_BY_TEAM, _OL_GRADES_BY_PLAYER
+
+    out_csv = _ol_grades_cache_csv_path(seasons)
+    if (not refresh) and os.path.exists(out_csv):
+        _OL_GRADES_CACHE_CSV = out_csv
+        return out_csv
+
+    try:
+        import ol_grades_pipeline as _olp
+    except Exception as e:
+        print(f"    → OL grades pipeline: unavailable ({type(e).__name__}: {e})")
+        legacy = _legacy_ol_csv_path()
+        _OL_GRADES_CACHE_CSV = legacy if os.path.exists(legacy) else None
+        if _OL_GRADES_CACHE_CSV is None:
+            print("      ⚠ No OL grades source available (pipeline import failed + legacy CSV missing).")
+        return _OL_GRADES_CACHE_CSV
+
+    parquet_cache = _nflverse_cache_subdir("raw", "ol_parquet")
+    seasons_i = sorted(int(s) for s in seasons)
+    print("    → OL grades pipeline: building cache …", end="", flush=True)
+    try:
+        df = _olp.build_grades_df(seasons=seasons_i, cache_dir=parquet_cache)
+        os.makedirs(os.path.dirname(out_csv), exist_ok=True)
+        df.to_csv(out_csv, index=False)
+        _OL_GRADES_CACHE_CSV = out_csv
+        _OL_GRADES_BY_TEAM = None
+        _OL_GRADES_BY_PLAYER = None
+        print(f" ok ({len(df)} linemen → {os.path.basename(out_csv)})")
+        return out_csv
+    except Exception as e:
+        print(" failed")
+        import traceback
+        traceback.print_exc()
+        print(f"      ⚠ OL grades pipeline failed: {type(e).__name__}: {e}")
+
+    # Fallback for users who still keep a static CSV at the historical path.
+    legacy = _legacy_ol_csv_path()
+    _OL_GRADES_CACHE_CSV = legacy if os.path.exists(legacy) else None
+    if _OL_GRADES_CACHE_CSV is None:
+        print("      ⚠ No OL grades source available (pipeline output + legacy CSV missing).")
+    return _OL_GRADES_CACHE_CSV
 
 def _md5_cache_path(url):
     """Stable local cache path for a remote nflverse asset, keyed by URL md5.
@@ -920,8 +991,8 @@ def _ol_grades_by_team():
     if _OL_GRADES_BY_TEAM is not None:
         return _OL_GRADES_BY_TEAM
     out = {}
-    path = os.path.join(os.path.dirname(__file__), "claude", "ol_grades_final.csv")
-    if not os.path.exists(path):
+    path = _ol_grades_source_csv_path()
+    if not path or not os.path.exists(path):
         _OL_GRADES_BY_TEAM = out
         return out
     try:
@@ -962,8 +1033,8 @@ def _ol_grades_by_player():
     if _OL_GRADES_BY_PLAYER is not None:
         return _OL_GRADES_BY_PLAYER
     out = {}
-    path = os.path.join(os.path.dirname(__file__), "claude", "ol_grades_final.csv")
-    if not os.path.exists(path):
+    path = _ol_grades_source_csv_path()
+    if not path or not os.path.exists(path):
         _OL_GRADES_BY_PLAYER = out
         return out
     cols = [
@@ -974,7 +1045,11 @@ def _ol_grades_by_player():
         "consensus_flag", "market_pctile",
     ]
     try:
-        g = pd.read_csv(path, usecols=cols)
+        # market_pctile only exists when the pipeline ran with the market lens; read whatever
+        # columns are present so a marketless cache still populates every player grade.
+        available = set(pd.read_csv(path, nrows=0).columns)
+        use = [c for c in cols if c in available]
+        g = pd.read_csv(path, usecols=use)
     except Exception:
         _OL_GRADES_BY_PLAYER = out
         return out
@@ -1733,7 +1808,7 @@ def build_nflverse_season(season):
 
 def _nflverse_built_cache_path(seasons):
     """Path for cached built nflverse output keyed by requested seasons."""
-    payload = {"seasons": [str(s) for s in seasons], "schema": "nflverse_seed_v1"}
+    payload = {"seasons": [str(s) for s in seasons], "schema": "nflverse_seed_v2_ol_pipeline"}
     digest = hashlib.md5(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
     return os.path.join(_nflverse_cache_subdir("built"), f"{digest}.json")
 
@@ -1745,6 +1820,7 @@ def build_nflverse(seasons, refresh=False):
     """
     if not HAVE_PANDAS:
         return {}
+
     cache_path = _nflverse_built_cache_path(seasons)
     if not refresh and os.path.exists(cache_path):
         try:
@@ -1754,6 +1830,11 @@ def build_nflverse(seasons, refresh=False):
             return cached if isinstance(cached, dict) else {}
         except Exception:
             pass
+
+    # Only needed on a cache miss (or refresh): derive OL grades once, then load from the CSV
+    # cache for both rb_fan line cards and OL player-card payloads.
+    _ensure_ol_grades_cache(seasons, refresh=refresh)
+
     out = {}
     for s in seasons:
         try:
