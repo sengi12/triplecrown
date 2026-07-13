@@ -70,11 +70,32 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
   <img src="./images/player_cards.png" alt="Centered Image">
 </div>
 
-- **Player Cards.** Every Player that was targeted on routes in the past five seasons has a dedicated tab on their player cards that showcases their route trees. This feature shows what routes receivers tend to run more as they progress in their careers and adds more context to routes run as well as target totals to really showcase what type of receiver this player is.
+- **Passing Charts.** Every QB has strengths and weakness and it can difficult to determine what those are when just looking at raw fantasy totals at the end of each week. Introducing Passing Charts attached to every QB's player card where you can visually see how a QB performs doing what matters most for fantasy and see beyond the fantasy point totals.
+
+<!-- Center align -->
+<div align="center">
+  <img src="./images/pass_chart.png" alt="Centered Image">
+</div>
+
+- **Route Trees.** Every Player that was targeted on routes in the past five seasons has a dedicated tab on their player cards that showcases their route trees. This feature shows what routes receivers tend to run more as they progress in their careers and adds more context to routes run as well as target totals to really showcase what type of receiver this player is.
 
 <!-- Center align -->
 <div align="center">
   <img src="./images/route_tree.png" alt="Centered Image">
+</div>
+
+- **Rushing Fans.** A Major aspect of fantasy football, and the sport itself, that is often overlooked is the offensive line. Although available data for individual OL performance is poor, I created an ever evolving +/- algorithm that hands out rush and pass block grades to every qualifying offensive linemen so that you can see clearly how offensive line talent, performance, entanglement, and health directly affects key areas of the run and pass game with every rusher's rushing fan chart!
+
+<!-- Center align -->
+<div align="center">
+  <img src="./images/rushing_fan.png" alt="Centered Image">
+</div>
+
+- **Coaching Schemes.** Every team has been had their personnel groupings, formations, run success rates vs gaps and route concepts mapped into trends in this new visualization tool which allows you to see all the different passing and rushing concepts that these teams rely on in different situations in game!
+
+<!-- Center align -->
+<div align="center">
+  <img src="./images/coach_scheme.png" alt="Centered Image">
 </div>
 
 ---
