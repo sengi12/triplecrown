@@ -1970,17 +1970,29 @@ def main():
     if nflverse_def_weekly:
         with open("triplecrown_seed.def_weekly.json", "w") as f:
             json.dump(nflverse_def_weekly, f, separators=(",", ":"))
-    if nflverse_coaching:
-        with open("triplecrown_seed.coaching.json", "w") as f:
-            json.dump(nflverse_coaching, f, separators=(",", ":"))
+    # Coaching scheme is the largest lazy block and is viewed one season at a time, so split it
+    # into per-season sidecars the app fetches on demand (a typical user only downloads the
+    # current season). Remove any stale combined file from older builds.
+    _old_combined = "triplecrown_seed.coaching.json"
+    if os.path.exists(_old_combined):
+        try:
+            os.remove(_old_combined)
+        except OSError:
+            pass
+    coaching_files = []
+    for _s, _blk in sorted(nflverse_coaching.items(), key=lambda kv: kv[0], reverse=True):
+        _fn = f"triplecrown_seed.coaching.{_s}.json"
+        with open(_fn, "w") as f:
+            json.dump(_blk, f, separators=(",", ":"))
+        coaching_files.append(_fn)
 
     nplayers = sum(len(seed[t][p]) for t in seed for p in seed[t])
     print(f"\nDone (builder {BUILDER_VERSION}). {nplayers} players across {len(TEAMS)} teams.")
     print(f"  • triplecrown_seed.json → load this in the app via the 📦 Seed button (recommended)")
     if nflverse_def_weekly:
         print("  • triplecrown_seed.def_weekly.json → lazy sidecar (defensive weekly player cards)")
-    if nflverse_coaching:
-        print("  • triplecrown_seed.coaching.json   → lazy sidecar (coaching scheme modal)")
+    if coaching_files:
+        print(f"  • triplecrown_seed.coaching.<season>.json → {len(coaching_files)} per-season lazy sidecars (coaching scheme modal)")
     print(f"  • {CACHE_DIR}/ → cached raw API responses (delete to force refresh)")
     print("\nNext: open the TripleCrown app (index.html). By default it pulls live 2026")
     print("projections from Sleeper on load. To use this prebuilt snapshot (with historical")

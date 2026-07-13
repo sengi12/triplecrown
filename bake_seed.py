@@ -71,7 +71,18 @@ def main():
 
     seed_dir = os.path.dirname(os.path.abspath(args.seed))
     nflverse_def_weekly = _sidecar(os.path.join(seed_dir, "triplecrown_seed.def_weekly.json"))
-    nflverse_coaching = _sidecar(os.path.join(seed_dir, "triplecrown_seed.coaching.json"))
+    # Coaching scheme now ships as per-season sidecars (triplecrown_seed.coaching.<season>.json);
+    # re-embed every season for the offline/baked file. Fall back to the old combined file.
+    import glob as _glob
+    nflverse_coaching = {}
+    for _p in _glob.glob(os.path.join(seed_dir, "triplecrown_seed.coaching.*.json")):
+        _seas = os.path.basename(_p)[len("triplecrown_seed.coaching."):-len(".json")]
+        if _seas.isdigit():
+            _blk = _sidecar(_p)
+            if _blk:
+                nflverse_coaching[_seas] = _blk
+    if not nflverse_coaching:
+        nflverse_coaching = _sidecar(os.path.join(seed_dir, "triplecrown_seed.coaching.json"))
     # Fallback: if an older single-file seed still carries these inline, lift them out.
     if not nflverse_def_weekly or not nflverse_coaching:
         for _s, _blk in (nflverse.items() if isinstance(nflverse, dict) else []):

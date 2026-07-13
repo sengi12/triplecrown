@@ -33,6 +33,8 @@ function nflverseSectionReady(section){
 function resetNflverseLazy(){
   _nflverseLazyLoaded = { def_weekly:false, coaching_scheme:false };
   _nflverseLazyPromise = {};
+  _coachingSeasonLoaded = {};
+  _coachingSeasonPromise = {};
 }
 
 // Fetch a sidecar section on demand and merge it in. Returns a promise resolving to whether
@@ -52,6 +54,40 @@ function ensureNflverseSection(section){
     }catch(e){ return false; }
   })();
   return _nflverseLazyPromise[section];
+}
+
+// ── Per-season coaching-scheme loading ───────────────────────────────────────
+// The coaching-scheme block is by far the largest nflverse payload and is viewed one season
+// at a time, so build_seed.py writes a separate sidecar per season
+// (triplecrown_seed.coaching.<season>.json). The modal fetches only the season being viewed,
+// so the typical first open downloads ~1 season instead of the whole multi-season block.
+let _coachingSeasonLoaded = {};
+let _coachingSeasonPromise = {};
+
+function coachingSeasonReady(season){
+  season = String(season);
+  if(_coachingSeasonLoaded[season]) return true;
+  return !!(typeof NFLVERSE==='object' && NFLVERSE && NFLVERSE[season] && NFLVERSE[season].coaching_scheme);
+}
+
+function ensureNflverseCoachingSeason(season){
+  season = String(season);
+  if(coachingSeasonReady(season)) return Promise.resolve(true);
+  if(_coachingSeasonPromise[season]) return _coachingSeasonPromise[season];
+  _coachingSeasonPromise[season] = (async()=>{
+    try{
+      const res = await fetch(`triplecrown_seed.coaching.${season}.json`, {cache:'no-store'});
+      if(!res.ok) return false;
+      const data = await res.json();
+      if(data && typeof data==='object' && typeof NFLVERSE==='object' && NFLVERSE){
+        (NFLVERSE[season] = NFLVERSE[season] || {}).coaching_scheme = data;
+        _coachingSeasonLoaded[season] = true;
+        return true;
+      }
+      return false;
+    }catch(e){ return false; }
+  })();
+  return _coachingSeasonPromise[season];
 }
 
 // Merge any embedded sidecars (baked/offline path) into NFLVERSE once at load.

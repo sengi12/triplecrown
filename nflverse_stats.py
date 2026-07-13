@@ -1484,15 +1484,17 @@ def _scheme_name_from_group(b, t, align, ol):
     return "SHOTGUN" + jumbo
 
 
-def coaching_scheme(season, min_group_plays=4, max_groups=8):
+def coaching_scheme(season, min_group_plays=1, max_groups=40):
     """Team coaching-scheme visualization payload keyed by team code.
 
-    Produces compact per-team view buckets (all/PA/motion/no-huddle/down) with top personnel
-    groups, pass-run tendencies, route leaders by slot, and top run lanes.
+    Produces compact per-team view buckets (down × distance-to-sticks × play-type) with top
+    personnel groups, pass-run tendencies, route leaders by slot, and top run lanes. Every
+    personnel grouping with at least one play is included (no plays-per-group threshold), so a
+    filter combination only reads “no plays” when the situation truly never occurred.
     """
     pbp_cols = [
         "game_id", "play_id", "posteam", "play_type", "pass", "rush_attempt", "qb_scramble",
-        "epa", "success", "down", "season_type", "shotgun", "run_location", "run_gap",
+        "epa", "success", "down", "ydstogo", "season_type", "shotgun", "run_location", "run_gap",
         "receiver_player_id",
     ]
     pbp = _load_pbp(season, pbp_cols)
@@ -1617,6 +1619,8 @@ def coaching_scheme(season, min_group_plays=4, max_groups=8):
                 fr = season_routes.get(pid, [])
             return {"slot": slot, "name": names.get(str(pid), _lname(pid)), "routes": fr}
 
+        formation_table = {}
+
         def summarize(dfv):
             if dfv is None or not len(dfv):
                 return {"total": 0, "groups": []}
@@ -1633,18 +1637,28 @@ def coaching_scheme(season, min_group_plays=4, max_groups=8):
                 for lane, lg in runs.groupby("lane"):
                     lanes.append([str(lane), int(len(lg)), round(float(lg["epa"].mean()), 2)])
                 lanes.sort(key=lambda x: -x[1])
-                assigns = []
-                for i in range(int(w)):
-                    assigns.append(assign_for(f"WR{i+1}", slots.get(f"WR{i+1}"), pcode, align))
-                for i in range(int(t)):
-                    assigns.append(assign_for(f"TE{i+1}", slots.get(f"TE{i+1}"), pcode, align))
-                for i in range(int(b)):
-                    assigns.append(assign_for(f"RB{i+1}", slots.get(f"RB{i+1}"), pcode, align))
+                # Formation metadata + slot assignments (with route trees) are filter-independent,
+                # so store them once per unique signature in a per-team table and reference them by
+                # `sig` from each bucket. This dedupes the large assigns/route data across the ~80
+                # down×distance×play-type buckets (the app re-expands groups from the table).
+                sig = f"{pcode}|{align}|{int(w)}|{int(t)}|{int(b)}|{int(ol)}"
+                if sig not in formation_table:
+                    assigns = []
+                    for i in range(int(w)):
+                        assigns.append(assign_for(f"WR{i+1}", slots.get(f"WR{i+1}"), pcode, align))
+                    for i in range(int(t)):
+                        assigns.append(assign_for(f"TE{i+1}", slots.get(f"TE{i+1}"), pcode, align))
+                    for i in range(int(b)):
+                        assigns.append(assign_for(f"RB{i+1}", slots.get(f"RB{i+1}"), pcode, align))
+                    formation_table[sig] = {
+                        "p": str(pcode),
+                        "align": str(align),
+                        "name": _scheme_name_from_group(int(b), int(t), str(align), int(ol)),
+                        "backs": int(b), "te": int(t), "wr": int(w), "ol": int(ol),
+                        "assigns": assigns,
+                    }
                 groups.append({
-                    "p": str(pcode),
-                    "align": str(align),
-                    "name": _scheme_name_from_group(int(b), int(t), str(align), int(ol)),
-                    "backs": int(b), "te": int(t), "wr": int(w), "ol": int(ol),
+                    "sig": sig,
                     "n": n,
                     "share": round(100 * n / total, 1),
                     "pass_rate": round(100 * float(g["pass"].mean()), 1),
@@ -1656,30 +1670,57 @@ def coaching_scheme(season, min_group_plays=4, max_groups=8):
                     "nr": int(len(gr)),
                     "er": (None if not len(gr) else round(float(gr["epa"].mean()), 3)),
                     "sr": (None if not len(gr) else round(100 * float(gr["success"].mean()), 1)),
-                    "assigns": assigns,
                     "lanes": lanes[:3],
                 })
             groups.sort(key=lambda x: -x["n"])
             return {"total": total, "groups": groups[:max_groups]}
 
-        views = {
-            "all": summarize(dt),
-            "pa": summarize(dt[dt["is_play_action"] == True]),  # noqa: E712
-            "motion": summarize(dt[dt["is_motion"] == True]),   # noqa: E712
-            "nohuddle": summarize(dt[dt["is_no_huddle"] == True]),  # noqa: E712
-            "down1": summarize(dt[dt["down"] == 1]),
-            "down2": summarize(dt[dt["down"] == 2]),
-            "down3": summarize(dt[dt["down"] == 3]),
-            "down4": summarize(dt[dt["down"] == 4]),
-        }
-        views = {k: v for k, v in views.items() if v.get("total", 0) > 0 and len(v.get("groups", [])) > 0}
-        if not views:
+        # Full down × distance-to-sticks × play-type cross product so every filter combination
+        # in the modal resolves to real plays (down, distance, and play-type all co-exist in the
+        # pbp). Empty leaf/branch nodes are pruned so the lazy sidecar stays lean; the app fills
+        # any missing combination with an empty node at render time.
+        down_specs = [("all", None), ("1", 1), ("2", 2), ("3", 3), ("4", 4)]
+        dist_specs = [("all", None), ("short", (1, 3)), ("med", (4, 7)), ("long", (8, 99))]
+        type_specs = [("all", None), ("pa", "is_play_action"),
+                      ("motion", "is_motion"), ("nohuddle", "is_no_huddle")]
+
+        def _nonempty(node):
+            return node.get("total", 0) > 0 and len(node.get("groups", [])) > 0
+
+        views = {}
+        any_node = False
+        for dkey, dval in down_specs:
+            dsub = dt if dval is None else dt[dt["down"] == dval]
+            if not len(dsub):
+                continue
+            dist_map = {}
+            for diskey, drange in dist_specs:
+                if drange is None:
+                    ds2 = dsub
+                else:
+                    lo, hi = drange
+                    ds2 = dsub[(dsub["ydstogo"] >= lo) & (dsub["ydstogo"] <= hi)]
+                if not len(ds2):
+                    continue
+                type_map = {}
+                for tkey, tcol in type_specs:
+                    tsub = ds2 if tcol is None else ds2[ds2[tcol] == True]  # noqa: E712
+                    node = summarize(tsub)
+                    if _nonempty(node):
+                        type_map[tkey] = node
+                        any_node = True
+                if type_map:
+                    dist_map[diskey] = type_map
+            if dist_map:
+                views[dkey] = dist_map
+        if not any_node:
             continue
         out[team] = {
             "team": team,
             "slots": {k: str(v) for k, v in slots.items()},
             "names": names,
             "jerseys": jerseys,
+            "formations": formation_table,
             "views": views,
         }
     return out
@@ -1808,7 +1849,7 @@ def build_nflverse_season(season):
 
 def _nflverse_built_cache_path(seasons):
     """Path for cached built nflverse output keyed by requested seasons."""
-    payload = {"seasons": [str(s) for s in seasons], "schema": "nflverse_seed_v2_ol_pipeline"}
+    payload = {"seasons": [str(s) for s in seasons], "schema": "nflverse_seed_v5_scheme_dedup"}
     digest = hashlib.md5(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
     return os.path.join(_nflverse_cache_subdir("built"), f"{digest}.json")
 

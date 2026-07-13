@@ -17,18 +17,22 @@ function _schemeEscHtml(s){
     .replace(/'/g,'&#39;');
 }
 
+function _schemeAllSeasons(){
+  if(typeof NFLVERSE!=='object' || !NFLVERSE) return [];
+  return Object.keys(NFLVERSE).map(x=>parseInt(x,10)).filter(Number.isFinite)
+    .sort((a,b)=>b-a).map(String);
+}
+
+// Candidate seasons for a team = every season the loaded nflverse block covers. Coaching
+// data for each season is lazy-loaded per-season on demand, so this deliberately does NOT
+// require the coaching_scheme block to be present yet (that would hide season tabs/links
+// before their sidecar is fetched).
 function _schemeSeasons(team){
-  if(!team || !NFLVERSE) return [];
-  return Object.keys(NFLVERSE)
-    .filter(s=>{
-      const b = NFLVERSE[s] && NFLVERSE[s].coaching_scheme && NFLVERSE[s].coaching_scheme[team];
-      return !!(b && b.views);
-    })
-    .sort((a,b)=>parseInt(b,10)-parseInt(a,10));
+  return _schemeAllSeasons();
 }
 
 function _schemePreferredSeason(team){
-  const seasons = _schemeSeasons(team);
+  const seasons = _schemeAllSeasons();
   if(!seasons.length) return null;
   if(schemeSeason && seasons.includes(String(schemeSeason))) return String(schemeSeason);
   if(activeSeason!=='proj' && seasons.includes(String(activeSeason))) return String(activeSeason);
@@ -68,13 +72,9 @@ function _schemeOcSource(team){
 }
 
 function _schemeSeasonsForTeam(team){
-  if(!team || !NFLVERSE) return [];
-  return Object.keys(NFLVERSE)
-    .filter(s=>{
-      const b = NFLVERSE[s] && NFLVERSE[s].coaching_scheme && NFLVERSE[s].coaching_scheme[team];
-      return !!(b && b.views);
-    })
-    .sort((a,b)=>parseInt(b,10)-parseInt(a,10));
+  // Candidate seasons (see _schemeSeasons) so prior-team links appear before their
+  // per-season coaching sidecar is fetched; clicking a link loads that season on demand.
+  return _schemeAllSeasons();
 }
 
 function _schemeOcCallout(team){
@@ -165,9 +165,20 @@ function _schemeToGroup(g){
   };
 }
 
-function _schemeNode(view){
+function _schemeExpandGroup(g, formations){
+  if(!g) return g;
+  // New (deduped) schema: groups carry a `sig` referencing the per-team formations table
+  // (formation metadata + slot assignments/routes). Merge those back in so downstream
+  // rendering sees a self-contained group. Legacy full groups (no sig) pass through unchanged.
+  const f = (formations && g.sig && formations[g.sig]) || null;
+  return f ? Object.assign({}, f, g) : g;
+}
+
+function _schemeNode(view, formations){
   const v = view || {total:0,groups:[]};
-  const groups = (Array.isArray(v.groups) ? v.groups : []).map(_schemeToGroup).filter(Boolean);
+  const groups = (Array.isArray(v.groups) ? v.groups : [])
+    .map(g => _schemeToGroup(_schemeExpandGroup(g, formations)))
+    .filter(Boolean);
   const total = _schemeNumber(v.total, groups.reduce((t,g)=>t+_schemeNumber(g.n,0),0));
   return {total, groups};
 }
@@ -176,38 +187,49 @@ function _schemeEmptyNode(){ return {total:0, groups:[]}; }
 
 function _schemeBuildFv(p){
   const views = (p && p.data && p.data.views) ? p.data.views : {};
-  const all = _schemeNode(views.all);
-  const pa = _schemeNode(views.pa);
-  const motion = _schemeNode(views.motion);
-  const nohuddle = _schemeNode(views.nohuddle);
-  const d1 = _schemeNode(views.down1);
-  const d2 = _schemeNode(views.down2);
-  const d3 = _schemeNode(views.down3);
-  const d4 = _schemeNode(views.down4);
-  const e = _schemeEmptyNode();
+  const formations = (p && p.data && p.data.formations) ? p.data.formations : {};
+  const DOWNS = ['all','1','2','3','4'];
+  const DISTS = ['all','short','med','long'];
+  const TYPES = ['all','pa','motion','nohuddle'];
+  const isNode = x => !!x && (Array.isArray(x.groups) || typeof x.total === 'number');
+  // Old flat schema (down/type marginals only) vs new nested down→dist→type schema.
+  const legacy = isNode(views.all) || isNode(views.down1);
 
-  function downBlock(main){
-    return {
-      all:{all:main, pa:e, motion:e, nohuddle:e},
+  const data = {};
+  if(legacy){
+    // Back-compat: map the old marginal views onto the grid so the primary views still
+    // render; combined (down+dist / down+type) filters fall back to empty as they did before.
+    const e = _schemeEmptyNode();
+    const node = k => _schemeNode(views[k], formations);
+    const dblk = (main,pa,mo,nh) => ({
+      all:{all:main, pa:pa, motion:mo, nohuddle:nh},
       short:{all:e, pa:e, motion:e, nohuddle:e},
       med:{all:e, pa:e, motion:e, nohuddle:e},
       long:{all:e, pa:e, motion:e, nohuddle:e},
-    };
+    });
+    data.all = dblk(node('all'), node('pa'), node('motion'), node('nohuddle'));
+    data['1'] = dblk(node('down1'), e, e, e);
+    data['2'] = dblk(node('down2'), e, e, e);
+    data['3'] = dblk(node('down3'), e, e, e);
+    data['4'] = dblk(node('down4'), e, e, e);
+  } else {
+    // New schema: fill the full down × distance × type grid, defaulting any pruned
+    // (empty) combination to an empty node so every filter selection resolves cleanly.
+    for(const dn of DOWNS){
+      const dv = views[dn] || {};
+      data[dn] = {};
+      for(const ds of DISTS){
+        const sv = dv[ds] || {};
+        data[dn][ds] = {};
+        for(const fl of TYPES){
+          data[dn][ds][fl] = _schemeNode(sv[fl], formations);
+        }
+      }
+    }
   }
 
   return {
-    data: {
-      all: {
-        all: {all:all, pa:pa, motion:motion, nohuddle:nohuddle},
-        short:{all:e, pa:e, motion:e, nohuddle:e},
-        med:{all:e, pa:e, motion:e, nohuddle:e},
-        long:{all:e, pa:e, motion:e, nohuddle:e},
-      },
-      '1': downBlock(d1),
-      '2': downBlock(d2),
-      '3': downBlock(d3),
-      '4': downBlock(d4),
-    },
+    data: data,
     season: p ? p.season : {},
     names: (p && p.data && p.data.names) ? p.data.names : {},
     jerseys: (p && p.data && p.data.jerseys) ? p.data.jerseys : {},
@@ -276,8 +298,20 @@ function _schemeRenderTemplate(template, p){
 function _renderTeamCoachingScheme(){
   const host = document.getElementById('schemeOverlayHost');
   if(!host || !schemeTeam){ return; }
-  const seasons = _schemeSeasons(schemeTeam);
-  const pick = _schemePreferredSeason(schemeTeam);
+  const seasons = _schemeAllSeasons();
+  const pick = (schemeSeason && seasons.includes(String(schemeSeason)))
+    ? String(schemeSeason) : _schemePreferredSeason(schemeTeam);
+  schemeSeason = pick;
+  // Ensure the selected season's coaching sidecar is loaded before we read it (per-season lazy).
+  if(pick && typeof coachingSeasonReady==='function' && !coachingSeasonReady(pick)){
+    _renderSchemeLoadingShell();
+    if(typeof ensureNflverseCoachingSeason==='function'){
+      ensureNflverseCoachingSeason(pick).then(()=>{
+        if(schemeOverlayOpen && schemeTeam) _renderTeamCoachingScheme();
+      });
+    }
+    return;
+  }
   const p = _schemePayload(schemeTeam, pick);
   schemeSeason = p ? p.season : pick;
   if(!p){
@@ -338,11 +372,12 @@ function openTeamCoachingScheme(team, initialView){
   }else{
     schemeSeason = _schemePreferredSeason(team);
   }
-  // Coaching-scheme payloads live in a lazy-loaded nflverse sidecar. Fetch it first (hosted
-  // first-open), showing a loading shell, then render the interactive playsheet.
-  if(typeof ensureNflverseSection==='function' && !nflverseSectionReady('coaching_scheme')){
+  // Coaching-scheme payloads are lazy-loaded per season (triplecrown_seed.coaching.<season>.json)
+  // so we only fetch the season being viewed. Load it first (showing a loading shell), then render.
+  const want = schemeSeason;
+  if(want && typeof ensureNflverseCoachingSeason==='function' && !coachingSeasonReady(want)){
     _renderSchemeLoadingShell();
-    ensureNflverseSection('coaching_scheme').then(()=>{
+    ensureNflverseCoachingSeason(want).then(()=>{
       if(schemeOverlayOpen && schemeTeam===team) _renderTeamCoachingScheme();
     });
     return;
@@ -382,6 +417,16 @@ function setTeamCoachingSchemeSeason(season){
   const s = String(season||'');
   if(!s) return;
   schemeSeason = s;
+  // Load this season's coaching sidecar on demand before re-rendering.
+  if(typeof coachingSeasonReady==='function' && !coachingSeasonReady(s)){
+    _renderSchemeLoadingShell();
+    if(typeof ensureNflverseCoachingSeason==='function'){
+      ensureNflverseCoachingSeason(s).then(()=>{
+        if(schemeOverlayOpen && String(schemeSeason)===s) _renderTeamCoachingScheme();
+      });
+    }
+    return;
+  }
   _renderTeamCoachingScheme();
 }
 
