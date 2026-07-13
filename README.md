@@ -1,6 +1,6 @@
-# <img src="images/app-icon.png" align="left" width="100" style="margin-right: 50px;">
+# <img src="images/app-icon.png" align="left" width="100" style="margin-right: 10px;">
 
-# <span style="color:lightblue">Triple</span>Crown
+# <span style="color:#1599E6">Triple</span>Crown
 
 # <div style="clear: both;"></div>
 
