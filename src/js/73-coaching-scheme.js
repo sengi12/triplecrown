@@ -138,12 +138,50 @@ function _schemeBuildFv(p){
     },
     season: p ? p.season : {},
     names: (p && p.data && p.data.names) ? p.data.names : {},
+    jerseys: (p && p.data && p.data.jerseys) ? p.data.jerseys : {},
     slots: (p && p.data && p.data.slots) ? p.data.slots : {},
   };
 }
 
+function _schemeCompactLabel(slot, pid, names, jerseys){
+  const id = String(pid||'');
+  const j = jerseys && jerseys[id];
+  if(j!=null && String(j)!=='') return `#${j}`;
+  const nm = names && names[id] ? String(names[id]) : '';
+  if(nm) return nm.length>6 ? nm.slice(0,6) : nm;
+  return String(slot||'').toUpperCase() || '—';
+}
+
+function _schemeCompactFvLabels(fv){
+  if(!fv || !fv.data) return fv;
+  const out = JSON.parse(JSON.stringify(fv));
+  const names = out.names || {};
+  const jerseys = out.jerseys || {};
+  const slots = out.slots || {};
+  const data = out.data || {};
+  for(const down of Object.keys(data)){
+    const distBlock = data[down] || {};
+    for(const dist of Object.keys(distBlock)){
+      const fieldBlock = distBlock[dist] || {};
+      for(const field of Object.keys(fieldBlock)){
+        const node = fieldBlock[field];
+        const groups = Array.isArray(node&&node.groups) ? node.groups : [];
+        groups.forEach(g=>{
+          const assigns = Array.isArray(g&&g.assigns) ? g.assigns : [];
+          assigns.forEach(a=>{
+            const slot = String((a&&a.slot)||'');
+            const pid = slots[slot];
+            a.name = _schemeCompactLabel(slot, pid, names, jerseys);
+          });
+        });
+      }
+    }
+  }
+  return out;
+}
+
 function _schemeRenderTemplate(template, p){
-  const fv = _schemeBuildFv(p);
+  const fv = _schemeCompactFvLabels(_schemeBuildFv(p));
   const team = schemeTeam || '';
   const season = String((p && p.season) || SHARP_SEASON || '');
   const full = teamDisplayName(team);
@@ -151,6 +189,9 @@ function _schemeRenderTemplate(template, p){
   const wr2 = fv.names[(fv.slots||{}).WR2] || 'WR2';
   const script = `const FV=${JSON.stringify(fv)};\nconst FORM=FV.data;\nconst SEASON=FV.season;\nconst NAMES=FV.names;`;
   return template
+    .replace('svg{display:block;margin:0 auto;}', 'svg{display:block;margin:0 auto;max-width:100%;height:auto;}')
+    .replace('grid-template-columns:repeat(auto-fill,minmax(330px,1fr));', 'grid-template-columns:repeat(auto-fill,minmax(280px,1fr));')
+    .replace('</style>', '@media (max-width:560px){ body{padding:8px;} .sheet{max-width:100%;} .controls{padding:8px 10px;} .grid{grid-template-columns:1fr;} .card{padding:8px 8px 10px;} }</style>')
     .replace(/__TC_SCRIPT_OPEN__/g, _SCHEME_SCRIPT_OPEN)
     .replace(/__TC_SCRIPT_CLOSE__/g, _SCHEME_SCRIPT_CLOSE)
     .replace('__TC_FV_SCRIPT__', script)

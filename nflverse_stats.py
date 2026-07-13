@@ -1454,7 +1454,7 @@ def coaching_scheme(season, min_group_plays=4, max_groups=8):
     d["align"] = d.apply(_scheme_align, axis=1)
     d["lane"] = d.apply(_scheme_lane, axis=1)
 
-    roster = _aux_csv(ROSTER_URL.format(season=season), usecols=["gsis_id", "full_name", "position", "team"]).drop_duplicates("gsis_id")
+    roster = _aux_csv(ROSTER_URL.format(season=season), usecols=["gsis_id", "full_name", "position", "team", "jersey_number"]).drop_duplicates("gsis_id")
     rmap = roster.set_index("gsis_id") if len(roster) else pd.DataFrame()
 
     def _lname(pid):
@@ -1465,6 +1465,17 @@ def coaching_scheme(season, min_group_plays=4, max_groups=8):
             return "—"
         bits = nm.split()
         return bits[-1] if bits else nm
+
+    def _jersey(pid):
+        if pid is None or pd.isna(pid) or len(rmap) == 0 or pid not in rmap.index:
+            return None
+        try:
+            v = rmap.at[pid, "jersey_number"]
+            if pd.isna(v):
+                return None
+            return str(int(v))
+        except Exception:
+            return None
 
     def _slots_for_team(df_team):
         pass_rows = df_team[df_team["pass"] == 1]
@@ -1490,19 +1501,21 @@ def coaching_scheme(season, min_group_plays=4, max_groups=8):
         rbs = _top(rush, {"RB", "FB"}, 2)
         slots = {}
         names = {}
+        jerseys = {}
         for i, pid in enumerate(wrs):
-            slots[f"WR{i+1}"] = pid; names[str(pid)] = _lname(pid)
+            slots[f"WR{i+1}"] = pid; names[str(pid)] = _lname(pid); jerseys[str(pid)] = _jersey(pid)
         for i, pid in enumerate(tes):
-            slots[f"TE{i+1}"] = pid; names[str(pid)] = _lname(pid)
+            slots[f"TE{i+1}"] = pid; names[str(pid)] = _lname(pid); jerseys[str(pid)] = _jersey(pid)
         for i, pid in enumerate(rbs):
-            slots[f"RB{i+1}"] = pid; names[str(pid)] = _lname(pid)
-        return slots, names
+            slots[f"RB{i+1}"] = pid; names[str(pid)] = _lname(pid); jerseys[str(pid)] = _jersey(pid)
+        jerseys = {k: v for k, v in jerseys.items() if v is not None}
+        return slots, names, jerseys
 
     out = {}
     for team, dt in d.groupby("posteam"):
         if team not in TEAMS:
             continue
-        slots, names = _slots_for_team(dt)
+        slots, names, jerseys = _slots_for_team(dt)
         pass_all = dt[(dt["pass"] == 1) & dt["route"].notna() & (dt["route"] != "")]
 
         # season-level route fallback by player id
@@ -1591,6 +1604,7 @@ def coaching_scheme(season, min_group_plays=4, max_groups=8):
             "team": team,
             "slots": {k: str(v) for k, v in slots.items()},
             "names": names,
+            "jerseys": jerseys,
             "views": views,
         }
     return out
@@ -1717,10 +1731,29 @@ def build_nflverse_season(season):
         "coaching_scheme": coaching_scheme(season),
     }
 
-def build_nflverse(seasons):
-    """Build the additive nflverse block for the given seasons (skips failures gracefully)."""
+def _nflverse_built_cache_path(seasons):
+    """Path for cached built nflverse output keyed by requested seasons."""
+    payload = {"seasons": [str(s) for s in seasons], "schema": "nflverse_seed_v1"}
+    digest = hashlib.md5(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+    return os.path.join(_nflverse_cache_subdir("built"), f"{digest}.json")
+
+
+def build_nflverse(seasons, refresh=False):
+    """Build the additive nflverse block for the given seasons (skips failures gracefully).
+
+    Reuses a cached built output unless `refresh=True`.
+    """
     if not HAVE_PANDAS:
         return {}
+    cache_path = _nflverse_built_cache_path(seasons)
+    if not refresh and os.path.exists(cache_path):
+        try:
+            with open(cache_path, encoding="utf-8") as f:
+                cached = json.load(f)
+            print(f"    → nflverse built cache: hit ({os.path.basename(cache_path)})")
+            return cached if isinstance(cached, dict) else {}
+        except Exception:
+            pass
     out = {}
     for s in seasons:
         try:
@@ -1728,6 +1761,11 @@ def build_nflverse(seasons):
             print(f"    → nflverse {s}: ok")
         except Exception as e:
             print(f"    → nflverse {s}: FAILED ({type(e).__name__}: {e})")
+    try:
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(out, f, separators=(",", ":"))
+    except Exception:
+        pass
     return out
 
 # ── Comparison against the baked Sharp tables ────────────────────────────────
