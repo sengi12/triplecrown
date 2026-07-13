@@ -16,6 +16,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
   position:sticky;top:0;z-index:200;flex-wrap:wrap;}
 .logo{font-size:16px;font-weight:900;color:var(--accent);letter-spacing:-.5px;white-space:nowrap;}
 .logo span{color:var(--text);}
+.logo{display:inline-flex;align-items:center;gap:7px;}
+.logo-icon{width:18px;height:18px;display:block;flex-shrink:0;}
 .scenario-bar{display:flex;align-items:center;gap:5px;}
 .scenario-label{font-size:10px;color:var(--muted);}
 .scenario-name{font-size:12px;font-weight:700;background:var(--surface2);border:1px solid var(--border);
