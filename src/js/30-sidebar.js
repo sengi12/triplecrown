@@ -1,19 +1,50 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Sidebar
 // ─────────────────────────────────────────────────────────────────────────────
+const SIDEBAR_DIVISIONS = [
+  { title:'AFC North', teams:['CIN','PIT','BAL','CLE'] },
+  { title:'AFC South', teams:['HOU','JAX','TEN','IND'] },
+  { title:'AFC East',  teams:['BUF','NE','MIA','NYJ'] },
+  { title:'AFC West',  teams:['KC','LAC','LV','DEN'] },
+  { title:'NFC North', teams:['GB','DET','MIN','CHI'] },
+  { title:'NFC South', teams:['TB','CAR','ATL','NO'] },
+  { title:'NFC East',  teams:['PHI','DAL','WAS','NYG'] },
+  { title:'NFC West',  teams:['LAR','SF','SEA','ARI'] },
+];
+
+const SIDEBAR_TEAM_LABEL = {
+  CIN:'Bengals', PIT:'Steelers', BAL:'Ravens', CLE:'Browns',
+  HOU:'Texans', JAX:'Jaguars', TEN:'Titans', IND:'Colts',
+  BUF:'Bills', NE:'Patriots', MIA:'Dolphins', NYJ:'Jets',
+  KC:'Chiefs', LAC:'Chargers', LV:'Raiders', DEN:'Broncos',
+  GB:'Packers', DET:'Lions', MIN:'Vikings', CHI:'Bears',
+  TB:'Buccaneers', CAR:'Panthers', ATL:'Atlanta', NO:'Saints',
+  PHI:'Eagles', DAL:'Cowboys', WAS:'Commanders', NYG:'Giants',
+  LAR:'Rams', SF:'49ers', SEA:'Seahawks', ARI:'Cardinals',
+};
+
+function sidebarTeamLabel(t){
+  return SIDEBAR_TEAM_LABEL[t] || t;
+}
+
 function renderSidebar(){
   const sb=document.getElementById('sidebar');
-  let done=0,html='<div class="sidebar-section">Teams</div>';
-  TEAMS.forEach(t=>{
-    const st=userProj[t];let cls='';
-    if(st){
-      const a=st.qbs&&st.qbs[0]&&st.qbs[0].passing_yards>0;
-      const b=!!st.passing_shares;const c=!!st.rushing.shares;
-      if(a&&b&&c){cls='done';done++;}else if(a||b||c)cls='partial';
-    }
-    html+=`<div class="team-item ${t===currentTeam?'active':''}" onclick="selectTeam('${t}')">
-      <img src="${NFL_LOGO(t)}" class="team-logo-sm" alt="${t}" onerror="this.style.display='none'">
-      <div class="team-dot ${cls}"></div><span class="team-name">${t}</span></div>`;
+  let done=0,html='';
+  const doneClass = t => {
+    const st=userProj[t]; if(!st) return '';
+    const a=st.qbs&&st.qbs[0]&&st.qbs[0].passing_yards>0;
+    const b=!!st.passing_shares;const c=!!st.rushing.shares;
+    if(a&&b&&c){ done++; return 'done'; }
+    return (a||b||c) ? 'partial' : '';
+  };
+  SIDEBAR_DIVISIONS.forEach(div=>{
+    html += `<div class="sidebar-section">${div.title}</div>`;
+    div.teams.forEach(t=>{
+      const cls = doneClass(t);
+      html+=`<div class="team-item ${t===currentTeam?'active':''}" onclick="selectTeam('${t}')">
+        <img src="${NFL_LOGO(t)}" class="team-logo-sm" alt="${t}" onerror="this.style.display='none'">
+        <div class="team-dot ${cls}"></div><span class="team-name">${sidebarTeamLabel(t)}</span></div>`;
+    });
   });
   sb.innerHTML=html;
   document.getElementById('progressText').textContent=`${done}/32 teams`;
