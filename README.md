@@ -1,4 +1,9 @@
-# 👑 Triple 👑 Crown 👑
+# <img src="images/app-icon.png" align="left" width="100" style="margin-right: 50px;">
+
+# <span style="color:lightblue">Triple</span>Crown
+
+# <div style="clear: both;"></div>
+
 
 **Build your own NFL season projections, then draft from them.**
 
