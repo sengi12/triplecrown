@@ -4736,14 +4736,37 @@ const SCHEME_TEMPLATE_INLINE = "<!DOCTYPE html><html lang=\"en\"><head><meta cha
 // ─────────────────────────────────────────────────────────────────────────────
 let schemeOverlayOpen = false;
 let schemeTeam = null;
+let schemeSeason = null;
 let _schemeEscBound = false;
 const _SCHEME_SCRIPT_OPEN = '<scr' + 'ipt>';
 const _SCHEME_SCRIPT_CLOSE = '</scr' + 'ipt>';
 
-function _schemePayload(team){
+function _schemeSeasons(team){
+  if(!team || !NFLVERSE) return [];
+  return Object.keys(NFLVERSE)
+    .filter(s=>{
+      const b = NFLVERSE[s] && NFLVERSE[s].coaching_scheme && NFLVERSE[s].coaching_scheme[team];
+      return !!(b && b.views);
+    })
+    .sort((a,b)=>parseInt(b,10)-parseInt(a,10));
+}
+
+function _schemePreferredSeason(team){
+  const seasons = _schemeSeasons(team);
+  if(!seasons.length) return null;
+  if(schemeSeason && seasons.includes(String(schemeSeason))) return String(schemeSeason);
+  if(activeSeason!=='proj' && seasons.includes(String(activeSeason))) return String(activeSeason);
+  if(SHARP_SEASON!=null && seasons.includes(String(SHARP_SEASON))) return String(SHARP_SEASON);
+  return seasons[0];
+}
+
+function _schemePayload(team, seasonPref){
   if(!team || !NFLVERSE) return null;
+  const seasons = _schemeSeasons(team);
   const keys = Object.keys(NFLVERSE).map(x=>parseInt(x,10)).filter(Number.isFinite).sort((a,b)=>b-a);
   const pref = [];
+  if(seasonPref && seasons.includes(String(seasonPref))) pref.push(String(seasonPref));
+  if(schemeSeason && seasons.includes(String(schemeSeason))) pref.push(String(schemeSeason));
   if(Number.isFinite(parseInt(SHARP_SEASON,10))) pref.push(String(parseInt(SHARP_SEASON,10)));
   if(activeSeason!=='proj' && Number.isFinite(parseInt(activeSeason,10))) pref.push(String(parseInt(activeSeason,10)));
   const seen = new Set();
@@ -4873,7 +4896,10 @@ function _schemeRenderTemplate(template, p){
 function _renderTeamCoachingScheme(){
   const host = document.getElementById('schemeOverlayHost');
   if(!host || !schemeTeam){ return; }
-  const p = _schemePayload(schemeTeam);
+  const seasons = _schemeSeasons(schemeTeam);
+  const pick = _schemePreferredSeason(schemeTeam);
+  const p = _schemePayload(schemeTeam, pick);
+  schemeSeason = p ? p.season : pick;
   if(!p){
     host.innerHTML = `<div class="scheme-overlay" onclick="closeTeamCoachingScheme()">
       <div class="scheme-modal" onclick="event.stopPropagation()">
@@ -4899,6 +4925,7 @@ function _renderTeamCoachingScheme(){
         </div>
       </div>
       <div class="scheme-loading">Loading playsheet template…</div>
+      ${seasons.length>1?`<div class="scheme-tabs">${seasons.map(s=>`<button class="scheme-tab ${String(s)===String(schemeSeason)?'active':''}" onclick="setTeamCoachingSchemeSeason('${s}')">Season <span>${s}</span></button>`).join('')}</div>`:''}
     </div>
   </div>`;
 
@@ -4925,6 +4952,7 @@ function openTeamCoachingScheme(team, initialView){
   if(!team) return;
   schemeOverlayOpen = true;
   schemeTeam = team;
+  schemeSeason = _schemePreferredSeason(team);
   void initialView; // route preserved for compatibility with existing onclick hooks
   // Coaching-scheme payloads live in a lazy-loaded nflverse sidecar. Fetch it first (hosted
   // first-open), showing a loading shell, then render the interactive playsheet.
@@ -4960,8 +4988,17 @@ function _renderSchemeLoadingShell(){
 function closeTeamCoachingScheme(){
   schemeOverlayOpen = false;
   schemeTeam = null;
+  schemeSeason = null;
   const host = document.getElementById('schemeOverlayHost');
   if(host) host.innerHTML = '';
+}
+
+function setTeamCoachingSchemeSeason(season){
+  if(!schemeOverlayOpen || !schemeTeam) return;
+  const s = String(season||'');
+  if(!s) return;
+  schemeSeason = s;
+  _renderTeamCoachingScheme();
 }
 
 if(document && document.addEventListener && !_schemeEscBound){
