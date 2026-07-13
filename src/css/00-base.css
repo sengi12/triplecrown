@@ -47,6 +47,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .main{display:flex;height:calc(100vh - 50px);}
 .sidebar{width:200px;min-width:200px;background:var(--surface);
   border-right:1px solid var(--border);overflow-y:auto;padding:8px 0;flex-shrink:0;}
+.team-picker-toggle{display:none;}
+.sidebar-conference-title{display:none;}
+.sidebar-team-grid{display:block;}
 .sidebar-section{padding:5px 12px 2px;font-size:9px;font-weight:800;
   color:var(--muted);letter-spacing:1.2px;text-transform:uppercase;}
 .team-item{padding:5px 10px;cursor:pointer;display:flex;align-items:center;

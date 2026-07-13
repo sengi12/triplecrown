@@ -31,6 +31,7 @@ function setFill(el,color){
     if(color) fill.style.background=color;
   }
 }
+
 function initSliders(){
   document.querySelectorAll('input.sl').forEach(el=>{
     setFill(el,el.dataset.col||null);

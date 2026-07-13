@@ -2,10 +2,24 @@
 @media (max-width: 760px){
   .main{flex-direction:column;height:auto;}
   .sidebar{width:100%;min-width:0;max-height:none;border-right:none;
-    border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;overflow-x:auto;padding:6px;}
-  .sidebar-section{width:100%;padding:4px 8px 1px;}
-  .team-item{flex:0 0 auto;padding:6px 9px;font-size:11px;}
+    border-bottom:1px solid var(--border);display:block;overflow-x:hidden;padding:5px 6px;}
+  .team-picker-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;
+    gap:8px;padding:6px 9px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);
+    color:var(--text);font-size:11px;font-weight:800;letter-spacing:.2px;}
+  .team-picker-toggle-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .team-picker-toggle-icon{font-size:12px;color:var(--muted2);}
+  .sidebar-groups{display:block;margin-top:5px;}
+  .sidebar-groups.mobile-collapsed{display:none;}
+  .sidebar-conference-block{margin-bottom:6px;}
+  .sidebar-conference-title{padding:1px 2px 4px;font-size:8px;font-weight:900;color:var(--muted2);letter-spacing:1.3px;text-transform:uppercase;}
+  .sidebar-division-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;}
+  .sidebar-division-block{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:4px;min-width:0;}
+  .sidebar-section{width:100%;padding:0 2px 4px;font-size:9px;}
+  .sidebar-team-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;}
+  .team-item{padding:4px 1px;font-size:11px;justify-content:center;border-left:none;border:1px solid transparent;border-radius:6px;}
   .team-item .team-rec{display:none;}
+  .team-item.active{border-left-color:transparent;border-color:var(--accent);}
+  .team-logo-sm{width:20px;height:20px;}
   .content{padding:12px 12px 40px;height:auto;overflow-y:visible;}
   .main{height:auto;}
   body,html{height:auto;overflow-y:auto;}
@@ -27,6 +41,15 @@
   .format-btn,.pos-filter-btn{padding:5px 8px;font-size:10px;}
   .discrepancy-note,.vacated-note{font-size:10.5px;}
   .season-bar{padding:6px 10px;}
+
+  /* Mobile safety: only the thumb is interactive. Touches that begin on the track
+     should pass through for normal page scrolling without moving the slider value. */
+  input.sl{pointer-events:none;}
+  input.sl::-webkit-slider-thumb{pointer-events:auto;}
+  input.sl::-moz-range-thumb{pointer-events:auto;}
+}
+@media (max-width: 360px){
+  .sidebar-division-grid{grid-template-columns:1fr;}
 }
 @media (max-width: 420px){
   .stats-grid{grid-template-columns:1fr 1fr;}

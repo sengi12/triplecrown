@@ -791,6 +791,7 @@ function setFill(el,color){
     if(color) fill.style.background=color;
   }
 }
+
 function initSliders(){
   document.querySelectorAll('input.sl').forEach(el=>{
     setFill(el,el.dataset.col||null);
@@ -1007,23 +1008,35 @@ const SIDEBAR_DIVISIONS = [
 ];
 
 const SIDEBAR_TEAM_LABEL = {
-  CIN:'Cincinnati', PIT:'Pittsburgh', BAL:'Baltimore', CLE:'Cleveland',
-  HOU:'Houston', JAX:'Jaguars', TEN:'Titans', IND:'Colts',
-  BUF:'Buffalo', NE:'New England', MIA:'Miami', NYJ:'New York Jets',
-  KC:'Kansas City', LAC:'Los Angeles Chargers', LV:'Las Vegas', DEN:'Denver',
-  GB:'Green Bay', DET:'Detroit', MIN:'Minnesota', CHI:'Chicago',
-  TB:'Tampa Bay', CAR:'Carolina', ATL:'Atlanta', NO:'New Orleans',
-  PHI:'Philadelphia', DAL:'Dallas', WAS:'Washington', NYG:'New York Giants',
-  LAR:'Los Angeles Rams', SF:'San Fransisco', SEA:'Seattle', ARI:'Arizona',
+  CIN:'Bengals', PIT:'Steelers', BAL:'Ravens', CLE:'Browns',
+  HOU:'Texans', JAX:'Jaguars', TEN:'Titans', IND:'Colts',
+  BUF:'Bills', NE:'Patriots', MIA:'Dolphins', NYJ:'Jets',
+  KC:'Chiefs', LAC:'Chargers', LV:'Raiders', DEN:'Broncos',
+  GB:'Packers', DET:'Lions', MIN:'Vikings', CHI:'Bears',
+  TB:'Buccaneers', CAR:'Panthers', ATL:'Atlanta', NO:'Saints',
+  PHI:'Eagles', DAL:'Cowboys', WAS:'Commanders', NYG:'Giants',
+  LAR:'Rams', SF:'49ers', SEA:'Seahawks', ARI:'Cardinals',
 };
 
 function sidebarTeamLabel(t){
   return SIDEBAR_TEAM_LABEL[t] || t;
 }
 
+let mobileTeamPickerExpanded = false;
+
+function isMobileTeamPickerLayout(){
+  return !!(window.matchMedia && window.matchMedia('(max-width: 760px)').matches);
+}
+
+function toggleMobileTeamPicker(){
+  if(!isMobileTeamPickerLayout()) return;
+  mobileTeamPickerExpanded = !mobileTeamPickerExpanded;
+  renderSidebar();
+}
+
 function renderSidebar(){
   const sb=document.getElementById('sidebar');
-  let done=0,html='';
+  let done=0;
   const doneClass = t => {
     const st=userProj[t]; if(!st) return '';
     const a=st.qbs&&st.qbs[0]&&st.qbs[0].passing_yards>0;
@@ -1031,15 +1044,42 @@ function renderSidebar(){
     if(a&&b&&c){ done++; return 'done'; }
     return (a||b||c) ? 'partial' : '';
   };
-  SIDEBAR_DIVISIONS.forEach(div=>{
-    html += `<div class="sidebar-section">${div.title}</div>`;
-    div.teams.forEach(t=>{
-      const cls = doneClass(t);
-      html+=`<div class="team-item ${t===currentTeam?'active':''}" onclick="selectTeam('${t}')">
-        <img src="${NFL_LOGO(t)}" class="team-logo-sm" alt="${t}" onerror="this.style.display='none'">
-        <div class="team-dot ${cls}"></div><span class="team-name">${sidebarTeamLabel(t)}</span></div>`;
-    });
-  });
+
+  const mkTeamItem = (t, cls) => `<div class="team-item ${t===currentTeam?'active':''}" onclick="selectTeam('${t}')">
+    <img src="${NFL_LOGO(t)}" class="team-logo-sm" alt="${t}" onerror="this.style.display='none'">
+    <div class="team-dot ${cls}"></div><span class="team-name">${sidebarTeamLabel(t)}</span></div>`;
+
+  const conferences = [
+    { title:'AFC', divisions:SIDEBAR_DIVISIONS.filter(d=>d.title.startsWith('AFC')) },
+    { title:'NFC', divisions:SIDEBAR_DIVISIONS.filter(d=>d.title.startsWith('NFC')) },
+  ];
+
+  const groupsHtml = conferences.map(conf=>{
+    const divisionHtml = conf.divisions.map(div=>{
+      const teamsHtml = div.teams.map(t=>mkTeamItem(t, doneClass(t))).join('');
+      return `<div class="sidebar-division-block">
+        <div class="sidebar-section">${div.title}</div>
+        <div class="sidebar-team-grid">${teamsHtml}</div>
+      </div>`;
+    }).join('');
+    return `<div class="sidebar-conference-block">
+      <div class="sidebar-conference-title">${conf.title}</div>
+      <div class="sidebar-division-grid">${divisionHtml}</div>
+    </div>`;
+  }).join('');
+
+  const mobile = isMobileTeamPickerLayout();
+  const hasTeam = !!currentTeam;
+  const selectedLabel = hasTeam ? `${sidebarTeamLabel(currentTeam)} (${currentTeam})` : 'Select Team';
+  const chevron = mobileTeamPickerExpanded ? '▾' : '▸';
+  const mobileToggle = `<button class="team-picker-toggle" onclick="toggleMobileTeamPicker()" aria-expanded="${mobileTeamPickerExpanded?'true':'false'}" title="Tap to ${mobileTeamPickerExpanded?'collapse':'expand'} team selector">
+    <span class="team-picker-toggle-label">Teams: ${selectedLabel}</span>
+    <span class="team-picker-toggle-icon">${chevron}</span>
+  </button>`;
+
+  const collapsedClass = (mobile && !mobileTeamPickerExpanded) ? 'mobile-collapsed' : '';
+  const html = `${mobileToggle}<div class="sidebar-groups ${collapsedClass}">${groupsHtml}</div>`;
+
   sb.innerHTML=html;
   document.getElementById('progressText').textContent=`${done}/32 teams`;
   document.getElementById('progressFill').style.width=`${done/32*100}%`;
@@ -1054,6 +1094,7 @@ function selectTeam(t){
   // make sure shares exist so the targets/rushing tab is populated as if previously opened
   if(currentPhase==='Passing') initPassingShares(t);
   else if(currentPhase==='Rushing') initRushingShares(t);
+  if(isMobileTeamPickerLayout()) mobileTeamPickerExpanded=false;
   renderSidebar();renderContent();
 }
 function setPhase(p){
