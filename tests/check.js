@@ -90,7 +90,7 @@ const SLEEPER_AVATAR_THUMB=(id)=>`https://sleepercdn.com/avatars/thumbs/${id}`;
 // Embedded image assets (base64 data URIs → self-contained, render offline / from file://)
 // ─────────────────────────────────────────────────────────────────────────────
 // KeepTradeCut logo mark (their favicon-96), shown as the player-card KTC link icon.
-const KTC_ICON = 'data:image/png;base64,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';
+const KTC_ICON = 'images/ktc.png';
 // ═════════════════════════════════════════════════════════════════════════════
 // Week-range filtering (reference seasons only) — lets the user drag a dual
 // slider to see what a WR/RB/TE put up over just a stretch of weeks (e.g. Tucker
@@ -701,11 +701,126 @@ function updateUndoButton(){
 // the initial seed load lean/fast, build_seed.py writes them to sidecar files that the app
 // fetches on demand (hosted). The baked/offline file re-embeds them as SEED_NFLVERSE_*
 // constants (file:// can't fetch), which we merge into NFLVERSE at load below.
+
+// Seed decoders reverse the compaction applied by the seed codecs. Each decoder is a
+// no-op on non-compacted data, so decodeAnySeed(...) is safe on plain or compact payloads.
+
+// ── coaching seed (triplecrown_seed.coaching.<season>.json) ────────────────
+function decodeSeed(c){
+    if(!c || c.v!==2) return c;
+    const rt=c.leg.rt, ln=c.leg.ln;
+    const decRoutes = rc => rc.map(([i,pct])=>[rt[i],pct]);
+    const out={};
+    for(const code in c.teams){
+      const t=c.teams[code], slots=t.slots, names=t.names;
+      const formations={}, sigOrder=[];
+      for(const f of t.forms){
+        const [sig,name,backs,te,wr,ol,assignsC]=f;
+        sigOrder.push(sig);
+        const parts=sig.split("|");
+        const assigns=assignsC.map(([slot,routesC])=>{
+          const pid=slots[slot];
+          return {slot, name:(pid&&names[pid])||"\u2014", routes:decRoutes(routesC)};
+        });
+        formations[sig]={p:parts[0], align:parts[1], name, backs, te, wr, ol, assigns};
+      }
+      const decLanes = lc => lc.map(([i,n,epa])=>[ln[i],n,epa]);
+      const decGroup = g => {
+        const [fi,n,share,pass_rate,epa,succ,np,ep,sp,er,sr,lanesC]=g;
+        return {sig:sigOrder[fi], n, share, pass_rate, epa, succ,
+                np, ep, sp, nr:n-np, er, sr, lanes:decLanes(lanesC)};
+      };
+      const views={};
+      for(const dk in t.views){ views[dk]={};
+        for(const dsk in t.views[dk]){ views[dk][dsk]={};
+          for(const pk in t.views[dk][dsk]){
+            const node=t.views[dk][dsk][pk];
+            views[dk][dsk][pk] = node==null ? null : {total:node[0], groups:node[1].map(decGroup)};
+          }
+        }
+      }
+      out[code]={team:t.team, slots, names, jerseys:t.jerseys||{}, formations, views};
+    }
+    return out;
+  }
+
+// ── def_weekly seed (triplecrown_seed.def_weekly.json) ─────────────────────
+function decodeDefWeekly(c){
+    if(!c || c.kind!=="def_weekly") return c;
+    const wf=c.wf;
+    const decRow = row => { if(row==null) return null;
+      const o={}; for(let i=0;i<row.length;i++){ if(row[i]!=null) o[wf[i]]=row[i]; } return o; };
+    const out={};
+    for(const y in c.years){
+      const node=c.years[y], pl={};
+      for(const pname in node){
+        const [name,team,pos,group,totalsC,weeksC]=node[pname];
+        const p={name,team,pos,group};
+        if(totalsC!=null) p.totals=decRow(totalsC);
+        p.weeks=weeksC.map(decRow);
+        pl[pname]=p;
+      }
+      out[y]=pl;
+    }
+    return out;
+  }
+
+// ── fantasy seed (triplecrown_seed.json) ───────────────────────────────────
+function decodeFantasy(c){
+    if(!c || c.__codec!=="fantasy-1") return c;
+    const out={};
+    for(const k in c){ if(k!=="__codec") out[k]=c[k]; }
+    const hc=c.history, sf=hc.sf;
+    const decStats = row => { const o={}; for(let i=0;i<row.length;i++){ if(row[i]!=null) o[sf[i]]=row[i]; } return o; };
+    const hist={};
+    for(const pid in hc.players){
+      const [name,pos,sc]=hc.players[pid];
+      const seasons={};
+      for(const yr in sc){
+        seasons[yr]=sc[yr].map(base=>{
+          const rec={team:base[0], pos, name, games_played:base[1], games_started:base[2],
+                    snap_pct:base[3], stats:decStats(base[4])};
+          if(base.length>5 && base[5]) Object.assign(rec, base[5]);
+          return rec;
+        });
+      }
+      hist[pid]=seasons;
+    }
+    out.history=hist;
+    const nc=c.nflverse, rt=nc.rt;
+    const decRK = dct => { if(!dct||typeof dct!=="object") return dct;
+      const o={}; for(const i in dct) o[rt[+i]]=dct[i]; return o; };
+    const nv={};
+    for(const yr in nc.years){
+      const node=nc.years[yr], n2={};
+      for(const k in node) n2[k]=node[k];
+      if(node.routes && typeof node.routes==="object"){
+        const r2={};
+        for(const pn in node.routes){
+          const rr={}; for(const k in node.routes[pn]) rr[k]=node.routes[pn][k];
+          for(const kk of ["tree","route_tds","route_rec","route_yds"]) if(kk in rr) rr[kk]=decRK(rr[kk]);
+          r2[pn]=rr;
+        }
+        n2.routes=r2;
+      }
+      nv[yr]=n2;
+    }
+    out.nflverse=nv;
+    return out;
+  }
+
+// ── universal dispatcher: safe on any seed (compact or plain, any type) ─────
+function decodeAnySeed(data){
+  return decodeSeed(decodeDefWeekly(decodeFantasy(data)));
+}
+
+if(typeof module!=='undefined') module.exports={decodeSeed,decodeDefWeekly,decodeFantasy,decodeAnySeed};
+
 let _nflverseLazyLoaded = { def_weekly:false, coaching_scheme:false };
 let _nflverseLazyPromise = {};
 const _NFLVERSE_SIDECAR_URL = {
-  def_weekly: 'triplecrown_seed.def_weekly.json',
-  coaching_scheme: 'triplecrown_seed.coaching.json',
+  def_weekly: 'seeds/triplecrown_seed.def_weekly.json',
+  coaching_scheme: 'seeds/triplecrown_seed.coaching.json',
 };
 
 // Merge a {season:{key:{...}}} payload into NFLVERSE[season][section].
@@ -742,7 +857,7 @@ function ensureNflverseSection(section){
     try{
       const res = await fetch(url, {cache:'no-store'});
       if(!res.ok) return false;
-      const data = await res.json();
+      const data = decodeAnySeed(await res.json());
       mergeNflverseSection(section, data);
       _nflverseLazyLoaded[section] = true;
       return true;
@@ -771,9 +886,9 @@ function ensureNflverseCoachingSeason(season){
   if(_coachingSeasonPromise[season]) return _coachingSeasonPromise[season];
   _coachingSeasonPromise[season] = (async()=>{
     try{
-      const res = await fetch(`triplecrown_seed.coaching.${season}.json`, {cache:'no-store'});
+      const res = await fetch(`seeds/triplecrown_seed.coaching.${season}.json`, {cache:'no-store'});
       if(!res.ok) return false;
-      const data = await res.json();
+      const data = decodeAnySeed(await res.json());
       if(data && typeof data==='object' && typeof NFLVERSE==='object' && NFLVERSE){
         (NFLVERSE[season] = NFLVERSE[season] || {}).coaching_scheme = data;
         _coachingSeasonLoaded[season] = true;
@@ -788,8 +903,17 @@ function ensureNflverseCoachingSeason(season){
 // Merge any embedded sidecars (baked/offline path) into NFLVERSE once at load.
 (function(){
   try{
-    const dw = (typeof SEED_NFLVERSE_DEF_WEEKLY!=='undefined') ? SEED_NFLVERSE_DEF_WEEKLY : null;
-    const cs = (typeof SEED_NFLVERSE_COACHING!=='undefined') ? SEED_NFLVERSE_COACHING : null;
+    const dw = decodeAnySeed((typeof SEED_NFLVERSE_DEF_WEEKLY!=='undefined') ? SEED_NFLVERSE_DEF_WEEKLY : null);
+    // SEED_NFLVERSE_COACHING is embedded as {season: payload}. Each season payload may itself
+    // be compact-coded, so decode per season before merging into NFLVERSE.
+    const rawCs = (typeof SEED_NFLVERSE_COACHING!=='undefined') ? SEED_NFLVERSE_COACHING : null;
+    const cs = {};
+    if(rawCs && typeof rawCs==='object'){
+      for(const season of Object.keys(rawCs)){
+        const dec = decodeAnySeed(rawCs[season]);
+        if(dec && typeof dec==='object' && Object.keys(dec).length) cs[season] = dec;
+      }
+    }
     if(dw && Object.keys(dw).length){ mergeNflverseSection('def_weekly', dw); _nflverseLazyLoaded.def_weekly = true; }
     if(cs && Object.keys(cs).length){ mergeNflverseSection('coaching_scheme', cs); _nflverseLazyLoaded.coaching_scheme = true; }
   }catch(e){ /* no embedded sidecars — hosted lazy path will fetch on demand */ }
@@ -6497,9 +6621,9 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
 // useful (at minimum ECR). Never throws — a file:// open or missing file just returns false.
 async function tryAutoLoadSeed(){
   try{
-    const res = await fetch('triplecrown_seed.json', {cache:'no-store'});
+    const res = await fetch('seeds/triplecrown_seed.json', {cache:'no-store'});
     if(!res.ok) return false;
-    const j = await res.json();
+    const j = decodeAnySeed(await res.json());
     let got=false;
     if(j.ecr){ ECR=j.ecr; got=true; }
     if(j.contracts){ CONTRACTS=j.contracts; got=true; }
@@ -7323,7 +7447,7 @@ function handleSeedLoad(e){
   const r=new FileReader();
   r.onload=ev=>{
     try{
-      const j=JSON.parse(ev.target.result);
+      const j = decodeAnySeed(JSON.parse(ev.target.result));
       // Accept the file if it has EITHER projections or ECR (an ECR-only seed is valid —
       // it still populates the rankings ECR/Tier columns).
       const hasSeed = j.seed && Object.keys(j.seed).length;

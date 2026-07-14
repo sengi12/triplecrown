@@ -7,18 +7,11 @@
 // fetches on demand (hosted). The baked/offline file re-embeds them as SEED_NFLVERSE_*
 // constants (file:// can't fetch), which we merge into NFLVERSE at load below.
 
-// ═══════════════════════════════════════════════════════════════════════════
-  // seed_decoders.js — reverses the compaction applied by the seed codecs.
-  // Drop this in a <script> BEFORE the main app script, then wrap each loaded
-  // seed payload in decodeAnySeed(...) at the fetch/parse sites (see notes below).
-  //
-  // Every decoder is a NO-OP on data that isn't in its compact format, so it's
-  // safe to wrap payloads before you've re-encoded the files, and safe to run the
-  // universal decodeAnySeed() on any seed (compact or plain, any of the 3 types).
-  // ═══════════════════════════════════════════════════════════════════════════
+// Seed decoders reverse the compaction applied by the seed codecs. Each decoder is a
+// no-op on non-compacted data, so decodeAnySeed(...) is safe on plain or compact payloads.
 
-  // ── coaching seed (triplecrown_seed.coaching.<season>.json) ────────────────
-  function decodeSeed(c){
+// ── coaching seed (triplecrown_seed.coaching.<season>.json) ────────────────
+function decodeSeed(c){
     if(!c || c.v!==2) return c;
     const rt=c.leg.rt, ln=c.leg.ln;
     const decRoutes = rc => rc.map(([i,pct])=>[rt[i],pct]);
@@ -56,8 +49,8 @@
     return out;
   }
 
-  // ── def_weekly seed (triplecrown_seed.def_weekly.json) ─────────────────────
-  function decodeDefWeekly(c){
+// ── def_weekly seed (triplecrown_seed.def_weekly.json) ─────────────────────
+function decodeDefWeekly(c){
     if(!c || c.kind!=="def_weekly") return c;
     const wf=c.wf;
     const decRow = row => { if(row==null) return null;
@@ -77,8 +70,8 @@
     return out;
   }
 
-  // ── fantasy seed (triplecrown_seed.json) ───────────────────────────────────
-  function decodeFantasy(c){
+// ── fantasy seed (triplecrown_seed.json) ───────────────────────────────────
+function decodeFantasy(c){
     if(!c || c.__codec!=="fantasy-1") return c;
     const out={};
     for(const k in c){ if(k!=="__codec") out[k]=c[k]; }
@@ -121,12 +114,12 @@
     return out;
   }
 
-  // ── universal dispatcher: safe on any seed (compact or plain, any type) ─────
-  function decodeAnySeed(data){
-    return decodeSeed(decodeDefWeekly(decodeFantasy(data)));
-  }
+// ── universal dispatcher: safe on any seed (compact or plain, any type) ─────
+function decodeAnySeed(data){
+  return decodeSeed(decodeDefWeekly(decodeFantasy(data)));
+}
 
-  if(typeof module!=='undefined') module.exports={decodeSeed,decodeDefWeekly,decodeFantasy,decodeAnySeed};
+if(typeof module!=='undefined') module.exports={decodeSeed,decodeDefWeekly,decodeFantasy,decodeAnySeed};
 
 let _nflverseLazyLoaded = { def_weekly:false, coaching_scheme:false };
 let _nflverseLazyPromise = {};
@@ -200,7 +193,7 @@ function ensureNflverseCoachingSeason(season){
     try{
       const res = await fetch(`seeds/triplecrown_seed.coaching.${season}.json`, {cache:'no-store'});
       if(!res.ok) return false;
-      const data = await res.json();
+      const data = decodeAnySeed(await res.json());
       if(data && typeof data==='object' && typeof NFLVERSE==='object' && NFLVERSE){
         (NFLVERSE[season] = NFLVERSE[season] || {}).coaching_scheme = data;
         _coachingSeasonLoaded[season] = true;
@@ -216,7 +209,16 @@ function ensureNflverseCoachingSeason(season){
 (function(){
   try{
     const dw = decodeAnySeed((typeof SEED_NFLVERSE_DEF_WEEKLY!=='undefined') ? SEED_NFLVERSE_DEF_WEEKLY : null);
-    const cs = decodeAnySeed((typeof SEED_NFLVERSE_COACHING!=='undefined') ? SEED_NFLVERSE_COACHING : null);
+    // SEED_NFLVERSE_COACHING is embedded as {season: payload}. Each season payload may itself
+    // be compact-coded, so decode per season before merging into NFLVERSE.
+    const rawCs = (typeof SEED_NFLVERSE_COACHING!=='undefined') ? SEED_NFLVERSE_COACHING : null;
+    const cs = {};
+    if(rawCs && typeof rawCs==='object'){
+      for(const season of Object.keys(rawCs)){
+        const dec = decodeAnySeed(rawCs[season]);
+        if(dec && typeof dec==='object' && Object.keys(dec).length) cs[season] = dec;
+      }
+    }
     if(dw && Object.keys(dw).length){ mergeNflverseSection('def_weekly', dw); _nflverseLazyLoaded.def_weekly = true; }
     if(cs && Object.keys(cs).length){ mergeNflverseSection('coaching_scheme', cs); _nflverseLazyLoaded.coaching_scheme = true; }
   }catch(e){ /* no embedded sidecars — hosted lazy path will fetch on demand */ }
