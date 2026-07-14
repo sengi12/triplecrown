@@ -190,7 +190,7 @@ function _schemeBuildFv(p){
   const formations = (p && p.data && p.data.formations) ? p.data.formations : {};
   const DOWNS = ['all','1','2','3','4'];
   const DISTS = ['all','short','med','long'];
-  const TYPES = ['all','pa','motion','nohuddle'];
+  const TYPES = ['all','pa','motion','nohuddle','redzone'];
   const isNode = x => !!x && (Array.isArray(x.groups) || typeof x.total === 'number');
   // Old flat schema (down/type marginals only) vs new nested down→dist→type schema.
   const legacy = isNode(views.all) || isNode(views.down1);
@@ -201,17 +201,17 @@ function _schemeBuildFv(p){
     // render; combined (down+dist / down+type) filters fall back to empty as they did before.
     const e = _schemeEmptyNode();
     const node = k => _schemeNode(views[k], formations);
-    const dblk = (main,pa,mo,nh) => ({
-      all:{all:main, pa:pa, motion:mo, nohuddle:nh},
-      short:{all:e, pa:e, motion:e, nohuddle:e},
-      med:{all:e, pa:e, motion:e, nohuddle:e},
-      long:{all:e, pa:e, motion:e, nohuddle:e},
+    const dblk = (main,pa,mo,nh,rz) => ({
+      all:{all:main, pa:pa, motion:mo, nohuddle:nh, redzone:rz},
+      short:{all:e, pa:e, motion:e, nohuddle:e, redzone:e},
+      med:{all:e, pa:e, motion:e, nohuddle:e, redzone:e},
+      long:{all:e, pa:e, motion:e, nohuddle:e, redzone:e},
     });
-    data.all = dblk(node('all'), node('pa'), node('motion'), node('nohuddle'));
-    data['1'] = dblk(node('down1'), e, e, e);
-    data['2'] = dblk(node('down2'), e, e, e);
-    data['3'] = dblk(node('down3'), e, e, e);
-    data['4'] = dblk(node('down4'), e, e, e);
+    data.all = dblk(node('all'), node('pa'), node('motion'), node('nohuddle'), e);
+    data['1'] = dblk(node('down1'), e, e, e, e);
+    data['2'] = dblk(node('down2'), e, e, e, e);
+    data['3'] = dblk(node('down3'), e, e, e, e);
+    data['4'] = dblk(node('down4'), e, e, e, e);
   } else {
     // New schema: fill the full down × distance × type grid, defaulting any pruned
     // (empty) combination to an empty node so every filter selection resolves cleanly.

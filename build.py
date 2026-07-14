@@ -18,6 +18,7 @@ Usage:
     python build.py            # rebuild index.html from src/
     python build.py --check    # verify src/ rebuilds the current index.html (no write); exit 1 if not
 """
+import json
 import os
 import re
 import sys
@@ -31,6 +32,25 @@ JS_TOKEN = "@@JS_PARTIALS@@"
 # build can include or drop it. It's OFFLINE-only: hosted copies auto-load triplecrown_seed.json
 # (so a manual loader is redundant), while a local file:// copy with no server may still want it.
 SEED_UI_RE = re.compile(r"[ \t]*<!--@@SEED_UI@@-->\n(.*?)[ \t]*<!--@@/SEED_UI@@-->\n", re.DOTALL)
+INLINE_TEXT_RE = re.compile(r'__INLINE_TEXT__\("([^"]+)"\)')
+
+
+def _inline_text_token(match):
+    """Replace __INLINE_TEXT__("path") with a JSON-quoted file body.
+
+    Paths are relative to src/. This keeps source partials readable while the final built
+    index.html still ships the exact inline JS string the app expects.
+    """
+    rel = match.group(1)
+    path = os.path.join(SRC, rel)
+    with open(path, "r") as f:
+        text = f.read()
+    # Keep readable template sources as valid HTML in the editor, but convert script tags to
+    # runtime placeholders before inlining them into the outer app <script> block. Otherwise a
+    # literal </script> inside the template string would terminate the app script early.
+    text = text.replace("<script>", "__TC_SCRIPT_OPEN__")
+    text = text.replace("</script>", "__TC_SCRIPT_CLOSE__")
+    return json.dumps(text)
 
 
 def _read_partial(path):
@@ -40,6 +60,7 @@ def _read_partial(path):
         s = f.read()
     if s.endswith("\n"):
         s = s[:-1]
+    s = INLINE_TEXT_RE.sub(_inline_text_token, s)
     return s
 
 

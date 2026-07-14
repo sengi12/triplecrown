@@ -1494,7 +1494,7 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40):
     """
     pbp_cols = [
         "game_id", "play_id", "posteam", "play_type", "pass", "rush_attempt", "qb_scramble",
-        "epa", "success", "down", "ydstogo", "season_type", "shotgun", "run_location", "run_gap",
+        "epa", "success", "down", "ydstogo", "yardline_100", "season_type", "shotgun", "run_location", "run_gap",
         "receiver_player_id",
     ]
     pbp = _load_pbp(season, pbp_cols)
@@ -1530,6 +1530,7 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40):
     d["p"] = d["backs"].astype(str) + d["te"].astype(str)
     d["align"] = d.apply(_scheme_align, axis=1)
     d["lane"] = d.apply(_scheme_lane, axis=1)
+    d["is_red_zone"] = d["yardline_100"].notna() & (d["yardline_100"] <= 20)
 
     roster = _aux_csv(ROSTER_URL.format(season=season), usecols=["gsis_id", "full_name", "position", "team", "jersey_number"]).drop_duplicates("gsis_id")
     rmap = roster.set_index("gsis_id") if len(roster) else pd.DataFrame()
@@ -1682,7 +1683,8 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40):
         down_specs = [("all", None), ("1", 1), ("2", 2), ("3", 3), ("4", 4)]
         dist_specs = [("all", None), ("short", (1, 3)), ("med", (4, 7)), ("long", (8, 99))]
         type_specs = [("all", None), ("pa", "is_play_action"),
-                      ("motion", "is_motion"), ("nohuddle", "is_no_huddle")]
+                  ("motion", "is_motion"), ("nohuddle", "is_no_huddle"),
+                  ("redzone", "is_red_zone")]
 
         def _nonempty(node):
             return node.get("total", 0) > 0 and len(node.get("groups", [])) > 0

@@ -1,4 +1,4 @@
-# <img src="images/app-icon.png" align="left" width="100" style="margin-right: 10px;">
+# <img src="images/app-icon.png" align="left" width="120" style="margin-right: 10px;">
 
 # <span style="color:#1599E6">Triple</span>Crown
 
@@ -36,13 +36,13 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
   <img src="./images/rankings.png" alt="Centered Image">
 </div>
 
-- **Warren Sharp advanced stats.** A read-only **Advanced Stats** tab surfaces last season's team-level analytics from Warren Sharp — offensive and defensive line, pace, personnel, tendencies, and coverage. Every stat is league-ranked and color-coded best→worst, per team and league-wide. This is reference context to inform your projections; it never changes them.
+- **Advanced Stats.** A read-only advanced statistics tab surfaces last season's team-level analytics from Warren Sharp — offensive and defensive line, pace, personnel, tendencies, and coverage. Every stat is league-ranked and color-coded best→worst, per team and league-wide. This is reference context to inform your projections; it never changes them.
 - **Strength of schedule.** Each team shows its upcoming-season SOS rank and Vegas win total, plus a league-wide SOS chart.
 - **Coaching staff & scheme carryover.** Every team surfaces its head coach (live from ESPN), flags head coaches who call their own plays, and lists the current offensive/defensive coordinators. When a coordinator (or a play-calling head coach) is new this season and came from another team, TripleCrown carries over that former team's scheme tendencies as a forecast — because scheme travels with the play-caller.
 
 <!-- Center align -->
 <div align="center">
-  <img src="./images/sharp_adv.png" alt="Centered Image">
+  <img src="./images/adv_stats.png" alt="Centered Image">
 </div>
 
 - **Roster changes.** A per-team **Roster Changes** tab pulls the offseason's free-agent signings, draft picks, trades, and notable free-agent losses from Spotrac — sorted by contract value — so you can see how a team addressed last season's weaknesses (and where new holes may have opened). The same tab also renders the team's current **depth chart** — ordered starters → backups by position slot, live from ESPN.
@@ -247,4 +247,4 @@ This isn't legal advice; the [full license text](./LICENSE) governs.
 
 ---
 
-*TripleCrown is a personal projection tool and is not affiliated with the NFL, Sleeper, FantasyPros, OverTheCap, Warren Sharp, SumerSports, or Spotrac. Data from those sources is used under their respective terms for personal, non-commercial use.*
+*TripleCrown is a personal projection tool and is not affiliated with the NFL, Sleeper, FantasyPros, ESPN or NFLVerse and data from those sources is used under their respective terms for personal, non-commercial use.*
