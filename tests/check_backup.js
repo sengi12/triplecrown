@@ -21,7 +21,6 @@ const SEED_CONTRACTS = {};
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants & URLs
 // ─────────────────────────────────────────────────────────────────────────────
-const TFF = 'https://cloud.thefantasyfootballers.com/images/app-square-sm/';
 const NFL_LOGO = t => `https://static.www.nfl.com/t_headshot_desktop/f_auto/league/api/clubs/logos/${t==='JAX'?'JAC':t}`;
 // Sleeper APIs (browser can reach these directly; container cannot)
 const SLEEPER_PLAYERS_URL = 'https://api.sleeper.app/v1/players/nfl';
