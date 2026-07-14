@@ -78,7 +78,7 @@ function variantsFor(g){
   return out;
 }
 function positions(g, av){
-  const cx=165, olY=210, gap=22, sq=15;
+  const cx=165, olY=200, gap=22, sq=15;
   const olX=[cx-2*gap,cx-gap,cx,cx+gap,cx+2*gap];
   const skill=[]; const al=g.align, backs=g.backs, te=g.te, wr=g.wr;
   const vars=variantsFor(g); const v=vars[(av||0)%vars.length]||vars[0];
@@ -102,11 +102,12 @@ function positions(g, av){
     if(backs>=2)skill.push({role:'RB',x:cx-22,y:qbY,side:'L',label:'RB'});
     if(backs>=3)skill.push({role:'RB',x:cx,y:qbY+20,side:'M',label:'RB'}); }  // 3rd back offset behind QB
   // TEs: teR on right (attached beyond RT), rest left; bunch = tighter cluster to one side
+  const jumboOff = g.ol >= 6 ? 22 : 0;
   const teRightN=Math.min(v.teR,te), teLeftN=te-teRightN;
-  const rTE=v.teBunch?[olX[4]+16,olX[4]+34,olX[4]+52]:[olX[4]+18,olX[4]+40];
-  const lTE=v.teBunch?[olX[0]-16,olX[0]-34,olX[0]-52]:[olX[0]-18,olX[0]-40];
-  for(let i=0;i<teRightN;i++){ let x=rTE[i]; skill.push({role:'TE',x:x,y:olY-2,side:'R',label:'TE'}); }
-  for(let i=0;i<teLeftN;i++){ let x=lTE[i]; skill.push({role:'TE',x:x,y:olY-2,side:'L',label:'TE'}); }
+  const rTE=v.teBunch?[olX[4]+20+jumboOff,olX[4]+38+jumboOff,olX[4]+56+jumboOff]:[olX[4]+22+jumboOff,olX[4]+44+jumboOff];
+  const lTE=v.teBunch?[olX[0]-20,olX[0]-38,olX[0]-56]:[olX[0]-22,olX[0]-44];
+  for(let i=0;i<teRightN;i++){ let x=rTE[i]; skill.push({role:'TE',x:x,y:olY,side:'R',label:'TE'}); }
+  for(let i=0;i<teLeftN;i++){ let x=lTE[i]; skill.push({role:'TE',x:x,y:olY,side:'L',label:'TE'}); }
   // WRs: wrR on right, rest left; bunch clusters them tight. Triangle bunch staggers depth so they don't overlap.
   const wrRightN=Math.min(v.wrR,wr), wrLeftN=wr-wrRightN;
   const losWR=olY-4;
