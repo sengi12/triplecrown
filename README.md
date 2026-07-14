@@ -151,7 +151,7 @@ It fetches, in order:
 9. NFL coordinators and head coaches (Wikipedia), plus a maintained play-calling-HC list
 10. Spotrac offseason roster changes (free agency, draft, trades, losses)
 
-Output: **`triplecrown_seed.json`** (plus optional sidecars `triplecrown_seed.def_weekly.json` and `triplecrown_seed.coaching.json` for lazy nflverse sections). Requires only Python 3 standard library — no pip installs. Runs are cached in `triplecrown_cache/`, so re-runs are fast; use `--refresh` to force a re-download.
+Output: **`triplecrown_seed.json`** (plus optional sidecars `triplecrown_seed.def_weekly.json` and `triplecrown_seed.coaching.json` for lazy nflverse sections). Requires only Python 3 standard library — no pip installs. Runs are cached in `cache/`, so re-runs are fast; use `--refresh` to force a re-download.
 
 **Load it into the app** by placing it next to `index.html` when hosted over http(s) — it auto-loads on page open. (Manual seed-loading is offline-only: a `python build.py --offline` build adds a 📦 Seed button for loading a `triplecrown_seed.json` by hand from `file://`; the hosted/online build omits it since it auto-loads.)
 

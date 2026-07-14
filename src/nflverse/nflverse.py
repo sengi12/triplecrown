@@ -25,7 +25,7 @@ except Exception:
     pd = None
     HAVE_PANDAS = False
 
-CACHE_DIR = "triplecrown_cache"
+CACHE_DIR = "cache"
 PBP_URL = "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_{season}.csv.gz"
 PFR_PASS_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_season_pass.csv"
 PFR_RUSH_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_season_rush.csv"
@@ -116,7 +116,7 @@ def _ensure_ol_grades_cache(seasons, refresh=False):
         return out_csv
 
     try:
-        import ol_grades_pipeline as _olp
+        import src.nflverse.ol_grades_pipeline as _olp
     except Exception as e:
         print(f"    → OL grades pipeline: unavailable ({type(e).__name__}: {e})")
         legacy = _legacy_ol_csv_path()
@@ -1849,7 +1849,7 @@ def build_nflverse_season(season):
 
 def _nflverse_built_cache_path(seasons):
     """Path for cached built nflverse output keyed by requested seasons."""
-    payload = {"seasons": [str(s) for s in seasons], "schema": "nflverse_seed_v5_scheme_dedup"}
+    payload = {"seasons": [str(s) for s in seasons], "schema": "nflverse_seed_v4_scheme_grid_all"}
     digest = hashlib.md5(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
     return os.path.join(_nflverse_cache_subdir("built"), f"{digest}.json")
 

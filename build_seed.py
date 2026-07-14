@@ -206,7 +206,7 @@ def _encode_defweekly(seed):
         years[y] = pl
     return {"v": 1, "kind": "def_weekly", "wf": wf, "years": years}
 
-CACHE_DIR = "triplecrown_cache"
+CACHE_DIR = "cache"
 PLAYERS_URL       = "https://api.sleeper.app/v1/players/nfl"
 PROJECTIONS_URL   = "https://api.sleeper.com/projections/nfl/{season}?season_type={stype}&grouping=season"
 STATS_URL         = "https://api.sleeper.com/stats/nfl/{season}?season_type={stype}&grouping=season"
@@ -1818,7 +1818,7 @@ def aggregate_weeks_by_team(weekly, season):
     return out
 
 def fetch_weekly(pid, season, refresh):
-    # organize weekly files into per-season subfolders: triplecrown_cache/weekly/<season>/<pid>.json
+    # organize weekly files into per-season subfolders: cache/weekly/<season>/<pid>.json
     return cached(os.path.join("weekly", str(season), f"{pid}.json"),
                   WEEKLY_URL.format(pid=pid, season=season, stype="regular"),
                   f"{season} weekly for {pid}", refresh)
@@ -1832,7 +1832,7 @@ def fetch_weekly(pid, season, refresh):
 # FINAL team, so a mid-season trade (Flacco: CLE→CIN) is invisible there — the only way to
 # detect and split it is the per-week feed. We fetch weekly for every QB who played, but the
 # data is only actually *used* for the handful who turn out to be multi-team; the rest fall
-# back to their season totals. All responses are cached under triplecrown_cache/weekly/<season>/
+# back to their season totals. All responses are cached under cache/weekly/<season>/
 # so re-runs are instant and you only pay the fetch cost once.
 def build_history(players, stats_by_season, refresh):
     history = {}  # pid -> { season: [ {team, games_played, games_started, snap_pct, stats}, ... ] }
@@ -2110,7 +2110,7 @@ def main():
     if args.nflverse:
         print("\n  nflverse advanced metrics (default-on, additive — requires pandas)")
         try:
-            import nflverse_stats as _nfl
+            import src.nflverse.nflverse as _nfl
             if not _nfl.HAVE_PANDAS:
                 print("    ⚠ pandas not installed — skipping nflverse metrics (the rest of the seed is unaffected)")
             else:

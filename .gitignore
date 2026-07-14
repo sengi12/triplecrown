@@ -1,4 +1,4 @@
-triplecrown_cache
+cache
 *.tar.gz
 *.tgz
 __pycache__
