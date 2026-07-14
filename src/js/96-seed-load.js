@@ -8,7 +8,7 @@ function handleSeedLoad(e){
   const r=new FileReader();
   r.onload=ev=>{
     try{
-      const j=JSON.parse(ev.target.result);
+      const j = decodeAnySeed(JSON.parse(ev.target.result));
       // Accept the file if it has EITHER projections or ECR (an ECR-only seed is valid —
       // it still populates the rankings ECR/Tier columns).
       const hasSeed = j.seed && Object.keys(j.seed).length;

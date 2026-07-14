@@ -177,9 +177,9 @@ function weekRangeCommit(team){
   const [lo,hi]=state._weekDragPending;
   applyWeekRange(team, lo, hi);
 }
-const TEAMS = ['ARI','ATL','BAL','BUF','CAR','CHI','CIN','CLE','DAL','DEN',
-  'DET','GB','HOU','IND','JAX','KC','LAC','LAR','LV','MIA','MIN','NE',
-  'NO','NYG','NYJ','PHI','PIT','SEA','SF','TB','TEN','WAS'];
+const TEAMS = ['CIN','PIT','BAL','CLE','HOU','JAX','TEN','IND','BUF','NE',
+  'MIA','NYJ','KC','LAC','LV','DEN','GB','DET','MIN','CHI','TB','CAR',
+  'ATL','NO','PHI','DAL','WAS','NYG','LAR','SF','SEA','ARI'];
 const PCOLORS = ['#4a9eff','#00d4aa','#ff6b35','#c084fc','#fbbf24','#f472b6',
   '#34d399','#a78bfa','#fb923c','#60a5fa','#e879f9','#38bdf8','#f97316','#86efac'];
 const SEASON_GAMES = 17;

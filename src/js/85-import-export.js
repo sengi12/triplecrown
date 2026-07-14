@@ -329,7 +329,7 @@ async function tryAutoLoadSeed(){
   try{
     const res = await fetch('triplecrown_seed.json', {cache:'no-store'});
     if(!res.ok) return false;
-    const j = await res.json();
+    const j = decodeAnySeed(await res.json());
     let got=false;
     if(j.ecr){ ECR=j.ecr; got=true; }
     if(j.contracts){ CONTRACTS=j.contracts; got=true; }

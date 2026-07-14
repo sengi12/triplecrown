@@ -6,6 +6,128 @@
 // the initial seed load lean/fast, build_seed.py writes them to sidecar files that the app
 // fetches on demand (hosted). The baked/offline file re-embeds them as SEED_NFLVERSE_*
 // constants (file:// can't fetch), which we merge into NFLVERSE at load below.
+
+// ═══════════════════════════════════════════════════════════════════════════
+  // seed_decoders.js — reverses the compaction applied by the seed codecs.
+  // Drop this in a <script> BEFORE the main app script, then wrap each loaded
+  // seed payload in decodeAnySeed(...) at the fetch/parse sites (see notes below).
+  //
+  // Every decoder is a NO-OP on data that isn't in its compact format, so it's
+  // safe to wrap payloads before you've re-encoded the files, and safe to run the
+  // universal decodeAnySeed() on any seed (compact or plain, any of the 3 types).
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── coaching seed (triplecrown_seed.coaching.<season>.json) ────────────────
+  function decodeSeed(c){
+    if(!c || c.v!==2) return c;
+    const rt=c.leg.rt, ln=c.leg.ln;
+    const decRoutes = rc => rc.map(([i,pct])=>[rt[i],pct]);
+    const out={};
+    for(const code in c.teams){
+      const t=c.teams[code], slots=t.slots, names=t.names;
+      const formations={}, sigOrder=[];
+      for(const f of t.forms){
+        const [sig,name,backs,te,wr,ol,assignsC]=f;
+        sigOrder.push(sig);
+        const parts=sig.split("|");
+        const assigns=assignsC.map(([slot,routesC])=>{
+          const pid=slots[slot];
+          return {slot, name:(pid&&names[pid])||"\u2014", routes:decRoutes(routesC)};
+        });
+        formations[sig]={p:parts[0], align:parts[1], name, backs, te, wr, ol, assigns};
+      }
+      const decLanes = lc => lc.map(([i,n,epa])=>[ln[i],n,epa]);
+      const decGroup = g => {
+        const [fi,n,share,pass_rate,epa,succ,np,ep,sp,er,sr,lanesC]=g;
+        return {sig:sigOrder[fi], n, share, pass_rate, epa, succ,
+                np, ep, sp, nr:n-np, er, sr, lanes:decLanes(lanesC)};
+      };
+      const views={};
+      for(const dk in t.views){ views[dk]={};
+        for(const dsk in t.views[dk]){ views[dk][dsk]={};
+          for(const pk in t.views[dk][dsk]){
+            const node=t.views[dk][dsk][pk];
+            views[dk][dsk][pk] = node==null ? null : {total:node[0], groups:node[1].map(decGroup)};
+          }
+        }
+      }
+      out[code]={team:t.team, slots, names, jerseys:t.jerseys||{}, formations, views};
+    }
+    return out;
+  }
+
+  // ── def_weekly seed (triplecrown_seed.def_weekly.json) ─────────────────────
+  function decodeDefWeekly(c){
+    if(!c || c.kind!=="def_weekly") return c;
+    const wf=c.wf;
+    const decRow = row => { if(row==null) return null;
+      const o={}; for(let i=0;i<row.length;i++){ if(row[i]!=null) o[wf[i]]=row[i]; } return o; };
+    const out={};
+    for(const y in c.years){
+      const node=c.years[y], pl={};
+      for(const pname in node){
+        const [name,team,pos,group,totalsC,weeksC]=node[pname];
+        const p={name,team,pos,group};
+        if(totalsC!=null) p.totals=decRow(totalsC);
+        p.weeks=weeksC.map(decRow);
+        pl[pname]=p;
+      }
+      out[y]=pl;
+    }
+    return out;
+  }
+
+  // ── fantasy seed (triplecrown_seed.json) ───────────────────────────────────
+  function decodeFantasy(c){
+    if(!c || c.__codec!=="fantasy-1") return c;
+    const out={};
+    for(const k in c){ if(k!=="__codec") out[k]=c[k]; }
+    const hc=c.history, sf=hc.sf;
+    const decStats = row => { const o={}; for(let i=0;i<row.length;i++){ if(row[i]!=null) o[sf[i]]=row[i]; } return o; };
+    const hist={};
+    for(const pid in hc.players){
+      const [name,pos,sc]=hc.players[pid];
+      const seasons={};
+      for(const yr in sc){
+        seasons[yr]=sc[yr].map(base=>{
+          const rec={team:base[0], pos, name, games_played:base[1], games_started:base[2],
+                    snap_pct:base[3], stats:decStats(base[4])};
+          if(base.length>5 && base[5]) Object.assign(rec, base[5]);
+          return rec;
+        });
+      }
+      hist[pid]=seasons;
+    }
+    out.history=hist;
+    const nc=c.nflverse, rt=nc.rt;
+    const decRK = dct => { if(!dct||typeof dct!=="object") return dct;
+      const o={}; for(const i in dct) o[rt[+i]]=dct[i]; return o; };
+    const nv={};
+    for(const yr in nc.years){
+      const node=nc.years[yr], n2={};
+      for(const k in node) n2[k]=node[k];
+      if(node.routes && typeof node.routes==="object"){
+        const r2={};
+        for(const pn in node.routes){
+          const rr={}; for(const k in node.routes[pn]) rr[k]=node.routes[pn][k];
+          for(const kk of ["tree","route_tds","route_rec","route_yds"]) if(kk in rr) rr[kk]=decRK(rr[kk]);
+          r2[pn]=rr;
+        }
+        n2.routes=r2;
+      }
+      nv[yr]=n2;
+    }
+    out.nflverse=nv;
+    return out;
+  }
+
+  // ── universal dispatcher: safe on any seed (compact or plain, any type) ─────
+  function decodeAnySeed(data){
+    return decodeSeed(decodeDefWeekly(decodeFantasy(data)));
+  }
+
+  if(typeof module!=='undefined') module.exports={decodeSeed,decodeDefWeekly,decodeFantasy,decodeAnySeed};
+
 let _nflverseLazyLoaded = { def_weekly:false, coaching_scheme:false };
 let _nflverseLazyPromise = {};
 const _NFLVERSE_SIDECAR_URL = {
@@ -47,7 +169,7 @@ function ensureNflverseSection(section){
     try{
       const res = await fetch(url, {cache:'no-store'});
       if(!res.ok) return false;
-      const data = await res.json();
+      const data = decodeAnySeed(await res.json());
       mergeNflverseSection(section, data);
       _nflverseLazyLoaded[section] = true;
       return true;
@@ -93,8 +215,8 @@ function ensureNflverseCoachingSeason(season){
 // Merge any embedded sidecars (baked/offline path) into NFLVERSE once at load.
 (function(){
   try{
-    const dw = (typeof SEED_NFLVERSE_DEF_WEEKLY!=='undefined') ? SEED_NFLVERSE_DEF_WEEKLY : null;
-    const cs = (typeof SEED_NFLVERSE_COACHING!=='undefined') ? SEED_NFLVERSE_COACHING : null;
+    const dw = decodeAnySeed((typeof SEED_NFLVERSE_DEF_WEEKLY!=='undefined') ? SEED_NFLVERSE_DEF_WEEKLY : null);
+    const cs = decodeAnySeed((typeof SEED_NFLVERSE_COACHING!=='undefined') ? SEED_NFLVERSE_COACHING : null);
     if(dw && Object.keys(dw).length){ mergeNflverseSection('def_weekly', dw); _nflverseLazyLoaded.def_weekly = true; }
     if(cs && Object.keys(cs).length){ mergeNflverseSection('coaching_scheme', cs); _nflverseLazyLoaded.coaching_scheme = true; }
   }catch(e){ /* no embedded sidecars — hosted lazy path will fetch on demand */ }
