@@ -19,6 +19,135 @@ Then just open the *_baked.html file on your phone — no server, no CORS.
 """
 import argparse, json, os, re, sys
 
+# ── Seed compaction codecs ───────────────────────────────────────────────────
+# build_seed.py writes the hosted files in compact form. For the self-contained
+# offline bake we decode them back to plain before embedding, so the baked app
+# needs no decode step at runtime. Decoders no-op on already-plain input, so this
+# is safe whether or not the input files were compacted.
+
+def _decode_coaching(c):
+    if not c or c.get("v") != 2:
+        return c
+    rt, ln = c["leg"]["rt"], c["leg"]["ln"]
+
+    def dec_routes(rc):
+        return [[rt[i], pct] for i, pct in rc]
+
+    out = {}
+    for code, t in c["teams"].items():
+        slots, names = t["slots"], t["names"]
+
+        formations, sig_order = {}, []
+        for sig, name, backs, te, wr, ol, assigns_c in t["forms"]:
+            sig_order.append(sig)
+            parts = sig.split("|")
+            assigns = []
+            for slot, routes_c in assigns_c:
+                pid = slots.get(slot)
+                pname = names.get(pid, "\u2014") if pid else "\u2014"
+                assigns.append({"slot": slot, "name": pname, "routes": dec_routes(routes_c)})
+            formations[sig] = {"p": parts[0], "align": parts[1], "name": name,
+                               "backs": backs, "te": te, "wr": wr, "ol": ol, "assigns": assigns}
+
+        def dec_lanes(lc):
+            return [[ln[i], n, epa] for i, n, epa in lc]
+
+        def dec_group(gc):
+            fi, n, share, pass_rate, epa, succ, np_, ep, sp, er, sr, lanes_c = gc
+            return {"sig": sig_order[fi], "n": n, "share": share, "pass_rate": pass_rate,
+                    "epa": epa, "succ": succ, "np": np_, "ep": ep, "sp": sp,
+                    "nr": n - np_, "er": er, "sr": sr, "lanes": dec_lanes(lanes_c)}
+
+        views = {}
+        for dk, dnode in t["views"].items():
+            views[dk] = {}
+            for dsk, dsnode in dnode.items():
+                views[dk][dsk] = {}
+                for pk, node in dsnode.items():
+                    if node is None:
+                        views[dk][dsk][pk] = None
+                    else:
+                        total, groups = node
+                        views[dk][dsk][pk] = {"total": total, "groups": [dec_group(g) for g in groups]}
+
+        out[code] = {"team": t["team"], "slots": slots, "names": names,
+                     "jerseys": t.get("jerseys", {}), "formations": formations, "views": views}
+    return out
+
+def _decode_defweekly(c):
+    if not c or c.get("kind") != "def_weekly":
+        return c
+    wf = c["wf"]
+
+    def dec_row(row):
+        if row is None:
+            return None
+        return {wf[i]: v for i, v in enumerate(row) if v is not None}
+
+    out = {}
+    for y, node in c["years"].items():
+        pl = {}
+        for pname, rec in node.items():
+            name, team, pos, group, totals_c, weeks_c = rec
+            p = {"name": name, "team": team, "pos": pos, "group": group}
+            if totals_c is not None:
+                p["totals"] = dec_row(totals_c)
+            p["weeks"] = [dec_row(w) for w in weeks_c]
+            pl[pname] = p
+        out[y] = pl
+    return out
+
+def _decode_fantasy(c):
+    if not c or c.get("__codec") != "fantasy-1":
+        return c
+    out = dict(c)
+    out.pop("__codec", None)
+
+    # ---- history --------------------------------------------------------------
+    hc = c["history"]; sf = hc["sf"]
+
+    def dec_stats(row):
+        return {sf[i]: v for i, v in enumerate(row) if v is not None}
+
+    hist = {}
+    for pid, (name, pos, sc) in hc["players"].items():
+        seasons = {}
+        for yr, rows in sc.items():
+            recs = []
+            for base in rows:
+                team, gp, gs, snap, stats_c = base[0], base[1], base[2], base[3], base[4]
+                rec = {"team": team, "pos": pos, "name": name,
+                       "games_played": gp, "games_started": gs, "snap_pct": snap,
+                       "stats": dec_stats(stats_c)}
+                if len(base) > 5 and base[5]:
+                    rec.update(base[5])
+                recs.append(rec)
+            seasons[yr] = recs
+        hist[pid] = seasons
+    out["history"] = hist
+
+    # ---- nflverse -------------------------------------------------------------
+    nc = c["nflverse"]; rt = nc["rt"]
+
+    def dec_routekeyed(dct):
+        return {rt[int(i)]: v for i, v in dct.items()} if isinstance(dct, dict) else dct
+
+    nv = {}
+    for yr, node in nc["years"].items():
+        n2 = dict(node)
+        if isinstance(node.get("routes"), dict):
+            r2 = {}
+            for pname, rec in node["routes"].items():
+                rr = dict(rec)
+                for kk in ("tree", "route_tds", "route_rec", "route_yds"):
+                    if kk in rr:
+                        rr[kk] = dec_routekeyed(rr[kk])
+                r2[pname] = rr
+            n2["routes"] = r2
+        nv[yr] = n2
+    out["nflverse"] = nv
+    return out
+
 START = "// ═══ TRIPLECROWN_SEED_START ═══"
 END   = "// ═══ TRIPLECROWN_SEED_END ═══"
 
@@ -36,7 +165,7 @@ def main():
         sys.exit(f"ERROR: HTML file not found: {args.html}")
 
     with open(args.seed, encoding="utf-8") as f:
-        seed = json.load(f)
+        seed = _decode_fantasy(json.load(f))
     with open(args.html, encoding="utf-8") as f:
         html = f.read()
 
@@ -70,7 +199,7 @@ def main():
             return {}
 
     seed_dir = os.path.dirname(os.path.abspath(args.seed))
-    nflverse_def_weekly = _sidecar(os.path.join(seed_dir, "triplecrown_seed.def_weekly.json"))
+    nflverse_def_weekly = _decode_defweekly(_sidecar(os.path.join(seed_dir, "triplecrown_seed.def_weekly.json")))
     # Coaching scheme now ships as per-season sidecars (triplecrown_seed.coaching.<season>.json);
     # re-embed every season for the offline/baked file. Fall back to the old combined file.
     import glob as _glob
@@ -78,7 +207,7 @@ def main():
     for _p in _glob.glob(os.path.join(seed_dir, "triplecrown_seed.coaching.*.json")):
         _seas = os.path.basename(_p)[len("triplecrown_seed.coaching."):-len(".json")]
         if _seas.isdigit():
-            _blk = _sidecar(_p)
+            _blk = _decode_coaching(_sidecar(_p))
             if _blk:
                 nflverse_coaching[_seas] = _blk
     if not nflverse_coaching:

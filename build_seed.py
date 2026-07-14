@@ -21,6 +21,191 @@ payload is fetched once and saved to players.json, then reused.
 import argparse, json, os, sys, time
 from urllib import request, error
 
+# ── Seed compaction codecs ───────────────────────────────────────────────────
+# Shrink the hosted downloads: the fantasy seed, the def_weekly sidecar, and each
+# per-season coaching sidecar are written in compact form. The app reverses this on
+# load via seed_decoders.js (decodeAnySeed). If the codec modules aren't present,
+# fall back to identity so the build still succeeds (writing plain files).
+
+def _indexer():
+    order, pos = [], {}
+
+    def idx(x):
+        if x not in pos:
+            pos[x] = len(order)
+            order.append(x)
+        return pos[x]
+
+    return order, idx
+
+def _encode_coaching(seed, round_epa=3):
+    rt, rt_i = _indexer()
+    ln, ln_i = _indexer()
+    al, al_i = _indexer()
+
+    def R(x):
+        return None if x is None else round(x, round_epa)
+
+    def enc_routes(routes):
+        return [[rt_i(name), pct] for name, pct in (routes or [])]
+
+    out_teams = {}
+    for code, t in seed.items():
+        sig_order = list(t["formations"].keys())
+        sig_ix = {s: i for i, s in enumerate(sig_order)}
+
+        forms = []
+        for sig in sig_order:
+            f = t["formations"][sig]
+            al_i(f["align"])
+            assigns_c = [[a["slot"], enc_routes(a.get("routes"))] for a in f["assigns"]]
+            forms.append([sig, f["name"], f["backs"], f["te"], f["wr"], f["ol"], assigns_c])
+
+        def enc_lanes(lanes):
+            return [[ln_i(l[0]), l[1], R(l[2])] for l in (lanes or [])]
+
+        def enc_group(g):
+            # nr is dropped: nr == n - np always holds, recomputed on decode
+            return [sig_ix[g["sig"]], g["n"], g["share"], g["pass_rate"],
+                    R(g["epa"]), g["succ"],
+                    g["np"], R(g["ep"]), g["sp"],
+                    R(g["er"]), g["sr"],
+                    enc_lanes(g.get("lanes"))]
+
+        vout = {}
+        for dk, dnode in t["views"].items():
+            vout[dk] = {}
+            for dsk, dsnode in dnode.items():
+                vout[dk][dsk] = {}
+                for pk, node in dsnode.items():
+                    vout[dk][dsk][pk] = None if not node else \
+                        [node["total"], [enc_group(g) for g in node["groups"]]]
+
+        out_teams[code] = {"team": t["team"], "slots": t["slots"], "names": t["names"],
+                           "jerseys": t.get("jerseys", {}), "forms": forms, "views": vout}
+
+    return {"v": 2, "leg": {"rt": rt, "ln": ln, "al": al}, "teams": out_teams}
+
+def _idx():
+    order, pos = [], {}
+    def f(x):
+        if x not in pos:
+            pos[x] = len(order); order.append(x)
+        return pos[x]
+    return order, f
+
+
+# fields that live at the top of a history record (everything else -> `extra`)
+_HREC = ("team", "games_played", "games_started", "snap_pct")
+
+def _encode_fantasy(seed, ol_round=3):
+    out = dict(seed)  # shallow copy; we replace only the sections we touch
+    if "history" not in seed and "nflverse" not in seed:
+        return out  # nothing this codec handles; leave untouched (no marker added)
+ 
+    # ---- history --------------------------------------------------------------
+    sf, sf_i = _idx()
+ 
+    def enc_stats(st):
+        row = [None] * 64
+        mx = -1
+        for k, v in st.items():
+            i = sf_i(k); row[i] = v; mx = max(mx, i)
+        return row[:mx + 1]
+ 
+    hist_c = {}
+    for pid, seasons in seed.get("history", {}).items():
+        name = pos = None
+        sc = {}
+        for yr, recs in seasons.items():
+            rows = []
+            for r in recs:
+                name = r["name"]; pos = r["pos"]
+                base = [r.get("team"), r.get("games_played"),
+                        r.get("games_started"), r.get("snap_pct"), enc_stats(r.get("stats", {}))]
+                extra = {k: v for k, v in r.items()
+                         if k not in _HREC and k not in ("name", "pos", "stats")}
+                if extra:
+                    base.append(extra)
+                rows.append(base)
+            sc[yr] = rows
+        hist_c[pid] = [name, pos, sc]
+ 
+    # ---- nflverse: routes + ol_players ---------------------------------------
+    rt, rt_i = _idx()
+ 
+    def enc_routekeyed(dct):
+        return {str(rt_i(k)): v for k, v in dct.items()} if isinstance(dct, dict) else dct
+ 
+    def round_floats(o):
+        if isinstance(o, float):
+            return round(o, ol_round)
+        if isinstance(o, dict):
+            return {k: round_floats(v) for k, v in o.items()}
+        if isinstance(o, list):
+            return [round_floats(v) for v in o]
+        return o
+ 
+    nv_c = {}
+    for yr, node in seed.get("nflverse", {}).items():
+        n2 = dict(node)
+        if isinstance(node.get("routes"), dict):
+            r2 = {}
+            for pname, rec in node["routes"].items():
+                rr = dict(rec)
+                for kk in ("tree", "route_tds", "route_rec", "route_yds"):
+                    if kk in rr:
+                        rr[kk] = enc_routekeyed(rr[kk])
+                r2[pname] = rr
+            n2["routes"] = r2
+        if isinstance(node.get("ol_players"), dict):
+            n2["ol_players"] = {k: round_floats(v) for k, v in node["ol_players"].items()}
+        nv_c[yr] = n2
+ 
+    out["history"] = {"__c": 1, "sf": sf, "players": hist_c}
+    out["nflverse"] = {"__c": 1, "rt": rt, "years": nv_c}
+    out["__codec"] = "fantasy-1"
+    return out
+
+def _field_legend(seed):
+    seen, order = set(), []
+    for node in seed.values():
+        for p in node.values():
+            dicts = list(p.get("weeks", []))
+            if isinstance(p.get("totals"), dict):
+                dicts.append(p["totals"])
+            for dct in dicts:
+                for k in dct:
+                    if k not in seen:
+                        seen.add(k); order.append(k)
+    return order
+
+
+def _encode_defweekly(seed):
+    wf = _field_legend(seed)
+    wf_ix = {k: i for i, k in enumerate(wf)}
+
+    def enc_dict(dct):
+        if dct is None:
+            return None
+        row = [None] * len(wf)
+        for k, v in dct.items():
+            row[wf_ix[k]] = v
+        # trim trailing nulls to save bytes (decode pads back)
+        while row and row[-1] is None:
+            row.pop()
+        return row
+
+    years = {}
+    for y, node in seed.items():
+        pl = {}
+        for pname, p in node.items():
+            pl[pname] = [p.get("name"), p.get("team"), p.get("pos"), p.get("group"),
+                         enc_dict(p.get("totals")),
+                         [enc_dict(w) for w in p.get("weeks", [])]]
+        years[y] = pl
+    return {"v": 1, "kind": "def_weekly", "wf": wf, "years": years}
+
 CACHE_DIR = "triplecrown_cache"
 PLAYERS_URL       = "https://api.sleeper.app/v1/players/nfl"
 PROJECTIONS_URL   = "https://api.sleeper.com/projections/nfl/{season}?season_type={stype}&grouping=season"
@@ -1956,20 +2141,21 @@ def main():
     # download and faster parse with identical data).
     BUILDER_VERSION = "2.12-adp-fix"   # bump when aggregation logic changes
 
+    _fantasy_obj = {"season": args.season, "builder_version": BUILDER_VERSION,
+                    "seed": seed, "history": history,
+                    "history_seasons": nonempty_seasons, "ecr": ecr,
+                    "contracts": contracts, "sharp": sharp, "sos": sos,
+                    "team_names": CODE_TO_FULLNAME, "coordinators": coordinators,
+                    "hc_history": hc_history, "additions": additions,
+                    "hc_playcallers": HC_PLAYCALLERS, "sharp_season": args.season-1,
+                    "sumer": sumer, "sumer_seasons": sumer_seasons, "ktc": ktc,
+                    "nflverse": nflverse}
     with open("triplecrown_seed.json", "w") as f:
-        json.dump({"season": args.season, "builder_version": BUILDER_VERSION,
-                   "seed": seed, "history": history,
-                   "history_seasons": nonempty_seasons, "ecr": ecr,
-                   "contracts": contracts, "sharp": sharp, "sos": sos,
-                   "team_names": CODE_TO_FULLNAME, "coordinators": coordinators,
-                   "hc_history": hc_history, "additions": additions,
-                   "hc_playcallers": HC_PLAYCALLERS, "sharp_season": args.season-1,
-                   "sumer": sumer, "sumer_seasons": sumer_seasons, "ktc": ktc,
-                   "nflverse": nflverse}, f, separators=(",", ":"))
+        json.dump(_encode_fantasy(_fantasy_obj), f, separators=(",", ":"))
     # Sidecar files — lazy-loaded by the app on demand (hosted). Only written when non-empty.
     if nflverse_def_weekly:
         with open("triplecrown_seed.def_weekly.json", "w") as f:
-            json.dump(nflverse_def_weekly, f, separators=(",", ":"))
+            json.dump(_encode_defweekly(nflverse_def_weekly), f, separators=(",", ":"))
     # Coaching scheme is the largest lazy block and is viewed one season at a time, so split it
     # into per-season sidecars the app fetches on demand (a typical user only downloads the
     # current season). Remove any stale combined file from older builds.
@@ -1983,7 +2169,7 @@ def main():
     for _s, _blk in sorted(nflverse_coaching.items(), key=lambda kv: kv[0], reverse=True):
         _fn = f"triplecrown_seed.coaching.{_s}.json"
         with open(_fn, "w") as f:
-            json.dump(_blk, f, separators=(",", ":"))
+            json.dump(_encode_coaching(_blk), f, separators=(",", ":"))
         coaching_files.append(_fn)
 
     nplayers = sum(len(seed[t][p]) for t in seed for p in seed[t])
