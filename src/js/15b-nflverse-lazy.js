@@ -131,8 +131,8 @@
 let _nflverseLazyLoaded = { def_weekly:false, coaching_scheme:false };
 let _nflverseLazyPromise = {};
 const _NFLVERSE_SIDECAR_URL = {
-  def_weekly: 'triplecrown_seed.def_weekly.json',
-  coaching_scheme: 'triplecrown_seed.coaching.json',
+  def_weekly: 'seeds/triplecrown_seed.def_weekly.json',
+  coaching_scheme: 'seeds/triplecrown_seed.coaching.json',
 };
 
 // Merge a {season:{key:{...}}} payload into NFLVERSE[season][section].
@@ -198,7 +198,7 @@ function ensureNflverseCoachingSeason(season){
   if(_coachingSeasonPromise[season]) return _coachingSeasonPromise[season];
   _coachingSeasonPromise[season] = (async()=>{
     try{
-      const res = await fetch(`triplecrown_seed.coaching.${season}.json`, {cache:'no-store'});
+      const res = await fetch(`seeds/triplecrown_seed.coaching.${season}.json`, {cache:'no-store'});
       if(!res.ok) return false;
       const data = await res.json();
       if(data && typeof data==='object' && typeof NFLVERSE==='object' && NFLVERSE){

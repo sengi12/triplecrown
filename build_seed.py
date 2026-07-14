@@ -4,7 +4,7 @@ TripleCrown seed builder
 ─────────────────────
 Fetches Sleeper's player database, 2026 season projections, and the last N
 seasons of real stats, caches them locally (so re-runs are fast), and emits a
-single `triplecrown_seed.json` (plus optional nflverse sidecars) that the
+single `seeds/triplecrown_seed.json` (plus optional nflverse sidecars) that the
 TripleCrown web app auto-loads.
 
 Usage:
@@ -2150,16 +2150,16 @@ def main():
                     "hc_playcallers": HC_PLAYCALLERS, "sharp_season": args.season-1,
                     "sumer": sumer, "sumer_seasons": sumer_seasons, "ktc": ktc,
                     "nflverse": nflverse}
-    with open("triplecrown_seed.json", "w") as f:
+    with open("seeds/triplecrown_seed.json", "w") as f:
         json.dump(_encode_fantasy(_fantasy_obj), f, separators=(",", ":"))
     # Sidecar files — lazy-loaded by the app on demand (hosted). Only written when non-empty.
     if nflverse_def_weekly:
-        with open("triplecrown_seed.def_weekly.json", "w") as f:
+        with open("seeds/triplecrown_seed.def_weekly.json", "w") as f:
             json.dump(_encode_defweekly(nflverse_def_weekly), f, separators=(",", ":"))
     # Coaching scheme is the largest lazy block and is viewed one season at a time, so split it
     # into per-season sidecars the app fetches on demand (a typical user only downloads the
     # current season). Remove any stale combined file from older builds.
-    _old_combined = "triplecrown_seed.coaching.json"
+    _old_combined = "seeds/triplecrown_seed.coaching.json"
     if os.path.exists(_old_combined):
         try:
             os.remove(_old_combined)
@@ -2167,22 +2167,22 @@ def main():
             pass
     coaching_files = []
     for _s, _blk in sorted(nflverse_coaching.items(), key=lambda kv: kv[0], reverse=True):
-        _fn = f"triplecrown_seed.coaching.{_s}.json"
+        _fn = f"seeds/triplecrown_seed.coaching.{_s}.json"
         with open(_fn, "w") as f:
             json.dump(_encode_coaching(_blk), f, separators=(",", ":"))
         coaching_files.append(_fn)
 
     nplayers = sum(len(seed[t][p]) for t in seed for p in seed[t])
     print(f"\nDone (builder {BUILDER_VERSION}). {nplayers} players across {len(TEAMS)} teams.")
-    print(f"  • triplecrown_seed.json → load this in the app via the 📦 Seed button (recommended)")
+    print(f"  • seeds/triplecrown_seed.json → load this in the app via the 📦 Seed button (recommended)")
     if nflverse_def_weekly:
-        print("  • triplecrown_seed.def_weekly.json → lazy sidecar (defensive weekly player cards)")
+        print("  • seeds/triplecrown_seed.def_weekly.json → lazy sidecar (defensive weekly player cards)")
     if coaching_files:
-        print(f"  • triplecrown_seed.coaching.<season>.json → {len(coaching_files)} per-season lazy sidecars (coaching scheme modal)")
+        print(f"  • seeds/triplecrown_seed.coaching.<season>.json → {len(coaching_files)} per-season lazy sidecars (coaching scheme modal)")
     print(f"  • {CACHE_DIR}/ → cached raw API responses (delete to force refresh)")
     print("\nNext: open the TripleCrown app (index.html). By default it pulls live 2026")
     print("projections from Sleeper on load. To use this prebuilt snapshot (with historical")
-    print("seasons + advanced stats), click the 📦 Seed button and choose triplecrown_seed.json")
+    print("seasons + advanced stats), click the 📦 Seed button and choose seeds/triplecrown_seed.json")
     print("— no HTML editing needed.")
 
 if __name__ == "__main__":

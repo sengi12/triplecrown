@@ -153,14 +153,14 @@ END   = "// ═══ TRIPLECROWN_SEED_END ═══"
 
 def main():
     ap = argparse.ArgumentParser(description="Embed a seed JSON into the TripleCrown app HTML.")
-    ap.add_argument("--seed", default="triplecrown_seed.json", help="seed JSON from build_seed.py")
+    ap.add_argument("--seed", default="seeds/triplecrown_seed.json", help="seed JSON from build_seed.py")
     ap.add_argument("--html", default="index.html", help="the app HTML to bake into")
     ap.add_argument("--out",  default=None, help="output file (default: <html>_baked.html)")
     args = ap.parse_args()
 
     if not os.path.exists(args.seed):
         sys.exit(f"ERROR: seed file not found: {args.seed}\n"
-                 f"Run build_seed.py first to produce triplecrown_seed.json.")
+                 f"Run build_seed.py first to produce seeds/triplecrown_seed.json.")
     if not os.path.exists(args.html):
         sys.exit(f"ERROR: HTML file not found: {args.html}")
 
@@ -200,7 +200,7 @@ def main():
 
     seed_dir = os.path.dirname(os.path.abspath(args.seed))
     nflverse_def_weekly = _decode_defweekly(_sidecar(os.path.join(seed_dir, "triplecrown_seed.def_weekly.json")))
-    # Coaching scheme now ships as per-season sidecars (triplecrown_seed.coaching.<season>.json);
+    # Coaching scheme now ships as per-season sidecars (seeds/triplecrown_seed.coaching.<season>.json);
     # re-embed every season for the offline/baked file. Fall back to the old combined file.
     import glob as _glob
     nflverse_coaching = {}

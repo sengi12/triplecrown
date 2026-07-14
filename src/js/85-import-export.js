@@ -327,7 +327,7 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
 // useful (at minimum ECR). Never throws — a file:// open or missing file just returns false.
 async function tryAutoLoadSeed(){
   try{
-    const res = await fetch('triplecrown_seed.json', {cache:'no-store'});
+    const res = await fetch('seeds/triplecrown_seed.json', {cache:'no-store'});
     if(!res.ok) return false;
     const j = decodeAnySeed(await res.json());
     let got=false;
