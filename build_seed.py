@@ -65,12 +65,18 @@ def _encode_coaching(seed, round_epa=3):
             return [[ln_i(l[0]), l[1], R(l[2])] for l in (lanes or [])]
 
         def enc_group(g):
-            # nr is dropped: nr == n - np always holds, recomputed on decode
+            # nr is dropped: nr == n - np always holds, recomputed on decode.
+            # WARNING: fixed-order array — any group field NOT listed here is silently
+            # discarded at encode time. Always APPEND new fields (never insert), and read
+            # the tail defensively on decode so older seeds keep working.
             return [sig_ix[g["sig"]], g["n"], g["share"], g["pass_rate"],
                     R(g["epa"]), g["succ"],
                     g["np"], R(g["ep"]), g["sp"],
                     R(g["er"]), g["sr"],
-                    enc_lanes(g.get("lanes"))]
+                    enc_lanes(g.get("lanes")),
+                    # v3: production out of this formation (yards / TDs, pass vs run)
+                    int(g.get("py") or 0), int(g.get("ptd") or 0),
+                    int(g.get("ry") or 0), int(g.get("rtd") or 0)]
 
         vout = {}
         for dk, dnode in t["views"].items():
@@ -84,7 +90,7 @@ def _encode_coaching(seed, round_epa=3):
         out_teams[code] = {"team": t["team"], "slots": t["slots"], "names": t["names"],
                            "jerseys": t.get("jerseys", {}), "forms": forms, "views": vout}
 
-    return {"v": 2, "leg": {"rt": rt, "ln": ln, "al": al}, "teams": out_teams}
+    return {"v": 3, "leg": {"rt": rt, "ln": ln, "al": al}, "teams": out_teams}
 
 def _idx():
     order, pos = [], {}

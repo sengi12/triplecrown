@@ -12,7 +12,7 @@
 
 // ── coaching seed (triplecrown_seed.coaching.<season>.json) ────────────────
 function decodeSeed(c){
-    if(!c || c.v!==2) return c;
+    if(!c || (c.v!==2 && c.v!==3)) return c;   // v2 = pre-production seeds, v3 = current
     const rt=c.leg.rt, ln=c.leg.ln;
     const decRoutes = rc => rc.map(([i,pct])=>[rt[i],pct]);
     const out={};
@@ -32,8 +32,11 @@ function decodeSeed(c){
       const decLanes = lc => lc.map(([i,n,epa])=>[ln[i],n,epa]);
       const decGroup = g => {
         const [fi,n,share,pass_rate,epa,succ,np,ep,sp,er,sr,lanesC]=g;
+        // v3 appended production (yards/TDs). Read defensively so v2 seeds — which never
+        // measured it — still decode, just with zeros.
+        const py=g[12]||0, ptd=g[13]||0, ry=g[14]||0, rtd=g[15]||0;
         return {sig:sigOrder[fi], n, share, pass_rate, epa, succ,
-                np, ep, sp, nr:n-np, er, sr, lanes:decLanes(lanesC)};
+                np, ep, sp, nr:n-np, er, sr, py, ptd, ry, rtd, lanes:decLanes(lanesC)};
       };
       const views={};
       for(const dk in t.views){ views[dk]={};

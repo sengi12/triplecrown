@@ -20,6 +20,11 @@
   .plabel .pers{background:var(--hl-yel);padding:1px 6px;}
   .plabel .fname{font-size:11px;color:#5a5545;}
   .subttl{text-align:center;font-size:10px;color:#5a5545;margin-bottom:4px;}
+.prod{font-family:'Courier New',monospace;font-size:9.5px;font-weight:700;letter-spacing:.02em;
+  margin:2px 0 4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.prod-pass{color:#4f83cc;}
+.prod-run{color:#4a7f2c;}
+.prod-sep{color:#b9b295;}
   svg{display:block;margin:0 auto;}
   .stats{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;margin-top:6px;font-size:12px;}
   .stat{display:flex;justify-content:space-between;border-bottom:1px dotted var(--rule);}
@@ -234,11 +239,20 @@ function draw(){
   if(!node||!node.groups.length){grid.innerHTML='<div class="empty">No plays match this situation.</div>';document.getElementById('ctx').textContent='';return;}
   document.getElementById('ctx').textContent=node.total+' plays';
   window._G=node.groups;
+  // Production out of this formation: yards + TDs, split pass vs run. Moves with the filters.
+  function prodLine(g, mode){
+    const P=`<span class="prod-pass">PASS ${(+g.py||0).toLocaleString()} yds · ${+g.ptd||0} TD</span>`;
+    const R=`<span class="prod-run">RUN ${(+g.ry||0).toLocaleString()} yds · ${+g.rtd||0} TD</span>`;
+    if(mode==='pass') return P;
+    if(mode==='run')  return R;
+    return `${P}<span class="prod-sep">·</span>${R}`;
+  }
   let html="";
   node.groups.forEach((g,i)=>{const noise=g.n<8?' <span class="hl-p" style="font-size:9px;padding:0 3px;">SMALL</span>':'';
     html+=`<div class="card"><div class="rank">#${i+1}</div>
       <div class="plabel"><span class="pers alt" data-i="${i}" title="tap to change alignment" style="cursor:pointer">${g.p} PERSONNEL ⇄</span> <span class="fname">${g.name}</span></div>
       <div class="subttl">${g.backs} BACK · ${g.te} TE · ${g.wr} WR — ${g.share}% of snaps${noise}</div>
+      <div class="prod" id="prd${i}">${prodLine(g)}</div>
       <div class="fieldbox">${fieldSvg(g,'none',{},0,0)}</div>
       <div class="stats"><div class="stat"><span id="snl${i}">Snaps</span><b id="snv${i}">${g.n}</b></div><div class="stat"><span>Success</span><b id="scv${i}">${g.succ}%</b></div>
       <div class="stat"><span>EPA/play</span><b id="epv${i}" class="${g.epa>=.05?'hl-g':(g.epa<=-.05?'hl-p':'')}">${g.epa>=0?'+':''}${g.epa.toFixed(2)}</b></div><div class="stat"><span>Share</span><b>${g.share}%</b></div></div>
@@ -250,6 +264,8 @@ function draw(){
     let n=g.n,sc=g.succ,ep=g.epa,lbl='Snaps';
     if(mode=='run'){ n=g.nr;sc=g.sr;ep=g.er;lbl='Run snaps'; }
     else if(mode=='pass'){ n=g.np;sc=g.sp;ep=g.ep;lbl='Pass snaps'; }
+    const prd=document.getElementById('prd'+i);
+    if(prd) prd.innerHTML=prodLine(g, mode==='none'?null:mode);
     snl.textContent=lbl; snv.textContent=n; scv.textContent=sc+'%';
     epv.textContent=(ep>=0?'+':'')+ep.toFixed(2);
     epv.className = ep>=.05?'hl-g':(ep<=-.05?'hl-p':'');

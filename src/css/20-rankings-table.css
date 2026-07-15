@@ -35,3 +35,41 @@
 .c-fa .num{color:var(--text);}
 .c-fa.fa-soon{background:rgba(255,90,90,.14);}
 .c-fa.fa-soon .num{color:#ff6a6a;font-weight:900;}
+
+/* ── Frozen ECR + PLAYER columns ─────────────────────────────────────────────
+   The rankings table is very wide (the advanced-stats view especially), so scrolling right
+   loses track of WHO each row is. Pin ECR and PLAYER: the columns between them (TIER, FPTS,
+   VOR, POS) scroll underneath, so the two pinned columns end up adjacent. Column ORDER is
+   untouched — nothing is re-ordered, the middle just collapses away.
+
+   border-collapse:separate is REQUIRED here. Under `collapse`, borders belong to the table
+   rather than the cell, so they smear or vanish on sticky cells while scrolling. With
+   border-spacing:0 the layout is pixel-identical, and since no cell declares a right border
+   (group dividers are all border-LEFT), nothing doubles up. */
+.rankings-table{border-collapse:separate;border-spacing:0;}
+/* ECR: fixed width so PLAYER's left offset is exact rather than guessed. */
+.rankings-table.grouped th.c-ecr,.rankings-table.grouped td.c-ecr{
+  position:sticky;left:0;z-index:2;background:var(--surface);
+  width:48px;min-width:48px;max-width:48px;}
+.rankings-table.grouped th.c-player,.rankings-table.grouped td.c-player{
+  position:sticky;left:48px;z-index:2;background:var(--surface);
+  max-width:190px;box-shadow:1px 0 0 var(--border);}
+/* Header cells must sit above body cells on BOTH axes. thead th had no z-index, so a sticky
+   body cell (z-index:2) would otherwise paint over the header on vertical scroll. */
+.rankings-table.grouped thead th{z-index:3;}
+.rankings-table.grouped thead th.c-ecr,.rankings-table.grouped thead th.c-player{z-index:4;}
+/* Row hover has to repaint the pinned cells too, or they read as a detached strip. */
+.rankings-table.grouped tr:hover td.c-ecr,
+.rankings-table.grouped tr:hover td.c-player{background:var(--surface2);}
+/* Let the name ellipsis inside the flex cell instead of forcing the column wider. */
+.rankings-table.grouped td.c-player .clickable-player{min-width:0;}
+.rankings-table.grouped td.c-player .rank-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rankings-table.grouped td.c-player .rank-hs{flex:none;}
+/* Phones: the pinned pair can't eat the whole viewport — tighten both. */
+@media (max-width:640px){
+  .rankings-table.grouped th.c-ecr,.rankings-table.grouped td.c-ecr{
+    width:38px;min-width:38px;max-width:38px;}
+  .rankings-table.grouped th.c-player,.rankings-table.grouped td.c-player{
+    left:38px;max-width:124px;}
+  .rankings-table.grouped td.c-player .rank-hs{width:20px;height:20px;}
+}

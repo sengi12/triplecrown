@@ -152,6 +152,11 @@ function _schemeToGroup(g){
     nr: _schemeNumber(g.nr, 0),
     sr: _schemeNumber(g.sr, 0),
     er: _schemeNumber(g.er, 0),
+    // Production out of this formation (filter-dependent, so it lives on the group).
+    py: _schemeNumber(g.py, 0),
+    ptd: _schemeNumber(g.ptd, 0),
+    ry: _schemeNumber(g.ry, 0),
+    rtd: _schemeNumber(g.rtd, 0),
     assigns: assigns.map(a=>({
       role: String(((a&&a.slot)||'').replace(/\d+/g,'')||'WR'),
       slot: String((a&&a.slot)||''),

@@ -1495,7 +1495,11 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40):
     pbp_cols = [
         "game_id", "play_id", "posteam", "play_type", "pass", "rush_attempt", "qb_scramble",
         "epa", "success", "down", "ydstogo", "yardline_100", "season_type", "shotgun", "run_location", "run_gap",
-        "receiver_player_id",
+        # rusher_player_id is REQUIRED to identify RBs: on a run play receiver_player_id is
+        # always null, so ranking backs off it silently produced zero RB slots.
+        "receiver_player_id", "rusher_player_id",
+        # production per formation (yards/TDs), split pass vs run
+        "yards_gained", "pass_touchdown", "rush_touchdown",
     ]
     pbp = _load_pbp(season, pbp_cols)
     pbp = pbp[(pbp["season_type"] == "REG") & pbp["play_type"].isin(["pass", "run"])].copy()
@@ -1558,9 +1562,13 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40):
     def _slots_for_team(df_team):
         pass_rows = df_team[df_team["pass"] == 1]
         tgt = pass_rows["receiver_player_id"].dropna().value_counts()
-        rush = df_team[(df_team["rush_attempt"] == 1) & (df_team["qb_scramble"] == 0)]["receiver_player_id"].dropna().value_counts()
-        if len(rush) == 0:
-            rush = df_team[(df_team["rush_attempt"] == 1) & (df_team["qb_scramble"] == 0)]["receiver_player_id"].value_counts()
+        # Backs are ranked by CARRIES, which live in rusher_player_id. This previously read
+        # receiver_player_id — null on every run play — so `rush` came back empty, no RB1/RB2
+        # slots were ever created, and every RB assign shipped with routes:[] (the app then
+        # fell back to the generic route tree, which is why RBs showed no target %).
+        # The old `if len(rush)==0` retry was a no-op: value_counts() already drops NaN.
+        rush_col = "rusher_player_id" if "rusher_player_id" in df_team.columns else "receiver_player_id"
+        rush = df_team[(df_team["rush_attempt"] == 1) & (df_team["qb_scramble"] == 0)][rush_col].dropna().value_counts()
 
         def _top(counts, want, k):
             out = []
@@ -1671,6 +1679,13 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40):
                     "nr": int(len(gr)),
                     "er": (None if not len(gr) else round(float(gr["epa"].mean()), 3)),
                     "sr": (None if not len(gr) else round(100 * float(gr["success"].mean()), 1)),
+                    # Production out of this formation, split pass vs run. Unlike the route
+                    # trees (filter-independent, shared via `sig`), these are real per-bucket
+                    # totals — they move with the down/distance/type filters.
+                    "py": int(gp["yards_gained"].fillna(0).sum()) if len(gp) else 0,
+                    "ptd": int(gp["pass_touchdown"].fillna(0).sum()) if len(gp) else 0,
+                    "ry": int(gr["yards_gained"].fillna(0).sum()) if len(gr) else 0,
+                    "rtd": int(gr["rush_touchdown"].fillna(0).sum()) if len(gr) else 0,
                     "lanes": lanes[:3],
                 })
             groups.sort(key=lambda x: -x["n"])

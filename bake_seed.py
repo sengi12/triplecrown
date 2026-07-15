@@ -26,7 +26,7 @@ import argparse, json, os, re, sys
 # is safe whether or not the input files were compacted.
 
 def _decode_coaching(c):
-    if not c or c.get("v") != 2:
+    if not c or c.get("v") not in (2, 3):
         return c
     rt, ln = c["leg"]["rt"], c["leg"]["ln"]
 
@@ -53,10 +53,15 @@ def _decode_coaching(c):
             return [[ln[i], n, epa] for i, n, epa in lc]
 
         def dec_group(gc):
-            fi, n, share, pass_rate, epa, succ, np_, ep, sp, er, sr, lanes_c = gc
+            # Read the v3 tail defensively: v2 seeds have 12 slots and simply never measured
+            # production, so 0 is the honest value rather than a crash.
+            fi, n, share, pass_rate, epa, succ, np_, ep, sp, er, sr, lanes_c = gc[:12]
+            py, ptd, ry, rtd = (list(gc[12:16]) + [0, 0, 0, 0])[:4]
             return {"sig": sig_order[fi], "n": n, "share": share, "pass_rate": pass_rate,
                     "epa": epa, "succ": succ, "np": np_, "ep": ep, "sp": sp,
-                    "nr": n - np_, "er": er, "sr": sr, "lanes": dec_lanes(lanes_c)}
+                    "nr": n - np_, "er": er, "sr": sr,
+                    "py": py or 0, "ptd": ptd or 0, "ry": ry or 0, "rtd": rtd or 0,
+                    "lanes": dec_lanes(lanes_c)}
 
         views = {}
         for dk, dnode in t["views"].items():
