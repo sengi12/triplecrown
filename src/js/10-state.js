@@ -21,6 +21,16 @@ let rankFormat = 'half_ppr';   // std | ppr | half_ppr | superflex | dynasty (ma
 // independent of rankFormat so Dynasty — whose non-SF ECR table is identical regardless of
 // std/half/ppr — can still show and apply the chosen scoring format instead of feeling dead.
 let scoringAxis = 'half_ppr';
+// Scoring panel starts COLLAPSED so the rankings table owns the screen. Once you've dialled
+// scoring in (or linked a league that sets it), you rarely touch it again — the collapsed
+// header shows a live summary so you can confirm at a glance without expanding.
+let scoringPanelOpen = false;
+
+// The linked league's real shape — roster slots + team count — held INDEPENDENTLY of any
+// draft. A league whose draft is already complete still describes a real lineup, and VOR
+// baselines depend on it. Keeping this off the draft-follow lifecycle is what makes syncing
+// a finished league actually move VOR instead of silently using a generic 12-team 2-WR board.
+let leagueShape = null;   // {teams, lineup:[slots], bench}
 let rankPosFilter = 'ALL';
 let rankScope = 'all';   // 'all' = full league rankings, 'team' = current team only
 let rankAdvanced = false; // rankings "Adv. Metrics" (SumerSports) view — swaps stat columns for advanced metrics

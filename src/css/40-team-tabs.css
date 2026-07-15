@@ -85,7 +85,21 @@
 .undo-btn.disabled,.undo-btn:disabled{opacity:.4;cursor:not-allowed;}
 .undo-btn:not(.disabled):hover{background:var(--surface3);}
 #undoCount{font-family:var(--mono);font-size:10px;color:var(--accent);font-weight:800;}
-.scoring-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+/* Collapsible scoring panel — collapsed by default so the rankings table owns the viewport.
+   The header always shows a live summary, so you can verify settings without expanding. */
+.scoring-card{overflow:hidden;}
+.scoring-head{display:flex;align-items:center;gap:9px;padding:9px 13px;cursor:pointer;user-select:none;}
+.scoring-head:hover{background:var(--surface2);}
+.scoring-caret{font-size:9px;color:var(--muted);transition:transform .15s ease;display:inline-block;flex:none;}
+.scoring-card.open .scoring-caret{transform:rotate(90deg);}
+.scoring-title{font-size:12px;font-weight:800;flex:none;}
+.scoring-summary{font-family:var(--mono);font-size:10px;color:var(--muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;}
+.scoring-edit{font-size:10px;color:var(--muted);font-weight:700;flex:none;}
+.scoring-head:hover .scoring-edit{color:var(--accent);}
+.scoring-body{display:none;padding:2px 13px 12px;}
+.scoring-card.open .scoring-body{display:block;}
+.scoring-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
 .scoring-field{display:flex;flex-direction:column;gap:3px;}
 .scoring-field label{font-size:10px;color:var(--muted);font-weight:600;letter-spacing:.5px;}
 .scoring-field input{background:var(--surface2);border:1px solid var(--border);

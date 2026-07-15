@@ -175,6 +175,18 @@ async function pickLeague(idx){
   leaguePickerState.loading=false;
   if(!did){ toast(`No draft found for "${lg.name}"`,'err'); renderRankings(); return; }
 
+  // Adopt the league's SHAPE (roster slots + size) up front, before any early return.
+  // This is what VOR baselines read, and it must survive the "draft already complete" path —
+  // a finished league still tells us it starts 3 WRs in a 10-team league.
+  if(Array.isArray(lg.roster_positions) && lg.roster_positions.length){
+    const { lineup, bench } = lineupFromRosterPositions(lg.roster_positions);
+    leagueShape = {
+      teams: lg.total_rosters || (lg.settings && lg.settings.num_teams) || 12,
+      lineup, bench,
+    };
+    draftLineup = lineup; draftBenchCount = bench;
+  }
+
   // Adopt the league's scoring + format regardless of whether the draft is followable —
   // even a completed-draft league is useful to score your rankings the way that league does.
   const applied = applySleeperScoring(lg.scoring_settings);
@@ -344,6 +356,14 @@ async function loadDraftMeta(applyScoring){
     }
     // If we still couldn't get a real roster shape, fall back to the generic default.
     if(!gotLineup){ draftLineup=DEFAULT_LINEUP.slice(); draftBenchCount=DEFAULT_BENCH; }
+    // Mirror the draft's shape onto leagueShape so VOR keeps a correct board even after
+    // the follow stops (draftId clears, but the league's shape is still the truth).
+    if(gotLineup){
+      leagueShape = {
+        teams: (d.settings && d.settings.teams) || (leagueShape && leagueShape.teams) || 12,
+        lineup: draftLineup.slice(), bench: draftBenchCount,
+      };
+    }
     // Adopt the draft's own scoring + format so a pasted mock doesn't inherit a stale league.
     if(applyScoring){ applyDraftScoring(d); }
     // Auto-detect my slot from draft_order (user_id → slot) when we know who I am.
@@ -471,6 +491,29 @@ async function pollDraft(){
 function toggleHideDrafted(){ hideDrafted=!hideDrafted; renderRankings(); }
 
 // ── Roster tracker: UI ──────────────────────────────────────────────────────
+// "Amon-Ra St. Brown" → "A. St. Brown". Compound surnames (St., Van, De, Mc…) and suffixes
+// ride along with the last name, so we only ever initialise the FIRST token.
+function abbrevName(full){
+  const parts=(full||'').trim().split(/\s+/);
+  if(parts.length<2) return full||'';
+  return `${parts[0][0]}. ${parts.slice(1).join(' ')}`;
+}
+// Sleeper headshot in a fixed circle. The wrapper keeps its shape if the image 404s (rookies
+// and practice-squad guys often have none), so rows never jump.
+function playerThumb(p){
+  const pid = p && p.player_id;
+  return `<span class="rt-thumb">${pid
+    ? `<img src="${SLEEPER_HEADSHOT(pid)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+    : ''}</span>`;
+}
+// A roster row's player cell: photo + full name (with an abbreviated variant CSS swaps in when
+// the panel is too narrow) + position/team.
+function playerCell(p){
+  return `${playerThumb(p)}<span class="rt-pname" title="${p.name}">` +
+    `<span class="rt-nm-full">${p.name}</span>` +
+    `<span class="rt-nm-abbr">${abbrevName(p.name)}</span></span>` +
+    `<span class="rt-pmeta">${p.pos} \u00b7 ${p.team}</span>`;
+}
 // A slot label for display (flex variants get friendly names).
 function slotLabel(slot){
   return ({FLEX:'FLEX', WRRB_FLEX:'W/R', REC_FLEX:'W/T', SUPER_FLEX:'SFLX'})[slot] || slot;
@@ -586,8 +629,8 @@ function renderTrackerPanel(viewSlot){
     const p=s.player;
     return `<div class="rt-row ${p?'':'open'}">
       <span class="rt-slot ${slotClass(s.slot)}">${slotLabel(s.slot)}</span>
-      ${p ? `<span class="rt-pname">${p.name}</span><span class="rt-pmeta">${p.pos} · ${p.team}</span>`
-          : `<span class="rt-empty-lbl">— open —</span>`}
+      ${p ? playerCell(p)
+          : `<span class="rt-empty-lbl">\u2014 open \u2014</span>`}
     </div>`;
   }).join('');
   // Bench: show ALL bench slots (filled first, then empty "— open —" up to draftBenchCount).
@@ -598,7 +641,7 @@ function renderTrackerPanel(viewSlot){
     for(let i=0;i<totalBench;i++){
       const p=bench[i];
       benchRows += p
-        ? `<div class="rt-row bench"><span class="rt-slot rt-pos-bn">BN</span><span class="rt-pname">${p.name}</span><span class="rt-pmeta">${p.pos} · ${p.team}</span></div>`
+        ? `<div class="rt-row bench"><span class="rt-slot rt-pos-bn">BN</span>${playerCell(p)}</div>`
         : `<div class="rt-row bench open"><span class="rt-slot rt-pos-bn">BN</span><span class="rt-empty-lbl">— open —</span></div>`;
     }
   }
@@ -619,17 +662,31 @@ function renderTrackerPanel(viewSlot){
   if(viewSlot===mySlot && draftId){
     const v=computeVONA();
     if(v && v.rows.length){
-      const fmtP=(p)=> p ? `${p.name.split(' ').slice(-1)[0]} (${p.pos})` : '—';
+      const nm=(p)=> p ? p.name.split(' ').slice(-1)[0] : '\u2014';
+      const pct=(x)=> Math.round((x||0)*100);
+      // Colour the availability % like a traffic light: green = safe to wait, red = he's gone.
+      const pcls=(x)=> x>=0.6 ? 'vp-hi' : (x>=0.3 ? 'vp-mid' : 'vp-lo');
       const chips=v.rows.slice(0,4).map((r,i)=>{
         const cls = r.adjDrop>=25?'vona-hot':r.adjDrop>=12?'vona-warm':'vona-cool';
-        const star = (i===0 && r.need) ? '★ ' : '';
+        const star = (i===0 && r.need) ? '\u2605 ' : '';
         const tag = r.filled ? (r.studBackup?`<span class="vona-tag stud">stud backup</span>`:`<span class="vona-tag">filled</span>`) : '';
-        // show raw drop, but note it's discounted for filled spots
-        const dropTxt = r.filled ? `−${r.dropoff} <span class="vona-adj">(adj −${r.adjDrop})</span>` : `−${r.dropoff}`;
+        const dropTxt = r.filled ? `\u2212${r.dropoff} <span class="vona-adj">(adj \u2212${r.adjDrop})</span>` : `\u2212${r.dropoff}`;
+        // Line 1: the guy you'd take right now, and the market's odds he lasts to your next pick.
+        // Line 2: who you'd most likely settle for instead — the concrete cost of waiting.
+        const waitLine = r.bestNext && r.bestNext!==r.bestNow
+          ? `<div class="vona-wait">wait \u2192 <b>${nm(r.bestNext)}</b>
+               <span class="vona-vor">${(r.bestNext.vor||0)>0?'+':''}${(r.bestNext.vor||0).toFixed(0)}</span>
+               <span class="vona-pct ${pcls(r.nextShare)}">${pct(r.nextShare)}% likely available</span></div>`
+          : `<div class="vona-wait vona-wait-safe">wait \u2192 <b>${nm(r.bestNow)}</b> likely still available</div>`;
         return `<div class="vona-row ${r.need?'':'vona-filled'} ${cls}">
           <span class="rt-slot ${slotClass(r.pos)}">${r.pos}</span>
-          <span class="vona-best">${fmtP(r.bestNow)}${tag}</span>
-          <span class="vona-drop" title="VOR drop-off before your next pick">${star}${dropTxt}</span>
+          <div class="vona-main">
+            <div class="vona-now"><b>${nm(r.bestNow)}</b>
+              <span class="vona-vor">${(r.bestNow.vor||0)>0?'+':''}${(r.bestNow.vor||0).toFixed(0)}</span>
+              <span class="vona-pct ${pcls(r.pHold)}" title="Chance they make it back to your next pick, per market ADP">${pct(r.pHold)}% chance they make it back</span>${tag}</div>
+            ${waitLine}
+          </div>
+          <span class="vona-drop" title="Your VOR now minus the VOR you'd expect to settle for">${star}${dropTxt}</span>
         </div>`;
       }).join('');
       // headline = biggest drop among positions I still NEED; fall back to top row
@@ -638,23 +695,24 @@ function renderTrackerPanel(viewSlot){
       const alsoBig = v.rows.find(r=>r!==rec && r.dropoff>=12);
       let recTxt='';
       if(rec){
-        recTxt = `Take a <b>${rec.pos}</b> — biggest need-value cliff (−${rec.dropoff})`;
-        if(rec.filled) recTxt = `Best value: <b>${rec.pos}</b> (−${rec.dropoff}) — but your starters are set`;
+        recTxt = `Take a <b>${rec.pos}</b> \u2014 biggest need-value cliff (\u2212${rec.dropoff})`;
+        if(rec.filled) recTxt = `Best value: <b>${rec.pos}</b> (\u2212${rec.dropoff}) \u2014 but your starters are set`;
       }
       const noteTxt = (rec && !rec.need && needRows.length===0)
-        ? `All starters filled — now drafting for value/depth.`
-        : (alsoBig ? `Also watch <b>${alsoBig.pos}</b> (−${alsoBig.dropoff}).` : '');
+        ? `All starters filled \u2014 now drafting for value/depth.`
+        : (alsoBig ? `Also watch <b>${alsoBig.pos}</b> (\u2212${alsoBig.dropoff}).` : '');
       advisory=`<div class="vona-box">
-        <div class="vona-head">📊 On-the-clock advice ${v.onClock?'· <b style="color:var(--accent)">YOU\u2019RE UP</b>':`· next pick in ${v.gap}`}</div>
-        <div class="vona-sub">${recTxt}${noteTxt?` · ${noteTxt}`:''}</div>
+        <div class="vona-head">\ud83d\udcca On-the-clock advice ${v.onClock?'\u00b7 <b style="color:var(--accent)">YOU\u2019RE UP</b>':`\u00b7 next pick in ${v.gap}`}</div>
+        <div class="vona-sub">${recTxt}${noteTxt?` \u00b7 ${noteTxt}`:''}</div>
         <div class="vona-rows">${chips}</div>
-        <div class="vona-legend">Accounts for who your opponents still need before your next pick, and the spots you\u2019ve already filled.</div>
+        <div class="vona-legend">Value from your VOR board \u00b7 availability from Sleeper ${formatLabel(rankFormat)} ADP, simulated over the ${v.gap} pick${v.gap===1?'':'s'} before you\u2019re up.</div>
       </div>`;
     }
   }
   return `<div class="rt-panel">
     <div class="rt-panel-head">
-      <span class="rt-panel-title">${viewSlot===mySlot?'★ My roster':slotOwnerName(viewSlot)} <span class="rt-panel-slot">· seat ${viewSlot}</span></span>
+      <span class="rt-panel-title">${viewSlot===mySlot?'\u2605 My roster':slotOwnerName(viewSlot)} <span class="rt-panel-slot">\u00b7 seat ${viewSlot}</span></span>
+      <button class="rt-reseat" onclick="reclaimSeat()" title="Wrong seat? Pick it again">\u21bb change seat</button>
     </div>
     <div class="rt-switch-head">Jump to a team</div>
     <div class="rt-switcher">${switcher}</div>
@@ -665,7 +723,16 @@ function renderTrackerPanel(viewSlot){
 }
 function toggleTracker(){ trackerOpen=!trackerOpen; renderRosterBar(); }
 function viewTrackerSlot(slot){ trackerViewSlot = (slot===trackerViewSlot? null : slot); renderRosterBar(); }
-function claimSlot(slot){ mySlot=slot; _trackerNeedsSlotPick=false; trackerViewSlot=null; toast(`Seat ${slot} is yours ★`,'ok'); renderRosterBar(); if(currentPhase==='Rankings') renderRankings(); }
+// Re-open the seat picker. Needed when auto-detection picked the wrong seat (pasted draft
+// IDs can't be matched to your user), or you simply mis-tapped.
+function reclaimSeat(){
+  mySlot=null; _trackerNeedsSlotPick=true; trackerViewSlot=null;
+  _vonaCache={key:null,val:null};
+  renderRosterBar();
+  if(currentPhase==='Rankings') renderRankings();
+  toast('Pick your seat','ok');
+}
+function claimSlot(slot){ mySlot=slot; _trackerNeedsSlotPick=false; trackerViewSlot=null; _vonaCache={key:null,val:null}; toast(`Seat ${slot} is yours ★`,'ok'); renderRosterBar(); if(currentPhase==='Rankings') renderRankings(); }
 
 // ── "You're on the clock next" projection ───────────────────────────────────
 // Which draft SLOT is on the clock at a given global pick number (1-based), accounting
@@ -725,13 +792,170 @@ function picksUntilMyTurn(slot){
   return null;
 }
 // ── VONA: Value Over Next Available ─────────────────────────────────────────
-// The on-the-clock advisory. For each position, compares the best player available NOW
-// (by your VOR) against the best you're PROJECTED to have at your next pick — modeling that
-// the picks between now and then take the top undrafted players by market ADP. A big drop
-// means that position's value is about to evaporate: draft it now. Small drop means you can
-// safely wait and address it on the way back.
-//   dropoff[pos] = bestNowVOR - bestAtNextTurnVOR
-// Returns a sorted array (biggest drop first) of { pos, bestNow, bestNext, dropoff, need }.
+// The on-the-clock advisory. Two different sources of truth, deliberately:
+//   • VALUE comes from YOUR board (VOR) — what a player is worth to you.
+//   • AVAILABILITY comes from the MARKET (Sleeper ADP for this league's format) — what your
+//     opponents will actually do, which has nothing to do with your board.
+// We Monte-Carlo the picks between now and your next turn: each upcoming team drafts by noisy
+// market ADP, restricted to positions IT still needs (so QBs stop flying off once everyone has
+// one, but stay scarce in superflex). From those sims we get, per player, the probability he
+// survives to your next pick — and per position, the player you'd most likely actually land
+// if you wait, plus the expected VOR you'd settle for.
+//   dropoff[pos] = bestNowVOR − E[best available VOR at my next pick]
+// Returns { gap, onClock, rows:[{pos,bestNow,pHold,bestNext,pNext,expVor,dropoff,adjDrop,need,…}] }
+
+// Mulberry32 — a tiny seeded PRNG. Seeding on the draft state keeps the percentages STABLE
+// between 2.5s polls (they only move when a pick is actually made), instead of jittering.
+function _vonaRng(seed){
+  let t = seed >>> 0;
+  return function(){
+    t += 0x6D2B79F5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// A precomputed table of standard normals. Drawing Box-Muller inside the sim loop (tens of
+// thousands of log/sqrt/cos calls) dominated the runtime; a LUT + cheap index is ~10x faster
+// and statistically identical for our purposes.
+const _VONA_NORMALS = (function(){
+  const N=4096, a=new Float64Array(N);
+  let s=0x9e3779b9;
+  const r=()=>{ s+=0x6D2B79F5; let t=Math.imul(s^(s>>>15),1|s); t^=t+Math.imul(t^(t>>>7),61|t); return ((t^(t>>>14))>>>0)/4294967296; };
+  for(let i=0;i<N;i++){
+    let u=0,v=0; while(u===0)u=r(); while(v===0)v=r();
+    a[i]=Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+  }
+  return a;
+})();
+// How much a player's real draft slot scatters around his ADP. Uncertainty grows with ADP:
+// a 1.02 ADP goes ~1.02, but ADP-90 guys routinely swing +/-20 picks. Floor/cap keep it sane.
+function adpSigma(adp){
+  if(adp == null || adp >= 999) return 999;   // no market data -> effectively undraftable by ADP
+  return Math.min(24, Math.max(3.5, adp * 0.18));
+}
+const VONA_SIMS = 240;          // sims per advisory (stable via the seeded RNG)
+const VONA_MKT_DEPTH = 40;      // per position, hard cap on who the market can realistically take
+let _vonaCache = { key:null, val:null };
+
+// The positions a given draft slot still needs (from that team's actual filled lineup).
+function vonaPosNeedsForSlot(slot){
+  const picks = (draftPicksBySlot[slot]) || [];
+  const { needs } = fillLineup(picks);
+  const set = new Set();
+  needs.forEach(s=>{
+    if(s==='QB'||s==='RB'||s==='WR'||s==='TE') set.add(s);
+    else {
+      const elig = FLEX_ELIGIBLE[s];
+      if(elig) elig.forEach(p=>set.add(p));
+    }
+  });
+  return set;
+}
+
+// Monte-Carlo the pick window. Returns per-player survival probability and, per position,
+// how often each player ends up being the best-VOR guy left on YOUR board.
+//   pAvail:   Map(pid -> P(still available at my next pick))
+//   bestCount:{pos: Map(pid -> times he was the best survivor)}
+//   expVor:   {pos: E[VOR of the best survivor]}
+//
+// Perf notes (this runs on every 2.5s draft poll, so it has to stay cheap):
+//   • only the top (gap+10) by ADP per position can plausibly go in a window of `gap` picks
+//   • each sim sorts each position ONCE by noisy ADP, then walks a pointer per position —
+//     since a team always takes the lowest noisy-ADP player it needs, picks come off the head
+//     of a position's list in order, so pointers advance monotonically. O(4) per pick.
+function vonaSimulate(avail, upcomingSlots, pools){
+  const POSL=['QB','RB','WR','TE'];
+  const pidOf = (p)=> p.player_id || p.name;
+  const nUp = upcomingSlots.length;
+  const needsBySlot = upcomingSlots.map(s=>vonaPosNeedsForSlot(s));
+  // At most `nUp` players come off the board, so we never need more than nUp+10 deep.
+  const depth = Math.min(VONA_MKT_DEPTH, nUp + 10);
+
+  // Dense integer ids make the hot loop array-indexed instead of Map/Set-keyed.
+  const idOf = new Map();
+  avail.forEach((p,i)=>idOf.set(pidOf(p), i));
+
+  // MARKET pools: ordered by ADP, capped. These are who opponents actually consider.
+  const mkt={}, mktIds={}, mktAdp={}, mktSig={};
+  POSL.forEach(pos=>{
+    const arr = avail.filter(p=>p.pos===pos && adpFor(p)<999).sort((a,b)=>adpFor(a)-adpFor(b)).slice(0,depth);
+    mkt[pos]=arr;
+    mktIds[pos]=Int32Array.from(arr.map(p=>idOf.get(pidOf(p))));
+    mktAdp[pos]=Float64Array.from(arr.map(p=>adpFor(p)));
+    mktSig[pos]=Float64Array.from(arr.map(p=>adpSigma(adpFor(p))));
+  });
+  const inMarket = new Uint8Array(avail.length);
+  POSL.forEach(pos=>{ for(const id of mktIds[pos]) inMarket[id]=1; });
+
+  // Your board, as dense ids, best-VOR first.
+  const poolIds={}; POSL.forEach(pos=>{ poolIds[pos]=Int32Array.from(pools[pos].map(p=>idOf.get(pidOf(p)))); });
+
+  const survCount = new Int32Array(avail.length);
+  const bestCount = {}; POSL.forEach(p=>bestCount[p]=new Map());
+  const vorSum = {QB:0,RB:0,WR:0,TE:0};
+  const taken = new Uint8Array(avail.length);
+
+  // Seed on the draft state so numbers hold still until a pick actually happens.
+  let seed = ((Object.keys(draftedIds).length*7919) ^ ((mySlot||0)*104729) ^ (nUp*31) ^ 0x5f3759df)>>>0;
+  const rnd = ()=>{ seed+=0x6D2B79F5; let t=Math.imul(seed^(seed>>>15),1|seed); t^=t+Math.imul(t^(t>>>7),61|t); return ((t^(t>>>14))>>>0)/4294967296; };
+
+  // Scratch reused across sims.
+  const order={}, noisy={}, ptr={};
+  POSL.forEach(pos=>{ order[pos]=new Int32Array(mkt[pos].length); noisy[pos]=new Float64Array(mkt[pos].length); });
+
+  for(let s=0; s<VONA_SIMS; s++){
+    taken.fill(0);
+    // Draw one noisy market position per candidate, then sort that position by it.
+    POSL.forEach(pos=>{
+      const n=mkt[pos].length, no=noisy[pos], od=order[pos], ad=mktAdp[pos], sg=mktSig[pos];
+      for(let i=0;i<n;i++){ no[i] = ad[i] + _VONA_NORMALS[(rnd()*4096)|0]*sg[i]; od[i]=i; }
+      // small n (<=50) — a plain sort on the index array is fine
+      const idx=Array.prototype.slice.call(od).sort((a,b)=>no[a]-no[b]);
+      for(let i=0;i<n;i++) od[i]=idx[i];
+      ptr[pos]=0;
+    });
+    // Walk the window: each team takes its lowest noisy-ADP player among positions it needs.
+    for(let i=0;i<nUp;i++){
+      const need=needsBySlot[i];
+      let bestPos=null, best=Infinity;
+      for(let c=0;c<POSL.length;c++){
+        const pos=POSL[c];
+        if(need.size && !need.has(pos)) continue;
+        const k=ptr[pos];
+        if(k>=mkt[pos].length) continue;
+        const v=noisy[pos][order[pos][k]];
+        if(v<best){ best=v; bestPos=pos; }
+      }
+      if(bestPos!=null){
+        taken[ mktIds[bestPos][ order[bestPos][ ptr[bestPos] ] ] ] = 1;
+        ptr[bestPos]++;
+      }
+    }
+    // Tally survival + who's the best VOR left at each position.
+    for(let i=0;i<avail.length;i++){ if(inMarket[i] && !taken[i]) survCount[i]++; }
+    POSL.forEach(pos=>{
+      const ids=poolIds[pos];
+      for(let j=0;j<ids.length;j++){
+        if(!taken[ids[j]]){
+          const p=pools[pos][j], k=pidOf(p);
+          bestCount[pos].set(k,(bestCount[pos].get(k)||0)+1);
+          vorSum[pos]+=(p.vor||0);
+          break;
+        }
+      }
+    });
+  }
+  const pAvail = new Map();
+  avail.forEach((p,i)=>{
+    // Outside the modeled market (no ADP / too deep) -> nobody's taking him.
+    pAvail.set(pidOf(p), inMarket[i] ? survCount[i]/VONA_SIMS : 1);
+  });
+  const expVor = {};
+  POSL.forEach(pos=>{ expVor[pos] = vorSum[pos]/VONA_SIMS; });
+  return { pAvail, bestCount, expVor, pidOf };
+}
+
 function computeVONA(){
   if(mySlot==null) return null;
   let gap = picksUntilMyTurn(mySlot);              // picks between now and my next turn
@@ -739,86 +963,41 @@ function computeVONA(){
   const onClock = (gap===0);
   const { teams, type, reversalRound, rounds } = draftParams();
   const startPick = currentPickNo();
-  // The exact sequence of SLOTS picking between now and my next turn (so we can read each of
-  // those teams' rosters and model what they actually need).
+  // The exact sequence of SLOTS picking between now and my next turn.
   const upcomingSlots=[];
   {
     const myUps = myUpcomingPickNumbers(mySlot);
-    // window = from the current pick up to (but not including) my next relevant pick
     const endPick = onClock ? (myUps[1]!=null?myUps[1]:startPick) : (myUps[0]!=null?myUps[0]:startPick);
     const from = onClock ? startPick+1 : startPick;   // on the clock: picks AFTER mine
-    for(let n=from; n<endPick; n++){
-      upcomingSlots.push(slotOnClock(n, teams, type, reversalRound));
-    }
+    for(let n=from; n<endPick; n++) upcomingSlots.push(slotOnClock(n, teams, type, reversalRound));
     gap = upcomingSlots.length;
   }
+  // Cache: the sim is deterministic for a given draft state, so only redo it when that changes.
+  const cacheKey = `${Object.keys(draftedIds).length}|${mySlot}|${gap}|${rankFormat}|${startPick}`;
+  if(_vonaCache.key===cacheKey && _vonaCache.val) return _vonaCache.val;
+
   const list = buildPlayerList();
   const avail = list.filter(p=>!draftedIds[p.player_id]);
   if(!avail.length) return null;
-  const realAdpCount = avail.filter(p=>adpFor(p)<999).length;
-  const useAdp = realAdpCount >= Math.max(5, Math.min(gap,8));
 
-  // ── Demand-aware depletion ────────────────────────────────────────────────
-  // Instead of removing the top `gap` players by ADP (which wrongly predicts a QB run when
-  // most teams already have their QB), we simulate each upcoming pick taking the best player
-  // at a position THAT team still needs. This makes one-off positions (QB/TE in 1-QB/1-TE)
-  // deplete slowly once demand is satisfied, and keeps them scarce in superflex.
-  const posNeedsForSlot=(slot)=>{
-    const picks=(draftPicksBySlot[slot])||[];
-    const { needs }=fillLineup(picks);
-    const set=new Set();
-    needs.forEach(s=>{
-      if(s==='QB'||s==='RB'||s==='WR'||s==='TE') set.add(s);
-      else if(s==='FLEX'||s==='WRRB_FLEX'||s==='REC_FLEX'){ set.add('RB'); set.add('WR'); set.add('TE'); }
-      else if(s==='SUPER_FLEX'){ set.add('QB'); set.add('RB'); set.add('WR'); set.add('TE'); }
-    });
-    return set;
-  };
-  // working pools per position, best-first by VOR (what a value-drafter reaches for)
+  // YOUR board: pools per position, best-first by VOR.
   const pools={QB:[],RB:[],WR:[],TE:[]};
   avail.forEach(p=>{ if(pools[p.pos]) pools[p.pos].push(p); });
   Object.keys(pools).forEach(k=>pools[k].sort((a,b)=>(b.vor||0)-(a.vor||0)));
-  const idx={QB:0,RB:0,WR:0,TE:0};
-  const goneSet=new Set();
-  // snapshot "best available now" BEFORE depletion
   const bestNow={};
   ['QB','RB','WR','TE'].forEach(pos=>{ bestNow[pos]=pools[pos][0]||null; });
-  // simulate each upcoming pick
-  upcomingSlots.forEach(slot=>{
-    const need=posNeedsForSlot(slot);
-    // candidate positions this team would draft: their needs; if none (full starters), they
-    // take best-player-available regardless (bench/upside) — model as any position.
-    const cands = need.size ? [...need] : ['QB','RB','WR','TE'];
-    // pick the position whose next-best available player has the highest VOR (value-based),
-    // but only among positions this team needs — this is the demand filter.
-    let bestPos=null, bestVal=-Infinity;
-    cands.forEach(pos=>{
-      const nx=pools[pos][idx[pos]];
-      if(nx && (nx.vor||0)>bestVal){ bestVal=nx.vor||0; bestPos=pos; }
-    });
-    if(bestPos){
-      const taken=pools[bestPos][idx[bestPos]];
-      goneSet.add(taken.player_id||taken.name);
-      idx[bestPos]++;
-    }
-  });
-  // best available at MY next pick = the next in each pool after depletion
-  const bestNext={};
-  ['QB','RB','WR','TE'].forEach(pos=>{ bestNext[pos]=pools[pos][idx[pos]]||null; });
+
+  const sim = vonaSimulate(avail, upcomingSlots, pools);
+  const byId = new Map(avail.map(p=>[sim.pidOf(p), p]));
 
   // ── My own remaining needs (for the discount) ─────────────────────────────
   const myPicks=(draftPicksBySlot[mySlot])||[];
   const { needs: myNeeds }=fillLineup(myPicks);
-  // Dedicated-slot needs: a position is a TRUE need only if I have an unfilled slot that names
-  // that position directly (QB/RB/WR/TE). FLEX/superflex eligibility is a SOFT need — it keeps
-  // a position relevant, but a filled one-off (already have my TE) shouldn't read as "needed"
-  // just because TE can fill a flex. This is what makes the QB/TE "already have a stud" logic work.
   const dedicatedNeed=new Set();
   const flexNeed=new Set();
   myNeeds.forEach(s=>{
     if(s==='QB'||s==='RB'||s==='WR'||s==='TE') dedicatedNeed.add(s);
-    else if(s==='FLEX'||s==='WRRB_FLEX'||s==='REC_FLEX'){ flexNeed.add('RB'); flexNeed.add('WR'); flexNeed.add('TE'); }
-    else if(s==='SUPER_FLEX'){ flexNeed.add('QB'); flexNeed.add('RB'); flexNeed.add('WR'); flexNeed.add('TE'); }
+    else { const elig=FLEX_ELIGIBLE[s]; if(elig) elig.forEach(p=>flexNeed.add(p)); }
   });
 
   const WORTH_A_BACKUP=20;   // VOR above which a 2nd QB/TE is worth taking even if slot filled
@@ -826,33 +1005,40 @@ function computeVONA(){
   ['QB','RB','WR','TE'].forEach(pos=>{
     const now=bestNow[pos];
     if(!now) return;
-    const next=bestNext[pos];
-    const rawDrop=+((now.vor||0) - (next?(next.vor||0):0)).toFixed(1);
-    const isDedicated = dedicatedNeed.has(pos);   // unfilled one-off/dedicated slot for this pos
-    const isFlexElig  = flexNeed.has(pos);        // can still fill a flex, but starter is set
-    const needed = isDedicated;
-    // Discount weighting:
-    //  • dedicated need (no starter yet) → full weight
-    //  • flex-eligible only (starter filled, could go flex) → moderate weight
-    //  • filled & not flex-relevant → low, unless a genuine stud worth a backup
+    // The player you'd MOST LIKELY actually land at this position if you wait — i.e. the guy
+    // who most often ends up as the best survivor on your board. This is the concrete
+    // "here's what waiting looks like" answer.
+    let bestNextId=null, bestNextHits=-1;
+    sim.bestCount[pos].forEach((cnt,k)=>{ if(cnt>bestNextHits){ bestNextHits=cnt; bestNextId=k; } });
+    const bestNext = bestNextId ? byId.get(bestNextId) : null;
+    const expVor = sim.expVor[pos];
+    const rawDrop = +((now.vor||0) - expVor).toFixed(1);
+    const isDedicated = dedicatedNeed.has(pos);
+    const isFlexElig  = flexNeed.has(pos);
     let weight;
     if(isDedicated) weight=1;
     else if(isFlexElig) weight=0.6;
     else weight=((now.vor||0)>=WORTH_A_BACKUP ? 0.5 : 0.15);
     out.push({
-      pos, bestNow: now, bestNext: next,
+      pos,
+      bestNow: now,
+      pHold: sim.pAvail.get(sim.pidOf(now)) || 0,          // P(the guy you'd take now is still there)
+      bestNext,
+      pNext: bestNext ? (sim.pAvail.get(bestNextId)||0) : 0,
+      nextShare: bestNextHits>0 ? bestNextHits/VONA_SIMS : 0,  // how often he IS the fallback
+      expVor: +expVor.toFixed(1),
       dropoff: rawDrop,
       adjDrop: +(rawDrop*weight).toFixed(1),
-      need: needed,
+      need: isDedicated,
       filled: !isDedicated,
       flexEligible: isFlexElig,
       studBackup: !isDedicated && (now.vor||0)>=WORTH_A_BACKUP,
     });
   });
-  // Rank by adjusted drop (need-weighted) so a filled position won't outrank a real need
-  // unless it's a stud-backup situation.
   out.sort((a,b)=> b.adjDrop-a.adjDrop);
-  return { gap, rows: out, usedAdp: useAdp, onClock };
+  const res = { gap, rows: out, onClock };
+  _vonaCache = { key:cacheKey, val:res };
+  return res;
 }
 
 

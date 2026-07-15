@@ -64,7 +64,27 @@
 .rt-pos-k{background:rgba(168,85,247,.2);color:var(--k);}       /* K — purple */
 .rt-pos-def{background:rgba(185,138,99,.22);color:var(--def);}  /* DEF — brown */
 .rt-pos-bn{background:var(--surface3);color:var(--muted);}
-.rt-pname{font-weight:700;font-size:12px;}
+/* Roster rows: headshot + name. The panel is a size container, so the name can fall back to
+   "F. Lastname" based on the PANEL's width rather than the viewport's — the tracker is narrow
+   on desktop too, so a viewport media query would miss the case that actually matters. */
+.rt-panel{container-type:inline-size;}
+.rt-thumb{width:24px;height:24px;border-radius:50%;overflow:hidden;flex:none;
+  background:var(--surface);display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--border);}
+.rt-thumb img{width:100%;height:100%;object-fit:cover;object-position:top center;}
+.rt-pname{font-weight:700;font-size:12px;min-width:0;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;}
+.rt-nm-abbr{display:none;}
+@container (max-width:330px){
+  .rt-nm-full{display:none;}
+  .rt-nm-abbr{display:inline;}
+}
+/* Change-seat affordance: auto-detection can't match a pasted draft id to your user, and
+   mis-taps happen. */
+.rt-reseat{margin-left:auto;background:transparent;border:1px solid var(--border);
+  color:var(--muted);font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:6px;
+  cursor:pointer;white-space:nowrap;}
+.rt-reseat:hover{color:var(--accent);border-color:var(--accent);}
 .rt-pmeta{color:var(--muted);font-size:10.5px;margin-left:auto;white-space:nowrap;}
 .rt-empty-lbl{color:var(--muted);font-style:italic;font-size:11px;}
 .rt-bench-head{font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;
@@ -85,6 +105,18 @@
 .vona-hot .vona-drop{color:#ff6b6b;}
 .vona-warm .vona-drop{color:#fbbf24;}
 .vona-cool .vona-drop{color:var(--muted);}
+/* VONA rows: two lines — who you'd take now (+ market odds he holds), and who you'd most
+   likely settle for if you wait. Makes the cost of waiting concrete instead of abstract. */
+.vona-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}
+.vona-now{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.vona-wait{font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.vona-wait-safe{font-style:italic;opacity:.75;}
+.vona-vor{font-family:var(--mono);font-size:10px;color:#00d4aa;font-weight:800;margin-left:3px;}
+.vona-pct{font-family:var(--mono);font-size:8.5px;font-weight:800;margin-left:5px;padding:0 4px;
+  border-radius:4px;background:var(--surface2);}
+.vp-hi{color:#00d4aa;}
+.vp-mid{color:#fbbf24;}
+.vp-lo{color:#ff6b6b;}
 .vona-legend{font-size:9.5px;color:var(--muted);margin-top:7px;font-style:italic;}
 .vona-tag{font-size:8.5px;font-weight:700;padding:1px 5px;border-radius:4px;margin-left:6px;
   background:var(--surface3);color:var(--muted);vertical-align:middle;}

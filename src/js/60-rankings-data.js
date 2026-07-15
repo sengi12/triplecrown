@@ -363,24 +363,37 @@ function adpFor(p){
 // position sets that position's baseline. Everything is scoring-independent because it all
 // flows from each player's fpts under the current scoring.
 function leagueStarterCounts(){
-  // Determine per-position starter demand across the league. Prefer a LINKED draft's real
-  // lineup; otherwise fall back to a standard 12-team lineup shaped by the current rankFormat
-  // (so switching the format dropdown to Superflex actually changes QB scarcity/VOR).
-  const teams = (draftMeta && draftMeta.settings && draftMeta.settings.teams) || 12;
+  // Per-position starter demand across the league, in priority order:
+  //   1. a LIVE linked draft's lineup (most authoritative — it's the actual draft)
+  //   2. the linked LEAGUE's roster_positions, which we now keep even when its draft is
+  //      COMPLETE. This is the case that used to silently fall through to a generic
+  //      12-team/2-WR board, so a 3-WR league's WR baseline sat at ~WR24 instead of ~WR36.
+  //   3. no league at all → a standard 12-team lineup shaped by the current rankFormat, so
+  //      flipping the format dropdown to Superflex still moves QB scarcity.
+  let lineup=null, teams=null;
+  if(draftId && draftLineup && draftLineup.length){
+    lineup = draftLineup;
+    teams  = (draftMeta && draftMeta.settings && draftMeta.settings.teams)
+             || (leagueShape && leagueShape.teams) || 12;
+  } else if(leagueShape && leagueShape.lineup && leagueShape.lineup.length){
+    lineup = leagueShape.lineup;
+    teams  = leagueShape.teams || 12;
+  }
   const base = { QB:1, RB:2, WR:2, TE:1 };
   let flex=0, superflex=0;
-  const hasLinkedLineup = draftId && draftLineup && draftLineup.length;
-  if(hasLinkedLineup){
+  if(lineup){
     const c={QB:0,RB:0,WR:0,TE:0,FLEX:0,SUPER_FLEX:0};
-    draftLineup.forEach(s=>{ if(c[s]!=null) c[s]++; else if(s==='WRRB_FLEX'||s==='REC_FLEX') c.FLEX++; });
-    base.QB=c.QB||1; base.RB=c.RB||2; base.WR=c.WR||2; base.TE=c.TE||1;
+    lineup.forEach(s=>{ if(c[s]!=null) c[s]++; else if(s==='WRRB_FLEX'||s==='REC_FLEX') c.FLEX++; });
+    // Use the REAL counts. A zero is meaningful (e.g. a superflex-only lineup with no
+    // dedicated QB slot) — the old `c.QB||1` defaults masked that.
+    base.QB=c.QB; base.RB=c.RB; base.WR=c.WR; base.TE=c.TE;
     flex=c.FLEX; superflex=c.SUPER_FLEX;
   } else {
-    // No draft linked → shape demand from the rankings format so VOR reflects it.
-    flex=1;  // standard single flex
+    teams = 12;
+    flex  = 1;
     if(rankFormat==='superflex' || rankFormat==='dynasty_superflex') superflex=1;
   }
-  return { teams, base, flex, superflex };
+  return { teams: teams||12, base, flex, superflex };
 }
 function computeVOR(list){
   if(!list||!list.length) return;
