@@ -206,18 +206,18 @@ function renderRankings(){
       </div>
       <div class="scoring-body">
         <div class="scoring-grid">
-          <div class="scoring-field"><label>PASS YDS / POINT</label><input id="sc_pass_yds_ydg" type="number" value="${scoringSettings.passing_yards_yardage}" step="1"></div>
-          <div class="scoring-field"><label>PASS TD PTS</label><input id="sc_pass_td" type="number" value="${scoringSettings.passing_touchdowns}" step="0.5"></div>
+          <div class="scoring-field"><label>PASS YDS / FPTS</label><input id="sc_pass_yds_ydg" type="number" value="${scoringSettings.passing_yards_yardage}" step="1"></div>
+          <div class="scoring-field"><label>PASS TD</label><input id="sc_pass_td" type="number" value="${scoringSettings.passing_touchdowns}" step="0.5"></div>
           <div class="scoring-field"><label>INT PTS</label><input id="sc_int" type="number" value="${scoringSettings.interceptions_thrown}" step="0.5"></div>
-          <div class="scoring-field"><label>RUSH YDS / POINT</label><input id="sc_rush_yds_ydg" type="number" value="${scoringSettings.rushing_yards_yardage}" step="1"></div>
-          <div class="scoring-field"><label>RUSH TD PTS</label><input id="sc_rush_td" type="number" value="${scoringSettings.rushing_touchdowns}" step="0.5"></div>
-          <div class="scoring-field"><label>REC YDS / POINT</label><input id="sc_rec_yds_ydg" type="number" value="${scoringSettings.receiving_yards_yardage}" step="1"></div>
-          <div class="scoring-field"><label>REC TD PTS</label><input id="sc_rec_td" type="number" value="${scoringSettings.receiving_touchdowns}" step="0.5"></div>
-          <div class="scoring-field"><label>RECEPTION PTS (PPR)</label><input id="sc_rec" type="number" value="${scoringSettings.receptions}" step="0.25"></div>
-          <div class="scoring-field"><label>FUMBLE LOST PTS</label><input id="sc_fum" type="number" value="${scoringSettings.fumbles_lost}" step="0.5"></div>
-          <div class="scoring-field"><label>PASS ATT PTS</label><input id="sc_pass_att" type="number" value="${scoringSettings.passing_attempts}" step="0.1"></div>
-          <div class="scoring-field"><label>PASS COMP PTS</label><input id="sc_pass_comp" type="number" value="${scoringSettings.passing_completions}" step="0.1"></div>
-          <div class="scoring-field"><label>RUSH ATT PTS</label><input id="sc_rush_att" type="number" value="${scoringSettings.rushing_attempts}" step="0.1"></div>
+          <div class="scoring-field"><label>RUSH YDS / FPTS</label><input id="sc_rush_yds_ydg" type="number" value="${scoringSettings.rushing_yards_yardage}" step="1"></div>
+          <div class="scoring-field"><label>RUSH TD</label><input id="sc_rush_td" type="number" value="${scoringSettings.rushing_touchdowns}" step="0.5"></div>
+          <div class="scoring-field"><label>REC YDS / FPTS</label><input id="sc_rec_yds_ydg" type="number" value="${scoringSettings.receiving_yards_yardage}" step="1"></div>
+          <div class="scoring-field"><label>REC TD</label><input id="sc_rec_td" type="number" value="${scoringSettings.receiving_touchdowns}" step="0.5"></div>
+          <div class="scoring-field"><label>REC (PPR)</label><input id="sc_rec" type="number" value="${scoringSettings.receptions}" step="0.25"></div>
+          <div class="scoring-field"><label>FUMBLE</label><input id="sc_fum" type="number" value="${scoringSettings.fumbles_lost}" step="0.5"></div>
+          <div class="scoring-field"><label>PASS ATT</label><input id="sc_pass_att" type="number" value="${scoringSettings.passing_attempts}" step="0.1"></div>
+          <div class="scoring-field"><label>PASS COMP</label><input id="sc_pass_comp" type="number" value="${scoringSettings.passing_completions}" step="0.1"></div>
+          <div class="scoring-field"><label>RUSH ATT</label><input id="sc_rush_att" type="number" value="${scoringSettings.rushing_attempts}" step="0.1"></div>
         </div>
       </div>
     </div>
