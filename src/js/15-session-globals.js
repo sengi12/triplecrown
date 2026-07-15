@@ -153,6 +153,10 @@ let scoringSettings = {
   passing_attempts:0, passing_completions:0,
   receiving_yards_points:1, receiving_yards_yardage:10,
   receiving_touchdowns:6, receptions:0.5,
+  // TE Premium: EXTRA points per reception, TEs only, ON TOP of `receptions`.
+  // A "1.5 PPR TE" league in full PPR is receptions:1 + receptions_te_bonus:0.5.
+  // Mirrors Sleeper's own model, where scoring_settings.bonus_rec_te is a bonus, not a total.
+  receptions_te_bonus:0,
   rushing_yards_points:1, rushing_yards_yardage:10,
   rushing_touchdowns:6, rushing_attempts:0,
   fumbles_lost:-2,

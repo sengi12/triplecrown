@@ -21,33 +21,59 @@ function pcardDefWeeklyAvailable(pid){
   return pcardDefWeeklySeasons(_pcardDefNorm(pid)).length>0;
 }
 
-function _dwNum(v, dp=1){
+// Format one weekly cell. `dp` = decimal places. `pct:true` means the SEED stores the value
+// as a 0-1 fraction (nflverse ships missed_tackle_pct as 0.125, i.e. 12.5%) so we scale it to
+// a human percentage here — the seed is NOT changed, only the display.
+function _dwNum(v, dp=1, pct=false){
   if(v==null || Number.isNaN(v)) return '–';
-  return Number(v).toFixed(dp);
+  const n = pct ? Number(v)*100 : Number(v);
+  return n.toFixed(dp) + (pct ? '%' : '');
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// COLOR THRESHOLDS FOR THE DEFENSIVE WEEKLY CARD — EDIT THESE
+// ═══════════════════════════════════════════════════════════════════════════
+// One line per stat. Two helpers, and the argument order differs between them:
+//   _tri(v, good, ok)     → HIGHER is better.  v >= good = green, v >= ok = yellow, else red
+//   _triLow(v, good, ok)  → LOWER is better.   v <= good = green, v <= ok = yellow, else red
+// All values are PER GAME (one row = one week). `missed_tackle_pct` is compared AFTER the
+// 0-1 → 0-100 scaling below, so its thresholds are on a 0-100 scale like a human would read.
+// ═══════════════════════════════════════════════════════════════════════════
 function _dwCellClass(key, v){
   if(v==null || Number.isNaN(v)) return '';
-  if(key==='tackles') return _tri(v,7,4);
-  if(key==='sacks') return _tri(v,1,0.5);
-  if(key==='pressures') return _tri(v,4,2);
-  if(key==='hurries') return _tri(v,3,1);
-  if(key==='qb_hits') return _tri(v,2,1);
-  if(key==='blitzes') return _tri(v,4,1);
-  if(key==='ints') return _tri(v,1,0.5);
-  if(key==='td_allowed') return _triLow(v,0,1);
-  if(key==='rating_allowed') return _triLow(v,75,105);
-  if(key==='missed_tackle_pct') return _triLow(v,8,16);
-  if(key==='cmp_allowed' || key==='yds_allowed' || key==='targets') return _triLow(v,5,8);
+  // missed_tackle_pct arrives as a fraction (0.125); compare on the same 0-100 scale we show.
+  if(key==='missed_tackle_pct') return _triLow(v*100, 8, 16);
+  if(key==='tackles') return _tri(v,7,4);                 // tackles/game: 7+ green, 4+ yellow
+  if(key==='sacks') return _tri(v,1,0.5);                 // sacks/game
+  if(key==='pressures') return _tri(v,4,2);               // pressures/game
+  if(key==='hurries') return _tri(v,3,1);                 // hurries/game
+  if(key==='qb_hits') return _tri(v,2,1);                 // QB hits/game
+  if(key==='blitzes') return _tri(v,4,1);                 // blitzes/game
+  if(key==='ints') return _tri(v,1,0.5);                  // INTs/game
+  if(key==='td_allowed') return _triLow(v,0,1);           // TDs allowed in coverage/game
+  if(key==='rating_allowed') return _triLow(v,75,105);    // passer rating when targeted (0-158.3)
+  // NOTE: one shared rule for three very different stats — 5/8 is sensible for targets and
+  // completions allowed, but 5/8 YARDS allowed is far too strict. Split these if you want
+  // yds_allowed to read sensibly (e.g. _triLow(v,25,50)).
+  if(key==='cmp_allowed' || key==='targets') return _triLow(v,5,8);
+  if(key==='yds_allowed') return _triLow(v,5,8);           // ← almost certainly wants its own scale
   return '';
 }
 
+// Column spec for one defensive group's weekly table. Each entry is:
+//   k    = key into the week object from the seed (e.g. w.missed_tackle_pct)
+//   l    = the <th> label shown to the user
+//   d    = decimal places for display
+//   pct  = seed stores a 0-1 fraction; multiply by 100 and append '%' when rendering
+// `group` is the seed's own DL/LB/DB bucket (rec.group), NOT the roster position — a 3-4 OLB
+// is grouped LB even though its position code is OLB. Anything unrecognised falls to the DB
+// table at the bottom.
 function _dwCols(group){
   if(group==='DL'){
     return [
       {k:'tackles', l:'TKL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1},
       {k:'hurries', l:'HUR', d:1}, {k:'qb_hits', l:'HIT', d:1}, {k:'blitzes', l:'BLZ', d:1},
-      {k:'missed_tackle_pct', l:'MISS%', d:1},
+      {k:'missed_tackles', l:'MTKL', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
     ];
   }
   if(group==='LB'){
@@ -55,12 +81,15 @@ function _dwCols(group){
       {k:'tackles', l:'TKL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1},
       {k:'blitzes', l:'BLZ', d:1}, {k:'targets', l:'TGT', d:1}, {k:'cmp_allowed', l:'CMPA', d:1},
       {k:'yds_allowed', l:'YDSA', d:1}, {k:'ints', l:'INT', d:1}, {k:'rating_allowed', l:'RTG A', d:1},
+      {k:'missed_tackles', l:'MTKL', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
     ];
   }
   return [
     {k:'targets', l:'TGT', d:1}, {k:'cmp_allowed', l:'CMPA', d:1}, {k:'yds_allowed', l:'YDSA', d:1},
     {k:'td_allowed', l:'TDA', d:1}, {k:'ints', l:'INT', d:1}, {k:'rating_allowed', l:'RTG A', d:1},
     {k:'adot', l:'aDOT', d:1}, {k:'yac_allowed', l:'YAC A', d:1}, {k:'tackles', l:'TKL', d:0},
+    // DBs miss tackles too — the seed has 100% coverage for DB/LB/DL, it just wasn't surfaced.
+    {k:'missed_tackles', l:'MTKL', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
   ];
 }
 
@@ -89,14 +118,14 @@ function renderPcardDefWeekly(pid){
       const cells = cols.map(c=>{
         const v = w[c.k];
         const cls = _dwCellClass(c.k, v);
-        return `<td class="pcard-cell ${cls}">${v==null?'–':_dwNum(v, c.d)}</td>`;
+        return `<td class="pcard-cell ${cls}">${v==null?'–':_dwNum(v, c.d, c.pct)}</td>`;
       }).join('');
       return `<tr><td class="pcard-wk">${w.week||''}</td><td class="pcard-opp home">${opp}</td>${cells}</tr>`;
     }).join('');
     const totals = rec.totals||{};
     const totCells = cols.map(c=>{
       const v=totals[c.k];
-      return `<td class="pcard-cell pcard-total-cell">${v==null?'–':_dwNum(v,c.d)}</td>`;
+      return `<td class="pcard-cell pcard-total-cell">${v==null?'–':_dwNum(v,c.d,c.pct)}</td>`;
     }).join('');
     const totalRow = `<tr class="pcard-total-row"><td class="pcard-wk">TOT</td><td class="pcard-opp">${totals.games||rec.weeks.length}g</td>${totCells}</tr>`;
     seasonBlocks.push(`<div class="pcard-season">

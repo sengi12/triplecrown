@@ -1705,6 +1705,10 @@ let scoringSettings = {
   passing_attempts:0, passing_completions:0,
   receiving_yards_points:1, receiving_yards_yardage:10,
   receiving_touchdowns:6, receptions:0.5,
+  // TE Premium: EXTRA points per reception, TEs only, ON TOP of `receptions`.
+  // A "1.5 PPR TE" league in full PPR is receptions:1 + receptions_te_bonus:0.5.
+  // Mirrors Sleeper's own model, where scoring_settings.bonus_rec_te is a bonus, not a total.
+  receptions_te_bonus:0,
   rushing_yards_points:1, rushing_yards_yardage:10,
   rushing_touchdowns:6, rushing_attempts:0,
   fumbles_lost:-2,
@@ -3674,6 +3678,11 @@ function setEditTxt(id,v){const e=document.getElementById(id);if(e&&document.act
 // ─────────────────────────────────────────────────────────────────────────────
 // Rankings
 // ─────────────────────────────────────────────────────────────────────────────
+// Fantasy points for one player under the CURRENT scoring settings.
+//   p  = a player row from buildPlayerList() — carries pos + raw stat totals
+//   sc = the live scoringSettings object (the scoring panel writes straight into it)
+//   f  = the running points total
+// `*_yardage` fields are yards-PER-POINT (25 = 1pt per 25 yds), which is why they divide.
 function calcFpts(p){
   const sc=scoringSettings;let f=0;
   f+=(p.passing_yards||0)/sc.passing_yards_yardage*sc.passing_yards_points;
@@ -3683,7 +3692,10 @@ function calcFpts(p){
   f+=(p.passing_completions||0)*sc.passing_completions;
   f+=(p.receiving_yards||0)/sc.receiving_yards_yardage*sc.receiving_yards_points;
   f+=(p.receiving_tds||0)*sc.receiving_touchdowns;
-  f+=(p.receptions||0)*sc.receptions;
+  // Receptions, plus the TE-premium bonus for tight ends only. Because VOR baselines derive
+  // from these fpts, TEP cascades correctly: TEs score more -> they win more FLEX slots in
+  // leagueStarterCounts() -> the TE replacement level rises -> TE VOR reshapes on its own.
+  f+=(p.receptions||0)*(sc.receptions + (p.pos==='TE' ? (sc.receptions_te_bonus||0) : 0));
   f+=(p.rushing_yards||0)/sc.rushing_yards_yardage*sc.rushing_yards_points;
   f+=(p.rushing_tds||0)*sc.rushing_touchdowns;
   f+=(p.rushing_attempts||0)*sc.rushing_attempts;
@@ -3715,8 +3727,10 @@ function ecrTierFor(p){ const e=ecrEntry(p); return e&&e.tier!=null ? e.tier : n
 function hasECR(){ const t=ecrTableFor(rankFormat); return t && Object.keys(t).length>0; }
 
 // ── SumerSports advanced stats (rankings "Advanced" toggle) ──────────────────
-// Reference-season only: available when the rankings page is viewing a completed season that
-// SumerSports covers (2022-2025). Never on the projection season, never for seasons w/o data.
+// Reference-season only: available whenever the rankings page views a completed season the
+// nflverse seed carries (currently 2021-2025 = every entry in `history_seasons`). Never on
+// the projection season. Already fully per-season: switch the season tabs and Adv. Metrics
+// follows automatically — there is no allowlist to maintain.
 // The data is fully data-driven: each position table carries its own ordered `columns` +
 // `pct_cols`, so the app renders whatever the seed provides (and future refinements slot in).
 function sumerSeasonKey(){
@@ -4120,10 +4134,22 @@ function computeVOR(list){
 // tables, with league rank 1–32 per stat), and a league-wide sortable table view.
 // None of this touches projections.
 function sharpHasData(){ return activeSharp() && Object.keys(activeSharp()).length>0; }
-// Adapt the nflverse team tables for SHARP_SEASON into the Sharp-shaped dict the league view
-// renders (adds title/category/pct_cols). Returns {} when no nflverse data for that season.
+// Which season the Advanced Stats tables describe. Follows the season tabs: when you're on a
+// completed season that the nflverse seed carries team data for (2021-2025), the tables show
+// THAT season. On the projection view — or a season with no team data — it falls back to the
+// seed's reference season (SHARP_SEASON), which is the newest completed year.
+// This is the single hook for the whole feature: every Advanced Stats renderer (team card and
+// league-wide) reads activeSharp(), which reads this.
+function advTeamSeason(){
+  const s = String(activeSeason);
+  if(activeSeason!=='proj' && NFLVERSE && NFLVERSE[s] && NFLVERSE[s].team) return s;
+  return String(SHARP_SEASON);
+}
+// Adapt the nflverse team tables for the ACTIVE season into the Sharp-shaped dict the league
+// view renders (adds title/category/pct_cols). Returns {} when no nflverse data for it.
+// ("Sharp-shaped" is historical — the Warren Sharp source is gone; this is all nflverse now.)
 function nflverseSharpTables(){
-  const t=(NFLVERSE && NFLVERSE[String(SHARP_SEASON)] && NFLVERSE[String(SHARP_SEASON)].team) || null;
+  const t=(NFLVERSE && NFLVERSE[advTeamSeason()] && NFLVERSE[advTeamSeason()].team) || null;
   if(!t) return {};
   const META={
     offense:{title:'Offensive Metrics',category:'offense'},
@@ -4487,6 +4513,12 @@ let pcardStatsMode = 'pro';
 let pcardToken = 0;           // bumped on each source switch so a slow in-flight load can't clobber a newer one
 async function loadPlayerCardData(pid, pos, team){
   const posc = pos || (sleeperPlayers&&sleeperPlayers[pid]&&sleeperPlayers[pid].pos) || 'QB';
+  // posc = the player's canonical position code (e.g. 'WR', 'CB', 'K').
+  // isSkill  → fantasy skill positions, which have hand-built PCARD_SCHEMA gamelog tables.
+  // isOl     → offensive line, routed to the dedicated OL card.
+  // isDefense→ real defenders. NOTE: these three do NOT cover everything — K, P and LS are
+  //            none of them, which is exactly why `!isSkill` must never be used as a stand-in
+  //            for "is a defender" (that bug titled kicker gamelogs "DEFENSE").
   const isSkill = ['QB','RB','WR','TE'].includes(posc);
   const isOl = ['LT','LG','C','RG','RT','OL','G','T','OT','OG'].includes(posc);
   const isDefense = ['DE','DT','NT','DL','LB','MLB','OLB','ILB','WLB','SLB','DB','CB','S','FS','SS'].includes(posc);
@@ -4548,7 +4580,9 @@ function retryPlayerCardData(){
 function pcardLoadStats(mode){
   if(!pcardState) return;
   pcardToken++;
-  const {pid, posc, isSkill} = pcardState;
+  // isDefense is needed for the ESPN `def` flag (stat grouping). It MUST be destructured
+  // here — it's a const local to renderPlayerCardShell(), not a global.
+  const {pid, posc, isSkill, isDefense} = pcardState;
   const body = document.getElementById('pcardBody');
   if(!body) return;
   if(mode==='routes'){
@@ -4588,7 +4622,9 @@ function pcardLoadStats(mode){
     return;
   }
   if(mode==='college'){
-    return loadEspnCardData(pid, posc, body, {league:'college-football', def:!isSkill});
+    // `def` flips the stat GROUPING (tackles/coverage vs passing/rushing) — it must key off
+    // isDefense, not !isSkill, or kickers/punters get bucketed as defenders.
+    return loadEspnCardData(pid, posc, body, {league:'college-football', def:isDefense});
   }
   if(mode==='pro' && pcardState.isDefense && typeof pcardDefWeeklyAvailable==='function' && pcardDefWeeklyAvailable(pid) && typeof renderPcardDefWeekly==='function'){
     body.innerHTML = renderPcardDefWeekly(pid);
@@ -4608,7 +4644,10 @@ function pcardLoadStats(mode){
     return;
   }
   if(!isSkill){
-    return loadEspnCardData(pid, posc, body, {league:'nfl', def:true});
+    // Anything without a hand-built schema (defenders, K, P, LS) falls back to the ESPN
+    // gamelog. Only pass def:true for ACTUAL defenders — a kicker with def:true lands in
+    // espnStatGroup's defensive branch and every column gets headed "DEFENSE".
+    return loadEspnCardData(pid, posc, body, {league:'nfl', def:isDefense});
   }
   if(!PCARD_SCHEMA[posc]){
     body.innerHTML = `<div class="pcard-loading">Game logs aren't available for ${posc}.</div>`;
@@ -5633,6 +5672,11 @@ function espnStatGroup(name, def){
     if(['interceptions','interceptionYards','avgInterceptionYards','interceptionTouchdowns','longInterception','passesDefended'].includes(n)) return 'COVERAGE';
     return 'DEFENSE';
   }
+  // Kicking / punting: these reach here because K and P are non-skill, non-defensive, so they
+  // fall through the schema tables to the raw ESPN gamelog. Without these they'd all land in
+  // 'MISC'. ESPN's machine names are stable across kickers and punters.
+  if(/^fieldGoal/i.test(n) || /^extraPoint/i.test(n) || ['longFieldGoalMade','totalKickingPoints','kickExtraPoints','fieldGoalsMade19','fieldGoalsMade29','fieldGoalsMade39','fieldGoalsMade49','fieldGoalsMade50'].includes(n)) return 'KICKING';
+  if(/^punt/i.test(n) || ['grossAvgPuntYards','netAvgPuntYards','longPunt','touchbacks','puntsInside20','puntsBlocked','fairCatches'].includes(n)) return 'PUNTING';
   if(/^passing/.test(n) || ['completions','passingAttempts','completionPct','interceptions','interceptionPct','longPassing','sacks','sackYardsLost','QBRating','adjQBR','ESPNQBRating'].includes(n)) return 'PASSING';
   if(/^rushing/.test(n) || ['yardsPerRushAttempt','longRushing'].includes(n)) return 'RUSHING';
   if(/^receiving/.test(n) || ['receptions','yardsPerReception','longReception'].includes(n)) return 'RECEIVING';
@@ -5876,33 +5920,59 @@ function pcardDefWeeklyAvailable(pid){
   return pcardDefWeeklySeasons(_pcardDefNorm(pid)).length>0;
 }
 
-function _dwNum(v, dp=1){
+// Format one weekly cell. `dp` = decimal places. `pct:true` means the SEED stores the value
+// as a 0-1 fraction (nflverse ships missed_tackle_pct as 0.125, i.e. 12.5%) so we scale it to
+// a human percentage here — the seed is NOT changed, only the display.
+function _dwNum(v, dp=1, pct=false){
   if(v==null || Number.isNaN(v)) return '–';
-  return Number(v).toFixed(dp);
+  const n = pct ? Number(v)*100 : Number(v);
+  return n.toFixed(dp) + (pct ? '%' : '');
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// COLOR THRESHOLDS FOR THE DEFENSIVE WEEKLY CARD — EDIT THESE
+// ═══════════════════════════════════════════════════════════════════════════
+// One line per stat. Two helpers, and the argument order differs between them:
+//   _tri(v, good, ok)     → HIGHER is better.  v >= good = green, v >= ok = yellow, else red
+//   _triLow(v, good, ok)  → LOWER is better.   v <= good = green, v <= ok = yellow, else red
+// All values are PER GAME (one row = one week). `missed_tackle_pct` is compared AFTER the
+// 0-1 → 0-100 scaling below, so its thresholds are on a 0-100 scale like a human would read.
+// ═══════════════════════════════════════════════════════════════════════════
 function _dwCellClass(key, v){
   if(v==null || Number.isNaN(v)) return '';
-  if(key==='tackles') return _tri(v,7,4);
-  if(key==='sacks') return _tri(v,1,0.5);
-  if(key==='pressures') return _tri(v,4,2);
-  if(key==='hurries') return _tri(v,3,1);
-  if(key==='qb_hits') return _tri(v,2,1);
-  if(key==='blitzes') return _tri(v,4,1);
-  if(key==='ints') return _tri(v,1,0.5);
-  if(key==='td_allowed') return _triLow(v,0,1);
-  if(key==='rating_allowed') return _triLow(v,75,105);
-  if(key==='missed_tackle_pct') return _triLow(v,8,16);
-  if(key==='cmp_allowed' || key==='yds_allowed' || key==='targets') return _triLow(v,5,8);
+  // missed_tackle_pct arrives as a fraction (0.125); compare on the same 0-100 scale we show.
+  if(key==='missed_tackle_pct') return _triLow(v*100, 8, 16);
+  if(key==='tackles') return _tri(v,7,4);                 // tackles/game: 7+ green, 4+ yellow
+  if(key==='sacks') return _tri(v,1,0.5);                 // sacks/game
+  if(key==='pressures') return _tri(v,4,2);               // pressures/game
+  if(key==='hurries') return _tri(v,3,1);                 // hurries/game
+  if(key==='qb_hits') return _tri(v,2,1);                 // QB hits/game
+  if(key==='blitzes') return _tri(v,4,1);                 // blitzes/game
+  if(key==='ints') return _tri(v,1,0.5);                  // INTs/game
+  if(key==='td_allowed') return _triLow(v,0,1);           // TDs allowed in coverage/game
+  if(key==='rating_allowed') return _triLow(v,75,105);    // passer rating when targeted (0-158.3)
+  // NOTE: one shared rule for three very different stats — 5/8 is sensible for targets and
+  // completions allowed, but 5/8 YARDS allowed is far too strict. Split these if you want
+  // yds_allowed to read sensibly (e.g. _triLow(v,25,50)).
+  if(key==='cmp_allowed' || key==='targets') return _triLow(v,5,8);
+  if(key==='yds_allowed') return _triLow(v,5,8);           // ← almost certainly wants its own scale
   return '';
 }
 
+// Column spec for one defensive group's weekly table. Each entry is:
+//   k    = key into the week object from the seed (e.g. w.missed_tackle_pct)
+//   l    = the <th> label shown to the user
+//   d    = decimal places for display
+//   pct  = seed stores a 0-1 fraction; multiply by 100 and append '%' when rendering
+// `group` is the seed's own DL/LB/DB bucket (rec.group), NOT the roster position — a 3-4 OLB
+// is grouped LB even though its position code is OLB. Anything unrecognised falls to the DB
+// table at the bottom.
 function _dwCols(group){
   if(group==='DL'){
     return [
       {k:'tackles', l:'TKL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1},
       {k:'hurries', l:'HUR', d:1}, {k:'qb_hits', l:'HIT', d:1}, {k:'blitzes', l:'BLZ', d:1},
-      {k:'missed_tackle_pct', l:'MISS%', d:1},
+      {k:'missed_tackles', l:'MTKL', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
     ];
   }
   if(group==='LB'){
@@ -5910,12 +5980,15 @@ function _dwCols(group){
       {k:'tackles', l:'TKL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1},
       {k:'blitzes', l:'BLZ', d:1}, {k:'targets', l:'TGT', d:1}, {k:'cmp_allowed', l:'CMPA', d:1},
       {k:'yds_allowed', l:'YDSA', d:1}, {k:'ints', l:'INT', d:1}, {k:'rating_allowed', l:'RTG A', d:1},
+      {k:'missed_tackles', l:'MTKL', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
     ];
   }
   return [
     {k:'targets', l:'TGT', d:1}, {k:'cmp_allowed', l:'CMPA', d:1}, {k:'yds_allowed', l:'YDSA', d:1},
     {k:'td_allowed', l:'TDA', d:1}, {k:'ints', l:'INT', d:1}, {k:'rating_allowed', l:'RTG A', d:1},
     {k:'adot', l:'aDOT', d:1}, {k:'yac_allowed', l:'YAC A', d:1}, {k:'tackles', l:'TKL', d:0},
+    // DBs miss tackles too — the seed has 100% coverage for DB/LB/DL, it just wasn't surfaced.
+    {k:'missed_tackles', l:'MTKL', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
   ];
 }
 
@@ -5944,14 +6017,14 @@ function renderPcardDefWeekly(pid){
       const cells = cols.map(c=>{
         const v = w[c.k];
         const cls = _dwCellClass(c.k, v);
-        return `<td class="pcard-cell ${cls}">${v==null?'–':_dwNum(v, c.d)}</td>`;
+        return `<td class="pcard-cell ${cls}">${v==null?'–':_dwNum(v, c.d, c.pct)}</td>`;
       }).join('');
       return `<tr><td class="pcard-wk">${w.week||''}</td><td class="pcard-opp home">${opp}</td>${cells}</tr>`;
     }).join('');
     const totals = rec.totals||{};
     const totCells = cols.map(c=>{
       const v=totals[c.k];
-      return `<td class="pcard-cell pcard-total-cell">${v==null?'–':_dwNum(v,c.d)}</td>`;
+      return `<td class="pcard-cell pcard-total-cell">${v==null?'–':_dwNum(v,c.d,c.pct)}</td>`;
     }).join('');
     const totalRow = `<tr class="pcard-total-row"><td class="pcard-wk">TOT</td><td class="pcard-opp">${totals.games||rec.weeks.length}g</td>${totCells}</tr>`;
     seasonBlocks.push(`<div class="pcard-season">
@@ -6231,6 +6304,9 @@ function _schemePayload(team, seasonPref){
   return null;
 }
 
+// Coerce a seed value to a number, falling back to `d` when it's null/undefined/NaN.
+// Used everywhere in the scheme normalizer because the seed omits fields that had no sample
+// (e.g. `er` is null for a formation with zero runs) and the UI must not render NaN.
 function _schemeNumber(v, d){
   return (v==null || Number.isNaN(Number(v))) ? d : Number(v);
 }
@@ -6612,7 +6688,7 @@ function renderTeamAdditions(team){
       </tr></thead><tbody>${body}</tbody></table></div>`;
   };
   return `<div class="add-wrap">
-    <div class="add-note">🔄 <b>${teamDisplayName(team)}</b> ${PROJ_SEASON} roster changes — additions via free agency, the draft, and trades, plus notable departures. Sorted by contract/cap value. Pair this with the ${SHARP_SEASON} Advanced Stats to see how weaknesses were addressed — and where new holes may have opened.</div>
+    <div class="add-note">🔄 <b>${teamDisplayName(team)}</b> ${PROJ_SEASON} roster changes — additions via free agency, the draft, and trades, plus notable departures. Sorted by contract/cap value. Pair this with the ${advTeamSeason()} Advanced Stats to see how weaknesses were addressed — and where new holes may have opened.</div>
 
     <div class="add-section">
       <div class="add-section-head">💰 Free Agency ${count((a.free_agents||[]).length)}</div>
@@ -6743,13 +6819,13 @@ function renderTeamAdvanced(team){
   const carryBlock = renderCoordinatorCarryover(team, cardFor);
   const srcLabel = 'nflverse (computed from play-by-play)';
   return `<div class="sr-team-wrap">
-    <div class="sr-note">📊 <b>Advanced team stats</b> · ${srcLabel} · <b>${SHARP_SEASON} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
+    <div class="sr-note">📊 <b>Advanced team stats</b> · ${srcLabel} · <b>${advTeamSeason()} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
       <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="showSharpLeague()">🌐 View league-wide tables →</button></div>
     ${sosStrip}
     ${carryBlock}
     ${section('🏈 Offense', offKeys, coordInlineLabel(team,oc,'offensive'))}
     ${section('🛡️ Defense', defKeys, coordInlineLabel(team,dc,'defensive'))}
-    <div class="sr-source">${SHARP_SEASON} season · computed from nflverse play-by-play (nflfastR) — for informational use.</div>
+    <div class="sr-source">${advTeamSeason()} season · computed from nflverse play-by-play (nflfastR) — for informational use.</div>
   </div>`;
 }
 
@@ -6786,7 +6862,7 @@ function renderCoordinatorCarryover(team, cardFor){
   if(!blocks.length) return '';
   return `<div class="coord-carry-wrap">
     <div class="coord-carry-head">🔄 New coordinator scheme carryover</div>
-    <div class="coord-carry-note">A brand-new coordinator arrived for ${PROJ_SEASON}. Below are their <b>former team's</b> ${SHARP_SEASON} scheme stats — the tendencies &amp; personnel that tend to travel with a coordinator. Use as a forecast for how this unit may shift.</div>
+    <div class="coord-carry-note">A brand-new coordinator arrived for ${PROJ_SEASON}. Below are their <b>former team's</b> ${advTeamSeason()} scheme stats — the tendencies &amp; personnel that tend to travel with a coordinator. Use as a forecast for how this unit may shift.</div>
     ${blocks.join('')}
   </div>`;
 }
@@ -6808,7 +6884,7 @@ function coordCarryCard(sideWord, c, ks, cardFor){
       <span class="coord-side">${badge}</span>
       <b>${c.name||'(name unavailable)'}</b> — ${roleNote}
     </div>
-    <div class="coord-carry-sub">Showing ${from}'s ${SHARP_SEASON} ${sideWord} scheme (${ks.map(k=>SRC[k].title).join(' · ')||'—'}) — the tendencies &amp; personnel that travel with a ${schemeOwner}:</div>
+    <div class="coord-carry-sub">Showing ${from}'s ${advTeamSeason()} ${sideWord} scheme (${ks.map(k=>SRC[k].title).join(' · ')||'—'}) — the tendencies &amp; personnel that travel with a ${schemeOwner}:</div>
     <div class="sr-card-grid">${cards}</div>
   </div>`;
 }
@@ -6849,7 +6925,7 @@ function renderSharpLeague(){
   const headerBar=`
     <div class="team-header sr-league-header">
       <div><div class="team-abbr">📊 Advanced Stats — League-Wide</div>
-        <div class="team-qb-name">${srcLabel} · <b>${SHARP_SEASON} season</b> · click any column to sort (best→worst)</div></div>
+        <div class="team-qb-name">${srcLabel} · <b>${advTeamSeason()} season</b> · click any column to sort (best→worst)</div></div>
       <div class="team-nav">
         ${currentTeam?`<button class="btn btn-ghost" onclick="setPhase('Advanced')">← ${teamDisplayName(currentTeam)} card</button>`:''}
         <button class="btn btn-ghost" onclick="setPhase('Rankings')">🏆 Rankings</button></div>
@@ -6896,7 +6972,7 @@ function renderSharpLeague(){
   }).join('');
   host.innerHTML = headerBar + renderCategoryTabs() + `
     <div class="sr-league-tabs">${tableTabs}</div>
-    <div class="sr-desc">${tbl.title} · <b>${SHARP_SEASON} season</b> — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
+    <div class="sr-desc">${tbl.title} · <b>${advTeamSeason()} season</b> — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
     <div class="card" style="padding:0;overflow-x:auto">
       <table class="sr-league-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
     </div>
@@ -7242,6 +7318,7 @@ function renderRankings(){
           <div class="scoring-field"><label>REC YDS / FPTS</label><input id="sc_rec_yds_ydg" type="number" value="${scoringSettings.receiving_yards_yardage}" step="1"></div>
           <div class="scoring-field"><label>REC TD</label><input id="sc_rec_td" type="number" value="${scoringSettings.receiving_touchdowns}" step="0.5"></div>
           <div class="scoring-field"><label>REC (PPR)</label><input id="sc_rec" type="number" value="${scoringSettings.receptions}" step="0.25"></div>
+          <div class="scoring-field"><label>TE PREM</label><input id="sc_rec_te" type="number" value="${scoringSettings.receptions_te_bonus}" step="0.25" title="Extra points per reception for TEs only, on top of PPR. 0.5 here = a 1.5-PPR-TE league in full PPR."></div>
           <div class="scoring-field"><label>FUMBLE</label><input id="sc_fum" type="number" value="${scoringSettings.fumbles_lost}" step="0.5"></div>
           <div class="scoring-field"><label>PASS ATT</label><input id="sc_pass_att" type="number" value="${scoringSettings.passing_attempts}" step="0.1"></div>
           <div class="scoring-field"><label>PASS COMP</label><input id="sc_pass_comp" type="number" value="${scoringSettings.passing_completions}" step="0.1"></div>
@@ -7421,7 +7498,8 @@ function scoringSummary(){
   const sc=scoringSettings;
   const rec=+sc.receptions;
   const recTxt = rec>=1 ? 'Full PPR' : (rec>0 ? `${rec} PPR` : 'Standard');
-  const bits=[recTxt, `${sc.passing_touchdowns} pass TD`, `${sc.receiving_touchdowns} rec TD`,
+  const tep=+sc.receptions_te_bonus||0;
+  const bits=[recTxt + (tep ? ` +${tep} TEP` : ''), `${sc.passing_touchdowns} pass TD`, `${sc.receiving_touchdowns} rec TD`,
               `${sc.passing_yards_yardage} pass yd/pt`, `${sc.receiving_yards_yardage} rec yd/pt`];
   if(+sc.interceptions_thrown!==0) bits.push(`${sc.interceptions_thrown} INT`);
   return bits.join(' \u00b7 ');
@@ -7438,6 +7516,9 @@ function toggleScoringPanel(){
   saveSession();              // already debounced
 }
 function recalcRankings(){
+  // g(id, d) = read the number out of scoring input #id, falling back to default `d` when the
+  // field is blank or garbage. Every scoringSettings key below is populated straight from the
+  // DOM, so an input's id is the single source of truth linking UI ↔ state.
   const g=(id,d)=>{const v=parseFloat(document.getElementById(id).value);return isNaN(v)?d:v;};
   scoringSettings.passing_yards_yardage=g('sc_pass_yds_ydg',25)||25;
   scoringSettings.passing_touchdowns=g('sc_pass_td',6);
@@ -7447,6 +7528,7 @@ function recalcRankings(){
   scoringSettings.receiving_yards_yardage=g('sc_rec_yds_ydg',10)||10;
   scoringSettings.receiving_touchdowns=g('sc_rec_td',6);
   scoringSettings.receptions=g('sc_rec',0.5);
+  scoringSettings.receptions_te_bonus=g('sc_rec_te',0);
   scoringSettings.fumbles_lost=g('sc_fum',-2);
   scoringSettings.passing_attempts=g('sc_pass_att',0);
   scoringSettings.passing_completions=g('sc_pass_comp',0);
@@ -8732,6 +8814,9 @@ function applySleeperScoring(sc){
   if(sc.rec_yd!=null) s.receiving_yards_yardage = perYardToYdg(sc.rec_yd, s.receiving_yards_yardage);
   if(sc.rec_td!=null) s.receiving_touchdowns = num(sc.rec_td, s.receiving_touchdowns);
   if(sc.rec!=null) s.receptions = num(sc.rec, s.receptions);
+  // TE Premium. Sleeper models this as a BONUS per TE reception (bonus_rec_te), not a
+  // replacement value — a 1.5-PPR-TE league arrives as rec:1 + bonus_rec_te:0.5.
+  if(sc.bonus_rec_te!=null) s.receptions_te_bonus = num(sc.bonus_rec_te, s.receptions_te_bonus);
   // Fumbles: Sleeper splits fum_lost (offensive player losing it) from fum; use fum_lost.
   if(sc.fum_lost!=null) s.fumbles_lost = num(sc.fum_lost, s.fumbles_lost);
   return true;

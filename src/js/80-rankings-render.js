@@ -215,6 +215,7 @@ function renderRankings(){
           <div class="scoring-field"><label>REC YDS / FPTS</label><input id="sc_rec_yds_ydg" type="number" value="${scoringSettings.receiving_yards_yardage}" step="1"></div>
           <div class="scoring-field"><label>REC TD</label><input id="sc_rec_td" type="number" value="${scoringSettings.receiving_touchdowns}" step="0.5"></div>
           <div class="scoring-field"><label>REC (PPR)</label><input id="sc_rec" type="number" value="${scoringSettings.receptions}" step="0.25"></div>
+          <div class="scoring-field"><label>TE PREM</label><input id="sc_rec_te" type="number" value="${scoringSettings.receptions_te_bonus}" step="0.25" title="Extra points per reception for TEs only, on top of PPR. 0.5 here = a 1.5-PPR-TE league in full PPR."></div>
           <div class="scoring-field"><label>FUMBLE</label><input id="sc_fum" type="number" value="${scoringSettings.fumbles_lost}" step="0.5"></div>
           <div class="scoring-field"><label>PASS ATT</label><input id="sc_pass_att" type="number" value="${scoringSettings.passing_attempts}" step="0.1"></div>
           <div class="scoring-field"><label>PASS COMP</label><input id="sc_pass_comp" type="number" value="${scoringSettings.passing_completions}" step="0.1"></div>
@@ -394,7 +395,8 @@ function scoringSummary(){
   const sc=scoringSettings;
   const rec=+sc.receptions;
   const recTxt = rec>=1 ? 'Full PPR' : (rec>0 ? `${rec} PPR` : 'Standard');
-  const bits=[recTxt, `${sc.passing_touchdowns} pass TD`, `${sc.receiving_touchdowns} rec TD`,
+  const tep=+sc.receptions_te_bonus||0;
+  const bits=[recTxt + (tep ? ` +${tep} TEP` : ''), `${sc.passing_touchdowns} pass TD`, `${sc.receiving_touchdowns} rec TD`,
               `${sc.passing_yards_yardage} pass yd/pt`, `${sc.receiving_yards_yardage} rec yd/pt`];
   if(+sc.interceptions_thrown!==0) bits.push(`${sc.interceptions_thrown} INT`);
   return bits.join(' \u00b7 ');
@@ -411,6 +413,9 @@ function toggleScoringPanel(){
   saveSession();              // already debounced
 }
 function recalcRankings(){
+  // g(id, d) = read the number out of scoring input #id, falling back to default `d` when the
+  // field is blank or garbage. Every scoringSettings key below is populated straight from the
+  // DOM, so an input's id is the single source of truth linking UI ↔ state.
   const g=(id,d)=>{const v=parseFloat(document.getElementById(id).value);return isNaN(v)?d:v;};
   scoringSettings.passing_yards_yardage=g('sc_pass_yds_ydg',25)||25;
   scoringSettings.passing_touchdowns=g('sc_pass_td',6);
@@ -420,6 +425,7 @@ function recalcRankings(){
   scoringSettings.receiving_yards_yardage=g('sc_rec_yds_ydg',10)||10;
   scoringSettings.receiving_touchdowns=g('sc_rec_td',6);
   scoringSettings.receptions=g('sc_rec',0.5);
+  scoringSettings.receptions_te_bonus=g('sc_rec_te',0);
   scoringSettings.fumbles_lost=g('sc_fum',-2);
   scoringSettings.passing_attempts=g('sc_pass_att',0);
   scoringSettings.passing_completions=g('sc_pass_comp',0);

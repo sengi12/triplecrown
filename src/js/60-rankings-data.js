@@ -1,6 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Rankings
 // ─────────────────────────────────────────────────────────────────────────────
+// Fantasy points for one player under the CURRENT scoring settings.
+//   p  = a player row from buildPlayerList() — carries pos + raw stat totals
+//   sc = the live scoringSettings object (the scoring panel writes straight into it)
+//   f  = the running points total
+// `*_yardage` fields are yards-PER-POINT (25 = 1pt per 25 yds), which is why they divide.
 function calcFpts(p){
   const sc=scoringSettings;let f=0;
   f+=(p.passing_yards||0)/sc.passing_yards_yardage*sc.passing_yards_points;
@@ -10,7 +15,10 @@ function calcFpts(p){
   f+=(p.passing_completions||0)*sc.passing_completions;
   f+=(p.receiving_yards||0)/sc.receiving_yards_yardage*sc.receiving_yards_points;
   f+=(p.receiving_tds||0)*sc.receiving_touchdowns;
-  f+=(p.receptions||0)*sc.receptions;
+  // Receptions, plus the TE-premium bonus for tight ends only. Because VOR baselines derive
+  // from these fpts, TEP cascades correctly: TEs score more -> they win more FLEX slots in
+  // leagueStarterCounts() -> the TE replacement level rises -> TE VOR reshapes on its own.
+  f+=(p.receptions||0)*(sc.receptions + (p.pos==='TE' ? (sc.receptions_te_bonus||0) : 0));
   f+=(p.rushing_yards||0)/sc.rushing_yards_yardage*sc.rushing_yards_points;
   f+=(p.rushing_tds||0)*sc.rushing_touchdowns;
   f+=(p.rushing_attempts||0)*sc.rushing_attempts;
@@ -42,8 +50,10 @@ function ecrTierFor(p){ const e=ecrEntry(p); return e&&e.tier!=null ? e.tier : n
 function hasECR(){ const t=ecrTableFor(rankFormat); return t && Object.keys(t).length>0; }
 
 // ── SumerSports advanced stats (rankings "Advanced" toggle) ──────────────────
-// Reference-season only: available when the rankings page is viewing a completed season that
-// SumerSports covers (2022-2025). Never on the projection season, never for seasons w/o data.
+// Reference-season only: available whenever the rankings page views a completed season the
+// nflverse seed carries (currently 2021-2025 = every entry in `history_seasons`). Never on
+// the projection season. Already fully per-season: switch the season tabs and Adv. Metrics
+// follows automatically — there is no allowlist to maintain.
 // The data is fully data-driven: each position table carries its own ordered `columns` +
 // `pct_cols`, so the app renders whatever the seed provides (and future refinements slot in).
 function sumerSeasonKey(){
@@ -447,10 +457,22 @@ function computeVOR(list){
 // tables, with league rank 1–32 per stat), and a league-wide sortable table view.
 // None of this touches projections.
 function sharpHasData(){ return activeSharp() && Object.keys(activeSharp()).length>0; }
-// Adapt the nflverse team tables for SHARP_SEASON into the Sharp-shaped dict the league view
-// renders (adds title/category/pct_cols). Returns {} when no nflverse data for that season.
+// Which season the Advanced Stats tables describe. Follows the season tabs: when you're on a
+// completed season that the nflverse seed carries team data for (2021-2025), the tables show
+// THAT season. On the projection view — or a season with no team data — it falls back to the
+// seed's reference season (SHARP_SEASON), which is the newest completed year.
+// This is the single hook for the whole feature: every Advanced Stats renderer (team card and
+// league-wide) reads activeSharp(), which reads this.
+function advTeamSeason(){
+  const s = String(activeSeason);
+  if(activeSeason!=='proj' && NFLVERSE && NFLVERSE[s] && NFLVERSE[s].team) return s;
+  return String(SHARP_SEASON);
+}
+// Adapt the nflverse team tables for the ACTIVE season into the Sharp-shaped dict the league
+// view renders (adds title/category/pct_cols). Returns {} when no nflverse data for it.
+// ("Sharp-shaped" is historical — the Warren Sharp source is gone; this is all nflverse now.)
 function nflverseSharpTables(){
-  const t=(NFLVERSE && NFLVERSE[String(SHARP_SEASON)] && NFLVERSE[String(SHARP_SEASON)].team) || null;
+  const t=(NFLVERSE && NFLVERSE[advTeamSeason()] && NFLVERSE[advTeamSeason()].team) || null;
   if(!t) return {};
   const META={
     offense:{title:'Offensive Metrics',category:'offense'},

@@ -117,6 +117,9 @@ function _schemePayload(team, seasonPref){
   return null;
 }
 
+// Coerce a seed value to a number, falling back to `d` when it's null/undefined/NaN.
+// Used everywhere in the scheme normalizer because the seed omits fields that had no sample
+// (e.g. `er` is null for a formation with zero runs) and the UI must not render NaN.
 function _schemeNumber(v, d){
   return (v==null || Number.isNaN(Number(v))) ? d : Number(v);
 }

@@ -60,6 +60,9 @@ function applySleeperScoring(sc){
   if(sc.rec_yd!=null) s.receiving_yards_yardage = perYardToYdg(sc.rec_yd, s.receiving_yards_yardage);
   if(sc.rec_td!=null) s.receiving_touchdowns = num(sc.rec_td, s.receiving_touchdowns);
   if(sc.rec!=null) s.receptions = num(sc.rec, s.receptions);
+  // TE Premium. Sleeper models this as a BONUS per TE reception (bonus_rec_te), not a
+  // replacement value — a 1.5-PPR-TE league arrives as rec:1 + bonus_rec_te:0.5.
+  if(sc.bonus_rec_te!=null) s.receptions_te_bonus = num(sc.bonus_rec_te, s.receptions_te_bonus);
   // Fumbles: Sleeper splits fum_lost (offensive player losing it) from fum; use fum_lost.
   if(sc.fum_lost!=null) s.fumbles_lost = num(sc.fum_lost, s.fumbles_lost);
   return true;

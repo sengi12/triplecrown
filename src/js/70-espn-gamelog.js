@@ -145,6 +145,11 @@ function espnStatGroup(name, def){
     if(['interceptions','interceptionYards','avgInterceptionYards','interceptionTouchdowns','longInterception','passesDefended'].includes(n)) return 'COVERAGE';
     return 'DEFENSE';
   }
+  // Kicking / punting: these reach here because K and P are non-skill, non-defensive, so they
+  // fall through the schema tables to the raw ESPN gamelog. Without these they'd all land in
+  // 'MISC'. ESPN's machine names are stable across kickers and punters.
+  if(/^fieldGoal/i.test(n) || /^extraPoint/i.test(n) || ['longFieldGoalMade','totalKickingPoints','kickExtraPoints','fieldGoalsMade19','fieldGoalsMade29','fieldGoalsMade39','fieldGoalsMade49','fieldGoalsMade50'].includes(n)) return 'KICKING';
+  if(/^punt/i.test(n) || ['grossAvgPuntYards','netAvgPuntYards','longPunt','touchbacks','puntsInside20','puntsBlocked','fairCatches'].includes(n)) return 'PUNTING';
   if(/^passing/.test(n) || ['completions','passingAttempts','completionPct','interceptions','interceptionPct','longPassing','sacks','sackYardsLost','QBRating','adjQBR','ESPNQBRating'].includes(n)) return 'PASSING';
   if(/^rushing/.test(n) || ['yardsPerRushAttempt','longRushing'].includes(n)) return 'RUSHING';
   if(/^receiving/.test(n) || ['receptions','yardsPerReception','longReception'].includes(n)) return 'RECEIVING';

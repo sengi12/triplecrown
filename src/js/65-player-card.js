@@ -288,6 +288,12 @@ let pcardStatsMode = 'pro';
 let pcardToken = 0;           // bumped on each source switch so a slow in-flight load can't clobber a newer one
 async function loadPlayerCardData(pid, pos, team){
   const posc = pos || (sleeperPlayers&&sleeperPlayers[pid]&&sleeperPlayers[pid].pos) || 'QB';
+  // posc = the player's canonical position code (e.g. 'WR', 'CB', 'K').
+  // isSkill  → fantasy skill positions, which have hand-built PCARD_SCHEMA gamelog tables.
+  // isOl     → offensive line, routed to the dedicated OL card.
+  // isDefense→ real defenders. NOTE: these three do NOT cover everything — K, P and LS are
+  //            none of them, which is exactly why `!isSkill` must never be used as a stand-in
+  //            for "is a defender" (that bug titled kicker gamelogs "DEFENSE").
   const isSkill = ['QB','RB','WR','TE'].includes(posc);
   const isOl = ['LT','LG','C','RG','RT','OL','G','T','OT','OG'].includes(posc);
   const isDefense = ['DE','DT','NT','DL','LB','MLB','OLB','ILB','WLB','SLB','DB','CB','S','FS','SS'].includes(posc);
@@ -349,7 +355,9 @@ function retryPlayerCardData(){
 function pcardLoadStats(mode){
   if(!pcardState) return;
   pcardToken++;
-  const {pid, posc, isSkill} = pcardState;
+  // isDefense is needed for the ESPN `def` flag (stat grouping). It MUST be destructured
+  // here — it's a const local to renderPlayerCardShell(), not a global.
+  const {pid, posc, isSkill, isDefense} = pcardState;
   const body = document.getElementById('pcardBody');
   if(!body) return;
   if(mode==='routes'){
@@ -389,7 +397,9 @@ function pcardLoadStats(mode){
     return;
   }
   if(mode==='college'){
-    return loadEspnCardData(pid, posc, body, {league:'college-football', def:!isSkill});
+    // `def` flips the stat GROUPING (tackles/coverage vs passing/rushing) — it must key off
+    // isDefense, not !isSkill, or kickers/punters get bucketed as defenders.
+    return loadEspnCardData(pid, posc, body, {league:'college-football', def:isDefense});
   }
   if(mode==='pro' && pcardState.isDefense && typeof pcardDefWeeklyAvailable==='function' && pcardDefWeeklyAvailable(pid) && typeof renderPcardDefWeekly==='function'){
     body.innerHTML = renderPcardDefWeekly(pid);
@@ -409,7 +419,10 @@ function pcardLoadStats(mode){
     return;
   }
   if(!isSkill){
-    return loadEspnCardData(pid, posc, body, {league:'nfl', def:true});
+    // Anything without a hand-built schema (defenders, K, P, LS) falls back to the ESPN
+    // gamelog. Only pass def:true for ACTUAL defenders — a kicker with def:true lands in
+    // espnStatGroup's defensive branch and every column gets headed "DEFENSE".
+    return loadEspnCardData(pid, posc, body, {league:'nfl', def:isDefense});
   }
   if(!PCARD_SCHEMA[posc]){
     body.innerHTML = `<div class="pcard-loading">Game logs aren't available for ${posc}.</div>`;

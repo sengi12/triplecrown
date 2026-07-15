@@ -33,7 +33,7 @@ function renderSharpLeague(){
   const headerBar=`
     <div class="team-header sr-league-header">
       <div><div class="team-abbr">📊 Advanced Stats — League-Wide</div>
-        <div class="team-qb-name">${srcLabel} · <b>${SHARP_SEASON} season</b> · click any column to sort (best→worst)</div></div>
+        <div class="team-qb-name">${srcLabel} · <b>${advTeamSeason()} season</b> · click any column to sort (best→worst)</div></div>
       <div class="team-nav">
         ${currentTeam?`<button class="btn btn-ghost" onclick="setPhase('Advanced')">← ${teamDisplayName(currentTeam)} card</button>`:''}
         <button class="btn btn-ghost" onclick="setPhase('Rankings')">🏆 Rankings</button></div>
@@ -80,7 +80,7 @@ function renderSharpLeague(){
   }).join('');
   host.innerHTML = headerBar + renderCategoryTabs() + `
     <div class="sr-league-tabs">${tableTabs}</div>
-    <div class="sr-desc">${tbl.title} · <b>${SHARP_SEASON} season</b> — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
+    <div class="sr-desc">${tbl.title} · <b>${advTeamSeason()} season</b> — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
     <div class="card" style="padding:0;overflow-x:auto">
       <table class="sr-league-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
     </div>

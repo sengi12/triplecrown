@@ -55,7 +55,7 @@ function renderTeamAdditions(team){
       </tr></thead><tbody>${body}</tbody></table></div>`;
   };
   return `<div class="add-wrap">
-    <div class="add-note">🔄 <b>${teamDisplayName(team)}</b> ${PROJ_SEASON} roster changes — additions via free agency, the draft, and trades, plus notable departures. Sorted by contract/cap value. Pair this with the ${SHARP_SEASON} Advanced Stats to see how weaknesses were addressed — and where new holes may have opened.</div>
+    <div class="add-note">🔄 <b>${teamDisplayName(team)}</b> ${PROJ_SEASON} roster changes — additions via free agency, the draft, and trades, plus notable departures. Sorted by contract/cap value. Pair this with the ${advTeamSeason()} Advanced Stats to see how weaknesses were addressed — and where new holes may have opened.</div>
 
     <div class="add-section">
       <div class="add-section-head">💰 Free Agency ${count((a.free_agents||[]).length)}</div>
@@ -186,13 +186,13 @@ function renderTeamAdvanced(team){
   const carryBlock = renderCoordinatorCarryover(team, cardFor);
   const srcLabel = 'nflverse (computed from play-by-play)';
   return `<div class="sr-team-wrap">
-    <div class="sr-note">📊 <b>Advanced team stats</b> · ${srcLabel} · <b>${SHARP_SEASON} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
+    <div class="sr-note">📊 <b>Advanced team stats</b> · ${srcLabel} · <b>${advTeamSeason()} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
       <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="showSharpLeague()">🌐 View league-wide tables →</button></div>
     ${sosStrip}
     ${carryBlock}
     ${section('🏈 Offense', offKeys, coordInlineLabel(team,oc,'offensive'))}
     ${section('🛡️ Defense', defKeys, coordInlineLabel(team,dc,'defensive'))}
-    <div class="sr-source">${SHARP_SEASON} season · computed from nflverse play-by-play (nflfastR) — for informational use.</div>
+    <div class="sr-source">${advTeamSeason()} season · computed from nflverse play-by-play (nflfastR) — for informational use.</div>
   </div>`;
 }
 
@@ -229,7 +229,7 @@ function renderCoordinatorCarryover(team, cardFor){
   if(!blocks.length) return '';
   return `<div class="coord-carry-wrap">
     <div class="coord-carry-head">🔄 New coordinator scheme carryover</div>
-    <div class="coord-carry-note">A brand-new coordinator arrived for ${PROJ_SEASON}. Below are their <b>former team's</b> ${SHARP_SEASON} scheme stats — the tendencies &amp; personnel that tend to travel with a coordinator. Use as a forecast for how this unit may shift.</div>
+    <div class="coord-carry-note">A brand-new coordinator arrived for ${PROJ_SEASON}. Below are their <b>former team's</b> ${advTeamSeason()} scheme stats — the tendencies &amp; personnel that tend to travel with a coordinator. Use as a forecast for how this unit may shift.</div>
     ${blocks.join('')}
   </div>`;
 }
@@ -251,7 +251,7 @@ function coordCarryCard(sideWord, c, ks, cardFor){
       <span class="coord-side">${badge}</span>
       <b>${c.name||'(name unavailable)'}</b> — ${roleNote}
     </div>
-    <div class="coord-carry-sub">Showing ${from}'s ${SHARP_SEASON} ${sideWord} scheme (${ks.map(k=>SRC[k].title).join(' · ')||'—'}) — the tendencies &amp; personnel that travel with a ${schemeOwner}:</div>
+    <div class="coord-carry-sub">Showing ${from}'s ${advTeamSeason()} ${sideWord} scheme (${ks.map(k=>SRC[k].title).join(' · ')||'—'}) — the tendencies &amp; personnel that travel with a ${schemeOwner}:</div>
     <div class="sr-card-grid">${cards}</div>
   </div>`;
 }
