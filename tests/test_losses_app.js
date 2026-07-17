@@ -19,8 +19,8 @@ const ADD={CIN:{
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 app.setAdd(ADD); app.setNames({CIN:'Cincinnati Bengals'}); app.setTeam('CIN');
 
-console.log('=== Tab renamed to Roster Changes ===');
-chk(app.tabBar().includes('Roster Changes'),'tab says "Roster Changes"');
+console.log('=== Tab renamed to Roster ===');
+chk(app.tabBar().includes('Roster'),'tab says "Roster"');
 chk(!app.tabBar().includes('New Additions'),'no longer says "New Additions"');
 
 console.log('\n=== Notable Losses section ===');

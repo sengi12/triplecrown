@@ -94,10 +94,10 @@ function selectTeam(t){
   currentTeam=t;
   // Keep whatever phase the user was on (Targets stays Targets across teams). Only the
   // global Rankings view falls back to a per-team phase since it isn't team-scoped here.
-  if(currentPhase==='Rankings') currentPhase='Passing';
+  if(currentPhase==='Rankings') currentPhase='Receiving';
   ensureTeam(t);
   // make sure shares exist so the targets/rushing tab is populated as if previously opened
-  if(currentPhase==='Passing') initPassingShares(t);
+  if(currentPhase==='Receiving') initPassingShares(t);
   else if(currentPhase==='Rushing') initRushingShares(t);
   if(isMobileTeamPickerLayout()) mobileTeamPickerExpanded=false;
   renderSidebar();renderContent();
@@ -114,12 +114,13 @@ function showFullRankings(){ rankScope='all'; currentPhase='Rankings'; renderCon
 function renderContent(){
   if(currentPhase==='Rankings'){renderRankings();return;}
   if(currentPhase==='AdvancedLeague'){renderSharpLeague();return;}
+  if(currentPhase==='League'){renderLeagueAnalyzer();return;}
   if(!currentTeam){document.getElementById('content').innerHTML=emptyHTML();return;}
   const t=currentTeam,state=userProj[t];
   const tabs=tabBar();
   let body='';
-  if(currentPhase==='QB') body=renderQB(t,state);
-  else if(currentPhase==='Passing'){initPassingShares(t);body=renderPassing(t,state);}
+  if(currentPhase==='Passing') body=renderPassing(t,state);
+  else if(currentPhase==='Receiving'){initPassingShares(t);body=renderReceiving(t,state);}
   else if(currentPhase==='Rushing'){initRushingShares(t);body=renderRushing(t,state);}
   else if(currentPhase==='Advanced') body=renderTeamAdvanced(t);
   else if(currentPhase==='Additions') body=renderTeamAdditions(t);
@@ -163,25 +164,25 @@ function renderContent(){
     ${seasonBanner}
     <div class="phase-tabs">${tabs}</div>${body}
     <div id="schemeOverlayHost"></div>`;
-  if(currentPhase==='Passing') initPie(t,'pass');
+  if(currentPhase==='Receiving') initPie(t,'pass');
   else if(currentPhase==='Rushing') initPie(t,'rush');
   initSliders();
   updateUndoButton();
 }
 function tabBar(){
   const hasSharp = (typeof sharpHasData==='function' ? sharpHasData() : false) || (SOS && Object.keys(SOS).length>0);
-  const tabs=[['QB','⚡ QB'],['Passing','🎯 Targets'],['Rushing','💨 Rushing']];
-  if(hasSharp) tabs.push(['Advanced','📊 Advanced Stats']);
+  const tabs=[['Passing','Passing'],['Receiving','Receiving'],['Rushing','Rushing']];
+  if(hasSharp) tabs.push(['Advanced','Adv Metrics']);
   // "Roster Changes" appears when the currently-selected team has Spotrac data.
-  if(currentTeam && ADDITIONS && ADDITIONS[currentTeam]) tabs.push(['Additions','🔄 Roster Changes']);
-  tabs.push(['Rankings','🏆 Rankings']);
+  if(currentTeam && ADDITIONS && ADDITIONS[currentTeam]) tabs.push(['Additions','Roster']);
+  tabs.push(['Rankings','Rankings']);
   // Treat the league-wide advanced view as the same visual tab as the per-team one.
   const phaseForTab = (currentPhase==='AdvancedLeague') ? 'Advanced' : currentPhase;
   return tabs.map(([p,l])=>`<button class="phase-tab ${phaseForTab===p?'active':''}" onclick="setPhase('${p}')">${l}</button>`).join('');
 }
-function emptyHTML(){return`<div class="empty"><div class="empty-icon">🏈</div>
+function emptyHTML(){return`<div class="logo-icon-lg"><img src="images/app-icon.png" class="logo-icon-lg" alt="Centered Image"></div>
   <div class="empty-title">Select a team to begin</div>
   <div class="empty-body">Work through each team's QB output, receiver target &amp; TD share,
-  and RB rushing distribution. Click 🏆 Rankings any time to see fantasy scores.</div></div>`;}
+  and RB rushing distribution. Click Rankings any time to see fantasy scores.</div></div>`;}
 
 

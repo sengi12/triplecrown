@@ -192,6 +192,9 @@ async function pickLeague(idx){
 
   // Adopt the league's scoring + format regardless of whether the draft is followable —
   // even a completed-draft league is useful to score your rankings the way that league does.
+  // Remember the league for the League Analyzer: its setup screen offers a one-click
+  // "sync the league you linked here" instead of asking for the username again.
+  window._laLinkedLeague = { id: lg.league_id, name: lg.name };
   const applied = applySleeperScoring(lg.scoring_settings);
   const fmt = detectLeagueFormat(lg.scoring_settings, lg.roster_positions, scoringType, lg.settings&&lg.settings.type);
   if(fmt){

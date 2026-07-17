@@ -41,9 +41,9 @@ const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.lo
 console.log('=== TEST 1: tab bar includes Advanced when nflverse data present ===');
 app.setSharpSeasonVar(2024);
 app.setNflverse(NFLV);
-chk(app.tabBar().includes('Advanced Stats'),'Advanced Stats tab shown');
+chk(app.tabBar().includes('Adv Metrics'),'Advanced Stats tab shown');
 app.setNflverse({});
-chk(!app.tabBar().includes('Advanced Stats'),'Advanced Stats tab hidden when no nflverse data');
+chk(!app.tabBar().includes('Adv Metrics'),'Advanced Stats tab hidden when no nflverse data');
 
 console.log('\n=== TEST 2: per-team advanced card (nflverse-only) ===');
 app.setNflverse(NFLV);

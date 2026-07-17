@@ -13,7 +13,7 @@ const app=new Function(code+`return {
   assembleSeed, normalizeSleeperRow, ensureTeam, initPassingShares,
   teamRecYardsPool, teamRecPool, ensureDerivedShares, reconcileDerived,
   setProj:(s)=>{SEED=s;projSeed=s;seasonStatsCache.proj=s;workingProj={};userProj=workingProj;activeSeason='proj';},
-  selectTeam:t=>{currentTeam=t;currentPhase='Passing';ensureTeam(t);initPassingShares(t);},
+  selectTeam:t=>{currentTeam=t;currentPhase='Receiving';ensureTeam(t);initPassingShares(t);},
   setSub:(s)=>{passingSubTab=s;},
   derived:(team,i,share,metric)=>{setDerivedShare(userProj[team],team,i,share,metric);},
   getProj:()=>userProj };

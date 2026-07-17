@@ -55,25 +55,25 @@ function renderTeamAdditions(team){
       </tr></thead><tbody>${body}</tbody></table></div>`;
   };
   return `<div class="add-wrap">
-    <div class="add-note">🔄 <b>${teamDisplayName(team)}</b> ${PROJ_SEASON} roster changes — additions via free agency, the draft, and trades, plus notable departures. Sorted by contract/cap value. Pair this with the ${advTeamSeason()} Advanced Stats to see how weaknesses were addressed — and where new holes may have opened.</div>
+    <div class="add-note"><b>${teamDisplayName(team)}</b> ${PROJ_SEASON} roster changes — additions via free agency, the draft, and trades, plus notable departures. Sorted by contract/cap value. Pair this with the ${advTeamSeason()} Advanced Stats to see how weaknesses were addressed — and where new holes may have opened.</div>
 
     <div class="add-section">
-      <div class="add-section-head">💰 Free Agency ${count((a.free_agents||[]).length)}</div>
+      <div class="add-section-head">Free Agency ${count((a.free_agents||[]).length)}</div>
       ${signingTable(a.free_agents,'fa')}
     </div>
 
     <div class="add-section">
-      <div class="add-section-head">🎯 Draft ${count((a.draft||[]).length)}</div>
+      <div class="add-section-head">Draft ${count((a.draft||[]).length)}</div>
       ${signingTable(a.draft,'draft')}
     </div>
 
     <div class="add-section">
-      <div class="add-section-head">🔄 Trades ${count((a.trades||[]).length)}</div>
+      <div class="add-section-head">Trades ${count((a.trades||[]).length)}</div>
       ${tradeTable(a.trades)}
     </div>
 
     <div class="add-section add-losses-section">
-      <div class="add-section-head">📉 Notable Losses ${count((a.free_agents_lost||[]).length)}</div>
+      <div class="add-section-head">Notable Losses ${count((a.free_agents_lost||[]).length)}</div>
       <div class="add-losses-sub">Free agents who signed elsewhere this offseason.</div>
       ${lossTable(a.free_agents_lost)}
     </div>
@@ -190,8 +190,8 @@ function renderTeamAdvanced(team){
       <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="showSharpLeague()">🌐 View league-wide tables →</button></div>
     ${sosStrip}
     ${carryBlock}
-    ${section('🏈 Offense', offKeys, coordInlineLabel(team,oc,'offensive'))}
-    ${section('🛡️ Defense', defKeys, coordInlineLabel(team,dc,'defensive'))}
+    ${section('Offense', offKeys, coordInlineLabel(team,oc,'offensive'))}
+    ${section('Defense', defKeys, coordInlineLabel(team,dc,'defensive'))}
     <div class="sr-source">${advTeamSeason()} season · computed from nflverse play-by-play (nflfastR) — for informational use.</div>
   </div>`;
 }
@@ -243,8 +243,8 @@ function coordCarryCard(sideWord, c, ks, cardFor){
     : `<div class="sr-empty">No carry-over tables available for ${from}.</div>`;
   // When the offensive source is a play-calling head coach, label it as such (the scheme
   // follows the HC, not the OC).
-  const badge = c._fromHC ? '🎧 New play-calling HC'
-    : (sideWord==='offensive' ? '🏈 New OC' : '🛡️ New DC');
+  const badge = c._fromHC ? 'New play-calling Head Coach'
+    : (sideWord==='offensive' ? 'New Offensive Coordinator' : 'New Defensive Coordinator');
   const schemeOwner = c._fromHC ? 'play-calling head coach' : `${sideWord} coordinator`;
   return `<div class="coord-carry-block">
     <div class="coord-carry-title">

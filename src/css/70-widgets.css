@@ -148,3 +148,206 @@
 .draft-upturn{background:var(--surface3);color:var(--text);font-weight:700;font-size:11px;
   padding:2px 9px;border-radius:6px;}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+
+/* ── League Analyzer ────────────────────────────────────────────────────────
+   Header button is solid accent-blue (the app's main theme color) so the league entry point
+   reads as a primary action from anywhere in the app. Once synced it shows the league name. */
+.league-sync-btn{background:var(--accent);color:#fff;border:none;border-radius:8px;
+  font-size:11.5px;font-weight:800;padding:6px 12px;cursor:pointer;white-space:nowrap;
+  letter-spacing:.01em;}
+.league-sync-btn:hover{background:var(--accent2);}
+.league-sync-btn.synced{background:transparent;color:var(--accent);border:1px solid var(--accent);}
+.la-setup{max-width:520px;margin:24px auto;padding:20px;}
+.la-setup-title{font-size:15px;font-weight:900;margin-bottom:6px;}
+.la-setup-body{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:14px;}
+.la-row{display:flex;gap:8px;}
+.la-row input{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);
+  border-radius:8px;padding:8px 10px;font-size:13px;}
+.la-league-list{display:flex;flex-direction:column;gap:8px;margin:10px 0;}
+.la-league{display:flex;justify-content:space-between;align-items:center;gap:10px;text-align:left;
+  background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);
+  padding:10px 12px;cursor:pointer;font-size:12.5px;}
+.la-league:hover{border-color:var(--accent);}
+.la-league span{color:var(--muted);font-size:11px;white-space:nowrap;}
+.la-busy{margin-top:10px;font-size:12px;color:var(--accent);}
+.la-error{margin-top:10px;font-size:12px;color:#ff6b6b;}
+/* Roster cards */
+.la-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;}
+.la-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;}
+.la-card.mine{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
+.la-card-head{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;}
+.la-team{font-size:13px;font-weight:900;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.la-owner{font-size:10px;color:var(--muted);white-space:nowrap;}
+.la-total{font-family:var(--mono);font-size:15px;font-weight:900;color:var(--accent);}
+.la-p{display:flex;align-items:center;gap:7px;padding:2px 0;font-size:12px;}
+.la-pname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;}
+.la-pteam{font-size:9.5px;color:var(--muted);}
+.la-pval{font-family:var(--mono);font-weight:800;min-width:26px;text-align:right;}
+.la-depth{font-size:10.5px;color:var(--muted);padding:4px 0 0;font-style:italic;}
+.la-picks{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);}
+.la-pick{font-size:9.5px;font-weight:700;background:var(--surface2);border:1px solid var(--border);
+  border-radius:6px;padding:2px 6px;color:var(--muted);}
+.la-pick b{color:var(--text);font-family:var(--mono);}
+
+/* ── League Analyzer: Phase 2 (Compare + Best Available) ────────────────────
+   Quartile colors mirror the Advanced Stats convention: green = top quarter of the league,
+   red = bottom. Cells show the raw number big with its league rank small beside it. */
+.la-lens{display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap;}
+.la-lens-lbl{font-size:10px;font-weight:800;color:var(--muted);letter-spacing:.04em;}
+.la-cmp-wrap{overflow-x:auto;}
+.la-cmp{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;
+  background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+.la-cmp th{font-size:9px;font-weight:800;color:var(--muted);letter-spacing:.04em;
+  padding:7px 9px;text-align:right;border-bottom:1px solid var(--border);}
+.la-cmp th.la-cmp-team{text-align:left;}
+.la-cmp td{padding:6px 9px;text-align:right;border-bottom:1px solid var(--border);
+  font-family:var(--mono);white-space:nowrap;}
+.la-cmp tr:last-child td{border-bottom:none;}
+.la-cmp td.la-cmp-team{font-family:inherit;text-align:left;font-weight:800;max-width:180px;
+  overflow:hidden;text-overflow:ellipsis;}
+.la-cmp-own{font-size:9.5px;color:var(--muted);font-weight:600;margin-left:6px;}
+.la-cmp tr.mine td{background:rgba(61,155,255,.07);}
+.la-cmp tr.mine td.la-cmp-team{color:var(--accent);}
+.la-rk{font-size:8.5px;color:var(--muted);margin-left:4px;}
+.la-q1 b{color:#00d4aa;}
+.la-q2 b{color:#9fd48a;}
+.la-q3 b{color:#fbbf24;}
+.la-q4 b{color:#ff6b6b;}
+.la-note{font-size:10px;color:var(--muted);margin-top:8px;line-height:1.5;max-width:760px;}
+/* Best Available list */
+.la-ba{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  padding:4px 0;max-width:640px;}
+.la-ba-row{display:flex;align-items:center;gap:8px;padding:4px 12px;font-size:12px;}
+.la-ba-row:nth-child(even){background:var(--surface2);}
+.la-ba-head{font-size:8.5px;font-weight:800;color:var(--muted);letter-spacing:.05em;}
+.la-ba-rk{width:20px;text-align:right;color:var(--muted);font-family:var(--mono);font-size:10px;flex:none;}
+.la-ba-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;}
+.la-ba-team{width:32px;font-size:9.5px;color:var(--muted);flex:none;}
+.la-ba-val{width:44px;text-align:right;font-family:var(--mono);font-weight:800;color:var(--accent);flex:none;}
+.la-ba-fpts{width:44px;text-align:right;font-family:var(--mono);color:var(--muted);flex:none;}
+
+/* ── League Analyzer: Phase 3 (Trade Calculator + Finder) ───────────────────*/
+/* .team-logo-sm{width:20px;height:20px;object-fit:contain;flex-shrink:0;} */
+.la-btn-av{width:20px;height:20px;object-fit:contain;border-radius:5px;overflow:hidden;}
+.la-lg-av{width:100px;height:100px;object-fit:contain;border-radius:20px;overflow:hidden;}
+.la-tm-av{width:100px;height:100px;object-fit:contain;border-radius:20px;overflow:hidden;}
+.la-tm-av-sm{width:20px;height:20px;object-fit:contain;border-radius:5px;overflow:hidden;}
+.la-tc-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+@media (max-width:760px){.la-tc-grid{grid-template-columns:1fr;}}
+.la-tc-side{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;}
+.la-tc-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.la-tc-sel{background:var(--surface2);border:1px solid var(--border);color:var(--text);
+  border-radius:8px;padding:6px 8px;font-size:12px;font-weight:800;max-width:230px;}
+.la-tc-gives{font-size:10px;color:var(--muted);font-weight:700;letter-spacing:.04em;}
+.la-tc-box{background:var(--surface2);border:1px dashed var(--border);border-radius:8px;
+  padding:6px 8px;margin-bottom:8px;min-height:52px;}
+.la-tc-empty{font-size:11px;color:var(--muted);font-style:italic;padding:8px 2px;}
+.la-tc-tot{font-size:10px;color:var(--muted);padding-top:4px;border-top:1px dashed var(--border);margin-top:4px;font-family:var(--mono);}
+.la-tc-tot b{color:var(--accent);}
+.la-tc-pool{max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:1px;}
+.la-tc-row{display:flex;align-items:center;gap:7px;padding:2px 4px;font-size:12px;border-radius:6px;}
+.la-tc-row:hover{background:var(--surface2);}
+.la-tc-nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700;}
+.la-tc-fill{flex:1;}
+.la-tc-btn{width:22px;height:22px;flex:none;border-radius:6px;border:1px solid var(--border);
+  background:var(--surface2);color:var(--accent);font-weight:900;cursor:pointer;font-size:12px;line-height:1;}
+.la-tc-btn:hover{border-color:var(--accent);}
+.la-tc-btn.rm{color:#ff6b6b;}
+.la-verdict{display:flex;align-items:center;gap:14px;margin:12px 0 4px;background:var(--surface);
+  border:1px solid var(--border);border-radius:10px;padding:10px 14px;}
+.la-vd-txt{font-size:13.5px;font-weight:800;white-space:nowrap;}
+.la-vd-sub{font-size:10px;color:var(--muted);font-weight:600;}
+.la-bar{position:relative;flex:1;height:8px;border-radius:4px;background:var(--surface2);overflow:hidden;}
+.la-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),#00d4aa);transition:width .25s ease;}
+.la-bar-mid{position:absolute;left:50%;top:-2px;bottom:-2px;width:2px;background:var(--border);}
+.la-sug{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:8px 0;}
+.la-sug-lbl{font-size:10.5px;font-weight:800;color:var(--muted);}
+.la-sug-chip{background:var(--surface);border:1px solid var(--accent);color:var(--text);
+  border-radius:14px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;}
+.la-sug-chip b{color:var(--accent);font-family:var(--mono);}
+.la-sug-chip:hover{background:var(--accent);color:#fff;}
+.la-sug-none{font-size:11px;color:var(--muted);font-style:italic;}
+.la-fnd{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-top:12px;}
+.la-fnd-title{font-size:12.5px;font-weight:900;margin-bottom:8px;}
+.la-fnd-sub{font-size:10px;color:var(--muted);font-weight:600;margin-left:8px;}
+.la-fnd-row{display:flex;align-items:center;gap:10px;padding:5px 0;border-top:1px dashed var(--border);font-size:12px;}
+.la-fnd-deal{flex:1;min-width:0;}
+.la-fnd-v{font-family:var(--mono);font-size:10.5px;font-weight:800;color:#fbbf24;flex:none;}
+.la-fnd-v.ok{color:#00d4aa;}
+.la-linked{margin-top:10px;font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.la-linked-note{font-size:10px;}
+
+/* ── League Analyzer: My Team view + trade-calc middle column ───────────────*/
+.la-my-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(600px,1fr));gap:12px;align-items:start;}
+.la-my-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
+.la-my-wide{grid-column:1/-1;}
+.la-my-title{font-size:12px;font-weight:900;margin-bottom:10px;}
+.la-pw{width:100%;border-collapse:collapse;font-size:12px;}
+.la-pw th{font-size:8.5px;color:var(--muted);font-weight:800;letter-spacing:.05em;text-align:left;padding:2px 4px;}
+.la-pw td{padding:4px;border-top:1px dashed var(--border);}
+.la-pw-rk{width:26px;color:var(--muted);font-family:var(--mono);}
+.la-pw-team{font-weight:800;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.la-pw-score{width:44%;position:relative;font-family:var(--mono);text-align:right;}
+.la-pw-bar{position:absolute;left:0;top:15%;bottom:15%;background:var(--surface2);border-radius:4px;z-index:0;}
+.la-pw-score b{position:relative;z-index:1;}
+.la-pw tr.mine td{background:rgba(61,155,255,.09);}
+.la-pw tr.mine .la-pw-team{color:var(--accent);}
+.la-pw tr.mine .la-pw-bar{background:rgba(61,155,255,.25);}
+.la-pr-row{display:flex;align-items:center;gap:8px;padding:3px 0;}
+.la-pr-lbl{width:66px;font-size:10px;font-weight:800;color:var(--muted);letter-spacing:.03em;flex:none;}
+.la-pr-track{flex:1;height:9px;background:var(--surface2);border-radius:5px;overflow:hidden;}
+.la-pr-bar{height:100%;border-radius:5px;background:var(--muted);}
+.la-pr-bar.la-q1{background:#00d4aa;}
+.la-pr-bar.la-q2{background:#9fd48a;}
+.la-pr-bar.la-q3{background:#fbbf24;}
+.la-pr-bar.la-q4{background:#ff6b6b;}
+.la-pr-rank{width:34px;text-align:right;font-family:var(--mono);font-size:11px;font-weight:800;flex:none;}
+/* starting lineup chart */
+.la-lu{display:flex;gap:10px;align-items:flex-end;height:190px;padding-top:16px;overflow-x:auto;}
+.la-lu-col{flex:1;min-width:52px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:4px;}
+.la-lu-rk{font-family:var(--mono);font-size:10px;font-weight:800;color:var(--muted);}
+.la-lu-bar{width:70%;border-radius:6px 6px 0 0;background:var(--surface2);min-height:6px;}
+.la-lu-bar.la-q1{background:linear-gradient(180deg,#00d4aa,#00b894);}
+.la-lu-bar.la-q2{background:linear-gradient(180deg,#9fd48a,#7cb86a);}
+.la-lu-bar.la-q3{background:linear-gradient(180deg,#fbbf24,#e0a800);}
+.la-lu-bar.la-q4{background:linear-gradient(180deg,#ff6b6b,#e05555);}
+.la-lu-hs{width:30px;height:30px;border-radius:50%;object-fit:cover;object-position:top center;
+  border:1px solid var(--border);background:var(--surface2);flex:none;}
+.la-lu-empty{display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;}
+.la-lu-lbl{font-size:9px;font-weight:800;color:var(--muted);letter-spacing:.03em;}
+/* radar */
+.la-radar{width:100%;max-width:230px;display:block;margin:0 auto;}
+.la-rd-ring{fill:none;stroke:var(--border);stroke-width:1;}
+.la-rd-me{fill:rgba(61,155,255,.30);stroke:var(--accent);stroke-width:1.6;}
+.la-rd-bench{fill:rgba(226,192,141,.22);stroke:#e2c08d;stroke-width:1.2;}
+.la-rd-lbl{fill:var(--muted);font-size:9px;font-weight:800;text-anchor:middle;dominant-baseline:middle;}
+.la-rd-key{font-size:9px;color:var(--muted);font-weight:600;margin-left:8px;}
+.la-rd-key i{display:inline-block;width:8px;height:8px;border-radius:2px;margin:0 3px 0 6px;}
+.la-rd-k-me{background:rgba(61,155,255,.6);}
+.la-rd-k-bn{background:rgba(226,192,141,.6);}
+.la-chk{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:var(--muted);cursor:pointer;}
+.la-chk input{accent-color:var(--accent);}
+.la-chk-off{opacity:.45;}
+/* trade calc: verdict column between the sides */
+.la-tc-grid{grid-template-columns:1fr 250px 1fr;}
+@media (max-width:900px){.la-tc-grid{grid-template-columns:1fr;}}
+.la-tc-mid{display:flex;flex-direction:column;gap:9px;align-items:stretch;background:var(--surface);
+  border:1px solid var(--border);border-radius:10px;padding:12px;align-self:start;position:sticky;top:8px;}
+.la-tc-mid .la-vd-txt{text-align:center;white-space:normal;}
+.la-tc-mid .la-sug{margin:0;justify-content:center;}
+.la-tc-mid-lbls{display:flex;justify-content:space-between;font-size:8.5px;font-weight:800;color:var(--muted);letter-spacing:.03em;}
+.la-tc-clear{align-self:center;}
+.la-fnd-refresh{margin-left:auto;float:right;}
+.la-fnd-title{display:flex;align-items:center;flex-wrap:wrap;gap:4px;}
+
+/* ── personas, age-cliffs, finder targeting ─────────────────────────────────*/
+.la-traj.traj-1pc{background:rgba(0,212,170,.12);color:#00d4aa;border-color:rgba(0,212,170,.4);}
+.la-traj.traj-asc{background:rgba(61,155,255,.12);color:var(--accent);border-color:rgba(61,155,255,.4);}
+.la-traj.traj-cliff{background:rgba(251,191,36,.12);color:#fbbf24;border-color:rgba(251,191,36,.4);}
+.la-cliff{margin-left:4px;font-size:10px;cursor:help;}
+.la-cliff-warn{color:#fbbf24;}
+.la-cliff-past{color:#ff6b6b;}
+.la-cliff-defy{color:#00d4aa;}
+.la-cliff-hot{color:#fbbf24;}
+.la-fnd-chips{display:inline-flex;gap:4px;margin-left:10px;}
+.la-fnd-gem{cursor:help;}

@@ -9,7 +9,7 @@ const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   assembleSeedFromRecords, ensureTeam, perGame, pace,
   setSEED:(s)=>{SEED=s;seasonStatsCache.proj=s;},
-  selectTeam:t=>{currentTeam=t;currentPhase='QB';ensureTeam(t);},
+  selectTeam:t=>{currentTeam=t;currentPhase='Passing';ensureTeam(t);},
   handleKey:(k,v,t)=>handleSliderKey(k,v,t,false),
   getProj:()=>userProj };
 `)();

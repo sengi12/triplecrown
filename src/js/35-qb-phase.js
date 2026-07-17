@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// QB Phase
+// Passing Phase
 // ─────────────────────────────────────────────────────────────────────────────
-function renderQB(team,state){
+function renderPassing(team,state){
   if(!state.qbs||!state.qbs.length){
     return `<div class="card"><div class="card-title">Passing Attack</div>
       <div class="alert alert-warn"><span class="alert-icon">⚠️</span>

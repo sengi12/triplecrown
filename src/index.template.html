@@ -34,7 +34,7 @@
         <button class="hdr-menu-item" onclick="exportCSV()">CSV</button>
       </div>
     </div>
-    <button class="btn btn-ghost" onclick="showFullRankings()">🏆 Full Rankings</button>
+    <button class="btn btn-ghost" onclick="showFullRankings()">Full Rankings</button>
     <button class="btn btn-ghost" onclick="resetAll()" title="Reset all edits and pull the latest Sleeper projections">↺ Reset</button>
   </div>
 </div>
@@ -42,17 +42,18 @@
   <span class="season-label">Season</span>
   <div id="seasonTabs" style="display:flex;gap:6px;flex-shrink:0;"></div>
   <div class="season-spacer"></div>
+  <button class="league-sync-btn" id="leagueSyncBtn" onclick="openLeagueAnalyzer()" title="Sync your Sleeper league — rosters, dynasty values, trade tools">🔗 My League</button>
   <span class="sleeper-badge">data: Sleeper</span>
 </div>
 <div class="main">
   <div class="sidebar" id="sidebar"></div>
   <div class="content" id="content">
     <div class="empty">
-      <div class="empty-icon">🏈</div>
+      <div class="logo-icon-lg"><img src="images/app-icon.png" class="logo-icon-lg" alt="Centered Image"></div>
       <div class="empty-title">Select a team to begin</div>
       <div class="empty-body">Work through each team's QB output, receiver target &amp; TD share,
       and RB rushing distribution. Use the season tabs to reference prior years, ↺ Reset to pull
-      the latest live projections, and 🏆 Rankings to see fantasy scores and follow a live draft.</div>
+      the latest live projections, and Rankings to see fantasy scores and follow a live draft.</div>
     </div>
   </div>
 </div>

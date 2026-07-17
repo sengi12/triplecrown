@@ -6,8 +6,8 @@ function renderRushing(team,state){
   const baseAtt=getBase(team,'RB').reduce((s,p)=>s+p.rushing_attempts,0)||200;
   const baseYds=getBase(team,'RB').reduce((s,p)=>s+p.rushing_yards,0)||1600;
   const subTabs=`<div class="sub-tabs">
-    <button class="sub-tab ${rushingSubTab==='carries'?'active':''}" onclick="setRushSub('carries')">🏃 Carry Share</button>
-    <button class="sub-tab ${rushingSubTab==='rush_tds'?'active':''}" onclick="setRushSub('rush_tds')">🏆 Rush TD Share</button></div>`;
+    <button class="sub-tab ${rushingSubTab==='carries'?'active':''}" onclick="setRushSub('carries')">Carry Share</button>
+    <button class="sub-tab ${rushingSubTab==='rush_tds'?'active':''}" onclick="setRushSub('rush_tds')">Rush TD Share</button></div>`;
   const weekSlider=weekRangeSliderHTML(team,state);
   const body = rushingSubTab==='carries' ? renderRushCarries(team,state,baseAtt,baseYds,subTabs) : renderRushTDs(team,state,subTabs);
   return weekSlider + body;
@@ -110,3 +110,49 @@ function rushNote(state){
   return `RB carries: ${r.total_attempts} · team YPA: ${(r.ypa||0).toFixed(2)} · RB yards: ${(r.total_yards||0).toLocaleString()} · incl QB: ~${totalIncQB} carries`;
 }
 
+// Rushing counterpart of vacatedProduction: carries/rush-yards/rush-TDs left behind by
+// players (RB/WR/QB) who were on the team last season but aren't on the current roster.
+function vacatedRushing(team){
+  if(activeSeason!=='proj') return null;
+  const lastYear = (HISTORY_SEASONS&&HISTORY_SEASONS.length)?HISTORY_SEASONS[0]:String(PROJ_SEASON-1);
+  if(!seasonStatsCache[lastYear]){
+    if(HISTORY && Object.keys(HISTORY).length){
+      const built=buildSeedFromHistory(lastYear); if(built) seasonStatsCache[lastYear]=built;
+    } else {
+      ensureSeasonStats(lastYear);
+    }
+  }
+  const prev=seasonStatsCache[lastYear] && seasonStatsCache[lastYear][team];
+  if(!prev) return null;
+  const curIds=new Set();
+  const ps=projSeed||seasonStatsCache['proj']||{};
+  ['QB','RB','WR','TE'].forEach(pos=>(ps[team]&&ps[team][pos]||[]).forEach(p=>p.player_id&&curIds.add(p.player_id)));
+  if(sleeperPlayers){
+    for(const pid in sleeperPlayers){ if(sleeperPlayers[pid].team===team) curIds.add(pid); }
+  }
+  let att=0,yds=0,td=0; const gone=[];
+  // RBs carry most rushing; include WR/QB rushers too since they leave carries behind as well.
+  ['RB','WR','QB'].forEach(pos=>(prev[pos]||[]).forEach(p=>{
+    const carries = (p.rushing_attempts||p.qb_rush_attempts||0);
+    if(p.player_id && !curIds.has(p.player_id) && carries>0){
+      att+=carries;
+      yds+=(p.rushing_yards||p.qb_rush_yards||0);
+      td+=(p.rushing_tds||p.qb_rush_tds||0);
+      gone.push({name:p.name, att:carries});
+    }
+  }));
+  if(!gone.length) return null;
+  gone.sort((a,b)=>b.att-a.att);
+  return {season:lastYear, att:Math.round(att), yds:Math.round(yds), td:Math.round(td),
+          players:gone.map(g=>g.name)};
+}
+function vacatedRushNote(team){
+  const v=vacatedRushing(team);
+  if(!v) return '';
+  const names = v.players.length>3 ? v.players.slice(0,3).join(', ')+` +${v.players.length-3} more` : v.players.join(', ');
+  return `<div class="vacated-note">
+    <span class="vacated-icon">📤</span>
+    <div><b>Vacated from ${v.season}:</b> ${v.att} carries · ${v.yds.toLocaleString()} yds · ${v.td} TD
+    <span style="color:var(--muted)"> — left by ${names}.</span>
+    <span style="color:var(--muted)">These carries are up for grabs among the current backfield.</span></div></div>`;
+}

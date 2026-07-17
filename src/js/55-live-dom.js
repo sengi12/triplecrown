@@ -55,7 +55,7 @@ function refreshQBStatSliders(state,qi){
 // Receivers/rushing depend on QB pass attempts (via teamTargetPool). Refresh whatever
 // passing/rushing view is currently shown so volume cascades from QB workload changes.
 function livePassDependents(state,team){
-  if(currentPhase!=='Passing') return;
+  if(currentPhase!=='Receiving') return;
   if(passingSubTab==='targets') livePassTargets(state,team);
   else liveTDRows('tdp','tdt',state.passing_shares||[],teamPassTDs(state),'tds_',true);
 }

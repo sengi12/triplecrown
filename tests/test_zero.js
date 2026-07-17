@@ -7,7 +7,7 @@ global.confirm=()=>true;global.btoa=s=>Buffer.from(s,'binary').toString('base64'
 const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return { assembleSeedFromRecords, ensureTeam, perGame,
-  setSEED:(s)=>{SEED=s;seasonStatsCache.proj=s;}, selectTeam:t=>{currentTeam=t;currentPhase='QB';ensureTeam(t);},
+  setSEED:(s)=>{SEED=s;seasonStatsCache.proj=s;}, selectTeam:t=>{currentTeam=t;currentPhase='Passing';ensureTeam(t);},
   handleKey:(k,v,t)=>handleSliderKey(k,v,t,false), getProj:()=>userProj };`)();
 const meta={'1':{player_id:'1',name:'Backup QB',pos:'QB',team:'KC'},'2':{player_id:'2',name:'Starter',pos:'QB',team:'KC'}};
 const records=[

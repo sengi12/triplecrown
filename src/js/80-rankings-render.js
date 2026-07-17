@@ -193,9 +193,9 @@ function renderRankings(){
     <div class="phase-tabs">${tabBar()}</div>
     <div class="rankings-scope-bar">
       ${teamScoped
-        ? `<span class="scope-title">🏆 ${currentTeam} Rankings</span><span class="scope-sub">this team only</span>
+        ? `<span class="scope-title">${currentTeam} Rankings</span><span class="scope-sub">this team only</span>
            <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showFullRankings()">View full league →</button>`
-        : `<span class="scope-title">🏆 Full League Rankings</span><span class="scope-sub">all ${all.length} players</span>`}
+        : `<span class="scope-title">Full League Rankings</span><span class="scope-sub">all ${all.length} players</span>`}
     </div>
     <div class="card scoring-card ${scoringPanelOpen?'open':''}" style="margin-bottom:12px;padding:0">
       <div class="scoring-head" onclick="toggleScoringPanel()" title="Show / hide scoring settings">

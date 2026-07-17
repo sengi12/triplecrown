@@ -27,9 +27,9 @@ let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',
 app.setAdd(ADD); app.setNames({CIN:'Cincinnati Bengals'});
 
 console.log('=== TEST 1: tab appears only when team has additions ===');
-app.setTeam('CIN'); chk(app.tabBar().includes('Roster Changes'),'CIN shows Roster Changes tab');
-app.setTeam('DAL'); chk(!app.tabBar().includes('Roster Changes'),'DAL (no data) hides tab');
-app.setTeam(null); chk(!app.tabBar().includes('Roster Changes'),'no team → no tab');
+app.setTeam('CIN'); chk(app.tabBar().includes('Roster'),'CIN shows Roster Changes tab');
+app.setTeam('DAL'); chk(!app.tabBar().includes('Roster'),'DAL (no data) hides tab');
+app.setTeam(null); chk(!app.tabBar().includes('Roster'),'no team → no tab');
 
 console.log('\n=== TEST 2: money formatting ===');
 chk(app.fmtMillions(60.0)==='$60M','60.0 → $60M');
@@ -39,13 +39,13 @@ chk(app.fmtMillions(null)==='—','null → —');
 console.log('\n=== TEST 3: renders all three categories ===');
 app.setTeam('CIN');
 const html=app.renderTeamAdditions('CIN');
-chk(html.includes('💰 Free Agency'),'Free Agency section');
-chk(html.includes('🎯 Draft'),'Draft section');
-chk(html.includes('🔄 Trades'),'Trades section');
+chk(html.includes('Free Agency'),'Free Agency section');
+chk(html.includes('Draft'),'Draft section');
+chk(html.includes('Trades'),'Trades section');
 chk(html.includes('Cincinnati Bengals'),'full team name in note');
 
 console.log('\n=== TEST 4: check-players in right categories ===');
-const faIdx=html.indexOf('Free Agency'), drIdx=html.indexOf('🎯 Draft'), trIdx=html.indexOf('🔄 Trades');
+const faIdx=html.indexOf('Free Agency'), drIdx=html.indexOf('Draft'), trIdx=html.indexOf('Trades');
 const faSec=html.slice(faIdx,drIdx), drSec=html.slice(drIdx,trIdx), trSec=html.slice(trIdx);
 chk(faSec.includes('Boye Mafe')&&faSec.includes('$60M'),'Mafe in Free Agency at $60M');
 chk(drSec.includes('Cashius Howell'),'Howell in Draft');

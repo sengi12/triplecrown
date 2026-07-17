@@ -18,7 +18,7 @@ Usage:
 Mirrors the caching approach in draft.py's update_players(): the big players
 payload is fetched once and saved to players.json, then reused.
 """
-import argparse, json, os, sys, time
+import argparse, json, os, re, sys, time
 from urllib import request, error
 
 # ── Seed compaction codecs ───────────────────────────────────────────────────
@@ -596,6 +596,148 @@ def build_ktc(refresh):
         print(" FAILED (couldn't parse playersArray) — KTC links will be omitted")
         return {}
     print(f" ok ({len(out)} players)")
+    with open(cache_path, "w") as f:
+        json.dump(out, f)
+    return out
+
+
+# ── FantasyPros Dynasty Trade Value Chart ────────────────────────────────────
+# FantasyPros publishes a monthly "Dynasty Trade Value Chart" article: a 0-100 consensus
+# value for every relevant dynasty asset (players AND rookie picks), with separate SF values
+# for QBs/picks and TEP values for TEs. The player tables are Datawrapper embeds whose raw
+# data is fetchable as TSV at datawrapper.dwcdn.net/{id}/{ver}/dataset.csv; the rookie-pick
+# tables are plain HTML tables in the article body.
+#
+# The article URL and Datawrapper IDs ROTATE MONTHLY (".../2026/06/...-june-2026-update/"),
+# so we discover the newest article from FantasyPros' trade-value-chart tag index instead of
+# hardcoding one, and cache the parsed result like every other pulled source.
+#
+# Output shape (seed key "dynasty_values"):
+#   { "asof": "2026-06", "source": "<article url>",
+#     "players": { nameKey: {"pos","team","v",("sf")?,("tep")?} },       # 0-100 ints
+#     "picks":   { "2026": [[label, v1qb, vSF], ...], "2027": [[...]] } }# display order kept
+FP_TVC_INDEX_URL = "https://www.fantasypros.com/content/nfl-trade-value-chart/"
+FP_TVC_FALLBACK = "https://www.fantasypros.com/2026/06/fantasy-football-rankings-dynasty-trade-value-chart-june-2026-update/"
+
+def _fp_fetch(url):
+    req = request.Request(url, headers=UA)
+    with request.urlopen(req, timeout=60) as r:
+        raw = r.read()
+    if raw[:2] == b"\x1f\x8b":
+        import gzip, io
+        raw = gzip.GzipFile(fileobj=io.BytesIO(raw)).read()
+    return raw.decode("utf-8", "replace")
+
+def _fp_latest_dynasty_chart_url():
+    """Newest dynasty-trade-value-chart article from the FP tag index (falls back to a
+    known-good URL if the index can't be parsed)."""
+    try:
+        html = _fp_fetch(FP_TVC_INDEX_URL)
+        m = re.findall(r'href="(https://www\.fantasypros\.com/\d{4}/\d{2}/[^"]*dynasty-trade-value-chart[^"]*)"', html)
+        if m:
+            return m[0]  # articles are listed newest-first
+    except Exception:
+        pass
+    return FP_TVC_FALLBACK
+
+def _parse_dw_tsv(text):
+    rows = [r.split("\t") for r in text.strip().splitlines()]
+    head = rows[0]
+    return [dict(zip(head, r)) for r in rows[1:] if len(r) == len(head)]
+
+def _int_or_none(x):
+    try:
+        return int(round(float(str(x).strip())))
+    except Exception:
+        return None
+
+def _parse_pick_tables(html):
+    """Rookie-pick values from the article's HTML tables. A pick table row is
+    <td>label</td><td>1QB</td><td>SF</td> where both value cells are ints. Tables before the
+    '2027' heading are the upcoming draft; tables after it are the year-out draft."""
+    picks = {}
+    # Split the body at the 2027 heading so tables sort themselves into seasons.
+    parts = re.split(r"2027\s+Dynasty\s+Rookie\s+Draft\s+Pick\s+Values", html, maxsplit=1)
+    year_now = re.search(r"(\d{4})\s+Dynasty\s+Rookie\s+Draft\s+Pick\s+Values", html)
+    seasons = [(year_now.group(1) if year_now else "2026", parts[0])]
+    if len(parts) > 1:
+        seasons.append(("2027", parts[1]))
+    for season, chunk in seasons:
+        out = []
+        for tbl in re.findall(r"<table[^>]*>(.*?)</table>", chunk, re.S):
+            for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", tbl, re.S):
+                cells = [re.sub(r"<[^>]+>", "", c).replace("&#8211;", "-").replace("\u2013", "-").strip()
+                         for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", tr, re.S)]
+                if len(cells) != 3:
+                    continue
+                v1, v2 = _int_or_none(cells[1]), _int_or_none(cells[2])
+                if v1 is None or v2 is None:
+                    continue  # header row
+                out.append([cells[0], v1, v2])
+        if out:
+            picks[season] = out
+    return picks
+
+def build_dynasty_values(refresh):
+    """Fetch + parse the latest FP dynasty trade value chart -> seed 'dynasty_values'."""
+    cache_path = os.path.join(CACHE_DIR, "dynasty", "values.json")
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    if not refresh and os.path.exists(cache_path):
+        print("  → dynasty values: using cache")
+        with open(cache_path) as f:
+            return json.load(f)
+    url = _fp_latest_dynasty_chart_url()
+    print(f"  → fetching FP dynasty trade values ({url.rsplit('/',3)[-2]}) ...", end="", flush=True)
+    try:
+        html = _fp_fetch(url)
+    except Exception as e:
+        print(f" FAILED ({type(e).__name__}: {e}) — dynasty values omitted")
+        return {}
+    # Datawrapper embeds, in article order QB, RB, WR, TE. Keep id+version pairs as found.
+    dw = []
+    for m in re.finditer(r"datawrapper\.dwcdn\.net/([A-Za-z0-9]+)/(\d+)", html):
+        if m.group(1) not in [d[0] for d in dw]:
+            dw.append((m.group(1), m.group(2)))
+    if len(dw) < 4:
+        print(f" FAILED (found {len(dw)} datawrapper embeds, need 4) — dynasty values omitted")
+        return {}
+    players = {}
+    order = ["QB", "RB", "WR", "TE"]
+    for pos, (dwid, ver) in zip(order, dw[:4]):
+        try:
+            tsv = _fp_fetch(f"https://datawrapper.dwcdn.net/{dwid}/{ver}/dataset.csv")
+        except Exception as e:
+            print(f" FAILED ({pos} dataset: {e}) — dynasty values omitted")
+            return {}
+        rows = _parse_dw_tsv(tsv)
+        # Sanity-check the position mapping instead of trusting article order blindly:
+        # the QB table carries "SF Value", the TE table carries "TEP Value".
+        cols = set(rows[0].keys()) if rows else set()
+        if pos == "QB" and "SF Value" not in cols:
+            print(" WARNING: QB table missing 'SF Value' — article layout may have changed")
+        if pos == "TE" and "TEP Value" not in cols:
+            print(" WARNING: TE table missing 'TEP Value' — article layout may have changed")
+        for r in rows:
+            v = _int_or_none(r.get("Trade Value"))
+            name = (r.get("Name") or "").strip()
+            if v is None or not name:
+                continue
+            key = _norm_name(name)
+            # "n" = display name as FP prints it; the dict key is NORMALIZED (lookup only)
+            # and not fit to render ("jamarr chase"). Best Available shows e.n || key.
+            ent = {"n": name, "pos": pos, "team": (r.get("Team") or "").strip(), "v": v}
+            sf = _int_or_none(r.get("SF Value"))
+            tep = _int_or_none(r.get("TEP Value"))
+            if sf is not None:
+                ent["sf"] = sf
+            if tep is not None:
+                ent["tep"] = tep
+            players[key] = ent
+    picks = _parse_pick_tables(html)
+    m = re.search(r"fantasypros\.com/(\d{4})/(\d{2})/", url)
+    asof = f"{m.group(1)}-{m.group(2)}" if m else ""
+    out = {"asof": asof, "source": url, "players": players, "picks": picks}
+    print(f" ok ({len(players)} players, picks for {'/'.join(picks.keys()) or 'none'})")
     with open(cache_path, "w") as f:
         json.dump(out, f)
     return out
@@ -2103,6 +2245,7 @@ def main():
 
     print("\n  KeepTradeCut dynasty player IDs (player-card links)")
     ktc = build_ktc(web_refresh)
+    dynasty_values = build_dynasty_values(web_refresh)
 
     # Keep only seasons that actually returned stats (older years may be unavailable).
     nonempty_seasons = sorted([s for s, idx in stats_by_season.items() if idx], reverse=True)
@@ -2155,6 +2298,7 @@ def main():
                     "hc_history": hc_history, "additions": additions,
                     "hc_playcallers": HC_PLAYCALLERS, "sharp_season": args.season-1,
                     "sumer": sumer, "sumer_seasons": sumer_seasons, "ktc": ktc,
+                    "dynasty_values": dynasty_values,
                     "nflverse": nflverse}
     with open("seeds/triplecrown_seed.json", "w") as f:
         json.dump(_encode_fantasy(_fantasy_obj), f, separators=(",", ":"))

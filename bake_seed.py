@@ -191,6 +191,7 @@ def main():
     sumer = seed.get("sumer", {})
     sumer_seasons = seed.get("sumer_seasons", [])
     ktc = seed.get("ktc", {})
+    dynasty_values = seed.get("dynasty_values", {})
     nflverse = seed.get("nflverse", {})
 
     # Heavy nflverse sections live in sidecar files (build_seed.py splits them out so the hosted
@@ -247,6 +248,7 @@ def main():
         f"const SEED_SUMER = {j(sumer)};\n"
         f"const SEED_SUMER_SEASONS = {j(sumer_seasons)};\n"
         f"const SEED_KTC = {j(ktc)};\n"
+        f"const SEED_DYNASTY_VALUES = {j(dynasty_values)};\n"
         f"const SEED_NFLVERSE = {j(nflverse)};\n"
         f"const SEED_NFLVERSE_DEF_WEEKLY = {j(nflverse_def_weekly)};\n"
         f"const SEED_NFLVERSE_COACHING = {j(nflverse_coaching)};\n"

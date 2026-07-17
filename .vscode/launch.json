@@ -1,21 +1,21 @@
 {
   "version": "0.2.0",
   "configurations": [
-    {
-      "name":"Python Debugger: Current File",
-      "type":"debugpy",
-      "python": "/Users/sengi/.pyenv/versions/3.11.9/envs/nfl/bin/python",
-      "request":"launch",
-      "program":"${file}",
-      "console":"integratedTerminal"
-    },
     // {
-    //   "type": "chrome",
-    //   "request": "launch",
-    //   "name": "Launch my cool app",
-    //   "url": "http://localhost:8000",
-    //   "file": "${workspaceFolder}/index.html"
+    //   "name":"Python Debugger: Current File",
+    //   "type":"debugpy",
+    //   "python": "/Users/sengi/.pyenv/versions/3.11.9/envs/nfl/bin/python",
+    //   "request":"launch",
+    //   "program":"${file}",
+    //   "console":"integratedTerminal"
     // },
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "Launch my cool app",
+      "url": "http://localhost:8000",
+      "file": "${workspaceFolder}/index_baked.html"
+    },
     // {
     //   "name": "Python: Current File",
     //   "type": "python",

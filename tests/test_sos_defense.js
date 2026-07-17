@@ -58,8 +58,8 @@ const adv=app.renderTeamAdvanced('CHI');
 chk(advMissing.includes('No data for Dallas Cowboys'),'missing-team card uses full name');
 chk(adv.includes('2026 Strength of Schedule'),'SOS strip present');
 chk(adv.includes('27th'),'SOS rank shown as 27th');
-chk(adv.includes('🏈 Offense'),'Offense section head');
-chk(adv.includes('🛡️ Defense'),'Defense section head');
+chk(adv.includes('Offense'),'Offense section head');
+chk(adv.includes('Defense'),'Defense section head');
 chk(adv.includes('%'),'percentage rendered somewhere (rate col)');
 
 console.log('\n=== TEST 4: league-wide Offense/Defense category toggle ===');

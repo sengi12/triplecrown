@@ -7,7 +7,7 @@ global.confirm=()=>true;global.btoa=s=>Buffer.from(s,'binary').toString('base64'
 const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
-  buildSeedFromHistory, ensureTeam, renderQB,
+  buildSeedFromHistory, ensureTeam, renderPassing,
   setAll:(s,h,hs)=>{SEED=s;projSeed=s;seasonStatsCache.proj=s;workingProj={};userProj=workingProj;activeSeason='proj';HISTORY=h;HISTORY_SEASONS=hs;},
   setSeasonCache:(s,seed)=>{seasonStatsCache[s]=seed;},
   enterRef:(s)=>{if(activeSeason==='proj')workingProj=userProj;activeSeason=s;SEED=seasonStatsCache[s];referenceProj={};userProj=referenceProj;},

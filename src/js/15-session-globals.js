@@ -29,6 +29,7 @@ function saveSession(){
         rankFormat: rankFormat,
         scoringAxis: scoringAxis,
         scoringPanelOpen: scoringPanelOpen,
+        leagueSnapshot: leagueSnapshot,
         undoStacks: undoStacks,
       };
       localStorage.setItem(TC_STORE_KEY, JSON.stringify(payload));
@@ -63,6 +64,7 @@ function restoreSession(){
   // older sessions (pre-scoringAxis) still light up the correct scoring button.
   scoringAxis = p.scoringAxis || scoringAxisOf(rankFormat);
   if(typeof p.scoringPanelOpen==='boolean') scoringPanelOpen = p.scoringPanelOpen;
+  if(p.leagueSnapshot && p.leagueSnapshot.teams) leagueSnapshot = p.leagueSnapshot;
   if(p.season===PROJ_SEASON && p.workingProj && Object.keys(p.workingProj).length){
     workingProj = p.workingProj;
     if(activeSeason==='proj') userProj = workingProj;
@@ -105,6 +107,12 @@ let SUMER = (typeof SEED_SUMER!=='undefined') ? SEED_SUMER : {};
 let SUMER_SEASONS = (typeof SEED_SUMER_SEASONS!=='undefined') ? SEED_SUMER_SEASONS : [];
 // KeepTradeCut dynasty player-page slugs (player-card links): {nameKey:{slug,pos}}
 let KTC = (typeof SEED_KTC!=='undefined') ? SEED_KTC : {};
+let DYNASTY_VALUES = (typeof SEED_DYNASTY_VALUES!=='undefined') ? SEED_DYNASTY_VALUES : {};
+// League Analyzer snapshot: a deliberate point-in-time capture of a synced Sleeper league
+// (rosters, owners, picks, settings). Deliberately NOT auto-refreshed — dynasty rosters move
+// slowly and stable numbers matter during a week of trade talks — so it only changes when the
+// user hits Re-sync. Persisted with the session; takenAt carries the timestamp shown in the UI.
+let leagueSnapshot = null;
 // nflverse-computed advanced metrics (opt-in A/B source): {season:{team:{...}, players:{QB,RB}}}
 let NFLVERSE = (typeof SEED_NFLVERSE!=='undefined') ? SEED_NFLVERSE : {};
 // Advanced team tables are now nflverse-only (the old curated toggle was retired).

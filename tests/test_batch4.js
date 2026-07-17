@@ -12,7 +12,7 @@ const app=new Function(code+`return {
   setProj:(s)=>{SEED=s;projSeed=s;seasonStatsCache.proj=s;workingProj={};userProj=workingProj;activeSeason='proj';},
   setRefCache:(season,seed)=>{seasonStatsCache[season]=seed;HISTORY_SEASONS=[season];},
   setSleeper:(p)=>{sleeperPlayers=p;buildSleeperNameIndex();},
-  selectTeam:t=>{currentTeam=t;currentPhase='Passing';ensureTeam(t);initPassingShares(t);},
+  selectTeam:t=>{currentTeam=t;currentPhase='Receiving';ensureTeam(t);initPassingShares(t);},
   getProj:()=>userProj, getSEED:()=>SEED };
 `)();
 

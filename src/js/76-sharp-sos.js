@@ -36,7 +36,7 @@ function renderSharpLeague(){
         <div class="team-qb-name">${srcLabel} · <b>${advTeamSeason()} season</b> · click any column to sort (best→worst)</div></div>
       <div class="team-nav">
         ${currentTeam?`<button class="btn btn-ghost" onclick="setPhase('Advanced')">← ${teamDisplayName(currentTeam)} card</button>`:''}
-        <button class="btn btn-ghost" onclick="setPhase('Rankings')">🏆 Rankings</button></div>
+        <button class="btn btn-ghost" onclick="setPhase('Rankings')">Rankings</button></div>
     </div>
     <div class="phase-tabs">${tabBar()}</div>`;
 
@@ -96,9 +96,9 @@ function renderCategoryTabs(){
   const isSOS = sharpTable==='__sos__';
   const btn=(cat,label,active,onclick)=>`<button class="sr-cat ${active?'active':''}" onclick="${onclick}">${label}</button>`;
   let out='<div class="sr-cat-row">';
-  if(hasOff) out+=btn('offense','🏈 Offense', !isSOS && sharpCategory==='offense', "setSharpCategory('offense')");
-  if(hasDef) out+=btn('defense','🛡️ Defense', !isSOS && sharpCategory==='defense', "setSharpCategory('defense')");
-  if(hasSOS) out+=btn('sos','📅 Strength of Schedule', isSOS, "showSharpLeague('sos')");
+  if(hasOff) out+=btn('offense','Offense', !isSOS && sharpCategory==='offense', "setSharpCategory('offense')");
+  if(hasDef) out+=btn('defense','Defense', !isSOS && sharpCategory==='defense', "setSharpCategory('defense')");
+  if(hasSOS) out+=btn('sos','Strength of Schedule', isSOS, "showSharpLeague('sos')");
   out+='</div>';
   return out;
 }

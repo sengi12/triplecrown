@@ -398,7 +398,7 @@ let projSeed = null;           // snapshot of the projection-season SEED (workin
 let importedSnapshot = null;   // deep copy of last-imported state (for 2-stage reset)
 let dirtySinceImport = false;  // have edits happened since import/last reset-to-import?
 let currentTeam = null;
-let currentPhase = 'QB';
+let currentPhase = 'Passing';
 let passingSubTab = 'targets';
 let rushingSubTab = 'carries';
 let pieChart = null;
@@ -1249,10 +1249,10 @@ function selectTeam(t){
   currentTeam=t;
   // Keep whatever phase the user was on (Targets stays Targets across teams). Only the
   // global Rankings view falls back to a per-team phase since it isn't team-scoped here.
-  if(currentPhase==='Rankings') currentPhase='Passing';
+  if(currentPhase==='Rankings') currentPhase='Receiving';
   ensureTeam(t);
   // make sure shares exist so the targets/rushing tab is populated as if previously opened
-  if(currentPhase==='Passing') initPassingShares(t);
+  if(currentPhase==='Receiving') initPassingShares(t);
   else if(currentPhase==='Rushing') initRushingShares(t);
   if(isMobileTeamPickerLayout()) mobileTeamPickerExpanded=false;
   renderSidebar();renderContent();
@@ -1273,8 +1273,8 @@ function renderContent(){
   const t=currentTeam,state=userProj[t];
   const tabs=tabBar();
   let body='';
-  if(currentPhase==='QB') body=renderQB(t,state);
-  else if(currentPhase==='Passing'){initPassingShares(t);body=renderPassing(t,state);}
+  if(currentPhase==='QB') body=renderPassing(t,state);
+  else if(currentPhase==='Passing'){initPassingShares(t);body=renderReceiving(t,state);}
   else if(currentPhase==='Rushing'){initRushingShares(t);body=renderRushing(t,state);}
   else if(currentPhase==='Advanced') body=renderTeamAdvanced(t);
   else if(currentPhase==='Additions') body=renderTeamAdditions(t);
@@ -1318,32 +1318,32 @@ function renderContent(){
     ${seasonBanner}
     <div class="phase-tabs">${tabs}</div>${body}
     <div id="schemeOverlayHost"></div>`;
-  if(currentPhase==='Passing') initPie(t,'pass');
+  if(currentPhase==='Receiving') initPie(t,'pass');
   else if(currentPhase==='Rushing') initPie(t,'rush');
   initSliders();
   updateUndoButton();
 }
 function tabBar(){
   const hasSharp = (typeof sharpHasData==='function' ? sharpHasData() : false) || (SOS && Object.keys(SOS).length>0);
-  const tabs=[['QB','⚡ QB'],['Passing','🎯 Targets'],['Rushing','💨 Rushing']];
-  if(hasSharp) tabs.push(['Advanced','📊 Advanced Stats']);
+  const tabs=[['Passing','Passing'],['Receiving','Receiving'],['Rushing','Rushing']];
+  if(hasSharp) tabs.push(['Advanced','Adv Metrics']);
   // "Roster Changes" appears when the currently-selected team has Spotrac data.
-  if(currentTeam && ADDITIONS && ADDITIONS[currentTeam]) tabs.push(['Additions','🔄 Roster Changes']);
-  tabs.push(['Rankings','🏆 Rankings']);
+  if(currentTeam && ADDITIONS && ADDITIONS[currentTeam]) tabs.push(['Additions','Roster']);
+  tabs.push(['Rankings','Rankings']);
   // Treat the league-wide advanced view as the same visual tab as the per-team one.
   const phaseForTab = (currentPhase==='AdvancedLeague') ? 'Advanced' : currentPhase;
   return tabs.map(([p,l])=>`<button class="phase-tab ${phaseForTab===p?'active':''}" onclick="setPhase('${p}')">${l}</button>`).join('');
 }
-function emptyHTML(){return`<div class="empty"><div class="empty-icon">🏈</div>
+function emptyHTML(){return`<div class="logo-icon-lg"><img src="images/app-icon.png" class="logo-icon-lg" alt="Centered Image"></div>
   <div class="empty-title">Select a team to begin</div>
   <div class="empty-body">Work through each team's QB output, receiver target &amp; TD share,
-  and RB rushing distribution. Click 🏆 Rankings any time to see fantasy scores.</div></div>`;}
+  and RB rushing distribution. Click Rankings any time to see fantasy scores.</div></div>`;}
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// QB Phase
+// Passing Phase
 // ─────────────────────────────────────────────────────────────────────────────
-function renderQB(team,state){
+function renderPassing(team,state){
   if(!state.qbs||!state.qbs.length){
     return `<div class="card"><div class="card-title">Passing Attack</div>
       <div class="alert alert-warn"><span class="alert-icon">⚠️</span>
@@ -1473,14 +1473,14 @@ function teamTargetPool(state){
   return Math.round(baseTargets);
 }
 
-function renderPassing(team,state){
+function renderReceiving(team,state){
   const totalTgts=teamTargetPool(state);
   const totalTDs=teamPassTDs(state);
   const subTabs=`<div class="sub-tabs">
-    <button class="sub-tab ${passingSubTab==='targets'?'active':''}" onclick="setPassSub('targets')">📊 Targets</button>
-    <button class="sub-tab ${passingSubTab==='rec'?'active':''}" onclick="setPassSub('rec')">🧤 Receptions</button>
-    <button class="sub-tab ${passingSubTab==='recyds'?'active':''}" onclick="setPassSub('recyds')">📏 Rec Yards</button>
-    <button class="sub-tab ${passingSubTab==='rec_tds'?'active':''}" onclick="setPassSub('rec_tds')">🎯 TD Share</button></div>`;
+    <button class="sub-tab ${passingSubTab==='targets'?'active':''}" onclick="setPassSub('targets')">Targets</button>
+    <button class="sub-tab ${passingSubTab==='rec'?'active':''}" onclick="setPassSub('rec')">Receptions</button>
+    <button class="sub-tab ${passingSubTab==='recyds'?'active':''}" onclick="setPassSub('recyds')">Receiving Yards</button>
+    <button class="sub-tab ${passingSubTab==='rec_tds'?'active':''}" onclick="setPassSub('rec_tds')">TD Share</button></div>`;
   const weekSlider=weekRangeSliderHTML(team,state);
   const body = passingSubTab==='targets' ? renderPassTargets(team,state,totalTgts,totalTDs,subTabs)
     : passingSubTab==='rec' ? renderPassDerived(team,state,subTabs,'rec')
@@ -1862,8 +1862,8 @@ function renderRushing(team,state){
   const baseAtt=getBase(team,'RB').reduce((s,p)=>s+p.rushing_attempts,0)||200;
   const baseYds=getBase(team,'RB').reduce((s,p)=>s+p.rushing_yards,0)||1600;
   const subTabs=`<div class="sub-tabs">
-    <button class="sub-tab ${rushingSubTab==='carries'?'active':''}" onclick="setRushSub('carries')">🏃 Carry Share</button>
-    <button class="sub-tab ${rushingSubTab==='rush_tds'?'active':''}" onclick="setRushSub('rush_tds')">🏆 Rush TD Share</button></div>`;
+    <button class="sub-tab ${rushingSubTab==='carries'?'active':''}" onclick="setRushSub('carries')">Carry Share</button>
+    <button class="sub-tab ${rushingSubTab==='rush_tds'?'active':''}" onclick="setRushSub('rush_tds')">Rush TD Share</button></div>`;
   const weekSlider=weekRangeSliderHTML(team,state);
   const body = rushingSubTab==='carries' ? renderRushCarries(team,state,baseAtt,baseYds,subTabs) : renderRushTDs(team,state,subTabs);
   return weekSlider + body;
@@ -2448,7 +2448,7 @@ function refreshQBStatSliders(state,qi){
 // Receivers/rushing depend on QB pass attempts (via teamTargetPool). Refresh whatever
 // passing/rushing view is currently shown so volume cascades from QB workload changes.
 function livePassDependents(state,team){
-  if(currentPhase!=='Passing') return;
+  if(currentPhase!=='Receiving') return;
   if(passingSubTab==='targets') livePassTargets(state,team);
   else liveTDRows('tdp','tdt',state.passing_shares||[],teamPassTDs(state),'tds_',true);
 }
@@ -5459,25 +5459,25 @@ function renderTeamAdditions(team){
       </tr></thead><tbody>${body}</tbody></table></div>`;
   };
   return `<div class="add-wrap">
-    <div class="add-note">🔄 <b>${teamDisplayName(team)}</b> ${PROJ_SEASON} roster changes — additions via free agency, the draft, and trades, plus notable departures. Sorted by contract/cap value. Pair this with the ${SHARP_SEASON} Advanced Stats to see how weaknesses were addressed — and where new holes may have opened.</div>
+    <div class="add-note"><b>${teamDisplayName(team)}</b> ${PROJ_SEASON} roster changes — additions via free agency, the draft, and trades, plus notable departures. Sorted by contract/cap value. Pair this with the ${SHARP_SEASON} Advanced Stats to see how weaknesses were addressed — and where new holes may have opened.</div>
 
     <div class="add-section">
-      <div class="add-section-head">💰 Free Agency ${count((a.free_agents||[]).length)}</div>
+      <div class="add-section-head">Free Agency ${count((a.free_agents||[]).length)}</div>
       ${signingTable(a.free_agents,'fa')}
     </div>
 
     <div class="add-section">
-      <div class="add-section-head">🎯 Draft ${count((a.draft||[]).length)}</div>
+      <div class="add-section-head">Draft ${count((a.draft||[]).length)}</div>
       ${signingTable(a.draft,'draft')}
     </div>
 
     <div class="add-section">
-      <div class="add-section-head">🔄 Trades ${count((a.trades||[]).length)}</div>
+      <div class="add-section-head">Trades ${count((a.trades||[]).length)}</div>
       ${tradeTable(a.trades)}
     </div>
 
     <div class="add-section add-losses-section">
-      <div class="add-section-head">📉 Notable Losses ${count((a.free_agents_lost||[]).length)}</div>
+      <div class="add-section-head">Notable Losses ${count((a.free_agents_lost||[]).length)}</div>
       <div class="add-losses-sub">Free agents who signed elsewhere this offseason.</div>
       ${lossTable(a.free_agents_lost)}
     </div>
@@ -5695,11 +5695,11 @@ function renderSharpLeague(){
   const srcLabel = `nflverse (computed)`;
   const headerBar=`
     <div class="team-header sr-league-header">
-      <div><div class="team-abbr">📊 Advanced Stats — League-Wide</div>
+      <div><div class="team-abbr">Adv Metrics — League-Wide</div>
         <div class="team-qb-name">${srcLabel} · <b>${SHARP_SEASON} season</b> · click any column to sort (best→worst)</div></div>
       <div class="team-nav">
         ${currentTeam?`<button class="btn btn-ghost" onclick="setPhase('Advanced')">← ${teamDisplayName(currentTeam)} card</button>`:''}
-        <button class="btn btn-ghost" onclick="setPhase('Rankings')">🏆 Rankings</button></div>
+        <button class="btn btn-ghost" onclick="setPhase('Rankings')">Rankings</button></div>
     </div>
     <div class="phase-tabs">${tabBar()}</div>`;
 
@@ -6067,9 +6067,9 @@ function renderRankings(){
     <div class="phase-tabs">${tabBar()}</div>
     <div class="rankings-scope-bar">
       ${teamScoped
-        ? `<span class="scope-title">🏆 ${currentTeam} Rankings</span><span class="scope-sub">this team only</span>
+        ? `<span class="scope-title">${currentTeam} Rankings</span><span class="scope-sub">this team only</span>
            <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showFullRankings()">View full league →</button>`
-        : `<span class="scope-title">🏆 Full League Rankings</span><span class="scope-sub">all ${all.length} players</span>`}
+        : `<span class="scope-title">Full League Rankings</span><span class="scope-sub">all ${all.length} players</span>`}
     </div>
     <div class="card" style="margin-bottom:12px">
       <div class="card-title" style="margin-bottom:10px">Scoring Settings

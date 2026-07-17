@@ -25,6 +25,9 @@ const SEED_SUMER_SEASONS = [];
 // KeepTradeCut dynasty player-page slugs, {nameKey:{slug,pos}} — baked in / loaded from seed.
 // Used to link a player card straight to their KTC dynasty page. Empty by default.
 const SEED_KTC = {};
+// FantasyPros dynasty trade values: {asof, source, players:{nameKey:{pos,team,v,sf?,tep?}},
+// picks:{season:[[label,v1qb,vSF],...]}}. Powers the League Analyzer. Empty by default.
+const SEED_DYNASTY_VALUES = {};
 // nflverse-computed advanced metrics (opt-in `build_seed.py --nflverse`): a parallel A/B source
 // shaped like Sharp (team tables) + Sumer (QB/RB player tables). Empty unless built with --nflverse.
 const SEED_NFLVERSE = {};

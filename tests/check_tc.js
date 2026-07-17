@@ -218,7 +218,7 @@ let projSeed = null;           // snapshot of the projection-season SEED (workin
 let importedSnapshot = null;   // deep copy of last-imported state (for 2-stage reset)
 let dirtySinceImport = false;  // have edits happened since import/last reset-to-import?
 let currentTeam = null;
-let currentPhase = 'QB';
+let currentPhase = 'Passing';
 let passingSubTab = 'targets';
 let rushingSubTab = 'carries';
 let pieChart = null;
@@ -627,10 +627,10 @@ function selectTeam(t){
   currentTeam=t;
   // Keep whatever phase the user was on (Targets stays Targets across teams). Only the
   // global Rankings view falls back to a per-team phase since it isn't team-scoped here.
-  if(currentPhase==='Rankings') currentPhase='Passing';
+  if(currentPhase==='Rankings') currentPhase='Receiving';
   ensureTeam(t);
   // make sure shares exist so the targets/rushing tab is populated as if previously opened
-  if(currentPhase==='Passing') initPassingShares(t);
+  if(currentPhase==='Receiving') initPassingShares(t);
   else if(currentPhase==='Rushing') initRushingShares(t);
   renderSidebar();renderContent();
 }
@@ -647,8 +647,8 @@ function renderContent(){
   const t=currentTeam,state=userProj[t];
   const tabs=tabBar();
   let body='';
-  if(currentPhase==='QB') body=renderQB(t,state);
-  else if(currentPhase==='Passing'){initPassingShares(t);body=renderPassing(t,state);}
+  if(currentPhase==='Passing') body=renderPassing(t,state);
+  else if(currentPhase==='Receiving'){initPassingShares(t);body=renderReceiving(t,state);}
   else if(currentPhase==='Rushing'){initRushingShares(t);body=renderRushing(t,state);}
   const prev=TEAMS[TEAMS.indexOf(t)-1],next=TEAMS[TEAMS.indexOf(t)+1];
   const isRef = activeSeason!=='proj';
@@ -675,25 +675,25 @@ function renderContent(){
     </div>
     ${seasonBanner}
     <div class="phase-tabs">${tabs}</div>${body}`;
-  if(currentPhase==='Passing') initPie(t,'pass');
+  if(currentPhase==='Receiving') initPie(t,'pass');
   else if(currentPhase==='Rushing') initPie(t,'rush');
   initSliders();
   updateUndoButton();
 }
 function tabBar(){
-  return [['QB','⚡ QB'],['Passing','🎯 Targets'],['Rushing','💨 Rushing'],['Rankings','🏆 Rankings']]
+  return [['Passing','Passing'],['Receiving','Receiving'],['Rushing','Rushing']]
     .map(([p,l])=>`<button class="phase-tab ${currentPhase===p?'active':''}" onclick="setPhase('${p}')">${l}</button>`).join('');
 }
-function emptyHTML(){return`<div class="empty"><div class="empty-icon">🏈</div>
+function emptyHTML(){return`<div class="logo-icon-lg"><img src="images/app-icon.png" class="logo-icon-lg" alt="Centered Image"></div>
   <div class="empty-title">Select a team to begin</div>
   <div class="empty-body">Work through each team's QB output, receiver target &amp; TD share,
-  and RB rushing distribution. Click 🏆 Rankings any time to see fantasy scores.</div></div>`;}
+  and RB rushing distribution. Click Rankings any time to see fantasy scores.</div></div>`;}
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// QB Phase
+// Passing Phase
 // ─────────────────────────────────────────────────────────────────────────────
-function renderQB(team,state){
+function renderPassing(team,state){
   if(!state.qbs||!state.qbs.length){
     return `<div class="card"><div class="card-title">Passing Attack</div>
       <div class="alert alert-warn"><span class="alert-icon">⚠️</span>
@@ -803,14 +803,14 @@ function teamTargetPool(state){
   return Math.round(baseTargets);
 }
 
-function renderPassing(team,state){
+function renderReceiving(team,state){
   const totalTgts=teamTargetPool(state);
   const totalTDs=teamPassTDs(state);
   const subTabs=`<div class="sub-tabs">
-    <button class="sub-tab ${passingSubTab==='targets'?'active':''}" onclick="setPassSub('targets')">📊 Targets</button>
-    <button class="sub-tab ${passingSubTab==='rec'?'active':''}" onclick="setPassSub('rec')">🧤 Receptions</button>
-    <button class="sub-tab ${passingSubTab==='recyds'?'active':''}" onclick="setPassSub('recyds')">📏 Rec Yards</button>
-    <button class="sub-tab ${passingSubTab==='rec_tds'?'active':''}" onclick="setPassSub('rec_tds')">🎯 TD Share</button></div>`;
+    <button class="sub-tab ${passingSubTab==='targets'?'active':''}" onclick="setPassSub('targets')">Targets</button>
+    <button class="sub-tab ${passingSubTab==='rec'?'active':''}" onclick="setPassSub('rec')">Receptions</button>
+    <button class="sub-tab ${passingSubTab==='recyds'?'active':''}" onclick="setPassSub('recyds')">Receiving Yards</button>
+    <button class="sub-tab ${passingSubTab==='rec_tds'?'active':''}" onclick="setPassSub('rec_tds')">TD Share</button></div>`;
   const weekSlider=weekRangeSliderHTML(team,state);
   const body = passingSubTab==='targets' ? renderPassTargets(team,state,totalTgts,totalTDs,subTabs)
     : passingSubTab==='rec' ? renderPassDerived(team,state,subTabs,'rec')
@@ -1145,8 +1145,8 @@ function renderRushing(team,state){
   const baseAtt=getBase(team,'RB').reduce((s,p)=>s+p.rushing_attempts,0)||200;
   const baseYds=getBase(team,'RB').reduce((s,p)=>s+p.rushing_yards,0)||1600;
   const subTabs=`<div class="sub-tabs">
-    <button class="sub-tab ${rushingSubTab==='carries'?'active':''}" onclick="setRushSub('carries')">🏃 Carry Share</button>
-    <button class="sub-tab ${rushingSubTab==='rush_tds'?'active':''}" onclick="setRushSub('rush_tds')">🏆 Rush TD Share</button></div>`;
+    <button class="sub-tab ${rushingSubTab==='carries'?'active':''}" onclick="setRushSub('carries')">Carry Share</button>
+    <button class="sub-tab ${rushingSubTab==='rush_tds'?'active':''}" onclick="setRushSub('rush_tds')">Rush TD Share</button></div>`;
   const weekSlider=weekRangeSliderHTML(team,state);
   const body = rushingSubTab==='carries' ? renderRushCarries(team,state,baseAtt,baseYds,subTabs) : renderRushTDs(team,state,subTabs);
   return weekSlider + body;
@@ -1730,7 +1730,7 @@ function refreshQBStatSliders(state,qi){
 // Receivers/rushing depend on QB pass attempts (via teamTargetPool). Refresh whatever
 // passing/rushing view is currently shown so volume cascades from QB workload changes.
 function livePassDependents(state,team){
-  if(currentPhase!=='Passing') return;
+  if(currentPhase!=='Receiving') return;
   if(passingSubTab==='targets') livePassTargets(state,team);
   else liveTDRows('tdp','tdt',state.passing_shares||[],teamPassTDs(state),'tds_',true);
 }
@@ -2027,9 +2027,9 @@ function renderRankings(){
     <div class="phase-tabs">${tabBar()}</div>
     <div class="rankings-scope-bar">
       ${teamScoped
-        ? `<span class="scope-title">🏆 ${currentTeam} Rankings</span><span class="scope-sub">this team only</span>
+        ? `<span class="scope-title">${currentTeam} Rankings</span><span class="scope-sub">this team only</span>
            <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showFullRankings()">View full league →</button>`
-        : `<span class="scope-title">🏆 Full League Rankings</span><span class="scope-sub">all ${all.length} players</span>`}
+        : `<span class="scope-title">Full League Rankings</span><span class="scope-sub">all ${all.length} players</span>`}
     </div>
     <div class="card" style="margin-bottom:12px">
       <div class="card-title" style="margin-bottom:10px">Scoring Settings

@@ -84,7 +84,7 @@ async function fetchEspnDepth(team){
   })();
   return espnDepthInFlight[team];
 }
-const DEPTH_UNIT_LABEL = {offense:'🏈 Offense', defense:'🛡️ Defense', special:'⭐ Special Teams'};
+const DEPTH_UNIT_LABEL = {offense:'Offense', defense:'Defense', special:'Special Teams'};
 function renderDepthChart(team){
   const rows = espnDepth[team];
   if(rows===undefined){ fetchEspnDepth(team);
