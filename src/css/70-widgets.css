@@ -450,3 +450,19 @@
 .la-traj.traj-1yr{background:rgba(251,191,36,.12);color:#fbbf24;border-color:rgba(251,191,36,.4);}
 .la-traj.traj-multi{background:rgba(255,107,107,.10);color:#ff6b6b;border-color:rgba(255,107,107,.35);}
 .la-traj.traj-hard{background:rgba(255,107,107,.16);color:#ff6b6b;border-color:rgba(255,107,107,.5);}
+
+/* ── Trade-calc rows: positional rank + age under the name ──────────────────*/
+.la-tc-nmwrap{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;line-height:1.15;}
+.la-tc-nmwrap .la-tc-nm{flex:none;}
+.la-tc-meta{font-size:9px;color:var(--muted);font-weight:600;letter-spacing:.02em;}
+.la-tc-age-edge{color:#fbbf24;}
+.la-tc-age-past{color:#ff6b6b;}
+
+/* ── Trade finder: lane tags + league-size context ─────────────────────────*/
+.la-fnd-lane{font-size:8px;font-weight:800;letter-spacing:.04em;padding:2px 5px;border-radius:4px;
+  flex:none;white-space:nowrap;border:1px solid var(--border);}
+.la-lane-big{background:rgba(255,107,107,.12);color:#ff8888;border-color:rgba(255,107,107,.35);}
+.la-lane-mid{background:rgba(61,155,255,.12);color:var(--accent);border-color:rgba(61,155,255,.35);}
+.la-lane-value{background:rgba(0,212,170,.12);color:#00d4aa;border-color:rgba(0,212,170,.35);}
+.la-lane-buy{background:rgba(226,192,141,.14);color:#e2c08d;border-color:rgba(226,192,141,.4);}
+.la-fnd-size{display:block;font-size:9px;color:var(--muted);font-weight:600;margin-top:2px;}

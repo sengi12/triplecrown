@@ -279,6 +279,7 @@ async function laTakeSnapshot(leagueId){
       window._laLinkedLeague = { id: leagueId, name: lg.name||'League' };
     }catch(e){}
     _laTierVals=null;   // format (SF/TEP) may have changed → rebuild the pick-tier table
+    _laPosRankCache=null;   // roster set changed → positional ranks are stale
     laState.step='view'; laState.busy=false;
     saveSession();
     toast(`Snapshot of ${leagueSnapshot.name} taken`,'ok');
@@ -637,6 +638,7 @@ function laAssetPools(s, rosterId){
   const players=t.players.map(p=>({
     key:'p|'+ecrNormName(p.name), type:'p', id:p.id, name:p.name, pos:p.pos, team:p.team,
     v:laDynVal(p.name,p.pos)||0,
+    age:laDynAge(p.name), posRank:laPosRankOf(s,p.name,p.pos),
   })).sort((a,b)=>b.v-a.v);
   const picks=t.picks.map(pk=>({
     key:`k|${pk.season}|${pk.round}|${pk.origRosterId}`, type:'k',
@@ -708,6 +710,12 @@ function laTcSuggestions(s, pools, give, vals, otherVals, side){
 // top assets at my weak position — 1-for-1 first, then my-two-for-their-one (consolidating UP
 // pays the stud premium honestly). Only proposals whose verdict is already fair (or one
 // suggested add away from fair) survive.
+const LA_LANE_LABEL={big:'BIG FISH', mid:'UPGRADE', value:'VALUE', buy:'BREAKOUT'};
+const LA_LANE_TIP={
+  big:'A top-tier player at your weak spot — the biggest single upgrade, but it costs real assets.',
+  mid:'A solid mid-priced starter — moves the needle without gutting another position.',
+  value:'A cheap contributor — low cost, low risk; useful depth in a deeper league.',
+  buy:'A young player entering their breakout window, priced before the leap.'};
 function laTradeFinder(s){
   const POS=['QB','RB','WR','TE'];
   const totals=s.teamList.map(t=>{
@@ -730,12 +738,53 @@ function laTradeFinder(s){
   const myGive = target
     ? myPool.players.filter(p=>p.pos!==target&&p.v>0).slice(0,6)
     : myPool.players.filter(p=>p.pos===strong.pos).slice(0,4);
+
+  // ── League size shapes the whole strategy ─────────────────────────────────
+  // In a shallow league (8-10 teams) the talent pool is concentrated, so the only upgrade
+  // that matters is a big fish — starters are already good league-wide. In a deep league
+  // (12-14+) the waiver/bench tier is thin, so a cheap ascending player is a real edge and
+  // a blockbuster that guts another position is often a net loss. `deep` tilts the mix toward
+  // cheaper, roster-friendly gets; `shallow` keeps the big-fish bias.
+  const nTeams=s.teamList.length;
+  const deep = nTeams>=12, shallow = nTeams<=10;
+
+  // What I'd give up hurts more if it drops me at a position where I'm already thin. Net
+  // roster impact = value gained at the weak spot MINUS a penalty for how much the pieces I
+  // send weaken their positions relative to the league. A fair-value blockbuster that leaves
+  // me WR-poor can score WORSE than a cheap add that costs me nothing I start.
+  const posDepth={};   // how many startable-ish bodies I have per position (for cost weighting)
+  POS.forEach(pos=>{ posDepth[pos]=myPool.players.filter(p=>p.pos===pos && p.v>0).length; });
+  const costPenalty=(giveArr)=>{
+    let pen=0;
+    giveArr.forEach(g=>{
+      if(g.type!=='p') return;                 // picks cost you nothing on the field
+      const depth=posDepth[g.pos]||0;
+      // giving from a thin position (≤2 bodies) hurts; from a stacked one barely stings
+      const scarcity = depth<=2 ? 1.0 : depth===3 ? 0.55 : 0.25;
+      pen += g.v * scarcity;
+    });
+    return pen;
+  };
+  // A proposal's worth to ME: value in at the weak spot, minus the scarcity-weighted cost of
+  // what leaves. Deep leagues weight the cost more (depth is precious); shallow leagues less.
+  const impact=(getArr,giveArr)=>{
+    const gained=getArr.reduce((a,g)=>a+(g.v||0),0);
+    const costW = deep ? 0.55 : shallow ? 0.30 : 0.42;
+    return gained - costW*costPenalty(giveArr);
+  };
+
   const proposals=[];
   totals.forEach(row=>{
     if(row===mine) return;
     if(!target && row.by[weak.pos]<=mine.by[weak.pos]) return;  // AUTO: they must be STRONGER where I'm weak
     const theirPool=laAssetPools(s,row.t.rosterId);
-    const gets=theirPool.players.filter(p=>p.pos===weak.pos&&p.v>0).slice(0,4);
+    // Their targets at the weak position, split into value tiers so the finder can't fixate
+    // only on the big fish: take the top few AND some mid/cheap ones. Deep leagues get more
+    // of the cheaper lane; shallow leagues lean big.
+    const atPos=theirPool.players.filter(p=>p.pos===weak.pos&&p.v>0).sort((a,b)=>b.v-a.v);
+    const bigN = shallow?4:deep?2:3, midN = shallow?1:deep?4:3;
+    const gets=[...atPos.slice(0,bigN), ...atPos.slice(bigN, bigN+midN)]
+      .filter((x,i,arr)=>arr.indexOf(x)===i);
     gets.forEach(get=>{
       myGive.forEach(g1=>{
         const v1=laTcVerdict([g1.v],[get.v]);
@@ -764,17 +813,33 @@ function laTradeFinder(s){
   const bw=LA_BREAKOUT_AGE[weak.pos];
   const buys=[];
   if(bw){
-    const cheapGive=[...myPool.players.filter(x=>x.pos!==weak.pos&&x.v>0),...myPool.picks.filter(x=>x.v>0)]
+    // Everything I could part with cheaply, in scale-space (values are chart×100). "Cheap
+    // breakout" targets are the low-to-mid of the position — priced BELOW the league median
+    // at the spot — who are still in their breakout age window.
+    const myAssets=[...myPool.players.filter(x=>x.pos!==weak.pos&&x.v>0),...myPool.picks.filter(x=>x.v>0)]
       .sort((a,b)=>a.v-b.v);
+    const medAtPos=(()=>{ const vs=[]; totals.forEach(r=>{ if(r===mine)return;
+      laAssetPools(s,r.t.rosterId).players.filter(p=>p.pos===weak.pos&&p.v>0).forEach(p=>vs.push(p.v)); });
+      vs.sort((a,b)=>a-b); return vs.length?vs[Math.floor(vs.length/2)]:0; })();
     totals.forEach(row=>{
       if(row===mine) return;
       laAssetPools(s,row.t.rosterId).players
-        .filter(c=>c.pos===weak.pos && c.v>=8 && c.v<=42)
+        .filter(c=>c.pos===weak.pos && c.v>0 && c.v<=Math.max(medAtPos, 1))   // below the positional median
         .filter(c=>{ const a=laDynAge(c.name); return a!=null && a>=bw[0] && a<=bw[1]; })
         .slice(0,3)
         .forEach(c=>{
-          const g=cheapGive.find(g1=>laTcVerdict([g1.v],[c.v]).fair);
-          if(g) buys.push({give:[g],get:[c],b:row.t,v:laTcVerdict([g.v],[c.v]),buy:true});
+          // Try a single cheap asset first; if my smallest still overpays, look for a fair
+          // combo of my two cheapest — a young buy shouldn't require shipping a real player.
+          let g=myAssets.find(g1=>laTcVerdict([g1.v],[c.v]).fair);
+          if(g){ buys.push({give:[g],get:[c],b:row.t,v:laTcVerdict([g.v],[c.v]),buy:true}); return; }
+          for(let i=0;i<Math.min(4,myAssets.length);i++) for(let j=i+1;j<Math.min(6,myAssets.length);j++){
+            const vv=laTcVerdict([myAssets[i].v,myAssets[j].v],[c.v]);
+            if(vv.fair){ buys.push({give:[myAssets[i],myAssets[j]],get:[c],b:row.t,v:vv,buy:true}); return; }
+          }
+          // Still can't reach fair with my cheap stuff? Offer my single closest asset anyway —
+          // a near-miss breakout buy is worth showing so the reader can adjust it themselves.
+          const near=myAssets.map(a=>({a,vv:laTcVerdict([a.v],[c.v])})).sort((x,y)=>Math.abs(x.vv.diff)-Math.abs(y.vv.diff))[0];
+          if(near && Math.abs(near.vv.diff) <= c.v*0.35) buys.push({give:[near.a],get:[c],b:row.t,v:near.vv,buy:true});
         });
     });
   }
@@ -783,19 +848,32 @@ function laTradeFinder(s){
   const uniq=proposals.filter(p=>{
     const k=p.b.rosterId+'|'+p.give.map(x=>x.key).sort().join(',')+'>'+p.get.map(x=>x.key).sort().join(',');
     if(seen.has(k)) return false; seen.add(k); return true;
-  }).sort((a,b)=>(b.get[0].v-a.get[0].v)||(Math.abs(a.v.diff)-Math.abs(b.v.diff)));
+  }).map(p=>({...p, impact:impact(p.get, p.give)}))
+    // Best NET improvement first — a cheap add that costs nothing you start can outrank a
+    // blockbuster that guts another position. Ties broken by fairness.
+    .sort((a,b)=>(b.impact-a.impact)||(Math.abs(a.v.diff)-Math.abs(b.v.diff)));
   // 🔄 variations: instead of always the same top-6, deal a seeded shuffle biased toward the
   // front of the sorted list and toward partner diversity — every press of refresh reseeds.
   let seed=(laState.fndSeed*2654435761)>>>0 || 1;
   const rnd=()=>{ seed^=seed<<13; seed>>>=0; seed^=seed>>17; seed^=seed<<5; seed>>>=0; return seed/4294967296; };
   // Breakout buys ride a separate lane so big swings can't crowd them out entirely:
   // up to 2 guaranteed seats (seed-rotated), the rest sampled from everything.
-  const buyPool=uniq.filter(x=>x.buy), mainPool=uniq.filter(x=>!x.buy);
+  // Classify every proposal by the COST of the headline get, so the six shown always span
+  // price points instead of all being blockbusters: a "big fish" (top-tier get), a "value"
+  // add (mid), and breakout buys. The reader sees a menu, not six versions of the same swing.
+  const laneOf=(p)=> p.buy ? 'buy' : (p.get[0].v>=6000 ? 'big' : p.get[0].v>=3000 ? 'mid' : 'value');
+  uniq.forEach(p=>{ p.lane=laneOf(p); });
+  const buyPool=uniq.filter(x=>x.lane==='buy'), mainPool=uniq.filter(x=>x.lane!=='buy');
   const pool=[...mainPool];
-  const picksOut=[]; const usedPartner={};
-  for(let k=0;k<Math.min(2,buyPool.length);k++){
+  const picksOut=[]; const usedPartner={}; const usedLane={};
+  // Guarantee spread: up to 2 breakout buys and at least one non-"big" (value/mid) seat, so a
+  // stack of fair blockbusters can't monopolise the list — the exact thing you flagged.
+  for(let k=0;k<Math.min(deep?2:1,buyPool.length);k++){
     picksOut.push(buyPool[(laState.fndSeed+k)%buyPool.length]);
   }
+  const cheap=mainPool.filter(p=>p.lane!=='big');
+  if(cheap.length){ const c=cheap[laState.fndSeed%cheap.length];
+    if(!picksOut.includes(c)){ picksOut.push(c); const i=pool.indexOf(c); if(i>=0) pool.splice(i,1); } }
   while(picksOut.length<6 && pool.length){
     // exponential bias to the front keeps quality high while still rotating variety
     let i=Math.min(pool.length-1, Math.floor(-Math.log(1-rnd())*2.2));
@@ -804,11 +882,50 @@ function laTradeFinder(s){
     while(guard++<8 && (usedPartner[pool[i].b.rosterId]||0)>=2 && pool.some(p=>(usedPartner[p.b.rosterId]||0)<2)){
       i=Math.min(pool.length-1, Math.floor(-Math.log(1-rnd())*2.2));
     }
+    // Soft cap on blockbusters: once 3 "big" gets are shown, prefer variety if any remains.
+    let g2=0;
+    while(g2++<8 && pool[i] && pool[i].lane==='big' && (usedLane['big']||0)>=3
+          && pool.some(p=>p.lane!=='big')){
+      i=Math.min(pool.length-1, Math.floor(-Math.log(1-rnd())*2.2));
+    }
     const pr=pool.splice(i,1)[0];
     usedPartner[pr.b.rosterId]=(usedPartner[pr.b.rosterId]||0)+1;
+    usedLane[pr.lane]=(usedLane[pr.lane]||0)+1;
     picksOut.push(pr);
   }
-  return {weak,strong,proposals:picksOut, total:uniq.length, targeted:!!target, myRosterId:mine.t.rosterId};
+  return {weak,strong,proposals:picksOut, total:uniq.length, targeted:!!target,
+          deep, shallow, nTeams, myRosterId:mine.t.rosterId};
+}
+
+// League-wide positional value ranks, computed live from the snapshot: every rostered player
+// at a position, sorted by dynasty value, so "WR14" means 14th-most-valuable WR IN THIS LEAGUE.
+// Cached per snapshot (invalidated on re-sync alongside the pick-tier table).
+let _laPosRankCache = null;
+function laPosRanks(s){
+  if(_laPosRankCache) return _laPosRankCache;
+  const byPos={};
+  s.teamList.forEach(t=>t.players.forEach(p=>{
+    const v=laDynVal(p.name,p.pos)||0;
+    (byPos[p.pos]=byPos[p.pos]||[]).push({key:ecrNormName(p.name), v});
+  }));
+  const rank={};
+  Object.keys(byPos).forEach(pos=>{
+    byPos[pos].sort((a,b)=>b.v-a.v).forEach((x,i)=>{ rank[pos+'|'+x.key]=i+1; });
+  });
+  _laPosRankCache={rank, counts:Object.fromEntries(Object.keys(byPos).map(k=>[k,byPos[k].length]))};
+  return _laPosRankCache;
+}
+// Age tint for the trade rows: amber within a year of the positional cliff, red past it.
+// Works straight off the age we already have (LA_AGE_CLIFF is the same table laCliffInfo uses).
+function laAgeCliffClass(pos,age){
+  const cliff=LA_AGE_CLIFF[pos];
+  if(cliff==null || age==null) return 'la-tc-age';
+  if(age>=cliff) return 'la-tc-age la-tc-age-past';
+  if(age>=cliff-1) return 'la-tc-age la-tc-age-edge';
+  return 'la-tc-age';
+}
+function laPosRankOf(s, name, pos){
+  const r=laPosRanks(s); return r.rank[pos+'|'+ecrNormName(name)] || null;
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
@@ -819,7 +936,8 @@ function laAssetRow(x, side, inTrade){
   return `<div class="la-tc-row">
     <span class="rt-slot ${slotClass(x.pos)}">${x.pos}</span>
     <span class="clickable-player" onclick="${pcardOnclick(x.id||x.name,x.pos,x.team||'')}">${imgTag(hsURL({player_id:x.id,name:x.name,pos:x.pos}),'player-headshot')}</span>
-    <span class="share-name clickable-player la-tc-nm" title="${x.name}" onclick="${pcardOnclick(x.id||x.name,x.pos,x.team||'')}">${x.name}</span>
+    <span class="la-tc-nmwrap"><span class="share-name clickable-player la-tc-nm" title="${x.name}" onclick="${pcardOnclick(x.id||x.name,x.pos,x.team||'')}">${x.name}</span>
+      <span class="la-tc-meta">${x.posRank?`${x.pos}${x.posRank}`:''}${x.age!=null?`${x.posRank?' \u00b7 ':''}<span class="${laAgeCliffClass(x.pos,x.age)}">${x.age.toFixed(0)}yo</span>`:''}</span></span>
     <span class="la-pval">${x.v||'\u2013'}</span>${btn}</div>`;
 }
 function laTradeView(s){
@@ -861,6 +979,7 @@ function laTradeView(s){
   const fnd=laTradeFinder(s);
   const fndHtml = fnd.proposals.length ? fnd.proposals.map(p=>`
     <div class="la-fnd-row">
+      <span class="la-fnd-lane la-lane-${p.lane}" title="${LA_LANE_TIP[p.lane]}">${LA_LANE_LABEL[p.lane]}</span>
       <span class="la-fnd-deal">${p.buy?'<span class="la-fnd-gem" title="Breakout-window buy: young player (2nd-yr TE/QB, 3rd-yr WR window) priced before the leap \u2014 small cost, big compounding upside">\ud83d\udc8e</span> ':''}Send <b>${p.give.map(x=>x.type==='k'?x.label:x.name).join(' + ')}</b>
         \u2192 <b>${p.b.teamName}</b> for <b>${p.get.map(x=>x.type==='k'?x.label:x.name).join(' + ')}</b></span>
       <span class="la-fnd-v ${p.v.fair?'ok':''}">${p.v.fair?'fair':(p.v.diff>0?'-':'+')+Math.abs(p.v.diff).toFixed(0)}</span>
@@ -891,7 +1010,8 @@ function laTradeView(s){
     </div>
     <div class="la-fnd">
       <div class="la-fnd-title">\ud83d\udd0e Suggested trades for you
-        <span class="la-fnd-sub">${fnd.targeted?`targeting <b>${fnd.weak.pos}</b> (you rank #${fnd.weak.rank})`:`weakest: <b>${fnd.weak.pos}</b> (#${fnd.weak.rank} in league)`} \u00b7 paying from: <b>${fnd.targeted?'any position':fnd.strong.pos+' (#'+fnd.strong.rank+')'}</b>${fnd.total?` \u00b7 ${fnd.total} fair deals found`:''}</span>
+        <span class="la-fnd-sub">${fnd.targeted?`targeting <b>${fnd.weak.pos}</b> (you rank #${fnd.weak.rank})`:`weakest: <b>${fnd.weak.pos}</b> (#${fnd.weak.rank} in league)`} \u00b7 paying from: <b>${fnd.targeted?'any position':fnd.strong.pos+' (#'+fnd.strong.rank+')'}</b>${fnd.total?` \u00b7 ${fnd.total} fair deals`:''}
+          <span class="la-fnd-size">${fnd.nTeams}-team \u00b7 ${fnd.deep?'deep league \u2014 favouring cheaper, roster-friendly adds':fnd.shallow?'shallow league \u2014 big fish matter most':'balanced mix'}</span></span>
         <span class="la-fnd-chips">${['AUTO','QB','RB','WR','TE'].map(x=>`<button class="format-btn ${laState.fndPos===x?'active':''}" onclick="laState.fndPos='${x}';renderLeagueAnalyzer()" title="${x==='AUTO'?'Target my weakest position automatically':'Hunt deals at '+x}">${x}</button>`).join('')}</span>
         <button class="btn btn-sm btn-ghost la-fnd-refresh" onclick="laState.fndSeed++;renderLeagueAnalyzer()" title="Deal me different variations">\ud83d\udd04 refresh</button></div>
       ${fndHtml}
