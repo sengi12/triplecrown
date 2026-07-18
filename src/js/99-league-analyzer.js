@@ -35,6 +35,23 @@ let laState = { step: leagueSnapshot? 'view':'start', busy:false, error:null,
                 cmpStarters:false, // Compare: rank on starting lineups only (mirrors My Team)
                 cmpSort:{col:'total',dir:-1} };  // Compare column sort (click a header)
 
+// Called whenever DYNASTY_VALUES is (re)assigned by an async seed load. The analyzer's value
+// caches are built lazily and, on a cold boot or resume, the League view can render once
+// BEFORE the dynasty-values JSON has finished fetching — showing every value/rank/persona as
+// 0. When the values finally land we must drop the stale caches and repaint the view, or it
+// stays stuck at 0 until the user manually re-syncs. This is the hook that closes that gap.
+function laOnValuesLoaded(){
+  _laTierVals = null;
+  _laPosRankCache = null;
+  try{
+    if(typeof currentPhase!=='undefined' && currentPhase==='League'
+       && typeof leagueSnapshot!=='undefined' && leagueSnapshot
+       && typeof renderLeagueAnalyzer==='function'){
+      renderLeagueAnalyzer();
+    }
+  }catch(e){}
+}
+
 // ── Value lookups ────────────────────────────────────────────────────────────
 // Every dynasty number in this file is (chart points x LA_VAL_SCALE). Keep it that way:
 // players, superflex QBs, TEP tight ends and PICKS must share one scale or the trade math,

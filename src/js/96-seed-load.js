@@ -26,7 +26,8 @@ function handleSeedLoad(e){
       if(j.sharp_season) SHARP_SEASON=j.sharp_season;   // season the Sharp stats describe
       if(j.sumer){ SUMER=j.sumer; SUMER_SEASONS=j.sumer_seasons||Object.keys(j.sumer); }   // SumerSports advanced per-player stats
       if(j.ktc) KTC=j.ktc;
-      if(j.dynasty_values) DYNASTY_VALUES=j.dynasty_values;   // FP dynasty trade values (League Analyzer)   // KeepTradeCut dynasty player-page slugs (player-card links)
+      if(j.dynasty_values){ DYNASTY_VALUES=j.dynasty_values;   // FP dynasty trade values (League Analyzer)
+        if(typeof laOnValuesLoaded==="function") laOnValuesLoaded(); }
       if(j.nflverse){ NFLVERSE=j.nflverse; if(typeof resetNflverseLazy==='function') resetNflverseLazy(); }   // nflverse advanced metrics (opt-in A/B source; heavy sections lazy-load)
       if(hasSeed){
         SEED=j.seed; rosterMergedTeams.clear();
