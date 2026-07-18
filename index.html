@@ -8398,6 +8398,69 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
   });
 })();
 
+// ── Resume / back-forward-cache recovery ─────────────────────────────────────
+// Mobile browsers freeze a backgrounded tab in the bfcache and later restore the frozen DOM
+// WITHOUT re-running any scripts. If the page was mid-load (or the OS discarded the renderer
+// and repainted a stale frame) when you switched away, coming back showed a blank/half-loaded
+// app until a manual refresh forced a fresh execution. boot() is a run-once IIFE, so nothing
+// re-rendered on its own. These handlers fix that:
+//   • pageshow{persisted:true} — a genuine bfcache restore. The JS heap is intact, so we just
+//     re-render the current view rather than reload (instant, keeps your working edits).
+//   • visibilitychange — when the tab becomes visible again, verify the content actually
+//     rendered; if the seed is in memory but the DOM is empty (a discarded/stale paint),
+//     re-render. Only if the seed itself is gone (heap was wiped) do we hard-reload.
+(function installResumeRecovery(){
+  if(typeof window==='undefined' || !window.addEventListener) return;
+
+  // Is the app's data actually in memory right now?
+  function seedInMemory(){
+    try{ return typeof SEED!=='undefined' && SEED && Object.keys(SEED).some(t=>SEED[t] &&
+      (SEED[t].QB.length||SEED[t].RB.length||SEED[t].WR.length||SEED[t].TE.length)); }
+    catch(e){ return false; }
+  }
+  // Did the current view actually paint something?
+  function contentRendered(){
+    const c=document.getElementById('content');
+    return !!c && c.innerHTML && c.innerHTML.trim().length>40;
+  }
+  // Re-render whatever view we're on, without touching data or re-fetching.
+  function rerender(){
+    try{
+      if(typeof renderSeasonTabs==='function') renderSeasonTabs();
+      if(typeof renderSidebar==='function') renderSidebar();
+      if(typeof renderContent==='function') renderContent();
+      else if(typeof emptyHTML==='function'){ const c=document.getElementById('content'); if(c) c.innerHTML=emptyHTML(); }
+      if(typeof syncAppChrome==='function') syncAppChrome();
+    }catch(e){ /* if a re-render throws, the reload path below is the safety net */ }
+  }
+
+  let _recoverAt=0;
+  function recover(reason){
+    // Debounce duplicate events (some browsers emit pageshow AND visibilitychange together) —
+    // but NEVER swallow a recovery when the view is actually broken. A blank content div must
+    // always be repaired, even if we just ran; only skip the redundant re-render of a view
+    // that's already fine.
+    const now=Date.now();
+    const broken=!contentRendered();
+    if(!broken && now-_recoverAt < 1200) return;
+    _recoverAt=now;
+    if(seedInMemory()){
+      // Heap survived — cheapest correct fix is to re-render the frozen/blank view.
+      if(broken || reason==='pageshow') rerender();
+    } else if(_persistReady){
+      // The renderer was discarded and the heap wiped, but we HAD booted once. A reload will
+      // re-run boot() and restore the session from localStorage. This is the rare hard case.
+      location.reload();
+    }
+    // If we never finished booting (!_persistReady, no seed), boot() is still in flight — leave it alone.
+  }
+
+  window.addEventListener('pageshow', e=>{ if(e.persisted) recover('pageshow'); });
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState==='visible') recover('visible');
+  });
+})();
+
 // Attempt to fetch triplecrown_seed.json next to the page. Returns true if it loaded anything
 // useful (at minimum ECR). Never throws — a file:// open or missing file just returns false.
 async function tryAutoLoadSeed(){
