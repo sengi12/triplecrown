@@ -406,6 +406,23 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
     if(seedInMemory()){
       // Heap survived — cheapest correct fix is to re-render the frozen/blank view.
       if(broken || reason==='pageshow') rerender();
+      // The dynasty-value table (DYNASTY_VALUES) is a SEPARATE global from SEED and may have
+      // been dropped/emptied while SEED survived, which would show the analyzer with every
+      // value, rank and persona at 0. If we're in the League view and the values look empty,
+      // pull the seed again and re-render once it lands.
+      try{
+        if(typeof currentPhase!=='undefined' && currentPhase==='League'){
+          const valsEmpty = !(typeof DYNASTY_VALUES!=='undefined' && DYNASTY_VALUES &&
+                              DYNASTY_VALUES.players && Object.keys(DYNASTY_VALUES.players).length);
+          if(valsEmpty && typeof tryAutoLoadSeed==='function'){
+            tryAutoLoadSeed().then(()=>{
+              if(typeof _laTierVals!=='undefined') _laTierVals=null;         // rebuild against fresh values
+              if(typeof _laPosRankCache!=='undefined') _laPosRankCache=null;
+              rerender();
+            }).catch(()=>{});
+          }
+        }
+      }catch(e){}
     } else if(_persistReady){
       // The renderer was discarded and the heap wiped, but we HAD booted once. A reload will
       // re-run boot() and restore the session from localStorage. This is the rare hard case.

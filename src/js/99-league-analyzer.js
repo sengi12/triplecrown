@@ -94,10 +94,16 @@ function laTierValueTable(){
     if(v==null||v<=0) continue;
     (buckets[t]=buckets[t]||[]).push(v);
   }
-  _laTierVals=Object.keys(buckets).map(t=>{
+  const table=Object.keys(buckets).map(t=>{
     const a=buckets[t].sort((x,y)=>x-y);
     return {tier:+t, med:a[Math.floor(a.length/2)]};
   }).sort((a,b)=>a.tier-b.tier);
+  // Do NOT cache an empty result: on a resume the analyzer can render before the async seed
+  // reload has repopulated DYNASTY_VALUES. Caching [] here would poison every value/rank/
+  // persona to 0 permanently (they only recompute on re-sync). Returning without caching
+  // means the next render — after values land — builds the real table.
+  if(!table.length) return table;
+  _laTierVals=table;
   return _laTierVals;
 }
 // Tier multiplier appropriate to a raw asset value (used for picks).
@@ -912,7 +918,10 @@ function laPosRanks(s){
   Object.keys(byPos).forEach(pos=>{
     byPos[pos].sort((a,b)=>b.v-a.v).forEach((x,i)=>{ rank[pos+'|'+x.key]=i+1; });
   });
-  _laPosRankCache={rank, counts:Object.fromEntries(Object.keys(byPos).map(k=>[k,byPos[k].length]))};
+  const built={rank, counts:Object.fromEntries(Object.keys(byPos).map(k=>[k,byPos[k].length]))};
+  // Don't cache an all-zero table (values not loaded yet) — see laTierValueTable.
+  if(!Object.keys(rank).length) return built;
+  _laPosRankCache=built;
   return _laPosRankCache;
 }
 // Age tint for the trade rows: amber within a year of the positional cliff, red past it.
