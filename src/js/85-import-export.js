@@ -239,21 +239,55 @@ function exportCSV(){
 // ─────────────────────────────────────────────────────────────────────────────
 // Download format menu (one ⬇ Download button → choose JSON or CSV)
 // ─────────────────────────────────────────────────────────────────────────────
-function toggleDownloadMenu(e){
+// ── App menu (☰) ────────────────────────────────────────────────────────────
+// Replaces the old header button row. Same open/close contract as the download menu it
+// supersedes: stop the opening click, then close on the next outside click (a menu-item
+// click bubbles here too, so choosing an action closes the menu after it fires).
+function toggleAppMenu(e){
   if(e) e.stopPropagation();
-  const m=document.getElementById('downloadMenu'); if(!m) return;
+  const m=document.getElementById('appMenu'); if(!m) return;
+  const btn=document.getElementById('appMenuBtn');
   if(m.hasAttribute('hidden')){
     m.removeAttribute('hidden');
-    // Close on the next outside click (this handler runs on bubble, so the opening click
-    // — which we stopped above — won't immediately re-close it). A menu-item click bubbles
-    // here too, so picking a format closes the menu after the export fires.
-    setTimeout(()=>document.addEventListener('click', closeDownloadMenu, {once:true}), 0);
+    if(btn){ btn.classList.add('open'); btn.setAttribute('aria-expanded','true'); }
+    setTimeout(()=>document.addEventListener('click', closeAppMenu, {once:true}), 0);
   } else {
-    closeDownloadMenu();
+    closeAppMenu();
   }
 }
-function closeDownloadMenu(){
-  const m=document.getElementById('downloadMenu'); if(m) m.setAttribute('hidden','');
+function closeAppMenu(){
+  const m=document.getElementById('appMenu'); if(m) m.setAttribute('hidden','');
+  const btn=document.getElementById('appMenuBtn');
+  if(btn){ btn.classList.remove('open'); btn.setAttribute('aria-expanded','false'); }
+}
+// The app has two top-level VIEWS: Projections (the builder — season tabs, team sidebar) and
+// the League Analyzer (snapshot-driven, season-agnostic). This returns to the former.
+function showProjectionsView(){
+  if(currentPhase==='League') currentPhase = currentTeam ? 'Passing' : 'Rankings';
+  renderContent();
+  syncAppChrome();
+}
+// Show/hide chrome that only belongs to one view. The season tabs do nothing in the League
+// Analyzer (a snapshot isn't a season), so they'd just be dead controls taking a row of
+// screen — hide them there. Also keeps the menu's view items in sync.
+function syncAppChrome(){
+  const inLeague = (typeof currentPhase!=='undefined' && currentPhase==='League');
+  // Season tabs AND the NFL team sidebar are both projection-builder chrome: a snapshot
+  // isn't a season, and picking the Lions does nothing to your dynasty league. Hiding both
+  // in the analyzer removes two dead controls and ~75px of vertical space on a phone.
+  const bar=document.getElementById('seasonBar');
+  if(bar) bar.classList.toggle('hidden-view', inLeague);
+  const side=document.getElementById('sidebar');
+  if(side) side.classList.toggle('hidden-view', inLeague);
+  const mp=document.getElementById('menuProjView'), ml=document.getElementById('menuLeagueView');
+  if(mp) mp.classList.toggle('active', !inLeague);
+  if(ml) ml.classList.toggle('active', inLeague);
+  // League actions only exist once there's a snapshot to act on.
+  const hasSnap = (typeof leagueSnapshot!=='undefined' && !!leagueSnapshot);
+  document.querySelectorAll('.la-menu-only').forEach(el=>{
+    if(hasSnap) el.removeAttribute('hidden'); else el.setAttribute('hidden','');
+  });
+  if(typeof refreshLeagueSyncBtn==='function') refreshLeagueSyncBtn();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

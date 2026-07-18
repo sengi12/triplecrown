@@ -150,13 +150,8 @@
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
 
 /* ── League Analyzer ────────────────────────────────────────────────────────
-   Header button is solid accent-blue (the app's main theme color) so the league entry point
-   reads as a primary action from anywhere in the app. Once synced it shows the league name. */
-.league-sync-btn{background:var(--accent);color:#fff;border:none;border-radius:8px;
-  font-size:11.5px;font-weight:800;padding:6px 12px;cursor:pointer;white-space:nowrap;
-  letter-spacing:.01em;}
-.league-sync-btn:hover{background:var(--accent2);}
-.league-sync-btn.synced{background:transparent;color:var(--accent);border:1px solid var(--accent);}
+   (The old .league-sync-btn header button is gone — the League entry point and its
+   sync actions live in the ☰ menu now, so its styles were dead weight.) */
 .la-setup{max-width:520px;margin:24px auto;padding:20px;}
 .la-setup-title{font-size:15px;font-weight:900;margin-bottom:6px;}
 .la-setup-body{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:14px;}
@@ -229,11 +224,14 @@
 /* ── League Analyzer: Phase 3 (Trade Calculator + Finder) ───────────────────*/
 /* .team-logo-sm{width:20px;height:20px;object-fit:contain;flex-shrink:0;} */
 .la-btn-av{width:20px;height:20px;object-fit:contain;border-radius:5px;overflow:hidden;}
-.la-lg-av{width:100px;height:100px;object-fit:contain;border-radius:20px;overflow:hidden;}
-.la-tm-av{width:100px;height:100px;object-fit:contain;border-radius:20px;overflow:hidden;}
+/* League + team icons. These were 100px, which on a phone is a quarter of the screen — the
+   title then wrapped around them. Sized to the type they sit beside, and their containers
+   are flex rows (below) so the text aligns instead of flowing under the image. */
+.la-lg-av{width:40px;height:40px;object-fit:contain;border-radius:9px;overflow:hidden;flex:none;}
+.la-tm-av{width:56px;height:56px;object-fit:contain;border-radius:12px;overflow:hidden;flex:none;}
 .la-tm-av-sm{width:20px;height:20px;object-fit:contain;border-radius:5px;overflow:hidden;}
 .la-tc-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-@media (max-width:760px){.la-tc-grid{grid-template-columns:1fr;}}
+/* (trade-grid stacking lives in the mobile block at the bottom of this file) */
 .la-tc-side{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;}
 .la-tc-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
 .la-tc-sel{background:var(--surface2);border:1px solid var(--border);color:var(--text);
@@ -330,7 +328,7 @@
 .la-chk-off{opacity:.45;}
 /* trade calc: verdict column between the sides */
 .la-tc-grid{grid-template-columns:1fr 250px 1fr;}
-@media (max-width:900px){.la-tc-grid{grid-template-columns:1fr;}}
+
 .la-tc-mid{display:flex;flex-direction:column;gap:9px;align-items:stretch;background:var(--surface);
   border:1px solid var(--border);border-radius:10px;padding:12px;align-self:start;position:sticky;top:8px;}
 .la-tc-mid .la-vd-txt{text-align:center;white-space:normal;}
@@ -351,3 +349,104 @@
 .la-cliff-hot{color:#fbbf24;}
 .la-fnd-chips{display:inline-flex;gap:4px;margin-left:10px;}
 .la-fnd-gem{cursor:help;}
+
+/* ── League Analyzer: team switcher ─────────────────────────────────────────*/
+.la-switch{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+.la-switch-sel{max-width:260px;font-size:13px;}
+.la-clickteam{cursor:pointer;}
+.la-clickteam:hover{color:var(--accent);}
+.la-pw-team.la-clickteam:hover,.la-cmp-team.la-clickteam:hover{text-decoration:underline;}
+
+/* ── League Analyzer: mobile ────────────────────────────────────────────────
+   The analyzer is dense by nature (tables, radars, pools). On a phone we: stack every grid,
+   let the tab bar scroll horizontally, shrink the chrome, and turn the trade calculator into
+   a single readable column with the verdict pinned at the top instead of the middle. */
+@media (max-width:760px){
+  /* header: title + controls stack instead of fighting for one row */
+  .la-hdr{font-size:18px;gap:8px;}
+  .la-lg-av{width:32px;height:32px;border-radius:7px;}
+  .la-tm-av{width:42px;height:42px;border-radius:9px;}
+  .la-my-sum{padding:9px 10px;gap:9px;}
+  .la-my-sum-head{font-size:13px;}
+  .la-grid{grid-template-columns:1fr;gap:10px;}
+  .la-my-grid{grid-template-columns:1fr;gap:10px;}
+  .la-my-card{padding:10px;}
+  .la-setup{margin:12px auto;padding:14px;}
+  .la-row{flex-direction:column;}
+  .la-row input,.la-row .btn{width:100%;}
+  /* tab bar scrolls rather than wrapping into a second row */
+  .phase-tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+  .phase-tabs::-webkit-scrollbar{display:none;}
+  .phase-tab{white-space:nowrap;flex:none;}
+  /* controls: let lens buttons + checkboxes wrap cleanly, bigger tap targets */
+  .la-lens{gap:5px;}
+  .la-lens .format-btn{padding:5px 9px;}
+  .la-chk{padding:3px 0;}
+  .la-switch-sel{max-width:100%;flex:1;}
+  /* compare table: freeze the team column so the numbers stay attributable while scrolling */
+  .la-cmp{font-size:11px;}
+  .la-cmp th,.la-cmp td{padding:5px 6px;}
+  .la-cmp th.la-cmp-team,.la-cmp td.la-cmp-team{position:sticky;left:0;z-index:2;
+    background:var(--surface);max-width:118px;box-shadow:1px 0 0 var(--border);}
+  .la-cmp tr.mine td.la-cmp-team{background:#16283c;}
+  .la-cmp-own{display:none;}
+  .la-rk{font-size:8px;}
+  /* my-team charts */
+  .la-lu{height:150px;gap:5px;}
+  .la-lu-col{min-width:40px;}
+  .la-lu-hs{width:24px;height:24px;}
+  .la-radar{max-width:200px;}
+  .la-pw-team{max-width:none;}
+  .la-pw-score{width:38%;}
+  /* trade calculator: one column, verdict FIRST (order:-1) so it's always in view */
+  .la-tc-grid{grid-template-columns:1fr;gap:10px;}
+  .la-tc-mid{position:static;order:-1;}
+  .la-tc-pool{max-height:220px;}
+  .la-tc-sel{max-width:100%;flex:1;}
+  .la-tc-head{gap:6px;}
+  /* finder rows stack: deal text over the verdict+load row */
+  .la-fnd{padding:10px;}
+  .la-fnd-row{flex-wrap:wrap;gap:6px;}
+  .la-fnd-deal{flex-basis:100%;}
+  .la-fnd-chips{margin-left:0;flex-wrap:wrap;}
+  .la-fnd-title{gap:6px;}
+  .la-fnd-sub{margin-left:0;flex-basis:100%;}
+  .la-fnd-refresh{margin-left:auto;}
+  /* best available */
+  .la-ba-row{gap:6px;padding:4px 8px;}
+  .la-ba-team{width:26px;}
+  .la-ba-val,.la-ba-fpts{width:38px;}
+  .la-note{font-size:9.5px;}
+}
+@media (max-width:420px){
+  .la-cmp td.la-cmp-team,.la-cmp th.la-cmp-team{max-width:92px;}
+  .la-lu{height:130px;}
+  .la-lu-col{min-width:34px;}
+  .la-lu-hs{width:20px;height:20px;}
+}
+
+
+/* ── League header: icon beside the name, never behind it ───────────────────*/
+.la-hdr{display:flex;align-items:center;gap:10px;min-width:0;}
+.la-hdr-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.15;}
+.la-av-blank{display:inline-flex;align-items:center;justify-content:center;background:var(--surface2);
+  border:1px solid var(--border);font-size:15px;}
+
+/* ── My Team summary card ───────────────────────────────────────────────────
+   (These classes shipped with no CSS at all, which is why the card rendered as a giant
+   icon with raw text underneath.) */
+.la-my-sum{display:flex;align-items:flex-start;gap:12px;background:var(--surface);
+  border:1px solid var(--border);border-radius:10px;padding:11px 13px;margin-bottom:12px;}
+.la-my-sum-body{flex:1;min-width:0;}
+.la-my-sum-head{font-size:14px;font-weight:900;display:flex;align-items:center;gap:8px;
+  flex-wrap:wrap;margin-bottom:3px;}
+.la-my-sum-line{font-size:10.5px;color:var(--muted);line-height:1.55;}
+.la-my-sum-line b{color:var(--text);font-family:var(--mono);}
+.la-my-sum-adv{font-size:11.5px;line-height:1.5;margin-top:6px;padding-top:6px;
+  border-top:1px dashed var(--border);}
+.la-traj{font-size:9.5px;font-weight:800;letter-spacing:.03em;padding:2px 7px;border-radius:10px;
+  border:1px solid var(--border);white-space:nowrap;}
+.la-traj.traj-cont{background:rgba(0,212,170,.12);color:#00d4aa;border-color:rgba(0,212,170,.4);}
+.la-traj.traj-1yr{background:rgba(251,191,36,.12);color:#fbbf24;border-color:rgba(251,191,36,.4);}
+.la-traj.traj-multi{background:rgba(255,107,107,.10);color:#ff6b6b;border-color:rgba(255,107,107,.35);}
+.la-traj.traj-hard{background:rgba(255,107,107,.16);color:#ff6b6b;border-color:rgba(255,107,107,.5);}

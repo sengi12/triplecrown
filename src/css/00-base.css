@@ -92,3 +92,30 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .pos-RB{background:rgba(0,207,159,.18);color:var(--rb);}
 .pos-WR{background:rgba(86,165,255,.18);color:var(--wr);}
 .pos-TE{background:rgba(255,201,77,.18);color:var(--te);}
+
+/* ── App menu (☰) ───────────────────────────────────────────────────────────
+   One button replaces the old header row (Seed/Import/Download/Rankings/Reset + League
+   sync). On a phone that row wrapped onto two lines before any content was visible. */
+.hdr-burger{display:flex;flex-direction:column;justify-content:center;gap:4px;
+  width:38px;height:34px;padding:0 8px;cursor:pointer;
+  background:var(--surface2);border:1px solid var(--border);border-radius:8px;}
+.hdr-burger span{display:block;height:2.5px;border-radius:2px;background:var(--text);
+  transition:transform .18s ease, opacity .18s ease;}
+.hdr-burger:hover{border-color:var(--accent);}
+.hdr-burger:hover span{background:var(--accent);}
+/* open state: the classic ☰ → ✕ morph */
+.hdr-burger.open span:nth-child(1){transform:translateY(6.5px) rotate(45deg);}
+.hdr-burger.open span:nth-child(2){opacity:0;}
+.hdr-burger.open span:nth-child(3){transform:translateY(-6.5px) rotate(-45deg);}
+.app-menu{min-width:212px;padding:5px;}
+.app-menu .hdr-menu-item{display:flex;align-items:center;gap:7px;width:100%;text-align:left;
+  padding:7px 9px;font-size:12px;}
+.app-menu .hdr-menu-item.active{color:var(--accent);background:rgba(61,155,255,.10);}
+.app-menu-sec{font-size:8.5px;font-weight:800;letter-spacing:.07em;color:var(--muted);
+  padding:7px 9px 3px;text-transform:uppercase;}
+.app-menu-sec:first-child{padding-top:3px;}
+.hdr-menu-danger{color:#ff6b6b;}
+.hdr-menu-danger:hover{background:rgba(255,107,107,.12);color:#ff6b6b;}
+.app-menu .la-btn-av{width:15px;height:15px;border-radius:3px;object-fit:cover;flex:none;}
+/* Chrome that belongs to one view only (season tabs are meaningless in the analyzer). */
+.hidden-view{display:none !important;}

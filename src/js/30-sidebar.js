@@ -112,6 +112,8 @@ function setPhase(p){
 function showFullRankings(){ rankScope='all'; currentPhase='Rankings'; renderContent(); }
 
 function renderContent(){
+  // Single choke point for phase changes — keep view-specific chrome honest here.
+  if(typeof syncAppChrome==='function') syncAppChrome();
   if(currentPhase==='Rankings'){renderRankings();return;}
   if(currentPhase==='AdvancedLeague'){renderSharpLeague();return;}
   if(currentPhase==='League'){renderLeagueAnalyzer();return;}
@@ -174,7 +176,9 @@ function tabBar(){
   const tabs=[['Passing','Passing'],['Receiving','Receiving'],['Rushing','Rushing']];
   if(hasSharp) tabs.push(['Advanced','Adv Metrics']);
   // "Roster Changes" appears when the currently-selected team has Spotrac data.
-  if(currentTeam && ADDITIONS && ADDITIONS[currentTeam]) tabs.push(['Additions','Roster']);
+  // "Roster" shows Spotrac offseason moves on the projection season, and the actual nflverse
+  // roster for that year on any completed season — so it's available whenever either exists.
+  if(currentTeam && ((ADDITIONS && ADDITIONS[currentTeam]) || nflverseRosterFor(currentTeam))) tabs.push(['Additions','Roster']);
   tabs.push(['Rankings','Rankings']);
   // Treat the league-wide advanced view as the same visual tab as the per-team one.
   const phaseForTab = (currentPhase==='AdvancedLeague') ? 'Advanced' : currentPhase;

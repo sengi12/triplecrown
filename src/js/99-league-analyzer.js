@@ -26,12 +26,20 @@ let laState = { step: leagueSnapshot? 'view':'start', busy:false, error:null,
                 myPicks:true,      // My Team: include draft picks in power scores
                 myStarters:false,  // My Team: starters only (ignore bench capital)
                 fndSeed:0,         // Trade Finder shuffle seed — 🔄 bumps it for new variations
+                // Team view: which roster is on screen (null = the synced user's own team).
+                // Clicking any team in Power Rankings / Compare / Rosters swaps the whole
+                // analysis to them — same charts, same lenses, their roster.
+                viewTeam:null,
                 fndPos:'AUTO',     // Trade Finder target position (AUTO = my weakest by rank)
                 cmpPicks:true,     // Compare: include pick capital in the value lens
                 cmpStarters:false, // Compare: rank on starting lineups only (mirrors My Team)
                 cmpSort:{col:'total',dir:-1} };  // Compare column sort (click a header)
 
 // ── Value lookups ────────────────────────────────────────────────────────────
+// Every dynasty number in this file is (chart points x LA_VAL_SCALE). Keep it that way:
+// players, superflex QBs, TEP tight ends and PICKS must share one scale or the trade math,
+// the tier multipliers and the power scores all quietly disagree with each other.
+const LA_VAL_SCALE = 100;
 // Dynasty value for one player under the SNAPSHOT league's format. Returns null when the
 // player is off the chart (deep depth pieces) — callers render those as unvalued, not 0,
 // because "not charted" and "worthless" are different claims.
@@ -41,9 +49,14 @@ function dynastyValueFor(name, pos){
   const e = dv[ecrNormName(name)];
   if(!e || (pos && e.pos && e.pos !== pos)) return null;
   const snap = leagueSnapshot || {};
-  if(e.pos==='QB' && snap.superflex && e.sf!=null) return e.sf;
-  if(e.pos==='TE' && snap.tep && e.tep!=null) return e.tep;
-  return e.v!=null ? e.v*100 : null;
+  // ONE scale for every asset. The seed stores raw 0-100 chart points; LA_VAL_SCALE lifts
+  // them into the working range the tier multipliers and trade math operate in.
+  // The SF/TEP branches used to return the raw column while the base branch scaled — so in a
+  // superflex league Josh Allen priced at 100 against Ja'Marr Chase's 8900, i.e. ~1% of his
+  // real worth. Every return here now goes through the same multiplier.
+  if(e.pos==='QB' && snap.superflex && e.sf!=null) return e.sf*LA_VAL_SCALE;
+  if(e.pos==='TE' && snap.tep && e.tep!=null) return e.tep*LA_VAL_SCALE;
+  return e.v!=null ? e.v*LA_VAL_SCALE : null;
 }
 // Value for a future rookie pick. Exact rows exist for the chart's listed seasons; later
 // seasons reuse the year-out table (dynasty convention: value the unknown like next year's).
@@ -58,7 +71,49 @@ function dynastyPickValue(season, round){
   const hits = rows.filter(r=>rx.test(r[0]));
   if(!hits.length) return round>=5 ? (rows[rows.length-1] ? rows[rows.length-1][col] : null) : null;
   // Use the MIDDLE row of the matching tier (mid-1st for an unknown future 1st, mid-2nd, …).
-  return hits[Math.floor(hits.length/2)][col];
+  return hits[Math.floor(hits.length/2)][col]*LA_VAL_SCALE;
+}
+
+// ── Pick tiering ─────────────────────────────────────────────────────────────
+// Players get a tier multiplier (LA_TIER_MULT); picks got nothing, so every pick was
+// implicitly priced at a tier-4 "1.0" while the players around it were boosted or faded.
+// Rather than invent a tier for a pick, we DERIVE one from what it's worth: build a
+// tier -> median-player-value table from the actual chart, then a pick takes the multiplier
+// of the tier whose players are worth about the same. A 1.01 that trades like a tier-1 WR
+// gets tier-1 treatment; a late 4th gets the same fade as the fringe players it competes with.
+let _laTierVals = null;
+function laTierValueTable(){
+  if(_laTierVals) return _laTierVals;
+  const buckets={};
+  const dv=(DYNASTY_VALUES&&DYNASTY_VALUES.players)||{};
+  for(const k in dv){
+    const e=dv[k];
+    const t=laDynTier(e.n||k);
+    if(t==null) continue;
+    const v=dynastyValueFor(e.n||k, e.pos);
+    if(v==null||v<=0) continue;
+    (buckets[t]=buckets[t]||[]).push(v);
+  }
+  _laTierVals=Object.keys(buckets).map(t=>{
+    const a=buckets[t].sort((x,y)=>x-y);
+    return {tier:+t, med:a[Math.floor(a.length/2)]};
+  }).sort((a,b)=>a.tier-b.tier);
+  return _laTierVals;
+}
+// Tier multiplier appropriate to a raw asset value (used for picks).
+function laTierMultForValue(v){
+  const tbl=laTierValueTable();
+  if(!tbl.length || v==null) return 1;
+  let best=tbl[0], bd=Infinity;
+  tbl.forEach(x=>{ const d=Math.abs(x.med-v); if(d<bd){ bd=d; best=x; } });
+  return LA_TIER_MULT[best.tier] || 1;
+}
+// The pick equivalent of laDynVal(): chart value with its value-equivalent tier boost.
+// Every ranking view should use THIS for picks, never the raw dynastyPickValue().
+function laPickVal(season, round){
+  const v=dynastyPickValue(season, round);
+  if(v==null) return 0;
+  return v * laTierMultForValue(v);
 }
 
 // ── Tier-weighted valuation ──────────────────────────────────────────────────
@@ -97,12 +152,20 @@ function openLeagueAnalyzer(){
   renderContent();
   refreshLeagueSyncBtn();
 }
-function leaveLeagueAnalyzer(){ setPhase('Rankings'); }
+function leaveLeagueAnalyzer(){ showProjectionsView(); }
 // Header button reflects state: plain sync CTA before a snapshot, league name after.
 function refreshLeagueSyncBtn(){
-  const b=document.getElementById('leagueSyncBtn'); if(!b) return;
-  b.innerHTML = leagueSnapshot ? `${laLeagueIcon(leagueSnapshot,'la-btn-av')} ${leagueSnapshot.name}` : '\ud83d\udd17 My League';
-  b.classList.toggle('synced', !!leagueSnapshot);
+  // The League entry point lives in the ☰ menu now; show the synced league's icon + name
+  // there so the menu doubles as the sync indicator the old header button used to be.
+  const label = leagueSnapshot
+    ? `${laLeagueIcon(leagueSnapshot,'la-btn-av')} ${leagueSnapshot.name}`
+    : '\ud83c\udfdf League Analyzer';
+  const m=document.getElementById('menuLeagueView');
+  if(m) m.innerHTML = label;
+  // Kept for any build that still renders the old header button.
+  const b=document.getElementById('leagueSyncBtn');
+  if(b){ b.innerHTML = leagueSnapshot ? label : '\ud83d\udd17 My League';
+         b.classList.toggle('synced', !!leagueSnapshot); }
 }
 
 // ── Sync flow ────────────────────────────────────────────────────────────────
@@ -134,6 +197,13 @@ async function laResync(){
 }
 function laChangeLeague(){
   laState.step='start'; laState.error=null; renderLeagueAnalyzer();
+}
+// Same, but reachable from the ☰ menu while you're in the Projections view: switch into the
+// analyzer and land on its setup screen rather than re-rendering a view that isn't on screen.
+function laMenuChangeLeague(){
+  laState.step='start'; laState.error=null;
+  currentPhase='League';
+  renderContent();
 }
 
 // The snapshot itself: league + users + rosters + traded picks + the Sleeper player DB
@@ -208,13 +278,17 @@ async function laTakeSnapshot(leagueId){
       }
       window._laLinkedLeague = { id: leagueId, name: lg.name||'League' };
     }catch(e){}
+    _laTierVals=null;   // format (SF/TEP) may have changed → rebuild the pick-tier table
     laState.step='view'; laState.busy=false;
     saveSession();
     toast(`Snapshot of ${leagueSnapshot.name} taken`,'ok');
   }catch(e){
     laState.busy=false; laState.error=`Sync failed: ${e.message}`;
   }
-  renderLeagueAnalyzer(); refreshLeagueSyncBtn();
+  renderLeagueAnalyzer();
+  // Taking a snapshot doesn't go through renderContent(), so sync the chrome explicitly —
+  // this is what reveals the League actions (Re-sync / Change league) in the ☰ menu.
+  if(typeof syncAppChrome==='function') syncAppChrome(); else refreshLeagueSyncBtn();
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
@@ -261,16 +335,13 @@ function renderLeagueAnalyzer(){
   const stamp=`${taken.toLocaleDateString(undefined,{month:'short',day:'numeric'})} ${taken.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`;
   const fmt=[`${s.teams}-team`, s.superflex?'Superflex':'1QB', s.tep?'TEP':null].filter(Boolean).join(' · ');
   host.innerHTML=`
-    <div class="team-header"><div><div class="team-abbr la-hdr">${laLeagueIcon(s,'la-lg-av')} ${s.name}</div>
+    <div class="team-header"><div><div class="team-abbr la-hdr">${laLeagueIcon(s,'la-lg-av')}<span class="la-hdr-name">${s.name}</span></div>
       <div class="team-qb-name">${fmt} · snapshot taken <b>${stamp}</b>
         ${DYNASTY_VALUES&&DYNASTY_VALUES.asof?` · values: FantasyPros dynasty chart <b>${DYNASTY_VALUES.asof}</b>`:''}</div></div>
-      <div class="team-nav">
-        <button class="btn btn-accent btn-sm" ${laState.busy?'disabled':''} onclick="laResync()">${laState.busy?'Syncing…':'⟳ Re-sync'}</button>
-        <button class="btn btn-ghost btn-sm" onclick="laChangeLeague()">Change league</button>
-        ${back}</div></div>
+      </div>
     <div class="phase-tabs">
       ${[['myteam','My Team'],['rosters','Rosters'],['compare','Compare'],['best','Waiver Wire'],['trade','Trade Center']]
-        .map(([k,l])=>`<button class="phase-tab ${laState.laTab===k?'active':''}" onclick="laState.laTab='${k}';renderLeagueAnalyzer()">${l}</button>`).join('')}
+        .map(([k,l])=>`<button class="phase-tab ${laState.laTab===k?'active':''}" onclick="laSetTab('${k}')">${l}</button>`).join('')}
     </div>
     ${laState.laTab==='compare' ? laCompareView(s) : laState.laTab==='best' ? laBestAvailView(s) : laState.laTab==='trade' ? laTradeView(s) : laState.laTab==='rosters' ? laRostersView(s) : laMyTeamView(s)}`;
 }
@@ -290,7 +361,7 @@ function laTeamValue(t){
   // totals, Compare ranks and Trade verdicts can never disagree about who's loaded.
   return Math.round(
     laTcAdjusted(t.players.map(p=>laDynVal(p.name,p.pos)).filter(v=>v>0)) +
-    laTcAdjusted(t.picks.map(pk=>dynastyPickValue(pk.season,pk.round)||0).filter(v=>v>0)));
+    laTcAdjusted(t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0)));
 }
 function laTeamCard(t,s){
   const valued=[], depth=[];
@@ -302,7 +373,9 @@ function laTeamCard(t,s){
   const mine=s.myUserId && t.ownerId===s.myUserId;
   const total=laTeamValue(t);
   const pickChips=t.picks.map(pk=>{
-    const v=dynastyPickValue(pk.season,pk.round);
+    // laPickVal, not the raw chart value: players on this card are tier-boosted and scaled,
+    // so a raw pick number here would be ~1% of a comparable player and read as worthless.
+    const v=Math.round(laPickVal(pk.season,pk.round))||null;
     const label=`${pk.season} ${pk.round}${['','st','nd','rd','th'][pk.round]||'th'}`;
     const orig=pk.origRosterId!==t.rosterId?` (via ${laRosterName(s,pk.origRosterId)})`:'';
     return `<span class="la-pick" title="${label}${orig}${v!=null?` · value ${v}`:''}">${label}${orig?'*':''}${v!=null?` <b>${v}</b>`:''}</span>`;
@@ -310,7 +383,7 @@ function laTeamCard(t,s){
   return `<div class="la-card ${mine?'mine':''}">
     <div class="la-card-head">
       ${laTeamIcon(t,'la-tm-av-sm')}
-      <div class="la-team">${mine?'\u2605 ':''}${t.teamName}</div>
+      <div class="la-team la-clickteam" onclick="laViewTeam(${t.rosterId})" title="View this team\u2019s analysis">${mine?'\u2605 ':''}${t.teamName}</div>
       <div class="la-owner">@${t.owner} · ${t.wins}-${t.losses}</div>
       <div class="la-total" title="Sum of player + pick dynasty values">${total}</div>
     </div>
@@ -405,7 +478,7 @@ function laCompareView(s){
         : t.players;
       srcP.forEach(p=>{ const v=laDynVal(p.name,p.pos); if(byPos[p.pos]&&v>0) byPos[p.pos].push(v); });
       POS.forEach(pos=>{ by[pos]=+laTcAdjusted(byPos[pos]).toFixed(0); });
-      picks=+laTcAdjusted(t.picks.map(pk=>dynastyPickValue(pk.season,pk.round)||0).filter(v=>v>0)).toFixed(0);
+      picks=+laTcAdjusted(t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0)).toFixed(0);
     }else{
       const withF=t.players.map(p=>({...p, fpts:pm.get(ecrNormName(p.name)+'|'+p.pos)||0}))
                            .sort((a,b)=>b.fpts-a.fpts);
@@ -457,7 +530,7 @@ function laCompareView(s){
         const mine=s.myUserId && r.t.ownerId===s.myUserId;
         const cell=(c,v)=>`<td class="${laQuartile(ranks[c][i],n)}"><b>${fmtV(v)}</b><span class="la-rk">#${ranks[c][i]}</span></td>`;
         return `<tr class="${mine?'mine':''}">
-          <td class="la-cmp-team">${laTeamIcon(r.t,'la-tm-av-sm')}${mine?'\u2605 ':''}${r.t.teamName}<span class="la-cmp-own">@${r.t.owner}</span></td>
+          <td class="la-cmp-team la-clickteam" onclick="laViewTeam(${r.t.rosterId})" title="View ${r.t.teamName}\u2019s analysis">${laTeamIcon(r.t,'la-tm-av-sm')}${mine?'\u2605 ':''}${r.t.teamName}<span class="la-cmp-own">@${r.t.owner}</span></td>
           ${POS.map(p=>cell(p,r.by[p])).join('')}
           ${withPicks?cell('picks',r.picks):''}
           ${cell('total',r.total)}</tr>`;
@@ -569,7 +642,10 @@ function laAssetPools(s, rosterId){
     key:`k|${pk.season}|${pk.round}|${pk.origRosterId}`, type:'k',
     season:pk.season, round:pk.round, orig:pk.origRosterId,
     label:`${pk.season} ${pk.round}${['','st','nd','rd','th'][pk.round]||'th'}${pk.origRosterId!==t.rosterId?'*':''}`,
-    v:dynastyPickValue(pk.season,pk.round)||0,
+    // MUST match how players are priced two lines up (laDynVal = scaled + tier-boosted).
+    // Mixing a raw pick value in here made every pick ~1% of a player's worth, so the
+    // calculator happily called "your whole pick chest for my WR3" a fair trade.
+    v:Math.round(laPickVal(pk.season,pk.round)),
   }));
   return {players,picks,team:t};
 }
@@ -823,6 +899,23 @@ function laTradeView(s){
     <div class="la-note">Verdicts use consolidation-adjusted values: extra assets on a side count at 75/55/40/30/25%, and the side holding the single best player gets a premium worth 25% of the best-asset gap \u2014 so a stack of depth can\u2019t buy a stud, but star + real piece can. Fair = within \u00b1max(4, 5%).</div>`;
 }
 
+// Switch analyzer tabs. Also scrolls back to the tab bar: these views differ wildly in
+// length (a 12-team Rosters grid vs. a short summary), so switching while scrolled down
+// otherwise drops you into the middle of the new view with no context.
+function laSetTab(k){
+  laState.laTab=k;
+  renderLeagueAnalyzer();
+  const t=document.querySelector('.phase-tabs');
+  if(t && t.getBoundingClientRect().top < 0) t.scrollIntoView({block:'start', behavior:'smooth'});
+}
+// Switch the Team view to any roster ('' → back to my own) and land on that tab.
+function laViewTeam(rosterId){
+  laState.viewTeam = (rosterId===''||rosterId==null) ? null : +rosterId;
+  laState.laTab='myteam';
+  renderLeagueAnalyzer();
+  const c=document.getElementById('content'); if(c) c.scrollTop=0;
+}
+
 // ═══ My Team — the landing view: how MY roster stacks up ═════════════════════
 // FantasyPros-Playbook-style analysis of the syncing user's roster: league power rankings,
 // per-position and per-starting-slot ranks, a starting-lineup chart, and a strength radar.
@@ -845,7 +938,7 @@ function laTeamEngine(s, t, lens, pm, opts){
   const starterIds = new Set(filled.filter(f=>f.player).map(f=>f.player.id));
   const starters = filled;
   const bench = ranked.filter(p=>!starterIds.has(p.id));
-  const pickVals = t.picks.map(pk=>dynastyPickValue(pk.season,pk.round)||0).filter(v=>v>0);
+  const pickVals = t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0);
   const sVals = starters.filter(f=>f.player).map(f=>f.player._v);
   let score = laTcAdjusted(sVals);
   if(!o.startersOnly) score += laTcAdjusted(bench.map(p=>p._v)) * LA_PW_BENCH;
@@ -937,17 +1030,30 @@ function laDynAge(name){
   const a=e&&e.age!=null?parseFloat(e.age):NaN;
   return isNaN(a)?null:a;
 }
+// Contention is a THIS-YEAR question. A roster of proven-but-aging starters (Henry, Higgins)
+// can be a genuine title threat while its dynasty capital — which prices future years — reads
+// mid-pack. Ranking personas off capital alone therefore called real contenders "rebuilds".
+// So the ladder ranks on a BLEND, weighted toward the season in front of you:
+//   nowScore = projected points from the best legal starting lineup under league scoring
+//   futScore = dynasty capital (tier-boosted, consolidation-adjusted, incl. picks)
+// Both are normalised to the league best (0-1) before blending so the two very different
+// units — fantasy points vs chart value — can be compared at all.
+const LA_CONTEND_NOW = 0.70;   // weight on this season; the remainder is dynasty capital
 function laTrajectories(s, pm){
   const eng=s.teamList.map(t=>laTeamEngine(s,t,'value',pm,{picks:true,startersOnly:false}));
+  const engNow=s.teamList.map(t=>laTeamEngine(s,t,'proj',pm,{picks:false,startersOnly:true}));
+  const nowById={}; engNow.forEach(e=>nowById[e.t.rosterId]=e.score);
+  const maxNow=Math.max(...engNow.map(e=>e.score))||1;
+  const maxFut=Math.max(...eng.map(e=>e.score))||1;
   const n=eng.length;
-  const maxPick=Math.max(...s.teamList.map(t=>laTcAdjusted(t.picks.map(pk=>dynastyPickValue(pk.season,pk.round)||0).filter(v=>v>0))))||1;
+  const maxPick=Math.max(...s.teamList.map(t=>laTcAdjusted(t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0))))||1;
   const rows=eng.map(e=>{
     const vals=e.t.players.map(p=>({v:laDynVal(p.name,p.pos), age:laDynAge(p.name)})).filter(x=>x.v>0);
     const tot=vals.reduce((a,x)=>a+x.v,0)||1;
     const aged=vals.filter(x=>x.age!=null);
     const coreAge=aged.length?aged.reduce((a,x)=>a+x.v*x.age,0)/aged.reduce((a,x)=>a+x.v,0):null;
     const youth=vals.filter(x=>x.age!=null&&x.age<=25).reduce((a,x)=>a+x.v,0)/tot;
-    const pickStr=laTcAdjusted(e.t.picks.map(pk=>dynastyPickValue(pk.season,pk.round)||0).filter(v=>v>0))/maxPick;
+    const pickStr=laTcAdjusted(e.t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0))/maxPick;
     // Cliff exposure: how much of this roster's VALUE sits on players at/near their
     // positional age-cliff (defiers included — they're still mortal), and how many defiers.
     let cliffVal=0, defiers=0;
@@ -955,9 +1061,15 @@ function laTrajectories(s, pm){
       if(c.state!=='ok') cliffVal+=laDynVal(p.name,p.pos);
       if(c.state==='defier') defiers++; });
     const cliffShare=cliffVal/tot;
-    return {t:e.t, score:e.score, coreAge, youth, pickStr, cliffShare, defiers, startersAdj:e.startersAdj};
+    // now/fut normalised 0-1 vs the league best, then blended. contendScore is the ONLY
+    // thing the top/bottom bands rank on.
+    const now=(nowById[e.t.rosterId]||0)/maxNow;
+    const fut=e.score/maxFut;
+    const contendScore=LA_CONTEND_NOW*now + (1-LA_CONTEND_NOW)*fut;
+    return {t:e.t, score:e.score, coreAge, youth, pickStr, cliffShare, defiers,
+            startersAdj:e.startersAdj, now, fut, contendScore};
   });
-  rows.sort((a,b)=>b.startersAdj-a.startersAdj);
+  rows.sort((a,b)=>b.contendScore-a.contendScore);
   rows.forEach((r,i)=>{
     const rk=i+1;
     const top = rk<=Math.max(1,Math.round(n*LA_TRAJ_TOP));
@@ -966,6 +1078,9 @@ function laTrajectories(s, pm){
     const young = r.coreAge!=null && r.coreAge<=LA_TRAJ_YOUNG;
     let title, cls, advice;
     const cliffy = r.cliffShare>=LA_TRAJ_CLIFFSHARE;
+    // How this roster splits: strong THIS year vs strong for LATER. The gap is the story —
+    // now >> fut is a closing window; fut >> now is a rebuild that's working.
+    const nowStrong = r.now>=0.80, nowWeak = r.now<0.60;
     if(top){ title='Contender'; cls='traj-cont';
       advice='You\u2019re built \u2014 capital is for banners now. Push future picks for win-now pieces, buy proven vets on value dips'+(cliffy?' \u2014 but note your cliff exposure: this window is short, so go all-in THIS year.':'.'); }
     else if(bot){
@@ -976,12 +1091,18 @@ function laTrajectories(s, pm){
     }
     else if(cliffy){ title='Edge of the Cliff'; cls='traj-cliff';
       advice=Math.round(100*r.cliffShare)+'% of your value sits on players at or near their positional age-cliff. Either commit to one last all-in push NOW, or sell those vets at peak before the market does it for you \u2014 the one wrong answer is waiting.'; }
-    else if(young && rk<=Math.ceil(n*0.5)){ title='One Piece Away'; cls='traj-1pc';
+    else if(nowStrong){ title='One Piece Away'; cls='traj-1pc';
+      advice='Your starters already project like a contender \u2014 you are one real add from the top tier, not a rebuild. Spend a pick or bench depth on the weakest starting slot; do not sell win-now pieces.'; }
+    // A young team can rank high on the BLEND purely on future capital — that isn't "one
+    // piece away", that's a rebuild working. Require a live lineup this year as well.
+    else if(young && !nowWeak && rk<=Math.ceil(n*0.5)){ title='One Piece Away'; cls='traj-1pc';
       advice='Young core already competing \u2014 you\u2019re one real win-now add from the top tier. This is the moment to spend a pick or depth on the missing piece; don\u2019t over-save.'; }
     else if(young){ title='Ascending'; cls='traj-asc';
       advice='Up-and-coming: young vets about to level up. Hold your risers, and buy OTHER teams\u2019 breakout-window players (2nd-yr TE/QB, 3rd-yr WR) before their price moves. A couple of key adds here compound fast.'; }
     else if(rk<=Math.ceil(n*0.5)){ title='1-Yr Reload'; cls='traj-1yr';
       advice='Aging core but real capital \u2014 flip veterans at peak value NOW and one aggressive offseason puts you right back in it.'; }
+    else if(!nowWeak){ title='1-Yr Reload'; cls='traj-1yr';
+      advice='Middling on both clocks but your lineup is live \u2014 one aggressive move at your worst starting slot swings the season. Sell the aging depth, not the starters.'; }
     else { title='Multi-Yr Rebuild'; cls='traj-multi';
       advice='Aging core and thinning capital \u2014 a proper teardown beats treading water. Move the vets (mind the cliffs), hoard picks, get young.'; }
     r.rank=rk; r.title=title; r.cls=cls; r.advice=advice;
@@ -994,7 +1115,11 @@ function laMyTeamView(s){
   const lens=laState.myLens||'value';
   const pm=laProjMap();
   const eng=s.teamList.map(t=>laTeamEngine(s,t,lens,pm));
-  const mineEng=eng.find(e=>s.myUserId && e.t.ownerId===s.myUserId) || eng[0];
+  // The team on screen: laState.viewTeam when set, else my own, else the first roster. Every
+  // chart below reads mineEng, so this one line is what makes the whole view switchable.
+  const ownEng=eng.find(e=>s.myUserId && e.t.ownerId===s.myUserId) || eng[0];
+  const mineEng=(laState.viewTeam!=null && eng.find(e=>e.t.rosterId===laState.viewTeam)) || ownEng;
+  const isOwn = mineEng===ownEng;
   const traj=laTrajectories(s,pm);
   const myTraj=traj[mineEng.t.rosterId];
   const maxScore=Math.max(...eng.map(e=>e.score))||1;
@@ -1003,6 +1128,16 @@ function laMyTeamView(s){
   // Per-slot values across the league → my rank at every starting slot.
   const slotLabels=laSlotLabels(s.rosterPositions);
   const slotVals=slotLabels.map((_,i)=>eng.map(e=>(e.starters[i]&&e.starters[i].player)?e.starters[i].player._v:0));
+  const switcher=`
+    <div class="la-switch">
+      <select class="la-tc-sel la-switch-sel" onchange="laViewTeam(this.value)">
+        ${[...s.teamList].sort((a,b)=>{
+            if(s.myUserId){ if(a.ownerId===s.myUserId) return -1; if(b.ownerId===s.myUserId) return 1; }
+            return a.teamName.localeCompare(b.teamName);
+          }).map(t=>`<option value="${t.rosterId}" ${t.rosterId===mineEng.t.rosterId?'selected':''}>${s.myUserId&&t.ownerId===s.myUserId?'\u2605 ':''}${t.teamName}</option>`).join('')}
+      </select>
+      ${!isOwn?`<button class="btn btn-sm btn-ghost" onclick="laViewTeam('')" title="Back to your own team">\u21a9 my team</button>`:''}
+    </div>`;
   const controls=`
     <div class="la-lens">
       <span class="la-lens-lbl">Lens:</span>
@@ -1018,7 +1153,7 @@ function laMyTeamView(s){
       <table class="la-pw"><thead><tr><th>RK</th><th>TEAM</th><th>SCORE</th></tr></thead><tbody>
       ${power.map((e,i)=>`<tr class="${e===mineEng?'mine':''}">
         <td class="la-pw-rk">${i+1}.</td>
-        <td class="la-pw-team">${laTeamIcon(e.t,'la-tm-av-sm')}${e.t.teamName}
+        <td class="la-pw-team la-clickteam" onclick="laViewTeam(${e.t.rosterId})" title="View ${e.t.teamName}\u2019s analysis">${laTeamIcon(e.t,'la-tm-av-sm')}${e.t.teamName}
           <span class="la-traj ${traj[e.t.rosterId].cls}" title="${traj[e.t.rosterId].advice}">${traj[e.t.rosterId].title}</span>
           <span class="la-cmp-own">@${e.t.owner}</span></td>
         <td class="la-pw-score"><div class="la-pw-bar" style="width:${(100*e.score/maxScore).toFixed(0)}%"></div><b>${Math.round(100*e.score/maxScore)}</b></td></tr>`).join('')}
@@ -1080,7 +1215,7 @@ function laMyTeamView(s){
           \u00b7 pick chest <b>${Math.round(100*myTraj.pickStr)}%</b> of league best</div>
         <div class="la-my-sum-adv">${myTraj.advice}</div>
       </div></div>`;
-  return controls + summary
+  return switcher + controls + summary
     + `<div class="la-my-grid">${powerTbl}${posTbl}${slotTbl}${radar}${lineup}</div>`
     + `<div class="la-note">${lens==='value'
         ? 'Dynasty lens: tier-boosted FantasyPros values (T1 \u00d71.15), consolidation-adjusted \u2014 stars carry, depth decays. Power score = starters + 35% bench'+(laState.myPicks?' + 50% picks':'')+', league best = 100.'

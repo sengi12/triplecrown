@@ -102,6 +102,33 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .pos-RB{background:rgba(0,207,159,.18);color:var(--rb);}
 .pos-WR{background:rgba(86,165,255,.18);color:var(--wr);}
 .pos-TE{background:rgba(255,201,77,.18);color:var(--te);}
+
+/* ── App menu (☰) ───────────────────────────────────────────────────────────
+   One button replaces the old header row (Seed/Import/Download/Rankings/Reset + League
+   sync). On a phone that row wrapped onto two lines before any content was visible. */
+.hdr-burger{display:flex;flex-direction:column;justify-content:center;gap:4px;
+  width:38px;height:34px;padding:0 8px;cursor:pointer;
+  background:var(--surface2);border:1px solid var(--border);border-radius:8px;}
+.hdr-burger span{display:block;height:2.5px;border-radius:2px;background:var(--text);
+  transition:transform .18s ease, opacity .18s ease;}
+.hdr-burger:hover{border-color:var(--accent);}
+.hdr-burger:hover span{background:var(--accent);}
+/* open state: the classic ☰ → ✕ morph */
+.hdr-burger.open span:nth-child(1){transform:translateY(6.5px) rotate(45deg);}
+.hdr-burger.open span:nth-child(2){opacity:0;}
+.hdr-burger.open span:nth-child(3){transform:translateY(-6.5px) rotate(-45deg);}
+.app-menu{min-width:212px;padding:5px;}
+.app-menu .hdr-menu-item{display:flex;align-items:center;gap:7px;width:100%;text-align:left;
+  padding:7px 9px;font-size:12px;}
+.app-menu .hdr-menu-item.active{color:var(--accent);background:rgba(61,155,255,.10);}
+.app-menu-sec{font-size:8.5px;font-weight:800;letter-spacing:.07em;color:var(--muted);
+  padding:7px 9px 3px;text-transform:uppercase;}
+.app-menu-sec:first-child{padding-top:3px;}
+.hdr-menu-danger{color:#ff6b6b;}
+.hdr-menu-danger:hover{background:rgba(255,107,107,.12);color:#ff6b6b;}
+.app-menu .la-btn-av{width:15px;height:15px;border-radius:3px;object-fit:cover;flex:none;}
+/* Chrome that belongs to one view only (season tabs are meaningless in the analyzer). */
+.hidden-view{display:none !important;}
 /* ── Player card modal ── */
 /* Overlay scrolls (not hidden) and the card centers via margin:auto, so when the mobile browser
    toolbar shrinks the viewport the card's top + close button stay reachable instead of being
@@ -789,6 +816,12 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
   .stats-grid{grid-template-columns:repeat(2,1fr);}
   .scoring-grid{grid-template-columns:1fr;}
 }
+
+/* ── nflverse season roster (Roster tab on completed seasons) ───────────────
+   Reuses the depth-chart chip styling wholesale; these are the only additions. */
+.depth-ir{font-size:7.5px;font-weight:800;color:#ff6b6b;border:1px solid rgba(255,107,107,.4);
+  border-radius:4px;padding:0 3px;margin-left:4px;vertical-align:middle;}
+.depth-starter-key{color:var(--accent);}
 /* Season tabs */
 .season-bar{display:flex;align-items:center;gap:6px;padding:6px 16px;
   background:var(--surface);border-bottom:1px solid var(--border);overflow-x:auto;}
@@ -886,14 +919,38 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
   .phase-tab{flex:0 0 auto;}
   .sub-tabs{overflow-x:auto;}
   .sub-tab{flex:0 0 auto;white-space:nowrap;}
-  .hdr{flex-wrap:wrap;gap:6px;padding:8px 12px;}
-  .hdr-right{width:100%;margin-left:0;}
+  /* ── Header: ONE row on a phone ───────────────────────────────────────────
+     The container is .header — the old `.hdr` rules here were a dead selector (nothing in
+     the markup ever had class="hdr"), which is why the header kept growing unchecked.
+     `.hdr-right{width:100%}` dated from when that div held a row of buttons: it forced the
+     menu onto its own full-width row, left-aligned and below the fold. Now that it's a
+     single ☰, keep it on row 1 pinned right (margin-left:auto from the base rule).
+     Layout: [icon] [scenario input — flexes] [progress] [☰], all inside the viewport. */
+  .header{gap:8px;padding:8px 12px;flex-wrap:nowrap;}
+  .hdr-right{width:auto;margin-left:auto;flex:none;flex-wrap:nowrap;}
+  .logo{font-size:0;gap:0;flex:none;}            /* icon only — the wordmark costs ~110px */
+  .logo-icon{width:22px;height:22px;}
+  .logo span{display:none;}
+  .scenario-bar{flex:1;min-width:0;}
+  .scenario-label{display:none;}                 /* the input is self-evidently the scenario */
+  .scenario-name{width:100%;min-width:0;font-size:11.5px;padding:5px 7px;}
+  .progress-wrap{min-width:0;width:62px;flex:none;}
+  .progress-text{font-size:8px;white-space:nowrap;}
+  /* Menu panel: anchor to the right edge and never exceed the viewport. */
+  .app-menu{min-width:200px;max-width:calc(100vw - 24px);}
   .scoring-grid{grid-template-columns:repeat(2,1fr)!important;}
   .share-stats{flex-wrap:wrap;gap:6px 10px;}
   .rank-table{font-size:10px;}
   .format-btn,.pos-filter-btn{padding:5px 8px;font-size:10px;}
   .discrepancy-note,.vacated-note{font-size:10.5px;}
-  .season-bar{padding:6px 10px;}
+  /* Season bar: the tabs are the point — the label and the data badge are not worth a
+     third of the row on a 390px screen. */
+  .season-bar{padding:5px 10px;gap:6px;}
+  .season-label{display:none;}
+  .sleeper-badge{display:none;}
+  .season-spacer{display:none;}
+  #seasonTabs{overflow-x:auto;scrollbar-width:none;}
+  #seasonTabs::-webkit-scrollbar{display:none;}
 
   /* Mobile safety: only the thumb is interactive. Touches that begin on the track
      should pass through for normal page scrolling without moving the slider value. */
@@ -1075,13 +1132,8 @@ html,body{max-width:100%;overflow-x:hidden;}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
 
 /* ── League Analyzer ────────────────────────────────────────────────────────
-   Header button is solid accent-blue (the app's main theme color) so the league entry point
-   reads as a primary action from anywhere in the app. Once synced it shows the league name. */
-.league-sync-btn{background:var(--accent);color:#fff;border:none;border-radius:8px;
-  font-size:11.5px;font-weight:800;padding:6px 12px;cursor:pointer;white-space:nowrap;
-  letter-spacing:.01em;}
-.league-sync-btn:hover{background:var(--accent2);}
-.league-sync-btn.synced{background:transparent;color:var(--accent);border:1px solid var(--accent);}
+   (The old .league-sync-btn header button is gone — the League entry point and its
+   sync actions live in the ☰ menu now, so its styles were dead weight.) */
 .la-setup{max-width:520px;margin:24px auto;padding:20px;}
 .la-setup-title{font-size:15px;font-weight:900;margin-bottom:6px;}
 .la-setup-body{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:14px;}
@@ -1154,11 +1206,14 @@ html,body{max-width:100%;overflow-x:hidden;}
 /* ── League Analyzer: Phase 3 (Trade Calculator + Finder) ───────────────────*/
 /* .team-logo-sm{width:20px;height:20px;object-fit:contain;flex-shrink:0;} */
 .la-btn-av{width:20px;height:20px;object-fit:contain;border-radius:5px;overflow:hidden;}
-.la-lg-av{width:100px;height:100px;object-fit:contain;border-radius:20px;overflow:hidden;}
-.la-tm-av{width:100px;height:100px;object-fit:contain;border-radius:20px;overflow:hidden;}
+/* League + team icons. These were 100px, which on a phone is a quarter of the screen — the
+   title then wrapped around them. Sized to the type they sit beside, and their containers
+   are flex rows (below) so the text aligns instead of flowing under the image. */
+.la-lg-av{width:40px;height:40px;object-fit:contain;border-radius:9px;overflow:hidden;flex:none;}
+.la-tm-av{width:56px;height:56px;object-fit:contain;border-radius:12px;overflow:hidden;flex:none;}
 .la-tm-av-sm{width:20px;height:20px;object-fit:contain;border-radius:5px;overflow:hidden;}
 .la-tc-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-@media (max-width:760px){.la-tc-grid{grid-template-columns:1fr;}}
+/* (trade-grid stacking lives in the mobile block at the bottom of this file) */
 .la-tc-side{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px;}
 .la-tc-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
 .la-tc-sel{background:var(--surface2);border:1px solid var(--border);color:var(--text);
@@ -1255,7 +1310,7 @@ html,body{max-width:100%;overflow-x:hidden;}
 .la-chk-off{opacity:.45;}
 /* trade calc: verdict column between the sides */
 .la-tc-grid{grid-template-columns:1fr 250px 1fr;}
-@media (max-width:900px){.la-tc-grid{grid-template-columns:1fr;}}
+
 .la-tc-mid{display:flex;flex-direction:column;gap:9px;align-items:stretch;background:var(--surface);
   border:1px solid var(--border);border-radius:10px;padding:12px;align-self:start;position:sticky;top:8px;}
 .la-tc-mid .la-vd-txt{text-align:center;white-space:normal;}
@@ -1276,6 +1331,107 @@ html,body{max-width:100%;overflow-x:hidden;}
 .la-cliff-hot{color:#fbbf24;}
 .la-fnd-chips{display:inline-flex;gap:4px;margin-left:10px;}
 .la-fnd-gem{cursor:help;}
+
+/* ── League Analyzer: team switcher ─────────────────────────────────────────*/
+.la-switch{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+.la-switch-sel{max-width:260px;font-size:13px;}
+.la-clickteam{cursor:pointer;}
+.la-clickteam:hover{color:var(--accent);}
+.la-pw-team.la-clickteam:hover,.la-cmp-team.la-clickteam:hover{text-decoration:underline;}
+
+/* ── League Analyzer: mobile ────────────────────────────────────────────────
+   The analyzer is dense by nature (tables, radars, pools). On a phone we: stack every grid,
+   let the tab bar scroll horizontally, shrink the chrome, and turn the trade calculator into
+   a single readable column with the verdict pinned at the top instead of the middle. */
+@media (max-width:760px){
+  /* header: title + controls stack instead of fighting for one row */
+  .la-hdr{font-size:18px;gap:8px;}
+  .la-lg-av{width:32px;height:32px;border-radius:7px;}
+  .la-tm-av{width:42px;height:42px;border-radius:9px;}
+  .la-my-sum{padding:9px 10px;gap:9px;}
+  .la-my-sum-head{font-size:13px;}
+  .la-grid{grid-template-columns:1fr;gap:10px;}
+  .la-my-grid{grid-template-columns:1fr;gap:10px;}
+  .la-my-card{padding:10px;}
+  .la-setup{margin:12px auto;padding:14px;}
+  .la-row{flex-direction:column;}
+  .la-row input,.la-row .btn{width:100%;}
+  /* tab bar scrolls rather than wrapping into a second row */
+  .phase-tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+  .phase-tabs::-webkit-scrollbar{display:none;}
+  .phase-tab{white-space:nowrap;flex:none;}
+  /* controls: let lens buttons + checkboxes wrap cleanly, bigger tap targets */
+  .la-lens{gap:5px;}
+  .la-lens .format-btn{padding:5px 9px;}
+  .la-chk{padding:3px 0;}
+  .la-switch-sel{max-width:100%;flex:1;}
+  /* compare table: freeze the team column so the numbers stay attributable while scrolling */
+  .la-cmp{font-size:11px;}
+  .la-cmp th,.la-cmp td{padding:5px 6px;}
+  .la-cmp th.la-cmp-team,.la-cmp td.la-cmp-team{position:sticky;left:0;z-index:2;
+    background:var(--surface);max-width:118px;box-shadow:1px 0 0 var(--border);}
+  .la-cmp tr.mine td.la-cmp-team{background:#16283c;}
+  .la-cmp-own{display:none;}
+  .la-rk{font-size:8px;}
+  /* my-team charts */
+  .la-lu{height:150px;gap:5px;}
+  .la-lu-col{min-width:40px;}
+  .la-lu-hs{width:24px;height:24px;}
+  .la-radar{max-width:200px;}
+  .la-pw-team{max-width:none;}
+  .la-pw-score{width:38%;}
+  /* trade calculator: one column, verdict FIRST (order:-1) so it's always in view */
+  .la-tc-grid{grid-template-columns:1fr;gap:10px;}
+  .la-tc-mid{position:static;order:-1;}
+  .la-tc-pool{max-height:220px;}
+  .la-tc-sel{max-width:100%;flex:1;}
+  .la-tc-head{gap:6px;}
+  /* finder rows stack: deal text over the verdict+load row */
+  .la-fnd{padding:10px;}
+  .la-fnd-row{flex-wrap:wrap;gap:6px;}
+  .la-fnd-deal{flex-basis:100%;}
+  .la-fnd-chips{margin-left:0;flex-wrap:wrap;}
+  .la-fnd-title{gap:6px;}
+  .la-fnd-sub{margin-left:0;flex-basis:100%;}
+  .la-fnd-refresh{margin-left:auto;}
+  /* best available */
+  .la-ba-row{gap:6px;padding:4px 8px;}
+  .la-ba-team{width:26px;}
+  .la-ba-val,.la-ba-fpts{width:38px;}
+  .la-note{font-size:9.5px;}
+}
+@media (max-width:420px){
+  .la-cmp td.la-cmp-team,.la-cmp th.la-cmp-team{max-width:92px;}
+  .la-lu{height:130px;}
+  .la-lu-col{min-width:34px;}
+  .la-lu-hs{width:20px;height:20px;}
+}
+
+
+/* ── League header: icon beside the name, never behind it ───────────────────*/
+.la-hdr{display:flex;align-items:center;gap:10px;min-width:0;}
+.la-hdr-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.15;}
+.la-av-blank{display:inline-flex;align-items:center;justify-content:center;background:var(--surface2);
+  border:1px solid var(--border);font-size:15px;}
+
+/* ── My Team summary card ───────────────────────────────────────────────────
+   (These classes shipped with no CSS at all, which is why the card rendered as a giant
+   icon with raw text underneath.) */
+.la-my-sum{display:flex;align-items:flex-start;gap:12px;background:var(--surface);
+  border:1px solid var(--border);border-radius:10px;padding:11px 13px;margin-bottom:12px;}
+.la-my-sum-body{flex:1;min-width:0;}
+.la-my-sum-head{font-size:14px;font-weight:900;display:flex;align-items:center;gap:8px;
+  flex-wrap:wrap;margin-bottom:3px;}
+.la-my-sum-line{font-size:10.5px;color:var(--muted);line-height:1.55;}
+.la-my-sum-line b{color:var(--text);font-family:var(--mono);}
+.la-my-sum-adv{font-size:11.5px;line-height:1.5;margin-top:6px;padding-top:6px;
+  border-top:1px dashed var(--border);}
+.la-traj{font-size:9.5px;font-weight:800;letter-spacing:.03em;padding:2px 7px;border-radius:10px;
+  border:1px solid var(--border);white-space:nowrap;}
+.la-traj.traj-cont{background:rgba(0,212,170,.12);color:#00d4aa;border-color:rgba(0,212,170,.4);}
+.la-traj.traj-1yr{background:rgba(251,191,36,.12);color:#fbbf24;border-color:rgba(251,191,36,.4);}
+.la-traj.traj-multi{background:rgba(255,107,107,.10);color:#ff6b6b;border-color:rgba(255,107,107,.35);}
+.la-traj.traj-hard{background:rgba(255,107,107,.16);color:#ff6b6b;border-color:rgba(255,107,107,.5);}
 </style>
 </head>
 <body>
@@ -1290,23 +1446,37 @@ html,body{max-width:100%;overflow-x:hidden;}
     <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
   </div>
   <div class="hdr-right">
-    <button class="btn btn-ghost" onclick="triggerImport()">⬆ Import</button>
+    <!-- Everything that used to be a row of buttons now lives behind one ☰ menu: on a phone
+         that row wrapped and ate two lines of vertical space before you saw any content.
+         League sync moved in here too, so the season bar carries seasons and nothing else. -->
     <div class="hdr-menu-wrap">
-      <button class="btn btn-ghost" onclick="toggleDownloadMenu(event)" aria-haspopup="true" title="Download your projections as JSON or CSV">⬇ Download ▾</button>
-      <div class="hdr-menu" id="downloadMenu" hidden>
-        <button class="hdr-menu-item" onclick="exportJSON()">JSON</button>
-        <button class="hdr-menu-item" onclick="exportCSV()">CSV</button>
+      <button class="hdr-burger" id="appMenuBtn" onclick="toggleAppMenu(event)"
+              aria-haspopup="true" aria-expanded="false" aria-label="Menu" title="Menu">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="hdr-menu app-menu" id="appMenu" hidden>
+        <div class="app-menu-sec">View</div>
+        <button class="hdr-menu-item" id="menuProjView" onclick="closeAppMenu();showProjectionsView()">📊 Projections</button>
+        <button class="hdr-menu-item" id="menuLeagueView" onclick="closeAppMenu();openLeagueAnalyzer()">🏟 League Analyzer</button>
+        <button class="hdr-menu-item" onclick="closeAppMenu();showFullRankings()">🏆 Full Rankings</button>
+        <!-- League actions: only meaningful once a snapshot exists, so syncAppChrome()
+             reveals this whole section when leagueSnapshot is set. -->
+        <div class="app-menu-sec la-menu-only" id="menuLeagueSec" hidden>League</div>
+        <button class="hdr-menu-item la-menu-only" id="menuResync" hidden onclick="closeAppMenu();laResync()">⟳ Re-sync league</button>
+        <button class="hdr-menu-item la-menu-only" id="menuChangeLeague" hidden onclick="closeAppMenu();laMenuChangeLeague()">🔗 Change league</button>
+        <div class="app-menu-sec">Projections</div>
+        <button class="hdr-menu-item" onclick="closeAppMenu();triggerImport()">⬆ Import</button>
+        <button class="hdr-menu-item" onclick="closeAppMenu();exportJSON()">⬇ Download JSON</button>
+        <button class="hdr-menu-item" onclick="closeAppMenu();exportCSV()">⬇ Download CSV</button>
+        <button class="hdr-menu-item hdr-menu-danger" onclick="closeAppMenu();resetAll()" title="Reset all edits and pull the latest Sleeper projections">↺ Reset all</button>
       </div>
     </div>
-    <button class="btn btn-ghost" onclick="showFullRankings()">Full Rankings</button>
-    <button class="btn btn-ghost" onclick="resetAll()" title="Reset all edits and pull the latest Sleeper projections">↺ Reset</button>
   </div>
 </div>
-<div class="season-bar">
+<div class="season-bar" id="seasonBar">
   <span class="season-label">Season</span>
   <div id="seasonTabs" style="display:flex;gap:6px;flex-shrink:0;"></div>
   <div class="season-spacer"></div>
-  <button class="league-sync-btn" id="leagueSyncBtn" onclick="openLeagueAnalyzer()" title="Sync your Sleeper league — rosters, dynasty values, trade tools">🔗 My League</button>
   <span class="sleeper-badge">data: Sleeper</span>
 </div>
 <div class="main">
@@ -1706,9 +1876,14 @@ function hsURL(p){
   }
   return '';
 }
+// loading="lazy" is the single biggest win on the rankings page: it renders ~570 rows with
+// two images each (headshot + team logo), so eager loading fired >1,100 image fetches the
+// moment the table mounted — most for rows far below the fold. The browser now fetches them
+// as they approach the viewport. decoding="async" keeps decode work off the main thread so
+// it can't block the first paint.
 function imgTag(src,cls,fb='🏈'){
   if(!src) return `<div class="${cls} ph-err">${fb}</div>`;
-  return `<img src="${src}" class="${cls}" alt="" onerror="this.outerHTML='<div class=\\'${cls} ph-err\\'>${fb}</div>'">`;
+  return `<img src="${src}" class="${cls}" alt="" loading="lazy" decoding="async" onerror="this.outerHTML='<div class=\\'${cls} ph-err\\'>${fb}</div>'">`;
 }
 function imgSm(src,cls='share-hs',fb='🏈'){
   if(!src) return `<div class="${cls}-err">${fb}</div>`.replace(cls+'-err',cls.replace('share-hs','share-hs')+'-err');
@@ -2622,6 +2797,8 @@ function setPhase(p){
 function showFullRankings(){ rankScope='all'; currentPhase='Rankings'; renderContent(); }
 
 function renderContent(){
+  // Single choke point for phase changes — keep view-specific chrome honest here.
+  if(typeof syncAppChrome==='function') syncAppChrome();
   if(currentPhase==='Rankings'){renderRankings();return;}
   if(currentPhase==='AdvancedLeague'){renderSharpLeague();return;}
   if(currentPhase==='League'){renderLeagueAnalyzer();return;}
@@ -2684,7 +2861,9 @@ function tabBar(){
   const tabs=[['Passing','Passing'],['Receiving','Receiving'],['Rushing','Rushing']];
   if(hasSharp) tabs.push(['Advanced','Adv Metrics']);
   // "Roster Changes" appears when the currently-selected team has Spotrac data.
-  if(currentTeam && ADDITIONS && ADDITIONS[currentTeam]) tabs.push(['Additions','Roster']);
+  // "Roster" shows Spotrac offseason moves on the projection season, and the actual nflverse
+  // roster for that year on any completed season — so it's available whenever either exists.
+  if(currentTeam && ((ADDITIONS && ADDITIONS[currentTeam]) || nflverseRosterFor(currentTeam))) tabs.push(['Additions','Roster']);
   tabs.push(['Rankings','Rankings']);
   // Treat the league-wide advanced view as the same visual tab as the per-team one.
   const phaseForTab = (currentPhase==='AdvancedLeague') ? 'Advanced' : currentPhase;
@@ -3172,8 +3351,8 @@ function renderRushing(team,state){
   const baseAtt=getBase(team,'RB').reduce((s,p)=>s+p.rushing_attempts,0)||200;
   const baseYds=getBase(team,'RB').reduce((s,p)=>s+p.rushing_yards,0)||1600;
   const subTabs=`<div class="sub-tabs">
-    <button class="sub-tab ${rushingSubTab==='carries'?'active':''}" onclick="setRushSub('carries')">🏃 Carry Share</button>
-    <button class="sub-tab ${rushingSubTab==='rush_tds'?'active':''}" onclick="setRushSub('rush_tds')">🏆 Rush TD Share</button></div>`;
+    <button class="sub-tab ${rushingSubTab==='carries'?'active':''}" onclick="setRushSub('carries')">Carry Share</button>
+    <button class="sub-tab ${rushingSubTab==='rush_tds'?'active':''}" onclick="setRushSub('rush_tds')">Rush TD Share</button></div>`;
   const weekSlider=weekRangeSliderHTML(team,state);
   const body = rushingSubTab==='carries' ? renderRushCarries(team,state,baseAtt,baseYds,subTabs) : renderRushTDs(team,state,subTabs);
   return weekSlider + body;
@@ -6159,6 +6338,8 @@ function _dwCellClass(key, v){
   if(v==null || Number.isNaN(v)) return '';
   // missed_tackle_pct arrives as a fraction (0.125); compare on the same 0-100 scale we show.
   if(key==='missed_tackle_pct') return _triLow(v*100, 8, 16);
+  // snap share is a FRACTION from the seed too; higher = more on the field = better.
+  if(key==='snap_pct') return _tri(v*100, 70, 40);   // 70%+ green, 40%+ yellow
   if(key==='tackles') return _tri(v,7,4);                 // tackles/game: 7+ green, 4+ yellow
   if(key==='sacks') return _tri(v,1,0.5);                 // sacks/game
   if(key==='pressures') return _tri(v,4,2);               // pressures/game
@@ -6187,6 +6368,7 @@ function _dwCellClass(key, v){
 function _dwCols(group){
   if(group==='DL'){
     return [
+      {k:'snap_pct', l:'SNP%', d:0, pct:true},
       {k:'tackles', l:'TKL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1},
       {k:'hurries', l:'HUR', d:1}, {k:'qb_hits', l:'HIT', d:1}, {k:'blitzes', l:'BLZ', d:1},
       {k:'missed_tackles', l:'MTKL', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
@@ -6194,6 +6376,7 @@ function _dwCols(group){
   }
   if(group==='LB'){
     return [
+      {k:'snap_pct', l:'SNP%', d:0, pct:true},
       {k:'tackles', l:'TKL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1},
       {k:'blitzes', l:'BLZ', d:1}, {k:'targets', l:'TGT', d:1}, {k:'cmp_allowed', l:'CMPA', d:1},
       {k:'yds_allowed', l:'YDSA', d:1}, {k:'ints', l:'INT', d:1}, {k:'rating_allowed', l:'RTG A', d:1},
@@ -6201,6 +6384,7 @@ function _dwCols(group){
     ];
   }
   return [
+    {k:'snap_pct', l:'SNP%', d:0, pct:true},
     {k:'targets', l:'TGT', d:1}, {k:'cmp_allowed', l:'CMPA', d:1}, {k:'yds_allowed', l:'YDSA', d:1},
     {k:'td_allowed', l:'TDA', d:1}, {k:'ints', l:'INT', d:1}, {k:'rating_allowed', l:'RTG A', d:1},
     {k:'adot', l:'aDOT', d:1}, {k:'yac_allowed', l:'YAC A', d:1}, {k:'tackles', l:'TKL', d:0},
@@ -6243,7 +6427,15 @@ function renderPcardDefWeekly(pid){
       const v=totals[c.k];
       return `<td class="pcard-cell pcard-total-cell">${v==null?'–':_dwNum(v,c.d,c.pct)}</td>`;
     }).join('');
-    const totalRow = `<tr class="pcard-total-row"><td class="pcard-wk">TOT</td><td class="pcard-opp">${totals.games||rec.weeks.length}g</td>${totCells}</tr>`;
+    // games = weeks PFR charted; gp = weeks he actually took a snap. When they differ, say so:
+    // "9/16g" is honest where a bare "16g" would imply every row carries stats.
+    const gp = totals.gp!=null ? totals.gp : rec.weeks.length;
+    const ch = totals.games!=null ? totals.games : rec.weeks.length;
+    const gLbl = (gp && ch && gp!==ch) ? `${ch}/${gp}g` : `${ch||gp}g`;
+    const gTip = (gp && ch && gp!==ch)
+      ? `Played ${gp} games; PFR charted advanced stats in ${ch}. Uncharted weeks still appear (snap share proves he played) but their stat cells are blank.`
+      : `${ch||gp} games played`;
+    const totalRow = `<tr class="pcard-total-row"><td class="pcard-wk">TOT</td><td class="pcard-opp" title="${gTip}">${gLbl}</td>${totCells}</tr>`;
     seasonBlocks.push(`<div class="pcard-season">
       ${_dwTitleForSeason(season, rec)}
       <div class="pcard-table-scroll"><table class="pcard-table">
@@ -6848,7 +7040,64 @@ if(document && document.addEventListener && !_schemeEscBound){
     if(e && e.key==='Escape' && schemeOverlayOpen) closeTeamCoachingScheme();
   });
 }
+// nflverse season roster for a team, or null. Only for COMPLETED seasons — on the projection
+// season the roster is a moving target and Spotrac's offseason moves are the real story.
+function nflverseRosterFor(team){
+  if(activeSeason==='proj' || !team) return null;
+  const blk = (typeof NFLVERSE!=='undefined' && NFLVERSE) ? NFLVERSE[String(activeSeason)] : null;
+  const r = blk && blk.rosters && blk.rosters[team];
+  return (r && r.length) ? r : null;
+}
+// Historical roster in the SAME shape as the live depth chart (renderDepthChart): position
+// rows, players left→right, starter highlighted, every chip opening a player card.
+// Row arrays are positional — [name, pos, jersey, yrsExp, age, sleeperId, status, snaps] —
+// see team_rosters() in nflverse.py. The builder already sorted them by position group then
+// snaps DESC, so the FIRST player in each position is that season's real starter: for a
+// completed year, snaps are what actually happened (better than anyone's depth chart).
+function renderNflverseRoster(team){
+  const rows = nflverseRosterFor(team);
+  if(!rows) return '';
+  const FANTASY={QB:1,RB:1,WR:1,TE:1};
+  const byPos={};
+  rows.forEach(r=>{ const pos=String(r[1]||'').toUpperCase(); (byPos[pos]=byPos[pos]||[]).push(r); });
+  const posKeys=Object.keys(byPos).sort((x,y)=>{
+    const ix=DEPTH_POS_ORDER.indexOf(x), iy=DEPTH_POS_ORDER.indexOf(y);
+    return (ix<0?99:ix)-(iy<0?99:iy) || x.localeCompare(y);
+  });
+  const groups=posKeys.map(pos=>{
+    const chips=byPos[pos].map(([name,ps,jersey,exp,age,sid,status,snaps],i)=>{
+      // The id column must be a SLEEPER id (all digits) — that's what openPlayerCard() and
+      // hsURL() understand. Be defensive: an earlier build of team_rosters() wrote gsis ids
+      // here ("00-0036900"), and ~19% of older rosters have no sleeper_id at all. Anything
+      // that isn't all-digits is discarded in favour of the NAME, which resolvePlayerId()
+      // and hsURL() both handle — so cards and headshots work on any vintage of the seed.
+      const sleeperId = (sid!=null && /^\d+$/.test(String(sid))) ? String(sid) : null;
+      const hsrc = sleeperId ? hsURL({player_id:sleeperId, name, pos:ps}) : hsURL({name, pos:ps});
+      const hs = hsrc ? `<img src="${hsrc}" class="depth-hs" onerror="this.style.display='none'">` : '';
+      const rk = exp===0 ? `<span class="depth-rookie">R</span>` : '';
+      const jr = jersey!=null ? `<span class="depth-jersey">#${jersey}</span>` : '';
+      const ir = status==='RES' ? `<span class="depth-ir" title="Finished the season on injured reserve / reserve">IR</span>` : '';
+      // Starter = most snaps at the position (and actually played). A 0-snap player is
+      // never a "starter" even if he's alphabetically first in an empty group.
+      const starter = (i===0 && snaps>0) ? ' depth-starter' : '';
+      const tip = `${ordinal(i+1)} · ${ps}${snaps?` · ${snaps.toLocaleString()} snaps`:' · did not play'}${age!=null?` · age ${age}`:''}`;
+      return `<span class="depth-player clickable-player${starter}" title="${tip}" onclick="${pcardOnclick(sleeperId||name, ps, team)}">${hs}<span class="depth-name">${name}</span>${jr}${rk}${ir}</span>`;
+    }).join('');
+    const lbl = FANTASY[pos] ? `<span class="pos-badge pos-${pos}">${pos}</span>` : `<span class="depth-pos-abbr">${pos}</span>`;
+    return `<div class="depth-pos"><div class="depth-pos-label">${lbl}</div><div class="depth-players">${chips}</div></div>`;
+  }).join('');
+  return `<div class="add-section">
+    <div class="add-section-head">\ud83d\udccb ${activeSeason} Roster <span class="add-count">${rows.length}</span></div>
+    <div class="depth-sub">nflverse \u00b7 end-of-season active + reserve \u00b7 ordered by snaps played, so the
+      <b class="depth-starter-key">highlighted</b> player is that season\u2019s real starter \u00b7 tap any player for their card.</div>
+    <div class="depth-grid">${groups}</div></div>`;
+}
+
 function renderTeamAdditions(team){
+  // Completed season → show that year's actual roster instead of Spotrac's offseason moves
+  // (which only describe the upcoming season and would be misleading dated to a past year).
+  const histRoster = renderNflverseRoster(team);
+  if(histRoster) return histRoster;
   const a = (ADDITIONS && ADDITIONS[team]) || {};
   // Highlight fantasy-relevant offensive positions (QB/RB/WR/TE) with the same Sleeper-style
   // colors as the Rankings page; leave defensive/other positions neutral so skill players pop.
@@ -7466,7 +7715,7 @@ function renderRankings(){
     <td class="c-vor"><span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${p.vor>0?'+':''}${p.vor!=null?p.vor.toFixed(1):'—'}</span></td>
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
     <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsURL(p),'rank-hs','🏈')}<span class="rank-name">${p.name}</span></div></td>
-    <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" onerror="this.style.display='none'"> ${p.team}</td>
+    <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${p.team}</td>
     ${contractCells}
     ${statCells}
   </tr>`);
@@ -8015,21 +8264,55 @@ function exportCSV(){
 // ─────────────────────────────────────────────────────────────────────────────
 // Download format menu (one ⬇ Download button → choose JSON or CSV)
 // ─────────────────────────────────────────────────────────────────────────────
-function toggleDownloadMenu(e){
+// ── App menu (☰) ────────────────────────────────────────────────────────────
+// Replaces the old header button row. Same open/close contract as the download menu it
+// supersedes: stop the opening click, then close on the next outside click (a menu-item
+// click bubbles here too, so choosing an action closes the menu after it fires).
+function toggleAppMenu(e){
   if(e) e.stopPropagation();
-  const m=document.getElementById('downloadMenu'); if(!m) return;
+  const m=document.getElementById('appMenu'); if(!m) return;
+  const btn=document.getElementById('appMenuBtn');
   if(m.hasAttribute('hidden')){
     m.removeAttribute('hidden');
-    // Close on the next outside click (this handler runs on bubble, so the opening click
-    // — which we stopped above — won't immediately re-close it). A menu-item click bubbles
-    // here too, so picking a format closes the menu after the export fires.
-    setTimeout(()=>document.addEventListener('click', closeDownloadMenu, {once:true}), 0);
+    if(btn){ btn.classList.add('open'); btn.setAttribute('aria-expanded','true'); }
+    setTimeout(()=>document.addEventListener('click', closeAppMenu, {once:true}), 0);
   } else {
-    closeDownloadMenu();
+    closeAppMenu();
   }
 }
-function closeDownloadMenu(){
-  const m=document.getElementById('downloadMenu'); if(m) m.setAttribute('hidden','');
+function closeAppMenu(){
+  const m=document.getElementById('appMenu'); if(m) m.setAttribute('hidden','');
+  const btn=document.getElementById('appMenuBtn');
+  if(btn){ btn.classList.remove('open'); btn.setAttribute('aria-expanded','false'); }
+}
+// The app has two top-level VIEWS: Projections (the builder — season tabs, team sidebar) and
+// the League Analyzer (snapshot-driven, season-agnostic). This returns to the former.
+function showProjectionsView(){
+  if(currentPhase==='League') currentPhase = currentTeam ? 'Passing' : 'Rankings';
+  renderContent();
+  syncAppChrome();
+}
+// Show/hide chrome that only belongs to one view. The season tabs do nothing in the League
+// Analyzer (a snapshot isn't a season), so they'd just be dead controls taking a row of
+// screen — hide them there. Also keeps the menu's view items in sync.
+function syncAppChrome(){
+  const inLeague = (typeof currentPhase!=='undefined' && currentPhase==='League');
+  // Season tabs AND the NFL team sidebar are both projection-builder chrome: a snapshot
+  // isn't a season, and picking the Lions does nothing to your dynasty league. Hiding both
+  // in the analyzer removes two dead controls and ~75px of vertical space on a phone.
+  const bar=document.getElementById('seasonBar');
+  if(bar) bar.classList.toggle('hidden-view', inLeague);
+  const side=document.getElementById('sidebar');
+  if(side) side.classList.toggle('hidden-view', inLeague);
+  const mp=document.getElementById('menuProjView'), ml=document.getElementById('menuLeagueView');
+  if(mp) mp.classList.toggle('active', !inLeague);
+  if(ml) ml.classList.toggle('active', inLeague);
+  // League actions only exist once there's a snapshot to act on.
+  const hasSnap = (typeof leagueSnapshot!=='undefined' && !!leagueSnapshot);
+  document.querySelectorAll('.la-menu-only').forEach(el=>{
+    if(hasSnap) el.removeAttribute('hidden'); else el.setAttribute('hidden','');
+  });
+  if(typeof refreshLeagueSyncBtn==='function') refreshLeagueSyncBtn();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -10100,12 +10383,20 @@ let laState = { step: leagueSnapshot? 'view':'start', busy:false, error:null,
                 myPicks:true,      // My Team: include draft picks in power scores
                 myStarters:false,  // My Team: starters only (ignore bench capital)
                 fndSeed:0,         // Trade Finder shuffle seed — 🔄 bumps it for new variations
+                // Team view: which roster is on screen (null = the synced user's own team).
+                // Clicking any team in Power Rankings / Compare / Rosters swaps the whole
+                // analysis to them — same charts, same lenses, their roster.
+                viewTeam:null,
                 fndPos:'AUTO',     // Trade Finder target position (AUTO = my weakest by rank)
                 cmpPicks:true,     // Compare: include pick capital in the value lens
                 cmpStarters:false, // Compare: rank on starting lineups only (mirrors My Team)
                 cmpSort:{col:'total',dir:-1} };  // Compare column sort (click a header)
 
 // ── Value lookups ────────────────────────────────────────────────────────────
+// Every dynasty number in this file is (chart points x LA_VAL_SCALE). Keep it that way:
+// players, superflex QBs, TEP tight ends and PICKS must share one scale or the trade math,
+// the tier multipliers and the power scores all quietly disagree with each other.
+const LA_VAL_SCALE = 100;
 // Dynasty value for one player under the SNAPSHOT league's format. Returns null when the
 // player is off the chart (deep depth pieces) — callers render those as unvalued, not 0,
 // because "not charted" and "worthless" are different claims.
@@ -10115,9 +10406,14 @@ function dynastyValueFor(name, pos){
   const e = dv[ecrNormName(name)];
   if(!e || (pos && e.pos && e.pos !== pos)) return null;
   const snap = leagueSnapshot || {};
-  if(e.pos==='QB' && snap.superflex && e.sf!=null) return e.sf;
-  if(e.pos==='TE' && snap.tep && e.tep!=null) return e.tep;
-  return e.v!=null ? e.v*100 : null;
+  // ONE scale for every asset. The seed stores raw 0-100 chart points; LA_VAL_SCALE lifts
+  // them into the working range the tier multipliers and trade math operate in.
+  // The SF/TEP branches used to return the raw column while the base branch scaled — so in a
+  // superflex league Josh Allen priced at 100 against Ja'Marr Chase's 8900, i.e. ~1% of his
+  // real worth. Every return here now goes through the same multiplier.
+  if(e.pos==='QB' && snap.superflex && e.sf!=null) return e.sf*LA_VAL_SCALE;
+  if(e.pos==='TE' && snap.tep && e.tep!=null) return e.tep*LA_VAL_SCALE;
+  return e.v!=null ? e.v*LA_VAL_SCALE : null;
 }
 // Value for a future rookie pick. Exact rows exist for the chart's listed seasons; later
 // seasons reuse the year-out table (dynasty convention: value the unknown like next year's).
@@ -10132,7 +10428,49 @@ function dynastyPickValue(season, round){
   const hits = rows.filter(r=>rx.test(r[0]));
   if(!hits.length) return round>=5 ? (rows[rows.length-1] ? rows[rows.length-1][col] : null) : null;
   // Use the MIDDLE row of the matching tier (mid-1st for an unknown future 1st, mid-2nd, …).
-  return hits[Math.floor(hits.length/2)][col];
+  return hits[Math.floor(hits.length/2)][col]*LA_VAL_SCALE;
+}
+
+// ── Pick tiering ─────────────────────────────────────────────────────────────
+// Players get a tier multiplier (LA_TIER_MULT); picks got nothing, so every pick was
+// implicitly priced at a tier-4 "1.0" while the players around it were boosted or faded.
+// Rather than invent a tier for a pick, we DERIVE one from what it's worth: build a
+// tier -> median-player-value table from the actual chart, then a pick takes the multiplier
+// of the tier whose players are worth about the same. A 1.01 that trades like a tier-1 WR
+// gets tier-1 treatment; a late 4th gets the same fade as the fringe players it competes with.
+let _laTierVals = null;
+function laTierValueTable(){
+  if(_laTierVals) return _laTierVals;
+  const buckets={};
+  const dv=(DYNASTY_VALUES&&DYNASTY_VALUES.players)||{};
+  for(const k in dv){
+    const e=dv[k];
+    const t=laDynTier(e.n||k);
+    if(t==null) continue;
+    const v=dynastyValueFor(e.n||k, e.pos);
+    if(v==null||v<=0) continue;
+    (buckets[t]=buckets[t]||[]).push(v);
+  }
+  _laTierVals=Object.keys(buckets).map(t=>{
+    const a=buckets[t].sort((x,y)=>x-y);
+    return {tier:+t, med:a[Math.floor(a.length/2)]};
+  }).sort((a,b)=>a.tier-b.tier);
+  return _laTierVals;
+}
+// Tier multiplier appropriate to a raw asset value (used for picks).
+function laTierMultForValue(v){
+  const tbl=laTierValueTable();
+  if(!tbl.length || v==null) return 1;
+  let best=tbl[0], bd=Infinity;
+  tbl.forEach(x=>{ const d=Math.abs(x.med-v); if(d<bd){ bd=d; best=x; } });
+  return LA_TIER_MULT[best.tier] || 1;
+}
+// The pick equivalent of laDynVal(): chart value with its value-equivalent tier boost.
+// Every ranking view should use THIS for picks, never the raw dynastyPickValue().
+function laPickVal(season, round){
+  const v=dynastyPickValue(season, round);
+  if(v==null) return 0;
+  return v * laTierMultForValue(v);
 }
 
 // ── Tier-weighted valuation ──────────────────────────────────────────────────
@@ -10171,12 +10509,20 @@ function openLeagueAnalyzer(){
   renderContent();
   refreshLeagueSyncBtn();
 }
-function leaveLeagueAnalyzer(){ setPhase('Rankings'); }
+function leaveLeagueAnalyzer(){ showProjectionsView(); }
 // Header button reflects state: plain sync CTA before a snapshot, league name after.
 function refreshLeagueSyncBtn(){
-  const b=document.getElementById('leagueSyncBtn'); if(!b) return;
-  b.innerHTML = leagueSnapshot ? `${laLeagueIcon(leagueSnapshot,'la-btn-av')} ${leagueSnapshot.name}` : '\ud83d\udd17 My League';
-  b.classList.toggle('synced', !!leagueSnapshot);
+  // The League entry point lives in the ☰ menu now; show the synced league's icon + name
+  // there so the menu doubles as the sync indicator the old header button used to be.
+  const label = leagueSnapshot
+    ? `${laLeagueIcon(leagueSnapshot,'la-btn-av')} ${leagueSnapshot.name}`
+    : '\ud83c\udfdf League Analyzer';
+  const m=document.getElementById('menuLeagueView');
+  if(m) m.innerHTML = label;
+  // Kept for any build that still renders the old header button.
+  const b=document.getElementById('leagueSyncBtn');
+  if(b){ b.innerHTML = leagueSnapshot ? label : '\ud83d\udd17 My League';
+         b.classList.toggle('synced', !!leagueSnapshot); }
 }
 
 // ── Sync flow ────────────────────────────────────────────────────────────────
@@ -10208,6 +10554,13 @@ async function laResync(){
 }
 function laChangeLeague(){
   laState.step='start'; laState.error=null; renderLeagueAnalyzer();
+}
+// Same, but reachable from the ☰ menu while you're in the Projections view: switch into the
+// analyzer and land on its setup screen rather than re-rendering a view that isn't on screen.
+function laMenuChangeLeague(){
+  laState.step='start'; laState.error=null;
+  currentPhase='League';
+  renderContent();
 }
 
 // The snapshot itself: league + users + rosters + traded picks + the Sleeper player DB
@@ -10282,13 +10635,17 @@ async function laTakeSnapshot(leagueId){
       }
       window._laLinkedLeague = { id: leagueId, name: lg.name||'League' };
     }catch(e){}
+    _laTierVals=null;   // format (SF/TEP) may have changed → rebuild the pick-tier table
     laState.step='view'; laState.busy=false;
     saveSession();
     toast(`Snapshot of ${leagueSnapshot.name} taken`,'ok');
   }catch(e){
     laState.busy=false; laState.error=`Sync failed: ${e.message}`;
   }
-  renderLeagueAnalyzer(); refreshLeagueSyncBtn();
+  renderLeagueAnalyzer();
+  // Taking a snapshot doesn't go through renderContent(), so sync the chrome explicitly —
+  // this is what reveals the League actions (Re-sync / Change league) in the ☰ menu.
+  if(typeof syncAppChrome==='function') syncAppChrome(); else refreshLeagueSyncBtn();
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
@@ -10335,16 +10692,13 @@ function renderLeagueAnalyzer(){
   const stamp=`${taken.toLocaleDateString(undefined,{month:'short',day:'numeric'})} ${taken.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`;
   const fmt=[`${s.teams}-team`, s.superflex?'Superflex':'1QB', s.tep?'TEP':null].filter(Boolean).join(' · ');
   host.innerHTML=`
-    <div class="team-header"><div><div class="team-abbr la-hdr">${laLeagueIcon(s,'la-lg-av')} ${s.name}</div>
+    <div class="team-header"><div><div class="team-abbr la-hdr">${laLeagueIcon(s,'la-lg-av')}<span class="la-hdr-name">${s.name}</span></div>
       <div class="team-qb-name">${fmt} · snapshot taken <b>${stamp}</b>
         ${DYNASTY_VALUES&&DYNASTY_VALUES.asof?` · values: FantasyPros dynasty chart <b>${DYNASTY_VALUES.asof}</b>`:''}</div></div>
-      <div class="team-nav">
-        <button class="btn btn-accent btn-sm" ${laState.busy?'disabled':''} onclick="laResync()">${laState.busy?'Syncing…':'⟳ Re-sync'}</button>
-        <button class="btn btn-ghost btn-sm" onclick="laChangeLeague()">Change league</button>
-        ${back}</div></div>
+      </div>
     <div class="phase-tabs">
       ${[['myteam','My Team'],['rosters','Rosters'],['compare','Compare'],['best','Waiver Wire'],['trade','Trade Center']]
-        .map(([k,l])=>`<button class="phase-tab ${laState.laTab===k?'active':''}" onclick="laState.laTab='${k}';renderLeagueAnalyzer()">${l}</button>`).join('')}
+        .map(([k,l])=>`<button class="phase-tab ${laState.laTab===k?'active':''}" onclick="laSetTab('${k}')">${l}</button>`).join('')}
     </div>
     ${laState.laTab==='compare' ? laCompareView(s) : laState.laTab==='best' ? laBestAvailView(s) : laState.laTab==='trade' ? laTradeView(s) : laState.laTab==='rosters' ? laRostersView(s) : laMyTeamView(s)}`;
 }
@@ -10364,7 +10718,7 @@ function laTeamValue(t){
   // totals, Compare ranks and Trade verdicts can never disagree about who's loaded.
   return Math.round(
     laTcAdjusted(t.players.map(p=>laDynVal(p.name,p.pos)).filter(v=>v>0)) +
-    laTcAdjusted(t.picks.map(pk=>dynastyPickValue(pk.season,pk.round)||0).filter(v=>v>0)));
+    laTcAdjusted(t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0)));
 }
 function laTeamCard(t,s){
   const valued=[], depth=[];
@@ -10376,7 +10730,9 @@ function laTeamCard(t,s){
   const mine=s.myUserId && t.ownerId===s.myUserId;
   const total=laTeamValue(t);
   const pickChips=t.picks.map(pk=>{
-    const v=dynastyPickValue(pk.season,pk.round);
+    // laPickVal, not the raw chart value: players on this card are tier-boosted and scaled,
+    // so a raw pick number here would be ~1% of a comparable player and read as worthless.
+    const v=Math.round(laPickVal(pk.season,pk.round))||null;
     const label=`${pk.season} ${pk.round}${['','st','nd','rd','th'][pk.round]||'th'}`;
     const orig=pk.origRosterId!==t.rosterId?` (via ${laRosterName(s,pk.origRosterId)})`:'';
     return `<span class="la-pick" title="${label}${orig}${v!=null?` · value ${v}`:''}">${label}${orig?'*':''}${v!=null?` <b>${v}</b>`:''}</span>`;
@@ -10384,7 +10740,7 @@ function laTeamCard(t,s){
   return `<div class="la-card ${mine?'mine':''}">
     <div class="la-card-head">
       ${laTeamIcon(t,'la-tm-av-sm')}
-      <div class="la-team">${mine?'\u2605 ':''}${t.teamName}</div>
+      <div class="la-team la-clickteam" onclick="laViewTeam(${t.rosterId})" title="View this team\u2019s analysis">${mine?'\u2605 ':''}${t.teamName}</div>
       <div class="la-owner">@${t.owner} · ${t.wins}-${t.losses}</div>
       <div class="la-total" title="Sum of player + pick dynasty values">${total}</div>
     </div>
@@ -10479,7 +10835,7 @@ function laCompareView(s){
         : t.players;
       srcP.forEach(p=>{ const v=laDynVal(p.name,p.pos); if(byPos[p.pos]&&v>0) byPos[p.pos].push(v); });
       POS.forEach(pos=>{ by[pos]=+laTcAdjusted(byPos[pos]).toFixed(0); });
-      picks=+laTcAdjusted(t.picks.map(pk=>dynastyPickValue(pk.season,pk.round)||0).filter(v=>v>0)).toFixed(0);
+      picks=+laTcAdjusted(t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0)).toFixed(0);
     }else{
       const withF=t.players.map(p=>({...p, fpts:pm.get(ecrNormName(p.name)+'|'+p.pos)||0}))
                            .sort((a,b)=>b.fpts-a.fpts);
@@ -10531,7 +10887,7 @@ function laCompareView(s){
         const mine=s.myUserId && r.t.ownerId===s.myUserId;
         const cell=(c,v)=>`<td class="${laQuartile(ranks[c][i],n)}"><b>${fmtV(v)}</b><span class="la-rk">#${ranks[c][i]}</span></td>`;
         return `<tr class="${mine?'mine':''}">
-          <td class="la-cmp-team">${laTeamIcon(r.t,'la-tm-av-sm')}${mine?'\u2605 ':''}${r.t.teamName}<span class="la-cmp-own">@${r.t.owner}</span></td>
+          <td class="la-cmp-team la-clickteam" onclick="laViewTeam(${r.t.rosterId})" title="View ${r.t.teamName}\u2019s analysis">${laTeamIcon(r.t,'la-tm-av-sm')}${mine?'\u2605 ':''}${r.t.teamName}<span class="la-cmp-own">@${r.t.owner}</span></td>
           ${POS.map(p=>cell(p,r.by[p])).join('')}
           ${withPicks?cell('picks',r.picks):''}
           ${cell('total',r.total)}</tr>`;
@@ -10643,7 +10999,10 @@ function laAssetPools(s, rosterId){
     key:`k|${pk.season}|${pk.round}|${pk.origRosterId}`, type:'k',
     season:pk.season, round:pk.round, orig:pk.origRosterId,
     label:`${pk.season} ${pk.round}${['','st','nd','rd','th'][pk.round]||'th'}${pk.origRosterId!==t.rosterId?'*':''}`,
-    v:dynastyPickValue(pk.season,pk.round)||0,
+    // MUST match how players are priced two lines up (laDynVal = scaled + tier-boosted).
+    // Mixing a raw pick value in here made every pick ~1% of a player's worth, so the
+    // calculator happily called "your whole pick chest for my WR3" a fair trade.
+    v:Math.round(laPickVal(pk.season,pk.round)),
   }));
   return {players,picks,team:t};
 }
@@ -10897,6 +11256,23 @@ function laTradeView(s){
     <div class="la-note">Verdicts use consolidation-adjusted values: extra assets on a side count at 75/55/40/30/25%, and the side holding the single best player gets a premium worth 25% of the best-asset gap \u2014 so a stack of depth can\u2019t buy a stud, but star + real piece can. Fair = within \u00b1max(4, 5%).</div>`;
 }
 
+// Switch analyzer tabs. Also scrolls back to the tab bar: these views differ wildly in
+// length (a 12-team Rosters grid vs. a short summary), so switching while scrolled down
+// otherwise drops you into the middle of the new view with no context.
+function laSetTab(k){
+  laState.laTab=k;
+  renderLeagueAnalyzer();
+  const t=document.querySelector('.phase-tabs');
+  if(t && t.getBoundingClientRect().top < 0) t.scrollIntoView({block:'start', behavior:'smooth'});
+}
+// Switch the Team view to any roster ('' → back to my own) and land on that tab.
+function laViewTeam(rosterId){
+  laState.viewTeam = (rosterId===''||rosterId==null) ? null : +rosterId;
+  laState.laTab='myteam';
+  renderLeagueAnalyzer();
+  const c=document.getElementById('content'); if(c) c.scrollTop=0;
+}
+
 // ═══ My Team — the landing view: how MY roster stacks up ═════════════════════
 // FantasyPros-Playbook-style analysis of the syncing user's roster: league power rankings,
 // per-position and per-starting-slot ranks, a starting-lineup chart, and a strength radar.
@@ -10919,7 +11295,7 @@ function laTeamEngine(s, t, lens, pm, opts){
   const starterIds = new Set(filled.filter(f=>f.player).map(f=>f.player.id));
   const starters = filled;
   const bench = ranked.filter(p=>!starterIds.has(p.id));
-  const pickVals = t.picks.map(pk=>dynastyPickValue(pk.season,pk.round)||0).filter(v=>v>0);
+  const pickVals = t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0);
   const sVals = starters.filter(f=>f.player).map(f=>f.player._v);
   let score = laTcAdjusted(sVals);
   if(!o.startersOnly) score += laTcAdjusted(bench.map(p=>p._v)) * LA_PW_BENCH;
@@ -11011,17 +11387,30 @@ function laDynAge(name){
   const a=e&&e.age!=null?parseFloat(e.age):NaN;
   return isNaN(a)?null:a;
 }
+// Contention is a THIS-YEAR question. A roster of proven-but-aging starters (Henry, Higgins)
+// can be a genuine title threat while its dynasty capital — which prices future years — reads
+// mid-pack. Ranking personas off capital alone therefore called real contenders "rebuilds".
+// So the ladder ranks on a BLEND, weighted toward the season in front of you:
+//   nowScore = projected points from the best legal starting lineup under league scoring
+//   futScore = dynasty capital (tier-boosted, consolidation-adjusted, incl. picks)
+// Both are normalised to the league best (0-1) before blending so the two very different
+// units — fantasy points vs chart value — can be compared at all.
+const LA_CONTEND_NOW = 0.70;   // weight on this season; the remainder is dynasty capital
 function laTrajectories(s, pm){
   const eng=s.teamList.map(t=>laTeamEngine(s,t,'value',pm,{picks:true,startersOnly:false}));
+  const engNow=s.teamList.map(t=>laTeamEngine(s,t,'proj',pm,{picks:false,startersOnly:true}));
+  const nowById={}; engNow.forEach(e=>nowById[e.t.rosterId]=e.score);
+  const maxNow=Math.max(...engNow.map(e=>e.score))||1;
+  const maxFut=Math.max(...eng.map(e=>e.score))||1;
   const n=eng.length;
-  const maxPick=Math.max(...s.teamList.map(t=>laTcAdjusted(t.picks.map(pk=>dynastyPickValue(pk.season,pk.round)||0).filter(v=>v>0))))||1;
+  const maxPick=Math.max(...s.teamList.map(t=>laTcAdjusted(t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0))))||1;
   const rows=eng.map(e=>{
     const vals=e.t.players.map(p=>({v:laDynVal(p.name,p.pos), age:laDynAge(p.name)})).filter(x=>x.v>0);
     const tot=vals.reduce((a,x)=>a+x.v,0)||1;
     const aged=vals.filter(x=>x.age!=null);
     const coreAge=aged.length?aged.reduce((a,x)=>a+x.v*x.age,0)/aged.reduce((a,x)=>a+x.v,0):null;
     const youth=vals.filter(x=>x.age!=null&&x.age<=25).reduce((a,x)=>a+x.v,0)/tot;
-    const pickStr=laTcAdjusted(e.t.picks.map(pk=>dynastyPickValue(pk.season,pk.round)||0).filter(v=>v>0))/maxPick;
+    const pickStr=laTcAdjusted(e.t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0))/maxPick;
     // Cliff exposure: how much of this roster's VALUE sits on players at/near their
     // positional age-cliff (defiers included — they're still mortal), and how many defiers.
     let cliffVal=0, defiers=0;
@@ -11029,9 +11418,15 @@ function laTrajectories(s, pm){
       if(c.state!=='ok') cliffVal+=laDynVal(p.name,p.pos);
       if(c.state==='defier') defiers++; });
     const cliffShare=cliffVal/tot;
-    return {t:e.t, score:e.score, coreAge, youth, pickStr, cliffShare, defiers, startersAdj:e.startersAdj};
+    // now/fut normalised 0-1 vs the league best, then blended. contendScore is the ONLY
+    // thing the top/bottom bands rank on.
+    const now=(nowById[e.t.rosterId]||0)/maxNow;
+    const fut=e.score/maxFut;
+    const contendScore=LA_CONTEND_NOW*now + (1-LA_CONTEND_NOW)*fut;
+    return {t:e.t, score:e.score, coreAge, youth, pickStr, cliffShare, defiers,
+            startersAdj:e.startersAdj, now, fut, contendScore};
   });
-  rows.sort((a,b)=>b.startersAdj-a.startersAdj);
+  rows.sort((a,b)=>b.contendScore-a.contendScore);
   rows.forEach((r,i)=>{
     const rk=i+1;
     const top = rk<=Math.max(1,Math.round(n*LA_TRAJ_TOP));
@@ -11040,6 +11435,9 @@ function laTrajectories(s, pm){
     const young = r.coreAge!=null && r.coreAge<=LA_TRAJ_YOUNG;
     let title, cls, advice;
     const cliffy = r.cliffShare>=LA_TRAJ_CLIFFSHARE;
+    // How this roster splits: strong THIS year vs strong for LATER. The gap is the story —
+    // now >> fut is a closing window; fut >> now is a rebuild that's working.
+    const nowStrong = r.now>=0.80, nowWeak = r.now<0.60;
     if(top){ title='Contender'; cls='traj-cont';
       advice='You\u2019re built \u2014 capital is for banners now. Push future picks for win-now pieces, buy proven vets on value dips'+(cliffy?' \u2014 but note your cliff exposure: this window is short, so go all-in THIS year.':'.'); }
     else if(bot){
@@ -11050,12 +11448,18 @@ function laTrajectories(s, pm){
     }
     else if(cliffy){ title='Edge of the Cliff'; cls='traj-cliff';
       advice=Math.round(100*r.cliffShare)+'% of your value sits on players at or near their positional age-cliff. Either commit to one last all-in push NOW, or sell those vets at peak before the market does it for you \u2014 the one wrong answer is waiting.'; }
-    else if(young && rk<=Math.ceil(n*0.5)){ title='One Piece Away'; cls='traj-1pc';
+    else if(nowStrong){ title='One Piece Away'; cls='traj-1pc';
+      advice='Your starters already project like a contender \u2014 you are one real add from the top tier, not a rebuild. Spend a pick or bench depth on the weakest starting slot; do not sell win-now pieces.'; }
+    // A young team can rank high on the BLEND purely on future capital — that isn't "one
+    // piece away", that's a rebuild working. Require a live lineup this year as well.
+    else if(young && !nowWeak && rk<=Math.ceil(n*0.5)){ title='One Piece Away'; cls='traj-1pc';
       advice='Young core already competing \u2014 you\u2019re one real win-now add from the top tier. This is the moment to spend a pick or depth on the missing piece; don\u2019t over-save.'; }
     else if(young){ title='Ascending'; cls='traj-asc';
       advice='Up-and-coming: young vets about to level up. Hold your risers, and buy OTHER teams\u2019 breakout-window players (2nd-yr TE/QB, 3rd-yr WR) before their price moves. A couple of key adds here compound fast.'; }
     else if(rk<=Math.ceil(n*0.5)){ title='1-Yr Reload'; cls='traj-1yr';
       advice='Aging core but real capital \u2014 flip veterans at peak value NOW and one aggressive offseason puts you right back in it.'; }
+    else if(!nowWeak){ title='1-Yr Reload'; cls='traj-1yr';
+      advice='Middling on both clocks but your lineup is live \u2014 one aggressive move at your worst starting slot swings the season. Sell the aging depth, not the starters.'; }
     else { title='Multi-Yr Rebuild'; cls='traj-multi';
       advice='Aging core and thinning capital \u2014 a proper teardown beats treading water. Move the vets (mind the cliffs), hoard picks, get young.'; }
     r.rank=rk; r.title=title; r.cls=cls; r.advice=advice;
@@ -11068,7 +11472,11 @@ function laMyTeamView(s){
   const lens=laState.myLens||'value';
   const pm=laProjMap();
   const eng=s.teamList.map(t=>laTeamEngine(s,t,lens,pm));
-  const mineEng=eng.find(e=>s.myUserId && e.t.ownerId===s.myUserId) || eng[0];
+  // The team on screen: laState.viewTeam when set, else my own, else the first roster. Every
+  // chart below reads mineEng, so this one line is what makes the whole view switchable.
+  const ownEng=eng.find(e=>s.myUserId && e.t.ownerId===s.myUserId) || eng[0];
+  const mineEng=(laState.viewTeam!=null && eng.find(e=>e.t.rosterId===laState.viewTeam)) || ownEng;
+  const isOwn = mineEng===ownEng;
   const traj=laTrajectories(s,pm);
   const myTraj=traj[mineEng.t.rosterId];
   const maxScore=Math.max(...eng.map(e=>e.score))||1;
@@ -11077,6 +11485,16 @@ function laMyTeamView(s){
   // Per-slot values across the league → my rank at every starting slot.
   const slotLabels=laSlotLabels(s.rosterPositions);
   const slotVals=slotLabels.map((_,i)=>eng.map(e=>(e.starters[i]&&e.starters[i].player)?e.starters[i].player._v:0));
+  const switcher=`
+    <div class="la-switch">
+      <select class="la-tc-sel la-switch-sel" onchange="laViewTeam(this.value)">
+        ${[...s.teamList].sort((a,b)=>{
+            if(s.myUserId){ if(a.ownerId===s.myUserId) return -1; if(b.ownerId===s.myUserId) return 1; }
+            return a.teamName.localeCompare(b.teamName);
+          }).map(t=>`<option value="${t.rosterId}" ${t.rosterId===mineEng.t.rosterId?'selected':''}>${s.myUserId&&t.ownerId===s.myUserId?'\u2605 ':''}${t.teamName}</option>`).join('')}
+      </select>
+      ${!isOwn?`<button class="btn btn-sm btn-ghost" onclick="laViewTeam('')" title="Back to your own team">\u21a9 my team</button>`:''}
+    </div>`;
   const controls=`
     <div class="la-lens">
       <span class="la-lens-lbl">Lens:</span>
@@ -11092,7 +11510,7 @@ function laMyTeamView(s){
       <table class="la-pw"><thead><tr><th>RK</th><th>TEAM</th><th>SCORE</th></tr></thead><tbody>
       ${power.map((e,i)=>`<tr class="${e===mineEng?'mine':''}">
         <td class="la-pw-rk">${i+1}.</td>
-        <td class="la-pw-team">${laTeamIcon(e.t,'la-tm-av-sm')}${e.t.teamName}
+        <td class="la-pw-team la-clickteam" onclick="laViewTeam(${e.t.rosterId})" title="View ${e.t.teamName}\u2019s analysis">${laTeamIcon(e.t,'la-tm-av-sm')}${e.t.teamName}
           <span class="la-traj ${traj[e.t.rosterId].cls}" title="${traj[e.t.rosterId].advice}">${traj[e.t.rosterId].title}</span>
           <span class="la-cmp-own">@${e.t.owner}</span></td>
         <td class="la-pw-score"><div class="la-pw-bar" style="width:${(100*e.score/maxScore).toFixed(0)}%"></div><b>${Math.round(100*e.score/maxScore)}</b></td></tr>`).join('')}
@@ -11154,7 +11572,7 @@ function laMyTeamView(s){
           \u00b7 pick chest <b>${Math.round(100*myTraj.pickStr)}%</b> of league best</div>
         <div class="la-my-sum-adv">${myTraj.advice}</div>
       </div></div>`;
-  return controls + summary
+  return switcher + controls + summary
     + `<div class="la-my-grid">${powerTbl}${posTbl}${slotTbl}${radar}${lineup}</div>`
     + `<div class="la-note">${lens==='value'
         ? 'Dynasty lens: tier-boosted FantasyPros values (T1 \u00d71.15), consolidation-adjusted \u2014 stars carry, depth decays. Power score = starters + 35% bench'+(laState.myPicks?' + 50% picks':'')+', league best = 100.'

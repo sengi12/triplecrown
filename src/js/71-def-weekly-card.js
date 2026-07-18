@@ -43,6 +43,8 @@ function _dwCellClass(key, v){
   if(v==null || Number.isNaN(v)) return '';
   // missed_tackle_pct arrives as a fraction (0.125); compare on the same 0-100 scale we show.
   if(key==='missed_tackle_pct') return _triLow(v*100, 8, 16);
+  // snap share is a FRACTION from the seed too; higher = more on the field = better.
+  if(key==='snap_pct') return _tri(v*100, 70, 40);   // 70%+ green, 40%+ yellow
   if(key==='tackles') return _tri(v,7,4);                 // tackles/game: 7+ green, 4+ yellow
   if(key==='sacks') return _tri(v,1,0.5);                 // sacks/game
   if(key==='pressures') return _tri(v,4,2);               // pressures/game
@@ -71,6 +73,7 @@ function _dwCellClass(key, v){
 function _dwCols(group){
   if(group==='DL'){
     return [
+      {k:'snap_pct', l:'SNP%', d:0, pct:true},
       {k:'tackles', l:'TKL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1},
       {k:'hurries', l:'HUR', d:1}, {k:'qb_hits', l:'HIT', d:1}, {k:'blitzes', l:'BLZ', d:1},
       {k:'missed_tackles', l:'MTKL', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
@@ -78,6 +81,7 @@ function _dwCols(group){
   }
   if(group==='LB'){
     return [
+      {k:'snap_pct', l:'SNP%', d:0, pct:true},
       {k:'tackles', l:'TKL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1},
       {k:'blitzes', l:'BLZ', d:1}, {k:'targets', l:'TGT', d:1}, {k:'cmp_allowed', l:'CMPA', d:1},
       {k:'yds_allowed', l:'YDSA', d:1}, {k:'ints', l:'INT', d:1}, {k:'rating_allowed', l:'RTG A', d:1},
@@ -85,6 +89,7 @@ function _dwCols(group){
     ];
   }
   return [
+    {k:'snap_pct', l:'SNP%', d:0, pct:true},
     {k:'targets', l:'TGT', d:1}, {k:'cmp_allowed', l:'CMPA', d:1}, {k:'yds_allowed', l:'YDSA', d:1},
     {k:'td_allowed', l:'TDA', d:1}, {k:'ints', l:'INT', d:1}, {k:'rating_allowed', l:'RTG A', d:1},
     {k:'adot', l:'aDOT', d:1}, {k:'yac_allowed', l:'YAC A', d:1}, {k:'tackles', l:'TKL', d:0},
@@ -127,7 +132,15 @@ function renderPcardDefWeekly(pid){
       const v=totals[c.k];
       return `<td class="pcard-cell pcard-total-cell">${v==null?'–':_dwNum(v,c.d,c.pct)}</td>`;
     }).join('');
-    const totalRow = `<tr class="pcard-total-row"><td class="pcard-wk">TOT</td><td class="pcard-opp">${totals.games||rec.weeks.length}g</td>${totCells}</tr>`;
+    // games = weeks PFR charted; gp = weeks he actually took a snap. When they differ, say so:
+    // "9/16g" is honest where a bare "16g" would imply every row carries stats.
+    const gp = totals.gp!=null ? totals.gp : rec.weeks.length;
+    const ch = totals.games!=null ? totals.games : rec.weeks.length;
+    const gLbl = (gp && ch && gp!==ch) ? `${ch}/${gp}g` : `${ch||gp}g`;
+    const gTip = (gp && ch && gp!==ch)
+      ? `Played ${gp} games; PFR charted advanced stats in ${ch}. Uncharted weeks still appear (snap share proves he played) but their stat cells are blank.`
+      : `${ch||gp} games played`;
+    const totalRow = `<tr class="pcard-total-row"><td class="pcard-wk">TOT</td><td class="pcard-opp" title="${gTip}">${gLbl}</td>${totCells}</tr>`;
     seasonBlocks.push(`<div class="pcard-season">
       ${_dwTitleForSeason(season, rec)}
       <div class="pcard-table-scroll"><table class="pcard-table">

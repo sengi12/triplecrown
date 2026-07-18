@@ -1,4 +1,61 @@
+// nflverse season roster for a team, or null. Only for COMPLETED seasons — on the projection
+// season the roster is a moving target and Spotrac's offseason moves are the real story.
+function nflverseRosterFor(team){
+  if(activeSeason==='proj' || !team) return null;
+  const blk = (typeof NFLVERSE!=='undefined' && NFLVERSE) ? NFLVERSE[String(activeSeason)] : null;
+  const r = blk && blk.rosters && blk.rosters[team];
+  return (r && r.length) ? r : null;
+}
+// Historical roster in the SAME shape as the live depth chart (renderDepthChart): position
+// rows, players left→right, starter highlighted, every chip opening a player card.
+// Row arrays are positional — [name, pos, jersey, yrsExp, age, sleeperId, status, snaps] —
+// see team_rosters() in nflverse.py. The builder already sorted them by position group then
+// snaps DESC, so the FIRST player in each position is that season's real starter: for a
+// completed year, snaps are what actually happened (better than anyone's depth chart).
+function renderNflverseRoster(team){
+  const rows = nflverseRosterFor(team);
+  if(!rows) return '';
+  const FANTASY={QB:1,RB:1,WR:1,TE:1};
+  const byPos={};
+  rows.forEach(r=>{ const pos=String(r[1]||'').toUpperCase(); (byPos[pos]=byPos[pos]||[]).push(r); });
+  const posKeys=Object.keys(byPos).sort((x,y)=>{
+    const ix=DEPTH_POS_ORDER.indexOf(x), iy=DEPTH_POS_ORDER.indexOf(y);
+    return (ix<0?99:ix)-(iy<0?99:iy) || x.localeCompare(y);
+  });
+  const groups=posKeys.map(pos=>{
+    const chips=byPos[pos].map(([name,ps,jersey,exp,age,sid,status,snaps],i)=>{
+      // The id column must be a SLEEPER id (all digits) — that's what openPlayerCard() and
+      // hsURL() understand. Be defensive: an earlier build of team_rosters() wrote gsis ids
+      // here ("00-0036900"), and ~19% of older rosters have no sleeper_id at all. Anything
+      // that isn't all-digits is discarded in favour of the NAME, which resolvePlayerId()
+      // and hsURL() both handle — so cards and headshots work on any vintage of the seed.
+      const sleeperId = (sid!=null && /^\d+$/.test(String(sid))) ? String(sid) : null;
+      const hsrc = sleeperId ? hsURL({player_id:sleeperId, name, pos:ps}) : hsURL({name, pos:ps});
+      const hs = hsrc ? `<img src="${hsrc}" class="depth-hs" onerror="this.style.display='none'">` : '';
+      const rk = exp===0 ? `<span class="depth-rookie">R</span>` : '';
+      const jr = jersey!=null ? `<span class="depth-jersey">#${jersey}</span>` : '';
+      const ir = status==='RES' ? `<span class="depth-ir" title="Finished the season on injured reserve / reserve">IR</span>` : '';
+      // Starter = most snaps at the position (and actually played). A 0-snap player is
+      // never a "starter" even if he's alphabetically first in an empty group.
+      const starter = (i===0 && snaps>0) ? ' depth-starter' : '';
+      const tip = `${ordinal(i+1)} · ${ps}${snaps?` · ${snaps.toLocaleString()} snaps`:' · did not play'}${age!=null?` · age ${age}`:''}`;
+      return `<span class="depth-player clickable-player${starter}" title="${tip}" onclick="${pcardOnclick(sleeperId||name, ps, team)}">${hs}<span class="depth-name">${name}</span>${jr}${rk}${ir}</span>`;
+    }).join('');
+    const lbl = FANTASY[pos] ? `<span class="pos-badge pos-${pos}">${pos}</span>` : `<span class="depth-pos-abbr">${pos}</span>`;
+    return `<div class="depth-pos"><div class="depth-pos-label">${lbl}</div><div class="depth-players">${chips}</div></div>`;
+  }).join('');
+  return `<div class="add-section">
+    <div class="add-section-head">\ud83d\udccb ${activeSeason} Roster <span class="add-count">${rows.length}</span></div>
+    <div class="depth-sub">nflverse \u00b7 end-of-season active + reserve \u00b7 ordered by snaps played, so the
+      <b class="depth-starter-key">highlighted</b> player is that season\u2019s real starter \u00b7 tap any player for their card.</div>
+    <div class="depth-grid">${groups}</div></div>`;
+}
+
 function renderTeamAdditions(team){
+  // Completed season → show that year's actual roster instead of Spotrac's offseason moves
+  // (which only describe the upcoming season and would be misleading dated to a past year).
+  const histRoster = renderNflverseRoster(team);
+  if(histRoster) return histRoster;
   const a = (ADDITIONS && ADDITIONS[team]) || {};
   // Highlight fantasy-relevant offensive positions (QB/RB/WR/TE) with the same Sleeper-style
   // colors as the Rankings page; leave defensive/other positions neutral so skill players pop.

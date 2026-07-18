@@ -23,26 +23,40 @@
     <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
   </div>
   <div class="hdr-right">
-    <!--@@SEED_UI@@-->
-    <button class="btn btn-ghost" onclick="triggerSeedLoad()" title="Load triplecrown_seed.json from build_seed.py">📦 Seed</button>
-    <!--@@/SEED_UI@@-->
-    <button class="btn btn-ghost" onclick="triggerImport()">⬆ Import</button>
+    <!-- Everything that used to be a row of buttons now lives behind one ☰ menu: on a phone
+         that row wrapped and ate two lines of vertical space before you saw any content.
+         League sync moved in here too, so the season bar carries seasons and nothing else. -->
     <div class="hdr-menu-wrap">
-      <button class="btn btn-ghost" onclick="toggleDownloadMenu(event)" aria-haspopup="true" title="Download your projections as JSON or CSV">⬇ Download ▾</button>
-      <div class="hdr-menu" id="downloadMenu" hidden>
-        <button class="hdr-menu-item" onclick="exportJSON()">JSON</button>
-        <button class="hdr-menu-item" onclick="exportCSV()">CSV</button>
+      <button class="hdr-burger" id="appMenuBtn" onclick="toggleAppMenu(event)"
+              aria-haspopup="true" aria-expanded="false" aria-label="Menu" title="Menu">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="hdr-menu app-menu" id="appMenu" hidden>
+        <div class="app-menu-sec">View</div>
+        <button class="hdr-menu-item" id="menuProjView" onclick="closeAppMenu();showProjectionsView()">📊 Projections</button>
+        <button class="hdr-menu-item" id="menuLeagueView" onclick="closeAppMenu();openLeagueAnalyzer()">🏟 League Analyzer</button>
+        <button class="hdr-menu-item" onclick="closeAppMenu();showFullRankings()">🏆 Full Rankings</button>
+        <!-- League actions: only meaningful once a snapshot exists, so syncAppChrome()
+             reveals this whole section when leagueSnapshot is set. -->
+        <div class="app-menu-sec la-menu-only" id="menuLeagueSec" hidden>League</div>
+        <button class="hdr-menu-item la-menu-only" id="menuResync" hidden onclick="closeAppMenu();laResync()">⟳ Re-sync league</button>
+        <button class="hdr-menu-item la-menu-only" id="menuChangeLeague" hidden onclick="closeAppMenu();laMenuChangeLeague()">🔗 Change league</button>
+        <div class="app-menu-sec">Projections</div>
+        <button class="hdr-menu-item" onclick="closeAppMenu();triggerImport()">⬆ Import</button>
+        <button class="hdr-menu-item" onclick="closeAppMenu();exportJSON()">⬇ Download JSON</button>
+        <button class="hdr-menu-item" onclick="closeAppMenu();exportCSV()">⬇ Download CSV</button>
+        <!--@@SEED_UI@@-->
+        <button class="hdr-menu-item" onclick="closeAppMenu();triggerSeedLoad()" title="Load triplecrown_seed.json from build_seed.py">📦 Load Seed</button>
+        <!--@@/SEED_UI@@-->
+        <button class="hdr-menu-item hdr-menu-danger" onclick="closeAppMenu();resetAll()" title="Reset all edits and pull the latest Sleeper projections">↺ Reset all</button>
       </div>
     </div>
-    <button class="btn btn-ghost" onclick="showFullRankings()">Full Rankings</button>
-    <button class="btn btn-ghost" onclick="resetAll()" title="Reset all edits and pull the latest Sleeper projections">↺ Reset</button>
   </div>
 </div>
-<div class="season-bar">
+<div class="season-bar" id="seasonBar">
   <span class="season-label">Season</span>
   <div id="seasonTabs" style="display:flex;gap:6px;flex-shrink:0;"></div>
   <div class="season-spacer"></div>
-  <button class="league-sync-btn" id="leagueSyncBtn" onclick="openLeagueAnalyzer()" title="Sync your Sleeper league — rosters, dynasty values, trade tools">🔗 My League</button>
   <span class="sleeper-badge">data: Sleeper</span>
 </div>
 <div class="main">

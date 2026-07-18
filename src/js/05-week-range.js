@@ -285,9 +285,14 @@ function hsURL(p){
   }
   return '';
 }
+// loading="lazy" is the single biggest win on the rankings page: it renders ~570 rows with
+// two images each (headshot + team logo), so eager loading fired >1,100 image fetches the
+// moment the table mounted — most for rows far below the fold. The browser now fetches them
+// as they approach the viewport. decoding="async" keeps decode work off the main thread so
+// it can't block the first paint.
 function imgTag(src,cls,fb='🏈'){
   if(!src) return `<div class="${cls} ph-err">${fb}</div>`;
-  return `<img src="${src}" class="${cls}" alt="" onerror="this.outerHTML='<div class=\\'${cls} ph-err\\'>${fb}</div>'">`;
+  return `<img src="${src}" class="${cls}" alt="" loading="lazy" decoding="async" onerror="this.outerHTML='<div class=\\'${cls} ph-err\\'>${fb}</div>'">`;
 }
 function imgSm(src,cls='share-hs',fb='🏈'){
   if(!src) return `<div class="${cls}-err">${fb}</div>`.replace(cls+'-err',cls.replace('share-hs','share-hs')+'-err');

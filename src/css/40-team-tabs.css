@@ -151,3 +151,9 @@
   .stats-grid{grid-template-columns:repeat(2,1fr);}
   .scoring-grid{grid-template-columns:1fr;}
 }
+
+/* ── nflverse season roster (Roster tab on completed seasons) ───────────────
+   Reuses the depth-chart chip styling wholesale; these are the only additions. */
+.depth-ir{font-size:7.5px;font-weight:800;color:#ff6b6b;border:1px solid rgba(255,107,107,.4);
+  border-radius:4px;padding:0 3px;margin-left:4px;vertical-align:middle;}
+.depth-starter-key{color:var(--accent);}

@@ -31,6 +31,11 @@ PFR_PASS_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_
 PFR_RUSH_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_season_rush.csv"
 PFR_DEF_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_season_def.csv"
 PFR_DEF_WEEK_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_def_{season}.parquet"
+# Weekly snap counts. PFR's advanced-defense table only creates a player-week row when a
+# pass-rush or coverage event was CHARTED — measured across 2023, 49% of DL player-weeks that
+# actually played have no row (Dexter Lawrence: played 16, charted 9). Snap counts are the
+# ground truth for "did he play", so they decide which weeks appear on the card.
+SNAP_COUNTS_URL = "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_{season}.parquet"
 PLAYERS_PARQUET_URL = "https://github.com/nflverse/nflverse-data/releases/download/players/players.parquet"
 NGS_PASS_URL = "https://github.com/nflverse/nflverse-data/releases/download/nextgen_stats/ngs_passing.csv.gz"
 # Columns we actually need (usecols keeps the ~370-col file fast + small in memory).
@@ -1207,6 +1212,7 @@ def defensive_weekly_players(season):
             "team": rec["team"],
             "pos": rec["pos"],
             "group": rec["group"],
+            "_gsis": rec["gsis_id"],   # join key for snap counts; stripped before return
             "weeks": [],
             "totals": {},
         })
@@ -1237,7 +1243,8 @@ def defensive_weekly_players(season):
         "targets", "cmp_allowed", "yds_allowed", "td_allowed", "yac_allowed", "blitzes", "hurries",
         "qb_hits", "sacks", "pressures", "tackles", "missed_tackles", "ints",
     ]
-    mean_fields = ["rating_allowed", "adot", "missed_tackle_pct"]
+    mean_fields = ["rating_allowed", "adot", "missed_tackle_pct", "snap_pct"]
+    sum_fields = sum_fields + ["snaps"]
 
     # Compact encoding to keep the seed small (this table is the largest nflverse block):
     #   • drop the per-week `team` (identical to the player-level team; the card reader uses
@@ -1261,9 +1268,62 @@ def defensive_weekly_players(season):
             packed[k] = _num(v)
         return packed
 
+    # ── Snap share: the inclusion baseline (the "Dexter Lawrence" fix) ───────────
+    # A week belongs on the card if the player took a defensive snap — full stop. PFR decides
+    # whether a week gets STATS; snap counts decide whether it EXISTS. So:
+    #   • weeks PFR charted get snaps/snap_pct attached,
+    #   • weeks he played but PFR never charted get a stub row (week/opp/snaps only; the stat
+    #     cells render '–' exactly like any other missing value),
+    #   • totals carry games (charted) AND gp (actually played) so the card can be honest
+    #     about the difference.
+    # If snap counts are unavailable the cards behave exactly as they do today.
+    try:
+        snaps = _aux_parquet(SNAP_COUNTS_URL.format(season=season),
+                             columns=["game_type", "week", "pfr_player_id", "opponent",
+                                      "defense_snaps", "defense_pct"])
+        snaps = snaps[(snaps["game_type"] == "REG") & (snaps["defense_snaps"].fillna(0) > 0)]
+        gsis_to_pfr = {}
+        for pfr_id, gid in p2g.items():
+            gsis_to_pfr.setdefault(gid, pfr_id)
+        by_pfr = {}
+        for _, sr in snaps.iterrows():
+            by_pfr.setdefault(str(sr["pfr_player_id"]), []).append(sr)
+        for key, d in out.items():
+            pfr_id = gsis_to_pfr.get(d.get("_gsis"))
+            srows = by_pfr.get(str(pfr_id)) if pfr_id else None
+            if not srows:
+                continue
+            wkmap = {}
+            for sr in srows:
+                opp = str(sr["opponent"] or "").upper()
+                wkmap[int(sr["week"])] = (
+                    int(sr["defense_snaps"]),
+                    None if pd.isna(sr["defense_pct"]) else round(float(sr["defense_pct"]), 3),
+                    NFLVERSE_TO_SEED.get(opp, opp),
+                )
+            have_weeks = {int(w.get("week") or 0) for w in d["weeks"]}
+            for w in d["weeks"]:
+                hit = wkmap.get(int(w.get("week") or 0))
+                if hit:
+                    w["snaps"], w["snap_pct"] = hit[0], hit[1]
+            for wknum, (sn, pct, opp) in wkmap.items():
+                if wknum not in have_weeks:
+                    d["weeks"].append({"week": wknum, "team": d["team"], "opp": opp,
+                                       "snaps": sn, "snap_pct": pct})
+            d["_gp"] = len({int(w.get("week") or 0) for w in d["weeks"]})
+    except Exception:
+        pass
+
     for key, d in out.items():
+        # games = weeks PFR actually charted; gp = weeks he took a snap. They differ a lot for
+        # run-stuffing interior linemen, which is the whole point of showing both.
+        charted = sum(1 for w in d["weeks"]
+                      if any(w.get(f) is not None
+                             for f in ("tackles", "targets", "pressures", "sacks")))
         d["weeks"] = sorted(d["weeks"], key=lambda w: int(w.get("week") or 0))
-        t = {"games": len(d["weeks"])}
+        gp = d.pop("_gp", None) or len(d["weeks"])
+        d.pop("_gsis", None)
+        t = {"games": charted, "gp": gp}
         for f in sum_fields:
             vals = [w.get(f) for w in d["weeks"] if w.get(f) is not None]
             t[f] = (None if not vals else round(float(sum(vals)), 2))
@@ -1862,6 +1922,9 @@ def build_nflverse_season(season):
         "ol_players": _ol_grades_by_player(),
         "def_weekly": defensive_weekly_players(season),
         "coaching_scheme": coaching_scheme(season),
+        # Season rosters: who each team actually had that year. Small enough (~100KB/season)
+        # to ride inline rather than needing a lazy sidecar like the two blocks above.
+        "rosters": team_rosters(season),
     }
 
 def _nflverse_built_cache_path(seasons):
@@ -2052,3 +2115,77 @@ if __name__ == "__main__":
     if mode in ("all", "coverage"):
         compare_participation(season)
 
+
+
+def team_rosters(season):
+    """Per-team season roster from nflverse (players only — no trades/FA/draft context).
+
+    Powers the Roster tab when viewing a completed season: what each team ACTUALLY had that
+    year, rather than today's roster. Returns
+      {TEAM: [[name, pos, jersey, yrs_exp, age, sleeper_id, status, snaps], ...]}
+    grouped by position and ordered by SNAPS within each position — so the first player at a
+    position is that season's real starter. This is better than a depth chart for a completed
+    year: a depth chart is somebody's opinion, snap counts are what actually happened.
+
+    Kept deliberately lean: rosters are 32 teams x ~60 players x 5 seasons, so an array-of-
+    arrays (not dicts) with only the fields the view needs keeps this a small seed block.
+    sleeper_id (not gsis) is carried because the app's hsURL()/pcardOnclick() resolve
+    headshots and player cards from Sleeper ids.
+    ACT (active) + RES (IR/reserve) only: CUT/DEV/practice-squad churn isn't "the roster".
+    """
+    try:
+        r = _aux_csv(ROSTER_URL.format(season=season),
+                     usecols=["season", "team", "position", "jersey_number", "status",
+                              "full_name", "birth_date", "years_exp", "gsis_id", "sleeper_id"])
+    except Exception:
+        return {}
+    if r is None or r.empty:
+        return {}
+    r = r[r["status"].isin(["ACT", "RES"])].copy()
+    r = r.dropna(subset=["full_name", "team"])
+    r = r.drop_duplicates(subset=["gsis_id", "team"])
+    # Age as of Sept 1 of that season — the number a dynasty manager actually thinks in.
+    ref = pd.Timestamp(f"{season}-09-01")
+    bd = pd.to_datetime(r["birth_date"], errors="coerce")
+    r["age"] = ((ref - bd).dt.days / 365.25).round(1)
+    # Position sort order: offense skill first (the fantasy reader's eye), then the rest.
+    # Season snap totals per player — the ordering signal that makes "starter" real.
+    snaps_by_gsis = {}
+    try:
+        sn = _aux_parquet(SNAP_COUNTS_URL.format(season=season),
+                          columns=["game_type", "pfr_player_id", "offense_snaps", "defense_snaps", "st_snaps"])
+        sn = sn[sn["game_type"] == "REG"]
+        p2g = _pfr_to_gsis_map()
+        sn["gsis_id"] = sn["pfr_player_id"].astype(str).map(p2g)
+        sn = sn.dropna(subset=["gsis_id"])
+        sn["tot"] = (sn["offense_snaps"].fillna(0) + sn["defense_snaps"].fillna(0)).astype(int)
+        snaps_by_gsis = sn.groupby("gsis_id")["tot"].sum().to_dict()
+    except Exception:
+        pass   # no snaps → fall back to jersey ordering below
+
+    ORDER = {"QB": 0, "RB": 1, "FB": 2, "WR": 3, "TE": 4, "OL": 5, "T": 5, "G": 5, "C": 5,
+             "DL": 6, "DE": 6, "DT": 6, "NT": 6, "LB": 7, "DB": 8, "CB": 8, "S": 8,
+             "K": 9, "P": 9, "LS": 9}
+    out = {}
+    for team, grp in r.groupby("team"):
+        tm = NFLVERSE_TO_SEED.get(str(team).upper(), str(team).upper())
+        rows = []
+        for _, x in grp.iterrows():
+            pos = str(x["position"] or "").upper()
+            gid = None if pd.isna(x["gsis_id"]) else str(x["gsis_id"])
+            sid = None if pd.isna(x.get("sleeper_id")) else str(int(float(x["sleeper_id"])))
+            rows.append([
+                str(x["full_name"]),
+                pos,
+                None if pd.isna(x["jersey_number"]) else int(x["jersey_number"]),
+                None if pd.isna(x["years_exp"]) else int(x["years_exp"]),
+                None if pd.isna(x["age"]) else float(x["age"]),
+                sid,
+                str(x["status"]),
+                int(snaps_by_gsis.get(gid, 0)),
+            ])
+        # position group, then snaps DESC (starter first), then jersey as a stable tiebreak
+        rows.sort(key=lambda z: (ORDER.get(z[1], 10), -z[7], z[2] if z[2] is not None else 999))
+        if rows:
+            out[tm] = rows
+    return out
