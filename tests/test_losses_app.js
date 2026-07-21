@@ -25,7 +25,7 @@ chk(!app.tabBar().includes('New Additions'),'no longer says "New Additions"');
 
 console.log('\n=== Notable Losses section ===');
 const html=app.renderTeamAdditions('CIN');
-chk(html.includes('📉 Notable Losses'),'Notable Losses section present');
+chk(html.includes('Notable Losses'),'Notable Losses section present');
 const lossIdx=html.indexOf('Notable Losses');
 const lossSec=html.slice(lossIdx);
 chk(lossSec.includes('Trey Hendrickson'),'Hendrickson in losses');
