@@ -42,10 +42,11 @@ function _dwNum(v, dp=1, pct=false){
 function _dwCellClass(key, v){
   if(v==null || Number.isNaN(v)) return '';
   // missed_tackle_pct arrives as a fraction (0.125); compare on the same 0-100 scale we show.
-  if(key==='missed_tackle_pct') return _triLow(v*100, 8, 16);
+  if(key==='missed_tackles') return _triLow(v,1,2);
+  if(key==='missed_tackle_pct') return _triLow(v*100, 15, 25);
   // snap share is a FRACTION from the seed too; higher = more on the field = better.
   if(key==='snap_pct') return _tri(v*100, 70, 40);   // 70%+ green, 40%+ yellow
-  if(key==='tackles') return _tri(v,7,4);                 // tackles/game: 7+ green, 4+ yellow
+  if(key==='tackles') return _tri(v,4.5,2.5);                 // tackles/game: 6+ green, 4+ yellow
   if(key==='sacks') return _tri(v,1,0.5);                 // sacks/game
   if(key==='pressures') return _tri(v,4,2);               // pressures/game
   if(key==='hurries') return _tri(v,3,1);                 // hurries/game
@@ -53,12 +54,14 @@ function _dwCellClass(key, v){
   if(key==='blitzes') return _tri(v,4,1);                 // blitzes/game
   if(key==='ints') return _tri(v,1,0.5);                  // INTs/game
   if(key==='td_allowed') return _triLow(v,0,1);           // TDs allowed in coverage/game
-  if(key==='rating_allowed') return _triLow(v,75,105);    // passer rating when targeted (0-158.3)
+  if(key==='rating_allowed') return _triLow(v,75,100);    // passer rating when targeted (0-158.3)
   // NOTE: one shared rule for three very different stats — 5/8 is sensible for targets and
   // completions allowed, but 5/8 YARDS allowed is far too strict. Split these if you want
   // yds_allowed to read sensibly (e.g. _triLow(v,25,50)).
   if(key==='cmp_allowed' || key==='targets') return _triLow(v,5,8);
-  if(key==='yds_allowed') return _triLow(v,5,8);           // ← almost certainly wants its own scale
+  if(key==='yds_allowed') return _triLow(v,35,60);
+  if(key==='adot') return _triLow(v,10,30);
+  if(key==='yac_allowed') return _triLow(v,10,20);
   return '';
 }
 
@@ -76,25 +79,24 @@ function _dwCols(group){
       {k:'snap_pct', l:'SNP%', d:0, pct:true},
       {k:'tackles', l:'TKL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1},
       {k:'hurries', l:'HUR', d:1}, {k:'qb_hits', l:'HIT', d:1}, {k:'blitzes', l:'BLZ', d:1},
-      {k:'missed_tackles', l:'MTKL', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
+      {k:'missed_tackles', l:'MISS', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
     ];
   }
   if(group==='LB'){
     return [
       {k:'snap_pct', l:'SNP%', d:0, pct:true},
       {k:'tackles', l:'TKL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1},
-      {k:'blitzes', l:'BLZ', d:1}, {k:'targets', l:'TGT', d:1}, {k:'cmp_allowed', l:'CMPA', d:1},
-      {k:'yds_allowed', l:'YDSA', d:1}, {k:'ints', l:'INT', d:1}, {k:'rating_allowed', l:'RTG A', d:1},
-      {k:'missed_tackles', l:'MTKL', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
+      {k:'blitzes', l:'BLZ', d:1}, {k:'targets', l:'TGT', d:1}, {k:'cmp_allowed', l:'CMP', d:1},
+      {k:'yds_allowed', l:'YDS', d:1}, {k:'ints', l:'INT', d:1}, {k:'rating_allowed', l:'RTG', d:1},
+      {k:'missed_tackles', l:'MISS', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
     ];
   }
   return [
     {k:'snap_pct', l:'SNP%', d:0, pct:true},
-    {k:'targets', l:'TGT', d:1}, {k:'cmp_allowed', l:'CMPA', d:1}, {k:'yds_allowed', l:'YDSA', d:1},
-    {k:'td_allowed', l:'TDA', d:1}, {k:'ints', l:'INT', d:1}, {k:'rating_allowed', l:'RTG A', d:1},
-    {k:'adot', l:'aDOT', d:1}, {k:'yac_allowed', l:'YAC A', d:1}, {k:'tackles', l:'TKL', d:0},
-    // DBs miss tackles too — the seed has 100% coverage for DB/LB/DL, it just wasn't surfaced.
-    {k:'missed_tackles', l:'MTKL', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
+    {k:'targets', l:'TGT', d:1}, {k:'cmp_allowed', l:'CMP', d:1}, {k:'yds_allowed', l:'YDS', d:1},
+    {k:'td_allowed', l:'TD', d:1}, {k:'ints', l:'INT', d:1}, {k:'rating_allowed', l:'RTG', d:1},
+    {k:'adot', l:'aDOT', d:1}, {k:'yac_allowed', l:'YAC', d:1}, {k:'tackles', l:'TKL', d:0},
+    {k:'missed_tackles', l:'MISS', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
   ];
 }
 

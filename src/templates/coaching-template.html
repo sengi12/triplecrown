@@ -150,9 +150,9 @@ function routePath(x,y,side,route,losY){
   // Backfield-release routes stay put and work out of the backfield.
   if(y > losY+6 && !backfieldRelease){ const upTo = losY-8; pre=`M${x},${y} L${x},${upTo} `; sx=x; sy=upTo; }
   const P={
-    'GO':`V${sy-140}`, 'FADE/GO':`V${sy-140}`,'HITCH/CURL':`V${sy-55} l${-6*c},12`, 'COMEBACK':`V${sy-90} l${-8*c},14`,
+    'GO':`V${sy-140}`, 'FADE/GO':`V${sy-140}`,'HITCH/CURL':`V${sy-55} l${-6*c},12`,'HITCH':`V${sy-55} l${-6*c},12`, 'COMEBACK':`V${sy-90} l${-8*c},14`,
     'SLANT':`l${90*c},-40`, 'QUICK OUT':`V${sy-32} h${-30*c}`, 'SPEED OUT':`V${sy-30} h${-28*c}`, 'OUT':`V${sy-72} h${-32*c}`, 'DEEP OUT':`V${sy-90} h${-32*c}`,
-    'IN/DIG':`V${sy-76} h${54*c}`, 'POST':`V${sy-88} l${40*c},-40`, 'CORNER':`V${sy-88} l${-38*c},-38`,
+    'IN/DIG':`V${sy-76} h${54*c}`,'IN':`V${sy-76} h${54*c}`, 'POST':`V${sy-88} l${40*c},-40`, 'CROSS':`V${sy-72} l${80*c},-30`, 'CORNER':`V${sy-88} l${-38*c},-38`,
     'SHALLOW CROSS/DRAG':`V${sy-5} h${120*c}`, 'SCREEN':`q${25*c},25 ${50*c},22`, 'FLAT':`q${-70*c},-50 ${-120*c},-60`, 'SPEED':`V${sy-12} h${-28*c}`,
     'SWING':`q${-50*c},18 ${-80*c},2`, 'WHEEL':`q${-70*c},-40 ${-80*c},-170`,
     'TEXAS/ANGLE':`l${-60*c},-40 l${60*c},-40`, 'ARROW':`l${-24*c},-18`
