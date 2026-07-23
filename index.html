@@ -11235,8 +11235,7 @@ async function laSubmitUsername(){
   laState.busy=true; laState.error=null; renderLeagueAnalyzer();
   try{
     const user=await resolveSleeperUser(username);
-    // const season=await fetchCurrentSeason();
-    const season='2025';
+    const season=await fetchCurrentSeason();
     const { leagues }=await fetchUserLeagues(user.user_id, season);
     laState.user=user; laState.leagues=leagues;
     laState.step='pick'; laState.busy=false;
