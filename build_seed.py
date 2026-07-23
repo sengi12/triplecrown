@@ -104,6 +104,56 @@ def _idx():
 # fields that live at the top of a history record (everything else -> `extra`)
 _HREC = ("team", "games_played", "games_started", "snap_pct")
 
+_RB_LANES = ["LE", "LT", "LG", "MID", "RG", "RT", "RE"]
+_RB_LANE_KEYS = ["attempts", "ypc", "success_rate", "league_ypc", "ypc_diff"]
+_RB_TOT_KEYS = ["attempts", "yards", "ypc", "success_rate"]
+_QB_ZONES = [d + "|" + l for d in ("deep", "inter", "short", "behind")
+             for l in ("left", "middle", "right")]
+_QB_ZONE_KEYS = ["rating", "league_avg", "attempts"]
+_QB_TOT_KEYS = ["passer_rating", "comp_pct", "yards", "td", "int", "attempts"]
+
+
+def _enc_table(cnode):
+    """Columnarize a rank table ({columns?, teams:{TEAM:{values:{col:v}, ranks:{col:v}}}}).
+    values/ranks dicts repeated every column name per team; -> two parallel arrays against a
+    vcols list stored once. Used for both `sharp` categories and nflverse per-season `team`
+    tables (identical shape). Extra per-team keys ride as an optional third element."""
+    if not isinstance(cnode, dict) or not isinstance(cnode.get("teams"), dict):
+        return cnode
+    c2 = {k: v for k, v in cnode.items() if k != "teams"}
+    vcols = None
+    rows = {}
+    for tm, rec in cnode["teams"].items():
+        vals = rec.get("values") or {}
+        ranks = rec.get("ranks") or {}
+        if vcols is None:
+            vcols = list(vals.keys())
+        row = [[vals.get(cn) for cn in vcols], [ranks.get(cn) for cn in vcols]]
+        extra = {k: v for k, v in rec.items() if k not in ("values", "ranks")}
+        if extra:
+            row.append(extra)
+        rows[tm] = row
+    c2["vcols"] = vcols or []
+    c2["teams"] = rows
+    return c2
+
+
+def _trim_nulls(arr):
+    while arr and arr[-1] is None:
+        arr.pop()
+    return arr
+
+
+def _enc_map_arr(m, intern):
+    """{KEY: v} -> index-aligned array against the intern order (None = key absent)."""
+    if not isinstance(m, dict):
+        return m
+    tmp = {intern(k): v for k, v in m.items()}
+    if not tmp:
+        return []
+    return [tmp.get(i) for i in range(max(tmp) + 1)]
+
+
 def _encode_fantasy(seed, ol_round=3):
     out = dict(seed)  # shallow copy; we replace only the sections we touch
     if "history" not in seed and "nflverse" not in seed:
@@ -155,22 +205,94 @@ def _encode_fantasy(seed, ol_round=3):
     nv_c = {}
     for yr, node in seed.get("nflverse", {}).items():
         n2 = dict(node)
+        # fantasy-2: routes -> one row per player. The four {ROUTE: n} maps become four
+        # index-aligned arrays against the rt intern order (null = route absent, so a genuine
+        # 0 stat survives the round-trip). Kills both the repeated route keys AND the four
+        # per-map dict skeletons per player.
         if isinstance(node.get("routes"), dict):
             r2 = {}
             for pname, rec in node["routes"].items():
-                rr = dict(rec)
-                for kk in ("tree", "route_tds", "route_rec", "route_yds"):
-                    if kk in rr:
-                        rr[kk] = enc_routekeyed(rr[kk])
-                r2[pname] = rr
+                r2[pname] = [rec.get("pos"), rec.get("total"), rec.get("total_rec"),
+                             rec.get("total_yds"), rec.get("total_tds"),
+                             _enc_map_arr(rec.get("tree") or {}, rt_i),
+                             _enc_map_arr(rec.get("route_rec") or {}, rt_i),
+                             _enc_map_arr(rec.get("route_yds") or {}, rt_i),
+                             _enc_map_arr(rec.get("route_tds") or {}, rt_i)]
             n2["routes"] = r2
+        # fantasy-2: players + their 14 refinement tables -> ONE row per player name:
+        # [base_values, ref1_values, ...] against a refs order stored once. This is where a
+        # star's name used to appear ~15x per season (~70x per seed) and the identical columns
+        # array repeated per refinement. null = absent from that table (refinements have their
+        # own qualify thresholds, so ~3k players exist in a refinement but not the base).
+        if isinstance(node.get("players"), dict):
+            p2 = {}
+            for pos, blk in node["players"].items():
+                if not isinstance(blk, dict) or "players" not in blk:
+                    p2[pos] = blk
+                    continue
+                refs = list(blk.get("refinements", {}).keys())
+                allnames = set(blk["players"])
+                for rk in refs:
+                    allnames.update(blk["refinements"][rk].get("players", {}))
+                rows = {}
+                for name in sorted(allnames):
+                    base = blk["players"].get(name)
+                    row = [base.get("values") if base else None]
+                    for rk in refs:
+                        r = blk["refinements"][rk]["players"].get(name)
+                        row.append(r.get("values") if r else None)
+                    rows[name] = row
+                p2[pos] = {"columns": blk["columns"], "refs": refs, "players": rows}
+            n2["players"] = p2
+        # fantasy-2: rb_fan — lane dicts repeated 5 stat keys x up to 7 lanes per player, and
+        # the OL `line` block was duplicated verbatim across every RB on the same team
+        # (verified identical within a team-season). -> lanes as a 7-slot array against
+        # _RB_LANES, line hoisted to one __lines[team] entry.
+        if isinstance(node.get("rb_fan"), dict):
+            lines = {}
+            players = {}
+            for name, rec in node["rb_fan"].items():
+                tm = rec.get("team")
+                if rec.get("line") is not None and tm is not None and tm not in lines:
+                    lines[tm] = rec["line"]
+                tot = rec.get("totals") or {}
+                lanes = rec.get("lanes") or {}
+                lane_arr = _trim_nulls([
+                    ([lanes[l].get(k) for k in _RB_LANE_KEYS] if l in lanes else None)
+                    for l in _RB_LANES])
+                players[name] = [tm, [tot.get(k) for k in _RB_TOT_KEYS], lane_arr]
+            n2["rb_fan"] = {"__lines": lines, "players": players}
+        # fantasy-2: qb_passing — 12 zone dicts x 3 stat keys per QB -> a 12-slot array
+        # against _QB_ZONES (depth-major), totals against a fixed key list.
+        if isinstance(node.get("qb_passing"), dict):
+            players = {}
+            for name, rec in node["qb_passing"].items():
+                zones = rec.get("zones") or {}
+                zarr = []
+                for zk in _QB_ZONES:
+                    d, l = zk.split("|")
+                    cell = (zones.get(d) or {}).get(l)
+                    zarr.append([cell.get(k) for k in _QB_ZONE_KEYS] if cell else None)
+                tot = rec.get("totals") or {}
+                players[name] = [rec.get("team"), [tot.get(k) for k in _QB_TOT_KEYS],
+                                 _trim_nulls(zarr)]
+            n2["qb_passing"] = {"players": players}
+        # fantasy-2: team tables are sharp-shaped rank tables -> same columnarizer.
+        if isinstance(node.get("team"), dict):
+            n2["team"] = {cat: _enc_table(cnode) for cat, cnode in node["team"].items()}
         if isinstance(node.get("ol_players"), dict):
             n2["ol_players"] = {k: round_floats(v) for k, v in node["ol_players"].items()}
         nv_c[yr] = n2
  
+    # fantasy-2: sharp values/ranks dicts repeated every column name per team (32 teams x
+    # 2 dicts x ~6 cols x 10 categories). -> two parallel arrays aligned to a vcols list
+    # stored once per category; any extra per-team keys ride as an optional third element.
+    if isinstance(seed.get("sharp"), dict):
+        out["sharp"] = {cat: _enc_table(cnode) for cat, cnode in seed["sharp"].items()}
+
     out["history"] = {"__c": 1, "sf": sf, "players": hist_c}
     out["nflverse"] = {"__c": 1, "rt": rt, "years": nv_c}
-    out["__codec"] = "fantasy-1"
+    out["__codec"] = "fantasy-2"
     return out
 
 def _field_legend(seed):
@@ -2300,12 +2422,25 @@ def main():
                     "sumer": sumer, "sumer_seasons": sumer_seasons, "ktc": ktc,
                     "dynasty_values": dynasty_values,
                     "nflverse": nflverse}
-    with open("seeds/triplecrown_seed.json", "w") as f:
-        json.dump(_encode_fantasy(_fantasy_obj), f, separators=(",", ":"))
+    # Every seed also gets a pre-gzipped twin (.json.gz, gzip -9, deterministic mtime=0).
+    # The app fetches the .gz first (DecompressionStream) and falls back to plain .json —
+    # this guarantees a small download on ANY host (local dev, no-CDN static hosting) and
+    # beats CDN default compression levels; GitHub Pages compresses on the fly, but at a
+    # lighter level and only when it feels like it.
+    import gzip as _gzip
+
+    def _write_seed(path, obj):
+        blob = json.dumps(obj, separators=(",", ":")).encode()
+        with open(path, "wb") as f:
+            f.write(blob)
+        with open(path + ".gz", "wb") as f:
+            f.write(_gzip.compress(blob, compresslevel=9, mtime=0))
+        return len(blob)
+
+    _write_seed("seeds/triplecrown_seed.json", _encode_fantasy(_fantasy_obj))
     # Sidecar files — lazy-loaded by the app on demand (hosted). Only written when non-empty.
     if nflverse_def_weekly:
-        with open("seeds/triplecrown_seed.def_weekly.json", "w") as f:
-            json.dump(_encode_defweekly(nflverse_def_weekly), f, separators=(",", ":"))
+        _write_seed("seeds/triplecrown_seed.def_weekly.json", _encode_defweekly(nflverse_def_weekly))
     # Coaching scheme is the largest lazy block and is viewed one season at a time, so split it
     # into per-season sidecars the app fetches on demand (a typical user only downloads the
     # current season). Remove any stale combined file from older builds.
@@ -2318,13 +2453,12 @@ def main():
     coaching_files = []
     for _s, _blk in sorted(nflverse_coaching.items(), key=lambda kv: kv[0], reverse=True):
         _fn = f"seeds/triplecrown_seed.coaching.{_s}.json"
-        with open(_fn, "w") as f:
-            json.dump(_encode_coaching(_blk), f, separators=(",", ":"))
+        _write_seed(_fn, _encode_coaching(_blk))
         coaching_files.append(_fn)
 
     nplayers = sum(len(seed[t][p]) for t in seed for p in seed[t])
     print(f"\nDone (builder {BUILDER_VERSION}). {nplayers} players across {len(TEAMS)} teams.")
-    print(f"  • seeds/triplecrown_seed.json → load this in the app via the 📦 Seed button (recommended)")
+    print(f"  • seeds/triplecrown_seed.json (+ .gz twin) → load this in the app via the 📦 Seed button (recommended)")
     if nflverse_def_weekly:
         print("  • seeds/triplecrown_seed.def_weekly.json → lazy sidecar (defensive weekly player cards)")
     if coaching_files:

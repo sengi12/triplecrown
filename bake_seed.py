@@ -102,9 +102,42 @@ def _decode_defweekly(c):
         out[y] = pl
     return out
 
+_RB_LANES = ["LE", "LT", "LG", "MID", "RG", "RT", "RE"]
+_RB_LANE_KEYS = ["attempts", "ypc", "success_rate", "league_ypc", "ypc_diff"]
+_RB_TOT_KEYS = ["attempts", "yards", "ypc", "success_rate"]
+_QB_ZONES = [d + "|" + l for d in ("deep", "inter", "short", "behind")
+             for l in ("left", "middle", "right")]
+_QB_ZONE_KEYS = ["rating", "league_avg", "attempts"]
+_QB_TOT_KEYS = ["passer_rating", "comp_pct", "yards", "td", "int", "attempts"]
+
+
+def _keys_to_obj(keys, arr):
+    return {keys[i]: arr[i] for i in range(len(keys)) if arr is not None and i < len(arr)}
+
+
+def _dec_table(cnode):
+    """Inverse of build_seed._enc_table (sharp categories + nflverse team tables)."""
+    if not isinstance(cnode, dict) or not isinstance(cnode.get("vcols"), list):
+        return cnode
+    c2 = {k: v for k, v in cnode.items() if k not in ("vcols", "teams")}
+    vcols = cnode["vcols"]
+    teams = {}
+    for tm, row in cnode.get("teams", {}).items():
+        values = {vcols[i]: row[0][i] for i in range(len(vcols))}
+        ranks = {vcols[i]: row[1][i] for i in range(len(vcols))}
+        teams[tm] = {"values": values, "ranks": ranks}
+        if len(row) > 2 and row[2]:
+            teams[tm].update(row[2])
+    c2["teams"] = teams
+    return c2
+
+
 def _decode_fantasy(c):
-    if not c or c.get("__codec") != "fantasy-1":
+    # Mirrors decodeFantasy in the app (src/js/15b-nflverse-lazy.js) — both fantasy-1 and
+    # fantasy-2 decode to the same plain shapes for embedding in the baked file.
+    if not c or c.get("__codec") not in ("fantasy-1", "fantasy-2"):
         return c
+    v2 = c.get("__codec") == "fantasy-2"
     out = dict(c)
     out.pop("__codec", None)
 
@@ -137,21 +170,81 @@ def _decode_fantasy(c):
     def dec_routekeyed(dct):
         return {rt[int(i)]: v for i, v in dct.items()} if isinstance(dct, dict) else dct
 
+    def dec_arr(arr):
+        if not isinstance(arr, list):
+            return dec_routekeyed(arr)
+        return {rt[i]: v for i, v in enumerate(arr) if v is not None}
+
     nv = {}
     for yr, node in nc["years"].items():
         n2 = dict(node)
         if isinstance(node.get("routes"), dict):
             r2 = {}
             for pname, rec in node["routes"].items():
-                rr = dict(rec)
-                for kk in ("tree", "route_tds", "route_rec", "route_yds"):
-                    if kk in rr:
-                        rr[kk] = dec_routekeyed(rr[kk])
-                r2[pname] = rr
+                if v2 and isinstance(rec, list):
+                    r2[pname] = {"pos": rec[0], "total": rec[1], "total_rec": rec[2],
+                                 "total_yds": rec[3], "total_tds": rec[4],
+                                 "tree": dec_arr(rec[5]), "route_rec": dec_arr(rec[6]),
+                                 "route_yds": dec_arr(rec[7]), "route_tds": dec_arr(rec[8])}
+                else:
+                    rr = dict(rec)
+                    for kk in ("tree", "route_tds", "route_rec", "route_yds"):
+                        if kk in rr:
+                            rr[kk] = dec_routekeyed(rr[kk])
+                    r2[pname] = rr
             n2["routes"] = r2
+        if v2 and isinstance(node.get("players"), dict):
+            p2 = {}
+            for pos, blk in node["players"].items():
+                if not isinstance(blk, dict) or not isinstance(blk.get("refs"), list):
+                    p2[pos] = blk
+                    continue
+                cols, refs = blk["columns"], blk["refs"]
+                base_players = {}
+                ref_tables = {rk: {"columns": cols, "players": {}} for rk in refs}
+                for name, row in blk["players"].items():
+                    if row[0] is not None:
+                        base_players[name] = {"values": row[0]}
+                    for i, rk in enumerate(refs):
+                        if row[i + 1] is not None:
+                            ref_tables[rk]["players"][name] = {"values": row[i + 1]}
+                dec = {"columns": cols, "players": base_players}
+                if refs:
+                    dec["refinements"] = ref_tables
+                p2[pos] = dec
+            n2["players"] = p2
+        if v2 and isinstance(node.get("rb_fan"), dict) and "players" in node["rb_fan"]:
+            lines = node["rb_fan"].get("__lines", {})
+            r = {}
+            for name, (tm, tot, lane_arr) in node["rb_fan"]["players"].items():
+                lanes = {}
+                for i, cell in enumerate(lane_arr or []):
+                    if cell:
+                        lanes[_RB_LANES[i]] = _keys_to_obj(_RB_LANE_KEYS, cell)
+                rec = {"team": tm, "totals": _keys_to_obj(_RB_TOT_KEYS, tot), "lanes": lanes}
+                if tm is not None and tm in lines:
+                    rec["line"] = lines[tm]
+                r[name] = rec
+            n2["rb_fan"] = r
+        if v2 and isinstance(node.get("qb_passing"), dict) and "players" in node["qb_passing"]:
+            q = {}
+            for name, (tm, tot, zarr) in node["qb_passing"]["players"].items():
+                zones = {}
+                for i, cell in enumerate(zarr or []):
+                    if cell:
+                        d, l = _QB_ZONES[i].split("|")
+                        zones.setdefault(d, {})[l] = _keys_to_obj(_QB_ZONE_KEYS, cell)
+                q[name] = {"team": tm, "totals": _keys_to_obj(_QB_TOT_KEYS, tot), "zones": zones}
+            n2["qb_passing"] = q
+        if v2 and isinstance(node.get("team"), dict):
+            n2["team"] = {cat: _dec_table(cnode) for cat, cnode in node["team"].items()}
         nv[yr] = n2
     out["nflverse"] = nv
+
+    if v2 and isinstance(out.get("sharp"), dict):
+        out["sharp"] = {cat: _dec_table(cnode) for cat, cnode in out["sharp"].items()}
     return out
+
 
 START = "// ═══ TRIPLECROWN_SEED_START ═══"
 END   = "// ═══ TRIPLECROWN_SEED_END ═══"
@@ -169,8 +262,16 @@ def main():
     if not os.path.exists(args.html):
         sys.exit(f"ERROR: HTML file not found: {args.html}")
 
-    with open(args.seed, encoding="utf-8") as f:
-        seed = _decode_fantasy(json.load(f))
+    if os.path.exists(args.seed):
+        with open(args.seed, encoding="utf-8") as f:
+            seed = _decode_fantasy(json.load(f))
+    elif os.path.exists(args.seed + ".gz"):
+        # Only the pre-gzipped twin present — read it directly.
+        import gzip as _gz
+        with _gz.open(args.seed + ".gz", "rt", encoding="utf-8") as f:
+            seed = _decode_fantasy(json.load(f))
+    else:
+        sys.exit(f"ERROR: seed not found: {args.seed} (or .gz)")
     with open(args.html, encoding="utf-8") as f:
         html = f.read()
 
@@ -198,8 +299,16 @@ def main():
     # app can lazy-load them). For a self-contained offline/baked file we re-embed them, since
     # file:// can't fetch. Read them next to the main seed if present.
     def _sidecar(path):
+        # Plain .json first; fall back to the pre-gzipped .json.gz twin build_seed now writes
+        # (a repo can ship only the .gz to stay small — bake handles either).
         try:
             with open(path, encoding="utf-8") as fh:
+                return json.load(fh)
+        except Exception:
+            pass
+        try:
+            import gzip as _gz
+            with _gz.open(path + ".gz", "rt", encoding="utf-8") as fh:
                 return json.load(fh)
         except Exception:
             return {}

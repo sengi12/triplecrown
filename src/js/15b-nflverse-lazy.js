@@ -74,8 +74,43 @@ function decodeDefWeekly(c){
   }
 
 // ── fantasy seed (triplecrown_seed.json) ───────────────────────────────────
+const _RB_LANES=["LE","LT","LG","MID","RG","RT","RE"];
+const _RB_LANE_KEYS=["attempts","ypc","success_rate","league_ypc","ypc_diff"];
+const _RB_TOT_KEYS=["attempts","yards","ypc","success_rate"];
+const _QB_ZONES=(()=>{const o=[];for(const d of["deep","inter","short","behind"])for(const l of["left","middle","right"])o.push(d+"|"+l);return o;})();
+const _QB_ZONE_KEYS=["rating","league_avg","attempts"];
+const _QB_TOT_KEYS=["passer_rating","comp_pct","yards","td","int","attempts"];
+// Rank-table decode (sharp categories + nflverse team tables share this shape).
+function _decTable(cnode){
+  if(!cnode || !Array.isArray(cnode.vcols)) return cnode;
+  const c2={}; for(const k in cnode){ if(k!=="vcols" && k!=="teams") c2[k]=cnode[k]; }
+  const vcols=cnode.vcols, teams={};
+  for(const tm in cnode.teams){
+    const row=cnode.teams[tm];
+    const values={}, ranks={};
+    for(let i=0;i<vcols.length;i++){
+      if(row[0][i]!==undefined) values[vcols[i]]=row[0][i];
+      if(row[1][i]!==undefined) ranks[vcols[i]]=row[1][i];
+    }
+    teams[tm]={values, ranks};
+    if(row.length>2 && row[2]) Object.assign(teams[tm], row[2]);
+  }
+  c2.teams=teams;
+  return c2;
+}
+const _keysToObj=(keys,arr)=>{const o={};for(let i=0;i<keys.length;i++){ if(arr && arr[i]!==undefined && arr[i]!==null) o[keys[i]]=arr[i]; else if(arr && arr[i]===null) o[keys[i]]=null; } return o;};
+
 function decodeFantasy(c){
-    if(!c || c.__codec!=="fantasy-1") return c;
+    // fantasy-1 and fantasy-2 both decode here, back to the exact in-memory shapes every
+    // renderer/lookup has always seen — the codec is invisible past this function.
+    // fantasy-2 adds three compactions (measured ~30% of the raw seed):
+    //   players: one row per name [base_values, ref1_values, ...] against a refs list — was
+    //     14 refinement tables each re-keyed by player name with identical columns arrays;
+    //   routes: four index-aligned arrays against the rt intern — was four {ROUTE: n} dicts
+    //     per player (null = absent, so a genuine 0 survives the round-trip);
+    //   sharp: values/ranks as parallel arrays against a per-category vcols list.
+    if(!c || (c.__codec!=="fantasy-1" && c.__codec!=="fantasy-2")) return c;
+    const v2 = (c.__codec==="fantasy-2");
     const out={};
     for(const k in c){ if(k!=="__codec") out[k]=c[k]; }
     const hc=c.history, sf=hc.sf;
@@ -98,6 +133,8 @@ function decodeFantasy(c){
     const nc=c.nflverse, rt=nc.rt;
     const decRK = dct => { if(!dct||typeof dct!=="object") return dct;
       const o={}; for(const i in dct) o[rt[+i]]=dct[i]; return o; };
+    const decArr = arr => { const o={}; if(!Array.isArray(arr)) return decRK(arr);
+      for(let i=0;i<arr.length;i++){ if(arr[i]!=null) o[rt[i]]=arr[i]; } return o; };
     const nv={};
     for(const yr in nc.years){
       const node=nc.years[yr], n2={};
@@ -105,24 +142,107 @@ function decodeFantasy(c){
       if(node.routes && typeof node.routes==="object"){
         const r2={};
         for(const pn in node.routes){
-          const rr={}; for(const k in node.routes[pn]) rr[k]=node.routes[pn][k];
-          for(const kk of ["tree","route_tds","route_rec","route_yds"]) if(kk in rr) rr[kk]=decRK(rr[kk]);
-          r2[pn]=rr;
+          const rec=node.routes[pn];
+          if(v2 && Array.isArray(rec)){
+            r2[pn]={pos:rec[0], total:rec[1], total_rec:rec[2], total_yds:rec[3], total_tds:rec[4],
+                    tree:decArr(rec[5]), route_rec:decArr(rec[6]),
+                    route_yds:decArr(rec[7]), route_tds:decArr(rec[8])};
+          } else {
+            const rr={}; for(const k in rec) rr[k]=rec[k];
+            for(const kk of ["tree","route_tds","route_rec","route_yds"]) if(kk in rr) rr[kk]=decRK(rr[kk]);
+            r2[pn]=rr;
+          }
         }
         n2.routes=r2;
+      }
+      if(v2 && node.players && typeof node.players==="object"){
+        const p2={};
+        for(const pos in node.players){
+          const blk=node.players[pos];
+          if(!blk || !Array.isArray(blk.refs)){ p2[pos]=blk; continue; }
+          const cols=blk.columns, refs=blk.refs;
+          const basePlayers={}, refTables={};
+          refs.forEach(rk=>{ refTables[rk]={columns:cols, players:{}}; });
+          for(const name in blk.players){
+            const row=blk.players[name];
+            if(row[0]!=null) basePlayers[name]={values:row[0]};
+            for(let i=0;i<refs.length;i++){
+              if(row[i+1]!=null) refTables[refs[i]].players[name]={values:row[i+1]};
+            }
+          }
+          const dec={columns:cols, players:basePlayers};
+          if(refs.length) dec.refinements=refTables;
+          p2[pos]=dec;
+        }
+        n2.players=p2;
+      }
+      if(v2 && node.rb_fan && node.rb_fan.players){
+        const r={}, lines=node.rb_fan.__lines||{};
+        for(const name in node.rb_fan.players){
+          const [tm, tot, laneArr]=node.rb_fan.players[name];
+          const lanes={};
+          (laneArr||[]).forEach((cell,i)=>{ if(cell) lanes[_RB_LANES[i]]=_keysToObj(_RB_LANE_KEYS,cell); });
+          const rec={team:tm, totals:_keysToObj(_RB_TOT_KEYS,tot), lanes};
+          if(tm!=null && lines[tm]!==undefined) rec.line=lines[tm];
+          r[name]=rec;
+        }
+        n2.rb_fan=r;
+      }
+      if(v2 && node.qb_passing && node.qb_passing.players){
+        const q={};
+        for(const name in node.qb_passing.players){
+          const [tm, tot, zarr]=node.qb_passing.players[name];
+          const zones={};
+          (zarr||[]).forEach((cell,i)=>{
+            if(!cell) return;
+            const [d,l]=_QB_ZONES[i].split("|");
+            (zones[d]=zones[d]||{})[l]=_keysToObj(_QB_ZONE_KEYS,cell);
+          });
+          q[name]={team:tm, totals:_keysToObj(_QB_TOT_KEYS,tot), zones};
+        }
+        n2.qb_passing=q;
+      }
+      if(v2 && node.team && typeof node.team==="object"){
+        const t={}; for(const cat in node.team) t[cat]=_decTable(node.team[cat]);
+        n2.team=t;
       }
       nv[yr]=n2;
     }
     out.nflverse=nv;
+    if(v2 && out.sharp && typeof out.sharp==="object"){
+      const s2={}; for(const cat in out.sharp) s2[cat]=_decTable(out.sharp[cat]);
+      out.sharp=s2;
+    }
     return out;
   }
+
+// ── seed fetch: pre-gzipped twin first ──────────────────────────────────────
+// build_seed writes a .json.gz next to every seed. Fetching that + DecompressionStream
+// guarantees the ~5x-smaller download on ANY host (local dev servers and bare static hosts
+// don't compress; CDNs compress at lighter levels). Falls back to the plain .json when the
+// .gz is missing (older deploys) or DecompressionStream is unavailable (older browsers) —
+// so this can never make loading WORSE, only smaller.
+async function fetchSeedJson(url){
+  try{
+    if(typeof DecompressionStream==='function'){
+      const r = await fetch(url + '.gz', {cache:'no-store'});
+      if(r.ok && r.body){
+        const txt = await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).text();
+        return JSON.parse(txt);
+      }
+    }
+  }catch(e){ /* fall through to plain */ }
+  const r = await fetch(url, {cache:'no-store'});
+  if(!r.ok) return null;
+  return await r.json();
+}
 
 // ── universal dispatcher: safe on any seed (compact or plain, any type) ─────
 function decodeAnySeed(data){
   return decodeSeed(decodeDefWeekly(decodeFantasy(data)));
 }
 
-if(typeof module!=='undefined') module.exports={decodeSeed,decodeDefWeekly,decodeFantasy,decodeAnySeed};
+if(typeof module!=='undefined') module.exports={decodeSeed,decodeDefWeekly,decodeFantasy,decodeAnySeed,fetchSeedJson};
 
 let _nflverseLazyLoaded = { def_weekly:false, coaching_scheme:false };
 let _nflverseLazyPromise = {};
@@ -163,9 +283,9 @@ function ensureNflverseSection(section){
   const url = _NFLVERSE_SIDECAR_URL[section];
   _nflverseLazyPromise[section] = (async()=>{
     try{
-      const res = await fetch(url, {cache:'no-store'});
-      if(!res.ok) return false;
-      const data = decodeAnySeed(await res.json());
+      const raw = await fetchSeedJson(url);
+      if(!raw) return false;
+      const data = decodeAnySeed(raw);
       mergeNflverseSection(section, data);
       _nflverseLazyLoaded[section] = true;
       return true;
@@ -194,9 +314,9 @@ function ensureNflverseCoachingSeason(season){
   if(_coachingSeasonPromise[season]) return _coachingSeasonPromise[season];
   _coachingSeasonPromise[season] = (async()=>{
     try{
-      const res = await fetch(`seeds/triplecrown_seed.coaching.${season}.json`, {cache:'no-store'});
-      if(!res.ok) return false;
-      const data = decodeAnySeed(await res.json());
+      const raw = await fetchSeedJson(`seeds/triplecrown_seed.coaching.${season}.json`);
+      if(!raw) return false;
+      const data = decodeAnySeed(raw);
       if(data && typeof data==='object' && typeof NFLVERSE==='object' && NFLVERSE){
         (NFLVERSE[season] = NFLVERSE[season] || {}).coaching_scheme = data;
         _coachingSeasonLoaded[season] = true;

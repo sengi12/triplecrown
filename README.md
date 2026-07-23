@@ -239,13 +239,13 @@ The project ships with a regression suite (Node + Python) covering the projectio
 ### UI / UX
 - [ ] Remove A.I. style emoji's from app and README
 - [ ] Improve names for app sections
-- [ ] Add past season rosters to roster tab (see add prev seasons for adv stats commit)
 ### Playercards
 - [ ] Kicker playercards need color
 - [ ] Implement future schedule on player cards with "4-weeks in" defensive rankings per pos
 ### Audit
 - [ ] Review comments and variable names
 - [ ] Parse through code that utilized non-TOS sources
+- [ ] Steelers QBs still include history QBs
 - [ ] Add Coaching History (HCs, OCs, DCs)
 - [ ] Improve seed packing mechanism
 

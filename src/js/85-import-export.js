@@ -441,9 +441,11 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
 // useful (at minimum ECR). Never throws — a file:// open or missing file just returns false.
 async function tryAutoLoadSeed(){
   try{
-    const res = await fetch('seeds/triplecrown_seed.json', {cache:'no-store'});
-    if(!res.ok) return false;
-    const j = decodeAnySeed(await res.json());
+    // gz-first: build_seed ships a pre-compressed .json.gz twin — ~5x smaller on hosts that
+    // don't compress, never worse (fetchSeedJson falls back to plain .json automatically).
+    const raw = await fetchSeedJson('seeds/triplecrown_seed.json');
+    if(!raw) return false;
+    const j = decodeAnySeed(raw);
     let got=false;
     if(j.ecr){ ECR=j.ecr; got=true; }
     if(j.contracts){ CONTRACTS=j.contracts; got=true; }
