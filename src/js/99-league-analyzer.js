@@ -191,6 +191,78 @@ function refreshLeagueSyncBtn(){
          b.classList.toggle('synced', !!leagueSnapshot); }
 }
 
+// ── Remembered Sleeper profile (leagues for quick switching) ─────────────────
+// Kept in its own localStorage key rather than the projection session, deliberately: the
+// session payload is season-guarded (restoreSession refuses a payload whose season doesn't
+// match PROJ_SEASON), so folding the league list in there would silently lose it every
+// season rollover. It's also tiny and unrelated to projections, so clearing your working
+// set shouldn't forget which leagues you're in.
+// Shape: {username, user:{user_id,display_name,avatar}, leagues:[...], fetchedAt}
+const TC_SLEEPER_KEY = 'triplecrown.sleeper.v1';
+function laSaveSleeperProfile(username, user, leagues){
+  if(!persistAvailable()) return;
+  try{
+    localStorage.setItem(TC_SLEEPER_KEY, JSON.stringify({
+      username: username || '',
+      user: user ? {user_id:user.user_id, display_name:user.display_name, avatar:user.avatar||null} : null,
+      // Store only what the switcher renders — a full league object carries roster_positions,
+      // scoring settings and metadata we'd never read here.
+      leagues: (leagues||[]).map(lg=>({
+        league_id: lg.league_id, name: lg.name, total_rosters: lg.total_rosters,
+        type: (lg.settings&&lg.settings.type)||0,
+        sf: (lg.roster_positions||[]).includes('SUPER_FLEX'),
+        avatar: lg.avatar||null,
+      })),
+      fetchedAt: Date.now(),
+    }));
+  }catch(e){ /* quota / serialization — the switcher just won't have history */ }
+}
+function laLoadSleeperProfile(){
+  if(!persistAvailable()) return null;
+  try{
+    const raw = localStorage.getItem(TC_SLEEPER_KEY);
+    if(!raw) return null;
+    const p = JSON.parse(raw);
+    return (p && Array.isArray(p.leagues)) ? p : null;
+  }catch(e){ return null; }
+}
+// Sync a remembered league straight from the switcher (by id — the saved list is independent
+// of laState.leagues, so index-based laPickLeague isn't safe here).
+async function laSyncSavedLeague(leagueId){
+  if(!leagueId || laState.busy) return;
+  await laTakeSnapshot(leagueId);
+}
+
+// Quick-switch list shown under the username field: the leagues we already know this
+// account is in. Excludes the league you're currently synced to (you'd be re-syncing what
+// you already have — that's what ↻ Resync is for) and the draft-page linked league (already
+// offered as its own button right above, so listing it twice would be noise).
+// Returns '' when there's nothing worth showing, so first-run stays clean.
+function laSavedLeaguesHTML(){
+  const p = laLoadSleeperProfile();
+  if(!p || !p.leagues.length) return '';
+  const currentId = leagueSnapshot ? String(leagueSnapshot.leagueId) : null;
+  const linkedId  = (window._laLinkedLeague && String(window._laLinkedLeague.id)) || null;
+  const others = p.leagues.filter(lg=>{
+    const id=String(lg.league_id);
+    return id!==currentId && id!==linkedId;
+  });
+  if(!others.length) return '';
+  const who = p.user && p.user.display_name ? p.user.display_name : (p.username||'your account');
+  return `<div class="la-saved">
+    <div class="la-saved-title">Your other leagues <span class="la-saved-who">— ${escAttr(who)}</span></div>
+    <div class="la-league-list">
+      ${others.map(lg=>`
+        <button class="la-league" ${laState.busy?'disabled':''}
+                onclick="laSyncSavedLeague('${escAttr(lg.league_id)}')">
+          <b>${escAttr(lg.name||'League')}</b>
+          <span>${lg.total_rosters||'?'}-team · ${lg.type===2?'dynasty':lg.type===1?'keeper':'redraft'}${lg.sf?' · SF':''}</span>
+        </button>`).join('')}
+    </div>
+    <div class="la-saved-note">or enter a different username above to search another account</div>
+  </div>`;
+}
+
 // ── Sync flow ────────────────────────────────────────────────────────────────
 async function laSubmitUsername(){
   const inp=document.getElementById('laUsername');
@@ -203,6 +275,9 @@ async function laSubmitUsername(){
     const { leagues }=await fetchUserLeagues(user.user_id, season);
     laState.user=user; laState.leagues=leagues;
     laState.step='pick'; laState.busy=false;
+    // Remember this account's leagues so "change league" can offer them directly next time
+    // (including after a reload — laState itself is in-memory only).
+    laSaveSleeperProfile(username, user, leagues);
     if(!leagues.length) laState.error='No NFL leagues found for this account.';
   }catch(e){
     laState.busy=false;
@@ -332,12 +407,14 @@ function renderLeagueAnalyzer(){
             FantasyPros dynasty trade chart${DYNASTY_VALUES&&DYNASTY_VALUES.asof?` (<b>${DYNASTY_VALUES.asof}</b> update)`:''}.
             Nothing auto-refreshes; you control when the snapshot updates.</div>
           <div class="la-row">
-            <input id="laUsername" placeholder="Sleeper username" onkeydown="if(event.key==='Enter')laSubmitUsername()">
+            <input id="laUsername" placeholder="Sleeper username" value="${escAttr((laLoadSleeperProfile()||{}).username||'')}"
+                   onkeydown="if(event.key==='Enter')laSubmitUsername()">
             <button class="btn btn-accent" ${laState.busy?'disabled':''} onclick="laSubmitUsername()">${laState.busy?'Looking up…':'Find my leagues'}</button>
           </div>
           ${window._laLinkedLeague?`<div class="la-linked">or <button class="btn btn-sm btn-accent" ${laState.busy?'disabled':''}
             onclick="laTakeSnapshot(window._laLinkedLeague.id)">\u26a1 Sync ${window._laLinkedLeague.name}</button>
-            <span class="la-linked-note">(the league linked on your draft/rankings page)</span></div>`:''}`
+            <span class="la-linked-note">(the league linked on your draft/rankings page)</span></div>`:''}
+          ${laSavedLeaguesHTML()}`
         :`
           <div class="la-setup-title">Pick a league</div>
           <div class="la-league-list">

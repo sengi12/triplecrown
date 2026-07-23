@@ -235,7 +235,11 @@ The project ships with a regression suite (Node + Python) covering the projectio
 
 ## To Do
 ### New Features
-- [ ] Add Flex to Strength Radar
+- [ ] ability for users to create account to save their projections (supabase)
+- [ ] projections manager
+- [ ] make sure triplecrown is season agnostic and easy to adjust for next season
+- [ ] input injection vulnerability scan on all input fields
+- [ ] league analyzer should also work with non-dynasty leagues (trad value entirely dependent on projections/VOR)
 ### UI / UX
 - [ ] Remove A.I. style emoji's from app and README
 - [ ] Improve names for app sections
@@ -244,10 +248,7 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] Implement future schedule on player cards with "4-weeks in" defensive rankings per pos
 ### Audit
 - [ ] Review comments and variable names
-- [ ] Parse through code that utilized non-TOS sources
-- [ ] Steelers QBs still include history QBs
 - [ ] Add Coaching History (HCs, OCs, DCs)
-- [ ] Improve seed packing mechanism
 
 ## License
 

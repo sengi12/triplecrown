@@ -466,3 +466,10 @@
 .la-lane-value{background:rgba(0,212,170,.12);color:#00d4aa;border-color:rgba(0,212,170,.35);}
 .la-lane-buy{background:rgba(226,192,141,.14);color:#e2c08d;border-color:rgba(226,192,141,.4);}
 .la-fnd-size{display:block;font-size:9px;color:var(--muted);font-weight:600;margin-top:2px;}
+
+/* ── League switcher: remembered leagues under the username field ────────────*/
+.la-saved{margin-top:16px;padding-top:14px;border-top:1px solid var(--border);}
+.la-saved-title{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:2px;}
+.la-saved-who{text-transform:none;letter-spacing:0;font-weight:400;opacity:.75;}
+.la-saved-note{font-size:10.5px;color:var(--muted);opacity:.8;margin-top:2px;}
