@@ -56,8 +56,16 @@ function initPassingShares(team){
   if(state.passing_shares) return;
   // Include ALL WR/TE on the roster (even zero-stat, so upside picks like a buried TE are
   // selectable), plus RBs with meaningful receiving work.
+  // An RB qualifies on EITHER the current row (proj, or copied reference stats) OR their
+  // projection-season role — so copying a season where a featured back barely caught passes
+  // (or hadn't debuted) can't knock him out of the receiving options. Roster membership is
+  // decided by the projected roster; the copied stats only set his baseline (possibly 0).
+  const projRbQualifies = p => {
+    const r=p._proj_role;   // projected role snapshotted before a reference copy overwrote the row
+    return !!(r && ((r.tgt>5)||(r.rec>5)));
+  };
   let all=[...getBase(team,'WR'),...getBase(team,'TE'),
-    ...getBase(team,'RB').filter(p=>(p.receiving_targets>5)||(p.receptions>5))];
+    ...getBase(team,'RB').filter(p=>(p.receiving_targets>5)||(p.receptions>5)||projRbQualifies(p))];
   // Reference-season week-range filter active? Overlay windowed totals onto the roster
   // before computing shares — everything downstream (pies, edits) just works on it.
   if(isWeekFilterActive(state) && state.weekFilterData) all=applyWeekFilterOverrides(all, state.weekFilterData);

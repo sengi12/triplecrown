@@ -1092,9 +1092,14 @@ function laTeamEngine(s, t, lens, pm, opts){
   const byPos={QB:[],RB:[],WR:[],TE:[]};
   (o.startersOnly ? starters.filter(f=>f.player).map(f=>f.player) : ranked)
     .forEach(p=>{ if(byPos[p.pos]&&p._v>0) byPos[p.pos].push(p._v); });
+  // FLEX strength = the players actually starting in flex-type slots (FLEX/SFLX/W-R/W-T) —
+  // a real axis of its own: two teams with identical RB/WR rooms can differ a lot in what
+  // they can afford to flex after the dedicated slots are filled.
+  const flexVals = starters.filter(f=>f.player && FLEX_ELIGIBLE[f.slot]).map(f=>f.player._v);
   return { t, starters, bench, score,
            pos:{QB:laTcAdjusted(byPos.QB), RB:laTcAdjusted(byPos.RB),
                 WR:laTcAdjusted(byPos.WR), TE:laTcAdjusted(byPos.TE)},
+           flex:laTcAdjusted(flexVals),
            startersAdj:laTcAdjusted(sVals),
            benchAdj:laTcAdjusted(bench.map(p=>p._v)) };
 }
@@ -1342,11 +1347,26 @@ function laMyTeamView(s){
              :`<span class="la-lu-hs la-lu-empty">\u2014</span>`}
           <span class="la-lu-lbl" title="${p?p.name:'empty'}">${lbl}</span></div>`; }).join('')}
       </div></div>`;
-  // Radar: starters vs bench strength per position, scaled to league max per axis.
-  const axes=POS.filter(p=>eng.some(e=>e.pos[p]>0));
-  const maxPos={}; axes.forEach(p=>maxPos[p]=Math.max(...eng.map(e=>e.pos[p]))||1);
-  const meAx=axes.map(p=>{ const st=laTcAdjusted(mineEng.starters.filter(f=>f.player&&f.player.pos===p).map(f=>f.player._v)); return Math.min(1, st/maxPos[p]); });
-  const bnAx=axes.map(p=>{ const bn=laTcAdjusted(mineEng.bench.filter(x=>x.pos===p).map(x=>x._v)); return Math.min(1, bn/maxPos[p]); });
+  // Radar: starters vs bench strength per position, scaled to league max per axis. FLEX is
+  // its own axis when the league starts flex slots: starters = who's actually IN the flex
+  // slots; bench = flex-eligible reserves (best RB/WR/TE depth that could step into flex).
+  const posAxes=POS.filter(p=>eng.some(e=>e.pos[p]>0));
+  const hasFlex=eng.some(e=>e.flex>0);
+  const axes=hasFlex ? [...posAxes,'FLEX'] : posAxes;
+  const flexElig=(()=>{ const set=new Set();
+    (s.rosterPositions||[]).forEach(sl=>{ (FLEX_ELIGIBLE[sl]||[]).forEach(pp=>set.add(pp)); });
+    return set.size?set:new Set(['RB','WR','TE']); })();
+  const maxPos={}; posAxes.forEach(p=>maxPos[p]=Math.max(...eng.map(e=>e.pos[p]))||1);
+  if(hasFlex) maxPos.FLEX=Math.max(...eng.map(e=>e.flex))||1;
+  const meAx=axes.map(p=>{
+    if(p==='FLEX') return Math.min(1, mineEng.flex/maxPos.FLEX);
+    const st=laTcAdjusted(mineEng.starters.filter(f=>f.player&&f.player.pos===p).map(f=>f.player._v));
+    return Math.min(1, st/maxPos[p]); });
+  const bnAx=axes.map(p=>{
+    if(p==='FLEX'){ const bn=laTcAdjusted(mineEng.bench.filter(x=>flexElig.has(x.pos)).map(x=>x._v));
+      return Math.min(1, bn/maxPos.FLEX); }
+    const bn=laTcAdjusted(mineEng.bench.filter(x=>x.pos===p).map(x=>x._v));
+    return Math.min(1, bn/maxPos[p]); });
   const radar=`
     <div class="la-my-card"><div class="la-my-title">Position Strength <span class="la-rd-key"><i class="la-rd-k-me"></i>starters <i class="la-rd-k-bn"></i>bench</span></div>
       ${laRadarSVG(axes, meAx, bnAx)}</div>`;

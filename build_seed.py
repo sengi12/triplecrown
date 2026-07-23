@@ -1960,6 +1960,14 @@ def get_players(refresh):
             # agents / departed / retired); `active` + `status` reflect current roster status.
             "active": p.get("active", True),
             "status": p.get("status"),   # e.g. "Active", "Inactive", "Retired"; None = unknown
+            # Sleeper's DB is itself stale for some long-retired players (Roethlisberger shows
+            # team=PIT, active=True, status=Active years after retiring). Two extra signals
+            # separate real roster members from ghosts: a depth-chart slot (set for players
+            # actually on the team's depth chart) and news recency (real players get news;
+            # verified league-wide: every "ghost" lacks both, while real fringe players
+            # missing a depth slot all have recent news).
+            "depth_chart_position": p.get("depth_chart_position"),
+            "news_updated": p.get("news_updated"),
             "age": p.get("age"), "years_exp": p.get("years_exp"),
             "headshot": None,  # Sleeper headshots use a CDN by player_id (handled in app)
             "bye_week": None,
@@ -2168,8 +2176,16 @@ def assemble(players, proj_idx, stats_by_season, history, proj_season):
             # from projectable rosters — they shouldn't appear on any team's 2026 depth chart.
             status = (meta.get("status") or "")
             is_inactive = (meta.get("active") is False) or (status in ("Retired", "Inactive"))
-            if not db_team or is_inactive:
-                skipped_stale.append((rec.get("name") or meta.get("name") or pid, proj_team, status or "no team"))
+            # Ghost check: Sleeper leaves some long-retired players looking Active on a team.
+            # A player with NO depth-chart slot AND no news in ~13 months isn't on a real
+            # roster (400 days clears a full offseason so August builds don't drop players
+            # who were quiet since last season).
+            _news = meta.get("news_updated")
+            _stale_news = (_news is None) or ((time.time() * 1000 - _news) > 400 * 24 * 3600 * 1000)
+            is_ghost = (not meta.get("depth_chart_position")) and _stale_news
+            if not db_team or is_inactive or is_ghost:
+                skipped_stale.append((rec.get("name") or meta.get("name") or pid, proj_team,
+                                      status if (not db_team or is_inactive) else "ghost (no depth slot, stale news)"))
                 continue
             team = db_team
         else:

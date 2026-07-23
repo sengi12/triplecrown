@@ -53,10 +53,20 @@ async function loadSleeperPlayers(silent){
         pos:p.position, team:p.team||null, age:p.age||null, years_exp:p.years_exp,
         height:p.height||null, weight:p.weight||null, college:p.college||null,
         number:(p.number!=null?p.number:null), espn_id:(p.espn_id!=null?String(p.espn_id):null),
+        // Roster-truth fields for the projection path. Sleeper's DB leaves some long-retired
+        // players looking Active on a team (Roethlisberger: team=PIT, active=true, years after
+        // retiring), so team/active/status alone aren't enough — a depth-chart slot or recent
+        // news separates real roster members from ghosts.
+        active:(p.active!==false), status:p.status||null,
+        dcp:p.depth_chart_position||null, news:(p.news_updated!=null?p.news_updated:null),
       };
     }
     sleeperPlayers = slim;
     buildSleeperNameIndex();
+    // Player DB just landed: scrub any ghost rosters loaded from a stale seed or a restored
+    // session (see scrubGhostRosters — this is the half of the race where the DB arrives
+    // after the session restore).
+    if(typeof scrubGhostRosters==='function') scrubGhostRosters();
     return slim;
   })();
   try{
@@ -114,8 +124,30 @@ function normalizeSleeperRow(row){
 // The index is keyed by player_id; each value carries that SEASON's team/pos/name/stats,
 // so a player lands on the team they actually played for that year (DJ Moore → CHI in
 // 2024, BUF in 2026), and rotating backup QBs resolve correctly per season.
-function buildSeedEntry(pid, row, meta){
-  const team = row.team || meta.team;
+// True when the Sleeper DB says this player is on a real current roster. Used ONLY for the
+// projection season (historical seasons must keep departed players on their historical teams).
+// A player qualifies with a team + not retired/inactive + (a depth-chart slot OR news within
+// ~13 months). Verified league-wide: this drops every "ghost" (Roethlisberger, Haskins et al
+// that Sleeper still lists on a team) while keeping real fringe players who lack a depth slot
+// but have recent news. 400 days clears a full offseason of quiet.
+function sleeperProjectableRoster(meta){
+  if(!meta || !meta.team) return false;
+  if(meta.active===false) return false;
+  if(meta.status==='Retired' || meta.status==='Inactive') return false;
+  if(meta.dcp) return true;
+  return !!(meta.news && (Date.now()-meta.news) < 400*24*3600*1000);
+}
+
+function buildSeedEntry(pid, row, meta, isProjection){
+  // Projection season: the player DB's CURRENT team is the truth (the projections feed can
+  // carry a stale historical team), and ghosts are dropped entirely. Historical seasons keep
+  // the row's team — that's the team the player was actually on that year.
+  if(isProjection){
+    if(meta && meta.player_id!=null && !sleeperProjectableRoster(meta)) return null;
+    var team = (meta && meta.team) || row.team;
+  } else {
+    var team = row.team || meta.team;
+  }
   const pos  = row.pos  || meta.pos;
   const name = row.name || meta.name || 'Unknown';
   if(!team) return null;
@@ -194,7 +226,7 @@ function projectQBGames(qbs){
 function assembleSeed(players, idx, isProjection){
   const seed={}; TEAMS.forEach(t=>seed[t]={QB:[],RB:[],WR:[],TE:[]});
   for(const pid in idx){
-    const entry=buildSeedEntry(pid, idx[pid], players[pid]||{});
+    const entry=buildSeedEntry(pid, idx[pid], players[pid]||{}, isProjection);
     if(entry && seed[entry.team]) seed[entry.team][entry.pos].push(entry);
   }
   return finalizeSeed(seed, isProjection);
@@ -204,7 +236,7 @@ function assembleSeed(players, idx, isProjection){
 function assembleSeedFromRecords(players, records, isProjection){
   const seed={}; TEAMS.forEach(t=>seed[t]={QB:[],RB:[],WR:[],TE:[]});
   records.forEach(row=>{
-    const entry=buildSeedEntry(row.pid, row, players[row.pid]||{});
+    const entry=buildSeedEntry(row.pid, row, players[row.pid]||{}, isProjection);
     if(entry && seed[entry.team]) seed[entry.team][entry.pos].push(entry);
   });
   return finalizeSeed(seed, isProjection);

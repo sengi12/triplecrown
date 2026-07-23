@@ -71,6 +71,10 @@ function restoreSession(){
     if(p.undoStacks && typeof p.undoStacks==='object') undoStacks = p.undoStacks;
     restored = true;
   }
+  // A restored session can carry ghost rosters saved before the roster-truth filter existed —
+  // scrub immediately (no-op until the Sleeper player DB has loaded; the DB-load path calls
+  // the scrub again, so whichever lands second does the real work).
+  if(typeof scrubGhostRosters==='function') scrubGhostRosters();
   return restored;
 }
 // Live seed (starts from embedded SEED_DATA; can be replaced by a live Sleeper pull)
@@ -192,6 +196,10 @@ function mergeRosterPlayers(team){
     const sp=sleeperPlayers[pid];
     if(sp.team!==team) continue;
     if(!POS_KEEP[sp.pos]) continue;
+    // Roster truth: Sleeper's DB still lists some long-retired players on a team
+    // (Roethlisberger shows team=PIT years after retiring), so without this check the merge
+    // re-injects ghosts into the projections view even when the seed itself is clean.
+    if(typeof sleeperProjectableRoster==='function' && !sleeperProjectableRoster(sp)) continue;
     if(have.has(pid) || have.has(normName(sp.name))) continue;
     if(!Array.isArray(SEED[team][sp.pos])) continue;
     // add a zeroed-out entry so the player is selectable with sliders at 0
@@ -204,6 +212,61 @@ function mergeRosterPlayers(team){
     });
   }
   rosterMergedTeams.add(team);
+}
+
+// ── Ghost scrub: self-heal rosters that were saved before the roster-truth filter ────────────
+// Ghosts (players Sleeper's DB still lists on a team years after they left — Roethlisberger,
+// Haskins et al) can arrive from THREE stores, and blocking new ones isn't enough because two
+// of the stores are persisted: (1) a seed built before the filter, (2) the user's saved
+// session — workingProj[team].qbs is the exact list the 2026 projections QB tab renders, and
+// restoreSession() faithfully puts an old ghost-laden copy back over a perfectly clean seed
+// on every boot. This scrub removes ghost entries from the projection seed AND every restored
+// working team, judged against the live Sleeper DB via sleeperProjectableRoster. Players the
+// DB doesn't know are left alone (could be custom/manual additions). Historical season caches
+// are never touched — departed players belong on their historical teams.
+// Idempotent and cheap; called after the player DB loads and after each session restore
+// (whichever lands second does the real work).
+function scrubGhostRosters(){
+  if(typeof sleeperPlayers!=='object' || !sleeperPlayers) return 0;
+  if(typeof sleeperProjectableRoster!=='function') return 0;
+  const isGhost = e => {
+    if(!e || e.player_id==null) return false;
+    const meta = sleeperPlayers[e.player_id];
+    return !!(meta && !sleeperProjectableRoster(meta));
+  };
+  let removed = 0;
+  // 1. The projection seed (covers a seed built before the filter). projSeed is the canonical
+  //    reference for the projection season regardless of which season tab is active.
+  const ps = (typeof projSeed!=='undefined' && projSeed) ? projSeed
+           : (typeof activeSeason!=='undefined' && activeSeason==='proj' ? SEED : null);
+  if(ps){
+    for(const t in ps){
+      ['QB','RB','WR','TE'].forEach(pos=>{
+        const lst = ps[t] && ps[t][pos];
+        if(!Array.isArray(lst)) return;
+        for(let i=lst.length-1;i>=0;i--){ if(isGhost(lst[i])){ lst.splice(i,1); removed++; } }
+      });
+    }
+  }
+  // 2. Restored working teams — the store the QB projections tab actually renders from.
+  if(typeof workingProj==='object' && workingProj){
+    for(const t in workingProj){
+      const wp = workingProj[t];
+      if(wp && Array.isArray(wp.qbs)){
+        const before = wp.qbs.length;
+        wp.qbs = wp.qbs.filter(q=>!isGhost(q));
+        removed += before - wp.qbs.length;
+        if(wp.activeQB!=null && wp.activeQB >= wp.qbs.length) wp.activeQB = 0;
+      }
+    }
+  }
+  if(removed>0){
+    try{
+      if(typeof saveSession==='function') saveSession();   // persist the healed session
+      if(typeof currentTeam!=='undefined' && currentTeam && typeof renderContent==='function') renderContent();
+    }catch(e){}
+  }
+  return removed;
 }
 function deepCopy(o){ return JSON.parse(JSON.stringify(o)); }
 function markDirty(){ if(importedSnapshot) dirtySinceImport = true; saveSession(); }
