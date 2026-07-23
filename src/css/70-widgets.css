@@ -473,3 +473,18 @@
   color:var(--muted);margin-bottom:2px;}
 .la-saved-who{text-transform:none;letter-spacing:0;font-weight:400;opacity:.75;}
 .la-saved-note{font-size:10.5px;color:var(--muted);opacity:.8;margin-top:2px;}
+
+/* ── Value-mode pin (auto / VOR / dynasty) in the Compare lens bar ───────────*/
+.la-valmode{display:inline-flex;align-items:center;gap:4px;margin-left:10px;padding-left:10px;
+  border-left:1px solid var(--border);}
+
+/* Team-defense thumbnails: club logo, letterboxed so it doesn't fill the circular crop. */
+.la-def-logo{object-fit:contain;background:var(--surface2);padding:1px;}
+
+/* Season lookback picker in the analyzer header. */
+.la-season-sel{margin-left:10px;font-size:12px;padding:2px 6px;border-radius:6px;
+  background:var(--surface2);color:var(--text);border:1px solid var(--border);cursor:pointer;vertical-align:middle;}
+.la-season-sel:hover{border-color:var(--accent);}
+
+/* "loading <season> stats…" note while an uncovered season is fetched from Sleeper. */
+.la-loading-note{color:var(--accent);opacity:.85;}

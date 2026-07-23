@@ -240,6 +240,8 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] make sure triplecrown is season agnostic and easy to adjust for next season
 - [ ] input injection vulnerability scan on all input fields
 - [ ] league analyzer should also work with non-dynasty leagues (trad value entirely dependent on projections/VOR)
+- [ ] add a search player feature to find a player's playercard or team
+- [ ] clicking on a team logo, takes you to that team's 2026 projections page anywhere in the app
 ### UI / UX
 - [ ] Remove A.I. style emoji's from app and README
 - [ ] Improve names for app sections

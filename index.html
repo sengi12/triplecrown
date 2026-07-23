@@ -1455,6 +1455,21 @@ html,body{max-width:100%;overflow-x:hidden;}
   color:var(--muted);margin-bottom:2px;}
 .la-saved-who{text-transform:none;letter-spacing:0;font-weight:400;opacity:.75;}
 .la-saved-note{font-size:10.5px;color:var(--muted);opacity:.8;margin-top:2px;}
+
+/* ── Value-mode pin (auto / VOR / dynasty) in the Compare lens bar ───────────*/
+.la-valmode{display:inline-flex;align-items:center;gap:4px;margin-left:10px;padding-left:10px;
+  border-left:1px solid var(--border);}
+
+/* Team-defense thumbnails: club logo, letterboxed so it doesn't fill the circular crop. */
+.la-def-logo{object-fit:contain;background:var(--surface2);padding:1px;}
+
+/* Season lookback picker in the analyzer header. */
+.la-season-sel{margin-left:10px;font-size:12px;padding:2px 6px;border-radius:6px;
+  background:var(--surface2);color:var(--text);border:1px solid var(--border);cursor:pointer;vertical-align:middle;}
+.la-season-sel:hover{border-color:var(--accent);}
+
+/* "loading <season> stats…" note while an uncovered season is fetched from Sleeper. */
+.la-loading-note{color:var(--accent);opacity:.85;}
 </style>
 </head>
 <body>
@@ -10893,6 +10908,203 @@ function laDynVal(name,pos){
   return Math.round(v * (LA_TIER_MULT[t]||1));
 }
 
+// ═══ Redraft valuation (VOR) ═════════════════════════════════════════════════
+// A dynasty league prices a player on what the market thinks he's worth for YEARS; a redraft
+// league only cares what he'll SCORE this season against a freely-available replacement. So
+// in redraft every value in this file comes from VOR — and from the SAME engine the rankings
+// board uses (computeVOR in 60-rankings-data.js), not a second implementation that could
+// drift. That engine reads the league's scoring settings and roster slots, and laTakeSnapshot
+// already applies both globally on sync (applySleeperScoring + lineupFromRosterPositions), so
+// VOR here is deterministic from the synced league exactly like the rankings page.
+//
+// 'auto' follows the league type; the user can pin either lens from the header.
+function laValMode(){
+  // A look-back season can ONLY be valued on what actually happened. The dynasty chart prices
+  // players for today's market, so applying it to a 2022 roster is meaningless — and worse, it
+  // doesn't move when you change seasons, which is exactly the "values aren't changing" symptom.
+  // Past seasons are therefore always VOR, in dynasty leagues too; the manual pin doesn't
+  // override it because there is no sensible dynasty answer for a finished year.
+  if(laHistoricalSeason()) return 'redraft';
+  if(laState.valMode==='dynasty' || laState.valMode==='redraft') return laState.valMode;
+  // Sleeper type: 0 redraft, 1 keeper, 2 dynasty. Keeper and dynasty both carry rosters
+  // forward, so they keep the dynasty chart unless the user pins otherwise.
+  return (leagueSnapshot && leagueSnapshot.leagueType===0) ? 'redraft' : 'dynasty';
+}
+function laIsRedraft(){ return laValMode()==='redraft'; }
+
+// K and DEF live outside the projection builder's universe (POS_KEEP is QB/RB/WR/TE), so the
+// analyzer carries its own small map for them, captured at snapshot time. Sleeper publishes
+// season projections for both; we use its projected points as the starting point and derive a
+// replacement level the same way computeVOR does — last starter consumed at that position.
+function laKdefVorMap(){
+  const m=new Map();
+  const s=leagueSnapshot;
+  if(!s || !Array.isArray(s.kdef) || !s.kdef.length) return m;
+  const slots=s.rosterPositions||[];
+  const teams=s.teams||12;
+  ['K','DEF'].forEach(pos=>{
+    const pool=s.kdef.filter(x=>x.pos===pos && x.pts!=null).sort((a,b)=>b.pts-a.pts);
+    if(!pool.length) return;
+    const n=slots.filter(x=>x===pos).length*teams;
+    // No slot for this position in the league → nothing is startable, so everyone sits at
+    // the top of the pool as replacement (VOR 0) rather than inheriting a phantom baseline.
+    const base = n>0 ? pool[Math.min(Math.max(n-1,0), pool.length-1)].pts : pool[0].pts;
+    pool.forEach(x=>{
+      const vor=+(x.pts-base).toFixed(1);
+      m.set(ecrNormName(x.name)+'|'+pos, vor);
+      // Insurance for defenses: the roster names them from TEAM_NAMES while the projections
+      // name them from Sleeper. Those agree today ("Philadelphia Eagles D/ST" both sides),
+      // but a club missing from TEAM_NAMES falls back to the bare code — so register the
+      // team abbreviation as an alias and the lookup still resolves.
+      if(pos==='DEF' && x.team) m.set(ecrNormName(x.team)+'|DEF', vor);
+    });
+  });
+  return m;
+}
+
+// Snapshots taken before K/DEF capture existed have no `kdef`, which silently prices every
+// kicker and defense at 0 — and since laRankOf counts how many beat you, a league where
+// everyone is 0 shows EVERY team ranked 1st at those slots. Rather than force a re-sync,
+// backfill the snapshot in the background the first time we notice, then re-render.
+let _laKdefBackfilling=false;
+function laEnsureKdef(){
+  const s=leagueSnapshot;
+  if(!s || _laKdefBackfilling) return;
+  if(Array.isArray(s.kdef) && s.kdef.length) return;
+  if(!(s.rosterPositions||[]).some(x=>x==='K'||x==='DEF')) return;
+  _laKdefBackfilling=true;
+  laFetchKdef(s.season).then(rows=>{
+    _laKdefBackfilling=false;
+    if(!rows || !rows.length) return;
+    leagueSnapshot.kdef=rows;
+    try{ saveSession(); }catch(e){}
+    renderLeagueAnalyzer();
+  }).catch(()=>{ _laKdefBackfilling=false; });
+}
+
+// When the snapshot is an earlier season of the league, "value" should mean what players
+// actually DID that year, not what we project for the upcoming one — otherwise a 2022 roster
+// gets priced on 2026 projections and reads as nonsense. Returns the season string when the
+// snapshot predates the projection season, else null.
+function laHistoricalSeason(){
+  const s=leagueSnapshot;
+  if(!s || !s.season) return null;
+  const chain=s.seasonChain;
+  if(Array.isArray(chain) && chain.length>1){
+    // "Previous" is relative to the league's OWN lineage, not to the projection year. That
+    // matters in the off-season: Sleeper doesn't roll a league over until the new year starts,
+    // so a live dynasty league is still labelled 2025 while we project 2026 — comparing against
+    // PROJ_SEASON would wrongly call the CURRENT league historical and strip its dynasty
+    // values. Newest season in the chain is current; anything older is a look-back.
+    const newest=Math.max(...chain.map(c=>parseInt(c.season,10)||0));
+    return (parseInt(s.season,10) < newest) ? String(s.season) : null;
+  }
+  // No chain discovered yet. Fall back to the projection year but allow a season of slack so
+  // an un-rolled-over current league isn't misread as history while the walk is in flight.
+  const snap=parseInt(s.season,10), proj=parseInt(PROJ_SEASON,10);
+  return (snap && proj && snap < proj-1) ? String(snap) : null;
+}
+// Build that season's player list (with .vor attached by computeVOR) without disturbing the
+// user's live view. SEED/userProj/activeSeason are swapped for the duration and restored in
+// a finally, so an exception can't strand the app on a reference season.
+// Make sure we have a stat seed for `season`. The embedded HISTORY block only covers the
+// seasons build_seed captured (2021-2025 today), but Sleeper serves season stats much further
+// back — so for anything older we pull it live, cache it, and re-render. Returns true when the
+// data is ready now, false when a fetch is in flight (callers render 0s for one paint).
+let _laSeasonFetching={};
+function laEnsureSeasonStats(season){
+  season=String(season);
+  if(typeof seasonStatsCache==='undefined') return false;
+  if(seasonStatsCache[season]) return true;
+  // Free path first: build from the embedded history block if it covers this year.
+  try{
+    if(typeof buildSeedFromHistory==='function'){
+      const built=buildSeedFromHistory(season);
+      if(built){ seasonStatsCache[season]=built; return true; }
+    }
+  }catch(e){}
+  if(_laSeasonFetching[season]) return false;
+  _laSeasonFetching[season]=true;
+  (async()=>{
+    try{
+      const players=await loadSleeperPlayers();
+      const rows=await sleeperFetch(SLEEPER_STATS_URL(season));
+      const idx={};
+      (rows||[]).forEach(r=>{ const n=normalizeSleeperRow(r); if(n && n.pid) idx[n.pid]=n; });
+      if(Object.keys(idx).length){
+        seasonStatsCache[season]=assembleSeed(players, idx);
+        _laVorCache=null;
+        // Clear the in-flight flag BEFORE repainting, or the header renders the
+        // "loading…" note on the very paint that already has the data.
+        _laSeasonFetching[season]=false;
+        renderLeagueAnalyzer();
+      }
+    }catch(e){ /* offline or no data that far back — the view just stays unvalued */ }
+    finally{ _laSeasonFetching[season]=false; }
+  })();
+  return false;
+}
+// True while we're fetching a season's stats — lets the view say so instead of showing zeros
+// with no explanation.
+function laSeasonLoading(){
+  const h=laHistoricalSeason();
+  return !!(h && _laSeasonFetching[String(h)]);
+}
+function laHistoricalPlayerList(season){
+  if(!laEnsureSeasonStats(season)) return [];
+  const savedSeed=SEED, savedProj=userProj, savedActive=activeSeason;
+  try{
+    SEED=seasonStatsCache[season];
+    userProj={};              // throwaway derived state; never touches the working set
+    activeSeason=season;
+    return buildPlayerList(); // computeVOR runs inside, using THIS league's slots + scoring
+  }catch(e){ return []; }
+  finally{ SEED=savedSeed; userProj=savedProj; activeSeason=savedActive; }
+}
+
+// name|pos → VOR. Rebuilt once per analyzer render (renderLeagueAnalyzer clears the cache),
+// so edits to your projections show up immediately — same cost profile as laProjMap().
+let _laVorCache=null;
+function laVorMap(){
+  if(_laVorCache) return _laVorCache;
+  const m=new Map();
+  try{
+    const hist=laHistoricalSeason();
+    const list=hist ? laHistoricalPlayerList(hist) : buildPlayerList();
+    list.forEach(p=>{ if(p.vor!=null) m.set(ecrNormName(p.name)+'|'+p.pos, p.vor); });
+  }catch(e){ /* seed not loaded → empty map; views render 0s rather than crashing */ }
+  laKdefVorMap().forEach((v,k)=>m.set(k,v));
+  _laVorCache=m;
+  return m;
+}
+const LA_VOR_SCALE = 100;   // lift VOR into the same working range as (chart pts x LA_VAL_SCALE)
+function laRedraftVal(name,pos,team){
+  const map=laVorMap();
+  let v=map.get(ecrNormName(name)+'|'+pos);
+  if(v==null && pos==='DEF' && team) v=map.get(ecrNormName(team)+'|DEF');
+  if(v==null) return 0;
+  // Below replacement = streamable off waivers, so no trade value. Clamping at 0 rather than
+  // going negative keeps the consolidation weights and fairness bands — which all assume
+  // non-negative asset values — behaving exactly as they do under the dynasty lens.
+  return Math.max(0, Math.round(v*LA_VOR_SCALE));
+}
+// THE value entry point. Every tab reads worth through here, so switching lens switches the
+// whole analyzer coherently instead of one view at a time.
+function laVal(name,pos,team){ return laIsRedraft() ? laRedraftVal(name,pos,team) : laDynVal(name,pos); }
+// Rookie picks are dynasty capital; in a redraft league they don't exist as assets.
+function laPickValFor(season,round){ return laIsRedraft() ? 0 : laPickVal(season,round); }
+
+// Player thumbnail. Team defenses have no headshot (they're not people and aren't in the
+// Sleeper player DB), so they render the club logo instead — Sleeper keys a DEF by its team
+// abbreviation, which is exactly what NFL_LOGO wants.
+function laPlayerImg(p, cls){
+  cls = cls || 'player-headshot';
+  const isDef = p.pos==='DEF';
+  const code = isDef ? (p.team || p.id || p.player_id) : null;
+  if(isDef && code) return imgTag(NFL_LOGO(String(code).toUpperCase()), cls+' la-def-logo');
+  return imgTag(hsURL({player_id:p.player_id||p.id, name:p.name, pos:p.pos}), cls);
+}
+
 // League / team icons — real Sleeper avatars with emoji fallback (older persisted snapshots
 // predate avatar capture, and orphan rosters have none; both degrade gracefully).
 function laLeagueIcon(s,cls){ return s&&s.avatar?`<img src="${s.avatar}" class="${cls}" onerror="this.outerHTML='\ud83c\udfdf'">`:'\ud83c\udfdf'; }
@@ -10993,6 +11205,28 @@ function laSavedLeaguesHTML(){
   </div>`;
 }
 
+// Season dropdown: jump to an earlier year of THIS league (discovered via previous_league_id).
+// Hidden until the background chain walk finds more than one season. Past seasons are valued
+// on that year's real stats — see laHistoricalSeason.
+function laSeasonPicker(s){
+  const chain=s.seasonChain;
+  if(!Array.isArray(chain) || chain.length<2) return '';
+  return `<select class="la-season-sel" title="Look back at an earlier season of this league"
+      onchange="laGoToSeason(this.value)">
+    ${chain.map(c=>`<option value="${c.leagueId}" ${String(c.leagueId)===String(s.leagueId)?'selected':''}>${c.season}</option>`).join('')}
+  </select>`;
+}
+async function laGoToSeason(leagueId){
+  if(!leagueId || laState.busy) return;
+  if(leagueSnapshot && String(leagueSnapshot.leagueId)===String(leagueId)) return;
+  // Seed the cache with what we already know before switching, so the new snapshot inherits
+  // the FULL chain (including the season we're leaving, which its own backward walk can't see).
+  laCacheChain(laMergeChain(_laChainCache[String(leagueId)],
+                            (leagueSnapshot && leagueSnapshot.seasonChain) || []));
+  await laTakeSnapshot(leagueId);
+  renderLeagueAnalyzer();
+}
+
 // ── Sync flow ────────────────────────────────────────────────────────────────
 async function laSubmitUsername(){
   const inp=document.getElementById('laUsername');
@@ -11001,7 +11235,8 @@ async function laSubmitUsername(){
   laState.busy=true; laState.error=null; renderLeagueAnalyzer();
   try{
     const user=await resolveSleeperUser(username);
-    const season=await fetchCurrentSeason();
+    // const season=await fetchCurrentSeason();
+    const season='2025';
     const { leagues }=await fetchUserLeagues(user.user_id, season);
     laState.user=user; laState.leagues=leagues;
     laState.step='pick'; laState.busy=false;
@@ -11037,6 +11272,88 @@ function laMenuChangeLeague(){
 // The snapshot itself: league + users + rosters + traded picks + the Sleeper player DB
 // (for id→name/pos), assembled into one persisted object. This is the only network moment
 // in the whole analyzer — everything downstream reads the snapshot.
+// Sleeper season projections for K and DEF → [{name, pos, team, pts}]. Sleeper's own
+// projected points are the starting point for valuing these two positions (the component
+// scoring for field-goal distance buckets and points-allowed tiers isn't modelled yet), so
+// a league with unusual K/DEF scoring will price them approximately rather than exactly.
+async function laFetchKdef(season){
+  const url=`https://api.sleeper.com/projections/nfl/${season}?season_type=regular`
+          + `&position[]=K&position[]=DEF&order_by=pts_half_ppr`;
+  const rows=await sleeperFetch(url);
+  const out=[];
+  (rows||[]).forEach(r=>{
+    const pos=r.position||(r.player&&r.player.position);
+    if(pos!=='K' && pos!=='DEF') return;
+    const pl=r.player||{};
+    const name=`${pl.first_name||''} ${pl.last_name||''}`.trim() || r.player_id;
+    const st=r.stats||{};
+    const pts=st.pts_half_ppr!=null?st.pts_half_ppr:(st.pts_ppr!=null?st.pts_ppr:st.pts_std);
+    if(pts==null) return;
+    // DEF rows are keyed by club, and the roster carries the same abbreviation as the id —
+    // store the "<Club> D/ST" form the snapshot builds so the two sides match on lookup.
+    out.push({ name: pos==='DEF' ? `${name} D/ST` : name,
+               pos, team:r.team||pl.team||null, pts:+pts });
+  });
+  return out;
+}
+
+// Sleeper chains a league to its prior year via previous_league_id. Walk it (bounded) so the
+// analyzer can offer a season dropdown — same league, earlier years, real final rosters.
+// Runs in the background after a snapshot so it never delays the view.
+async function laBuildSeasonChain(leagueId, season, name){
+  const chain=[{season:String(season), leagueId:String(leagueId)}];
+  let cur=leagueId;
+  for(let i=0;i<8;i++){
+    let lg;
+    try{ lg=await sleeperFetch(LA_LEAGUE_URL(cur)); }catch(e){ break; }
+    const prev=lg && lg.previous_league_id;
+    if(!prev || prev==='0') break;
+    let plg;
+    try{ plg=await sleeperFetch(LA_LEAGUE_URL(prev)); }catch(e){ break; }
+    if(!plg || !plg.season) break;
+    chain.push({season:String(plg.season), leagueId:String(prev)});
+    cur=prev;
+  }
+  return chain;
+}
+// Every league in one lineage shares the same chain, so cache it under EVERY id in it. This
+// is what makes the picker work in both directions: previous_league_id only walks BACKWARD,
+// so a chain built from the 2024 league is [2024..2021] and would otherwise drop the 2025
+// entry you arrived from. Cache + merge means once a season is known it stays reachable.
+let _laChainCache = {};
+function laMergeChain(a, b){
+  const byId=new Map();
+  [...(a||[]), ...(b||[])].forEach(c=>{ if(c && c.leagueId) byId.set(String(c.leagueId), c); });
+  // Newest season first so the dropdown reads the way people think about years.
+  return [...byId.values()].sort((x,y)=>parseInt(y.season,10)-parseInt(x.season,10));
+}
+function laCacheChain(chain){
+  if(!chain || !chain.length) return chain;
+  chain.forEach(c=>{ _laChainCache[String(c.leagueId)]=chain; });
+  return chain;
+}
+function laRefreshSeasonChain(){
+  const s=leagueSnapshot;
+  if(!s) return;
+  // Anything we already know about this lineage — from the cache, or carried on the snapshot.
+  const known=laMergeChain(_laChainCache[String(s.leagueId)], s.seasonChain);
+  if(known.length){
+    s.seasonChain=laCacheChain(known);
+    if(known.some(c=>String(c.leagueId)===String(s.leagueId)) && known.length>1){
+      // Already complete enough to render the picker; no need to re-walk.
+      return;
+    }
+  }
+  laBuildSeasonChain(s.leagueId, s.season, s.name).then(chain=>{
+    if(!leagueSnapshot || leagueSnapshot.leagueId!==s.leagueId) return;
+    // MERGE, never replace: the walk can only see this season and earlier.
+    const merged=laMergeChain(leagueSnapshot.seasonChain, chain);
+    leagueSnapshot.seasonChain=laCacheChain(merged);
+    try{ saveSession(); }catch(e){}
+    if(merged.length>1) renderLeagueAnalyzer();
+  }).catch(()=>{});
+}
+
 async function laTakeSnapshot(leagueId){
   laState.busy=true; laState.error=null; renderLeagueAnalyzer();
   try{
@@ -11046,11 +11363,23 @@ async function laTakeSnapshot(leagueId){
       sleeperFetch(LA_ROSTERS_URL(leagueId)),
       sleeperFetch(LA_TRADED_PICKS_URL(leagueId)).catch(()=>[]),
     ]);
+    // Kicker + team-defense projections. These positions sit outside the projection builder
+    // (POS_KEEP is QB/RB/WR/TE), so we capture Sleeper's own season projections for them and
+    // keep them on the snapshot — enough to value and rank K/DEF in redraft leagues that
+    // start them. Only fetched when the league actually has those slots; a failure is
+    // non-fatal (they simply come out unvalued).
+    let kdef=[];
+    if((lg.roster_positions||[]).some(x=>x==='K'||x==='DEF')){
+      kdef = await laFetchKdef(lg.season).catch(()=>[]);
+    }
     await loadSleeperPlayers(true);
     const uById={}; (users||[]).forEach(u=>uById[u.user_id]=u);
     const rp=lg.roster_positions||[];
     const superflex = rp.includes('SUPER_FLEX');
     const tep = +((lg.scoring_settings||{}).bonus_rec_te||0) > 0;
+    // Sleeper league type: 0 = redraft, 1 = keeper, 2 = dynasty. This is what decides whether
+    // a player's worth comes from the dynasty chart or from THIS season's VOR — see laVal().
+    const leagueType = +((lg.settings||{}).type) || 0;
 
     // Future pick ownership. Default: every roster owns its own R1-R4 for the horizon
     // seasons; traded_picks rows then reassign {season, round, roster_id(original)} → owner.
@@ -11069,7 +11398,16 @@ async function laTakeSnapshot(leagueId){
         // sleeperPlayers is the SLIMMED map from loadSleeperPlayers: {name, pos, team, ...} —
         // not the raw Sleeper API shape (full_name/position). Read the slim keys.
         const sp=(sleeperPlayers||{})[pid]||{};
-        return { id:pid, name:sp.name||pid, pos:sp.pos||'?', team:sp.team||'FA' };
+        if(sp.name) return { id:pid, name:sp.name, pos:sp.pos||'?', team:sp.team||'FA' };
+        // Team defenses aren't in the slim player DB (it excludes position 'DEF'), and Sleeper
+        // uses the TEAM ABBREVIATION as the DEF player_id — so an unresolved id that looks like
+        // a team code is a defense. Resolve it to the club name + code rather than leaving a
+        // raw "PIT" with pos '?' sitting on the roster.
+        if(/^[A-Z]{2,4}$/.test(pid)){
+          return { id:pid, name:(typeof teamDisplayName==='function'?teamDisplayName(pid):pid)+' D/ST',
+                   pos:'DEF', team:pid, isDef:true };
+        }
+        return { id:pid, name:pid, pos:'?', team:'FA' };
       });
       const picks=[];
       for(const k in own){ if(own[k]!==r.roster_id) continue;
@@ -11089,7 +11427,7 @@ async function laTakeSnapshot(leagueId){
     leagueSnapshot = {
       leagueId, name:lg.name||'League', season:lg.season,
       avatar: lg.avatar ? SLEEPER_AVATAR_THUMB(lg.avatar) : null,
-      teams:lg.total_rosters||teams.length, superflex, tep,
+      teams:lg.total_rosters||teams.length, superflex, tep, leagueType, kdef,
       rosterPositions:rp, takenAt:Date.now(),
       myUserId:(laState.user&&laState.user.user_id)||((leagueSnapshot&&leagueSnapshot.leagueId===leagueId)?leagueSnapshot.myUserId:null),
       teamList:teams,
@@ -11106,6 +11444,7 @@ async function laTakeSnapshot(leagueId){
       }
       window._laLinkedLeague = { id: leagueId, name: lg.name||'League' };
     }catch(e){}
+    laRefreshSeasonChain();   // background: discover earlier seasons of this league
     _laTierVals=null;   // format (SF/TEP) may have changed → rebuild the pick-tier table
     _laPosRankCache=null;   // roster set changed → positional ranks are stale
     laState.step='view'; laState.busy=false;
@@ -11124,6 +11463,10 @@ async function laTakeSnapshot(leagueId){
 function renderLeagueAnalyzer(){
   const host=document.getElementById('content'); if(!host) return;
   if(currentPhase!=='League') return;
+  // VOR is derived from the live projections, so rebuild it once per render — edit a slider
+  // and the redraft values follow. Same cost profile as laProjMap(), which renders already pay.
+  _laVorCache=null;
+  if(laIsRedraft()) laEnsureKdef();   // heal pre-kdef snapshots (see laEnsureKdef)
   const back=`<button class="btn btn-ghost" onclick="leaveLeagueAnalyzer()">← Projections</button>`;
   if(laState.step!=='view' || !leagueSnapshot){
     host.innerHTML=`
@@ -11166,9 +11509,15 @@ function renderLeagueAnalyzer(){
   const stamp=`${taken.toLocaleDateString(undefined,{month:'short',day:'numeric'})} ${taken.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`;
   const fmt=[`${s.teams}-team`, s.superflex?'Superflex':'1QB', s.tep?'TEP':null].filter(Boolean).join(' · ');
   host.innerHTML=`
-    <div class="team-header"><div><div class="team-abbr la-hdr">${laLeagueIcon(s,'la-lg-av')}<span class="la-hdr-name">${s.name}</span></div>
+    <div class="team-header"><div><div class="team-abbr la-hdr">${laLeagueIcon(s,'la-lg-av')}<span class="la-hdr-name">${s.name}</span>${laSeasonPicker(s)}</div>
       <div class="team-qb-name">${fmt} · snapshot taken <b>${stamp}</b>
-        ${DYNASTY_VALUES&&DYNASTY_VALUES.asof?` · values: FantasyPros dynasty chart <b>${DYNASTY_VALUES.asof}</b>`:''}</div></div>
+        ${laHistoricalSeason()
+          ? (laSeasonLoading()
+              ? ` · <span class="la-loading-note">loading ${laHistoricalSeason()} stats\u2026</span>`
+              : ` · values: <b>${laHistoricalSeason()}</b> actual stats (VOR)`)
+          : (DYNASTY_VALUES&&DYNASTY_VALUES.asof&&!laIsRedraft()
+              ? ` · values: FantasyPros dynasty chart <b>${DYNASTY_VALUES.asof}</b>`
+              : ' · values: value over replacement (VOR)')}</div></div>
       </div>
     <div class="phase-tabs">
       ${[['myteam','My Team'],['rosters','Rosters'],['compare','Compare'],['best','Waiver Wire'],['trade','Trade Center']]
@@ -11191,19 +11540,23 @@ function laTeamValue(t){
   // depth at a steep discount — matching the trade calculator's worldview so the Rosters
   // totals, Compare ranks and Trade verdicts can never disagree about who's loaded.
   return Math.round(
-    laTcAdjusted(t.players.map(p=>laDynVal(p.name,p.pos)).filter(v=>v>0)) +
-    laTcAdjusted(t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0)));
+    laTcAdjusted(t.players.map(p=>laVal(p.name,p.pos,p.team)).filter(v=>v>0)) +
+    // laPickValFor is 0 in redraft — the snapshot still carries pick rows (Sleeper reports
+    // them for every league) but they're not assets, so they must not inflate roster worth.
+    laTcAdjusted(t.picks.map(pk=>laPickValFor(pk.season,pk.round)).filter(v=>v>0)));
 }
 function laTeamCard(t,s){
   const valued=[], depth=[];
   t.players.forEach(p=>{
-    const v=laDynVal(p.name,p.pos);
+    const v=laVal(p.name,p.pos,p.team);
     (v!=null?valued:depth).push({...p,v:v||0});
   });
   valued.sort((a,b)=>b.v-a.v);
   const mine=s.myUserId && t.ownerId===s.myUserId;
   const total=laTeamValue(t);
-  const pickChips=t.picks.map(pk=>{
+  // No rookie-pick chips in redraft — the snapshot carries pick rows for every league, but
+  // they aren't assets when the whole roster resets each year.
+  const pickChips=(laIsRedraft()?[]:t.picks).map(pk=>{
     // laPickVal, not the raw chart value: players on this card are tier-boosted and scaled,
     // so a raw pick number here would be ~1% of a comparable player and read as worthless.
     const v=Math.round(laPickVal(pk.season,pk.round))||null;
@@ -11221,7 +11574,7 @@ function laTeamCard(t,s){
     <div class="la-players">
       ${valued.map(p=>`<div class="la-p">
         <span class="rt-slot ${slotClass(p.pos)}">${p.pos}</span>
-        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name,p.pos,p.team||'')}">${imgTag(hsURL(p),'player-headshot')}</span>
+        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name,p.pos,p.team||'')}">${laPlayerImg(p)}</span>
         <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${p.name}</span>${laCliffMark(p.name,p.pos)}
         <span class="team-header"><img src="${NFL_LOGO(p.team)}" class="team-logo-sm" alt="${p.team}"</span>
         <span class="la-pval">${p.v}</span></div>`).join('')}
@@ -11294,7 +11647,7 @@ function laCompareView(s){
   const lens=laState.lens||'value';
   const POS=['QB','RB','WR','TE'];
   const pm=laProjMap();
-  const withPicks = lens==='value' && laState.cmpPicks;
+  const withPicks = lens==='value' && laState.cmpPicks && !laIsRedraft();
   const rows=s.teamList.map(t=>{
     const by={QB:0,RB:0,WR:0,TE:0};
     let picks=0;
@@ -11307,7 +11660,7 @@ function laCompareView(s){
       const srcP = laState.cmpStarters
         ? laTeamEngine(s,t,'value',pm,{picks:false,startersOnly:true}).starters.filter(f=>f.player).map(f=>f.player)
         : t.players;
-      srcP.forEach(p=>{ const v=laDynVal(p.name,p.pos); if(byPos[p.pos]&&v>0) byPos[p.pos].push(v); });
+      srcP.forEach(p=>{ const v=laVal(p.name,p.pos,p.team); if(byPos[p.pos]&&v>0) byPos[p.pos].push(v); });
       POS.forEach(pos=>{ by[pos]=+laTcAdjusted(byPos[pos]).toFixed(0); });
       picks=+laTcAdjusted(t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0)).toFixed(0);
     }else{
@@ -11344,10 +11697,15 @@ function laCompareView(s){
   return `
     <div class="la-lens">
       <span class="la-lens-lbl">Lens:</span>
-      <button class="format-btn ${lens==='value'?'active':''}" onclick="laState.lens='value';renderLeagueAnalyzer()" title="Dynasty capital: tier-boosted values, consolidation-adjusted">Dynasty value</button>
+      <button class="format-btn ${lens==='value'?'active':''}" onclick="laState.lens='value';renderLeagueAnalyzer()" title="${laIsRedraft()?'Value over replacement from YOUR projections, under this league\u2019s scoring and roster slots':'Dynasty capital: tier-boosted values, consolidation-adjusted'}">${laHistoricalSeason()?laHistoricalSeason()+' value (VOR)':laIsRedraft()?'Redraft value (VOR)':'Dynasty value'}</button>
       <button class="format-btn ${lens==='proj'?'active':''}" onclick="laState.lens='proj';renderLeagueAnalyzer()" title="Projected points from YOUR projections: best starting lineup under this league's slots">Projected starters</button>
-      ${lens==='value'?`<label class="la-chk" title="Count owned rookie-pick capital (PICKS column + inside TOTAL)">
+      ${(lens==='value'&&!laIsRedraft())?`<label class="la-chk" title="Count owned rookie-pick capital (PICKS column + inside TOTAL)">
         <input type="checkbox" ${laState.cmpPicks?'checked':''} onchange="laState.cmpPicks=this.checked;renderLeagueAnalyzer()"> incl. picks</label>`:''}
+      ${(laHistoricalSeason()||(leagueSnapshot&&leagueSnapshot.leagueType===0))?'':`<span class="la-valmode" title="Keeper leagues sit between the two: they carry rosters forward like dynasty but reset like redraft. Pin whichever matches how your league actually trades.">
+        <span class="la-lens-lbl">Value:</span>
+        ${['auto','redraft','dynasty'].map(mv=>`<button class="format-btn ${((laState.valMode||'auto')===mv)?'active':''}"
+          onclick="laState.valMode='${mv}';renderLeagueAnalyzer()">${mv==='auto'?`Auto (${laValMode()})`:mv==='redraft'?'VOR':'Dynasty'}</button>`).join('')}
+      </span>`}
       <label class="la-chk" title="Rank on starting lineups only — same filter as the My Team page">
         <input type="checkbox" ${laState.cmpStarters?'checked':''} onchange="laState.cmpStarters=this.checked;renderLeagueAnalyzer()"> starters only</label>
     </div>
@@ -11386,9 +11744,29 @@ function laBestAvailView(s){
   const rostered=new Set();
   s.teamList.forEach(t=>t.players.forEach(p=>rostered.add(ecrNormName(p.name))));
   const pm=laProjMap();
-  const dv=(DYNASTY_VALUES&&DYNASTY_VALUES.players)||{};
   const posF=laState.baPos||'ALL';
   const rows=[];
+  if(laIsRedraft()){
+    // Redraft: the free-agent universe is everyone our projections cover (plus K/DEF), ranked
+    // by VOR. Walking the dynasty chart instead would both miss K/DEF entirely and rank the
+    // waiver wire by long-term worth — the wrong question when the season is all there is.
+    laVorMap().forEach((vor,key)=>{
+      const i=key.lastIndexOf('|'); if(i<0) return;
+      const k=key.slice(0,i), pos=key.slice(i+1);
+      if(rostered.has(k)) return;
+      if(posF!=='ALL' && pos!==posF) return;
+      rows.push({name:k, pos, team:'', v:Math.max(0,Math.round(vor*LA_VOR_SCALE)),
+                 fpts:pm.get(key)||0});
+    });
+    // Prefer the projection list's display name/team where we have it (the VOR map is keyed
+    // by normalized name, which reads badly in a table).
+    try{
+      const meta=new Map();
+      buildPlayerList().forEach(pl=>meta.set(ecrNormName(pl.name)+'|'+pl.pos,{n:pl.name,t:pl.team}));
+      rows.forEach(r=>{ const m=meta.get(ecrNormName(r.name)+'|'+r.pos); if(m){ r.name=m.n; r.team=m.t||''; } });
+    }catch(e){}
+  } else {
+  const dv=(DYNASTY_VALUES&&DYNASTY_VALUES.players)||{};
   for(const k in dv){
     if(rostered.has(k)) continue;
     const e=dv[k];
@@ -11399,9 +11777,11 @@ function laBestAvailView(s){
     // e.n = display name (added to the seed builder); older seeds fall back to the norm key.
     rows.push({name:e.n||k, pos:e.pos, team:e.team||'', v:v||0, fpts:pm.get(k+'|'+e.pos)||0});
   }
+  }
   rows.sort((a,b)=>b.v-a.v);
   const top=rows.slice(0,60);
-  const chips=['ALL','QB','RB','WR','TE'].map(p=>
+  const extraPos=(laIsRedraft()?['K','DEF']:[]).filter(x=>(s.rosterPositions||[]).includes(x));
+  const chips=['ALL','QB','RB','WR','TE'].concat(extraPos).map(p=>
     `<button class="format-btn ${posF===p?'active':''}" onclick="laState.baPos='${p}';renderLeagueAnalyzer()">${p}</button>`).join('');
   if(!top.length) return `<div class="la-lens">${chips}</div><div class="la-note">No unrostered players on the value chart${posF!=='ALL'?` at ${posF}`:''} — deep league!</div>`;
   return `
@@ -11414,7 +11794,7 @@ function laBestAvailView(s){
       ${top.map((r,i)=>`<div class="la-ba-row">
         <span class="la-ba-rk">${i+1}</span>
         <span class="rt-slot ${slotClass(r.pos)}">${r.pos}</span>
-        <span class="clickable-player" onclick="${pcardOnclick(r.name,r.pos,r.team||'')}">${imgTag(hsURL({name:r.name,pos:r.pos}),'player-headshot')}</span>
+        <span class="clickable-player" onclick="${pcardOnclick(r.name,r.pos,r.team||'')}">${laPlayerImg(r)}</span>
         <span class="la-ba-name clickable-player" onclick="${pcardOnclick(r.name,r.pos,r.team||'')}">${r.name}</span>
         <span class="la-ba-team">${r.team}</span>
         <span class="la-ba-val">${r.v}</span>
@@ -11467,10 +11847,12 @@ function laAssetPools(s, rosterId){
   if(!t) return {players:[],picks:[],team:null};
   const players=t.players.map(p=>({
     key:'p|'+ecrNormName(p.name), type:'p', id:p.id, name:p.name, pos:p.pos, team:p.team,
-    v:laDynVal(p.name,p.pos)||0,
+    v:laVal(p.name,p.pos,p.team)||0,
     age:laDynAge(p.name), posRank:laPosRankOf(s,p.name,p.pos),
   })).sort((a,b)=>b.v-a.v);
-  const picks=t.picks.map(pk=>({
+  // Rookie picks are dynasty capital. A redraft league drafts fresh every year and owns no
+  // future picks as tradeable assets, so the pool is players only.
+  const picks=laIsRedraft() ? [] : t.picks.map(pk=>({
     key:`k|${pk.season}|${pk.round}|${pk.origRosterId}`, type:'k',
     season:pk.season, round:pk.round, orig:pk.origRosterId,
     label:`${pk.season} ${pk.round}${['','st','nd','rd','th'][pk.round]||'th'}${pk.origRosterId!==t.rosterId?'*':''}`,
@@ -11550,7 +11932,7 @@ function laTradeFinder(s){
   const POS=['QB','RB','WR','TE'];
   const totals=s.teamList.map(t=>{
     const by={QB:0,RB:0,WR:0,TE:0};
-    t.players.forEach(p=>{ const v=laDynVal(p.name,p.pos)||0; if(by[p.pos]!=null) by[p.pos]+=v; });
+    t.players.forEach(p=>{ const v=laVal(p.name,p.pos,p.team)||0; if(by[p.pos]!=null) by[p.pos]+=v; });
     return {t,by};
   });
   const mine=totals.find(x=>s.myUserId && x.t.ownerId===s.myUserId) || totals[0];
@@ -11735,7 +12117,7 @@ function laPosRanks(s){
   if(_laPosRankCache) return _laPosRankCache;
   const byPos={};
   s.teamList.forEach(t=>t.players.forEach(p=>{
-    const v=laDynVal(p.name,p.pos)||0;
+    const v=laVal(p.name,p.pos,p.team)||0;
     (byPos[p.pos]=byPos[p.pos]||[]).push({key:ecrNormName(p.name), v});
   }));
   const rank={};
@@ -11768,7 +12150,7 @@ function laAssetRow(x, side, inTrade){
     return `<div class="la-tc-row"><span class="la-pick">${x.label}${x.v?` <b>${x.v}</b>`:''}</span><span class="la-tc-fill"></span>${btn}</div>`;
   return `<div class="la-tc-row">
     <span class="rt-slot ${slotClass(x.pos)}">${x.pos}</span>
-    <span class="clickable-player" onclick="${pcardOnclick(x.id||x.name,x.pos,x.team||'')}">${imgTag(hsURL({player_id:x.id,name:x.name,pos:x.pos}),'player-headshot')}</span>
+    <span class="clickable-player" onclick="${pcardOnclick(x.id||x.name,x.pos,x.team||'')}">${laPlayerImg(x)}</span>
     <span class="la-tc-nmwrap"><span class="share-name clickable-player la-tc-nm" title="${x.name}" onclick="${pcardOnclick(x.id||x.name,x.pos,x.team||'')}">${x.name}</span>
       <span class="la-tc-meta">${x.posRank?`${x.pos}${x.posRank}`:''}${x.age!=null?`${x.posRank?' \u00b7 ':''}<span class="${laAgeCliffClass(x.pos,x.age)}">${x.age.toFixed(0)}yo</span>`:''}</span></span>
     <span class="la-pval">${x.v||'\u2013'}</span>${btn}</div>`;
@@ -11885,7 +12267,7 @@ const LA_PW_PICKS = .50;
 // trajectory engine) pass their own; when omitted we follow the My Team page's checkboxes.
 function laTeamEngine(s, t, lens, pm, opts){
   const o = opts || {picks: laState.myPicks, startersOnly: laState.myStarters};
-  const val = p => lens==='proj' ? (pm.get(ecrNormName(p.name)+'|'+p.pos)||0) : laDynVal(p.name,p.pos);
+  const val = p => lens==='proj' ? (pm.get(ecrNormName(p.name)+'|'+p.pos)||0) : laVal(p.name,p.pos,p.team);
   const ranked = t.players.map(p=>({...p, _v:val(p)})).sort((a,b)=>b._v-a._v);
   const filled = laFillStarters(ranked, s.rosterPositions);
   const starterIds = new Set(filled.filter(f=>f.player).map(f=>f.player.id));
@@ -11965,6 +12347,11 @@ const LA_CLIFF_DEFIER_V = 55;       // past-cliff but still worth this much → 
 const LA_TRAJ_CLIFFSHARE = .35;     // % of team value on/past the cliff → "Edge of the Cliff"
 // Cliff state for one player: null (no age / no cliff), 'edge', 'past', or 'defier'.
 function laCliffInfo(name,pos){
+  // Age cliffs are a dynasty concern: they price the RISK that an asset stops being worth
+  // what it is today. A redraft roster is spent at the end of the year, so a 32-year-old who
+  // still scores is worth exactly what he scores. Returning null here switches off every
+  // cliff marker, warning and persona input across the analyzer in one place.
+  if(laIsRedraft()) return null;
   const cliff=LA_AGE_CLIFF[pos]; if(!cliff) return null;
   const age=laDynAge(name); if(age==null) return null;
   if(age>=cliff){
@@ -12023,7 +12410,11 @@ function laTrajectories(s, pm){
     // thing the top/bottom bands rank on.
     const now=(nowById[e.t.rosterId]||0)/maxNow;
     const fut=e.score/maxFut;
-    const contendScore=LA_CONTEND_NOW*now + (1-LA_CONTEND_NOW)*fut;
+    // Redraft has no "later" to blend in: the roster is spent at the end of the year, so the
+    // only question is what the STARTING LINEUP scores. (fut still means something here — it's
+    // total roster VOR, i.e. depth — but it wins no games directly, so it stays out of the
+    // ranking and feeds the fragility read instead.)
+    const contendScore=laIsRedraft() ? now : (LA_CONTEND_NOW*now + (1-LA_CONTEND_NOW)*fut);
     return {t:e.t, score:e.score, coreAge, youth, pickStr, cliffShare, defiers,
             startersAdj:e.startersAdj, now, fut, contendScore};
   });
@@ -12032,6 +12423,29 @@ function laTrajectories(s, pm){
     const rk=i+1;
     const top = rk<=Math.max(1,Math.round(n*LA_TRAJ_TOP));
     const bot = rk> n-Math.max(1,Math.round(n*LA_TRAJ_BOT));
+    // ── Redraft personas ────────────────────────────────────────────────────
+    // Dynasty bands rank a roster on two clocks (now vs later) and lean on age, youth and
+    // pick capital. None of that exists in redraft, so these bands read one thing — how the
+    // starting lineup projects against the league — and the advice is about consolidation
+    // and the waiver wire rather than timelines.
+    if(laIsRedraft()){
+      const depth = r.fut;                      // total roster VOR vs league best = depth
+      const thin  = r.now>=0.75 && depth<=0.55; // strong top, little behind it
+      let t2, c2, a2;
+      if(top){ t2='Contender'; c2='traj-cont';
+        a2='Your starters are the class of the league. Bench points don\u2019t score \u2014 consolidate depth into an upgrade at your weakest starting slot, and stay ahead of bye weeks.'; }
+      else if(r.now>=0.85){ t2='One Piece Away'; c2='traj-1pc';
+        a2='Your lineup already projects like a contender \u2014 one real starter separates you from the top. Package bench pieces now; hoarding depth wins nothing in a redraft league.'; }
+      else if(rk<=Math.ceil(n*0.5)){ t2='In the Hunt'; c2='traj-1yr';
+        a2='Right in the mix \u2014 your weakest starting slot is the whole season. Trade from a position where you start two comparable players into the slot that\u2019s costing you points every week.'; }
+      else if(bot){ t2='Swing for Upside'; c2='traj-hard';
+        a2='Longest odds in the league \u2014 floor plays can\u2019t close this gap. Consolidate two mid starters into one difference-maker, take the high-variance side of every trade, and work the wire aggressively.'; }
+      else { t2='Fading'; c2='traj-multi';
+        a2='Below the cut line and running out of weeks. You need ceiling, not floor \u2014 turn surplus depth into one genuine starter and stream the rest.'; }
+      if(thin) a2 += ' Heads up: your lineup is top-heavy \u2014 one injury or bye at the wrong spot and there\u2019s nothing behind it.';
+      r.title=t2; r.cls=c2; r.advice=a2; r.rank=rk;
+      return;
+    }
     const old = (r.coreAge!=null && r.coreAge>=28.0) || r.cliffShare>=LA_TRAJ_CLIFFSHARE;
     const young = r.coreAge!=null && r.coreAge<=LA_TRAJ_YOUNG;
     let title, cls, advice;
@@ -12099,10 +12513,10 @@ function laMyTeamView(s){
   const controls=`
     <div class="la-lens">
       <span class="la-lens-lbl">Lens:</span>
-      <button class="format-btn ${lens==='value'?'active':''}" onclick="laState.myLens='value';renderLeagueAnalyzer()" title="Dynasty capital: tier-boosted FantasyPros values, consolidation-adjusted">Dynasty value</button>
-      <button class="format-btn ${lens==='proj'?'active':''}" onclick="laState.myLens='proj';renderLeagueAnalyzer()" title="Redraft: this season's projected points from YOUR projections">Redraft (proj)</button>
-      <label class="la-chk ${lens==='proj'?'la-chk-off':''}" title="Count owned rookie picks toward power scores (dynasty lens only — picks don't score points)">
-        <input type="checkbox" ${laState.myPicks?'checked':''} ${lens==='proj'?'disabled':''} onchange="laState.myPicks=this.checked;renderLeagueAnalyzer()"> incl. picks</label>
+      <button class="format-btn ${lens==='value'?'active':''}" onclick="laState.myLens='value';renderLeagueAnalyzer()" title="${laIsRedraft()?'Whole-roster value over replacement, starters plus bench':'Dynasty capital: tier-boosted FantasyPros values, consolidation-adjusted'}">${laHistoricalSeason()?laHistoricalSeason()+' value (VOR)':laIsRedraft()?'Roster value (VOR)':'Dynasty value'}</button>
+      <button class="format-btn ${lens==='proj'?'active':''}" onclick="laState.myLens='proj';renderLeagueAnalyzer()" title="This season's projected points from YOUR projections: best starting lineup">${laIsRedraft()?'Projected starters':'Redraft (proj)'}</button>
+      ${laIsRedraft()?'':`<label class="la-chk ${lens==='proj'?'la-chk-off':''}" title="Count owned rookie picks toward power scores (dynasty lens only — picks don't score points)">
+        <input type="checkbox" ${laState.myPicks?'checked':''} ${lens==='proj'?'disabled':''} onchange="laState.myPicks=this.checked;renderLeagueAnalyzer()"> incl. picks</label>`}
       <label class="la-chk" title="Rank on starting lineups only — ignore bench capital">
         <input type="checkbox" ${laState.myStarters?'checked':''} onchange="laState.myStarters=this.checked;renderLeagueAnalyzer()"> starters only</label>
     </div>`;
@@ -12150,7 +12564,7 @@ function laMyTeamView(s){
         return `<div class="la-lu-col">
           <span class="la-lu-rk">#${rank}</span>
           <div class="la-lu-bar ${laQuartile(rank,eng.length)}" style="height:${h.toFixed(0)}%"></div>
-          ${p?`<span class="clickable-player" onclick="${pcardOnclick(p.id||p.name,p.pos,p.team||'')}">${imgTag(hsURL({player_id:p.id,name:p.name,pos:p.pos}),'la-lu-hs')}</span>`
+          ${p?`<span class="clickable-player" onclick="${pcardOnclick(p.id||p.name,p.pos,p.team||'')}">${laPlayerImg(p,'la-lu-hs')}</span>`
              :`<span class="la-lu-hs la-lu-empty">\u2014</span>`}
           <span class="la-lu-lbl" title="${p?p.name:'empty'}">${lbl}</span></div>`; }).join('')}
       </div></div>`;
@@ -12182,10 +12596,14 @@ function laMyTeamView(s){
       ${laTeamIcon(mineEng.t,'la-tm-av')}
       <div class="la-my-sum-body">
         <div class="la-my-sum-head">${mineEng.t.teamName} \u00b7 <span class="la-traj ${myTraj.cls}">${myTraj.title}</span></div>
-        <div class="la-my-sum-line">#${myTraj.rank} in dynasty capital${myTraj.coreAge?` \u00b7 core age <b>${myTraj.coreAge.toFixed(1)}</b>`:''}
-          \u00b7 <b>${Math.round(100*myTraj.youth)}%</b> of value age \u226425
-          \u00b7 <b class="${myTraj.cliffShare>=LA_TRAJ_CLIFFSHARE?'la-cliff-hot':''}">${Math.round(100*myTraj.cliffShare)}%</b> on the age-cliff${myTraj.defiers?` (${myTraj.defiers} defier${myTraj.defiers>1?'s':''} \ud83d\udee1)`:''}
-          \u00b7 pick chest <b>${Math.round(100*myTraj.pickStr)}%</b> of league best</div>
+        <div class="la-my-sum-line">${laIsRedraft()
+          ? `#${myTraj.rank} by projected starters `
+            + `\u00b7 lineup <b>${Math.round(100*myTraj.now)}%</b> of league best `
+            + `\u00b7 roster depth <b>${Math.round(100*myTraj.fut)}%</b>`
+          : `#${myTraj.rank} in dynasty capital${myTraj.coreAge?` \u00b7 core age <b>${myTraj.coreAge.toFixed(1)}</b>`:''}`
+            + ` \u00b7 <b>${Math.round(100*myTraj.youth)}%</b> of value age \u226425`
+            + ` \u00b7 <b class="${myTraj.cliffShare>=LA_TRAJ_CLIFFSHARE?'la-cliff-hot':''}">${Math.round(100*myTraj.cliffShare)}%</b> on the age-cliff${myTraj.defiers?` (${myTraj.defiers} defier${myTraj.defiers>1?'s':''} \ud83d\udee1)`:''}`
+            + ` \u00b7 pick chest <b>${Math.round(100*myTraj.pickStr)}%</b> of league best`}</div>
         <div class="la-my-sum-adv">${myTraj.advice}</div>
       </div></div>`;
   return switcher + controls + summary
