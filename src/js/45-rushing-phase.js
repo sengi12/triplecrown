@@ -151,7 +151,7 @@ function vacatedRushNote(team){
   if(!v) return '';
   const names = v.players.length>3 ? v.players.slice(0,3).join(', ')+` +${v.players.length-3} more` : v.players.join(', ');
   return `<div class="vacated-note">
-    <span class="vacated-icon">📤</span>
+    <span class="vacated-icon">${TC_ICON("export")}</span>
     <div><b>Vacated from ${v.season}:</b> ${v.att} carries · ${v.yds.toLocaleString()} yds · ${v.td} TD
     <span style="color:var(--muted)"> — left by ${names}.</span>
     <span style="color:var(--muted)">These carries are up for grabs among the current backfield.</span></div></div>`;

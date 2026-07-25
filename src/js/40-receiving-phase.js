@@ -50,7 +50,7 @@ function weekRangeSliderHTML(team,state){
   const loPct=(lo-1)/17*100, hiPct=(18-hi)/17*100;
   return `<div class="week-range-card">
     <div class="week-range-label">
-      <span>📅 Filter weeks: <b id="wr-lo-${team}">${lo}</b> – <b id="wr-hi-${team}">${hi}</b>${state.weekFilterLoading?' <span class="week-range-loading">loading…</span>':''}</span>
+      <span>${TC_ICON("calendar")} Filter weeks: <b id="wr-lo-${team}">${lo}</b> – <b id="wr-hi-${team}">${hi}</b>${state.weekFilterLoading?' <span class="week-range-loading">loading…</span>':''}</span>
       ${active?`<span class="week-range-reset" onclick="resetWeekRange('${team}')">↺ Reset to full season</span>`:'<span class="week-range-hint">drag either end to zoom into a stretch of games</span>'}
     </div>
     <div class="dual-slider">
@@ -127,7 +127,7 @@ function vacatedNote(team){
   if(!v) return '';
   const names = v.players.length>3 ? v.players.slice(0,3).join(', ')+` +${v.players.length-3} more` : v.players.join(', ');
   return `<div class="vacated-note">
-    <span class="vacated-icon">📤</span>
+    <span class="vacated-icon">${TC_ICON("export")}</span>
     <div><b>Vacated from ${v.season}:</b> ${v.tgt} targets · ${v.rec} rec · ${v.yds.toLocaleString()} yds · ${v.td} TD
     <span style="color:var(--muted)"> — left by ${names}.</span>
     <span style="color:var(--muted)">This production is up for grabs among the current roster.</span></div></div>`;
@@ -197,7 +197,7 @@ function renderPassDerived(team,state,subTabs,metric){
   if(Math.abs(diff) > threshold){
     const sign = diff>0?'short of':'over';
     banner = `<div class="discrepancy-note">
-      <span class="vacated-icon">${diff>0?'⚠️':'❗'}</span>
+      <span class="vacated-icon">${TC_ICON("warning")}</span>
       <div><b>${Math.abs(diff).toLocaleString()} ${unit} ${sign} the QB total.</b>
       The QBs are projected for <b>${qbPool.toLocaleString()} ${unit}</b>, but the receivers currently add up to
       <b>${Math.round(receiverSum).toLocaleString()}</b>. ${diff>0
@@ -206,7 +206,7 @@ function renderPassDerived(team,state,subTabs,metric){
       <button class="btn btn-accent btn-sm" style="margin-top:6px" onclick="reconcileDerived('${team}','${metric}')">
         ${diff>0?'Distribute':'Reconcile'} the ${diff>0?'difference':'overage'} →</button></div></div>`;
   } else {
-    banner = `<div class="reconciled-note">✅ Receivers match the QBs' projected ${unit} (${qbPool.toLocaleString()}).</div>`;
+    banner = `<div class="reconciled-note">${TC_ICON("check")} Receivers match the QBs' projected ${unit} (${qbPool.toLocaleString()}).</div>`;
   }
   return `<div class="card"><div class="card-title">${title}</div>${subTabs}
     ${vacatedNote(team)}

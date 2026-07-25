@@ -143,7 +143,7 @@ function loadProjections(data){
   else toast(`Loaded ${merged.length} players · ${Object.keys(byTeam).length} teams`,'ok');
   if(currentTeam&&userProj[currentTeam]) renderContent();
   else{currentTeam=null;document.getElementById('content').innerHTML=`<div class="empty">
-    <div class="empty-icon">✅</div><div class="empty-title">Projections loaded${multiAnalyst?' (averaged)':''}</div>
+    <div class="empty-icon">${TC_ICON("check","tc-ico-lg")}</div><div class="empty-title">Projections loaded${multiAnalyst?' (averaged)':''}</div>
     <div class="empty-body">${merged.length} players · ${analysts.length>1?analysts.join(', ')+' averaged':'analyst: '+(analysts[0]||'n/a')}<br>Select any team to review and edit.</div></div>`;}
 }
 
@@ -338,7 +338,7 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
     return;
   }
   document.getElementById('content').innerHTML=`<div class="empty">
-    <div class="empty-icon">📡</div><div class="empty-title">Loading ${PROJ_SEASON} data…</div>
+    <div class="empty-icon">${TC_ICON("signal","tc-ico-lg")}</div><div class="empty-title">Loading ${PROJ_SEASON} data…</div>
     <div class="empty-body">Checking for a prebuilt seed, then pulling live from Sleeper if needed.</div></div>`;
   // No embedded projections. Try a local seed file (works when served over http), which at
   // minimum gives us ECR; then fall back to a live Sleeper pull for projections.

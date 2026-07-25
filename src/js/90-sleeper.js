@@ -329,7 +329,7 @@ async function refreshFromSleeper(bootRestore){
     const empty = !SEED || !Object.keys(SEED).some(t=>SEED[t]&&(SEED[t].QB.length||SEED[t].WR.length||SEED[t].RB.length||SEED[t].TE.length));
     if(empty){
       document.getElementById('content').innerHTML=`<div class="empty">
-        <div class="empty-icon">⚠️</div><div class="empty-title">Couldn't reach Sleeper</div>
+        <div class="empty-icon">${TC_ICON("warning","tc-ico-lg")}</div><div class="empty-title">Couldn't reach Sleeper</div>
         <div class="empty-body">The live pull was blocked (often browser CORS when opening the file directly).
         Two easy fixes:<br><br>
         <b>1.</b> Serve the file over http (e.g. <code>python -m http.server</code>) so it can reach Sleeper,

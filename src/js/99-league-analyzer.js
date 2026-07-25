@@ -490,8 +490,7 @@ async function laSubmitUsername(){
   laState.busy=true; laState.error=null; renderLeagueAnalyzer();
   try{
     const user=await resolveSleeperUser(username);
-    const season=await fetchCurrentSeason();
-    const { leagues }=await fetchUserLeagues(user.user_id, season);
+    const leagues=await laFetchLeaguesForAnalyzer(user.user_id);
     laState.user=user; laState.leagues=leagues;
     laState.step='pick'; laState.busy=false;
     // Remember this account's leagues so "change league" can offer them directly next time
@@ -503,6 +502,31 @@ async function laSubmitUsername(){
     laState.error=/No such/.test(e.message)?'Username not found on Sleeper.':`Couldn't reach Sleeper (${e.message}).`;
   }
   renderLeagueAnalyzer();
+}
+// Unlike the draft-follow lookup (which swaps whole-season when the current year is empty),
+// the analyzer MERGES the current season with the previous one and dedupes by lineage. Reason:
+// people routinely have some leagues already renewed for the new year and others (often
+// redraft) not yet rolled over — the old all-or-nothing swap hid the un-renewed ones entirely.
+// A prior-season league is only added when its lineage isn't already present via a newer entry,
+// and it's tagged {stale:true, staleSeason} so the picker can label it "last active <year>".
+async function laFetchLeaguesForAnalyzer(userId){
+  const season=await fetchCurrentSeason();
+  const prev=String(parseInt(season,10)-1);
+  const [cur, old] = await Promise.all([
+    sleeperFetch(SLEEPER_LEAGUES_URL(userId, season)).catch(()=>[]),
+    sleeperFetch(SLEEPER_LEAGUES_URL(userId, prev)).catch(()=>[]),
+  ]);
+  const out=[...(cur||[])];
+  const haveIds=new Set(out.map(l=>String(l.league_id)));
+  // A current league points back to its prior year via previous_league_id — that id IS the
+  // prior-season league, so anything reachable that way is already represented.
+  const haveLineage=new Set(out.map(l=>String(l.previous_league_id||'')).filter(Boolean));
+  (old||[]).forEach(l=>{
+    const id=String(l.league_id);
+    if(haveIds.has(id) || haveLineage.has(id)) return;
+    out.push({...l, stale:true, staleSeason:prev});
+  });
+  return out;
 }
 async function laPickLeague(idx){
   const lg=laState.leagues[idx]; if(!lg) return;
@@ -626,6 +650,23 @@ async function laTakeSnapshot(leagueId){
     if((lg.roster_positions||[]).some(x=>x==='K'||x==='DEF')){
       kdef = await laFetchKdef(lg.season).catch(()=>[]);
     }
+    // Champion of a COMPLETED season. Sleeper stamps the winner on the league metadata the
+    // moment a season finalizes; the winners bracket is the fallback (its p:1 match is the
+    // championship, winner in `w`). Only meaningful once status==='complete', so we skip the
+    // extra request on in-progress seasons.
+    let championRosterId=null;
+    if(lg.status==='complete'){
+      const metaWin=lg.metadata && lg.metadata.latest_league_winner_roster_id;
+      if(metaWin!=null && metaWin!==''){
+        championRosterId=+metaWin;
+      } else {
+        try{
+          const wb=await sleeperFetch(`${LA_LEAGUE_URL(leagueId)}/winners_bracket`);
+          const finalM=(wb||[]).filter(m=>m.p===1).sort((a,b)=>(b.r||0)-(a.r||0))[0];
+          if(finalM && finalM.w!=null) championRosterId=+finalM.w;
+        }catch(e){}
+      }
+    }
     await loadSleeperPlayers(true);
     const uById={}; (users||[]).forEach(u=>uById[u.user_id]=u);
     const rp=lg.roster_positions||[];
@@ -671,6 +712,8 @@ async function laTakeSnapshot(leagueId){
       picks.sort((a,b)=> a.season===b.season ? a.round-b.round : a.season.localeCompare(b.season));
       return { rosterId:r.roster_id, ownerId:r.owner_id||null,
                owner:u.display_name||'(orphan)',
+               isChampion: championRosterId!=null && r.roster_id===championRosterId,
+               isChampion: championRosterId!=null && r.roster_id===championRosterId,
                // Team icon: Sleeper's per-league team avatar (metadata.avatar, a full URL)
                // beats the account avatar (an id we turn into a CDN thumb). Null → emoji.
                avatar:(u.metadata&&u.metadata.avatar)||(u.avatar?SLEEPER_AVATAR_THUMB(u.avatar):null),
@@ -678,12 +721,31 @@ async function laTakeSnapshot(leagueId){
                wins:(r.settings&&r.settings.wins)||0, losses:(r.settings&&r.settings.losses)||0,
                players, picks };
     });
+    // myUserId identifies YOUR team. laState.user is in-memory only, so after a reload it's
+    // gone — which is why a restored snapshot could re-render with a random team starred as
+    // "My Team". Fall back through: the live user → the saved snapshot (same league) → the
+    // persisted Sleeper profile (survives reloads). Also stamp the resolved username onto the
+    // snapshot so the player search and league lookups have it without a round-trip.
+    const _prof=(typeof laLoadSleeperProfile==='function'?laLoadSleeperProfile():null);
+    const _myId=(laState.user&&laState.user.user_id)
+      || ((leagueSnapshot&&leagueSnapshot.leagueId===leagueId)?leagueSnapshot.myUserId:null)
+      || (_prof&&_prof.user&&_prof.user.user_id)
+      || null;
+    // If we still don't know which roster is ours, match the profile username against this
+    // league's owners so a restored session lands on the right team instead of roster 1.
+    let _resolvedId=_myId;
+    if(_resolvedId==null && _prof && _prof.username){
+      const mine=(users||[]).find(u=>(u.display_name||'').toLowerCase()===String(_prof.username).toLowerCase());
+      if(mine) _resolvedId=mine.user_id;
+    }
     leagueSnapshot = {
       leagueId, name:lg.name||'League', season:lg.season,
       avatar: lg.avatar ? SLEEPER_AVATAR_THUMB(lg.avatar) : null,
       teams:lg.total_rosters||teams.length, superflex, tep, leagueType, kdef,
+      championRosterId,
       rosterPositions:rp, takenAt:Date.now(),
-      myUserId:(laState.user&&laState.user.user_id)||((leagueSnapshot&&leagueSnapshot.leagueId===leagueId)?leagueSnapshot.myUserId:null),
+      myUserId:_resolvedId,
+      username:(laState.user&&laState.user.display_name)||(_prof&&_prof.username)||(leagueSnapshot&&leagueSnapshot.username)||null,
       teamList:teams,
     };
     // Tie to the draft-page sync: adopt this league's scoring + roster shape exactly like
@@ -724,7 +786,7 @@ function renderLeagueAnalyzer(){
   const back=`<button class="btn btn-ghost" onclick="leaveLeagueAnalyzer()">← Projections</button>`;
   if(laState.step!=='view' || !leagueSnapshot){
     host.innerHTML=`
-      <div class="team-header"><div><div class="team-abbr">🏟 League Analyzer</div>
+      <div class="team-header"><div><div class="team-abbr">${TC_ICON("stadium")} League Analyzer</div>
         <div class="team-qb-name">dynasty rosters · values · trades — powered by your league snapshot</div></div>
         <div class="team-nav">${back}</div></div>
       <div class="la-setup card">
@@ -739,7 +801,7 @@ function renderLeagueAnalyzer(){
             <button class="btn btn-accent" ${laState.busy?'disabled':''} onclick="laSubmitUsername()">${laState.busy?'Looking up…':'Find my leagues'}</button>
           </div>
           ${window._laLinkedLeague?`<div class="la-linked">or <button class="btn btn-sm btn-accent" ${laState.busy?'disabled':''}
-            onclick="laTakeSnapshot(window._laLinkedLeague.id)">\u26a1 Sync ${window._laLinkedLeague.name}</button>
+            onclick="laTakeSnapshot(window._laLinkedLeague.id)">${TC_ICON("link")} Sync ${window._laLinkedLeague.name}</button>
             <span class="la-linked-note">(the league linked on your draft/rankings page)</span></div>`:''}
           ${laSavedLeaguesHTML()}`
         :`
@@ -749,7 +811,7 @@ function renderLeagueAnalyzer(){
               <button class="la-league" ${laState.busy?'disabled':''} onclick="laPickLeague(${i})">
                 <b>${lg.name}</b>
                 <span>${lg.total_rosters}-team · ${(lg.settings&&lg.settings.type)===2?'dynasty':(lg.settings&&lg.settings.type)===1?'keeper':'redraft'}
-                  ${ (lg.roster_positions||[]).includes('SUPER_FLEX')?' · SF':'' }</span>
+                  ${ (lg.roster_positions||[]).includes('SUPER_FLEX')?' · SF':'' }${lg.stale?` <span class="la-stale-tag">last active ${lg.staleSeason}</span>`:''}</span>
               </button>`).join('')}
           </div>
           <button class="btn btn-ghost btn-sm" onclick="laChangeLeague()">← different username</button>`}
@@ -821,7 +883,7 @@ function laTeamCard(t,s){
   return `<div class="la-card ${mine?'mine':''}">
     <div class="la-card-head">
       ${laTeamIcon(t,'la-tm-av-sm')}
-      <div class="la-team la-clickteam" onclick="laViewTeam(${t.rosterId})" title="View this team\u2019s analysis">${mine?'\u2605 ':''}${t.teamName}</div>
+      <div class="la-team la-clickteam" onclick="laViewTeam(${t.rosterId})" title="View this team\u2019s analysis">${mine?'\u2605 ':''}${t.teamName}${t.isChampion?` <span class="la-champ" title="${leagueSnapshot.season} champion">${TC_ICON('trophy','tc-ico-champ')}</span>`:''}</div>
       <div class="la-owner">@${t.owner} · ${t.wins}-${t.losses}</div>
       <div class="la-total" title="Sum of player + pick dynasty values">${total}</div>
     </div>
@@ -973,7 +1035,7 @@ function laCompareView(s){
         const mine=s.myUserId && r.t.ownerId===s.myUserId;
         const cell=(c,v)=>`<td class="${laQuartile(ranks[c][i],n)}"><b>${fmtV(v)}</b><span class="la-rk">#${ranks[c][i]}</span></td>`;
         return `<tr class="${mine?'mine':''}">
-          <td class="la-cmp-team la-clickteam" onclick="laViewTeam(${r.t.rosterId})" title="View ${r.t.teamName}\u2019s analysis">${laTeamIcon(r.t,'la-tm-av-sm')}${mine?'\u2605 ':''}${r.t.teamName}<span class="la-cmp-own">@${r.t.owner}</span></td>
+          <td class="la-cmp-team la-clickteam" onclick="laViewTeam(${r.t.rosterId})" title="View ${r.t.teamName}\u2019s analysis">${laTeamIcon(r.t,'la-tm-av-sm')}${mine?'\u2605 ':''}${r.t.teamName}${r.t.isChampion?` <span class="la-champ" title="${s.season} champion">${TC_ICON('trophy','tc-ico-champ')}</span>`:''}<span class="la-cmp-own">@${r.t.owner}</span></td>
           ${POS.map(p=>cell(p,r.by[p])).join('')}
           ${withPicks?cell('picks',r.picks):''}
           ${cell('total',r.total)}</tr>`;
@@ -1425,7 +1487,7 @@ function laTradeView(s){
   let verdictTxt='Add assets to both sides';
   if(started){
     const nameA=poolA.team.teamName, nameB=poolB.team.teamName;
-    verdictTxt = v.fair ? `\u2696\ufe0f Fair trade <span class="la-vd-sub">(within \u00b1${v.band})</span>`
+    verdictTxt = v.fair ? `${TC_ICON("check")} Fair trade <span class="la-vd-sub">(within \u00b1${v.band})</span>`
       : (v.diff>0 ? `<b>${nameB}</b> wins by ${Math.abs(v.diff).toFixed(0)}`
                   : `<b>${nameA}</b> wins by ${Math.abs(v.diff).toFixed(0)}`);
   }
@@ -1478,11 +1540,11 @@ function laTradeView(s){
       </div>
     </div>
     <div class="la-fnd">
-      <div class="la-fnd-title">\ud83d\udd0e Suggested trades for you
+      <div class="la-fnd-title">${TC_ICON("search")} Suggested trades for you
         <span class="la-fnd-sub">${fnd.targeted?`targeting <b>${fnd.weak.pos}</b> (you rank #${fnd.weak.rank})`:`weakest: <b>${fnd.weak.pos}</b> (#${fnd.weak.rank} in league)`} \u00b7 paying from: <b>${fnd.targeted?'any position':fnd.strong.pos+' (#'+fnd.strong.rank+')'}</b>${fnd.total?` \u00b7 ${fnd.total} fair deals`:''}
           <span class="la-fnd-size">${fnd.nTeams}-team \u00b7 ${fnd.deep?'deep league \u2014 favouring cheaper, roster-friendly adds':fnd.shallow?'shallow league \u2014 big fish matter most':'balanced mix'}</span></span>
         <span class="la-fnd-chips">${['AUTO','QB','RB','WR','TE'].map(x=>`<button class="format-btn ${laState.fndPos===x?'active':''}" onclick="laState.fndPos='${x}';renderLeagueAnalyzer()" title="${x==='AUTO'?'Target my weakest position automatically':'Hunt deals at '+x}">${x}</button>`).join('')}</span>
-        <button class="btn btn-sm btn-ghost la-fnd-refresh" onclick="laState.fndSeed++;renderLeagueAnalyzer()" title="Deal me different variations">\ud83d\udd04 refresh</button></div>
+        <button class="btn btn-sm btn-ghost la-fnd-refresh" onclick="laState.fndSeed++;renderLeagueAnalyzer()" title="Deal me different variations">${TC_ICON("refresh")} refresh</button></div>
       ${fndHtml}
     </div>
     <div class="la-note">Verdicts use consolidation-adjusted values: extra assets on a side count at 75/55/40/30/25%, and the side holding the single best player gets a premium worth 25% of the best-asset gap \u2014 so a stack of depth can\u2019t buy a stud, but star + real piece can. Fair = within \u00b1max(4, 5%).</div>`;
@@ -1763,6 +1825,7 @@ function laMyTeamView(s){
           }).map(t=>`<option value="${t.rosterId}" ${t.rosterId===mineEng.t.rosterId?'selected':''}>${s.myUserId&&t.ownerId===s.myUserId?'\u2605 ':''}${t.teamName}</option>`).join('')}
       </select>
       ${!isOwn?`<button class="btn btn-sm btn-ghost" onclick="laViewTeam('')" title="Back to your own team">\u21a9 my team</button>`:''}
+      ${mineEng.t.isChampion?`<span class="la-champ-badge">${TC_ICON('trophy','tc-ico-champ')} ${s.season} champion</span>`:''}
     </div>`;
   const controls=`
     <div class="la-lens">

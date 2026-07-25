@@ -186,9 +186,9 @@ function renderRankings(){
        </select>`
     : '';
   const advNote = advActive
-    ? `<span class="ecr-missing" style="color:var(--muted)">📊 nflverse advanced ${sumerSeasonKey()} stats${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}${sumerView.single?'':' · common columns (pick a position for the full set)'}${((sumerRefinement==='vs_man'||sumerRefinement==='vs_zone'))?' · coverage counts approximate, rates accurate':''}</span>`
+    ? `<span class="ecr-missing" style="color:var(--muted)">${TC_ICON("chart")} nflverse advanced ${sumerSeasonKey()} stats${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}${sumerView.single?'':' · common columns (pick a position for the full set)'}${((sumerRefinement==='vs_man'||sumerRefinement==='vs_zone'))?' · coverage counts approximate, rates accurate':''}</span>`
     : '';
-  const ecrNote = hasECR() ? '' : `<span class="ecr-missing">⚠ No FantasyPros ECR loaded — run build_seed.py and load the 📦 seed to populate ECR/Tier</span>`;
+  const ecrNote = hasECR() ? '' : `<span class="ecr-missing">${TC_ICON("warning")} No FantasyPros ECR loaded — run build_seed.py and load the 📦 seed to populate ECR/Tier</span>`;
   document.getElementById('content').innerHTML=`
     <div class="phase-tabs">${tabBar()}</div>
     <div class="rankings-scope-bar">
@@ -249,7 +249,7 @@ function renderRankings(){
         <span style="font-size:11px;font-weight:700;margin-left:auto">${view.length} players</span>
         ${following?'':`<button class="btn btn-accent btn-sm" onclick="openLeaguePicker()">🔗 Link Sleeper League</button>
         <button class="btn btn-ghost btn-sm" onclick="promptDraftFollow()" title="Follow a live or mock draft by its ID">Paste draft ID</button>`}
-        <button class="btn btn-ghost btn-sm" onclick="exportRankingsCSV()">⬇ CSV</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportRankingsCSV()">${TC_ICON("download")} CSV</button>
       </div>
       <div class="rank-table-wrap" style="max-height:calc(100vh - 320px)">
       <table class="rankings-table grouped"><thead><tr>

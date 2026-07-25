@@ -88,7 +88,7 @@ const DEPTH_UNIT_LABEL = {offense:'Offense', defense:'Defense', special:'Special
 function renderDepthChart(team){
   const rows = espnDepth[team];
   if(rows===undefined){ fetchEspnDepth(team);
-    return `<div class="add-section"><div class="add-section-head">📋 Depth Chart</div>
+    return `<div class="add-section"><div class="add-section-head">${TC_ICON("clipboard")} Depth Chart</div>
       <div class="add-empty">Loading depth chart from ESPN…</div></div>`; }
   if(rows===null) return renderDepthChartFallback(team);   // depth chart unavailable → flat roster
   const FANTASY={QB:1,RB:1,WR:1,TE:1};

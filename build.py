@@ -83,9 +83,42 @@ def build(offline=False):
     if CSS_TOKEN not in template or JS_TOKEN not in template:
         raise SystemExit(f"template is missing {CSS_TOKEN} or {JS_TOKEN}")
     out = template.replace(CSS_TOKEN, css).replace(JS_TOKEN, js)
+    # Static template can't call TC_ICON(), so @@ICON_name@@ placeholders are substituted here
+    # with the same inline SVGs (kept in sync with src/js/03-icons.js).
+    out = _sub_icons(out)
     # Include the seed UI (keep only the inner content) or strip it entirely.
     out = SEED_UI_RE.sub((lambda m: m.group(1)) if offline else "", out)
     return out, css_files, js_files
+
+
+# Inline-SVG icon bodies mirroring src/js/03-icons.js (menu + header use the placeholder form
+# because the template is static HTML). Keep these identical to the JS `paths` map.
+_ICON_PATHS = {
+    "search": '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+    "chart": '<path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6"/>',
+    "stadium": '<ellipse cx="12" cy="9" rx="9" ry="4"/><path d="M3 9v5c0 2.2 4 4 9 4s9-1.8 9-4V9"/>',
+    "trophy": ('<path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" fill="currentColor" stroke="none"/>'
+               '<path d="M8 5H5.5A2.5 2.5 0 0 0 8 8.5M16 5h2.5A2.5 2.5 0 0 1 16 8.5"/>'
+               '<path d="M12 13v3M9 20h6M10 20v-1.5a2 2 0 0 1 4 0V20"/>'),
+    "refresh": '<path d="M4 12a8 8 0 0 1 13.7-5.6L20 8M20 3v5h-5"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16M4 21v-5h5"/>',
+    "link": '<path d="M9 15l6-6M10.5 6.5 12 5a4 4 0 0 1 6 6l-1.5 1.5M13.5 17.5 12 19a4 4 0 0 1-6-6l1.5-1.5"/>',
+    "export": '<path d="M12 15V4M8 8l4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/>',
+    "download": '<path d="M12 4v11M8 11l4 4 4-4M5 20h14"/>',
+    "box": '<path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5v-9Z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"/>',
+    "undo": '<path d="M9 7 4 12l5 5M4 12h11a5 5 0 0 1 0 10"/>',
+}
+_ICON_RE = re.compile(r"@@ICON_([a-zA-Z]+)@@")
+
+
+def _sub_icons(text):
+    def repl(m):
+        body = _ICON_PATHS.get(m.group(1))
+        if body is None:
+            return m.group(0)
+        return (f'<svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" '
+                f'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" '
+                f'aria-hidden="true">{body}</svg>')
+    return _ICON_RE.sub(repl, text)
 
 
 def main():

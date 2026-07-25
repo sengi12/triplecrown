@@ -200,7 +200,7 @@ function renderTeamAdvanced(team){
   const hasSharp=sharpHasData(), hasSOS=SOS&&Object.keys(SOS).length>0;
   const hasCoord = COORDINATORS && COORDINATORS[team];
   if(!hasSharp && !hasSOS && !hasCoord){
-    return `<div class="empty"><div class="empty-icon">📊</div>
+    return `<div class="empty"><div class="empty-icon">${TC_ICON("chart","tc-ico-lg")}</div>
       <div class="empty-title">No advanced stats loaded</div>
       <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed to populate advanced team stats.</div></div>`;
   }
@@ -243,8 +243,8 @@ function renderTeamAdvanced(team){
   const carryBlock = renderCoordinatorCarryover(team, cardFor);
   const srcLabel = 'nflverse (computed from play-by-play)';
   return `<div class="sr-team-wrap">
-    <div class="sr-note">📊 <b>Advanced team stats</b> · ${srcLabel} · <b>${advTeamSeason()} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
-      <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="showSharpLeague()">🌐 View league-wide tables →</button></div>
+    <div class="sr-note">${TC_ICON("chart")} <b>Advanced team stats</b> · ${srcLabel} · <b>${advTeamSeason()} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
+      <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="showSharpLeague()">View league-wide tables →</button></div>
     ${sosStrip}
     ${carryBlock}
     ${section('Offense', offKeys, coordInlineLabel(team,oc,'offensive'))}
@@ -285,7 +285,7 @@ function renderCoordinatorCarryover(team, cardFor){
   }
   if(!blocks.length) return '';
   return `<div class="coord-carry-wrap">
-    <div class="coord-carry-head">🔄 New coordinator scheme carryover</div>
+    <div class="coord-carry-head">${TC_ICON("refresh")} New coordinator scheme carryover</div>
     <div class="coord-carry-note">A brand-new coordinator arrived for ${PROJ_SEASON}. Below are their <b>former team's</b> ${advTeamSeason()} scheme stats — the tendencies &amp; personnel that tend to travel with a coordinator. Use as a forecast for how this unit may shift.</div>
     ${blocks.join('')}
   </div>`;

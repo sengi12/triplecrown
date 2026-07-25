@@ -230,7 +230,7 @@ async function pickLeague(idx){
 function renderLeaguePicker(){
   const st=leaguePickerState;
   const head=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <b style="font-size:13px">🔗 Link a Sleeper league</b>
+      <b style="font-size:13px">${TC_ICON("link")} Link a Sleeper league</b>
       <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="closeLeaguePicker()">✕</button>
     </div>`;
   const errRow = st.error?`<div class="lp-error">${st.error}</div>`:'';

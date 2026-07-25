@@ -4,7 +4,7 @@
 function renderPassing(team,state){
   if(!state.qbs||!state.qbs.length){
     return `<div class="card"><div class="card-title">Passing Attack</div>
-      <div class="alert alert-warn"><span class="alert-icon">⚠️</span>
+      <div class="alert alert-warn"><span class="alert-icon">${TC_ICON("warning")}</span>
       <div>No projected QB found for ${team} in this dataset. This can happen with historical
       seasons or sparse projections. Switch seasons or pull live ${PROJ_SEASON} projections.</div></div></div>`;
   }

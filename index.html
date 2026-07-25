@@ -779,7 +779,8 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
   border-radius:6px;overflow:hidden;width:fit-content;}
 .format-btn{padding:4px 11px;font-size:10px;font-weight:700;cursor:pointer;
   border:none;background:none;color:var(--muted);transition:all .15s;}
-.format-btn.active{background:var(--surface);color:var(--accent);}
+.format-btn.active{background:rgba(90,169,230,.16);color:var(--accent);
+  box-shadow:inset 0 0 0 1px rgba(90,169,230,.35);}
 .ltype-toggle{display:flex;background:var(--surface2);border:1px solid var(--border);
   border-radius:6px;overflow:hidden;width:fit-content;}
 .ltype-btn{padding:4px 13px;font-size:10px;font-weight:800;cursor:pointer;letter-spacing:.02em;
@@ -1305,9 +1306,24 @@ html,body{max-width:100%;overflow-x:hidden;}
 .la-rd-key i{display:inline-block;width:8px;height:8px;border-radius:2px;margin:0 3px 0 6px;}
 .la-rd-k-me{background:rgba(61,155,255,.6);}
 .la-rd-k-bn{background:rgba(226,192,141,.6);}
-.la-chk{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:var(--muted);cursor:pointer;}
-.la-chk input{accent-color:var(--accent);}
-.la-chk-off{opacity:.45;}
+/* Compare / My Team option toggles — themed light-blue pills with a sliding switch. The
+   markup stays a plain <label><input type=checkbox>; CSS hides the native box and draws a
+   track + knob, so the whole label reads as one tappable control that matches the format-btn
+   row it sits in. */
+.la-chk{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:600;
+  color:var(--muted);cursor:pointer;padding:3px 10px 3px 6px;border-radius:999px;
+  border:1px solid var(--border);background:var(--surface);user-select:none;transition:all .15s;}
+.la-chk:hover{border-color:rgba(90,169,230,.45);color:var(--text);}
+.la-chk input{appearance:none;-webkit-appearance:none;margin:0;position:relative;
+  width:26px;height:15px;border-radius:999px;background:var(--surface2);
+  border:1px solid var(--border);cursor:pointer;flex:none;transition:background .15s,border-color .15s;}
+.la-chk input::after{content:"";position:absolute;top:1px;left:1px;width:11px;height:11px;
+  border-radius:50%;background:var(--muted);transition:transform .15s,background .15s;}
+.la-chk input:checked{background:rgba(90,169,230,.28);border-color:var(--accent);}
+.la-chk input:checked::after{transform:translateX(11px);background:var(--accent);}
+.la-chk:has(input:checked){color:var(--accent);border-color:rgba(90,169,230,.5);
+  background:rgba(90,169,230,.08);}
+.la-chk-off{opacity:.4;pointer-events:none;}
 /* trade calc: verdict column between the sides */
 .la-tc-grid{grid-template-columns:1fr 250px 1fr;}
 
@@ -1470,6 +1486,58 @@ html,body{max-width:100%;overflow-x:hidden;}
 
 /* "loading <season> stats…" note while an uncovered season is fetched from Sleeper. */
 .la-loading-note{color:var(--accent);opacity:.85;}
+
+/* ── TripleCrown inline icons ────────────────────────────────────────────────*/
+.tc-ico{width:1em;height:1em;display:inline-block;vertical-align:-0.125em;
+  color:var(--accent);flex:none;}
+.tc-ico-champ{color:#f4c04a;width:1.05em;height:1.05em;vertical-align:-0.15em;
+  filter:drop-shadow(0 1px 1px rgba(0,0,0,.35));}
+.tc-ico-lg{width:1.35em;height:1.35em;}
+
+/* Champion trophy + badge in the league analyzer. */
+.la-champ{display:inline-flex;align-items:center;}
+.la-champ-badge{display:inline-flex;align-items:center;gap:5px;margin-left:10px;
+  padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600;
+  color:#f4c04a;background:rgba(244,192,74,.12);border:1px solid rgba(244,192,74,.35);}
+
+/* "last active <year>" tag on un-renewed leagues in the picker. */
+.la-stale-tag{display:inline-block;margin-left:4px;padding:1px 6px;border-radius:999px;
+  font-size:9.5px;font-weight:600;letter-spacing:.02em;color:var(--accent);
+  background:rgba(90,169,230,.12);border:1px solid rgba(90,169,230,.3);}
+
+/* ── Player search modal ─────────────────────────────────────────────────────*/
+.ps-overlay{position:fixed;inset:0;z-index:1000;background:rgba(6,10,18,.62);
+  backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;
+  padding:10vh 16px 16px;}
+.ps-modal{width:100%;max-width:520px;background:var(--surface);border:1px solid var(--border);
+  border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column;
+  max-height:76vh;}
+.ps-head{display:flex;align-items:center;gap:9px;padding:12px 14px;border-bottom:1px solid var(--border);}
+.ps-search-ico{color:var(--accent);font-size:17px;display:inline-flex;}
+.ps-input{flex:1;background:transparent;border:none;outline:none;color:var(--text);
+  font-size:16px;font-weight:500;}
+.ps-input::placeholder{color:var(--muted);}
+.ps-close{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:17px;
+  display:inline-flex;padding:4px;border-radius:6px;}
+.ps-close:hover{color:var(--text);background:var(--surface2);}
+.ps-results{overflow-y:auto;padding:6px;}
+.ps-hint{padding:22px 18px;color:var(--muted);font-size:12.5px;line-height:1.55;text-align:center;}
+.ps-row{display:flex;align-items:center;gap:11px;width:100%;padding:8px 10px;border:none;
+  background:transparent;border-radius:9px;cursor:pointer;text-align:left;color:var(--text);}
+.ps-row:hover,.ps-row.ps-active{background:var(--surface2);}
+.ps-hs{width:36px;height:36px;border-radius:50%;object-fit:cover;background:var(--surface2);flex:none;}
+.ps-hs.ps-def{object-fit:contain;padding:3px;}
+.ps-nm{flex:1;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ps-meta{display:flex;align-items:center;gap:8px;flex:none;}
+.ps-team-logo{width:20px;height:20px;object-fit:contain;}
+.ps-pos{font-size:10px;font-weight:700;letter-spacing:.03em;padding:2px 7px;border-radius:5px;
+  background:var(--surface2);color:var(--muted);min-width:30px;text-align:center;}
+.ps-pos-QB{color:#e06c9f;background:rgba(224,108,159,.14);}
+.ps-pos-RB{color:#4fb477;background:rgba(79,180,119,.14);}
+.ps-pos-WR{color:#5aa9e6;background:rgba(90,169,230,.14);}
+.ps-pos-TE{color:#e8a24a;background:rgba(232,162,74,.14);}
+.ps-pos-K{color:#b98cdb;background:rgba(185,140,219,.14);}
+.ps-pos-DEF{color:#8fa3b8;background:rgba(143,163,184,.14);}
 </style>
 </head>
 <body>
@@ -1494,19 +1562,20 @@ html,body{max-width:100%;overflow-x:hidden;}
       </button>
       <div class="hdr-menu app-menu" id="appMenu" hidden>
         <div class="app-menu-sec">View</div>
-        <button class="hdr-menu-item" id="menuProjView" onclick="closeAppMenu();showProjectionsView()">📊 Projections</button>
-        <button class="hdr-menu-item" id="menuLeagueView" onclick="closeAppMenu();openLeagueAnalyzer()">🏟 League Analyzer</button>
-        <button class="hdr-menu-item" onclick="closeAppMenu();showFullRankings()">🏆 Full Rankings</button>
+        <button class="hdr-menu-item" id="menuProjView" onclick="closeAppMenu();showProjectionsView()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6"/></svg> Projections</button>
+        <button class="hdr-menu-item" id="menuLeagueView" onclick="closeAppMenu();openLeagueAnalyzer()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="9" rx="9" ry="4"/><path d="M3 9v5c0 2.2 4 4 9 4s9-1.8 9-4V9"/></svg> League Analyzer</button>
+        <button class="hdr-menu-item" onclick="closeAppMenu();showFullRankings()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" fill="currentColor" stroke="none"/><path d="M8 5H5.5A2.5 2.5 0 0 0 8 8.5M16 5h2.5A2.5 2.5 0 0 1 16 8.5"/><path d="M12 13v3M9 20h6M10 20v-1.5a2 2 0 0 1 4 0V20"/></svg> Full Rankings</button>
+        <button class="hdr-menu-item" onclick="closeAppMenu();openPlayerSearch()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg> Search players</button>
         <!-- League actions: only meaningful once a snapshot exists, so syncAppChrome()
              reveals this whole section when leagueSnapshot is set. -->
         <div class="app-menu-sec la-menu-only" id="menuLeagueSec" hidden>League</div>
-        <button class="hdr-menu-item la-menu-only" id="menuResync" hidden onclick="closeAppMenu();laResync()">⟳ Re-sync league</button>
-        <button class="hdr-menu-item la-menu-only" id="menuChangeLeague" hidden onclick="closeAppMenu();laMenuChangeLeague()">🔗 Change league</button>
+        <button class="hdr-menu-item la-menu-only" id="menuResync" hidden onclick="closeAppMenu();laResync()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8M20 3v5h-5"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16M4 21v-5h5"/></svg> Re-sync league</button>
+        <button class="hdr-menu-item la-menu-only" id="menuChangeLeague" hidden onclick="closeAppMenu();laMenuChangeLeague()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 15l6-6M10.5 6.5 12 5a4 4 0 0 1 6 6l-1.5 1.5M13.5 17.5 12 19a4 4 0 0 1-6-6l1.5-1.5"/></svg> Change league</button>
         <div class="app-menu-sec">Projections</div>
-        <button class="hdr-menu-item" onclick="closeAppMenu();triggerImport()">⬆ Import</button>
-        <button class="hdr-menu-item" onclick="closeAppMenu();exportJSON()">⬇ Download JSON</button>
-        <button class="hdr-menu-item" onclick="closeAppMenu();exportCSV()">⬇ Download CSV</button>
-        <button class="hdr-menu-item hdr-menu-danger" onclick="closeAppMenu();resetAll()" title="Reset all edits and pull the latest Sleeper projections">↺ Reset all</button>
+        <button class="hdr-menu-item" onclick="closeAppMenu();triggerImport()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M8 8l4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg> Import</button>
+        <button class="hdr-menu-item" onclick="closeAppMenu();exportJSON()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M8 11l4 4 4-4M5 20h14"/></svg> Download JSON</button>
+        <button class="hdr-menu-item" onclick="closeAppMenu();exportCSV()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M8 11l4 4 4-4M5 20h14"/></svg> Download CSV</button>
+        <button class="hdr-menu-item hdr-menu-danger" onclick="closeAppMenu();resetAll()" title="Reset all edits and pull the latest Sleeper projections"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7 4 12l5 5M4 12h11a5 5 0 0 1 0 10"/></svg> Reset all</button>
       </div>
     </div>
   </div>
@@ -1627,6 +1696,57 @@ const SLEEPER_AVATAR_THUMB=(id)=>`https://sleepercdn.com/avatars/thumbs/${id}`;
 // ─────────────────────────────────────────────────────────────────────────────
 // KeepTradeCut logo mark (their favicon-96), shown as the player-card KTC link icon.
 const KTC_ICON = 'images/ktc.png';
+// ─────────────────────────────────────────────────────────────────────────────
+// TripleCrown icon set — inline SVG, currentColor-driven so a single CSS rule tints
+// them to the brand light-blue (var(--accent)). Replaces the emoji that were scattered
+// through the UI; each returns a self-contained <svg> string sized 1em so it flows inline
+// with text. Pass a class for sizing/color overrides.
+//
+// Design language: 1.6px strokes, round caps/joins, no fills except where a solid mark
+// reads better at small sizes (trophy, star). Minimal and geometric to match the logo.
+// ─────────────────────────────────────────────────────────────────────────────
+const TC_ICON = (() => {
+  const wrap = (body, cls) =>
+    `<svg viewBox="0 0 24 24" class="tc-ico${cls?' '+cls:''}" fill="none" ` +
+    `stroke="currentColor" stroke-width="1.6" stroke-linecap="round" ` +
+    `stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+
+  const paths = {
+    // Champion trophy — solid cup so it reads at 14px, with base.
+    trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" fill="currentColor" stroke="none"/>' +
+            '<path d="M8 5H5.5A2.5 2.5 0 0 0 8 8.5M16 5h2.5A2.5 2.5 0 0 1 16 8.5"/>' +
+            '<path d="M12 13v3M9 20h6M10 20v-1.5a2 2 0 0 1 4 0V20"/>',
+    star:   '<path d="m12 3 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.2l5.9-.9L12 3Z" fill="currentColor" stroke="none"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+    menu:   '<path d="M4 7h16M4 12h16M4 17h16"/>',
+    close:  '<path d="M6 6l12 12M18 6 6 18"/>',
+    box:    '<path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5v-9Z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"/>',
+    chart:  '<path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6"/>',
+    clipboard:'<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h4"/>',
+    refresh:'<path d="M4 12a8 8 0 0 1 13.7-5.6L20 8M20 3v5h-5"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16M4 21v-5h5"/>',
+    calendar:'<rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 9h16M8 3v4M16 3v4"/>',
+    link:   '<path d="M9 15l6-6M10.5 6.5 12 5a4 4 0 0 1 6 6l-1.5 1.5M13.5 17.5 12 19a4 4 0 0 1-6-6l1.5-1.5"/>',
+    shield: '<path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3Z"/>',
+    football:'<path d="M4 12c0-4 4-8 8-8s8 4 8 8-4 8-8 8-8-4-8-8Z"/><path d="M8 8s2 4 2 8M16 8s-2 4-2 8M9 12h6"/>',
+    export: '<path d="M12 15V4M8 8l4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/>',
+    download:'<path d="M12 4v11M8 11l4 4 4-4M5 20h14"/>',
+    globe:  '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4a12 12 0 0 1 0 16 12 12 0 0 1 0-16Z"/>',
+    signal: '<path d="M5 18a10 10 0 0 1 14 0M8 15a6 6 0 0 1 8 0"/><circle cx="12" cy="18" r="1.4" fill="currentColor" stroke="none"/>',
+    headphones:'<path d="M5 15v-3a7 7 0 0 1 14 0v3"/><rect x="3.5" y="14" width="4" height="6" rx="1.5"/><rect x="16.5" y="14" width="4" height="6" rx="1.5"/>',
+    warning:'<path d="M12 4 2.5 20h19L12 4Z"/><path d="M12 10v4M12 17h.01"/>',
+    check:  '<path d="M5 12.5 10 17 19 7"/>',
+    stadium:'<ellipse cx="12" cy="9" rx="9" ry="4"/><path d="M3 9v5c0 2.2 4 4 9 4s9-1.8 9-4V9"/>',
+    arrowRight:'<path d="M5 12h14M13 6l6 6-6 6"/>',
+    arrowLeft:'<path d="M19 12H5M11 18l-6-6 6-6"/>',
+    arrowUp:'<path d="M12 19V5M6 11l6-6 6 6"/>',
+    arrowDown:'<path d="M12 5v14M6 13l6 6 6-6"/>',
+    swap:   '<path d="M7 4 3 8l4 4M3 8h13M17 20l4-4-4-4M21 16H8"/>',
+    undo:   '<path d="M9 7 4 12l5 5M4 12h11a5 5 0 0 1 0 10"/>',
+  };
+  const fn = (name, cls) => wrap(paths[name] || '', cls);
+  fn.has = name => Object.prototype.hasOwnProperty.call(paths, name);
+  return fn;
+})();
 // ═════════════════════════════════════════════════════════════════════════════
 // Week-range filtering (reference seasons only) — lets the user drag a dual
 // slider to see what a WR/RB/TE put up over just a stretch of weeks (e.g. Tucker
@@ -1919,11 +2039,11 @@ function hsURL(p){
 // moment the table mounted — most for rows far below the fold. The browser now fetches them
 // as they approach the viewport. decoding="async" keeps decode work off the main thread so
 // it can't block the first paint.
-function imgTag(src,cls,fb='🏈'){
+function imgTag(src,cls,fb=''){
   if(!src) return `<div class="${cls} ph-err">${fb}</div>`;
   return `<img src="${src}" class="${cls}" alt="" loading="lazy" decoding="async" onerror="this.outerHTML='<div class=\\'${cls} ph-err\\'>${fb}</div>'">`;
 }
-function imgSm(src,cls='share-hs',fb='🏈'){
+function imgSm(src,cls='share-hs',fb=''){
   if(!src) return `<div class="${cls}-err">${fb}</div>`.replace(cls+'-err',cls.replace('share-hs','share-hs')+'-err');
   return `<img src="${src}" class="${cls}" alt="" onerror="this.outerHTML='<div class=\\'share-hs-err\\'>${fb}</div>'">`;
 }
@@ -3048,7 +3168,7 @@ function renderContent(){
   if(isRef && espnRecordCache[recKey]==null) fetchTeamRecord(activeSeason,t);
   const recStr = isRef ? (espnRecordCache[recKey]||'') : '';
   const seasonBanner = isRef
-    ? `<div class="season-readonly">📅 <b>${activeSeason} actual stats</b>${recStr?` · <b>${recStr}</b> record`:''} — read-only reference. Your ${PROJ_SEASON} working projections are untouched.
+    ? `<div class="season-readonly">${TC_ICON("calendar")} <b>${activeSeason} actual stats</b>${recStr?` · <b>${recStr}</b> record`:''} — read-only reference. Your ${PROJ_SEASON} working projections are untouched.
        ${canUndo(t)?`<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="undoTeam('${t}')" title="Undo the last working-set change for ${t}">↶ Undo last copy</button>`:''}
        <button class="btn btn-accent btn-sm" ${canUndo(t)?'':'style="margin-left:auto"'} onclick="copyTeamToWorking('${t}')">⤵ Copy team to ${PROJ_SEASON} working set</button></div>`
     : '';
@@ -3110,7 +3230,7 @@ function emptyHTML(){return`<div class="logo-icon-lg"><img src="images/app-icon.
 function renderPassing(team,state){
   if(!state.qbs||!state.qbs.length){
     return `<div class="card"><div class="card-title">Passing Attack</div>
-      <div class="alert alert-warn"><span class="alert-icon">⚠️</span>
+      <div class="alert alert-warn"><span class="alert-icon">${TC_ICON("warning")}</span>
       <div>No projected QB found for ${team} in this dataset. This can happen with historical
       seasons or sparse projections. Switch seasons or pull live ${PROJ_SEASON} projections.</div></div></div>`;
   }
@@ -3261,7 +3381,7 @@ function weekRangeSliderHTML(team,state){
   const loPct=(lo-1)/17*100, hiPct=(18-hi)/17*100;
   return `<div class="week-range-card">
     <div class="week-range-label">
-      <span>📅 Filter weeks: <b id="wr-lo-${team}">${lo}</b> – <b id="wr-hi-${team}">${hi}</b>${state.weekFilterLoading?' <span class="week-range-loading">loading…</span>':''}</span>
+      <span>${TC_ICON("calendar")} Filter weeks: <b id="wr-lo-${team}">${lo}</b> – <b id="wr-hi-${team}">${hi}</b>${state.weekFilterLoading?' <span class="week-range-loading">loading…</span>':''}</span>
       ${active?`<span class="week-range-reset" onclick="resetWeekRange('${team}')">↺ Reset to full season</span>`:'<span class="week-range-hint">drag either end to zoom into a stretch of games</span>'}
     </div>
     <div class="dual-slider">
@@ -3338,7 +3458,7 @@ function vacatedNote(team){
   if(!v) return '';
   const names = v.players.length>3 ? v.players.slice(0,3).join(', ')+` +${v.players.length-3} more` : v.players.join(', ');
   return `<div class="vacated-note">
-    <span class="vacated-icon">📤</span>
+    <span class="vacated-icon">${TC_ICON("export")}</span>
     <div><b>Vacated from ${v.season}:</b> ${v.tgt} targets · ${v.rec} rec · ${v.yds.toLocaleString()} yds · ${v.td} TD
     <span style="color:var(--muted)"> — left by ${names}.</span>
     <span style="color:var(--muted)">This production is up for grabs among the current roster.</span></div></div>`;
@@ -3408,7 +3528,7 @@ function renderPassDerived(team,state,subTabs,metric){
   if(Math.abs(diff) > threshold){
     const sign = diff>0?'short of':'over';
     banner = `<div class="discrepancy-note">
-      <span class="vacated-icon">${diff>0?'⚠️':'❗'}</span>
+      <span class="vacated-icon">${TC_ICON("warning")}</span>
       <div><b>${Math.abs(diff).toLocaleString()} ${unit} ${sign} the QB total.</b>
       The QBs are projected for <b>${qbPool.toLocaleString()} ${unit}</b>, but the receivers currently add up to
       <b>${Math.round(receiverSum).toLocaleString()}</b>. ${diff>0
@@ -3417,7 +3537,7 @@ function renderPassDerived(team,state,subTabs,metric){
       <button class="btn btn-accent btn-sm" style="margin-top:6px" onclick="reconcileDerived('${team}','${metric}')">
         ${diff>0?'Distribute':'Reconcile'} the ${diff>0?'difference':'overage'} →</button></div></div>`;
   } else {
-    banner = `<div class="reconciled-note">✅ Receivers match the QBs' projected ${unit} (${qbPool.toLocaleString()}).</div>`;
+    banner = `<div class="reconciled-note">${TC_ICON("check")} Receivers match the QBs' projected ${unit} (${qbPool.toLocaleString()}).</div>`;
   }
   return `<div class="card"><div class="card-title">${title}</div>${subTabs}
     ${vacatedNote(team)}
@@ -3725,7 +3845,7 @@ function vacatedRushNote(team){
   if(!v) return '';
   const names = v.players.length>3 ? v.players.slice(0,3).join(', ')+` +${v.players.length-3} more` : v.players.join(', ');
   return `<div class="vacated-note">
-    <span class="vacated-icon">📤</span>
+    <span class="vacated-icon">${TC_ICON("export")}</span>
     <div><b>Vacated from ${v.season}:</b> ${v.att} carries · ${v.yds.toLocaleString()} yds · ${v.td} TD
     <span style="color:var(--muted)"> — left by ${names}.</span>
     <span style="color:var(--muted)">These carries are up for grabs among the current backfield.</span></div></div>`;
@@ -6768,7 +6888,7 @@ const DEPTH_UNIT_LABEL = {offense:'Offense', defense:'Defense', special:'Special
 function renderDepthChart(team){
   const rows = espnDepth[team];
   if(rows===undefined){ fetchEspnDepth(team);
-    return `<div class="add-section"><div class="add-section-head">📋 Depth Chart</div>
+    return `<div class="add-section"><div class="add-section-head">${TC_ICON("clipboard")} Depth Chart</div>
       <div class="add-empty">Loading depth chart from ESPN…</div></div>`; }
   if(rows===null) return renderDepthChartFallback(team);   // depth chart unavailable → flat roster
   const FANTASY={QB:1,RB:1,WR:1,TE:1};
@@ -7473,7 +7593,7 @@ function renderTeamAdvanced(team){
   const hasSharp=sharpHasData(), hasSOS=SOS&&Object.keys(SOS).length>0;
   const hasCoord = COORDINATORS && COORDINATORS[team];
   if(!hasSharp && !hasSOS && !hasCoord){
-    return `<div class="empty"><div class="empty-icon">📊</div>
+    return `<div class="empty"><div class="empty-icon">${TC_ICON("chart","tc-ico-lg")}</div>
       <div class="empty-title">No advanced stats loaded</div>
       <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed to populate advanced team stats.</div></div>`;
   }
@@ -7516,8 +7636,8 @@ function renderTeamAdvanced(team){
   const carryBlock = renderCoordinatorCarryover(team, cardFor);
   const srcLabel = 'nflverse (computed from play-by-play)';
   return `<div class="sr-team-wrap">
-    <div class="sr-note">📊 <b>Advanced team stats</b> · ${srcLabel} · <b>${advTeamSeason()} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
-      <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="showSharpLeague()">🌐 View league-wide tables →</button></div>
+    <div class="sr-note">${TC_ICON("chart")} <b>Advanced team stats</b> · ${srcLabel} · <b>${advTeamSeason()} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
+      <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="showSharpLeague()">View league-wide tables →</button></div>
     ${sosStrip}
     ${carryBlock}
     ${section('Offense', offKeys, coordInlineLabel(team,oc,'offensive'))}
@@ -7558,7 +7678,7 @@ function renderCoordinatorCarryover(team, cardFor){
   }
   if(!blocks.length) return '';
   return `<div class="coord-carry-wrap">
-    <div class="coord-carry-head">🔄 New coordinator scheme carryover</div>
+    <div class="coord-carry-head">${TC_ICON("refresh")} New coordinator scheme carryover</div>
     <div class="coord-carry-note">A brand-new coordinator arrived for ${PROJ_SEASON}. Below are their <b>former team's</b> ${advTeamSeason()} scheme stats — the tendencies &amp; personnel that tend to travel with a coordinator. Use as a forecast for how this unit may shift.</div>
     ${blocks.join('')}
   </div>`;
@@ -7614,14 +7734,14 @@ function renderSharpLeague(){
   const hasSharp=sharpHasData(), hasSOS=SOS&&Object.keys(SOS).length>0;
   if(!hasSharp && !hasSOS){
     host.innerHTML=`<div class="phase-tabs">${tabBar()}</div>
-      <div class="empty"><div class="empty-icon">📊</div><div class="empty-title">No advanced stats loaded</div>
+      <div class="empty"><div class="empty-icon">${TC_ICON("chart","tc-ico-lg")}</div><div class="empty-title">No advanced stats loaded</div>
       <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed.</div></div>`;
     return;
   }
   const srcLabel = `nflverse (computed)`;
   const headerBar=`
     <div class="team-header sr-league-header">
-      <div><div class="team-abbr">📊 Advanced Stats — League-Wide</div>
+      <div><div class="team-abbr">${TC_ICON("chart")} Advanced Stats — League-Wide</div>
         <div class="team-qb-name">${srcLabel} · <b>${advTeamSeason()} season</b> · click any column to sort (best→worst)</div></div>
       <div class="team-nav">
         ${currentTeam?`<button class="btn btn-ghost" onclick="setPhase('Advanced')">← ${teamDisplayName(currentTeam)} card</button>`:''}
@@ -7986,9 +8106,9 @@ function renderRankings(){
        </select>`
     : '';
   const advNote = advActive
-    ? `<span class="ecr-missing" style="color:var(--muted)">📊 nflverse advanced ${sumerSeasonKey()} stats${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}${sumerView.single?'':' · common columns (pick a position for the full set)'}${((sumerRefinement==='vs_man'||sumerRefinement==='vs_zone'))?' · coverage counts approximate, rates accurate':''}</span>`
+    ? `<span class="ecr-missing" style="color:var(--muted)">${TC_ICON("chart")} nflverse advanced ${sumerSeasonKey()} stats${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}${sumerView.single?'':' · common columns (pick a position for the full set)'}${((sumerRefinement==='vs_man'||sumerRefinement==='vs_zone'))?' · coverage counts approximate, rates accurate':''}</span>`
     : '';
-  const ecrNote = hasECR() ? '' : `<span class="ecr-missing">⚠ No FantasyPros ECR loaded — run build_seed.py and load the 📦 seed to populate ECR/Tier</span>`;
+  const ecrNote = hasECR() ? '' : `<span class="ecr-missing">${TC_ICON("warning")} No FantasyPros ECR loaded — run build_seed.py and load the 📦 seed to populate ECR/Tier</span>`;
   document.getElementById('content').innerHTML=`
     <div class="phase-tabs">${tabBar()}</div>
     <div class="rankings-scope-bar">
@@ -8049,7 +8169,7 @@ function renderRankings(){
         <span style="font-size:11px;font-weight:700;margin-left:auto">${view.length} players</span>
         ${following?'':`<button class="btn btn-accent btn-sm" onclick="openLeaguePicker()">🔗 Link Sleeper League</button>
         <button class="btn btn-ghost btn-sm" onclick="promptDraftFollow()" title="Follow a live or mock draft by its ID">Paste draft ID</button>`}
-        <button class="btn btn-ghost btn-sm" onclick="exportRankingsCSV()">⬇ CSV</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportRankingsCSV()">${TC_ICON("download")} CSV</button>
       </div>
       <div class="rank-table-wrap" style="max-height:calc(100vh - 320px)">
       <table class="rankings-table grouped"><thead><tr>
@@ -8399,7 +8519,7 @@ function loadProjections(data){
   else toast(`Loaded ${merged.length} players · ${Object.keys(byTeam).length} teams`,'ok');
   if(currentTeam&&userProj[currentTeam]) renderContent();
   else{currentTeam=null;document.getElementById('content').innerHTML=`<div class="empty">
-    <div class="empty-icon">✅</div><div class="empty-title">Projections loaded${multiAnalyst?' (averaged)':''}</div>
+    <div class="empty-icon">${TC_ICON("check","tc-ico-lg")}</div><div class="empty-title">Projections loaded${multiAnalyst?' (averaged)':''}</div>
     <div class="empty-body">${merged.length} players · ${analysts.length>1?analysts.join(', ')+' averaged':'analyst: '+(analysts[0]||'n/a')}<br>Select any team to review and edit.</div></div>`;}
 }
 
@@ -8594,7 +8714,7 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
     return;
   }
   document.getElementById('content').innerHTML=`<div class="empty">
-    <div class="empty-icon">📡</div><div class="empty-title">Loading ${PROJ_SEASON} data…</div>
+    <div class="empty-icon">${TC_ICON("signal","tc-ico-lg")}</div><div class="empty-title">Loading ${PROJ_SEASON} data…</div>
     <div class="empty-body">Checking for a prebuilt seed, then pulling live from Sleeper if needed.</div></div>`;
   // No embedded projections. Try a local seed file (works when served over http), which at
   // minimum gives us ECR; then fall back to a live Sleeper pull for projections.
@@ -8738,6 +8858,145 @@ async function tryAutoLoadSeed(){
 }
 
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Player search — a modal reachable from the ☰ menu. Type a name, get normalized-matched
+// results (same ecrNormName the rest of the app uses), each showing photo, name, team logo
+// and position. Includes EVERY loaded player, not just offensive fantasy positions — any
+// depth-chart player in the Sleeper DB (LB, CB, OL, …) is searchable. Clicking a result
+// opens the existing player card.
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _psOpen = false;
+
+function openPlayerSearch(){
+  if(_psOpen) return;
+  // The search reads the Sleeper player DB; make sure it's loaded first.
+  if(!sleeperPlayers){
+    loadSleeperPlayers(true).then(()=>openPlayerSearch()).catch(()=>{
+      toast('Player data still loading — try again in a moment','err');
+    });
+    return;
+  }
+  _psOpen = true;
+  const ov = document.createElement('div');
+  ov.id = 'psOverlay';
+  ov.className = 'ps-overlay';
+  ov.innerHTML = `
+    <div class="ps-modal" role="dialog" aria-label="Search players">
+      <div class="ps-head">
+        <span class="ps-search-ico">${TC_ICON('search')}</span>
+        <input id="psInput" class="ps-input" type="text" autocomplete="off" spellcheck="false"
+               placeholder="Search any player…" aria-label="Player name">
+        <button class="ps-close" onclick="closePlayerSearch()" aria-label="Close">${TC_ICON('close')}</button>
+      </div>
+      <div id="psResults" class="ps-results"></div>
+    </div>`;
+  // Click on the backdrop (not the modal) closes.
+  ov.addEventListener('mousedown', e=>{ if(e.target===ov) closePlayerSearch(); });
+  document.body.appendChild(ov);
+  const inp = document.getElementById('psInput');
+  inp.addEventListener('input', ()=>psRender(inp.value));
+  inp.addEventListener('keydown', psKey);
+  psRender('');
+  setTimeout(()=>inp.focus(), 30);
+}
+
+function closePlayerSearch(){
+  _psOpen = false;
+  const el = document.getElementById('psOverlay'); if(el) el.remove();
+}
+
+// Precomputed once per open: [{pid, name, norm, pos, team}] over every player in the DB.
+let _psIndex = null;
+function psBuildIndex(){
+  const out = [];
+  for(const pid in sleeperPlayers){
+    const p = sleeperPlayers[pid];
+    if(!p || !p.name) continue;
+    out.push({ pid, name:p.name, norm:ecrNormName(p.name), pos:p.pos||'', team:p.team||'' });
+  }
+  // Team defenses aren't in the slim player DB (it drops position 'DEF'), but they're real
+  // roster units people search for. Add one entry per NFL team, keyed by the abbreviation the
+  // player card / DEF logic already understands, matchable by club name or code.
+  if(typeof TEAMS!=='undefined' && Array.isArray(TEAMS)){
+    TEAMS.forEach(tc=>{
+      const full = (typeof teamDisplayName==='function' ? teamDisplayName(tc) : tc);
+      const label = `${full} D/ST`;
+      out.push({ pid:tc, name:label, norm:ecrNormName(full+' '+tc), pos:'DEF', team:tc });
+    });
+  }
+  return out;
+}
+
+function psRender(q){
+  const box = document.getElementById('psResults'); if(!box) return;
+  if(!_psIndex) _psIndex = psBuildIndex();
+  const raw = (q||'').trim();
+  if(!raw){
+    box.innerHTML = `<div class="ps-hint">Start typing a player's name — every player on an NFL roster is searchable, not just fantasy skill positions.</div>`;
+    return;
+  }
+  const nq = ecrNormName(raw);
+  // Rank: exact norm match, then prefix, then substring; alphabetical within a tier. Cap the
+  // list so a two-letter query doesn't paint 800 rows.
+  const scored = [];
+  for(const e of _psIndex){
+    let s = -1;
+    if(e.norm === nq) s = 0;
+    else if(e.norm.startsWith(nq)) s = 1;
+    else if(e.norm.includes(nq)) s = 2;
+    else if(nq.length>=3 && e.norm.replace(/\s/g,'').includes(nq.replace(/\s/g,''))) s = 3;
+    if(s>=0) scored.push({e, s});
+  }
+  scored.sort((a,b)=> a.s-b.s || a.e.name.localeCompare(b.e.name));
+  const top = scored.slice(0, 40);
+  if(!top.length){
+    box.innerHTML = `<div class="ps-hint">No players match “${escAttr(raw)}”.</div>`;
+    return;
+  }
+  box.innerHTML = top.map((r,i)=>{
+    const e = r.e;
+    const isDef = e.pos==='DEF';
+    const img = (isDef && e.team)
+      ? imgTag(NFL_LOGO(String(e.team).toUpperCase()), 'ps-hs ps-def')
+      : imgTag(hsURL({player_id:e.pid, name:e.name, pos:e.pos}), 'ps-hs');
+    const logo = e.team ? `<img class="ps-team-logo" src="${NFL_LOGO(String(e.team).toUpperCase())}" alt="${escAttr(e.team)}" onerror="this.style.display='none'">` : '';
+    return `<button class="ps-row${i===0?' ps-active':''}" data-pid="${escAttr(e.pid)}" data-pos="${escAttr(e.pos)}" data-team="${escAttr(e.team)}"
+                    onclick="psPick(this)">
+      ${img}
+      <span class="ps-nm">${e.name}</span>
+      <span class="ps-meta">${logo}<span class="ps-pos ps-pos-${e.pos}">${e.pos||'—'}</span></span>
+    </button>`;
+  }).join('');
+}
+
+function psPick(btn){
+  const pid = btn.getAttribute('data-pid');
+  const pos = btn.getAttribute('data-pos');
+  const team = btn.getAttribute('data-team');
+  closePlayerSearch();
+  openPlayerCard(pid, pos, team);
+}
+
+// Arrow keys move the highlight; Enter opens it; Escape closes.
+function psKey(e){
+  const box = document.getElementById('psResults'); if(!box) return;
+  const rows = [...box.querySelectorAll('.ps-row')];
+  if(!rows.length) return;
+  let idx = rows.findIndex(r=>r.classList.contains('ps-active'));
+  if(e.key==='ArrowDown'){ e.preventDefault(); idx=Math.min(rows.length-1, idx+1); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); idx=Math.max(0, idx-1); }
+  else if(e.key==='Enter'){ e.preventDefault(); if(rows[idx]) psPick(rows[idx]); return; }
+  else if(e.key==='Escape'){ e.preventDefault(); closePlayerSearch(); return; }
+  else return;
+  rows.forEach(r=>r.classList.remove('ps-active'));
+  if(rows[idx]){ rows[idx].classList.add('ps-active'); rows[idx].scrollIntoView({block:'nearest'}); }
+}
+
+// Rebuild the index if the player DB reloads mid-session (rare, but cheap to be correct).
+if(typeof document!=='undefined' && document.addEventListener){
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape' && _psOpen) closePlayerSearch(); });
+}
 // ═════════════════════════════════════════════════════════════════════════════
 // Sleeper live data integration
 // ═════════════════════════════════════════════════════════════════════════════
@@ -9069,7 +9328,7 @@ async function refreshFromSleeper(bootRestore){
     const empty = !SEED || !Object.keys(SEED).some(t=>SEED[t]&&(SEED[t].QB.length||SEED[t].WR.length||SEED[t].RB.length||SEED[t].TE.length));
     if(empty){
       document.getElementById('content').innerHTML=`<div class="empty">
-        <div class="empty-icon">⚠️</div><div class="empty-title">Couldn't reach Sleeper</div>
+        <div class="empty-icon">${TC_ICON("warning","tc-ico-lg")}</div><div class="empty-title">Couldn't reach Sleeper</div>
         <div class="empty-body">The live pull was blocked (often browser CORS when opening the file directly).
         Two easy fixes:<br><br>
         <b>1.</b> Serve the file over http (e.g. <code>python -m http.server</code>) so it can reach Sleeper,
@@ -9874,7 +10133,7 @@ async function pickLeague(idx){
 function renderLeaguePicker(){
   const st=leaguePickerState;
   const head=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <b style="font-size:13px">🔗 Link a Sleeper league</b>
+      <b style="font-size:13px">${TC_ICON("link")} Link a Sleeper league</b>
       <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="closeLeaguePicker()">✕</button>
     </div>`;
   const errRow = st.error?`<div class="lp-error">${st.error}</div>`:'';
@@ -11235,8 +11494,7 @@ async function laSubmitUsername(){
   laState.busy=true; laState.error=null; renderLeagueAnalyzer();
   try{
     const user=await resolveSleeperUser(username);
-    const season=await fetchCurrentSeason();
-    const { leagues }=await fetchUserLeagues(user.user_id, season);
+    const leagues=await laFetchLeaguesForAnalyzer(user.user_id);
     laState.user=user; laState.leagues=leagues;
     laState.step='pick'; laState.busy=false;
     // Remember this account's leagues so "change league" can offer them directly next time
@@ -11248,6 +11506,31 @@ async function laSubmitUsername(){
     laState.error=/No such/.test(e.message)?'Username not found on Sleeper.':`Couldn't reach Sleeper (${e.message}).`;
   }
   renderLeagueAnalyzer();
+}
+// Unlike the draft-follow lookup (which swaps whole-season when the current year is empty),
+// the analyzer MERGES the current season with the previous one and dedupes by lineage. Reason:
+// people routinely have some leagues already renewed for the new year and others (often
+// redraft) not yet rolled over — the old all-or-nothing swap hid the un-renewed ones entirely.
+// A prior-season league is only added when its lineage isn't already present via a newer entry,
+// and it's tagged {stale:true, staleSeason} so the picker can label it "last active <year>".
+async function laFetchLeaguesForAnalyzer(userId){
+  const season=await fetchCurrentSeason();
+  const prev=String(parseInt(season,10)-1);
+  const [cur, old] = await Promise.all([
+    sleeperFetch(SLEEPER_LEAGUES_URL(userId, season)).catch(()=>[]),
+    sleeperFetch(SLEEPER_LEAGUES_URL(userId, prev)).catch(()=>[]),
+  ]);
+  const out=[...(cur||[])];
+  const haveIds=new Set(out.map(l=>String(l.league_id)));
+  // A current league points back to its prior year via previous_league_id — that id IS the
+  // prior-season league, so anything reachable that way is already represented.
+  const haveLineage=new Set(out.map(l=>String(l.previous_league_id||'')).filter(Boolean));
+  (old||[]).forEach(l=>{
+    const id=String(l.league_id);
+    if(haveIds.has(id) || haveLineage.has(id)) return;
+    out.push({...l, stale:true, staleSeason:prev});
+  });
+  return out;
 }
 async function laPickLeague(idx){
   const lg=laState.leagues[idx]; if(!lg) return;
@@ -11371,6 +11654,23 @@ async function laTakeSnapshot(leagueId){
     if((lg.roster_positions||[]).some(x=>x==='K'||x==='DEF')){
       kdef = await laFetchKdef(lg.season).catch(()=>[]);
     }
+    // Champion of a COMPLETED season. Sleeper stamps the winner on the league metadata the
+    // moment a season finalizes; the winners bracket is the fallback (its p:1 match is the
+    // championship, winner in `w`). Only meaningful once status==='complete', so we skip the
+    // extra request on in-progress seasons.
+    let championRosterId=null;
+    if(lg.status==='complete'){
+      const metaWin=lg.metadata && lg.metadata.latest_league_winner_roster_id;
+      if(metaWin!=null && metaWin!==''){
+        championRosterId=+metaWin;
+      } else {
+        try{
+          const wb=await sleeperFetch(`${LA_LEAGUE_URL(leagueId)}/winners_bracket`);
+          const finalM=(wb||[]).filter(m=>m.p===1).sort((a,b)=>(b.r||0)-(a.r||0))[0];
+          if(finalM && finalM.w!=null) championRosterId=+finalM.w;
+        }catch(e){}
+      }
+    }
     await loadSleeperPlayers(true);
     const uById={}; (users||[]).forEach(u=>uById[u.user_id]=u);
     const rp=lg.roster_positions||[];
@@ -11416,6 +11716,8 @@ async function laTakeSnapshot(leagueId){
       picks.sort((a,b)=> a.season===b.season ? a.round-b.round : a.season.localeCompare(b.season));
       return { rosterId:r.roster_id, ownerId:r.owner_id||null,
                owner:u.display_name||'(orphan)',
+               isChampion: championRosterId!=null && r.roster_id===championRosterId,
+               isChampion: championRosterId!=null && r.roster_id===championRosterId,
                // Team icon: Sleeper's per-league team avatar (metadata.avatar, a full URL)
                // beats the account avatar (an id we turn into a CDN thumb). Null → emoji.
                avatar:(u.metadata&&u.metadata.avatar)||(u.avatar?SLEEPER_AVATAR_THUMB(u.avatar):null),
@@ -11423,12 +11725,31 @@ async function laTakeSnapshot(leagueId){
                wins:(r.settings&&r.settings.wins)||0, losses:(r.settings&&r.settings.losses)||0,
                players, picks };
     });
+    // myUserId identifies YOUR team. laState.user is in-memory only, so after a reload it's
+    // gone — which is why a restored snapshot could re-render with a random team starred as
+    // "My Team". Fall back through: the live user → the saved snapshot (same league) → the
+    // persisted Sleeper profile (survives reloads). Also stamp the resolved username onto the
+    // snapshot so the player search and league lookups have it without a round-trip.
+    const _prof=(typeof laLoadSleeperProfile==='function'?laLoadSleeperProfile():null);
+    const _myId=(laState.user&&laState.user.user_id)
+      || ((leagueSnapshot&&leagueSnapshot.leagueId===leagueId)?leagueSnapshot.myUserId:null)
+      || (_prof&&_prof.user&&_prof.user.user_id)
+      || null;
+    // If we still don't know which roster is ours, match the profile username against this
+    // league's owners so a restored session lands on the right team instead of roster 1.
+    let _resolvedId=_myId;
+    if(_resolvedId==null && _prof && _prof.username){
+      const mine=(users||[]).find(u=>(u.display_name||'').toLowerCase()===String(_prof.username).toLowerCase());
+      if(mine) _resolvedId=mine.user_id;
+    }
     leagueSnapshot = {
       leagueId, name:lg.name||'League', season:lg.season,
       avatar: lg.avatar ? SLEEPER_AVATAR_THUMB(lg.avatar) : null,
       teams:lg.total_rosters||teams.length, superflex, tep, leagueType, kdef,
+      championRosterId,
       rosterPositions:rp, takenAt:Date.now(),
-      myUserId:(laState.user&&laState.user.user_id)||((leagueSnapshot&&leagueSnapshot.leagueId===leagueId)?leagueSnapshot.myUserId:null),
+      myUserId:_resolvedId,
+      username:(laState.user&&laState.user.display_name)||(_prof&&_prof.username)||(leagueSnapshot&&leagueSnapshot.username)||null,
       teamList:teams,
     };
     // Tie to the draft-page sync: adopt this league's scoring + roster shape exactly like
@@ -11469,7 +11790,7 @@ function renderLeagueAnalyzer(){
   const back=`<button class="btn btn-ghost" onclick="leaveLeagueAnalyzer()">← Projections</button>`;
   if(laState.step!=='view' || !leagueSnapshot){
     host.innerHTML=`
-      <div class="team-header"><div><div class="team-abbr">🏟 League Analyzer</div>
+      <div class="team-header"><div><div class="team-abbr">${TC_ICON("stadium")} League Analyzer</div>
         <div class="team-qb-name">dynasty rosters · values · trades — powered by your league snapshot</div></div>
         <div class="team-nav">${back}</div></div>
       <div class="la-setup card">
@@ -11484,7 +11805,7 @@ function renderLeagueAnalyzer(){
             <button class="btn btn-accent" ${laState.busy?'disabled':''} onclick="laSubmitUsername()">${laState.busy?'Looking up…':'Find my leagues'}</button>
           </div>
           ${window._laLinkedLeague?`<div class="la-linked">or <button class="btn btn-sm btn-accent" ${laState.busy?'disabled':''}
-            onclick="laTakeSnapshot(window._laLinkedLeague.id)">\u26a1 Sync ${window._laLinkedLeague.name}</button>
+            onclick="laTakeSnapshot(window._laLinkedLeague.id)">${TC_ICON("link")} Sync ${window._laLinkedLeague.name}</button>
             <span class="la-linked-note">(the league linked on your draft/rankings page)</span></div>`:''}
           ${laSavedLeaguesHTML()}`
         :`
@@ -11494,7 +11815,7 @@ function renderLeagueAnalyzer(){
               <button class="la-league" ${laState.busy?'disabled':''} onclick="laPickLeague(${i})">
                 <b>${lg.name}</b>
                 <span>${lg.total_rosters}-team · ${(lg.settings&&lg.settings.type)===2?'dynasty':(lg.settings&&lg.settings.type)===1?'keeper':'redraft'}
-                  ${ (lg.roster_positions||[]).includes('SUPER_FLEX')?' · SF':'' }</span>
+                  ${ (lg.roster_positions||[]).includes('SUPER_FLEX')?' · SF':'' }${lg.stale?` <span class="la-stale-tag">last active ${lg.staleSeason}</span>`:''}</span>
               </button>`).join('')}
           </div>
           <button class="btn btn-ghost btn-sm" onclick="laChangeLeague()">← different username</button>`}
@@ -11566,7 +11887,7 @@ function laTeamCard(t,s){
   return `<div class="la-card ${mine?'mine':''}">
     <div class="la-card-head">
       ${laTeamIcon(t,'la-tm-av-sm')}
-      <div class="la-team la-clickteam" onclick="laViewTeam(${t.rosterId})" title="View this team\u2019s analysis">${mine?'\u2605 ':''}${t.teamName}</div>
+      <div class="la-team la-clickteam" onclick="laViewTeam(${t.rosterId})" title="View this team\u2019s analysis">${mine?'\u2605 ':''}${t.teamName}${t.isChampion?` <span class="la-champ" title="${leagueSnapshot.season} champion">${TC_ICON('trophy','tc-ico-champ')}</span>`:''}</div>
       <div class="la-owner">@${t.owner} · ${t.wins}-${t.losses}</div>
       <div class="la-total" title="Sum of player + pick dynasty values">${total}</div>
     </div>
@@ -11718,7 +12039,7 @@ function laCompareView(s){
         const mine=s.myUserId && r.t.ownerId===s.myUserId;
         const cell=(c,v)=>`<td class="${laQuartile(ranks[c][i],n)}"><b>${fmtV(v)}</b><span class="la-rk">#${ranks[c][i]}</span></td>`;
         return `<tr class="${mine?'mine':''}">
-          <td class="la-cmp-team la-clickteam" onclick="laViewTeam(${r.t.rosterId})" title="View ${r.t.teamName}\u2019s analysis">${laTeamIcon(r.t,'la-tm-av-sm')}${mine?'\u2605 ':''}${r.t.teamName}<span class="la-cmp-own">@${r.t.owner}</span></td>
+          <td class="la-cmp-team la-clickteam" onclick="laViewTeam(${r.t.rosterId})" title="View ${r.t.teamName}\u2019s analysis">${laTeamIcon(r.t,'la-tm-av-sm')}${mine?'\u2605 ':''}${r.t.teamName}${r.t.isChampion?` <span class="la-champ" title="${s.season} champion">${TC_ICON('trophy','tc-ico-champ')}</span>`:''}<span class="la-cmp-own">@${r.t.owner}</span></td>
           ${POS.map(p=>cell(p,r.by[p])).join('')}
           ${withPicks?cell('picks',r.picks):''}
           ${cell('total',r.total)}</tr>`;
@@ -12170,7 +12491,7 @@ function laTradeView(s){
   let verdictTxt='Add assets to both sides';
   if(started){
     const nameA=poolA.team.teamName, nameB=poolB.team.teamName;
-    verdictTxt = v.fair ? `\u2696\ufe0f Fair trade <span class="la-vd-sub">(within \u00b1${v.band})</span>`
+    verdictTxt = v.fair ? `${TC_ICON("check")} Fair trade <span class="la-vd-sub">(within \u00b1${v.band})</span>`
       : (v.diff>0 ? `<b>${nameB}</b> wins by ${Math.abs(v.diff).toFixed(0)}`
                   : `<b>${nameA}</b> wins by ${Math.abs(v.diff).toFixed(0)}`);
   }
@@ -12223,11 +12544,11 @@ function laTradeView(s){
       </div>
     </div>
     <div class="la-fnd">
-      <div class="la-fnd-title">\ud83d\udd0e Suggested trades for you
+      <div class="la-fnd-title">${TC_ICON("search")} Suggested trades for you
         <span class="la-fnd-sub">${fnd.targeted?`targeting <b>${fnd.weak.pos}</b> (you rank #${fnd.weak.rank})`:`weakest: <b>${fnd.weak.pos}</b> (#${fnd.weak.rank} in league)`} \u00b7 paying from: <b>${fnd.targeted?'any position':fnd.strong.pos+' (#'+fnd.strong.rank+')'}</b>${fnd.total?` \u00b7 ${fnd.total} fair deals`:''}
           <span class="la-fnd-size">${fnd.nTeams}-team \u00b7 ${fnd.deep?'deep league \u2014 favouring cheaper, roster-friendly adds':fnd.shallow?'shallow league \u2014 big fish matter most':'balanced mix'}</span></span>
         <span class="la-fnd-chips">${['AUTO','QB','RB','WR','TE'].map(x=>`<button class="format-btn ${laState.fndPos===x?'active':''}" onclick="laState.fndPos='${x}';renderLeagueAnalyzer()" title="${x==='AUTO'?'Target my weakest position automatically':'Hunt deals at '+x}">${x}</button>`).join('')}</span>
-        <button class="btn btn-sm btn-ghost la-fnd-refresh" onclick="laState.fndSeed++;renderLeagueAnalyzer()" title="Deal me different variations">\ud83d\udd04 refresh</button></div>
+        <button class="btn btn-sm btn-ghost la-fnd-refresh" onclick="laState.fndSeed++;renderLeagueAnalyzer()" title="Deal me different variations">${TC_ICON("refresh")} refresh</button></div>
       ${fndHtml}
     </div>
     <div class="la-note">Verdicts use consolidation-adjusted values: extra assets on a side count at 75/55/40/30/25%, and the side holding the single best player gets a premium worth 25% of the best-asset gap \u2014 so a stack of depth can\u2019t buy a stud, but star + real piece can. Fair = within \u00b1max(4, 5%).</div>`;
@@ -12508,6 +12829,7 @@ function laMyTeamView(s){
           }).map(t=>`<option value="${t.rosterId}" ${t.rosterId===mineEng.t.rosterId?'selected':''}>${s.myUserId&&t.ownerId===s.myUserId?'\u2605 ':''}${t.teamName}</option>`).join('')}
       </select>
       ${!isOwn?`<button class="btn btn-sm btn-ghost" onclick="laViewTeam('')" title="Back to your own team">\u21a9 my team</button>`:''}
+      ${mineEng.t.isChampion?`<span class="la-champ-badge">${TC_ICON('trophy','tc-ico-champ')} ${s.season} champion</span>`:''}
     </div>`;
   const controls=`
     <div class="la-lens">

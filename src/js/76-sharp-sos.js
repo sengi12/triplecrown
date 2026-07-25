@@ -25,14 +25,14 @@ function renderSharpLeague(){
   const hasSharp=sharpHasData(), hasSOS=SOS&&Object.keys(SOS).length>0;
   if(!hasSharp && !hasSOS){
     host.innerHTML=`<div class="phase-tabs">${tabBar()}</div>
-      <div class="empty"><div class="empty-icon">📊</div><div class="empty-title">No advanced stats loaded</div>
+      <div class="empty"><div class="empty-icon">${TC_ICON("chart","tc-ico-lg")}</div><div class="empty-title">No advanced stats loaded</div>
       <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed.</div></div>`;
     return;
   }
   const srcLabel = `nflverse (computed)`;
   const headerBar=`
     <div class="team-header sr-league-header">
-      <div><div class="team-abbr">📊 Advanced Stats — League-Wide</div>
+      <div><div class="team-abbr">${TC_ICON("chart")} Advanced Stats — League-Wide</div>
         <div class="team-qb-name">${srcLabel} · <b>${advTeamSeason()} season</b> · click any column to sort (best→worst)</div></div>
       <div class="team-nav">
         ${currentTeam?`<button class="btn btn-ghost" onclick="setPhase('Advanced')">← ${teamDisplayName(currentTeam)} card</button>`:''}
