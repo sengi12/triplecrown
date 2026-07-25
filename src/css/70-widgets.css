@@ -661,3 +661,10 @@ body{padding-bottom:calc(var(--rt-h, 0px) + 10px);}
   padding:2px 4px 2px 0;margin:-2px 0;border-radius:6px;}
 .rt-pcell:hover{background:rgba(90,169,230,.10);}
 .rt-pcell:hover .rt-pname{color:var(--accent);}
+
+/* Carryover card: the former team is a link through to that team's Adv Metrics. */
+.adv-carry-link{display:inline-flex;align-items:center;gap:5px;padding:1px 7px 1px 4px;
+  border-radius:999px;border:1px solid rgba(90,169,230,.35);background:rgba(90,169,230,.10);
+  color:var(--accent);font-weight:700;font-size:inherit;cursor:pointer;vertical-align:baseline;}
+.adv-carry-link:hover{background:rgba(90,169,230,.20);border-color:var(--accent);}
+.adv-carry-logo{width:15px;height:15px;object-fit:contain;}
