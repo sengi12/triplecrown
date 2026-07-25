@@ -5841,13 +5841,34 @@ function routeTreeSVG(rt, metric){
   // Draw least-run first so the hot routes sit on top; each route ends in an arrowhead.
   let paths='';
   for(const it of items.slice().sort((a,b)=>a.n-b.n)){
-    paths+=`<polyline points="${it.pts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${it.col}" stroke-width="${it.w}" stroke-linejoin="round" stroke-linecap="round" opacity="0.95"/>`;
-    const [ex,ey]=it.end, a=it.ang, aLen=8+it.ratio*3, aW=3.4+it.ratio*1.8;
-    const tip=[ex+Math.cos(a)*aLen*0.5, ey+Math.sin(a)*aLen*0.5];
-    const back=[ex-Math.cos(a)*aLen*0.5, ey-Math.sin(a)*aLen*0.5];
-    const b1=[back[0]+Math.cos(a+Math.PI/2)*aW, back[1]+Math.sin(a+Math.PI/2)*aW];
-    const b2=[back[0]+Math.cos(a-Math.PI/2)*aW, back[1]+Math.sin(a-Math.PI/2)*aW];
-    paths+=`<polygon points="${tip[0].toFixed(1)},${tip[1].toFixed(1)} ${b1[0].toFixed(1)},${b1[1].toFixed(1)} ${b2[0].toFixed(1)},${b2[1].toFixed(1)}" fill="${it.col}"/>`;
+    // Arrowhead geometry is derived FROM the stroke width, not from `ratio` independently.
+    // Previously a hot route drew a 7.4px-wide line behind a head only ~10px across, so the
+    // head stopped reading as a head on exactly the routes that matter most. Keeping a fixed
+    // head:line ratio makes every arrow look deliberate at any thickness.
+    const [ex,ey]=it.end, a=it.ang;
+    const ca=Math.cos(a), sa=Math.sin(a);
+    const aW  = Math.max(3.2, it.w*1.55);         // half-width of the head's base
+    const aLen= Math.max(7.5, it.w*2.5);          // base → tip
+    // Pull the line back so it ENDS UNDER the head's base. The polyline uses a round linecap,
+    // which extends half a stroke-width beyond its last point — on a thick route that bulge
+    // poked out around (and through) the triangle, which is the "wonky tip" artifact. Ending
+    // the line beneath the base hides the cap completely. Clamped to a fraction of the final
+    // segment so a short last leg can't invert.
+    const prev=it.pts[it.pts.length-2] || it.end;
+    const segLen=Math.hypot(ex-prev[0], ey-prev[1]) || 1;
+    // The head's base sits exactly here, so this IS the head's length — use aLen directly
+    // (a 0.75 factor here left the arrow wider than it was long, which reads as a blob).
+    const trim=Math.min(aLen, segLen*0.55);
+    const linePts=it.pts.slice();
+    linePts[linePts.length-1]=[+(ex-ca*trim).toFixed(2), +(ey-sa*trim).toFixed(2)];
+    paths+=`<polyline points="${linePts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${it.col}" stroke-width="${it.w}" stroke-linejoin="round" stroke-linecap="round" opacity="0.95"/>`;
+    // Base sits at the (trimmed) line end; the tip reaches the route's true endpoint, so the
+    // arrow still terminates exactly where the route does.
+    const baseX=ex-ca*trim, baseY=ey-sa*trim;
+    const tip=[ex, ey];
+    const b1=[baseX+Math.cos(a+Math.PI/2)*aW, baseY+Math.sin(a+Math.PI/2)*aW];
+    const b2=[baseX+Math.cos(a-Math.PI/2)*aW, baseY+Math.sin(a-Math.PI/2)*aW];
+    paths+=`<polygon points="${tip[0].toFixed(1)},${tip[1].toFixed(1)} ${b1[0].toFixed(1)},${b1[1].toFixed(1)} ${b2[0].toFixed(1)},${b2[1].toFixed(1)}" fill="${it.col}" stroke="${it.col}" stroke-width="0.6" stroke-linejoin="round"/>`;
   }
   // Label placement with a vertical de-collision pass per side (left / right / centre), so the
   // lower clusters (Slant/Angle/Drag …) don't stack on top of each other. A thin leader line is
