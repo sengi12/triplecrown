@@ -555,3 +555,10 @@
 .ps-pos-TE{color:#e8a24a;background:rgba(232,162,74,.14);}
 .ps-pos-K{color:#b98cdb;background:rgba(185,140,219,.14);}
 .ps-pos-DEF{color:#8fa3b8;background:rgba(143,163,184,.14);}
+
+/* Team defense (D/ST) player card bits. */
+.pcard-hero-dst{object-fit:contain;padding:14px;background:rgba(255,255,255,.04);}
+.pcard-season-title{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;
+  margin:14px 0 8px;color:var(--text);}
+.pcard-dst-logo{width:22px;height:22px;object-fit:contain;}
+.pcard-mini-note{color:var(--muted);font-size:12px;padding:8px 2px;}

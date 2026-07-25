@@ -205,7 +205,12 @@ function openPlayerCard(nameOrId, pos, team){
   }
   // Resolve a player_id: accept an id directly, or resolve from name(+pos).
   let pid = null;
-  if(nameOrId && /^\d+$/.test(String(nameOrId))) pid = String(nameOrId);
+  // A team defense is addressed by its team abbreviation (PIT, SF…), which has no numeric
+  // Sleeper id — carry it through as-is so the D/ST card can fetch by team.
+  if(pos==='DEF' && nameOrId && /^[A-Z]{2,4}$/.test(String(nameOrId).toUpperCase())){
+    pid = String(nameOrId).toUpperCase();
+  }
+  else if(nameOrId && /^\d+$/.test(String(nameOrId))) pid = String(nameOrId);
   else pid = resolvePlayerId(nameOrId, pos);
   if(!pid){ toast('No stats available for that player','err'); return; }
   pcardOpen=true;
@@ -217,6 +222,11 @@ function closePlayerCard(){
   const el=document.getElementById('pcardOverlay'); if(el) el.remove();
 }
 function renderPlayerCardShell(pid, pos, team){
+  // Team defense: no person behind it, so build a compact D/ST hero (team name + logo) and
+  // a single stats tab, rather than the player meta grid that would all read "–".
+  if(typeof pcardIsTeamDef==='function' && pcardIsTeamDef(pid, pos)){
+    return renderTeamDefShell(pid);
+  }
   const p = (sleeperPlayers&&sleeperPlayers[pid]) || {};
   const name = p.name || 'Player';
   const posc = pos || p.pos || '';
@@ -288,6 +298,17 @@ let pcardStatsMode = 'pro';
 let pcardToken = 0;           // bumped on each source switch so a slow in-flight load can't clobber a newer one
 async function loadPlayerCardData(pid, pos, team){
   const posc = pos || (sleeperPlayers&&sleeperPlayers[pid]&&sleeperPlayers[pid].pos) || 'QB';
+  // Team defense: no draft/career/college machinery — just its Sleeper-sourced gamelog.
+  if(typeof pcardIsTeamDef==='function' && pcardIsTeamDef(pid, posc)){
+    pcardState = {pid:String(pid).toUpperCase(), posc:'DEF', team:String(pid).toUpperCase(),
+                  isSkill:false, isOl:false, isDefense:true, isTeamDef:true};
+    pcardStatsMode = 'pro';
+    const body = document.getElementById('pcardBody');
+    if(body) body.innerHTML = renderPcardTeamDef(pcardState.pid);
+    const tabs = document.getElementById('pcardTabs');
+    if(tabs) tabs.innerHTML = '';   // single view; no source toggle needed
+    return;
+  }
   // posc = the player's canonical position code (e.g. 'WR', 'CB', 'K').
   // isSkill  → fantasy skill positions, which have hand-built PCARD_SCHEMA gamelog tables.
   // isOl     → offensive line, routed to the dedicated OL card.
@@ -360,6 +381,11 @@ function pcardLoadStats(mode){
   const {pid, posc, isSkill, isDefense} = pcardState;
   const body = document.getElementById('pcardBody');
   if(!body) return;
+  // Team defense (pid is a team abbreviation, posc DEF): its own Sleeper-sourced gamelog.
+  if(typeof pcardIsTeamDef==='function' && pcardIsTeamDef(pid, posc)){
+    body.innerHTML = renderPcardTeamDef(pid);
+    return;
+  }
   if(mode==='routes'){
     body.innerHTML = renderPcardRoutes(pid);
     return;
