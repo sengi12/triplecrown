@@ -96,7 +96,7 @@ def build(offline=False):
 _ICON_PATHS = {
     "search": '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
     "chart": '<path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6"/>',
-    "stadium": '<ellipse cx="12" cy="9" rx="9" ry="4"/><path d="M3 9v5c0 2.2 4 4 9 4s9-1.8 9-4V9"/>',
+    "stadium": '<rect x="2.5" y="6" width="19" height="12" rx="6"/><ellipse cx="12" cy="12" rx="5.5" ry="3"/>',
     "trophy": ('<path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" fill="currentColor" stroke="none"/>'
                '<path d="M8 5H5.5A2.5 2.5 0 0 0 8 8.5M16 5h2.5A2.5 2.5 0 0 1 16 8.5"/>'
                '<path d="M12 13v3M9 20h6M10 20v-1.5a2 2 0 0 1 4 0V20"/>'),

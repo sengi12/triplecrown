@@ -362,8 +362,8 @@ function laPlayerImg(p, cls){
 
 // League / team icons — real Sleeper avatars with emoji fallback (older persisted snapshots
 // predate avatar capture, and orphan rosters have none; both degrade gracefully).
-function laLeagueIcon(s,cls){ return s&&s.avatar?`<img src="${s.avatar}" class="${cls}" onerror="this.outerHTML='\ud83c\udfdf'">`:'\ud83c\udfdf'; }
-function laTeamIcon(t,cls){ return t&&t.avatar?`<img src="${t.avatar}" class="${cls}" onerror="this.outerHTML='\ud83c\udfc8'">`:'<span class="'+cls+' la-av-blank">\ud83c\udfc8</span>'; }
+function laLeagueIcon(s,cls){ return s&&s.avatar?`<img src="${s.avatar}" class="${cls}" onerror="this.outerHTML=TC_ICON('stadium')">`:TC_ICON('stadium'); }
+function laTeamIcon(t,cls){ return t&&t.avatar?`<img src="${t.avatar}" class="${cls}" onerror="this.outerHTML=TC_ICON('football')">`:'<span class="'+cls+' la-av-blank">'+TC_ICON('football')+'</span>'; }
 
 // ── Entry + navigation ───────────────────────────────────────────────────────
 function openLeagueAnalyzer(){
@@ -379,7 +379,7 @@ function refreshLeagueSyncBtn(){
   // there so the menu doubles as the sync indicator the old header button used to be.
   const label = leagueSnapshot
     ? `${laLeagueIcon(leagueSnapshot,'la-btn-av')} ${leagueSnapshot.name}`
-    : '\ud83c\udfdf League Analyzer';
+    : TC_ICON('stadium')+' League Analyzer';
   const m=document.getElementById('menuLeagueView');
   if(m) m.innerHTML = label;
   // Kept for any build that still renders the old header button.

@@ -1368,7 +1368,14 @@ html,body{max-width:100%;overflow-x:hidden;}
   .la-my-sum-head{font-size:13px;}
   .la-grid{grid-template-columns:1fr;gap:10px;}
   .la-my-grid{grid-template-columns:1fr;gap:10px;}
+  /* Grid/flex children default to min-width:auto, so a wide table inside refuses to shrink and
+     pushes the whole page past the viewport. Let these blocks shrink to their column, and cap
+     names/rows so nothing spills right on a phone. */
+  .la-my-grid>*,.la-grid>*,.la-my-card,.la-card{min-width:0;max-width:100%;overflow-x:hidden;}
   .la-my-card{padding:10px;}
+  .la-pw-team{max-width:120px;}
+  .la-p{min-width:0;}
+  .la-p-name{min-width:0;overflow:hidden;text-overflow:ellipsis;}
   .la-setup{margin:12px auto;padding:14px;}
   .la-row{flex-direction:column;}
   .la-row input,.la-row .btn{width:100%;}
@@ -1545,6 +1552,27 @@ html,body{max-width:100%;overflow-x:hidden;}
   margin:14px 0 8px;color:var(--text);}
 .pcard-dst-logo{width:22px;height:22px;object-fit:contain;}
 .pcard-mini-note{color:var(--muted);font-size:12px;padding:8px 2px;}
+
+/* League header must fit a phone: the wrapper div inside .team-header is a flex child, so it
+   defaults to min-width:auto and refuses to shrink — that's what pushed the analyzer past the
+   viewport (worst on leagues with long names + a season dropdown). Let it shrink so the
+   name's existing ellipsis can do its job. */
+.team-header{min-width:0;max-width:100%;}
+.team-header>div{min-width:0;max-width:100%;}
+.team-qb-name{overflow-wrap:anywhere;}
+@media (max-width:760px){
+  .la-hdr{flex-wrap:wrap;}
+  .la-hdr-name{max-width:100%;}
+  .la-season-sel{margin-left:0;}
+}
+
+/* Draft helper: the full "% chance they make it back" phrase wraps badly on a phone, so a
+   compact "% back" variant swaps in — same number, no wrap. */
+.vona-pct-short{display:none;}
+@media (max-width:600px){
+  .vona-pct-long{display:none;}
+  .vona-pct-short{display:inline;}
+}
 </style>
 </head>
 <body>
@@ -1570,7 +1598,7 @@ html,body{max-width:100%;overflow-x:hidden;}
       <div class="hdr-menu app-menu" id="appMenu" hidden>
         <div class="app-menu-sec">View</div>
         <button class="hdr-menu-item" id="menuProjView" onclick="closeAppMenu();showProjectionsView()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6"/></svg> Projections</button>
-        <button class="hdr-menu-item" id="menuLeagueView" onclick="closeAppMenu();openLeagueAnalyzer()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="9" rx="9" ry="4"/><path d="M3 9v5c0 2.2 4 4 9 4s9-1.8 9-4V9"/></svg> League Analyzer</button>
+        <button class="hdr-menu-item" id="menuLeagueView" onclick="closeAppMenu();openLeagueAnalyzer()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="6"/><ellipse cx="12" cy="12" rx="5.5" ry="3"/></svg> League Analyzer</button>
         <button class="hdr-menu-item" onclick="closeAppMenu();showFullRankings()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" fill="currentColor" stroke="none"/><path d="M8 5H5.5A2.5 2.5 0 0 0 8 8.5M16 5h2.5A2.5 2.5 0 0 1 16 8.5"/><path d="M12 13v3M9 20h6M10 20v-1.5a2 2 0 0 1 4 0V20"/></svg> Full Rankings</button>
         <button class="hdr-menu-item" onclick="closeAppMenu();openPlayerSearch()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg> Search players</button>
         <!-- League actions: only meaningful once a snapshot exists, so syncAppChrome()
@@ -1742,7 +1770,7 @@ const TC_ICON = (() => {
     headphones:'<path d="M5 15v-3a7 7 0 0 1 14 0v3"/><rect x="3.5" y="14" width="4" height="6" rx="1.5"/><rect x="16.5" y="14" width="4" height="6" rx="1.5"/>',
     warning:'<path d="M12 4 2.5 20h19L12 4Z"/><path d="M12 10v4M12 17h.01"/>',
     check:  '<path d="M5 12.5 10 17 19 7"/>',
-    stadium:'<ellipse cx="12" cy="9" rx="9" ry="4"/><path d="M3 9v5c0 2.2 4 4 9 4s9-1.8 9-4V9"/>',
+    stadium:'<rect x="2.5" y="6" width="19" height="12" rx="6"/><ellipse cx="12" cy="12" rx="5.5" ry="3"/>',
     arrowRight:'<path d="M5 12h14M13 6l6 6-6 6"/>',
     arrowLeft:'<path d="M19 12H5M11 18l-6-6 6-6"/>',
     arrowUp:'<path d="M12 19V5M6 11l6-6 6 6"/>',
@@ -5184,8 +5212,13 @@ function openPlayerCard(nameOrId, pos, team){
   let pid = null;
   // A team defense is addressed by its team abbreviation (PIT, SF…), which has no numeric
   // Sleeper id — carry it through as-is so the D/ST card can fetch by team.
-  if(pos==='DEF' && nameOrId && /^[A-Z]{2,4}$/.test(String(nameOrId).toUpperCase())){
-    pid = String(nameOrId).toUpperCase();
+  if(pos==='DEF'){
+    // A team defense is addressed by its team code. Call sites variously pass the code
+    // ('PIT'), the display name ('Pittsburgh Steelers D/ST'), or a snapshot row whose id
+    // lives in a different field — so accept a code in either the id OR the team argument.
+    const asCode = String(nameOrId||'').toUpperCase();
+    pid = /^[A-Z]{2,4}$/.test(asCode) ? asCode
+        : (team && /^[A-Z]{2,4}$/.test(String(team).toUpperCase()) ? String(team).toUpperCase() : null);
   }
   else if(nameOrId && /^\d+$/.test(String(nameOrId))) pid = String(nameOrId);
   else pid = resolvePlayerId(nameOrId, pos);
@@ -10786,7 +10819,7 @@ function renderTrackerPanel(viewSlot){
           <div class="vona-main">
             <div class="vona-now"><b>${nm(r.bestNow)}</b>
               <span class="vona-vor">${(r.bestNow.vor||0)>0?'+':''}${(r.bestNow.vor||0).toFixed(0)}</span>
-              <span class="vona-pct ${pcls(r.pHold)}" title="Chance they make it back to your next pick, per market ADP">${pct(r.pHold)}% chance they make it back</span>${tag}</div>
+              <span class="vona-pct ${pcls(r.pHold)}" title="Chance they make it back to your next pick, per market ADP"><span class="vona-pct-long">${pct(r.pHold)}% chance they make it back</span><span class="vona-pct-short">${pct(r.pHold)}% back</span></span>${tag}</div>
             ${waitLine}
           </div>
           <span class="vona-drop" title="Your VOR now minus the VOR you'd expect to settle for">${star}${dropTxt}</span>
@@ -11560,8 +11593,8 @@ function laPlayerImg(p, cls){
 
 // League / team icons — real Sleeper avatars with emoji fallback (older persisted snapshots
 // predate avatar capture, and orphan rosters have none; both degrade gracefully).
-function laLeagueIcon(s,cls){ return s&&s.avatar?`<img src="${s.avatar}" class="${cls}" onerror="this.outerHTML='\ud83c\udfdf'">`:'\ud83c\udfdf'; }
-function laTeamIcon(t,cls){ return t&&t.avatar?`<img src="${t.avatar}" class="${cls}" onerror="this.outerHTML='\ud83c\udfc8'">`:'<span class="'+cls+' la-av-blank">\ud83c\udfc8</span>'; }
+function laLeagueIcon(s,cls){ return s&&s.avatar?`<img src="${s.avatar}" class="${cls}" onerror="this.outerHTML=TC_ICON('stadium')">`:TC_ICON('stadium'); }
+function laTeamIcon(t,cls){ return t&&t.avatar?`<img src="${t.avatar}" class="${cls}" onerror="this.outerHTML=TC_ICON('football')">`:'<span class="'+cls+' la-av-blank">'+TC_ICON('football')+'</span>'; }
 
 // ── Entry + navigation ───────────────────────────────────────────────────────
 function openLeagueAnalyzer(){
@@ -11577,7 +11610,7 @@ function refreshLeagueSyncBtn(){
   // there so the menu doubles as the sync indicator the old header button used to be.
   const label = leagueSnapshot
     ? `${laLeagueIcon(leagueSnapshot,'la-btn-av')} ${leagueSnapshot.name}`
-    : '\ud83c\udfdf League Analyzer';
+    : TC_ICON('stadium')+' League Analyzer';
   const m=document.getElementById('menuLeagueView');
   if(m) m.innerHTML = label;
   // Kept for any build that still renders the old header button.

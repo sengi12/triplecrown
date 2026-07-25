@@ -569,3 +569,24 @@
   margin:14px 0 8px;color:var(--text);}
 .pcard-dst-logo{width:22px;height:22px;object-fit:contain;}
 .pcard-mini-note{color:var(--muted);font-size:12px;padding:8px 2px;}
+
+/* League header must fit a phone: the wrapper div inside .team-header is a flex child, so it
+   defaults to min-width:auto and refuses to shrink — that's what pushed the analyzer past the
+   viewport (worst on leagues with long names + a season dropdown). Let it shrink so the
+   name's existing ellipsis can do its job. */
+.team-header{min-width:0;max-width:100%;}
+.team-header>div{min-width:0;max-width:100%;}
+.team-qb-name{overflow-wrap:anywhere;}
+@media (max-width:760px){
+  .la-hdr{flex-wrap:wrap;}
+  .la-hdr-name{max-width:100%;}
+  .la-season-sel{margin-left:0;}
+}
+
+/* Draft helper: the full "% chance they make it back" phrase wraps badly on a phone, so a
+   compact "% back" variant swaps in — same number, no wrap. */
+.vona-pct-short{display:none;}
+@media (max-width:600px){
+  .vona-pct-long{display:none;}
+  .vona-pct-short{display:inline;}
+}

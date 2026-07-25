@@ -207,8 +207,13 @@ function openPlayerCard(nameOrId, pos, team){
   let pid = null;
   // A team defense is addressed by its team abbreviation (PIT, SF…), which has no numeric
   // Sleeper id — carry it through as-is so the D/ST card can fetch by team.
-  if(pos==='DEF' && nameOrId && /^[A-Z]{2,4}$/.test(String(nameOrId).toUpperCase())){
-    pid = String(nameOrId).toUpperCase();
+  if(pos==='DEF'){
+    // A team defense is addressed by its team code. Call sites variously pass the code
+    // ('PIT'), the display name ('Pittsburgh Steelers D/ST'), or a snapshot row whose id
+    // lives in a different field — so accept a code in either the id OR the team argument.
+    const asCode = String(nameOrId||'').toUpperCase();
+    pid = /^[A-Z]{2,4}$/.test(asCode) ? asCode
+        : (team && /^[A-Z]{2,4}$/.test(String(team).toUpperCase()) ? String(team).toUpperCase() : null);
   }
   else if(nameOrId && /^\d+$/.test(String(nameOrId))) pid = String(nameOrId);
   else pid = resolvePlayerId(nameOrId, pos);

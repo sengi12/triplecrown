@@ -37,7 +37,7 @@ const TC_ICON = (() => {
     headphones:'<path d="M5 15v-3a7 7 0 0 1 14 0v3"/><rect x="3.5" y="14" width="4" height="6" rx="1.5"/><rect x="16.5" y="14" width="4" height="6" rx="1.5"/>',
     warning:'<path d="M12 4 2.5 20h19L12 4Z"/><path d="M12 10v4M12 17h.01"/>',
     check:  '<path d="M5 12.5 10 17 19 7"/>',
-    stadium:'<ellipse cx="12" cy="9" rx="9" ry="4"/><path d="M3 9v5c0 2.2 4 4 9 4s9-1.8 9-4V9"/>',
+    stadium:'<rect x="2.5" y="6" width="19" height="12" rx="6"/><ellipse cx="12" cy="12" rx="5.5" ry="3"/>',
     arrowRight:'<path d="M5 12h14M13 6l6 6-6 6"/>',
     arrowLeft:'<path d="M19 12H5M11 18l-6-6 6-6"/>',
     arrowUp:'<path d="M12 19V5M6 11l6-6 6 6"/>',

@@ -689,7 +689,7 @@ function renderTrackerPanel(viewSlot){
           <div class="vona-main">
             <div class="vona-now"><b>${nm(r.bestNow)}</b>
               <span class="vona-vor">${(r.bestNow.vor||0)>0?'+':''}${(r.bestNow.vor||0).toFixed(0)}</span>
-              <span class="vona-pct ${pcls(r.pHold)}" title="Chance they make it back to your next pick, per market ADP">${pct(r.pHold)}% chance they make it back</span>${tag}</div>
+              <span class="vona-pct ${pcls(r.pHold)}" title="Chance they make it back to your next pick, per market ADP"><span class="vona-pct-long">${pct(r.pHold)}% chance they make it back</span><span class="vona-pct-short">${pct(r.pHold)}% back</span></span>${tag}</div>
             ${waitLine}
           </div>
           <span class="vona-drop" title="Your VOR now minus the VOR you'd expect to settle for">${star}${dropTxt}</span>
