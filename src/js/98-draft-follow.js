@@ -699,7 +699,10 @@ function renderTrackerPanel(viewSlot){
         const cls = r.adjDrop>=25?'vona-hot':r.adjDrop>=12?'vona-warm':'vona-cool';
         const star = (i===0 && r.need) ? '\u2605 ' : '';
         const tag = r.filled ? (r.studBackup?`<span class="vona-tag stud">stud backup</span>`:`<span class="vona-tag">filled</span>`) : '';
-        const dropTxt = r.filled ? `\u2212${r.dropoff} <span class="vona-adj">(adj \u2212${r.adjDrop})</span>` : `\u2212${r.dropoff}`;
+        // A drop that rounds to zero means "no real cost to waiting" — say that with a dash
+        // rather than rendering "\u22120", which looks like a bug.
+        const dz = (x)=> (Math.abs(x)<0.05 ? '\u2013' : `\u2212${x}`);
+        const dropTxt = r.filled ? `${dz(r.dropoff)} <span class="vona-adj">(adj ${dz(r.adjDrop)})</span>` : dz(r.dropoff);
         // Line 1: the guy you'd take right now, and the market's odds he lasts to your next pick.
         // Line 2: who you'd most likely settle for instead — the concrete cost of waiting.
         const waitLine = r.bestNext && r.bestNext!==r.bestNow
@@ -725,14 +728,18 @@ function renderTrackerPanel(viewSlot){
       const alsoBig = v.rows.find(r=>r!==rec && r.dropoff>=12);
       let recTxt='';
       if(rec){
-        recTxt = `Take a <b>${rec.pos}</b> \u2014 biggest need-value cliff (\u2212${rec.dropoff})`;
-        if(rec.filled) recTxt = `Best value: <b>${rec.pos}</b> (\u2212${rec.dropoff}) \u2014 but your starters are set`;
+        // Lead with the ACTION and the player, not a raw cliff number — "(\u22121.6)" reads like
+        // an error on a phone and means nothing without the board in front of you.
+        const who = rec.bestNow ? rec.bestNow.name.split(' ').slice(-1)[0] : '';
+        recTxt = `Take a <b>${rec.pos}</b>${who?` \u2014 ${who}`:''}`;
+        if(rec.why) recTxt += ` <span class="vona-sub-why">(${rec.why})</span>`;
+        else if(rec.filled) recTxt = `Best value: <b>${rec.pos}</b>${who?` \u2014 ${who}`:''} \u2014 starters are set`;
       }
       const noteTxt = (rec && !rec.need && needRows.length===0)
         ? `All starters filled \u2014 now drafting for value/depth.`
         : (alsoBig ? `Also watch <b>${alsoBig.pos}</b> (\u2212${alsoBig.dropoff}).` : '');
       advisory=`<div class="vona-box">
-        <div class="vona-head">\ud83d\udcca On-the-clock advice ${v.onClock?'\u00b7 <b style="color:var(--accent)">YOU\u2019RE UP</b>':`\u00b7 next pick in ${v.gap}`}</div>
+        <div class="vona-head">${TC_ICON('chart')} On-the-clock advice ${v.onClock?'\u00b7 <b style="color:var(--accent)">YOU\u2019RE UP</b>':`\u00b7 next pick in ${v.gap}`}</div>
         <div class="vona-sub">${recTxt}${noteTxt?` \u00b7 ${noteTxt}`:''}</div>
         <div class="vona-rows">${chips}</div>
         <div class="vona-legend">Value from your VOR board \u00b7 availability from Sleeper ${formatLabel(rankFormat)} ADP, simulated over the ${v.gap} pick${v.gap===1?'':'s'} before you\u2019re up.</div>
