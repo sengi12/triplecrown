@@ -560,8 +560,22 @@ function renderRosterBar(){
   if(!host){
     host=document.createElement('div'); host.id='rosterBar'; host.className='rt-bar-host';
     document.body.appendChild(host);
+    // The tracker is position:fixed over the page, so without compensating padding the last
+    // stretch of the rankings sits permanently underneath it and can't be scrolled to. Publish
+    // the drawer's live height as --rt-h and let the page reserve exactly that much space —
+    // measured rather than hard-coded, since the panel grows and shrinks as it opens/closes.
+    if(typeof ResizeObserver==='function'){
+      new ResizeObserver(()=>{
+        const h = (host.style.display==='none') ? 0 : host.offsetHeight;
+        document.documentElement.style.setProperty('--rt-h', h+'px');
+      }).observe(host);
+    }
   }
-  if(!rosterBarVisible){ host.innerHTML=''; host.style.display='none'; return; }
+  if(!rosterBarVisible){
+    host.innerHTML=''; host.style.display='none';
+    document.documentElement.style.setProperty('--rt-h','0px');
+    return;
+  }
   host.style.display='block';
 
   // Preserve the expanded panel's scroll position across re-renders (the 2.5s poll rebuilds
@@ -668,7 +682,16 @@ function renderTrackerPanel(viewSlot){
   if(viewSlot===mySlot && draftId){
     const v=computeVONA();
     if(v && v.rows.length){
-      const nm=(p)=> p ? p.name.split(' ').slice(-1)[0] : '\u2014';
+      // Surname only (space is tight), but clickable — opens the full player card so you can
+      // check a name before spending a pick on it. Falls back to plain text if the card
+      // helper isn't loaded for any reason.
+      const nm=(p)=>{
+        if(!p) return '\u2014';
+        const short = p.name.split(' ').slice(-1)[0];
+        if(typeof pcardOnclick!=='function') return short;
+        return `<span class="vona-name clickable-player" title="${escAttr(p.name)} \u2014 open player card"
+          onclick="event.stopPropagation();${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${short}</span>`;
+      };
       const pct=(x)=> Math.round((x||0)*100);
       // Colour the availability % like a traffic light: green = safe to wait, red = he's gone.
       const pcls=(x)=> x>=0.6 ? 'vp-hi' : (x>=0.3 ? 'vp-mid' : 'vp-lo');
@@ -691,6 +714,7 @@ function renderTrackerPanel(viewSlot){
               <span class="vona-vor">${(r.bestNow.vor||0)>0?'+':''}${(r.bestNow.vor||0).toFixed(0)}</span>
               <span class="vona-pct ${pcls(r.pHold)}" title="Chance they make it back to your next pick, per market ADP"><span class="vona-pct-long">${pct(r.pHold)}% chance they make it back</span><span class="vona-pct-short">${pct(r.pHold)}% back</span></span>${tag}</div>
             ${waitLine}
+            ${r.why?`<div class="vona-why">${r.why}</div>`:''}
           </div>
           <span class="vona-drop" title="Your VOR now minus the VOR you'd expect to settle for">${star}${dropTxt}</span>
         </div>`;
@@ -962,6 +986,92 @@ function vonaSimulate(avail, upcomingSlots, pools){
   return { pAvail, bestCount, expVor, pidOf };
 }
 
+// ── Positional structure: scarcity, cliffs, and lineup impact ────────────────
+// Plain VONA answers "what do I lose by waiting ONE pick window?" — which is why it could
+// recommend a mid TE over a 3rd RB: the TE happened to have a bigger gap to the next TE right
+// now. Three structural signals fix that, each answering a question VONA alone can't:
+//
+//   1. PRESSURE  — will this position's startable players actually run out? There are only 32
+//      NFL starting RBs, so a 12-team league needing ~30 of them is nearly a 1:1 market; a
+//      1QB league needs 12 of 32 QBs and will never run dry. Demand is counted from every
+//      team's real unfilled slots, so it shrinks as the league fills up.
+//   2. FLATNESS  — are the remaining players at this position meaningfully different from each
+//      other? This is the punt gate: punting TE is only correct once the top tier is gone AND
+//      what's left is interchangeable. Measured as VOR spread per remaining startable player,
+//      so it fires on evidence rather than on "I don't have one yet".
+//   3. LINEUPGAIN — how many points does this player actually add to MY starting lineup? A 3rd
+//      RB that fills an empty FLEX is worth real points; a 2nd TE that rides the bench is
+//      worth zero, however big its positional gap looks.
+const VONA_STARTABLE = 0;        // VOR > this = a startable (above-replacement) player
+
+// League-wide unfilled starter demand per position, counting flex slots toward every
+// position that can fill them (a flex is genuine demand for RB *or* WR *or* TE).
+function vonaLeagueDemand(){
+  const { teams } = draftParams();
+  const dem={QB:0,RB:0,WR:0,TE:0};
+  for(let slot=1; slot<=teams; slot++){
+    const picks=(draftPicksBySlot[slot])||[];
+    const { needs }=fillLineup(picks);
+    needs.forEach(sl=>{
+      if(dem[sl]!=null){ dem[sl]++; return; }
+      const elig=FLEX_ELIGIBLE[sl];
+      if(elig) elig.forEach(p=>{ if(dem[p]!=null) dem[p]+=1/elig.length; });
+    });
+  }
+  return dem;
+}
+
+// Per-position structure over the AVAILABLE pool (pools are pre-sorted best-VOR-first).
+function vonaPosStructure(pools){
+  const demand=vonaLeagueDemand();
+  const out={};
+  let maxStep=0;
+  ['QB','RB','WR','TE'].forEach(pos=>{
+    const pool=pools[pos]||[];
+    const startable=pool.filter(p=>(p.vor||0)>VONA_STARTABLE);
+    const supply=startable.length;
+    const best=(pool[0] && pool[0].vor) || 0;
+    const worst=supply? (startable[supply-1].vor||0) : 0;
+    const spread=Math.max(0, best-worst);
+    // Average VOR step between consecutive startable players — "how different are they?".
+    const step = supply>1 ? spread/(supply-1) : spread;
+    if(step>maxStep) maxStep=step;
+    out[pos]={ demand:demand[pos]||0, supply, spread:+spread.toFixed(1), step:+step.toFixed(2),
+               pressure: supply>0 ? (demand[pos]||0)/supply : (demand[pos]>0?3:0) };
+  });
+  // Flat = "the value has dropped off and the rest aren't really different from each other",
+  // measured on evidence rather than roster counts. Two conditions, both required:
+  //   • the ENTIRE remaining startable tier spans little value (VOR is points-over-replacement,
+  //     so it's directly comparable across positions — a tier spanning <14 VOR is roughly one
+  //     point per game from top to bottom, i.e. interchangeable), and
+  //   • supply comfortably outruns what the league still needs, so waiting still lands you one.
+  // Deliberately NOT relative to the steepest position: late in a draft the other positions
+  // exhaust and their step collapses to 0, which made a relative test stop firing exactly when
+  // punting became most correct. This is what keeps a punt honest — TE goes flat early and
+  // often, RB almost never does, and a superflex QB market can't (24 of 32 are needed).
+  ['QB','RB','WR','TE'].forEach(pos=>{
+    const o=out[pos];
+    const interchangeable = o.spread < 14 || o.step < 1.5;
+    o.flat = o.supply >= Math.ceil(o.demand)+2 && interchangeable;
+  });
+  return out;
+}
+
+// Marginal starting-lineup VALUE from adding one player to my roster. This is the
+// cross-positional comparison plain VONA lacks: it prices a pick by what it does to the
+// lineup that actually scores, so a FLEX-filling RB beats a bench-riding TE automatically.
+// Measured in VOR, not raw points, on purpose: an empty slot will eventually be filled by
+// SOMEONE, so a player's true marginal worth is his value over the replacement who'd
+// otherwise occupy that slot. Using raw points instead would hand every QB a ~350-point
+// "gain" in a 1QB league purely because quarterbacks score more, which is not an edge.
+function vonaLineupGain(myPicks, cand, vorOf){
+  const val = picks => fillLineup(picks).slots
+    .reduce((sum,f)=> sum + (f.player ? Math.max(0, vorOf(f.player)||0) : 0), 0);
+  const before = val(myPicks);
+  const after  = val(myPicks.concat([{ pos:cand.pos, name:cand.name, player_id:cand.player_id }]));
+  return Math.max(0, +(after-before).toFixed(1));
+}
+
 function computeVONA(){
   if(mySlot==null) return null;
   let gap = picksUntilMyTurn(mySlot);              // picks between now and my next turn
@@ -1007,6 +1117,12 @@ function computeVONA(){
   });
 
   const WORTH_A_BACKUP=20;   // VOR above which a 2nd QB/TE is worth taking even if slot filled
+  // Structural context + a points lookup for lineup math (needs drafted players too, so it's
+  // built from the full list rather than the available pool).
+  const struct = vonaPosStructure(pools);
+  const vorById = new Map();
+  list.forEach(p=>{ vorById.set(p.player_id||p.name, p.vor||0); });
+  const vorOf = pk => vorById.get(pk.player_id || pk.name) || 0;
   const out=[];
   ['QB','RB','WR','TE'].forEach(pos=>{
     const now=bestNow[pos];
@@ -1021,12 +1137,27 @@ function computeVONA(){
     const rawDrop = +((now.vor||0) - expVor).toFixed(1);
     const isDedicated = dedicatedNeed.has(pos);
     const isFlexElig  = flexNeed.has(pos);
+    const st = struct[pos] || {pressure:0, flat:false, supply:0, step:0};
+    // Base need weight, as before: an unfilled dedicated slot matters most.
     let weight;
     if(isDedicated) weight=1;
     else if(isFlexElig) weight=0.6;
     else weight=((now.vor||0)>=WORTH_A_BACKUP ? 0.5 : 0.15);
+    // SCARCITY: when league-wide demand approaches or exceeds the startable supply, waiting
+    // stops being a choice — those players simply won't exist later. Ramps in above ~0.8
+    // demand-per-supply and tops out at +80%, so a tight RB/superflex-QB market gets pushed
+    // up without letting one signal run away with the recommendation.
+    const scarcity = 1 + Math.min(0.8, Math.max(0, st.pressure-0.8)*0.9);
+    // PUNT GATE: only discount a position once the evidence says the rest are interchangeable
+    // AND supply comfortably covers demand. This is what stops "I have no TE" from
+    // out-shouting "startable RBs are nearly gone" in the middle rounds.
+    const puntable = st.flat && !(isDedicated && st.pressure>=1);
+    const puntMult = puntable ? 0.45 : 1;
+    weight = weight * scarcity * puntMult;
+    const lineupGain = vonaLineupGain(myPicks, now, vorOf);
     out.push({
       pos,
+      struct: st, scarcity:+scarcity.toFixed(2), puntable, lineupGain,
       bestNow: now,
       pHold: sim.pAvail.get(sim.pidOf(now)) || 0,          // P(the guy you'd take now is still there)
       bestNext,
@@ -1041,8 +1172,27 @@ function computeVONA(){
       studBackup: !isDedicated && (now.vor||0)>=WORTH_A_BACKUP,
     });
   });
-  out.sort((a,b)=> b.adjDrop-a.adjDrop);
-  const res = { gap, rows: out, onClock };
+  // LINEUP IMPACT (the cross-positional tiebreak). adjDrop says how much value evaporates if
+  // you wait; lineupGain says how much of that value would actually reach your STARTING
+  // lineup. Multiplying them is what separates "3rd RB fills my empty FLEX" from "2nd TE
+  // rides my bench" when the two have similar positional gaps. Normalized against the best
+  // position this pick and floored at 0.35, so a position that adds nothing to the lineup
+  // today is damped but never zeroed out (it can still be a real future upgrade).
+  const maxGain = Math.max(1, ...out.map(r=>r.lineupGain||0));
+  out.forEach(r=>{
+    r.lineupFactor = +(0.35 + 0.65*((r.lineupGain||0)/maxGain)).toFixed(2);
+    r.score = +((r.adjDrop||0) * r.lineupFactor).toFixed(1);
+    // Short human reason for why this row sits where it does — shown under the pick.
+    const st=r.struct||{};
+    // Keep this SHORT and rare. A sentence on every row buries the recommendation and, on a
+    // phone, squeezes the player's name into an ellipsis. Only genuinely decision-changing
+    // signals earn a line: the pool is flat enough to punt, or supply is tight enough that
+    // waiting risks not getting one at all.
+    r.why = r.puntable ? 'flat \u2014 safe to wait'
+          : (st.pressure>=1.15 ? `${st.supply} left \u00b7 ${Math.round(st.demand)} slots` : '');
+  });
+  out.sort((a,b)=> b.score-a.score);
+  const res = { gap, rows: out, onClock, struct };
   _vonaCache = { key:cacheKey, val:res };
   return res;
 }

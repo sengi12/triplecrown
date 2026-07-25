@@ -590,3 +590,37 @@
   .vona-pct-long{display:none;}
   .vona-pct-short{display:inline;}
 }
+
+/* Draft advisory: clickable player names + the one-line "why this position" reason. */
+.vona-name{cursor:pointer;border-bottom:1px dotted rgba(90,169,230,.55);}
+.vona-name:hover{color:var(--accent);border-bottom-color:var(--accent);}
+.vona-why{font-size:10px;color:var(--muted);margin-top:2px;font-style:italic;}
+
+/* ── Draft advisory: mobile-first row layout ─────────────────────────────────
+   The row is [pos][name column][drop]. Previously the drop value and an inline reason
+   competed with the name for width, so on a phone the name collapsed to "McBride +…" and
+   the VOR was cut off. The name column now owns the flexible space, the drop value is a
+   fixed narrow column, and the reason lives INSIDE the name column on its own line. */
+.vona-row{gap:7px;align-items:flex-start;}
+.vona-main{flex:1 1 auto;min-width:0;}
+.vona-drop{flex:0 0 auto;margin-left:auto;text-align:right;white-space:nowrap;padding-top:1px;}
+.vona-now{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;white-space:normal;}
+.vona-now>b{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;}
+.vona-why{font-size:9.5px;color:var(--muted);opacity:.85;margin-top:1px;font-style:italic;}
+@media (max-width:600px){
+  .vona-box{padding:8px 9px;}
+  .vona-row{padding:5px 6px;gap:6px;}
+  .vona-now{font-size:12.5px;}
+  .vona-wait{font-size:9.5px;}
+  /* the availability chip is the first thing to sacrifice when space is tight */
+  .vona-pct{font-size:9.5px;}
+  .vona-legend{font-size:9px;}
+}
+
+/* Reserve room for the fixed roster tracker so the rankings behind it stay reachable —
+   scroll the list clear of the drawer instead of having its tail hidden underneath. */
+body{padding-bottom:calc(var(--rt-h, 0px) + 10px);}
+@media (max-width:600px){
+  /* don't let the expanded panel swallow the screen on a phone */
+  .rt-panel{max-height:42vh;}
+}
