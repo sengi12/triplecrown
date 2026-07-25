@@ -75,10 +75,10 @@ function decodeDefWeekly(c){
 
 // ── fantasy seed (triplecrown_seed.json) ───────────────────────────────────
 const _RB_LANES=["LE","LT","LG","MID","RG","RT","RE"];
-const _RB_LANE_KEYS=["attempts","ypc","success_rate","league_ypc","ypc_diff"];
+const _RB_LANE_KEYS=["attempts","ypc","success_rate","league_ypc","ypc_diff","yards","td"];
 const _RB_TOT_KEYS=["attempts","yards","ypc","success_rate"];
 const _QB_ZONES=(()=>{const o=[];for(const d of["deep","inter","short","behind"])for(const l of["left","middle","right"])o.push(d+"|"+l);return o;})();
-const _QB_ZONE_KEYS=["rating","league_avg","attempts"];
+const _QB_ZONE_KEYS=["rating","league_avg","attempts","yards","td"];
 const _QB_TOT_KEYS=["passer_rating","comp_pct","yards","td","int","attempts"];
 // Rank-table decode (sharp categories + nflverse team tables share this shape).
 function _decTable(cnode){

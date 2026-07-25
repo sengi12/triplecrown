@@ -103,11 +103,11 @@ def _decode_defweekly(c):
     return out
 
 _RB_LANES = ["LE", "LT", "LG", "MID", "RG", "RT", "RE"]
-_RB_LANE_KEYS = ["attempts", "ypc", "success_rate", "league_ypc", "ypc_diff"]
+_RB_LANE_KEYS = ["attempts", "ypc", "success_rate", "league_ypc", "ypc_diff", "yards", "td"]
 _RB_TOT_KEYS = ["attempts", "yards", "ypc", "success_rate"]
 _QB_ZONES = [d + "|" + l for d in ("deep", "inter", "short", "behind")
              for l in ("left", "middle", "right")]
-_QB_ZONE_KEYS = ["rating", "league_avg", "attempts"]
+_QB_ZONE_KEYS = ["rating", "league_avg", "attempts", "yards", "td"]
 _QB_TOT_KEYS = ["passer_rating", "comp_pct", "yards", "td", "int", "attempts"]
 
 

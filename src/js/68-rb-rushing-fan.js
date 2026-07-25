@@ -62,7 +62,40 @@ function _rbNameParts(name){
   return [bits[0], bits.slice(1).join(' ')];
 }
 
-function _rbFanSVG(chart, playerName, season){
+// Lane metrics. Efficiency (the default) colours each gap by YPC vs the league average for
+// that same gap; yards and TDs are production, so those colour by the back's own best lane —
+// a gap can be wildly efficient on four carries, or be the one he actually scores through.
+const RB_LANE_METRICS = {
+  eff:   {short:'Efficiency', label:'YPC vs league average by gap', key:null},
+  yards: {short:'Yards',      label:'Rushing yards by gap',         key:'yards'},
+  td:    {short:'TD',         label:'Rushing touchdowns by gap',    key:'td'},
+};
+let pcardRbMetric='eff';
+function setPcardRbMetric(m){
+  if(!RB_LANE_METRICS[m]) return;
+  pcardRbMetric=m;
+  // Body-only re-render (see setPcardQbMetric) so switching metric keeps you on this chart.
+  const body=document.getElementById('pcardBody');
+  if(body && pcardState) body.innerHTML=renderPcardRbFan(pcardState.pid);
+}
+function _rbMetricKnown(chart, m){
+  if(m==='eff') return true;
+  const L=chart&&chart.lanes; if(!L) return false;
+  for(const k in L) if(L[k] && L[k][m]!=null) return true;
+  return false;
+}
+function _rbHeat(v, max){
+  if(v==null || !max) return '#4a4f57';
+  const t=Math.max(0, Math.min(1, v/max));
+  // Same monotonic green ramp as the QB chart (see _qbHeat) so both read identically.
+  const stops=[[74,79,87],[38,92,66],[44,132,74],[62,176,82],[118,220,96]];
+  const i=Math.min(stops.length-2, Math.floor(t*(stops.length-1)));
+  const f=(t*(stops.length-1))-i;
+  const c=stops[i].map((a,k)=>Math.round(a+(stops[i+1][k]-a)*f));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
+function _rbFanSVG(chart, playerName, season, metric){
   const lanes=chart.lanes||{};
   const line=chart.line||{};
   const t=chart.totals||{};
@@ -75,6 +108,9 @@ function _rbFanSVG(chart, playerName, season){
   parts.push(`<text x="30" y="34" fill="#fff" font-size="22" font-weight="800">${String(playerName||'RB').toUpperCase()} RUSHING FAN <tspan fill="#9aa0a6" font-size="14" font-weight="600">/ ${season} REGULAR SEASON</tspan></text>`);
   parts.push('<text x="30" y="56" fill="#9aa0a6" font-size="13">Arrow width = lane success rate · arrow color = lane YPC vs league lane average</text>');
 
+  const MET = RB_LANE_METRICS[metric] || RB_LANE_METRICS.eff;
+  let MAXV=0;
+  if(MET.key){ for(const k in lanes){ const v=lanes[k]&&lanes[k][MET.key]; if(v!=null && +v>MAXV) MAXV=+v; } }
   for(const lane of RB_FAN_LANES){
     const d=lanes[lane];
     if(!d || (+d.attempts||0)<3) continue;
@@ -82,14 +118,19 @@ function _rbFanSVG(chart, playerName, season){
     const succ = d.success_rate;
     const ypc = d.ypc;
     const att = +d.attempts||0;
-    const col = _rbArrowColor(d.ypc_diff);
+    const mv = MET.key ? (d[MET.key]!=null ? +d[MET.key] : null) : null;
+    // Efficiency keeps the vs-league diverging colour; production metrics heat by the back's
+    // own best gap so the busiest/most productive lane stands out.
+    const col = MET.key ? _rbHeat(mv, MAXV) : _rbArrowColor(d.ypc_diff);
     const w = _rbArrowWidth(succ).toFixed(2);
     const path = lane==='MID'
       ? 'M380,650 V150'
       : `M380,650 C${(380-(380-cx)*0.55).toFixed(0)},700 ${cx},585 ${cx},150`;
     parts.push(`<path d="${path}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" marker-end="url(#rbf-arrow)"/>`);
     parts.push(`<text x="${cx}" y="106" fill="#fff" font-size="13" font-weight="800" text-anchor="middle">${lane}</text>`);
-    parts.push(`<text x="${cx}" y="122" fill="${col}" font-size="12" font-weight="800" text-anchor="middle">${_rbNum(succ,0)}% SUCC</text>`);
+    const headline = MET.key==='yards' ? `${mv!=null?Math.round(mv):'—'} YDS`
+      : (MET.key==='td' ? `${mv!=null?Math.round(mv):0} TD` : `${_rbNum(succ,0)}% SUCC`);
+    parts.push(`<text x="${cx}" y="122" fill="${col}" font-size="12" font-weight="800" text-anchor="middle">${headline}</text>`);
     parts.push(`<text x="${cx}" y="137" fill="#9aa0a6" font-size="10" text-anchor="middle">${att} att · ${_rbNum(ypc,1)} YPC</text>`);
   }
 
@@ -119,7 +160,7 @@ function _rbFanSVG(chart, playerName, season){
   parts.push(`<text x="${rbx}" y="707" fill="#9aa0a6" font-size="11" text-anchor="middle">${t.attempts||0} carries · ${(t.yards!=null?Number(t.yards).toLocaleString():'—')} yds · ${_rbNum(t.ypc,2)} YPC · ${_rbNum(t.success_rate,1)}% success</text>`);
 
   parts.push('<text x="30" y="772" fill="#6b7075" font-size="10">OL card grades are from the validated local OL pipeline (run + pass grades, starter slot by pass-snaps).</text>');
-  parts.push('<text x="30" y="786" fill="#6b7075" font-size="10">Lanes shown when attempts ≥ 3. Color compares lane YPC to league average for that lane in-season.</text>');
+  parts.push(`<text x="30" y="786" fill="#6b7075" font-size="10">Lanes shown when attempts \u2265 3. ${MET.key? 'Color scales to this back\u2019s best gap.' : 'Color compares lane YPC to league average for that lane in-season.'}</text>`);
   parts.push('<text x="30" y="800" fill="#6b7075" font-size="10">Data: nflverse play-by-play + local OL grades. Not affiliated with the NFL.</text>');
   parts.push('</svg>');
   return parts.join('');
@@ -138,13 +179,23 @@ function renderPcardRbFan(pid){
   const name=p.name||'RB';
   const t=chart.totals||{};
   const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardRbFanSeason('${s}')">${s}</button>`).join('');
+  if(!RB_LANE_METRICS[pcardRbMetric]) pcardRbMetric='eff';
+  let metric=pcardRbMetric;
+  if(!_rbMetricKnown(chart, metric)) metric='eff';   // older seed without per-gap yards/TD
+  const metricBtns=Object.entries(RB_LANE_METRICS).map(([k,m])=>{
+    const known=_rbMetricKnown(chart,k);
+    return `<button class="rt-metric-btn ${k===metric?'active':''}" ${known?'':'disabled'}
+      title="${known?('Show '+m.label):(m.short+' unavailable for this season — rebuild the seed to add it')}"
+      onclick="setPcardRbMetric('${k}')">${m.short}</button>`;
+  }).join('');
 
   return `<div class="rbf-wrap">
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns}</div>
+      <div class="rt-metrics">${metricBtns}</div>
       <div class="rt-summary">${t.attempts||0} carries · ${_rbNum(t.ypc,2)} YPC · ${_rbNum(t.success_rate,1)}% success</div>
     </div>
-    ${_rbFanSVG(chart, name, season)}
+    ${_rbFanSVG(chart, name, season, metric)}
     <div class="rbf-legend">
       <span><i style="background:#2fae4e"></i>Lane YPC above league avg</span>
       <span><i style="background:#d8a51d"></i>Lane YPC near league avg</span>

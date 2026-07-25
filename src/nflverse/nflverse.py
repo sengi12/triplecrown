@@ -53,6 +53,7 @@ _QB_ZONE_COLS = [
 _RB_FAN_COLS = [
     "season_type", "posteam", "rush_attempt", "qb_scramble", "two_point_attempt",
     "run_location", "run_gap", "yards_gained", "success", "rusher_player_id",
+    "rush_touchdown",
 ]
 # nflverse team codes that differ from the seed's codes.
 NFLVERSE_TO_SEED = {"LA": "LAR", "OAK": "LV", "SD": "LAC", "STL": "LAR"}
@@ -970,6 +971,11 @@ def qb_passing_zones(season, min_attempts=25):
                     "rating": _passer_rating_df(me),
                     "league_avg": _passer_rating_df(lg),
                     "attempts": int(len(me)),
+                    # Yards and TDs per zone, so the chart can be read as production and not
+                    # only as efficiency. Rating already answers "how well did he throw here";
+                    # these answer "how much did it actually produce".
+                    "yards": int(me["yards_gained"].sum()) if len(me) else 0,
+                    "td": int(me["pass_touchdown"].sum()) if len(me) else 0,
                 }
         comp_pct = round(float(qb["complete_pass"].mean() * 100), 1) if len(qb) else None
         out[name] = {
@@ -1385,6 +1391,10 @@ def rb_rushing_fans(season, min_attempts=20, min_lane_attempts=3):
                 "success_rate": (None if succ is None else round(succ, 1)),
                 "league_ypc": (None if ly is None else round(float(ly), 2)),
                 "ypc_diff": (None if ly is None else round(ypc - float(ly), 2)),
+                # Volume and scoring per gap alongside the efficiency figures — a lane can be
+                # highly efficient on six carries or be the one he actually scores through.
+                "yards": int(g["yards_gained"].sum()),
+                "td": (int(g["rush_touchdown"].sum()) if "rush_touchdown" in g.columns else 0),
             }
         if not lanes:
             continue
