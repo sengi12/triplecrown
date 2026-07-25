@@ -385,7 +385,14 @@
   .la-my-sum-head{font-size:13px;}
   .la-grid{grid-template-columns:1fr;gap:10px;}
   .la-my-grid{grid-template-columns:1fr;gap:10px;}
+  /* Grid/flex children default to min-width:auto, so a wide table inside refuses to shrink and
+     pushes the whole page past the viewport. Let these blocks shrink to their column, and cap
+     names/rows so nothing spills right on a phone. */
+  .la-my-grid>*,.la-grid>*,.la-my-card,.la-card{min-width:0;max-width:100%;overflow-x:hidden;}
   .la-my-card{padding:10px;}
+  .la-pw-team{max-width:120px;}
+  .la-p{min-width:0;}
+  .la-p-name{min-width:0;overflow:hidden;text-overflow:ellipsis;}
   .la-setup{margin:12px auto;padding:14px;}
   .la-row{flex-direction:column;}
   .la-row input,.la-row .btn{width:100%;}
