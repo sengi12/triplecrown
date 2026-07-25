@@ -90,6 +90,28 @@ const _DST_COLS = [
   {k:'pts_std',     l:'FPTS', d:1},
 ];
 
+// Per-game grading for a team-defense stat. Thresholds are single-game figures for a fantasy
+// D/ST: two sacks is a decent day, a takeaway is a good one, and points/yards allowed invert
+// (fewer is better). Returns the same g/y/r classes the rest of the player cards use.
+const _DST_GRADE = {
+  sack:      v => v>=3 ? 'g' : (v>=2 ? 'y' : (v>0 ? '' : 'r')),
+  int:       v => v>=2 ? 'g' : (v>=1 ? 'y' : ''),
+  fum_rec:   v => v>=2 ? 'g' : (v>=1 ? 'y' : ''),
+  ff:        v => v>=2 ? 'g' : (v>=1 ? 'y' : ''),
+  def_td:    v => v>=1 ? 'g' : '',
+  def_st_td: v => v>=1 ? 'g' : '',
+  safe:      v => v>=1 ? 'g' : '',
+  blk_kick:  v => v>=1 ? 'g' : '',
+  pts_allow: v => v<=10 ? 'g' : (v<=20 ? 'y' : 'r'),
+  yds_allow: v => v<=275 ? 'g' : (v<=350 ? 'y' : 'r'),
+  pts_std:   v => v>=12 ? 'g' : (v>=6 ? 'y' : 'r'),
+};
+function _dstCls(key, v){
+  if(v==null || !isFinite(+v)) return '';
+  const f=_DST_GRADE[key];
+  return f ? (f(+v)||'') : '';
+}
+
 function _dstNum(v, d){
   if(v==null) return '–';
   const n = +v;
@@ -140,7 +162,7 @@ function _dstSeasonBlock(weeks, season, team){
     const cells = _DST_COLS.map(c=>{
       const v = w.stats[c.k];
       if(v!=null && isFinite(+v)) tot[c.k] = (tot[c.k]||0) + (+v);
-      return `<td class="pcard-cell">${_dstNum(v, c.d)}</td>`;
+      return `<td class="pcard-cell ${_dstCls(c.k, v)}">${_dstNum(v, c.d)}</td>`;
     }).join('');
     return `<tr><td class="pcard-wk">${w.week||''}</td><td class="pcard-opp home">${opp}</td>${cells}</tr>`;
   }).join('');
@@ -149,7 +171,12 @@ function _dstSeasonBlock(weeks, season, team){
   const totCells = _DST_COLS.map(c=>{
     let v = tot[c.k];
     if(v!=null && (c.k==='pts_allow' || c.k==='yds_allow')) v = v/gp;   // per-game average
-    return `<td class="pcard-cell pcard-total-cell">${v==null?'–':_dstNum(v, (c.k==='pts_allow'||c.k==='yds_allow')?1:c.d)}</td>`;
+    // PA/YA are per-game averages in this row so they grade on the single-game scale; FPTS is
+    // converted to per-game for the same reason. Counting stats are season sums, which would
+    // false-positive against per-game thresholds — left uncoloured rather than implying a grade.
+    const perGame = (c.k==='pts_allow'||c.k==='yds_allow');
+    const cls = perGame ? _dstCls(c.k, v) : (c.k==='pts_std' && v!=null ? _dstCls(c.k, v/gp) : '');
+    return `<td class="pcard-cell pcard-total-cell ${cls}">${v==null?'\u2013':_dstNum(v, perGame?1:c.d)}</td>`;
   }).join('');
   const totalRow = `<tr class="pcard-total-row"><td class="pcard-wk">TOT</td><td class="pcard-opp" title="${gp} games (PA/YA shown per game)">${gp}g</td>${totCells}</tr>`;
   const full = (typeof teamDisplayName==='function' ? teamDisplayName(team) : team);

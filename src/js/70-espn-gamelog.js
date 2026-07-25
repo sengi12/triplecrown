@@ -192,8 +192,42 @@ function espnColor(name, v, def){
     case 'interceptions': return _triLow(v,0,1);   // QB INTs thrown → lower better
     case 'sacks': return _triLow(v,1,3);            // QB sacked → lower better
     case 'fumbles': case 'fumblesLost': return _triLow(v,0,1);
+    // ── Kicking ──────────────────────────────────────────────────────────────
+    // ESPN reports the distance buckets as made-attempted strings ("2-2"), so those are graded
+    // on conversion rate rather than a raw count, and an unattempted bucket ("0-0") stays
+    // NEUTRAL — never kicking from 50+ isn't a bad performance, it's an absence of one.
+    case 'fieldGoalAttempts19': case 'fieldGoalsMade19':
+    case 'fieldGoalAttempts29': case 'fieldGoalsMade29':
+    case 'fieldGoalAttempts39': case 'fieldGoalsMade39':
+    case 'fieldGoalAttempts49': case 'fieldGoalsMade49':
+    case 'fieldGoalAttempts50': case 'fieldGoalsMade50':
+    case 'fieldGoals': case 'extraPoints':
+      return _triRatio(v);
+    case 'fieldGoalsMade': return _tri(v,2,1);
+    case 'fieldGoalPct': return _tri(v,90,75);
+    case 'fieldGoalsMissed': return _triLow(v,0,1);
+    case 'longFieldGoalMade': return _tri(v,50,42);
+    case 'extraPointsMade': return _tri(v,3,2);
+    case 'extraPointsMissed': return _triLow(v,0,1);
+    case 'totalKickingPoints': return _tri(v,10,6);
+    // ── Punting (same table, opposite intent on a couple of stats) ───────────
+    case 'grossAvgPuntYards': return _tri(v,46,42);
+    case 'netAvgPuntYards': return _tri(v,42,38);
+    case 'puntsInside20': return _tri(v,2,1);
+    case 'touchbacks': return _triLow(v,0,1);
+    case 'puntsBlocked': return _triLow(v,0,1);
     default: return '';
   }
+}
+// Grade an ESPN "made-attempted" cell (e.g. "2-2", "1-3", "0-0") by conversion rate.
+// Returns '' for an unattempted bucket so it renders neutral rather than looking like a miss.
+function _triRatio(v){
+  const m = /^\s*(\d+)\s*[-\/]\s*(\d+)\s*$/.exec(String(v==null?'':v));
+  if(!m) return '';
+  const made=+m[1], att=+m[2];
+  if(!att) return '';
+  const pct = made/att;
+  return pct>=0.999 ? 'g' : (pct>=0.7 ? 'y' : 'r');
 }
 function cfbNum(s){ const n=parseFloat(String(s==null?'':s).replace(/,/g,'')); return isNaN(n)?null:n; }
 // Map an ESPN postseason event note to a compact playoff-round abbreviation (NFL). Regular-season

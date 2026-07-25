@@ -515,9 +515,17 @@ function playerThumb(p){
 // A roster row's player cell: photo + full name (with an abbreviated variant CSS swaps in when
 // the panel is too narrow) + position/team.
 function playerCell(p){
-  return `${playerThumb(p)}<span class="rt-pname" title="${p.name}">` +
+  // The thumbnail + name open the player card. During a live draft this is the natural place
+  // to check a rostered player (yours or a rival's) without leaving the tracker, and it's the
+  // same pcardOnclick every other surface uses — team defenses included, since openPlayerCard
+  // accepts a team code for DEF.
+  const open = (typeof pcardOnclick==='function')
+    ? `onclick="event.stopPropagation();${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}"` : '';
+  const cls = open ? 'rt-pname clickable-player' : 'rt-pname';
+  return `<span class="rt-pcell" ${open} title="${escAttr(p.name)}\u2002\u2014\u2002open player card">` +
+    `${playerThumb(p)}<span class="${cls}">` +
     `<span class="rt-nm-full">${p.name}</span>` +
-    `<span class="rt-nm-abbr">${abbrevName(p.name)}</span></span>` +
+    `<span class="rt-nm-abbr">${abbrevName(p.name)}</span></span></span>` +
     `<span class="rt-pmeta">${p.pos} \u00b7 ${p.team}</span>`;
 }
 // A slot label for display (flex variants get friendly names).

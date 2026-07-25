@@ -99,7 +99,14 @@
 .vona-sub{font-size:11px;color:var(--muted);margin-bottom:8px;}
 .vona-rows{display:flex;flex-direction:column;gap:4px;}
 .vona-row{display:flex;align-items:center;gap:9px;padding:4px 7px;border-radius:7px;background:var(--surface);}
-.vona-row.vona-filled{opacity:.55;}
+/* "Filled" = you already have a starter at this position. Worth marking, but NOT by fading
+   the row into illegibility — late in a draft nearly every row is filled (you're drafting
+   depth), and a 0.55 wash made the whole advisory hard to read. Distinguish it with a muted
+   left edge and a slightly dimmer position badge instead, keeping the text at full contrast. */
+.vona-row.vona-filled{opacity:1;box-shadow:inset 2px 0 0 var(--border);}
+.vona-row.vona-filled .rt-slot{opacity:.7;}
+.vona-row.vona-filled .vona-now{color:var(--text);}
+.vona-row.vona-filled .vona-vor{opacity:.85;}
 .vona-best{font-size:12px;font-weight:700;flex:1;}
 .vona-drop{font-family:var(--mono);font-weight:800;font-size:12px;}
 .vona-hot .vona-drop{color:#ff6b6b;}
@@ -647,3 +654,10 @@ body{padding-bottom:calc(var(--rt-h, 0px) + 10px);}
   .rt-chips{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 18px),transparent);
             mask-image:linear-gradient(to right,#000 calc(100% - 18px),transparent);}
 }
+
+/* Roster-tracker rows: thumbnail + name are one tappable target that opens the player card.
+   Sized generously enough for a thumb on mobile without changing the row's height. */
+.rt-pcell{display:flex;align-items:center;gap:8px;min-width:0;flex:1;cursor:pointer;
+  padding:2px 4px 2px 0;margin:-2px 0;border-radius:6px;}
+.rt-pcell:hover{background:rgba(90,169,230,.10);}
+.rt-pcell:hover .rt-pname{color:var(--accent);}
