@@ -851,7 +851,26 @@ function laRostersView(s){
     if(s.myUserId){ if(a.ownerId===s.myUserId) return -1; if(b.ownerId===s.myUserId) return 1; }
     return laTeamValue(b)-laTeamValue(a);
   });
-  return `<div class="la-grid">${teams.map(t=>laTeamCard(t,s)).join('')}</div>`;
+  // Twelve full rosters stacked vertically is an enormous amount of scrolling on a phone, so
+  // offer a picker that narrows to one team. 'all' keeps the original stacked view for desktop
+  // (and for anyone comparing side by side). The choice lives on laState so it survives the
+  // re-renders that value/lens changes trigger.
+  const sel = laState.rosterPick || 'all';
+  const shown = (sel==='all') ? teams : teams.filter(t=>String(t.rosterId)===String(sel));
+  const opts = [`<option value="all" ${sel==='all'?'selected':''}>All teams (${teams.length})</option>`]
+    .concat(teams.map(t=>{
+      const me = s.myUserId && t.ownerId===s.myUserId ? '\u2605 ' : '';
+      return `<option value="${t.rosterId}" ${String(t.rosterId)===String(sel)?'selected':''}>${me}${escAttr(t.teamName)}</option>`;
+    })).join('');
+  return `<div class="la-roster-pick">
+      <label class="la-roster-pick-lbl" for="laRosterPick">Show</label>
+      <select id="laRosterPick" class="la-season-sel" onchange="laSetRosterPick(this.value)">${opts}</select>
+    </div>
+    <div class="la-grid">${(shown.length?shown:teams).map(t=>laTeamCard(t,s)).join('')}</div>`;
+}
+function laSetRosterPick(v){
+  laState.rosterPick = v || 'all';
+  renderLeagueAnalyzer();
 }
 function laTeamValue(t){
   // Consolidated + tier-weighted (see laDynVal): a roster's worth is its stars first, its
