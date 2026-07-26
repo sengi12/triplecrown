@@ -262,8 +262,43 @@ function closeAppMenu(){
 }
 // The app has two top-level VIEWS: Projections (the builder — season tabs, team sidebar) and
 // the League Analyzer (snapshot-driven, season-agnostic). This returns to the former.
+// Where the user was in the projections builder before they opened the League Analyzer, so
+// returning puts them back rather than dumping them on Passing. Stores the phase, the team and
+// the scroll offset — being returned to the right tab but the top of a long page is still a
+// loss of place.
+let _preLeagueView = null;
+function rememberProjectionsView(){
+  if(currentPhase==='League') return;   // already in the analyzer; don't overwrite the stash
+  _preLeagueView = {
+    phase: currentPhase,
+    team: currentTeam,
+    scope: (typeof rankScope!=='undefined' ? rankScope : null),
+    y: window.scrollY || document.documentElement.scrollTop || 0,
+  };
+}
 function showProjectionsView(){
-  if(currentPhase==='League') currentPhase = currentTeam ? 'Passing' : 'Rankings';
+  if(currentPhase==='League'){
+    const v=_preLeagueView;
+    // Restore the remembered spot when it's still valid; otherwise fall back as before.
+    if(v && v.phase && v.phase!=='League' && (v.team ? v.team===currentTeam || !currentTeam : true)){
+      if(v.team && !currentTeam) currentTeam=v.team;
+      currentPhase = v.phase;
+      if(v.scope && typeof rankScope!=='undefined') rankScope = v.scope;
+    } else {
+      currentPhase = currentTeam ? 'Passing' : 'Rankings';
+    }
+    renderContent();
+    syncAppChrome();
+    // Restore scroll after layout, clamped to the rebuilt page height.
+    if(_preLeagueView && _preLeagueView.y){
+      const y=_preLeagueView.y;
+      requestAnimationFrame(()=>{
+        const max=Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+        window.scrollTo(0, Math.min(y, max));
+      });
+    }
+    return;
+  }
   renderContent();
   syncAppChrome();
 }

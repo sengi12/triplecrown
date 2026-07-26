@@ -367,6 +367,8 @@ function laTeamIcon(t,cls){ return t&&t.avatar?`<img src="${t.avatar}" class="${
 
 // ── Entry + navigation ───────────────────────────────────────────────────────
 function openLeagueAnalyzer(){
+  // Snapshot where we were so leaving the analyzer returns here (see showProjectionsView).
+  if(typeof rememberProjectionsView==='function') rememberProjectionsView();
   laState.step = leagueSnapshot ? 'view' : 'start';
   currentPhase='League';
   renderContent();

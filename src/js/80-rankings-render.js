@@ -4,7 +4,7 @@ function renderRankings(){
   const teamScoped = (rankScope==='team' && currentTeam);
   if(teamScoped) all=all.filter(p=>p.team===currentTeam);
   if(!all.length){document.getElementById('content').innerHTML=
-    `<div class="empty"><div class="empty-icon">${TC_ICON("trophy","tc-ico-lg")}</div>
+    `${(rankScope==='team' && currentTeam) ? `<div class="phase-tabs">${tabBar()}</div>` : ''}<div class="empty"><div class="empty-icon">${TC_ICON("trophy","tc-ico-lg")}</div>
      <div class="empty-title">No projections yet</div><div class="empty-body">Set at least one team's stats to see rankings.</div></div>`;return;}
   // Overall order is by fantasy points (your projections). ECR/tier come from FantasyPros.
   all.sort((a,b)=>b.fpts-a.fpts);
@@ -190,6 +190,7 @@ function renderRankings(){
     : '';
   const ecrNote = hasECR() ? '' : `<span class="ecr-missing">${TC_ICON("warning")} No FantasyPros ECR loaded — run build_seed.py and load the seed to populate ECR/Tier</span>`;
   document.getElementById('content').innerHTML=`
+    ${teamScoped ? `<div class="phase-tabs">${tabBar()}</div>` : ''}
     <div class="rankings-scope-bar">
       ${teamScoped
         ? `<span class="scope-title">${currentTeam} Rankings</span><span class="scope-sub">this team only</span>
