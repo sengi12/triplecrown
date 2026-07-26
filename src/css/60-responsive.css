@@ -29,9 +29,9 @@
   .pie-section{flex-direction:column;align-items:stretch;gap:10px;}
   .pie-wrap{align-self:center;}
   .stats-grid{grid-template-columns:repeat(2,1fr);}
-  .phase-tabs{overflow-x:auto;}
+  .phase-tabs{overflow-x:auto;flex-wrap:nowrap;}
   .phase-tab{flex:0 0 auto;}
-  .sub-tabs{overflow-x:auto;}
+  .sub-tabs{overflow-x:auto;flex-wrap:nowrap;}
   .sub-tab{flex:0 0 auto;white-space:nowrap;}
   /* ── Header: ONE row on a phone ───────────────────────────────────────────
      The container is .header — the old `.hdr` rules here were a dead selector (nothing in

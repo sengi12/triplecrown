@@ -35,13 +35,14 @@ function renderTeamDefShell(pid){
       </div>
     </div>`;
   const overlay = document.getElementById('pcardOverlay');
-  if(overlay){ overlay.innerHTML = html; }
+  if(overlay){ overlay.innerHTML = html; if(typeof attachPcardSwipe==='function') attachPcardSwipe(overlay.querySelector('.pcard')); }
   else {
     const div = document.createElement('div');
     div.id='pcardOverlay'; div.className='pcard-overlay';
     div.onclick = closePlayerCard;
     div.innerHTML = html;
     document.body.appendChild(div);
+    if(typeof attachPcardSwipe==='function') attachPcardSwipe(div.querySelector('.pcard'));
   }
 }
 

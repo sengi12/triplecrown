@@ -404,7 +404,11 @@
   .la-row{flex-direction:column;}
   .la-row input,.la-row .btn{width:100%;}
   /* tab bar scrolls rather than wrapping into a second row */
-  .phase-tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+  /* flex-wrap:nowrap is the operative bit — the base rule wraps, which defeated overflow-x
+     and pushed the tab bar onto a second line instead of letting it scroll. */
+  .phase-tabs{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+    -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 16px),transparent);
+    mask-image:linear-gradient(to right,#000 calc(100% - 16px),transparent);}
   .phase-tabs::-webkit-scrollbar{display:none;}
   .phase-tab{white-space:nowrap;flex:none;}
   /* controls: let lens buttons + checkboxes wrap cleanly, bigger tap targets */

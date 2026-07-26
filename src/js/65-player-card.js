@@ -219,11 +219,71 @@ function openPlayerCard(nameOrId, pos, team){
   else pid = resolvePlayerId(nameOrId, pos);
   if(!pid){ toast('No stats available for that player','err'); return; }
   pcardOpen=true;
+  _pcardLockPage(true);
   renderPlayerCardShell(pid, pos, team);
   loadPlayerCardData(pid, pos, team);
 }
+// ── Swipe-down to close (touch) ──────────────────────────────────────────────
+// Standard mobile sheet behaviour: drag the card down and it closes. The drag must begin on
+// the HERO — that area doesn't scroll, so the gesture can never compete with the gamelog
+// underneath it. Pointer events aren't used because they'd also capture mouse drags on
+// desktop, where the close button is the right affordance.
+function attachPcardSwipe(cardEl){
+  if(!cardEl || cardEl._swipeWired) return;
+  cardEl._swipeWired = true;
+  const CLOSE_AT = 90;      // px dragged before it dismisses
+  let y0=null, dy=0, dragging=false;
+  const reset = (anim)=>{
+    cardEl.style.transition = anim ? 'transform .18s ease-out' : '';
+    cardEl.style.transform = '';
+    if(anim) setTimeout(()=>{ cardEl.style.transition=''; }, 200);
+  };
+  cardEl.addEventListener('touchstart', e=>{
+    if(e.touches.length!==1){ dragging=false; y0=null; return; }
+    // The drag must START ON THE HERO. That region doesn't scroll, so a downward swipe there is
+    // unambiguous — whereas starting inside the body would fight the gamelog's own scrolling
+    // (and a scrollTop check still misbehaves with momentum/overscroll on iOS).
+    const onHero = e.target && e.target.closest && e.target.closest('.pcard-hero');
+    if(!onHero){ dragging=false; y0=null; return; }
+    y0 = e.touches[0].clientY; dy=0; dragging=true;
+    cardEl.style.transition='';
+  }, {passive:true});
+  // NON-PASSIVE on purpose. A passive listener cannot call preventDefault(), which meant the
+  // browser kept running its own gesture underneath the drag — pull-to-refresh at the top of
+  // the page, and scrolling the content behind the card. Claiming the gesture here stops both.
+  cardEl.addEventListener('touchmove', e=>{
+    if(!dragging || y0==null) return;
+    dy = e.touches[0].clientY - y0;
+    if(dy<=0){ cardEl.style.transform=''; cardEl.style.opacity=''; return; }
+    // We own this gesture now: suppress native scroll / pull-to-refresh for the whole drag.
+    if(e.cancelable) e.preventDefault();
+    // Resistance so the card feels attached rather than free-falling.
+    const shift = dy<CLOSE_AT ? dy*0.7 : CLOSE_AT*0.7 + (dy-CLOSE_AT)*0.35;
+    cardEl.style.transform = `translateY(${shift.toFixed(1)}px)`;
+    cardEl.style.opacity = String(Math.max(0.55, 1 - dy/600));
+  }, {passive:false});
+  const finish = ()=>{
+    if(!dragging){ return; }
+    dragging=false; y0=null;
+    cardEl.style.opacity='';
+    if(dy > CLOSE_AT) closePlayerCard();
+    else reset(true);
+    dy=0;
+  };
+  cardEl.addEventListener('touchend', finish, {passive:true});
+  cardEl.addEventListener('touchcancel', finish, {passive:true});
+}
+
+// While a card is open the page behind it must not scroll — otherwise the background creeps
+// whenever a gesture isn't fully claimed, and on mobile the browser will happily pull-to-refresh
+// from it. Applied as a class so the CSS owns the details (and scroll position is preserved,
+// since overflow:hidden doesn't reset scrollTop).
+function _pcardLockPage(on){
+  try{ document.documentElement.classList.toggle('pcard-locked', !!on); }catch(e){}
+}
 function closePlayerCard(){
   pcardOpen=false;
+  _pcardLockPage(false);
   const el=document.getElementById('pcardOverlay'); if(el) el.remove();
 }
 function renderPlayerCardShell(pid, pos, team){
@@ -292,6 +352,7 @@ function renderPlayerCardShell(pid, pos, team){
     div.onclick=closePlayerCard;
     div.innerHTML=html;
     document.body.appendChild(div);
+    if(typeof attachPcardSwipe==='function') attachPcardSwipe(div.querySelector('.pcard'));
   }
 }
 // Player-card stats source: 'pro' (NFL career — Sleeper weekly for skill players, ESPN nfl for

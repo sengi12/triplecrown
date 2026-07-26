@@ -4,7 +4,7 @@ function renderRankings(){
   const teamScoped = (rankScope==='team' && currentTeam);
   if(teamScoped) all=all.filter(p=>p.team===currentTeam);
   if(!all.length){document.getElementById('content').innerHTML=
-    `<div class="phase-tabs">${tabBar()}</div><div class="empty"><div class="empty-icon">🏆</div>
+    `<div class="empty"><div class="empty-icon">${TC_ICON("trophy","tc-ico-lg")}</div>
      <div class="empty-title">No projections yet</div><div class="empty-body">Set at least one team's stats to see rankings.</div></div>`;return;}
   // Overall order is by fantasy points (your projections). ECR/tier come from FantasyPros.
   all.sort((a,b)=>b.fpts-a.fpts);
@@ -145,7 +145,7 @@ function renderRankings(){
     <td class="fpts">${p.fpts.toFixed(1)}</td>
     <td class="c-vor"><span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${p.vor>0?'+':''}${p.vor!=null?p.vor.toFixed(1):'—'}</span></td>
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
-    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsURL(p),'rank-hs','🏈')}<span class="rank-name">${p.name}</span></div></td>
+    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsURL(p),'rank-hs')}<span class="rank-name">${p.name}</span></div></td>
     <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${p.team}</td>
     ${contractCells}
     ${statCells}
@@ -188,9 +188,8 @@ function renderRankings(){
   const advNote = advActive
     ? `<span class="ecr-missing" style="color:var(--muted)">${TC_ICON("chart")} nflverse advanced ${sumerSeasonKey()} stats${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}${sumerView.single?'':' · common columns (pick a position for the full set)'}${((sumerRefinement==='vs_man'||sumerRefinement==='vs_zone'))?' · coverage counts approximate, rates accurate':''}</span>`
     : '';
-  const ecrNote = hasECR() ? '' : `<span class="ecr-missing">${TC_ICON("warning")} No FantasyPros ECR loaded — run build_seed.py and load the 📦 seed to populate ECR/Tier</span>`;
+  const ecrNote = hasECR() ? '' : `<span class="ecr-missing">${TC_ICON("warning")} No FantasyPros ECR loaded — run build_seed.py and load the seed to populate ECR/Tier</span>`;
   document.getElementById('content').innerHTML=`
-    <div class="phase-tabs">${tabBar()}</div>
     <div class="rankings-scope-bar">
       ${teamScoped
         ? `<span class="scope-title">${currentTeam} Rankings</span><span class="scope-sub">this team only</span>
@@ -266,7 +265,29 @@ function renderRankings(){
     </div>`;
 }
 function cell(v){return v&&v>0?`<span class="num">${(+v)%1!==0?(+v).toFixed(1):(+v).toLocaleString()}</span>`:'';}
-function rankSort(k){if(rankSortKey===k)rankSortDir*=-1;else{rankSortKey=k;rankSortDir=k==='ecr'?-1:-1;}renderRankings();}
+function rankSort(k){
+  if(rankSortKey===k) rankSortDir*=-1;
+  else { rankSortKey=k; rankSortDir=k==='ecr'?-1:-1; }
+  // renderRankings() replaces #content wholesale, so BOTH scroll positions are lost: the page's
+  // vertical offset and the table wrapper's horizontal one. The horizontal one matters as much
+  // as the vertical — if you've scrolled right to read YAC and sort by it, snapping back to the
+  // name column hides the very numbers you just sorted on.
+  const y = window.scrollY || document.documentElement.scrollTop || 0;
+  const wrapBefore = document.querySelector('.rank-table-wrap');
+  const x = wrapBefore ? wrapBefore.scrollLeft : 0;
+  renderRankings();
+  // Restore after layout settles. Both axes are clamped to the NEW content size, since a
+  // different sort can change the table's height (and column widths).
+  requestAnimationFrame(()=>{
+    const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    window.scrollTo(0, Math.min(y, max));
+    const wrap = document.querySelector('.rank-table-wrap');
+    if(wrap && x){
+      const maxX = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+      wrap.scrollLeft = Math.min(x, maxX);
+    }
+  });
+}
 // Scoring presets per format. The reception value is what distinguishes PPR / Half / Standard.
 const FORMAT_PRESETS={
   ppr:      {receptions:1.0},

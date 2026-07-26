@@ -438,6 +438,15 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
 .qpc-heat-key{display:inline-block;width:56px;height:9px;border-radius:5px;margin-right:6px;
   vertical-align:-1px;background:linear-gradient(90deg,#383c42,#22543e,#287c48,#3aa850,#6ed65c);}
 .rt-metric-btn[disabled]{opacity:.35;cursor:not-allowed;}
+
+/* Page lock while a player card is open: nothing behind it scrolls, and the browser can't
+   pull-to-refresh from the background. The fixed overlay keeps its own scrolling.
+   overscroll-behavior:contain stops a scroll that reaches the end of the card's body from
+   chaining out to the page (which is what triggers pull-to-refresh on Android/iOS). */
+html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:none;}
+.pcard-overlay{overscroll-behavior:contain;}
+.pcard-body{overscroll-behavior:contain;}
+.pcard-hero{touch-action:none;}
 /* ── Grouped rankings table (ECR / Tier / FPTS / stat groups) ── */
 .rankings-table.grouped{font-size:11.5px;}
 .rankings-table.grouped th,.rankings-table.grouped td{padding:5px 7px;text-align:center;}
@@ -920,9 +929,9 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
   .pie-section{flex-direction:column;align-items:stretch;gap:10px;}
   .pie-wrap{align-self:center;}
   .stats-grid{grid-template-columns:repeat(2,1fr);}
-  .phase-tabs{overflow-x:auto;}
+  .phase-tabs{overflow-x:auto;flex-wrap:nowrap;}
   .phase-tab{flex:0 0 auto;}
-  .sub-tabs{overflow-x:auto;}
+  .sub-tabs{overflow-x:auto;flex-wrap:nowrap;}
   .sub-tab{flex:0 0 auto;white-space:nowrap;}
   /* ── Header: ONE row on a phone ───────────────────────────────────────────
      The container is .header — the old `.hdr` rules here were a dead selector (nothing in
@@ -1391,7 +1400,11 @@ html,body{max-width:100%;overflow-x:hidden;}
   .la-row{flex-direction:column;}
   .la-row input,.la-row .btn{width:100%;}
   /* tab bar scrolls rather than wrapping into a second row */
-  .phase-tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+  /* flex-wrap:nowrap is the operative bit — the base rule wraps, which defeated overflow-x
+     and pushed the tab bar onto a second line instead of letting it scroll. */
+  .phase-tabs{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+    -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 16px),transparent);
+    mask-image:linear-gradient(to right,#000 calc(100% - 16px),transparent);}
   .phase-tabs::-webkit-scrollbar{display:none;}
   .phase-tab{white-space:nowrap;flex:none;}
   /* controls: let lens buttons + checkboxes wrap cleanly, bigger tap targets */
@@ -5306,11 +5319,71 @@ function openPlayerCard(nameOrId, pos, team){
   else pid = resolvePlayerId(nameOrId, pos);
   if(!pid){ toast('No stats available for that player','err'); return; }
   pcardOpen=true;
+  _pcardLockPage(true);
   renderPlayerCardShell(pid, pos, team);
   loadPlayerCardData(pid, pos, team);
 }
+// ── Swipe-down to close (touch) ──────────────────────────────────────────────
+// Standard mobile sheet behaviour: drag the card down and it closes. The drag must begin on
+// the HERO — that area doesn't scroll, so the gesture can never compete with the gamelog
+// underneath it. Pointer events aren't used because they'd also capture mouse drags on
+// desktop, where the close button is the right affordance.
+function attachPcardSwipe(cardEl){
+  if(!cardEl || cardEl._swipeWired) return;
+  cardEl._swipeWired = true;
+  const CLOSE_AT = 90;      // px dragged before it dismisses
+  let y0=null, dy=0, dragging=false;
+  const reset = (anim)=>{
+    cardEl.style.transition = anim ? 'transform .18s ease-out' : '';
+    cardEl.style.transform = '';
+    if(anim) setTimeout(()=>{ cardEl.style.transition=''; }, 200);
+  };
+  cardEl.addEventListener('touchstart', e=>{
+    if(e.touches.length!==1){ dragging=false; y0=null; return; }
+    // The drag must START ON THE HERO. That region doesn't scroll, so a downward swipe there is
+    // unambiguous — whereas starting inside the body would fight the gamelog's own scrolling
+    // (and a scrollTop check still misbehaves with momentum/overscroll on iOS).
+    const onHero = e.target && e.target.closest && e.target.closest('.pcard-hero');
+    if(!onHero){ dragging=false; y0=null; return; }
+    y0 = e.touches[0].clientY; dy=0; dragging=true;
+    cardEl.style.transition='';
+  }, {passive:true});
+  // NON-PASSIVE on purpose. A passive listener cannot call preventDefault(), which meant the
+  // browser kept running its own gesture underneath the drag — pull-to-refresh at the top of
+  // the page, and scrolling the content behind the card. Claiming the gesture here stops both.
+  cardEl.addEventListener('touchmove', e=>{
+    if(!dragging || y0==null) return;
+    dy = e.touches[0].clientY - y0;
+    if(dy<=0){ cardEl.style.transform=''; cardEl.style.opacity=''; return; }
+    // We own this gesture now: suppress native scroll / pull-to-refresh for the whole drag.
+    if(e.cancelable) e.preventDefault();
+    // Resistance so the card feels attached rather than free-falling.
+    const shift = dy<CLOSE_AT ? dy*0.7 : CLOSE_AT*0.7 + (dy-CLOSE_AT)*0.35;
+    cardEl.style.transform = `translateY(${shift.toFixed(1)}px)`;
+    cardEl.style.opacity = String(Math.max(0.55, 1 - dy/600));
+  }, {passive:false});
+  const finish = ()=>{
+    if(!dragging){ return; }
+    dragging=false; y0=null;
+    cardEl.style.opacity='';
+    if(dy > CLOSE_AT) closePlayerCard();
+    else reset(true);
+    dy=0;
+  };
+  cardEl.addEventListener('touchend', finish, {passive:true});
+  cardEl.addEventListener('touchcancel', finish, {passive:true});
+}
+
+// While a card is open the page behind it must not scroll — otherwise the background creeps
+// whenever a gesture isn't fully claimed, and on mobile the browser will happily pull-to-refresh
+// from it. Applied as a class so the CSS owns the details (and scroll position is preserved,
+// since overflow:hidden doesn't reset scrollTop).
+function _pcardLockPage(on){
+  try{ document.documentElement.classList.toggle('pcard-locked', !!on); }catch(e){}
+}
 function closePlayerCard(){
   pcardOpen=false;
+  _pcardLockPage(false);
   const el=document.getElementById('pcardOverlay'); if(el) el.remove();
 }
 function renderPlayerCardShell(pid, pos, team){
@@ -5379,6 +5452,7 @@ function renderPlayerCardShell(pid, pos, team){
     div.onclick=closePlayerCard;
     div.innerHTML=html;
     document.body.appendChild(div);
+    if(typeof attachPcardSwipe==='function') attachPcardSwipe(div.querySelector('.pcard'));
   }
 }
 // Player-card stats source: 'pro' (NFL career — Sleeper weekly for skill players, ESPN nfl for
@@ -7155,13 +7229,14 @@ function renderTeamDefShell(pid){
       </div>
     </div>`;
   const overlay = document.getElementById('pcardOverlay');
-  if(overlay){ overlay.innerHTML = html; }
+  if(overlay){ overlay.innerHTML = html; if(typeof attachPcardSwipe==='function') attachPcardSwipe(overlay.querySelector('.pcard')); }
   else {
     const div = document.createElement('div');
     div.id='pcardOverlay'; div.className='pcard-overlay';
     div.onclick = closePlayerCard;
     div.innerHTML = html;
     document.body.appendChild(div);
+    if(typeof attachPcardSwipe==='function') attachPcardSwipe(div.querySelector('.pcard'));
   }
 }
 
@@ -8427,7 +8502,7 @@ function renderRankings(){
   const teamScoped = (rankScope==='team' && currentTeam);
   if(teamScoped) all=all.filter(p=>p.team===currentTeam);
   if(!all.length){document.getElementById('content').innerHTML=
-    `<div class="phase-tabs">${tabBar()}</div><div class="empty"><div class="empty-icon">🏆</div>
+    `<div class="empty"><div class="empty-icon">${TC_ICON("trophy","tc-ico-lg")}</div>
      <div class="empty-title">No projections yet</div><div class="empty-body">Set at least one team's stats to see rankings.</div></div>`;return;}
   // Overall order is by fantasy points (your projections). ECR/tier come from FantasyPros.
   all.sort((a,b)=>b.fpts-a.fpts);
@@ -8568,7 +8643,7 @@ function renderRankings(){
     <td class="fpts">${p.fpts.toFixed(1)}</td>
     <td class="c-vor"><span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${p.vor>0?'+':''}${p.vor!=null?p.vor.toFixed(1):'—'}</span></td>
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
-    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsURL(p),'rank-hs','🏈')}<span class="rank-name">${p.name}</span></div></td>
+    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsURL(p),'rank-hs')}<span class="rank-name">${p.name}</span></div></td>
     <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${p.team}</td>
     ${contractCells}
     ${statCells}
@@ -8611,9 +8686,8 @@ function renderRankings(){
   const advNote = advActive
     ? `<span class="ecr-missing" style="color:var(--muted)">${TC_ICON("chart")} nflverse advanced ${sumerSeasonKey()} stats${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}${sumerView.single?'':' · common columns (pick a position for the full set)'}${((sumerRefinement==='vs_man'||sumerRefinement==='vs_zone'))?' · coverage counts approximate, rates accurate':''}</span>`
     : '';
-  const ecrNote = hasECR() ? '' : `<span class="ecr-missing">${TC_ICON("warning")} No FantasyPros ECR loaded — run build_seed.py and load the 📦 seed to populate ECR/Tier</span>`;
+  const ecrNote = hasECR() ? '' : `<span class="ecr-missing">${TC_ICON("warning")} No FantasyPros ECR loaded — run build_seed.py and load the seed to populate ECR/Tier</span>`;
   document.getElementById('content').innerHTML=`
-    <div class="phase-tabs">${tabBar()}</div>
     <div class="rankings-scope-bar">
       ${teamScoped
         ? `<span class="scope-title">${currentTeam} Rankings</span><span class="scope-sub">this team only</span>
@@ -8689,7 +8763,29 @@ function renderRankings(){
     </div>`;
 }
 function cell(v){return v&&v>0?`<span class="num">${(+v)%1!==0?(+v).toFixed(1):(+v).toLocaleString()}</span>`:'';}
-function rankSort(k){if(rankSortKey===k)rankSortDir*=-1;else{rankSortKey=k;rankSortDir=k==='ecr'?-1:-1;}renderRankings();}
+function rankSort(k){
+  if(rankSortKey===k) rankSortDir*=-1;
+  else { rankSortKey=k; rankSortDir=k==='ecr'?-1:-1; }
+  // renderRankings() replaces #content wholesale, so BOTH scroll positions are lost: the page's
+  // vertical offset and the table wrapper's horizontal one. The horizontal one matters as much
+  // as the vertical — if you've scrolled right to read YAC and sort by it, snapping back to the
+  // name column hides the very numbers you just sorted on.
+  const y = window.scrollY || document.documentElement.scrollTop || 0;
+  const wrapBefore = document.querySelector('.rank-table-wrap');
+  const x = wrapBefore ? wrapBefore.scrollLeft : 0;
+  renderRankings();
+  // Restore after layout settles. Both axes are clamped to the NEW content size, since a
+  // different sort can change the table's height (and column widths).
+  requestAnimationFrame(()=>{
+    const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    window.scrollTo(0, Math.min(y, max));
+    const wrap = document.querySelector('.rank-table-wrap');
+    if(wrap && x){
+      const maxX = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+      wrap.scrollLeft = Math.min(x, maxX);
+    }
+  });
+}
 // Scoring presets per format. The reception value is what distinguishes PPR / Half / Standard.
 const FORMAT_PRESETS={
   ppr:      {receptions:1.0},

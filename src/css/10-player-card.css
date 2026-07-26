@@ -307,3 +307,12 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
 .qpc-heat-key{display:inline-block;width:56px;height:9px;border-radius:5px;margin-right:6px;
   vertical-align:-1px;background:linear-gradient(90deg,#383c42,#22543e,#287c48,#3aa850,#6ed65c);}
 .rt-metric-btn[disabled]{opacity:.35;cursor:not-allowed;}
+
+/* Page lock while a player card is open: nothing behind it scrolls, and the browser can't
+   pull-to-refresh from the background. The fixed overlay keeps its own scrolling.
+   overscroll-behavior:contain stops a scroll that reaches the end of the card's body from
+   chaining out to the page (which is what triggers pull-to-refresh on Android/iOS). */
+html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:none;}
+.pcard-overlay{overscroll-behavior:contain;}
+.pcard-body{overscroll-behavior:contain;}
+.pcard-hero{touch-action:none;}
