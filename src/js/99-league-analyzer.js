@@ -288,7 +288,7 @@ function laEnsureSeasonStats(season){
       (rows||[]).forEach(r=>{ const n=normalizeSleeperRow(r); if(n && n.pid) idx[n.pid]=n; });
       if(Object.keys(idx).length){
         seasonStatsCache[season]=assembleSeed(players, idx);
-        _laVorCache=null;
+        _laVorCache=null; _laDefierCut=null;
         // Clear the in-flight flag BEFORE repainting, or the header renders the
         // "loading…" note on the very paint that already has the data.
         _laSeasonFetching[season]=false;
@@ -1661,9 +1661,40 @@ const LA_TRAJ_YOUNG = 25.5;
 // valued ≥ LA_CLIFF_DEFIER_V (or tier ≤2) despite being past the line. Advice: just hold.
 const LA_AGE_CLIFF = {RB:27.5, WR:29.5, TE:31, QB:35};
 const LA_CLIFF_EDGE = 1.0;          // within this many years of the cliff = "on the edge"
-const LA_CLIFF_DEFIER_V = 55;       // past-cliff but still worth this much → defier, hold
+// A defier is meant to be rare — the Henry/Kelce case where age says sell but production says
+// hold. The old absolute cutoff (55) predates the current value scale, where rostered players
+// routinely sit in the thousands, so effectively EVERY past-cliff player with a value qualified.
+// Defining it against the league's own distribution keeps it exclusive no matter how values are
+// scaled: you must be inside the top slice of everything rostered.
+// A defier must still be a startable-calibre asset AT HIS OWN POSITION despite being past the
+// age cliff — that's the Henry/Kelce case. Deliberately NOT gated on dynasty tier: a defier's
+// tier is depressed precisely because of his age (Derrick Henry sits at tier 7), so a tier test
+// would make the state unreachable. Positional rank is the honest measure.
+const LA_DEFIER_POS_RANK = 12;      // top-12 at his position among rostered players
 const LA_TRAJ_CLIFFSHARE = .35;     // % of team value on/past the cliff → "Edge of the Cliff"
 // Cliff state for one player: null (no age / no cliff), 'edge', 'past', or 'defier'.
+// Value of the LA_DEFIER_TOP_N-th best rostered player — the bar a past-cliff player must
+// clear to count as a defier. Cached per render (cleared alongside the other caches).
+let _laDefierCut=null;
+function laDefierCut(pos){
+  if(!_laDefierCut){
+    const s=leagueSnapshot;
+    _laDefierCut={};
+    if(s && Array.isArray(s.teamList)){
+      const byPos={};
+      s.teamList.forEach(t=>(t.players||[]).forEach(p=>{
+        const v=laVal(p.name,p.pos,p.team);
+        if(v>0) (byPos[p.pos]=byPos[p.pos]||[]).push(v);
+      }));
+      for(const k in byPos){
+        const arr=byPos[k].sort((a,b)=>b-a);
+        _laDefierCut[k] = arr.length>=LA_DEFIER_POS_RANK ? arr[LA_DEFIER_POS_RANK-1] : (arr[arr.length-1]||Infinity);
+      }
+    }
+  }
+  const c=_laDefierCut[pos];
+  return c==null ? Infinity : c;
+}
 function laCliffInfo(name,pos){
   // Age cliffs are a dynasty concern: they price the RISK that an asset stops being worth
   // what it is today. A redraft roster is spent at the end of the year, so a 32-year-old who
@@ -1674,18 +1705,72 @@ function laCliffInfo(name,pos){
   const age=laDynAge(name); if(age==null) return null;
   if(age>=cliff){
     const v=laDynVal(name,pos), t=laDynTier(name);
-    return {age, cliff, state:(v>=LA_CLIFF_DEFIER_V||(t!=null&&t<=2))?'defier':'past'};
+    // BOTH conditions now (it was either/or): top-N by value across every rostered player AND
+    // a tier-1 asset. Past-cliff players who are merely good fall through to 'past', which is
+    // the honest read — the sell window really is closing on them.
+    const isDefier = v>0 && v>=laDefierCut(pos);
+    return {age, cliff, state: isDefier ? 'defier' : 'past'};
   }
   if(age>=cliff-LA_CLIFF_EDGE) return {age, cliff, state:'edge'};
   return {age, cliff, state:'ok'};
 }
 // Marker span for player rows: ⚠ near/past the cliff (amber/red), 🛡 defier (hold).
+// Persistent, tappable explanation for a cliff badge. Deliberately reuses the pace popover's
+// classes so it inherits that styling and viewport clamping rather than inventing a second look.
+function laCloseCliffPops(){
+  if(document && document.querySelectorAll) document.querySelectorAll('.la-cliff-pop').forEach(el=>el.remove());
+}
+function laToggleCliffPop(btn, label, body){
+  if(!btn || !btn.parentNode) return;
+  const wrap=btn.parentNode;
+  const open=wrap.querySelector && wrap.querySelector('.la-cliff-pop');
+  if(open){ open.remove(); return; }
+  laCloseCliffPops();
+  const pop=document.createElement('div');
+  pop.className='pace-info-pop la-cliff-pop';
+  pop.onclick=e=>e.stopPropagation();
+  pop.innerHTML=`<div class="pace-info-pop-head">
+      <span class="pace-info-pop-lbl">${escAttr(label)}</span>
+      <button class="pace-info-pop-close" onclick="this.closest('.la-cliff-pop').remove()" aria-label="Close">\u2715</button>
+    </div>
+    <div class="pace-info-pop-body">${escAttr(body)}</div>`;
+  wrap.appendChild(pop);
+  // Viewport-fixed and clamped so it can't run off a narrow screen; flips above when needed.
+  try{
+    const M=8, vw=window.innerWidth, vh=window.innerHeight;
+    const br=btn.getBoundingClientRect(), pr=pop.getBoundingClientRect();
+    let left=br.left+br.width/2-pr.width/2;
+    if(left+pr.width>vw-M) left=vw-M-pr.width;
+    if(left<M) left=M;
+    let top=br.bottom+6;
+    if(top+pr.height>vh-M) top=br.top-pr.height-6;
+    if(top<M) top=M;
+    pop.style.position='fixed'; pop.style.left=left+'px'; pop.style.top=top+'px'; pop.style.right='auto';
+  }catch(e){}
+}
+if(typeof document!=='undefined' && document.addEventListener){
+  document.addEventListener('click', e=>{
+    const t=e.target;
+    if(t && t.closest && t.closest('.la-cliff-wrap')) return;
+    laCloseCliffPops();
+  });
+}
 function laCliffMark(name,pos){
   const c=laCliffInfo(name,pos);
   if(!c||c.state==='ok') return '';
-  if(c.state==='defier') return `<span class="la-cliff la-cliff-defy" title="Age ${c.age} \u2014 past the ${pos} cliff (~${c.cliff}) yet still elite: a true cliff-defier (Henry/Kelce class). Hold; selling at a discount is the mistake.">\ud83d\udee1</span>`;
-  if(c.state==='past')   return `<span class="la-cliff la-cliff-past" title="Age ${c.age} \u2014 at/past the ${pos} age-cliff (~${c.cliff}). Value decays fast from here; the sell window is closing.">\u26a0</span>`;
-  return `<span class="la-cliff la-cliff-warn" title="Age ${c.age} \u2014 within a year of the ${pos} age-cliff (~${c.cliff}). Peak sell window is NOW.">\u26a0</span>`;
+  // These used to be title= tooltips, which simply don't exist on a phone — the badge was an
+  // unexplained symbol. They're now buttons that open the same persistent popover the 17-game
+  // pace uses, so the reasoning is readable (and selectable) on touch.
+  const mk=(cls, label, icon, body)=>
+    `<span class="la-cliff-wrap"><button type="button" class="la-cliff ${cls}"
+       aria-label="${escAttr(label)}" title="${escAttr(body)}"
+       onclick="event.stopPropagation();laToggleCliffPop(this,'${escAttr(label)}','${escAttr(body)}')">${icon}</button></span>`;
+  if(c.state==='defier') return mk('la-cliff-defy','Cliff defier','\ud83d\udee1',
+    `Age ${c.age} \u2014 past the ${pos} cliff (~${c.cliff}) yet still one of the most valuable players rostered in this league. A true cliff-defier: hold. Selling at an age discount is the mistake.`);
+  if(c.state==='past') return mk('la-cliff-past','Past the age cliff','\u26a0',
+    `Age ${c.age} \u2014 at or past the ${pos} age-cliff (~${c.cliff}). Value decays fast from here; the sell window is closing.`);
+  return mk('la-cliff-warn','Approaching the age cliff','\u26a0',
+    `Age ${c.age} \u2014 within a year of the ${pos} age-cliff (~${c.cliff}). Peak sell window is NOW.`);
 }
 function laDynAge(name){
   const fmt=(leagueSnapshot&&leagueSnapshot.superflex)?'dynasty_superflex':'dynasty';

@@ -238,19 +238,21 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] ability for users to create account to save their projections (supabase)
 - [ ] projections manager
 - [ ] make sure triplecrown is season agnostic and easy to adjust for next season
-- [ ] input injection vulnerability scan on all input fields
-- [ ] league analyzer should also work with non-dynasty leagues (trad value entirely dependent on projections/VOR)
-- [ ] add a search player feature to find a player's playercard or team
 - [ ] clicking on a team logo, takes you to that team's 2026 projections page anywhere in the app
+- [ ] add ESPN league support
+- [ ] Google Play Store
+- [ ] Apple iOS Store
 ### UI / UX
-- [ ] Remove A.I. style emoji's from app and README
-- [ ] Improve names for app sections
 ### Playercards
-- [ ] Kicker playercards need color
+### Live Draft
+- [ ] reach out to Sleeper
+### League Analyzer
+- [ ] lineup helper tab
 - [ ] Implement future schedule on player cards with "4-weeks in" defensive rankings per pos
 ### Audit
 - [ ] Review comments and variable names
 - [ ] Add Coaching History (HCs, OCs, DCs)
+- [ ] input injection vulnerability scan on all input fields
 
 ## License
 
