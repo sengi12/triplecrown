@@ -9074,52 +9074,105 @@ function loadProjections(data){
         qb_rush_yards:parseFloat(qb.rushing_yards)||0,
         qb_rush_tds:parseFloat(qb.rushing_touchdowns)||0,
         qb_rush_attempts:parseFloat(qb.rushing_attempts)||0,
-        // games is what teamPassAtt/teamPassTDs/etc. now check (0-game QBs are excluded
-        // from team totals). Imported data rarely carries games_played, so default the
-        // primary (first/highest-yardage) QB to a full season — same rule ensureTeam uses.
         games_played:parseFloat(qb.games_played)||0,
-        games:parseFloat(qb.games_played)>0?parseFloat(qb.games_played):(i===0?SEASON_GAMES:0),
-        base_games:parseFloat(qb.games_played)>0?parseFloat(qb.games_played):(i===0?SEASON_GAMES:1),
         snap_share:1/qbs.length,
       }));
+      // Games decide who counts toward team totals: teamPassAtt/teamPassTDs (and therefore
+      // the receiving target pool) only include QBs with games>0. Imported files almost never
+      // carry games_played, so estimate each QB's games from their share of the team's
+      // projected passing yards — the same committee-aware rule the Sleeper import uses
+      // (projectQBGames). This keeps a genuine timeshare (e.g. LV Cousins/Mendoza) with BOTH
+      // QBs active instead of crowning the top-yardage QB with a full season and zeroing the
+      // rest, which otherwise halves that team's receiving projections.
+      const hasExplicitGames=state.qbs.some(q=>(q.games_played||0)>0);
+      if(hasExplicitGames){
+        state.qbs.forEach(q=>{ q.games=(q.games_played||0)>0?q.games_played:0; });
+      } else {
+        projectQBGames(state.qbs);   // sets q.games (+ q.games_played) from passing-yards share
+      }
+      // base_games converts each QB's SEASON totals to a per-game pace; anchor it to their
+      // projected games so pace×games reproduces the imported line (a 0-game backup keeps a
+      // 1-game denominator so its rate survives if dialed up later).
+      state.qbs.forEach(q=>{ q.base_games=(q.games||0)>0?q.games:1; });
+      // Preserve roster QBs the import omits (no passing line) at a ZERO baseline — the same
+      // guarantee as the WR/RB fill below, so a backup/rookie QB on the projected roster stays
+      // selectable instead of disappearing. games=0 keeps them out of team totals until dialed
+      // up; appended last (gp=0) so the imported starter stays qbs[0] for snap-share assignment.
+      const qbKey=p=>p.player_id!=null?('id:'+p.player_id):('nm:'+normName(p.name));
+      const qbSeen=new Set(state.qbs.map(qbKey));
+      getBase(team,'QB').forEach(qb=>{
+        const k=qbKey(qb); if(qbSeen.has(k)) return; qbSeen.add(k);
+        state.qbs.push({
+          name:qb.name,headshot:qb.headshot||null,slug:qb.slug||null,player_id:qb.player_id||null,
+          adp:parseFloat(qb.adp)||999,adp_ppr:parseFloat(qb.adp_ppr)||999,
+          adp_half_ppr:parseFloat(qb.adp_half_ppr)||999,adp_2qb:parseFloat(qb.adp_2qb)||999,
+          passing_yards:0,passing_tds:0,passing_attempts:0,passing_completions:0,interceptions_thrown:0,
+          qb_rush_yards:0,qb_rush_tds:0,qb_rush_attempts:0,
+          games_played:0,games:0,base_games:1,snap_share:0,
+        });
+      });
       assignQBSnapShares(state.qbs);
       state.activeQB=0;
     }
     const recv=[...wrs,...tes,...rbs.filter(p=>parseFloat(p.receiving_targets||0)>5)]
       .filter(p=>parseFloat(p.receiving_targets||0)>0)
       .sort((a,b)=>parseFloat(b.receiving_targets||0)-parseFloat(a.receiving_targets||0));
-    if(recv.length){
-      const tot=recv.reduce((s,p)=>s+parseFloat(p.receiving_targets||0),0)||1;
-      const totTDs=recv.reduce((s,p)=>s+(parseFloat(p.receiving_touchdowns)||0),0)||0;
-      state.passing_shares=recv.map(p=>{
-        const tgts=parseFloat(p.receiving_targets)||0;
-        const yds=parseFloat(p.receiving_yards)||0;
-        const rec=parseFloat(p.receptions)||0;
-        return {name:p.name,pos:p.fantasy_position,headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
-          baseline_targets:tgts,baseline_yards:yds,baseline_tds:parseFloat(p.receiving_touchdowns)||0,baseline_rec:rec,
-          share:tgts/tot, td_share:totTDs>0?(parseFloat(p.receiving_touchdowns)||0)/totTDs:1/recv.length,
-          ypt:tgts>0?yds/tgts:9, catch_rate:tgts>0?rec/tgts:0.65,
-          adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999};
+    // Preserve the initial projected roster: any WR/TE (or receiving RB) the import omits stays
+    // selectable at a ZERO baseline — the same guarantee as copying a previous season, so a
+    // player without an imported line isn't dropped as an option. ensureTeam() (above) already
+    // merged the live Sleeper roster into the seed, so getBase carries the full projected corps.
+    const recvKey=p=>p.player_id!=null?('id:'+p.player_id):('nm:'+normName(p.name));
+    const rosterRecv=[...getBase(team,'WR'),...getBase(team,'TE'),
+      ...getBase(team,'RB').filter(p=>(parseFloat(p.receiving_targets)||0)>5||(parseFloat(p.receptions)||0)>5)];
+    const recvRows=[]; const recvSeen=new Set();
+    recv.forEach(p=>{ const k=recvKey(p); if(recvSeen.has(k)) return; recvSeen.add(k);
+      recvRows.push({name:p.name,pos:p.fantasy_position,headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
+        tgts:parseFloat(p.receiving_targets)||0,yds:parseFloat(p.receiving_yards)||0,rec:parseFloat(p.receptions)||0,tds:parseFloat(p.receiving_touchdowns)||0,
+        adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
+    rosterRecv.forEach(p=>{ const k=recvKey(p); if(recvSeen.has(k)) return; recvSeen.add(k);
+      recvRows.push({name:p.name,pos:p.pos,headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
+        tgts:0,yds:0,rec:0,tds:0,
+        adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
+    if(recvRows.length){
+      const tot=recvRows.reduce((s,p)=>s+p.tgts,0)||1;
+      const totTDs=recvRows.reduce((s,p)=>s+p.tds,0)||0;
+      state.passing_shares=recvRows.map(p=>{
+        return {name:p.name,pos:p.pos,headshot:p.headshot,slug:p.slug,player_id:p.player_id,
+          baseline_targets:p.tgts,baseline_yards:p.yds,baseline_tds:p.tds,baseline_rec:p.rec,
+          share:p.tgts/tot, td_share:totTDs>0?p.tds/totTDs:1/recvRows.length,
+          ypt:p.tgts>0?p.yds/p.tgts:9, catch_rate:p.tgts>0?p.rec/p.tgts:0.65,
+          adp:p.adp,adp_ppr:p.adp_ppr,adp_half_ppr:p.adp_half_ppr,adp_2qb:p.adp_2qb};
       });
     }
     const rushers=rbs.filter(p=>parseFloat(p.rushing_attempts||0)>0)
       .sort((a,b)=>parseFloat(b.rushing_attempts||0)-parseFloat(a.rushing_attempts||0));
-    if(rushers.length){
-      const tot=rushers.reduce((s,p)=>s+parseFloat(p.rushing_attempts||0),0)||1;
-      const totYds=rushers.reduce((s,p)=>s+parseFloat(p.rushing_yards||0),0)||0;
-      const totTDs=rushers.reduce((s,p)=>s+(parseFloat(p.rushing_touchdowns)||0),0)||0;
+    // Preserve roster RBs the import omits at a ZERO baseline (still selectable), mirroring the
+    // copy-from-season behavior; team totals stay anchored to the imported (real) carries only.
+    const rushKey=p=>p.player_id!=null?('id:'+p.player_id):('nm:'+normName(p.name));
+    const rosterRush=getBase(team,'RB').filter(p=>(parseFloat(p.rushing_attempts)||0)>0||(parseFloat(p.adp)||999)<300);
+    const rushRows=[]; const rushSeen=new Set();
+    rushers.forEach(p=>{ const k=rushKey(p); if(rushSeen.has(k)) return; rushSeen.add(k);
+      rushRows.push({name:p.name,headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
+        att:parseFloat(p.rushing_attempts)||0,yds:parseFloat(p.rushing_yards)||0,tds:parseFloat(p.rushing_touchdowns)||0,
+        adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
+    rosterRush.forEach(p=>{ const k=rushKey(p); if(rushSeen.has(k)) return; rushSeen.add(k);
+      rushRows.push({name:p.name,headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
+        att:0,yds:0,tds:0,
+        adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
+    if(rushRows.length){
+      const tot=rushRows.reduce((s,p)=>s+p.att,0)||1;
+      const totYds=rushRows.reduce((s,p)=>s+p.yds,0)||0;
+      const totTDs=rushRows.reduce((s,p)=>s+p.tds,0)||0;
       state.rushing.total_attempts=tot;
       state.rushing.total_yards=totYds;
       state.rushing.ypa=tot>0?totYds/tot:4.0;
       state.rushing.total_rush_tds=totTDs;
-      state.rushing.shares=rushers.map(p=>{
-        const att=parseFloat(p.rushing_attempts)||0;
-        const yds=parseFloat(p.rushing_yards)||0;
-        return {name:p.name,pos:'RB',headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
-          baseline_att:att,baseline_yards:yds,baseline_tds:parseFloat(p.rushing_touchdowns)||0,
-          share:att/tot, td_share:totTDs>0?(parseFloat(p.rushing_touchdowns)||0)/totTDs:1/rushers.length,
-          ypc:att>0?yds/att:4.0,
-          adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999};
+      state.rushing.shares=rushRows.map(p=>{
+        return {name:p.name,pos:'RB',headshot:p.headshot,slug:p.slug,player_id:p.player_id,
+          baseline_att:p.att,baseline_yards:p.yds,baseline_tds:p.tds,
+          share:p.att/tot, td_share:totTDs>0?p.tds/totTDs:1/rushRows.length,
+          ypc:p.att>0?p.yds/p.att:4.0,
+          adp:p.adp,adp_ppr:p.adp_ppr,adp_half_ppr:p.adp_half_ppr,adp_2qb:p.adp_2qb};
       });
     }
   });

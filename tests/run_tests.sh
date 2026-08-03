@@ -105,6 +105,7 @@ run_js_test test_batch2        "Format presets, vacated production, auto-populat
 run_js_test test_batch3        "Editable reception share, vacated roster membership"
 run_js_test test_batch4        "Headshot resolution, roster merge, vacated sort, target reconcile"
 run_js_test test_games         "Projected games from passing-yards share (ATL/CIN)"
+run_js_test test_import_qbgames_roster "Import: committee QB games + QB/WR/RB roster preserved at 0"
 run_js_test test_seasons       "10-year season tab rendering"
 run_js_test test_discrepancy   "Receiving-yards discrepancy detection and reconcile"
 run_js_test test_flacco_app    "Flacco per-team split flows through app correctly"
