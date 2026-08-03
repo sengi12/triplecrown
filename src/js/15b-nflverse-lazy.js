@@ -244,11 +244,12 @@ function decodeAnySeed(data){
 
 if(typeof module!=='undefined') module.exports={decodeSeed,decodeDefWeekly,decodeFantasy,decodeAnySeed,fetchSeedJson};
 
-let _nflverseLazyLoaded = { def_weekly:false, ol_weekly:false, coaching_scheme:false };
+let _nflverseLazyLoaded = { def_weekly:false, ol_weekly:false, adv_weekly:false, coaching_scheme:false };
 let _nflverseLazyPromise = {};
 const _NFLVERSE_SIDECAR_URL = {
   def_weekly: 'seeds/triplecrown_seed.def_weekly.json',
   ol_weekly: 'seeds/triplecrown_seed.ol_weekly.json',
+  adv_weekly: 'seeds/triplecrown_seed.adv_weekly.json',
   coaching_scheme: 'seeds/triplecrown_seed.coaching.json',
 };
 
@@ -270,7 +271,7 @@ function nflverseSectionReady(section){
 
 // Reset lazy state — called when the app replaces NFLVERSE wholesale (seed (re)load).
 function resetNflverseLazy(){
-  _nflverseLazyLoaded = { def_weekly:false, ol_weekly:false, coaching_scheme:false };
+  _nflverseLazyLoaded = { def_weekly:false, ol_weekly:false, adv_weekly:false, coaching_scheme:false };
   _nflverseLazyPromise = {};
   _coachingSeasonLoaded = {};
   _coachingSeasonPromise = {};
@@ -334,6 +335,7 @@ function ensureNflverseCoachingSeason(season){
   try{
     const dw = decodeAnySeed((typeof SEED_NFLVERSE_DEF_WEEKLY!=='undefined') ? SEED_NFLVERSE_DEF_WEEKLY : null);
     const ow = decodeAnySeed((typeof SEED_NFLVERSE_OL_WEEKLY!=='undefined') ? SEED_NFLVERSE_OL_WEEKLY : null);
+    const aw = decodeAnySeed((typeof SEED_NFLVERSE_ADV_WEEKLY!=='undefined') ? SEED_NFLVERSE_ADV_WEEKLY : null);
     // SEED_NFLVERSE_COACHING is embedded as {season: payload}. Each season payload may itself
     // be compact-coded, so decode per season before merging into NFLVERSE.
     const rawCs = (typeof SEED_NFLVERSE_COACHING!=='undefined') ? SEED_NFLVERSE_COACHING : null;
@@ -346,6 +348,7 @@ function ensureNflverseCoachingSeason(season){
     }
     if(dw && Object.keys(dw).length){ mergeNflverseSection('def_weekly', dw); _nflverseLazyLoaded.def_weekly = true; }
     if(ow && Object.keys(ow).length){ mergeNflverseSection('ol_weekly', ow); _nflverseLazyLoaded.ol_weekly = true; }
+    if(aw && Object.keys(aw).length){ mergeNflverseSection('adv_weekly', aw); _nflverseLazyLoaded.adv_weekly = true; }
     if(cs && Object.keys(cs).length){ mergeNflverseSection('coaching_scheme', cs); _nflverseLazyLoaded.coaching_scheme = true; }
   }catch(e){ /* no embedded sidecars — hosted lazy path will fetch on demand */ }
 })();

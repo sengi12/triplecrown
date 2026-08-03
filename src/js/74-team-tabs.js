@@ -197,12 +197,13 @@ function coordInlineLabel(a,b,c){
 }
 
 // ── Advanced week-range control (team cards) ───────────────────────────────
-// Uses nflverse `ol_weekly` sidecar today (O-Line pass/run cards). Other advanced
-// categories stay full-season until weekly sidecars are added for them.
+// Uses nflverse weekly sidecars (`ol_weekly` + `adv_weekly`) to recompute
+// selected advanced cards over arbitrary week windows.
 let _advWeekDragByTeam = {};       // temporary drag state before commit
 let _advWeeklySeedReady = false;
 let _advWeeklySeedLoading = false;
 let _advOlRangeCache = {};         // key: `${season}:${lo}-${hi}` -> {passTbl, runTbl}
+let _advGenRangeCache = {};        // key: `${season}:${lo}-${hi}` -> recomputed advanced tables
 
 function _advSeasonCanRange(){
   if(activeSeason==='proj') return false;
@@ -226,8 +227,11 @@ function _advEnsureWeeklyLoaded(){
   if(_advWeeklySeedReady || _advWeeklySeedLoading) return;
   if(typeof ensureNflverseSection!=='function') return;
   _advWeeklySeedLoading=true;
-  ensureNflverseSection('ol_weekly').then(ok=>{
-    _advWeeklySeedReady = !!ok;
+  Promise.all([
+    ensureNflverseSection('ol_weekly').catch(()=>false),
+    ensureNflverseSection('adv_weekly').catch(()=>false),
+  ]).then(([okOl, okAdv])=>{
+    _advWeeklySeedReady = !!(okOl || okAdv);
     _advWeeklySeedLoading = false;
     if(typeof renderContent==='function') renderContent();
   }).catch(()=>{ _advWeeklySeedLoading=false; });
@@ -433,15 +437,229 @@ function _advComputeOlRangeTables(season, lo, hi){
   _advOlRangeCache[cacheKey]=out;
   return out;
 }
+
+function _advComputeGeneralRangeTables(season, lo, hi){
+  const cacheKey=`${season}:${lo}-${hi}`;
+  if(_advGenRangeCache[cacheKey]) return _advGenRangeCache[cacheKey];
+  const pack=(NFLVERSE&&NFLVERSE[String(season)]&&NFLVERSE[String(season)].adv_weekly)||null;
+  if(!pack || !pack.teams || !Array.isArray(pack.weeks) || !Array.isArray(pack.cols)) return null;
+  const weekIdx=[];
+  for(let i=0;i<pack.weeks.length;i++){
+    const w=Number(pack.weeks[i]);
+    if(Number.isFinite(w) && w>=lo && w<=hi) weekIdx.push(i);
+  }
+  if(!weekIdx.length) return null;
+  const last5Idx=weekIdx.slice(-5);
+  const cols=pack.cols;
+  const cidx={}; cols.forEach((c,i)=>{ cidx[c]=i; });
+
+  const teams={};
+  for(const tm in pack.teams){
+    const rows=Array.isArray(pack.teams[tm]) ? pack.teams[tm] : [];
+    const sum={};
+    const l5={};
+    cols.forEach(c=>{ sum[c]=0; l5[c]=0; });
+    weekIdx.forEach(ix=>{
+      const r=rows[ix]||[];
+      cols.forEach((c,j)=>{ sum[c]+=Number(r[j]||0); });
+    });
+    last5Idx.forEach(ix=>{
+      const r=rows[ix]||[];
+      cols.forEach((c,j)=>{ l5[c]+=Number(r[j]||0); });
+    });
+
+    const offPlays=sum.off_plays||0;
+    const defPlays=sum.def_plays||0;
+    const offConvObs=sum.off_conv_obs||0;
+    const defConvObs=sum.def_conv_obs||0;
+    const offDriveCt=sum.off_drive_ct||0;
+    const defDriveCt=sum.def_drive_ct||0;
+    const l5OffPlays=l5.off_plays||0;
+    const l5DefPlays=l5.def_plays||0;
+
+    const tendPlays=sum.tend_plays||0;
+    const db=sum.db||0;
+    const catchable=sum.tend_catchable||0;
+
+    const paceSnaps=sum.pace_snaps||0;
+    const paceNeutralSnaps=sum.pace_neutral_snaps||0;
+    const paceGames=sum.pace_games||0;
+    const paceSecN=sum.pace_sec_n||0;
+    const l5PaceNeutral=l5.pace_neutral_snaps||0;
+    const l5PaceSecN=l5.pace_sec_n||0;
+
+    const offPersObs=sum.off_pers_obs||0;
+    const defPersObs=sum.def_pers_obs||0;
+    const covObs=sum.cov_obs||0;
+    const covShellObs=sum.cov_shell_obs||0;
+    const blitzObs=sum.blitz_db_obs||0;
+    const dlDropbacks=sum.dl_dropbacks||0;
+    const dlNoBlitzObs=sum.dl_no_blitz_obs||0;
+    const dlRushAtt=sum.dl_rush_att||0;
+
+    teams[tm]={
+      offense:{
+        'EPA/Play': _advNum(offPlays>0 ? (sum.off_epa/offPlays) : null, 3),
+        'Yards Per Play': _advNum(offPlays>0 ? (sum.off_yards/offPlays) : null, 2),
+        'Y/PL Last 5': _advNum(l5OffPlays>0 ? (l5.off_yards/l5OffPlays) : null, 2),
+        'Points Per Drive': _advNum(offDriveCt>0 ? (sum.off_drive_pts/offDriveCt) : null, 2),
+        'Explosive Play Rate': _advNum(offPlays>0 ? (sum.off_explosive/offPlays)*100 : null, 1),
+        'Down Conversion Rate': _advNum(offConvObs>0 ? (sum.off_conv/offConvObs)*100 : null, 1),
+      },
+      defense:{
+        'EPA/Play': _advNum(defPlays>0 ? (-(sum.def_epa_allowed/defPlays)) : null, 3),
+        'Yards Per Play': _advNum(defPlays>0 ? (sum.def_yards/defPlays) : null, 2),
+        'Y/PL Last 5': _advNum(l5DefPlays>0 ? (l5.def_yards/l5DefPlays) : null, 2),
+        'Points Per Drive': _advNum(defDriveCt>0 ? (sum.def_drive_pts_allowed/defDriveCt) : null, 2),
+        'Explosive Play Rate': _advNum(defPlays>0 ? (sum.def_explosive_allowed/defPlays)*100 : null, 1),
+        'Down Conversion Rate': _advNum(defConvObs>0 ? (sum.def_conv_allowed/defConvObs)*100 : null, 1),
+      },
+      tendencies:{
+        'Shotgun Rate': _advNum(tendPlays>0 ? (sum.tend_shotgun/tendPlays)*100 : null, 1),
+        'NoHuddle Rate': _advNum(tendPlays>0 ? (sum.tend_nohuddle/tendPlays)*100 : null, 1),
+        'AirYards/Att': _advNum((sum.air_att||0)>0 ? (sum.air_sum/sum.air_att) : null, 2),
+        'Motion Rate': _advNum(tendPlays>0 ? (sum.tend_motion/tendPlays)*100 : null, 1),
+        'Play Action Rate': _advNum(db>0 ? (sum.tend_play_action/db)*100 : null, 1),
+        'RPO Rate': _advNum(tendPlays>0 ? (sum.tend_rpo/tendPlays)*100 : null, 1),
+        'Screen Rate': _advNum(db>0 ? (sum.tend_screen/db)*100 : null, 1),
+        'Trick Play Rate': _advNum(tendPlays>0 ? (sum.tend_trick/tendPlays)*100 : null, 1),
+        'Drop Rate': _advNum(catchable>0 ? (sum.tend_drop/catchable)*100 : null, 1),
+      },
+      pace:{
+        'Neutral DB Rate': _advNum(paceNeutralSnaps>0 ? (sum.pace_neutral_db/paceNeutralSnaps)*100 : null, 1),
+        'Neutral DB Rate Last 5': _advNum(l5PaceNeutral>0 ? (l5.pace_neutral_db/l5PaceNeutral)*100 : null, 1),
+        'Sec/Play': _advNum(paceSecN>0 ? (sum.pace_sec_sum/paceSecN) : null, 1),
+        'Sec/Play Last 5': _advNum(l5PaceSecN>0 ? (l5.pace_sec_sum/l5PaceSecN) : null, 1),
+        'Off Plays/G': _advNum(paceGames>0 ? (paceSnaps/paceGames) : null, 1),
+        'Total Plays/G': _advNum(paceGames>0 ? ((sum.pace_total_game_plays||0)/paceGames) : null, 1),
+      },
+      personnel:{
+        '11 Personnel': _advNum(offPersObs>0 ? (sum.off_11/offPersObs)*100 : null, 1),
+        '12 Personnel': _advNum(offPersObs>0 ? (sum.off_12/offPersObs)*100 : null, 1),
+        '13 Personnel': _advNum(offPersObs>0 ? (sum.off_13/offPersObs)*100 : null, 1),
+        '21 Personnel': _advNum(offPersObs>0 ? (sum.off_21/offPersObs)*100 : null, 1),
+        '3WR Rate': _advNum(offPersObs>0 ? (sum.off_wr3/offPersObs)*100 : null, 1),
+        'Multi TE Rate': _advNum(offPersObs>0 ? (sum.off_mte/offPersObs)*100 : null, 1),
+        'Multi RB Rate': _advNum(offPersObs>0 ? (sum.off_multirb/offPersObs)*100 : null, 1),
+      },
+      coverage:{
+        'Man Rate': _advNum(covObs>0 ? (sum.cov_man/covObs)*100 : null, 1),
+        'Zone Rate': _advNum(covObs>0 ? (sum.cov_zone/covObs)*100 : null, 1),
+        'Middle Closed Rate': _advNum(covShellObs>0 ? (sum.cov_mofc/covShellObs)*100 : null, 1),
+        'Middle Open Rate': _advNum(covShellObs>0 ? (sum.cov_mofo/covShellObs)*100 : null, 1),
+        'Cover 1': _advNum(covShellObs>0 ? (sum.cov_c1/covShellObs)*100 : null, 1),
+        'Cover 2': _advNum(covShellObs>0 ? (sum.cov_c2/covShellObs)*100 : null, 1),
+        'Cover 3': _advNum(covShellObs>0 ? (sum.cov_c3/covShellObs)*100 : null, 1),
+      },
+      def_tendencies:{
+        'Blitz Rate': _advNum(blitzObs>0 ? (sum.blitz_db5/blitzObs)*100 : null, 1),
+        'Sub Package Rate': _advNum(defPersObs>0 ? (sum.def_sub/defPersObs)*100 : null, 1),
+        'Nickel Rate': _advNum(defPersObs>0 ? (sum.def_nickel/defPersObs)*100 : null, 1),
+        'Dime+ Rate': _advNum(defPersObs>0 ? (sum.def_dime/defPersObs)*100 : null, 1),
+      },
+      defensive_line:{
+        'Pressure Rate': _advNum(dlDropbacks>0 ? (sum.dl_pressures/dlDropbacks)*100 : null, 1),
+        'No Blitz Pressure Rate': _advNum(dlNoBlitzObs>0 ? (sum.dl_no_blitz_pressures/dlNoBlitzObs)*100 : null, 1),
+        'Rush Stuff Rate': _advNum(dlRushAtt>0 ? (sum.dl_rush_stuffed/dlRushAtt)*100 : null, 1),
+      },
+    };
+  }
+
+  const mk=(vals, lower)=>_advRankMap(vals, lower);
+  const out={};
+  const defLower=new Set(['Yards Per Play','Y/PL Last 5','Points Per Drive','Explosive Play Rate','Down Conversion Rate']);
+  const tendLower=new Set(['Drop Rate']);
+  const paceLower=new Set(['Sec/Play','Sec/Play Last 5']);
+  const covLower=new Set();
+  const persLower=new Set();
+  const dtendLower=new Set();
+  const dlineLower=new Set(['Missed Tackles']);
+  const spec={
+    offense:{lower:new Set(), cols:['EPA/Play','Yards Per Play','Y/PL Last 5','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
+    defense:{lower:defLower, cols:['EPA/Play','Yards Per Play','Y/PL Last 5','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
+    tendencies:{lower:tendLower, cols:['Shotgun Rate','NoHuddle Rate','AirYards/Att','Motion Rate','Play Action Rate','RPO Rate','Screen Rate','Trick Play Rate','Drop Rate']},
+    pace:{lower:paceLower, cols:['Neutral DB Rate','Neutral DB Rate Last 5','Sec/Play','Sec/Play Last 5','Off Plays/G','Total Plays/G']},
+    personnel:{lower:persLower, cols:['11 Personnel','12 Personnel','13 Personnel','21 Personnel','3WR Rate','Multi TE Rate','Multi RB Rate']},
+    coverage:{lower:covLower, cols:['Man Rate','Zone Rate','Middle Closed Rate','Middle Open Rate','Cover 1','Cover 2','Cover 3']},
+    def_tendencies:{lower:dtendLower, cols:['Blitz Rate','Sub Package Rate','Nickel Rate','Dime+ Rate']},
+    defensive_line:{lower:dlineLower, cols:['Pressure Rate','No Blitz Pressure Rate','Rush Stuff Rate','Missed Tackles']},
+  };
+  for(const key of Object.keys(spec)){
+    const colsList=spec[key].cols;
+    const table={columns:colsList, teams:{}};
+    for(const c of colsList){
+      const vals={};
+      for(const tm in teams) vals[tm]=teams[tm][key][c];
+      const rk=mk(vals, spec[key].lower.has(c));
+      for(const tm in teams){
+        table.teams[tm]=table.teams[tm]||{values:{},ranks:{}};
+        table.teams[tm].values[c]=teams[tm][key][c];
+        table.teams[tm].ranks[c]=(rk[tm]!=null)?rk[tm]:null;
+      }
+    }
+    out[key]=table;
+  }
+  _advGenRangeCache[cacheKey]=out;
+  return out;
+}
 function _advTableForRange(key, baseTable, team){
   if(!baseTable) return baseTable;
   if(!_advWeekRangeActive(team)) return baseTable;
   if(!_advSeasonCanRange()) return baseTable;
-  if(!(key==='offensive_line_pass' || key==='offensive_line_run')) return baseTable;
   const [lo,hi]=_advGetWeekRange(team);
-  const agg=_advComputeOlRangeTables(String(advTeamSeason()), lo, hi);
-  if(!agg) return baseTable;
-  return key==='offensive_line_pass' ? agg.passTbl : agg.runTbl;
+  const season=String(advTeamSeason());
+  if(key==='offensive_line_pass' || key==='offensive_line_run'){
+    const agg=_advComputeOlRangeTables(season, lo, hi);
+    if(!agg) return baseTable;
+    return key==='offensive_line_pass' ? agg.passTbl : agg.runTbl;
+  }
+  if(key==='offense' || key==='defense' || key==='tendencies' || key==='pace'){
+    const agg=_advComputeGeneralRangeTables(season, lo, hi);
+    if(!agg || !agg[key]) return baseTable;
+    const aggTbl=agg[key];
+    const baseTeams=(baseTable&&baseTable.teams)||{};
+    const aggTeams=(aggTbl&&aggTbl.teams)||{};
+    const outTeams={};
+    const allTeams=new Set([...Object.keys(baseTeams), ...Object.keys(aggTeams)]);
+    const cols=(Array.isArray(baseTable.columns) && baseTable.columns.length) ? baseTable.columns : (aggTbl.columns||[]);
+    allTeams.forEach(tm=>{
+      const b=baseTeams[tm]||{values:{},ranks:{}};
+      const a=aggTeams[tm]||{values:{},ranks:{}};
+      const values={}; const ranks={};
+      cols.forEach(col=>{
+        const av=(a.values||{})[col];
+        const ar=(a.ranks||{})[col];
+        values[col]=(av!=null && Number.isFinite(av)) ? av : ((b.values||{})[col]!=null ? (b.values||{})[col] : null);
+        ranks[col]=(ar!=null && Number.isFinite(ar)) ? ar : ((b.ranks||{})[col]!=null ? (b.ranks||{})[col] : null);
+      });
+      outTeams[tm]={values,ranks};
+    });
+    return Object.assign({}, baseTable, { columns: cols, teams: outTeams });
+  }
+  if(key==='personnel' || key==='coverage' || key==='def_tendencies' || key==='defensive_line'){
+    const agg=_advComputeGeneralRangeTables(season, lo, hi);
+    if(!agg || !agg[key]) return baseTable;
+    const aggTbl=agg[key];
+    const baseTeams=(baseTable&&baseTable.teams)||{};
+    const aggTeams=(aggTbl&&aggTbl.teams)||{};
+    const outTeams={};
+    const allTeams=new Set([...Object.keys(baseTeams), ...Object.keys(aggTeams)]);
+    const cols=(Array.isArray(baseTable.columns) && baseTable.columns.length) ? baseTable.columns : (aggTbl.columns||[]);
+    allTeams.forEach(tm=>{
+      const b=baseTeams[tm]||{values:{},ranks:{}};
+      const a=aggTeams[tm]||{values:{},ranks:{}};
+      const values={}; const ranks={};
+      cols.forEach(col=>{
+        const av=(a.values||{})[col];
+        const ar=(a.ranks||{})[col];
+        values[col]=(av!=null && Number.isFinite(av)) ? av : ((b.values||{})[col]!=null ? (b.values||{})[col] : null);
+        ranks[col]=(ar!=null && Number.isFinite(ar)) ? ar : ((b.ranks||{})[col]!=null ? (b.ranks||{})[col] : null);
+      });
+      outTeams[tm]={values,ranks};
+    });
+    return Object.assign({}, baseTable, { columns: cols, teams: outTeams });
+  }
+  return baseTable;
 }
 function renderAdvWeekRange(team){
   if(!_advSeasonCanRange()) return '';
@@ -468,10 +686,21 @@ function renderAdvWeekRange(team){
     </div>
     ${oppRail}
     <div class="week-range-label" style="margin-top:8px;">
-      <span class="week-range-hint">Windowed recompute currently powers O-Line pass/run cards; other advanced cards remain full-season until weekly sidecars are added.</span>
+      <span class="week-range-hint">Windowed recompute powers offense, defense, tendencies, pace, personnel, coverage, defensive tendencies, pass rush &amp; run D, and O-Line pass/run cards.</span>
       ${loading}
     </div>
   </div>`;
+}
+
+// Projected 2026 OL overall-score chip shown next to the OL Pass / OL Run block titles.
+// which = 'pass' | 'run'. Empty when no projection is available for the team.
+function _advProjOlBadge(team, which){
+  const p = (typeof projectedOlScore==='function') ? projectedOlScore(team, which) : null;
+  if(!p || p.score==null || Number.isNaN(Number(p.score))) return '';
+  const rk = (p.rank!=null && !Number.isNaN(Number(p.rank))) ? Number(p.rank) : null;
+  const cls = (typeof sharpRankClass==='function' && rk!=null) ? sharpRankClass(rk) : '';
+  const lbl = which==='pass' ? 'pass-protection' : 'run-blocking';
+  return ` <span class="sr-proj-badge ${cls}" title="Projected 2026 ${lbl} overall score, from projected depth-chart starters">Proj \u201926 ${Number(p.score).toFixed(1)}${rk!=null?` \u00b7 #${rk}`:''}</span>`;
 }
 
 function renderTeamAdvanced(team){
@@ -502,8 +731,10 @@ function renderTeamAdvanced(team){
         <div class="sr-stat-rank">${sharpRankBadge(r)}</div>
       </div>`;
     }).join('');
+    const projBadge = (key==='offensive_line_pass' || key==='offensive_line_run')
+      ? _advProjOlBadge(useTeam, key==='offensive_line_pass'?'pass':'run') : '';
     return `<div class="sr-card">
-      <div class="sr-card-title">${tbl.title||key}</div>
+      <div class="sr-card-title">${tbl.title||key}${projBadge}</div>
       <div class="sr-stat-grid">${lines}</div>
     </div>`;
   };

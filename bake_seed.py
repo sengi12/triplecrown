@@ -316,6 +316,7 @@ def main():
     seed_dir = os.path.dirname(os.path.abspath(args.seed))
     nflverse_def_weekly = _decode_defweekly(_sidecar(os.path.join(seed_dir, "triplecrown_seed.def_weekly.json")))
     nflverse_ol_weekly = _sidecar(os.path.join(seed_dir, "triplecrown_seed.ol_weekly.json"))
+    nflverse_adv_weekly = _sidecar(os.path.join(seed_dir, "triplecrown_seed.adv_weekly.json"))
     # Coaching scheme now ships as per-season sidecars (seeds/triplecrown_seed.coaching.<season>.json);
     # re-embed every season for the offline/baked file. Fall back to the old combined file.
     import glob as _glob
@@ -329,13 +330,15 @@ def main():
     if not nflverse_coaching:
         nflverse_coaching = _sidecar(os.path.join(seed_dir, "triplecrown_seed.coaching.json"))
     # Fallback: if an older single-file seed still carries these inline, lift them out.
-    if not nflverse_def_weekly or not nflverse_ol_weekly or not nflverse_coaching:
+    if not nflverse_def_weekly or not nflverse_ol_weekly or not nflverse_adv_weekly or not nflverse_coaching:
         for _s, _blk in (nflverse.items() if isinstance(nflverse, dict) else []):
             if isinstance(_blk, dict):
                 if not nflverse_def_weekly and "def_weekly" in _blk:
                     nflverse_def_weekly.setdefault(_s, _blk.get("def_weekly"))
                 if not nflverse_ol_weekly and "ol_weekly" in _blk:
                     nflverse_ol_weekly.setdefault(_s, _blk.get("ol_weekly"))
+                if not nflverse_adv_weekly and "adv_weekly" in _blk:
+                    nflverse_adv_weekly.setdefault(_s, _blk.get("adv_weekly"))
                 if not nflverse_coaching and "coaching_scheme" in _blk:
                     nflverse_coaching.setdefault(_s, _blk.get("coaching_scheme"))
 
@@ -364,6 +367,7 @@ def main():
         f"const SEED_NFLVERSE = {j(nflverse)};\n"
         f"const SEED_NFLVERSE_DEF_WEEKLY = {j(nflverse_def_weekly)};\n"
         f"const SEED_NFLVERSE_OL_WEEKLY = {j(nflverse_ol_weekly)};\n"
+        f"const SEED_NFLVERSE_ADV_WEEKLY = {j(nflverse_adv_weekly)};\n"
         f"const SEED_NFLVERSE_COACHING = {j(nflverse_coaching)};\n"
         f"{END}"
     )

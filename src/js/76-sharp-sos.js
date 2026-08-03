@@ -55,24 +55,56 @@ function renderSharpLeague(){
     return;
   }
   const tbl=SRC[sharpTable];
-  const cols=tbl.columns;
-  let rows=Object.keys(tbl.teams).map(code=>({code, ...tbl.teams[code]}));
+  const isProjTable = (sharpTable==='offensive_line_pass' || sharpTable==='offensive_line_run');
+  const projWhich = sharpTable==='offensive_line_pass' ? 'pass' : (sharpTable==='offensive_line_run' ? 'run' : null);
+  const projCol = 'Proj 2026';
+  const showProjCol = isProjTable && typeof pcardQbOlSeason!=='undefined' && String(pcardQbOlSeason)==='2026';
+  const baseCols = (tbl.columns||[]).slice();
+  let cols = baseCols;
+  if(showProjCol){
+    const i=baseCols.indexOf('Overall Score');
+    if(i>=0) cols=[...baseCols.slice(0,i+1), projCol, ...baseCols.slice(i+1)];
+    else cols=[projCol, ...baseCols];
+  }
+  let rows=Object.keys(tbl.teams).map(code=>{
+    const base={code, ...tbl.teams[code]};
+    if(!showProjCol || !projWhich || typeof projectedOlScore!=='function') return base;
+    const p=projectedOlScore(code, projWhich);
+    base._projScore=(p && p.score!=null && !Number.isNaN(Number(p.score))) ? Number(p.score) : null;
+    base._projRank=(p && p.rank!=null && !Number.isNaN(Number(p.rank))) ? Number(p.rank) : null;
+    return base;
+  });
+
+  if(!sharpSortCol && showProjCol) sharpSortCol = projCol;
   const sortCol = sharpSortCol || cols[0];
   rows.sort((a,b)=>{
-    const ra=a.ranks?a.ranks[sortCol]:null, rb=b.ranks?b.ranks[sortCol]:null;
+    let ra=null, rb=null;
+    if(sortCol===projCol){
+      ra=a._projRank; rb=b._projRank;
+    }else{
+      ra=a.ranks?a.ranks[sortCol]:null;
+      rb=b.ranks?b.ranks[sortCol]:null;
+    }
     if(ra==null && rb==null) return 0;
     if(ra==null) return 1;
     if(rb==null) return -1;
     return (ra-rb)*sharpSortDir;
   });
+
   const tableTabs = keys.map(k=>`<button class="sr-tab ${k===sharpTable?'active':''}" onclick="setSharpTable('${k}')">${SRC[k].title||k}</button>`).join('');
   const head = `<th class="sr-th-team">TEAM</th>`+cols.map(c=>{
     const active = c===sortCol;
     const arrow = active ? (sharpSortDir>0?' ▲':' ▼') : '';
-    return `<th class="sr-th ${active?'active':''}" onclick="sortSharpBy('${c.replace(/'/g,"\\'")}')" title="Sort by ${c}">${c}${arrow}</th>`;
+    const title = c===projCol ? `Projected 2026 OL ${projWhich==='pass'?'pass-protection':'run-blocking'} overall score` : `Sort by ${c}`;
+    return `<th class="sr-th ${active?'active':''}" onclick="sortSharpBy('${c.replace(/'/g,"\\'")}')" title="${title}">${c}${arrow}</th>`;
   }).join('');
+
   const body = rows.map(r=>{
     const cells = cols.map(c=>{
+      if(c===projCol){
+        const v=r._projScore, rk=r._projRank;
+        return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${v!=null?Number(v).toFixed(1):'—'}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
+      }
       const v=r.values?r.values[c]:null, rk=r.ranks?r.ranks[c]:null;
       return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${fmtSharpVal(v, sharpColIsPct(tbl,c))}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
     }).join('');
@@ -80,11 +112,19 @@ function renderSharpLeague(){
   }).join('');
   host.innerHTML = headerBar + renderCategoryTabs() + `
     <div class="sr-league-tabs">${tableTabs}</div>
-    <div class="sr-desc">${tbl.title} · <b>${advTeamSeason()} season</b> — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
+    <div class="sr-desc">${tbl.title}${_advLeagueProjOlBadge()} · <b>${advTeamSeason()} season</b> — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
     <div class="card" style="padding:0;overflow-x:auto">
       <table class="sr-league-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
     </div>
     <div class="sr-source">Computed from nflverse play-by-play (nflfastR).</div>`;
+}
+
+// League-wide OL Pass/Run title chip: shows the CURRENT team's projected 2026 OL overall
+// score next to the table title (mirrors the team-specific card badge). Empty otherwise.
+function _advLeagueProjOlBadge(){
+  const which = sharpTable==='offensive_line_pass' ? 'pass' : (sharpTable==='offensive_line_run' ? 'run' : null);
+  if(!which || !currentTeam || typeof _advProjOlBadge!=='function') return '';
+  return _advProjOlBadge(currentTeam, which);
 }
 
 // Offense / Defense / SOS category selector row for the league-wide view.

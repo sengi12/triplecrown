@@ -905,6 +905,245 @@ def ol_weekly_team(season):
         packed["teams"][tm] = {"pass": pass_rows, "run": run_rows}
     return packed
 
+
+def adv_weekly_team(season):
+    """Compact weekly team aggregates for advanced-card range recomputation.
+
+    Stores additive numerators/denominators so the client can recompute accurate
+    windowed values + league ranks for offense/defense/tendencies/pace cards.
+    """
+    pbp_cols = [
+        "game_id", "play_id", "season_type", "week", "posteam", "defteam", "play_type",
+        "qb_dropback", "rush_attempt", "qb_scramble", "qb_kneel", "qb_spike",
+        "sack", "qb_hit",
+        "yards_gained", "epa", "fixed_drive", "fixed_drive_result", "series_result",
+        "shotgun", "no_huddle", "air_yards", "wp", "half_seconds_remaining",
+        "game_seconds_remaining",
+    ]
+    pbp = _load_pbp(season, pbp_cols)
+    pbp = pbp[(pbp["season_type"] == "REG") & pbp["play_type"].isin(["pass", "run"]) & pbp["posteam"].notna()].copy()
+    if pbp.empty:
+        return {}
+    pbp["posteam"] = pbp["posteam"].replace(NFLVERSE_TO_SEED)
+    pbp["defteam"] = pbp["defteam"].replace(NFLVERSE_TO_SEED)
+    pbp["week"] = pd.to_numeric(pbp["week"], errors="coerce")
+    pbp = pbp[pbp["week"].notna()].copy()
+    pbp["week"] = pbp["week"].astype(int)
+    weeks = sorted(int(w) for w in pbp["week"].unique() if int(w) > 0)
+    if not weeks:
+        return {}
+
+    teams = sorted(set(pbp["posteam"].dropna().astype(str).tolist()) | set(pbp["defteam"].dropna().astype(str).tolist()))
+    idx = pd.MultiIndex.from_product([teams, weeks], names=["team", "week"])
+    out = pd.DataFrame(index=idx)
+    plays = pbp.copy()
+
+    # Offense / defense core (_side_table-compatible numerators/denominators).
+    plays["explosive"] = pd.to_numeric(plays["yards_gained"], errors="coerce") >= 20
+    plays["conv"] = plays["series_result"].isin(["First down", "Touchdown"])
+    plays["conv_obs"] = plays["series_result"].notna()
+
+    out["off_plays"] = plays.groupby(["posteam", "week"]).size().reindex(idx).fillna(0)
+    out["off_yards"] = pd.to_numeric(plays["yards_gained"], errors="coerce").groupby([plays["posteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["off_epa"] = pd.to_numeric(plays["epa"], errors="coerce").groupby([plays["posteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["off_explosive"] = plays.groupby(["posteam", "week"])["explosive"].sum(min_count=1).reindex(idx).fillna(0)
+    out["off_conv"] = plays.groupby(["posteam", "week"])["conv"].sum(min_count=1).reindex(idx).fillna(0)
+    out["off_conv_obs"] = plays.groupby(["posteam", "week"])["conv_obs"].sum(min_count=1).reindex(idx).fillna(0)
+
+    out["def_plays"] = plays.groupby(["defteam", "week"]).size().reindex(idx).fillna(0)
+    out["def_yards"] = pd.to_numeric(plays["yards_gained"], errors="coerce").groupby([plays["defteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["def_epa_allowed"] = pd.to_numeric(plays["epa"], errors="coerce").groupby([plays["defteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["def_explosive_allowed"] = plays.groupby(["defteam", "week"])["explosive"].sum(min_count=1).reindex(idx).fillna(0)
+    out["def_conv_allowed"] = plays.groupby(["defteam", "week"])["conv"].sum(min_count=1).reindex(idx).fillna(0)
+    out["def_conv_obs"] = plays.groupby(["defteam", "week"])["conv_obs"].sum(min_count=1).reindex(idx).fillna(0)
+
+    dr = plays.dropna(subset=["fixed_drive"]).copy()
+    dr["dpts"] = dr["fixed_drive_result"].map(_drive_points)
+    d_off = dr.groupby(["posteam", "week", "game_id", "fixed_drive"])["dpts"].first().reset_index()
+    d_def = dr.groupby(["defteam", "week", "game_id", "fixed_drive"])["dpts"].first().reset_index()
+    out["off_drive_pts"] = d_off.groupby(["posteam", "week"])["dpts"].sum(min_count=1).reindex(idx).fillna(0)
+    out["off_drive_ct"] = d_off.groupby(["posteam", "week"]).size().reindex(idx).fillna(0)
+    out["def_drive_pts_allowed"] = d_def.groupby(["defteam", "week"])["dpts"].sum(min_count=1).reindex(idx).fillna(0)
+    out["def_drive_ct"] = d_def.groupby(["defteam", "week"]).size().reindex(idx).fillna(0)
+
+    # Tendencies base.
+    out["tend_plays"] = out["off_plays"]
+    out["tend_shotgun"] = pd.to_numeric(plays["shotgun"], errors="coerce").fillna(0).groupby([plays["posteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["tend_nohuddle"] = pd.to_numeric(plays["no_huddle"], errors="coerce").fillna(0).groupby([plays["posteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+
+    db = plays[plays["qb_dropback"] == 1].copy()
+    out["db"] = db.groupby(["posteam", "week"]).size().reindex(idx).fillna(0)
+    air = pd.to_numeric(db["air_yards"], errors="coerce")
+    out["air_sum"] = air.groupby([db["posteam"], db["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["air_att"] = air.notna().groupby([db["posteam"], db["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+
+    for c in ["tend_motion", "tend_play_action", "tend_rpo", "tend_screen", "tend_trick", "tend_drop", "tend_catchable"]:
+        out[c] = 0.0
+    try:
+        ftn = _aux_csv(
+            FTN_URL.format(season=season),
+            usecols=[
+                "nflverse_game_id", "nflverse_play_id", "is_motion", "is_play_action", "is_rpo",
+                "is_screen_pass", "is_trick_play", "is_drop", "is_catchable_ball", "n_pass_rushers",
+            ],
+        )
+        m = plays.merge(
+            ftn,
+            left_on=["game_id", "play_id"],
+            right_on=["nflverse_game_id", "nflverse_play_id"],
+            how="left",
+        )
+        dbm = m[m["qb_dropback"] == 1].copy()
+        out["tend_motion"] = (m["is_motion"] == True).groupby([m["posteam"], m["week"]]).sum(min_count=1).reindex(idx).fillna(0)  # noqa: E712
+        out["tend_rpo"] = (m["is_rpo"] == True).groupby([m["posteam"], m["week"]]).sum(min_count=1).reindex(idx).fillna(0)  # noqa: E712
+        out["tend_trick"] = (m["is_trick_play"] == True).groupby([m["posteam"], m["week"]]).sum(min_count=1).reindex(idx).fillna(0)  # noqa: E712
+        out["tend_play_action"] = (dbm["is_play_action"] == True).groupby([dbm["posteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)  # noqa: E712
+        out["tend_screen"] = (dbm["is_screen_pass"] == True).groupby([dbm["posteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)  # noqa: E712
+        out["tend_drop"] = (dbm["is_drop"] == True).groupby([dbm["posteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)  # noqa: E712
+        out["tend_catchable"] = (dbm["is_catchable_ball"] == True).groupby([dbm["posteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)  # noqa: E712
+    except Exception:
+        pass
+
+    # Coverage/personnel and defensive tendencies/line proxies from participation + FTN.
+    # Keep everything as additive weekly counts so client week windows recompute exact rates.
+    for c in [
+        "cov_obs", "cov_man", "cov_zone",
+        "cov_shell_obs", "cov_mofc", "cov_mofo", "cov_c1", "cov_c2", "cov_c3",
+        "off_pers_obs", "off_wr3", "off_mte", "off_11", "off_12", "off_13", "off_21", "off_multirb",
+        "def_pers_obs", "def_sub", "def_nickel", "def_dime",
+        "blitz_db_obs", "blitz_db5",
+        "dl_dropbacks", "dl_pressures", "dl_no_blitz_obs", "dl_no_blitz_pressures",
+        "dl_rush_att", "dl_rush_stuffed",
+    ]:
+        out[c] = 0.0
+    try:
+        part = _aux_csv(
+            PART_URL.format(season=season),
+            usecols=[
+                "nflverse_game_id", "play_id", "defense_man_zone_type", "defense_coverage_type",
+                "offense_personnel", "defense_personnel",
+            ],
+        )
+        chart = plays.merge(
+            ftn,
+            left_on=["game_id", "play_id"],
+            right_on=["nflverse_game_id", "nflverse_play_id"],
+            how="left",
+        ).merge(
+            part,
+            left_on=["game_id", "play_id"],
+            right_on=["nflverse_game_id", "play_id"],
+            how="left",
+            suffixes=("", "_part"),
+        )
+
+        dbm = chart[chart["qb_dropback"] == 1].copy()
+        # Defensive tendencies (FTN): blitz = 5+ pass rushers on a dropback.
+        out["blitz_db_obs"] = dbm["n_pass_rushers"].notna().groupby([dbm["defteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["blitz_db5"] = (dbm["n_pass_rushers"] >= 5).groupby([dbm["defteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+
+        # Coverage (participation): man/zone + MOFC/MOFO + Cover 1/2/3.
+        mz = dbm.dropna(subset=["defense_man_zone_type"]).copy()
+        out["cov_obs"] = mz.groupby(["defteam", "week"]).size().reindex(idx).fillna(0)
+        out["cov_man"] = (mz["defense_man_zone_type"] == "MAN_COVERAGE").groupby([mz["defteam"], mz["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["cov_zone"] = (mz["defense_man_zone_type"] == "ZONE_COVERAGE").groupby([mz["defteam"], mz["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+
+        cc = dbm[dbm["defense_coverage_type"].notna() & (dbm["defense_coverage_type"] != "")].copy()
+        MOFC = ["COVER_0", "COVER_1", "COVER_3"]
+        MOFO = ["COVER_2", "COVER_4", "COVER_6", "2_MAN"]
+        out["cov_shell_obs"] = cc.groupby(["defteam", "week"]).size().reindex(idx).fillna(0)
+        out["cov_mofc"] = cc["defense_coverage_type"].isin(MOFC).groupby([cc["defteam"], cc["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["cov_mofo"] = cc["defense_coverage_type"].isin(MOFO).groupby([cc["defteam"], cc["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["cov_c1"] = (cc["defense_coverage_type"] == "COVER_1").groupby([cc["defteam"], cc["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["cov_c2"] = (cc["defense_coverage_type"] == "COVER_2").groupby([cc["defteam"], cc["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["cov_c3"] = (cc["defense_coverage_type"] == "COVER_3").groupby([cc["defteam"], cc["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+
+        # Offensive personnel groups from participation strings.
+        op = chart.dropna(subset=["offense_personnel"]).copy()
+        op = op[op["play_type"].isin(["pass", "run"])]
+        op_cache = {s: _parse_personnel(s) for s in op["offense_personnel"].unique()}
+        op["backs"] = op["offense_personnel"].map(lambda s: op_cache[s].get("RB", 0) + op_cache[s].get("FB", 0))
+        op["te"] = op["offense_personnel"].map(lambda s: op_cache[s].get("TE", 0))
+        op["wr"] = op["offense_personnel"].map(lambda s: op_cache[s].get("WR", 0))
+        out["off_pers_obs"] = op.groupby(["posteam", "week"]).size().reindex(idx).fillna(0)
+        out["off_wr3"] = (op["wr"] >= 3).groupby([op["posteam"], op["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["off_mte"] = (op["te"] >= 2).groupby([op["posteam"], op["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["off_11"] = ((op["backs"] == 1) & (op["te"] == 1)).groupby([op["posteam"], op["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["off_12"] = ((op["backs"] == 1) & (op["te"] == 2)).groupby([op["posteam"], op["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["off_13"] = ((op["backs"] == 1) & (op["te"] == 3)).groupby([op["posteam"], op["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["off_21"] = ((op["backs"] == 2) & (op["te"] == 1)).groupby([op["posteam"], op["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["off_multirb"] = (op["backs"] >= 2).groupby([op["posteam"], op["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+
+        # Defensive personnel groupings.
+        dp = chart.dropna(subset=["defense_personnel"]).copy()
+        dp = dp[dp["play_type"].isin(["pass", "run"])]
+        dp_cache = {s: _parse_personnel(s) for s in dp["defense_personnel"].unique()}
+        dp["dbs"] = dp["defense_personnel"].map(lambda s: sum(dp_cache[s].get(k, 0) for k in ("CB", "FS", "SS", "S", "DB")))
+        out["def_pers_obs"] = dp.groupby(["defteam", "week"]).size().reindex(idx).fillna(0)
+        out["def_sub"] = (dp["dbs"] >= 5).groupby([dp["defteam"], dp["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["def_nickel"] = (dp["dbs"] == 5).groupby([dp["defteam"], dp["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["def_dime"] = (dp["dbs"] >= 6).groupby([dp["defteam"], dp["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+
+        # Defensive-line weekly proxies.
+        dbm["hit_or_sack"] = ((pd.to_numeric(dbm["qb_hit"], errors="coerce").fillna(0) > 0) |
+                               (pd.to_numeric(dbm["sack"], errors="coerce").fillna(0) > 0))
+        out["dl_dropbacks"] = dbm.groupby(["defteam", "week"]).size().reindex(idx).fillna(0)
+        out["dl_pressures"] = dbm.groupby(["defteam", "week"])["hit_or_sack"].sum(min_count=1).reindex(idx).fillna(0)
+        out["dl_no_blitz_obs"] = (dbm["n_pass_rushers"] == 0).groupby([dbm["defteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["dl_no_blitz_pressures"] = ((dbm["n_pass_rushers"] == 0) & (dbm["hit_or_sack"] == True)).groupby([dbm["defteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)  # noqa: E712
+        rd = chart[(chart["rush_attempt"] == 1) & (chart["qb_scramble"] == 0) & (chart["qb_kneel"] == 0)].copy()
+        out["dl_rush_att"] = rd.groupby(["defteam", "week"]).size().reindex(idx).fillna(0)
+        out["dl_rush_stuffed"] = (pd.to_numeric(rd["yards_gained"], errors="coerce") <= 0).groupby([rd["defteam"], rd["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    except Exception:
+        pass
+
+    # Pace components.
+    snaps = pbp[(((pbp["qb_dropback"] == 1) | ((pbp["rush_attempt"] == 1) & (pbp["qb_scramble"] == 0)))
+                 & (pbp["qb_kneel"] == 0) & (pbp["qb_spike"] == 0) & pbp["posteam"].notna())].copy()
+    snaps["posteam"] = snaps["posteam"].replace(NFLVERSE_TO_SEED)
+    snaps["week"] = pd.to_numeric(snaps["week"], errors="coerce")
+    snaps = snaps[snaps["week"].notna()].copy()
+    snaps["week"] = snaps["week"].astype(int)
+    snaps["neutral"] = snaps["wp"].between(0.20, 0.80) & (snaps["half_seconds_remaining"] > 120)
+    out["pace_snaps"] = snaps.groupby(["posteam", "week"]).size().reindex(idx).fillna(0)
+    out["pace_neutral_db"] = ((snaps["neutral"] == True) & (snaps["qb_dropback"] == 1)).groupby([snaps["posteam"], snaps["week"]]).sum(min_count=1).reindex(idx).fillna(0)  # noqa: E712
+    out["pace_neutral_snaps"] = (snaps["neutral"] == True).groupby([snaps["posteam"], snaps["week"]]).sum(min_count=1).reindex(idx).fillna(0)  # noqa: E712
+
+    s = snaps.sort_values(["game_id", "posteam", "fixed_drive", "game_seconds_remaining"], ascending=[True, True, True, False]).copy()
+    s["diff"] = s.groupby(["game_id", "posteam", "fixed_drive"])["game_seconds_remaining"].shift(1) - s["game_seconds_remaining"]
+    s = s[s["diff"].between(1, 45)]
+    out["pace_sec_sum"] = pd.to_numeric(s["diff"], errors="coerce").groupby([s["posteam"], s["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["pace_sec_n"] = s.groupby(["posteam", "week"]).size().reindex(idx).fillna(0)
+    out["pace_games"] = snaps.groupby(["posteam", "week"])["game_id"].nunique().reindex(idx).fillna(0)
+    game_tot = snaps.groupby("game_id").size()
+    tp = snaps[["game_id", "posteam", "week"]].drop_duplicates().copy()
+    tp["gp"] = tp["game_id"].map(game_tot)
+    out["pace_total_game_plays"] = tp.groupby(["posteam", "week"])["gp"].sum(min_count=1).reindex(idx).fillna(0)
+
+    cols = [
+        "off_plays", "off_yards", "off_epa", "off_explosive", "off_conv", "off_conv_obs", "off_drive_pts", "off_drive_ct",
+        "def_plays", "def_yards", "def_epa_allowed", "def_explosive_allowed", "def_conv_allowed", "def_conv_obs", "def_drive_pts_allowed", "def_drive_ct",
+        "tend_plays", "tend_shotgun", "tend_nohuddle", "db", "air_sum", "air_att", "tend_motion", "tend_play_action", "tend_rpo", "tend_screen", "tend_trick", "tend_drop", "tend_catchable",
+        "pace_snaps", "pace_neutral_db", "pace_neutral_snaps", "pace_sec_sum", "pace_sec_n", "pace_games", "pace_total_game_plays",
+        "cov_obs", "cov_man", "cov_zone", "cov_shell_obs", "cov_mofc", "cov_mofo", "cov_c1", "cov_c2", "cov_c3",
+        "off_pers_obs", "off_wr3", "off_mte", "off_11", "off_12", "off_13", "off_21", "off_multirb",
+        "def_pers_obs", "def_sub", "def_nickel", "def_dime", "blitz_db_obs", "blitz_db5",
+        "dl_dropbacks", "dl_pressures", "dl_no_blitz_obs", "dl_no_blitz_pressures", "dl_rush_att", "dl_rush_stuffed",
+    ]
+    for c in cols:
+        if c not in out.columns:
+            out[c] = 0
+        out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0.0)
+
+    packed = {"weeks": weeks, "cols": cols, "teams": {}}
+    for tm in teams:
+        rows = []
+        for wk in weeks:
+            row = out.loc[(tm, wk)]
+            rows.append([round(float(row[c]), 6) for c in cols])
+        packed["teams"][tm] = rows
+    return packed
+
 # Defensive pass-rush + run-defense table (PFR def charting + pbp + FTN proxy). Mirrors Sharp's
 # defensive_line: Pressure Rate, No-Blitz Pressure Rate, Rush Stuff Rate, plus Missed Tackles.
 # Same fidelity tier as the O-Line table (rank ρ ~0.73–0.84 vs Sharp 2025; pressure proxies read
@@ -2506,6 +2745,7 @@ def build_nflverse_season(season):
         "qb_passing": qb_passing_zones(season),
         "rb_fan": rb_rushing_fans(season),
         "ol_weekly": ol_weekly_team(season),
+        "adv_weekly": adv_weekly_team(season),
         "ol_players": _ol_grades_by_player(
             season=season,
             utilization_by_team=util_map,
@@ -2522,7 +2762,7 @@ def build_nflverse_season(season):
 
 def _nflverse_built_cache_path(seasons):
     """Path for cached built nflverse output keyed by requested seasons."""
-    payload = {"seasons": [str(s) for s in seasons], "schema": "nflverse_seed_v4_scheme_grid_all"}
+    payload = {"seasons": [str(s) for s in seasons], "schema": "nflverse_seed_v6_adv_weekly_plus"}
     digest = hashlib.md5(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
     return os.path.join(_nflverse_cache_subdir("built"), f"{digest}.json")
 

@@ -36,6 +36,7 @@ const SEED_NFLVERSE = {};
 // triplecrown_seed.coaching.json); re-embedded by bake_seed.py for the offline/baked file.
 const SEED_NFLVERSE_DEF_WEEKLY = {};
 const SEED_NFLVERSE_OL_WEEKLY = {};
+const SEED_NFLVERSE_ADV_WEEKLY = {};
 const SEED_NFLVERSE_COACHING = {};
 // ═══ TRIPLECROWN_SEED_END ═══
 

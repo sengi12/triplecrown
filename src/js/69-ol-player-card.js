@@ -170,7 +170,104 @@ function _olSlotFamily(slot){
   return 'OL';
 }
 
+function _olDepthChartSlotsByTeam(teamCode){
+  if(typeof espnDepth==='undefined') return null;
+  const rows=espnDepth[teamCode];
+  if(rows===undefined){
+    if(typeof fetchEspnDepth==='function') fetchEspnDepth(teamCode).catch(()=>{});
+    return null;
+  }
+  if(!Array.isArray(rows) || !rows.length) return null;
+
+  const bySlot={};
+  for(const r of rows){
+    const k=String((r&&r.slot)||'').toLowerCase();
+    if(!k) continue;
+    bySlot[k]=r;
+  }
+
+  const out={LT:null,LG:null,C:null,RG:null,RT:null};
+  const used=new Set();
+  const take=(slot, keys)=>{
+    for(const k of keys){
+      const row=bySlot[k];
+      if(!row || !Array.isArray(row.players)) continue;
+      const p=row.players.find(x=>x&&x.name&&!used.has(_olNormName(x.name)));
+      if(!p) continue;
+      used.add(_olNormName(p.name));
+      out[slot]={
+        name:String(p.name||'').trim(),
+        pos:String(p.pos||row.label||slot).toUpperCase(),
+        snaps:0,
+        prevSnaps:0,
+        explicit:slot,
+        preferred:slot,
+        lockFamily:_olSlotFamily(slot),
+      };
+      return true;
+    }
+    return false;
+  };
+
+  take('LT', ['lt']);
+  take('LG', ['lg']);
+  take('C',  ['c']);
+  take('RG', ['rg']);
+  take('RT', ['rt']);
+
+  // If ESPN omits side-specific rows, fill any gaps from generic OL rows by family.
+  const pool=[];
+  for(const k of ['ol','ot','og','g','t']){
+    const row=bySlot[k];
+    if(!row || !Array.isArray(row.players)) continue;
+    for(const p of row.players){
+      if(!p || !p.name) continue;
+      const nk=_olNormName(p.name);
+      if(!nk || used.has(nk)) continue;
+      pool.push(p);
+    }
+  }
+  const pull=(fam)=>{
+    const i=pool.findIndex(p=>{
+      const pf=_olPosFamily(String((p&&p.pos)||'').toUpperCase());
+      if(fam==='C') return pf==='C';
+      if(fam==='G') return pf==='G' || pf==='OL';
+      if(fam==='T') return pf==='T' || pf==='OL';
+      return true;
+    });
+    if(i<0) return null;
+    return pool.splice(i,1)[0];
+  };
+  const fill=(slot, fam)=>{
+    if(out[slot]) return;
+    const p=pull(fam);
+    if(!p) return;
+    used.add(_olNormName(p.name));
+    out[slot]={
+      name:String(p.name||'').trim(),
+      pos:String(p.pos||slot).toUpperCase(),
+      snaps:0,
+      prevSnaps:0,
+      explicit:slot,
+      preferred:slot,
+      lockFamily:_olSlotFamily(slot),
+    };
+  };
+  fill('C','C');
+  fill('LT','T');
+  fill('RT','T');
+  fill('LG','G');
+  fill('RG','G');
+
+  const hasAny=Object.values(out).some(v=>v&&v.name);
+  return hasAny ? out : null;
+}
+
 function _olRosterSlotsBySeason(season, teamCode, preferredSlotByName){
+  if(String(season)==='2026'){
+    const depthSlots=_olDepthChartSlotsByTeam(teamCode);
+    if(depthSlots) return depthSlots;
+  }
   const pack=(NFLVERSE&&NFLVERSE[String(season)])||{};
   const rows=(pack.rosters&&pack.rosters[teamCode])||[];
   if(!rows.length) return null;
@@ -373,6 +470,316 @@ function _olLineByTeamSeason(season, teamCode){
   return merged;
 }
 
+function _olGradeToPct(grade){
+  const g=String(grade||'').trim().toUpperCase();
+  if(!g) return null;
+  const base={A:95,B:82,C:70,D:58,F:45};
+  const l=g.charAt(0);
+  if(!Object.prototype.hasOwnProperty.call(base, l)) return null;
+  let v=base[l];
+  if(g.includes('+')) v+=3;
+  if(g.includes('-')) v-=3;
+  return Math.max(1, Math.min(99, v));
+}
+
+let _olLatestPlayerPctileCache = null;
+function _olLatestPlayerPctileByName(){
+  if(_olLatestPlayerPctileCache) return _olLatestPlayerPctileCache;
+  const out={};
+  if(!(typeof NFLVERSE==='object' && NFLVERSE)) return out;
+  const seasons=Object.keys(NFLVERSE).sort((a,b)=>Number(b)-Number(a));
+  for(const s of seasons){
+    const pl=(NFLVERSE[s]&&NFLVERSE[s].ol_players)||{};
+    for(const k in pl){
+      const r=pl[k]||{};
+      const nm=_olNormName(r.name||k);
+      if(!nm || out[nm]) continue;
+      const passPct=(r.pass_pctile!=null && !Number.isNaN(Number(r.pass_pctile))) ? Number(r.pass_pctile) : _olGradeToPct(r.pass_grade);
+      const runPct=(r.run_pctile!=null && !Number.isNaN(Number(r.run_pctile))) ? Number(r.run_pctile) : _olGradeToPct(r.run_grade);
+      out[nm]={
+        pass_pctile:passPct,
+        run_pctile:runPct,
+        pass_grade:(r.pass_grade||null),
+        run_grade:(r.run_grade||null),
+        career_ap1:(r.career_ap1!=null?Number(r.career_ap1):0),
+        career_pb:(r.career_pb!=null?Number(r.career_pb):0),
+        allpro_recent:String(r.allpro_recent||''),
+        market_pctile:(r.market_pctile!=null && !Number.isNaN(Number(r.market_pctile)))?Number(r.market_pctile):null,
+      };
+    }
+  }
+  _olLatestPlayerPctileCache = out;
+  return out;
+}
+
+function _olPctFromStarter(rec, which){
+  if(!rec) return null;
+  if(which==='pass'){
+    if(rec.pass_pctile!=null && !Number.isNaN(Number(rec.pass_pctile))) return Number(rec.pass_pctile);
+    return _olGradeToPct(rec.pass_grade);
+  }
+  if(rec.run_pctile!=null && !Number.isNaN(Number(rec.run_pctile))) return Number(rec.run_pctile);
+  return _olGradeToPct(rec.run_grade);
+}
+
+function _olAvgStarterPct(line, which){
+  const vals=[];
+  const latestByName=_olLatestPlayerPctileByName();
+  for(const sl of ['LT','LG','C','RG','RT']){
+    const r=line&&line[sl];
+    if(!r || !r.name) continue;
+    let pct=_olPctFromStarter(r, which);
+    if((pct==null || Number.isNaN(pct)) && r.name){
+      const snap=latestByName[_olNormName(r.name)]||{};
+      pct = which==='pass' ? snap.pass_pctile : snap.run_pctile;
+    }
+    if(pct!=null && !Number.isNaN(Number(pct))) vals.push(Number(pct));
+  }
+  if(!vals.length) return null;
+  return vals.reduce((a,b)=>a+b,0)/vals.length;
+}
+
+function _olRankMap(valsByTeam, lowerBetterSet){
+  const entries=Object.entries(valsByTeam).filter(([,v])=>v!=null && !Number.isNaN(Number(v)));
+  entries.sort((a,b)=>{
+    const av=Number(a[1]), bv=Number(b[1]);
+    return (lowerBetterSet ? (av-bv) : (bv-av));
+  });
+  const out={};
+  for(let i=0;i<entries.length;i++) out[entries[i][0]]=i+1;
+  return out;
+}
+
+// Slot weights: pass protection is tackle-premium; run blocking is interior-premium.
+const _OL_PASS_SLOT_W = {LT:1.30, RT:1.20, LG:1.00, RG:1.00, C:0.95};
+const _OL_RUN_SLOT_W  = {C:1.20, LG:1.15, RG:1.15, LT:0.85, RT:0.85};
+
+// A single projected starter's talent (0-100), earned on ANY prior team. This is the core
+// signal: it reflects the player's own multi-year grade, not last year's team outcome — so a
+// stud returning from an injury-wrecked team season is valued on his real ability, and an
+// unknown/backup projected starter drops to a below-median replacement level.
+function _olStarterTalent(rec, which){
+  const latestByName=_olLatestPlayerPctileByName();
+  const name = rec && rec.name;
+  const snap = name ? (latestByName[_olNormName(name)]||{}) : {};
+  let pct = _olPctFromStarter(rec, which);
+  if(pct==null || Number.isNaN(pct)) pct = (which==='pass' ? snap.pass_pctile : snap.run_pctile);
+  if((pct==null || Number.isNaN(pct)) && snap.market_pctile!=null) pct = snap.market_pctile;
+  if(pct==null || Number.isNaN(pct)) return {pct:38, known:false}; // replacement level
+  let v=Number(pct);
+  const ap = snap.allpro_recent||'';
+  if(/1st/i.test(ap)) v+=8;
+  else if(/2nd/i.test(ap)) v+=5;
+  if((snap.career_ap1||0)>=1) v+=4;
+  else if((snap.career_pb||0)>=2) v+=2;
+  return {pct:Math.max(1, Math.min(99, v)), known:true};
+}
+
+// Weighted team talent (0-100) across the five projected starters.
+function _olTeamTalent(line, which){
+  const W = which==='pass' ? _OL_PASS_SLOT_W : _OL_RUN_SLOT_W;
+  let num=0, den=0, known=0;
+  for(const sl of ['LT','LG','C','RG','RT']){
+    const rec=line&&line[sl];
+    const w=W[sl]||1.0;
+    const t=_olStarterTalent(rec&&rec.name?rec:null, which);
+    num += t.pct * w;
+    den += w;
+    if(t.known) known++;
+  }
+  if(!den) return null;
+  return {talent:num/den, known};
+}
+
+// Ascending-sorted league values for a metric column (baseline season distribution).
+function _olColumnSorted(baseTbl, col){
+  const vals=[];
+  const teams=(baseTbl&&baseTbl.teams)||{};
+  for(const tm in teams){
+    const v=teams[tm]&&teams[tm].values?teams[tm].values[col]:null;
+    if(v!=null && !Number.isNaN(Number(v))) vals.push(Number(v));
+  }
+  vals.sort((a,b)=>a-b);
+  return vals;
+}
+
+// Map a projected quality (0..1, 1=best) onto the league distribution so projected metric
+// values stay realistic and monotonic with the projected rank.
+function _olValueAtQuality(sorted, quality, lowerBetter){
+  if(!sorted.length) return null;
+  const q=Math.max(0, Math.min(1, quality));
+  const pos=lowerBetter ? (1-q) : q;
+  const idx=Math.round(pos*(sorted.length-1));
+  return sorted[Math.max(0, Math.min(sorted.length-1, idx))];
+}
+
+// Attach each projected starter's latest-known letter grade/percentile (earned on any team)
+// to the line record, so the projection page shows real grades instead of blanks.
+function _olEnrichLineGrades(line){
+  if(!line) return line;
+  const latestByName=_olLatestPlayerPctileByName();
+  const out={};
+  for(const sl of ['LT','LG','C','RG','RT']){
+    const r=line[sl];
+    if(!r || !r.name){ out[sl]=r||null; continue; }
+    const snap=latestByName[_olNormName(r.name)]||{};
+    const havePassPct=(r.pass_pctile!=null && !Number.isNaN(Number(r.pass_pctile)));
+    const haveRunPct=(r.run_pctile!=null && !Number.isNaN(Number(r.run_pctile)));
+    out[sl]=Object.assign({}, r, {
+      pass_grade: r.pass_grade || snap.pass_grade || null,
+      run_grade: r.run_grade || snap.run_grade || null,
+      pass_pctile: havePassPct ? Number(r.pass_pctile) : (snap.pass_pctile!=null?Number(snap.pass_pctile):null),
+      run_pctile: haveRunPct ? Number(r.run_pctile) : (snap.run_pctile!=null?Number(snap.run_pctile):null),
+    });
+  }
+  return out;
+}
+
+function _olProjectedTeam2026(){
+  const out={};
+  if(!(typeof NFLVERSE==='object' && NFLVERSE)) return out;
+
+  let baselineSeason='2025';
+  if(!(NFLVERSE[baselineSeason] && NFLVERSE[baselineSeason].team && NFLVERSE[baselineSeason].team.offensive_line_pass)){
+    const cands=Object.keys(NFLVERSE).filter(x=>Number(x)<2026).sort((a,b)=>Number(b)-Number(a));
+    baselineSeason=cands[0]||'';
+  }
+  const basePack=(NFLVERSE[baselineSeason]||{});
+  const basePassTbl=basePack.team&&basePack.team.offensive_line_pass;
+  const baseRunTbl=basePack.team&&basePack.team.offensive_line_run;
+  const passCols=(basePassTbl&&basePassTbl.columns)||[];
+  const runCols=(baseRunTbl&&baseRunTbl.columns)||[];
+  const allTeams=(basePassTbl&&basePassTbl.teams)?Object.keys(basePassTbl.teams):[];
+  if(!allTeams.length) return out;
+
+  const lowerCols=new Set(['Pressure Rate','Hit Rate','Hurry Rate','Sack Rate','Non-QB Sack Rate','No Blitz Pressure Rate','Last 5 Sacks Allowed','Last 5 Sack Rate']);
+  const keepBaseline=new Set(['Dropbacks','Pass Rate','Blitz Rate','Last 5 Sacks Allowed','Last 5 Sack Rate']);
+
+  // 1) Projected quality per team = projected-starter talent, lightly anchored (20%) to the
+  //    prior-season team Pass Score for scheme/coaching continuity. Talent dominates so an
+  //    injury-ruined team result no longer drags a healthy projected line down.
+  const teamRows={};
+  for(const tm of allTeams){
+    const teamCode=_olTeamCode(tm);
+    const rawLine=_olLineByTeamSeason('2026', teamCode) || _olLineByTeamSeason(baselineSeason, teamCode);
+    if(!rawLine) continue;
+    const line=_olEnrichLineGrades(rawLine);
+    const tp=_olTeamTalent(line, 'pass');
+    const tr=_olTeamTalent(line, 'run');
+    const talentPass = tp?tp.talent:50;
+    const talentRun  = tr?tr.talent:50;
+
+    const passBaseRow=basePassTbl.teams[teamCode];
+    const bs=(passBaseRow&&passBaseRow.values)?passBaseRow.values['Pass Score']:null;
+    const baseScore=(bs!=null && !Number.isNaN(Number(bs)))?Number(bs):null;
+    const projPassScore=(baseScore!=null)
+      ? Math.max(0, Math.min(100, 0.80*talentPass + 0.20*baseScore))
+      : talentPass;
+
+    const runBaseRow0=baseRunTbl&&baseRunTbl.teams&&baseRunTbl.teams[teamCode];
+    const brs=(runBaseRow0&&runBaseRow0.values)?runBaseRow0.values['Overall Score']:null;
+    const baseRunScore=(brs!=null && !Number.isNaN(Number(brs)))?Number(brs):null;
+    const projRunScore=(baseRunScore!=null)
+      ? Math.max(0, Math.min(100, 0.80*talentRun + 0.20*baseRunScore))
+      : talentRun;
+
+    teamRows[teamCode]={ team:teamCode, line, talentPass, talentRun, projPassScore, projRunScore, baseRow:passBaseRow };
+  }
+
+  const teamCodes=Object.keys(teamRows);
+  if(!teamCodes.length) return out;
+
+  // 2) League ranking by projected pass/run quality → per-team quality fraction (1 = best).
+  const scoreMap={};
+  teamCodes.forEach(tm=>{ scoreMap[tm]=teamRows[tm].projPassScore; });
+  const passScoreRank=_olRankMap(scoreMap, false);
+  const runScoreMap={};
+  teamCodes.forEach(tm=>{ runScoreMap[tm]=teamRows[tm].projRunScore; });
+  const runScoreRank=_olRankMap(runScoreMap, false);
+  const n=teamCodes.length;
+
+  // 3) Baseline league distributions for realistic projected metric values.
+  const sortedByCol={};
+  passCols.forEach(c=>{ sortedByCol[c]=_olColumnSorted(basePassTbl, c); });
+
+  // 4) Assemble projected pass values (Pass/Overall Score direct; rate/time via distribution).
+  teamCodes.forEach(tm=>{
+    const tr=teamRows[tm];
+    const rank=passScoreRank[tm]||n;
+    const quality=n>1 ? (1-(rank-1)/(n-1)) : 1;
+    const passValues={};
+    passCols.forEach(c=>{
+      const baseVal=(tr.baseRow&&tr.baseRow.values)?tr.baseRow.values[c]:null;
+      if(c==='Pass Score'){ passValues[c]=Math.round(tr.projPassScore*10)/10; return; }
+      if(c==='Overall Score'){
+        const util=(tr.baseRow&&tr.baseRow.values&&tr.baseRow.values['Pass Rate']!=null)?Number(tr.baseRow.values['Pass Rate'])/100:0.58;
+        passValues[c]=Math.round((util*tr.projPassScore + (1-util)*tr.talentRun)*10)/10;
+        return;
+      }
+      if(keepBaseline.has(c)){ passValues[c]=(baseVal!=null && !Number.isNaN(Number(baseVal)))?Number(baseVal):null; return; }
+      const mapped=_olValueAtQuality(sortedByCol[c], quality, lowerCols.has(c));
+      passValues[c]=(mapped!=null)?mapped:((baseVal!=null && !Number.isNaN(Number(baseVal)))?Number(baseVal):null);
+    });
+    tr.passValues=passValues;
+    tr.quality=quality;
+    tr.rank=rank;
+  });
+
+  // 5) Per-column ranks from the assembled projected values.
+  const ranksByCol={};
+  passCols.forEach(c=>{
+    const vals={};
+    teamCodes.forEach(tm=>{ vals[tm]=teamRows[tm].passValues[c]; });
+    ranksByCol[c]=_olRankMap(vals, lowerCols.has(c));
+  });
+
+  teamCodes.forEach(tm=>{
+    const tr=teamRows[tm];
+    const passRanks={};
+    passCols.forEach(c=>{ passRanks[c]=(ranksByCol[c]&&ranksByCol[c][tm]!=null)?ranksByCol[c][tm]:null; });
+    const runBaseRow=baseRunTbl&&baseRunTbl.teams&&baseRunTbl.teams[tm];
+    const runValues={};
+    runCols.forEach(c=>{ runValues[c]=(runBaseRow&&runBaseRow.values)?runBaseRow.values[c]:null; });
+    out[tm]={
+      team:tm,
+      baselineSeason,
+      talentPass:tr.talentPass,
+      talentRun:tr.talentRun,
+      projPassScore:tr.projPassScore,
+      projRunScore:tr.projRunScore,
+      passRank:tr.rank,
+      runRank:(runScoreRank[tm]||n),
+      line:tr.line,
+      passTbl:{ columns:passCols, teams:{ [tm]:{ values:tr.passValues, ranks:passRanks } } },
+      runTbl:{ columns:runCols, teams:{ [tm]:{ values:runValues, ranks:(runBaseRow&&runBaseRow.ranks)||{} } } },
+    };
+  });
+  return out;
+}
+
+// Public accessor: projected 2026 OL overall score + league rank for a team.
+// which = 'pass' | 'run'. Returns {score, rank} or null.
+function projectedOlScore(team, which){
+  if(typeof _olProjectedTeam2026!=='function') return null;
+  const proj=_olProjectedTeam2026()[_olTeamCode(team)];
+  if(!proj) return null;
+  if(which==='run') return {score:proj.projRunScore, rank:proj.runRank};
+  return {score:proj.projPassScore, rank:proj.passRank};
+}
+
+function _olQbHasSeasonData(pid, season, normName, fallbackTeam){
+  const s=String(season);
+  const tm=_qbTeamForSeason(pid, s, normName, fallbackTeam) || _qbAnyKnownTeam(pid, normName, fallbackTeam);
+  if(!tm) return false;
+  if(s==='2026'){
+    const p=_olProjectedTeam2026()[tm];
+    if(p && p.passTbl && p.passTbl.teams && p.passTbl.teams[tm]) return true;
+  }
+  const pack=NFLVERSE[s]||{};
+  const passTbl=pack.team&&pack.team.offensive_line_pass;
+  return !!(passTbl && passTbl.teams && passTbl.teams[tm]);
+}
+
 function _qbTeamForSeason(pid, season, normName, fallbackTeam){
   const pack=(NFLVERSE&&NFLVERSE[String(season)])||{};
   const qb=(pack.qb_passing&&pack.qb_passing[normName])||null;
@@ -405,11 +812,64 @@ function _qbTeamForSeason(pid, season, normName, fallbackTeam){
   return _olTeamCode(fallbackTeam||'');
 }
 
-function _olHeadshot(name, slot){
+function _qbAnyKnownTeam(pid, normName, fallbackTeam){
+  const base=_olTeamCode(fallbackTeam||'');
+  if(!(typeof NFLVERSE==='object' && NFLVERSE)) return base;
+  const seasons=Object.keys(NFLVERSE).sort((a,b)=>Number(b)-Number(a));
+  for(const s of seasons){
+    const tm=_qbTeamForSeason(pid, s, normName, '');
+    if(tm) return tm;
+  }
+  return base;
+}
+
+function _olDepthHeadshot(teamCode, name){
+  const tn=_olNormName(name);
+  if(!tn) return '';
+  if(typeof espnDepth!=='undefined'){
+    const rows=espnDepth[teamCode];
+    if(Array.isArray(rows)){
+      for(const row of rows){
+        const players=Array.isArray(row&&row.players)?row.players:[];
+        for(const p of players){
+          if(_olNormName(p&&p.name)===tn && p&&p.headshot) return String(p.headshot);
+        }
+      }
+    }else if(rows===undefined && typeof fetchEspnDepth==='function'){
+      fetchEspnDepth(teamCode).catch(()=>{});
+    }
+  }
+  if(typeof espnRosters!=='undefined'){
+    const players=espnRosters[teamCode];
+    if(Array.isArray(players)){
+      const hit=players.find(p=>_olNormName(p&&p.name)===tn && p&&p.headshot);
+      if(hit&&hit.headshot) return String(hit.headshot);
+    }
+  }
+  return '';
+}
+
+function _olHeadshot(name, slot, teamCode){
   if(!name) return '';
-  const src = (typeof hsURL==='function') ? hsURL({name, pos:slot}) : '';
-  if(!src) return '<div class="olc-qb-hs ph-err"></div>';
-  return `<img src="${src}" class="olc-qb-hs" alt="" onerror="this.outerHTML='<div class=\\'olc-qb-hs ph-err\\'></div>'">`;
+  const depthSrc = _olDepthHeadshot(teamCode, name);
+  let rid='';
+  if(typeof resolvePlayerId==='function'){
+    const rawPos=String(slot||'').toUpperCase();
+    rid = resolvePlayerId(name, rawPos) || resolvePlayerId(name, 'OL') || resolvePlayerId(name) || '';
+  }
+  const sleeperSrc = (rid && typeof SLEEPER_HEADSHOT==='function') ? SLEEPER_HEADSHOT(rid) : ((typeof hsURL==='function') ? hsURL({name, pos:slot}) : '');
+  const primary = depthSrc || sleeperSrc;
+  if(!primary) return '<div class="olc-qb-hs ph-err"></div>';
+
+  const fallbacks=[];
+  if(depthSrc && sleeperSrc && sleeperSrc!==depthSrc) fallbacks.push(sleeperSrc);
+  if(rid && typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[rid] && sleeperPlayers[rid].espn_id && typeof ESPN_HEADSHOT==='function'){
+    const aid=String(sleeperPlayers[rid].espn_id);
+    fallbacks.push(ESPN_HEADSHOT('nfl', aid), ESPN_HEADSHOT('college-football', aid));
+  }
+  const fb=fallbacks.filter(Boolean).join('|');
+  const onerr = "const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.outerHTML='<div class=\\'olc-qb-hs ph-err\\'></div>'; }";
+  return `<img src="${primary}" class="olc-qb-hs" alt="" data-fallbacks="${fb}" onerror="${onerr}">`;
 }
 
 function pcardQbOlAvailable(pid){
@@ -418,6 +878,8 @@ function pcardQbOlAvailable(pid){
   if(String(p.position||p.pos||'').toUpperCase()!=='QB') return false;
   const teamNow=_olTeamCode(p.team||'');
   if(!teamNow) return false;
+  const proj2026=_olProjectedTeam2026()[teamNow];
+  if(proj2026 && proj2026.passTbl && proj2026.passTbl.teams && proj2026.passTbl.teams[teamNow]) return true;
   return Object.keys(NFLVERSE).some(s=>{
     const pack=NFLVERSE[s]||{};
     const tbl=pack.team&&pack.team.offensive_line_pass;
@@ -430,39 +892,33 @@ function renderPcardQbOl(pid){
   const norm=ecrNormName(p.name||'');
   if(!norm) return '<div class="pcard-loading">No QB identity found for OL context view.</div>';
 
-  let seasons=(typeof NFLVERSE==='object'&&NFLVERSE)?Object.keys(NFLVERSE)
-    .filter(s=>{
-      const pack=NFLVERSE[s]||{};
-      const tm=_qbTeamForSeason(pid, s, norm, p.team||'');
-      const passTbl=pack.team&&pack.team.offensive_line_pass;
-      return !!(tm && passTbl && passTbl.teams && passTbl.teams[tm]);
-    })
-    .sort((a,b)=>b-a):[];
+  const seasonPool=(typeof NFLVERSE==='object'&&NFLVERSE)?Object.keys(NFLVERSE):[];
+  if(!seasonPool.includes('2026')) seasonPool.push('2026');
+
+  let seasons=seasonPool
+    .filter(s=>_olQbHasSeasonData(pid, s, norm, p.team||''))
+    .sort((a,b)=>b-a);
   // Fallback for occasional name mismatches: if we cannot tie this QB to a season-specific
   // qb_passing row, show current-team OL context so the tab still renders.
   if(!seasons.length){
-    seasons=(typeof NFLVERSE==='object'&&NFLVERSE)?Object.keys(NFLVERSE)
-      .filter(s=>{
-        const pack=NFLVERSE[s]||{};
-        const passTbl=pack.team&&pack.team.offensive_line_pass;
-        const tm=_olTeamCode(p.team||'');
-        return !!(tm && passTbl && passTbl.teams && passTbl.teams[tm]);
-      })
-      .sort((a,b)=>b-a):[];
+    seasons=seasonPool
+      .filter(s=>_olQbHasSeasonData(pid, s, norm, p.team||''))
+      .sort((a,b)=>b-a);
   }
   if(!seasons.length) return '<div class="pcard-loading">No OL pass-protection data available for this QB.</div>';
   if(pcardQbOlSeason==null || !seasons.includes(String(pcardQbOlSeason))) pcardQbOlSeason=seasons[0];
   const season=String(pcardQbOlSeason);
   const pack=NFLVERSE[season]||{};
-  const teamCode=_qbTeamForSeason(pid, season, norm, p.team||'');
+  const teamCode=_qbTeamForSeason(pid, season, norm, p.team||'') || _qbAnyKnownTeam(pid, norm, p.team||'');
   if(!teamCode) return '<div class="pcard-loading">No team context available for this QB in that season.</div>';
 
-  const passTbl=pack.team&&pack.team.offensive_line_pass;
+  const proj=(season==='2026') ? (_olProjectedTeam2026()[teamCode]||null) : null;
+  const passTbl=proj ? proj.passTbl : (pack.team&&pack.team.offensive_line_pass);
   const row=passTbl&&passTbl.teams&&passTbl.teams[teamCode];
   const cols=(passTbl&&passTbl.columns)||[];
   if(!row || !cols.length) return '<div class="pcard-loading">No team pass-protection table found for this season.</div>';
 
-  const line=_olLineByTeamSeason(season, teamCode);
+  const line=(proj&&proj.line) ? proj.line : _olLineByTeamSeason(season, teamCode);
   const slotCards=['LT','LG','C','RG','RT'].map(sl=>{
     const r=line[sl]||{};
     const g=r.pass_grade||'—';
@@ -474,7 +930,7 @@ function renderPcardQbOl(pid){
     const click = r.name ? `openPlayerCardFromCard(${pcardArg(r.name)},${pcardArg(sl)},${pcardArg(teamCode)})` : '';
     return `<div class="olc-qb-slot-card${r.name?' clickable-player':''}" ${r.name?`onclick="${click}" role="button" tabindex="0"`:''}>
       <div class="olc-qb-slot-top"><span class="olc-qb-slot">${sl}</span>${starter}</div>
-      ${_olHeadshot(r.name||'', sl)}
+      ${_olHeadshot(r.name||'', sl, teamCode)}
       <div class="olc-qb-name">${r.name||'—'}</div>
       <div class="olc-qb-grade ${_olGradeClass(g)}">${g}</div>
       <div class="olc-qb-sub">${pctBadge} · ${snaps} snaps</div>
@@ -487,7 +943,25 @@ function renderPcardQbOl(pid){
   const overallPassHtml = (overallPassScore!=null || overallPassRank!=null)
     ? `<div class="olc-overview"><b>Cumulative Pass Protection Score: ${overallPassScore!=null?overallPassScore.toFixed(1):'—'}</b> ${_olRankBadge(overallPassRank)}</div>`
     : '';
-  const teamMetrics=metricCols.map(c=>{
+
+  let projOverallHtml='';
+  let metricColsUse=metricCols.slice();
+  if(proj){
+    const basePack=NFLVERSE[String(proj.baselineSeason)]||{};
+    const baseTbl=basePack.team&&basePack.team.offensive_line_pass;
+    const baseRow=baseTbl&&baseTbl.teams&&baseTbl.teams[teamCode];
+    const projScore=row.values?row.values['Overall Score']:null;
+    const projRank=row.ranks?row.ranks['Overall Score']:null;
+    const baseScore=baseRow&&baseRow.values?baseRow.values['Overall Score']:null;
+    const baseRank=baseRow&&baseRow.ranks?baseRow.ranks['Overall Score']:null;
+    projOverallHtml = `<div class="olc-metrics" style="margin-bottom:8px">`
+      + `<div class="olc-metric"><label>Proj 2026</label><b>${_olFmtMetric('Overall Score', projScore)}</b><small>${_olRankBadge(projRank)}</small></div>`
+      + `<div class="olc-metric"><label>${proj.baselineSeason}</label><b>${_olFmtMetric('Overall Score', baseScore)}</b><small>${_olRankBadge(baseRank)}</small></div>`
+      + `</div>`;
+    metricColsUse=metricColsUse.filter(c=>c!=='Overall Score');
+  }
+
+  const teamMetrics=metricColsUse.map(c=>{
     const v=row.values?row.values[c]:null;
     const rk=row.ranks?row.ranks[c]:null;
     return `<div class="olc-metric">
@@ -498,18 +972,23 @@ function renderPcardQbOl(pid){
   }).join('');
 
   const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardQbOlSeason('${s}')">${s}</button>`).join('');
+  const projNote=(proj)
+    ? `<div class="olc-overview"><b>2026 Projection:</b> from projected depth-chart starters' multi-year grades (line talent ${proj.talentPass!=null?Math.round(proj.talentPass):'—'}%), lightly anchored to ${proj.baselineSeason} scheme. Projected pass-protection rank #${proj.passRank!=null?proj.passRank:'—'}.</div>`
+    : '';
 
   return `<div class="olc-wrap">
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns}</div>
-      <div class="rt-summary">${teamDisplayName(teamCode)||teamCode} · pass protection context for ${p.name||'QB'}</div>
+      <div class="rt-summary">${teamDisplayName(teamCode)||teamCode} · ${proj?'projected ':'pass protection '}context for ${p.name||'QB'}</div>
     </div>
+    ${projNote}
     ${overallPassHtml}
     <div class="olc-team-head">${teamDisplayName(teamCode)||teamCode} Offensive Line (Pass Protection)</div>
     <div class="olc-qb-slot-grid">${slotCards}</div>
     <div class="olc-team-head" style="margin-top:10px">Team Pass Protection Metrics (${season})</div>
+    ${projOverallHtml}
     <div class="olc-metrics">${teamMetrics}</div>
-    <div class="pcard-src">Linemen from this season's team context; pass grades from the OL pipeline.</div>
+    <div class="pcard-src">${proj?'Projected starters from 2026 depth chart, adjusted from prior team OL performance using starter quality deltas.':'Linemen from this season\'s team context; pass grades from the OL pipeline.'}</div>
   </div>`;
 }
 
@@ -517,6 +996,24 @@ function setPcardQbOlSeason(season){
   pcardQbOlSeason=season;
   const body=document.getElementById('pcardBody');
   if(body && pcardState) body.innerHTML=renderPcardQbOl(pcardState.pid);
+}
+
+// Called when an ESPN depth chart finishes loading: if a QB OL card is open on the 2026
+// projection tab for that team, re-render so projected starters (and their talent-driven
+// ranks) replace the prior-season fallback line used on first paint.
+function _olRefreshOpenQbOlForTeam(team){
+  if(typeof pcardState==='undefined' || !pcardState) return;
+  if(typeof pcardStatsMode==='undefined' || pcardStatsMode!=='qbol') return;
+  if(String(pcardQbOlSeason)!=='2026') return;
+  const body=document.getElementById('pcardBody');
+  if(!body) return;
+  try{
+    const p=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[pcardState.pid])||{};
+    const norm=ecrNormName(p.name||'');
+    const tm=_qbTeamForSeason(pcardState.pid,'2026',norm,p.team||'')||_qbAnyKnownTeam(pcardState.pid,norm,p.team||'');
+    if(_olTeamCode(team)!==_olTeamCode(tm)) return;
+  }catch(e){ /* refresh anyway on lookup failure */ }
+  body.innerHTML=renderPcardQbOl(pcardState.pid);
 }
 
 function renderPcardOlGrades(pid){
