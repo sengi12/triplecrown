@@ -24,6 +24,19 @@
 .dual-range::-webkit-slider-runnable-track{background:transparent;}
 .dual-range::-moz-range-track{background:transparent;}
 
+/* Week opponent rail under dual sliders (@ / vs + opponent logo) */
+.wr-opp-rail{position:relative;height:22px;margin-top:8px;}
+.wr-opp-cell{position:absolute;top:0;left:0;transform:translateX(-50%);
+  display:flex;align-items:center;justify-content:center;gap:4px;min-height:22px;
+  font-size:10px;font-weight:800;color:var(--muted);line-height:1;padding:1px 0;white-space:nowrap;}
+.wr-opp-edge-start{transform:none;}
+.wr-opp-edge-end{transform:translateX(-100%);}
+.wr-opp-ha{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.01em;}
+.wr-opp-logo{width:16px;height:16px;object-fit:contain;flex:none;}
+.wr-opp-fallback{font-size:9px;color:var(--text);font-weight:800;}
+.wr-opp-bye{opacity:.55;font-size:10px;}
+.wr-opp-loading{position:absolute;left:0;top:2px;font-size:10px;color:var(--muted);font-style:italic;padding:1px 0;}
+
 /* ── Roster tracker (pinned bottom bar + expandable panel) ── */
 .rt-bar-host{position:fixed;left:0;right:0;bottom:0;z-index:900;pointer-events:none;}
 .rt-bar-host>*{pointer-events:auto;}
@@ -155,6 +168,13 @@
 .draft-upturn{background:var(--surface3);color:var(--text);font-weight:700;font-size:11px;
   padding:2px 9px;border-radius:6px;}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+
+@media (max-width:560px){
+  .wr-opp-rail{height:18px;}
+  .wr-opp-cell{min-height:18px;gap:2px;padding:1px 0;}
+  .wr-opp-ha{font-size:8px;}
+  .wr-opp-logo{width:12px;height:12px;}
+}
 
 /* ── League Analyzer ────────────────────────────────────────────────────────
    (The old .league-sync-btn header button is gone — the League entry point and its

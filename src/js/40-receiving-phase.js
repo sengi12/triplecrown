@@ -45,9 +45,14 @@ function renderReceiving(team,state){
 // Targets/Rushing tabs down to a stretch of weeks (e.g. a player's hot streak before injury).
 function weekRangeSliderHTML(team,state){
   if(activeSeason==='proj') return '';
-  const [lo,hi]=state.weekFilter||[1,18];
+  const shared = (typeof getSharedWeekRange==='function') ? getSharedWeekRange(team, activeSeason) : (state.weekFilter||[1,18]);
+  const [lo,hi]=shared;
+  state.weekFilter=[lo,hi];
   const active=isWeekFilterActive(state);
   const loPct=(lo-1)/17*100, hiPct=(18-hi)/17*100;
+  const oppRail = (typeof renderWeekOpponentRail==='function')
+    ? renderWeekOpponentRail(team, activeSeason, 'wr-opp-main')
+    : '';
   return `<div class="week-range-card">
     <div class="week-range-label">
       <span>${TC_ICON("calendar")} Filter weeks: <b id="wr-lo-${team}">${lo}</b> – <b id="wr-hi-${team}">${hi}</b>${state.weekFilterLoading?' <span class="week-range-loading">loading…</span>':''}</span>
@@ -61,6 +66,7 @@ function weekRangeSliderHTML(team,state){
       <input type="range" min="1" max="18" step="1" value="${hi}" class="dual-range dual-range-hi"
         oninput="weekRangeDrag('${team}','hi',this.value)" onchange="weekRangeCommit('${team}')">
     </div>
+    ${oppRail}
   </div>`;
 }
 function setPassSub(t){passingSubTab=t;renderContent();}

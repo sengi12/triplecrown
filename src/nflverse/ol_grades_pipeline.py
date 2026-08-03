@@ -257,6 +257,140 @@ def percentile_grades(df, coef_col, sign, grp_map, prefix):
     return df
 
 
+def pct_to_letter(pct):
+    """Map a percentile (0-100) to the same strict letter-grade curve."""
+    if pct is None or pd.isna(pct):
+        return None
+    x = float(pct)
+    for cutoff, grade in CURVE:
+        if x >= cutoff:
+            return grade
+    return "F"
+
+
+def enrich_ol_player_records(
+    df,
+    utilization_by_team=None,
+    team_ol_context=None,
+    starters_by_team=None,
+    player_snap_pct_by_team=None,
+):
+    """Attach utilization-/entanglement-aware contextual fields to OL player rows.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Must include at least: name, team, pass_pctile, run_pctile, shared_credit.
+    utilization_by_team : dict[str, float], optional
+        Team pass-utilization percentage (0-100).
+    team_ol_context : dict[str, dict], optional
+        Team OL context keyed by team code. If present, uses
+        `Overall Score` and `Last 5 Sacks Allowed` when available.
+    starters_by_team : dict[str, set[str]], optional
+        Projected-starter names by team (used to stamp `is_projected_starter`).
+    player_snap_pct_by_team : dict[str, dict[str, float]], optional
+        Team -> player name -> snap percentage (0-100). Used to scale how much
+        team-level context should influence a player's contextual weighted score.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Copy of input with contextual fields added:
+        pass_rate, run_rate, ol_weighted_pctile, ol_weighted_grade,
+        entanglement_factor, is_projected_starter, last5_sacks_allowed_est.
+    """
+    if df is None or len(df) == 0:
+        return df
+    out = df.copy()
+    util_map = utilization_by_team or {}
+    ctx_map = team_ol_context or {}
+    starters = starters_by_team or {}
+    snap_map = player_snap_pct_by_team or {}
+
+    def _norm_name(s):
+        import re
+        n = (s or "").strip().lower()
+        n = re.sub(r"[.'\-]", "", n)
+        n = re.sub(r"\s+(jr|sr|ii|iii|iv|v)$", "", n)
+        n = re.sub(r"\s+", " ", n)
+        return n
+
+    starter_norm = {}
+    for tm, names in starters.items():
+        if isinstance(names, set):
+            starter_norm[str(tm).upper()] = {_norm_name(n) for n in names if n}
+
+    def _compute(row):
+        tm = str(row.get("team") or "").upper()
+        util = util_map.get(tm)
+        util = 50.0 if util is None or pd.isna(util) else float(util)
+        util = max(0.0, min(100.0, util))
+        pw = util / 100.0
+        rw = 1.0 - pw
+
+        pass_pct = row.get("pass_pctile")
+        run_pct = row.get("run_pctile")
+        pass_pct = 50.0 if pass_pct is None or pd.isna(pass_pct) else float(pass_pct)
+        run_pct = 50.0 if run_pct is None or pd.isna(run_pct) else float(run_pct)
+        base_weighted = pw * pass_pct + rw * run_pct
+
+        tctx = ctx_map.get(tm) if isinstance(ctx_map, dict) else None
+        team_score = None
+        if isinstance(tctx, dict):
+            team_score = tctx.get("Overall Score")
+        team_score = base_weighted if team_score is None or pd.isna(team_score) else float(team_score)
+
+        entangled = bool(row.get("shared_credit"))
+
+        snap_pct = None
+        tm_snaps = snap_map.get(tm) if isinstance(snap_map, dict) else None
+        if isinstance(tm_snaps, dict):
+            nm = str(row.get("name") or "")
+            snap_pct = tm_snaps.get(nm)
+        # Fallback: derive a rough share from modeled pass snaps if explicit snap % is missing.
+        if (snap_pct is None or pd.isna(snap_pct)) and row.get("pass_snaps") is not None:
+            try:
+                snap_pct = min(max(float(row.get("pass_snaps")) / 1200.0 * 100.0, 0.0), 100.0)
+            except Exception:
+                snap_pct = None
+        snap_pct = 50.0 if snap_pct is None or pd.isna(snap_pct) else float(snap_pct)
+        snap_pct = max(0.0, min(100.0, snap_pct))
+        snap_share = snap_pct / 100.0
+
+        # Team-context influence scales by on-field exposure.
+        # Starters feel more team-context pull than rotational players.
+        team_blend_base = 0.20 if entangled else 0.10
+        team_blend = team_blend_base * snap_share
+        ent_factor = 1.0 - team_blend
+        composite = base_weighted * ent_factor + team_score * team_blend
+
+        nm = str(row.get("name") or "")
+        st_names = starters.get(tm) if isinstance(starters.get(tm), set) else set()
+        is_starter = (nm in st_names) or (_norm_name(nm) in starter_norm.get(tm, set()))
+
+        l5_sacks = tctx.get("Last 5 Sacks Allowed") if isinstance(tctx, dict) else None
+        l5_est = None
+        if l5_sacks is not None and not pd.isna(l5_sacks):
+            l5_est = float(l5_sacks) / 5.0
+
+        return pd.Series({
+            "pass_rate": round(util, 2),
+            "run_rate": round(100.0 - util, 2),
+            "ol_weighted_pctile": round(composite, 2),
+            "ol_weighted_grade": pct_to_letter(composite),
+            "entanglement_factor": round(ent_factor, 2),
+            "snap_pct": round(snap_pct, 2),
+            "team_context_weight": round(team_blend, 4),
+            "is_projected_starter": bool(is_starter),
+            "last5_sacks_allowed_est": (None if l5_est is None else round(l5_est, 2)),
+        })
+
+    extra = out.apply(_compute, axis=1)
+    for c in extra.columns:
+        out[c] = extra[c]
+    return out
+
+
 def daggers(season, keep):
     part = pq(f"part_{season}.parquet", f"pbp_participation/pbp_participation_{season}.parquet",
               ["possession_team", "offense_players"]).dropna()

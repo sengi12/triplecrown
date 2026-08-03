@@ -240,10 +240,14 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] make sure triplecrown is season agnostic and easy to adjust for next season
 - [ ] clicking on a team logo, takes you to that team's 2026 projections page anywhere in the app
 - [ ] add ESPN league support
+- [ ] add Yahoo league support
 - [ ] Google Play Store
 - [ ] Apple iOS Store
+- [ ] Generate my own proprietary projections based on all the metrics we have
+- [ ] Simplify process with a vibe-check. Tinder-style swipes.
 ### UI / UX
 ### Playercards
+- [ ] OL cards are clickable on RB Rushing Charts
 ### Live Draft
 - [ ] reach out to Sleeper
 ### League Analyzer
@@ -253,6 +257,27 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] Review comments and variable names
 - [ ] Add Coaching History (HCs, OCs, DCs)
 - [ ] input injection vulnerability scan on all input fields
+### Import Projections
+- [ ] age column on full rankings page isn't accurate (Justin Jefferson)
+### Adv Metrics
+- [ ] OL metrics: (pressure_pct, times_pressured, times_hit, times_hurried, times_blitzed, pocket_time, is_qb_fault_sack)
+  - [ ] Consider Percentage of Utilization (if super pass heavy, weight pass stats over rush stats)
+  - [ ] per team # of dropbacks rankings
+  - [ ] Pressure Rate Allowed Ranking (pressure_pct or times_pressured / qb dropbacks)
+  - [ ] Hit Rate Allowed Ranking (times_hit for each qb that season / qb dropbacks)
+  - [ ] Hurry Rate Allowed Ranking (times_hurried for each qb that season / qb dropbacks)
+  - [ ] Blitz Rate Against Ranking (times_blitzed for each qb that season / qb dropbacks)
+  - [ ] Pocket Time Allowed Ranking (pocket_time average)
+  - [ ] Non QB Fault Sack Rate Allowed Ranking (take into consideration is_qb_fault_sack for each qb sack that season / qb dropbacks)
+  - [ ] Total Sack Rate Allowed Ranking (each sack that season / qb dropbacks) (example: Burrow 5.3% sack rate, 14th in sacks allowed)
+  - [ ] No Blitz Pressure Rate Ranking? (pressures with blitzed removed for each qb that season / qb dropbacks)
+  - [ ] Last 5 games of last year (per linemen sacks allowed)
+- [ ] QB Metrics: on_tgt_throws, bad_throw_pct, batted_balls, is_interception_worthy, is_catchable_ball
+- [ ] Overall Team Fantasy Performance: nflverse/ff_opportunity
+- [ ] Charts that show team progress over the last 5 years in specific categories
+### Playcalling Stats
+- [ ] On series within 10 yard line: 46.2% of series with Burrow reach 3rd down. 29th in NFL (goal_to_go)
+- [ ] Improve Playbooks is_qb_sneak, n_offense_backfield
 
 ## License
 

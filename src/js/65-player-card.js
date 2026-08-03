@@ -167,6 +167,46 @@ function pcardFptsFromStats(s){
 }
 
 let pcardOpen=false;
+let pcardNavStack = [];
+let pcardRestoreState = null;
+let pcardSuppressNavPush = false;
+
+function pcardCaptureNavState(){
+  if(!pcardState) return null;
+  return {
+    pid: pcardState.pid,
+    pos: pcardState.posc,
+    team: pcardState.team || '',
+    mode: pcardStatsMode,
+    routeSeason: pcardRouteSeason,
+    qbPassingSeason: pcardQbPassingSeason,
+    rbFanSeason: pcardRbFanSeason,
+    olSeason: pcardOlSeason,
+    qbOlSeason: (typeof pcardQbOlSeason!=='undefined') ? pcardQbOlSeason : null,
+  };
+}
+
+function pcardBackButtonHTML(){
+  if(!pcardNavStack.length) return '';
+  return `<button class="pcard-back" onclick="pcardGoBack()" aria-label="Back">${typeof TC_ICON==='function'?TC_ICON('undo'):'←'}</button>`;
+}
+
+function openPlayerCardFromCard(nameOrId, pos, team){
+  if(pcardState){
+    const snap = pcardCaptureNavState();
+    if(snap && String(snap.pid)!==String(nameOrId)) pcardNavStack.push(snap);
+  }
+  openPlayerCard(nameOrId, pos, team);
+}
+
+function pcardGoBack(){
+  if(!pcardNavStack.length) return;
+  const prev = pcardNavStack.pop();
+  if(!prev) return;
+  pcardRestoreState = prev;
+  pcardSuppressNavPush = true;
+  openPlayerCard(prev.pid, prev.pos, prev.team);
+}
 // Player-card image fallback: walk the pipe-separated data-fallbacks (ESPN headshots) when the
 // current src 404s, then hide once exhausted.
 function pcardImgFallback(img){
@@ -218,7 +258,12 @@ function openPlayerCard(nameOrId, pos, team){
   else if(nameOrId && /^\d+$/.test(String(nameOrId))) pid = String(nameOrId);
   else pid = resolvePlayerId(nameOrId, pos);
   if(!pid){ toast('No stats available for that player','err'); return; }
+  if(!pcardSuppressNavPush && pcardOpen && pcardState){
+    const snap = pcardCaptureNavState();
+    if(snap && String(snap.pid)!==String(pid)) pcardNavStack.push(snap);
+  }
   pcardOpen=true;
+  pcardSuppressNavPush = false;
   _pcardLockPage(true);
   renderPlayerCardShell(pid, pos, team);
   loadPlayerCardData(pid, pos, team);
@@ -284,6 +329,9 @@ function _pcardLockPage(on){
 function closePlayerCard(){
   pcardOpen=false;
   _pcardLockPage(false);
+  pcardNavStack = [];
+  pcardRestoreState = null;
+  pcardSuppressNavPush = false;
   const el=document.getElementById('pcardOverlay'); if(el) el.remove();
 }
 function renderPlayerCardShell(pid, pos, team){
@@ -336,6 +384,7 @@ function renderPlayerCardShell(pid, pos, team){
           </div>
           <div class="pcard-hero-draft" id="pcardHeroDraft"></div>
         </div>
+        ${pcardBackButtonHTML()}
         <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">✕</button>
         ${ktcBand}
       </div>
@@ -385,14 +434,28 @@ async function loadPlayerCardData(pid, pos, team){
   const isOl = ['LT','LG','C','RG','RT','OL','G','T','OT','OG'].includes(posc);
   const isDefense = ['DE','DT','NT','DL','LB','MLB','OLB','ILB','WLB','SLB','DB','CB','S','FS','SS'].includes(posc);
   pcardState = {pid, posc, team, isSkill, isOl, isDefense};
+  const restoring = !!(pcardRestoreState && String(pcardRestoreState.pid)===String(pid));
   // Rookies have no NFL game log yet → default to their college stats; everyone else to the pros.
   pcardStatsMode = (isOl && typeof pcardOlAvailable==='function' && pcardOlAvailable(pid))
     ? 'olgrades'
     : (isRookiePlayer(pid) ? 'college' : 'pro');
-  pcardRouteSeason = null;        // reset the Routes-tab season for the new player
-  pcardQbPassingSeason = null;    // reset the Passing Chart season for the new player
-  pcardRbFanSeason = null;        // reset the Rushing Fan season for the new player
-  pcardOlSeason = null;           // reset the OL Grades season for the new player
+  if(restoring && pcardRestoreState.mode){
+    pcardStatsMode = pcardRestoreState.mode;
+  }
+  if(!restoring){
+    pcardRouteSeason = null;        // reset the Routes-tab season for the new player
+    pcardQbPassingSeason = null;    // reset the Passing Chart season for the new player
+    pcardRbFanSeason = null;        // reset the Rushing Fan season for the new player
+    pcardOlSeason = null;           // reset the OL Grades season for the new player
+    if(typeof pcardQbOlSeason!=='undefined') pcardQbOlSeason = null;
+  } else {
+    if(pcardRestoreState.routeSeason!=null) pcardRouteSeason = pcardRestoreState.routeSeason;
+    if(pcardRestoreState.qbPassingSeason!=null) pcardQbPassingSeason = pcardRestoreState.qbPassingSeason;
+    if(pcardRestoreState.rbFanSeason!=null) pcardRbFanSeason = pcardRestoreState.rbFanSeason;
+    if(pcardRestoreState.olSeason!=null) pcardOlSeason = pcardRestoreState.olSeason;
+    if(typeof pcardQbOlSeason!=='undefined' && pcardRestoreState.qbOlSeason!=null) pcardQbOlSeason = pcardRestoreState.qbOlSeason;
+    pcardRestoreState = null;
+  }
   loadPcardDraft(pid);            // draft summary fills the hero banner (independent of stat source)
   renderPcardStatTabs();
   pcardLoadStats(pcardStatsMode);
@@ -417,11 +480,13 @@ function renderPcardStatTabs(){
     ? tab('routes','Routes') : '';
   const passingTab = (pcardState.posc==='QB' && typeof pcardQbPassingAvailable==='function' && pcardQbPassingAvailable(pcardState.pid))
     ? tab('passing','Passing Chart') : '';
+  const qbOlTab = (pcardState.posc==='QB' && typeof pcardQbOlAvailable==='function' && pcardQbOlAvailable(pcardState.pid))
+    ? tab('qbol','Offensive Line') : '';
   const rbFanTab = (pcardState.posc==='RB' && typeof pcardRbFanAvailable==='function' && pcardRbFanAvailable(pcardState.pid))
     ? tab('rbfan','Rushing Fan') : '';
   const olTab = (pcardState.isOl && typeof pcardOlAvailable==='function' && pcardOlAvailable(pcardState.pid))
     ? tab('olgrades','OL Grades') : '';
-  el.innerHTML = tab('pro','NFL') + tab('college','College') + passingTab + rbFanTab + olTab + routesTab;
+  el.innerHTML = tab('pro','NFL') + tab('college','College') + passingTab + qbOlTab + rbFanTab + olTab + routesTab;
 }
 // Switch the card's stat source and reload the body from the matching feed.
 function setPcardStatsMode(mode){
@@ -470,6 +535,14 @@ function pcardLoadStats(mode){
       return;
     }
     body.innerHTML = `<div class="pcard-loading">Rushing fan unavailable in this build.</div>`;
+    return;
+  }
+  if(mode==='qbol'){
+    if(typeof renderPcardQbOl==='function'){
+      body.innerHTML = renderPcardQbOl(pid);
+      return;
+    }
+    body.innerHTML = `<div class="pcard-loading">QB offensive line tab unavailable in this build.</div>`;
     return;
   }
   if(mode==='olgrades'){

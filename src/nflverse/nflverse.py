@@ -17,6 +17,12 @@ Usage:
     python nflverse_stats.py 2024       # a different season
 """
 import os, sys, json, hashlib
+from urllib.error import HTTPError
+
+try:
+    import numpy as np
+except Exception:
+    np = None
 
 try:
     import pandas as pd
@@ -30,6 +36,8 @@ PBP_URL = "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_
 PFR_PASS_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_season_pass.csv"
 PFR_RUSH_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_season_rush.csv"
 PFR_DEF_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_season_def.csv"
+PFR_PASS_WEEK_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_pass_{season}.parquet"
+PFR_RUSH_WEEK_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_rush_{season}.parquet"
 PFR_DEF_WEEK_URL = "https://github.com/nflverse/nflverse-data/releases/download/pfr_advstats/advstats_week_def_{season}.parquet"
 # Weekly snap counts. PFR's advanced-defense table only creates a player-week row when a
 # pass-rush or coverage event was CHARTED — measured across 2023, 49% of DL player-weeks that
@@ -67,14 +75,18 @@ NGS_RUSH_URL = "https://github.com/nflverse/nflverse-data/releases/download/next
 ROSTER_URL = "https://github.com/nflverse/nflverse-data/releases/download/rosters/roster_{season}.csv"
 
 _NAME_MAP = {}
-_OL_GRADES_BY_TEAM = None
-_OL_GRADES_BY_PLAYER = None
+_OL_GRADES_BY_TEAM = {}
+_OL_GRADES_BY_PLAYER = {}
 _PFR_TO_GSIS = None
 _OL_GRADES_CACHE_CSV = None
 
 # URLs that failed to download this run (e.g. FTN charting before 2022). Cached so we don't
 # retry the same 404 dozens of times across refinement/receiver loops.
 _FAILED_REMOTE = {}
+
+
+def _is_http_not_found(err):
+    return isinstance(err, HTTPError) and getattr(err, "code", None) == 404
 
 def _nflverse_cache_dir():
     d = os.path.join(CACHE_DIR, "nflverse")
@@ -139,8 +151,8 @@ def _ensure_ol_grades_cache(seasons, refresh=False):
         os.makedirs(os.path.dirname(out_csv), exist_ok=True)
         df.to_csv(out_csv, index=False)
         _OL_GRADES_CACHE_CSV = out_csv
-        _OL_GRADES_BY_TEAM = None
-        _OL_GRADES_BY_PLAYER = None
+        _OL_GRADES_BY_TEAM = {}
+        _OL_GRADES_BY_PLAYER = {}
         print(f" ok ({len(df)} linemen → {os.path.basename(out_csv)})")
         return out_csv
     except Exception as e:
@@ -386,7 +398,7 @@ def _pfr_pass_team(season):
     return pd.DataFrame({"Pressure Rate Allowed": pressure.round(1)})
 
 def _pfr_rush_team(season):
-    """Team-level yards before contact per rush (from PFR advanced rushing)."""
+    """Team-level rushing context (from PFR advanced rushing)."""
     df = _aux_csv(PFR_RUSH_URL)
     tmcol = "tm" if "tm" in df.columns else "team"
     df = df[(df["season"] == season) & (df[tmcol] != "2TM")].copy()
@@ -394,9 +406,51 @@ def _pfr_rush_team(season):
     # Only RBs (Sharp's metric is "per RB rush").
     if "pos" in df.columns:
         df = df[df["pos"] == "RB"]
+
+    # nflverse occasionally ships mixed/object dtypes in rushing fields (for example
+    # `loaded` can arrive as non-numeric text). Coerce here so bad values become NaN
+    # instead of crashing seed builds with TypeError during arithmetic.
+    for c in ["att", "ybc", "yac", "yds", "brk_tkl", "loaded", "x1d"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+
     g = df.groupby(tmcol)
-    ybc = g["ybc"].sum() / g["att"].sum()
-    return pd.DataFrame({"Yards Before Contact Per RB Rush": ybc.round(2)})
+    nan = float("nan")
+    att = g["att"].sum().replace(0, nan)
+    ybc = g["ybc"].sum(min_count=1) / att
+    yac = g["yac"].sum(min_count=1) / att
+    ypc = g["yds"].sum(min_count=1) / att
+    brk = g["brk_tkl"].sum(min_count=1) / att * 100
+    loaded = g["loaded"].sum(min_count=1) / att * 100
+    first = g["x1d"].sum(min_count=1) / att * 100
+    return pd.DataFrame({
+        "YBC/Rush": ybc.round(2),
+        "YAC/Rush": yac.round(2),
+        "Yards/Rush": ypc.round(2),
+        "Broken Tackle Rate": brk.round(1),
+        "Loaded Box Rate": loaded.round(1),
+        "Rush 1D Rate": first.round(1),
+    })
+
+
+def _ngs_rush_team(season):
+    """Team-level rushing context from NGS season totals (week==0)."""
+    df = _aux_csv(NGS_RUSH_URL, compression="gzip")
+    df = df[(df["season"] == season) & (df["season_type"] == "REG") & (df["week"] == 0)].copy()
+    if df.empty:
+        return pd.DataFrame()
+    df["team_abbr"] = df["team_abbr"].replace(NFLVERSE_TO_SEED)
+    att = df["rush_attempts"].replace(0, np.nan)
+    df["w_roe"] = df["rush_yards_over_expected_per_att"] * att
+    df["w_box"] = df["percent_attempts_gte_eight_defenders"] * att
+    df["w_tlos"] = df["avg_time_to_los"] * att
+    g = df.groupby("team_abbr")
+    den = g["rush_attempts"].sum().replace(0, np.nan)
+    return pd.DataFrame({
+        "ROE/Att": (g["w_roe"].sum() / den).round(2),
+        "8+ Box Rate": (g["w_box"].sum() / den).round(1),
+        "Time to LOS": (g["w_tlos"].sum() / den).round(2),
+    })
 
 def _ngs_pass_team(season):
     """Team-level average time to throw (from Next Gen Stats, season totals week==0)."""
@@ -409,6 +463,219 @@ def _ngs_pass_team(season):
     ttt = g["w"].sum() / g["attempts"].sum()
     return pd.DataFrame({"Time to Throw": ttt.round(2)})
 
+
+def _pct_rank(series, lower_better=False):
+    """0-100 percentile-like score where higher is always better."""
+    s = pd.to_numeric(series, errors="coerce")
+    if s.dropna().empty:
+        return pd.Series(index=s.index, dtype="float64")
+    base = s.rank(pct=True) * 100
+    return (100 - base) if lower_better else base
+
+
+def _ol_pass_metrics(season):
+    """Team pass-protection metrics from nflverse PFR + pbp + participation + FTN.
+
+    Produces the requested OL ranking columns:
+      - dropbacks volume
+      - pressure/hit/hurry/blitz rates allowed
+      - pocket time allowed
+      - total sack + non-QB-fault sack rates allowed
+      - no-blitz pressure rate
+      - last-5 sack rate
+      - pass-utilization and utilization-weighted OL score
+    """
+    if not HAVE_PANDAS:
+        raise RuntimeError("pandas is required for nflverse_stats.")
+
+    # Base play-level denominators (dropbacks/rushes/sacks, plus last-5 sack trend).
+    pbp = _load_pbp(season, [
+        "game_id", "play_id", "season_type", "week", "posteam", "play_type",
+        "qb_dropback", "sack", "rush_attempt", "qb_scramble", "qb_kneel"
+    ])
+    pbp = pbp[pbp["season_type"] == "REG"].copy()
+    pbp["posteam"] = pbp["posteam"].replace(NFLVERSE_TO_SEED)
+    pbp = pbp[pbp["posteam"].notna()]
+
+    db = pbp[pbp["qb_dropback"] == 1].copy()
+    db_ct = db.groupby("posteam").size().rename("Dropbacks")
+    sack_ct = db.groupby("posteam")["sack"].sum().rename("_sacks")
+
+    run = pbp[(pbp["rush_attempt"] == 1) & (pbp["qb_scramble"] == 0) & (pbp["qb_kneel"] == 0)]
+    run_ct = run.groupby("posteam").size().rename("_designed_rushes")
+
+    wk = db[["posteam", "week"]].dropna().drop_duplicates()
+    wk["rk"] = wk.groupby("posteam")["week"].rank("dense", ascending=False)
+    l5_keys = set(map(tuple, wk[wk["rk"] <= 5][["posteam", "week"]].values))
+    db_l5 = db[["posteam", "week", "sack"]].copy()
+    db_l5["is_l5"] = [(t, w) in l5_keys for t, w in zip(db_l5["posteam"], db_l5["week"])]
+    l5_sack = db_l5[db_l5["is_l5"]].groupby("posteam")["sack"].sum().rename("Last 5 Sacks Allowed")
+    l5_db = db_l5[db_l5["is_l5"]].groupby("posteam").size().rename("_last5_dropbacks")
+
+    out = pd.DataFrame(index=sorted(set(db_ct.index) | set(run_ct.index)))
+    out = out.join(db_ct, how="left").join(run_ct, how="left").join(sack_ct, how="left")
+    out = out.join(l5_sack, how="left").join(l5_db, how="left")
+    out["Dropbacks"] = out["Dropbacks"].fillna(0)
+    out["_designed_rushes"] = out["_designed_rushes"].fillna(0)
+    out["_sacks"] = out["_sacks"].fillna(0)
+    out["Last 5 Sacks Allowed"] = out["Last 5 Sacks Allowed"].fillna(0)
+    out["_last5_dropbacks"] = out["_last5_dropbacks"].fillna(0)
+
+    util_den = (out["Dropbacks"] + out["_designed_rushes"]).replace(0, np.nan)
+    out["Pass Rate"] = (out["Dropbacks"] / util_den * 100).fillna(0)
+    out["Sack Rate"] = (out["_sacks"] / out["Dropbacks"].replace(0, np.nan) * 100).fillna(0)
+    out["Last 5 Sack Rate"] = (
+        out["Last 5 Sacks Allowed"] / out["_last5_dropbacks"].replace(0, np.nan) * 100
+    ).fillna(0)
+
+    # PFR pass charting: rates per team using dropbacks as denominator for consistency.
+    try:
+        pfr = _aux_csv(PFR_PASS_URL)
+        pfr = pfr[(pfr["season"] == season) & (pfr["team"] != "2TM")].copy()
+        pfr["team"] = pfr["team"].replace(NFLVERSE_TO_SEED)
+        g = pfr.groupby("team")
+        pr = g[["times_pressured", "times_hit", "times_hurried", "times_blitzed", "pass_attempts"]].sum()
+        pr["Pocket Time Allowed"] = (
+            (pfr["pocket_time"] * pfr["pass_attempts"]).groupby(pfr["team"]).sum()
+            / g["pass_attempts"].sum().replace(0, np.nan)
+        )
+        pr = pr.join(out[["Dropbacks"]], how="left")
+        den = pr["Dropbacks"].replace(0, np.nan)
+        out["Pressure Rate"] = (pr["times_pressured"] / den * 100).reindex(out.index)
+        out["Hit Rate"] = (pr["times_hit"] / den * 100).reindex(out.index)
+        out["Hurry Rate"] = (pr["times_hurried"] / den * 100).reindex(out.index)
+        out["Blitz Rate"] = (pr["times_blitzed"] / den * 100).reindex(out.index)
+        out["Pocket Time"] = pr["Pocket Time Allowed"].reindex(out.index)
+    except Exception as e:
+        print(f"  (skipped _ol_pass_metrics PFR pass block: {type(e).__name__})")
+
+    # FTN+participation enriches non-QB-fault sacks and no-blitz pressure.
+    try:
+        ftn = _aux_csv(
+            FTN_URL.format(season=season),
+            usecols=["nflverse_game_id", "nflverse_play_id", "n_blitzers", "is_qb_fault_sack"],
+        )
+        part = _aux_csv(
+            PART_URL.format(season=season),
+            usecols=["nflverse_game_id", "play_id", "was_pressure"],
+        )
+        d = db[["game_id", "play_id", "posteam", "sack"]].copy()
+        d = d.merge(
+            ftn,
+            left_on=["game_id", "play_id"],
+            right_on=["nflverse_game_id", "nflverse_play_id"],
+            how="left",
+        ).merge(
+            part,
+            left_on=["game_id", "play_id"],
+            right_on=["nflverse_game_id", "play_id"],
+            how="left",
+            suffixes=("", "_part"),
+        )
+
+        sack_rows = d[d["sack"] == 1]
+        qb_fault = (sack_rows["is_qb_fault_sack"] == True).groupby(sack_rows["posteam"]).sum()  # noqa: E712
+        non_qb_fault = (sack_rows.groupby("posteam").size() - qb_fault).clip(lower=0)
+        out["Non-QB Sack Rate"] = (
+            non_qb_fault.reindex(out.index).fillna(0) / out["Dropbacks"].replace(0, np.nan) * 100
+        ).fillna(0)
+
+        nbp = d[(d["n_blitzers"] == 0) & (d["was_pressure"] == True)].groupby("posteam").size()  # noqa: E712
+        out["No Blitz Pressure Rate"] = (
+            nbp.reindex(out.index).fillna(0) / out["Dropbacks"].replace(0, np.nan) * 100
+        ).fillna(0)
+    except Exception as e:
+        # FTN/participation lags can legitimately 404 for newer seasons; skip quietly.
+        if not _is_http_not_found(e):
+            print(f"  (skipped _ol_pass_metrics FTN/participation block: {type(e).__name__})")
+
+    # Composite pass-protection + utilization weighting (pass-heavy teams weight pass-pro more).
+    low_cols = [
+        "Pressure Rate", "Hit Rate", "Hurry Rate",
+        "Sack Rate", "Non-QB Sack Rate", "No Blitz Pressure Rate",
+    ]
+    for c in low_cols:
+        if c not in out.columns:
+            out[c] = np.nan
+    if "Pocket Time" not in out.columns:
+        out["Pocket Time"] = np.nan
+
+    pass_score = (
+        _pct_rank(out["Pressure Rate"], lower_better=True) * 0.30
+        + _pct_rank(out["Hit Rate"], lower_better=True) * 0.10
+        + _pct_rank(out["Hurry Rate"], lower_better=True) * 0.10
+        + _pct_rank(out["Sack Rate"], lower_better=True) * 0.20
+        + _pct_rank(out["Non-QB Sack Rate"], lower_better=True) * 0.15
+        + _pct_rank(out["No Blitz Pressure Rate"], lower_better=True) * 0.10
+        + _pct_rank(out["Pocket Time"], lower_better=False) * 0.05
+    )
+    run_proxy = _pct_rank(out.get("Stuff Rate"), lower_better=True) if "Stuff Rate" in out.columns else 50
+    util = out["Pass Rate"].fillna(50) / 100
+    out["Pass Score"] = pass_score
+    out["Overall Score"] = (util * pass_score + (1 - util) * run_proxy)
+
+    # Final formatting and cleanup.
+    cols = [
+        "Dropbacks", "Pass Rate",
+        "Pressure Rate", "Hit Rate", "Hurry Rate", "Blitz Rate",
+        "Pocket Time", "Sack Rate", "Non-QB Sack Rate",
+        "No Blitz Pressure Rate", "Last 5 Sacks Allowed", "Last 5 Sack Rate",
+        "Pass Score", "Overall Score",
+    ]
+    for c in cols:
+        if c not in out.columns:
+            out[c] = np.nan
+    out = out[cols]
+    out["Dropbacks"] = pd.to_numeric(out["Dropbacks"], errors="coerce").fillna(0).round(0)
+    out["Last 5 Sacks Allowed"] = pd.to_numeric(out["Last 5 Sacks Allowed"], errors="coerce").fillna(0).round(0)
+    for c in out.columns:
+        if c not in {"Dropbacks", "Last 5 Sacks Allowed"}:
+            out[c] = pd.to_numeric(out[c], errors="coerce").round(2)
+    return out
+
+
+def _ol_snap_pct_by_player(season):
+    """Team -> player name -> OL snap share (% on-field across pass/run snaps)."""
+    try:
+        pbp = _load_pbp(season, ["game_id", "play_id", "season_type", "posteam", "play_type"])
+        pbp = pbp[(pbp["season_type"] == "REG") & pbp["play_type"].isin(["pass", "run"]) & pbp["posteam"].notna()].copy()
+        if pbp.empty:
+            return {}
+        pbp["posteam"] = pbp["posteam"].replace(NFLVERSE_TO_SEED)
+        part = _aux_csv(PART_URL.format(season=season), usecols=["nflverse_game_id", "play_id", "offense_players"])
+        m = pbp.merge(part, left_on=["game_id", "play_id"], right_on=["nflverse_game_id", "play_id"], how="inner")
+        m = m[m["offense_players"].notna()].copy()
+        if m.empty:
+            return {}
+
+        roster = _aux_csv(ROSTER_URL.format(season=season), usecols=["gsis_id", "full_name", "position"]).drop_duplicates("gsis_id")
+        roster = roster[roster["position"].isin(["T", "G", "C", "OT", "OG", "OL"])].copy()
+        if roster.empty:
+            return {}
+        ol_ids = set(roster["gsis_id"].dropna().astype(str))
+        name_by_id = {str(r["gsis_id"]): str(r["full_name"]).strip() for _, r in roster.iterrows() if pd.notna(r["gsis_id"]) and pd.notna(r["full_name"])}
+
+        m["pid_list"] = m["offense_players"].astype(str).str.split(";")
+        ex = m[["posteam", "pid_list"]].explode("pid_list")
+        ex["pid_list"] = ex["pid_list"].astype(str)
+        ex = ex[ex["pid_list"].isin(ol_ids)]
+        if ex.empty:
+            return {}
+
+        counts = ex.groupby(["posteam", "pid_list"]).size()
+        team_snaps = m.groupby("posteam").size().replace(0, np.nan)
+
+        out = {}
+        for (tm, pid), n in counts.items():
+            nm = name_by_id.get(str(pid))
+            if not nm:
+                continue
+            pct = float(n) / float(team_snaps.get(tm, np.nan)) * 100.0
+            out.setdefault(str(tm), {})[nm] = round(pct, 2)
+        return out
+    except Exception:
+        return {}
+
 # FTN charting (2022+) unlocks a batch of team tendencies pbp can't supply: motion, play-action,
 # RPO, screen, trick, drop rate (offense) and blitz rate (defense). Validated vs Warren Sharp on
 # 2025 — motion ρ≈0.90, blitz(5+ rushers) ρ≈0.97, play-action ρ≈0.81. RPO/screen/trick/drop have
@@ -417,10 +684,15 @@ def _ftn_team(season):
     pbp = _load_pbp(season, ["game_id", "play_id", "season_type", "posteam", "defteam",
                              "play_type", "qb_dropback"])
     pbp = pbp[pbp["season_type"] == "REG"]
-    ftn = _aux_csv(FTN_URL.format(season=season),
-                   usecols=["nflverse_game_id", "nflverse_play_id", "is_motion", "is_play_action",
-                            "is_rpo", "is_screen_pass", "is_trick_play", "is_drop",
-                            "is_catchable_ball", "n_pass_rushers"])
+    try:
+        ftn = _aux_csv(FTN_URL.format(season=season),
+                       usecols=["nflverse_game_id", "nflverse_play_id", "is_motion", "is_play_action",
+                                "is_rpo", "is_screen_pass", "is_trick_play", "is_drop",
+                                "is_catchable_ball", "n_pass_rushers"])
+    except Exception as e:
+        if _is_http_not_found(e):
+            return pd.DataFrame(), pd.DataFrame()
+        raise
     m = pbp.merge(ftn, left_on=["game_id", "play_id"],
                   right_on=["nflverse_game_id", "nflverse_play_id"], how="left")
     plays = m[(m["play_type"].isin(["pass", "run"])) & m["posteam"].notna()].copy()
@@ -448,6 +720,190 @@ def _ftn_team(season):
     blitz = db.groupby("defteam").apply(lambda d: (d["n_pass_rushers"] >= 5).mean() * 100)
     dfn = pd.DataFrame({"Blitz Rate": blitz.round(1)})
     return off, dfn
+
+
+def ol_weekly_team(season):
+    """Compact weekly OL raw metrics per team for client-side week-range recomputation.
+
+    Returns a compact shape:
+      {
+        "weeks": [1..N],
+        "pass_cols": [...],
+        "run_cols": [...],
+        "teams": {"ARI": {"pass": [[...],[...]], "run": [[...],[...]]}, ...}
+      }
+    """
+    pbp_cols = [
+        "game_id", "play_id", "season_type", "week", "posteam", "play_type",
+        "qb_dropback", "rush_attempt", "qb_scramble", "qb_kneel", "sack", "yards_gained",
+        "ydstogo", "first_down",
+    ]
+    pbp = _load_pbp(season, pbp_cols)
+    pbp = pbp[(pbp["season_type"] == "REG") & pbp["play_type"].isin(["pass", "run"]) & pbp["posteam"].notna()].copy()
+    if pbp.empty:
+        return {}
+    pbp["posteam"] = pbp["posteam"].replace(NFLVERSE_TO_SEED)
+    pbp["week"] = pd.to_numeric(pbp["week"], errors="coerce")
+    pbp = pbp[pbp["week"].notna()].copy()
+    pbp["week"] = pbp["week"].astype(int)
+    weeks = sorted(int(w) for w in pbp["week"].unique() if int(w) > 0)
+    if not weeks:
+        return {}
+
+    db = pbp[pbp["qb_dropback"] == 1].copy()
+    run = pbp[(pbp["rush_attempt"] == 1) & (pbp["qb_scramble"] == 0) & (pbp["qb_kneel"] == 0)].copy()
+
+    teams = sorted(set(pbp["posteam"].dropna().astype(str).tolist()))
+    idx = pd.MultiIndex.from_product([teams, weeks], names=["team", "week"])
+    out = pd.DataFrame(index=idx)
+
+    out["dropbacks"] = db.groupby(["posteam", "week"]).size().reindex(idx)
+    out["designed_rushes"] = run.groupby(["posteam", "week"]).size().reindex(idx)
+    out["sacks"] = db.groupby(["posteam", "week"])["sack"].sum(min_count=1).reindex(idx)
+
+    out["stuffed"] = run.groupby(["posteam", "week"]).apply(lambda d: (d["yards_gained"] <= 0).sum()).reindex(idx)
+    out["explosive"] = run.groupby(["posteam", "week"]).apply(lambda d: (d["yards_gained"] >= 10).sum()).reindex(idx)
+    out["rush_yards"] = run.groupby(["posteam", "week"])["yards_gained"].sum(min_count=1).reindex(idx)
+
+    if "first_down" in run.columns:
+        out["rush_first_downs"] = run.groupby(["posteam", "week"])["first_down"].sum(min_count=1).reindex(idx)
+    else:
+        out["rush_first_downs"] = run.groupby(["posteam", "week"]).apply(
+            lambda d: (pd.to_numeric(d["yards_gained"], errors="coerce") >= pd.to_numeric(d["ydstogo"], errors="coerce")).sum()
+        ).reindex(idx)
+
+    try:
+        pw = _aux_parquet(PFR_PASS_WEEK_URL.format(season=season))
+        pw = pw[pw["game_type"] == "REG"].copy()
+        pw["team"] = pw["team"].replace(NFLVERSE_TO_SEED)
+        pw["week"] = pd.to_numeric(pw["week"], errors="coerce").astype("Int64")
+        pw = pw[pw["week"].notna()].copy()
+        g = pw.groupby(["team", "week"])
+        out["times_pressured"] = g["times_pressured"].sum(min_count=1).reindex(idx)
+        out["times_hit"] = g["times_hit"].sum(min_count=1).reindex(idx)
+        out["times_hurried"] = g["times_hurried"].sum(min_count=1).reindex(idx)
+        out["times_blitzed"] = g["times_blitzed"].sum(min_count=1).reindex(idx)
+    except Exception:
+        pass
+
+    try:
+        rw = _aux_parquet(PFR_RUSH_WEEK_URL.format(season=season))
+        rw = rw[rw["game_type"] == "REG"].copy()
+        rw["team"] = rw["team"].replace(NFLVERSE_TO_SEED)
+        rw["week"] = pd.to_numeric(rw["week"], errors="coerce").astype("Int64")
+        rw = rw[rw["week"].notna()].copy()
+        g = rw.groupby(["team", "week"])
+        out["ybc"] = g["rushing_yards_before_contact"].sum(min_count=1).reindex(idx)
+        out["yac"] = g["rushing_yards_after_contact"].sum(min_count=1).reindex(idx)
+        out["broken_tackles"] = g["rushing_broken_tackles"].sum(min_count=1).reindex(idx)
+    except Exception:
+        pass
+
+    try:
+        ngp = _aux_csv(
+            NGS_PASS_URL,
+            compression="gzip",
+            usecols=["season", "season_type", "week", "team_abbr", "attempts", "avg_time_to_throw"],
+        )
+        ngp = ngp[(ngp["season"] == season) & (ngp["season_type"] == "REG") & (ngp["week"] > 0)].copy()
+        ngp["team_abbr"] = ngp["team_abbr"].replace(NFLVERSE_TO_SEED)
+        ngp["attempts"] = pd.to_numeric(ngp["attempts"], errors="coerce").fillna(0)
+        ngp["avg_time_to_throw"] = pd.to_numeric(ngp["avg_time_to_throw"], errors="coerce")
+        ngp = ngp[ngp["attempts"] > 0]
+        if not ngp.empty:
+            ngp["pt_w"] = ngp["avg_time_to_throw"] * ngp["attempts"]
+            g = ngp.groupby(["team_abbr", "week"])
+            out["pocket_time_w"] = g["pt_w"].sum(min_count=1).reindex(idx)
+            out["pocket_time_att"] = g["attempts"].sum(min_count=1).reindex(idx)
+    except Exception:
+        pass
+
+    try:
+        ngr = _aux_csv(
+            NGS_RUSH_URL,
+            compression="gzip",
+            usecols=[
+                "season", "season_type", "week", "team_abbr", "rush_attempts",
+                "rush_yards_over_expected_per_att", "percent_attempts_gte_eight_defenders", "avg_time_to_los",
+            ],
+        )
+        ngr = ngr[(ngr["season"] == season) & (ngr["season_type"] == "REG") & (ngr["week"] > 0)].copy()
+        ngr["team_abbr"] = ngr["team_abbr"].replace(NFLVERSE_TO_SEED)
+        ngr["rush_attempts"] = pd.to_numeric(ngr["rush_attempts"], errors="coerce").fillna(0)
+        ngr["rush_yards_over_expected_per_att"] = pd.to_numeric(ngr["rush_yards_over_expected_per_att"], errors="coerce")
+        ngr["percent_attempts_gte_eight_defenders"] = pd.to_numeric(ngr["percent_attempts_gte_eight_defenders"], errors="coerce")
+        ngr["avg_time_to_los"] = pd.to_numeric(ngr["avg_time_to_los"], errors="coerce")
+        ngr = ngr[ngr["rush_attempts"] > 0]
+        if not ngr.empty:
+            ngr["roe_w"] = ngr["rush_yards_over_expected_per_att"] * ngr["rush_attempts"]
+            ngr["box8_w"] = ngr["percent_attempts_gte_eight_defenders"] * ngr["rush_attempts"]
+            ngr["tlos_w"] = ngr["avg_time_to_los"] * ngr["rush_attempts"]
+            g = ngr.groupby(["team_abbr", "week"])
+            out["ngs_att"] = g["rush_attempts"].sum(min_count=1).reindex(idx)
+            out["roe_w"] = g["roe_w"].sum(min_count=1).reindex(idx)
+            out["box8_w"] = g["box8_w"].sum(min_count=1).reindex(idx)
+            out["tlos_w"] = g["tlos_w"].sum(min_count=1).reindex(idx)
+    except Exception:
+        pass
+
+    try:
+        ftn = _aux_csv(
+            FTN_URL.format(season=season),
+            usecols=["nflverse_game_id", "nflverse_play_id", "n_blitzers", "is_qb_fault_sack"],
+        )
+        part = _aux_csv(
+            PART_URL.format(season=season),
+            usecols=["nflverse_game_id", "play_id", "was_pressure"],
+        )
+        d = db[["game_id", "play_id", "week", "posteam", "sack"]].copy()
+        d = d.merge(
+            ftn,
+            left_on=["game_id", "play_id"],
+            right_on=["nflverse_game_id", "nflverse_play_id"],
+            how="left",
+        ).merge(
+            part,
+            left_on=["game_id", "play_id"],
+            right_on=["nflverse_game_id", "play_id"],
+            how="left",
+            suffixes=("", "_part"),
+        )
+        sack_rows = d[d["sack"] == 1].copy()
+        qb_fault = (sack_rows["is_qb_fault_sack"] == True).groupby([sack_rows["posteam"], sack_rows["week"]]).sum()  # noqa: E712
+        sack_tot = sack_rows.groupby(["posteam", "week"]).size()
+        non_qb = (sack_tot - qb_fault).clip(lower=0)
+        out["non_qb_sacks"] = non_qb.reindex(idx)
+
+        nbp = d[(d["n_blitzers"] == 0) & (d["was_pressure"] == True)].groupby(["posteam", "week"]).size()  # noqa: E712
+        out["no_blitz_pressures"] = nbp.reindex(idx)
+    except Exception:
+        pass
+
+    pass_cols = [
+        "dropbacks", "designed_rushes", "sacks",
+        "times_pressured", "times_hit", "times_hurried", "times_blitzed",
+        "non_qb_sacks", "no_blitz_pressures", "pocket_time_w", "pocket_time_att",
+    ]
+    run_cols = [
+        "designed_rushes", "stuffed", "explosive", "rush_yards", "ybc", "yac",
+        "broken_tackles", "rush_first_downs", "ngs_att", "roe_w", "box8_w", "tlos_w",
+    ]
+
+    for c in pass_cols + run_cols:
+        if c not in out.columns:
+            out[c] = 0
+        out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0.0)
+
+    packed = {"weeks": weeks, "pass_cols": pass_cols, "run_cols": run_cols, "teams": {}}
+    for tm in teams:
+        pass_rows = []
+        run_rows = []
+        for wk in weeks:
+            row = out.loc[(tm, wk)]
+            pass_rows.append([round(float(row[c]), 4) for c in pass_cols])
+            run_rows.append([round(float(row[c]), 4) for c in run_cols])
+        packed["teams"][tm] = {"pass": pass_rows, "run": run_rows}
+    return packed
 
 # Defensive pass-rush + run-defense table (PFR def charting + pbp + FTN proxy). Mirrors Sharp's
 # defensive_line: Pressure Rate, No-Blitz Pressure Rate, Rush Stuff Rate, plus Missed Tackles.
@@ -483,7 +939,8 @@ def team_defense_line(season):
         nob = m[m["n_blitzers"] == 0].groupby("defteam")["hit"].mean() * 100
         out["No Blitz Pressure Rate"] = nob.round(1)
     except Exception as e:
-        print(f"  (skipped no-blitz pressure proxy: {type(e).__name__})")
+        if not _is_http_not_found(e):
+            print(f"  (skipped no-blitz pressure proxy: {type(e).__name__})")
     # Rush Stuff Rate forced: designed rushes (no scrambles/kneels) held to <= 0 yards.
     rd = pbp[(pbp["rush_attempt"] == 1) & (pbp["qb_scramble"] == 0) & (pbp["qb_kneel"] == 0)]
     out["Rush Stuff Rate"] = (rd.groupby("defteam").apply(lambda x: (x["yards_gained"] <= 0).mean() * 100)).round(1)
@@ -514,27 +971,42 @@ def team_extended(season):
     # O-Line rush stuff (pbp): share of rushes for <= 0 yards
     rush = p[p["rush"] == 1].copy()
     rush["stuff"] = rush["yards_gained"] <= 0
+    rush["explosive"] = rush["yards_gained"] >= 10
     stuff = rush.groupby("posteam")["stuff"].mean() * 100
+    explosive = rush.groupby("posteam")["explosive"].mean() * 100
     out = pd.DataFrame({
         "Shotgun Rate": shotgun.round(1),
         "NoHuddle Rate": nohuddle.round(1),
         "AirYards/Att": airatt.round(2),
         "Off Plays/G": off_plays_g.round(1),
         "Neutral DB Rate": neutral_db.round(1),
-        "Rush Stuff Rate": stuff.round(1),
+        "Stuff Rate": stuff.round(1),
+        "Explosive Run Rate": explosive.round(1),
     })
     # Join PFR + NGS derived columns
-    for fn in (_pfr_pass_team, _pfr_rush_team, _ngs_pass_team):
+    for fn in (_pfr_rush_team, _ngs_pass_team, _ngs_rush_team):
         try:
             out = out.join(fn(season))
         except Exception as e:
             print(f"  (skipped {fn.__name__}: {type(e).__name__})")
+    # Enriched OL pass-protection metrics and utilization-weighted score stack.
+    try:
+        out = out.join(_ol_pass_metrics(season))
+    except Exception as e:
+        print(f"  (skipped _ol_pass_metrics: {type(e).__name__})")
     # Join FTN charting tendencies (2022+): motion / play-action / RPO / screen / trick / drop.
     try:
         ftn_off, _ = _ftn_team(season)
         out = out.join(ftn_off)
     except Exception as e:
         print(f"  (skipped FTN team tendencies: {type(e).__name__})")
+
+    # PFR rushing `loaded` has occasionally shipped as non-numeric strings.
+    # When that happens, keep the OL run card populated by borrowing NGS's
+    # 8+ defender box rate as the nearest available proxy.
+    if "Loaded Box Rate" in out.columns and "8+ Box Rate" in out.columns:
+        out["Loaded Box Rate"] = out["Loaded Box Rate"].where(out["Loaded Box Rate"].notna(), out["8+ Box Rate"])
+
     return out
 
 # Pace-of-play table (pbp only). Neutral dropback rate + seconds/play (with last-5 variants) +
@@ -993,29 +1465,53 @@ def qb_passing_zones(season, min_attempts=25):
     return out
 
 
-def _ol_grades_by_team():
+def _ol_grades_by_team(season=None):
     """Team/slot → latest OL grades from the local validated grades CSV.
 
     Returns {TEAM:{LT|LG|C|RG|RT:{name,run_grade,pass_grade,pass_snaps}}}.
     """
     global _OL_GRADES_BY_TEAM
-    if _OL_GRADES_BY_TEAM is not None:
-        return _OL_GRADES_BY_TEAM
+    skey = str(season) if season is not None else "latest"
+    if skey in _OL_GRADES_BY_TEAM:
+        return _OL_GRADES_BY_TEAM[skey]
     out = {}
     path = _ol_grades_source_csv_path()
     if not path or not os.path.exists(path):
-        _OL_GRADES_BY_TEAM = out
+        _OL_GRADES_BY_TEAM[skey] = out
         return out
     try:
-        g = pd.read_csv(path, usecols=["name", "team", "slot", "run_grade", "pass_grade", "pass_snaps"])
+        hdr = set(pd.read_csv(path, nrows=0).columns)
+        use = [c for c in ["gsis_id", "name", "team", "slot", "run_grade", "pass_grade", "pass_snaps"] if c in hdr]
+        g = pd.read_csv(path, usecols=use)
     except Exception:
-        _OL_GRADES_BY_TEAM = out
+        _OL_GRADES_BY_TEAM[skey] = out
         return out
+    if season is not None and "gsis_id" in g.columns:
+        try:
+            rost = _aux_parquet(
+                f"https://github.com/nflverse/nflverse-data/releases/download/weekly_rosters/roster_weekly_{int(season)}.parquet",
+                columns=["gsis_id", "team", "position"],
+            )
+            rost = rost.dropna(subset=["gsis_id"]).copy()
+            rost["team"] = rost["team"].astype(str).str.strip().str.upper().replace(NFLVERSE_TO_SEED)
+            rost = rost[rost["team"].isin(TEAMS)]
+            if not rost.empty:
+                tm_by_id = rost.groupby("gsis_id")["team"].agg(lambda s: s.mode().iloc[0] if len(s.mode()) else s.iloc[0])
+                pos_by_id = rost.groupby("gsis_id")["position"].agg(lambda s: s.mode().iloc[0] if len(s.mode()) else s.iloc[0])
+                gid = g["gsis_id"].astype(str)
+                g["team"] = gid.map(tm_by_id).fillna(g["team"])
+                if "slot" in g.columns:
+                    season_slot = gid.map(pos_by_id)
+                    season_slot = season_slot.astype(str).str.strip().str.upper()
+                    valid_slot = season_slot.isin(["LT", "LG", "C", "RG", "RT"])
+                    g.loc[valid_slot, "slot"] = season_slot[valid_slot]
+        except Exception:
+            pass
     g["team"] = g["team"].astype(str).str.strip().str.upper()
     g["slot"] = g["slot"].astype(str).str.strip().str.upper()
     g = g[g["team"].isin(TEAMS) & g["slot"].isin(["LT", "LG", "C", "RG", "RT"])]
     if g.empty:
-        _OL_GRADES_BY_TEAM = out
+        _OL_GRADES_BY_TEAM[skey] = out
         return out
     g["pass_snaps"] = pd.to_numeric(g["pass_snaps"], errors="coerce").fillna(0)
     g = g.sort_values(["team", "slot", "pass_snaps"], ascending=[True, True, False])
@@ -1029,11 +1525,11 @@ def _ol_grades_by_team():
             "pass_grade": r["pass_grade"] if pd.notna(r["pass_grade"]) else None,
             "pass_snaps": int(r["pass_snaps"]),
         }
-    _OL_GRADES_BY_TEAM = out
+    _OL_GRADES_BY_TEAM[skey] = out
     return out
 
 
-def _ol_grades_by_player():
+def _ol_grades_by_player(season=None, utilization_by_team=None, team_ol_context=None, starters_by_team=None, player_snap_pct_by_team=None):
     """Normalized player-name lookup for OL grade cards.
 
     Returns {normName:{team,slot,pos,pass_grade,pass_pctile,pass_conf,pass_snaps,
@@ -1041,12 +1537,13 @@ def _ol_grades_by_player():
             allpro_recent,career_ap1,career_pb,consensus_flag,market_pctile}}.
     """
     global _OL_GRADES_BY_PLAYER
-    if _OL_GRADES_BY_PLAYER is not None:
-        return _OL_GRADES_BY_PLAYER
+    skey = str(season) if season is not None else "latest"
+    if skey in _OL_GRADES_BY_PLAYER and utilization_by_team is None and team_ol_context is None and starters_by_team is None and player_snap_pct_by_team is None:
+        return _OL_GRADES_BY_PLAYER[skey]
     out = {}
     path = _ol_grades_source_csv_path()
     if not path or not os.path.exists(path):
-        _OL_GRADES_BY_PLAYER = out
+        _OL_GRADES_BY_PLAYER[skey] = out
         return out
     cols = [
         "name", "team", "slot", "pos",
@@ -1054,6 +1551,9 @@ def _ol_grades_by_player():
         "run_grade", "run_pctile", "run_conf", "poa_carries",
         "shared_credit", "penalty_rate", "allpro_recent", "career_ap1", "career_pb",
         "consensus_flag", "market_pctile",
+        # Contextual fields may already exist when a future pipeline writes them directly.
+        "pass_rate", "run_rate", "ol_weighted_pctile", "ol_weighted_grade",
+        "entanglement_factor", "is_projected_starter", "last5_sacks_allowed_est",
     ]
     try:
         # market_pctile only exists when the pipeline ran with the market lens; read whatever
@@ -1062,21 +1562,56 @@ def _ol_grades_by_player():
         use = [c for c in cols if c in available]
         g = pd.read_csv(path, usecols=use)
     except Exception:
-        _OL_GRADES_BY_PLAYER = out
+        _OL_GRADES_BY_PLAYER[skey] = out
         return out
     if g.empty:
-        _OL_GRADES_BY_PLAYER = out
+        _OL_GRADES_BY_PLAYER[skey] = out
         return out
+    if season is not None and "gsis_id" in g.columns:
+        try:
+            rost = _aux_parquet(
+                f"https://github.com/nflverse/nflverse-data/releases/download/weekly_rosters/roster_weekly_{int(season)}.parquet",
+                columns=["gsis_id", "team", "position"],
+            )
+            rost = rost.dropna(subset=["gsis_id"]).copy()
+            rost["team"] = rost["team"].astype(str).str.strip().str.upper().replace(NFLVERSE_TO_SEED)
+            rost = rost[rost["team"].isin(TEAMS)]
+            if not rost.empty:
+                tm_by_id = rost.groupby("gsis_id")["team"].agg(lambda s: s.mode().iloc[0] if len(s.mode()) else s.iloc[0])
+                pos_by_id = rost.groupby("gsis_id")["position"].agg(lambda s: s.mode().iloc[0] if len(s.mode()) else s.iloc[0])
+                gid = g["gsis_id"].astype(str)
+                g["team"] = gid.map(tm_by_id).fillna(g.get("team"))
+                season_slot = gid.map(pos_by_id)
+                season_slot = season_slot.astype(str).str.strip().str.upper()
+                valid_slot = season_slot.isin(["LT", "LG", "C", "RG", "RT"])
+                g.loc[valid_slot, "slot"] = season_slot[valid_slot]
+        except Exception:
+            pass
     g["name"] = g["name"].astype(str).str.strip()
     g["team"] = g["team"].astype(str).str.strip().str.upper()
     g["slot"] = g["slot"].astype(str).str.strip().str.upper()
     g["pass_snaps"] = pd.to_numeric(g["pass_snaps"], errors="coerce").fillna(0)
     g = g[(g["name"] != "") & g["team"].isin(TEAMS) & g["slot"].isin(["LT", "LG", "C", "RG", "RT"])]
     if g.empty:
-        _OL_GRADES_BY_PLAYER = out
+        _OL_GRADES_BY_PLAYER[skey] = out
         return out
     # If a name appears multiple times, keep the highest-snap record.
     g = g.sort_values(["name", "pass_snaps"], ascending=[True, False]).groupby("name", as_index=False).first()
+
+    # Model-layer enrichment lives in ol_grades_pipeline.py; nflverse.py only shapes payloads.
+    if utilization_by_team is not None or team_ol_context is not None or starters_by_team is not None or player_snap_pct_by_team is not None:
+        try:
+            import src.nflverse.ol_grades_pipeline as _olp
+            if hasattr(_olp, "enrich_ol_player_records"):
+                g = _olp.enrich_ol_player_records(
+                    g,
+                    utilization_by_team=utilization_by_team,
+                    team_ol_context=team_ol_context,
+                    starters_by_team=starters_by_team,
+                    player_snap_pct_by_team=player_snap_pct_by_team,
+                )
+        except Exception as e:
+            print(f"  (OL contextual enrichment fallback in nflverse.py: {type(e).__name__})")
     for _, r in g.iterrows():
         name = r.get("name")
         key = _norm(name)
@@ -1105,8 +1640,19 @@ def _ol_grades_by_player():
             "career_pb": _v("career_pb"),
             "consensus_flag": _v("consensus_flag"),
             "market_pctile": _v("market_pctile"),
+            "pass_rate": _v("pass_rate"),
+            "run_rate": _v("run_rate"),
+            "ol_weighted_pctile": _v("ol_weighted_pctile"),
+            "ol_weighted_grade": _v("ol_weighted_grade"),
+            "entanglement_factor": _v("entanglement_factor"),
+            "snap_pct": _v("snap_pct"),
+            "team_context_weight": _v("team_context_weight"),
+            "is_projected_starter": _v("is_projected_starter"),
+            "last5_sacks_allowed_est": _v("last5_sacks_allowed_est"),
         }
-    _OL_GRADES_BY_PLAYER = out
+
+    # Cache the base table once; season/context-aware fields are layered via pipeline helper.
+    _OL_GRADES_BY_PLAYER[skey] = out
     return out
 
 
@@ -1368,7 +1914,7 @@ def rb_rushing_fans(season, min_attempts=20, min_lane_attempts=3):
     lanes_order = ["LE", "LT", "LG", "MID", "RG", "RT", "RE"]
     lg_lane_ypc = runs.groupby("lane")["yards_gained"].mean().to_dict()
     names = _name_map(season)
-    ol_cards = _ol_grades_by_team()
+    ol_cards = _ol_grades_by_team(season)
     out = {}
     for rid, rb in runs.groupby("rusher_player_id"):
         if len(rb) < min_attempts:
@@ -1878,10 +2424,18 @@ def build_nflverse_season(season):
     tend_cols = ["Shotgun Rate", "NoHuddle Rate", "AirYards/Att", "Motion Rate", "Play Action Rate",
                  "RPO Rate", "Screen Rate", "Trick Play Rate", "Drop Rate"]
     tend_cols = [c for c in tend_cols if c in ext.columns]
-    # O-Line: PFR/NGS pressure + protection + run-blocking (validated vs Sharp; Rush Stuff ρ≈0.98).
-    ol_cols = ["Pressure Rate Allowed", "Time to Throw", "Yards Before Contact Per RB Rush",
-               "Rush Stuff Rate"]
-    ol_cols = [c for c in ol_cols if c in ext.columns]
+    # O-Line split into two focused cards: pass protection and run blocking.
+    ol_pass_cols = [
+        "Overall Score", "Dropbacks", "Pass Score",
+        "Pressure Rate", "Hit Rate", "Hurry Rate", "Blitz Rate", "No Blitz Pressure Rate",
+        "Sack Rate", "Non-QB Sack Rate", "Pocket Time", "Last 5 Sacks Allowed", "Last 5 Sack Rate",
+    ]
+    ol_pass_cols = [c for c in ol_pass_cols if c in ext.columns]
+    ol_run_cols = [
+        "Overall Score", "Stuff Rate", "Explosive Run Rate", "Yards/Rush", "YBC/Rush", "YAC/Rush",
+        "Rush 1D Rate", "Broken Tackle Rate", "ROE/Att", "8+ Box Rate", "Time to LOS",
+    ]
+    ol_run_cols = [c for c in ol_run_cols if c in ext.columns]
     # Personnel: base 3WR/multi-TE (coverage_personnel) + 11/12/21 + multi-RB grouping rates.
     if off_pers is not None:
         pers = pers.join(off_pers)
@@ -1903,9 +2457,20 @@ def build_nflverse_season(season):
         "personnel": _shape_team(pers[pers_cols]),
         "coverage": _shape_team(cover),   # man/zone solid; MOFC/MOFO validated ρ≈0.8 vs Sharp
     }
-    if ol_cols:
-        team["offensive_line"] = _shape_team(ext[ol_cols],
-                                             lower_better=["Pressure Rate Allowed", "Rush Stuff Rate"])
+    if ol_pass_cols:
+        team["offensive_line_pass"] = _shape_team(
+            ext[ol_pass_cols],
+            lower_better=[
+                "Pressure Rate", "Hit Rate", "Hurry Rate",
+                "Sack Rate", "Non-QB Sack Rate",
+                "No Blitz Pressure Rate", "Last 5 Sacks Allowed", "Last 5 Sack Rate",
+            ],
+        )
+    if ol_run_cols:
+        team["offensive_line_run"] = _shape_team(
+            ext[ol_run_cols],
+            lower_better=["Stuff Rate", "8+ Box Rate", "Time to LOS"],
+        )
     if dtend is not None and len(dtend.columns):
         dt_cols = [c for c in ["Blitz Rate", "Sub Package Rate", "Nickel Rate", "Dime+ Rate"] if c in dtend.columns]
         team["def_tendencies"] = _shape_team(dtend[dt_cols])
@@ -1923,13 +2488,31 @@ def build_nflverse_season(season):
         "WR": _players_with_refs(sumer_wr, season, _REF_PASS),
         "TE": _players_with_refs(sumer_te, season, _REF_PASS),
     }
+    starter_map = _ol_grades_by_team(season)
+    starter_names = {
+        tm: {v.get("name") for _, v in slots.items() if isinstance(v, dict) and v.get("name")}
+        for tm, slots in starter_map.items()
+    }
+    util_map = ext["Pass Rate"].to_dict() if "Pass Rate" in ext.columns else {}
+    # Player contextual enrichment uses the full OL feature set available in this season.
+    ol_ctx_cols = list(dict.fromkeys(ol_pass_cols + ol_run_cols))
+    ol_ctx = ext[ol_ctx_cols].to_dict("index") if ol_ctx_cols else {}
+    snap_pct_map = _ol_snap_pct_by_player(season)
+
     return {
         "team": team,
         "players": players,
         "routes": route_trees(season),
         "qb_passing": qb_passing_zones(season),
         "rb_fan": rb_rushing_fans(season),
-        "ol_players": _ol_grades_by_player(),
+        "ol_weekly": ol_weekly_team(season),
+        "ol_players": _ol_grades_by_player(
+            season=season,
+            utilization_by_team=util_map,
+            team_ol_context=ol_ctx,
+            starters_by_team=starter_names,
+            player_snap_pct_by_team=snap_pct_map,
+        ),
         "def_weekly": defensive_weekly_players(season),
         "coaching_scheme": coaching_scheme(season),
         # Season rosters: who each team actually had that year. Small enough (~100KB/season)

@@ -13,6 +13,127 @@ async function fetchPlayerWeekly(pid, season){
   return data;
 }
 
+// Shared week-range state across ALL week sliders (QB/RB/WR and Advanced OL).
+// Keyed by season+team so every surface in that team/season stays synchronized.
+let _sharedWeekRangeByTeam = {};  // `${season}:${TEAM}` -> [lo,hi]
+function _sharedWeekRangeKey(team, season){
+  return `${String(season||activeSeason)}:${String(team||'').toUpperCase()}`;
+}
+function getSharedWeekRange(team, season){
+  const key=_sharedWeekRangeKey(team, season);
+  return _sharedWeekRangeByTeam[key] || [1,18];
+}
+function setSharedWeekRange(team, season, lo, hi){
+  const key=_sharedWeekRangeKey(team, season);
+  const a=Math.max(1, Math.min(18, Number(lo)||1));
+  const b=Math.max(1, Math.min(18, Number(hi)||18));
+  _sharedWeekRangeByTeam[key] = [Math.min(a,b), Math.max(a,b)];
+  return _sharedWeekRangeByTeam[key];
+}
+
+// ── Weekly schedule lookup for slider opponent rails ───────────────────────
+// Runtime-only (no seed change): fetch nflverse schedule CSV once per season and build
+// team -> week -> {opp, home} so sliders can show @/vs + opponent logo chips.
+const WEEKLY_SCHEDULE_URL = 'https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv';
+const _SCHED_TEAM_FIX = {LA:'LAR', OAK:'LV', SD:'LAC', STL:'LAR'};
+let _weeklyOppBySeason = {};      // season -> { TEAM -> { week -> {opp, home} } }
+let _weeklyOppPromise = {};       // season -> Promise<boolean>
+
+function _schedTeamCode(code){
+  const t=String(code||'').toUpperCase();
+  return _SCHED_TEAM_FIX[t] || t;
+}
+function _csvRow(line){
+  const out=[];
+  let cur='';
+  let q=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(ch==='"'){
+      if(q && line[i+1]==='"'){ cur+='"'; i++; }
+      else q=!q;
+      continue;
+    }
+    if(ch===',' && !q){ out.push(cur); cur=''; continue; }
+    cur+=ch;
+  }
+  out.push(cur);
+  return out;
+}
+async function ensureWeeklyOppSchedule(season){
+  const s=String(season||'');
+  if(!/^\d{4}$/.test(s)) return false;
+  if(_weeklyOppBySeason[s]) return true;
+  if(_weeklyOppPromise[s]) return _weeklyOppPromise[s];
+  _weeklyOppPromise[s] = (async()=>{
+    try{
+      const r = await fetch(WEEKLY_SCHEDULE_URL, {cache:'force-cache'});
+      if(!r.ok) return false;
+      const txt = await r.text();
+      const lines = txt.split(/\r?\n/).filter(Boolean);
+      if(!lines.length) return false;
+      const hdr = _csvRow(lines[0]);
+      const ix={}; hdr.forEach((h,i)=>{ ix[h]=i; });
+      const need=['season','game_type','week','home_team','away_team'];
+      if(need.some(k=>ix[k]==null)) return false;
+
+      const map={};
+      for(let i=1;i<lines.length;i++){
+        const row=_csvRow(lines[i]);
+        if(String(row[ix.season])!==s) continue;
+        if(String(row[ix.game_type]||'').toUpperCase()!=='REG') continue;
+        const wk=parseInt(row[ix.week],10);
+        if(!Number.isFinite(wk) || wk<1 || wk>18) continue;
+        const home=_schedTeamCode(row[ix.home_team]);
+        const away=_schedTeamCode(row[ix.away_team]);
+        if(!home || !away) continue;
+        (map[home]=map[home]||{})[wk]={opp:away, home:true};
+        (map[away]=map[away]||{})[wk]={opp:home, home:false};
+      }
+      _weeklyOppBySeason[s]=map;
+      if(typeof renderContent==='function') renderContent();
+      return true;
+    }catch(e){
+      return false;
+    }
+  })();
+  return _weeklyOppPromise[s];
+}
+function weekOpponentMap(team, season){
+  const s=String(season||'');
+  const tm=String(team||'').toUpperCase();
+  const byS=_weeklyOppBySeason[s];
+  return (byS && byS[tm]) ? byS[tm] : null;
+}
+function renderWeekOpponentRail(team, season, className=''){ 
+  const s=String(season||'');
+  if(!/^\d{4}$/.test(s)) return '';
+  const tm=String(team||'').toUpperCase();
+  const byWeek=weekOpponentMap(tm, s);
+  if(!byWeek){
+    ensureWeeklyOppSchedule(s);
+    return `<div class="wr-opp-rail ${className}"><div class="wr-opp-loading">Loading weekly opponents…</div></div>`;
+  }
+  const cells=[];
+  for(let wk=1; wk<=18; wk++){
+    const m=byWeek[wk];
+    const pos=((wk-1)/17*100).toFixed(4);
+    const edgeCls = wk===1 ? ' wr-opp-edge-start' : (wk===18 ? ' wr-opp-edge-end' : '');
+    if(!m || !m.opp){
+      cells.push(`<div class="wr-opp-cell wr-opp-bye${edgeCls}" style="left:${pos}%" title="Week ${wk}: bye">—</div>`);
+      continue;
+    }
+    const ha=m.home?'vs':'@';
+    const opp=String(m.opp).toUpperCase();
+    const logo=(typeof NFL_LOGO==='function') ? NFL_LOGO(opp) : '';
+    cells.push(`<div class="wr-opp-cell${edgeCls}" style="left:${pos}%" title="Week ${wk}: ${ha} ${opp}">
+      <span class="wr-opp-ha">${ha}</span>
+      ${logo?`<img src="${logo}" class="wr-opp-logo" alt="${opp}" onerror="this.style.display='none'">`:`<span class="wr-opp-fallback">${opp}</span>`}
+    </div>`);
+  }
+  return `<div class="wr-opp-rail ${className}">${cells.join('')}</div>`;
+}
+
 // Sum one player's weekly rows between fromWk..toWk (inclusive), restricted to the
 // given team (so a trade mid-window doesn't blend two teams' stats together).
 function sumWeeklyRange(weekly, team, fromWk, toWk){
@@ -216,6 +337,7 @@ function isWeekFilterActive(state){
 // Kick off a week-range fetch+recompute+rerender. Called when the slider is released.
 async function applyWeekRange(team, fromWk, toWk){
   const state=userProj[team]; if(!state) return;
+  setSharedWeekRange(team, activeSeason, fromWk, toWk);
   state.weekFilter=[fromWk,toWk];
   state.weekFilterLoading=true;
   renderContent();
@@ -240,6 +362,7 @@ async function applyWeekRange(team, fromWk, toWk){
 }
 function resetWeekRange(team){
   const state=userProj[team]; if(!state) return;
+  setSharedWeekRange(team, activeSeason, 1, 18);
   state.weekFilter=null; state.weekFilterData=null; state.weekFilterQBPool=null; state.weekFilterQBData=null;
   state.passing_shares=null; state.rushing.shares=null;
   initPassingShares(team); initRushingShares(team);
@@ -248,7 +371,7 @@ function resetWeekRange(team){
 // Live label update while dragging (cheap — no fetch until release).
 function weekRangeDrag(team, which, val){
   const state=userProj[team]; if(!state) return;
-  const cur = state.weekFilter || [1,18];
+  const cur = getSharedWeekRange(team, activeSeason);
   let [lo,hi]=cur;
   val=parseInt(val);
   if(which==='lo'){ lo=Math.min(val,hi); } else { hi=Math.max(val,lo); }
@@ -261,6 +384,7 @@ function weekRangeDrag(team, which, val){
 function weekRangeCommit(team){
   const state=userProj[team]; if(!state||!state._weekDragPending) return;
   const [lo,hi]=state._weekDragPending;
+  setSharedWeekRange(team, activeSeason, lo, hi);
   applyWeekRange(team, lo, hi);
 }
 const TEAMS = ['CIN','PIT','BAL','CLE','HOU','JAX','TEN','IND','BUF','NE',
@@ -280,7 +404,13 @@ function hsURL(p){
   // No id (e.g. imported from another site) — try to resolve one by name so we still get
   // a Sleeper headshot rather than a broken third-party URL.
   if(typeof resolvePlayerId==='function'){
-    const rid=resolvePlayerId(p.name,p.pos);
+    const rawPos=String(p.pos||'').toUpperCase();
+    let rid=resolvePlayerId(p.name,p.pos);
+    // OL views often pass side slots (LT/LG/C/RG/RT), while Sleeper is commonly keyed as OL.
+    // Retry with OL and then name-only so OL headshots don't drop on slot-specific lookups.
+    if(!rid && /^(LT|LG|C|RG|RT|OL|G|T|OT|OG)$/.test(rawPos)){
+      rid=resolvePlayerId(p.name,'OL') || resolvePlayerId(p.name);
+    }
     if(rid){ p.player_id=rid; return SLEEPER_HEADSHOT(rid); }
   }
   return '';

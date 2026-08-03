@@ -27,6 +27,7 @@ function renderTeamDefShell(pid){
           <div class="pcard-name">${full}</div>
           <div class="pcard-sub"><span class="pos-badge pos-DEF">D/ST</span><span class="pcard-team">Team Defense</span></div>
         </div>
+        ${typeof pcardBackButtonHTML==='function' ? pcardBackButtonHTML() : ''}
         <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">${typeof TC_ICON==='function'?TC_ICON('close'):'\u2715'}</button>
       </div>
       <div class="pcard-tabs" id="pcardTabs"></div>

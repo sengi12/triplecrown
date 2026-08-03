@@ -2416,11 +2416,14 @@ def main():
     # player card / a team's coaching-scheme modal) so the initial seed load stays lean & fast.
     # The baked/offline build re-embeds them (see bake_seed.py) since file:// can't fetch.
     nflverse_def_weekly = {}
+    nflverse_ol_weekly = {}
     nflverse_coaching = {}
     for _s, _blk in nflverse.items():
         if isinstance(_blk, dict):
             if "def_weekly" in _blk:
                 nflverse_def_weekly[_s] = _blk.pop("def_weekly")
+            if "ol_weekly" in _blk:
+                nflverse_ol_weekly[_s] = _blk.pop("ol_weekly")
             if "coaching_scheme" in _blk:
                 nflverse_coaching[_s] = _blk.pop("coaching_scheme")
 
@@ -2459,6 +2462,8 @@ def main():
     # Sidecar files — lazy-loaded by the app on demand (hosted). Only written when non-empty.
     if nflverse_def_weekly:
         _write_seed("seeds/triplecrown_seed.def_weekly.json", _encode_defweekly(nflverse_def_weekly))
+    if nflverse_ol_weekly:
+        _write_seed("seeds/triplecrown_seed.ol_weekly.json", nflverse_ol_weekly)
     # Coaching scheme is the largest lazy block and is viewed one season at a time, so split it
     # into per-season sidecars the app fetches on demand (a typical user only downloads the
     # current season). Remove any stale combined file from older builds.
@@ -2479,6 +2484,8 @@ def main():
     print(f"  • seeds/triplecrown_seed.json (+ .gz twin) → load this in the app via the 📦 Seed button (recommended)")
     if nflverse_def_weekly:
         print("  • seeds/triplecrown_seed.def_weekly.json → lazy sidecar (defensive weekly player cards)")
+    if nflverse_ol_weekly:
+        print("  • seeds/triplecrown_seed.ol_weekly.json → lazy sidecar (OL weekly week-range charts)")
     if coaching_files:
         print(f"  • seeds/triplecrown_seed.coaching.<season>.json → {len(coaching_files)} per-season lazy sidecars (coaching scheme modal)")
     print(f"  • {CACHE_DIR}/ → cached raw API responses (delete to force refresh)")

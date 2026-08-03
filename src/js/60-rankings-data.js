@@ -478,7 +478,8 @@ function nflverseSharpTables(){
     offense:{title:'Offensive Metrics',category:'offense'},
     defense:{title:'Defensive Metrics',category:'defense'},
     tendencies:{title:'Tendencies',category:'offense'},
-    offensive_line:{title:'O-Line',category:'offense'},
+    offensive_line_pass:{title:'O-Line: Pass Protection',category:'offense'},
+    offensive_line_run:{title:'O-Line: Run Blocking',category:'offense'},
     pace:{title:'Pace',category:'offense'},
     personnel:{title:'Personnel',category:'offense'},
     coverage:{title:'Coverage (man/zone)',category:'defense'},
@@ -488,6 +489,8 @@ function nflverseSharpTables(){
   const PCT=['Explosive Play Rate','Down Conversion Rate','Shotgun Rate','NoHuddle Rate','3WR Rate','Multi TE Rate','Man Rate','Zone Rate',
     'Motion Rate','Play Action Rate','RPO Rate','Screen Rate','Trick Play Rate','Drop Rate','Blitz Rate',
     'Pressure Rate Allowed','Rush Stuff Rate','Pressure Rate','No Blitz Pressure Rate',
+    'Hit Rate','Hurry Rate','Sack Rate','Non-QB Sack Rate','Last 5 Sack Rate',
+    'Stuff Rate','Explosive Run Rate','Rush 1D Rate','Broken Tackle Rate','8+ Box Rate',
     '11 Personnel','12 Personnel','13 Personnel','21 Personnel','Multi RB Rate','Sub Package Rate','Nickel Rate','Dime+ Rate',
     'Neutral DB Rate','Neutral DB Rate Last 5','Middle Closed Rate','Middle Open Rate','Cover 1','Cover 2','Cover 3'];
   const out={};

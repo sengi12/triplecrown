@@ -196,6 +196,284 @@ function coordInlineLabel(a,b,c){
   return `<span ${attrs}>${sideWord==='offensive'?'OC':'DC'}: <b>${coord.name}</b>${since}</span>`;
 }
 
+// ── Advanced week-range control (team cards) ───────────────────────────────
+// Uses nflverse `ol_weekly` sidecar today (O-Line pass/run cards). Other advanced
+// categories stay full-season until weekly sidecars are added for them.
+let _advWeekDragByTeam = {};       // temporary drag state before commit
+let _advWeeklySeedReady = false;
+let _advWeeklySeedLoading = false;
+let _advOlRangeCache = {};         // key: `${season}:${lo}-${hi}` -> {passTbl, runTbl}
+
+function _advSeasonCanRange(){
+  if(activeSeason==='proj') return false;
+  const s=String(advTeamSeason());
+  return !!(NFLVERSE && NFLVERSE[s] && NFLVERSE[s].team);
+}
+function _advRangeKey(team){ return `${advTeamSeason()}:${String(team||'').toUpperCase()}`; }
+function _advGetWeekRange(team){
+  if(typeof getSharedWeekRange==='function') return getSharedWeekRange(team, advTeamSeason());
+  return [1,18];
+}
+function _advWeekRangeActive(team){
+  const [lo,hi]=_advGetWeekRange(team);
+  return lo>1 || hi<18;
+}
+function _advWeekLabel(team){
+  const [lo,hi]=_advGetWeekRange(team);
+  return lo===1 && hi===18 ? 'Weeks 1-18 (full season)' : `Weeks ${lo}-${hi}`;
+}
+function _advEnsureWeeklyLoaded(){
+  if(_advWeeklySeedReady || _advWeeklySeedLoading) return;
+  if(typeof ensureNflverseSection!=='function') return;
+  _advWeeklySeedLoading=true;
+  ensureNflverseSection('ol_weekly').then(ok=>{
+    _advWeeklySeedReady = !!ok;
+    _advWeeklySeedLoading = false;
+    if(typeof renderContent==='function') renderContent();
+  }).catch(()=>{ _advWeeklySeedLoading=false; });
+}
+function advWeekRangeDrag(team, which, val){
+  team=String(team||'').toUpperCase();
+  const [curLo,curHi]=_advGetWeekRange(team);
+  let lo=curLo, hi=curHi;
+  const n=Math.max(1, Math.min(18, parseInt(val,10)||1));
+  if(which==='lo') lo=Math.min(n, hi); else hi=Math.max(n, lo);
+  _advWeekDragByTeam[_advRangeKey(team)] = [lo,hi];
+  const loEl=document.getElementById(`adv-wr-lo-${team}`); if(loEl) loEl.textContent=lo;
+  const hiEl=document.getElementById(`adv-wr-hi-${team}`); if(hiEl) hiEl.textContent=hi;
+  const fill=document.getElementById(`adv-wr-fill-${team}`);
+  if(fill){
+    fill.style.left=((lo-1)/17*100)+'%';
+    fill.style.right=((18-hi)/17*100)+'%';
+  }
+}
+function advWeekRangeCommit(team){
+  team=String(team||'').toUpperCase();
+  const key=_advRangeKey(team);
+  const next=_advWeekDragByTeam[key] || _advGetWeekRange(team);
+  delete _advWeekDragByTeam[key];
+  if(typeof setSharedWeekRange==='function') setSharedWeekRange(team, advTeamSeason(), next[0], next[1]);
+  if(typeof applyWeekRange==='function' && advTeamSeason()===String(activeSeason)){
+    applyWeekRange(team, next[0], next[1]);
+    return;
+  }
+  if(typeof renderContent==='function') renderContent();
+}
+function advWeekRangeReset(team){
+  team=String(team||'').toUpperCase();
+  if(typeof setSharedWeekRange==='function') setSharedWeekRange(team, advTeamSeason(), 1, 18);
+  if(typeof resetWeekRange==='function' && advTeamSeason()===String(activeSeason)){
+    resetWeekRange(team);
+    return;
+  }
+  if(typeof renderContent==='function') renderContent();
+}
+function advWeekRangeLast5(team){
+  team=String(team||'').toUpperCase();
+  if(typeof setSharedWeekRange==='function') setSharedWeekRange(team, advTeamSeason(), 14, 18);
+  if(typeof applyWeekRange==='function' && advTeamSeason()===String(activeSeason)){
+    applyWeekRange(team, 14, 18);
+    return;
+  }
+  if(typeof renderContent==='function') renderContent();
+}
+function _advPctRank(valuesByTeam, lowerBetter){
+  const entries = Object.entries(valuesByTeam).filter(([,v])=>typeof v==='number' && Number.isFinite(v));
+  entries.sort((a,b)=> lowerBetter ? (a[1]-b[1]) : (b[1]-a[1]));
+  const out={};
+  const n=entries.length;
+  if(!n) return out;
+  for(let i=0;i<n;i++){
+    const pct=((i+1)/n)*100;
+    out[entries[i][0]] = lowerBetter ? (100-pct) : pct;
+  }
+  return out;
+}
+function _advRankMap(valuesByTeam, lowerBetter){
+  const entries = Object.entries(valuesByTeam).filter(([,v])=>typeof v==='number' && Number.isFinite(v));
+  entries.sort((a,b)=> lowerBetter ? (a[1]-b[1]) : (b[1]-a[1]));
+  const out={};
+  for(let i=0;i<entries.length;i++) out[entries[i][0]] = i+1;
+  return out;
+}
+function _advNum(v, dp){
+  if(v==null || !Number.isFinite(v)) return null;
+  return Number(v.toFixed(dp));
+}
+function _advComputeOlRangeTables(season, lo, hi){
+  const cacheKey=`${season}:${lo}-${hi}`;
+  if(_advOlRangeCache[cacheKey]) return _advOlRangeCache[cacheKey];
+  const pack=(NFLVERSE&&NFLVERSE[String(season)]&&NFLVERSE[String(season)].ol_weekly)||null;
+  if(!pack || !pack.teams || !Array.isArray(pack.weeks)) return null;
+  const weekIdx=[];
+  for(let i=0;i<pack.weeks.length;i++){
+    const w=Number(pack.weeks[i]);
+    if(Number.isFinite(w) && w>=lo && w<=hi) weekIdx.push(i);
+  }
+  if(!weekIdx.length) return null;
+  const pcols=pack.pass_cols||[];
+  const rcols=pack.run_cols||[];
+  const pidx={}; pcols.forEach((c,i)=>{ pidx[c]=i; });
+  const ridx={}; rcols.forEach((c,i)=>{ ridx[c]=i; });
+  const teams={};
+  for(const tm in pack.teams){
+    const node=pack.teams[tm]||{};
+    const passRows=Array.isArray(node.pass)?node.pass:[];
+    const runRows=Array.isArray(node.run)?node.run:[];
+    const ps=new Array(pcols.length).fill(0);
+    const rs=new Array(rcols.length).fill(0);
+    weekIdx.forEach(ix=>{
+      const pr=passRows[ix]||[]; const rr=runRows[ix]||[];
+      for(let i=0;i<pcols.length;i++) ps[i]+=Number(pr[i]||0);
+      for(let i=0;i<rcols.length;i++) rs[i]+=Number(rr[i]||0);
+    });
+    const db=ps[pidx.dropbacks]||0;
+    const dr=ps[pidx.designed_rushes]||0;
+    const sacks=ps[pidx.sacks]||0;
+    const pressure=ps[pidx.times_pressured]||0;
+    const hits=ps[pidx.times_hit]||0;
+    const hurries=ps[pidx.times_hurried]||0;
+    const blitzes=ps[pidx.times_blitzed]||0;
+    const nonQb=ps[pidx.non_qb_sacks]||0;
+    const nbp=ps[pidx.no_blitz_pressures]||0;
+    const ptW=ps[pidx.pocket_time_w]||0;
+    const ptAtt=ps[pidx.pocket_time_att]||0;
+
+    const ra=rs[ridx.designed_rushes]||0;
+    const stuffed=rs[ridx.stuffed]||0;
+    const expl=rs[ridx.explosive]||0;
+    const ry=rs[ridx.rush_yards]||0;
+    const ybc=rs[ridx.ybc]||0;
+    const yac=rs[ridx.yac]||0;
+    const bt=rs[ridx.broken_tackles]||0;
+    const r1d=rs[ridx.rush_first_downs]||0;
+    const ngsAtt=rs[ridx.ngs_att]||0;
+    const roeW=rs[ridx.roe_w]||0;
+    const b8W=rs[ridx.box8_w]||0;
+    const tlosW=rs[ridx.tlos_w]||0;
+
+    teams[tm]={
+      pass:{
+        Dropbacks: _advNum(db,0),
+        'Pass Rate': _advNum((db+dr)>0 ? (db/(db+dr))*100 : null,1),
+        'Pressure Rate': _advNum(db>0 ? (pressure/db)*100 : null,1),
+        'Hit Rate': _advNum(db>0 ? (hits/db)*100 : null,1),
+        'Hurry Rate': _advNum(db>0 ? (hurries/db)*100 : null,1),
+        'Blitz Rate': _advNum(db>0 ? (blitzes/db)*100 : null,1),
+        'Pocket Time': _advNum(ptAtt>0 ? (ptW/ptAtt) : null,2),
+        'Sack Rate': _advNum(db>0 ? (sacks/db)*100 : null,1),
+        'Non-QB Sack Rate': _advNum(db>0 ? (nonQb/db)*100 : null,1),
+        'No Blitz Pressure Rate': _advNum(db>0 ? (nbp/db)*100 : null,1),
+      },
+      run:{
+        'Stuff Rate': _advNum(ra>0 ? (stuffed/ra)*100 : null,1),
+        'Explosive Run Rate': _advNum(ra>0 ? (expl/ra)*100 : null,1),
+        'Yards/Rush': _advNum(ra>0 ? (ry/ra) : null,2),
+        'YBC/Rush': _advNum(ra>0 ? (ybc/ra) : null,2),
+        'YAC/Rush': _advNum(ra>0 ? (yac/ra) : null,2),
+        'Rush 1D Rate': _advNum(ra>0 ? (r1d/ra)*100 : null,1),
+        'Broken Tackle Rate': _advNum(ra>0 ? (bt/ra)*100 : null,1),
+        'ROE/Att': _advNum(ngsAtt>0 ? (roeW/ngsAtt) : null,2),
+        '8+ Box Rate': _advNum(ngsAtt>0 ? (b8W/ngsAtt) : null,1),
+        'Time to LOS': _advNum(ngsAtt>0 ? (tlosW/ngsAtt) : null,2),
+      },
+      util: _advNum((db+dr)>0 ? (db/(db+dr))*100 : null,1),
+    };
+  }
+
+  const map=(which,col)=>{ const o={}; for(const tm in teams){ o[tm]=teams[tm][which][col]; } return o; };
+  const passScore={
+    p: _advPctRank(map('pass','Pressure Rate'), true),
+    h: _advPctRank(map('pass','Hit Rate'), true),
+    hu:_advPctRank(map('pass','Hurry Rate'), true),
+    s: _advPctRank(map('pass','Sack Rate'), true),
+    n: _advPctRank(map('pass','Non-QB Sack Rate'), true),
+    nb:_advPctRank(map('pass','No Blitz Pressure Rate'), true),
+    pt:_advPctRank(map('pass','Pocket Time'), false),
+  };
+  const runProxy=_advPctRank(map('run','Stuff Rate'), true);
+  for(const tm in teams){
+    const ps=(Number(passScore.p[tm]||0)*0.30)+(Number(passScore.h[tm]||0)*0.10)+(Number(passScore.hu[tm]||0)*0.10)+
+      (Number(passScore.s[tm]||0)*0.20)+(Number(passScore.n[tm]||0)*0.15)+(Number(passScore.nb[tm]||0)*0.10)+
+      (Number(passScore.pt[tm]||0)*0.05);
+    const util=(Number(teams[tm].util)||50)/100;
+    const overall=(util*ps)+((1-util)*Number(runProxy[tm]||50));
+    teams[tm].pass['Pass Score']=_advNum(ps,2);
+    teams[tm].pass['Overall Score']=_advNum(overall,2);
+    teams[tm].run['Overall Score']=_advNum(overall,2);
+  }
+
+  const passCols=['Overall Score','Dropbacks','Pass Score','Pressure Rate','Hit Rate','Hurry Rate','Blitz Rate','No Blitz Pressure Rate','Sack Rate','Non-QB Sack Rate','Pocket Time'];
+  const runCols=['Overall Score','Stuff Rate','Explosive Run Rate','Yards/Rush','YBC/Rush','YAC/Rush','Rush 1D Rate','Broken Tackle Rate','ROE/Att','8+ Box Rate','Time to LOS'];
+  const passLower=new Set(['Pressure Rate','Hit Rate','Hurry Rate','Sack Rate','Non-QB Sack Rate','No Blitz Pressure Rate']);
+  const runLower=new Set(['Stuff Rate','8+ Box Rate','Time to LOS']);
+
+  const passTbl={columns:passCols, pct_cols:['Pass Rate','Pressure Rate','Hit Rate','Hurry Rate','Blitz Rate','No Blitz Pressure Rate','Sack Rate','Non-QB Sack Rate'], teams:{}};
+  const runTbl={columns:runCols, pct_cols:['Stuff Rate','Explosive Run Rate','Rush 1D Rate','Broken Tackle Rate','8+ Box Rate'], teams:{}};
+  passCols.forEach(col=>{
+    const vals={}; for(const tm in teams) vals[tm]=teams[tm].pass[col];
+    const rk=_advRankMap(vals, passLower.has(col));
+    for(const tm in teams){
+      passTbl.teams[tm]=passTbl.teams[tm]||{values:{},ranks:{}};
+      passTbl.teams[tm].values[col]=teams[tm].pass[col];
+      passTbl.teams[tm].ranks[col]=(rk[tm]!=null)?rk[tm]:null;
+    }
+  });
+  runCols.forEach(col=>{
+    const vals={}; for(const tm in teams) vals[tm]=teams[tm].run[col];
+    const rk=_advRankMap(vals, runLower.has(col));
+    for(const tm in teams){
+      runTbl.teams[tm]=runTbl.teams[tm]||{values:{},ranks:{}};
+      runTbl.teams[tm].values[col]=teams[tm].run[col];
+      runTbl.teams[tm].ranks[col]=(rk[tm]!=null)?rk[tm]:null;
+    }
+  });
+
+  const out={passTbl, runTbl};
+  _advOlRangeCache[cacheKey]=out;
+  return out;
+}
+function _advTableForRange(key, baseTable, team){
+  if(!baseTable) return baseTable;
+  if(!_advWeekRangeActive(team)) return baseTable;
+  if(!_advSeasonCanRange()) return baseTable;
+  if(!(key==='offensive_line_pass' || key==='offensive_line_run')) return baseTable;
+  const [lo,hi]=_advGetWeekRange(team);
+  const agg=_advComputeOlRangeTables(String(advTeamSeason()), lo, hi);
+  if(!agg) return baseTable;
+  return key==='offensive_line_pass' ? agg.passTbl : agg.runTbl;
+}
+function renderAdvWeekRange(team){
+  if(!_advSeasonCanRange()) return '';
+  _advEnsureWeeklyLoaded();
+  const [lo,hi]=_advGetWeekRange(team);
+  const left=((lo-1)/17*100), right=((18-hi)/17*100);
+  const loading=_advWeeklySeedLoading ? '<span class="week-range-loading">Loading weekly advanced data…</span>' : '';
+  const oppRail = (typeof renderWeekOpponentRail==='function')
+    ? renderWeekOpponentRail(team, advTeamSeason(), 'wr-opp-adv')
+    : '';
+  return `<div class="week-range-card adv-week-range-card">
+    <div class="week-range-label">
+      <span><b>Advanced week range:</b> <span id="adv-wr-lo-${team}">${lo}</span>–<span id="adv-wr-hi-${team}">${hi}</span> <span class="week-range-hint">(${_advWeekLabel(team)})</span></span>
+      <span style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" onclick="advWeekRangeLast5('${team}')">Last 5</button>
+        <span class="week-range-reset" onclick="advWeekRangeReset('${team}')">Reset</span>
+      </span>
+    </div>
+    <div class="dual-slider">
+      <div class="dual-slider-track"></div>
+      <div class="dual-slider-fill" id="adv-wr-fill-${team}" style="left:${left}%;right:${right}%;"></div>
+      <input class="dual-range" type="range" min="1" max="18" value="${lo}" oninput="advWeekRangeDrag('${team}','lo',this.value)" onchange="advWeekRangeCommit('${team}')">
+      <input class="dual-range" type="range" min="1" max="18" value="${hi}" oninput="advWeekRangeDrag('${team}','hi',this.value)" onchange="advWeekRangeCommit('${team}')">
+    </div>
+    ${oppRail}
+    <div class="week-range-label" style="margin-top:8px;">
+      <span class="week-range-hint">Windowed recompute currently powers O-Line pass/run cards; other advanced cards remain full-season until weekly sidecars are added.</span>
+      ${loading}
+    </div>
+  </div>`;
+}
+
 function renderTeamAdvanced(team){
   const hasSharp=sharpHasData(), hasSOS=SOS&&Object.keys(SOS).length>0;
   const hasCoord = COORDINATORS && COORDINATORS[team];
@@ -206,12 +484,16 @@ function renderTeamAdvanced(team){
   }
   const SRC=activeSharp();
   const cardFor=(key, srcTeam)=>{
-    const tbl=SRC[key]; if(!tbl) return '';
+    const baseTbl=SRC[key]; if(!baseTbl) return '';
+    const tbl=_advTableForRange(key, baseTbl, team);
     const useTeam = srcTeam||team;
     const row=tbl.teams&&tbl.teams[useTeam];
     if(!row) return `<div class="sr-card"><div class="sr-card-title">${tbl.title||key}</div>
       <div class="sr-empty">No data for ${teamDisplayName(useTeam)}</div></div>`;
-    const lines = tbl.columns.map(col=>{
+    const displayCols = (key==='offensive_line_pass')
+      ? (tbl.columns||[]).filter(c=>c!=='Last 5 Sacks Allowed' && c!=='Last 5 Sack Rate')
+      : (tbl.columns||[]);
+    const lines = displayCols.map(col=>{
       const v=row.values?row.values[col]:null;
       const r=row.ranks?row.ranks[col]:null;
       return `<div class="sr-stat">
@@ -245,6 +527,7 @@ function renderTeamAdvanced(team){
   return `<div class="sr-team-wrap">
     <div class="sr-note">${TC_ICON("chart")} <b>Advanced team stats</b> · ${srcLabel} · <b>${advTeamSeason()} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
       <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="showSharpLeague()">View league-wide tables →</button></div>
+    ${renderAdvWeekRange(team)}
     ${sosStrip}
     ${carryBlock}
     ${section('Offense', offKeys, coordInlineLabel(team,oc,'offensive'))}
