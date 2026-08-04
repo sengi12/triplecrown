@@ -5150,6 +5150,23 @@ function sumerVolCol(pos){ return pos==='QB' ? 'Plays' : pos==='RB' ? 'Rushes' :
 // ── OverTheCap contract lookup (Dynasty tab only: Age / APY / Free-Agency year) ──
 // Reuses the same name-normalization as ECR so the keys line up with build_seed.py.
 function contractEntry(p){ return CONTRACTS[ecrNormName(p.name)] || null; }
+
+// Rankings age source should match player cards: Sleeper player metadata first.
+// Falls back to base-seed age, then contract age if neither is available.
+function rankingAgeFromSleeper(p, baseEntry){
+  let pid = p && p.player_id ? String(p.player_id) : '';
+  if(!pid && typeof resolvePlayerId==='function'){
+    pid = resolvePlayerId(p.name, p.pos) || resolvePlayerId(p.name) || '';
+  }
+  const sp = (pid && typeof sleeperPlayers!=='undefined' && sleeperPlayers)
+    ? sleeperPlayers[pid]
+    : null;
+  if(sp && sp.age!=null && !Number.isNaN(Number(sp.age))) return Number(sp.age);
+  if(baseEntry && baseEntry.age!=null && !Number.isNaN(Number(baseEntry.age))) return Number(baseEntry.age);
+  const c = contractEntry(p);
+  if(c && c.age!=null && !Number.isNaN(Number(c.age))) return Number(c.age);
+  return null;
+}
 function hasContracts(){ return CONTRACTS && Object.keys(CONTRACTS).length>0; }
 // Format an APY (annual salary in dollars) compactly, e.g. 40250000 → "$40.3M".
 function fmtAPY(v){
@@ -5268,7 +5285,7 @@ function buildPlayerList(){
     p.adp_half_ppr = be && be.adp_half_ppr!=null ? be.adp_half_ppr : 999;
     p.adp_2qb = be && be.adp_2qb!=null ? be.adp_2qb : 999;
     const c=contractEntry(p);
-    p.age = c && c.age!=null ? c.age : null;
+    p.age = rankingAgeFromSleeper(p, be);
     p.apy = c && c.apy!=null ? c.apy : null;
     p.fa  = c && c.fa!=null ? c.fa : null;
   });

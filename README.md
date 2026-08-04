@@ -238,8 +238,9 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] ability for users to create account to save their projections (supabase)
 - [ ] projections manager
 - [ ] clicking on a team logo, takes you to that team's 2026 projections page anywhere in the app
-- [ ] add ESPN league support
-- [ ] add Yahoo league support
+- [🛠️] add ESPN league support: No Public API, yet public links discovered
+- [🛠️] add Yahoo league support: Requires OAUTH
+- [ ] AWS my own Domain
 - [ ] Google Play Store
 - [ ] Apple iOS Store
 - [ ] Generate my own proprietary projections based on all the metrics we have
@@ -256,7 +257,6 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] Add Coaching History (HCs, OCs, DCs)
 - [ ] input injection vulnerability scan on all input fields
 ### Import Projections
-- [ ] age column on full rankings page isn't accurate (Justin Jefferson)
 ### Adv Metrics
 - [ ] QB Metrics: on_tgt_throws, bad_throw_pct, batted_balls, is_interception_worthy, is_catchable_ball
 - [ ] Overall Team Fantasy Performance: nflverse/ff_opportunity
