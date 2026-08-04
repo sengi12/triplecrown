@@ -10,11 +10,16 @@ const RB_FAN_CARD_SLOTS = ['LT','LG','C','RG','RT'];
 const RB_FAN_ARROW_X = {LE:60, LT:160, LG:270, MID:380, RG:490, RT:600, RE:700};
 const RB_FAN_CARD_X = {LT:160, LG:270, C:380, RG:490, RT:600};
 const RB_TEAM_FIX = {LA:'LAR', OAK:'LV', SD:'LAC', STL:'LAR'};
+const RB_PROJ_SEASON = String((typeof PROJ_SEASON!=='undefined' && PROJ_SEASON) ? PROJ_SEASON : new Date().getFullYear());
 
 let pcardRbFanSeason = null;
 
 function _rbProjSeed(){
   return projSeed || (seasonStatsCache && seasonStatsCache['proj']) || null;
+}
+
+function _rbIsProjSeason(season){
+  return String(season)===RB_PROJ_SEASON;
 }
 
 function _rbProjectedTeamAndRow(pid, normName){
@@ -104,7 +109,7 @@ function _rbProjectedChart(pid, normName){
   const olProj=(typeof _olProjectedTeam2026==='function') ? _olProjectedTeam2026()[teamCode] : null;
   if(!teamCode || !olProj) return null;
   const histSeasons=Object.keys(NFLVERSE||{})
-    .filter(s=>String(s)!=='2026' && NFLVERSE[s] && NFLVERSE[s].rb_fan && NFLVERSE[s].rb_fan[normName])
+    .filter(s=>String(s)!==RB_PROJ_SEASON && NFLVERSE[s] && NFLVERSE[s].rb_fan && NFLVERSE[s].rb_fan[normName])
     .sort((a,b)=>Number(b)-Number(a));
   const baseChart=histSeasons.length ? NFLVERSE[histSeasons[0]].rb_fan[normName] : null;
   const share=_rbProjectedShareRow(teamCode, pid, normName);
@@ -303,9 +308,9 @@ function _rbLatestExplicitSlotByName(){
   if(!(typeof NFLVERSE==='object' && NFLVERSE)) return out;
   const allSeasons=Object.keys(NFLVERSE);
   const seasons=[];
-  if(allSeasons.includes('2026')) seasons.push('2026');
+  if(allSeasons.includes(RB_PROJ_SEASON)) seasons.push(RB_PROJ_SEASON);
   seasons.push(...allSeasons
-    .filter(s=>s!=='2026')
+    .filter(s=>s!==RB_PROJ_SEASON)
     .sort((a,b)=>Number(b)-Number(a)));
   for(const s of seasons){
     const rosters=(NFLVERSE[s]&&NFLVERSE[s].rosters)||{};
@@ -560,7 +565,7 @@ function _rbFanSVG(chart, playerName, season, metric){
   parts.push(`<text x="${rbx}" y="690" fill="#fff" font-size="13" font-weight="800" text-anchor="middle">${String(playerName||'RB').toUpperCase()}</text>`);
   parts.push(`<text x="${rbx}" y="707" fill="#9aa0a6" font-size="11" text-anchor="middle">${t.attempts||0} carries · ${(t.yards!=null?Number(t.yards).toLocaleString():'—')} yds · ${_rbNum(t.ypc,2)} YPC · ${_rbNum(t.success_rate,1)}% success</text>`);
 
-  parts.push(`<text x="30" y="772" fill="#6b7075" font-size="10">OL card grades are from the validated local OL pipeline (${chart.is_projection?'projected 2026 run grades':'historical rushing grades'}, slot by pass-snaps).</text>`);
+  parts.push(`<text x="30" y="772" fill="#6b7075" font-size="10">OL card grades are from the validated local OL pipeline (${chart.is_projection?`projected ${RB_PROJ_SEASON} run grades`:'historical rushing grades'}, slot by pass-snaps).</text>`);
   parts.push(`<text x="30" y="786" fill="#6b7075" font-size="10">Lanes shown when attempts >= 3. ${chart.is_projection?'Projected lanes keep the back\u2019s last known directional profile and scale it to projected volume/efficiency.' : (MET.key? 'Color scales to this back\u2019s best gap.' : 'Color compares lane YPC to league average for that lane in-season.')}</text>`);
   parts.push('<text x="30" y="800" fill="#6b7075" font-size="10">Data: nflverse play-by-play + local OL grades. Not affiliated with the NFL.</text>');
   parts.push('</svg>');
@@ -572,16 +577,16 @@ function renderPcardRbFan(pid){
   const seasons=pcardRbFanSeasons(norm);
   const projChart=_rbProjectedChart(pid, norm);
   const seasonOpts=seasons.slice();
-  if(projChart && !seasonOpts.includes('2026')) seasonOpts.unshift('2026');
+  if(projChart && !seasonOpts.includes(RB_PROJ_SEASON)) seasonOpts.unshift(RB_PROJ_SEASON);
   if(!seasonOpts.length) return '<div class="pcard-loading">No rushing-fan data for this RB.</div>';
   if(pcardRbFanSeason==null || !seasonOpts.includes(String(pcardRbFanSeason))) pcardRbFanSeason=seasonOpts[0];
   const season=String(pcardRbFanSeason);
-  const chart=(season==='2026' && projChart) ? projChart : (NFLVERSE[season]&&NFLVERSE[season].rb_fan&&NFLVERSE[season].rb_fan[norm]);
+  const chart=(_rbIsProjSeason(season) && projChart) ? projChart : (NFLVERSE[season]&&NFLVERSE[season].rb_fan&&NFLVERSE[season].rb_fan[norm]);
   if(!chart) return '<div class="pcard-loading">No rushing-fan data for this season.</div>';
   const pack=NFLVERSE[season]||{};
   const teamCode=_rbTeamCode(chart.team||'');
   const runTbl=pack.team&&pack.team.offensive_line_run;
-  const runSc=(season==='2026' && chart.is_projection)
+  const runSc=(_rbIsProjSeason(season) && chart.is_projection)
     ? {score:chart.run_score, rank:chart.run_rank}
     : _rbRunScoreAndRankFromTable(runTbl, teamCode);
   const overallRunHtml = (runSc.score!=null || runSc.rank!=null)
@@ -609,7 +614,7 @@ function renderPcardRbFan(pid){
       <div class="rt-summary">${t.attempts||0} carries · ${_rbNum(t.ypc,2)} YPC · ${_rbNum(t.success_rate,1)}% success</div>
     </div>
     ${overallRunHtml}
-    ${chart.is_projection?`<div class="olc-overview"><b>2026 Projection:</b> projected depth-chart starters' run grades drive the line cards and cumulative run score. Lane arrows preserve the back's latest directional profile and scale it to projected efficiency/volume.</div>`:''}
+    ${chart.is_projection?`<div class="olc-overview"><b>${RB_PROJ_SEASON} Projection:</b> projected depth-chart starters' run grades drive the line cards and cumulative run score. Lane arrows preserve the back's latest directional profile and scale it to projected efficiency/volume.</div>`:''}
     ${_rbFanSVG(chart, name, season, metric)}
     <div class="rbf-legend">
       <span><i style="background:#2fae4e"></i>Lane YPC above league avg</span>
@@ -629,7 +634,7 @@ function setPcardRbFanSeason(season){
 function _rbRefreshOpenProjectedFanForTeam(team){
   if(typeof pcardState==='undefined' || !pcardState) return;
   if(typeof pcardStatsMode==='undefined' || pcardStatsMode!=='rbfan') return;
-  if(String(pcardRbFanSeason)!=='2026') return;
+  if(!_rbIsProjSeason(pcardRbFanSeason)) return;
   const body=document.getElementById('pcardBody');
   if(!body) return;
   try{

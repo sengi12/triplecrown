@@ -3,14 +3,14 @@
 // ═════════════════════════════════════════════════════════════════════════════
 // Copy a team's reference-season production into the working set, but ONLY for players
 // who are still on that team in the projection season. Players who left (traded, retired,
-// signed elsewhere) are skipped; brand-new players keep their existing 2026 projection.
+// signed elsewhere) are skipped; brand-new players keep their existing projection baseline.
 function copyTeamToWorking(team){
   if(activeSeason==='proj') return;
   const refSeason=activeSeason;
   const refSeasonSeed=seasonStatsCache[activeSeason]||{};
   const ref=refSeasonSeed[team]; if(!ref){ toast('Nothing to copy','err'); return; }
   // Snapshot the team's CURRENT working state AND proj-seed roster row before we touch
-  // either, so this whole copy can be undone in one step (e.g. you copy 2025 Colts stats
+  // either, so this whole copy can be undone in one step (e.g. you copy a prior Colts season
   // onto Michael Pittman's new Steelers slot, don't like it, and want it all back exactly
   // as it was — this must run before any mutation below, not after).
   pushUndo(team);
@@ -54,7 +54,7 @@ function copyTeamToWorking(team){
   // ROSTER CONSISTENCY: the copy must never change WHO is on the projected roster — only
   // whose stats it overwrites. Members without a line that season (rookies, injured, new
   // arrivals) stay selectable with ZEROED stats, so the working set reads as "that season's
-  // reality for this roster" and the user dials anyone up from 0 — instead of leftover 2026
+  // reality for this roster" and the user dials anyone up from 0 — instead of leftover projection-season
   // projections silently polluting the baseline (or, worse, a tiny historical line knocking
   // a player out of the receiving/rushing option filters).
   const ZERO_STATS=['passing_yards','passing_touchdowns','passing_attempts','passing_completions',

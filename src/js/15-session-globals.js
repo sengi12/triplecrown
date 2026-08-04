@@ -51,7 +51,7 @@ function clearSession(){
 }
 // Apply a saved session over the freshly-loaded seed. Returns true if anything was restored.
 // Only restores the working projections when the saved season matches the current seed,
-// so 2025 edits never land on a 2026 seed. Scoring/format restore regardless (harmless).
+// so prior-season edits never land on a newer projection seed. Scoring/format restore regardless (harmless).
 function restoreSession(){
   const p = loadSession();
   if(!p) return false;
@@ -87,7 +87,7 @@ let ECR = (typeof SEED_ECR!=='undefined') ? SEED_ECR : {};
 let CONTRACTS = (typeof SEED_CONTRACTS!=='undefined') ? SEED_CONTRACTS : {};
 // Warren Sharp advanced offensive stats (read-only reference): {tableKey:{columns,title,teams:{CODE:{values,ranks}}}}
 let SHARP = (typeof SEED_SHARP!=='undefined') ? SEED_SHARP : {};
-// 2026 Strength of Schedule: {CODE:{rank, win_total, name}}
+// Projection-season Strength of Schedule: {CODE:{rank, win_total, name}}
 let SOS = (typeof SEED_SOS!=='undefined') ? SEED_SOS : {};
 let _sosSchedLoading=false, _sosSchedLoaded=false;   // opponent-schedule fetch state (SOS arc)
 // Full team display names: {CODE:"Cincinnati Bengals"}
@@ -106,7 +106,7 @@ let ADDITIONS = (typeof SEED_ADDITIONS!=='undefined') ? SEED_ADDITIONS : {};
 let SHARP_SEASON = (typeof SEED_SHARP_SEASON!=='undefined') ? SEED_SHARP_SEASON : (PROJ_SEASON-1);
 // SumerSports advanced per-player stats: {season:{POS:{columns,pct_cols,players:{nameKey:{values,team,rank}}}}}.
 // Reference-season only — shown on the rankings page via the "Advanced (SumerSports)" toggle
-// when viewing a season that has data (2022-2025), never on projections or seasons without data.
+// when viewing a season that has data, never on projections or seasons without data.
 let SUMER = (typeof SEED_SUMER!=='undefined') ? SEED_SUMER : {};
 let SUMER_SEASONS = (typeof SEED_SUMER_SEASONS!=='undefined') ? SEED_SUMER_SEASONS : [];
 // KeepTradeCut dynasty player-page slugs (player-card links): {nameKey:{slug,pos}}
@@ -218,7 +218,7 @@ function mergeRosterPlayers(team){
 // Ghosts (players Sleeper's DB still lists on a team years after they left — Roethlisberger,
 // Haskins et al) can arrive from THREE stores, and blocking new ones isn't enough because two
 // of the stores are persisted: (1) a seed built before the filter, (2) the user's saved
-// session — workingProj[team].qbs is the exact list the 2026 projections QB tab renders, and
+// session — workingProj[team].qbs is the exact list the projection-season QB tab renders, and
 // restoreSession() faithfully puts an old ghost-laden copy back over a perfectly clean seed
 // on every boot. This scrub removes ghost entries from the projection seed AND every restored
 // working team, judged against the live Sleeper DB via sleeperProjectableRoster. Players the
@@ -277,7 +277,7 @@ function markDirty(){ if(importedSnapshot) dirtySinceImport = true; saveSession(
 // always capture the WORKING set for that team (workingProj[team]) — not whatever
 // view is currently on screen — so this also covers actions triggered from a
 // reference-season page, like "copy team to working set" or "copy player to working
-// set" (e.g. copying Michael Pittman's 2025 Colts season onto his new Steelers slot).
+// set" (e.g. copying a prior Colts season onto his new Steelers slot).
 // A snapshot is taken right before a mutation begins (slider drag start, an editable-
 // field commit, or a copy-to-working action). We cap the stack so memory stays bounded.
 const UNDO_LIMIT = 40;

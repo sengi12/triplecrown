@@ -1868,10 +1868,11 @@ button.la-cliff:hover{filter:brightness(1.25);}
 
 
 // ═══ TRIPLECROWN_SEED_START ═══ (build_seed.py / bake_seed.py replace this whole block)
-// SEED_DATA intentionally empty — TripleCrown pulls 2026 projections live from Sleeper
+// SEED_DATA intentionally empty — TripleCrown pulls the current projections live from Sleeper
 // on first load (or load a prebuilt triplecrown_seed.json via the 📦 Seed button, or bake
 // a seed straight into this file with bake_seed.py for a phone-friendly offline copy).
-const SEED_SEASON = 2026;
+const _SEED_YEAR_GUESS = Number(new Date().getFullYear());
+const SEED_SEASON = Number.isFinite(_SEED_YEAR_GUESS) ? _SEED_YEAR_GUESS : Number(new Date().getUTCFullYear());
 const SEED_DATA = {};
 const SEED_HISTORY = {};
 const SEED_HISTORY_SEASONS = [];
@@ -1884,8 +1885,8 @@ const SEED_COORDINATORS = {};
 const SEED_HC_PLAYCALLERS = {};
 const SEED_HC_HISTORY = {};
 const SEED_ADDITIONS = {};
-const SEED_SHARP_SEASON = 2025;
-// SumerSports advanced per-player stats, per completed season (2022-2025). Empty by default —
+const SEED_SHARP_SEASON = SEED_SEASON - 1;
+// SumerSports advanced per-player stats, per completed season (2022+). Empty by default —
 // baked in by build_seed.py / loaded from triplecrown_seed.json.
 const SEED_SUMER = {};
 const SEED_SUMER_SEASONS = [];
@@ -2424,8 +2425,45 @@ const PCOLORS = ['#4a9eff','#00d4aa','#ff6b35','#c084fc','#fbbf24','#f472b6',
   '#34d399','#a78bfa','#fb923c','#60a5fa','#e879f9','#38bdf8','#f97316','#86efac'];
 const SEASON_GAMES = 17;
 const TARGET_RATE = 0.95; // targets ≈ pass attempts × this
-const PROJ_SEASON = (typeof SEED_SEASON!=='undefined') ? SEED_SEASON : 2026;
-document.getElementById('scenarioName').value = PROJ_SEASON + ' Projections';
+let PROJ_SEASON = Number((typeof SEED_SEASON!=='undefined') ? SEED_SEASON : new Date().getFullYear());
+if(!Number.isFinite(PROJ_SEASON)) PROJ_SEASON = new Date().getFullYear();
+const _tcScenarioName = document.getElementById('scenarioName');
+if(_tcScenarioName) _tcScenarioName.value = PROJ_SEASON + ' Projections';
+
+function _tcApplyProjSeason(nextSeason){
+  const next = Number(nextSeason);
+  if(!Number.isFinite(next) || next<2000 || next>2100) return PROJ_SEASON;
+  const prev = PROJ_SEASON;
+  if(next===prev) return PROJ_SEASON;
+  PROJ_SEASON = next;
+  const nameEl = document.getElementById('scenarioName');
+  if(nameEl){
+    const prevDefault = `${prev} Projections`;
+    if(!nameEl.value || nameEl.value===prevDefault) nameEl.value = `${PROJ_SEASON} Projections`;
+  }
+  if(typeof SHARP_SEASON!=='undefined'){
+    const prevSharp = Number(prev)-1;
+    if(!Number.isFinite(Number(SHARP_SEASON)) || Number(SHARP_SEASON)===prevSharp){
+      SHARP_SEASON = PROJ_SEASON-1;
+    }
+  }
+  return PROJ_SEASON;
+}
+
+async function syncProjSeasonFromSleeper(){
+  if(typeof SLEEPER_STATE_URL==='undefined' || !SLEEPER_STATE_URL) return PROJ_SEASON;
+  try{
+    const ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(()=>ctrl.abort(), 5000) : null;
+    const res = await fetch(SLEEPER_STATE_URL, {cache:'no-store', signal: ctrl?ctrl.signal:undefined});
+    if(timer) clearTimeout(timer);
+    if(!res || !res.ok) return PROJ_SEASON;
+    const s = await res.json();
+    const y = Number((s && (s.league_season || s.season)) || NaN);
+    if(Number.isFinite(y)) _tcApplyProjSeason(y);
+  }catch(e){ /* keep existing projection season fallback */ }
+  return PROJ_SEASON;
+}
 
 function hsPack(p){
   if(!p) return {src:'', fallbacks:[]};
@@ -2504,7 +2542,7 @@ function imgSm(src,cls='share-hs',fb=''){
 // State
 // ─────────────────────────────────────────────────────────────────────────────
 let userProj = {};             // the state the render code reads (working set OR reference)
-let workingProj = userProj;    // THE working set (2026 projections in progress) — preserved across season views
+let workingProj = userProj;    // THE working set (current projection season) — preserved across season views
 let referenceProj = {};        // read-only per-team state for the currently-viewed historical season
 let referenceSeed = null;      // the SEED for the active reference season (proj SEED stays in projSeed)
 let projSeed = null;           // snapshot of the projection-season SEED (working baseline)
@@ -2596,7 +2634,7 @@ function clearSession(){
 }
 // Apply a saved session over the freshly-loaded seed. Returns true if anything was restored.
 // Only restores the working projections when the saved season matches the current seed,
-// so 2025 edits never land on a 2026 seed. Scoring/format restore regardless (harmless).
+// so prior-season edits never land on a newer projection seed. Scoring/format restore regardless (harmless).
 function restoreSession(){
   const p = loadSession();
   if(!p) return false;
@@ -2632,7 +2670,7 @@ let ECR = (typeof SEED_ECR!=='undefined') ? SEED_ECR : {};
 let CONTRACTS = (typeof SEED_CONTRACTS!=='undefined') ? SEED_CONTRACTS : {};
 // Warren Sharp advanced offensive stats (read-only reference): {tableKey:{columns,title,teams:{CODE:{values,ranks}}}}
 let SHARP = (typeof SEED_SHARP!=='undefined') ? SEED_SHARP : {};
-// 2026 Strength of Schedule: {CODE:{rank, win_total, name}}
+// Projection-season Strength of Schedule: {CODE:{rank, win_total, name}}
 let SOS = (typeof SEED_SOS!=='undefined') ? SEED_SOS : {};
 let _sosSchedLoading=false, _sosSchedLoaded=false;   // opponent-schedule fetch state (SOS arc)
 // Full team display names: {CODE:"Cincinnati Bengals"}
@@ -2651,7 +2689,7 @@ let ADDITIONS = (typeof SEED_ADDITIONS!=='undefined') ? SEED_ADDITIONS : {};
 let SHARP_SEASON = (typeof SEED_SHARP_SEASON!=='undefined') ? SEED_SHARP_SEASON : (PROJ_SEASON-1);
 // SumerSports advanced per-player stats: {season:{POS:{columns,pct_cols,players:{nameKey:{values,team,rank}}}}}.
 // Reference-season only — shown on the rankings page via the "Advanced (SumerSports)" toggle
-// when viewing a season that has data (2022-2025), never on projections or seasons without data.
+// when viewing a season that has data, never on projections or seasons without data.
 let SUMER = (typeof SEED_SUMER!=='undefined') ? SEED_SUMER : {};
 let SUMER_SEASONS = (typeof SEED_SUMER_SEASONS!=='undefined') ? SEED_SUMER_SEASONS : [];
 // KeepTradeCut dynasty player-page slugs (player-card links): {nameKey:{slug,pos}}
@@ -2763,7 +2801,7 @@ function mergeRosterPlayers(team){
 // Ghosts (players Sleeper's DB still lists on a team years after they left — Roethlisberger,
 // Haskins et al) can arrive from THREE stores, and blocking new ones isn't enough because two
 // of the stores are persisted: (1) a seed built before the filter, (2) the user's saved
-// session — workingProj[team].qbs is the exact list the 2026 projections QB tab renders, and
+// session — workingProj[team].qbs is the exact list the projection-season QB tab renders, and
 // restoreSession() faithfully puts an old ghost-laden copy back over a perfectly clean seed
 // on every boot. This scrub removes ghost entries from the projection seed AND every restored
 // working team, judged against the live Sleeper DB via sleeperProjectableRoster. Players the
@@ -2822,7 +2860,7 @@ function markDirty(){ if(importedSnapshot) dirtySinceImport = true; saveSession(
 // always capture the WORKING set for that team (workingProj[team]) — not whatever
 // view is currently on screen — so this also covers actions triggered from a
 // reference-season page, like "copy team to working set" or "copy player to working
-// set" (e.g. copying Michael Pittman's 2025 Colts season onto his new Steelers slot).
+// set" (e.g. copying a prior Colts season onto his new Steelers slot).
 // A snapshot is taken right before a mutation begins (slider drag start, an editable-
 // field commit, or a copy-to-working action). We cap the stack so memory stays bounded.
 const UNDO_LIMIT = 40;
@@ -4947,7 +4985,7 @@ function hasECR(){ const t=ecrTableFor(rankFormat); return t && Object.keys(t).l
 
 // ── SumerSports advanced stats (rankings "Advanced" toggle) ──────────────────
 // Reference-season only: available whenever the rankings page views a completed season the
-// nflverse seed carries (currently 2021-2025 = every entry in `history_seasons`). Never on
+// nflverse seed carries (every entry in `history_seasons`). Never on
 // the projection season. Already fully per-season: switch the season tabs and Adv. Metrics
 // follows automatically — there is no allowlist to maintain.
 // The data is fully data-driven: each position table carries its own ordered `columns` +
@@ -5354,7 +5392,7 @@ function computeVOR(list){
 // None of this touches projections.
 function sharpHasData(){ return activeSharp() && Object.keys(activeSharp()).length>0; }
 // Which season the Advanced Stats tables describe. Follows the season tabs: when you're on a
-// completed season that the nflverse seed carries team data for (2021-2025), the tables show
+// completed season that the nflverse seed carries team data for, the tables show
 // THAT season. On the projection view — or a season with no team data — it falls back to the
 // seed's reference season (SHARP_SEASON), which is the newest completed year.
 // This is the single hook for the whole feature: every Advanced Stats renderer (team card and
@@ -5446,7 +5484,7 @@ function sharpColIsPct(tbl, col){
 }
 
 // ── Roster Changes (Spotrac offseason: free agency, draft, trades, losses) ──
-// Read-only per-team view tying the 2025 weaknesses to how the team addressed them.
+// Read-only per-team view tying prior-season weaknesses to how the team addressed them.
 // ── Player card modal ───────────────────────────────────────────────────────
 // Clicking any player name opens a card showing per-game stats by season, colored
 // green/yellow/red relative to positional expectations. QB is implemented first; other
@@ -6205,7 +6243,7 @@ function renderPcardSeason(season, rows, pos){
 }
 
 // Team abbreviation(s) a player logged games for in a season — shown next to the season title
-// so a mid-season trade (or offseason move) reads clearly (e.g. "2025 · CLE / CIN").
+// so a mid-season trade (or offseason move) reads clearly (e.g. "YYYY · CLE / CIN").
 function pcardSeasonTeamTag(rows){
   const teams=[...new Set((rows||[]).filter(r=>!r.bye && r.team).map(r=>r.team))];
   return teams.length ? ` <span class="pcard-season-team">· ${teams.map(t=>`<img src="${NFL_LOGO(t)}" class="pcard-season-logo" onerror="this.style.display='none'">${t}`).join(' / ')}</span>` : '';
@@ -6730,11 +6768,16 @@ const RB_FAN_CARD_SLOTS = ['LT','LG','C','RG','RT'];
 const RB_FAN_ARROW_X = {LE:60, LT:160, LG:270, MID:380, RG:490, RT:600, RE:700};
 const RB_FAN_CARD_X = {LT:160, LG:270, C:380, RG:490, RT:600};
 const RB_TEAM_FIX = {LA:'LAR', OAK:'LV', SD:'LAC', STL:'LAR'};
+const RB_PROJ_SEASON = String((typeof PROJ_SEASON!=='undefined' && PROJ_SEASON) ? PROJ_SEASON : new Date().getFullYear());
 
 let pcardRbFanSeason = null;
 
 function _rbProjSeed(){
   return projSeed || (seasonStatsCache && seasonStatsCache['proj']) || null;
+}
+
+function _rbIsProjSeason(season){
+  return String(season)===RB_PROJ_SEASON;
 }
 
 function _rbProjectedTeamAndRow(pid, normName){
@@ -6824,7 +6867,7 @@ function _rbProjectedChart(pid, normName){
   const olProj=(typeof _olProjectedTeam2026==='function') ? _olProjectedTeam2026()[teamCode] : null;
   if(!teamCode || !olProj) return null;
   const histSeasons=Object.keys(NFLVERSE||{})
-    .filter(s=>String(s)!=='2026' && NFLVERSE[s] && NFLVERSE[s].rb_fan && NFLVERSE[s].rb_fan[normName])
+    .filter(s=>String(s)!==RB_PROJ_SEASON && NFLVERSE[s] && NFLVERSE[s].rb_fan && NFLVERSE[s].rb_fan[normName])
     .sort((a,b)=>Number(b)-Number(a));
   const baseChart=histSeasons.length ? NFLVERSE[histSeasons[0]].rb_fan[normName] : null;
   const share=_rbProjectedShareRow(teamCode, pid, normName);
@@ -7023,9 +7066,9 @@ function _rbLatestExplicitSlotByName(){
   if(!(typeof NFLVERSE==='object' && NFLVERSE)) return out;
   const allSeasons=Object.keys(NFLVERSE);
   const seasons=[];
-  if(allSeasons.includes('2026')) seasons.push('2026');
+  if(allSeasons.includes(RB_PROJ_SEASON)) seasons.push(RB_PROJ_SEASON);
   seasons.push(...allSeasons
-    .filter(s=>s!=='2026')
+    .filter(s=>s!==RB_PROJ_SEASON)
     .sort((a,b)=>Number(b)-Number(a)));
   for(const s of seasons){
     const rosters=(NFLVERSE[s]&&NFLVERSE[s].rosters)||{};
@@ -7280,7 +7323,7 @@ function _rbFanSVG(chart, playerName, season, metric){
   parts.push(`<text x="${rbx}" y="690" fill="#fff" font-size="13" font-weight="800" text-anchor="middle">${String(playerName||'RB').toUpperCase()}</text>`);
   parts.push(`<text x="${rbx}" y="707" fill="#9aa0a6" font-size="11" text-anchor="middle">${t.attempts||0} carries · ${(t.yards!=null?Number(t.yards).toLocaleString():'—')} yds · ${_rbNum(t.ypc,2)} YPC · ${_rbNum(t.success_rate,1)}% success</text>`);
 
-  parts.push(`<text x="30" y="772" fill="#6b7075" font-size="10">OL card grades are from the validated local OL pipeline (${chart.is_projection?'projected 2026 run grades':'historical rushing grades'}, slot by pass-snaps).</text>`);
+  parts.push(`<text x="30" y="772" fill="#6b7075" font-size="10">OL card grades are from the validated local OL pipeline (${chart.is_projection?`projected ${RB_PROJ_SEASON} run grades`:'historical rushing grades'}, slot by pass-snaps).</text>`);
   parts.push(`<text x="30" y="786" fill="#6b7075" font-size="10">Lanes shown when attempts >= 3. ${chart.is_projection?'Projected lanes keep the back\u2019s last known directional profile and scale it to projected volume/efficiency.' : (MET.key? 'Color scales to this back\u2019s best gap.' : 'Color compares lane YPC to league average for that lane in-season.')}</text>`);
   parts.push('<text x="30" y="800" fill="#6b7075" font-size="10">Data: nflverse play-by-play + local OL grades. Not affiliated with the NFL.</text>');
   parts.push('</svg>');
@@ -7292,16 +7335,16 @@ function renderPcardRbFan(pid){
   const seasons=pcardRbFanSeasons(norm);
   const projChart=_rbProjectedChart(pid, norm);
   const seasonOpts=seasons.slice();
-  if(projChart && !seasonOpts.includes('2026')) seasonOpts.unshift('2026');
+  if(projChart && !seasonOpts.includes(RB_PROJ_SEASON)) seasonOpts.unshift(RB_PROJ_SEASON);
   if(!seasonOpts.length) return '<div class="pcard-loading">No rushing-fan data for this RB.</div>';
   if(pcardRbFanSeason==null || !seasonOpts.includes(String(pcardRbFanSeason))) pcardRbFanSeason=seasonOpts[0];
   const season=String(pcardRbFanSeason);
-  const chart=(season==='2026' && projChart) ? projChart : (NFLVERSE[season]&&NFLVERSE[season].rb_fan&&NFLVERSE[season].rb_fan[norm]);
+  const chart=(_rbIsProjSeason(season) && projChart) ? projChart : (NFLVERSE[season]&&NFLVERSE[season].rb_fan&&NFLVERSE[season].rb_fan[norm]);
   if(!chart) return '<div class="pcard-loading">No rushing-fan data for this season.</div>';
   const pack=NFLVERSE[season]||{};
   const teamCode=_rbTeamCode(chart.team||'');
   const runTbl=pack.team&&pack.team.offensive_line_run;
-  const runSc=(season==='2026' && chart.is_projection)
+  const runSc=(_rbIsProjSeason(season) && chart.is_projection)
     ? {score:chart.run_score, rank:chart.run_rank}
     : _rbRunScoreAndRankFromTable(runTbl, teamCode);
   const overallRunHtml = (runSc.score!=null || runSc.rank!=null)
@@ -7329,7 +7372,7 @@ function renderPcardRbFan(pid){
       <div class="rt-summary">${t.attempts||0} carries · ${_rbNum(t.ypc,2)} YPC · ${_rbNum(t.success_rate,1)}% success</div>
     </div>
     ${overallRunHtml}
-    ${chart.is_projection?`<div class="olc-overview"><b>2026 Projection:</b> projected depth-chart starters' run grades drive the line cards and cumulative run score. Lane arrows preserve the back's latest directional profile and scale it to projected efficiency/volume.</div>`:''}
+    ${chart.is_projection?`<div class="olc-overview"><b>${RB_PROJ_SEASON} Projection:</b> projected depth-chart starters' run grades drive the line cards and cumulative run score. Lane arrows preserve the back's latest directional profile and scale it to projected efficiency/volume.</div>`:''}
     ${_rbFanSVG(chart, name, season, metric)}
     <div class="rbf-legend">
       <span><i style="background:#2fae4e"></i>Lane YPC above league avg</span>
@@ -7349,7 +7392,7 @@ function setPcardRbFanSeason(season){
 function _rbRefreshOpenProjectedFanForTeam(team){
   if(typeof pcardState==='undefined' || !pcardState) return;
   if(typeof pcardStatsMode==='undefined' || pcardStatsMode!=='rbfan') return;
-  if(String(pcardRbFanSeason)!=='2026') return;
+  if(!_rbIsProjSeason(pcardRbFanSeason)) return;
   const body=document.getElementById('pcardBody');
   if(!body) return;
   try{
@@ -7370,6 +7413,7 @@ function _rbRefreshOpenProjectedFanForTeam(team){
 
 const OL_CARD_POS = new Set(['LT','LG','C','RG','RT','OL','G','T','OT','OG']);
 const OL_TEAM_FIX = {LA:'LAR', OAK:'LV', SD:'LAC', STL:'LAR'};
+const OL_PROJ_SEASON = String((typeof PROJ_SEASON!=='undefined' && PROJ_SEASON) ? PROJ_SEASON : new Date().getFullYear());
 
 let pcardOlSeason = null;
 let pcardQbOlSeason = null;
@@ -7464,6 +7508,10 @@ function _olMetricRankFromRow(row, keys){
 
 function _olNormName(n){ return ecrNormName(String(n||'')); }
 
+function _olIsProjSeason(season){
+  return String(season)===OL_PROJ_SEASON;
+}
+
 let _olLatestExplicitSlotCache = null;
 function _olLatestExplicitSlotByName(){
   if(_olLatestExplicitSlotCache) return _olLatestExplicitSlotCache;
@@ -7471,9 +7519,9 @@ function _olLatestExplicitSlotByName(){
   if(!(typeof NFLVERSE==='object' && NFLVERSE)) return out;
   const allSeasons=Object.keys(NFLVERSE);
   const seasons=[];
-  if(allSeasons.includes('2026')) seasons.push('2026');
+  if(allSeasons.includes(OL_PROJ_SEASON)) seasons.push(OL_PROJ_SEASON);
   seasons.push(...allSeasons
-    .filter(s=>s!=='2026')
+    .filter(s=>s!==OL_PROJ_SEASON)
     .sort((a,b)=>Number(b)-Number(a)));
   for(const s of seasons){
     const rosters=(NFLVERSE[s]&&NFLVERSE[s].rosters)||{};
@@ -7625,7 +7673,7 @@ function _olDepthChartSlotsByTeam(teamCode){
 }
 
 function _olRosterSlotsBySeason(season, teamCode, preferredSlotByName){
-  if(String(season)==='2026'){
+  if(_olIsProjSeason(season)){
     const depthSlots=_olDepthChartSlotsByTeam(teamCode);
     if(depthSlots) return depthSlots;
   }
@@ -8000,9 +8048,12 @@ function _olProjectedTeam2026(){
   const out={};
   if(!(typeof NFLVERSE==='object' && NFLVERSE)) return out;
 
-  let baselineSeason='2025';
+  const projSeasonNum=Number(OL_PROJ_SEASON);
+  let baselineSeason=Number.isFinite(projSeasonNum) ? String(projSeasonNum-1) : String(new Date().getFullYear()-1);
   if(!(NFLVERSE[baselineSeason] && NFLVERSE[baselineSeason].team && NFLVERSE[baselineSeason].team.offensive_line_pass)){
-    const cands=Object.keys(NFLVERSE).filter(x=>Number(x)<2026).sort((a,b)=>Number(b)-Number(a));
+    const cands=Object.keys(NFLVERSE)
+      .filter(x=>Number.isFinite(Number(x)) && Number(x)<projSeasonNum)
+      .sort((a,b)=>Number(b)-Number(a));
     baselineSeason=cands[0]||'';
   }
   const basePack=(NFLVERSE[baselineSeason]||{});
@@ -8022,7 +8073,7 @@ function _olProjectedTeam2026(){
   const teamRows={};
   for(const tm of allTeams){
     const teamCode=_olTeamCode(tm);
-    const rawLine=_olLineByTeamSeason('2026', teamCode) || _olLineByTeamSeason(baselineSeason, teamCode);
+    const rawLine=_olLineByTeamSeason(OL_PROJ_SEASON, teamCode) || _olLineByTeamSeason(baselineSeason, teamCode);
     if(!rawLine) continue;
     const line=_olEnrichLineGrades(rawLine);
     const tp=_olTeamTalent(line, 'pass');
@@ -8118,7 +8169,7 @@ function _olProjectedTeam2026(){
   return out;
 }
 
-// Public accessor: projected 2026 OL overall score + league rank for a team.
+// Public accessor: projected OL overall score + league rank for a team.
 // which = 'pass' | 'run'. Returns {score, rank} or null.
 function projectedOlScore(team, which){
   if(typeof _olProjectedTeam2026!=='function') return null;
@@ -8132,7 +8183,7 @@ function _olQbHasSeasonData(pid, season, normName, fallbackTeam){
   const s=String(season);
   const tm=_qbTeamForSeason(pid, s, normName, fallbackTeam) || _qbAnyKnownTeam(pid, normName, fallbackTeam);
   if(!tm) return false;
-  if(s==='2026'){
+  if(_olIsProjSeason(s)){
     const p=_olProjectedTeam2026()[tm];
     if(p && p.passTbl && p.passTbl.teams && p.passTbl.teams[tm]) return true;
   }
@@ -8254,7 +8305,7 @@ function renderPcardQbOl(pid){
   if(!norm) return '<div class="pcard-loading">No QB identity found for OL context view.</div>';
 
   const seasonPool=(typeof NFLVERSE==='object'&&NFLVERSE)?Object.keys(NFLVERSE):[];
-  if(!seasonPool.includes('2026')) seasonPool.push('2026');
+  if(!seasonPool.includes(OL_PROJ_SEASON)) seasonPool.push(OL_PROJ_SEASON);
 
   let seasons=seasonPool
     .filter(s=>_olQbHasSeasonData(pid, s, norm, p.team||''))
@@ -8273,7 +8324,7 @@ function renderPcardQbOl(pid){
   const teamCode=_qbTeamForSeason(pid, season, norm, p.team||'') || _qbAnyKnownTeam(pid, norm, p.team||'');
   if(!teamCode) return '<div class="pcard-loading">No team context available for this QB in that season.</div>';
 
-  const proj=(season==='2026') ? (_olProjectedTeam2026()[teamCode]||null) : null;
+  const proj=_olIsProjSeason(season) ? (_olProjectedTeam2026()[teamCode]||null) : null;
   const passTbl=proj ? proj.passTbl : (pack.team&&pack.team.offensive_line_pass);
   const row=passTbl&&passTbl.teams&&passTbl.teams[teamCode];
   const cols=(passTbl&&passTbl.columns)||[];
@@ -8315,7 +8366,7 @@ function renderPcardQbOl(pid){
     const baseScore=baseRow&&baseRow.values?baseRow.values['Overall Score']:null;
     const baseRank=baseRow&&baseRow.ranks?baseRow.ranks['Overall Score']:null;
     projOverallHtml = `<div class="olc-metrics" style="margin-bottom:8px">`
-      + `<div class="olc-metric"><label>Proj 2026</label><b>${_olFmtMetric('Overall Score', projScore)}</b><small>${_olRankBadge(projRank)}</small></div>`
+      + `<div class="olc-metric"><label>Proj ${OL_PROJ_SEASON}</label><b>${_olFmtMetric('Overall Score', projScore)}</b><small>${_olRankBadge(projRank)}</small></div>`
       + `<div class="olc-metric"><label>${proj.baselineSeason}</label><b>${_olFmtMetric('Overall Score', baseScore)}</b><small>${_olRankBadge(baseRank)}</small></div>`
       + `</div>`;
     metricColsUse=metricColsUse.filter(c=>c!=='Overall Score');
@@ -8333,7 +8384,7 @@ function renderPcardQbOl(pid){
 
   const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardQbOlSeason('${s}')">${s}</button>`).join('');
   const projNote=(proj)
-    ? `<div class="olc-overview"><b>2026 Projection:</b> from projected depth-chart starters' multi-year grades (line talent ${proj.talentPass!=null?Math.round(proj.talentPass):'—'}%), lightly anchored to ${proj.baselineSeason} scheme. Projected pass-protection rank #${proj.passRank!=null?proj.passRank:'—'}.</div>`
+    ? `<div class="olc-overview"><b>${OL_PROJ_SEASON} Projection:</b> from projected depth-chart starters' multi-year grades (line talent ${proj.talentPass!=null?Math.round(proj.talentPass):'—'}%), lightly anchored to ${proj.baselineSeason} scheme. Projected pass-protection rank #${proj.passRank!=null?proj.passRank:'—'}.</div>`
     : '';
 
   return `<div class="olc-wrap">
@@ -8348,7 +8399,7 @@ function renderPcardQbOl(pid){
     <div class="olc-team-head" style="margin-top:10px">Team Pass Protection Metrics (${season})</div>
     ${projOverallHtml}
     <div class="olc-metrics">${teamMetrics}</div>
-    <div class="pcard-src">${proj?'Projected starters from 2026 depth chart, adjusted from prior team OL performance using starter quality deltas.':'Linemen from this season\'s team context; pass grades from the OL pipeline.'}</div>
+    <div class="pcard-src">${proj?`Projected starters from ${OL_PROJ_SEASON} depth chart, adjusted from prior team OL performance using starter quality deltas.`:'Linemen from this season\'s team context; pass grades from the OL pipeline.'}</div>
   </div>`;
 }
 
@@ -8358,19 +8409,19 @@ function setPcardQbOlSeason(season){
   if(body && pcardState) body.innerHTML=renderPcardQbOl(pcardState.pid);
 }
 
-// Called when an ESPN depth chart finishes loading: if a QB OL card is open on the 2026
+// Called when an ESPN depth chart finishes loading: if a QB OL card is open on the projection-season
 // projection tab for that team, re-render so projected starters (and their talent-driven
 // ranks) replace the prior-season fallback line used on first paint.
 function _olRefreshOpenQbOlForTeam(team){
   if(typeof pcardState==='undefined' || !pcardState) return;
   if(typeof pcardStatsMode==='undefined' || pcardStatsMode!=='qbol') return;
-  if(String(pcardQbOlSeason)!=='2026') return;
+  if(!_olIsProjSeason(pcardQbOlSeason)) return;
   const body=document.getElementById('pcardBody');
   if(!body) return;
   try{
     const p=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[pcardState.pid])||{};
     const norm=ecrNormName(p.name||'');
-    const tm=_qbTeamForSeason(pcardState.pid,'2026',norm,p.team||'')||_qbAnyKnownTeam(pcardState.pid,norm,p.team||'');
+    const tm=_qbTeamForSeason(pcardState.pid,OL_PROJ_SEASON,norm,p.team||'')||_qbAnyKnownTeam(pcardState.pid,norm,p.team||'');
     if(_olTeamCode(team)!==_olTeamCode(tm)) return;
   }catch(e){ /* refresh anyway on lookup failure */ }
   body.innerHTML=renderPcardQbOl(pcardState.pid);
@@ -9300,7 +9351,7 @@ async function fetchEspnDepth(team){
       const rows = (depthRaw && depthRaw.items) ? buildDepthRows(depthRaw, byId) : null;
       espnDepth[team] = (rows && rows.length) ? rows : null;
       if(currentTeam===team && currentPhase==='Additions') renderContent();
-      // A QB OL card open on the 2026 projection tab renders before this depth chart loads
+      // A QB OL card open on the projection tab can render before this depth chart loads
       // (falling back to prior-season starters). Refresh it now that real starters are known.
       if(typeof _olRefreshOpenQbOlForTeam==='function') _olRefreshOpenQbOlForTeam(team);
       if(typeof _rbRefreshOpenProjectedFanForTeam==='function') _rbRefreshOpenProjectedFanForTeam(team);
@@ -9688,7 +9739,7 @@ function _schemeRenderTemplate(template, p){
     .replace(/__TC_SCRIPT_CLOSE__/g, _SCHEME_SCRIPT_CLOSE)
     .replace('__TC_FV_SCRIPT__', script)
     .replace('Detroit Lions &mdash; Playbook', `${full} &mdash; Playbook`)
-    .replace('2025 · Routes mapped to players', `${season} · Routes mapped to players`)
+    .replace(/\b20\d{2}\s+·\s+Routes mapped to players/, `${season} · Routes mapped to players`)
     .replace('WR1=St. Brown, WR2=Williams', `WR1=${wr1}, WR2=${wr2}`)
     .replace(/const FV=.*?const FORM=FV\.data;\s*const SEASON=FV\.season;\s*const NAMES=FV\.names;/s, script);
 }
@@ -10521,7 +10572,7 @@ function renderAdvLeagueWeekRange(){
   });
 }
 
-// Projected 2026 OL overall-score chip shown next to the OL Pass / OL Run block titles.
+// Projected-season OL overall-score chip shown next to the OL Pass / OL Run block titles.
 // which = 'pass' | 'run'. Empty when no projection is available for the team.
 function _advProjOlBadge(team, which){
   const p = (typeof projectedOlScore==='function') ? projectedOlScore(team, which) : null;
@@ -10529,7 +10580,9 @@ function _advProjOlBadge(team, which){
   const rk = (p.rank!=null && !Number.isNaN(Number(p.rank))) ? Number(p.rank) : null;
   const cls = (typeof sharpRankClass==='function' && rk!=null) ? sharpRankClass(rk) : '';
   const lbl = which==='pass' ? 'pass-protection' : 'run-blocking';
-  return ` <span class="sr-proj-badge ${cls}" title="Projected 2026 ${lbl} overall score, from projected depth-chart starters">Proj \u201926 ${Number(p.score).toFixed(1)}${rk!=null?` \u00b7 #${rk}`:''}</span>`;
+  const projSeason = String((typeof PROJ_SEASON!=='undefined' && PROJ_SEASON) ? PROJ_SEASON : new Date().getFullYear());
+  const shortSeason = projSeason.slice(-2);
+  return ` <span class="sr-proj-badge ${cls}" title="Projected ${projSeason} ${lbl} overall score, from projected depth-chart starters">Proj \u2019${shortSeason} ${Number(p.score).toFixed(1)}${rk!=null?` \u00b7 #${rk}`:''}</span>`;
 }
 
 function renderTeamAdvanced(team){
@@ -10711,14 +10764,20 @@ function renderSharpLeague(){
   const tbl=(typeof _advTableForRange==='function') ? _advTableForRange(sharpTable, baseTbl, '__LEAGUE__') : baseTbl;
   const isProjTable = (sharpTable==='offensive_line_pass' || sharpTable==='offensive_line_run');
   const projWhich = sharpTable==='offensive_line_pass' ? 'pass' : (sharpTable==='offensive_line_run' ? 'run' : null);
-  const projCol = 'Proj 2026';
+  const projSeason = String((typeof PROJ_SEASON!=='undefined' && PROJ_SEASON) ? PROJ_SEASON : new Date().getFullYear());
+  const baseSeason = String(advTeamSeason());
+  const projCol = `Proj ${projSeason}`;
+  const overallLabel = `Overall (${baseSeason})`;
   const showProjCol = isProjTable;
   const baseCols = (tbl.columns||[]).slice();
   let cols = baseCols;
+  let colSource = {};
+  baseCols.forEach(c=>{ colSource[c]=c; });
   if(showProjCol){
-    const i=baseCols.indexOf('Overall Score');
-    if(i>=0) cols=[...baseCols.slice(0,i+1), projCol, ...baseCols.slice(i+1)];
-    else cols=[projCol, ...baseCols];
+    const rest = baseCols.filter(c=>c!=='Overall Score');
+    cols = [projCol, overallLabel, ...rest];
+    colSource = {[projCol]:'__proj__', [overallLabel]:'Overall Score'};
+    rest.forEach(c=>{ colSource[c]=c; });
   }
   let rows=Object.keys(tbl.teams).map(code=>{
     const base={code, ...tbl.teams[code]};
@@ -10736,8 +10795,9 @@ function renderSharpLeague(){
     if(sortCol===projCol){
       ra=a._projRank; rb=b._projRank;
     }else{
-      ra=a.ranks?a.ranks[sortCol]:null;
-      rb=b.ranks?b.ranks[sortCol]:null;
+      const srcCol=colSource[sortCol]||sortCol;
+      ra=a.ranks?a.ranks[srcCol]:null;
+      rb=b.ranks?b.ranks[srcCol]:null;
     }
     if(ra==null && rb==null) return 0;
     if(ra==null) return 1;
@@ -10749,7 +10809,7 @@ function renderSharpLeague(){
   const head = `<th class="sr-th-team">TEAM</th>`+cols.map(c=>{
     const active = c===sortCol;
     const arrow = active ? (sharpSortDir>0?' ▲':' ▼') : '';
-    const title = c===projCol ? `Projected 2026 OL ${projWhich==='pass'?'pass-protection':'run-blocking'} overall score` : `Sort by ${c}`;
+    const title = c===projCol ? `Projected ${projSeason} OL ${projWhich==='pass'?'pass-protection':'run-blocking'} overall score` : `Sort by ${c}`;
     return `<th class="sr-th ${active?'active':''}" onclick="sortSharpBy('${c.replace(/'/g,"\\'")}')" title="${title}">${c}${arrow}</th>`;
   }).join('');
 
@@ -10759,7 +10819,8 @@ function renderSharpLeague(){
         const v=r._projScore, rk=r._projRank;
         return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${v!=null?Number(v).toFixed(1):'—'}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
       }
-      const v=r.values?r.values[c]:null, rk=r.ranks?r.ranks[c]:null;
+      const srcCol=colSource[c]||c;
+      const v=r.values?r.values[srcCol]:null, rk=r.ranks?r.ranks[srcCol]:null;
       return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${fmtSharpVal(v, sharpColIsPct(tbl,c))}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
     }).join('');
     return `<tr><td class="sr-td-team"><span class="sr-td-team-inner"><img src="${NFL_LOGO(r.code)}" class="sr-logo" onerror="this.style.display='none'">${r.code}</span></td>${cells}</tr>`;
@@ -11092,8 +11153,8 @@ function renderRankings(){
     .map(([s,l])=>`<button class="format-btn ${curScoring===s?'active':''}" onclick="setScoringAxis('${s}')">${l}</button>`).join('');
   const posBtns=['ALL','QB','RB','WR','TE','FLEX'].map(pos=>
     `<button class="pos-filter-btn ${rankPosFilter===pos?'active':''}" onclick="setPosFilter('${pos}')">${pos}</button>`).join('');
-  // Advanced-metrics toggle — only on a reference season nflverse has player data for
-  // (2022-2025). Switches the stat columns to advanced per-player metrics (computed from
+  // Advanced-metrics toggle — only on a reference season nflverse has player data for.
+  // Switches the stat columns to advanced per-player metrics (computed from
   // nflverse play-by-play; SumerSports was retired as a source).
   const sumerOn = sumerAvailable();
   const advToggle = sumerOn
@@ -11815,9 +11876,12 @@ renderSidebar();
 // open the browser blocks it (CORS), and we silently fall back to the live Sleeper pull.
 // Close the player card on Escape.
 if(document&&document.addEventListener) document.addEventListener('keydown', e=>{ if(e.key==='Escape' && pcardOpen) closePlayerCard(); });
-(function boot(){
+(async function boot(){
   const hasEmbeddedProj = SEED && Object.keys(SEED).some(t=>SEED[t] && (SEED[t].QB.length||SEED[t].RB.length||SEED[t].WR.length||SEED[t].TE.length));
   const hasEmbeddedECR  = ECR && Object.keys(ECR).some(f=>ECR[f] && Object.keys(ECR[f]).length);
+  if(!hasEmbeddedProj && typeof syncProjSeasonFromSleeper==='function'){
+    await syncProjSeasonFromSleeper();
+  }
   // If a seed was baked into this file (bake_seed.py), everything is already in memory —
   // no fetch, so it works when opened directly from a phone (file://) with no CORS issue.
   if(hasEmbeddedProj){
@@ -11828,7 +11892,7 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
     // Best-effort: pull the Sleeper player DB in the background so roster-membership checks
     // (used by "copy team to working set") have real data. Harmless if it fails (file://).
     loadSleeperPlayers(true).catch(()=>{});
-    // Also refresh 2026 ADP live in the background so VONA/VOR stay current without a rebuild.
+    // Also refresh projection-season ADP live in the background so VONA/VOR stay current without a rebuild.
     backgroundRefreshADP();
     return;
   }
@@ -12633,8 +12697,8 @@ function normalizeSleeperRow(row){
 
 // Build a SEED-shaped object {team:{QB/RB/WR/TE:[...]}} from a per-season index.
 // The index is keyed by player_id; each value carries that SEASON's team/pos/name/stats,
-// so a player lands on the team they actually played for that year (DJ Moore → CHI in
-// 2024, BUF in 2026), and rotating backup QBs resolve correctly per season.
+// so a player lands on the team they actually played for that year, and rotating backup QBs
+// resolve correctly per season.
 // True when the Sleeper DB says this player is on a real current roster. Used ONLY for the
 // projection season (historical seasons must keep departed players on their historical teams).
 // A player qualifies with a team + not retired/inactive + (a depth-chart slot OR news within
@@ -13049,7 +13113,7 @@ function enterReference(season){
 
 // Build a seed from embedded HISTORY. New shape: player_id → { season: [ {team, pos,
 // name, games_played, games_started, snap_pct, stats}, ... ] } — a LIST so a traded
-// player (e.g. Flacco 2025: CLE + CIN) appears on each team with that stint's stats.
+// player appears on each team with that stint's stats.
 // Older builds stored a single object or flat stats; both are handled.
 function buildSeedFromHistory(season){
   if(!HISTORY||!Object.keys(HISTORY).length) return null;
@@ -13128,7 +13192,7 @@ const ESPN_RECORD_URL=(season,tid)=>`https://sports.core.api.espn.com/v2/sports/
 // ── Team schedule (live from ESPN) → opponents for the projection season ────────
 // Used by the SOS chart to sum each team's opponents' Vegas win totals ("how hard is
 // this slate?"). The endpoint's top-level `season` can read as the current league phase
-// (e.g. off-season 2025), so we key off `requestedSeason` for the year we actually asked
+// (e.g. an off-season league-year value), so we key off `requestedSeason` for the year we actually asked
 // for. Browser-reachable (site.api.espn.com is CORS-open). Cached per team for the session.
 const ESPN_ID_TO_CODE = Object.fromEntries(Object.entries(ESPN_TEAM_ID).map(([c,i])=>[i,c]));
 const ESPN_SCHEDULE_URL=(tid,season)=>`https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/${tid}/schedule?season=${season}`;
@@ -13236,14 +13300,14 @@ function hcIsPlaycaller(team){
 // ═════════════════════════════════════════════════════════════════════════════
 // Copy a team's reference-season production into the working set, but ONLY for players
 // who are still on that team in the projection season. Players who left (traded, retired,
-// signed elsewhere) are skipped; brand-new players keep their existing 2026 projection.
+// signed elsewhere) are skipped; brand-new players keep their existing projection baseline.
 function copyTeamToWorking(team){
   if(activeSeason==='proj') return;
   const refSeason=activeSeason;
   const refSeasonSeed=seasonStatsCache[activeSeason]||{};
   const ref=refSeasonSeed[team]; if(!ref){ toast('Nothing to copy','err'); return; }
   // Snapshot the team's CURRENT working state AND proj-seed roster row before we touch
-  // either, so this whole copy can be undone in one step (e.g. you copy 2025 Colts stats
+  // either, so this whole copy can be undone in one step (e.g. you copy a prior Colts season
   // onto Michael Pittman's new Steelers slot, don't like it, and want it all back exactly
   // as it was — this must run before any mutation below, not after).
   pushUndo(team);
@@ -13287,7 +13351,7 @@ function copyTeamToWorking(team){
   // ROSTER CONSISTENCY: the copy must never change WHO is on the projected roster — only
   // whose stats it overwrites. Members without a line that season (rookies, injured, new
   // arrivals) stay selectable with ZEROED stats, so the working set reads as "that season's
-  // reality for this roster" and the user dials anyone up from 0 — instead of leftover 2026
+  // reality for this roster" and the user dials anyone up from 0 — instead of leftover projection-season
   // projections silently polluting the baseline (or, worse, a tiny historical line knocking
   // a player out of the receiving/rushing option filters).
   const ZERO_STATS=['passing_yards','passing_touchdowns','passing_attempts','passing_completions',
@@ -13380,7 +13444,7 @@ function handleSeedLoad(e){
       if(j.ecr) ECR=j.ecr;   // FantasyPros ECR (replaces ADP) — set FIRST so it survives even if seed is empty
       if(j.contracts) CONTRACTS=j.contracts;   // OverTheCap contracts (dynasty Age/APY/FA)
       if(j.sharp) SHARP=j.sharp;   // Warren Sharp advanced offensive stats
-      if(j.sos) SOS=j.sos;   // 2026 strength of schedule
+      if(j.sos) SOS=j.sos;   // projection-season strength of schedule
       if(j.team_names) TEAM_NAMES=j.team_names;   // full team display names
       if(j.coordinators) COORDINATORS=j.coordinators;   // OC/DC from Wikipedia
       if(j.hc_playcallers) HC_PLAYCALLERS=j.hc_playcallers;   // HC-as-playcaller list
@@ -14920,8 +14984,8 @@ function laEnsureKdef(){
 }
 
 // When the snapshot is an earlier season of the league, "value" should mean what players
-// actually DID that year, not what we project for the upcoming one — otherwise a 2022 roster
-// gets priced on 2026 projections and reads as nonsense. Returns the season string when the
+// actually DID that year, not what we project for the upcoming one — otherwise a historical roster
+// gets priced on current projections and reads as nonsense. Returns the season string when the
 // snapshot predates the projection season, else null.
 function laHistoricalSeason(){
   const s=leagueSnapshot;
@@ -14930,7 +14994,7 @@ function laHistoricalSeason(){
   if(Array.isArray(chain) && chain.length>1){
     // "Previous" is relative to the league's OWN lineage, not to the projection year. That
     // matters in the off-season: Sleeper doesn't roll a league over until the new year starts,
-    // so a live dynasty league is still labelled 2025 while we project 2026 — comparing against
+    // so a live dynasty league can still be labelled one year behind projections — comparing against
     // PROJ_SEASON would wrongly call the CURRENT league historical and strip its dynasty
     // values. Newest season in the chain is current; anything older is a look-back.
     const newest=Math.max(...chain.map(c=>parseInt(c.season,10)||0));
@@ -14945,7 +15009,7 @@ function laHistoricalSeason(){
 // user's live view. SEED/userProj/activeSeason are swapped for the duration and restored in
 // a finally, so an exception can't strand the app on a reference season.
 // Make sure we have a stat seed for `season`. The embedded HISTORY block only covers the
-// seasons build_seed captured (2021-2025 today), but Sleeper serves season stats much further
+// seasons build_seed captured, but Sleeper serves season stats much further
 // back — so for anything older we pull it live, cache it, and re-render. Returns true when the
 // data is ready now, false when a fetch is in flight (callers render 0s for one paint).
 let _laSeasonFetching={};
@@ -15280,7 +15344,7 @@ async function laBuildSeasonChain(leagueId, season, name){
 }
 // Every league in one lineage shares the same chain, so cache it under EVERY id in it. This
 // is what makes the picker work in both directions: previous_league_id only walks BACKWARD,
-// so a chain built from the 2024 league is [2024..2021] and would otherwise drop the 2025
+// so a chain built from an older league id is [that year..earliest] and would otherwise drop the next season
 // entry you arrived from. Cache + merge means once a season is known it stays reachable.
 let _laChainCache = {};
 function laMergeChain(a, b){

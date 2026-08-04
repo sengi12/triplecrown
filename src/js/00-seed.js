@@ -1,10 +1,11 @@
 
 
 // ═══ TRIPLECROWN_SEED_START ═══ (build_seed.py / bake_seed.py replace this whole block)
-// SEED_DATA intentionally empty — TripleCrown pulls 2026 projections live from Sleeper
+// SEED_DATA intentionally empty — TripleCrown pulls the current projections live from Sleeper
 // on first load (or load a prebuilt triplecrown_seed.json via the 📦 Seed button, or bake
 // a seed straight into this file with bake_seed.py for a phone-friendly offline copy).
-const SEED_SEASON = 2026;
+const _SEED_YEAR_GUESS = Number(new Date().getFullYear());
+const SEED_SEASON = Number.isFinite(_SEED_YEAR_GUESS) ? _SEED_YEAR_GUESS : Number(new Date().getUTCFullYear());
 const SEED_DATA = {};
 const SEED_HISTORY = {};
 const SEED_HISTORY_SEASONS = [];
@@ -17,8 +18,8 @@ const SEED_COORDINATORS = {};
 const SEED_HC_PLAYCALLERS = {};
 const SEED_HC_HISTORY = {};
 const SEED_ADDITIONS = {};
-const SEED_SHARP_SEASON = 2025;
-// SumerSports advanced per-player stats, per completed season (2022-2025). Empty by default —
+const SEED_SHARP_SEASON = SEED_SEASON - 1;
+// SumerSports advanced per-player stats, per completed season (2022+). Empty by default —
 // baked in by build_seed.py / loaded from triplecrown_seed.json.
 const SEED_SUMER = {};
 const SEED_SUMER_SEASONS = [];

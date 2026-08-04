@@ -9,6 +9,7 @@
 
 const OL_CARD_POS = new Set(['LT','LG','C','RG','RT','OL','G','T','OT','OG']);
 const OL_TEAM_FIX = {LA:'LAR', OAK:'LV', SD:'LAC', STL:'LAR'};
+const OL_PROJ_SEASON = String((typeof PROJ_SEASON!=='undefined' && PROJ_SEASON) ? PROJ_SEASON : new Date().getFullYear());
 
 let pcardOlSeason = null;
 let pcardQbOlSeason = null;
@@ -103,6 +104,10 @@ function _olMetricRankFromRow(row, keys){
 
 function _olNormName(n){ return ecrNormName(String(n||'')); }
 
+function _olIsProjSeason(season){
+  return String(season)===OL_PROJ_SEASON;
+}
+
 let _olLatestExplicitSlotCache = null;
 function _olLatestExplicitSlotByName(){
   if(_olLatestExplicitSlotCache) return _olLatestExplicitSlotCache;
@@ -110,9 +115,9 @@ function _olLatestExplicitSlotByName(){
   if(!(typeof NFLVERSE==='object' && NFLVERSE)) return out;
   const allSeasons=Object.keys(NFLVERSE);
   const seasons=[];
-  if(allSeasons.includes('2026')) seasons.push('2026');
+  if(allSeasons.includes(OL_PROJ_SEASON)) seasons.push(OL_PROJ_SEASON);
   seasons.push(...allSeasons
-    .filter(s=>s!=='2026')
+    .filter(s=>s!==OL_PROJ_SEASON)
     .sort((a,b)=>Number(b)-Number(a)));
   for(const s of seasons){
     const rosters=(NFLVERSE[s]&&NFLVERSE[s].rosters)||{};
@@ -264,7 +269,7 @@ function _olDepthChartSlotsByTeam(teamCode){
 }
 
 function _olRosterSlotsBySeason(season, teamCode, preferredSlotByName){
-  if(String(season)==='2026'){
+  if(_olIsProjSeason(season)){
     const depthSlots=_olDepthChartSlotsByTeam(teamCode);
     if(depthSlots) return depthSlots;
   }
@@ -639,9 +644,12 @@ function _olProjectedTeam2026(){
   const out={};
   if(!(typeof NFLVERSE==='object' && NFLVERSE)) return out;
 
-  let baselineSeason='2025';
+  const projSeasonNum=Number(OL_PROJ_SEASON);
+  let baselineSeason=Number.isFinite(projSeasonNum) ? String(projSeasonNum-1) : String(new Date().getFullYear()-1);
   if(!(NFLVERSE[baselineSeason] && NFLVERSE[baselineSeason].team && NFLVERSE[baselineSeason].team.offensive_line_pass)){
-    const cands=Object.keys(NFLVERSE).filter(x=>Number(x)<2026).sort((a,b)=>Number(b)-Number(a));
+    const cands=Object.keys(NFLVERSE)
+      .filter(x=>Number.isFinite(Number(x)) && Number(x)<projSeasonNum)
+      .sort((a,b)=>Number(b)-Number(a));
     baselineSeason=cands[0]||'';
   }
   const basePack=(NFLVERSE[baselineSeason]||{});
@@ -661,7 +669,7 @@ function _olProjectedTeam2026(){
   const teamRows={};
   for(const tm of allTeams){
     const teamCode=_olTeamCode(tm);
-    const rawLine=_olLineByTeamSeason('2026', teamCode) || _olLineByTeamSeason(baselineSeason, teamCode);
+    const rawLine=_olLineByTeamSeason(OL_PROJ_SEASON, teamCode) || _olLineByTeamSeason(baselineSeason, teamCode);
     if(!rawLine) continue;
     const line=_olEnrichLineGrades(rawLine);
     const tp=_olTeamTalent(line, 'pass');
@@ -757,7 +765,7 @@ function _olProjectedTeam2026(){
   return out;
 }
 
-// Public accessor: projected 2026 OL overall score + league rank for a team.
+// Public accessor: projected OL overall score + league rank for a team.
 // which = 'pass' | 'run'. Returns {score, rank} or null.
 function projectedOlScore(team, which){
   if(typeof _olProjectedTeam2026!=='function') return null;
@@ -771,7 +779,7 @@ function _olQbHasSeasonData(pid, season, normName, fallbackTeam){
   const s=String(season);
   const tm=_qbTeamForSeason(pid, s, normName, fallbackTeam) || _qbAnyKnownTeam(pid, normName, fallbackTeam);
   if(!tm) return false;
-  if(s==='2026'){
+  if(_olIsProjSeason(s)){
     const p=_olProjectedTeam2026()[tm];
     if(p && p.passTbl && p.passTbl.teams && p.passTbl.teams[tm]) return true;
   }
@@ -893,7 +901,7 @@ function renderPcardQbOl(pid){
   if(!norm) return '<div class="pcard-loading">No QB identity found for OL context view.</div>';
 
   const seasonPool=(typeof NFLVERSE==='object'&&NFLVERSE)?Object.keys(NFLVERSE):[];
-  if(!seasonPool.includes('2026')) seasonPool.push('2026');
+  if(!seasonPool.includes(OL_PROJ_SEASON)) seasonPool.push(OL_PROJ_SEASON);
 
   let seasons=seasonPool
     .filter(s=>_olQbHasSeasonData(pid, s, norm, p.team||''))
@@ -912,7 +920,7 @@ function renderPcardQbOl(pid){
   const teamCode=_qbTeamForSeason(pid, season, norm, p.team||'') || _qbAnyKnownTeam(pid, norm, p.team||'');
   if(!teamCode) return '<div class="pcard-loading">No team context available for this QB in that season.</div>';
 
-  const proj=(season==='2026') ? (_olProjectedTeam2026()[teamCode]||null) : null;
+  const proj=_olIsProjSeason(season) ? (_olProjectedTeam2026()[teamCode]||null) : null;
   const passTbl=proj ? proj.passTbl : (pack.team&&pack.team.offensive_line_pass);
   const row=passTbl&&passTbl.teams&&passTbl.teams[teamCode];
   const cols=(passTbl&&passTbl.columns)||[];
@@ -954,7 +962,7 @@ function renderPcardQbOl(pid){
     const baseScore=baseRow&&baseRow.values?baseRow.values['Overall Score']:null;
     const baseRank=baseRow&&baseRow.ranks?baseRow.ranks['Overall Score']:null;
     projOverallHtml = `<div class="olc-metrics" style="margin-bottom:8px">`
-      + `<div class="olc-metric"><label>Proj 2026</label><b>${_olFmtMetric('Overall Score', projScore)}</b><small>${_olRankBadge(projRank)}</small></div>`
+      + `<div class="olc-metric"><label>Proj ${OL_PROJ_SEASON}</label><b>${_olFmtMetric('Overall Score', projScore)}</b><small>${_olRankBadge(projRank)}</small></div>`
       + `<div class="olc-metric"><label>${proj.baselineSeason}</label><b>${_olFmtMetric('Overall Score', baseScore)}</b><small>${_olRankBadge(baseRank)}</small></div>`
       + `</div>`;
     metricColsUse=metricColsUse.filter(c=>c!=='Overall Score');
@@ -972,7 +980,7 @@ function renderPcardQbOl(pid){
 
   const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardQbOlSeason('${s}')">${s}</button>`).join('');
   const projNote=(proj)
-    ? `<div class="olc-overview"><b>2026 Projection:</b> from projected depth-chart starters' multi-year grades (line talent ${proj.talentPass!=null?Math.round(proj.talentPass):'—'}%), lightly anchored to ${proj.baselineSeason} scheme. Projected pass-protection rank #${proj.passRank!=null?proj.passRank:'—'}.</div>`
+    ? `<div class="olc-overview"><b>${OL_PROJ_SEASON} Projection:</b> from projected depth-chart starters' multi-year grades (line talent ${proj.talentPass!=null?Math.round(proj.talentPass):'—'}%), lightly anchored to ${proj.baselineSeason} scheme. Projected pass-protection rank #${proj.passRank!=null?proj.passRank:'—'}.</div>`
     : '';
 
   return `<div class="olc-wrap">
@@ -987,7 +995,7 @@ function renderPcardQbOl(pid){
     <div class="olc-team-head" style="margin-top:10px">Team Pass Protection Metrics (${season})</div>
     ${projOverallHtml}
     <div class="olc-metrics">${teamMetrics}</div>
-    <div class="pcard-src">${proj?'Projected starters from 2026 depth chart, adjusted from prior team OL performance using starter quality deltas.':'Linemen from this season\'s team context; pass grades from the OL pipeline.'}</div>
+    <div class="pcard-src">${proj?`Projected starters from ${OL_PROJ_SEASON} depth chart, adjusted from prior team OL performance using starter quality deltas.`:'Linemen from this season\'s team context; pass grades from the OL pipeline.'}</div>
   </div>`;
 }
 
@@ -997,19 +1005,19 @@ function setPcardQbOlSeason(season){
   if(body && pcardState) body.innerHTML=renderPcardQbOl(pcardState.pid);
 }
 
-// Called when an ESPN depth chart finishes loading: if a QB OL card is open on the 2026
+// Called when an ESPN depth chart finishes loading: if a QB OL card is open on the projection-season
 // projection tab for that team, re-render so projected starters (and their talent-driven
 // ranks) replace the prior-season fallback line used on first paint.
 function _olRefreshOpenQbOlForTeam(team){
   if(typeof pcardState==='undefined' || !pcardState) return;
   if(typeof pcardStatsMode==='undefined' || pcardStatsMode!=='qbol') return;
-  if(String(pcardQbOlSeason)!=='2026') return;
+  if(!_olIsProjSeason(pcardQbOlSeason)) return;
   const body=document.getElementById('pcardBody');
   if(!body) return;
   try{
     const p=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[pcardState.pid])||{};
     const norm=ecrNormName(p.name||'');
-    const tm=_qbTeamForSeason(pcardState.pid,'2026',norm,p.team||'')||_qbAnyKnownTeam(pcardState.pid,norm,p.team||'');
+    const tm=_qbTeamForSeason(pcardState.pid,OL_PROJ_SEASON,norm,p.team||'')||_qbAnyKnownTeam(pcardState.pid,norm,p.team||'');
     if(_olTeamCode(team)!==_olTeamCode(tm)) return;
   }catch(e){ /* refresh anyway on lookup failure */ }
   body.innerHTML=renderPcardQbOl(pcardState.pid);

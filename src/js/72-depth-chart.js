@@ -74,7 +74,7 @@ async function fetchEspnDepth(team){
       const rows = (depthRaw && depthRaw.items) ? buildDepthRows(depthRaw, byId) : null;
       espnDepth[team] = (rows && rows.length) ? rows : null;
       if(currentTeam===team && currentPhase==='Additions') renderContent();
-      // A QB OL card open on the 2026 projection tab renders before this depth chart loads
+      // A QB OL card open on the projection tab can render before this depth chart loads
       // (falling back to prior-season starters). Refresh it now that real starters are known.
       if(typeof _olRefreshOpenQbOlForTeam==='function') _olRefreshOpenQbOlForTeam(team);
       if(typeof _rbRefreshOpenProjectedFanForTeam==='function') _rbRefreshOpenProjectedFanForTeam(team);

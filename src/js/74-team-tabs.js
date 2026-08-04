@@ -685,7 +685,7 @@ function renderAdvLeagueWeekRange(){
   });
 }
 
-// Projected 2026 OL overall-score chip shown next to the OL Pass / OL Run block titles.
+// Projected-season OL overall-score chip shown next to the OL Pass / OL Run block titles.
 // which = 'pass' | 'run'. Empty when no projection is available for the team.
 function _advProjOlBadge(team, which){
   const p = (typeof projectedOlScore==='function') ? projectedOlScore(team, which) : null;
@@ -693,7 +693,9 @@ function _advProjOlBadge(team, which){
   const rk = (p.rank!=null && !Number.isNaN(Number(p.rank))) ? Number(p.rank) : null;
   const cls = (typeof sharpRankClass==='function' && rk!=null) ? sharpRankClass(rk) : '';
   const lbl = which==='pass' ? 'pass-protection' : 'run-blocking';
-  return ` <span class="sr-proj-badge ${cls}" title="Projected 2026 ${lbl} overall score, from projected depth-chart starters">Proj \u201926 ${Number(p.score).toFixed(1)}${rk!=null?` \u00b7 #${rk}`:''}</span>`;
+  const projSeason = String((typeof PROJ_SEASON!=='undefined' && PROJ_SEASON) ? PROJ_SEASON : new Date().getFullYear());
+  const shortSeason = projSeason.slice(-2);
+  return ` <span class="sr-proj-badge ${cls}" title="Projected ${projSeason} ${lbl} overall score, from projected depth-chart starters">Proj \u2019${shortSeason} ${Number(p.score).toFixed(1)}${rk!=null?` \u00b7 #${rk}`:''}</span>`;
 }
 
 function renderTeamAdvanced(team){

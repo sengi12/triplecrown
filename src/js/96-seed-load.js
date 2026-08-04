@@ -17,7 +17,7 @@ function handleSeedLoad(e){
       if(j.ecr) ECR=j.ecr;   // FantasyPros ECR (replaces ADP) — set FIRST so it survives even if seed is empty
       if(j.contracts) CONTRACTS=j.contracts;   // OverTheCap contracts (dynasty Age/APY/FA)
       if(j.sharp) SHARP=j.sharp;   // Warren Sharp advanced offensive stats
-      if(j.sos) SOS=j.sos;   // 2026 strength of schedule
+      if(j.sos) SOS=j.sos;   // projection-season strength of schedule
       if(j.team_names) TEAM_NAMES=j.team_names;   // full team display names
       if(j.coordinators) COORDINATORS=j.coordinators;   // OC/DC from Wikipedia
       if(j.hc_playcallers) HC_PLAYCALLERS=j.hc_playcallers;   // HC-as-playcaller list

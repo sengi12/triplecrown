@@ -756,7 +756,7 @@ function renderPcardSeason(season, rows, pos){
 }
 
 // Team abbreviation(s) a player logged games for in a season — shown next to the season title
-// so a mid-season trade (or offseason move) reads clearly (e.g. "2025 · CLE / CIN").
+// so a mid-season trade (or offseason move) reads clearly (e.g. "YYYY · CLE / CIN").
 function pcardSeasonTeamTag(rows){
   const teams=[...new Set((rows||[]).filter(r=>!r.bye && r.team).map(r=>r.team))];
   return teams.length ? ` <span class="pcard-season-team">· ${teams.map(t=>`<img src="${NFL_LOGO(t)}" class="pcard-season-logo" onerror="this.style.display='none'">${t}`).join(' / ')}</span>` : '';

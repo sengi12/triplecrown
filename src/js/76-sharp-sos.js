@@ -57,14 +57,20 @@ function renderSharpLeague(){
   const tbl=(typeof _advTableForRange==='function') ? _advTableForRange(sharpTable, baseTbl, '__LEAGUE__') : baseTbl;
   const isProjTable = (sharpTable==='offensive_line_pass' || sharpTable==='offensive_line_run');
   const projWhich = sharpTable==='offensive_line_pass' ? 'pass' : (sharpTable==='offensive_line_run' ? 'run' : null);
-  const projCol = 'Proj 2026';
+  const projSeason = String((typeof PROJ_SEASON!=='undefined' && PROJ_SEASON) ? PROJ_SEASON : new Date().getFullYear());
+  const baseSeason = String(advTeamSeason());
+  const projCol = `Proj ${projSeason}`;
+  const overallLabel = `Overall (${baseSeason})`;
   const showProjCol = isProjTable;
   const baseCols = (tbl.columns||[]).slice();
   let cols = baseCols;
+  let colSource = {};
+  baseCols.forEach(c=>{ colSource[c]=c; });
   if(showProjCol){
-    const i=baseCols.indexOf('Overall Score');
-    if(i>=0) cols=[...baseCols.slice(0,i+1), projCol, ...baseCols.slice(i+1)];
-    else cols=[projCol, ...baseCols];
+    const rest = baseCols.filter(c=>c!=='Overall Score');
+    cols = [projCol, overallLabel, ...rest];
+    colSource = {[projCol]:'__proj__', [overallLabel]:'Overall Score'};
+    rest.forEach(c=>{ colSource[c]=c; });
   }
   let rows=Object.keys(tbl.teams).map(code=>{
     const base={code, ...tbl.teams[code]};
@@ -82,8 +88,9 @@ function renderSharpLeague(){
     if(sortCol===projCol){
       ra=a._projRank; rb=b._projRank;
     }else{
-      ra=a.ranks?a.ranks[sortCol]:null;
-      rb=b.ranks?b.ranks[sortCol]:null;
+      const srcCol=colSource[sortCol]||sortCol;
+      ra=a.ranks?a.ranks[srcCol]:null;
+      rb=b.ranks?b.ranks[srcCol]:null;
     }
     if(ra==null && rb==null) return 0;
     if(ra==null) return 1;
@@ -95,7 +102,7 @@ function renderSharpLeague(){
   const head = `<th class="sr-th-team">TEAM</th>`+cols.map(c=>{
     const active = c===sortCol;
     const arrow = active ? (sharpSortDir>0?' ▲':' ▼') : '';
-    const title = c===projCol ? `Projected 2026 OL ${projWhich==='pass'?'pass-protection':'run-blocking'} overall score` : `Sort by ${c}`;
+    const title = c===projCol ? `Projected ${projSeason} OL ${projWhich==='pass'?'pass-protection':'run-blocking'} overall score` : `Sort by ${c}`;
     return `<th class="sr-th ${active?'active':''}" onclick="sortSharpBy('${c.replace(/'/g,"\\'")}')" title="${title}">${c}${arrow}</th>`;
   }).join('');
 
@@ -105,7 +112,8 @@ function renderSharpLeague(){
         const v=r._projScore, rk=r._projRank;
         return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${v!=null?Number(v).toFixed(1):'—'}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
       }
-      const v=r.values?r.values[c]:null, rk=r.ranks?r.ranks[c]:null;
+      const srcCol=colSource[c]||c;
+      const v=r.values?r.values[srcCol]:null, rk=r.ranks?r.ranks[srcCol]:null;
       return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${fmtSharpVal(v, sharpColIsPct(tbl,c))}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
     }).join('');
     return `<tr><td class="sr-td-team"><span class="sr-td-team-inner"><img src="${NFL_LOGO(r.code)}" class="sr-logo" onerror="this.style.display='none'">${r.code}</span></td>${cells}</tr>`;

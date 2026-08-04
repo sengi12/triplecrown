@@ -195,8 +195,8 @@ function renderRankings(){
     .map(([s,l])=>`<button class="format-btn ${curScoring===s?'active':''}" onclick="setScoringAxis('${s}')">${l}</button>`).join('');
   const posBtns=['ALL','QB','RB','WR','TE','FLEX'].map(pos=>
     `<button class="pos-filter-btn ${rankPosFilter===pos?'active':''}" onclick="setPosFilter('${pos}')">${pos}</button>`).join('');
-  // Advanced-metrics toggle — only on a reference season nflverse has player data for
-  // (2022-2025). Switches the stat columns to advanced per-player metrics (computed from
+  // Advanced-metrics toggle — only on a reference season nflverse has player data for.
+  // Switches the stat columns to advanced per-player metrics (computed from
   // nflverse play-by-play; SumerSports was retired as a source).
   const sumerOn = sumerAvailable();
   const advToggle = sumerOn

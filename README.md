@@ -237,7 +237,6 @@ The project ships with a regression suite (Node + Python) covering the projectio
 ### New Features
 - [ ] ability for users to create account to save their projections (supabase)
 - [ ] projections manager
-- [ ] make sure triplecrown is season agnostic and easy to adjust for next season
 - [ ] clicking on a team logo, takes you to that team's 2026 projections page anywhere in the app
 - [ ] add ESPN league support
 - [ ] add Yahoo league support

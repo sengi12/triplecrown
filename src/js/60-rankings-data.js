@@ -51,7 +51,7 @@ function hasECR(){ const t=ecrTableFor(rankFormat); return t && Object.keys(t).l
 
 // ── SumerSports advanced stats (rankings "Advanced" toggle) ──────────────────
 // Reference-season only: available whenever the rankings page views a completed season the
-// nflverse seed carries (currently 2021-2025 = every entry in `history_seasons`). Never on
+// nflverse seed carries (every entry in `history_seasons`). Never on
 // the projection season. Already fully per-season: switch the season tabs and Adv. Metrics
 // follows automatically — there is no allowlist to maintain.
 // The data is fully data-driven: each position table carries its own ordered `columns` +
@@ -458,7 +458,7 @@ function computeVOR(list){
 // None of this touches projections.
 function sharpHasData(){ return activeSharp() && Object.keys(activeSharp()).length>0; }
 // Which season the Advanced Stats tables describe. Follows the season tabs: when you're on a
-// completed season that the nflverse seed carries team data for (2021-2025), the tables show
+// completed season that the nflverse seed carries team data for, the tables show
 // THAT season. On the projection view — or a season with no team data — it falls back to the
 // seed's reference season (SHARP_SEASON), which is the newest completed year.
 // This is the single hook for the whole feature: every Advanced Stats renderer (team card and
@@ -550,4 +550,4 @@ function sharpColIsPct(tbl, col){
 }
 
 // ── Roster Changes (Spotrac offseason: free agency, draft, trades, losses) ──
-// Read-only per-team view tying the 2025 weaknesses to how the team addressed them.
+// Read-only per-team view tying prior-season weaknesses to how the team addressed them.

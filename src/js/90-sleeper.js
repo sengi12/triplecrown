@@ -122,8 +122,8 @@ function normalizeSleeperRow(row){
 
 // Build a SEED-shaped object {team:{QB/RB/WR/TE:[...]}} from a per-season index.
 // The index is keyed by player_id; each value carries that SEASON's team/pos/name/stats,
-// so a player lands on the team they actually played for that year (DJ Moore → CHI in
-// 2024, BUF in 2026), and rotating backup QBs resolve correctly per season.
+// so a player lands on the team they actually played for that year, and rotating backup QBs
+// resolve correctly per season.
 // True when the Sleeper DB says this player is on a real current roster. Used ONLY for the
 // projection season (historical seasons must keep departed players on their historical teams).
 // A player qualifies with a team + not retired/inactive + (a depth-chart slot OR news within
@@ -538,7 +538,7 @@ function enterReference(season){
 
 // Build a seed from embedded HISTORY. New shape: player_id → { season: [ {team, pos,
 // name, games_played, games_started, snap_pct, stats}, ... ] } — a LIST so a traded
-// player (e.g. Flacco 2025: CLE + CIN) appears on each team with that stint's stats.
+// player appears on each team with that stint's stats.
 // Older builds stored a single object or flat stats; both are handled.
 function buildSeedFromHistory(season){
   if(!HISTORY||!Object.keys(HISTORY).length) return null;

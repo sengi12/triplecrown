@@ -409,8 +409,45 @@ const PCOLORS = ['#4a9eff','#00d4aa','#ff6b35','#c084fc','#fbbf24','#f472b6',
   '#34d399','#a78bfa','#fb923c','#60a5fa','#e879f9','#38bdf8','#f97316','#86efac'];
 const SEASON_GAMES = 17;
 const TARGET_RATE = 0.95; // targets ≈ pass attempts × this
-const PROJ_SEASON = (typeof SEED_SEASON!=='undefined') ? SEED_SEASON : 2026;
-document.getElementById('scenarioName').value = PROJ_SEASON + ' Projections';
+let PROJ_SEASON = Number((typeof SEED_SEASON!=='undefined') ? SEED_SEASON : new Date().getFullYear());
+if(!Number.isFinite(PROJ_SEASON)) PROJ_SEASON = new Date().getFullYear();
+const _tcScenarioName = document.getElementById('scenarioName');
+if(_tcScenarioName) _tcScenarioName.value = PROJ_SEASON + ' Projections';
+
+function _tcApplyProjSeason(nextSeason){
+  const next = Number(nextSeason);
+  if(!Number.isFinite(next) || next<2000 || next>2100) return PROJ_SEASON;
+  const prev = PROJ_SEASON;
+  if(next===prev) return PROJ_SEASON;
+  PROJ_SEASON = next;
+  const nameEl = document.getElementById('scenarioName');
+  if(nameEl){
+    const prevDefault = `${prev} Projections`;
+    if(!nameEl.value || nameEl.value===prevDefault) nameEl.value = `${PROJ_SEASON} Projections`;
+  }
+  if(typeof SHARP_SEASON!=='undefined'){
+    const prevSharp = Number(prev)-1;
+    if(!Number.isFinite(Number(SHARP_SEASON)) || Number(SHARP_SEASON)===prevSharp){
+      SHARP_SEASON = PROJ_SEASON-1;
+    }
+  }
+  return PROJ_SEASON;
+}
+
+async function syncProjSeasonFromSleeper(){
+  if(typeof SLEEPER_STATE_URL==='undefined' || !SLEEPER_STATE_URL) return PROJ_SEASON;
+  try{
+    const ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(()=>ctrl.abort(), 5000) : null;
+    const res = await fetch(SLEEPER_STATE_URL, {cache:'no-store', signal: ctrl?ctrl.signal:undefined});
+    if(timer) clearTimeout(timer);
+    if(!res || !res.ok) return PROJ_SEASON;
+    const s = await res.json();
+    const y = Number((s && (s.league_season || s.season)) || NaN);
+    if(Number.isFinite(y)) _tcApplyProjSeason(y);
+  }catch(e){ /* keep existing projection season fallback */ }
+  return PROJ_SEASON;
+}
 
 function hsPack(p){
   if(!p) return {src:'', fallbacks:[]};

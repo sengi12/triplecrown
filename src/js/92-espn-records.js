@@ -9,7 +9,7 @@ const ESPN_RECORD_URL=(season,tid)=>`https://sports.core.api.espn.com/v2/sports/
 // ── Team schedule (live from ESPN) → opponents for the projection season ────────
 // Used by the SOS chart to sum each team's opponents' Vegas win totals ("how hard is
 // this slate?"). The endpoint's top-level `season` can read as the current league phase
-// (e.g. off-season 2025), so we key off `requestedSeason` for the year we actually asked
+// (e.g. an off-season league-year value), so we key off `requestedSeason` for the year we actually asked
 // for. Browser-reachable (site.api.espn.com is CORS-open). Cached per team for the session.
 const ESPN_ID_TO_CODE = Object.fromEntries(Object.entries(ESPN_TEAM_ID).map(([c,i])=>[i,c]));
 const ESPN_SCHEDULE_URL=(tid,season)=>`https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/${tid}/schedule?season=${season}`;

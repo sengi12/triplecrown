@@ -2,7 +2,7 @@
 // State
 // ─────────────────────────────────────────────────────────────────────────────
 let userProj = {};             // the state the render code reads (working set OR reference)
-let workingProj = userProj;    // THE working set (2026 projections in progress) — preserved across season views
+let workingProj = userProj;    // THE working set (current projection season) — preserved across season views
 let referenceProj = {};        // read-only per-team state for the currently-viewed historical season
 let referenceSeed = null;      // the SEED for the active reference season (proj SEED stays in projSeed)
 let projSeed = null;           // snapshot of the projection-season SEED (working baseline)

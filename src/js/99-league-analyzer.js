@@ -238,8 +238,8 @@ function laEnsureKdef(){
 }
 
 // When the snapshot is an earlier season of the league, "value" should mean what players
-// actually DID that year, not what we project for the upcoming one — otherwise a 2022 roster
-// gets priced on 2026 projections and reads as nonsense. Returns the season string when the
+// actually DID that year, not what we project for the upcoming one — otherwise a historical roster
+// gets priced on current projections and reads as nonsense. Returns the season string when the
 // snapshot predates the projection season, else null.
 function laHistoricalSeason(){
   const s=leagueSnapshot;
@@ -248,7 +248,7 @@ function laHistoricalSeason(){
   if(Array.isArray(chain) && chain.length>1){
     // "Previous" is relative to the league's OWN lineage, not to the projection year. That
     // matters in the off-season: Sleeper doesn't roll a league over until the new year starts,
-    // so a live dynasty league is still labelled 2025 while we project 2026 — comparing against
+    // so a live dynasty league can still be labelled one year behind projections — comparing against
     // PROJ_SEASON would wrongly call the CURRENT league historical and strip its dynasty
     // values. Newest season in the chain is current; anything older is a look-back.
     const newest=Math.max(...chain.map(c=>parseInt(c.season,10)||0));
@@ -263,7 +263,7 @@ function laHistoricalSeason(){
 // user's live view. SEED/userProj/activeSeason are swapped for the duration and restored in
 // a finally, so an exception can't strand the app on a reference season.
 // Make sure we have a stat seed for `season`. The embedded HISTORY block only covers the
-// seasons build_seed captured (2021-2025 today), but Sleeper serves season stats much further
+// seasons build_seed captured, but Sleeper serves season stats much further
 // back — so for anything older we pull it live, cache it, and re-render. Returns true when the
 // data is ready now, false when a fetch is in flight (callers render 0s for one paint).
 let _laSeasonFetching={};
@@ -598,7 +598,7 @@ async function laBuildSeasonChain(leagueId, season, name){
 }
 // Every league in one lineage shares the same chain, so cache it under EVERY id in it. This
 // is what makes the picker work in both directions: previous_league_id only walks BACKWARD,
-// so a chain built from the 2024 league is [2024..2021] and would otherwise drop the 2025
+// so a chain built from an older league id is [that year..earliest] and would otherwise drop the next season
 // entry you arrived from. Cache + merge means once a season is known it stays reachable.
 let _laChainCache = {};
 function laMergeChain(a, b){

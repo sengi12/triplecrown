@@ -408,9 +408,12 @@ renderSidebar();
 // open the browser blocks it (CORS), and we silently fall back to the live Sleeper pull.
 // Close the player card on Escape.
 if(document&&document.addEventListener) document.addEventListener('keydown', e=>{ if(e.key==='Escape' && pcardOpen) closePlayerCard(); });
-(function boot(){
+(async function boot(){
   const hasEmbeddedProj = SEED && Object.keys(SEED).some(t=>SEED[t] && (SEED[t].QB.length||SEED[t].RB.length||SEED[t].WR.length||SEED[t].TE.length));
   const hasEmbeddedECR  = ECR && Object.keys(ECR).some(f=>ECR[f] && Object.keys(ECR[f]).length);
+  if(!hasEmbeddedProj && typeof syncProjSeasonFromSleeper==='function'){
+    await syncProjSeasonFromSleeper();
+  }
   // If a seed was baked into this file (bake_seed.py), everything is already in memory —
   // no fetch, so it works when opened directly from a phone (file://) with no CORS issue.
   if(hasEmbeddedProj){
@@ -421,7 +424,7 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
     // Best-effort: pull the Sleeper player DB in the background so roster-membership checks
     // (used by "copy team to working set") have real data. Harmless if it fails (file://).
     loadSleeperPlayers(true).catch(()=>{});
-    // Also refresh 2026 ADP live in the background so VONA/VOR stay current without a rebuild.
+    // Also refresh projection-season ADP live in the background so VONA/VOR stay current without a rebuild.
     backgroundRefreshADP();
     return;
   }

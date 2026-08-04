@@ -2,14 +2,14 @@
 """
 TripleCrown seed builder
 ─────────────────────
-Fetches Sleeper's player database, 2026 season projections, and the last N
+Fetches Sleeper's player database, current-season projections, and the last N
 seasons of real stats, caches them locally (so re-runs are fast), and emits a
 single `seeds/triplecrown_seed.json` (plus optional nflverse sidecars) that the
 TripleCrown web app auto-loads.
 
 Usage:
-    python build_seed.py                 # build 2026 projections + 5 prior seasons of stats
-    python build_seed.py --season 2026   # choose the projection season
+    python build_seed.py                 # build current-season projections + 5 prior seasons of stats
+    python build_seed.py --season <year> # choose the projection season
     python build_seed.py --history 5     # how many prior seasons of stats to bundle
     python build_seed.py --refresh       # re-download volatile core data (Sleeper + ECR) only
     python build_seed.py --refresh-web   # also re-scrape stable web sources (Sharp, SoS, OTC…)
@@ -20,6 +20,26 @@ payload is fetched once and saved to players.json, then reused.
 """
 import argparse, json, os, re, sys, time
 from urllib import request, error
+
+SLEEPER_STATE_URL = "https://api.sleeper.app/v1/state/nfl"
+
+
+def _default_proj_season_from_sleeper():
+    """Best-effort current Sleeper NFL season. Falls back to current UTC year."""
+    fallback = time.gmtime().tm_year
+    try:
+        req = request.Request(SLEEPER_STATE_URL, headers={"Accept": "application/json"})
+        with request.urlopen(req, timeout=8) as r:
+            state = json.loads(r.read().decode("utf-8", "replace"))
+        y = int((state or {}).get("league_season") or (state or {}).get("season") or fallback)
+        if 2000 <= y <= 2100:
+            return y
+    except Exception:
+        pass
+    return fallback
+
+
+DEFAULT_PROJ_SEASON = _default_proj_season_from_sleeper()
 
 # ── Seed compaction codecs ───────────────────────────────────────────────────
 # Shrink the hosted downloads: the fantasy seed, the def_weekly sidecar, and each
@@ -732,16 +752,21 @@ def build_ktc(refresh):
 # data is fetchable as TSV at datawrapper.dwcdn.net/{id}/{ver}/dataset.csv; the rookie-pick
 # tables are plain HTML tables in the article body.
 #
-# The article URL and Datawrapper IDs ROTATE MONTHLY (".../2026/06/...-june-2026-update/"),
+# The article URL and Datawrapper IDs ROTATE MONTHLY (".../<year>/<month>/...-<month>-<year>-update/"),
 # so we discover the newest article from FantasyPros' trade-value-chart tag index instead of
 # hardcoding one, and cache the parsed result like every other pulled source.
 #
 # Output shape (seed key "dynasty_values"):
-#   { "asof": "2026-06", "source": "<article url>",
+#   { "asof": "YYYY-MM", "source": "<article url>",
 #     "players": { nameKey: {"pos","team","v",("sf")?,("tep")?} },       # 0-100 ints
-#     "picks":   { "2026": [[label, v1qb, vSF], ...], "2027": [[...]] } }# display order kept
+#     "picks":   { "<year>": [[label, v1qb, vSF], ...], "<year+1>": [[...]] } } # display order kept
 FP_TVC_INDEX_URL = "https://www.fantasypros.com/content/nfl-trade-value-chart/"
-FP_TVC_FALLBACK = "https://www.fantasypros.com/2026/06/fantasy-football-rankings-dynasty-trade-value-chart-june-2026-update/"
+_fp_month_num = time.strftime("%m")
+_fp_month_name = time.strftime("%B").lower()
+FP_TVC_FALLBACK = (
+    f"https://www.fantasypros.com/{DEFAULT_PROJ_SEASON}/{_fp_month_num}/"
+    f"fantasy-football-rankings-dynasty-trade-value-chart-{_fp_month_name}-{DEFAULT_PROJ_SEASON}-update/"
+)
 
 def _fp_fetch(url):
     req = request.Request(url, headers=UA)
@@ -778,14 +803,16 @@ def _int_or_none(x):
 def _parse_pick_tables(html):
     """Rookie-pick values from the article's HTML tables. A pick table row is
     <td>label</td><td>1QB</td><td>SF</td> where both value cells are ints. Tables before the
-    '2027' heading are the upcoming draft; tables after it are the year-out draft."""
+    '<next-year>' heading are the upcoming draft; tables after it are the year-out draft."""
     picks = {}
-    # Split the body at the 2027 heading so tables sort themselves into seasons.
-    parts = re.split(r"2027\s+Dynasty\s+Rookie\s+Draft\s+Pick\s+Values", html, maxsplit=1)
+    cur_year = str(DEFAULT_PROJ_SEASON)
+    next_year = str(DEFAULT_PROJ_SEASON + 1)
+    # Split the body at next season's heading so tables sort themselves into seasons.
+    parts = re.split(rf"{re.escape(next_year)}\s+Dynasty\s+Rookie\s+Draft\s+Pick\s+Values", html, maxsplit=1)
     year_now = re.search(r"(\d{4})\s+Dynasty\s+Rookie\s+Draft\s+Pick\s+Values", html)
-    seasons = [(year_now.group(1) if year_now else "2026", parts[0])]
+    seasons = [(year_now.group(1) if year_now else cur_year, parts[0])]
     if len(parts) > 1:
-        seasons.append(("2027", parts[1]))
+        seasons.append((next_year, parts[1]))
     for season, chunk in seasons:
         out = []
         for tbl in re.findall(r"<table[^>]*>(.*?)</table>", chunk, re.S):
@@ -873,9 +900,9 @@ def build_dynasty_values(refresh):
 # raw HTML), so stdlib fetch + a light parse is enough — but the browser can't reach them
 # (no CORS), so we pull here and bake the result into the seed as SEED_SUMER.
 #
-# Reference-season only: these stats exist for completed seasons (2022-2025 as of now), so we
+# Reference-season only: these stats exist for completed seasons (2022+), so we
 # bake one table per position PER SEASON. The app shows them only when viewing a matching
-# reference season (never on the 2026 projections, never for seasons without data).
+# reference season (never on projection season, never for seasons without data).
 SUMER_POS_URLS = {
     "QB": "https://sumersports.com/players/quarterback/",
     "RB": "https://sumersports.com/players/running-back/",
@@ -884,7 +911,12 @@ SUMER_POS_URLS = {
 }
 # Seasons to bundle. SumerSports only publishes 2022+ (subject to change); missing seasons
 # are simply omitted so the app never shows an empty tab for them.
-SUMER_SEASONS = [2025, 2024, 2023, 2022]
+def _default_sumer_seasons(proj_season):
+    hi = int(proj_season) - 1
+    lo = 2022
+    if hi < lo:
+        return []
+    return list(range(hi, lo - 1, -1))
 # Columns that identify the row rather than being a stat — dropped from the stat set. The rest
 # (whatever the page shows for that position) become the ordered `columns` the app renders.
 SUMER_META_COLS = {"Player Name", "Season", "Team", "Position", "Rank"}
@@ -1016,14 +1048,14 @@ def fetch_sumer_table(pos, season, refresh, refinement=None):
         json.dump(out, f)
     return out
 
-def build_sumer(refresh):
+def build_sumer(refresh, proj_season):
     """Build {season: {POS: {columns, pct_cols, players, refinements:{...}}}} across QB/RB/WR/TE
     for each completed season we can fetch. Each position also carries a `refinements` map of
     game-situation splits (When Leading / Red Zone / vs. Man / box counts …) keyed by the site's
     refinement value, each holding its own {columns, pct_cols, players}. Seasons/positions/
     refinements that fail are simply omitted so the app never renders an empty advanced tab."""
     sumer = {}
-    for season in SUMER_SEASONS:
+    for season in _default_sumer_seasons(proj_season):
         per_pos = {}
         for pos in SUMER_POS_URLS:
             tbl = fetch_sumer_table(pos, season, refresh)
@@ -1363,11 +1395,12 @@ def _sos_opponent_ranks(win_totals, season, refresh):
     return out
 
 
-def build_sos(refresh, season=2026):
+def build_sos(refresh, season=None):
     """Strength of schedule → {CODE:{rank, win_total, opp_win_total, name}}.
     Vegas win totals come from the scraped table; the RANK is our own calculation = the sum of
     each team's opponents' win totals (rank 1 = easiest). Falls back to the scraped rank only if
     the schedule can't be fetched."""
+    season = int(season or DEFAULT_PROJ_SEASON)
     cache_path = os.path.join(CACHE_DIR, "sharp", "sos.json")
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     if not refresh and os.path.exists(cache_path):
@@ -1383,7 +1416,7 @@ def build_sos(refresh, season=2026):
         print(f" FAILED ({type(e).__name__}: {e})")
         return {}
     headers, rows = _parse_sharp_table(html)
-    # Expected headers: ["2026 SOS Ranking", "Team", "2026 Vegas Win Total"]
+    # Expected headers: ["<SEASON> SOS Ranking", "Team", "<SEASON> Vegas Win Total"]
     out = {}
     for cells in rows:
         if len(cells) < 3:
@@ -1462,8 +1495,8 @@ def _norm_team_name_to_code(text):
     return None, None
 
 def _parse_prev_position(prev_text):
-    """From e.g. 'Chicago Bears offensive coordinator (2025)' or 'Miami Dolphins head
-    coach (2022–2025)' extract (prev_code, role_label, years). Role is normalized to one
+    """From e.g. 'Chicago Bears offensive coordinator (2024)' or 'Miami Dolphins head
+    coach (2021–2024)' extract (prev_code, role_label, years). Role is normalized to one
     of: head coach / offensive coordinator / defensive coordinator / <verbatim>."""
     if not prev_text:
         return {"prev_code": None, "prev_team_name": None, "role": None, "years": None}
@@ -2175,7 +2208,7 @@ def assemble(players, proj_idx, stats_by_season, history, proj_season):
         if meta:
             # We know this player. Trust the DB's current team. If the DB says they're NOT on
             # a team (free agent / retired / departed), or they're inactive/retired, drop them
-            # from projectable rosters — they shouldn't appear on any team's 2026 depth chart.
+            # from projectable rosters — they shouldn't appear on any team's projection-season depth chart.
             status = (meta.get("status") or "")
             is_inactive = (meta.get("active") is False) or (status in ("Retired", "Inactive"))
             # Ghost check: Sleeper leaves some long-retired players looking Active on a team.
@@ -2309,7 +2342,8 @@ def _assign_qb_snap_shares(qbs):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--season", type=int, default=2026, help="projection season (default 2026)")
+    ap.add_argument("--season", type=int, default=DEFAULT_PROJ_SEASON,
+                    help=f"projection season (default {DEFAULT_PROJ_SEASON}, from Sleeper state)")
     ap.add_argument("--history", type=int, default=5,
                     help="prior seasons of stats to bundle (default 5; e.g. --history 10 for ten years)")
     ap.add_argument("--refresh", action="store_true",
@@ -2380,7 +2414,7 @@ def main():
     sumer, sumer_seasons = {}, []
     if args.sumer:
         print("\n  SumerSports advanced per-player stats (opt-in — QB/RB/WR/TE, per season)")
-        sumer = build_sumer(web_refresh)
+        sumer = build_sumer(web_refresh, args.season)
         sumer_seasons = sorted(sumer.keys(), reverse=True)
 
     print("\n  KeepTradeCut dynasty player IDs (player-card links)")
@@ -2496,7 +2530,7 @@ def main():
     if coaching_files:
         print(f"  • seeds/triplecrown_seed.coaching.<season>.json → {len(coaching_files)} per-season lazy sidecars (playbook modal)")
     print(f"  • {CACHE_DIR}/ → cached raw API responses (delete to force refresh)")
-    print("\nNext: open the TripleCrown app (index.html). By default it pulls live 2026")
+    print(f"\nNext: open the TripleCrown app (index.html). By default it pulls live {args.season}")
     print("projections from Sleeper on load. To use this prebuilt snapshot (with historical")
     print("seasons + advanced stats), click the 📦 Seed button and choose seeds/triplecrown_seed.json")
     print("— no HTML editing needed.")
