@@ -474,6 +474,7 @@ function advTeamSeason(){
 function nflverseSharpTables(){
   const t=(NFLVERSE && NFLVERSE[advTeamSeason()] && NFLVERSE[advTeamSeason()].team) || null;
   if(!t) return {};
+  const HIDE_LAST5 = new Set(['Y/PL Last 5','Neutral DB Rate Last 5','Sec/Play Last 5']);
   const META={
     offense:{title:'Offensive Metrics',category:'offense'},
     defense:{title:'Defensive Metrics',category:'defense'},
@@ -496,8 +497,9 @@ function nflverseSharpTables(){
   const out={};
   for(const k in t){
     const m=META[k]||{title:k,category:'offense'};
-    out[k]={columns:t[k].columns, title:m.title, category:m.category,
-            pct_cols:(t[k].columns||[]).filter(c=>PCT.includes(c)), teams:t[k].teams};
+    const cols=(t[k].columns||[]).filter(c=>!HIDE_LAST5.has(c));
+    out[k]={columns:cols, title:m.title, category:m.category,
+            pct_cols:cols.filter(c=>PCT.includes(c)), teams:t[k].teams};
   }
   return out;
 }

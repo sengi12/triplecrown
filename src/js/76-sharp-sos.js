@@ -29,18 +29,19 @@ function renderSharpLeague(){
     return;
   }
   const srcLabel = `nflverse (computed)`;
+  const leagueWeekRange = (typeof renderAdvLeagueWeekRange==='function') ? renderAdvLeagueWeekRange() : '';
   const headerBar=`
     <div class="team-header sr-league-header">
       <div><div class="team-abbr">${TC_ICON("chart")} Advanced Stats — League-Wide</div>
         <div class="team-qb-name">${srcLabel} · <b>${advTeamSeason()} season</b> · click any column to sort (best→worst)</div></div>
       <div class="team-nav">
-        ${currentTeam?`<button class="btn btn-ghost" onclick="setPhase('Advanced')">← ${teamDisplayName(currentTeam)} card</button>`:''}
+        ${currentTeam?`<button class="btn btn-ghost" onclick="showCurrentTeamAdvanced()">← ${teamDisplayName(currentTeam)} card</button>`:''}
         <button class="btn btn-ghost" onclick="setPhase('Rankings')">Rankings</button></div>
     </div>`;
 
   // The SOS view is its own "table" selection.
   if(sharpTable==='__sos__' && hasSOS){
-    host.innerHTML = headerBar + renderCategoryTabs() + renderSOSView();
+    host.innerHTML = headerBar + leagueWeekRange + renderCategoryTabs() + renderSOSView();
     return;
   }
 
@@ -52,7 +53,8 @@ function renderSharpLeague(){
     host.innerHTML = headerBar + renderCategoryTabs() + `<div class="sr-desc">No tables in this category.</div>`;
     return;
   }
-  const tbl=SRC[sharpTable];
+  const baseTbl=SRC[sharpTable];
+  const tbl=(typeof _advTableForRange==='function') ? _advTableForRange(sharpTable, baseTbl, '__LEAGUE__') : baseTbl;
   const isProjTable = (sharpTable==='offensive_line_pass' || sharpTable==='offensive_line_run');
   const projWhich = sharpTable==='offensive_line_pass' ? 'pass' : (sharpTable==='offensive_line_run' ? 'run' : null);
   const projCol = 'Proj 2026';
@@ -108,7 +110,7 @@ function renderSharpLeague(){
     }).join('');
     return `<tr><td class="sr-td-team"><span class="sr-td-team-inner"><img src="${NFL_LOGO(r.code)}" class="sr-logo" onerror="this.style.display='none'">${r.code}</span></td>${cells}</tr>`;
   }).join('');
-  host.innerHTML = headerBar + renderCategoryTabs() + `
+  host.innerHTML = headerBar + leagueWeekRange + renderCategoryTabs() + `
     <div class="sr-league-tabs">${tableTabs}</div>
     <div class="sr-desc">${tbl.title} · <b>${advTeamSeason()} season</b> — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
     <div class="card" style="padding:0;overflow-x:auto">

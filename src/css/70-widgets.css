@@ -39,6 +39,18 @@
 .wr-opp-bye{opacity:.55;font-size:10px;}
 .wr-opp-loading{position:absolute;left:0;top:18px;font-size:10px;color:var(--muted);font-style:italic;padding:1px 0;}
 
+/* League-wide advanced slider week numbers (same geometry as the opponent rail). */
+.wr-week-rail{position:absolute;left:0;right:0;top:0;height:50px;pointer-events:none;}
+.wr-week-cell{position:absolute;top:0;left:0;transform:translateX(-50%);
+  display:flex;align-items:center;justify-content:center;gap:4px;min-height:22px;
+  font-size:10px;font-weight:800;color:var(--muted);line-height:1;padding:1px 0;white-space:nowrap;}
+.wr-week-top{top:1px;}
+.wr-week-bottom{top:30px;}
+.wr-week-stem{position:absolute;left:50%;transform:translateX(-50%);width:1px;height:8px;background:rgba(255,255,255,.18);}
+.wr-week-top .wr-week-stem{top:18px;height:5px;}
+.wr-week-bottom .wr-week-stem{top:-5px;height:5px;}
+.wr-week-num{font-size:10px;color:var(--text);font-weight:800;}
+
 /* ── Roster tracker (pinned bottom bar + expandable panel) ── */
 .rt-bar-host{position:fixed;left:0;right:0;bottom:0;z-index:900;pointer-events:none;}
 .rt-bar-host>*{pointer-events:auto;}
@@ -174,6 +186,7 @@
 @media (max-width:560px){
   .dual-slider{height:42px;}
   .wr-opp-rail{height:42px;}
+  .wr-week-rail{height:42px;}
   .wr-opp-cell{min-height:16px;gap:2px;padding:0;}
   .wr-opp-top{top:0;}
   .wr-opp-bottom{top:24px;}
@@ -181,6 +194,12 @@
   .wr-opp-top .wr-opp-stem{top:14px;height:4px;}
   .wr-opp-bottom .wr-opp-stem{top:-4px;height:4px;}
   .wr-opp-logo{width:15px;height:15px;}
+  .wr-week-cell{min-height:16px;gap:2px;padding:0;}
+  .wr-week-top{top:0;}
+  .wr-week-bottom{top:24px;}
+  .wr-week-stem{height:6px;}
+  .wr-week-top .wr-week-stem{top:14px;height:4px;}
+  .wr-week-bottom .wr-week-stem{top:-4px;height:4px;}
 }
 
 /* ── League Analyzer ────────────────────────────────────────────────────────

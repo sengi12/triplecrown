@@ -95,6 +95,9 @@ function selectTeam(t){
   // Keep whatever phase the user was on (Targets stays Targets across teams). Only the
   // global Rankings view falls back to a per-team phase since it isn't team-scoped here.
   if(currentPhase==='Rankings') currentPhase='Receiving';
+  // League-wide Advanced Metrics is a standalone view; selecting a team should return to
+  // that team's Advanced tab instead of keeping the league table pinned on screen.
+  if(currentPhase==='AdvancedLeague') currentPhase='Advanced';
   ensureTeam(t);
   // make sure shares exist so the targets/rushing tab is populated as if previously opened
   if(currentPhase==='Receiving') initPassingShares(t);
@@ -110,6 +113,13 @@ function setPhase(p){
   currentPhase=p;renderContent();
 }
 function showFullRankings(){ rankScope='all'; currentPhase='Rankings'; renderContent(); }
+
+function showCurrentTeamAdvanced(){
+  if(!currentTeam){ showSharpLeague(); return; }
+  rankScope='team';
+  currentPhase='Advanced';
+  selectTeam(currentTeam);
+}
 
 function renderContent(){
   // Single choke point for phase changes — keep view-specific chrome honest here.

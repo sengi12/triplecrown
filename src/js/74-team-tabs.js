@@ -206,6 +206,7 @@ let _advWeeklySeedReady = false;
 let _advWeeklySeedLoading = false;
 let _advOlRangeCache = {};         // key: `${season}:${lo}-${hi}` -> {passTbl, runTbl}
 let _advGenRangeCache = {};        // key: `${season}:${lo}-${hi}` -> recomputed advanced tables
+const ADV_LEAGUE_RANGE_KEY = '__LEAGUE__';
 
 function _advSeasonCanRange(){
   if(activeSeason==='proj') return false;
@@ -259,7 +260,7 @@ function advWeekRangeCommit(team){
   const next=_advWeekDragByTeam[key] || _advGetWeekRange(team);
   delete _advWeekDragByTeam[key];
   if(typeof setSharedWeekRange==='function') setSharedWeekRange(team, advTeamSeason(), next[0], next[1]);
-  if(typeof applyWeekRange==='function' && advTeamSeason()===String(activeSeason)){
+  if(team!==ADV_LEAGUE_RANGE_KEY && typeof applyWeekRange==='function' && advTeamSeason()===String(activeSeason)){
     applyWeekRange(team, next[0], next[1]);
     return;
   }
@@ -268,17 +269,8 @@ function advWeekRangeCommit(team){
 function advWeekRangeReset(team){
   team=String(team||'').toUpperCase();
   if(typeof setSharedWeekRange==='function') setSharedWeekRange(team, advTeamSeason(), 1, 18);
-  if(typeof resetWeekRange==='function' && advTeamSeason()===String(activeSeason)){
+  if(team!==ADV_LEAGUE_RANGE_KEY && typeof resetWeekRange==='function' && advTeamSeason()===String(activeSeason)){
     resetWeekRange(team);
-    return;
-  }
-  if(typeof renderContent==='function') renderContent();
-}
-function advWeekRangeLast5(team){
-  team=String(team||'').toUpperCase();
-  if(typeof setSharedWeekRange==='function') setSharedWeekRange(team, advTeamSeason(), 14, 18);
-  if(typeof applyWeekRange==='function' && advTeamSeason()===String(activeSeason)){
-    applyWeekRange(team, 14, 18);
     return;
   }
   if(typeof renderContent==='function') renderContent();
@@ -451,23 +443,16 @@ function _advComputeGeneralRangeTables(season, lo, hi){
     if(Number.isFinite(w) && w>=lo && w<=hi) weekIdx.push(i);
   }
   if(!weekIdx.length) return null;
-  const last5Idx=weekIdx.slice(-5);
   const cols=pack.cols;
-  const cidx={}; cols.forEach((c,i)=>{ cidx[c]=i; });
 
   const teams={};
   for(const tm in pack.teams){
     const rows=Array.isArray(pack.teams[tm]) ? pack.teams[tm] : [];
     const sum={};
-    const l5={};
-    cols.forEach(c=>{ sum[c]=0; l5[c]=0; });
+    cols.forEach(c=>{ sum[c]=0; });
     weekIdx.forEach(ix=>{
       const r=rows[ix]||[];
       cols.forEach((c,j)=>{ sum[c]+=Number(r[j]||0); });
-    });
-    last5Idx.forEach(ix=>{
-      const r=rows[ix]||[];
-      cols.forEach((c,j)=>{ l5[c]+=Number(r[j]||0); });
     });
 
     const offPlays=sum.off_plays||0;
@@ -476,8 +461,6 @@ function _advComputeGeneralRangeTables(season, lo, hi){
     const defConvObs=sum.def_conv_obs||0;
     const offDriveCt=sum.off_drive_ct||0;
     const defDriveCt=sum.def_drive_ct||0;
-    const l5OffPlays=l5.off_plays||0;
-    const l5DefPlays=l5.def_plays||0;
 
     const tendPlays=sum.tend_plays||0;
     const db=sum.db||0;
@@ -487,8 +470,6 @@ function _advComputeGeneralRangeTables(season, lo, hi){
     const paceNeutralSnaps=sum.pace_neutral_snaps||0;
     const paceGames=sum.pace_games||0;
     const paceSecN=sum.pace_sec_n||0;
-    const l5PaceNeutral=l5.pace_neutral_snaps||0;
-    const l5PaceSecN=l5.pace_sec_n||0;
 
     const offPersObs=sum.off_pers_obs||0;
     const defPersObs=sum.def_pers_obs||0;
@@ -503,7 +484,6 @@ function _advComputeGeneralRangeTables(season, lo, hi){
       offense:{
         'EPA/Play': _advNum(offPlays>0 ? (sum.off_epa/offPlays) : null, 3),
         'Yards Per Play': _advNum(offPlays>0 ? (sum.off_yards/offPlays) : null, 2),
-        'Y/PL Last 5': _advNum(l5OffPlays>0 ? (l5.off_yards/l5OffPlays) : null, 2),
         'Points Per Drive': _advNum(offDriveCt>0 ? (sum.off_drive_pts/offDriveCt) : null, 2),
         'Explosive Play Rate': _advNum(offPlays>0 ? (sum.off_explosive/offPlays)*100 : null, 1),
         'Down Conversion Rate': _advNum(offConvObs>0 ? (sum.off_conv/offConvObs)*100 : null, 1),
@@ -511,7 +491,6 @@ function _advComputeGeneralRangeTables(season, lo, hi){
       defense:{
         'EPA/Play': _advNum(defPlays>0 ? (-(sum.def_epa_allowed/defPlays)) : null, 3),
         'Yards Per Play': _advNum(defPlays>0 ? (sum.def_yards/defPlays) : null, 2),
-        'Y/PL Last 5': _advNum(l5DefPlays>0 ? (l5.def_yards/l5DefPlays) : null, 2),
         'Points Per Drive': _advNum(defDriveCt>0 ? (sum.def_drive_pts_allowed/defDriveCt) : null, 2),
         'Explosive Play Rate': _advNum(defPlays>0 ? (sum.def_explosive_allowed/defPlays)*100 : null, 1),
         'Down Conversion Rate': _advNum(defConvObs>0 ? (sum.def_conv_allowed/defConvObs)*100 : null, 1),
@@ -529,9 +508,7 @@ function _advComputeGeneralRangeTables(season, lo, hi){
       },
       pace:{
         'Neutral DB Rate': _advNum(paceNeutralSnaps>0 ? (sum.pace_neutral_db/paceNeutralSnaps)*100 : null, 1),
-        'Neutral DB Rate Last 5': _advNum(l5PaceNeutral>0 ? (l5.pace_neutral_db/l5PaceNeutral)*100 : null, 1),
         'Sec/Play': _advNum(paceSecN>0 ? (sum.pace_sec_sum/paceSecN) : null, 1),
-        'Sec/Play Last 5': _advNum(l5PaceSecN>0 ? (l5.pace_sec_sum/l5PaceSecN) : null, 1),
         'Off Plays/G': _advNum(paceGames>0 ? (paceSnaps/paceGames) : null, 1),
         'Total Plays/G': _advNum(paceGames>0 ? ((sum.pace_total_game_plays||0)/paceGames) : null, 1),
       },
@@ -569,18 +546,18 @@ function _advComputeGeneralRangeTables(season, lo, hi){
 
   const mk=(vals, lower)=>_advRankMap(vals, lower);
   const out={};
-  const defLower=new Set(['Yards Per Play','Y/PL Last 5','Points Per Drive','Explosive Play Rate','Down Conversion Rate']);
+  const defLower=new Set(['Yards Per Play','Points Per Drive','Explosive Play Rate','Down Conversion Rate']);
   const tendLower=new Set(['Drop Rate']);
-  const paceLower=new Set(['Sec/Play','Sec/Play Last 5']);
+  const paceLower=new Set(['Sec/Play']);
   const covLower=new Set();
   const persLower=new Set();
   const dtendLower=new Set();
   const dlineLower=new Set(['Missed Tackles']);
   const spec={
-    offense:{lower:new Set(), cols:['EPA/Play','Yards Per Play','Y/PL Last 5','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
-    defense:{lower:defLower, cols:['EPA/Play','Yards Per Play','Y/PL Last 5','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
+    offense:{lower:new Set(), cols:['EPA/Play','Yards Per Play','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
+    defense:{lower:defLower, cols:['EPA/Play','Yards Per Play','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
     tendencies:{lower:tendLower, cols:['Shotgun Rate','NoHuddle Rate','AirYards/Att','Motion Rate','Play Action Rate','RPO Rate','Screen Rate','Trick Play Rate','Drop Rate']},
-    pace:{lower:paceLower, cols:['Neutral DB Rate','Neutral DB Rate Last 5','Sec/Play','Sec/Play Last 5','Off Plays/G','Total Plays/G']},
+    pace:{lower:paceLower, cols:['Neutral DB Rate','Sec/Play','Off Plays/G','Total Plays/G']},
     personnel:{lower:persLower, cols:['11 Personnel','12 Personnel','13 Personnel','21 Personnel','3WR Rate','Multi TE Rate','Multi RB Rate']},
     coverage:{lower:covLower, cols:['Man Rate','Zone Rate','Middle Closed Rate','Middle Open Rate','Cover 1','Cover 2','Cover 3']},
     def_tendencies:{lower:dtendLower, cols:['Blitz Rate','Sub Package Rate','Nickel Rate','Dime+ Rate']},
@@ -663,20 +640,24 @@ function _advTableForRange(key, baseTable, team){
   }
   return baseTable;
 }
-function renderAdvWeekRange(team){
+function renderAdvWeekRange(team, opts){
   if(!_advSeasonCanRange()) return '';
   _advEnsureWeeklyLoaded();
+  opts = opts || {};
+  const showOppRail = opts.showOppRail !== false;
+  const extraRail = opts.extraRailHTML || '';
+  const title = opts.title || 'Advanced week range:';
+  const summaryHint = opts.summaryHint || 'Windowed recompute powers offense, defense, tendencies, pace, personnel, coverage, defensive tendencies, pass rush &amp; run D, and O-Line pass/run cards.';
   const [lo,hi]=_advGetWeekRange(team);
   const left=((lo-1)/17*100), right=((18-hi)/17*100);
   const loading=_advWeeklySeedLoading ? '<span class="week-range-loading">Loading weekly advanced data…</span>' : '';
-  const oppRail = (typeof renderWeekOpponentRail==='function')
+  const oppRail = (showOppRail && typeof renderWeekOpponentRail==='function')
     ? renderWeekOpponentRail(team, advTeamSeason(), 'wr-opp-adv')
     : '';
   return `<div class="week-range-card adv-week-range-card">
     <div class="week-range-label">
-      <span><b>Advanced week range:</b> <span id="adv-wr-lo-${team}">${lo}</span>–<span id="adv-wr-hi-${team}">${hi}</span> <span class="week-range-hint">(${_advWeekLabel(team)})</span></span>
+      <span><b>${title}</b> <span id="adv-wr-lo-${team}">${lo}</span>–<span id="adv-wr-hi-${team}">${hi}</span> <span class="week-range-hint">(${_advWeekLabel(team)})</span></span>
       <span style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <button class="btn btn-ghost btn-sm" onclick="advWeekRangeLast5('${team}')">Last 5</button>
         <span class="week-range-reset" onclick="advWeekRangeReset('${team}')">Reset</span>
       </span>
     </div>
@@ -685,13 +666,23 @@ function renderAdvWeekRange(team){
       <div class="dual-slider-fill" id="adv-wr-fill-${team}" style="left:${left}%;right:${right}%;"></div>
       <input class="dual-range" type="range" min="1" max="18" value="${lo}" oninput="advWeekRangeDrag('${team}','lo',this.value)" onchange="advWeekRangeCommit('${team}')">
       <input class="dual-range" type="range" min="1" max="18" value="${hi}" oninput="advWeekRangeDrag('${team}','hi',this.value)" onchange="advWeekRangeCommit('${team}')">
+      ${extraRail}
       ${oppRail}
     </div>
     <div class="week-range-label" style="margin-top:8px;">
-      <span class="week-range-hint">Windowed recompute powers offense, defense, tendencies, pace, personnel, coverage, defensive tendencies, pass rush &amp; run D, and O-Line pass/run cards.</span>
+      <span class="week-range-hint">${summaryHint}</span>
       ${loading}
     </div>
   </div>`;
+}
+
+function renderAdvLeagueWeekRange(){
+  return renderAdvWeekRange(ADV_LEAGUE_RANGE_KEY, {
+    showOppRail:false,
+    extraRailHTML:(typeof renderWeekNumberRail==='function') ? renderWeekNumberRail('wr-week-adv') : '',
+    title:'League-wide advanced week range:',
+    summaryHint:'Windowed recompute applies to all 32 teams on the selected table (same season, weeks only).'
+  });
 }
 
 // Projected 2026 OL overall-score chip shown next to the OL Pass / OL Run block titles.

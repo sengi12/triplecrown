@@ -135,6 +135,20 @@ function renderWeekOpponentRail(team, season, className=''){
   return `<div class="wr-opp-rail ${className}">${cells.join('')}</div>`;
 }
 
+function renderWeekNumberRail(className=''){
+  const cells=[];
+  for(let wk=1; wk<=18; wk++){
+    const ratio=((wk-1)/17).toFixed(6);
+    const pos=`calc(var(--wr-pad, 0px) + (100% - (2 * var(--wr-pad, 0px))) * ${ratio})`;
+    const laneCls = (wk%2===0) ? ' wr-week-top' : ' wr-week-bottom';
+    cells.push(`<div class="wr-week-cell${laneCls}" style="left:${pos}" title="Week ${wk}">
+      <span class="wr-week-stem"></span>
+      <span class="wr-week-num">${wk}</span>
+    </div>`);
+  }
+  return `<div class="wr-week-rail ${className}">${cells.join('')}</div>`;
+}
+
 // Sum one player's weekly rows between fromWk..toWk (inclusive), restricted to the
 // given team (so a trade mid-window doesn't blend two teams' stats together).
 function sumWeeklyRange(weekly, team, fromWk, toWk){
