@@ -67,7 +67,7 @@ app.setPlaycallers({CIN:'Zac Taylor'});
   const balLbl=app.coordInlineLabel(COORD.BAL.offense,'offensive');
   chk(balLbl.includes('Declan Doyle')&&balLbl.includes('NEW'),'Ravens: name + NEW tag');
   chk(balLbl.includes('Chicago Bears'),'Ravens: shows former team');
-  chk(balLbl.includes("openTeamCoachingScheme('BAL')") || balLbl.includes('openTeamCoachingScheme'), 'Ravens: coordinator label opens coaching scheme');
+  chk(balLbl.includes("openTeamCoachingScheme('BAL')") || balLbl.includes('openTeamCoachingScheme'), 'Ravens: coordinator label opens playbook');
 
   console.log('\n=== TEST 5: carryover block pulls former team stats ===');
   app.setNflverse(NFLV); app.setSharpSeason(2025);
@@ -89,7 +89,7 @@ app.setPlaycallers({CIN:'Zac Taylor'});
   const cinHtml=app.renderTeamAdvanced('CIN');
   chk(!cinHtml.includes('New coordinator scheme carryover'),'no carryover block for internal promotion');
   chk(cinHtml.includes('Dan Pitcher'),'still shows OC name inline');
-  chk(cinHtml.includes("openTeamCoachingScheme('CIN')") || cinHtml.includes('openTeamCoachingScheme'), 'advanced section embeds coaching scheme trigger');
+  chk(cinHtml.includes("openTeamCoachingScheme('CIN')") || cinHtml.includes('openTeamCoachingScheme'), 'advanced section embeds playbook trigger');
 
   console.log('\n=== TEST 8: season labels ===');
   chk(cinHtml.includes('2025 season'),'advanced note shows 2025 season');

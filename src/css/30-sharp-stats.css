@@ -111,7 +111,7 @@
 .scheme-team-logo{width:34px;height:34px;object-fit:contain;flex-shrink:0;}
 .scheme-title{font-size:18px;font-weight:800;color:var(--text);}
 .scheme-subtitle{font-size:11px;color:var(--muted);margin-top:2px;}
-.scheme-oc-callout{margin-top:8px;display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--muted);}
+.scheme-oc-callout{margin-top:8px;display:inline-block;flex-direction:column;gap:6px;font-size:11px;color:var(--muted);}
 .scheme-oc-pill{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.05em;color:#7cb5ff;background:rgba(64,128,255,.18);border:1px solid rgba(64,128,255,.35);padding:1px 6px;border-radius:5px;margin-right:6px;vertical-align:middle;}
 .scheme-oc-pill.new{color:#00d4aa;background:rgba(0,212,170,.14);border-color:rgba(0,212,170,.34);}
 .scheme-oc-callout b{color:var(--text);font-weight:800;}
