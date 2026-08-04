@@ -5,3 +5,4 @@ __pycache__
 projections
 # Test runner output log
 tests/last_run.log
+index_baked.html

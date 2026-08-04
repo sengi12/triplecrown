@@ -8,6 +8,17 @@ let _schemeEscBound = false;
 const _SCHEME_SCRIPT_OPEN = '<scr' + 'ipt>';
 const _SCHEME_SCRIPT_CLOSE = '</scr' + 'ipt>';
 
+function _schemeOverlayHost(create){
+  let el = document.getElementById('schemeOverlay');
+  if(!el && create){
+    el = document.createElement('div');
+    el.id = 'schemeOverlay';
+    el.className = 'scheme-overlay-host';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
 function _schemeEscHtml(s){
   return String(s==null?'':s)
     .replace(/&/g,'&amp;')
@@ -304,7 +315,7 @@ function _schemeRenderTemplate(template, p){
 }
 
 function _renderTeamCoachingScheme(){
-  const host = document.getElementById('schemeOverlayHost');
+  const host = _schemeOverlayHost(true);
   if(!host || !schemeTeam){ return; }
   const seasons = _schemeAllSeasons();
   const pick = (schemeSeason && seasons.includes(String(schemeSeason)))
@@ -395,7 +406,7 @@ function openTeamCoachingScheme(team, initialView){
 
 // Minimal overlay shell shown while the coaching-scheme sidecar is fetched.
 function _renderSchemeLoadingShell(){
-  const host = document.getElementById('schemeOverlayHost');
+  const host = _schemeOverlayHost(true);
   if(!host || !schemeTeam) return;
   host.innerHTML = `<div class="scheme-overlay" onclick="closeTeamCoachingScheme()">
     <div class="scheme-modal" onclick="event.stopPropagation()">
@@ -416,8 +427,8 @@ function closeTeamCoachingScheme(){
   schemeOverlayOpen = false;
   schemeTeam = null;
   schemeSeason = null;
-  const host = document.getElementById('schemeOverlayHost');
-  if(host) host.innerHTML = '';
+  const host = _schemeOverlayHost(false);
+  if(host) host.remove();
 }
 
 function setTeamCoachingSchemeSeason(season){
