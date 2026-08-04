@@ -30,8 +30,10 @@ function renderNflverseRoster(team){
       // that isn't all-digits is discarded in favour of the NAME, which resolvePlayerId()
       // and hsURL() both handle — so cards and headshots work on any vintage of the seed.
       const sleeperId = (sid!=null && /^\d+$/.test(String(sid))) ? String(sid) : null;
-      const hsrc = sleeperId ? hsURL({player_id:sleeperId, name, pos:ps}) : hsURL({name, pos:ps});
-      const hs = hsrc ? `<img src="${hsrc}" class="depth-hs" onerror="this.style.display='none'">` : '';
+      const hpack = sleeperId ? hsPack({player_id:sleeperId, name, pos:ps, team}) : hsPack({name, pos:ps, team});
+      const hs = hpack && hpack.src
+        ? `<img src="${hpack.src}" class="depth-hs" data-fallbacks="${(hpack.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">`
+        : '';
       const rk = exp===0 ? `<span class="depth-rookie">R</span>` : '';
       const jr = jersey!=null ? `<span class="depth-jersey">#${jersey}</span>` : '';
       const ir = status==='RES' ? `<span class="depth-ir" title="Finished the season on injured reserve / reserve">IR</span>` : '';
@@ -683,8 +685,8 @@ function renderAdvWeekRange(team){
       <div class="dual-slider-fill" id="adv-wr-fill-${team}" style="left:${left}%;right:${right}%;"></div>
       <input class="dual-range" type="range" min="1" max="18" value="${lo}" oninput="advWeekRangeDrag('${team}','lo',this.value)" onchange="advWeekRangeCommit('${team}')">
       <input class="dual-range" type="range" min="1" max="18" value="${hi}" oninput="advWeekRangeDrag('${team}','hi',this.value)" onchange="advWeekRangeCommit('${team}')">
+      ${oppRail}
     </div>
-    ${oppRail}
     <div class="week-range-label" style="margin-top:8px;">
       <span class="week-range-hint">Windowed recompute powers offense, defense, tendencies, pace, personnel, coverage, defensive tendencies, pass rush &amp; run D, and O-Line pass/run cards.</span>
       ${loading}

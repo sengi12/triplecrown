@@ -20,7 +20,7 @@
   .team-item .team-rec{display:none;}
   .team-item.active{border-left-color:transparent;border-color:var(--accent);}
   .team-logo-sm{width:20px;height:20px;}
-  .content{padding:12px 12px 40px;height:auto;overflow-y:visible;}
+  .content{padding:12px 12px 40px;height:auto;overflow-y:visible;overflow-x:hidden;}
   .main{height:auto;}
   body,html{height:auto;overflow-y:auto;}
   .team-header{flex-wrap:wrap;gap:8px;}

@@ -65,8 +65,8 @@ function weekRangeSliderHTML(team,state){
         oninput="weekRangeDrag('${team}','lo',this.value)" onchange="weekRangeCommit('${team}')">
       <input type="range" min="1" max="18" step="1" value="${hi}" class="dual-range dual-range-hi"
         oninput="weekRangeDrag('${team}','hi',this.value)" onchange="weekRangeCommit('${team}')">
+      ${oppRail}
     </div>
-    ${oppRail}
   </div>`;
 }
 function setPassSub(t){passingSubTab=t;renderContent();}
@@ -167,7 +167,7 @@ function renderPassDerived(team,state,subTabs,metric){
     const projYds=Math.round(projTgts*(p.ypt||9));
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
-        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsURL(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
+        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rec')}
         <span class="share-pct" id="dp-${i}">${pct}%</span>
         <span class="share-vol" id="dv-${i}">${v.toLocaleString()} ${label}</span></div>
@@ -265,7 +265,7 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row">
         <div class="share-dot" style="background:${col}"></div>
-        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsURL(p))}</span>
+        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span>
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rec')}
         <span class="share-pct" id="pp-${i}">${pct}%</span>
@@ -344,7 +344,7 @@ function renderPassTDs(team,state,totalTDs,subTabs){
     const projTDs=(p.td_share*totalTDs).toFixed(1);
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
-        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsURL(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
+        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>
         <span class="share-pct" id="tdp-${i}">${pct}%</span>
         <span class="share-vol">proj TDs</span></div>

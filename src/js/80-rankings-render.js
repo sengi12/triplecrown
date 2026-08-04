@@ -2,9 +2,41 @@ function renderRankings(){
   let all=buildPlayerList();
   // Team-scoped rankings (from a team's Rankings tab) show only that team's players.
   const teamScoped = (rankScope==='team' && currentTeam);
+  let teamHeader='';
+  if(teamScoped && currentTeam){
+    const t=currentTeam;
+    const state=userProj[t]||{qbs:[]};
+    const prev=TEAMS[TEAMS.indexOf(t)-1], next=TEAMS[TEAMS.indexOf(t)+1];
+    const isRef = activeSeason!=='proj';
+    const recKey = `${activeSeason}:${t}`;
+    if(isRef && espnRecordCache[recKey]==null) fetchTeamRecord(activeSeason,t);
+    const recStr = isRef ? (espnRecordCache[recKey]||'') : '';
+    const sos = SOS && SOS[t];
+    const sosBadge = sos ? `<span class="team-sos">SOS: <b>${ordinal(sos.rank)}</b>${sos.win_total!=null?` · Vegas Win Total: <b>${sos.win_total}</b>`:''}</span>` : '';
+    if(headCoaches[t]===undefined) fetchHeadCoach(t);
+    const hc=headCoaches[t];
+    const hcCaller = hcIsPlaycaller(t);
+    const hcLine = hc ? `<div class="team-hc scheme-open" role="button" tabindex="0" title="Open coaching scheme visualization" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">
+        ${hc.headshot?`<img src="${hc.headshot}" class="team-hc-img" onerror="this.style.display='none'">`:''}
+        <span class="team-hc-label">HC</span> <b>${hc.name}</b>${hc.experience!=null?` · yr ${hc.experience}`:''}
+        ${hcCaller?`<span class="hc-caller" title="This head coach is the team's primary offensive playcaller — the OC is less pivotal for scheme continuity.">🎧 Primary playcaller</span>`:''}
+      </div>` : (headCoaches[t]===null?'':`<div class="team-hc team-hc-loading">Loading head coach…</div>`);
+    teamHeader = `<div class="team-header">
+      <img src="${NFL_LOGO(t)}" class="team-logo-lg scheme-open" alt="${t}" title="Open coaching scheme visualization" onclick="openTeamCoachingScheme('${t}')" onerror="this.style.opacity='.25'">
+      <div><div class="team-abbr team-fullname scheme-open" role="button" tabindex="0" title="Open coaching scheme visualization" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">${teamDisplayName(t)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}</div>
+        <div class="team-qb-name">${(state.qbs&&state.qbs.length)?state.qbs.map(q=>q.name).join(' / '):'No projected QB'}${recStr?` · ${recStr}`:''}</div>
+        ${hcLine}
+        ${sosBadge?`<div class="team-sos-row">${sosBadge}</div>`:''}</div>
+      <div class="team-nav">
+        <button id="undoBtn" class="btn btn-ghost undo-btn ${canUndo(t)?'':'disabled'}" ${canUndo(t)?'':'disabled'} onclick="undoTeam('${t}')" title="Undo last working-set change to ${t}">↶ Undo<span id="undoCount">${canUndo(t)?' '+undoStacks[t].length:''}</span></button>
+        ${prev?`<button class="btn btn-ghost" onclick="selectTeam('${prev}')">← ${prev}</button>`:''}
+        ${next?`<button class="btn btn-accent" onclick="selectTeam('${next}')">${next} →</button>`:''}
+      </div>
+    </div>`;
+  }
   if(teamScoped) all=all.filter(p=>p.team===currentTeam);
   if(!all.length){document.getElementById('content').innerHTML=
-    `${(rankScope==='team' && currentTeam) ? `<div class="phase-tabs">${tabBar()}</div>` : ''}<div class="empty"><div class="empty-icon">${TC_ICON("trophy","tc-ico-lg")}</div>
+    `${teamScoped?`${teamHeader}<div class="phase-tabs">${tabBar()}</div>`:''}<div class="empty"><div class="empty-icon">${TC_ICON("trophy","tc-ico-lg")}</div>
      <div class="empty-title">No projections yet</div><div class="empty-body">Set at least one team's stats to see rankings.</div></div>`;return;}
   // Overall order is by fantasy points (your projections). ECR/tier come from FantasyPros.
   all.sort((a,b)=>b.fpts-a.fpts);
@@ -145,7 +177,7 @@ function renderRankings(){
     <td class="fpts">${p.fpts.toFixed(1)}</td>
     <td class="c-vor"><span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${p.vor>0?'+':''}${p.vor!=null?p.vor.toFixed(1):'—'}</span></td>
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
-    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsURL(p),'rank-hs')}<span class="rank-name">${p.name}</span></div></td>
+    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsPack(p),'rank-hs')}<span class="rank-name">${p.name}</span></div></td>
     <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${p.team}</td>
     ${contractCells}
     ${statCells}
@@ -190,7 +222,7 @@ function renderRankings(){
     : '';
   const ecrNote = hasECR() ? '' : `<span class="ecr-missing">${TC_ICON("warning")} No FantasyPros ECR loaded — run build_seed.py and load the seed to populate ECR/Tier</span>`;
   document.getElementById('content').innerHTML=`
-    ${teamScoped ? `<div class="phase-tabs">${tabBar()}</div>` : ''}
+    ${teamScoped ? `${teamHeader}<div class="phase-tabs">${tabBar()}</div>` : ''}
     <div class="rankings-scope-bar">
       ${teamScoped
         ? `<span class="scope-title">${currentTeam} Rankings</span><span class="scope-sub">this team only</span>

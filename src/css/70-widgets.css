@@ -9,12 +9,12 @@
 .week-range-reset:hover{text-decoration:underline;}
 .week-range-hint{font-size:10.5px;color:var(--muted);white-space:nowrap;}
 .week-range-loading{color:var(--muted);font-style:italic;}
-.dual-slider{position:relative;height:22px;}
+.dual-slider{position:relative;height:50px;--wr-pad:8.5px;}
 .dual-slider-track{position:absolute;top:50%;left:0;right:0;height:4px;transform:translateY(-50%);
   background:var(--border);border-radius:2px;}
 .dual-slider-fill{position:absolute;top:50%;height:4px;transform:translateY(-50%);
   background:var(--accent);border-radius:2px;}
-.dual-range{position:absolute;top:0;left:0;width:100%;height:22px;margin:0;
+.dual-range{position:absolute;top:50%;left:0;width:100%;height:22px;transform:translateY(-50%);margin:0;
   -webkit-appearance:none;appearance:none;background:transparent;pointer-events:none;touch-action:pan-y;}
 .dual-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;pointer-events:auto;
   width:17px;height:17px;border-radius:50%;background:var(--accent);border:2px solid #0b0e13;
@@ -25,17 +25,19 @@
 .dual-range::-moz-range-track{background:transparent;}
 
 /* Week opponent rail under dual sliders (@ / vs + opponent logo) */
-.wr-opp-rail{position:relative;height:22px;margin-top:8px;}
+.wr-opp-rail{position:absolute;left:0;right:0;top:0;height:50px;pointer-events:none;}
 .wr-opp-cell{position:absolute;top:0;left:0;transform:translateX(-50%);
   display:flex;align-items:center;justify-content:center;gap:4px;min-height:22px;
   font-size:10px;font-weight:800;color:var(--muted);line-height:1;padding:1px 0;white-space:nowrap;}
-.wr-opp-edge-start{transform:none;}
-.wr-opp-edge-end{transform:translateX(-100%);}
-.wr-opp-ha{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.01em;}
-.wr-opp-logo{width:16px;height:16px;object-fit:contain;flex:none;}
+.wr-opp-top{top:1px;}
+.wr-opp-bottom{top:30px;}
+.wr-opp-stem{position:absolute;left:50%;transform:translateX(-50%);width:1px;height:8px;background:rgba(255,255,255,.18);}
+.wr-opp-top .wr-opp-stem{top:18px;height:5px;}
+.wr-opp-bottom .wr-opp-stem{top:-5px;height:5px;}
+.wr-opp-logo{width:18px;height:18px;object-fit:contain;flex:none;}
 .wr-opp-fallback{font-size:9px;color:var(--text);font-weight:800;}
 .wr-opp-bye{opacity:.55;font-size:10px;}
-.wr-opp-loading{position:absolute;left:0;top:2px;font-size:10px;color:var(--muted);font-style:italic;padding:1px 0;}
+.wr-opp-loading{position:absolute;left:0;top:18px;font-size:10px;color:var(--muted);font-style:italic;padding:1px 0;}
 
 /* ── Roster tracker (pinned bottom bar + expandable panel) ── */
 .rt-bar-host{position:fixed;left:0;right:0;bottom:0;z-index:900;pointer-events:none;}
@@ -170,10 +172,15 @@
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
 
 @media (max-width:560px){
-  .wr-opp-rail{height:18px;}
-  .wr-opp-cell{min-height:18px;gap:2px;padding:1px 0;}
-  .wr-opp-ha{font-size:8px;}
-  .wr-opp-logo{width:12px;height:12px;}
+  .dual-slider{height:42px;}
+  .wr-opp-rail{height:42px;}
+  .wr-opp-cell{min-height:16px;gap:2px;padding:0;}
+  .wr-opp-top{top:0;}
+  .wr-opp-bottom{top:24px;}
+  .wr-opp-stem{height:6px;}
+  .wr-opp-top .wr-opp-stem{top:14px;height:4px;}
+  .wr-opp-bottom .wr-opp-stem{top:-4px;height:4px;}
+  .wr-opp-logo{width:15px;height:15px;}
 }
 
 /* ── League Analyzer ────────────────────────────────────────────────────────

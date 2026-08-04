@@ -357,7 +357,7 @@ function laPlayerImg(p, cls){
   const isDef = p.pos==='DEF';
   const code = isDef ? (p.team || p.id || p.player_id) : null;
   if(isDef && code) return imgTag(NFL_LOGO(String(code).toUpperCase()), cls+' la-def-logo');
-  return imgTag(hsURL({player_id:p.player_id||p.id, name:p.name, pos:p.pos}), cls);
+  return imgTag(hsPack({player_id:p.player_id||p.id, name:p.name, pos:p.pos}), cls);
 }
 
 // League / team icons — real Sleeper avatars with emoji fallback (older persisted snapshots

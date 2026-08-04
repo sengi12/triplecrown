@@ -24,8 +24,7 @@ function renderSharpLeague(){
   const SRC=activeSharp();
   const hasSharp=sharpHasData(), hasSOS=SOS&&Object.keys(SOS).length>0;
   if(!hasSharp && !hasSOS){
-    host.innerHTML=`<div class="phase-tabs">${tabBar()}</div>
-      <div class="empty"><div class="empty-icon">${TC_ICON("chart","tc-ico-lg")}</div><div class="empty-title">No advanced stats loaded</div>
+    host.innerHTML=`<div class="empty"><div class="empty-icon">${TC_ICON("chart","tc-ico-lg")}</div><div class="empty-title">No advanced stats loaded</div>
       <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed.</div></div>`;
     return;
   }
@@ -37,8 +36,7 @@ function renderSharpLeague(){
       <div class="team-nav">
         ${currentTeam?`<button class="btn btn-ghost" onclick="setPhase('Advanced')">← ${teamDisplayName(currentTeam)} card</button>`:''}
         <button class="btn btn-ghost" onclick="setPhase('Rankings')">Rankings</button></div>
-    </div>
-    <div class="phase-tabs">${tabBar()}</div>`;
+    </div>`;
 
   // The SOS view is its own "table" selection.
   if(sharpTable==='__sos__' && hasSOS){
@@ -58,7 +56,7 @@ function renderSharpLeague(){
   const isProjTable = (sharpTable==='offensive_line_pass' || sharpTable==='offensive_line_run');
   const projWhich = sharpTable==='offensive_line_pass' ? 'pass' : (sharpTable==='offensive_line_run' ? 'run' : null);
   const projCol = 'Proj 2026';
-  const showProjCol = isProjTable && typeof pcardQbOlSeason!=='undefined' && String(pcardQbOlSeason)==='2026';
+  const showProjCol = isProjTable;
   const baseCols = (tbl.columns||[]).slice();
   let cols = baseCols;
   if(showProjCol){
@@ -112,19 +110,11 @@ function renderSharpLeague(){
   }).join('');
   host.innerHTML = headerBar + renderCategoryTabs() + `
     <div class="sr-league-tabs">${tableTabs}</div>
-    <div class="sr-desc">${tbl.title}${_advLeagueProjOlBadge()} · <b>${advTeamSeason()} season</b> — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
+    <div class="sr-desc">${tbl.title} · <b>${advTeamSeason()} season</b> — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
     <div class="card" style="padding:0;overflow-x:auto">
       <table class="sr-league-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
     </div>
     <div class="sr-source">Computed from nflverse play-by-play (nflfastR).</div>`;
-}
-
-// League-wide OL Pass/Run title chip: shows the CURRENT team's projected 2026 OL overall
-// score next to the table title (mirrors the team-specific card badge). Empty otherwise.
-function _advLeagueProjOlBadge(){
-  const which = sharpTable==='offensive_line_pass' ? 'pass' : (sharpTable==='offensive_line_run' ? 'run' : null);
-  if(!which || !currentTeam || typeof _advProjOlBadge!=='function') return '';
-  return _advProjOlBadge(currentTeam, which);
 }
 
 // Offense / Defense / SOS category selector row for the league-wide view.

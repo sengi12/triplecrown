@@ -660,7 +660,7 @@ function renderContent(){
   const seasonBanner = isRef
     ? `<div class="season-readonly">📅 <b>${activeSeason} actual stats</b>${recStr?` · <b>${recStr}</b> record`:''} — read-only reference. Your ${PROJ_SEASON} working projections are untouched.
        ${canUndo(t)?`<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="undoTeam('${t}')" title="Undo the last working-set change for ${t}">↶ Undo last copy</button>`:''}
-       <button class="btn btn-accent btn-sm" ${canUndo(t)?'':'style="margin-left:auto"'} onclick="copyTeamToWorking('${t}')">⤵ Copy team to ${PROJ_SEASON} working set</button></div>`
+       <button class="btn btn-accent btn-sm" ${canUndo(t)?'':'style="margin-left:auto"'} onclick="copyTeamToWorking('${t}')">⤵ Copy</button></div>`
     : '';
   document.getElementById('content').innerHTML=`
     <div class="team-header">

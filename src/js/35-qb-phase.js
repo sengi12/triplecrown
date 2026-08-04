@@ -44,7 +44,7 @@ function renderPassing(team,state){
         const gms=Math.round(q.games||0);
         const active = i===idx;
         return `<div class="snap-row" style="${active?'border:1px solid var(--qb)':''}">
-          <span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${imgTag(hsURL(q),'player-headshot')}</span>
+          <span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${imgTag(hsPack(q),'player-headshot')}</span>
           <div class="snap-info" style="flex:1">
             <div style="font-size:12px;font-weight:700"><span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${q.name}</span>${weekFilterPaceButton(state,q.player_id,'qb')}
               ${q.games_played?`<span style="font-size:9px;color:var(--muted);font-weight:500">· actually played ${Math.round(q.games_played)}</span>`:''}</div>
@@ -64,7 +64,7 @@ function renderPassing(team,state){
     <div class="card-title">${qb.name} — Passing ${isMulti?`<span style="font-size:9px;color:var(--muted)">(editing QB${idx+1} of ${state.qbs.length})</span>`:''}</div>
     ${isMulti?`<div class="qb-tab-bar">${state.qbs.map((q,i)=>
       `<button class="qb-tab ${i===idx?'active':''}" onclick="setActiveQB(${i})">${q.name.split(' ').pop()}</button>`).join('')}</div>`:''}
-    <div class="player-row"><span class="clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${imgTag(hsURL(qb),'player-headshot')}</span>
+    <div class="player-row"><span class="clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${imgTag(hsPack(qb),'player-headshot')}</span>
       <span class="pos-badge pos-QB">QB${idx+1}</span>
       <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${qb.name}</div>
         ${weekFilterPaceButton(state,qb.player_id,'qb')}

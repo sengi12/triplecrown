@@ -219,7 +219,15 @@
 .olc-qb-sub{margin-top:3px;font-size:9px;color:var(--muted);font-weight:700;line-height:1.25;}
 @media (max-width:560px){
   .olc-grades{grid-template-columns:1fr;}
-  .olc-qb-slot-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .olc-qb-slot-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;}
+  .olc-qb-slot-card{padding:6px 4px;}
+  .olc-qb-slot-top{gap:2px;}
+  .olc-qb-slot{font-size:8.5px;}
+  .olc-starter-pill{font-size:7px;padding:1px 3px;}
+  .olc-qb-hs{width:24px;height:24px;margin:4px auto 3px;}
+  .olc-qb-name{font-size:9.5px;min-height:22px;}
+  .olc-qb-grade{font-size:14px;}
+  .olc-qb-sub{font-size:7.5px;line-height:1.15;}
   .olc-metrics{grid-template-columns:1fr;}
 }
 .dw-wrap{padding:4px 2px 2px;}

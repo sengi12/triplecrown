@@ -196,6 +196,9 @@ function openPlayerCardFromCard(nameOrId, pos, team){
     const snap = pcardCaptureNavState();
     if(snap && String(snap.pid)!==String(nameOrId)) pcardNavStack.push(snap);
   }
+  // openPlayerCard() also has a generic "push current card" path; suppress it so
+  // in-card drilldowns only push once (prevents back-stack duplication bugs).
+  pcardSuppressNavPush = true;
   openPlayerCard(nameOrId, pos, team);
 }
 
@@ -289,7 +292,9 @@ function attachPcardSwipe(cardEl){
     // unambiguous — whereas starting inside the body would fight the gamelog's own scrolling
     // (and a scrollTop check still misbehaves with momentum/overscroll on iOS).
     const onHero = e.target && e.target.closest && e.target.closest('.pcard-hero');
+    const onControl = e.target && e.target.closest && e.target.closest('.pcard-back,.pcard-close,.pcard-ktc');
     if(!onHero){ dragging=false; y0=null; return; }
+    if(onControl){ dragging=false; y0=null; return; }
     y0 = e.touches[0].clientY; dy=0; dragging=true;
     cardEl.style.transition='';
   }, {passive:true});
@@ -352,10 +357,15 @@ function renderPlayerCardShell(pid, pos, team){
   const weight = p.weight!=null && p.weight!=='' ? `${p.weight} lbs` : '–';
   const college = p.college || '–';
   const jersey = (p.number!=null && p.number!=='') ? `#${p.number}` : '';
-  // Photo: Sleeper headshot first, then ESPN (nfl → college) when Sleeper has none. Rookies with
-  // no Sleeper espn_id get their ESPN photo filled in after the athlete id is resolved.
+  // Photo fallback chain is centralized in hsPack() so this hero matches every other surface.
+  // Keep the pcard's ESPN fallback augmentation for unresolved rookies after lookups complete.
   const eid = p.espn_id||null;
-  const heroFallbacks = eid ? [ESPN_HEADSHOT('nfl',eid), ESPN_HEADSHOT('college-football',eid)] : [];
+  const heroPack = (typeof hsPack==='function') ? hsPack({player_id:pid, name, pos:posc, team:tm}) : {src:hsURL({player_id:pid,pos:posc}), fallbacks:[]};
+  const heroFallbacks = (heroPack.fallbacks||[]).slice();
+  if(eid){
+    const extra=[ESPN_HEADSHOT('nfl',eid), ESPN_HEADSHOT('college-football',eid)];
+    extra.forEach(u=>{ if(u && !heroFallbacks.includes(u)) heroFallbacks.push(u); });
+  }
   const overlay = document.getElementById('pcardOverlay');
   let tc = teamColor(tm);
   // A few team primaries are light (e.g. PIT gold, NO gold); darken those so the white hero
@@ -371,7 +381,7 @@ function renderPlayerCardShell(pid, pos, team){
     <div class="pcard" onclick="event.stopPropagation()">
       <div class="pcard-hero" style="${heroStyle}">
         <div class="pcard-hero-logo" style="${tm?`background-image:url('${NFL_LOGO(tm)}')`:''}"></div>
-        <img src="${hsURL({player_id:pid,pos:posc})}" class="pcard-hero-img" data-fallbacks="${heroFallbacks.join('|')}" onerror="pcardImgFallback(this)">
+        <img src="${heroPack.src||''}" class="pcard-hero-img" data-fallbacks="${heroFallbacks.join('|')}" onerror="pcardImgFallback(this)">
         <div class="pcard-hero-main">
           <div class="pcard-name">${name}${jersey?`<span class="pcard-jersey">${jersey}</span>`:''}</div>
           <div class="pcard-sub">${posc?`<span class="pos-badge pos-${posc}">${posc}</span>`:''}${tm?`<span class="pcard-team">${teamDisplayName(tm)}</span>`:''}</div>
@@ -403,6 +413,8 @@ function renderPlayerCardShell(pid, pos, team){
     document.body.appendChild(div);
     if(typeof attachPcardSwipe==='function') attachPcardSwipe(div.querySelector('.pcard'));
   }
+  const cardEl=(overlay||document.getElementById('pcardOverlay')).querySelector('.pcard');
+  if(typeof attachPcardSwipe==='function') attachPcardSwipe(cardEl);
 }
 // Player-card stats source: 'pro' (NFL career — Sleeper weekly for skill players, ESPN nfl for
 // defense/other) or 'college' (ESPN college gamelog). Rookies default to college (no NFL games

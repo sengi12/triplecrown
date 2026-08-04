@@ -144,10 +144,29 @@ function _rbNameParts(name){
   return [bits[0], bits.slice(1).join(' ')];
 }
 
-function _rbOlHeadshot(name, slot){
-  if(!name || typeof hsURL!=='function') return '';
-  const src = hsURL({name, pos:slot});
-  return src ? String(src) : '';
+function _rbOlHeadshot(name, slot, teamCode){
+  if(!name) return '';
+  const tm=_rbTeamCode(teamCode||'');
+  const depthSrc = (tm && typeof _olDepthHeadshot==='function') ? String(_olDepthHeadshot(tm, name)||'') : '';
+
+  let rid='';
+  if(typeof resolvePlayerId==='function'){
+    const rawPos=String(slot||'').toUpperCase();
+    rid = resolvePlayerId(name, rawPos) || resolvePlayerId(name, 'OL') || resolvePlayerId(name) || '';
+  }
+
+  let espnSrc='';
+  if(rid && typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[rid] && sleeperPlayers[rid].espn_id && typeof ESPN_HEADSHOT==='function'){
+    const aid=String(sleeperPlayers[rid].espn_id||'');
+    if(aid) espnSrc = ESPN_HEADSHOT('nfl', aid) || ESPN_HEADSHOT('college-football', aid) || '';
+  }
+
+  const sleeperSrc = (rid && typeof SLEEPER_HEADSHOT==='function')
+    ? String(SLEEPER_HEADSHOT(rid)||'')
+    : ((typeof hsURL==='function') ? String(hsURL({name, pos:slot})||'') : '');
+
+  // SVG <image> has no reliable inline fallback chain here, so choose the most stable source first.
+  return depthSrc || espnSrc || sleeperSrc || '';
 }
 
 function _rbNormName(n){ return ecrNormName(String(n||'')); }
@@ -387,7 +406,7 @@ function _rbFanSVG(chart, playerName, season, metric){
     parts.push(`<text x="${cx}" y="137" fill="#9aa0a6" font-size="10" text-anchor="middle">${att} att · ${_rbNum(ypc,1)} YPC</text>`);
   }
 
-  parts.push('<defs><marker id="rbf-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></marker><clipPath id="rbf-hs-LT"><circle cx="160" cy="505" r="17"/></clipPath><clipPath id="rbf-hs-LG"><circle cx="270" cy="505" r="17"/></clipPath><clipPath id="rbf-hs-C"><circle cx="380" cy="505" r="17"/></clipPath><clipPath id="rbf-hs-RG"><circle cx="490" cy="505" r="17"/></clipPath><clipPath id="rbf-hs-RT"><circle cx="600" cy="505" r="17"/></clipPath></defs>');
+  parts.push('<defs><marker id="rbf-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></marker><clipPath id="rbf-hs-LT"><circle cx="160" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-LG"><circle cx="270" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-C"><circle cx="380" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-RG"><circle cx="490" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-RT"><circle cx="600" cy="506" r="19"/></clipPath></defs>');
 
   parts.push('<line x1="15" y1="520" x2="745" y2="520" stroke="#2f6fe4" stroke-width="3" stroke-dasharray="10 7"/>');
   parts.push('<text x="18" y="508" fill="#5b83c9" font-size="11" font-weight="800">LOS</text>');
@@ -398,14 +417,14 @@ function _rbFanSVG(chart, playerName, season, metric){
     const runG=d.run_grade||null;
     const col=_rbGradeColor(runG);
     const n=_rbNameParts(d.name||'');
-    const hs=_rbOlHeadshot(d.name||'', slot);
+    const hs=_rbOlHeadshot(d.name||'', slot, chart.team||'');
     const click = d.name
       ? `openPlayerCardFromCard(${pcardArg(d.name)},${pcardArg(slot)},${pcardArg(chart.team||'')})`
       : '';
     parts.push(`<g class="rbf-ol-card${d.name?' clickable-player':''}" ${d.name?`onclick="${click}" role="button" tabindex="0"`:''}>
       <rect x="${x-46}" y="462" width="92" height="122" rx="7" fill="#1b1e22" stroke="${col}" stroke-width="2"/>
       <text x="${x}" y="483" fill="#fff" font-size="15" font-weight="800" text-anchor="middle">${slot}</text>
-      ${hs?`<image href="${hs}" x="${x-17}" y="488" width="34" height="34" clip-path="url(#rbf-hs-${slot})" preserveAspectRatio="xMidYMid slice"/>`:''}
+      ${hs?`<image href="${hs}" x="${x-19}" y="487" width="40" height="40" clip-path="url(#rbf-hs-${slot})" preserveAspectRatio="xMidYMid slice"/>`:''}
       <text x="${x}" y="529" fill="#e8eaed" font-size="9.5" text-anchor="middle">${n[0]||''}</text>
       <text x="${x}" y="541" fill="#e8eaed" font-size="9.5" font-weight="700" text-anchor="middle">${n[1]||''}</text>
       <text x="${x}" y="568" fill="${col}" font-size="27" font-weight="900" text-anchor="middle">${runG||'n/a'}</text>

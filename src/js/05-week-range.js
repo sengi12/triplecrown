@@ -117,17 +117,18 @@ function renderWeekOpponentRail(team, season, className=''){
   const cells=[];
   for(let wk=1; wk<=18; wk++){
     const m=byWeek[wk];
-    const pos=((wk-1)/17*100).toFixed(4);
-    const edgeCls = wk===1 ? ' wr-opp-edge-start' : (wk===18 ? ' wr-opp-edge-end' : '');
+    const ratio=((wk-1)/17).toFixed(6);
+    const pos=`calc(var(--wr-pad, 0px) + (100% - (2 * var(--wr-pad, 0px))) * ${ratio})`;
+    const laneCls = (wk%2===0) ? ' wr-opp-top' : ' wr-opp-bottom';
     if(!m || !m.opp){
-      cells.push(`<div class="wr-opp-cell wr-opp-bye${edgeCls}" style="left:${pos}%" title="Week ${wk}: bye">—</div>`);
+      cells.push(`<div class="wr-opp-cell wr-opp-bye${laneCls}" style="left:${pos}" title="Week ${wk}: bye"><span class="wr-opp-stem"></span>—</div>`);
       continue;
     }
-    const ha=m.home?'vs':'@';
     const opp=String(m.opp).toUpperCase();
     const logo=(typeof NFL_LOGO==='function') ? NFL_LOGO(opp) : '';
-    cells.push(`<div class="wr-opp-cell${edgeCls}" style="left:${pos}%" title="Week ${wk}: ${ha} ${opp}">
-      <span class="wr-opp-ha">${ha}</span>
+    const ha=m.home?'vs':'@';
+    cells.push(`<div class="wr-opp-cell${laneCls}" style="left:${pos}" title="Week ${wk}: ${ha} ${opp}">
+      <span class="wr-opp-stem"></span>
       ${logo?`<img src="${logo}" class="wr-opp-logo" alt="${opp}" onerror="this.style.display='none'">`:`<span class="wr-opp-fallback">${opp}</span>`}
     </div>`);
   }
@@ -397,23 +398,56 @@ const TARGET_RATE = 0.95; // targets ≈ pass attempts × this
 const PROJ_SEASON = (typeof SEED_SEASON!=='undefined') ? SEED_SEASON : 2026;
 document.getElementById('scenarioName').value = PROJ_SEASON + ' Projections';
 
-function hsURL(p){
-  if(!p) return '';
-  // Prefer Sleeper's headshot by player_id (most reliable, auto-updates with roster moves).
-  if(p.player_id) return SLEEPER_HEADSHOT(p.player_id);
-  // No id (e.g. imported from another site) — try to resolve one by name so we still get
-  // a Sleeper headshot rather than a broken third-party URL.
-  if(typeof resolvePlayerId==='function'){
-    const rawPos=String(p.pos||'').toUpperCase();
-    let rid=resolvePlayerId(p.name,p.pos);
-    // OL views often pass side slots (LT/LG/C/RG/RT), while Sleeper is commonly keyed as OL.
-    // Retry with OL and then name-only so OL headshots don't drop on slot-specific lookups.
-    if(!rid && /^(LT|LG|C|RG|RT|OL|G|T|OT|OG)$/.test(rawPos)){
-      rid=resolvePlayerId(p.name,'OL') || resolvePlayerId(p.name);
-    }
-    if(rid){ p.player_id=rid; return SLEEPER_HEADSHOT(rid); }
+function hsPack(p){
+  if(!p) return {src:'', fallbacks:[]};
+  const add=(arr,u)=>{ const s=String(u||'').trim(); if(s && !arr.includes(s)) arr.push(s); };
+  const urls=[];
+  const rawPos=String(p.pos||'').toUpperCase();
+  const isOl=/^(LT|LG|C|RG|RT|OL|G|T|OT|OG)$/.test(rawPos);
+
+  let rid = p.player_id ? String(p.player_id) : '';
+  if(!rid && typeof resolvePlayerId==='function'){
+    rid = resolvePlayerId(p.name, p.pos) || '';
+    if(!rid && isOl) rid = resolvePlayerId(p.name, 'OL') || resolvePlayerId(p.name) || '';
+    if(!rid) rid = resolvePlayerId(p.name) || '';
+    if(rid) p.player_id=rid;
   }
-  return '';
+
+  // Team/depth and explicit payload headshots are usually the most reliable for OL.
+  if(isOl && p.team && typeof _olDepthHeadshot==='function') add(urls, _olDepthHeadshot(String(p.team).toUpperCase(), p.name));
+  add(urls, p.headshot);
+
+  // ESPN headshots (when we can resolve an athlete id) are a reliable fallback for missing/403 Sleeper images.
+  if(rid && typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[rid] && sleeperPlayers[rid].espn_id && typeof ESPN_HEADSHOT==='function'){
+    const aid=String(sleeperPlayers[rid].espn_id||'');
+    if(aid){
+      if(isOl){
+        add(urls, ESPN_HEADSHOT('nfl', aid));
+        add(urls, ESPN_HEADSHOT('college-football', aid));
+      }
+    }
+  }
+
+  // Sleeper remains the primary source for non-OL players.
+  if(rid && typeof SLEEPER_HEADSHOT==='function') add(urls, SLEEPER_HEADSHOT(rid));
+
+  if(rid && typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[rid] && sleeperPlayers[rid].espn_id && typeof ESPN_HEADSHOT==='function'){
+    const aid=String(sleeperPlayers[rid].espn_id||'');
+    if(aid){
+      if(!isOl){
+        add(urls, ESPN_HEADSHOT('nfl', aid));
+        add(urls, ESPN_HEADSHOT('college-football', aid));
+      }else if(!urls.length){
+        add(urls, ESPN_HEADSHOT('nfl', aid));
+        add(urls, ESPN_HEADSHOT('college-football', aid));
+      }
+    }
+  }
+
+  return {src:urls[0]||'', fallbacks:urls.slice(1)};
+}
+function hsURL(p){
+  return hsPack(p).src || '';
 }
 // loading="lazy" is the single biggest win on the rankings page: it renders ~570 rows with
 // two images each (headshot + team logo), so eager loading fired >1,100 image fetches the
@@ -421,11 +455,19 @@ function hsURL(p){
 // as they approach the viewport. decoding="async" keeps decode work off the main thread so
 // it can't block the first paint.
 function imgTag(src,cls,fb=''){
+  let fallbacks=[];
+  if(src && typeof src==='object'){ fallbacks=Array.isArray(src.fallbacks)?src.fallbacks:[]; src=src.src||''; }
   if(!src) return `<div class="${cls} ph-err">${fb}</div>`;
-  return `<img src="${src}" class="${cls}" alt="" loading="lazy" decoding="async" onerror="this.outerHTML='<div class=\\'${cls} ph-err\\'>${fb}</div>'">`;
+  const fbList=fallbacks.filter(Boolean).join('|');
+  const onerr = `const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.outerHTML='<div class=\\'${cls} ph-err\\'>${fb}</div>';}`;
+  return `<img src="${src}" class="${cls}" alt="" data-fallbacks="${fbList}" loading="lazy" decoding="async" onerror="${onerr}">`;
 }
 function imgSm(src,cls='share-hs',fb=''){
+  let fallbacks=[];
+  if(src && typeof src==='object'){ fallbacks=Array.isArray(src.fallbacks)?src.fallbacks:[]; src=src.src||''; }
   if(!src) return `<div class="${cls}-err">${fb}</div>`.replace(cls+'-err',cls.replace('share-hs','share-hs')+'-err');
-  return `<img src="${src}" class="${cls}" alt="" onerror="this.outerHTML='<div class=\\'share-hs-err\\'>${fb}</div>'">`;
+  const fbList=fallbacks.filter(Boolean).join('|');
+  const onerr = `const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.outerHTML='<div class=\\'share-hs-err\\'>${fb}</div>';}`;
+  return `<img src="${src}" class="${cls}" alt="" data-fallbacks="${fbList}" onerror="${onerr}">`;
 }
 

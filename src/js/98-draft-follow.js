@@ -508,8 +508,9 @@ function abbrevName(full){
 // and practice-squad guys often have none), so rows never jump.
 function playerThumb(p){
   const pid = p && p.player_id;
+  const hp = (typeof hsPack==='function') ? hsPack({player_id:pid, name:(p&&p.name)||'', pos:(p&&p.pos)||'', team:(p&&p.team)||''}) : {src:(pid?SLEEPER_HEADSHOT(pid):''), fallbacks:[]};
   return `<span class="rt-thumb">${pid
-    ? `<img src="${SLEEPER_HEADSHOT(pid)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+    ? `<img src="${hp.src||''}" alt="" loading="lazy" data-fallbacks="${(hp.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">`
     : ''}</span>`;
 }
 // A roster row's player cell: photo + full name (with an abbreviated variant CSS swaps in when

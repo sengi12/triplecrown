@@ -72,7 +72,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .team-dot{width:6px;height:6px;border-radius:50%;background:var(--border);flex-shrink:0;}
 .team-dot.done{background:var(--success);}
 .team-dot.partial{background:var(--warn);}
-.content{flex:1;overflow-y:auto;padding:18px 22px;}
+.content{flex:1;overflow-y:auto;overflow-x:hidden;padding:18px 22px;}
 .team-header{display:flex;align-items:center;gap:12px;margin-bottom:16px;}
 .team-logo-lg{width:44px;height:44px;object-fit:contain;}
 .team-abbr{font-size:24px;font-weight:900;letter-spacing:-1px;}
@@ -84,6 +84,39 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
   border:none;background:none;color:var(--muted);transition:all .15s;white-space:nowrap;}
 .phase-tab.active{background:var(--surface2);color:var(--text);}
 .phase-tab:hover:not(.active){color:var(--text);}
+.ts-swipe-host{position:relative;overflow:hidden;border-radius:12px;isolation:isolate;}
+.ts-swipe-top{position:relative;will-change:transform;z-index:2;
+  backface-visibility:hidden;transform:translateZ(0);}
+.ts-swipe-under{position:absolute;z-index:1;inset:6px;border-radius:10px;overflow:hidden;
+  pointer-events:none;transform:translateX(calc(var(--ts-dir,1) * 22px)) scale(.985);
+  border:1px solid rgba(255,255,255,.08);
+  background:linear-gradient(180deg,rgba(36,48,66,.96),rgba(24,31,45,.96));
+  transition:transform .16s ease-out;
+  backface-visibility:hidden;transform-origin:center center;}
+.ts-swipe-under:empty{display:none;}
+.ts-swipe-under > *{margin-bottom:0 !important;}
+.ts-swipe-host::before{content:attr(data-ts-next);position:absolute;z-index:1;
+  inset:6px 6px 6px 6px;border-radius:10px;
+  border:1px solid rgba(255,255,255,.08);
+  background:linear-gradient(180deg,rgba(36,48,66,.96),rgba(24,31,45,.96));
+  color:rgba(255,255,255,.78);font-size:11px;font-weight:800;letter-spacing:.03em;
+  display:flex;align-items:flex-start;justify-content:flex-end;padding:8px 10px;
+  transform:translateX(calc(var(--ts-dir,1) * 22px)) scale(.985);
+  transition:transform .16s ease-out;pointer-events:none;display:none;}
+.ts-swipe-host.ts-swipe-dragging:not(.ts-swipe-live)::before{display:flex;
+  transform:translateX(calc(var(--ts-dir,1) * (22px - (var(--ts-reveal,0) * 22px))))
+            scale(calc(.985 + (var(--ts-reveal,0) * .015)));}
+.ts-swipe-host.ts-swipe-live::before{display:none;}
+.ts-swipe-host.ts-swipe-committing{pointer-events:none;}
+.ts-preview-pane{padding:0 0 2px;}
+.ts-preview-rankings{display:block;}
+.ts-rankings-preview-card{margin-bottom:0;}
+.ts-rankings-preview-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.ts-rankings-preview-table{border-collapse:separate;border-spacing:0;width:100%;}
+.ts-rankings-preview-table th,.ts-rankings-preview-table td{padding:5px 7px;text-align:center;position:static !important;left:auto !important;max-width:none !important;box-shadow:none !important;background:transparent;}
+.ts-rankings-preview-table th:nth-child(4),.ts-rankings-preview-table td:nth-child(4),
+.ts-rankings-preview-table th:nth-child(5),.ts-rankings-preview-table td:nth-child(5){text-align:left;}
+.ts-rankings-preview-table .rank-name{font-weight:700;font-size:12px;}
 .card{background:var(--surface);border:1px solid var(--border);
   border-radius:10px;padding:15px;margin-bottom:12px;}
 .card-title{font-size:9px;font-weight:800;color:var(--muted);
@@ -350,7 +383,15 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .olc-qb-sub{margin-top:3px;font-size:9px;color:var(--muted);font-weight:700;line-height:1.25;}
 @media (max-width:560px){
   .olc-grades{grid-template-columns:1fr;}
-  .olc-qb-slot-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .olc-qb-slot-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;}
+  .olc-qb-slot-card{padding:6px 4px;}
+  .olc-qb-slot-top{gap:2px;}
+  .olc-qb-slot{font-size:8.5px;}
+  .olc-starter-pill{font-size:7px;padding:1px 3px;}
+  .olc-qb-hs{width:24px;height:24px;margin:4px auto 3px;}
+  .olc-qb-name{font-size:9.5px;min-height:22px;}
+  .olc-qb-grade{font-size:14px;}
+  .olc-qb-sub{font-size:7.5px;line-height:1.15;}
   .olc-metrics{grid-template-columns:1fr;}
 }
 .dw-wrap{padding:4px 2px 2px;}
@@ -954,7 +995,7 @@ html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:no
   .team-item .team-rec{display:none;}
   .team-item.active{border-left-color:transparent;border-color:var(--accent);}
   .team-logo-sm{width:20px;height:20px;}
-  .content{padding:12px 12px 40px;height:auto;overflow-y:visible;}
+  .content{padding:12px 12px 40px;height:auto;overflow-y:visible;overflow-x:hidden;}
   .main{height:auto;}
   body,html{height:auto;overflow-y:auto;}
   .team-header{flex-wrap:wrap;gap:8px;}
@@ -1039,12 +1080,12 @@ html,body{max-width:100%;overflow-x:hidden;}
 .week-range-reset:hover{text-decoration:underline;}
 .week-range-hint{font-size:10.5px;color:var(--muted);white-space:nowrap;}
 .week-range-loading{color:var(--muted);font-style:italic;}
-.dual-slider{position:relative;height:22px;}
+.dual-slider{position:relative;height:50px;--wr-pad:8.5px;}
 .dual-slider-track{position:absolute;top:50%;left:0;right:0;height:4px;transform:translateY(-50%);
   background:var(--border);border-radius:2px;}
 .dual-slider-fill{position:absolute;top:50%;height:4px;transform:translateY(-50%);
   background:var(--accent);border-radius:2px;}
-.dual-range{position:absolute;top:0;left:0;width:100%;height:22px;margin:0;
+.dual-range{position:absolute;top:50%;left:0;width:100%;height:22px;transform:translateY(-50%);margin:0;
   -webkit-appearance:none;appearance:none;background:transparent;pointer-events:none;touch-action:pan-y;}
 .dual-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;pointer-events:auto;
   width:17px;height:17px;border-radius:50%;background:var(--accent);border:2px solid #0b0e13;
@@ -1055,17 +1096,19 @@ html,body{max-width:100%;overflow-x:hidden;}
 .dual-range::-moz-range-track{background:transparent;}
 
 /* Week opponent rail under dual sliders (@ / vs + opponent logo) */
-.wr-opp-rail{position:relative;height:22px;margin-top:8px;}
+.wr-opp-rail{position:absolute;left:0;right:0;top:0;height:50px;pointer-events:none;}
 .wr-opp-cell{position:absolute;top:0;left:0;transform:translateX(-50%);
   display:flex;align-items:center;justify-content:center;gap:4px;min-height:22px;
   font-size:10px;font-weight:800;color:var(--muted);line-height:1;padding:1px 0;white-space:nowrap;}
-.wr-opp-edge-start{transform:none;}
-.wr-opp-edge-end{transform:translateX(-100%);}
-.wr-opp-ha{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.01em;}
-.wr-opp-logo{width:16px;height:16px;object-fit:contain;flex:none;}
+.wr-opp-top{top:1px;}
+.wr-opp-bottom{top:30px;}
+.wr-opp-stem{position:absolute;left:50%;transform:translateX(-50%);width:1px;height:8px;background:rgba(255,255,255,.18);}
+.wr-opp-top .wr-opp-stem{top:18px;height:5px;}
+.wr-opp-bottom .wr-opp-stem{top:-5px;height:5px;}
+.wr-opp-logo{width:18px;height:18px;object-fit:contain;flex:none;}
 .wr-opp-fallback{font-size:9px;color:var(--text);font-weight:800;}
 .wr-opp-bye{opacity:.55;font-size:10px;}
-.wr-opp-loading{position:absolute;left:0;top:2px;font-size:10px;color:var(--muted);font-style:italic;padding:1px 0;}
+.wr-opp-loading{position:absolute;left:0;top:18px;font-size:10px;color:var(--muted);font-style:italic;padding:1px 0;}
 
 /* ── Roster tracker (pinned bottom bar + expandable panel) ── */
 .rt-bar-host{position:fixed;left:0;right:0;bottom:0;z-index:900;pointer-events:none;}
@@ -1200,10 +1243,15 @@ html,body{max-width:100%;overflow-x:hidden;}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
 
 @media (max-width:560px){
-  .wr-opp-rail{height:18px;}
-  .wr-opp-cell{min-height:18px;gap:2px;padding:1px 0;}
-  .wr-opp-ha{font-size:8px;}
-  .wr-opp-logo{width:12px;height:12px;}
+  .dual-slider{height:42px;}
+  .wr-opp-rail{height:42px;}
+  .wr-opp-cell{min-height:16px;gap:2px;padding:0;}
+  .wr-opp-top{top:0;}
+  .wr-opp-bottom{top:24px;}
+  .wr-opp-stem{height:6px;}
+  .wr-opp-top .wr-opp-stem{top:14px;height:4px;}
+  .wr-opp-bottom .wr-opp-stem{top:-4px;height:4px;}
+  .wr-opp-logo{width:15px;height:15px;}
 }
 
 /* ── League Analyzer ────────────────────────────────────────────────────────
@@ -2065,17 +2113,18 @@ function renderWeekOpponentRail(team, season, className=''){
   const cells=[];
   for(let wk=1; wk<=18; wk++){
     const m=byWeek[wk];
-    const pos=((wk-1)/17*100).toFixed(4);
-    const edgeCls = wk===1 ? ' wr-opp-edge-start' : (wk===18 ? ' wr-opp-edge-end' : '');
+    const ratio=((wk-1)/17).toFixed(6);
+    const pos=`calc(var(--wr-pad, 0px) + (100% - (2 * var(--wr-pad, 0px))) * ${ratio})`;
+    const laneCls = (wk%2===0) ? ' wr-opp-top' : ' wr-opp-bottom';
     if(!m || !m.opp){
-      cells.push(`<div class="wr-opp-cell wr-opp-bye${edgeCls}" style="left:${pos}%" title="Week ${wk}: bye">—</div>`);
+      cells.push(`<div class="wr-opp-cell wr-opp-bye${laneCls}" style="left:${pos}" title="Week ${wk}: bye"><span class="wr-opp-stem"></span>—</div>`);
       continue;
     }
-    const ha=m.home?'vs':'@';
     const opp=String(m.opp).toUpperCase();
     const logo=(typeof NFL_LOGO==='function') ? NFL_LOGO(opp) : '';
-    cells.push(`<div class="wr-opp-cell${edgeCls}" style="left:${pos}%" title="Week ${wk}: ${ha} ${opp}">
-      <span class="wr-opp-ha">${ha}</span>
+    const ha=m.home?'vs':'@';
+    cells.push(`<div class="wr-opp-cell${laneCls}" style="left:${pos}" title="Week ${wk}: ${ha} ${opp}">
+      <span class="wr-opp-stem"></span>
       ${logo?`<img src="${logo}" class="wr-opp-logo" alt="${opp}" onerror="this.style.display='none'">`:`<span class="wr-opp-fallback">${opp}</span>`}
     </div>`);
   }
@@ -2345,23 +2394,56 @@ const TARGET_RATE = 0.95; // targets ≈ pass attempts × this
 const PROJ_SEASON = (typeof SEED_SEASON!=='undefined') ? SEED_SEASON : 2026;
 document.getElementById('scenarioName').value = PROJ_SEASON + ' Projections';
 
-function hsURL(p){
-  if(!p) return '';
-  // Prefer Sleeper's headshot by player_id (most reliable, auto-updates with roster moves).
-  if(p.player_id) return SLEEPER_HEADSHOT(p.player_id);
-  // No id (e.g. imported from another site) — try to resolve one by name so we still get
-  // a Sleeper headshot rather than a broken third-party URL.
-  if(typeof resolvePlayerId==='function'){
-    const rawPos=String(p.pos||'').toUpperCase();
-    let rid=resolvePlayerId(p.name,p.pos);
-    // OL views often pass side slots (LT/LG/C/RG/RT), while Sleeper is commonly keyed as OL.
-    // Retry with OL and then name-only so OL headshots don't drop on slot-specific lookups.
-    if(!rid && /^(LT|LG|C|RG|RT|OL|G|T|OT|OG)$/.test(rawPos)){
-      rid=resolvePlayerId(p.name,'OL') || resolvePlayerId(p.name);
-    }
-    if(rid){ p.player_id=rid; return SLEEPER_HEADSHOT(rid); }
+function hsPack(p){
+  if(!p) return {src:'', fallbacks:[]};
+  const add=(arr,u)=>{ const s=String(u||'').trim(); if(s && !arr.includes(s)) arr.push(s); };
+  const urls=[];
+  const rawPos=String(p.pos||'').toUpperCase();
+  const isOl=/^(LT|LG|C|RG|RT|OL|G|T|OT|OG)$/.test(rawPos);
+
+  let rid = p.player_id ? String(p.player_id) : '';
+  if(!rid && typeof resolvePlayerId==='function'){
+    rid = resolvePlayerId(p.name, p.pos) || '';
+    if(!rid && isOl) rid = resolvePlayerId(p.name, 'OL') || resolvePlayerId(p.name) || '';
+    if(!rid) rid = resolvePlayerId(p.name) || '';
+    if(rid) p.player_id=rid;
   }
-  return '';
+
+  // Team/depth and explicit payload headshots are usually the most reliable for OL.
+  if(isOl && p.team && typeof _olDepthHeadshot==='function') add(urls, _olDepthHeadshot(String(p.team).toUpperCase(), p.name));
+  add(urls, p.headshot);
+
+  // ESPN headshots (when we can resolve an athlete id) are a reliable fallback for missing/403 Sleeper images.
+  if(rid && typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[rid] && sleeperPlayers[rid].espn_id && typeof ESPN_HEADSHOT==='function'){
+    const aid=String(sleeperPlayers[rid].espn_id||'');
+    if(aid){
+      if(isOl){
+        add(urls, ESPN_HEADSHOT('nfl', aid));
+        add(urls, ESPN_HEADSHOT('college-football', aid));
+      }
+    }
+  }
+
+  // Sleeper remains the primary source for non-OL players.
+  if(rid && typeof SLEEPER_HEADSHOT==='function') add(urls, SLEEPER_HEADSHOT(rid));
+
+  if(rid && typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[rid] && sleeperPlayers[rid].espn_id && typeof ESPN_HEADSHOT==='function'){
+    const aid=String(sleeperPlayers[rid].espn_id||'');
+    if(aid){
+      if(!isOl){
+        add(urls, ESPN_HEADSHOT('nfl', aid));
+        add(urls, ESPN_HEADSHOT('college-football', aid));
+      }else if(!urls.length){
+        add(urls, ESPN_HEADSHOT('nfl', aid));
+        add(urls, ESPN_HEADSHOT('college-football', aid));
+      }
+    }
+  }
+
+  return {src:urls[0]||'', fallbacks:urls.slice(1)};
+}
+function hsURL(p){
+  return hsPack(p).src || '';
 }
 // loading="lazy" is the single biggest win on the rankings page: it renders ~570 rows with
 // two images each (headshot + team logo), so eager loading fired >1,100 image fetches the
@@ -2369,12 +2451,20 @@ function hsURL(p){
 // as they approach the viewport. decoding="async" keeps decode work off the main thread so
 // it can't block the first paint.
 function imgTag(src,cls,fb=''){
+  let fallbacks=[];
+  if(src && typeof src==='object'){ fallbacks=Array.isArray(src.fallbacks)?src.fallbacks:[]; src=src.src||''; }
   if(!src) return `<div class="${cls} ph-err">${fb}</div>`;
-  return `<img src="${src}" class="${cls}" alt="" loading="lazy" decoding="async" onerror="this.outerHTML='<div class=\\'${cls} ph-err\\'>${fb}</div>'">`;
+  const fbList=fallbacks.filter(Boolean).join('|');
+  const onerr = `const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.outerHTML='<div class=\\'${cls} ph-err\\'>${fb}</div>';}`;
+  return `<img src="${src}" class="${cls}" alt="" data-fallbacks="${fbList}" loading="lazy" decoding="async" onerror="${onerr}">`;
 }
 function imgSm(src,cls='share-hs',fb=''){
+  let fallbacks=[];
+  if(src && typeof src==='object'){ fallbacks=Array.isArray(src.fallbacks)?src.fallbacks:[]; src=src.src||''; }
   if(!src) return `<div class="${cls}-err">${fb}</div>`.replace(cls+'-err',cls.replace('share-hs','share-hs')+'-err');
-  return `<img src="${src}" class="${cls}" alt="" onerror="this.outerHTML='<div class=\\'share-hs-err\\'>${fb}</div>'">`;
+  const fbList=fallbacks.filter(Boolean).join('|');
+  const onerr = `const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.outerHTML='<div class=\\'share-hs-err\\'>${fb}</div>';}`;
+  return `<img src="${src}" class="${cls}" alt="" data-fallbacks="${fbList}" onerror="${onerr}">`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3505,7 +3595,7 @@ function renderContent(){
   const seasonBanner = isRef
     ? `<div class="season-readonly">${TC_ICON("calendar")} <b>${activeSeason} actual stats</b>${recStr?` · <b>${recStr}</b> record`:''} — read-only reference. Your ${PROJ_SEASON} working projections are untouched.
        ${canUndo(t)?`<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="undoTeam('${t}')" title="Undo the last working-set change for ${t}">↶ Undo last copy</button>`:''}
-       <button class="btn btn-accent btn-sm" ${canUndo(t)?'':'style="margin-left:auto"'} onclick="copyTeamToWorking('${t}')">⤵ Copy team to ${PROJ_SEASON} working set</button></div>`
+       <button class="btn btn-accent btn-sm" ${canUndo(t)?'':'style="margin-left:auto"'} onclick="copyTeamToWorking('${t}')">⤵ Copy</button></div>`
     : '';
   const sos = SOS && SOS[t];
   const sosBadge = sos ? `<span class="team-sos">SOS: <b>${ordinal(sos.rank)}</b>${sos.win_total!=null?` · Vegas Win Total: <b>${sos.win_total}</b>`:''}</span>` : '';
@@ -3605,7 +3695,7 @@ function renderPassing(team,state){
         const gms=Math.round(q.games||0);
         const active = i===idx;
         return `<div class="snap-row" style="${active?'border:1px solid var(--qb)':''}">
-          <span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${imgTag(hsURL(q),'player-headshot')}</span>
+          <span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${imgTag(hsPack(q),'player-headshot')}</span>
           <div class="snap-info" style="flex:1">
             <div style="font-size:12px;font-weight:700"><span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${q.name}</span>${weekFilterPaceButton(state,q.player_id,'qb')}
               ${q.games_played?`<span style="font-size:9px;color:var(--muted);font-weight:500">· actually played ${Math.round(q.games_played)}</span>`:''}</div>
@@ -3625,7 +3715,7 @@ function renderPassing(team,state){
     <div class="card-title">${qb.name} — Passing ${isMulti?`<span style="font-size:9px;color:var(--muted)">(editing QB${idx+1} of ${state.qbs.length})</span>`:''}</div>
     ${isMulti?`<div class="qb-tab-bar">${state.qbs.map((q,i)=>
       `<button class="qb-tab ${i===idx?'active':''}" onclick="setActiveQB(${i})">${q.name.split(' ').pop()}</button>`).join('')}</div>`:''}
-    <div class="player-row"><span class="clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${imgTag(hsURL(qb),'player-headshot')}</span>
+    <div class="player-row"><span class="clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${imgTag(hsPack(qb),'player-headshot')}</span>
       <span class="pos-badge pos-QB">QB${idx+1}</span>
       <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${qb.name}</div>
         ${weekFilterPaceButton(state,qb.player_id,'qb')}
@@ -3731,8 +3821,8 @@ function weekRangeSliderHTML(team,state){
         oninput="weekRangeDrag('${team}','lo',this.value)" onchange="weekRangeCommit('${team}')">
       <input type="range" min="1" max="18" step="1" value="${hi}" class="dual-range dual-range-hi"
         oninput="weekRangeDrag('${team}','hi',this.value)" onchange="weekRangeCommit('${team}')">
+      ${oppRail}
     </div>
-    ${oppRail}
   </div>`;
 }
 function setPassSub(t){passingSubTab=t;renderContent();}
@@ -3833,7 +3923,7 @@ function renderPassDerived(team,state,subTabs,metric){
     const projYds=Math.round(projTgts*(p.ypt||9));
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
-        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsURL(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
+        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rec')}
         <span class="share-pct" id="dp-${i}">${pct}%</span>
         <span class="share-vol" id="dv-${i}">${v.toLocaleString()} ${label}</span></div>
@@ -3931,7 +4021,7 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row">
         <div class="share-dot" style="background:${col}"></div>
-        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsURL(p))}</span>
+        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span>
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rec')}
         <span class="share-pct" id="pp-${i}">${pct}%</span>
@@ -4010,7 +4100,7 @@ function renderPassTDs(team,state,totalTDs,subTabs){
     const projTDs=(p.td_share*totalTDs).toFixed(1);
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
-        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsURL(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
+        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>
         <span class="share-pct" id="tdp-${i}">${pct}%</span>
         <span class="share-vol">proj TDs</span></div>
@@ -4064,7 +4154,7 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
     const tds=(p.td_share*totalTDs).toFixed(1);
     return `<div class="share-block" id="rblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
-        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsURL(p))}</span><span class="pos-badge pos-RB">RB</span>
+        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
         <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rush')}
         <span class="share-pct" id="rp-${i}">${pct}%</span>
         <span class="share-vol" id="ra-${i}">${att} att</span>
@@ -4114,7 +4204,7 @@ function renderRushTDs(team,state,subTabs){
     const projTDs=(p.td_share*totalTDs).toFixed(1);
     return `<div class="share-block" id="rblk-${i}"><div class="share-row">
         <div class="share-dot" style="background:${col}"></div>
-        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsURL(p))}</span><span class="pos-badge pos-RB">RB</span>
+        <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
         <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rush')}
         <span class="share-pct" id="rtdp-${i}">${pct}%</span>
         <span class="share-vol">proj TDs</span></div>
@@ -5510,6 +5600,9 @@ function openPlayerCardFromCard(nameOrId, pos, team){
     const snap = pcardCaptureNavState();
     if(snap && String(snap.pid)!==String(nameOrId)) pcardNavStack.push(snap);
   }
+  // openPlayerCard() also has a generic "push current card" path; suppress it so
+  // in-card drilldowns only push once (prevents back-stack duplication bugs).
+  pcardSuppressNavPush = true;
   openPlayerCard(nameOrId, pos, team);
 }
 
@@ -5603,7 +5696,9 @@ function attachPcardSwipe(cardEl){
     // unambiguous — whereas starting inside the body would fight the gamelog's own scrolling
     // (and a scrollTop check still misbehaves with momentum/overscroll on iOS).
     const onHero = e.target && e.target.closest && e.target.closest('.pcard-hero');
+    const onControl = e.target && e.target.closest && e.target.closest('.pcard-back,.pcard-close,.pcard-ktc');
     if(!onHero){ dragging=false; y0=null; return; }
+    if(onControl){ dragging=false; y0=null; return; }
     y0 = e.touches[0].clientY; dy=0; dragging=true;
     cardEl.style.transition='';
   }, {passive:true});
@@ -5666,10 +5761,15 @@ function renderPlayerCardShell(pid, pos, team){
   const weight = p.weight!=null && p.weight!=='' ? `${p.weight} lbs` : '–';
   const college = p.college || '–';
   const jersey = (p.number!=null && p.number!=='') ? `#${p.number}` : '';
-  // Photo: Sleeper headshot first, then ESPN (nfl → college) when Sleeper has none. Rookies with
-  // no Sleeper espn_id get their ESPN photo filled in after the athlete id is resolved.
+  // Photo fallback chain is centralized in hsPack() so this hero matches every other surface.
+  // Keep the pcard's ESPN fallback augmentation for unresolved rookies after lookups complete.
   const eid = p.espn_id||null;
-  const heroFallbacks = eid ? [ESPN_HEADSHOT('nfl',eid), ESPN_HEADSHOT('college-football',eid)] : [];
+  const heroPack = (typeof hsPack==='function') ? hsPack({player_id:pid, name, pos:posc, team:tm}) : {src:hsURL({player_id:pid,pos:posc}), fallbacks:[]};
+  const heroFallbacks = (heroPack.fallbacks||[]).slice();
+  if(eid){
+    const extra=[ESPN_HEADSHOT('nfl',eid), ESPN_HEADSHOT('college-football',eid)];
+    extra.forEach(u=>{ if(u && !heroFallbacks.includes(u)) heroFallbacks.push(u); });
+  }
   const overlay = document.getElementById('pcardOverlay');
   let tc = teamColor(tm);
   // A few team primaries are light (e.g. PIT gold, NO gold); darken those so the white hero
@@ -5685,7 +5785,7 @@ function renderPlayerCardShell(pid, pos, team){
     <div class="pcard" onclick="event.stopPropagation()">
       <div class="pcard-hero" style="${heroStyle}">
         <div class="pcard-hero-logo" style="${tm?`background-image:url('${NFL_LOGO(tm)}')`:''}"></div>
-        <img src="${hsURL({player_id:pid,pos:posc})}" class="pcard-hero-img" data-fallbacks="${heroFallbacks.join('|')}" onerror="pcardImgFallback(this)">
+        <img src="${heroPack.src||''}" class="pcard-hero-img" data-fallbacks="${heroFallbacks.join('|')}" onerror="pcardImgFallback(this)">
         <div class="pcard-hero-main">
           <div class="pcard-name">${name}${jersey?`<span class="pcard-jersey">${jersey}</span>`:''}</div>
           <div class="pcard-sub">${posc?`<span class="pos-badge pos-${posc}">${posc}</span>`:''}${tm?`<span class="pcard-team">${teamDisplayName(tm)}</span>`:''}</div>
@@ -5717,6 +5817,8 @@ function renderPlayerCardShell(pid, pos, team){
     document.body.appendChild(div);
     if(typeof attachPcardSwipe==='function') attachPcardSwipe(div.querySelector('.pcard'));
   }
+  const cardEl=(overlay||document.getElementById('pcardOverlay')).querySelector('.pcard');
+  if(typeof attachPcardSwipe==='function') attachPcardSwipe(cardEl);
 }
 // Player-card stats source: 'pro' (NFL career — Sleeper weekly for skill players, ESPN nfl for
 // defense/other) or 'college' (ESPN college gamelog). Rookies default to college (no NFL games
@@ -6717,10 +6819,29 @@ function _rbNameParts(name){
   return [bits[0], bits.slice(1).join(' ')];
 }
 
-function _rbOlHeadshot(name, slot){
-  if(!name || typeof hsURL!=='function') return '';
-  const src = hsURL({name, pos:slot});
-  return src ? String(src) : '';
+function _rbOlHeadshot(name, slot, teamCode){
+  if(!name) return '';
+  const tm=_rbTeamCode(teamCode||'');
+  const depthSrc = (tm && typeof _olDepthHeadshot==='function') ? String(_olDepthHeadshot(tm, name)||'') : '';
+
+  let rid='';
+  if(typeof resolvePlayerId==='function'){
+    const rawPos=String(slot||'').toUpperCase();
+    rid = resolvePlayerId(name, rawPos) || resolvePlayerId(name, 'OL') || resolvePlayerId(name) || '';
+  }
+
+  let espnSrc='';
+  if(rid && typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[rid] && sleeperPlayers[rid].espn_id && typeof ESPN_HEADSHOT==='function'){
+    const aid=String(sleeperPlayers[rid].espn_id||'');
+    if(aid) espnSrc = ESPN_HEADSHOT('nfl', aid) || ESPN_HEADSHOT('college-football', aid) || '';
+  }
+
+  const sleeperSrc = (rid && typeof SLEEPER_HEADSHOT==='function')
+    ? String(SLEEPER_HEADSHOT(rid)||'')
+    : ((typeof hsURL==='function') ? String(hsURL({name, pos:slot})||'') : '');
+
+  // SVG <image> has no reliable inline fallback chain here, so choose the most stable source first.
+  return depthSrc || espnSrc || sleeperSrc || '';
 }
 
 function _rbNormName(n){ return ecrNormName(String(n||'')); }
@@ -6960,7 +7081,7 @@ function _rbFanSVG(chart, playerName, season, metric){
     parts.push(`<text x="${cx}" y="137" fill="#9aa0a6" font-size="10" text-anchor="middle">${att} att · ${_rbNum(ypc,1)} YPC</text>`);
   }
 
-  parts.push('<defs><marker id="rbf-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></marker><clipPath id="rbf-hs-LT"><circle cx="160" cy="505" r="17"/></clipPath><clipPath id="rbf-hs-LG"><circle cx="270" cy="505" r="17"/></clipPath><clipPath id="rbf-hs-C"><circle cx="380" cy="505" r="17"/></clipPath><clipPath id="rbf-hs-RG"><circle cx="490" cy="505" r="17"/></clipPath><clipPath id="rbf-hs-RT"><circle cx="600" cy="505" r="17"/></clipPath></defs>');
+  parts.push('<defs><marker id="rbf-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></marker><clipPath id="rbf-hs-LT"><circle cx="160" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-LG"><circle cx="270" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-C"><circle cx="380" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-RG"><circle cx="490" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-RT"><circle cx="600" cy="506" r="19"/></clipPath></defs>');
 
   parts.push('<line x1="15" y1="520" x2="745" y2="520" stroke="#2f6fe4" stroke-width="3" stroke-dasharray="10 7"/>');
   parts.push('<text x="18" y="508" fill="#5b83c9" font-size="11" font-weight="800">LOS</text>');
@@ -6971,14 +7092,14 @@ function _rbFanSVG(chart, playerName, season, metric){
     const runG=d.run_grade||null;
     const col=_rbGradeColor(runG);
     const n=_rbNameParts(d.name||'');
-    const hs=_rbOlHeadshot(d.name||'', slot);
+    const hs=_rbOlHeadshot(d.name||'', slot, chart.team||'');
     const click = d.name
       ? `openPlayerCardFromCard(${pcardArg(d.name)},${pcardArg(slot)},${pcardArg(chart.team||'')})`
       : '';
     parts.push(`<g class="rbf-ol-card${d.name?' clickable-player':''}" ${d.name?`onclick="${click}" role="button" tabindex="0"`:''}>
       <rect x="${x-46}" y="462" width="92" height="122" rx="7" fill="#1b1e22" stroke="${col}" stroke-width="2"/>
       <text x="${x}" y="483" fill="#fff" font-size="15" font-weight="800" text-anchor="middle">${slot}</text>
-      ${hs?`<image href="${hs}" x="${x-17}" y="488" width="34" height="34" clip-path="url(#rbf-hs-${slot})" preserveAspectRatio="xMidYMid slice"/>`:''}
+      ${hs?`<image href="${hs}" x="${x-19}" y="487" width="40" height="40" clip-path="url(#rbf-hs-${slot})" preserveAspectRatio="xMidYMid slice"/>`:''}
       <text x="${x}" y="529" fill="#e8eaed" font-size="9.5" text-anchor="middle">${n[0]||''}</text>
       <text x="${x}" y="541" fill="#e8eaed" font-size="9.5" font-weight="700" text-anchor="middle">${n[1]||''}</text>
       <text x="${x}" y="568" fill="${col}" font-size="27" font-weight="900" text-anchor="middle">${runG||'n/a'}</text>
@@ -9017,7 +9138,8 @@ function renderDepthChart(team){
     if(row.unit!==curUnit){ curUnit=row.unit; body+=`<div class="depth-unit-head">${DEPTH_UNIT_LABEL[curUnit]||''}</div>`; }
     const chips=row.players.map((p,i)=>{
       total++;
-      const hs = p.headshot ? `<img src="${p.headshot}" class="depth-hs" onerror="this.style.display='none'">` : '';
+      const hp = (typeof hsPack==='function') ? hsPack({name:p.name, pos:(p.pos||row.label), team, headshot:p.headshot}) : {src:(p.headshot||''), fallbacks:[]};
+      const hs = hp.src ? `<img src="${hp.src}" class="depth-hs" data-fallbacks="${(hp.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">` : '';
       const rk = p.exp===0 ? `<span class="depth-rookie">R</span>` : '';
       const jersey = p.jersey ? `<span class="depth-jersey">#${p.jersey}</span>` : '';
       const starter = i===0 ? ' depth-starter' : '';
@@ -9049,7 +9171,8 @@ function renderDepthChartFallback(team){
   });
   const groups=posKeys.map(pos=>{
     const chips=byPos[pos].map(p=>{
-      const hs = p.headshot ? `<img src="${p.headshot}" class="depth-hs" onerror="this.style.display='none'">` : '';
+      const hp = (typeof hsPack==='function') ? hsPack({name:p.name, pos:p.pos, team, headshot:p.headshot}) : {src:(p.headshot||''), fallbacks:[]};
+      const hs = hp.src ? `<img src="${hp.src}" class="depth-hs" data-fallbacks="${(hp.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">` : '';
       const rk = p.exp===0 ? `<span class="depth-rookie">R</span>` : '';
       const jersey = p.jersey ? `<span class="depth-jersey">#${p.jersey}</span>` : '';
       return `<span class="depth-player clickable-player" onclick="${pcardOnclick(p.name, p.pos, team)}">${hs}<span class="depth-name">${p.name}</span>${jersey}${rk}</span>`;
@@ -9543,8 +9666,10 @@ function renderNflverseRoster(team){
       // that isn't all-digits is discarded in favour of the NAME, which resolvePlayerId()
       // and hsURL() both handle — so cards and headshots work on any vintage of the seed.
       const sleeperId = (sid!=null && /^\d+$/.test(String(sid))) ? String(sid) : null;
-      const hsrc = sleeperId ? hsURL({player_id:sleeperId, name, pos:ps}) : hsURL({name, pos:ps});
-      const hs = hsrc ? `<img src="${hsrc}" class="depth-hs" onerror="this.style.display='none'">` : '';
+      const hpack = sleeperId ? hsPack({player_id:sleeperId, name, pos:ps, team}) : hsPack({name, pos:ps, team});
+      const hs = hpack && hpack.src
+        ? `<img src="${hpack.src}" class="depth-hs" data-fallbacks="${(hpack.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">`
+        : '';
       const rk = exp===0 ? `<span class="depth-rookie">R</span>` : '';
       const jr = jersey!=null ? `<span class="depth-jersey">#${jersey}</span>` : '';
       const ir = status==='RES' ? `<span class="depth-ir" title="Finished the season on injured reserve / reserve">IR</span>` : '';
@@ -10196,8 +10321,8 @@ function renderAdvWeekRange(team){
       <div class="dual-slider-fill" id="adv-wr-fill-${team}" style="left:${left}%;right:${right}%;"></div>
       <input class="dual-range" type="range" min="1" max="18" value="${lo}" oninput="advWeekRangeDrag('${team}','lo',this.value)" onchange="advWeekRangeCommit('${team}')">
       <input class="dual-range" type="range" min="1" max="18" value="${hi}" oninput="advWeekRangeDrag('${team}','hi',this.value)" onchange="advWeekRangeCommit('${team}')">
+      ${oppRail}
     </div>
-    ${oppRail}
     <div class="week-range-label" style="margin-top:8px;">
       <span class="week-range-hint">Windowed recompute powers offense, defense, tendencies, pace, personnel, coverage, defensive tendencies, pass rush &amp; run D, and O-Line pass/run cards.</span>
       ${loading}
@@ -10362,8 +10487,7 @@ function renderSharpLeague(){
   const SRC=activeSharp();
   const hasSharp=sharpHasData(), hasSOS=SOS&&Object.keys(SOS).length>0;
   if(!hasSharp && !hasSOS){
-    host.innerHTML=`<div class="phase-tabs">${tabBar()}</div>
-      <div class="empty"><div class="empty-icon">${TC_ICON("chart","tc-ico-lg")}</div><div class="empty-title">No advanced stats loaded</div>
+    host.innerHTML=`<div class="empty"><div class="empty-icon">${TC_ICON("chart","tc-ico-lg")}</div><div class="empty-title">No advanced stats loaded</div>
       <div class="empty-body">Run <code>build_seed.py</code> and load the 📦 seed.</div></div>`;
     return;
   }
@@ -10375,8 +10499,7 @@ function renderSharpLeague(){
       <div class="team-nav">
         ${currentTeam?`<button class="btn btn-ghost" onclick="setPhase('Advanced')">← ${teamDisplayName(currentTeam)} card</button>`:''}
         <button class="btn btn-ghost" onclick="setPhase('Rankings')">Rankings</button></div>
-    </div>
-    <div class="phase-tabs">${tabBar()}</div>`;
+    </div>`;
 
   // The SOS view is its own "table" selection.
   if(sharpTable==='__sos__' && hasSOS){
@@ -10396,7 +10519,7 @@ function renderSharpLeague(){
   const isProjTable = (sharpTable==='offensive_line_pass' || sharpTable==='offensive_line_run');
   const projWhich = sharpTable==='offensive_line_pass' ? 'pass' : (sharpTable==='offensive_line_run' ? 'run' : null);
   const projCol = 'Proj 2026';
-  const showProjCol = isProjTable && typeof pcardQbOlSeason!=='undefined' && String(pcardQbOlSeason)==='2026';
+  const showProjCol = isProjTable;
   const baseCols = (tbl.columns||[]).slice();
   let cols = baseCols;
   if(showProjCol){
@@ -10450,19 +10573,11 @@ function renderSharpLeague(){
   }).join('');
   host.innerHTML = headerBar + renderCategoryTabs() + `
     <div class="sr-league-tabs">${tableTabs}</div>
-    <div class="sr-desc">${tbl.title}${_advLeagueProjOlBadge()} · <b>${advTeamSeason()} season</b> — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
+    <div class="sr-desc">${tbl.title} · <b>${advTeamSeason()} season</b> — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
     <div class="card" style="padding:0;overflow-x:auto">
       <table class="sr-league-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
     </div>
     <div class="sr-source">Computed from nflverse play-by-play (nflfastR).</div>`;
-}
-
-// League-wide OL Pass/Run title chip: shows the CURRENT team's projected 2026 OL overall
-// score next to the table title (mirrors the team-specific card badge). Empty otherwise.
-function _advLeagueProjOlBadge(){
-  const which = sharpTable==='offensive_line_pass' ? 'pass' : (sharpTable==='offensive_line_run' ? 'run' : null);
-  if(!which || !currentTeam || typeof _advProjOlBadge!=='function') return '';
-  return _advProjOlBadge(currentTeam, which);
 }
 
 // Offense / Defense / SOS category selector row for the league-wide view.
@@ -10591,9 +10706,41 @@ function renderRankings(){
   let all=buildPlayerList();
   // Team-scoped rankings (from a team's Rankings tab) show only that team's players.
   const teamScoped = (rankScope==='team' && currentTeam);
+  let teamHeader='';
+  if(teamScoped && currentTeam){
+    const t=currentTeam;
+    const state=userProj[t]||{qbs:[]};
+    const prev=TEAMS[TEAMS.indexOf(t)-1], next=TEAMS[TEAMS.indexOf(t)+1];
+    const isRef = activeSeason!=='proj';
+    const recKey = `${activeSeason}:${t}`;
+    if(isRef && espnRecordCache[recKey]==null) fetchTeamRecord(activeSeason,t);
+    const recStr = isRef ? (espnRecordCache[recKey]||'') : '';
+    const sos = SOS && SOS[t];
+    const sosBadge = sos ? `<span class="team-sos">SOS: <b>${ordinal(sos.rank)}</b>${sos.win_total!=null?` · Vegas Win Total: <b>${sos.win_total}</b>`:''}</span>` : '';
+    if(headCoaches[t]===undefined) fetchHeadCoach(t);
+    const hc=headCoaches[t];
+    const hcCaller = hcIsPlaycaller(t);
+    const hcLine = hc ? `<div class="team-hc scheme-open" role="button" tabindex="0" title="Open coaching scheme visualization" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">
+        ${hc.headshot?`<img src="${hc.headshot}" class="team-hc-img" onerror="this.style.display='none'">`:''}
+        <span class="team-hc-label">HC</span> <b>${hc.name}</b>${hc.experience!=null?` · yr ${hc.experience}`:''}
+        ${hcCaller?`<span class="hc-caller" title="This head coach is the team's primary offensive playcaller — the OC is less pivotal for scheme continuity.">🎧 Primary playcaller</span>`:''}
+      </div>` : (headCoaches[t]===null?'':`<div class="team-hc team-hc-loading">Loading head coach…</div>`);
+    teamHeader = `<div class="team-header">
+      <img src="${NFL_LOGO(t)}" class="team-logo-lg scheme-open" alt="${t}" title="Open coaching scheme visualization" onclick="openTeamCoachingScheme('${t}')" onerror="this.style.opacity='.25'">
+      <div><div class="team-abbr team-fullname scheme-open" role="button" tabindex="0" title="Open coaching scheme visualization" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">${teamDisplayName(t)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}</div>
+        <div class="team-qb-name">${(state.qbs&&state.qbs.length)?state.qbs.map(q=>q.name).join(' / '):'No projected QB'}${recStr?` · ${recStr}`:''}</div>
+        ${hcLine}
+        ${sosBadge?`<div class="team-sos-row">${sosBadge}</div>`:''}</div>
+      <div class="team-nav">
+        <button id="undoBtn" class="btn btn-ghost undo-btn ${canUndo(t)?'':'disabled'}" ${canUndo(t)?'':'disabled'} onclick="undoTeam('${t}')" title="Undo last working-set change to ${t}">↶ Undo<span id="undoCount">${canUndo(t)?' '+undoStacks[t].length:''}</span></button>
+        ${prev?`<button class="btn btn-ghost" onclick="selectTeam('${prev}')">← ${prev}</button>`:''}
+        ${next?`<button class="btn btn-accent" onclick="selectTeam('${next}')">${next} →</button>`:''}
+      </div>
+    </div>`;
+  }
   if(teamScoped) all=all.filter(p=>p.team===currentTeam);
   if(!all.length){document.getElementById('content').innerHTML=
-    `${(rankScope==='team' && currentTeam) ? `<div class="phase-tabs">${tabBar()}</div>` : ''}<div class="empty"><div class="empty-icon">${TC_ICON("trophy","tc-ico-lg")}</div>
+    `${teamScoped?`${teamHeader}<div class="phase-tabs">${tabBar()}</div>`:''}<div class="empty"><div class="empty-icon">${TC_ICON("trophy","tc-ico-lg")}</div>
      <div class="empty-title">No projections yet</div><div class="empty-body">Set at least one team's stats to see rankings.</div></div>`;return;}
   // Overall order is by fantasy points (your projections). ECR/tier come from FantasyPros.
   all.sort((a,b)=>b.fpts-a.fpts);
@@ -10734,7 +10881,7 @@ function renderRankings(){
     <td class="fpts">${p.fpts.toFixed(1)}</td>
     <td class="c-vor"><span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${p.vor>0?'+':''}${p.vor!=null?p.vor.toFixed(1):'—'}</span></td>
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
-    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsURL(p),'rank-hs')}<span class="rank-name">${p.name}</span></div></td>
+    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsPack(p),'rank-hs')}<span class="rank-name">${p.name}</span></div></td>
     <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${p.team}</td>
     ${contractCells}
     ${statCells}
@@ -10779,7 +10926,7 @@ function renderRankings(){
     : '';
   const ecrNote = hasECR() ? '' : `<span class="ecr-missing">${TC_ICON("warning")} No FantasyPros ECR loaded — run build_seed.py and load the seed to populate ECR/Tier</span>`;
   document.getElementById('content').innerHTML=`
-    ${teamScoped ? `<div class="phase-tabs">${tabBar()}</div>` : ''}
+    ${teamScoped ? `${teamHeader}<div class="phase-tabs">${tabBar()}</div>` : ''}
     <div class="rankings-scope-bar">
       ${teamScoped
         ? `<span class="scope-title">${currentTeam} Rankings</span><span class="scope-sub">this team only</span>
@@ -11738,7 +11885,7 @@ function psRender(q){
     const isDef = e.pos==='DEF';
     const img = (isDef && e.team)
       ? imgTag(NFL_LOGO(String(e.team).toUpperCase()), 'ps-hs ps-def')
-      : imgTag(hsURL({player_id:e.pid, name:e.name, pos:e.pos}), 'ps-hs');
+      : imgTag(hsPack({player_id:e.pid, name:e.name, pos:e.pos}), 'ps-hs');
     const logo = e.team ? `<img class="ps-team-logo" src="${NFL_LOGO(String(e.team).toUpperCase())}" alt="${escAttr(e.team)}" onerror="this.style.display='none'">` : '';
     return `<button class="ps-row${i===0?' ps-active':''}" data-pid="${escAttr(e.pid)}" data-pos="${escAttr(e.pos)}" data-team="${escAttr(e.team)}"
                     onclick="psPick(this)">
@@ -11796,7 +11943,190 @@ if(typeof document!=='undefined' && document.addEventListener){
 const TS_COMMIT = 60;      // px of horizontal travel before a tab change commits
 const TS_DECIDE = 10;      // px before we decide the gesture's axis
 const TS_EDGE   = 24;      // ignore starts this close to the left edge (iOS back-swipe zone)
-const TS_MAXSHIFT = 44;    // cap on the content's follow-the-finger travel
+const TS_MAXSHIFT = 500;   // cap on the content's follow-the-finger travel
+
+function tsTabPhase(btn){
+  if(!btn) return null;
+  const oc=btn.getAttribute('onclick')||'';
+  const m=oc.match(/setPhase\('([^']+)'\)/);
+  return m ? m[1] : null;
+}
+
+function tsCanPreviewPhase(phase){
+  const p=String(phase||'');
+  if(!currentTeam) return false;
+  if(['Passing','Receiving','Rushing','Advanced','Additions'].includes(p)) return true;
+  if(p==='Rankings') return (typeof rankScope!=='undefined' ? rankScope==='team' : true);
+  return false;
+}
+
+function tsPreviewTeamRankings(){
+  if(!currentTeam) return '';
+  let all=[];
+  try{ all=buildPlayerList().filter(p=>p.team===currentTeam); }
+  catch(e){ all=[]; }
+  if(!all.length){
+    return `<div class="ts-preview-pane ts-preview-rankings"><div class="empty"><div class="empty-icon">${typeof TC_ICON==='function'?TC_ICON('trophy','tc-ico-lg'):'🏆'}</div>
+      <div class="empty-title">No projections yet</div><div class="empty-body">Set at least one team's stats to see rankings.</div></div></div>`;
+  }
+  all.sort((a,b)=>b.fpts-a.fpts);
+  let view=rankPosFilter==='ALL'?all
+    :rankPosFilter==='FLEX'?all.filter(p=>p.pos!=='QB')
+    :all.filter(p=>p.pos===rankPosFilter);
+  const rows=view.slice(0,28).map((p,i)=>`<tr>
+    <td class="c-ecr">${i+1}</td>
+    <td class="fpts">${(Number(p.fpts)||0).toFixed(1)}</td>
+    <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
+    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsPack(p),'rank-hs')}<span class="rank-name">${p.name}</span></div></td>
+    <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${p.team}</td>
+  </tr>`).join('');
+  return `<div class="ts-preview-pane ts-preview-rankings"><div class="rankings-scope-bar">
+      <span class="scope-title">${currentTeam} Rankings</span><span class="scope-sub">this team only</span>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showFullRankings()">View full league →</button>
+    </div>
+    <div class="card ts-rankings-preview-card" style="padding:0;overflow:hidden">
+      <div style="padding:11px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--muted);font-weight:700">PREVIEW</span>
+        <span style="font-size:11px;color:var(--muted)">Top ${Math.min(view.length,28)} players · full controls after tab settle</span>
+      </div>
+      <div class="rank-table-wrap ts-rankings-preview-wrap" style="max-height:calc(100vh - 380px)">
+        <table class="rankings-table grouped ts-rankings-preview-table"><thead><tr>
+          <th><div class="th-stack">RK</div></th>
+          <th><div class="th-stack">FPTS</div></th>
+          <th><div class="th-stack">POS</div></th>
+          <th><div class="th-stack">PLAYER</div></th>
+          <th><div class="th-stack">TM</div></th>
+        </tr></thead><tbody>${rows}</tbody></table>
+      </div>
+    </div></div>`;
+}
+
+function tsRenderPhasePreview(phase){
+  if(!tsCanPreviewPhase(phase)) return '';
+  const t=currentTeam;
+  const state=userProj[t];
+  if(!state) return '';
+  if(phase==='Passing') return renderPassing(t,state);
+  if(phase==='Receiving'){ initPassingShares(t); return renderReceiving(t,state); }
+  if(phase==='Rushing'){ initRushingShares(t); return renderRushing(t,state); }
+  if(phase==='Advanced') return renderTeamAdvanced(t);
+  if(phase==='Additions') return renderTeamAdditions(t);
+  if(phase==='Rankings') return tsPreviewTeamRankings();
+  return '';
+}
+
+function tsSanitizePreviewHTML(html){
+  return String(html||'').replace(/\sid="[^"]*"/g,'');
+}
+
+function tsSwipeTop(host){
+  if(!host) return null;
+  return host.querySelector(':scope > .ts-swipe-top') || host.firstElementChild || host;
+}
+
+function tsSwipeUnder(host){
+  if(!host) return null;
+  let under = host.querySelector(':scope > .ts-swipe-under');
+  if(under) return under;
+  under=document.createElement('div');
+  under.className='ts-swipe-under';
+  const top=tsSwipeTop(host);
+  if(top && top.parentElement===host) host.insertBefore(under, top);
+  else host.appendChild(under);
+  return under;
+}
+
+// Wrap everything AFTER the active tab bar so swipe animation only moves the changing
+// page region (content below labels), leaving static chrome above untouched.
+function tsSwipeHost(bar){
+  if(!bar || !bar.parentElement) return document.getElementById('content');
+  const parent=bar.parentElement;
+  const next=bar.nextElementSibling;
+  if(next && next.classList && next.classList.contains('ts-swipe-host')){
+    if(!next.querySelector(':scope > .ts-swipe-top')){
+      const top=document.createElement('div');
+      top.className='ts-swipe-top';
+      while(next.firstChild) top.appendChild(next.firstChild);
+      next.appendChild(top);
+    }
+    return next;
+  }
+  const host=document.createElement('div');
+  host.className='ts-swipe-host';
+  const top=document.createElement('div');
+  top.className='ts-swipe-top';
+  let n=bar.nextSibling;
+  while(n){
+    const after=n.nextSibling;
+    top.appendChild(n);
+    n=after;
+  }
+  host.appendChild(top);
+  parent.appendChild(host);
+  return host;
+}
+
+function tsAnimateTabTurn(host, tabs, next, moved, opts){
+  if(!host || !tabs || next<0 || next>=tabs.length){
+    if(tabs && tabs[next]) tabs[next].click();
+    return;
+  }
+  const top = tsSwipeTop(host) || host;
+  const under = tsSwipeUnder(host);
+  const out = moved<0 ? -120 : 120;
+  const inn = moved<0 ? 120 : -120;
+  const seamless = !!(opts && opts.seamless);
+
+  if(seamless && under && under.innerHTML && under.innerHTML.trim()){
+    // The target is already visible underneath during drag; promote it immediately so
+    // the release feels "already there", then sync canonical state via normal tab click.
+    host.classList.add('ts-swipe-committing');
+    host.classList.remove('ts-swipe-dragging');
+    try{
+      top.style.transition='none';
+      top.style.transform='translateX(0px)';
+      top.innerHTML=under.innerHTML;
+      under.innerHTML='';
+      under.style.transform='translateX(0px) scale(1)';
+      tabs.forEach(t=>t.classList.remove('active'));
+      if(tabs[next]) tabs[next].classList.add('active');
+    }catch(e){}
+    setTimeout(()=>{ if(tabs[next]) tabs[next].click(); }, 0);
+    return;
+  }
+  host.classList.add('ts-swipe-dragging');
+  host.dataset.tsNext = (tabs[next] && tabs[next].textContent) ? tabs[next].textContent.trim() : '';
+  host.style.setProperty('--ts-dir', moved<0 ? '1' : '-1');
+  host.style.setProperty('--ts-reveal', '1');
+  if(under){
+    under.style.transform='translateX(0px) scale(1)';
+  }
+  top.style.transition = 'transform .16s ease-out';
+  top.style.transform = `translateX(${out}px)`;
+  setTimeout(()=>{
+    tabs[next].click();
+    const freshBar=tsActiveBar();
+    const fresh=freshBar ? tsSwipeHost(freshBar) : (document.getElementById('content') || host);
+    const freshTop = tsSwipeTop(fresh) || fresh;
+    fresh.style.setProperty('--ts-dir', moved<0 ? '1' : '-1');
+    fresh.style.setProperty('--ts-reveal', '0');
+    fresh.classList.remove('ts-swipe-dragging');
+    if(seamless){
+      // The target page was already revealed under the top card during drag: settle
+      // directly to it (no second "slide in" pass) to avoid a double-motion feel.
+      freshTop.style.transition='none';
+      freshTop.style.transform='translateX(0px)';
+      setTimeout(()=>{ if(freshTop){ freshTop.style.transition=''; } }, 40);
+      return;
+    }
+    freshTop.style.transition='none';
+    freshTop.style.transform=`translateX(${inn}px)`;
+    freshTop.getBoundingClientRect();
+    freshTop.style.transition='transform .18s ease-out';
+    freshTop.style.transform='translateX(0px)';
+    setTimeout(()=>{ if(freshTop){ freshTop.style.transition=''; } }, 210);
+  }, 140);
+}
 
 // The visible tab bar, if any. Multiple can exist in the DOM across views, so take the first
 // one that's actually laid out.
@@ -11826,18 +12156,82 @@ function tsScrollerClaims(el, dir){
 
 (function installTabSwipe(){
   if(typeof document==='undefined' || !document.addEventListener) return;
-  let x0=null, y0=null, dx=0, axis=null, bar=null, host=null;
+  let x0=null, y0=null, dx=0, axis=null, bar=null, host=null, tabs=null, cur=-1;
+  let previewPhase=null, previewCache={};
+
+  const cachePreviewForPhase = (phase)=>{
+    if(!phase || !tsCanPreviewPhase(phase)) return;
+    const cacheKey = `${String(currentTeam||'')}:${String(activeSeason||'')}:${String(phase)}`;
+    if(previewCache[cacheKey]!=null) return;
+    let html='';
+    try{ html = tsSanitizePreviewHTML(tsRenderPhasePreview(phase)); }
+    catch(e){ html=''; }
+    previewCache[cacheKey]=html||'';
+  };
+
+  const preloadAdjacentPreviews = ()=>{
+    if(!tabs || cur<0) return;
+    const left = cur-1, right = cur+1;
+    if(left>=0) cachePreviewForPhase(tsTabPhase(tabs[left]));
+    if(right<tabs.length) cachePreviewForPhase(tsTabPhase(tabs[right]));
+  };
+
+  const setPreview = (phase, label)=>{
+    if(!host) return;
+    const under=tsSwipeUnder(host);
+    if(!under) return;
+    if(!phase || !tsCanPreviewPhase(phase)){
+      previewPhase=null;
+      under.innerHTML='';
+      host.classList.remove('ts-swipe-live');
+      host.dataset.tsNext = label||'';
+      return;
+    }
+    if(previewPhase===phase) return;
+    const cacheKey = `${String(currentTeam||'')}:${String(activeSeason||'')}:${String(phase)}`;
+    if(previewCache[cacheKey]==null) cachePreviewForPhase(phase);
+    let html = previewCache[cacheKey];
+    if(!html){
+      previewPhase=null;
+      under.innerHTML='';
+      host.classList.remove('ts-swipe-live');
+      host.dataset.tsNext = label||'';
+      return;
+    }
+    under.innerHTML=html;
+    host.classList.add('ts-swipe-live');
+    host.dataset.tsNext='';
+    previewPhase=phase;
+  };
 
   const clearShift = (anim)=>{
     if(!host) return;
-    host.style.transition = anim ? 'transform .16s ease-out' : '';
-    host.style.transform = '';
-    if(anim){ const h=host; setTimeout(()=>{ if(h) h.style.transition=''; }, 180); }
+    const top = tsSwipeTop(host) || host;
+    const under = tsSwipeUnder(host);
+    top.style.transition = anim ? 'transform .16s ease-out' : '';
+    top.style.transform = '';
+    if(under){
+      under.style.transition = anim ? 'transform .16s ease-out' : '';
+      under.style.transform = '';
+      under.innerHTML='';
+    }
+    host.classList.remove('ts-swipe-dragging');
+    host.classList.remove('ts-swipe-live');
+    host.classList.remove('ts-swipe-committing');
+    host.style.removeProperty('--ts-reveal');
+    host.style.removeProperty('--ts-dir');
+    host.dataset.tsNext = '';
+    previewPhase=null;
+    previewCache={};
+    if(anim){ const t=top; setTimeout(()=>{ if(t) t.style.transition=''; }, 180); }
   };
 
   document.addEventListener('touchstart', e=>{
-    x0=y0=null; axis=null; dx=0; bar=null; host=null;
+    x0=y0=null; axis=null; dx=0; bar=null; host=null; tabs=null; cur=-1; previewPhase=null; previewCache={};
     if(e.touches.length!==1) return;
+    // League-wide Advanced Metrics is a standalone page (like Full Rankings):
+    // no horizontal phase-swipe navigation from this view.
+    if(typeof currentPhase!=='undefined' && currentPhase==='AdvancedLeague') return;
     const t=e.touches[0];
     if(t.clientX <= TS_EDGE) return;                 // leave the back-swipe zone alone
     // The player card runs its own gesture; don't compete with it.
@@ -11851,9 +12245,18 @@ function tsScrollerClaims(el, dir){
         '.ps-overlay, .scheme-overlay, .rt-bar-host')) return;
     const b=tsActiveBar();
     if(!b) return;
-    const tabs=[...b.querySelectorAll('.phase-tab')];
-    if(tabs.length<2) return;
-    bar=b; host=document.getElementById('content');
+    if(e.target && e.target.closest && e.target.closest('.phase-tabs')) return;
+    const ts=[...b.querySelectorAll('.phase-tab')];
+    if(ts.length<2) return;
+    bar=b;
+    tabs=ts;
+    cur=tabs.findIndex(t=>t.classList.contains('active'));
+    if(cur<0) return;
+    host=tsSwipeHost(b);
+    if(!host || (e.target && !host.contains(e.target))) return;
+    // Pre-render only the immediate left/right neighbors for instant direction changes
+    // without precomputing the whole tab stack.
+    preloadAdjacentPreviews();
     x0=t.clientX; y0=t.clientY;
   }, {passive:true});
 
@@ -11875,22 +12278,40 @@ function tsScrollerClaims(el, dir){
     // Follow the finger with resistance so the swipe feels connected, capped so the layout
     // never travels far enough to look broken.
     const shift = Math.sign(dx) * Math.min(TS_MAXSHIFT, Math.abs(dx)*0.35);
-    if(host) host.style.transform = `translateX(${shift.toFixed(1)}px)`;
+    if(host){
+      const dir = dx<0 ? 1 : -1;
+      const next = cur>=0 ? (cur + (dx<0 ? 1 : -1)) : -1;
+      const valid = next>=0 && tabs && next<tabs.length;
+      host.classList.toggle('ts-swipe-dragging', !!valid);
+      const nextLabel = valid ? String((tabs[next]&&tabs[next].textContent)||'').trim() : '';
+      const nextPhase = valid ? tsTabPhase(tabs[next]) : null;
+      setPreview(nextPhase, nextLabel);
+      const under=tsSwipeUnder(host);
+      host.style.setProperty('--ts-dir', String(dir));
+      host.style.setProperty('--ts-reveal', String(Math.min(1, Math.abs(dx)/150)));
+      const top = tsSwipeTop(host) || host;
+      top.style.transform = `translateX(${shift.toFixed(1)}px)`;
+      if(under && valid){
+        const reveal = Math.min(1, Math.abs(dx)/150);
+        const underShift = (22 - reveal*22) * dir;
+        under.style.transform = `translateX(${underShift.toFixed(1)}px) scale(${(0.985 + reveal*0.015).toFixed(4)})`;
+      }
+    }
   }, {passive:false});
 
   const finish = ()=>{
     if(x0==null || axis!=='x'){ x0=null; axis=null; clearShift(false); return; }
     const moved=dx;
     x0=null; axis=null;
-    clearShift(true);
-    if(Math.abs(moved) < TS_COMMIT || !bar) return;
-    const tabs=[...bar.querySelectorAll('.phase-tab')];
-    const cur=tabs.findIndex(b=>b.classList.contains('active'));
-    if(cur<0) return;
+    if(host){ host.classList.remove('ts-swipe-dragging'); }
+    if(Math.abs(moved) < TS_COMMIT || !bar){ clearShift(true); return; }
+    if(!tabs || cur<0){ clearShift(true); return; }
     // Swipe left → next tab (content moves left, like turning a page).
     const next = moved<0 ? cur+1 : cur-1;
-    if(next<0 || next>=tabs.length) return;
-    tabs[next].click();
+    if(next<0 || next>=tabs.length){ clearShift(true); return; }
+    const nextPhase = tsTabPhase(tabs[next]);
+    const seamless = !!(nextPhase && previewPhase===nextPhase && host && host.classList.contains('ts-swipe-live'));
+    tsAnimateTabTurn(host, tabs, next, moved, {seamless});
   };
   document.addEventListener('touchend', finish, {passive:true});
   document.addEventListener('touchcancel', finish, {passive:true});
@@ -13309,8 +13730,9 @@ function abbrevName(full){
 // and practice-squad guys often have none), so rows never jump.
 function playerThumb(p){
   const pid = p && p.player_id;
+  const hp = (typeof hsPack==='function') ? hsPack({player_id:pid, name:(p&&p.name)||'', pos:(p&&p.pos)||'', team:(p&&p.team)||''}) : {src:(pid?SLEEPER_HEADSHOT(pid):''), fallbacks:[]};
   return `<span class="rt-thumb">${pid
-    ? `<img src="${SLEEPER_HEADSHOT(pid)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+    ? `<img src="${hp.src||''}" alt="" loading="lazy" data-fallbacks="${(hp.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">`
     : ''}</span>`;
 }
 // A roster row's player cell: photo + full name (with an abbreviated variant CSS swaps in when
@@ -14424,7 +14846,7 @@ function laPlayerImg(p, cls){
   const isDef = p.pos==='DEF';
   const code = isDef ? (p.team || p.id || p.player_id) : null;
   if(isDef && code) return imgTag(NFL_LOGO(String(code).toUpperCase()), cls+' la-def-logo');
-  return imgTag(hsURL({player_id:p.player_id||p.id, name:p.name, pos:p.pos}), cls);
+  return imgTag(hsPack({player_id:p.player_id||p.id, name:p.name, pos:p.pos}), cls);
 }
 
 // League / team icons — real Sleeper avatars with emoji fallback (older persisted snapshots
