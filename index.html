@@ -686,6 +686,7 @@ html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:no
 .coord-side{display:inline-block;font-size:10px;font-weight:800;color:var(--accent);
   background:var(--surface3);padding:2px 7px;border-radius:5px;margin-right:6px;}
 .coord-carry-sub{font-size:10.5px;color:var(--muted);margin-bottom:8px;}
+/* ── Coaching Playbook Modal + Insights ───────────────────────────────────── */
 
 /* Click affordances for coaching-scheme entry points */
 .scheme-open{cursor:pointer;transition:color .12s,border-color .12s,opacity .12s,transform .12s;}
@@ -719,6 +720,50 @@ html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:no
 .scheme-tab:hover{border-color:var(--accent);color:var(--text);}
 .scheme-tab.active{background:var(--accent);border-color:var(--accent);color:#08110e;}
 .scheme-tab.active span{color:#08110e;background:rgba(255,255,255,.35);}
+
+/* Insights section themed like the playcall sheet */
+.scheme-view-tabs{display:flex;gap:8px;margin:6px 0 10px;}
+.scheme-view-tab{border:1.5px solid #000;background:#e8e1d0;color:#2a2723;font-size:11px;font-weight:900;border-radius:3px;padding:6px 10px;cursor:pointer;font-family:"Courier New",monospace;letter-spacing:.04em;text-transform:uppercase;}
+.scheme-view-tab:hover{filter:brightness(1.04);}
+.scheme-view-tab.active{background:#f5e04b;border-color:#000;color:#1a1a17;}
+.scheme-insights-wrap{margin-top:2px;border:2px solid #000;background:#f4efe2;border-radius:2px;padding:11px;color:#1a1a17;font-family:"Courier New",monospace;}
+.scheme-insights-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+.scheme-insights-pill{display:inline-block;font-size:10px;font-weight:900;letter-spacing:.07em;border-radius:2px;padding:4px 9px;border:1.5px solid #000;background:#ece5d3;color:#1a1a17;text-transform:uppercase;}
+.scheme-insights-pill.warn{color:#1a1a17;border-color:#000;background:#f7a8c4;}
+.scheme-insights-pill.good{color:#1a1a17;border-color:#000;background:#8fd06a;}
+.scheme-insights-pill.neutral{color:#1a1a17;border-color:#000;background:#f5e04b;}
+.scheme-insights-sample{font-size:10px;color:#5a5545;font-weight:700;letter-spacing:.03em;}
+.scheme-insights-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;}
+.scheme-insight-card{background:#ece5d3;border:1.5px solid #000;border-radius:2px;padding:9px;}
+.scheme-insight-k{font-size:9.5px;color:#5a5545;margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em;font-weight:800;}
+.scheme-insight-v{font-family:"Courier New",monospace;font-size:20px;line-height:1.05;color:#1a1a17;font-weight:900;}
+.scheme-insight-rank{font-family:"Courier New",monospace;font-size:11px;font-weight:800;color:#5a5545;margin-left:4px;white-space:nowrap;}
+.scheme-insight-rank.good{color:#2f7a23;}
+.scheme-insight-rank.mid{color:#8c6b07;}
+.scheme-insight-rank.bad{color:#a8321f;}
+.scheme-insight-sub{font-size:10px;color:#5a5545;margin-top:5px;line-height:1.4;}
+.scheme-insight-note{margin-top:10px;padding:8px 9px;border-radius:2px;border:1.5px dashed #000;background:#ece5d3;font-size:11px;color:#5a5545;line-height:1.55;}
+.scheme-insight-note b{color:#1a1a17;}
+
+.scheme-benefactors-wrap{margin-top:10px;border:1.5px solid #000;background:#ece5d3;border-radius:2px;padding:8px 9px;}
+.scheme-benefactors-title{font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#1a1a17;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;}
+.scheme-benefactors-title span{font-size:9px;font-weight:800;color:#5a5545;letter-spacing:.04em;text-transform:none;}
+.scheme-benefit-list{display:flex;flex-direction:column;gap:5px;margin-top:7px;}
+.scheme-benefit-row{display:grid;grid-template-columns:20px 36px 1fr auto;gap:8px;align-items:center;background:#f4efe2;border:1.5px solid #000;border-radius:2px;padding:6px 7px;text-align:left;width:100%;font-family:"Courier New",monospace;color:#1a1a17;cursor:pointer;}
+.scheme-benefit-row:hover{background:#f8f3e7;}
+.scheme-benefit-row:focus{outline:2px solid #000;outline-offset:1px;}
+.scheme-benefit-rank{font-size:10px;font-weight:900;color:#5a5545;}
+.scheme-benefit-head{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1.5px solid #000;border-radius:50%;overflow:hidden;background:#ddd6c4;}
+.scheme-benefit-hs{width:100%;height:100%;object-fit:cover;display:block;}
+.scheme-benefit-hs-err,.scheme-benefit-hs.ph,.scheme-benefit-hs.ph-err{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#d9d2bf;color:#5a5545;font-size:9px;font-weight:900;letter-spacing:.03em;}
+.scheme-benefit-hs.ph{display:inline-block;}
+.scheme-benefit-main{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.scheme-benefit-name{font-size:12px;font-weight:900;color:#1a1a17;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.scheme-benefit-meta{font-size:9px;font-weight:800;color:#5a5545;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.scheme-benefit-score{font-size:16px;font-weight:900;color:#1a1a17;line-height:1;min-width:30px;text-align:right;}
+.scheme-benefit-why{grid-column:3 / span 2;font-size:9.5px;color:#5a5545;line-height:1.35;}
+
+/* Playbook cards under iframe fallback */
 .scheme-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(440px,1fr));gap:10px;}
 .scheme-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 11px;}
 .scheme-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;}
@@ -748,6 +793,11 @@ html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:no
   .scheme-overlay{padding:10px;}
   .scheme-modal{width:100%;max-height:calc(100vh - 20px);padding:12px 10px 12px;}
   .scheme-oc-note{display:block;margin:3px 0 0 0;}
+  .scheme-view-tabs{margin:4px 0 9px;}
+  .scheme-insights-grid{grid-template-columns:1fr;}
+  .scheme-benefit-row{grid-template-columns:18px 32px 1fr auto;gap:6px;padding:6px;}
+  .scheme-benefit-head{width:30px;height:30px;}
+  .scheme-benefit-score{font-size:14px;min-width:24px;}
   .scheme-grid{grid-template-columns:1fr;}
   .scheme-split{grid-template-columns:1fr;}
 }
@@ -9451,6 +9501,7 @@ const SCHEME_TEMPLATE_INLINE = "<!DOCTYPE html><html lang=\"en\"><head><meta cha
 let schemeOverlayOpen = false;
 let schemeTeam = null;
 let schemeSeason = null;
+let schemeViewTab = 'playbook';
 let _schemeEscBound = false;
 const _SCHEME_SCRIPT_OPEN = '<scr' + 'ipt>';
 const _SCHEME_SCRIPT_CLOSE = '</scr' + 'ipt>';
@@ -9712,6 +9763,452 @@ function _schemeCompactLabel(slot, pid, names, jerseys){
   return String(slot||'').toUpperCase() || '—';
 }
 
+function _schemeSafeNode(fv, down, dist, kind){
+  return (((((fv||{}).data||{})[String(down)]||{})[String(dist)]||{})[String(kind)]) || {total:0, groups:[]};
+}
+
+function _schemeWeightedGroupRate(nodes, key){
+  const arr = Array.isArray(nodes) ? nodes : [nodes];
+  let nTot = 0;
+  let sum = 0;
+  arr.forEach(node=>{
+    const gs = Array.isArray(node && node.groups) ? node.groups : [];
+    gs.forEach(g=>{
+      const n = _schemeNumber(g && g.n, 0);
+      const v = _schemeNumber(g && g[key], 0);
+      if(n <= 0) return;
+      nTot += n;
+      sum += n * v;
+    });
+  });
+  return nTot > 0 ? (sum / nTot) : null;
+}
+
+function _schemePct(v){
+  return Number.isFinite(v) ? `${v.toFixed(1)}%` : '—';
+}
+
+function _schemeOrdinal(n){
+  const v = Math.max(1, parseInt(n, 10) || 1);
+  const mod100 = v % 100;
+  if(mod100 >= 11 && mod100 <= 13) return `${v}th`;
+  const mod10 = v % 10;
+  if(mod10 === 1) return `${v}st`;
+  if(mod10 === 2) return `${v}nd`;
+  if(mod10 === 3) return `${v}rd`;
+  return `${v}th`;
+}
+
+function _schemeRankInLeague(value, values, dir){
+  if(!Number.isFinite(value)) return null;
+  const arr = (values||[]).filter(Number.isFinite);
+  if(!arr.length) return null;
+  const better = dir==='asc'
+    ? arr.filter(v=>v < value).length
+    : arr.filter(v=>v > value).length;
+  return 1 + better;
+}
+
+function _schemeRankClass(rank, nTeams){
+  const r = _schemeNumber(rank, 0);
+  const n = _schemeNumber(nTeams, 0);
+  if(r <= 0 || n <= 0) return 'neutral';
+  const pct = r / n;
+  if(pct <= 0.34) return 'good';
+  if(pct <= 0.67) return 'mid';
+  return 'bad';
+}
+
+function _schemeLeagueInsightRanks(season){
+  const block = NFLVERSE && NFLVERSE[String(season)] && NFLVERSE[String(season)].coaching_scheme;
+  const teams = block ? Object.keys(block) : [];
+  const rows = teams.map(team=>{
+    const data = _schemeRedZoneInsightData({ season:String(season), data:block[team] });
+    return {
+      thirdDownReach: data.thirdDownReach,
+      earlySucc: data.earlySucc,
+      earlyPass: data.earlyPass,
+      allSucc: data.allSucc,
+    };
+  });
+  return {
+    leagueSize: teams.length,
+    thirdDownReach: rows.map(r=>r.thirdDownReach).filter(Number.isFinite),
+    earlySucc: rows.map(r=>r.earlySucc).filter(Number.isFinite),
+    earlyPass: rows.map(r=>r.earlyPass).filter(Number.isFinite),
+    allSucc: rows.map(r=>r.allSucc).filter(Number.isFinite),
+  };
+}
+
+function _schemeRedZoneInsightData(p){
+  const fv = _schemeBuildFv(p);
+  const rz1 = _schemeSafeNode(fv, '1', 'all', 'redzone');
+  const rz2 = _schemeSafeNode(fv, '2', 'all', 'redzone');
+  const rz3 = _schemeSafeNode(fv, '3', 'all', 'redzone');
+  const rz4 = _schemeSafeNode(fv, '4', 'all', 'redzone');
+  const rzAll = _schemeSafeNode(fv, 'all', 'all', 'redzone');
+
+  const n1 = _schemeNumber(rz1.total, 0);
+  const n2 = _schemeNumber(rz2.total, 0);
+  const n3 = _schemeNumber(rz3.total, 0);
+  const n4 = _schemeNumber(rz4.total, 0);
+  const downsKnown = n1 + n2 + n3 + n4;
+
+  const thirdDownReach = downsKnown > 0 ? ((n3 + n4) / downsKnown) * 100 : null;
+  const earlySucc = _schemeWeightedGroupRate([rz1, rz2], 'succ');
+  const earlyPass = _schemeWeightedGroupRate([rz1, rz2], 'pass_rate');
+  const allSucc = _schemeWeightedGroupRate(rzAll, 'succ');
+
+  let label = 'Balanced';
+  let tone = 'neutral';
+  if(Number.isFinite(thirdDownReach)){
+    if(thirdDownReach >= 43){ label = 'High Drive Friction'; tone = 'warn'; }
+    else if(thirdDownReach <= 34){ label = 'Low Drive Friction'; tone = 'good'; }
+  }
+
+  return {
+    samplePlays: Math.max(downsKnown, _schemeNumber(rzAll.total, 0)),
+    thirdDownReach,
+    earlySucc,
+    earlyPass,
+    allSucc,
+    label,
+    tone,
+  };
+}
+
+function _schemeInsightNarrative(d){
+  const pieces = [];
+  if(Number.isFinite(d.thirdDownReach)){
+    if(d.thirdDownReach >= 43){
+      pieces.push('Goal-to-go sequences are reaching late downs too often. That usually means lower touchdown certainty and more week-to-week volatility.');
+    }else if(d.thirdDownReach <= 34){
+      pieces.push('Goal-to-go sequences are converting early at a healthy rate. Primary red-zone roles tend to be more reliable for touchdowns.');
+    }else{
+      pieces.push('Goal-to-go execution looks near league middle. Treat touchdown outcomes as role-driven more than scheme-extreme.');
+    }
+  }
+  if(Number.isFinite(d.earlyPass)){
+    if(d.earlyPass >= 58) pieces.push('Early downs skew pass-heavy inside the 10, which can support target-driven profiles over pure goal-line rushers.');
+    if(d.earlyPass <= 42) pieces.push('Early downs skew run-heavy inside the 10, which can concentrate upside into primary rushing roles.');
+  }
+  if(!pieces.length) pieces.push('Not enough red-zone charting for a confident read yet.');
+  return pieces.join(' ');
+}
+
+function _schemeClamp(v, lo, hi){
+  const n = _schemeNumber(v, 0);
+  return Math.max(lo, Math.min(hi, n));
+}
+
+function _schemePosFromSlot(slot){
+  const s = String(slot||'').toUpperCase();
+  if(s.startsWith('WR')) return 'WR';
+  if(s.startsWith('TE')) return 'TE';
+  if(s.startsWith('RB') || s.startsWith('FB')) return 'RB';
+  if(s.startsWith('QB')) return 'QB';
+  return 'WR';
+}
+
+function _schemeNormNameToken(s){
+  return String(s||'').toLowerCase()
+    .replace(/[.'\-]/g,'')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+function _schemePosPlayers(team, pos){
+  if(typeof getBase!=='function' || !team) return [];
+  const rows = getBase(team, pos) || [];
+  return rows.map(p=>{
+    const full = String((p && p.name) || '').trim();
+    const toks = full.split(/\s+/).filter(Boolean);
+    const first = _schemeNormNameToken(toks[0] || '');
+    const last = _schemeNormNameToken(toks[toks.length-1] || '');
+    const suffix = _schemeNormNameToken(toks[toks.length-1] || '').replace(/[^a-z0-9]/g,'');
+    const vol = _schemeNumber(p && (p.receiving_targets || p.receptions || p.rushing_attempts || p.targets), 0);
+    return {
+      name: full,
+      player_id: String((p && p.player_id) || ''),
+      pos: String((p && p.pos) || pos),
+      team: String((p && p.team) || team),
+      first,
+      last,
+      suffix,
+      norm: _schemeNormNameToken(full),
+      vol,
+    };
+  }).filter(p=>p.name);
+}
+
+function _schemeResolveRosterPlayer(team, pos, shortName, slot){
+  const players = _schemePosPlayers(team, pos);
+  if(!players.length){
+    return { name: String(shortName||slot||'Unknown'), player_id:'', pos, team };
+  }
+  const tok = _schemeNormNameToken(shortName);
+  const slotIdx = Math.max(1, parseInt(String(slot||'').replace(/\D+/g,''), 10) || 1);
+
+  let best = null;
+  let bestScore = -1;
+  players.forEach((p, i)=>{
+    let s = 0;
+    if(tok){
+      if(p.last === tok) s += 8;
+      if(p.first === tok) s += 5;
+      if(p.suffix === tok) s += 6;
+      if(p.norm.includes(tok)) s += 3;
+      if(tok.includes(p.last) || p.last.includes(tok)) s += 2;
+    }
+    if(i === (slotIdx-1)) s += 0.6;
+    s += Math.min(2, _schemeNumber(p.vol, 0) / 120);
+    if(s > bestScore){ bestScore = s; best = p; }
+  });
+  if(!best) best = players[Math.min(slotIdx-1, players.length-1)] || players[0];
+  return best || { name: String(shortName||slot||'Unknown'), player_id:'', pos, team };
+}
+
+function _schemePlayerOnclick(p){
+  const target = p.player_id || p.name;
+  if(typeof pcardOnclick==='function') return pcardOnclick(target, p.pos, p.team||'');
+  if(typeof openPlayerCard==='function'){
+    return `openPlayerCard(${JSON.stringify(target)},${JSON.stringify(p.pos)},${JSON.stringify(p.team||'')})`;
+  }
+  return '';
+}
+
+function _schemePlayerHeadshot(p){
+  const hasSleeper = (id)=>{
+    const rid = String(id||'');
+    return !!(rid && typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[rid]);
+  };
+  const byNameId = (typeof resolvePlayerId==='function')
+    ? (resolvePlayerId(p.name, p.pos) || resolvePlayerId(p.name) || '')
+    : '';
+  const pid = hasSleeper(p.player_id) ? String(p.player_id) : (hasSleeper(byNameId) ? String(byNameId) : '');
+  const hp = {
+    name: p.name,
+    pos: p.pos,
+    team: p.team,
+    player_id: pid || null,
+    headshot: p.headshot || null,
+  };
+  if(typeof hsPack==='function'){
+    const pack = hsPack(hp) || { src:'', fallbacks:[] };
+    const src = String(pack.src || '');
+    const fbs = Array.isArray(pack.fallbacks) ? pack.fallbacks.filter(Boolean) : [];
+    if(src){
+      const fbList = fbs.join('|');
+      const onerr = "const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.outerHTML='<span class=\\'scheme-benefit-hs-err\\'>NA</span>'; }";
+      return `<img src="${src}" class="scheme-benefit-hs" alt="" data-fallbacks="${fbList}" loading="lazy" decoding="async" onerror="${onerr}">`;
+    }
+  }
+  if(typeof imgTag==='function' && typeof hsURL==='function'){
+    return imgTag(hsURL(hp), 'scheme-benefit-hs', 'NA');
+  }
+  return '<span class="scheme-benefit-hs ph"></span>';
+}
+
+function _schemeBenefactorReason(pos, passLean, friction){
+  if((pos==='WR' || pos==='TE') && passLean > 0.18) return 'Pass-lean red-zone script';
+  if((pos==='WR' || pos==='TE') && friction > 0.12) return 'Late-down dependency boosts target paths';
+  if(pos==='RB' && passLean < -0.18) return 'Run-lean red-zone script';
+  if(pos==='RB' && friction < -0.08) return 'Early-down conversion supports rush TD paths';
+  if(pos==='QB' && passLean > 0.2) return 'Pass-heavy red-zone design can lift QB TD paths';
+  return 'High role concentration in this team context';
+}
+
+// Position priors for "who benefits" in red-zone context.
+// Higher `fitWeight` means team tendencies matter more than raw usage for that position.
+const SCHEME_BENEFIT_PROFILE = {
+  WR: { passW: 1.25, frictionW: 0.85, usageWeight: 0.54, fitWeight: 0.46 },
+  TE: { passW: 1.18, frictionW: 0.72, usageWeight: 0.56, fitWeight: 0.44 },
+  RB: { passW: -1.30, frictionW: -0.62, usageWeight: 0.60, fitWeight: 0.40 },
+  QB: { passW: 0.78, frictionW: -0.48, usageWeight: 0.66, fitWeight: 0.34 },
+  DEF: { passW: 0.0, frictionW: 0.0, usageWeight: 1.0, fitWeight: 0.0 },
+};
+
+function _schemeBenefitForPos(pos, useNorm, passLean, friction){
+  const cfg = SCHEME_BENEFIT_PROFILE[pos] || SCHEME_BENEFIT_PROFILE.WR;
+  const fitRaw = cfg.passW * passLean + cfg.frictionW * friction;
+  const fitNorm = _schemeClamp((fitRaw + 1) / 2, 0, 1);
+  return {
+    score: _schemeClamp(cfg.usageWeight * useNorm + cfg.fitWeight * fitNorm, 0, 1),
+    fitNorm,
+  };
+}
+
+function _schemeBuildBenefactors(p, d){
+  const fv = _schemeBuildFv(p);
+  const slotDownOpp = {};
+  const posDownOpp = {};
+  const slotMap = fv.slots || {};
+  const names = fv.names || {};
+  const downs = ['1','2','3','4'];
+  downs.forEach(down=>{
+    const node = _schemeSafeNode(fv, down, 'all', 'redzone');
+    const groups = Array.isArray(node && node.groups) ? node.groups : [];
+    groups.forEach(g=>{
+      const n = _schemeNumber(g && g.n, 0);
+      const passRate = _schemeNumber(g && g.pass_rate, 0) / 100;
+      const passPlays = n * passRate;
+      if(passPlays <= 0) return;
+
+      const assigns = Array.isArray(g && g.assigns) ? g.assigns : [];
+      const posBuckets = {};
+      assigns.forEach(a=>{
+        const slot = String((a && a.slot) || '');
+        if(!slot) return;
+        const pos = _schemePosFromSlot(slot);
+        (posBuckets[pos] = posBuckets[pos] || []).push({ slot, a });
+      });
+
+      Object.keys(posBuckets).forEach(pos=>{
+        const bucket = posBuckets[pos] || [];
+        if(!bucket.length) return;
+        const weights = bucket.map(x=>{
+          const routes = Array.isArray(x.a && x.a.routes) ? x.a.routes : [];
+          const sumPct = routes.reduce((t,r)=>t+Math.max(0,_schemeNumber(r && r[1],0)),0);
+          return Math.max(0.2, sumPct / 100);
+        });
+        const wSum = weights.reduce((t,v)=>t+v,0) || bucket.length;
+        bucket.forEach((x, i)=>{
+          const slot = x.slot;
+          const shareOpp = passPlays * (weights[i] / wSum);
+          const rec = (slotDownOpp[slot] = slotDownOpp[slot] || { pos, total:0, d1:0, d2:0, d3:0, d4:0 });
+          rec.total += shareOpp;
+          rec[`d${down}`] += shareOpp;
+          const pRec = (posDownOpp[pos] = posDownOpp[pos] || { d1:0, d2:0, d3:0, d4:0, total:0 });
+          pRec[`d${down}`] += shareOpp;
+          pRec.total += shareOpp;
+        });
+      });
+    });
+  });
+
+  const totals = Object.values(slotDownOpp);
+  const maxOpp = totals.reduce((m,r)=>Math.max(m,_schemeNumber(r && r.total,0)),0) || 1;
+  const rows = [];
+
+  Object.keys(slotDownOpp).forEach(slot=>{
+    const rec = slotDownOpp[slot] || {};
+    const pos = rec.pos || _schemePosFromSlot(slot);
+    const pRec = posDownOpp[pos] || { d1:0, d2:0, d3:0, d4:0, total:0 };
+    const d1Pct = pRec.d1>0 ? (100*rec.d1/pRec.d1) : 0;
+    const d2Pct = pRec.d2>0 ? (100*rec.d2/pRec.d2) : 0;
+    const d3Pct = pRec.d3>0 ? (100*rec.d3/pRec.d3) : 0;
+    const d4Pct = pRec.d4>0 ? (100*rec.d4/pRec.d4) : 0;
+    const wPct = (0.22*d1Pct) + (0.30*d2Pct) + (0.40*d3Pct) + (0.08*d4Pct);
+    const volNorm = _schemeClamp(_schemeNumber(rec.total, 0) / maxOpp, 0, 1);
+    const benefit = _schemeClamp((0.7*(wPct/100)) + (0.3*volNorm), 0, 1);
+
+    const gsis = slotMap[slot];
+    const shortName = names[gsis] || slot;
+    const resolved = _schemeResolveRosterPlayer(schemeTeam||'', pos, shortName, slot);
+    const rid = String((resolved && resolved.player_id) || '');
+    const name = String((resolved && resolved.name) || shortName || slot);
+    const bestDown = [
+      {k:'1st',v:d1Pct}, {k:'2nd',v:d2Pct}, {k:'3rd',v:d3Pct}, {k:'4th',v:d4Pct}
+    ].sort((a,b)=>b.v-a.v)[0];
+
+    rows.push({
+      name,
+      slot,
+      pos,
+      player_id: rid || null,
+      team: schemeTeam || '',
+      useRaw: _schemeNumber(rec.total, 0),
+      useShare: totals.length ? (100*_schemeNumber(rec.total,0)/totals.reduce((t,x)=>t+_schemeNumber(x.total,0),0)) : 0,
+      benefit,
+      d1Pct,
+      d2Pct,
+      d3Pct,
+      d4Pct,
+      targetPct: wPct,
+      reason: `${bestDown.k}-down ${pos} target-share leader (${bestDown.v.toFixed(1)}%)`,
+    });
+  });
+
+  return rows
+    .sort((a,b)=> (b.targetPct - a.targetPct) || (b.benefit - a.benefit) || (b.useShare - a.useShare) || String(a.name).localeCompare(String(b.name)))
+    .slice(0, 6);
+}
+
+function _schemeRenderBenefactors(list){
+  if(!list || !list.length){
+    return `<div class="scheme-benefactors-wrap">
+      <div class="scheme-benefactors-title">Most Benefiting Players</div>
+      <div class="scheme-empty">No player-level red-zone role data available for this season/team.</div>
+    </div>`;
+  }
+  const rows = list.map((p, i)=>{
+    const click = _schemePlayerOnclick(p);
+    const wrapOpen = click
+      ? `<div class="scheme-benefit-row clickable-player" role="button" tabindex="0" onclick="${click}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${click}}">`
+      : '<div class="scheme-benefit-row">';
+    const wrapClose = '</div>';
+    return `${wrapOpen}
+      <span class="scheme-benefit-rank">${i+1}</span>
+      <span class="scheme-benefit-head">${_schemePlayerHeadshot(p)}</span>
+      <span class="scheme-benefit-main">
+        <span class="scheme-benefit-name">${_schemeEscHtml(p.name)}</span>
+        <span class="scheme-benefit-meta">${_schemeEscHtml(p.pos)} · ${_schemeEscHtml(p.slot)} · TGT% ${p.targetPct.toFixed(1)} (D1 ${p.d1Pct.toFixed(0)} / D2 ${p.d2Pct.toFixed(0)} / D3 ${p.d3Pct.toFixed(0)})</span>
+      </span>
+      <span class="scheme-benefit-score">${(p.benefit*100).toFixed(0)}</span>
+      <span class="scheme-benefit-why">${_schemeEscHtml(p.reason)}</span>
+    ${wrapClose}`;
+  }).join('');
+  return `<div class="scheme-benefactors-wrap">
+    <div class="scheme-benefactors-title">Most Benefiting Players <span>ranked by fit + role usage</span></div>
+    <div class="scheme-benefit-list">${rows}</div>
+  </div>`;
+}
+
+function _schemeRenderInsights(p){
+  const d = _schemeRedZoneInsightData(p);
+  const benefactors = _schemeBuildBenefactors(p, d);
+  const league = _schemeLeagueInsightRanks(p && p.season);
+  const nTeams = _schemeNumber(league && league.leagueSize, 0);
+  const rankText = (rank) => (rank && nTeams) ? `${_schemeOrdinal(rank)} of ${nTeams}` : '—';
+  const rankClass = (rank) => _schemeRankClass(rank, nTeams);
+  const rzRank = _schemeRankInLeague(d.thirdDownReach, league.thirdDownReach, 'asc');
+  const earlySuccRank = _schemeRankInLeague(d.earlySucc, league.earlySucc, 'desc');
+  const earlyPassRank = _schemeRankInLeague(d.earlyPass, league.earlyPass, 'desc');
+  const allSuccRank = _schemeRankInLeague(d.allSucc, league.allSucc, 'desc');
+  const toneClass = d.tone==='warn' ? 'warn' : (d.tone==='good' ? 'good' : 'neutral');
+  const blurb = _schemeInsightNarrative(d);
+  return `<div class="scheme-insights-wrap">
+    <div class="scheme-insights-head">
+      <span class="scheme-insights-pill ${toneClass}">${d.label}</span>
+      <span class="scheme-insights-sample">Sample: ${Math.round(_schemeNumber(d.samplePlays, 0))} red-zone plays</span>
+    </div>
+    <div class="scheme-insights-grid">
+      <div class="scheme-insight-card">
+        <div class="scheme-insight-k">Goal-to-go 3rd/4th-down reach (proxy)</div>
+        <div class="scheme-insight-v">${_schemePct(d.thirdDownReach)} <span class="scheme-insight-rank ${rankClass(rzRank)}">(${rankText(rzRank)})</span></div>
+        <div class="scheme-insight-sub">Higher generally means weaker early-down finish quality.</div>
+      </div>
+      <div class="scheme-insight-card">
+        <div class="scheme-insight-k">Early-down success in red zone (1st/2nd)</div>
+        <div class="scheme-insight-v">${_schemePct(d.earlySucc)} <span class="scheme-insight-rank ${rankClass(earlySuccRank)}">(${rankText(earlySuccRank)})</span></div>
+        <div class="scheme-insight-sub">Weighted by formation usage in this filter set.</div>
+      </div>
+      <div class="scheme-insight-card">
+        <div class="scheme-insight-k">Early-down pass rate in red zone</div>
+        <div class="scheme-insight-v">${_schemePct(d.earlyPass)} <span class="scheme-insight-rank ${rankClass(earlyPassRank)}">(${rankText(earlyPassRank)})</span></div>
+        <div class="scheme-insight-sub">Context for WR/TE vs. RB touchdown paths.</div>
+      </div>
+      <div class="scheme-insight-card">
+        <div class="scheme-insight-k">All-down red-zone success</div>
+        <div class="scheme-insight-v">${_schemePct(d.allSucc)} <span class="scheme-insight-rank ${rankClass(allSuccRank)}">(${rankText(allSuccRank)})</span></div>
+        <div class="scheme-insight-sub">Overall efficiency backdrop for touchdown expectation.</div>
+      </div>
+    </div>
+    <div class="scheme-insight-note"><b>Fantasy angle:</b> ${_schemeEscHtml(blurb)}</div>
+    ${_schemeRenderBenefactors(benefactors)}
+  </div>`;
+}
+
 function _schemeCompactFvLabels(fv){
   if(!fv || !fv.data) return fv;
   const out = JSON.parse(JSON.stringify(fv));
@@ -9805,10 +10302,22 @@ function _renderTeamCoachingScheme(){
           ${_schemeOcCallout(schemeTeam)}
         </div>
       </div>
+      <div class="scheme-view-tabs">
+        <button class="scheme-view-tab ${schemeViewTab==='playbook'?'active':''}" onclick="setTeamCoachingSchemeTab('playbook')">Playbook</button>
+        <button class="scheme-view-tab ${schemeViewTab==='insights'?'active':''}" onclick="setTeamCoachingSchemeTab('insights')">Insights</button>
+      </div>
       <div class="scheme-loading">Loading playsheet template…</div>
       ${seasons.length>1?`<div class="scheme-tabs">${seasons.map(s=>`<button class="scheme-tab ${String(s)===String(schemeSeason)?'active':''}" onclick="setTeamCoachingSchemeSeason('${s}')">Season <span>${s}</span></button>`).join('')}</div>`:''}
     </div>
   </div>`;
+
+  if(schemeViewTab==='insights'){
+    const modal = host.querySelector('.scheme-modal');
+    const loading = host.querySelector('.scheme-loading');
+    if(loading) loading.remove();
+    if(modal) modal.insertAdjacentHTML('beforeend', _schemeRenderInsights(p));
+    return;
+  }
 
   try{
     const tpl = (typeof SCHEME_TEMPLATE_INLINE==='string' && SCHEME_TEMPLATE_INLINE)
@@ -9833,6 +10342,7 @@ function openTeamCoachingScheme(team, initialView){
   if(!team) return;
   schemeOverlayOpen = true;
   schemeTeam = team;
+  schemeViewTab = (initialView && initialView.tab==='insights') ? 'insights' : 'playbook';
   if(initialView && typeof initialView==='object' && initialView.season!=null){
     schemeSeason = String(initialView.season);
   }else{
@@ -9874,6 +10384,7 @@ function closeTeamCoachingScheme(){
   schemeOverlayOpen = false;
   schemeTeam = null;
   schemeSeason = null;
+  schemeViewTab = 'playbook';
   const host = _schemeOverlayHost(false);
   if(host) host.remove();
 }
@@ -9893,6 +10404,12 @@ function setTeamCoachingSchemeSeason(season){
     }
     return;
   }
+  _renderTeamCoachingScheme();
+}
+
+function setTeamCoachingSchemeTab(tab){
+  if(!schemeOverlayOpen || !schemeTeam) return;
+  schemeViewTab = String(tab)==='insights' ? 'insights' : 'playbook';
   _renderTeamCoachingScheme();
 }
 
