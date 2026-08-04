@@ -184,7 +184,7 @@ function coordInlineLabel(a,b,c){
     }
   }
   const attrs = team
-    ? `class="coord-inline scheme-open" role="button" tabindex="0" title="Open coaching scheme visualization" onclick="openTeamCoachingScheme('${team}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${team}');}"`
+    ? `class="coord-inline scheme-open" role="button" tabindex="0" title="Open playbook visualization" onclick="openTeamCoachingScheme('${team}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${team}');}"`
     : `class="coord-inline"`;
   if(!coord) return '';
   if(!coord.name) return '';

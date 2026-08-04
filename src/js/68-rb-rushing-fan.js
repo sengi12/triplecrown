@@ -13,6 +13,130 @@ const RB_TEAM_FIX = {LA:'LAR', OAK:'LV', SD:'LAC', STL:'LAR'};
 
 let pcardRbFanSeason = null;
 
+function _rbProjSeed(){
+  return projSeed || (seasonStatsCache && seasonStatsCache['proj']) || null;
+}
+
+function _rbProjectedTeamAndRow(pid, normName){
+  const proj=_rbProjSeed();
+  const olProj=(typeof _olProjectedTeam2026==='function') ? _olProjectedTeam2026() : {};
+  const player=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[pid])||{};
+  const directTeam=_rbTeamCode(player.team||'');
+  const matchesRow=(row)=> !!row && ((pid && row.player_id && String(row.player_id)===String(pid)) || _rbNormName(row.name)===normName);
+  if(directTeam && proj && proj[directTeam] && Array.isArray(proj[directTeam].RB)){
+    const row=proj[directTeam].RB.find(matchesRow) || null;
+    if(row) return {team:directTeam, row};
+  }
+  if(proj){
+    for(const tm in proj){
+      const rows=(proj[tm]&&proj[tm].RB)||[];
+      const row=rows.find(matchesRow);
+      if(row && olProj[_rbTeamCode(tm)]) return {team:_rbTeamCode(tm), row};
+    }
+  }
+  return {team:(directTeam&&olProj[directTeam])?directTeam:'', row:null};
+}
+
+function _rbProjectedShareRow(teamCode, pid, normName){
+  const st=(typeof workingProj==='object' && workingProj) ? workingProj[teamCode] : null;
+  const shares=st && st.rushing && Array.isArray(st.rushing.shares) ? st.rushing.shares : null;
+  if(!shares) return {state:st, row:null};
+  const row=shares.find(p=>((pid && p.player_id && String(p.player_id)===String(pid)) || _rbNormName(p.name)===normName)) || null;
+  return {state:st, row};
+}
+
+function _rbLaneSlot(lane){
+  if(lane==='LE' || lane==='LT') return 'LT';
+  if(lane==='LG') return 'LG';
+  if(lane==='MID') return 'C';
+  if(lane==='RG') return 'RG';
+  if(lane==='RT' || lane==='RE') return 'RT';
+  return 'C';
+}
+
+function _rbRunPctile(rec){
+  if(!rec) return null;
+  if(rec.run_pctile!=null && !Number.isNaN(Number(rec.run_pctile))) return Number(rec.run_pctile);
+  if(typeof _olGradeToPct==='function') return _olGradeToPct(rec.run_grade);
+  return null;
+}
+
+function _rbProjectedLanes(baseChart, projLine, totals){
+  const lanes=(baseChart&&baseChart.lanes)||{};
+  const out={};
+  const baseTotals=(baseChart&&baseChart.totals)||{};
+  const baseAtt=Math.max(1, Number(baseTotals.attempts)||0);
+  const projAtt=Math.max(0, Number((totals&&totals.attempts)||0));
+  const attScale=baseAtt>0 ? (projAtt/baseAtt) : 1;
+  const baseYpc=(baseTotals.ypc!=null && !Number.isNaN(Number(baseTotals.ypc))) ? Number(baseTotals.ypc) : null;
+  const projYpc=(totals&&totals.ypc!=null && !Number.isNaN(Number(totals.ypc))) ? Number(totals.ypc) : baseYpc;
+  const ypcDelta=(baseYpc!=null && projYpc!=null) ? (projYpc-baseYpc) : 0;
+  for(const lane of RB_FAN_LANES){
+    const d=lanes[lane]||{};
+    const slot=_rbLaneSlot(lane);
+    const projPct=_rbRunPctile(projLine&&projLine[slot]);
+    const basePct=_rbRunPctile(baseChart&&baseChart.line&&baseChart.line[slot]);
+    const laneBoost=(projPct!=null && basePct!=null) ? ((projPct-basePct)/100) : 0;
+    const attempts=Math.max(0, Math.round((Number(d.attempts)||0)*attScale));
+    const ypc=(d.ypc!=null && !Number.isNaN(Number(d.ypc)))
+      ? Math.max(0, Number((Number(d.ypc) + ypcDelta + (laneBoost*0.9)).toFixed(2)))
+      : null;
+    const success=(d.success_rate!=null && !Number.isNaN(Number(d.success_rate)))
+      ? Math.max(15, Math.min(80, Number((Number(d.success_rate) + (ypcDelta*3.5) + (laneBoost*9)).toFixed(1))))
+      : null;
+    const leagueYpc=(d.league_ypc!=null && !Number.isNaN(Number(d.league_ypc))) ? Number(d.league_ypc) : null;
+    out[lane]={
+      attempts,
+      ypc,
+      success_rate:success,
+      league_ypc:leagueYpc,
+      ypc_diff:(ypc!=null && leagueYpc!=null) ? Number((ypc-leagueYpc).toFixed(2)) : null,
+      yards:(ypc!=null) ? Math.round(attempts*ypc) : null,
+      td:(d.td!=null) ? Number((((Number(d.td)||0)*attScale)).toFixed(1)) : null,
+    };
+  }
+  return out;
+}
+
+function _rbProjectedChart(pid, normName){
+  const pr=_rbProjectedTeamAndRow(pid, normName);
+  const teamCode=_rbTeamCode(pr.team||'');
+  const olProj=(typeof _olProjectedTeam2026==='function') ? _olProjectedTeam2026()[teamCode] : null;
+  if(!teamCode || !olProj) return null;
+  const histSeasons=Object.keys(NFLVERSE||{})
+    .filter(s=>String(s)!=='2026' && NFLVERSE[s] && NFLVERSE[s].rb_fan && NFLVERSE[s].rb_fan[normName])
+    .sort((a,b)=>Number(b)-Number(a));
+  const baseChart=histSeasons.length ? NFLVERSE[histSeasons[0]].rb_fan[normName] : null;
+  const share=_rbProjectedShareRow(teamCode, pid, normName);
+  const st=share.state;
+  const shareRow=share.row;
+  const baseRow=pr.row||{};
+  const attempts=shareRow && st && st.rushing
+    ? Math.round(Number(shareRow.share||0) * Number(st.rushing.total_attempts||0))
+    : Math.round(Number(baseRow.rushing_attempts||0));
+  const ypc=shareRow
+    ? Number(shareRow.ypc || (st&&st.rushing&&st.rushing.ypa) || ((baseRow.rushing_attempts||0)>0 ? (Number(baseRow.rushing_yards||0)/Number(baseRow.rushing_attempts||1)) : 4))
+    : ((Number(baseRow.rushing_attempts||0)>0) ? (Number(baseRow.rushing_yards||0)/Number(baseRow.rushing_attempts||1)) : 4);
+  const yards=shareRow ? Math.round(attempts*ypc) : Math.round(Number(baseRow.rushing_yards||0));
+  const teamTds=(shareRow && st && typeof teamRushTDs==='function') ? teamRushTDs(st) : Number((st&&st.rushing&&st.rushing.total_rush_tds)||0);
+  const tds=shareRow ? Number((Number(shareRow.td_share||0)*teamTds).toFixed(1)) : Number(baseRow.rushing_tds||0);
+  const baseSuccess=(baseChart&&baseChart.totals&&baseChart.totals.success_rate!=null && !Number.isNaN(Number(baseChart.totals.success_rate))) ? Number(baseChart.totals.success_rate) : null;
+  const baseYpc=(baseChart&&baseChart.totals&&baseChart.totals.ypc!=null && !Number.isNaN(Number(baseChart.totals.ypc))) ? Number(baseChart.totals.ypc) : null;
+  const success=(baseSuccess!=null && baseYpc!=null)
+    ? Math.max(15, Math.min(80, Number((baseSuccess + ((ypc-baseYpc)*4)).toFixed(1))))
+    : null;
+  return {
+    is_projection:true,
+    baselineSeason:olProj.baselineSeason,
+    run_score:olProj.projRunScore,
+    run_rank:olProj.runRank,
+    team:teamCode,
+    totals:{attempts, yards, ypc:Number(ypc.toFixed(2)), success_rate:success, td:tds},
+    lanes:_rbProjectedLanes(baseChart, olProj.line||{}, {attempts, ypc}),
+    line:olProj.line||{},
+  };
+}
+
 function _pcardRbNorm(pid){
   const p=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[pid])||{};
   return ecrNormName(p.name||'');
@@ -31,7 +155,8 @@ function pcardRbFanSeasons(normName){
 }
 
 function pcardRbFanAvailable(pid){
-  return pcardRbFanSeasons(_pcardRbNorm(pid)).length>0;
+  const norm=_pcardRbNorm(pid);
+  return pcardRbFanSeasons(norm).length>0 || !!_rbProjectedChart(pid, norm);
 }
 
 function _rbNum(v, dp=1){
@@ -377,8 +502,8 @@ function _rbFanSVG(chart, playerName, season, metric){
   const parts=[];
   parts.push(`<svg viewBox="0 0 ${W} ${H}" class="rbf-svg" role="img" aria-label="RB rushing fan chart">`);
   parts.push('<rect width="760" height="880" fill="#101214"/>');
-  parts.push(`<text x="30" y="34" fill="#fff" font-size="22" font-weight="800">${String(playerName||'RB').toUpperCase()} RUSHING FAN <tspan fill="#9aa0a6" font-size="14" font-weight="600">/ ${season} REGULAR SEASON</tspan></text>`);
-  parts.push('<text x="30" y="56" fill="#9aa0a6" font-size="13">Arrow width = lane success rate · arrow color = lane YPC vs league lane average</text>');
+  parts.push(`<text x="30" y="34" fill="#fff" font-size="22" font-weight="800">${String(playerName||'RB').toUpperCase()} RUSHING FAN <tspan fill="#9aa0a6" font-size="14" font-weight="600">/ ${season} ${chart.is_projection?'PROJECTION':'REGULAR SEASON'}</tspan></text>`);
+  parts.push(`<text x="30" y="56" fill="#9aa0a6" font-size="13">Arrow width = lane success rate · arrow color = ${chart.is_projection?'projected lane YPC vs league lane average':'lane YPC vs league lane average'}</text>`);
 
   const MET = RB_LANE_METRICS[metric] || RB_LANE_METRICS.eff;
   let MAXV=0;
@@ -435,8 +560,8 @@ function _rbFanSVG(chart, playerName, season, metric){
   parts.push(`<text x="${rbx}" y="690" fill="#fff" font-size="13" font-weight="800" text-anchor="middle">${String(playerName||'RB').toUpperCase()}</text>`);
   parts.push(`<text x="${rbx}" y="707" fill="#9aa0a6" font-size="11" text-anchor="middle">${t.attempts||0} carries · ${(t.yards!=null?Number(t.yards).toLocaleString():'—')} yds · ${_rbNum(t.ypc,2)} YPC · ${_rbNum(t.success_rate,1)}% success</text>`);
 
-  parts.push('<text x="30" y="772" fill="#6b7075" font-size="10">OL card grades are from the validated local OL pipeline (rushing grades, starter slot by pass-snaps).</text>');
-  parts.push(`<text x="30" y="786" fill="#6b7075" font-size="10">Lanes shown when attempts \u2265 3. ${MET.key? 'Color scales to this back\u2019s best gap.' : 'Color compares lane YPC to league average for that lane in-season.'}</text>`);
+  parts.push(`<text x="30" y="772" fill="#6b7075" font-size="10">OL card grades are from the validated local OL pipeline (${chart.is_projection?'projected 2026 run grades':'historical rushing grades'}, slot by pass-snaps).</text>`);
+  parts.push(`<text x="30" y="786" fill="#6b7075" font-size="10">Lanes shown when attempts >= 3. ${chart.is_projection?'Projected lanes keep the back\u2019s last known directional profile and scale it to projected volume/efficiency.' : (MET.key? 'Color scales to this back\u2019s best gap.' : 'Color compares lane YPC to league average for that lane in-season.')}</text>`);
   parts.push('<text x="30" y="800" fill="#6b7075" font-size="10">Data: nflverse play-by-play + local OL grades. Not affiliated with the NFL.</text>');
   parts.push('</svg>');
   return parts.join('');
@@ -445,16 +570,20 @@ function _rbFanSVG(chart, playerName, season, metric){
 function renderPcardRbFan(pid){
   const norm=_pcardRbNorm(pid);
   const seasons=pcardRbFanSeasons(norm);
-  if(!seasons.length) return '<div class="pcard-loading">No rushing-fan data for this RB.</div>';
-  if(pcardRbFanSeason==null || !seasons.includes(String(pcardRbFanSeason))) pcardRbFanSeason=seasons[0];
+  const projChart=_rbProjectedChart(pid, norm);
+  const seasonOpts=seasons.slice();
+  if(projChart && !seasonOpts.includes('2026')) seasonOpts.unshift('2026');
+  if(!seasonOpts.length) return '<div class="pcard-loading">No rushing-fan data for this RB.</div>';
+  if(pcardRbFanSeason==null || !seasonOpts.includes(String(pcardRbFanSeason))) pcardRbFanSeason=seasonOpts[0];
   const season=String(pcardRbFanSeason);
-  const chart=NFLVERSE[season].rb_fan[norm];
+  const chart=(season==='2026' && projChart) ? projChart : (NFLVERSE[season]&&NFLVERSE[season].rb_fan&&NFLVERSE[season].rb_fan[norm]);
   if(!chart) return '<div class="pcard-loading">No rushing-fan data for this season.</div>';
   const pack=NFLVERSE[season]||{};
   const teamCode=_rbTeamCode(chart.team||'');
   const runTbl=pack.team&&pack.team.offensive_line_run;
-  const runRow=runTbl&&runTbl.teams&&runTbl.teams[teamCode];
-  const runSc=_rbRunScoreAndRankFromTable(runTbl, teamCode);
+  const runSc=(season==='2026' && chart.is_projection)
+    ? {score:chart.run_score, rank:chart.run_rank}
+    : _rbRunScoreAndRankFromTable(runTbl, teamCode);
   const overallRunHtml = (runSc.score!=null || runSc.rank!=null)
     ? `<div class="olc-overview"><b>Cumulative Run Blocking Score: ${runSc.score!=null?runSc.score.toFixed(1):'—'}</b> ${_rbRankBadge(runSc.rank)}</div>`
     : '';
@@ -462,7 +591,7 @@ function renderPcardRbFan(pid){
   const p=(sleeperPlayers&&sleeperPlayers[pid])||{};
   const name=p.name||'RB';
   const t=chart.totals||{};
-  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardRbFanSeason('${s}')">${s}</button>`).join('');
+  const seasonBtns=seasonOpts.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardRbFanSeason('${s}')">${s}</button>`).join('');
   if(!RB_LANE_METRICS[pcardRbMetric]) pcardRbMetric='eff';
   let metric=pcardRbMetric;
   if(!_rbMetricKnown(chart, metric)) metric='eff';   // older seed without per-gap yards/TD
@@ -480,6 +609,7 @@ function renderPcardRbFan(pid){
       <div class="rt-summary">${t.attempts||0} carries · ${_rbNum(t.ypc,2)} YPC · ${_rbNum(t.success_rate,1)}% success</div>
     </div>
     ${overallRunHtml}
+    ${chart.is_projection?`<div class="olc-overview"><b>2026 Projection:</b> projected depth-chart starters' run grades drive the line cards and cumulative run score. Lane arrows preserve the back's latest directional profile and scale it to projected efficiency/volume.</div>`:''}
     ${_rbFanSVG(chart, name, season, metric)}
     <div class="rbf-legend">
       <span><i style="background:#2fae4e"></i>Lane YPC above league avg</span>
@@ -494,4 +624,18 @@ function setPcardRbFanSeason(season){
   pcardRbFanSeason=season;
   const body=document.getElementById('pcardBody');
   if(body && pcardState) body.innerHTML=renderPcardRbFan(pcardState.pid);
+}
+
+function _rbRefreshOpenProjectedFanForTeam(team){
+  if(typeof pcardState==='undefined' || !pcardState) return;
+  if(typeof pcardStatsMode==='undefined' || pcardStatsMode!=='rbfan') return;
+  if(String(pcardRbFanSeason)!=='2026') return;
+  const body=document.getElementById('pcardBody');
+  if(!body) return;
+  try{
+    const norm=_pcardRbNorm(pcardState.pid);
+    const proj=_rbProjectedChart(pcardState.pid, norm);
+    if(!proj || _rbTeamCode(proj.team)!==_rbTeamCode(team)) return;
+  }catch(e){ /* refresh anyway on lookup failure */ }
+  body.innerHTML=renderPcardRbFan(pcardState.pid);
 }

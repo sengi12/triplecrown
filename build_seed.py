@@ -2469,7 +2469,7 @@ def main():
         _write_seed("seeds/triplecrown_seed.ol_weekly.json", nflverse_ol_weekly)
     if nflverse_adv_weekly:
         _write_seed("seeds/triplecrown_seed.adv_weekly.json", nflverse_adv_weekly)
-    # Coaching scheme is the largest lazy block and is viewed one season at a time, so split it
+    # Playbook is the largest lazy block and is viewed one season at a time, so split it
     # into per-season sidecars the app fetches on demand (a typical user only downloads the
     # current season). Remove any stale combined file from older builds.
     _old_combined = "seeds/triplecrown_seed.coaching.json"
@@ -2494,7 +2494,7 @@ def main():
     if nflverse_adv_weekly:
         print("  • seeds/triplecrown_seed.adv_weekly.json → lazy sidecar (advanced weekly range recompute)")
     if coaching_files:
-        print(f"  • seeds/triplecrown_seed.coaching.<season>.json → {len(coaching_files)} per-season lazy sidecars (coaching scheme modal)")
+        print(f"  • seeds/triplecrown_seed.coaching.<season>.json → {len(coaching_files)} per-season lazy sidecars (playbook modal)")
     print(f"  • {CACHE_DIR}/ → cached raw API responses (delete to force refresh)")
     print("\nNext: open the TripleCrown app (index.html). By default it pulls live 2026")
     print("projections from Sleeper on load. To use this prebuilt snapshot (with historical")

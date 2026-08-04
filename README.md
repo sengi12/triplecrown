@@ -96,7 +96,7 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
   <img src="./images/rushing_fan.png" alt="Centered Image">
 </div>
 
-- **Coaching Schemes.** Every team has been had their personnel groupings, formations, run success rates vs gaps and route concepts mapped into trends in this new visualization tool which allows you to see all the different passing and rushing concepts that these teams rely on in different situations in game!
+- **Playbooks.** Every team has been had their personnel groupings, formations, run success rates vs gaps and route concepts mapped into trends in this new visualization tool which allows you to see all the different passing and rushing concepts that these teams rely on in different situations in game!
 
 <!-- Center align -->
 <div align="center">

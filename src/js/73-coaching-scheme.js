@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Team coaching scheme modal (nflverse)
+// Team playbook modal (nflverse)
 // ─────────────────────────────────────────────────────────────────────────────
 let schemeOverlayOpen = false;
 let schemeTeam = null;
@@ -101,7 +101,7 @@ function _schemeOcCallout(team){
   const seasons = _schemeSeasonsForTeam(prev);
   const links = seasons.length
     ? `<div class="scheme-oc-links">${seasons.map(s=>`<button class="scheme-oc-link" onclick="openTeamCoachingScheme('${prev}',{season:'${s}',from:'${team}'})">${prev} ${s}</button>`).join('')}</div>`
-    : `<span class="scheme-oc-missing">No prior-team coaching scheme seasons loaded.</span>`;
+    : `<span class="scheme-oc-missing">No prior-team playbook seasons loaded.</span>`;
   return `<div class="scheme-oc-callout">
     <div><span class="scheme-oc-pill new">NEW ${roleTag}</span><b>${_schemeEscHtml(src.name)}</b>${since}
       <span class="scheme-oc-note">from ${prevName}${src.prev_role?` (${_schemeEscHtml(src.prev_role)})`:''}${src.prev_years?` · ${_schemeEscHtml(String(src.prev_years))}`:''}</span>
@@ -308,7 +308,7 @@ function _schemeRenderTemplate(template, p){
     .replace(/__TC_SCRIPT_OPEN__/g, _SCHEME_SCRIPT_OPEN)
     .replace(/__TC_SCRIPT_CLOSE__/g, _SCHEME_SCRIPT_CLOSE)
     .replace('__TC_FV_SCRIPT__', script)
-    .replace('Detroit Lions &mdash; Formation &amp; Concept Sheet', `${full} &mdash; Formation &amp; Concept Sheet`)
+    .replace('Detroit Lions &mdash; Playbook', `${full} &mdash; Playbook`)
     .replace('2025 · Routes mapped to players', `${season} · Routes mapped to players`)
     .replace('WR1=St. Brown, WR2=Williams', `WR1=${wr1}, WR2=${wr2}`)
     .replace(/const FV=.*?const FORM=FV\.data;\s*const SEASON=FV\.season;\s*const NAMES=FV\.names;/s, script);
@@ -339,7 +339,7 @@ function _renderTeamCoachingScheme(){
         <button class="scheme-close" onclick="closeTeamCoachingScheme()" aria-label="Close">✕</button>
         <div class="scheme-head">
           <img src="${NFL_LOGO(schemeTeam)}" class="scheme-team-logo" onerror="this.style.display='none'">
-          <div><div class="scheme-title">${teamDisplayName(schemeTeam)} Coaching Scheme</div>
+          <div><div class="scheme-title">${teamDisplayName(schemeTeam)} Playbook</div>
           <div class="scheme-subtitle">No nflverse coaching-scheme payload found for this team.</div></div>
         </div>
       </div>
@@ -353,7 +353,7 @@ function _renderTeamCoachingScheme(){
       <div class="scheme-head">
         <img src="${NFL_LOGO(schemeTeam)}" class="scheme-team-logo" onerror="this.style.display='none'">
         <div>
-          <div class="scheme-title">${teamDisplayName(schemeTeam)} Coaching Scheme</div>
+          <div class="scheme-title">${teamDisplayName(schemeTeam)} Playbook</div>
           <div class="scheme-subtitle">Interactive playsheet · nflverse charting · ${p.season} regular season</div>
           ${_schemeOcCallout(schemeTeam)}
         </div>
@@ -414,7 +414,7 @@ function _renderSchemeLoadingShell(){
       <div class="scheme-head">
         <img src="${NFL_LOGO(schemeTeam)}" class="scheme-team-logo" onerror="this.style.display='none'">
         <div>
-          <div class="scheme-title">${teamDisplayName(schemeTeam)} Coaching Scheme</div>
+          <div class="scheme-title">${teamDisplayName(schemeTeam)} Playbook</div>
           <div class="scheme-subtitle">Loading coaching-scheme data…</div>
         </div>
       </div>

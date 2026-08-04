@@ -926,10 +926,9 @@ function renderPcardQbOl(pid){
     const pctRank=_olRankFromPct(r.pass_pctile);
     const pctBadge=pctRank!=null ? `<span class="sr-badge ${_olRankClass(pctRank)} olc-rank-badge">${pct}</span>` : `<span class="olc-rank-muted">${pct}</span>`;
     const snaps=(r.pass_snaps==null||Number.isNaN(r.pass_snaps))?'—':Number(r.pass_snaps).toLocaleString();
-    const starter = r.is_projected_starter===true ? '<span class="olc-starter-pill">Starter</span>' : '';
     const click = r.name ? `openPlayerCardFromCard(${pcardArg(r.name)},${pcardArg(sl)},${pcardArg(teamCode)})` : '';
     return `<div class="olc-qb-slot-card${r.name?' clickable-player':''}" ${r.name?`onclick="${click}" role="button" tabindex="0"`:''}>
-      <div class="olc-qb-slot-top"><span class="olc-qb-slot">${sl}</span>${starter}</div>
+      <div class="olc-qb-slot-top"><span class="olc-qb-slot">${sl}</span></div>
       ${_olHeadshot(r.name||'', sl, teamCode)}
       <div class="olc-qb-name">${r.name||'—'}</div>
       <div class="olc-qb-grade ${_olGradeClass(g)}">${g}</div>

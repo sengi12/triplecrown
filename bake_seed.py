@@ -317,7 +317,7 @@ def main():
     nflverse_def_weekly = _decode_defweekly(_sidecar(os.path.join(seed_dir, "triplecrown_seed.def_weekly.json")))
     nflverse_ol_weekly = _sidecar(os.path.join(seed_dir, "triplecrown_seed.ol_weekly.json"))
     nflverse_adv_weekly = _sidecar(os.path.join(seed_dir, "triplecrown_seed.adv_weekly.json"))
-    # Coaching scheme now ships as per-season sidecars (seeds/triplecrown_seed.coaching.<season>.json);
+    # playbook now ships as per-season sidecars (seeds/triplecrown_seed.coaching.<season>.json);
     # re-embed every season for the offline/baked file. Fall back to the old combined file.
     import glob as _glob
     nflverse_coaching = {}
