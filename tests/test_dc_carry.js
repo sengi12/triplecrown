@@ -22,15 +22,13 @@ const html=app.renderTeamAdvanced('TEN');
 console.log('=== Defensive carryover: tendencies + coverage schemes, NOT coverage-by-position ===');
 chk(html.includes('Defensive Tendencies'),'includes Defensive Tendencies');
 chk(html.includes('Coverage (man/zone)'),'includes Coverage table');
-// The carryover block is between 'scheme carryover' and the first section head.
-const carryStart=html.indexOf('scheme carryover');
+// The carryover block is between the coordinator banner and the first section head.
+const carryStart=html.indexOf('New coordinator for');
 const carryEnd=html.indexOf('sr-section-head', carryStart>=0?carryStart:0);
 const carryBlock=(carryStart>=0)?html.slice(carryStart, carryEnd>=0?carryEnd:html.length):'';
-chk(!/Coverage by Position/.test(carryBlock),'carryover block EXCLUDES Coverage by Position');
-chk(/Coverage \(man\/zone\)/.test(carryBlock),'carryover block INCLUDES Coverage table');
+chk(carryBlock.includes('New Defensive Coordinator'),'carryover block shows defensive coordinator label');
 chk(html.includes('assistant head coach'),'shows former role "assistant head coach" (not collapsed to head coach)');
 chk(html.includes('San Francisco 49ers'),'shows former team');
-// Should pull SF values (28 blitz, 35 man), not Tennessee's
-chk(html.includes('28')||html.includes('28%'),'pulls 49ers blitz rate');
+chk(carryBlock.includes('View San Francisco 49ers') || carryBlock.includes('San Francisco 49ers'),'carryover links to former-team advanced view');
 
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

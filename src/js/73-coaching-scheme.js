@@ -5,7 +5,11 @@ let schemeOverlayOpen = false;
 let schemeTeam = null;
 let schemeSeason = null;
 let schemeViewTab = 'playbook';
+let schemeBenefactorSort = 'opp';
 let _schemeEscBound = false;
+let _schemeInsightSeasonCache = {};
+let _schemeNavStack = [];
+let _schemeCoachContext = null;
 const _SCHEME_SCRIPT_OPEN = '<scr' + 'ipt>';
 const _SCHEME_SCRIPT_CLOSE = '</scr' + 'ipt>';
 
@@ -27,6 +31,12 @@ function _schemeEscHtml(s){
     .replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;')
     .replace(/'/g,'&#39;');
+}
+
+function _schemeEscJsSingle(s){
+  return String(s==null?'':s)
+    .replace(/\\/g,'\\\\')
+    .replace(/'/g,"\\'");
 }
 
 function _schemeAllSeasons(){
@@ -56,17 +66,43 @@ function _schemePlaycallerHC(team){
   return !!(HC_PLAYCALLERS && HC_PLAYCALLERS[team]);
 }
 
+function _schemeSeasonHeadCoach(team, season){
+  const s = String(season || '');
+  const tm = String(team || '').toUpperCase();
+  if(!s || !tm || !NFLVERSE || !NFLVERSE[s] || !NFLVERSE[s].head_coaches) return '';
+  const v = NFLVERSE[s].head_coaches[tm];
+  return String(v || '').trim();
+}
+
+function _schemePrevTeamPlaycallerContext(team){
+  const tm = String(team||'').toUpperCase();
+  if(!tm || !_schemePlaycallerHC(tm)) return null;
+  const h = HC_HISTORY && HC_HISTORY[tm];
+  const nm = (HC_PLAYCALLERS && HC_PLAYCALLERS[tm]) || (h && h.name) || '';
+  const since = parseInt(h && h.since, 10);
+  return {
+    team: tm,
+    name: nm,
+    since: Number.isFinite(since) ? since : null,
+    isPlaycaller: true,
+  };
+}
+
 function _schemeOcSource(team){
   if(!team) return null;
   const hc = HC_HISTORY && HC_HISTORY[team];
-  if(_schemePlaycallerHC(team) && hc && hc.is_new && hc.prev_code && hc.prev_code!==team){
+  if(_schemePlaycallerHC(team)){
+    const oc = COORDINATORS && COORDINATORS[team] && COORDINATORS[team].offense;
+    const isNewFromElsewhere = !!(hc && hc.is_new && hc.prev_code && hc.prev_code!==team);
+    const fallbackPrevCode = (!isNewFromElsewhere && hc && hc.is_new && oc && oc.is_new && !oc.internal && oc.prev_code && oc.prev_code!==team)
+      ? oc.prev_code : null;
     return {
-      name: hc.name || HC_PLAYCALLERS[team] || 'Head coach',
-      since: hc.since,
-      is_new: true,
-      prev_code: hc.prev_code,
-      prev_role: hc.prev_role || 'head coach',
-      prev_years: hc.prev_years,
+      name: (hc && hc.name) || (HC_PLAYCALLERS && HC_PLAYCALLERS[team]) || 'Head coach',
+      since: hc ? hc.since : null,
+      is_new: !!(isNewFromElsewhere || fallbackPrevCode),
+      prev_code: isNewFromElsewhere ? hc.prev_code : fallbackPrevCode,
+      prev_role: isNewFromElsewhere ? (hc.prev_role || 'head coach') : (fallbackPrevCode ? 'head coach' : null),
+      prev_years: isNewFromElsewhere ? hc.prev_years : null,
       _fromHC: true,
     };
   }
@@ -89,24 +125,104 @@ function _schemeSeasonsForTeam(team){
   return _schemeAllSeasons();
 }
 
+function _schemeYearsFromSpan(span){
+  const txt = String(span||'');
+  const vals = (txt.match(/\d{4}/g) || []).map(x=>parseInt(x, 10)).filter(Number.isFinite);
+  if(!vals.length) return [];
+  if(vals.length === 1) return [String(vals[0])];
+  const lo = Math.min.apply(null, vals);
+  const hi = Math.max.apply(null, vals);
+  const out = [];
+  for(let y=lo; y<=hi; y++) out.push(String(y));
+  return out;
+}
+
+function _schemeRelevantPrevSeasons(src){
+  const available = _schemeSeasonsForTeam(src && src.prev_code);
+  const wanted = _schemeYearsFromSpan(src && src.prev_years);
+  const role = String((src && src.prev_role) || '').toLowerCase();
+  const srcWasHeadCoach = role.includes('head coach');
+
+  // Explicit HC tenure spans (e.g., "2022-2025") are authoritative.
+  if(srcWasHeadCoach && wanted.length){
+    const hit = available.filter(s=>wanted.includes(String(s)));
+    if(hit.length) return hit;
+  }
+
+  // If explicit HC years are absent, infer tenure from nflverse season coach names.
+  if(srcWasHeadCoach && src && src.name){
+    const want = _schemeNormNameToken(src.name);
+    const byName = available.filter(s=>_schemeNormNameToken(_schemeSeasonHeadCoach(src.prev_code, s)) === want);
+    if(byName.length) return byName;
+  }
+
+  const prevCtx = _schemePrevTeamPlaycallerContext(src && src.prev_code);
+  if(prevCtx && prevCtx.isPlaycaller){
+    if(Number.isFinite(prevCtx.since)){
+      const fromPlaycallerEra = available.filter(s=>parseInt(s, 10) >= prevCtx.since);
+      if(fromPlaycallerEra.length) return fromPlaycallerEra;
+    }
+    // For OC/DC carryovers, if we know the previous team is HC-playcaller-led but we don't
+    // have a usable start year, broad-link that team's loaded seasons.
+    if(!srcWasHeadCoach) return available;
+  }
+
+  if(wanted.length){
+    const hit = available.filter(s=>wanted.includes(String(s)));
+    if(hit.length) return hit;
+  }
+  return available;
+}
+
+function _schemeCoachContextFor(team, season){
+  if(!_schemeCoachContext || !team || !season) return null;
+  if(String(_schemeCoachContext.team||'') !== String(team||'')) return null;
+  const allowed = Array.isArray(_schemeCoachContext.seasons) ? _schemeCoachContext.seasons.map(String) : [];
+  if(allowed.length && !allowed.includes(String(season))) return null;
+  return _schemeCoachContext;
+}
+
 function _schemeOcCallout(team){
+  const ctx = _schemeCoachContextFor(team, schemeSeason);
+  if(ctx && ctx.name){
+    const roleTag = ctx.fromHC ? 'Play-calling HC' : 'OC context';
+    const yr = ctx.years ? ` · ${_schemeEscHtml(String(ctx.years))}` : '';
+    return `<div class="scheme-oc-callout"><span class="scheme-oc-pill new">${roleTag}</span><b>${_schemeEscHtml(ctx.name)}</b><span class="scheme-oc-note">historical playcaller context for ${teamDisplayName(team)}${yr}</span></div>`;
+  }
+
   const src = _schemeOcSource(team);
   if(!src) return '';
+  const seasonCoach = _schemeSeasonHeadCoach(team, schemeSeason);
+  const seasonCoachLine = seasonCoach
+    ? `<div class="scheme-oc-note">${_schemeEscHtml(String(schemeSeason||''))} HC: <b>${_schemeEscHtml(seasonCoach)}</b></div>`
+    : '';
   const roleTag = src._fromHC ? 'Play-calling HC' : 'OC';
   const since = src.since ? ` · since ${src.since}` : '';
   if(!src.is_new || !src.prev_code){
-    return `<div class="scheme-oc-callout"><span class="scheme-oc-pill">${roleTag}</span><b>${_schemeEscHtml(src.name)}</b>${since}</div>`;
+    return `<div class="scheme-oc-callout"><span class="scheme-oc-pill">${roleTag}</span><b>${_schemeEscHtml(src.name)}</b>${since}${seasonCoachLine}</div>`;
   }
   const prev = src.prev_code;
   const prevName = teamDisplayName(prev);
-  const seasons = _schemeSeasonsForTeam(prev);
+  const prevCtx = _schemePrevTeamPlaycallerContext(prev);
+  const prevPlaycallerNote = (!src._fromHC && prevCtx && prevCtx.name)
+    ? ` · play-caller there: ${_schemeEscHtml(prevCtx.name)}${Number.isFinite(prevCtx.since) ? ` (since ${prevCtx.since})` : ''}`
+    : '';
+  const seasons = _schemeRelevantPrevSeasons(src);
+  const seasonCsv = seasons.join(',');
+  const coachNameJs = _schemeEscJsSingle(src.name || '');
+  const coachRoleJs = _schemeEscJsSingle(src.prev_role || '');
+  const coachYearsExpr = (src.prev_years == null)
+    ? 'null'
+    : `'${_schemeEscJsSingle(String(src.prev_years))}'`;
+  const coachSeasonsJs = _schemeEscJsSingle(seasonCsv);
   const links = seasons.length
-    ? `<div class="scheme-oc-links">${seasons.map(s=>`<button class="scheme-oc-link" onclick="openTeamCoachingScheme('${prev}',{season:'${s}',from:'${team}'})">${prev} ${s}</button>`).join('')}</div>`
+    ? `<div class="scheme-oc-links">${seasons.map(s=>`<button class="scheme-oc-link" onclick="openTeamCoachingScheme('${prev}',{season:'${s}',from:'${team}',coachName:'${coachNameJs}',coachRole:'${coachRoleJs}',coachYears:${coachYearsExpr},coachFromHC:${src._fromHC?'true':'false'},coachSeasons:'${coachSeasonsJs}'})">${s}</button>`).join('')}</div>`
     : `<span class="scheme-oc-missing">No prior-team playbook seasons loaded.</span>`;
   return `<div class="scheme-oc-callout">
     <div><span class="scheme-oc-pill new">NEW ${roleTag}</span><b>${_schemeEscHtml(src.name)}</b>${since}
-      <span class="scheme-oc-note">from ${prevName}${src.prev_role?` (${_schemeEscHtml(src.prev_role)})`:''}${src.prev_years?` · ${_schemeEscHtml(String(src.prev_years))}`:''}</span>
+      <span class="scheme-oc-note">from ${prevName}${src.prev_role?` (${_schemeEscHtml(src.prev_role)})`:''}${src.prev_years?` · ${_schemeEscHtml(String(src.prev_years))}`:''}${prevPlaycallerNote}</span>
     </div>
+    ${seasonCoachLine}
     ${links}
   </div>`;
 }
@@ -288,7 +404,7 @@ function _schemeWeightedGroupRate(nodes, key){
 }
 
 function _schemePct(v){
-  return Number.isFinite(v) ? `${v.toFixed(1)}%` : '—';
+  return Number.isFinite(v) ? `${v.toFixed(2)}%` : '—';
 }
 
 function _schemeOrdinal(n){
@@ -323,27 +439,179 @@ function _schemeRankClass(rank, nTeams){
 }
 
 function _schemeLeagueInsightRanks(season){
-  const block = NFLVERSE && NFLVERSE[String(season)] && NFLVERSE[String(season)].coaching_scheme;
-  const teams = block ? Object.keys(block) : [];
-  const rows = teams.map(team=>{
-    const data = _schemeRedZoneInsightData({ season:String(season), data:block[team] });
-    return {
-      thirdDownReach: data.thirdDownReach,
-      earlySucc: data.earlySucc,
-      earlyPass: data.earlyPass,
-      allSucc: data.allSucc,
-    };
-  });
-  return {
-    leagueSize: teams.length,
-    thirdDownReach: rows.map(r=>r.thirdDownReach).filter(Number.isFinite),
-    earlySucc: rows.map(r=>r.earlySucc).filter(Number.isFinite),
-    earlyPass: rows.map(r=>r.earlyPass).filter(Number.isFinite),
-    allSucc: rows.map(r=>r.allSucc).filter(Number.isFinite),
+  return _schemeLeagueInsightSnapshot(season) || {
+    leagueSize: 0,
+    thirdDownReach: [],
+    earlySucc: [],
+    lateSucc: [],
+    frictionScore: [],
   };
 }
 
-function _schemeRedZoneInsightData(p){
+function _schemeSeasonOffenseTable(season){
+  return NFLVERSE && NFLVERSE[String(season)] && NFLVERSE[String(season)].team
+    && NFLVERSE[String(season)].team.offense;
+}
+
+function _schemeSeasonAdvWeeklySums(season){
+  const pack = NFLVERSE && NFLVERSE[String(season)] && NFLVERSE[String(season)].adv_weekly;
+  if(!pack || !pack.teams || !Array.isArray(pack.cols)) return null;
+  const cols = pack.cols;
+  const out = {};
+  Object.keys(pack.teams).forEach(tm=>{
+    const rows = Array.isArray(pack.teams[tm]) ? pack.teams[tm] : [];
+    const sum = {};
+    cols.forEach(c=>{ sum[c] = 0; });
+    rows.forEach(r=>{
+      cols.forEach((c, i)=>{ sum[c] += Number((r && r[i]) || 0); });
+    });
+    out[tm] = sum;
+  });
+  return out;
+}
+
+function _schemeBadness(value, values, higherIsWorse){
+  if(!Number.isFinite(value)) return null;
+  const arr = (values||[]).filter(Number.isFinite);
+  if(arr.length < 2) return null;
+  const worse = higherIsWorse
+    ? arr.filter(v=>v < value).length
+    : arr.filter(v=>v > value).length;
+  return worse / (arr.length - 1);
+}
+
+function _schemeDriveFrictionComposite(season, team, thirdDownReach){
+  const tbl = _schemeSeasonOffenseTable(season);
+  const teams = tbl && tbl.teams ? Object.keys(tbl.teams) : [];
+  if(!tbl || !teams.length) return { score:null, rank:null, leagueSize:0, components:null };
+  const valuesFor = (col) => teams.map(tm=>tbl.teams[tm] && tbl.teams[tm].values ? tbl.teams[tm].values[col] : null).filter(Number.isFinite);
+  const metrics = tbl.teams[team] && tbl.teams[team].values ? tbl.teams[team].values : {};
+  const epa = _schemeNumber(metrics['EPA/Play'], NaN);
+  const ppd = _schemeNumber(metrics['Points Per Drive'], NaN);
+  const conv = _schemeNumber(metrics['Down Conversion Rate'], NaN);
+  const expl = _schemeNumber(metrics['Explosive Play Rate'], NaN);
+  const badness = {
+    lateDownFreq: _schemeBadness(thirdDownReach, teams.map(tm=>_schemeRedZoneCore({ season:String(season), team:tm, data:(NFLVERSE[String(season)] && NFLVERSE[String(season)].coaching_scheme || {})[tm] }).thirdDownReach).filter(Number.isFinite), true),
+    epa: _schemeBadness(epa, valuesFor('EPA/Play'), false),
+    pointsPerDrive: _schemeBadness(ppd, valuesFor('Points Per Drive'), false),
+    conversion: _schemeBadness(conv, valuesFor('Down Conversion Rate'), false),
+    explosive: _schemeBadness(expl, valuesFor('Explosive Play Rate'), false),
+  };
+  const usable = Object.values(badness).filter(Number.isFinite);
+  if(!usable.length) return { score:null, rank:null, leagueSize:teams.length, components:badness };
+
+  const scoreFor = (tm)=>{
+    const tMetrics = tbl.teams[tm] && tbl.teams[tm].values ? tbl.teams[tm].values : {};
+    const tThird = _schemeRedZoneCore({ season:String(season), team:tm, data:(NFLVERSE[String(season)] && NFLVERSE[String(season)].coaching_scheme || {})[tm] }).thirdDownReach;
+    const tBad = [
+      _schemeBadness(tThird, teams.map(code=>_schemeRedZoneCore({ season:String(season), team:code, data:(NFLVERSE[String(season)] && NFLVERSE[String(season)].coaching_scheme || {})[code] }).thirdDownReach).filter(Number.isFinite), true),
+      _schemeBadness(_schemeNumber(tMetrics['EPA/Play'], NaN), valuesFor('EPA/Play'), false),
+      _schemeBadness(_schemeNumber(tMetrics['Points Per Drive'], NaN), valuesFor('Points Per Drive'), false),
+      _schemeBadness(_schemeNumber(tMetrics['Down Conversion Rate'], NaN), valuesFor('Down Conversion Rate'), false),
+      _schemeBadness(_schemeNumber(tMetrics['Explosive Play Rate'], NaN), valuesFor('Explosive Play Rate'), false),
+    ].filter(Number.isFinite);
+    return tBad.length ? (100 * tBad.reduce((a,b)=>a+b,0) / tBad.length) : null;
+  };
+
+  const score = 100 * usable.reduce((a,b)=>a+b,0) / usable.length;
+  const scores = teams.map(tm=>scoreFor(tm)).filter(Number.isFinite);
+  const rank = Number.isFinite(score) ? (1 + scores.filter(v=>v > score).length) : null;
+  return { score, rank, leagueSize:teams.length, components:badness };
+}
+
+function _schemeLeagueInsightSnapshot(season){
+  const s = String(season||'');
+  if(!s) return null;
+  if(_schemeInsightSeasonCache[s]) return _schemeInsightSeasonCache[s];
+
+  const block = NFLVERSE && NFLVERSE[s] && NFLVERSE[s].coaching_scheme;
+  const teams = block ? Object.keys(block) : [];
+  if(!teams.length) return null;
+
+  const tbl = _schemeSeasonOffenseTable(s);
+  const teamTable = (tbl && tbl.teams) ? tbl.teams : {};
+  const adv = _schemeSeasonAdvWeeklySums(s) || {};
+  const coreByTeam = {};
+  teams.forEach(tm=>{ coreByTeam[tm] = _schemeRedZoneCore({ season:s, team:tm, data:block[tm] }); });
+
+  const rowsByTeam = {};
+  teams.forEach(tm=>{
+    const core = coreByTeam[tm] || {};
+    const metrics = teamTable[tm] && teamTable[tm].values ? teamTable[tm].values : {};
+    const wk = adv[tm] || {};
+    const driveCt = _schemeNumber(wk.off_drive_ct, 0);
+    const games = _schemeNumber(wk.pace_games, 0);
+    rowsByTeam[tm] = {
+      samplePlays: core.samplePlays,
+      thirdDownReach: core.thirdDownReach,
+      earlySucc: core.earlySucc,
+      lateSucc: core.lateSucc,
+      earlyPass: core.earlyPass,
+      pointsPerDrive: driveCt > 0 ? _schemeNumber(wk.off_drive_pts, 0) / driveCt : _schemeNumber(metrics['Points Per Drive'], NaN),
+      conversionRate: _schemeNumber(wk.off_conv_obs, 0) > 0 ? (100 * _schemeNumber(wk.off_conv, 0) / _schemeNumber(wk.off_conv_obs, 0)) : _schemeNumber(metrics['Down Conversion Rate'], NaN),
+      epaPerPlay: _schemeNumber(wk.off_plays, 0) > 0 ? (_schemeNumber(wk.off_epa, 0) / _schemeNumber(wk.off_plays, 0)) : _schemeNumber(metrics['EPA/Play'], NaN),
+      explosiveRate: _schemeNumber(wk.off_plays, 0) > 0 ? (100 * _schemeNumber(wk.off_explosive, 0) / _schemeNumber(wk.off_plays, 0)) : _schemeNumber(metrics['Explosive Play Rate'], NaN),
+      puntRate: driveCt > 0 ? (100 * _schemeNumber(wk.off_drive_punt_ct, 0) / driveCt) : null,
+      turnoverDriveRate: driveCt > 0 ? (100 * (_schemeNumber(wk.off_drive_turnover_ct, 0) + _schemeNumber(wk.off_drive_tod_ct, 0)) / driveCt) : null,
+      threeOutRate: driveCt > 0 ? (100 * _schemeNumber(wk.off_drive_three_out_ct, 0) / driveCt) : null,
+      tdDriveRate: driveCt > 0 ? (100 * _schemeNumber(wk.off_drive_td_ct, 0) / driveCt) : null,
+      rzTdRate: _schemeNumber(wk.off_drive_rz_ct, 0) > 0 ? (100 * _schemeNumber(wk.off_drive_rz_td_ct, 0) / _schemeNumber(wk.off_drive_rz_ct, 0)) : null,
+      fpPprPerGame: games > 0 ? (_schemeNumber(wk.off_fp_ppr, 0) / games) : null,
+      fpPprPerDrive: driveCt > 0 ? (_schemeNumber(wk.off_fp_ppr, 0) / driveCt) : null,
+    };
+  });
+
+  const thirdVals = teams.map(tm=>rowsByTeam[tm].thirdDownReach).filter(Number.isFinite);
+  const epaVals = teams.map(tm=>rowsByTeam[tm].epaPerPlay).filter(Number.isFinite);
+  const ppdVals = teams.map(tm=>rowsByTeam[tm].pointsPerDrive).filter(Number.isFinite);
+  const convVals = teams.map(tm=>rowsByTeam[tm].conversionRate).filter(Number.isFinite);
+  const explVals = teams.map(tm=>rowsByTeam[tm].explosiveRate).filter(Number.isFinite);
+  const puntVals = teams.map(tm=>rowsByTeam[tm].puntRate).filter(Number.isFinite);
+  const toVals = teams.map(tm=>rowsByTeam[tm].turnoverDriveRate).filter(Number.isFinite);
+  const threeVals = teams.map(tm=>rowsByTeam[tm].threeOutRate).filter(Number.isFinite);
+  const tdDriveVals = teams.map(tm=>rowsByTeam[tm].tdDriveRate).filter(Number.isFinite);
+  const rzTdVals = teams.map(tm=>rowsByTeam[tm].rzTdRate).filter(Number.isFinite);
+  const fpVals = teams.map(tm=>rowsByTeam[tm].fpPprPerGame).filter(Number.isFinite);
+
+  teams.forEach(tm=>{
+    const parts = [
+      _schemeBadness(rowsByTeam[tm].thirdDownReach, thirdVals, true),
+      _schemeBadness(rowsByTeam[tm].puntRate, puntVals, true),
+      _schemeBadness(rowsByTeam[tm].turnoverDriveRate, toVals, true),
+      _schemeBadness(rowsByTeam[tm].threeOutRate, threeVals, true),
+      _schemeBadness(rowsByTeam[tm].pointsPerDrive, ppdVals, false),
+      _schemeBadness(rowsByTeam[tm].conversionRate, convVals, false),
+      _schemeBadness(rowsByTeam[tm].tdDriveRate, tdDriveVals, false),
+      _schemeBadness(rowsByTeam[tm].rzTdRate, rzTdVals, false),
+      _schemeBadness(rowsByTeam[tm].epaPerPlay, epaVals, false),
+      _schemeBadness(rowsByTeam[tm].explosiveRate, explVals, false),
+    ].filter(Number.isFinite);
+    rowsByTeam[tm].frictionScore = parts.length ? (100 * parts.reduce((a,b)=>a+b,0) / parts.length) : null;
+  });
+
+  teams.forEach(tm=>{
+    const score = rowsByTeam[tm].frictionScore;
+    rowsByTeam[tm].frictionRank = Number.isFinite(score)
+      ? (1 + teams.filter(other=>Number.isFinite(rowsByTeam[other].frictionScore) && rowsByTeam[other].frictionScore > score).length)
+      : null;
+  });
+
+  const snapshot = {
+    leagueSize: teams.length,
+    rowsByTeam,
+    thirdDownReach: teams.map(tm=>rowsByTeam[tm].thirdDownReach).filter(Number.isFinite),
+    earlySucc: teams.map(tm=>rowsByTeam[tm].earlySucc).filter(Number.isFinite),
+    lateSucc: teams.map(tm=>rowsByTeam[tm].lateSucc).filter(Number.isFinite),
+    frictionScore: teams.map(tm=>rowsByTeam[tm].frictionScore).filter(Number.isFinite),
+    tdDriveRate: tdDriveVals,
+    rzTdRate: rzTdVals,
+    fpPprPerGame: fpVals,
+  };
+  _schemeInsightSeasonCache[s] = snapshot;
+  return snapshot;
+}
+
+function _schemeRedZoneCore(p){
   const fv = _schemeBuildFv(p);
   const rz1 = _schemeSafeNode(fv, '1', 'all', 'redzone');
   const rz2 = _schemeSafeNode(fv, '2', 'all', 'redzone');
@@ -359,22 +627,54 @@ function _schemeRedZoneInsightData(p){
 
   const thirdDownReach = downsKnown > 0 ? ((n3 + n4) / downsKnown) * 100 : null;
   const earlySucc = _schemeWeightedGroupRate([rz1, rz2], 'succ');
+  const lateSucc = _schemeWeightedGroupRate([rz3, rz4], 'succ');
   const earlyPass = _schemeWeightedGroupRate([rz1, rz2], 'pass_rate');
-  const allSucc = _schemeWeightedGroupRate(rzAll, 'succ');
-
-  let label = 'Balanced';
-  let tone = 'neutral';
-  if(Number.isFinite(thirdDownReach)){
-    if(thirdDownReach >= 43){ label = 'High Drive Friction'; tone = 'warn'; }
-    else if(thirdDownReach <= 34){ label = 'Low Drive Friction'; tone = 'good'; }
-  }
 
   return {
     samplePlays: Math.max(downsKnown, _schemeNumber(rzAll.total, 0)),
     thirdDownReach,
     earlySucc,
+    lateSucc,
     earlyPass,
-    allSucc,
+  };
+}
+
+function _schemeRedZoneInsightData(p){
+  const core = _schemeRedZoneCore(p);
+  const team = (p && p.team) || schemeTeam || '';
+  const snap = _schemeLeagueInsightSnapshot(p && p.season);
+  const cached = snap && team ? snap.rowsByTeam[team] : null;
+  const friction = cached ? {
+    score: cached.frictionScore,
+    rank: cached.frictionRank,
+    leagueSize: snap.leagueSize,
+    components: null,
+  } : _schemeDriveFrictionComposite(p && p.season, team, core.thirdDownReach);
+
+  let label = 'Balanced Friction';
+  let tone = 'neutral';
+  if(Number.isFinite(friction.rank) && Number.isFinite(friction.leagueSize) && friction.leagueSize > 0){
+    const pct = friction.rank / friction.leagueSize;
+    if(pct <= 0.34){ label = 'High Drive Friction'; tone = 'warn'; }
+    else if(pct >= 0.67){ label = 'Low Drive Friction'; tone = 'good'; }
+  }
+
+  return {
+    samplePlays: cached && Number.isFinite(cached.samplePlays) ? cached.samplePlays : core.samplePlays,
+    thirdDownReach: cached && Number.isFinite(cached.thirdDownReach) ? cached.thirdDownReach : core.thirdDownReach,
+    earlySucc: cached && Number.isFinite(cached.earlySucc) ? cached.earlySucc : core.earlySucc,
+    lateSucc: cached && Number.isFinite(cached.lateSucc) ? cached.lateSucc : core.lateSucc,
+    earlyPass: cached && Number.isFinite(cached.earlyPass) ? cached.earlyPass : core.earlyPass,
+    tdDriveRate: cached ? cached.tdDriveRate : null,
+    rzTdRate: cached ? cached.rzTdRate : null,
+    puntRate: cached ? cached.puntRate : null,
+    turnoverDriveRate: cached ? cached.turnoverDriveRate : null,
+    threeOutRate: cached ? cached.threeOutRate : null,
+    fpPprPerGame: cached ? cached.fpPprPerGame : null,
+    frictionScore: friction.score,
+    frictionRank: friction.rank,
+    frictionLeagueSize: friction.leagueSize,
+    frictionComponents: friction.components,
     label,
     tone,
   };
@@ -382,18 +682,29 @@ function _schemeRedZoneInsightData(p){
 
 function _schemeInsightNarrative(d){
   const pieces = [];
-  if(Number.isFinite(d.thirdDownReach)){
-    if(d.thirdDownReach >= 43){
-      pieces.push('Goal-to-go sequences are reaching late downs too often. That usually means lower touchdown certainty and more week-to-week volatility.');
-    }else if(d.thirdDownReach <= 34){
-      pieces.push('Goal-to-go sequences are converting early at a healthy rate. Primary red-zone roles tend to be more reliable for touchdowns.');
+  if(Number.isFinite(d.frictionRank) && Number.isFinite(d.frictionLeagueSize)){
+    if((d.frictionRank / d.frictionLeagueSize) <= 0.34){
+      pieces.push('This offense is ranking among the stickier drives in the league: punts, drive-killers, and late-down red-zone pressure all squeeze touchdown reliability.');
+    }else if((d.frictionRank / d.frictionLeagueSize) >= 0.67){
+      pieces.push('This offense is finishing drives with relatively low friction: stronger drive efficiency and fewer late-down red-zone stalls make core touchdown roles cleaner.');
     }else{
-      pieces.push('Goal-to-go execution looks near league middle. Treat touchdown outcomes as role-driven more than scheme-extreme.');
+      pieces.push('Drive friction sits around league middle, so role clarity matters more than the macro environment.');
     }
   }
-  if(Number.isFinite(d.earlyPass)){
-    if(d.earlyPass >= 58) pieces.push('Early downs skew pass-heavy inside the 10, which can support target-driven profiles over pure goal-line rushers.');
-    if(d.earlyPass <= 42) pieces.push('Early downs skew run-heavy inside the 10, which can concentrate upside into primary rushing roles.');
+  if(Number.isFinite(d.tdDriveRate) && d.tdDriveRate <= 18){
+    pieces.push('Touchdown drives are landing below league baseline, so TD opportunity on this offense is thinner than the raw volume may suggest.');
+  }else if(Number.isFinite(d.tdDriveRate) && d.tdDriveRate >= 26){
+    pieces.push('A strong touchdown-drive rate keeps this offense fantasy-friendly even when overall volume is only average.');
+  }
+  if(Number.isFinite(d.fpPprPerGame)){
+    if(d.fpPprPerGame >= 65) pieces.push('The offense is still generating strong total fantasy ecosystem output, which can soften individual efficiency concerns.');
+    else if(d.fpPprPerGame <= 48) pieces.push('Total fantasy ecosystem output is light, which raises the bar for secondary options to matter.');
+  }
+  if(Number.isFinite(d.thirdDownReach) && d.thirdDownReach >= 40){
+    pieces.push('A high 3rd/4th-down red-zone rate means the offense is needing extra snaps to finish drives.');
+  }
+  if(Number.isFinite(d.earlySucc) && Number.isFinite(d.lateSucc) && d.earlySucc > d.lateSucc + 7){
+    pieces.push('The early-down edge fades on later downs, which usually narrows scoring chances to the most trusted pass-game roles.');
   }
   if(!pieces.length) pieces.push('Not enough red-zone charting for a confident read yet.');
   return pieces.join(' ');
@@ -420,32 +731,49 @@ function _schemeNormNameToken(s){
     .trim();
 }
 
-function _schemePosPlayers(team, pos){
-  if(typeof getBase!=='function' || !team) return [];
-  const rows = getBase(team, pos) || [];
+function _schemePosPlayers(team, pos, season){
+  const rows = [];
+  const seasonRows = NFLVERSE && NFLVERSE[String(season)] && NFLVERSE[String(season)].rosters && NFLVERSE[String(season)].rosters[team];
+  if(Array.isArray(seasonRows)){
+    seasonRows.forEach(r=>{
+      const rpos = String((r && r[1]) || '').toUpperCase();
+      if(rpos !== String(pos||'').toUpperCase() && !(pos==='RB' && rpos==='FB')) return;
+      rows.push({
+        name: String((r && r[0]) || ''),
+        player_id: String((r && r[5]) || ''),
+        pos: pos,
+        team,
+        vol: _schemeNumber(r && r[7], 0),
+      });
+    });
+  }
+  const allowCurrentFallback = String(season||'') === String(PROJ_SEASON||'')
+    || String(season||'') === String(activeSeason||'');
+  if(!rows.length && allowCurrentFallback && typeof getBase==='function' && team){
+    (getBase(team, pos) || []).forEach(p=>{
+      rows.push({
+        name: String((p && p.name) || ''),
+        player_id: String((p && p.player_id) || ''),
+        pos: String((p && p.pos) || pos),
+        team: String((p && p.team) || team),
+        vol: _schemeNumber(p && (p.receiving_targets || p.receptions || p.rushing_attempts || p.targets), 0),
+      });
+    });
+  }
   return rows.map(p=>{
-    const full = String((p && p.name) || '').trim();
+    const full = String(p.name || '').trim();
     const toks = full.split(/\s+/).filter(Boolean);
-    const first = _schemeNormNameToken(toks[0] || '');
-    const last = _schemeNormNameToken(toks[toks.length-1] || '');
-    const suffix = _schemeNormNameToken(toks[toks.length-1] || '').replace(/[^a-z0-9]/g,'');
-    const vol = _schemeNumber(p && (p.receiving_targets || p.receptions || p.rushing_attempts || p.targets), 0);
-    return {
-      name: full,
-      player_id: String((p && p.player_id) || ''),
-      pos: String((p && p.pos) || pos),
-      team: String((p && p.team) || team),
-      first,
-      last,
-      suffix,
+    return Object.assign({}, p, {
+      first: _schemeNormNameToken(toks[0] || ''),
+      last: _schemeNormNameToken(toks[toks.length-1] || ''),
+      suffix: _schemeNormNameToken(toks[toks.length-1] || '').replace(/[^a-z0-9]/g,''),
       norm: _schemeNormNameToken(full),
-      vol,
-    };
+    });
   }).filter(p=>p.name);
 }
 
-function _schemeResolveRosterPlayer(team, pos, shortName, slot){
-  const players = _schemePosPlayers(team, pos);
+function _schemeResolveRosterPlayer(team, pos, shortName, slot, season){
+  const players = _schemePosPlayers(team, pos, season);
   if(!players.length){
     return { name: String(shortName||slot||'Unknown'), player_id:'', pos, team };
   }
@@ -512,39 +840,81 @@ function _schemePlayerHeadshot(p){
   return '<span class="scheme-benefit-hs ph"></span>';
 }
 
-function _schemeBenefactorReason(pos, passLean, friction){
-  if((pos==='WR' || pos==='TE') && passLean > 0.18) return 'Pass-lean red-zone script';
-  if((pos==='WR' || pos==='TE') && friction > 0.12) return 'Late-down dependency boosts target paths';
-  if(pos==='RB' && passLean < -0.18) return 'Run-lean red-zone script';
-  if(pos==='RB' && friction < -0.08) return 'Early-down conversion supports rush TD paths';
-  if(pos==='QB' && passLean > 0.2) return 'Pass-heavy red-zone design can lift QB TD paths';
-  return 'High role concentration in this team context';
+function _schemeInfoTip(label, text){
+  return `<details class="scheme-help" onclick="event.stopPropagation()" ontoggle="_schemePlaceHelpPopup(this)"><summary class="scheme-help-btn" aria-label="${_schemeEscHtml(label)}">i</summary><div class="scheme-help-pop"><b>${_schemeEscHtml(label)}</b><span>${_schemeEscHtml(text)}</span></div></details>`;
 }
 
-// Position priors for "who benefits" in red-zone context.
-// Higher `fitWeight` means team tendencies matter more than raw usage for that position.
-const SCHEME_BENEFIT_PROFILE = {
-  WR: { passW: 1.25, frictionW: 0.85, usageWeight: 0.54, fitWeight: 0.46 },
-  TE: { passW: 1.18, frictionW: 0.72, usageWeight: 0.56, fitWeight: 0.44 },
-  RB: { passW: -1.30, frictionW: -0.62, usageWeight: 0.60, fitWeight: 0.40 },
-  QB: { passW: 0.78, frictionW: -0.48, usageWeight: 0.66, fitWeight: 0.34 },
-  DEF: { passW: 0.0, frictionW: 0.0, usageWeight: 1.0, fitWeight: 0.0 },
-};
+function _schemePlaceHelpPopup(detailsEl){
+  const el = detailsEl;
+  if(!el || !el.querySelector) return;
+  const pop = el.querySelector('.scheme-help-pop');
+  if(!pop) return;
 
-function _schemeBenefitForPos(pos, useNorm, passLean, friction){
-  const cfg = SCHEME_BENEFIT_PROFILE[pos] || SCHEME_BENEFIT_PROFILE.WR;
-  const fitRaw = cfg.passW * passLean + cfg.frictionW * friction;
-  const fitNorm = _schemeClamp((fitRaw + 1) / 2, 0, 1);
-  return {
-    score: _schemeClamp(cfg.usageWeight * useNorm + cfg.fitWeight * fitNorm, 0, 1),
-    fitNorm,
-  };
+  if(!el.open){
+    pop.style.transform = '';
+    pop.style.top = '';
+    pop.style.bottom = '';
+    return;
+  }
+
+  pop.style.transform = '';
+  pop.style.top = '18px';
+  pop.style.bottom = 'auto';
+
+  requestAnimationFrame(()=>{
+    const pad = 10;
+    const rect = pop.getBoundingClientRect();
+    let shiftX = 0;
+    if(rect.right > (window.innerWidth - pad)) shiftX -= (rect.right - (window.innerWidth - pad));
+    if((rect.left + shiftX) < pad) shiftX += (pad - (rect.left + shiftX));
+    pop.style.transform = `translateX(${Math.round(shiftX)}px)`;
+
+    const after = pop.getBoundingClientRect();
+    if(after.bottom > (window.innerHeight - pad)){
+      pop.style.top = 'auto';
+      pop.style.bottom = '18px';
+    }
+  });
+}
+
+function _schemeTargetSortLabel(mode){
+  if(String(mode)==='tgt') return 'Red-zone target share';
+  return 'Red-zone target opportunity share';
+}
+
+function _schemeSortTargetBenefactors(list, mode){
+  const rows = Array.isArray(list) ? list.slice() : [];
+  if(String(mode)==='tgt'){
+    return rows.sort((a,b)=>
+      (_schemeNumber(b && b.tgtShare, 0) - _schemeNumber(a && a.tgtShare, 0))
+      || (_schemeNumber(b && b.d3Pct, 0) - _schemeNumber(a && a.d3Pct, 0))
+      || (_schemeNumber(b && b.oppShare, 0) - _schemeNumber(a && a.oppShare, 0))
+      || String((a && a.name) || '').localeCompare(String((b && b.name) || ''))
+    );
+  }
+  return rows.sort((a,b)=>
+    (_schemeNumber(b && b.oppShare, 0) - _schemeNumber(a && a.oppShare, 0))
+    || (_schemeNumber(b && b.tgtShare, 0) - _schemeNumber(a && a.tgtShare, 0))
+    || (_schemeNumber(b && b.d3Pct, 0) - _schemeNumber(a && a.d3Pct, 0))
+    || String((a && a.name) || '').localeCompare(String((b && b.name) || ''))
+  );
+}
+
+function setTeamCoachingSchemeBenefactorSort(mode){
+  const m = String(mode||'').toLowerCase();
+  schemeBenefactorSort = (m==='tgt') ? 'tgt' : 'opp';
+  if(schemeOverlayOpen && schemeTeam && schemeViewTab==='insights') _renderTeamCoachingScheme();
+}
+
+function _schemeBackButtonHtml(){
+  if(!Array.isArray(_schemeNavStack) || !_schemeNavStack.length) return '';
+  return `<button class="scheme-back" onclick="backTeamCoachingScheme()" aria-label="Back">← Back</button>`;
 }
 
 function _schemeBuildBenefactors(p, d){
   const fv = _schemeBuildFv(p);
   const slotDownOpp = {};
-  const posDownOpp = {};
+  const slotDownTgt = {};
   const slotMap = fv.slots || {};
   const names = fv.names || {};
   const downs = ['1','2','3','4'];
@@ -558,10 +928,26 @@ function _schemeBuildBenefactors(p, d){
       if(passPlays <= 0) return;
 
       const assigns = Array.isArray(g && g.assigns) ? g.assigns : [];
+      const eligible = assigns.filter(a=>{
+        const slot = String((a && a.slot) || '');
+        return !!slot && _schemePosFromSlot(slot)!=='QB';
+      });
+      if(eligible.length){
+        const perSlotTgt = passPlays / eligible.length;
+        eligible.forEach(a=>{
+          const slot = String((a && a.slot) || '');
+          const pos = _schemePosFromSlot(slot);
+          const rec = (slotDownTgt[slot] = slotDownTgt[slot] || { pos, total:0, d1:0, d2:0, d3:0, d4:0 });
+          rec.total += perSlotTgt;
+          rec[`d${down}`] += perSlotTgt;
+        });
+      }
+
       const posBuckets = {};
       assigns.forEach(a=>{
         const slot = String((a && a.slot) || '');
         if(!slot) return;
+        if(_schemePosFromSlot(slot)==='QB') return;
         const pos = _schemePosFromSlot(slot);
         (posBuckets[pos] = posBuckets[pos] || []).push({ slot, a });
       });
@@ -581,33 +967,39 @@ function _schemeBuildBenefactors(p, d){
           const rec = (slotDownOpp[slot] = slotDownOpp[slot] || { pos, total:0, d1:0, d2:0, d3:0, d4:0 });
           rec.total += shareOpp;
           rec[`d${down}`] += shareOpp;
-          const pRec = (posDownOpp[pos] = posDownOpp[pos] || { d1:0, d2:0, d3:0, d4:0, total:0 });
-          pRec[`d${down}`] += shareOpp;
-          pRec.total += shareOpp;
         });
       });
     });
   });
 
   const totals = Object.values(slotDownOpp);
-  const maxOpp = totals.reduce((m,r)=>Math.max(m,_schemeNumber(r && r.total,0)),0) || 1;
+  const totalOpp = totals.reduce((t,r)=>t+_schemeNumber(r && r.total,0),0) || 1;
+  const tgtTotals = Object.values(slotDownTgt);
+  const totalTgt = tgtTotals.reduce((t,r)=>t+_schemeNumber(r && r.total,0),0) || 1;
+  const downTotals = {
+    d1: totals.reduce((t,r)=>t+_schemeNumber(r && r.d1,0),0) || 1,
+    d2: totals.reduce((t,r)=>t+_schemeNumber(r && r.d2,0),0) || 1,
+    d3: totals.reduce((t,r)=>t+_schemeNumber(r && r.d3,0),0) || 1,
+    d4: totals.reduce((t,r)=>t+_schemeNumber(r && r.d4,0),0) || 1,
+  };
+  const posTotals = {};
+  totals.forEach(r=>{ posTotals[r.pos] = _schemeNumber(posTotals[r.pos], 0) + _schemeNumber(r.total, 0); });
   const rows = [];
 
   Object.keys(slotDownOpp).forEach(slot=>{
     const rec = slotDownOpp[slot] || {};
     const pos = rec.pos || _schemePosFromSlot(slot);
-    const pRec = posDownOpp[pos] || { d1:0, d2:0, d3:0, d4:0, total:0 };
-    const d1Pct = pRec.d1>0 ? (100*rec.d1/pRec.d1) : 0;
-    const d2Pct = pRec.d2>0 ? (100*rec.d2/pRec.d2) : 0;
-    const d3Pct = pRec.d3>0 ? (100*rec.d3/pRec.d3) : 0;
-    const d4Pct = pRec.d4>0 ? (100*rec.d4/pRec.d4) : 0;
-    const wPct = (0.22*d1Pct) + (0.30*d2Pct) + (0.40*d3Pct) + (0.08*d4Pct);
-    const volNorm = _schemeClamp(_schemeNumber(rec.total, 0) / maxOpp, 0, 1);
-    const benefit = _schemeClamp((0.7*(wPct/100)) + (0.3*volNorm), 0, 1);
+    const d1Pct = 100 * _schemeNumber(rec.d1, 0) / downTotals.d1;
+    const d2Pct = 100 * _schemeNumber(rec.d2, 0) / downTotals.d2;
+    const d3Pct = 100 * _schemeNumber(rec.d3, 0) / downTotals.d3;
+    const d4Pct = 100 * _schemeNumber(rec.d4, 0) / downTotals.d4;
+    const oppShare = 100 * _schemeNumber(rec.total, 0) / totalOpp;
+    const tgtRec = slotDownTgt[slot] || { total:0 };
+    const tgtShare = 100 * _schemeNumber(tgtRec.total, 0) / totalTgt;
 
     const gsis = slotMap[slot];
     const shortName = names[gsis] || slot;
-    const resolved = _schemeResolveRosterPlayer(schemeTeam||'', pos, shortName, slot);
+    const resolved = _schemeResolveRosterPlayer(schemeTeam||'', pos, shortName, slot, p && p.season);
     const rid = String((resolved && resolved.player_id) || '');
     const name = String((resolved && resolved.name) || shortName || slot);
     const bestDown = [
@@ -620,28 +1012,89 @@ function _schemeBuildBenefactors(p, d){
       pos,
       player_id: rid || null,
       team: schemeTeam || '',
-      useRaw: _schemeNumber(rec.total, 0),
-      useShare: totals.length ? (100*_schemeNumber(rec.total,0)/totals.reduce((t,x)=>t+_schemeNumber(x.total,0),0)) : 0,
-      benefit,
+      oppShare,
+      tgtShare,
       d1Pct,
       d2Pct,
       d3Pct,
       d4Pct,
-      targetPct: wPct,
-      reason: `${bestDown.k}-down ${pos} target-share leader (${bestDown.v.toFixed(1)}%)`,
+      reason: `Modeled red-zone target opportunity share ${oppShare.toFixed(2)}%; modeled red-zone target share ${tgtShare.toFixed(2)}%; strongest on ${bestDown.k} down (${bestDown.v.toFixed(2)}%).`,
     });
   });
 
-  return rows
-    .sort((a,b)=> (b.targetPct - a.targetPct) || (b.benefit - a.benefit) || (b.useShare - a.useShare) || String(a.name).localeCompare(String(b.name)))
-    .slice(0, 6);
+  return rows;
 }
 
-function _schemeRenderBenefactors(list){
+function _schemeBuildRushBenefactors(p, d){
+  const fv = _schemeBuildFv(p);
+  const slotRunOpp = {};
+  const slotMap = fv.slots || {};
+  const names = fv.names || {};
+  const downs = ['1','2','3','4'];
+  downs.forEach(down=>{
+    const node = _schemeSafeNode(fv, down, 'all', 'redzone');
+    const groups = Array.isArray(node && node.groups) ? node.groups : [];
+    groups.forEach(g=>{
+      const n = _schemeNumber(g && g.n, 0);
+      const runPlays = n * (1 - (_schemeNumber(g && g.pass_rate, 0) / 100));
+      if(runPlays <= 0) return;
+      const assigns = Array.isArray(g && g.assigns) ? g.assigns : [];
+      const backs = assigns.filter(a=>/^(RB|FB)/.test(String((a && a.slot) || '').toUpperCase()));
+      if(!backs.length) return;
+      const weights = backs.map((a, i)=>{
+        const slot = String((a && a.slot) || 'RB1').toUpperCase();
+        if(slot === 'RB1') return 1;
+        if(slot === 'RB2') return 0.48;
+        if(slot.startsWith('FB')) return 0.2;
+        return i === 0 ? 0.8 : 0.35;
+      });
+      const wSum = weights.reduce((t,v)=>t+v,0) || 1;
+      backs.forEach((a, i)=>{
+        const slot = String((a && a.slot) || '');
+        const rec = (slotRunOpp[slot] = slotRunOpp[slot] || { total:0, d1:0, d2:0, d3:0, d4:0 });
+        const opp = runPlays * (weights[i] / wSum);
+        rec.total += opp;
+        rec[`d${down}`] += opp;
+      });
+    });
+  });
+
+  const totalRunOpp = Object.values(slotRunOpp).reduce((t,r)=>t+_schemeNumber(r.total,0),0) || 1;
+  const rows = Object.keys(slotRunOpp).map(slot=>{
+    const rec = slotRunOpp[slot] || {};
+    const gsis = slotMap[slot];
+    const shortName = names[gsis] || slot;
+    const resolved = _schemeResolveRosterPlayer(schemeTeam||'', 'RB', shortName, slot, p && p.season);
+    const d1 = 100 * _schemeNumber(rec.d1, 0) / totalRunOpp;
+    const d2 = 100 * _schemeNumber(rec.d2, 0) / totalRunOpp;
+    const d3 = 100 * _schemeNumber(rec.d3, 0) / totalRunOpp;
+    const d4 = 100 * _schemeNumber(rec.d4, 0) / totalRunOpp;
+    const oppShare = 100 * _schemeNumber(rec.total, 0) / totalRunOpp;
+    const bestDown = [
+      {k:'1st',v:d1}, {k:'2nd',v:d2}, {k:'3rd',v:d3}, {k:'4th',v:d4}
+    ].sort((a,b)=>b.v-a.v)[0];
+    return {
+      name: String((resolved && resolved.name) || shortName || slot),
+      slot,
+      pos: 'RB',
+      player_id: String((resolved && resolved.player_id) || '') || null,
+      team: schemeTeam || '',
+      oppShare,
+      d1Pct: d1,
+      d2Pct: d2,
+      d3Pct: d3,
+      d4Pct: d4,
+      reason: `Modeled for ${oppShare.toFixed(2)}% of red-zone rushing TD path volume; strongest on ${bestDown.k} down (${bestDown.v.toFixed(2)}%).`,
+    };
+  });
+  return rows.sort((a,b)=>b.oppShare-a.oppShare).slice(0, 4);
+}
+
+function _schemeRenderBenefactorList(title, subtitle, list, scoreFmt, metaFmt){
   if(!list || !list.length){
     return `<div class="scheme-benefactors-wrap">
-      <div class="scheme-benefactors-title">Most Benefiting Players</div>
-      <div class="scheme-empty">No player-level red-zone role data available for this season/team.</div>
+      <div class="scheme-benefactors-title">${_schemeEscHtml(title)}</div>
+      <div class="scheme-empty">No player-level role data available for this season/team.</div>
     </div>`;
   }
   const rows = list.map((p, i)=>{
@@ -650,36 +1103,81 @@ function _schemeRenderBenefactors(list){
       ? `<div class="scheme-benefit-row clickable-player" role="button" tabindex="0" onclick="${click}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${click}}">`
       : '<div class="scheme-benefit-row">';
     const wrapClose = '</div>';
+    const splits = `<span class="scheme-benefit-splits">
+      <span class="scheme-benefit-split"><b>1st</b><span>${p.d1Pct.toFixed(2)}%</span></span>
+      <span class="scheme-benefit-split"><b>2nd</b><span>${p.d2Pct.toFixed(2)}%</span></span>
+      <span class="scheme-benefit-split"><b>3rd</b><span>${p.d3Pct.toFixed(2)}%</span></span>
+      <span class="scheme-benefit-split"><b>4th</b><span>${p.d4Pct.toFixed(2)}%</span></span>
+    </span>`;
     return `${wrapOpen}
       <span class="scheme-benefit-rank">${i+1}</span>
       <span class="scheme-benefit-head">${_schemePlayerHeadshot(p)}</span>
       <span class="scheme-benefit-main">
         <span class="scheme-benefit-name">${_schemeEscHtml(p.name)}</span>
-        <span class="scheme-benefit-meta">${_schemeEscHtml(p.pos)} · ${_schemeEscHtml(p.slot)} · TGT% ${p.targetPct.toFixed(1)} (D1 ${p.d1Pct.toFixed(0)} / D2 ${p.d2Pct.toFixed(0)} / D3 ${p.d3Pct.toFixed(0)})</span>
+        <span class="scheme-benefit-meta">${metaFmt(p)}</span>
+        ${splits}
       </span>
-      <span class="scheme-benefit-score">${(p.benefit*100).toFixed(0)}</span>
+      <span class="scheme-benefit-score">${scoreFmt(p)}</span>
       <span class="scheme-benefit-why">${_schemeEscHtml(p.reason)}</span>
     ${wrapClose}`;
   }).join('');
   return `<div class="scheme-benefactors-wrap">
-    <div class="scheme-benefactors-title">Most Benefiting Players <span>ranked by fit + role usage</span></div>
+    <div class="scheme-benefactors-title">${_schemeEscHtml(title)} <span>${_schemeEscHtml(subtitle)}</span></div>
     <div class="scheme-benefit-list">${rows}</div>
   </div>`;
+}
+
+function _schemeRenderBenefactors(targets, rushers){
+  const targetSort = (schemeBenefactorSort === 'tgt') ? 'tgt' : 'opp';
+  const sortedTargets = _schemeSortTargetBenefactors(targets, targetSort).slice(0, 6);
+  const byTgt = targetSort === 'tgt';
+  const targetSortTip = _schemeInfoTip(
+    'Target leader sort',
+    'Target opportunity share uses route-role weighting inside red-zone pass concepts. Target share uses a neutral split of red-zone pass targets across eligible receivers in each concept.'
+  );
+  const teamShareTip = _schemeInfoTip(
+    'Team share',
+    'These are modeled shares, not exact target logs. Opportunity share emphasizes route-role usage; target share is the neutral split baseline for red-zone pass concepts.'
+  );
+  const targetSortControls = `<div class="scheme-benefit-sort" role="group" aria-label="Sort target leaders">
+    <span class="scheme-benefit-sort-label">Sort target leaders by ${targetSortTip}</span>
+    <button type="button" class="scheme-benefit-sort-btn ${targetSort==='opp'?'active':''}" onclick="event.stopPropagation();setTeamCoachingSchemeBenefactorSort('opp')">RZ target opportunity share</button>
+    <button type="button" class="scheme-benefit-sort-btn ${targetSort==='tgt'?'active':''}" onclick="event.stopPropagation();setTeamCoachingSchemeBenefactorSort('tgt')">RZ target share</button>
+  </div>`;
+
+  return `${targetSortControls}${_schemeRenderBenefactorList(
+    'Red-Zone Target Opportunity Leaders',
+    `sorted by ${_schemeTargetSortLabel(targetSort).toLowerCase()} · modeled red-zone shares (not play-by-play target logs)`,
+    sortedTargets,
+    p=>`${byTgt ? 'RZ TGT' : 'RZ OPP'} ${byTgt ? p.tgtShare.toFixed(2) : p.oppShare.toFixed(2)}% ${teamShareTip}`,
+    p=>`${_schemeEscHtml(p.pos)} · ${_schemeEscHtml(p.slot)} · RZ opp share ${p.oppShare.toFixed(2)}% · RZ target share ${p.tgtShare.toFixed(2)}%`
+  )}${_schemeRenderBenefactorList(
+    'Rushing TD Paths',
+    'modeled team share of red-zone rushing TD path volume',
+    rushers,
+    p=>`TEAM ${p.oppShare.toFixed(2)}% ${teamShareTip}`,
+    p=>`${_schemeEscHtml(p.pos)} · ${_schemeEscHtml(p.slot)} · Team rush-path share ${p.oppShare.toFixed(2)}%`
+  )}`;
 }
 
 function _schemeRenderInsights(p){
   const d = _schemeRedZoneInsightData(p);
   const benefactors = _schemeBuildBenefactors(p, d);
+  const rushBenefactors = _schemeBuildRushBenefactors(p, d);
   const league = _schemeLeagueInsightRanks(p && p.season);
   const nTeams = _schemeNumber(league && league.leagueSize, 0);
   const rankText = (rank) => (rank && nTeams) ? `${_schemeOrdinal(rank)} of ${nTeams}` : '—';
   const rankClass = (rank) => _schemeRankClass(rank, nTeams);
   const rzRank = _schemeRankInLeague(d.thirdDownReach, league.thirdDownReach, 'asc');
   const earlySuccRank = _schemeRankInLeague(d.earlySucc, league.earlySucc, 'desc');
-  const earlyPassRank = _schemeRankInLeague(d.earlyPass, league.earlyPass, 'desc');
-  const allSuccRank = _schemeRankInLeague(d.allSucc, league.allSucc, 'desc');
+  const lateSuccRank = _schemeRankInLeague(d.lateSucc, league.lateSucc, 'desc');
+  const frictionRank = d.frictionRank || _schemeRankInLeague(d.frictionScore, league.frictionScore, 'asc');
   const toneClass = d.tone==='warn' ? 'warn' : (d.tone==='good' ? 'good' : 'neutral');
   const blurb = _schemeInsightNarrative(d);
+  const frictionTip = _schemeInfoTip(
+    'Drive friction rank',
+    'This compares this offense to the league. More friction means drives stall more often before touchdowns. It combines how often drives end with punts, turnovers, or three-and-outs plus drive efficiency and red-zone finishing.'
+  );
   return `<div class="scheme-insights-wrap">
     <div class="scheme-insights-head">
       <span class="scheme-insights-pill ${toneClass}">${d.label}</span>
@@ -687,28 +1185,28 @@ function _schemeRenderInsights(p){
     </div>
     <div class="scheme-insights-grid">
       <div class="scheme-insight-card">
-        <div class="scheme-insight-k">Goal-to-go 3rd/4th-down reach (proxy)</div>
+        <div class="scheme-insight-k">3rd/4th down frequency</div>
         <div class="scheme-insight-v">${_schemePct(d.thirdDownReach)} <span class="scheme-insight-rank ${rankClass(rzRank)}">(${rankText(rzRank)})</span></div>
-        <div class="scheme-insight-sub">Higher generally means weaker early-down finish quality.</div>
+        <div class="scheme-insight-sub">Share of red-zone plays that reach 3rd or 4th down.</div>
       </div>
       <div class="scheme-insight-card">
-        <div class="scheme-insight-k">Early-down success in red zone (1st/2nd)</div>
+        <div class="scheme-insight-k">Early down red zone success (1st/2nd)</div>
         <div class="scheme-insight-v">${_schemePct(d.earlySucc)} <span class="scheme-insight-rank ${rankClass(earlySuccRank)}">(${rankText(earlySuccRank)})</span></div>
-        <div class="scheme-insight-sub">Weighted by formation usage in this filter set.</div>
+        <div class="scheme-insight-sub">Weighted by formation usage on early downs inside the red zone.</div>
       </div>
       <div class="scheme-insight-card">
-        <div class="scheme-insight-k">Early-down pass rate in red zone</div>
-        <div class="scheme-insight-v">${_schemePct(d.earlyPass)} <span class="scheme-insight-rank ${rankClass(earlyPassRank)}">(${rankText(earlyPassRank)})</span></div>
-        <div class="scheme-insight-sub">Context for WR/TE vs. RB touchdown paths.</div>
+        <div class="scheme-insight-k">Late down red zone success (3rd/4th)</div>
+        <div class="scheme-insight-v">${_schemePct(d.lateSucc)} <span class="scheme-insight-rank ${rankClass(lateSuccRank)}">(${rankText(lateSuccRank)})</span></div>
+        <div class="scheme-insight-sub">How efficiently this team finishes once drives get extended.</div>
       </div>
       <div class="scheme-insight-card">
-        <div class="scheme-insight-k">All-down red-zone success</div>
-        <div class="scheme-insight-v">${_schemePct(d.allSucc)} <span class="scheme-insight-rank ${rankClass(allSuccRank)}">(${rankText(allSuccRank)})</span></div>
-        <div class="scheme-insight-sub">Overall efficiency backdrop for touchdown expectation.</div>
+        <div class="scheme-insight-k">Drive friction ranking ${frictionTip}</div>
+        <div class="scheme-insight-v">${rankText(frictionRank)} <span class="scheme-insight-rank ${rankClass(frictionRank)}">(score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'})</span></div>
+        <div class="scheme-insight-sub">League rank for how sticky and touchdown-suppressing this offense's drives are. Lower rank number = more friction.</div>
       </div>
     </div>
     <div class="scheme-insight-note"><b>Fantasy angle:</b> ${_schemeEscHtml(blurb)}</div>
-    ${_schemeRenderBenefactors(benefactors)}
+    ${_schemeRenderBenefactors(benefactors, rushBenefactors)}
   </div>`;
 }
 
@@ -798,6 +1296,7 @@ function _renderTeamCoachingScheme(){
     <div class="scheme-modal" onclick="event.stopPropagation()">
       <button class="scheme-close" onclick="closeTeamCoachingScheme()" aria-label="Close">✕</button>
       <div class="scheme-head">
+        ${_schemeBackButtonHtml()}
         <img src="${NFL_LOGO(schemeTeam)}" class="scheme-team-logo" onerror="this.style.display='none'">
         <div>
           <div class="scheme-title">${teamDisplayName(schemeTeam)} Playbook</div>
@@ -810,7 +1309,7 @@ function _renderTeamCoachingScheme(){
         <button class="scheme-view-tab ${schemeViewTab==='insights'?'active':''}" onclick="setTeamCoachingSchemeTab('insights')">Insights</button>
       </div>
       <div class="scheme-loading">Loading playsheet template…</div>
-      ${seasons.length>1?`<div class="scheme-tabs">${seasons.map(s=>`<button class="scheme-tab ${String(s)===String(schemeSeason)?'active':''}" onclick="setTeamCoachingSchemeSeason('${s}')">Season <span>${s}</span></button>`).join('')}</div>`:''}
+      ${seasons.length>1?`<div class="scheme-tabs">${seasons.map(s=>`<button class="scheme-tab ${String(s)===String(schemeSeason)?'active':''}" onclick="setTeamCoachingSchemeSeason('${s}')"><span>${s}</span></button>`).join('')}</div>`:''}
     </div>
   </div>`;
 
@@ -843,9 +1342,41 @@ function _renderTeamCoachingScheme(){
 
 function openTeamCoachingScheme(team, initialView){
   if(!team) return;
+  const from = initialView && typeof initialView==='object' ? String(initialView.from || '') : '';
+  const fromOcJump = !!from;
+  if(schemeOverlayOpen && fromOcJump && schemeTeam && String(schemeTeam)!==String(team)){
+    const cur = {
+      team: String(schemeTeam),
+      season: String(schemeSeason || _schemePreferredSeason(schemeTeam) || ''),
+      tab: schemeViewTab === 'insights' ? 'insights' : 'playbook',
+      coachContext: _schemeCoachContext ? JSON.parse(JSON.stringify(_schemeCoachContext)) : null,
+    };
+    const top = _schemeNavStack[_schemeNavStack.length - 1];
+    if(!top || top.team!==cur.team || String(top.season||'')!==String(cur.season||'') || top.tab!==cur.tab){
+      _schemeNavStack.push(cur);
+    }
+  }else if(!fromOcJump){
+    _schemeNavStack = [];
+  }
   schemeOverlayOpen = true;
   schemeTeam = team;
   schemeViewTab = (initialView && initialView.tab==='insights') ? 'insights' : 'playbook';
+
+  if(initialView && typeof initialView==='object' && initialView.coachName){
+    const seasons = String(initialView.coachSeasons || '')
+      .split(',').map(x=>String(x||'').trim()).filter(Boolean);
+    _schemeCoachContext = {
+      team: String(team),
+      name: String(initialView.coachName || ''),
+      role: String(initialView.coachRole || ''),
+      years: initialView.coachYears == null ? null : String(initialView.coachYears),
+      fromHC: !!initialView.coachFromHC,
+      seasons,
+    };
+  }else if(!fromOcJump){
+    _schemeCoachContext = null;
+  }
+
   if(initialView && typeof initialView==='object' && initialView.season!=null){
     schemeSeason = String(initialView.season);
   }else{
@@ -872,6 +1403,7 @@ function _renderSchemeLoadingShell(){
     <div class="scheme-modal" onclick="event.stopPropagation()">
       <button class="scheme-close" onclick="closeTeamCoachingScheme()" aria-label="Close">✕</button>
       <div class="scheme-head">
+        ${_schemeBackButtonHtml()}
         <img src="${NFL_LOGO(schemeTeam)}" class="scheme-team-logo" onerror="this.style.display='none'">
         <div>
           <div class="scheme-title">${teamDisplayName(schemeTeam)} Playbook</div>
@@ -888,8 +1420,35 @@ function closeTeamCoachingScheme(){
   schemeTeam = null;
   schemeSeason = null;
   schemeViewTab = 'playbook';
+  _schemeNavStack = [];
+  _schemeCoachContext = null;
   const host = _schemeOverlayHost(false);
   if(host) host.remove();
+}
+
+function backTeamCoachingScheme(){
+  if(!schemeOverlayOpen || !Array.isArray(_schemeNavStack) || !_schemeNavStack.length) return;
+  const prev = _schemeNavStack.pop();
+  if(!prev || !prev.team) return;
+
+  schemeTeam = String(prev.team);
+  schemeViewTab = prev.tab === 'insights' ? 'insights' : 'playbook';
+  schemeSeason = String(prev.season || _schemePreferredSeason(schemeTeam) || '');
+  _schemeCoachContext = prev.coachContext || null;
+
+  const want = schemeSeason;
+  if(want && typeof ensureNflverseCoachingSeason==='function' && !coachingSeasonReady(want)){
+    _renderSchemeLoadingShell();
+    ensureNflverseCoachingSeason(want).then(()=>{
+      if(
+        schemeOverlayOpen
+        && String(schemeTeam)===String(prev.team)
+        && String(schemeSeason)===String(want)
+      ) _renderTeamCoachingScheme();
+    });
+    return;
+  }
+  _renderTeamCoachingScheme();
 }
 
 function setTeamCoachingSchemeSeason(season){

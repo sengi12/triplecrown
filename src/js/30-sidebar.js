@@ -94,7 +94,7 @@ function selectTeam(t){
   currentTeam=t;
   // Keep whatever phase the user was on (Targets stays Targets across teams). Only the
   // global Rankings view falls back to a per-team phase since it isn't team-scoped here.
-  if(currentPhase==='Rankings') currentPhase='Receiving';
+  if(currentPhase==='Rankings' && rankScope==='all') currentPhase='Receiving';
   // League-wide Advanced Metrics is a standalone view; selecting a team should return to
   // that team's Advanced tab instead of keeping the league table pinned on screen.
   if(currentPhase==='AdvancedLeague') currentPhase='Advanced';
@@ -119,6 +119,61 @@ function showCurrentTeamAdvanced(){
   rankScope='team';
   currentPhase='Advanced';
   selectTeam(currentTeam);
+}
+
+function seasonHeadCoachName(team, season){
+  const t = String(team || '').toUpperCase();
+  const s = String(season || '');
+  if(!t || !s || !NFLVERSE || !NFLVERSE[s] || !NFLVERSE[s].head_coaches) return '';
+  return String(NFLVERSE[s].head_coaches[t] || '').trim();
+}
+
+function _teamLastName(name){
+  const parts = String(name||'').trim().split(/\s+/).filter(Boolean);
+  return parts.length ? parts[parts.length-1] : String(name||'').trim();
+}
+
+function teamHeaderQbText(team, qbs, recStr){
+  const list = Array.isArray(qbs) ? qbs.map(q=>String((q&&q.name)||'').trim()).filter(Boolean) : [];
+  let txt = list.length ? list.join(' / ') : 'No projected QB';
+
+  // Mobile compacting: replace trailing names with last names until the line fits better.
+  const w = (typeof window!=='undefined' && window && Number.isFinite(window.innerWidth)) ? window.innerWidth : 9999;
+  const maxChars = (w <= 420) ? 34 : (w <= 560 ? 42 : (w <= 820 ? 56 : 9999));
+  if(list.length > 1 && txt.length > maxChars){
+    const work = list.slice();
+    for(let i=work.length-1; i>=1 && work.join(' / ').length > maxChars; i--){
+      work[i] = _teamLastName(work[i]);
+    }
+    txt = work.join(' / ');
+  }
+  return txt + (recStr ? ` · ${recStr}` : '');
+}
+
+function teamHeaderHcLine(team, opts){
+  const t = String(team || '').toUpperCase();
+  const o = opts || {};
+  const openTitle = String(o.openTitle || 'Open playbook');
+  const openTitleEsc = escAttr(openTitle);
+  const isRef = activeSeason !== 'proj';
+  const histName = isRef ? seasonHeadCoachName(t, activeSeason) : '';
+  if(histName){
+    const callerName = (HC_PLAYCALLERS && HC_PLAYCALLERS[t]) ? String(HC_PLAYCALLERS[t]) : '';
+    const callerMatch = callerName && callerName.toLowerCase() === histName.toLowerCase();
+    return `<div class="team-hc scheme-open" role="button" tabindex="0" title="${openTitleEsc}" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">
+      <span class="team-hc-label">HC ${activeSeason}</span> <b>${histName}</b>
+      ${callerMatch?`<span class="hc-caller" title="This head coach is listed as the team's primary offensive playcaller.">🎧 Primary playcaller</span>`:''}
+    </div>`;
+  }
+
+  if(headCoaches[t]===undefined) fetchHeadCoach(t);
+  const hc=headCoaches[t];
+  const hcCaller = hcIsPlaycaller(t);
+  return hc ? `<div class="team-hc scheme-open" role="button" tabindex="0" title="${openTitleEsc}" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">
+      ${hc.headshot?`<img src="${hc.headshot}" class="team-hc-img" onerror="this.style.display='none'">`:''}
+      <span class="team-hc-label">HC</span> <b>${hc.name}</b>${hc.experience!=null?` · yr ${hc.experience}`:''}
+      ${hcCaller?`<span class="hc-caller" title="This head coach is the team's primary offensive playcaller — the OC is less pivotal for scheme continuity.">🎧 Primary playcaller</span>`:''}
+    </div>` : (headCoaches[t]===null?'':`<div class="team-hc team-hc-loading">Loading head coach…</div>`);
 }
 
 function renderContent(){
@@ -150,21 +205,12 @@ function renderContent(){
     : '';
   const sos = SOS && SOS[t];
   const sosBadge = sos ? `<span class="team-sos">SOS: <b>${ordinal(sos.rank)}</b>${sos.win_total!=null?` · Vegas Win Total: <b>${sos.win_total}</b>`:''}</span>` : '';
-  // Head coach (live from ESPN). Kick off the fetch if we haven't yet; the render re-runs
-  // when it resolves. Show a compact line under the QBs, flagging offensive-playcaller HCs.
-  if(headCoaches[t]===undefined) fetchHeadCoach(t);
-  const hc=headCoaches[t];
-  const hcCaller = hcIsPlaycaller(t);
-  const hcLine = hc ? `<div class="team-hc scheme-open" role="button" tabindex="0" title="Open playbook" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">
-      ${hc.headshot?`<img src="${hc.headshot}" class="team-hc-img" onerror="this.style.display='none'">`:''}
-      <span class="team-hc-label">HC</span> <b>${hc.name}</b>${hc.experience!=null?` · yr ${hc.experience}`:''}
-      ${hcCaller?`<span class="hc-caller" title="This head coach is the team's primary offensive playcaller — the OC is less pivotal for scheme continuity.">🎧 Primary playcaller</span>`:''}
-    </div>` : (headCoaches[t]===null?'':`<div class="team-hc team-hc-loading">Loading head coach…</div>`);
+  const hcLine = teamHeaderHcLine(t, { openTitle: 'Open playbook' });
   document.getElementById('content').innerHTML=`
     <div class="team-header">
       <img src="${NFL_LOGO(t)}" class="team-logo-lg scheme-open" alt="${t}" title="Open playbook" onclick="openTeamCoachingScheme('${t}')" onerror="this.style.opacity='.25'">
       <div><div class="team-abbr team-fullname scheme-open" role="button" tabindex="0" title="Open playbook" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">${teamDisplayName(t)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}</div>
-        <div class="team-qb-name">${(state.qbs&&state.qbs.length)?state.qbs.map(q=>q.name).join(' / '):'No projected QB'}${recStr?` · ${recStr}`:''}</div>
+        <div class="team-qb-name">${teamHeaderQbText(t, state.qbs, recStr)}</div>
         ${hcLine}
         ${sosBadge?`<div class="team-sos-row">${sosBadge}</div>`:''}</div>
       <div class="team-nav">

@@ -246,6 +246,7 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] Generate my own proprietary projections based on all the metrics we have
 - [ ] Simplify process with a vibe-check. Tinder-style swipes.
 ### UI / UX
+- [ ] Add swiping gestures to change teams
 ### Playercards
 ### Live Draft
 - [ ] reach out to Sleeper
@@ -256,13 +257,12 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] Review comments and variable names
 - [ ] Add Coaching History (HCs, OCs, DCs)
 - [ ] input injection vulnerability scan on all input fields
+- [ ] Investigate the format of downloaded CSVs
 ### Import Projections
 ### Adv Metrics
 - [ ] QB Metrics: on_tgt_throws, bad_throw_pct, batted_balls, is_interception_worthy, is_catchable_ball
-- [ ] Overall Team Fantasy Performance: nflverse/ff_opportunity
 - [ ] Charts that show team progress over the last 5 years in specific categories
 ### Playcalling Stats
-- [ ] On series within 10 yard line: 46.2% of series with Burrow reach 3rd down. 29th in NFL (goal_to_go)
 - [ ] Improve Playbooks is_qb_sneak, n_offense_backfield
 
 ## License

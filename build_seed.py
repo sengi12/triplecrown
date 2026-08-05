@@ -1690,6 +1690,51 @@ def _parse_coordinator_page(html, side, proj_season):
         }
     return out
 
+
+def _parse_head_coach_page(html, proj_season):
+    """Parse Wikipedia's current-head-coaches table into {CODE:{name,since,is_new}}.
+
+    The HC table layout changed and no longer exposes a reliable "previous coaching
+    position" column. We therefore parse only stable fields (team, coach, hired/since)
+    here, and let `build_head_coach_history` enrich previous-team metadata via fallback
+    sources when possible.
+    """
+    if not html:
+        return {}
+    headers, rows = _parse_wikitable(html)
+
+    def col_idx(*names):
+        for i, h in enumerate(headers):
+            hl = (h or "").lower()
+            if any(n in hl for n in names):
+                return i
+        return None
+
+    i_team = col_idx("team")
+    i_name = col_idx("coach", "head coach", "name")
+    i_since = col_idx("hired", "since", "tenure")
+
+    out = {}
+    for cells in rows:
+        if len(cells) < 3:
+            continue
+        team_cell = cells[i_team] if i_team is not None and i_team < len(cells) else cells[0]
+        name_cell = cells[i_name] if i_name is not None and i_name < len(cells) else (cells[1] if len(cells) > 1 else "")
+        since_cell = cells[i_since] if i_since is not None and i_since < len(cells) else (cells[2] if len(cells) > 2 else "")
+
+        code, _m = _norm_team_name_to_code(team_cell)
+        if not code:
+            continue
+        nm = (name_cell or "").strip() or None
+        ym = _re.search(r"(20\d{2})", since_cell or "")
+        since = int(ym.group(1)) if ym else None
+        out[code] = {
+            "name": nm,
+            "since": since,
+            "is_new": (since == proj_season),
+        }
+    return out
+
 def build_coordinators(proj_season, refresh):
     """Build {CODE: {offense:{...}, defense:{...}}} from Wikipedia's OC/DC lists."""
     oc_html = _fetch_wiki_html(WIKI_OC_TITLE, refresh, "offensive coordinators (Wikipedia)")
@@ -1714,7 +1759,7 @@ def build_coordinators(proj_season, refresh):
 
 WIKI_HC_TITLE = "List_of_current_NFL_head_coaches"
 
-def build_head_coach_history(proj_season, refresh):
+def build_head_coach_history(proj_season, refresh, coordinators=None):
     """Pull Wikipedia's current-head-coaches table → {CODE: {name, since, prev_code,
     prev_team_name, prev_role, prev_years, is_new}}. This reuses the same table/row parser
     as the coordinator pages (Team | Coach | Since | Previous position). It exists so that
@@ -1722,16 +1767,33 @@ def build_head_coach_history(proj_season, refresh):
     the projection season, the app can carry over the HC's FORMER team's offensive scheme —
     because with a playcalling HC the scheme travels with the coach, not the coordinator."""
     hc_html = _fetch_wiki_html(WIKI_HC_TITLE, refresh, "head coaches (Wikipedia)")
-    # Parse with the shared coordinator parser; side label is nominal here ("head").
-    hc = _parse_coordinator_page(hc_html, "head", proj_season)
-    # Keep only the fields the app needs (drop the coordinator-specific carryover flags,
-    # which don't apply the same way to a head coach).
+    hc = _parse_head_coach_page(hc_html, proj_season)
+
+    # NOTE: Wikipedia's HC table no longer provides a stable previous-position column.
+    # We keep previous-team fields nullable and fill best-effort fallbacks for new
+    # playcaller HCs from that team's new OC carryover metadata when available.
     out = {}
     for code, d in hc.items():
+        prev_code = None
+        prev_team_name = None
+        prev_role = None
+        prev_years = None
+
+        oc = (coordinators or {}).get(code, {}).get("offense") if coordinators else None
+        is_playcaller_hc = code in HC_PLAYCALLERS
+        if d.get("is_new") and is_playcaller_hc and oc and oc.get("is_new") and (not oc.get("internal")) and oc.get("prev_code"):
+            # Best-effort fallback for missing HC previous-team data.
+            prev_code = oc.get("prev_code")
+            prev_team_name = oc.get("prev_team_name")
+            prev_role = "head coach"
+            # Keep years nullable here: UI logic may widen to full available HC era when
+            # explicit tenure years are absent, instead of pinning to the OC's years.
+            prev_years = None
+
         out[code] = {
             "name": d.get("name"), "since": d.get("since"),
-            "prev_code": d.get("prev_code"), "prev_team_name": d.get("prev_team_name"),
-            "prev_role": d.get("prev_role"), "prev_years": d.get("prev_years"),
+            "prev_code": prev_code, "prev_team_name": prev_team_name,
+            "prev_role": prev_role, "prev_years": prev_years,
             "is_new": d.get("is_new"),
         }
     if out:
@@ -2404,7 +2466,7 @@ def main():
     sharp = build_sharp(web_refresh)
     sos = build_sos(web_refresh, args.season)
     coordinators = build_coordinators(args.season, web_refresh)
-    hc_history = build_head_coach_history(args.season, web_refresh)
+    hc_history = build_head_coach_history(args.season, web_refresh, coordinators)
     print("\n  New Additions (Spotrac free agency / draft / trades)")
     additions = build_additions(args.season, web_refresh)
 

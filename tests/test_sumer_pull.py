@@ -57,15 +57,15 @@ def fake_fetch(pos, season, refresh, refinement=None):
     return {"columns":["Routes Run"], "pct_cols":[],
             "players":{"jaxon smithnjigba":{"values":[tag], "team":"", "rank":1}}}
 _orig_fetch, _orig_seasons, _orig_urls, _orig_refis = (
-    bs.fetch_sumer_table, bs.SUMER_SEASONS, bs.SUMER_POS_URLS, bs.SUMER_REFINEMENTS)
+    bs.fetch_sumer_table, bs._default_sumer_seasons, bs.SUMER_POS_URLS, bs.SUMER_REFINEMENTS)
 try:
     bs.fetch_sumer_table = fake_fetch
-    bs.SUMER_SEASONS = [2025]
+    bs._default_sumer_seasons = lambda _proj: [2025]
     bs.SUMER_POS_URLS = {"WR": "u"}
     bs.SUMER_REFINEMENTS = {"WR": ["red_zone", "when_leading", "broken"]}
-    res = bs.build_sumer(refresh=True)
+    res = bs.build_sumer(refresh=True, proj_season=2026)
 finally:
-    (bs.fetch_sumer_table, bs.SUMER_SEASONS, bs.SUMER_POS_URLS, bs.SUMER_REFINEMENTS) = (
+    (bs.fetch_sumer_table, bs._default_sumer_seasons, bs.SUMER_POS_URLS, bs.SUMER_REFINEMENTS) = (
         _orig_fetch, _orig_seasons, _orig_urls, _orig_refis)
 wr = res["2025"]["WR"]
 ok &= "refinements" in wr

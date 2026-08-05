@@ -75,9 +75,17 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .content{flex:1;overflow-y:auto;overflow-x:hidden;padding:18px 22px;}
 .team-header{display:flex;align-items:center;gap:12px;margin-bottom:16px;}
 .team-logo-lg{width:44px;height:44px;object-fit:contain;}
-.team-abbr{font-size:24px;font-weight:900;letter-spacing:-1px;}
-.team-qb-name{font-size:11px;color:var(--muted);}
+.team-abbr{font-size:24px;font-weight:900;letter-spacing:-1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+.team-qb-name{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 .team-nav{display:flex;gap:6px;margin-left:auto;}
+.ths-swipe-host{position:relative;overflow:hidden;border-radius:12px;isolation:isolate;}
+.ths-swipe-top{position:relative;will-change:transform;z-index:2;backface-visibility:hidden;transform:translateZ(0);}
+.ths-swipe-under{position:absolute;z-index:1;inset:0;pointer-events:none;
+  transform:translateX(100%);transition:transform .16s ease-out;
+  backface-visibility:hidden;}
+.ths-swipe-under:empty{display:none;}
+.ths-swipe-under .team-header{margin-bottom:16px;}
+.ths-swipe-host.ths-swipe-committing{pointer-events:none;}
 .phase-tabs{display:flex;background:var(--surface);border:1px solid var(--border);
   border-radius:8px;overflow:hidden;margin-bottom:14px;flex-wrap:wrap;}
 .phase-tab{padding:6px 14px;font-size:11px;font-weight:700;cursor:pointer;
@@ -167,7 +175,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
    toolbar shrinks the viewport the card's top + close button stay reachable instead of being
    clipped behind the chrome. dvh tracks the *visible* viewport (100vh includes the area behind
    the dynamic toolbar), with a vh fallback for older engines. */
-.pcard-overlay{position:fixed;inset:0;background:rgba(0,0,0,.66);z-index:1000;
+.pcard-overlay{position:fixed;inset:0;background:rgba(0,0,0,.66);z-index:1105;
   display:flex;align-items:flex-start;justify-content:center;
   padding:24px 12px;
   padding-top:max(24px,env(safe-area-inset-top));
@@ -656,7 +664,7 @@ html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:no
 /* on hover, the frozen team cell needs an opaque bg too (else scrolling cells show through) */
 .sr-league-table tbody tr:hover .sr-td-team{background:var(--surface3);}
 /* Full team name + SOS in team header */
-.team-fullname{font-size:20px;font-weight:800;letter-spacing:-.01em;}
+.team-fullname{font-size:20px;font-weight:800;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;display:block;}
 .team-sos-row{margin-top:3px;}
 .team-sos{font-size:11px;color:var(--muted);}
 .team-sos b{color:var(--text);font-weight:800;}
@@ -700,6 +708,8 @@ html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:no
 .scheme-close{position:absolute;top:10px;right:10px;background:var(--surface3);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:2px 8px;font-size:16px;cursor:pointer;}
 .scheme-close:hover{border-color:var(--accent);}
 .scheme-head{display:flex;align-items:center;gap:10px;padding-right:28px;margin-bottom:10px;}
+.scheme-back{border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:10px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;border-radius:7px;padding:4px 8px;cursor:pointer;flex-shrink:0;}
+.scheme-back:hover{border-color:var(--accent);color:var(--text);}
 .scheme-team-logo{width:34px;height:34px;object-fit:contain;flex-shrink:0;}
 .scheme-title{font-size:18px;font-weight:800;color:var(--text);}
 .scheme-subtitle{font-size:11px;color:var(--muted);margin-top:2px;}
@@ -714,18 +724,21 @@ html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:no
 .scheme-oc-missing{font-size:10px;font-style:italic;color:var(--muted);}
 .scheme-loading{font-size:12px;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:10px;}
 .scheme-frame{display:block;width:100%;height:min(82vh,980px);border:1px solid var(--border);border-radius:10px;background:#1f1d1a;margin-top:10px;}
-.scheme-tabs{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0 10px;}
-.scheme-tab{border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:11px;font-weight:800;border-radius:7px;padding:6px 9px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
-.scheme-tab span{font-family:var(--mono);font-size:10px;color:var(--text);background:var(--surface3);padding:1px 5px;border-radius:10px;}
-.scheme-tab:hover{border-color:var(--accent);color:var(--text);}
-.scheme-tab.active{background:var(--accent);border-color:var(--accent);color:#08110e;}
-.scheme-tab.active span{color:#08110e;background:rgba(255,255,255,.35);}
+.scheme-tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(68px,1fr));gap:4px;margin:12px 0 10px;align-items:end;}
+.scheme-tab{position:relative;border:1.5px solid #000;border-bottom-width:3px;background:#d7caa9;color:#3d3320;font-size:11px;font-weight:900;border-radius:9px 9px 2px 2px;padding:8px 6px 7px;cursor:pointer;display:flex;align-items:center;justify-content:center;min-width:0;box-shadow:inset 0 -2px 0 rgba(0,0,0,.14);font-family:"Courier New",monospace;letter-spacing:.05em;}
+.scheme-tab::before{content:'';position:absolute;left:8px;right:8px;top:-7px;height:7px;border:1.5px solid #000;border-bottom:none;border-radius:8px 8px 0 0;background:linear-gradient(180deg,#e9dfc4 0%,#d7caa9 100%);}
+.scheme-tab span{font-family:inherit;font-size:11px;color:inherit;background:none;padding:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.scheme-tab:hover{background:#e3d7bd;color:#221c13;}
+.scheme-tab.active{background:#f5e04b;border-color:#000;color:#1a1a17;transform:translateY(1px);}
+.scheme-tab.active::before{background:linear-gradient(180deg,#fff1a1 0%,#f5e04b 100%);}
 
 /* Insights section themed like the playcall sheet */
-.scheme-view-tabs{display:flex;gap:8px;margin:6px 0 10px;}
-.scheme-view-tab{border:1.5px solid #000;background:#e8e1d0;color:#2a2723;font-size:11px;font-weight:900;border-radius:3px;padding:6px 10px;cursor:pointer;font-family:"Courier New",monospace;letter-spacing:.04em;text-transform:uppercase;}
-.scheme-view-tab:hover{filter:brightness(1.04);}
-.scheme-view-tab.active{background:#f5e04b;border-color:#000;color:#1a1a17;}
+.scheme-view-tabs{display:flex;gap:6px;margin:8px 0 6px;align-items:end;flex-wrap:wrap;}
+.scheme-view-tab{position:relative;border:1.5px solid #000;border-bottom-width:3px;background:#d7caa9;color:#3d3320;font-size:10px;font-weight:900;border-radius:9px 9px 2px 2px;padding:7px 9px 6px;cursor:pointer;box-shadow:inset 0 -2px 0 rgba(0,0,0,.14);font-family:"Courier New",monospace;letter-spacing:.05em;text-transform:uppercase;}
+.scheme-view-tab::before{content:'';position:absolute;left:7px;right:7px;top:-6px;height:6px;border:1.5px solid #000;border-bottom:none;border-radius:8px 8px 0 0;background:linear-gradient(180deg,#e9dfc4 0%,#d7caa9 100%);}
+.scheme-view-tab:hover{background:#e3d7bd;color:#221c13;}
+.scheme-view-tab.active{background:#f5e04b;border-color:#000;color:#1a1a17;transform:translateY(1px);}
+.scheme-view-tab.active::before{background:linear-gradient(180deg,#fff1a1 0%,#f5e04b 100%);}
 .scheme-insights-wrap{margin-top:2px;border:2px solid #000;background:#f4efe2;border-radius:2px;padding:11px;color:#1a1a17;font-family:"Courier New",monospace;}
 .scheme-insights-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
 .scheme-insights-pill{display:inline-block;font-size:10px;font-weight:900;letter-spacing:.07em;border-radius:2px;padding:4px 9px;border:1.5px solid #000;background:#ece5d3;color:#1a1a17;text-transform:uppercase;}
@@ -744,8 +757,20 @@ html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:no
 .scheme-insight-sub{font-size:10px;color:#5a5545;margin-top:5px;line-height:1.4;}
 .scheme-insight-note{margin-top:10px;padding:8px 9px;border-radius:2px;border:1.5px dashed #000;background:#ece5d3;font-size:11px;color:#5a5545;line-height:1.55;}
 .scheme-insight-note b{color:#1a1a17;}
+.scheme-help{display:inline-block;position:relative;vertical-align:middle;}
+.scheme-help-btn{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-left:4px;border:1px solid #000;border-radius:50%;background:#f5e04b;color:#1a1a17;font-size:9px;font-weight:900;line-height:1;cursor:pointer;list-style:none;}
+.scheme-help-btn::-webkit-details-marker{display:none;}
+.scheme-help[open] .scheme-help-btn{background:#1a1a17;color:#f5e04b;}
+.scheme-help-pop{position:absolute;top:18px;right:0;z-index:3;width:min(260px,70vw);max-height:min(220px,70vh);overflow:auto;padding:8px 9px;border:1.5px solid #000;background:#f7f1e2;color:#4e493d;border-radius:3px;box-shadow:0 8px 18px rgba(0,0,0,.18);font-size:10px;line-height:1.45;text-transform:none;letter-spacing:0;}
+.scheme-help-pop b{display:block;margin-bottom:4px;color:#1a1a17;font-size:10px;}
+.scheme-help-pop span{display:block;}
 
 .scheme-benefactors-wrap{margin-top:10px;border:1.5px solid #000;background:#ece5d3;border-radius:2px;padding:8px 9px;}
+.scheme-benefit-sort{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+.scheme-benefit-sort-label{font-size:10px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#1a1a17;display:inline-flex;align-items:center;}
+.scheme-benefit-sort-btn{border:1.5px solid #000;background:#e8e1d0;color:#2a2723;font-size:9.5px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;border-radius:999px;padding:4px 8px;cursor:pointer;font-family:"Courier New",monospace;}
+.scheme-benefit-sort-btn:hover{background:#efe7d6;}
+.scheme-benefit-sort-btn.active{background:#f5e04b;color:#1a1a17;}
 .scheme-benefactors-title{font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#1a1a17;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;}
 .scheme-benefactors-title span{font-size:9px;font-weight:800;color:#5a5545;letter-spacing:.04em;text-transform:none;}
 .scheme-benefit-list{display:flex;flex-direction:column;gap:5px;margin-top:7px;}
@@ -759,8 +784,12 @@ html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:no
 .scheme-benefit-hs.ph{display:inline-block;}
 .scheme-benefit-main{display:flex;flex-direction:column;gap:2px;min-width:0;}
 .scheme-benefit-name{font-size:12px;font-weight:900;color:#1a1a17;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.scheme-benefit-meta{font-size:9px;font-weight:800;color:#5a5545;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.scheme-benefit-score{font-size:16px;font-weight:900;color:#1a1a17;line-height:1;min-width:30px;text-align:right;}
+.scheme-benefit-meta{font-size:9px;font-weight:800;color:#5a5545;letter-spacing:.04em;text-transform:uppercase;white-space:normal;overflow:visible;text-overflow:clip;line-height:1.35;}
+.scheme-benefit-splits{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px;}
+.scheme-benefit-split{display:inline-flex;align-items:center;gap:4px;padding:2px 5px;border:1px solid #000;background:#e7ddc7;border-radius:999px;font-size:9px;font-weight:900;color:#3f392d;}
+.scheme-benefit-split b{font-size:8px;letter-spacing:.06em;color:#1a1a17;}
+.scheme-benefit-score{font-size:12px;font-weight:900;color:#1a1a17;line-height:1.15;min-width:54px;text-align:right;align-self:start;}
+.scheme-benefit-score .scheme-help{margin-left:4px;}
 .scheme-benefit-why{grid-column:3 / span 2;font-size:9.5px;color:#5a5545;line-height:1.35;}
 
 /* Playbook cards under iframe fallback */
@@ -793,11 +822,25 @@ html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:no
   .scheme-overlay{padding:10px;}
   .scheme-modal{width:100%;max-height:calc(100vh - 20px);padding:12px 10px 12px;}
   .scheme-oc-note{display:block;margin:3px 0 0 0;}
-  .scheme-view-tabs{margin:4px 0 9px;}
+  .scheme-back{font-size:9px;padding:4px 7px;}
+  .scheme-view-tabs{margin:6px 0 5px;gap:4px;}
+  .scheme-view-tab{font-size:9px;padding:6px 7px 5px;}
+  .scheme-view-tab::before{left:6px;right:6px;top:-5px;height:5px;}
+  .scheme-tabs{grid-template-columns:repeat(auto-fit,minmax(54px,1fr));gap:3px;}
+  .scheme-tab{font-size:10px;padding:7px 4px 6px;}
+  .scheme-tab::before{left:6px;right:6px;top:-6px;height:6px;}
   .scheme-insights-grid{grid-template-columns:1fr;}
-  .scheme-benefit-row{grid-template-columns:18px 32px 1fr auto;gap:6px;padding:6px;}
+  .scheme-help-pop{left:0;right:auto;width:min(240px,78vw);}
+  .scheme-benefit-sort-label{font-size:9px;}
+  .scheme-benefit-sort-btn{font-size:9px;padding:4px 7px;}
+  .scheme-benefit-row{grid-template-columns:18px 32px minmax(0,1fr);gap:6px;padding:6px;}
   .scheme-benefit-head{width:30px;height:30px;}
-  .scheme-benefit-score{font-size:14px;min-width:24px;}
+  .scheme-benefit-score{grid-column:3;justify-self:start;min-width:0;font-size:11px;margin-top:2px;text-align:left;}
+  .scheme-benefit-name{white-space:normal;overflow:visible;text-overflow:clip;}
+  .scheme-benefit-meta{font-size:8.5px;}
+  .scheme-benefit-splits{gap:3px;}
+  .scheme-benefit-split{font-size:8.5px;padding:2px 4px;}
+  .scheme-benefit-why{grid-column:1 / -1;font-size:9px;}
   .scheme-grid{grid-template-columns:1fr;}
   .scheme-split{grid-template-columns:1fr;}
 }
@@ -1754,7 +1797,7 @@ html,body{max-width:100%;overflow-x:hidden;}
    name's existing ellipsis can do its job. */
 .team-header{min-width:0;max-width:100%;}
 .team-header>div{min-width:0;max-width:100%;}
-.team-qb-name{overflow-wrap:anywhere;}
+.team-qb-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 @media (max-width:760px){
   .la-hdr{flex-wrap:wrap;}
   .la-hdr-name{max-width:100%;}
@@ -3674,7 +3717,7 @@ function selectTeam(t){
   currentTeam=t;
   // Keep whatever phase the user was on (Targets stays Targets across teams). Only the
   // global Rankings view falls back to a per-team phase since it isn't team-scoped here.
-  if(currentPhase==='Rankings') currentPhase='Receiving';
+  if(currentPhase==='Rankings' && rankScope==='all') currentPhase='Receiving';
   // League-wide Advanced Metrics is a standalone view; selecting a team should return to
   // that team's Advanced tab instead of keeping the league table pinned on screen.
   if(currentPhase==='AdvancedLeague') currentPhase='Advanced';
@@ -3699,6 +3742,61 @@ function showCurrentTeamAdvanced(){
   rankScope='team';
   currentPhase='Advanced';
   selectTeam(currentTeam);
+}
+
+function seasonHeadCoachName(team, season){
+  const t = String(team || '').toUpperCase();
+  const s = String(season || '');
+  if(!t || !s || !NFLVERSE || !NFLVERSE[s] || !NFLVERSE[s].head_coaches) return '';
+  return String(NFLVERSE[s].head_coaches[t] || '').trim();
+}
+
+function _teamLastName(name){
+  const parts = String(name||'').trim().split(/\s+/).filter(Boolean);
+  return parts.length ? parts[parts.length-1] : String(name||'').trim();
+}
+
+function teamHeaderQbText(team, qbs, recStr){
+  const list = Array.isArray(qbs) ? qbs.map(q=>String((q&&q.name)||'').trim()).filter(Boolean) : [];
+  let txt = list.length ? list.join(' / ') : 'No projected QB';
+
+  // Mobile compacting: replace trailing names with last names until the line fits better.
+  const w = (typeof window!=='undefined' && window && Number.isFinite(window.innerWidth)) ? window.innerWidth : 9999;
+  const maxChars = (w <= 420) ? 34 : (w <= 560 ? 42 : (w <= 820 ? 56 : 9999));
+  if(list.length > 1 && txt.length > maxChars){
+    const work = list.slice();
+    for(let i=work.length-1; i>=1 && work.join(' / ').length > maxChars; i--){
+      work[i] = _teamLastName(work[i]);
+    }
+    txt = work.join(' / ');
+  }
+  return txt + (recStr ? ` · ${recStr}` : '');
+}
+
+function teamHeaderHcLine(team, opts){
+  const t = String(team || '').toUpperCase();
+  const o = opts || {};
+  const openTitle = String(o.openTitle || 'Open playbook');
+  const openTitleEsc = escAttr(openTitle);
+  const isRef = activeSeason !== 'proj';
+  const histName = isRef ? seasonHeadCoachName(t, activeSeason) : '';
+  if(histName){
+    const callerName = (HC_PLAYCALLERS && HC_PLAYCALLERS[t]) ? String(HC_PLAYCALLERS[t]) : '';
+    const callerMatch = callerName && callerName.toLowerCase() === histName.toLowerCase();
+    return `<div class="team-hc scheme-open" role="button" tabindex="0" title="${openTitleEsc}" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">
+      <span class="team-hc-label">HC ${activeSeason}</span> <b>${histName}</b>
+      ${callerMatch?`<span class="hc-caller" title="This head coach is listed as the team's primary offensive playcaller.">🎧 Primary playcaller</span>`:''}
+    </div>`;
+  }
+
+  if(headCoaches[t]===undefined) fetchHeadCoach(t);
+  const hc=headCoaches[t];
+  const hcCaller = hcIsPlaycaller(t);
+  return hc ? `<div class="team-hc scheme-open" role="button" tabindex="0" title="${openTitleEsc}" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">
+      ${hc.headshot?`<img src="${hc.headshot}" class="team-hc-img" onerror="this.style.display='none'">`:''}
+      <span class="team-hc-label">HC</span> <b>${hc.name}</b>${hc.experience!=null?` · yr ${hc.experience}`:''}
+      ${hcCaller?`<span class="hc-caller" title="This head coach is the team's primary offensive playcaller — the OC is less pivotal for scheme continuity.">🎧 Primary playcaller</span>`:''}
+    </div>` : (headCoaches[t]===null?'':`<div class="team-hc team-hc-loading">Loading head coach…</div>`);
 }
 
 function renderContent(){
@@ -3730,21 +3828,12 @@ function renderContent(){
     : '';
   const sos = SOS && SOS[t];
   const sosBadge = sos ? `<span class="team-sos">SOS: <b>${ordinal(sos.rank)}</b>${sos.win_total!=null?` · Vegas Win Total: <b>${sos.win_total}</b>`:''}</span>` : '';
-  // Head coach (live from ESPN). Kick off the fetch if we haven't yet; the render re-runs
-  // when it resolves. Show a compact line under the QBs, flagging offensive-playcaller HCs.
-  if(headCoaches[t]===undefined) fetchHeadCoach(t);
-  const hc=headCoaches[t];
-  const hcCaller = hcIsPlaycaller(t);
-  const hcLine = hc ? `<div class="team-hc scheme-open" role="button" tabindex="0" title="Open playbook" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">
-      ${hc.headshot?`<img src="${hc.headshot}" class="team-hc-img" onerror="this.style.display='none'">`:''}
-      <span class="team-hc-label">HC</span> <b>${hc.name}</b>${hc.experience!=null?` · yr ${hc.experience}`:''}
-      ${hcCaller?`<span class="hc-caller" title="This head coach is the team's primary offensive playcaller — the OC is less pivotal for scheme continuity.">🎧 Primary playcaller</span>`:''}
-    </div>` : (headCoaches[t]===null?'':`<div class="team-hc team-hc-loading">Loading head coach…</div>`);
+  const hcLine = teamHeaderHcLine(t, { openTitle: 'Open playbook' });
   document.getElementById('content').innerHTML=`
     <div class="team-header">
       <img src="${NFL_LOGO(t)}" class="team-logo-lg scheme-open" alt="${t}" title="Open playbook" onclick="openTeamCoachingScheme('${t}')" onerror="this.style.opacity='.25'">
       <div><div class="team-abbr team-fullname scheme-open" role="button" tabindex="0" title="Open playbook" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">${teamDisplayName(t)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}</div>
-        <div class="team-qb-name">${(state.qbs&&state.qbs.length)?state.qbs.map(q=>q.name).join(' / '):'No projected QB'}${recStr?` · ${recStr}`:''}</div>
+        <div class="team-qb-name">${teamHeaderQbText(t, state.qbs, recStr)}</div>
         ${hcLine}
         ${sosBadge?`<div class="team-sos-row">${sosBadge}</div>`:''}</div>
       <div class="team-nav">
@@ -9502,7 +9591,11 @@ let schemeOverlayOpen = false;
 let schemeTeam = null;
 let schemeSeason = null;
 let schemeViewTab = 'playbook';
+let schemeBenefactorSort = 'opp';
 let _schemeEscBound = false;
+let _schemeInsightSeasonCache = {};
+let _schemeNavStack = [];
+let _schemeCoachContext = null;
 const _SCHEME_SCRIPT_OPEN = '<scr' + 'ipt>';
 const _SCHEME_SCRIPT_CLOSE = '</scr' + 'ipt>';
 
@@ -9524,6 +9617,12 @@ function _schemeEscHtml(s){
     .replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;')
     .replace(/'/g,'&#39;');
+}
+
+function _schemeEscJsSingle(s){
+  return String(s==null?'':s)
+    .replace(/\\/g,'\\\\')
+    .replace(/'/g,"\\'");
 }
 
 function _schemeAllSeasons(){
@@ -9553,17 +9652,43 @@ function _schemePlaycallerHC(team){
   return !!(HC_PLAYCALLERS && HC_PLAYCALLERS[team]);
 }
 
+function _schemeSeasonHeadCoach(team, season){
+  const s = String(season || '');
+  const tm = String(team || '').toUpperCase();
+  if(!s || !tm || !NFLVERSE || !NFLVERSE[s] || !NFLVERSE[s].head_coaches) return '';
+  const v = NFLVERSE[s].head_coaches[tm];
+  return String(v || '').trim();
+}
+
+function _schemePrevTeamPlaycallerContext(team){
+  const tm = String(team||'').toUpperCase();
+  if(!tm || !_schemePlaycallerHC(tm)) return null;
+  const h = HC_HISTORY && HC_HISTORY[tm];
+  const nm = (HC_PLAYCALLERS && HC_PLAYCALLERS[tm]) || (h && h.name) || '';
+  const since = parseInt(h && h.since, 10);
+  return {
+    team: tm,
+    name: nm,
+    since: Number.isFinite(since) ? since : null,
+    isPlaycaller: true,
+  };
+}
+
 function _schemeOcSource(team){
   if(!team) return null;
   const hc = HC_HISTORY && HC_HISTORY[team];
-  if(_schemePlaycallerHC(team) && hc && hc.is_new && hc.prev_code && hc.prev_code!==team){
+  if(_schemePlaycallerHC(team)){
+    const oc = COORDINATORS && COORDINATORS[team] && COORDINATORS[team].offense;
+    const isNewFromElsewhere = !!(hc && hc.is_new && hc.prev_code && hc.prev_code!==team);
+    const fallbackPrevCode = (!isNewFromElsewhere && hc && hc.is_new && oc && oc.is_new && !oc.internal && oc.prev_code && oc.prev_code!==team)
+      ? oc.prev_code : null;
     return {
-      name: hc.name || HC_PLAYCALLERS[team] || 'Head coach',
-      since: hc.since,
-      is_new: true,
-      prev_code: hc.prev_code,
-      prev_role: hc.prev_role || 'head coach',
-      prev_years: hc.prev_years,
+      name: (hc && hc.name) || (HC_PLAYCALLERS && HC_PLAYCALLERS[team]) || 'Head coach',
+      since: hc ? hc.since : null,
+      is_new: !!(isNewFromElsewhere || fallbackPrevCode),
+      prev_code: isNewFromElsewhere ? hc.prev_code : fallbackPrevCode,
+      prev_role: isNewFromElsewhere ? (hc.prev_role || 'head coach') : (fallbackPrevCode ? 'head coach' : null),
+      prev_years: isNewFromElsewhere ? hc.prev_years : null,
       _fromHC: true,
     };
   }
@@ -9586,24 +9711,104 @@ function _schemeSeasonsForTeam(team){
   return _schemeAllSeasons();
 }
 
+function _schemeYearsFromSpan(span){
+  const txt = String(span||'');
+  const vals = (txt.match(/\d{4}/g) || []).map(x=>parseInt(x, 10)).filter(Number.isFinite);
+  if(!vals.length) return [];
+  if(vals.length === 1) return [String(vals[0])];
+  const lo = Math.min.apply(null, vals);
+  const hi = Math.max.apply(null, vals);
+  const out = [];
+  for(let y=lo; y<=hi; y++) out.push(String(y));
+  return out;
+}
+
+function _schemeRelevantPrevSeasons(src){
+  const available = _schemeSeasonsForTeam(src && src.prev_code);
+  const wanted = _schemeYearsFromSpan(src && src.prev_years);
+  const role = String((src && src.prev_role) || '').toLowerCase();
+  const srcWasHeadCoach = role.includes('head coach');
+
+  // Explicit HC tenure spans (e.g., "2022-2025") are authoritative.
+  if(srcWasHeadCoach && wanted.length){
+    const hit = available.filter(s=>wanted.includes(String(s)));
+    if(hit.length) return hit;
+  }
+
+  // If explicit HC years are absent, infer tenure from nflverse season coach names.
+  if(srcWasHeadCoach && src && src.name){
+    const want = _schemeNormNameToken(src.name);
+    const byName = available.filter(s=>_schemeNormNameToken(_schemeSeasonHeadCoach(src.prev_code, s)) === want);
+    if(byName.length) return byName;
+  }
+
+  const prevCtx = _schemePrevTeamPlaycallerContext(src && src.prev_code);
+  if(prevCtx && prevCtx.isPlaycaller){
+    if(Number.isFinite(prevCtx.since)){
+      const fromPlaycallerEra = available.filter(s=>parseInt(s, 10) >= prevCtx.since);
+      if(fromPlaycallerEra.length) return fromPlaycallerEra;
+    }
+    // For OC/DC carryovers, if we know the previous team is HC-playcaller-led but we don't
+    // have a usable start year, broad-link that team's loaded seasons.
+    if(!srcWasHeadCoach) return available;
+  }
+
+  if(wanted.length){
+    const hit = available.filter(s=>wanted.includes(String(s)));
+    if(hit.length) return hit;
+  }
+  return available;
+}
+
+function _schemeCoachContextFor(team, season){
+  if(!_schemeCoachContext || !team || !season) return null;
+  if(String(_schemeCoachContext.team||'') !== String(team||'')) return null;
+  const allowed = Array.isArray(_schemeCoachContext.seasons) ? _schemeCoachContext.seasons.map(String) : [];
+  if(allowed.length && !allowed.includes(String(season))) return null;
+  return _schemeCoachContext;
+}
+
 function _schemeOcCallout(team){
+  const ctx = _schemeCoachContextFor(team, schemeSeason);
+  if(ctx && ctx.name){
+    const roleTag = ctx.fromHC ? 'Play-calling HC' : 'OC context';
+    const yr = ctx.years ? ` · ${_schemeEscHtml(String(ctx.years))}` : '';
+    return `<div class="scheme-oc-callout"><span class="scheme-oc-pill new">${roleTag}</span><b>${_schemeEscHtml(ctx.name)}</b><span class="scheme-oc-note">historical playcaller context for ${teamDisplayName(team)}${yr}</span></div>`;
+  }
+
   const src = _schemeOcSource(team);
   if(!src) return '';
+  const seasonCoach = _schemeSeasonHeadCoach(team, schemeSeason);
+  const seasonCoachLine = seasonCoach
+    ? `<div class="scheme-oc-note">${_schemeEscHtml(String(schemeSeason||''))} HC: <b>${_schemeEscHtml(seasonCoach)}</b></div>`
+    : '';
   const roleTag = src._fromHC ? 'Play-calling HC' : 'OC';
   const since = src.since ? ` · since ${src.since}` : '';
   if(!src.is_new || !src.prev_code){
-    return `<div class="scheme-oc-callout"><span class="scheme-oc-pill">${roleTag}</span><b>${_schemeEscHtml(src.name)}</b>${since}</div>`;
+    return `<div class="scheme-oc-callout"><span class="scheme-oc-pill">${roleTag}</span><b>${_schemeEscHtml(src.name)}</b>${since}${seasonCoachLine}</div>`;
   }
   const prev = src.prev_code;
   const prevName = teamDisplayName(prev);
-  const seasons = _schemeSeasonsForTeam(prev);
+  const prevCtx = _schemePrevTeamPlaycallerContext(prev);
+  const prevPlaycallerNote = (!src._fromHC && prevCtx && prevCtx.name)
+    ? ` · play-caller there: ${_schemeEscHtml(prevCtx.name)}${Number.isFinite(prevCtx.since) ? ` (since ${prevCtx.since})` : ''}`
+    : '';
+  const seasons = _schemeRelevantPrevSeasons(src);
+  const seasonCsv = seasons.join(',');
+  const coachNameJs = _schemeEscJsSingle(src.name || '');
+  const coachRoleJs = _schemeEscJsSingle(src.prev_role || '');
+  const coachYearsExpr = (src.prev_years == null)
+    ? 'null'
+    : `'${_schemeEscJsSingle(String(src.prev_years))}'`;
+  const coachSeasonsJs = _schemeEscJsSingle(seasonCsv);
   const links = seasons.length
-    ? `<div class="scheme-oc-links">${seasons.map(s=>`<button class="scheme-oc-link" onclick="openTeamCoachingScheme('${prev}',{season:'${s}',from:'${team}'})">${prev} ${s}</button>`).join('')}</div>`
+    ? `<div class="scheme-oc-links">${seasons.map(s=>`<button class="scheme-oc-link" onclick="openTeamCoachingScheme('${prev}',{season:'${s}',from:'${team}',coachName:'${coachNameJs}',coachRole:'${coachRoleJs}',coachYears:${coachYearsExpr},coachFromHC:${src._fromHC?'true':'false'},coachSeasons:'${coachSeasonsJs}'})">${s}</button>`).join('')}</div>`
     : `<span class="scheme-oc-missing">No prior-team playbook seasons loaded.</span>`;
   return `<div class="scheme-oc-callout">
     <div><span class="scheme-oc-pill new">NEW ${roleTag}</span><b>${_schemeEscHtml(src.name)}</b>${since}
-      <span class="scheme-oc-note">from ${prevName}${src.prev_role?` (${_schemeEscHtml(src.prev_role)})`:''}${src.prev_years?` · ${_schemeEscHtml(String(src.prev_years))}`:''}</span>
+      <span class="scheme-oc-note">from ${prevName}${src.prev_role?` (${_schemeEscHtml(src.prev_role)})`:''}${src.prev_years?` · ${_schemeEscHtml(String(src.prev_years))}`:''}${prevPlaycallerNote}</span>
     </div>
+    ${seasonCoachLine}
     ${links}
   </div>`;
 }
@@ -9785,7 +9990,7 @@ function _schemeWeightedGroupRate(nodes, key){
 }
 
 function _schemePct(v){
-  return Number.isFinite(v) ? `${v.toFixed(1)}%` : '—';
+  return Number.isFinite(v) ? `${v.toFixed(2)}%` : '—';
 }
 
 function _schemeOrdinal(n){
@@ -9820,27 +10025,179 @@ function _schemeRankClass(rank, nTeams){
 }
 
 function _schemeLeagueInsightRanks(season){
-  const block = NFLVERSE && NFLVERSE[String(season)] && NFLVERSE[String(season)].coaching_scheme;
-  const teams = block ? Object.keys(block) : [];
-  const rows = teams.map(team=>{
-    const data = _schemeRedZoneInsightData({ season:String(season), data:block[team] });
-    return {
-      thirdDownReach: data.thirdDownReach,
-      earlySucc: data.earlySucc,
-      earlyPass: data.earlyPass,
-      allSucc: data.allSucc,
-    };
-  });
-  return {
-    leagueSize: teams.length,
-    thirdDownReach: rows.map(r=>r.thirdDownReach).filter(Number.isFinite),
-    earlySucc: rows.map(r=>r.earlySucc).filter(Number.isFinite),
-    earlyPass: rows.map(r=>r.earlyPass).filter(Number.isFinite),
-    allSucc: rows.map(r=>r.allSucc).filter(Number.isFinite),
+  return _schemeLeagueInsightSnapshot(season) || {
+    leagueSize: 0,
+    thirdDownReach: [],
+    earlySucc: [],
+    lateSucc: [],
+    frictionScore: [],
   };
 }
 
-function _schemeRedZoneInsightData(p){
+function _schemeSeasonOffenseTable(season){
+  return NFLVERSE && NFLVERSE[String(season)] && NFLVERSE[String(season)].team
+    && NFLVERSE[String(season)].team.offense;
+}
+
+function _schemeSeasonAdvWeeklySums(season){
+  const pack = NFLVERSE && NFLVERSE[String(season)] && NFLVERSE[String(season)].adv_weekly;
+  if(!pack || !pack.teams || !Array.isArray(pack.cols)) return null;
+  const cols = pack.cols;
+  const out = {};
+  Object.keys(pack.teams).forEach(tm=>{
+    const rows = Array.isArray(pack.teams[tm]) ? pack.teams[tm] : [];
+    const sum = {};
+    cols.forEach(c=>{ sum[c] = 0; });
+    rows.forEach(r=>{
+      cols.forEach((c, i)=>{ sum[c] += Number((r && r[i]) || 0); });
+    });
+    out[tm] = sum;
+  });
+  return out;
+}
+
+function _schemeBadness(value, values, higherIsWorse){
+  if(!Number.isFinite(value)) return null;
+  const arr = (values||[]).filter(Number.isFinite);
+  if(arr.length < 2) return null;
+  const worse = higherIsWorse
+    ? arr.filter(v=>v < value).length
+    : arr.filter(v=>v > value).length;
+  return worse / (arr.length - 1);
+}
+
+function _schemeDriveFrictionComposite(season, team, thirdDownReach){
+  const tbl = _schemeSeasonOffenseTable(season);
+  const teams = tbl && tbl.teams ? Object.keys(tbl.teams) : [];
+  if(!tbl || !teams.length) return { score:null, rank:null, leagueSize:0, components:null };
+  const valuesFor = (col) => teams.map(tm=>tbl.teams[tm] && tbl.teams[tm].values ? tbl.teams[tm].values[col] : null).filter(Number.isFinite);
+  const metrics = tbl.teams[team] && tbl.teams[team].values ? tbl.teams[team].values : {};
+  const epa = _schemeNumber(metrics['EPA/Play'], NaN);
+  const ppd = _schemeNumber(metrics['Points Per Drive'], NaN);
+  const conv = _schemeNumber(metrics['Down Conversion Rate'], NaN);
+  const expl = _schemeNumber(metrics['Explosive Play Rate'], NaN);
+  const badness = {
+    lateDownFreq: _schemeBadness(thirdDownReach, teams.map(tm=>_schemeRedZoneCore({ season:String(season), team:tm, data:(NFLVERSE[String(season)] && NFLVERSE[String(season)].coaching_scheme || {})[tm] }).thirdDownReach).filter(Number.isFinite), true),
+    epa: _schemeBadness(epa, valuesFor('EPA/Play'), false),
+    pointsPerDrive: _schemeBadness(ppd, valuesFor('Points Per Drive'), false),
+    conversion: _schemeBadness(conv, valuesFor('Down Conversion Rate'), false),
+    explosive: _schemeBadness(expl, valuesFor('Explosive Play Rate'), false),
+  };
+  const usable = Object.values(badness).filter(Number.isFinite);
+  if(!usable.length) return { score:null, rank:null, leagueSize:teams.length, components:badness };
+
+  const scoreFor = (tm)=>{
+    const tMetrics = tbl.teams[tm] && tbl.teams[tm].values ? tbl.teams[tm].values : {};
+    const tThird = _schemeRedZoneCore({ season:String(season), team:tm, data:(NFLVERSE[String(season)] && NFLVERSE[String(season)].coaching_scheme || {})[tm] }).thirdDownReach;
+    const tBad = [
+      _schemeBadness(tThird, teams.map(code=>_schemeRedZoneCore({ season:String(season), team:code, data:(NFLVERSE[String(season)] && NFLVERSE[String(season)].coaching_scheme || {})[code] }).thirdDownReach).filter(Number.isFinite), true),
+      _schemeBadness(_schemeNumber(tMetrics['EPA/Play'], NaN), valuesFor('EPA/Play'), false),
+      _schemeBadness(_schemeNumber(tMetrics['Points Per Drive'], NaN), valuesFor('Points Per Drive'), false),
+      _schemeBadness(_schemeNumber(tMetrics['Down Conversion Rate'], NaN), valuesFor('Down Conversion Rate'), false),
+      _schemeBadness(_schemeNumber(tMetrics['Explosive Play Rate'], NaN), valuesFor('Explosive Play Rate'), false),
+    ].filter(Number.isFinite);
+    return tBad.length ? (100 * tBad.reduce((a,b)=>a+b,0) / tBad.length) : null;
+  };
+
+  const score = 100 * usable.reduce((a,b)=>a+b,0) / usable.length;
+  const scores = teams.map(tm=>scoreFor(tm)).filter(Number.isFinite);
+  const rank = Number.isFinite(score) ? (1 + scores.filter(v=>v > score).length) : null;
+  return { score, rank, leagueSize:teams.length, components:badness };
+}
+
+function _schemeLeagueInsightSnapshot(season){
+  const s = String(season||'');
+  if(!s) return null;
+  if(_schemeInsightSeasonCache[s]) return _schemeInsightSeasonCache[s];
+
+  const block = NFLVERSE && NFLVERSE[s] && NFLVERSE[s].coaching_scheme;
+  const teams = block ? Object.keys(block) : [];
+  if(!teams.length) return null;
+
+  const tbl = _schemeSeasonOffenseTable(s);
+  const teamTable = (tbl && tbl.teams) ? tbl.teams : {};
+  const adv = _schemeSeasonAdvWeeklySums(s) || {};
+  const coreByTeam = {};
+  teams.forEach(tm=>{ coreByTeam[tm] = _schemeRedZoneCore({ season:s, team:tm, data:block[tm] }); });
+
+  const rowsByTeam = {};
+  teams.forEach(tm=>{
+    const core = coreByTeam[tm] || {};
+    const metrics = teamTable[tm] && teamTable[tm].values ? teamTable[tm].values : {};
+    const wk = adv[tm] || {};
+    const driveCt = _schemeNumber(wk.off_drive_ct, 0);
+    const games = _schemeNumber(wk.pace_games, 0);
+    rowsByTeam[tm] = {
+      samplePlays: core.samplePlays,
+      thirdDownReach: core.thirdDownReach,
+      earlySucc: core.earlySucc,
+      lateSucc: core.lateSucc,
+      earlyPass: core.earlyPass,
+      pointsPerDrive: driveCt > 0 ? _schemeNumber(wk.off_drive_pts, 0) / driveCt : _schemeNumber(metrics['Points Per Drive'], NaN),
+      conversionRate: _schemeNumber(wk.off_conv_obs, 0) > 0 ? (100 * _schemeNumber(wk.off_conv, 0) / _schemeNumber(wk.off_conv_obs, 0)) : _schemeNumber(metrics['Down Conversion Rate'], NaN),
+      epaPerPlay: _schemeNumber(wk.off_plays, 0) > 0 ? (_schemeNumber(wk.off_epa, 0) / _schemeNumber(wk.off_plays, 0)) : _schemeNumber(metrics['EPA/Play'], NaN),
+      explosiveRate: _schemeNumber(wk.off_plays, 0) > 0 ? (100 * _schemeNumber(wk.off_explosive, 0) / _schemeNumber(wk.off_plays, 0)) : _schemeNumber(metrics['Explosive Play Rate'], NaN),
+      puntRate: driveCt > 0 ? (100 * _schemeNumber(wk.off_drive_punt_ct, 0) / driveCt) : null,
+      turnoverDriveRate: driveCt > 0 ? (100 * (_schemeNumber(wk.off_drive_turnover_ct, 0) + _schemeNumber(wk.off_drive_tod_ct, 0)) / driveCt) : null,
+      threeOutRate: driveCt > 0 ? (100 * _schemeNumber(wk.off_drive_three_out_ct, 0) / driveCt) : null,
+      tdDriveRate: driveCt > 0 ? (100 * _schemeNumber(wk.off_drive_td_ct, 0) / driveCt) : null,
+      rzTdRate: _schemeNumber(wk.off_drive_rz_ct, 0) > 0 ? (100 * _schemeNumber(wk.off_drive_rz_td_ct, 0) / _schemeNumber(wk.off_drive_rz_ct, 0)) : null,
+      fpPprPerGame: games > 0 ? (_schemeNumber(wk.off_fp_ppr, 0) / games) : null,
+      fpPprPerDrive: driveCt > 0 ? (_schemeNumber(wk.off_fp_ppr, 0) / driveCt) : null,
+    };
+  });
+
+  const thirdVals = teams.map(tm=>rowsByTeam[tm].thirdDownReach).filter(Number.isFinite);
+  const epaVals = teams.map(tm=>rowsByTeam[tm].epaPerPlay).filter(Number.isFinite);
+  const ppdVals = teams.map(tm=>rowsByTeam[tm].pointsPerDrive).filter(Number.isFinite);
+  const convVals = teams.map(tm=>rowsByTeam[tm].conversionRate).filter(Number.isFinite);
+  const explVals = teams.map(tm=>rowsByTeam[tm].explosiveRate).filter(Number.isFinite);
+  const puntVals = teams.map(tm=>rowsByTeam[tm].puntRate).filter(Number.isFinite);
+  const toVals = teams.map(tm=>rowsByTeam[tm].turnoverDriveRate).filter(Number.isFinite);
+  const threeVals = teams.map(tm=>rowsByTeam[tm].threeOutRate).filter(Number.isFinite);
+  const tdDriveVals = teams.map(tm=>rowsByTeam[tm].tdDriveRate).filter(Number.isFinite);
+  const rzTdVals = teams.map(tm=>rowsByTeam[tm].rzTdRate).filter(Number.isFinite);
+  const fpVals = teams.map(tm=>rowsByTeam[tm].fpPprPerGame).filter(Number.isFinite);
+
+  teams.forEach(tm=>{
+    const parts = [
+      _schemeBadness(rowsByTeam[tm].thirdDownReach, thirdVals, true),
+      _schemeBadness(rowsByTeam[tm].puntRate, puntVals, true),
+      _schemeBadness(rowsByTeam[tm].turnoverDriveRate, toVals, true),
+      _schemeBadness(rowsByTeam[tm].threeOutRate, threeVals, true),
+      _schemeBadness(rowsByTeam[tm].pointsPerDrive, ppdVals, false),
+      _schemeBadness(rowsByTeam[tm].conversionRate, convVals, false),
+      _schemeBadness(rowsByTeam[tm].tdDriveRate, tdDriveVals, false),
+      _schemeBadness(rowsByTeam[tm].rzTdRate, rzTdVals, false),
+      _schemeBadness(rowsByTeam[tm].epaPerPlay, epaVals, false),
+      _schemeBadness(rowsByTeam[tm].explosiveRate, explVals, false),
+    ].filter(Number.isFinite);
+    rowsByTeam[tm].frictionScore = parts.length ? (100 * parts.reduce((a,b)=>a+b,0) / parts.length) : null;
+  });
+
+  teams.forEach(tm=>{
+    const score = rowsByTeam[tm].frictionScore;
+    rowsByTeam[tm].frictionRank = Number.isFinite(score)
+      ? (1 + teams.filter(other=>Number.isFinite(rowsByTeam[other].frictionScore) && rowsByTeam[other].frictionScore > score).length)
+      : null;
+  });
+
+  const snapshot = {
+    leagueSize: teams.length,
+    rowsByTeam,
+    thirdDownReach: teams.map(tm=>rowsByTeam[tm].thirdDownReach).filter(Number.isFinite),
+    earlySucc: teams.map(tm=>rowsByTeam[tm].earlySucc).filter(Number.isFinite),
+    lateSucc: teams.map(tm=>rowsByTeam[tm].lateSucc).filter(Number.isFinite),
+    frictionScore: teams.map(tm=>rowsByTeam[tm].frictionScore).filter(Number.isFinite),
+    tdDriveRate: tdDriveVals,
+    rzTdRate: rzTdVals,
+    fpPprPerGame: fpVals,
+  };
+  _schemeInsightSeasonCache[s] = snapshot;
+  return snapshot;
+}
+
+function _schemeRedZoneCore(p){
   const fv = _schemeBuildFv(p);
   const rz1 = _schemeSafeNode(fv, '1', 'all', 'redzone');
   const rz2 = _schemeSafeNode(fv, '2', 'all', 'redzone');
@@ -9856,22 +10213,54 @@ function _schemeRedZoneInsightData(p){
 
   const thirdDownReach = downsKnown > 0 ? ((n3 + n4) / downsKnown) * 100 : null;
   const earlySucc = _schemeWeightedGroupRate([rz1, rz2], 'succ');
+  const lateSucc = _schemeWeightedGroupRate([rz3, rz4], 'succ');
   const earlyPass = _schemeWeightedGroupRate([rz1, rz2], 'pass_rate');
-  const allSucc = _schemeWeightedGroupRate(rzAll, 'succ');
-
-  let label = 'Balanced';
-  let tone = 'neutral';
-  if(Number.isFinite(thirdDownReach)){
-    if(thirdDownReach >= 43){ label = 'High Drive Friction'; tone = 'warn'; }
-    else if(thirdDownReach <= 34){ label = 'Low Drive Friction'; tone = 'good'; }
-  }
 
   return {
     samplePlays: Math.max(downsKnown, _schemeNumber(rzAll.total, 0)),
     thirdDownReach,
     earlySucc,
+    lateSucc,
     earlyPass,
-    allSucc,
+  };
+}
+
+function _schemeRedZoneInsightData(p){
+  const core = _schemeRedZoneCore(p);
+  const team = (p && p.team) || schemeTeam || '';
+  const snap = _schemeLeagueInsightSnapshot(p && p.season);
+  const cached = snap && team ? snap.rowsByTeam[team] : null;
+  const friction = cached ? {
+    score: cached.frictionScore,
+    rank: cached.frictionRank,
+    leagueSize: snap.leagueSize,
+    components: null,
+  } : _schemeDriveFrictionComposite(p && p.season, team, core.thirdDownReach);
+
+  let label = 'Balanced Friction';
+  let tone = 'neutral';
+  if(Number.isFinite(friction.rank) && Number.isFinite(friction.leagueSize) && friction.leagueSize > 0){
+    const pct = friction.rank / friction.leagueSize;
+    if(pct <= 0.34){ label = 'High Drive Friction'; tone = 'warn'; }
+    else if(pct >= 0.67){ label = 'Low Drive Friction'; tone = 'good'; }
+  }
+
+  return {
+    samplePlays: cached && Number.isFinite(cached.samplePlays) ? cached.samplePlays : core.samplePlays,
+    thirdDownReach: cached && Number.isFinite(cached.thirdDownReach) ? cached.thirdDownReach : core.thirdDownReach,
+    earlySucc: cached && Number.isFinite(cached.earlySucc) ? cached.earlySucc : core.earlySucc,
+    lateSucc: cached && Number.isFinite(cached.lateSucc) ? cached.lateSucc : core.lateSucc,
+    earlyPass: cached && Number.isFinite(cached.earlyPass) ? cached.earlyPass : core.earlyPass,
+    tdDriveRate: cached ? cached.tdDriveRate : null,
+    rzTdRate: cached ? cached.rzTdRate : null,
+    puntRate: cached ? cached.puntRate : null,
+    turnoverDriveRate: cached ? cached.turnoverDriveRate : null,
+    threeOutRate: cached ? cached.threeOutRate : null,
+    fpPprPerGame: cached ? cached.fpPprPerGame : null,
+    frictionScore: friction.score,
+    frictionRank: friction.rank,
+    frictionLeagueSize: friction.leagueSize,
+    frictionComponents: friction.components,
     label,
     tone,
   };
@@ -9879,18 +10268,29 @@ function _schemeRedZoneInsightData(p){
 
 function _schemeInsightNarrative(d){
   const pieces = [];
-  if(Number.isFinite(d.thirdDownReach)){
-    if(d.thirdDownReach >= 43){
-      pieces.push('Goal-to-go sequences are reaching late downs too often. That usually means lower touchdown certainty and more week-to-week volatility.');
-    }else if(d.thirdDownReach <= 34){
-      pieces.push('Goal-to-go sequences are converting early at a healthy rate. Primary red-zone roles tend to be more reliable for touchdowns.');
+  if(Number.isFinite(d.frictionRank) && Number.isFinite(d.frictionLeagueSize)){
+    if((d.frictionRank / d.frictionLeagueSize) <= 0.34){
+      pieces.push('This offense is ranking among the stickier drives in the league: punts, drive-killers, and late-down red-zone pressure all squeeze touchdown reliability.');
+    }else if((d.frictionRank / d.frictionLeagueSize) >= 0.67){
+      pieces.push('This offense is finishing drives with relatively low friction: stronger drive efficiency and fewer late-down red-zone stalls make core touchdown roles cleaner.');
     }else{
-      pieces.push('Goal-to-go execution looks near league middle. Treat touchdown outcomes as role-driven more than scheme-extreme.');
+      pieces.push('Drive friction sits around league middle, so role clarity matters more than the macro environment.');
     }
   }
-  if(Number.isFinite(d.earlyPass)){
-    if(d.earlyPass >= 58) pieces.push('Early downs skew pass-heavy inside the 10, which can support target-driven profiles over pure goal-line rushers.');
-    if(d.earlyPass <= 42) pieces.push('Early downs skew run-heavy inside the 10, which can concentrate upside into primary rushing roles.');
+  if(Number.isFinite(d.tdDriveRate) && d.tdDriveRate <= 18){
+    pieces.push('Touchdown drives are landing below league baseline, so TD opportunity on this offense is thinner than the raw volume may suggest.');
+  }else if(Number.isFinite(d.tdDriveRate) && d.tdDriveRate >= 26){
+    pieces.push('A strong touchdown-drive rate keeps this offense fantasy-friendly even when overall volume is only average.');
+  }
+  if(Number.isFinite(d.fpPprPerGame)){
+    if(d.fpPprPerGame >= 65) pieces.push('The offense is still generating strong total fantasy ecosystem output, which can soften individual efficiency concerns.');
+    else if(d.fpPprPerGame <= 48) pieces.push('Total fantasy ecosystem output is light, which raises the bar for secondary options to matter.');
+  }
+  if(Number.isFinite(d.thirdDownReach) && d.thirdDownReach >= 40){
+    pieces.push('A high 3rd/4th-down red-zone rate means the offense is needing extra snaps to finish drives.');
+  }
+  if(Number.isFinite(d.earlySucc) && Number.isFinite(d.lateSucc) && d.earlySucc > d.lateSucc + 7){
+    pieces.push('The early-down edge fades on later downs, which usually narrows scoring chances to the most trusted pass-game roles.');
   }
   if(!pieces.length) pieces.push('Not enough red-zone charting for a confident read yet.');
   return pieces.join(' ');
@@ -9917,32 +10317,49 @@ function _schemeNormNameToken(s){
     .trim();
 }
 
-function _schemePosPlayers(team, pos){
-  if(typeof getBase!=='function' || !team) return [];
-  const rows = getBase(team, pos) || [];
+function _schemePosPlayers(team, pos, season){
+  const rows = [];
+  const seasonRows = NFLVERSE && NFLVERSE[String(season)] && NFLVERSE[String(season)].rosters && NFLVERSE[String(season)].rosters[team];
+  if(Array.isArray(seasonRows)){
+    seasonRows.forEach(r=>{
+      const rpos = String((r && r[1]) || '').toUpperCase();
+      if(rpos !== String(pos||'').toUpperCase() && !(pos==='RB' && rpos==='FB')) return;
+      rows.push({
+        name: String((r && r[0]) || ''),
+        player_id: String((r && r[5]) || ''),
+        pos: pos,
+        team,
+        vol: _schemeNumber(r && r[7], 0),
+      });
+    });
+  }
+  const allowCurrentFallback = String(season||'') === String(PROJ_SEASON||'')
+    || String(season||'') === String(activeSeason||'');
+  if(!rows.length && allowCurrentFallback && typeof getBase==='function' && team){
+    (getBase(team, pos) || []).forEach(p=>{
+      rows.push({
+        name: String((p && p.name) || ''),
+        player_id: String((p && p.player_id) || ''),
+        pos: String((p && p.pos) || pos),
+        team: String((p && p.team) || team),
+        vol: _schemeNumber(p && (p.receiving_targets || p.receptions || p.rushing_attempts || p.targets), 0),
+      });
+    });
+  }
   return rows.map(p=>{
-    const full = String((p && p.name) || '').trim();
+    const full = String(p.name || '').trim();
     const toks = full.split(/\s+/).filter(Boolean);
-    const first = _schemeNormNameToken(toks[0] || '');
-    const last = _schemeNormNameToken(toks[toks.length-1] || '');
-    const suffix = _schemeNormNameToken(toks[toks.length-1] || '').replace(/[^a-z0-9]/g,'');
-    const vol = _schemeNumber(p && (p.receiving_targets || p.receptions || p.rushing_attempts || p.targets), 0);
-    return {
-      name: full,
-      player_id: String((p && p.player_id) || ''),
-      pos: String((p && p.pos) || pos),
-      team: String((p && p.team) || team),
-      first,
-      last,
-      suffix,
+    return Object.assign({}, p, {
+      first: _schemeNormNameToken(toks[0] || ''),
+      last: _schemeNormNameToken(toks[toks.length-1] || ''),
+      suffix: _schemeNormNameToken(toks[toks.length-1] || '').replace(/[^a-z0-9]/g,''),
       norm: _schemeNormNameToken(full),
-      vol,
-    };
+    });
   }).filter(p=>p.name);
 }
 
-function _schemeResolveRosterPlayer(team, pos, shortName, slot){
-  const players = _schemePosPlayers(team, pos);
+function _schemeResolveRosterPlayer(team, pos, shortName, slot, season){
+  const players = _schemePosPlayers(team, pos, season);
   if(!players.length){
     return { name: String(shortName||slot||'Unknown'), player_id:'', pos, team };
   }
@@ -10009,39 +10426,81 @@ function _schemePlayerHeadshot(p){
   return '<span class="scheme-benefit-hs ph"></span>';
 }
 
-function _schemeBenefactorReason(pos, passLean, friction){
-  if((pos==='WR' || pos==='TE') && passLean > 0.18) return 'Pass-lean red-zone script';
-  if((pos==='WR' || pos==='TE') && friction > 0.12) return 'Late-down dependency boosts target paths';
-  if(pos==='RB' && passLean < -0.18) return 'Run-lean red-zone script';
-  if(pos==='RB' && friction < -0.08) return 'Early-down conversion supports rush TD paths';
-  if(pos==='QB' && passLean > 0.2) return 'Pass-heavy red-zone design can lift QB TD paths';
-  return 'High role concentration in this team context';
+function _schemeInfoTip(label, text){
+  return `<details class="scheme-help" onclick="event.stopPropagation()" ontoggle="_schemePlaceHelpPopup(this)"><summary class="scheme-help-btn" aria-label="${_schemeEscHtml(label)}">i</summary><div class="scheme-help-pop"><b>${_schemeEscHtml(label)}</b><span>${_schemeEscHtml(text)}</span></div></details>`;
 }
 
-// Position priors for "who benefits" in red-zone context.
-// Higher `fitWeight` means team tendencies matter more than raw usage for that position.
-const SCHEME_BENEFIT_PROFILE = {
-  WR: { passW: 1.25, frictionW: 0.85, usageWeight: 0.54, fitWeight: 0.46 },
-  TE: { passW: 1.18, frictionW: 0.72, usageWeight: 0.56, fitWeight: 0.44 },
-  RB: { passW: -1.30, frictionW: -0.62, usageWeight: 0.60, fitWeight: 0.40 },
-  QB: { passW: 0.78, frictionW: -0.48, usageWeight: 0.66, fitWeight: 0.34 },
-  DEF: { passW: 0.0, frictionW: 0.0, usageWeight: 1.0, fitWeight: 0.0 },
-};
+function _schemePlaceHelpPopup(detailsEl){
+  const el = detailsEl;
+  if(!el || !el.querySelector) return;
+  const pop = el.querySelector('.scheme-help-pop');
+  if(!pop) return;
 
-function _schemeBenefitForPos(pos, useNorm, passLean, friction){
-  const cfg = SCHEME_BENEFIT_PROFILE[pos] || SCHEME_BENEFIT_PROFILE.WR;
-  const fitRaw = cfg.passW * passLean + cfg.frictionW * friction;
-  const fitNorm = _schemeClamp((fitRaw + 1) / 2, 0, 1);
-  return {
-    score: _schemeClamp(cfg.usageWeight * useNorm + cfg.fitWeight * fitNorm, 0, 1),
-    fitNorm,
-  };
+  if(!el.open){
+    pop.style.transform = '';
+    pop.style.top = '';
+    pop.style.bottom = '';
+    return;
+  }
+
+  pop.style.transform = '';
+  pop.style.top = '18px';
+  pop.style.bottom = 'auto';
+
+  requestAnimationFrame(()=>{
+    const pad = 10;
+    const rect = pop.getBoundingClientRect();
+    let shiftX = 0;
+    if(rect.right > (window.innerWidth - pad)) shiftX -= (rect.right - (window.innerWidth - pad));
+    if((rect.left + shiftX) < pad) shiftX += (pad - (rect.left + shiftX));
+    pop.style.transform = `translateX(${Math.round(shiftX)}px)`;
+
+    const after = pop.getBoundingClientRect();
+    if(after.bottom > (window.innerHeight - pad)){
+      pop.style.top = 'auto';
+      pop.style.bottom = '18px';
+    }
+  });
+}
+
+function _schemeTargetSortLabel(mode){
+  if(String(mode)==='tgt') return 'Red-zone target share';
+  return 'Red-zone target opportunity share';
+}
+
+function _schemeSortTargetBenefactors(list, mode){
+  const rows = Array.isArray(list) ? list.slice() : [];
+  if(String(mode)==='tgt'){
+    return rows.sort((a,b)=>
+      (_schemeNumber(b && b.tgtShare, 0) - _schemeNumber(a && a.tgtShare, 0))
+      || (_schemeNumber(b && b.d3Pct, 0) - _schemeNumber(a && a.d3Pct, 0))
+      || (_schemeNumber(b && b.oppShare, 0) - _schemeNumber(a && a.oppShare, 0))
+      || String((a && a.name) || '').localeCompare(String((b && b.name) || ''))
+    );
+  }
+  return rows.sort((a,b)=>
+    (_schemeNumber(b && b.oppShare, 0) - _schemeNumber(a && a.oppShare, 0))
+    || (_schemeNumber(b && b.tgtShare, 0) - _schemeNumber(a && a.tgtShare, 0))
+    || (_schemeNumber(b && b.d3Pct, 0) - _schemeNumber(a && a.d3Pct, 0))
+    || String((a && a.name) || '').localeCompare(String((b && b.name) || ''))
+  );
+}
+
+function setTeamCoachingSchemeBenefactorSort(mode){
+  const m = String(mode||'').toLowerCase();
+  schemeBenefactorSort = (m==='tgt') ? 'tgt' : 'opp';
+  if(schemeOverlayOpen && schemeTeam && schemeViewTab==='insights') _renderTeamCoachingScheme();
+}
+
+function _schemeBackButtonHtml(){
+  if(!Array.isArray(_schemeNavStack) || !_schemeNavStack.length) return '';
+  return `<button class="scheme-back" onclick="backTeamCoachingScheme()" aria-label="Back">← Back</button>`;
 }
 
 function _schemeBuildBenefactors(p, d){
   const fv = _schemeBuildFv(p);
   const slotDownOpp = {};
-  const posDownOpp = {};
+  const slotDownTgt = {};
   const slotMap = fv.slots || {};
   const names = fv.names || {};
   const downs = ['1','2','3','4'];
@@ -10055,10 +10514,26 @@ function _schemeBuildBenefactors(p, d){
       if(passPlays <= 0) return;
 
       const assigns = Array.isArray(g && g.assigns) ? g.assigns : [];
+      const eligible = assigns.filter(a=>{
+        const slot = String((a && a.slot) || '');
+        return !!slot && _schemePosFromSlot(slot)!=='QB';
+      });
+      if(eligible.length){
+        const perSlotTgt = passPlays / eligible.length;
+        eligible.forEach(a=>{
+          const slot = String((a && a.slot) || '');
+          const pos = _schemePosFromSlot(slot);
+          const rec = (slotDownTgt[slot] = slotDownTgt[slot] || { pos, total:0, d1:0, d2:0, d3:0, d4:0 });
+          rec.total += perSlotTgt;
+          rec[`d${down}`] += perSlotTgt;
+        });
+      }
+
       const posBuckets = {};
       assigns.forEach(a=>{
         const slot = String((a && a.slot) || '');
         if(!slot) return;
+        if(_schemePosFromSlot(slot)==='QB') return;
         const pos = _schemePosFromSlot(slot);
         (posBuckets[pos] = posBuckets[pos] || []).push({ slot, a });
       });
@@ -10078,33 +10553,39 @@ function _schemeBuildBenefactors(p, d){
           const rec = (slotDownOpp[slot] = slotDownOpp[slot] || { pos, total:0, d1:0, d2:0, d3:0, d4:0 });
           rec.total += shareOpp;
           rec[`d${down}`] += shareOpp;
-          const pRec = (posDownOpp[pos] = posDownOpp[pos] || { d1:0, d2:0, d3:0, d4:0, total:0 });
-          pRec[`d${down}`] += shareOpp;
-          pRec.total += shareOpp;
         });
       });
     });
   });
 
   const totals = Object.values(slotDownOpp);
-  const maxOpp = totals.reduce((m,r)=>Math.max(m,_schemeNumber(r && r.total,0)),0) || 1;
+  const totalOpp = totals.reduce((t,r)=>t+_schemeNumber(r && r.total,0),0) || 1;
+  const tgtTotals = Object.values(slotDownTgt);
+  const totalTgt = tgtTotals.reduce((t,r)=>t+_schemeNumber(r && r.total,0),0) || 1;
+  const downTotals = {
+    d1: totals.reduce((t,r)=>t+_schemeNumber(r && r.d1,0),0) || 1,
+    d2: totals.reduce((t,r)=>t+_schemeNumber(r && r.d2,0),0) || 1,
+    d3: totals.reduce((t,r)=>t+_schemeNumber(r && r.d3,0),0) || 1,
+    d4: totals.reduce((t,r)=>t+_schemeNumber(r && r.d4,0),0) || 1,
+  };
+  const posTotals = {};
+  totals.forEach(r=>{ posTotals[r.pos] = _schemeNumber(posTotals[r.pos], 0) + _schemeNumber(r.total, 0); });
   const rows = [];
 
   Object.keys(slotDownOpp).forEach(slot=>{
     const rec = slotDownOpp[slot] || {};
     const pos = rec.pos || _schemePosFromSlot(slot);
-    const pRec = posDownOpp[pos] || { d1:0, d2:0, d3:0, d4:0, total:0 };
-    const d1Pct = pRec.d1>0 ? (100*rec.d1/pRec.d1) : 0;
-    const d2Pct = pRec.d2>0 ? (100*rec.d2/pRec.d2) : 0;
-    const d3Pct = pRec.d3>0 ? (100*rec.d3/pRec.d3) : 0;
-    const d4Pct = pRec.d4>0 ? (100*rec.d4/pRec.d4) : 0;
-    const wPct = (0.22*d1Pct) + (0.30*d2Pct) + (0.40*d3Pct) + (0.08*d4Pct);
-    const volNorm = _schemeClamp(_schemeNumber(rec.total, 0) / maxOpp, 0, 1);
-    const benefit = _schemeClamp((0.7*(wPct/100)) + (0.3*volNorm), 0, 1);
+    const d1Pct = 100 * _schemeNumber(rec.d1, 0) / downTotals.d1;
+    const d2Pct = 100 * _schemeNumber(rec.d2, 0) / downTotals.d2;
+    const d3Pct = 100 * _schemeNumber(rec.d3, 0) / downTotals.d3;
+    const d4Pct = 100 * _schemeNumber(rec.d4, 0) / downTotals.d4;
+    const oppShare = 100 * _schemeNumber(rec.total, 0) / totalOpp;
+    const tgtRec = slotDownTgt[slot] || { total:0 };
+    const tgtShare = 100 * _schemeNumber(tgtRec.total, 0) / totalTgt;
 
     const gsis = slotMap[slot];
     const shortName = names[gsis] || slot;
-    const resolved = _schemeResolveRosterPlayer(schemeTeam||'', pos, shortName, slot);
+    const resolved = _schemeResolveRosterPlayer(schemeTeam||'', pos, shortName, slot, p && p.season);
     const rid = String((resolved && resolved.player_id) || '');
     const name = String((resolved && resolved.name) || shortName || slot);
     const bestDown = [
@@ -10117,28 +10598,89 @@ function _schemeBuildBenefactors(p, d){
       pos,
       player_id: rid || null,
       team: schemeTeam || '',
-      useRaw: _schemeNumber(rec.total, 0),
-      useShare: totals.length ? (100*_schemeNumber(rec.total,0)/totals.reduce((t,x)=>t+_schemeNumber(x.total,0),0)) : 0,
-      benefit,
+      oppShare,
+      tgtShare,
       d1Pct,
       d2Pct,
       d3Pct,
       d4Pct,
-      targetPct: wPct,
-      reason: `${bestDown.k}-down ${pos} target-share leader (${bestDown.v.toFixed(1)}%)`,
+      reason: `Modeled red-zone target opportunity share ${oppShare.toFixed(2)}%; modeled red-zone target share ${tgtShare.toFixed(2)}%; strongest on ${bestDown.k} down (${bestDown.v.toFixed(2)}%).`,
     });
   });
 
-  return rows
-    .sort((a,b)=> (b.targetPct - a.targetPct) || (b.benefit - a.benefit) || (b.useShare - a.useShare) || String(a.name).localeCompare(String(b.name)))
-    .slice(0, 6);
+  return rows;
 }
 
-function _schemeRenderBenefactors(list){
+function _schemeBuildRushBenefactors(p, d){
+  const fv = _schemeBuildFv(p);
+  const slotRunOpp = {};
+  const slotMap = fv.slots || {};
+  const names = fv.names || {};
+  const downs = ['1','2','3','4'];
+  downs.forEach(down=>{
+    const node = _schemeSafeNode(fv, down, 'all', 'redzone');
+    const groups = Array.isArray(node && node.groups) ? node.groups : [];
+    groups.forEach(g=>{
+      const n = _schemeNumber(g && g.n, 0);
+      const runPlays = n * (1 - (_schemeNumber(g && g.pass_rate, 0) / 100));
+      if(runPlays <= 0) return;
+      const assigns = Array.isArray(g && g.assigns) ? g.assigns : [];
+      const backs = assigns.filter(a=>/^(RB|FB)/.test(String((a && a.slot) || '').toUpperCase()));
+      if(!backs.length) return;
+      const weights = backs.map((a, i)=>{
+        const slot = String((a && a.slot) || 'RB1').toUpperCase();
+        if(slot === 'RB1') return 1;
+        if(slot === 'RB2') return 0.48;
+        if(slot.startsWith('FB')) return 0.2;
+        return i === 0 ? 0.8 : 0.35;
+      });
+      const wSum = weights.reduce((t,v)=>t+v,0) || 1;
+      backs.forEach((a, i)=>{
+        const slot = String((a && a.slot) || '');
+        const rec = (slotRunOpp[slot] = slotRunOpp[slot] || { total:0, d1:0, d2:0, d3:0, d4:0 });
+        const opp = runPlays * (weights[i] / wSum);
+        rec.total += opp;
+        rec[`d${down}`] += opp;
+      });
+    });
+  });
+
+  const totalRunOpp = Object.values(slotRunOpp).reduce((t,r)=>t+_schemeNumber(r.total,0),0) || 1;
+  const rows = Object.keys(slotRunOpp).map(slot=>{
+    const rec = slotRunOpp[slot] || {};
+    const gsis = slotMap[slot];
+    const shortName = names[gsis] || slot;
+    const resolved = _schemeResolveRosterPlayer(schemeTeam||'', 'RB', shortName, slot, p && p.season);
+    const d1 = 100 * _schemeNumber(rec.d1, 0) / totalRunOpp;
+    const d2 = 100 * _schemeNumber(rec.d2, 0) / totalRunOpp;
+    const d3 = 100 * _schemeNumber(rec.d3, 0) / totalRunOpp;
+    const d4 = 100 * _schemeNumber(rec.d4, 0) / totalRunOpp;
+    const oppShare = 100 * _schemeNumber(rec.total, 0) / totalRunOpp;
+    const bestDown = [
+      {k:'1st',v:d1}, {k:'2nd',v:d2}, {k:'3rd',v:d3}, {k:'4th',v:d4}
+    ].sort((a,b)=>b.v-a.v)[0];
+    return {
+      name: String((resolved && resolved.name) || shortName || slot),
+      slot,
+      pos: 'RB',
+      player_id: String((resolved && resolved.player_id) || '') || null,
+      team: schemeTeam || '',
+      oppShare,
+      d1Pct: d1,
+      d2Pct: d2,
+      d3Pct: d3,
+      d4Pct: d4,
+      reason: `Modeled for ${oppShare.toFixed(2)}% of red-zone rushing TD path volume; strongest on ${bestDown.k} down (${bestDown.v.toFixed(2)}%).`,
+    };
+  });
+  return rows.sort((a,b)=>b.oppShare-a.oppShare).slice(0, 4);
+}
+
+function _schemeRenderBenefactorList(title, subtitle, list, scoreFmt, metaFmt){
   if(!list || !list.length){
     return `<div class="scheme-benefactors-wrap">
-      <div class="scheme-benefactors-title">Most Benefiting Players</div>
-      <div class="scheme-empty">No player-level red-zone role data available for this season/team.</div>
+      <div class="scheme-benefactors-title">${_schemeEscHtml(title)}</div>
+      <div class="scheme-empty">No player-level role data available for this season/team.</div>
     </div>`;
   }
   const rows = list.map((p, i)=>{
@@ -10147,36 +10689,81 @@ function _schemeRenderBenefactors(list){
       ? `<div class="scheme-benefit-row clickable-player" role="button" tabindex="0" onclick="${click}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${click}}">`
       : '<div class="scheme-benefit-row">';
     const wrapClose = '</div>';
+    const splits = `<span class="scheme-benefit-splits">
+      <span class="scheme-benefit-split"><b>1st</b><span>${p.d1Pct.toFixed(2)}%</span></span>
+      <span class="scheme-benefit-split"><b>2nd</b><span>${p.d2Pct.toFixed(2)}%</span></span>
+      <span class="scheme-benefit-split"><b>3rd</b><span>${p.d3Pct.toFixed(2)}%</span></span>
+      <span class="scheme-benefit-split"><b>4th</b><span>${p.d4Pct.toFixed(2)}%</span></span>
+    </span>`;
     return `${wrapOpen}
       <span class="scheme-benefit-rank">${i+1}</span>
       <span class="scheme-benefit-head">${_schemePlayerHeadshot(p)}</span>
       <span class="scheme-benefit-main">
         <span class="scheme-benefit-name">${_schemeEscHtml(p.name)}</span>
-        <span class="scheme-benefit-meta">${_schemeEscHtml(p.pos)} · ${_schemeEscHtml(p.slot)} · TGT% ${p.targetPct.toFixed(1)} (D1 ${p.d1Pct.toFixed(0)} / D2 ${p.d2Pct.toFixed(0)} / D3 ${p.d3Pct.toFixed(0)})</span>
+        <span class="scheme-benefit-meta">${metaFmt(p)}</span>
+        ${splits}
       </span>
-      <span class="scheme-benefit-score">${(p.benefit*100).toFixed(0)}</span>
+      <span class="scheme-benefit-score">${scoreFmt(p)}</span>
       <span class="scheme-benefit-why">${_schemeEscHtml(p.reason)}</span>
     ${wrapClose}`;
   }).join('');
   return `<div class="scheme-benefactors-wrap">
-    <div class="scheme-benefactors-title">Most Benefiting Players <span>ranked by fit + role usage</span></div>
+    <div class="scheme-benefactors-title">${_schemeEscHtml(title)} <span>${_schemeEscHtml(subtitle)}</span></div>
     <div class="scheme-benefit-list">${rows}</div>
   </div>`;
+}
+
+function _schemeRenderBenefactors(targets, rushers){
+  const targetSort = (schemeBenefactorSort === 'tgt') ? 'tgt' : 'opp';
+  const sortedTargets = _schemeSortTargetBenefactors(targets, targetSort).slice(0, 6);
+  const byTgt = targetSort === 'tgt';
+  const targetSortTip = _schemeInfoTip(
+    'Target leader sort',
+    'Target opportunity share uses route-role weighting inside red-zone pass concepts. Target share uses a neutral split of red-zone pass targets across eligible receivers in each concept.'
+  );
+  const teamShareTip = _schemeInfoTip(
+    'Team share',
+    'These are modeled shares, not exact target logs. Opportunity share emphasizes route-role usage; target share is the neutral split baseline for red-zone pass concepts.'
+  );
+  const targetSortControls = `<div class="scheme-benefit-sort" role="group" aria-label="Sort target leaders">
+    <span class="scheme-benefit-sort-label">Sort target leaders by ${targetSortTip}</span>
+    <button type="button" class="scheme-benefit-sort-btn ${targetSort==='opp'?'active':''}" onclick="event.stopPropagation();setTeamCoachingSchemeBenefactorSort('opp')">RZ target opportunity share</button>
+    <button type="button" class="scheme-benefit-sort-btn ${targetSort==='tgt'?'active':''}" onclick="event.stopPropagation();setTeamCoachingSchemeBenefactorSort('tgt')">RZ target share</button>
+  </div>`;
+
+  return `${targetSortControls}${_schemeRenderBenefactorList(
+    'Red-Zone Target Opportunity Leaders',
+    `sorted by ${_schemeTargetSortLabel(targetSort).toLowerCase()} · modeled red-zone shares (not play-by-play target logs)`,
+    sortedTargets,
+    p=>`${byTgt ? 'RZ TGT' : 'RZ OPP'} ${byTgt ? p.tgtShare.toFixed(2) : p.oppShare.toFixed(2)}% ${teamShareTip}`,
+    p=>`${_schemeEscHtml(p.pos)} · ${_schemeEscHtml(p.slot)} · RZ opp share ${p.oppShare.toFixed(2)}% · RZ target share ${p.tgtShare.toFixed(2)}%`
+  )}${_schemeRenderBenefactorList(
+    'Rushing TD Paths',
+    'modeled team share of red-zone rushing TD path volume',
+    rushers,
+    p=>`TEAM ${p.oppShare.toFixed(2)}% ${teamShareTip}`,
+    p=>`${_schemeEscHtml(p.pos)} · ${_schemeEscHtml(p.slot)} · Team rush-path share ${p.oppShare.toFixed(2)}%`
+  )}`;
 }
 
 function _schemeRenderInsights(p){
   const d = _schemeRedZoneInsightData(p);
   const benefactors = _schemeBuildBenefactors(p, d);
+  const rushBenefactors = _schemeBuildRushBenefactors(p, d);
   const league = _schemeLeagueInsightRanks(p && p.season);
   const nTeams = _schemeNumber(league && league.leagueSize, 0);
   const rankText = (rank) => (rank && nTeams) ? `${_schemeOrdinal(rank)} of ${nTeams}` : '—';
   const rankClass = (rank) => _schemeRankClass(rank, nTeams);
   const rzRank = _schemeRankInLeague(d.thirdDownReach, league.thirdDownReach, 'asc');
   const earlySuccRank = _schemeRankInLeague(d.earlySucc, league.earlySucc, 'desc');
-  const earlyPassRank = _schemeRankInLeague(d.earlyPass, league.earlyPass, 'desc');
-  const allSuccRank = _schemeRankInLeague(d.allSucc, league.allSucc, 'desc');
+  const lateSuccRank = _schemeRankInLeague(d.lateSucc, league.lateSucc, 'desc');
+  const frictionRank = d.frictionRank || _schemeRankInLeague(d.frictionScore, league.frictionScore, 'asc');
   const toneClass = d.tone==='warn' ? 'warn' : (d.tone==='good' ? 'good' : 'neutral');
   const blurb = _schemeInsightNarrative(d);
+  const frictionTip = _schemeInfoTip(
+    'Drive friction rank',
+    'This compares this offense to the league. More friction means drives stall more often before touchdowns. It combines how often drives end with punts, turnovers, or three-and-outs plus drive efficiency and red-zone finishing.'
+  );
   return `<div class="scheme-insights-wrap">
     <div class="scheme-insights-head">
       <span class="scheme-insights-pill ${toneClass}">${d.label}</span>
@@ -10184,28 +10771,28 @@ function _schemeRenderInsights(p){
     </div>
     <div class="scheme-insights-grid">
       <div class="scheme-insight-card">
-        <div class="scheme-insight-k">Goal-to-go 3rd/4th-down reach (proxy)</div>
+        <div class="scheme-insight-k">3rd/4th down frequency</div>
         <div class="scheme-insight-v">${_schemePct(d.thirdDownReach)} <span class="scheme-insight-rank ${rankClass(rzRank)}">(${rankText(rzRank)})</span></div>
-        <div class="scheme-insight-sub">Higher generally means weaker early-down finish quality.</div>
+        <div class="scheme-insight-sub">Share of red-zone plays that reach 3rd or 4th down.</div>
       </div>
       <div class="scheme-insight-card">
-        <div class="scheme-insight-k">Early-down success in red zone (1st/2nd)</div>
+        <div class="scheme-insight-k">Early down red zone success (1st/2nd)</div>
         <div class="scheme-insight-v">${_schemePct(d.earlySucc)} <span class="scheme-insight-rank ${rankClass(earlySuccRank)}">(${rankText(earlySuccRank)})</span></div>
-        <div class="scheme-insight-sub">Weighted by formation usage in this filter set.</div>
+        <div class="scheme-insight-sub">Weighted by formation usage on early downs inside the red zone.</div>
       </div>
       <div class="scheme-insight-card">
-        <div class="scheme-insight-k">Early-down pass rate in red zone</div>
-        <div class="scheme-insight-v">${_schemePct(d.earlyPass)} <span class="scheme-insight-rank ${rankClass(earlyPassRank)}">(${rankText(earlyPassRank)})</span></div>
-        <div class="scheme-insight-sub">Context for WR/TE vs. RB touchdown paths.</div>
+        <div class="scheme-insight-k">Late down red zone success (3rd/4th)</div>
+        <div class="scheme-insight-v">${_schemePct(d.lateSucc)} <span class="scheme-insight-rank ${rankClass(lateSuccRank)}">(${rankText(lateSuccRank)})</span></div>
+        <div class="scheme-insight-sub">How efficiently this team finishes once drives get extended.</div>
       </div>
       <div class="scheme-insight-card">
-        <div class="scheme-insight-k">All-down red-zone success</div>
-        <div class="scheme-insight-v">${_schemePct(d.allSucc)} <span class="scheme-insight-rank ${rankClass(allSuccRank)}">(${rankText(allSuccRank)})</span></div>
-        <div class="scheme-insight-sub">Overall efficiency backdrop for touchdown expectation.</div>
+        <div class="scheme-insight-k">Drive friction ranking ${frictionTip}</div>
+        <div class="scheme-insight-v">${rankText(frictionRank)} <span class="scheme-insight-rank ${rankClass(frictionRank)}">(score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'})</span></div>
+        <div class="scheme-insight-sub">League rank for how sticky and touchdown-suppressing this offense's drives are. Lower rank number = more friction.</div>
       </div>
     </div>
     <div class="scheme-insight-note"><b>Fantasy angle:</b> ${_schemeEscHtml(blurb)}</div>
-    ${_schemeRenderBenefactors(benefactors)}
+    ${_schemeRenderBenefactors(benefactors, rushBenefactors)}
   </div>`;
 }
 
@@ -10295,6 +10882,7 @@ function _renderTeamCoachingScheme(){
     <div class="scheme-modal" onclick="event.stopPropagation()">
       <button class="scheme-close" onclick="closeTeamCoachingScheme()" aria-label="Close">✕</button>
       <div class="scheme-head">
+        ${_schemeBackButtonHtml()}
         <img src="${NFL_LOGO(schemeTeam)}" class="scheme-team-logo" onerror="this.style.display='none'">
         <div>
           <div class="scheme-title">${teamDisplayName(schemeTeam)} Playbook</div>
@@ -10307,7 +10895,7 @@ function _renderTeamCoachingScheme(){
         <button class="scheme-view-tab ${schemeViewTab==='insights'?'active':''}" onclick="setTeamCoachingSchemeTab('insights')">Insights</button>
       </div>
       <div class="scheme-loading">Loading playsheet template…</div>
-      ${seasons.length>1?`<div class="scheme-tabs">${seasons.map(s=>`<button class="scheme-tab ${String(s)===String(schemeSeason)?'active':''}" onclick="setTeamCoachingSchemeSeason('${s}')">Season <span>${s}</span></button>`).join('')}</div>`:''}
+      ${seasons.length>1?`<div class="scheme-tabs">${seasons.map(s=>`<button class="scheme-tab ${String(s)===String(schemeSeason)?'active':''}" onclick="setTeamCoachingSchemeSeason('${s}')"><span>${s}</span></button>`).join('')}</div>`:''}
     </div>
   </div>`;
 
@@ -10340,9 +10928,41 @@ function _renderTeamCoachingScheme(){
 
 function openTeamCoachingScheme(team, initialView){
   if(!team) return;
+  const from = initialView && typeof initialView==='object' ? String(initialView.from || '') : '';
+  const fromOcJump = !!from;
+  if(schemeOverlayOpen && fromOcJump && schemeTeam && String(schemeTeam)!==String(team)){
+    const cur = {
+      team: String(schemeTeam),
+      season: String(schemeSeason || _schemePreferredSeason(schemeTeam) || ''),
+      tab: schemeViewTab === 'insights' ? 'insights' : 'playbook',
+      coachContext: _schemeCoachContext ? JSON.parse(JSON.stringify(_schemeCoachContext)) : null,
+    };
+    const top = _schemeNavStack[_schemeNavStack.length - 1];
+    if(!top || top.team!==cur.team || String(top.season||'')!==String(cur.season||'') || top.tab!==cur.tab){
+      _schemeNavStack.push(cur);
+    }
+  }else if(!fromOcJump){
+    _schemeNavStack = [];
+  }
   schemeOverlayOpen = true;
   schemeTeam = team;
   schemeViewTab = (initialView && initialView.tab==='insights') ? 'insights' : 'playbook';
+
+  if(initialView && typeof initialView==='object' && initialView.coachName){
+    const seasons = String(initialView.coachSeasons || '')
+      .split(',').map(x=>String(x||'').trim()).filter(Boolean);
+    _schemeCoachContext = {
+      team: String(team),
+      name: String(initialView.coachName || ''),
+      role: String(initialView.coachRole || ''),
+      years: initialView.coachYears == null ? null : String(initialView.coachYears),
+      fromHC: !!initialView.coachFromHC,
+      seasons,
+    };
+  }else if(!fromOcJump){
+    _schemeCoachContext = null;
+  }
+
   if(initialView && typeof initialView==='object' && initialView.season!=null){
     schemeSeason = String(initialView.season);
   }else{
@@ -10369,6 +10989,7 @@ function _renderSchemeLoadingShell(){
     <div class="scheme-modal" onclick="event.stopPropagation()">
       <button class="scheme-close" onclick="closeTeamCoachingScheme()" aria-label="Close">✕</button>
       <div class="scheme-head">
+        ${_schemeBackButtonHtml()}
         <img src="${NFL_LOGO(schemeTeam)}" class="scheme-team-logo" onerror="this.style.display='none'">
         <div>
           <div class="scheme-title">${teamDisplayName(schemeTeam)} Playbook</div>
@@ -10385,8 +11006,35 @@ function closeTeamCoachingScheme(){
   schemeTeam = null;
   schemeSeason = null;
   schemeViewTab = 'playbook';
+  _schemeNavStack = [];
+  _schemeCoachContext = null;
   const host = _schemeOverlayHost(false);
   if(host) host.remove();
+}
+
+function backTeamCoachingScheme(){
+  if(!schemeOverlayOpen || !Array.isArray(_schemeNavStack) || !_schemeNavStack.length) return;
+  const prev = _schemeNavStack.pop();
+  if(!prev || !prev.team) return;
+
+  schemeTeam = String(prev.team);
+  schemeViewTab = prev.tab === 'insights' ? 'insights' : 'playbook';
+  schemeSeason = String(prev.season || _schemePreferredSeason(schemeTeam) || '');
+  _schemeCoachContext = prev.coachContext || null;
+
+  const want = schemeSeason;
+  if(want && typeof ensureNflverseCoachingSeason==='function' && !coachingSeasonReady(want)){
+    _renderSchemeLoadingShell();
+    ensureNflverseCoachingSeason(want).then(()=>{
+      if(
+        schemeOverlayOpen
+        && String(schemeTeam)===String(prev.team)
+        && String(schemeSeason)===String(want)
+      ) _renderTeamCoachingScheme();
+    });
+    return;
+  }
+  _renderTeamCoachingScheme();
 }
 
 function setTeamCoachingSchemeSeason(season){
@@ -10586,6 +11234,20 @@ function playcallerHCOffenseSource(team){
   return { name:h.name||(HC_PLAYCALLERS&&HC_PLAYCALLERS[team])||'Head coach', prev_code:h.prev_code,
            prev_role:h.prev_role||'head coach', prev_years:h.prev_years, is_new:true, internal:false,
            _fromHC:true };
+}
+
+// If a team's HC is the primary offensive playcaller, offensive trend context should reference
+// that HC's tenure on the team (used when another coach moved here from that team).
+function offensivePlaycallerContextFor(team){
+  const t = String(team||'').toUpperCase();
+  if(!t || !(HC_PLAYCALLERS && HC_PLAYCALLERS[t])) return null;
+  const h = hcHistFor(t) || {};
+  const nm = (HC_PLAYCALLERS && HC_PLAYCALLERS[t]) || h.name || '';
+  const since = parseInt(h.since, 10);
+  return {
+    name: nm,
+    since: Number.isFinite(since) ? since : null,
+  };
 }
 function teamHasCarryover(team){
   const o=coordFor(team,'offense'), d=coordFor(team,'defense');
@@ -11213,6 +11875,9 @@ function advJumpToTeam(code){
 }
 function coordCarryCard(sideWord, c){
   const from = teamDisplayName(c.prev_code);
+  const prevPlaycaller = (sideWord==='offensive' && !c._fromHC)
+    ? offensivePlaycallerContextFor(c.prev_code)
+    : null;
   // A LINK, not an embedded copy of the other team's tables. Inlining the former team's stat
   // cards doubled the length of the Adv Metrics page and put another team's numbers directly
   // beside this team's — easy to misread as this team's own. The pointer is the useful part;
@@ -11224,6 +11889,9 @@ function coordCarryCard(sideWord, c){
   const roleNote = c.prev_role
     ? `previously ${link} <b>${c.prev_role}</b>${c.prev_years?` (${c.prev_years})`:''}`
     : `previously with ${link}`;
+  const playcallerHint = prevPlaycaller && prevPlaycaller.name
+    ? ` · offense there was called by <b>${prevPlaycaller.name}</b>${Number.isFinite(prevPlaycaller.since)?` (since ${prevPlaycaller.since})`:''}`
+    : '';
   // When the offensive source is a play-calling head coach, label it as such (the scheme
   // follows the HC, not the OC).
   const badge = c._fromHC ? 'New play-calling Head Coach'
@@ -11232,7 +11900,7 @@ function coordCarryCard(sideWord, c){
   return `<div class="coord-carry-block">
     <div class="coord-carry-title">
       <span class="coord-side">${badge}</span>
-      <b>${c.name||'(name unavailable)'}</b> — ${roleNote}
+      <b>${c.name||'(name unavailable)'}</b> — ${roleNote}${playcallerHint}
     </div>
     <div class="coord-carry-sub">The tendencies &amp; personnel that travel with a ${schemeOwner} tend to follow them here \u2014 open ${from} to see their ${advTeamSeason()} ${sideWord} scheme.</div>
   </div>`;
@@ -11505,18 +12173,11 @@ function renderRankings(){
     const recStr = isRef ? (espnRecordCache[recKey]||'') : '';
     const sos = SOS && SOS[t];
     const sosBadge = sos ? `<span class="team-sos">SOS: <b>${ordinal(sos.rank)}</b>${sos.win_total!=null?` · Vegas Win Total: <b>${sos.win_total}</b>`:''}</span>` : '';
-    if(headCoaches[t]===undefined) fetchHeadCoach(t);
-    const hc=headCoaches[t];
-    const hcCaller = hcIsPlaycaller(t);
-    const hcLine = hc ? `<div class="team-hc scheme-open" role="button" tabindex="0" title="Open playbook visualization" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">
-        ${hc.headshot?`<img src="${hc.headshot}" class="team-hc-img" onerror="this.style.display='none'">`:''}
-        <span class="team-hc-label">HC</span> <b>${hc.name}</b>${hc.experience!=null?` · yr ${hc.experience}`:''}
-        ${hcCaller?`<span class="hc-caller" title="This head coach is the team's primary offensive playcaller — the OC is less pivotal for scheme continuity.">🎧 Primary playcaller</span>`:''}
-      </div>` : (headCoaches[t]===null?'':`<div class="team-hc team-hc-loading">Loading head coach…</div>`);
+    const hcLine = teamHeaderHcLine(t, { openTitle: 'Open playbook visualization' });
     teamHeader = `<div class="team-header">
       <img src="${NFL_LOGO(t)}" class="team-logo-lg scheme-open" alt="${t}" title="Open playbook visualization" onclick="openTeamCoachingScheme('${t}')" onerror="this.style.opacity='.25'">
       <div><div class="team-abbr team-fullname scheme-open" role="button" tabindex="0" title="Open playbook visualization" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">${teamDisplayName(t)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}</div>
-        <div class="team-qb-name">${(state.qbs&&state.qbs.length)?state.qbs.map(q=>q.name).join(' / '):'No projected QB'}${recStr?` · ${recStr}`:''}</div>
+        <div class="team-qb-name">${teamHeaderQbText(t, state.qbs, recStr)}</div>
         ${hcLine}
         ${sosBadge?`<div class="team-sos-row">${sosBadge}</div>`:''}</div>
       <div class="team-nav">
@@ -13104,6 +13765,302 @@ function tsScrollerClaims(el, dir){
     const seamless = !!(nextPhase && previewPhase===nextPhase && host && host.classList.contains('ts-swipe-live'));
     tsAnimateTabTurn(host, tabs, next, moved, {seamless});
   };
+  document.addEventListener('touchend', finish, {passive:true});
+  document.addEventListener('touchcancel', finish, {passive:true});
+})();
+// ─────────────────────────────────────────────────────────────────────────────
+// Team-header swipe navigation (mobile-friendly)
+// Swipe left/right on the top team banner to move to next/previous team.
+// This complements the arrow buttons; both paths call the same selectTeam flow.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const THS_COMMIT = 56;   // px of horizontal travel before team switch commits
+const THS_DECIDE = 10;   // px before deciding axis
+const THS_EDGE = 24;     // ignore left edge to avoid iOS back-swipe conflict
+const THS_MAXSHIFT = 320;
+
+function _thsActiveHeader(){
+  const headers = [...document.querySelectorAll('.team-header')];
+  return headers.find(h=>h.offsetParent!==null && h.getClientRects().length>0) || null;
+}
+
+function _thsHostForHeader(h){
+  if(!h || !h.parentElement) return null;
+  if(h.parentElement.classList && h.parentElement.classList.contains('ths-swipe-top')){
+    const host = h.parentElement.parentElement;
+    return (host && host.classList && host.classList.contains('ths-swipe-host')) ? host : null;
+  }
+  const host=document.createElement('div');
+  host.className='ths-swipe-host';
+  const top=document.createElement('div');
+  top.className='ths-swipe-top';
+  const parent=h.parentElement;
+  parent.insertBefore(host, h);
+  host.appendChild(top);
+  top.appendChild(h);
+  return host;
+}
+
+function _thsTop(host){
+  if(!host) return null;
+  return host.querySelector(':scope > .ths-swipe-top') || host.firstElementChild || host;
+}
+
+function _thsUnder(host){
+  if(!host) return null;
+  let under = host.querySelector(':scope > .ths-swipe-under');
+  if(under) return under;
+  under=document.createElement('div');
+  under.className='ths-swipe-under';
+  host.insertBefore(under, _thsTop(host));
+  return under;
+}
+
+function _thsWidth(host){
+  if(!host || !host.getBoundingClientRect) return 320;
+  const w = host.getBoundingClientRect().width;
+  return (Number.isFinite(w) && w > 10) ? w : 320;
+}
+
+function _thsPlacePair(host, topX, dir){
+  if(!host) return;
+  const top = _thsTop(host);
+  const under = _thsUnder(host);
+  if(!top || !under) return;
+  const w = _thsWidth(host);
+  top.style.transform = `translateX(${topX.toFixed(1)}px)`;
+  under.style.transform = `translateX(${(topX + (dir<0 ? w : -w)).toFixed(1)}px)`;
+}
+
+function _thsReco(team){
+  try{
+    if(typeof calcTeamWinsLosses!=='function') return '';
+    const wl=calcTeamWinsLosses(team);
+    if(!wl || typeof wl.wins!=='number' || typeof wl.losses!=='number') return '';
+    const ties = Number(wl.ties)||0;
+    return ties ? `${wl.wins}-${wl.losses}-${ties}` : `${wl.wins}-${wl.losses}`;
+  }catch(e){
+    return '';
+  }
+}
+
+function _thsSosRow(team){
+  const s = (typeof SOS!=='undefined' && SOS) ? SOS[team] : null;
+  if(!s) return '';
+  const rankTxt = (typeof ordinal==='function') ? ordinal(s.rank) : String(s.rank);
+  const wt = (s.win_total!=null) ? ` · Vegas Win Total: <b>${s.win_total}</b>` : '';
+  return `<div class="team-sos-row"><span class="team-sos">SOS: <b>${rankTxt}</b>${wt}</span></div>`;
+}
+
+function _thsPreviewCacheKey(team){
+  return `${String(activeSeason||'proj')}:${String(team||'')}`;
+}
+
+const _thsPreviewCache = Object.create(null);
+
+function _thsCachePreview(team){
+  if(!team) return '';
+  try{ if(typeof ensureTeam==='function') ensureTeam(team); }catch(e){}
+  const key = _thsPreviewCacheKey(team);
+  const html = _thsHeaderPreviewHtml(team);
+  _thsPreviewCache[key] = html;
+  return html;
+}
+
+function _thsGetPreview(team){
+  if(!team) return '';
+  const key = _thsPreviewCacheKey(team);
+  if(_thsPreviewCache[key]) return _thsPreviewCache[key];
+  return _thsCachePreview(team);
+}
+
+function _thsPrimeAdjacent(idx){
+  if(!Array.isArray(TEAMS) || idx<0) return;
+  const prev = TEAMS[idx-1];
+  const next = TEAMS[idx+1];
+  if(prev) _thsCachePreview(prev);
+  if(next) _thsCachePreview(next);
+}
+
+function _thsSetInitialUnder(host, idx){
+  if(!host || !Array.isArray(TEAMS) || idx<0) return;
+  const next = TEAMS[idx+1] || '';
+  const under = _thsUnder(host);
+  if(!under) return;
+  if(!next){
+    under.innerHTML='';
+    under.style.transform='translateX(100%)';
+    return;
+  }
+  under.innerHTML = _thsGetPreview(next);
+  const w = _thsWidth(host);
+  under.style.transition='none';
+  under.style.transform=`translateX(${w}px)`;
+}
+
+function _thsHeaderPreviewHtml(team){
+  const state = (typeof userProj!=='undefined' && userProj) ? userProj[team] : null;
+  const qbs = (state && Array.isArray(state.qbs)) ? state.qbs : [];
+  const recStr = _thsReco(team);
+  const isRef = activeSeason !== 'proj';
+  const qb = (typeof teamHeaderQbText==='function')
+    ? teamHeaderQbText(team, qbs, recStr)
+    : ((qbs&&qbs.length)?qbs.map(q=>q.name).join(' / '):'No projected QB');
+  const hcLine = (typeof teamHeaderHcLine==='function') ? teamHeaderHcLine(team, state||{}) : '';
+  const sosRow = _thsSosRow(team);
+  return `<div class="team-header" aria-hidden="true">
+    <img src="${NFL_LOGO(team)}" class="team-logo-lg" alt="${team}" onerror="this.style.opacity='.25'">
+    <div style="min-width:0;max-width:100%">
+      <div class="team-abbr team-fullname">${teamDisplayName(team)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}</div>
+      <div class="team-qb-name">${qb}</div>
+      ${hcLine}
+      ${sosRow}
+    </div>
+  </div>`;
+}
+
+(function installTeamHeaderSwipe(){
+  if(typeof document==='undefined' || !document.addEventListener) return;
+
+  let x0=null, y0=null, dx=0, axis=null, header=null, host=null, targetTeam='';
+
+  const clearShift = (anim)=>{
+    if(!header || !host) return;
+    const top = _thsTop(host) || header;
+    const under = _thsUnder(host);
+    const dir = dx<0 ? -1 : 1;
+    const w = _thsWidth(host);
+    top.style.transition = anim ? 'transform .16s ease-out' : '';
+    if(under){
+      under.style.transition = anim ? 'transform .16s ease-out' : '';
+      under.style.transform = `translateX(${dir<0 ? w : -w}px)`;
+    }
+    top.style.transform = 'translateX(0px)';
+    host.classList.remove('ths-swipe-dragging');
+    host.classList.remove('ths-swipe-committing');
+    if(anim){
+      const t=top;
+      const u=under;
+      setTimeout(()=>{
+        if(t) t.style.transition='';
+        if(u){ u.style.transition=''; u.innerHTML=''; u.style.transform='translateX(100%)'; }
+      }, 180);
+    } else if(under){
+      under.innerHTML='';
+      under.style.transform='translateX(100%)';
+    }
+    for(const k in _thsPreviewCache) delete _thsPreviewCache[k];
+    targetTeam='';
+  };
+
+  const finish = ()=>{
+    if(x0==null || axis!=='x'){
+      x0=null; y0=null; axis=null; dx=0;
+      clearShift(false);
+      header=null; host=null;
+      return;
+    }
+    const moved = dx;
+    x0=null; y0=null; axis=null; dx=0;
+
+    if(Math.abs(moved) < THS_COMMIT){ clearShift(true); header=null; host=null; return; }
+    if(!currentTeam || !Array.isArray(TEAMS)){ clearShift(true); header=null; host=null; return; }
+
+    const idx = TEAMS.indexOf(currentTeam);
+    if(idx < 0){ clearShift(true); header=null; host=null; return; }
+
+    const target = moved < 0 ? TEAMS[idx+1] : TEAMS[idx-1];
+    if(!target){ clearShift(true); header=null; host=null; return; }
+
+    if(host){
+      const top = _thsTop(host) || header;
+      const under = _thsUnder(host);
+      const w = _thsWidth(host);
+      host.classList.add('ths-swipe-committing');
+      top.style.transition = 'transform .18s ease-out';
+      if(under) under.style.transition = 'transform .18s ease-out';
+      top.style.transform = `translateX(${moved<0 ? -w : w}px)`;
+      if(under) under.style.transform = 'translateX(0px)';
+    }
+    setTimeout(()=>{ selectTeam(target); }, 140);
+    header=null;
+    host=null;
+  };
+
+  document.addEventListener('touchstart', e=>{
+    x0=y0=null; dx=0; axis=null; header=null; host=null; targetTeam='';
+    if(e.touches.length!==1) return;
+    if(!currentTeam) return;
+    if(document.getElementById('pcardOverlay')) return;
+
+    const t = e.touches[0];
+    if(t.clientX <= THS_EDGE) return;
+
+    const target = e.target;
+    if(target && target.closest && target.closest('.scheme-overlay, .ps-overlay, .rt-bar-host')) return;
+    if(target && target.closest && target.closest('input,select,textarea,button,a')) return;
+
+    const h = target && target.closest ? target.closest('.team-header') : null;
+    if(!h) return;
+
+    const idx = TEAMS.indexOf(currentTeam);
+    if(idx < 0) return;
+    if(!TEAMS[idx-1] && !TEAMS[idx+1]) return;
+    _thsPrimeAdjacent(idx);
+
+    header = _thsActiveHeader() || h;
+    host = _thsHostForHeader(header);
+    if(!host) return;
+    _thsSetInitialUnder(host, idx);
+    x0=t.clientX;
+    y0=t.clientY;
+  }, {passive:true});
+
+  document.addEventListener('touchmove', e=>{
+    if(x0==null || e.touches.length!==1) return;
+    const t=e.touches[0];
+    dx = t.clientX - x0;
+    const dy = t.clientY - y0;
+
+    if(axis===null){
+      if(Math.abs(dx) < THS_DECIDE && Math.abs(dy) < THS_DECIDE) return;
+      axis = (Math.abs(dx) > Math.abs(dy)*1.35) ? 'x' : 'y';
+      if(axis==='y'){ x0=null; y0=null; clearShift(false); header=null; host=null; return; }
+    }
+    if(axis!=='x') return;
+
+    if(e.cancelable) e.preventDefault();
+
+    if(!currentTeam || !Array.isArray(TEAMS) || !host){ return; }
+    const idx = TEAMS.indexOf(currentTeam);
+    if(idx < 0){ return; }
+    // Resist swiping beyond the team list ends.
+    if(dx > 0 && !TEAMS[idx-1]){ dx=0; }
+    if(dx < 0 && !TEAMS[idx+1]){ dx=0; }
+
+    const shift = Math.sign(dx) * Math.min(THS_MAXSHIFT, Math.abs(dx));
+
+    const next = dx<0 ? TEAMS[idx+1] : (dx>0 ? TEAMS[idx-1] : '');
+    if(next !== targetTeam){
+      targetTeam = next || '';
+      const under = _thsUnder(host);
+      if(under){
+        under.innerHTML = targetTeam ? _thsGetPreview(targetTeam) : '';
+        under.style.transition = 'none';
+      }
+    }
+    if(targetTeam){
+      const dir = dx<0 ? -1 : 1;
+      const top = _thsTop(host);
+      if(top) top.style.transition = 'none';
+      host.classList.add('ths-swipe-dragging');
+      _thsPlacePair(host, shift, dir);
+    } else {
+      host.classList.remove('ths-swipe-dragging');
+      clearShift(false);
+    }
+  }, {passive:false});
+
   document.addEventListener('touchend', finish, {passive:true});
   document.addEventListener('touchcancel', finish, {passive:true});
 })();

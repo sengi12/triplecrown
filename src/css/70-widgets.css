@@ -633,7 +633,7 @@
    name's existing ellipsis can do its job. */
 .team-header{min-width:0;max-width:100%;}
 .team-header>div{min-width:0;max-width:100%;}
-.team-qb-name{overflow-wrap:anywhere;}
+.team-qb-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 @media (max-width:760px){
   .la-hdr{flex-wrap:wrap;}
   .la-hdr-name{max-width:100%;}

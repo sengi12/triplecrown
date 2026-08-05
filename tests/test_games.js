@@ -15,9 +15,10 @@ const atl=app.assembleSeed(
   {tua:app.normalizeSleeperRow({player_id:'tua',team:'ATL',position:'QB',stats:{pass_yd:2141,pass_att:300,gp:18}}),
    penix:app.normalizeSleeperRow({player_id:'penix',team:'ATL',position:'QB',stats:{pass_yd:1567,pass_att:230,gp:18}})}, true);
 atl.ATL.QB.forEach(q=>console.log(`  ${q.name}: ${q.games} games (${q.passing_yards} yds)`));
-const tua=atl.ATL.QB.find(q=>q.name==='Tua'), penix=atl.ATL.QB.find(q=>q.name==='Penix');
-// Tua 57% → ceil(.577*17)=10; Penix 42% → ceil(.423*17)=8
-console.log('RESULT:', tua.games>=9&&tua.games<=11&&penix.games>=7&&penix.games<=9?'PASS (committee split)':'FAIL');
+const atlQbs=atl.ATL.QB.slice().sort((a,b)=>(b.passing_yards||0)-(a.passing_yards||0));
+const lead=atlQbs[0], second=atlQbs[1];
+// 57/42 split should remain a committee regardless of display-name changes.
+console.log('RESULT:', atlQbs.length>=2 && lead.games>=9&&lead.games<=11&&second.games>=7&&second.games<=9?'PASS (committee split)':'FAIL');
 
 console.log('\n=== CIN clear starter (Burrow dominant, Flacco padding) ===');
 const cin=app.assembleSeed(
@@ -25,5 +26,6 @@ const cin=app.assembleSeed(
   {bur:app.normalizeSleeperRow({player_id:'bur',team:'CIN',position:'QB',stats:{pass_yd:4200,pass_att:580,gp:18}}),
    fla:app.normalizeSleeperRow({player_id:'fla',team:'CIN',position:'QB',stats:{pass_yd:400,pass_att:60,gp:18}})}, true);
 cin.CIN.QB.forEach(q=>console.log(`  ${q.name}: ${q.games} games (${q.passing_yards} yds)`));
-const bur=cin.CIN.QB.find(q=>q.name==='Burrow'), fla=cin.CIN.QB.find(q=>q.name==='Flacco');
-console.log('RESULT:', bur.games===17&&fla.games===0?'PASS (Burrow 17, Flacco 0)':'FAIL');
+const cinQbs=cin.CIN.QB.slice().sort((a,b)=>(b.passing_yards||0)-(a.passing_yards||0));
+const starter=cinQbs[0], backup=cinQbs[1];
+console.log('RESULT:', cinQbs.length>=2 && starter.games===17&&backup.games===0?'PASS (starter 17, backup 0)':'FAIL');

@@ -327,6 +327,18 @@ def _drive_points(result):
         return 3.0
     return 0.0
 
+def _drive_result_flags(result):
+    r = str(result)
+    return {
+        "td": r == "Touchdown",
+        "fg": r == "Field goal",
+        "punt": r == "Punt",
+        "turnover": r == "Turnover",
+        "downs": r == "Turnover on downs",
+        "safety": r == "Safety",
+        "eoh": r == "End of half",
+    }
+
 def _side_table(plays, team_col, last5_weeks, defense=False):
     """Aggregate the 6 Sharp-shaped metrics for one side of the ball (posteam or defteam).
 
@@ -915,13 +927,14 @@ def adv_weekly_team(season):
     pbp_cols = [
         "game_id", "play_id", "season_type", "week", "posteam", "defteam", "play_type",
         "qb_dropback", "rush_attempt", "qb_scramble", "qb_kneel", "qb_spike",
-        "sack", "qb_hit",
+        "sack", "qb_hit", "complete_pass", "pass_touchdown", "interception", "fumble_lost",
+        "passing_yards", "rushing_yards", "receiving_yards", "rush_touchdown", "pass_attempt", "yardline_100",
         "yards_gained", "epa", "fixed_drive", "fixed_drive_result", "series_result",
         "shotgun", "no_huddle", "air_yards", "wp", "half_seconds_remaining",
         "game_seconds_remaining",
     ]
     pbp = _load_pbp(season, pbp_cols)
-    pbp = pbp[(pbp["season_type"] == "REG") & pbp["play_type"].isin(["pass", "run"]) & pbp["posteam"].notna()].copy()
+    pbp = pbp[(pbp["season_type"] == "REG") & pbp["posteam"].notna()].copy()
     if pbp.empty:
         return {}
     pbp["posteam"] = pbp["posteam"].replace(NFLVERSE_TO_SEED)
@@ -929,6 +942,9 @@ def adv_weekly_team(season):
     pbp["week"] = pd.to_numeric(pbp["week"], errors="coerce")
     pbp = pbp[pbp["week"].notna()].copy()
     pbp["week"] = pbp["week"].astype(int)
+    plays = pbp[pbp["play_type"].isin(["pass", "run"])].copy()
+    if plays.empty:
+        return {}
     weeks = sorted(int(w) for w in pbp["week"].unique() if int(w) > 0)
     if not weeks:
         return {}
@@ -936,7 +952,6 @@ def adv_weekly_team(season):
     teams = sorted(set(pbp["posteam"].dropna().astype(str).tolist()) | set(pbp["defteam"].dropna().astype(str).tolist()))
     idx = pd.MultiIndex.from_product([teams, weeks], names=["team", "week"])
     out = pd.DataFrame(index=idx)
-    plays = pbp.copy()
 
     # Offense / defense core (_side_table-compatible numerators/denominators).
     plays["explosive"] = pd.to_numeric(plays["yards_gained"], errors="coerce") >= 20
@@ -957,7 +972,7 @@ def adv_weekly_team(season):
     out["def_conv_allowed"] = plays.groupby(["defteam", "week"])["conv"].sum(min_count=1).reindex(idx).fillna(0)
     out["def_conv_obs"] = plays.groupby(["defteam", "week"])["conv_obs"].sum(min_count=1).reindex(idx).fillna(0)
 
-    dr = plays.dropna(subset=["fixed_drive"]).copy()
+    dr = pbp.dropna(subset=["fixed_drive"]).copy()
     dr["dpts"] = dr["fixed_drive_result"].map(_drive_points)
     d_off = dr.groupby(["posteam", "week", "game_id", "fixed_drive"])["dpts"].first().reset_index()
     d_def = dr.groupby(["defteam", "week", "game_id", "fixed_drive"])["dpts"].first().reset_index()
@@ -965,6 +980,73 @@ def adv_weekly_team(season):
     out["off_drive_ct"] = d_off.groupby(["posteam", "week"]).size().reindex(idx).fillna(0)
     out["def_drive_pts_allowed"] = d_def.groupby(["defteam", "week"])["dpts"].sum(min_count=1).reindex(idx).fillna(0)
     out["def_drive_ct"] = d_def.groupby(["defteam", "week"]).size().reindex(idx).fillna(0)
+
+    drive_core = plays.dropna(subset=["fixed_drive"]).copy()
+    drive_core["is_rz"] = pd.to_numeric(drive_core["yardline_100"], errors="coerce") <= 20
+    drive_core["is_g10"] = pd.to_numeric(drive_core["yardline_100"], errors="coerce") <= 10
+    drive_core["drive_conv"] = drive_core["series_result"].isin(["First down", "Touchdown"])
+    drive_sum = drive_core.groupby(["posteam", "week", "game_id", "fixed_drive"]).agg(
+        drive_play_ct=("play_id", "nunique"),
+        drive_conv_ct=("drive_conv", "sum"),
+        reached_rz=("is_rz", "max"),
+        reached_g10=("is_g10", "max"),
+        pass_td=("pass_touchdown", "sum"),
+        rush_td=("rush_touchdown", "sum"),
+    ).reset_index()
+
+    drive_results = dr.groupby(["posteam", "week", "game_id", "fixed_drive"])["fixed_drive_result"].first().reset_index()
+    for key in ["td", "fg", "punt", "turnover", "downs", "safety", "eoh"]:
+        drive_results[key] = drive_results["fixed_drive_result"].map(lambda r: 1 if _drive_result_flags(r)[key] else 0)
+    drive_results = drive_results.merge(
+        drive_sum[["posteam", "week", "game_id", "fixed_drive", "drive_play_ct", "drive_conv_ct", "reached_rz", "reached_g10", "pass_td", "rush_td"]],
+        on=["posteam", "week", "game_id", "fixed_drive"], how="left"
+    )
+    drive_results["three_out"] = ((drive_results["drive_play_ct"] >= 3) & (drive_results["drive_conv_ct"] <= 0)).astype(int)
+    drive_results["rz_td"] = ((drive_results["reached_rz"] == True) & (drive_results["td"] == 1)).astype(int)
+    drive_results["g10_td"] = ((drive_results["reached_g10"] == True) & (drive_results["td"] == 1)).astype(int)
+    drive_results["kill_drive"] = ((drive_results["punt"] == 1) | (drive_results["turnover"] == 1) | (drive_results["downs"] == 1)).astype(int)
+
+    for col, src in [
+        ("off_drive_td_ct", "td"),
+        ("off_drive_fg_ct", "fg"),
+        ("off_drive_punt_ct", "punt"),
+        ("off_drive_turnover_ct", "turnover"),
+        ("off_drive_tod_ct", "downs"),
+        ("off_drive_safety_ct", "safety"),
+        ("off_drive_end_half_ct", "eoh"),
+        ("off_drive_three_out_ct", "three_out"),
+        ("off_drive_kill_ct", "kill_drive"),
+        ("off_drive_rz_ct", "reached_rz"),
+        ("off_drive_rz_td_ct", "rz_td"),
+        ("off_drive_g10_ct", "reached_g10"),
+        ("off_drive_g10_td_ct", "g10_td"),
+        ("off_drive_pass_td_ct", "pass_td"),
+        ("off_drive_rush_td_ct", "rush_td"),
+    ]:
+        out[col] = drive_results.groupby(["posteam", "week"])[src].sum(min_count=1).reindex(idx).fillna(0)
+
+    # Team fantasy-ecosystem output: intentionally double counts passing + receiving production,
+    # because the goal is total fantasy points created for the offense's fantasy-relevant players.
+    pass_yd = pd.to_numeric(plays["passing_yards"], errors="coerce").fillna(0)
+    rush_yd = pd.to_numeric(plays["rushing_yards"], errors="coerce").fillna(0)
+    rec_yd = pd.to_numeric(plays["receiving_yards"], errors="coerce").fillna(0)
+    pass_td = pd.to_numeric(plays["pass_touchdown"], errors="coerce").fillna(0)
+    ints = pd.to_numeric(plays["interception"], errors="coerce").fillna(0)
+    fumbles = pd.to_numeric(plays["fumble_lost"], errors="coerce").fillna(0)
+    rush_td = pd.to_numeric(plays.get("rush_touchdown"), errors="coerce").fillna(0)
+    rec = pd.to_numeric(plays["complete_pass"], errors="coerce").fillna(0)
+
+    off_fp_std = (pass_yd/25.0) + (pass_td*10.0) - (ints*2.0) + (rush_yd/10.0) + (rush_td*6.0) + (rec_yd/10.0) - (fumbles*2.0)
+    off_fp_half = off_fp_std + (rec*0.5)
+    off_fp_ppr = off_fp_std + rec
+    out["off_fp_std"] = off_fp_std.groupby([plays["posteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["off_fp_half"] = off_fp_half.groupby([plays["posteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["off_fp_ppr"] = off_fp_ppr.groupby([plays["posteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    pass_att = pd.to_numeric(plays["pass_attempt"], errors="coerce").fillna(0)
+    out["off_targets"] = pass_att.groupby([plays["posteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["off_receptions"] = rec.groupby([plays["posteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["off_pass_td"] = pass_td.groupby([plays["posteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["off_rush_td"] = rush_td.groupby([plays["posteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
 
     # Tendencies base.
     out["tend_plays"] = out["off_plays"]
@@ -1122,6 +1204,9 @@ def adv_weekly_team(season):
 
     cols = [
         "off_plays", "off_yards", "off_epa", "off_explosive", "off_conv", "off_conv_obs", "off_drive_pts", "off_drive_ct",
+        "off_drive_td_ct", "off_drive_fg_ct", "off_drive_punt_ct", "off_drive_turnover_ct", "off_drive_tod_ct", "off_drive_safety_ct", "off_drive_end_half_ct",
+        "off_drive_three_out_ct", "off_drive_kill_ct", "off_drive_rz_ct", "off_drive_rz_td_ct", "off_drive_g10_ct", "off_drive_g10_td_ct",
+        "off_drive_pass_td_ct", "off_drive_rush_td_ct", "off_fp_std", "off_fp_half", "off_fp_ppr", "off_targets", "off_receptions", "off_pass_td", "off_rush_td",
         "def_plays", "def_yards", "def_epa_allowed", "def_explosive_allowed", "def_conv_allowed", "def_conv_obs", "def_drive_pts_allowed", "def_drive_ct",
         "tend_plays", "tend_shotgun", "tend_nohuddle", "db", "air_sum", "air_att", "tend_motion", "tend_play_action", "tend_rpo", "tend_screen", "tend_trick", "tend_drop", "tend_catchable",
         "pace_snaps", "pace_neutral_db", "pace_neutral_snaps", "pace_sec_sum", "pace_sec_n", "pace_games", "pace_total_game_plays",
@@ -2755,6 +2840,9 @@ def build_nflverse_season(season):
         ),
         "def_weekly": defensive_weekly_players(season),
         "coaching_scheme": coaching_scheme(season),
+        # Season-level team head coaches derived from nflverse pbp (REG games).
+        # This is historical truth for that season and powers season-aware HC context in UI.
+        "head_coaches": season_head_coaches(season),
         # Season rosters: who each team actually had that year. Small enough (~100KB/season)
         # to ride inline rather than needing a lazy sidecar like the two blocks above.
         "rosters": team_rosters(season),
@@ -2762,9 +2850,52 @@ def build_nflverse_season(season):
 
 def _nflverse_built_cache_path(seasons):
     """Path for cached built nflverse output keyed by requested seasons."""
-    payload = {"seasons": [str(s) for s in seasons], "schema": "nflverse_seed_v6_adv_weekly_plus"}
+    payload = {"seasons": [str(s) for s in seasons], "schema": "nflverse_seed_v8_hc_history"}
     digest = hashlib.md5(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
     return os.path.join(_nflverse_cache_subdir("built"), f"{digest}.json")
+
+
+def season_head_coaches(season):
+    """Return season head coach by team from nflverse pbp.
+
+    Output shape: {TEAM: "Coach Name"}. Uses REG games only and collapses to one coach per
+    team by game-level frequency (supports mid-season changes while still picking primary coach).
+    """
+    try:
+        df = _load_pbp(season, cols=["game_id", "season_type", "home_team", "away_team", "home_coach", "away_coach"])
+    except Exception:
+        return {}
+    if df is None or df.empty:
+        return {}
+
+    reg = df[df["season_type"] == "REG"].copy()
+    if reg.empty:
+        return {}
+
+    # One record per game/team side (coach repeats on every play).
+    home = reg[["game_id", "home_team", "home_coach"]].dropna(subset=["home_team", "home_coach"]).drop_duplicates()
+    home = home.rename(columns={"home_team": "team", "home_coach": "coach"})
+    away = reg[["game_id", "away_team", "away_coach"]].dropna(subset=["away_team", "away_coach"]).drop_duplicates()
+    away = away.rename(columns={"away_team": "team", "away_coach": "coach"})
+    g = pd.concat([home, away], ignore_index=True)
+    if g.empty:
+        return {}
+
+    g["team"] = g["team"].astype(str).str.upper().map(lambda t: NFLVERSE_TO_SEED.get(t, t))
+    g["coach"] = g["coach"].astype(str).str.strip()
+    g = g[(g["team"] != "") & (g["coach"] != "")]
+    if g.empty:
+        return {}
+
+    out = {}
+    for tm, grp in g.groupby("team"):
+        vc = grp["coach"].value_counts()
+        if vc.empty:
+            continue
+        top_n = int(vc.iloc[0])
+        tied = sorted([nm for nm, n in vc.items() if int(n) == top_n])
+        out[str(tm)] = tied[0] if tied else str(vc.index[0])
+    return out
 
 
 def build_nflverse(seasons, refresh=False):

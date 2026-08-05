@@ -166,6 +166,20 @@ function playcallerHCOffenseSource(team){
            prev_role:h.prev_role||'head coach', prev_years:h.prev_years, is_new:true, internal:false,
            _fromHC:true };
 }
+
+// If a team's HC is the primary offensive playcaller, offensive trend context should reference
+// that HC's tenure on the team (used when another coach moved here from that team).
+function offensivePlaycallerContextFor(team){
+  const t = String(team||'').toUpperCase();
+  if(!t || !(HC_PLAYCALLERS && HC_PLAYCALLERS[t])) return null;
+  const h = hcHistFor(t) || {};
+  const nm = (HC_PLAYCALLERS && HC_PLAYCALLERS[t]) || h.name || '';
+  const since = parseInt(h.since, 10);
+  return {
+    name: nm,
+    since: Number.isFinite(since) ? since : null,
+  };
+}
 function teamHasCarryover(team){
   const o=coordFor(team,'offense'), d=coordFor(team,'defense');
   return coordCarriesOver(o) || coordCarriesOver(d);
@@ -792,6 +806,9 @@ function advJumpToTeam(code){
 }
 function coordCarryCard(sideWord, c){
   const from = teamDisplayName(c.prev_code);
+  const prevPlaycaller = (sideWord==='offensive' && !c._fromHC)
+    ? offensivePlaycallerContextFor(c.prev_code)
+    : null;
   // A LINK, not an embedded copy of the other team's tables. Inlining the former team's stat
   // cards doubled the length of the Adv Metrics page and put another team's numbers directly
   // beside this team's — easy to misread as this team's own. The pointer is the useful part;
@@ -803,6 +820,9 @@ function coordCarryCard(sideWord, c){
   const roleNote = c.prev_role
     ? `previously ${link} <b>${c.prev_role}</b>${c.prev_years?` (${c.prev_years})`:''}`
     : `previously with ${link}`;
+  const playcallerHint = prevPlaycaller && prevPlaycaller.name
+    ? ` · offense there was called by <b>${prevPlaycaller.name}</b>${Number.isFinite(prevPlaycaller.since)?` (since ${prevPlaycaller.since})`:''}`
+    : '';
   // When the offensive source is a play-calling head coach, label it as such (the scheme
   // follows the HC, not the OC).
   const badge = c._fromHC ? 'New play-calling Head Coach'
@@ -811,7 +831,7 @@ function coordCarryCard(sideWord, c){
   return `<div class="coord-carry-block">
     <div class="coord-carry-title">
       <span class="coord-side">${badge}</span>
-      <b>${c.name||'(name unavailable)'}</b> — ${roleNote}
+      <b>${c.name||'(name unavailable)'}</b> — ${roleNote}${playcallerHint}
     </div>
     <div class="coord-carry-sub">The tendencies &amp; personnel that travel with a ${schemeOwner} tend to follow them here \u2014 open ${from} to see their ${advTeamSeason()} ${sideWord} scheme.</div>
   </div>`;

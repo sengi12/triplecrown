@@ -65,9 +65,17 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .content{flex:1;overflow-y:auto;overflow-x:hidden;padding:18px 22px;}
 .team-header{display:flex;align-items:center;gap:12px;margin-bottom:16px;}
 .team-logo-lg{width:44px;height:44px;object-fit:contain;}
-.team-abbr{font-size:24px;font-weight:900;letter-spacing:-1px;}
-.team-qb-name{font-size:11px;color:var(--muted);}
+.team-abbr{font-size:24px;font-weight:900;letter-spacing:-1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+.team-qb-name{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 .team-nav{display:flex;gap:6px;margin-left:auto;}
+.ths-swipe-host{position:relative;overflow:hidden;border-radius:12px;isolation:isolate;}
+.ths-swipe-top{position:relative;will-change:transform;z-index:2;backface-visibility:hidden;transform:translateZ(0);}
+.ths-swipe-under{position:absolute;z-index:1;inset:0;pointer-events:none;
+  transform:translateX(100%);transition:transform .16s ease-out;
+  backface-visibility:hidden;}
+.ths-swipe-under:empty{display:none;}
+.ths-swipe-under .team-header{margin-bottom:16px;}
+.ths-swipe-host.ths-swipe-committing{pointer-events:none;}
 .phase-tabs{display:flex;background:var(--surface);border:1px solid var(--border);
   border-radius:8px;overflow:hidden;margin-bottom:14px;flex-wrap:wrap;}
 .phase-tab{padding:6px 14px;font-size:11px;font-weight:700;cursor:pointer;

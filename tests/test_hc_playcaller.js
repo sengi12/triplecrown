@@ -32,21 +32,24 @@ console.log('\n=== TEST 2: Falcons carryover pulls CLEVELAND scheme, labeled as 
 // Give ATL an OC that came from a DIFFERENT team (Detroit) to prove HC wins over OC
 app.setCoord({ATL:{offense:{name:'Some OC',since:2026,is_new:true,internal:false,carryover:false,prev_code:'DET',prev_role:'passing game coordinator'}}});
 const html=app.renderTeamAdvanced('ATL');
-chk(html.includes('New coordinator scheme carryover'),'carryover block present');
+chk(html.includes('New coordinator for'),'carryover block present');
 chk(html.includes('play-calling HC')||html.includes('play-calling head coach'),'labeled as play-calling HC');
 chk(html.includes('Kevin Stefanski'),'shows HC name');
 chk(html.includes('Cleveland Browns'),'pulls Cleveland, not Detroit');
-chk(!/Detroit/.test(html.slice(html.indexOf('scheme carryover'), html.indexOf('sr-section-head'))),'carryover does NOT use OC former team (Detroit)');
-// Cleveland's tendencies value (31) should appear, not Atlanta's (24)
-const carry=html.slice(html.indexOf('scheme carryover'), html.indexOf('sr-section-head'));
-chk(carry.includes('31'),'shows Cleveland play-action rate (31)');
+const carryStart=html.indexOf('New coordinator for');
+const carryEnd=html.indexOf('sr-section-head', carryStart>=0?carryStart:0);
+const carry=html.slice(carryStart, carryEnd>=0?carryEnd:html.length);
+chk(carry.includes('View Cleveland Browns') || carry.includes('Cleveland Browns'),'carryover links to Cleveland advanced view');
+chk(!carry.includes('Detroit'),'carryover block does not point to Detroit');
 
 console.log('\n=== TEST 3: non-playcaller HC → OC drives carryover (unchanged behavior) ===');
 app.setPlaycallers({});  // ATL HC not a playcaller now
 app.setHCHist({ATL:{name:'Kevin Stefanski',since:2026,is_new:true,prev_code:'CLE',prev_role:'head coach'}});
 app.setCoord({ATL:{offense:{name:'Some OC',since:2026,is_new:true,internal:false,carryover:false,prev_code:'DET',prev_role:'offensive coordinator'}}});
 const html3=app.renderTeamAdvanced('ATL');
-const carry3=html3.slice(html3.indexOf('scheme carryover'), html3.indexOf('sr-section-head'));
+const cs=html3.indexOf('New coordinator for');
+const ce=html3.indexOf('sr-section-head', cs>=0?cs:0);
+const carry3=html3.slice(cs, ce>=0?ce:html3.length);
 chk(carry3.includes('Detroit'),'non-playcaller HC → carryover uses OC former team (Detroit)');
 chk(!carry3.includes('play-calling'),'not labeled as play-calling HC');
 

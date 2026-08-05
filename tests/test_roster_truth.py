@@ -18,13 +18,13 @@ proj_idx = {
   'fa':      {'stats':{'passing_yards':150,'passing_attempts':20},  'team':'PIT', 'pos':'QB', 'name':'FA Arm'},
 }
 players = {
-  'rodgers': {'team':'PIT','pos':'QB','name':'Aaron Rodgers','active':True,'status':'Active'},
-  'rudolph': {'team':'PIT','pos':'QB','name':'Mason Rudolph','active':True,'status':'Active'},
-  'allar':   {'team':'PIT','pos':'QB','name':'Drew Allar','active':True,'status':'Active'},
-  'howard':  {'team':'PIT','pos':'QB','name':'Will Howard','active':True,'status':'Active'},
-  'departed':{'team':'LV', 'pos':'QB','name':'Departed Arm','active':True,'status':'Active'},
-  'retired': {'team':None, 'pos':'QB','name':'Retired Arm','active':False,'status':'Retired'},
-  'fa':      {'team':None, 'pos':'QB','name':'FA Arm','active':True,'status':'Active'},
+  'rodgers': {'team':'PIT','pos':'QB','name':'Aaron Rodgers','active':True,'status':'Active','depth_chart_position':'QB1','news_updated':9999999999999},
+  'rudolph': {'team':'PIT','pos':'QB','name':'Mason Rudolph','active':True,'status':'Active','depth_chart_position':'QB2','news_updated':9999999999999},
+  'allar':   {'team':'PIT','pos':'QB','name':'Drew Allar','active':True,'status':'Active','depth_chart_position':'QB3','news_updated':9999999999999},
+  'howard':  {'team':'PIT','pos':'QB','name':'Will Howard','active':True,'status':'Active','depth_chart_position':'QB4','news_updated':9999999999999},
+  'departed':{'team':'LV', 'pos':'QB','name':'Departed Arm','active':True,'status':'Active','depth_chart_position':'QB2','news_updated':9999999999999},
+  'retired': {'team':None, 'pos':'QB','name':'Retired Arm','active':False,'status':'Retired','depth_chart_position':None,'news_updated':0},
+  'fa':      {'team':None, 'pos':'QB','name':'FA Arm','active':True,'status':'Active','depth_chart_position':None,'news_updated':9999999999999},
 }
 seed,_ = bs.assemble(players, proj_idx, {}, {}, 2026)
 pit = set(q['name'] for q in seed['PIT']['QB'])

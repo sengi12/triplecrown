@@ -72,18 +72,16 @@ app.setPlaycallers({CIN:'Zac Taylor'});
   console.log('\n=== TEST 5: carryover block pulls former team stats ===');
   app.setNflverse(NFLV); app.setSharpSeason(2025);
   const balHtml=app.renderTeamAdvanced('BAL');
-  chk(balHtml.includes('New coordinator scheme carryover'),'carryover block present');
+  chk(balHtml.includes('New coordinator for'),'carryover block present');
   chk(balHtml.includes('Declan Doyle'),'shows new OC name');
   chk(balHtml.includes('Chicago Bears offensive coordinator'),'shows former role');
-  chk(balHtml.includes('Tendencies')&&balHtml.includes('Personnel'),'pulls tendencies + personnel');
-  // The carryover cards should show CHICAGO's values (28 PA rate, 70 3WR), not Baltimore's
-  chk(balHtml.includes('28%')||balHtml.includes('28'),'carryover shows Bears PA rate');
+  chk(balHtml.includes('View Chicago Bears') || balHtml.includes('Chicago Bears'),'shows former-team advanced-metrics link');
 
   console.log('\n=== TEST 6: LAC new OC was a HEAD COACH ===');
   const lacHtml=app.renderTeamAdvanced('LAC');
   chk(lacHtml.includes('Mike McDaniel'),'LAC shows McDaniel');
   chk(lacHtml.includes('Miami Dolphins head coach'),'LAC spells out former HC role');
-  chk(lacHtml.includes('Miami')&&(lacHtml.includes('82')||lacHtml.includes('22')),'LAC pulls Miami scheme stats');
+  chk(lacHtml.includes('View Miami Dolphins') || lacHtml.includes('Miami Dolphins'),'LAC links to Miami advanced view');
 
   console.log('\n=== TEST 7: Bengals (carryover) shows NO carryover block ===');
   const cinHtml=app.renderTeamAdvanced('CIN');

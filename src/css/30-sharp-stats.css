@@ -65,7 +65,7 @@
 /* on hover, the frozen team cell needs an opaque bg too (else scrolling cells show through) */
 .sr-league-table tbody tr:hover .sr-td-team{background:var(--surface3);}
 /* Full team name + SOS in team header */
-.team-fullname{font-size:20px;font-weight:800;letter-spacing:-.01em;}
+.team-fullname{font-size:20px;font-weight:800;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;display:block;}
 .team-sos-row{margin-top:3px;}
 .team-sos{font-size:11px;color:var(--muted);}
 .team-sos b{color:var(--text);font-weight:800;}

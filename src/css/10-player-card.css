@@ -3,7 +3,7 @@
    toolbar shrinks the viewport the card's top + close button stay reachable instead of being
    clipped behind the chrome. dvh tracks the *visible* viewport (100vh includes the area behind
    the dynamic toolbar), with a vh fallback for older engines. */
-.pcard-overlay{position:fixed;inset:0;background:rgba(0,0,0,.66);z-index:1000;
+.pcard-overlay{position:fixed;inset:0;background:rgba(0,0,0,.66);z-index:1105;
   display:flex;align-items:flex-start;justify-content:center;
   padding:24px 12px;
   padding-top:max(24px,env(safe-area-inset-top));
