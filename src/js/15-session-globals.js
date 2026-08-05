@@ -292,11 +292,15 @@ function playerNoteKey(nameOrId, pos, team){
 function ensurePlayerNote(nameOrId, pos, team){
   const key = playerNoteKey(nameOrId, pos, team);
   if(!key) return null;
+  const raw = String(nameOrId||'');
+  const pid = /^pid:/.test(key) ? key.slice(4) : (/^\d+$/.test(raw) ? raw : '');
+  const meta = (pid && typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[pid]) ? sleeperPlayers[pid] : null;
+  const displayName = meta && meta.name ? meta.name : (String(pos||'').toUpperCase()==='DEF' && team ? `${teamDisplayName(team)} D/ST` : raw);
   if(!playerNotes[key]){
     playerNotes[key] = {
       key,
-      pid: /^pid:/.test(key) ? key.slice(4) : '',
-      name: String(nameOrId||''),
+      pid,
+      name: displayName,
       pos: String(pos||''),
       team: String(team||''),
       text: '',
@@ -305,7 +309,8 @@ function ensurePlayerNote(nameOrId, pos, team){
     };
   }
   const note = playerNotes[key];
-  if(nameOrId && !note.name) note.name = String(nameOrId);
+  if(displayName && (!note.name || /^\d+$/.test(String(note.name)))) note.name = displayName;
+  if(pid && !note.pid) note.pid = pid;
   if(pos && !note.pos) note.pos = String(pos);
   if(team && !note.team) note.team = String(team);
   return note;

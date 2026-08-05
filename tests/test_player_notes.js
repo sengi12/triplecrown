@@ -54,6 +54,7 @@ global.toast=()=>{};
 const code=fs.readFileSync(path.join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   saveSession, loadSession, setPlayerNoteText, addPlayerNoteTag, getPlayerNote, buildOutput, loadProjections,
+  notesBrowserEntries,
   setReady:(b)=>{_persistReady=b;},
   setWorking:(w)=>{workingProj=w; userProj=w;},
   setSeed:(s)=>{SEED=s; projSeed=s; seasonStatsCache.proj=s;},
@@ -104,5 +105,10 @@ const restored=app.getPlayerNote('6770','QB','CIN');
 chk(!!restored,'player note restored after import');
 chk(restored.text==='Trust the volume.','import restores note text');
 chk((restored.tags||[])[0] && restored.tags[0].context==='2025 adv metrics','import restores tag context');
+
+console.log('\n=== pid-backed notes resolve to display names ===');
+app.setPlayerNotes({'pid:6770':{key:'pid:6770',pid:'6770',name:'6770',pos:'QB',team:'CIN',text:'x',tags:[],updatedAt:2}});
+const rows=app.notesBrowserEntries();
+chk(rows[0] && rows[0].name==='Joe Burrow','notes browser resolves pid-backed name to display name');
 
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

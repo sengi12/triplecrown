@@ -1,12 +1,13 @@
 // ── Player notes + hidden stat tagging ─────────────────────────────────────
 // Notes are keyed per player and live alongside the working projection session. A hidden
-// long-press gesture on tagged stats opens a picker that lets the user attach that stat to a
+// double-tap gesture on tagged stats opens a picker that lets the user attach that stat to a
 // relevant player without cluttering the UI with visible controls.
 
-const NOTE_HOLD_MS = 520;
+const NOTE_DBL_MS = 360;
 const NOTE_MOVE_PX = 10;
+const TC_DEV_MODE = "__TC_DEV_MODE__" === "1";
 let _notePickerState = null;
-let _noteHoldState = null;
+let _noteTapState = null;
 let _noteSuppressClickUntil = 0;
 let _notesBrowserOpen = false;
 
@@ -113,6 +114,18 @@ function noteDisplayTag(tag){
     value: noteCompactValue(tag && tag.value),
     context: noteCompactContext(tag && tag.context),
   };
+}
+
+function noteResolvedName(note){
+  if(!note) return 'Unknown';
+  const pid = String(note.pid||'');
+  if(pid && typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[pid] && sleeperPlayers[pid].name){
+    return sleeperPlayers[pid].name;
+  }
+  if(String(note.pos||'').toUpperCase()==='DEF' && note.team){
+    return `${teamDisplayName(note.team)} D/ST`;
+  }
+  return String(note.name||note.pid||'Unknown');
 }
 
 function noteRelevantPlayers(team, relevance){
@@ -294,7 +307,7 @@ function renderPcardNotes(){
     return `<div class="pcard-note-tag${clickable?' is-link':''}"><div class="pcard-note-tag-top"><button class="pcard-note-tag-open" ${clickable?`onclick="noteOpenFromCard('${escJsSingle(tag.id)}')"`:'disabled'} title="${escAttr(ttl)}"><span class="pcard-note-tag-label">${escHtml(d.label)}</span><div class="pcard-note-tag-value">${escHtml(d.value)}</div>${d.context?`<div class="pcard-note-tag-context">${escHtml(d.context)}</div>`:''}</button><button class="pcard-note-tag-info" onclick="openPcardNoteTagInfo('${escJsSingle(tag.id)}')" aria-label="View note details">i</button><button class="pcard-note-tag-rm" onclick="removePcardNoteTagFromCard('${escJsSingle(tag.id)}')" aria-label="Remove tag">✕</button></div></div>`;
   }).join('');
   return `<div class="pcard-notes-view">
-    <div class="pcard-notes-head"><div class="pcard-notes-title">Player Notes</div><div class="pcard-notes-sub">Hold down on tagged stats anywhere in the app to pin them here.</div></div>
+    <div class="pcard-notes-head"><div class="pcard-notes-title">Player Notes</div><div class="pcard-notes-sub">Double-tap tagged stats anywhere in the app to pin them here.</div></div>
     <div class="pcard-notes-tags">${tags || '<div class="pcard-notes-empty">No pinned stats yet.</div>'}</div>
     <label class="pcard-notes-label" for="pcardNotesText">Your notes</label>
     <textarea id="pcardNotesText" class="pcard-notes-text" spellcheck="true" placeholder="Write down anything you want to remember about this player…" oninput="updatePcardNotesText(this.value)">${escHtml(note.text || '')}</textarea>
@@ -328,10 +341,11 @@ function openPcardNoteTagInfo(tagId){
   if(!tag) return;
   closePcardNoteTagInfo();
   const jumpBtn = tag.nav ? `<button class="btn btn-accent btn-sm" onclick="closePcardNoteTagInfo();noteOpenFromCard('${escJsSingle(tag.id)}')">Jump to source</button>` : '';
+  const sourceRow = (TC_DEV_MODE && tag.source) ? `<div class="note-info-row"><span>Source</span><b>${escHtml(tag.source)}</b></div>` : '';
   const ov = document.createElement('div');
   ov.id = 'pcardNoteInfoOverlay';
   ov.className = 'note-info-overlay';
-  ov.innerHTML = `<div class="note-info-backdrop" onclick="closePcardNoteTagInfo()"><div class="note-info-modal" onclick="event.stopPropagation()"><div class="note-info-head"><div class="note-info-title">Tag details</div><button class="note-info-close" onclick="closePcardNoteTagInfo()" aria-label="Close">✕</button></div><div class="note-info-row"><span>Label</span><b>${escHtml(tag.label||'—')}</b></div><div class="note-info-row"><span>Value</span><b>${escHtml(tag.value||'—')}</b></div>${tag.context?`<div class="note-info-row"><span>Context</span><b>${escHtml(tag.context)}</b></div>`:''}${tag.source?`<div class="note-info-row"><span>Source</span><b>${escHtml(tag.source)}</b></div>`:''}<div class="note-info-actions">${jumpBtn}<button class="btn btn-ghost btn-sm" onclick="closePcardNoteTagInfo()">Close</button></div></div></div>`;
+  ov.innerHTML = `<div class="note-info-backdrop" onclick="closePcardNoteTagInfo()"><div class="note-info-modal" onclick="event.stopPropagation()"><div class="note-info-head"><div class="note-info-title">Tag details</div><button class="note-info-close" onclick="closePcardNoteTagInfo()" aria-label="Close">✕</button></div><div class="note-info-row"><span>Label</span><b>${escHtml(tag.label||'—')}</b></div><div class="note-info-row"><span>Value</span><b>${escHtml(tag.value||'—')}</b></div>${tag.context?`<div class="note-info-row"><span>Context</span><b>${escHtml(tag.context)}</b></div>`:''}${sourceRow}<div class="note-info-actions">${jumpBtn}<button class="btn btn-ghost btn-sm" onclick="closePcardNoteTagInfo()">Close</button></div></div></div>`;
   document.body.appendChild(ov);
 }
 
@@ -362,10 +376,11 @@ function notesBrowserEntries(){
   return Object.values(playerNotes||{}).map(note=>{
     const text = String(note.text||'').trim();
     const tags = Array.isArray(note.tags) ? note.tags : [];
+    const name = noteResolvedName(note);
     return {
       key: note.key,
       pid: note.pid || '',
-      name: note.name || 'Unknown',
+      name,
       pos: note.pos || '',
       team: note.team || '',
       text,
@@ -469,7 +484,7 @@ function renderNotesBrowser(query){
   }) : rows;
   meta.innerHTML = `<div class="notes-browser-count">${view.length} noted player${view.length===1?'':'s'}</div>`;
   if(!view.length){
-    box.innerHTML = `<div class="ps-hint">${rows.length?'No notes match that search.':'No player notes yet. Open a player card or hold down on a tagged stat to start collecting notes.'}</div>`;
+    box.innerHTML = `<div class="ps-hint">${rows.length?'No notes match that search.':'No player notes yet. Open a player card or double-tap a tagged stat to start collecting notes.'}</div>`;
     return;
   }
   box.innerHTML = view.map(r=>{
@@ -502,30 +517,27 @@ function _noteIgnoreTarget(t){
   return !!(t && t.closest && t.closest('input, textarea, select, button, [contenteditable="true"], [contenteditable=true], .sl, .dual-range, .pcard-notes-text, .mini-edit'));
 }
 
-function _noteStartHold(targetEl, clientX, clientY){
-  _noteHoldState = {
-    targetEl,
-    clientX,
-    clientY,
-    timer: setTimeout(()=>{
-      const st = _noteHoldState;
-      if(!st || st.targetEl!==targetEl) return;
-      _noteSuppressClickUntil = Date.now() + 600;
-      const info = noteInfoFromElement(targetEl);
-      _noteHoldState = null;
-      if(info) noteOpenPicker(info);
-    }, NOTE_HOLD_MS),
-  };
+function _noteClearTap(){
+  _noteTapState = null;
 }
 
-function _noteClearHold(){
-  if(_noteHoldState && _noteHoldState.timer) clearTimeout(_noteHoldState.timer);
-  _noteHoldState = null;
-}
-
-function _noteMaybeCancelHold(clientX, clientY){
-  if(!_noteHoldState) return;
-  if(Math.abs(clientX - _noteHoldState.clientX) > NOTE_MOVE_PX || Math.abs(clientY - _noteHoldState.clientY) > NOTE_MOVE_PX) _noteClearHold();
+function _noteRegisterTap(el, clientX, clientY){
+  const now = Date.now();
+  if(!_noteTapState){
+    _noteTapState = { el, x:clientX, y:clientY, t:now };
+    return;
+  }
+  const withinTime = (now - _noteTapState.t) <= NOTE_DBL_MS;
+  const withinMove = Math.abs(clientX - _noteTapState.x) <= NOTE_MOVE_PX && Math.abs(clientY - _noteTapState.y) <= NOTE_MOVE_PX;
+  const sameTarget = _noteTapState.el===el;
+  if(withinTime && withinMove && sameTarget){
+    _noteSuppressClickUntil = now + 450;
+    const info = noteInfoFromElement(el);
+    _noteTapState = null;
+    if(info) noteOpenPicker(info);
+    return;
+  }
+  _noteTapState = { el, x:clientX, y:clientY, t:now };
 }
 
 if(typeof document!=='undefined' && document.addEventListener){
@@ -541,27 +553,19 @@ if(typeof document!=='undefined' && document.addEventListener){
     }
   }, true);
   document.addEventListener('touchstart', e=>{
-    if(e.touches.length!==1) return _noteClearHold();
+    if(e.touches.length!==1) return _noteClearTap();
     const t = e.target;
     const el = t && t.closest ? t.closest('[data-noteable="1"]') : null;
     if(!el || _noteIgnoreTarget(t)) return;
     const touch = e.touches[0];
-    _noteStartHold(el, touch.clientX, touch.clientY);
+    _noteRegisterTap(el, touch.clientX, touch.clientY);
   }, {passive:true});
-  document.addEventListener('touchmove', e=>{
-    if(!_noteHoldState || !e.touches.length) return;
-    const touch = e.touches[0];
-    _noteMaybeCancelHold(touch.clientX, touch.clientY);
-  }, {passive:true});
-  document.addEventListener('touchend', _noteClearHold, {passive:true});
-  document.addEventListener('touchcancel', _noteClearHold, {passive:true});
+  document.addEventListener('touchcancel', _noteClearTap, {passive:true});
   document.addEventListener('mousedown', e=>{
     const t = e.target;
     const el = t && t.closest ? t.closest('[data-noteable="1"]') : null;
     if(!el || _noteIgnoreTarget(t) || e.button!==0) return;
-    _noteStartHold(el, e.clientX, e.clientY);
+    _noteRegisterTap(el, e.clientX, e.clientY);
   });
-  document.addEventListener('mousemove', e=>_noteMaybeCancelHold(e.clientX, e.clientY));
-  document.addEventListener('mouseup', _noteClearHold);
-  document.addEventListener('mouseleave', _noteClearHold);
+  document.addEventListener('mouseleave', _noteClearTap);
 }

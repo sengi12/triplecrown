@@ -325,9 +325,9 @@ function wireTaps(box,g){
 }
 
 (function noteBridge(){
-  const HOLD_MS=520, MOVE=10;
+  const DBL_MS=360, MOVE=10;
   let st=null;
-  function clear(){ if(st&&st.t) clearTimeout(st.t); st=null; }
+  function clear(){ st=null; }
   function info(el){
     if(!el || !el.dataset) return null;
     return {
@@ -338,6 +338,7 @@ function wireTaps(box,g){
       statKey: el.dataset.noteStatKey || '',
       team: el.dataset.noteTeam || TEAM_CODE || '',
       relevance: el.dataset.noteRelevance || 'QB,RB,WR,TE',
+      nav: el.dataset.noteNav ? (function(){ try{return JSON.parse(el.dataset.noteNav);}catch(e){return null;} })() : null,
     };
   }
   function open(el){
@@ -346,19 +347,28 @@ function wireTaps(box,g){
     const payload = info(el);
     if(payload) parentWin.noteOpenPicker(payload);
   }
+  function tap(el,x,y){
+    const now=Date.now();
+    if(!st){ st={el,x,y,t:now}; return; }
+    const same=st.el===el;
+    const soon=(now-st.t)<=DBL_MS;
+    const close=Math.abs(x-st.x)<=MOVE && Math.abs(y-st.y)<=MOVE;
+    if(same&&soon&&close){ clear(); open(el); return; }
+    st={el,x,y,t:now};
+  }
   document.addEventListener('touchstart', e=>{
     if(e.touches.length!==1) return clear();
     const el=e.target&&e.target.closest?e.target.closest('[data-noteable="1"]'):null;
     if(!el) return;
     const t=e.touches[0];
-    st={x:t.clientX,y:t.clientY,el,t:setTimeout(()=>{ const cur=st; clear(); if(cur&&cur.el===el) open(el); }, HOLD_MS)};
+    tap(el,t.clientX,t.clientY);
   }, {passive:true});
-  document.addEventListener('touchmove', e=>{ if(!st||!e.touches.length) return; const t=e.touches[0]; if(Math.abs(t.clientX-st.x)>MOVE||Math.abs(t.clientY-st.y)>MOVE) clear(); }, {passive:true});
-  document.addEventListener('touchend', clear, {passive:true});
   document.addEventListener('touchcancel', clear, {passive:true});
-  document.addEventListener('mousedown', e=>{ const el=e.target&&e.target.closest?e.target.closest('[data-noteable="1"]'):null; if(!el||e.button!==0) return; st={x:e.clientX,y:e.clientY,el,t:setTimeout(()=>{ const cur=st; clear(); if(cur&&cur.el===el) open(el); }, HOLD_MS)}; });
-  document.addEventListener('mousemove', e=>{ if(!st) return; if(Math.abs(e.clientX-st.x)>MOVE||Math.abs(e.clientY-st.y)>MOVE) clear(); });
-  document.addEventListener('mouseup', clear);
+  document.addEventListener('mousedown', e=>{
+    const el=e.target&&e.target.closest?e.target.closest('[data-noteable="1"]'):null;
+    if(!el||e.button!==0) return;
+    tap(el,e.clientX,e.clientY);
+  });
   document.addEventListener('mouseleave', clear);
 })();
 

@@ -119,11 +119,11 @@ For the full experience (expert rankings, contracts, advanced stats, coaching, r
 |------|-----------|
 | `index.html` | The entire app, as one self-contained file. Open it in a browser. **Generated from `src/` — don't hand-edit it; edit `src/` and run `python build.py`.** |
 | `src/` | The editable source: `src/css/*.css` + `src/js/*.js` (split by feature) and `src/index.template.html` (the shell). |
-| `build.py` | Concatenates `src/` back into `index.html`. Output is byte-identical to a hand-edited single file — the shipped app is unchanged. Add `--offline` (optionally `--out index_offline.html`) for a local `file://` copy that includes the 📦 Seed loader button. |
+| `build.py` | Concatenates `src/` back into `index.html`. Output is byte-identical to a hand-edited single file — the shipped app is unchanged. Add `--dev` for a developer build that includes the 📦 Seed loader button and other developer-only UI. |
 | `build_seed.py` | Run locally to fetch all the data and produce `triplecrown_seed.json`. |
 | `bake_seed.py` | Embeds a seed directly into the HTML for a phone-friendly, offline copy. |
 
-> **Why a build step?** The app ships as one file on purpose (works offline from `file://`, bakes onto a phone, zero runtime dependencies). That's great for *users* but unwieldy to *edit*, so the source lives split under `src/` and `build.py` (Python 3 stdlib, no installs) reassembles it. It's plain concatenation — everything stays in one shared scope, so the app and test suite behave exactly as before. `run_tests.sh` rebuilds from `src/` automatically, and `python build.py --check` verifies `src/` matches the committed `index.html`. The default (online) build drops the manual 📦 Seed loader — hosted copies auto-load `triplecrown_seed.json` — while `python build.py --offline` keeps it for a serverless `file://` copy.
+> **Why a build step?** The app ships as one file on purpose (works offline from `file://`, bakes onto a phone, zero runtime dependencies). That's great for *users* but unwieldy to *edit*, so the source lives split under `src/` and `build.py` (Python 3 stdlib, no installs) reassembles it. It's plain concatenation — everything stays in one shared scope, so the app and test suite behave exactly as before. `run_tests.sh` rebuilds from `src/` automatically, and `python build.py --check` verifies `src/` matches the committed `index.html`. The default build is the normal user-facing app; `python build.py --dev` keeps the manual 📦 Seed loader and other developer-only UI.
 
 ---
 
@@ -153,7 +153,7 @@ It fetches, in order:
 
 Output: **`triplecrown_seed.json`** (plus optional sidecars `triplecrown_seed.def_weekly.json` and `triplecrown_seed.coaching.json` for lazy nflverse sections). Requires only Python 3 standard library — no pip installs. Runs are cached in `cache/`, so re-runs are fast; use `--refresh` to force a re-download.
 
-**Load it into the app** by placing it next to `index.html` when hosted over http(s) — it auto-loads on page open. (Manual seed-loading is offline-only: a `python build.py --offline` build adds a 📦 Seed button for loading a `triplecrown_seed.json` by hand from `file://`; the hosted/online build omits it since it auto-loads.)
+**Load it into the app** by placing it next to `index.html` when hosted over http(s) — it auto-loads on page open. (Manual seed-loading is developer-only: a `python build.py --dev` build adds a 📦 Seed button for loading a `triplecrown_seed.json` by hand; the normal build omits it since hosted copies auto-load the seed.)
 
 ---
 
@@ -245,6 +245,7 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] Apple iOS Store
 - [ ] Generate my own proprietary projections based on all the metrics we have
 - [ ] Simplify process with a vibe-check. Tinder-style swipes? KTC?
+- [ ] fully flesh out a --dev mode for the web page that adds debug logs, etc
 ### UI / UX
 ### Playercards
 ### Live Draft
@@ -260,7 +261,6 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] Charts that show team progress over the last 5 years in specific categories
 ### Playcalling Stats
 - [ ] Improve Playbooks is_qb_sneak, n_offense_backfield
-- [ ] Team Total TDs, Pass Yds, Rush Yds, etc and league ranks
 
 ## License
 

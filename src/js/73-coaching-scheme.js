@@ -710,6 +710,75 @@ function _schemeInsightNarrative(d){
   return pieces.join(' ');
 }
 
+function _schemeProductionTotalsFromPayload(p){
+  const fv = _schemeBuildFv(p);
+  const node = _schemeSafeNode(fv, 'all', 'all', 'all');
+  const groups = Array.isArray(node && node.groups) ? node.groups : [];
+  const sum = { passYds:0, rushYds:0, passTD:0, rushTD:0, passAtt:0, rushAtt:0 };
+  groups.forEach(g=>{
+    sum.passYds += _schemeNumber(g && g.py, 0);
+    sum.rushYds += _schemeNumber(g && g.ry, 0);
+    sum.passTD += _schemeNumber(g && g.ptd, 0);
+    sum.rushTD += _schemeNumber(g && g.rtd, 0);
+    sum.passAtt += _schemeNumber(g && g.np, 0);
+    sum.rushAtt += _schemeNumber(g && g.nr, 0);
+  });
+  sum.totalTD = sum.passTD + sum.rushTD;
+  return sum;
+}
+
+function _schemeTeamOffenseProduction(season, teamCode){
+  const snap = _schemeLeagueInsightSnapshot(season);
+  const block = NFLVERSE && NFLVERSE[String(season)] && NFLVERSE[String(season)].coaching_scheme;
+  const teams = block ? Object.keys(block) : [];
+  if(!snap || !block || !teams.length || !teamCode || !block[teamCode]) return null;
+  const byTeam = {};
+  teams.forEach(tm=>{ byTeam[tm] = _schemeProductionTotalsFromPayload({ season:String(season), team:tm, data:block[tm] }); });
+  const stats = [
+    { key:'Team Total TDs', dataKey:'totalTD', digits:0, higher:true },
+    { key:'Pass Yards', dataKey:'passYds', digits:0, higher:true },
+    { key:'Rush Yards', dataKey:'rushYds', digits:0, higher:true },
+    { key:'Pass Att', dataKey:'passAtt', digits:0, higher:true },
+    { key:'Rush Att', dataKey:'rushAtt', digits:0, higher:true },
+    { key:'Points/Drive', dataKey:'pointsPerDrive', digits:2, higher:true },
+  ];
+  return stats.map(s=>{
+    const value = s.dataKey==='pointsPerDrive'
+      ? (snap.rowsByTeam[teamCode] ? snap.rowsByTeam[teamCode].pointsPerDrive : null)
+      : (byTeam[teamCode] ? byTeam[teamCode][s.dataKey] : null);
+    const arr = teams.map(tm=> s.dataKey==='pointsPerDrive'
+      ? (snap.rowsByTeam[tm] ? snap.rowsByTeam[tm].pointsPerDrive : null)
+      : (byTeam[tm] ? byTeam[tm][s.dataKey] : null)).filter(Number.isFinite);
+    const rank = _schemeRankInLeague(value, arr, s.higher ? 'desc' : 'asc');
+    const rankCls = _schemeRankClass(rank, teams.length);
+    const txt = Number.isFinite(value) ? (s.digits>0 ? value.toFixed(s.digits) : Math.round(value).toLocaleString()) : '—';
+    const rv = rank ? `${txt} · league rank #${rank} of ${teams.length}` : txt;
+    return { label:s.key, value, display:txt, rank, rankCls, rankText: rank ? `#${rank}` : '—', valueText:rv };
+  });
+}
+
+function _schemeRenderTeamOffenseProduction(p){
+  const season = String((p&&p.season) || '');
+  const teamCode = String((p&&p.team) || schemeTeam || '').toUpperCase();
+  const teamName = teamDisplayName(teamCode) || teamCode;
+  const rows = _schemeTeamOffenseProduction(season, teamCode);
+  if(!rows || !rows.length) return '';
+  const cards = rows.map(r=>{
+    const tagged = noteWrapHtml(`${r.display} <span class="scheme-op-rank ${r.rankCls}">(${r.rankText})</span>`, {
+      label: r.label,
+      value: r.valueText,
+      source:'coaching_insights',
+      statKey:r.label,
+      context:`${teamName} team offense production · ${season}`,
+      team:teamCode,
+      relevance:'QB,RB,WR,TE',
+      nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' },
+    }, 'note-tag-hit');
+    return `<div class="scheme-op-card"><div class="scheme-op-k">${_schemeEscHtml(r.label)}</div><div class="scheme-op-v">${tagged}</div></div>`;
+  }).join('');
+  return `<div class="scheme-op-wrap"><div class="scheme-op-title">Team offensive production · ${_schemeEscHtml(String(season))}</div><div class="scheme-op-grid">${cards}</div></div>`;
+}
+
 function _schemeClamp(v, lo, hi){
   const n = _schemeNumber(v, 0);
   return Math.max(lo, Math.min(hi, n));
@@ -1151,26 +1220,29 @@ function _schemeRenderBenefactorList(title, subtitle, list, scoreFmt, metaFmt){
     </div>`;
   }
   const rows = list.map((p, i)=>{
+    const teamCode = String(p && p.team || schemeTeam || '').toUpperCase();
+    const season = String(schemeSeason || (list[0] && list[0].season) || advTeamSeason() || '');
     const click = _schemePlayerOnclick(p);
     const wrapOpen = click
       ? `<div class="scheme-benefit-row clickable-player" role="button" tabindex="0" onclick="${click}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${click}}">`
       : '<div class="scheme-benefit-row">';
     const wrapClose = '</div>';
     const splits = `<span class="scheme-benefit-splits">
-      <span class="scheme-benefit-split"><b>1st</b><span>${p.d1Pct.toFixed(2)}%</span></span>
-      <span class="scheme-benefit-split"><b>2nd</b><span>${p.d2Pct.toFixed(2)}%</span></span>
-      <span class="scheme-benefit-split"><b>3rd</b><span>${p.d3Pct.toFixed(2)}%</span></span>
-      <span class="scheme-benefit-split"><b>4th</b><span>${p.d4Pct.toFixed(2)}%</span></span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>1st</b><span>${p.d1Pct.toFixed(2)}%</span>`, { label:`${title} 1st-down share`, value:`${p.d1Pct.toFixed(2)}%`, source:'coaching_insights', statKey:'d1_share', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>2nd</b><span>${p.d2Pct.toFixed(2)}%</span>`, { label:`${title} 2nd-down share`, value:`${p.d2Pct.toFixed(2)}%`, source:'coaching_insights', statKey:'d2_share', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>3rd</b><span>${p.d3Pct.toFixed(2)}%</span>`, { label:`${title} 3rd-down share`, value:`${p.d3Pct.toFixed(2)}%`, source:'coaching_insights', statKey:'d3_share', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>4th</b><span>${p.d4Pct.toFixed(2)}%</span>`, { label:`${title} 4th-down share`, value:`${p.d4Pct.toFixed(2)}%`, source:'coaching_insights', statKey:'d4_share', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
     </span>`;
+    const notePlayer = p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null;
     return `${wrapOpen}
       <span class="scheme-benefit-rank">${i+1}</span>
       <span class="scheme-benefit-head">${_schemePlayerHeadshot(p)}</span>
       <span class="scheme-benefit-main">
         <span class="scheme-benefit-name">${_schemeEscHtml(p.name)}</span>
-        <span class="scheme-benefit-meta">${metaFmt(p)}</span>
+        <span class="scheme-benefit-meta">${noteWrapHtml(metaFmt(p), { label:`${title} role context`, value:`${p.pos||''} · ${p.slot||''}${p.oppShare!=null?` · opp share ${p.oppShare.toFixed(2)}%`:''}${p.tgtShare!=null?` · tgt share ${p.tgtShare.toFixed(2)}%`:''}`, source:'coaching_insights', statKey:'role_context', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:notePlayer, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
         ${splits}
       </span>
-      <span class="scheme-benefit-score">${scoreFmt(p)}</span>
+      <span class="scheme-benefit-score">${noteWrapHtml(scoreFmt(p), { label:`${title} leader score`, value:`${p.tgtShare!=null?`RZ target share ${p.tgtShare.toFixed(2)}% · `:''}${p.oppShare!=null?`team share ${p.oppShare.toFixed(2)}%`:''}`.trim() || scoreFmt(p).replace(/<[^>]+>/g,''), source:'coaching_insights', statKey:'leader_score', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:notePlayer, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
       <span class="scheme-benefit-why">${_schemeEscHtml(p.reason)}</span>
     ${wrapClose}`;
   }).join('');
@@ -1217,6 +1289,7 @@ function _schemeRenderInsights(p){
   const d = _schemeRedZoneInsightData(p);
   const teamCode = String((p && p.team) || '').toUpperCase();
   const teamName = teamDisplayName(teamCode) || teamCode;
+  const offenseStrip = _schemeRenderTeamOffenseProduction(p);
   const benefactors = _schemeBuildBenefactors(p, d);
   const rushBenefactors = _schemeBuildRushBenefactors(p, d);
   const league = _schemeLeagueInsightRanks(p && p.season);
@@ -1235,6 +1308,7 @@ function _schemeRenderInsights(p){
     'This compares this offense to the league. Lower friction means cleaner touchdown paths with fewer stalled drives. It combines how often drives end with punts, turnovers, or three-and-outs plus drive efficiency and red-zone finishing.'
   );
   return `<div class="scheme-insights-wrap">
+    ${offenseStrip}
     <div class="scheme-insights-head">
       <span class="scheme-insights-pill ${toneClass}">${d.label}</span>
       <span class="scheme-insights-sample">Sample: ${Math.round(_schemeNumber(d.samplePlays, 0))} red-zone plays</span>

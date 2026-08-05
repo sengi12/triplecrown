@@ -1029,11 +1029,15 @@ function playerNoteKey(nameOrId, pos, team){
 function ensurePlayerNote(nameOrId, pos, team){
   const key = playerNoteKey(nameOrId, pos, team);
   if(!key) return null;
+  const raw = String(nameOrId||'');
+  const pid = /^pid:/.test(key) ? key.slice(4) : (/^\d+$/.test(raw) ? raw : '');
+  const meta = (pid && typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[pid]) ? sleeperPlayers[pid] : null;
+  const displayName = meta && meta.name ? meta.name : (String(pos||'').toUpperCase()==='DEF' && team ? `${teamDisplayName(team)} D/ST` : raw);
   if(!playerNotes[key]){
     playerNotes[key] = {
       key,
-      pid: /^pid:/.test(key) ? key.slice(4) : '',
-      name: String(nameOrId||''),
+      pid,
+      name: displayName,
       pos: String(pos||''),
       team: String(team||''),
       text: '',
@@ -1042,7 +1046,8 @@ function ensurePlayerNote(nameOrId, pos, team){
     };
   }
   const note = playerNotes[key];
-  if(nameOrId && !note.name) note.name = String(nameOrId);
+  if(displayName && (!note.name || /^\d+$/.test(String(note.name)))) note.name = displayName;
+  if(pid && !note.pid) note.pid = pid;
   if(pos && !note.pos) note.pos = String(pos);
   if(team && !note.team) note.team = String(team);
   return note;
@@ -1522,13 +1527,14 @@ function ensureNflverseCoachingSeason(season){
 })();
 // ── Player notes + hidden stat tagging ─────────────────────────────────────
 // Notes are keyed per player and live alongside the working projection session. A hidden
-// long-press gesture on tagged stats opens a picker that lets the user attach that stat to a
+// double-tap gesture on tagged stats opens a picker that lets the user attach that stat to a
 // relevant player without cluttering the UI with visible controls.
 
-const NOTE_HOLD_MS = 520;
+const NOTE_DBL_MS = 360;
 const NOTE_MOVE_PX = 10;
+const TC_DEV_MODE = "0" === "1";
 let _notePickerState = null;
-let _noteHoldState = null;
+let _noteTapState = null;
 let _noteSuppressClickUntil = 0;
 let _notesBrowserOpen = false;
 
@@ -1635,6 +1641,18 @@ function noteDisplayTag(tag){
     value: noteCompactValue(tag && tag.value),
     context: noteCompactContext(tag && tag.context),
   };
+}
+
+function noteResolvedName(note){
+  if(!note) return 'Unknown';
+  const pid = String(note.pid||'');
+  if(pid && typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[pid] && sleeperPlayers[pid].name){
+    return sleeperPlayers[pid].name;
+  }
+  if(String(note.pos||'').toUpperCase()==='DEF' && note.team){
+    return `${teamDisplayName(note.team)} D/ST`;
+  }
+  return String(note.name||note.pid||'Unknown');
 }
 
 function noteRelevantPlayers(team, relevance){
@@ -1813,10 +1831,10 @@ function renderPcardNotes(){
     const d = noteDisplayTag(tag);
     const ttl = [tag.label||'', tag.value||'', tag.context||''].filter(Boolean).join(' · ');
     const clickable = !!(tag && tag.nav);
-    return `<div class="pcard-note-tag${clickable?' is-link':''}"><div class="pcard-note-tag-top"><button class="pcard-note-tag-open" ${clickable?`onclick="noteOpenFromCard('${escJsSingle(tag.id)}')"`:'disabled'} title="${escAttr(ttl)}"><span class="pcard-note-tag-label">${escHtml(d.label)}</span><div class="pcard-note-tag-value">${escHtml(d.value)}</div>${d.context?`<div class="pcard-note-tag-context">${escHtml(d.context)}</div>`:''}</button><button class="pcard-note-tag-rm" onclick="removePcardNoteTagFromCard('${escJsSingle(tag.id)}')" aria-label="Remove tag">✕</button></div></div>`;
+    return `<div class="pcard-note-tag${clickable?' is-link':''}"><div class="pcard-note-tag-top"><button class="pcard-note-tag-open" ${clickable?`onclick="noteOpenFromCard('${escJsSingle(tag.id)}')"`:'disabled'} title="${escAttr(ttl)}"><span class="pcard-note-tag-label">${escHtml(d.label)}</span><div class="pcard-note-tag-value">${escHtml(d.value)}</div>${d.context?`<div class="pcard-note-tag-context">${escHtml(d.context)}</div>`:''}</button><button class="pcard-note-tag-info" onclick="openPcardNoteTagInfo('${escJsSingle(tag.id)}')" aria-label="View note details">i</button><button class="pcard-note-tag-rm" onclick="removePcardNoteTagFromCard('${escJsSingle(tag.id)}')" aria-label="Remove tag">✕</button></div></div>`;
   }).join('');
   return `<div class="pcard-notes-view">
-    <div class="pcard-notes-head"><div class="pcard-notes-title">Player Notes</div><div class="pcard-notes-sub">Hold down on tagged stats anywhere in the app to pin them here.</div></div>
+    <div class="pcard-notes-head"><div class="pcard-notes-title">Player Notes</div><div class="pcard-notes-sub">Double-tap tagged stats anywhere in the app to pin them here.</div></div>
     <div class="pcard-notes-tags">${tags || '<div class="pcard-notes-empty">No pinned stats yet.</div>'}</div>
     <label class="pcard-notes-label" for="pcardNotesText">Your notes</label>
     <textarea id="pcardNotesText" class="pcard-notes-text" spellcheck="true" placeholder="Write down anything you want to remember about this player…" oninput="updatePcardNotesText(this.value)">${escHtml(note.text || '')}</textarea>
@@ -1830,6 +1848,32 @@ function noteOpenFromCard(tagId){
   const note = getPlayerNote(target.player_id || target.name, target.pos, target.team);
   if(!note) return;
   noteJumpToTag(note.key, tagId);
+}
+
+function _pcardNoteTagById(tagId){
+  const target = pcardNoteTarget();
+  if(!target) return null;
+  const note = getPlayerNote(target.player_id || target.name, target.pos, target.team);
+  if(!note || !Array.isArray(note.tags)) return null;
+  return note.tags.find(t=>String(t.id)===String(tagId)) || null;
+}
+
+function closePcardNoteTagInfo(){
+  const el = document.getElementById('pcardNoteInfoOverlay');
+  if(el) el.remove();
+}
+
+function openPcardNoteTagInfo(tagId){
+  const tag = _pcardNoteTagById(tagId);
+  if(!tag) return;
+  closePcardNoteTagInfo();
+  const jumpBtn = tag.nav ? `<button class="btn btn-accent btn-sm" onclick="closePcardNoteTagInfo();noteOpenFromCard('${escJsSingle(tag.id)}')">Jump to source</button>` : '';
+  const sourceRow = (TC_DEV_MODE && tag.source) ? `<div class="note-info-row"><span>Source</span><b>${escHtml(tag.source)}</b></div>` : '';
+  const ov = document.createElement('div');
+  ov.id = 'pcardNoteInfoOverlay';
+  ov.className = 'note-info-overlay';
+  ov.innerHTML = `<div class="note-info-backdrop" onclick="closePcardNoteTagInfo()"><div class="note-info-modal" onclick="event.stopPropagation()"><div class="note-info-head"><div class="note-info-title">Tag details</div><button class="note-info-close" onclick="closePcardNoteTagInfo()" aria-label="Close">✕</button></div><div class="note-info-row"><span>Label</span><b>${escHtml(tag.label||'—')}</b></div><div class="note-info-row"><span>Value</span><b>${escHtml(tag.value||'—')}</b></div>${tag.context?`<div class="note-info-row"><span>Context</span><b>${escHtml(tag.context)}</b></div>`:''}${sourceRow}<div class="note-info-actions">${jumpBtn}<button class="btn btn-ghost btn-sm" onclick="closePcardNoteTagInfo()">Close</button></div></div></div>`;
+  document.body.appendChild(ov);
 }
 
 function updatePcardNotesText(value){
@@ -1859,10 +1903,11 @@ function notesBrowserEntries(){
   return Object.values(playerNotes||{}).map(note=>{
     const text = String(note.text||'').trim();
     const tags = Array.isArray(note.tags) ? note.tags : [];
+    const name = noteResolvedName(note);
     return {
       key: note.key,
       pid: note.pid || '',
-      name: note.name || 'Unknown',
+      name,
       pos: note.pos || '',
       team: note.team || '',
       text,
@@ -1966,7 +2011,7 @@ function renderNotesBrowser(query){
   }) : rows;
   meta.innerHTML = `<div class="notes-browser-count">${view.length} noted player${view.length===1?'':'s'}</div>`;
   if(!view.length){
-    box.innerHTML = `<div class="ps-hint">${rows.length?'No notes match that search.':'No player notes yet. Open a player card or hold down on a tagged stat to start collecting notes.'}</div>`;
+    box.innerHTML = `<div class="ps-hint">${rows.length?'No notes match that search.':'No player notes yet. Open a player card or double-tap a tagged stat to start collecting notes.'}</div>`;
     return;
   }
   box.innerHTML = view.map(r=>{
@@ -1999,30 +2044,27 @@ function _noteIgnoreTarget(t){
   return !!(t && t.closest && t.closest('input, textarea, select, button, [contenteditable="true"], [contenteditable=true], .sl, .dual-range, .pcard-notes-text, .mini-edit'));
 }
 
-function _noteStartHold(targetEl, clientX, clientY){
-  _noteHoldState = {
-    targetEl,
-    clientX,
-    clientY,
-    timer: setTimeout(()=>{
-      const st = _noteHoldState;
-      if(!st || st.targetEl!==targetEl) return;
-      _noteSuppressClickUntil = Date.now() + 600;
-      const info = noteInfoFromElement(targetEl);
-      _noteHoldState = null;
-      if(info) noteOpenPicker(info);
-    }, NOTE_HOLD_MS),
-  };
+function _noteClearTap(){
+  _noteTapState = null;
 }
 
-function _noteClearHold(){
-  if(_noteHoldState && _noteHoldState.timer) clearTimeout(_noteHoldState.timer);
-  _noteHoldState = null;
-}
-
-function _noteMaybeCancelHold(clientX, clientY){
-  if(!_noteHoldState) return;
-  if(Math.abs(clientX - _noteHoldState.clientX) > NOTE_MOVE_PX || Math.abs(clientY - _noteHoldState.clientY) > NOTE_MOVE_PX) _noteClearHold();
+function _noteRegisterTap(el, clientX, clientY){
+  const now = Date.now();
+  if(!_noteTapState){
+    _noteTapState = { el, x:clientX, y:clientY, t:now };
+    return;
+  }
+  const withinTime = (now - _noteTapState.t) <= NOTE_DBL_MS;
+  const withinMove = Math.abs(clientX - _noteTapState.x) <= NOTE_MOVE_PX && Math.abs(clientY - _noteTapState.y) <= NOTE_MOVE_PX;
+  const sameTarget = _noteTapState.el===el;
+  if(withinTime && withinMove && sameTarget){
+    _noteSuppressClickUntil = now + 450;
+    const info = noteInfoFromElement(el);
+    _noteTapState = null;
+    if(info) noteOpenPicker(info);
+    return;
+  }
+  _noteTapState = { el, x:clientX, y:clientY, t:now };
 }
 
 if(typeof document!=='undefined' && document.addEventListener){
@@ -2038,29 +2080,21 @@ if(typeof document!=='undefined' && document.addEventListener){
     }
   }, true);
   document.addEventListener('touchstart', e=>{
-    if(e.touches.length!==1) return _noteClearHold();
+    if(e.touches.length!==1) return _noteClearTap();
     const t = e.target;
     const el = t && t.closest ? t.closest('[data-noteable="1"]') : null;
     if(!el || _noteIgnoreTarget(t)) return;
     const touch = e.touches[0];
-    _noteStartHold(el, touch.clientX, touch.clientY);
+    _noteRegisterTap(el, touch.clientX, touch.clientY);
   }, {passive:true});
-  document.addEventListener('touchmove', e=>{
-    if(!_noteHoldState || !e.touches.length) return;
-    const touch = e.touches[0];
-    _noteMaybeCancelHold(touch.clientX, touch.clientY);
-  }, {passive:true});
-  document.addEventListener('touchend', _noteClearHold, {passive:true});
-  document.addEventListener('touchcancel', _noteClearHold, {passive:true});
+  document.addEventListener('touchcancel', _noteClearTap, {passive:true});
   document.addEventListener('mousedown', e=>{
     const t = e.target;
     const el = t && t.closest ? t.closest('[data-noteable="1"]') : null;
     if(!el || _noteIgnoreTarget(t) || e.button!==0) return;
-    _noteStartHold(el, e.clientX, e.clientY);
+    _noteRegisterTap(el, e.clientX, e.clientY);
   });
-  document.addEventListener('mousemove', e=>_noteMaybeCancelHold(e.clientX, e.clientY));
-  document.addEventListener('mouseup', _noteClearHold);
-  document.addEventListener('mouseleave', _noteClearHold);
+  document.addEventListener('mouseleave', _noteClearTap);
 }
 // ─────────────────────────────────────────────────────────────────────────────
 // Toast
@@ -2610,9 +2644,7 @@ function renderPassing(team,state){
         </div>
         ${sRow('games_'+i,'Games Played',gms,Math.round(q.games_played||q.games||0),0,SEASON_GAMES,1,'var(--qb)')}`;
       }).join('')}
-      <div class="derived-note" id="qbWorkloadNote" style="${overBudget?'color:var(--warn)':''}">
-        Team QB-games: ${teamGames.toFixed(0)} of ${SEASON_GAMES}${overBudget?' ⚠️ over a full season — combined QB workload exceeds 17 games':''}
-      </div>
+      <div class="derived-note" id="qbWorkloadNote" style="${overBudget?'color:var(--warn)':''}">${qbWorkloadNoteHtml(teamGames, overBudget, team)}</div>
     </div>`;
   const games=Math.round(qb.games||0);
   return `${weekSlider}${workloadCard}<div class="card">
@@ -2631,14 +2663,14 @@ function renderPassing(team,state){
     ${sRow('patt','Pass Attempts',Math.round(qb.passing_attempts),Math.round(seed.passing_attempts||560),0,800,5)}
     ${sRow('pcomp','Completions',Math.round(qb.passing_completions),Math.round(seed.passing_completions||360),0,680,5)}
     ${sRow('int','Interceptions',Math.round(qb.interceptions_thrown),Math.round(seed.interceptions_thrown||10),0,40,1,'var(--danger)',true)}
-    <div class="derived-note" id="qbDerived">Comp%: ${compPct}% · YPA: ${ypa} · Yds/TD: ${qb.passing_tds>0?Math.round(qb.passing_yards/qb.passing_tds):'-'} · per game: ${perGame(qb,'passing_yards').toFixed(1)} yds</div>
+    <div class="derived-note" id="qbDerived">${qbDerivedHtml(qb, team)}</div>
     <div style="margin-top:13px;padding-top:11px;border-top:1px solid var(--border)">
       <div class="card-title">QB Rushing</div>
       ${sRow('qbry','Rush Yards',Math.round(qb.qb_rush_yards),Math.round(seed.rushing_yards||0),0,1400,10,'var(--rb)')}
       ${sRow('qbrtd','Rush TDs',Math.round(qb.qb_rush_tds),Math.round(seed.rushing_tds||0),0,22,1,'var(--rb)')}
       ${sRow('qbratt','Rush Attempts',Math.round(qb.qb_rush_attempts),Math.round(seed.rushing_attempts||0),0,200,5,'var(--rb)')}
     </div>
-    ${isMulti?`<div class="derived-note" id="qbTeamTotals" style="margin-top:10px">${qbTotalsText(state)}</div>`:''}
+    ${isMulti?`<div class="derived-note" id="qbTeamTotals" style="margin-top:10px">${qbTotalsText(state,{asHtml:true,team})}</div>`:''}
     <div class="stats-grid">
       <div class="stat-box"><div class="stat-box-label">Pass Yds</div><div class="stat-box-val" style="color:var(--qb)" id="sb-py">${Math.round(qb.passing_yards).toLocaleString()}</div></div>
       <div class="stat-box"><div class="stat-box-label">Pass TDs</div><div class="stat-box-val" style="color:var(--qb)" id="sb-ptd">${Math.round(qb.passing_tds)}</div></div>
@@ -2648,13 +2680,42 @@ function renderPassing(team,state){
       <div class="stat-box"><div class="stat-box-label">Attempts</div><div class="stat-box-val" id="sb-att">${Math.round(qb.passing_attempts)}</div></div>
     </div></div>`;
 }
-function qbTotalsText(state){
+function qbDerivedHtml(qb, team){
+  const cp=qb.passing_attempts>0?(qb.passing_completions/qb.passing_attempts*100).toFixed(1):'0';
+  const ypa=qb.passing_attempts>0?(qb.passing_yards/qb.passing_attempts).toFixed(2):'-';
+  const ytd=qb.passing_tds>0?Math.round(qb.passing_yards/qb.passing_tds):'-';
+  const ypg=perGame(qb,'passing_yards').toFixed(1);
+  const noteTeam=String((qb&&qb.team)||team||currentTeam||'').toUpperCase();
+  const notePlayer=noteTargetFromArgs((qb&&((qb.player_id)||qb.name))||'', 'QB', noteTeam);
+  const ctx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} QB derived`
+    : `${activeSeason} QB derived`;
+  return `Comp%: ${noteWrapHtml(escHtml(cp+'%'), { label:'Completion Percentage', value:cp+'%', source:'projection_builder_qb_derived', statKey:'completion_pct', context:ctx, player:notePlayer, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · YPA: ${noteWrapHtml(escHtml(String(ypa)), { label:'Yards Per Attempt', value:String(ypa), source:'projection_builder_qb_derived', statKey:'yards_per_attempt', context:ctx, player:notePlayer, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · Yds/TD: ${noteWrapHtml(escHtml(String(ytd)), { label:'Yards Per Passing TD', value:String(ytd), source:'projection_builder_qb_derived', statKey:'yards_per_td', context:ctx, player:notePlayer, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · per game: ${noteWrapHtml(escHtml(ypg+' yds'), { label:'Passing Yards Per Game', value:ypg+' yds', source:'projection_builder_qb_derived', statKey:'pass_yds_per_game', context:ctx, player:notePlayer, team:noteTeam, relevance:'QB' }, 'note-tag-hit')}`;
+}
+
+function qbWorkloadNoteHtml(teamGames, overBudget, team){
+  const noteTeam=String(team||currentTeam||'').toUpperCase();
+  const ctx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} QB workload`
+    : `${activeSeason} QB workload`;
+  const shown=`${teamGames.toFixed(0)} of ${SEASON_GAMES}`;
+  const tagged=noteWrapHtml(escHtml(shown), { label:'Team QB Games', value:shown, source:'projection_builder_qb_workload', statKey:'team_qb_games', context:ctx, team:noteTeam, relevance:'QB' }, 'note-tag-hit');
+  return `Team QB-games: ${tagged}${overBudget?' ⚠️ over a full season — combined QB workload exceeds 17 games':''}`;
+}
+
+function qbTotalsText(state, opts){
   const qbs = state.qbs.filter(q=> (q.games||0) > 0);
   const y=qbs.reduce((s,q)=>s+q.passing_yards,0);
   const t=qbs.reduce((s,q)=>s+q.passing_tds,0);
   const a=qbs.reduce((s,q)=>s+q.passing_attempts,0);
   const i=qbs.reduce((s,q)=>s+q.interceptions_thrown,0);
-  return `All QBs combined: ${Math.round(y).toLocaleString()} yds · ${Math.round(t)} TDs · ${Math.round(a)} att · ${Math.round(i)} INTs`;
+  const base=`All QBs combined: ${Math.round(y).toLocaleString()} yds · ${Math.round(t)} TDs · ${Math.round(a)} att · ${Math.round(i)} INTs`;
+  if(!opts || !opts.asHtml) return base;
+  const noteTeam=String((opts&&opts.team)||currentTeam||'').toUpperCase();
+  const ctx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} QB totals`
+    : `${activeSeason} QB totals`;
+  return `All QBs combined: ${noteWrapHtml(escHtml(Math.round(y).toLocaleString()+' yds'), { label:'Combined Passing Yards', value:Math.round(y).toLocaleString()+' yds', source:'projection_builder_qb_totals', statKey:'combined_pass_yards', context:ctx, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · ${noteWrapHtml(escHtml(Math.round(t)+' TDs'), { label:'Combined Passing TDs', value:Math.round(t)+' TDs', source:'projection_builder_qb_totals', statKey:'combined_pass_tds', context:ctx, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · ${noteWrapHtml(escHtml(Math.round(a)+' att'), { label:'Combined Pass Attempts', value:Math.round(a)+' att', source:'projection_builder_qb_totals', statKey:'combined_pass_attempts', context:ctx, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · ${noteWrapHtml(escHtml(Math.round(i)+' INTs'), { label:'Combined Interceptions', value:Math.round(i)+' INTs', source:'projection_builder_qb_totals', statKey:'combined_interceptions', context:ctx, team:noteTeam, relevance:'QB' }, 'note-tag-hit')}`;
 }
 function setActiveQB(idx){userProj[currentTeam].activeQB=idx;saveSession();renderContent();}
 
@@ -2881,8 +2942,28 @@ function renderPassDerived(team,state,subTabs,metric){
     ${banner}
     <div class="pie-section">
       <div class="pie-wrap"><canvas id="derivedPieChart" width="150" height="150"></canvas>
-        <div class="pie-sub" id="derivedSub">${Math.round(qbPool).toLocaleString()} ${isYds?'yds':'rec'}</div></div>
+        <div class="pie-sub" id="derivedSub">${passDerivedSubHtml(state, metric, team)}</div></div>
       <div class="pie-controls" id="shareControls">${rows}</div></div></div>`;
+}
+
+function passPieSubHtml(state,totalTgts,team){
+  const noteTeam=String(team||currentTeam||'').toUpperCase();
+  const shown=String(totalTgts)+' targets';
+  const ctx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} target pool`
+    : `${activeSeason} target pool`;
+  return `${noteWrapHtml(escHtml(shown), { label:'Team Target Pool', value:shown, source:'projection_builder_receiving', statKey:'target_pool', context:ctx, team:noteTeam, relevance:'WR,TE,RB' }, 'note-tag-hit')}`;
+}
+
+function passDerivedSubHtml(state,metric,team){
+  const isYds=metric==='recyds';
+  const pool=isYds?teamRecYardsPool(state):teamRecPool(state);
+  const noteTeam=String(team||currentTeam||'').toUpperCase();
+  const shown=isYds?`${Math.round(pool).toLocaleString()} yds`:`${Math.round(pool)} rec`;
+  const ctx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} receiving pool`
+    : `${activeSeason} receiving pool`;
+  return `${noteWrapHtml(escHtml(shown), { label:isYds?'Team Receiving Yards Pool':'Team Receptions Pool', value:shown, source:'projection_builder_receiving', statKey:isYds?'receiving_yards_pool':'receptions_pool', context:ctx, team:noteTeam, relevance:'WR,TE,RB' }, 'note-tag-hit')}`;
 }
 
 // Distribute (or trim) the gap between the QBs' projected output and the receivers' sum,
@@ -2982,7 +3063,7 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
       Drag a share to 100% and others rebalance. Or edit <b>Tgts</b>/<b>Rec</b> directly — shares recompute.</div></div>
     <div class="pie-section">
       <div class="pie-wrap"><canvas id="pieChart" width="150" height="150"></canvas>
-        <div class="pie-sub" id="pieSub">${totalTgts} targets</div></div>
+        <div class="pie-sub" id="pieSub">${passPieSubHtml(state,totalTgts,team)}</div></div>
       <div class="pie-controls" id="shareControls">${rows}</div></div></div>`;
 }
 
@@ -3096,12 +3177,12 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
       changing the team total scales every RB's efficiency proportionally.</div></div>
     ${sRow('rush_total_att','RB Carries (excl QB)',r.total_attempts,baseAtt,0,600,5,'var(--rb)')}
     ${sRow('rush_total_yds','Total RB Rush Yards',r.total_yards,baseYds,0,3500,25,'var(--rb)')}
-    <div class="derived-note" id="rushDerived">${rushNote(state)}</div></div>
+    <div class="derived-note" id="rushDerived">${rushNote(state,{asHtml:true,team})}</div></div>
   <div class="card"><div class="card-title">RB Carry Share</div>${subTabs}
     ${vacatedRushNote(team)}
     <div class="pie-section">
       <div class="pie-wrap"><canvas id="rushPieChart" width="150" height="150"></canvas>
-        <div class="pie-sub" id="rushTotalLbl">${r.total_attempts} att / ${(r.total_yards||0).toLocaleString()} yds</div></div>
+        <div class="pie-sub" id="rushTotalLbl">${rushTotalLabelHtml(state,team)}</div></div>
       <div class="pie-controls" id="rushShareControls">${rows}</div></div></div>`;
 }
 
@@ -3142,11 +3223,28 @@ function renderRushTDs(team,state,subTabs){
         <div class="pie-sub" id="rushTDLbl">${totalTDs.toFixed(0)} rush TDs</div></div>
       <div class="pie-controls" id="rushShareControls">${rows}</div></div></div>`;
 }
-function rushNote(state){
+function rushNote(state, opts){
   const r=state.rushing;
   const qbRushAtt=state.qbs.reduce((s,q)=>s+q.qb_rush_attempts,0);
   const totalIncQB=(r.total_attempts||0)+qbRushAtt;
-  return `RB carries: ${r.total_attempts} · team YPA: ${(r.ypa||0).toFixed(2)} · RB yards: ${(r.total_yards||0).toLocaleString()} · incl QB: ~${totalIncQB} carries`;
+  const plain=`RB carries: ${r.total_attempts} · team YPA: ${(r.ypa||0).toFixed(2)} · RB yards: ${(r.total_yards||0).toLocaleString()} · incl QB: ~${totalIncQB} carries`;
+  if(!opts || !opts.asHtml) return plain;
+  const noteTeam=String((opts&&opts.team)||currentTeam||'').toUpperCase();
+  const ctx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} rushing derived`
+    : `${activeSeason} rushing derived`;
+  return `RB carries: ${noteWrapHtml(escHtml(String(r.total_attempts)), { label:'RB Carries', value:String(r.total_attempts), source:'projection_builder_rushing', statKey:'rb_carries', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')} · team YPA: ${noteWrapHtml(escHtml((r.ypa||0).toFixed(2)), { label:'Team RB Yards Per Carry', value:(r.ypa||0).toFixed(2), source:'projection_builder_rushing', statKey:'team_rb_ypa', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')} · RB yards: ${noteWrapHtml(escHtml((r.total_yards||0).toLocaleString()), { label:'Team RB Rushing Yards', value:(r.total_yards||0).toLocaleString(), source:'projection_builder_rushing', statKey:'team_rb_yards', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')} · incl QB: ${noteWrapHtml(escHtml('~'+String(totalIncQB)+' carries'), { label:'Team Carries Including QB', value:'~'+String(totalIncQB)+' carries', source:'projection_builder_rushing', statKey:'team_carries_incl_qb', context:ctx, team:noteTeam, relevance:'QB,RB' }, 'note-tag-hit')}`;
+}
+
+function rushTotalLabelHtml(state, team){
+  const r=state.rushing;
+  const noteTeam=String(team||currentTeam||'').toUpperCase();
+  const ctx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} rushing totals`
+    : `${activeSeason} rushing totals`;
+  const attShown=String(r.total_attempts||0)+' att';
+  const ydsShown=(r.total_yards||0).toLocaleString()+' yds';
+  return `${noteWrapHtml(escHtml(attShown), { label:'Team RB Carries', value:attShown, source:'projection_builder_rushing', statKey:'team_rb_carries', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')} / ${noteWrapHtml(escHtml(ydsShown), { label:'Team RB Rushing Yards', value:ydsShown, source:'projection_builder_rushing', statKey:'team_rb_total_yards', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')}`;
 }
 
 // Rushing counterpart of vacatedProduction: carries/rush-yards/rush-TDs left behind by
@@ -3415,8 +3513,8 @@ function editCarries(i,raw){
   liveRushRows(state,currentTeam);
   // update the team total label/derived
   const lbl=document.getElementById('rushTotalLbl');
-  if(lbl) lbl.textContent=`${state.rushing.total_attempts} att / ${(state.rushing.total_yards||0).toLocaleString()} yds`;
-  const d=document.getElementById('rushDerived'); if(d) d.textContent=rushNote(state);
+  if(lbl) lbl.innerHTML=rushTotalLabelHtml(state,currentTeam);
+  const d=document.getElementById('rushDerived'); if(d) d.innerHTML=rushNote(state,{asHtml:true,team:currentTeam});
 }
 function editYpc(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
@@ -3426,8 +3524,8 @@ function editYpc(i,raw){
   recomputeTeamRushYards(state);
   liveRushRows(state,currentTeam);
   const lbl=document.getElementById('rushTotalLbl');
-  if(lbl) lbl.textContent=`${state.rushing.total_attempts} att / ${(state.rushing.total_yards||0).toLocaleString()} yds`;
-  const d=document.getElementById('rushDerived'); if(d) d.textContent=rushNote(state);
+  if(lbl) lbl.innerHTML=rushTotalLabelHtml(state,currentTeam);
+  const d=document.getElementById('rushDerived'); if(d) d.innerHTML=rushNote(state,{asHtml:true,team:currentTeam});
   syncRushYdsSlider(state);
 }
 // Edit a player's absolute rushing yards → back out Y/Carry so att×ypc = entered, feeds team total
@@ -3441,8 +3539,8 @@ function editRushYds(i,raw){
   recomputeTeamRushYards(state);
   liveRushRows(state,currentTeam);
   const lbl=document.getElementById('rushTotalLbl');
-  if(lbl) lbl.textContent=`${r.total_attempts} att / ${(r.total_yards||0).toLocaleString()} yds`;
-  const d=document.getElementById('rushDerived'); if(d) d.textContent=rushNote(state);
+  if(lbl) lbl.innerHTML=rushTotalLabelHtml(state,currentTeam);
+  const d=document.getElementById('rushDerived'); if(d) d.innerHTML=rushNote(state,{asHtml:true,team:currentTeam});
   syncRushYdsSlider(state);
 }
 // Edit a player's absolute rushing TDs from the carry view → grows/shrinks team rush-TD total
@@ -3575,7 +3673,7 @@ function liveDerivedRows(state,team,metric){
   });
   if(pieChart) updatePie(shares.map(p=>p[field]||0));
   const sub=document.getElementById('derivedSub');
-  if(sub) sub.textContent=isYds?Math.round(pool).toLocaleString()+' yds':Math.round(pool)+' rec';
+  if(sub) sub.innerHTML=passDerivedSubHtml(state,metric,team);
 }
 // Edit a player's absolute receiving TDs (from the Targets view) → set td_share of team passing TDs
 function editRecTDs(i,raw){
@@ -3625,10 +3723,7 @@ function editRushTDsAbs(i,raw){
 // ─────────────────────────────────────────────────────────────────────────────
 function liveQB(state,idx,team,changedKey){
   const q=state.qbs[idx];
-  const cp=q.passing_attempts>0?(q.passing_completions/q.passing_attempts*100).toFixed(1):'0';
-  const ypa=q.passing_attempts>0?(q.passing_yards/q.passing_attempts).toFixed(2):'-';
-  const ytd=q.passing_tds>0?Math.round(q.passing_yards/q.passing_tds):'-';
-  const d=document.getElementById('qbDerived'); if(d) d.textContent=`Comp%: ${cp}% · YPA: ${ypa} · Yds/TD: ${ytd} · per game: ${perGame(q,'passing_yards').toFixed(1)} yds`;
+  const d=document.getElementById('qbDerived'); if(d) d.innerHTML=qbDerivedHtml(q,team);
   const m={'sb-py':Math.round(q.passing_yards).toLocaleString(),'sb-ptd':Math.round(q.passing_tds),'sb-int':Math.round(q.interceptions_thrown),
     'sb-ry':Math.round(q.qb_rush_yards),'sb-rtd':Math.round(q.qb_rush_tds),'sb-att':Math.round(q.passing_attempts)};
   Object.entries(m).forEach(([id,v])=>{const e=document.getElementById(id);if(e)e.textContent=v;});
@@ -3637,7 +3732,7 @@ function liveQB(state,idx,team,changedKey){
     pcomp:seed.passing_completions||360,int:seed.interceptions_thrown||10,
     qbry:seed.rushing_yards||0,qbrtd:seed.rushing_tds||0,qbratt:seed.rushing_attempts||0};
   if(changedKey){const sd=document.getElementById(`sd-${changedKey}`);if(sd)sd.innerHTML=mkDelta(state.qbs[idx][({py:'passing_yards',ptd:'passing_tds',patt:'passing_attempts',pcomp:'passing_completions',int:'interceptions_thrown',qbry:'qb_rush_yards',qbrtd:'qb_rush_tds',qbratt:'qb_rush_attempts'})[changedKey]],bases[changedKey]||0,changedKey==='int');}
-  const tot=document.getElementById('qbTeamTotals'); if(tot) tot.textContent=qbTotalsText(state);
+  const tot=document.getElementById('qbTeamTotals'); if(tot) tot.innerHTML=qbTotalsText(state,{asHtml:true,team});
 }
 
 // Update the workload card text (per-QB sub line, team-games budget, the active QB's
@@ -3655,7 +3750,7 @@ function updateWorkloadUI(state,qi,team){
   const note=document.getElementById('qbWorkloadNote');
   if(note){
     note.style.color = over?'var(--warn)':'';
-    note.textContent=`Team QB-games: ${teamGames.toFixed(0)} of ${SEASON_GAMES}`+(over?' ⚠️ over a full season — combined QB workload exceeds 17 games':'');
+    note.innerHTML=qbWorkloadNoteHtml(teamGames, over, team);
   }
 }
 
@@ -3698,7 +3793,7 @@ function livePassTargets(state,team){
     const sl=document.querySelector(`input.sl[data-key="ps_${i}"]`);
     if(sl){sl.value=pct;setFill(sl,PCOLORS[i%PCOLORS.length]);}
   });
-  const sub=document.getElementById('pieSub'); if(sub) sub.textContent=`${totalTgts} targets`;
+  const sub=document.getElementById('pieSub'); if(sub) sub.innerHTML=passPieSubHtml(state,totalTgts,team);
   reorderShareBlocks('shareControls','pblk-',state.passing_shares,'share');
 }
 
@@ -3731,9 +3826,9 @@ function liveTDRows(pctId,volId,shares,totalTDs,keyPrefix,editable){
 }
 
 function liveRush(state,team){
-  const d=document.getElementById('rushDerived'); if(d) d.textContent=rushNote(state);
+  const d=document.getElementById('rushDerived'); if(d) d.innerHTML=rushNote(state,{asHtml:true,team});
   const lbl=document.getElementById('rushTotalLbl');
-  if(lbl) lbl.textContent=`${state.rushing.total_attempts} att / ${(state.rushing.total_yards||0).toLocaleString()} yds`;
+  if(lbl) lbl.innerHTML=rushTotalLabelHtml(state,team);
   liveRushRows(state,team);
 }
 
@@ -3752,7 +3847,7 @@ function liveRushRows(state,team){
     if(sl){sl.value=pct;setFill(sl,PCOLORS[i%PCOLORS.length]);}
   });
   const lbl=document.getElementById('rushTotalLbl');
-  if(lbl) lbl.textContent=`${r.total_attempts} att / ${(r.total_yards||0).toLocaleString()} yds`;
+  if(lbl) lbl.innerHTML=rushTotalLabelHtml(state,team);
   if(rushingSubTab==='carries') updatePie(r.shares.map(p=>p.share));
   reorderShareBlocks('rushShareControls','rblk-',r.shares,'share');
   // keep the team total-yards slider in sync (carries/ypc edits change the sum)
@@ -5236,7 +5331,7 @@ function _routeHeat(ratio){
 }
 
 // The SVG route tree for one season's distribution.
-function routeTreeSVG(rt, metric){
+function routeTreeSVG(rt, metric, notePlayer){
   metric=ROUTE_TREE_METRICS[metric]?metric:'td';
   const W=360, H=440, cx=180, losY=340, sx=15, sy=20;
   const PX = x => +(cx + x*sx).toFixed(1);
@@ -5297,6 +5392,19 @@ function routeTreeSVG(rt, metric){
     const trim=Math.min(aLen, segLen*0.55);
     const linePts=it.pts.slice();
     linePts[linePts.length-1]=[+(ex-ca*trim).toFixed(2), +(ey-sa*trim).toFixed(2)];
+    const metricTag = metricKnown ? _fmtRouteMetricValue(it.metricV, metric) : '—';
+    const noteValue = `${it.sh.label} · ${it.pct.toFixed(1)}% · ${it.n} routes${metricKnown?` · ${metricTag}`:''}`;
+    const attrs = noteTagAttrs({
+      label:`${it.sh.label} route tendency`,
+      value:noteValue,
+      source:'route_tree',
+      statKey:metric,
+      context:`${pcardRouteSeason} route tree`,
+      player:notePlayer,
+      team:notePlayer&&notePlayer.team,
+      relevance:'WR,TE,RB,QB',
+    });
+    paths+=`<g${attrs}>`;
     paths+=`<polyline points="${linePts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${it.col}" stroke-width="${it.w}" stroke-linejoin="round" stroke-linecap="round" opacity="0.95"/>`;
     // Base sits at the (trimmed) line end; the tip reaches the route's true endpoint, so the
     // arrow still terminates exactly where the route does.
@@ -5305,6 +5413,7 @@ function routeTreeSVG(rt, metric){
     const b1=[baseX+Math.cos(a+Math.PI/2)*aW, baseY+Math.sin(a+Math.PI/2)*aW];
     const b2=[baseX+Math.cos(a-Math.PI/2)*aW, baseY+Math.sin(a-Math.PI/2)*aW];
     paths+=`<polygon points="${tip[0].toFixed(1)},${tip[1].toFixed(1)} ${b1[0].toFixed(1)},${b1[1].toFixed(1)} ${b2[0].toFixed(1)},${b2[1].toFixed(1)}" fill="${it.col}" stroke="${it.col}" stroke-width="0.6" stroke-linejoin="round"/>`;
+    paths+=`</g>`;
   }
   // Label placement with a vertical de-collision pass per side (left / right / centre), so the
   // lower clusters (Slant/Angle/Drag …) don't stack on top of each other. A thin leader line is
@@ -5419,7 +5528,7 @@ function renderPcardRoutes(pid){
         <div class="rt-metrics">${metricBtns}</div>
         <div class="rt-summary">${noteWrapHtml(`${rt.total} routes charted`, { label:'Routes Charted', value:String(rt.total), source:'route_tree', statKey:'routes', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')} · ${metricKnown?noteWrapHtml(metricSummary, { label:metricCfg.label, value:_fmtRouteMetricValue(metricTotal, pcardRouteMetric), source:'route_tree', statKey:pcardRouteMetric, context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit'):metricSummary} · most-run <b>${noteWrapHtml(escHtml(topLabel), { label:'Most-run route', value:topLabel, source:'route_tree', statKey:'top_route', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')}</b></div>
       </div>
-      ${routeTreeSVG(rt, pcardRouteMetric)}
+      ${routeTreeSVG(rt, pcardRouteMetric, notePlayer)}
       ${routeTreeList(rt, pcardRouteMetric)}
       <div class="pcard-src">Route types via nflverse participation charting (route run when targeted, ${pcardRouteSeason} regular season).</div>
     </div>`;
@@ -5519,7 +5628,27 @@ function _qbNum(v, dp=1){
   return Number(v).toFixed(dp);
 }
 
-function _qbPassingSVG(chart, playerName, season, metric){
+function _qbZoneTagAttrs(meta){
+  const attrs=[];
+  const put=(k,v)=>{ if(v!=null && v!=='') attrs.push(`${k}="${escAttr(String(v))}"`); };
+  put('data-noteable','1');
+  put('data-note-label', meta.label || 'Passing zone');
+  put('data-note-value', meta.value || '');
+  put('data-note-source','qb_passing_chart');
+  put('data-note-stat-key', meta.statKey || 'zone');
+  put('data-note-context', meta.context || '');
+  put('data-note-team', meta.team || '');
+  put('data-note-relevance','QB,WR,TE,RB');
+  if(meta.player){
+    put('data-note-player-id', meta.player.player_id || '');
+    put('data-note-player-name', meta.player.name || '');
+    put('data-note-player-pos', meta.player.pos || 'QB');
+    put('data-note-player-team', meta.player.team || meta.team || '');
+  }
+  return attrs.join(' ');
+}
+
+function _qbPassingSVG(chart, playerName, season, metric, notePlayer){
   const zones = chart.zones || {};
   const MET = QB_ZONE_METRICS[metric] || QB_ZONE_METRICS.rating;
   // Peak zone value drives the heat scale for volume metrics.
@@ -5560,14 +5689,25 @@ function _qbPassingSVG(chart, playerName, season, metric){
       const pts=`${(tl+gap).toFixed(0)},${y0+gap} ${(tr-gap).toFixed(0)},${y0+gap} ${(br-gap).toFixed(0)},${y1-gap} ${(bl+gap).toFixed(0)},${y1-gap}`;
       // Rating keeps the diverging vs-league scale; volume metrics use the sequential heat.
       const fill = (MET.key==='rating') ? _qbCellColor(rating, lg) : _qbHeat(mv, MAXV);
-      parts.push(`<polygon points="${pts}" fill="${fill}" stroke="#0c0d0f" stroke-width="2"/>`);
+      const zoneName = `${depth} ${loc}`;
+      const subTxt = MET.sub==='lg' ? `LEAGUE AVG: ${_qbNum(lg,1)}`
+        : (MET.sub==='ypa' && att ? `${(mv!=null? mv/att : 0).toFixed(1)} yds/att` : '');
+      const noteVal = `${MET.short} ${_qbNum(mv, MET.digits)}${subTxt?` · ${subTxt}`:''} · ${att} att`;
+      const tagAttrs = _qbZoneTagAttrs({
+        label:`${MET.short} (${zoneName})`,
+        value:noteVal,
+        statKey:`zone_${MET.key||'rating'}`,
+        context:`${season} passing chart · ${zoneName}`,
+        team:(notePlayer&&notePlayer.team)||chart.team||'',
+        player:notePlayer,
+      });
+      parts.push(`<g ${tagAttrs}><polygon points="${pts}" fill="${fill}" stroke="#0c0d0f" stroke-width="2"/>`);
       parts.push(`<text x="${cx.toFixed(0)}" y="${(cy-4).toFixed(0)}" fill="#fff" font-size="26" font-weight="800" text-anchor="middle">${_qbNum(mv, MET.digits)}</text>`);
       // Second line depends on the metric: the league baseline for rating, yards-per-attempt
       // for yards (context a raw total can't give), nothing for TDs.
-      const subTxt = MET.sub==='lg' ? `LEAGUE AVG: ${_qbNum(lg,1)}`
-        : (MET.sub==='ypa' && att ? `${(mv!=null? mv/att : 0).toFixed(1)} yds/att` : '');
       if(subTxt) parts.push(`<text x="${cx.toFixed(0)}" y="${(cy+14).toFixed(0)}" fill="#0d1b10" font-size="10.5" font-weight="800" text-anchor="middle">${subTxt}</text>`);
       parts.push(`<text x="${cx.toFixed(0)}" y="${(cy+(subTxt?29:16)).toFixed(0)}" fill="#141517" font-size="10" font-weight="800" opacity="0.75" text-anchor="middle">${att} att</text>`);
+      parts.push(`</g>`);
     }
   }
 
@@ -5616,7 +5756,7 @@ function renderPcardQbPassing(pid){
       <div class="rt-metrics">${metricBtns}</div>
       <div class="rt-summary">${noteWrapHtml(`${t.attempts||0} located attempts`, { label:'Located Attempts', value:String(t.attempts||0), source:'qb_passing_chart', statKey:'attempts', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · threshold ±${QB_PASS_THRESH.toFixed(0)} vs league avg</div>
     </div>
-    ${_qbPassingSVG(chart, name, season, metric)}
+    ${_qbPassingSVG(chart, name, season, metric, notePlayer)}
     ${metric==='rating' ? `<div class="qpc-legend">
       <span><i style="background:#2fae4e"></i>Better than average</span>
       <span><i style="background:#d8a51d"></i>Within average</span>
@@ -6137,7 +6277,7 @@ function _rbHeat(v, max){
   return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
 
-function _rbFanSVG(chart, playerName, season, metric){
+function _rbFanSVG(chart, playerName, season, metric, notePlayer){
   const lanes=chart.lanes||{};
   const line=_rbRosterLine(season, _rbTeamCode(chart.team||''), chart.line||{});
   const t=chart.totals||{};
@@ -6168,12 +6308,25 @@ function _rbFanSVG(chart, playerName, season, metric){
     const path = lane==='MID'
       ? 'M380,650 V150'
       : `M380,650 C${(380-(380-cx)*0.55).toFixed(0)},700 ${cx},585 ${cx},150`;
-    parts.push(`<path d="${path}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" marker-end="url(#rbf-arrow)"/>`);
+    const laneValue = MET.key==='yards' ? `${mv!=null?Math.round(mv):'—'} yds`
+      : (MET.key==='td' ? `${mv!=null?Math.round(mv):0} TD` : `${_rbNum(succ,0)}% success`);
+    const laneTag = noteTagAttrs({
+      label:`${lane} lane ${MET.short}`,
+      value:`${laneValue} · ${att} att · ${_rbNum(ypc,1)} YPC`,
+      source:'rb_rushing_fan',
+      statKey:`lane_${MET.key||'eff'}`,
+      context:`${season} rushing fan · ${lane} lane`,
+      player:notePlayer,
+      team:(notePlayer&&notePlayer.team)||chart.team||'',
+      relevance:'RB,QB',
+    });
+    parts.push(`<g${laneTag}><path d="${path}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" marker-end="url(#rbf-arrow)"/>`);
     parts.push(`<text x="${cx}" y="106" fill="#fff" font-size="13" font-weight="800" text-anchor="middle">${lane}</text>`);
     const headline = MET.key==='yards' ? `${mv!=null?Math.round(mv):'—'} YDS`
       : (MET.key==='td' ? `${mv!=null?Math.round(mv):0} TD` : `${_rbNum(succ,0)}% SUCC`);
     parts.push(`<text x="${cx}" y="122" fill="${col}" font-size="12" font-weight="800" text-anchor="middle">${headline}</text>`);
     parts.push(`<text x="${cx}" y="137" fill="#9aa0a6" font-size="10" text-anchor="middle">${att} att · ${_rbNum(ypc,1)} YPC</text>`);
+    parts.push(`</g>`);
   }
 
   parts.push('<defs><marker id="rbf-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></marker><clipPath id="rbf-hs-LT"><circle cx="160" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-LG"><circle cx="270" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-C"><circle cx="380" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-RG"><circle cx="490" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-RT"><circle cx="600" cy="506" r="19"/></clipPath></defs>');
@@ -6257,7 +6410,7 @@ function renderPcardRbFan(pid){
     </div>
     ${runSc.score!=null || runSc.rank!=null ? `<div class="olc-overview">${noteWrapHtml(`<b>Cumulative Run Blocking Score: ${runSc.score!=null?runSc.score.toFixed(1):'—'}</b> ${_rbRankBadge(runSc.rank)}`, { label:'Cumulative Run Blocking Score', value:runSc.score!=null?runSc.score.toFixed(1):'—', source:'rb_offensive_line', statKey:'run_blocking_score', context:`${chart.team||notePlayer.team} offensive line · ${(_rbIsProjSeason(season) && chart.is_projection)?`${season} projections`:`${season}`}`, team:chart.team||notePlayer.team, relevance:'RB' }, 'note-tag-hit')}</div>` : ''}
     ${chart.is_projection?`<div class="olc-overview"><b>${RB_PROJ_SEASON} Projection:</b> projected depth-chart starters' run grades drive the line cards and cumulative run score. Lane arrows preserve the back's latest directional profile and scale it to projected efficiency/volume.</div>`:''}
-    ${_rbFanSVG(chart, name, season, metric)}
+    ${_rbFanSVG(chart, name, season, metric, notePlayer)}
     <div class="rbf-legend">
       <span><i style="background:#2fae4e"></i>Lane YPC above league avg</span>
       <span><i style="background:#d8a51d"></i>Lane YPC near league avg</span>
@@ -8325,7 +8478,7 @@ function renderDepthChartFallback(team){
 }
 // Readable source lives in src/templates/coaching-template.html; build.py inlines it here
 // as a JSON string so the shipped index.html remains a single self-contained file.
-const SCHEME_TEMPLATE_INLINE = "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><title>Formation Playsheet</title>\n<style>\n  :root{--paper:#f4efe2;--ink:#1a1a17;--rule:#c9c1ab;--hl-yel:#f5e04b;--hl-grn:#8fd06a;--hl-pnk:#f7a8c4;--red:#a8321f;}\n  *{box-sizing:border-box;}\n  body{margin:0;background:#2a2723;font-family:\"Courier New\",monospace;padding:14px;color:var(--ink);}\n  .sheet{max-width:1040px;margin:0 auto;background:var(--paper);border:2px solid #000;box-shadow:0 8px 40px rgba(0,0,0,.6);}\n  .hdr{background:var(--ink);color:var(--paper);padding:10px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}\n  .hdr h1{font-size:18px;margin:0;letter-spacing:1px;text-transform:uppercase;}\n  .hdr .wk{font-size:12px;color:#c9c1ab;}\n  .controls{display:flex;flex-wrap:wrap;gap:10px;padding:10px 16px;background:#e8e1d0;border-bottom:2px solid #000;align-items:flex-end;}\n  .ctrl{display:flex;flex-direction:column;gap:3px;}\n  .ctrl label{font-size:9px;text-transform:uppercase;letter-spacing:1px;font-weight:bold;color:#5a5545;}\n  select{font-family:\"Courier New\",monospace;background:var(--paper);border:1.5px solid #000;padding:5px 8px;font-size:13px;font-weight:bold;cursor:pointer;}\n  .banner{background:var(--red);color:#fff;text-align:center;font-weight:bold;font-size:13px;padding:4px;letter-spacing:2px;text-transform:uppercase;}\n  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));}\n  .card{border:1px solid #000;border-top:none;border-left:none;padding:8px 12px 12px;position:relative;}\n  .rank{position:absolute;top:6px;left:8px;font-size:10px;font-weight:bold;color:#8a8470;}\n  .plabel{text-align:center;font-weight:bold;font-size:14px;letter-spacing:1px;border-bottom:1.5px solid #000;padding-bottom:3px;margin-bottom:2px;}\n  .plabel .pers{background:var(--hl-yel);padding:1px 6px;}\n  .plabel .fname{font-size:11px;color:#5a5545;}\n  .subttl{text-align:center;font-size:10px;color:#5a5545;margin-bottom:4px;}\n.prod{font-family:'Courier New',monospace;font-size:9.5px;font-weight:700;letter-spacing:.02em;\n  margin:2px 0 4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}\n.prod-pass{color:#4f83cc;}\n.prod-run{color:#4a7f2c;}\n.prod-sep{color:#b9b295;}\n  svg{display:block;margin:0 auto;}\n  .stats{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;margin-top:6px;font-size:12px;}\n  .stat{display:flex;justify-content:space-between;border-bottom:1px dotted var(--rule);}\n  .rp{height:20px;background:#ddd6c4;border:1px solid #000;position:relative;margin-top:8px;overflow:hidden;font-size:10px;display:flex;cursor:pointer;}\n  .rp .run,.rp .pass{position:relative;display:flex;align-items:center;height:100%;transition:filter .1s;}\n  .rp .run{background:var(--hl-grn);justify-content:flex-start;padding-left:5px;}\n  .rp .pass{background:#4f83cc;color:#fff;justify-content:flex-end;padding-right:5px;}\n  .rp .run:hover,.rp .pass:hover{filter:brightness(1.12);}\n  .rp .seg.active{outline:2px solid #1a1a17;outline-offset:-2px;}\n  .rp b{font-weight:bold;}\n  .hintbar{text-align:center;font-size:9px;color:#8a8470;margin-top:2px;}\n  .nt{display:inline;}\n  .dia{margin-top:8px;border-top:2px dashed var(--rule);padding-top:6px;display:none;}\n  .dia.show{display:block;}\n  .diahead{font-size:10px;font-weight:bold;text-transform:uppercase;text-align:center;margin-bottom:3px;}\n  .empty{padding:30px;text-align:center;color:#8a8470;font-size:13px;grid-column:1/-1;}\n  .foot{padding:8px 16px;font-size:9px;color:#6a6455;border-top:2px solid #000;line-height:1.5;}\n  .hint{text-align:center;font-size:10px;color:#8a8470;padding:6px;background:#ece5d3;border-bottom:1px solid #000;}\n  .hl-p{background:var(--hl-pnk);} .hl-g{background:var(--hl-grn);}\n</style></head>\n<body><div class=\"sheet\">\n  <div class=\"hdr\"><h1>Detroit Lions &mdash; Playbook</h1><span class=\"wk\">2025 \u00b7 Routes mapped to players</span></div>\n  <div class=\"controls\">\n    <div class=\"ctrl\"><label>Down</label><select id=\"down\"><option value=\"all\">All downs</option><option value=\"1\">1st</option><option value=\"2\">2nd</option><option value=\"3\">3rd</option><option value=\"4\">4th</option></select></div>\n    <div class=\"ctrl\"><label>Distance to sticks</label><select id=\"dist\"><option value=\"all\">Any</option><option value=\"short\">Short (1-3)</option><option value=\"med\">Medium (4-7)</option><option value=\"long\">Long (8+)</option></select></div>\n    <div class=\"ctrl\"><label>Play type</label><select id=\"field\"><option value=\"all\">All plays</option><option value=\"pa\">Play-action</option><option value=\"motion\">Pre-snap motion</option><option value=\"nohuddle\">No-huddle</option><option value=\"redzone\">Red zone</option></select></div>\n    <div class=\"ctrl\"><label>&nbsp;</label><span id=\"ctx\" style=\"font-size:12px;font-weight:bold;padding:5px;\"></span></div>\n  </div>\n  <div class=\"hint\">\u25b8 Click the GREEN part of a formation's bar to see its top-3 run lanes \u00b7 click the BLUE part to see each player's most-common route</div>\n  <div class=\"banner\" id=\"banner\">All Situations</div>\n  <div class=\"grid\" id=\"grid\"></div>\n  <div class=\"foot\">Play diagrams: routes are each skill player's single most-common route WHEN TARGETED out of this formation (season pool, all situations, for stable sample), mapped to players by target rank (WR1=St. Brown, WR2=Williams, etc.); the outermost WR is treated as WR1. Run mode shows the 3 most-used gaps, arrow width = frequency, color = EPA. Alignment is authentic; exact pre-snap WR splits are schematic. Data: nflverse pbp + FTN participation, 2025 REG. Not affiliated with the NFL.</div>\n</div>\n__TC_SCRIPT_OPEN____TC_FV_SCRIPT____TC_SCRIPT_CLOSE__\n__TC_SCRIPT_OPEN__\nfunction nEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }\nconst NOTE_NAV=nEsc(JSON.stringify({type:'coaching',team:TEAM_CODE,season:String(SEASON),tab:'playbook'}));\nfunction noteWrap(label,value,context,relevance,html){\n  return `<span class=\"nt\" data-noteable=\"1\" data-note-label=\"${nEsc(label)}\" data-note-value=\"${nEsc(value)}\" data-note-context=\"${nEsc(context)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"${nEsc(label)}\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"${nEsc(relevance||'QB,RB,WR,TE')}\" data-note-nav=\"${NOTE_NAV}\">${html}</span>`;\n}\nfunction ec(e){ if(e==null)return\"#999\"; let t=Math.max(-0.4,Math.min(0.4,e))/0.4;\n  if(t>=0)return `rgb(${Math.round(216+(47-216)*t)},${Math.round(165+(174-165)*t)},${Math.round(29+(78-29)*t)})`;\n  let a=-t; return `rgb(${Math.round(216+(211-216)*a)},${Math.round(165+(59-165)*a)},${Math.round(29+(47-29)*a)})`; }\n\n// compute skill-player positions on a tall play diagram; returns {ol:[...], skill:[{role,x,y,side,label}]}\n// full 1-9 route tree (fallback when a player has no route data at all)\nconst FULL_TREE=[['FLAT',null],['SLANT',null],['COMEBACK',null],['HITCH/CURL',null],['OUT',null],['IN/DIG',null],['CORNER',null],['POST',null],['GO',null]];\nconst FULL_TREE_RB=[['FLAT',null],['SWING',null],['SCREEN',null],['TEXAS/ANGLE',null],['WHEEL',null],['SLANT',null],['HITCH/CURL',null]];\n\n// alignment variations for a personnel grouping (schematic \u2014 nflverse gives personnel, not splits)\nfunction variantsFor(g){\n  const wr=g.wr, te=g.te; const out=[];\n  const half=Math.ceil(wr/2);\n  const add=(name,o)=>out.push(Object.assign({name:name,wrR:half,wrBunch:null,teR:Math.ceil(te/2),teBunch:false,rbSide:null},o));\n  add('Base '+half+'x'+(wr-half));\n  if(wr>=2){ add('Trips Rt',{wrR:wr,teR:0}); add('Trips Lt',{wrR:0,teR:te}); }\n  if(wr>=3){ add('Bunch Rt',{wrR:wr,wrBunch:'R',triangle:true,teR:0,rbSide:'L'}); add('Bunch Lt',{wrR:0,wrBunch:'L',triangle:true,teR:te,rbSide:'R'}); }\n  if(wr==2){ add('Doubles Rt',{wrR:2,teR:0}); add('Doubles Lt',{wrR:0,teR:te}); }\n  if(wr>=4){ add('4-Strong Rt',{wrR:4,wrBunch:'R',teR:0}); add('3x1 Rt',{wrR:3,teR:0}); }\n  if(te>=2){ add('TE Bunch Rt',{teR:te,teBunch:true,wrR:half}); add('TE Bunch Lt',{teR:0,teBunch:true,wrR:half}); add('TE Split',{teR:1,wrR:half}); }\n  if(te>=3){ add('TE Trips Rt',{teR:3,teBunch:true,wrR:0}); add('TE Trips Lt',{teR:0,teBunch:true,wrR:wr}); }\n  return out;\n}\nfunction positions(g, av){\n  const cx=165, olY=200, gap=22, sq=15;\n  const olX=[cx-2*gap,cx-gap,cx,cx+gap,cx+2*gap];\n  const skill=[]; const al=g.align, backs=g.backs, te=g.te, wr=g.wr;\n  const vars=variantsFor(g); const v=vars[(av||0)%vars.length]||vars[0];\n  let qbY = al=='uc'?olY+16:(al=='pistol'?olY+34:olY+42);\n  skill.push({role:'QB',x:cx,y:qbY,side:'M',label:'QB'});\n  // RB placement (shotgun/pistol can flip to weak side of a bunch)\n  const rbSide = v.rbSide;\n  if(al=='uc'){\n    if(backs>=3){ // full house: FB/lead back tight, two halfbacks split behind\n      skill.push({role:'RB',x:cx,y:qbY+22,side:'M',label:'FB'});\n      skill.push({role:'RB',x:cx-20,y:qbY+40,side:'L',label:'RB'});\n      skill.push({role:'RB',x:cx+20,y:qbY+40,side:'R',label:'RB'}); }\n    else if(backs>=2){skill.push({role:'RB',x:cx,y:qbY+22,side:'M',label:'FB'});skill.push({role:'RB',x:cx,y:qbY+40,side:'M',label:'RB'});}\n    else if(backs==1)skill.push({role:'RB',x:cx,y:qbY+38,side:'M',label:'RB'}); }\n  else if(al=='pistol'){\n    skill.push({role:'RB',x:cx,y:qbY+20,side:'M',label:'RB'});\n    if(backs>=2)skill.push({role:'RB',x:cx-24,y:qbY+14,side:'L',label:'RB'});\n    if(backs>=3)skill.push({role:'RB',x:cx+24,y:qbY+14,side:'R',label:'RB'}); }\n  else { const rx=rbSide=='L'?cx-22:(rbSide=='R'?cx+22:cx+22);\n    if(backs>=1)skill.push({role:'RB',x:rx,y:qbY,side:rx<cx?'L':'R',label:'RB'});\n    if(backs>=2)skill.push({role:'RB',x:cx-22,y:qbY,side:'L',label:'RB'});\n    if(backs>=3)skill.push({role:'RB',x:cx,y:qbY+20,side:'M',label:'RB'}); }  // 3rd back offset behind QB\n  // TEs: teR on right (attached beyond RT), rest left; bunch = tighter cluster to one side\n  const jumboOff = g.ol >= 6 ? 22 : 0;\n  const teRightN=Math.min(v.teR,te), teLeftN=te-teRightN;\n  const rTE=v.teBunch?[olX[4]+20+jumboOff,olX[4]+38+jumboOff,olX[4]+56+jumboOff]:[olX[4]+22+jumboOff,olX[4]+44+jumboOff];\n  const lTE=v.teBunch?[olX[0]-20,olX[0]-38,olX[0]-56]:[olX[0]-22,olX[0]-44];\n  for(let i=0;i<teRightN;i++){ let x=rTE[i]; skill.push({role:'TE',x:x,y:olY,side:'R',label:'TE'}); }\n  for(let i=0;i<teLeftN;i++){ let x=lTE[i]; skill.push({role:'TE',x:x,y:olY,side:'L',label:'TE'}); }\n  // WRs: wrR on right, rest left; bunch clusters them tight. Triangle bunch staggers depth so they don't overlap.\n  const wrRightN=Math.min(v.wrR,wr), wrLeftN=wr-wrRightN;\n  const losWR=olY-4;\n  if(v.triangle && (wrRightN>=3 || wrLeftN>=3)){\n    // two receivers on the LOS, third backed off behind the middle of them (triangle apex at the back)\n    const onR = wrRightN>=3;\n    const losX1 = onR?306:24, losX2 = onR?262:68;   // two on the line (outside + inside)\n    const backX = onR?284:46;                        // point man off the ball, centered behind the two\n    skill.push({role:'WR',x:losX1,y:losWR,side:onR?'R':'L',label:'WR'});      // #1 on line, outside\n    skill.push({role:'WR',x:losX2,y:losWR,side:onR?'R':'L',label:'WR'});      // #2 on line, inside\n    skill.push({role:'WR',x:backX,y:losWR+16,side:onR?'R':'L',label:'WR'});   // #3 off ball, behind the middle\n    // any extra WRs (4+) split to the opposite side\n    const rest = wr-3;\n    const oppWide = onR?[30,58,84]:[300,272,246];\n    for(let i=0;i<rest;i++){ skill.push({role:'WR',x:oppWide[i],y:losWR,side:onR?'L':'R',label:'WR'}); }\n  } else {\n    const rWide=v.wrBunch=='R'?[300,286,272,258]:[300,272,246,224];\n    const lWide=v.wrBunch=='L'?[30,44,58,72]:[30,58,84,106];\n    for(let i=0;i<wrRightN;i++){ let x=rWide[i]; skill.push({role:'WR',x:x,y:losWR,side:'R',label:'WR'}); }\n    for(let i=0;i<wrLeftN;i++){ let x=lWide[i]; skill.push({role:'WR',x:x,y:losWR,side:'L',label:'WR'}); }\n  }\n  return {olX, olY, sq, cx, skill, variantName:v.name, nVariants:vars.length};\n}\n// arrowhead marker id counter to keep unique\nlet _mk=0;\nfunction arrow(color){ const id='a'+(_mk++); return {def:`<marker id=\"${id}\" viewBox=\"0 0 10 10\" refX=\"7\" refY=\"5\" markerWidth=\"5\" markerHeight=\"5\" orient=\"auto-start-reverse\"><path d=\"M1 1L8 5L1 9\" fill=\"none\" stroke=\"${color}\" stroke-width=\"2\"/></marker>`, url:`url(#${id})`}; }\n\n// route path from (x,y); side L/R. Most RB backfield routes stem up to cross the LOS,\n// but SCREEN/SWING/TEXAS release from the backfield without stemming up first.\nfunction routePath(x,y,side,route,losY){\n  const c=(side=='L')?1:-1;\n  const backfieldRelease = (route=='SCREEN'||route=='SWING'||route=='TEXAS/ANGLE'||route=='FLAT'||route=='WHEEL');\n  let sx=x, sy=y, pre=`M${x},${y} `;\n  // RB below the LOS: for downfield routes, stem up to just past the LOS so short breaks are visible.\n  // Backfield-release routes stay put and work out of the backfield.\n  if(y > losY+6 && !backfieldRelease){ const upTo = losY-8; pre=`M${x},${y} L${x},${upTo} `; sx=x; sy=upTo; }\n  const P={\n    'GO':`V${sy-140}`, 'FADE/GO':`V${sy-140}`,'HITCH/CURL':`V${sy-55} l${-6*c},12`,'HITCH':`V${sy-55} l${-6*c},12`, 'COMEBACK':`V${sy-90} l${-8*c},14`,\n    'SLANT':`l${90*c},-40`, 'QUICK OUT':`V${sy-32} h${-30*c}`, 'SPEED OUT':`V${sy-30} h${-28*c}`, 'OUT':`V${sy-72} h${-32*c}`, 'DEEP OUT':`V${sy-90} h${-32*c}`,\n    'IN/DIG':`V${sy-76} h${54*c}`,'IN':`V${sy-76} h${54*c}`, 'POST':`V${sy-88} l${40*c},-40`, 'CROSS':`V${sy-72} l${80*c},-30`, 'CORNER':`V${sy-88} l${-38*c},-38`,\n    'SHALLOW CROSS/DRAG':`V${sy-5} h${120*c}`, 'SCREEN':`q${25*c},25 ${50*c},22`, 'FLAT':`q${-70*c},-50 ${-120*c},-60`, 'SPEED':`V${sy-12} h${-28*c}`,\n    'SWING':`q${-50*c},18 ${-80*c},2`, 'WHEEL':`q${-70*c},-40 ${-80*c},-170`,\n    'TEXAS/ANGLE':`l${-60*c},-40 l${60*c},-40`, 'ARROW':`l${-24*c},-18`\n  };\n  const seg=P[route]||`V${sy-46}`;\n  return pre+seg;\n}\nfunction drawPlayDiagram(g, mode, sel, wrRot, av){\n  sel=sel||{}; wrRot=wrRot||0; _mk=0;\n  const W=330,H=290; const pos=positions(g, av); const {olX,olY,sq,cx,skill}=pos; const losY=olY-11;\n  let defs=''; let s=`<svg width=\"${W}\" height=\"${H}\" viewBox=\"0 0 ${W} ${H}\">`;\n  s+=`<line x1=\"10\" y1=\"${losY}\" x2=\"${W-10}\" y2=\"${losY}\" stroke=\"#000\" stroke-dasharray=\"5 3\" opacity=\"0.4\"/>`;\n  s+=`<text x=\"${W-14}\" y=\"${losY-4}\" font-size=\"8\" fill=\"#8a8470\" text-anchor=\"end\">LOS</text>`;\n  if(pos.nVariants>1) s+=`<text x=\"14\" y=\"14\" font-size=\"8.5\" fill=\"#a8321f\" font-weight=\"bold\">\u25b8 ${pos.variantName} <tspan fill=\"#8a8470\" font-weight=\"normal\">(tap label)</tspan></text>`;\n  const olL=[\"LT\",\"LG\",\"C\",\"RG\",\"RT\"];\n  for(let i=0;i<5;i++){s+=`<rect x=\"${olX[i]-sq/2}\" y=\"${olY-sq/2}\" width=\"${sq}\" height=\"${sq}\" fill=\"#1f3a6d\" stroke=\"#000\"/><text x=\"${olX[i]}\" y=\"${olY+3}\" fill=\"#fff\" font-size=\"7\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">${olL[i]}</text>`;}\n  if(g.ol>=6){let x=olX[4]+22;s+=`<rect x=\"${x-sq/2}\" y=\"${olY-sq/2}\" width=\"${sq}\" height=\"${sq}\" fill=\"#2d4f8a\" stroke=\"#000\"/><text x=\"${x}\" y=\"${olY+3}\" fill=\"#fff\" font-size=\"6.5\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">ST</text>`;}\n  const bySlot={}; (g.assigns||[]).forEach(a=>bySlot[a.slot]=a);\n  // rotate WRs: collect WR skill entries in order, rotate their slot assignment\n  const wrPlayers=skill.filter(p=>p.role=='WR');\n  let wrN=0,teN=0,rbN=0;\n  skill.forEach(p=>{ if(p.role=='WR'){p.slot='WR'+(((wrN++)+wrRot)%Math.max(wrPlayers.length,1)+1);} else if(p.role=='TE'){teN++;p.slot='TE'+teN;} else if(p.role=='RB'){rbN++;p.slot='RB'+rbN;} });\n  function routesFor(p){ const a=bySlot[p.slot]; if(a&&a.routes&&a.routes.length) return {name:a.name,list:a.routes,src:a.src};\n    // fallback to full tree\n    if(p.role=='RB') return {name:(a?a.name:''),list:FULL_TREE_RB,src:'tree'};\n    return {name:(a?a.name:''),list:FULL_TREE,src:'tree'}; }\n\n  // ---- RUN MODE: OL blocking \"T\" + RB lanes ----\n  if(mode=='run'){\n    const side=g.run_side||'mid';\n    const dx = side=='right'?12:(side=='left'?-12:0);\n    // OL blocking lines forming a T: each lineman a short line up, drifting toward run side\n    olX.forEach((ox,i)=>{ const tipx=ox+dx, tipy=olY-24;\n      s+=`<path d=\"M${ox},${olY-8} L${tipx},${tipy}\" stroke=\"#1a1a17\" stroke-width=\"2\" fill=\"none\" stroke-linecap=\"round\"/>`;\n      // small cross-cap at the top = the \"T\"\n      s+=`<line x1=\"${tipx-5}\" y1=\"${tipy}\" x2=\"${tipx+5}\" y2=\"${tipy}\" stroke=\"#1a1a17\" stroke-width=\"2\"/>`;\n    });\n    const rb=skill.find(p=>p.role=='RB')||skill.find(p=>p.role=='QB');\n    const laneX={LE:olX[0]-30,LT:olX[0]-6,LG:olX[1]-4,MID:cx,RG:olX[3]+4,RT:olX[4]+6,RE:olX[4]+30};\n    const tot=(g.lanes||[]).reduce((a,l)=>a+l[1],0)||1;\n    (g.lanes||[]).forEach(l=>{ const tx=laneX[l[0]]; if(tx==null)return;\n      const w=1.5+l[1]/tot*7; const ty=olY-52; const ar=arrow(ec(l[2])); defs+=ar.def;\n      s+=`<path d=\"M${rb.x},${rb.y} C${rb.x+(tx-rb.x)*0.4},${rb.y-20} ${tx},${olY+16} ${tx},${ty}\" fill=\"none\" stroke=\"${ec(l[2])}\" stroke-width=\"${w.toFixed(1)}\" stroke-linecap=\"round\" marker-end=\"${ar.url}\"/>`;\n      s+=`<text x=\"${tx}\" y=\"${ty-4}\" font-size=\"8\" fill=\"#1a1a17\" text-anchor=\"middle\" font-weight=\"bold\" data-noteable=\"1\" data-note-label=\"Run lane\" data-note-value=\"${nEsc(l[0]+' '+Math.round(100*l[1]/tot)+'%')}\" data-note-context=\"${nEsc(SEASON+' playbook \u00b7 '+g.p+' personnel \u00b7 '+g.name)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"run_lane\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"RB,QB\" data-note-nav=\"${NOTE_NAV}\">${l[0]} ${Math.round(100*l[1]/tot)}%</text>`;\n    });\n  }\n  // ---- PASS MODE: routes per player + TE block T ----\n  if(mode=='pass'){\n    skill.forEach(p=>{ if(!p.slot||p.role=='QB') return; const rf=routesFor(p); if(!rf.list||!rf.list.length) return;\n      const idx=(sel[p.slot]||0)%rf.list.length; const rt=rf.list[idx];\n      const ar=arrow('#a8321f'); defs+=ar.def;\n      s+=`<path d=\"${routePath(p.x,p.y,p.side,rt[0],losY)}\" fill=\"none\" stroke=\"#a8321f\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" marker-end=\"${ar.url}\"/>`;\n    });\n  }\n  // ---- skill circles + labels ----\n  wrN=0;\n  skill.forEach(p=>{\n    let fill=p.role=='WR'?'#cdd2e0':(p.role=='TE'?'#3f6db5':'#1f3a6d'), tc=p.role=='WR'?'#1a1a17':'#fff';\n    const rf=(p.slot&&p.role!='QB')?routesFor(p):null;\n    const tappable=(mode=='pass' && rf && rf.list && rf.list.length);\n    const qbTap=(mode=='pass' && p.role=='QB' && wrPlayers.length>1);\n    if(tappable) s+=`<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"12.5\" fill=\"none\" stroke=\"#a8321f\" stroke-width=\"1\" stroke-dasharray=\"2 2\" opacity=\"0.5\"/>`;\n    if(qbTap) s+=`<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"12.5\" fill=\"none\" stroke=\"#4f83cc\" stroke-width=\"1\" stroke-dasharray=\"2 2\" opacity=\"0.6\"/>`;\n    const cls = tappable?`<g class=\"tap\" data-slot=\"${p.slot}\" style=\"cursor:pointer\">`:(qbTap?`<g class=\"qbtap\" style=\"cursor:pointer\">`:'<g>');\n    s+=`${cls}<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"9\" fill=\"${fill}\" stroke=\"#000\"/><text x=\"${p.x}\" y=\"${p.y+3}\" fill=\"${tc}\" font-size=\"7\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">${p.label}</text></g>`;\n    if(qbTap) s+=`<text x=\"${p.x}\" y=\"${p.y+20}\" font-size=\"5.5\" fill=\"#4f83cc\" text-anchor=\"middle\">tap: rotate WRs</text>`;\n    if(mode=='pass' && rf && rf.name && rf.name!='\\u2014'){\n      const idx=(sel[p.slot]||0)%rf.list.length; const rt=rf.list[idx];\n      const belowLOS = p.y>losY;\n      let ny=belowLOS?p.y+20:p.y+20;\n      s+=`<text x=\"${p.x}\" y=\"${ny}\" font-size=\"7.5\" fill=\"#1a1a17\" text-anchor=\"middle\" font-weight=\"bold\" data-noteable=\"1\" data-note-label=\"Player role\" data-note-value=\"${nEsc(rf.name)}\" data-note-context=\"${nEsc(SEASON+' playbook \u00b7 '+g.p+' personnel \u00b7 '+g.name)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"player_role\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"QB,RB,WR,TE\" data-note-nav=\"${NOTE_NAV}\">${rf.name}</text>`;\n      const pctTxt = rt[1]!=null?` ${rt[1]}%`:'';\n      const srcTxt = rf.src=='tree'?' (tree)':(rf.src=='season'?' (szn)':'');\n      s+=`<text x=\"${p.x}\" y=\"${ny+9}\" font-size=\"6\" fill=\"#a8321f\" text-anchor=\"middle\" data-noteable=\"1\" data-note-label=\"Route tendency\" data-note-value=\"${nEsc(rt[0].split('/')[0]+pctTxt+srcTxt)}\" data-note-context=\"${nEsc(SEASON+' playbook \u00b7 '+g.p+' personnel \u00b7 '+g.name+' \u00b7 '+rf.name)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"route_tendency\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"QB,RB,WR,TE\" data-note-nav=\"${NOTE_NAV}\">${rt[0].split('/')[0]}${pctTxt}${srcTxt}</text>`;\n      if(rf.list.length>1) s+=`<text x=\"${p.x}\" y=\"${ny+17}\" font-size=\"5.5\" fill=\"#8a8470\" text-anchor=\"middle\">${idx+1}/${rf.list.length} tap</text>`;\n    }\n  });\n  return s.replace('<svg ',`<svg `).replace(`viewBox=\"0 0 ${W} ${H}\">`,`viewBox=\"0 0 ${W} ${H}\"><defs>${defs}</defs>`)+`</svg>`;\n}\nfunction draw(){\n  const dn=document.getElementById('down').value,ds=document.getElementById('dist').value,fl=document.getElementById('field').value;\n  const node=FORM[dn][ds][fl],grid=document.getElementById('grid');\n  document.getElementById('banner').textContent=({all:'All Downs','1':'1st Down','2':'2nd Down','3':'3rd Down','4':'4th Down'}[dn])+({all:'',short:' & Short',med:' & Medium',long:' & Long'}[ds])+({all:'',pa:' \u00b7 Play-Action',motion:' \u00b7 Motion',nohuddle:' \u00b7 No-Huddle',redzone:' \u00b7 Red Zone'}[fl]);\n  if(!node||!node.groups.length){grid.innerHTML='<div class=\"empty\">No plays match this situation.</div>';document.getElementById('ctx').textContent='';return;}\n  document.getElementById('ctx').textContent=node.total+' plays';\n  window._G=node.groups;\n  // Production out of this formation: yards + TDs, split pass vs run. Moves with the filters.\n  function prodLine(g, mode){\n    const P=noteWrap('Pass production', `PASS ${(+g.py||0).toLocaleString()} yds \u00b7 ${+g.ptd||0} TD`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,WR,TE,RB', `<span class=\"prod-pass\">PASS ${(+g.py||0).toLocaleString()} yds \u00b7 ${+g.ptd||0} TD</span>`);\n    const R=noteWrap('Run production', `RUN ${(+g.ry||0).toLocaleString()} yds \u00b7 ${+g.rtd||0} TD`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'RB,QB', `<span class=\"prod-run\">RUN ${(+g.ry||0).toLocaleString()} yds \u00b7 ${+g.rtd||0} TD</span>`);\n    if(mode==='pass') return P;\n    if(mode==='run')  return R;\n    return `${P}<span class=\"prod-sep\">\u00b7</span>${R}`;\n  }\n  let html=\"\";\n  node.groups.forEach((g,i)=>{const noise=g.n<8?' <span class=\"hl-p\" style=\"font-size:9px;padding:0 3px;\">SMALL</span>':'';\n    html+=`<div class=\"card\"><div class=\"rank\">#${i+1}</div>\n      <div class=\"plabel\"><span class=\"pers alt\" data-i=\"${i}\" title=\"tap to change alignment\" style=\"cursor:pointer\">${g.p} PERSONNEL \u21c4</span> <span class=\"fname\">${g.name}</span></div>\n      <div class=\"subttl\">${g.backs} BACK \u00b7 ${g.te} TE \u00b7 ${g.wr} WR \u2014 ${g.share}% of snaps${noise}</div>\n      <div class=\"prod\" id=\"prd${i}\">${prodLine(g)}</div>\n      <div class=\"fieldbox\">${fieldSvg(g,'none',{},0,0)}</div>\n      <div class=\"stats\"><div class=\"stat\"><span id=\"snl${i}\">Snaps</span><b id=\"snv${i}\">${noteWrap('Snaps', String(g.n), `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', String(g.n))}</b></div><div class=\"stat\"><span>Success</span><b id=\"scv${i}\">${noteWrap('Success Rate', `${g.succ}%`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', `${g.succ}%`)}</b></div>\n      <div class=\"stat\"><span>EPA/play</span><b id=\"epv${i}\" class=\"${g.epa>=.05?'hl-g':(g.epa<=-.05?'hl-p':'')}\">${noteWrap('EPA/play', `${g.epa>=0?'+':''}${g.epa.toFixed(2)}`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', `${g.epa>=0?'+':''}${g.epa.toFixed(2)}`)}</b></div><div class=\"stat\"><span>Share</span><b>${noteWrap('Formation Share', `${g.share}%`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', `${g.share}%`)}</b></div></div>\n      <div class=\"rp\" data-i=\"${i}\"><div class=\"run seg\" data-mode=\"run\" style=\"width:${(100-Number(g.pass_rate||0)).toFixed(2)}%\"><b>RUN ${(100-Number(g.pass_rate||0)).toFixed(2)}%</b></div><div class=\"pass seg\" data-mode=\"pass\" style=\"width:${Number(g.pass_rate||0).toFixed(2)}%\"><b>PASS ${Number(g.pass_rate||0).toFixed(2)}%</b></div></div>\n      <div class=\"hintbar\" id=\"hint${i}\">tap label \u21c4 change look \u00b7 click bar \u25b8 runs / routes</div></div>`;});\n  grid.innerHTML=html;\n  function setStats(i,mode,g){\n    const snl=document.getElementById('snl'+i),snv=document.getElementById('snv'+i),scv=document.getElementById('scv'+i),epv=document.getElementById('epv'+i);\n    let n=g.n,sc=g.succ,ep=g.epa,lbl='Snaps';\n    if(mode=='run'){ n=g.nr;sc=g.sr;ep=g.er;lbl='Run snaps'; }\n    else if(mode=='pass'){ n=g.np;sc=g.sp;ep=g.ep;lbl='Pass snaps'; }\n    const prd=document.getElementById('prd'+i);\n    if(prd) prd.innerHTML=prodLine(g, mode==='none'?null:mode);\n    snl.textContent=lbl; snv.textContent=n; scv.textContent=sc+'%';\n    epv.textContent=(ep>=0?'+':'')+ep.toFixed(2);\n    epv.className = ep>=.05?'hl-g':(ep<=-.05?'hl-p':'');\n  }\n  document.querySelectorAll('.seg').forEach(seg=>{\n    seg.onclick=(e)=>{ e.stopPropagation();\n      const card=seg.closest('.card'), i=+seg.closest('.rp').dataset.i, mode=seg.dataset.mode, g=window._G[i];\n      const box=card.querySelector('.fieldbox'), hint=card.querySelector('.hintbar');\n      const cur=box.dataset.mode||'none';\n      card.querySelectorAll('.seg').forEach(x=>x.classList.remove('active'));\n      if(cur==mode){ box.innerHTML=fieldSvg(g,'none',{},0,box._av||0); box.dataset.mode='none';\n        hint.textContent='tap label \u21c4 change look \u00b7 click bar \u25b8 runs / routes'; hint.style.color=''; setStats(i,'none',g); return; }\n      seg.classList.add('active');\n      if(!box._sel) box._sel={};\n      box.innerHTML=fieldSvg(g,mode,box._sel,box._rot||0,box._av||0); box.dataset.mode=mode;\n      if(mode=='pass') wireTaps(box,g);\n      setStats(i,mode,g);\n      hint.textContent = mode=='pass'?'ROUTES \u2014 most common per player when targeted':'RUN LANES \u2014 top 3 gaps (color = EPA)';\n      hint.style.color = mode=='pass'?'#4f83cc':'#4a7f2c';\n    };\n  });\n  // clickable personnel label cycles alignment variant\n  document.querySelectorAll('.pers.alt').forEach(lab=>{\n    lab.onclick=(e)=>{ e.stopPropagation();\n      const i=+lab.dataset.i, g=window._G[i], card=lab.closest('.card'), box=card.querySelector('.fieldbox');\n      box._av=(box._av||0)+1; box._sel={}; box._rot=box._rot||0;\n      const mode=box.dataset.mode||'none';\n      box.innerHTML=fieldSvg(g,mode,box._sel,box._rot,box._av); \n      if(mode=='pass') wireTaps(box,g);\n    };\n  });\n}\n// formation diagram rendered in the card; overlay drawn in-place on click\nfunction fieldSvg(g, mode, sel, wrRot, av){ return drawPlayDiagram(g, mode, sel, wrRot, av); }\nfunction wireTaps(box,g){\n  box.querySelectorAll('.tap').forEach(el=>{\n    el.onclick=(ev)=>{ ev.stopPropagation();\n      const slot=el.getAttribute('data-slot'); if(!box._sel) box._sel={};\n      box._sel[slot]=(box._sel[slot]||0)+1;\n      box.innerHTML=fieldSvg(g,'pass',box._sel,box._rot||0,box._av||0); box.dataset.mode='pass';\n      wireTaps(box,g);\n    };\n  });\n  box.querySelectorAll('.qbtap').forEach(el=>{\n    el.onclick=(ev)=>{ ev.stopPropagation();\n      box._rot=(box._rot||0)+1; box._sel={};\n      box.innerHTML=fieldSvg(g,'pass',{},box._rot,box._av||0); box.dataset.mode='pass';\n      wireTaps(box,g);\n    };\n  });\n}\n\n(function noteBridge(){\n  const HOLD_MS=520, MOVE=10;\n  let st=null;\n  function clear(){ if(st&&st.t) clearTimeout(st.t); st=null; }\n  function info(el){\n    if(!el || !el.dataset) return null;\n    return {\n      label: el.dataset.noteLabel || 'Playbook stat',\n      value: el.dataset.noteValue || '',\n      context: el.dataset.noteContext || '',\n      source: el.dataset.noteSource || 'coaching_playbook',\n      statKey: el.dataset.noteStatKey || '',\n      team: el.dataset.noteTeam || TEAM_CODE || '',\n      relevance: el.dataset.noteRelevance || 'QB,RB,WR,TE',\n    };\n  }\n  function open(el){\n    const parentWin = window.parent;\n    if(!parentWin || typeof parentWin.noteOpenPicker!=='function') return;\n    const payload = info(el);\n    if(payload) parentWin.noteOpenPicker(payload);\n  }\n  document.addEventListener('touchstart', e=>{\n    if(e.touches.length!==1) return clear();\n    const el=e.target&&e.target.closest?e.target.closest('[data-noteable=\"1\"]'):null;\n    if(!el) return;\n    const t=e.touches[0];\n    st={x:t.clientX,y:t.clientY,el,t:setTimeout(()=>{ const cur=st; clear(); if(cur&&cur.el===el) open(el); }, HOLD_MS)};\n  }, {passive:true});\n  document.addEventListener('touchmove', e=>{ if(!st||!e.touches.length) return; const t=e.touches[0]; if(Math.abs(t.clientX-st.x)>MOVE||Math.abs(t.clientY-st.y)>MOVE) clear(); }, {passive:true});\n  document.addEventListener('touchend', clear, {passive:true});\n  document.addEventListener('touchcancel', clear, {passive:true});\n  document.addEventListener('mousedown', e=>{ const el=e.target&&e.target.closest?e.target.closest('[data-noteable=\"1\"]'):null; if(!el||e.button!==0) return; st={x:e.clientX,y:e.clientY,el,t:setTimeout(()=>{ const cur=st; clear(); if(cur&&cur.el===el) open(el); }, HOLD_MS)}; });\n  document.addEventListener('mousemove', e=>{ if(!st) return; if(Math.abs(e.clientX-st.x)>MOVE||Math.abs(e.clientY-st.y)>MOVE) clear(); });\n  document.addEventListener('mouseup', clear);\n  document.addEventListener('mouseleave', clear);\n})();\n\n['down','dist','field'].forEach(id=>document.getElementById(id).onchange=draw); draw();\n__TC_SCRIPT_CLOSE__</body></html>\n";
+const SCHEME_TEMPLATE_INLINE = "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><title>Formation Playsheet</title>\n<style>\n  :root{--paper:#f4efe2;--ink:#1a1a17;--rule:#c9c1ab;--hl-yel:#f5e04b;--hl-grn:#8fd06a;--hl-pnk:#f7a8c4;--red:#a8321f;}\n  *{box-sizing:border-box;}\n  body{margin:0;background:#2a2723;font-family:\"Courier New\",monospace;padding:14px;color:var(--ink);}\n  .sheet{max-width:1040px;margin:0 auto;background:var(--paper);border:2px solid #000;box-shadow:0 8px 40px rgba(0,0,0,.6);}\n  .hdr{background:var(--ink);color:var(--paper);padding:10px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}\n  .hdr h1{font-size:18px;margin:0;letter-spacing:1px;text-transform:uppercase;}\n  .hdr .wk{font-size:12px;color:#c9c1ab;}\n  .controls{display:flex;flex-wrap:wrap;gap:10px;padding:10px 16px;background:#e8e1d0;border-bottom:2px solid #000;align-items:flex-end;}\n  .ctrl{display:flex;flex-direction:column;gap:3px;}\n  .ctrl label{font-size:9px;text-transform:uppercase;letter-spacing:1px;font-weight:bold;color:#5a5545;}\n  select{font-family:\"Courier New\",monospace;background:var(--paper);border:1.5px solid #000;padding:5px 8px;font-size:13px;font-weight:bold;cursor:pointer;}\n  .banner{background:var(--red);color:#fff;text-align:center;font-weight:bold;font-size:13px;padding:4px;letter-spacing:2px;text-transform:uppercase;}\n  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));}\n  .card{border:1px solid #000;border-top:none;border-left:none;padding:8px 12px 12px;position:relative;}\n  .rank{position:absolute;top:6px;left:8px;font-size:10px;font-weight:bold;color:#8a8470;}\n  .plabel{text-align:center;font-weight:bold;font-size:14px;letter-spacing:1px;border-bottom:1.5px solid #000;padding-bottom:3px;margin-bottom:2px;}\n  .plabel .pers{background:var(--hl-yel);padding:1px 6px;}\n  .plabel .fname{font-size:11px;color:#5a5545;}\n  .subttl{text-align:center;font-size:10px;color:#5a5545;margin-bottom:4px;}\n.prod{font-family:'Courier New',monospace;font-size:9.5px;font-weight:700;letter-spacing:.02em;\n  margin:2px 0 4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}\n.prod-pass{color:#4f83cc;}\n.prod-run{color:#4a7f2c;}\n.prod-sep{color:#b9b295;}\n  svg{display:block;margin:0 auto;}\n  .stats{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;margin-top:6px;font-size:12px;}\n  .stat{display:flex;justify-content:space-between;border-bottom:1px dotted var(--rule);}\n  .rp{height:20px;background:#ddd6c4;border:1px solid #000;position:relative;margin-top:8px;overflow:hidden;font-size:10px;display:flex;cursor:pointer;}\n  .rp .run,.rp .pass{position:relative;display:flex;align-items:center;height:100%;transition:filter .1s;}\n  .rp .run{background:var(--hl-grn);justify-content:flex-start;padding-left:5px;}\n  .rp .pass{background:#4f83cc;color:#fff;justify-content:flex-end;padding-right:5px;}\n  .rp .run:hover,.rp .pass:hover{filter:brightness(1.12);}\n  .rp .seg.active{outline:2px solid #1a1a17;outline-offset:-2px;}\n  .rp b{font-weight:bold;}\n  .hintbar{text-align:center;font-size:9px;color:#8a8470;margin-top:2px;}\n  .nt{display:inline;}\n  .dia{margin-top:8px;border-top:2px dashed var(--rule);padding-top:6px;display:none;}\n  .dia.show{display:block;}\n  .diahead{font-size:10px;font-weight:bold;text-transform:uppercase;text-align:center;margin-bottom:3px;}\n  .empty{padding:30px;text-align:center;color:#8a8470;font-size:13px;grid-column:1/-1;}\n  .foot{padding:8px 16px;font-size:9px;color:#6a6455;border-top:2px solid #000;line-height:1.5;}\n  .hint{text-align:center;font-size:10px;color:#8a8470;padding:6px;background:#ece5d3;border-bottom:1px solid #000;}\n  .hl-p{background:var(--hl-pnk);} .hl-g{background:var(--hl-grn);}\n</style></head>\n<body><div class=\"sheet\">\n  <div class=\"hdr\"><h1>Detroit Lions &mdash; Playbook</h1><span class=\"wk\">2025 \u00b7 Routes mapped to players</span></div>\n  <div class=\"controls\">\n    <div class=\"ctrl\"><label>Down</label><select id=\"down\"><option value=\"all\">All downs</option><option value=\"1\">1st</option><option value=\"2\">2nd</option><option value=\"3\">3rd</option><option value=\"4\">4th</option></select></div>\n    <div class=\"ctrl\"><label>Distance to sticks</label><select id=\"dist\"><option value=\"all\">Any</option><option value=\"short\">Short (1-3)</option><option value=\"med\">Medium (4-7)</option><option value=\"long\">Long (8+)</option></select></div>\n    <div class=\"ctrl\"><label>Play type</label><select id=\"field\"><option value=\"all\">All plays</option><option value=\"pa\">Play-action</option><option value=\"motion\">Pre-snap motion</option><option value=\"nohuddle\">No-huddle</option><option value=\"redzone\">Red zone</option></select></div>\n    <div class=\"ctrl\"><label>&nbsp;</label><span id=\"ctx\" style=\"font-size:12px;font-weight:bold;padding:5px;\"></span></div>\n  </div>\n  <div class=\"hint\">\u25b8 Click the GREEN part of a formation's bar to see its top-3 run lanes \u00b7 click the BLUE part to see each player's most-common route</div>\n  <div class=\"banner\" id=\"banner\">All Situations</div>\n  <div class=\"grid\" id=\"grid\"></div>\n  <div class=\"foot\">Play diagrams: routes are each skill player's single most-common route WHEN TARGETED out of this formation (season pool, all situations, for stable sample), mapped to players by target rank (WR1=St. Brown, WR2=Williams, etc.); the outermost WR is treated as WR1. Run mode shows the 3 most-used gaps, arrow width = frequency, color = EPA. Alignment is authentic; exact pre-snap WR splits are schematic. Data: nflverse pbp + FTN participation, 2025 REG. Not affiliated with the NFL.</div>\n</div>\n__TC_SCRIPT_OPEN____TC_FV_SCRIPT____TC_SCRIPT_CLOSE__\n__TC_SCRIPT_OPEN__\nfunction nEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }\nconst NOTE_NAV=nEsc(JSON.stringify({type:'coaching',team:TEAM_CODE,season:String(SEASON),tab:'playbook'}));\nfunction noteWrap(label,value,context,relevance,html){\n  return `<span class=\"nt\" data-noteable=\"1\" data-note-label=\"${nEsc(label)}\" data-note-value=\"${nEsc(value)}\" data-note-context=\"${nEsc(context)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"${nEsc(label)}\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"${nEsc(relevance||'QB,RB,WR,TE')}\" data-note-nav=\"${NOTE_NAV}\">${html}</span>`;\n}\nfunction ec(e){ if(e==null)return\"#999\"; let t=Math.max(-0.4,Math.min(0.4,e))/0.4;\n  if(t>=0)return `rgb(${Math.round(216+(47-216)*t)},${Math.round(165+(174-165)*t)},${Math.round(29+(78-29)*t)})`;\n  let a=-t; return `rgb(${Math.round(216+(211-216)*a)},${Math.round(165+(59-165)*a)},${Math.round(29+(47-29)*a)})`; }\n\n// compute skill-player positions on a tall play diagram; returns {ol:[...], skill:[{role,x,y,side,label}]}\n// full 1-9 route tree (fallback when a player has no route data at all)\nconst FULL_TREE=[['FLAT',null],['SLANT',null],['COMEBACK',null],['HITCH/CURL',null],['OUT',null],['IN/DIG',null],['CORNER',null],['POST',null],['GO',null]];\nconst FULL_TREE_RB=[['FLAT',null],['SWING',null],['SCREEN',null],['TEXAS/ANGLE',null],['WHEEL',null],['SLANT',null],['HITCH/CURL',null]];\n\n// alignment variations for a personnel grouping (schematic \u2014 nflverse gives personnel, not splits)\nfunction variantsFor(g){\n  const wr=g.wr, te=g.te; const out=[];\n  const half=Math.ceil(wr/2);\n  const add=(name,o)=>out.push(Object.assign({name:name,wrR:half,wrBunch:null,teR:Math.ceil(te/2),teBunch:false,rbSide:null},o));\n  add('Base '+half+'x'+(wr-half));\n  if(wr>=2){ add('Trips Rt',{wrR:wr,teR:0}); add('Trips Lt',{wrR:0,teR:te}); }\n  if(wr>=3){ add('Bunch Rt',{wrR:wr,wrBunch:'R',triangle:true,teR:0,rbSide:'L'}); add('Bunch Lt',{wrR:0,wrBunch:'L',triangle:true,teR:te,rbSide:'R'}); }\n  if(wr==2){ add('Doubles Rt',{wrR:2,teR:0}); add('Doubles Lt',{wrR:0,teR:te}); }\n  if(wr>=4){ add('4-Strong Rt',{wrR:4,wrBunch:'R',teR:0}); add('3x1 Rt',{wrR:3,teR:0}); }\n  if(te>=2){ add('TE Bunch Rt',{teR:te,teBunch:true,wrR:half}); add('TE Bunch Lt',{teR:0,teBunch:true,wrR:half}); add('TE Split',{teR:1,wrR:half}); }\n  if(te>=3){ add('TE Trips Rt',{teR:3,teBunch:true,wrR:0}); add('TE Trips Lt',{teR:0,teBunch:true,wrR:wr}); }\n  return out;\n}\nfunction positions(g, av){\n  const cx=165, olY=200, gap=22, sq=15;\n  const olX=[cx-2*gap,cx-gap,cx,cx+gap,cx+2*gap];\n  const skill=[]; const al=g.align, backs=g.backs, te=g.te, wr=g.wr;\n  const vars=variantsFor(g); const v=vars[(av||0)%vars.length]||vars[0];\n  let qbY = al=='uc'?olY+16:(al=='pistol'?olY+34:olY+42);\n  skill.push({role:'QB',x:cx,y:qbY,side:'M',label:'QB'});\n  // RB placement (shotgun/pistol can flip to weak side of a bunch)\n  const rbSide = v.rbSide;\n  if(al=='uc'){\n    if(backs>=3){ // full house: FB/lead back tight, two halfbacks split behind\n      skill.push({role:'RB',x:cx,y:qbY+22,side:'M',label:'FB'});\n      skill.push({role:'RB',x:cx-20,y:qbY+40,side:'L',label:'RB'});\n      skill.push({role:'RB',x:cx+20,y:qbY+40,side:'R',label:'RB'}); }\n    else if(backs>=2){skill.push({role:'RB',x:cx,y:qbY+22,side:'M',label:'FB'});skill.push({role:'RB',x:cx,y:qbY+40,side:'M',label:'RB'});}\n    else if(backs==1)skill.push({role:'RB',x:cx,y:qbY+38,side:'M',label:'RB'}); }\n  else if(al=='pistol'){\n    skill.push({role:'RB',x:cx,y:qbY+20,side:'M',label:'RB'});\n    if(backs>=2)skill.push({role:'RB',x:cx-24,y:qbY+14,side:'L',label:'RB'});\n    if(backs>=3)skill.push({role:'RB',x:cx+24,y:qbY+14,side:'R',label:'RB'}); }\n  else { const rx=rbSide=='L'?cx-22:(rbSide=='R'?cx+22:cx+22);\n    if(backs>=1)skill.push({role:'RB',x:rx,y:qbY,side:rx<cx?'L':'R',label:'RB'});\n    if(backs>=2)skill.push({role:'RB',x:cx-22,y:qbY,side:'L',label:'RB'});\n    if(backs>=3)skill.push({role:'RB',x:cx,y:qbY+20,side:'M',label:'RB'}); }  // 3rd back offset behind QB\n  // TEs: teR on right (attached beyond RT), rest left; bunch = tighter cluster to one side\n  const jumboOff = g.ol >= 6 ? 22 : 0;\n  const teRightN=Math.min(v.teR,te), teLeftN=te-teRightN;\n  const rTE=v.teBunch?[olX[4]+20+jumboOff,olX[4]+38+jumboOff,olX[4]+56+jumboOff]:[olX[4]+22+jumboOff,olX[4]+44+jumboOff];\n  const lTE=v.teBunch?[olX[0]-20,olX[0]-38,olX[0]-56]:[olX[0]-22,olX[0]-44];\n  for(let i=0;i<teRightN;i++){ let x=rTE[i]; skill.push({role:'TE',x:x,y:olY,side:'R',label:'TE'}); }\n  for(let i=0;i<teLeftN;i++){ let x=lTE[i]; skill.push({role:'TE',x:x,y:olY,side:'L',label:'TE'}); }\n  // WRs: wrR on right, rest left; bunch clusters them tight. Triangle bunch staggers depth so they don't overlap.\n  const wrRightN=Math.min(v.wrR,wr), wrLeftN=wr-wrRightN;\n  const losWR=olY-4;\n  if(v.triangle && (wrRightN>=3 || wrLeftN>=3)){\n    // two receivers on the LOS, third backed off behind the middle of them (triangle apex at the back)\n    const onR = wrRightN>=3;\n    const losX1 = onR?306:24, losX2 = onR?262:68;   // two on the line (outside + inside)\n    const backX = onR?284:46;                        // point man off the ball, centered behind the two\n    skill.push({role:'WR',x:losX1,y:losWR,side:onR?'R':'L',label:'WR'});      // #1 on line, outside\n    skill.push({role:'WR',x:losX2,y:losWR,side:onR?'R':'L',label:'WR'});      // #2 on line, inside\n    skill.push({role:'WR',x:backX,y:losWR+16,side:onR?'R':'L',label:'WR'});   // #3 off ball, behind the middle\n    // any extra WRs (4+) split to the opposite side\n    const rest = wr-3;\n    const oppWide = onR?[30,58,84]:[300,272,246];\n    for(let i=0;i<rest;i++){ skill.push({role:'WR',x:oppWide[i],y:losWR,side:onR?'L':'R',label:'WR'}); }\n  } else {\n    const rWide=v.wrBunch=='R'?[300,286,272,258]:[300,272,246,224];\n    const lWide=v.wrBunch=='L'?[30,44,58,72]:[30,58,84,106];\n    for(let i=0;i<wrRightN;i++){ let x=rWide[i]; skill.push({role:'WR',x:x,y:losWR,side:'R',label:'WR'}); }\n    for(let i=0;i<wrLeftN;i++){ let x=lWide[i]; skill.push({role:'WR',x:x,y:losWR,side:'L',label:'WR'}); }\n  }\n  return {olX, olY, sq, cx, skill, variantName:v.name, nVariants:vars.length};\n}\n// arrowhead marker id counter to keep unique\nlet _mk=0;\nfunction arrow(color){ const id='a'+(_mk++); return {def:`<marker id=\"${id}\" viewBox=\"0 0 10 10\" refX=\"7\" refY=\"5\" markerWidth=\"5\" markerHeight=\"5\" orient=\"auto-start-reverse\"><path d=\"M1 1L8 5L1 9\" fill=\"none\" stroke=\"${color}\" stroke-width=\"2\"/></marker>`, url:`url(#${id})`}; }\n\n// route path from (x,y); side L/R. Most RB backfield routes stem up to cross the LOS,\n// but SCREEN/SWING/TEXAS release from the backfield without stemming up first.\nfunction routePath(x,y,side,route,losY){\n  const c=(side=='L')?1:-1;\n  const backfieldRelease = (route=='SCREEN'||route=='SWING'||route=='TEXAS/ANGLE'||route=='FLAT'||route=='WHEEL');\n  let sx=x, sy=y, pre=`M${x},${y} `;\n  // RB below the LOS: for downfield routes, stem up to just past the LOS so short breaks are visible.\n  // Backfield-release routes stay put and work out of the backfield.\n  if(y > losY+6 && !backfieldRelease){ const upTo = losY-8; pre=`M${x},${y} L${x},${upTo} `; sx=x; sy=upTo; }\n  const P={\n    'GO':`V${sy-140}`, 'FADE/GO':`V${sy-140}`,'HITCH/CURL':`V${sy-55} l${-6*c},12`,'HITCH':`V${sy-55} l${-6*c},12`, 'COMEBACK':`V${sy-90} l${-8*c},14`,\n    'SLANT':`l${90*c},-40`, 'QUICK OUT':`V${sy-32} h${-30*c}`, 'SPEED OUT':`V${sy-30} h${-28*c}`, 'OUT':`V${sy-72} h${-32*c}`, 'DEEP OUT':`V${sy-90} h${-32*c}`,\n    'IN/DIG':`V${sy-76} h${54*c}`,'IN':`V${sy-76} h${54*c}`, 'POST':`V${sy-88} l${40*c},-40`, 'CROSS':`V${sy-72} l${80*c},-30`, 'CORNER':`V${sy-88} l${-38*c},-38`,\n    'SHALLOW CROSS/DRAG':`V${sy-5} h${120*c}`, 'SCREEN':`q${25*c},25 ${50*c},22`, 'FLAT':`q${-70*c},-50 ${-120*c},-60`, 'SPEED':`V${sy-12} h${-28*c}`,\n    'SWING':`q${-50*c},18 ${-80*c},2`, 'WHEEL':`q${-70*c},-40 ${-80*c},-170`,\n    'TEXAS/ANGLE':`l${-60*c},-40 l${60*c},-40`, 'ARROW':`l${-24*c},-18`\n  };\n  const seg=P[route]||`V${sy-46}`;\n  return pre+seg;\n}\nfunction drawPlayDiagram(g, mode, sel, wrRot, av){\n  sel=sel||{}; wrRot=wrRot||0; _mk=0;\n  const W=330,H=290; const pos=positions(g, av); const {olX,olY,sq,cx,skill}=pos; const losY=olY-11;\n  let defs=''; let s=`<svg width=\"${W}\" height=\"${H}\" viewBox=\"0 0 ${W} ${H}\">`;\n  s+=`<line x1=\"10\" y1=\"${losY}\" x2=\"${W-10}\" y2=\"${losY}\" stroke=\"#000\" stroke-dasharray=\"5 3\" opacity=\"0.4\"/>`;\n  s+=`<text x=\"${W-14}\" y=\"${losY-4}\" font-size=\"8\" fill=\"#8a8470\" text-anchor=\"end\">LOS</text>`;\n  if(pos.nVariants>1) s+=`<text x=\"14\" y=\"14\" font-size=\"8.5\" fill=\"#a8321f\" font-weight=\"bold\">\u25b8 ${pos.variantName} <tspan fill=\"#8a8470\" font-weight=\"normal\">(tap label)</tspan></text>`;\n  const olL=[\"LT\",\"LG\",\"C\",\"RG\",\"RT\"];\n  for(let i=0;i<5;i++){s+=`<rect x=\"${olX[i]-sq/2}\" y=\"${olY-sq/2}\" width=\"${sq}\" height=\"${sq}\" fill=\"#1f3a6d\" stroke=\"#000\"/><text x=\"${olX[i]}\" y=\"${olY+3}\" fill=\"#fff\" font-size=\"7\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">${olL[i]}</text>`;}\n  if(g.ol>=6){let x=olX[4]+22;s+=`<rect x=\"${x-sq/2}\" y=\"${olY-sq/2}\" width=\"${sq}\" height=\"${sq}\" fill=\"#2d4f8a\" stroke=\"#000\"/><text x=\"${x}\" y=\"${olY+3}\" fill=\"#fff\" font-size=\"6.5\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">ST</text>`;}\n  const bySlot={}; (g.assigns||[]).forEach(a=>bySlot[a.slot]=a);\n  // rotate WRs: collect WR skill entries in order, rotate their slot assignment\n  const wrPlayers=skill.filter(p=>p.role=='WR');\n  let wrN=0,teN=0,rbN=0;\n  skill.forEach(p=>{ if(p.role=='WR'){p.slot='WR'+(((wrN++)+wrRot)%Math.max(wrPlayers.length,1)+1);} else if(p.role=='TE'){teN++;p.slot='TE'+teN;} else if(p.role=='RB'){rbN++;p.slot='RB'+rbN;} });\n  function routesFor(p){ const a=bySlot[p.slot]; if(a&&a.routes&&a.routes.length) return {name:a.name,list:a.routes,src:a.src};\n    // fallback to full tree\n    if(p.role=='RB') return {name:(a?a.name:''),list:FULL_TREE_RB,src:'tree'};\n    return {name:(a?a.name:''),list:FULL_TREE,src:'tree'}; }\n\n  // ---- RUN MODE: OL blocking \"T\" + RB lanes ----\n  if(mode=='run'){\n    const side=g.run_side||'mid';\n    const dx = side=='right'?12:(side=='left'?-12:0);\n    // OL blocking lines forming a T: each lineman a short line up, drifting toward run side\n    olX.forEach((ox,i)=>{ const tipx=ox+dx, tipy=olY-24;\n      s+=`<path d=\"M${ox},${olY-8} L${tipx},${tipy}\" stroke=\"#1a1a17\" stroke-width=\"2\" fill=\"none\" stroke-linecap=\"round\"/>`;\n      // small cross-cap at the top = the \"T\"\n      s+=`<line x1=\"${tipx-5}\" y1=\"${tipy}\" x2=\"${tipx+5}\" y2=\"${tipy}\" stroke=\"#1a1a17\" stroke-width=\"2\"/>`;\n    });\n    const rb=skill.find(p=>p.role=='RB')||skill.find(p=>p.role=='QB');\n    const laneX={LE:olX[0]-30,LT:olX[0]-6,LG:olX[1]-4,MID:cx,RG:olX[3]+4,RT:olX[4]+6,RE:olX[4]+30};\n    const tot=(g.lanes||[]).reduce((a,l)=>a+l[1],0)||1;\n    (g.lanes||[]).forEach(l=>{ const tx=laneX[l[0]]; if(tx==null)return;\n      const w=1.5+l[1]/tot*7; const ty=olY-52; const ar=arrow(ec(l[2])); defs+=ar.def;\n      s+=`<path d=\"M${rb.x},${rb.y} C${rb.x+(tx-rb.x)*0.4},${rb.y-20} ${tx},${olY+16} ${tx},${ty}\" fill=\"none\" stroke=\"${ec(l[2])}\" stroke-width=\"${w.toFixed(1)}\" stroke-linecap=\"round\" marker-end=\"${ar.url}\"/>`;\n      s+=`<text x=\"${tx}\" y=\"${ty-4}\" font-size=\"8\" fill=\"#1a1a17\" text-anchor=\"middle\" font-weight=\"bold\" data-noteable=\"1\" data-note-label=\"Run lane\" data-note-value=\"${nEsc(l[0]+' '+Math.round(100*l[1]/tot)+'%')}\" data-note-context=\"${nEsc(SEASON+' playbook \u00b7 '+g.p+' personnel \u00b7 '+g.name)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"run_lane\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"RB,QB\" data-note-nav=\"${NOTE_NAV}\">${l[0]} ${Math.round(100*l[1]/tot)}%</text>`;\n    });\n  }\n  // ---- PASS MODE: routes per player + TE block T ----\n  if(mode=='pass'){\n    skill.forEach(p=>{ if(!p.slot||p.role=='QB') return; const rf=routesFor(p); if(!rf.list||!rf.list.length) return;\n      const idx=(sel[p.slot]||0)%rf.list.length; const rt=rf.list[idx];\n      const ar=arrow('#a8321f'); defs+=ar.def;\n      s+=`<path d=\"${routePath(p.x,p.y,p.side,rt[0],losY)}\" fill=\"none\" stroke=\"#a8321f\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" marker-end=\"${ar.url}\"/>`;\n    });\n  }\n  // ---- skill circles + labels ----\n  wrN=0;\n  skill.forEach(p=>{\n    let fill=p.role=='WR'?'#cdd2e0':(p.role=='TE'?'#3f6db5':'#1f3a6d'), tc=p.role=='WR'?'#1a1a17':'#fff';\n    const rf=(p.slot&&p.role!='QB')?routesFor(p):null;\n    const tappable=(mode=='pass' && rf && rf.list && rf.list.length);\n    const qbTap=(mode=='pass' && p.role=='QB' && wrPlayers.length>1);\n    if(tappable) s+=`<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"12.5\" fill=\"none\" stroke=\"#a8321f\" stroke-width=\"1\" stroke-dasharray=\"2 2\" opacity=\"0.5\"/>`;\n    if(qbTap) s+=`<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"12.5\" fill=\"none\" stroke=\"#4f83cc\" stroke-width=\"1\" stroke-dasharray=\"2 2\" opacity=\"0.6\"/>`;\n    const cls = tappable?`<g class=\"tap\" data-slot=\"${p.slot}\" style=\"cursor:pointer\">`:(qbTap?`<g class=\"qbtap\" style=\"cursor:pointer\">`:'<g>');\n    s+=`${cls}<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"9\" fill=\"${fill}\" stroke=\"#000\"/><text x=\"${p.x}\" y=\"${p.y+3}\" fill=\"${tc}\" font-size=\"7\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">${p.label}</text></g>`;\n    if(qbTap) s+=`<text x=\"${p.x}\" y=\"${p.y+20}\" font-size=\"5.5\" fill=\"#4f83cc\" text-anchor=\"middle\">tap: rotate WRs</text>`;\n    if(mode=='pass' && rf && rf.name && rf.name!='\\u2014'){\n      const idx=(sel[p.slot]||0)%rf.list.length; const rt=rf.list[idx];\n      const belowLOS = p.y>losY;\n      let ny=belowLOS?p.y+20:p.y+20;\n      s+=`<text x=\"${p.x}\" y=\"${ny}\" font-size=\"7.5\" fill=\"#1a1a17\" text-anchor=\"middle\" font-weight=\"bold\" data-noteable=\"1\" data-note-label=\"Player role\" data-note-value=\"${nEsc(rf.name)}\" data-note-context=\"${nEsc(SEASON+' playbook \u00b7 '+g.p+' personnel \u00b7 '+g.name)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"player_role\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"QB,RB,WR,TE\" data-note-nav=\"${NOTE_NAV}\">${rf.name}</text>`;\n      const pctTxt = rt[1]!=null?` ${rt[1]}%`:'';\n      const srcTxt = rf.src=='tree'?' (tree)':(rf.src=='season'?' (szn)':'');\n      s+=`<text x=\"${p.x}\" y=\"${ny+9}\" font-size=\"6\" fill=\"#a8321f\" text-anchor=\"middle\" data-noteable=\"1\" data-note-label=\"Route tendency\" data-note-value=\"${nEsc(rt[0].split('/')[0]+pctTxt+srcTxt)}\" data-note-context=\"${nEsc(SEASON+' playbook \u00b7 '+g.p+' personnel \u00b7 '+g.name+' \u00b7 '+rf.name)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"route_tendency\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"QB,RB,WR,TE\" data-note-nav=\"${NOTE_NAV}\">${rt[0].split('/')[0]}${pctTxt}${srcTxt}</text>`;\n      if(rf.list.length>1) s+=`<text x=\"${p.x}\" y=\"${ny+17}\" font-size=\"5.5\" fill=\"#8a8470\" text-anchor=\"middle\">${idx+1}/${rf.list.length} tap</text>`;\n    }\n  });\n  return s.replace('<svg ',`<svg `).replace(`viewBox=\"0 0 ${W} ${H}\">`,`viewBox=\"0 0 ${W} ${H}\"><defs>${defs}</defs>`)+`</svg>`;\n}\nfunction draw(){\n  const dn=document.getElementById('down').value,ds=document.getElementById('dist').value,fl=document.getElementById('field').value;\n  const node=FORM[dn][ds][fl],grid=document.getElementById('grid');\n  document.getElementById('banner').textContent=({all:'All Downs','1':'1st Down','2':'2nd Down','3':'3rd Down','4':'4th Down'}[dn])+({all:'',short:' & Short',med:' & Medium',long:' & Long'}[ds])+({all:'',pa:' \u00b7 Play-Action',motion:' \u00b7 Motion',nohuddle:' \u00b7 No-Huddle',redzone:' \u00b7 Red Zone'}[fl]);\n  if(!node||!node.groups.length){grid.innerHTML='<div class=\"empty\">No plays match this situation.</div>';document.getElementById('ctx').textContent='';return;}\n  document.getElementById('ctx').textContent=node.total+' plays';\n  window._G=node.groups;\n  // Production out of this formation: yards + TDs, split pass vs run. Moves with the filters.\n  function prodLine(g, mode){\n    const P=noteWrap('Pass production', `PASS ${(+g.py||0).toLocaleString()} yds \u00b7 ${+g.ptd||0} TD`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,WR,TE,RB', `<span class=\"prod-pass\">PASS ${(+g.py||0).toLocaleString()} yds \u00b7 ${+g.ptd||0} TD</span>`);\n    const R=noteWrap('Run production', `RUN ${(+g.ry||0).toLocaleString()} yds \u00b7 ${+g.rtd||0} TD`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'RB,QB', `<span class=\"prod-run\">RUN ${(+g.ry||0).toLocaleString()} yds \u00b7 ${+g.rtd||0} TD</span>`);\n    if(mode==='pass') return P;\n    if(mode==='run')  return R;\n    return `${P}<span class=\"prod-sep\">\u00b7</span>${R}`;\n  }\n  let html=\"\";\n  node.groups.forEach((g,i)=>{const noise=g.n<8?' <span class=\"hl-p\" style=\"font-size:9px;padding:0 3px;\">SMALL</span>':'';\n    html+=`<div class=\"card\"><div class=\"rank\">#${i+1}</div>\n      <div class=\"plabel\"><span class=\"pers alt\" data-i=\"${i}\" title=\"tap to change alignment\" style=\"cursor:pointer\">${g.p} PERSONNEL \u21c4</span> <span class=\"fname\">${g.name}</span></div>\n      <div class=\"subttl\">${g.backs} BACK \u00b7 ${g.te} TE \u00b7 ${g.wr} WR \u2014 ${g.share}% of snaps${noise}</div>\n      <div class=\"prod\" id=\"prd${i}\">${prodLine(g)}</div>\n      <div class=\"fieldbox\">${fieldSvg(g,'none',{},0,0)}</div>\n      <div class=\"stats\"><div class=\"stat\"><span id=\"snl${i}\">Snaps</span><b id=\"snv${i}\">${noteWrap('Snaps', String(g.n), `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', String(g.n))}</b></div><div class=\"stat\"><span>Success</span><b id=\"scv${i}\">${noteWrap('Success Rate', `${g.succ}%`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', `${g.succ}%`)}</b></div>\n      <div class=\"stat\"><span>EPA/play</span><b id=\"epv${i}\" class=\"${g.epa>=.05?'hl-g':(g.epa<=-.05?'hl-p':'')}\">${noteWrap('EPA/play', `${g.epa>=0?'+':''}${g.epa.toFixed(2)}`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', `${g.epa>=0?'+':''}${g.epa.toFixed(2)}`)}</b></div><div class=\"stat\"><span>Share</span><b>${noteWrap('Formation Share', `${g.share}%`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', `${g.share}%`)}</b></div></div>\n      <div class=\"rp\" data-i=\"${i}\"><div class=\"run seg\" data-mode=\"run\" style=\"width:${(100-Number(g.pass_rate||0)).toFixed(2)}%\"><b>RUN ${(100-Number(g.pass_rate||0)).toFixed(2)}%</b></div><div class=\"pass seg\" data-mode=\"pass\" style=\"width:${Number(g.pass_rate||0).toFixed(2)}%\"><b>PASS ${Number(g.pass_rate||0).toFixed(2)}%</b></div></div>\n      <div class=\"hintbar\" id=\"hint${i}\">tap label \u21c4 change look \u00b7 click bar \u25b8 runs / routes</div></div>`;});\n  grid.innerHTML=html;\n  function setStats(i,mode,g){\n    const snl=document.getElementById('snl'+i),snv=document.getElementById('snv'+i),scv=document.getElementById('scv'+i),epv=document.getElementById('epv'+i);\n    let n=g.n,sc=g.succ,ep=g.epa,lbl='Snaps';\n    if(mode=='run'){ n=g.nr;sc=g.sr;ep=g.er;lbl='Run snaps'; }\n    else if(mode=='pass'){ n=g.np;sc=g.sp;ep=g.ep;lbl='Pass snaps'; }\n    const prd=document.getElementById('prd'+i);\n    if(prd) prd.innerHTML=prodLine(g, mode==='none'?null:mode);\n    snl.textContent=lbl; snv.textContent=n; scv.textContent=sc+'%';\n    epv.textContent=(ep>=0?'+':'')+ep.toFixed(2);\n    epv.className = ep>=.05?'hl-g':(ep<=-.05?'hl-p':'');\n  }\n  document.querySelectorAll('.seg').forEach(seg=>{\n    seg.onclick=(e)=>{ e.stopPropagation();\n      const card=seg.closest('.card'), i=+seg.closest('.rp').dataset.i, mode=seg.dataset.mode, g=window._G[i];\n      const box=card.querySelector('.fieldbox'), hint=card.querySelector('.hintbar');\n      const cur=box.dataset.mode||'none';\n      card.querySelectorAll('.seg').forEach(x=>x.classList.remove('active'));\n      if(cur==mode){ box.innerHTML=fieldSvg(g,'none',{},0,box._av||0); box.dataset.mode='none';\n        hint.textContent='tap label \u21c4 change look \u00b7 click bar \u25b8 runs / routes'; hint.style.color=''; setStats(i,'none',g); return; }\n      seg.classList.add('active');\n      if(!box._sel) box._sel={};\n      box.innerHTML=fieldSvg(g,mode,box._sel,box._rot||0,box._av||0); box.dataset.mode=mode;\n      if(mode=='pass') wireTaps(box,g);\n      setStats(i,mode,g);\n      hint.textContent = mode=='pass'?'ROUTES \u2014 most common per player when targeted':'RUN LANES \u2014 top 3 gaps (color = EPA)';\n      hint.style.color = mode=='pass'?'#4f83cc':'#4a7f2c';\n    };\n  });\n  // clickable personnel label cycles alignment variant\n  document.querySelectorAll('.pers.alt').forEach(lab=>{\n    lab.onclick=(e)=>{ e.stopPropagation();\n      const i=+lab.dataset.i, g=window._G[i], card=lab.closest('.card'), box=card.querySelector('.fieldbox');\n      box._av=(box._av||0)+1; box._sel={}; box._rot=box._rot||0;\n      const mode=box.dataset.mode||'none';\n      box.innerHTML=fieldSvg(g,mode,box._sel,box._rot,box._av); \n      if(mode=='pass') wireTaps(box,g);\n    };\n  });\n}\n// formation diagram rendered in the card; overlay drawn in-place on click\nfunction fieldSvg(g, mode, sel, wrRot, av){ return drawPlayDiagram(g, mode, sel, wrRot, av); }\nfunction wireTaps(box,g){\n  box.querySelectorAll('.tap').forEach(el=>{\n    el.onclick=(ev)=>{ ev.stopPropagation();\n      const slot=el.getAttribute('data-slot'); if(!box._sel) box._sel={};\n      box._sel[slot]=(box._sel[slot]||0)+1;\n      box.innerHTML=fieldSvg(g,'pass',box._sel,box._rot||0,box._av||0); box.dataset.mode='pass';\n      wireTaps(box,g);\n    };\n  });\n  box.querySelectorAll('.qbtap').forEach(el=>{\n    el.onclick=(ev)=>{ ev.stopPropagation();\n      box._rot=(box._rot||0)+1; box._sel={};\n      box.innerHTML=fieldSvg(g,'pass',{},box._rot,box._av||0); box.dataset.mode='pass';\n      wireTaps(box,g);\n    };\n  });\n}\n\n(function noteBridge(){\n  const DBL_MS=360, MOVE=10;\n  let st=null;\n  function clear(){ st=null; }\n  function info(el){\n    if(!el || !el.dataset) return null;\n    return {\n      label: el.dataset.noteLabel || 'Playbook stat',\n      value: el.dataset.noteValue || '',\n      context: el.dataset.noteContext || '',\n      source: el.dataset.noteSource || 'coaching_playbook',\n      statKey: el.dataset.noteStatKey || '',\n      team: el.dataset.noteTeam || TEAM_CODE || '',\n      relevance: el.dataset.noteRelevance || 'QB,RB,WR,TE',\n      nav: el.dataset.noteNav ? (function(){ try{return JSON.parse(el.dataset.noteNav);}catch(e){return null;} })() : null,\n    };\n  }\n  function open(el){\n    const parentWin = window.parent;\n    if(!parentWin || typeof parentWin.noteOpenPicker!=='function') return;\n    const payload = info(el);\n    if(payload) parentWin.noteOpenPicker(payload);\n  }\n  function tap(el,x,y){\n    const now=Date.now();\n    if(!st){ st={el,x,y,t:now}; return; }\n    const same=st.el===el;\n    const soon=(now-st.t)<=DBL_MS;\n    const close=Math.abs(x-st.x)<=MOVE && Math.abs(y-st.y)<=MOVE;\n    if(same&&soon&&close){ clear(); open(el); return; }\n    st={el,x,y,t:now};\n  }\n  document.addEventListener('touchstart', e=>{\n    if(e.touches.length!==1) return clear();\n    const el=e.target&&e.target.closest?e.target.closest('[data-noteable=\"1\"]'):null;\n    if(!el) return;\n    const t=e.touches[0];\n    tap(el,t.clientX,t.clientY);\n  }, {passive:true});\n  document.addEventListener('touchcancel', clear, {passive:true});\n  document.addEventListener('mousedown', e=>{\n    const el=e.target&&e.target.closest?e.target.closest('[data-noteable=\"1\"]'):null;\n    if(!el||e.button!==0) return;\n    tap(el,e.clientX,e.clientY);\n  });\n  document.addEventListener('mouseleave', clear);\n})();\n\n['down','dist','field'].forEach(id=>document.getElementById(id).onchange=draw); draw();\n__TC_SCRIPT_CLOSE__</body></html>\n";
 // ─────────────────────────────────────────────────────────────────────────────
 // Team playbook modal (nflverse)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -9038,6 +9191,75 @@ function _schemeInsightNarrative(d){
   return pieces.join(' ');
 }
 
+function _schemeProductionTotalsFromPayload(p){
+  const fv = _schemeBuildFv(p);
+  const node = _schemeSafeNode(fv, 'all', 'all', 'all');
+  const groups = Array.isArray(node && node.groups) ? node.groups : [];
+  const sum = { passYds:0, rushYds:0, passTD:0, rushTD:0, passAtt:0, rushAtt:0 };
+  groups.forEach(g=>{
+    sum.passYds += _schemeNumber(g && g.py, 0);
+    sum.rushYds += _schemeNumber(g && g.ry, 0);
+    sum.passTD += _schemeNumber(g && g.ptd, 0);
+    sum.rushTD += _schemeNumber(g && g.rtd, 0);
+    sum.passAtt += _schemeNumber(g && g.np, 0);
+    sum.rushAtt += _schemeNumber(g && g.nr, 0);
+  });
+  sum.totalTD = sum.passTD + sum.rushTD;
+  return sum;
+}
+
+function _schemeTeamOffenseProduction(season, teamCode){
+  const snap = _schemeLeagueInsightSnapshot(season);
+  const block = NFLVERSE && NFLVERSE[String(season)] && NFLVERSE[String(season)].coaching_scheme;
+  const teams = block ? Object.keys(block) : [];
+  if(!snap || !block || !teams.length || !teamCode || !block[teamCode]) return null;
+  const byTeam = {};
+  teams.forEach(tm=>{ byTeam[tm] = _schemeProductionTotalsFromPayload({ season:String(season), team:tm, data:block[tm] }); });
+  const stats = [
+    { key:'Team Total TDs', dataKey:'totalTD', digits:0, higher:true },
+    { key:'Pass Yards', dataKey:'passYds', digits:0, higher:true },
+    { key:'Rush Yards', dataKey:'rushYds', digits:0, higher:true },
+    { key:'Pass Att', dataKey:'passAtt', digits:0, higher:true },
+    { key:'Rush Att', dataKey:'rushAtt', digits:0, higher:true },
+    { key:'Points/Drive', dataKey:'pointsPerDrive', digits:2, higher:true },
+  ];
+  return stats.map(s=>{
+    const value = s.dataKey==='pointsPerDrive'
+      ? (snap.rowsByTeam[teamCode] ? snap.rowsByTeam[teamCode].pointsPerDrive : null)
+      : (byTeam[teamCode] ? byTeam[teamCode][s.dataKey] : null);
+    const arr = teams.map(tm=> s.dataKey==='pointsPerDrive'
+      ? (snap.rowsByTeam[tm] ? snap.rowsByTeam[tm].pointsPerDrive : null)
+      : (byTeam[tm] ? byTeam[tm][s.dataKey] : null)).filter(Number.isFinite);
+    const rank = _schemeRankInLeague(value, arr, s.higher ? 'desc' : 'asc');
+    const rankCls = _schemeRankClass(rank, teams.length);
+    const txt = Number.isFinite(value) ? (s.digits>0 ? value.toFixed(s.digits) : Math.round(value).toLocaleString()) : '—';
+    const rv = rank ? `${txt} · league rank #${rank} of ${teams.length}` : txt;
+    return { label:s.key, value, display:txt, rank, rankCls, rankText: rank ? `#${rank}` : '—', valueText:rv };
+  });
+}
+
+function _schemeRenderTeamOffenseProduction(p){
+  const season = String((p&&p.season) || '');
+  const teamCode = String((p&&p.team) || schemeTeam || '').toUpperCase();
+  const teamName = teamDisplayName(teamCode) || teamCode;
+  const rows = _schemeTeamOffenseProduction(season, teamCode);
+  if(!rows || !rows.length) return '';
+  const cards = rows.map(r=>{
+    const tagged = noteWrapHtml(`${r.display} <span class="scheme-op-rank ${r.rankCls}">(${r.rankText})</span>`, {
+      label: r.label,
+      value: r.valueText,
+      source:'coaching_insights',
+      statKey:r.label,
+      context:`${teamName} team offense production · ${season}`,
+      team:teamCode,
+      relevance:'QB,RB,WR,TE',
+      nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' },
+    }, 'note-tag-hit');
+    return `<div class="scheme-op-card"><div class="scheme-op-k">${_schemeEscHtml(r.label)}</div><div class="scheme-op-v">${tagged}</div></div>`;
+  }).join('');
+  return `<div class="scheme-op-wrap"><div class="scheme-op-title">Team offensive production · ${_schemeEscHtml(String(season))}</div><div class="scheme-op-grid">${cards}</div></div>`;
+}
+
 function _schemeClamp(v, lo, hi){
   const n = _schemeNumber(v, 0);
   return Math.max(lo, Math.min(hi, n));
@@ -9545,6 +9767,7 @@ function _schemeRenderInsights(p){
   const d = _schemeRedZoneInsightData(p);
   const teamCode = String((p && p.team) || '').toUpperCase();
   const teamName = teamDisplayName(teamCode) || teamCode;
+  const offenseStrip = _schemeRenderTeamOffenseProduction(p);
   const benefactors = _schemeBuildBenefactors(p, d);
   const rushBenefactors = _schemeBuildRushBenefactors(p, d);
   const league = _schemeLeagueInsightRanks(p && p.season);
@@ -9563,6 +9786,7 @@ function _schemeRenderInsights(p){
     'This compares this offense to the league. Lower friction means cleaner touchdown paths with fewer stalled drives. It combines how often drives end with punts, turnovers, or three-and-outs plus drive efficiency and red-zone finishing.'
   );
   return `<div class="scheme-insights-wrap">
+    ${offenseStrip}
     <div class="scheme-insights-head">
       <span class="scheme-insights-pill ${toneClass}">${d.label}</span>
       <span class="scheme-insights-sample">Sample: ${Math.round(_schemeNumber(d.samplePlays, 0))} red-zone plays</span>
@@ -12204,7 +12428,7 @@ function psRender(q){
       ? imgTag(NFL_LOGO(String(e.team).toUpperCase()), 'ps-hs ps-def')
       : imgTag(hsPack({player_id:e.pid, name:e.name, pos:e.pos}), 'ps-hs');
     const logo = e.team ? `<img class="ps-team-logo" src="${NFL_LOGO(String(e.team).toUpperCase())}" alt="${escAttr(e.team)}" onerror="this.style.display='none'">` : '';
-    return `<button class="ps-row${i===0?' ps-active':''}" data-pid="${escAttr(e.pid)}" data-pos="${escAttr(e.pos)}" data-team="${escAttr(e.team)}"
+    return `<button class="ps-row${i===0?' ps-active':''}" data-pid="${escAttr(e.pid)}" data-name="${escAttr(e.name)}" data-pos="${escAttr(e.pos)}" data-team="${escAttr(e.team)}"
                     onclick="psPick(this)">
       ${img}
       <span class="ps-nm">${nameText}</span>
@@ -12215,10 +12439,11 @@ function psRender(q){
 
 function psPick(btn){
   const pid = btn.getAttribute('data-pid');
+  const name = btn.getAttribute('data-name') || '';
   const pos = btn.getAttribute('data-pos');
   const team = btn.getAttribute('data-team');
   closePlayerSearch();
-  openPlayerCard(pid, pos, team);
+  openPlayerCard((pos==='DEF') ? pid : (name || pid), pos, team);
 }
 
 // Arrow keys move the highlight; Enter opens it; Escape closes.

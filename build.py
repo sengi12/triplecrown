@@ -15,7 +15,8 @@ prefixes fix the order so top-level `let`/`const` initialise exactly as before. 
 byte-for-byte what you'd get hand-editing index.html — nothing about the shipped app changes.
 
 Usage:
-    python build.py            # rebuild index.html from src/
+    python build.py            # rebuild the normal user-facing index.html from src/
+    python build.py --dev      # rebuild a developer build (seed loader + developer-only UI)
     python build.py --check    # verify src/ rebuilds the current index.html (no write); exit 1 if not
 """
 import json
@@ -28,9 +29,10 @@ SRC = os.path.join(ROOT, "src")
 OUT = os.path.join(ROOT, "index.html")
 CSS_TOKEN = "@@CSS_PARTIALS@@"
 JS_TOKEN = "@@JS_PARTIALS@@"
+DEV_TOKEN = "__TC_DEV_MODE__"
 # The seed-loading UI (📦 Seed button + hidden file input) is wrapped in these markers so the
-# build can include or drop it. It's OFFLINE-only: hosted copies auto-load triplecrown_seed.json
-# (so a manual loader is redundant), while a local file:// copy with no server may still want it.
+# build can include or drop it. It is DEV-only: normal user-facing builds auto-load
+# triplecrown_seed.json when hosted, while a developer build may still want the manual loader.
 SEED_UI_RE = re.compile(r"[ \t]*<!--@@SEED_UI@@-->\n(.*?)[ \t]*<!--@@/SEED_UI@@-->\n", re.DOTALL)
 INLINE_TEXT_RE = re.compile(r'__INLINE_TEXT__\("([^"]+)"\)')
 
@@ -70,12 +72,11 @@ def _concat(dirpath):
     return "\n".join(_read_partial(os.path.join(dirpath, f)) for f in files), files
 
 
-def build(offline=False):
+def build(dev=False):
     """Assemble the single-file index.html string from the src/ partials.
 
-    `offline=True` keeps the seed-loading UI (📦 Seed button + file input); the default
-    (online) build strips it — hosted copies auto-load triplecrown_seed.json, so a manual
-    loader is redundant clutter there."""
+    `dev=True` keeps the seed-loading UI (📦 Seed button + file input) and any developer-only
+    UI. The default build strips those extras so the shipped app stays user-facing."""
     with open(os.path.join(SRC, "index.template.html"), "r") as f:
         template = f.read()
     css, css_files = _concat(os.path.join(SRC, "css"))
@@ -83,11 +84,12 @@ def build(offline=False):
     if CSS_TOKEN not in template or JS_TOKEN not in template:
         raise SystemExit(f"template is missing {CSS_TOKEN} or {JS_TOKEN}")
     out = template.replace(CSS_TOKEN, css).replace(JS_TOKEN, js)
+    out = out.replace(DEV_TOKEN, "1" if dev else "0")
     # Static template can't call TC_ICON(), so @@ICON_name@@ placeholders are substituted here
     # with the same inline SVGs (kept in sync with src/js/03-icons.js).
     out = _sub_icons(out)
     # Include the seed UI (keep only the inner content) or strip it entirely.
-    out = SEED_UI_RE.sub((lambda m: m.group(1)) if offline else "", out)
+    out = SEED_UI_RE.sub((lambda m: m.group(1)) if dev else "", out)
     return out, css_files, js_files
 
 
@@ -124,15 +126,15 @@ def _sub_icons(text):
 
 def main():
     check = "--check" in sys.argv
-    offline = "--offline" in sys.argv
+    dev = ("--dev" in sys.argv) or ("--offline" in sys.argv)
     # Optional custom output path (e.g. `--out index_offline.html`); defaults to index.html.
     out_path = OUT
     if "--out" in sys.argv:
         i = sys.argv.index("--out")
         if i + 1 < len(sys.argv):
             out_path = os.path.abspath(sys.argv[i + 1])
-    out, css_files, js_files = build(offline=offline)
-    mode = "offline" if offline else "online"
+    out, css_files, js_files = build(dev=dev)
+    mode = "dev" if dev else "normal"
     if check:
         current = open(OUT).read() if os.path.exists(OUT) else ""
         if out != current:
