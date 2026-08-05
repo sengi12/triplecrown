@@ -743,7 +743,7 @@ function renderTeamAdvanced(team){
           value: tagValue,
           source: 'team_advanced',
           statKey: key,
-          context: `${teamDisplayName(useTeam)} · ${tbl.title||key} · ${advTeamSeason()} season`,
+          context: historicalTagContext(`${teamDisplayName(useTeam)} · ${tbl.title||key} · ${advTeamSeason()} season`, useTeam, advTeamSeason()),
           team: useTeam,
           relevance: noteRelevanceForTableKey(key),
           nav: { type:'advanced', team: useTeam, season: String(advTeamSeason()) },

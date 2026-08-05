@@ -230,7 +230,7 @@ function passPieSubHtml(state,totalTgts,team){
   const shown=String(totalTgts)+' targets';
   const ctx=activeSeason==='proj'
     ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} target pool`
-    : `${activeSeason} target pool`;
+    : historicalTagContext(`${activeSeason} target pool`, noteTeam, activeSeason);
   return `${noteWrapHtml(escHtml(shown), { label:'Team Target Pool', value:shown, source:'projection_builder_receiving', statKey:'target_pool', context:ctx, team:noteTeam, relevance:'WR,TE,RB' }, 'note-tag-hit')}`;
 }
 
@@ -241,7 +241,7 @@ function passDerivedSubHtml(state,metric,team){
   const shown=isYds?`${Math.round(pool).toLocaleString()} yds`:`${Math.round(pool)} rec`;
   const ctx=activeSeason==='proj'
     ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} receiving pool`
-    : `${activeSeason} receiving pool`;
+    : historicalTagContext(`${activeSeason} receiving pool`, noteTeam, activeSeason);
   return `${noteWrapHtml(escHtml(shown), { label:isYds?'Team Receiving Yards Pool':'Team Receptions Pool', value:shown, source:'projection_builder_receiving', statKey:isYds?'receiving_yards_pool':'receptions_pool', context:ctx, team:noteTeam, relevance:'WR,TE,RB' }, 'note-tag-hit')}`;
 }
 

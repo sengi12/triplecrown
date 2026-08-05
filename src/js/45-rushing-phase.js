@@ -116,7 +116,7 @@ function rushNote(state, opts){
   const noteTeam=String((opts&&opts.team)||currentTeam||'').toUpperCase();
   const ctx=activeSeason==='proj'
     ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} rushing derived`
-    : `${activeSeason} rushing derived`;
+    : historicalTagContext(`${activeSeason} rushing derived`, noteTeam, activeSeason);
   return `RB carries: ${noteWrapHtml(escHtml(String(r.total_attempts)), { label:'RB Carries', value:String(r.total_attempts), source:'projection_builder_rushing', statKey:'rb_carries', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')} · team YPA: ${noteWrapHtml(escHtml((r.ypa||0).toFixed(2)), { label:'Team RB Yards Per Carry', value:(r.ypa||0).toFixed(2), source:'projection_builder_rushing', statKey:'team_rb_ypa', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')} · RB yards: ${noteWrapHtml(escHtml((r.total_yards||0).toLocaleString()), { label:'Team RB Rushing Yards', value:(r.total_yards||0).toLocaleString(), source:'projection_builder_rushing', statKey:'team_rb_yards', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')} · incl QB: ${noteWrapHtml(escHtml('~'+String(totalIncQB)+' carries'), { label:'Team Carries Including QB', value:'~'+String(totalIncQB)+' carries', source:'projection_builder_rushing', statKey:'team_carries_incl_qb', context:ctx, team:noteTeam, relevance:'QB,RB' }, 'note-tag-hit')}`;
 }
 
@@ -125,7 +125,7 @@ function rushTotalLabelHtml(state, team){
   const noteTeam=String(team||currentTeam||'').toUpperCase();
   const ctx=activeSeason==='proj'
     ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} rushing totals`
-    : `${activeSeason} rushing totals`;
+    : historicalTagContext(`${activeSeason} rushing totals`, noteTeam, activeSeason);
   const attShown=String(r.total_attempts||0)+' att';
   const ydsShown=(r.total_yards||0).toLocaleString()+' yds';
   return `${noteWrapHtml(escHtml(attShown), { label:'Team RB Carries', value:attShown, source:'projection_builder_rushing', statKey:'team_rb_carries', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')} / ${noteWrapHtml(escHtml(ydsShown), { label:'Team RB Rushing Yards', value:ydsShown, source:'projection_builder_rushing', statKey:'team_rb_total_yards', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')}`;

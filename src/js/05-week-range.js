@@ -362,11 +362,37 @@ function weekFilterPaceButton(state, pid, mode){
   const text = weekFilterPaceText(state, pid, mode);
   if(!text) return '';
   const target = noteTargetFromArgs(pid, '', currentTeam||'');
-  return `<span class="pace-info-wrap"${noteTagAttrs({ label:'17-game pace', value:text, source:'week_range_pace', statKey:'pace', context:`${activeSeason} week range`, player:target, team:target&&target.team })}><button class="pace-info-btn" onclick="toggleWeekFilterPace(this, ${pcardArg(text)})" aria-label="Show 17-game pace">i</button></span>`;
+  return `<span class="pace-info-wrap"${noteTagAttrs({ label:'17-game pace', value:text, source:'week_range_pace', statKey:'pace', context:historicalTagContext(`${activeSeason} week range`, target&&target.team, activeSeason), player:target, team:target&&target.team })}><button class="pace-info-btn" onclick="toggleWeekFilterPace(this, ${pcardArg(text)})" aria-label="Show 17-game pace">i</button></span>`;
 }
 
 function isWeekFilterActive(state){
   return !!(state.weekFilter && (state.weekFilter[0]>1 || state.weekFilter[1]<18));
+}
+
+function noteWeekRangeSuffix(team, season){
+  const s = String(season==null ? activeSeason : season);
+  if(s==='proj') return '';
+  const tm = String(team||currentTeam||'').toUpperCase();
+  let range = (typeof getSharedWeekRange==='function') ? getSharedWeekRange(tm, s) : null;
+  const localRange = (s===String(activeSeason) && userProj && userProj[tm] && Array.isArray(userProj[tm].weekFilter))
+    ? userProj[tm].weekFilter
+    : null;
+  const sharedFullSeason = Array.isArray(range) && range.length>=2
+    && (parseInt(range[0], 10) || 1)===1 && (parseInt(range[1], 10) || 18)===18;
+  const localFiltered = Array.isArray(localRange) && localRange.length>=2
+    && ((parseInt(localRange[0], 10) || 1)>1 || (parseInt(localRange[1], 10) || 18)<18);
+  if((!Array.isArray(range) || range.length<2 || (sharedFullSeason && localFiltered)) && localRange){
+    range = localRange;
+  }
+  if(!Array.isArray(range) || range.length<2) return '';
+  const lo = Math.max(1, parseInt(range[0], 10) || 1);
+  const hi = Math.max(lo, Math.min(18, parseInt(range[1], 10) || 18));
+  if(lo===1 && hi===18) return '';
+  return ` · weeks ${lo}-${hi}`;
+}
+
+function historicalTagContext(base, team, season){
+  return `${String(base||'').trim()}${noteWeekRangeSuffix(team, season)}`;
 }
 
 // Kick off a week-range fetch+recompute+rerender. Called when the slider is released.

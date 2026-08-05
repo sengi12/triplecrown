@@ -9,7 +9,7 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   assembleSeed, normalizeSleeperRow, ensureTeam, initPassingShares, teamTargetPool, teamRecYardsPool,
-  weekFilterPaceButton, weekFilterPaceText,
+  weekFilterPaceButton, weekFilterPaceText, historicalTagContext,
   setSEED:(s)=>{SEED=s;projSeed=s;seasonStatsCache.proj=s;workingProj={};userProj=workingProj;activeSeason='2025';referenceProj=workingProj;},
   selectTeam:t=>{currentTeam=t;ensureTeam(t);},
   setWeekFilterDirect:(team,lo,hi,skillData,qbPool,qbData)=>{
@@ -51,13 +51,21 @@ console.log('Kraft share of windowed pool:', (kraftFiltered.share*100).toFixed(1
 const paceBtn=app.weekFilterPaceButton(st,'9484','rec');
 const qbPaceBtn=app.weekFilterPaceButton(st,'q','qb');
 const paceText=app.weekFilterPaceText(st,'9484','rec');
+const histCtx=app.historicalTagContext('2025 QB totals','GB','2025');
+const advCtx=app.historicalTagContext('Green Bay Packers · Offense · 2025 season','GB','2025');
 console.log('Kraft pace button present:', /pace-info-btn/.test(paceBtn));
 console.log('Kraft pace button opens a persistent popover:', /toggleWeekFilterPace\(/.test(paceBtn));
 console.log('Kraft pace text references 17-game pace + weeks + sample games:', /17-game pace/.test(paceText) && /weeks 1-9/.test(paceText) && /8 games/.test(paceText));
 console.log('QB pace button includes pass and rush pace source text:', /toggleWeekFilterPace\(/.test(qbPaceBtn) && /pass yds/.test(app.weekFilterPaceText(st,'q','qb')) && /rush yds/.test(app.weekFilterPaceText(st,'q','qb')));
+console.log('Historical stat tag context includes week filter:', histCtx==='2025 QB totals · weeks 1-9');
+console.log('Historical advanced tag context includes week filter:', advCtx==='Green Bay Packers · Offense · 2025 season · weeks 1-9');
+console.log('Pace tag stores week filter in note context attr:', /data-note-context="2025 week range · weeks 1-9"/.test(paceBtn));
 const okMain = kraftFiltered.baseline_targets===44 && kraftFiltered.baseline_yards===489 && app.teamRecYardsPool(st)===2100
   && /pace-info-btn/.test(paceBtn) && /toggleWeekFilterPace\(/.test(paceBtn) && /17-game pace/.test(paceText)
-  && /pass yds/.test(app.weekFilterPaceText(st,'q','qb'));
+  && /pass yds/.test(app.weekFilterPaceText(st,'q','qb'))
+  && histCtx==='2025 QB totals · weeks 1-9'
+  && advCtx==='Green Bay Packers · Offense · 2025 season · weeks 1-9'
+  && /data-note-context="2025 week range · weeks 1-9"/.test(paceBtn);
 
 console.log('\n=== Apply week 13-14 filter (QB missed whole window) ===');
 const zeroQbData={'q':{pass_yards:0, pass_att:0, pass_td:0, comp:0, pass_int:0, rush_att:0, rush_yards:0, rush_td:0, games_played:0}};

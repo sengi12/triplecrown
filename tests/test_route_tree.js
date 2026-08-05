@@ -57,6 +57,7 @@ const nRoutes=Object.keys(rt.tree).length;
 chk('valid <svg> root', svg.startsWith('<svg') && svg.trim().endsWith('</svg>'));
 chk('one polyline per run route', (svg.match(/<polyline/g)||[]).length===nRoutes);
 chk('one label per run route', (svg.match(/rt-label-name/g)||[]).length===nRoutes);
+chk('route endpoint labels are note-tagable', (svg.match(/class="rt-label" data-noteable="1"/g)||[]).length===nRoutes);
 chk('backfield marker present (swing/angle run)', svg.includes('rt-origin-bf'));
 chk('LOS + receiver origin drawn', svg.includes('rt-los') && svg.includes('rt-origin'));
 // A route NOT run should not appear (Wheel absent from the fixture).

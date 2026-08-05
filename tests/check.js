@@ -512,11 +512,37 @@ function weekFilterPaceButton(state, pid, mode){
   const text = weekFilterPaceText(state, pid, mode);
   if(!text) return '';
   const target = noteTargetFromArgs(pid, '', currentTeam||'');
-  return `<span class="pace-info-wrap"${noteTagAttrs({ label:'17-game pace', value:text, source:'week_range_pace', statKey:'pace', context:`${activeSeason} week range`, player:target, team:target&&target.team })}><button class="pace-info-btn" onclick="toggleWeekFilterPace(this, ${pcardArg(text)})" aria-label="Show 17-game pace">i</button></span>`;
+  return `<span class="pace-info-wrap"${noteTagAttrs({ label:'17-game pace', value:text, source:'week_range_pace', statKey:'pace', context:historicalTagContext(`${activeSeason} week range`, target&&target.team, activeSeason), player:target, team:target&&target.team })}><button class="pace-info-btn" onclick="toggleWeekFilterPace(this, ${pcardArg(text)})" aria-label="Show 17-game pace">i</button></span>`;
 }
 
 function isWeekFilterActive(state){
   return !!(state.weekFilter && (state.weekFilter[0]>1 || state.weekFilter[1]<18));
+}
+
+function noteWeekRangeSuffix(team, season){
+  const s = String(season==null ? activeSeason : season);
+  if(s==='proj') return '';
+  const tm = String(team||currentTeam||'').toUpperCase();
+  let range = (typeof getSharedWeekRange==='function') ? getSharedWeekRange(tm, s) : null;
+  const localRange = (s===String(activeSeason) && userProj && userProj[tm] && Array.isArray(userProj[tm].weekFilter))
+    ? userProj[tm].weekFilter
+    : null;
+  const sharedFullSeason = Array.isArray(range) && range.length>=2
+    && (parseInt(range[0], 10) || 1)===1 && (parseInt(range[1], 10) || 18)===18;
+  const localFiltered = Array.isArray(localRange) && localRange.length>=2
+    && ((parseInt(localRange[0], 10) || 1)>1 || (parseInt(localRange[1], 10) || 18)<18);
+  if((!Array.isArray(range) || range.length<2 || (sharedFullSeason && localFiltered)) && localRange){
+    range = localRange;
+  }
+  if(!Array.isArray(range) || range.length<2) return '';
+  const lo = Math.max(1, parseInt(range[0], 10) || 1);
+  const hi = Math.max(lo, Math.min(18, parseInt(range[1], 10) || 18));
+  if(lo===1 && hi===18) return '';
+  return ` · weeks ${lo}-${hi}`;
+}
+
+function historicalTagContext(base, team, season){
+  return `${String(base||'').trim()}${noteWeekRangeSuffix(team, season)}`;
 }
 
 // Kick off a week-range fetch+recompute+rerender. Called when the slider is released.
@@ -2689,7 +2715,7 @@ function qbDerivedHtml(qb, team){
   const notePlayer=noteTargetFromArgs((qb&&((qb.player_id)||qb.name))||'', 'QB', noteTeam);
   const ctx=activeSeason==='proj'
     ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} QB derived`
-    : `${activeSeason} QB derived`;
+    : historicalTagContext(`${activeSeason} QB derived`, noteTeam, activeSeason);
   return `Comp%: ${noteWrapHtml(escHtml(cp+'%'), { label:'Completion Percentage', value:cp+'%', source:'projection_builder_qb_derived', statKey:'completion_pct', context:ctx, player:notePlayer, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · YPA: ${noteWrapHtml(escHtml(String(ypa)), { label:'Yards Per Attempt', value:String(ypa), source:'projection_builder_qb_derived', statKey:'yards_per_attempt', context:ctx, player:notePlayer, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · Yds/TD: ${noteWrapHtml(escHtml(String(ytd)), { label:'Yards Per Passing TD', value:String(ytd), source:'projection_builder_qb_derived', statKey:'yards_per_td', context:ctx, player:notePlayer, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · per game: ${noteWrapHtml(escHtml(ypg+' yds'), { label:'Passing Yards Per Game', value:ypg+' yds', source:'projection_builder_qb_derived', statKey:'pass_yds_per_game', context:ctx, player:notePlayer, team:noteTeam, relevance:'QB' }, 'note-tag-hit')}`;
 }
 
@@ -2697,7 +2723,7 @@ function qbWorkloadNoteHtml(teamGames, overBudget, team){
   const noteTeam=String(team||currentTeam||'').toUpperCase();
   const ctx=activeSeason==='proj'
     ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} QB workload`
-    : `${activeSeason} QB workload`;
+    : historicalTagContext(`${activeSeason} QB workload`, noteTeam, activeSeason);
   const shown=`${teamGames.toFixed(0)} of ${SEASON_GAMES}`;
   const tagged=noteWrapHtml(escHtml(shown), { label:'Team QB Games', value:shown, source:'projection_builder_qb_workload', statKey:'team_qb_games', context:ctx, team:noteTeam, relevance:'QB' }, 'note-tag-hit');
   return `Team QB-games: ${tagged}${overBudget?' ⚠️ over a full season — combined QB workload exceeds 17 games':''}`;
@@ -2714,7 +2740,7 @@ function qbTotalsText(state, opts){
   const noteTeam=String((opts&&opts.team)||currentTeam||'').toUpperCase();
   const ctx=activeSeason==='proj'
     ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} QB totals`
-    : `${activeSeason} QB totals`;
+    : historicalTagContext(`${activeSeason} QB totals`, noteTeam, activeSeason);
   return `All QBs combined: ${noteWrapHtml(escHtml(Math.round(y).toLocaleString()+' yds'), { label:'Combined Passing Yards', value:Math.round(y).toLocaleString()+' yds', source:'projection_builder_qb_totals', statKey:'combined_pass_yards', context:ctx, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · ${noteWrapHtml(escHtml(Math.round(t)+' TDs'), { label:'Combined Passing TDs', value:Math.round(t)+' TDs', source:'projection_builder_qb_totals', statKey:'combined_pass_tds', context:ctx, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · ${noteWrapHtml(escHtml(Math.round(a)+' att'), { label:'Combined Pass Attempts', value:Math.round(a)+' att', source:'projection_builder_qb_totals', statKey:'combined_pass_attempts', context:ctx, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · ${noteWrapHtml(escHtml(Math.round(i)+' INTs'), { label:'Combined Interceptions', value:Math.round(i)+' INTs', source:'projection_builder_qb_totals', statKey:'combined_interceptions', context:ctx, team:noteTeam, relevance:'QB' }, 'note-tag-hit')}`;
 }
 function setActiveQB(idx){userProj[currentTeam].activeQB=idx;saveSession();renderContent();}
@@ -2951,7 +2977,7 @@ function passPieSubHtml(state,totalTgts,team){
   const shown=String(totalTgts)+' targets';
   const ctx=activeSeason==='proj'
     ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} target pool`
-    : `${activeSeason} target pool`;
+    : historicalTagContext(`${activeSeason} target pool`, noteTeam, activeSeason);
   return `${noteWrapHtml(escHtml(shown), { label:'Team Target Pool', value:shown, source:'projection_builder_receiving', statKey:'target_pool', context:ctx, team:noteTeam, relevance:'WR,TE,RB' }, 'note-tag-hit')}`;
 }
 
@@ -2962,7 +2988,7 @@ function passDerivedSubHtml(state,metric,team){
   const shown=isYds?`${Math.round(pool).toLocaleString()} yds`:`${Math.round(pool)} rec`;
   const ctx=activeSeason==='proj'
     ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} receiving pool`
-    : `${activeSeason} receiving pool`;
+    : historicalTagContext(`${activeSeason} receiving pool`, noteTeam, activeSeason);
   return `${noteWrapHtml(escHtml(shown), { label:isYds?'Team Receiving Yards Pool':'Team Receptions Pool', value:shown, source:'projection_builder_receiving', statKey:isYds?'receiving_yards_pool':'receptions_pool', context:ctx, team:noteTeam, relevance:'WR,TE,RB' }, 'note-tag-hit')}`;
 }
 
@@ -3232,7 +3258,7 @@ function rushNote(state, opts){
   const noteTeam=String((opts&&opts.team)||currentTeam||'').toUpperCase();
   const ctx=activeSeason==='proj'
     ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} rushing derived`
-    : `${activeSeason} rushing derived`;
+    : historicalTagContext(`${activeSeason} rushing derived`, noteTeam, activeSeason);
   return `RB carries: ${noteWrapHtml(escHtml(String(r.total_attempts)), { label:'RB Carries', value:String(r.total_attempts), source:'projection_builder_rushing', statKey:'rb_carries', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')} · team YPA: ${noteWrapHtml(escHtml((r.ypa||0).toFixed(2)), { label:'Team RB Yards Per Carry', value:(r.ypa||0).toFixed(2), source:'projection_builder_rushing', statKey:'team_rb_ypa', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')} · RB yards: ${noteWrapHtml(escHtml((r.total_yards||0).toLocaleString()), { label:'Team RB Rushing Yards', value:(r.total_yards||0).toLocaleString(), source:'projection_builder_rushing', statKey:'team_rb_yards', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')} · incl QB: ${noteWrapHtml(escHtml('~'+String(totalIncQB)+' carries'), { label:'Team Carries Including QB', value:'~'+String(totalIncQB)+' carries', source:'projection_builder_rushing', statKey:'team_carries_incl_qb', context:ctx, team:noteTeam, relevance:'QB,RB' }, 'note-tag-hit')}`;
 }
 
@@ -3241,7 +3267,7 @@ function rushTotalLabelHtml(state, team){
   const noteTeam=String(team||currentTeam||'').toUpperCase();
   const ctx=activeSeason==='proj'
     ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} rushing totals`
-    : `${activeSeason} rushing totals`;
+    : historicalTagContext(`${activeSeason} rushing totals`, noteTeam, activeSeason);
   const attShown=String(r.total_attempts||0)+' att';
   const ydsShown=(r.total_yards||0).toLocaleString()+' yds';
   return `${noteWrapHtml(escHtml(attShown), { label:'Team RB Carries', value:attShown, source:'projection_builder_rushing', statKey:'team_rb_carries', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')} / ${noteWrapHtml(escHtml(ydsShown), { label:'Team RB Rushing Yards', value:ydsShown, source:'projection_builder_rushing', statKey:'team_rb_total_yards', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')}`;
@@ -5367,7 +5393,19 @@ function routeTreeSVG(rt, metric, notePlayer){
     const end=pts[pts.length-1], prev=pts[pts.length-2];
     const ang=Math.atan2(end[1]-prev[1], end[0]-prev[0]);
     const side = sh.anc==='end'?'L' : (sh.anc==='start'?'R':'C');
-    return {sh,n,pct,ratio,col,w,pts,end,ang,side,metricV};
+    const metricTag = metricKnown ? _fmtRouteMetricValue(metricV, metric) : '—';
+    const noteValue = `${sh.label} · ${pct.toFixed(1)}% · ${n} routes${metricKnown?` · ${metricTag}`:''}`;
+    const noteAttrs = noteTagAttrs({
+      label:`${sh.label} route tendency`,
+      value:noteValue,
+      source:'route_tree',
+      statKey:metric,
+      context:`${pcardRouteSeason} route tree`,
+      player:notePlayer,
+      team:notePlayer&&notePlayer.team,
+      relevance:'WR,TE,RB,QB',
+    });
+    return {sh,n,pct,ratio,col,w,pts,end,ang,side,metricV,metricTag,noteAttrs};
   });
   // Draw least-run first so the hot routes sit on top; each route ends in an arrowhead.
   let paths='';
@@ -5392,19 +5430,7 @@ function routeTreeSVG(rt, metric, notePlayer){
     const trim=Math.min(aLen, segLen*0.55);
     const linePts=it.pts.slice();
     linePts[linePts.length-1]=[+(ex-ca*trim).toFixed(2), +(ey-sa*trim).toFixed(2)];
-    const metricTag = metricKnown ? _fmtRouteMetricValue(it.metricV, metric) : '—';
-    const noteValue = `${it.sh.label} · ${it.pct.toFixed(1)}% · ${it.n} routes${metricKnown?` · ${metricTag}`:''}`;
-    const attrs = noteTagAttrs({
-      label:`${it.sh.label} route tendency`,
-      value:noteValue,
-      source:'route_tree',
-      statKey:metric,
-      context:`${pcardRouteSeason} route tree`,
-      player:notePlayer,
-      team:notePlayer&&notePlayer.team,
-      relevance:'WR,TE,RB,QB',
-    });
-    paths+=`<g${attrs}>`;
+    paths+=`<g${it.noteAttrs}>`;
     paths+=`<polyline points="${linePts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${it.col}" stroke-width="${it.w}" stroke-linejoin="round" stroke-linecap="round" opacity="0.95"/>`;
     // Base sits at the (trimmed) line end; the tip reaches the route's true endpoint, so the
     // arrow still terminates exactly where the route does.
@@ -5442,7 +5468,7 @@ function routeTreeSVG(rt, metric, notePlayer){
       if(metric==='td' && it.metricV>0) metricTag=` <tspan class="rt-label-td">${Math.round(it.metricV)} TD</tspan>`;
       else if(metric!=='td' && it.metricV>0) metricTag=` <tspan class="rt-label-alt">${_fmtRouteMetricValue(it.metricV, metric)}</tspan>`;
     }
-        labels+=`<text x="${it.lx}" y="${it.ly.toFixed(1)}" text-anchor="${it.sh.anc}" class="rt-label">`+
+        labels+=`<text x="${it.lx}" y="${it.ly.toFixed(1)}" text-anchor="${it.sh.anc}" class="rt-label"${it.noteAttrs}>`+
           `<tspan class="rt-label-name">${it.sh.label}</tspan> <tspan class="rt-label-pct" fill="${it.col}">${it.pct.toFixed(1)}%</tspan>${metricTag}</text>`;
   }
   // LOS + origin markers.
@@ -9701,26 +9727,29 @@ function _schemeRenderBenefactorList(title, subtitle, list, scoreFmt, metaFmt){
     </div>`;
   }
   const rows = list.map((p, i)=>{
+    const teamCode = String(p && p.team || schemeTeam || '').toUpperCase();
+    const season = String(schemeSeason || (list[0] && list[0].season) || advTeamSeason() || '');
     const click = _schemePlayerOnclick(p);
     const wrapOpen = click
       ? `<div class="scheme-benefit-row clickable-player" role="button" tabindex="0" onclick="${click}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${click}}">`
       : '<div class="scheme-benefit-row">';
     const wrapClose = '</div>';
     const splits = `<span class="scheme-benefit-splits">
-      <span class="scheme-benefit-split"><b>1st</b><span>${p.d1Pct.toFixed(2)}%</span></span>
-      <span class="scheme-benefit-split"><b>2nd</b><span>${p.d2Pct.toFixed(2)}%</span></span>
-      <span class="scheme-benefit-split"><b>3rd</b><span>${p.d3Pct.toFixed(2)}%</span></span>
-      <span class="scheme-benefit-split"><b>4th</b><span>${p.d4Pct.toFixed(2)}%</span></span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>1st</b><span>${p.d1Pct.toFixed(2)}%</span>`, { label:`${title} 1st-down share`, value:`${p.d1Pct.toFixed(2)}%`, source:'coaching_insights', statKey:'d1_share', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>2nd</b><span>${p.d2Pct.toFixed(2)}%</span>`, { label:`${title} 2nd-down share`, value:`${p.d2Pct.toFixed(2)}%`, source:'coaching_insights', statKey:'d2_share', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>3rd</b><span>${p.d3Pct.toFixed(2)}%</span>`, { label:`${title} 3rd-down share`, value:`${p.d3Pct.toFixed(2)}%`, source:'coaching_insights', statKey:'d3_share', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>4th</b><span>${p.d4Pct.toFixed(2)}%</span>`, { label:`${title} 4th-down share`, value:`${p.d4Pct.toFixed(2)}%`, source:'coaching_insights', statKey:'d4_share', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
     </span>`;
+    const notePlayer = p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null;
     return `${wrapOpen}
       <span class="scheme-benefit-rank">${i+1}</span>
       <span class="scheme-benefit-head">${_schemePlayerHeadshot(p)}</span>
       <span class="scheme-benefit-main">
         <span class="scheme-benefit-name">${_schemeEscHtml(p.name)}</span>
-        <span class="scheme-benefit-meta">${metaFmt(p)}</span>
+        <span class="scheme-benefit-meta">${noteWrapHtml(metaFmt(p), { label:`${title} role context`, value:`${p.pos||''} · ${p.slot||''}${p.oppShare!=null?` · opp share ${p.oppShare.toFixed(2)}%`:''}${p.tgtShare!=null?` · tgt share ${p.tgtShare.toFixed(2)}%`:''}`, source:'coaching_insights', statKey:'role_context', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:notePlayer, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
         ${splits}
       </span>
-      <span class="scheme-benefit-score">${scoreFmt(p)}</span>
+      <span class="scheme-benefit-score">${noteWrapHtml(scoreFmt(p), { label:`${title} leader score`, value:`${p.tgtShare!=null?`RZ target share ${p.tgtShare.toFixed(2)}% · `:''}${p.oppShare!=null?`team share ${p.oppShare.toFixed(2)}%`:''}`.trim() || scoreFmt(p).replace(/<[^>]+>/g,''), source:'coaching_insights', statKey:'leader_score', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:notePlayer, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
       <span class="scheme-benefit-why">${_schemeEscHtml(p.reason)}</span>
     ${wrapClose}`;
   }).join('');
@@ -10834,7 +10863,7 @@ function renderTeamAdvanced(team){
           value: tagValue,
           source: 'team_advanced',
           statKey: key,
-          context: `${teamDisplayName(useTeam)} · ${tbl.title||key} · ${advTeamSeason()} season`,
+          context: historicalTagContext(`${teamDisplayName(useTeam)} · ${tbl.title||key} · ${advTeamSeason()} season`, useTeam, advTeamSeason()),
           team: useTeam,
           relevance: noteRelevanceForTableKey(key),
           nav: { type:'advanced', team: useTeam, season: String(advTeamSeason()) },
@@ -12134,6 +12163,7 @@ function syncAppChrome(){
 async function resetAll(){
   if(!confirm('Reset all projections and pull the latest projections from Sleeper?\n\nThis clears your current edits and imported/loaded data.')) return;
   userProj={}; workingProj=userProj; importedSnapshot=null; dirtySinceImport=false;
+  playerNotes={};
   currentTeam=null; undoStacks={};
   clearSession();   // wipe the saved session so the fresh pull isn't overwritten on next boot
   // refreshFromSleeper resets the working set to the fresh seed, re-renders, and toasts.

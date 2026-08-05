@@ -142,7 +142,19 @@ function routeTreeSVG(rt, metric, notePlayer){
     const end=pts[pts.length-1], prev=pts[pts.length-2];
     const ang=Math.atan2(end[1]-prev[1], end[0]-prev[0]);
     const side = sh.anc==='end'?'L' : (sh.anc==='start'?'R':'C');
-    return {sh,n,pct,ratio,col,w,pts,end,ang,side,metricV};
+    const metricTag = metricKnown ? _fmtRouteMetricValue(metricV, metric) : '—';
+    const noteValue = `${sh.label} · ${pct.toFixed(1)}% · ${n} routes${metricKnown?` · ${metricTag}`:''}`;
+    const noteAttrs = noteTagAttrs({
+      label:`${sh.label} route tendency`,
+      value:noteValue,
+      source:'route_tree',
+      statKey:metric,
+      context:`${pcardRouteSeason} route tree`,
+      player:notePlayer,
+      team:notePlayer&&notePlayer.team,
+      relevance:'WR,TE,RB,QB',
+    });
+    return {sh,n,pct,ratio,col,w,pts,end,ang,side,metricV,metricTag,noteAttrs};
   });
   // Draw least-run first so the hot routes sit on top; each route ends in an arrowhead.
   let paths='';
@@ -167,19 +179,7 @@ function routeTreeSVG(rt, metric, notePlayer){
     const trim=Math.min(aLen, segLen*0.55);
     const linePts=it.pts.slice();
     linePts[linePts.length-1]=[+(ex-ca*trim).toFixed(2), +(ey-sa*trim).toFixed(2)];
-    const metricTag = metricKnown ? _fmtRouteMetricValue(it.metricV, metric) : '—';
-    const noteValue = `${it.sh.label} · ${it.pct.toFixed(1)}% · ${it.n} routes${metricKnown?` · ${metricTag}`:''}`;
-    const attrs = noteTagAttrs({
-      label:`${it.sh.label} route tendency`,
-      value:noteValue,
-      source:'route_tree',
-      statKey:metric,
-      context:`${pcardRouteSeason} route tree`,
-      player:notePlayer,
-      team:notePlayer&&notePlayer.team,
-      relevance:'WR,TE,RB,QB',
-    });
-    paths+=`<g${attrs}>`;
+    paths+=`<g${it.noteAttrs}>`;
     paths+=`<polyline points="${linePts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${it.col}" stroke-width="${it.w}" stroke-linejoin="round" stroke-linecap="round" opacity="0.95"/>`;
     // Base sits at the (trimmed) line end; the tip reaches the route's true endpoint, so the
     // arrow still terminates exactly where the route does.
@@ -217,7 +217,7 @@ function routeTreeSVG(rt, metric, notePlayer){
       if(metric==='td' && it.metricV>0) metricTag=` <tspan class="rt-label-td">${Math.round(it.metricV)} TD</tspan>`;
       else if(metric!=='td' && it.metricV>0) metricTag=` <tspan class="rt-label-alt">${_fmtRouteMetricValue(it.metricV, metric)}</tspan>`;
     }
-        labels+=`<text x="${it.lx}" y="${it.ly.toFixed(1)}" text-anchor="${it.sh.anc}" class="rt-label">`+
+        labels+=`<text x="${it.lx}" y="${it.ly.toFixed(1)}" text-anchor="${it.sh.anc}" class="rt-label"${it.noteAttrs}>`+
           `<tspan class="rt-label-name">${it.sh.label}</tspan> <tspan class="rt-label-pct" fill="${it.col}">${it.pct.toFixed(1)}%</tspan>${metricTag}</text>`;
   }
   // LOS + origin markers.
