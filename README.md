@@ -244,9 +244,8 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] Google Play Store
 - [ ] Apple iOS Store
 - [ ] Generate my own proprietary projections based on all the metrics we have
-- [ ] Simplify process with a vibe-check. Tinder-style swipes.
+- [ ] Simplify process with a vibe-check. Tinder-style swipes? KTC?
 ### UI / UX
-- [ ] Add swiping gestures to change teams
 ### Playercards
 ### Live Draft
 - [ ] reach out to Sleeper
@@ -257,7 +256,6 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] Review comments and variable names
 - [ ] Add Coaching History (HCs, OCs, DCs)
 - [ ] input injection vulnerability scan on all input fields
-- [ ] Investigate the format of downloaded CSVs
 ### Import Projections
 ### Adv Metrics
 - [ ] QB Metrics: on_tgt_throws, bad_throw_pct, batted_balls, is_interception_worthy, is_catchable_ball

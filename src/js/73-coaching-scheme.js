@@ -515,7 +515,7 @@ function _schemeDriveFrictionComposite(season, team, thirdDownReach){
 
   const score = 100 * usable.reduce((a,b)=>a+b,0) / usable.length;
   const scores = teams.map(tm=>scoreFor(tm)).filter(Number.isFinite);
-  const rank = Number.isFinite(score) ? (1 + scores.filter(v=>v > score).length) : null;
+  const rank = Number.isFinite(score) ? (1 + scores.filter(v=>v < score).length) : null;
   return { score, rank, leagueSize:teams.length, components:badness };
 }
 
@@ -592,7 +592,7 @@ function _schemeLeagueInsightSnapshot(season){
   teams.forEach(tm=>{
     const score = rowsByTeam[tm].frictionScore;
     rowsByTeam[tm].frictionRank = Number.isFinite(score)
-      ? (1 + teams.filter(other=>Number.isFinite(rowsByTeam[other].frictionScore) && rowsByTeam[other].frictionScore > score).length)
+      ? (1 + teams.filter(other=>Number.isFinite(rowsByTeam[other].frictionScore) && rowsByTeam[other].frictionScore < score).length)
       : null;
   });
 
@@ -655,8 +655,8 @@ function _schemeRedZoneInsightData(p){
   let tone = 'neutral';
   if(Number.isFinite(friction.rank) && Number.isFinite(friction.leagueSize) && friction.leagueSize > 0){
     const pct = friction.rank / friction.leagueSize;
-    if(pct <= 0.34){ label = 'High Drive Friction'; tone = 'warn'; }
-    else if(pct >= 0.67){ label = 'Low Drive Friction'; tone = 'good'; }
+    if(pct <= 0.34){ label = 'Low Drive Friction'; tone = 'good'; }
+    else if(pct >= 0.67){ label = 'High Drive Friction'; tone = 'warn'; }
   }
 
   return {
@@ -684,9 +684,9 @@ function _schemeInsightNarrative(d){
   const pieces = [];
   if(Number.isFinite(d.frictionRank) && Number.isFinite(d.frictionLeagueSize)){
     if((d.frictionRank / d.frictionLeagueSize) <= 0.34){
-      pieces.push('This offense is ranking among the stickier drives in the league: punts, drive-killers, and late-down red-zone pressure all squeeze touchdown reliability.');
-    }else if((d.frictionRank / d.frictionLeagueSize) >= 0.67){
       pieces.push('This offense is finishing drives with relatively low friction: stronger drive efficiency and fewer late-down red-zone stalls make core touchdown roles cleaner.');
+    }else if((d.frictionRank / d.frictionLeagueSize) >= 0.67){
+      pieces.push('This offense is ranking among the stickier drives in the league: punts, drive-killers, and late-down red-zone pressure all squeeze touchdown reliability.');
     }else{
       pieces.push('Drive friction sits around league middle, so role clarity matters more than the macro environment.');
     }
@@ -772,19 +772,66 @@ function _schemePosPlayers(team, pos, season){
   }).filter(p=>p.name);
 }
 
-function _schemeResolveRosterPlayer(team, pos, shortName, slot, season){
+function _schemeBasePosPlayers(team, pos){
+  if(typeof getBase!=='function' || !team) return [];
+  const rows = [];
+  (getBase(team, pos) || []).forEach(p=>{
+    rows.push({
+      name: String((p && p.name) || ''),
+      player_id: String((p && p.player_id) || ''),
+      pos: String((p && p.pos) || pos),
+      team: String((p && p.team) || team),
+      vol: _schemeNumber(p && (p.receiving_targets || p.receptions || p.rushing_attempts || p.targets), 0),
+    });
+  });
+  return rows.map(p=>{
+    const full = String(p.name || '').trim();
+    const toks = full.split(/\s+/).filter(Boolean);
+    return Object.assign({}, p, {
+      first: _schemeNormNameToken(toks[0] || ''),
+      last: _schemeNormNameToken(toks[toks.length-1] || ''),
+      suffix: _schemeNormNameToken(toks[toks.length-1] || '').replace(/[^a-z0-9]/g,''),
+      norm: _schemeNormNameToken(full),
+    });
+  }).filter(p=>p.name);
+}
+
+function _schemeResolveRosterPlayer(team, pos, shortName, slot, season, slotRef){
   const players = _schemePosPlayers(team, pos, season);
+  const basePlayers = _schemeBasePosPlayers(team, pos);
+  const slotRefKey = String(slotRef || '').trim();
   if(!players.length){
+    if(basePlayers.length){
+      const slotIdx = Math.max(1, parseInt(String(slot||'').replace(/\D+/g,''), 10) || 1);
+      const pick = basePlayers[Math.min(slotIdx-1, basePlayers.length-1)] || basePlayers[0];
+      if(pick) return pick;
+    }
     return { name: String(shortName||slot||'Unknown'), player_id:'', pos, team };
   }
   const tok = _schemeNormNameToken(shortName);
+  const weakTok = /^(jr|sr|ii|iii|iv|v)$/.test(tok);
   const slotIdx = Math.max(1, parseInt(String(slot||'').replace(/\D+/g,''), 10) || 1);
+
+  if(slotRefKey){
+    const byId = players.find(p=>String(p.player_id||'')===slotRefKey);
+    if(byId) return byId;
+  }
+
+  if(weakTok && basePlayers.length){
+    const pick = basePlayers[Math.min(slotIdx-1, basePlayers.length-1)] || basePlayers[0];
+    if(pick){
+      if(tok==='jr' && pick.name && !/\bjr\.?$/i.test(pick.name)){
+        return Object.assign({}, pick, { name: `${pick.name} Jr.` });
+      }
+      return pick;
+    }
+  }
 
   let best = null;
   let bestScore = -1;
   players.forEach((p, i)=>{
     let s = 0;
-    if(tok){
+    if(tok && !weakTok){
       if(p.last === tok) s += 8;
       if(p.first === tok) s += 5;
       if(p.suffix === tok) s += 6;
@@ -795,7 +842,13 @@ function _schemeResolveRosterPlayer(team, pos, shortName, slot, season){
     s += Math.min(2, _schemeNumber(p.vol, 0) / 120);
     if(s > bestScore){ bestScore = s; best = p; }
   });
-  if(!best) best = players[Math.min(slotIdx-1, players.length-1)] || players[0];
+  if(!best){
+    best = players[Math.min(slotIdx-1, players.length-1)] || players[0];
+    if(weakTok && best && basePlayers.length){
+      const pick = basePlayers[Math.min(slotIdx-1, basePlayers.length-1)] || basePlayers[0];
+      if(pick) return pick;
+    }
+  }
   return best || { name: String(shortName||slot||'Unknown'), player_id:'', pos, team };
 }
 
@@ -999,7 +1052,7 @@ function _schemeBuildBenefactors(p, d){
 
     const gsis = slotMap[slot];
     const shortName = names[gsis] || slot;
-    const resolved = _schemeResolveRosterPlayer(schemeTeam||'', pos, shortName, slot, p && p.season);
+    const resolved = _schemeResolveRosterPlayer(schemeTeam||'', pos, shortName, slot, p && p.season, gsis);
     const rid = String((resolved && resolved.player_id) || '');
     const name = String((resolved && resolved.name) || shortName || slot);
     const bestDown = [
@@ -1064,7 +1117,7 @@ function _schemeBuildRushBenefactors(p, d){
     const rec = slotRunOpp[slot] || {};
     const gsis = slotMap[slot];
     const shortName = names[gsis] || slot;
-    const resolved = _schemeResolveRosterPlayer(schemeTeam||'', 'RB', shortName, slot, p && p.season);
+    const resolved = _schemeResolveRosterPlayer(schemeTeam||'', 'RB', shortName, slot, p && p.season, gsis);
     const d1 = 100 * _schemeNumber(rec.d1, 0) / totalRunOpp;
     const d2 = 100 * _schemeNumber(rec.d2, 0) / totalRunOpp;
     const d3 = 100 * _schemeNumber(rec.d3, 0) / totalRunOpp;
@@ -1172,11 +1225,12 @@ function _schemeRenderInsights(p){
   const earlySuccRank = _schemeRankInLeague(d.earlySucc, league.earlySucc, 'desc');
   const lateSuccRank = _schemeRankInLeague(d.lateSucc, league.lateSucc, 'desc');
   const frictionRank = d.frictionRank || _schemeRankInLeague(d.frictionScore, league.frictionScore, 'asc');
+  const frictionRankClass = rankClass(frictionRank);
   const toneClass = d.tone==='warn' ? 'warn' : (d.tone==='good' ? 'good' : 'neutral');
   const blurb = _schemeInsightNarrative(d);
   const frictionTip = _schemeInfoTip(
     'Drive friction rank',
-    'This compares this offense to the league. More friction means drives stall more often before touchdowns. It combines how often drives end with punts, turnovers, or three-and-outs plus drive efficiency and red-zone finishing.'
+    'This compares this offense to the league. Lower friction means cleaner touchdown paths with fewer stalled drives. It combines how often drives end with punts, turnovers, or three-and-outs plus drive efficiency and red-zone finishing.'
   );
   return `<div class="scheme-insights-wrap">
     <div class="scheme-insights-head">
@@ -1201,8 +1255,8 @@ function _schemeRenderInsights(p){
       </div>
       <div class="scheme-insight-card">
         <div class="scheme-insight-k">Drive friction ranking ${frictionTip}</div>
-        <div class="scheme-insight-v">${rankText(frictionRank)} <span class="scheme-insight-rank ${rankClass(frictionRank)}">(score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'})</span></div>
-        <div class="scheme-insight-sub">League rank for how sticky and touchdown-suppressing this offense's drives are. Lower rank number = more friction.</div>
+        <div class="scheme-insight-v">${rankText(frictionRank)} <span class="scheme-insight-rank ${frictionRankClass}">(score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'})</span></div>
+        <div class="scheme-insight-sub">Ranked by drive cleanliness (1 = least friction / cleanest drives, 32 = most friction / toughest drives).</div>
       </div>
     </div>
     <div class="scheme-insight-note"><b>Fantasy angle:</b> ${_schemeEscHtml(blurb)}</div>
