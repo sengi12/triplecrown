@@ -18,7 +18,7 @@
 const TS_COMMIT = 60;      // px of horizontal travel before a tab change commits
 const TS_DECIDE = 10;      // px before we decide the gesture's axis
 const TS_EDGE   = 24;      // ignore starts this close to the left edge (iOS back-swipe zone)
-const TS_MAXSHIFT = 500;   // cap on the content's follow-the-finger travel
+const TS_MAXSHIFT = 420;   // cap on the content's follow-the-finger travel
 
 function tsTabPhase(btn){
   if(!btn) return null;
@@ -111,6 +111,22 @@ function tsSwipeUnder(host){
   return under;
 }
 
+function tsHostWidth(host){
+  if(!host || !host.getBoundingClientRect) return 320;
+  const w = host.getBoundingClientRect().width;
+  return (Number.isFinite(w) && w>10) ? w : 320;
+}
+
+function tsPlacePair(host, topX, dir){
+  if(!host) return;
+  const top = tsSwipeTop(host);
+  const under = tsSwipeUnder(host);
+  if(!top || !under) return;
+  const w = tsHostWidth(host);
+  top.style.transform = `translateX(${topX.toFixed(1)}px)`;
+  under.style.transform = `translateX(${(topX + (dir<0 ? w : -w)).toFixed(1)}px)`;
+}
+
 // Wrap everything AFTER the active tab bar so swipe animation only moves the changing
 // page region (content below labels), leaving static chrome above untouched.
 function tsSwipeHost(bar){
@@ -148,59 +164,15 @@ function tsAnimateTabTurn(host, tabs, next, moved, opts){
   }
   const top = tsSwipeTop(host) || host;
   const under = tsSwipeUnder(host);
-  const out = moved<0 ? -120 : 120;
-  const inn = moved<0 ? 120 : -120;
-  const seamless = !!(opts && opts.seamless);
-
-  if(seamless && under && under.innerHTML && under.innerHTML.trim()){
-    // The target is already visible underneath during drag; promote it immediately so
-    // the release feels "already there", then sync canonical state via normal tab click.
-    host.classList.add('ts-swipe-committing');
-    host.classList.remove('ts-swipe-dragging');
-    try{
-      top.style.transition='none';
-      top.style.transform='translateX(0px)';
-      top.innerHTML=under.innerHTML;
-      under.innerHTML='';
-      under.style.transform='translateX(0px) scale(1)';
-      tabs.forEach(t=>t.classList.remove('active'));
-      if(tabs[next]) tabs[next].classList.add('active');
-    }catch(e){}
-    setTimeout(()=>{ if(tabs[next]) tabs[next].click(); }, 0);
-    return;
-  }
+  const w = tsHostWidth(host);
   host.classList.add('ts-swipe-dragging');
-  host.dataset.tsNext = (tabs[next] && tabs[next].textContent) ? tabs[next].textContent.trim() : '';
-  host.style.setProperty('--ts-dir', moved<0 ? '1' : '-1');
-  host.style.setProperty('--ts-reveal', '1');
-  if(under){
-    under.style.transform='translateX(0px) scale(1)';
-  }
-  top.style.transition = 'transform .16s ease-out';
-  top.style.transform = `translateX(${out}px)`;
+  if(under) under.style.transition = 'transform .18s ease-out';
+  top.style.transition = 'transform .18s ease-out';
+  top.style.transform = `translateX(${moved<0 ? -w : w}px)`;
+  if(under) under.style.transform='translateX(0px)';
   setTimeout(()=>{
     tabs[next].click();
-    const freshBar=tsActiveBar();
-    const fresh=freshBar ? tsSwipeHost(freshBar) : (document.getElementById('content') || host);
-    const freshTop = tsSwipeTop(fresh) || fresh;
-    fresh.style.setProperty('--ts-dir', moved<0 ? '1' : '-1');
-    fresh.style.setProperty('--ts-reveal', '0');
-    fresh.classList.remove('ts-swipe-dragging');
-    if(seamless){
-      // The target page was already revealed under the top card during drag: settle
-      // directly to it (no second "slide in" pass) to avoid a double-motion feel.
-      freshTop.style.transition='none';
-      freshTop.style.transform='translateX(0px)';
-      setTimeout(()=>{ if(freshTop){ freshTop.style.transition=''; } }, 40);
-      return;
-    }
-    freshTop.style.transition='none';
-    freshTop.style.transform=`translateX(${inn}px)`;
-    freshTop.getBoundingClientRect();
-    freshTop.style.transition='transform .18s ease-out';
-    freshTop.style.transform='translateX(0px)';
-    setTimeout(()=>{ if(freshTop){ freshTop.style.transition=''; } }, 210);
-  }, 140);
+  }, 145);
 }
 
 // The visible tab bar, if any. Multiple can exist in the DOM across views, so take the first
@@ -258,8 +230,6 @@ function tsScrollerClaims(el, dir){
     if(!phase || !tsCanPreviewPhase(phase)){
       previewPhase=null;
       under.innerHTML='';
-      host.classList.remove('ts-swipe-live');
-      host.dataset.tsNext = label||'';
       return;
     }
     if(previewPhase===phase) return;
@@ -269,13 +239,9 @@ function tsScrollerClaims(el, dir){
     if(!html){
       previewPhase=null;
       under.innerHTML='';
-      host.classList.remove('ts-swipe-live');
-      host.dataset.tsNext = label||'';
       return;
     }
     under.innerHTML=html;
-    host.classList.add('ts-swipe-live');
-    host.dataset.tsNext='';
     previewPhase=phase;
   };
 
@@ -283,22 +249,28 @@ function tsScrollerClaims(el, dir){
     if(!host) return;
     const top = tsSwipeTop(host) || host;
     const under = tsSwipeUnder(host);
+    const dir = dx<0 ? -1 : 1;
+    const w = tsHostWidth(host);
     top.style.transition = anim ? 'transform .16s ease-out' : '';
-    top.style.transform = '';
+    top.style.transform = 'translateX(0px)';
     if(under){
       under.style.transition = anim ? 'transform .16s ease-out' : '';
-      under.style.transform = '';
-      under.innerHTML='';
+      under.style.transform = `translateX(${dir<0 ? w : -w}px)`;
     }
     host.classList.remove('ts-swipe-dragging');
-    host.classList.remove('ts-swipe-live');
     host.classList.remove('ts-swipe-committing');
-    host.style.removeProperty('--ts-reveal');
-    host.style.removeProperty('--ts-dir');
-    host.dataset.tsNext = '';
     previewPhase=null;
     previewCache={};
-    if(anim){ const t=top; setTimeout(()=>{ if(t) t.style.transition=''; }, 180); }
+    if(anim){
+      const t=top; const u=under;
+      setTimeout(()=>{
+        if(t) t.style.transition='';
+        if(u){ u.style.transition=''; u.innerHTML=''; u.style.transform='translateX(100%)'; }
+      }, 180);
+    } else if(under){
+      under.innerHTML='';
+      under.style.transform='translateX(100%)';
+    }
   };
 
   document.addEventListener('touchstart', e=>{
@@ -352,24 +324,23 @@ function tsScrollerClaims(el, dir){
     if(e.cancelable) e.preventDefault();
     // Follow the finger with resistance so the swipe feels connected, capped so the layout
     // never travels far enough to look broken.
-    const shift = Math.sign(dx) * Math.min(TS_MAXSHIFT, Math.abs(dx)*0.35);
+    const shift = Math.sign(dx) * Math.min(TS_MAXSHIFT, Math.abs(dx)*0.9);
     if(host){
-      const dir = dx<0 ? 1 : -1;
+      const dir = dx<0 ? -1 : 1;
       const next = cur>=0 ? (cur + (dx<0 ? 1 : -1)) : -1;
       const valid = next>=0 && tabs && next<tabs.length;
       host.classList.toggle('ts-swipe-dragging', !!valid);
       const nextLabel = valid ? String((tabs[next]&&tabs[next].textContent)||'').trim() : '';
       const nextPhase = valid ? tsTabPhase(tabs[next]) : null;
       setPreview(nextPhase, nextLabel);
+      const top = tsSwipeTop(host);
+      if(top) top.style.transition='none';
       const under=tsSwipeUnder(host);
-      host.style.setProperty('--ts-dir', String(dir));
-      host.style.setProperty('--ts-reveal', String(Math.min(1, Math.abs(dx)/150)));
-      const top = tsSwipeTop(host) || host;
-      top.style.transform = `translateX(${shift.toFixed(1)}px)`;
-      if(under && valid){
-        const reveal = Math.min(1, Math.abs(dx)/150);
-        const underShift = (22 - reveal*22) * dir;
-        under.style.transform = `translateX(${underShift.toFixed(1)}px) scale(${(0.985 + reveal*0.015).toFixed(4)})`;
+      if(under) under.style.transition='none';
+      if(valid){
+        tsPlacePair(host, shift, dir);
+      } else if(top){
+        top.style.transform='translateX(0px)';
       }
     }
   }, {passive:false});
@@ -384,9 +355,7 @@ function tsScrollerClaims(el, dir){
     // Swipe left → next tab (content moves left, like turning a page).
     const next = moved<0 ? cur+1 : cur-1;
     if(next<0 || next>=tabs.length){ clearShift(true); return; }
-    const nextPhase = tsTabPhase(tabs[next]);
-    const seamless = !!(nextPhase && previewPhase===nextPhase && host && host.classList.contains('ts-swipe-live'));
-    tsAnimateTabTurn(host, tabs, next, moved, {seamless});
+    tsAnimateTabTurn(host, tabs, next, moved, {});
   };
   document.addEventListener('touchend', finish, {passive:true});
   document.addEventListener('touchcancel', finish, {passive:true});
