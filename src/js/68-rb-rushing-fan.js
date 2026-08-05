@@ -497,7 +497,7 @@ function _rbHeat(v, max){
   return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
 
-function _rbFanSVG(chart, playerName, season, metric){
+function _rbFanSVG(chart, playerName, season, metric, notePlayer){
   const lanes=chart.lanes||{};
   const line=_rbRosterLine(season, _rbTeamCode(chart.team||''), chart.line||{});
   const t=chart.totals||{};
@@ -528,12 +528,25 @@ function _rbFanSVG(chart, playerName, season, metric){
     const path = lane==='MID'
       ? 'M380,650 V150'
       : `M380,650 C${(380-(380-cx)*0.55).toFixed(0)},700 ${cx},585 ${cx},150`;
-    parts.push(`<path d="${path}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" marker-end="url(#rbf-arrow)"/>`);
+    const laneValue = MET.key==='yards' ? `${mv!=null?Math.round(mv):'—'} yds`
+      : (MET.key==='td' ? `${mv!=null?Math.round(mv):0} TD` : `${_rbNum(succ,0)}% success`);
+    const laneTag = noteTagAttrs({
+      label:`${lane} lane ${MET.short}`,
+      value:`${laneValue} · ${att} att · ${_rbNum(ypc,1)} YPC`,
+      source:'rb_rushing_fan',
+      statKey:`lane_${MET.key||'eff'}`,
+      context:`${season} rushing fan · ${lane} lane`,
+      player:notePlayer,
+      team:(notePlayer&&notePlayer.team)||chart.team||'',
+      relevance:'RB,QB',
+    });
+    parts.push(`<g${laneTag}><path d="${path}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" marker-end="url(#rbf-arrow)"/>`);
     parts.push(`<text x="${cx}" y="106" fill="#fff" font-size="13" font-weight="800" text-anchor="middle">${lane}</text>`);
     const headline = MET.key==='yards' ? `${mv!=null?Math.round(mv):'—'} YDS`
       : (MET.key==='td' ? `${mv!=null?Math.round(mv):0} TD` : `${_rbNum(succ,0)}% SUCC`);
     parts.push(`<text x="${cx}" y="122" fill="${col}" font-size="12" font-weight="800" text-anchor="middle">${headline}</text>`);
     parts.push(`<text x="${cx}" y="137" fill="#9aa0a6" font-size="10" text-anchor="middle">${att} att · ${_rbNum(ypc,1)} YPC</text>`);
+    parts.push(`</g>`);
   }
 
   parts.push('<defs><marker id="rbf-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></marker><clipPath id="rbf-hs-LT"><circle cx="160" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-LG"><circle cx="270" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-C"><circle cx="380" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-RG"><circle cx="490" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-RT"><circle cx="600" cy="506" r="19"/></clipPath></defs>');
@@ -595,6 +608,8 @@ function renderPcardRbFan(pid){
 
   const p=(sleeperPlayers&&sleeperPlayers[pid])||{};
   const name=p.name||'RB';
+  const notePlayer = noteTargetFromArgs(pid, 'RB', p.team||chart.team||'');
+  const noteCtx = (_rbIsProjSeason(season) && chart.is_projection) ? `${season} projection rushing fan` : `${season} rushing fan`;
   const t=chart.totals||{};
   const seasonBtns=seasonOpts.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardRbFanSeason('${s}')">${s}</button>`).join('');
   if(!RB_LANE_METRICS[pcardRbMetric]) pcardRbMetric='eff';
@@ -611,11 +626,11 @@ function renderPcardRbFan(pid){
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns}</div>
       <div class="rt-metrics">${metricBtns}</div>
-      <div class="rt-summary">${t.attempts||0} carries · ${_rbNum(t.ypc,2)} YPC · ${_rbNum(t.success_rate,1)}% success</div>
+      <div class="rt-summary">${noteWrapHtml(`${t.attempts||0} carries`, { label:'Carries', value:String(t.attempts||0), source:'rb_rushing_fan', statKey:'attempts', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.ypc,2)} YPC`, { label:'Yards Per Carry', value:_rbNum(t.ypc,2), source:'rb_rushing_fan', statKey:'ypc', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.success_rate,1)}% success`, { label:'Success Rate', value:`${_rbNum(t.success_rate,1)}%`, source:'rb_rushing_fan', statKey:'success_rate', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</div>
     </div>
-    ${overallRunHtml}
+    ${runSc.score!=null || runSc.rank!=null ? `<div class="olc-overview">${noteWrapHtml(`<b>Cumulative Run Blocking Score: ${runSc.score!=null?runSc.score.toFixed(1):'—'}</b> ${_rbRankBadge(runSc.rank)}`, { label:'Cumulative Run Blocking Score', value:runSc.score!=null?runSc.score.toFixed(1):'—', source:'rb_offensive_line', statKey:'run_blocking_score', context:`${chart.team||notePlayer.team} offensive line · ${(_rbIsProjSeason(season) && chart.is_projection)?`${season} projections`:`${season}`}`, team:chart.team||notePlayer.team, relevance:'RB' }, 'note-tag-hit')}</div>` : ''}
     ${chart.is_projection?`<div class="olc-overview"><b>${RB_PROJ_SEASON} Projection:</b> projected depth-chart starters' run grades drive the line cards and cumulative run score. Lane arrows preserve the back's latest directional profile and scale it to projected efficiency/volume.</div>`:''}
-    ${_rbFanSVG(chart, name, season, metric)}
+    ${_rbFanSVG(chart, name, season, metric, notePlayer)}
     <div class="rbf-legend">
       <span><i style="background:#2fae4e"></i>Lane YPC above league avg</span>
       <span><i style="background:#d8a51d"></i>Lane YPC near league avg</span>

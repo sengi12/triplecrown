@@ -154,6 +154,7 @@ function renderPcardTeamDef(pid){
 
 function _dstSeasonBlock(weeks, season, team){
   if(!weeks || !weeks.length) return `<div class="pcard-mini-note">No ${season} defensive weeks.</div>`;
+  const noteTeam=String(team||'').toUpperCase();
   const colHead = _DST_COLS.map(c=>`<th>${c.l}</th>`).join('');
   const tot = {};
   const bodyRows = weeks.map(w=>{
@@ -164,7 +165,8 @@ function _dstSeasonBlock(weeks, season, team){
     const cells = _DST_COLS.map(c=>{
       const v = w.stats[c.k];
       if(v!=null && isFinite(+v)) tot[c.k] = (tot[c.k]||0) + (+v);
-      return `<td class="pcard-cell ${_dstCls(c.k, v)}">${_dstNum(v, c.d)}</td>`;
+      const txt=_dstNum(v, c.d);
+      return `<td class="pcard-cell ${_dstCls(c.k, v)}">${noteWrapHtml(escHtml(txt), { label:c.l, value:txt, source:'team_def_weekly', statKey:c.k, context:`${season} wk ${w.week||''} · ${w.opp?`vs ${w.opp}`:'—'}`, team:noteTeam, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>`;
     }).join('');
     return `<tr><td class="pcard-wk">${w.week||''}</td><td class="pcard-opp home">${opp}</td>${cells}</tr>`;
   }).join('');
@@ -178,7 +180,8 @@ function _dstSeasonBlock(weeks, season, team){
     // false-positive against per-game thresholds — left uncoloured rather than implying a grade.
     const perGame = (c.k==='pts_allow'||c.k==='yds_allow');
     const cls = perGame ? _dstCls(c.k, v) : (c.k==='pts_std' && v!=null ? _dstCls(c.k, v/gp) : '');
-    return `<td class="pcard-cell pcard-total-cell ${cls}">${v==null?'\u2013':_dstNum(v, perGame?1:c.d)}</td>`;
+    const txt=v==null?'\u2013':_dstNum(v, perGame?1:c.d);
+    return `<td class="pcard-cell pcard-total-cell ${cls}">${noteWrapHtml(escHtml(txt), { label:c.l, value:txt, source:'team_def_weekly_total', statKey:c.k, context:`${season} D/ST totals`, team:noteTeam, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>`;
   }).join('');
   const totalRow = `<tr class="pcard-total-row"><td class="pcard-wk">TOT</td><td class="pcard-opp" title="${gp} games (PA/YA shown per game)">${gp}g</td>${totCells}</tr>`;
   const full = (typeof teamDisplayName==='function' ? teamDisplayName(team) : team);

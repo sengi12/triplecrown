@@ -36,6 +36,7 @@
   .rp .seg.active{outline:2px solid #1a1a17;outline-offset:-2px;}
   .rp b{font-weight:bold;}
   .hintbar{text-align:center;font-size:9px;color:#8a8470;margin-top:2px;}
+  .nt{display:inline;}
   .dia{margin-top:8px;border-top:2px dashed var(--rule);padding-top:6px;display:none;}
   .dia.show{display:block;}
   .diahead{font-size:10px;font-weight:bold;text-transform:uppercase;text-align:center;margin-bottom:3px;}
@@ -59,6 +60,11 @@
 </div>
 <script>__TC_FV_SCRIPT__</script>
 <script>
+function nEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+const NOTE_NAV=nEsc(JSON.stringify({type:'coaching',team:TEAM_CODE,season:String(SEASON),tab:'playbook'}));
+function noteWrap(label,value,context,relevance,html){
+  return `<span class="nt" data-noteable="1" data-note-label="${nEsc(label)}" data-note-value="${nEsc(value)}" data-note-context="${nEsc(context)}" data-note-source="coaching_playbook" data-note-stat-key="${nEsc(label)}" data-note-team="${nEsc(TEAM_CODE)}" data-note-relevance="${nEsc(relevance||'QB,RB,WR,TE')}" data-note-nav="${NOTE_NAV}">${html}</span>`;
+}
 function ec(e){ if(e==null)return"#999"; let t=Math.max(-0.4,Math.min(0.4,e))/0.4;
   if(t>=0)return `rgb(${Math.round(216+(47-216)*t)},${Math.round(165+(174-165)*t)},${Math.round(29+(78-29)*t)})`;
   let a=-t; return `rgb(${Math.round(216+(211-216)*a)},${Math.round(165+(59-165)*a)},${Math.round(29+(47-29)*a)})`; }
@@ -196,7 +202,7 @@ function drawPlayDiagram(g, mode, sel, wrRot, av){
     (g.lanes||[]).forEach(l=>{ const tx=laneX[l[0]]; if(tx==null)return;
       const w=1.5+l[1]/tot*7; const ty=olY-52; const ar=arrow(ec(l[2])); defs+=ar.def;
       s+=`<path d="M${rb.x},${rb.y} C${rb.x+(tx-rb.x)*0.4},${rb.y-20} ${tx},${olY+16} ${tx},${ty}" fill="none" stroke="${ec(l[2])}" stroke-width="${w.toFixed(1)}" stroke-linecap="round" marker-end="${ar.url}"/>`;
-      s+=`<text x="${tx}" y="${ty-4}" font-size="8" fill="#1a1a17" text-anchor="middle" font-weight="bold">${l[0]} ${Math.round(100*l[1]/tot)}%</text>`;
+      s+=`<text x="${tx}" y="${ty-4}" font-size="8" fill="#1a1a17" text-anchor="middle" font-weight="bold" data-noteable="1" data-note-label="Run lane" data-note-value="${nEsc(l[0]+' '+Math.round(100*l[1]/tot)+'%')}" data-note-context="${nEsc(SEASON+' playbook · '+g.p+' personnel · '+g.name)}" data-note-source="coaching_playbook" data-note-stat-key="run_lane" data-note-team="${nEsc(TEAM_CODE)}" data-note-relevance="RB,QB" data-note-nav="${NOTE_NAV}">${l[0]} ${Math.round(100*l[1]/tot)}%</text>`;
     });
   }
   // ---- PASS MODE: routes per player + TE block T ----
@@ -223,10 +229,10 @@ function drawPlayDiagram(g, mode, sel, wrRot, av){
       const idx=(sel[p.slot]||0)%rf.list.length; const rt=rf.list[idx];
       const belowLOS = p.y>losY;
       let ny=belowLOS?p.y+20:p.y+20;
-      s+=`<text x="${p.x}" y="${ny}" font-size="7.5" fill="#1a1a17" text-anchor="middle" font-weight="bold">${rf.name}</text>`;
+      s+=`<text x="${p.x}" y="${ny}" font-size="7.5" fill="#1a1a17" text-anchor="middle" font-weight="bold" data-noteable="1" data-note-label="Player role" data-note-value="${nEsc(rf.name)}" data-note-context="${nEsc(SEASON+' playbook · '+g.p+' personnel · '+g.name)}" data-note-source="coaching_playbook" data-note-stat-key="player_role" data-note-team="${nEsc(TEAM_CODE)}" data-note-relevance="QB,RB,WR,TE" data-note-nav="${NOTE_NAV}">${rf.name}</text>`;
       const pctTxt = rt[1]!=null?` ${rt[1]}%`:'';
       const srcTxt = rf.src=='tree'?' (tree)':(rf.src=='season'?' (szn)':'');
-      s+=`<text x="${p.x}" y="${ny+9}" font-size="6" fill="#a8321f" text-anchor="middle">${rt[0].split('/')[0]}${pctTxt}${srcTxt}</text>`;
+      s+=`<text x="${p.x}" y="${ny+9}" font-size="6" fill="#a8321f" text-anchor="middle" data-noteable="1" data-note-label="Route tendency" data-note-value="${nEsc(rt[0].split('/')[0]+pctTxt+srcTxt)}" data-note-context="${nEsc(SEASON+' playbook · '+g.p+' personnel · '+g.name+' · '+rf.name)}" data-note-source="coaching_playbook" data-note-stat-key="route_tendency" data-note-team="${nEsc(TEAM_CODE)}" data-note-relevance="QB,RB,WR,TE" data-note-nav="${NOTE_NAV}">${rt[0].split('/')[0]}${pctTxt}${srcTxt}</text>`;
       if(rf.list.length>1) s+=`<text x="${p.x}" y="${ny+17}" font-size="5.5" fill="#8a8470" text-anchor="middle">${idx+1}/${rf.list.length} tap</text>`;
     }
   });
@@ -241,8 +247,8 @@ function draw(){
   window._G=node.groups;
   // Production out of this formation: yards + TDs, split pass vs run. Moves with the filters.
   function prodLine(g, mode){
-    const P=`<span class="prod-pass">PASS ${(+g.py||0).toLocaleString()} yds · ${+g.ptd||0} TD</span>`;
-    const R=`<span class="prod-run">RUN ${(+g.ry||0).toLocaleString()} yds · ${+g.rtd||0} TD</span>`;
+    const P=noteWrap('Pass production', `PASS ${(+g.py||0).toLocaleString()} yds · ${+g.ptd||0} TD`, `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,WR,TE,RB', `<span class="prod-pass">PASS ${(+g.py||0).toLocaleString()} yds · ${+g.ptd||0} TD</span>`);
+    const R=noteWrap('Run production', `RUN ${(+g.ry||0).toLocaleString()} yds · ${+g.rtd||0} TD`, `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'RB,QB', `<span class="prod-run">RUN ${(+g.ry||0).toLocaleString()} yds · ${+g.rtd||0} TD</span>`);
     if(mode==='pass') return P;
     if(mode==='run')  return R;
     return `${P}<span class="prod-sep">·</span>${R}`;
@@ -254,8 +260,8 @@ function draw(){
       <div class="subttl">${g.backs} BACK · ${g.te} TE · ${g.wr} WR — ${g.share}% of snaps${noise}</div>
       <div class="prod" id="prd${i}">${prodLine(g)}</div>
       <div class="fieldbox">${fieldSvg(g,'none',{},0,0)}</div>
-      <div class="stats"><div class="stat"><span id="snl${i}">Snaps</span><b id="snv${i}">${g.n}</b></div><div class="stat"><span>Success</span><b id="scv${i}">${g.succ}%</b></div>
-      <div class="stat"><span>EPA/play</span><b id="epv${i}" class="${g.epa>=.05?'hl-g':(g.epa<=-.05?'hl-p':'')}">${g.epa>=0?'+':''}${g.epa.toFixed(2)}</b></div><div class="stat"><span>Share</span><b>${g.share}%</b></div></div>
+      <div class="stats"><div class="stat"><span id="snl${i}">Snaps</span><b id="snv${i}">${noteWrap('Snaps', String(g.n), `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,RB,WR,TE', String(g.n))}</b></div><div class="stat"><span>Success</span><b id="scv${i}">${noteWrap('Success Rate', `${g.succ}%`, `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,RB,WR,TE', `${g.succ}%`)}</b></div>
+      <div class="stat"><span>EPA/play</span><b id="epv${i}" class="${g.epa>=.05?'hl-g':(g.epa<=-.05?'hl-p':'')}">${noteWrap('EPA/play', `${g.epa>=0?'+':''}${g.epa.toFixed(2)}`, `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,RB,WR,TE', `${g.epa>=0?'+':''}${g.epa.toFixed(2)}`)}</b></div><div class="stat"><span>Share</span><b>${noteWrap('Formation Share', `${g.share}%`, `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,RB,WR,TE', `${g.share}%`)}</b></div></div>
       <div class="rp" data-i="${i}"><div class="run seg" data-mode="run" style="width:${(100-Number(g.pass_rate||0)).toFixed(2)}%"><b>RUN ${(100-Number(g.pass_rate||0)).toFixed(2)}%</b></div><div class="pass seg" data-mode="pass" style="width:${Number(g.pass_rate||0).toFixed(2)}%"><b>PASS ${Number(g.pass_rate||0).toFixed(2)}%</b></div></div>
       <div class="hintbar" id="hint${i}">tap label ⇄ change look · click bar ▸ runs / routes</div></div>`;});
   grid.innerHTML=html;
@@ -317,6 +323,44 @@ function wireTaps(box,g){
     };
   });
 }
+
+(function noteBridge(){
+  const HOLD_MS=520, MOVE=10;
+  let st=null;
+  function clear(){ if(st&&st.t) clearTimeout(st.t); st=null; }
+  function info(el){
+    if(!el || !el.dataset) return null;
+    return {
+      label: el.dataset.noteLabel || 'Playbook stat',
+      value: el.dataset.noteValue || '',
+      context: el.dataset.noteContext || '',
+      source: el.dataset.noteSource || 'coaching_playbook',
+      statKey: el.dataset.noteStatKey || '',
+      team: el.dataset.noteTeam || TEAM_CODE || '',
+      relevance: el.dataset.noteRelevance || 'QB,RB,WR,TE',
+    };
+  }
+  function open(el){
+    const parentWin = window.parent;
+    if(!parentWin || typeof parentWin.noteOpenPicker!=='function') return;
+    const payload = info(el);
+    if(payload) parentWin.noteOpenPicker(payload);
+  }
+  document.addEventListener('touchstart', e=>{
+    if(e.touches.length!==1) return clear();
+    const el=e.target&&e.target.closest?e.target.closest('[data-noteable="1"]'):null;
+    if(!el) return;
+    const t=e.touches[0];
+    st={x:t.clientX,y:t.clientY,el,t:setTimeout(()=>{ const cur=st; clear(); if(cur&&cur.el===el) open(el); }, HOLD_MS)};
+  }, {passive:true});
+  document.addEventListener('touchmove', e=>{ if(!st||!e.touches.length) return; const t=e.touches[0]; if(Math.abs(t.clientX-st.x)>MOVE||Math.abs(t.clientY-st.y)>MOVE) clear(); }, {passive:true});
+  document.addEventListener('touchend', clear, {passive:true});
+  document.addEventListener('touchcancel', clear, {passive:true});
+  document.addEventListener('mousedown', e=>{ const el=e.target&&e.target.closest?e.target.closest('[data-noteable="1"]'):null; if(!el||e.button!==0) return; st={x:e.clientX,y:e.clientY,el,t:setTimeout(()=>{ const cur=st; clear(); if(cur&&cur.el===el) open(el); }, HOLD_MS)}; });
+  document.addEventListener('mousemove', e=>{ if(!st) return; if(Math.abs(e.clientX-st.x)>MOVE||Math.abs(e.clientY-st.y)>MOVE) clear(); });
+  document.addEventListener('mouseup', clear);
+  document.addEventListener('mouseleave', clear);
+})();
 
 ['down','dist','field'].forEach(id=>document.getElementById(id).onchange=draw); draw();
 </script></body></html>

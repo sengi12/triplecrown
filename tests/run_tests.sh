@@ -133,6 +133,7 @@ run_js_test test_losses_app     "Notable Losses section: FA losses with destinat
 run_js_test test_pos_colors    "Additions/losses: fantasy positions (QB/RB/WR/TE) Sleeper-colored, defense neutral, destination logos"
 run_js_test test_pcard          "Player card: FPTS from scoring, QB color thresholds (INT 0/1/2), season rows, BYE, render"
 run_js_test test_pcard_click    "Player card click: onclick single-quote escaping (the no-popup bug), apostrophe names, overlay opens"
+run_js_test test_player_notes   "Player notes: session persistence plus export/import round-trip"
 run_js_test test_input_injection "Input-injection regression coverage: HTML/JS context escaping in card/render paths"
 run_js_test test_teamcolor      "Player card: team-color hero gradient, light-color darkening, watermark logo"
 run_js_test test_pcard_pos      "Player card positions: QB rushing group, RB/WR/TE schemas, YPC/YPT math, 3-group scroll"

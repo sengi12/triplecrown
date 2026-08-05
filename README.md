@@ -260,6 +260,7 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] Charts that show team progress over the last 5 years in specific categories
 ### Playcalling Stats
 - [ ] Improve Playbooks is_qb_sneak, n_offense_backfield
+- [ ] Team Total TDs, Pass Yds, Rush Yds, etc and league ranks
 
 ## License
 

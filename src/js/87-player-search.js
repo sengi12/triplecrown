@@ -103,7 +103,7 @@ function psRender(q){
       ? imgTag(NFL_LOGO(String(e.team).toUpperCase()), 'ps-hs ps-def')
       : imgTag(hsPack({player_id:e.pid, name:e.name, pos:e.pos}), 'ps-hs');
     const logo = e.team ? `<img class="ps-team-logo" src="${NFL_LOGO(String(e.team).toUpperCase())}" alt="${escAttr(e.team)}" onerror="this.style.display='none'">` : '';
-    return `<button class="ps-row${i===0?' ps-active':''}" data-pid="${escAttr(e.pid)}" data-pos="${escAttr(e.pos)}" data-team="${escAttr(e.team)}"
+    return `<button class="ps-row${i===0?' ps-active':''}" data-pid="${escAttr(e.pid)}" data-name="${escAttr(e.name)}" data-pos="${escAttr(e.pos)}" data-team="${escAttr(e.team)}"
                     onclick="psPick(this)">
       ${img}
       <span class="ps-nm">${nameText}</span>
@@ -114,10 +114,11 @@ function psRender(q){
 
 function psPick(btn){
   const pid = btn.getAttribute('data-pid');
+  const name = btn.getAttribute('data-name') || '';
   const pos = btn.getAttribute('data-pos');
   const team = btn.getAttribute('data-team');
   closePlayerSearch();
-  openPlayerCard(pid, pos, team);
+  openPlayerCard((pos==='DEF') ? pid : (name || pid), pos, team);
 }
 
 // Arrow keys move the highlight; Enter opens it; Escape closes.

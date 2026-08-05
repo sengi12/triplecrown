@@ -76,9 +76,9 @@ function renderTeamAdditions(team){
     const body=rows.map(r=>`<tr>
       <td class="add-player clickable-player" onclick="${pcardOnclick(r.player, r.pos, '')}">${r.player}</td>
       <td>${posBadge(r.pos)}</td>
-      <td class="add-num">${r.years!=null?r.years+' yr':'—'}</td>
-      <td class="add-num add-val">${fmtMillions(r.value_m)}</td>
-      <td class="add-num add-aav">${fmtMillions(r.aav_m)}</td>
+      <td class="add-num">${noteWrapHtml(escHtml(r.years!=null?r.years+' yr':'—'), { label:'Contract Term', value:r.years!=null?r.years+' yr':'—', source:'roster_changes', statKey:'term', context:`${teamDisplayName(team)} ${PROJ_SEASON} ${kind==='draft'?'draft':'free agency'}`, player:noteTargetFromArgs(r.player, r.pos, team), team, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>
+      <td class="add-num add-val">${noteWrapHtml(escHtml(fmtMillions(r.value_m)), { label:'Contract Total', value:fmtMillions(r.value_m), source:'roster_changes', statKey:'value_m', context:`${teamDisplayName(team)} ${PROJ_SEASON} ${kind==='draft'?'draft':'free agency'}`, player:noteTargetFromArgs(r.player, r.pos, team), team, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>
+      <td class="add-num add-aav">${noteWrapHtml(escHtml(fmtMillions(r.aav_m)), { label:'Contract AAV', value:fmtMillions(r.aav_m), source:'roster_changes', statKey:'aav_m', context:`${teamDisplayName(team)} ${PROJ_SEASON} ${kind==='draft'?'draft':'free agency'}`, player:noteTargetFromArgs(r.player, r.pos, team), team, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>
     </tr>`).join('');
     return `<div class="add-table-scroll"><table class="add-table"><thead><tr>
       <th class="add-th-player">PLAYER</th><th>POS</th><th class="add-num">TERM</th>
@@ -89,8 +89,8 @@ function renderTeamAdditions(team){
     const body=rows.map(r=>`<tr>
       <td class="add-player clickable-player" onclick="${pcardOnclick(r.player, r.pos, '')}">${r.player}</td>
       <td>${posBadge(r.pos)}</td>
-      <td class="add-num add-val">${fmtMillions(r.cap_m)}</td>
-      <td class="add-detail">${r.detail||'—'}</td>
+      <td class="add-num add-val">${noteWrapHtml(escHtml(fmtMillions(r.cap_m)), { label:'Cap Acquired', value:fmtMillions(r.cap_m), source:'roster_changes', statKey:'cap_m', context:`${teamDisplayName(team)} ${PROJ_SEASON} trade`, player:noteTargetFromArgs(r.player, r.pos, team), team, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>
+      <td class="add-detail">${noteWrapHtml(escHtml(r.detail||'—'), { label:'Trade Detail', value:r.detail||'—', source:'roster_changes', statKey:'detail', context:`${teamDisplayName(team)} ${PROJ_SEASON} trade`, player:noteTargetFromArgs(r.player, r.pos, team), team, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>
     </tr>`).join('');
     return `<div class="add-table-scroll"><table class="add-table add-trade-table"><thead><tr>
       <th class="add-th-player">PLAYER</th><th>POS</th><th class="add-num">CAP ACQ.</th>
@@ -104,9 +104,9 @@ function renderTeamAdditions(team){
       <td class="add-player clickable-player" onclick="${pcardOnclick(r.player, r.pos, '')}">${r.player}</td>
       <td>${posBadge(r.pos)}</td>
       <td class="add-dest">${r.to_team?`→ <img src="${NFL_LOGO(r.to_team)}" class="add-dest-logo" onerror="this.style.display='none'"><b>${r.to_team}</b>`:'—'}</td>
-      <td class="add-num">${r.years!=null?r.years+' yr':'—'}</td>
-      <td class="add-num add-val add-loss-val">${fmtMillions(r.value_m)}</td>
-      <td class="add-num add-aav">${fmtMillions(r.aav_m)}</td>
+      <td class="add-num">${noteWrapHtml(escHtml(r.years!=null?r.years+' yr':'—'), { label:'Contract Term', value:r.years!=null?r.years+' yr':'—', source:'roster_changes_loss', statKey:'term', context:`${teamDisplayName(team)} ${PROJ_SEASON} free-agent loss`, player:noteTargetFromArgs(r.player, r.pos, team), team, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>
+      <td class="add-num add-val add-loss-val">${noteWrapHtml(escHtml(fmtMillions(r.value_m)), { label:'Contract Total', value:fmtMillions(r.value_m), source:'roster_changes_loss', statKey:'value_m', context:`${teamDisplayName(team)} ${PROJ_SEASON} free-agent loss`, player:noteTargetFromArgs(r.player, r.pos, team), team, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>
+      <td class="add-num add-aav">${noteWrapHtml(escHtml(fmtMillions(r.aav_m)), { label:'Contract AAV', value:fmtMillions(r.aav_m), source:'roster_changes_loss', statKey:'aav_m', context:`${teamDisplayName(team)} ${PROJ_SEASON} free-agent loss`, player:noteTargetFromArgs(r.player, r.pos, team), team, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>
     </tr>`).join('');
     return `<div class="add-table-scroll"><table class="add-table"><thead><tr>
       <th class="add-th-player">PLAYER</th><th>POS</th><th>SIGNED WITH</th>
@@ -734,9 +734,20 @@ function renderTeamAdvanced(team){
     const lines = displayCols.map(col=>{
       const v=row.values?row.values[col]:null;
       const r=row.ranks?row.ranks[col]:null;
+      const txt = fmtSharpVal(v, sharpColIsPct(tbl,col));
+      const tagValue = r!=null ? `${txt} · league rank #${r}` : txt;
       return `<div class="sr-stat">
         <div class="sr-stat-label">${col}</div>
-        <div class="sr-stat-val">${fmtSharpVal(v, sharpColIsPct(tbl,col))}</div>
+        <div class="sr-stat-val">${txt?noteWrapHtml(escHtml(txt), {
+          label: col,
+          value: tagValue,
+          source: 'team_advanced',
+          statKey: key,
+          context: `${teamDisplayName(useTeam)} · ${tbl.title||key} · ${advTeamSeason()} season`,
+          team: useTeam,
+          relevance: noteRelevanceForTableKey(key),
+          nav: { type:'advanced', team: useTeam, season: String(advTeamSeason()) },
+        }, 'note-tag-hit'):txt}</div>
         <div class="sr-stat-rank">${sharpRankBadge(r)}</div>
       </div>`;
     }).join('');
@@ -758,7 +769,16 @@ function renderTeamAdvanced(team){
   const sosStrip = sos ? `<div class="sr-sos-strip">
     <span class="sr-sos-rank ${sharpRankClass(sos.rank)}">${ordinal(sos.rank)}</span>
     <div><div class="sr-sos-label">${PROJ_SEASON} Strength of Schedule</div>
-      <div class="sr-sos-sub">${sos.win_total!=null?`Vegas win total <b>${sos.win_total}</b> · `:''}rank ${sos.rank} of 32 (1 = easiest)</div></div>
+      <div class="sr-sos-sub">${noteWrapHtml(`${sos.win_total!=null?`Vegas win total <b>${sos.win_total}</b> · `:''}rank ${sos.rank} of 32 (1 = easiest)`, {
+        label: `${PROJ_SEASON} Strength of Schedule`,
+        value: `${sos.win_total!=null?`Vegas win total ${sos.win_total} · `:''}rank ${sos.rank} of 32`,
+        source: 'team_sos',
+        statKey: 'sos',
+        context: `${teamDisplayName(team)} · ${PROJ_SEASON} schedule`,
+        team,
+        relevance: 'QB,RB,WR,TE',
+        nav: { type:'advanced', team, season: 'proj' },
+      }, 'note-tag-hit')}</div></div>
     <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showSharpLeague('sos')">See SOS chart →</button>
   </div>` : '';
   // Carryover coordinators → a highlighted section that pulls the former team's scheme stats.

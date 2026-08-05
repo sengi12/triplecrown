@@ -377,6 +377,7 @@ function renderPlayerCardShell(pid, pos, team){
     `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val">${val}</span></div>`;
   const contractBand = contractSummaryHTML(name);
   const ktcBand = ktcLinkHTML(name, posc);
+  const noteCount = playerNoteCount(pid, posc, tm);
   const html = `
     <div class="pcard" onclick="event.stopPropagation()">
       <div class="pcard-hero" style="${heroStyle}">
@@ -395,6 +396,7 @@ function renderPlayerCardShell(pid, pos, team){
           <div class="pcard-hero-draft" id="pcardHeroDraft"></div>
         </div>
         ${pcardBackButtonHTML()}
+        <button id="pcardNoteBtn" class="pcard-note-btn" onclick="openPcardNotes()" aria-label="Open player notes" title="Player notes">${TC_ICON('clipboard')}${noteCount?`<span class="pcard-note-badge">${noteCount}</span>`:''}</button>
         <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">✕</button>
         ${ktcBand}
       </div>
@@ -411,10 +413,11 @@ function renderPlayerCardShell(pid, pos, team){
     div.onclick=closePlayerCard;
     div.innerHTML=html;
     document.body.appendChild(div);
-    if(typeof attachPcardSwipe==='function') attachPcardSwipe(div.querySelector('.pcard'));
+    if(typeof attachPcardSwipe==='function' && div.querySelector) attachPcardSwipe(div.querySelector('.pcard'));
   }
-  const cardEl=(overlay||document.getElementById('pcardOverlay')).querySelector('.pcard');
-  if(typeof attachPcardSwipe==='function') attachPcardSwipe(cardEl);
+  const cardHost = overlay || document.getElementById('pcardOverlay');
+  const cardEl = (cardHost && cardHost.querySelector) ? cardHost.querySelector('.pcard') : null;
+  if(typeof attachPcardSwipe==='function' && cardEl) attachPcardSwipe(cardEl);
 }
 // Player-card stats source: 'pro' (NFL career — Sleeper weekly for skill players, ESPN nfl for
 // defense/other) or 'college' (ESPN college gamelog). Rookies default to college (no NFL games
@@ -531,6 +534,10 @@ function pcardLoadStats(mode){
   }
   if(mode==='routes'){
     body.innerHTML = renderPcardRoutes(pid);
+    return;
+  }
+  if(mode==='notes'){
+    body.innerHTML = renderPcardNotes();
     return;
   }
   if(mode==='passing'){
@@ -702,6 +709,7 @@ function _passerRating(t){
 }
 function renderPcardSeason(season, rows, pos){
   const schema=PCARD_SCHEMA[pos]; if(!schema) return '';
+  const notePlayer = pcardNoteTarget();
   // group header row
   const grpCells = schema.group.map(([label,span])=>`<th class="pcard-grp" colspan="${span}">${label}</th>`).join('<th></th>');
   const colHead = schema.cols.map((c,i)=>{
@@ -723,7 +731,18 @@ function renderPcardSeason(season, rows, pos){
       const prev=schema.cols[i-1]; const sep=(prev&&prev.grp!==c.grp)?'<td></td>':'';
       const v=vals[c.key];
       const cls=c.color?c.color(v):'';
-      return sep+`<td class="pcard-cell ${cls}">${c.fmt?c.fmt(v):(v==null?'–':v)}</td>`;
+      const display = c.fmt?c.fmt(v):(v==null?'–':v);
+      const oppCtx = r.opp ? `${r.isAway?'@':'vs'} ${r.opp}` : 'BYE';
+      const body = noteWrapHtml(String(display), {
+        label: c.label,
+        value: display,
+        source: 'player_card',
+        statKey: c.key,
+        context: `${season} week ${r.wk} · ${oppCtx}`,
+        player: notePlayer,
+        team: notePlayer && notePlayer.team,
+      }, 'note-tag-hit');
+      return sep+`<td class="pcard-cell ${cls}">${body}</td>`;
     }).join('');
     const oppTxt = r.opp
       ? `<span class="pcard-opp-inner">${r.isAway?'<span class="pcard-at">@</span>':'<span class="pcard-vs">vs</span>'}<img src="${NFL_LOGO(r.opp)}" class="pcard-opp-logo" onerror="this.style.display='none'"><span>${r.opp}</span></span>`
@@ -738,7 +757,17 @@ function renderPcardSeason(season, rows, pos){
       const prev=schema.cols[i-1]; const sep=(prev&&prev.grp!==c.grp)?'<td></td>':'';
       // RANK has no meaningful season total; show a dash.
       const v = (c.key==='rank') ? null : tot[c.key];
-      return sep+`<td class="pcard-cell pcard-total-cell">${v==null?'–':(c.fmt?c.fmt(v):v)}</td>`;
+      const display = v==null?'–':(c.fmt?c.fmt(v):v);
+      const body = noteWrapHtml(String(display), {
+        label: c.label,
+        value: display,
+        source: 'player_card_total',
+        statKey: c.key,
+        context: `${season} season total`,
+        player: notePlayer,
+        team: notePlayer && notePlayer.team,
+      }, 'note-tag-hit');
+      return sep+`<td class="pcard-cell pcard-total-cell">${body}</td>`;
     }).join('');
     totalsRow = `<tr class="pcard-total-row"><td class="pcard-wk">TOT</td>
       <td class="pcard-opp">${tot._games}g</td>${tcells}</tr>`;

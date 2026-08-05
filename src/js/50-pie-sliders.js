@@ -218,8 +218,8 @@ function editCarries(i,raw){
   liveRushRows(state,currentTeam);
   // update the team total label/derived
   const lbl=document.getElementById('rushTotalLbl');
-  if(lbl) lbl.textContent=`${state.rushing.total_attempts} att / ${(state.rushing.total_yards||0).toLocaleString()} yds`;
-  const d=document.getElementById('rushDerived'); if(d) d.textContent=rushNote(state);
+  if(lbl) lbl.innerHTML=rushTotalLabelHtml(state,currentTeam);
+  const d=document.getElementById('rushDerived'); if(d) d.innerHTML=rushNote(state,{asHtml:true,team:currentTeam});
 }
 function editYpc(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
@@ -229,8 +229,8 @@ function editYpc(i,raw){
   recomputeTeamRushYards(state);
   liveRushRows(state,currentTeam);
   const lbl=document.getElementById('rushTotalLbl');
-  if(lbl) lbl.textContent=`${state.rushing.total_attempts} att / ${(state.rushing.total_yards||0).toLocaleString()} yds`;
-  const d=document.getElementById('rushDerived'); if(d) d.textContent=rushNote(state);
+  if(lbl) lbl.innerHTML=rushTotalLabelHtml(state,currentTeam);
+  const d=document.getElementById('rushDerived'); if(d) d.innerHTML=rushNote(state,{asHtml:true,team:currentTeam});
   syncRushYdsSlider(state);
 }
 // Edit a player's absolute rushing yards → back out Y/Carry so att×ypc = entered, feeds team total
@@ -244,8 +244,8 @@ function editRushYds(i,raw){
   recomputeTeamRushYards(state);
   liveRushRows(state,currentTeam);
   const lbl=document.getElementById('rushTotalLbl');
-  if(lbl) lbl.textContent=`${r.total_attempts} att / ${(r.total_yards||0).toLocaleString()} yds`;
-  const d=document.getElementById('rushDerived'); if(d) d.textContent=rushNote(state);
+  if(lbl) lbl.innerHTML=rushTotalLabelHtml(state,currentTeam);
+  const d=document.getElementById('rushDerived'); if(d) d.innerHTML=rushNote(state,{asHtml:true,team:currentTeam});
   syncRushYdsSlider(state);
 }
 // Edit a player's absolute rushing TDs from the carry view → grows/shrinks team rush-TD total
@@ -378,7 +378,7 @@ function liveDerivedRows(state,team,metric){
   });
   if(pieChart) updatePie(shares.map(p=>p[field]||0));
   const sub=document.getElementById('derivedSub');
-  if(sub) sub.textContent=isYds?Math.round(pool).toLocaleString()+' yds':Math.round(pool)+' rec';
+  if(sub) sub.innerHTML=passDerivedSubHtml(state,metric,team);
 }
 // Edit a player's absolute receiving TDs (from the Targets view) → set td_share of team passing TDs
 function editRecTDs(i,raw){

@@ -55,7 +55,13 @@ global.toast=()=>{};
 global.NFL_LOGO=(tm)=>`logo_${tm||''}`;
 
 const code=fs.readFileSync(path.join(__dirname,'check.js'),'utf8');
-const app=new Function(code+`return { escHtml, escJsSingle, pcardOnclick, laAssetRow };`)();
+const app=new Function(code+`return {
+  escHtml, escJsSingle, pcardOnclick, laAssetRow, loadProjections, buildOutput, renderPcardNotes,
+  setNotes:(n)=>{playerNotes=n;},
+  setPcardState:(pid,pos,team)=>{pcardState={pid,posc:pos,team};},
+  setWorking:(w)=>{workingProj=w; userProj=w;},
+  setSeed:(s)=>{SEED=s; projSeed=s; seasonStatsCache.proj=s;},
+};`)();
 
 let pass=0,total=0;
 const chk=(cond,label)=>{
@@ -99,5 +105,28 @@ chk(!row.includes('<svg onload=alert(1)>'), 'laAssetRow escapes dangerous player
 chk(row.includes('&lt;svg onload=alert(1)&gt;'), 'laAssetRow renders escaped name text');
 chk(!row.includes("laTradeToggle('a','id');alert(1)//')"), 'laAssetRow blocks trade key quote-breakout');
 chk(row.includes("laTradeToggle('a','id\\');alert(1)//')"), 'laAssetRow escapes key for inline JS context');
+
+console.log('\n=== notes import/export guards ===');
+const maliciousNotes={
+  'pid:6770':{
+    key:'pid:6770', pid:'6770', name:'Joe Burrow', pos:'QB', team:'CIN',
+    text:'<img src=x onerror="alert(1)">',
+    tags:[{id:'1',label:'<svg onload=alert(1)>',value:"bad');alert(1)//",source:'rankings',statKey:'epa',context:'<b>ctx</b>'}],
+    updatedAt:1,
+  }
+};
+app.setNotes(maliciousNotes);
+const exported=app.buildOutput();
+chk(exported.playerNotes['pid:6770'].text==='<img src=x onerror="alert(1)">', 'note export preserves raw note data');
+
+app.setSeed({CIN:{QB:[{player_id:'6770',name:'Joe Burrow',pos:'QB',team:'CIN'}],RB:[],WR:[],TE:[]}});
+app.setWorking({CIN:{qbs:[{name:'Joe Burrow',player_id:'6770',games:17,passing_yards:4500,passing_tds:30,passing_attempts:600,passing_completions:400,interceptions_thrown:10,qb_rush_yards:100,qb_rush_tds:2,qb_rush_attempts:20,base_games:17,snap_share:1}],activeQB:0,passing_shares:[],rushing:{shares:[],total_attempts:0,total_yards:0,ypa:4,total_rush_tds:0}}});
+app.loadProjections({projections:[], playerNotes:maliciousNotes});
+app.setPcardState('6770','QB','CIN');
+const notesHtml=app.renderPcardNotes();
+chk(!notesHtml.includes('<img src=x onerror="alert(1)">'), 'notes renderer escapes malicious note text HTML');
+chk(notesHtml.includes('&lt;img src=x onerror=&quot;alert(1)&quot;&gt;'), 'notes renderer shows escaped note text');
+chk(!notesHtml.includes('<svg onload=alert(1)>'), 'notes renderer escapes malicious tag labels');
+chk(notesHtml.includes('bad&#39;);alert(1)//'), 'notes renderer escapes malicious tag values');
 
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

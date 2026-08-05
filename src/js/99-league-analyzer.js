@@ -986,6 +986,7 @@ function laCompareView(s){
   const lens=laState.lens||'value';
   const POS=['QB','RB','WR','TE'];
   const pm=laProjMap();
+  const cmpSource = lens==='value' ? 'league_analyzer_value' : 'league_analyzer_proj';
   const withPicks = lens==='value' && laState.cmpPicks && !laIsRedraft();
   const rows=s.teamList.map(t=>{
     const by={QB:0,RB:0,WR:0,TE:0};
@@ -1056,12 +1057,12 @@ function laCompareView(s){
       <tbody>
       ${order.map(({r,i})=>{
         const mine=s.myUserId && r.t.ownerId===s.myUserId;
-        const cell=(c,v)=>`<td class="${laQuartile(ranks[c][i],n)}"><b>${fmtV(v)}</b><span class="la-rk">#${ranks[c][i]}</span></td>`;
+        const cell=(c,v,label)=>`<td class="${laQuartile(ranks[c][i],n)}">${noteWrapHtml(`<b>${fmtV(v)}</b><span class="la-rk">#${ranks[c][i]}</span>`, { label, value:`${fmtV(v)} · league rank #${ranks[c][i]}`, source:cmpSource, statKey:c, context:`League Analyzer compare · ${lens==='value'?'value':'projected starters'}`, team:r.t.teamCode||'', relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>`;
         return `<tr class="${mine?'mine':''}">
           <td class="la-cmp-team la-clickteam" onclick="laViewTeam(${r.t.rosterId})" title="View ${escAttr(r.t.teamName)}\u2019s analysis">${laTeamIcon(r.t,'la-tm-av-sm')}${mine?'\u2605 ':''}${escHtml(r.t.teamName)}${r.t.isChampion?` <span class="la-champ" title="${s.season} champion">${TC_ICON('trophy','tc-ico-champ')}</span>`:''}<span class="la-cmp-own">@${escHtml(r.t.owner)}</span></td>
-          ${POS.map(p=>cell(p,r.by[p])).join('')}
-          ${withPicks?cell('picks',r.picks):''}
-          ${cell('total',r.total)}</tr>`;
+          ${POS.map(p=>cell(p,r.by[p],p)).join('')}
+          ${withPicks?cell('picks',r.picks,'Picks'):''}
+          ${cell('total',r.total,'Total')}</tr>`;
       }).join('')}
       </tbody></table></div>
     <div class="la-note">${lens==='value'
@@ -1136,8 +1137,8 @@ function laBestAvailView(s){
         <span class="clickable-player" onclick="${pcardOnclick(r.name,r.pos,r.team||'')}">${laPlayerImg(r)}</span>
         <span class="la-ba-name clickable-player" onclick="${pcardOnclick(r.name,r.pos,r.team||'')}">${escHtml(r.name)}</span>
         <span class="la-ba-team">${escHtml(r.team)}</span>
-        <span class="la-ba-val">${r.v}</span>
-        <span class="la-ba-fpts">${r.fpts?r.fpts.toFixed(0):'–'}</span></div>`).join('')}
+        <span class="la-ba-val">${noteWrapHtml(String(r.v), { label:'Value', value:String(r.v), source:'league_analyzer_best_avail', statKey:'value', context:`League Analyzer best available · ${posF}`, player:noteTargetFromArgs(r.name,r.pos,r.team||''), team:r.team||'' }, 'note-tag-hit')}</span>
+        <span class="la-ba-fpts">${noteWrapHtml(escHtml(r.fpts?r.fpts.toFixed(0):'–'), { label:'Projected Points', value:r.fpts?r.fpts.toFixed(0):'–', source:'league_analyzer_best_avail', statKey:'proj', context:`League Analyzer best available · ${posF}`, player:noteTargetFromArgs(r.name,r.pos,r.team||''), team:r.team||'' }, 'note-tag-hit')}</span></div>`).join('')}
     </div>
     <div class="la-note">Free agents = FP value chart minus every rostered player in the snapshot. PROJ is your projection engine under current scoring — a high PROJ on a cheap value is the classic dynasty waiver add.</div>`;
 }

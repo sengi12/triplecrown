@@ -61,12 +61,12 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
       changing the team total scales every RB's efficiency proportionally.</div></div>
     ${sRow('rush_total_att','RB Carries (excl QB)',r.total_attempts,baseAtt,0,600,5,'var(--rb)')}
     ${sRow('rush_total_yds','Total RB Rush Yards',r.total_yards,baseYds,0,3500,25,'var(--rb)')}
-    <div class="derived-note" id="rushDerived">${rushNote(state)}</div></div>
+    <div class="derived-note" id="rushDerived">${rushNote(state,{asHtml:true,team})}</div></div>
   <div class="card"><div class="card-title">RB Carry Share</div>${subTabs}
     ${vacatedRushNote(team)}
     <div class="pie-section">
       <div class="pie-wrap"><canvas id="rushPieChart" width="150" height="150"></canvas>
-        <div class="pie-sub" id="rushTotalLbl">${r.total_attempts} att / ${(r.total_yards||0).toLocaleString()} yds</div></div>
+        <div class="pie-sub" id="rushTotalLbl">${rushTotalLabelHtml(state,team)}</div></div>
       <div class="pie-controls" id="rushShareControls">${rows}</div></div></div>`;
 }
 
@@ -107,11 +107,28 @@ function renderRushTDs(team,state,subTabs){
         <div class="pie-sub" id="rushTDLbl">${totalTDs.toFixed(0)} rush TDs</div></div>
       <div class="pie-controls" id="rushShareControls">${rows}</div></div></div>`;
 }
-function rushNote(state){
+function rushNote(state, opts){
   const r=state.rushing;
   const qbRushAtt=state.qbs.reduce((s,q)=>s+q.qb_rush_attempts,0);
   const totalIncQB=(r.total_attempts||0)+qbRushAtt;
-  return `RB carries: ${r.total_attempts} · team YPA: ${(r.ypa||0).toFixed(2)} · RB yards: ${(r.total_yards||0).toLocaleString()} · incl QB: ~${totalIncQB} carries`;
+  const plain=`RB carries: ${r.total_attempts} · team YPA: ${(r.ypa||0).toFixed(2)} · RB yards: ${(r.total_yards||0).toLocaleString()} · incl QB: ~${totalIncQB} carries`;
+  if(!opts || !opts.asHtml) return plain;
+  const noteTeam=String((opts&&opts.team)||currentTeam||'').toUpperCase();
+  const ctx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} rushing derived`
+    : `${activeSeason} rushing derived`;
+  return `RB carries: ${noteWrapHtml(escHtml(String(r.total_attempts)), { label:'RB Carries', value:String(r.total_attempts), source:'projection_builder_rushing', statKey:'rb_carries', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')} · team YPA: ${noteWrapHtml(escHtml((r.ypa||0).toFixed(2)), { label:'Team RB Yards Per Carry', value:(r.ypa||0).toFixed(2), source:'projection_builder_rushing', statKey:'team_rb_ypa', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')} · RB yards: ${noteWrapHtml(escHtml((r.total_yards||0).toLocaleString()), { label:'Team RB Rushing Yards', value:(r.total_yards||0).toLocaleString(), source:'projection_builder_rushing', statKey:'team_rb_yards', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')} · incl QB: ${noteWrapHtml(escHtml('~'+String(totalIncQB)+' carries'), { label:'Team Carries Including QB', value:'~'+String(totalIncQB)+' carries', source:'projection_builder_rushing', statKey:'team_carries_incl_qb', context:ctx, team:noteTeam, relevance:'QB,RB' }, 'note-tag-hit')}`;
+}
+
+function rushTotalLabelHtml(state, team){
+  const r=state.rushing;
+  const noteTeam=String(team||currentTeam||'').toUpperCase();
+  const ctx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} rushing totals`
+    : `${activeSeason} rushing totals`;
+  const attShown=String(r.total_attempts||0)+' att';
+  const ydsShown=(r.total_yards||0).toLocaleString()+' yds';
+  return `${noteWrapHtml(escHtml(attShown), { label:'Team RB Carries', value:attShown, source:'projection_builder_rushing', statKey:'team_rb_carries', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')} / ${noteWrapHtml(escHtml(ydsShown), { label:'Team RB Rushing Yards', value:ydsShown, source:'projection_builder_rushing', statKey:'team_rb_total_yards', context:ctx, team:noteTeam, relevance:'RB' }, 'note-tag-hit')}`;
 }
 
 // Rushing counterpart of vacatedProduction: carries/rush-yards/rush-TDs left behind by

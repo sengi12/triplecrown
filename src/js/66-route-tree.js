@@ -106,7 +106,7 @@ function _routeHeat(ratio){
 }
 
 // The SVG route tree for one season's distribution.
-function routeTreeSVG(rt, metric){
+function routeTreeSVG(rt, metric, notePlayer){
   metric=ROUTE_TREE_METRICS[metric]?metric:'td';
   const W=360, H=440, cx=180, losY=340, sx=15, sy=20;
   const PX = x => +(cx + x*sx).toFixed(1);
@@ -167,6 +167,19 @@ function routeTreeSVG(rt, metric){
     const trim=Math.min(aLen, segLen*0.55);
     const linePts=it.pts.slice();
     linePts[linePts.length-1]=[+(ex-ca*trim).toFixed(2), +(ey-sa*trim).toFixed(2)];
+    const metricTag = metricKnown ? _fmtRouteMetricValue(it.metricV, metric) : '—';
+    const noteValue = `${it.sh.label} · ${it.pct.toFixed(1)}% · ${it.n} routes${metricKnown?` · ${metricTag}`:''}`;
+    const attrs = noteTagAttrs({
+      label:`${it.sh.label} route tendency`,
+      value:noteValue,
+      source:'route_tree',
+      statKey:metric,
+      context:`${pcardRouteSeason} route tree`,
+      player:notePlayer,
+      team:notePlayer&&notePlayer.team,
+      relevance:'WR,TE,RB,QB',
+    });
+    paths+=`<g${attrs}>`;
     paths+=`<polyline points="${linePts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${it.col}" stroke-width="${it.w}" stroke-linejoin="round" stroke-linecap="round" opacity="0.95"/>`;
     // Base sits at the (trimmed) line end; the tip reaches the route's true endpoint, so the
     // arrow still terminates exactly where the route does.
@@ -175,6 +188,7 @@ function routeTreeSVG(rt, metric){
     const b1=[baseX+Math.cos(a+Math.PI/2)*aW, baseY+Math.sin(a+Math.PI/2)*aW];
     const b2=[baseX+Math.cos(a-Math.PI/2)*aW, baseY+Math.sin(a-Math.PI/2)*aW];
     paths+=`<polygon points="${tip[0].toFixed(1)},${tip[1].toFixed(1)} ${b1[0].toFixed(1)},${b1[1].toFixed(1)} ${b2[0].toFixed(1)},${b2[1].toFixed(1)}" fill="${it.col}" stroke="${it.col}" stroke-width="0.6" stroke-linejoin="round"/>`;
+    paths+=`</g>`;
   }
   // Label placement with a vertical de-collision pass per side (left / right / centre), so the
   // lower clusters (Slant/Angle/Drag …) don't stack on top of each other. A thin leader line is
@@ -221,6 +235,7 @@ function routeTreeSVG(rt, metric){
 // Ranked list beneath the tree — exact counts + share, coloured to match the tree.
 function routeTreeList(rt, metric){
   metric=ROUTE_TREE_METRICS[metric]?metric:'td';
+  const notePlayer = pcardNoteTarget();
   const tree=rt.tree||{}, total=rt.total||1;
   const metricKnown=_routeMetricKnown(rt, metric);
   const rowsMap = {};
@@ -252,7 +267,7 @@ function routeTreeList(rt, metric){
     return `<div class="rt-list-row">`+
       `<span class="rt-list-name">${label}</span>`+
       `<span class="rt-list-bar"><span class="rt-list-fill" style="width:${(100*n/maxN).toFixed(0)}%;background:${col}"></span></span>`+
-      `<span class="rt-list-n">${n}</span><span class="rt-list-pct">${pct.toFixed(1)}%</span><span class="${metricClass}" title="${metricShort}">${metricTxt}</span></div>`;
+      `<span class="rt-list-n">${noteWrapHtml(String(n), { label:`${label} routes`, value:String(n), source:'route_tree', statKey:'route_count', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')}</span><span class="rt-list-pct">${noteWrapHtml(`${pct.toFixed(1)}%`, { label:`${label} route share`, value:`${pct.toFixed(1)}%`, source:'route_tree', statKey:'route_share', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')}</span><span class="${metricClass}" title="${metricShort}">${metricTxt==='—'?metricTxt:noteWrapHtml(metricTxt, { label:`${label} ${metricShort}`, value:metricTxt, source:'route_tree', statKey:metric, context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')}</span></div>`;
   }).join('')+`</div>`;
 }
 
@@ -280,14 +295,15 @@ function renderPcardRoutes(pid){
   const metricSummary = metricKnown
     ? `${_fmtRouteMetricValue(metricTotal, pcardRouteMetric)} ${metricCfg.summary}`
     : `${metricCfg.short} route data unavailable in this seed`;
+  const notePlayer = noteTargetFromArgs(pid, pcardState&&pcardState.posc, pcardState&&pcardState.team);
   return `
     <div class="rt-wrap">
       <div class="rt-head">
         <div class="rt-seasons">${seasonBtns}</div>
         <div class="rt-metrics">${metricBtns}</div>
-        <div class="rt-summary">${rt.total} routes charted · ${metricSummary} · most-run <b>${topLabel}</b></div>
+        <div class="rt-summary">${noteWrapHtml(`${rt.total} routes charted`, { label:'Routes Charted', value:String(rt.total), source:'route_tree', statKey:'routes', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')} · ${metricKnown?noteWrapHtml(metricSummary, { label:metricCfg.label, value:_fmtRouteMetricValue(metricTotal, pcardRouteMetric), source:'route_tree', statKey:pcardRouteMetric, context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit'):metricSummary} · most-run <b>${noteWrapHtml(escHtml(topLabel), { label:'Most-run route', value:topLabel, source:'route_tree', statKey:'top_route', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')}</b></div>
       </div>
-      ${routeTreeSVG(rt, pcardRouteMetric)}
+      ${routeTreeSVG(rt, pcardRouteMetric, notePlayer)}
       ${routeTreeList(rt, pcardRouteMetric)}
       <div class="pcard-src">Route types via nflverse participation charting (route run when targeted, ${pcardRouteSeason} regular season).</div>
     </div>`;

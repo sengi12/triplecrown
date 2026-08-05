@@ -919,6 +919,8 @@ function renderPcardQbOl(pid){
   const pack=NFLVERSE[season]||{};
   const teamCode=_qbTeamForSeason(pid, season, norm, p.team||'') || _qbAnyKnownTeam(pid, norm, p.team||'');
   if(!teamCode) return '<div class="pcard-loading">No team context available for this QB in that season.</div>';
+  const notePlayer = noteTargetFromArgs(pid, 'QB', teamCode);
+  const noteCtx = _olIsProjSeason(season) ? `${season} projections · QB OL` : `${season} QB OL`;
 
   const proj=_olIsProjSeason(season) ? (_olProjectedTeam2026()[teamCode]||null) : null;
   const passTbl=proj ? proj.passTbl : (pack.team&&pack.team.offensive_line_pass);
@@ -947,8 +949,9 @@ function renderPcardQbOl(pid){
   const metricCols=cols.filter(c=>c!=='Last 5 Sacks Allowed' && c!=='Last 5 Sack Rate');
   const overallPassScore=_olMetricScoreFromRow(row, ['Pass Score','Overall Score','Overall','Score']);
   const overallPassRank=_olMetricRankFromRow(row, ['Pass Score','Overall Score','Overall','Score']);
+  const overallPassValue = overallPassScore!=null ? `${overallPassScore.toFixed(1)}${overallPassRank!=null?` · league rank #${overallPassRank}`:''}` : `—${overallPassRank!=null?` · league rank #${overallPassRank}`:''}`;
   const overallPassHtml = (overallPassScore!=null || overallPassRank!=null)
-    ? `<div class="olc-overview"><b>Cumulative Pass Protection Score: ${overallPassScore!=null?overallPassScore.toFixed(1):'—'}</b> ${_olRankBadge(overallPassRank)}</div>`
+    ? `<div class="olc-overview">${noteWrapHtml(`<b>Cumulative Pass Protection Score: ${overallPassScore!=null?overallPassScore.toFixed(1):'—'}</b> ${_olRankBadge(overallPassRank)}`, { label:'Cumulative Pass Protection Score', value:overallPassValue, source:'qb_ol_context', statKey:'overall_pass_score', context:`${teamDisplayName(teamCode)||teamCode} pass protection · ${noteCtx}`, player:notePlayer, team:teamCode, relevance:'QB', nav:{ type:'advanced', team:teamCode, season:_olIsProjSeason(season)?'proj':String(season) } }, 'note-tag-hit')}</div>`
     : '';
 
   let projOverallHtml='';
@@ -962,8 +965,8 @@ function renderPcardQbOl(pid){
     const baseScore=baseRow&&baseRow.values?baseRow.values['Overall Score']:null;
     const baseRank=baseRow&&baseRow.ranks?baseRow.ranks['Overall Score']:null;
     projOverallHtml = `<div class="olc-metrics" style="margin-bottom:8px">`
-      + `<div class="olc-metric"><label>Proj ${OL_PROJ_SEASON}</label><b>${_olFmtMetric('Overall Score', projScore)}</b><small>${_olRankBadge(projRank)}</small></div>`
-      + `<div class="olc-metric"><label>${proj.baselineSeason}</label><b>${_olFmtMetric('Overall Score', baseScore)}</b><small>${_olRankBadge(baseRank)}</small></div>`
+      + `<div class="olc-metric"><label>Proj ${OL_PROJ_SEASON}</label><b>${noteWrapHtml(escHtml(_olFmtMetric('Overall Score', projScore)), { label:`Proj ${OL_PROJ_SEASON} Pass Protection Score`, value:`${_olFmtMetric('Overall Score', projScore)}${projRank!=null?` · league rank #${projRank}`:''}`, source:'qb_ol_context', statKey:'proj_overall_score', context:`${teamDisplayName(teamCode)||teamCode} pass protection · ${OL_PROJ_SEASON} projections`, player:notePlayer, team:teamCode, relevance:'QB', nav:{ type:'advanced', team:teamCode, season:'proj' } }, 'note-tag-hit')}</b><small>${_olRankBadge(projRank)}</small></div>`
+      + `<div class="olc-metric"><label>${proj.baselineSeason}</label><b>${noteWrapHtml(escHtml(_olFmtMetric('Overall Score', baseScore)), { label:`${proj.baselineSeason} Pass Protection Score`, value:`${_olFmtMetric('Overall Score', baseScore)}${baseRank!=null?` · league rank #${baseRank}`:''}`, source:'qb_ol_context', statKey:'base_overall_score', context:`${teamDisplayName(teamCode)||teamCode} pass protection · ${proj.baselineSeason}`, player:notePlayer, team:teamCode, relevance:'QB', nav:{ type:'advanced', team:teamCode, season:String(proj.baselineSeason) } }, 'note-tag-hit')}</b><small>${_olRankBadge(baseRank)}</small></div>`
       + `</div>`;
     metricColsUse=metricColsUse.filter(c=>c!=='Overall Score');
   }
@@ -971,9 +974,10 @@ function renderPcardQbOl(pid){
   const teamMetrics=metricColsUse.map(c=>{
     const v=row.values?row.values[c]:null;
     const rk=row.ranks?row.ranks[c]:null;
+    const txt=_olFmtMetric(c,v);
     return `<div class="olc-metric">
       <label>${c}</label>
-      <b>${_olFmtMetric(c,v)}</b>
+      <b>${noteWrapHtml(escHtml(txt), { label:c, value:`${txt}${rk!=null?` · league rank #${rk}`:''}`, source:'qb_ol_context', statKey:c, context:`${teamDisplayName(teamCode)||teamCode} pass protection · ${noteCtx}`, player:notePlayer, team:teamCode, relevance:'QB', nav:{ type:'advanced', team:teamCode, season:_olIsProjSeason(season)?'proj':String(season) } }, 'note-tag-hit')}</b>
       <small>${_olRankBadge(rk)}</small>
     </div>`;
   }).join('');
@@ -1029,6 +1033,8 @@ function renderPcardOlGrades(pid){
   if(!seasons.length) return '<div class="pcard-loading">No OL grades available for this player.</div>';
   if(pcardOlSeason==null || !seasons.includes(String(pcardOlSeason))) pcardOlSeason=seasons[0];
   const season=String(pcardOlSeason);
+  const notePlayer = noteTargetFromArgs(pid, pcardState&&pcardState.posc, pcardState&&pcardState.team);
+  const noteCtx = _olIsProjSeason(season) ? `${season} projections · OL grades` : `${season} OL grades`;
 
   const pack=NFLVERSE[season]||{};
   const rec=(pack.ol_players&&pack.ol_players[norm])||null;
@@ -1050,9 +1056,10 @@ function renderPcardOlGrades(pid){
     const metricRow = (title, row, cols) => `<div class="olc-team-head" style="margin-top:8px">${title}</div><div class="olc-metrics">${cols.map(c=>{
       const v=row.values ? row.values[c] : null;
       const r=row.ranks ? row.ranks[c] : null;
+      const txt=_olFmtMetric(c, v);
       return `<div class="olc-metric">
         <label>${c}</label>
-        <b>${_olFmtMetric(c, v)}</b>
+        <b>${noteWrapHtml(escHtml(txt), { label:c, value:txt, source:'ol_team_context', statKey:c, context:`${teamDisplayName(teamCode)||teamCode} ${title} · ${_olIsProjSeason(season)?`${season} projections`:`${season}`}`, team:teamCode, relevance:noteRelevanceForTableKey(title==='Run Blocking'?'offensive_line_run':'offensive_line_pass') }, 'note-tag-hit')}</b>
         <small>${_olRankBadge(r)}</small>
       </div>`;
     }).join('')}</div>`;
@@ -1076,18 +1083,18 @@ function renderPcardOlGrades(pid){
   return `<div class="olc-wrap">
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns}</div>
-      <div class="rt-summary">${teamDisplayName(teamCode)||teamCode||'Team'} · ${rec.slot||rec.pos||'OL'} · validated OL pipeline grades</div>
+      <div class="rt-summary">${noteWrapHtml(`${teamDisplayName(teamCode)||teamCode||'Team'} · ${rec.slot||rec.pos||'OL'}`, { label:'Offensive line slot', value:`${teamDisplayName(teamCode)||teamCode||'Team'} · ${rec.slot||rec.pos||'OL'}`, source:'ol_grades', statKey:'slot', context:noteCtx, player:notePlayer, team:teamCode }, 'note-tag-hit')} · validated OL pipeline grades</div>
     </div>
 
     <div class="olc-grades">
       <div class="olc-grade-tile">
         <label>Pass Grade</label>
-        <b class="olc-grade ${_olGradeClass(rec.pass_grade)}">${rec.pass_grade||'—'}</b>
+        <b class="olc-grade ${_olGradeClass(rec.pass_grade)}">${noteWrapHtml(escHtml(rec.pass_grade||'—'), { label:'Pass Grade', value:rec.pass_grade||'—', source:'ol_grades', statKey:'pass_grade', context:noteCtx, player:notePlayer, team:teamCode }, 'note-tag-hit')}</b>
         <small>${_olPct(rec.pass_pctile)} pctile · ${passPctRank!=null?_olRankBadge(passPctRank):'<span class="olc-rank-muted">Rank —</span>'} · ${rec.pass_conf||'—'} conf · ${rec.pass_snaps!=null?Number(rec.pass_snaps).toLocaleString():'—'} snaps</small>
       </div>
       <div class="olc-grade-tile">
         <label>Run Grade</label>
-        <b class="olc-grade ${_olGradeClass(rec.run_grade)}">${rec.run_grade||'—'}</b>
+        <b class="olc-grade ${_olGradeClass(rec.run_grade)}">${noteWrapHtml(escHtml(rec.run_grade||'—'), { label:'Run Grade', value:rec.run_grade||'—', source:'ol_grades', statKey:'run_grade', context:noteCtx, player:notePlayer, team:teamCode }, 'note-tag-hit')}</b>
         <small>${_olPct(rec.run_pctile)} pctile · ${runPctRank!=null?_olRankBadge(runPctRank):'<span class="olc-rank-muted">Rank —</span>'} · ${rec.run_conf||'—'} conf · ${rec.poa_carries!=null?Number(rec.poa_carries).toLocaleString():'—'} POA carries</small>
       </div>
       <div class="olc-grade-tile">

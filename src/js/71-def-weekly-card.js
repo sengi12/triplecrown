@@ -111,6 +111,8 @@ function renderPcardDefWeekly(pid){
   const norm=_pcardDefNorm(pid);
   const seasons=pcardDefWeeklySeasons(norm);
   if(!seasons.length) return '<div class="pcard-loading">No nflverse defensive weekly data for this player.</div>';
+  const meta=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[pid])||{};
+  const notePlayer=noteTargetFromArgs(pid, meta.pos||'', meta.team||'');
   const seasonBlocks = [];
   for(const season of seasons){
     const rec=NFLVERSE[season]&&NFLVERSE[season].def_weekly&&NFLVERSE[season].def_weekly[norm];
@@ -125,14 +127,16 @@ function renderPcardDefWeekly(pid){
       const cells = cols.map(c=>{
         const v = w[c.k];
         const cls = _dwCellClass(c.k, v);
-        return `<td class="pcard-cell ${cls}">${v==null?'–':_dwNum(v, c.d, c.pct)}</td>`;
+        const txt=v==null?'–':_dwNum(v, c.d, c.pct);
+        return `<td class="pcard-cell ${cls}">${noteWrapHtml(escHtml(txt), { label:c.l, value:txt, source:'def_weekly', statKey:c.k, context:`${season} wk ${w.week||''} · ${w.opp?`vs ${w.opp}`:'—'}`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</td>`;
       }).join('');
       return `<tr><td class="pcard-wk">${w.week||''}</td><td class="pcard-opp home">${opp}</td>${cells}</tr>`;
     }).join('');
     const totals = rec.totals||{};
     const totCells = cols.map(c=>{
       const v=totals[c.k];
-      return `<td class="pcard-cell pcard-total-cell">${v==null?'–':_dwNum(v,c.d,c.pct)}</td>`;
+      const txt=v==null?'–':_dwNum(v,c.d,c.pct);
+      return `<td class="pcard-cell pcard-total-cell">${noteWrapHtml(escHtml(txt), { label:c.l, value:txt, source:'def_weekly_total', statKey:c.k, context:`${season} totals`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</td>`;
     }).join('');
     // games = weeks PFR charted; gp = weeks he actually took a snap. When they differ, say so:
     // "9/16g" is honest where a bare "16g" would imply every row carries stats.

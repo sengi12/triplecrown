@@ -511,7 +511,8 @@ function weekFilterPaceText(state, pid, mode){
 function weekFilterPaceButton(state, pid, mode){
   const text = weekFilterPaceText(state, pid, mode);
   if(!text) return '';
-  return `<span class="pace-info-wrap"><button class="pace-info-btn" onclick="toggleWeekFilterPace(this, ${pcardArg(text)})" aria-label="Show 17-game pace">i</button></span>`;
+  const target = noteTargetFromArgs(pid, '', currentTeam||'');
+  return `<span class="pace-info-wrap"${noteTagAttrs({ label:'17-game pace', value:text, source:'week_range_pace', statKey:'pace', context:`${activeSeason} week range`, player:target, team:target&&target.team })}><button class="pace-info-btn" onclick="toggleWeekFilterPace(this, ${pcardArg(text)})" aria-label="Show 17-game pace">i</button></span>`;
 }
 
 function isWeekFilterActive(state){
@@ -745,6 +746,7 @@ let sumerRefinement = null;
 const TC_STORE_KEY = 'triplecrown.session.v1';
 let _persistTimer = null;
 let _persistReady = false;   // becomes true after boot restore, so we don't save during load
+let playerNotes = {};        // player-note state keyed by canonical player key
 function persistAvailable(){
   try{ const k='__tc_test__'; localStorage.setItem(k,'1'); localStorage.removeItem(k); return true; }
   catch(e){ return false; }
@@ -757,10 +759,11 @@ function saveSession(){
   _persistTimer = setTimeout(()=>{
     try{
       const payload = {
-        v: 1,
+        v: 2,
         season: PROJ_SEASON,          // guard: only restore onto a matching-season seed
         savedAt: Date.now(),
         workingProj: workingProj,
+        playerNotes: playerNotes,
         scoringSettings: scoringSettings,
         rankFormat: rankFormat,
         scoringAxis: scoringAxis,
@@ -778,7 +781,7 @@ function loadSession(){
     const raw = localStorage.getItem(TC_STORE_KEY);
     if(!raw) return null;
     const p = JSON.parse(raw);
-    if(!p || p.v!==1) return null;
+    if(!p || (p.v!==1 && p.v!==2)) return null;
     return p;
   }catch(e){ return null; }
 }
@@ -801,6 +804,7 @@ function restoreSession(){
   scoringAxis = p.scoringAxis || scoringAxisOf(rankFormat);
   if(typeof p.scoringPanelOpen==='boolean') scoringPanelOpen = p.scoringPanelOpen;
   if(p.leagueSnapshot && p.leagueSnapshot.teams) leagueSnapshot = p.leagueSnapshot;
+  if(p.playerNotes && typeof p.playerNotes==='object') playerNotes = p.playerNotes;
   if(p.season===PROJ_SEASON && p.workingProj && Object.keys(p.workingProj).length){
     workingProj = p.workingProj;
     if(activeSeason==='proj') userProj = workingProj;
@@ -1006,6 +1010,84 @@ function scrubGhostRosters(){
 }
 function deepCopy(o){ return JSON.parse(JSON.stringify(o)); }
 function markDirty(){ if(importedSnapshot) dirtySinceImport = true; saveSession(); }
+
+function playerNoteKey(nameOrId, pos, team){
+  const posc = String(pos||'').toUpperCase();
+  if(posc==='DEF'){
+    const code = String(team||nameOrId||'').toUpperCase();
+    return code ? `def:${code}` : '';
+  }
+  const raw = String(nameOrId||'').trim();
+  if(/^\d+$/.test(raw)) return `pid:${raw}`;
+  let pid = '';
+  try{
+    if(typeof resolvePlayerId==='function') pid = resolvePlayerId(raw, posc) || resolvePlayerId(raw) || '';
+  }catch(e){}
+  if(pid) return `pid:${pid}`;
+  return `nm:${normName(raw)}|${posc}|${String(team||'').toUpperCase()}`;
+}
+function ensurePlayerNote(nameOrId, pos, team){
+  const key = playerNoteKey(nameOrId, pos, team);
+  if(!key) return null;
+  if(!playerNotes[key]){
+    playerNotes[key] = {
+      key,
+      pid: /^pid:/.test(key) ? key.slice(4) : '',
+      name: String(nameOrId||''),
+      pos: String(pos||''),
+      team: String(team||''),
+      text: '',
+      tags: [],
+      updatedAt: Date.now(),
+    };
+  }
+  const note = playerNotes[key];
+  if(nameOrId && !note.name) note.name = String(nameOrId);
+  if(pos && !note.pos) note.pos = String(pos);
+  if(team && !note.team) note.team = String(team);
+  return note;
+}
+function getPlayerNote(nameOrId, pos, team){
+  const key = playerNoteKey(nameOrId, pos, team);
+  return key ? (playerNotes[key] || null) : null;
+}
+function setPlayerNoteText(nameOrId, pos, team, text){
+  const note = ensurePlayerNote(nameOrId, pos, team);
+  if(!note) return null;
+  note.text = String(text==null?'':text);
+  note.updatedAt = Date.now();
+  markDirty();
+  return note;
+}
+function addPlayerNoteTag(nameOrId, pos, team, tag){
+  const note = ensurePlayerNote(nameOrId, pos, team);
+  if(!note || !tag) return null;
+  const clean = {
+    id: String(tag.id || (`tag:${Date.now()}:${Math.random().toString(36).slice(2,8)}`)),
+    label: String(tag.label||''),
+    value: String(tag.value||''),
+    source: String(tag.source||''),
+    statKey: String(tag.statKey||''),
+    context: String(tag.context||''),
+    capturedAt: tag.capturedAt || Date.now(),
+    nav: tag.nav && typeof tag.nav==='object' ? JSON.parse(JSON.stringify(tag.nav)) : null,
+  };
+  const dup = note.tags.find(t=>t.label===clean.label && t.value===clean.value && t.source===clean.source && t.statKey===clean.statKey);
+  if(!dup) note.tags.unshift(clean);
+  note.updatedAt = Date.now();
+  markDirty();
+  return note;
+}
+function removePlayerNoteTag(nameOrId, pos, team, tagId){
+  const note = getPlayerNote(nameOrId, pos, team);
+  if(!note || !tagId) return null;
+  const before = note.tags.length;
+  note.tags = note.tags.filter(t=>String(t.id)!==String(tagId));
+  if(note.tags.length===before) return note;
+  note.updatedAt = Date.now();
+  markDirty();
+  return note;
+}
 
 // ── Per-team undo history ──────────────────────────────────────────────────
 // Each team keeps its own stack of state snapshots so you can step back through
@@ -1438,6 +1520,548 @@ function ensureNflverseCoachingSeason(season){
     if(cs && Object.keys(cs).length){ mergeNflverseSection('coaching_scheme', cs); _nflverseLazyLoaded.coaching_scheme = true; }
   }catch(e){ /* no embedded sidecars — hosted lazy path will fetch on demand */ }
 })();
+// ── Player notes + hidden stat tagging ─────────────────────────────────────
+// Notes are keyed per player and live alongside the working projection session. A hidden
+// long-press gesture on tagged stats opens a picker that lets the user attach that stat to a
+// relevant player without cluttering the UI with visible controls.
+
+const NOTE_HOLD_MS = 520;
+const NOTE_MOVE_PX = 10;
+let _notePickerState = null;
+let _noteHoldState = null;
+let _noteSuppressClickUntil = 0;
+let _notesBrowserOpen = false;
+
+function playerNoteCount(nameOrId, pos, team){
+  const note = getPlayerNote(nameOrId, pos, team);
+  if(!note) return 0;
+  return (note.text && note.text.trim() ? 1 : 0) + ((note.tags && note.tags.length) || 0);
+}
+
+function noteTagAttrs(meta){
+  if(!meta) return '';
+  const attrs = [['data-noteable', '1']];
+  const put = (k, v)=>{ if(v!=null && v!=='') attrs.push([k, String(v)]); };
+  put('data-note-label', meta.label || 'Stat');
+  put('data-note-value', meta.value);
+  put('data-note-source', meta.source || 'app');
+  put('data-note-context', meta.context || '');
+  put('data-note-stat-key', meta.statKey || '');
+  put('data-note-team', meta.team || '');
+  put('data-note-relevance', Array.isArray(meta.relevance) ? meta.relevance.join(',') : (meta.relevance || ''));
+  if(meta.nav) put('data-note-nav', JSON.stringify(meta.nav));
+  const p = meta.player || null;
+  if(p){
+    put('data-note-player-id', p.player_id || p.pid || p.id || '');
+    put('data-note-player-name', p.name || '');
+    put('data-note-player-pos', p.pos || '');
+    put('data-note-player-team', p.team || meta.team || '');
+  }
+  if(Array.isArray(meta.players) && meta.players.length){
+    put('data-note-players', JSON.stringify(meta.players.slice(0, 12).map(ply=>({
+      player_id: ply.player_id || ply.pid || ply.id || '',
+      name: ply.name || '',
+      pos: ply.pos || '',
+      team: ply.team || meta.team || '',
+    }))));
+  }
+  return attrs.map(([k,v])=>` ${k}="${escAttr(v)}"`).join('');
+}
+
+function noteWrapHtml(innerHtml, meta, cls){
+  return `<span class="${cls||'note-tag-hit'}"${noteTagAttrs(meta)}>${innerHtml}</span>`;
+}
+
+function noteDisplayValue(value){
+  if(value==null || value==='') return '';
+  return String(value);
+}
+
+function noteAbbrevLabel(label){
+  return String(label||'')
+    .replace(/Strength of Schedule/gi,'SOS')
+    .replace(/Expert Consensus Rank/gi,'ECR')
+    .replace(/Completion Percentage/gi,'CMP%')
+    .replace(/Passer Rating/gi,'RTG')
+    .replace(/Value Over Replacement/gi,'VOR')
+    .replace(/Yards Per Carry/gi,'YPC')
+    .replace(/Receiving Yards/gi,'Rec Yds')
+    .replace(/Rush Touchdowns/gi,'Rush TDs')
+    .replace(/Receiving Touchdowns/gi,'Rec TDs')
+    .replace(/Pass Touchdowns/gi,'Pass TDs')
+    .replace(/Interceptions Thrown/gi,'INT Thrown')
+    .replace(/Cumulative Run Blocking Score/gi,'Run Block Score')
+    .replace(/Drive friction ranking/gi,'Drive Friction')
+    .replace(/3rd\/4th down frequency/gi,'3rd/4th Freq')
+    .replace(/Early down red zone success/gi,'Early RZ SR')
+    .replace(/Late down red zone success/gi,'Late RZ SR');
+}
+
+function noteCompactText(text, maxLen){
+  const raw = String(text||'').replace(/\s+/g,' ').trim();
+  if(raw.length<=maxLen) return raw;
+  return raw.slice(0, Math.max(0, maxLen-1)).trimEnd() + '…';
+}
+
+function noteCompactValue(value){
+  return noteCompactText(String(value||'')
+    .replace(/Vegas win total/gi,'VWT')
+    .replace(/league rank\s*#/gi,'#')
+    .replace(/rank\s+(\d+)\s+of\s+32/gi,'#$1/32')
+    .replace(/ projections /gi,' proj ')
+    .replace(/ projection /gi,' proj ')
+    .replace(/Passing Yards/gi,'Pass Yds')
+    .replace(/Receiving Yards/gi,'Rec Yds')
+    .replace(/Yards Per Carry/gi,'YPC')
+    .replace(/Success Rate/gi,'SR')
+    .replace(/Pass production/gi,'Pass Prod')
+    .replace(/Run production/gi,'Run Prod'), 52);
+}
+
+function noteCompactContext(context){
+  return noteCompactText(String(context||'')
+    .replace(/ projections /gi,' proj ')
+    .replace(/ projection /gi,' proj ')
+    .replace(/full rankings/gi,'full rk')
+    .replace(/ rankings/gi,' rk')
+    .replace(/adv metrics/gi,'adv')
+    .replace(/ season/gi,' szn')
+    .replace(/ week /gi,' wk '), 40);
+}
+
+function noteDisplayTag(tag){
+  return {
+    label: noteAbbrevLabel(tag && tag.label),
+    value: noteCompactValue(tag && tag.value),
+    context: noteCompactContext(tag && tag.context),
+  };
+}
+
+function noteRelevantPlayers(team, relevance){
+  const tm = String(team||'').toUpperCase();
+  if(!tm) return [];
+  const want = String(relevance||'QB,RB,WR,TE').split(/[^A-Z]+/i).map(x=>x.toUpperCase()).filter(Boolean);
+  const order = {QB:0,RB:1,WR:2,TE:3};
+  const wantSet = new Set(want);
+  const seen = new Set();
+  const out = [];
+  ['QB','RB','WR','TE'].forEach(pos=>{
+    (getBase(tm, pos) || []).forEach(p=>{
+      const key = playerNoteKey((p && (p.player_id || p.name)) || '', pos, tm);
+      if(!key || seen.has(key)) return;
+      seen.add(key);
+      out.push({
+        player_id: p.player_id || '',
+        name: p.name || '',
+        pos,
+        team: tm,
+        adp: Number.isFinite(+p.adp) ? +p.adp : 999,
+        relevant: wantSet.has(pos),
+      });
+    });
+  });
+  out.sort((a,b)=> (a.relevant===b.relevant?0:(a.relevant?-1:1)) || (order[a.pos]||9)-(order[b.pos]||9) || a.adp-b.adp || a.name.localeCompare(b.name));
+  return out;
+}
+
+function noteRelevanceForTableKey(key){
+  const k = String(key||'');
+  if(k==='offensive_line_run') return 'RB';
+  if(k==='offensive_line_pass') return 'QB,RB';
+  return 'QB,RB,WR,TE';
+}
+
+function notePickerTargets(info){
+  if(info.player && (info.player.name || info.player.player_id)) return [info.player];
+  if(Array.isArray(info.players) && info.players.length) return info.players;
+  if(info.team) return noteRelevantPlayers(info.team, info.relevance);
+  return [];
+}
+
+function noteInfoFromElement(el){
+  if(!el || !el.dataset) return null;
+  const ds = el.dataset;
+  const info = {
+    label: ds.noteLabel || 'Stat',
+    value: ds.noteValue || '',
+    source: ds.noteSource || 'app',
+    context: ds.noteContext || '',
+    statKey: ds.noteStatKey || '',
+    team: ds.noteTeam || '',
+    relevance: ds.noteRelevance || '',
+  };
+  if(ds.notePlayerId || ds.notePlayerName){
+    info.player = {
+      player_id: ds.notePlayerId || '',
+      name: ds.notePlayerName || '',
+      pos: ds.notePlayerPos || '',
+      team: ds.notePlayerTeam || ds.noteTeam || '',
+    };
+  }
+  if(ds.notePlayers){
+    try{ info.players = JSON.parse(ds.notePlayers); }catch(e){}
+  }
+    if(ds.noteNav){
+      try{ info.nav = JSON.parse(ds.noteNav); }catch(e){}
+    }
+  return info;
+}
+
+function noteClosePicker(){
+  _notePickerState = null;
+  const el = document.getElementById('notePickerOverlay');
+  if(el) el.remove();
+}
+
+function noteRenderPicker(){
+  const st = _notePickerState;
+  if(!st) return;
+  const existing = document.getElementById('notePickerOverlay');
+  const targets = st.targets || [];
+  const rows = targets.map((t, i)=>`
+    <button class="note-picker-row" onclick="noteChooseTarget(${i})">
+      <span class="note-picker-main"><span class="pos-badge pos-${t.pos||'WR'}">${escHtml(t.pos||'')}</span><span class="note-picker-name">${escHtml(t.name||'Unknown')}</span></span>
+      <span class="note-picker-team">${escHtml(t.team||'')}</span>
+    </button>`).join('');
+  const html = `
+    <div class="note-picker-backdrop" onclick="noteClosePicker()">
+      <div class="note-picker" onclick="event.stopPropagation()">
+        <div class="note-picker-head">
+          <div class="note-picker-title">Add to player notes</div>
+          <button class="note-picker-close" onclick="noteClosePicker()" aria-label="Close">✕</button>
+        </div>
+        <div class="note-picker-stat"><span class="note-picker-label">${escHtml(st.info.label)}</span><span class="note-picker-value">${escHtml(st.info.value)}</span></div>
+        ${st.info.context ? `<div class="note-picker-context">${escHtml(st.info.context)}</div>` : ''}
+        <div class="note-picker-list">${rows || '<div class="note-picker-empty">No relevant players found for this stat.</div>'}</div>
+      </div>
+    </div>`;
+  if(existing) existing.innerHTML = html;
+  else {
+    const div = document.createElement('div');
+    div.id = 'notePickerOverlay';
+    div.className = 'note-picker-overlay';
+    div.innerHTML = html;
+    document.body.appendChild(div);
+  }
+}
+
+function noteChooseTarget(index){
+  const st = _notePickerState;
+  if(!st || !st.targets || !st.targets[index]) return;
+  const t = st.targets[index];
+  addPlayerNoteTag(t.player_id || t.name, t.pos, t.team, {
+    label: st.info.label,
+    value: st.info.value,
+    source: st.info.source,
+    statKey: st.info.statKey,
+    context: st.info.context,
+    nav: st.info.nav || null,
+  });
+  const name = t.name || 'player';
+  noteClosePicker();
+  if(typeof pcardState!=='undefined' && pcardState && pcardStatsMode==='notes'){
+    const cur = pcardNoteTarget();
+    if(cur && playerNoteKey(cur.player_id || cur.name, cur.pos, cur.team)===playerNoteKey(t.player_id || t.name, t.pos, t.team)){
+      const body = document.getElementById('pcardBody');
+      if(body) body.innerHTML = renderPcardNotes();
+      renderPcardStatTabs();
+    }
+  }
+  refreshPcardNoteButton();
+  toast(`Added ${st.info.label} to ${name}'s notes`,'ok');
+}
+
+function noteOpenPicker(info){
+  const targets = notePickerTargets(info);
+  if(!targets.length){
+    toast('No relevant players found for that stat','err');
+    return;
+  }
+  _notePickerState = {info, targets};
+  noteRenderPicker();
+}
+
+function noteTargetFromArgs(nameOrId, pos, team){
+  const pid = String(nameOrId||'');
+  const p = (typeof sleeperPlayers!=='undefined' && sleeperPlayers && /^\d+$/.test(pid) && sleeperPlayers[pid]) ? sleeperPlayers[pid] : null;
+  return {
+    player_id: /^\d+$/.test(pid) ? pid : (p && p.player_id) || '',
+    name: (p && p.name) || String(nameOrId||''),
+    pos: String(pos|| (p && p.pos) || ''),
+    team: String(team|| (p && p.team) || ''),
+  };
+}
+
+function pcardNoteTarget(){
+  if(typeof pcardState==='undefined' || !pcardState) return null;
+  return noteTargetFromArgs(pcardState.pid, pcardState.posc, pcardState.team);
+}
+
+function refreshPcardNoteButton(){
+  const btn = document.getElementById('pcardNoteBtn');
+  const target = pcardNoteTarget();
+  if(!btn || !target) return;
+  const count = playerNoteCount(target.player_id || target.name, target.pos, target.team);
+  btn.innerHTML = `${TC_ICON('clipboard')}${count?`<span class="pcard-note-badge">${count}</span>`:''}`;
+}
+
+function renderPcardNotes(){
+  const target = pcardNoteTarget();
+  if(!target) return `<div class="pcard-loading">Notes unavailable for this player.</div>`;
+  const note = ensurePlayerNote(target.player_id || target.name, target.pos, target.team);
+  const tags = (note.tags || []).map(tag=>{
+    const d = noteDisplayTag(tag);
+    const ttl = [tag.label||'', tag.value||'', tag.context||''].filter(Boolean).join(' · ');
+    const clickable = !!(tag && tag.nav);
+    return `<div class="pcard-note-tag${clickable?' is-link':''}"><div class="pcard-note-tag-top"><button class="pcard-note-tag-open" ${clickable?`onclick="noteOpenFromCard('${escJsSingle(tag.id)}')"`:'disabled'} title="${escAttr(ttl)}"><span class="pcard-note-tag-label">${escHtml(d.label)}</span><div class="pcard-note-tag-value">${escHtml(d.value)}</div>${d.context?`<div class="pcard-note-tag-context">${escHtml(d.context)}</div>`:''}</button><button class="pcard-note-tag-rm" onclick="removePcardNoteTagFromCard('${escJsSingle(tag.id)}')" aria-label="Remove tag">✕</button></div></div>`;
+  }).join('');
+  return `<div class="pcard-notes-view">
+    <div class="pcard-notes-head"><div class="pcard-notes-title">Player Notes</div><div class="pcard-notes-sub">Hold down on tagged stats anywhere in the app to pin them here.</div></div>
+    <div class="pcard-notes-tags">${tags || '<div class="pcard-notes-empty">No pinned stats yet.</div>'}</div>
+    <label class="pcard-notes-label" for="pcardNotesText">Your notes</label>
+    <textarea id="pcardNotesText" class="pcard-notes-text" spellcheck="true" placeholder="Write down anything you want to remember about this player…" oninput="updatePcardNotesText(this.value)">${escHtml(note.text || '')}</textarea>
+    <div class="pcard-src">Notes save with this session and export with your projections JSON.</div>
+  </div>`;
+}
+
+function noteOpenFromCard(tagId){
+  const target = pcardNoteTarget();
+  if(!target) return;
+  const note = getPlayerNote(target.player_id || target.name, target.pos, target.team);
+  if(!note) return;
+  noteJumpToTag(note.key, tagId);
+}
+
+function updatePcardNotesText(value){
+  const target = pcardNoteTarget();
+  if(!target) return;
+  setPlayerNoteText(target.player_id || target.name, target.pos, target.team, value);
+  renderPcardStatTabs();
+  refreshPcardNoteButton();
+}
+
+function removePcardNoteTagFromCard(tagId){
+  const target = pcardNoteTarget();
+  if(!target) return;
+  removePlayerNoteTag(target.player_id || target.name, target.pos, target.team, tagId);
+  const body = document.getElementById('pcardBody');
+  if(body) body.innerHTML = renderPcardNotes();
+  renderPcardStatTabs();
+  refreshPcardNoteButton();
+}
+
+function openPcardNotes(){
+  if(typeof pcardState==='undefined' || !pcardState) return;
+  setPcardStatsMode('notes');
+}
+
+function notesBrowserEntries(){
+  return Object.values(playerNotes||{}).map(note=>{
+    const text = String(note.text||'').trim();
+    const tags = Array.isArray(note.tags) ? note.tags : [];
+    return {
+      key: note.key,
+      pid: note.pid || '',
+      name: note.name || 'Unknown',
+      pos: note.pos || '',
+      team: note.team || '',
+      text,
+      tags,
+      count: (text?1:0) + tags.length,
+      updatedAt: Number(note.updatedAt||0),
+    };
+  }).filter(e=>e.count>0).sort((a,b)=>b.updatedAt-a.updatedAt || a.name.localeCompare(b.name));
+}
+
+function noteGetByKey(key){ return key && playerNotes ? (playerNotes[key] || null) : null; }
+
+async function noteJumpToTag(noteKey, tagId){
+  const note = noteGetByKey(noteKey);
+  const tag = note && Array.isArray(note.tags) ? note.tags.find(t=>String(t.id)===String(tagId)) : null;
+  if(!tag) return;
+  const nav = tag.nav || null;
+  const team = String((note && note.team) || (nav && nav.team) || '').toUpperCase();
+  closeNotesBrowser();
+  if(nav && nav.type==='advanced' && team){
+    if(nav.season && String(nav.season)!=='proj') await loadSeason(String(nav.season));
+    currentTeam = team;
+    currentPhase = 'Advanced';
+    renderContent();
+    return;
+  }
+  if(nav && nav.type==='coaching' && team){
+    openTeamCoachingScheme(team, {season: nav.season || null, tab: nav.tab || 'insights'});
+    return;
+  }
+  if(nav && nav.type==='rankings'){
+    if(nav.season && String(nav.season)!=='proj') await loadSeason(String(nav.season));
+    else if(nav.season==='proj') await loadSeason('proj');
+    rankScope = nav.scope || 'all';
+    rankPosFilter = nav.posFilter || rankPosFilter;
+    if(typeof nav.advanced==='boolean') rankAdvanced = !!nav.advanced;
+    sumerRefinement = nav.refinement || null;
+    currentPhase = 'Rankings';
+    if(team && rankScope==='team') currentTeam = team;
+    renderContent();
+    return;
+  }
+  if(team){
+    openPlayerCard(note.pid || note.name, note.pos, team);
+    setTimeout(()=>{ try{ openPcardNotes(); }catch(e){} }, 0);
+  }
+}
+
+function noteDeleteBrowserTag(noteKey, tagId){
+  const note = noteGetByKey(noteKey);
+  if(!note) return;
+  removePlayerNoteTag(note.pid || note.name, note.pos, note.team, tagId);
+  const inp = document.getElementById('notesBrowserInput');
+  renderNotesBrowser(inp ? inp.value : '');
+}
+
+function openNotesBrowser(){
+  if(_notesBrowserOpen) return;
+  _notesBrowserOpen = true;
+  const ov = document.createElement('div');
+  ov.id = 'notesBrowserOverlay';
+  ov.className = 'ps-overlay';
+  ov.innerHTML = `
+    <div class="ps-modal notes-browser-modal" role="dialog" aria-label="Player notes browser">
+      <div class="ps-head notes-browser-head">
+        <span class="ps-search-ico">${TC_ICON('clipboard')}</span>
+        <input id="notesBrowserInput" class="ps-input" type="text" autocomplete="off" spellcheck="false"
+               placeholder="Search noted players or tagged stats…" aria-label="Search player notes">
+        <button class="ps-close" onclick="closeNotesBrowser()" aria-label="Close">${TC_ICON('close')}</button>
+      </div>
+      <div id="notesBrowserMeta" class="notes-browser-meta"></div>
+      <div id="notesBrowserResults" class="ps-results notes-browser-results"></div>
+    </div>`;
+  ov.addEventListener('mousedown', e=>{ if(e.target===ov) closeNotesBrowser(); });
+  document.body.appendChild(ov);
+  const inp = document.getElementById('notesBrowserInput');
+  if(inp){
+    inp.addEventListener('input', ()=>renderNotesBrowser(inp.value));
+    inp.addEventListener('keydown', e=>{ if(e.key==='Escape'){ e.preventDefault(); closeNotesBrowser(); } });
+    setTimeout(()=>inp.focus(), 30);
+  }
+  renderNotesBrowser('');
+}
+
+function closeNotesBrowser(){
+  _notesBrowserOpen = false;
+  const el = document.getElementById('notesBrowserOverlay');
+  if(el) el.remove();
+}
+
+function renderNotesBrowser(query){
+  const box = document.getElementById('notesBrowserResults');
+  const meta = document.getElementById('notesBrowserMeta');
+  if(!box || !meta) return;
+  const rows = notesBrowserEntries();
+  const raw = String(query||'').trim();
+  const nq = ecrNormName(raw);
+  const view = raw ? rows.filter(r=>{
+    const hay = [r.name, r.team, r.pos, r.text].concat(r.tags.map(t=>`${t.label} ${t.value} ${t.context||''}`)).join(' ');
+    return ecrNormName(hay).includes(nq);
+  }) : rows;
+  meta.innerHTML = `<div class="notes-browser-count">${view.length} noted player${view.length===1?'':'s'}</div>`;
+  if(!view.length){
+    box.innerHTML = `<div class="ps-hint">${rows.length?'No notes match that search.':'No player notes yet. Open a player card or hold down on a tagged stat to start collecting notes.'}</div>`;
+    return;
+  }
+  box.innerHTML = view.map(r=>{
+    const head = r.pid && sleeperPlayers && sleeperPlayers[r.pid]
+      ? imgTag(hsPack({player_id:r.pid,name:r.name,pos:r.pos,team:r.team}),'ps-hs')
+      : (r.team && r.pos==='DEF' ? imgTag(NFL_LOGO(String(r.team).toUpperCase()), 'ps-hs ps-def') : imgTag(hsPack({name:r.name,pos:r.pos,team:r.team}),'ps-hs'));
+    const preview = r.text ? escHtml(r.text.slice(0,140)) : '';
+    const tagPreview = r.tags.slice(0,4).map(t=>{ const d=noteDisplayTag(t); const ttl=[t.label||'',t.value||'',t.context||''].filter(Boolean).join(' · '); return `<span class="notes-browser-tag-wrap"><button class="notes-browser-tag" title="${escAttr(ttl)}" onclick="event.stopPropagation();noteJumpToTag(${pcardArg(r.key)},${pcardArg(t.id)})">${escHtml(d.label)}: ${escHtml(d.value)}</button><button class="notes-browser-tag-rm" onclick="event.stopPropagation();noteDeleteBrowserTag(${pcardArg(r.key)},${pcardArg(t.id)})" aria-label="Remove tag">✕</button></span>`; }).join('');
+    return `<div class="ps-row notes-browser-row">
+      <button class="notes-browser-open" onclick="openNotesBrowserPlayer(${pcardArg(r.pid||r.name)},${pcardArg(r.pos)},${pcardArg(r.team)})">
+        ${head}
+        <span class="notes-browser-main">
+          <span class="notes-browser-top"><span class="ps-nm">${escHtml(r.name)}</span><span class="ps-meta"><span class="ps-pos ps-pos-${r.pos}">${escHtml(r.pos||'')}</span><span class="notes-browser-team">${escHtml(r.team||'')}</span></span></span>
+          ${preview?`<span class="notes-browser-preview">${preview}</span>`:''}
+        </span>
+        <span class="notes-browser-badge">${r.count}</span>
+      </button>
+      ${tagPreview?`<div class="notes-browser-tags">${tagPreview}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function openNotesBrowserPlayer(idOrName, pos, team){
+  closeNotesBrowser();
+  openPlayerCard(idOrName, pos, team);
+  setTimeout(()=>{ try{ openPcardNotes(); }catch(e){} }, 0);
+}
+
+function _noteIgnoreTarget(t){
+  return !!(t && t.closest && t.closest('input, textarea, select, button, [contenteditable="true"], [contenteditable=true], .sl, .dual-range, .pcard-notes-text, .mini-edit'));
+}
+
+function _noteStartHold(targetEl, clientX, clientY){
+  _noteHoldState = {
+    targetEl,
+    clientX,
+    clientY,
+    timer: setTimeout(()=>{
+      const st = _noteHoldState;
+      if(!st || st.targetEl!==targetEl) return;
+      _noteSuppressClickUntil = Date.now() + 600;
+      const info = noteInfoFromElement(targetEl);
+      _noteHoldState = null;
+      if(info) noteOpenPicker(info);
+    }, NOTE_HOLD_MS),
+  };
+}
+
+function _noteClearHold(){
+  if(_noteHoldState && _noteHoldState.timer) clearTimeout(_noteHoldState.timer);
+  _noteHoldState = null;
+}
+
+function _noteMaybeCancelHold(clientX, clientY){
+  if(!_noteHoldState) return;
+  if(Math.abs(clientX - _noteHoldState.clientX) > NOTE_MOVE_PX || Math.abs(clientY - _noteHoldState.clientY) > NOTE_MOVE_PX) _noteClearHold();
+}
+
+if(typeof document!=='undefined' && document.addEventListener){
+  document.addEventListener('contextmenu', e=>{
+    const el = e.target && e.target.closest ? e.target.closest('[data-noteable="1"]') : null;
+    if(el && !_noteIgnoreTarget(e.target)) e.preventDefault();
+  });
+  document.addEventListener('click', e=>{
+    if(Date.now() < _noteSuppressClickUntil){
+      e.preventDefault();
+      e.stopPropagation();
+      _noteSuppressClickUntil = 0;
+    }
+  }, true);
+  document.addEventListener('touchstart', e=>{
+    if(e.touches.length!==1) return _noteClearHold();
+    const t = e.target;
+    const el = t && t.closest ? t.closest('[data-noteable="1"]') : null;
+    if(!el || _noteIgnoreTarget(t)) return;
+    const touch = e.touches[0];
+    _noteStartHold(el, touch.clientX, touch.clientY);
+  }, {passive:true});
+  document.addEventListener('touchmove', e=>{
+    if(!_noteHoldState || !e.touches.length) return;
+    const touch = e.touches[0];
+    _noteMaybeCancelHold(touch.clientX, touch.clientY);
+  }, {passive:true});
+  document.addEventListener('touchend', _noteClearHold, {passive:true});
+  document.addEventListener('touchcancel', _noteClearHold, {passive:true});
+  document.addEventListener('mousedown', e=>{
+    const t = e.target;
+    const el = t && t.closest ? t.closest('[data-noteable="1"]') : null;
+    if(!el || _noteIgnoreTarget(t) || e.button!==0) return;
+    _noteStartHold(el, e.clientX, e.clientY);
+  });
+  document.addEventListener('mousemove', e=>_noteMaybeCancelHold(e.clientX, e.clientY));
+  document.addEventListener('mouseup', _noteClearHold);
+  document.addEventListener('mouseleave', _noteClearHold);
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // Toast
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4090,6 +4714,7 @@ function renderPlayerCardShell(pid, pos, team){
     `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val">${val}</span></div>`;
   const contractBand = contractSummaryHTML(name);
   const ktcBand = ktcLinkHTML(name, posc);
+  const noteCount = playerNoteCount(pid, posc, tm);
   const html = `
     <div class="pcard" onclick="event.stopPropagation()">
       <div class="pcard-hero" style="${heroStyle}">
@@ -4108,6 +4733,7 @@ function renderPlayerCardShell(pid, pos, team){
           <div class="pcard-hero-draft" id="pcardHeroDraft"></div>
         </div>
         ${pcardBackButtonHTML()}
+        <button id="pcardNoteBtn" class="pcard-note-btn" onclick="openPcardNotes()" aria-label="Open player notes" title="Player notes">${TC_ICON('clipboard')}${noteCount?`<span class="pcard-note-badge">${noteCount}</span>`:''}</button>
         <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">✕</button>
         ${ktcBand}
       </div>
@@ -4124,10 +4750,11 @@ function renderPlayerCardShell(pid, pos, team){
     div.onclick=closePlayerCard;
     div.innerHTML=html;
     document.body.appendChild(div);
-    if(typeof attachPcardSwipe==='function') attachPcardSwipe(div.querySelector('.pcard'));
+    if(typeof attachPcardSwipe==='function' && div.querySelector) attachPcardSwipe(div.querySelector('.pcard'));
   }
-  const cardEl=(overlay||document.getElementById('pcardOverlay')).querySelector('.pcard');
-  if(typeof attachPcardSwipe==='function') attachPcardSwipe(cardEl);
+  const cardHost = overlay || document.getElementById('pcardOverlay');
+  const cardEl = (cardHost && cardHost.querySelector) ? cardHost.querySelector('.pcard') : null;
+  if(typeof attachPcardSwipe==='function' && cardEl) attachPcardSwipe(cardEl);
 }
 // Player-card stats source: 'pro' (NFL career — Sleeper weekly for skill players, ESPN nfl for
 // defense/other) or 'college' (ESPN college gamelog). Rookies default to college (no NFL games
@@ -4244,6 +4871,10 @@ function pcardLoadStats(mode){
   }
   if(mode==='routes'){
     body.innerHTML = renderPcardRoutes(pid);
+    return;
+  }
+  if(mode==='notes'){
+    body.innerHTML = renderPcardNotes();
     return;
   }
   if(mode==='passing'){
@@ -4415,6 +5046,7 @@ function _passerRating(t){
 }
 function renderPcardSeason(season, rows, pos){
   const schema=PCARD_SCHEMA[pos]; if(!schema) return '';
+  const notePlayer = pcardNoteTarget();
   // group header row
   const grpCells = schema.group.map(([label,span])=>`<th class="pcard-grp" colspan="${span}">${label}</th>`).join('<th></th>');
   const colHead = schema.cols.map((c,i)=>{
@@ -4436,7 +5068,18 @@ function renderPcardSeason(season, rows, pos){
       const prev=schema.cols[i-1]; const sep=(prev&&prev.grp!==c.grp)?'<td></td>':'';
       const v=vals[c.key];
       const cls=c.color?c.color(v):'';
-      return sep+`<td class="pcard-cell ${cls}">${c.fmt?c.fmt(v):(v==null?'–':v)}</td>`;
+      const display = c.fmt?c.fmt(v):(v==null?'–':v);
+      const oppCtx = r.opp ? `${r.isAway?'@':'vs'} ${r.opp}` : 'BYE';
+      const body = noteWrapHtml(String(display), {
+        label: c.label,
+        value: display,
+        source: 'player_card',
+        statKey: c.key,
+        context: `${season} week ${r.wk} · ${oppCtx}`,
+        player: notePlayer,
+        team: notePlayer && notePlayer.team,
+      }, 'note-tag-hit');
+      return sep+`<td class="pcard-cell ${cls}">${body}</td>`;
     }).join('');
     const oppTxt = r.opp
       ? `<span class="pcard-opp-inner">${r.isAway?'<span class="pcard-at">@</span>':'<span class="pcard-vs">vs</span>'}<img src="${NFL_LOGO(r.opp)}" class="pcard-opp-logo" onerror="this.style.display='none'"><span>${r.opp}</span></span>`
@@ -4451,7 +5094,17 @@ function renderPcardSeason(season, rows, pos){
       const prev=schema.cols[i-1]; const sep=(prev&&prev.grp!==c.grp)?'<td></td>':'';
       // RANK has no meaningful season total; show a dash.
       const v = (c.key==='rank') ? null : tot[c.key];
-      return sep+`<td class="pcard-cell pcard-total-cell">${v==null?'–':(c.fmt?c.fmt(v):v)}</td>`;
+      const display = v==null?'–':(c.fmt?c.fmt(v):v);
+      const body = noteWrapHtml(String(display), {
+        label: c.label,
+        value: display,
+        source: 'player_card_total',
+        statKey: c.key,
+        context: `${season} season total`,
+        player: notePlayer,
+        team: notePlayer && notePlayer.team,
+      }, 'note-tag-hit');
+      return sep+`<td class="pcard-cell pcard-total-cell">${body}</td>`;
     }).join('');
     totalsRow = `<tr class="pcard-total-row"><td class="pcard-wk">TOT</td>
       <td class="pcard-opp">${tot._games}g</td>${tcells}</tr>`;
@@ -4698,6 +5351,7 @@ function routeTreeSVG(rt, metric){
 // Ranked list beneath the tree — exact counts + share, coloured to match the tree.
 function routeTreeList(rt, metric){
   metric=ROUTE_TREE_METRICS[metric]?metric:'td';
+  const notePlayer = pcardNoteTarget();
   const tree=rt.tree||{}, total=rt.total||1;
   const metricKnown=_routeMetricKnown(rt, metric);
   const rowsMap = {};
@@ -4729,7 +5383,7 @@ function routeTreeList(rt, metric){
     return `<div class="rt-list-row">`+
       `<span class="rt-list-name">${label}</span>`+
       `<span class="rt-list-bar"><span class="rt-list-fill" style="width:${(100*n/maxN).toFixed(0)}%;background:${col}"></span></span>`+
-      `<span class="rt-list-n">${n}</span><span class="rt-list-pct">${pct.toFixed(1)}%</span><span class="${metricClass}" title="${metricShort}">${metricTxt}</span></div>`;
+      `<span class="rt-list-n">${noteWrapHtml(String(n), { label:`${label} routes`, value:String(n), source:'route_tree', statKey:'route_count', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')}</span><span class="rt-list-pct">${noteWrapHtml(`${pct.toFixed(1)}%`, { label:`${label} route share`, value:`${pct.toFixed(1)}%`, source:'route_tree', statKey:'route_share', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')}</span><span class="${metricClass}" title="${metricShort}">${metricTxt==='—'?metricTxt:noteWrapHtml(metricTxt, { label:`${label} ${metricShort}`, value:metricTxt, source:'route_tree', statKey:metric, context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')}</span></div>`;
   }).join('')+`</div>`;
 }
 
@@ -4757,12 +5411,13 @@ function renderPcardRoutes(pid){
   const metricSummary = metricKnown
     ? `${_fmtRouteMetricValue(metricTotal, pcardRouteMetric)} ${metricCfg.summary}`
     : `${metricCfg.short} route data unavailable in this seed`;
+  const notePlayer = noteTargetFromArgs(pid, pcardState&&pcardState.posc, pcardState&&pcardState.team);
   return `
     <div class="rt-wrap">
       <div class="rt-head">
         <div class="rt-seasons">${seasonBtns}</div>
         <div class="rt-metrics">${metricBtns}</div>
-        <div class="rt-summary">${rt.total} routes charted · ${metricSummary} · most-run <b>${topLabel}</b></div>
+        <div class="rt-summary">${noteWrapHtml(`${rt.total} routes charted`, { label:'Routes Charted', value:String(rt.total), source:'route_tree', statKey:'routes', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')} · ${metricKnown?noteWrapHtml(metricSummary, { label:metricCfg.label, value:_fmtRouteMetricValue(metricTotal, pcardRouteMetric), source:'route_tree', statKey:pcardRouteMetric, context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit'):metricSummary} · most-run <b>${noteWrapHtml(escHtml(topLabel), { label:'Most-run route', value:topLabel, source:'route_tree', statKey:'top_route', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')}</b></div>
       </div>
       ${routeTreeSVG(rt, pcardRouteMetric)}
       ${routeTreeList(rt, pcardRouteMetric)}
@@ -4941,6 +5596,7 @@ function renderPcardQbPassing(pid){
 
   const p=(sleeperPlayers&&sleeperPlayers[pid])||{};
   const name=p.name||'QB';
+  const notePlayer = noteTargetFromArgs(pid, 'QB', p.team||chart.team||'');
   const t=chart.totals||{};
   const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardQbPassingSeason('${s}')">${s}</button>`).join('');
   if(!QB_ZONE_METRICS[pcardQbMetric]) pcardQbMetric='rating';
@@ -4958,7 +5614,7 @@ function renderPcardQbPassing(pid){
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns}</div>
       <div class="rt-metrics">${metricBtns}</div>
-      <div class="rt-summary">${t.attempts||0} located attempts · threshold ±${QB_PASS_THRESH.toFixed(0)} vs league avg</div>
+      <div class="rt-summary">${noteWrapHtml(`${t.attempts||0} located attempts`, { label:'Located Attempts', value:String(t.attempts||0), source:'qb_passing_chart', statKey:'attempts', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · threshold ±${QB_PASS_THRESH.toFixed(0)} vs league avg</div>
     </div>
     ${_qbPassingSVG(chart, name, season, metric)}
     ${metric==='rating' ? `<div class="qpc-legend">
@@ -4967,11 +5623,11 @@ function renderPcardQbPassing(pid){
       <span><i style="background:#d33b2f"></i>Worse than average</span>
     </div>` : `<div class="qpc-legend"><span class="qpc-heat-key"></span>lighter = more ${QB_ZONE_METRICS[metric].short.toLowerCase()} from that zone</div>`}
     <div class="qpc-totals">
-      <div class="qpc-tile"><label>Passer Rating</label><b>${_qbNum(t.passer_rating,1)}</b></div>
-      <div class="qpc-tile"><label>Comp %</label><b>${_qbNum(t.comp_pct,1)}</b></div>
-      <div class="qpc-tile"><label>Yards</label><b>${t.yards!=null?Number(t.yards).toLocaleString():'—'}</b></div>
-      <div class="qpc-tile"><label>TD/INT</label><b>${tdInt}</b></div>
-      <div class="qpc-tile"><label>Attempts*</label><b>${t.attempts!=null?t.attempts:'—'}</b></div>
+      <div class="qpc-tile"><label>Passer Rating</label><b>${noteWrapHtml(escHtml(_qbNum(t.passer_rating,1)), { label:'Passer Rating', value:_qbNum(t.passer_rating,1), source:'qb_passing_chart', statKey:'passer_rating', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
+      <div class="qpc-tile"><label>Comp %</label><b>${noteWrapHtml(escHtml(_qbNum(t.comp_pct,1)), { label:'Completion Percentage', value:_qbNum(t.comp_pct,1), source:'qb_passing_chart', statKey:'comp_pct', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
+      <div class="qpc-tile"><label>Yards</label><b>${noteWrapHtml(escHtml(t.yards!=null?Number(t.yards).toLocaleString():'—'), { label:'Passing Yards', value:t.yards!=null?Number(t.yards).toLocaleString():'—', source:'qb_passing_chart', statKey:'yards', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
+      <div class="qpc-tile"><label>TD/INT</label><b>${noteWrapHtml(escHtml(tdInt), { label:'TD/INT', value:tdInt, source:'qb_passing_chart', statKey:'td_int', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
+      <div class="qpc-tile"><label>Attempts*</label><b>${noteWrapHtml(escHtml(t.attempts!=null?t.attempts:'—'), { label:'Located Attempts', value:t.attempts!=null?t.attempts:'—', source:'qb_passing_chart', statKey:'attempts', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
     </div>
     <div class="pcard-src">*Located pass attempts (excl. sacks, 2-pt) · depth via air yards, location via nflverse charting.</div>
   </div>`;
@@ -5579,6 +6235,8 @@ function renderPcardRbFan(pid){
 
   const p=(sleeperPlayers&&sleeperPlayers[pid])||{};
   const name=p.name||'RB';
+  const notePlayer = noteTargetFromArgs(pid, 'RB', p.team||chart.team||'');
+  const noteCtx = (_rbIsProjSeason(season) && chart.is_projection) ? `${season} projection rushing fan` : `${season} rushing fan`;
   const t=chart.totals||{};
   const seasonBtns=seasonOpts.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardRbFanSeason('${s}')">${s}</button>`).join('');
   if(!RB_LANE_METRICS[pcardRbMetric]) pcardRbMetric='eff';
@@ -5595,9 +6253,9 @@ function renderPcardRbFan(pid){
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns}</div>
       <div class="rt-metrics">${metricBtns}</div>
-      <div class="rt-summary">${t.attempts||0} carries · ${_rbNum(t.ypc,2)} YPC · ${_rbNum(t.success_rate,1)}% success</div>
+      <div class="rt-summary">${noteWrapHtml(`${t.attempts||0} carries`, { label:'Carries', value:String(t.attempts||0), source:'rb_rushing_fan', statKey:'attempts', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.ypc,2)} YPC`, { label:'Yards Per Carry', value:_rbNum(t.ypc,2), source:'rb_rushing_fan', statKey:'ypc', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.success_rate,1)}% success`, { label:'Success Rate', value:`${_rbNum(t.success_rate,1)}%`, source:'rb_rushing_fan', statKey:'success_rate', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</div>
     </div>
-    ${overallRunHtml}
+    ${runSc.score!=null || runSc.rank!=null ? `<div class="olc-overview">${noteWrapHtml(`<b>Cumulative Run Blocking Score: ${runSc.score!=null?runSc.score.toFixed(1):'—'}</b> ${_rbRankBadge(runSc.rank)}`, { label:'Cumulative Run Blocking Score', value:runSc.score!=null?runSc.score.toFixed(1):'—', source:'rb_offensive_line', statKey:'run_blocking_score', context:`${chart.team||notePlayer.team} offensive line · ${(_rbIsProjSeason(season) && chart.is_projection)?`${season} projections`:`${season}`}`, team:chart.team||notePlayer.team, relevance:'RB' }, 'note-tag-hit')}</div>` : ''}
     ${chart.is_projection?`<div class="olc-overview"><b>${RB_PROJ_SEASON} Projection:</b> projected depth-chart starters' run grades drive the line cards and cumulative run score. Lane arrows preserve the back's latest directional profile and scale it to projected efficiency/volume.</div>`:''}
     ${_rbFanSVG(chart, name, season, metric)}
     <div class="rbf-legend">
@@ -6549,6 +7207,8 @@ function renderPcardQbOl(pid){
   const pack=NFLVERSE[season]||{};
   const teamCode=_qbTeamForSeason(pid, season, norm, p.team||'') || _qbAnyKnownTeam(pid, norm, p.team||'');
   if(!teamCode) return '<div class="pcard-loading">No team context available for this QB in that season.</div>';
+  const notePlayer = noteTargetFromArgs(pid, 'QB', teamCode);
+  const noteCtx = _olIsProjSeason(season) ? `${season} projections · QB OL` : `${season} QB OL`;
 
   const proj=_olIsProjSeason(season) ? (_olProjectedTeam2026()[teamCode]||null) : null;
   const passTbl=proj ? proj.passTbl : (pack.team&&pack.team.offensive_line_pass);
@@ -6577,8 +7237,9 @@ function renderPcardQbOl(pid){
   const metricCols=cols.filter(c=>c!=='Last 5 Sacks Allowed' && c!=='Last 5 Sack Rate');
   const overallPassScore=_olMetricScoreFromRow(row, ['Pass Score','Overall Score','Overall','Score']);
   const overallPassRank=_olMetricRankFromRow(row, ['Pass Score','Overall Score','Overall','Score']);
+  const overallPassValue = overallPassScore!=null ? `${overallPassScore.toFixed(1)}${overallPassRank!=null?` · league rank #${overallPassRank}`:''}` : `—${overallPassRank!=null?` · league rank #${overallPassRank}`:''}`;
   const overallPassHtml = (overallPassScore!=null || overallPassRank!=null)
-    ? `<div class="olc-overview"><b>Cumulative Pass Protection Score: ${overallPassScore!=null?overallPassScore.toFixed(1):'—'}</b> ${_olRankBadge(overallPassRank)}</div>`
+    ? `<div class="olc-overview">${noteWrapHtml(`<b>Cumulative Pass Protection Score: ${overallPassScore!=null?overallPassScore.toFixed(1):'—'}</b> ${_olRankBadge(overallPassRank)}`, { label:'Cumulative Pass Protection Score', value:overallPassValue, source:'qb_ol_context', statKey:'overall_pass_score', context:`${teamDisplayName(teamCode)||teamCode} pass protection · ${noteCtx}`, player:notePlayer, team:teamCode, relevance:'QB', nav:{ type:'advanced', team:teamCode, season:_olIsProjSeason(season)?'proj':String(season) } }, 'note-tag-hit')}</div>`
     : '';
 
   let projOverallHtml='';
@@ -6592,8 +7253,8 @@ function renderPcardQbOl(pid){
     const baseScore=baseRow&&baseRow.values?baseRow.values['Overall Score']:null;
     const baseRank=baseRow&&baseRow.ranks?baseRow.ranks['Overall Score']:null;
     projOverallHtml = `<div class="olc-metrics" style="margin-bottom:8px">`
-      + `<div class="olc-metric"><label>Proj ${OL_PROJ_SEASON}</label><b>${_olFmtMetric('Overall Score', projScore)}</b><small>${_olRankBadge(projRank)}</small></div>`
-      + `<div class="olc-metric"><label>${proj.baselineSeason}</label><b>${_olFmtMetric('Overall Score', baseScore)}</b><small>${_olRankBadge(baseRank)}</small></div>`
+      + `<div class="olc-metric"><label>Proj ${OL_PROJ_SEASON}</label><b>${noteWrapHtml(escHtml(_olFmtMetric('Overall Score', projScore)), { label:`Proj ${OL_PROJ_SEASON} Pass Protection Score`, value:`${_olFmtMetric('Overall Score', projScore)}${projRank!=null?` · league rank #${projRank}`:''}`, source:'qb_ol_context', statKey:'proj_overall_score', context:`${teamDisplayName(teamCode)||teamCode} pass protection · ${OL_PROJ_SEASON} projections`, player:notePlayer, team:teamCode, relevance:'QB', nav:{ type:'advanced', team:teamCode, season:'proj' } }, 'note-tag-hit')}</b><small>${_olRankBadge(projRank)}</small></div>`
+      + `<div class="olc-metric"><label>${proj.baselineSeason}</label><b>${noteWrapHtml(escHtml(_olFmtMetric('Overall Score', baseScore)), { label:`${proj.baselineSeason} Pass Protection Score`, value:`${_olFmtMetric('Overall Score', baseScore)}${baseRank!=null?` · league rank #${baseRank}`:''}`, source:'qb_ol_context', statKey:'base_overall_score', context:`${teamDisplayName(teamCode)||teamCode} pass protection · ${proj.baselineSeason}`, player:notePlayer, team:teamCode, relevance:'QB', nav:{ type:'advanced', team:teamCode, season:String(proj.baselineSeason) } }, 'note-tag-hit')}</b><small>${_olRankBadge(baseRank)}</small></div>`
       + `</div>`;
     metricColsUse=metricColsUse.filter(c=>c!=='Overall Score');
   }
@@ -6601,9 +7262,10 @@ function renderPcardQbOl(pid){
   const teamMetrics=metricColsUse.map(c=>{
     const v=row.values?row.values[c]:null;
     const rk=row.ranks?row.ranks[c]:null;
+    const txt=_olFmtMetric(c,v);
     return `<div class="olc-metric">
       <label>${c}</label>
-      <b>${_olFmtMetric(c,v)}</b>
+      <b>${noteWrapHtml(escHtml(txt), { label:c, value:`${txt}${rk!=null?` · league rank #${rk}`:''}`, source:'qb_ol_context', statKey:c, context:`${teamDisplayName(teamCode)||teamCode} pass protection · ${noteCtx}`, player:notePlayer, team:teamCode, relevance:'QB', nav:{ type:'advanced', team:teamCode, season:_olIsProjSeason(season)?'proj':String(season) } }, 'note-tag-hit')}</b>
       <small>${_olRankBadge(rk)}</small>
     </div>`;
   }).join('');
@@ -6659,6 +7321,8 @@ function renderPcardOlGrades(pid){
   if(!seasons.length) return '<div class="pcard-loading">No OL grades available for this player.</div>';
   if(pcardOlSeason==null || !seasons.includes(String(pcardOlSeason))) pcardOlSeason=seasons[0];
   const season=String(pcardOlSeason);
+  const notePlayer = noteTargetFromArgs(pid, pcardState&&pcardState.posc, pcardState&&pcardState.team);
+  const noteCtx = _olIsProjSeason(season) ? `${season} projections · OL grades` : `${season} OL grades`;
 
   const pack=NFLVERSE[season]||{};
   const rec=(pack.ol_players&&pack.ol_players[norm])||null;
@@ -6680,9 +7344,10 @@ function renderPcardOlGrades(pid){
     const metricRow = (title, row, cols) => `<div class="olc-team-head" style="margin-top:8px">${title}</div><div class="olc-metrics">${cols.map(c=>{
       const v=row.values ? row.values[c] : null;
       const r=row.ranks ? row.ranks[c] : null;
+      const txt=_olFmtMetric(c, v);
       return `<div class="olc-metric">
         <label>${c}</label>
-        <b>${_olFmtMetric(c, v)}</b>
+        <b>${noteWrapHtml(escHtml(txt), { label:c, value:txt, source:'ol_team_context', statKey:c, context:`${teamDisplayName(teamCode)||teamCode} ${title} · ${_olIsProjSeason(season)?`${season} projections`:`${season}`}`, team:teamCode, relevance:noteRelevanceForTableKey(title==='Run Blocking'?'offensive_line_run':'offensive_line_pass') }, 'note-tag-hit')}</b>
         <small>${_olRankBadge(r)}</small>
       </div>`;
     }).join('')}</div>`;
@@ -6706,18 +7371,18 @@ function renderPcardOlGrades(pid){
   return `<div class="olc-wrap">
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns}</div>
-      <div class="rt-summary">${teamDisplayName(teamCode)||teamCode||'Team'} · ${rec.slot||rec.pos||'OL'} · validated OL pipeline grades</div>
+      <div class="rt-summary">${noteWrapHtml(`${teamDisplayName(teamCode)||teamCode||'Team'} · ${rec.slot||rec.pos||'OL'}`, { label:'Offensive line slot', value:`${teamDisplayName(teamCode)||teamCode||'Team'} · ${rec.slot||rec.pos||'OL'}`, source:'ol_grades', statKey:'slot', context:noteCtx, player:notePlayer, team:teamCode }, 'note-tag-hit')} · validated OL pipeline grades</div>
     </div>
 
     <div class="olc-grades">
       <div class="olc-grade-tile">
         <label>Pass Grade</label>
-        <b class="olc-grade ${_olGradeClass(rec.pass_grade)}">${rec.pass_grade||'—'}</b>
+        <b class="olc-grade ${_olGradeClass(rec.pass_grade)}">${noteWrapHtml(escHtml(rec.pass_grade||'—'), { label:'Pass Grade', value:rec.pass_grade||'—', source:'ol_grades', statKey:'pass_grade', context:noteCtx, player:notePlayer, team:teamCode }, 'note-tag-hit')}</b>
         <small>${_olPct(rec.pass_pctile)} pctile · ${passPctRank!=null?_olRankBadge(passPctRank):'<span class="olc-rank-muted">Rank —</span>'} · ${rec.pass_conf||'—'} conf · ${rec.pass_snaps!=null?Number(rec.pass_snaps).toLocaleString():'—'} snaps</small>
       </div>
       <div class="olc-grade-tile">
         <label>Run Grade</label>
-        <b class="olc-grade ${_olGradeClass(rec.run_grade)}">${rec.run_grade||'—'}</b>
+        <b class="olc-grade ${_olGradeClass(rec.run_grade)}">${noteWrapHtml(escHtml(rec.run_grade||'—'), { label:'Run Grade', value:rec.run_grade||'—', source:'ol_grades', statKey:'run_grade', context:noteCtx, player:notePlayer, team:teamCode }, 'note-tag-hit')}</b>
         <small>${_olPct(rec.run_pctile)} pctile · ${runPctRank!=null?_olRankBadge(runPctRank):'<span class="olc-rank-muted">Rank —</span>'} · ${rec.run_conf||'—'} conf · ${rec.poa_carries!=null?Number(rec.poa_carries).toLocaleString():'—'} POA carries</small>
       </div>
       <div class="olc-grade-tile">
@@ -7268,6 +7933,8 @@ function renderPcardDefWeekly(pid){
   const norm=_pcardDefNorm(pid);
   const seasons=pcardDefWeeklySeasons(norm);
   if(!seasons.length) return '<div class="pcard-loading">No nflverse defensive weekly data for this player.</div>';
+  const meta=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[pid])||{};
+  const notePlayer=noteTargetFromArgs(pid, meta.pos||'', meta.team||'');
   const seasonBlocks = [];
   for(const season of seasons){
     const rec=NFLVERSE[season]&&NFLVERSE[season].def_weekly&&NFLVERSE[season].def_weekly[norm];
@@ -7282,14 +7949,16 @@ function renderPcardDefWeekly(pid){
       const cells = cols.map(c=>{
         const v = w[c.k];
         const cls = _dwCellClass(c.k, v);
-        return `<td class="pcard-cell ${cls}">${v==null?'–':_dwNum(v, c.d, c.pct)}</td>`;
+        const txt=v==null?'–':_dwNum(v, c.d, c.pct);
+        return `<td class="pcard-cell ${cls}">${noteWrapHtml(escHtml(txt), { label:c.l, value:txt, source:'def_weekly', statKey:c.k, context:`${season} wk ${w.week||''} · ${w.opp?`vs ${w.opp}`:'—'}`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</td>`;
       }).join('');
       return `<tr><td class="pcard-wk">${w.week||''}</td><td class="pcard-opp home">${opp}</td>${cells}</tr>`;
     }).join('');
     const totals = rec.totals||{};
     const totCells = cols.map(c=>{
       const v=totals[c.k];
-      return `<td class="pcard-cell pcard-total-cell">${v==null?'–':_dwNum(v,c.d,c.pct)}</td>`;
+      const txt=v==null?'–':_dwNum(v,c.d,c.pct);
+      return `<td class="pcard-cell pcard-total-cell">${noteWrapHtml(escHtml(txt), { label:c.l, value:txt, source:'def_weekly_total', statKey:c.k, context:`${season} totals`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</td>`;
     }).join('');
     // games = weeks PFR charted; gp = weeks he actually took a snap. When they differ, say so:
     // "9/16g" is honest where a bare "16g" would imply every row carries stats.
@@ -7467,6 +8136,7 @@ function renderPcardTeamDef(pid){
 
 function _dstSeasonBlock(weeks, season, team){
   if(!weeks || !weeks.length) return `<div class="pcard-mini-note">No ${season} defensive weeks.</div>`;
+  const noteTeam=String(team||'').toUpperCase();
   const colHead = _DST_COLS.map(c=>`<th>${c.l}</th>`).join('');
   const tot = {};
   const bodyRows = weeks.map(w=>{
@@ -7477,7 +8147,8 @@ function _dstSeasonBlock(weeks, season, team){
     const cells = _DST_COLS.map(c=>{
       const v = w.stats[c.k];
       if(v!=null && isFinite(+v)) tot[c.k] = (tot[c.k]||0) + (+v);
-      return `<td class="pcard-cell ${_dstCls(c.k, v)}">${_dstNum(v, c.d)}</td>`;
+      const txt=_dstNum(v, c.d);
+      return `<td class="pcard-cell ${_dstCls(c.k, v)}">${noteWrapHtml(escHtml(txt), { label:c.l, value:txt, source:'team_def_weekly', statKey:c.k, context:`${season} wk ${w.week||''} · ${w.opp?`vs ${w.opp}`:'—'}`, team:noteTeam, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>`;
     }).join('');
     return `<tr><td class="pcard-wk">${w.week||''}</td><td class="pcard-opp home">${opp}</td>${cells}</tr>`;
   }).join('');
@@ -7491,7 +8162,8 @@ function _dstSeasonBlock(weeks, season, team){
     // false-positive against per-game thresholds — left uncoloured rather than implying a grade.
     const perGame = (c.k==='pts_allow'||c.k==='yds_allow');
     const cls = perGame ? _dstCls(c.k, v) : (c.k==='pts_std' && v!=null ? _dstCls(c.k, v/gp) : '');
-    return `<td class="pcard-cell pcard-total-cell ${cls}">${v==null?'\u2013':_dstNum(v, perGame?1:c.d)}</td>`;
+    const txt=v==null?'\u2013':_dstNum(v, perGame?1:c.d);
+    return `<td class="pcard-cell pcard-total-cell ${cls}">${noteWrapHtml(escHtml(txt), { label:c.l, value:txt, source:'team_def_weekly_total', statKey:c.k, context:`${season} D/ST totals`, team:noteTeam, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>`;
   }).join('');
   const totalRow = `<tr class="pcard-total-row"><td class="pcard-wk">TOT</td><td class="pcard-opp" title="${gp} games (PA/YA shown per game)">${gp}g</td>${totCells}</tr>`;
   const full = (typeof teamDisplayName==='function' ? teamDisplayName(team) : team);
@@ -7653,7 +8325,7 @@ function renderDepthChartFallback(team){
 }
 // Readable source lives in src/templates/coaching-template.html; build.py inlines it here
 // as a JSON string so the shipped index.html remains a single self-contained file.
-const SCHEME_TEMPLATE_INLINE = "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><title>Formation Playsheet</title>\n<style>\n  :root{--paper:#f4efe2;--ink:#1a1a17;--rule:#c9c1ab;--hl-yel:#f5e04b;--hl-grn:#8fd06a;--hl-pnk:#f7a8c4;--red:#a8321f;}\n  *{box-sizing:border-box;}\n  body{margin:0;background:#2a2723;font-family:\"Courier New\",monospace;padding:14px;color:var(--ink);}\n  .sheet{max-width:1040px;margin:0 auto;background:var(--paper);border:2px solid #000;box-shadow:0 8px 40px rgba(0,0,0,.6);}\n  .hdr{background:var(--ink);color:var(--paper);padding:10px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}\n  .hdr h1{font-size:18px;margin:0;letter-spacing:1px;text-transform:uppercase;}\n  .hdr .wk{font-size:12px;color:#c9c1ab;}\n  .controls{display:flex;flex-wrap:wrap;gap:10px;padding:10px 16px;background:#e8e1d0;border-bottom:2px solid #000;align-items:flex-end;}\n  .ctrl{display:flex;flex-direction:column;gap:3px;}\n  .ctrl label{font-size:9px;text-transform:uppercase;letter-spacing:1px;font-weight:bold;color:#5a5545;}\n  select{font-family:\"Courier New\",monospace;background:var(--paper);border:1.5px solid #000;padding:5px 8px;font-size:13px;font-weight:bold;cursor:pointer;}\n  .banner{background:var(--red);color:#fff;text-align:center;font-weight:bold;font-size:13px;padding:4px;letter-spacing:2px;text-transform:uppercase;}\n  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));}\n  .card{border:1px solid #000;border-top:none;border-left:none;padding:8px 12px 12px;position:relative;}\n  .rank{position:absolute;top:6px;left:8px;font-size:10px;font-weight:bold;color:#8a8470;}\n  .plabel{text-align:center;font-weight:bold;font-size:14px;letter-spacing:1px;border-bottom:1.5px solid #000;padding-bottom:3px;margin-bottom:2px;}\n  .plabel .pers{background:var(--hl-yel);padding:1px 6px;}\n  .plabel .fname{font-size:11px;color:#5a5545;}\n  .subttl{text-align:center;font-size:10px;color:#5a5545;margin-bottom:4px;}\n.prod{font-family:'Courier New',monospace;font-size:9.5px;font-weight:700;letter-spacing:.02em;\n  margin:2px 0 4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}\n.prod-pass{color:#4f83cc;}\n.prod-run{color:#4a7f2c;}\n.prod-sep{color:#b9b295;}\n  svg{display:block;margin:0 auto;}\n  .stats{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;margin-top:6px;font-size:12px;}\n  .stat{display:flex;justify-content:space-between;border-bottom:1px dotted var(--rule);}\n  .rp{height:20px;background:#ddd6c4;border:1px solid #000;position:relative;margin-top:8px;overflow:hidden;font-size:10px;display:flex;cursor:pointer;}\n  .rp .run,.rp .pass{position:relative;display:flex;align-items:center;height:100%;transition:filter .1s;}\n  .rp .run{background:var(--hl-grn);justify-content:flex-start;padding-left:5px;}\n  .rp .pass{background:#4f83cc;color:#fff;justify-content:flex-end;padding-right:5px;}\n  .rp .run:hover,.rp .pass:hover{filter:brightness(1.12);}\n  .rp .seg.active{outline:2px solid #1a1a17;outline-offset:-2px;}\n  .rp b{font-weight:bold;}\n  .hintbar{text-align:center;font-size:9px;color:#8a8470;margin-top:2px;}\n  .dia{margin-top:8px;border-top:2px dashed var(--rule);padding-top:6px;display:none;}\n  .dia.show{display:block;}\n  .diahead{font-size:10px;font-weight:bold;text-transform:uppercase;text-align:center;margin-bottom:3px;}\n  .empty{padding:30px;text-align:center;color:#8a8470;font-size:13px;grid-column:1/-1;}\n  .foot{padding:8px 16px;font-size:9px;color:#6a6455;border-top:2px solid #000;line-height:1.5;}\n  .hint{text-align:center;font-size:10px;color:#8a8470;padding:6px;background:#ece5d3;border-bottom:1px solid #000;}\n  .hl-p{background:var(--hl-pnk);} .hl-g{background:var(--hl-grn);}\n</style></head>\n<body><div class=\"sheet\">\n  <div class=\"hdr\"><h1>Detroit Lions &mdash; Playbook</h1><span class=\"wk\">2025 \u00b7 Routes mapped to players</span></div>\n  <div class=\"controls\">\n    <div class=\"ctrl\"><label>Down</label><select id=\"down\"><option value=\"all\">All downs</option><option value=\"1\">1st</option><option value=\"2\">2nd</option><option value=\"3\">3rd</option><option value=\"4\">4th</option></select></div>\n    <div class=\"ctrl\"><label>Distance to sticks</label><select id=\"dist\"><option value=\"all\">Any</option><option value=\"short\">Short (1-3)</option><option value=\"med\">Medium (4-7)</option><option value=\"long\">Long (8+)</option></select></div>\n    <div class=\"ctrl\"><label>Play type</label><select id=\"field\"><option value=\"all\">All plays</option><option value=\"pa\">Play-action</option><option value=\"motion\">Pre-snap motion</option><option value=\"nohuddle\">No-huddle</option><option value=\"redzone\">Red zone</option></select></div>\n    <div class=\"ctrl\"><label>&nbsp;</label><span id=\"ctx\" style=\"font-size:12px;font-weight:bold;padding:5px;\"></span></div>\n  </div>\n  <div class=\"hint\">\u25b8 Click the GREEN part of a formation's bar to see its top-3 run lanes \u00b7 click the BLUE part to see each player's most-common route</div>\n  <div class=\"banner\" id=\"banner\">All Situations</div>\n  <div class=\"grid\" id=\"grid\"></div>\n  <div class=\"foot\">Play diagrams: routes are each skill player's single most-common route WHEN TARGETED out of this formation (season pool, all situations, for stable sample), mapped to players by target rank (WR1=St. Brown, WR2=Williams, etc.); the outermost WR is treated as WR1. Run mode shows the 3 most-used gaps, arrow width = frequency, color = EPA. Alignment is authentic; exact pre-snap WR splits are schematic. Data: nflverse pbp + FTN participation, 2025 REG. Not affiliated with the NFL.</div>\n</div>\n__TC_SCRIPT_OPEN____TC_FV_SCRIPT____TC_SCRIPT_CLOSE__\n__TC_SCRIPT_OPEN__\nfunction ec(e){ if(e==null)return\"#999\"; let t=Math.max(-0.4,Math.min(0.4,e))/0.4;\n  if(t>=0)return `rgb(${Math.round(216+(47-216)*t)},${Math.round(165+(174-165)*t)},${Math.round(29+(78-29)*t)})`;\n  let a=-t; return `rgb(${Math.round(216+(211-216)*a)},${Math.round(165+(59-165)*a)},${Math.round(29+(47-29)*a)})`; }\n\n// compute skill-player positions on a tall play diagram; returns {ol:[...], skill:[{role,x,y,side,label}]}\n// full 1-9 route tree (fallback when a player has no route data at all)\nconst FULL_TREE=[['FLAT',null],['SLANT',null],['COMEBACK',null],['HITCH/CURL',null],['OUT',null],['IN/DIG',null],['CORNER',null],['POST',null],['GO',null]];\nconst FULL_TREE_RB=[['FLAT',null],['SWING',null],['SCREEN',null],['TEXAS/ANGLE',null],['WHEEL',null],['SLANT',null],['HITCH/CURL',null]];\n\n// alignment variations for a personnel grouping (schematic \u2014 nflverse gives personnel, not splits)\nfunction variantsFor(g){\n  const wr=g.wr, te=g.te; const out=[];\n  const half=Math.ceil(wr/2);\n  const add=(name,o)=>out.push(Object.assign({name:name,wrR:half,wrBunch:null,teR:Math.ceil(te/2),teBunch:false,rbSide:null},o));\n  add('Base '+half+'x'+(wr-half));\n  if(wr>=2){ add('Trips Rt',{wrR:wr,teR:0}); add('Trips Lt',{wrR:0,teR:te}); }\n  if(wr>=3){ add('Bunch Rt',{wrR:wr,wrBunch:'R',triangle:true,teR:0,rbSide:'L'}); add('Bunch Lt',{wrR:0,wrBunch:'L',triangle:true,teR:te,rbSide:'R'}); }\n  if(wr==2){ add('Doubles Rt',{wrR:2,teR:0}); add('Doubles Lt',{wrR:0,teR:te}); }\n  if(wr>=4){ add('4-Strong Rt',{wrR:4,wrBunch:'R',teR:0}); add('3x1 Rt',{wrR:3,teR:0}); }\n  if(te>=2){ add('TE Bunch Rt',{teR:te,teBunch:true,wrR:half}); add('TE Bunch Lt',{teR:0,teBunch:true,wrR:half}); add('TE Split',{teR:1,wrR:half}); }\n  if(te>=3){ add('TE Trips Rt',{teR:3,teBunch:true,wrR:0}); add('TE Trips Lt',{teR:0,teBunch:true,wrR:wr}); }\n  return out;\n}\nfunction positions(g, av){\n  const cx=165, olY=200, gap=22, sq=15;\n  const olX=[cx-2*gap,cx-gap,cx,cx+gap,cx+2*gap];\n  const skill=[]; const al=g.align, backs=g.backs, te=g.te, wr=g.wr;\n  const vars=variantsFor(g); const v=vars[(av||0)%vars.length]||vars[0];\n  let qbY = al=='uc'?olY+16:(al=='pistol'?olY+34:olY+42);\n  skill.push({role:'QB',x:cx,y:qbY,side:'M',label:'QB'});\n  // RB placement (shotgun/pistol can flip to weak side of a bunch)\n  const rbSide = v.rbSide;\n  if(al=='uc'){\n    if(backs>=3){ // full house: FB/lead back tight, two halfbacks split behind\n      skill.push({role:'RB',x:cx,y:qbY+22,side:'M',label:'FB'});\n      skill.push({role:'RB',x:cx-20,y:qbY+40,side:'L',label:'RB'});\n      skill.push({role:'RB',x:cx+20,y:qbY+40,side:'R',label:'RB'}); }\n    else if(backs>=2){skill.push({role:'RB',x:cx,y:qbY+22,side:'M',label:'FB'});skill.push({role:'RB',x:cx,y:qbY+40,side:'M',label:'RB'});}\n    else if(backs==1)skill.push({role:'RB',x:cx,y:qbY+38,side:'M',label:'RB'}); }\n  else if(al=='pistol'){\n    skill.push({role:'RB',x:cx,y:qbY+20,side:'M',label:'RB'});\n    if(backs>=2)skill.push({role:'RB',x:cx-24,y:qbY+14,side:'L',label:'RB'});\n    if(backs>=3)skill.push({role:'RB',x:cx+24,y:qbY+14,side:'R',label:'RB'}); }\n  else { const rx=rbSide=='L'?cx-22:(rbSide=='R'?cx+22:cx+22);\n    if(backs>=1)skill.push({role:'RB',x:rx,y:qbY,side:rx<cx?'L':'R',label:'RB'});\n    if(backs>=2)skill.push({role:'RB',x:cx-22,y:qbY,side:'L',label:'RB'});\n    if(backs>=3)skill.push({role:'RB',x:cx,y:qbY+20,side:'M',label:'RB'}); }  // 3rd back offset behind QB\n  // TEs: teR on right (attached beyond RT), rest left; bunch = tighter cluster to one side\n  const jumboOff = g.ol >= 6 ? 22 : 0;\n  const teRightN=Math.min(v.teR,te), teLeftN=te-teRightN;\n  const rTE=v.teBunch?[olX[4]+20+jumboOff,olX[4]+38+jumboOff,olX[4]+56+jumboOff]:[olX[4]+22+jumboOff,olX[4]+44+jumboOff];\n  const lTE=v.teBunch?[olX[0]-20,olX[0]-38,olX[0]-56]:[olX[0]-22,olX[0]-44];\n  for(let i=0;i<teRightN;i++){ let x=rTE[i]; skill.push({role:'TE',x:x,y:olY,side:'R',label:'TE'}); }\n  for(let i=0;i<teLeftN;i++){ let x=lTE[i]; skill.push({role:'TE',x:x,y:olY,side:'L',label:'TE'}); }\n  // WRs: wrR on right, rest left; bunch clusters them tight. Triangle bunch staggers depth so they don't overlap.\n  const wrRightN=Math.min(v.wrR,wr), wrLeftN=wr-wrRightN;\n  const losWR=olY-4;\n  if(v.triangle && (wrRightN>=3 || wrLeftN>=3)){\n    // two receivers on the LOS, third backed off behind the middle of them (triangle apex at the back)\n    const onR = wrRightN>=3;\n    const losX1 = onR?306:24, losX2 = onR?262:68;   // two on the line (outside + inside)\n    const backX = onR?284:46;                        // point man off the ball, centered behind the two\n    skill.push({role:'WR',x:losX1,y:losWR,side:onR?'R':'L',label:'WR'});      // #1 on line, outside\n    skill.push({role:'WR',x:losX2,y:losWR,side:onR?'R':'L',label:'WR'});      // #2 on line, inside\n    skill.push({role:'WR',x:backX,y:losWR+16,side:onR?'R':'L',label:'WR'});   // #3 off ball, behind the middle\n    // any extra WRs (4+) split to the opposite side\n    const rest = wr-3;\n    const oppWide = onR?[30,58,84]:[300,272,246];\n    for(let i=0;i<rest;i++){ skill.push({role:'WR',x:oppWide[i],y:losWR,side:onR?'L':'R',label:'WR'}); }\n  } else {\n    const rWide=v.wrBunch=='R'?[300,286,272,258]:[300,272,246,224];\n    const lWide=v.wrBunch=='L'?[30,44,58,72]:[30,58,84,106];\n    for(let i=0;i<wrRightN;i++){ let x=rWide[i]; skill.push({role:'WR',x:x,y:losWR,side:'R',label:'WR'}); }\n    for(let i=0;i<wrLeftN;i++){ let x=lWide[i]; skill.push({role:'WR',x:x,y:losWR,side:'L',label:'WR'}); }\n  }\n  return {olX, olY, sq, cx, skill, variantName:v.name, nVariants:vars.length};\n}\n// arrowhead marker id counter to keep unique\nlet _mk=0;\nfunction arrow(color){ const id='a'+(_mk++); return {def:`<marker id=\"${id}\" viewBox=\"0 0 10 10\" refX=\"7\" refY=\"5\" markerWidth=\"5\" markerHeight=\"5\" orient=\"auto-start-reverse\"><path d=\"M1 1L8 5L1 9\" fill=\"none\" stroke=\"${color}\" stroke-width=\"2\"/></marker>`, url:`url(#${id})`}; }\n\n// route path from (x,y); side L/R. Most RB backfield routes stem up to cross the LOS,\n// but SCREEN/SWING/TEXAS release from the backfield without stemming up first.\nfunction routePath(x,y,side,route,losY){\n  const c=(side=='L')?1:-1;\n  const backfieldRelease = (route=='SCREEN'||route=='SWING'||route=='TEXAS/ANGLE'||route=='FLAT'||route=='WHEEL');\n  let sx=x, sy=y, pre=`M${x},${y} `;\n  // RB below the LOS: for downfield routes, stem up to just past the LOS so short breaks are visible.\n  // Backfield-release routes stay put and work out of the backfield.\n  if(y > losY+6 && !backfieldRelease){ const upTo = losY-8; pre=`M${x},${y} L${x},${upTo} `; sx=x; sy=upTo; }\n  const P={\n    'GO':`V${sy-140}`, 'FADE/GO':`V${sy-140}`,'HITCH/CURL':`V${sy-55} l${-6*c},12`,'HITCH':`V${sy-55} l${-6*c},12`, 'COMEBACK':`V${sy-90} l${-8*c},14`,\n    'SLANT':`l${90*c},-40`, 'QUICK OUT':`V${sy-32} h${-30*c}`, 'SPEED OUT':`V${sy-30} h${-28*c}`, 'OUT':`V${sy-72} h${-32*c}`, 'DEEP OUT':`V${sy-90} h${-32*c}`,\n    'IN/DIG':`V${sy-76} h${54*c}`,'IN':`V${sy-76} h${54*c}`, 'POST':`V${sy-88} l${40*c},-40`, 'CROSS':`V${sy-72} l${80*c},-30`, 'CORNER':`V${sy-88} l${-38*c},-38`,\n    'SHALLOW CROSS/DRAG':`V${sy-5} h${120*c}`, 'SCREEN':`q${25*c},25 ${50*c},22`, 'FLAT':`q${-70*c},-50 ${-120*c},-60`, 'SPEED':`V${sy-12} h${-28*c}`,\n    'SWING':`q${-50*c},18 ${-80*c},2`, 'WHEEL':`q${-70*c},-40 ${-80*c},-170`,\n    'TEXAS/ANGLE':`l${-60*c},-40 l${60*c},-40`, 'ARROW':`l${-24*c},-18`\n  };\n  const seg=P[route]||`V${sy-46}`;\n  return pre+seg;\n}\nfunction drawPlayDiagram(g, mode, sel, wrRot, av){\n  sel=sel||{}; wrRot=wrRot||0; _mk=0;\n  const W=330,H=290; const pos=positions(g, av); const {olX,olY,sq,cx,skill}=pos; const losY=olY-11;\n  let defs=''; let s=`<svg width=\"${W}\" height=\"${H}\" viewBox=\"0 0 ${W} ${H}\">`;\n  s+=`<line x1=\"10\" y1=\"${losY}\" x2=\"${W-10}\" y2=\"${losY}\" stroke=\"#000\" stroke-dasharray=\"5 3\" opacity=\"0.4\"/>`;\n  s+=`<text x=\"${W-14}\" y=\"${losY-4}\" font-size=\"8\" fill=\"#8a8470\" text-anchor=\"end\">LOS</text>`;\n  if(pos.nVariants>1) s+=`<text x=\"14\" y=\"14\" font-size=\"8.5\" fill=\"#a8321f\" font-weight=\"bold\">\u25b8 ${pos.variantName} <tspan fill=\"#8a8470\" font-weight=\"normal\">(tap label)</tspan></text>`;\n  const olL=[\"LT\",\"LG\",\"C\",\"RG\",\"RT\"];\n  for(let i=0;i<5;i++){s+=`<rect x=\"${olX[i]-sq/2}\" y=\"${olY-sq/2}\" width=\"${sq}\" height=\"${sq}\" fill=\"#1f3a6d\" stroke=\"#000\"/><text x=\"${olX[i]}\" y=\"${olY+3}\" fill=\"#fff\" font-size=\"7\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">${olL[i]}</text>`;}\n  if(g.ol>=6){let x=olX[4]+22;s+=`<rect x=\"${x-sq/2}\" y=\"${olY-sq/2}\" width=\"${sq}\" height=\"${sq}\" fill=\"#2d4f8a\" stroke=\"#000\"/><text x=\"${x}\" y=\"${olY+3}\" fill=\"#fff\" font-size=\"6.5\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">ST</text>`;}\n  const bySlot={}; (g.assigns||[]).forEach(a=>bySlot[a.slot]=a);\n  // rotate WRs: collect WR skill entries in order, rotate their slot assignment\n  const wrPlayers=skill.filter(p=>p.role=='WR');\n  let wrN=0,teN=0,rbN=0;\n  skill.forEach(p=>{ if(p.role=='WR'){p.slot='WR'+(((wrN++)+wrRot)%Math.max(wrPlayers.length,1)+1);} else if(p.role=='TE'){teN++;p.slot='TE'+teN;} else if(p.role=='RB'){rbN++;p.slot='RB'+rbN;} });\n  function routesFor(p){ const a=bySlot[p.slot]; if(a&&a.routes&&a.routes.length) return {name:a.name,list:a.routes,src:a.src};\n    // fallback to full tree\n    if(p.role=='RB') return {name:(a?a.name:''),list:FULL_TREE_RB,src:'tree'};\n    return {name:(a?a.name:''),list:FULL_TREE,src:'tree'}; }\n\n  // ---- RUN MODE: OL blocking \"T\" + RB lanes ----\n  if(mode=='run'){\n    const side=g.run_side||'mid';\n    const dx = side=='right'?12:(side=='left'?-12:0);\n    // OL blocking lines forming a T: each lineman a short line up, drifting toward run side\n    olX.forEach((ox,i)=>{ const tipx=ox+dx, tipy=olY-24;\n      s+=`<path d=\"M${ox},${olY-8} L${tipx},${tipy}\" stroke=\"#1a1a17\" stroke-width=\"2\" fill=\"none\" stroke-linecap=\"round\"/>`;\n      // small cross-cap at the top = the \"T\"\n      s+=`<line x1=\"${tipx-5}\" y1=\"${tipy}\" x2=\"${tipx+5}\" y2=\"${tipy}\" stroke=\"#1a1a17\" stroke-width=\"2\"/>`;\n    });\n    const rb=skill.find(p=>p.role=='RB')||skill.find(p=>p.role=='QB');\n    const laneX={LE:olX[0]-30,LT:olX[0]-6,LG:olX[1]-4,MID:cx,RG:olX[3]+4,RT:olX[4]+6,RE:olX[4]+30};\n    const tot=(g.lanes||[]).reduce((a,l)=>a+l[1],0)||1;\n    (g.lanes||[]).forEach(l=>{ const tx=laneX[l[0]]; if(tx==null)return;\n      const w=1.5+l[1]/tot*7; const ty=olY-52; const ar=arrow(ec(l[2])); defs+=ar.def;\n      s+=`<path d=\"M${rb.x},${rb.y} C${rb.x+(tx-rb.x)*0.4},${rb.y-20} ${tx},${olY+16} ${tx},${ty}\" fill=\"none\" stroke=\"${ec(l[2])}\" stroke-width=\"${w.toFixed(1)}\" stroke-linecap=\"round\" marker-end=\"${ar.url}\"/>`;\n      s+=`<text x=\"${tx}\" y=\"${ty-4}\" font-size=\"8\" fill=\"#1a1a17\" text-anchor=\"middle\" font-weight=\"bold\">${l[0]} ${Math.round(100*l[1]/tot)}%</text>`;\n    });\n  }\n  // ---- PASS MODE: routes per player + TE block T ----\n  if(mode=='pass'){\n    skill.forEach(p=>{ if(!p.slot||p.role=='QB') return; const rf=routesFor(p); if(!rf.list||!rf.list.length) return;\n      const idx=(sel[p.slot]||0)%rf.list.length; const rt=rf.list[idx];\n      const ar=arrow('#a8321f'); defs+=ar.def;\n      s+=`<path d=\"${routePath(p.x,p.y,p.side,rt[0],losY)}\" fill=\"none\" stroke=\"#a8321f\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" marker-end=\"${ar.url}\"/>`;\n    });\n  }\n  // ---- skill circles + labels ----\n  wrN=0;\n  skill.forEach(p=>{\n    let fill=p.role=='WR'?'#cdd2e0':(p.role=='TE'?'#3f6db5':'#1f3a6d'), tc=p.role=='WR'?'#1a1a17':'#fff';\n    const rf=(p.slot&&p.role!='QB')?routesFor(p):null;\n    const tappable=(mode=='pass' && rf && rf.list && rf.list.length);\n    const qbTap=(mode=='pass' && p.role=='QB' && wrPlayers.length>1);\n    if(tappable) s+=`<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"12.5\" fill=\"none\" stroke=\"#a8321f\" stroke-width=\"1\" stroke-dasharray=\"2 2\" opacity=\"0.5\"/>`;\n    if(qbTap) s+=`<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"12.5\" fill=\"none\" stroke=\"#4f83cc\" stroke-width=\"1\" stroke-dasharray=\"2 2\" opacity=\"0.6\"/>`;\n    const cls = tappable?`<g class=\"tap\" data-slot=\"${p.slot}\" style=\"cursor:pointer\">`:(qbTap?`<g class=\"qbtap\" style=\"cursor:pointer\">`:'<g>');\n    s+=`${cls}<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"9\" fill=\"${fill}\" stroke=\"#000\"/><text x=\"${p.x}\" y=\"${p.y+3}\" fill=\"${tc}\" font-size=\"7\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">${p.label}</text></g>`;\n    if(qbTap) s+=`<text x=\"${p.x}\" y=\"${p.y+20}\" font-size=\"5.5\" fill=\"#4f83cc\" text-anchor=\"middle\">tap: rotate WRs</text>`;\n    if(mode=='pass' && rf && rf.name && rf.name!='\\u2014'){\n      const idx=(sel[p.slot]||0)%rf.list.length; const rt=rf.list[idx];\n      const belowLOS = p.y>losY;\n      let ny=belowLOS?p.y+20:p.y+20;\n      s+=`<text x=\"${p.x}\" y=\"${ny}\" font-size=\"7.5\" fill=\"#1a1a17\" text-anchor=\"middle\" font-weight=\"bold\">${rf.name}</text>`;\n      const pctTxt = rt[1]!=null?` ${rt[1]}%`:'';\n      const srcTxt = rf.src=='tree'?' (tree)':(rf.src=='season'?' (szn)':'');\n      s+=`<text x=\"${p.x}\" y=\"${ny+9}\" font-size=\"6\" fill=\"#a8321f\" text-anchor=\"middle\">${rt[0].split('/')[0]}${pctTxt}${srcTxt}</text>`;\n      if(rf.list.length>1) s+=`<text x=\"${p.x}\" y=\"${ny+17}\" font-size=\"5.5\" fill=\"#8a8470\" text-anchor=\"middle\">${idx+1}/${rf.list.length} tap</text>`;\n    }\n  });\n  return s.replace('<svg ',`<svg `).replace(`viewBox=\"0 0 ${W} ${H}\">`,`viewBox=\"0 0 ${W} ${H}\"><defs>${defs}</defs>`)+`</svg>`;\n}\nfunction draw(){\n  const dn=document.getElementById('down').value,ds=document.getElementById('dist').value,fl=document.getElementById('field').value;\n  const node=FORM[dn][ds][fl],grid=document.getElementById('grid');\n  document.getElementById('banner').textContent=({all:'All Downs','1':'1st Down','2':'2nd Down','3':'3rd Down','4':'4th Down'}[dn])+({all:'',short:' & Short',med:' & Medium',long:' & Long'}[ds])+({all:'',pa:' \u00b7 Play-Action',motion:' \u00b7 Motion',nohuddle:' \u00b7 No-Huddle',redzone:' \u00b7 Red Zone'}[fl]);\n  if(!node||!node.groups.length){grid.innerHTML='<div class=\"empty\">No plays match this situation.</div>';document.getElementById('ctx').textContent='';return;}\n  document.getElementById('ctx').textContent=node.total+' plays';\n  window._G=node.groups;\n  // Production out of this formation: yards + TDs, split pass vs run. Moves with the filters.\n  function prodLine(g, mode){\n    const P=`<span class=\"prod-pass\">PASS ${(+g.py||0).toLocaleString()} yds \u00b7 ${+g.ptd||0} TD</span>`;\n    const R=`<span class=\"prod-run\">RUN ${(+g.ry||0).toLocaleString()} yds \u00b7 ${+g.rtd||0} TD</span>`;\n    if(mode==='pass') return P;\n    if(mode==='run')  return R;\n    return `${P}<span class=\"prod-sep\">\u00b7</span>${R}`;\n  }\n  let html=\"\";\n  node.groups.forEach((g,i)=>{const noise=g.n<8?' <span class=\"hl-p\" style=\"font-size:9px;padding:0 3px;\">SMALL</span>':'';\n    html+=`<div class=\"card\"><div class=\"rank\">#${i+1}</div>\n      <div class=\"plabel\"><span class=\"pers alt\" data-i=\"${i}\" title=\"tap to change alignment\" style=\"cursor:pointer\">${g.p} PERSONNEL \u21c4</span> <span class=\"fname\">${g.name}</span></div>\n      <div class=\"subttl\">${g.backs} BACK \u00b7 ${g.te} TE \u00b7 ${g.wr} WR \u2014 ${g.share}% of snaps${noise}</div>\n      <div class=\"prod\" id=\"prd${i}\">${prodLine(g)}</div>\n      <div class=\"fieldbox\">${fieldSvg(g,'none',{},0,0)}</div>\n      <div class=\"stats\"><div class=\"stat\"><span id=\"snl${i}\">Snaps</span><b id=\"snv${i}\">${g.n}</b></div><div class=\"stat\"><span>Success</span><b id=\"scv${i}\">${g.succ}%</b></div>\n      <div class=\"stat\"><span>EPA/play</span><b id=\"epv${i}\" class=\"${g.epa>=.05?'hl-g':(g.epa<=-.05?'hl-p':'')}\">${g.epa>=0?'+':''}${g.epa.toFixed(2)}</b></div><div class=\"stat\"><span>Share</span><b>${g.share}%</b></div></div>\n      <div class=\"rp\" data-i=\"${i}\"><div class=\"run seg\" data-mode=\"run\" style=\"width:${(100-Number(g.pass_rate||0)).toFixed(2)}%\"><b>RUN ${(100-Number(g.pass_rate||0)).toFixed(2)}%</b></div><div class=\"pass seg\" data-mode=\"pass\" style=\"width:${Number(g.pass_rate||0).toFixed(2)}%\"><b>PASS ${Number(g.pass_rate||0).toFixed(2)}%</b></div></div>\n      <div class=\"hintbar\" id=\"hint${i}\">tap label \u21c4 change look \u00b7 click bar \u25b8 runs / routes</div></div>`;});\n  grid.innerHTML=html;\n  function setStats(i,mode,g){\n    const snl=document.getElementById('snl'+i),snv=document.getElementById('snv'+i),scv=document.getElementById('scv'+i),epv=document.getElementById('epv'+i);\n    let n=g.n,sc=g.succ,ep=g.epa,lbl='Snaps';\n    if(mode=='run'){ n=g.nr;sc=g.sr;ep=g.er;lbl='Run snaps'; }\n    else if(mode=='pass'){ n=g.np;sc=g.sp;ep=g.ep;lbl='Pass snaps'; }\n    const prd=document.getElementById('prd'+i);\n    if(prd) prd.innerHTML=prodLine(g, mode==='none'?null:mode);\n    snl.textContent=lbl; snv.textContent=n; scv.textContent=sc+'%';\n    epv.textContent=(ep>=0?'+':'')+ep.toFixed(2);\n    epv.className = ep>=.05?'hl-g':(ep<=-.05?'hl-p':'');\n  }\n  document.querySelectorAll('.seg').forEach(seg=>{\n    seg.onclick=(e)=>{ e.stopPropagation();\n      const card=seg.closest('.card'), i=+seg.closest('.rp').dataset.i, mode=seg.dataset.mode, g=window._G[i];\n      const box=card.querySelector('.fieldbox'), hint=card.querySelector('.hintbar');\n      const cur=box.dataset.mode||'none';\n      card.querySelectorAll('.seg').forEach(x=>x.classList.remove('active'));\n      if(cur==mode){ box.innerHTML=fieldSvg(g,'none',{},0,box._av||0); box.dataset.mode='none';\n        hint.textContent='tap label \u21c4 change look \u00b7 click bar \u25b8 runs / routes'; hint.style.color=''; setStats(i,'none',g); return; }\n      seg.classList.add('active');\n      if(!box._sel) box._sel={};\n      box.innerHTML=fieldSvg(g,mode,box._sel,box._rot||0,box._av||0); box.dataset.mode=mode;\n      if(mode=='pass') wireTaps(box,g);\n      setStats(i,mode,g);\n      hint.textContent = mode=='pass'?'ROUTES \u2014 most common per player when targeted':'RUN LANES \u2014 top 3 gaps (color = EPA)';\n      hint.style.color = mode=='pass'?'#4f83cc':'#4a7f2c';\n    };\n  });\n  // clickable personnel label cycles alignment variant\n  document.querySelectorAll('.pers.alt').forEach(lab=>{\n    lab.onclick=(e)=>{ e.stopPropagation();\n      const i=+lab.dataset.i, g=window._G[i], card=lab.closest('.card'), box=card.querySelector('.fieldbox');\n      box._av=(box._av||0)+1; box._sel={}; box._rot=box._rot||0;\n      const mode=box.dataset.mode||'none';\n      box.innerHTML=fieldSvg(g,mode,box._sel,box._rot,box._av); \n      if(mode=='pass') wireTaps(box,g);\n    };\n  });\n}\n// formation diagram rendered in the card; overlay drawn in-place on click\nfunction fieldSvg(g, mode, sel, wrRot, av){ return drawPlayDiagram(g, mode, sel, wrRot, av); }\nfunction wireTaps(box,g){\n  box.querySelectorAll('.tap').forEach(el=>{\n    el.onclick=(ev)=>{ ev.stopPropagation();\n      const slot=el.getAttribute('data-slot'); if(!box._sel) box._sel={};\n      box._sel[slot]=(box._sel[slot]||0)+1;\n      box.innerHTML=fieldSvg(g,'pass',box._sel,box._rot||0,box._av||0); box.dataset.mode='pass';\n      wireTaps(box,g);\n    };\n  });\n  box.querySelectorAll('.qbtap').forEach(el=>{\n    el.onclick=(ev)=>{ ev.stopPropagation();\n      box._rot=(box._rot||0)+1; box._sel={};\n      box.innerHTML=fieldSvg(g,'pass',{},box._rot,box._av||0); box.dataset.mode='pass';\n      wireTaps(box,g);\n    };\n  });\n}\n\n['down','dist','field'].forEach(id=>document.getElementById(id).onchange=draw); draw();\n__TC_SCRIPT_CLOSE__</body></html>\n";
+const SCHEME_TEMPLATE_INLINE = "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><title>Formation Playsheet</title>\n<style>\n  :root{--paper:#f4efe2;--ink:#1a1a17;--rule:#c9c1ab;--hl-yel:#f5e04b;--hl-grn:#8fd06a;--hl-pnk:#f7a8c4;--red:#a8321f;}\n  *{box-sizing:border-box;}\n  body{margin:0;background:#2a2723;font-family:\"Courier New\",monospace;padding:14px;color:var(--ink);}\n  .sheet{max-width:1040px;margin:0 auto;background:var(--paper);border:2px solid #000;box-shadow:0 8px 40px rgba(0,0,0,.6);}\n  .hdr{background:var(--ink);color:var(--paper);padding:10px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}\n  .hdr h1{font-size:18px;margin:0;letter-spacing:1px;text-transform:uppercase;}\n  .hdr .wk{font-size:12px;color:#c9c1ab;}\n  .controls{display:flex;flex-wrap:wrap;gap:10px;padding:10px 16px;background:#e8e1d0;border-bottom:2px solid #000;align-items:flex-end;}\n  .ctrl{display:flex;flex-direction:column;gap:3px;}\n  .ctrl label{font-size:9px;text-transform:uppercase;letter-spacing:1px;font-weight:bold;color:#5a5545;}\n  select{font-family:\"Courier New\",monospace;background:var(--paper);border:1.5px solid #000;padding:5px 8px;font-size:13px;font-weight:bold;cursor:pointer;}\n  .banner{background:var(--red);color:#fff;text-align:center;font-weight:bold;font-size:13px;padding:4px;letter-spacing:2px;text-transform:uppercase;}\n  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));}\n  .card{border:1px solid #000;border-top:none;border-left:none;padding:8px 12px 12px;position:relative;}\n  .rank{position:absolute;top:6px;left:8px;font-size:10px;font-weight:bold;color:#8a8470;}\n  .plabel{text-align:center;font-weight:bold;font-size:14px;letter-spacing:1px;border-bottom:1.5px solid #000;padding-bottom:3px;margin-bottom:2px;}\n  .plabel .pers{background:var(--hl-yel);padding:1px 6px;}\n  .plabel .fname{font-size:11px;color:#5a5545;}\n  .subttl{text-align:center;font-size:10px;color:#5a5545;margin-bottom:4px;}\n.prod{font-family:'Courier New',monospace;font-size:9.5px;font-weight:700;letter-spacing:.02em;\n  margin:2px 0 4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}\n.prod-pass{color:#4f83cc;}\n.prod-run{color:#4a7f2c;}\n.prod-sep{color:#b9b295;}\n  svg{display:block;margin:0 auto;}\n  .stats{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;margin-top:6px;font-size:12px;}\n  .stat{display:flex;justify-content:space-between;border-bottom:1px dotted var(--rule);}\n  .rp{height:20px;background:#ddd6c4;border:1px solid #000;position:relative;margin-top:8px;overflow:hidden;font-size:10px;display:flex;cursor:pointer;}\n  .rp .run,.rp .pass{position:relative;display:flex;align-items:center;height:100%;transition:filter .1s;}\n  .rp .run{background:var(--hl-grn);justify-content:flex-start;padding-left:5px;}\n  .rp .pass{background:#4f83cc;color:#fff;justify-content:flex-end;padding-right:5px;}\n  .rp .run:hover,.rp .pass:hover{filter:brightness(1.12);}\n  .rp .seg.active{outline:2px solid #1a1a17;outline-offset:-2px;}\n  .rp b{font-weight:bold;}\n  .hintbar{text-align:center;font-size:9px;color:#8a8470;margin-top:2px;}\n  .nt{display:inline;}\n  .dia{margin-top:8px;border-top:2px dashed var(--rule);padding-top:6px;display:none;}\n  .dia.show{display:block;}\n  .diahead{font-size:10px;font-weight:bold;text-transform:uppercase;text-align:center;margin-bottom:3px;}\n  .empty{padding:30px;text-align:center;color:#8a8470;font-size:13px;grid-column:1/-1;}\n  .foot{padding:8px 16px;font-size:9px;color:#6a6455;border-top:2px solid #000;line-height:1.5;}\n  .hint{text-align:center;font-size:10px;color:#8a8470;padding:6px;background:#ece5d3;border-bottom:1px solid #000;}\n  .hl-p{background:var(--hl-pnk);} .hl-g{background:var(--hl-grn);}\n</style></head>\n<body><div class=\"sheet\">\n  <div class=\"hdr\"><h1>Detroit Lions &mdash; Playbook</h1><span class=\"wk\">2025 \u00b7 Routes mapped to players</span></div>\n  <div class=\"controls\">\n    <div class=\"ctrl\"><label>Down</label><select id=\"down\"><option value=\"all\">All downs</option><option value=\"1\">1st</option><option value=\"2\">2nd</option><option value=\"3\">3rd</option><option value=\"4\">4th</option></select></div>\n    <div class=\"ctrl\"><label>Distance to sticks</label><select id=\"dist\"><option value=\"all\">Any</option><option value=\"short\">Short (1-3)</option><option value=\"med\">Medium (4-7)</option><option value=\"long\">Long (8+)</option></select></div>\n    <div class=\"ctrl\"><label>Play type</label><select id=\"field\"><option value=\"all\">All plays</option><option value=\"pa\">Play-action</option><option value=\"motion\">Pre-snap motion</option><option value=\"nohuddle\">No-huddle</option><option value=\"redzone\">Red zone</option></select></div>\n    <div class=\"ctrl\"><label>&nbsp;</label><span id=\"ctx\" style=\"font-size:12px;font-weight:bold;padding:5px;\"></span></div>\n  </div>\n  <div class=\"hint\">\u25b8 Click the GREEN part of a formation's bar to see its top-3 run lanes \u00b7 click the BLUE part to see each player's most-common route</div>\n  <div class=\"banner\" id=\"banner\">All Situations</div>\n  <div class=\"grid\" id=\"grid\"></div>\n  <div class=\"foot\">Play diagrams: routes are each skill player's single most-common route WHEN TARGETED out of this formation (season pool, all situations, for stable sample), mapped to players by target rank (WR1=St. Brown, WR2=Williams, etc.); the outermost WR is treated as WR1. Run mode shows the 3 most-used gaps, arrow width = frequency, color = EPA. Alignment is authentic; exact pre-snap WR splits are schematic. Data: nflverse pbp + FTN participation, 2025 REG. Not affiliated with the NFL.</div>\n</div>\n__TC_SCRIPT_OPEN____TC_FV_SCRIPT____TC_SCRIPT_CLOSE__\n__TC_SCRIPT_OPEN__\nfunction nEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }\nconst NOTE_NAV=nEsc(JSON.stringify({type:'coaching',team:TEAM_CODE,season:String(SEASON),tab:'playbook'}));\nfunction noteWrap(label,value,context,relevance,html){\n  return `<span class=\"nt\" data-noteable=\"1\" data-note-label=\"${nEsc(label)}\" data-note-value=\"${nEsc(value)}\" data-note-context=\"${nEsc(context)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"${nEsc(label)}\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"${nEsc(relevance||'QB,RB,WR,TE')}\" data-note-nav=\"${NOTE_NAV}\">${html}</span>`;\n}\nfunction ec(e){ if(e==null)return\"#999\"; let t=Math.max(-0.4,Math.min(0.4,e))/0.4;\n  if(t>=0)return `rgb(${Math.round(216+(47-216)*t)},${Math.round(165+(174-165)*t)},${Math.round(29+(78-29)*t)})`;\n  let a=-t; return `rgb(${Math.round(216+(211-216)*a)},${Math.round(165+(59-165)*a)},${Math.round(29+(47-29)*a)})`; }\n\n// compute skill-player positions on a tall play diagram; returns {ol:[...], skill:[{role,x,y,side,label}]}\n// full 1-9 route tree (fallback when a player has no route data at all)\nconst FULL_TREE=[['FLAT',null],['SLANT',null],['COMEBACK',null],['HITCH/CURL',null],['OUT',null],['IN/DIG',null],['CORNER',null],['POST',null],['GO',null]];\nconst FULL_TREE_RB=[['FLAT',null],['SWING',null],['SCREEN',null],['TEXAS/ANGLE',null],['WHEEL',null],['SLANT',null],['HITCH/CURL',null]];\n\n// alignment variations for a personnel grouping (schematic \u2014 nflverse gives personnel, not splits)\nfunction variantsFor(g){\n  const wr=g.wr, te=g.te; const out=[];\n  const half=Math.ceil(wr/2);\n  const add=(name,o)=>out.push(Object.assign({name:name,wrR:half,wrBunch:null,teR:Math.ceil(te/2),teBunch:false,rbSide:null},o));\n  add('Base '+half+'x'+(wr-half));\n  if(wr>=2){ add('Trips Rt',{wrR:wr,teR:0}); add('Trips Lt',{wrR:0,teR:te}); }\n  if(wr>=3){ add('Bunch Rt',{wrR:wr,wrBunch:'R',triangle:true,teR:0,rbSide:'L'}); add('Bunch Lt',{wrR:0,wrBunch:'L',triangle:true,teR:te,rbSide:'R'}); }\n  if(wr==2){ add('Doubles Rt',{wrR:2,teR:0}); add('Doubles Lt',{wrR:0,teR:te}); }\n  if(wr>=4){ add('4-Strong Rt',{wrR:4,wrBunch:'R',teR:0}); add('3x1 Rt',{wrR:3,teR:0}); }\n  if(te>=2){ add('TE Bunch Rt',{teR:te,teBunch:true,wrR:half}); add('TE Bunch Lt',{teR:0,teBunch:true,wrR:half}); add('TE Split',{teR:1,wrR:half}); }\n  if(te>=3){ add('TE Trips Rt',{teR:3,teBunch:true,wrR:0}); add('TE Trips Lt',{teR:0,teBunch:true,wrR:wr}); }\n  return out;\n}\nfunction positions(g, av){\n  const cx=165, olY=200, gap=22, sq=15;\n  const olX=[cx-2*gap,cx-gap,cx,cx+gap,cx+2*gap];\n  const skill=[]; const al=g.align, backs=g.backs, te=g.te, wr=g.wr;\n  const vars=variantsFor(g); const v=vars[(av||0)%vars.length]||vars[0];\n  let qbY = al=='uc'?olY+16:(al=='pistol'?olY+34:olY+42);\n  skill.push({role:'QB',x:cx,y:qbY,side:'M',label:'QB'});\n  // RB placement (shotgun/pistol can flip to weak side of a bunch)\n  const rbSide = v.rbSide;\n  if(al=='uc'){\n    if(backs>=3){ // full house: FB/lead back tight, two halfbacks split behind\n      skill.push({role:'RB',x:cx,y:qbY+22,side:'M',label:'FB'});\n      skill.push({role:'RB',x:cx-20,y:qbY+40,side:'L',label:'RB'});\n      skill.push({role:'RB',x:cx+20,y:qbY+40,side:'R',label:'RB'}); }\n    else if(backs>=2){skill.push({role:'RB',x:cx,y:qbY+22,side:'M',label:'FB'});skill.push({role:'RB',x:cx,y:qbY+40,side:'M',label:'RB'});}\n    else if(backs==1)skill.push({role:'RB',x:cx,y:qbY+38,side:'M',label:'RB'}); }\n  else if(al=='pistol'){\n    skill.push({role:'RB',x:cx,y:qbY+20,side:'M',label:'RB'});\n    if(backs>=2)skill.push({role:'RB',x:cx-24,y:qbY+14,side:'L',label:'RB'});\n    if(backs>=3)skill.push({role:'RB',x:cx+24,y:qbY+14,side:'R',label:'RB'}); }\n  else { const rx=rbSide=='L'?cx-22:(rbSide=='R'?cx+22:cx+22);\n    if(backs>=1)skill.push({role:'RB',x:rx,y:qbY,side:rx<cx?'L':'R',label:'RB'});\n    if(backs>=2)skill.push({role:'RB',x:cx-22,y:qbY,side:'L',label:'RB'});\n    if(backs>=3)skill.push({role:'RB',x:cx,y:qbY+20,side:'M',label:'RB'}); }  // 3rd back offset behind QB\n  // TEs: teR on right (attached beyond RT), rest left; bunch = tighter cluster to one side\n  const jumboOff = g.ol >= 6 ? 22 : 0;\n  const teRightN=Math.min(v.teR,te), teLeftN=te-teRightN;\n  const rTE=v.teBunch?[olX[4]+20+jumboOff,olX[4]+38+jumboOff,olX[4]+56+jumboOff]:[olX[4]+22+jumboOff,olX[4]+44+jumboOff];\n  const lTE=v.teBunch?[olX[0]-20,olX[0]-38,olX[0]-56]:[olX[0]-22,olX[0]-44];\n  for(let i=0;i<teRightN;i++){ let x=rTE[i]; skill.push({role:'TE',x:x,y:olY,side:'R',label:'TE'}); }\n  for(let i=0;i<teLeftN;i++){ let x=lTE[i]; skill.push({role:'TE',x:x,y:olY,side:'L',label:'TE'}); }\n  // WRs: wrR on right, rest left; bunch clusters them tight. Triangle bunch staggers depth so they don't overlap.\n  const wrRightN=Math.min(v.wrR,wr), wrLeftN=wr-wrRightN;\n  const losWR=olY-4;\n  if(v.triangle && (wrRightN>=3 || wrLeftN>=3)){\n    // two receivers on the LOS, third backed off behind the middle of them (triangle apex at the back)\n    const onR = wrRightN>=3;\n    const losX1 = onR?306:24, losX2 = onR?262:68;   // two on the line (outside + inside)\n    const backX = onR?284:46;                        // point man off the ball, centered behind the two\n    skill.push({role:'WR',x:losX1,y:losWR,side:onR?'R':'L',label:'WR'});      // #1 on line, outside\n    skill.push({role:'WR',x:losX2,y:losWR,side:onR?'R':'L',label:'WR'});      // #2 on line, inside\n    skill.push({role:'WR',x:backX,y:losWR+16,side:onR?'R':'L',label:'WR'});   // #3 off ball, behind the middle\n    // any extra WRs (4+) split to the opposite side\n    const rest = wr-3;\n    const oppWide = onR?[30,58,84]:[300,272,246];\n    for(let i=0;i<rest;i++){ skill.push({role:'WR',x:oppWide[i],y:losWR,side:onR?'L':'R',label:'WR'}); }\n  } else {\n    const rWide=v.wrBunch=='R'?[300,286,272,258]:[300,272,246,224];\n    const lWide=v.wrBunch=='L'?[30,44,58,72]:[30,58,84,106];\n    for(let i=0;i<wrRightN;i++){ let x=rWide[i]; skill.push({role:'WR',x:x,y:losWR,side:'R',label:'WR'}); }\n    for(let i=0;i<wrLeftN;i++){ let x=lWide[i]; skill.push({role:'WR',x:x,y:losWR,side:'L',label:'WR'}); }\n  }\n  return {olX, olY, sq, cx, skill, variantName:v.name, nVariants:vars.length};\n}\n// arrowhead marker id counter to keep unique\nlet _mk=0;\nfunction arrow(color){ const id='a'+(_mk++); return {def:`<marker id=\"${id}\" viewBox=\"0 0 10 10\" refX=\"7\" refY=\"5\" markerWidth=\"5\" markerHeight=\"5\" orient=\"auto-start-reverse\"><path d=\"M1 1L8 5L1 9\" fill=\"none\" stroke=\"${color}\" stroke-width=\"2\"/></marker>`, url:`url(#${id})`}; }\n\n// route path from (x,y); side L/R. Most RB backfield routes stem up to cross the LOS,\n// but SCREEN/SWING/TEXAS release from the backfield without stemming up first.\nfunction routePath(x,y,side,route,losY){\n  const c=(side=='L')?1:-1;\n  const backfieldRelease = (route=='SCREEN'||route=='SWING'||route=='TEXAS/ANGLE'||route=='FLAT'||route=='WHEEL');\n  let sx=x, sy=y, pre=`M${x},${y} `;\n  // RB below the LOS: for downfield routes, stem up to just past the LOS so short breaks are visible.\n  // Backfield-release routes stay put and work out of the backfield.\n  if(y > losY+6 && !backfieldRelease){ const upTo = losY-8; pre=`M${x},${y} L${x},${upTo} `; sx=x; sy=upTo; }\n  const P={\n    'GO':`V${sy-140}`, 'FADE/GO':`V${sy-140}`,'HITCH/CURL':`V${sy-55} l${-6*c},12`,'HITCH':`V${sy-55} l${-6*c},12`, 'COMEBACK':`V${sy-90} l${-8*c},14`,\n    'SLANT':`l${90*c},-40`, 'QUICK OUT':`V${sy-32} h${-30*c}`, 'SPEED OUT':`V${sy-30} h${-28*c}`, 'OUT':`V${sy-72} h${-32*c}`, 'DEEP OUT':`V${sy-90} h${-32*c}`,\n    'IN/DIG':`V${sy-76} h${54*c}`,'IN':`V${sy-76} h${54*c}`, 'POST':`V${sy-88} l${40*c},-40`, 'CROSS':`V${sy-72} l${80*c},-30`, 'CORNER':`V${sy-88} l${-38*c},-38`,\n    'SHALLOW CROSS/DRAG':`V${sy-5} h${120*c}`, 'SCREEN':`q${25*c},25 ${50*c},22`, 'FLAT':`q${-70*c},-50 ${-120*c},-60`, 'SPEED':`V${sy-12} h${-28*c}`,\n    'SWING':`q${-50*c},18 ${-80*c},2`, 'WHEEL':`q${-70*c},-40 ${-80*c},-170`,\n    'TEXAS/ANGLE':`l${-60*c},-40 l${60*c},-40`, 'ARROW':`l${-24*c},-18`\n  };\n  const seg=P[route]||`V${sy-46}`;\n  return pre+seg;\n}\nfunction drawPlayDiagram(g, mode, sel, wrRot, av){\n  sel=sel||{}; wrRot=wrRot||0; _mk=0;\n  const W=330,H=290; const pos=positions(g, av); const {olX,olY,sq,cx,skill}=pos; const losY=olY-11;\n  let defs=''; let s=`<svg width=\"${W}\" height=\"${H}\" viewBox=\"0 0 ${W} ${H}\">`;\n  s+=`<line x1=\"10\" y1=\"${losY}\" x2=\"${W-10}\" y2=\"${losY}\" stroke=\"#000\" stroke-dasharray=\"5 3\" opacity=\"0.4\"/>`;\n  s+=`<text x=\"${W-14}\" y=\"${losY-4}\" font-size=\"8\" fill=\"#8a8470\" text-anchor=\"end\">LOS</text>`;\n  if(pos.nVariants>1) s+=`<text x=\"14\" y=\"14\" font-size=\"8.5\" fill=\"#a8321f\" font-weight=\"bold\">\u25b8 ${pos.variantName} <tspan fill=\"#8a8470\" font-weight=\"normal\">(tap label)</tspan></text>`;\n  const olL=[\"LT\",\"LG\",\"C\",\"RG\",\"RT\"];\n  for(let i=0;i<5;i++){s+=`<rect x=\"${olX[i]-sq/2}\" y=\"${olY-sq/2}\" width=\"${sq}\" height=\"${sq}\" fill=\"#1f3a6d\" stroke=\"#000\"/><text x=\"${olX[i]}\" y=\"${olY+3}\" fill=\"#fff\" font-size=\"7\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">${olL[i]}</text>`;}\n  if(g.ol>=6){let x=olX[4]+22;s+=`<rect x=\"${x-sq/2}\" y=\"${olY-sq/2}\" width=\"${sq}\" height=\"${sq}\" fill=\"#2d4f8a\" stroke=\"#000\"/><text x=\"${x}\" y=\"${olY+3}\" fill=\"#fff\" font-size=\"6.5\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">ST</text>`;}\n  const bySlot={}; (g.assigns||[]).forEach(a=>bySlot[a.slot]=a);\n  // rotate WRs: collect WR skill entries in order, rotate their slot assignment\n  const wrPlayers=skill.filter(p=>p.role=='WR');\n  let wrN=0,teN=0,rbN=0;\n  skill.forEach(p=>{ if(p.role=='WR'){p.slot='WR'+(((wrN++)+wrRot)%Math.max(wrPlayers.length,1)+1);} else if(p.role=='TE'){teN++;p.slot='TE'+teN;} else if(p.role=='RB'){rbN++;p.slot='RB'+rbN;} });\n  function routesFor(p){ const a=bySlot[p.slot]; if(a&&a.routes&&a.routes.length) return {name:a.name,list:a.routes,src:a.src};\n    // fallback to full tree\n    if(p.role=='RB') return {name:(a?a.name:''),list:FULL_TREE_RB,src:'tree'};\n    return {name:(a?a.name:''),list:FULL_TREE,src:'tree'}; }\n\n  // ---- RUN MODE: OL blocking \"T\" + RB lanes ----\n  if(mode=='run'){\n    const side=g.run_side||'mid';\n    const dx = side=='right'?12:(side=='left'?-12:0);\n    // OL blocking lines forming a T: each lineman a short line up, drifting toward run side\n    olX.forEach((ox,i)=>{ const tipx=ox+dx, tipy=olY-24;\n      s+=`<path d=\"M${ox},${olY-8} L${tipx},${tipy}\" stroke=\"#1a1a17\" stroke-width=\"2\" fill=\"none\" stroke-linecap=\"round\"/>`;\n      // small cross-cap at the top = the \"T\"\n      s+=`<line x1=\"${tipx-5}\" y1=\"${tipy}\" x2=\"${tipx+5}\" y2=\"${tipy}\" stroke=\"#1a1a17\" stroke-width=\"2\"/>`;\n    });\n    const rb=skill.find(p=>p.role=='RB')||skill.find(p=>p.role=='QB');\n    const laneX={LE:olX[0]-30,LT:olX[0]-6,LG:olX[1]-4,MID:cx,RG:olX[3]+4,RT:olX[4]+6,RE:olX[4]+30};\n    const tot=(g.lanes||[]).reduce((a,l)=>a+l[1],0)||1;\n    (g.lanes||[]).forEach(l=>{ const tx=laneX[l[0]]; if(tx==null)return;\n      const w=1.5+l[1]/tot*7; const ty=olY-52; const ar=arrow(ec(l[2])); defs+=ar.def;\n      s+=`<path d=\"M${rb.x},${rb.y} C${rb.x+(tx-rb.x)*0.4},${rb.y-20} ${tx},${olY+16} ${tx},${ty}\" fill=\"none\" stroke=\"${ec(l[2])}\" stroke-width=\"${w.toFixed(1)}\" stroke-linecap=\"round\" marker-end=\"${ar.url}\"/>`;\n      s+=`<text x=\"${tx}\" y=\"${ty-4}\" font-size=\"8\" fill=\"#1a1a17\" text-anchor=\"middle\" font-weight=\"bold\" data-noteable=\"1\" data-note-label=\"Run lane\" data-note-value=\"${nEsc(l[0]+' '+Math.round(100*l[1]/tot)+'%')}\" data-note-context=\"${nEsc(SEASON+' playbook \u00b7 '+g.p+' personnel \u00b7 '+g.name)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"run_lane\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"RB,QB\" data-note-nav=\"${NOTE_NAV}\">${l[0]} ${Math.round(100*l[1]/tot)}%</text>`;\n    });\n  }\n  // ---- PASS MODE: routes per player + TE block T ----\n  if(mode=='pass'){\n    skill.forEach(p=>{ if(!p.slot||p.role=='QB') return; const rf=routesFor(p); if(!rf.list||!rf.list.length) return;\n      const idx=(sel[p.slot]||0)%rf.list.length; const rt=rf.list[idx];\n      const ar=arrow('#a8321f'); defs+=ar.def;\n      s+=`<path d=\"${routePath(p.x,p.y,p.side,rt[0],losY)}\" fill=\"none\" stroke=\"#a8321f\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" marker-end=\"${ar.url}\"/>`;\n    });\n  }\n  // ---- skill circles + labels ----\n  wrN=0;\n  skill.forEach(p=>{\n    let fill=p.role=='WR'?'#cdd2e0':(p.role=='TE'?'#3f6db5':'#1f3a6d'), tc=p.role=='WR'?'#1a1a17':'#fff';\n    const rf=(p.slot&&p.role!='QB')?routesFor(p):null;\n    const tappable=(mode=='pass' && rf && rf.list && rf.list.length);\n    const qbTap=(mode=='pass' && p.role=='QB' && wrPlayers.length>1);\n    if(tappable) s+=`<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"12.5\" fill=\"none\" stroke=\"#a8321f\" stroke-width=\"1\" stroke-dasharray=\"2 2\" opacity=\"0.5\"/>`;\n    if(qbTap) s+=`<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"12.5\" fill=\"none\" stroke=\"#4f83cc\" stroke-width=\"1\" stroke-dasharray=\"2 2\" opacity=\"0.6\"/>`;\n    const cls = tappable?`<g class=\"tap\" data-slot=\"${p.slot}\" style=\"cursor:pointer\">`:(qbTap?`<g class=\"qbtap\" style=\"cursor:pointer\">`:'<g>');\n    s+=`${cls}<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"9\" fill=\"${fill}\" stroke=\"#000\"/><text x=\"${p.x}\" y=\"${p.y+3}\" fill=\"${tc}\" font-size=\"7\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">${p.label}</text></g>`;\n    if(qbTap) s+=`<text x=\"${p.x}\" y=\"${p.y+20}\" font-size=\"5.5\" fill=\"#4f83cc\" text-anchor=\"middle\">tap: rotate WRs</text>`;\n    if(mode=='pass' && rf && rf.name && rf.name!='\\u2014'){\n      const idx=(sel[p.slot]||0)%rf.list.length; const rt=rf.list[idx];\n      const belowLOS = p.y>losY;\n      let ny=belowLOS?p.y+20:p.y+20;\n      s+=`<text x=\"${p.x}\" y=\"${ny}\" font-size=\"7.5\" fill=\"#1a1a17\" text-anchor=\"middle\" font-weight=\"bold\" data-noteable=\"1\" data-note-label=\"Player role\" data-note-value=\"${nEsc(rf.name)}\" data-note-context=\"${nEsc(SEASON+' playbook \u00b7 '+g.p+' personnel \u00b7 '+g.name)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"player_role\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"QB,RB,WR,TE\" data-note-nav=\"${NOTE_NAV}\">${rf.name}</text>`;\n      const pctTxt = rt[1]!=null?` ${rt[1]}%`:'';\n      const srcTxt = rf.src=='tree'?' (tree)':(rf.src=='season'?' (szn)':'');\n      s+=`<text x=\"${p.x}\" y=\"${ny+9}\" font-size=\"6\" fill=\"#a8321f\" text-anchor=\"middle\" data-noteable=\"1\" data-note-label=\"Route tendency\" data-note-value=\"${nEsc(rt[0].split('/')[0]+pctTxt+srcTxt)}\" data-note-context=\"${nEsc(SEASON+' playbook \u00b7 '+g.p+' personnel \u00b7 '+g.name+' \u00b7 '+rf.name)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"route_tendency\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"QB,RB,WR,TE\" data-note-nav=\"${NOTE_NAV}\">${rt[0].split('/')[0]}${pctTxt}${srcTxt}</text>`;\n      if(rf.list.length>1) s+=`<text x=\"${p.x}\" y=\"${ny+17}\" font-size=\"5.5\" fill=\"#8a8470\" text-anchor=\"middle\">${idx+1}/${rf.list.length} tap</text>`;\n    }\n  });\n  return s.replace('<svg ',`<svg `).replace(`viewBox=\"0 0 ${W} ${H}\">`,`viewBox=\"0 0 ${W} ${H}\"><defs>${defs}</defs>`)+`</svg>`;\n}\nfunction draw(){\n  const dn=document.getElementById('down').value,ds=document.getElementById('dist').value,fl=document.getElementById('field').value;\n  const node=FORM[dn][ds][fl],grid=document.getElementById('grid');\n  document.getElementById('banner').textContent=({all:'All Downs','1':'1st Down','2':'2nd Down','3':'3rd Down','4':'4th Down'}[dn])+({all:'',short:' & Short',med:' & Medium',long:' & Long'}[ds])+({all:'',pa:' \u00b7 Play-Action',motion:' \u00b7 Motion',nohuddle:' \u00b7 No-Huddle',redzone:' \u00b7 Red Zone'}[fl]);\n  if(!node||!node.groups.length){grid.innerHTML='<div class=\"empty\">No plays match this situation.</div>';document.getElementById('ctx').textContent='';return;}\n  document.getElementById('ctx').textContent=node.total+' plays';\n  window._G=node.groups;\n  // Production out of this formation: yards + TDs, split pass vs run. Moves with the filters.\n  function prodLine(g, mode){\n    const P=noteWrap('Pass production', `PASS ${(+g.py||0).toLocaleString()} yds \u00b7 ${+g.ptd||0} TD`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,WR,TE,RB', `<span class=\"prod-pass\">PASS ${(+g.py||0).toLocaleString()} yds \u00b7 ${+g.ptd||0} TD</span>`);\n    const R=noteWrap('Run production', `RUN ${(+g.ry||0).toLocaleString()} yds \u00b7 ${+g.rtd||0} TD`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'RB,QB', `<span class=\"prod-run\">RUN ${(+g.ry||0).toLocaleString()} yds \u00b7 ${+g.rtd||0} TD</span>`);\n    if(mode==='pass') return P;\n    if(mode==='run')  return R;\n    return `${P}<span class=\"prod-sep\">\u00b7</span>${R}`;\n  }\n  let html=\"\";\n  node.groups.forEach((g,i)=>{const noise=g.n<8?' <span class=\"hl-p\" style=\"font-size:9px;padding:0 3px;\">SMALL</span>':'';\n    html+=`<div class=\"card\"><div class=\"rank\">#${i+1}</div>\n      <div class=\"plabel\"><span class=\"pers alt\" data-i=\"${i}\" title=\"tap to change alignment\" style=\"cursor:pointer\">${g.p} PERSONNEL \u21c4</span> <span class=\"fname\">${g.name}</span></div>\n      <div class=\"subttl\">${g.backs} BACK \u00b7 ${g.te} TE \u00b7 ${g.wr} WR \u2014 ${g.share}% of snaps${noise}</div>\n      <div class=\"prod\" id=\"prd${i}\">${prodLine(g)}</div>\n      <div class=\"fieldbox\">${fieldSvg(g,'none',{},0,0)}</div>\n      <div class=\"stats\"><div class=\"stat\"><span id=\"snl${i}\">Snaps</span><b id=\"snv${i}\">${noteWrap('Snaps', String(g.n), `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', String(g.n))}</b></div><div class=\"stat\"><span>Success</span><b id=\"scv${i}\">${noteWrap('Success Rate', `${g.succ}%`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', `${g.succ}%`)}</b></div>\n      <div class=\"stat\"><span>EPA/play</span><b id=\"epv${i}\" class=\"${g.epa>=.05?'hl-g':(g.epa<=-.05?'hl-p':'')}\">${noteWrap('EPA/play', `${g.epa>=0?'+':''}${g.epa.toFixed(2)}`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', `${g.epa>=0?'+':''}${g.epa.toFixed(2)}`)}</b></div><div class=\"stat\"><span>Share</span><b>${noteWrap('Formation Share', `${g.share}%`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', `${g.share}%`)}</b></div></div>\n      <div class=\"rp\" data-i=\"${i}\"><div class=\"run seg\" data-mode=\"run\" style=\"width:${(100-Number(g.pass_rate||0)).toFixed(2)}%\"><b>RUN ${(100-Number(g.pass_rate||0)).toFixed(2)}%</b></div><div class=\"pass seg\" data-mode=\"pass\" style=\"width:${Number(g.pass_rate||0).toFixed(2)}%\"><b>PASS ${Number(g.pass_rate||0).toFixed(2)}%</b></div></div>\n      <div class=\"hintbar\" id=\"hint${i}\">tap label \u21c4 change look \u00b7 click bar \u25b8 runs / routes</div></div>`;});\n  grid.innerHTML=html;\n  function setStats(i,mode,g){\n    const snl=document.getElementById('snl'+i),snv=document.getElementById('snv'+i),scv=document.getElementById('scv'+i),epv=document.getElementById('epv'+i);\n    let n=g.n,sc=g.succ,ep=g.epa,lbl='Snaps';\n    if(mode=='run'){ n=g.nr;sc=g.sr;ep=g.er;lbl='Run snaps'; }\n    else if(mode=='pass'){ n=g.np;sc=g.sp;ep=g.ep;lbl='Pass snaps'; }\n    const prd=document.getElementById('prd'+i);\n    if(prd) prd.innerHTML=prodLine(g, mode==='none'?null:mode);\n    snl.textContent=lbl; snv.textContent=n; scv.textContent=sc+'%';\n    epv.textContent=(ep>=0?'+':'')+ep.toFixed(2);\n    epv.className = ep>=.05?'hl-g':(ep<=-.05?'hl-p':'');\n  }\n  document.querySelectorAll('.seg').forEach(seg=>{\n    seg.onclick=(e)=>{ e.stopPropagation();\n      const card=seg.closest('.card'), i=+seg.closest('.rp').dataset.i, mode=seg.dataset.mode, g=window._G[i];\n      const box=card.querySelector('.fieldbox'), hint=card.querySelector('.hintbar');\n      const cur=box.dataset.mode||'none';\n      card.querySelectorAll('.seg').forEach(x=>x.classList.remove('active'));\n      if(cur==mode){ box.innerHTML=fieldSvg(g,'none',{},0,box._av||0); box.dataset.mode='none';\n        hint.textContent='tap label \u21c4 change look \u00b7 click bar \u25b8 runs / routes'; hint.style.color=''; setStats(i,'none',g); return; }\n      seg.classList.add('active');\n      if(!box._sel) box._sel={};\n      box.innerHTML=fieldSvg(g,mode,box._sel,box._rot||0,box._av||0); box.dataset.mode=mode;\n      if(mode=='pass') wireTaps(box,g);\n      setStats(i,mode,g);\n      hint.textContent = mode=='pass'?'ROUTES \u2014 most common per player when targeted':'RUN LANES \u2014 top 3 gaps (color = EPA)';\n      hint.style.color = mode=='pass'?'#4f83cc':'#4a7f2c';\n    };\n  });\n  // clickable personnel label cycles alignment variant\n  document.querySelectorAll('.pers.alt').forEach(lab=>{\n    lab.onclick=(e)=>{ e.stopPropagation();\n      const i=+lab.dataset.i, g=window._G[i], card=lab.closest('.card'), box=card.querySelector('.fieldbox');\n      box._av=(box._av||0)+1; box._sel={}; box._rot=box._rot||0;\n      const mode=box.dataset.mode||'none';\n      box.innerHTML=fieldSvg(g,mode,box._sel,box._rot,box._av); \n      if(mode=='pass') wireTaps(box,g);\n    };\n  });\n}\n// formation diagram rendered in the card; overlay drawn in-place on click\nfunction fieldSvg(g, mode, sel, wrRot, av){ return drawPlayDiagram(g, mode, sel, wrRot, av); }\nfunction wireTaps(box,g){\n  box.querySelectorAll('.tap').forEach(el=>{\n    el.onclick=(ev)=>{ ev.stopPropagation();\n      const slot=el.getAttribute('data-slot'); if(!box._sel) box._sel={};\n      box._sel[slot]=(box._sel[slot]||0)+1;\n      box.innerHTML=fieldSvg(g,'pass',box._sel,box._rot||0,box._av||0); box.dataset.mode='pass';\n      wireTaps(box,g);\n    };\n  });\n  box.querySelectorAll('.qbtap').forEach(el=>{\n    el.onclick=(ev)=>{ ev.stopPropagation();\n      box._rot=(box._rot||0)+1; box._sel={};\n      box.innerHTML=fieldSvg(g,'pass',{},box._rot,box._av||0); box.dataset.mode='pass';\n      wireTaps(box,g);\n    };\n  });\n}\n\n(function noteBridge(){\n  const HOLD_MS=520, MOVE=10;\n  let st=null;\n  function clear(){ if(st&&st.t) clearTimeout(st.t); st=null; }\n  function info(el){\n    if(!el || !el.dataset) return null;\n    return {\n      label: el.dataset.noteLabel || 'Playbook stat',\n      value: el.dataset.noteValue || '',\n      context: el.dataset.noteContext || '',\n      source: el.dataset.noteSource || 'coaching_playbook',\n      statKey: el.dataset.noteStatKey || '',\n      team: el.dataset.noteTeam || TEAM_CODE || '',\n      relevance: el.dataset.noteRelevance || 'QB,RB,WR,TE',\n    };\n  }\n  function open(el){\n    const parentWin = window.parent;\n    if(!parentWin || typeof parentWin.noteOpenPicker!=='function') return;\n    const payload = info(el);\n    if(payload) parentWin.noteOpenPicker(payload);\n  }\n  document.addEventListener('touchstart', e=>{\n    if(e.touches.length!==1) return clear();\n    const el=e.target&&e.target.closest?e.target.closest('[data-noteable=\"1\"]'):null;\n    if(!el) return;\n    const t=e.touches[0];\n    st={x:t.clientX,y:t.clientY,el,t:setTimeout(()=>{ const cur=st; clear(); if(cur&&cur.el===el) open(el); }, HOLD_MS)};\n  }, {passive:true});\n  document.addEventListener('touchmove', e=>{ if(!st||!e.touches.length) return; const t=e.touches[0]; if(Math.abs(t.clientX-st.x)>MOVE||Math.abs(t.clientY-st.y)>MOVE) clear(); }, {passive:true});\n  document.addEventListener('touchend', clear, {passive:true});\n  document.addEventListener('touchcancel', clear, {passive:true});\n  document.addEventListener('mousedown', e=>{ const el=e.target&&e.target.closest?e.target.closest('[data-noteable=\"1\"]'):null; if(!el||e.button!==0) return; st={x:e.clientX,y:e.clientY,el,t:setTimeout(()=>{ const cur=st; clear(); if(cur&&cur.el===el) open(el); }, HOLD_MS)}; });\n  document.addEventListener('mousemove', e=>{ if(!st) return; if(Math.abs(e.clientX-st.x)>MOVE||Math.abs(e.clientY-st.y)>MOVE) clear(); });\n  document.addEventListener('mouseup', clear);\n  document.addEventListener('mouseleave', clear);\n})();\n\n['down','dist','field'].forEach(id=>document.getElementById(id).onchange=draw); draw();\n__TC_SCRIPT_CLOSE__</body></html>\n";
 // ─────────────────────────────────────────────────────────────────────────────
 // Team playbook modal (nflverse)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -8871,6 +9543,8 @@ function _schemeRenderBenefactors(targets, rushers){
 
 function _schemeRenderInsights(p){
   const d = _schemeRedZoneInsightData(p);
+  const teamCode = String((p && p.team) || '').toUpperCase();
+  const teamName = teamDisplayName(teamCode) || teamCode;
   const benefactors = _schemeBuildBenefactors(p, d);
   const rushBenefactors = _schemeBuildRushBenefactors(p, d);
   const league = _schemeLeagueInsightRanks(p && p.season);
@@ -8896,22 +9570,22 @@ function _schemeRenderInsights(p){
     <div class="scheme-insights-grid">
       <div class="scheme-insight-card">
         <div class="scheme-insight-k">3rd/4th down frequency</div>
-        <div class="scheme-insight-v">${_schemePct(d.thirdDownReach)} <span class="scheme-insight-rank ${rankClass(rzRank)}">(${rankText(rzRank)})</span></div>
+        <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.thirdDownReach)} <span class="scheme-insight-rank ${rankClass(rzRank)}">(${rankText(rzRank)})</span>`, { label:'3rd/4th down frequency', value:_schemePct(d.thirdDownReach), source:'coaching_insights', statKey:'third_down_reach', context:`${teamName} red-zone insights · ${p&&p.season?p.season:advTeamSeason()}`, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(p&&p.season?p.season:advTeamSeason()), tab:'insights' } }, 'note-tag-hit')}</div>
         <div class="scheme-insight-sub">Share of red-zone plays that reach 3rd or 4th down.</div>
       </div>
       <div class="scheme-insight-card">
         <div class="scheme-insight-k">Early down red zone success (1st/2nd)</div>
-        <div class="scheme-insight-v">${_schemePct(d.earlySucc)} <span class="scheme-insight-rank ${rankClass(earlySuccRank)}">(${rankText(earlySuccRank)})</span></div>
+        <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.earlySucc)} <span class="scheme-insight-rank ${rankClass(earlySuccRank)}">(${rankText(earlySuccRank)})</span>`, { label:'Early down red zone success', value:_schemePct(d.earlySucc), source:'coaching_insights', statKey:'early_succ', context:`${teamName} red-zone insights · ${p&&p.season?p.season:advTeamSeason()}`, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(p&&p.season?p.season:advTeamSeason()), tab:'insights' } }, 'note-tag-hit')}</div>
         <div class="scheme-insight-sub">Weighted by formation usage on early downs inside the red zone.</div>
       </div>
       <div class="scheme-insight-card">
         <div class="scheme-insight-k">Late down red zone success (3rd/4th)</div>
-        <div class="scheme-insight-v">${_schemePct(d.lateSucc)} <span class="scheme-insight-rank ${rankClass(lateSuccRank)}">(${rankText(lateSuccRank)})</span></div>
+        <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.lateSucc)} <span class="scheme-insight-rank ${rankClass(lateSuccRank)}">(${rankText(lateSuccRank)})</span>`, { label:'Late down red zone success', value:_schemePct(d.lateSucc), source:'coaching_insights', statKey:'late_succ', context:`${teamName} red-zone insights · ${p&&p.season?p.season:advTeamSeason()}`, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(p&&p.season?p.season:advTeamSeason()), tab:'insights' } }, 'note-tag-hit')}</div>
         <div class="scheme-insight-sub">How efficiently this team finishes once drives get extended.</div>
       </div>
       <div class="scheme-insight-card">
         <div class="scheme-insight-k">Drive friction ranking ${frictionTip}</div>
-        <div class="scheme-insight-v">${rankText(frictionRank)} <span class="scheme-insight-rank ${frictionRankClass}">(score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'})</span></div>
+        <div class="scheme-insight-v">${noteWrapHtml(`${rankText(frictionRank)} <span class="scheme-insight-rank ${frictionRankClass}">(score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'})</span>`, { label:'Drive friction ranking', value:`${rankText(frictionRank)} · score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'}`, source:'coaching_insights', statKey:'friction_rank', context:`${teamName} red-zone insights · ${p&&p.season?p.season:advTeamSeason()}`, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(p&&p.season?p.season:advTeamSeason()), tab:'insights' } }, 'note-tag-hit')}</div>
         <div class="scheme-insight-sub">Ranked by drive cleanliness (1 = least friction / cleanest drives, 32 = most friction / toughest drives).</div>
       </div>
     </div>
@@ -8955,7 +9629,7 @@ function _schemeRenderTemplate(template, p){
   const full = teamDisplayName(team);
   const wr1 = fv.names[(fv.slots||{}).WR1] || 'WR1';
   const wr2 = fv.names[(fv.slots||{}).WR2] || 'WR2';
-  const script = `const FV=${JSON.stringify(fv)};\nconst FORM=FV.data;\nconst SEASON=FV.season;\nconst NAMES=FV.names;`;
+  const script = `const FV=${JSON.stringify(fv)};\nconst FORM=FV.data;\nconst SEASON=FV.season;\nconst NAMES=FV.names;\nconst TEAM_CODE=${JSON.stringify(team)};`;
   return template
     .replace('svg{display:block;margin:0 auto;}', 'svg{display:block;margin:0 auto;max-width:100%;height:auto;}')
     .replace('grid-template-columns:repeat(auto-fill,minmax(330px,1fr));', 'grid-template-columns:repeat(auto-fill,minmax(280px,1fr));')
@@ -8966,7 +9640,7 @@ function _schemeRenderTemplate(template, p){
     .replace('Detroit Lions &mdash; Playbook', `${full} &mdash; Playbook`)
     .replace(/\b20\d{2}\s+·\s+Routes mapped to players/, `${season} · Routes mapped to players`)
     .replace('WR1=St. Brown, WR2=Williams', `WR1=${wr1}, WR2=${wr2}`)
-    .replace(/const FV=.*?const FORM=FV\.data;\s*const SEASON=FV\.season;\s*const NAMES=FV\.names;/s, script);
+    .replace(/const FV=.*?const FORM=FV\.data;\s*const SEASON=FV\.season;\s*const NAMES=FV\.names;\s*const TEAM_CODE=.*?;/s, script);
 }
 
 function _renderTeamCoachingScheme(){
@@ -9269,9 +9943,9 @@ function renderTeamAdditions(team){
     const body=rows.map(r=>`<tr>
       <td class="add-player clickable-player" onclick="${pcardOnclick(r.player, r.pos, '')}">${r.player}</td>
       <td>${posBadge(r.pos)}</td>
-      <td class="add-num">${r.years!=null?r.years+' yr':'—'}</td>
-      <td class="add-num add-val">${fmtMillions(r.value_m)}</td>
-      <td class="add-num add-aav">${fmtMillions(r.aav_m)}</td>
+      <td class="add-num">${noteWrapHtml(escHtml(r.years!=null?r.years+' yr':'—'), { label:'Contract Term', value:r.years!=null?r.years+' yr':'—', source:'roster_changes', statKey:'term', context:`${teamDisplayName(team)} ${PROJ_SEASON} ${kind==='draft'?'draft':'free agency'}`, player:noteTargetFromArgs(r.player, r.pos, team), team, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>
+      <td class="add-num add-val">${noteWrapHtml(escHtml(fmtMillions(r.value_m)), { label:'Contract Total', value:fmtMillions(r.value_m), source:'roster_changes', statKey:'value_m', context:`${teamDisplayName(team)} ${PROJ_SEASON} ${kind==='draft'?'draft':'free agency'}`, player:noteTargetFromArgs(r.player, r.pos, team), team, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>
+      <td class="add-num add-aav">${noteWrapHtml(escHtml(fmtMillions(r.aav_m)), { label:'Contract AAV', value:fmtMillions(r.aav_m), source:'roster_changes', statKey:'aav_m', context:`${teamDisplayName(team)} ${PROJ_SEASON} ${kind==='draft'?'draft':'free agency'}`, player:noteTargetFromArgs(r.player, r.pos, team), team, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>
     </tr>`).join('');
     return `<div class="add-table-scroll"><table class="add-table"><thead><tr>
       <th class="add-th-player">PLAYER</th><th>POS</th><th class="add-num">TERM</th>
@@ -9282,8 +9956,8 @@ function renderTeamAdditions(team){
     const body=rows.map(r=>`<tr>
       <td class="add-player clickable-player" onclick="${pcardOnclick(r.player, r.pos, '')}">${r.player}</td>
       <td>${posBadge(r.pos)}</td>
-      <td class="add-num add-val">${fmtMillions(r.cap_m)}</td>
-      <td class="add-detail">${r.detail||'—'}</td>
+      <td class="add-num add-val">${noteWrapHtml(escHtml(fmtMillions(r.cap_m)), { label:'Cap Acquired', value:fmtMillions(r.cap_m), source:'roster_changes', statKey:'cap_m', context:`${teamDisplayName(team)} ${PROJ_SEASON} trade`, player:noteTargetFromArgs(r.player, r.pos, team), team, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>
+      <td class="add-detail">${noteWrapHtml(escHtml(r.detail||'—'), { label:'Trade Detail', value:r.detail||'—', source:'roster_changes', statKey:'detail', context:`${teamDisplayName(team)} ${PROJ_SEASON} trade`, player:noteTargetFromArgs(r.player, r.pos, team), team, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>
     </tr>`).join('');
     return `<div class="add-table-scroll"><table class="add-table add-trade-table"><thead><tr>
       <th class="add-th-player">PLAYER</th><th>POS</th><th class="add-num">CAP ACQ.</th>
@@ -9297,9 +9971,9 @@ function renderTeamAdditions(team){
       <td class="add-player clickable-player" onclick="${pcardOnclick(r.player, r.pos, '')}">${r.player}</td>
       <td>${posBadge(r.pos)}</td>
       <td class="add-dest">${r.to_team?`→ <img src="${NFL_LOGO(r.to_team)}" class="add-dest-logo" onerror="this.style.display='none'"><b>${r.to_team}</b>`:'—'}</td>
-      <td class="add-num">${r.years!=null?r.years+' yr':'—'}</td>
-      <td class="add-num add-val add-loss-val">${fmtMillions(r.value_m)}</td>
-      <td class="add-num add-aav">${fmtMillions(r.aav_m)}</td>
+      <td class="add-num">${noteWrapHtml(escHtml(r.years!=null?r.years+' yr':'—'), { label:'Contract Term', value:r.years!=null?r.years+' yr':'—', source:'roster_changes_loss', statKey:'term', context:`${teamDisplayName(team)} ${PROJ_SEASON} free-agent loss`, player:noteTargetFromArgs(r.player, r.pos, team), team, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>
+      <td class="add-num add-val add-loss-val">${noteWrapHtml(escHtml(fmtMillions(r.value_m)), { label:'Contract Total', value:fmtMillions(r.value_m), source:'roster_changes_loss', statKey:'value_m', context:`${teamDisplayName(team)} ${PROJ_SEASON} free-agent loss`, player:noteTargetFromArgs(r.player, r.pos, team), team, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>
+      <td class="add-num add-aav">${noteWrapHtml(escHtml(fmtMillions(r.aav_m)), { label:'Contract AAV', value:fmtMillions(r.aav_m), source:'roster_changes_loss', statKey:'aav_m', context:`${teamDisplayName(team)} ${PROJ_SEASON} free-agent loss`, player:noteTargetFromArgs(r.player, r.pos, team), team, relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>
     </tr>`).join('');
     return `<div class="add-table-scroll"><table class="add-table"><thead><tr>
       <th class="add-th-player">PLAYER</th><th>POS</th><th>SIGNED WITH</th>
@@ -9927,9 +10601,20 @@ function renderTeamAdvanced(team){
     const lines = displayCols.map(col=>{
       const v=row.values?row.values[col]:null;
       const r=row.ranks?row.ranks[col]:null;
+      const txt = fmtSharpVal(v, sharpColIsPct(tbl,col));
+      const tagValue = r!=null ? `${txt} · league rank #${r}` : txt;
       return `<div class="sr-stat">
         <div class="sr-stat-label">${col}</div>
-        <div class="sr-stat-val">${fmtSharpVal(v, sharpColIsPct(tbl,col))}</div>
+        <div class="sr-stat-val">${txt?noteWrapHtml(escHtml(txt), {
+          label: col,
+          value: tagValue,
+          source: 'team_advanced',
+          statKey: key,
+          context: `${teamDisplayName(useTeam)} · ${tbl.title||key} · ${advTeamSeason()} season`,
+          team: useTeam,
+          relevance: noteRelevanceForTableKey(key),
+          nav: { type:'advanced', team: useTeam, season: String(advTeamSeason()) },
+        }, 'note-tag-hit'):txt}</div>
         <div class="sr-stat-rank">${sharpRankBadge(r)}</div>
       </div>`;
     }).join('');
@@ -9951,7 +10636,16 @@ function renderTeamAdvanced(team){
   const sosStrip = sos ? `<div class="sr-sos-strip">
     <span class="sr-sos-rank ${sharpRankClass(sos.rank)}">${ordinal(sos.rank)}</span>
     <div><div class="sr-sos-label">${PROJ_SEASON} Strength of Schedule</div>
-      <div class="sr-sos-sub">${sos.win_total!=null?`Vegas win total <b>${sos.win_total}</b> · `:''}rank ${sos.rank} of 32 (1 = easiest)</div></div>
+      <div class="sr-sos-sub">${noteWrapHtml(`${sos.win_total!=null?`Vegas win total <b>${sos.win_total}</b> · `:''}rank ${sos.rank} of 32 (1 = easiest)`, {
+        label: `${PROJ_SEASON} Strength of Schedule`,
+        value: `${sos.win_total!=null?`Vegas win total ${sos.win_total} · `:''}rank ${sos.rank} of 32`,
+        source: 'team_sos',
+        statKey: 'sos',
+        context: `${teamDisplayName(team)} · ${PROJ_SEASON} schedule`,
+        team,
+        relevance: 'QB,RB,WR,TE',
+        nav: { type:'advanced', team, season: 'proj' },
+      }, 'note-tag-hit')}</div></div>
     <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showSharpLeague('sos')">See SOS chart →</button>
   </div>` : '';
   // Carryover coordinators → a highlighted section that pulls the former team's scheme stats.
@@ -10143,11 +10837,29 @@ function renderSharpLeague(){
     const cells = cols.map(c=>{
       if(c===projCol){
         const v=r._projScore, rk=r._projRank;
-        return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${v!=null?Number(v).toFixed(1):'—'}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
+        const txt = v!=null?Number(v).toFixed(1):'—';
+        return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${noteWrapHtml(escHtml(txt), {
+          label: c,
+          value: txt,
+          source: 'league_advanced',
+          statKey: sharpTable,
+          context: `${teamDisplayName(r.code)} · ${tbl.title} · ${advTeamSeason()} season`,
+          team: r.code,
+          relevance: noteRelevanceForTableKey(sharpTable),
+        }, 'note-tag-hit')}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
       }
       const srcCol=colSource[c]||c;
       const v=r.values?r.values[srcCol]:null, rk=r.ranks?r.ranks[srcCol]:null;
-      return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${fmtSharpVal(v, sharpColIsPct(tbl,c))}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
+      const txt = fmtSharpVal(v, sharpColIsPct(tbl,c));
+      return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${noteWrapHtml(escHtml(txt), {
+        label: c,
+        value: txt,
+        source: 'league_advanced',
+        statKey: sharpTable,
+        context: `${teamDisplayName(r.code)} · ${tbl.title} · ${advTeamSeason()} season`,
+        team: r.code,
+        relevance: noteRelevanceForTableKey(sharpTable),
+      }, 'note-tag-hit')}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
     }).join('');
     return `<tr><td class="sr-td-team"><span class="sr-td-team-inner"><img src="${NFL_LOGO(r.code)}" class="sr-logo" onerror="this.style.display='none'">${r.code}</span></td>${cells}</tr>`;
   }).join('');
@@ -10412,6 +11124,25 @@ function renderRankings(){
 
   let undraftedSeen=0, nextGapIdx=0, gapRemaining=(pickGaps[0]!=null?pickGaps[0]:-1);
   const rowChunks=[];
+  const rankBaseContext = activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${teamScoped?`${currentTeam} rankings`:'full rankings'}`
+    : `${teamScoped?`${currentTeam} rankings`:'full rankings'} · ${activeSeason}`;
+  const rankNoteContext = `${rankBaseContext}${advActive?` · adv metrics${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}`:''}`;
+  const rankValueHtml = (display, p, label, statKey, source)=> noteWrapHtml(display, {
+    label,
+    value: typeof display==='string' ? display.replace(/<[^>]+>/g,'').trim() : display,
+    source,
+    statKey,
+    context: rankNoteContext,
+    player: p,
+    team: p.team,
+    nav: { type:'rankings', season:String(activeSeason), scope: teamScoped?'team':'all', team: teamScoped?currentTeam:p.team, advanced: advActive, refinement: sumerRefinement||'', posFilter: rankPosFilter },
+  }, 'note-tag-hit');
+  const statCell = (v, p, label, statKey)=>{
+    if(!(v && v>0)) return '';
+    const txt = (+v)%1!==0?(+v).toFixed(1):(+v).toLocaleString();
+    return rankValueHtml(`<span class="num">${txt}</span>`, p, label, statKey, advActive?'rankings_advanced':'rankings');
+  };
   view.forEach(p=>{
     // emit a pick line right before the player who'd fall to your pick
     if(showPickLines && nextGapIdx<pickGaps.length && !p.drafted && undraftedSeen===gapRemaining){
@@ -10444,19 +11175,22 @@ function renderRankings(){
       statCells = sumerView.cols.map((label,ci)=>{
         const v=sumerValue(p,label);
         const isPct=sumerView.pct.has(label);
-        return `<td class="grp-adv${ci===0?' grp-start':''}">${v==null?'':`<span class="num">${fmtSumer(v,isPct)}</span>`}</td>`;
+        const txt = v==null ? '' : fmtSumer(v,isPct);
+        return `<td class="grp-adv${ci===0?' grp-start':''}">${txt?rankValueHtml(`<span class="num">${txt}</span>`, p, label, `sumer:${label}`, 'rankings_advanced'):''}</td>`;
       }).join('');
     } else {
       statCells =
-        `<td class="grp-rush">${cell(p.rushing_attempts)}</td><td class="grp-rush-mid">${cell(p.rushing_yards)}</td><td class="grp-rush-mid">${ypc?`<span class="num">${ypc}</span>`:''}</td><td class="grp-rush-end">${cell(p.rushing_tds)}</td>`+
-        `<td class="grp-rec">${cell(p.receiving_targets)}</td><td class="grp-rec-mid">${cell(p.receptions)}</td><td class="grp-rec-mid">${cell(p.receiving_yards)}</td><td class="grp-rec-end">${cell(p.receiving_tds)}</td>`+
-        `<td class="grp-pass">${cell(p.passing_attempts)}</td><td class="grp-pass-mid">${cell(p.passing_yards)}</td><td class="grp-pass-mid">${cell(p.passing_tds)}</td><td class="grp-pass-end">${cell(p.interceptions_thrown)}</td>`;
+        `<td class="grp-rush">${statCell(p.rushing_attempts,p,'Rush Attempts','rushing_attempts')}</td><td class="grp-rush-mid">${statCell(p.rushing_yards,p,'Rush Yards','rushing_yards')}</td><td class="grp-rush-mid">${ypc?rankValueHtml(`<span class="num">${ypc}</span>`, p, 'Yards Per Carry', 'ypc', 'rankings'):''}</td><td class="grp-rush-end">${statCell(p.rushing_tds,p,'Rush Touchdowns','rushing_tds')}</td>`+
+        `<td class="grp-rec">${statCell(p.receiving_targets,p,'Targets','receiving_targets')}</td><td class="grp-rec-mid">${statCell(p.receptions,p,'Receptions','receptions')}</td><td class="grp-rec-mid">${statCell(p.receiving_yards,p,'Receiving Yards','receiving_yards')}</td><td class="grp-rec-end">${statCell(p.receiving_tds,p,'Receiving Touchdowns','receiving_tds')}</td>`+
+        `<td class="grp-pass">${statCell(p.passing_attempts,p,'Pass Attempts','passing_attempts')}</td><td class="grp-pass-mid">${statCell(p.passing_yards,p,'Pass Yards','passing_yards')}</td><td class="grp-pass-mid">${statCell(p.passing_tds,p,'Pass Touchdowns','passing_tds')}</td><td class="grp-pass-end">${statCell(p.interceptions_thrown,p,'Interceptions Thrown','interceptions_thrown')}</td>`;
     }
+    const fptsTxt = p.fpts.toFixed(1);
+    const vorTxt = `${p.vor>0?'+':''}${p.vor!=null?p.vor.toFixed(1):'—'}`;
     rowChunks.push(`<tr class="${p.drafted?'drafted':''}">
-    <td class="c-ecr">${ecrTxt}</td>
-    <td class="c-tier">${tier!=null?`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`:''}</td>
-    <td class="fpts">${p.fpts.toFixed(1)}</td>
-    <td class="c-vor"><span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${p.vor>0?'+':''}${p.vor!=null?p.vor.toFixed(1):'—'}</span></td>
+    <td class="c-ecr">${ecrTxt!=='—'?rankValueHtml(ecrTxt, p, 'Expert Consensus Rank', 'ecr', 'rankings'):ecrTxt}</td>
+    <td class="c-tier">${tier!=null?rankValueHtml(`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`, p, 'Tier', 'ecr_tier', 'rankings'):''}</td>
+    <td class="fpts">${rankValueHtml(fptsTxt, p, 'Fantasy Points', 'fpts', 'rankings')}</td>
+    <td class="c-vor">${rankValueHtml(`<span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${vorTxt}</span>`, p, 'Value Over Replacement', 'vor', 'rankings')}</td>
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
     <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsPack(p),'rank-hs')}<span class="rank-name">${pNameText}</span></div></td>
     <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" alt="${pTeamAttr}" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${pTeamText}</td>
@@ -10832,6 +11566,7 @@ function averageGroup(group){
 
 function loadProjections(data){
   const players=data.projections;
+  playerNotes = (data.playerNotes && typeof data.playerNotes==='object') ? data.playerNotes : {};
   // Group by player_id when present, else name+team. Only treat as "same player"
   // when BOTH id matches AND team matches (avoids merging a traded player's two teams).
   const useIds=players.some(p=>p.player_id!==undefined&&p.player_id!==null);
@@ -11055,7 +11790,7 @@ function buildOutput(){
       });
     }
   });
-  return {projections:out};
+  return {projections:out, playerNotes:playerNotes};
 }
 function dlFile(content,filename,mime){
   const b64=btoa(unescape(encodeURIComponent(content)));
@@ -15322,6 +16057,7 @@ function laCompareView(s){
   const lens=laState.lens||'value';
   const POS=['QB','RB','WR','TE'];
   const pm=laProjMap();
+  const cmpSource = lens==='value' ? 'league_analyzer_value' : 'league_analyzer_proj';
   const withPicks = lens==='value' && laState.cmpPicks && !laIsRedraft();
   const rows=s.teamList.map(t=>{
     const by={QB:0,RB:0,WR:0,TE:0};
@@ -15392,12 +16128,12 @@ function laCompareView(s){
       <tbody>
       ${order.map(({r,i})=>{
         const mine=s.myUserId && r.t.ownerId===s.myUserId;
-        const cell=(c,v)=>`<td class="${laQuartile(ranks[c][i],n)}"><b>${fmtV(v)}</b><span class="la-rk">#${ranks[c][i]}</span></td>`;
+        const cell=(c,v,label)=>`<td class="${laQuartile(ranks[c][i],n)}">${noteWrapHtml(`<b>${fmtV(v)}</b><span class="la-rk">#${ranks[c][i]}</span>`, { label, value:`${fmtV(v)} · league rank #${ranks[c][i]}`, source:cmpSource, statKey:c, context:`League Analyzer compare · ${lens==='value'?'value':'projected starters'}`, team:r.t.teamCode||'', relevance:'QB,RB,WR,TE' }, 'note-tag-hit')}</td>`;
         return `<tr class="${mine?'mine':''}">
           <td class="la-cmp-team la-clickteam" onclick="laViewTeam(${r.t.rosterId})" title="View ${escAttr(r.t.teamName)}\u2019s analysis">${laTeamIcon(r.t,'la-tm-av-sm')}${mine?'\u2605 ':''}${escHtml(r.t.teamName)}${r.t.isChampion?` <span class="la-champ" title="${s.season} champion">${TC_ICON('trophy','tc-ico-champ')}</span>`:''}<span class="la-cmp-own">@${escHtml(r.t.owner)}</span></td>
-          ${POS.map(p=>cell(p,r.by[p])).join('')}
-          ${withPicks?cell('picks',r.picks):''}
-          ${cell('total',r.total)}</tr>`;
+          ${POS.map(p=>cell(p,r.by[p],p)).join('')}
+          ${withPicks?cell('picks',r.picks,'Picks'):''}
+          ${cell('total',r.total,'Total')}</tr>`;
       }).join('')}
       </tbody></table></div>
     <div class="la-note">${lens==='value'
@@ -15472,8 +16208,8 @@ function laBestAvailView(s){
         <span class="clickable-player" onclick="${pcardOnclick(r.name,r.pos,r.team||'')}">${laPlayerImg(r)}</span>
         <span class="la-ba-name clickable-player" onclick="${pcardOnclick(r.name,r.pos,r.team||'')}">${escHtml(r.name)}</span>
         <span class="la-ba-team">${escHtml(r.team)}</span>
-        <span class="la-ba-val">${r.v}</span>
-        <span class="la-ba-fpts">${r.fpts?r.fpts.toFixed(0):'–'}</span></div>`).join('')}
+        <span class="la-ba-val">${noteWrapHtml(String(r.v), { label:'Value', value:String(r.v), source:'league_analyzer_best_avail', statKey:'value', context:`League Analyzer best available · ${posF}`, player:noteTargetFromArgs(r.name,r.pos,r.team||''), team:r.team||'' }, 'note-tag-hit')}</span>
+        <span class="la-ba-fpts">${noteWrapHtml(escHtml(r.fpts?r.fpts.toFixed(0):'–'), { label:'Projected Points', value:r.fpts?r.fpts.toFixed(0):'–', source:'league_analyzer_best_avail', statKey:'proj', context:`League Analyzer best available · ${posF}`, player:noteTargetFromArgs(r.name,r.pos,r.team||''), team:r.team||'' }, 'note-tag-hit')}</span></div>`).join('')}
     </div>
     <div class="la-note">Free agents = FP value chart minus every rostered player in the snapshot. PROJ is your projection engine under current scoring — a high PROJ on a cheap value is the classic dynasty waiver add.</div>`;
 }

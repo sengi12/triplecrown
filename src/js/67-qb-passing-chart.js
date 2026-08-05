@@ -80,7 +80,27 @@ function _qbNum(v, dp=1){
   return Number(v).toFixed(dp);
 }
 
-function _qbPassingSVG(chart, playerName, season, metric){
+function _qbZoneTagAttrs(meta){
+  const attrs=[];
+  const put=(k,v)=>{ if(v!=null && v!=='') attrs.push(`${k}="${escAttr(String(v))}"`); };
+  put('data-noteable','1');
+  put('data-note-label', meta.label || 'Passing zone');
+  put('data-note-value', meta.value || '');
+  put('data-note-source','qb_passing_chart');
+  put('data-note-stat-key', meta.statKey || 'zone');
+  put('data-note-context', meta.context || '');
+  put('data-note-team', meta.team || '');
+  put('data-note-relevance','QB,WR,TE,RB');
+  if(meta.player){
+    put('data-note-player-id', meta.player.player_id || '');
+    put('data-note-player-name', meta.player.name || '');
+    put('data-note-player-pos', meta.player.pos || 'QB');
+    put('data-note-player-team', meta.player.team || meta.team || '');
+  }
+  return attrs.join(' ');
+}
+
+function _qbPassingSVG(chart, playerName, season, metric, notePlayer){
   const zones = chart.zones || {};
   const MET = QB_ZONE_METRICS[metric] || QB_ZONE_METRICS.rating;
   // Peak zone value drives the heat scale for volume metrics.
@@ -121,14 +141,25 @@ function _qbPassingSVG(chart, playerName, season, metric){
       const pts=`${(tl+gap).toFixed(0)},${y0+gap} ${(tr-gap).toFixed(0)},${y0+gap} ${(br-gap).toFixed(0)},${y1-gap} ${(bl+gap).toFixed(0)},${y1-gap}`;
       // Rating keeps the diverging vs-league scale; volume metrics use the sequential heat.
       const fill = (MET.key==='rating') ? _qbCellColor(rating, lg) : _qbHeat(mv, MAXV);
-      parts.push(`<polygon points="${pts}" fill="${fill}" stroke="#0c0d0f" stroke-width="2"/>`);
+      const zoneName = `${depth} ${loc}`;
+      const subTxt = MET.sub==='lg' ? `LEAGUE AVG: ${_qbNum(lg,1)}`
+        : (MET.sub==='ypa' && att ? `${(mv!=null? mv/att : 0).toFixed(1)} yds/att` : '');
+      const noteVal = `${MET.short} ${_qbNum(mv, MET.digits)}${subTxt?` · ${subTxt}`:''} · ${att} att`;
+      const tagAttrs = _qbZoneTagAttrs({
+        label:`${MET.short} (${zoneName})`,
+        value:noteVal,
+        statKey:`zone_${MET.key||'rating'}`,
+        context:`${season} passing chart · ${zoneName}`,
+        team:(notePlayer&&notePlayer.team)||chart.team||'',
+        player:notePlayer,
+      });
+      parts.push(`<g ${tagAttrs}><polygon points="${pts}" fill="${fill}" stroke="#0c0d0f" stroke-width="2"/>`);
       parts.push(`<text x="${cx.toFixed(0)}" y="${(cy-4).toFixed(0)}" fill="#fff" font-size="26" font-weight="800" text-anchor="middle">${_qbNum(mv, MET.digits)}</text>`);
       // Second line depends on the metric: the league baseline for rating, yards-per-attempt
       // for yards (context a raw total can't give), nothing for TDs.
-      const subTxt = MET.sub==='lg' ? `LEAGUE AVG: ${_qbNum(lg,1)}`
-        : (MET.sub==='ypa' && att ? `${(mv!=null? mv/att : 0).toFixed(1)} yds/att` : '');
       if(subTxt) parts.push(`<text x="${cx.toFixed(0)}" y="${(cy+14).toFixed(0)}" fill="#0d1b10" font-size="10.5" font-weight="800" text-anchor="middle">${subTxt}</text>`);
       parts.push(`<text x="${cx.toFixed(0)}" y="${(cy+(subTxt?29:16)).toFixed(0)}" fill="#141517" font-size="10" font-weight="800" opacity="0.75" text-anchor="middle">${att} att</text>`);
+      parts.push(`</g>`);
     }
   }
 
@@ -157,6 +188,7 @@ function renderPcardQbPassing(pid){
 
   const p=(sleeperPlayers&&sleeperPlayers[pid])||{};
   const name=p.name||'QB';
+  const notePlayer = noteTargetFromArgs(pid, 'QB', p.team||chart.team||'');
   const t=chart.totals||{};
   const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardQbPassingSeason('${s}')">${s}</button>`).join('');
   if(!QB_ZONE_METRICS[pcardQbMetric]) pcardQbMetric='rating';
@@ -174,20 +206,20 @@ function renderPcardQbPassing(pid){
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns}</div>
       <div class="rt-metrics">${metricBtns}</div>
-      <div class="rt-summary">${t.attempts||0} located attempts · threshold ±${QB_PASS_THRESH.toFixed(0)} vs league avg</div>
+      <div class="rt-summary">${noteWrapHtml(`${t.attempts||0} located attempts`, { label:'Located Attempts', value:String(t.attempts||0), source:'qb_passing_chart', statKey:'attempts', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · threshold ±${QB_PASS_THRESH.toFixed(0)} vs league avg</div>
     </div>
-    ${_qbPassingSVG(chart, name, season, metric)}
+    ${_qbPassingSVG(chart, name, season, metric, notePlayer)}
     ${metric==='rating' ? `<div class="qpc-legend">
       <span><i style="background:#2fae4e"></i>Better than average</span>
       <span><i style="background:#d8a51d"></i>Within average</span>
       <span><i style="background:#d33b2f"></i>Worse than average</span>
     </div>` : `<div class="qpc-legend"><span class="qpc-heat-key"></span>lighter = more ${QB_ZONE_METRICS[metric].short.toLowerCase()} from that zone</div>`}
     <div class="qpc-totals">
-      <div class="qpc-tile"><label>Passer Rating</label><b>${_qbNum(t.passer_rating,1)}</b></div>
-      <div class="qpc-tile"><label>Comp %</label><b>${_qbNum(t.comp_pct,1)}</b></div>
-      <div class="qpc-tile"><label>Yards</label><b>${t.yards!=null?Number(t.yards).toLocaleString():'—'}</b></div>
-      <div class="qpc-tile"><label>TD/INT</label><b>${tdInt}</b></div>
-      <div class="qpc-tile"><label>Attempts*</label><b>${t.attempts!=null?t.attempts:'—'}</b></div>
+      <div class="qpc-tile"><label>Passer Rating</label><b>${noteWrapHtml(escHtml(_qbNum(t.passer_rating,1)), { label:'Passer Rating', value:_qbNum(t.passer_rating,1), source:'qb_passing_chart', statKey:'passer_rating', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
+      <div class="qpc-tile"><label>Comp %</label><b>${noteWrapHtml(escHtml(_qbNum(t.comp_pct,1)), { label:'Completion Percentage', value:_qbNum(t.comp_pct,1), source:'qb_passing_chart', statKey:'comp_pct', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
+      <div class="qpc-tile"><label>Yards</label><b>${noteWrapHtml(escHtml(t.yards!=null?Number(t.yards).toLocaleString():'—'), { label:'Passing Yards', value:t.yards!=null?Number(t.yards).toLocaleString():'—', source:'qb_passing_chart', statKey:'yards', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
+      <div class="qpc-tile"><label>TD/INT</label><b>${noteWrapHtml(escHtml(tdInt), { label:'TD/INT', value:tdInt, source:'qb_passing_chart', statKey:'td_int', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
+      <div class="qpc-tile"><label>Attempts*</label><b>${noteWrapHtml(escHtml(t.attempts!=null?t.attempts:'—'), { label:'Located Attempts', value:t.attempts!=null?t.attempts:'—', source:'qb_passing_chart', statKey:'attempts', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
     </div>
     <div class="pcard-src">*Located pass attempts (excl. sacks, 2-pt) · depth via air yards, location via nflverse charting.</div>
   </div>`;

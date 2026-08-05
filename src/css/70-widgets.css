@@ -619,6 +619,22 @@
 .ps-pos-TE{color:#e8a24a;background:rgba(232,162,74,.14);}
 .ps-pos-K{color:#b98cdb;background:rgba(185,140,219,.14);}
 .ps-pos-DEF{color:#8fa3b8;background:rgba(143,163,184,.14);}
+.notes-browser-modal{max-width:720px;}
+.notes-browser-head .ps-search-ico .tc-ico{width:17px;height:17px;}
+.notes-browser-meta{padding:8px 14px 0;color:var(--muted);font-size:11px;font-weight:700;}
+.notes-browser-results{padding-top:8px;}
+.notes-browser-row{align-items:stretch;gap:0;padding:0;}
+.notes-browser-open{display:flex;align-items:flex-start;gap:10px;width:100%;padding:8px 10px;border:none;background:transparent;color:inherit;text-align:left;cursor:pointer;}
+.notes-browser-main{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0;}
+.notes-browser-top{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;}
+.notes-browser-team{font-size:10px;color:var(--muted);font-weight:800;margin-left:6px;}
+.notes-browser-preview{font-size:11px;color:var(--text);line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-align:left;}
+.notes-browser-tags{display:flex;gap:5px;flex-wrap:wrap;padding:0 10px 8px 57px;}
+.notes-browser-tag-wrap{display:inline-flex;align-items:center;gap:3px;max-width:240px;}
+.notes-browser-tag{font-size:9px;font-weight:800;color:var(--accent);background:rgba(61,155,255,.12);padding:2px 5px;border-radius:5px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border:none;cursor:pointer;}
+.notes-browser-tag-rm{width:16px;height:16px;border:none;border-radius:999px;background:var(--surface2);color:var(--muted);cursor:pointer;font-size:10px;line-height:1;display:flex;align-items:center;justify-content:center;}
+.notes-browser-tag-rm:hover{color:var(--text);}
+.notes-browser-badge{flex:none;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:var(--accent);}
 
 /* Team defense (D/ST) player card bits. */
 .pcard-hero-dst{object-fit:contain;padding:14px;background:rgba(255,255,255,.04);}

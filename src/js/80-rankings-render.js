@@ -128,6 +128,25 @@ function renderRankings(){
 
   let undraftedSeen=0, nextGapIdx=0, gapRemaining=(pickGaps[0]!=null?pickGaps[0]:-1);
   const rowChunks=[];
+  const rankBaseContext = activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${teamScoped?`${currentTeam} rankings`:'full rankings'}`
+    : `${teamScoped?`${currentTeam} rankings`:'full rankings'} · ${activeSeason}`;
+  const rankNoteContext = `${rankBaseContext}${advActive?` · adv metrics${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}`:''}`;
+  const rankValueHtml = (display, p, label, statKey, source)=> noteWrapHtml(display, {
+    label,
+    value: typeof display==='string' ? display.replace(/<[^>]+>/g,'').trim() : display,
+    source,
+    statKey,
+    context: rankNoteContext,
+    player: p,
+    team: p.team,
+    nav: { type:'rankings', season:String(activeSeason), scope: teamScoped?'team':'all', team: teamScoped?currentTeam:p.team, advanced: advActive, refinement: sumerRefinement||'', posFilter: rankPosFilter },
+  }, 'note-tag-hit');
+  const statCell = (v, p, label, statKey)=>{
+    if(!(v && v>0)) return '';
+    const txt = (+v)%1!==0?(+v).toFixed(1):(+v).toLocaleString();
+    return rankValueHtml(`<span class="num">${txt}</span>`, p, label, statKey, advActive?'rankings_advanced':'rankings');
+  };
   view.forEach(p=>{
     // emit a pick line right before the player who'd fall to your pick
     if(showPickLines && nextGapIdx<pickGaps.length && !p.drafted && undraftedSeen===gapRemaining){
@@ -160,19 +179,22 @@ function renderRankings(){
       statCells = sumerView.cols.map((label,ci)=>{
         const v=sumerValue(p,label);
         const isPct=sumerView.pct.has(label);
-        return `<td class="grp-adv${ci===0?' grp-start':''}">${v==null?'':`<span class="num">${fmtSumer(v,isPct)}</span>`}</td>`;
+        const txt = v==null ? '' : fmtSumer(v,isPct);
+        return `<td class="grp-adv${ci===0?' grp-start':''}">${txt?rankValueHtml(`<span class="num">${txt}</span>`, p, label, `sumer:${label}`, 'rankings_advanced'):''}</td>`;
       }).join('');
     } else {
       statCells =
-        `<td class="grp-rush">${cell(p.rushing_attempts)}</td><td class="grp-rush-mid">${cell(p.rushing_yards)}</td><td class="grp-rush-mid">${ypc?`<span class="num">${ypc}</span>`:''}</td><td class="grp-rush-end">${cell(p.rushing_tds)}</td>`+
-        `<td class="grp-rec">${cell(p.receiving_targets)}</td><td class="grp-rec-mid">${cell(p.receptions)}</td><td class="grp-rec-mid">${cell(p.receiving_yards)}</td><td class="grp-rec-end">${cell(p.receiving_tds)}</td>`+
-        `<td class="grp-pass">${cell(p.passing_attempts)}</td><td class="grp-pass-mid">${cell(p.passing_yards)}</td><td class="grp-pass-mid">${cell(p.passing_tds)}</td><td class="grp-pass-end">${cell(p.interceptions_thrown)}</td>`;
+        `<td class="grp-rush">${statCell(p.rushing_attempts,p,'Rush Attempts','rushing_attempts')}</td><td class="grp-rush-mid">${statCell(p.rushing_yards,p,'Rush Yards','rushing_yards')}</td><td class="grp-rush-mid">${ypc?rankValueHtml(`<span class="num">${ypc}</span>`, p, 'Yards Per Carry', 'ypc', 'rankings'):''}</td><td class="grp-rush-end">${statCell(p.rushing_tds,p,'Rush Touchdowns','rushing_tds')}</td>`+
+        `<td class="grp-rec">${statCell(p.receiving_targets,p,'Targets','receiving_targets')}</td><td class="grp-rec-mid">${statCell(p.receptions,p,'Receptions','receptions')}</td><td class="grp-rec-mid">${statCell(p.receiving_yards,p,'Receiving Yards','receiving_yards')}</td><td class="grp-rec-end">${statCell(p.receiving_tds,p,'Receiving Touchdowns','receiving_tds')}</td>`+
+        `<td class="grp-pass">${statCell(p.passing_attempts,p,'Pass Attempts','passing_attempts')}</td><td class="grp-pass-mid">${statCell(p.passing_yards,p,'Pass Yards','passing_yards')}</td><td class="grp-pass-mid">${statCell(p.passing_tds,p,'Pass Touchdowns','passing_tds')}</td><td class="grp-pass-end">${statCell(p.interceptions_thrown,p,'Interceptions Thrown','interceptions_thrown')}</td>`;
     }
+    const fptsTxt = p.fpts.toFixed(1);
+    const vorTxt = `${p.vor>0?'+':''}${p.vor!=null?p.vor.toFixed(1):'—'}`;
     rowChunks.push(`<tr class="${p.drafted?'drafted':''}">
-    <td class="c-ecr">${ecrTxt}</td>
-    <td class="c-tier">${tier!=null?`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`:''}</td>
-    <td class="fpts">${p.fpts.toFixed(1)}</td>
-    <td class="c-vor"><span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${p.vor>0?'+':''}${p.vor!=null?p.vor.toFixed(1):'—'}</span></td>
+    <td class="c-ecr">${ecrTxt!=='—'?rankValueHtml(ecrTxt, p, 'Expert Consensus Rank', 'ecr', 'rankings'):ecrTxt}</td>
+    <td class="c-tier">${tier!=null?rankValueHtml(`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`, p, 'Tier', 'ecr_tier', 'rankings'):''}</td>
+    <td class="fpts">${rankValueHtml(fptsTxt, p, 'Fantasy Points', 'fpts', 'rankings')}</td>
+    <td class="c-vor">${rankValueHtml(`<span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${vorTxt}</span>`, p, 'Value Over Replacement', 'vor', 'rankings')}</td>
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
     <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsPack(p),'rank-hs')}<span class="rank-name">${pNameText}</span></div></td>
     <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" alt="${pTeamAttr}" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${pTeamText}</td>

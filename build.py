@@ -95,6 +95,7 @@ def build(offline=False):
 # because the template is static HTML). Keep these identical to the JS `paths` map.
 _ICON_PATHS = {
     "search": '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+    "clipboard": '<rect x="8" y="3" width="8" height="4" rx="1"/><rect x="6" y="5" width="12" height="16" rx="2"/><path d="M9 10h6M9 14h6M9 18h4"/>',
     "chart": '<path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6"/>',
     "stadium": '<rect x="2.5" y="6" width="19" height="12" rx="6"/><ellipse cx="12" cy="12" rx="5.5" ry="3"/>',
     "trophy": ('<path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" fill="currentColor" stroke="none"/>'

@@ -361,7 +361,8 @@ function weekFilterPaceText(state, pid, mode){
 function weekFilterPaceButton(state, pid, mode){
   const text = weekFilterPaceText(state, pid, mode);
   if(!text) return '';
-  return `<span class="pace-info-wrap"><button class="pace-info-btn" onclick="toggleWeekFilterPace(this, ${pcardArg(text)})" aria-label="Show 17-game pace">i</button></span>`;
+  const target = noteTargetFromArgs(pid, '', currentTeam||'');
+  return `<span class="pace-info-wrap"${noteTagAttrs({ label:'17-game pace', value:text, source:'week_range_pace', statKey:'pace', context:`${activeSeason} week range`, player:target, team:target&&target.team })}><button class="pace-info-btn" onclick="toggleWeekFilterPace(this, ${pcardArg(text)})" aria-label="Show 17-game pace">i</button></span>`;
 }
 
 function isWeekFilterActive(state){

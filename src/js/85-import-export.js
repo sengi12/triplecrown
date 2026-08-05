@@ -41,6 +41,7 @@ function averageGroup(group){
 
 function loadProjections(data){
   const players=data.projections;
+  playerNotes = (data.playerNotes && typeof data.playerNotes==='object') ? data.playerNotes : {};
   // Group by player_id when present, else name+team. Only treat as "same player"
   // when BOTH id matches AND team matches (avoids merging a traded player's two teams).
   const useIds=players.some(p=>p.player_id!==undefined&&p.player_id!==null);
@@ -264,7 +265,7 @@ function buildOutput(){
       });
     }
   });
-  return {projections:out};
+  return {projections:out, playerNotes:playerNotes};
 }
 function dlFile(content,filename,mime){
   const b64=btoa(unescape(encodeURIComponent(content)));

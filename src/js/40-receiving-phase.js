@@ -221,8 +221,28 @@ function renderPassDerived(team,state,subTabs,metric){
     ${banner}
     <div class="pie-section">
       <div class="pie-wrap"><canvas id="derivedPieChart" width="150" height="150"></canvas>
-        <div class="pie-sub" id="derivedSub">${Math.round(qbPool).toLocaleString()} ${isYds?'yds':'rec'}</div></div>
+        <div class="pie-sub" id="derivedSub">${passDerivedSubHtml(state, metric, team)}</div></div>
       <div class="pie-controls" id="shareControls">${rows}</div></div></div>`;
+}
+
+function passPieSubHtml(state,totalTgts,team){
+  const noteTeam=String(team||currentTeam||'').toUpperCase();
+  const shown=String(totalTgts)+' targets';
+  const ctx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} target pool`
+    : `${activeSeason} target pool`;
+  return `${noteWrapHtml(escHtml(shown), { label:'Team Target Pool', value:shown, source:'projection_builder_receiving', statKey:'target_pool', context:ctx, team:noteTeam, relevance:'WR,TE,RB' }, 'note-tag-hit')}`;
+}
+
+function passDerivedSubHtml(state,metric,team){
+  const isYds=metric==='recyds';
+  const pool=isYds?teamRecYardsPool(state):teamRecPool(state);
+  const noteTeam=String(team||currentTeam||'').toUpperCase();
+  const shown=isYds?`${Math.round(pool).toLocaleString()} yds`:`${Math.round(pool)} rec`;
+  const ctx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} receiving pool`
+    : `${activeSeason} receiving pool`;
+  return `${noteWrapHtml(escHtml(shown), { label:isYds?'Team Receiving Yards Pool':'Team Receptions Pool', value:shown, source:'projection_builder_receiving', statKey:isYds?'receiving_yards_pool':'receptions_pool', context:ctx, team:noteTeam, relevance:'WR,TE,RB' }, 'note-tag-hit')}`;
 }
 
 // Distribute (or trim) the gap between the QBs' projected output and the receivers' sum,
@@ -322,7 +342,7 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
       Drag a share to 100% and others rebalance. Or edit <b>Tgts</b>/<b>Rec</b> directly — shares recompute.</div></div>
     <div class="pie-section">
       <div class="pie-wrap"><canvas id="pieChart" width="150" height="150"></canvas>
-        <div class="pie-sub" id="pieSub">${totalTgts} targets</div></div>
+        <div class="pie-sub" id="pieSub">${passPieSubHtml(state,totalTgts,team)}</div></div>
       <div class="pie-controls" id="shareControls">${rows}</div></div></div>`;
 }
 

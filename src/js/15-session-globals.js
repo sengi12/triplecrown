@@ -9,6 +9,7 @@
 const TC_STORE_KEY = 'triplecrown.session.v1';
 let _persistTimer = null;
 let _persistReady = false;   // becomes true after boot restore, so we don't save during load
+let playerNotes = {};        // player-note state keyed by canonical player key
 function persistAvailable(){
   try{ const k='__tc_test__'; localStorage.setItem(k,'1'); localStorage.removeItem(k); return true; }
   catch(e){ return false; }
@@ -21,10 +22,11 @@ function saveSession(){
   _persistTimer = setTimeout(()=>{
     try{
       const payload = {
-        v: 1,
+        v: 2,
         season: PROJ_SEASON,          // guard: only restore onto a matching-season seed
         savedAt: Date.now(),
         workingProj: workingProj,
+        playerNotes: playerNotes,
         scoringSettings: scoringSettings,
         rankFormat: rankFormat,
         scoringAxis: scoringAxis,
@@ -42,7 +44,7 @@ function loadSession(){
     const raw = localStorage.getItem(TC_STORE_KEY);
     if(!raw) return null;
     const p = JSON.parse(raw);
-    if(!p || p.v!==1) return null;
+    if(!p || (p.v!==1 && p.v!==2)) return null;
     return p;
   }catch(e){ return null; }
 }
@@ -65,6 +67,7 @@ function restoreSession(){
   scoringAxis = p.scoringAxis || scoringAxisOf(rankFormat);
   if(typeof p.scoringPanelOpen==='boolean') scoringPanelOpen = p.scoringPanelOpen;
   if(p.leagueSnapshot && p.leagueSnapshot.teams) leagueSnapshot = p.leagueSnapshot;
+  if(p.playerNotes && typeof p.playerNotes==='object') playerNotes = p.playerNotes;
   if(p.season===PROJ_SEASON && p.workingProj && Object.keys(p.workingProj).length){
     workingProj = p.workingProj;
     if(activeSeason==='proj') userProj = workingProj;
@@ -270,6 +273,84 @@ function scrubGhostRosters(){
 }
 function deepCopy(o){ return JSON.parse(JSON.stringify(o)); }
 function markDirty(){ if(importedSnapshot) dirtySinceImport = true; saveSession(); }
+
+function playerNoteKey(nameOrId, pos, team){
+  const posc = String(pos||'').toUpperCase();
+  if(posc==='DEF'){
+    const code = String(team||nameOrId||'').toUpperCase();
+    return code ? `def:${code}` : '';
+  }
+  const raw = String(nameOrId||'').trim();
+  if(/^\d+$/.test(raw)) return `pid:${raw}`;
+  let pid = '';
+  try{
+    if(typeof resolvePlayerId==='function') pid = resolvePlayerId(raw, posc) || resolvePlayerId(raw) || '';
+  }catch(e){}
+  if(pid) return `pid:${pid}`;
+  return `nm:${normName(raw)}|${posc}|${String(team||'').toUpperCase()}`;
+}
+function ensurePlayerNote(nameOrId, pos, team){
+  const key = playerNoteKey(nameOrId, pos, team);
+  if(!key) return null;
+  if(!playerNotes[key]){
+    playerNotes[key] = {
+      key,
+      pid: /^pid:/.test(key) ? key.slice(4) : '',
+      name: String(nameOrId||''),
+      pos: String(pos||''),
+      team: String(team||''),
+      text: '',
+      tags: [],
+      updatedAt: Date.now(),
+    };
+  }
+  const note = playerNotes[key];
+  if(nameOrId && !note.name) note.name = String(nameOrId);
+  if(pos && !note.pos) note.pos = String(pos);
+  if(team && !note.team) note.team = String(team);
+  return note;
+}
+function getPlayerNote(nameOrId, pos, team){
+  const key = playerNoteKey(nameOrId, pos, team);
+  return key ? (playerNotes[key] || null) : null;
+}
+function setPlayerNoteText(nameOrId, pos, team, text){
+  const note = ensurePlayerNote(nameOrId, pos, team);
+  if(!note) return null;
+  note.text = String(text==null?'':text);
+  note.updatedAt = Date.now();
+  markDirty();
+  return note;
+}
+function addPlayerNoteTag(nameOrId, pos, team, tag){
+  const note = ensurePlayerNote(nameOrId, pos, team);
+  if(!note || !tag) return null;
+  const clean = {
+    id: String(tag.id || (`tag:${Date.now()}:${Math.random().toString(36).slice(2,8)}`)),
+    label: String(tag.label||''),
+    value: String(tag.value||''),
+    source: String(tag.source||''),
+    statKey: String(tag.statKey||''),
+    context: String(tag.context||''),
+    capturedAt: tag.capturedAt || Date.now(),
+    nav: tag.nav && typeof tag.nav==='object' ? JSON.parse(JSON.stringify(tag.nav)) : null,
+  };
+  const dup = note.tags.find(t=>t.label===clean.label && t.value===clean.value && t.source===clean.source && t.statKey===clean.statKey);
+  if(!dup) note.tags.unshift(clean);
+  note.updatedAt = Date.now();
+  markDirty();
+  return note;
+}
+function removePlayerNoteTag(nameOrId, pos, team, tagId){
+  const note = getPlayerNote(nameOrId, pos, team);
+  if(!note || !tagId) return null;
+  const before = note.tags.length;
+  note.tags = note.tags.filter(t=>String(t.id)!==String(tagId));
+  if(note.tags.length===before) return note;
+  note.updatedAt = Date.now();
+  markDirty();
+  return note;
+}
 
 // ── Per-team undo history ──────────────────────────────────────────────────
 // Each team keeps its own stack of state snapshots so you can step back through

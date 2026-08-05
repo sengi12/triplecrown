@@ -110,11 +110,29 @@ function renderSharpLeague(){
     const cells = cols.map(c=>{
       if(c===projCol){
         const v=r._projScore, rk=r._projRank;
-        return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${v!=null?Number(v).toFixed(1):'—'}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
+        const txt = v!=null?Number(v).toFixed(1):'—';
+        return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${noteWrapHtml(escHtml(txt), {
+          label: c,
+          value: txt,
+          source: 'league_advanced',
+          statKey: sharpTable,
+          context: `${teamDisplayName(r.code)} · ${tbl.title} · ${advTeamSeason()} season`,
+          team: r.code,
+          relevance: noteRelevanceForTableKey(sharpTable),
+        }, 'note-tag-hit')}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
       }
       const srcCol=colSource[c]||c;
       const v=r.values?r.values[srcCol]:null, rk=r.ranks?r.ranks[srcCol]:null;
-      return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${fmtSharpVal(v, sharpColIsPct(tbl,c))}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
+      const txt = fmtSharpVal(v, sharpColIsPct(tbl,c));
+      return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${noteWrapHtml(escHtml(txt), {
+        label: c,
+        value: txt,
+        source: 'league_advanced',
+        statKey: sharpTable,
+        context: `${teamDisplayName(r.code)} · ${tbl.title} · ${advTeamSeason()} season`,
+        team: r.code,
+        relevance: noteRelevanceForTableKey(sharpTable),
+      }, 'note-tag-hit')}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
     }).join('');
     return `<tr><td class="sr-td-team"><span class="sr-td-team-inner"><img src="${NFL_LOGO(r.code)}" class="sr-logo" onerror="this.style.display='none'">${r.code}</span></td>${cells}</tr>`;
   }).join('');

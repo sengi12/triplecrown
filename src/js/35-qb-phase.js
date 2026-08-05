@@ -55,9 +55,7 @@ function renderPassing(team,state){
         </div>
         ${sRow('games_'+i,'Games Played',gms,Math.round(q.games_played||q.games||0),0,SEASON_GAMES,1,'var(--qb)')}`;
       }).join('')}
-      <div class="derived-note" id="qbWorkloadNote" style="${overBudget?'color:var(--warn)':''}">
-        Team QB-games: ${teamGames.toFixed(0)} of ${SEASON_GAMES}${overBudget?' ⚠️ over a full season — combined QB workload exceeds 17 games':''}
-      </div>
+      <div class="derived-note" id="qbWorkloadNote" style="${overBudget?'color:var(--warn)':''}">${qbWorkloadNoteHtml(teamGames, overBudget, team)}</div>
     </div>`;
   const games=Math.round(qb.games||0);
   return `${weekSlider}${workloadCard}<div class="card">
@@ -76,14 +74,14 @@ function renderPassing(team,state){
     ${sRow('patt','Pass Attempts',Math.round(qb.passing_attempts),Math.round(seed.passing_attempts||560),0,800,5)}
     ${sRow('pcomp','Completions',Math.round(qb.passing_completions),Math.round(seed.passing_completions||360),0,680,5)}
     ${sRow('int','Interceptions',Math.round(qb.interceptions_thrown),Math.round(seed.interceptions_thrown||10),0,40,1,'var(--danger)',true)}
-    <div class="derived-note" id="qbDerived">Comp%: ${compPct}% · YPA: ${ypa} · Yds/TD: ${qb.passing_tds>0?Math.round(qb.passing_yards/qb.passing_tds):'-'} · per game: ${perGame(qb,'passing_yards').toFixed(1)} yds</div>
+    <div class="derived-note" id="qbDerived">${qbDerivedHtml(qb, team)}</div>
     <div style="margin-top:13px;padding-top:11px;border-top:1px solid var(--border)">
       <div class="card-title">QB Rushing</div>
       ${sRow('qbry','Rush Yards',Math.round(qb.qb_rush_yards),Math.round(seed.rushing_yards||0),0,1400,10,'var(--rb)')}
       ${sRow('qbrtd','Rush TDs',Math.round(qb.qb_rush_tds),Math.round(seed.rushing_tds||0),0,22,1,'var(--rb)')}
       ${sRow('qbratt','Rush Attempts',Math.round(qb.qb_rush_attempts),Math.round(seed.rushing_attempts||0),0,200,5,'var(--rb)')}
     </div>
-    ${isMulti?`<div class="derived-note" id="qbTeamTotals" style="margin-top:10px">${qbTotalsText(state)}</div>`:''}
+    ${isMulti?`<div class="derived-note" id="qbTeamTotals" style="margin-top:10px">${qbTotalsText(state,{asHtml:true,team})}</div>`:''}
     <div class="stats-grid">
       <div class="stat-box"><div class="stat-box-label">Pass Yds</div><div class="stat-box-val" style="color:var(--qb)" id="sb-py">${Math.round(qb.passing_yards).toLocaleString()}</div></div>
       <div class="stat-box"><div class="stat-box-label">Pass TDs</div><div class="stat-box-val" style="color:var(--qb)" id="sb-ptd">${Math.round(qb.passing_tds)}</div></div>
@@ -93,13 +91,42 @@ function renderPassing(team,state){
       <div class="stat-box"><div class="stat-box-label">Attempts</div><div class="stat-box-val" id="sb-att">${Math.round(qb.passing_attempts)}</div></div>
     </div></div>`;
 }
-function qbTotalsText(state){
+function qbDerivedHtml(qb, team){
+  const cp=qb.passing_attempts>0?(qb.passing_completions/qb.passing_attempts*100).toFixed(1):'0';
+  const ypa=qb.passing_attempts>0?(qb.passing_yards/qb.passing_attempts).toFixed(2):'-';
+  const ytd=qb.passing_tds>0?Math.round(qb.passing_yards/qb.passing_tds):'-';
+  const ypg=perGame(qb,'passing_yards').toFixed(1);
+  const noteTeam=String((qb&&qb.team)||team||currentTeam||'').toUpperCase();
+  const notePlayer=noteTargetFromArgs((qb&&((qb.player_id)||qb.name))||'', 'QB', noteTeam);
+  const ctx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} QB derived`
+    : `${activeSeason} QB derived`;
+  return `Comp%: ${noteWrapHtml(escHtml(cp+'%'), { label:'Completion Percentage', value:cp+'%', source:'projection_builder_qb_derived', statKey:'completion_pct', context:ctx, player:notePlayer, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · YPA: ${noteWrapHtml(escHtml(String(ypa)), { label:'Yards Per Attempt', value:String(ypa), source:'projection_builder_qb_derived', statKey:'yards_per_attempt', context:ctx, player:notePlayer, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · Yds/TD: ${noteWrapHtml(escHtml(String(ytd)), { label:'Yards Per Passing TD', value:String(ytd), source:'projection_builder_qb_derived', statKey:'yards_per_td', context:ctx, player:notePlayer, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · per game: ${noteWrapHtml(escHtml(ypg+' yds'), { label:'Passing Yards Per Game', value:ypg+' yds', source:'projection_builder_qb_derived', statKey:'pass_yds_per_game', context:ctx, player:notePlayer, team:noteTeam, relevance:'QB' }, 'note-tag-hit')}`;
+}
+
+function qbWorkloadNoteHtml(teamGames, overBudget, team){
+  const noteTeam=String(team||currentTeam||'').toUpperCase();
+  const ctx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} QB workload`
+    : `${activeSeason} QB workload`;
+  const shown=`${teamGames.toFixed(0)} of ${SEASON_GAMES}`;
+  const tagged=noteWrapHtml(escHtml(shown), { label:'Team QB Games', value:shown, source:'projection_builder_qb_workload', statKey:'team_qb_games', context:ctx, team:noteTeam, relevance:'QB' }, 'note-tag-hit');
+  return `Team QB-games: ${tagged}${overBudget?' ⚠️ over a full season — combined QB workload exceeds 17 games':''}`;
+}
+
+function qbTotalsText(state, opts){
   const qbs = state.qbs.filter(q=> (q.games||0) > 0);
   const y=qbs.reduce((s,q)=>s+q.passing_yards,0);
   const t=qbs.reduce((s,q)=>s+q.passing_tds,0);
   const a=qbs.reduce((s,q)=>s+q.passing_attempts,0);
   const i=qbs.reduce((s,q)=>s+q.interceptions_thrown,0);
-  return `All QBs combined: ${Math.round(y).toLocaleString()} yds · ${Math.round(t)} TDs · ${Math.round(a)} att · ${Math.round(i)} INTs`;
+  const base=`All QBs combined: ${Math.round(y).toLocaleString()} yds · ${Math.round(t)} TDs · ${Math.round(a)} att · ${Math.round(i)} INTs`;
+  if(!opts || !opts.asHtml) return base;
+  const noteTeam=String((opts&&opts.team)||currentTeam||'').toUpperCase();
+  const ctx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} QB totals`
+    : `${activeSeason} QB totals`;
+  return `All QBs combined: ${noteWrapHtml(escHtml(Math.round(y).toLocaleString()+' yds'), { label:'Combined Passing Yards', value:Math.round(y).toLocaleString()+' yds', source:'projection_builder_qb_totals', statKey:'combined_pass_yards', context:ctx, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · ${noteWrapHtml(escHtml(Math.round(t)+' TDs'), { label:'Combined Passing TDs', value:Math.round(t)+' TDs', source:'projection_builder_qb_totals', statKey:'combined_pass_tds', context:ctx, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · ${noteWrapHtml(escHtml(Math.round(a)+' att'), { label:'Combined Pass Attempts', value:Math.round(a)+' att', source:'projection_builder_qb_totals', statKey:'combined_pass_attempts', context:ctx, team:noteTeam, relevance:'QB' }, 'note-tag-hit')} · ${noteWrapHtml(escHtml(Math.round(i)+' INTs'), { label:'Combined Interceptions', value:Math.round(i)+' INTs', source:'projection_builder_qb_totals', statKey:'combined_interceptions', context:ctx, team:noteTeam, relevance:'QB' }, 'note-tag-hit')}`;
 }
 function setActiveQB(idx){userProj[currentTeam].activeQB=idx;saveSession();renderContent();}
 

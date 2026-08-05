@@ -3,10 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 function liveQB(state,idx,team,changedKey){
   const q=state.qbs[idx];
-  const cp=q.passing_attempts>0?(q.passing_completions/q.passing_attempts*100).toFixed(1):'0';
-  const ypa=q.passing_attempts>0?(q.passing_yards/q.passing_attempts).toFixed(2):'-';
-  const ytd=q.passing_tds>0?Math.round(q.passing_yards/q.passing_tds):'-';
-  const d=document.getElementById('qbDerived'); if(d) d.textContent=`Comp%: ${cp}% · YPA: ${ypa} · Yds/TD: ${ytd} · per game: ${perGame(q,'passing_yards').toFixed(1)} yds`;
+  const d=document.getElementById('qbDerived'); if(d) d.innerHTML=qbDerivedHtml(q,team);
   const m={'sb-py':Math.round(q.passing_yards).toLocaleString(),'sb-ptd':Math.round(q.passing_tds),'sb-int':Math.round(q.interceptions_thrown),
     'sb-ry':Math.round(q.qb_rush_yards),'sb-rtd':Math.round(q.qb_rush_tds),'sb-att':Math.round(q.passing_attempts)};
   Object.entries(m).forEach(([id,v])=>{const e=document.getElementById(id);if(e)e.textContent=v;});
@@ -15,7 +12,7 @@ function liveQB(state,idx,team,changedKey){
     pcomp:seed.passing_completions||360,int:seed.interceptions_thrown||10,
     qbry:seed.rushing_yards||0,qbrtd:seed.rushing_tds||0,qbratt:seed.rushing_attempts||0};
   if(changedKey){const sd=document.getElementById(`sd-${changedKey}`);if(sd)sd.innerHTML=mkDelta(state.qbs[idx][({py:'passing_yards',ptd:'passing_tds',patt:'passing_attempts',pcomp:'passing_completions',int:'interceptions_thrown',qbry:'qb_rush_yards',qbrtd:'qb_rush_tds',qbratt:'qb_rush_attempts'})[changedKey]],bases[changedKey]||0,changedKey==='int');}
-  const tot=document.getElementById('qbTeamTotals'); if(tot) tot.textContent=qbTotalsText(state);
+  const tot=document.getElementById('qbTeamTotals'); if(tot) tot.innerHTML=qbTotalsText(state,{asHtml:true,team});
 }
 
 // Update the workload card text (per-QB sub line, team-games budget, the active QB's
@@ -33,7 +30,7 @@ function updateWorkloadUI(state,qi,team){
   const note=document.getElementById('qbWorkloadNote');
   if(note){
     note.style.color = over?'var(--warn)':'';
-    note.textContent=`Team QB-games: ${teamGames.toFixed(0)} of ${SEASON_GAMES}`+(over?' ⚠️ over a full season — combined QB workload exceeds 17 games':'');
+    note.innerHTML=qbWorkloadNoteHtml(teamGames, over, team);
   }
 }
 
@@ -76,7 +73,7 @@ function livePassTargets(state,team){
     const sl=document.querySelector(`input.sl[data-key="ps_${i}"]`);
     if(sl){sl.value=pct;setFill(sl,PCOLORS[i%PCOLORS.length]);}
   });
-  const sub=document.getElementById('pieSub'); if(sub) sub.textContent=`${totalTgts} targets`;
+  const sub=document.getElementById('pieSub'); if(sub) sub.innerHTML=passPieSubHtml(state,totalTgts,team);
   reorderShareBlocks('shareControls','pblk-',state.passing_shares,'share');
 }
 
@@ -109,9 +106,9 @@ function liveTDRows(pctId,volId,shares,totalTDs,keyPrefix,editable){
 }
 
 function liveRush(state,team){
-  const d=document.getElementById('rushDerived'); if(d) d.textContent=rushNote(state);
+  const d=document.getElementById('rushDerived'); if(d) d.innerHTML=rushNote(state,{asHtml:true,team});
   const lbl=document.getElementById('rushTotalLbl');
-  if(lbl) lbl.textContent=`${state.rushing.total_attempts} att / ${(state.rushing.total_yards||0).toLocaleString()} yds`;
+  if(lbl) lbl.innerHTML=rushTotalLabelHtml(state,team);
   liveRushRows(state,team);
 }
 
@@ -130,7 +127,7 @@ function liveRushRows(state,team){
     if(sl){sl.value=pct;setFill(sl,PCOLORS[i%PCOLORS.length]);}
   });
   const lbl=document.getElementById('rushTotalLbl');
-  if(lbl) lbl.textContent=`${r.total_attempts} att / ${(r.total_yards||0).toLocaleString()} yds`;
+  if(lbl) lbl.innerHTML=rushTotalLabelHtml(state,team);
   if(rushingSubTab==='carries') updatePie(r.shares.map(p=>p.share));
   reorderShareBlocks('rushShareControls','rblk-',r.shares,'share');
   // keep the team total-yards slider in sync (carries/ypc edits change the sum)
