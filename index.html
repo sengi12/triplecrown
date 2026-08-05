@@ -14167,6 +14167,7 @@ function syncAppChrome(){
 async function resetAll(){
   if(!confirm('Reset all projections and pull the latest projections from Sleeper?\n\nThis clears your current edits and imported/loaded data.')) return;
   userProj={}; workingProj=userProj; importedSnapshot=null; dirtySinceImport=false;
+  playerNotes={};
   currentTeam=null; undoStacks={};
   clearSession();   // wipe the saved session so the fresh pull isn't overwritten on next boot
   // refreshFromSleeper resets the working set to the fresh seed, re-renders, and toasts.
