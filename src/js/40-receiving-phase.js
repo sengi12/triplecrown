@@ -160,6 +160,8 @@ function renderPassDerived(team,state,subTabs,metric){
   const order=state.passing_shares.map((p,i)=>i).sort((a,b)=>(state.passing_shares[b][field]||0)-(state.passing_shares[a][field]||0));
   const rows=order.map(i=>{
     const p=state.passing_shares[i]; const col=PCOLORS[i%PCOLORS.length];
+    const nameAttr = escAttr(p.name);
+    const nameText = escHtml(p.name);
     const sh=p[field]||0; const pct=(sh*100).toFixed(1);
     const v=Math.round(sh*qbPool);
     const projTgts=Math.round(p.share*totalTgts);
@@ -168,7 +170,7 @@ function renderPassDerived(team,state,subTabs,metric){
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rec')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${weekFilterPaceButton(state,p.player_id,'rec')}
         <span class="share-pct" id="dp-${i}">${pct}%</span>
         <span class="share-vol" id="dv-${i}">${v.toLocaleString()} ${label}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -257,6 +259,8 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
   const rows=order.map(i=>{
     const p=state.passing_shares[i];
     const col=PCOLORS[i%PCOLORS.length];
+    const nameAttr = escAttr(p.name);
+    const nameText = escHtml(p.name);
     const pct=(p.share*100).toFixed(1);
     const projTgts=Math.round(p.share*totalTgts);
     const projRec=Math.round(projTgts*(p.catch_rate||0.65));
@@ -267,10 +271,10 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span>
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rec')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${weekFilterPaceButton(state,p.player_id,'rec')}
         <span class="share-pct" id="pp-${i}">${pct}%</span>
         <span class="share-vol" id="pt-${i}">${projTgts} tgt</span>
-        ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking('${p.player_id}','${p.pos}')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
+        ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},${pcardArg(p.pos)})" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
       </div>
       <div class="slider-track">
         <div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -340,12 +344,14 @@ function renderPassTDs(team,state,totalTDs,subTabs){
   const rows=order.map(i=>{
     const p=state.passing_shares[i];
     const col=PCOLORS[i%PCOLORS.length];
+    const nameAttr = escAttr(p.name);
+    const nameText = escHtml(p.name);
     const pct=(p.td_share*100).toFixed(1);
     const projTDs=(p.td_share*totalTDs).toFixed(1);
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>
         <span class="share-pct" id="tdp-${i}">${pct}%</span>
         <span class="share-vol">proj TDs</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>

@@ -51,7 +51,7 @@ function renderPassing(team,state){
             <div style="font-size:10px;color:var(--muted)" id="wl-sub-${i}">${gms} games · ${perGame(q,'passing_yards').toFixed(1)} pass yds/gm</div>
           </div>
           ${!active?`<button class="btn btn-ghost btn-sm" onclick="setActiveQB(${i})">edit</button>`:''}
-          ${activeSeason!=='proj'&&q.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking('${q.player_id}','QB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
+          ${activeSeason!=='proj'&&q.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(q.player_id)},'QB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
         </div>
         ${sRow('games_'+i,'Games Played',gms,Math.round(q.games_played||q.games||0),0,SEASON_GAMES,1,'var(--qb)')}`;
       }).join('')}

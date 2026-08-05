@@ -97,6 +97,8 @@ function psRender(q){
   box.innerHTML = top.map((r,i)=>{
     const e = r.e;
     const isDef = e.pos==='DEF';
+    const nameText = escHtml(e.name);
+    const posText = escHtml(e.pos||'—');
     const img = (isDef && e.team)
       ? imgTag(NFL_LOGO(String(e.team).toUpperCase()), 'ps-hs ps-def')
       : imgTag(hsPack({player_id:e.pid, name:e.name, pos:e.pos}), 'ps-hs');
@@ -104,8 +106,8 @@ function psRender(q){
     return `<button class="ps-row${i===0?' ps-active':''}" data-pid="${escAttr(e.pid)}" data-pos="${escAttr(e.pos)}" data-team="${escAttr(e.team)}"
                     onclick="psPick(this)">
       ${img}
-      <span class="ps-nm">${e.name}</span>
-      <span class="ps-meta">${logo}<span class="ps-pos ps-pos-${e.pos}">${e.pos||'—'}</span></span>
+      <span class="ps-nm">${nameText}</span>
+      <span class="ps-meta">${logo}<span class="ps-pos ps-pos-${e.pos}">${posText}</span></span>
     </button>`;
   }).join('');
 }

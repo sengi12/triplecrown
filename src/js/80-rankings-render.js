@@ -139,6 +139,10 @@ function renderRankings(){
     const ecrTxt = p.ecr!=null ? p.ecr : '—';
     const tier = p.ecr_tier;
     const ypc = p.ypc>0 ? p.ypc.toFixed(1) : '';
+    const pNameAttr = escAttr(p.name);
+    const pNameText = escHtml(p.name);
+    const pTeamAttr = escAttr(p.team);
+    const pTeamText = escHtml(p.team);
     let contractCells='';
     if(isDynasty){
       const ageTxt = p.age!=null ? p.age : '';
@@ -170,8 +174,8 @@ function renderRankings(){
     <td class="fpts">${p.fpts.toFixed(1)}</td>
     <td class="c-vor"><span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${p.vor>0?'+':''}${p.vor!=null?p.vor.toFixed(1):'—'}</span></td>
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
-    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsPack(p),'rank-hs')}<span class="rank-name">${p.name}</span></div></td>
-    <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${p.team}</td>
+    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsPack(p),'rank-hs')}<span class="rank-name">${pNameText}</span></div></td>
+    <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" alt="${pTeamAttr}" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${pTeamText}</td>
     ${contractCells}
     ${statCells}
   </tr>`);

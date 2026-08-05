@@ -380,14 +380,16 @@ function refreshLeagueSyncBtn(){
   // The League entry point lives in the ☰ menu now; show the synced league's icon + name
   // there so the menu doubles as the sync indicator the old header button used to be.
   const label = leagueSnapshot
-    ? `${laLeagueIcon(leagueSnapshot,'la-btn-av')} ${leagueSnapshot.name}`
+    ? `${laLeagueIcon(leagueSnapshot,'la-btn-av')} ${escHtml(leagueSnapshot.name)}`
     : TC_ICON('stadium')+' League Analyzer';
   const m=document.getElementById('menuLeagueView');
   if(m) m.innerHTML = label;
   // Kept for any build that still renders the old header button.
   const b=document.getElementById('leagueSyncBtn');
   if(b){ b.innerHTML = leagueSnapshot ? label : '\ud83d\udd17 My League';
-         b.classList.toggle('synced', !!leagueSnapshot); }
+      if(b.classList && typeof b.classList.toggle==='function') b.classList.toggle('synced', !!leagueSnapshot);
+      else if(b.classList && leagueSnapshot && typeof b.classList.add==='function') b.classList.add('synced');
+      else if(b.classList && !leagueSnapshot && typeof b.classList.remove==='function') b.classList.remove('synced'); }
 }
 
 // ── Remembered Sleeper profile (leagues for quick switching) ─────────────────
@@ -449,12 +451,12 @@ function laSavedLeaguesHTML(){
   if(!others.length) return '';
   const who = p.user && p.user.display_name ? p.user.display_name : (p.username||'your account');
   return `<div class="la-saved">
-    <div class="la-saved-title">Your other leagues <span class="la-saved-who">— ${escAttr(who)}</span></div>
+    <div class="la-saved-title">Your other leagues <span class="la-saved-who">— ${escHtml(who)}</span></div>
     <div class="la-league-list">
       ${others.map(lg=>`
         <button class="la-league" ${laState.busy?'disabled':''}
-                onclick="laSyncSavedLeague('${escAttr(lg.league_id)}')">
-          <b>${escAttr(lg.name||'League')}</b>
+                onclick="laSyncSavedLeague('${escJsSingle(lg.league_id)}')">
+          <b>${escHtml(lg.name||'League')}</b>
           <span>${lg.total_rosters||'?'}-team · ${lg.type===2?'dynasty':lg.type===1?'keeper':'redraft'}${lg.sf?' · SF':''}</span>
         </button>`).join('')}
     </div>
@@ -803,7 +805,7 @@ function renderLeagueAnalyzer(){
             <button class="btn btn-accent" ${laState.busy?'disabled':''} onclick="laSubmitUsername()">${laState.busy?'Looking up…':'Find my leagues'}</button>
           </div>
           ${window._laLinkedLeague?`<div class="la-linked">or <button class="btn btn-sm btn-accent" ${laState.busy?'disabled':''}
-            onclick="laTakeSnapshot(window._laLinkedLeague.id)">${TC_ICON("link")} Sync ${window._laLinkedLeague.name}</button>
+            onclick="laTakeSnapshot(window._laLinkedLeague.id)">${TC_ICON("link")} Sync ${escHtml(window._laLinkedLeague.name)}</button>
             <span class="la-linked-note">(the league linked on your draft/rankings page)</span></div>`:''}
           ${laSavedLeaguesHTML()}`
         :`
@@ -811,14 +813,14 @@ function renderLeagueAnalyzer(){
           <div class="la-league-list">
             ${laState.leagues.map((lg,i)=>`
               <button class="la-league" ${laState.busy?'disabled':''} onclick="laPickLeague(${i})">
-                <b>${lg.name}</b>
+                <b>${escHtml(lg.name)}</b>
                 <span>${lg.total_rosters}-team · ${(lg.settings&&lg.settings.type)===2?'dynasty':(lg.settings&&lg.settings.type)===1?'keeper':'redraft'}
                   ${ (lg.roster_positions||[]).includes('SUPER_FLEX')?' · SF':'' }${lg.stale?` <span class="la-stale-tag">last active ${lg.staleSeason}</span>`:''}</span>
               </button>`).join('')}
           </div>
           <button class="btn btn-ghost btn-sm" onclick="laChangeLeague()">← different username</button>`}
         ${laState.busy&&laState.step==='pick'?`<div class="la-busy">Taking snapshot…</div>`:''}
-        ${laState.error?`<div class="la-error">${laState.error}</div>`:''}
+        ${laState.error?`<div class="la-error">${escHtml(laState.error)}</div>`:''}
       </div>`;
     return;
   }
@@ -827,7 +829,7 @@ function renderLeagueAnalyzer(){
   const stamp=`${taken.toLocaleDateString(undefined,{month:'short',day:'numeric'})} ${taken.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`;
   const fmt=[`${s.teams}-team`, s.superflex?'Superflex':'1QB', s.tep?'TEP':null].filter(Boolean).join(' · ');
   host.innerHTML=`
-    <div class="team-header"><div><div class="team-abbr la-hdr">${laLeagueIcon(s,'la-lg-av')}<span class="la-hdr-name">${s.name}</span>${laSeasonPicker(s)}</div>
+    <div class="team-header"><div><div class="team-abbr la-hdr">${laLeagueIcon(s,'la-lg-av')}<span class="la-hdr-name">${escHtml(s.name)}</span>${laSeasonPicker(s)}</div>
       <div class="team-qb-name">${fmt} · snapshot taken <b>${stamp}</b>
         ${laHistoricalSeason()
           ? (laSeasonLoading()
@@ -860,7 +862,7 @@ function laRostersView(s){
   const opts = [`<option value="all" ${sel==='all'?'selected':''}>All teams (${teams.length})</option>`]
     .concat(teams.map(t=>{
       const me = s.myUserId && t.ownerId===s.myUserId ? '\u2605 ' : '';
-      return `<option value="${t.rosterId}" ${String(t.rosterId)===String(sel)?'selected':''}>${me}${escAttr(t.teamName)}</option>`;
+      return `<option value="${t.rosterId}" ${String(t.rosterId)===String(sel)?'selected':''}>${me}${escHtml(t.teamName)}</option>`;
     })).join('');
   return `<div class="la-roster-pick">
       <label class="la-roster-pick-lbl" for="laRosterPick">Show</label>
@@ -904,15 +906,15 @@ function laTeamCard(t,s){
   return `<div class="la-card ${mine?'mine':''}">
     <div class="la-card-head">
       ${laTeamIcon(t,'la-tm-av-sm')}
-      <div class="la-team la-clickteam" onclick="laViewTeam(${t.rosterId})" title="View this team\u2019s analysis">${mine?'\u2605 ':''}${t.teamName}${t.isChampion?` <span class="la-champ" title="${leagueSnapshot.season} champion">${TC_ICON('trophy','tc-ico-champ')}</span>`:''}</div>
-      <div class="la-owner">@${t.owner} · ${t.wins}-${t.losses}</div>
+      <div class="la-team la-clickteam" onclick="laViewTeam(${t.rosterId})" title="View this team\u2019s analysis">${mine?'\u2605 ':''}${escHtml(t.teamName)}${t.isChampion?` <span class="la-champ" title="${leagueSnapshot.season} champion">${TC_ICON('trophy','tc-ico-champ')}</span>`:''}</div>
+      <div class="la-owner">@${escHtml(t.owner)} · ${t.wins}-${t.losses}</div>
       <div class="la-total" title="Sum of player + pick dynasty values">${total}</div>
     </div>
     <div class="la-players">
       ${valued.map(p=>`<div class="la-p">
         <span class="rt-slot ${slotClass(p.pos)}">${p.pos}</span>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name,p.pos,p.team||'')}">${laPlayerImg(p)}</span>
-        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${p.name}</span>${laCliffMark(p.name,p.pos)}
+        <span class="share-name clickable-player" title="${escAttr(p.name)}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${escHtml(p.name)}</span>${laCliffMark(p.name,p.pos)}
         <span class="team-header"><img src="${NFL_LOGO(p.team)}" class="team-logo-sm" alt="${p.team}"</span>
         <span class="la-pval">${p.v}</span></div>`).join('')}
       ${depth.length?`<div class="la-depth">+ ${depth.length} unvalued depth</div>`:''}
@@ -1056,7 +1058,7 @@ function laCompareView(s){
         const mine=s.myUserId && r.t.ownerId===s.myUserId;
         const cell=(c,v)=>`<td class="${laQuartile(ranks[c][i],n)}"><b>${fmtV(v)}</b><span class="la-rk">#${ranks[c][i]}</span></td>`;
         return `<tr class="${mine?'mine':''}">
-          <td class="la-cmp-team la-clickteam" onclick="laViewTeam(${r.t.rosterId})" title="View ${r.t.teamName}\u2019s analysis">${laTeamIcon(r.t,'la-tm-av-sm')}${mine?'\u2605 ':''}${r.t.teamName}${r.t.isChampion?` <span class="la-champ" title="${s.season} champion">${TC_ICON('trophy','tc-ico-champ')}</span>`:''}<span class="la-cmp-own">@${r.t.owner}</span></td>
+          <td class="la-cmp-team la-clickteam" onclick="laViewTeam(${r.t.rosterId})" title="View ${escAttr(r.t.teamName)}\u2019s analysis">${laTeamIcon(r.t,'la-tm-av-sm')}${mine?'\u2605 ':''}${escHtml(r.t.teamName)}${r.t.isChampion?` <span class="la-champ" title="${s.season} champion">${TC_ICON('trophy','tc-ico-champ')}</span>`:''}<span class="la-cmp-own">@${escHtml(r.t.owner)}</span></td>
           ${POS.map(p=>cell(p,r.by[p])).join('')}
           ${withPicks?cell('picks',r.picks):''}
           ${cell('total',r.total)}</tr>`;
@@ -1132,8 +1134,8 @@ function laBestAvailView(s){
         <span class="la-ba-rk">${i+1}</span>
         <span class="rt-slot ${slotClass(r.pos)}">${r.pos}</span>
         <span class="clickable-player" onclick="${pcardOnclick(r.name,r.pos,r.team||'')}">${laPlayerImg(r)}</span>
-        <span class="la-ba-name clickable-player" onclick="${pcardOnclick(r.name,r.pos,r.team||'')}">${r.name}</span>
-        <span class="la-ba-team">${r.team}</span>
+        <span class="la-ba-name clickable-player" onclick="${pcardOnclick(r.name,r.pos,r.team||'')}">${escHtml(r.name)}</span>
+        <span class="la-ba-team">${escHtml(r.team)}</span>
         <span class="la-ba-val">${r.v}</span>
         <span class="la-ba-fpts">${r.fpts?r.fpts.toFixed(0):'–'}</span></div>`).join('')}
     </div>
@@ -1482,13 +1484,13 @@ function laPosRankOf(s, name, pos){
 
 // ── Rendering ────────────────────────────────────────────────────────────────
 function laAssetRow(x, side, inTrade){
-  const btn=`<button class="la-tc-btn ${inTrade?'rm':''}" onclick="laTradeToggle('${side}','${x.key}')">${inTrade?'\u2715':'+'}</button>`;
+  const btn=`<button class="la-tc-btn ${inTrade?'rm':''}" onclick="laTradeToggle('${side}','${escJsSingle(x.key)}')">${inTrade?'\u2715':'+'}</button>`;
   if(x.type==='k')
     return `<div class="la-tc-row"><span class="la-pick">${x.label}${x.v?` <b>${x.v}</b>`:''}</span><span class="la-tc-fill"></span>${btn}</div>`;
   return `<div class="la-tc-row">
     <span class="rt-slot ${slotClass(x.pos)}">${x.pos}</span>
     <span class="clickable-player" onclick="${pcardOnclick(x.id||x.name,x.pos,x.team||'')}">${laPlayerImg(x)}</span>
-    <span class="la-tc-nmwrap"><span class="share-name clickable-player la-tc-nm" title="${x.name}" onclick="${pcardOnclick(x.id||x.name,x.pos,x.team||'')}">${x.name}</span>
+    <span class="la-tc-nmwrap"><span class="share-name clickable-player la-tc-nm" title="${escAttr(x.name)}" onclick="${pcardOnclick(x.id||x.name,x.pos,x.team||'')}">${escHtml(x.name)}</span>
       <span class="la-tc-meta">${x.posRank?`${x.pos}${x.posRank}`:''}${x.age!=null?`${x.posRank?' \u00b7 ':''}<span class="${laAgeCliffClass(x.pos,x.age)}">${x.age.toFixed(0)}yo</span>`:''}</span></span>
     <span class="la-pval">${x.v||'\u2013'}</span>${btn}</div>`;
 }
@@ -1502,12 +1504,12 @@ function laTradeView(s){
   const v=laTcVerdict(givenA.map(x=>x.v), givenB.map(x=>x.v));
   const started=givenA.length||givenB.length;
   const sel=(side,cur)=>`<select class="la-tc-sel" onchange="laTradeSetTeam('${side}',this.value)">
-    ${s.teamList.map(t=>`<option value="${t.rosterId}" ${t.rosterId===cur?'selected':''}>${s.myUserId&&t.ownerId===s.myUserId?'\u2605 ':''}${t.teamName}</option>`).join('')}</select>`;
+    ${s.teamList.map(t=>`<option value="${t.rosterId}" ${t.rosterId===cur?'selected':''}>${s.myUserId&&t.ownerId===s.myUserId?'\u2605 ':''}${escHtml(t.teamName)}</option>`).join('')}</select>`;
   // verdict bar: 50/50 = dead even; the fill leans toward whichever side gives MORE.
   const lean=started ? Math.max(8,Math.min(92, 50 - (v.diff/(v.effA+v.effB||1))*100 )) : 50;
   let verdictTxt='Add assets to both sides';
   if(started){
-    const nameA=poolA.team.teamName, nameB=poolB.team.teamName;
+    const nameA=escHtml(poolA.team.teamName), nameB=escHtml(poolB.team.teamName);
     verdictTxt = v.fair ? `${TC_ICON("check")} Fair trade <span class="la-vd-sub">(within \u00b1${v.band})</span>`
       : (v.diff>0 ? `<b>${nameB}</b> wins by ${Math.abs(v.diff).toFixed(0)}`
                   : `<b>${nameA}</b> wins by ${Math.abs(v.diff).toFixed(0)}`);
@@ -1520,9 +1522,9 @@ function laTradeView(s){
                                (shortSide==='a'?givenA:givenB).map(x=>x.v),
                                (shortSide==='a'?givenB:givenA).map(x=>x.v), shortSide);
     if(sugs.length){
-      sugHtml=`<div class="la-sug"><span class="la-sug-lbl">${(shortSide==='a'?poolA:poolB).team.teamName} evens it with:</span>
-        ${sugs.map(x=>`<button class="la-sug-chip" onclick="${x.adds.map(a=>`laTradeToggle('${shortSide}','${a.key}')`).join(';')}">
-          + ${x.adds.map(a=>a.type==='k'?a.label:a.name).join(' + ')} <b>${x.adds.reduce((t,a)=>t+a.v,0)}</b></button>`).join('')}</div>`;
+      sugHtml=`<div class="la-sug"><span class="la-sug-lbl">${escHtml((shortSide==='a'?poolA:poolB).team.teamName)} evens it with:</span>
+        ${sugs.map(x=>`<button class="la-sug-chip" onclick="${x.adds.map(a=>`laTradeToggle('${shortSide}','${escJsSingle(a.key)}')`).join(';')}">
+          + ${escHtml(x.adds.map(a=>a.type==='k'?a.label:a.name).join(' + '))} <b>${x.adds.reduce((t,a)=>t+a.v,0)}</b></button>`).join('')}</div>`;
     } else {
       sugHtml=`<div class="la-sug la-sug-none">No single addition gets this fair \u2014 the gap needs a real piece, not scraps.</div>`;
     }
@@ -1532,12 +1534,12 @@ function laTradeView(s){
   const fndHtml = fnd.proposals.length ? fnd.proposals.map(p=>`
     <div class="la-fnd-row">
       <span class="la-fnd-lane la-lane-${p.lane}" title="${LA_LANE_TIP[p.lane]}">${LA_LANE_LABEL[p.lane]}</span>
-      <span class="la-fnd-deal">${p.buy?'<span class="la-fnd-gem" title="Breakout-window buy: young player (2nd-yr TE/QB, 3rd-yr WR window) priced before the leap \u2014 small cost, big compounding upside">\ud83d\udc8e</span> ':''}Send <b>${p.give.map(x=>x.type==='k'?x.label:x.name).join(' + ')}</b>
-        \u2192 <b>${p.b.teamName}</b> for <b>${p.get.map(x=>x.type==='k'?x.label:x.name).join(' + ')}</b></span>
+      <span class="la-fnd-deal">${p.buy?'<span class="la-fnd-gem" title="Breakout-window buy: young player (2nd-yr TE/QB, 3rd-yr WR window) priced before the leap \u2014 small cost, big compounding upside">\ud83d\udc8e</span> ':''}Send <b>${escHtml(p.give.map(x=>x.type==='k'?x.label:x.name).join(' + '))}</b>
+        \u2192 <b>${escHtml(p.b.teamName)}</b> for <b>${escHtml(p.get.map(x=>x.type==='k'?x.label:x.name).join(' + '))}</b></span>
       <span class="la-fnd-v ${p.v.fair?'ok':''}">${p.v.fair?'fair':(p.v.diff>0?'-':'+')+Math.abs(p.v.diff).toFixed(0)}</span>
-      <button class="btn btn-sm btn-ghost" onclick="laLoadProposal(${fnd.myRosterId},${p.b.rosterId},[${p.give.map(x=>`'${x.key}'`).join(',')}],[${p.get.map(x=>`'${x.key}'`).join(',')}])">Load</button>
+      <button class="btn btn-sm btn-ghost" onclick="laLoadProposal(${fnd.myRosterId},${p.b.rosterId},[${p.give.map(x=>`'${escJsSingle(x.key)}'`).join(',')}],[${p.get.map(x=>`'${escJsSingle(x.key)}'`).join(',')}])">Load</button>
     </div>`).join('')
-    : `<div class="la-note">No fair upgrades found at ${fnd.weak.pos} right now \u2014 nobody stronger there has a piece your surplus can buy evenly.</div>`;
+    : `<div class="la-note">No fair upgrades found at ${escHtml(fnd.weak.pos)} right now \u2014 nobody stronger there has a piece your surplus can buy evenly.</div>`;
   return `
     <div class="la-tc-grid">
       <div class="la-tc-side">
@@ -1549,7 +1551,7 @@ function laTradeView(s){
       <div class="la-tc-mid">
         <div class="la-vd-txt">${verdictTxt}</div>
         <div class="la-bar"><div class="la-bar-fill" style="width:${lean}%"></div><div class="la-bar-mid"></div></div>
-        <div class="la-tc-mid-lbls"><span>${poolA.team.teamName}</span><span>${poolB.team.teamName}</span></div>
+        <div class="la-tc-mid-lbls"><span>${escHtml(poolA.team.teamName)}</span><span>${escHtml(poolB.team.teamName)}</span></div>
         ${sugHtml}
         ${started?`<button class="btn btn-sm btn-ghost la-tc-clear" onclick="laTradeClear()">clear trade</button>`:''}
       </div>
@@ -1562,7 +1564,7 @@ function laTradeView(s){
     </div>
     <div class="la-fnd">
       <div class="la-fnd-title">${TC_ICON("search")} Suggested trades for you
-        <span class="la-fnd-sub">${fnd.targeted?`targeting <b>${fnd.weak.pos}</b> (you rank #${fnd.weak.rank})`:`weakest: <b>${fnd.weak.pos}</b> (#${fnd.weak.rank} in league)`} \u00b7 paying from: <b>${fnd.targeted?'any position':fnd.strong.pos+' (#'+fnd.strong.rank+')'}</b>${fnd.total?` \u00b7 ${fnd.total} fair deals`:''}
+        <span class="la-fnd-sub">${fnd.targeted?`targeting <b>${escHtml(fnd.weak.pos)}</b> (you rank #${fnd.weak.rank})`:`weakest: <b>${escHtml(fnd.weak.pos)}</b> (#${fnd.weak.rank} in league)`} \u00b7 paying from: <b>${fnd.targeted?'any position':escHtml(fnd.strong.pos+' (#'+fnd.strong.rank+')')}</b>${fnd.total?` \u00b7 ${fnd.total} fair deals`:''}
           <span class="la-fnd-size">${fnd.nTeams}-team \u00b7 ${fnd.deep?'deep league \u2014 favouring cheaper, roster-friendly adds':fnd.shallow?'shallow league \u2014 big fish matter most':'balanced mix'}</span></span>
         <span class="la-fnd-chips">${['AUTO','QB','RB','WR','TE'].map(x=>`<button class="format-btn ${laState.fndPos===x?'active':''}" onclick="laState.fndPos='${x}';renderLeagueAnalyzer()" title="${x==='AUTO'?'Target my weakest position automatically':'Hunt deals at '+x}">${x}</button>`).join('')}</span>
         <button class="btn btn-sm btn-ghost la-fnd-refresh" onclick="laState.fndSeed++;renderLeagueAnalyzer()" title="Deal me different variations">${TC_ICON("refresh")} refresh</button></div>
@@ -1749,10 +1751,10 @@ function laToggleCliffPop(btn, label, body){
   pop.className='pace-info-pop la-cliff-pop';
   pop.onclick=e=>e.stopPropagation();
   pop.innerHTML=`<div class="pace-info-pop-head">
-      <span class="pace-info-pop-lbl">${escAttr(label)}</span>
+      <span class="pace-info-pop-lbl">${escHtml(label)}</span>
       <button class="pace-info-pop-close" onclick="this.closest('.la-cliff-pop').remove()" aria-label="Close">\u2715</button>
     </div>
-    <div class="pace-info-pop-body">${escAttr(body)}</div>`;
+    <div class="pace-info-pop-body">${escHtml(body)}</div>`;
   wrap.appendChild(pop);
   // Viewport-fixed and clamped so it can't run off a narrow screen; flips above when needed.
   try{
@@ -1783,7 +1785,7 @@ function laCliffMark(name,pos){
   const mk=(cls, label, icon, body)=>
     `<span class="la-cliff-wrap"><button type="button" class="la-cliff ${cls}"
        aria-label="${escAttr(label)}" title="${escAttr(body)}"
-       onclick="event.stopPropagation();laToggleCliffPop(this,'${escAttr(label)}','${escAttr(body)}')">${icon}</button></span>`;
+       onclick="event.stopPropagation();laToggleCliffPop(this,'${escJsSingle(label)}','${escJsSingle(body)}')">${icon}</button></span>`;
   if(c.state==='defier') return mk('la-cliff-defy','Cliff defier','\ud83d\udee1',
     `Age ${c.age} \u2014 past the ${pos} cliff (~${c.cliff}) yet still one of the most valuable players rostered in this league. A true cliff-defier: hold. Selling at an age discount is the mistake.`);
   if(c.state==='past') return mk('la-cliff-past','Past the age cliff','\u26a0',
@@ -1928,7 +1930,7 @@ function laMyTeamView(s){
         ${[...s.teamList].sort((a,b)=>{
             if(s.myUserId){ if(a.ownerId===s.myUserId) return -1; if(b.ownerId===s.myUserId) return 1; }
             return a.teamName.localeCompare(b.teamName);
-          }).map(t=>`<option value="${t.rosterId}" ${t.rosterId===mineEng.t.rosterId?'selected':''}>${s.myUserId&&t.ownerId===s.myUserId?'\u2605 ':''}${t.teamName}</option>`).join('')}
+          }).map(t=>`<option value="${t.rosterId}" ${t.rosterId===mineEng.t.rosterId?'selected':''}>${s.myUserId&&t.ownerId===s.myUserId?'\u2605 ':''}${escHtml(t.teamName)}</option>`).join('')}
       </select>
       ${!isOwn?`<button class="btn btn-sm btn-ghost" onclick="laViewTeam('')" title="Back to your own team">\u21a9 my team</button>`:''}
       ${mineEng.t.isChampion?`<span class="la-champ-badge">${TC_ICON('trophy','tc-ico-champ')} ${s.season} champion</span>`:''}
@@ -1948,9 +1950,9 @@ function laMyTeamView(s){
       <table class="la-pw"><thead><tr><th>RK</th><th>TEAM</th><th>SCORE</th></tr></thead><tbody>
       ${power.map((e,i)=>`<tr class="${e===mineEng?'mine':''}">
         <td class="la-pw-rk">${i+1}.</td>
-        <td class="la-pw-team la-clickteam" onclick="laViewTeam(${e.t.rosterId})" title="View ${e.t.teamName}\u2019s analysis">${laTeamIcon(e.t,'la-tm-av-sm')}${e.t.teamName}
-          <span class="la-traj ${traj[e.t.rosterId].cls}" title="${traj[e.t.rosterId].advice}">${traj[e.t.rosterId].title}</span>
-          <span class="la-cmp-own">@${e.t.owner}</span></td>
+        <td class="la-pw-team la-clickteam" onclick="laViewTeam(${e.t.rosterId})" title="View ${escAttr(e.t.teamName)}\u2019s analysis">${laTeamIcon(e.t,'la-tm-av-sm')}${escHtml(e.t.teamName)}
+          <span class="la-traj ${traj[e.t.rosterId].cls}" title="${escAttr(traj[e.t.rosterId].advice)}">${escHtml(traj[e.t.rosterId].title)}</span>
+          <span class="la-cmp-own">@${escHtml(e.t.owner)}</span></td>
         <td class="la-pw-score"><div class="la-pw-bar" style="width:${(100*e.score/maxScore).toFixed(0)}%"></div><b>${Math.round(100*e.score/maxScore)}</b></td></tr>`).join('')}
       </tbody></table></div>`;
   const posRows=[...POS.map(pos=>({lbl:pos, mine:mineEng.pos[pos], all:eng.map(e=>e.pos[pos])})),
@@ -1970,7 +1972,7 @@ function laMyTeamView(s){
         const mineV=mp?mp._v:0;
         const rank=laRankOf(mineV,vals), n=eng.length, mx=Math.max(...vals)||1;
         return `<div class="la-pr-row"><span class="la-pr-lbl">${lbl}</span>
-          ${mp?`<span class="la-pr-nm clickable-player" title="${mp.name}" onclick="${pcardOnclick(mp.id||mp.name,mp.pos,mp.team||'')}">${abbrevName(mp.name)}</span>`:`<span class="la-pr-nm la-pr-empty">\u2014</span>`}
+          ${mp?`<span class="la-pr-nm clickable-player" title="${escAttr(mp.name)}" onclick="${pcardOnclick(mp.id||mp.name,mp.pos,mp.team||'')}">${escHtml(abbrevName(mp.name))}</span>`:`<span class="la-pr-nm la-pr-empty">\u2014</span>`}
           <div class="la-pr-track"><div class="la-pr-bar ${laQuartile(rank,n)}" style="width:${Math.max(4,100*mineV/mx).toFixed(0)}%"></div></div>
           <span class="la-pr-rank">${laOrd(rank)}</span></div>`; }).join('')}
     </div>`;
@@ -1989,7 +1991,7 @@ function laMyTeamView(s){
           <div class="la-lu-bar ${laQuartile(rank,eng.length)}" style="height:${h.toFixed(0)}%"></div>
           ${p?`<span class="clickable-player" onclick="${pcardOnclick(p.id||p.name,p.pos,p.team||'')}">${laPlayerImg(p,'la-lu-hs')}</span>`
              :`<span class="la-lu-hs la-lu-empty">\u2014</span>`}
-          <span class="la-lu-lbl" title="${p?p.name:'empty'}">${lbl}</span></div>`; }).join('')}
+           <span class="la-lu-lbl" title="${escAttr(p?p.name:'empty')}">${escHtml(lbl)}</span></div>`; }).join('')}
       </div></div>`;
   // Radar: starters vs bench strength per position, scaled to league max per axis. FLEX is
   // its own axis when the league starts flex slots: starters = who's actually IN the flex
@@ -2018,7 +2020,7 @@ function laMyTeamView(s){
     <div class="la-my-sum">
       ${laTeamIcon(mineEng.t,'la-tm-av')}
       <div class="la-my-sum-body">
-        <div class="la-my-sum-head">${mineEng.t.teamName} \u00b7 <span class="la-traj ${myTraj.cls}">${myTraj.title}</span></div>
+        <div class="la-my-sum-head">${escHtml(mineEng.t.teamName)} \u00b7 <span class="la-traj ${myTraj.cls}">${escHtml(myTraj.title)}</span></div>
         <div class="la-my-sum-line">${laIsRedraft()
           ? `#${myTraj.rank} by projected starters `
             + `\u00b7 lineup <b>${Math.round(100*myTraj.now)}%</b> of league best `
@@ -2027,7 +2029,7 @@ function laMyTeamView(s){
             + ` \u00b7 <b>${Math.round(100*myTraj.youth)}%</b> of value age \u226425`
             + ` \u00b7 <b class="${myTraj.cliffShare>=LA_TRAJ_CLIFFSHARE?'la-cliff-hot':''}">${Math.round(100*myTraj.cliffShare)}%</b> on the age-cliff${myTraj.defiers?` (${myTraj.defiers} defier${myTraj.defiers>1?'s':''} \ud83d\udee1)`:''}`
             + ` \u00b7 pick chest <b>${Math.round(100*myTraj.pickStr)}%</b> of league best`}</div>
-        <div class="la-my-sum-adv">${myTraj.advice}</div>
+        <div class="la-my-sum-adv">${escHtml(myTraj.advice)}</div>
       </div></div>`;
   return switcher + controls + summary
     + `<div class="la-my-grid">${powerTbl}${posTbl}${slotTbl}${radar}${lineup}</div>`

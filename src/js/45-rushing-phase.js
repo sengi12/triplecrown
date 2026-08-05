@@ -23,6 +23,8 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
   const rows=order.map(i=>{
     const p=r.shares[i];
     const col=PCOLORS[i%PCOLORS.length];
+    const nameAttr = escAttr(p.name);
+    const nameText = escHtml(p.name);
     const pct=(p.share*100).toFixed(1);
     const att=Math.round(p.share*r.total_attempts);
     const yds=Math.round(att*(p.ypc||r.ypa||4));
@@ -30,10 +32,10 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
     return `<div class="share-block" id="rblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
-        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rush')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${weekFilterPaceButton(state,p.player_id,'rush')}
         <span class="share-pct" id="rp-${i}">${pct}%</span>
         <span class="share-vol" id="ra-${i}">${att} att</span>
-        ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking('${p.player_id}','RB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
+        ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},'RB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
         </div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
         <input class="sl" type="range" min="0" max="100" step="1" value="${pct}"
@@ -75,12 +77,14 @@ function renderRushTDs(team,state,subTabs){
   const rows=order.map(i=>{
     const p=r.shares[i];
     const col=PCOLORS[i%PCOLORS.length];
+    const nameAttr = escAttr(p.name);
+    const nameText = escHtml(p.name);
     const pct=(p.td_share*100).toFixed(1);
     const projTDs=(p.td_share*totalTDs).toFixed(1);
     return `<div class="share-block" id="rblk-${i}"><div class="share-row">
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
-        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rush')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${weekFilterPaceButton(state,p.player_id,'rush')}
         <span class="share-pct" id="rtdp-${i}">${pct}%</span>
         <span class="share-vol">proj TDs</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>

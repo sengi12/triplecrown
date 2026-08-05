@@ -272,6 +272,25 @@ function escAttr(s){
     .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
     .replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+
+// HTML text-node escaping (safe for generic innerHTML interpolation in text content).
+function escHtml(s){
+  return String(s==null?'':s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+
+// Escape for JS single-quoted string literals used inside inline event attributes.
+function escJsSingle(s){
+  return String(s==null?'':s)
+    .replace(/\\/g,'\\\\')
+    .replace(/'/g,"\\'")
+    .replace(/\r/g,'\\r')
+    .replace(/\n/g,'\\n')
+    .replace(/\u2028/g,'\\u2028')
+    .replace(/\u2029/g,'\\u2029');
+}
 // Close any open 17-game pace popovers.
 function closeWeekFilterPacePops(){
   if(!document || !document.querySelectorAll) return;

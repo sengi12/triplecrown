@@ -422,6 +422,25 @@ function escAttr(s){
     .replace(/&/g,'&amp;').replace(/"/g,'&quot;')
     .replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+
+// HTML text-node escaping (safe for generic innerHTML interpolation in text content).
+function escHtml(s){
+  return String(s==null?'':s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+
+// Escape for JS single-quoted string literals used inside inline event attributes.
+function escJsSingle(s){
+  return String(s==null?'':s)
+    .replace(/\\/g,'\\\\')
+    .replace(/'/g,"\\'")
+    .replace(/\r/g,'\\r')
+    .replace(/\n/g,'\\n')
+    .replace(/\u2028/g,'\\u2028')
+    .replace(/\u2029/g,'\\u2029');
+}
 // Close any open 17-game pace popovers.
 function closeWeekFilterPacePops(){
   if(!document || !document.querySelectorAll) return;
@@ -1758,7 +1777,7 @@ function selectTeam(t){
   currentTeam=t;
   // Keep whatever phase the user was on (Targets stays Targets across teams). Only the
   // global Rankings view falls back to a per-team phase since it isn't team-scoped here.
-  if(currentPhase==='Rankings') currentPhase='Receiving';
+  if(currentPhase==='Rankings' && rankScope==='all') currentPhase='Receiving';
   // League-wide Advanced Metrics is a standalone view; selecting a team should return to
   // that team's Advanced tab instead of keeping the league table pinned on screen.
   if(currentPhase==='AdvancedLeague') currentPhase='Advanced';
@@ -1963,7 +1982,7 @@ function renderPassing(team,state){
             <div style="font-size:10px;color:var(--muted)" id="wl-sub-${i}">${gms} games · ${perGame(q,'passing_yards').toFixed(1)} pass yds/gm</div>
           </div>
           ${!active?`<button class="btn btn-ghost btn-sm" onclick="setActiveQB(${i})">edit</button>`:''}
-          ${activeSeason!=='proj'&&q.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking('${q.player_id}','QB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
+          ${activeSeason!=='proj'&&q.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(q.player_id)},'QB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
         </div>
         ${sRow('games_'+i,'Games Played',gms,Math.round(q.games_played||q.games||0),0,SEASON_GAMES,1,'var(--qb)')}`;
       }).join('')}
@@ -2177,6 +2196,8 @@ function renderPassDerived(team,state,subTabs,metric){
   const order=state.passing_shares.map((p,i)=>i).sort((a,b)=>(state.passing_shares[b][field]||0)-(state.passing_shares[a][field]||0));
   const rows=order.map(i=>{
     const p=state.passing_shares[i]; const col=PCOLORS[i%PCOLORS.length];
+    const nameAttr = escAttr(p.name);
+    const nameText = escHtml(p.name);
     const sh=p[field]||0; const pct=(sh*100).toFixed(1);
     const v=Math.round(sh*qbPool);
     const projTgts=Math.round(p.share*totalTgts);
@@ -2185,7 +2206,7 @@ function renderPassDerived(team,state,subTabs,metric){
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rec')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${weekFilterPaceButton(state,p.player_id,'rec')}
         <span class="share-pct" id="dp-${i}">${pct}%</span>
         <span class="share-vol" id="dv-${i}">${v.toLocaleString()} ${label}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -2274,6 +2295,8 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
   const rows=order.map(i=>{
     const p=state.passing_shares[i];
     const col=PCOLORS[i%PCOLORS.length];
+    const nameAttr = escAttr(p.name);
+    const nameText = escHtml(p.name);
     const pct=(p.share*100).toFixed(1);
     const projTgts=Math.round(p.share*totalTgts);
     const projRec=Math.round(projTgts*(p.catch_rate||0.65));
@@ -2284,10 +2307,10 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span>
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rec')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${weekFilterPaceButton(state,p.player_id,'rec')}
         <span class="share-pct" id="pp-${i}">${pct}%</span>
         <span class="share-vol" id="pt-${i}">${projTgts} tgt</span>
-        ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking('${p.player_id}','${p.pos}')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
+        ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},${pcardArg(p.pos)})" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
       </div>
       <div class="slider-track">
         <div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -2357,12 +2380,14 @@ function renderPassTDs(team,state,totalTDs,subTabs){
   const rows=order.map(i=>{
     const p=state.passing_shares[i];
     const col=PCOLORS[i%PCOLORS.length];
+    const nameAttr = escAttr(p.name);
+    const nameText = escHtml(p.name);
     const pct=(p.td_share*100).toFixed(1);
     const projTDs=(p.td_share*totalTDs).toFixed(1);
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>
         <span class="share-pct" id="tdp-${i}">${pct}%</span>
         <span class="share-vol">proj TDs</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -2409,6 +2434,8 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
   const rows=order.map(i=>{
     const p=r.shares[i];
     const col=PCOLORS[i%PCOLORS.length];
+    const nameAttr = escAttr(p.name);
+    const nameText = escHtml(p.name);
     const pct=(p.share*100).toFixed(1);
     const att=Math.round(p.share*r.total_attempts);
     const yds=Math.round(att*(p.ypc||r.ypa||4));
@@ -2416,10 +2443,10 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
     return `<div class="share-block" id="rblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
-        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rush')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${weekFilterPaceButton(state,p.player_id,'rush')}
         <span class="share-pct" id="rp-${i}">${pct}%</span>
         <span class="share-vol" id="ra-${i}">${att} att</span>
-        ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking('${p.player_id}','RB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
+        ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},'RB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
         </div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
         <input class="sl" type="range" min="0" max="100" step="1" value="${pct}"
@@ -2461,12 +2488,14 @@ function renderRushTDs(team,state,subTabs){
   const rows=order.map(i=>{
     const p=r.shares[i];
     const col=PCOLORS[i%PCOLORS.length];
+    const nameAttr = escAttr(p.name);
+    const nameText = escHtml(p.name);
     const pct=(p.td_share*100).toFixed(1);
     const projTDs=(p.td_share*totalTDs).toFixed(1);
     return `<div class="share-block" id="rblk-${i}"><div class="share-row">
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
-        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${p.name}</span>${weekFilterPaceButton(state,p.player_id,'rush')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${weekFilterPaceButton(state,p.player_id,'rush')}
         <span class="share-pct" id="rtdp-${i}">${pct}%</span>
         <span class="share-vol">proj TDs</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -8142,7 +8171,7 @@ function _schemeDriveFrictionComposite(season, team, thirdDownReach){
 
   const score = 100 * usable.reduce((a,b)=>a+b,0) / usable.length;
   const scores = teams.map(tm=>scoreFor(tm)).filter(Number.isFinite);
-  const rank = Number.isFinite(score) ? (1 + scores.filter(v=>v > score).length) : null;
+  const rank = Number.isFinite(score) ? (1 + scores.filter(v=>v < score).length) : null;
   return { score, rank, leagueSize:teams.length, components:badness };
 }
 
@@ -8219,7 +8248,7 @@ function _schemeLeagueInsightSnapshot(season){
   teams.forEach(tm=>{
     const score = rowsByTeam[tm].frictionScore;
     rowsByTeam[tm].frictionRank = Number.isFinite(score)
-      ? (1 + teams.filter(other=>Number.isFinite(rowsByTeam[other].frictionScore) && rowsByTeam[other].frictionScore > score).length)
+      ? (1 + teams.filter(other=>Number.isFinite(rowsByTeam[other].frictionScore) && rowsByTeam[other].frictionScore < score).length)
       : null;
   });
 
@@ -8282,8 +8311,8 @@ function _schemeRedZoneInsightData(p){
   let tone = 'neutral';
   if(Number.isFinite(friction.rank) && Number.isFinite(friction.leagueSize) && friction.leagueSize > 0){
     const pct = friction.rank / friction.leagueSize;
-    if(pct <= 0.34){ label = 'High Drive Friction'; tone = 'warn'; }
-    else if(pct >= 0.67){ label = 'Low Drive Friction'; tone = 'good'; }
+    if(pct <= 0.34){ label = 'Low Drive Friction'; tone = 'good'; }
+    else if(pct >= 0.67){ label = 'High Drive Friction'; tone = 'warn'; }
   }
 
   return {
@@ -8311,9 +8340,9 @@ function _schemeInsightNarrative(d){
   const pieces = [];
   if(Number.isFinite(d.frictionRank) && Number.isFinite(d.frictionLeagueSize)){
     if((d.frictionRank / d.frictionLeagueSize) <= 0.34){
-      pieces.push('This offense is ranking among the stickier drives in the league: punts, drive-killers, and late-down red-zone pressure all squeeze touchdown reliability.');
-    }else if((d.frictionRank / d.frictionLeagueSize) >= 0.67){
       pieces.push('This offense is finishing drives with relatively low friction: stronger drive efficiency and fewer late-down red-zone stalls make core touchdown roles cleaner.');
+    }else if((d.frictionRank / d.frictionLeagueSize) >= 0.67){
+      pieces.push('This offense is ranking among the stickier drives in the league: punts, drive-killers, and late-down red-zone pressure all squeeze touchdown reliability.');
     }else{
       pieces.push('Drive friction sits around league middle, so role clarity matters more than the macro environment.');
     }
@@ -8399,19 +8428,66 @@ function _schemePosPlayers(team, pos, season){
   }).filter(p=>p.name);
 }
 
-function _schemeResolveRosterPlayer(team, pos, shortName, slot, season){
+function _schemeBasePosPlayers(team, pos){
+  if(typeof getBase!=='function' || !team) return [];
+  const rows = [];
+  (getBase(team, pos) || []).forEach(p=>{
+    rows.push({
+      name: String((p && p.name) || ''),
+      player_id: String((p && p.player_id) || ''),
+      pos: String((p && p.pos) || pos),
+      team: String((p && p.team) || team),
+      vol: _schemeNumber(p && (p.receiving_targets || p.receptions || p.rushing_attempts || p.targets), 0),
+    });
+  });
+  return rows.map(p=>{
+    const full = String(p.name || '').trim();
+    const toks = full.split(/\s+/).filter(Boolean);
+    return Object.assign({}, p, {
+      first: _schemeNormNameToken(toks[0] || ''),
+      last: _schemeNormNameToken(toks[toks.length-1] || ''),
+      suffix: _schemeNormNameToken(toks[toks.length-1] || '').replace(/[^a-z0-9]/g,''),
+      norm: _schemeNormNameToken(full),
+    });
+  }).filter(p=>p.name);
+}
+
+function _schemeResolveRosterPlayer(team, pos, shortName, slot, season, slotRef){
   const players = _schemePosPlayers(team, pos, season);
+  const basePlayers = _schemeBasePosPlayers(team, pos);
+  const slotRefKey = String(slotRef || '').trim();
   if(!players.length){
+    if(basePlayers.length){
+      const slotIdx = Math.max(1, parseInt(String(slot||'').replace(/\D+/g,''), 10) || 1);
+      const pick = basePlayers[Math.min(slotIdx-1, basePlayers.length-1)] || basePlayers[0];
+      if(pick) return pick;
+    }
     return { name: String(shortName||slot||'Unknown'), player_id:'', pos, team };
   }
   const tok = _schemeNormNameToken(shortName);
+  const weakTok = /^(jr|sr|ii|iii|iv|v)$/.test(tok);
   const slotIdx = Math.max(1, parseInt(String(slot||'').replace(/\D+/g,''), 10) || 1);
+
+  if(slotRefKey){
+    const byId = players.find(p=>String(p.player_id||'')===slotRefKey);
+    if(byId) return byId;
+  }
+
+  if(weakTok && basePlayers.length){
+    const pick = basePlayers[Math.min(slotIdx-1, basePlayers.length-1)] || basePlayers[0];
+    if(pick){
+      if(tok==='jr' && pick.name && !/\bjr\.?$/i.test(pick.name)){
+        return Object.assign({}, pick, { name: `${pick.name} Jr.` });
+      }
+      return pick;
+    }
+  }
 
   let best = null;
   let bestScore = -1;
   players.forEach((p, i)=>{
     let s = 0;
-    if(tok){
+    if(tok && !weakTok){
       if(p.last === tok) s += 8;
       if(p.first === tok) s += 5;
       if(p.suffix === tok) s += 6;
@@ -8422,7 +8498,13 @@ function _schemeResolveRosterPlayer(team, pos, shortName, slot, season){
     s += Math.min(2, _schemeNumber(p.vol, 0) / 120);
     if(s > bestScore){ bestScore = s; best = p; }
   });
-  if(!best) best = players[Math.min(slotIdx-1, players.length-1)] || players[0];
+  if(!best){
+    best = players[Math.min(slotIdx-1, players.length-1)] || players[0];
+    if(weakTok && best && basePlayers.length){
+      const pick = basePlayers[Math.min(slotIdx-1, basePlayers.length-1)] || basePlayers[0];
+      if(pick) return pick;
+    }
+  }
   return best || { name: String(shortName||slot||'Unknown'), player_id:'', pos, team };
 }
 
@@ -8626,7 +8708,7 @@ function _schemeBuildBenefactors(p, d){
 
     const gsis = slotMap[slot];
     const shortName = names[gsis] || slot;
-    const resolved = _schemeResolveRosterPlayer(schemeTeam||'', pos, shortName, slot, p && p.season);
+    const resolved = _schemeResolveRosterPlayer(schemeTeam||'', pos, shortName, slot, p && p.season, gsis);
     const rid = String((resolved && resolved.player_id) || '');
     const name = String((resolved && resolved.name) || shortName || slot);
     const bestDown = [
@@ -8691,7 +8773,7 @@ function _schemeBuildRushBenefactors(p, d){
     const rec = slotRunOpp[slot] || {};
     const gsis = slotMap[slot];
     const shortName = names[gsis] || slot;
-    const resolved = _schemeResolveRosterPlayer(schemeTeam||'', 'RB', shortName, slot, p && p.season);
+    const resolved = _schemeResolveRosterPlayer(schemeTeam||'', 'RB', shortName, slot, p && p.season, gsis);
     const d1 = 100 * _schemeNumber(rec.d1, 0) / totalRunOpp;
     const d2 = 100 * _schemeNumber(rec.d2, 0) / totalRunOpp;
     const d3 = 100 * _schemeNumber(rec.d3, 0) / totalRunOpp;
@@ -8799,11 +8881,12 @@ function _schemeRenderInsights(p){
   const earlySuccRank = _schemeRankInLeague(d.earlySucc, league.earlySucc, 'desc');
   const lateSuccRank = _schemeRankInLeague(d.lateSucc, league.lateSucc, 'desc');
   const frictionRank = d.frictionRank || _schemeRankInLeague(d.frictionScore, league.frictionScore, 'asc');
+  const frictionRankClass = rankClass(frictionRank);
   const toneClass = d.tone==='warn' ? 'warn' : (d.tone==='good' ? 'good' : 'neutral');
   const blurb = _schemeInsightNarrative(d);
   const frictionTip = _schemeInfoTip(
     'Drive friction rank',
-    'This compares this offense to the league. More friction means drives stall more often before touchdowns. It combines how often drives end with punts, turnovers, or three-and-outs plus drive efficiency and red-zone finishing.'
+    'This compares this offense to the league. Lower friction means cleaner touchdown paths with fewer stalled drives. It combines how often drives end with punts, turnovers, or three-and-outs plus drive efficiency and red-zone finishing.'
   );
   return `<div class="scheme-insights-wrap">
     <div class="scheme-insights-head">
@@ -8828,8 +8911,8 @@ function _schemeRenderInsights(p){
       </div>
       <div class="scheme-insight-card">
         <div class="scheme-insight-k">Drive friction ranking ${frictionTip}</div>
-        <div class="scheme-insight-v">${rankText(frictionRank)} <span class="scheme-insight-rank ${rankClass(frictionRank)}">(score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'})</span></div>
-        <div class="scheme-insight-sub">League rank for how sticky and touchdown-suppressing this offense's drives are. Lower rank number = more friction.</div>
+        <div class="scheme-insight-v">${rankText(frictionRank)} <span class="scheme-insight-rank ${frictionRankClass}">(score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'})</span></div>
+        <div class="scheme-insight-sub">Ranked by drive cleanliness (1 = least friction / cleanest drives, 32 = most friction / toughest drives).</div>
       </div>
     </div>
     <div class="scheme-insight-note"><b>Fantasy angle:</b> ${_schemeEscHtml(blurb)}</div>
@@ -10340,6 +10423,10 @@ function renderRankings(){
     const ecrTxt = p.ecr!=null ? p.ecr : '—';
     const tier = p.ecr_tier;
     const ypc = p.ypc>0 ? p.ypc.toFixed(1) : '';
+    const pNameAttr = escAttr(p.name);
+    const pNameText = escHtml(p.name);
+    const pTeamAttr = escAttr(p.team);
+    const pTeamText = escHtml(p.team);
     let contractCells='';
     if(isDynasty){
       const ageTxt = p.age!=null ? p.age : '';
@@ -10371,8 +10458,8 @@ function renderRankings(){
     <td class="fpts">${p.fpts.toFixed(1)}</td>
     <td class="c-vor"><span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${p.vor>0?'+':''}${p.vor!=null?p.vor.toFixed(1):'—'}</span></td>
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
-    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsPack(p),'rank-hs')}<span class="rank-name">${p.name}</span></div></td>
-    <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${p.team}</td>
+    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsPack(p),'rank-hs')}<span class="rank-name">${pNameText}</span></div></td>
+    <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" alt="${pTeamAttr}" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${pTeamText}</td>
     ${contractCells}
     ${statCells}
   </tr>`);
@@ -11376,6 +11463,8 @@ function psRender(q){
   box.innerHTML = top.map((r,i)=>{
     const e = r.e;
     const isDef = e.pos==='DEF';
+    const nameText = escHtml(e.name);
+    const posText = escHtml(e.pos||'—');
     const img = (isDef && e.team)
       ? imgTag(NFL_LOGO(String(e.team).toUpperCase()), 'ps-hs ps-def')
       : imgTag(hsPack({player_id:e.pid, name:e.name, pos:e.pos}), 'ps-hs');
@@ -11383,8 +11472,8 @@ function psRender(q){
     return `<button class="ps-row${i===0?' ps-active':''}" data-pid="${escAttr(e.pid)}" data-pos="${escAttr(e.pos)}" data-team="${escAttr(e.team)}"
                     onclick="psPick(this)">
       ${img}
-      <span class="ps-nm">${e.name}</span>
-      <span class="ps-meta">${logo}<span class="ps-pos ps-pos-${e.pos}">${e.pos||'—'}</span></span>
+      <span class="ps-nm">${nameText}</span>
+      <span class="ps-meta">${logo}<span class="ps-pos ps-pos-${e.pos}">${posText}</span></span>
     </button>`;
   }).join('');
 }
@@ -11436,7 +11525,7 @@ if(typeof document!=='undefined' && document.addEventListener){
 const TS_COMMIT = 60;      // px of horizontal travel before a tab change commits
 const TS_DECIDE = 10;      // px before we decide the gesture's axis
 const TS_EDGE   = 24;      // ignore starts this close to the left edge (iOS back-swipe zone)
-const TS_MAXSHIFT = 500;   // cap on the content's follow-the-finger travel
+const TS_MAXSHIFT = 420;   // cap on the content's follow-the-finger travel
 
 function tsTabPhase(btn){
   if(!btn) return null;
@@ -11529,6 +11618,22 @@ function tsSwipeUnder(host){
   return under;
 }
 
+function tsHostWidth(host){
+  if(!host || !host.getBoundingClientRect) return 320;
+  const w = host.getBoundingClientRect().width;
+  return (Number.isFinite(w) && w>10) ? w : 320;
+}
+
+function tsPlacePair(host, topX, dir){
+  if(!host) return;
+  const top = tsSwipeTop(host);
+  const under = tsSwipeUnder(host);
+  if(!top || !under) return;
+  const w = tsHostWidth(host);
+  top.style.transform = `translateX(${topX.toFixed(1)}px)`;
+  under.style.transform = `translateX(${(topX + (dir<0 ? w : -w)).toFixed(1)}px)`;
+}
+
 // Wrap everything AFTER the active tab bar so swipe animation only moves the changing
 // page region (content below labels), leaving static chrome above untouched.
 function tsSwipeHost(bar){
@@ -11566,59 +11671,15 @@ function tsAnimateTabTurn(host, tabs, next, moved, opts){
   }
   const top = tsSwipeTop(host) || host;
   const under = tsSwipeUnder(host);
-  const out = moved<0 ? -120 : 120;
-  const inn = moved<0 ? 120 : -120;
-  const seamless = !!(opts && opts.seamless);
-
-  if(seamless && under && under.innerHTML && under.innerHTML.trim()){
-    // The target is already visible underneath during drag; promote it immediately so
-    // the release feels "already there", then sync canonical state via normal tab click.
-    host.classList.add('ts-swipe-committing');
-    host.classList.remove('ts-swipe-dragging');
-    try{
-      top.style.transition='none';
-      top.style.transform='translateX(0px)';
-      top.innerHTML=under.innerHTML;
-      under.innerHTML='';
-      under.style.transform='translateX(0px) scale(1)';
-      tabs.forEach(t=>t.classList.remove('active'));
-      if(tabs[next]) tabs[next].classList.add('active');
-    }catch(e){}
-    setTimeout(()=>{ if(tabs[next]) tabs[next].click(); }, 0);
-    return;
-  }
+  const w = tsHostWidth(host);
   host.classList.add('ts-swipe-dragging');
-  host.dataset.tsNext = (tabs[next] && tabs[next].textContent) ? tabs[next].textContent.trim() : '';
-  host.style.setProperty('--ts-dir', moved<0 ? '1' : '-1');
-  host.style.setProperty('--ts-reveal', '1');
-  if(under){
-    under.style.transform='translateX(0px) scale(1)';
-  }
-  top.style.transition = 'transform .16s ease-out';
-  top.style.transform = `translateX(${out}px)`;
+  if(under) under.style.transition = 'transform .18s ease-out';
+  top.style.transition = 'transform .18s ease-out';
+  top.style.transform = `translateX(${moved<0 ? -w : w}px)`;
+  if(under) under.style.transform='translateX(0px)';
   setTimeout(()=>{
     tabs[next].click();
-    const freshBar=tsActiveBar();
-    const fresh=freshBar ? tsSwipeHost(freshBar) : (document.getElementById('content') || host);
-    const freshTop = tsSwipeTop(fresh) || fresh;
-    fresh.style.setProperty('--ts-dir', moved<0 ? '1' : '-1');
-    fresh.style.setProperty('--ts-reveal', '0');
-    fresh.classList.remove('ts-swipe-dragging');
-    if(seamless){
-      // The target page was already revealed under the top card during drag: settle
-      // directly to it (no second "slide in" pass) to avoid a double-motion feel.
-      freshTop.style.transition='none';
-      freshTop.style.transform='translateX(0px)';
-      setTimeout(()=>{ if(freshTop){ freshTop.style.transition=''; } }, 40);
-      return;
-    }
-    freshTop.style.transition='none';
-    freshTop.style.transform=`translateX(${inn}px)`;
-    freshTop.getBoundingClientRect();
-    freshTop.style.transition='transform .18s ease-out';
-    freshTop.style.transform='translateX(0px)';
-    setTimeout(()=>{ if(freshTop){ freshTop.style.transition=''; } }, 210);
-  }, 140);
+  }, 145);
 }
 
 // The visible tab bar, if any. Multiple can exist in the DOM across views, so take the first
@@ -11676,8 +11737,6 @@ function tsScrollerClaims(el, dir){
     if(!phase || !tsCanPreviewPhase(phase)){
       previewPhase=null;
       under.innerHTML='';
-      host.classList.remove('ts-swipe-live');
-      host.dataset.tsNext = label||'';
       return;
     }
     if(previewPhase===phase) return;
@@ -11687,13 +11746,9 @@ function tsScrollerClaims(el, dir){
     if(!html){
       previewPhase=null;
       under.innerHTML='';
-      host.classList.remove('ts-swipe-live');
-      host.dataset.tsNext = label||'';
       return;
     }
     under.innerHTML=html;
-    host.classList.add('ts-swipe-live');
-    host.dataset.tsNext='';
     previewPhase=phase;
   };
 
@@ -11701,22 +11756,28 @@ function tsScrollerClaims(el, dir){
     if(!host) return;
     const top = tsSwipeTop(host) || host;
     const under = tsSwipeUnder(host);
+    const dir = dx<0 ? -1 : 1;
+    const w = tsHostWidth(host);
     top.style.transition = anim ? 'transform .16s ease-out' : '';
-    top.style.transform = '';
+    top.style.transform = 'translateX(0px)';
     if(under){
       under.style.transition = anim ? 'transform .16s ease-out' : '';
-      under.style.transform = '';
-      under.innerHTML='';
+      under.style.transform = `translateX(${dir<0 ? w : -w}px)`;
     }
     host.classList.remove('ts-swipe-dragging');
-    host.classList.remove('ts-swipe-live');
     host.classList.remove('ts-swipe-committing');
-    host.style.removeProperty('--ts-reveal');
-    host.style.removeProperty('--ts-dir');
-    host.dataset.tsNext = '';
     previewPhase=null;
     previewCache={};
-    if(anim){ const t=top; setTimeout(()=>{ if(t) t.style.transition=''; }, 180); }
+    if(anim){
+      const t=top; const u=under;
+      setTimeout(()=>{
+        if(t) t.style.transition='';
+        if(u){ u.style.transition=''; u.innerHTML=''; u.style.transform='translateX(100%)'; }
+      }, 180);
+    } else if(under){
+      under.innerHTML='';
+      under.style.transform='translateX(100%)';
+    }
   };
 
   document.addEventListener('touchstart', e=>{
@@ -11770,24 +11831,23 @@ function tsScrollerClaims(el, dir){
     if(e.cancelable) e.preventDefault();
     // Follow the finger with resistance so the swipe feels connected, capped so the layout
     // never travels far enough to look broken.
-    const shift = Math.sign(dx) * Math.min(TS_MAXSHIFT, Math.abs(dx)*0.35);
+    const shift = Math.sign(dx) * Math.min(TS_MAXSHIFT, Math.abs(dx)*0.9);
     if(host){
-      const dir = dx<0 ? 1 : -1;
+      const dir = dx<0 ? -1 : 1;
       const next = cur>=0 ? (cur + (dx<0 ? 1 : -1)) : -1;
       const valid = next>=0 && tabs && next<tabs.length;
       host.classList.toggle('ts-swipe-dragging', !!valid);
       const nextLabel = valid ? String((tabs[next]&&tabs[next].textContent)||'').trim() : '';
       const nextPhase = valid ? tsTabPhase(tabs[next]) : null;
       setPreview(nextPhase, nextLabel);
+      const top = tsSwipeTop(host);
+      if(top) top.style.transition='none';
       const under=tsSwipeUnder(host);
-      host.style.setProperty('--ts-dir', String(dir));
-      host.style.setProperty('--ts-reveal', String(Math.min(1, Math.abs(dx)/150)));
-      const top = tsSwipeTop(host) || host;
-      top.style.transform = `translateX(${shift.toFixed(1)}px)`;
-      if(under && valid){
-        const reveal = Math.min(1, Math.abs(dx)/150);
-        const underShift = (22 - reveal*22) * dir;
-        under.style.transform = `translateX(${underShift.toFixed(1)}px) scale(${(0.985 + reveal*0.015).toFixed(4)})`;
+      if(under) under.style.transition='none';
+      if(valid){
+        tsPlacePair(host, shift, dir);
+      } else if(top){
+        top.style.transform='translateX(0px)';
       }
     }
   }, {passive:false});
@@ -11802,9 +11862,7 @@ function tsScrollerClaims(el, dir){
     // Swipe left → next tab (content moves left, like turning a page).
     const next = moved<0 ? cur+1 : cur-1;
     if(next<0 || next>=tabs.length){ clearShift(true); return; }
-    const nextPhase = tsTabPhase(tabs[next]);
-    const seamless = !!(nextPhase && previewPhase===nextPhase && host && host.classList.contains('ts-swipe-live'));
-    tsAnimateTabTurn(host, tabs, next, moved, {seamless});
+    tsAnimateTabTurn(host, tabs, next, moved, {});
   };
   document.addEventListener('touchend', finish, {passive:true});
   document.addEventListener('touchcancel', finish, {passive:true});
@@ -11901,6 +11959,7 @@ const _thsPreviewCache = Object.create(null);
 
 function _thsCachePreview(team){
   if(!team) return '';
+  try{ if(typeof ensureTeam==='function') ensureTeam(team); }catch(e){}
   const key = _thsPreviewCacheKey(team);
   const html = _thsHeaderPreviewHtml(team);
   _thsPreviewCache[key] = html;
@@ -11920,6 +11979,22 @@ function _thsPrimeAdjacent(idx){
   const next = TEAMS[idx+1];
   if(prev) _thsCachePreview(prev);
   if(next) _thsCachePreview(next);
+}
+
+function _thsSetInitialUnder(host, idx){
+  if(!host || !Array.isArray(TEAMS) || idx<0) return;
+  const next = TEAMS[idx+1] || '';
+  const under = _thsUnder(host);
+  if(!under) return;
+  if(!next){
+    under.innerHTML='';
+    under.style.transform='translateX(100%)';
+    return;
+  }
+  under.innerHTML = _thsGetPreview(next);
+  const w = _thsWidth(host);
+  under.style.transition='none';
+  under.style.transform=`translateX(${w}px)`;
 }
 
 function _thsHeaderPreviewHtml(team){
@@ -12035,6 +12110,7 @@ function _thsHeaderPreviewHtml(team){
     header = _thsActiveHeader() || h;
     host = _thsHostForHeader(header);
     if(!host) return;
+    _thsSetInitialUnder(host, idx);
     x0=t.clientX;
     y0=t.clientY;
   }, {passive:true});
@@ -14640,14 +14716,16 @@ function refreshLeagueSyncBtn(){
   // The League entry point lives in the ☰ menu now; show the synced league's icon + name
   // there so the menu doubles as the sync indicator the old header button used to be.
   const label = leagueSnapshot
-    ? `${laLeagueIcon(leagueSnapshot,'la-btn-av')} ${leagueSnapshot.name}`
+    ? `${laLeagueIcon(leagueSnapshot,'la-btn-av')} ${escHtml(leagueSnapshot.name)}`
     : TC_ICON('stadium')+' League Analyzer';
   const m=document.getElementById('menuLeagueView');
   if(m) m.innerHTML = label;
   // Kept for any build that still renders the old header button.
   const b=document.getElementById('leagueSyncBtn');
   if(b){ b.innerHTML = leagueSnapshot ? label : '\ud83d\udd17 My League';
-         b.classList.toggle('synced', !!leagueSnapshot); }
+      if(b.classList && typeof b.classList.toggle==='function') b.classList.toggle('synced', !!leagueSnapshot);
+      else if(b.classList && leagueSnapshot && typeof b.classList.add==='function') b.classList.add('synced');
+      else if(b.classList && !leagueSnapshot && typeof b.classList.remove==='function') b.classList.remove('synced'); }
 }
 
 // ── Remembered Sleeper profile (leagues for quick switching) ─────────────────
@@ -14709,12 +14787,12 @@ function laSavedLeaguesHTML(){
   if(!others.length) return '';
   const who = p.user && p.user.display_name ? p.user.display_name : (p.username||'your account');
   return `<div class="la-saved">
-    <div class="la-saved-title">Your other leagues <span class="la-saved-who">— ${escAttr(who)}</span></div>
+    <div class="la-saved-title">Your other leagues <span class="la-saved-who">— ${escHtml(who)}</span></div>
     <div class="la-league-list">
       ${others.map(lg=>`
         <button class="la-league" ${laState.busy?'disabled':''}
-                onclick="laSyncSavedLeague('${escAttr(lg.league_id)}')">
-          <b>${escAttr(lg.name||'League')}</b>
+                onclick="laSyncSavedLeague('${escJsSingle(lg.league_id)}')">
+          <b>${escHtml(lg.name||'League')}</b>
           <span>${lg.total_rosters||'?'}-team · ${lg.type===2?'dynasty':lg.type===1?'keeper':'redraft'}${lg.sf?' · SF':''}</span>
         </button>`).join('')}
     </div>
@@ -15063,7 +15141,7 @@ function renderLeagueAnalyzer(){
             <button class="btn btn-accent" ${laState.busy?'disabled':''} onclick="laSubmitUsername()">${laState.busy?'Looking up…':'Find my leagues'}</button>
           </div>
           ${window._laLinkedLeague?`<div class="la-linked">or <button class="btn btn-sm btn-accent" ${laState.busy?'disabled':''}
-            onclick="laTakeSnapshot(window._laLinkedLeague.id)">${TC_ICON("link")} Sync ${window._laLinkedLeague.name}</button>
+            onclick="laTakeSnapshot(window._laLinkedLeague.id)">${TC_ICON("link")} Sync ${escHtml(window._laLinkedLeague.name)}</button>
             <span class="la-linked-note">(the league linked on your draft/rankings page)</span></div>`:''}
           ${laSavedLeaguesHTML()}`
         :`
@@ -15071,14 +15149,14 @@ function renderLeagueAnalyzer(){
           <div class="la-league-list">
             ${laState.leagues.map((lg,i)=>`
               <button class="la-league" ${laState.busy?'disabled':''} onclick="laPickLeague(${i})">
-                <b>${lg.name}</b>
+                <b>${escHtml(lg.name)}</b>
                 <span>${lg.total_rosters}-team · ${(lg.settings&&lg.settings.type)===2?'dynasty':(lg.settings&&lg.settings.type)===1?'keeper':'redraft'}
                   ${ (lg.roster_positions||[]).includes('SUPER_FLEX')?' · SF':'' }${lg.stale?` <span class="la-stale-tag">last active ${lg.staleSeason}</span>`:''}</span>
               </button>`).join('')}
           </div>
           <button class="btn btn-ghost btn-sm" onclick="laChangeLeague()">← different username</button>`}
         ${laState.busy&&laState.step==='pick'?`<div class="la-busy">Taking snapshot…</div>`:''}
-        ${laState.error?`<div class="la-error">${laState.error}</div>`:''}
+        ${laState.error?`<div class="la-error">${escHtml(laState.error)}</div>`:''}
       </div>`;
     return;
   }
@@ -15087,7 +15165,7 @@ function renderLeagueAnalyzer(){
   const stamp=`${taken.toLocaleDateString(undefined,{month:'short',day:'numeric'})} ${taken.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`;
   const fmt=[`${s.teams}-team`, s.superflex?'Superflex':'1QB', s.tep?'TEP':null].filter(Boolean).join(' · ');
   host.innerHTML=`
-    <div class="team-header"><div><div class="team-abbr la-hdr">${laLeagueIcon(s,'la-lg-av')}<span class="la-hdr-name">${s.name}</span>${laSeasonPicker(s)}</div>
+    <div class="team-header"><div><div class="team-abbr la-hdr">${laLeagueIcon(s,'la-lg-av')}<span class="la-hdr-name">${escHtml(s.name)}</span>${laSeasonPicker(s)}</div>
       <div class="team-qb-name">${fmt} · snapshot taken <b>${stamp}</b>
         ${laHistoricalSeason()
           ? (laSeasonLoading()
@@ -15120,7 +15198,7 @@ function laRostersView(s){
   const opts = [`<option value="all" ${sel==='all'?'selected':''}>All teams (${teams.length})</option>`]
     .concat(teams.map(t=>{
       const me = s.myUserId && t.ownerId===s.myUserId ? '\u2605 ' : '';
-      return `<option value="${t.rosterId}" ${String(t.rosterId)===String(sel)?'selected':''}>${me}${escAttr(t.teamName)}</option>`;
+      return `<option value="${t.rosterId}" ${String(t.rosterId)===String(sel)?'selected':''}>${me}${escHtml(t.teamName)}</option>`;
     })).join('');
   return `<div class="la-roster-pick">
       <label class="la-roster-pick-lbl" for="laRosterPick">Show</label>
@@ -15164,15 +15242,15 @@ function laTeamCard(t,s){
   return `<div class="la-card ${mine?'mine':''}">
     <div class="la-card-head">
       ${laTeamIcon(t,'la-tm-av-sm')}
-      <div class="la-team la-clickteam" onclick="laViewTeam(${t.rosterId})" title="View this team\u2019s analysis">${mine?'\u2605 ':''}${t.teamName}${t.isChampion?` <span class="la-champ" title="${leagueSnapshot.season} champion">${TC_ICON('trophy','tc-ico-champ')}</span>`:''}</div>
-      <div class="la-owner">@${t.owner} · ${t.wins}-${t.losses}</div>
+      <div class="la-team la-clickteam" onclick="laViewTeam(${t.rosterId})" title="View this team\u2019s analysis">${mine?'\u2605 ':''}${escHtml(t.teamName)}${t.isChampion?` <span class="la-champ" title="${leagueSnapshot.season} champion">${TC_ICON('trophy','tc-ico-champ')}</span>`:''}</div>
+      <div class="la-owner">@${escHtml(t.owner)} · ${t.wins}-${t.losses}</div>
       <div class="la-total" title="Sum of player + pick dynasty values">${total}</div>
     </div>
     <div class="la-players">
       ${valued.map(p=>`<div class="la-p">
         <span class="rt-slot ${slotClass(p.pos)}">${p.pos}</span>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name,p.pos,p.team||'')}">${laPlayerImg(p)}</span>
-        <span class="share-name clickable-player" title="${p.name}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${p.name}</span>${laCliffMark(p.name,p.pos)}
+        <span class="share-name clickable-player" title="${escAttr(p.name)}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${escHtml(p.name)}</span>${laCliffMark(p.name,p.pos)}
         <span class="team-header"><img src="${NFL_LOGO(p.team)}" class="team-logo-sm" alt="${p.team}"</span>
         <span class="la-pval">${p.v}</span></div>`).join('')}
       ${depth.length?`<div class="la-depth">+ ${depth.length} unvalued depth</div>`:''}
@@ -15316,7 +15394,7 @@ function laCompareView(s){
         const mine=s.myUserId && r.t.ownerId===s.myUserId;
         const cell=(c,v)=>`<td class="${laQuartile(ranks[c][i],n)}"><b>${fmtV(v)}</b><span class="la-rk">#${ranks[c][i]}</span></td>`;
         return `<tr class="${mine?'mine':''}">
-          <td class="la-cmp-team la-clickteam" onclick="laViewTeam(${r.t.rosterId})" title="View ${r.t.teamName}\u2019s analysis">${laTeamIcon(r.t,'la-tm-av-sm')}${mine?'\u2605 ':''}${r.t.teamName}${r.t.isChampion?` <span class="la-champ" title="${s.season} champion">${TC_ICON('trophy','tc-ico-champ')}</span>`:''}<span class="la-cmp-own">@${r.t.owner}</span></td>
+          <td class="la-cmp-team la-clickteam" onclick="laViewTeam(${r.t.rosterId})" title="View ${escAttr(r.t.teamName)}\u2019s analysis">${laTeamIcon(r.t,'la-tm-av-sm')}${mine?'\u2605 ':''}${escHtml(r.t.teamName)}${r.t.isChampion?` <span class="la-champ" title="${s.season} champion">${TC_ICON('trophy','tc-ico-champ')}</span>`:''}<span class="la-cmp-own">@${escHtml(r.t.owner)}</span></td>
           ${POS.map(p=>cell(p,r.by[p])).join('')}
           ${withPicks?cell('picks',r.picks):''}
           ${cell('total',r.total)}</tr>`;
@@ -15392,8 +15470,8 @@ function laBestAvailView(s){
         <span class="la-ba-rk">${i+1}</span>
         <span class="rt-slot ${slotClass(r.pos)}">${r.pos}</span>
         <span class="clickable-player" onclick="${pcardOnclick(r.name,r.pos,r.team||'')}">${laPlayerImg(r)}</span>
-        <span class="la-ba-name clickable-player" onclick="${pcardOnclick(r.name,r.pos,r.team||'')}">${r.name}</span>
-        <span class="la-ba-team">${r.team}</span>
+        <span class="la-ba-name clickable-player" onclick="${pcardOnclick(r.name,r.pos,r.team||'')}">${escHtml(r.name)}</span>
+        <span class="la-ba-team">${escHtml(r.team)}</span>
         <span class="la-ba-val">${r.v}</span>
         <span class="la-ba-fpts">${r.fpts?r.fpts.toFixed(0):'–'}</span></div>`).join('')}
     </div>
@@ -15742,13 +15820,13 @@ function laPosRankOf(s, name, pos){
 
 // ── Rendering ────────────────────────────────────────────────────────────────
 function laAssetRow(x, side, inTrade){
-  const btn=`<button class="la-tc-btn ${inTrade?'rm':''}" onclick="laTradeToggle('${side}','${x.key}')">${inTrade?'\u2715':'+'}</button>`;
+  const btn=`<button class="la-tc-btn ${inTrade?'rm':''}" onclick="laTradeToggle('${side}','${escJsSingle(x.key)}')">${inTrade?'\u2715':'+'}</button>`;
   if(x.type==='k')
     return `<div class="la-tc-row"><span class="la-pick">${x.label}${x.v?` <b>${x.v}</b>`:''}</span><span class="la-tc-fill"></span>${btn}</div>`;
   return `<div class="la-tc-row">
     <span class="rt-slot ${slotClass(x.pos)}">${x.pos}</span>
     <span class="clickable-player" onclick="${pcardOnclick(x.id||x.name,x.pos,x.team||'')}">${laPlayerImg(x)}</span>
-    <span class="la-tc-nmwrap"><span class="share-name clickable-player la-tc-nm" title="${x.name}" onclick="${pcardOnclick(x.id||x.name,x.pos,x.team||'')}">${x.name}</span>
+    <span class="la-tc-nmwrap"><span class="share-name clickable-player la-tc-nm" title="${escAttr(x.name)}" onclick="${pcardOnclick(x.id||x.name,x.pos,x.team||'')}">${escHtml(x.name)}</span>
       <span class="la-tc-meta">${x.posRank?`${x.pos}${x.posRank}`:''}${x.age!=null?`${x.posRank?' \u00b7 ':''}<span class="${laAgeCliffClass(x.pos,x.age)}">${x.age.toFixed(0)}yo</span>`:''}</span></span>
     <span class="la-pval">${x.v||'\u2013'}</span>${btn}</div>`;
 }
@@ -15762,12 +15840,12 @@ function laTradeView(s){
   const v=laTcVerdict(givenA.map(x=>x.v), givenB.map(x=>x.v));
   const started=givenA.length||givenB.length;
   const sel=(side,cur)=>`<select class="la-tc-sel" onchange="laTradeSetTeam('${side}',this.value)">
-    ${s.teamList.map(t=>`<option value="${t.rosterId}" ${t.rosterId===cur?'selected':''}>${s.myUserId&&t.ownerId===s.myUserId?'\u2605 ':''}${t.teamName}</option>`).join('')}</select>`;
+    ${s.teamList.map(t=>`<option value="${t.rosterId}" ${t.rosterId===cur?'selected':''}>${s.myUserId&&t.ownerId===s.myUserId?'\u2605 ':''}${escHtml(t.teamName)}</option>`).join('')}</select>`;
   // verdict bar: 50/50 = dead even; the fill leans toward whichever side gives MORE.
   const lean=started ? Math.max(8,Math.min(92, 50 - (v.diff/(v.effA+v.effB||1))*100 )) : 50;
   let verdictTxt='Add assets to both sides';
   if(started){
-    const nameA=poolA.team.teamName, nameB=poolB.team.teamName;
+    const nameA=escHtml(poolA.team.teamName), nameB=escHtml(poolB.team.teamName);
     verdictTxt = v.fair ? `${TC_ICON("check")} Fair trade <span class="la-vd-sub">(within \u00b1${v.band})</span>`
       : (v.diff>0 ? `<b>${nameB}</b> wins by ${Math.abs(v.diff).toFixed(0)}`
                   : `<b>${nameA}</b> wins by ${Math.abs(v.diff).toFixed(0)}`);
@@ -15780,9 +15858,9 @@ function laTradeView(s){
                                (shortSide==='a'?givenA:givenB).map(x=>x.v),
                                (shortSide==='a'?givenB:givenA).map(x=>x.v), shortSide);
     if(sugs.length){
-      sugHtml=`<div class="la-sug"><span class="la-sug-lbl">${(shortSide==='a'?poolA:poolB).team.teamName} evens it with:</span>
-        ${sugs.map(x=>`<button class="la-sug-chip" onclick="${x.adds.map(a=>`laTradeToggle('${shortSide}','${a.key}')`).join(';')}">
-          + ${x.adds.map(a=>a.type==='k'?a.label:a.name).join(' + ')} <b>${x.adds.reduce((t,a)=>t+a.v,0)}</b></button>`).join('')}</div>`;
+      sugHtml=`<div class="la-sug"><span class="la-sug-lbl">${escHtml((shortSide==='a'?poolA:poolB).team.teamName)} evens it with:</span>
+        ${sugs.map(x=>`<button class="la-sug-chip" onclick="${x.adds.map(a=>`laTradeToggle('${shortSide}','${escJsSingle(a.key)}')`).join(';')}">
+          + ${escHtml(x.adds.map(a=>a.type==='k'?a.label:a.name).join(' + '))} <b>${x.adds.reduce((t,a)=>t+a.v,0)}</b></button>`).join('')}</div>`;
     } else {
       sugHtml=`<div class="la-sug la-sug-none">No single addition gets this fair \u2014 the gap needs a real piece, not scraps.</div>`;
     }
@@ -15792,12 +15870,12 @@ function laTradeView(s){
   const fndHtml = fnd.proposals.length ? fnd.proposals.map(p=>`
     <div class="la-fnd-row">
       <span class="la-fnd-lane la-lane-${p.lane}" title="${LA_LANE_TIP[p.lane]}">${LA_LANE_LABEL[p.lane]}</span>
-      <span class="la-fnd-deal">${p.buy?'<span class="la-fnd-gem" title="Breakout-window buy: young player (2nd-yr TE/QB, 3rd-yr WR window) priced before the leap \u2014 small cost, big compounding upside">\ud83d\udc8e</span> ':''}Send <b>${p.give.map(x=>x.type==='k'?x.label:x.name).join(' + ')}</b>
-        \u2192 <b>${p.b.teamName}</b> for <b>${p.get.map(x=>x.type==='k'?x.label:x.name).join(' + ')}</b></span>
+      <span class="la-fnd-deal">${p.buy?'<span class="la-fnd-gem" title="Breakout-window buy: young player (2nd-yr TE/QB, 3rd-yr WR window) priced before the leap \u2014 small cost, big compounding upside">\ud83d\udc8e</span> ':''}Send <b>${escHtml(p.give.map(x=>x.type==='k'?x.label:x.name).join(' + '))}</b>
+        \u2192 <b>${escHtml(p.b.teamName)}</b> for <b>${escHtml(p.get.map(x=>x.type==='k'?x.label:x.name).join(' + '))}</b></span>
       <span class="la-fnd-v ${p.v.fair?'ok':''}">${p.v.fair?'fair':(p.v.diff>0?'-':'+')+Math.abs(p.v.diff).toFixed(0)}</span>
-      <button class="btn btn-sm btn-ghost" onclick="laLoadProposal(${fnd.myRosterId},${p.b.rosterId},[${p.give.map(x=>`'${x.key}'`).join(',')}],[${p.get.map(x=>`'${x.key}'`).join(',')}])">Load</button>
+      <button class="btn btn-sm btn-ghost" onclick="laLoadProposal(${fnd.myRosterId},${p.b.rosterId},[${p.give.map(x=>`'${escJsSingle(x.key)}'`).join(',')}],[${p.get.map(x=>`'${escJsSingle(x.key)}'`).join(',')}])">Load</button>
     </div>`).join('')
-    : `<div class="la-note">No fair upgrades found at ${fnd.weak.pos} right now \u2014 nobody stronger there has a piece your surplus can buy evenly.</div>`;
+    : `<div class="la-note">No fair upgrades found at ${escHtml(fnd.weak.pos)} right now \u2014 nobody stronger there has a piece your surplus can buy evenly.</div>`;
   return `
     <div class="la-tc-grid">
       <div class="la-tc-side">
@@ -15809,7 +15887,7 @@ function laTradeView(s){
       <div class="la-tc-mid">
         <div class="la-vd-txt">${verdictTxt}</div>
         <div class="la-bar"><div class="la-bar-fill" style="width:${lean}%"></div><div class="la-bar-mid"></div></div>
-        <div class="la-tc-mid-lbls"><span>${poolA.team.teamName}</span><span>${poolB.team.teamName}</span></div>
+        <div class="la-tc-mid-lbls"><span>${escHtml(poolA.team.teamName)}</span><span>${escHtml(poolB.team.teamName)}</span></div>
         ${sugHtml}
         ${started?`<button class="btn btn-sm btn-ghost la-tc-clear" onclick="laTradeClear()">clear trade</button>`:''}
       </div>
@@ -15822,7 +15900,7 @@ function laTradeView(s){
     </div>
     <div class="la-fnd">
       <div class="la-fnd-title">${TC_ICON("search")} Suggested trades for you
-        <span class="la-fnd-sub">${fnd.targeted?`targeting <b>${fnd.weak.pos}</b> (you rank #${fnd.weak.rank})`:`weakest: <b>${fnd.weak.pos}</b> (#${fnd.weak.rank} in league)`} \u00b7 paying from: <b>${fnd.targeted?'any position':fnd.strong.pos+' (#'+fnd.strong.rank+')'}</b>${fnd.total?` \u00b7 ${fnd.total} fair deals`:''}
+        <span class="la-fnd-sub">${fnd.targeted?`targeting <b>${escHtml(fnd.weak.pos)}</b> (you rank #${fnd.weak.rank})`:`weakest: <b>${escHtml(fnd.weak.pos)}</b> (#${fnd.weak.rank} in league)`} \u00b7 paying from: <b>${fnd.targeted?'any position':escHtml(fnd.strong.pos+' (#'+fnd.strong.rank+')')}</b>${fnd.total?` \u00b7 ${fnd.total} fair deals`:''}
           <span class="la-fnd-size">${fnd.nTeams}-team \u00b7 ${fnd.deep?'deep league \u2014 favouring cheaper, roster-friendly adds':fnd.shallow?'shallow league \u2014 big fish matter most':'balanced mix'}</span></span>
         <span class="la-fnd-chips">${['AUTO','QB','RB','WR','TE'].map(x=>`<button class="format-btn ${laState.fndPos===x?'active':''}" onclick="laState.fndPos='${x}';renderLeagueAnalyzer()" title="${x==='AUTO'?'Target my weakest position automatically':'Hunt deals at '+x}">${x}</button>`).join('')}</span>
         <button class="btn btn-sm btn-ghost la-fnd-refresh" onclick="laState.fndSeed++;renderLeagueAnalyzer()" title="Deal me different variations">${TC_ICON("refresh")} refresh</button></div>
@@ -16009,10 +16087,10 @@ function laToggleCliffPop(btn, label, body){
   pop.className='pace-info-pop la-cliff-pop';
   pop.onclick=e=>e.stopPropagation();
   pop.innerHTML=`<div class="pace-info-pop-head">
-      <span class="pace-info-pop-lbl">${escAttr(label)}</span>
+      <span class="pace-info-pop-lbl">${escHtml(label)}</span>
       <button class="pace-info-pop-close" onclick="this.closest('.la-cliff-pop').remove()" aria-label="Close">\u2715</button>
     </div>
-    <div class="pace-info-pop-body">${escAttr(body)}</div>`;
+    <div class="pace-info-pop-body">${escHtml(body)}</div>`;
   wrap.appendChild(pop);
   // Viewport-fixed and clamped so it can't run off a narrow screen; flips above when needed.
   try{
@@ -16043,7 +16121,7 @@ function laCliffMark(name,pos){
   const mk=(cls, label, icon, body)=>
     `<span class="la-cliff-wrap"><button type="button" class="la-cliff ${cls}"
        aria-label="${escAttr(label)}" title="${escAttr(body)}"
-       onclick="event.stopPropagation();laToggleCliffPop(this,'${escAttr(label)}','${escAttr(body)}')">${icon}</button></span>`;
+       onclick="event.stopPropagation();laToggleCliffPop(this,'${escJsSingle(label)}','${escJsSingle(body)}')">${icon}</button></span>`;
   if(c.state==='defier') return mk('la-cliff-defy','Cliff defier','\ud83d\udee1',
     `Age ${c.age} \u2014 past the ${pos} cliff (~${c.cliff}) yet still one of the most valuable players rostered in this league. A true cliff-defier: hold. Selling at an age discount is the mistake.`);
   if(c.state==='past') return mk('la-cliff-past','Past the age cliff','\u26a0',
@@ -16188,7 +16266,7 @@ function laMyTeamView(s){
         ${[...s.teamList].sort((a,b)=>{
             if(s.myUserId){ if(a.ownerId===s.myUserId) return -1; if(b.ownerId===s.myUserId) return 1; }
             return a.teamName.localeCompare(b.teamName);
-          }).map(t=>`<option value="${t.rosterId}" ${t.rosterId===mineEng.t.rosterId?'selected':''}>${s.myUserId&&t.ownerId===s.myUserId?'\u2605 ':''}${t.teamName}</option>`).join('')}
+          }).map(t=>`<option value="${t.rosterId}" ${t.rosterId===mineEng.t.rosterId?'selected':''}>${s.myUserId&&t.ownerId===s.myUserId?'\u2605 ':''}${escHtml(t.teamName)}</option>`).join('')}
       </select>
       ${!isOwn?`<button class="btn btn-sm btn-ghost" onclick="laViewTeam('')" title="Back to your own team">\u21a9 my team</button>`:''}
       ${mineEng.t.isChampion?`<span class="la-champ-badge">${TC_ICON('trophy','tc-ico-champ')} ${s.season} champion</span>`:''}
@@ -16208,9 +16286,9 @@ function laMyTeamView(s){
       <table class="la-pw"><thead><tr><th>RK</th><th>TEAM</th><th>SCORE</th></tr></thead><tbody>
       ${power.map((e,i)=>`<tr class="${e===mineEng?'mine':''}">
         <td class="la-pw-rk">${i+1}.</td>
-        <td class="la-pw-team la-clickteam" onclick="laViewTeam(${e.t.rosterId})" title="View ${e.t.teamName}\u2019s analysis">${laTeamIcon(e.t,'la-tm-av-sm')}${e.t.teamName}
-          <span class="la-traj ${traj[e.t.rosterId].cls}" title="${traj[e.t.rosterId].advice}">${traj[e.t.rosterId].title}</span>
-          <span class="la-cmp-own">@${e.t.owner}</span></td>
+        <td class="la-pw-team la-clickteam" onclick="laViewTeam(${e.t.rosterId})" title="View ${escAttr(e.t.teamName)}\u2019s analysis">${laTeamIcon(e.t,'la-tm-av-sm')}${escHtml(e.t.teamName)}
+          <span class="la-traj ${traj[e.t.rosterId].cls}" title="${escAttr(traj[e.t.rosterId].advice)}">${escHtml(traj[e.t.rosterId].title)}</span>
+          <span class="la-cmp-own">@${escHtml(e.t.owner)}</span></td>
         <td class="la-pw-score"><div class="la-pw-bar" style="width:${(100*e.score/maxScore).toFixed(0)}%"></div><b>${Math.round(100*e.score/maxScore)}</b></td></tr>`).join('')}
       </tbody></table></div>`;
   const posRows=[...POS.map(pos=>({lbl:pos, mine:mineEng.pos[pos], all:eng.map(e=>e.pos[pos])})),
@@ -16230,7 +16308,7 @@ function laMyTeamView(s){
         const mineV=mp?mp._v:0;
         const rank=laRankOf(mineV,vals), n=eng.length, mx=Math.max(...vals)||1;
         return `<div class="la-pr-row"><span class="la-pr-lbl">${lbl}</span>
-          ${mp?`<span class="la-pr-nm clickable-player" title="${mp.name}" onclick="${pcardOnclick(mp.id||mp.name,mp.pos,mp.team||'')}">${abbrevName(mp.name)}</span>`:`<span class="la-pr-nm la-pr-empty">\u2014</span>`}
+          ${mp?`<span class="la-pr-nm clickable-player" title="${escAttr(mp.name)}" onclick="${pcardOnclick(mp.id||mp.name,mp.pos,mp.team||'')}">${escHtml(abbrevName(mp.name))}</span>`:`<span class="la-pr-nm la-pr-empty">\u2014</span>`}
           <div class="la-pr-track"><div class="la-pr-bar ${laQuartile(rank,n)}" style="width:${Math.max(4,100*mineV/mx).toFixed(0)}%"></div></div>
           <span class="la-pr-rank">${laOrd(rank)}</span></div>`; }).join('')}
     </div>`;
@@ -16249,7 +16327,7 @@ function laMyTeamView(s){
           <div class="la-lu-bar ${laQuartile(rank,eng.length)}" style="height:${h.toFixed(0)}%"></div>
           ${p?`<span class="clickable-player" onclick="${pcardOnclick(p.id||p.name,p.pos,p.team||'')}">${laPlayerImg(p,'la-lu-hs')}</span>`
              :`<span class="la-lu-hs la-lu-empty">\u2014</span>`}
-          <span class="la-lu-lbl" title="${p?p.name:'empty'}">${lbl}</span></div>`; }).join('')}
+           <span class="la-lu-lbl" title="${escAttr(p?p.name:'empty')}">${escHtml(lbl)}</span></div>`; }).join('')}
       </div></div>`;
   // Radar: starters vs bench strength per position, scaled to league max per axis. FLEX is
   // its own axis when the league starts flex slots: starters = who's actually IN the flex
@@ -16278,7 +16356,7 @@ function laMyTeamView(s){
     <div class="la-my-sum">
       ${laTeamIcon(mineEng.t,'la-tm-av')}
       <div class="la-my-sum-body">
-        <div class="la-my-sum-head">${mineEng.t.teamName} \u00b7 <span class="la-traj ${myTraj.cls}">${myTraj.title}</span></div>
+        <div class="la-my-sum-head">${escHtml(mineEng.t.teamName)} \u00b7 <span class="la-traj ${myTraj.cls}">${escHtml(myTraj.title)}</span></div>
         <div class="la-my-sum-line">${laIsRedraft()
           ? `#${myTraj.rank} by projected starters `
             + `\u00b7 lineup <b>${Math.round(100*myTraj.now)}%</b> of league best `
@@ -16287,7 +16365,7 @@ function laMyTeamView(s){
             + ` \u00b7 <b>${Math.round(100*myTraj.youth)}%</b> of value age \u226425`
             + ` \u00b7 <b class="${myTraj.cliffShare>=LA_TRAJ_CLIFFSHARE?'la-cliff-hot':''}">${Math.round(100*myTraj.cliffShare)}%</b> on the age-cliff${myTraj.defiers?` (${myTraj.defiers} defier${myTraj.defiers>1?'s':''} \ud83d\udee1)`:''}`
             + ` \u00b7 pick chest <b>${Math.round(100*myTraj.pickStr)}%</b> of league best`}</div>
-        <div class="la-my-sum-adv">${myTraj.advice}</div>
+        <div class="la-my-sum-adv">${escHtml(myTraj.advice)}</div>
       </div></div>`;
   return switcher + controls + summary
     + `<div class="la-my-grid">${powerTbl}${posTbl}${slotTbl}${radar}${lineup}</div>`
