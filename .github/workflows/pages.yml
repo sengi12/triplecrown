@@ -35,7 +35,7 @@ jobs:
           mkdir -p _site
           cp index.html _site/index.html
           cp -R images _site/images
-          cp -R seeds _site/seeds/*.json.gz
+          cp -R seeds/*.json.gz _site/seeds
           touch _site/.nojekyll
           du -sh _site
 
