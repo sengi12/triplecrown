@@ -31,11 +31,12 @@ jobs:
 
       - name: Prepare minimal Pages artifact
         run: |
+          set -o pipefail
           rm -rf _site
-          mkdir -p _site _site/seeds
+          mkdir -p _site/seeds
           cp index.html _site/index.html
           cp -R images _site/images
-          cp -R seeds/*.json.gz _site/seeds
+          cp seeds/*.json.gz _site/seeds/
           touch _site/.nojekyll
           du -sh _site
 
