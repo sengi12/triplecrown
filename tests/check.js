@@ -18303,7 +18303,8 @@ const LA_TRAJ_YOUNG = 25.5;
 // whose value is concentrated in at/near-cliff vets is living on borrowed time no matter what
 // its power rank says. EXCEPT: some players are so far past the cliff and still elite (the
 // Henry / Kelce / Evans class) that selling at a discount is wrong — those are DEFIERS: still
-// valued ≥ LA_CLIFF_DEFIER_V (or tier ≤2) despite being past the line. Advice: just hold.
+// startable by current league distribution at their own position despite being past the line.
+// Advice: just hold.
 const LA_AGE_CLIFF = {RB:27.5, WR:29.5, TE:31, QB:35};
 const LA_CLIFF_EDGE = 1.0;          // within this many years of the cliff = "on the edge"
 // A defier is meant to be rare — the Henry/Kelce case where age says sell but production says
@@ -18349,10 +18350,9 @@ function laCliffInfo(name,pos){
   const cliff=LA_AGE_CLIFF[pos]; if(!cliff) return null;
   const age=laDynAge(name); if(age==null) return null;
   if(age>=cliff){
-    const v=laDynVal(name,pos), t=laDynTier(name);
-    // BOTH conditions now (it was either/or): top-N by value across every rostered player AND
-    // a tier-1 asset. Past-cliff players who are merely good fall through to 'past', which is
-    // the honest read — the sell window really is closing on them.
+    const v=laDynVal(name,pos);
+    // Defier rule: still top startable value at the same position even after crossing the cliff.
+    // We intentionally do not gate on dynasty tier; age naturally pushes tiers down for vets.
     const isDefier = v>0 && v>=laDefierCut(pos);
     return {age, cliff, state: isDefier ? 'defier' : 'past'};
   }
@@ -18425,13 +18425,6 @@ function laShowRadarPop(btn, label, body){
     pop.style.top=top+'px';
     pop.style.right='auto';
   }catch(e){}
-}
-function laToggleRadarPop(btn, label, body){
-  if(!btn || !btn.parentNode) return;
-  const wrap=btn.parentNode;
-  const open=wrap.querySelector && wrap.querySelector('.la-radar-pop');
-  if(open && open.dataset && open.dataset.label===String(label||'')){ open.remove(); return; }
-  laShowRadarPop(btn, label, body);
 }
 if(typeof document!=='undefined' && document.addEventListener){
   document.addEventListener('click', e=>{

@@ -1849,7 +1849,8 @@ const LA_TRAJ_YOUNG = 25.5;
 // whose value is concentrated in at/near-cliff vets is living on borrowed time no matter what
 // its power rank says. EXCEPT: some players are so far past the cliff and still elite (the
 // Henry / Kelce / Evans class) that selling at a discount is wrong — those are DEFIERS: still
-// valued ≥ LA_CLIFF_DEFIER_V (or tier ≤2) despite being past the line. Advice: just hold.
+// startable by current league distribution at their own position despite being past the line.
+// Advice: just hold.
 const LA_AGE_CLIFF = {RB:27.5, WR:29.5, TE:31, QB:35};
 const LA_CLIFF_EDGE = 1.0;          // within this many years of the cliff = "on the edge"
 // A defier is meant to be rare — the Henry/Kelce case where age says sell but production says
@@ -1864,8 +1865,8 @@ const LA_CLIFF_EDGE = 1.0;          // within this many years of the cliff = "on
 const LA_DEFIER_POS_RANK = 12;      // top-12 at his position among rostered players
 const LA_TRAJ_CLIFFSHARE = .35;     // % of team value on/past the cliff → "Edge of the Cliff"
 // Cliff state for one player: null (no age / no cliff), 'edge', 'past', or 'defier'.
-// Value of the LA_DEFIER_TOP_N-th best rostered player — the bar a past-cliff player must
-// clear to count as a defier. Cached per render (cleared alongside the other caches).
+// Value of the LA_DEFIER_POS_RANK-th best rostered player at each position — the bar a
+// past-cliff player must clear to count as a defier. Cached per render.
 let _laDefierCut=null;
 function laDefierCut(pos){
   if(!_laDefierCut){
@@ -1895,10 +1896,9 @@ function laCliffInfo(name,pos){
   const cliff=LA_AGE_CLIFF[pos]; if(!cliff) return null;
   const age=laDynAge(name); if(age==null) return null;
   if(age>=cliff){
-    const v=laDynVal(name,pos), t=laDynTier(name);
-    // BOTH conditions now (it was either/or): top-N by value across every rostered player AND
-    // a tier-1 asset. Past-cliff players who are merely good fall through to 'past', which is
-    // the honest read — the sell window really is closing on them.
+    const v=laDynVal(name,pos);
+    // Defier rule: still top startable value at the same position even after crossing the cliff.
+    // We intentionally do not gate on dynasty tier; age naturally pushes tiers down for vets.
     const isDefier = v>0 && v>=laDefierCut(pos);
     return {age, cliff, state: isDefier ? 'defier' : 'past'};
   }
@@ -1971,13 +1971,6 @@ function laShowRadarPop(btn, label, body){
     pop.style.top=top+'px';
     pop.style.right='auto';
   }catch(e){}
-}
-function laToggleRadarPop(btn, label, body){
-  if(!btn || !btn.parentNode) return;
-  const wrap=btn.parentNode;
-  const open=wrap.querySelector && wrap.querySelector('.la-radar-pop');
-  if(open && open.dataset && open.dataset.label===String(label||'')){ open.remove(); return; }
-  laShowRadarPop(btn, label, body);
 }
 if(typeof document!=='undefined' && document.addEventListener){
   document.addEventListener('click', e=>{
