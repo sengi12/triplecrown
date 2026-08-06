@@ -4219,6 +4219,7 @@ let _buildPlayerCache = {
   scoringSig: '',
   list: null,
 };
+let _buildPlayerCacheEpoch = 0;
 
 function buildPlayerScoringSig(){
   const sc = scoringSettings || {};
@@ -4240,6 +4241,8 @@ function invalidateBuildPlayerCache(){
   _buildPlayerCache.rankFormat = null;
   _buildPlayerCache.scoringSig = '';
   _buildPlayerCache.list = null;
+  _buildPlayerCacheEpoch++;
+  if(typeof invalidateRankingsRenderCache==='function') invalidateRankingsRenderCache();
 }
 
 function buildPlayerList(){
@@ -11337,10 +11340,51 @@ function sortSOSBy(col){
 }
 
 
+let _rankingsRenderCache = { key:'', html:'' };
+
+function invalidateRankingsRenderCache(){
+  _rankingsRenderCache.key = '';
+  _rankingsRenderCache.html = '';
+}
+
+function rankingsRenderCacheKey(teamScoped){
+  if(teamScoped) return '';
+  if(typeof ktcGameState!=='undefined' && ktcGameState && ktcGameState.active) return '';
+  if(typeof draftId!=='undefined' && draftId) return '';
+  if(typeof leaguePickerState!=='undefined' && leaguePickerState && leaguePickerState.open) return '';
+  const scSig = (typeof buildPlayerScoringSig==='function') ? buildPlayerScoringSig() : '';
+  const advCols = (rankAdvanced && typeof sumerAvailable==='function' && sumerAvailable() && typeof sumerColumnsForFilter==='function')
+    ? ((sumerColumnsForFilter()||{}).cols||[]).join(',')
+    : '';
+  const buildEpoch = (typeof _buildPlayerCacheEpoch!=='undefined') ? _buildPlayerCacheEpoch : 0;
+  return [
+    'rankings',
+    buildEpoch,
+    String(activeSeason),
+    String(rankFormat),
+    scSig,
+    String(rankSortKey),
+    String(rankSortDir),
+    String(rankPosFilter),
+    String(!!rankAdvanced),
+    String(sumerRefinement||''),
+    advCols,
+    String(scoringPanelOpen),
+    String(scoringAxis||''),
+    String(rankScope||'all'),
+  ].join('|');
+}
+
 function renderRankings(){
+  const teamScoped = (rankScope==='team' && currentTeam);
+  const cacheKey = rankingsRenderCacheKey(teamScoped);
+  if(cacheKey && _rankingsRenderCache.key===cacheKey && _rankingsRenderCache.html){
+    document.getElementById('content').innerHTML = _rankingsRenderCache.html;
+    return;
+  }
+
   let all=buildPlayerList();
   // Team-scoped rankings (from a team's Rankings tab) show only that team's players.
-  const teamScoped = (rankScope==='team' && currentTeam);
   let teamHeader='';
   if(teamScoped && currentTeam){
     const t=currentTeam;
@@ -11579,7 +11623,7 @@ function renderRankings(){
     ? `<span class="ecr-missing" style="color:var(--muted)">${TC_ICON("chart")} nflverse advanced ${sumerSeasonKey()} stats${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}${sumerView.single?'':' · common columns (pick a position for the full set)'}${((sumerRefinement==='vs_man'||sumerRefinement==='vs_zone'))?' · coverage counts approximate, rates accurate':''}</span>`
     : '';
   const ecrNote = hasECR() ? '' : `<span class="ecr-missing">${TC_ICON("warning")} No FantasyPros ECR loaded — run build_seed.py and load the seed to populate ECR/Tier</span>`;
-  document.getElementById('content').innerHTML=`
+  const pageHtml = `
     ${teamScoped ? `${teamHeader}<div class="phase-tabs">${tabBar()}</div>` : ''}
     <div class="rankings-scope-bar">
       ${teamScoped
@@ -11654,6 +11698,11 @@ function renderRankings(){
         ${th('passing_attempts','PASS','ATT','grp-pass',true)}${th('passing_yards','PASS','YDS','grp-pass-mid')}${th('passing_tds','PASS','TDS','grp-pass-mid')}${th('interceptions_thrown','PASS','INTS','grp-pass-end')}`}
       </tr></thead><tbody>${rows}</tbody></table></div>
     </div>`;
+  document.getElementById('content').innerHTML = pageHtml;
+  if(cacheKey){
+    _rankingsRenderCache.key = cacheKey;
+    _rankingsRenderCache.html = pageHtml;
+  }
 }
 function cell(v){return v&&v>0?`<span class="num">${(+v)%1!==0?(+v).toFixed(1):(+v).toLocaleString()}</span>`:'';}
 function rankSort(k){

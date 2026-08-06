@@ -287,6 +287,7 @@ let _buildPlayerCache = {
   scoringSig: '',
   list: null,
 };
+let _buildPlayerCacheEpoch = 0;
 
 function buildPlayerScoringSig(){
   const sc = scoringSettings || {};
@@ -308,6 +309,8 @@ function invalidateBuildPlayerCache(){
   _buildPlayerCache.rankFormat = null;
   _buildPlayerCache.scoringSig = '';
   _buildPlayerCache.list = null;
+  _buildPlayerCacheEpoch++;
+  if(typeof invalidateRankingsRenderCache==='function') invalidateRankingsRenderCache();
 }
 
 function buildPlayerList(){
