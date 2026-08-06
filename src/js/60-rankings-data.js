@@ -280,7 +280,48 @@ function ktcLinkHTML(name, pos){
   return `<a class="pcard-ktc" href="${url}" target="_blank" rel="noopener noreferrer" aria-label="View ${name} on KeepTradeCut (opens in a new tab)" title="View on KeepTradeCut — dynasty trade value"><img src="${KTC_ICON}" class="pcard-ktc-img" alt="KeepTradeCut"></a>`;
 }
 
+let _buildPlayerCache = {
+  userProjRef: null,
+  activeSeason: null,
+  rankFormat: null,
+  scoringSig: '',
+  list: null,
+};
+
+function buildPlayerScoringSig(){
+  const sc = scoringSettings || {};
+  return [
+    sc.passing_yards_points, sc.passing_yards_yardage,
+    sc.passing_touchdowns, sc.interceptions_thrown,
+    sc.passing_attempts, sc.passing_completions,
+    sc.receiving_yards_points, sc.receiving_yards_yardage,
+    sc.receiving_touchdowns, sc.receptions, sc.receptions_te_bonus,
+    sc.rushing_yards_points, sc.rushing_yards_yardage,
+    sc.rushing_touchdowns, sc.rushing_attempts,
+    sc.fumbles_lost,
+  ].join('|');
+}
+
+function invalidateBuildPlayerCache(){
+  _buildPlayerCache.userProjRef = null;
+  _buildPlayerCache.activeSeason = null;
+  _buildPlayerCache.rankFormat = null;
+  _buildPlayerCache.scoringSig = '';
+  _buildPlayerCache.list = null;
+}
+
 function buildPlayerList(){
+  const scoringSig = buildPlayerScoringSig();
+  const cacheHit = (_buildPlayerCache.list
+    && _buildPlayerCache.userProjRef===userProj
+    && _buildPlayerCache.activeSeason===activeSeason
+    && _buildPlayerCache.rankFormat===rankFormat
+    && _buildPlayerCache.scoringSig===scoringSig);
+  if(cacheHit){
+    // Return detached rows so callers can sort/annotate without mutating the cache.
+    return _buildPlayerCache.list.map(p=>Object.assign({}, p));
+  }
+
   const list=[];
   // Auto-populate: make sure every team with seed data is initialized so all players
   // appear in the rankings without the user opening each team first.
@@ -356,6 +397,11 @@ function buildPlayerList(){
     p.fa  = c && c.fa!=null ? c.fa : null;
   });
   computeVOR(list);   // scarcity-aware value over replacement (last-starter baseline)
+  _buildPlayerCache.userProjRef = userProj;
+  _buildPlayerCache.activeSeason = activeSeason;
+  _buildPlayerCache.rankFormat = rankFormat;
+  _buildPlayerCache.scoringSig = scoringSig;
+  _buildPlayerCache.list = list.map(p=>Object.assign({}, p));
   return list;
 }
 // Find a player's base seed entry (for ADP etc.) by id first, then name+team.

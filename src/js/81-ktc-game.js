@@ -410,8 +410,8 @@ function ktcFallbackTrio(board, requireMixed){
   return trio;
 }
 
-function ktcPickNextTrio(){
-  const board = ktcEligibleBoard();
+function ktcPickNextTrio(preBoard){
+  const board = (Array.isArray(preBoard) && preBoard.length) ? preBoard : ktcEligibleBoard();
   if(board.length<3){
     stopKtcGame('Not enough projected players for Keep Trade Cut.');
     return false;
@@ -836,17 +836,22 @@ function stopKtcGame(msg){
 }
 
 async function startKtcGame(){
+  const needsProjSeason = activeSeason!=='proj';
+  const needsRankingsView = (currentPhase!=='Rankings' || rankScope!=='all');
   if(currentPhase==='League') showProjectionsView();
-  if(activeSeason!=='proj') await loadSeason('proj');
+  if(needsProjSeason) await loadSeason('proj');
   rankScope='all';
   currentPhase='Rankings';
-  renderContent();
+  // Opening KTC from an already-rendered Full Rankings view should not rebuild the
+  // whole page every time; that expensive render is a major source of click latency.
+  if(needsProjSeason || needsRankingsView) renderContent();
   // Fresh session variety: clear short-term trio/tag memory each time the game starts.
   ktcGameState.recentTrioSigs = [];
   ktcGameState.recentTags = [];
   ktcGameState.active = true;
-  if(!ktcGameState.cursor) ktcGameState.cursor = Math.floor(Math.max(3, ktcEligibleBoard().length*0.12));
-  if(!ktcPickNextTrio()) return;
+  const bootBoard = ktcEligibleBoard();
+  if(!ktcGameState.cursor) ktcGameState.cursor = Math.floor(Math.max(3, bootBoard.length*0.12));
+  if(!ktcPickNextTrio(bootBoard)) return;
   renderKtcOverlay();
   toast('Keep Trade Cut started — submit picks to personalize rankings.','ok');
 }

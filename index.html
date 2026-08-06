@@ -3138,7 +3138,11 @@ function scrubGhostRosters(){
   return removed;
 }
 function deepCopy(o){ return JSON.parse(JSON.stringify(o)); }
-function markDirty(){ if(importedSnapshot) dirtySinceImport = true; saveSession(); }
+function markDirty(){
+  if(importedSnapshot) dirtySinceImport = true;
+  if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();
+  saveSession();
+}
 
 function playerNoteKey(nameOrId, pos, team){
   const posc = String(pos||'').toUpperCase();
@@ -6276,7 +6280,48 @@ function ktcLinkHTML(name, pos){
   return `<a class="pcard-ktc" href="${url}" target="_blank" rel="noopener noreferrer" aria-label="View ${name} on KeepTradeCut (opens in a new tab)" title="View on KeepTradeCut — dynasty trade value"><img src="${KTC_ICON}" class="pcard-ktc-img" alt="KeepTradeCut"></a>`;
 }
 
+let _buildPlayerCache = {
+  userProjRef: null,
+  activeSeason: null,
+  rankFormat: null,
+  scoringSig: '',
+  list: null,
+};
+
+function buildPlayerScoringSig(){
+  const sc = scoringSettings || {};
+  return [
+    sc.passing_yards_points, sc.passing_yards_yardage,
+    sc.passing_touchdowns, sc.interceptions_thrown,
+    sc.passing_attempts, sc.passing_completions,
+    sc.receiving_yards_points, sc.receiving_yards_yardage,
+    sc.receiving_touchdowns, sc.receptions, sc.receptions_te_bonus,
+    sc.rushing_yards_points, sc.rushing_yards_yardage,
+    sc.rushing_touchdowns, sc.rushing_attempts,
+    sc.fumbles_lost,
+  ].join('|');
+}
+
+function invalidateBuildPlayerCache(){
+  _buildPlayerCache.userProjRef = null;
+  _buildPlayerCache.activeSeason = null;
+  _buildPlayerCache.rankFormat = null;
+  _buildPlayerCache.scoringSig = '';
+  _buildPlayerCache.list = null;
+}
+
 function buildPlayerList(){
+  const scoringSig = buildPlayerScoringSig();
+  const cacheHit = (_buildPlayerCache.list
+    && _buildPlayerCache.userProjRef===userProj
+    && _buildPlayerCache.activeSeason===activeSeason
+    && _buildPlayerCache.rankFormat===rankFormat
+    && _buildPlayerCache.scoringSig===scoringSig);
+  if(cacheHit){
+    // Return detached rows so callers can sort/annotate without mutating the cache.
+    return _buildPlayerCache.list.map(p=>Object.assign({}, p));
+  }
+
   const list=[];
   // Auto-populate: make sure every team with seed data is initialized so all players
   // appear in the rankings without the user opening each team first.
@@ -6352,6 +6397,11 @@ function buildPlayerList(){
     p.fa  = c && c.fa!=null ? c.fa : null;
   });
   computeVOR(list);   // scarcity-aware value over replacement (last-starter baseline)
+  _buildPlayerCache.userProjRef = userProj;
+  _buildPlayerCache.activeSeason = activeSeason;
+  _buildPlayerCache.rankFormat = rankFormat;
+  _buildPlayerCache.scoringSig = scoringSig;
+  _buildPlayerCache.list = list.map(p=>Object.assign({}, p));
   return list;
 }
 // Find a player's base seed entry (for ADP etc.) by id first, then name+team.
@@ -14296,8 +14346,8 @@ function ktcFallbackTrio(board, requireMixed){
   return trio;
 }
 
-function ktcPickNextTrio(){
-  const board = ktcEligibleBoard();
+function ktcPickNextTrio(preBoard){
+  const board = (Array.isArray(preBoard) && preBoard.length) ? preBoard : ktcEligibleBoard();
   if(board.length<3){
     stopKtcGame('Not enough projected players for Keep Trade Cut.');
     return false;
@@ -14722,17 +14772,22 @@ function stopKtcGame(msg){
 }
 
 async function startKtcGame(){
+  const needsProjSeason = activeSeason!=='proj';
+  const needsRankingsView = (currentPhase!=='Rankings' || rankScope!=='all');
   if(currentPhase==='League') showProjectionsView();
-  if(activeSeason!=='proj') await loadSeason('proj');
+  if(needsProjSeason) await loadSeason('proj');
   rankScope='all';
   currentPhase='Rankings';
-  renderContent();
+  // Opening KTC from an already-rendered Full Rankings view should not rebuild the
+  // whole page every time; that expensive render is a major source of click latency.
+  if(needsProjSeason || needsRankingsView) renderContent();
   // Fresh session variety: clear short-term trio/tag memory each time the game starts.
   ktcGameState.recentTrioSigs = [];
   ktcGameState.recentTags = [];
   ktcGameState.active = true;
-  if(!ktcGameState.cursor) ktcGameState.cursor = Math.floor(Math.max(3, ktcEligibleBoard().length*0.12));
-  if(!ktcPickNextTrio()) return;
+  const bootBoard = ktcEligibleBoard();
+  if(!ktcGameState.cursor) ktcGameState.cursor = Math.floor(Math.max(3, bootBoard.length*0.12));
+  if(!ktcPickNextTrio(bootBoard)) return;
   renderKtcOverlay();
   toast('Keep Trade Cut started — submit picks to personalize rankings.','ok');
 }

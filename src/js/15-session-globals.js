@@ -272,7 +272,11 @@ function scrubGhostRosters(){
   return removed;
 }
 function deepCopy(o){ return JSON.parse(JSON.stringify(o)); }
-function markDirty(){ if(importedSnapshot) dirtySinceImport = true; saveSession(); }
+function markDirty(){
+  if(importedSnapshot) dirtySinceImport = true;
+  if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();
+  saveSession();
+}
 
 function playerNoteKey(nameOrId, pos, team){
   const posc = String(pos||'').toUpperCase();
