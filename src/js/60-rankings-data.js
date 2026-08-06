@@ -62,8 +62,6 @@ function sumerSeasonKey(){
   return (activeSeason!=='proj' && D && D[activeSeason]) ? String(activeSeason) : null;
 }
 function sumerAvailable(){ return !!sumerSeasonKey(); }
-// Does the nflverse A/B source have data for a season?
-function nflverseHasSeason(season){ return !!(NFLVERSE && NFLVERSE[String(season)]); }
 // Columns that are percentages in the nflverse player tables (for correct formatting).
 function _nflversePct(cols){
   const pct=['Scramble %','Sack %','Success %','Comp %','TFL %','Explosive %','First Down %','Catch %','Target Share'];

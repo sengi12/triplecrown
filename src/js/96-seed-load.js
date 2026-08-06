@@ -2,7 +2,6 @@
 // Load a prebuilt seed file (triplecrown_seed.json from build_seed.py)
 // This is the no-edit path: run the script, then load the JSON here.
 // ═════════════════════════════════════════════════════════════════════════════
-function triggerSeedLoad(){ document.getElementById('seedFile').click(); }
 function handleSeedLoad(e){
   const f=e.target.files[0]; if(!f) return;
   const r=new FileReader();
@@ -28,7 +27,7 @@ function handleSeedLoad(e){
       if(j.ktc) KTC=j.ktc;
       if(j.dynasty_values){ DYNASTY_VALUES=j.dynasty_values;   // FP dynasty trade values (League Analyzer)
         if(typeof laOnValuesLoaded==="function") laOnValuesLoaded(); }
-      if(j.nflverse){ NFLVERSE=j.nflverse; if(typeof resetNflverseLazy==='function') resetNflverseLazy(); }   // nflverse advanced metrics (opt-in A/B source; heavy sections lazy-load)
+      if(j.nflverse){ NFLVERSE=j.nflverse; if(typeof resetNflverseLazy==='function') resetNflverseLazy(); }   // nflverse advanced metrics payload (heavy sections lazy-load)
       if(hasSeed){
         SEED=j.seed; rosterMergedTeams.clear();
         HISTORY=j.history||{};

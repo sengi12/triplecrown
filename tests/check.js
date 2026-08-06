@@ -3992,8 +3992,6 @@ function sumerSeasonKey(){
   return (activeSeason!=='proj' && D && D[activeSeason]) ? String(activeSeason) : null;
 }
 function sumerAvailable(){ return !!sumerSeasonKey(); }
-// Does the nflverse A/B source have data for a season?
-function nflverseHasSeason(season){ return !!(NFLVERSE && NFLVERSE[String(season)]); }
 // Columns that are percentages in the nflverse player tables (for correct formatting).
 function _nflversePct(cols){
   const pct=['Scramble %','Sack %','Success %','Comp %','TFL %','Explosive %','First Down %','Catch %','Target Share'];
@@ -12817,6 +12815,7 @@ function loadProjections(data){
   const multiAnalyst=groups.some(g=>g.length>1);
   const analysts=[...new Set(players.map(p=>p.analyst_name).filter(Boolean))];
   const merged=groups.map(averageGroup);
+  const projKey=p=>p.player_id!=null?('id:'+p.player_id):('nm:'+normName(p.name));
 
   const sn=multiAnalyst?`Avg: ${analysts.join('+')} ${merged[0]?.season||''}`
     :`${merged[0]?.analyst_name||'Imported'} ${merged[0]?.season||''}`;
@@ -12872,10 +12871,9 @@ function loadProjections(data){
       // guarantee as the WR/RB fill below, so a backup/rookie QB on the projected roster stays
       // selectable instead of disappearing. games=0 keeps them out of team totals until dialed
       // up; appended last (gp=0) so the imported starter stays qbs[0] for snap-share assignment.
-      const qbKey=p=>p.player_id!=null?('id:'+p.player_id):('nm:'+normName(p.name));
-      const qbSeen=new Set(state.qbs.map(qbKey));
+      const qbSeen=new Set(state.qbs.map(projKey));
       getBase(team,'QB').forEach(qb=>{
-        const k=qbKey(qb); if(qbSeen.has(k)) return; qbSeen.add(k);
+        const k=projKey(qb); if(qbSeen.has(k)) return; qbSeen.add(k);
         state.qbs.push({
           name:qb.name,headshot:qb.headshot||null,slug:qb.slug||null,player_id:qb.player_id||null,
           adp:parseFloat(qb.adp)||999,adp_ppr:parseFloat(qb.adp_ppr)||999,
@@ -12895,15 +12893,14 @@ function loadProjections(data){
     // selectable at a ZERO baseline — the same guarantee as copying a previous season, so a
     // player without an imported line isn't dropped as an option. ensureTeam() (above) already
     // merged the live Sleeper roster into the seed, so getBase carries the full projected corps.
-    const recvKey=p=>p.player_id!=null?('id:'+p.player_id):('nm:'+normName(p.name));
     const rosterRecv=[...getBase(team,'WR'),...getBase(team,'TE'),
       ...getBase(team,'RB').filter(p=>(parseFloat(p.receiving_targets)||0)>5||(parseFloat(p.receptions)||0)>5)];
     const recvRows=[]; const recvSeen=new Set();
-    recv.forEach(p=>{ const k=recvKey(p); if(recvSeen.has(k)) return; recvSeen.add(k);
+    recv.forEach(p=>{ const k=projKey(p); if(recvSeen.has(k)) return; recvSeen.add(k);
       recvRows.push({name:p.name,pos:p.fantasy_position,headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
         tgts:parseFloat(p.receiving_targets)||0,yds:parseFloat(p.receiving_yards)||0,rec:parseFloat(p.receptions)||0,tds:parseFloat(p.receiving_touchdowns)||0,
         adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
-    rosterRecv.forEach(p=>{ const k=recvKey(p); if(recvSeen.has(k)) return; recvSeen.add(k);
+    rosterRecv.forEach(p=>{ const k=projKey(p); if(recvSeen.has(k)) return; recvSeen.add(k);
       recvRows.push({name:p.name,pos:p.pos,headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
         tgts:0,yds:0,rec:0,tds:0,
         adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
@@ -12922,14 +12919,13 @@ function loadProjections(data){
       .sort((a,b)=>parseFloat(b.rushing_attempts||0)-parseFloat(a.rushing_attempts||0));
     // Preserve roster RBs the import omits at a ZERO baseline (still selectable), mirroring the
     // copy-from-season behavior; team totals stay anchored to the imported (real) carries only.
-    const rushKey=p=>p.player_id!=null?('id:'+p.player_id):('nm:'+normName(p.name));
     const rosterRush=getBase(team,'RB').filter(p=>(parseFloat(p.rushing_attempts)||0)>0||(parseFloat(p.adp)||999)<300);
     const rushRows=[]; const rushSeen=new Set();
-    rushers.forEach(p=>{ const k=rushKey(p); if(rushSeen.has(k)) return; rushSeen.add(k);
+    rushers.forEach(p=>{ const k=projKey(p); if(rushSeen.has(k)) return; rushSeen.add(k);
       rushRows.push({name:p.name,headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
         att:parseFloat(p.rushing_attempts)||0,yds:parseFloat(p.rushing_yards)||0,tds:parseFloat(p.rushing_touchdowns)||0,
         adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
-    rosterRush.forEach(p=>{ const k=rushKey(p); if(rushSeen.has(k)) return; rushSeen.add(k);
+    rosterRush.forEach(p=>{ const k=projKey(p); if(rushSeen.has(k)) return; rushSeen.add(k);
       rushRows.push({name:p.name,headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
         att:0,yds:0,tds:0,
         adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
@@ -13407,7 +13403,7 @@ async function tryAutoLoadSeed(){
     if(j.ktc){ KTC=j.ktc; got=true; }   // KeepTradeCut dynasty player-page slugs (player-card links)
     if(j.dynasty_values){ DYNASTY_VALUES=j.dynasty_values; got=true;
       if(typeof laOnValuesLoaded==="function") laOnValuesLoaded(); }   // FP dynasty trade values → refresh analyzer
-    if(j.nflverse){ NFLVERSE=j.nflverse; if(typeof resetNflverseLazy==='function') resetNflverseLazy(); got=true; }   // nflverse advanced metrics (opt-in A/B source; heavy sections lazy-load)
+    if(j.nflverse){ NFLVERSE=j.nflverse; if(typeof resetNflverseLazy==='function') resetNflverseLazy(); got=true; }   // nflverse advanced metrics payload (heavy sections lazy-load)
     // Only adopt prebuilt projections/history if present and non-trivial.
     if(j.seed && Object.keys(j.seed).length){
       SEED=j.seed; projSeed=SEED; seasonStatsCache={proj:SEED}; rosterMergedTeams.clear();
@@ -15137,7 +15133,6 @@ function copyPlayerToWorking(pid,pos){
 // Load a prebuilt seed file (triplecrown_seed.json from build_seed.py)
 // This is the no-edit path: run the script, then load the JSON here.
 // ═════════════════════════════════════════════════════════════════════════════
-function triggerSeedLoad(){ document.getElementById('seedFile').click(); }
 function handleSeedLoad(e){
   const f=e.target.files[0]; if(!f) return;
   const r=new FileReader();
@@ -15163,7 +15158,7 @@ function handleSeedLoad(e){
       if(j.ktc) KTC=j.ktc;
       if(j.dynasty_values){ DYNASTY_VALUES=j.dynasty_values;   // FP dynasty trade values (League Analyzer)
         if(typeof laOnValuesLoaded==="function") laOnValuesLoaded(); }
-      if(j.nflverse){ NFLVERSE=j.nflverse; if(typeof resetNflverseLazy==='function') resetNflverseLazy(); }   // nflverse advanced metrics (opt-in A/B source; heavy sections lazy-load)
+      if(j.nflverse){ NFLVERSE=j.nflverse; if(typeof resetNflverseLazy==='function') resetNflverseLazy(); }   // nflverse advanced metrics payload (heavy sections lazy-load)
       if(hasSeed){
         SEED=j.seed; rosterMergedTeams.clear();
         HISTORY=j.history||{};
@@ -18319,8 +18314,8 @@ const LA_CLIFF_EDGE = 1.0;          // within this many years of the cliff = "on
 const LA_DEFIER_POS_RANK = 12;      // top-12 at his position among rostered players
 const LA_TRAJ_CLIFFSHARE = .35;     // % of team value on/past the cliff → "Edge of the Cliff"
 // Cliff state for one player: null (no age / no cliff), 'edge', 'past', or 'defier'.
-// Value of the LA_DEFIER_TOP_N-th best rostered player — the bar a past-cliff player must
-// clear to count as a defier. Cached per render (cleared alongside the other caches).
+// Value of the LA_DEFIER_POS_RANK-th best rostered player at each position — the bar a
+// past-cliff player must clear to count as a defier. Cached per render.
 let _laDefierCut=null;
 function laDefierCut(pos){
   if(!_laDefierCut){
