@@ -322,6 +322,8 @@
 .la-fnd-title{font-size:12.5px;font-weight:900;margin-bottom:8px;}
 .la-fnd-sub{font-size:10px;color:var(--muted);font-weight:600;margin-left:8px;}
 .la-fnd-row{display:flex;align-items:center;gap:10px;padding:5px 0;border-top:1px dashed var(--border);font-size:12px;}
+.la-fnd-shape{font-size:9px;font-weight:800;letter-spacing:.02em;color:var(--muted);
+  border:1px solid var(--border);border-radius:999px;padding:1px 7px;flex:none;}
 .la-fnd-deal{flex:1;min-width:0;}
 .la-fnd-v{font-family:var(--mono);font-size:10.5px;font-weight:800;color:#fbbf24;flex:none;}
 .la-fnd-v.ok{color:#00d4aa;}
@@ -601,6 +603,10 @@
 .ps-close{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:17px;
   display:inline-flex;padding:4px;border-radius:6px;}
 .ps-close:hover{color:var(--text);background:var(--surface2);}
+.ps-note-toggle{background:transparent;border:none;color:var(--muted);cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;padding:5px;border-radius:7px;}
+.ps-note-toggle:hover{color:var(--accent);background:var(--surface2);}
+.ps-note-toggle.on{color:#9fd7ff;background:rgba(61,155,255,.16);box-shadow:0 0 0 1px rgba(61,155,255,.35) inset;}
 .ps-results{overflow-y:auto;padding:6px;}
 .ps-hint{padding:22px 18px;color:var(--muted);font-size:12.5px;line-height:1.55;text-align:center;}
 .ps-row{display:flex;align-items:center;gap:11px;width:100%;padding:8px 10px;border:none;
@@ -610,6 +616,9 @@
 .ps-hs.ps-def{object-fit:contain;padding:3px;}
 .ps-nm{flex:1;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .ps-meta{display:flex;align-items:center;gap:8px;flex:none;}
+.ps-note-badge{min-width:17px;height:17px;padding:0 5px;border-radius:999px;display:inline-flex;
+  align-items:center;justify-content:center;font-size:10px;font-weight:900;line-height:1;
+  color:#9fd7ff;background:rgba(61,155,255,.18);border:1px solid rgba(61,155,255,.4);}
 .ps-team-logo{width:20px;height:20px;object-fit:contain;}
 .ps-pos{font-size:10px;font-weight:700;letter-spacing:.03em;padding:2px 7px;border-radius:5px;
   background:var(--surface2);color:var(--muted);min-width:30px;text-align:center;}
@@ -635,6 +644,17 @@
 .notes-browser-tag-rm{width:16px;height:16px;border:none;border-radius:999px;background:var(--surface2);color:var(--muted);cursor:pointer;font-size:10px;line-height:1;display:flex;align-items:center;justify-content:center;}
 .notes-browser-tag-rm:hover{color:var(--text);}
 .notes-browser-badge{flex:none;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:var(--accent);}
+
+/* ── Download picker modal (JSON vs CSV) ─────────────────────────────────── */
+.dl-modal{max-width:460px;}
+.dl-head{align-items:flex-start;}
+.dl-title-wrap{display:flex;flex-direction:column;gap:1px;min-width:0;}
+.dl-title{font-size:14px;font-weight:800;color:var(--text);line-height:1.2;}
+.dl-sub{font-size:11px;color:var(--muted);font-weight:600;}
+.dl-actions{display:flex;flex-direction:column;gap:6px;padding:8px;}
+.dl-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;}
+.dl-fmt{font-size:12px;font-weight:900;letter-spacing:.05em;color:#9fd7ff;}
+.dl-desc{font-size:11px;color:var(--muted);text-align:right;}
 
 /* Team defense (D/ST) player card bits. */
 .pcard-hero-dst{object-fit:contain;padding:14px;background:rgba(255,255,255,.04);}

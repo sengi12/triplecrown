@@ -290,6 +290,57 @@ function exportCSV(){
   dlFile(csv,`${n}.csv`,'text/csv');toast('CSV exported ✓','ok');
 }
 
+let _dlOpen = false;
+
+function openDownloadPicker(){
+  if(_dlOpen) return;
+  _dlOpen = true;
+  const ov = document.createElement('div');
+  ov.id = 'dlOverlay';
+  ov.className = 'ps-overlay';
+  ov.innerHTML = `
+    <div class="ps-modal dl-modal" role="dialog" aria-label="Download projections">
+      <div class="ps-head dl-head">
+        <span class="ps-search-ico">${TC_ICON('download')}</span>
+        <div class="dl-title-wrap">
+          <div class="dl-title">Download Projections</div>
+          <div class="dl-sub">Choose a file format</div>
+        </div>
+        <button class="ps-close" onclick="closeDownloadPicker()" aria-label="Close">${TC_ICON('close')}</button>
+      </div>
+      <div class="dl-actions">
+        <button class="ps-row dl-row" onclick="downloadAsFormat('json')">
+          <span class="dl-fmt">JSON</span>
+          <span class="dl-desc">Full projections + notes metadata</span>
+        </button>
+        <button class="ps-row dl-row" onclick="downloadAsFormat('csv')">
+          <span class="dl-fmt">CSV</span>
+          <span class="dl-desc">Spreadsheet-friendly projections</span>
+        </button>
+      </div>
+    </div>`;
+  ov.addEventListener('mousedown', e=>{ if(e.target===ov) closeDownloadPicker(); });
+  document.body.appendChild(ov);
+}
+
+function closeDownloadPicker(){
+  _dlOpen = false;
+  const el = document.getElementById('dlOverlay');
+  if(el) el.remove();
+}
+
+function downloadAsFormat(fmt){
+  closeDownloadPicker();
+  const f = String(fmt||'').toLowerCase();
+  if(f==='json') return exportJSON();
+  if(f==='csv') return exportCSV();
+  toast('Unknown download format','err');
+}
+
+function menuDownloadPrompt(){
+  openDownloadPicker();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Download format menu (one ⬇ Download button → choose JSON or CSV)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -353,6 +404,13 @@ function showProjectionsView(){
     }
     return;
   }
+  // From global views (Rankings / league-wide Advanced), jump back into the
+  // projection builder phases instead of re-rendering the same global view.
+  if(currentPhase==='Rankings' || currentPhase==='AdvancedLeague'){
+    const stashed = _preLeagueView && _preLeagueView.phase;
+    const usableStash = stashed && !['League','Rankings','AdvancedLeague'].includes(stashed);
+    currentPhase = usableStash ? stashed : 'Passing';
+  }
   renderContent();
   syncAppChrome();
 }
@@ -360,22 +418,54 @@ function showProjectionsView(){
 // Analyzer (a snapshot isn't a season), so they'd just be dead controls taking a row of
 // screen — hide them there. Also keeps the menu's view items in sync.
 function syncAppChrome(){
-  const inLeague = (typeof currentPhase!=='undefined' && currentPhase==='League');
+  const setCls = (el, cls, on)=>{
+    if(!el || !el.classList) return;
+    if(el.classList.toggle) el.classList.toggle(cls, !!on);
+    else if(on) el.classList.add(cls);
+    else el.classList.remove(cls);
+  };
+  const setHidden = (el, hidden)=>{
+    if(!el) return;
+    if(hidden){
+      if(typeof el.setAttribute==='function') el.setAttribute('hidden','');
+      else el.hidden = true;
+    } else {
+      if(typeof el.removeAttribute==='function') el.removeAttribute('hidden');
+      else el.hidden = false;
+    }
+  };
+  const phase = String((typeof currentPhase!=='undefined' && currentPhase) || '');
+  const inLeague = (phase==='League' || phase==='AdvancedLeague');
+  const inRankings = phase==='Rankings';
+  const inProjections = !inLeague && !inRankings;
+  const viewLabel = inProjections ? 'Projections' : (inRankings ? 'Rankings' : 'Leagues');
   // Season tabs AND the NFL team sidebar are both projection-builder chrome: a snapshot
   // isn't a season, and picking the Lions does nothing to your dynasty league. Hiding both
   // in the analyzer removes two dead controls and ~75px of vertical space on a phone.
   const bar=document.getElementById('seasonBar');
-  if(bar) bar.classList.toggle('hidden-view', inLeague);
+  setCls(bar, 'hidden-view', inLeague);
   const side=document.getElementById('sidebar');
-  if(side) side.classList.toggle('hidden-view', inLeague);
-  const mp=document.getElementById('menuProjView'), ml=document.getElementById('menuLeagueView');
-  if(mp) mp.classList.toggle('active', !inLeague);
-  if(ml) ml.classList.toggle('active', inLeague);
-  // League actions only exist once there's a snapshot to act on.
-  const hasSnap = (typeof leagueSnapshot!=='undefined' && !!leagueSnapshot);
-  document.querySelectorAll('.la-menu-only').forEach(el=>{
-    if(hasSnap) el.removeAttribute('hidden'); else el.setAttribute('hidden','');
+  setCls(side, 'hidden-view', inLeague);
+  const mp=document.getElementById('menuProjView');
+  const mr=document.getElementById('menuRankView');
+  const ml=document.getElementById('menuLeagueView');
+  setCls(mp, 'active', inProjections);
+  setCls(mr, 'active', inRankings);
+  setCls(ml, 'active', inLeague);
+
+  document.querySelectorAll('.menu-view-proj').forEach(el=>{
+    setHidden(el, !inProjections);
   });
+  document.querySelectorAll('.menu-view-rank').forEach(el=>{
+    setHidden(el, !inRankings);
+  });
+  document.querySelectorAll('.menu-view-league').forEach(el=>{
+    setHidden(el, !inLeague);
+  });
+
+  const viewSpecificSec = document.getElementById('menuViewSpecificSec');
+  if(viewSpecificSec) viewSpecificSec.textContent = `View-specific: ${viewLabel}`;
+
   if(typeof refreshLeagueSyncBtn==='function') refreshLeagueSyncBtn();
 }
 
@@ -399,6 +489,7 @@ seasonStatsCache['proj'] = SEED;
 projSeed = SEED;
 renderSeasonTabs();
 renderSidebar();
+syncAppChrome();
 
 // If no seed is embedded (the default now — we pull live from Sleeper), fetch the
 // current-season projections automatically on first load. A prebuilt triplecrown_seed.json

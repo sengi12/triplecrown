@@ -244,7 +244,6 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] Google Play Store
 - [ ] Apple iOS Store
 - [ ] Generate my own proprietary projections based on all the metrics we have
-- [ ] Simplify process with a vibe-check. Tinder-style swipes? KTC?
 - [ ] fully flesh out a --dev mode for the web page that adds debug logs, etc
 ### UI / UX
 ### Playercards

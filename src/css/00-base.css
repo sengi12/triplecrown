@@ -136,6 +136,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .app-menu{min-width:212px;padding:5px;}
 .app-menu .hdr-menu-item{display:flex;align-items:center;gap:7px;width:100%;text-align:left;
   padding:7px 9px;font-size:12px;}
+.app-menu .hdr-menu-item[hidden],
+.app-menu .app-menu-sec[hidden]{display:none !important;}
 .app-menu .hdr-menu-item.active{color:var(--accent);background:rgba(61,155,255,.10);}
 .app-menu-sec{font-size:8.5px;font-weight:800;letter-spacing:.07em;color:var(--muted);
   padding:7px 9px 3px;text-transform:uppercase;}

@@ -31,6 +31,7 @@ let laState = { step: leagueSnapshot? 'view':'start', busy:false, error:null,
                 // analysis to them — same charts, same lenses, their roster.
                 viewTeam:null,
                 fndPos:'AUTO',     // Trade Finder target position (AUTO = my weakest by rank)
+                fndShape:'ANY',    // Trade Finder package filter (ANY, BAL, 1v1, 2v2, 3v3, xv1, 1vx)
                 cmpPicks:true,     // Compare: include pick capital in the value lens
                 cmpStarters:false, // Compare: rank on starting lineups only (mirrors My Team)
                 cmpSort:{col:'total',dir:-1} };  // Compare column sort (click a header)
@@ -381,7 +382,7 @@ function refreshLeagueSyncBtn(){
   // there so the menu doubles as the sync indicator the old header button used to be.
   const label = leagueSnapshot
     ? `${laLeagueIcon(leagueSnapshot,'la-btn-av')} ${escHtml(leagueSnapshot.name)}`
-    : TC_ICON('stadium')+' League Analyzer';
+    : TC_ICON('stadium')+' Leagues';
   const m=document.getElementById('menuLeagueView');
   if(m) m.innerHTML = label;
   // Kept for any build that still renders the old header button.
@@ -790,7 +791,7 @@ function renderLeagueAnalyzer(){
   const back=`<button class="btn btn-ghost" onclick="leaveLeagueAnalyzer()">← Projections</button>`;
   if(laState.step!=='view' || !leagueSnapshot){
     host.innerHTML=`
-      <div class="team-header"><div><div class="team-abbr">${TC_ICON("stadium")} League Analyzer</div>
+      <div class="team-header"><div><div class="team-abbr">${TC_ICON("stadium")} Leagues</div>
         <div class="team-qb-name">dynasty rosters · values · trades — powered by your league snapshot</div></div>
         <div class="team-nav">${back}</div></div>
       <div class="la-setup card">
@@ -1268,6 +1269,15 @@ const LA_LANE_TIP={
   mid:'A solid mid-priced starter — moves the needle without gutting another position.',
   value:'A cheap contributor — low cost, low risk; useful depth in a deeper league.',
   buy:'A young player entering their breakout window, priced before the leap.'};
+const LA_SHAPE_LABEL={
+  ANY:'Any shape',
+  BAL:'Balanced only (same number of assets each side)',
+  '1v1':'1-for-1',
+  '2v2':'2-for-2',
+  '3v3':'3-for-3',
+  'xv1':'x-for-1',
+  '1vx':'1-for-x',
+};
 function laTradeFinder(s){
   const POS=['QB','RB','WR','TE'];
   const totals=s.teamList.map(t=>{
@@ -1283,13 +1293,21 @@ function laTradeFinder(s){
   // need to be stronger than me there (maybe I'm hunting an upgrade at a strength), and my
   // give pool widens to my best assets at every OTHER position, not just my single surplus.
   const target = (laState.fndPos && laState.fndPos!=='AUTO') ? laState.fndPos : null;
+  const shapeTarget = (laState.fndShape && LA_SHAPE_LABEL[laState.fndShape]) ? laState.fndShape : 'ANY';
   const weak = target ? {pos:target, rank:rankAt(target,mine)} : [...myRanks].sort((a,b)=>b.rank-a.rank)[0];
   const strong=[...myRanks].filter(r=>r.pos!==weak.pos).sort((a,b)=>a.rank-b.rank)[0] || weak;
   if(weak.pos===strong.pos) return {weak,strong,proposals:[],targeted:!!target};
   const myPool=laAssetPools(s, mine.t.rosterId);
-  const myGive = target
-    ? myPool.players.filter(p=>p.pos!==target&&p.v>0).slice(0,6)
-    : myPool.players.filter(p=>p.pos===strong.pos).slice(0,4);
+  const coreKeep = new Set(myPool.players.slice(0,1).map(p=>p.key)); // keep my top star mostly out
+  const rawGive = myPool.players.filter(p=>p.v>0 && (target ? p.pos!==target : true));
+  const giveOrdered = [...rawGive.filter(p=>p.pos===strong.pos), ...rawGive.filter(p=>p.pos!==strong.pos)]
+    .filter((x,i,a)=>a.findIndex(y=>y.key===x.key)===i);
+  // Primary give pool favors realistic middle-tier outgoing assets.
+  const myGiveMain = giveOrdered.filter(p=>!coreKeep.has(p.key)).slice(0,8);
+  // Keep a small star lane so big swings are still shown sometimes.
+  const myGiveStar = rawGive.filter(p=>coreKeep.has(p.key)).slice(0,1);
+  const myGive = [...myGiveMain, ...myGiveStar]
+    .filter((x,i,a)=>a.findIndex(y=>y.key===x.key)===i);
 
   // ── League size shapes the whole strategy ─────────────────────────────────
   // In a shallow league (8-10 teams) the talent pool is concentrated, so the only upgrade
@@ -1326,6 +1344,32 @@ function laTradeFinder(s){
   };
 
   const proposals=[];
+  const mkBundles = (assets, sizes, opts)=>{
+    const out=[];
+    const list=(assets||[]).filter(a=>a && (+a.v||0)>0);
+    const seenSig=new Set();
+    const allow=opts&&typeof opts.allow==='function' ? opts.allow : (()=>true);
+    const maxEach=(opts&&opts.maxEach)||18;
+    const take=(k, arr)=>{
+      if(sizes.indexOf(k)<0) return;
+      const sig=arr.map(x=>x.key).sort().join('|');
+      if(seenSig.has(sig)) return;
+      if(!allow(arr)) return;
+      seenSig.add(sig);
+      out.push({size:k, assets:arr.slice(), total:arr.reduce((s,a)=>s+(+a.v||0),0)});
+    };
+    for(let i=0;i<list.length;i++) take(1,[list[i]]);
+    for(let i=0;i<list.length-1;i++) for(let j=i+1;j<list.length;j++) take(2,[list[i],list[j]]);
+    for(let i=0;i<list.length-2;i++) for(let j=i+1;j<list.length-1;j++) for(let k=j+1;k<list.length;k++) take(3,[list[i],list[j],list[k]]);
+    const bySize={1:[],2:[],3:[]};
+    out.forEach(b=>bySize[b.size].push(b));
+    [1,2,3].forEach(k=>bySize[k].sort((a,b)=>b.total-a.total));
+    return {
+      1: bySize[1].slice(0, maxEach),
+      2: bySize[2].slice(0, maxEach),
+      3: bySize[3].slice(0, maxEach),
+    };
+  };
   totals.forEach(row=>{
     if(row===mine) return;
     if(!target && row.by[weak.pos]<=mine.by[weak.pos]) return;  // AUTO: they must be STRONGER where I'm weak
@@ -1337,23 +1381,43 @@ function laTradeFinder(s){
     const bigN = shallow?4:deep?2:3, midN = shallow?1:deep?4:3;
     const gets=[...atPos.slice(0,bigN), ...atPos.slice(bigN, bigN+midN)]
       .filter((x,i,arr)=>arr.indexOf(x)===i);
-    gets.forEach(get=>{
-      myGive.forEach(g1=>{
-        const v1=laTcVerdict([g1.v],[get.v]);
-        if(v1.fair){ proposals.push({give:[g1],get:[get],b:row.t,v:v1}); return; }
-        if(v1.diff<0){                                    // I'm short → add a second piece of MINE
-          myPool.players.concat(myPool.picks).filter(x=>x.key!==g1.key&&x.v>0).slice(0,10).forEach(g2=>{
-            const v2=laTcVerdict([g1.v,g2.v],[get.v]);
-            if(v2.fair) proposals.push({give:[g1,g2],get:[get],b:row.t,v:v2});
-          });
-        } else {                                          // I'm overpaying → THEY sweeten instead
-          // (this is the "Allen for Bowers + a 2nd" shape: my stud outweighs their piece, so the
-          //  fair completion is a sweetener from THEIR remaining assets, not less from me)
-          theirPool.players.concat(theirPool.picks).filter(x=>x.key!==get.key&&x.v>0).slice(0,10).forEach(x2=>{
-            const v2=laTcVerdict([g1.v],[get.v,x2.v]);
-            if(v2.fair) proposals.push({give:[g1],get:[get,x2],b:row.t,v:v2});
-          });
-        }
+    const theirSupports=[
+      ...theirPool.players.filter(p=>p.pos!==weak.pos&&p.v>0).slice(0,5),
+      ...theirPool.picks.filter(p=>p.v>0).slice(0,4),
+    ].filter((x,i,a)=>a.findIndex(y=>y.key===x.key)===i);
+    const theirTargetPool=[...gets, ...theirSupports]
+      .filter((x,i,a)=>a.findIndex(y=>y.key===x.key)===i)
+      .slice(0,12);
+    const myTargetPool=[
+      ...myGive,
+      ...myPool.picks.filter(p=>p.v>0).slice(0,4),
+    ].filter((x,i,a)=>a.findIndex(y=>y.key===x.key)===i)
+      .slice(0,12);
+
+    const myBundles = mkBundles(myTargetPool, [1,2,3], { maxEach: 16 });
+    const theirBundles = mkBundles(theirTargetPool, [1,2,3], {
+      maxEach: 16,
+      allow: arr => arr.some(a=>a.type==='p' && a.pos===weak.pos),
+    });
+    const shapes=[[1,1],[2,1],[3,1],[1,2],[2,2],[3,2],[1,3],[2,3],[3,3]];
+    shapes.forEach(([ga,gb])=>{
+      const mineSet = myBundles[ga]||[];
+      const theirsSet = theirBundles[gb]||[];
+      mineSet.forEach(mb=>{
+        theirsSet.forEach(tb=>{
+          const v=laTcVerdict(mb.assets.map(x=>x.v), tb.assets.map(x=>x.v));
+          const near = Math.abs(v.diff) <= v.band*1.35;
+          if(v.fair || near){
+            proposals.push({
+              give: mb.assets,
+              get: tb.assets,
+              b: row.t,
+              v,
+              near: !v.fair,
+              shape: `${ga}for${gb}`,
+            });
+          }
+        });
       });
     });
   });
@@ -1400,10 +1464,38 @@ function laTradeFinder(s){
   const uniq=proposals.filter(p=>{
     const k=p.b.rosterId+'|'+p.give.map(x=>x.key).sort().join(',')+'>'+p.get.map(x=>x.key).sort().join(',');
     if(seen.has(k)) return false; seen.add(k); return true;
-  }).map(p=>({...p, impact:impact(p.get, p.give)}))
+  }).map(p=>({
+    ...p,
+    shape:p.shape || `${p.give.length}for${p.get.length}`,
+    valueIn:p.get.reduce((s,x)=>s+(+x.v||0),0),
+    valueOut:p.give.reduce((s,x)=>s+(+x.v||0),0),
+    rawDelta:p.get.reduce((s,x)=>s+(+x.v||0),0)-p.give.reduce((s,x)=>s+(+x.v||0),0),
+    impact:impact(p.get, p.give),
+    coreCost:p.give.some(g=>coreKeep.has(g.key)) ? 1 : 0,
+    givePositions:new Set(p.give.filter(g=>g.type==='p').map(g=>g.pos)).size,
+  })).map(p=>{
+    // Team-first scoring: prefer proposals that improve my weak spot enough to offset what I lose,
+    // while penalizing fairness gaps where I am the one overpaying.
+    const tcPenalty = Math.max(0, p.v.diff||0) * 0.38;
+    const teamGain = p.impact + (p.rawDelta*0.10) - tcPenalty;
+    const realistic = p.v.fair
+      ? teamGain >= -120
+      : (Math.abs(p.v.diff)<=p.v.band*1.15 && teamGain >= 180);
+    const improvesTeam = teamGain >= 0;
+    return {...p, tcPenalty, teamGain, realistic, improvesTeam};
+  })
     // Best NET improvement first — a cheap add that costs nothing you start can outrank a
     // blockbuster that guts another position. Ties broken by fairness.
-    .sort((a,b)=>(b.impact-a.impact)||(Math.abs(a.v.diff)-Math.abs(b.v.diff)));
+    .sort((a,b)=>
+      (b.improvesTeam-a.improvesTeam) ||
+      (b.realistic-a.realistic) ||
+      (a.coreCost-b.coreCost) ||
+      ((a.near?1:0)-(b.near?1:0)) ||
+      (b.givePositions-a.givePositions) ||
+      (b.teamGain-a.teamGain) ||
+      (b.impact-a.impact) ||
+      (Math.abs(a.v.diff)-Math.abs(b.v.diff))
+    );
   // 🔄 variations: instead of always the same top-6, deal a seeded shuffle biased toward the
   // front of the sorted list and toward partner diversity — every press of refresh reseeds.
   let seed=(laState.fndSeed*2654435761)>>>0 || 1;
@@ -1413,9 +1505,33 @@ function laTradeFinder(s){
   // Classify every proposal by the COST of the headline get, so the six shown always span
   // price points instead of all being blockbusters: a "big fish" (top-tier get), a "value"
   // add (mid), and breakout buys. The reader sees a menu, not six versions of the same swing.
-  const laneOf=(p)=> p.buy ? 'buy' : (p.get[0].v>=6000 ? 'big' : p.get[0].v>=3000 ? 'mid' : 'value');
-  uniq.forEach(p=>{ p.lane=laneOf(p); });
-  const buyPool=uniq.filter(x=>x.lane==='buy'), mainPool=uniq.filter(x=>x.lane!=='buy');
+  const laneOf=(p)=>{
+    if(p.buy) return 'buy';
+    const head = p.get.reduce((m,x)=>Math.max(m,+x.v||0),0);
+    return head>=6000 ? 'big' : head>=3000 ? 'mid' : 'value';
+  };
+  const viable = uniq.filter(x=>x.realistic || x.improvesTeam);
+  const rankedPool = viable.length ? viable : uniq;
+  const shapeMatch = (p)=>{
+    if(shapeTarget==='ANY') return true;
+    const m=/^(\d+)for(\d+)$/.exec(p.shape||'');
+    if(!m) return true;
+    const ga=+m[1], gb=+m[2];
+    if(shapeTarget==='BAL') return ga===gb;
+    if(shapeTarget==='1v1') return ga===1 && gb===1;
+    if(shapeTarget==='2v2') return ga===2 && gb===2;
+    if(shapeTarget==='3v3') return ga===3 && gb===3;
+    if(shapeTarget==='xv1') return gb===1 && ga>1;
+    if(shapeTarget==='1vx') return ga===1 && gb>1;
+    return true;
+  };
+  const scopedPool = rankedPool.filter(shapeMatch);
+  const boardPool = scopedPool.length ? scopedPool : rankedPool;
+  boardPool.forEach(p=>{ p.lane=laneOf(p); });
+  const buyPool=boardPool.filter(x=>x.lane==='buy');
+  const mainPool=boardPool.filter(x=>x.lane!=='buy');
+  const mainNoCore=mainPool.filter(x=>!x.coreCost);
+  const mainCore=mainPool.filter(x=>x.coreCost);
   const pool=[...mainPool];
   const picksOut=[]; const usedPartner={}; const usedLane={};
   // Guarantee spread: up to 2 breakout buys and at least one non-"big" (value/mid) seat, so a
@@ -1426,6 +1542,17 @@ function laTradeFinder(s){
   const cheap=mainPool.filter(p=>p.lane!=='big');
   if(cheap.length){ const c=cheap[laState.fndSeed%cheap.length];
     if(!picksOut.includes(c)){ picksOut.push(c); const i=pool.indexOf(c); if(i>=0) pool.splice(i,1); } }
+  // Guarantee realistic proposals first: reserve up to 4 slots for non-core outgoing packages.
+  const noCoreSeeded=[...mainNoCore];
+  let rot=laState.fndSeed % Math.max(1, noCoreSeeded.length);
+  while(noCoreSeeded.length && picksOut.length<Math.min(4,6)){
+    const p=noCoreSeeded.splice(rot%noCoreSeeded.length,1)[0];
+    if(!picksOut.includes(p)){
+      picksOut.push(p);
+      const i=pool.indexOf(p); if(i>=0) pool.splice(i,1);
+    }
+    rot += 1;
+  }
   while(picksOut.length<6 && pool.length){
     // exponential bias to the front keeps quality high while still rotating variety
     let i=Math.min(pool.length-1, Math.floor(-Math.log(1-rnd())*2.2));
@@ -1445,8 +1572,17 @@ function laTradeFinder(s){
     usedLane[pr.lane]=(usedLane[pr.lane]||0)+1;
     picksOut.push(pr);
   }
-  return {weak,strong,proposals:picksOut, total:uniq.length, targeted:!!target,
-          deep, shallow, nTeams, myRosterId:mine.t.rosterId};
+  // If the board is still short and we have star-cost proposals left, include a couple.
+  if(picksOut.length<6 && mainCore.length){
+    for(let i=0;i<mainCore.length && picksOut.length<6;i++){
+      const p=mainCore[(laState.fndSeed+i)%mainCore.length];
+      if(!picksOut.includes(p)) picksOut.push(p);
+    }
+  }
+    const fairCount = boardPool.filter(x=>x.v&&x.v.fair).length;
+    const betterCount = boardPool.filter(x=>x.improvesTeam).length;
+    return {weak,strong,proposals:picksOut, total:boardPool.length, fairCount, betterCount, targeted:!!target,
+      deep, shallow, nTeams, myRosterId:mine.t.rosterId, shapeTarget};
 }
 
 // League-wide positional value ranks, computed live from the snapshot: every rostered player
@@ -1535,12 +1671,13 @@ function laTradeView(s){
   const fndHtml = fnd.proposals.length ? fnd.proposals.map(p=>`
     <div class="la-fnd-row">
       <span class="la-fnd-lane la-lane-${p.lane}" title="${LA_LANE_TIP[p.lane]}">${LA_LANE_LABEL[p.lane]}</span>
+      <span class="la-fnd-shape">${escHtml((p.shape||'1for1').replace('for','-for-'))}</span>
       <span class="la-fnd-deal">${p.buy?'<span class="la-fnd-gem" title="Breakout-window buy: young player (2nd-yr TE/QB, 3rd-yr WR window) priced before the leap \u2014 small cost, big compounding upside">\ud83d\udc8e</span> ':''}Send <b>${escHtml(p.give.map(x=>x.type==='k'?x.label:x.name).join(' + '))}</b>
         \u2192 <b>${escHtml(p.b.teamName)}</b> for <b>${escHtml(p.get.map(x=>x.type==='k'?x.label:x.name).join(' + '))}</b></span>
       <span class="la-fnd-v ${p.v.fair?'ok':''}">${p.v.fair?'fair':(p.v.diff>0?'-':'+')+Math.abs(p.v.diff).toFixed(0)}</span>
       <button class="btn btn-sm btn-ghost" onclick="laLoadProposal(${fnd.myRosterId},${p.b.rosterId},[${p.give.map(x=>`'${escJsSingle(x.key)}'`).join(',')}],[${p.get.map(x=>`'${escJsSingle(x.key)}'`).join(',')}])">Load</button>
     </div>`).join('')
-    : `<div class="la-note">No fair upgrades found at ${escHtml(fnd.weak.pos)} right now \u2014 nobody stronger there has a piece your surplus can buy evenly.</div>`;
+    : `<div class="la-note">No viable upgrades found for ${escHtml(LA_SHAPE_LABEL[fnd.shapeTarget]||'this shape')} at ${escHtml(fnd.weak.pos)} right now. Try another shape or press refresh.</div>`;
   return `
     <div class="la-tc-grid">
       <div class="la-tc-side">
@@ -1565,9 +1702,10 @@ function laTradeView(s){
     </div>
     <div class="la-fnd">
       <div class="la-fnd-title">${TC_ICON("search")} Suggested trades for you
-        <span class="la-fnd-sub">${fnd.targeted?`targeting <b>${escHtml(fnd.weak.pos)}</b> (you rank #${fnd.weak.rank})`:`weakest: <b>${escHtml(fnd.weak.pos)}</b> (#${fnd.weak.rank} in league)`} \u00b7 paying from: <b>${fnd.targeted?'any position':escHtml(fnd.strong.pos+' (#'+fnd.strong.rank+')')}</b>${fnd.total?` \u00b7 ${fnd.total} fair deals`:''}
+        <span class="la-fnd-sub">${fnd.targeted?`targeting <b>${escHtml(fnd.weak.pos)}</b> (you rank #${fnd.weak.rank})`:`weakest: <b>${escHtml(fnd.weak.pos)}</b> (#${fnd.weak.rank} in league)`} \u00b7 paying from: <b>${fnd.targeted?'any position':escHtml(fnd.strong.pos+' (#'+fnd.strong.rank+')')}</b>${fnd.total?` \u00b7 ${fnd.total} viable deals (${fnd.betterCount||0} team-improving, ${fnd.fairCount||0} fair)`:''}
           <span class="la-fnd-size">${fnd.nTeams}-team \u00b7 ${fnd.deep?'deep league \u2014 favouring cheaper, roster-friendly adds':fnd.shallow?'shallow league \u2014 big fish matter most':'balanced mix'}</span></span>
         <span class="la-fnd-chips">${['AUTO','QB','RB','WR','TE'].map(x=>`<button class="format-btn ${laState.fndPos===x?'active':''}" onclick="laState.fndPos='${x}';renderLeagueAnalyzer()" title="${x==='AUTO'?'Target my weakest position automatically':'Hunt deals at '+x}">${x}</button>`).join('')}</span>
+        <span class="la-fnd-chips">${['ANY','BAL','1v1','2v2','3v3','xv1','1vx'].map(x=>`<button class="format-btn ${laState.fndShape===x?'active':''}" onclick="laState.fndShape='${x}';renderLeagueAnalyzer()" title="${LA_SHAPE_LABEL[x]}">${x}</button>`).join('')}</span>
         <button class="btn btn-sm btn-ghost la-fnd-refresh" onclick="laState.fndSeed++;renderLeagueAnalyzer()" title="Deal me different variations">${TC_ICON("refresh")} refresh</button></div>
       ${fndHtml}
     </div>

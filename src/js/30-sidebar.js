@@ -179,6 +179,11 @@ function teamHeaderHcLine(team, opts){
 function renderContent(){
   // Single choke point for phase changes — keep view-specific chrome honest here.
   if(typeof syncAppChrome==='function') syncAppChrome();
+  if(typeof ktcGameState!=='undefined' && ktcGameState && ktcGameState.active
+    && !(currentPhase==='Rankings' && rankScope==='all')
+    && typeof stopKtcGame==='function'){
+    stopKtcGame();
+  }
   if(currentPhase==='Rankings'){renderRankings();return;}
   if(currentPhase==='AdvancedLeague'){renderSharpLeague();return;}
   if(currentPhase==='League'){renderLeagueAnalyzer();return;}

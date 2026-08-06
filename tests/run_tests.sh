@@ -167,6 +167,7 @@ run_js_test test_copy_undo     "Undo for copy-to-working actions (cross-team Pit
 run_js_test test_copy_noroster "Copy-from-prev-season works when roster unverifiable (seed-only, no Sleeper DB)"
 run_js_test test_contracts     "Dynasty contract columns (Age/APY/FA, next-year FA red, dynasty-only)"
 run_js_test test_ktc           "KeepTradeCut player-card link: slug lookup, URL build, position guard, misses"
+run_js_test test_ktc_game      "Keep Trade Cut game deltas enforce KEEP > TRADE > CUT ordering"
 
 # Step 4: Python tests
 echo ""

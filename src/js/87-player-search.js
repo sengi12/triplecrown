@@ -7,12 +7,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 let _psOpen = false;
+let _psNotesOnly = false;
 
-function openPlayerSearch(){
+function openPlayerSearch(opts){
   if(_psOpen) return;
+  _psNotesOnly = !!(opts && opts.notesOnly);
   // The search reads the Sleeper player DB; make sure it's loaded first.
   if(!sleeperPlayers){
-    loadSleeperPlayers(true).then(()=>openPlayerSearch()).catch(()=>{
+    loadSleeperPlayers(true).then(()=>openPlayerSearch(opts)).catch(()=>{
       toast('Player data still loading — try again in a moment','err');
     });
     return;
@@ -27,6 +29,7 @@ function openPlayerSearch(){
         <span class="ps-search-ico">${TC_ICON('search')}</span>
         <input id="psInput" class="ps-input" type="text" autocomplete="off" spellcheck="false"
                placeholder="Search any player…" aria-label="Player name">
+        <button id="psNotesToggle" class="ps-note-toggle" onclick="psToggleNotesMode()" aria-label="Focus search on player notes" title="Focus search on player notes" aria-pressed="false">${TC_ICON('clipboard')}</button>
         <button class="ps-close" onclick="closePlayerSearch()" aria-label="Close">${TC_ICON('close')}</button>
       </div>
       <div id="psResults" class="ps-results"></div>
@@ -37,13 +40,46 @@ function openPlayerSearch(){
   const inp = document.getElementById('psInput');
   inp.addEventListener('input', ()=>psRender(inp.value));
   inp.addEventListener('keydown', psKey);
+  psSyncModeUi();
   psRender('');
   setTimeout(()=>inp.focus(), 30);
 }
 
 function closePlayerSearch(){
   _psOpen = false;
+  _psNotesOnly = false;
   const el = document.getElementById('psOverlay'); if(el) el.remove();
+}
+
+function psSyncModeUi(){
+  const btn = document.getElementById('psNotesToggle');
+  const inp = document.getElementById('psInput');
+  if(btn){
+    btn.classList.toggle('on', !!_psNotesOnly);
+    btn.setAttribute('aria-pressed', _psNotesOnly ? 'true' : 'false');
+    btn.title = _psNotesOnly ? 'Showing noted players only' : 'Focus search on player notes';
+  }
+  if(inp){
+    inp.placeholder = _psNotesOnly ? 'Search player notes (name, tags, note text)…' : 'Search any player…';
+  }
+}
+
+function psToggleNotesMode(force){
+  if(typeof force==='boolean') _psNotesOnly = force;
+  else _psNotesOnly = !_psNotesOnly;
+  psSyncModeUi();
+  const inp = document.getElementById('psInput');
+  psRender(inp ? inp.value : '');
+}
+
+function psNoteDataForEntry(e){
+  if(!e || typeof getPlayerNote!=='function') return null;
+  const note = getPlayerNote((e.pos==='DEF' ? (e.team||e.name) : (e.pid || e.name)), e.pos, e.team);
+  if(!note) return null;
+  const text = String(note.text||'').trim();
+  const tags = Array.isArray(note.tags) ? note.tags : [];
+  if(!text && !tags.length) return null;
+  return { key, text, tags, count: (text?1:0) + tags.length };
 }
 
 // Precomputed once per open: [{pid, name, norm, pos, team}] over every player in the DB.
@@ -72,30 +108,41 @@ function psRender(q){
   const box = document.getElementById('psResults'); if(!box) return;
   if(!_psIndex) _psIndex = psBuildIndex();
   const raw = (q||'').trim();
-  if(!raw){
-    box.innerHTML = `<div class="ps-hint">Start typing a player's name — every player on an NFL roster is searchable, not just fantasy skill positions.</div>`;
+  if(!raw && !_psNotesOnly){
+    box.innerHTML = `<div class="ps-hint">Start typing a player's name. Tap the notes icon to focus this search on players with notes.</div>`;
     return;
   }
   const nq = ecrNormName(raw);
-  // Rank: exact norm match, then prefix, then substring; alphabetical within a tier. Cap the
-  // list so a two-letter query doesn't paint 800 rows.
+
   const scored = [];
   for(const e of _psIndex){
+    const note = psNoteDataForEntry(e);
+    if(_psNotesOnly && !note) continue;
+
+    const noteHay = note ? [note.text].concat((note.tags||[]).map(t=>`${t.label||''} ${t.value||''} ${t.context||''}`)).join(' ') : '';
+    const hayNorm = `${e.norm} ${ecrNormName(e.team||'')} ${ecrNormName(e.pos||'')} ${ecrNormName(noteHay)}`.trim();
     let s = -1;
-    if(e.norm === nq) s = 0;
+    if(!raw){
+      s = 2;
+    } else if(e.norm === nq) s = 0;
     else if(e.norm.startsWith(nq)) s = 1;
-    else if(e.norm.includes(nq)) s = 2;
-    else if(nq.length>=3 && e.norm.replace(/\s/g,'').includes(nq.replace(/\s/g,''))) s = 3;
-    if(s>=0) scored.push({e, s});
+    else if(hayNorm.includes(nq)) s = 2;
+    else if(nq.length>=3 && hayNorm.replace(/\s/g,'').includes(nq.replace(/\s/g,''))) s = 3;
+    if(s>=0) scored.push({e, s, note});
   }
-  scored.sort((a,b)=> a.s-b.s || a.e.name.localeCompare(b.e.name));
+  scored.sort((a,b)=>{
+    const ac = (a.note && a.note.count) || 0;
+    const bc = (b.note && b.note.count) || 0;
+    return a.s-b.s || bc-ac || a.e.name.localeCompare(b.e.name);
+  });
   const top = scored.slice(0, 40);
   if(!top.length){
-    box.innerHTML = `<div class="ps-hint">No players match “${escAttr(raw)}”.</div>`;
+    box.innerHTML = `<div class="ps-hint">${_psNotesOnly ? 'No noted players match that search.' : `No players match “${escAttr(raw)}”.`}</div>`;
     return;
   }
   box.innerHTML = top.map((r,i)=>{
     const e = r.e;
+    const note = r.note;
     const isDef = e.pos==='DEF';
     const nameText = escHtml(e.name);
     const posText = escHtml(e.pos||'—');
@@ -103,11 +150,12 @@ function psRender(q){
       ? imgTag(NFL_LOGO(String(e.team).toUpperCase()), 'ps-hs ps-def')
       : imgTag(hsPack({player_id:e.pid, name:e.name, pos:e.pos}), 'ps-hs');
     const logo = e.team ? `<img class="ps-team-logo" src="${NFL_LOGO(String(e.team).toUpperCase())}" alt="${escAttr(e.team)}" onerror="this.style.display='none'">` : '';
-    return `<button class="ps-row${i===0?' ps-active':''}" data-pid="${escAttr(e.pid)}" data-name="${escAttr(e.name)}" data-pos="${escAttr(e.pos)}" data-team="${escAttr(e.team)}"
+    const noteBadge = note ? `<span class="ps-note-badge" title="${note.count} note item${note.count===1?'':'s'}">${note.count}</span>` : '';
+    return `<button class="ps-row${i===0?' ps-active':''}" data-pid="${escAttr(e.pid)}" data-name="${escAttr(e.name)}" data-pos="${escAttr(e.pos)}" data-team="${escAttr(e.team)}" data-notes="${note ? note.count : 0}"
                     onclick="psPick(this)">
       ${img}
       <span class="ps-nm">${nameText}</span>
-      <span class="ps-meta">${logo}<span class="ps-pos ps-pos-${e.pos}">${posText}</span></span>
+      <span class="ps-meta">${noteBadge}${logo}<span class="ps-pos ps-pos-${e.pos}">${posText}</span></span>
     </button>`;
   }).join('');
 }
@@ -117,8 +165,13 @@ function psPick(btn){
   const name = btn.getAttribute('data-name') || '';
   const pos = btn.getAttribute('data-pos');
   const team = btn.getAttribute('data-team');
+  const noteCount = +(btn.getAttribute('data-notes')||0);
+  const openNotesMode = !!_psNotesOnly;
   closePlayerSearch();
   openPlayerCard((pos==='DEF') ? pid : (name || pid), pos, team);
+  if(openNotesMode && noteCount>0){
+    setTimeout(()=>{ try{ openPcardNotes(); }catch(e){} }, 0);
+  }
 }
 
 // Arrow keys move the highlight; Enter opens it; Escape closes.
