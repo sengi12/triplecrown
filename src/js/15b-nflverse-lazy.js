@@ -222,19 +222,54 @@ function decodeFantasy(c){
 // don't compress; CDNs compress at lighter levels). Falls back to the plain .json when the
 // .gz is missing (older deploys) or DecompressionStream is unavailable (older browsers) —
 // so this can never make loading WORSE, only smaller.
+function tcLatencyDebugEnabled(){
+  try{
+    if(typeof localStorage!=='undefined' && localStorage.getItem('tc_latency_debug')==='1') return true;
+  }catch(_e){}
+  try{ return !!(typeof window!=='undefined' && window.TC_LATENCY_DEBUG); }
+  catch(_e){ return false; }
+}
+
+function tcLatencyLog(path, mode, msFetch, msDecode, msParse, ok){
+  if(!tcLatencyDebugEnabled()) return;
+  const total = (msFetch + msDecode + msParse).toFixed(1);
+  const sf = msFetch.toFixed(1), sd = msDecode.toFixed(1), sp = msParse.toFixed(1);
+  const status = ok ? 'ok' : 'miss';
+  try{ console.info(`[seed-load] ${status} ${mode} ${path} total=${total}ms (fetch=${sf} decode=${sd} parse=${sp})`); }
+  catch(_e){}
+}
+
 async function fetchSeedJson(url){
   try{
     if(typeof DecompressionStream==='function'){
+      const t0 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
       const r = await fetch(url + '.gz', {cache:'no-store'});
+      const t1 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
       if(r.ok && r.body){
         const txt = await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).text();
-        return JSON.parse(txt);
+        const t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
+        const parsed = JSON.parse(txt);
+        const t3 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
+        tcLatencyLog(url, 'gz', t1 - t0, t2 - t1, t3 - t2, true);
+        return parsed;
       }
+      tcLatencyLog(url, 'gz', t1 - t0, 0, 0, false);
     }
   }catch(e){ /* fall through to plain */ }
+
+  const t0 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
   const r = await fetch(url, {cache:'no-store'});
-  if(!r.ok) return null;
-  return await r.json();
+  const t1 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
+  if(!r.ok){
+    tcLatencyLog(url, 'json', t1 - t0, 0, 0, false);
+    return null;
+  }
+  const txt = await r.text();
+  const t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
+  const parsed = JSON.parse(txt);
+  const t3 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
+  tcLatencyLog(url, 'json', t1 - t0, 0, t3 - t2, true);
+  return parsed;
 }
 
 // ── universal dispatcher: safe on any seed (compact or plain, any type) ─────
