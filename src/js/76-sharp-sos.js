@@ -1,3 +1,87 @@
+// ── Advanced Stats (nflverse "Sharp") data helpers ──────────────────────────
+// Read-only reference feeding both the per-team Advanced card and the league-wide sortable
+// table below. None of this touches projections. (Named "Sharp" for historical reasons — the
+// Warren Sharp source is gone; every table here is computed from the nflverse seed.)
+function sharpHasData(){ return activeSharp() && Object.keys(activeSharp()).length>0; }
+// Which season the Advanced Stats tables describe. Follows the season tabs: on a completed
+// season the nflverse seed carries team data for, the tables show THAT season; on the
+// projection view (or a season with no team data) it falls back to the seed's reference season
+// (SHARP_SEASON, the newest completed year). Single hook for the whole feature — every renderer
+// reads activeSharp(), which reads this.
+function advTeamSeason(){
+  const s = String(activeSeason);
+  if(activeSeason!=='proj' && NFLVERSE && NFLVERSE[s] && NFLVERSE[s].team) return s;
+  return String(SHARP_SEASON);
+}
+// Adapt the nflverse team tables for the ACTIVE season into the dict the league view renders
+// (adds title/category/pct_cols). Returns {} when there's no nflverse team data for it.
+function nflverseSharpTables(){
+  const t=(NFLVERSE && NFLVERSE[advTeamSeason()] && NFLVERSE[advTeamSeason()].team) || null;
+  if(!t) return {};
+  const HIDE_LAST5 = new Set(['Y/PL Last 5','Neutral DB Rate Last 5','Sec/Play Last 5']);
+  const META={
+    offense:{title:'Offensive Metrics',category:'offense'},
+    defense:{title:'Defensive Metrics',category:'defense'},
+    tendencies:{title:'Tendencies',category:'offense'},
+    offensive_line_pass:{title:'O-Line: Pass Protection',category:'offense'},
+    offensive_line_run:{title:'O-Line: Run Blocking',category:'offense'},
+    pace:{title:'Pace',category:'offense'},
+    personnel:{title:'Personnel',category:'offense'},
+    coverage:{title:'Coverage (man/zone)',category:'defense'},
+    def_tendencies:{title:'Defensive Tendencies',category:'defense'},
+    defensive_line:{title:'Pass Rush & Run D',category:'defense'},
+  };
+  const PCT=['Explosive Play Rate','Down Conversion Rate','Shotgun Rate','NoHuddle Rate','3WR Rate','Multi TE Rate','Man Rate','Zone Rate',
+    'Motion Rate','Play Action Rate','RPO Rate','Screen Rate','Trick Play Rate','Drop Rate','Blitz Rate',
+    'Pressure Rate Allowed','Rush Stuff Rate','Pressure Rate','No Blitz Pressure Rate',
+    'Hit Rate','Hurry Rate','Sack Rate','Non-QB Sack Rate','Last 5 Sack Rate',
+    'Stuff Rate','Explosive Run Rate','Rush 1D Rate','Broken Tackle Rate','8+ Box Rate',
+    '11 Personnel','12 Personnel','13 Personnel','21 Personnel','Multi RB Rate','Sub Package Rate','Nickel Rate','Dime+ Rate',
+    'Neutral DB Rate','Neutral DB Rate Last 5','Middle Closed Rate','Middle Open Rate','Cover 1','Cover 2','Cover 3'];
+  const out={};
+  for(const k in t){
+    const m=META[k]||{title:k,category:'offense'};
+    const cols=(t[k].columns||[]).filter(c=>!HIDE_LAST5.has(c));
+    out[k]={columns:cols, title:m.title, category:m.category,
+            pct_cols:cols.filter(c=>PCT.includes(c)), teams:t[k].teams};
+  }
+  return out;
+}
+// The active source for the league-wide Advanced Stats tables (nflverse-computed).
+function activeSharp(){
+  return nflverseSharpTables();
+}
+// League-rank → quartile color class (top 8 = best, bottom 8 = worst).
+function sharpRankClass(rank){
+  if(rank==null) return '';
+  if(rank<=8)  return 'sr-good';    // top quarter
+  if(rank<=16) return 'sr-okhi';
+  if(rank<=24) return 'sr-oklo';
+  return 'sr-bad';                  // bottom quarter
+}
+function sharpRankBadge(rank){
+  if(rank==null) return '';
+  return `<span class="sr-badge ${sharpRankClass(rank)}">${ordinal(rank)}</span>`;
+}
+function fmtSharpVal(v, isPct){
+  if(v==null) return '—';
+  if(typeof v!=='number') return v;
+  let s;
+  if(Number.isInteger(v)){
+    s = String(v);
+  } else {
+    // Small-magnitude metrics (e.g. EPA/Play, ~ -0.25..0.25) need 2 decimals — 1 decimal
+    // collapses meaningful differences (0.19 → 0.2). Larger stats read fine at 1 decimal.
+    const dp = (Math.abs(v) < 1 && !isPct) ? 2 : 1;
+    s = v.toFixed(dp);
+  }
+  return isPct ? s+'%' : s;
+}
+// Is a column a percentage in the given table? (build_seed flags these in pct_cols.)
+function sharpColIsPct(tbl, col){
+  return !!(tbl && Array.isArray(tbl.pct_cols) && tbl.pct_cols.includes(col));
+}
+
 async function showSharpLeague(target){
   rankScope='all'; currentPhase='AdvancedLeague';
   if(target==='sos'){ sharpTable='__sos__'; sharpSortCol=null; sharpSortDir=1; }

@@ -362,7 +362,6 @@ function renderRankings(){
     _rankingsRenderCache.html = pageHtml;
   }
 }
-function cell(v){return v&&v>0?`<span class="num">${(+v)%1!==0?(+v).toFixed(1):(+v).toLocaleString()}</span>`:'';}
 function rankSort(k){
   if(rankSortKey===k) rankSortDir*=-1;
   else { rankSortKey=k; rankSortDir=k==='ecr'?-1:-1; }

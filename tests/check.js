@@ -885,8 +885,6 @@ let DYNASTY_VALUES = (typeof SEED_DYNASTY_VALUES!=='undefined') ? SEED_DYNASTY_V
 let leagueSnapshot = null;
 // nflverse-computed advanced metrics (opt-in A/B source): {season:{team:{...}, players:{QB,RB}}}
 let NFLVERSE = (typeof SEED_NFLVERSE!=='undefined') ? SEED_NFLVERSE : {};
-// Advanced team tables are now nflverse-only (the old curated toggle was retired).
-let advSource = 'nflverse';
 // Head coaches fetched live from ESPN this session: {CODE:{name,headshot,experience}|null}
 let headCoaches = {};
 let hcInFlight = {};
@@ -4035,17 +4033,6 @@ function advSumerData(){
   _advSumerCache=out;
   return out;
 }
-// Switch the advanced-stats data source and re-render whichever advanced view is open.
-function setAdvSource(src){
-  // Advanced Stats source switching was removed; keep this for backward-compat calls.
-  if(src!=='nflverse') return;
-  if(advSource==='nflverse') return;
-  advSource='nflverse';
-  sharpTable=null; sharpSortCol=null;
-  if(currentPhase==='AdvancedLeague' && typeof renderSharpLeague==='function') renderSharpLeague();
-  else if(currentPhase==='Advanced' && typeof renderContent==='function') renderContent();
-  else if(currentPhase==='Rankings') renderRankings();
-}
 // Ordered list + display labels for the "Situational" refinement dropdown (SumerSports splits).
 // Order is the sequence shown in the dropdown; only the refinements a position actually tracks
 // (present in its baked `refinements` map) are offered.
@@ -4450,102 +4437,20 @@ function computeVOR(list){
   list.forEach(p=>{ p.vor = (baseline[p.pos]!=null) ? +(p.fpts-baseline[p.pos]).toFixed(1) : 0; });
 }
 
-// ── Advanced Stats (Warren Sharp) ───────────────────────────────────────────
-// Read-only reference. Two views: a per-team card (this team's row across all Sharp
-// tables, with league rank 1–32 per stat), and a league-wide sortable table view.
-// None of this touches projections.
-function sharpHasData(){ return activeSharp() && Object.keys(activeSharp()).length>0; }
-// Which season the Advanced Stats tables describe. Follows the season tabs: when you're on a
-// completed season that the nflverse seed carries team data for, the tables show
-// THAT season. On the projection view — or a season with no team data — it falls back to the
-// seed's reference season (SHARP_SEASON), which is the newest completed year.
-// This is the single hook for the whole feature: every Advanced Stats renderer (team card and
-// league-wide) reads activeSharp(), which reads this.
-function advTeamSeason(){
-  const s = String(activeSeason);
-  if(activeSeason!=='proj' && NFLVERSE && NFLVERSE[s] && NFLVERSE[s].team) return s;
-  return String(SHARP_SEASON);
-}
-// Adapt the nflverse team tables for the ACTIVE season into the Sharp-shaped dict the league
-// view renders (adds title/category/pct_cols). Returns {} when no nflverse data for it.
-// ("Sharp-shaped" is historical — the Warren Sharp source is gone; this is all nflverse now.)
-function nflverseSharpTables(){
-  const t=(NFLVERSE && NFLVERSE[advTeamSeason()] && NFLVERSE[advTeamSeason()].team) || null;
-  if(!t) return {};
-  const HIDE_LAST5 = new Set(['Y/PL Last 5','Neutral DB Rate Last 5','Sec/Play Last 5']);
-  const META={
-    offense:{title:'Offensive Metrics',category:'offense'},
-    defense:{title:'Defensive Metrics',category:'defense'},
-    tendencies:{title:'Tendencies',category:'offense'},
-    offensive_line_pass:{title:'O-Line: Pass Protection',category:'offense'},
-    offensive_line_run:{title:'O-Line: Run Blocking',category:'offense'},
-    pace:{title:'Pace',category:'offense'},
-    personnel:{title:'Personnel',category:'offense'},
-    coverage:{title:'Coverage (man/zone)',category:'defense'},
-    def_tendencies:{title:'Defensive Tendencies',category:'defense'},
-    defensive_line:{title:'Pass Rush & Run D',category:'defense'},
-  };
-  const PCT=['Explosive Play Rate','Down Conversion Rate','Shotgun Rate','NoHuddle Rate','3WR Rate','Multi TE Rate','Man Rate','Zone Rate',
-    'Motion Rate','Play Action Rate','RPO Rate','Screen Rate','Trick Play Rate','Drop Rate','Blitz Rate',
-    'Pressure Rate Allowed','Rush Stuff Rate','Pressure Rate','No Blitz Pressure Rate',
-    'Hit Rate','Hurry Rate','Sack Rate','Non-QB Sack Rate','Last 5 Sack Rate',
-    'Stuff Rate','Explosive Run Rate','Rush 1D Rate','Broken Tackle Rate','8+ Box Rate',
-    '11 Personnel','12 Personnel','13 Personnel','21 Personnel','Multi RB Rate','Sub Package Rate','Nickel Rate','Dime+ Rate',
-    'Neutral DB Rate','Neutral DB Rate Last 5','Middle Closed Rate','Middle Open Rate','Cover 1','Cover 2','Cover 3'];
-  const out={};
-  for(const k in t){
-    const m=META[k]||{title:k,category:'offense'};
-    const cols=(t[k].columns||[]).filter(c=>!HIDE_LAST5.has(c));
-    out[k]={columns:cols, title:m.title, category:m.category,
-            pct_cols:cols.filter(c=>PCT.includes(c)), teams:t[k].teams};
-  }
-  return out;
-}
-// The active source for the league-wide Advanced Stats tables: Warren Sharp or nflverse.
-function activeSharp(){
-  return nflverseSharpTables();
-}
-// True when the nflverse A/B source can back the league-wide Advanced Stats view.
-function nflverseSharpAvailable(){ return Object.keys(nflverseSharpTables()).length>0; }
+// ── Generic display utils (used app-wide) ───────────────────────────────────
 // Full team name for team pages (e.g. "Cincinnati Bengals"); falls back to the code.
 function teamDisplayName(code){ return (TEAM_NAMES && TEAM_NAMES[code]) || code; }
-// 1 → "1st", 2 → "2nd", 22 → "22nd", etc.
+// 1 → "1st", 2 → "2nd", 22 → "22nd", etc. The single ordinal helper for the whole app
+// (the League Analyzer's positional ranks call this too).
 function ordinal(n){
   if(n==null) return '';
   const s=n%100;
   const suff=(s>=11&&s<=13)?'th':(n%10===1)?'st':(n%10===2)?'nd':(n%10===3)?'rd':'th';
   return n+suff;
 }
-function sharpRankClass(rank){
-  if(rank==null) return '';
-  if(rank<=8)  return 'sr-good';    // top quarter
-  if(rank<=16) return 'sr-okhi';
-  if(rank<=24) return 'sr-oklo';
-  return 'sr-bad';                  // bottom quarter
-}
-function sharpRankBadge(rank){
-  if(rank==null) return '';
-  const suff = (rank%10===1&&rank!==11)?'st':(rank%10===2&&rank!==12)?'nd':(rank%10===3&&rank!==13)?'rd':'th';
-  return `<span class="sr-badge ${sharpRankClass(rank)}">${rank}${suff}</span>`;
-}
-function fmtSharpVal(v, isPct){
-  if(v==null) return '—';
-  if(typeof v!=='number') return v;
-  let s;
-  if(Number.isInteger(v)){
-    s = String(v);
-  } else {
-    // Small-magnitude metrics (e.g. EPA/Play, ~ -0.25..0.25) need 2 decimals — 1 decimal
-    // collapses meaningful differences (0.19 → 0.2). Larger stats read fine at 1 decimal.
-    const dp = (Math.abs(v) < 1 && !isPct) ? 2 : 1;
-    s = v.toFixed(dp);
-  }
-  return isPct ? s+'%' : s;
-}
-// Is a column a percentage in the given table? (build_seed flags these in pct_cols.)
-function sharpColIsPct(tbl, col){
-  return !!(tbl && Array.isArray(tbl.pct_cols) && tbl.pct_cols.includes(col));
-}
+// NOTE: the Advanced Stats (nflverse "Sharp") data helpers — sharpHasData / advTeamSeason /
+// nflverseSharpTables / activeSharp / sharpRankClass / sharpRankBadge / fmtSharpVal /
+// sharpColIsPct — live with their renderers in 76-sharp-sos.js.
 
 // ── Roster Changes (Spotrac offseason: free agency, draft, trades, losses) ──
 // Read-only per-team view tying prior-season weaknesses to how the team addressed them.
@@ -11071,6 +10976,90 @@ function coordCarryCard(sideWord, c){
 }
 
 // League-wide advanced view: pick a table, see all 32 teams, sortable by any column.
+// ── Advanced Stats (nflverse "Sharp") data helpers ──────────────────────────
+// Read-only reference feeding both the per-team Advanced card and the league-wide sortable
+// table below. None of this touches projections. (Named "Sharp" for historical reasons — the
+// Warren Sharp source is gone; every table here is computed from the nflverse seed.)
+function sharpHasData(){ return activeSharp() && Object.keys(activeSharp()).length>0; }
+// Which season the Advanced Stats tables describe. Follows the season tabs: on a completed
+// season the nflverse seed carries team data for, the tables show THAT season; on the
+// projection view (or a season with no team data) it falls back to the seed's reference season
+// (SHARP_SEASON, the newest completed year). Single hook for the whole feature — every renderer
+// reads activeSharp(), which reads this.
+function advTeamSeason(){
+  const s = String(activeSeason);
+  if(activeSeason!=='proj' && NFLVERSE && NFLVERSE[s] && NFLVERSE[s].team) return s;
+  return String(SHARP_SEASON);
+}
+// Adapt the nflverse team tables for the ACTIVE season into the dict the league view renders
+// (adds title/category/pct_cols). Returns {} when there's no nflverse team data for it.
+function nflverseSharpTables(){
+  const t=(NFLVERSE && NFLVERSE[advTeamSeason()] && NFLVERSE[advTeamSeason()].team) || null;
+  if(!t) return {};
+  const HIDE_LAST5 = new Set(['Y/PL Last 5','Neutral DB Rate Last 5','Sec/Play Last 5']);
+  const META={
+    offense:{title:'Offensive Metrics',category:'offense'},
+    defense:{title:'Defensive Metrics',category:'defense'},
+    tendencies:{title:'Tendencies',category:'offense'},
+    offensive_line_pass:{title:'O-Line: Pass Protection',category:'offense'},
+    offensive_line_run:{title:'O-Line: Run Blocking',category:'offense'},
+    pace:{title:'Pace',category:'offense'},
+    personnel:{title:'Personnel',category:'offense'},
+    coverage:{title:'Coverage (man/zone)',category:'defense'},
+    def_tendencies:{title:'Defensive Tendencies',category:'defense'},
+    defensive_line:{title:'Pass Rush & Run D',category:'defense'},
+  };
+  const PCT=['Explosive Play Rate','Down Conversion Rate','Shotgun Rate','NoHuddle Rate','3WR Rate','Multi TE Rate','Man Rate','Zone Rate',
+    'Motion Rate','Play Action Rate','RPO Rate','Screen Rate','Trick Play Rate','Drop Rate','Blitz Rate',
+    'Pressure Rate Allowed','Rush Stuff Rate','Pressure Rate','No Blitz Pressure Rate',
+    'Hit Rate','Hurry Rate','Sack Rate','Non-QB Sack Rate','Last 5 Sack Rate',
+    'Stuff Rate','Explosive Run Rate','Rush 1D Rate','Broken Tackle Rate','8+ Box Rate',
+    '11 Personnel','12 Personnel','13 Personnel','21 Personnel','Multi RB Rate','Sub Package Rate','Nickel Rate','Dime+ Rate',
+    'Neutral DB Rate','Neutral DB Rate Last 5','Middle Closed Rate','Middle Open Rate','Cover 1','Cover 2','Cover 3'];
+  const out={};
+  for(const k in t){
+    const m=META[k]||{title:k,category:'offense'};
+    const cols=(t[k].columns||[]).filter(c=>!HIDE_LAST5.has(c));
+    out[k]={columns:cols, title:m.title, category:m.category,
+            pct_cols:cols.filter(c=>PCT.includes(c)), teams:t[k].teams};
+  }
+  return out;
+}
+// The active source for the league-wide Advanced Stats tables (nflverse-computed).
+function activeSharp(){
+  return nflverseSharpTables();
+}
+// League-rank → quartile color class (top 8 = best, bottom 8 = worst).
+function sharpRankClass(rank){
+  if(rank==null) return '';
+  if(rank<=8)  return 'sr-good';    // top quarter
+  if(rank<=16) return 'sr-okhi';
+  if(rank<=24) return 'sr-oklo';
+  return 'sr-bad';                  // bottom quarter
+}
+function sharpRankBadge(rank){
+  if(rank==null) return '';
+  return `<span class="sr-badge ${sharpRankClass(rank)}">${ordinal(rank)}</span>`;
+}
+function fmtSharpVal(v, isPct){
+  if(v==null) return '—';
+  if(typeof v!=='number') return v;
+  let s;
+  if(Number.isInteger(v)){
+    s = String(v);
+  } else {
+    // Small-magnitude metrics (e.g. EPA/Play, ~ -0.25..0.25) need 2 decimals — 1 decimal
+    // collapses meaningful differences (0.19 → 0.2). Larger stats read fine at 1 decimal.
+    const dp = (Math.abs(v) < 1 && !isPct) ? 2 : 1;
+    s = v.toFixed(dp);
+  }
+  return isPct ? s+'%' : s;
+}
+// Is a column a percentage in the given table? (build_seed flags these in pct_cols.)
+function sharpColIsPct(tbl, col){
+  return !!(tbl && Array.isArray(tbl.pct_cols) && tbl.pct_cols.includes(col));
+}
+
 async function showSharpLeague(target){
   rankScope='all'; currentPhase='AdvancedLeague';
   if(target==='sos'){ sharpTable='__sos__'; sharpSortCol=null; sharpSortDir=1; }
@@ -11704,7 +11693,6 @@ function renderRankings(){
     _rankingsRenderCache.html = pageHtml;
   }
 }
-function cell(v){return v&&v>0?`<span class="num">${(+v)%1!==0?(+v).toFixed(1):(+v).toLocaleString()}</span>`:'';}
 function rankSort(k){
   if(rankSortKey===k) rankSortDir*=-1;
   else { rankSortKey=k; rankSortDir=k==='ecr'?-1:-1; }
@@ -16500,7 +16488,8 @@ let laState = { step: leagueSnapshot? 'view':'start', busy:false, error:null,
                 fndShape:'ANY',    // Trade Finder package filter (ANY, BAL, 1v1, 2v2, 3v3, xv1, 1vx)
                 cmpPicks:true,     // Compare: include pick capital in the value lens
                 cmpStarters:false, // Compare: rank on starting lineups only (mirrors My Team)
-                cmpSort:{col:'total',dir:-1} };  // Compare column sort (click a header)
+                cmpSort:{col:'total',dir:-1},  // Compare column sort (click a header)
+                radarAxis:null };   // My Team radar: selected axis for inline details
 
 // Called whenever DYNASTY_VALUES is (re)assigned by an async seed load. The analyzer's value
 // caches are built lazily and, on a cold boot or resume, the League view can render once
@@ -16540,7 +16529,7 @@ function dynastyValueFor(name, pos){
   // real worth. Every return here now goes through the same multiplier.
   if(e.pos==='QB' && snap.superflex && e.sf!=null) return e.sf*LA_VAL_SCALE;
   if(e.pos==='TE' && snap.tep && e.tep!=null) return e.tep*LA_VAL_SCALE;
-  return e.v!=null ? e.v*LA_VAL_SCALE : null;
+    return e.v!=null ? e.v * LA_VAL_SCALE : null;
 }
 // Value for a future rookie pick. Exact rows exist for the chart's listed seasons; later
 // seasons reuse the year-out table (dynasty convention: value the unknown like next year's).
@@ -16627,7 +16616,7 @@ function laDynVal(name,pos){
   const v = dynastyValueFor(name,pos);
   if(v==null) return 0;
   const t = laDynTier(name);
-  return Math.round(v * (LA_TIER_MULT[t]||1));
+    return Math.round(v * (LA_TIER_MULT[t] || 1));
 }
 
 // ═══ Redraft valuation (VOR) ═════════════════════════════════════════════════
@@ -16808,7 +16797,7 @@ function laRedraftVal(name,pos,team){
   // Below replacement = streamable off waivers, so no trade value. Clamping at 0 rather than
   // going negative keeps the consolidation weights and fairness bands — which all assume
   // non-negative asset values — behaving exactly as they do under the dynasty lens.
-  return Math.max(0, Math.round(v*LA_VOR_SCALE));
+    return Math.max(0, Math.round(v * LA_VOR_SCALE));
 }
 // THE value entry point. Every tab reads worth through here, so switching lens switches the
 // whole analyzer coherently instead of one view at a time.
@@ -18251,19 +18240,49 @@ function laSlotLabels(rosterPositions){
   return out;
 }
 function laRankOf(v, all){ return all.filter(x=>x>v+1e-9).length+1; }
-function laOrd(n){ return n+(['','st','nd','rd'][(n%100>>3^1)&&n%10]||'th'); }
+// ordinal() (60-rankings-data.js) is the app-wide 1st/2nd/3rd helper; laOrd was a duplicate.
+
+function laSetRadarAxis(axis){
+  laState.radarAxis = laState.radarAxis===axis ? null : axis;
+  if(typeof renderLeagueAnalyzer==='function') renderLeagueAnalyzer();
+}
+
+function laRadarDetailHTML(axisMeta){
+  if(!axisMeta || !axisMeta.length) return '';
+  const axis = laState.radarAxis && axisMeta.find(a=>a.label===laState.radarAxis) ? laState.radarAxis : null;
+  if(!axis) return `<div class="la-rd-detail la-rd-detail-empty">Tap a dot to see your league rank for that position.</div>`;
+  const meta = axisMeta.find(a=>a.label===axis) || axisMeta[0];
+  const focus = meta.rank!=null && meta.total!=null
+    ? `Your league rank for ${escHtml(meta.label)} is <b>#${meta.rank}</b> of <b>${meta.total}</b> teams.`
+    : `League rank data is not available for ${escHtml(meta.label)}.`;
+  return `<div class="la-rd-detail">
+    <div class="la-rd-detail-head">
+      <span class="la-rd-detail-lbl">${escHtml(meta.label)}</span>
+      <button type="button" class="la-rd-detail-close" onclick="laSetRadarAxis('${escJsSingle(meta.label)}')">Clear</button>
+    </div>
+    <div class="la-rd-detail-body">${focus}</div>
+  </div>`;
+}
 
 // Strength radar: two polygons (starters solid, bench faint) over the position axes,
 // each axis scaled to the league max so the shape reads "where am I elite vs empty".
-function laRadarSVG(axes, mine, benchVals){
+function laRadarSVG(axes, mine, benchVals, axisMeta){
   const W=210, cx=W/2, cy=W/2, R=72, N=axes.length;
   const pt=(i,r)=>{ const a=-Math.PI/2+i*2*Math.PI/N; return [(cx+Math.cos(a)*r*R).toFixed(1), (cy+Math.sin(a)*r*R).toFixed(1)]; };
   const ring=r=>`<polygon points="${axes.map((_,i)=>pt(i,r).join(',')).join(' ')}" class="la-rd-ring"/>`;
   const poly=(vals,cls)=>`<polygon points="${vals.map((v,i)=>pt(i,Math.max(.04,v)).join(',')).join(' ')}" class="${cls}"/>`;
   const labels=axes.map((a,i)=>{ const [x,y]=pt(i,1.22); return `<text x="${x}" y="${y}" class="la-rd-lbl">${a}</text>`; }).join('');
-  return `<svg viewBox="0 0 ${W} ${W}" class="la-radar">${[.25,.5,.75,1].map(ring).join('')}
-    ${axes.map((_,i)=>`<line x1="${cx}" y1="${cy}" x2="${pt(i,1)[0]}" y2="${pt(i,1)[1]}" class="la-rd-ring"/>`).join('')}
-    ${poly(benchVals,'la-rd-bench')}${poly(mine,'la-rd-me')}${labels}</svg>`;
+  const dots=(axisMeta||axes.map((label,i)=>({label, rank:null, total:null, value:mine[i], body:''}))).map((m,i)=>{
+    const [x,y]=pt(i,Math.max(.04,mine[i]));
+    const left=(x/W*100).toFixed(3), top=(y/W*100).toFixed(3);
+    return `<button type="button" class="la-rd-dot${laState.radarAxis===m.label?' active':''}" style="left:${left}%;top:${top}%"
+      aria-label="${escAttr(m.rank!=null&&m.total!=null ? `${m.label} rank #${m.rank} of ${m.total}` : `${m.label} strength`)}"
+      onclick="event.stopPropagation();laSetRadarAxis('${escJsSingle(m.label)}')"></button>`;
+  }).join('');
+  return `<div class="la-radar-wrap">${dots}
+    <svg viewBox="0 0 ${W} ${W}" class="la-radar">${[.25,.5,.75,1].map(ring).join('')}
+      ${axes.map((_,i)=>`<line x1="${cx}" y1="${cy}" x2="${pt(i,1)[0]}" y2="${pt(i,1)[1]}" class="la-rd-ring"/>`).join('')}
+      ${poly(benchVals,'la-rd-bench')}${poly(mine,'la-rd-me')}${labels}</svg></div>`;
 }
 
 // ── Team personas ────────────────────────────────────────────────────────────
@@ -18374,11 +18393,52 @@ function laToggleCliffPop(btn, label, body){
     pop.style.position='fixed'; pop.style.left=left+'px'; pop.style.top=top+'px'; pop.style.right='auto';
   }catch(e){}
 }
+function laShowRadarPop(btn, label, body){
+  if(!btn || !btn.parentNode) return;
+  const wrap=btn.parentNode;
+  const open=wrap.querySelector && wrap.querySelector('.la-radar-pop');
+  if(open && open.dataset && open.dataset.label===String(label||'')) return;
+  laCloseRadarPops();
+  const pop=document.createElement('div');
+  pop.className='pace-info-pop la-radar-pop';
+  pop.dataset.label=String(label||'');
+  pop.onclick=e=>e.stopPropagation();
+  pop.innerHTML=`<div class="pace-info-pop-head">
+      <span class="pace-info-pop-lbl">${escHtml(label)}</span>
+      <button class="pace-info-pop-close" onclick="this.closest('.la-radar-pop').remove()" aria-label="Close">\u2715</button>
+    </div>
+    <div class="pace-info-pop-body">${escHtml(body)}</div>`;
+  wrap.appendChild(pop);
+  try{
+    const M=8;
+    const wr=wrap.getBoundingClientRect();
+    const br=btn.getBoundingClientRect();
+    const pr=pop.getBoundingClientRect();
+    let left=br.left-wr.left+br.width/2-pr.width/2;
+    if(left+pr.width>wr.width-M) left=wr.width-M-pr.width;
+    if(left<M) left=M;
+    let top=br.top-wr.top+br.height+6;
+    if(top+pr.height>wr.height-M) top=br.top-wr.top-pr.height-6;
+    if(top<M) top=M;
+    pop.style.position='absolute';
+    pop.style.left=left+'px';
+    pop.style.top=top+'px';
+    pop.style.right='auto';
+  }catch(e){}
+}
+function laToggleRadarPop(btn, label, body){
+  if(!btn || !btn.parentNode) return;
+  const wrap=btn.parentNode;
+  const open=wrap.querySelector && wrap.querySelector('.la-radar-pop');
+  if(open && open.dataset && open.dataset.label===String(label||'')){ open.remove(); return; }
+  laShowRadarPop(btn, label, body);
+}
 if(typeof document!=='undefined' && document.addEventListener){
   document.addEventListener('click', e=>{
     const t=e.target;
-    if(t && t.closest && t.closest('.la-cliff-wrap')) return;
+    if(t && t.closest && (t.closest('.la-cliff-wrap') || t.closest('.la-radar-wrap'))) return;
     laCloseCliffPops();
+    laCloseRadarPops();
   });
 }
 function laCliffMark(name,pos){
@@ -18568,7 +18628,7 @@ function laMyTeamView(s){
       ${posRows.map(r=>{ const rank=laRankOf(r.mine,r.all), n=eng.length, mx=Math.max(...r.all)||1;
         return `<div class="la-pr-row"><span class="la-pr-lbl">${r.lbl}</span>
           <div class="la-pr-track"><div class="la-pr-bar ${laQuartile(rank,n)}" style="width:${Math.max(4,100*r.mine/mx).toFixed(0)}%"></div></div>
-          <span class="la-pr-rank">${laOrd(rank)}</span></div>`; }).join('')}
+          <span class="la-pr-rank">${ordinal(rank)}</span></div>`; }).join('')}
     </div>`;
   const slotTbl=`
     <div class="la-my-card"><div class="la-my-title">Starter Rankings</div>
@@ -18579,7 +18639,7 @@ function laMyTeamView(s){
         return `<div class="la-pr-row"><span class="la-pr-lbl">${lbl}</span>
           ${mp?`<span class="la-pr-nm clickable-player" title="${escAttr(mp.name)}" onclick="${pcardOnclick(mp.id||mp.name,mp.pos,mp.team||'')}">${escHtml(abbrevName(mp.name))}</span>`:`<span class="la-pr-nm la-pr-empty">\u2014</span>`}
           <div class="la-pr-track"><div class="la-pr-bar ${laQuartile(rank,n)}" style="width:${Math.max(4,100*mineV/mx).toFixed(0)}%"></div></div>
-          <span class="la-pr-rank">${laOrd(rank)}</span></div>`; }).join('')}
+          <span class="la-pr-rank">${ordinal(rank)}</span></div>`; }).join('')}
     </div>`;
   // Starting-lineup chart: my starters as columns, height = my slot value vs league max.
   const lineup=`
@@ -18609,6 +18669,19 @@ function laMyTeamView(s){
     return set.size?set:new Set(['RB','WR','TE']); })();
   const maxPos={}; posAxes.forEach(p=>maxPos[p]=Math.max(...eng.map(e=>e.pos[p]))||1);
   if(hasFlex) maxPos.FLEX=Math.max(...eng.map(e=>e.flex))||1;
+  const radarMeta=axes.map(p=>{
+    const vals=p==='FLEX' ? eng.map(e=>e.flex) : eng.map(e=>e.pos[p]);
+    const mineVal=p==='FLEX' ? mineEng.flex : mineEng.pos[p];
+    const rank=laRankOf(mineVal, vals);
+    const total=vals.length;
+    return {
+      label:p,
+      rank,
+      total,
+      value:mineVal,
+      body:'Your ' + p + (p==='FLEX' ? '' : ' starters') + ' strength ranks #' + rank + ' of ' + total + ' teams in this league.',
+    };
+  });
   const meAx=axes.map(p=>{
     if(p==='FLEX') return Math.min(1, mineEng.flex/maxPos.FLEX);
     const st=laTcAdjusted(mineEng.starters.filter(f=>f.player&&f.player.pos===p).map(f=>f.player._v));
@@ -18618,27 +18691,30 @@ function laMyTeamView(s){
       return Math.min(1, bn/maxPos.FLEX); }
     const bn=laTcAdjusted(mineEng.bench.filter(x=>x.pos===p).map(x=>x._v));
     return Math.min(1, bn/maxPos[p]); });
-  const radar=`
-    <div class="la-my-card"><div class="la-my-title">Position Strength <span class="la-rd-key"><i class="la-rd-k-me"></i>starters <i class="la-rd-k-bn"></i>bench</span></div>
-      ${laRadarSVG(axes, meAx, bnAx)}</div>`;
-  const summary=`
-    <div class="la-my-sum">
-      ${laTeamIcon(mineEng.t,'la-tm-av')}
-      <div class="la-my-sum-body">
-        <div class="la-my-sum-head">${escHtml(mineEng.t.teamName)} \u00b7 <span class="la-traj ${myTraj.cls}">${escHtml(myTraj.title)}</span></div>
-        <div class="la-my-sum-line">${laIsRedraft()
-          ? `#${myTraj.rank} by projected starters `
-            + `\u00b7 lineup <b>${Math.round(100*myTraj.now)}%</b> of league best `
-            + `\u00b7 roster depth <b>${Math.round(100*myTraj.fut)}%</b>`
-          : `#${myTraj.rank} in dynasty capital${myTraj.coreAge?` \u00b7 core age <b>${myTraj.coreAge.toFixed(1)}</b>`:''}`
-            + ` \u00b7 <b>${Math.round(100*myTraj.youth)}%</b> of value age \u226425`
-            + ` \u00b7 <b class="${myTraj.cliffShare>=LA_TRAJ_CLIFFSHARE?'la-cliff-hot':''}">${Math.round(100*myTraj.cliffShare)}%</b> on the age-cliff${myTraj.defiers?` (${myTraj.defiers} defier${myTraj.defiers>1?'s':''} \ud83d\udee1)`:''}`
-            + ` \u00b7 pick chest <b>${Math.round(100*myTraj.pickStr)}%</b> of league best`}</div>
-        <div class="la-my-sum-adv">${escHtml(myTraj.advice)}</div>
-      </div></div>`;
+  const radar='<div class="la-my-card"><div class="la-my-title">Position Strength <span class="la-rd-key"><i class="la-rd-k-me"></i>starters <i class="la-rd-k-bn"></i>bench</span></div>'
+    + laRadarSVG(axes, meAx, bnAx, radarMeta)
+    + laRadarDetailHTML(radarMeta)
+    + '</div>';
+  const summary='<div class="la-my-sum">'
+    + laTeamIcon(mineEng.t,'la-tm-av')
+    + '<div class="la-my-sum-body">'
+    + '<div class="la-my-sum-head">' + escHtml(mineEng.t.teamName) + ' \u00b7 <span class="la-traj ' + myTraj.cls + '">' + escHtml(myTraj.title) + '</span></div>'
+    + '<div class="la-my-sum-line">'
+    + (laIsRedraft()
+      ? ('#' + myTraj.rank + ' by projected starters '
+        + ' \u00b7 lineup <b>' + Math.round(100*myTraj.now) + '%</b> of league best '
+        + ' \u00b7 roster depth <b>' + Math.round(100*myTraj.fut) + '%</b>')
+      : ('#' + myTraj.rank + ' in dynasty capital' + (myTraj.coreAge ? (' \u00b7 core age <b>' + myTraj.coreAge.toFixed(1) + '</b>') : '')
+        + ' \u00b7 <b>' + Math.round(100*myTraj.youth) + '%</b> of value age \u226425'
+        + ' \u00b7 <b class="' + (myTraj.cliffShare>=LA_TRAJ_CLIFFSHARE ? 'la-cliff-hot' : '') + '">' + Math.round(100*myTraj.cliffShare) + '%</b> on the age-cliff'
+        + (myTraj.defiers ? (' (' + myTraj.defiers + ' defier' + (myTraj.defiers>1 ? 's' : '') + ' \ud83d\udee1)') : '')
+        + ' \u00b7 pick chest <b>' + Math.round(100*myTraj.pickStr) + '%</b> of league best'))
+    + '</div>'
+    + '<div class="la-my-sum-adv">' + escHtml(myTraj.advice) + '</div>'
+    + '</div></div>';
   return switcher + controls + summary
-    + `<div class="la-my-grid">${powerTbl}${posTbl}${slotTbl}${radar}${lineup}</div>`
-    + `<div class="la-note">${lens==='value'
-        ? 'Dynasty lens: tier-boosted FantasyPros values (T1 \u00d71.15), consolidation-adjusted \u2014 stars carry, depth decays. Power score = starters + 35% bench'+(laState.myPicks?' + 50% picks':'')+', league best = 100.'
-        : 'Redraft lens: this season\u2019s projected points from your own projection engine under this league\u2019s scoring. Picks excluded (they don\u2019t score).'}</div>`;
+    + '<div class="la-my-grid">' + powerTbl + posTbl + slotTbl + radar + lineup + '</div>'
+    + '<div class="la-note">' + (lens==='value'
+        ? 'Dynasty lens: tier-boosted FantasyPros values (T1 \u00d71.15), consolidation-adjusted \u2014 stars carry, depth decays. Power score = starters + 35% bench' + (laState.myPicks ? ' + 50% picks' : '') + ', league best = 100.'
+        : 'Redraft lens: this season\u2019s projected points from your own projection engine under this league\u2019s scoring. Picks excluded (they don\u2019t score).') + '</div>';
 }

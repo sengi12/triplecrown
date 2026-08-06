@@ -103,17 +103,6 @@ function advSumerData(){
   _advSumerCache=out;
   return out;
 }
-// Switch the advanced-stats data source and re-render whichever advanced view is open.
-function setAdvSource(src){
-  // Advanced Stats source switching was removed; keep this for backward-compat calls.
-  if(src!=='nflverse') return;
-  if(advSource==='nflverse') return;
-  advSource='nflverse';
-  sharpTable=null; sharpSortCol=null;
-  if(currentPhase==='AdvancedLeague' && typeof renderSharpLeague==='function') renderSharpLeague();
-  else if(currentPhase==='Advanced' && typeof renderContent==='function') renderContent();
-  else if(currentPhase==='Rankings') renderRankings();
-}
 // Ordered list + display labels for the "Situational" refinement dropdown (SumerSports splits).
 // Order is the sequence shown in the dropdown; only the refinements a position actually tracks
 // (present in its baked `refinements` map) are offered.
@@ -518,102 +507,20 @@ function computeVOR(list){
   list.forEach(p=>{ p.vor = (baseline[p.pos]!=null) ? +(p.fpts-baseline[p.pos]).toFixed(1) : 0; });
 }
 
-// ── Advanced Stats (Warren Sharp) ───────────────────────────────────────────
-// Read-only reference. Two views: a per-team card (this team's row across all Sharp
-// tables, with league rank 1–32 per stat), and a league-wide sortable table view.
-// None of this touches projections.
-function sharpHasData(){ return activeSharp() && Object.keys(activeSharp()).length>0; }
-// Which season the Advanced Stats tables describe. Follows the season tabs: when you're on a
-// completed season that the nflverse seed carries team data for, the tables show
-// THAT season. On the projection view — or a season with no team data — it falls back to the
-// seed's reference season (SHARP_SEASON), which is the newest completed year.
-// This is the single hook for the whole feature: every Advanced Stats renderer (team card and
-// league-wide) reads activeSharp(), which reads this.
-function advTeamSeason(){
-  const s = String(activeSeason);
-  if(activeSeason!=='proj' && NFLVERSE && NFLVERSE[s] && NFLVERSE[s].team) return s;
-  return String(SHARP_SEASON);
-}
-// Adapt the nflverse team tables for the ACTIVE season into the Sharp-shaped dict the league
-// view renders (adds title/category/pct_cols). Returns {} when no nflverse data for it.
-// ("Sharp-shaped" is historical — the Warren Sharp source is gone; this is all nflverse now.)
-function nflverseSharpTables(){
-  const t=(NFLVERSE && NFLVERSE[advTeamSeason()] && NFLVERSE[advTeamSeason()].team) || null;
-  if(!t) return {};
-  const HIDE_LAST5 = new Set(['Y/PL Last 5','Neutral DB Rate Last 5','Sec/Play Last 5']);
-  const META={
-    offense:{title:'Offensive Metrics',category:'offense'},
-    defense:{title:'Defensive Metrics',category:'defense'},
-    tendencies:{title:'Tendencies',category:'offense'},
-    offensive_line_pass:{title:'O-Line: Pass Protection',category:'offense'},
-    offensive_line_run:{title:'O-Line: Run Blocking',category:'offense'},
-    pace:{title:'Pace',category:'offense'},
-    personnel:{title:'Personnel',category:'offense'},
-    coverage:{title:'Coverage (man/zone)',category:'defense'},
-    def_tendencies:{title:'Defensive Tendencies',category:'defense'},
-    defensive_line:{title:'Pass Rush & Run D',category:'defense'},
-  };
-  const PCT=['Explosive Play Rate','Down Conversion Rate','Shotgun Rate','NoHuddle Rate','3WR Rate','Multi TE Rate','Man Rate','Zone Rate',
-    'Motion Rate','Play Action Rate','RPO Rate','Screen Rate','Trick Play Rate','Drop Rate','Blitz Rate',
-    'Pressure Rate Allowed','Rush Stuff Rate','Pressure Rate','No Blitz Pressure Rate',
-    'Hit Rate','Hurry Rate','Sack Rate','Non-QB Sack Rate','Last 5 Sack Rate',
-    'Stuff Rate','Explosive Run Rate','Rush 1D Rate','Broken Tackle Rate','8+ Box Rate',
-    '11 Personnel','12 Personnel','13 Personnel','21 Personnel','Multi RB Rate','Sub Package Rate','Nickel Rate','Dime+ Rate',
-    'Neutral DB Rate','Neutral DB Rate Last 5','Middle Closed Rate','Middle Open Rate','Cover 1','Cover 2','Cover 3'];
-  const out={};
-  for(const k in t){
-    const m=META[k]||{title:k,category:'offense'};
-    const cols=(t[k].columns||[]).filter(c=>!HIDE_LAST5.has(c));
-    out[k]={columns:cols, title:m.title, category:m.category,
-            pct_cols:cols.filter(c=>PCT.includes(c)), teams:t[k].teams};
-  }
-  return out;
-}
-// The active source for the league-wide Advanced Stats tables: Warren Sharp or nflverse.
-function activeSharp(){
-  return nflverseSharpTables();
-}
-// True when the nflverse A/B source can back the league-wide Advanced Stats view.
-function nflverseSharpAvailable(){ return Object.keys(nflverseSharpTables()).length>0; }
+// ── Generic display utils (used app-wide) ───────────────────────────────────
 // Full team name for team pages (e.g. "Cincinnati Bengals"); falls back to the code.
 function teamDisplayName(code){ return (TEAM_NAMES && TEAM_NAMES[code]) || code; }
-// 1 → "1st", 2 → "2nd", 22 → "22nd", etc.
+// 1 → "1st", 2 → "2nd", 22 → "22nd", etc. The single ordinal helper for the whole app
+// (the League Analyzer's positional ranks call this too).
 function ordinal(n){
   if(n==null) return '';
   const s=n%100;
   const suff=(s>=11&&s<=13)?'th':(n%10===1)?'st':(n%10===2)?'nd':(n%10===3)?'rd':'th';
   return n+suff;
 }
-function sharpRankClass(rank){
-  if(rank==null) return '';
-  if(rank<=8)  return 'sr-good';    // top quarter
-  if(rank<=16) return 'sr-okhi';
-  if(rank<=24) return 'sr-oklo';
-  return 'sr-bad';                  // bottom quarter
-}
-function sharpRankBadge(rank){
-  if(rank==null) return '';
-  const suff = (rank%10===1&&rank!==11)?'st':(rank%10===2&&rank!==12)?'nd':(rank%10===3&&rank!==13)?'rd':'th';
-  return `<span class="sr-badge ${sharpRankClass(rank)}">${rank}${suff}</span>`;
-}
-function fmtSharpVal(v, isPct){
-  if(v==null) return '—';
-  if(typeof v!=='number') return v;
-  let s;
-  if(Number.isInteger(v)){
-    s = String(v);
-  } else {
-    // Small-magnitude metrics (e.g. EPA/Play, ~ -0.25..0.25) need 2 decimals — 1 decimal
-    // collapses meaningful differences (0.19 → 0.2). Larger stats read fine at 1 decimal.
-    const dp = (Math.abs(v) < 1 && !isPct) ? 2 : 1;
-    s = v.toFixed(dp);
-  }
-  return isPct ? s+'%' : s;
-}
-// Is a column a percentage in the given table? (build_seed flags these in pct_cols.)
-function sharpColIsPct(tbl, col){
-  return !!(tbl && Array.isArray(tbl.pct_cols) && tbl.pct_cols.includes(col));
-}
+// NOTE: the Advanced Stats (nflverse "Sharp") data helpers — sharpHasData / advTeamSeason /
+// nflverseSharpTables / activeSharp / sharpRankClass / sharpRankBadge / fmtSharpVal /
+// sharpColIsPct — live with their renderers in 76-sharp-sos.js.
 
 // ── Roster Changes (Spotrac offseason: free agency, draft, trades, losses) ──
 // Read-only per-team view tying prior-season weaknesses to how the team addressed them.

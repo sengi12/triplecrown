@@ -6,3 +6,7 @@ projections
 # Test runner output log
 tests/last_run.log
 index_baked.html
+# GitHub Pages publish artifact — regenerated fresh by .github/workflows/pages.yml
+# on every deploy, so it never belongs in the repo (it just duplicates index.html,
+# images/, and the seed .gz files).
+_site/

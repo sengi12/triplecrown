@@ -369,11 +369,25 @@
 .la-lu-empty{display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px;}
 .la-lu-lbl{font-size:9px;font-weight:800;color:var(--muted);letter-spacing:.03em;}
 /* radar */
+.la-radar-wrap{position:relative;max-width:230px;margin:0 auto;}
 .la-radar{width:100%;max-width:230px;display:block;margin:0 auto;}
 .la-rd-ring{fill:none;stroke:var(--border);stroke-width:1;}
 .la-rd-me{fill:rgba(61,155,255,.30);stroke:var(--accent);stroke-width:1.6;}
 .la-rd-bench{fill:rgba(226,192,141,.22);stroke:#e2c08d;stroke-width:1.2;}
 .la-rd-lbl{fill:var(--muted);font-size:9px;font-weight:800;text-anchor:middle;dominant-baseline:middle;}
+.la-rd-dot{position:absolute;transform:translate(-50%,-50%);width:12px;height:12px;border-radius:50%;
+  border:2px solid #0b0e13;background:var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.22);
+  cursor:help;padding:0;z-index:3;touch-action:manipulation;}
+.la-rd-dot:hover,.la-rd-dot.active{background:#6fb7ff;border-color:#fff;}
+.la-rd-detail{margin-top:10px;padding:9px 10px;border:1px solid var(--border);border-radius:8px;
+  background:var(--surface2);display:flex;flex-direction:column;gap:6px;max-height:92px;overflow:auto;}
+.la-rd-detail-empty{font-size:11px;color:var(--muted);font-style:italic;}
+.la-rd-detail-head{display:flex;align-items:center;gap:8px;justify-content:space-between;}
+.la-rd-detail-lbl{font-size:10px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);}
+.la-rd-detail-body{font-size:11.5px;line-height:1.45;color:var(--text);}
+.la-rd-detail-close{margin-left:auto;background:none;border:1px solid var(--border);color:var(--muted);cursor:pointer;
+  font-size:10px;font-weight:800;padding:2px 7px;border-radius:6px;}
+.la-rd-detail-close:hover{color:var(--accent);border-color:var(--accent);}
 .la-rd-key{font-size:9px;color:var(--muted);font-weight:600;margin-left:8px;}
 .la-rd-key i{display:inline-block;width:8px;height:8px;border-radius:2px;margin:0 3px 0 6px;}
 .la-rd-k-me{background:rgba(61,155,255,.6);}
@@ -477,6 +491,7 @@
   .la-lu-col{min-width:40px;}
   .la-lu-hs{width:24px;height:24px;}
   .la-radar{max-width:200px;}
+  .la-rd-dot{width:14px;height:14px;}
   .la-pw-team{max-width:none;}
   .la-pw-score{width:38%;}
   /* trade calculator: one column, verdict FIRST (order:-1) so it's always in view */
