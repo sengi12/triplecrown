@@ -253,7 +253,6 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] lineup helper tab
 - [ ] Implement future schedule on player cards with "4-weeks in" defensive rankings per pos
 ### Audit
-- [ ] Review comments and variable names
 ### Import Projections
 ### Adv Metrics
 - [ ] QB Metrics: on_tgt_throws, bad_throw_pct, batted_balls, is_interception_worthy, is_catchable_ball

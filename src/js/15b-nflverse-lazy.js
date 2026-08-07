@@ -264,9 +264,19 @@ async function fetchSeedJson(url){
     tcLatencyLog(url, 'json', t1 - t0, 0, 0, false);
     return null;
   }
-  const txt = await r.text();
-  const t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
-  const parsed = JSON.parse(txt);
+  let parsed;
+  let t2;
+  if(typeof r.text==='function'){
+    const txt = await r.text();
+    t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
+    parsed = JSON.parse(txt);
+  }else if(typeof r.json==='function'){
+    parsed = await r.json();
+    t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
+  }else{
+    tcLatencyLog(url, 'json', t1 - t0, 0, 0, false);
+    return null;
+  }
   const t3 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
   tcLatencyLog(url, 'json', t1 - t0, 0, t3 - t2, true);
   return parsed;

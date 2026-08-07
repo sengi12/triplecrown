@@ -54,8 +54,8 @@ const KTC_INTENSITY = {
 let ktcGameState = {
   active: false,
   trio: [],
-  trioTag: 'FPTS',
-  trioWhy: 'projection-cluster',
+  trioTag: 'ECR',
+  trioWhy: 'ecr-cluster',
   selection: [],
   cursor: 0,
   posCursor: 0,
@@ -122,10 +122,28 @@ function ktcTopTierCutoff(board){
 function ktcRoundBudget(trio, level){
   const cfg = ktcIntensityCfg(level||ktcIntensityKey());
   if(!Array.isArray(trio) || trio.length!==3) return cfg.minBudget;
-  const vals = trio.map(p=>+p.fpts||0);
+  const samePos = new Set(trio.map(p=>String((p&&p.pos)||''))).size===1;
+  const vals = trio.map(p=>samePos?(+p.fpts||0):(+p.vor||0));
   const spread = Math.max(...vals) - Math.min(...vals);
-  // Budget scales with the presented trio's spread, but always stays tightly bounded.
-  return ktcClamp(spread*cfg.budgetScale, cfg.minBudget, cfg.maxBudget);
+  // Mixed-position rounds run on VOR-space; allow a bit more budget than raw-FPTS rounds.
+  const scale = samePos ? 1 : 0.16;
+  const maxBudget = samePos ? cfg.maxBudget : (cfg.maxBudget*1.45);
+  return ktcClamp(spread*cfg.budgetScale*scale, cfg.minBudget, maxBudget);
+}
+
+function ktcSignalMode(trio){
+  if(!Array.isArray(trio) || !trio.length) return 'same_pos';
+  return new Set(trio.map(p=>String((p&&p.pos)||''))).size===1 ? 'same_pos' : 'cross_pos';
+}
+
+function ktcSignalDeltaToFpts(player, delta, mode){
+  const d = +delta||0;
+  if(!Number.isFinite(d) || Math.abs(d)<0.0001) return 0;
+  if(mode==='same_pos') return d;
+  // Cross-position rounds are judged in VOR-space; convert to a small projection nudge.
+  const pos = String((player&&player.pos)||'');
+  const scale = (pos==='QB') ? 0.18 : 0.24;
+  return d*scale;
 }
 
 function ktcScoreSummary(p){
@@ -283,10 +301,12 @@ function ktcPreferredPos(){
 }
 
 function ktcTrioDetail(trio, targetPos){
-  if(!Array.isArray(trio) || trio.length!==3) return {score:-1e9, tag:'FPTS', why:'projection-cluster'};
+  if(!Array.isArray(trio) || trio.length!==3) return {score:-1e9, tag:'ECR', why:'ecr-cluster'};
   const profile = ktcFormatProfile();
-  const sorted = trio.slice().sort((a,b)=>b.fpts-a.fpts);
-  const fptsSpread = (+sorted[0].fpts||0) - (+sorted[2].fpts||0);
+  const signalMode = ktcSignalMode(trio);
+  const samePos = signalMode==='same_pos';
+  const sorted = trio.slice().sort((a,b)=> (samePos?((+b.fpts||0)-(+a.fpts||0)):((+b.vor||0)-(+a.vor||0))));
+  const fptsSpread = samePos ? ((+sorted[0].fpts||0) - (+sorted[2].fpts||0)) : 0;
   const rankSpread = (+sorted[2]._ktcRank||0) - (+sorted[0]._ktcRank||0);
   const adps = sorted.map(ktcAdpVal).filter(v=>v<900);
   const adpSpread = adps.length>1 ? (Math.max(...adps)-Math.min(...adps)) : 90;
@@ -333,7 +353,7 @@ function ktcTrioDetail(trio, targetPos){
 
   // Keep rounds non-obvious: trio members should be reasonably close to each other.
   const closeRule = {
-    fpts: fptsSpread <= Math.max(profile.fptsTarget + 7, 14),
+    fpts: samePos ? (fptsSpread <= Math.max(profile.fptsTarget + 7, 14)) : true,
     rank: rankSpread <= 26,
     adp: adps.length<2 || adpSpread <= (profile.adpTarget + 18),
     ecr: ecrs.length<2 || ecrSpread <= 54,
@@ -346,7 +366,7 @@ function ktcTrioDetail(trio, targetPos){
   let score = 0;
   // Keep position coherence as a preference, but avoid hard-locking to all-same-position trios.
   score += (samePosCt===3 ? 8 : samePosCt===2 ? 12 : 3);
-  score += fptsFit * (0.8 + profile.fptsW);
+  if(samePos) score += fptsFit * (0.8 + profile.fptsW);
   score += Math.max(-12, 7 - Math.abs(rankSpread - 14));
   score += adpFit * (1.0 + profile.adpW);
   score += ecrFit * (0.9 + profile.ecrW);
@@ -367,11 +387,11 @@ function ktcTrioDetail(trio, targetPos){
   const tagScores = {
     ADP: adpFit*(1+profile.adpW) - (ktcTagSeenCount('ADP')*1.55),
     ECR: ecrFit*(1+profile.ecrW) - (ktcTagSeenCount('ECR')*1.55),
-    FPTS: fptsFit*(1+profile.fptsW) - (ktcTagSeenCount('FPTS')*1.55),
+    FPTS: samePos ? (fptsFit*(1+profile.fptsW) - (ktcTagSeenCount('FPTS')*1.55)) : -1e9,
     TIER: tierFit*1.1 - (ktcTagSeenCount('TIER')*1.55),
     VOR: vorFit*1.05 - (ktcTagSeenCount('VOR')*1.55),
   };
-  let tag='FPTS';
+  let tag=samePos?'FPTS':'ECR';
   let best=-1e9;
   Object.keys(tagScores).forEach(k=>{ if(tagScores[k]>best){ best=tagScores[k]; tag=k; } });
   const whyMap = {
@@ -381,7 +401,7 @@ function ktcTrioDetail(trio, targetPos){
     TIER:'tier-cluster',
     VOR:'vor-cluster',
   };
-  return {score, tag, why: whyMap[tag] || 'fpts-cluster', sig: trioSig, closeOk, closeHits};
+  return {score, tag, why: whyMap[tag] || (samePos?'fpts-cluster':'ecr-cluster'), sig: trioSig, closeOk, closeHits, signalMode};
 }
 
 function ktcTrioScore(trio, targetPos){
@@ -491,14 +511,25 @@ function ktcPickNextTrio(preBoard){
 
 function ktcSolveDeltas(trio, orderedKeys, minGap, level){
   const out = {};
-  if(!Array.isArray(trio) || trio.length!==3 || !Array.isArray(orderedKeys) || orderedKeys.length!==3) return out;
+  if(!Array.isArray(trio) || trio.length!==3 || !Array.isArray(orderedKeys) || orderedKeys.length!==3){
+    out._signalMode = 'same_pos';
+    return out;
+  }
   const cfg = ktcIntensityCfg(level||ktcIntensityKey());
   const ranked = orderedKeys.map(k=>ktcPlayerByKey(trio, k));
-  if(ranked.some(p=>!p)) return out;
+  if(ranked.some(p=>!p)){
+    out._signalMode = 'same_pos';
+    return out;
+  }
 
-  const gap = Number.isFinite(+minGap) ? +minGap : KTC_MIN_GAP;
+  const signalMode = ktcSignalMode(trio);
+  const samePos = signalMode==='same_pos';
+
+  const gap = samePos
+    ? (Number.isFinite(+minGap) ? +minGap : KTC_MIN_GAP)
+    : Math.max(2.4, (Number.isFinite(+minGap) ? +minGap : KTC_MIN_GAP) * 5.2);
   const budget = ktcRoundBudget(trio, level);
-  const cur = ranked.map(p=>+p.fpts||0);
+  const cur = ranked.map(p=>samePos ? (+p.fpts||0) : (+p.vor||0));
   const d = [0,0,0];
 
   // Treat KTC as a strict 1/2/3 ranking. Enforce all pairwise constraints so the
@@ -531,6 +562,7 @@ function ktcSolveDeltas(trio, orderedKeys, minGap, level){
   out[orderedKeys[0]] = d[0];
   out[orderedKeys[1]] = d[1];
   out[orderedKeys[2]] = d[2];
+  out._signalMode = signalMode;
   return out;
 }
 
@@ -703,16 +735,18 @@ function ktcSubmitSelection(){
   const ordered = ktcGameState.selection.slice();
   const level = ktcIntensityKey();
   const cfg = ktcIntensityCfg(level);
-  const deltas = ktcSolveDeltas(trio, ktcGameState.selection, KTC_MIN_GAP, level);
+  const deltas = ktcSolveDeltas(trio, ktcGameState.selection, KTC_MIN_GAP, level) || {};
+  const signalMode = deltas._signalMode || 'same_pos';
   let changed = false;
   trio.forEach(p=>{
     const d = deltas[ktcPlayerKey(p)] || 0;
-    if(Math.abs(d)<0.01) return;
-    if(ktcApplyPlayerDelta(p, d)) changed = true;
+    const fptsDelta = ktcSignalDeltaToFpts(p, d, signalMode);
+    if(Math.abs(fptsDelta)<0.01) return;
+    if(ktcApplyPlayerDelta(p, fptsDelta)) changed = true;
   });
 
-  // Second-pass correction: small bounded top-off only (no big leaps in a single round).
-  if(changed){
+  // Second-pass correction only for same-position rounds; mixed rounds are VOR-ranked.
+  if(changed && signalMode==='same_pos'){
     const board = ktcEligibleBoard();
     const map = {};
     board.forEach(p=>{ map[ktcPlayerKey(p)] = +p.fpts||0; });
@@ -791,6 +825,10 @@ function renderKtcOverlay(){
   const intensity = ktcIntensityKey();
   const cfg = ktcIntensityCfg(intensity);
   const trioTag = String(ktcGameState.trioTag||'FPTS');
+  const trioMode = ktcSignalMode(ktcGameState.trio||[]);
+  const modeHint = trioMode==='same_pos'
+    ? 'Same-position rounds may use projection/FPTS proximity.'
+    : 'Mixed-position rounds compare ADP, ECR, TIER, and VOR (not raw FPTS).';
   const intensityOptions = ['conservative','balanced','aggressive'].map(k=>
     `<button class="ktc-intensity-opt ${k===intensity?'on':''}" onclick="ktcSetIntensity('${k}')">${escHtml((KTC_INTENSITY[k]&&KTC_INTENSITY[k].label)||k)}</button>`
   ).join('');
@@ -801,7 +839,7 @@ function renderKtcOverlay(){
         <div class="ktc-title">Keep Trade Cut</div>
         <button class="ktc-x" onclick="stopKtcGame()" aria-label="Close">✕</button>
       </div>
-      <div class="ktc-sub">Pick in order: <b>KEEP</b> first, then <b>TRADE</b>, then <b>CUT</b>. Rankings adjust after each submit. <span class="ktc-signal">signal <b class="ktc-signal-tag">${escHtml(trioTag)}</b></span></div>
+      <div class="ktc-sub">Rank the trio <b>1</b>, <b>2</b>, <b>3</b> as <b>KEEP</b>, <b>TRADE</b>, <b>CUT</b>. Rankings adjust after each submit. <span class="ktc-signal">signal <b class="ktc-signal-tag">${escHtml(trioTag)}</b></span> <span class="ktc-mode-hint">${escHtml(modeHint)}</span></div>
       <div class="ktc-intensity-row"><span>Nudge intensity</span><div class="ktc-intensity">${intensityOptions}</div></div>
       <div class="ktc-cards">${cards}</div>
       <div class="ktc-actions">

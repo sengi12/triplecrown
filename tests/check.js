@@ -1193,7 +1193,11 @@ function updateUndoButton(){
   const team=currentTeam;
   const n = team && undoStacks[team] ? undoStacks[team].length : 0;
   btn.disabled = !n;
-  btn.classList.toggle('disabled', !n);
+  if(btn.classList){
+    if(typeof btn.classList.toggle==='function') btn.classList.toggle('disabled', !n);
+    else if(!n && typeof btn.classList.add==='function') btn.classList.add('disabled');
+    else if(n && typeof btn.classList.remove==='function') btn.classList.remove('disabled');
+  }
   btn.title = n ? `Undo last working-set change to ${team} (${n} step${n===1?'':'s'} available)` : `Nothing to undo for ${team}'s working set`;
   const cnt=document.getElementById('undoCount');
   if(cnt) cnt.textContent = n? ` ${n}`:'';
@@ -1465,9 +1469,19 @@ async function fetchSeedJson(url){
     tcLatencyLog(url, 'json', t1 - t0, 0, 0, false);
     return null;
   }
-  const txt = await r.text();
-  const t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
-  const parsed = JSON.parse(txt);
+  let parsed;
+  let t2;
+  if(typeof r.text==='function'){
+    const txt = await r.text();
+    t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
+    parsed = JSON.parse(txt);
+  }else if(typeof r.json==='function'){
+    parsed = await r.json();
+    t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
+  }else{
+    tcLatencyLog(url, 'json', t1 - t0, 0, 0, false);
+    return null;
+  }
   const t3 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
   tcLatencyLog(url, 'json', t1 - t0, 0, t3 - t2, true);
   return parsed;
@@ -1589,16 +1603,11 @@ function ensureNflverseCoachingSeason(season){
   }catch(e){ /* no embedded sidecars — hosted lazy path will fetch on demand */ }
 })();
 // ── Player notes + hidden stat tagging ─────────────────────────────────────
-// Notes are keyed per player and live alongside the working projection session. A hidden
-// double-tap gesture on tagged stats opens a picker that lets the user attach that stat to a
-// relevant player without cluttering the UI with visible controls.
+// Notes are keyed per player and live alongside the working projection session. Tapping/clicking
+// a tagged stat opens a picker to attach that stat to a relevant player without extra controls.
 
-const NOTE_DBL_MS = 360;
-const NOTE_MOVE_PX = 10;
 const TC_DEV_MODE = "0" === "1";
 let _notePickerState = null;
-let _noteTapState = null;
-let _noteSuppressClickUntil = 0;
 let _notesBrowserOpen = false;
 
 function playerNoteCount(nameOrId, pos, team){
@@ -1897,7 +1906,7 @@ function renderPcardNotes(){
     return `<div class="pcard-note-tag${clickable?' is-link':''}"><div class="pcard-note-tag-top"><button class="pcard-note-tag-open" ${clickable?`onclick="noteOpenFromCard('${escJsSingle(tag.id)}')"`:'disabled'} title="${escAttr(ttl)}"><span class="pcard-note-tag-label">${escHtml(d.label)}</span><div class="pcard-note-tag-value">${escHtml(d.value)}</div>${d.context?`<div class="pcard-note-tag-context">${escHtml(d.context)}</div>`:''}</button><button class="pcard-note-tag-info" onclick="openPcardNoteTagInfo('${escJsSingle(tag.id)}')" aria-label="View note details">i</button><button class="pcard-note-tag-rm" onclick="removePcardNoteTagFromCard('${escJsSingle(tag.id)}')" aria-label="Remove tag">✕</button></div></div>`;
   }).join('');
   return `<div class="pcard-notes-view">
-    <div class="pcard-notes-head"><div class="pcard-notes-title">Player Notes</div><div class="pcard-notes-sub">Double-tap tagged stats anywhere in the app to pin them here.</div></div>
+    <div class="pcard-notes-head"><div class="pcard-notes-title">Player Notes</div><div class="pcard-notes-sub">Tap/click tagged stats anywhere in the app to pin them here.</div></div>
     <div class="pcard-notes-tags">${tags || '<div class="pcard-notes-empty">No pinned stats yet.</div>'}</div>
     <label class="pcard-notes-label" for="pcardNotesText">Your notes</label>
     <textarea id="pcardNotesText" class="pcard-notes-text" spellcheck="true" placeholder="Write down anything you want to remember about this player…" oninput="updatePcardNotesText(this.value)">${escHtml(note.text || '')}</textarea>
@@ -2074,7 +2083,7 @@ function renderNotesBrowser(query){
   }) : rows;
   meta.innerHTML = `<div class="notes-browser-count">${view.length} noted player${view.length===1?'':'s'}</div>`;
   if(!view.length){
-    box.innerHTML = `<div class="ps-hint">${rows.length?'No notes match that search.':'No player notes yet. Open a player card or double-tap a tagged stat to start collecting notes.'}</div>`;
+    box.innerHTML = `<div class="ps-hint">${rows.length?'No notes match that search.':'No player notes yet. Open a player card or tap/click a tagged stat to start collecting notes.'}</div>`;
     return;
   }
   box.innerHTML = view.map(r=>{
@@ -2107,57 +2116,20 @@ function _noteIgnoreTarget(t){
   return !!(t && t.closest && t.closest('input, textarea, select, button, [contenteditable="true"], [contenteditable=true], .sl, .dual-range, .pcard-notes-text, .mini-edit'));
 }
 
-function _noteClearTap(){
-  _noteTapState = null;
-}
-
-function _noteRegisterTap(el, clientX, clientY){
-  const now = Date.now();
-  if(!_noteTapState){
-    _noteTapState = { el, x:clientX, y:clientY, t:now };
-    return;
-  }
-  const withinTime = (now - _noteTapState.t) <= NOTE_DBL_MS;
-  const withinMove = Math.abs(clientX - _noteTapState.x) <= NOTE_MOVE_PX && Math.abs(clientY - _noteTapState.y) <= NOTE_MOVE_PX;
-  const sameTarget = _noteTapState.el===el;
-  if(withinTime && withinMove && sameTarget){
-    _noteSuppressClickUntil = now + 450;
-    const info = noteInfoFromElement(el);
-    _noteTapState = null;
-    if(info) noteOpenPicker(info);
-    return;
-  }
-  _noteTapState = { el, x:clientX, y:clientY, t:now };
-}
-
 if(typeof document!=='undefined' && document.addEventListener){
   document.addEventListener('contextmenu', e=>{
     const el = e.target && e.target.closest ? e.target.closest('[data-noteable="1"]') : null;
     if(el && !_noteIgnoreTarget(e.target)) e.preventDefault();
   });
   document.addEventListener('click', e=>{
-    if(Date.now() < _noteSuppressClickUntil){
-      e.preventDefault();
-      e.stopPropagation();
-      _noteSuppressClickUntil = 0;
-    }
-  }, true);
-  document.addEventListener('touchstart', e=>{
-    if(e.touches.length!==1) return _noteClearTap();
     const t = e.target;
     const el = t && t.closest ? t.closest('[data-noteable="1"]') : null;
     if(!el || _noteIgnoreTarget(t)) return;
-    const touch = e.touches[0];
-    _noteRegisterTap(el, touch.clientX, touch.clientY);
-  }, {passive:true});
-  document.addEventListener('touchcancel', _noteClearTap, {passive:true});
-  document.addEventListener('mousedown', e=>{
-    const t = e.target;
-    const el = t && t.closest ? t.closest('[data-noteable="1"]') : null;
-    if(!el || _noteIgnoreTarget(t) || e.button!==0) return;
-    _noteRegisterTap(el, e.clientX, e.clientY);
-  });
-  document.addEventListener('mouseleave', _noteClearTap);
+    e.preventDefault();
+    e.stopPropagation();
+    const info = noteInfoFromElement(el);
+    if(info) noteOpenPicker(info);
+  }, true);
 }
 // ─────────────────────────────────────────────────────────────────────────────
 // Toast
@@ -11328,14 +11300,30 @@ function sortSOSBy(col){
 
 
 let _rankingsRenderCache = { key:'', html:'' };
+let _rankingsMobileAutoFullPass = false;
+let _rankingsMobileAutoToken = 0;
+let _rankingsPrewarmQueued = false;
 
 function invalidateRankingsRenderCache(){
   _rankingsRenderCache.key = '';
   _rankingsRenderCache.html = '';
 }
 
+function prewarmRankingsFromSeed(){
+  if(_rankingsPrewarmQueued) return;
+  _rankingsPrewarmQueued = true;
+  const run = ()=>{
+    try{
+      if(typeof buildPlayerList==='function') buildPlayerList();
+    }catch(_e){
+      _rankingsPrewarmQueued = false;
+    }
+  };
+  if(typeof requestIdleCallback==='function') requestIdleCallback(run, { timeout: 1500 });
+  else setTimeout(run, 0);
+}
+
 function rankingsRenderCacheKey(teamScoped){
-  if(teamScoped) return '';
   if(typeof ktcGameState!=='undefined' && ktcGameState && ktcGameState.active) return '';
   if(typeof draftId!=='undefined' && draftId) return '';
   if(typeof leaguePickerState!=='undefined' && leaguePickerState && leaguePickerState.open) return '';
@@ -11344,6 +11332,7 @@ function rankingsRenderCacheKey(teamScoped){
     ? ((sumerColumnsForFilter()||{}).cols||[]).join(',')
     : '';
   const buildEpoch = (typeof _buildPlayerCacheEpoch!=='undefined') ? _buildPlayerCacheEpoch : 0;
+  const mobileNarrow = !!(typeof window!=='undefined' && window.matchMedia && window.matchMedia('(max-width: 760px)').matches);
   return [
     'rankings',
     buildEpoch,
@@ -11359,18 +11348,31 @@ function rankingsRenderCacheKey(teamScoped){
     String(scoringPanelOpen),
     String(scoringAxis||''),
     String(rankScope||'all'),
+    String(teamScoped?1:0),
+    String(teamScoped?(currentTeam||''):'all'),
+    String(mobileNarrow?1:0),
+    String(_rankingsMobileAutoFullPass?1:0),
   ].join('|');
 }
 
 function renderRankings(){
+  const _rkNow = ()=>((typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now());
+  const _rkDebug = (typeof tcLatencyDebugEnabled==='function' && tcLatencyDebugEnabled());
+  const _rkT0 = _rkNow();
   const teamScoped = (rankScope==='team' && currentTeam);
   const cacheKey = rankingsRenderCacheKey(teamScoped);
   if(cacheKey && _rankingsRenderCache.key===cacheKey && _rankingsRenderCache.html){
     document.getElementById('content').innerHTML = _rankingsRenderCache.html;
+    if(_rkDebug){
+      const dt = (_rkNow()-_rkT0).toFixed(1);
+      try{ console.info(`[rankings-latency] cache-hit total=${dt}ms`); }catch(_e){}
+    }
     return;
   }
 
+  const tBuildStart = _rkNow();
   let all=buildPlayerList();
+  const tBuildDone = _rkNow();
   // Team-scoped rankings (from a team's Rankings tab) show only that team's players.
   let teamHeader='';
   if(teamScoped && currentTeam){
@@ -11402,6 +11404,7 @@ function renderRankings(){
     `${teamScoped?`${teamHeader}<div class="phase-tabs">${tabBar()}</div>`:''}<div class="empty"><div class="empty-icon">${TC_ICON("trophy","tc-ico-lg")}</div>
      <div class="empty-title">No projections yet</div><div class="empty-body">Set at least one team's stats to see rankings.</div></div>`;return;}
   // Overall order is by fantasy points (your projections). ECR/tier come from FantasyPros.
+  const tSortStart = _rkNow();
   all.sort((a,b)=>b.fpts-a.fpts);
   all.forEach((p,i)=>{ p.overall=i+1; });
   // live draft: mark drafted players
@@ -11411,6 +11414,7 @@ function renderRankings(){
     :rankPosFilter==='FLEX'?all.filter(p=>p.pos!=='QB')
     :all.filter(p=>p.pos===rankPosFilter);
   if(following && hideDrafted) view=view.filter(p=>!p.drafted);
+  const fullViewCount = view.length;
   view=[...view].sort((a,b)=>{
     if(rankSortKey==='ecr'){
       // Unranked players sort to the bottom regardless of direction.
@@ -11472,6 +11476,15 @@ function renderRankings(){
       return typeof v==='number' && v>=min;
     });
   }
+  const mobileNarrow = !!(typeof window!=='undefined' && window.matchMedia && window.matchMedia('(max-width: 760px)').matches);
+  const mobileCapApplies = mobileNarrow && !teamScoped && rankPosFilter==='ALL' && !following;
+  const MOBILE_ROW_CAP = 180;
+  let mobileTrimmedCount = 0;
+  if(mobileCapApplies && !_rankingsMobileAutoFullPass && view.length>MOBILE_ROW_CAP){
+    mobileTrimmedCount = view.length - MOBILE_ROW_CAP;
+    view = view.slice(0, MOBILE_ROW_CAP);
+  }
+  const tSortDone = _rkNow();
   // Projected-pick lines: when following a draft with a known seat and the board is in draft
   // order (sorted by ECR). This is *especially* useful with "hide drafted" on, since the board
   // then shows only available players and the line marks exactly how far down your pick lands.
@@ -11498,6 +11511,7 @@ function renderRankings(){
 
   let undraftedSeen=0, nextGapIdx=0, gapRemaining=(pickGaps[0]!=null?pickGaps[0]:-1);
   const rowChunks=[];
+  const tRowsStart = _rkNow();
   const rankBaseContext = activeSeason==='proj'
     ? `${PROJ_SEASON} projections · ${teamScoped?`${currentTeam} rankings`:'full rankings'}`
     : `${teamScoped?`${currentTeam} rankings`:'full rankings'} · ${activeSeason}`;
@@ -11574,6 +11588,7 @@ function renderRankings(){
     if(!p.drafted) undraftedSeen++;
   });
   const rows=rowChunks.join('');
+  const tRowsDone = _rkNow();
   // Two-axis format picker: league TYPE (redraft/dynasty) + SCORING (std/half/full/superflex).
   const curType=leagueTypeOf(rankFormat);
   const curScoring=scoringAxis;   // source of truth for the scoring buttons (independent of rankFormat)
@@ -11618,6 +11633,11 @@ function renderRankings(){
            <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showFullRankings()">View full league →</button>`
         : `<span class="scope-title">Full League Rankings</span><span class="scope-sub">all ${all.length} players</span>`}
     </div>
+    ${(mobileTrimmedCount>0)
+      ? `<div class="card" style="margin-bottom:10px;padding:10px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--muted)">Mobile quick-open: rendering top ${view.length} first; full list is loading automatically.</span>
+        </div>`
+      : ''}
     <div class="card scoring-card ${scoringPanelOpen?'open':''}" style="margin-bottom:12px;padding:0">
       <div class="scoring-head" onclick="toggleScoringPanel()" title="Show / hide scoring settings">
         <span class="scoring-caret">\u25b8</span>
@@ -11667,7 +11687,7 @@ function renderRankings(){
         ${minInputs}
         ${advNote}
         ${ecrNote}
-        <span style="font-size:11px;font-weight:700;margin-left:auto">${view.length} players</span>
+        <span style="font-size:11px;font-weight:700;margin-left:auto">${view.length}${mobileTrimmedCount>0?` / ${fullViewCount}`:''} players</span>
         ${following?'':`<button class="btn btn-accent btn-sm" onclick="openLeaguePicker()">🔗 Link Sleeper League</button>
         <button class="btn btn-ghost btn-sm" onclick="promptDraftFollow()" title="Follow a live or mock draft by its ID">Paste draft ID</button>`}
         <button class="btn btn-ghost btn-sm" onclick="exportRankingsCSV()">${TC_ICON("download")} CSV</button>
@@ -11685,10 +11705,39 @@ function renderRankings(){
         ${th('passing_attempts','PASS','ATT','grp-pass',true)}${th('passing_yards','PASS','YDS','grp-pass-mid')}${th('passing_tds','PASS','TDS','grp-pass-mid')}${th('interceptions_thrown','PASS','INTS','grp-pass-end')}`}
       </tr></thead><tbody>${rows}</tbody></table></div>
     </div>`;
+  const tHtmlDone = _rkNow();
   document.getElementById('content').innerHTML = pageHtml;
+  const tDomDone = _rkNow();
   if(cacheKey){
     _rankingsRenderCache.key = cacheKey;
     _rankingsRenderCache.html = pageHtml;
+  }
+  // Mobile first paint: show a fast initial slice, then auto-render the full list on idle.
+  if(mobileTrimmedCount>0){
+    const token = ++_rankingsMobileAutoToken;
+    const runFull = ()=>{
+      if(token!==_rankingsMobileAutoToken) return;
+      if(typeof currentPhase!=='undefined' && currentPhase!=='Rankings') return;
+      if(typeof rankScope!=='undefined' && rankScope!=='all') return;
+      if(typeof rankPosFilter!=='undefined' && rankPosFilter!=='ALL') return;
+      if(typeof draftId!=='undefined' && draftId) return;
+      if(typeof ktcGameState!=='undefined' && ktcGameState && ktcGameState.active) return;
+      _rankingsMobileAutoFullPass = true;
+      try{ renderRankings(); }
+      finally{ _rankingsMobileAutoFullPass = false; }
+    };
+    if(typeof requestIdleCallback==='function') requestIdleCallback(runFull, { timeout: 500 });
+    else setTimeout(runFull, 60);
+  }
+  if(_rkDebug){
+    const mBuild = (tBuildDone - tBuildStart).toFixed(1);
+    const mSort = (tSortDone - tSortStart).toFixed(1);
+    const mRows = (tRowsDone - tRowsStart).toFixed(1);
+    const mHtml = (tHtmlDone - tRowsDone).toFixed(1);
+    const mDom = (tDomDone - tHtmlDone).toFixed(1);
+    const mTotal = (tDomDone - _rkT0).toFixed(1);
+    const meta = `players=${all.length} shown=${view.length} adv=${advActive?1:0} mobile=${mobileNarrow?1:0} cap=${mobileTrimmedCount>0?1:0}`;
+    try{ console.info(`[rankings-latency] total=${mTotal}ms build=${mBuild} sort/filter=${mSort} rows=${mRows} html=${mHtml} dom=${mDom} ${meta}`); }catch(_e){}
   }
 }
 function rankSort(k){
@@ -11957,8 +12006,8 @@ const KTC_INTENSITY = {
 let ktcGameState = {
   active: false,
   trio: [],
-  trioTag: 'FPTS',
-  trioWhy: 'projection-cluster',
+  trioTag: 'ECR',
+  trioWhy: 'ecr-cluster',
   selection: [],
   cursor: 0,
   posCursor: 0,
@@ -12025,10 +12074,28 @@ function ktcTopTierCutoff(board){
 function ktcRoundBudget(trio, level){
   const cfg = ktcIntensityCfg(level||ktcIntensityKey());
   if(!Array.isArray(trio) || trio.length!==3) return cfg.minBudget;
-  const vals = trio.map(p=>+p.fpts||0);
+  const samePos = new Set(trio.map(p=>String((p&&p.pos)||''))).size===1;
+  const vals = trio.map(p=>samePos?(+p.fpts||0):(+p.vor||0));
   const spread = Math.max(...vals) - Math.min(...vals);
-  // Budget scales with the presented trio's spread, but always stays tightly bounded.
-  return ktcClamp(spread*cfg.budgetScale, cfg.minBudget, cfg.maxBudget);
+  // Mixed-position rounds run on VOR-space; allow a bit more budget than raw-FPTS rounds.
+  const scale = samePos ? 1 : 0.16;
+  const maxBudget = samePos ? cfg.maxBudget : (cfg.maxBudget*1.45);
+  return ktcClamp(spread*cfg.budgetScale*scale, cfg.minBudget, maxBudget);
+}
+
+function ktcSignalMode(trio){
+  if(!Array.isArray(trio) || !trio.length) return 'same_pos';
+  return new Set(trio.map(p=>String((p&&p.pos)||''))).size===1 ? 'same_pos' : 'cross_pos';
+}
+
+function ktcSignalDeltaToFpts(player, delta, mode){
+  const d = +delta||0;
+  if(!Number.isFinite(d) || Math.abs(d)<0.0001) return 0;
+  if(mode==='same_pos') return d;
+  // Cross-position rounds are judged in VOR-space; convert to a small projection nudge.
+  const pos = String((player&&player.pos)||'');
+  const scale = (pos==='QB') ? 0.18 : 0.24;
+  return d*scale;
 }
 
 function ktcScoreSummary(p){
@@ -12186,10 +12253,12 @@ function ktcPreferredPos(){
 }
 
 function ktcTrioDetail(trio, targetPos){
-  if(!Array.isArray(trio) || trio.length!==3) return {score:-1e9, tag:'FPTS', why:'projection-cluster'};
+  if(!Array.isArray(trio) || trio.length!==3) return {score:-1e9, tag:'ECR', why:'ecr-cluster'};
   const profile = ktcFormatProfile();
-  const sorted = trio.slice().sort((a,b)=>b.fpts-a.fpts);
-  const fptsSpread = (+sorted[0].fpts||0) - (+sorted[2].fpts||0);
+  const signalMode = ktcSignalMode(trio);
+  const samePos = signalMode==='same_pos';
+  const sorted = trio.slice().sort((a,b)=> (samePos?((+b.fpts||0)-(+a.fpts||0)):((+b.vor||0)-(+a.vor||0))));
+  const fptsSpread = samePos ? ((+sorted[0].fpts||0) - (+sorted[2].fpts||0)) : 0;
   const rankSpread = (+sorted[2]._ktcRank||0) - (+sorted[0]._ktcRank||0);
   const adps = sorted.map(ktcAdpVal).filter(v=>v<900);
   const adpSpread = adps.length>1 ? (Math.max(...adps)-Math.min(...adps)) : 90;
@@ -12236,7 +12305,7 @@ function ktcTrioDetail(trio, targetPos){
 
   // Keep rounds non-obvious: trio members should be reasonably close to each other.
   const closeRule = {
-    fpts: fptsSpread <= Math.max(profile.fptsTarget + 7, 14),
+    fpts: samePos ? (fptsSpread <= Math.max(profile.fptsTarget + 7, 14)) : true,
     rank: rankSpread <= 26,
     adp: adps.length<2 || adpSpread <= (profile.adpTarget + 18),
     ecr: ecrs.length<2 || ecrSpread <= 54,
@@ -12249,7 +12318,7 @@ function ktcTrioDetail(trio, targetPos){
   let score = 0;
   // Keep position coherence as a preference, but avoid hard-locking to all-same-position trios.
   score += (samePosCt===3 ? 8 : samePosCt===2 ? 12 : 3);
-  score += fptsFit * (0.8 + profile.fptsW);
+  if(samePos) score += fptsFit * (0.8 + profile.fptsW);
   score += Math.max(-12, 7 - Math.abs(rankSpread - 14));
   score += adpFit * (1.0 + profile.adpW);
   score += ecrFit * (0.9 + profile.ecrW);
@@ -12270,11 +12339,11 @@ function ktcTrioDetail(trio, targetPos){
   const tagScores = {
     ADP: adpFit*(1+profile.adpW) - (ktcTagSeenCount('ADP')*1.55),
     ECR: ecrFit*(1+profile.ecrW) - (ktcTagSeenCount('ECR')*1.55),
-    FPTS: fptsFit*(1+profile.fptsW) - (ktcTagSeenCount('FPTS')*1.55),
+    FPTS: samePos ? (fptsFit*(1+profile.fptsW) - (ktcTagSeenCount('FPTS')*1.55)) : -1e9,
     TIER: tierFit*1.1 - (ktcTagSeenCount('TIER')*1.55),
     VOR: vorFit*1.05 - (ktcTagSeenCount('VOR')*1.55),
   };
-  let tag='FPTS';
+  let tag=samePos?'FPTS':'ECR';
   let best=-1e9;
   Object.keys(tagScores).forEach(k=>{ if(tagScores[k]>best){ best=tagScores[k]; tag=k; } });
   const whyMap = {
@@ -12284,7 +12353,7 @@ function ktcTrioDetail(trio, targetPos){
     TIER:'tier-cluster',
     VOR:'vor-cluster',
   };
-  return {score, tag, why: whyMap[tag] || 'fpts-cluster', sig: trioSig, closeOk, closeHits};
+  return {score, tag, why: whyMap[tag] || (samePos?'fpts-cluster':'ecr-cluster'), sig: trioSig, closeOk, closeHits, signalMode};
 }
 
 function ktcTrioScore(trio, targetPos){
@@ -12394,14 +12463,25 @@ function ktcPickNextTrio(preBoard){
 
 function ktcSolveDeltas(trio, orderedKeys, minGap, level){
   const out = {};
-  if(!Array.isArray(trio) || trio.length!==3 || !Array.isArray(orderedKeys) || orderedKeys.length!==3) return out;
+  if(!Array.isArray(trio) || trio.length!==3 || !Array.isArray(orderedKeys) || orderedKeys.length!==3){
+    out._signalMode = 'same_pos';
+    return out;
+  }
   const cfg = ktcIntensityCfg(level||ktcIntensityKey());
   const ranked = orderedKeys.map(k=>ktcPlayerByKey(trio, k));
-  if(ranked.some(p=>!p)) return out;
+  if(ranked.some(p=>!p)){
+    out._signalMode = 'same_pos';
+    return out;
+  }
 
-  const gap = Number.isFinite(+minGap) ? +minGap : KTC_MIN_GAP;
+  const signalMode = ktcSignalMode(trio);
+  const samePos = signalMode==='same_pos';
+
+  const gap = samePos
+    ? (Number.isFinite(+minGap) ? +minGap : KTC_MIN_GAP)
+    : Math.max(2.4, (Number.isFinite(+minGap) ? +minGap : KTC_MIN_GAP) * 5.2);
   const budget = ktcRoundBudget(trio, level);
-  const cur = ranked.map(p=>+p.fpts||0);
+  const cur = ranked.map(p=>samePos ? (+p.fpts||0) : (+p.vor||0));
   const d = [0,0,0];
 
   // Treat KTC as a strict 1/2/3 ranking. Enforce all pairwise constraints so the
@@ -12434,6 +12514,7 @@ function ktcSolveDeltas(trio, orderedKeys, minGap, level){
   out[orderedKeys[0]] = d[0];
   out[orderedKeys[1]] = d[1];
   out[orderedKeys[2]] = d[2];
+  out._signalMode = signalMode;
   return out;
 }
 
@@ -12606,16 +12687,18 @@ function ktcSubmitSelection(){
   const ordered = ktcGameState.selection.slice();
   const level = ktcIntensityKey();
   const cfg = ktcIntensityCfg(level);
-  const deltas = ktcSolveDeltas(trio, ktcGameState.selection, KTC_MIN_GAP, level);
+  const deltas = ktcSolveDeltas(trio, ktcGameState.selection, KTC_MIN_GAP, level) || {};
+  const signalMode = deltas._signalMode || 'same_pos';
   let changed = false;
   trio.forEach(p=>{
     const d = deltas[ktcPlayerKey(p)] || 0;
-    if(Math.abs(d)<0.01) return;
-    if(ktcApplyPlayerDelta(p, d)) changed = true;
+    const fptsDelta = ktcSignalDeltaToFpts(p, d, signalMode);
+    if(Math.abs(fptsDelta)<0.01) return;
+    if(ktcApplyPlayerDelta(p, fptsDelta)) changed = true;
   });
 
-  // Second-pass correction: small bounded top-off only (no big leaps in a single round).
-  if(changed){
+  // Second-pass correction only for same-position rounds; mixed rounds are VOR-ranked.
+  if(changed && signalMode==='same_pos'){
     const board = ktcEligibleBoard();
     const map = {};
     board.forEach(p=>{ map[ktcPlayerKey(p)] = +p.fpts||0; });
@@ -12694,6 +12777,10 @@ function renderKtcOverlay(){
   const intensity = ktcIntensityKey();
   const cfg = ktcIntensityCfg(intensity);
   const trioTag = String(ktcGameState.trioTag||'FPTS');
+  const trioMode = ktcSignalMode(ktcGameState.trio||[]);
+  const modeHint = trioMode==='same_pos'
+    ? 'Same-position rounds may use projection/FPTS proximity.'
+    : 'Mixed-position rounds compare ADP, ECR, TIER, and VOR (not raw FPTS).';
   const intensityOptions = ['conservative','balanced','aggressive'].map(k=>
     `<button class="ktc-intensity-opt ${k===intensity?'on':''}" onclick="ktcSetIntensity('${k}')">${escHtml((KTC_INTENSITY[k]&&KTC_INTENSITY[k].label)||k)}</button>`
   ).join('');
@@ -12704,7 +12791,7 @@ function renderKtcOverlay(){
         <div class="ktc-title">Keep Trade Cut</div>
         <button class="ktc-x" onclick="stopKtcGame()" aria-label="Close">✕</button>
       </div>
-      <div class="ktc-sub">Pick in order: <b>KEEP</b> first, then <b>TRADE</b>, then <b>CUT</b>. Rankings adjust after each submit. <span class="ktc-signal">signal <b class="ktc-signal-tag">${escHtml(trioTag)}</b></span></div>
+      <div class="ktc-sub">Rank the trio <b>1</b>, <b>2</b>, <b>3</b> as <b>KEEP</b>, <b>TRADE</b>, <b>CUT</b>. Rankings adjust after each submit. <span class="ktc-signal">signal <b class="ktc-signal-tag">${escHtml(trioTag)}</b></span> <span class="ktc-mode-hint">${escHtml(modeHint)}</span></div>
       <div class="ktc-intensity-row"><span>Nudge intensity</span><div class="ktc-intensity">${intensityOptions}</div></div>
       <div class="ktc-cards">${cards}</div>
       <div class="ktc-actions">
@@ -13415,6 +13502,7 @@ async function tryAutoLoadSeed(){
       const n=j.seed?Object.values(j.seed).reduce((s,t)=>s+(t.QB||[]).length+(t.RB||[]).length+(t.WR||[]).length+(t.TE||[]).length,0):0;
       const ecrN=j.ecr?Object.keys(ecrTableFor(rankFormat)||{}).length:0;
       toast(`Auto-loaded seed${ecrN?` · ${ecrN} ECR ranks`:''}${n?` · ${n} players`:''} ✓`,'ok');
+      if(typeof prewarmRankingsFromSeed==='function') prewarmRankingsFromSeed();
     }
     return got;
   }catch(e){
@@ -13505,7 +13593,7 @@ function psNoteDataForEntry(e){
   const text = String(note.text||'').trim();
   const tags = Array.isArray(note.tags) ? note.tags : [];
   if(!text && !tags.length) return null;
-  return { key, text, tags, count: (text?1:0) + tags.length };
+  return { key: note.key || '', text, tags, count: (text?1:0) + tags.length };
 }
 
 // Precomputed once per open: [{pid, name, norm, pos, team}] over every player in the DB.
@@ -14411,6 +14499,10 @@ function normalizeSleeperRow(row){
 // but have recent news. 400 days clears a full offseason of quiet.
 function sleeperProjectableRoster(meta){
   if(!meta || !meta.team) return false;
+  // Some callers/tests provide sparse player objects with only id/name/pos/team.
+  // When roster-truth fields are absent, treat the row as eligible and let team/pos gating decide.
+  const hasRosterSignals = (meta.active!=null) || (meta.status!=null) || (meta.dcp!=null) || (meta.news!=null);
+  if(!hasRosterSignals) return true;
   if(meta.active===false) return false;
   if(meta.status==='Retired' || meta.status==='Inactive') return false;
   if(meta.dcp) return true;

@@ -132,6 +132,10 @@ function normalizeSleeperRow(row){
 // but have recent news. 400 days clears a full offseason of quiet.
 function sleeperProjectableRoster(meta){
   if(!meta || !meta.team) return false;
+  // Some callers/tests provide sparse player objects with only id/name/pos/team.
+  // When roster-truth fields are absent, treat the row as eligible and let team/pos gating decide.
+  const hasRosterSignals = (meta.active!=null) || (meta.status!=null) || (meta.dcp!=null) || (meta.news!=null);
+  if(!hasRosterSignals) return true;
   if(meta.active===false) return false;
   if(meta.status==='Retired' || meta.status==='Inactive') return false;
   if(meta.dcp) return true;

@@ -1,12 +1,28 @@
 let _rankingsRenderCache = { key:'', html:'' };
+let _rankingsMobileAutoFullPass = false;
+let _rankingsMobileAutoToken = 0;
+let _rankingsPrewarmQueued = false;
 
 function invalidateRankingsRenderCache(){
   _rankingsRenderCache.key = '';
   _rankingsRenderCache.html = '';
 }
 
+function prewarmRankingsFromSeed(){
+  if(_rankingsPrewarmQueued) return;
+  _rankingsPrewarmQueued = true;
+  const run = ()=>{
+    try{
+      if(typeof buildPlayerList==='function') buildPlayerList();
+    }catch(_e){
+      _rankingsPrewarmQueued = false;
+    }
+  };
+  if(typeof requestIdleCallback==='function') requestIdleCallback(run, { timeout: 1500 });
+  else setTimeout(run, 0);
+}
+
 function rankingsRenderCacheKey(teamScoped){
-  if(teamScoped) return '';
   if(typeof ktcGameState!=='undefined' && ktcGameState && ktcGameState.active) return '';
   if(typeof draftId!=='undefined' && draftId) return '';
   if(typeof leaguePickerState!=='undefined' && leaguePickerState && leaguePickerState.open) return '';
@@ -15,6 +31,7 @@ function rankingsRenderCacheKey(teamScoped){
     ? ((sumerColumnsForFilter()||{}).cols||[]).join(',')
     : '';
   const buildEpoch = (typeof _buildPlayerCacheEpoch!=='undefined') ? _buildPlayerCacheEpoch : 0;
+  const mobileNarrow = !!(typeof window!=='undefined' && window.matchMedia && window.matchMedia('(max-width: 760px)').matches);
   return [
     'rankings',
     buildEpoch,
@@ -30,18 +47,31 @@ function rankingsRenderCacheKey(teamScoped){
     String(scoringPanelOpen),
     String(scoringAxis||''),
     String(rankScope||'all'),
+    String(teamScoped?1:0),
+    String(teamScoped?(currentTeam||''):'all'),
+    String(mobileNarrow?1:0),
+    String(_rankingsMobileAutoFullPass?1:0),
   ].join('|');
 }
 
 function renderRankings(){
+  const _rkNow = ()=>((typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now());
+  const _rkDebug = (typeof tcLatencyDebugEnabled==='function' && tcLatencyDebugEnabled());
+  const _rkT0 = _rkNow();
   const teamScoped = (rankScope==='team' && currentTeam);
   const cacheKey = rankingsRenderCacheKey(teamScoped);
   if(cacheKey && _rankingsRenderCache.key===cacheKey && _rankingsRenderCache.html){
     document.getElementById('content').innerHTML = _rankingsRenderCache.html;
+    if(_rkDebug){
+      const dt = (_rkNow()-_rkT0).toFixed(1);
+      try{ console.info(`[rankings-latency] cache-hit total=${dt}ms`); }catch(_e){}
+    }
     return;
   }
 
+  const tBuildStart = _rkNow();
   let all=buildPlayerList();
+  const tBuildDone = _rkNow();
   // Team-scoped rankings (from a team's Rankings tab) show only that team's players.
   let teamHeader='';
   if(teamScoped && currentTeam){
@@ -73,6 +103,7 @@ function renderRankings(){
     `${teamScoped?`${teamHeader}<div class="phase-tabs">${tabBar()}</div>`:''}<div class="empty"><div class="empty-icon">${TC_ICON("trophy","tc-ico-lg")}</div>
      <div class="empty-title">No projections yet</div><div class="empty-body">Set at least one team's stats to see rankings.</div></div>`;return;}
   // Overall order is by fantasy points (your projections). ECR/tier come from FantasyPros.
+  const tSortStart = _rkNow();
   all.sort((a,b)=>b.fpts-a.fpts);
   all.forEach((p,i)=>{ p.overall=i+1; });
   // live draft: mark drafted players
@@ -82,6 +113,7 @@ function renderRankings(){
     :rankPosFilter==='FLEX'?all.filter(p=>p.pos!=='QB')
     :all.filter(p=>p.pos===rankPosFilter);
   if(following && hideDrafted) view=view.filter(p=>!p.drafted);
+  const fullViewCount = view.length;
   view=[...view].sort((a,b)=>{
     if(rankSortKey==='ecr'){
       // Unranked players sort to the bottom regardless of direction.
@@ -143,6 +175,15 @@ function renderRankings(){
       return typeof v==='number' && v>=min;
     });
   }
+  const mobileNarrow = !!(typeof window!=='undefined' && window.matchMedia && window.matchMedia('(max-width: 760px)').matches);
+  const mobileCapApplies = mobileNarrow && !teamScoped && rankPosFilter==='ALL' && !following;
+  const MOBILE_ROW_CAP = 180;
+  let mobileTrimmedCount = 0;
+  if(mobileCapApplies && !_rankingsMobileAutoFullPass && view.length>MOBILE_ROW_CAP){
+    mobileTrimmedCount = view.length - MOBILE_ROW_CAP;
+    view = view.slice(0, MOBILE_ROW_CAP);
+  }
+  const tSortDone = _rkNow();
   // Projected-pick lines: when following a draft with a known seat and the board is in draft
   // order (sorted by ECR). This is *especially* useful with "hide drafted" on, since the board
   // then shows only available players and the line marks exactly how far down your pick lands.
@@ -169,6 +210,7 @@ function renderRankings(){
 
   let undraftedSeen=0, nextGapIdx=0, gapRemaining=(pickGaps[0]!=null?pickGaps[0]:-1);
   const rowChunks=[];
+  const tRowsStart = _rkNow();
   const rankBaseContext = activeSeason==='proj'
     ? `${PROJ_SEASON} projections · ${teamScoped?`${currentTeam} rankings`:'full rankings'}`
     : `${teamScoped?`${currentTeam} rankings`:'full rankings'} · ${activeSeason}`;
@@ -245,6 +287,7 @@ function renderRankings(){
     if(!p.drafted) undraftedSeen++;
   });
   const rows=rowChunks.join('');
+  const tRowsDone = _rkNow();
   // Two-axis format picker: league TYPE (redraft/dynasty) + SCORING (std/half/full/superflex).
   const curType=leagueTypeOf(rankFormat);
   const curScoring=scoringAxis;   // source of truth for the scoring buttons (independent of rankFormat)
@@ -289,6 +332,11 @@ function renderRankings(){
            <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showFullRankings()">View full league →</button>`
         : `<span class="scope-title">Full League Rankings</span><span class="scope-sub">all ${all.length} players</span>`}
     </div>
+    ${(mobileTrimmedCount>0)
+      ? `<div class="card" style="margin-bottom:10px;padding:10px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--muted)">Mobile quick-open: rendering top ${view.length} first; full list is loading automatically.</span>
+        </div>`
+      : ''}
     <div class="card scoring-card ${scoringPanelOpen?'open':''}" style="margin-bottom:12px;padding:0">
       <div class="scoring-head" onclick="toggleScoringPanel()" title="Show / hide scoring settings">
         <span class="scoring-caret">\u25b8</span>
@@ -338,7 +386,7 @@ function renderRankings(){
         ${minInputs}
         ${advNote}
         ${ecrNote}
-        <span style="font-size:11px;font-weight:700;margin-left:auto">${view.length} players</span>
+        <span style="font-size:11px;font-weight:700;margin-left:auto">${view.length}${mobileTrimmedCount>0?` / ${fullViewCount}`:''} players</span>
         ${following?'':`<button class="btn btn-accent btn-sm" onclick="openLeaguePicker()">🔗 Link Sleeper League</button>
         <button class="btn btn-ghost btn-sm" onclick="promptDraftFollow()" title="Follow a live or mock draft by its ID">Paste draft ID</button>`}
         <button class="btn btn-ghost btn-sm" onclick="exportRankingsCSV()">${TC_ICON("download")} CSV</button>
@@ -356,10 +404,39 @@ function renderRankings(){
         ${th('passing_attempts','PASS','ATT','grp-pass',true)}${th('passing_yards','PASS','YDS','grp-pass-mid')}${th('passing_tds','PASS','TDS','grp-pass-mid')}${th('interceptions_thrown','PASS','INTS','grp-pass-end')}`}
       </tr></thead><tbody>${rows}</tbody></table></div>
     </div>`;
+  const tHtmlDone = _rkNow();
   document.getElementById('content').innerHTML = pageHtml;
+  const tDomDone = _rkNow();
   if(cacheKey){
     _rankingsRenderCache.key = cacheKey;
     _rankingsRenderCache.html = pageHtml;
+  }
+  // Mobile first paint: show a fast initial slice, then auto-render the full list on idle.
+  if(mobileTrimmedCount>0){
+    const token = ++_rankingsMobileAutoToken;
+    const runFull = ()=>{
+      if(token!==_rankingsMobileAutoToken) return;
+      if(typeof currentPhase!=='undefined' && currentPhase!=='Rankings') return;
+      if(typeof rankScope!=='undefined' && rankScope!=='all') return;
+      if(typeof rankPosFilter!=='undefined' && rankPosFilter!=='ALL') return;
+      if(typeof draftId!=='undefined' && draftId) return;
+      if(typeof ktcGameState!=='undefined' && ktcGameState && ktcGameState.active) return;
+      _rankingsMobileAutoFullPass = true;
+      try{ renderRankings(); }
+      finally{ _rankingsMobileAutoFullPass = false; }
+    };
+    if(typeof requestIdleCallback==='function') requestIdleCallback(runFull, { timeout: 500 });
+    else setTimeout(runFull, 60);
+  }
+  if(_rkDebug){
+    const mBuild = (tBuildDone - tBuildStart).toFixed(1);
+    const mSort = (tSortDone - tSortStart).toFixed(1);
+    const mRows = (tRowsDone - tRowsStart).toFixed(1);
+    const mHtml = (tHtmlDone - tRowsDone).toFixed(1);
+    const mDom = (tDomDone - tHtmlDone).toFixed(1);
+    const mTotal = (tDomDone - _rkT0).toFixed(1);
+    const meta = `players=${all.length} shown=${view.length} adv=${advActive?1:0} mobile=${mobileNarrow?1:0} cap=${mobileTrimmedCount>0?1:0}`;
+    try{ console.info(`[rankings-latency] total=${mTotal}ms build=${mBuild} sort/filter=${mSort} rows=${mRows} html=${mHtml} dom=${mDom} ${meta}`); }catch(_e){}
   }
 }
 function rankSort(k){

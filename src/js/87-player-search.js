@@ -79,7 +79,7 @@ function psNoteDataForEntry(e){
   const text = String(note.text||'').trim();
   const tags = Array.isArray(note.tags) ? note.tags : [];
   if(!text && !tags.length) return null;
-  return { key, text, tags, count: (text?1:0) + tags.length };
+  return { key: note.key || '', text, tags, count: (text?1:0) + tags.length };
 }
 
 // Precomputed once per open: [{pid, name, norm, pos, team}] over every player in the DB.

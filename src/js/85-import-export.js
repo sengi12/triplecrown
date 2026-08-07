@@ -655,6 +655,7 @@ async function tryAutoLoadSeed(){
       const n=j.seed?Object.values(j.seed).reduce((s,t)=>s+(t.QB||[]).length+(t.RB||[]).length+(t.WR||[]).length+(t.TE||[]).length,0):0;
       const ecrN=j.ecr?Object.keys(ecrTableFor(rankFormat)||{}).length:0;
       toast(`Auto-loaded seed${ecrN?` · ${ecrN} ECR ranks`:''}${n?` · ${n} players`:''} ✓`,'ok');
+      if(typeof prewarmRankingsFromSeed==='function') prewarmRankingsFromSeed();
     }
     return got;
   }catch(e){

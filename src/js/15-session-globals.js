@@ -430,7 +430,11 @@ function updateUndoButton(){
   const team=currentTeam;
   const n = team && undoStacks[team] ? undoStacks[team].length : 0;
   btn.disabled = !n;
-  btn.classList.toggle('disabled', !n);
+  if(btn.classList){
+    if(typeof btn.classList.toggle==='function') btn.classList.toggle('disabled', !n);
+    else if(!n && typeof btn.classList.add==='function') btn.classList.add('disabled');
+    else if(n && typeof btn.classList.remove==='function') btn.classList.remove('disabled');
+  }
   btn.title = n ? `Undo last working-set change to ${team} (${n} step${n===1?'':'s'} available)` : `Nothing to undo for ${team}'s working set`;
   const cnt=document.getElementById('undoCount');
   if(cnt) cnt.textContent = n? ` ${n}`:'';
