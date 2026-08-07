@@ -3,6 +3,44 @@ let _rankingsMobileAutoFullPass = false;
 let _rankingsMobileAutoToken = 0;
 let _rankingsPrewarmQueued = false;
 
+function rankHeadshotSlotHtml(p){
+  const pid = p && p.player_id!=null ? String(p.player_id) : '';
+  const nm = p && p.name ? String(p.name) : '';
+  const pos = p && p.pos ? String(p.pos) : '';
+  const tm = p && p.team ? String(p.team) : '';
+  return `<span class="rank-hs-slot" data-rank-hs="1" data-rhs-pid="${escAttr(pid)}" data-rhs-n="${escAttr(nm)}" data-rhs-pos="${escAttr(pos)}" data-rhs-tm="${escAttr(tm)}"></span>`;
+}
+
+function rankHydrateHeadshotSlot(slot){
+  if(!slot || slot.dataset.rankHsReady==='1') return;
+  const pid = slot.getAttribute('data-rhs-pid') || '';
+  const nm = slot.getAttribute('data-rhs-n') || '';
+  const pos = slot.getAttribute('data-rhs-pos') || '';
+  const tm = slot.getAttribute('data-rhs-tm') || '';
+  slot.innerHTML = imgTag(hsPack({ player_id: pid || null, name: nm, pos, team: tm }), 'rank-hs');
+  slot.dataset.rankHsReady = '1';
+}
+
+function hydrateRankingsHeadshots(){
+  if(typeof document==='undefined') return;
+  const slots = Array.from(document.querySelectorAll('.rank-hs-slot[data-rank-hs="1"]'));
+  if(!slots.length) return;
+  // Tests / older browsers: hydrate immediately so behavior remains deterministic.
+  if(typeof IntersectionObserver!=='function'){
+    slots.forEach(rankHydrateHeadshotSlot);
+    return;
+  }
+  const root = document.querySelector('.rank-table-wrap') || null;
+  const io = new IntersectionObserver((entries, obs)=>{
+    entries.forEach(en=>{
+      if(!en.isIntersecting) return;
+      rankHydrateHeadshotSlot(en.target);
+      obs.unobserve(en.target);
+    });
+  }, { root, rootMargin: '120px 0px' });
+  slots.forEach(slot=>io.observe(slot));
+}
+
 function invalidateRankingsRenderCache(){
   _rankingsRenderCache.key = '';
   _rankingsRenderCache.html = '';
@@ -62,6 +100,7 @@ function renderRankings(){
   const cacheKey = rankingsRenderCacheKey(teamScoped);
   if(cacheKey && _rankingsRenderCache.key===cacheKey && _rankingsRenderCache.html){
     document.getElementById('content').innerHTML = _rankingsRenderCache.html;
+    hydrateRankingsHeadshots();
     if(_rkDebug){
       const dt = (_rkNow()-_rkT0).toFixed(1);
       try{ console.info(`[rankings-latency] cache-hit total=${dt}ms`); }catch(_e){}
@@ -279,7 +318,7 @@ function renderRankings(){
     <td class="fpts">${rankValueHtml(fptsTxt, p, 'Fantasy Points', 'fpts', 'rankings')}</td>
     <td class="c-vor">${rankValueHtml(`<span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${vorTxt}</span>`, p, 'Value Over Replacement', 'vor', 'rankings')}</td>
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
-    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${imgTag(hsPack(p),'rank-hs')}<span class="rank-name">${pNameText}</span></div></td>
+    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${rankHeadshotSlotHtml(p)}<span class="rank-name">${pNameText}</span></div></td>
     <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" alt="${pTeamAttr}" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${pTeamText}</td>
     ${contractCells}
     ${statCells}
@@ -406,6 +445,7 @@ function renderRankings(){
     </div>`;
   const tHtmlDone = _rkNow();
   document.getElementById('content').innerHTML = pageHtml;
+  hydrateRankingsHeadshots();
   const tDomDone = _rkNow();
   if(cacheKey){
     _rankingsRenderCache.key = cacheKey;
