@@ -221,6 +221,9 @@ function _thsHeaderPreviewHtml(team){
     x0=y0=null; dx=0; axis=null; header=null; host=null; targetTeam='';
     if(e.touches.length!==1) return;
     if(!currentTeam) return;
+    // League Analyzer uses a top .team-header shell for league identity, not team navigation.
+    // Keep its header gestures owned by the analyzer/tab swipe handlers.
+    if(typeof currentPhase!=='undefined' && currentPhase==='League') return;
     if(document.getElementById('pcardOverlay')) return;
 
     const t = e.touches[0];

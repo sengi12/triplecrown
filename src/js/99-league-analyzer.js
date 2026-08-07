@@ -37,6 +37,10 @@ let laState = { step: leagueSnapshot? 'view':'start', busy:false, error:null,
                 cmpSort:{col:'total',dir:-1},  // Compare column sort (click a header)
                 radarAxis:null };   // My Team radar: selected axis for inline details
 
+const LA_AUTO_REFRESH_MS = 15 * 60 * 1000;   // 15 min stale window for background refresh
+let _laAutoRefreshInFlight = false;
+let _laAutoRefreshLastAttempt = 0;
+
 // Called whenever DYNASTY_VALUES is (re)assigned by an async seed load. The analyzer's value
 // caches are built lazily and, on a cold boot or resume, the League view can render once
 // BEFORE the dynasty-values JSON has finished fetching — showing every value/rank/persona as
@@ -375,6 +379,7 @@ function openLeagueAnalyzer(){
   currentPhase='League';
   renderContent();
   refreshLeagueSyncBtn();
+  laMaybeAutoRefreshSnapshot('open');
 }
 function leaveLeagueAnalyzer(){ showProjectionsView(); }
 // Header button reflects state: plain sync CTA before a snapshot, league name after.
@@ -639,7 +644,11 @@ function laRefreshSeasonChain(){
 }
 
 async function laTakeSnapshot(leagueId){
-  laState.busy=true; laState.error=null; renderLeagueAnalyzer();
+  const opts = (arguments.length>1 && arguments[1]) ? arguments[1] : null;
+  const background = !!(opts && opts.background);
+  if(!background){
+    laState.busy=true; laState.error=null; renderLeagueAnalyzer();
+  }
   try{
     const [lg, users, rosters, traded] = await Promise.all([
       sleeperFetch(LA_LEAGUE_URL(leagueId)),
@@ -769,16 +778,33 @@ async function laTakeSnapshot(leagueId){
     laRefreshSeasonChain();   // background: discover earlier seasons of this league
     _laTierVals=null;   // format (SF/TEP) may have changed → rebuild the pick-tier table
     _laPosRankCache=null;   // roster set changed → positional ranks are stale
-    laState.step='view'; laState.busy=false;
+    laState.step='view';
+    laState.busy=false;
     saveSession();
-    toast(`Snapshot of ${leagueSnapshot.name} taken`,'ok');
+    if(!background) toast(`Snapshot of ${leagueSnapshot.name} taken`,'ok');
   }catch(e){
-    laState.busy=false; laState.error=`Sync failed: ${e.message}`;
+    laState.busy=false;
+    if(!background) laState.error=`Sync failed: ${e.message}`;
   }
   renderLeagueAnalyzer();
   // Taking a snapshot doesn't go through renderContent(), so sync the chrome explicitly —
   // this is what reveals the League actions (Re-sync / Change league) in the ☰ menu.
   if(typeof syncAppChrome==='function') syncAppChrome(); else refreshLeagueSyncBtn();
+}
+
+function laMaybeAutoRefreshSnapshot(reason){
+  if(currentPhase!=='League') return;
+  if(!leagueSnapshot || !leagueSnapshot.leagueId) return;
+  if(_laAutoRefreshInFlight || laState.busy) return;
+  const now = Date.now();
+  const age = now - (+leagueSnapshot.takenAt || 0);
+  if(age < LA_AUTO_REFRESH_MS) return;
+  // Avoid repeated retries while navigating within the analyzer.
+  if((now - _laAutoRefreshLastAttempt) < 60 * 1000) return;
+  _laAutoRefreshLastAttempt = now;
+  _laAutoRefreshInFlight = true;
+  laTakeSnapshot(leagueSnapshot.leagueId, { background: true, reason: reason||'auto' })
+    .finally(()=>{ _laAutoRefreshInFlight = false; });
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
@@ -827,6 +853,7 @@ function renderLeagueAnalyzer(){
     return;
   }
   const s=leagueSnapshot;
+  laMaybeAutoRefreshSnapshot('render');
   const taken=new Date(s.takenAt);
   const stamp=`${taken.toLocaleDateString(undefined,{month:'short',day:'numeric'})} ${taken.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`;
   const fmt=[`${s.teams}-team`, s.superflex?'Superflex':'1QB', s.tep?'TEP':null].filter(Boolean).join(' · ');
