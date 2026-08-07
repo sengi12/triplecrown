@@ -13418,10 +13418,31 @@ function sortSOSBy(col){
 }
 
 
-let _rankingsRenderCache = { key:'', html:'' };
+const _RANKINGS_RENDER_CACHE_MAX = 8;
+let _rankingsRenderCache = new Map();
 let _rankingsMobileAutoFullPass = false;
 let _rankingsMobileAutoToken = 0;
 let _rankingsPrewarmQueued = false;
+
+function rankingsRenderCacheGet(key){
+  if(!key || !_rankingsRenderCache.has(key)) return '';
+  const html = _rankingsRenderCache.get(key) || '';
+  // LRU touch: reinsert so recent views survive tab/phase hopping.
+  _rankingsRenderCache.delete(key);
+  _rankingsRenderCache.set(key, html);
+  return html;
+}
+
+function rankingsRenderCacheSet(key, html){
+  if(!key || !html) return;
+  if(_rankingsRenderCache.has(key)) _rankingsRenderCache.delete(key);
+  _rankingsRenderCache.set(key, html);
+  while(_rankingsRenderCache.size > _RANKINGS_RENDER_CACHE_MAX){
+    const oldest = _rankingsRenderCache.keys().next();
+    if(oldest && !oldest.done) _rankingsRenderCache.delete(oldest.value);
+    else break;
+  }
+}
 
 function rankHeadshotSlotHtml(p){
   const pid = p && p.player_id!=null ? String(p.player_id) : '';
@@ -13462,8 +13483,7 @@ function hydrateRankingsHeadshots(){
 }
 
 function invalidateRankingsRenderCache(){
-  _rankingsRenderCache.key = '';
-  _rankingsRenderCache.html = '';
+  _rankingsRenderCache.clear();
 }
 
 function prewarmRankingsFromSeed(){
@@ -13518,8 +13538,9 @@ function renderRankings(){
   const _rkT0 = _rkNow();
   const teamScoped = (rankScope==='team' && currentTeam);
   const cacheKey = rankingsRenderCacheKey(teamScoped);
-  if(cacheKey && _rankingsRenderCache.key===cacheKey && _rankingsRenderCache.html){
-    document.getElementById('content').innerHTML = _rankingsRenderCache.html;
+  const cachedHtml = rankingsRenderCacheGet(cacheKey);
+  if(cachedHtml){
+    document.getElementById('content').innerHTML = cachedHtml;
     hydrateRankingsHeadshots();
     if(_rkDebug){
       const dt = (_rkNow()-_rkT0).toFixed(1);
@@ -13867,10 +13888,7 @@ function renderRankings(){
   document.getElementById('content').innerHTML = pageHtml;
   hydrateRankingsHeadshots();
   const tDomDone = _rkNow();
-  if(cacheKey){
-    _rankingsRenderCache.key = cacheKey;
-    _rankingsRenderCache.html = pageHtml;
-  }
+  rankingsRenderCacheSet(cacheKey, pageHtml);
   // Mobile first paint: show a fast initial slice, then auto-render the full list on idle.
   if(mobileTrimmedCount>0){
     const token = ++_rankingsMobileAutoToken;
