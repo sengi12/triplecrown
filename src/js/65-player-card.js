@@ -835,7 +835,7 @@ function pcardSeasonTeamTag(rows){
 
 // Tweak these thresholds to change consistency benchmarks (PPR points per game).
 const PCARD_CONSISTENCY_BENCHMARKS = {
-  QB: 20,
+  QB: 17,
   RB: 10,
   WR: 9,
   TE: 8,
