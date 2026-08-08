@@ -64,6 +64,14 @@
 .pcard-season{margin-top:12px;}
 .pcard-season-title{font-size:13px;font-weight:800;color:var(--text);margin:6px 2px 6px;
   padding:4px 0;}
+.pcard-cons-badge{display:inline-block;margin-left:8px;padding:1px 7px;border-radius:999px;
+  font-size:9px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;vertical-align:middle;
+  border:1px solid transparent;}
+.pcard-cons-A{color:#1f8f54;background:rgba(47,174,78,.14);border-color:rgba(47,174,78,.34);}
+.pcard-cons-B{color:#5e9f2f;background:rgba(132,185,63,.16);border-color:rgba(132,185,63,.34);}
+.pcard-cons-C{color:#b37d16;background:rgba(216,165,29,.14);border-color:rgba(216,165,29,.34);}
+.pcard-cons-D{color:#b35f1f;background:rgba(217,123,41,.14);border-color:rgba(217,123,41,.34);}
+.pcard-cons-F{color:#b5392f;background:rgba(211,59,47,.14);border-color:rgba(211,59,47,.34);}
 .pcard-season-team{font-size:11px;color:var(--muted);font-weight:700;}
 .pcard-season-logo{width:14px;height:14px;object-fit:contain;vertical-align:middle;margin-right:2px;}
 .pcard-college-tag{font-size:9px;font-weight:800;letter-spacing:.06em;color:var(--accent);

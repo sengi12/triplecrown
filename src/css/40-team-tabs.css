@@ -61,9 +61,38 @@
 .sr-sos-strip{display:flex;align-items:center;gap:12px;padding:11px 14px;margin-bottom:14px;
   background:var(--surface2);border:1px solid var(--border);border-radius:10px;}
 .sr-sos-rank{font-size:22px;font-weight:900;font-family:var(--mono);padding:4px 10px;border-radius:8px;min-width:52px;text-align:center;}
+.sr-sos-main{min-width:0;}
 .sr-sos-label{font-size:12px;font-weight:800;color:var(--text);}
 .sr-sos-sub{font-size:10.5px;color:var(--muted);margin-top:1px;}
 .sr-sos-sub b{color:var(--text);}
+.sr-sos-power{display:inline-flex;align-items:center;gap:10px;margin-left:8px;padding:4px 8px;border-radius:9px;white-space:nowrap;}
+.sr-sos-power-label{font-size:11px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;color:var(--text);}
+.sr-sos-power-shield{position:relative;display:inline-flex;align-items:center;justify-content:center;width:72px;height:72px;line-height:1;}
+.sr-sos-power-shield .tc-ico{width:70px;height:70px;display:block;}
+.sr-sos-power-shield b{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-family:var(--mono);font-size:14px;font-weight:900;letter-spacing:0;white-space:nowrap;color:var(--text);}
+.sr-sos-power.sr-good{background:rgba(0,212,170,.11);border:1px solid rgba(0,212,170,.3);}
+.sr-sos-power.sr-okhi{background:rgba(120,200,120,.10);border:1px solid rgba(120,200,120,.28);}
+.sr-sos-power.sr-oklo{background:rgba(240,180,80,.10);border:1px solid rgba(240,180,80,.28);}
+.sr-sos-power.sr-bad{background:rgba(255,90,90,.10);border:1px solid rgba(255,90,90,.3);}
+@media (max-width:680px){
+  .sr-sos-strip{
+    display:grid;
+    grid-template-columns:auto minmax(0,1fr);
+    grid-template-areas:
+      "rank main"
+      "btn power";
+    gap:8px 10px;
+    align-items:center;
+  }
+  .sr-sos-rank{grid-area:rank;}
+  .sr-sos-main{grid-area:main;}
+  .sr-sos-btn{grid-area:btn;justify-self:start;}
+  .sr-sos-power{grid-area:power;justify-self:end;margin-left:0;gap:0;padding:0;border:none;background:none;}
+  .sr-sos-power-label{display:none;}
+  .sr-sos-power-shield{width:66px;height:66px;}
+  .sr-sos-power-shield .tc-ico{width:64px;height:64px;}
+  .sr-sos-power-shield b{font-size:12.5px;top:48%;}
+}
 /* Category tabs (Offense / Defense / SOS) */
 .sr-cat-row{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 4px;}
 .sr-cat{padding:7px 15px;font-size:12px;font-weight:800;cursor:pointer;border-radius:8px;

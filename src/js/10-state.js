@@ -41,3 +41,44 @@ let sumerMin = { QB:0, WRTE:0, RB:0 };   // QB→min Plays, WRTE→min Routes Ru
 // SumerSports refinement value (e.g. 'red_zone'), the stat columns read that game-situation
 // split instead of the overall season table. Only ever applied on the Adv. Metrics view.
 let sumerRefinement = null;
+
+// Preserve the user's reading position across in-place re-renders (sorting/filtering).
+// Captures window scroll plus optional scrollable containers (horizontal and vertical).
+function tcCaptureViewScroll(selectors){
+	const list = Array.isArray(selectors) ? selectors : [];
+	const buckets = list.map(sel=>{
+		const el = sel ? document.querySelector(sel) : null;
+		return {
+			sel,
+			x: el ? el.scrollLeft : 0,
+			y: el ? el.scrollTop : 0,
+		};
+	});
+	return {
+		winY: window.scrollY || document.documentElement.scrollTop || 0,
+		buckets,
+	};
+}
+
+function tcRestoreViewScroll(snap){
+	if(!snap) return;
+	requestAnimationFrame(()=>{
+		const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+		window.scrollTo(0, Math.min(Math.max(0, snap.winY || 0), maxY));
+		(snap.buckets || []).forEach(b=>{
+			if(!b || !b.sel) return;
+			const el = document.querySelector(b.sel);
+			if(!el) return;
+			const maxX = Math.max(0, el.scrollWidth - el.clientWidth);
+			const maxLocalY = Math.max(0, el.scrollHeight - el.clientHeight);
+			el.scrollLeft = Math.min(Math.max(0, b.x || 0), maxX);
+			el.scrollTop = Math.min(Math.max(0, b.y || 0), maxLocalY);
+		});
+	});
+}
+
+function tcPreserveViewScroll(run, selectors){
+	const snap = tcCaptureViewScroll(selectors);
+	run();
+	tcRestoreViewScroll(snap);
+}

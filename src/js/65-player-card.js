@@ -238,6 +238,48 @@ function pcardArg(s){
 function pcardOnclick(idOrName, pos, team){
   return `openPlayerCard(${pcardArg(idOrName)},${pcardArg(pos)},${pcardArg(team)})`;
 }
+
+function pcardPosCompatible(wantPos, gotPos){
+  const w = String(wantPos||'').toUpperCase();
+  const g = String(gotPos||'').toUpperCase();
+  if(!w || !g) return true;
+  if(w===g) return true;
+  const ol = new Set(['OL','OT','OG','G','T','C','LT','LG','RG','RT']);
+  if(ol.has(w) && ol.has(g)) return true;
+  return false;
+}
+
+function resolvePlayerIdLoose(name, pos, team){
+  if(!name || !sleeperPlayers) return null;
+  const raw = String(name||'').trim();
+  if(!raw) return null;
+  const bits = raw.split(/\s+/).filter(Boolean);
+  const first = normName(bits[0]||'');
+  const last = normName(bits[bits.length-1]||'');
+  if(!last) return null;
+  const teamHint = String(team||'').toUpperCase() || String(currentTeam||'').toUpperCase();
+  let bestPid = null;
+  let bestScore = -1;
+  for(const pid in sleeperPlayers){
+    const p = sleeperPlayers[pid] || {};
+    const pLast = normName(p.last_name || ((p.name||'').split(/\s+/).slice(-1)[0]||''));
+    if(!pLast || pLast!==last) continue;
+    const pPos = p.pos || p.position || '';
+    if(!pcardPosCompatible(pos, pPos)) continue;
+    const pFirst = normName(p.first_name || (p.name||''));
+    let score = 0;
+    if(first && pFirst===first) score += 4;
+    else if(first && pFirst && pFirst[0]===first[0]) score += 2;
+    if(teamHint && String(p.team||'').toUpperCase()===teamHint) score += 3;
+    if(p.active===true) score += 1;
+    if(score > bestScore){
+      bestScore = score;
+      bestPid = pid;
+    }
+  }
+  return bestScore >= 3 ? bestPid : null;
+}
+
 function openPlayerCard(nameOrId, pos, team){
   // Ensure the Sleeper player map is available (needed for metadata + id resolution).
   if(!sleeperPlayers){
@@ -259,7 +301,7 @@ function openPlayerCard(nameOrId, pos, team){
         : (team && /^[A-Z]{2,4}$/.test(String(team).toUpperCase()) ? String(team).toUpperCase() : null);
   }
   else if(nameOrId && /^\d+$/.test(String(nameOrId))) pid = String(nameOrId);
-  else pid = resolvePlayerId(nameOrId, pos);
+  else pid = resolvePlayerId(nameOrId, pos) || resolvePlayerIdLoose(nameOrId, pos, team);
   if(!pid){ toast('No stats available for that player','err'); return; }
   if(!pcardSuppressNavPush && pcardOpen && pcardState){
     const snap = pcardCaptureNavState();
@@ -773,7 +815,7 @@ function renderPcardSeason(season, rows, pos){
       <td class="pcard-opp">${tot._games}g</td>${tcells}</tr>`;
   }
   return `<div class="pcard-season">
-    <div class="pcard-season-title">${season}${pcardSeasonTeamTag(rows)}</div>
+    <div class="pcard-season-title">${season}${pcardSeasonTeamTag(rows)}${pcardSeasonConsistencyBadge(rows, pos)}</div>
     <div class="pcard-table-scroll"><table class="pcard-table">
       <thead>
         <tr><th></th><th></th>${grpCells}</tr>
@@ -789,5 +831,45 @@ function renderPcardSeason(season, rows, pos){
 function pcardSeasonTeamTag(rows){
   const teams=[...new Set((rows||[]).filter(r=>!r.bye && r.team).map(r=>r.team))];
   return teams.length ? ` <span class="pcard-season-team">· ${teams.map(t=>`<img src="${NFL_LOGO(t)}" class="pcard-season-logo" onerror="this.style.display='none'">${t}`).join(' / ')}</span>` : '';
+}
+
+// Tweak these thresholds to change consistency benchmarks (PPR points per game).
+const PCARD_CONSISTENCY_BENCHMARKS = {
+  QB: 20,
+  RB: 10,
+  WR: 9,
+  TE: 8,
+};
+
+function pcardConsistencyBenchmarkForPos(pos){
+  const p = String(pos||'').toUpperCase();
+  if(PCARD_CONSISTENCY_BENCHMARKS[p] != null) return Number(PCARD_CONSISTENCY_BENCHMARKS[p]);
+  if(p==='HB') return Number(PCARD_CONSISTENCY_BENCHMARKS.RB);
+  return null;
+}
+
+function pcardSeasonConsistency(rows, pos){
+  const benchmark = pcardConsistencyBenchmarkForPos(pos);
+  if(!Number.isFinite(benchmark)) return null;
+  const vals = (rows||[])
+    .filter(r=>!r.bye && r.gp>0 && Number.isFinite(r.fpts))
+    .map(r=>Number(r.fpts));
+  const n = vals.length;
+  if(n < 2) return null;
+  const hits = vals.filter(v=>v >= benchmark).length;
+  const rate = hits / n;
+  let grade = 'F';
+  if(rate >= 0.8) grade = 'A';
+  else if(rate >= 0.7) grade = 'B';
+  else if(rate >= 0.6) grade = 'C';
+  else if(rate >= 0.5) grade = 'D';
+  return { grade, benchmark, hits, n, rate };
+}
+
+function pcardSeasonConsistencyBadge(rows, pos){
+  const c = pcardSeasonConsistency(rows, pos);
+  if(!c) return '';
+  const tip = `Consistency grade from benchmark hits (games played only): ${c.hits}/${c.n} games (${(c.rate*100).toFixed(1)}%) at or above ${c.benchmark.toFixed(1)} PPR points.`;
+  return ` <span class="pcard-cons-badge pcard-cons-${c.grade}" title="${escAttr(tip)}">Consistency ${c.grade}</span>`;
 }
 

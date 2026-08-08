@@ -101,7 +101,8 @@ function setSharpCategory(cat){
 }
 function sortSharpBy(col){
   if(sharpSortCol===col){ sharpSortDir*=-1; } else { sharpSortCol=col; sharpSortDir=1; }
-  renderSharpLeague();
+  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderSharpLeague(), ['.sr-table-wrap']);
+  else renderSharpLeague();
 }
 function renderSharpLeague(){
   const host=document.getElementById('content'); if(!host) return;
@@ -223,7 +224,7 @@ function renderSharpLeague(){
   host.innerHTML = headerBar + leagueWeekRange + renderCategoryTabs() + `
     <div class="sr-league-tabs">${tableTabs}</div>
     <div class="sr-desc">${tbl.title} · <b>${advTeamSeason()} season</b> — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
-    <div class="card" style="padding:0;overflow-x:auto">
+    <div class="card sr-table-wrap" style="padding:0;overflow-x:auto">
       <table class="sr-league-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
     </div>
     <div class="sr-source">Computed from nflverse play-by-play (nflfastR).</div>`;
@@ -338,7 +339,7 @@ function renderSOSView(){
   </tr>`).join('');
   return `<div class="sr-desc">${PROJ_SEASON} strength of schedule — our own ranking by the <b>sum of each team's opponents' Vegas win totals</b>. Rank 1 = easiest slate, ${n} = hardest.</div>
     <div class="card sos-card">${chart}</div>
-    <div class="card" style="padding:0;overflow-x:auto;margin-top:12px">
+    <div class="card sr-table-wrap" style="padding:0;overflow-x:auto;margin-top:12px">
       <table class="sr-league-table sos-table"><thead><tr>
         <th class="sr-th-team">TEAM</th>${th('rank',PROJ_SEASON+' SOS RANK')}${th('opp','OPP WIN TOTAL')}${th('win_total','VEGAS WIN TOTAL')}
       </tr></thead><tbody>${body}</tbody></table>
@@ -347,7 +348,8 @@ function renderSOSView(){
 }
 function sortSOSBy(col){
   if(sharpSortCol===col){ sharpSortDir*=-1; } else { sharpSortCol=col; sharpSortDir=1; }
-  renderSharpLeague();
+  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderSharpLeague(), ['.sr-table-wrap']);
+  else renderSharpLeague();
 }
 
 

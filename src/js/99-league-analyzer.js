@@ -1102,7 +1102,8 @@ function laCmpSort(col){
   const sc=laState.cmpSort||(laState.cmpSort={col:'total',dir:-1});
   if(sc.col===col) sc.dir=-sc.dir;
   else { sc.col=col; sc.dir = col==='team'?1:-1; }
-  renderLeagueAnalyzer();
+  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderLeagueAnalyzer(), ['.la-cmp-wrap']);
+  else renderLeagueAnalyzer();
 }
 
 // ── Best Available: the valued free agents ───────────────────────────────────

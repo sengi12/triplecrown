@@ -712,6 +712,80 @@ function _advProjOlBadge(team, which){
   return ` <span class="sr-proj-badge ${cls}" title="Projected ${projSeason} ${lbl} overall score, from projected depth-chart starters">Proj \u2019${shortSeason} ${Number(p.score).toFixed(1)}${rk!=null?` \u00b7 #${rk}`:''}</span>`;
 }
 
+function _advTeamPowerScore(team, src){
+  const specs = [
+    { table:'offense', col:'EPA/Play', label:'Off EPA/Play' },
+    { table:'offense', col:'Points Per Drive', label:'Off Points/Drive' },
+    { table:'defense', col:'EPA/Play', label:'Def EPA/Play' },
+    { table:'defense', col:'Points Per Drive', label:'Def Points/Drive' },
+    { table:'offensive_line_pass', col:'Overall Score', label:'OL Pass Score' },
+    { table:'offensive_line_run', col:'Overall Score', label:'OL Run Score' },
+  ];
+  const tables = {};
+  specs.forEach(s=>{
+    const base = src && src[s.table];
+    if(!base) return;
+    tables[s.table] = _advTableForRange(s.table, base, team);
+  });
+
+  const sums = {};
+  const partsByTeam = {};
+  specs.forEach(s=>{
+    const tbl = tables[s.table];
+    if(!tbl || !tbl.teams) return;
+    Object.keys(tbl.teams).forEach(tm=>{
+      const rk = tbl.teams[tm] && tbl.teams[tm].ranks ? tbl.teams[tm].ranks[s.col] : null;
+      if(!Number.isFinite(rk)) return;
+      if(!sums[tm]) sums[tm] = { sum:0, count:0 };
+      sums[tm].sum += Number(rk);
+      sums[tm].count += 1;
+      (partsByTeam[tm] = partsByTeam[tm] || []).push({ label:s.label, rank:Number(rk) });
+    });
+  });
+
+  const rows = Object.keys(sums)
+    .filter(tm=>sums[tm].count === specs.length)
+    .map(tm=>({
+      team: tm,
+      avg: sums[tm].sum / specs.length,
+      parts: partsByTeam[tm] || [],
+    }))
+    .sort((a,b)=>a.avg - b.avg || String(a.team).localeCompare(String(b.team)));
+  if(!rows.length) return null;
+  const rankMap = {};
+  rows.forEach((r, i)=>{ rankMap[r.team] = i + 1; });
+  const me = rows.find(r=>String(r.team).toUpperCase()===String(team).toUpperCase());
+  if(!me) return null;
+  return {
+    team: String(team).toUpperCase(),
+    avgRank: me.avg,
+    leagueRank: rankMap[me.team],
+    leagueSize: rows.length,
+    parts: me.parts,
+  };
+}
+
+function _renderAdvPowerScore(team, src, opts){
+  const p = _advTeamPowerScore(team, src);
+  if(!p) return '';
+  const o = opts || {};
+  const showLabel = !o.shieldOnly;
+  const cls = typeof sharpRankClass==='function' ? sharpRankClass(p.leagueRank) : '';
+  const season = String(advTeamSeason());
+  const detail = p.parts.map(x=>`${x.label} #${x.rank}`).join(' · ');
+  const scoreTxt = p.avgRank.toFixed(2);
+  return noteWrapHtml(`<span class="sr-sos-power ${cls}${showLabel?'':' sr-sos-power-shield-only'}" title="Power score rank ${ordinal(p.leagueRank)} of ${p.leagueSize}">${showLabel?'<span class="sr-sos-power-label">Power Score</span>':''}<span class="sr-sos-power-shield">${TC_ICON('shield')}<b>${ordinal(p.leagueRank)}</b></span></span>`, {
+      label: 'Power Score league rank',
+      value: `${ordinal(p.leagueRank)} of ${p.leagueSize} · Avg rank ${scoreTxt} · ${detail}`,
+      source: 'team_advanced',
+      statKey: 'power_score_rank',
+      context: historicalTagContext(`${teamDisplayName(team)} · Advanced Power Score · ${season}`, team, season),
+      team,
+      relevance: 'QB,RB,WR,TE',
+      nav: { type:'advanced', team, season },
+    }, 'note-tag-hit');
+}
+
 function renderTeamAdvanced(team){
   const hasSharp=sharpHasData(), hasSOS=SOS&&Object.keys(SOS).length>0;
   const hasCoord = COORDINATORS && COORDINATORS[team];
@@ -768,7 +842,7 @@ function renderTeamAdvanced(team){
   const sos=SOS && SOS[team];
   const sosStrip = sos ? `<div class="sr-sos-strip">
     <span class="sr-sos-rank ${sharpRankClass(sos.rank)}">${ordinal(sos.rank)}</span>
-    <div><div class="sr-sos-label">${PROJ_SEASON} Strength of Schedule</div>
+    <div class="sr-sos-main"><div class="sr-sos-label">${PROJ_SEASON} Strength of Schedule</div>
       <div class="sr-sos-sub">${noteWrapHtml(`${sos.win_total!=null?`Vegas win total <b>${sos.win_total}</b> · `:''}rank ${sos.rank} of 32 (1 = easiest)`, {
         label: `${PROJ_SEASON} Strength of Schedule`,
         value: `${sos.win_total!=null?`Vegas win total ${sos.win_total} · `:''}rank ${sos.rank} of 32`,
@@ -779,7 +853,7 @@ function renderTeamAdvanced(team){
         relevance: 'QB,RB,WR,TE',
         nav: { type:'advanced', team, season: 'proj' },
       }, 'note-tag-hit')}</div></div>
-    <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showSharpLeague('sos')">See SOS chart →</button>
+    <button class="btn btn-ghost btn-sm sr-sos-btn" onclick="showSharpLeague('sos')">See SOS chart →</button>
   </div>` : '';
   // Carryover coordinators → a highlighted section that pulls the former team's scheme stats.
   const carryBlock = renderCoordinatorCarryover(team);

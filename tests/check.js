@@ -761,6 +761,47 @@ let sumerMin = { QB:0, WRTE:0, RB:0 };   // QB→min Plays, WRTE→min Routes Ru
 // SumerSports refinement value (e.g. 'red_zone'), the stat columns read that game-situation
 // split instead of the overall season table. Only ever applied on the Adv. Metrics view.
 let sumerRefinement = null;
+
+// Preserve the user's reading position across in-place re-renders (sorting/filtering).
+// Captures window scroll plus optional scrollable containers (horizontal and vertical).
+function tcCaptureViewScroll(selectors){
+	const list = Array.isArray(selectors) ? selectors : [];
+	const buckets = list.map(sel=>{
+		const el = sel ? document.querySelector(sel) : null;
+		return {
+			sel,
+			x: el ? el.scrollLeft : 0,
+			y: el ? el.scrollTop : 0,
+		};
+	});
+	return {
+		winY: window.scrollY || document.documentElement.scrollTop || 0,
+		buckets,
+	};
+}
+
+function tcRestoreViewScroll(snap){
+	if(!snap) return;
+	requestAnimationFrame(()=>{
+		const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+		window.scrollTo(0, Math.min(Math.max(0, snap.winY || 0), maxY));
+		(snap.buckets || []).forEach(b=>{
+			if(!b || !b.sel) return;
+			const el = document.querySelector(b.sel);
+			if(!el) return;
+			const maxX = Math.max(0, el.scrollWidth - el.clientWidth);
+			const maxLocalY = Math.max(0, el.scrollHeight - el.clientHeight);
+			el.scrollLeft = Math.min(Math.max(0, b.x || 0), maxX);
+			el.scrollTop = Math.min(Math.max(0, b.y || 0), maxLocalY);
+		});
+	});
+}
+
+function tcPreserveViewScroll(run, selectors){
+	const snap = tcCaptureViewScroll(selectors);
+	run();
+	tcRestoreViewScroll(snap);
+}
 // ═════════════════════════════════════════════════════════════════════════════
 // Session persistence (localStorage) — auto-saves your working projections so they
 // survive a refresh/close. Only the EDITABLE state is stored (working projections,
@@ -2579,10 +2620,18 @@ function renderContent(){
   // teams while already viewing a past season — not just entering the season first).
   if(isRef && espnRecordCache[recKey]==null) fetchTeamRecord(activeSeason,t);
   const recStr = isRef ? (espnRecordCache[recKey]||'') : '';
+  const powerScoreBadge = (isRef && typeof _renderAdvPowerScore==='function' && typeof activeSharp==='function')
+    ? _renderAdvPowerScore(t, activeSharp(), { shieldOnly:true })
+    : '';
   const seasonBanner = isRef
-    ? `<div class="season-readonly">${TC_ICON("calendar")} <b>${activeSeason} actual stats</b>${recStr?` · <b>${recStr}</b> record`:''} — read-only reference. Your ${PROJ_SEASON} working projections are untouched.
-       ${canUndo(t)?`<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="undoTeam('${t}')" title="Undo the last working-set change for ${t}">↶ Undo last copy</button>`:''}
-       <button class="btn btn-accent btn-sm" ${canUndo(t)?'':'style="margin-left:auto"'} onclick="copyTeamToWorking('${t}')">⤵ Copy</button></div>`
+    ? `<div class="season-readonly">
+       <div class="season-readonly-main">${TC_ICON("calendar")} <b>${activeSeason} actual stats</b>${recStr?` · <b>${recStr}</b> Record`:''}</div>
+       ${powerScoreBadge}
+       <div class="season-readonly-actions">
+         ${canUndo(t)?`<button class="btn btn-ghost btn-sm" onclick="undoTeam('${t}')" title="Undo the last working-set change for ${t}">↶ Undo last copy</button>`:''}
+         <button class="btn btn-accent btn-sm" onclick="copyTeamToWorking('${t}')">⤵ Copy</button>
+       </div>
+     </div>`
     : '';
   const sos = SOS && SOS[t];
   const sosBadge = sos ? `<span class="team-sos">SOS: <b>${ordinal(sos.rank)}</b>${sos.win_total!=null?` · Vegas Win Total: <b>${sos.win_total}</b>`:''}</span>` : '';
@@ -4664,6 +4713,48 @@ function pcardArg(s){
 function pcardOnclick(idOrName, pos, team){
   return `openPlayerCard(${pcardArg(idOrName)},${pcardArg(pos)},${pcardArg(team)})`;
 }
+
+function pcardPosCompatible(wantPos, gotPos){
+  const w = String(wantPos||'').toUpperCase();
+  const g = String(gotPos||'').toUpperCase();
+  if(!w || !g) return true;
+  if(w===g) return true;
+  const ol = new Set(['OL','OT','OG','G','T','C','LT','LG','RG','RT']);
+  if(ol.has(w) && ol.has(g)) return true;
+  return false;
+}
+
+function resolvePlayerIdLoose(name, pos, team){
+  if(!name || !sleeperPlayers) return null;
+  const raw = String(name||'').trim();
+  if(!raw) return null;
+  const bits = raw.split(/\s+/).filter(Boolean);
+  const first = normName(bits[0]||'');
+  const last = normName(bits[bits.length-1]||'');
+  if(!last) return null;
+  const teamHint = String(team||'').toUpperCase() || String(currentTeam||'').toUpperCase();
+  let bestPid = null;
+  let bestScore = -1;
+  for(const pid in sleeperPlayers){
+    const p = sleeperPlayers[pid] || {};
+    const pLast = normName(p.last_name || ((p.name||'').split(/\s+/).slice(-1)[0]||''));
+    if(!pLast || pLast!==last) continue;
+    const pPos = p.pos || p.position || '';
+    if(!pcardPosCompatible(pos, pPos)) continue;
+    const pFirst = normName(p.first_name || (p.name||''));
+    let score = 0;
+    if(first && pFirst===first) score += 4;
+    else if(first && pFirst && pFirst[0]===first[0]) score += 2;
+    if(teamHint && String(p.team||'').toUpperCase()===teamHint) score += 3;
+    if(p.active===true) score += 1;
+    if(score > bestScore){
+      bestScore = score;
+      bestPid = pid;
+    }
+  }
+  return bestScore >= 3 ? bestPid : null;
+}
+
 function openPlayerCard(nameOrId, pos, team){
   // Ensure the Sleeper player map is available (needed for metadata + id resolution).
   if(!sleeperPlayers){
@@ -4685,7 +4776,7 @@ function openPlayerCard(nameOrId, pos, team){
         : (team && /^[A-Z]{2,4}$/.test(String(team).toUpperCase()) ? String(team).toUpperCase() : null);
   }
   else if(nameOrId && /^\d+$/.test(String(nameOrId))) pid = String(nameOrId);
-  else pid = resolvePlayerId(nameOrId, pos);
+  else pid = resolvePlayerId(nameOrId, pos) || resolvePlayerIdLoose(nameOrId, pos, team);
   if(!pid){ toast('No stats available for that player','err'); return; }
   if(!pcardSuppressNavPush && pcardOpen && pcardState){
     const snap = pcardCaptureNavState();
@@ -5199,7 +5290,7 @@ function renderPcardSeason(season, rows, pos){
       <td class="pcard-opp">${tot._games}g</td>${tcells}</tr>`;
   }
   return `<div class="pcard-season">
-    <div class="pcard-season-title">${season}${pcardSeasonTeamTag(rows)}</div>
+    <div class="pcard-season-title">${season}${pcardSeasonTeamTag(rows)}${pcardSeasonConsistencyBadge(rows, pos)}</div>
     <div class="pcard-table-scroll"><table class="pcard-table">
       <thead>
         <tr><th></th><th></th>${grpCells}</tr>
@@ -5215,6 +5306,46 @@ function renderPcardSeason(season, rows, pos){
 function pcardSeasonTeamTag(rows){
   const teams=[...new Set((rows||[]).filter(r=>!r.bye && r.team).map(r=>r.team))];
   return teams.length ? ` <span class="pcard-season-team">· ${teams.map(t=>`<img src="${NFL_LOGO(t)}" class="pcard-season-logo" onerror="this.style.display='none'">${t}`).join(' / ')}</span>` : '';
+}
+
+// Tweak these thresholds to change consistency benchmarks (PPR points per game).
+const PCARD_CONSISTENCY_BENCHMARKS = {
+  QB: 20,
+  RB: 10,
+  WR: 9,
+  TE: 8,
+};
+
+function pcardConsistencyBenchmarkForPos(pos){
+  const p = String(pos||'').toUpperCase();
+  if(PCARD_CONSISTENCY_BENCHMARKS[p] != null) return Number(PCARD_CONSISTENCY_BENCHMARKS[p]);
+  if(p==='HB') return Number(PCARD_CONSISTENCY_BENCHMARKS.RB);
+  return null;
+}
+
+function pcardSeasonConsistency(rows, pos){
+  const benchmark = pcardConsistencyBenchmarkForPos(pos);
+  if(!Number.isFinite(benchmark)) return null;
+  const vals = (rows||[])
+    .filter(r=>!r.bye && r.gp>0 && Number.isFinite(r.fpts))
+    .map(r=>Number(r.fpts));
+  const n = vals.length;
+  if(n < 2) return null;
+  const hits = vals.filter(v=>v >= benchmark).length;
+  const rate = hits / n;
+  let grade = 'F';
+  if(rate >= 0.8) grade = 'A';
+  else if(rate >= 0.7) grade = 'B';
+  else if(rate >= 0.6) grade = 'C';
+  else if(rate >= 0.5) grade = 'D';
+  return { grade, benchmark, hits, n, rate };
+}
+
+function pcardSeasonConsistencyBadge(rows, pos){
+  const c = pcardSeasonConsistency(rows, pos);
+  if(!c) return '';
+  const tip = `Consistency grade from benchmark hits (games played only): ${c.hits}/${c.n} games (${(c.rate*100).toFixed(1)}%) at or above ${c.benchmark.toFixed(1)} PPR points.`;
+  return ` <span class="pcard-cons-badge pcard-cons-${c.grade}" title="${escAttr(tip)}">Consistency ${c.grade}</span>`;
 }
 
 // ── Route tree (player-card "Routes" tab) ────────────────────────────────────
@@ -8499,6 +8630,10 @@ function _schemeOverlayHost(create){
   return el;
 }
 
+function _schemeLockPage(on){
+  try{ document.documentElement.classList.toggle('scheme-locked', !!on); }catch(e){}
+}
+
 function _schemeEscHtml(s){
   return String(s==null?'':s)
     .replace(/&/g,'&amp;')
@@ -9031,6 +9166,8 @@ function _schemeLeagueInsightSnapshot(season){
       threeOutRate: driveCt > 0 ? (100 * _schemeNumber(wk.off_drive_three_out_ct, 0) / driveCt) : null,
       tdDriveRate: driveCt > 0 ? (100 * _schemeNumber(wk.off_drive_td_ct, 0) / driveCt) : null,
       rzTdRate: _schemeNumber(wk.off_drive_rz_ct, 0) > 0 ? (100 * _schemeNumber(wk.off_drive_rz_td_ct, 0) / _schemeNumber(wk.off_drive_rz_ct, 0)) : null,
+      rzDrivesPerGame: games > 0 ? (_schemeNumber(wk.off_drive_rz_ct, 0) / games) : null,
+      rzPlaysPerGame: games > 0 ? (_schemeNumber(core.samplePlays, 0) / games) : null,
       fpPprPerGame: games > 0 ? (_schemeNumber(wk.off_fp_ppr, 0) / games) : null,
       fpPprPerDrive: driveCt > 0 ? (_schemeNumber(wk.off_fp_ppr, 0) / driveCt) : null,
     };
@@ -9046,6 +9183,8 @@ function _schemeLeagueInsightSnapshot(season){
   const threeVals = teams.map(tm=>rowsByTeam[tm].threeOutRate).filter(Number.isFinite);
   const tdDriveVals = teams.map(tm=>rowsByTeam[tm].tdDriveRate).filter(Number.isFinite);
   const rzTdVals = teams.map(tm=>rowsByTeam[tm].rzTdRate).filter(Number.isFinite);
+  const rzDriveVolVals = teams.map(tm=>rowsByTeam[tm].rzDrivesPerGame).filter(Number.isFinite);
+  const rzPlayVolVals = teams.map(tm=>rowsByTeam[tm].rzPlaysPerGame).filter(Number.isFinite);
   const fpVals = teams.map(tm=>rowsByTeam[tm].fpPprPerGame).filter(Number.isFinite);
 
   teams.forEach(tm=>{
@@ -9078,8 +9217,13 @@ function _schemeLeagueInsightSnapshot(season){
     earlySucc: teams.map(tm=>rowsByTeam[tm].earlySucc).filter(Number.isFinite),
     lateSucc: teams.map(tm=>rowsByTeam[tm].lateSucc).filter(Number.isFinite),
     frictionScore: teams.map(tm=>rowsByTeam[tm].frictionScore).filter(Number.isFinite),
+    puntRate: puntVals,
+    turnoverDriveRate: toVals,
+    threeOutRate: threeVals,
     tdDriveRate: tdDriveVals,
     rzTdRate: rzTdVals,
+    rzDrivesPerGame: rzDriveVolVals,
+    rzPlaysPerGame: rzPlayVolVals,
     fpPprPerGame: fpVals,
   };
   _schemeInsightSeasonCache[s] = snapshot;
@@ -9145,6 +9289,8 @@ function _schemeRedZoneInsightData(p){
     puntRate: cached ? cached.puntRate : null,
     turnoverDriveRate: cached ? cached.turnoverDriveRate : null,
     threeOutRate: cached ? cached.threeOutRate : null,
+    rzDrivesPerGame: cached ? cached.rzDrivesPerGame : null,
+    rzPlaysPerGame: cached ? cached.rzPlaysPerGame : null,
     fpPprPerGame: cached ? cached.fpPprPerGame : null,
     frictionScore: friction.score,
     frictionRank: friction.rank,
@@ -9183,6 +9329,86 @@ function _schemeInsightNarrative(d){
   }
   if(!pieces.length) pieces.push('Not enough red-zone charting for a confident read yet.');
   return pieces.join(' ');
+}
+
+function _schemeLeagueMetricTag(opts){
+  const teamCode = String((opts && opts.team) || '').toUpperCase();
+  const season = String((opts && opts.season) || advTeamSeason() || '');
+  const ctx = `${teamDisplayName(teamCode)} red-zone insights · ${season}`;
+  const nav = { type:'coaching', team:teamCode, season, tab:'insights' };
+  return noteWrapHtml(String((opts && opts.html) || ''), {
+    label: String((opts && opts.label) || ''),
+    value: String((opts && opts.value) || ''),
+    source: 'coaching_insights',
+    statKey: String((opts && opts.statKey) || ''),
+    context: ctx,
+    team: teamCode,
+    relevance: 'QB,RB,WR,TE',
+    nav,
+  }, 'note-tag-hit');
+}
+
+function _schemeRenderDriveFrictionBreakdown(p, d, league, rankText, rankClass){
+  const nTeams = _schemeNumber(league && league.leagueSize, 0);
+  const season = String((p && p.season) || advTeamSeason() || '');
+  const teamCode = String((p && p.team) || schemeTeam || '').toUpperCase();
+  const metric = (label, value, list, dir, key, higherWorse)=>{
+    const rank = _schemeRankInLeague(value, list, dir);
+    const rc = rankClass(rank);
+    const polarity = higherWorse ? 'Lower is better' : 'Higher is better';
+    const txt = _schemePct(value);
+    const wrapped = _schemeLeagueMetricTag({
+      team: teamCode,
+      season,
+      label,
+      value: `${txt}${rank&&nTeams?` · ${_schemeOrdinal(rank)} of ${nTeams}`:''} · ${polarity}`,
+      statKey: key,
+      html: `${txt}${rank ? ` <span class="scheme-insight-rank ${rc}">(${rankText(rank)})</span>` : ''}`,
+    });
+    return `<div class="scheme-op-card"><div class="scheme-op-k">${label}</div><div class="scheme-op-v">${wrapped}</div></div>`;
+  };
+  return `<div class="scheme-op-wrap">
+    <div class="scheme-op-title">Drive Friction Components</div>
+    <div class="scheme-op-grid">
+      ${metric('Punt Drive Rate', d.puntRate, league.puntRate, 'asc', 'punt_drive_rate', true)}
+      ${metric('Turnover Drive Rate', d.turnoverDriveRate, league.turnoverDriveRate, 'asc', 'turnover_drive_rate', true)}
+      ${metric('Three-and-Out Rate', d.threeOutRate, league.threeOutRate, 'asc', 'three_out_rate', true)}
+      ${metric('TD Drive Rate', d.tdDriveRate, league.tdDriveRate, 'desc', 'td_drive_rate', false)}
+    </div>
+  </div>`;
+}
+
+function _schemeRenderRzOpportunityVolume(p, d, league, rankText, rankClass){
+  const nTeams = _schemeNumber(league && league.leagueSize, 0);
+  const season = String((p && p.season) || advTeamSeason() || '');
+  const teamCode = String((p && p.team) || schemeTeam || '').toUpperCase();
+  const driveRank = _schemeRankInLeague(d.rzDrivesPerGame, league.rzDrivesPerGame, 'desc');
+  const playRank = _schemeRankInLeague(d.rzPlaysPerGame, league.rzPlaysPerGame, 'desc');
+  const drivesTxt = Number.isFinite(d.rzDrivesPerGame) ? d.rzDrivesPerGame.toFixed(2) : '—';
+  const playsTxt = Number.isFinite(d.rzPlaysPerGame) ? d.rzPlaysPerGame.toFixed(2) : '—';
+  const drives = _schemeLeagueMetricTag({
+    team: teamCode,
+    season,
+    label: 'Red-zone drives per game',
+    value: `${drivesTxt}${driveRank&&nTeams?` · ${_schemeOrdinal(driveRank)} of ${nTeams}`:''}`,
+    statKey: 'rz_drives_per_game',
+    html: `${drivesTxt}${driveRank ? ` <span class="scheme-insight-rank ${rankClass(driveRank)}">(${rankText(driveRank)})</span>` : ''}`,
+  });
+  const plays = _schemeLeagueMetricTag({
+    team: teamCode,
+    season,
+    label: 'Red-zone plays per game',
+    value: `${playsTxt}${playRank&&nTeams?` · ${_schemeOrdinal(playRank)} of ${nTeams}`:''}`,
+    statKey: 'rz_plays_per_game',
+    html: `${playsTxt}${playRank ? ` <span class="scheme-insight-rank ${rankClass(playRank)}">(${rankText(playRank)})</span>` : ''}`,
+  });
+  return `<div class="scheme-insight-card">
+    <div class="scheme-insight-k">Red-Zone Opportunity Volume (League-Wide)</div>
+    <div class="scheme-insight-v">${drives}</div>
+    <div class="scheme-insight-sub">RZ drives per game. Volume baseline for touchdown opportunities.</div>
+    <div class="scheme-insight-v" style="margin-top:7px">${plays}</div>
+    <div class="scheme-insight-sub">RZ plays per game. Helps compare opportunity volume against usage concentration.</div>
+  </div>`;
 }
 
 function _schemeProductionTotalsFromPayload(p){
@@ -9500,7 +9726,79 @@ function _schemeSortTargetBenefactors(list, mode){
 function setTeamCoachingSchemeBenefactorSort(mode){
   const m = String(mode||'').toLowerCase();
   schemeBenefactorSort = (m==='tgt') ? 'tgt' : 'opp';
-  if(schemeOverlayOpen && schemeTeam && schemeViewTab==='insights') _renderTeamCoachingScheme();
+  if(schemeOverlayOpen && schemeTeam && schemeViewTab==='insights'){
+    if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>_renderTeamCoachingScheme(), ['.scheme-modal']);
+    else _renderTeamCoachingScheme();
+  }
+}
+
+function _schemeBindSwipeClose(host){
+  if(!host) return;
+  const modal = host.querySelector('.scheme-modal');
+  if(!modal || modal._swipeBound) return;
+  modal._swipeBound = true;
+  const CLOSE_AT = 90;
+  let y0 = null;
+  let x0 = null;
+  let dy = 0;
+  let dragging = false;
+
+  const reset = (anim)=>{
+    modal.style.transition = anim ? 'transform .18s ease-out, opacity .18s ease-out' : '';
+    modal.style.transform = '';
+    modal.style.opacity = '';
+    if(anim) setTimeout(()=>{ modal.style.transition = ''; }, 200);
+  };
+
+  modal.addEventListener('touchstart', e=>{
+    if(!schemeOverlayOpen || schemeViewTab!=='playbook'){ dragging=false; y0=null; x0=null; return; }
+    if(e.touches.length!==1){ dragging=false; y0=null; x0=null; return; }
+    const t = e.touches && e.touches[0];
+    if(!t){ dragging=false; y0=null; x0=null; return; }
+    y0 = t.clientY;
+    x0 = t.clientX;
+    dy = 0;
+    dragging = true;
+    modal.style.transition = '';
+  }, { passive:true });
+  modal.addEventListener('touchmove', e=>{
+    if(!schemeOverlayOpen || schemeViewTab!=='playbook') return;
+    if(!dragging || !Number.isFinite(y0) || !Number.isFinite(x0)) return;
+    if(modal.scrollTop > 1) return;
+    const t = e.touches && e.touches[0];
+    if(!t) return;
+    dy = t.clientY - y0;
+    const dx = Math.abs(t.clientX - x0);
+    if(dy <= 0){ modal.style.transform=''; modal.style.opacity=''; return; }
+    if(dy > 20 && dy > dx * 1.25){
+      // Keep the pull gesture from chaining into page refresh behind the modal.
+      e.preventDefault();
+      const shift = dy<CLOSE_AT ? dy*0.7 : CLOSE_AT*0.7 + (dy-CLOSE_AT)*0.35;
+      modal.style.transform = `translateY(${shift.toFixed(1)}px)`;
+      modal.style.opacity = String(Math.max(0.6, 1 - dy/650));
+    }
+  }, { passive:false });
+  const finish = (e)=>{
+    if(!dragging){ return; }
+    dragging = false;
+    const shouldTrack = schemeOverlayOpen && schemeViewTab==='playbook' && modal.scrollTop <= 1;
+    if(!shouldTrack){ y0=null; x0=null; dy=0; reset(false); return; }
+    const t = e.changedTouches && e.changedTouches[0];
+    if(!t || !Number.isFinite(y0) || !Number.isFinite(x0)){ y0=null; x0=null; dy=0; reset(false); return; }
+    const endDy = t.clientY - y0;
+    const dx = Math.abs(t.clientX - x0);
+    y0 = null;
+    x0 = null;
+    modal.style.opacity = '';
+    if(endDy >= CLOSE_AT && endDy > dx * 1.25){
+      closeTeamCoachingScheme();
+    }else{
+      reset(true);
+    }
+    dy = 0;
+  };
+  modal.addEventListener('touchend', finish, { passive:true });
+  modal.addEventListener('touchcancel', finish, { passive:true });
 }
 
 function _schemeBackButtonHtml(){
@@ -9782,6 +10080,8 @@ function _schemeRenderInsights(p){
     'Drive friction rank',
     'This compares this offense to the league. Lower friction means cleaner touchdown paths with fewer stalled drives. It combines how often drives end with punts, turnovers, or three-and-outs plus drive efficiency and red-zone finishing.'
   );
+  const frictionComponents = _schemeRenderDriveFrictionBreakdown(p, d, league, rankText, rankClass);
+  const rzVolumeCard = _schemeRenderRzOpportunityVolume(p, d, league, rankText, rankClass);
   return `<div class="scheme-insights-wrap">
     ${offenseStrip}
     <div class="scheme-insights-head">
@@ -9809,7 +10109,9 @@ function _schemeRenderInsights(p){
         <div class="scheme-insight-v">${noteWrapHtml(`${rankText(frictionRank)} <span class="scheme-insight-rank ${frictionRankClass}">(score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'})</span>`, { label:'Drive friction ranking', value:`${rankText(frictionRank)} · score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'}`, source:'coaching_insights', statKey:'friction_rank', context:`${teamName} red-zone insights · ${p&&p.season?p.season:advTeamSeason()}`, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(p&&p.season?p.season:advTeamSeason()), tab:'insights' } }, 'note-tag-hit')}</div>
         <div class="scheme-insight-sub">Ranked by drive cleanliness (1 = least friction / cleanest drives, 32 = most friction / toughest drives).</div>
       </div>
+      ${rzVolumeCard}
     </div>
+    ${frictionComponents}
     <div class="scheme-insight-note"><b>Fantasy angle:</b> ${_schemeEscHtml(blurb)}</div>
     ${_schemeRenderBenefactors(benefactors, rushBenefactors)}
   </div>`;
@@ -9894,6 +10196,7 @@ function _renderTeamCoachingScheme(){
         </div>
       </div>
     </div>`;
+    _schemeBindSwipeClose(host);
     return;
   }
 
@@ -9917,6 +10220,7 @@ function _renderTeamCoachingScheme(){
       ${seasons.length>1?`<div class="scheme-tabs">${seasons.map(s=>`<button class="scheme-tab ${String(s)===String(schemeSeason)?'active':''}" onclick="setTeamCoachingSchemeSeason('${s}')"><span>${s}</span></button>`).join('')}</div>`:''}
     </div>
   </div>`;
+  _schemeBindSwipeClose(host);
 
   if(schemeViewTab==='insights'){
     const modal = host.querySelector('.scheme-modal');
@@ -9964,6 +10268,7 @@ function openTeamCoachingScheme(team, initialView){
     _schemeNavStack = [];
   }
   schemeOverlayOpen = true;
+  _schemeLockPage(true);
   schemeTeam = team;
   schemeViewTab = (initialView && initialView.tab==='insights') ? 'insights' : 'playbook';
 
@@ -10018,10 +10323,12 @@ function _renderSchemeLoadingShell(){
       <div class="scheme-loading">Loading coaching-scheme data…</div>
     </div>
   </div>`;
+  _schemeBindSwipeClose(host);
 }
 
 function closeTeamCoachingScheme(){
   schemeOverlayOpen = false;
+  _schemeLockPage(false);
   schemeTeam = null;
   schemeSeason = null;
   schemeViewTab = 'playbook';
@@ -10800,6 +11107,80 @@ function _advProjOlBadge(team, which){
   return ` <span class="sr-proj-badge ${cls}" title="Projected ${projSeason} ${lbl} overall score, from projected depth-chart starters">Proj \u2019${shortSeason} ${Number(p.score).toFixed(1)}${rk!=null?` \u00b7 #${rk}`:''}</span>`;
 }
 
+function _advTeamPowerScore(team, src){
+  const specs = [
+    { table:'offense', col:'EPA/Play', label:'Off EPA/Play' },
+    { table:'offense', col:'Points Per Drive', label:'Off Points/Drive' },
+    { table:'defense', col:'EPA/Play', label:'Def EPA/Play' },
+    { table:'defense', col:'Points Per Drive', label:'Def Points/Drive' },
+    { table:'offensive_line_pass', col:'Overall Score', label:'OL Pass Score' },
+    { table:'offensive_line_run', col:'Overall Score', label:'OL Run Score' },
+  ];
+  const tables = {};
+  specs.forEach(s=>{
+    const base = src && src[s.table];
+    if(!base) return;
+    tables[s.table] = _advTableForRange(s.table, base, team);
+  });
+
+  const sums = {};
+  const partsByTeam = {};
+  specs.forEach(s=>{
+    const tbl = tables[s.table];
+    if(!tbl || !tbl.teams) return;
+    Object.keys(tbl.teams).forEach(tm=>{
+      const rk = tbl.teams[tm] && tbl.teams[tm].ranks ? tbl.teams[tm].ranks[s.col] : null;
+      if(!Number.isFinite(rk)) return;
+      if(!sums[tm]) sums[tm] = { sum:0, count:0 };
+      sums[tm].sum += Number(rk);
+      sums[tm].count += 1;
+      (partsByTeam[tm] = partsByTeam[tm] || []).push({ label:s.label, rank:Number(rk) });
+    });
+  });
+
+  const rows = Object.keys(sums)
+    .filter(tm=>sums[tm].count === specs.length)
+    .map(tm=>({
+      team: tm,
+      avg: sums[tm].sum / specs.length,
+      parts: partsByTeam[tm] || [],
+    }))
+    .sort((a,b)=>a.avg - b.avg || String(a.team).localeCompare(String(b.team)));
+  if(!rows.length) return null;
+  const rankMap = {};
+  rows.forEach((r, i)=>{ rankMap[r.team] = i + 1; });
+  const me = rows.find(r=>String(r.team).toUpperCase()===String(team).toUpperCase());
+  if(!me) return null;
+  return {
+    team: String(team).toUpperCase(),
+    avgRank: me.avg,
+    leagueRank: rankMap[me.team],
+    leagueSize: rows.length,
+    parts: me.parts,
+  };
+}
+
+function _renderAdvPowerScore(team, src, opts){
+  const p = _advTeamPowerScore(team, src);
+  if(!p) return '';
+  const o = opts || {};
+  const showLabel = !o.shieldOnly;
+  const cls = typeof sharpRankClass==='function' ? sharpRankClass(p.leagueRank) : '';
+  const season = String(advTeamSeason());
+  const detail = p.parts.map(x=>`${x.label} #${x.rank}`).join(' · ');
+  const scoreTxt = p.avgRank.toFixed(2);
+  return noteWrapHtml(`<span class="sr-sos-power ${cls}${showLabel?'':' sr-sos-power-shield-only'}" title="Power score rank ${ordinal(p.leagueRank)} of ${p.leagueSize}">${showLabel?'<span class="sr-sos-power-label">Power Score</span>':''}<span class="sr-sos-power-shield">${TC_ICON('shield')}<b>${ordinal(p.leagueRank)}</b></span></span>`, {
+      label: 'Power Score league rank',
+      value: `${ordinal(p.leagueRank)} of ${p.leagueSize} · Avg rank ${scoreTxt} · ${detail}`,
+      source: 'team_advanced',
+      statKey: 'power_score_rank',
+      context: historicalTagContext(`${teamDisplayName(team)} · Advanced Power Score · ${season}`, team, season),
+      team,
+      relevance: 'QB,RB,WR,TE',
+      nav: { type:'advanced', team, season },
+    }, 'note-tag-hit');
+}
+
 function renderTeamAdvanced(team){
   const hasSharp=sharpHasData(), hasSOS=SOS&&Object.keys(SOS).length>0;
   const hasCoord = COORDINATORS && COORDINATORS[team];
@@ -10856,7 +11237,7 @@ function renderTeamAdvanced(team){
   const sos=SOS && SOS[team];
   const sosStrip = sos ? `<div class="sr-sos-strip">
     <span class="sr-sos-rank ${sharpRankClass(sos.rank)}">${ordinal(sos.rank)}</span>
-    <div><div class="sr-sos-label">${PROJ_SEASON} Strength of Schedule</div>
+    <div class="sr-sos-main"><div class="sr-sos-label">${PROJ_SEASON} Strength of Schedule</div>
       <div class="sr-sos-sub">${noteWrapHtml(`${sos.win_total!=null?`Vegas win total <b>${sos.win_total}</b> · `:''}rank ${sos.rank} of 32 (1 = easiest)`, {
         label: `${PROJ_SEASON} Strength of Schedule`,
         value: `${sos.win_total!=null?`Vegas win total ${sos.win_total} · `:''}rank ${sos.rank} of 32`,
@@ -10867,7 +11248,7 @@ function renderTeamAdvanced(team){
         relevance: 'QB,RB,WR,TE',
         nav: { type:'advanced', team, season: 'proj' },
       }, 'note-tag-hit')}</div></div>
-    <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showSharpLeague('sos')">See SOS chart →</button>
+    <button class="btn btn-ghost btn-sm sr-sos-btn" onclick="showSharpLeague('sos')">See SOS chart →</button>
   </div>` : '';
   // Carryover coordinators → a highlighted section that pulls the former team's scheme stats.
   const carryBlock = renderCoordinatorCarryover(team);
@@ -11049,7 +11430,8 @@ function setSharpCategory(cat){
 }
 function sortSharpBy(col){
   if(sharpSortCol===col){ sharpSortDir*=-1; } else { sharpSortCol=col; sharpSortDir=1; }
-  renderSharpLeague();
+  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderSharpLeague(), ['.sr-table-wrap']);
+  else renderSharpLeague();
 }
 function renderSharpLeague(){
   const host=document.getElementById('content'); if(!host) return;
@@ -11171,7 +11553,7 @@ function renderSharpLeague(){
   host.innerHTML = headerBar + leagueWeekRange + renderCategoryTabs() + `
     <div class="sr-league-tabs">${tableTabs}</div>
     <div class="sr-desc">${tbl.title} · <b>${advTeamSeason()} season</b> — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
-    <div class="card" style="padding:0;overflow-x:auto">
+    <div class="card sr-table-wrap" style="padding:0;overflow-x:auto">
       <table class="sr-league-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
     </div>
     <div class="sr-source">Computed from nflverse play-by-play (nflfastR).</div>`;
@@ -11286,7 +11668,7 @@ function renderSOSView(){
   </tr>`).join('');
   return `<div class="sr-desc">${PROJ_SEASON} strength of schedule — our own ranking by the <b>sum of each team's opponents' Vegas win totals</b>. Rank 1 = easiest slate, ${n} = hardest.</div>
     <div class="card sos-card">${chart}</div>
-    <div class="card" style="padding:0;overflow-x:auto;margin-top:12px">
+    <div class="card sr-table-wrap" style="padding:0;overflow-x:auto;margin-top:12px">
       <table class="sr-league-table sos-table"><thead><tr>
         <th class="sr-th-team">TEAM</th>${th('rank',PROJ_SEASON+' SOS RANK')}${th('opp','OPP WIN TOTAL')}${th('win_total','VEGAS WIN TOTAL')}
       </tr></thead><tbody>${body}</tbody></table>
@@ -11295,7 +11677,8 @@ function renderSOSView(){
 }
 function sortSOSBy(col){
   if(sharpSortCol===col){ sharpSortDir*=-1; } else { sharpSortCol=col; sharpSortDir=1; }
-  renderSharpLeague();
+  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderSharpLeague(), ['.sr-table-wrap']);
+  else renderSharpLeague();
 }
 
 
@@ -17704,7 +18087,8 @@ function laCmpSort(col){
   const sc=laState.cmpSort||(laState.cmpSort={col:'total',dir:-1});
   if(sc.col===col) sc.dir=-sc.dir;
   else { sc.col=col; sc.dir = col==='team'?1:-1; }
-  renderLeagueAnalyzer();
+  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderLeagueAnalyzer(), ['.la-cmp-wrap']);
+  else renderLeagueAnalyzer();
 }
 
 // ── Best Available: the valued free agents ───────────────────────────────────
