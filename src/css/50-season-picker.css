@@ -46,6 +46,8 @@
   border-radius:7px;font-size:11px;color:#6ab8ff;margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .season-readonly-main{display:inline-flex;align-items:center;gap:7px;min-width:0;}
 .season-readonly-actions{display:inline-flex;align-items:center;gap:7px;margin-left:auto;}
+.season-power{display:inline-flex;align-items:center;gap:6px;min-width:0;}
+.season-power-text{font-size:11px;font-weight:800;letter-spacing:.02em;color:#9bcfff;white-space:nowrap;}
 .season-readonly .sr-sos-power{margin-left:0;padding:0;border:none;background:none;gap:6px;}
 .season-readonly .sr-sos-power-label{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#9bcfff;}
 .season-readonly .sr-sos-power-shield{width:48px;height:48px;}
@@ -70,8 +72,10 @@
 @media (max-width:680px){
   .season-readonly{gap:6px;}
   .season-readonly-main{flex:1 1 100%;}
-  .season-readonly .sr-sos-power{order:2;}
+  .season-power{order:2;}
+  .season-readonly .sr-sos-power{order:0;}
   .season-readonly .sr-sos-power-label{display:none;}
+  .season-power-text{display:inline-block;}
   .season-readonly-actions{order:3;margin-left:0;justify-content:flex-end;flex:1 1 auto;}
 }
 

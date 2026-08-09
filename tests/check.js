@@ -2629,10 +2629,13 @@ function renderContent(){
   const powerScoreBadge = (isRef && typeof _renderAdvPowerScore==='function' && typeof activeSharp==='function')
     ? _renderAdvPowerScore(t, activeSharp(), { shieldOnly:true })
     : '';
+  const powerScoreInline = isRef
+    ? `<div class="season-power">${powerScoreBadge}<span class="season-power-text">Power Score</span></div>`
+    : '';
   const seasonBanner = isRef
     ? `<div class="season-readonly">
        <div class="season-readonly-main">${TC_ICON("calendar")} <b>${activeSeason} actual stats</b>${recStr?` · <b>${recStr}</b> Record`:''}</div>
-       ${powerScoreBadge} Power Score
+       ${powerScoreInline}
        <div class="season-readonly-actions">
          ${canUndo(t)?`<button class="btn btn-ghost btn-sm" onclick="undoTeam('${t}')" title="Undo the last working-set change for ${t}">↶ Undo last copy</button>`:''}
          <button class="btn btn-accent btn-sm" onclick="copyTeamToWorking('${t}')">⤵ Copy</button>
@@ -12020,8 +12023,9 @@ function renderRankings(){
       return typeof v==='number' && v>=min;
     });
   }
+  const searchActive = !!(rankingsSearchOpen || (rankingsSearchQuery||'').trim());
   const mobileNarrow = !!(typeof window!=='undefined' && window.matchMedia && window.matchMedia('(max-width: 760px)').matches);
-  const mobileCapApplies = mobileNarrow && !teamScoped && rankPosFilter==='ALL' && !following;
+  const mobileCapApplies = mobileNarrow && !teamScoped && rankPosFilter==='ALL' && !following && !searchActive;
   const MOBILE_ROW_CAP = 180;
   let mobileTrimmedCount = 0;
   if(mobileCapApplies && !_rankingsMobileAutoFullPass && view.length>MOBILE_ROW_CAP){
@@ -12118,7 +12122,8 @@ function renderRankings(){
     }
     const fptsTxt = p.fpts.toFixed(1);
     const vorTxt = `${p.vor>0?'+':''}${p.vor!=null?p.vor.toFixed(1):'—'}`;
-    rowChunks.push(`<tr class="${p.drafted?'drafted':''}">
+    const pSearchAttr = escAttr(String(p.name||'').toLowerCase());
+    rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}">
     <td class="c-ecr">${ecrTxt!=='—'?rankValueHtml(ecrTxt, p, 'Expert Consensus Rank', 'ecr', 'rankings'):ecrTxt}</td>
     <td class="c-tier">${tier!=null?rankValueHtml(`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`, p, 'Tier', 'ecr_tier', 'rankings'):''}</td>
     <td class="fpts">${rankValueHtml(fptsTxt, p, 'Fantasy Points', 'fpts', 'rankings')}</td>
@@ -12143,7 +12148,7 @@ function renderRankings(){
     .map(([s,l])=>`<button class="format-btn ${curScoring===s?'active':''}" onclick="setScoringAxis('${s}')">${l}</button>`).join('');
   const posBtns=['ALL','QB','RB','WR','TE','FLEX','ROOKIES'].map(pos=>
     `<button class="pos-filter-btn ${rankPosFilter===pos?'active':''}" onclick="setPosFilter('${pos}')">${pos}</button>`).join('');
-  const searchOpen = !!(rankingsSearchOpen || (rankingsSearchQuery||'').trim());
+  const searchOpen = searchActive;
   const searchPlaceholder = 'Search players (comma separated)';
   // Advanced-metrics toggle — only on a reference season nflverse has player data for.
   // Switches the stat columns to advanced per-player metrics (computed from
@@ -12238,7 +12243,7 @@ function renderRankings(){
         ${minInputs}
         ${advNote}
         ${ecrNote}
-        <span style="font-size:11px;font-weight:700;margin-left:auto">${view.length}${mobileTrimmedCount>0?` / ${fullViewCount}`:''} players</span>
+        <span id="rankPlayerCount" data-default-label="${escAttr(`${view.length}${mobileTrimmedCount>0?` / ${fullViewCount}`:''} players`)}" style="font-size:11px;font-weight:700;margin-left:auto">${view.length}${mobileTrimmedCount>0?` / ${fullViewCount}`:''} players</span>
         ${following?'':`<button class="btn btn-accent btn-sm" onclick="openLeaguePicker()">🔗 Link Sleeper League</button>
         <button class="btn btn-ghost btn-sm" onclick="promptDraftFollow()" title="Follow a live or mock draft by its ID">Paste draft ID</button>`}
         <button class="btn btn-ghost btn-sm" onclick="exportRankingsCSV()">${TC_ICON("download")} CSV</button>
@@ -12269,6 +12274,8 @@ function renderRankings(){
       if(typeof currentPhase!=='undefined' && currentPhase!=='Rankings') return;
       if(typeof rankScope!=='undefined' && rankScope!=='all') return;
       if(typeof rankPosFilter!=='undefined' && rankPosFilter!=='ALL') return;
+      if(typeof rankingsSearchOpen!=='undefined' && rankingsSearchOpen) return;
+      if(typeof rankingsSearchQuery!=='undefined' && String(rankingsSearchQuery||'').trim()) return;
       if(typeof draftId!=='undefined' && draftId) return;
       if(typeof ktcGameState!=='undefined' && ktcGameState && ktcGameState.active) return;
       _rankingsMobileAutoFullPass = true;
@@ -12403,6 +12410,7 @@ function rankingsSearchTokens(q){
 function setRankingsSearchQuery(v, selStart, selEnd){
   rankingsSearchQuery = String(v||'');
   const keepFocus = (typeof document!=='undefined' && document.activeElement && document.activeElement.id==='rankSearchInput');
+  if(keepFocus && applyRankingsSearchInPlace()) return;
   renderRankings();
   if(!keepFocus) return;
   requestAnimationFrame(()=>{
@@ -12414,6 +12422,32 @@ function setRankingsSearchQuery(v, selStart, selEnd){
     const e = Math.max(0, Math.min(max, Number.isFinite(selEnd) ? selEnd : s));
     if(typeof el.setSelectionRange==='function') el.setSelectionRange(s, e);
   });
+}
+
+function applyRankingsSearchInPlace(){
+  if(typeof document==='undefined') return false;
+  const tbody = document.querySelector('.rankings-table tbody');
+  if(!tbody) return false;
+  const tokens = rankingsSearchTokens(rankingsSearchQuery);
+  let shown = 0;
+  const rows = tbody.querySelectorAll('tr');
+  rows.forEach((row)=>{
+    if(row.classList.contains('rank-pickline')){
+      // Pick-line markers become misleading during ad-hoc filtering.
+      row.style.display = tokens.length ? 'none' : '';
+      return;
+    }
+    const hay = String(row.getAttribute('data-rank-search')||'').toLowerCase();
+    const match = !tokens.length || tokens.some(tok=>hay.includes(tok));
+    row.style.display = match ? '' : 'none';
+    if(match) shown++;
+  });
+  const countEl = document.getElementById('rankPlayerCount');
+  if(countEl){
+    const def = String(countEl.getAttribute('data-default-label')||'').trim();
+    countEl.textContent = tokens.length ? `${shown} players` : (def || `${shown} players`);
+  }
+  return true;
 }
 
 function clearRankingsSearch(){

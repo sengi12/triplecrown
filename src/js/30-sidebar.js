@@ -206,10 +206,13 @@ function renderContent(){
   const powerScoreBadge = (isRef && typeof _renderAdvPowerScore==='function' && typeof activeSharp==='function')
     ? _renderAdvPowerScore(t, activeSharp(), { shieldOnly:true })
     : '';
+  const powerScoreInline = isRef
+    ? `<div class="season-power">${powerScoreBadge}<span class="season-power-text">Power Score</span></div>`
+    : '';
   const seasonBanner = isRef
     ? `<div class="season-readonly">
        <div class="season-readonly-main">${TC_ICON("calendar")} <b>${activeSeason} actual stats</b>${recStr?` · <b>${recStr}</b> Record`:''}</div>
-       ${powerScoreBadge} Power Score
+       ${powerScoreInline}
        <div class="season-readonly-actions">
          ${canUndo(t)?`<button class="btn btn-ghost btn-sm" onclick="undoTeam('${t}')" title="Undo the last working-set change for ${t}">↶ Undo last copy</button>`:''}
          <button class="btn btn-accent btn-sm" onclick="copyTeamToWorking('${t}')">⤵ Copy</button>
