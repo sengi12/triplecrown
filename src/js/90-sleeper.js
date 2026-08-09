@@ -160,6 +160,7 @@ function buildSeedEntry(pid, row, meta, isProjection){
   const ad = row.adp || {};
   const entry={
     name, slug:null, player_id:pid, pos, team, headshot:null, age:meta.age||null,
+    years_exp:(meta.years_exp!=null?meta.years_exp:null),
     passing_yards:st.passing_yards||0, passing_touchdowns:st.passing_touchdowns||0,
     passing_tds:st.passing_touchdowns||0,
     passing_attempts:st.passing_attempts||0, passing_completions:st.passing_completions||0,

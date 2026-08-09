@@ -754,6 +754,8 @@ let leagueShape = null;   // {teams, lineup:[slots], bench}
 let rankPosFilter = 'ALL';
 let rankScope = 'all';   // 'all' = full league rankings, 'team' = current team only
 let rankAdvanced = false; // rankings "Adv. Metrics" (SumerSports) view — swaps stat columns for advanced metrics
+let rankingsSearchOpen = false;
+let rankingsSearchQuery = '';
 // Per-position minimum-volume filter for the Adv. Metrics view (0 = no filter). Rate stats
 // like YPRR / EPADrop are noisy on tiny samples, so a floor keeps the board meaningful.
 let sumerMin = { QB:0, WRTE:0, RB:0 };   // QB→min Plays, WRTE→min Routes Run, RB→min Rushes
@@ -834,6 +836,8 @@ function saveSession(){
         scoringSettings: scoringSettings,
         rankFormat: rankFormat,
         scoringAxis: scoringAxis,
+        rankingsSearchOpen: rankingsSearchOpen,
+        rankingsSearchQuery: rankingsSearchQuery,
         scoringPanelOpen: scoringPanelOpen,
         leagueSnapshot: leagueSnapshot,
         undoStacks: undoStacks,
@@ -869,6 +873,8 @@ function restoreSession(){
   // Restore the scoring axis if saved; otherwise derive it from the restored rankFormat so
   // older sessions (pre-scoringAxis) still light up the correct scoring button.
   scoringAxis = p.scoringAxis || scoringAxisOf(rankFormat);
+  if(typeof p.rankingsSearchOpen==='boolean') rankingsSearchOpen = p.rankingsSearchOpen;
+  if(typeof p.rankingsSearchQuery==='string') rankingsSearchQuery = p.rankingsSearchQuery;
   if(typeof p.scoringPanelOpen==='boolean') scoringPanelOpen = p.scoringPanelOpen;
   if(p.leagueSnapshot && p.leagueSnapshot.teams) leagueSnapshot = p.leagueSnapshot;
   if(p.playerNotes && typeof p.playerNotes==='object') playerNotes = p.playerNotes;
@@ -2626,7 +2632,7 @@ function renderContent(){
   const seasonBanner = isRef
     ? `<div class="season-readonly">
        <div class="season-readonly-main">${TC_ICON("calendar")} <b>${activeSeason} actual stats</b>${recStr?` · <b>${recStr}</b> Record`:''}</div>
-       ${powerScoreBadge}
+       ${powerScoreBadge} Power Score
        <div class="season-readonly-actions">
          ${canUndo(t)?`<button class="btn btn-ghost btn-sm" onclick="undoTeam('${t}')" title="Undo the last working-set change for ${t}">↶ Undo last copy</button>`:''}
          <button class="btn btn-accent btn-sm" onclick="copyTeamToWorking('${t}')">⤵ Copy</button>
@@ -3996,8 +4002,18 @@ function ecrEntry(p){
   const tbl=ecrTableFor(rankFormat);
   return tbl[ecrNormName(p.name)] || null;
 }
-function ecrFor(p){ const e=ecrEntry(p); return e&&e.rank_ecr!=null ? e.rank_ecr : null; }
-function ecrTierFor(p){ const e=ecrEntry(p); return e&&e.tier!=null ? e.tier : null; }
+function ecrFor(p){
+  const e=ecrEntry(p);
+  if(!(e&&e.rank_ecr!=null)) return null;
+  const v = Number(e.rank_ecr);
+  return Number.isFinite(v) && v>0 ? v : null;
+}
+function ecrTierFor(p){
+  const e=ecrEntry(p);
+  if(!(e&&e.tier!=null)) return null;
+  const v = Number(e.tier);
+  return Number.isFinite(v) && v>0 ? v : null;
+}
 function hasECR(){ const t=ecrTableFor(rankFormat); return t && Object.keys(t).length>0; }
 
 // ── SumerSports advanced stats (rankings "Advanced" toggle) ──────────────────
@@ -4171,6 +4187,20 @@ function rankingAgeFromSleeper(p, baseEntry){
   if(c && c.age!=null && !Number.isNaN(Number(c.age))) return Number(c.age);
   return null;
 }
+
+function rankingYearsExpFromSleeper(p, baseEntry){
+  let pid = p && p.player_id ? String(p.player_id) : '';
+  if(!pid && typeof resolvePlayerId==='function'){
+    pid = resolvePlayerId(p.name, p.pos) || resolvePlayerId(p.name) || '';
+  }
+  const sp = (pid && typeof sleeperPlayers!=='undefined' && sleeperPlayers)
+    ? sleeperPlayers[pid]
+    : null;
+  if(sp && sp.years_exp!=null && !Number.isNaN(Number(sp.years_exp))) return Number(sp.years_exp);
+  if(baseEntry && baseEntry.years_exp!=null && !Number.isNaN(Number(baseEntry.years_exp))) return Number(baseEntry.years_exp);
+  return null;
+}
+
 function hasContracts(){ return CONTRACTS && Object.keys(CONTRACTS).length>0; }
 // Format an APY (annual salary in dollars) compactly, e.g. 40250000 → "$40.3M".
 function fmtAPY(v){
@@ -4334,6 +4364,8 @@ function buildPlayerList(){
     p.adp_2qb = be && be.adp_2qb!=null ? be.adp_2qb : 999;
     const c=contractEntry(p);
     p.age = rankingAgeFromSleeper(p, be);
+    p.years_exp = rankingYearsExpFromSleeper(p, be);
+    p.is_rookie = (p.years_exp===0);
     p.apy = c && c.apy!=null ? c.apy : null;
     p.fa  = c && c.fa!=null ? c.fa : null;
   });
@@ -5310,7 +5342,7 @@ function pcardSeasonTeamTag(rows){
 
 // Tweak these thresholds to change consistency benchmarks (PPR points per game).
 const PCARD_CONSISTENCY_BENCHMARKS = {
-  QB: 20,
+  QB: 17,
   RB: 10,
   WR: 9,
   TE: 8,
@@ -11108,28 +11140,86 @@ function _advProjOlBadge(team, which){
 }
 
 function _advTeamPowerScore(team, src){
-  const specs = [
-    { table:'offense', col:'EPA/Play', label:'Off EPA/Play' },
-    { table:'offense', col:'Points Per Drive', label:'Off Points/Drive' },
-    { table:'defense', col:'EPA/Play', label:'Def EPA/Play' },
-    { table:'defense', col:'Points Per Drive', label:'Def Points/Drive' },
-    { table:'offensive_line_pass', col:'Overall Score', label:'OL Pass Score' },
-    { table:'offensive_line_run', col:'Overall Score', label:'OL Run Score' },
+  const season = String(advTeamSeason());
+  const pack = (NFLVERSE && NFLVERSE[season] && NFLVERSE[season].adv_weekly) || null;
+  if(!pack || !pack.teams || !Array.isArray(pack.weeks) || !Array.isArray(pack.cols)) return null;
+
+  const requiredCols = [
+    'off_pass_epa', 'off_pass_plays',
+    'off_run_epa', 'off_run_plays',
+    'def_pass_epa_allowed', 'def_pass_plays',
+    'def_run_epa_allowed', 'def_run_plays',
+    'off_drive_pts', 'def_drive_pts_allowed', 'pace_games',
   ];
-  const tables = {};
+  const colIdx = {};
+  requiredCols.forEach(c=>{ colIdx[c] = pack.cols.indexOf(c); });
+  if(requiredCols.some(c=>colIdx[c] < 0)) return null;
+
+  const [lo, hi] = _advGetWeekRange(team);
+  const weekIdx = [];
+  for(let i=0;i<pack.weeks.length;i++){
+    const w = Number(pack.weeks[i]);
+    if(Number.isFinite(w) && w>=lo && w<=hi) weekIdx.push(i);
+  }
+  if(!weekIdx.length) return null;
+
+  const specs = [
+    { key:'off_pass_epa_pp', label:'Off EPA/Play (Pass)', lowerBetter:false },
+    { key:'off_run_epa_pp', label:'Off EPA/Play (Run)', lowerBetter:false },
+    { key:'def_pass_epa_allowed_pp', label:'Def EPA/Play Allowed (Pass)', lowerBetter:true },
+    { key:'def_run_epa_allowed_pp', label:'Def EPA/Play Allowed (Run)', lowerBetter:true },
+    { key:'points_scored_pg', label:'Points Scored', lowerBetter:false },
+    { key:'points_allowed_pg', label:'Points Allowed', lowerBetter:true },
+  ];
+
+  const metricsByTeam = {};
+  for(const tm of Object.keys(pack.teams)){
+    const rows = Array.isArray(pack.teams[tm]) ? pack.teams[tm] : [];
+    const sum = {
+      offPassEpa:0, offPassPlays:0,
+      offRunEpa:0, offRunPlays:0,
+      defPassEpa:0, defPassPlays:0,
+      defRunEpa:0, defRunPlays:0,
+      offPts:0, defPts:0, games:0,
+    };
+    weekIdx.forEach(ix=>{
+      const r = rows[ix] || [];
+      sum.offPassEpa += Number(r[colIdx.off_pass_epa] || 0);
+      sum.offPassPlays += Number(r[colIdx.off_pass_plays] || 0);
+      sum.offRunEpa += Number(r[colIdx.off_run_epa] || 0);
+      sum.offRunPlays += Number(r[colIdx.off_run_plays] || 0);
+      sum.defPassEpa += Number(r[colIdx.def_pass_epa_allowed] || 0);
+      sum.defPassPlays += Number(r[colIdx.def_pass_plays] || 0);
+      sum.defRunEpa += Number(r[colIdx.def_run_epa_allowed] || 0);
+      sum.defRunPlays += Number(r[colIdx.def_run_plays] || 0);
+      sum.offPts += Number(r[colIdx.off_drive_pts] || 0);
+      sum.defPts += Number(r[colIdx.def_drive_pts_allowed] || 0);
+      sum.games += Number(r[colIdx.pace_games] || 0);
+    });
+    const games = sum.games > 0 ? sum.games : weekIdx.length;
+    metricsByTeam[tm] = {
+      off_pass_epa_pp: sum.offPassPlays>0 ? (sum.offPassEpa / sum.offPassPlays) : null,
+      off_run_epa_pp: sum.offRunPlays>0 ? (sum.offRunEpa / sum.offRunPlays) : null,
+      def_pass_epa_allowed_pp: sum.defPassPlays>0 ? (sum.defPassEpa / sum.defPassPlays) : null,
+      def_run_epa_allowed_pp: sum.defRunPlays>0 ? (sum.defRunEpa / sum.defRunPlays) : null,
+      points_scored_pg: games>0 ? (sum.offPts / games) : null,
+      points_allowed_pg: games>0 ? (sum.defPts / games) : null,
+    };
+  }
+
+  const rankMaps = {};
   specs.forEach(s=>{
-    const base = src && src[s.table];
-    if(!base) return;
-    tables[s.table] = _advTableForRange(s.table, base, team);
+    const vals = {};
+    Object.keys(metricsByTeam).forEach(tm=>{ vals[tm] = metricsByTeam[tm][s.key]; });
+    rankMaps[s.key] = _advRankMap(vals, s.lowerBetter);
   });
 
   const sums = {};
   const partsByTeam = {};
   specs.forEach(s=>{
-    const tbl = tables[s.table];
-    if(!tbl || !tbl.teams) return;
-    Object.keys(tbl.teams).forEach(tm=>{
-      const rk = tbl.teams[tm] && tbl.teams[tm].ranks ? tbl.teams[tm].ranks[s.col] : null;
+    const rkMap = rankMaps[s.key] || {};
+    Object.keys(rkMap).forEach(tm=>{
+      const rk = rkMap[tm];
       if(!Number.isFinite(rk)) return;
       if(!sums[tm]) sums[tm] = { sum:0, count:0 };
       sums[tm].sum += Number(rk);
@@ -11788,6 +11878,8 @@ function rankingsRenderCacheKey(teamScoped){
     advCols,
     String(scoringPanelOpen),
     String(scoringAxis||''),
+    String(rankingsSearchOpen?1:0),
+    String((rankingsSearchQuery||'').trim().toLowerCase()),
     String(rankScope||'all'),
     String(teamScoped?1:0),
     String(teamScoped?(currentTeam||''):'all'),
@@ -11853,10 +11945,19 @@ function renderRankings(){
   // live draft: mark drafted players
   const following = !!draftId;
   all.forEach(p=>{ p.drafted = following && !!draftedIds[p.player_id]; });
+  const rankIsRookie = (p)=>!!(p && (p.is_rookie===true || Number(p.years_exp)===0));
   let view=rankPosFilter==='ALL'?all
+    :rankPosFilter==='ROOKIES'?all.filter(rankIsRookie)
     :rankPosFilter==='FLEX'?all.filter(p=>p.pos!=='QB')
     :all.filter(p=>p.pos===rankPosFilter);
   if(following && hideDrafted) view=view.filter(p=>!p.drafted);
+  const searchTokens = rankingsSearchTokens(rankingsSearchQuery);
+  if(searchTokens.length){
+    view = view.filter(p=>{
+      const nm = String(p && p.name ? p.name : '').toLowerCase();
+      return searchTokens.some(tok=>nm.includes(tok));
+    });
+  }
   const fullViewCount = view.length;
   view=[...view].sort((a,b)=>{
     if(rankSortKey==='ecr'){
@@ -12040,8 +12141,10 @@ function renderRankings(){
   const scoringList=[['std','Standard'],['half_ppr','Half PPR'],['ppr','Full PPR'],['superflex','Superflex']];
   const fmtBtns=scoringList
     .map(([s,l])=>`<button class="format-btn ${curScoring===s?'active':''}" onclick="setScoringAxis('${s}')">${l}</button>`).join('');
-  const posBtns=['ALL','QB','RB','WR','TE','FLEX'].map(pos=>
+  const posBtns=['ALL','QB','RB','WR','TE','FLEX','ROOKIES'].map(pos=>
     `<button class="pos-filter-btn ${rankPosFilter===pos?'active':''}" onclick="setPosFilter('${pos}')">${pos}</button>`).join('');
+  const searchOpen = !!(rankingsSearchOpen || (rankingsSearchQuery||'').trim());
+  const searchPlaceholder = 'Search players (comma separated)';
   // Advanced-metrics toggle — only on a reference season nflverse has player data for.
   // Switches the stat columns to advanced per-player metrics (computed from
   // nflverse play-by-play; SumerSports was retired as a source).
@@ -12125,6 +12228,11 @@ function renderRankings(){
         <div class="format-toggle">${fmtBtns}</div>
         <span style="font-size:11px;color:var(--muted);font-weight:700;margin-left:8px">POSITION</span>
         <div class="pos-filter">${posBtns}</div>
+        <button class="btn btn-ghost btn-sm rank-search-toggle ${searchOpen?'active':''}" onclick="toggleRankingsSearch()" title="Search rankings players">${TC_ICON("search")}</button>
+        ${searchOpen ? `<div class="rank-search-wrap">
+          <input id="rankSearchInput" class="rank-search-input" type="text" value="${escAttr(rankingsSearchQuery||'')}" placeholder="${searchPlaceholder}" oninput="setRankingsSearchQuery(this.value, this.selectionStart, this.selectionEnd)">
+          ${(rankingsSearchQuery||'').trim() ? `<button class="btn btn-ghost btn-sm" onclick="clearRankingsSearch()" title="Clear search">Clear</button>` : ''}
+        </div>` : ''}
         ${advToggle}
         ${situationalSelect}
         ${minInputs}
@@ -12284,6 +12392,60 @@ function syncFormatFromScoring(){
     toast(`Reception value ${r} → switched to ${({ppr:'Full PPR',half_ppr:'Half PPR',std:'Standard'})[f]} (ECR follows)`,'ok'); }
 }
 function setPosFilter(p){rankPosFilter=p;renderRankings();}
+
+function rankingsSearchTokens(q){
+  const s = String(q||'').trim().toLowerCase();
+  if(!s) return [];
+  // Comma/newline/pipe separated names; a plain single phrase remains intact.
+  return s.split(/[\n,|]+/).map(x=>x.trim()).filter(Boolean);
+}
+
+function setRankingsSearchQuery(v, selStart, selEnd){
+  rankingsSearchQuery = String(v||'');
+  const keepFocus = (typeof document!=='undefined' && document.activeElement && document.activeElement.id==='rankSearchInput');
+  renderRankings();
+  if(!keepFocus) return;
+  requestAnimationFrame(()=>{
+    const el = document.getElementById('rankSearchInput');
+    if(!el || typeof el.focus!=='function') return;
+    el.focus();
+    const max = el.value.length;
+    const s = Math.max(0, Math.min(max, Number.isFinite(selStart) ? selStart : max));
+    const e = Math.max(0, Math.min(max, Number.isFinite(selEnd) ? selEnd : s));
+    if(typeof el.setSelectionRange==='function') el.setSelectionRange(s, e);
+  });
+}
+
+function clearRankingsSearch(){
+  rankingsSearchQuery = '';
+  rankingsSearchOpen = true;
+  renderRankings();
+  requestAnimationFrame(()=>{
+    const el = document.getElementById('rankSearchInput');
+    if(el && typeof el.focus==='function') el.focus();
+  });
+}
+
+function toggleRankingsSearch(){
+  const hasQuery = !!String(rankingsSearchQuery||'').trim();
+  if(rankingsSearchOpen && !hasQuery){
+    rankingsSearchOpen = false;
+    renderRankings();
+    return;
+  }
+  if(rankingsSearchOpen && hasQuery){
+    rankingsSearchQuery = '';
+    rankingsSearchOpen = false;
+    renderRankings();
+    return;
+  }
+  rankingsSearchOpen = true;
+  renderRankings();
+  requestAnimationFrame(()=>{
+    const el = document.getElementById('rankSearchInput');
+    if(el && typeof el.focus==='function') el.focus();
+  });
+}
 // Toggle the SumerSports advanced stat columns on the rankings page.
 function setRankAdvanced(v){
   rankAdvanced=!!v;
@@ -12402,8 +12564,14 @@ const KTC_MIN_GAP = 0.45; // target fpts gap between KEEP>TRADE and TRADE>CUT
 const KTC_SOFT_CORRECTION = 0.42; // balanced per-round fraction of ordering deficit to correct
 const KTC_MIN_ROUND_BUDGET = 1.0; // balanced minimum total fpts movement budget per player/round
 const KTC_MAX_ROUND_BUDGET = 2.1; // hard ceiling to avoid drastic projection swings
-const KTC_TARGET_TIER_MIN = 8;
-const KTC_TARGET_TIER_MAX = 9;
+// Lower numeric tier is better (Tier 1 is elite). Keep KTC mostly in top tiers.
+const KTC_TARGET_TIER_MIN = 4;
+const KTC_TARGET_TIER_MAX = 6;
+const KTC_SIGNAL_MAX_SPREAD = {
+  ADP: 10,
+  ECR: 10,
+  VOR: 10,
+};
 const KTC_POS_CYCLE = ['QB', 'RB', 'WR', 'TE'];
 const KTC_INTENSITY = {
   conservative: {
@@ -12494,22 +12662,23 @@ function ktcEcrTierVal(p){
   if(!p) return null;
   const raw = p.ecr_tier!=null ? p.ecr_tier : (typeof ecrTierFor==='function' ? ecrTierFor(p) : null);
   const v = Number(raw);
-  return Number.isFinite(v) ? v : null;
+  return Number.isFinite(v) && v>0 ? v : null;
 }
 
 function ktcEcrRankVal(p){
   if(!p) return 9999;
   const raw = p.ecr!=null ? p.ecr : (typeof ecrFor==='function' ? ecrFor(p) : null);
   const v = Number(raw);
-  return Number.isFinite(v) ? v : 9999;
+  return Number.isFinite(v) && v>0 ? v : 9999;
 }
 
 function ktcTopTierCutoff(board){
   if(!Array.isArray(board) || !board.length) return KTC_TARGET_TIER_MAX;
   const tiers = board.map(ktcEcrTierVal).filter(v=>v!=null).sort((a,b)=>a-b);
   if(!tiers.length) return KTC_TARGET_TIER_MAX;
-  const p70 = tiers[Math.min(tiers.length-1, Math.floor(tiers.length*0.7))];
-  return ktcClamp(Math.round(p70), KTC_TARGET_TIER_MIN, KTC_TARGET_TIER_MAX);
+  // Use roughly the top half, then clamp to a strict top-tier window.
+  const p55 = tiers[Math.min(tiers.length-1, Math.floor(tiers.length*0.55))];
+  return ktcClamp(Math.round(p55), KTC_TARGET_TIER_MIN, KTC_TARGET_TIER_MAX);
 }
 
 function ktcRoundBudget(trio, level){
@@ -12709,6 +12878,9 @@ function ktcTrioDetail(trio, targetPos){
   const tdSpread = (Math.max(...tdVals)-Math.min(...tdVals));
   const tierVals = sorted.map(p=>ktcEcrTierVal(p)).filter(v=>v!=null);
   const tierSpread = tierVals.length>1 ? (Math.max(...tierVals)-Math.min(...tierVals)) : 8;
+  const tierAligned = (tierVals.length===3 && tierSpread<=0.0001);
+  const tierCutoff = ktcGameState.tierCutoff || KTC_TARGET_TIER_MAX;
+  const tierTopAligned = tierAligned && tierVals.length===3 && Math.max(...tierVals) <= tierCutoff;
   const vorVals = sorted.map(p=>+p.vor||0);
   const vorSpread = Math.max(...vorVals)-Math.min(...vorVals);
   const mixVals = sorted.map(p=>+p._ktcMix||0);
@@ -12719,7 +12891,6 @@ function ktcTrioDetail(trio, targetPos){
   const seenPenalty = ktcSeenPenalty(sorted);
   const trioSig = ktcTrioSig(sorted);
   const trioRepeatPenalty = ktcTrioRepeatPenalty(trioSig);
-  const tierCutoff = ktcGameState.tierCutoff || KTC_TARGET_TIER_MAX;
   const tierBonus = sorted.reduce((s,p)=>{
     const t = ktcEcrTierVal(p);
     if(t==null) return s - 4;
@@ -12747,14 +12918,23 @@ function ktcTrioDetail(trio, targetPos){
   // Keep rounds non-obvious: trio members should be reasonably close to each other.
   const closeRule = {
     fpts: samePos ? (fptsSpread <= Math.max(profile.fptsTarget + 7, 14)) : true,
-    rank: rankSpread <= 26,
-    adp: adps.length<2 || adpSpread <= (profile.adpTarget + 18),
-    ecr: ecrs.length<2 || ecrSpread <= 54,
+    rank: rankSpread <= 22,
+    adp: adps.length<2 || adpSpread <= 12,
+    ecr: ecrs.length<2 || ecrSpread <= 12,
     tier: tierVals.length<2 || tierSpread <= 3.2,
-    vor: vorSpread <= 62,
+    vor: vorSpread <= 18,
   };
   const closeHits = Object.values(closeRule).reduce((n,x)=>n + (x?1:0), 0);
   const closeOk = !!(closeRule.fpts && closeRule.rank && closeHits>=4);
+
+  // Signal-specific guardrails: if we label a trio as ADP/ECR/VOR, it must be tightly clustered
+  // on that exact signal using valid values for all 3 players.
+  const signalClose = {
+    ADP: adps.length===3 && adpSpread <= KTC_SIGNAL_MAX_SPREAD.ADP,
+    ECR: ecrs.length===3 && ecrSpread <= KTC_SIGNAL_MAX_SPREAD.ECR,
+    VOR: vorSpread <= KTC_SIGNAL_MAX_SPREAD.VOR,
+  };
+  const hasMixedSignal = signalClose.ADP || signalClose.ECR || signalClose.VOR || tierTopAligned;
 
   let score = 0;
   // Keep position coherence as a preference, but avoid hard-locking to all-same-position trios.
@@ -12778,14 +12958,14 @@ function ktcTrioDetail(trio, targetPos){
 
   // One-word reason tag for why this trio is clustered.
   const tagScores = {
-    ADP: adpFit*(1+profile.adpW) - (ktcTagSeenCount('ADP')*1.55),
-    ECR: ecrFit*(1+profile.ecrW) - (ktcTagSeenCount('ECR')*1.55),
+    ADP: signalClose.ADP ? (adpFit*(1+profile.adpW) - (ktcTagSeenCount('ADP')*1.55)) : -1e9,
+    ECR: signalClose.ECR ? (ecrFit*(1+profile.ecrW) - (ktcTagSeenCount('ECR')*1.55)) : -1e9,
     FPTS: samePos ? (fptsFit*(1+profile.fptsW) - (ktcTagSeenCount('FPTS')*1.55)) : -1e9,
-    TIER: tierFit*1.1 - (ktcTagSeenCount('TIER')*1.55),
-    VOR: vorFit*1.05 - (ktcTagSeenCount('VOR')*1.55),
+    TIER: tierTopAligned ? (tierFit*1.1 - (ktcTagSeenCount('TIER')*1.55)) : -1e9,
+    VOR: signalClose.VOR ? (vorFit*1.05 - (ktcTagSeenCount('VOR')*1.55)) : -1e9,
   };
   let tag=samePos?'FPTS':'ECR';
-  let best=-1e9;
+  let best=Number.NEGATIVE_INFINITY;
   Object.keys(tagScores).forEach(k=>{ if(tagScores[k]>best){ best=tagScores[k]; tag=k; } });
   const whyMap = {
     ADP:'adp-cluster',
@@ -12794,7 +12974,7 @@ function ktcTrioDetail(trio, targetPos){
     TIER:'tier-cluster',
     VOR:'vor-cluster',
   };
-  return {score, tag, why: whyMap[tag] || (samePos?'fpts-cluster':'ecr-cluster'), sig: trioSig, closeOk, closeHits, signalMode};
+  return {score, tag, why: whyMap[tag] || (samePos?'fpts-cluster':'ecr-cluster'), sig: trioSig, closeOk, closeHits, signalMode, hasMixedSignal};
 }
 
 function ktcTrioScore(trio, targetPos){
@@ -12829,15 +13009,27 @@ function ktcPickNextTrio(preBoard){
     stopKtcGame('Not enough projected players for Keep Trade Cut.');
     return false;
   }
-  const tierCutoff = ktcTopTierCutoff(board);
+  const tierKnownBoard = board.filter(p=>ktcEcrTierVal(p)!=null);
+  if(tierKnownBoard.length<3){
+    stopKtcGame('KTC needs FantasyPros tiers. Rebuild seed/load ECR tier data and try again.');
+    return false;
+  }
+  const tierCutoff = ktcTopTierCutoff(tierKnownBoard);
   ktcGameState.tierCutoff = tierCutoff;
-  const tierPool = board.filter(p=>{
+  const tierPool = tierKnownBoard.filter(p=>{
     const t = ktcEcrTierVal(p);
     return t!=null && t<=tierCutoff;
   });
-  const ecrPool = board.filter(p=>ktcEcrRankVal(p)<=170);
+  const tierPlayablePool = tierKnownBoard.filter(p=>{
+    const t = ktcEcrTierVal(p);
+    return t!=null && t<=Math.max(tierCutoff+2, KTC_TARGET_TIER_MAX+1);
+  });
+  const ecrPool = tierKnownBoard.filter(p=>ktcEcrRankVal(p)<=170);
   const targetPos = ktcPreferredPos();
-  const preferredBoard = tierPool.length>=18 ? tierPool : (ecrPool.length>=18 ? ecrPool : board);
+  const preferredBoard =
+    tierPool.length>=18 ? tierPool
+    : (tierPlayablePool.length>=18 ? tierPlayablePool
+    : (ecrPool.length>=18 ? ecrPool : tierPlayablePool.length ? tierPlayablePool : tierKnownBoard));
   const posPool = preferredBoard.filter(p=>p.pos===targetPos);
   const poolRaw = posPool.length>=10 ? posPool : preferredBoard;
   const pool = ktcBuildMixedBoard(poolRaw);
@@ -12875,6 +13067,7 @@ function ktcPickNextTrio(preBoard){
           bestAnyDetail = detail;
         }
         if(!detail.closeOk) continue;
+        if(detail.signalMode==='cross_pos' && !detail.hasMixedSignal) continue;
         if(detail.score>bestScore){
           bestScore = detail.score;
           best = trio;
@@ -12883,11 +13076,11 @@ function ktcPickNextTrio(preBoard){
       }
     }
   }
-  if(!best && bestAny){
+  if(!best && !requireMixed && bestAny){
     best = bestAny;
     bestDetail = bestAnyDetail;
   }
-  if(!best) best = ktcFallbackTrio(board, requireMixed);
+  if(!best) best = ktcFallbackTrio(preferredBoard, false);
   if(!bestDetail) bestDetail = ktcTrioDetail(best, targetPos);
   ktcGameState.trio = best;
   ktcGameState.lastSig = bestDetail.sig || ktcTrioSig(best);
@@ -13122,6 +13315,47 @@ function ktcSelectionBadge(key){
   return `<div class="ktc-role-badge ${KTC_ROLE_CLASS[i]}">${KTC_ROLE_LABELS[i]}</div>`;
 }
 
+function ktcFmtSignalVal(v, digits){
+  if(!Number.isFinite(+v)) return '—';
+  const n = +v;
+  if(Number.isInteger(n)) return String(n);
+  return n.toFixed(Number.isFinite(+digits) ? +digits : 1);
+}
+
+function ktcPlayerSignalBundle(p, trioTag){
+  const tag = String(trioTag||'').toUpperCase();
+  const tier = ktcEcrTierVal(p);
+  const ecr = ktcEcrRankVal(p);
+  const adp = ktcAdpVal(p);
+  const fpts = +p.fpts||0;
+  const vor = +p.vor||0;
+  const mix = Number.isFinite(+p._ktcMix) ? +p._ktcMix : null;
+
+  let signalRaw = null;
+  if(tag==='TIER') signalRaw = tier;
+  else if(tag==='ECR') signalRaw = ecr;
+  else if(tag==='ADP') signalRaw = adp;
+  else if(tag==='FPTS') signalRaw = fpts;
+  else if(tag==='VOR') signalRaw = vor;
+  else signalRaw = mix;
+
+  const signalVal = ktcFmtSignalVal(signalRaw, tag==='MIX' ? 3 : 1);
+  const facts = [
+    `TIER ${ktcFmtSignalVal(tier, 0)}`,
+    `ECR ${ktcFmtSignalVal(ecr, 0)}`,
+    `ADP ${ktcFmtSignalVal(adp, 1)}`,
+    `FPTS ${ktcFmtSignalVal(fpts, 1)}`,
+    `VOR ${ktcFmtSignalVal(vor, 1)}`,
+  ];
+  if(mix!=null) facts.push(`MIX ${ktcFmtSignalVal(mix, 3)}`);
+
+  return {
+    tag,
+    signalVal,
+    factsText: facts.join(' · '),
+  };
+}
+
 function ktcSubmitSelection(){
   if(!ktcGameState.active || ktcGameState.selection.length!==3) return;
   const trio = ktcGameState.trio.slice();
@@ -13186,9 +13420,11 @@ function ktcSkipTrio(){
   renderKtcOverlay();
 }
 
-function ktcCardHtml(p){
+function ktcCardHtml(p, trioTag){
   const key = ktcPlayerKey(p);
   const lines = ktcScoreSummary(p);
+  const showSignalDebug = (typeof TC_DEV_MODE!=='undefined' && !!TC_DEV_MODE);
+  const sig = showSignalDebug ? ktcPlayerSignalBundle(p, trioTag) : null;
   const color = teamColor(p.team||'');
   const shade = (_hexLum(color)>0.62) ? _darken(color, 0.38) : color;
   const sel = ktcSelectionIndex(key);
@@ -13199,6 +13435,10 @@ function ktcCardHtml(p){
     <div class="ktc-hs-wrap clickable-player" onclick="event.stopPropagation();${cardOpen}">${imgTag(hsPack(p), 'ktc-hs')}</div>
     <div class="ktc-name clickable-player" onclick="event.stopPropagation();${cardOpen}">${escHtml(p.name||'')}</div>
     <div class="ktc-meta"><span class="pos-badge pos-${escAttr(p.pos||'WR')}">${escHtml(p.pos||'')}</span> ${escHtml(p.team||'')} · rank #${p._ktcRank||'—'}</div>
+    ${showSignalDebug ? `<div class="ktc-signalvals">
+      <div class="ktc-signal-main">Signal ${escHtml(sig.tag||'—')}: ${escHtml(sig.signalVal)}</div>
+      <div class="ktc-signal-facts">${escHtml(sig.factsText)}</div>
+    </div>` : ''}
     <div class="ktc-stats">${lines.map(t=>`<div>${escHtml(t)}</div>`).join('')}</div>
   </button>`;
 }
@@ -13212,12 +13452,13 @@ function renderKtcOverlay(){
   if(!ktcGameState.trio || ktcGameState.trio.length!==3){
     if(!ktcPickNextTrio()) return;
   }
+  const trioTag = String(ktcGameState.trioTag||'FPTS');
   const submitOn = ktcGameState.selection.length===3;
-  const cards = ktcGameState.trio.map(ktcCardHtml).join('');
+  const cards = ktcGameState.trio.map(p=>ktcCardHtml(p, trioTag)).join('');
   const rounds = ktcGameState.rounds;
   const intensity = ktcIntensityKey();
   const cfg = ktcIntensityCfg(intensity);
-  const trioTag = String(ktcGameState.trioTag||'FPTS');
+  const showSignalDebug = (typeof TC_DEV_MODE!=='undefined' && !!TC_DEV_MODE);
   const trioMode = ktcSignalMode(ktcGameState.trio||[]);
   const modeHint = trioMode==='same_pos'
     ? 'Same-position rounds may use projection/FPTS proximity.'
@@ -13232,7 +13473,7 @@ function renderKtcOverlay(){
         <div class="ktc-title">Keep Trade Cut</div>
         <button class="ktc-x" onclick="stopKtcGame()" aria-label="Close">✕</button>
       </div>
-      <div class="ktc-sub">Rank the trio <b>1</b>, <b>2</b>, <b>3</b> as <b>KEEP</b>, <b>TRADE</b>, <b>CUT</b>. Rankings adjust after each submit. <span class="ktc-signal">signal <b class="ktc-signal-tag">${escHtml(trioTag)}</b></span> <span class="ktc-mode-hint">${escHtml(modeHint)}</span></div>
+      <div class="ktc-sub">Rank the trio <b>1</b>, <b>2</b>, <b>3</b> as <b>KEEP</b>, <b>TRADE</b>, <b>CUT</b>. Rankings adjust after each submit. ${showSignalDebug ? `<span class="ktc-signal">signal <b class="ktc-signal-tag">${escHtml(trioTag)}</b></span>` : ''} <span class="ktc-mode-hint">${escHtml(modeHint)}</span></div>
       <div class="ktc-intensity-row"><span>Nudge intensity</span><div class="ktc-intensity">${intensityOptions}</div></div>
       <div class="ktc-cards">${cards}</div>
       <div class="ktc-actions">
@@ -14195,7 +14436,9 @@ function tsPreviewTeamRankings(){
       <div class="empty-title">No projections yet</div><div class="empty-body">Set at least one team's stats to see rankings.</div></div></div>`;
   }
   all.sort((a,b)=>b.fpts-a.fpts);
+  const rankIsRookie = (p)=>!!(p && (p.is_rookie===true || Number(p.years_exp)===0));
   let view=rankPosFilter==='ALL'?all
+    :rankPosFilter==='ROOKIES'?all.filter(rankIsRookie)
     :rankPosFilter==='FLEX'?all.filter(p=>p.pos!=='QB')
     :all.filter(p=>p.pos===rankPosFilter);
   const rows=view.slice(0,28).map((p,i)=>`<tr>
@@ -14971,6 +15214,7 @@ function buildSeedEntry(pid, row, meta, isProjection){
   const ad = row.adp || {};
   const entry={
     name, slug:null, player_id:pid, pos, team, headshot:null, age:meta.age||null,
+    years_exp:(meta.years_exp!=null?meta.years_exp:null),
     passing_yards:st.passing_yards||0, passing_touchdowns:st.passing_touchdowns||0,
     passing_tds:st.passing_touchdowns||0,
     passing_attempts:st.passing_attempts||0, passing_completions:st.passing_completions||0,

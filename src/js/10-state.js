@@ -34,6 +34,8 @@ let leagueShape = null;   // {teams, lineup:[slots], bench}
 let rankPosFilter = 'ALL';
 let rankScope = 'all';   // 'all' = full league rankings, 'team' = current team only
 let rankAdvanced = false; // rankings "Adv. Metrics" (SumerSports) view — swaps stat columns for advanced metrics
+let rankingsSearchOpen = false;
+let rankingsSearchQuery = '';
 // Per-position minimum-volume filter for the Adv. Metrics view (0 = no filter). Rate stats
 // like YPRR / EPADrop are noisy on tiny samples, so a floor keeps the board meaningful.
 let sumerMin = { QB:0, WRTE:0, RB:0 };   // QB→min Plays, WRTE→min Routes Run, RB→min Rushes

@@ -56,6 +56,8 @@
   .share-stats{flex-wrap:wrap;gap:6px 10px;}
   .rank-table{font-size:10px;}
   .format-btn,.pos-filter-btn{padding:5px 8px;font-size:10px;}
+  .rank-search-wrap{width:100%;max-width:100%;}
+  .rank-search-input{min-width:0;max-width:none;width:100%;}
   .discrepancy-note,.vacated-note{font-size:10.5px;}
   /* Season bar: the tabs are the point — the label and the data badge are not worth a
      third of the row on a 390px screen. */

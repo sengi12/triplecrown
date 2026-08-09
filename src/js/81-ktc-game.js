@@ -9,8 +9,14 @@ const KTC_MIN_GAP = 0.45; // target fpts gap between KEEP>TRADE and TRADE>CUT
 const KTC_SOFT_CORRECTION = 0.42; // balanced per-round fraction of ordering deficit to correct
 const KTC_MIN_ROUND_BUDGET = 1.0; // balanced minimum total fpts movement budget per player/round
 const KTC_MAX_ROUND_BUDGET = 2.1; // hard ceiling to avoid drastic projection swings
-const KTC_TARGET_TIER_MIN = 8;
-const KTC_TARGET_TIER_MAX = 9;
+// Lower numeric tier is better (Tier 1 is elite). Keep KTC mostly in top tiers.
+const KTC_TARGET_TIER_MIN = 4;
+const KTC_TARGET_TIER_MAX = 6;
+const KTC_SIGNAL_MAX_SPREAD = {
+  ADP: 10,
+  ECR: 10,
+  VOR: 10,
+};
 const KTC_POS_CYCLE = ['QB', 'RB', 'WR', 'TE'];
 const KTC_INTENSITY = {
   conservative: {
@@ -101,22 +107,23 @@ function ktcEcrTierVal(p){
   if(!p) return null;
   const raw = p.ecr_tier!=null ? p.ecr_tier : (typeof ecrTierFor==='function' ? ecrTierFor(p) : null);
   const v = Number(raw);
-  return Number.isFinite(v) ? v : null;
+  return Number.isFinite(v) && v>0 ? v : null;
 }
 
 function ktcEcrRankVal(p){
   if(!p) return 9999;
   const raw = p.ecr!=null ? p.ecr : (typeof ecrFor==='function' ? ecrFor(p) : null);
   const v = Number(raw);
-  return Number.isFinite(v) ? v : 9999;
+  return Number.isFinite(v) && v>0 ? v : 9999;
 }
 
 function ktcTopTierCutoff(board){
   if(!Array.isArray(board) || !board.length) return KTC_TARGET_TIER_MAX;
   const tiers = board.map(ktcEcrTierVal).filter(v=>v!=null).sort((a,b)=>a-b);
   if(!tiers.length) return KTC_TARGET_TIER_MAX;
-  const p70 = tiers[Math.min(tiers.length-1, Math.floor(tiers.length*0.7))];
-  return ktcClamp(Math.round(p70), KTC_TARGET_TIER_MIN, KTC_TARGET_TIER_MAX);
+  // Use roughly the top half, then clamp to a strict top-tier window.
+  const p55 = tiers[Math.min(tiers.length-1, Math.floor(tiers.length*0.55))];
+  return ktcClamp(Math.round(p55), KTC_TARGET_TIER_MIN, KTC_TARGET_TIER_MAX);
 }
 
 function ktcRoundBudget(trio, level){
@@ -316,6 +323,9 @@ function ktcTrioDetail(trio, targetPos){
   const tdSpread = (Math.max(...tdVals)-Math.min(...tdVals));
   const tierVals = sorted.map(p=>ktcEcrTierVal(p)).filter(v=>v!=null);
   const tierSpread = tierVals.length>1 ? (Math.max(...tierVals)-Math.min(...tierVals)) : 8;
+  const tierAligned = (tierVals.length===3 && tierSpread<=0.0001);
+  const tierCutoff = ktcGameState.tierCutoff || KTC_TARGET_TIER_MAX;
+  const tierTopAligned = tierAligned && tierVals.length===3 && Math.max(...tierVals) <= tierCutoff;
   const vorVals = sorted.map(p=>+p.vor||0);
   const vorSpread = Math.max(...vorVals)-Math.min(...vorVals);
   const mixVals = sorted.map(p=>+p._ktcMix||0);
@@ -326,7 +336,6 @@ function ktcTrioDetail(trio, targetPos){
   const seenPenalty = ktcSeenPenalty(sorted);
   const trioSig = ktcTrioSig(sorted);
   const trioRepeatPenalty = ktcTrioRepeatPenalty(trioSig);
-  const tierCutoff = ktcGameState.tierCutoff || KTC_TARGET_TIER_MAX;
   const tierBonus = sorted.reduce((s,p)=>{
     const t = ktcEcrTierVal(p);
     if(t==null) return s - 4;
@@ -354,14 +363,23 @@ function ktcTrioDetail(trio, targetPos){
   // Keep rounds non-obvious: trio members should be reasonably close to each other.
   const closeRule = {
     fpts: samePos ? (fptsSpread <= Math.max(profile.fptsTarget + 7, 14)) : true,
-    rank: rankSpread <= 26,
-    adp: adps.length<2 || adpSpread <= (profile.adpTarget + 18),
-    ecr: ecrs.length<2 || ecrSpread <= 54,
+    rank: rankSpread <= 22,
+    adp: adps.length<2 || adpSpread <= 12,
+    ecr: ecrs.length<2 || ecrSpread <= 12,
     tier: tierVals.length<2 || tierSpread <= 3.2,
-    vor: vorSpread <= 62,
+    vor: vorSpread <= 18,
   };
   const closeHits = Object.values(closeRule).reduce((n,x)=>n + (x?1:0), 0);
   const closeOk = !!(closeRule.fpts && closeRule.rank && closeHits>=4);
+
+  // Signal-specific guardrails: if we label a trio as ADP/ECR/VOR, it must be tightly clustered
+  // on that exact signal using valid values for all 3 players.
+  const signalClose = {
+    ADP: adps.length===3 && adpSpread <= KTC_SIGNAL_MAX_SPREAD.ADP,
+    ECR: ecrs.length===3 && ecrSpread <= KTC_SIGNAL_MAX_SPREAD.ECR,
+    VOR: vorSpread <= KTC_SIGNAL_MAX_SPREAD.VOR,
+  };
+  const hasMixedSignal = signalClose.ADP || signalClose.ECR || signalClose.VOR || tierTopAligned;
 
   let score = 0;
   // Keep position coherence as a preference, but avoid hard-locking to all-same-position trios.
@@ -385,14 +403,14 @@ function ktcTrioDetail(trio, targetPos){
 
   // One-word reason tag for why this trio is clustered.
   const tagScores = {
-    ADP: adpFit*(1+profile.adpW) - (ktcTagSeenCount('ADP')*1.55),
-    ECR: ecrFit*(1+profile.ecrW) - (ktcTagSeenCount('ECR')*1.55),
+    ADP: signalClose.ADP ? (adpFit*(1+profile.adpW) - (ktcTagSeenCount('ADP')*1.55)) : -1e9,
+    ECR: signalClose.ECR ? (ecrFit*(1+profile.ecrW) - (ktcTagSeenCount('ECR')*1.55)) : -1e9,
     FPTS: samePos ? (fptsFit*(1+profile.fptsW) - (ktcTagSeenCount('FPTS')*1.55)) : -1e9,
-    TIER: tierFit*1.1 - (ktcTagSeenCount('TIER')*1.55),
-    VOR: vorFit*1.05 - (ktcTagSeenCount('VOR')*1.55),
+    TIER: tierTopAligned ? (tierFit*1.1 - (ktcTagSeenCount('TIER')*1.55)) : -1e9,
+    VOR: signalClose.VOR ? (vorFit*1.05 - (ktcTagSeenCount('VOR')*1.55)) : -1e9,
   };
   let tag=samePos?'FPTS':'ECR';
-  let best=-1e9;
+  let best=Number.NEGATIVE_INFINITY;
   Object.keys(tagScores).forEach(k=>{ if(tagScores[k]>best){ best=tagScores[k]; tag=k; } });
   const whyMap = {
     ADP:'adp-cluster',
@@ -401,7 +419,7 @@ function ktcTrioDetail(trio, targetPos){
     TIER:'tier-cluster',
     VOR:'vor-cluster',
   };
-  return {score, tag, why: whyMap[tag] || (samePos?'fpts-cluster':'ecr-cluster'), sig: trioSig, closeOk, closeHits, signalMode};
+  return {score, tag, why: whyMap[tag] || (samePos?'fpts-cluster':'ecr-cluster'), sig: trioSig, closeOk, closeHits, signalMode, hasMixedSignal};
 }
 
 function ktcTrioScore(trio, targetPos){
@@ -436,15 +454,27 @@ function ktcPickNextTrio(preBoard){
     stopKtcGame('Not enough projected players for Keep Trade Cut.');
     return false;
   }
-  const tierCutoff = ktcTopTierCutoff(board);
+  const tierKnownBoard = board.filter(p=>ktcEcrTierVal(p)!=null);
+  if(tierKnownBoard.length<3){
+    stopKtcGame('KTC needs FantasyPros tiers. Rebuild seed/load ECR tier data and try again.');
+    return false;
+  }
+  const tierCutoff = ktcTopTierCutoff(tierKnownBoard);
   ktcGameState.tierCutoff = tierCutoff;
-  const tierPool = board.filter(p=>{
+  const tierPool = tierKnownBoard.filter(p=>{
     const t = ktcEcrTierVal(p);
     return t!=null && t<=tierCutoff;
   });
-  const ecrPool = board.filter(p=>ktcEcrRankVal(p)<=170);
+  const tierPlayablePool = tierKnownBoard.filter(p=>{
+    const t = ktcEcrTierVal(p);
+    return t!=null && t<=Math.max(tierCutoff+2, KTC_TARGET_TIER_MAX+1);
+  });
+  const ecrPool = tierKnownBoard.filter(p=>ktcEcrRankVal(p)<=170);
   const targetPos = ktcPreferredPos();
-  const preferredBoard = tierPool.length>=18 ? tierPool : (ecrPool.length>=18 ? ecrPool : board);
+  const preferredBoard =
+    tierPool.length>=18 ? tierPool
+    : (tierPlayablePool.length>=18 ? tierPlayablePool
+    : (ecrPool.length>=18 ? ecrPool : tierPlayablePool.length ? tierPlayablePool : tierKnownBoard));
   const posPool = preferredBoard.filter(p=>p.pos===targetPos);
   const poolRaw = posPool.length>=10 ? posPool : preferredBoard;
   const pool = ktcBuildMixedBoard(poolRaw);
@@ -482,6 +512,7 @@ function ktcPickNextTrio(preBoard){
           bestAnyDetail = detail;
         }
         if(!detail.closeOk) continue;
+        if(detail.signalMode==='cross_pos' && !detail.hasMixedSignal) continue;
         if(detail.score>bestScore){
           bestScore = detail.score;
           best = trio;
@@ -490,11 +521,11 @@ function ktcPickNextTrio(preBoard){
       }
     }
   }
-  if(!best && bestAny){
+  if(!best && !requireMixed && bestAny){
     best = bestAny;
     bestDetail = bestAnyDetail;
   }
-  if(!best) best = ktcFallbackTrio(board, requireMixed);
+  if(!best) best = ktcFallbackTrio(preferredBoard, false);
   if(!bestDetail) bestDetail = ktcTrioDetail(best, targetPos);
   ktcGameState.trio = best;
   ktcGameState.lastSig = bestDetail.sig || ktcTrioSig(best);
@@ -729,6 +760,47 @@ function ktcSelectionBadge(key){
   return `<div class="ktc-role-badge ${KTC_ROLE_CLASS[i]}">${KTC_ROLE_LABELS[i]}</div>`;
 }
 
+function ktcFmtSignalVal(v, digits){
+  if(!Number.isFinite(+v)) return '—';
+  const n = +v;
+  if(Number.isInteger(n)) return String(n);
+  return n.toFixed(Number.isFinite(+digits) ? +digits : 1);
+}
+
+function ktcPlayerSignalBundle(p, trioTag){
+  const tag = String(trioTag||'').toUpperCase();
+  const tier = ktcEcrTierVal(p);
+  const ecr = ktcEcrRankVal(p);
+  const adp = ktcAdpVal(p);
+  const fpts = +p.fpts||0;
+  const vor = +p.vor||0;
+  const mix = Number.isFinite(+p._ktcMix) ? +p._ktcMix : null;
+
+  let signalRaw = null;
+  if(tag==='TIER') signalRaw = tier;
+  else if(tag==='ECR') signalRaw = ecr;
+  else if(tag==='ADP') signalRaw = adp;
+  else if(tag==='FPTS') signalRaw = fpts;
+  else if(tag==='VOR') signalRaw = vor;
+  else signalRaw = mix;
+
+  const signalVal = ktcFmtSignalVal(signalRaw, tag==='MIX' ? 3 : 1);
+  const facts = [
+    `TIER ${ktcFmtSignalVal(tier, 0)}`,
+    `ECR ${ktcFmtSignalVal(ecr, 0)}`,
+    `ADP ${ktcFmtSignalVal(adp, 1)}`,
+    `FPTS ${ktcFmtSignalVal(fpts, 1)}`,
+    `VOR ${ktcFmtSignalVal(vor, 1)}`,
+  ];
+  if(mix!=null) facts.push(`MIX ${ktcFmtSignalVal(mix, 3)}`);
+
+  return {
+    tag,
+    signalVal,
+    factsText: facts.join(' · '),
+  };
+}
+
 function ktcSubmitSelection(){
   if(!ktcGameState.active || ktcGameState.selection.length!==3) return;
   const trio = ktcGameState.trio.slice();
@@ -793,9 +865,11 @@ function ktcSkipTrio(){
   renderKtcOverlay();
 }
 
-function ktcCardHtml(p){
+function ktcCardHtml(p, trioTag){
   const key = ktcPlayerKey(p);
   const lines = ktcScoreSummary(p);
+  const showSignalDebug = (typeof TC_DEV_MODE!=='undefined' && !!TC_DEV_MODE);
+  const sig = showSignalDebug ? ktcPlayerSignalBundle(p, trioTag) : null;
   const color = teamColor(p.team||'');
   const shade = (_hexLum(color)>0.62) ? _darken(color, 0.38) : color;
   const sel = ktcSelectionIndex(key);
@@ -806,6 +880,10 @@ function ktcCardHtml(p){
     <div class="ktc-hs-wrap clickable-player" onclick="event.stopPropagation();${cardOpen}">${imgTag(hsPack(p), 'ktc-hs')}</div>
     <div class="ktc-name clickable-player" onclick="event.stopPropagation();${cardOpen}">${escHtml(p.name||'')}</div>
     <div class="ktc-meta"><span class="pos-badge pos-${escAttr(p.pos||'WR')}">${escHtml(p.pos||'')}</span> ${escHtml(p.team||'')} · rank #${p._ktcRank||'—'}</div>
+    ${showSignalDebug ? `<div class="ktc-signalvals">
+      <div class="ktc-signal-main">Signal ${escHtml(sig.tag||'—')}: ${escHtml(sig.signalVal)}</div>
+      <div class="ktc-signal-facts">${escHtml(sig.factsText)}</div>
+    </div>` : ''}
     <div class="ktc-stats">${lines.map(t=>`<div>${escHtml(t)}</div>`).join('')}</div>
   </button>`;
 }
@@ -819,12 +897,13 @@ function renderKtcOverlay(){
   if(!ktcGameState.trio || ktcGameState.trio.length!==3){
     if(!ktcPickNextTrio()) return;
   }
+  const trioTag = String(ktcGameState.trioTag||'FPTS');
   const submitOn = ktcGameState.selection.length===3;
-  const cards = ktcGameState.trio.map(ktcCardHtml).join('');
+  const cards = ktcGameState.trio.map(p=>ktcCardHtml(p, trioTag)).join('');
   const rounds = ktcGameState.rounds;
   const intensity = ktcIntensityKey();
   const cfg = ktcIntensityCfg(intensity);
-  const trioTag = String(ktcGameState.trioTag||'FPTS');
+  const showSignalDebug = (typeof TC_DEV_MODE!=='undefined' && !!TC_DEV_MODE);
   const trioMode = ktcSignalMode(ktcGameState.trio||[]);
   const modeHint = trioMode==='same_pos'
     ? 'Same-position rounds may use projection/FPTS proximity.'
@@ -839,7 +918,7 @@ function renderKtcOverlay(){
         <div class="ktc-title">Keep Trade Cut</div>
         <button class="ktc-x" onclick="stopKtcGame()" aria-label="Close">✕</button>
       </div>
-      <div class="ktc-sub">Rank the trio <b>1</b>, <b>2</b>, <b>3</b> as <b>KEEP</b>, <b>TRADE</b>, <b>CUT</b>. Rankings adjust after each submit. <span class="ktc-signal">signal <b class="ktc-signal-tag">${escHtml(trioTag)}</b></span> <span class="ktc-mode-hint">${escHtml(modeHint)}</span></div>
+      <div class="ktc-sub">Rank the trio <b>1</b>, <b>2</b>, <b>3</b> as <b>KEEP</b>, <b>TRADE</b>, <b>CUT</b>. Rankings adjust after each submit. ${showSignalDebug ? `<span class="ktc-signal">signal <b class="ktc-signal-tag">${escHtml(trioTag)}</b></span>` : ''} <span class="ktc-mode-hint">${escHtml(modeHint)}</span></div>
       <div class="ktc-intensity-row"><span>Nudge intensity</span><div class="ktc-intensity">${intensityOptions}</div></div>
       <div class="ktc-cards">${cards}</div>
       <div class="ktc-actions">

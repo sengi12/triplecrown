@@ -45,8 +45,18 @@ function ecrEntry(p){
   const tbl=ecrTableFor(rankFormat);
   return tbl[ecrNormName(p.name)] || null;
 }
-function ecrFor(p){ const e=ecrEntry(p); return e&&e.rank_ecr!=null ? e.rank_ecr : null; }
-function ecrTierFor(p){ const e=ecrEntry(p); return e&&e.tier!=null ? e.tier : null; }
+function ecrFor(p){
+  const e=ecrEntry(p);
+  if(!(e&&e.rank_ecr!=null)) return null;
+  const v = Number(e.rank_ecr);
+  return Number.isFinite(v) && v>0 ? v : null;
+}
+function ecrTierFor(p){
+  const e=ecrEntry(p);
+  if(!(e&&e.tier!=null)) return null;
+  const v = Number(e.tier);
+  return Number.isFinite(v) && v>0 ? v : null;
+}
 function hasECR(){ const t=ecrTableFor(rankFormat); return t && Object.keys(t).length>0; }
 
 // ── SumerSports advanced stats (rankings "Advanced" toggle) ──────────────────
@@ -220,6 +230,20 @@ function rankingAgeFromSleeper(p, baseEntry){
   if(c && c.age!=null && !Number.isNaN(Number(c.age))) return Number(c.age);
   return null;
 }
+
+function rankingYearsExpFromSleeper(p, baseEntry){
+  let pid = p && p.player_id ? String(p.player_id) : '';
+  if(!pid && typeof resolvePlayerId==='function'){
+    pid = resolvePlayerId(p.name, p.pos) || resolvePlayerId(p.name) || '';
+  }
+  const sp = (pid && typeof sleeperPlayers!=='undefined' && sleeperPlayers)
+    ? sleeperPlayers[pid]
+    : null;
+  if(sp && sp.years_exp!=null && !Number.isNaN(Number(sp.years_exp))) return Number(sp.years_exp);
+  if(baseEntry && baseEntry.years_exp!=null && !Number.isNaN(Number(baseEntry.years_exp))) return Number(baseEntry.years_exp);
+  return null;
+}
+
 function hasContracts(){ return CONTRACTS && Object.keys(CONTRACTS).length>0; }
 // Format an APY (annual salary in dollars) compactly, e.g. 40250000 → "$40.3M".
 function fmtAPY(v){
@@ -383,6 +407,8 @@ function buildPlayerList(){
     p.adp_2qb = be && be.adp_2qb!=null ? be.adp_2qb : 999;
     const c=contractEntry(p);
     p.age = rankingAgeFromSleeper(p, be);
+    p.years_exp = rankingYearsExpFromSleeper(p, be);
+    p.is_rookie = (p.years_exp===0);
     p.apy = c && c.apy!=null ? c.apy : null;
     p.fa  = c && c.fa!=null ? c.fa : null;
   });

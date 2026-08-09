@@ -972,6 +972,21 @@ def adv_weekly_team(season):
     out["def_conv_allowed"] = plays.groupby(["defteam", "week"])["conv"].sum(min_count=1).reindex(idx).fillna(0)
     out["def_conv_obs"] = plays.groupby(["defteam", "week"])["conv_obs"].sum(min_count=1).reindex(idx).fillna(0)
 
+    # Pass/run split EPA numerators + denominators for Power Score.
+    is_pass = (plays["play_type"] == "pass")
+    is_run = (plays["play_type"] == "run")
+    epa_vals = pd.to_numeric(plays["epa"], errors="coerce").fillna(0)
+
+    out["off_pass_plays"] = is_pass.groupby([plays["posteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["off_pass_epa"] = epa_vals.where(is_pass, 0).groupby([plays["posteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["off_run_plays"] = is_run.groupby([plays["posteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["off_run_epa"] = epa_vals.where(is_run, 0).groupby([plays["posteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+
+    out["def_pass_plays"] = is_pass.groupby([plays["defteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["def_pass_epa_allowed"] = epa_vals.where(is_pass, 0).groupby([plays["defteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["def_run_plays"] = is_run.groupby([plays["defteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["def_run_epa_allowed"] = epa_vals.where(is_run, 0).groupby([plays["defteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+
     dr = pbp.dropna(subset=["fixed_drive"]).copy()
     dr["dpts"] = dr["fixed_drive_result"].map(_drive_points)
     d_off = dr.groupby(["posteam", "week", "game_id", "fixed_drive"])["dpts"].first().reset_index()
@@ -1203,11 +1218,11 @@ def adv_weekly_team(season):
     out["pace_total_game_plays"] = tp.groupby(["posteam", "week"])["gp"].sum(min_count=1).reindex(idx).fillna(0)
 
     cols = [
-        "off_plays", "off_yards", "off_epa", "off_explosive", "off_conv", "off_conv_obs", "off_drive_pts", "off_drive_ct",
+        "off_plays", "off_yards", "off_epa", "off_pass_plays", "off_pass_epa", "off_run_plays", "off_run_epa", "off_explosive", "off_conv", "off_conv_obs", "off_drive_pts", "off_drive_ct",
         "off_drive_td_ct", "off_drive_fg_ct", "off_drive_punt_ct", "off_drive_turnover_ct", "off_drive_tod_ct", "off_drive_safety_ct", "off_drive_end_half_ct",
         "off_drive_three_out_ct", "off_drive_kill_ct", "off_drive_rz_ct", "off_drive_rz_td_ct", "off_drive_g10_ct", "off_drive_g10_td_ct",
         "off_drive_pass_td_ct", "off_drive_rush_td_ct", "off_fp_std", "off_fp_half", "off_fp_ppr", "off_targets", "off_receptions", "off_pass_td", "off_rush_td",
-        "def_plays", "def_yards", "def_epa_allowed", "def_explosive_allowed", "def_conv_allowed", "def_conv_obs", "def_drive_pts_allowed", "def_drive_ct",
+        "def_plays", "def_yards", "def_epa_allowed", "def_pass_plays", "def_pass_epa_allowed", "def_run_plays", "def_run_epa_allowed", "def_explosive_allowed", "def_conv_allowed", "def_conv_obs", "def_drive_pts_allowed", "def_drive_ct",
         "tend_plays", "tend_shotgun", "tend_nohuddle", "db", "air_sum", "air_att", "tend_motion", "tend_play_action", "tend_rpo", "tend_screen", "tend_trick", "tend_drop", "tend_catchable",
         "pace_snaps", "pace_neutral_db", "pace_neutral_snaps", "pace_sec_sum", "pace_sec_n", "pace_games", "pace_total_game_plays",
         "cov_obs", "cov_man", "cov_zone", "cov_shell_obs", "cov_mofc", "cov_mofo", "cov_c1", "cov_c2", "cov_c3",

@@ -30,6 +30,8 @@ function saveSession(){
         scoringSettings: scoringSettings,
         rankFormat: rankFormat,
         scoringAxis: scoringAxis,
+        rankingsSearchOpen: rankingsSearchOpen,
+        rankingsSearchQuery: rankingsSearchQuery,
         scoringPanelOpen: scoringPanelOpen,
         leagueSnapshot: leagueSnapshot,
         undoStacks: undoStacks,
@@ -65,6 +67,8 @@ function restoreSession(){
   // Restore the scoring axis if saved; otherwise derive it from the restored rankFormat so
   // older sessions (pre-scoringAxis) still light up the correct scoring button.
   scoringAxis = p.scoringAxis || scoringAxisOf(rankFormat);
+  if(typeof p.rankingsSearchOpen==='boolean') rankingsSearchOpen = p.rankingsSearchOpen;
+  if(typeof p.rankingsSearchQuery==='string') rankingsSearchQuery = p.rankingsSearchQuery;
   if(typeof p.scoringPanelOpen==='boolean') scoringPanelOpen = p.scoringPanelOpen;
   if(p.leagueSnapshot && p.leagueSnapshot.teams) leagueSnapshot = p.leagueSnapshot;
   if(p.playerNotes && typeof p.playerNotes==='object') playerNotes = p.playerNotes;

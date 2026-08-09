@@ -713,28 +713,86 @@ function _advProjOlBadge(team, which){
 }
 
 function _advTeamPowerScore(team, src){
-  const specs = [
-    { table:'offense', col:'EPA/Play', label:'Off EPA/Play' },
-    { table:'offense', col:'Points Per Drive', label:'Off Points/Drive' },
-    { table:'defense', col:'EPA/Play', label:'Def EPA/Play' },
-    { table:'defense', col:'Points Per Drive', label:'Def Points/Drive' },
-    { table:'offensive_line_pass', col:'Overall Score', label:'OL Pass Score' },
-    { table:'offensive_line_run', col:'Overall Score', label:'OL Run Score' },
+  const season = String(advTeamSeason());
+  const pack = (NFLVERSE && NFLVERSE[season] && NFLVERSE[season].adv_weekly) || null;
+  if(!pack || !pack.teams || !Array.isArray(pack.weeks) || !Array.isArray(pack.cols)) return null;
+
+  const requiredCols = [
+    'off_pass_epa', 'off_pass_plays',
+    'off_run_epa', 'off_run_plays',
+    'def_pass_epa_allowed', 'def_pass_plays',
+    'def_run_epa_allowed', 'def_run_plays',
+    'off_drive_pts', 'def_drive_pts_allowed', 'pace_games',
   ];
-  const tables = {};
+  const colIdx = {};
+  requiredCols.forEach(c=>{ colIdx[c] = pack.cols.indexOf(c); });
+  if(requiredCols.some(c=>colIdx[c] < 0)) return null;
+
+  const [lo, hi] = _advGetWeekRange(team);
+  const weekIdx = [];
+  for(let i=0;i<pack.weeks.length;i++){
+    const w = Number(pack.weeks[i]);
+    if(Number.isFinite(w) && w>=lo && w<=hi) weekIdx.push(i);
+  }
+  if(!weekIdx.length) return null;
+
+  const specs = [
+    { key:'off_pass_epa_pp', label:'Off EPA/Play (Pass)', lowerBetter:false },
+    { key:'off_run_epa_pp', label:'Off EPA/Play (Run)', lowerBetter:false },
+    { key:'def_pass_epa_allowed_pp', label:'Def EPA/Play Allowed (Pass)', lowerBetter:true },
+    { key:'def_run_epa_allowed_pp', label:'Def EPA/Play Allowed (Run)', lowerBetter:true },
+    { key:'points_scored_pg', label:'Points Scored', lowerBetter:false },
+    { key:'points_allowed_pg', label:'Points Allowed', lowerBetter:true },
+  ];
+
+  const metricsByTeam = {};
+  for(const tm of Object.keys(pack.teams)){
+    const rows = Array.isArray(pack.teams[tm]) ? pack.teams[tm] : [];
+    const sum = {
+      offPassEpa:0, offPassPlays:0,
+      offRunEpa:0, offRunPlays:0,
+      defPassEpa:0, defPassPlays:0,
+      defRunEpa:0, defRunPlays:0,
+      offPts:0, defPts:0, games:0,
+    };
+    weekIdx.forEach(ix=>{
+      const r = rows[ix] || [];
+      sum.offPassEpa += Number(r[colIdx.off_pass_epa] || 0);
+      sum.offPassPlays += Number(r[colIdx.off_pass_plays] || 0);
+      sum.offRunEpa += Number(r[colIdx.off_run_epa] || 0);
+      sum.offRunPlays += Number(r[colIdx.off_run_plays] || 0);
+      sum.defPassEpa += Number(r[colIdx.def_pass_epa_allowed] || 0);
+      sum.defPassPlays += Number(r[colIdx.def_pass_plays] || 0);
+      sum.defRunEpa += Number(r[colIdx.def_run_epa_allowed] || 0);
+      sum.defRunPlays += Number(r[colIdx.def_run_plays] || 0);
+      sum.offPts += Number(r[colIdx.off_drive_pts] || 0);
+      sum.defPts += Number(r[colIdx.def_drive_pts_allowed] || 0);
+      sum.games += Number(r[colIdx.pace_games] || 0);
+    });
+    const games = sum.games > 0 ? sum.games : weekIdx.length;
+    metricsByTeam[tm] = {
+      off_pass_epa_pp: sum.offPassPlays>0 ? (sum.offPassEpa / sum.offPassPlays) : null,
+      off_run_epa_pp: sum.offRunPlays>0 ? (sum.offRunEpa / sum.offRunPlays) : null,
+      def_pass_epa_allowed_pp: sum.defPassPlays>0 ? (sum.defPassEpa / sum.defPassPlays) : null,
+      def_run_epa_allowed_pp: sum.defRunPlays>0 ? (sum.defRunEpa / sum.defRunPlays) : null,
+      points_scored_pg: games>0 ? (sum.offPts / games) : null,
+      points_allowed_pg: games>0 ? (sum.defPts / games) : null,
+    };
+  }
+
+  const rankMaps = {};
   specs.forEach(s=>{
-    const base = src && src[s.table];
-    if(!base) return;
-    tables[s.table] = _advTableForRange(s.table, base, team);
+    const vals = {};
+    Object.keys(metricsByTeam).forEach(tm=>{ vals[tm] = metricsByTeam[tm][s.key]; });
+    rankMaps[s.key] = _advRankMap(vals, s.lowerBetter);
   });
 
   const sums = {};
   const partsByTeam = {};
   specs.forEach(s=>{
-    const tbl = tables[s.table];
-    if(!tbl || !tbl.teams) return;
-    Object.keys(tbl.teams).forEach(tm=>{
-      const rk = tbl.teams[tm] && tbl.teams[tm].ranks ? tbl.teams[tm].ranks[s.col] : null;
+    const rkMap = rankMaps[s.key] || {};
+    Object.keys(rkMap).forEach(tm=>{
+      const rk = rkMap[tm];
       if(!Number.isFinite(rk)) return;
       if(!sums[tm]) sums[tm] = { sum:0, count:0 };
       sums[tm].sum += Number(rk);

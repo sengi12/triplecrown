@@ -104,6 +104,8 @@ function rankingsRenderCacheKey(teamScoped){
     advCols,
     String(scoringPanelOpen),
     String(scoringAxis||''),
+    String(rankingsSearchOpen?1:0),
+    String((rankingsSearchQuery||'').trim().toLowerCase()),
     String(rankScope||'all'),
     String(teamScoped?1:0),
     String(teamScoped?(currentTeam||''):'all'),
@@ -169,10 +171,19 @@ function renderRankings(){
   // live draft: mark drafted players
   const following = !!draftId;
   all.forEach(p=>{ p.drafted = following && !!draftedIds[p.player_id]; });
+  const rankIsRookie = (p)=>!!(p && (p.is_rookie===true || Number(p.years_exp)===0));
   let view=rankPosFilter==='ALL'?all
+    :rankPosFilter==='ROOKIES'?all.filter(rankIsRookie)
     :rankPosFilter==='FLEX'?all.filter(p=>p.pos!=='QB')
     :all.filter(p=>p.pos===rankPosFilter);
   if(following && hideDrafted) view=view.filter(p=>!p.drafted);
+  const searchTokens = rankingsSearchTokens(rankingsSearchQuery);
+  if(searchTokens.length){
+    view = view.filter(p=>{
+      const nm = String(p && p.name ? p.name : '').toLowerCase();
+      return searchTokens.some(tok=>nm.includes(tok));
+    });
+  }
   const fullViewCount = view.length;
   view=[...view].sort((a,b)=>{
     if(rankSortKey==='ecr'){
@@ -356,8 +367,10 @@ function renderRankings(){
   const scoringList=[['std','Standard'],['half_ppr','Half PPR'],['ppr','Full PPR'],['superflex','Superflex']];
   const fmtBtns=scoringList
     .map(([s,l])=>`<button class="format-btn ${curScoring===s?'active':''}" onclick="setScoringAxis('${s}')">${l}</button>`).join('');
-  const posBtns=['ALL','QB','RB','WR','TE','FLEX'].map(pos=>
+  const posBtns=['ALL','QB','RB','WR','TE','FLEX','ROOKIES'].map(pos=>
     `<button class="pos-filter-btn ${rankPosFilter===pos?'active':''}" onclick="setPosFilter('${pos}')">${pos}</button>`).join('');
+  const searchOpen = !!(rankingsSearchOpen || (rankingsSearchQuery||'').trim());
+  const searchPlaceholder = 'Search players (comma separated)';
   // Advanced-metrics toggle — only on a reference season nflverse has player data for.
   // Switches the stat columns to advanced per-player metrics (computed from
   // nflverse play-by-play; SumerSports was retired as a source).
@@ -441,6 +454,11 @@ function renderRankings(){
         <div class="format-toggle">${fmtBtns}</div>
         <span style="font-size:11px;color:var(--muted);font-weight:700;margin-left:8px">POSITION</span>
         <div class="pos-filter">${posBtns}</div>
+        <button class="btn btn-ghost btn-sm rank-search-toggle ${searchOpen?'active':''}" onclick="toggleRankingsSearch()" title="Search rankings players">${TC_ICON("search")}</button>
+        ${searchOpen ? `<div class="rank-search-wrap">
+          <input id="rankSearchInput" class="rank-search-input" type="text" value="${escAttr(rankingsSearchQuery||'')}" placeholder="${searchPlaceholder}" oninput="setRankingsSearchQuery(this.value, this.selectionStart, this.selectionEnd)">
+          ${(rankingsSearchQuery||'').trim() ? `<button class="btn btn-ghost btn-sm" onclick="clearRankingsSearch()" title="Clear search">Clear</button>` : ''}
+        </div>` : ''}
         ${advToggle}
         ${situationalSelect}
         ${minInputs}
@@ -600,6 +618,60 @@ function syncFormatFromScoring(){
     toast(`Reception value ${r} → switched to ${({ppr:'Full PPR',half_ppr:'Half PPR',std:'Standard'})[f]} (ECR follows)`,'ok'); }
 }
 function setPosFilter(p){rankPosFilter=p;renderRankings();}
+
+function rankingsSearchTokens(q){
+  const s = String(q||'').trim().toLowerCase();
+  if(!s) return [];
+  // Comma/newline/pipe separated names; a plain single phrase remains intact.
+  return s.split(/[\n,|]+/).map(x=>x.trim()).filter(Boolean);
+}
+
+function setRankingsSearchQuery(v, selStart, selEnd){
+  rankingsSearchQuery = String(v||'');
+  const keepFocus = (typeof document!=='undefined' && document.activeElement && document.activeElement.id==='rankSearchInput');
+  renderRankings();
+  if(!keepFocus) return;
+  requestAnimationFrame(()=>{
+    const el = document.getElementById('rankSearchInput');
+    if(!el || typeof el.focus!=='function') return;
+    el.focus();
+    const max = el.value.length;
+    const s = Math.max(0, Math.min(max, Number.isFinite(selStart) ? selStart : max));
+    const e = Math.max(0, Math.min(max, Number.isFinite(selEnd) ? selEnd : s));
+    if(typeof el.setSelectionRange==='function') el.setSelectionRange(s, e);
+  });
+}
+
+function clearRankingsSearch(){
+  rankingsSearchQuery = '';
+  rankingsSearchOpen = true;
+  renderRankings();
+  requestAnimationFrame(()=>{
+    const el = document.getElementById('rankSearchInput');
+    if(el && typeof el.focus==='function') el.focus();
+  });
+}
+
+function toggleRankingsSearch(){
+  const hasQuery = !!String(rankingsSearchQuery||'').trim();
+  if(rankingsSearchOpen && !hasQuery){
+    rankingsSearchOpen = false;
+    renderRankings();
+    return;
+  }
+  if(rankingsSearchOpen && hasQuery){
+    rankingsSearchQuery = '';
+    rankingsSearchOpen = false;
+    renderRankings();
+    return;
+  }
+  rankingsSearchOpen = true;
+  renderRankings();
+  requestAnimationFrame(()=>{
+    const el = document.getElementById('rankSearchInput');
+    if(el && typeof el.focus==='function') el.focus();
+  });
+}
 // Toggle the SumerSports advanced stat columns on the rankings page.
 function setRankAdvanced(v){
   rankAdvanced=!!v;
