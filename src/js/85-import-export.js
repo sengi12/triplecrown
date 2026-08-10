@@ -64,6 +64,7 @@ function loadProjections(data){
   const byTeam={};
   merged.forEach(p=>{if(p.team)(byTeam[p.team]=byTeam[p.team]||[]).push(p);});
   userProj={};
+  workingProj=userProj;
   TEAMS.forEach(team=>{
     const tp=byTeam[team]; if(!tp||!tp.length) return;
     const qbs=tp.filter(p=>p.fantasy_position==='QB'
@@ -145,15 +146,25 @@ function loadProjections(data){
         tgts:0,yds:0,rec:0,tds:0,
         adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
     if(recvRows.length){
-      const tot=recvRows.reduce((s,p)=>s+p.tgts,0)||1;
+      const importedTargetTotal=recvRows.reduce((s,p)=>s+p.tgts,0);
+      const tot=importedTargetTotal||1;
       const totTDs=recvRows.reduce((s,p)=>s+p.tds,0)||0;
+      const qbPassTDTotal=teamPassTDs(state);
+      // Preserve imported receiving TD lines exactly on load by pegging share to the QB
+      // passing-TD pool when available. If the file has no QB pass-TD context, fall back
+      // to the receivers' own total so ratios still render deterministically.
+      const tdPool=(qbPassTDTotal>0?qbPassTDTotal:totTDs);
       state.passing_shares=recvRows.map(p=>{
         return {name:p.name,pos:p.pos,headshot:p.headshot,slug:p.slug,player_id:p.player_id,
           baseline_targets:p.tgts,baseline_yards:p.yds,baseline_tds:p.tds,baseline_rec:p.rec,
-          share:p.tgts/tot, td_share:totTDs>0?p.tds/totTDs:1/recvRows.length,
+          share:p.tgts/tot, td_share:tdPool>0?p.tds/tdPool:1/recvRows.length,
           ypt:p.tgts>0?p.yds/p.tgts:9, catch_rate:p.tgts>0?p.rec/p.tgts:0.65,
           adp:p.adp,adp_ppr:p.adp_ppr,adp_half_ppr:p.adp_half_ppr,adp_2qb:p.adp_2qb};
       });
+      // Anchor target math to imported totals so receiver lines remain exactly as imported;
+      // mismatch vs QB attempts is surfaced by the existing discrepancy banner + reconcile.
+      state.team_targets=importedTargetTotal;
+      state.base_pass_att=teamPassAtt(state);
     }
     const rushers=rbs.filter(p=>parseFloat(p.rushing_attempts||0)>0)
       .sort((a,b)=>parseFloat(b.rushing_attempts||0)-parseFloat(a.rushing_attempts||0));
@@ -190,10 +201,17 @@ function loadProjections(data){
   importedSnapshot=deepCopy(userProj);
   dirtySinceImport=false;
 
+  // Imported files define projection-season working data; force projection context and
+  // bust all rankings/player caches so repeated imports cannot reuse stale rows/FPTS/VOR.
+  activeSeason='proj';
+  if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();
+  else if(typeof invalidateRankingsRenderCache==='function') invalidateRankingsRenderCache();
+
   renderSidebar();
   if(multiAnalyst) toast(`⚠️ ${analysts.length} analysts averaged: ${analysts.join(', ')}`,'ok');
   else toast(`Loaded ${merged.length} players · ${Object.keys(byTeam).length} teams`,'ok');
-  if(currentTeam&&userProj[currentTeam]) renderContent();
+  if(currentPhase==='Rankings') renderContent();
+  else if(currentTeam&&userProj[currentTeam]) renderContent();
   else{currentTeam=null;document.getElementById('content').innerHTML=`<div class="empty">
     <div class="empty-icon">${TC_ICON("check","tc-ico-lg")}</div><div class="empty-title">Projections loaded${multiAnalyst?' (averaged)':''}</div>
     <div class="empty-body">${merged.length} players · ${analysts.length>1?analysts.join(', ')+' averaged':'analyst: '+(analysts[0]||'n/a')}<br>Select any team to review and edit.</div></div>`;}
@@ -344,8 +362,24 @@ function menuDownloadPrompt(){
 // ─────────────────────────────────────────────────────────────────────────────
 // ── App menu (☰) ────────────────────────────────────────────────────────────
 // Replaces the old header button row. Same open/close contract as the download menu it
-// supersedes: stop the opening click, then close on the next outside click (a menu-item
-// click bubbles here too, so choosing an action closes the menu after it fires).
+// supersedes: stop the opening click, then keep it open until an actual menu action is
+// clicked or the user clicks outside the menu.
+let _appMenuDocListenerOn = false;
+
+function onAppMenuDocClick(e){
+  const m=document.getElementById('appMenu');
+  const btn=document.getElementById('appMenuBtn');
+  const t=e&&e.target;
+  if(!m || m.hasAttribute('hidden')){ closeAppMenu(); return; }
+  if(btn && t && (t===btn || (btn.contains && btn.contains(t)))) return;
+  if(t && m.contains && m.contains(t)){
+    const action=(t.closest && t.closest('button.hdr-menu-item, .hdr-menu-item button, [data-menu-close="1"]')) || null;
+    if(action && m.contains(action)) closeAppMenu();
+    return;
+  }
+  closeAppMenu();
+}
+
 function toggleAppMenu(e){
   if(e) e.stopPropagation();
   const m=document.getElementById('appMenu'); if(!m) return;
@@ -353,7 +387,10 @@ function toggleAppMenu(e){
   if(m.hasAttribute('hidden')){
     m.removeAttribute('hidden');
     if(btn){ btn.classList.add('open'); btn.setAttribute('aria-expanded','true'); }
-    setTimeout(()=>document.addEventListener('click', closeAppMenu, {once:true}), 0);
+    if(!_appMenuDocListenerOn){
+      document.addEventListener('click', onAppMenuDocClick);
+      _appMenuDocListenerOn = true;
+    }
   } else {
     closeAppMenu();
   }
@@ -362,6 +399,10 @@ function closeAppMenu(){
   const m=document.getElementById('appMenu'); if(m) m.setAttribute('hidden','');
   const btn=document.getElementById('appMenuBtn');
   if(btn){ btn.classList.remove('open'); btn.setAttribute('aria-expanded','false'); }
+  if(_appMenuDocListenerOn){
+    document.removeEventListener('click', onAppMenuDocClick);
+    _appMenuDocListenerOn = false;
+  }
 }
 // The app has two top-level VIEWS: Projections (the builder — season tabs, team sidebar) and
 // the League Analyzer (snapshot-driven, season-agnostic). This returns to the former.

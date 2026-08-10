@@ -11,7 +11,7 @@ global.confirm=()=>true;global.btoa=s=>Buffer.from(s,'binary').toString('base64'
 const fs=require('fs');const path=require('path');
 const code=fs.readFileSync(path.join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`
-  return { loadProjections, getProj:()=>userProj, teamPassAtt, teamTargetPool, teamPassTDs,
+  return { loadProjections, buildPlayerList, getProj:()=>userProj, teamPassAtt, teamTargetPool, teamPassTDs,
     setSeed:(s)=>{ SEED=s; projSeed=s; seasonStatsCache['proj']=s; },
     getSeed:()=>SEED, projectQBGames, SEASON_GAMES };
 `)();
@@ -79,6 +79,14 @@ const rw=(buf.passing_shares||[]).find(p=>p.name==='Roster Only WR');
 chk('roster-only WR kept at ZERO baseline', rw && rw.baseline_targets===0 && rw.share===0);
 const iw=(buf.passing_shares||[]).find(p=>p.name==='Imported WR');
 chk('imported WR keeps real targets', iw && iw.baseline_targets===130);
+chk('team target pool anchored to imported total (not QB att fallback)', app.teamTargetPool(buf)===130);
+
+const list=app.buildPlayerList();
+const iwRow=list.find(p=>p.team==='BUF' && p.name==='Imported WR');
+chk('rankings keep imported WR targets exactly', iwRow && iwRow.receiving_targets===130);
+chk('rankings keep imported WR receptions exactly', iwRow && iwRow.receptions===90);
+chk('rankings keep imported WR yards exactly', iwRow && iwRow.receiving_yards===1200);
+chk('rankings keep imported WR TDs exactly', iwRow && Math.abs(iwRow.receiving_tds-9)<0.001);
 
 console.log(`\n=== DONE: ${pass}/${pass+fail} checks passed ===`);
 if(fail>0){ console.log('RESULT: FAIL (see above)'); process.exit(1); }

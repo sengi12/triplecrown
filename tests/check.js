@@ -2552,8 +2552,22 @@ function seasonHeadCoachName(team, season){
 }
 
 function _teamLastName(name){
-  const parts = String(name||'').trim().split(/\s+/).filter(Boolean);
-  return parts.length ? parts[parts.length-1] : String(name||'').trim();
+  return tcLastName(name);
+}
+
+function tcLastName(name){
+  const raw = String(name||'').trim();
+  if(!raw) return '';
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if(parts.length===1) return parts[0];
+  const suffixRe = /^(jr|sr|ii|iii|iv|v|vi|vii|2nd|3rd|4th|5th)$/i;
+  let i = parts.length-1;
+  while(i>0){
+    const tok = String(parts[i]||'').replace(/[.,]/g,'');
+    if(!suffixRe.test(tok)) break;
+    i--;
+  }
+  return parts[i] || parts[parts.length-1];
 }
 
 function teamHeaderQbText(team, qbs, recStr){
@@ -2627,7 +2641,7 @@ function renderContent(){
   if(isRef && espnRecordCache[recKey]==null) fetchTeamRecord(activeSeason,t);
   const recStr = isRef ? (espnRecordCache[recKey]||'') : '';
   const powerScoreBadge = (isRef && typeof _renderAdvPowerScore==='function' && typeof activeSharp==='function')
-    ? _renderAdvPowerScore(t, activeSharp(), { shieldOnly:true })
+    ? _renderAdvPowerScore(t, activeSharp(), { shieldOnly:true, stableFromSource:true })
     : '';
   const powerScoreInline = isRef
     ? `<div class="season-power">${powerScoreBadge}<span class="season-power-text">Power Score</span></div>`
@@ -2748,7 +2762,7 @@ function renderPassing(team,state){
   return `${weekSlider}${workloadCard}<div class="card">
     <div class="card-title">${qb.name} — Passing ${isMulti?`<span style="font-size:9px;color:var(--muted)">(editing QB${idx+1} of ${state.qbs.length})</span>`:''}</div>
     ${isMulti?`<div class="qb-tab-bar">${state.qbs.map((q,i)=>
-      `<button class="qb-tab ${i===idx?'active':''}" onclick="setActiveQB(${i})">${q.name.split(' ').pop()}</button>`).join('')}</div>`:''}
+      `<button class="qb-tab ${i===idx?'active':''}" onclick="setActiveQB(${i})">${(typeof tcLastName==='function')?tcLastName(q.name):(String(q.name||'').trim().split(/\s+/).slice(-1)[0]||'')}</button>`).join('')}</div>`:''}
     <div class="player-row"><span class="clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${imgTag(hsPack(qb),'player-headshot')}</span>
       <span class="pos-badge pos-QB">QB${idx+1}</span>
       <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${qb.name}</div>
@@ -3409,7 +3423,7 @@ function initPie(team,kind){
       const vals=state.passing_shares.map(value);
       const pool=vals.reduce((s,v)=>s+v,0)||1;
       const data=vals.map(v=>v/pool); // original order → matches PCOLORS[i] in the rows
-      const labels=state.passing_shares.map(p=>p.name.split(' ').pop());
+      const labels=state.passing_shares.map(p=>(typeof tcLastName==='function')?tcLastName(p.name):(String(p.name||'').trim().split(/\s+/).slice(-1)[0]||''));
       pieChart=mkDoughnut(ctx,labels,data);
       return;
     }
@@ -3417,13 +3431,13 @@ function initPie(team,kind){
     const ctx=document.getElementById('pieChart');if(!ctx)return;
     if(pieChart){pieChart.destroy();pieChart=null;}
     const data=passingSubTab==='targets'?state.passing_shares.map(p=>p.share):state.passing_shares.map(p=>p.td_share);
-    pieChart=mkDoughnut(ctx,state.passing_shares.map(p=>p.name.split(' ').pop()),data);
+    pieChart=mkDoughnut(ctx,state.passing_shares.map(p=>(typeof tcLastName==='function')?tcLastName(p.name):(String(p.name||'').trim().split(/\s+/).slice(-1)[0]||'')),data);
   } else {
     if(!state.rushing.shares) return;
     const ctx=document.getElementById('rushPieChart');if(!ctx)return;
     if(pieChart){pieChart.destroy();pieChart=null;}
     const data=rushingSubTab==='carries'?state.rushing.shares.map(p=>p.share):state.rushing.shares.map(p=>p.td_share);
-    pieChart=mkDoughnut(ctx,state.rushing.shares.map(p=>p.name.split(' ').pop()),data);
+    pieChart=mkDoughnut(ctx,state.rushing.shares.map(p=>(typeof tcLastName==='function')?tcLastName(p.name):(String(p.name||'').trim().split(/\s+/).slice(-1)[0]||'')),data);
   }
 }
 function mkDoughnut(ctx,labels,data){
@@ -4168,7 +4182,20 @@ function fmtSumer(v, isPct){
 // Which minimum-volume bucket a position falls in (WR and TE share the "routes" bucket).
 function sumerBucket(pos){ return pos==='QB' ? 'QB' : pos==='RB' ? 'RB' : 'WRTE'; }
 // The Sumer column that represents "volume" for a position — the one the minimum filter reads.
-function sumerVolCol(pos){ return pos==='QB' ? 'Plays' : pos==='RB' ? 'Rushes' : 'Routes Run'; }
+function sumerVolCol(pos){
+  const t=sumerTableFor(pos);
+  const cols=(t && Array.isArray(t.columns)) ? t.columns.slice() : [];
+  const pick=(rx)=>cols.find(c=>rx.test(String(c||'').toLowerCase()) && !/\//.test(String(c||''))) || null;
+  const fallback = pos==='QB' ? 'Plays' : (pos==='RB' ? 'Rushes' : 'Routes Run');
+  if(!cols.length) return fallback;
+  if(pos==='QB'){
+    return pick(/\bplays?\b/) || pick(/\bdropbacks?\b/) || pick(/\battempts?\b/) || fallback;
+  }
+  if(pos==='RB'){
+    return pick(/\brush(?:es| attempts?)\b/) || pick(/\bcarries?\b/) || fallback;
+  }
+  return pick(/\broutes?(?: run)?\b/) || pick(/\btargets?\b/) || fallback;
+}
 
 // ── OverTheCap contract lookup (Dynasty tab only: Age / APY / Free-Agency year) ──
 // Reuses the same name-normalization as ECR so the keys line up with build_seed.py.
@@ -4202,6 +4229,17 @@ function rankingYearsExpFromSleeper(p, baseEntry){
   if(sp && sp.years_exp!=null && !Number.isNaN(Number(sp.years_exp))) return Number(sp.years_exp);
   if(baseEntry && baseEntry.years_exp!=null && !Number.isNaN(Number(baseEntry.years_exp))) return Number(baseEntry.years_exp);
   return null;
+}
+
+function rankingIsRookieForSeason(p, season){
+  if(!p) return false;
+  const exp = Number(p.years_exp);
+  const hasExp = Number.isFinite(exp) && exp>=0;
+  if(String(season||'')==='proj') return hasExp ? exp===0 : !!(p.is_rookie===true);
+  const yr = Number(season);
+  const cur = Number(PROJ_SEASON);
+  if(hasExp && Number.isFinite(yr) && Number.isFinite(cur)) return (cur - exp)===yr;
+  return hasExp ? exp===0 : !!(p.is_rookie===true);
 }
 
 function hasContracts(){ return CONTRACTS && Object.keys(CONTRACTS).length>0; }
@@ -4978,6 +5016,40 @@ function renderPlayerCardShell(pid, pos, team){
 let pcardState = null;        // {pid, posc, team, isSkill}
 let pcardStatsMode = 'pro';
 let pcardToken = 0;           // bumped on each source switch so a slow in-flight load can't clobber a newer one
+let _pcardStickyHeadersBound = false;
+
+function pcardRefreshStickyStatHeaders(){
+  const body = document.getElementById('pcardBody');
+  if(!body) return;
+  const bodyRect = body.getBoundingClientRect();
+  const stickyTop = bodyRect.top;
+  const wraps = body.querySelectorAll('.pcard-table-scroll');
+  wraps.forEach((wrap)=>{
+    const table = wrap.querySelector('.pcard-table');
+    const thead = table && table.tHead;
+    if(!thead || !thead.rows || !thead.rows.length) return;
+    const wrapRect = wrap.getBoundingClientRect();
+    const rowHeights = Array.from(thead.rows).map(r=>r.getBoundingClientRect().height || 0);
+    const headerHeight = rowHeights.reduce((a,b)=>a+b,0);
+    const maxOffset = Math.max(0, (wrapRect.bottom - wrapRect.top) - headerHeight);
+    const offset = Math.max(0, Math.min(maxOffset, stickyTop - wrapRect.top));
+    thead.style.transform = offset>0 ? `translateY(${offset}px)` : '';
+  });
+}
+
+function pcardEnableStickyStatHeaders(){
+  const body = document.getElementById('pcardBody');
+  if(!body) return;
+  if(!_pcardStickyHeadersBound){
+    body.addEventListener('scroll', pcardRefreshStickyStatHeaders, { passive:true });
+    if(typeof window!=='undefined' && window.addEventListener){
+      window.addEventListener('resize', pcardRefreshStickyStatHeaders, { passive:true });
+    }
+    _pcardStickyHeadersBound = true;
+  }
+  requestAnimationFrame(pcardRefreshStickyStatHeaders);
+}
+
 async function loadPlayerCardData(pid, pos, team){
   const posc = pos || (sleeperPlayers&&sleeperPlayers[pid]&&sleeperPlayers[pid].pos) || 'QB';
   // Team defense: no draft/career/college machinery — just its Sleeper-sourced gamelog.
@@ -5186,7 +5258,10 @@ async function loadSleeperCareerStats(pid, posc, body){
     }
     if(!out) out = `<div class="pcard-loading">No game data found for this player.</div>`;
     out += `<div class="pcard-src">Per-game stats via Sleeper · FPTS uses your current scoring settings.</div>`;
-    if(pcardOpen && tok===pcardToken) body.innerHTML = out;
+    if(pcardOpen && tok===pcardToken){
+      body.innerHTML = out;
+      pcardEnableStickyStatHeaders();
+    }
   }catch(e){
     if(pcardOpen && tok===pcardToken){
       body.innerHTML = `<div class="pcard-loading pcard-loading-retry"><span>Couldn't load game logs. Check your connection and try again.</span><button class="pcard-retry-btn" onclick="retryPlayerCardData()">Refresh</button></div>`;
@@ -6074,7 +6149,9 @@ function _rbProjectedChart(pid, normName){
     is_projection:true,
     baselineSeason:olProj.baselineSeason,
     run_score:olProj.projRunScore,
-    run_rank:olProj.runRank,
+    run_rank:(olProj.baselineRunRank!=null && !Number.isNaN(Number(olProj.baselineRunRank)))
+      ? Number(olProj.baselineRunRank)
+      : olProj.runRank,
     team:teamCode,
     totals:{attempts, yards, ypc:Number(ypc.toFixed(2)), success_rate:success, td:tds},
     lanes:_rbProjectedLanes(baseChart, olProj.line||{}, {attempts, ypc}),
@@ -6441,22 +6518,70 @@ function _rbFanSVG(chart, playerName, season, metric, notePlayer){
   const lanes=chart.lanes||{};
   const line=_rbRosterLine(season, _rbTeamCode(chart.team||''), chart.line||{});
   const t=chart.totals||{};
-  const W=760, H=880;
-  const rbx=380, rby=650;
+  const mobileNarrow = !!(typeof window!=='undefined' && window.matchMedia && window.matchMedia('(max-width: 560px)').matches);
+  const G = mobileNarrow
+    ? {
+        W:620, H:920,
+        centerX:310,
+        arrowX:{LE:50, LT:120, LG:205, MID:310, RG:415, RT:500, RE:570},
+        cardX:{LT:102, LG:206, C:310, RG:414, RT:518},
+        arrowTopY:248,
+        laneLblY:128, laneHeadY:148, laneSubY:166,
+        losY:560, losLabelY:547,
+        cardY:490, cardW:84, cardH:142,
+        slotY:513,
+        hsXOff:22, hsY:518, hsSize:44, hsClipY:540, hsClipR:21,
+        name1Y:569, name2Y:583, gradeY:616,
+        rbY:700, rbNameY:739, rbMetaY:758,
+        footY1:818, footY2:836, footY3:854,
+        titleY:38, titleSize:26, subtitleSize:16,
+        subcopyY:64, subcopySize:14,
+        laneLblSize:20, laneHeadSize:20, laneSubSize:16,
+        tipLabelGap:44, tipHeadGap:28, tipSubGap:12,
+        edgeDetailInset:8,
+      }
+    : {
+        W:760, H:920,
+        centerX:380,
+        arrowX:RB_FAN_ARROW_X,
+        cardX:RB_FAN_CARD_X,
+        arrowTopY:248,
+        laneLblY:106, laneHeadY:122, laneSubY:137,
+        losY:560, losLabelY:547,
+        cardY:490, cardW:94, cardH:142,
+        slotY:513,
+        hsXOff:22, hsY:518, hsSize:44, hsClipY:540, hsClipR:21,
+        name1Y:569, name2Y:583, gradeY:616,
+        rbY:700, rbNameY:739, rbMetaY:758,
+        footY1:818, footY2:836, footY3:854,
+        titleY:38, titleSize:34, subtitleSize:18,
+        subcopyY:64, subcopySize:16,
+        laneLblSize:25, laneHeadSize:25, laneSubSize:20,
+        tipLabelGap:54, tipHeadGap:34, tipSubGap:14,
+        edgeDetailInset:14,
+      };
+  const W=G.W, H=G.H;
+  const rbx=G.centerX, rby=G.rbY;
 
   const parts=[];
   parts.push(`<svg viewBox="0 0 ${W} ${H}" class="rbf-svg" role="img" aria-label="RB rushing fan chart">`);
-  parts.push('<rect width="760" height="880" fill="#101214"/>');
-  parts.push(`<text x="30" y="34" fill="#fff" font-size="22" font-weight="800">${String(playerName||'RB').toUpperCase()} RUSHING FAN <tspan fill="#9aa0a6" font-size="14" font-weight="600">/ ${season} ${chart.is_projection?'PROJECTION':'REGULAR SEASON'}</tspan></text>`);
-  parts.push(`<text x="30" y="56" fill="#9aa0a6" font-size="13">Arrow width = lane success rate · arrow color = ${chart.is_projection?'projected lane YPC vs league lane average':'lane YPC vs league lane average'}</text>`);
+  parts.push(`<rect width="${W}" height="${H}" fill="#101214"/>`);
+  parts.push(`<text x="30" y="${G.titleY}" fill="#fff" font-size="${G.titleSize}" font-weight="800">${String(playerName||'RB').toUpperCase()} RUSHING FAN <tspan fill="#9aa0a6" font-size="${G.subtitleSize}" font-weight="600">/ ${season} ${chart.is_projection?'PROJECTION':'REGULAR SEASON'}</tspan></text>`);
+  parts.push(`<text x="30" y="${G.subcopyY}" fill="#9aa0a6" font-size="${G.subcopySize}">Arrow width = lane success rate · arrow color = ${chart.is_projection?'projected lane YPC vs league lane average':'lane YPC vs league lane average'}</text>`);
 
   const MET = RB_LANE_METRICS[metric] || RB_LANE_METRICS.eff;
   let MAXV=0;
   if(MET.key){ for(const k in lanes){ const v=lanes[k]&&lanes[k][MET.key]; if(v!=null && +v>MAXV) MAXV=+v; } }
-  for(const lane of RB_FAN_LANES){
+  const laneOffsetMap = mobileNarrow
+    ? { LE:0, LT:80, LG:0, MID:80, RG:0, RT:80, RE:0 }
+    : { LE:0, LT:80, LG:0, MID:80, RG:0, RT:80, RE:0 };
+  for(let li=0; li<RB_FAN_LANES.length; li++){
+    const lane = RB_FAN_LANES[li];
     const d=lanes[lane];
     if(!d || (+d.attempts||0)<3) continue;
-    const cx=RB_FAN_ARROW_X[lane];
+    const cx=G.arrowX[lane];
+    const laneOffset = laneOffsetMap[lane] || 0;
+    const tipY = G.arrowTopY + laneOffset;
     const succ = d.success_rate;
     const ypc = d.ypc;
     const att = +d.attempts||0;
@@ -6466,8 +6591,8 @@ function _rbFanSVG(chart, playerName, season, metric, notePlayer){
     const col = MET.key ? _rbHeat(mv, MAXV) : _rbArrowColor(d.ypc_diff);
     const w = _rbArrowWidth(succ).toFixed(2);
     const path = lane==='MID'
-      ? 'M380,650 V150'
-      : `M380,650 C${(380-(380-cx)*0.55).toFixed(0)},700 ${cx},585 ${cx},150`;
+      ? `M${G.centerX},${G.rbY} V${tipY}`
+      : `M${G.centerX},${G.rbY} C${(G.centerX-(G.centerX-cx)*0.52).toFixed(0)},${G.rbY+48} ${cx},${G.rbY-70} ${cx},${tipY}`;
     const laneValue = MET.key==='yards' ? `${mv!=null?Math.round(mv):'—'} yds`
       : (MET.key==='td' ? `${mv!=null?Math.round(mv):0} TD` : `${_rbNum(succ,0)}% success`);
     const laneTag = noteTagAttrs({
@@ -6480,22 +6605,37 @@ function _rbFanSVG(chart, playerName, season, metric, notePlayer){
       team:(notePlayer&&notePlayer.team)||chart.team||'',
       relevance:'RB,QB',
     });
-    parts.push(`<g${laneTag}><path d="${path}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" marker-end="url(#rbf-arrow)"/>`);
-    parts.push(`<text x="${cx}" y="106" fill="#fff" font-size="13" font-weight="800" text-anchor="middle">${lane}</text>`);
+    // Keep text tied to the arrow tip so line-length staggering and label staggering always match.
+    const labelY = tipY - G.tipLabelGap;
+    const headlineY = tipY - G.tipHeadGap;
+    const sublineY = tipY - G.tipSubGap;
     const headline = MET.key==='yards' ? `${mv!=null?Math.round(mv):'—'} YDS`
       : (MET.key==='td' ? `${mv!=null?Math.round(mv):0} TD` : `${_rbNum(succ,0)}% SUCC`);
-    parts.push(`<text x="${cx}" y="122" fill="${col}" font-size="12" font-weight="800" text-anchor="middle">${headline}</text>`);
-    parts.push(`<text x="${cx}" y="137" fill="#9aa0a6" font-size="10" text-anchor="middle">${att} att · ${_rbNum(ypc,1)} YPC</text>`);
+    const subline = `${att} att · ${_rbNum(ypc,1)} YPC`;
+
+    const labelX = cx;
+    let detailX = cx;
+    let detailAnchor = 'middle';
+    if(lane==='LE' || lane==='RE'){
+      // Keep detail lines near the frame edge while lane labels stay on arrow endpoints.
+      detailX = lane==='LE' ? G.edgeDetailInset : (W - G.edgeDetailInset);
+      detailAnchor = lane==='LE' ? 'start' : 'end';
+    }
+    parts.push(`<g${laneTag}><path d="${path}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" marker-end="url(#rbf-arrow)"/>`);
+    parts.push(`<text x="${labelX}" y="${labelY}" fill="#fff" font-size="${G.laneLblSize}" font-weight="800" text-anchor="middle">${lane}</text>`);
+    parts.push(`<text x="${detailX}" y="${headlineY}" fill="${col}" font-size="${G.laneHeadSize}" font-weight="800" text-anchor="${detailAnchor}">${headline}</text>`);
+    parts.push(`<text x="${detailX}" y="${sublineY}" fill="#9aa0a6" font-size="${G.laneSubSize}" text-anchor="${detailAnchor}">${subline}</text>`);
     parts.push(`</g>`);
   }
 
-  parts.push('<defs><marker id="rbf-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></marker><clipPath id="rbf-hs-LT"><circle cx="160" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-LG"><circle cx="270" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-C"><circle cx="380" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-RG"><circle cx="490" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-RT"><circle cx="600" cy="506" r="19"/></clipPath></defs>');
+  const clipDefs = RB_FAN_CARD_SLOTS.map(slot=>`<clipPath id="rbf-hs-${slot}"><circle cx="${G.cardX[slot]}" cy="${G.hsClipY}" r="${G.hsClipR}"/></clipPath>`).join('');
+  parts.push(`<defs><marker id="rbf-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></marker>${clipDefs}</defs>`);
 
-  parts.push('<line x1="15" y1="520" x2="745" y2="520" stroke="#2f6fe4" stroke-width="3" stroke-dasharray="10 7"/>');
-  parts.push('<text x="18" y="508" fill="#5b83c9" font-size="11" font-weight="800">LOS</text>');
+  parts.push(`<line x1="15" y1="${G.losY}" x2="${W-15}" y2="${G.losY}" stroke="#2f6fe4" stroke-width="3" stroke-dasharray="10 7"/>`);
+  parts.push(`<text x="18" y="${G.losLabelY}" fill="#5b83c9" font-size="11" font-weight="800">LOS</text>`);
 
   for(const slot of RB_FAN_CARD_SLOTS){
-    const x=RB_FAN_CARD_X[slot];
+    const x=G.cardX[slot];
     const d=line[slot]||{};
     const runG=d.run_grade||null;
     const col=_rbGradeColor(runG);
@@ -6505,22 +6645,22 @@ function _rbFanSVG(chart, playerName, season, metric, notePlayer){
       ? `openPlayerCardFromCard(${pcardArg(d.name)},${pcardArg(slot)},${pcardArg(chart.team||'')})`
       : '';
     parts.push(`<g class="rbf-ol-card${d.name?' clickable-player':''}" ${d.name?`onclick="${click}" role="button" tabindex="0"`:''}>
-      <rect x="${x-46}" y="462" width="92" height="122" rx="7" fill="#1b1e22" stroke="${col}" stroke-width="2"/>
-      <text x="${x}" y="483" fill="#fff" font-size="15" font-weight="800" text-anchor="middle">${slot}</text>
-      ${hs?`<image href="${hs}" x="${x-19}" y="487" width="40" height="40" clip-path="url(#rbf-hs-${slot})" preserveAspectRatio="xMidYMid slice"/>`:''}
-      <text x="${x}" y="529" fill="#e8eaed" font-size="9.5" text-anchor="middle">${n[0]||''}</text>
-      <text x="${x}" y="541" fill="#e8eaed" font-size="9.5" font-weight="700" text-anchor="middle">${n[1]||''}</text>
-      <text x="${x}" y="568" fill="${col}" font-size="27" font-weight="900" text-anchor="middle">${runG||'n/a'}</text>
+      <rect x="${x-(G.cardW/2)}" y="${G.cardY}" width="${G.cardW}" height="${G.cardH}" rx="7" fill="#1b1e22" stroke="${col}" stroke-width="2"/>
+      <text x="${x}" y="${G.slotY}" fill="#fff" font-size="${mobileNarrow?17:15}" font-weight="800" text-anchor="middle">${slot}</text>
+      ${hs?`<image href="${hs}" x="${x-G.hsXOff}" y="${G.hsY}" width="${G.hsSize}" height="${G.hsSize}" clip-path="url(#rbf-hs-${slot})" preserveAspectRatio="xMidYMid slice"/>`:''}
+      <text x="${x}" y="${G.name1Y}" fill="#e8eaed" font-size="${mobileNarrow?11:9.5}" text-anchor="middle">${n[0]||''}</text>
+      <text x="${x}" y="${G.name2Y}" fill="#e8eaed" font-size="${mobileNarrow?11:9.5}" font-weight="700" text-anchor="middle">${n[1]||''}</text>
+      <text x="${x}" y="${G.gradeY}" fill="${col}" font-size="${mobileNarrow?30:27}" font-weight="900" text-anchor="middle">${runG||'n/a'}</text>
     </g>`);
   }
 
   parts.push(`<circle cx="${rbx}" cy="${rby}" r="13" fill="#e8eaed" stroke="#0c0d0f" stroke-width="2"/>`);
-  parts.push(`<text x="${rbx}" y="690" fill="#fff" font-size="13" font-weight="800" text-anchor="middle">${String(playerName||'RB').toUpperCase()}</text>`);
-  parts.push(`<text x="${rbx}" y="707" fill="#9aa0a6" font-size="11" text-anchor="middle">${t.attempts||0} carries · ${(t.yards!=null?Number(t.yards).toLocaleString():'—')} yds · ${_rbNum(t.ypc,2)} YPC · ${_rbNum(t.success_rate,1)}% success</text>`);
+  parts.push(`<text x="${rbx}" y="${G.rbNameY}" fill="#fff" font-size="${mobileNarrow?15:13}" font-weight="800" text-anchor="middle">${String(playerName||'RB').toUpperCase()}</text>`);
+  parts.push(`<text x="${rbx}" y="${G.rbMetaY}" fill="#9aa0a6" font-size="${mobileNarrow?12:11}" text-anchor="middle">${t.attempts||0} carries · ${(t.yards!=null?Number(t.yards).toLocaleString():'—')} yds · ${_rbNum(t.ypc,2)} YPC · ${_rbNum(t.success_rate,1)}% success</text>`);
 
-  parts.push(`<text x="30" y="772" fill="#6b7075" font-size="10">OL card grades are from the validated local OL pipeline (${chart.is_projection?`projected ${RB_PROJ_SEASON} run grades`:'historical rushing grades'}, slot by pass-snaps).</text>`);
-  parts.push(`<text x="30" y="786" fill="#6b7075" font-size="10">Lanes shown when attempts >= 3. ${chart.is_projection?'Projected lanes keep the back\u2019s last known directional profile and scale it to projected volume/efficiency.' : (MET.key? 'Color scales to this back\u2019s best gap.' : 'Color compares lane YPC to league average for that lane in-season.')}</text>`);
-  parts.push('<text x="30" y="800" fill="#6b7075" font-size="10">Data: nflverse play-by-play + local OL grades. Not affiliated with the NFL.</text>');
+  parts.push(`<text x="30" y="${G.footY1}" fill="#6b7075" font-size="10">OL card grades are from the validated local OL pipeline (${chart.is_projection?`projected ${RB_PROJ_SEASON} run grades`:'historical rushing grades'}, slot by pass-snaps).</text>`);
+  parts.push(`<text x="30" y="${G.footY2}" fill="#6b7075" font-size="10">Lanes shown when attempts >= 3. ${chart.is_projection?'Projected lanes keep the back\u2019s last known directional profile and scale it to projected volume/efficiency.' : (MET.key? 'Color scales to this back\u2019s best gap.' : 'Color compares lane YPC to league average for that lane in-season.')}</text>`);
+  parts.push(`<text x="30" y="${G.footY3}" fill="#6b7075" font-size="10">Data: nflverse play-by-play + local OL grades. Not affiliated with the NFL.</text>`);
   parts.push('</svg>');
   return parts.join('');
 }
@@ -7286,8 +7426,11 @@ function _olProjectedTeam2026(){
       : talentPass;
 
     const runBaseRow0=baseRunTbl&&baseRunTbl.teams&&baseRunTbl.teams[teamCode];
-    const brs=(runBaseRow0&&runBaseRow0.values)?runBaseRow0.values['Overall Score']:null;
-    const baseRunScore=(brs!=null && !Number.isNaN(Number(brs)))?Number(brs):null;
+    const brsRun=(runBaseRow0&&runBaseRow0.values)?runBaseRow0.values['Run Score']:null;
+    const brsOverall=(runBaseRow0&&runBaseRow0.values)?runBaseRow0.values['Overall Score']:null;
+    const baseRunScore=(brsRun!=null && !Number.isNaN(Number(brsRun)))
+      ? Number(brsRun)
+      : ((brsOverall!=null && !Number.isNaN(Number(brsOverall))) ? Number(brsOverall) : null);
     const projRunScore=(baseRunScore!=null)
       ? Math.max(0, Math.min(100, 0.80*talentRun + 0.20*baseRunScore))
       : talentRun;
@@ -7306,6 +7449,11 @@ function _olProjectedTeam2026(){
   teamCodes.forEach(tm=>{ runScoreMap[tm]=teamRows[tm].projRunScore; });
   const runScoreRank=_olRankMap(runScoreMap, false);
   const n=teamCodes.length;
+  // Early renders can happen before the full league table is hydrated. Using projected
+  // ranks on partial coverage creates volatile #1/#2 flashes, so fall back to baseline
+  // season ranks until coverage is effectively complete.
+  const ranksStable = n >= 28;
+  const rankNum = (v)=> (v!=null && !Number.isNaN(Number(v))) ? Number(v) : null;
 
   // 3) Baseline league distributions for realistic projected metric values.
   const sortedByCol={};
@@ -7349,6 +7497,10 @@ function _olProjectedTeam2026(){
     const runBaseRow=baseRunTbl&&baseRunTbl.teams&&baseRunTbl.teams[tm];
     const runValues={};
     runCols.forEach(c=>{ runValues[c]=(runBaseRow&&runBaseRow.values)?runBaseRow.values[c]:null; });
+    const basePassRank = rankNum(tr.baseRow&&tr.baseRow.ranks&&
+      (tr.baseRow.ranks['Pass Score']!=null ? tr.baseRow.ranks['Pass Score'] : tr.baseRow.ranks['Overall Score']));
+    const baseRunRank = rankNum(runBaseRow&&runBaseRow.ranks&&
+      (runBaseRow.ranks['Run Score']!=null ? runBaseRow.ranks['Run Score'] : runBaseRow.ranks['Overall Score']));
     out[tm]={
       team:tm,
       baselineSeason,
@@ -7356,8 +7508,10 @@ function _olProjectedTeam2026(){
       talentRun:tr.talentRun,
       projPassScore:tr.projPassScore,
       projRunScore:tr.projRunScore,
-      passRank:tr.rank,
-      runRank:(runScoreRank[tm]||n),
+      baselinePassRank:basePassRank,
+      baselineRunRank:baseRunRank,
+      passRank:ranksStable ? tr.rank : (basePassRank!=null ? basePassRank : tr.rank),
+      runRank:ranksStable ? (runScoreRank[tm]||n) : (baseRunRank!=null ? baseRunRank : (runScoreRank[tm]||n)),
       line:tr.line,
       passTbl:{ columns:passCols, teams:{ [tm]:{ values:tr.passValues, ranks:passRanks } } },
       runTbl:{ columns:runCols, teams:{ [tm]:{ values:runValues, ranks:(runBaseRow&&runBaseRow.ranks)||{} } } },
@@ -8009,7 +8163,10 @@ async function loadEspnCardData(pid, posc, body, opts){
     }
     if(!out) out = `<div class="pcard-loading">No game data found for this player.</div>`;
     out += `<div class="pcard-src">${league==='nfl'?'NFL':'College'} per-game stats via ESPN${def?'':' · AVG shown as YPC'}.</div>`;
-    if(pcardOpen && tok===pcardToken) body.innerHTML = out;
+    if(pcardOpen && tok===pcardToken){
+      body.innerHTML = out;
+      if(typeof pcardEnableStickyStatHeaders==='function') pcardEnableStickyStatHeaders();
+    }
   }catch(e){
     body.innerHTML = pcardRetryHtml("Couldn't load game logs. Check your connection and try again.");
   }
@@ -11142,10 +11299,54 @@ function _advProjOlBadge(team, which){
   return ` <span class="sr-proj-badge ${cls}" title="Projected ${projSeason} ${lbl} overall score, from projected depth-chart starters">Proj \u2019${shortSeason} ${Number(p.score).toFixed(1)}${rk!=null?` \u00b7 #${rk}`:''}</span>`;
 }
 
-function _advTeamPowerScore(team, src){
+function _advTeamPowerScore(team, src, opts){
+  const o = opts || {};
   const season = String(advTeamSeason());
   const pack = (NFLVERSE && NFLVERSE[season] && NFLVERSE[season].adv_weekly) || null;
-  if(!pack || !pack.teams || !Array.isArray(pack.weeks) || !Array.isArray(pack.cols)) return null;
+  const fallbackFromSrc = ()=>{
+    const SRC = (src && typeof src==='object') ? src : (typeof activeSharp==='function' ? activeSharp() : null);
+    if(!SRC || typeof SRC!=='object') return null;
+    const sums = {};
+    const partsByTeam = {};
+    Object.keys(SRC).forEach((key)=>{
+      const tbl = SRC[key] || {};
+      const teams = tbl.teams || {};
+      const label = String(tbl.title || key);
+      Object.keys(teams).forEach((tm)=>{
+        const row = teams[tm] || {};
+        const ranks = row.ranks || {};
+        const vals = Object.values(ranks).map(Number).filter(v=>Number.isFinite(v) && v>0);
+        if(!vals.length) return;
+        const avg = vals.reduce((a,b)=>a+b,0) / vals.length;
+        if(!sums[tm]) sums[tm] = { sum:0, count:0 };
+        sums[tm].sum += avg;
+        sums[tm].count += 1;
+        (partsByTeam[tm] = partsByTeam[tm] || []).push({ label, rank: avg });
+      });
+    });
+    const rows = Object.keys(sums)
+      .filter(tm=>sums[tm].count>0)
+      .map(tm=>({
+        team: tm,
+        avg: sums[tm].sum / sums[tm].count,
+        parts: (partsByTeam[tm]||[]).sort((a,b)=>a.rank-b.rank).slice(0,6),
+      }))
+      .sort((a,b)=>a.avg-b.avg || String(a.team).localeCompare(String(b.team)));
+    if(!rows.length) return null;
+    const rankMap = {};
+    rows.forEach((r,i)=>{ rankMap[r.team] = i + 1; });
+    const me = rows.find(r=>String(r.team).toUpperCase()===String(team).toUpperCase());
+    if(!me) return null;
+    return {
+      team: String(team).toUpperCase(),
+      avgRank: me.avg,
+      leagueRank: rankMap[me.team],
+      leagueSize: rows.length,
+      parts: me.parts,
+    };
+  };
+  if(o.stableFromSource) return fallbackFromSrc();
+  if(!pack || !pack.teams || !Array.isArray(pack.weeks) || !Array.isArray(pack.cols)) return fallbackFromSrc();
 
   const requiredCols = [
     'off_pass_epa', 'off_pass_plays',
@@ -11156,7 +11357,7 @@ function _advTeamPowerScore(team, src){
   ];
   const colIdx = {};
   requiredCols.forEach(c=>{ colIdx[c] = pack.cols.indexOf(c); });
-  if(requiredCols.some(c=>colIdx[c] < 0)) return null;
+  if(requiredCols.some(c=>colIdx[c] < 0)) return fallbackFromSrc();
 
   const [lo, hi] = _advGetWeekRange(team);
   const weekIdx = [];
@@ -11164,7 +11365,7 @@ function _advTeamPowerScore(team, src){
     const w = Number(pack.weeks[i]);
     if(Number.isFinite(w) && w>=lo && w<=hi) weekIdx.push(i);
   }
-  if(!weekIdx.length) return null;
+  if(!weekIdx.length) return fallbackFromSrc();
 
   const specs = [
     { key:'off_pass_epa_pp', label:'Off EPA/Play (Pass)', lowerBetter:false },
@@ -11239,11 +11440,11 @@ function _advTeamPowerScore(team, src){
       parts: partsByTeam[tm] || [],
     }))
     .sort((a,b)=>a.avg - b.avg || String(a.team).localeCompare(String(b.team)));
-  if(!rows.length) return null;
+  if(!rows.length) return fallbackFromSrc();
   const rankMap = {};
   rows.forEach((r, i)=>{ rankMap[r.team] = i + 1; });
   const me = rows.find(r=>String(r.team).toUpperCase()===String(team).toUpperCase());
-  if(!me) return null;
+  if(!me) return fallbackFromSrc();
   return {
     team: String(team).toUpperCase(),
     avgRank: me.avg,
@@ -11254,7 +11455,7 @@ function _advTeamPowerScore(team, src){
 }
 
 function _renderAdvPowerScore(team, src, opts){
-  const p = _advTeamPowerScore(team, src);
+  const p = _advTeamPowerScore(team, src, opts);
   if(!p) return '';
   const o = opts || {};
   const showLabel = !o.shieldOnly;
@@ -11347,9 +11548,9 @@ function renderTeamAdvanced(team){
   const carryBlock = renderCoordinatorCarryover(team);
   const srcLabel = 'nflverse (computed from play-by-play)';
   return `<div class="sr-team-wrap">
+    ${renderAdvWeekRange(team)}
     <div class="sr-note">${TC_ICON("chart")} <b>Advanced team stats</b> · ${srcLabel} · <b>${advTeamSeason()} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
       <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="showSharpLeague()">View league-wide tables →</button></div>
-    ${renderAdvWeekRange(team)}
     ${sosStrip}
     ${carryBlock}
     ${section('Offense', offKeys, coordInlineLabel(team,oc,'offensive'))}
@@ -11878,6 +12079,9 @@ function rankingsRenderCacheKey(teamScoped){
     String(rankPosFilter),
     String(!!rankAdvanced),
     String(sumerRefinement||''),
+    String(sumerMin && Number.isFinite(+sumerMin.QB) ? +sumerMin.QB : 0),
+    String(sumerMin && Number.isFinite(+sumerMin.WRTE) ? +sumerMin.WRTE : 0),
+    String(sumerMin && Number.isFinite(+sumerMin.RB) ? +sumerMin.RB : 0),
     advCols,
     String(scoringPanelOpen),
     String(scoringAxis||''),
@@ -11948,7 +12152,9 @@ function renderRankings(){
   // live draft: mark drafted players
   const following = !!draftId;
   all.forEach(p=>{ p.drafted = following && !!draftedIds[p.player_id]; });
-  const rankIsRookie = (p)=>!!(p && (p.is_rookie===true || Number(p.years_exp)===0));
+  const rankIsRookie = (p)=> (typeof rankingIsRookieForSeason==='function')
+    ? !!rankingIsRookieForSeason(p, activeSeason)
+    : !!(p && (p.is_rookie===true || Number(p.years_exp)===0));
   let view=rankPosFilter==='ALL'?all
     :rankPosFilter==='ROOKIES'?all.filter(rankIsRookie)
     :rankPosFilter==='FLEX'?all.filter(p=>p.pos!=='QB')
@@ -12123,7 +12329,13 @@ function renderRankings(){
     const fptsTxt = p.fpts.toFixed(1);
     const vorTxt = `${p.vor>0?'+':''}${p.vor!=null?p.vor.toFixed(1):'—'}`;
     const pSearchAttr = escAttr(String(p.name||'').toLowerCase());
-    rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}">
+    const volBucket = advActive ? String(sumerBucket(p.pos)||'') : '';
+    const volCol = advActive ? sumerVolCol(p.pos) : '';
+    const volVal = (advActive && volCol) ? sumerValue(p, volCol) : null;
+    const volAttrs = advActive
+      ? ` data-rank-sumer-bucket="${escAttr(volBucket)}" data-rank-sumer-vol="${(volVal!=null && Number.isFinite(+volVal)) ? escAttr(String(+volVal)) : ''}"`
+      : '';
+    rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}"${volAttrs}>
     <td class="c-ecr">${ecrTxt!=='—'?rankValueHtml(ecrTxt, p, 'Expert Consensus Rank', 'ecr', 'rankings'):ecrTxt}</td>
     <td class="c-tier">${tier!=null?rankValueHtml(`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`, p, 'Tier', 'ecr_tier', 'rankings'):''}</td>
     <td class="fpts">${rankValueHtml(fptsTxt, p, 'Fantasy Points', 'fpts', 'rankings')}</td>
@@ -12335,7 +12547,7 @@ function setRankFormat(f){
   if(preset){ Object.assign(scoringSettings,preset); }
   rankSortKey='ecr'; rankSortDir=-1;
   saveSession();
-  renderRankings();
+  rankingsRenderWithViewPreserved();
   toast(`${formatLabel(f)} — ECR + scoring applied`,'ok');
 }
 // ── Two-axis format model ───────────────────────────────────────────────────
@@ -12383,7 +12595,7 @@ function applyTwoAxisFormat(type, scoring){
   if(preset){ Object.assign(scoringSettings, preset); }
   rankSortKey='ecr'; rankSortDir=-1;
   saveSession();
-  renderRankings();
+  rankingsRenderWithViewPreserved();
   toast(`${formatLabel(rankFormat)} — ECR + scoring applied`,'ok');
 }
 // When the user edits the reception value directly, keep the format label in sync so the
@@ -12398,7 +12610,12 @@ function syncFormatFromScoring(){
   if(f!==rankFormat){ rankFormat=f;
     toast(`Reception value ${r} → switched to ${({ppr:'Full PPR',half_ppr:'Half PPR',std:'Standard'})[f]} (ECR follows)`,'ok'); }
 }
-function setPosFilter(p){rankPosFilter=p;renderRankings();}
+function rankingsRenderWithViewPreserved(){
+  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRankings(), ['.rank-table-wrap']);
+  else renderRankings();
+}
+
+function setPosFilter(p){rankPosFilter=p;rankingsRenderWithViewPreserved();}
 
 function rankingsSearchTokens(q){
   const s = String(q||'').trim().toLowerCase();
@@ -12410,7 +12627,7 @@ function rankingsSearchTokens(q){
 function setRankingsSearchQuery(v, selStart, selEnd){
   rankingsSearchQuery = String(v||'');
   const keepFocus = (typeof document!=='undefined' && document.activeElement && document.activeElement.id==='rankSearchInput');
-  if(keepFocus && applyRankingsSearchInPlace()) return;
+  if(keepFocus && applyRankingsFiltersInPlace()) return;
   renderRankings();
   if(!keepFocus) return;
   requestAnimationFrame(()=>{
@@ -12424,30 +12641,53 @@ function setRankingsSearchQuery(v, selStart, selEnd){
   });
 }
 
-function applyRankingsSearchInPlace(){
+function activeSumerMinFilters(){
+  if(!(rankAdvanced && typeof sumerAvailable==='function' && sumerAvailable())) return {};
+  const out = {};
+  ['QB','WRTE','RB'].forEach((bucket)=>{
+    const min = sumerMin && Number.isFinite(+sumerMin[bucket]) ? +sumerMin[bucket] : 0;
+    if(min>0) out[bucket] = min;
+  });
+  return out;
+}
+
+function applyRankingsFiltersInPlace(){
   if(typeof document==='undefined') return false;
   const tbody = document.querySelector('.rankings-table tbody');
   if(!tbody) return false;
   const tokens = rankingsSearchTokens(rankingsSearchQuery);
+  const minFilters = activeSumerMinFilters();
+  const hasMinFilters = Object.keys(minFilters).length>0;
   let shown = 0;
   const rows = tbody.querySelectorAll('tr');
   rows.forEach((row)=>{
     if(row.classList.contains('rank-pickline')){
       // Pick-line markers become misleading during ad-hoc filtering.
-      row.style.display = tokens.length ? 'none' : '';
+      row.style.display = (tokens.length || hasMinFilters) ? 'none' : '';
       return;
     }
     const hay = String(row.getAttribute('data-rank-search')||'').toLowerCase();
-    const match = !tokens.length || tokens.some(tok=>hay.includes(tok));
+    const matchSearch = !tokens.length || tokens.some(tok=>hay.includes(tok));
+    const bucket = String(row.getAttribute('data-rank-sumer-bucket')||'');
+    const volRaw = row.getAttribute('data-rank-sumer-vol');
+    const vol = (volRaw==null || volRaw==='') ? null : Number(volRaw);
+    const matchMin = !hasMinFilters || !bucket || !Object.prototype.hasOwnProperty.call(minFilters, bucket)
+      ? true
+      : (Number.isFinite(vol) && vol>=minFilters[bucket]);
+    const match = matchSearch && matchMin;
     row.style.display = match ? '' : 'none';
     if(match) shown++;
   });
   const countEl = document.getElementById('rankPlayerCount');
   if(countEl){
     const def = String(countEl.getAttribute('data-default-label')||'').trim();
-    countEl.textContent = tokens.length ? `${shown} players` : (def || `${shown} players`);
+    countEl.textContent = (tokens.length || hasMinFilters) ? `${shown} players` : (def || `${shown} players`);
   }
   return true;
+}
+
+function applyRankingsSearchInPlace(){
+  return applyRankingsFiltersInPlace();
 }
 
 function clearRankingsSearch(){
@@ -12492,7 +12732,7 @@ function setRankAdvanced(v){
   } else if(rankSortKey.startsWith('sumer:')){
     rankSortKey='ecr'; rankSortDir=-1;
   }
-  renderRankings();
+  rankingsRenderWithViewPreserved();
 }
 // Select a "Situational" refinement (game-situation split) for the Adv. Metrics view. Empty
 // value = Standard (overall). Re-sort onto the first column so the board reflects the split.
@@ -12500,13 +12740,13 @@ function setSumerRefinement(val){
   sumerRefinement = val || null;
   const sv=sumerColumnsForFilter();
   if(sv) { rankSortKey='sumer:'+sv.cols[0]; rankSortDir=-1; }
-  renderRankings();
+  rankingsRenderWithViewPreserved();
 }
 // Build the minimum-volume input(s) for the Adv. Metrics view, matched to the position filter:
 // QB → Min Plays, WR/TE → Min Routes, RB → Min Rushes. ALL/FLEX show each relevant one.
 function sumerMinInputs(){
   const mk=(bucket,label)=>`<label style="font-size:11px;color:var(--muted);font-weight:700;display:inline-flex;align-items:center;gap:4px">${label}
-    <input type="number" min="0" step="10" value="${sumerMin[bucket]||0}" onchange="setSumerMin('${bucket}',this.value)"
+    <input type="number" min="0" step="10" value="${sumerMin[bucket]||0}" data-rank-min-bucket="${bucket}" oninput="setSumerMin('${bucket}',this.value,this.selectionStart,this.selectionEnd)"
       style="width:58px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:3px 6px;color:var(--text);font-size:12px;font-family:var(--mono)"></label>`;
   const pos=rankPosFilter;
   let items;
@@ -12517,10 +12757,26 @@ function sumerMinInputs(){
   else items=[['QB','Min Plays'],['WRTE','Min Routes'],['RB','Min Rushes']];  // ALL
   return items.map(([b,l])=>mk(b,l)).join('');
 }
-function setSumerMin(bucket, val){
+function setSumerMin(bucket, val, selStart, selEnd){
   const n=parseInt(val,10);
   sumerMin[bucket] = (isNaN(n)||n<0) ? 0 : n;
-  renderRankings();
+  const keepFocus = !!(typeof document!=='undefined'
+    && document.activeElement
+    && document.activeElement.getAttribute
+    && document.activeElement.getAttribute('data-rank-min-bucket')===String(bucket));
+  if(keepFocus && applyRankingsFiltersInPlace()) return;
+  rankingsRenderWithViewPreserved();
+  if(!keepFocus) return;
+  requestAnimationFrame(()=>{
+    const el = document.querySelector(`[data-rank-min-bucket="${String(bucket)}"]`);
+    if(!el || typeof el.focus!=='function') return;
+    el.focus();
+    if(typeof el.setSelectionRange!=='function') return;
+    const max = el.value.length;
+    const s = Math.max(0, Math.min(max, Number.isFinite(selStart) ? selStart : max));
+    const e = Math.max(0, Math.min(max, Number.isFinite(selEnd) ? selEnd : s));
+    el.setSelectionRange(s, e);
+  });
 }
 // A one-line digest of the current scoring, shown in the collapsed panel header so you can
 // confirm your settings without expanding it. Only surfaces the fields people actually vary.
@@ -13008,11 +13264,34 @@ function ktcTrioDetail(trio, targetPos){
     TIER:'tier-cluster',
     VOR:'vor-cluster',
   };
-  return {score, tag, why: whyMap[tag] || (samePos?'fpts-cluster':'ecr-cluster'), sig: trioSig, closeOk, closeHits, signalMode, hasMixedSignal};
+  return {
+    score,
+    tag,
+    why: whyMap[tag] || (samePos?'fpts-cluster':'ecr-cluster'),
+    sig: trioSig,
+    closeOk,
+    closeHits,
+    signalMode,
+    hasMixedSignal,
+    samePos,
+    rankSpread,
+    fptsSpread,
+    adpSpread,
+    ecrSpread,
+    vorSpread,
+    avgRank: (sorted.reduce((s,p)=>s+(+p._ktcRank||0),0) / Math.max(1, sorted.length)),
+  };
 }
 
 function ktcTrioScore(trio, targetPos){
   return ktcTrioDetail(trio, targetPos).score;
+}
+
+function ktcProgressRatio(boardLen){
+  const n = Math.max(12, Number(boardLen)||12);
+  const submitted = Math.max(0, Number(ktcGameState.rounds)||0);
+  const target = Math.max(28, Math.floor(n*0.9));
+  return ktcClamp(submitted / target, 0, 1);
 }
 
 function ktcFallbackTrio(board, requireMixed){
@@ -13050,29 +13329,19 @@ function ktcPickNextTrio(preBoard){
   }
   const tierCutoff = ktcTopTierCutoff(tierKnownBoard);
   ktcGameState.tierCutoff = tierCutoff;
-  const tierPool = tierKnownBoard.filter(p=>{
-    const t = ktcEcrTierVal(p);
-    return t!=null && t<=tierCutoff;
-  });
-  const tierPlayablePool = tierKnownBoard.filter(p=>{
-    const t = ktcEcrTierVal(p);
-    return t!=null && t<=Math.max(tierCutoff+2, KTC_TARGET_TIER_MAX+1);
-  });
-  const ecrPool = tierKnownBoard.filter(p=>ktcEcrRankVal(p)<=170);
   const targetPos = ktcPreferredPos();
-  const preferredBoard =
-    tierPool.length>=18 ? tierPool
-    : (tierPlayablePool.length>=18 ? tierPlayablePool
-    : (ecrPool.length>=18 ? ecrPool : tierPlayablePool.length ? tierPlayablePool : tierKnownBoard));
-  const posPool = preferredBoard.filter(p=>p.pos===targetPos);
-  const poolRaw = posPool.length>=10 ? posPool : preferredBoard;
+  const progress = ktcProgressRatio(tierKnownBoard.length);
+  const desiredRank = 1 + progress*(tierKnownBoard.length-1);
+  const posPoolAll = tierKnownBoard.filter(p=>p.pos===targetPos);
+  const poolRaw = posPoolAll.length>=12 ? posPoolAll : tierKnownBoard;
   const pool = ktcBuildMixedBoard(poolRaw);
   const n = pool.length;
-  const base = Math.max(1, Math.min(n-2, ktcGameState.cursor||Math.floor(n*0.35)));
-  const from = Math.max(0, base-16);
-  const to = Math.min(n-1, base+16);
+  const anchor = Math.max(1, Math.min(n-2, Math.round((desiredRank / Math.max(1, tierKnownBoard.length)) * (n-1))));
+  const from = Math.max(0, anchor-22);
+  const to = Math.min(n-1, anchor+22);
   const cand = pool.slice(from, to+1);
   const requireMixed = (ktcGameState.samePosStreak||0) >= 1;
+  const desiredSpread = 13.5 - (progress*8.6); // easy/wider near top, tighter near harder rounds
 
   let best = null;
   let bestDetail = null;
@@ -13095,15 +13364,22 @@ function ktcPickNextTrio(preBoard){
         // Avoid exact-repeat trios from the recent window whenever alternatives exist.
         if((ktcGameState.recentTrioSigs||[]).includes(sig)) continue;
         const detail = ktcTrioDetail(trio, targetPos);
-        if(detail.score>bestAnyScore){
-          bestAnyScore = detail.score;
+        const laneDelta = Math.abs((detail.avgRank||desiredRank) - desiredRank);
+        const laneBonus = Math.max(-44, 18 - laneDelta*1.45);
+        const spreadMetric = detail.samePos
+          ? (Number.isFinite(detail.fptsSpread) ? detail.fptsSpread : 999)
+          : (Number.isFinite(detail.vorSpread) ? detail.vorSpread : 999);
+        const spreadBonus = Math.max(-22, 10 - Math.abs(spreadMetric - desiredSpread)*1.35);
+        const totalScore = detail.score + laneBonus + spreadBonus;
+        if(totalScore>bestAnyScore){
+          bestAnyScore = totalScore;
           bestAny = trio;
           bestAnyDetail = detail;
         }
         if(!detail.closeOk) continue;
         if(detail.signalMode==='cross_pos' && !detail.hasMixedSignal) continue;
-        if(detail.score>bestScore){
-          bestScore = detail.score;
+        if(totalScore>bestScore){
+          bestScore = totalScore;
           best = trio;
           bestDetail = detail;
         }
@@ -13114,7 +13390,8 @@ function ktcPickNextTrio(preBoard){
     best = bestAny;
     bestDetail = bestAnyDetail;
   }
-  if(!best) best = ktcFallbackTrio(preferredBoard, false);
+  if(!best) best = ktcFallbackTrio(pool, false);
+  if(!best) best = ktcFallbackTrio(board, false);
   if(!bestDetail) bestDetail = ktcTrioDetail(best, targetPos);
   ktcGameState.trio = best;
   ktcGameState.lastSig = bestDetail.sig || ktcTrioSig(best);
@@ -13125,7 +13402,7 @@ function ktcPickNextTrio(preBoard){
   ktcGameState.samePosStreak = (posSet.size===1) ? ((ktcGameState.samePosStreak||0)+1) : 0;
   ktcMarkShown(best);
   ktcGameState.posCursor += 1;
-  ktcGameState.cursor = (ktcGameState.cursor + 5 + Math.floor(Math.random()*7)) % Math.max(5, n-1);
+  ktcGameState.cursor = Math.max(1, Math.min(n-2, anchor + 2));
   return true;
 }
 
@@ -13437,9 +13714,9 @@ function ktcSubmitSelection(){
     }
   }
 
+  ktcGameState.rounds += 1; // each submission advances the progression lane
   if(changed){
     markDirty();
-    ktcGameState.rounds += 1;
     renderRankings();
   }
   if(!ktcPickNextTrio()) return;
@@ -13467,7 +13744,7 @@ function ktcCardHtml(p, trioTag){
     ${ktcSelectionBadge(key)}
     <img class="ktc-team-mark" src="${NFL_LOGO(p.team)}" alt="${escAttr(p.team||'')}" loading="lazy" decoding="async" onerror="this.style.display='none'">
     <div class="ktc-hs-wrap clickable-player" onclick="event.stopPropagation();${cardOpen}">${imgTag(hsPack(p), 'ktc-hs')}</div>
-    <div class="ktc-name clickable-player" onclick="event.stopPropagation();${cardOpen}">${escHtml(p.name||'')}</div>
+    <div class="ktc-name">${escHtml(p.name||'')}</div>
     <div class="ktc-meta"><span class="pos-badge pos-${escAttr(p.pos||'WR')}">${escHtml(p.pos||'')}</span> ${escHtml(p.team||'')} · rank #${p._ktcRank||'—'}</div>
     ${showSignalDebug ? `<div class="ktc-signalvals">
       <div class="ktc-signal-main">Signal ${escHtml(sig.tag||'—')}: ${escHtml(sig.signalVal)}</div>
@@ -13500,7 +13777,7 @@ function renderKtcOverlay(){
   const intensityOptions = ['conservative','balanced','aggressive'].map(k=>
     `<button class="ktc-intensity-opt ${k===intensity?'on':''}" onclick="ktcSetIntensity('${k}')">${escHtml((KTC_INTENSITY[k]&&KTC_INTENSITY[k].label)||k)}</button>`
   ).join('');
-  const tierText = `top ECR tiers 1-${ktcGameState.tierCutoff||KTC_TARGET_TIER_MAX}`;
+  const tierText = `progressive board pass`;
   const html = `<div class="ktc-backdrop" onclick="ktcBackdropStop(event)">
     <div class="ktc-modal" onclick="event.stopPropagation()">
       <div class="ktc-head">
@@ -13627,6 +13904,7 @@ function loadProjections(data){
   const byTeam={};
   merged.forEach(p=>{if(p.team)(byTeam[p.team]=byTeam[p.team]||[]).push(p);});
   userProj={};
+  workingProj=userProj;
   TEAMS.forEach(team=>{
     const tp=byTeam[team]; if(!tp||!tp.length) return;
     const qbs=tp.filter(p=>p.fantasy_position==='QB'
@@ -13708,15 +13986,25 @@ function loadProjections(data){
         tgts:0,yds:0,rec:0,tds:0,
         adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
     if(recvRows.length){
-      const tot=recvRows.reduce((s,p)=>s+p.tgts,0)||1;
+      const importedTargetTotal=recvRows.reduce((s,p)=>s+p.tgts,0);
+      const tot=importedTargetTotal||1;
       const totTDs=recvRows.reduce((s,p)=>s+p.tds,0)||0;
+      const qbPassTDTotal=teamPassTDs(state);
+      // Preserve imported receiving TD lines exactly on load by pegging share to the QB
+      // passing-TD pool when available. If the file has no QB pass-TD context, fall back
+      // to the receivers' own total so ratios still render deterministically.
+      const tdPool=(qbPassTDTotal>0?qbPassTDTotal:totTDs);
       state.passing_shares=recvRows.map(p=>{
         return {name:p.name,pos:p.pos,headshot:p.headshot,slug:p.slug,player_id:p.player_id,
           baseline_targets:p.tgts,baseline_yards:p.yds,baseline_tds:p.tds,baseline_rec:p.rec,
-          share:p.tgts/tot, td_share:totTDs>0?p.tds/totTDs:1/recvRows.length,
+          share:p.tgts/tot, td_share:tdPool>0?p.tds/tdPool:1/recvRows.length,
           ypt:p.tgts>0?p.yds/p.tgts:9, catch_rate:p.tgts>0?p.rec/p.tgts:0.65,
           adp:p.adp,adp_ppr:p.adp_ppr,adp_half_ppr:p.adp_half_ppr,adp_2qb:p.adp_2qb};
       });
+      // Anchor target math to imported totals so receiver lines remain exactly as imported;
+      // mismatch vs QB attempts is surfaced by the existing discrepancy banner + reconcile.
+      state.team_targets=importedTargetTotal;
+      state.base_pass_att=teamPassAtt(state);
     }
     const rushers=rbs.filter(p=>parseFloat(p.rushing_attempts||0)>0)
       .sort((a,b)=>parseFloat(b.rushing_attempts||0)-parseFloat(a.rushing_attempts||0));
@@ -13753,10 +14041,17 @@ function loadProjections(data){
   importedSnapshot=deepCopy(userProj);
   dirtySinceImport=false;
 
+  // Imported files define projection-season working data; force projection context and
+  // bust all rankings/player caches so repeated imports cannot reuse stale rows/FPTS/VOR.
+  activeSeason='proj';
+  if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();
+  else if(typeof invalidateRankingsRenderCache==='function') invalidateRankingsRenderCache();
+
   renderSidebar();
   if(multiAnalyst) toast(`⚠️ ${analysts.length} analysts averaged: ${analysts.join(', ')}`,'ok');
   else toast(`Loaded ${merged.length} players · ${Object.keys(byTeam).length} teams`,'ok');
-  if(currentTeam&&userProj[currentTeam]) renderContent();
+  if(currentPhase==='Rankings') renderContent();
+  else if(currentTeam&&userProj[currentTeam]) renderContent();
   else{currentTeam=null;document.getElementById('content').innerHTML=`<div class="empty">
     <div class="empty-icon">${TC_ICON("check","tc-ico-lg")}</div><div class="empty-title">Projections loaded${multiAnalyst?' (averaged)':''}</div>
     <div class="empty-body">${merged.length} players · ${analysts.length>1?analysts.join(', ')+' averaged':'analyst: '+(analysts[0]||'n/a')}<br>Select any team to review and edit.</div></div>`;}
@@ -14470,7 +14765,9 @@ function tsPreviewTeamRankings(){
       <div class="empty-title">No projections yet</div><div class="empty-body">Set at least one team's stats to see rankings.</div></div></div>`;
   }
   all.sort((a,b)=>b.fpts-a.fpts);
-  const rankIsRookie = (p)=>!!(p && (p.is_rookie===true || Number(p.years_exp)===0));
+  const rankIsRookie = (p)=> (typeof rankingIsRookieForSeason==='function')
+    ? !!rankingIsRookieForSeason(p, activeSeason)
+    : !!(p && (p.is_rookie===true || Number(p.years_exp)===0));
   let view=rankPosFilter==='ALL'?all
     :rankPosFilter==='ROOKIES'?all.filter(rankIsRookie)
     :rankPosFilter==='FLEX'?all.filter(p=>p.pos!=='QB')
@@ -16625,7 +16922,7 @@ function renderRosterBar(){
   const chips = slots.map(s=>{
     const p=s.player;
     const cls = p ? `rt-chip filled ${slotClass(s.slot)}` : 'rt-chip empty';
-    const label = p ? (p.name.split(' ').slice(-1)[0] || slotLabel(s.slot)) : slotLabel(s.slot);
+    const label = p ? (((typeof tcLastName==='function')?tcLastName(p.name):(String(p.name||'').trim().split(/\s+/).slice(-1)[0])) || slotLabel(s.slot)) : slotLabel(s.slot);
     return `<span class="${cls}" title="${p?`${p.name} (${p.pos} · ${p.team})`:slotLabel(s.slot)+' — open'}">${p?`<b>${slotLabel(s.slot)}</b> ${label}`:slotLabel(s.slot)}</span>`;
   }).join('');
 
@@ -16692,7 +16989,7 @@ function renderTrackerPanel(viewSlot){
       // helper isn't loaded for any reason.
       const nm=(p)=>{
         if(!p) return '\u2014';
-        const short = p.name.split(' ').slice(-1)[0];
+        const short = ((typeof tcLastName==='function')?tcLastName(p.name):(String(p.name||'').trim().split(/\s+/).slice(-1)[0])) || p.name;
         if(typeof pcardOnclick!=='function') return short;
         return `<span class="vona-name clickable-player" title="${escAttr(p.name)} \u2014 open player card"
           onclick="event.stopPropagation();${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${short}</span>`;
@@ -16735,7 +17032,7 @@ function renderTrackerPanel(viewSlot){
       if(rec){
         // Lead with the ACTION and the player, not a raw cliff number — "(\u22121.6)" reads like
         // an error on a phone and means nothing without the board in front of you.
-        const who = rec.bestNow ? rec.bestNow.name.split(' ').slice(-1)[0] : '';
+        const who = rec.bestNow ? (((typeof tcLastName==='function')?tcLastName(rec.bestNow.name):(String(rec.bestNow.name||'').trim().split(/\s+/).slice(-1)[0])) || '') : '';
         recTxt = `Take a <b>${rec.pos}</b>${who?` \u2014 ${who}`:''}`;
         if(rec.why) recTxt += ` <span class="vona-sub-why">(${rec.why})</span>`;
         else if(rec.filled) recTxt = `Best value: <b>${rec.pos}</b>${who?` \u2014 ${who}`:''} \u2014 starters are set`;
