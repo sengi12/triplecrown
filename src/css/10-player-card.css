@@ -123,16 +123,14 @@
 .pcard-table th:nth-child(2),.pcard-table td:nth-child(2){position:sticky;left:34px;z-index:2;
   background:var(--surface);min-width:56px;}
 /* header cells sit above body cells on both axes */
-.pcard-table thead th{position:relative;top:auto;background:var(--surface);will-change:transform;transition:transform .02s linear;}
+.pcard-table thead{position:relative;z-index:7;will-change:transform;}
+.pcard-table thead th{position:relative;top:auto;background:var(--surface);}
 .pcard-table thead tr:nth-child(1) th{z-index:4;}
 .pcard-table thead tr:nth-child(2) th{z-index:5;}
 .pcard-table thead tr:nth-child(1) th:nth-child(1),
 .pcard-table thead tr:nth-child(1) th:nth-child(2),
 .pcard-table thead tr:nth-child(2) th:nth-child(1),
 .pcard-table thead tr:nth-child(2) th:nth-child(2){z-index:6;}
-.pcard-table thead tr{position:relative;}
-.pcard-table thead tr::before{content:'';position:absolute;left:0;right:0;top:0;bottom:0;background:var(--surface);z-index:0;}
-.pcard-table thead th>*{position:relative;z-index:1;}
 .pcard-table thead tr:last-child th{box-shadow:0 1px 0 var(--border);}
 /* divider so the frozen pair reads as separate from the scrolling stats */
 .pcard-table th:nth-child(2),.pcard-table td:nth-child(2){box-shadow:1px 0 0 var(--border);}

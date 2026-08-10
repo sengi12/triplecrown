@@ -485,11 +485,7 @@ function pcardRefreshStickyStatHeaders(){
     const headerHeight = rowHeights.reduce((a,b)=>a+b,0);
     const maxOffset = Math.max(0, (wrapRect.bottom - wrapRect.top) - headerHeight);
     const offset = Math.max(0, Math.min(maxOffset, stickyTop - wrapRect.top));
-    Array.from(thead.rows).forEach((row)=>{
-      Array.from(row.cells).forEach((cell)=>{
-        cell.style.transform = offset>0 ? `translateY(${offset}px)` : '';
-      });
-    });
+    thead.style.transform = offset>0 ? `translateY(${offset}px)` : '';
   });
 }
 
