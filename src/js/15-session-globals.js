@@ -36,8 +36,15 @@ function saveSession(){
         leagueSnapshot: leagueSnapshot,
         undoStacks: undoStacks,
       };
-      localStorage.setItem(TC_STORE_KEY, JSON.stringify(payload));
-    }catch(e){ /* quota or serialization issue — skip silently */ }
+      const serialized = JSON.stringify(payload);
+      localStorage.setItem(TC_STORE_KEY, serialized);
+      if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+        try{ console.debug('[saveSession] wrote '+Math.round(serialized.length/1024)+'KB'); }catch(_e){}
+    }catch(e){
+      if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+        try{ console.warn('[saveSession] failed:', e); }catch(_e){}
+      /* quota or serialization issue — skip silently */
+    }
   }, 400);
 }
 function loadSession(){

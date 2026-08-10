@@ -2189,7 +2189,7 @@ button.la-cliff:hover{filter:brightness(1.25);}
         <button class="hdr-menu-item menu-view-proj" id="menuImport" hidden onclick="closeAppMenu();triggerImport()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M8 8l4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg> Import</button>
         <button class="hdr-menu-item menu-view-proj" id="menuDownload" hidden onclick="closeAppMenu();menuDownloadPrompt()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M8 11l4 4 4-4M5 20h14"/></svg> Download</button>
         <button class="hdr-menu-item menu-view-rank" id="menuKtc" hidden onclick="closeAppMenu();startKtcGame()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" fill="currentColor" stroke="none"/><path d="M8 5H5.5A2.5 2.5 0 0 0 8 8.5M16 5h2.5A2.5 2.5 0 0 1 16 8.5"/><path d="M12 13v3M9 20h6M10 20v-1.5a2 2 0 0 1 4 0V20"/></svg> Keep Trade Cut</button>
-        <button class="hdr-menu-item menu-view-rank" id="menuSwitchAnalyst" hidden onclick="closeAppMenu();openAnalystPicker()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6"/></svg> Switch Analyst</button>
+        <button class="hdr-menu-item" id="menuSwitchAnalyst" hidden onclick="closeAppMenu();openAnalystPicker()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6"/></svg> Switch Analyst</button>
         <button class="hdr-menu-item menu-view-league" id="menuResync" hidden onclick="closeAppMenu();laResync()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8M20 3v5h-5"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16M4 21v-5h5"/></svg> Re-sync league</button>
         <button class="hdr-menu-item menu-view-league" id="menuChangeLeague" hidden onclick="closeAppMenu();laMenuChangeLeague()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 15l6-6M10.5 6.5 12 5a4 4 0 0 1 6 6l-1.5 1.5M13.5 17.5 12 19a4 4 0 0 1-6-6l1.5-1.5"/></svg> Change league</button>
 
@@ -3065,8 +3065,15 @@ function saveSession(){
         leagueSnapshot: leagueSnapshot,
         undoStacks: undoStacks,
       };
-      localStorage.setItem(TC_STORE_KEY, JSON.stringify(payload));
-    }catch(e){ /* quota or serialization issue — skip silently */ }
+      const serialized = JSON.stringify(payload);
+      localStorage.setItem(TC_STORE_KEY, serialized);
+      if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+        try{ console.debug('[saveSession] wrote '+Math.round(serialized.length/1024)+'KB'); }catch(_e){}
+    }catch(e){
+      if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+        try{ console.warn('[saveSession] failed:', e); }catch(_e){}
+      /* quota or serialization issue — skip silently */
+    }
   }, 400);
 }
 function loadSession(){
@@ -3698,6 +3705,8 @@ function decodeFantasy(c){
 // .gz is missing (older deploys) or DecompressionStream is unavailable (older browsers) —
 // so this can never make loading WORSE, only smaller.
 function tcLatencyDebugEnabled(){
+  // Always on in dev builds.
+  try{ if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE) return true; }catch(_e){}
   try{
     if(typeof localStorage!=='undefined' && localStorage.getItem('tc_latency_debug')==='1') return true;
   }catch(_e){}
@@ -6536,6 +6545,8 @@ function buildPlayerScoringSig(){
 }
 
 function invalidateBuildPlayerCache(){
+  if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+    try{ console.debug('[buildPlayerList] cache invalidated (epoch→'+(_buildPlayerCacheEpoch+1)+')'); }catch(_e){}
   _buildPlayerCache.userProjRef = null;
   _buildPlayerCache.activeSeason = null;
   _buildPlayerCache.rankFormat = null;
@@ -6553,6 +6564,8 @@ function buildPlayerList(){
     && _buildPlayerCache.rankFormat===rankFormat
     && _buildPlayerCache.scoringSig===scoringSig);
   if(cacheHit){
+    if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+      try{ console.debug('[buildPlayerList] cache hit ('+_buildPlayerCache.list.length+' players, epoch='+_buildPlayerCacheEpoch+')'); }catch(_e){}
     // Return detached rows so callers can sort/annotate without mutating the cache.
     return _buildPlayerCache.list.map(p=>Object.assign({}, p));
   }
@@ -6639,6 +6652,8 @@ function buildPlayerList(){
   _buildPlayerCache.rankFormat = rankFormat;
   _buildPlayerCache.scoringSig = scoringSig;
   _buildPlayerCache.list = list.map(p=>Object.assign({}, p));
+  if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+    try{ console.debug('[buildPlayerList] rebuilt '+list.length+' players (epoch='+_buildPlayerCacheEpoch+', season='+activeSeason+', fmt='+rankFormat+')'); }catch(_e){}
   return list;
 }
 // Find a player's base seed entry (for ADP etc.) by id first, then name+team.
@@ -16456,7 +16471,6 @@ function switchToAnalyst(key){
   importedAnalystData = savedAnalystData;
   importedRawPayload  = savedRawPayload;
   if(typeof syncAppChrome==='function') syncAppChrome();
-  if(currentPhase !== 'Rankings') showFullRankings();
 }
 
 let _dlOpen = false;
@@ -16658,9 +16672,9 @@ function syncAppChrome(){
   const viewSpecificSec = document.getElementById('menuViewSpecificSec');
   if(viewSpecificSec) viewSpecificSec.textContent = `View-specific: ${viewLabel}`;
 
-  // "Switch Analyst" only appears in Rankings when imported projections have multiple analysts.
+  // "Switch Analyst" appears in any view when imported projections have multiple analysts.
   const menuSA = document.getElementById('menuSwitchAnalyst');
-  if(menuSA) setHidden(menuSA, !(inRankings && importedAnalystData && Object.keys(importedAnalystData).length > 1));
+  if(menuSA) setHidden(menuSA, !(importedAnalystData && Object.keys(importedAnalystData).length > 1));
 
   if(typeof refreshLeagueSyncBtn==='function') refreshLeagueSyncBtn();
 }
@@ -16675,10 +16689,11 @@ async function resetAll(){
   userProj={}; workingProj=userProj; importedSnapshot=null; dirtySinceImport=false;
   importedAnalystData=null; importedRawPayload=null;
   playerNotes={};
-  currentTeam=null; undoStacks={};
+  currentTeam=null; currentPhase='Passing'; undoStacks={};
   clearSession();   // wipe the saved session so the fresh pull isn't overwritten on next boot
   // refreshFromSleeper resets the working set to the fresh seed, re-renders, and toasts.
   await refreshFromSleeper();
+  syncAppChrome();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -16689,6 +16704,41 @@ projSeed = SEED;
 renderSeasonTabs();
 renderSidebar();
 syncAppChrome();
+
+// ── Dev-mode tooling ──────────────────────────────────────────────────────
+if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE){
+  // Expose a live state inspector at window.tcDebug for console inspection.
+  window.tcDebug = {
+    get proj()    { return userProj; },
+    get working() { return workingProj; },
+    get season()  { return activeSeason; },
+    get phase()   { return currentPhase; },
+    get team()    { return currentTeam; },
+    get format()  { return rankFormat; },
+    get analysts(){ return importedAnalystData ? Object.keys(importedAnalystData) : null; },
+    get draft()   { return { id: (typeof draftId!=='undefined'?draftId:null), picks: Object.keys(typeof draftedIds!=='undefined'?draftedIds:{}).length, active: !!(typeof draftTimer!=='undefined'&&draftTimer) }; },
+    get cache()   { return { epoch: (typeof _buildPlayerCacheEpoch!=='undefined'?_buildPlayerCacheEpoch:null), hit: !!(typeof _buildPlayerCache!=='undefined'&&_buildPlayerCache.list) }; },
+    buildPlayers(){ return (typeof buildPlayerList==='function') ? buildPlayerList() : null; },
+    bust(){        if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache(); },
+    dump(){
+      console.group('[TC] App state');
+      console.log('phase:', currentPhase, '| team:', currentTeam, '| season:', activeSeason, '| format:', rankFormat);
+      console.log('teams with proj:', Object.keys(userProj).length);
+      console.log('analysts:', importedAnalystData ? Object.keys(importedAnalystData).join(', ') : 'none');
+      console.log('draft:', window.tcDebug.draft);
+      console.log('cache:', window.tcDebug.cache);
+      console.groupEnd();
+    },
+  };
+  // Surface unhandled promise rejections and JS errors so they aren't silently swallowed.
+  window.addEventListener('unhandledrejection', e=>{
+    console.error('[TC] Unhandled rejection:', e.reason);
+  });
+  window.addEventListener('error', e=>{
+    console.error('[TC] Uncaught error:', e.message, '@', e.filename+':'+e.lineno);
+  });
+  console.info('[TC] Dev mode active. window.tcDebug available — try tcDebug.dump()');
+}
 
 // If no seed is embedded (the default now — we pull live from Sleeper), fetch the
 // current-season projections automatically on first load. A prebuilt triplecrown_seed.json
@@ -17744,11 +17794,16 @@ async function sleeperFetch(url){
   // seasonLoading flag and block further season clicks). AbortController enforces a cap.
   const ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
   const timer = ctrl ? setTimeout(()=>ctrl.abort(), 20000) : null;
+  const _dev = (typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE);
+  const t0 = _dev ? performance.now() : 0;
   try{
     const res = await fetch(url, {headers:{'Accept':'application/json'}, signal: ctrl?ctrl.signal:undefined});
     if(!res.ok) throw new Error(`Sleeper ${res.status}`);
-    return await res.json();
+    const data = await res.json();
+    if(_dev) try{ console.info(`[fetch] ${(performance.now()-t0).toFixed(0)}ms  ${url}`); }catch(_e){}
+    return data;
   }catch(e){
+    if(_dev) try{ console.warn(`[fetch] FAILED (${e.message})  ${url}`); }catch(_e){}
     if(e && e.name==='AbortError') throw new Error('request timed out');
     throw e;
   }finally{
@@ -19130,7 +19185,11 @@ async function pollDraft(){
       renderRosterBar();
       if(currentPhase==='Rankings') renderRankings();
     }
-  }catch(e){ /* keep polling quietly */ }
+  }catch(e){
+    if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+      try{ console.warn('[pollDraft]', e); }catch(_e){}
+    /* keep polling quietly */
+  }
 }
 function toggleHideDrafted(){ hideDrafted=!hideDrafted; renderRankings(); }
 

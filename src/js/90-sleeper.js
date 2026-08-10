@@ -16,11 +16,16 @@ async function sleeperFetch(url){
   // seasonLoading flag and block further season clicks). AbortController enforces a cap.
   const ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
   const timer = ctrl ? setTimeout(()=>ctrl.abort(), 20000) : null;
+  const _dev = (typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE);
+  const t0 = _dev ? performance.now() : 0;
   try{
     const res = await fetch(url, {headers:{'Accept':'application/json'}, signal: ctrl?ctrl.signal:undefined});
     if(!res.ok) throw new Error(`Sleeper ${res.status}`);
-    return await res.json();
+    const data = await res.json();
+    if(_dev) try{ console.info(`[fetch] ${(performance.now()-t0).toFixed(0)}ms  ${url}`); }catch(_e){}
+    return data;
   }catch(e){
+    if(_dev) try{ console.warn(`[fetch] FAILED (${e.message})  ${url}`); }catch(_e){}
     if(e && e.name==='AbortError') throw new Error('request timed out');
     throw e;
   }finally{

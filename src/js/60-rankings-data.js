@@ -339,6 +339,8 @@ function buildPlayerScoringSig(){
 }
 
 function invalidateBuildPlayerCache(){
+  if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+    try{ console.debug('[buildPlayerList] cache invalidated (epoch→'+(_buildPlayerCacheEpoch+1)+')'); }catch(_e){}
   _buildPlayerCache.userProjRef = null;
   _buildPlayerCache.activeSeason = null;
   _buildPlayerCache.rankFormat = null;
@@ -356,6 +358,8 @@ function buildPlayerList(){
     && _buildPlayerCache.rankFormat===rankFormat
     && _buildPlayerCache.scoringSig===scoringSig);
   if(cacheHit){
+    if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+      try{ console.debug('[buildPlayerList] cache hit ('+_buildPlayerCache.list.length+' players, epoch='+_buildPlayerCacheEpoch+')'); }catch(_e){}
     // Return detached rows so callers can sort/annotate without mutating the cache.
     return _buildPlayerCache.list.map(p=>Object.assign({}, p));
   }
@@ -442,6 +446,8 @@ function buildPlayerList(){
   _buildPlayerCache.rankFormat = rankFormat;
   _buildPlayerCache.scoringSig = scoringSig;
   _buildPlayerCache.list = list.map(p=>Object.assign({}, p));
+  if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+    try{ console.debug('[buildPlayerList] rebuilt '+list.length+' players (epoch='+_buildPlayerCacheEpoch+', season='+activeSeason+', fmt='+rankFormat+')'); }catch(_e){}
   return list;
 }
 // Find a player's base seed entry (for ADP etc.) by id first, then name+team.

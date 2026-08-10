@@ -492,7 +492,11 @@ async function pollDraft(){
       renderRosterBar();
       if(currentPhase==='Rankings') renderRankings();
     }
-  }catch(e){ /* keep polling quietly */ }
+  }catch(e){
+    if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+      try{ console.warn('[pollDraft]', e); }catch(_e){}
+    /* keep polling quietly */
+  }
 }
 function toggleHideDrafted(){ hideDrafted=!hideDrafted; renderRankings(); }
 

@@ -244,14 +244,19 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] Google Play Store
 - [ ] Apple iOS Store
 - [ ] Generate my own proprietary projections based on all the metrics we have
-- [ ] fully flesh out a --dev mode for the web page that adds debug logs, etc
 ### UI / UX
 ### Playercards
 ### Live Draft
 - [ ] reach out to Sleeper
 ### League Analyzer
-- [ ] lineup helper tab
-- [ ] Implement future schedule on player cards with "4-weeks in" defensive rankings per pos
+- [ ] In-Season Tools:
+  - [ ] lineup helper tab
+  - [ ] Implement future schedule on player cards 
+  - [ ] defensive rankings per pos that get more accurate as we get more data (each defense ranked against each fantasy position: QB, RB, WR, TE)
+  - [ ] Rest of season projections
+    - [ ] Current 17-game pace (can overlay with user's ROS projections)
+    - [ ] ROS positive regression candidates highlighted (ex: low in TD output, yet relatively high league-wide in Red Zone volume or just volume in general yet there could be so many other examples)
+    - [ ] Trending Up and Trending Down players each week based on surprising weekly stats from projections
 ### Audit
 ### Import Projections
 ### Adv Metrics

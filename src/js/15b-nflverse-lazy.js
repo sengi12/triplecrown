@@ -223,6 +223,8 @@ function decodeFantasy(c){
 // .gz is missing (older deploys) or DecompressionStream is unavailable (older browsers) —
 // so this can never make loading WORSE, only smaller.
 function tcLatencyDebugEnabled(){
+  // Always on in dev builds.
+  try{ if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE) return true; }catch(_e){}
   try{
     if(typeof localStorage!=='undefined' && localStorage.getItem('tc_latency_debug')==='1') return true;
   }catch(_e){}

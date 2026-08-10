@@ -393,7 +393,6 @@ function switchToAnalyst(key){
   importedAnalystData = savedAnalystData;
   importedRawPayload  = savedRawPayload;
   if(typeof syncAppChrome==='function') syncAppChrome();
-  if(currentPhase !== 'Rankings') showFullRankings();
 }
 
 let _dlOpen = false;
@@ -595,9 +594,9 @@ function syncAppChrome(){
   const viewSpecificSec = document.getElementById('menuViewSpecificSec');
   if(viewSpecificSec) viewSpecificSec.textContent = `View-specific: ${viewLabel}`;
 
-  // "Switch Analyst" only appears in Rankings when imported projections have multiple analysts.
+  // "Switch Analyst" appears in any view when imported projections have multiple analysts.
   const menuSA = document.getElementById('menuSwitchAnalyst');
-  if(menuSA) setHidden(menuSA, !(inRankings && importedAnalystData && Object.keys(importedAnalystData).length > 1));
+  if(menuSA) setHidden(menuSA, !(importedAnalystData && Object.keys(importedAnalystData).length > 1));
 
   if(typeof refreshLeagueSyncBtn==='function') refreshLeagueSyncBtn();
 }
@@ -612,10 +611,11 @@ async function resetAll(){
   userProj={}; workingProj=userProj; importedSnapshot=null; dirtySinceImport=false;
   importedAnalystData=null; importedRawPayload=null;
   playerNotes={};
-  currentTeam=null; undoStacks={};
+  currentTeam=null; currentPhase='Passing'; undoStacks={};
   clearSession();   // wipe the saved session so the fresh pull isn't overwritten on next boot
   // refreshFromSleeper resets the working set to the fresh seed, re-renders, and toasts.
   await refreshFromSleeper();
+  syncAppChrome();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -626,6 +626,41 @@ projSeed = SEED;
 renderSeasonTabs();
 renderSidebar();
 syncAppChrome();
+
+// ── Dev-mode tooling ──────────────────────────────────────────────────────
+if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE){
+  // Expose a live state inspector at window.tcDebug for console inspection.
+  window.tcDebug = {
+    get proj()    { return userProj; },
+    get working() { return workingProj; },
+    get season()  { return activeSeason; },
+    get phase()   { return currentPhase; },
+    get team()    { return currentTeam; },
+    get format()  { return rankFormat; },
+    get analysts(){ return importedAnalystData ? Object.keys(importedAnalystData) : null; },
+    get draft()   { return { id: (typeof draftId!=='undefined'?draftId:null), picks: Object.keys(typeof draftedIds!=='undefined'?draftedIds:{}).length, active: !!(typeof draftTimer!=='undefined'&&draftTimer) }; },
+    get cache()   { return { epoch: (typeof _buildPlayerCacheEpoch!=='undefined'?_buildPlayerCacheEpoch:null), hit: !!(typeof _buildPlayerCache!=='undefined'&&_buildPlayerCache.list) }; },
+    buildPlayers(){ return (typeof buildPlayerList==='function') ? buildPlayerList() : null; },
+    bust(){        if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache(); },
+    dump(){
+      console.group('[TC] App state');
+      console.log('phase:', currentPhase, '| team:', currentTeam, '| season:', activeSeason, '| format:', rankFormat);
+      console.log('teams with proj:', Object.keys(userProj).length);
+      console.log('analysts:', importedAnalystData ? Object.keys(importedAnalystData).join(', ') : 'none');
+      console.log('draft:', window.tcDebug.draft);
+      console.log('cache:', window.tcDebug.cache);
+      console.groupEnd();
+    },
+  };
+  // Surface unhandled promise rejections and JS errors so they aren't silently swallowed.
+  window.addEventListener('unhandledrejection', e=>{
+    console.error('[TC] Unhandled rejection:', e.reason);
+  });
+  window.addEventListener('error', e=>{
+    console.error('[TC] Uncaught error:', e.message, '@', e.filename+':'+e.lineno);
+  });
+  console.info('[TC] Dev mode active. window.tcDebug available — try tcDebug.dump()');
+}
 
 // If no seed is embedded (the default now — we pull live from Sleeper), fetch the
 // current-season projections automatically on first load. A prebuilt triplecrown_seed.json
