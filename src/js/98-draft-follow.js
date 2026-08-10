@@ -629,7 +629,7 @@ function renderRosterBar(){
   const chips = slots.map(s=>{
     const p=s.player;
     const cls = p ? `rt-chip filled ${slotClass(s.slot)}` : 'rt-chip empty';
-    const label = p ? (p.name.split(' ').slice(-1)[0] || slotLabel(s.slot)) : slotLabel(s.slot);
+    const label = p ? (((typeof tcLastName==='function')?tcLastName(p.name):(String(p.name||'').trim().split(/\s+/).slice(-1)[0])) || slotLabel(s.slot)) : slotLabel(s.slot);
     return `<span class="${cls}" title="${p?`${p.name} (${p.pos} · ${p.team})`:slotLabel(s.slot)+' — open'}">${p?`<b>${slotLabel(s.slot)}</b> ${label}`:slotLabel(s.slot)}</span>`;
   }).join('');
 
@@ -696,7 +696,7 @@ function renderTrackerPanel(viewSlot){
       // helper isn't loaded for any reason.
       const nm=(p)=>{
         if(!p) return '\u2014';
-        const short = p.name.split(' ').slice(-1)[0];
+        const short = ((typeof tcLastName==='function')?tcLastName(p.name):(String(p.name||'').trim().split(/\s+/).slice(-1)[0])) || p.name;
         if(typeof pcardOnclick!=='function') return short;
         return `<span class="vona-name clickable-player" title="${escAttr(p.name)} \u2014 open player card"
           onclick="event.stopPropagation();${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${short}</span>`;
@@ -739,7 +739,7 @@ function renderTrackerPanel(viewSlot){
       if(rec){
         // Lead with the ACTION and the player, not a raw cliff number — "(\u22121.6)" reads like
         // an error on a phone and means nothing without the board in front of you.
-        const who = rec.bestNow ? rec.bestNow.name.split(' ').slice(-1)[0] : '';
+        const who = rec.bestNow ? (((typeof tcLastName==='function')?tcLastName(rec.bestNow.name):(String(rec.bestNow.name||'').trim().split(/\s+/).slice(-1)[0])) || '') : '';
         recTxt = `Take a <b>${rec.pos}</b>${who?` \u2014 ${who}`:''}`;
         if(rec.why) recTxt += ` <span class="vona-sub-why">(${rec.why})</span>`;
         else if(rec.filled) recTxt = `Best value: <b>${rec.pos}</b>${who?` \u2014 ${who}`:''} \u2014 starters are set`;

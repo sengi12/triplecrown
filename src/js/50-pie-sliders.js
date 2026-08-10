@@ -16,7 +16,7 @@ function initPie(team,kind){
       const vals=state.passing_shares.map(value);
       const pool=vals.reduce((s,v)=>s+v,0)||1;
       const data=vals.map(v=>v/pool); // original order → matches PCOLORS[i] in the rows
-      const labels=state.passing_shares.map(p=>p.name.split(' ').pop());
+      const labels=state.passing_shares.map(p=>(typeof tcLastName==='function')?tcLastName(p.name):(String(p.name||'').trim().split(/\s+/).slice(-1)[0]||''));
       pieChart=mkDoughnut(ctx,labels,data);
       return;
     }
@@ -24,13 +24,13 @@ function initPie(team,kind){
     const ctx=document.getElementById('pieChart');if(!ctx)return;
     if(pieChart){pieChart.destroy();pieChart=null;}
     const data=passingSubTab==='targets'?state.passing_shares.map(p=>p.share):state.passing_shares.map(p=>p.td_share);
-    pieChart=mkDoughnut(ctx,state.passing_shares.map(p=>p.name.split(' ').pop()),data);
+    pieChart=mkDoughnut(ctx,state.passing_shares.map(p=>(typeof tcLastName==='function')?tcLastName(p.name):(String(p.name||'').trim().split(/\s+/).slice(-1)[0]||'')),data);
   } else {
     if(!state.rushing.shares) return;
     const ctx=document.getElementById('rushPieChart');if(!ctx)return;
     if(pieChart){pieChart.destroy();pieChart=null;}
     const data=rushingSubTab==='carries'?state.rushing.shares.map(p=>p.share):state.rushing.shares.map(p=>p.td_share);
-    pieChart=mkDoughnut(ctx,state.rushing.shares.map(p=>p.name.split(' ').pop()),data);
+    pieChart=mkDoughnut(ctx,state.rushing.shares.map(p=>(typeof tcLastName==='function')?tcLastName(p.name):(String(p.name||'').trim().split(/\s+/).slice(-1)[0]||'')),data);
   }
 }
 function mkDoughnut(ctx,labels,data){

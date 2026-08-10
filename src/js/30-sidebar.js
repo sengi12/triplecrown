@@ -129,8 +129,22 @@ function seasonHeadCoachName(team, season){
 }
 
 function _teamLastName(name){
-  const parts = String(name||'').trim().split(/\s+/).filter(Boolean);
-  return parts.length ? parts[parts.length-1] : String(name||'').trim();
+  return tcLastName(name);
+}
+
+function tcLastName(name){
+  const raw = String(name||'').trim();
+  if(!raw) return '';
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if(parts.length===1) return parts[0];
+  const suffixRe = /^(jr|sr|ii|iii|iv|v|vi|vii|2nd|3rd|4th|5th)$/i;
+  let i = parts.length-1;
+  while(i>0){
+    const tok = String(parts[i]||'').replace(/[.,]/g,'');
+    if(!suffixRe.test(tok)) break;
+    i--;
+  }
+  return parts[i] || parts[parts.length-1];
 }
 
 function teamHeaderQbText(team, qbs, recStr){

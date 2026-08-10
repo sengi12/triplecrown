@@ -4774,8 +4774,22 @@ function seasonHeadCoachName(team, season){
 }
 
 function _teamLastName(name){
-  const parts = String(name||'').trim().split(/\s+/).filter(Boolean);
-  return parts.length ? parts[parts.length-1] : String(name||'').trim();
+  return tcLastName(name);
+}
+
+function tcLastName(name){
+  const raw = String(name||'').trim();
+  if(!raw) return '';
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if(parts.length===1) return parts[0];
+  const suffixRe = /^(jr|sr|ii|iii|iv|v|vi|vii|2nd|3rd|4th|5th)$/i;
+  let i = parts.length-1;
+  while(i>0){
+    const tok = String(parts[i]||'').replace(/[.,]/g,'');
+    if(!suffixRe.test(tok)) break;
+    i--;
+  }
+  return parts[i] || parts[parts.length-1];
 }
 
 function teamHeaderQbText(team, qbs, recStr){
@@ -4970,7 +4984,7 @@ function renderPassing(team,state){
   return `${weekSlider}${workloadCard}<div class="card">
     <div class="card-title">${qb.name} — Passing ${isMulti?`<span style="font-size:9px;color:var(--muted)">(editing QB${idx+1} of ${state.qbs.length})</span>`:''}</div>
     ${isMulti?`<div class="qb-tab-bar">${state.qbs.map((q,i)=>
-      `<button class="qb-tab ${i===idx?'active':''}" onclick="setActiveQB(${i})">${q.name.split(' ').pop()}</button>`).join('')}</div>`:''}
+      `<button class="qb-tab ${i===idx?'active':''}" onclick="setActiveQB(${i})">${(typeof tcLastName==='function')?tcLastName(q.name):(String(q.name||'').trim().split(/\s+/).slice(-1)[0]||'')}</button>`).join('')}</div>`:''}
     <div class="player-row"><span class="clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${imgTag(hsPack(qb),'player-headshot')}</span>
       <span class="pos-badge pos-QB">QB${idx+1}</span>
       <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${qb.name}</div>
@@ -5631,7 +5645,7 @@ function initPie(team,kind){
       const vals=state.passing_shares.map(value);
       const pool=vals.reduce((s,v)=>s+v,0)||1;
       const data=vals.map(v=>v/pool); // original order → matches PCOLORS[i] in the rows
-      const labels=state.passing_shares.map(p=>p.name.split(' ').pop());
+      const labels=state.passing_shares.map(p=>(typeof tcLastName==='function')?tcLastName(p.name):(String(p.name||'').trim().split(/\s+/).slice(-1)[0]||''));
       pieChart=mkDoughnut(ctx,labels,data);
       return;
     }
@@ -5639,13 +5653,13 @@ function initPie(team,kind){
     const ctx=document.getElementById('pieChart');if(!ctx)return;
     if(pieChart){pieChart.destroy();pieChart=null;}
     const data=passingSubTab==='targets'?state.passing_shares.map(p=>p.share):state.passing_shares.map(p=>p.td_share);
-    pieChart=mkDoughnut(ctx,state.passing_shares.map(p=>p.name.split(' ').pop()),data);
+    pieChart=mkDoughnut(ctx,state.passing_shares.map(p=>(typeof tcLastName==='function')?tcLastName(p.name):(String(p.name||'').trim().split(/\s+/).slice(-1)[0]||'')),data);
   } else {
     if(!state.rushing.shares) return;
     const ctx=document.getElementById('rushPieChart');if(!ctx)return;
     if(pieChart){pieChart.destroy();pieChart=null;}
     const data=rushingSubTab==='carries'?state.rushing.shares.map(p=>p.share):state.rushing.shares.map(p=>p.td_share);
-    pieChart=mkDoughnut(ctx,state.rushing.shares.map(p=>p.name.split(' ').pop()),data);
+    pieChart=mkDoughnut(ctx,state.rushing.shares.map(p=>(typeof tcLastName==='function')?tcLastName(p.name):(String(p.name||'').trim().split(/\s+/).slice(-1)[0]||'')),data);
   }
 }
 function mkDoughnut(ctx,labels,data){
@@ -19116,7 +19130,7 @@ function renderRosterBar(){
   const chips = slots.map(s=>{
     const p=s.player;
     const cls = p ? `rt-chip filled ${slotClass(s.slot)}` : 'rt-chip empty';
-    const label = p ? (p.name.split(' ').slice(-1)[0] || slotLabel(s.slot)) : slotLabel(s.slot);
+    const label = p ? (((typeof tcLastName==='function')?tcLastName(p.name):(String(p.name||'').trim().split(/\s+/).slice(-1)[0])) || slotLabel(s.slot)) : slotLabel(s.slot);
     return `<span class="${cls}" title="${p?`${p.name} (${p.pos} · ${p.team})`:slotLabel(s.slot)+' — open'}">${p?`<b>${slotLabel(s.slot)}</b> ${label}`:slotLabel(s.slot)}</span>`;
   }).join('');
 
@@ -19183,7 +19197,7 @@ function renderTrackerPanel(viewSlot){
       // helper isn't loaded for any reason.
       const nm=(p)=>{
         if(!p) return '\u2014';
-        const short = p.name.split(' ').slice(-1)[0];
+        const short = ((typeof tcLastName==='function')?tcLastName(p.name):(String(p.name||'').trim().split(/\s+/).slice(-1)[0])) || p.name;
         if(typeof pcardOnclick!=='function') return short;
         return `<span class="vona-name clickable-player" title="${escAttr(p.name)} \u2014 open player card"
           onclick="event.stopPropagation();${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${short}</span>`;
@@ -19226,7 +19240,7 @@ function renderTrackerPanel(viewSlot){
       if(rec){
         // Lead with the ACTION and the player, not a raw cliff number — "(\u22121.6)" reads like
         // an error on a phone and means nothing without the board in front of you.
-        const who = rec.bestNow ? rec.bestNow.name.split(' ').slice(-1)[0] : '';
+        const who = rec.bestNow ? (((typeof tcLastName==='function')?tcLastName(rec.bestNow.name):(String(rec.bestNow.name||'').trim().split(/\s+/).slice(-1)[0])) || '') : '';
         recTxt = `Take a <b>${rec.pos}</b>${who?` \u2014 ${who}`:''}`;
         if(rec.why) recTxt += ` <span class="vona-sub-why">(${rec.why})</span>`;
         else if(rec.filled) recTxt = `Best value: <b>${rec.pos}</b>${who?` \u2014 ${who}`:''} \u2014 starters are set`;
