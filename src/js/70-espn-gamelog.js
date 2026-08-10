@@ -280,7 +280,10 @@ async function loadEspnCardData(pid, posc, body, opts){
     }
     if(!out) out = `<div class="pcard-loading">No game data found for this player.</div>`;
     out += `<div class="pcard-src">${league==='nfl'?'NFL':'College'} per-game stats via ESPN${def?'':' · AVG shown as YPC'}.</div>`;
-    if(pcardOpen && tok===pcardToken) body.innerHTML = out;
+    if(pcardOpen && tok===pcardToken){
+      body.innerHTML = out;
+      if(typeof pcardEnableStickyStatHeaders==='function') pcardEnableStickyStatHeaders();
+    }
   }catch(e){
     body.innerHTML = pcardRetryHtml("Couldn't load game logs. Check your connection and try again.");
   }

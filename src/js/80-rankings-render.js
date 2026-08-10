@@ -101,6 +101,9 @@ function rankingsRenderCacheKey(teamScoped){
     String(rankPosFilter),
     String(!!rankAdvanced),
     String(sumerRefinement||''),
+    String(sumerMin && Number.isFinite(+sumerMin.QB) ? +sumerMin.QB : 0),
+    String(sumerMin && Number.isFinite(+sumerMin.WRTE) ? +sumerMin.WRTE : 0),
+    String(sumerMin && Number.isFinite(+sumerMin.RB) ? +sumerMin.RB : 0),
     advCols,
     String(scoringPanelOpen),
     String(scoringAxis||''),
@@ -171,7 +174,9 @@ function renderRankings(){
   // live draft: mark drafted players
   const following = !!draftId;
   all.forEach(p=>{ p.drafted = following && !!draftedIds[p.player_id]; });
-  const rankIsRookie = (p)=>!!(p && (p.is_rookie===true || Number(p.years_exp)===0));
+  const rankIsRookie = (p)=> (typeof rankingIsRookieForSeason==='function')
+    ? !!rankingIsRookieForSeason(p, activeSeason)
+    : !!(p && (p.is_rookie===true || Number(p.years_exp)===0));
   let view=rankPosFilter==='ALL'?all
     :rankPosFilter==='ROOKIES'?all.filter(rankIsRookie)
     :rankPosFilter==='FLEX'?all.filter(p=>p.pos!=='QB')
@@ -346,7 +351,13 @@ function renderRankings(){
     const fptsTxt = p.fpts.toFixed(1);
     const vorTxt = `${p.vor>0?'+':''}${p.vor!=null?p.vor.toFixed(1):'—'}`;
     const pSearchAttr = escAttr(String(p.name||'').toLowerCase());
-    rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}">
+    const volBucket = advActive ? String(sumerBucket(p.pos)||'') : '';
+    const volCol = advActive ? sumerVolCol(p.pos) : '';
+    const volVal = (advActive && volCol) ? sumerValue(p, volCol) : null;
+    const volAttrs = advActive
+      ? ` data-rank-sumer-bucket="${escAttr(volBucket)}" data-rank-sumer-vol="${(volVal!=null && Number.isFinite(+volVal)) ? escAttr(String(+volVal)) : ''}"`
+      : '';
+    rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}"${volAttrs}>
     <td class="c-ecr">${ecrTxt!=='—'?rankValueHtml(ecrTxt, p, 'Expert Consensus Rank', 'ecr', 'rankings'):ecrTxt}</td>
     <td class="c-tier">${tier!=null?rankValueHtml(`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`, p, 'Tier', 'ecr_tier', 'rankings'):''}</td>
     <td class="fpts">${rankValueHtml(fptsTxt, p, 'Fantasy Points', 'fpts', 'rankings')}</td>
@@ -558,7 +569,7 @@ function setRankFormat(f){
   if(preset){ Object.assign(scoringSettings,preset); }
   rankSortKey='ecr'; rankSortDir=-1;
   saveSession();
-  renderRankings();
+  rankingsRenderWithViewPreserved();
   toast(`${formatLabel(f)} — ECR + scoring applied`,'ok');
 }
 // ── Two-axis format model ───────────────────────────────────────────────────
@@ -606,7 +617,7 @@ function applyTwoAxisFormat(type, scoring){
   if(preset){ Object.assign(scoringSettings, preset); }
   rankSortKey='ecr'; rankSortDir=-1;
   saveSession();
-  renderRankings();
+  rankingsRenderWithViewPreserved();
   toast(`${formatLabel(rankFormat)} — ECR + scoring applied`,'ok');
 }
 // When the user edits the reception value directly, keep the format label in sync so the
@@ -621,7 +632,12 @@ function syncFormatFromScoring(){
   if(f!==rankFormat){ rankFormat=f;
     toast(`Reception value ${r} → switched to ${({ppr:'Full PPR',half_ppr:'Half PPR',std:'Standard'})[f]} (ECR follows)`,'ok'); }
 }
-function setPosFilter(p){rankPosFilter=p;renderRankings();}
+function rankingsRenderWithViewPreserved(){
+  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRankings(), ['.rank-table-wrap']);
+  else renderRankings();
+}
+
+function setPosFilter(p){rankPosFilter=p;rankingsRenderWithViewPreserved();}
 
 function rankingsSearchTokens(q){
   const s = String(q||'').trim().toLowerCase();
@@ -633,7 +649,7 @@ function rankingsSearchTokens(q){
 function setRankingsSearchQuery(v, selStart, selEnd){
   rankingsSearchQuery = String(v||'');
   const keepFocus = (typeof document!=='undefined' && document.activeElement && document.activeElement.id==='rankSearchInput');
-  if(keepFocus && applyRankingsSearchInPlace()) return;
+  if(keepFocus && applyRankingsFiltersInPlace()) return;
   renderRankings();
   if(!keepFocus) return;
   requestAnimationFrame(()=>{
@@ -647,30 +663,53 @@ function setRankingsSearchQuery(v, selStart, selEnd){
   });
 }
 
-function applyRankingsSearchInPlace(){
+function activeSumerMinFilters(){
+  if(!(rankAdvanced && typeof sumerAvailable==='function' && sumerAvailable())) return {};
+  const out = {};
+  ['QB','WRTE','RB'].forEach((bucket)=>{
+    const min = sumerMin && Number.isFinite(+sumerMin[bucket]) ? +sumerMin[bucket] : 0;
+    if(min>0) out[bucket] = min;
+  });
+  return out;
+}
+
+function applyRankingsFiltersInPlace(){
   if(typeof document==='undefined') return false;
   const tbody = document.querySelector('.rankings-table tbody');
   if(!tbody) return false;
   const tokens = rankingsSearchTokens(rankingsSearchQuery);
+  const minFilters = activeSumerMinFilters();
+  const hasMinFilters = Object.keys(minFilters).length>0;
   let shown = 0;
   const rows = tbody.querySelectorAll('tr');
   rows.forEach((row)=>{
     if(row.classList.contains('rank-pickline')){
       // Pick-line markers become misleading during ad-hoc filtering.
-      row.style.display = tokens.length ? 'none' : '';
+      row.style.display = (tokens.length || hasMinFilters) ? 'none' : '';
       return;
     }
     const hay = String(row.getAttribute('data-rank-search')||'').toLowerCase();
-    const match = !tokens.length || tokens.some(tok=>hay.includes(tok));
+    const matchSearch = !tokens.length || tokens.some(tok=>hay.includes(tok));
+    const bucket = String(row.getAttribute('data-rank-sumer-bucket')||'');
+    const volRaw = row.getAttribute('data-rank-sumer-vol');
+    const vol = (volRaw==null || volRaw==='') ? null : Number(volRaw);
+    const matchMin = !hasMinFilters || !bucket || !Object.prototype.hasOwnProperty.call(minFilters, bucket)
+      ? true
+      : (Number.isFinite(vol) && vol>=minFilters[bucket]);
+    const match = matchSearch && matchMin;
     row.style.display = match ? '' : 'none';
     if(match) shown++;
   });
   const countEl = document.getElementById('rankPlayerCount');
   if(countEl){
     const def = String(countEl.getAttribute('data-default-label')||'').trim();
-    countEl.textContent = tokens.length ? `${shown} players` : (def || `${shown} players`);
+    countEl.textContent = (tokens.length || hasMinFilters) ? `${shown} players` : (def || `${shown} players`);
   }
   return true;
+}
+
+function applyRankingsSearchInPlace(){
+  return applyRankingsFiltersInPlace();
 }
 
 function clearRankingsSearch(){
@@ -715,7 +754,7 @@ function setRankAdvanced(v){
   } else if(rankSortKey.startsWith('sumer:')){
     rankSortKey='ecr'; rankSortDir=-1;
   }
-  renderRankings();
+  rankingsRenderWithViewPreserved();
 }
 // Select a "Situational" refinement (game-situation split) for the Adv. Metrics view. Empty
 // value = Standard (overall). Re-sort onto the first column so the board reflects the split.
@@ -723,13 +762,13 @@ function setSumerRefinement(val){
   sumerRefinement = val || null;
   const sv=sumerColumnsForFilter();
   if(sv) { rankSortKey='sumer:'+sv.cols[0]; rankSortDir=-1; }
-  renderRankings();
+  rankingsRenderWithViewPreserved();
 }
 // Build the minimum-volume input(s) for the Adv. Metrics view, matched to the position filter:
 // QB → Min Plays, WR/TE → Min Routes, RB → Min Rushes. ALL/FLEX show each relevant one.
 function sumerMinInputs(){
   const mk=(bucket,label)=>`<label style="font-size:11px;color:var(--muted);font-weight:700;display:inline-flex;align-items:center;gap:4px">${label}
-    <input type="number" min="0" step="10" value="${sumerMin[bucket]||0}" onchange="setSumerMin('${bucket}',this.value)"
+    <input type="number" min="0" step="10" value="${sumerMin[bucket]||0}" data-rank-min-bucket="${bucket}" oninput="setSumerMin('${bucket}',this.value,this.selectionStart,this.selectionEnd)"
       style="width:58px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:3px 6px;color:var(--text);font-size:12px;font-family:var(--mono)"></label>`;
   const pos=rankPosFilter;
   let items;
@@ -740,10 +779,26 @@ function sumerMinInputs(){
   else items=[['QB','Min Plays'],['WRTE','Min Routes'],['RB','Min Rushes']];  // ALL
   return items.map(([b,l])=>mk(b,l)).join('');
 }
-function setSumerMin(bucket, val){
+function setSumerMin(bucket, val, selStart, selEnd){
   const n=parseInt(val,10);
   sumerMin[bucket] = (isNaN(n)||n<0) ? 0 : n;
-  renderRankings();
+  const keepFocus = !!(typeof document!=='undefined'
+    && document.activeElement
+    && document.activeElement.getAttribute
+    && document.activeElement.getAttribute('data-rank-min-bucket')===String(bucket));
+  if(keepFocus && applyRankingsFiltersInPlace()) return;
+  rankingsRenderWithViewPreserved();
+  if(!keepFocus) return;
+  requestAnimationFrame(()=>{
+    const el = document.querySelector(`[data-rank-min-bucket="${String(bucket)}"]`);
+    if(!el || typeof el.focus!=='function') return;
+    el.focus();
+    if(typeof el.setSelectionRange!=='function') return;
+    const max = el.value.length;
+    const s = Math.max(0, Math.min(max, Number.isFinite(selStart) ? selStart : max));
+    const e = Math.max(0, Math.min(max, Number.isFinite(selEnd) ? selEnd : s));
+    el.setSelectionRange(s, e);
+  });
 }
 // A one-line digest of the current scoring, shown in the collapsed panel header so you can
 // confirm your settings without expanding it. Only surfaces the fields people actually vary.

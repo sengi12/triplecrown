@@ -712,7 +712,8 @@ function _advProjOlBadge(team, which){
   return ` <span class="sr-proj-badge ${cls}" title="Projected ${projSeason} ${lbl} overall score, from projected depth-chart starters">Proj \u2019${shortSeason} ${Number(p.score).toFixed(1)}${rk!=null?` \u00b7 #${rk}`:''}</span>`;
 }
 
-function _advTeamPowerScore(team, src){
+function _advTeamPowerScore(team, src, opts){
+  const o = opts || {};
   const season = String(advTeamSeason());
   const pack = (NFLVERSE && NFLVERSE[season] && NFLVERSE[season].adv_weekly) || null;
   const fallbackFromSrc = ()=>{
@@ -757,6 +758,7 @@ function _advTeamPowerScore(team, src){
       parts: me.parts,
     };
   };
+  if(o.stableFromSource) return fallbackFromSrc();
   if(!pack || !pack.teams || !Array.isArray(pack.weeks) || !Array.isArray(pack.cols)) return fallbackFromSrc();
 
   const requiredCols = [
@@ -866,7 +868,7 @@ function _advTeamPowerScore(team, src){
 }
 
 function _renderAdvPowerScore(team, src, opts){
-  const p = _advTeamPowerScore(team, src);
+  const p = _advTeamPowerScore(team, src, opts);
   if(!p) return '';
   const o = opts || {};
   const showLabel = !o.shieldOnly;
@@ -959,9 +961,9 @@ function renderTeamAdvanced(team){
   const carryBlock = renderCoordinatorCarryover(team);
   const srcLabel = 'nflverse (computed from play-by-play)';
   return `<div class="sr-team-wrap">
+    ${renderAdvWeekRange(team)}
     <div class="sr-note">${TC_ICON("chart")} <b>Advanced team stats</b> · ${srcLabel} · <b>${advTeamSeason()} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
       <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="showSharpLeague()">View league-wide tables →</button></div>
-    ${renderAdvWeekRange(team)}
     ${sosStrip}
     ${carryBlock}
     ${section('Offense', offKeys, coordInlineLabel(team,oc,'offensive'))}

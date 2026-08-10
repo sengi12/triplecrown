@@ -134,7 +134,9 @@ function _rbProjectedChart(pid, normName){
     is_projection:true,
     baselineSeason:olProj.baselineSeason,
     run_score:olProj.projRunScore,
-    run_rank:olProj.runRank,
+    run_rank:(olProj.baselineRunRank!=null && !Number.isNaN(Number(olProj.baselineRunRank)))
+      ? Number(olProj.baselineRunRank)
+      : olProj.runRank,
     team:teamCode,
     totals:{attempts, yards, ypc:Number(ypc.toFixed(2)), success_rate:success, td:tds},
     lanes:_rbProjectedLanes(baseChart, olProj.line||{}, {attempts, ypc}),
@@ -501,22 +503,70 @@ function _rbFanSVG(chart, playerName, season, metric, notePlayer){
   const lanes=chart.lanes||{};
   const line=_rbRosterLine(season, _rbTeamCode(chart.team||''), chart.line||{});
   const t=chart.totals||{};
-  const W=760, H=880;
-  const rbx=380, rby=650;
+  const mobileNarrow = !!(typeof window!=='undefined' && window.matchMedia && window.matchMedia('(max-width: 560px)').matches);
+  const G = mobileNarrow
+    ? {
+        W:620, H:920,
+        centerX:310,
+        arrowX:{LE:50, LT:120, LG:205, MID:310, RG:415, RT:500, RE:570},
+        cardX:{LT:102, LG:206, C:310, RG:414, RT:518},
+        arrowTopY:248,
+        laneLblY:128, laneHeadY:148, laneSubY:166,
+        losY:560, losLabelY:547,
+        cardY:490, cardW:84, cardH:142,
+        slotY:513,
+        hsXOff:22, hsY:518, hsSize:44, hsClipY:540, hsClipR:21,
+        name1Y:569, name2Y:583, gradeY:616,
+        rbY:700, rbNameY:739, rbMetaY:758,
+        footY1:818, footY2:836, footY3:854,
+        titleY:38, titleSize:26, subtitleSize:16,
+        subcopyY:64, subcopySize:14,
+        laneLblSize:20, laneHeadSize:20, laneSubSize:16,
+        tipLabelGap:44, tipHeadGap:28, tipSubGap:12,
+        edgeDetailInset:8,
+      }
+    : {
+        W:760, H:920,
+        centerX:380,
+        arrowX:RB_FAN_ARROW_X,
+        cardX:RB_FAN_CARD_X,
+        arrowTopY:248,
+        laneLblY:106, laneHeadY:122, laneSubY:137,
+        losY:560, losLabelY:547,
+        cardY:490, cardW:94, cardH:142,
+        slotY:513,
+        hsXOff:22, hsY:518, hsSize:44, hsClipY:540, hsClipR:21,
+        name1Y:569, name2Y:583, gradeY:616,
+        rbY:700, rbNameY:739, rbMetaY:758,
+        footY1:818, footY2:836, footY3:854,
+        titleY:38, titleSize:34, subtitleSize:18,
+        subcopyY:64, subcopySize:16,
+        laneLblSize:25, laneHeadSize:25, laneSubSize:20,
+        tipLabelGap:54, tipHeadGap:34, tipSubGap:14,
+        edgeDetailInset:14,
+      };
+  const W=G.W, H=G.H;
+  const rbx=G.centerX, rby=G.rbY;
 
   const parts=[];
   parts.push(`<svg viewBox="0 0 ${W} ${H}" class="rbf-svg" role="img" aria-label="RB rushing fan chart">`);
-  parts.push('<rect width="760" height="880" fill="#101214"/>');
-  parts.push(`<text x="30" y="34" fill="#fff" font-size="22" font-weight="800">${String(playerName||'RB').toUpperCase()} RUSHING FAN <tspan fill="#9aa0a6" font-size="14" font-weight="600">/ ${season} ${chart.is_projection?'PROJECTION':'REGULAR SEASON'}</tspan></text>`);
-  parts.push(`<text x="30" y="56" fill="#9aa0a6" font-size="13">Arrow width = lane success rate · arrow color = ${chart.is_projection?'projected lane YPC vs league lane average':'lane YPC vs league lane average'}</text>`);
+  parts.push(`<rect width="${W}" height="${H}" fill="#101214"/>`);
+  parts.push(`<text x="30" y="${G.titleY}" fill="#fff" font-size="${G.titleSize}" font-weight="800">${String(playerName||'RB').toUpperCase()} RUSHING FAN <tspan fill="#9aa0a6" font-size="${G.subtitleSize}" font-weight="600">/ ${season} ${chart.is_projection?'PROJECTION':'REGULAR SEASON'}</tspan></text>`);
+  parts.push(`<text x="30" y="${G.subcopyY}" fill="#9aa0a6" font-size="${G.subcopySize}">Arrow width = lane success rate · arrow color = ${chart.is_projection?'projected lane YPC vs league lane average':'lane YPC vs league lane average'}</text>`);
 
   const MET = RB_LANE_METRICS[metric] || RB_LANE_METRICS.eff;
   let MAXV=0;
   if(MET.key){ for(const k in lanes){ const v=lanes[k]&&lanes[k][MET.key]; if(v!=null && +v>MAXV) MAXV=+v; } }
-  for(const lane of RB_FAN_LANES){
+  const laneOffsetMap = mobileNarrow
+    ? { LE:0, LT:80, LG:0, MID:80, RG:0, RT:80, RE:0 }
+    : { LE:0, LT:80, LG:0, MID:80, RG:0, RT:80, RE:0 };
+  for(let li=0; li<RB_FAN_LANES.length; li++){
+    const lane = RB_FAN_LANES[li];
     const d=lanes[lane];
     if(!d || (+d.attempts||0)<3) continue;
-    const cx=RB_FAN_ARROW_X[lane];
+    const cx=G.arrowX[lane];
+    const laneOffset = laneOffsetMap[lane] || 0;
+    const tipY = G.arrowTopY + laneOffset;
     const succ = d.success_rate;
     const ypc = d.ypc;
     const att = +d.attempts||0;
@@ -526,8 +576,8 @@ function _rbFanSVG(chart, playerName, season, metric, notePlayer){
     const col = MET.key ? _rbHeat(mv, MAXV) : _rbArrowColor(d.ypc_diff);
     const w = _rbArrowWidth(succ).toFixed(2);
     const path = lane==='MID'
-      ? 'M380,650 V150'
-      : `M380,650 C${(380-(380-cx)*0.55).toFixed(0)},700 ${cx},585 ${cx},150`;
+      ? `M${G.centerX},${G.rbY} V${tipY}`
+      : `M${G.centerX},${G.rbY} C${(G.centerX-(G.centerX-cx)*0.52).toFixed(0)},${G.rbY+48} ${cx},${G.rbY-70} ${cx},${tipY}`;
     const laneValue = MET.key==='yards' ? `${mv!=null?Math.round(mv):'—'} yds`
       : (MET.key==='td' ? `${mv!=null?Math.round(mv):0} TD` : `${_rbNum(succ,0)}% success`);
     const laneTag = noteTagAttrs({
@@ -540,22 +590,37 @@ function _rbFanSVG(chart, playerName, season, metric, notePlayer){
       team:(notePlayer&&notePlayer.team)||chart.team||'',
       relevance:'RB,QB',
     });
-    parts.push(`<g${laneTag}><path d="${path}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" marker-end="url(#rbf-arrow)"/>`);
-    parts.push(`<text x="${cx}" y="106" fill="#fff" font-size="13" font-weight="800" text-anchor="middle">${lane}</text>`);
+    // Keep text tied to the arrow tip so line-length staggering and label staggering always match.
+    const labelY = tipY - G.tipLabelGap;
+    const headlineY = tipY - G.tipHeadGap;
+    const sublineY = tipY - G.tipSubGap;
     const headline = MET.key==='yards' ? `${mv!=null?Math.round(mv):'—'} YDS`
       : (MET.key==='td' ? `${mv!=null?Math.round(mv):0} TD` : `${_rbNum(succ,0)}% SUCC`);
-    parts.push(`<text x="${cx}" y="122" fill="${col}" font-size="12" font-weight="800" text-anchor="middle">${headline}</text>`);
-    parts.push(`<text x="${cx}" y="137" fill="#9aa0a6" font-size="10" text-anchor="middle">${att} att · ${_rbNum(ypc,1)} YPC</text>`);
+    const subline = `${att} att · ${_rbNum(ypc,1)} YPC`;
+
+    const labelX = cx;
+    let detailX = cx;
+    let detailAnchor = 'middle';
+    if(lane==='LE' || lane==='RE'){
+      // Keep detail lines near the frame edge while lane labels stay on arrow endpoints.
+      detailX = lane==='LE' ? G.edgeDetailInset : (W - G.edgeDetailInset);
+      detailAnchor = lane==='LE' ? 'start' : 'end';
+    }
+    parts.push(`<g${laneTag}><path d="${path}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" marker-end="url(#rbf-arrow)"/>`);
+    parts.push(`<text x="${labelX}" y="${labelY}" fill="#fff" font-size="${G.laneLblSize}" font-weight="800" text-anchor="middle">${lane}</text>`);
+    parts.push(`<text x="${detailX}" y="${headlineY}" fill="${col}" font-size="${G.laneHeadSize}" font-weight="800" text-anchor="${detailAnchor}">${headline}</text>`);
+    parts.push(`<text x="${detailX}" y="${sublineY}" fill="#9aa0a6" font-size="${G.laneSubSize}" text-anchor="${detailAnchor}">${subline}</text>`);
     parts.push(`</g>`);
   }
 
-  parts.push('<defs><marker id="rbf-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></marker><clipPath id="rbf-hs-LT"><circle cx="160" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-LG"><circle cx="270" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-C"><circle cx="380" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-RG"><circle cx="490" cy="506" r="19"/></clipPath><clipPath id="rbf-hs-RT"><circle cx="600" cy="506" r="19"/></clipPath></defs>');
+  const clipDefs = RB_FAN_CARD_SLOTS.map(slot=>`<clipPath id="rbf-hs-${slot}"><circle cx="${G.cardX[slot]}" cy="${G.hsClipY}" r="${G.hsClipR}"/></clipPath>`).join('');
+  parts.push(`<defs><marker id="rbf-arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse"><path d="M1 1L8 5L1 9" fill="none" stroke="context-stroke" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></marker>${clipDefs}</defs>`);
 
-  parts.push('<line x1="15" y1="520" x2="745" y2="520" stroke="#2f6fe4" stroke-width="3" stroke-dasharray="10 7"/>');
-  parts.push('<text x="18" y="508" fill="#5b83c9" font-size="11" font-weight="800">LOS</text>');
+  parts.push(`<line x1="15" y1="${G.losY}" x2="${W-15}" y2="${G.losY}" stroke="#2f6fe4" stroke-width="3" stroke-dasharray="10 7"/>`);
+  parts.push(`<text x="18" y="${G.losLabelY}" fill="#5b83c9" font-size="11" font-weight="800">LOS</text>`);
 
   for(const slot of RB_FAN_CARD_SLOTS){
-    const x=RB_FAN_CARD_X[slot];
+    const x=G.cardX[slot];
     const d=line[slot]||{};
     const runG=d.run_grade||null;
     const col=_rbGradeColor(runG);
@@ -565,22 +630,22 @@ function _rbFanSVG(chart, playerName, season, metric, notePlayer){
       ? `openPlayerCardFromCard(${pcardArg(d.name)},${pcardArg(slot)},${pcardArg(chart.team||'')})`
       : '';
     parts.push(`<g class="rbf-ol-card${d.name?' clickable-player':''}" ${d.name?`onclick="${click}" role="button" tabindex="0"`:''}>
-      <rect x="${x-46}" y="462" width="92" height="122" rx="7" fill="#1b1e22" stroke="${col}" stroke-width="2"/>
-      <text x="${x}" y="483" fill="#fff" font-size="15" font-weight="800" text-anchor="middle">${slot}</text>
-      ${hs?`<image href="${hs}" x="${x-19}" y="487" width="40" height="40" clip-path="url(#rbf-hs-${slot})" preserveAspectRatio="xMidYMid slice"/>`:''}
-      <text x="${x}" y="529" fill="#e8eaed" font-size="9.5" text-anchor="middle">${n[0]||''}</text>
-      <text x="${x}" y="541" fill="#e8eaed" font-size="9.5" font-weight="700" text-anchor="middle">${n[1]||''}</text>
-      <text x="${x}" y="568" fill="${col}" font-size="27" font-weight="900" text-anchor="middle">${runG||'n/a'}</text>
+      <rect x="${x-(G.cardW/2)}" y="${G.cardY}" width="${G.cardW}" height="${G.cardH}" rx="7" fill="#1b1e22" stroke="${col}" stroke-width="2"/>
+      <text x="${x}" y="${G.slotY}" fill="#fff" font-size="${mobileNarrow?17:15}" font-weight="800" text-anchor="middle">${slot}</text>
+      ${hs?`<image href="${hs}" x="${x-G.hsXOff}" y="${G.hsY}" width="${G.hsSize}" height="${G.hsSize}" clip-path="url(#rbf-hs-${slot})" preserveAspectRatio="xMidYMid slice"/>`:''}
+      <text x="${x}" y="${G.name1Y}" fill="#e8eaed" font-size="${mobileNarrow?11:9.5}" text-anchor="middle">${n[0]||''}</text>
+      <text x="${x}" y="${G.name2Y}" fill="#e8eaed" font-size="${mobileNarrow?11:9.5}" font-weight="700" text-anchor="middle">${n[1]||''}</text>
+      <text x="${x}" y="${G.gradeY}" fill="${col}" font-size="${mobileNarrow?30:27}" font-weight="900" text-anchor="middle">${runG||'n/a'}</text>
     </g>`);
   }
 
   parts.push(`<circle cx="${rbx}" cy="${rby}" r="13" fill="#e8eaed" stroke="#0c0d0f" stroke-width="2"/>`);
-  parts.push(`<text x="${rbx}" y="690" fill="#fff" font-size="13" font-weight="800" text-anchor="middle">${String(playerName||'RB').toUpperCase()}</text>`);
-  parts.push(`<text x="${rbx}" y="707" fill="#9aa0a6" font-size="11" text-anchor="middle">${t.attempts||0} carries · ${(t.yards!=null?Number(t.yards).toLocaleString():'—')} yds · ${_rbNum(t.ypc,2)} YPC · ${_rbNum(t.success_rate,1)}% success</text>`);
+  parts.push(`<text x="${rbx}" y="${G.rbNameY}" fill="#fff" font-size="${mobileNarrow?15:13}" font-weight="800" text-anchor="middle">${String(playerName||'RB').toUpperCase()}</text>`);
+  parts.push(`<text x="${rbx}" y="${G.rbMetaY}" fill="#9aa0a6" font-size="${mobileNarrow?12:11}" text-anchor="middle">${t.attempts||0} carries · ${(t.yards!=null?Number(t.yards).toLocaleString():'—')} yds · ${_rbNum(t.ypc,2)} YPC · ${_rbNum(t.success_rate,1)}% success</text>`);
 
-  parts.push(`<text x="30" y="772" fill="#6b7075" font-size="10">OL card grades are from the validated local OL pipeline (${chart.is_projection?`projected ${RB_PROJ_SEASON} run grades`:'historical rushing grades'}, slot by pass-snaps).</text>`);
-  parts.push(`<text x="30" y="786" fill="#6b7075" font-size="10">Lanes shown when attempts >= 3. ${chart.is_projection?'Projected lanes keep the back\u2019s last known directional profile and scale it to projected volume/efficiency.' : (MET.key? 'Color scales to this back\u2019s best gap.' : 'Color compares lane YPC to league average for that lane in-season.')}</text>`);
-  parts.push('<text x="30" y="800" fill="#6b7075" font-size="10">Data: nflverse play-by-play + local OL grades. Not affiliated with the NFL.</text>');
+  parts.push(`<text x="30" y="${G.footY1}" fill="#6b7075" font-size="10">OL card grades are from the validated local OL pipeline (${chart.is_projection?`projected ${RB_PROJ_SEASON} run grades`:'historical rushing grades'}, slot by pass-snaps).</text>`);
+  parts.push(`<text x="30" y="${G.footY2}" fill="#6b7075" font-size="10">Lanes shown when attempts >= 3. ${chart.is_projection?'Projected lanes keep the back\u2019s last known directional profile and scale it to projected volume/efficiency.' : (MET.key? 'Color scales to this back\u2019s best gap.' : 'Color compares lane YPC to league average for that lane in-season.')}</text>`);
+  parts.push(`<text x="30" y="${G.footY3}" fill="#6b7075" font-size="10">Data: nflverse play-by-play + local OL grades. Not affiliated with the NFL.</text>`);
   parts.push('</svg>');
   return parts.join('');
 }

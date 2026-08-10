@@ -208,7 +208,20 @@ function fmtSumer(v, isPct){
 // Which minimum-volume bucket a position falls in (WR and TE share the "routes" bucket).
 function sumerBucket(pos){ return pos==='QB' ? 'QB' : pos==='RB' ? 'RB' : 'WRTE'; }
 // The Sumer column that represents "volume" for a position — the one the minimum filter reads.
-function sumerVolCol(pos){ return pos==='QB' ? 'Plays' : pos==='RB' ? 'Rushes' : 'Routes Run'; }
+function sumerVolCol(pos){
+  const t=sumerTableFor(pos);
+  const cols=(t && Array.isArray(t.columns)) ? t.columns.slice() : [];
+  const pick=(rx)=>cols.find(c=>rx.test(String(c||'').toLowerCase()) && !/\//.test(String(c||''))) || null;
+  const fallback = pos==='QB' ? 'Plays' : (pos==='RB' ? 'Rushes' : 'Routes Run');
+  if(!cols.length) return fallback;
+  if(pos==='QB'){
+    return pick(/\bplays?\b/) || pick(/\bdropbacks?\b/) || pick(/\battempts?\b/) || fallback;
+  }
+  if(pos==='RB'){
+    return pick(/\brush(?:es| attempts?)\b/) || pick(/\bcarries?\b/) || fallback;
+  }
+  return pick(/\broutes?(?: run)?\b/) || pick(/\btargets?\b/) || fallback;
+}
 
 // ── OverTheCap contract lookup (Dynasty tab only: Age / APY / Free-Agency year) ──
 // Reuses the same name-normalization as ECR so the keys line up with build_seed.py.
@@ -242,6 +255,17 @@ function rankingYearsExpFromSleeper(p, baseEntry){
   if(sp && sp.years_exp!=null && !Number.isNaN(Number(sp.years_exp))) return Number(sp.years_exp);
   if(baseEntry && baseEntry.years_exp!=null && !Number.isNaN(Number(baseEntry.years_exp))) return Number(baseEntry.years_exp);
   return null;
+}
+
+function rankingIsRookieForSeason(p, season){
+  if(!p) return false;
+  const exp = Number(p.years_exp);
+  const hasExp = Number.isFinite(exp) && exp>=0;
+  if(String(season||'')==='proj') return hasExp ? exp===0 : !!(p.is_rookie===true);
+  const yr = Number(season);
+  const cur = Number(PROJ_SEASON);
+  if(hasExp && Number.isFinite(yr) && Number.isFinite(cur)) return (cur - exp)===yr;
+  return hasExp ? exp===0 : !!(p.is_rookie===true);
 }
 
 function hasContracts(){ return CONTRACTS && Object.keys(CONTRACTS).length>0; }

@@ -468,6 +468,44 @@ function renderPlayerCardShell(pid, pos, team){
 let pcardState = null;        // {pid, posc, team, isSkill}
 let pcardStatsMode = 'pro';
 let pcardToken = 0;           // bumped on each source switch so a slow in-flight load can't clobber a newer one
+let _pcardStickyHeadersBound = false;
+
+function pcardRefreshStickyStatHeaders(){
+  const body = document.getElementById('pcardBody');
+  if(!body) return;
+  const bodyRect = body.getBoundingClientRect();
+  const stickyTop = bodyRect.top;
+  const wraps = body.querySelectorAll('.pcard-table-scroll');
+  wraps.forEach((wrap)=>{
+    const table = wrap.querySelector('.pcard-table');
+    const thead = table && table.tHead;
+    if(!thead || !thead.rows || !thead.rows.length) return;
+    const wrapRect = wrap.getBoundingClientRect();
+    const rowHeights = Array.from(thead.rows).map(r=>r.getBoundingClientRect().height || 0);
+    const headerHeight = rowHeights.reduce((a,b)=>a+b,0);
+    const maxOffset = Math.max(0, (wrapRect.bottom - wrapRect.top) - headerHeight);
+    const offset = Math.max(0, Math.min(maxOffset, stickyTop - wrapRect.top));
+    Array.from(thead.rows).forEach((row)=>{
+      Array.from(row.cells).forEach((cell)=>{
+        cell.style.transform = offset>0 ? `translateY(${offset}px)` : '';
+      });
+    });
+  });
+}
+
+function pcardEnableStickyStatHeaders(){
+  const body = document.getElementById('pcardBody');
+  if(!body) return;
+  if(!_pcardStickyHeadersBound){
+    body.addEventListener('scroll', pcardRefreshStickyStatHeaders, { passive:true });
+    if(typeof window!=='undefined' && window.addEventListener){
+      window.addEventListener('resize', pcardRefreshStickyStatHeaders, { passive:true });
+    }
+    _pcardStickyHeadersBound = true;
+  }
+  requestAnimationFrame(pcardRefreshStickyStatHeaders);
+}
+
 async function loadPlayerCardData(pid, pos, team){
   const posc = pos || (sleeperPlayers&&sleeperPlayers[pid]&&sleeperPlayers[pid].pos) || 'QB';
   // Team defense: no draft/career/college machinery — just its Sleeper-sourced gamelog.
@@ -676,7 +714,10 @@ async function loadSleeperCareerStats(pid, posc, body){
     }
     if(!out) out = `<div class="pcard-loading">No game data found for this player.</div>`;
     out += `<div class="pcard-src">Per-game stats via Sleeper · FPTS uses your current scoring settings.</div>`;
-    if(pcardOpen && tok===pcardToken) body.innerHTML = out;
+    if(pcardOpen && tok===pcardToken){
+      body.innerHTML = out;
+      pcardEnableStickyStatHeaders();
+    }
   }catch(e){
     if(pcardOpen && tok===pcardToken){
       body.innerHTML = `<div class="pcard-loading pcard-loading-retry"><span>Couldn't load game logs. Check your connection and try again.</span><button class="pcard-retry-btn" onclick="retryPlayerCardData()">Refresh</button></div>`;

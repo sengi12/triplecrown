@@ -685,8 +685,11 @@ function _olProjectedTeam2026(){
       : talentPass;
 
     const runBaseRow0=baseRunTbl&&baseRunTbl.teams&&baseRunTbl.teams[teamCode];
-    const brs=(runBaseRow0&&runBaseRow0.values)?runBaseRow0.values['Overall Score']:null;
-    const baseRunScore=(brs!=null && !Number.isNaN(Number(brs)))?Number(brs):null;
+    const brsRun=(runBaseRow0&&runBaseRow0.values)?runBaseRow0.values['Run Score']:null;
+    const brsOverall=(runBaseRow0&&runBaseRow0.values)?runBaseRow0.values['Overall Score']:null;
+    const baseRunScore=(brsRun!=null && !Number.isNaN(Number(brsRun)))
+      ? Number(brsRun)
+      : ((brsOverall!=null && !Number.isNaN(Number(brsOverall))) ? Number(brsOverall) : null);
     const projRunScore=(baseRunScore!=null)
       ? Math.max(0, Math.min(100, 0.80*talentRun + 0.20*baseRunScore))
       : talentRun;
@@ -705,6 +708,11 @@ function _olProjectedTeam2026(){
   teamCodes.forEach(tm=>{ runScoreMap[tm]=teamRows[tm].projRunScore; });
   const runScoreRank=_olRankMap(runScoreMap, false);
   const n=teamCodes.length;
+  // Early renders can happen before the full league table is hydrated. Using projected
+  // ranks on partial coverage creates volatile #1/#2 flashes, so fall back to baseline
+  // season ranks until coverage is effectively complete.
+  const ranksStable = n >= 28;
+  const rankNum = (v)=> (v!=null && !Number.isNaN(Number(v))) ? Number(v) : null;
 
   // 3) Baseline league distributions for realistic projected metric values.
   const sortedByCol={};
@@ -748,6 +756,10 @@ function _olProjectedTeam2026(){
     const runBaseRow=baseRunTbl&&baseRunTbl.teams&&baseRunTbl.teams[tm];
     const runValues={};
     runCols.forEach(c=>{ runValues[c]=(runBaseRow&&runBaseRow.values)?runBaseRow.values[c]:null; });
+    const basePassRank = rankNum(tr.baseRow&&tr.baseRow.ranks&&
+      (tr.baseRow.ranks['Pass Score']!=null ? tr.baseRow.ranks['Pass Score'] : tr.baseRow.ranks['Overall Score']));
+    const baseRunRank = rankNum(runBaseRow&&runBaseRow.ranks&&
+      (runBaseRow.ranks['Run Score']!=null ? runBaseRow.ranks['Run Score'] : runBaseRow.ranks['Overall Score']));
     out[tm]={
       team:tm,
       baselineSeason,
@@ -755,8 +767,10 @@ function _olProjectedTeam2026(){
       talentRun:tr.talentRun,
       projPassScore:tr.projPassScore,
       projRunScore:tr.projRunScore,
-      passRank:tr.rank,
-      runRank:(runScoreRank[tm]||n),
+      baselinePassRank:basePassRank,
+      baselineRunRank:baseRunRank,
+      passRank:ranksStable ? tr.rank : (basePassRank!=null ? basePassRank : tr.rank),
+      runRank:ranksStable ? (runScoreRank[tm]||n) : (baseRunRank!=null ? baseRunRank : (runScoreRank[tm]||n)),
       line:tr.line,
       passTbl:{ columns:passCols, teams:{ [tm]:{ values:tr.passValues, ranks:passRanks } } },
       runTbl:{ columns:runCols, teams:{ [tm]:{ values:runValues, ranks:(runBaseRow&&runBaseRow.ranks)||{} } } },

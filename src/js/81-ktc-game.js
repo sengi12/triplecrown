@@ -419,11 +419,34 @@ function ktcTrioDetail(trio, targetPos){
     TIER:'tier-cluster',
     VOR:'vor-cluster',
   };
-  return {score, tag, why: whyMap[tag] || (samePos?'fpts-cluster':'ecr-cluster'), sig: trioSig, closeOk, closeHits, signalMode, hasMixedSignal};
+  return {
+    score,
+    tag,
+    why: whyMap[tag] || (samePos?'fpts-cluster':'ecr-cluster'),
+    sig: trioSig,
+    closeOk,
+    closeHits,
+    signalMode,
+    hasMixedSignal,
+    samePos,
+    rankSpread,
+    fptsSpread,
+    adpSpread,
+    ecrSpread,
+    vorSpread,
+    avgRank: (sorted.reduce((s,p)=>s+(+p._ktcRank||0),0) / Math.max(1, sorted.length)),
+  };
 }
 
 function ktcTrioScore(trio, targetPos){
   return ktcTrioDetail(trio, targetPos).score;
+}
+
+function ktcProgressRatio(boardLen){
+  const n = Math.max(12, Number(boardLen)||12);
+  const submitted = Math.max(0, Number(ktcGameState.rounds)||0);
+  const target = Math.max(28, Math.floor(n*0.9));
+  return ktcClamp(submitted / target, 0, 1);
 }
 
 function ktcFallbackTrio(board, requireMixed){
@@ -461,29 +484,19 @@ function ktcPickNextTrio(preBoard){
   }
   const tierCutoff = ktcTopTierCutoff(tierKnownBoard);
   ktcGameState.tierCutoff = tierCutoff;
-  const tierPool = tierKnownBoard.filter(p=>{
-    const t = ktcEcrTierVal(p);
-    return t!=null && t<=tierCutoff;
-  });
-  const tierPlayablePool = tierKnownBoard.filter(p=>{
-    const t = ktcEcrTierVal(p);
-    return t!=null && t<=Math.max(tierCutoff+2, KTC_TARGET_TIER_MAX+1);
-  });
-  const ecrPool = tierKnownBoard.filter(p=>ktcEcrRankVal(p)<=170);
   const targetPos = ktcPreferredPos();
-  const preferredBoard =
-    tierPool.length>=18 ? tierPool
-    : (tierPlayablePool.length>=18 ? tierPlayablePool
-    : (ecrPool.length>=18 ? ecrPool : tierPlayablePool.length ? tierPlayablePool : tierKnownBoard));
-  const posPool = preferredBoard.filter(p=>p.pos===targetPos);
-  const poolRaw = posPool.length>=10 ? posPool : preferredBoard;
+  const progress = ktcProgressRatio(tierKnownBoard.length);
+  const desiredRank = 1 + progress*(tierKnownBoard.length-1);
+  const posPoolAll = tierKnownBoard.filter(p=>p.pos===targetPos);
+  const poolRaw = posPoolAll.length>=12 ? posPoolAll : tierKnownBoard;
   const pool = ktcBuildMixedBoard(poolRaw);
   const n = pool.length;
-  const base = Math.max(1, Math.min(n-2, ktcGameState.cursor||Math.floor(n*0.35)));
-  const from = Math.max(0, base-16);
-  const to = Math.min(n-1, base+16);
+  const anchor = Math.max(1, Math.min(n-2, Math.round((desiredRank / Math.max(1, tierKnownBoard.length)) * (n-1))));
+  const from = Math.max(0, anchor-22);
+  const to = Math.min(n-1, anchor+22);
   const cand = pool.slice(from, to+1);
   const requireMixed = (ktcGameState.samePosStreak||0) >= 1;
+  const desiredSpread = 13.5 - (progress*8.6); // easy/wider near top, tighter near harder rounds
 
   let best = null;
   let bestDetail = null;
@@ -506,15 +519,22 @@ function ktcPickNextTrio(preBoard){
         // Avoid exact-repeat trios from the recent window whenever alternatives exist.
         if((ktcGameState.recentTrioSigs||[]).includes(sig)) continue;
         const detail = ktcTrioDetail(trio, targetPos);
-        if(detail.score>bestAnyScore){
-          bestAnyScore = detail.score;
+        const laneDelta = Math.abs((detail.avgRank||desiredRank) - desiredRank);
+        const laneBonus = Math.max(-44, 18 - laneDelta*1.45);
+        const spreadMetric = detail.samePos
+          ? (Number.isFinite(detail.fptsSpread) ? detail.fptsSpread : 999)
+          : (Number.isFinite(detail.vorSpread) ? detail.vorSpread : 999);
+        const spreadBonus = Math.max(-22, 10 - Math.abs(spreadMetric - desiredSpread)*1.35);
+        const totalScore = detail.score + laneBonus + spreadBonus;
+        if(totalScore>bestAnyScore){
+          bestAnyScore = totalScore;
           bestAny = trio;
           bestAnyDetail = detail;
         }
         if(!detail.closeOk) continue;
         if(detail.signalMode==='cross_pos' && !detail.hasMixedSignal) continue;
-        if(detail.score>bestScore){
-          bestScore = detail.score;
+        if(totalScore>bestScore){
+          bestScore = totalScore;
           best = trio;
           bestDetail = detail;
         }
@@ -525,7 +545,8 @@ function ktcPickNextTrio(preBoard){
     best = bestAny;
     bestDetail = bestAnyDetail;
   }
-  if(!best) best = ktcFallbackTrio(preferredBoard, false);
+  if(!best) best = ktcFallbackTrio(pool, false);
+  if(!best) best = ktcFallbackTrio(board, false);
   if(!bestDetail) bestDetail = ktcTrioDetail(best, targetPos);
   ktcGameState.trio = best;
   ktcGameState.lastSig = bestDetail.sig || ktcTrioSig(best);
@@ -536,7 +557,7 @@ function ktcPickNextTrio(preBoard){
   ktcGameState.samePosStreak = (posSet.size===1) ? ((ktcGameState.samePosStreak||0)+1) : 0;
   ktcMarkShown(best);
   ktcGameState.posCursor += 1;
-  ktcGameState.cursor = (ktcGameState.cursor + 5 + Math.floor(Math.random()*7)) % Math.max(5, n-1);
+  ktcGameState.cursor = Math.max(1, Math.min(n-2, anchor + 2));
   return true;
 }
 
@@ -848,9 +869,9 @@ function ktcSubmitSelection(){
     }
   }
 
+  ktcGameState.rounds += 1; // each submission advances the progression lane
   if(changed){
     markDirty();
-    ktcGameState.rounds += 1;
     renderRankings();
   }
   if(!ktcPickNextTrio()) return;
@@ -878,7 +899,7 @@ function ktcCardHtml(p, trioTag){
     ${ktcSelectionBadge(key)}
     <img class="ktc-team-mark" src="${NFL_LOGO(p.team)}" alt="${escAttr(p.team||'')}" loading="lazy" decoding="async" onerror="this.style.display='none'">
     <div class="ktc-hs-wrap clickable-player" onclick="event.stopPropagation();${cardOpen}">${imgTag(hsPack(p), 'ktc-hs')}</div>
-    <div class="ktc-name clickable-player" onclick="event.stopPropagation();${cardOpen}">${escHtml(p.name||'')}</div>
+    <div class="ktc-name">${escHtml(p.name||'')}</div>
     <div class="ktc-meta"><span class="pos-badge pos-${escAttr(p.pos||'WR')}">${escHtml(p.pos||'')}</span> ${escHtml(p.team||'')} · rank #${p._ktcRank||'—'}</div>
     ${showSignalDebug ? `<div class="ktc-signalvals">
       <div class="ktc-signal-main">Signal ${escHtml(sig.tag||'—')}: ${escHtml(sig.signalVal)}</div>
@@ -911,7 +932,7 @@ function renderKtcOverlay(){
   const intensityOptions = ['conservative','balanced','aggressive'].map(k=>
     `<button class="ktc-intensity-opt ${k===intensity?'on':''}" onclick="ktcSetIntensity('${k}')">${escHtml((KTC_INTENSITY[k]&&KTC_INTENSITY[k].label)||k)}</button>`
   ).join('');
-  const tierText = `top ECR tiers 1-${ktcGameState.tierCutoff||KTC_TARGET_TIER_MAX}`;
+  const tierText = `progressive board pass`;
   const html = `<div class="ktc-backdrop" onclick="ktcBackdropStop(event)">
     <div class="ktc-modal" onclick="event.stopPropagation()">
       <div class="ktc-head">

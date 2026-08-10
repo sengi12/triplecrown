@@ -45,7 +45,9 @@ function tsPreviewTeamRankings(){
       <div class="empty-title">No projections yet</div><div class="empty-body">Set at least one team's stats to see rankings.</div></div></div>`;
   }
   all.sort((a,b)=>b.fpts-a.fpts);
-  const rankIsRookie = (p)=>!!(p && (p.is_rookie===true || Number(p.years_exp)===0));
+  const rankIsRookie = (p)=> (typeof rankingIsRookieForSeason==='function')
+    ? !!rankingIsRookieForSeason(p, activeSeason)
+    : !!(p && (p.is_rookie===true || Number(p.years_exp)===0));
   let view=rankPosFilter==='ALL'?all
     :rankPosFilter==='ROOKIES'?all.filter(rankIsRookie)
     :rankPosFilter==='FLEX'?all.filter(p=>p.pos!=='QB')
