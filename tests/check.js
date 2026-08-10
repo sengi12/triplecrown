@@ -727,6 +727,8 @@ let referenceProj = {};        // read-only per-team state for the currently-vie
 let referenceSeed = null;      // the SEED for the active reference season (proj SEED stays in projSeed)
 let projSeed = null;           // snapshot of the projection-season SEED (working baseline)
 let importedSnapshot = null;   // deep copy of last-imported state (for 2-stage reset)
+let importedAnalystData = null; // { _avg:[mergedRows], analystName:[rawRows], ... } — null unless multi-analyst import
+let importedRawPayload = null;  // original {projections, playerNotes} from last import (for re-loading)
 let dirtySinceImport = false;  // have edits happened since import/last reset-to-import?
 let currentTeam = null;
 let currentPhase = 'Passing';
@@ -13897,6 +13899,17 @@ function loadProjections(data){
   const merged=groups.map(averageGroup);
   const projKey=p=>p.player_id!=null?('id:'+p.player_id):('nm:'+normName(p.name));
 
+  // Store per-analyst data so the Rankings "Switch Analyst" picker can replay any single
+  // analyst's rows (or the averaged default) without re-importing.
+  if(multiAnalyst){
+    importedRawPayload={projections:players, playerNotes:data.playerNotes||{}};
+    importedAnalystData={_avg:merged};
+    analysts.forEach(a=>{ importedAnalystData[a]=players.filter(p=>p.analyst_name===a); });
+  } else {
+    importedAnalystData=null;
+    importedRawPayload=null;
+  }
+
   const sn=multiAnalyst?`Avg: ${analysts.join('+')} ${merged[0]?.season||''}`
     :`${merged[0]?.analyst_name||'Imported'} ${merged[0]?.season||''}`;
   document.getElementById('scenarioName').value=sn.trim();
@@ -14047,6 +14060,7 @@ function loadProjections(data){
   if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();
   else if(typeof invalidateRankingsRenderCache==='function') invalidateRankingsRenderCache();
 
+  if(typeof syncAppChrome==='function') syncAppChrome();
   renderSidebar();
   if(multiAnalyst) toast(`⚠️ ${analysts.length} analysts averaged: ${analysts.join(', ')}`,'ok');
   else toast(`Loaded ${merged.length} players · ${Object.keys(byTeam).length} teams`,'ok');
@@ -14146,6 +14160,76 @@ function exportCSV(){
   dlFile(csv,`${n}.csv`,'text/csv');toast('CSV exported ✓','ok');
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Analyst picker — shown in Rankings when a multi-analyst import is active
+// ─────────────────────────────────────────────────────────────────────────────
+let _analystPickerOpen = false;
+
+function openAnalystPicker(){
+  if(_analystPickerOpen || !importedAnalystData) return;
+  _analystPickerOpen = true;
+  const currentName = document.getElementById('scenarioName').value || '';
+  const analysts = Object.keys(importedAnalystData).filter(k => k !== '_avg');
+  const ov = document.createElement('div');
+  ov.id = 'analystPickerOverlay';
+  ov.className = 'ps-overlay';
+  const rows = [
+    {key:'_avg', label:'Averaged', desc:`All ${analysts.length} analysts combined`},
+    ...analysts.map(a => ({key:a, label:a, desc:'Individual analyst projections'})),
+  ];
+  const isActive = key => {
+    if(key==='_avg') return currentName.startsWith('Avg:');
+    return currentName === `${key} ${importedRawPayload.projections.find(p=>p.analyst_name===key)?.season||''}`.trim()
+      || currentName === key;
+  };
+  ov.innerHTML = `
+    <div class="ps-modal dl-modal" role="dialog" aria-label="Switch analyst">
+      <div class="ps-head dl-head">
+        <span class="ps-search-ico">${TC_ICON('trophy')}</span>
+        <div class="dl-title-wrap">
+          <div class="dl-title">Switch Analyst</div>
+          <div class="dl-sub">Select whose projections to load into Rankings</div>
+        </div>
+        <button class="ps-close" onclick="closeAnalystPicker()" aria-label="Close">${TC_ICON('close')}</button>
+      </div>
+      <div class="dl-actions">
+        ${rows.map(r=>`
+        <button class="ps-row dl-row${isActive(r.key)?' dl-row-active':''}" onclick="closeAnalystPicker();switchToAnalyst(${JSON.stringify(r.key)})">
+          <span class="dl-fmt">${escHtml(r.label)}</span>
+          <span class="dl-desc">${escHtml(r.desc)}</span>
+        </button>`).join('')}
+      </div>
+    </div>`;
+  ov.addEventListener('mousedown', e=>{ if(e.target===ov) closeAnalystPicker(); });
+  document.body.appendChild(ov);
+}
+
+function closeAnalystPicker(){
+  _analystPickerOpen = false;
+  const el = document.getElementById('analystPickerOverlay');
+  if(el) el.remove();
+}
+
+function switchToAnalyst(key){
+  if(!importedAnalystData || !importedRawPayload) return;
+  // Preserve the multi-analyst index across the reload — loadProjections resets it when
+  // it sees only one analyst in the payload (the filtered single-analyst rows).
+  const savedAnalystData = importedAnalystData;
+  const savedRawPayload  = importedRawPayload;
+  if(key === '_avg'){
+    loadProjections(savedRawPayload);
+  } else {
+    const rows = savedAnalystData[key];
+    if(!rows || !rows.length){ toast('No data for '+escHtml(key),'err'); return; }
+    loadProjections({ projections: rows, playerNotes: savedRawPayload.playerNotes });
+  }
+  // Restore so the picker remains available for further switches.
+  importedAnalystData = savedAnalystData;
+  importedRawPayload  = savedRawPayload;
+  if(typeof syncAppChrome==='function') syncAppChrome();
+  if(currentPhase !== 'Rankings') showFullRankings();
+}
+
 let _dlOpen = false;
 
 function openDownloadPicker(){
@@ -14202,8 +14286,24 @@ function menuDownloadPrompt(){
 // ─────────────────────────────────────────────────────────────────────────────
 // ── App menu (☰) ────────────────────────────────────────────────────────────
 // Replaces the old header button row. Same open/close contract as the download menu it
-// supersedes: stop the opening click, then close on the next outside click (a menu-item
-// click bubbles here too, so choosing an action closes the menu after it fires).
+// supersedes: stop the opening click, then keep it open until an actual menu action is
+// clicked or the user clicks outside the menu.
+let _appMenuDocListenerOn = false;
+
+function onAppMenuDocClick(e){
+  const m=document.getElementById('appMenu');
+  const btn=document.getElementById('appMenuBtn');
+  const t=e&&e.target;
+  if(!m || m.hasAttribute('hidden')){ closeAppMenu(); return; }
+  if(btn && t && (t===btn || (btn.contains && btn.contains(t)))) return;
+  if(t && m.contains && m.contains(t)){
+    const action=(t.closest && t.closest('button.hdr-menu-item, .hdr-menu-item button, [data-menu-close="1"]')) || null;
+    if(action && m.contains(action)) closeAppMenu();
+    return;
+  }
+  closeAppMenu();
+}
+
 function toggleAppMenu(e){
   if(e) e.stopPropagation();
   const m=document.getElementById('appMenu'); if(!m) return;
@@ -14211,7 +14311,10 @@ function toggleAppMenu(e){
   if(m.hasAttribute('hidden')){
     m.removeAttribute('hidden');
     if(btn){ btn.classList.add('open'); btn.setAttribute('aria-expanded','true'); }
-    setTimeout(()=>document.addEventListener('click', closeAppMenu, {once:true}), 0);
+    if(!_appMenuDocListenerOn){
+      document.addEventListener('click', onAppMenuDocClick);
+      _appMenuDocListenerOn = true;
+    }
   } else {
     closeAppMenu();
   }
@@ -14220,6 +14323,10 @@ function closeAppMenu(){
   const m=document.getElementById('appMenu'); if(m) m.setAttribute('hidden','');
   const btn=document.getElementById('appMenuBtn');
   if(btn){ btn.classList.remove('open'); btn.setAttribute('aria-expanded','false'); }
+  if(_appMenuDocListenerOn){
+    document.removeEventListener('click', onAppMenuDocClick);
+    _appMenuDocListenerOn = false;
+  }
 }
 // The app has two top-level VIEWS: Projections (the builder — season tabs, team sidebar) and
 // the League Analyzer (snapshot-driven, season-agnostic). This returns to the former.
@@ -14322,6 +14429,10 @@ function syncAppChrome(){
   const viewSpecificSec = document.getElementById('menuViewSpecificSec');
   if(viewSpecificSec) viewSpecificSec.textContent = `View-specific: ${viewLabel}`;
 
+  // "Switch Analyst" only appears in Rankings when imported projections have multiple analysts.
+  const menuSA = document.getElementById('menuSwitchAnalyst');
+  if(menuSA) setHidden(menuSA, !(inRankings && importedAnalystData && Object.keys(importedAnalystData).length > 1));
+
   if(typeof refreshLeagueSyncBtn==='function') refreshLeagueSyncBtn();
 }
 
@@ -14331,6 +14442,7 @@ function syncAppChrome(){
 async function resetAll(){
   if(!confirm('Reset all projections and pull the latest projections from Sleeper?\n\nThis clears your current edits and imported/loaded data.')) return;
   userProj={}; workingProj=userProj; importedSnapshot=null; dirtySinceImport=false;
+  importedAnalystData=null; importedRawPayload=null;
   playerNotes={};
   currentTeam=null; undoStacks={};
   clearSession();   // wipe the saved session so the fresh pull isn't overwritten on next boot
@@ -15703,6 +15815,7 @@ async function refreshFromSleeper(bootRestore){
     projSeed=SEED;
     // reset the working set to the fresh seed
     workingProj={}; userProj=workingProj; importedSnapshot=null; dirtySinceImport=false;
+    importedAnalystData=null; importedRawPayload=null;
     activeSeason='proj';
     // On the very first (boot) load, restore any saved session over the fresh seed. A manual
     // "refresh from Sleeper" (bootRestore=false) intentionally starts clean instead.
@@ -16277,6 +16390,7 @@ function handleSeedLoad(e){
         seasonStatsCache={proj:SEED};
         projSeed=SEED;
         workingProj={}; userProj=workingProj; importedSnapshot=null; dirtySinceImport=false; activeSeason='proj';
+        importedAnalystData=null; importedRawPayload=null;
         currentTeam=null;
       }
       renderSeasonTabs(); renderSidebar();

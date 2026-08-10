@@ -35,6 +35,7 @@ function handleSeedLoad(e){
         seasonStatsCache={proj:SEED};
         projSeed=SEED;
         workingProj={}; userProj=workingProj; importedSnapshot=null; dirtySinceImport=false; activeSeason='proj';
+        importedAnalystData=null; importedRawPayload=null;
         currentTeam=null;
       }
       renderSeasonTabs(); renderSidebar();

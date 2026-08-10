@@ -2189,6 +2189,7 @@ button.la-cliff:hover{filter:brightness(1.25);}
         <button class="hdr-menu-item menu-view-proj" id="menuImport" hidden onclick="closeAppMenu();triggerImport()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M8 8l4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg> Import</button>
         <button class="hdr-menu-item menu-view-proj" id="menuDownload" hidden onclick="closeAppMenu();menuDownloadPrompt()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M8 11l4 4 4-4M5 20h14"/></svg> Download</button>
         <button class="hdr-menu-item menu-view-rank" id="menuKtc" hidden onclick="closeAppMenu();startKtcGame()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" fill="currentColor" stroke="none"/><path d="M8 5H5.5A2.5 2.5 0 0 0 8 8.5M16 5h2.5A2.5 2.5 0 0 1 16 8.5"/><path d="M12 13v3M9 20h6M10 20v-1.5a2 2 0 0 1 4 0V20"/></svg> Keep Trade Cut</button>
+        <button class="hdr-menu-item menu-view-rank" id="menuSwitchAnalyst" hidden onclick="closeAppMenu();openAnalystPicker()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6"/></svg> Switch Analyst</button>
         <button class="hdr-menu-item menu-view-league" id="menuResync" hidden onclick="closeAppMenu();laResync()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8M20 3v5h-5"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16M4 21v-5h5"/></svg> Re-sync league</button>
         <button class="hdr-menu-item menu-view-league" id="menuChangeLeague" hidden onclick="closeAppMenu();laMenuChangeLeague()"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 15l6-6M10.5 6.5 12 5a4 4 0 0 1 6 6l-1.5 1.5M13.5 17.5 12 19a4 4 0 0 1-6-6l1.5-1.5"/></svg> Change league</button>
 
@@ -2947,6 +2948,8 @@ let referenceProj = {};        // read-only per-team state for the currently-vie
 let referenceSeed = null;      // the SEED for the active reference season (proj SEED stays in projSeed)
 let projSeed = null;           // snapshot of the projection-season SEED (working baseline)
 let importedSnapshot = null;   // deep copy of last-imported state (for 2-stage reset)
+let importedAnalystData = null; // { _avg:[mergedRows], analystName:[rawRows], ... } — null unless multi-analyst import
+let importedRawPayload = null;  // original {projections, playerNotes} from last import (for re-loading)
 let dirtySinceImport = false;  // have edits happened since import/last reset-to-import?
 let currentTeam = null;
 let currentPhase = 'Passing';
@@ -16117,6 +16120,17 @@ function loadProjections(data){
   const merged=groups.map(averageGroup);
   const projKey=p=>p.player_id!=null?('id:'+p.player_id):('nm:'+normName(p.name));
 
+  // Store per-analyst data so the Rankings "Switch Analyst" picker can replay any single
+  // analyst's rows (or the averaged default) without re-importing.
+  if(multiAnalyst){
+    importedRawPayload={projections:players, playerNotes:data.playerNotes||{}};
+    importedAnalystData={_avg:merged};
+    analysts.forEach(a=>{ importedAnalystData[a]=players.filter(p=>p.analyst_name===a); });
+  } else {
+    importedAnalystData=null;
+    importedRawPayload=null;
+  }
+
   const sn=multiAnalyst?`Avg: ${analysts.join('+')} ${merged[0]?.season||''}`
     :`${merged[0]?.analyst_name||'Imported'} ${merged[0]?.season||''}`;
   document.getElementById('scenarioName').value=sn.trim();
@@ -16267,6 +16281,7 @@ function loadProjections(data){
   if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();
   else if(typeof invalidateRankingsRenderCache==='function') invalidateRankingsRenderCache();
 
+  if(typeof syncAppChrome==='function') syncAppChrome();
   renderSidebar();
   if(multiAnalyst) toast(`⚠️ ${analysts.length} analysts averaged: ${analysts.join(', ')}`,'ok');
   else toast(`Loaded ${merged.length} players · ${Object.keys(byTeam).length} teams`,'ok');
@@ -16364,6 +16379,84 @@ function exportCSV(){
     const v=r[k];return(v===null||v===undefined)?'':String(v).includes(',')?`"${v}"`:v;}).join(','))].join('\n');
   const n=(document.getElementById('scenarioName').value||'projections').replace(/[^a-z0-9]/gi,'_');
   dlFile(csv,`${n}.csv`,'text/csv');toast('CSV exported ✓','ok');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Analyst picker — shown in Rankings when a multi-analyst import is active
+// ─────────────────────────────────────────────────────────────────────────────
+let _analystPickerOpen = false;
+
+function openAnalystPicker(){
+  if(_analystPickerOpen || !importedAnalystData) return;
+  _analystPickerOpen = true;
+  const currentName = document.getElementById('scenarioName').value || '';
+  const analysts = Object.keys(importedAnalystData).filter(k => k !== '_avg');
+  const ov = document.createElement('div');
+  ov.id = 'analystPickerOverlay';
+  ov.className = 'ps-overlay';
+  const rows = [
+    {key:'_avg', label:'Averaged', desc:`All ${analysts.length} analysts combined`},
+    ...analysts.map(a => ({key:a, label:a, desc:'Individual analyst projections'})),
+  ];
+  const isActive = key => {
+    if(key==='_avg') return currentName.startsWith('Avg:');
+    return currentName === `${key} ${importedRawPayload.projections.find(p=>p.analyst_name===key)?.season||''}`.trim()
+      || currentName === key;
+  };
+  ov.innerHTML = `
+    <div class="ps-modal dl-modal" role="dialog" aria-label="Switch analyst">
+      <div class="ps-head dl-head">
+        <span class="ps-search-ico">${TC_ICON('trophy')}</span>
+        <div class="dl-title-wrap">
+          <div class="dl-title">Switch Analyst</div>
+          <div class="dl-sub">Select whose projections to load into Rankings</div>
+        </div>
+        <button class="ps-close" onclick="closeAnalystPicker()" aria-label="Close">${TC_ICON('close')}</button>
+      </div>
+      <div class="dl-actions">
+        ${rows.map(r=>`
+        <button class="ps-row dl-row${isActive(r.key)?' dl-row-active':''}" onclick="closeAnalystPicker();switchToAnalyst('${escJsSingle(r.key)}')">
+          <span class="dl-fmt">${escHtml(r.label)}</span>
+          <span class="dl-desc">${escHtml(r.desc)}</span>
+        </button>`).join('')}
+      </div>
+    </div>`;
+  ov.addEventListener('mousedown', e=>{ if(e.target===ov) closeAnalystPicker(); });
+  document.body.appendChild(ov);
+}
+
+function closeAnalystPicker(){
+  _analystPickerOpen = false;
+  const el = document.getElementById('analystPickerOverlay');
+  if(el) el.remove();
+}
+
+function switchToAnalyst(key){
+  if(!importedAnalystData || !importedRawPayload) return;
+  // Explicitly snapshot draft-follow state before touching projections so a future change
+  // to loadProjections can never accidentally orphan an active poll session.
+  const savedDraftId     = (typeof draftId!=='undefined')     ? draftId     : null;
+  const savedDraftTimer  = (typeof draftTimer!=='undefined')  ? draftTimer  : null;
+  const savedDraftedIds  = (typeof draftedIds!=='undefined')  ? draftedIds  : {};
+  // Preserve the multi-analyst index across the reload — loadProjections resets it when
+  // it sees only one analyst in the payload (the filtered single-analyst rows).
+  const savedAnalystData = importedAnalystData;
+  const savedRawPayload  = importedRawPayload;
+  if(key === '_avg'){
+    loadProjections(savedRawPayload);
+  } else {
+    const rows = savedAnalystData[key];
+    if(!rows || !rows.length){ toast('No data for '+escHtml(key),'err'); return; }
+    loadProjections({ projections: rows, playerNotes: savedRawPayload.playerNotes });
+  }
+  // Restore draft state and analyst index unconditionally.
+  if(typeof draftId!=='undefined')     draftId     = savedDraftId;
+  if(typeof draftTimer!=='undefined')  draftTimer  = savedDraftTimer;
+  if(typeof draftedIds!=='undefined')  draftedIds  = savedDraftedIds;
+  importedAnalystData = savedAnalystData;
+  importedRawPayload  = savedRawPayload;
+  if(typeof syncAppChrome==='function') syncAppChrome();
+  if(currentPhase !== 'Rankings') showFullRankings();
 }
 
 let _dlOpen = false;
@@ -16565,6 +16658,10 @@ function syncAppChrome(){
   const viewSpecificSec = document.getElementById('menuViewSpecificSec');
   if(viewSpecificSec) viewSpecificSec.textContent = `View-specific: ${viewLabel}`;
 
+  // "Switch Analyst" only appears in Rankings when imported projections have multiple analysts.
+  const menuSA = document.getElementById('menuSwitchAnalyst');
+  if(menuSA) setHidden(menuSA, !(inRankings && importedAnalystData && Object.keys(importedAnalystData).length > 1));
+
   if(typeof refreshLeagueSyncBtn==='function') refreshLeagueSyncBtn();
 }
 
@@ -16573,7 +16670,10 @@ function syncAppChrome(){
 // ─────────────────────────────────────────────────────────────────────────────
 async function resetAll(){
   if(!confirm('Reset all projections and pull the latest projections from Sleeper?\n\nThis clears your current edits and imported/loaded data.')) return;
+  // Stop any active draft-follow so the poll timer isn't orphaned after a full reset.
+  if(typeof stopDraftFollow==='function' && typeof draftId!=='undefined' && draftId) stopDraftFollow();
   userProj={}; workingProj=userProj; importedSnapshot=null; dirtySinceImport=false;
+  importedAnalystData=null; importedRawPayload=null;
   playerNotes={};
   currentTeam=null; undoStacks={};
   clearSession();   // wipe the saved session so the fresh pull isn't overwritten on next boot
@@ -17946,6 +18046,7 @@ async function refreshFromSleeper(bootRestore){
     projSeed=SEED;
     // reset the working set to the fresh seed
     workingProj={}; userProj=workingProj; importedSnapshot=null; dirtySinceImport=false;
+    importedAnalystData=null; importedRawPayload=null;
     activeSeason='proj';
     // On the very first (boot) load, restore any saved session over the fresh seed. A manual
     // "refresh from Sleeper" (bootRestore=false) intentionally starts clean instead.
@@ -18520,6 +18621,7 @@ function handleSeedLoad(e){
         seasonStatsCache={proj:SEED};
         projSeed=SEED;
         workingProj={}; userProj=workingProj; importedSnapshot=null; dirtySinceImport=false; activeSeason='proj';
+        importedAnalystData=null; importedRawPayload=null;
         currentTeam=null;
       }
       renderSeasonTabs(); renderSidebar();

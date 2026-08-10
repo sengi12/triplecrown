@@ -57,6 +57,17 @@ function loadProjections(data){
   const merged=groups.map(averageGroup);
   const projKey=p=>p.player_id!=null?('id:'+p.player_id):('nm:'+normName(p.name));
 
+  // Store per-analyst data so the Rankings "Switch Analyst" picker can replay any single
+  // analyst's rows (or the averaged default) without re-importing.
+  if(multiAnalyst){
+    importedRawPayload={projections:players, playerNotes:data.playerNotes||{}};
+    importedAnalystData={_avg:merged};
+    analysts.forEach(a=>{ importedAnalystData[a]=players.filter(p=>p.analyst_name===a); });
+  } else {
+    importedAnalystData=null;
+    importedRawPayload=null;
+  }
+
   const sn=multiAnalyst?`Avg: ${analysts.join('+')} ${merged[0]?.season||''}`
     :`${merged[0]?.analyst_name||'Imported'} ${merged[0]?.season||''}`;
   document.getElementById('scenarioName').value=sn.trim();
@@ -207,6 +218,7 @@ function loadProjections(data){
   if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();
   else if(typeof invalidateRankingsRenderCache==='function') invalidateRankingsRenderCache();
 
+  if(typeof syncAppChrome==='function') syncAppChrome();
   renderSidebar();
   if(multiAnalyst) toast(`⚠️ ${analysts.length} analysts averaged: ${analysts.join(', ')}`,'ok');
   else toast(`Loaded ${merged.length} players · ${Object.keys(byTeam).length} teams`,'ok');
@@ -304,6 +316,84 @@ function exportCSV(){
     const v=r[k];return(v===null||v===undefined)?'':String(v).includes(',')?`"${v}"`:v;}).join(','))].join('\n');
   const n=(document.getElementById('scenarioName').value||'projections').replace(/[^a-z0-9]/gi,'_');
   dlFile(csv,`${n}.csv`,'text/csv');toast('CSV exported ✓','ok');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Analyst picker — shown in Rankings when a multi-analyst import is active
+// ─────────────────────────────────────────────────────────────────────────────
+let _analystPickerOpen = false;
+
+function openAnalystPicker(){
+  if(_analystPickerOpen || !importedAnalystData) return;
+  _analystPickerOpen = true;
+  const currentName = document.getElementById('scenarioName').value || '';
+  const analysts = Object.keys(importedAnalystData).filter(k => k !== '_avg');
+  const ov = document.createElement('div');
+  ov.id = 'analystPickerOverlay';
+  ov.className = 'ps-overlay';
+  const rows = [
+    {key:'_avg', label:'Averaged', desc:`All ${analysts.length} analysts combined`},
+    ...analysts.map(a => ({key:a, label:a, desc:'Individual analyst projections'})),
+  ];
+  const isActive = key => {
+    if(key==='_avg') return currentName.startsWith('Avg:');
+    return currentName === `${key} ${importedRawPayload.projections.find(p=>p.analyst_name===key)?.season||''}`.trim()
+      || currentName === key;
+  };
+  ov.innerHTML = `
+    <div class="ps-modal dl-modal" role="dialog" aria-label="Switch analyst">
+      <div class="ps-head dl-head">
+        <span class="ps-search-ico">${TC_ICON('trophy')}</span>
+        <div class="dl-title-wrap">
+          <div class="dl-title">Switch Analyst</div>
+          <div class="dl-sub">Select whose projections to load into Rankings</div>
+        </div>
+        <button class="ps-close" onclick="closeAnalystPicker()" aria-label="Close">${TC_ICON('close')}</button>
+      </div>
+      <div class="dl-actions">
+        ${rows.map(r=>`
+        <button class="ps-row dl-row${isActive(r.key)?' dl-row-active':''}" onclick="closeAnalystPicker();switchToAnalyst('${escJsSingle(r.key)}')">
+          <span class="dl-fmt">${escHtml(r.label)}</span>
+          <span class="dl-desc">${escHtml(r.desc)}</span>
+        </button>`).join('')}
+      </div>
+    </div>`;
+  ov.addEventListener('mousedown', e=>{ if(e.target===ov) closeAnalystPicker(); });
+  document.body.appendChild(ov);
+}
+
+function closeAnalystPicker(){
+  _analystPickerOpen = false;
+  const el = document.getElementById('analystPickerOverlay');
+  if(el) el.remove();
+}
+
+function switchToAnalyst(key){
+  if(!importedAnalystData || !importedRawPayload) return;
+  // Explicitly snapshot draft-follow state before touching projections so a future change
+  // to loadProjections can never accidentally orphan an active poll session.
+  const savedDraftId     = (typeof draftId!=='undefined')     ? draftId     : null;
+  const savedDraftTimer  = (typeof draftTimer!=='undefined')  ? draftTimer  : null;
+  const savedDraftedIds  = (typeof draftedIds!=='undefined')  ? draftedIds  : {};
+  // Preserve the multi-analyst index across the reload — loadProjections resets it when
+  // it sees only one analyst in the payload (the filtered single-analyst rows).
+  const savedAnalystData = importedAnalystData;
+  const savedRawPayload  = importedRawPayload;
+  if(key === '_avg'){
+    loadProjections(savedRawPayload);
+  } else {
+    const rows = savedAnalystData[key];
+    if(!rows || !rows.length){ toast('No data for '+escHtml(key),'err'); return; }
+    loadProjections({ projections: rows, playerNotes: savedRawPayload.playerNotes });
+  }
+  // Restore draft state and analyst index unconditionally.
+  if(typeof draftId!=='undefined')     draftId     = savedDraftId;
+  if(typeof draftTimer!=='undefined')  draftTimer  = savedDraftTimer;
+  if(typeof draftedIds!=='undefined')  draftedIds  = savedDraftedIds;
+  importedAnalystData = savedAnalystData;
+  importedRawPayload  = savedRawPayload;
+  if(typeof syncAppChrome==='function') syncAppChrome();
+  if(currentPhase !== 'Rankings') showFullRankings();
 }
 
 let _dlOpen = false;
@@ -505,6 +595,10 @@ function syncAppChrome(){
   const viewSpecificSec = document.getElementById('menuViewSpecificSec');
   if(viewSpecificSec) viewSpecificSec.textContent = `View-specific: ${viewLabel}`;
 
+  // "Switch Analyst" only appears in Rankings when imported projections have multiple analysts.
+  const menuSA = document.getElementById('menuSwitchAnalyst');
+  if(menuSA) setHidden(menuSA, !(inRankings && importedAnalystData && Object.keys(importedAnalystData).length > 1));
+
   if(typeof refreshLeagueSyncBtn==='function') refreshLeagueSyncBtn();
 }
 
@@ -513,7 +607,10 @@ function syncAppChrome(){
 // ─────────────────────────────────────────────────────────────────────────────
 async function resetAll(){
   if(!confirm('Reset all projections and pull the latest projections from Sleeper?\n\nThis clears your current edits and imported/loaded data.')) return;
+  // Stop any active draft-follow so the poll timer isn't orphaned after a full reset.
+  if(typeof stopDraftFollow==='function' && typeof draftId!=='undefined' && draftId) stopDraftFollow();
   userProj={}; workingProj=userProj; importedSnapshot=null; dirtySinceImport=false;
+  importedAnalystData=null; importedRawPayload=null;
   playerNotes={};
   currentTeam=null; undoStacks={};
   clearSession();   // wipe the saved session so the fresh pull isn't overwritten on next boot
