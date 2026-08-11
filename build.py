@@ -109,6 +109,9 @@ _ICON_PATHS = {
     "download": '<path d="M12 4v11M8 11l4 4 4-4M5 20h14"/>',
     "box": '<path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5v-9Z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"/>',
     "undo": '<path d="M9 7 4 12l5 5M4 12h11a5 5 0 0 1 0 10"/>',
+    "user": '<circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>',
+    "folder": '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>',
+    "save": '<path d="M5 4h10l4 4v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M15 4v5H7V4M12 11v7M9 15l3 3 3-3"/>',
 }
 _ICON_RE = re.compile(r"@@ICON_([a-zA-Z]+)@@")
 

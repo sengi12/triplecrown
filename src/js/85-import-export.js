@@ -599,6 +599,7 @@ function syncAppChrome(){
   if(menuSA) setHidden(menuSA, !(importedAnalystData && Object.keys(importedAnalystData).length > 1));
 
   if(typeof refreshLeagueSyncBtn==='function') refreshLeagueSyncBtn();
+  if(typeof syncAuthChrome==='function') syncAuthChrome();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

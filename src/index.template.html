@@ -7,6 +7,7 @@
 <link rel="icon" type="image/svg+xml" href="images/app-icon.png">
 <link rel="shortcut icon" type="image/svg+xml" href="images/app-icon.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
 @@CSS_PARTIALS@@
 </style>
@@ -49,6 +50,9 @@
         <button class="hdr-menu-item menu-view-league" id="menuChangeLeague" hidden onclick="closeAppMenu();laMenuChangeLeague()">@@ICON_link@@ Change league</button>
 
         <div class="app-menu-sec">General</div>
+        <button class="hdr-menu-item" id="menuAuthBtn"    onclick="tcMenuSignIn()">Sign In</button>
+        <button class="hdr-menu-item" id="menuSaveBtn"    onclick="tcSaveClick()" style="display:none">@@ICON_save@@ Save</button>
+        <button class="hdr-menu-item" id="menuManagerBtn" onclick="tcOpenManager()" style="display:none">@@ICON_folder@@ Manager</button>
         <button class="hdr-menu-item hdr-menu-danger" onclick="closeAppMenu();resetAll()" title="Reset all edits and pull the latest Sleeper projections">@@ICON_undo@@ Reset all</button>
       </div>
     </div>

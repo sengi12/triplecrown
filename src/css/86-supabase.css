@@ -1,0 +1,141 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Supabase Auth + Projections Manager styles
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Shared overlay + modal shell ─────────────────────────────────────────── */
+.tc-modal-overlay{
+  position:fixed;inset:0;z-index:1800;
+  background:rgba(0,0,0,.55);backdrop-filter:blur(2px);
+  display:flex;align-items:center;justify-content:center;padding:16px;
+  animation:tcFadeIn .15s ease;}
+@keyframes tcFadeIn{from{opacity:0}to{opacity:1}}
+
+.tc-modal{
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:20px;width:min(420px,100%);max-height:calc(100dvh - 40px);max-height:calc(100vh - 40px);
+  overflow:auto;box-shadow:0 20px 48px rgba(0,0,0,.4);
+  display:flex;flex-direction:column;gap:12px;
+  animation:tcSlideUp .18s ease;}
+@keyframes tcSlideUp{from{transform:translateY(10px);opacity:0}to{transform:none;opacity:1}}
+
+.tc-modal-sm{width:min(340px,100%);}
+.tc-modal-mgr{width:min(480px,100%);max-height:calc(100dvh - 40px);max-height:calc(100vh - 40px);}
+
+.tc-modal-head{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.tc-modal-title{font-size:15px;font-weight:800;color:var(--text);}
+.tc-modal-close{
+  width:28px;height:28px;border-radius:50%;border:1px solid var(--border);
+  background:var(--surface3);color:var(--muted);font-size:13px;font-weight:700;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.tc-modal-close:hover{background:var(--surface2);color:var(--text);}
+
+/* ── Auth modal specifics ─────────────────────────────────────────────────── */
+.tc-auth-reason{
+  font-size:11px;color:var(--muted);background:var(--surface2);
+  border:1px solid var(--border);border-radius:8px;padding:8px 10px;line-height:1.4;}
+
+.tc-auth-tabs{display:flex;gap:4px;background:var(--surface2);border-radius:999px;padding:3px;}
+.tc-auth-tab{
+  flex:1;padding:5px 12px;border-radius:999px;border:none;background:none;
+  color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;transition:background .12s,color .12s;}
+.tc-auth-tab.active{background:var(--surface);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.18);}
+
+.tc-auth-form{display:flex;flex-direction:column;gap:10px;}
+
+.tc-input{
+  width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;
+  background:var(--surface2);color:var(--text);font-size:13px;
+  outline:none;box-sizing:border-box;transition:border-color .12s;}
+.tc-input:focus{border-color:var(--accent);}
+.tc-input::placeholder{color:var(--muted);}
+
+.tc-label{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;}
+
+.tc-form-err{
+  font-size:11px;font-weight:600;color:var(--danger);background:rgba(211,59,47,.1);
+  border:1px solid rgba(211,59,47,.25);border-radius:7px;padding:7px 10px;line-height:1.4;}
+.tc-form-info{color:#3a8fd4;background:rgba(58,143,212,.1);border-color:rgba(58,143,212,.25);}
+
+.tc-auth-divider{
+  display:flex;align-items:center;gap:10px;color:var(--muted);font-size:11px;}
+.tc-auth-divider::before,.tc-auth-divider::after{
+  content:'';flex:1;height:1px;background:var(--border);}
+
+.tc-auth-signout{border-top:1px solid var(--border);padding-top:10px;text-align:center;}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.tc-btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  border:1px solid transparent;border-radius:8px;padding:9px 16px;
+  font-size:13px;font-weight:700;cursor:pointer;transition:opacity .12s,background .12s;
+  white-space:nowrap;text-align:center;}
+.tc-btn:disabled{opacity:.5;cursor:not-allowed;}
+
+.tc-btn-primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+.tc-btn-primary:hover:not(:disabled){opacity:.88;}
+
+.tc-btn-ghost{background:transparent;color:var(--text);border-color:var(--border);}
+.tc-btn-ghost:hover:not(:disabled){background:var(--surface2);}
+
+.tc-btn-google{
+  background:var(--surface2);color:var(--text);border-color:var(--border);
+  font-size:13px;}
+.tc-btn-google:hover:not(:disabled){background:var(--surface3);}
+
+.tc-btn-sm{padding:5px 11px;font-size:11px;border-radius:6px;}
+.tc-btn-xs{padding:3px 8px;font-size:10px;border-radius:5px;}
+
+.tc-btn-load{
+  background:var(--surface2);color:var(--text);border-color:var(--border);
+  min-width:52px;}
+.tc-btn-load:hover:not(:disabled){background:var(--accent);color:#fff;border-color:var(--accent);}
+
+.tc-btn-del{
+  background:transparent;color:var(--muted);border-color:transparent;
+  padding:5px 8px;font-size:12px;}
+.tc-btn-del:hover:not(:disabled){color:var(--danger);background:rgba(211,59,47,.1);border-color:rgba(211,59,47,.2);}
+
+/* ── Save prompt ──────────────────────────────────────────────────────────── */
+.tc-save-body{display:flex;flex-direction:column;gap:10px;}
+
+/* ── Manager modal ────────────────────────────────────────────────────────── */
+.tc-mgr-user{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  font-size:11px;color:var(--muted);background:var(--surface2);
+  border:1px solid var(--border);border-radius:8px;padding:7px 10px;}
+
+.tc-mgr-new-btn{width:100%;font-size:13px;}
+
+.tc-mgr-list{
+  display:flex;flex-direction:column;gap:4px;overflow-y:auto;
+  max-height:calc(100dvh - 320px);max-height:calc(100vh - 320px);
+  min-height:60px;}
+
+.tc-mgr-empty,.tc-mgr-loading{
+  font-size:12px;color:var(--muted);text-align:center;
+  padding:24px 16px;line-height:1.6;}
+
+/* Each saved-projection row */
+.tc-mgr-row{
+  display:flex;align-items:center;gap:8px;
+  background:var(--surface2);border:1px solid var(--border);border-radius:8px;
+  padding:8px 10px;transition:background .1s;user-select:none;}
+.tc-mgr-row:hover{background:var(--surface3);}
+
+.tc-mgr-handle{
+  font-size:14px;color:var(--muted);cursor:grab;flex-shrink:0;
+  padding:2px 2px;line-height:1;touch-action:none;}
+.tc-mgr-handle:active{cursor:grabbing;}
+
+.tc-mgr-info{
+  display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
+.tc-mgr-name{
+  font-size:13px;font-weight:700;color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tc-mgr-meta{font-size:10px;color:var(--muted);}
+
+/* Drag states */
+.tc-mgr-dragging{opacity:.45;}
+.tc-mgr-drop-over{
+  border-color:var(--accent);background:rgba(var(--accent-rgb,21,153,230),.08);}

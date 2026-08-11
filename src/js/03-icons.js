@@ -44,6 +44,9 @@ const TC_ICON = (() => {
     arrowDown:'<path d="M12 5v14M6 13l6 6 6-6"/>',
     swap:   '<path d="M7 4 3 8l4 4M3 8h13M17 20l4-4-4-4M21 16H8"/>',
     undo:   '<path d="M9 7 4 12l5 5M4 12h11a5 5 0 0 1 0 10"/>',
+    user:   '<circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>',
+    folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>',
+    save:   '<path d="M5 4h10l4 4v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M15 4v5H7V4M12 11v7M9 15l3 3 3-3"/>',
   };
   const fn = (name, cls) => wrap(paths[name] || '', cls);
   fn.has = name => Object.prototype.hasOwnProperty.call(paths, name);
