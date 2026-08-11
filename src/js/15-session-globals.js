@@ -10,6 +10,7 @@ const TC_STORE_KEY = 'triplecrown.session.v1';
 let _persistTimer = null;
 let _persistReady = false;   // becomes true after boot restore, so we don't save during load
 let playerNotes = {};        // player-note state keyed by canonical player key
+const NOTE_TEXT_MAX = 20000; // hard cap on a single note body (chars); matches cloud-save sanitizer
 function persistAvailable(){
   try{ const k='__tc_test__'; localStorage.setItem(k,'1'); localStorage.removeItem(k); return true; }
   catch(e){ return false; }
@@ -335,7 +336,11 @@ function getPlayerNote(nameOrId, pos, team){
 function setPlayerNoteText(nameOrId, pos, team, text){
   const note = ensurePlayerNote(nameOrId, pos, team);
   if(!note) return null;
-  note.text = String(text==null?'':text);
+  // Hard cap the note body so a single note can't grow unbounded (matches the cloud-save
+  // sanitizer's MAX_TEXT). Truncating here keeps session storage and any later save in sync.
+  let t = String(text==null?'':text);
+  if(t.length > NOTE_TEXT_MAX) t = t.slice(0, NOTE_TEXT_MAX);
+  note.text = t;
   note.updatedAt = Date.now();
   markDirty();
   return note;

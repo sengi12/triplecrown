@@ -305,7 +305,8 @@ function renderPcardNotes(){
     <div class="pcard-notes-head"><div class="pcard-notes-title">Player Notes</div><div class="pcard-notes-sub">Tap/click tagged stats anywhere in the app to pin them here.</div></div>
     <div class="pcard-notes-tags">${tags || '<div class="pcard-notes-empty">No pinned stats yet.</div>'}</div>
     <label class="pcard-notes-label" for="pcardNotesText">Your notes</label>
-    <textarea id="pcardNotesText" class="pcard-notes-text" spellcheck="true" placeholder="Write down anything you want to remember about this player…" oninput="updatePcardNotesText(this.value)">${escHtml(note.text || '')}</textarea>
+    <textarea id="pcardNotesText" class="pcard-notes-text" spellcheck="true" maxlength="${NOTE_TEXT_MAX}" placeholder="Write down anything you want to remember about this player…" oninput="updatePcardNotesText(this.value)">${escHtml(note.text || '')}</textarea>
+    <div class="pcard-notes-count" id="pcardNotesCount">${(note.text||'').length} / ${NOTE_TEXT_MAX}</div>
     <div class="pcard-src">Notes save with this session and export with your projections JSON.</div>
   </div>`;
 }
@@ -348,6 +349,8 @@ function updatePcardNotesText(value){
   const target = pcardNoteTarget();
   if(!target) return;
   setPlayerNoteText(target.player_id || target.name, target.pos, target.team, value);
+  const cnt = document.getElementById('pcardNotesCount');
+  if(cnt) cnt.textContent = `${(value||'').length} / ${NOTE_TEXT_MAX}`;
   renderPcardStatTabs();
   refreshPcardNoteButton();
 }

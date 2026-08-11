@@ -135,6 +135,7 @@ run_js_test test_pcard          "Player card: FPTS from scoring, QB color thresh
 run_js_test test_pcard_click    "Player card click: onclick single-quote escaping (the no-popup bug), apostrophe names, overlay opens"
 run_js_test test_player_notes   "Player notes: session persistence plus export/import round-trip"
 run_js_test test_input_injection "Input-injection regression coverage: HTML/JS context escaping in card/render paths"
+run_js_test test_supabase_validate "Cloud-save validation: prototype-pollution, bounds, size caps, field whitelist"
 run_js_test test_teamcolor      "Player card: team-color hero gradient, light-color darkening, watermark logo"
 run_js_test test_pcard_pos      "Player card positions: QB rushing group, RB/WR/TE schemas, YPC/YPT math, 3-group scroll"
 run_js_test test_pcard_adv      "Player card advanced: RANK by format, QB/WR/RB new stats, season totals row (sum/max/rate)"

@@ -214,6 +214,158 @@ function _tcShowFormErr(id, msg, type){
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Data validation / sanitization before persisting to the server
+// ─────────────────────────────────────────────────────────────────────────────
+// Defense-in-depth for cloud saves. RLS restricts rows to their owner, and
+// escHtml/escAttr/escJsSingle escape all stored strings on render (so persisted data
+// can't XSS on read). This layer adds what those don't: (1) a JSON round-trip + field
+// whitelist to strip prototype-pollution and unknown/oversized keys, (2) numeric bounds
+// checks so no NaN/Infinity/absurd value is stored, and (3) size/count caps to keep a
+// buggy or hostile client from bloating the database (storage abuse / cost).
+const TC_SAVE_LIMITS = {
+  MAX_JSON_BYTES: 4 * 1024 * 1024,   // 4 MB ceiling on the serialized payload
+  MAX_PROJECTIONS: 4000,             // 32 teams × generous roster ceiling
+  MAX_NOTES: 6000,
+  MAX_TAGS_PER_NOTE: 300,
+  MAX_STR: 400,                      // generic string field cap
+  MAX_NAME: 120,
+  MAX_TEAM: 8,
+  MAX_TEXT: 20000,                   // note body
+  STAT_MIN: -100000,
+  STAT_MAX: 2000000,
+};
+const TC_VALID_POS = new Set(['QB','RB','WR','TE','K','FB','HB','DEF','DST','']);
+
+function _tcStr(v, max){
+  if(v==null) return '';
+  let s = String(v);
+  if(s.length > max) s = s.slice(0, max);
+  return s;
+}
+function _tcNum(v, opts){
+  opts = opts || {};
+  if(v==null || v===''){ return opts.allowNull ? null : 0; }
+  const n = (typeof v==='number') ? v : parseFloat(v);
+  if(!Number.isFinite(n)){ return opts.allowNull ? null : 0; }
+  const lo = (opts.min==null) ? TC_SAVE_LIMITS.STAT_MIN : opts.min;
+  const hi = (opts.max==null) ? TC_SAVE_LIMITS.STAT_MAX : opts.max;
+  return Math.min(hi, Math.max(lo, n));
+}
+// Shallow-clean an arbitrary nav object: drop dangerous keys, keep only primitive
+// values (capped strings / finite numbers / booleans), cap the key count. Forward-
+// compatible with any nav shape without whitelisting specific keys.
+function _tcSafeNav(nav){
+  if(!nav || typeof nav!=='object' || Array.isArray(nav)) return null;
+  const out = {};
+  let n = 0;
+  for(const k of Object.keys(nav)){
+    if(n >= 16) break;
+    if(k==='__proto__' || k==='constructor' || k==='prototype') continue;
+    const v = nav[k];
+    if(v==null) continue;
+    if(typeof v==='string') out[_tcStr(k,40)] = _tcStr(v, TC_SAVE_LIMITS.MAX_STR);
+    else if(typeof v==='number' && Number.isFinite(v)) out[_tcStr(k,40)] = v;
+    else if(typeof v==='boolean') out[_tcStr(k,40)] = v;
+    // objects/arrays/functions are intentionally dropped
+    else continue;
+    n++;
+  }
+  return out;
+}
+
+function tcSanitizeSavePayload(raw){
+  // 1. Round-trip through JSON to drop functions/undefined and any prototype tricks.
+  let src;
+  try{ src = JSON.parse(JSON.stringify(raw)); }
+  catch(e){ return { ok:false, error:'Projection data could not be serialized' }; }
+  if(!src || typeof src!=='object' || Array.isArray(src)){
+    return { ok:false, error:'Malformed projection data' };
+  }
+
+  const projIn = Array.isArray(src.projections) ? src.projections : null;
+  if(!projIn){ return { ok:false, error:'Projection data is missing its projections list' }; }
+  if(projIn.length > TC_SAVE_LIMITS.MAX_PROJECTIONS){
+    return { ok:false, error:`Too many players (${projIn.length}); limit ${TC_SAVE_LIMITS.MAX_PROJECTIONS}` };
+  }
+
+  // 2. Whitelist + bounds each projection row (unknown keys are dropped).
+  const NUMERIC = ['passing_yards','passing_touchdowns','passing_attempts','passing_completions',
+    'interceptions_thrown','rushing_yards','rushing_touchdowns','rushing_attempts','rushing_yards_per_attempt',
+    'receptions','receiving_yards','receiving_touchdowns','receiving_yards_per_reception','fumbles_lost'];
+  const projections = projIn.map(r=>{
+    r = (r && typeof r==='object' && !Array.isArray(r)) ? r : {};
+    const posRaw = _tcStr(r.fantasy_position, 8).toUpperCase();
+    const row = {
+      season: _tcStr(r.season, 12),
+      analyst_name: _tcStr(r.analyst_name, TC_SAVE_LIMITS.MAX_NAME),
+      name: _tcStr(r.name, TC_SAVE_LIMITS.MAX_NAME),
+      fantasy_position: TC_VALID_POS.has(posRaw) ? posRaw : 'WR',
+      team: _tcStr(r.team, TC_SAVE_LIMITS.MAX_TEAM).toUpperCase(),
+      player_id: (r.player_id==null) ? null : _tcStr(r.player_id, 40),
+      headshot: (r.headshot==null) ? null : _tcStr(r.headshot, TC_SAVE_LIMITS.MAX_STR),
+      slug: (r.slug==null) ? null : _tcStr(r.slug, TC_SAVE_LIMITS.MAX_STR),
+      receiving_targets: _tcStr(r.receiving_targets, 12),   // buildOutput stores this as a string
+      bye_week: (r.bye_week==null) ? null : _tcNum(r.bye_week, {min:0, max:30, allowNull:true}),
+      adp: _tcNum(r.adp, {min:0, max:100000}),
+      adp_ppr: _tcNum(r.adp_ppr, {min:0, max:100000}),
+      adp_half_ppr: _tcNum(r.adp_half_ppr, {min:0, max:100000}),
+      adp_2qb: _tcNum(r.adp_2qb, {min:0, max:100000}),
+    };
+    NUMERIC.forEach(k=>{ row[k] = _tcNum(r[k], {min:0}); });
+    return row;
+  });
+
+  // 3. Whitelist + cap playerNotes (guard against prototype-pollution keys).
+  const notes = {};
+  const pn = src.playerNotes;
+  if(pn && typeof pn==='object' && !Array.isArray(pn)){
+    const keys = Object.keys(pn).filter(k=>k!=='__proto__' && k!=='constructor' && k!=='prototype');
+    if(keys.length > TC_SAVE_LIMITS.MAX_NOTES){
+      return { ok:false, error:`Too many player notes (${keys.length}); limit ${TC_SAVE_LIMITS.MAX_NOTES}` };
+    }
+    keys.forEach(k=>{
+      const nte = pn[k];
+      if(!nte || typeof nte!=='object' || Array.isArray(nte)) return;
+      const tagsIn = Array.isArray(nte.tags) ? nte.tags.slice(0, TC_SAVE_LIMITS.MAX_TAGS_PER_NOTE) : [];
+      notes[_tcStr(k, 200)] = {
+        key: _tcStr(nte.key || k, 200),
+        pid: _tcStr(nte.pid, 40),
+        name: _tcStr(nte.name, TC_SAVE_LIMITS.MAX_NAME),
+        pos: _tcStr(nte.pos, 8),
+        team: _tcStr(nte.team, TC_SAVE_LIMITS.MAX_TEAM),
+        text: _tcStr(nte.text, TC_SAVE_LIMITS.MAX_TEXT),
+        updatedAt: _tcNum(nte.updatedAt, {min:0, max:1e15, allowNull:true}),
+        tags: tagsIn.map(t=>{
+          t = (t && typeof t==='object' && !Array.isArray(t)) ? t : {};
+          return {
+            id: _tcStr(t.id, 80),
+            label: _tcStr(t.label, TC_SAVE_LIMITS.MAX_STR),
+            value: _tcStr(t.value, TC_SAVE_LIMITS.MAX_STR),
+            source: _tcStr(t.source, 80),
+            statKey: _tcStr(t.statKey, 120),
+            context: _tcStr(t.context, TC_SAVE_LIMITS.MAX_STR),
+            capturedAt: _tcNum(t.capturedAt, {min:0, max:1e15, allowNull:true}),
+            nav: _tcSafeNav(t.nav),
+          };
+        }),
+      };
+    });
+  }
+
+  const cleaned = { projections, playerNotes: notes };
+
+  // 4. Final byte-size ceiling on the serialized result.
+  let size;
+  try{ size = new TextEncoder().encode(JSON.stringify(cleaned)).length; }
+  catch(e){ size = JSON.stringify(cleaned).length; }
+  if(size > TC_SAVE_LIMITS.MAX_JSON_BYTES){
+    return { ok:false, error:`Save is too large (${(size/1048576).toFixed(1)} MB); limit ${TC_SAVE_LIMITS.MAX_JSON_BYTES/1048576} MB` };
+  }
+
+  return { ok:true, cleaned, size };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Save
 // ─────────────────────────────────────────────────────────────────────────────
 function tcSaveClick(){
@@ -254,20 +406,45 @@ async function tcDoSave(){
   const nameEl = document.getElementById('tcSaveName');
   const name   = (nameEl?.value||'').trim();
   if(!name){ _tcShowFormErr('tcSaveErr','Please enter a save name'); return; }
+  if(name.length > 80){ _tcShowFormErr('tcSaveErr','Save name is too long (80 char max)'); return; }
   const btn = document.getElementById('tcSaveBtnOk');
   if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
   try{
-    const payload = buildOutput();
-    if(!payload.projections.length) throw new Error('No projection data to save (adjust some sliders first)');
-    const season = String(payload.projections[0]?.season || '');
-    // sort_order is an int32 column, so use epoch SECONDS (not ms) to stay in range.
-    const {error} = await _tcClient
+    const built = buildOutput();
+    if(!built.projections.length) throw new Error('No projection data to save (adjust some sliders first)');
+    // Validate + sanitize BEFORE the data ever leaves the browser. Strips prototype-pollution,
+    // caps sizes/counts, bounds every numeric field, and whitelists the structure.
+    const check = tcSanitizeSavePayload(built);
+    if(!check.ok) throw new Error(check.error);
+    const payload = check.cleaned;
+    const season = String(payload.projections[0]?.season || '').slice(0, 12);
+    // Overwrite-by-name: if a save with this exact name already exists for this user, UPDATE it
+    // so the user builds a single working set over time instead of piling up duplicates.
+    // Otherwise INSERT a new row. (sort_order is an int32 column → epoch SECONDS to stay in range.)
+    const { data: existing, error: findErr } = await _tcClient
       .from('tc_projections')
-      .insert({ user_id: _tcUser.id, name, season, data: payload, sort_order: Math.floor(Date.now()/1000) });
+      .select('id')
+      .eq('user_id', _tcUser.id)
+      .eq('name', name)
+      .limit(1);
+    if(findErr) throw findErr;
+    let error, overwrote = false;
+    if(existing && existing.length){
+      overwrote = true;
+      ({ error } = await _tcClient
+        .from('tc_projections')
+        .update({ season, data: payload, updated_at: new Date().toISOString() })
+        .eq('id', existing[0].id)
+        .eq('user_id', _tcUser.id));
+    } else {
+      ({ error } = await _tcClient
+        .from('tc_projections')
+        .insert({ user_id: _tcUser.id, name, season, data: payload, sort_order: Math.floor(Date.now()/1000) }));
+    }
     if(error) throw error;
     document.getElementById('tcSaveOverlay')?.remove();
     _tcMgrProjs = [];   // invalidate cache so Manager refreshes
-    toast(`"${name}" saved to cloud ✓`, 'ok');
+    toast(`"${name}" ${overwrote ? 'updated' : 'saved'} ✓`, 'ok');
   }catch(e){
     if(btn){ btn.disabled = false; btn.textContent = 'Save'; }
     _tcShowFormErr('tcSaveErr', e.message || 'Save failed');
@@ -464,4 +641,5 @@ if(typeof window !== 'undefined'){
   window.tcCloseManager   = tcCloseManager;
   window.tcLoadProjection = tcLoadProjection;
   window.tcDeleteProjection = tcDeleteProjection;
+  window.tcSanitizeSavePayload = tcSanitizeSavePayload;
 }

@@ -173,6 +173,7 @@
 .pcard-notes-label{display:block;font-size:10px;font-weight:900;letter-spacing:.04em;color:var(--muted);text-transform:uppercase;margin:0 0 6px 1px;}
 .pcard-notes-text{width:100%;min-height:160px;resize:vertical;border:1px solid var(--border);border-radius:12px;background:var(--surface2);color:var(--text);padding:12px;font:inherit;line-height:1.45;}
 .pcard-notes-text:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(61,155,255,.18);}
+.pcard-notes-count{font-size:10px;color:var(--muted);text-align:right;margin-top:3px;font-variant-numeric:tabular-nums;}
 .note-picker-overlay{position:fixed;inset:0;z-index:1500;}
 .note-picker-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:18px;}
 .note-picker{width:min(420px,100%);max-height:min(78vh,640px);overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 22px 60px rgba(0,0,0,.45);padding:14px;}
