@@ -17444,9 +17444,10 @@ async function tcDoSave(){
     const payload = buildOutput();
     if(!payload.projections.length) throw new Error('No projection data to save (adjust some sliders first)');
     const season = String(payload.projections[0]?.season || '');
+    // sort_order is an int32 column, so use epoch SECONDS (not ms) to stay in range.
     const {error} = await _tcClient
       .from('tc_projections')
-      .insert({ user_id: _tcUser.id, name, season, data: payload, sort_order: Date.now() });
+      .insert({ user_id: _tcUser.id, name, season, data: payload, sort_order: Math.floor(Date.now()/1000) });
     if(error) throw error;
     document.getElementById('tcSaveOverlay')?.remove();
     _tcMgrProjs = [];   // invalidate cache so Manager refreshes
