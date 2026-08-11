@@ -62,6 +62,10 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
 
 - **Live draft follow.** Point it at a Sleeper draft and drafted players are marked/hidden on your board in real time. Also follows your drafted team as you draft them with the option of seeing other team's rosters!
 - **VOR and VONA BasedRoster Suggestions** Based on your projections, VOR (Value Over Replacement) assigns a value to every player based on what is replacable at their position (per your league settings) and VONA (Value Over Next Available) uses that along with your draft position and live-draft data to help you see where the biggest value drop offs are at each position to better assist your draft decisions!
+- **Cloud save + projections manager (optional).** Sign in to save your projection scenarios to Supabase, then load, delete, and drag-to-reorder them in a built-in manager. If you never sign in, everything continues to work locally in-session as usual.
+- **Player Notes + stat tagging.** Add notes on any player card and tag important stats directly from rankings/cards into those notes so your own scouting context stays attached to the player.
+- **Rankings productivity tools.** Use built-in player search, switch imported analysts when multi-analyst files are loaded, and launch the KeepTradeCut game overlay from the Rankings view.
+- **League Analyzer controls.** Sync Sleeper leagues into explicit snapshots, re-sync on demand, and switch leagues from the menu while keeping all analyzer views tied to the same snapshot context.
 
 <!-- Center align -->
 <div align="center">
@@ -217,7 +221,7 @@ bake_seed.py  --embeds-->  index_baked.html   rankings scored to your league
 - **Scheme carryover is a forecast, not a guarantee.** When a new coordinator or play-calling head coach arrives, TripleCrown shows their former team's tendencies as a starting hypothesis for how a unit might shift — use it as a prompt, not a projection.
 - **Red-zone / air-yard columns appear only for past seasons.** They're live stats and aren't projectable, so they show only when you're viewing a prior season in the rankings. A missing value shows a dash rather than a zero.
 - **Data accuracy is best online.** Some roster-verification steps (e.g. "copy team from last season" filtering out players who left) rely on the live Sleeper roster. Fully offline from a baked file, the app copies the whole reference roster and flags it as unverified.
-- **Nothing is saved server-side.** All projections live in the browser session. Reference seasons are read-only and never overwrite your working set.
+- **Local-first by default.** If you do not sign in, all projections live in the browser session only. If you sign in, named scenarios can be saved to your own cloud account and reloaded later. Reference seasons are read-only and never overwrite your working set.
 - **Baked files are snapshots.** Re-run `build_seed.py` then `bake_seed.py` to refresh a phone copy with new data.
 - **Default scoring is Half PPR** (0.5 per reception), matching the default rankings format.
 
@@ -228,15 +232,13 @@ bake_seed.py  --embeds-->  index_baked.html   rankings scored to your league
 The project ships with a regression suite (Node + Python) covering the projection math, QB games model, week-range filtering, ECR/format sync, Sleeper league linking + scoring detection, dynasty contracts, per-team undo, copy-to-working, Sharp advanced-stat pulling and display, strength of schedule, coordinator/head-coach parsing and scheme carryover, Spotrac roster-change parsing, red-zone rankings, SumerSports advanced metrics + situational splits, player cards (ESPN gamelogs, contract/draft summaries, college stats, playoff-round labels), mobile layout, seed loading/baking, and the season-switching edge cases.
 
 ```bash
-./run_tests.sh index.html
+./tests/run_tests.sh index.html
 ```
 
 ---
 
 ## To Do
 ### New Features
-- [ ] ability for users to create account to save their projections (supabase)
-- [ ] projections manager
 - [ ] clicking on a team logo, takes you to that team's 2026 projections page anywhere in the app
 - [🛠️] add ESPN league support: No Public API, yet public links discovered
 - [🛠️] add Yahoo league support: Requires OAUTH

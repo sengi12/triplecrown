@@ -17365,7 +17365,8 @@ function tcAuthSubmit(){
   const btn = document.getElementById('tcAuthSubmit');
   if(btn){ btn.disabled = true; btn.textContent = isSignUp ? 'Creating account…' : 'Signing in…'; }
   const promise = isSignUp
-    ? _tcClient.auth.signUp({ email, password: pass })
+    ? _tcClient.auth.signUp({ email, password: pass,
+        options: { emailRedirectTo: window.location.href.split('#')[0] } })
     : _tcClient.auth.signInWithPassword({ email, password: pass });
   promise.then(({data, error})=>{
     if(btn){ btn.disabled = false; btn.textContent = isSignUp ? 'Create Account' : 'Sign In'; }
