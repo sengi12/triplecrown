@@ -242,6 +242,7 @@ function buildOutput(){
     state.qbs.forEach(qb=>{
       const bp=getBase(team,'QB').find(x=>x.name===qb.name)||getBase(team,'QB')[0]||{};
       out.push({season:PROJ_SEASON,analyst_name:analyst,name:qb.name,fantasy_position:'QB',team,
+        player_id:qb.player_id||null,
         headshot:qb.headshot||null,slug:qb.slug||null,
         passing_yards:Math.round(qb.passing_yards),passing_touchdowns:Math.round(qb.passing_tds),
         passing_attempts:Math.round(qb.passing_attempts),passing_completions:Math.round(qb.passing_completions),
@@ -265,6 +266,7 @@ function buildOutput(){
           receiving_targets:projTgts.toString(),receiving_yards_per_reception:projRec>0?+(projYds/projRec).toFixed(2):0};
         if(ex>=0) Object.assign(out[ex],rec);
         else out.push({season:PROJ_SEASON,analyst_name:analyst,name:p.name,fantasy_position:p.pos,team,
+          player_id:p.player_id||null,
           headshot:p.headshot||null,slug:p.slug||null,
           passing_yards:0,passing_touchdowns:0,passing_attempts:0,passing_completions:0,interceptions_thrown:0,
           rushing_yards:bp.rushing_yards||0,rushing_touchdowns:0,rushing_attempts:bp.rushing_attempts||0,rushing_yards_per_attempt:0,
@@ -285,6 +287,7 @@ function buildOutput(){
           rushing_yards_per_attempt:att>0?+(yds/att).toFixed(2):0};
         if(ex>=0) Object.assign(out[ex],rush);
         else out.push({season:PROJ_SEASON,analyst_name:analyst,name:p.name,fantasy_position:'RB',team,
+          player_id:p.player_id||null,
           headshot:p.headshot||null,slug:p.slug||null,
           passing_yards:0,passing_touchdowns:0,passing_attempts:0,passing_completions:0,interceptions_thrown:0,
           ...rush,receptions:0,receiving_yards:0,receiving_touchdowns:0,receiving_targets:'0',receiving_yards_per_reception:0,
