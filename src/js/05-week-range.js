@@ -362,20 +362,26 @@ function weekFilterPaceText(state, pid, mode){
 // Uses the baseline_* values which already reflect the active week-range window
 // (initPassingShares/initRushingShares rebuild from filtered data when active).
 // Excludes games where the player didn't play via p.games_played.
+// Always includes ALL fantasy-relevant stats (rush + rec) so dual-threat players
+// like McCaffrey show their full FPTS regardless of which tab they appear on.
 function sidebarFptsPerGame(p, mode){
   if(activeSeason==='proj' || typeof scoringSettings==='undefined') return null;
   const gp = p.games_played || 0;
   if(gp <= 0) return null;
   const sc = scoringSettings;
+  // In rec mode: baseline_yards/tds = receiving. In rush mode: baseline_yards/tds = rushing.
+  // The complementary side is stored under explicit names (baseline_rush_*/baseline_rec_*).
+  const rec    = p.baseline_rec || 0;
+  const rec_yd = mode==='rec' ? (p.baseline_yards||0) : (p.baseline_rec_yards||0);
+  const rec_td = mode==='rec' ? (p.baseline_tds||0)   : (p.baseline_rec_tds||0);
+  const rush_yd= mode==='rush'? (p.baseline_yards||0) : (p.baseline_rush_yards||0);
+  const rush_td= mode==='rush'? (p.baseline_tds||0)   : (p.baseline_rush_tds||0);
   let fpts = 0;
-  if(mode==='rec'){
-    fpts += (p.baseline_rec||0) * (sc.receptions||0);
-    fpts += (p.baseline_yards||0) / (sc.receiving_yards_yardage||10);
-    fpts += (p.baseline_tds||0) * (sc.receiving_touchdowns||6);
-  } else if(mode==='rush'){
-    fpts += (p.baseline_yards||0) / (sc.rushing_yards_yardage||10);
-    fpts += (p.baseline_tds||0) * (sc.rushing_touchdowns||6);
-  }
+  fpts += rec * (sc.receptions||0);
+  fpts += rec_yd / (sc.receiving_yards_yardage||10);
+  fpts += rec_td * (sc.receiving_touchdowns||6);
+  fpts += rush_yd / (sc.rushing_yards_yardage||10);
+  fpts += rush_td * (sc.rushing_touchdowns||6);
   return fpts / gp;
 }
 function sidebarFptsTag(p, mode){

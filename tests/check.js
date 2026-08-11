@@ -512,20 +512,26 @@ function weekFilterPaceText(state, pid, mode){
 // Uses the baseline_* values which already reflect the active week-range window
 // (initPassingShares/initRushingShares rebuild from filtered data when active).
 // Excludes games where the player didn't play via p.games_played.
+// Always includes ALL fantasy-relevant stats (rush + rec) so dual-threat players
+// like McCaffrey show their full FPTS regardless of which tab they appear on.
 function sidebarFptsPerGame(p, mode){
   if(activeSeason==='proj' || typeof scoringSettings==='undefined') return null;
   const gp = p.games_played || 0;
   if(gp <= 0) return null;
   const sc = scoringSettings;
+  // In rec mode: baseline_yards/tds = receiving. In rush mode: baseline_yards/tds = rushing.
+  // The complementary side is stored under explicit names (baseline_rush_*/baseline_rec_*).
+  const rec    = p.baseline_rec || 0;
+  const rec_yd = mode==='rec' ? (p.baseline_yards||0) : (p.baseline_rec_yards||0);
+  const rec_td = mode==='rec' ? (p.baseline_tds||0)   : (p.baseline_rec_tds||0);
+  const rush_yd= mode==='rush'? (p.baseline_yards||0) : (p.baseline_rush_yards||0);
+  const rush_td= mode==='rush'? (p.baseline_tds||0)   : (p.baseline_rush_tds||0);
   let fpts = 0;
-  if(mode==='rec'){
-    fpts += (p.baseline_rec||0) * (sc.receptions||0);
-    fpts += (p.baseline_yards||0) / (sc.receiving_yards_yardage||10);
-    fpts += (p.baseline_tds||0) * (sc.receiving_touchdowns||6);
-  } else if(mode==='rush'){
-    fpts += (p.baseline_yards||0) / (sc.rushing_yards_yardage||10);
-    fpts += (p.baseline_tds||0) * (sc.rushing_touchdowns||6);
-  }
+  fpts += rec * (sc.receptions||0);
+  fpts += rec_yd / (sc.receiving_yards_yardage||10);
+  fpts += rec_td * (sc.receiving_touchdowns||6);
+  fpts += rush_yd / (sc.rushing_yards_yardage||10);
+  fpts += rush_td * (sc.rushing_touchdowns||6);
   return fpts / gp;
 }
 function sidebarFptsTag(p, mode){
@@ -2434,6 +2440,7 @@ function initPassingShares(team){
       name:p.name,pos:p.pos,headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
       baseline_targets:tgts,baseline_yards:p.receiving_yards,
       baseline_tds:p.receiving_tds||0,baseline_rec:p.receptions,
+      baseline_rush_yards:p.rushing_yards||0,baseline_rush_tds:p.rushing_tds||0,
       games_played:p.games_played||0,
       share:weightOf(p)/total,
       td_share:totalTDs>0?(p.receiving_tds||0)/totalTDs:1/all.length,
@@ -2463,6 +2470,7 @@ function initRushingShares(team){
   state.rushing.shares=src.map(p=>({
     name:p.name,pos:'RB',headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
     baseline_att:p.rushing_attempts,baseline_yards:p.rushing_yards,baseline_tds:p.rushing_tds||0,
+    baseline_rec:p.receptions||0,baseline_rec_yards:p.receiving_yards||0,baseline_rec_tds:p.receiving_tds||0,
     games_played:p.games_played||0,
     share:totalAtt>0?p.rushing_attempts/totalAtt:1/src.length,
     td_share:totalTDs>0?(p.rushing_tds||0)/totalTDs:1/src.length,
