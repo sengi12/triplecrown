@@ -223,9 +223,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .pcard-season{margin-top:12px;}
 .pcard-season-title{font-size:13px;font-weight:800;color:var(--text);margin:6px 2px 6px;
   padding:4px 0;}
-.pcard-cons-badge{display:inline-block;margin-left:8px;padding:1px 7px;border-radius:999px;
+.pcard-cons-badge{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;
   font-size:9px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;vertical-align:middle;
   border:1px solid transparent;}
+.pcard-fptsg{color:#2060c0;background:rgba(32,96,192,.10);border-color:rgba(32,96,192,.28);}
 .pcard-cons-A{color:#1f8f54;background:rgba(47,174,78,.14);border-color:rgba(47,174,78,.34);}
 .pcard-cons-B{color:#5e9f2f;background:rgba(132,185,63,.16);border-color:rgba(132,185,63,.34);}
 .pcard-cons-C{color:#b37d16;background:rgba(216,165,29,.14);border-color:rgba(216,165,29,.34);}
@@ -530,6 +531,8 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
   color:var(--muted);font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;
   cursor:help;flex:0 0 auto;padding:0;line-height:1;}
 .pace-info-btn:hover{border-color:var(--accent);color:var(--accent);}
+.share-fptsg{display:inline-flex;align-items:center;gap:2px;margin-left:5px;padding:1px 6px;border-radius:999px;background:rgba(32,96,192,.13);border:1px solid rgba(32,96,192,.28);color:#4a8fe0;font-size:10px;font-weight:800;white-space:nowrap;flex:0 0 auto;vertical-align:middle;}
+.share-fptsg-label{font-size:9px;font-weight:700;opacity:.8;}
 .pace-info-pop{position:absolute;top:24px;right:0;z-index:25;min-width:min(260px,calc(100vw - 24px));max-width:min(340px,calc(100vw - 24px));padding:9px 10px;
   background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 14px 36px rgba(0,0,0,.35);
   white-space:normal;color:var(--text);font-size:11px;line-height:1.45;user-select:text;-webkit-user-select:text;}
@@ -845,7 +848,7 @@ html.scheme-locked, html.scheme-locked body{overflow:hidden;overscroll-behavior:
 
 /* Playbook modal */
 .scheme-overlay{position:fixed;inset:0;background:rgba(0,0,0,.66);z-index:1060;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:18px;overscroll-behavior:contain;}
-.scheme-modal{width:min(1120px,95vw);max-height:calc(100vh - 36px);overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 16px 18px;position:relative;box-shadow:0 16px 42px rgba(0,0,0,.35);overscroll-behavior:contain;}
+.scheme-modal{width:min(1120px,95vw);max-height:calc(100vh - 36px);max-height:calc(100dvh - 36px);overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 16px 18px;position:relative;box-shadow:0 16px 42px rgba(0,0,0,.35);overscroll-behavior:contain;}
 .scheme-close{position:absolute;top:10px;right:10px;background:var(--surface3);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:2px 8px;font-size:16px;cursor:pointer;}
 .scheme-close:hover{border-color:var(--accent);}
 .scheme-head{display:flex;align-items:center;gap:10px;padding-right:28px;margin-bottom:10px;}
@@ -925,11 +928,12 @@ html.scheme-locked, html.scheme-locked body{overflow:hidden;overscroll-behavior:
 .scheme-benefactors-title{font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#1a1a17;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;}
 .scheme-benefactors-title span{font-size:9px;font-weight:800;color:#5a5545;letter-spacing:.04em;text-transform:none;}
 .scheme-benefit-list{display:flex;flex-direction:column;gap:5px;margin-top:7px;}
-.scheme-benefit-row{display:grid;grid-template-columns:20px 36px 1fr auto;gap:8px;align-items:center;background:#f4efe2;border:1.5px solid #000;border-radius:2px;padding:6px 7px;text-align:left;width:100%;font-family:"Courier New",monospace;color:#1a1a17;cursor:pointer;}
-.scheme-benefit-row:hover{background:#f8f3e7;}
-.scheme-benefit-row:focus{outline:2px solid #000;outline-offset:1px;}
+.scheme-benefit-row{display:grid;grid-template-columns:20px 36px 1fr auto;gap:8px;align-items:center;background:#f4efe2;border:1.5px solid #000;border-radius:2px;padding:6px 7px;text-align:left;width:100%;font-family:"Courier New",monospace;color:#1a1a17;cursor:default;}
 .scheme-benefit-rank{font-size:10px;font-weight:900;color:#5a5545;}
-.scheme-benefit-head{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:1.5px solid #000;border-radius:50%;overflow:hidden;background:#ddd6c4;}
+.scheme-benefit-head{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1.5px solid #000;border-radius:50%;overflow:hidden;background:#ddd6c4;}
+.scheme-benefit-head-btn{cursor:pointer;transition:box-shadow .12s;}
+.scheme-benefit-head-btn:hover{box-shadow:0 0 0 2.5px #000;}
+.scheme-benefit-head-btn:focus{outline:2px solid #000;outline-offset:2px;}
 .scheme-benefit-hs{width:100%;height:100%;object-fit:cover;display:block;}
 .scheme-benefit-hs-err,.scheme-benefit-hs.ph,.scheme-benefit-hs.ph-err{width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#d9d2bf;color:#5a5545;font-size:9px;font-weight:900;letter-spacing:.03em;}
 .scheme-benefit-hs.ph{display:inline-block;}
@@ -937,8 +941,9 @@ html.scheme-locked, html.scheme-locked body{overflow:hidden;overscroll-behavior:
 .scheme-benefit-name{font-size:12px;font-weight:900;color:#1a1a17;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .scheme-benefit-meta{font-size:9px;font-weight:800;color:#5a5545;letter-spacing:.04em;text-transform:uppercase;white-space:normal;overflow:visible;text-overflow:clip;line-height:1.35;}
 .scheme-benefit-splits{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px;}
-.scheme-benefit-split{display:inline-flex;align-items:center;gap:4px;padding:2px 5px;border:1px solid #000;background:#e7ddc7;border-radius:999px;font-size:9px;font-weight:900;color:#3f392d;}
-.scheme-benefit-split b{font-size:8px;letter-spacing:.06em;color:#1a1a17;}
+.scheme-benefit-split{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border:1.5px solid #000;background:#e7ddc7;border-radius:999px;font-size:11.5px;font-weight:900;color:#3f392d;cursor:pointer;}
+.scheme-benefit-split:hover{background:#ddd4b5;}
+.scheme-benefit-split b{font-size:10px;letter-spacing:.06em;color:#1a1a17;}
 .scheme-benefit-score{font-size:12px;font-weight:900;color:#1a1a17;line-height:1.15;min-width:54px;text-align:right;align-self:start;}
 .scheme-benefit-score .scheme-help{margin-left:4px;}
 .scheme-benefit-why{grid-column:3 / span 2;font-size:9.5px;color:#5a5545;line-height:1.35;}
@@ -971,7 +976,7 @@ html.scheme-locked, html.scheme-locked body{overflow:hidden;overscroll-behavior:
 
 @media(max-width:820px){
   .scheme-overlay{padding:10px;}
-  .scheme-modal{width:100%;max-height:calc(100vh - 20px);padding:12px 10px 12px;}
+  .scheme-modal{width:100%;max-height:calc(100vh - 20px);max-height:calc(100dvh - 20px);padding:12px 10px 12px;}
   .scheme-oc-note{display:block;margin:3px 0 0 0;}
   .scheme-back{font-size:9px;padding:4px 7px;}
   .scheme-view-tabs{margin:6px 0 5px;gap:4px;}
@@ -2729,6 +2734,50 @@ function weekFilterPaceText(state, pid, mode){
   }
   return `17-game pace from weeks ${lo}-${hi} (${gp} game${gp===1?'':'s'}): ${parts.join(' · ')}`;
 }
+// Compute per-game FPTS for a player entry from passing_shares / rushing.shares.
+// Uses the baseline_* values which already reflect the active week-range window
+// (initPassingShares/initRushingShares rebuild from filtered data when active).
+// Excludes games where the player didn't play via p.games_played.
+function sidebarFptsPerGame(p, mode){
+  if(activeSeason==='proj' || typeof scoringSettings==='undefined') return null;
+  const gp = p.games_played || 0;
+  if(gp <= 0) return null;
+  const sc = scoringSettings;
+  let fpts = 0;
+  if(mode==='rec'){
+    fpts += (p.baseline_rec||0) * (sc.receptions||0);
+    fpts += (p.baseline_yards||0) / (sc.receiving_yards_yardage||10);
+    fpts += (p.baseline_tds||0) * (sc.receiving_touchdowns||6);
+  } else if(mode==='rush'){
+    fpts += (p.baseline_yards||0) / (sc.rushing_yards_yardage||10);
+    fpts += (p.baseline_tds||0) * (sc.rushing_touchdowns||6);
+  }
+  return fpts / gp;
+}
+function sidebarFptsTag(p, mode){
+  const v = sidebarFptsPerGame(p, mode);
+  if(v==null) return '';
+  return `<span class="share-fptsg">${v.toFixed(1)} <span class="share-fptsg-label">pts/g</span></span>`;
+}
+function qbFptsPerGame(qb){
+  if(activeSeason==='proj' || typeof scoringSettings==='undefined') return null;
+  const gp = qb.games_played || 0;
+  if(gp <= 0) return null;
+  const sc = scoringSettings;
+  let fpts = 0;
+  fpts += (qb.passing_yards||0) / (sc.passing_yards_yardage||25);
+  fpts += (qb.passing_tds||0) * (sc.passing_touchdowns||4);
+  fpts += (qb.interceptions_thrown||0) * (sc.interceptions_thrown||-2);
+  fpts += (qb.qb_rush_yards||0) / (sc.rushing_yards_yardage||10);
+  fpts += (qb.qb_rush_tds||0) * (sc.rushing_touchdowns||6);
+  return fpts / gp;
+}
+function qbFptsTag(qb){
+  const v = qbFptsPerGame(qb);
+  if(v==null) return '';
+  return `<span class="share-fptsg">${v.toFixed(1)} <span class="share-fptsg-label">pts/g</span></span>`;
+}
+
 function weekFilterPaceButton(state, pid, mode){
   const text = weekFilterPaceText(state, pid, mode);
   if(!text) return '';
@@ -2779,6 +2828,17 @@ async function applyWeekRange(team, fromWk, toWk){
       buildWeekFilterQBPool(team, activeSeason, fromWk, toWk),
       buildWeekFilterQBData(team, activeSeason, fromWk, toWk),
     ]);
+    // If all player fetches were blocked (CORS / offline), skillData will be empty.
+    // Detect this and show a clear message rather than silently leaving stats unchanged.
+    const hasData = skillData && Object.keys(skillData).length > 0;
+    if(!hasData){
+      state.weekFilterLoading=false;
+      state.weekFilter=null;
+      setSharedWeekRange(team, activeSeason, 1, 18);
+      toast('Weekly data unavailable — open the app from a web server or GitHub Pages to use the week-range filter','err');
+      renderContent();
+      return;
+    }
     state.weekFilterData=skillData;
     state.weekFilterQBPool=qbPool;
     state.weekFilterQBData=qbData;
@@ -4600,6 +4660,7 @@ function initPassingShares(team){
       name:p.name,pos:p.pos,headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
       baseline_targets:tgts,baseline_yards:p.receiving_yards,
       baseline_tds:p.receiving_tds||0,baseline_rec:p.receptions,
+      games_played:p.games_played||0,
       share:weightOf(p)/total,
       td_share:totalTDs>0?(p.receiving_tds||0)/totalTDs:1/all.length,
       ypt:tgts>0?p.receiving_yards/tgts:9,
@@ -4628,6 +4689,7 @@ function initRushingShares(team){
   state.rushing.shares=src.map(p=>({
     name:p.name,pos:'RB',headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
     baseline_att:p.rushing_attempts,baseline_yards:p.rushing_yards,baseline_tds:p.rushing_tds||0,
+    games_played:p.games_played||0,
     share:totalAtt>0?p.rushing_attempts/totalAtt:1/src.length,
     td_share:totalTDs>0?(p.rushing_tds||0)/totalTDs:1/src.length,
     ypc:p.rushing_attempts>0?p.rushing_yards/p.rushing_attempts:4.0,
@@ -4873,7 +4935,7 @@ function renderContent(){
   if(isRef && espnRecordCache[recKey]==null) fetchTeamRecord(activeSeason,t);
   const recStr = isRef ? (espnRecordCache[recKey]||'') : '';
   const powerScoreBadge = (isRef && typeof _renderAdvPowerScore==='function' && typeof activeSharp==='function')
-    ? _renderAdvPowerScore(t, activeSharp(), { shieldOnly:true, stableFromSource:true })
+    ? _renderAdvPowerScore(t, activeSharp(), { shieldOnly:true })
     : '';
   const powerScoreInline = isRef
     ? `<div class="season-power">${powerScoreBadge}<span class="season-power-text">Power Score</span></div>`
@@ -4979,7 +5041,7 @@ function renderPassing(team,state){
         return `<div class="snap-row" style="${active?'border:1px solid var(--qb)':''}">
           <span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${imgTag(hsPack(q),'player-headshot')}</span>
           <div class="snap-info" style="flex:1">
-            <div style="font-size:12px;font-weight:700"><span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${q.name}</span>${weekFilterPaceButton(state,q.player_id,'qb')}
+            <div style="font-size:12px;font-weight:700"><span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${q.name}</span>${weekFilterPaceButton(state,q.player_id,'qb')}${qbFptsTag(q)}
               ${q.games_played?`<span style="font-size:9px;color:var(--muted);font-weight:500">· actually played ${Math.round(q.games_played)}</span>`:''}</div>
             <div style="font-size:10px;color:var(--muted)" id="wl-sub-${i}">${gms} games · ${perGame(q,'passing_yards').toFixed(1)} pass yds/gm</div>
           </div>
@@ -4998,7 +5060,7 @@ function renderPassing(team,state){
     <div class="player-row"><span class="clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${imgTag(hsPack(qb),'player-headshot')}</span>
       <span class="pos-badge pos-QB">QB${idx+1}</span>
       <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${qb.name}</div>
-        ${weekFilterPaceButton(state,qb.player_id,'qb')}
+        ${weekFilterPaceButton(state,qb.player_id,'qb')}${qbFptsTag(qb)}
         <div class="player-sub">${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?`ECR ${e.rank_ecr}`:'';})()}${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?' · ':'';})()}<span id="qb-games-sub">${games}</span> games projected</div></div></div>
     <div class="alert alert-info" style="margin-bottom:11px"><span class="alert-icon">📈</span>
       <div>These are this QB's totals across <b>${games} games</b>. Adjust <b>Games Played</b> above to extrapolate a full-season pace (e.g. an 8-game stint scaled to 17), and the stats below scale with it.</div></div>
@@ -5235,7 +5297,7 @@ function renderPassDerived(team,state,subTabs,metric){
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${weekFilterPaceButton(state,p.player_id,'rec')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTag(p,'rec')}
         <span class="share-pct" id="dp-${i}">${pct}%</span>
         <span class="share-vol" id="dv-${i}">${v.toLocaleString()} ${label}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -5356,7 +5418,7 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span>
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${weekFilterPaceButton(state,p.player_id,'rec')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTag(p,'rec')}
         <span class="share-pct" id="pp-${i}">${pct}%</span>
         <span class="share-vol" id="pt-${i}">${projTgts} tgt</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},${pcardArg(p.pos)})" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
@@ -5492,7 +5554,7 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
     return `<div class="share-block" id="rblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${weekFilterPaceButton(state,p.player_id,'rush')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTag(p,'rush')}
         <span class="share-pct" id="rp-${i}">${pct}%</span>
         <span class="share-vol" id="ra-${i}">${att} att</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},'RB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
@@ -5544,7 +5606,7 @@ function renderRushTDs(team,state,subTabs){
     return `<div class="share-block" id="rblk-${i}"><div class="share-row">
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${weekFilterPaceButton(state,p.player_id,'rush')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTag(p,'rush')}
         <span class="share-pct" id="rtdp-${i}">${pct}%</span>
         <span class="share-vol">proj TDs</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -7638,7 +7700,7 @@ function renderPcardSeason(season, rows, pos){
       <td class="pcard-opp">${tot._games}g</td>${tcells}</tr>`;
   }
   return `<div class="pcard-season">
-    <div class="pcard-season-title">${season}${pcardSeasonTeamTag(rows)}${pcardSeasonConsistencyBadge(rows, pos)}</div>
+    <div class="pcard-season-title">${season}${pcardSeasonTeamTag(rows)}${pcardFptsPerGameBadge(rows, pos)}${pcardSeasonConsistencyBadge(rows, pos)}</div>
     <div class="pcard-table-scroll"><table class="pcard-table">
       <thead>
         <tr><th></th><th></th>${grpCells}</tr>
@@ -7687,6 +7749,18 @@ function pcardSeasonConsistency(rows, pos){
   else if(rate >= 0.6) grade = 'C';
   else if(rate >= 0.5) grade = 'D';
   return { grade, benchmark, hits, n, rate };
+}
+
+function pcardFptsPerGameBadge(rows, pos){
+  const benchmark = pcardConsistencyBenchmarkForPos(pos);
+  if(!Number.isFinite(benchmark)) return '';
+  const vals = (rows||[])
+    .filter(r=>!r.bye && r.gp>0 && Number.isFinite(r.fpts))
+    .map(r=>Number(r.fpts));
+  if(vals.length < 2) return '';
+  const avg = vals.reduce((a,b)=>a+b,0) / vals.length;
+  const tip = `FPTS/game (games played only, current scoring): ${avg.toFixed(2)} pts/game over ${vals.length} games.`;
+  return ` <span class="pcard-cons-badge pcard-fptsg" title="${escAttr(tip)}">${avg.toFixed(1)} pts/g</span>`;
 }
 
 function pcardSeasonConsistencyBadge(rows, pos){
@@ -11564,6 +11638,18 @@ function _schemeLeagueInsightSnapshot(season){
   if(!s) return null;
   if(_schemeInsightSeasonCache[s]) return _schemeInsightSeasonCache[s];
 
+  // Trigger adv_weekly lazy load so drive-component and RZ-volume stats populate.
+  // The cache key will be cleared by laOnAdvWeeklyLoaded when the fetch completes.
+  if(typeof ensureNflverseSection==='function') ensureNflverseSection('adv_weekly').then(ok=>{
+    if(!ok) return;
+    // Re-render the scheme modal if it's open on the insights tab so RZ data appears.
+    if(typeof schemeOverlayOpen!=='undefined' && schemeOverlayOpen
+       && typeof schemeViewTab!=='undefined' && schemeViewTab==='insights'
+       && typeof _renderTeamCoachingScheme==='function'){
+      _renderTeamCoachingScheme();
+    }
+  });
+
   const block = NFLVERSE && NFLVERSE[s] && NFLVERSE[s].coaching_scheme;
   const teams = block ? Object.keys(block) : [];
   if(!teams.length) return null;
@@ -11656,7 +11742,9 @@ function _schemeLeagueInsightSnapshot(season){
     rzPlaysPerGame: rzPlayVolVals,
     fpPprPerGame: fpVals,
   };
-  _schemeInsightSeasonCache[s] = snapshot;
+  // Only cache once adv_weekly is loaded — otherwise a later load would never refresh.
+  const advReady = typeof _nflverseLazyLoaded !== 'undefined' && _nflverseLazyLoaded.adv_weekly;
+  if(advReady) _schemeInsightSeasonCache[s] = snapshot;
   return snapshot;
 }
 
@@ -12328,7 +12416,7 @@ function _schemeBuildBenefactors(p, d){
     const rid = String((resolved && resolved.player_id) || '');
     const name = String((resolved && resolved.name) || shortName || slot);
     const bestDown = [
-      {k:'1st',v:d1Pct}, {k:'2nd',v:d2Pct}, {k:'3rd',v:d3Pct}, {k:'4th',v:d4Pct}
+      {k:'1st ',v:d1Pct}, {k:'2nd ',v:d2Pct}, {k:'3rd ',v:d3Pct}, {k:'4th ',v:d4Pct}
     ].sort((a,b)=>b.v-a.v)[0];
 
     rows.push({
@@ -12426,20 +12514,21 @@ function _schemeRenderBenefactorList(title, subtitle, list, scoreFmt, metaFmt){
     const teamCode = String(p && p.team || schemeTeam || '').toUpperCase();
     const season = String(schemeSeason || (list[0] && list[0].season) || advTeamSeason() || '');
     const click = _schemePlayerOnclick(p);
-    const wrapOpen = click
-      ? `<div class="scheme-benefit-row clickable-player" role="button" tabindex="0" onclick="${click}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${click}}">`
-      : '<div class="scheme-benefit-row">';
+    const notePlayer = p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null;
+    // Individual player is the note target for down splits — each pill tags that specific player.
+    const splitMeta = (label, value, statKey) => ({ label, value, source:'coaching_insights', statKey, context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:notePlayer, team:teamCode, nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } });
+    const wrapOpen = '<div class="scheme-benefit-row">';
     const wrapClose = '</div>';
     const splits = `<span class="scheme-benefit-splits">
-      <span class="scheme-benefit-split">${noteWrapHtml(`<b>1st</b><span>${p.d1Pct.toFixed(2)}%</span>`, { label:`${title} 1st-down share`, value:`${p.d1Pct.toFixed(2)}%`, source:'coaching_insights', statKey:'d1_share', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
-      <span class="scheme-benefit-split">${noteWrapHtml(`<b>2nd</b><span>${p.d2Pct.toFixed(2)}%</span>`, { label:`${title} 2nd-down share`, value:`${p.d2Pct.toFixed(2)}%`, source:'coaching_insights', statKey:'d2_share', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
-      <span class="scheme-benefit-split">${noteWrapHtml(`<b>3rd</b><span>${p.d3Pct.toFixed(2)}%</span>`, { label:`${title} 3rd-down share`, value:`${p.d3Pct.toFixed(2)}%`, source:'coaching_insights', statKey:'d3_share', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
-      <span class="scheme-benefit-split">${noteWrapHtml(`<b>4th</b><span>${p.d4Pct.toFixed(2)}%</span>`, { label:`${title} 4th-down share`, value:`${p.d4Pct.toFixed(2)}%`, source:'coaching_insights', statKey:'d4_share', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>1st </b><span>${p.d1Pct.toFixed(2)}%</span>`, splitMeta(`${title} 1st-down share`, `${p.d1Pct.toFixed(2)}%`, 'd1_share'), 'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>2nd </b><span>${p.d2Pct.toFixed(2)}%</span>`, splitMeta(`${title} 2nd-down share`, `${p.d2Pct.toFixed(2)}%`, 'd2_share'), 'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>3rd </b><span>${p.d3Pct.toFixed(2)}%</span>`, splitMeta(`${title} 3rd-down share`, `${p.d3Pct.toFixed(2)}%`, 'd3_share'), 'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>4th </b><span>${p.d4Pct.toFixed(2)}%</span>`, splitMeta(`${title} 4th-down share`, `${p.d4Pct.toFixed(2)}%`, 'd4_share'), 'note-tag-hit')}</span>
     </span>`;
-    const notePlayer = p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null;
+    const headClick = click ? `role="button" tabindex="0" title="Open player card" onclick="event.stopPropagation();${click}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();${click}}"` : '';
     return `${wrapOpen}
       <span class="scheme-benefit-rank">${i+1}</span>
-      <span class="scheme-benefit-head">${_schemePlayerHeadshot(p)}</span>
+      <span class="scheme-benefit-head scheme-benefit-head-btn" ${headClick}>${_schemePlayerHeadshot(p)}</span>
       <span class="scheme-benefit-main">
         <span class="scheme-benefit-name">${_schemeEscHtml(p.name)}</span>
         <span class="scheme-benefit-meta">${noteWrapHtml(metaFmt(p), { label:`${title} role context`, value:`${p.pos||''} · ${p.slot||''}${p.oppShare!=null?` · opp share ${p.oppShare.toFixed(2)}%`:''}${p.tgtShare!=null?` · tgt share ${p.tgtShare.toFixed(2)}%`:''}`, source:'coaching_insights', statKey:'role_context', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:notePlayer, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
@@ -12512,6 +12601,23 @@ function _schemeRenderInsights(p){
   );
   const frictionComponents = _schemeRenderDriveFrictionBreakdown(p, d, league, rankText, rankClass);
   const rzVolumeCard = _schemeRenderRzOpportunityVolume(p, d, league, rankText, rankClass);
+
+  // Build a direct player list from benefactors for the four insight tags so they don't
+  // fall back to getBase() (which reads the projection-year roster and may be empty).
+  const insightPlayers = (()=>{
+    const seen = new Set();
+    const out = [];
+    const add = (list)=>{ (list||[]).forEach(pl=>{ const k=pl.player_id||pl.name; if(!k||seen.has(k)) return; seen.add(k); out.push({player_id:pl.player_id||'',name:pl.name||'',pos:pl.pos||'',team:pl.team||teamCode}); }); };
+    add(benefactors);
+    add(rushBenefactors);
+    if(!out.length){
+      // Last resort: projection-year roster
+      ['QB','RB','WR','TE'].forEach(pos=>{ (getBase(teamCode,pos)||[]).slice(0,3).forEach(pl=>{ const k=pl.player_id||pl.name; if(!k||seen.has(k)) return; seen.add(k); out.push({player_id:pl.player_id||'',name:pl.name||'',pos,team:teamCode}); }); });
+    }
+    return out.slice(0, 12);
+  })();
+  const _itm = (label, value, statKey)=>({ label, value, source:'coaching_insights', statKey, context:`${teamName} red-zone insights · ${p&&p.season?p.season:advTeamSeason()}`, team:teamCode, players:insightPlayers, nav:{ type:'coaching', team:teamCode, season:String(p&&p.season?p.season:advTeamSeason()), tab:'insights' } });
+
   return `<div class="scheme-insights-wrap">
     ${offenseStrip}
     <div class="scheme-insights-head">
@@ -12521,22 +12627,22 @@ function _schemeRenderInsights(p){
     <div class="scheme-insights-grid">
       <div class="scheme-insight-card">
         <div class="scheme-insight-k">3rd/4th down frequency</div>
-        <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.thirdDownReach)} <span class="scheme-insight-rank ${rankClass(rzRank)}">(${rankText(rzRank)})</span>`, { label:'3rd/4th down frequency', value:_schemePct(d.thirdDownReach), source:'coaching_insights', statKey:'third_down_reach', context:`${teamName} red-zone insights · ${p&&p.season?p.season:advTeamSeason()}`, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(p&&p.season?p.season:advTeamSeason()), tab:'insights' } }, 'note-tag-hit')}</div>
+        <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.thirdDownReach)} <span class="scheme-insight-rank ${rankClass(rzRank)}">(${rankText(rzRank)})</span>`, _itm('3rd/4th down frequency', _schemePct(d.thirdDownReach), 'third_down_reach'), 'note-tag-hit')}</div>
         <div class="scheme-insight-sub">Share of red-zone plays that reach 3rd or 4th down.</div>
       </div>
       <div class="scheme-insight-card">
         <div class="scheme-insight-k">Early down red zone success (1st/2nd)</div>
-        <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.earlySucc)} <span class="scheme-insight-rank ${rankClass(earlySuccRank)}">(${rankText(earlySuccRank)})</span>`, { label:'Early down red zone success', value:_schemePct(d.earlySucc), source:'coaching_insights', statKey:'early_succ', context:`${teamName} red-zone insights · ${p&&p.season?p.season:advTeamSeason()}`, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(p&&p.season?p.season:advTeamSeason()), tab:'insights' } }, 'note-tag-hit')}</div>
+        <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.earlySucc)} <span class="scheme-insight-rank ${rankClass(earlySuccRank)}">(${rankText(earlySuccRank)})</span>`, _itm('Early down red zone success', _schemePct(d.earlySucc), 'early_succ'), 'note-tag-hit')}</div>
         <div class="scheme-insight-sub">Weighted by formation usage on early downs inside the red zone.</div>
       </div>
       <div class="scheme-insight-card">
         <div class="scheme-insight-k">Late down red zone success (3rd/4th)</div>
-        <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.lateSucc)} <span class="scheme-insight-rank ${rankClass(lateSuccRank)}">(${rankText(lateSuccRank)})</span>`, { label:'Late down red zone success', value:_schemePct(d.lateSucc), source:'coaching_insights', statKey:'late_succ', context:`${teamName} red-zone insights · ${p&&p.season?p.season:advTeamSeason()}`, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(p&&p.season?p.season:advTeamSeason()), tab:'insights' } }, 'note-tag-hit')}</div>
+        <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.lateSucc)} <span class="scheme-insight-rank ${rankClass(lateSuccRank)}">(${rankText(lateSuccRank)})</span>`, _itm('Late down red zone success', _schemePct(d.lateSucc), 'late_succ'), 'note-tag-hit')}</div>
         <div class="scheme-insight-sub">How efficiently this team finishes once drives get extended.</div>
       </div>
       <div class="scheme-insight-card">
         <div class="scheme-insight-k">Drive friction ranking ${frictionTip}</div>
-        <div class="scheme-insight-v">${noteWrapHtml(`${rankText(frictionRank)} <span class="scheme-insight-rank ${frictionRankClass}">(score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'})</span>`, { label:'Drive friction ranking', value:`${rankText(frictionRank)} · score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'}`, source:'coaching_insights', statKey:'friction_rank', context:`${teamName} red-zone insights · ${p&&p.season?p.season:advTeamSeason()}`, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(p&&p.season?p.season:advTeamSeason()), tab:'insights' } }, 'note-tag-hit')}</div>
+        <div class="scheme-insight-v">${noteWrapHtml(`${rankText(frictionRank)} <span class="scheme-insight-rank ${frictionRankClass}">(score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'})</span>`, _itm('Drive friction ranking', `${rankText(frictionRank)} · score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'}`, 'friction_rank'), 'note-tag-hit')}</div>
         <div class="scheme-insight-sub">Ranked by drive cleanliness (1 = least friction / cleanest drives, 32 = most friction / toughest drives).</div>
       </div>
       ${rzVolumeCard}
@@ -13485,32 +13591,25 @@ function renderAdvWeekRange(team, opts){
   opts = opts || {};
   const showOppRail = opts.showOppRail !== false;
   const extraRail = opts.extraRailHTML || '';
-  const title = opts.title || 'Advanced week range:';
-  const summaryHint = opts.summaryHint || 'Windowed recompute powers offense, defense, tendencies, pace, personnel, coverage, defensive tendencies, pass rush &amp; run D, and O-Line pass/run cards.';
   const [lo,hi]=_advGetWeekRange(team);
   const left=((lo-1)/17*100), right=((18-hi)/17*100);
-  const loading=_advWeeklySeedLoading ? '<span class="week-range-loading">Loading weekly advanced data…</span>' : '';
+  const loading=_advWeeklySeedLoading ? '<span class="week-range-loading">loading…</span>' : '';
+  const active = _advWeekRangeActive(team);
   const oppRail = (showOppRail && typeof renderWeekOpponentRail==='function')
     ? renderWeekOpponentRail(team, advTeamSeason(), 'wr-opp-adv')
     : '';
   return `<div class="week-range-card adv-week-range-card">
     <div class="week-range-label">
-      <span><b>${title}</b> <span id="adv-wr-lo-${team}">${lo}</span>–<span id="adv-wr-hi-${team}">${hi}</span> <span class="week-range-hint">(${_advWeekLabel(team)})</span></span>
-      <span style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <span class="week-range-reset" onclick="advWeekRangeReset('${team}')">Reset</span>
-      </span>
+      <span>${TC_ICON("calendar")} Filter weeks: <b id="adv-wr-lo-${team}">${lo}</b> – <b id="adv-wr-hi-${team}">${hi}</b>${loading ? ' ' + loading : ''}</span>
+      ${active ? `<span class="week-range-reset" onclick="advWeekRangeReset('${escJsSingle(team)}')">↺ Reset to full season</span>` : '<span class="week-range-hint">drag either end to zoom into a stretch of games</span>'}
     </div>
     <div class="dual-slider">
       <div class="dual-slider-track"></div>
       <div class="dual-slider-fill" id="adv-wr-fill-${team}" style="left:${left}%;right:${right}%;"></div>
-      <input class="dual-range" type="range" min="1" max="18" value="${lo}" oninput="advWeekRangeDrag('${team}','lo',this.value)" onchange="advWeekRangeCommit('${team}')">
-      <input class="dual-range" type="range" min="1" max="18" value="${hi}" oninput="advWeekRangeDrag('${team}','hi',this.value)" onchange="advWeekRangeCommit('${team}')">
+      <input class="dual-range" type="range" min="1" max="18" step="1" value="${lo}" oninput="advWeekRangeDrag('${team}','lo',this.value)" onchange="advWeekRangeCommit('${team}')">
+      <input class="dual-range" type="range" min="1" max="18" step="1" value="${hi}" oninput="advWeekRangeDrag('${team}','hi',this.value)" onchange="advWeekRangeCommit('${team}')">
       ${extraRail}
       ${oppRail}
-    </div>
-    <div class="week-range-label" style="margin-top:8px;">
-      <span class="week-range-hint">${summaryHint}</span>
-      ${loading}
     </div>
   </div>`;
 }
@@ -15587,7 +15686,12 @@ function ktcPickNextTrio(preBoard){
   let bestAny = null;
   let bestAnyDetail = null;
   let bestAnyScore = -1e9;
+  // Last-resort pool: trios that were recently shown but are better than ktcFallbackTrio.
+  let bestRecent = null;
+  let bestRecentDetail = null;
+  let bestRecentScore = -1e9;
   const spanCap = 13;
+  const recentSigSet = new Set(ktcGameState.recentTrioSigs||[]);
   for(let i=0;i<cand.length-2;i++){
     for(let j=i+1;j<cand.length-1;j++){
       for(let k=j+1;k<cand.length;k++){
@@ -15599,8 +15703,7 @@ function ktcPickNextTrio(preBoard){
         }
         const sig = trio.map(ktcPlayerKey).sort().join('~');
         if(sig===ktcGameState.lastSig) continue;
-        // Avoid exact-repeat trios from the recent window whenever alternatives exist.
-        if((ktcGameState.recentTrioSigs||[]).includes(sig)) continue;
+        const isRecent = recentSigSet.has(sig);
         const detail = ktcTrioDetail(trio, targetPos);
         const laneDelta = Math.abs((detail.avgRank||desiredRank) - desiredRank);
         const laneBonus = Math.max(-44, 18 - laneDelta*1.45);
@@ -15609,6 +15712,11 @@ function ktcPickNextTrio(preBoard){
           : (Number.isFinite(detail.vorSpread) ? detail.vorSpread : 999);
         const spreadBonus = Math.max(-22, 10 - Math.abs(spreadMetric - desiredSpread)*1.35);
         const totalScore = detail.score + laneBonus + spreadBonus;
+        if(isRecent){
+          // Recently shown — only eligible as absolute last resort (better than ktcFallbackTrio).
+          if(totalScore>bestRecentScore){ bestRecentScore=totalScore; bestRecent=trio; bestRecentDetail=detail; }
+          continue;
+        }
         if(totalScore>bestAnyScore){
           bestAnyScore = totalScore;
           bestAny = trio;
@@ -15628,7 +15736,8 @@ function ktcPickNextTrio(preBoard){
     best = bestAny;
     bestDetail = bestAnyDetail;
   }
-  if(!best) best = ktcFallbackTrio(pool, false);
+  if(!best) best = bestRecent || ktcFallbackTrio(pool, false);
+  if(!bestDetail && best === bestRecent) bestDetail = bestRecentDetail;
   if(!best) best = ktcFallbackTrio(board, false);
   if(!bestDetail) bestDetail = ktcTrioDetail(best, targetPos);
   ktcGameState.trio = best;

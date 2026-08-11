@@ -358,6 +358,50 @@ function weekFilterPaceText(state, pid, mode){
   }
   return `17-game pace from weeks ${lo}-${hi} (${gp} game${gp===1?'':'s'}): ${parts.join(' · ')}`;
 }
+// Compute per-game FPTS for a player entry from passing_shares / rushing.shares.
+// Uses the baseline_* values which already reflect the active week-range window
+// (initPassingShares/initRushingShares rebuild from filtered data when active).
+// Excludes games where the player didn't play via p.games_played.
+function sidebarFptsPerGame(p, mode){
+  if(activeSeason==='proj' || typeof scoringSettings==='undefined') return null;
+  const gp = p.games_played || 0;
+  if(gp <= 0) return null;
+  const sc = scoringSettings;
+  let fpts = 0;
+  if(mode==='rec'){
+    fpts += (p.baseline_rec||0) * (sc.receptions||0);
+    fpts += (p.baseline_yards||0) / (sc.receiving_yards_yardage||10);
+    fpts += (p.baseline_tds||0) * (sc.receiving_touchdowns||6);
+  } else if(mode==='rush'){
+    fpts += (p.baseline_yards||0) / (sc.rushing_yards_yardage||10);
+    fpts += (p.baseline_tds||0) * (sc.rushing_touchdowns||6);
+  }
+  return fpts / gp;
+}
+function sidebarFptsTag(p, mode){
+  const v = sidebarFptsPerGame(p, mode);
+  if(v==null) return '';
+  return `<span class="share-fptsg">${v.toFixed(1)} <span class="share-fptsg-label">pts/g</span></span>`;
+}
+function qbFptsPerGame(qb){
+  if(activeSeason==='proj' || typeof scoringSettings==='undefined') return null;
+  const gp = qb.games_played || 0;
+  if(gp <= 0) return null;
+  const sc = scoringSettings;
+  let fpts = 0;
+  fpts += (qb.passing_yards||0) / (sc.passing_yards_yardage||25);
+  fpts += (qb.passing_tds||0) * (sc.passing_touchdowns||4);
+  fpts += (qb.interceptions_thrown||0) * (sc.interceptions_thrown||-2);
+  fpts += (qb.qb_rush_yards||0) / (sc.rushing_yards_yardage||10);
+  fpts += (qb.qb_rush_tds||0) * (sc.rushing_touchdowns||6);
+  return fpts / gp;
+}
+function qbFptsTag(qb){
+  const v = qbFptsPerGame(qb);
+  if(v==null) return '';
+  return `<span class="share-fptsg">${v.toFixed(1)} <span class="share-fptsg-label">pts/g</span></span>`;
+}
+
 function weekFilterPaceButton(state, pid, mode){
   const text = weekFilterPaceText(state, pid, mode);
   if(!text) return '';
@@ -408,6 +452,17 @@ async function applyWeekRange(team, fromWk, toWk){
       buildWeekFilterQBPool(team, activeSeason, fromWk, toWk),
       buildWeekFilterQBData(team, activeSeason, fromWk, toWk),
     ]);
+    // If all player fetches were blocked (CORS / offline), skillData will be empty.
+    // Detect this and show a clear message rather than silently leaving stats unchanged.
+    const hasData = skillData && Object.keys(skillData).length > 0;
+    if(!hasData){
+      state.weekFilterLoading=false;
+      state.weekFilter=null;
+      setSharedWeekRange(team, activeSeason, 1, 18);
+      toast('Weekly data unavailable — open the app from a web server or GitHub Pages to use the week-range filter','err');
+      renderContent();
+      return;
+    }
     state.weekFilterData=skillData;
     state.weekFilterQBPool=qbPool;
     state.weekFilterQBData=qbData;

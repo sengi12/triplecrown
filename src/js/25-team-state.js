@@ -88,6 +88,7 @@ function initPassingShares(team){
       name:p.name,pos:p.pos,headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
       baseline_targets:tgts,baseline_yards:p.receiving_yards,
       baseline_tds:p.receiving_tds||0,baseline_rec:p.receptions,
+      games_played:p.games_played||0,
       share:weightOf(p)/total,
       td_share:totalTDs>0?(p.receiving_tds||0)/totalTDs:1/all.length,
       ypt:tgts>0?p.receiving_yards/tgts:9,
@@ -116,6 +117,7 @@ function initRushingShares(team){
   state.rushing.shares=src.map(p=>({
     name:p.name,pos:'RB',headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
     baseline_att:p.rushing_attempts,baseline_yards:p.rushing_yards,baseline_tds:p.rushing_tds||0,
+    games_played:p.games_played||0,
     share:totalAtt>0?p.rushing_attempts/totalAtt:1/src.length,
     td_share:totalTDs>0?(p.rushing_tds||0)/totalTDs:1/src.length,
     ypc:p.rushing_attempts>0?p.rushing_yards/p.rushing_attempts:4.0,

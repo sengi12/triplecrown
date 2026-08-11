@@ -852,7 +852,7 @@ function renderPcardSeason(season, rows, pos){
       <td class="pcard-opp">${tot._games}g</td>${tcells}</tr>`;
   }
   return `<div class="pcard-season">
-    <div class="pcard-season-title">${season}${pcardSeasonTeamTag(rows)}${pcardSeasonConsistencyBadge(rows, pos)}</div>
+    <div class="pcard-season-title">${season}${pcardSeasonTeamTag(rows)}${pcardFptsPerGameBadge(rows, pos)}${pcardSeasonConsistencyBadge(rows, pos)}</div>
     <div class="pcard-table-scroll"><table class="pcard-table">
       <thead>
         <tr><th></th><th></th>${grpCells}</tr>
@@ -901,6 +901,18 @@ function pcardSeasonConsistency(rows, pos){
   else if(rate >= 0.6) grade = 'C';
   else if(rate >= 0.5) grade = 'D';
   return { grade, benchmark, hits, n, rate };
+}
+
+function pcardFptsPerGameBadge(rows, pos){
+  const benchmark = pcardConsistencyBenchmarkForPos(pos);
+  if(!Number.isFinite(benchmark)) return '';
+  const vals = (rows||[])
+    .filter(r=>!r.bye && r.gp>0 && Number.isFinite(r.fpts))
+    .map(r=>Number(r.fpts));
+  if(vals.length < 2) return '';
+  const avg = vals.reduce((a,b)=>a+b,0) / vals.length;
+  const tip = `FPTS/game (games played only, current scoring): ${avg.toFixed(2)} pts/game over ${vals.length} games.`;
+  return ` <span class="pcard-cons-badge pcard-fptsg" title="${escAttr(tip)}">${avg.toFixed(1)} pts/g</span>`;
 }
 
 function pcardSeasonConsistencyBadge(rows, pos){

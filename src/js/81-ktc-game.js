@@ -504,7 +504,12 @@ function ktcPickNextTrio(preBoard){
   let bestAny = null;
   let bestAnyDetail = null;
   let bestAnyScore = -1e9;
+  // Last-resort pool: trios that were recently shown but are better than ktcFallbackTrio.
+  let bestRecent = null;
+  let bestRecentDetail = null;
+  let bestRecentScore = -1e9;
   const spanCap = 13;
+  const recentSigSet = new Set(ktcGameState.recentTrioSigs||[]);
   for(let i=0;i<cand.length-2;i++){
     for(let j=i+1;j<cand.length-1;j++){
       for(let k=j+1;k<cand.length;k++){
@@ -516,8 +521,7 @@ function ktcPickNextTrio(preBoard){
         }
         const sig = trio.map(ktcPlayerKey).sort().join('~');
         if(sig===ktcGameState.lastSig) continue;
-        // Avoid exact-repeat trios from the recent window whenever alternatives exist.
-        if((ktcGameState.recentTrioSigs||[]).includes(sig)) continue;
+        const isRecent = recentSigSet.has(sig);
         const detail = ktcTrioDetail(trio, targetPos);
         const laneDelta = Math.abs((detail.avgRank||desiredRank) - desiredRank);
         const laneBonus = Math.max(-44, 18 - laneDelta*1.45);
@@ -526,6 +530,11 @@ function ktcPickNextTrio(preBoard){
           : (Number.isFinite(detail.vorSpread) ? detail.vorSpread : 999);
         const spreadBonus = Math.max(-22, 10 - Math.abs(spreadMetric - desiredSpread)*1.35);
         const totalScore = detail.score + laneBonus + spreadBonus;
+        if(isRecent){
+          // Recently shown — only eligible as absolute last resort (better than ktcFallbackTrio).
+          if(totalScore>bestRecentScore){ bestRecentScore=totalScore; bestRecent=trio; bestRecentDetail=detail; }
+          continue;
+        }
         if(totalScore>bestAnyScore){
           bestAnyScore = totalScore;
           bestAny = trio;
@@ -545,7 +554,8 @@ function ktcPickNextTrio(preBoard){
     best = bestAny;
     bestDetail = bestAnyDetail;
   }
-  if(!best) best = ktcFallbackTrio(pool, false);
+  if(!best) best = bestRecent || ktcFallbackTrio(pool, false);
+  if(!bestDetail && best === bestRecent) bestDetail = bestRecentDetail;
   if(!best) best = ktcFallbackTrio(board, false);
   if(!bestDetail) bestDetail = ktcTrioDetail(best, targetPos);
   ktcGameState.trio = best;

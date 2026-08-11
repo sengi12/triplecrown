@@ -218,7 +218,7 @@ function renderContent(){
   if(isRef && espnRecordCache[recKey]==null) fetchTeamRecord(activeSeason,t);
   const recStr = isRef ? (espnRecordCache[recKey]||'') : '';
   const powerScoreBadge = (isRef && typeof _renderAdvPowerScore==='function' && typeof activeSharp==='function')
-    ? _renderAdvPowerScore(t, activeSharp(), { shieldOnly:true, stableFromSource:true })
+    ? _renderAdvPowerScore(t, activeSharp(), { shieldOnly:true })
     : '';
   const powerScoreInline = isRef
     ? `<div class="season-power">${powerScoreBadge}<span class="season-power-text">Power Score</span></div>`

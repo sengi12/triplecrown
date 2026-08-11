@@ -660,32 +660,25 @@ function renderAdvWeekRange(team, opts){
   opts = opts || {};
   const showOppRail = opts.showOppRail !== false;
   const extraRail = opts.extraRailHTML || '';
-  const title = opts.title || 'Advanced week range:';
-  const summaryHint = opts.summaryHint || 'Windowed recompute powers offense, defense, tendencies, pace, personnel, coverage, defensive tendencies, pass rush &amp; run D, and O-Line pass/run cards.';
   const [lo,hi]=_advGetWeekRange(team);
   const left=((lo-1)/17*100), right=((18-hi)/17*100);
-  const loading=_advWeeklySeedLoading ? '<span class="week-range-loading">Loading weekly advanced data…</span>' : '';
+  const loading=_advWeeklySeedLoading ? '<span class="week-range-loading">loading…</span>' : '';
+  const active = _advWeekRangeActive(team);
   const oppRail = (showOppRail && typeof renderWeekOpponentRail==='function')
     ? renderWeekOpponentRail(team, advTeamSeason(), 'wr-opp-adv')
     : '';
   return `<div class="week-range-card adv-week-range-card">
     <div class="week-range-label">
-      <span><b>${title}</b> <span id="adv-wr-lo-${team}">${lo}</span>–<span id="adv-wr-hi-${team}">${hi}</span> <span class="week-range-hint">(${_advWeekLabel(team)})</span></span>
-      <span style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <span class="week-range-reset" onclick="advWeekRangeReset('${team}')">Reset</span>
-      </span>
+      <span>${TC_ICON("calendar")} Filter weeks: <b id="adv-wr-lo-${team}">${lo}</b> – <b id="adv-wr-hi-${team}">${hi}</b>${loading ? ' ' + loading : ''}</span>
+      ${active ? `<span class="week-range-reset" onclick="advWeekRangeReset('${escJsSingle(team)}')">↺ Reset to full season</span>` : '<span class="week-range-hint">drag either end to zoom into a stretch of games</span>'}
     </div>
     <div class="dual-slider">
       <div class="dual-slider-track"></div>
       <div class="dual-slider-fill" id="adv-wr-fill-${team}" style="left:${left}%;right:${right}%;"></div>
-      <input class="dual-range" type="range" min="1" max="18" value="${lo}" oninput="advWeekRangeDrag('${team}','lo',this.value)" onchange="advWeekRangeCommit('${team}')">
-      <input class="dual-range" type="range" min="1" max="18" value="${hi}" oninput="advWeekRangeDrag('${team}','hi',this.value)" onchange="advWeekRangeCommit('${team}')">
+      <input class="dual-range" type="range" min="1" max="18" step="1" value="${lo}" oninput="advWeekRangeDrag('${team}','lo',this.value)" onchange="advWeekRangeCommit('${team}')">
+      <input class="dual-range" type="range" min="1" max="18" step="1" value="${hi}" oninput="advWeekRangeDrag('${team}','hi',this.value)" onchange="advWeekRangeCommit('${team}')">
       ${extraRail}
       ${oppRail}
-    </div>
-    <div class="week-range-label" style="margin-top:8px;">
-      <span class="week-range-hint">${summaryHint}</span>
-      ${loading}
     </div>
   </div>`;
 }

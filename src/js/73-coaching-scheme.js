@@ -528,6 +528,18 @@ function _schemeLeagueInsightSnapshot(season){
   if(!s) return null;
   if(_schemeInsightSeasonCache[s]) return _schemeInsightSeasonCache[s];
 
+  // Trigger adv_weekly lazy load so drive-component and RZ-volume stats populate.
+  // The cache key will be cleared by laOnAdvWeeklyLoaded when the fetch completes.
+  if(typeof ensureNflverseSection==='function') ensureNflverseSection('adv_weekly').then(ok=>{
+    if(!ok) return;
+    // Re-render the scheme modal if it's open on the insights tab so RZ data appears.
+    if(typeof schemeOverlayOpen!=='undefined' && schemeOverlayOpen
+       && typeof schemeViewTab!=='undefined' && schemeViewTab==='insights'
+       && typeof _renderTeamCoachingScheme==='function'){
+      _renderTeamCoachingScheme();
+    }
+  });
+
   const block = NFLVERSE && NFLVERSE[s] && NFLVERSE[s].coaching_scheme;
   const teams = block ? Object.keys(block) : [];
   if(!teams.length) return null;
@@ -620,7 +632,9 @@ function _schemeLeagueInsightSnapshot(season){
     rzPlaysPerGame: rzPlayVolVals,
     fpPprPerGame: fpVals,
   };
-  _schemeInsightSeasonCache[s] = snapshot;
+  // Only cache once adv_weekly is loaded — otherwise a later load would never refresh.
+  const advReady = typeof _nflverseLazyLoaded !== 'undefined' && _nflverseLazyLoaded.adv_weekly;
+  if(advReady) _schemeInsightSeasonCache[s] = snapshot;
   return snapshot;
 }
 
@@ -1292,7 +1306,7 @@ function _schemeBuildBenefactors(p, d){
     const rid = String((resolved && resolved.player_id) || '');
     const name = String((resolved && resolved.name) || shortName || slot);
     const bestDown = [
-      {k:'1st',v:d1Pct}, {k:'2nd',v:d2Pct}, {k:'3rd',v:d3Pct}, {k:'4th',v:d4Pct}
+      {k:'1st ',v:d1Pct}, {k:'2nd ',v:d2Pct}, {k:'3rd ',v:d3Pct}, {k:'4th ',v:d4Pct}
     ].sort((a,b)=>b.v-a.v)[0];
 
     rows.push({
@@ -1390,20 +1404,21 @@ function _schemeRenderBenefactorList(title, subtitle, list, scoreFmt, metaFmt){
     const teamCode = String(p && p.team || schemeTeam || '').toUpperCase();
     const season = String(schemeSeason || (list[0] && list[0].season) || advTeamSeason() || '');
     const click = _schemePlayerOnclick(p);
-    const wrapOpen = click
-      ? `<div class="scheme-benefit-row clickable-player" role="button" tabindex="0" onclick="${click}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${click}}">`
-      : '<div class="scheme-benefit-row">';
+    const notePlayer = p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null;
+    // Individual player is the note target for down splits — each pill tags that specific player.
+    const splitMeta = (label, value, statKey) => ({ label, value, source:'coaching_insights', statKey, context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:notePlayer, team:teamCode, nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } });
+    const wrapOpen = '<div class="scheme-benefit-row">';
     const wrapClose = '</div>';
     const splits = `<span class="scheme-benefit-splits">
-      <span class="scheme-benefit-split">${noteWrapHtml(`<b>1st</b><span>${p.d1Pct.toFixed(2)}%</span>`, { label:`${title} 1st-down share`, value:`${p.d1Pct.toFixed(2)}%`, source:'coaching_insights', statKey:'d1_share', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
-      <span class="scheme-benefit-split">${noteWrapHtml(`<b>2nd</b><span>${p.d2Pct.toFixed(2)}%</span>`, { label:`${title} 2nd-down share`, value:`${p.d2Pct.toFixed(2)}%`, source:'coaching_insights', statKey:'d2_share', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
-      <span class="scheme-benefit-split">${noteWrapHtml(`<b>3rd</b><span>${p.d3Pct.toFixed(2)}%</span>`, { label:`${title} 3rd-down share`, value:`${p.d3Pct.toFixed(2)}%`, source:'coaching_insights', statKey:'d3_share', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
-      <span class="scheme-benefit-split">${noteWrapHtml(`<b>4th</b><span>${p.d4Pct.toFixed(2)}%</span>`, { label:`${title} 4th-down share`, value:`${p.d4Pct.toFixed(2)}%`, source:'coaching_insights', statKey:'d4_share', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>1st </b><span>${p.d1Pct.toFixed(2)}%</span>`, splitMeta(`${title} 1st-down share`, `${p.d1Pct.toFixed(2)}%`, 'd1_share'), 'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>2nd </b><span>${p.d2Pct.toFixed(2)}%</span>`, splitMeta(`${title} 2nd-down share`, `${p.d2Pct.toFixed(2)}%`, 'd2_share'), 'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>3rd </b><span>${p.d3Pct.toFixed(2)}%</span>`, splitMeta(`${title} 3rd-down share`, `${p.d3Pct.toFixed(2)}%`, 'd3_share'), 'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>4th </b><span>${p.d4Pct.toFixed(2)}%</span>`, splitMeta(`${title} 4th-down share`, `${p.d4Pct.toFixed(2)}%`, 'd4_share'), 'note-tag-hit')}</span>
     </span>`;
-    const notePlayer = p.player_id||p.name ? noteTargetFromArgs(p.player_id||p.name,p.pos||'',teamCode) : null;
+    const headClick = click ? `role="button" tabindex="0" title="Open player card" onclick="event.stopPropagation();${click}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();${click}}"` : '';
     return `${wrapOpen}
       <span class="scheme-benefit-rank">${i+1}</span>
-      <span class="scheme-benefit-head">${_schemePlayerHeadshot(p)}</span>
+      <span class="scheme-benefit-head scheme-benefit-head-btn" ${headClick}>${_schemePlayerHeadshot(p)}</span>
       <span class="scheme-benefit-main">
         <span class="scheme-benefit-name">${_schemeEscHtml(p.name)}</span>
         <span class="scheme-benefit-meta">${noteWrapHtml(metaFmt(p), { label:`${title} role context`, value:`${p.pos||''} · ${p.slot||''}${p.oppShare!=null?` · opp share ${p.oppShare.toFixed(2)}%`:''}${p.tgtShare!=null?` · tgt share ${p.tgtShare.toFixed(2)}%`:''}`, source:'coaching_insights', statKey:'role_context', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:notePlayer, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
@@ -1476,6 +1491,23 @@ function _schemeRenderInsights(p){
   );
   const frictionComponents = _schemeRenderDriveFrictionBreakdown(p, d, league, rankText, rankClass);
   const rzVolumeCard = _schemeRenderRzOpportunityVolume(p, d, league, rankText, rankClass);
+
+  // Build a direct player list from benefactors for the four insight tags so they don't
+  // fall back to getBase() (which reads the projection-year roster and may be empty).
+  const insightPlayers = (()=>{
+    const seen = new Set();
+    const out = [];
+    const add = (list)=>{ (list||[]).forEach(pl=>{ const k=pl.player_id||pl.name; if(!k||seen.has(k)) return; seen.add(k); out.push({player_id:pl.player_id||'',name:pl.name||'',pos:pl.pos||'',team:pl.team||teamCode}); }); };
+    add(benefactors);
+    add(rushBenefactors);
+    if(!out.length){
+      // Last resort: projection-year roster
+      ['QB','RB','WR','TE'].forEach(pos=>{ (getBase(teamCode,pos)||[]).slice(0,3).forEach(pl=>{ const k=pl.player_id||pl.name; if(!k||seen.has(k)) return; seen.add(k); out.push({player_id:pl.player_id||'',name:pl.name||'',pos,team:teamCode}); }); });
+    }
+    return out.slice(0, 12);
+  })();
+  const _itm = (label, value, statKey)=>({ label, value, source:'coaching_insights', statKey, context:`${teamName} red-zone insights · ${p&&p.season?p.season:advTeamSeason()}`, team:teamCode, players:insightPlayers, nav:{ type:'coaching', team:teamCode, season:String(p&&p.season?p.season:advTeamSeason()), tab:'insights' } });
+
   return `<div class="scheme-insights-wrap">
     ${offenseStrip}
     <div class="scheme-insights-head">
@@ -1485,22 +1517,22 @@ function _schemeRenderInsights(p){
     <div class="scheme-insights-grid">
       <div class="scheme-insight-card">
         <div class="scheme-insight-k">3rd/4th down frequency</div>
-        <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.thirdDownReach)} <span class="scheme-insight-rank ${rankClass(rzRank)}">(${rankText(rzRank)})</span>`, { label:'3rd/4th down frequency', value:_schemePct(d.thirdDownReach), source:'coaching_insights', statKey:'third_down_reach', context:`${teamName} red-zone insights · ${p&&p.season?p.season:advTeamSeason()}`, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(p&&p.season?p.season:advTeamSeason()), tab:'insights' } }, 'note-tag-hit')}</div>
+        <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.thirdDownReach)} <span class="scheme-insight-rank ${rankClass(rzRank)}">(${rankText(rzRank)})</span>`, _itm('3rd/4th down frequency', _schemePct(d.thirdDownReach), 'third_down_reach'), 'note-tag-hit')}</div>
         <div class="scheme-insight-sub">Share of red-zone plays that reach 3rd or 4th down.</div>
       </div>
       <div class="scheme-insight-card">
         <div class="scheme-insight-k">Early down red zone success (1st/2nd)</div>
-        <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.earlySucc)} <span class="scheme-insight-rank ${rankClass(earlySuccRank)}">(${rankText(earlySuccRank)})</span>`, { label:'Early down red zone success', value:_schemePct(d.earlySucc), source:'coaching_insights', statKey:'early_succ', context:`${teamName} red-zone insights · ${p&&p.season?p.season:advTeamSeason()}`, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(p&&p.season?p.season:advTeamSeason()), tab:'insights' } }, 'note-tag-hit')}</div>
+        <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.earlySucc)} <span class="scheme-insight-rank ${rankClass(earlySuccRank)}">(${rankText(earlySuccRank)})</span>`, _itm('Early down red zone success', _schemePct(d.earlySucc), 'early_succ'), 'note-tag-hit')}</div>
         <div class="scheme-insight-sub">Weighted by formation usage on early downs inside the red zone.</div>
       </div>
       <div class="scheme-insight-card">
         <div class="scheme-insight-k">Late down red zone success (3rd/4th)</div>
-        <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.lateSucc)} <span class="scheme-insight-rank ${rankClass(lateSuccRank)}">(${rankText(lateSuccRank)})</span>`, { label:'Late down red zone success', value:_schemePct(d.lateSucc), source:'coaching_insights', statKey:'late_succ', context:`${teamName} red-zone insights · ${p&&p.season?p.season:advTeamSeason()}`, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(p&&p.season?p.season:advTeamSeason()), tab:'insights' } }, 'note-tag-hit')}</div>
+        <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.lateSucc)} <span class="scheme-insight-rank ${rankClass(lateSuccRank)}">(${rankText(lateSuccRank)})</span>`, _itm('Late down red zone success', _schemePct(d.lateSucc), 'late_succ'), 'note-tag-hit')}</div>
         <div class="scheme-insight-sub">How efficiently this team finishes once drives get extended.</div>
       </div>
       <div class="scheme-insight-card">
         <div class="scheme-insight-k">Drive friction ranking ${frictionTip}</div>
-        <div class="scheme-insight-v">${noteWrapHtml(`${rankText(frictionRank)} <span class="scheme-insight-rank ${frictionRankClass}">(score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'})</span>`, { label:'Drive friction ranking', value:`${rankText(frictionRank)} · score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'}`, source:'coaching_insights', statKey:'friction_rank', context:`${teamName} red-zone insights · ${p&&p.season?p.season:advTeamSeason()}`, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(p&&p.season?p.season:advTeamSeason()), tab:'insights' } }, 'note-tag-hit')}</div>
+        <div class="scheme-insight-v">${noteWrapHtml(`${rankText(frictionRank)} <span class="scheme-insight-rank ${frictionRankClass}">(score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'})</span>`, _itm('Drive friction ranking', `${rankText(frictionRank)} · score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'}`, 'friction_rank'), 'note-tag-hit')}</div>
         <div class="scheme-insight-sub">Ranked by drive cleanliness (1 = least friction / cleanest drives, 32 = most friction / toughest drives).</div>
       </div>
       ${rzVolumeCard}
