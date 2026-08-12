@@ -2,6 +2,12 @@
 // Passing Phase
 // ─────────────────────────────────────────────────────────────────────────────
 function renderPassing(team,state){
+  const historicalLocked = activeSeason!=='proj';
+  const noteTeam=String(team||currentTeam||'').toUpperCase();
+  const notePlayerFor=(ply)=>noteTargetFromArgs((ply&&((ply.player_id)||ply.name))||'', 'QB', noteTeam);
+  const noteCtx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} passing`
+    : historicalTagContext(`${activeSeason} passing`, noteTeam, activeSeason);
   if(!state.qbs||!state.qbs.length){
     return `<div class="card"><div class="card-title">Passing Attack</div>
       <div class="alert alert-warn"><span class="alert-icon">${TC_ICON("warning")}</span>
@@ -53,11 +59,24 @@ function renderPassing(team,state){
           ${!active?`<button class="btn btn-ghost btn-sm" onclick="setActiveQB(${i})">edit</button>`:''}
           ${activeSeason!=='proj'&&q.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(q.player_id)},'QB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
         </div>
-        ${sRow('games_'+i,'Games Played',gms,Math.round(q.games_played||q.games||0),0,SEASON_GAMES,1,'var(--qb)')}`;
+        ${sRow('games_'+i,'Games Played',gms,Math.round(q.games_played||q.games||0),0,SEASON_GAMES,1,'var(--qb)',false,{
+          readOnly:historicalLocked,
+          noteMeta:{ label:'Games Played', source:'projection_builder_qb', statKey:'games_played', context:noteCtx, player:notePlayerFor(q), team:noteTeam, relevance:'QB' }
+        })}`;
       }).join('')}
       <div class="derived-note" id="qbWorkloadNote" style="${overBudget?'color:var(--warn)':''}">${qbWorkloadNoteHtml(teamGames, overBudget, team)}</div>
     </div>`;
   const games=Math.round(qb.games||0);
+  const qbBoxAttrs=(label, value, statKey)=>noteTagAttrs({
+    label,
+    value,
+    source:'projection_builder_qb',
+    statKey,
+    context:noteCtx,
+    player:notePlayerFor(qb),
+    team:noteTeam,
+    relevance:'QB'
+  });
   return `${weekSlider}${workloadCard}<div class="card">
     <div class="card-title">${qb.name} — Passing ${isMulti?`<span style="font-size:9px;color:var(--muted)">(editing QB${idx+1} of ${state.qbs.length})</span>`:''}</div>
     ${isMulti?`<div class="qb-tab-bar">${state.qbs.map((q,i)=>
@@ -69,26 +88,50 @@ function renderPassing(team,state){
         <div class="player-sub">${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?`ECR ${e.rank_ecr}`:'';})()}${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?' · ':'';})()}<span id="qb-games-sub">${games}</span> games projected</div></div></div>
     <div class="alert alert-info" style="margin-bottom:11px"><span class="alert-icon">📈</span>
       <div>These are this QB's totals across <b>${games} games</b>. Adjust <b>Games Played</b> above to extrapolate a full-season pace (e.g. an 8-game stint scaled to 17), and the stats below scale with it.</div></div>
-    ${sRow('py','Passing Yards',Math.round(qb.passing_yards),Math.round(seed.passing_yards||4000),0,7500,50)}
-    ${sRow('ptd','Passing TDs',Math.round(qb.passing_tds),Math.round(seed.passing_tds||25),0,65,1)}
-    ${sRow('patt','Pass Attempts',Math.round(qb.passing_attempts),Math.round(seed.passing_attempts||560),0,800,5)}
-    ${sRow('pcomp','Completions',Math.round(qb.passing_completions),Math.round(seed.passing_completions||360),0,680,5)}
-    ${sRow('int','Interceptions',Math.round(qb.interceptions_thrown),Math.round(seed.interceptions_thrown||10),0,40,1,'var(--danger)',true)}
+    ${sRow('py','Passing Yards',Math.round(qb.passing_yards),Math.round(seed.passing_yards||4000),0,7500,50,undefined,false,{
+      readOnly:historicalLocked,
+      noteMeta:{ label:'Passing Yards', source:'projection_builder_qb', statKey:'passing_yards', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
+    })}
+    ${sRow('ptd','Passing TDs',Math.round(qb.passing_tds),Math.round(seed.passing_tds||25),0,65,1,undefined,false,{
+      readOnly:historicalLocked,
+      noteMeta:{ label:'Passing TDs', source:'projection_builder_qb', statKey:'passing_tds', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
+    })}
+    ${sRow('patt','Pass Attempts',Math.round(qb.passing_attempts),Math.round(seed.passing_attempts||560),0,800,5,undefined,false,{
+      readOnly:historicalLocked,
+      noteMeta:{ label:'Pass Attempts', source:'projection_builder_qb', statKey:'passing_attempts', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
+    })}
+    ${sRow('pcomp','Completions',Math.round(qb.passing_completions),Math.round(seed.passing_completions||360),0,680,5,undefined,false,{
+      readOnly:historicalLocked,
+      noteMeta:{ label:'Completions', source:'projection_builder_qb', statKey:'passing_completions', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
+    })}
+    ${sRow('int','Interceptions',Math.round(qb.interceptions_thrown),Math.round(seed.interceptions_thrown||10),0,40,1,'var(--danger)',true,{
+      readOnly:historicalLocked,
+      noteMeta:{ label:'Interceptions Thrown', source:'projection_builder_qb', statKey:'interceptions_thrown', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
+    })}
     <div class="derived-note" id="qbDerived">${qbDerivedHtml(qb, team)}</div>
     <div style="margin-top:13px;padding-top:11px;border-top:1px solid var(--border)">
       <div class="card-title">QB Rushing</div>
-      ${sRow('qbry','Rush Yards',Math.round(qb.qb_rush_yards),Math.round(seed.rushing_yards||0),0,1400,10,'var(--rb)')}
-      ${sRow('qbrtd','Rush TDs',Math.round(qb.qb_rush_tds),Math.round(seed.rushing_tds||0),0,22,1,'var(--rb)')}
-      ${sRow('qbratt','Rush Attempts',Math.round(qb.qb_rush_attempts),Math.round(seed.rushing_attempts||0),0,200,5,'var(--rb)')}
+      ${sRow('qbry','Rush Yards',Math.round(qb.qb_rush_yards),Math.round(seed.rushing_yards||0),0,1400,10,'var(--rb)',false,{
+        readOnly:historicalLocked,
+        noteMeta:{ label:'QB Rush Yards', source:'projection_builder_qb', statKey:'qb_rush_yards', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
+      })}
+      ${sRow('qbrtd','Rush TDs',Math.round(qb.qb_rush_tds),Math.round(seed.rushing_tds||0),0,22,1,'var(--rb)',false,{
+        readOnly:historicalLocked,
+        noteMeta:{ label:'QB Rush TDs', source:'projection_builder_qb', statKey:'qb_rush_tds', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
+      })}
+      ${sRow('qbratt','Rush Attempts',Math.round(qb.qb_rush_attempts),Math.round(seed.rushing_attempts||0),0,200,5,'var(--rb)',false,{
+        readOnly:historicalLocked,
+        noteMeta:{ label:'QB Rush Attempts', source:'projection_builder_qb', statKey:'qb_rush_attempts', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
+      })}
     </div>
     ${isMulti?`<div class="derived-note" id="qbTeamTotals" style="margin-top:10px">${qbTotalsText(state,{asHtml:true,team})}</div>`:''}
     <div class="stats-grid">
-      <div class="stat-box"><div class="stat-box-label">Pass Yds</div><div class="stat-box-val" style="color:var(--qb)" id="sb-py">${Math.round(qb.passing_yards).toLocaleString()}</div></div>
-      <div class="stat-box"><div class="stat-box-label">Pass TDs</div><div class="stat-box-val" style="color:var(--qb)" id="sb-ptd">${Math.round(qb.passing_tds)}</div></div>
-      <div class="stat-box"><div class="stat-box-label">INTs</div><div class="stat-box-val" style="color:var(--danger)" id="sb-int">${Math.round(qb.interceptions_thrown)}</div></div>
-      <div class="stat-box"><div class="stat-box-label">Rush Yds</div><div class="stat-box-val" style="color:var(--rb)" id="sb-ry">${Math.round(qb.qb_rush_yards)}</div></div>
-      <div class="stat-box"><div class="stat-box-label">Rush TDs</div><div class="stat-box-val" style="color:var(--rb)" id="sb-rtd">${Math.round(qb.qb_rush_tds)}</div></div>
-      <div class="stat-box"><div class="stat-box-label">Attempts</div><div class="stat-box-val" id="sb-att">${Math.round(qb.passing_attempts)}</div></div>
+      <div class="stat-box"><div class="stat-box-label">Pass Yds</div><div class="stat-box-val" style="color:var(--qb)" id="sb-py"${qbBoxAttrs('Passing Yards',`${Math.round(qb.passing_yards).toLocaleString()} yds`,'passing_yards')}>${Math.round(qb.passing_yards).toLocaleString()}</div></div>
+      <div class="stat-box"><div class="stat-box-label">Pass TDs</div><div class="stat-box-val" style="color:var(--qb)" id="sb-ptd"${qbBoxAttrs('Passing TDs',`${Math.round(qb.passing_tds)} TD`,'passing_tds')}>${Math.round(qb.passing_tds)}</div></div>
+      <div class="stat-box"><div class="stat-box-label">INTs</div><div class="stat-box-val" style="color:var(--danger)" id="sb-int"${qbBoxAttrs('Interceptions Thrown',`${Math.round(qb.interceptions_thrown)} INT`,'interceptions_thrown')}>${Math.round(qb.interceptions_thrown)}</div></div>
+      <div class="stat-box"><div class="stat-box-label">Rush Yds</div><div class="stat-box-val" style="color:var(--rb)" id="sb-ry"${qbBoxAttrs('QB Rush Yards',`${Math.round(qb.qb_rush_yards)} yds`,'qb_rush_yards')}>${Math.round(qb.qb_rush_yards)}</div></div>
+      <div class="stat-box"><div class="stat-box-label">Rush TDs</div><div class="stat-box-val" style="color:var(--rb)" id="sb-rtd"${qbBoxAttrs('QB Rush TDs',`${Math.round(qb.qb_rush_tds)} TD`,'qb_rush_tds')}>${Math.round(qb.qb_rush_tds)}</div></div>
+      <div class="stat-box"><div class="stat-box-label">Attempts</div><div class="stat-box-val" id="sb-att"${qbBoxAttrs('Pass Attempts',`${Math.round(qb.passing_attempts)} att`,'passing_attempts')}>${Math.round(qb.passing_attempts)}</div></div>
     </div></div>`;
 }
 function qbDerivedHtml(qb, team){

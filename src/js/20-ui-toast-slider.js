@@ -57,18 +57,26 @@ function resortAfterRelease(el){
 // ─────────────────────────────────────────────────────────────────────────────
 // Slider row builders
 // ─────────────────────────────────────────────────────────────────────────────
-function sRow(key,label,cur,base,min,max,step,col,invert){
+function sRow(key,label,cur,base,min,max,step,col,invert,opts){
+  opts=opts||{};
+  const readOnly=!!opts.readOnly;
+  const noteMeta=opts.noteMeta||null;
   col=col||'var(--accent)';
   const pct=Math.max(0,Math.min(100,(cur-min)/(max-min)*100));
   const disp=(step<1&&cur%1!==0)?(+cur).toFixed(2):Math.round(cur*10)/10;
   const bDisp=(step<1&&base%1!==0)?(+base).toFixed(2):Math.round(+base);
+  const curHtml = readOnly
+    ? (noteMeta
+      ? noteWrapHtml(`<span class="stat-current" id="sv-${key}">${disp}</span>`, Object.assign({}, noteMeta, {value:String(disp)}), 'note-tag-hit')
+      : `<span class="stat-current" id="sv-${key}">${disp}</span>`)
+    : `<span class="stat-current" id="sv-${key}" contenteditable="true" spellcheck="false"
+          onfocus="selAll(this)" onblur="manualEdit('${key}',this.textContent,${min},${max})"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${disp}</span>`;
   return `<div class="stat-row" id="row-${key}" data-invert="${invert?1:0}">
     <div class="stat-header">
       <span class="stat-label">${label}</span>
       <div class="stat-val-group">
-        <span class="stat-current" id="sv-${key}" contenteditable="true" spellcheck="false"
-          onfocus="selAll(this)" onblur="manualEdit('${key}',this.textContent,${min},${max})"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">${disp}</span>
+        ${curHtml}
         <span class="stat-baseline">/ ${bDisp}</span>
         <span id="sd-${key}">${mkDelta(cur,base,invert)}</span>
       </div>
@@ -76,7 +84,7 @@ function sRow(key,label,cur,base,min,max,step,col,invert){
     <div class="slider-track">
       <div class="slider-fill" style="width:${pct}%;background:${col}"></div>
       <input class="sl" type="range" min="${min}" max="${max}" step="${step}" value="${cur}"
-        data-key="${key}" data-team="${currentTeam}" data-col="${col}" style="--col:${col}">
+        data-key="${key}" data-team="${currentTeam}" data-col="${col}" style="--col:${col}"${readOnly?' disabled':''}>
     </div>
     <div class="slider-labels"><span>${min}</span><span>${max}</span></div>
   </div>`;

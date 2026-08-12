@@ -145,13 +145,13 @@ function vacatedNote(team){
 // others exactly like target share. A discrepancy banner flags when the receivers' summed
 // production doesn't match what the QBs are projected to throw for, with a one-click fix.
 function renderPassDerived(team,state,subTabs,metric){
+  const lockStats = activeSeason!=='proj';
   ensureDerivedShares(state,metric);
   const totalTgts=teamTargetPool(state);
   const isYds = metric==='recyds';
   const field=isYds?'recyds_share':'rec_share';
   const key=isYds?'recyds':'rec';
   const label=isYds?'rec yds':'rec';
-  // The "available" pool from the QBs vs. what the receivers actually add up to right now.
   const qbPool = isYds ? teamRecYardsPool(state) : teamRecPool(state);
   const receiverSum = state.passing_shares.reduce((s,p)=>{
     const tg=p.share*totalTgts; return s + (isYds ? tg*(p.ypt||9) : tg*(p.catch_rate||0.65));
@@ -162,39 +162,55 @@ function renderPassDerived(team,state,subTabs,metric){
     const p=state.passing_shares[i]; const col=PCOLORS[i%PCOLORS.length];
     const nameAttr = escAttr(p.name);
     const nameText = escHtml(p.name);
+    const noteTeam=String((p&&p.team)||team||currentTeam||'').toUpperCase();
+    const notePlayer=noteTargetFromArgs((p&&((p.player_id)||p.name))||'', (p&&p.pos)||'', noteTeam);
+    const noteCtx=activeSeason==='proj'
+      ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} receiving shares`
+      : historicalTagContext(`${activeSeason} receiving shares`, noteTeam, activeSeason);
+    const tagVal=(display,labelTxt,statKey)=>noteWrapHtml(`<span class="share-stat-val">${escHtml(String(display))}</span>`, {
+      label:labelTxt, value:String(display), source:'projection_builder_receiving', statKey,
+      context:noteCtx, player:notePlayer, team:noteTeam, relevance:'WR,TE,RB'
+    }, 'note-tag-hit');
     const sh=p[field]||0; const pct=(sh*100).toFixed(1);
+    const sharePct = tagVal(`${pct}%`, isYds?'Receiving Yard Share':'Reception Share', isYds?'receiving_yard_share_pct':'reception_share_pct');
     const v=Math.round(sh*qbPool);
     const projTgts=Math.round(p.share*totalTgts);
     const projRec=Math.round(projTgts*(p.catch_rate||0.65));
     const projYds=Math.round(projTgts*(p.ypt||9));
+    const tdVal=(p.td_share*teamPassTDs(state)).toFixed(1);
+    const tgtsCell = lockStats
+      ? tagVal(projTgts,'Targets','receiving_targets')
+      : `<span class="mini-edit" contenteditable="true" spellcheck="false" onfocus="selAll(this)" onblur="editTargets(${i},this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="ed-tgt-${i}">${projTgts}</span>`;
+    const recCell = lockStats
+      ? tagVal(projRec,'Receptions','receptions')
+      : `<span class="mini-edit" contenteditable="true" spellcheck="false" onfocus="selAll(this)" onblur="editRec(${i},this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="ed-rec-${i}">${projRec}</span>`;
+    const ydsCell = lockStats
+      ? tagVal(projYds,'Receiving Yards','receiving_yards')
+      : `<span class="mini-edit" contenteditable="true" spellcheck="false" onfocus="selAll(this)" onblur="editRecYds(${i},this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="yd-${i}">${projYds}</span>`;
+    const catchCell = lockStats
+      ? tagVal((p.catch_rate*100).toFixed(0)+'%','Catch Percentage','catch_rate_pct')
+      : `<span class="mini-edit" contenteditable="true" spellcheck="false" onfocus="selAll(this)" onblur="editCatchPct(${i},this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="cr-${i}">${(p.catch_rate*100).toFixed(0)}</span>%`;
+    const yptCell = lockStats
+      ? tagVal((p.ypt||9).toFixed(1),'Yards Per Target','yards_per_target')
+      : `<span class="mini-edit" contenteditable="true" spellcheck="false" onfocus="selAll(this)" onblur="editYpt(${i},this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="ypt-${i}">${(p.ypt||9).toFixed(1)}</span>`;
+    const tdCell = lockStats
+      ? tagVal(tdVal,'Receiving TDs','receiving_tds')
+      : `<span class="mini-edit" contenteditable="true" spellcheck="false" onfocus="selAll(this)" onblur="editRecTDs(${i},this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="rtd-${i}">${tdVal}</span>`;
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTag(p,'rec')}
-        <span class="share-pct" id="dp-${i}">${pct}%</span>
-        <span class="share-vol" id="dv-${i}">${v.toLocaleString()} ${label}</span></div>
+        <span class="share-pct" id="dp-${i}">${sharePct}</span>
+        <span class="share-vol" id="dv-${i}">${tagVal(v.toLocaleString()+' '+label, isYds?'Receiving Yards':'Receptions', isYds?'receiving_yards':'receptions')}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
-        <input class="sl" type="range" min="0" max="100" step="0.5" value="${pct}"
-          data-key="${key}_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"></div>
+        <input class="sl" type="range" min="0" max="100" step="0.5" value="${pct}" data-key="${key}_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
-        <span class="share-stat">Tgts <span class="mini-edit" contenteditable="true" spellcheck="false"
-          onfocus="selAll(this)" onblur="editTargets(${i},this.textContent)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="ed-tgt-${i}">${projTgts}</span></span>
-        <span class="share-stat">Rec <span class="mini-edit" contenteditable="true" spellcheck="false"
-          onfocus="selAll(this)" onblur="editRec(${i},this.textContent)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="ed-rec-${i}">${projRec}</span></span>
-        <span class="share-stat">Catch% <span class="mini-edit" contenteditable="true" spellcheck="false"
-          onfocus="selAll(this)" onblur="editCatchPct(${i},this.textContent)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="cr-${i}">${(p.catch_rate*100).toFixed(0)}</span>%</span>
-        <span class="share-stat">Yds <span class="mini-edit" contenteditable="true" spellcheck="false"
-          onfocus="selAll(this)" onblur="editRecYds(${i},this.textContent)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="yd-${i}">${projYds}</span></span>
-        <span class="share-stat">Y/Tgt <span class="mini-edit" contenteditable="true" spellcheck="false"
-          onfocus="selAll(this)" onblur="editYpt(${i},this.textContent)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="ypt-${i}">${(p.ypt||9).toFixed(1)}</span></span>
-        <span class="share-stat">TDs <span class="mini-edit" contenteditable="true" spellcheck="false"
-          onfocus="selAll(this)" onblur="editRecTDs(${i},this.textContent)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="rtd-${i}">${(p.td_share*teamPassTDs(state)).toFixed(1)}</span></span>
+        <span class="share-stat">Tgts ${tgtsCell}</span>
+        <span class="share-stat">Rec ${recCell}</span>
+        <span class="share-stat">Catch% ${catchCell}</span>
+        <span class="share-stat">Yds ${ydsCell}</span>
+        <span class="share-stat">Y/Tgt ${yptCell}</span>
+        <span class="share-stat">TDs ${tdCell}</span>
       </div></div>`;
   }).join('');
   const unit=isYds?'receiving yards':'receptions';
@@ -211,8 +227,8 @@ function renderPassDerived(team,state,subTabs,metric){
       <b>${Math.round(receiverSum).toLocaleString()}</b>. ${diff>0
         ? 'That production is unclaimed — distribute it across the receiving corps.'
         : 'The receivers exceed the QBs\' output — trim it down to reconcile.'}
-      <button class="btn btn-accent btn-sm" style="margin-top:6px" onclick="reconcileDerived('${team}','${metric}')">
-        ${diff>0?'Distribute':'Reconcile'} the ${diff>0?'difference':'overage'} →</button></div></div>`;
+      ${lockStats?'':`<button class="btn btn-accent btn-sm" style="margin-top:6px" onclick="reconcileDerived('${team}','${metric}')">
+        ${diff>0?'Distribute':'Reconcile'} the ${diff>0?'difference':'overage'} →</button>`}</div></div>`;
   } else {
     banner = `<div class="reconciled-note">${TC_ICON("check")} Receivers match the QBs' projected ${unit} (${qbPool.toLocaleString()}).</div>`;
   }
@@ -275,51 +291,67 @@ function sortedIdx(shares,field){
 }
 
 function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
+  const lockStats = activeSeason!=='proj';
   const order=sortedIdx(state.passing_shares,'share');
   const rows=order.map(i=>{
     const p=state.passing_shares[i];
     const col=PCOLORS[i%PCOLORS.length];
     const nameAttr = escAttr(p.name);
     const nameText = escHtml(p.name);
+    const noteTeam=String((p&&p.team)||team||currentTeam||'').toUpperCase();
+    const notePlayer=noteTargetFromArgs((p&&((p.player_id)||p.name))||'', (p&&p.pos)||'', noteTeam);
+    const noteCtx=activeSeason==='proj'
+      ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} receiving shares`
+      : historicalTagContext(`${activeSeason} receiving shares`, noteTeam, activeSeason);
+    const tagVal=(display,labelTxt,statKey)=>noteWrapHtml(`<span class="share-stat-val">${escHtml(String(display))}</span>`, {
+      label:labelTxt, value:String(display), source:'projection_builder_receiving', statKey,
+      context:noteCtx, player:notePlayer, team:noteTeam, relevance:'WR,TE,RB'
+    }, 'note-tag-hit');
     const pct=(p.share*100).toFixed(1);
+    const sharePct = tagVal(`${pct}%`,'Target Share','target_share_pct');
     const projTgts=Math.round(p.share*totalTgts);
     const projRec=Math.round(projTgts*(p.catch_rate||0.65));
     const projYds=Math.round(projTgts*(p.ypt||9));
     const projTDs=(p.td_share*totalTDs).toFixed(1);
+    const tgtsCell = lockStats
+      ? tagVal(projTgts,'Targets','receiving_targets')
+      : `<span class="mini-edit" contenteditable="true" spellcheck="false" onfocus="selAll(this)" onblur="editTargets(${i},this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="ed-tgt-${i}">${projTgts}</span>`;
+    const recCell = lockStats
+      ? tagVal(projRec,'Receptions','receptions')
+      : `<span class="mini-edit" contenteditable="true" spellcheck="false" onfocus="selAll(this)" onblur="editRec(${i},this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="ed-rec-${i}">${projRec}</span>`;
+    const ydsCell = lockStats
+      ? tagVal(projYds,'Receiving Yards','receiving_yards')
+      : `<span class="mini-edit" contenteditable="true" spellcheck="false" onfocus="selAll(this)" onblur="editRecYds(${i},this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="yd-${i}">${projYds}</span>`;
+    const catchCell = lockStats
+      ? tagVal((p.catch_rate*100).toFixed(0)+'%','Catch Percentage','catch_rate_pct')
+      : `<span class="mini-edit" contenteditable="true" spellcheck="false" onfocus="selAll(this)" onblur="editCatchPct(${i},this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="cr-${i}">${(p.catch_rate*100).toFixed(0)}</span>%`;
+    const yptCell = lockStats
+      ? tagVal((p.ypt||9).toFixed(1),'Yards Per Target','yards_per_target')
+      : `<span class="mini-edit" contenteditable="true" spellcheck="false" onfocus="selAll(this)" onblur="editYpt(${i},this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="ypt-${i}">${(p.ypt||9).toFixed(1)}</span>`;
+    const tdCell = lockStats
+      ? tagVal(projTDs,'Receiving TDs','receiving_tds')
+      : `<span class="mini-edit" contenteditable="true" spellcheck="false" onfocus="selAll(this)" onblur="editRecTDs(${i},this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="rtd-${i}">${projTDs}</span>`;
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row">
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span>
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTag(p,'rec')}
-        <span class="share-pct" id="pp-${i}">${pct}%</span>
-        <span class="share-vol" id="pt-${i}">${projTgts} tgt</span>
+        <span class="share-pct" id="pp-${i}">${sharePct}</span>
+        <span class="share-vol" id="pt-${i}">${tagVal(projTgts+' tgt','Targets','receiving_targets')}</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},${pcardArg(p.pos)})" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
       </div>
       <div class="slider-track">
         <div class="slider-fill" style="width:${pct}%;background:${col}"></div>
-        <input class="sl" type="range" min="0" max="100" step="0.5" value="${pct}"
-          data-key="ps_${i}" data-team="${team}" data-col="${col}" style="--col:${col}">
+        <input class="sl" type="range" min="0" max="100" step="0.5" value="${pct}" data-key="ps_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}>
       </div>
       <div class="share-stats">
-        <span class="share-stat">Tgts <span class="mini-edit" contenteditable="true" spellcheck="false"
-          onfocus="selAll(this)" onblur="editTargets(${i},this.textContent)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="ed-tgt-${i}">${projTgts}</span></span>
-        <span class="share-stat">Rec <span class="mini-edit" contenteditable="true" spellcheck="false"
-          onfocus="selAll(this)" onblur="editRec(${i},this.textContent)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="ed-rec-${i}">${projRec}</span></span>
-        <span class="share-stat">Catch% <span class="mini-edit" contenteditable="true" spellcheck="false"
-          onfocus="selAll(this)" onblur="editCatchPct(${i},this.textContent)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="cr-${i}">${(p.catch_rate*100).toFixed(0)}</span>%</span>
-        <span class="share-stat">Yds <span class="mini-edit" contenteditable="true" spellcheck="false"
-          onfocus="selAll(this)" onblur="editRecYds(${i},this.textContent)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="yd-${i}">${projYds}</span></span>
-        <span class="share-stat">Y/Tgt <span class="mini-edit" contenteditable="true" spellcheck="false"
-          onfocus="selAll(this)" onblur="editYpt(${i},this.textContent)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="ypt-${i}">${(p.ypt||9).toFixed(1)}</span></span>
-        <span class="share-stat">TDs <span class="mini-edit" contenteditable="true" spellcheck="false"
-          onfocus="selAll(this)" onblur="editRecTDs(${i},this.textContent)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="rtd-${i}">${projTDs}</span></span>
+        <span class="share-stat">Tgts ${tgtsCell}</span>
+        <span class="share-stat">Rec ${recCell}</span>
+        <span class="share-stat">Catch% ${catchCell}</span>
+        <span class="share-stat">Yds ${ydsCell}</span>
+        <span class="share-stat">Y/Tgt ${yptCell}</span>
+        <span class="share-stat">TDs ${tdCell}</span>
       </div></div>`;
   }).join('');
   // Discrepancy: the team's pass attempts imply ~att×TARGET_RATE targets, but the
@@ -332,7 +364,7 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
     tgtBanner=`<div class="discrepancy-note"><span class="vacated-icon">${tgtDiff>0?'⚠️':'❗'}</span>
       <div><b>${Math.abs(tgtDiff)} targets ${tgtDiff>0?'unaccounted for':'over the QB total'}.</b>
       The QBs' ${teamPassAtt(state)} attempts imply about <b>${expectTgts} targets</b>, but the receivers add up to <b>${Math.round(totalTgts)}</b>.
-      <button class="btn btn-accent btn-sm" style="margin-top:6px" onclick="reconcileTargets('${team}')">${tgtDiff>0?'Distribute':'Reconcile'} the difference →</button></div></div>`;
+      ${lockStats?'':`<button class="btn btn-accent btn-sm" style="margin-top:6px" onclick="reconcileTargets('${team}')">${tgtDiff>0?'Distribute':'Reconcile'} the difference →</button>`}</div></div>`;
   }
   return `<div class="card"><div class="card-title">Receiver Target Share</div>${subTabs}
     ${vacatedNote(team)}
@@ -360,27 +392,38 @@ function reconcileTargets(team){
 }
 
 function renderPassTDs(team,state,totalTDs,subTabs){
+  const lockStats = activeSeason!=='proj';
   const order=sortedIdx(state.passing_shares,'td_share');
   const rows=order.map(i=>{
     const p=state.passing_shares[i];
     const col=PCOLORS[i%PCOLORS.length];
     const nameAttr = escAttr(p.name);
     const nameText = escHtml(p.name);
+    const noteTeam=String((p&&p.team)||team||currentTeam||'').toUpperCase();
+    const notePlayer=noteTargetFromArgs((p&&((p.player_id)||p.name))||'', (p&&p.pos)||'', noteTeam);
+    const noteCtx=activeSeason==='proj'
+      ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} receiving shares`
+      : historicalTagContext(`${activeSeason} receiving shares`, noteTeam, activeSeason);
+    const tagVal=(display,labelTxt,statKey)=>noteWrapHtml(`<span class="share-stat-val">${escHtml(String(display))}</span>`, {
+      label:labelTxt, value:String(display), source:'projection_builder_receiving', statKey,
+      context:noteCtx, player:notePlayer, team:noteTeam, relevance:'WR,TE,RB'
+    }, 'note-tag-hit');
     const pct=(p.td_share*100).toFixed(1);
+    const sharePct = tagVal(`${pct}%`,'Receiving TD Share','receiving_td_share_pct');
     const projTDs=(p.td_share*totalTDs).toFixed(1);
+    const tdCell = lockStats
+      ? tagVal(projTDs,'Receiving TDs','receiving_tds')
+      : `<span class="mini-edit" contenteditable="true" spellcheck="false" onfocus="selAll(this)" onblur="editRecTDsAbs(${i},this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="tdt-${i}">${projTDs}</span>`;
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>
-        <span class="share-pct" id="tdp-${i}">${pct}%</span>
-        <span class="share-vol">proj TDs</span></div>
+        <span class="share-pct" id="tdp-${i}">${sharePct}</span>
+        <span class="share-vol">${tagVal(projTDs+' TD','Receiving TDs','receiving_tds')}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
-        <input class="sl" type="range" min="0" max="100" step="1" value="${pct}"
-          data-key="tds_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"></div>
+        <input class="sl" type="range" min="0" max="100" step="1" value="${pct}" data-key="tds_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
-        <span class="share-stat">Rec TDs <span class="mini-edit" contenteditable="true" spellcheck="false"
-          onfocus="selAll(this)" onblur="editRecTDsAbs(${i},this.textContent)"
-          onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" id="tdt-${i}">${projTDs}</span></span>
+        <span class="share-stat">Rec TDs ${tdCell}</span>
       </div></div>`;
   }).join('');
   return `<div class="card"><div class="card-title">Receiving TD Share</div>${subTabs}

@@ -387,7 +387,22 @@ function sidebarFptsPerGame(p, mode){
 function sidebarFptsTag(p, mode){
   const v = sidebarFptsPerGame(p, mode);
   if(v==null) return '';
-  return `<span class="share-fptsg">${v.toFixed(1)} <span class="share-fptsg-label">pts/g</span></span>`;
+  const noteTeam=String((p&&p.team)||currentTeam||'').toUpperCase();
+  const notePlayer=noteTargetFromArgs((p&&((p.player_id)||p.name))||'', (p&&p.pos)||'', noteTeam);
+  const ctx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} ${(mode==='rush')?'rushing':'receiving'} shares`
+    : historicalTagContext(`${activeSeason} ${(mode==='rush')?'rushing':'receiving'} shares`, noteTeam, activeSeason);
+  const shown=`${v.toFixed(1)} pts/g`;
+  return noteWrapHtml(`<span class="share-fptsg">${v.toFixed(1)} <span class="share-fptsg-label">pts/g</span></span>`, {
+    label:'Fantasy Points Per Game',
+    value:shown,
+    source:'projection_builder_fpts',
+    statKey:(mode==='rush')?'rush_fpts_per_game':'rec_fpts_per_game',
+    context:ctx,
+    player:notePlayer,
+    team:noteTeam,
+    relevance:(mode==='rush')?'RB':'WR,TE,RB'
+  }, 'note-tag-hit');
 }
 function qbFptsPerGame(qb){
   if(activeSeason==='proj' || typeof scoringSettings==='undefined') return null;
@@ -405,7 +420,22 @@ function qbFptsPerGame(qb){
 function qbFptsTag(qb){
   const v = qbFptsPerGame(qb);
   if(v==null) return '';
-  return `<span class="share-fptsg">${v.toFixed(1)} <span class="share-fptsg-label">pts/g</span></span>`;
+  const noteTeam=String((qb&&qb.team)||currentTeam||'').toUpperCase();
+  const notePlayer=noteTargetFromArgs((qb&&((qb.player_id)||qb.name))||'', 'QB', noteTeam);
+  const ctx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} passing`
+    : historicalTagContext(`${activeSeason} passing`, noteTeam, activeSeason);
+  const shown=`${v.toFixed(1)} pts/g`;
+  return noteWrapHtml(`<span class="share-fptsg">${v.toFixed(1)} <span class="share-fptsg-label">pts/g</span></span>`, {
+    label:'Fantasy Points Per Game',
+    value:shown,
+    source:'projection_builder_qb',
+    statKey:'qb_fpts_per_game',
+    context:ctx,
+    player:notePlayer,
+    team:noteTeam,
+    relevance:'QB'
+  }, 'note-tag-hit');
 }
 
 function weekFilterPaceButton(state, pid, mode){
