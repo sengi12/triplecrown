@@ -6981,6 +6981,13 @@ function computeVOR(list){
     if(!bestPos) break;
     sfIdx[bestPos]++; used[bestPos]++; sfLeft--;
   }
+
+  // Superflex QB replacement floor: 2.5 QBs per team.
+  if(superflex>0){
+    const qbFloor = Math.ceil(teams * 2.3);
+    used.QB = Math.max(used.QB, qbFloor);
+  }
+
   // Replacement baseline per position = fpts of the LAST starter consumed (index used-1),
   // clamped to the pool. Store both the baseline and each player's VOR.
   const baseline={};
