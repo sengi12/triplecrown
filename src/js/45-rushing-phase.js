@@ -202,13 +202,44 @@ function vacatedRushing(team){
   return {season:lastYear, att:Math.round(att), yds:Math.round(yds), td:Math.round(td),
           players:gone.map(g=>g.name)};
 }
+function vacatedOrdinal(n){
+  const v=Math.max(1, parseInt(n,10)||1);
+  const mod100=v%100;
+  if(mod100>=11 && mod100<=13) return `${v}th`;
+  const mod10=v%10;
+  if(mod10===1) return `${v}st`;
+  if(mod10===2) return `${v}nd`;
+  if(mod10===3) return `${v}rd`;
+  return `${v}th`;
+}
+function vacatedCarriesLeagueRank(team){
+  if(activeSeason!=='proj') return null;
+  const tms=(typeof TEAMS!=='undefined' && Array.isArray(TEAMS) && TEAMS.length)
+    ? TEAMS
+    : ['CIN','PIT','BAL','CLE','HOU','JAX','TEN','IND','BUF','NE','MIA','NYJ','KC','LAC','LV','DEN','GB','DET','MIN','CHI','TB','CAR','ATL','NO','PHI','DAL','WAS','NYG','LAR','SF','SEA','ARI'];
+  const rows=tms.map(tm=>({team:tm, v:vacatedRushing(tm)})).filter(x=>x.v && x.v.att>0);
+  if(!rows.length) return null;
+  rows.sort((a,b)=>((b.v.att||0)-(a.v.att||0)) || a.team.localeCompare(b.team));
+  const idx=rows.findIndex(x=>x.team===team);
+  if(idx<0) return null;
+  return {rank:idx+1,total:rows.length};
+}
 function vacatedRushNote(team){
   const v=vacatedRushing(team);
   if(!v) return '';
+  const noteTeam=String(team||currentTeam||'').toUpperCase();
+  const ctx=activeSeason==='proj'
+    ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} vacated rushing`
+    : historicalTagContext(`${activeSeason} vacated rushing`, noteTeam, activeSeason);
+  const rk=vacatedCarriesLeagueRank(noteTeam);
+  const rankText=rk?`${vacatedOrdinal(rk.rank)} most vacated carries in ${PROJ_SEASON}`:'';
+  const tagValue=`${v.att} carries · ${v.yds.toLocaleString()} yds · ${v.td} TD${rankText?` · ${rankText}`:''}`;
+  const rankLead=rk?`${vacatedOrdinal(rk.rank)}`:'Rank N/A';
+  const lineHtml=`<b>${escHtml(rankLead)} Vacated Carries from ${v.season}:</b> ${escHtml(`${v.att} carries · ${v.yds.toLocaleString()} yds · ${v.td} TD`)}`;
   const names = v.players.length>3 ? v.players.slice(0,3).join(', ')+` +${v.players.length-3} more` : v.players.join(', ');
   return `<div class="vacated-note">
     <span class="vacated-icon">${TC_ICON("export")}</span>
-    <div><b>Vacated from ${v.season}:</b> ${v.att} carries · ${v.yds.toLocaleString()} yds · ${v.td} TD
+    <div>${noteWrapHtml(lineHtml, { label:'Vacated Carries', value:tagValue, source:'projection_builder_vacated', statKey:'vacated_carries', context:ctx, team:noteTeam, relevance:'RB,QB,WR' }, 'note-tag-hit')}
     <span style="color:var(--muted)"> — left by ${names}.</span>
     <span style="color:var(--muted)">These carries are up for grabs among the current backfield.</span></div></div>`;
 }
