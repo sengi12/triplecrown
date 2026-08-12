@@ -534,7 +534,7 @@ function _schemeLeagueInsightSnapshot(season){
     if(!ok) return;
     // Re-render the scheme modal if it's open on the insights tab so RZ data appears.
     if(typeof schemeOverlayOpen!=='undefined' && schemeOverlayOpen
-       && typeof schemeViewTab!=='undefined' && schemeViewTab==='insights'
+       && typeof schemeViewTab!=='undefined' && schemeViewTab!=='playbook'
        && typeof _renderTeamCoachingScheme==='function'){
       _renderTeamCoachingScheme();
     }
@@ -1134,7 +1134,7 @@ function _schemeSortTargetBenefactors(list, mode){
 function setTeamCoachingSchemeBenefactorSort(mode){
   const m = String(mode||'').toLowerCase();
   schemeBenefactorSort = (m==='tgt') ? 'tgt' : 'opp';
-  if(schemeOverlayOpen && schemeTeam && schemeViewTab==='insights'){
+  if(schemeOverlayOpen && schemeTeam && schemeViewTab!=='playbook'){
     if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>_renderTeamCoachingScheme(), ['.scheme-modal']);
     else _renderTeamCoachingScheme();
   }
@@ -1212,6 +1212,466 @@ function _schemeBindSwipeClose(host){
 function _schemeBackButtonHtml(){
   if(!Array.isArray(_schemeNavStack) || !_schemeNavStack.length) return '';
   return `<button class="scheme-back" onclick="backTeamCoachingScheme()" aria-label="Back">← Back</button>`;
+}
+
+// ── Actual red-zone usage (real Sleeper logs) ──────────────────────────────
+// The modeled benefactor builders below split formation/route charting evenly across
+// receivers, which massively over-credits players who are merely ON THE FIELD a lot
+// (e.g. a blocking TE) versus the real target hog. These functions instead pull the
+// ACTUAL per-player red-zone target/carry logs (rec_rz_tgt / rush_rz_att) — the same
+// data shown on the player card — and compute true team red-zone shares.
+let _schemeRzUsageCache = {};    // `${season}:${TEAM}` -> {loaded, targets, carries, meta, teamTgt, teamAtt}
+let _schemeRzUsagePromise = {};  // `${season}:${TEAM}` -> Promise
+
+function _schemeRosterSkillPlayers(team, season){
+  const seen = new Set();
+  const out = [];
+  ['WR','TE','RB'].forEach(pos=>{
+    (_schemePosPlayers(team, pos, season) || []).forEach(pl=>{
+      const pid = String((pl && pl.player_id) || '');
+      if(!pid || seen.has(pid)) return;
+      seen.add(pid);
+      out.push({ player_id: pid, name: String((pl && pl.name) || ''), pos });
+    });
+  });
+  return out;
+}
+
+// Fetch weekly logs for every skill player on the team's roster and sum their actual
+// red-zone targets (rec_rz_tgt) and red-zone carries (rush_rz_att) for the season.
+// Season totals are used (unfiltered by team code) so they line up exactly with the
+// per-player season totals on the player card, which is the source the user compares to.
+async function _schemeEnsureRzUsage(team, season){
+  const tm = String(team || '').toUpperCase();
+  const key = `${season}:${tm}`;
+  if(_schemeRzUsageCache[key]) return _schemeRzUsageCache[key];
+  if(_schemeRzUsagePromise[key]) return _schemeRzUsagePromise[key];
+  _schemeRzUsagePromise[key] = (async()=>{
+    let roster = [];
+    try{ roster = _schemeRosterSkillPlayers(tm, season); }catch(e){ roster = []; }
+    const targets = {};
+    const carries = {};
+    const recTds = {};
+    const rushTds = {};
+    const meta = {};
+    if(roster.length && typeof fetchPlayerWeekly==='function'){
+      const results = await Promise.allSettled(
+        roster.map(p=>fetchPlayerWeekly(p.player_id, season).then(w=>({ p, weekly:w })))
+      );
+      results.forEach(r=>{
+        if(r.status!=='fulfilled' || !r.value || !r.value.weekly) return;
+        const p = r.value.p;
+        const weekly = r.value.weekly;
+        let rzTgt = 0, rzAtt = 0, recTd = 0, rushTd = 0;
+        for(const wk in weekly){
+          const row = weekly[wk];
+          if(!row || typeof row!=='object') continue;
+          const s = row.stats || {};
+          rzTgt += s.rec_rz_tgt || 0;
+          rzAtt += s.rush_rz_att || 0;
+          recTd += s.rec_td || 0;
+          rushTd += s.rush_td || 0;
+        }
+        if(rzTgt > 0) targets[p.player_id] = rzTgt;
+        if(rzAtt > 0) carries[p.player_id] = rzAtt;
+        // TDs + full meta captured for every player with any RZ opportunity so the
+        // Regression tab can compare actual TDs to their red-zone workload.
+        if(rzTgt > 0 || rzAtt > 0){
+          recTds[p.player_id] = recTd;
+          rushTds[p.player_id] = rushTd;
+          meta[p.player_id] = { name: p.name, pos: p.pos, rzTgt, rzAtt, recTd, rushTd };
+        }
+      });
+    }
+    const teamTgt = Object.values(targets).reduce((a,b)=>a+b,0);
+    const teamAtt = Object.values(carries).reduce((a,b)=>a+b,0);
+    const teamRecTd = Object.values(recTds).reduce((a,b)=>a+b,0);
+    const teamRushTd = Object.values(rushTds).reduce((a,b)=>a+b,0);
+    const snap = { loaded:true, targets, carries, recTds, rushTds, meta, teamTgt, teamAtt, teamRecTd, teamRushTd };
+    _schemeRzUsageCache[key] = snap;
+    return snap;
+  })();
+  return _schemeRzUsagePromise[key];
+}
+
+// Turn a usage snapshot into ranked rows with real shares:
+//   tgtShare  = player RZ targets ÷ team RZ targets
+//   rushShare = player RZ carries ÷ team RZ carries
+//   oppShare  = player RZ touches (tgt+carry) ÷ team RZ touches  (the fantasy money metric)
+function _schemeBuildActualBenefactors(snap, teamCode){
+  const meta = (snap && snap.meta) || {};
+  const targets = (snap && snap.targets) || {};
+  const carries = (snap && snap.carries) || {};
+  const teamTgt = (snap && snap.teamTgt) || 0;
+  const teamAtt = (snap && snap.teamAtt) || 0;
+  const teamTouch = teamTgt + teamAtt;
+  const ids = new Set([...Object.keys(targets), ...Object.keys(carries)]);
+  const rows = [];
+  ids.forEach(pid=>{
+    const m = meta[pid] || {};
+    const rzTgt = targets[pid] || 0;
+    const rzAtt = carries[pid] || 0;
+    const touches = rzTgt + rzAtt;
+    rows.push({
+      name: m.name || pid,
+      pos: m.pos || '',
+      player_id: pid,
+      team: teamCode,
+      rzTgt, rzAtt, touches,
+      tgtShare: teamTgt > 0 ? (100 * rzTgt / teamTgt) : 0,
+      rushShare: teamAtt > 0 ? (100 * rzAtt / teamAtt) : 0,
+      oppShare: teamTouch > 0 ? (100 * touches / teamTouch) : 0,
+    });
+  });
+  return rows;
+}
+
+function _schemeRenderActualBenefactorList(title, subtitle, list, teamCode, season, kind){
+  if(!list || !list.length){
+    return `<div class="scheme-benefactors-wrap">
+      <div class="scheme-benefactors-title">${_schemeEscHtml(title)}</div>
+      <div class="scheme-empty">No red-zone ${kind==='rush'?'carry':'target'} logs for this season/team.</div>
+    </div>`;
+  }
+  const rows = list.map((p, i)=>{
+    const click = _schemePlayerOnclick(p);
+    const notePlayer = (p.player_id || p.name) ? noteTargetFromArgs(p.player_id || p.name, p.pos || '', teamCode) : null;
+    const ctx = `${teamDisplayName(teamCode)} red-zone usage · ${season}`;
+    const chipMeta = (label, value, statKey)=>({ label, value, source:'coaching_insights', statKey, context:ctx, player:notePlayer, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } });
+    const chips = `<span class="scheme-benefit-splits">
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>TGT </b><span>${p.rzTgt} · ${p.tgtShare.toFixed(1)}%</span>`, chipMeta('RZ target share', `${p.rzTgt} RZ targets · ${p.tgtShare.toFixed(1)}% of team RZ targets`, 'rz_target_share'), 'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>CARR </b><span>${p.rzAtt} · ${p.rushShare.toFixed(1)}%</span>`, chipMeta('RZ carry share', `${p.rzAtt} RZ carries · ${p.rushShare.toFixed(1)}% of team RZ carries`, 'rz_carry_share'), 'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>OPP </b><span>${p.touches} · ${p.oppShare.toFixed(1)}%</span>`, chipMeta('RZ opportunity share', `${p.touches} RZ touches · ${p.oppShare.toFixed(1)}% of team RZ touches`, 'rz_opp_share'), 'note-tag-hit')}</span>
+    </span>`;
+    const useOpp = (kind!=='rush') && (schemeBenefactorSort==='opp');
+    const scoreVal = kind==='rush' ? p.rushShare : (useOpp ? p.oppShare : p.tgtShare);
+    const scoreLbl = kind==='rush' ? 'RZ RUSH' : (useOpp ? 'RZ OPP' : 'RZ TGT');
+    const reason = kind==='rush'
+      ? `${p.rzAtt} red-zone carr${p.rzAtt===1?'y':'ies'} · ${p.rushShare.toFixed(1)}% of team RZ carries · ${p.touches} total RZ touches (${p.oppShare.toFixed(1)}% opp share).`
+      : `${p.rzTgt} red-zone target${p.rzTgt===1?'':'s'} · ${p.tgtShare.toFixed(1)}% of team RZ targets · ${p.touches} total RZ touches (${p.oppShare.toFixed(1)}% opp share).`;
+    const headClick = click ? `role="button" tabindex="0" title="Open player card" onclick="event.stopPropagation();${click}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();${click}}"` : '';
+    const scoreHtml = noteWrapHtml(`${scoreLbl} ${scoreVal.toFixed(1)}%`, chipMeta(`${title} leader`, `${p.rzTgt} RZ tgt · ${p.rzAtt} RZ carr · ${p.touches} RZ touches`, 'rz_leader'), 'note-tag-hit');
+    const metaHtml = noteWrapHtml(`${_schemeEscHtml(p.pos)} · ${p.rzTgt} RZ tgt · ${p.rzAtt} RZ carr`, chipMeta(`${title} role`, `${p.pos} · ${p.rzTgt} RZ targets · ${p.rzAtt} RZ carries`, 'rz_role'), 'note-tag-hit');
+    return `<div class="scheme-benefit-row">
+      <span class="scheme-benefit-rank">${i+1}</span>
+      <span class="scheme-benefit-head scheme-benefit-head-btn" ${headClick}>${_schemePlayerHeadshot(p)}</span>
+      <span class="scheme-benefit-main">
+        <span class="scheme-benefit-name">${_schemeEscHtml(p.name)}</span>
+        <span class="scheme-benefit-meta">${metaHtml}</span>
+        ${chips}
+      </span>
+      <span class="scheme-benefit-score">${scoreHtml}</span>
+      <span class="scheme-benefit-why">${_schemeEscHtml(reason)}</span>
+    </div>`;
+  }).join('');
+  return `<div class="scheme-benefactors-wrap">
+    <div class="scheme-benefactors-title">${_schemeEscHtml(title)} <span>${_schemeEscHtml(subtitle)}</span></div>
+    <div class="scheme-benefit-list">${rows}</div>
+  </div>`;
+}
+
+// Returns rendered HTML for the actual-data leader lists, or null when there are no
+// real red-zone logs for this season/team (caller then falls back to the modeled view).
+function _schemeRenderActualBenefactors(snap, teamCode, season){
+  const hasData = ((snap && snap.teamTgt) || 0) > 0 || ((snap && snap.teamAtt) || 0) > 0;
+  if(!hasData) return null;
+  const all = _schemeBuildActualBenefactors(snap, teamCode);
+  const targetSort = (schemeBenefactorSort === 'tgt') ? 'tgt' : 'opp';
+  const targetRows = all.filter(r=>r.rzTgt > 0)
+    .sort((a,b)=> targetSort==='tgt'
+      ? ((b.tgtShare - a.tgtShare) || (b.oppShare - a.oppShare))
+      : ((b.oppShare - a.oppShare) || (b.tgtShare - a.tgtShare)))
+    .slice(0, 8);
+  const rushRows = all.filter(r=>r.rzAtt > 0)
+    .sort((a,b)=> (b.rushShare - a.rushShare) || (b.oppShare - a.oppShare))
+    .slice(0, 6);
+  const tip = _schemeInfoTip(
+    'Red-zone usage (actual)',
+    "Real inside-the-20 target and carry logs from Sleeper weekly data — not modeled from formations. Target share = a player's RZ targets ÷ team RZ targets. Opportunity share = (RZ targets + RZ carries) ÷ team RZ touches, which is the best single read on who actually gets the ball near the goal line (great for dual-threat backs and target hogs)."
+  );
+  const controls = `<div class="scheme-benefit-sort" role="group" aria-label="Sort red-zone leaders">
+    <span class="scheme-benefit-sort-label">Sort target leaders by ${tip}</span>
+    <button type="button" class="scheme-benefit-sort-btn ${targetSort==='tgt'?'active':''}" onclick="event.stopPropagation();setTeamCoachingSchemeBenefactorSort('tgt')">RZ target share</button>
+    <button type="button" class="scheme-benefit-sort-btn ${targetSort==='opp'?'active':''}" onclick="event.stopPropagation();setTeamCoachingSchemeBenefactorSort('opp')">RZ opportunity share</button>
+  </div>`;
+  const tgtList = _schemeRenderActualBenefactorList(
+    'Red-Zone Target Leaders',
+    `actual RZ target logs · team ${snap.teamTgt} RZ targets · ${targetSort==='opp'?'sorted by opportunity (touch) share':'sorted by target share'}`,
+    targetRows, teamCode, season, 'target'
+  );
+  const rushList = _schemeRenderActualBenefactorList(
+    'Red-Zone Rushing Leaders',
+    `actual RZ carry logs · team ${snap.teamAtt} RZ carries · sorted by carry share`,
+    rushRows, teamCode, season, 'rush'
+  );
+  return `${controls}${tgtList}${rushList}`;
+}
+
+// ── Tab id normalization (Playbook / Red Zone / Regression / Scheme) ───────
+// Legacy note-nav and saved sessions may reference the old 'insights' id — treat it
+// as an alias for the renamed 'redzone' tab so nothing breaks.
+function _schemeNormTab(t){
+  const s = String(t || '').toLowerCase();
+  if(s==='insights' || s==='redzone' || s==='red_zone') return 'redzone';
+  if(s==='regression') return 'regression';
+  if(s==='scheme') return 'scheme';
+  return 'playbook';
+}
+
+// Trigger the async Sleeper RZ-usage fetch (once) and return the cached snapshot (or null).
+// Any insight tab (redzone/regression) can call this; the modal re-renders when it lands.
+function _schemeRzTrigger(teamCode, season){
+  const key = `${season}:${teamCode}`;
+  const snap = _schemeRzUsageCache[key];
+  if(!snap && teamCode && !_schemeRzUsagePromise[key]){
+    _schemeEnsureRzUsage(teamCode, season).then(()=>{
+      if(schemeOverlayOpen && schemeViewTab!=='playbook' && String(schemeTeam||'').toUpperCase()===teamCode){
+        if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>_renderTeamCoachingScheme(), ['.scheme-modal']);
+        else _renderTeamCoachingScheme();
+      }
+    });
+  }
+  return snap;
+}
+
+// ── Red-zone TD source (real nflverse pbp production) ──────────────────────
+// Personnel identity naming — matches the playbook's `${g.p} PERSONNEL` label (11 = 1RB/1TE/3WR,
+// 12 = 1RB/2TE/2WR, 21 = 2RB/1TE/2WR, etc). Falls back to composing the code from RB/TE counts
+// when the personnel string is missing/odd.
+function _schemePersonnelName(g){
+  const p = String((g && g.p) || '').trim();
+  if(/^\d{2}$/.test(p)) return `${p} personnel`;
+  const b = _schemeNumber(g && g.backs, 0);
+  const t = _schemeNumber(g && g.te, 0);
+  return `${b}${t} personnel`;
+}
+function _schemePersonnelDetail(g){
+  return `${_schemeNumber(g && g.backs,0)}RB ${_schemeNumber(g && g.te,0)}TE ${_schemeNumber(g && g.wr,0)}WR`;
+}
+
+// League-wide scheme snapshot (pass rate, PA/motion/no-huddle rates, RZ TD air%, and per-personnel
+// usage share) so every scheme metric can carry an NFL rank. Cached per season; one build pass.
+let _schemeSchemeLeagueCache = {};
+function _schemeSchemeLeague(season){
+  const s = String(season || '');
+  if(!s) return null;
+  if(_schemeSchemeLeagueCache[s]) return _schemeSchemeLeagueCache[s];
+  const block = NFLVERSE && NFLVERSE[s] && NFLVERSE[s].coaching_scheme;
+  const teams = block ? Object.keys(block) : [];
+  if(!teams.length) return null;
+  const byTeam = {};
+  const passRate = [], paRate = [], motionRate = [], nohuddleRate = [], rzAir = [];
+  const persShare = {};
+  teams.forEach(tm=>{
+    const pp = { season:s, team:tm, data:block[tm] };
+    const sp = _schemeSchemeProfile(pp);
+    const sc = _schemeRzScoring(pp);
+    const air = sc.totalTD ? (100 * sc.passTD / sc.totalTD) : null;
+    byTeam[tm] = { sp, air };
+    if(Number.isFinite(sp.passRate)) passRate.push(sp.passRate);
+    if(Number.isFinite(sp.paRate)) paRate.push(sp.paRate);
+    if(Number.isFinite(sp.motionRate)) motionRate.push(sp.motionRate);
+    if(Number.isFinite(sp.nohuddleRate)) nohuddleRate.push(sp.nohuddleRate);
+    if(Number.isFinite(air)) rzAir.push(air);
+    (sp.persList || []).forEach(r=>{ (persShare[r.key] = persShare[r.key] || []).push(r.share); });
+  });
+  const snap = { teams: teams.length, byTeam, passRate, paRate, motionRate, nohuddleRate, rzAir, persShare };
+  _schemeSchemeLeagueCache[s] = snap;
+  return snap;
+}
+
+// Sums pass/rush TDs from the red-zone formation charting, by down and by personnel,
+// so we can see WHERE this offense's touchdown equity lives: air vs ground, which
+// personnel package, which down. (Validated: e.g. CIN 2024 = 30 pass / 9 rush RZ TDs.)
+function _schemeRzScoring(p){
+  const fv = _schemeBuildFv(p);
+  const byDown = {};
+  let passTD = 0, rushTD = 0, passPlays = 0, runPlays = 0;
+  ['1','2','3','4'].forEach(dn=>{
+    const node = _schemeSafeNode(fv, dn, 'all', 'redzone');
+    let ptd=0, rtd=0, np=0, nr=0;
+    (node.groups||[]).forEach(g=>{ ptd+=_schemeNumber(g.ptd,0); rtd+=_schemeNumber(g.rtd,0); np+=_schemeNumber(g.np,0); nr+=_schemeNumber(g.nr,0); });
+    byDown[dn] = { ptd, rtd, np, nr };
+    passTD+=ptd; rushTD+=rtd; passPlays+=np; runPlays+=nr;
+  });
+  const allNode = _schemeSafeNode(fv, 'all', 'all', 'redzone');
+  const allPtd = (allNode.groups||[]).reduce((t,g)=>t+_schemeNumber(g.ptd,0),0);
+  const allRtd = (allNode.groups||[]).reduce((t,g)=>t+_schemeNumber(g.rtd,0),0);
+  // Prefer the down-split sum, but never under-count vs the all-node total.
+  if((passTD+rushTD) < (allPtd+allRtd)){ passTD=allPtd; rushTD=allRtd; }
+  const pers = {};
+  (allNode.groups||[]).forEach(g=>{
+    const key = _schemePersonnelName(g);
+    const detail = _schemePersonnelDetail(g);
+    const rec = (pers[key] = pers[key] || { key, detail, td:0, ptd:0, rtd:0, n:0 });
+    rec.ptd += _schemeNumber(g.ptd,0);
+    rec.rtd += _schemeNumber(g.rtd,0);
+    rec.td  += _schemeNumber(g.ptd,0) + _schemeNumber(g.rtd,0);
+    rec.n   += _schemeNumber(g.n,0);
+  });
+  const persList = Object.values(pers).filter(r=>r.td>0).sort((a,b)=>b.td-a.td).slice(0,4);
+  return { byDown, passTD, rushTD, totalTD:passTD+rushTD, passPlays, runPlays, persList };
+}
+
+function _schemeRenderRzTdSource(p){
+  const s = _schemeRzScoring(p);
+  if(!s || s.totalTD<=0) return '';
+  const teamCode = String((p&&p.team)||schemeTeam||'').toUpperCase();
+  const season = String((p&&p.season)||advTeamSeason()||'');
+  const ctx = `${teamDisplayName(teamCode)} red-zone TD source · ${season}`;
+  const tag = (html, label, value, statKey)=>noteWrapHtml(html, { label, value, source:'coaching_insights', statKey, context:ctx, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season, tab:'redzone' } }, 'note-tag-hit');
+  const airPct = s.totalTD? Math.round(100*s.passTD/s.totalTD):0;
+  const grPct = 100-airPct;
+  const lg = _schemeSchemeLeague(season);
+  const nT = lg? lg.teams : 0;
+  const airRank = (lg && s.totalTD)? _schemeRankInLeague(100*s.passTD/s.totalTD, lg.rzAir, 'desc') : null;
+  const grRank  = (lg && s.totalTD)? _schemeRankInLeague(100*s.passTD/s.totalTD, lg.rzAir, 'asc')  : null;
+  const rkTxt = r => (r&&nT)? `${_schemeOrdinal(r)} of ${nT}` : '';
+  const dl = {1:'1st',2:'2nd',3:'3rd',4:'4th'};
+  const downCells = ['1','2','3','4'].map(dn=>{
+    const b=s.byDown[dn]||{ptd:0,rtd:0};
+    const td=b.ptd+b.rtd;
+    return `<div class="scheme-op-card"><div class="scheme-op-k">${dl[dn]} down</div><div class="scheme-op-v">${tag(`${td} <span class="scheme-insight-rank neutral">(${b.ptd}p / ${b.rtd}r)</span>`, `${dl[dn]}-down RZ TDs`, `${td} RZ TDs on ${dl[dn]} down (${b.ptd} pass, ${b.rtd} rush)`, 'rz_td_down_'+dn)}</div></div>`;
+  }).join('');
+  const persCells = s.persList.map(r=>`<div class="scheme-op-card"><div class="scheme-op-k">${_schemeEscHtml(r.key)}${r.detail?` <span style="font-weight:700;color:#8a8470">${_schemeEscHtml(r.detail)}</span>`:''}</div><div class="scheme-op-v">${tag(`${r.td} <span class="scheme-insight-rank neutral">(${r.ptd}p / ${r.rtd}r)</span>`, `${r.key} RZ TDs`, `${r.td} RZ TDs from ${r.key}${r.detail?` (${r.detail})`:''} (${r.ptd} pass, ${r.rtd} rush)`, 'rz_td_pers')}</div></div>`).join('');
+  return `<div class="scheme-op-wrap">
+    <div class="scheme-op-title">Red-Zone TD Source · ${_schemeEscHtml(season)}</div>
+    <div class="scheme-insights-grid" style="margin-bottom:8px">
+      <div class="scheme-insight-card"><div class="scheme-insight-k">Through the air</div><div class="scheme-insight-v">${tag(`${airPct}% <span class="scheme-insight-rank neutral">(${airRank?`${rkTxt(airRank)} · `:''}${s.passTD} pass TD)</span>`, 'RZ TDs through the air', `${airPct}% of RZ TDs via pass${airRank?` — ${rkTxt(airRank)} most pass-heavy`:''} (${s.passTD} pass TDs)`, 'rz_td_air')}</div><div class="scheme-insight-sub">Share of red-zone TDs scored passing. Higher ⇒ pass-catchers own the TD equity.</div></div>
+      <div class="scheme-insight-card"><div class="scheme-insight-k">On the ground</div><div class="scheme-insight-v">${tag(`${grPct}% <span class="scheme-insight-rank neutral">(${grRank?`${rkTxt(grRank)} · `:''}${s.rushTD} rush TD)</span>`, 'RZ TDs on the ground', `${grPct}% of RZ TDs via rush${grRank?` — ${rkTxt(grRank)} most ground-heavy`:''} (${s.rushTD} rush TDs)`, 'rz_td_ground')}</div><div class="scheme-insight-sub">Share of red-zone TDs scored rushing. Higher ⇒ the goal-line back carries more value.</div></div>
+    </div>
+    <div class="scheme-op-title" style="font-size:11px">TDs by down (pass / rush)</div>
+    <div class="scheme-op-grid">${downCells}</div>
+    ${persCells?`<div class="scheme-op-title" style="font-size:11px;margin-top:8px">Top scoring personnel</div><div class="scheme-op-grid">${persCells}</div>`:''}
+  </div>`;
+}
+
+// ── Scheme identity (pass tendency, play-action, motion, tempo, personnel) ──
+function _schemeSchemeProfile(p){
+  const fv = _schemeBuildFv(p);
+  const sumNode = node=>{ let np=0,nr=0,n=0,epaW=0; (node.groups||[]).forEach(g=>{ np+=_schemeNumber(g.np,0); nr+=_schemeNumber(g.nr,0); n+=_schemeNumber(g.n,0); epaW+=_schemeNumber(g.epa,0)*_schemeNumber(g.n,0); }); return { np, nr, n, epa: n?epaW/n:null }; };
+  const allNode = _schemeSafeNode(fv,'all','all','all');
+  const totalPlays = _schemeNumber(allNode.total,0) || sumNode(allNode).n;
+  const all = sumNode(allNode);
+  const passRate = (all.np+all.nr)? 100*all.np/(all.np+all.nr):null;
+  const byDown = {};
+  ['1','2','3'].forEach(dn=>{ const sd=sumNode(_schemeSafeNode(fv,dn,'all','all')); byDown[dn]=(sd.np+sd.nr)?100*sd.np/(sd.np+sd.nr):null; });
+  const typeTotal = key=>{ const node=_schemeSafeNode(fv,'all','all',key); return _schemeNumber(node.total,0) || sumNode(node).n; };
+  const paNode = _schemeSafeNode(fv,'all','all','pa');
+  const pa = sumNode(paNode);
+  const paRate = totalPlays? 100*(_schemeNumber(paNode.total,0)||pa.n)/totalPlays:null;
+  const paEpa = pa.epa;
+  const motionRate = totalPlays? 100*typeTotal('motion')/totalPlays:null;
+  const nohuddleRate = totalPlays? 100*typeTotal('nohuddle')/totalPlays:null;
+  const pers = {};
+  (allNode.groups||[]).forEach(g=>{ const key=_schemePersonnelName(g); const detail=_schemePersonnelDetail(g); const rec=(pers[key]=pers[key]||{key,detail,n:0,np:0,nr:0,epaW:0}); rec.n+=_schemeNumber(g.n,0); rec.np+=_schemeNumber(g.np,0); rec.nr+=_schemeNumber(g.nr,0); rec.epaW+=_schemeNumber(g.epa,0)*_schemeNumber(g.n,0); });
+  const persList = Object.values(pers).map(r=>({ key:r.key, detail:r.detail, share: totalPlays?100*r.n/totalPlays:0, passRate:(r.np+r.nr)?100*r.np/(r.np+r.nr):null, epa:r.n?r.epaW/r.n:null, n:r.n })).sort((a,b)=>b.share-a.share).slice(0,5);
+  return { totalPlays, passRate, byDown, paRate, paEpa, motionRate, nohuddleRate, persList };
+}
+
+function _schemeRenderScheme(p){
+  const sp = _schemeSchemeProfile(p);
+  const teamCode=String((p&&p.team)||schemeTeam||'').toUpperCase();
+  const teamName=teamDisplayName(teamCode)||teamCode;
+  const season=String((p&&p.season)||advTeamSeason()||'');
+  if(!sp || !sp.totalPlays) return `<div class="scheme-insights-wrap"><div class="scheme-empty">No scheme charting available for this season/team.</div></div>`;
+  const ctx=`${teamName} scheme identity · ${season}`;
+  const tag=(html,label,value,statKey)=>noteWrapHtml(html,{label,value,source:'coaching_insights',statKey,context:ctx,team:teamCode,relevance:'QB,RB,WR,TE',nav:{type:'coaching',team:teamCode,season,tab:'scheme'}},'note-tag-hit');
+  const pct=v=>Number.isFinite(v)?`${v.toFixed(1)}%`:'—';
+  const epaTxt=v=>Number.isFinite(v)?(v>=0?`+${v.toFixed(2)}`:v.toFixed(2)):'—';
+  const cards=`<div class="scheme-insights-grid">
+    <div class="scheme-insight-card"><div class="scheme-insight-k">Pass rate</div><div class="scheme-insight-v">${tag(pct(sp.passRate),'Pass rate',`${pct(sp.passRate)} overall pass rate`,'pass_rate')}</div><div class="scheme-insight-sub">Overall pass tendency. 1st ${pct(sp.byDown['1'])} · 2nd ${pct(sp.byDown['2'])} · 3rd ${pct(sp.byDown['3'])}.</div></div>
+    <div class="scheme-insight-card"><div class="scheme-insight-k">Play-action rate</div><div class="scheme-insight-v">${tag(`${pct(sp.paRate)} <span class="scheme-insight-rank neutral">(EPA ${epaTxt(sp.paEpa)})</span>`,'Play-action rate',`${pct(sp.paRate)} play-action rate · ${epaTxt(sp.paEpa)} EPA/play`,'pa_rate')}</div><div class="scheme-insight-sub">PA volume + efficiency. High PA lifts deep-shot WRs and QB efficiency.</div></div>
+    <div class="scheme-insight-card"><div class="scheme-insight-k">Pre-snap motion</div><div class="scheme-insight-v">${tag(pct(sp.motionRate),'Motion rate',`${pct(sp.motionRate)} of plays use pre-snap motion`,'motion_rate')}</div><div class="scheme-insight-sub">Motion usage schemes easy touches / YAC for movement players.</div></div>
+    <div class="scheme-insight-card"><div class="scheme-insight-k">No-huddle rate</div><div class="scheme-insight-v">${tag(pct(sp.nohuddleRate),'No-huddle rate',`${pct(sp.nohuddleRate)} of plays run no-huddle`,'nohuddle_rate')}</div><div class="scheme-insight-sub">Tempo. More no-huddle ⇒ more total plays and volume for everyone.</div></div>
+  </div>`;
+  const persCards = sp.persList.map(r=>`<div class="scheme-op-card"><div class="scheme-op-k">${_schemeEscHtml(r.key)}</div><div class="scheme-op-v">${tag(`${r.share.toFixed(0)}% <span class="scheme-insight-rank neutral">${pct(r.passRate)} pass</span>`, `${r.key} usage`, `${r.share.toFixed(1)}% of snaps · ${pct(r.passRate)} pass · ${epaTxt(r.epa)} EPA`, 'personnel_share')}</div></div>`).join('');
+  return `<div class="scheme-insights-wrap">
+    <div class="scheme-insights-head"><span class="scheme-insights-pill neutral">Scheme Identity</span><span class="scheme-insights-sample">${Math.round(sp.totalPlays)} offensive plays charted</span></div>
+    ${cards}
+    ${persCards?`<div class="scheme-op-wrap"><div class="scheme-op-title">Personnel identity (share · pass rate)</div><div class="scheme-op-grid">${persCards}</div></div>`:''}
+  </div>`;
+}
+
+// ── TD regression (Sleeper RZ workload vs actual TDs) ──────────────────────
+// Compares each player's actual season TDs to what their red-zone workload implies,
+// using this offense's own TD-per-RZ-opportunity rate (so Σexpected == Σactual).
+function _schemeBuildRegression(snap){
+  const meta=(snap&&snap.meta)||{};
+  const rows=[];
+  let teamOpp=0, teamTD=0;
+  Object.keys(meta).forEach(pid=>{
+    const m=meta[pid]||{};
+    const opp=(m.rzTgt||0)+(m.rzAtt||0);
+    const td=(m.recTd||0)+(m.rushTd||0);
+    if(opp<=0) return;
+    teamOpp+=opp; teamTD+=td;
+    rows.push({ player_id:pid, name:m.name||pid, pos:m.pos||'', rzTgt:m.rzTgt||0, rzAtt:m.rzAtt||0, opp, td });
+  });
+  const rate = teamOpp>0? teamTD/teamOpp : 0;
+  rows.forEach(r=>{ r.exp = r.opp*rate; r.delta = r.td - r.exp; });
+  return { rows, rate, teamOpp, teamTD };
+}
+
+function _schemeRegFlagStyle(flag){
+  if(flag==='buy') return 'background:rgba(52,211,153,.18);color:#34d399';
+  if(flag==='sell') return 'background:rgba(248,113,113,.18);color:#f87171';
+  return 'background:rgba(148,163,184,.15);color:var(--muted)';
+}
+
+function _schemeRenderRegression(p){
+  const teamCode=String((p&&p.team)||schemeTeam||'').toUpperCase();
+  const teamName=teamDisplayName(teamCode)||teamCode;
+  const season=String((p&&p.season)||advTeamSeason()||'');
+  const snap=_schemeRzTrigger(teamCode, season);
+  if(!snap){
+    return `<div class="scheme-insights-wrap"><div class="scheme-benefactors-wrap"><div class="scheme-benefactors-title">TD Regression</div><div class="scheme-empty">Loading actual red-zone &amp; touchdown logs…</div></div></div>`;
+  }
+  const reg=_schemeBuildRegression(snap);
+  if(!reg.rows.length || reg.teamOpp<=0){
+    return `<div class="scheme-insights-wrap"><div class="scheme-benefactors-wrap"><div class="scheme-benefactors-title">TD Regression</div><div class="scheme-empty">No red-zone opportunity logs for this season/team.</div></div></div>`;
+  }
+  const tip=_schemeInfoTip('TD regression', "Compares each player's actual season touchdowns to what their red-zone workload (targets + carries) implies, using this offense's own TD-per-RZ-opportunity rate. Under-scorers are positive-regression buy-low candidates; over-scorers are TD-dependent sell-high risks. Season TDs (most come from close range).");
+  const rowHtml=(r,i)=>{
+    const click=_schemePlayerOnclick(r);
+    const notePlayer=(r.player_id||r.name)?noteTargetFromArgs(r.player_id||r.name,r.pos||'',teamCode):null;
+    const ctx=`${teamName} TD regression · ${season}`;
+    const cm=(label,value,statKey)=>({label,value,source:'coaching_insights',statKey,context:ctx,player:notePlayer,team:teamCode,relevance:'QB,RB,WR,TE',nav:{type:'coaching',team:teamCode,season,tab:'regression'}});
+    const flag = r.delta>=1?'sell':(r.delta<=-1?'buy':'neutral');
+    const flagTxt = flag==='sell'?'TD-dependent':(flag==='buy'?'Buy-low':'Efficient');
+    const dSign=r.delta>=0?'+':'';
+    const chips=`<span class="scheme-benefit-splits">
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>OPP </b><span>${r.opp}</span>`, cm('RZ opportunities',`${r.opp} RZ touches (${r.rzTgt} tgt, ${r.rzAtt} carr)`,'reg_opp'),'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>TD </b><span>${r.td}</span>`, cm('Actual TDs',`${r.td} actual season TDs`,'reg_td'),'note-tag-hit')}</span>
+      <span class="scheme-benefit-split">${noteWrapHtml(`<b>xTD </b><span>${r.exp.toFixed(1)}</span>`, cm('Expected TDs',`${r.exp.toFixed(1)} expected TDs from RZ workload`,'reg_xtd'),'note-tag-hit')}</span>
+    </span>`;
+    const headClick=click?`role="button" tabindex="0" title="Open player card" onclick="event.stopPropagation();${click}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();${click}}"`:'';
+    const scoreHtml=noteWrapHtml(`${dSign}${r.delta.toFixed(1)}`, cm('TD regression delta',`${dSign}${r.delta.toFixed(1)} TDs vs expected · ${flagTxt}`,'reg_delta'),'note-tag-hit');
+    const reason= flag==='buy'?`${r.td} TD on ${r.opp} RZ touches — ${Math.abs(r.delta).toFixed(1)} below workload-implied. Positive-regression buy-low.`
+      : flag==='sell'?`${r.td} TD on ${r.opp} RZ touches — ${r.delta.toFixed(1)} above workload-implied. TD-dependent, regression risk.`
+      : `${r.td} TD on ${r.opp} RZ touches — roughly in line with workload.`;
+    return `<div class="scheme-benefit-row">
+      <span class="scheme-benefit-rank">${i+1}</span>
+      <span class="scheme-benefit-head scheme-benefit-head-btn" ${headClick}>${_schemePlayerHeadshot(r)}</span>
+      <span class="scheme-benefit-main">
+        <span class="scheme-benefit-name">${_schemeEscHtml(r.name)} <span style="font-size:9px;padding:1px 5px;border-radius:6px;font-weight:700;${_schemeRegFlagStyle(flag)}">${flagTxt}</span></span>
+        <span class="scheme-benefit-meta">${_schemeEscHtml(r.pos)} · ${r.rzTgt} RZ tgt · ${r.rzAtt} RZ carr</span>
+        ${chips}
+      </span>
+      <span class="scheme-benefit-score">${scoreHtml}</span>
+      <span class="scheme-benefit-why">${_schemeEscHtml(reason)}</span>
+    </div>`;
+  };
+  const buys=reg.rows.filter(r=>r.opp>=4 && r.delta<=-1).sort((a,b)=>a.delta-b.delta).slice(0,6);
+  const sells=reg.rows.filter(r=>r.opp>=4 && r.delta>=1).sort((a,b)=>b.delta-a.delta).slice(0,6);
+  const list=(title,sub,rows)=> rows.length? `<div class="scheme-benefactors-wrap"><div class="scheme-benefactors-title">${title} <span>${sub}</span></div><div class="scheme-benefit-list">${rows.map(rowHtml).join('')}</div></div>`:'';
+  const empty = (!buys.length && !sells.length) ? `<div class="scheme-benefactors-wrap"><div class="scheme-empty">No strong over/under-performers — this offense's RZ scoring closely matches workload.</div></div>`:'';
+  return `<div class="scheme-insights-wrap">
+    <div class="scheme-insights-head"><span class="scheme-insights-pill neutral">TD Regression ${tip}</span><span class="scheme-insights-sample">${reg.teamTD} team TDs · ${reg.teamOpp} RZ touches · ${reg.rate.toFixed(2)} TD/opp</span></div>
+    ${list('Buy-Low — under-scored RZ workload','sorted by biggest TD shortfall',buys)}
+    ${list('Sell-High — TD-dependent','sorted by biggest TD surplus',sells)}
+    ${empty}
+  </div>`;
 }
 
 function _schemeBuildBenefactors(p, d){
@@ -1467,13 +1927,21 @@ function _schemeRenderBenefactors(targets, rushers){
   )}`;
 }
 
-function _schemeRenderInsights(p){
+function _schemeRenderRedZone(p){
   const d = _schemeRedZoneInsightData(p);
-  const teamCode = String((p && p.team) || '').toUpperCase();
+  const teamCode = String((p && p.team) || schemeTeam || '').toUpperCase();
   const teamName = teamDisplayName(teamCode) || teamCode;
+  const season = String((p && p.season) || advTeamSeason() || '');
   const offenseStrip = _schemeRenderTeamOffenseProduction(p);
-  const benefactors = _schemeBuildBenefactors(p, d);
-  const rushBenefactors = _schemeBuildRushBenefactors(p, d);
+  const benefactors = _schemeBuildBenefactors(p, d);         // modeled fallback (formation/route)
+  const rushBenefactors = _schemeBuildRushBenefactors(p, d); // modeled fallback (formation/route)
+  // Actual red-zone usage from Sleeper weekly logs (real targets/carries) — fetched + cached
+  // async, then the modal re-renders. This replaces the misleading modeled formation shares.
+  const rzUsage = _schemeRzTrigger(teamCode, season);
+  const benefactorsHtml = rzUsage
+    ? (_schemeRenderActualBenefactors(rzUsage, teamCode, season) || _schemeRenderBenefactors(benefactors, rushBenefactors))
+    : `<div class="scheme-benefactors-wrap"><div class="scheme-benefactors-title">Red-Zone Usage Leaders</div><div class="scheme-empty">Loading actual red-zone target &amp; carry logs…</div></div>`;
+  const tdSourceHtml = _schemeRenderRzTdSource(p);
   const league = _schemeLeagueInsightRanks(p && p.season);
   const nTeams = _schemeNumber(league && league.leagueSize, 0);
   const rankText = (rank) => (rank && nTeams) ? `${_schemeOrdinal(rank)} of ${nTeams}` : '—';
@@ -1498,6 +1966,7 @@ function _schemeRenderInsights(p){
     const seen = new Set();
     const out = [];
     const add = (list)=>{ (list||[]).forEach(pl=>{ const k=pl.player_id||pl.name; if(!k||seen.has(k)) return; seen.add(k); out.push({player_id:pl.player_id||'',name:pl.name||'',pos:pl.pos||'',team:pl.team||teamCode}); }); };
+    if(rzUsage && rzUsage.meta){ Object.keys(rzUsage.meta).forEach(pid=>{ const m=rzUsage.meta[pid]||{}; add([{player_id:pid, name:m.name||'', pos:m.pos||'', team:teamCode}]); }); }
     add(benefactors);
     add(rushBenefactors);
     if(!out.length){
@@ -1538,8 +2007,9 @@ function _schemeRenderInsights(p){
       ${rzVolumeCard}
     </div>
     ${frictionComponents}
+    ${tdSourceHtml}
     <div class="scheme-insight-note"><b>Fantasy angle:</b> ${_schemeEscHtml(blurb)}</div>
-    ${_schemeRenderBenefactors(benefactors, rushBenefactors)}
+    ${benefactorsHtml}
   </div>`;
 }
 
@@ -1640,7 +2110,9 @@ function _renderTeamCoachingScheme(){
       </div>
       <div class="scheme-view-tabs">
         <button class="scheme-view-tab ${schemeViewTab==='playbook'?'active':''}" onclick="setTeamCoachingSchemeTab('playbook')">Playbook</button>
-        <button class="scheme-view-tab ${schemeViewTab==='insights'?'active':''}" onclick="setTeamCoachingSchemeTab('insights')">Insights</button>
+        <button class="scheme-view-tab ${schemeViewTab==='redzone'?'active':''}" onclick="setTeamCoachingSchemeTab('redzone')">Red Zone</button>
+        <button class="scheme-view-tab ${schemeViewTab==='regression'?'active':''}" onclick="setTeamCoachingSchemeTab('regression')">Regression</button>
+        <button class="scheme-view-tab ${schemeViewTab==='scheme'?'active':''}" onclick="setTeamCoachingSchemeTab('scheme')">Scheme</button>
       </div>
       <div class="scheme-loading">Loading playsheet template…</div>
       ${seasons.length>1?`<div class="scheme-tabs">${seasons.map(s=>`<button class="scheme-tab ${String(s)===String(schemeSeason)?'active':''}" onclick="setTeamCoachingSchemeSeason('${s}')"><span>${s}</span></button>`).join('')}</div>`:''}
@@ -1648,11 +2120,15 @@ function _renderTeamCoachingScheme(){
   </div>`;
   _schemeBindSwipeClose(host);
 
-  if(schemeViewTab==='insights'){
+  if(schemeViewTab!=='playbook'){
     const modal = host.querySelector('.scheme-modal');
     const loading = host.querySelector('.scheme-loading');
     if(loading) loading.remove();
-    if(modal) modal.insertAdjacentHTML('beforeend', _schemeRenderInsights(p));
+    let insightHtml;
+    if(schemeViewTab==='regression') insightHtml = _schemeRenderRegression(p);
+    else if(schemeViewTab==='scheme') insightHtml = _schemeRenderScheme(p);
+    else insightHtml = _schemeRenderRedZone(p);
+    if(modal) modal.insertAdjacentHTML('beforeend', insightHtml);
     return;
   }
 
@@ -1683,7 +2159,7 @@ function openTeamCoachingScheme(team, initialView){
     const cur = {
       team: String(schemeTeam),
       season: String(schemeSeason || _schemePreferredSeason(schemeTeam) || ''),
-      tab: schemeViewTab === 'insights' ? 'insights' : 'playbook',
+      tab: _schemeNormTab(schemeViewTab),
       coachContext: _schemeCoachContext ? JSON.parse(JSON.stringify(_schemeCoachContext)) : null,
     };
     const top = _schemeNavStack[_schemeNavStack.length - 1];
@@ -1696,7 +2172,7 @@ function openTeamCoachingScheme(team, initialView){
   schemeOverlayOpen = true;
   _schemeLockPage(true);
   schemeTeam = team;
-  schemeViewTab = (initialView && initialView.tab==='insights') ? 'insights' : 'playbook';
+  schemeViewTab = _schemeNormTab(initialView && initialView.tab);
 
   if(initialView && typeof initialView==='object' && initialView.coachName){
     const seasons = String(initialView.coachSeasons || '')
@@ -1770,7 +2246,7 @@ function backTeamCoachingScheme(){
   if(!prev || !prev.team) return;
 
   schemeTeam = String(prev.team);
-  schemeViewTab = prev.tab === 'insights' ? 'insights' : 'playbook';
+  schemeViewTab = _schemeNormTab(prev.tab);
   schemeSeason = String(prev.season || _schemePreferredSeason(schemeTeam) || '');
   _schemeCoachContext = prev.coachContext || null;
 
@@ -1809,7 +2285,7 @@ function setTeamCoachingSchemeSeason(season){
 
 function setTeamCoachingSchemeTab(tab){
   if(!schemeOverlayOpen || !schemeTeam) return;
-  schemeViewTab = String(tab)==='insights' ? 'insights' : 'playbook';
+  schemeViewTab = _schemeNormTab(tab);
   _renderTeamCoachingScheme();
 }
 
