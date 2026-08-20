@@ -264,6 +264,9 @@ function tsScrollerClaims(el, dir){
     host.classList.remove('ts-swipe-dragging');
     host.classList.remove('ts-swipe-committing');
     previewPhase=null;
+    // Cleared at the END of the gesture (not the start of the next touch): a preview is built
+    // from live projections, week-range filters and scoring settings, any of which may change
+    // between gestures, so one gesture is the only lifetime that's provably safe.
     previewCache={};
     if(anim){
       const t=top; const u=under;
@@ -278,7 +281,7 @@ function tsScrollerClaims(el, dir){
   };
 
   document.addEventListener('touchstart', e=>{
-    x0=y0=null; axis=null; dx=0; bar=null; host=null; tabs=null; cur=-1; previewPhase=null; previewCache={};
+    x0=y0=null; axis=null; dx=0; bar=null; host=null; tabs=null; cur=-1; previewPhase=null;
     if(e.touches.length!==1) return;
     // League-wide Advanced Metrics is a standalone page (like Full Rankings):
     // no horizontal phase-swipe navigation from this view.
@@ -305,9 +308,11 @@ function tsScrollerClaims(el, dir){
     if(cur<0) return;
     host=tsSwipeHost(b);
     if(!host || (e.target && !host.contains(e.target))) return;
-    // Pre-render only the immediate left/right neighbors for instant direction changes
-    // without precomputing the whole tab stack.
-    preloadAdjacentPreviews();
+    // NOTE: preloadAdjacentPreviews() deliberately does NOT run here. It renders two entire
+    // phase pages (renderTeamAdvanced + a rankings preview ≈ 12ms desktop, 10-60ms on a phone)
+    // and touchstart fires on every tap and every scroll-start — before we even know whether
+    // the gesture is horizontal. It now runs in touchmove, the moment axis==='x' is decided,
+    // which is ~10px of travel and still long before any preview becomes visible.
     x0=t.clientX; y0=t.clientY;
   }, {passive:true});
 
@@ -322,6 +327,11 @@ function tsScrollerClaims(el, dir){
       axis = (Math.abs(dx) > Math.abs(dy)*1.4) ? 'x' : 'y';
       if(axis==='x' && tsScrollerClaims(e.target, dx)) axis='y';   // a scroller owns it
       if(axis==='y'){ x0=null; return; }
+      // Horizontal intent confirmed — NOW pre-render the immediate left/right neighbours.
+      // setPreview() below only needs whichever one the finger is heading toward, but doing
+      // both here keeps a mid-gesture direction change instant, and this runs once per swipe
+      // instead of once per tap.
+      preloadAdjacentPreviews();
     }
     if(axis!=='x') return;
     // Ours now: stop the browser from scrolling / pull-to-refreshing underneath.

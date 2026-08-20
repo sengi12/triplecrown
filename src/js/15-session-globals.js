@@ -11,40 +11,85 @@ let _persistTimer = null;
 let _persistReady = false;   // becomes true after boot restore, so we don't save during load
 let playerNotes = {};        // player-note state keyed by canonical player key
 const NOTE_TEXT_MAX = 20000; // hard cap on a single note body (chars); matches cloud-save sanitizer
+// How many undo snapshots per team get PERSISTED. In-session undo stays UNDO_LIMIT (40) deep;
+// only the newest few are written to localStorage. Each snapshot deep-copies the team's working
+// set AND its proj-seed roster row, so a full 40-deep stack across ~8 edited teams serialises to
+// >5MB — past the localStorage quota, at which point setItem throws and the user's PROJECTIONS
+// stop being saved. Undo depth is a nice-to-have; the projections are the actual data.
+const UNDO_PERSIST_LIMIT = 5;
+// persistAvailable() does a real setItem+removeItem round-trip. It used to run on every
+// saveSession() call — i.e. on every slider `oninput` tick, ~60x/sec during a drag, so two
+// blocking storage syscalls per frame sat in the input-to-paint path. The answer cannot change
+// within a session, so probe once and remember it.
+let _persistOk = null;
 function persistAvailable(){
-  try{ const k='__tc_test__'; localStorage.setItem(k,'1'); localStorage.removeItem(k); return true; }
-  catch(e){ return false; }
+  if(_persistOk !== null) return _persistOk;
+  try{ const k='__tc_test__'; localStorage.setItem(k,'1'); localStorage.removeItem(k); _persistOk = true; }
+  catch(e){ _persistOk = false; }
+  return _persistOk;
 }
+// Trim undo stacks to the persisted depth without touching the live in-session stacks.
+function _undoStacksForPersist(){
+  const out = {};
+  for(const team in undoStacks){
+    const s = undoStacks[team];
+    if(s && s.length) out[team] = s.length>UNDO_PERSIST_LIMIT ? s.slice(-UNDO_PERSIST_LIMIT) : s;
+  }
+  return out;
+}
+let _persistWarned = false;   // only nag about a degraded save once per session
 function saveSession(){
   if(!_persistReady) return;
   if(!persistAvailable()) return;
   // Debounce: edits fire rapidly (sliders), so coalesce writes.
   clearTimeout(_persistTimer);
   _persistTimer = setTimeout(()=>{
-    try{
-      const payload = {
-        v: 2,
-        season: PROJ_SEASON,          // guard: only restore onto a matching-season seed
-        savedAt: Date.now(),
-        workingProj: workingProj,
-        playerNotes: playerNotes,
-        scoringSettings: scoringSettings,
-        rankFormat: rankFormat,
-        scoringAxis: scoringAxis,
-        rankingsSearchOpen: rankingsSearchOpen,
-        rankingsSearchQuery: rankingsSearchQuery,
-        scoringPanelOpen: scoringPanelOpen,
-        leagueSnapshot: leagueSnapshot,
-        undoStacks: undoStacks,
-      };
-      const serialized = JSON.stringify(payload);
-      localStorage.setItem(TC_STORE_KEY, serialized);
-      if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
-        try{ console.debug('[saveSession] wrote '+Math.round(serialized.length/1024)+'KB'); }catch(_e){}
-    }catch(e){
-      if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
-        try{ console.warn('[saveSession] failed:', e); }catch(_e){}
-      /* quota or serialization issue — skip silently */
+    const base = {
+      v: 2,
+      season: PROJ_SEASON,          // guard: only restore onto a matching-season seed
+      savedAt: Date.now(),
+      workingProj: workingProj,
+      playerNotes: playerNotes,
+      scoringSettings: scoringSettings,
+      rankFormat: rankFormat,
+      scoringAxis: scoringAxis,
+      rankingsSearchOpen: rankingsSearchOpen,
+      rankingsSearchQuery: rankingsSearchQuery,
+      scoringPanelOpen: scoringPanelOpen,
+      leagueSnapshot: leagueSnapshot,
+    };
+    // Write the richest payload that fits. If the quota rejects it, shed the OPTIONAL state
+    // (undo history first, then the league snapshot) and retry — the working projections and
+    // player notes are the last things to go. Previously a single over-quota write threw, the
+    // error was swallowed, and every subsequent edit silently went unsaved until the tab died.
+    const attempts = [
+      Object.assign({}, base, {undoStacks: _undoStacksForPersist()}),
+      base,                                              // drop undo history
+      Object.assign({}, base, {leagueSnapshot: null}),   // drop the league snapshot too
+    ];
+    for(let i=0;i<attempts.length;i++){
+      try{
+        const serialized = JSON.stringify(attempts[i]);
+        localStorage.setItem(TC_STORE_KEY, serialized);
+        if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+          try{ console.debug('[saveSession] wrote '+Math.round(serialized.length/1024)+'KB (tier '+i+')'); }catch(_e){}
+        if(i>0 && !_persistWarned){
+          _persistWarned = true;
+          if(typeof toast==='function')
+            toast('Browser storage is nearly full — undo history won’t survive a refresh. Your projections are still being saved.');
+        }
+        return;
+      }catch(e){
+        if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+          try{ console.warn('[saveSession] tier '+i+' failed:', e); }catch(_e){}
+      }
+    }
+    // Every tier failed — the projections themselves could not be written. Say so out loud;
+    // silently losing someone's work is the worst outcome available here.
+    if(!_persistWarned){
+      _persistWarned = true;
+      if(typeof toast==='function')
+        toast('Could not save this session to your browser (storage full or blocked) — use Download to keep a copy.','err');
     }
   }, 400);
 }

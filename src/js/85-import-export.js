@@ -679,6 +679,24 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
 (async function boot(){
   const hasEmbeddedProj = SEED && Object.keys(SEED).some(t=>SEED[t] && (SEED[t].QB.length||SEED[t].RB.length||SEED[t].WR.length||SEED[t].TE.length));
   const hasEmbeddedECR  = ECR && Object.keys(ECR).some(f=>ECR[f] && Object.keys(ECR[f]).length);
+  // Paint an honest loading state BEFORE the first await. The template ships the "Select a
+  // team to begin" empty state, which reads as "loaded and idle" — so a phone user used to
+  // stare at a false ready state for the whole Sleeper round-trip, then watch it flip to
+  // "Loading…" and back. (No season in the string: PROJ_SEASON may still be corrected by the
+  // sync below, and a number that changes under you is worse than no number.)
+  let _seedRawP = null;
+  if(!hasEmbeddedProj){
+    const _c = document.getElementById('content');
+    if(_c) _c.innerHTML = `<div class="empty">
+    <div class="empty-icon">${TC_ICON("signal","tc-ico-lg")}</div><div class="empty-title">Loading projections…</div>
+    <div class="empty-body">Checking for a prebuilt seed, then pulling live from Sleeper if needed.</div></div>`;
+    // Start the ~1.5MB seed download NOW rather than after the Sleeper season probe resolves.
+    // These two requests hit different hosts and neither depends on the other's RESULT, so
+    // running them back-to-back was costing a full extra round-trip on every cold load. The
+    // seed is still APPLIED after the season sync below, so ordering semantics are unchanged.
+    try{ _seedRawP = Promise.resolve(fetchSeedJson('seeds/triplecrown_seed.json')).catch(()=>null); }
+    catch(e){ _seedRawP = null; }
+  }
   if(!hasEmbeddedProj && typeof syncProjSeasonFromSleeper==='function'){
     await syncProjSeasonFromSleeper();
   }
@@ -696,12 +714,20 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
     backgroundRefreshADP();
     return;
   }
+  // Now that the season is settled, re-stamp the loading state with the real year.
   document.getElementById('content').innerHTML=`<div class="empty">
     <div class="empty-icon">${TC_ICON("signal","tc-ico-lg")}</div><div class="empty-title">Loading ${PROJ_SEASON} data…</div>
     <div class="empty-body">Checking for a prebuilt seed, then pulling live from Sleeper if needed.</div></div>`;
   // No embedded projections. Try a local seed file (works when served over http), which at
   // minimum gives us ECR; then fall back to a live Sleeper pull for projections.
-  tryAutoLoadSeed().then(loaded=>{
+  // The payload is usually already downloaded by now — hand it straight to tryAutoLoadSeed
+  // rather than issuing a second request for it.
+  const _seedRaw = _seedRawP ? await _seedRawP : null;
+  // The prefetch already ran and came back empty — no seed is hosted here (or this is a bare
+  // file:// open). Go straight to the live Sleeper pull instead of letting tryAutoLoadSeed
+  // issue a second request for a file we already know isn't there.
+  if(_seedRawP && !_seedRaw){ refreshFromSleeper(true); return; }
+  tryAutoLoadSeed(_seedRaw).then(loaded=>{
     const hasProj = SEED && Object.keys(SEED).some(t=>SEED[t] && (SEED[t].QB.length||SEED[t].RB.length||SEED[t].WR.length||SEED[t].TE.length));
     if(hasProj){
       const restored = restoreSession();
@@ -798,13 +824,20 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
 
 // Attempt to fetch triplecrown_seed.json next to the page. Returns true if it loaded anything
 // useful (at minimum ECR). Never throws — a file:// open or missing file just returns false.
-async function tryAutoLoadSeed(){
+// `prefetched` lets boot() hand over a payload it already downloaded in parallel with the
+// Sleeper season probe. Omitted (every other caller) → fetch it here as before.
+async function tryAutoLoadSeed(prefetched){
   try{
     // gz-first: build_seed ships a pre-compressed .json.gz twin — ~5x smaller on hosts that
     // don't compress, never worse (fetchSeedJson falls back to plain .json automatically).
-    const raw = await fetchSeedJson('seeds/triplecrown_seed.json');
+    let raw = prefetched || await fetchSeedJson('seeds/triplecrown_seed.json');
     if(!raw) return false;
     const j = decodeAnySeed(raw);
+    // decodeAnySeed rebuilds `history` and `nflverse` into new objects, so the compact
+    // originals are dead the moment it returns — but `raw` kept the whole ~22MB tree
+    // reachable for the rest of this function. Drop it so the GC can take it while we're
+    // still doing the (allocation-heavy) assignments below.
+    raw = null;
     let got=false;
     if(j.ecr){ ECR=j.ecr; got=true; }
     if(j.contracts){ CONTRACTS=j.contracts; got=true; }

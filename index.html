@@ -3285,40 +3285,85 @@ let _persistTimer = null;
 let _persistReady = false;   // becomes true after boot restore, so we don't save during load
 let playerNotes = {};        // player-note state keyed by canonical player key
 const NOTE_TEXT_MAX = 20000; // hard cap on a single note body (chars); matches cloud-save sanitizer
+// How many undo snapshots per team get PERSISTED. In-session undo stays UNDO_LIMIT (40) deep;
+// only the newest few are written to localStorage. Each snapshot deep-copies the team's working
+// set AND its proj-seed roster row, so a full 40-deep stack across ~8 edited teams serialises to
+// >5MB — past the localStorage quota, at which point setItem throws and the user's PROJECTIONS
+// stop being saved. Undo depth is a nice-to-have; the projections are the actual data.
+const UNDO_PERSIST_LIMIT = 5;
+// persistAvailable() does a real setItem+removeItem round-trip. It used to run on every
+// saveSession() call — i.e. on every slider `oninput` tick, ~60x/sec during a drag, so two
+// blocking storage syscalls per frame sat in the input-to-paint path. The answer cannot change
+// within a session, so probe once and remember it.
+let _persistOk = null;
 function persistAvailable(){
-  try{ const k='__tc_test__'; localStorage.setItem(k,'1'); localStorage.removeItem(k); return true; }
-  catch(e){ return false; }
+  if(_persistOk !== null) return _persistOk;
+  try{ const k='__tc_test__'; localStorage.setItem(k,'1'); localStorage.removeItem(k); _persistOk = true; }
+  catch(e){ _persistOk = false; }
+  return _persistOk;
 }
+// Trim undo stacks to the persisted depth without touching the live in-session stacks.
+function _undoStacksForPersist(){
+  const out = {};
+  for(const team in undoStacks){
+    const s = undoStacks[team];
+    if(s && s.length) out[team] = s.length>UNDO_PERSIST_LIMIT ? s.slice(-UNDO_PERSIST_LIMIT) : s;
+  }
+  return out;
+}
+let _persistWarned = false;   // only nag about a degraded save once per session
 function saveSession(){
   if(!_persistReady) return;
   if(!persistAvailable()) return;
   // Debounce: edits fire rapidly (sliders), so coalesce writes.
   clearTimeout(_persistTimer);
   _persistTimer = setTimeout(()=>{
-    try{
-      const payload = {
-        v: 2,
-        season: PROJ_SEASON,          // guard: only restore onto a matching-season seed
-        savedAt: Date.now(),
-        workingProj: workingProj,
-        playerNotes: playerNotes,
-        scoringSettings: scoringSettings,
-        rankFormat: rankFormat,
-        scoringAxis: scoringAxis,
-        rankingsSearchOpen: rankingsSearchOpen,
-        rankingsSearchQuery: rankingsSearchQuery,
-        scoringPanelOpen: scoringPanelOpen,
-        leagueSnapshot: leagueSnapshot,
-        undoStacks: undoStacks,
-      };
-      const serialized = JSON.stringify(payload);
-      localStorage.setItem(TC_STORE_KEY, serialized);
-      if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
-        try{ console.debug('[saveSession] wrote '+Math.round(serialized.length/1024)+'KB'); }catch(_e){}
-    }catch(e){
-      if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
-        try{ console.warn('[saveSession] failed:', e); }catch(_e){}
-      /* quota or serialization issue — skip silently */
+    const base = {
+      v: 2,
+      season: PROJ_SEASON,          // guard: only restore onto a matching-season seed
+      savedAt: Date.now(),
+      workingProj: workingProj,
+      playerNotes: playerNotes,
+      scoringSettings: scoringSettings,
+      rankFormat: rankFormat,
+      scoringAxis: scoringAxis,
+      rankingsSearchOpen: rankingsSearchOpen,
+      rankingsSearchQuery: rankingsSearchQuery,
+      scoringPanelOpen: scoringPanelOpen,
+      leagueSnapshot: leagueSnapshot,
+    };
+    // Write the richest payload that fits. If the quota rejects it, shed the OPTIONAL state
+    // (undo history first, then the league snapshot) and retry — the working projections and
+    // player notes are the last things to go. Previously a single over-quota write threw, the
+    // error was swallowed, and every subsequent edit silently went unsaved until the tab died.
+    const attempts = [
+      Object.assign({}, base, {undoStacks: _undoStacksForPersist()}),
+      base,                                              // drop undo history
+      Object.assign({}, base, {leagueSnapshot: null}),   // drop the league snapshot too
+    ];
+    for(let i=0;i<attempts.length;i++){
+      try{
+        const serialized = JSON.stringify(attempts[i]);
+        localStorage.setItem(TC_STORE_KEY, serialized);
+        if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+          try{ console.debug('[saveSession] wrote '+Math.round(serialized.length/1024)+'KB (tier '+i+')'); }catch(_e){}
+        if(i>0 && !_persistWarned){
+          _persistWarned = true;
+          if(typeof toast==='function')
+            toast('Browser storage is nearly full — undo history won’t survive a refresh. Your projections are still being saved.');
+        }
+        return;
+      }catch(e){
+        if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+          try{ console.warn('[saveSession] tier '+i+' failed:', e); }catch(_e){}
+      }
+    }
+    // Every tier failed — the projections themselves could not be written. Say so out loud;
+    // silently losing someone's work is the worst outcome available here.
+    if(!_persistWarned){
+      _persistWarned = true;
+      if(typeof toast==='function')
+        toast('Could not save this session to your browser (storage full or blocked) — use Download to keep a copy.','err');
     }
   }, 400);
 }
@@ -3954,6 +3999,15 @@ function decodeFantasy(c){
 // don't compress; CDNs compress at lighter levels). Falls back to the plain .json when the
 // .gz is missing (older deploys) or DecompressionStream is unavailable (older browsers) —
 // so this can never make loading WORSE, only smaller.
+//
+// Caching: these requests deliberately use the DEFAULT HTTP cache mode. They used to pass
+// `cache:'no-store'`, which forbids the browser from both reading AND writing the cache — so
+// every single page open re-downloaded the full ~1.5MB gzipped seed even though the host had
+// already sent a perfectly good ETag. Static hosts (GitHub Pages included) serve these with
+// ETag + Last-Modified, so 'default' gives a free cache hit inside the freshness window and a
+// ~200-byte conditional request (304) outside it. Freshness is still guaranteed: a rebuilt seed
+// has a new ETag, so the very next revalidation picks it up.
+const TC_SEED_FETCH_OPTS = {cache:'default'};
 function tcLatencyDebugEnabled(){
   // Always on in dev builds.
   try{ if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE) return true; }catch(_e){}
@@ -3977,12 +4031,13 @@ async function fetchSeedJson(url){
   try{
     if(typeof DecompressionStream==='function'){
       const t0 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
-      const r = await fetch(url + '.gz', {cache:'no-store'});
+      const r = await fetch(url + '.gz', TC_SEED_FETCH_OPTS);
       const t1 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
       if(r.ok && r.body){
-        const txt = await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).text();
+        let txt = await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).text();
         const t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
         const parsed = JSON.parse(txt);
+        txt = null;   // release the ~6MB source string before the caller starts decoding
         const t3 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
         tcLatencyLog(url, 'gz', t1 - t0, t2 - t1, t3 - t2, true);
         return parsed;
@@ -3992,7 +4047,7 @@ async function fetchSeedJson(url){
   }catch(e){ /* fall through to plain */ }
 
   const t0 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
-  const r = await fetch(url, {cache:'no-store'});
+  const r = await fetch(url, TC_SEED_FETCH_OPTS);
   const t1 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
   if(!r.ok){
     tcLatencyLog(url, 'json', t1 - t0, 0, 0, false);
@@ -4001,9 +4056,10 @@ async function fetchSeedJson(url){
   let parsed;
   let t2;
   if(typeof r.text==='function'){
-    const txt = await r.text();
+    let txt = await r.text();
     t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
     parsed = JSON.parse(txt);
+    txt = null;   // release the source string before the caller starts decoding
   }else if(typeof r.json==='function'){
     parsed = await r.json();
     t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
@@ -17735,6 +17791,24 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
 (async function boot(){
   const hasEmbeddedProj = SEED && Object.keys(SEED).some(t=>SEED[t] && (SEED[t].QB.length||SEED[t].RB.length||SEED[t].WR.length||SEED[t].TE.length));
   const hasEmbeddedECR  = ECR && Object.keys(ECR).some(f=>ECR[f] && Object.keys(ECR[f]).length);
+  // Paint an honest loading state BEFORE the first await. The template ships the "Select a
+  // team to begin" empty state, which reads as "loaded and idle" — so a phone user used to
+  // stare at a false ready state for the whole Sleeper round-trip, then watch it flip to
+  // "Loading…" and back. (No season in the string: PROJ_SEASON may still be corrected by the
+  // sync below, and a number that changes under you is worse than no number.)
+  let _seedRawP = null;
+  if(!hasEmbeddedProj){
+    const _c = document.getElementById('content');
+    if(_c) _c.innerHTML = `<div class="empty">
+    <div class="empty-icon">${TC_ICON("signal","tc-ico-lg")}</div><div class="empty-title">Loading projections…</div>
+    <div class="empty-body">Checking for a prebuilt seed, then pulling live from Sleeper if needed.</div></div>`;
+    // Start the ~1.5MB seed download NOW rather than after the Sleeper season probe resolves.
+    // These two requests hit different hosts and neither depends on the other's RESULT, so
+    // running them back-to-back was costing a full extra round-trip on every cold load. The
+    // seed is still APPLIED after the season sync below, so ordering semantics are unchanged.
+    try{ _seedRawP = Promise.resolve(fetchSeedJson('seeds/triplecrown_seed.json')).catch(()=>null); }
+    catch(e){ _seedRawP = null; }
+  }
   if(!hasEmbeddedProj && typeof syncProjSeasonFromSleeper==='function'){
     await syncProjSeasonFromSleeper();
   }
@@ -17752,12 +17826,20 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
     backgroundRefreshADP();
     return;
   }
+  // Now that the season is settled, re-stamp the loading state with the real year.
   document.getElementById('content').innerHTML=`<div class="empty">
     <div class="empty-icon">${TC_ICON("signal","tc-ico-lg")}</div><div class="empty-title">Loading ${PROJ_SEASON} data…</div>
     <div class="empty-body">Checking for a prebuilt seed, then pulling live from Sleeper if needed.</div></div>`;
   // No embedded projections. Try a local seed file (works when served over http), which at
   // minimum gives us ECR; then fall back to a live Sleeper pull for projections.
-  tryAutoLoadSeed().then(loaded=>{
+  // The payload is usually already downloaded by now — hand it straight to tryAutoLoadSeed
+  // rather than issuing a second request for it.
+  const _seedRaw = _seedRawP ? await _seedRawP : null;
+  // The prefetch already ran and came back empty — no seed is hosted here (or this is a bare
+  // file:// open). Go straight to the live Sleeper pull instead of letting tryAutoLoadSeed
+  // issue a second request for a file we already know isn't there.
+  if(_seedRawP && !_seedRaw){ refreshFromSleeper(true); return; }
+  tryAutoLoadSeed(_seedRaw).then(loaded=>{
     const hasProj = SEED && Object.keys(SEED).some(t=>SEED[t] && (SEED[t].QB.length||SEED[t].RB.length||SEED[t].WR.length||SEED[t].TE.length));
     if(hasProj){
       const restored = restoreSession();
@@ -17854,13 +17936,20 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
 
 // Attempt to fetch triplecrown_seed.json next to the page. Returns true if it loaded anything
 // useful (at minimum ECR). Never throws — a file:// open or missing file just returns false.
-async function tryAutoLoadSeed(){
+// `prefetched` lets boot() hand over a payload it already downloaded in parallel with the
+// Sleeper season probe. Omitted (every other caller) → fetch it here as before.
+async function tryAutoLoadSeed(prefetched){
   try{
     // gz-first: build_seed ships a pre-compressed .json.gz twin — ~5x smaller on hosts that
     // don't compress, never worse (fetchSeedJson falls back to plain .json automatically).
-    const raw = await fetchSeedJson('seeds/triplecrown_seed.json');
+    let raw = prefetched || await fetchSeedJson('seeds/triplecrown_seed.json');
     if(!raw) return false;
     const j = decodeAnySeed(raw);
+    // decodeAnySeed rebuilds `history` and `nflverse` into new objects, so the compact
+    // originals are dead the moment it returns — but `raw` kept the whole ~22MB tree
+    // reachable for the rest of this function. Drop it so the GC can take it while we're
+    // still doing the (allocation-heavy) assignments below.
+    raw = null;
     let got=false;
     if(j.ecr){ ECR=j.ecr; got=true; }
     if(j.contracts){ CONTRACTS=j.contracts; got=true; }
@@ -19005,6 +19094,9 @@ function tsScrollerClaims(el, dir){
     host.classList.remove('ts-swipe-dragging');
     host.classList.remove('ts-swipe-committing');
     previewPhase=null;
+    // Cleared at the END of the gesture (not the start of the next touch): a preview is built
+    // from live projections, week-range filters and scoring settings, any of which may change
+    // between gestures, so one gesture is the only lifetime that's provably safe.
     previewCache={};
     if(anim){
       const t=top; const u=under;
@@ -19019,7 +19111,7 @@ function tsScrollerClaims(el, dir){
   };
 
   document.addEventListener('touchstart', e=>{
-    x0=y0=null; axis=null; dx=0; bar=null; host=null; tabs=null; cur=-1; previewPhase=null; previewCache={};
+    x0=y0=null; axis=null; dx=0; bar=null; host=null; tabs=null; cur=-1; previewPhase=null;
     if(e.touches.length!==1) return;
     // League-wide Advanced Metrics is a standalone page (like Full Rankings):
     // no horizontal phase-swipe navigation from this view.
@@ -19046,9 +19138,11 @@ function tsScrollerClaims(el, dir){
     if(cur<0) return;
     host=tsSwipeHost(b);
     if(!host || (e.target && !host.contains(e.target))) return;
-    // Pre-render only the immediate left/right neighbors for instant direction changes
-    // without precomputing the whole tab stack.
-    preloadAdjacentPreviews();
+    // NOTE: preloadAdjacentPreviews() deliberately does NOT run here. It renders two entire
+    // phase pages (renderTeamAdvanced + a rankings preview ≈ 12ms desktop, 10-60ms on a phone)
+    // and touchstart fires on every tap and every scroll-start — before we even know whether
+    // the gesture is horizontal. It now runs in touchmove, the moment axis==='x' is decided,
+    // which is ~10px of travel and still long before any preview becomes visible.
     x0=t.clientX; y0=t.clientY;
   }, {passive:true});
 
@@ -19063,6 +19157,11 @@ function tsScrollerClaims(el, dir){
       axis = (Math.abs(dx) > Math.abs(dy)*1.4) ? 'x' : 'y';
       if(axis==='x' && tsScrollerClaims(e.target, dx)) axis='y';   // a scroller owns it
       if(axis==='y'){ x0=null; return; }
+      // Horizontal intent confirmed — NOW pre-render the immediate left/right neighbours.
+      // setPreview() below only needs whichever one the finger is heading toward, but doing
+      // both here keeps a mid-gesture direction change instant, and this runs once per swipe
+      // instead of once per tap.
+      preloadAdjacentPreviews();
     }
     if(axis!=='x') return;
     // Ours now: stop the browser from scrolling / pull-to-refreshing underneath.

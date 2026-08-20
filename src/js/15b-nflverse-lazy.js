@@ -222,6 +222,15 @@ function decodeFantasy(c){
 // don't compress; CDNs compress at lighter levels). Falls back to the plain .json when the
 // .gz is missing (older deploys) or DecompressionStream is unavailable (older browsers) —
 // so this can never make loading WORSE, only smaller.
+//
+// Caching: these requests deliberately use the DEFAULT HTTP cache mode. They used to pass
+// `cache:'no-store'`, which forbids the browser from both reading AND writing the cache — so
+// every single page open re-downloaded the full ~1.5MB gzipped seed even though the host had
+// already sent a perfectly good ETag. Static hosts (GitHub Pages included) serve these with
+// ETag + Last-Modified, so 'default' gives a free cache hit inside the freshness window and a
+// ~200-byte conditional request (304) outside it. Freshness is still guaranteed: a rebuilt seed
+// has a new ETag, so the very next revalidation picks it up.
+const TC_SEED_FETCH_OPTS = {cache:'default'};
 function tcLatencyDebugEnabled(){
   // Always on in dev builds.
   try{ if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE) return true; }catch(_e){}
@@ -245,12 +254,13 @@ async function fetchSeedJson(url){
   try{
     if(typeof DecompressionStream==='function'){
       const t0 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
-      const r = await fetch(url + '.gz', {cache:'no-store'});
+      const r = await fetch(url + '.gz', TC_SEED_FETCH_OPTS);
       const t1 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
       if(r.ok && r.body){
-        const txt = await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).text();
+        let txt = await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).text();
         const t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
         const parsed = JSON.parse(txt);
+        txt = null;   // release the ~6MB source string before the caller starts decoding
         const t3 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
         tcLatencyLog(url, 'gz', t1 - t0, t2 - t1, t3 - t2, true);
         return parsed;
@@ -260,7 +270,7 @@ async function fetchSeedJson(url){
   }catch(e){ /* fall through to plain */ }
 
   const t0 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
-  const r = await fetch(url, {cache:'no-store'});
+  const r = await fetch(url, TC_SEED_FETCH_OPTS);
   const t1 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
   if(!r.ok){
     tcLatencyLog(url, 'json', t1 - t0, 0, 0, false);
@@ -269,9 +279,10 @@ async function fetchSeedJson(url){
   let parsed;
   let t2;
   if(typeof r.text==='function'){
-    const txt = await r.text();
+    let txt = await r.text();
     t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
     parsed = JSON.parse(txt);
+    txt = null;   // release the source string before the caller starts decoding
   }else if(typeof r.json==='function'){
     parsed = await r.json();
     t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
