@@ -33,11 +33,26 @@ jobs:
         run: |
           set -o pipefail
           rm -rf _site
-          mkdir -p _site/seeds
+          mkdir -p _site/seeds _site/images
           cp index.html _site/index.html
-          cp -R images _site/images
+          # Only the images the APP actually references. The rest of images/ is README
+          # screenshots (~2MB), which GitHub renders from the repo, not from Pages.
+          cp images/app-icon.png images/ktc.png _site/images/
           cp seeds/*.json.gz _site/seeds/
+          cp manifest.webmanifest _site/manifest.webmanifest
+          # Stamp the service worker's cache name with this commit so a deploy retires the old
+          # cache instead of serving yesterday's index.html forever.
+          sed "s/__BUILD_ID__/${GITHUB_SHA::12}/" sw.js > _site/sw.js
           touch _site/.nojekyll
+          du -sh _site
+
+      # Minify only the DEPLOYED copy. src/ and the committed index.html stay readable, so
+      # `python build.py --check` keeps verifying source parity; this just shrinks what the
+      # browser has to download, parse and compile. Never fails the deploy — see the script.
+      - name: Minify for delivery
+        run: |
+          set -o pipefail
+          python3 tools/minify_site.py _site/index.html
           du -sh _site
 
       - name: Configure Pages

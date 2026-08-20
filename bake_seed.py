@@ -314,7 +314,11 @@ def main():
             return {}
 
     seed_dir = os.path.dirname(os.path.abspath(args.seed))
-    nflverse_def_weekly = _decode_defweekly(_sidecar(os.path.join(seed_dir, "triplecrown_seed.def_weekly.json")))
+    # NOTE: embed these COMPACT, exactly as build_seed.py wrote them. They used to be expanded
+    # here in Python, which tripled the baked file (~50MB of JSON literals) and made every byte
+    # of it a permanently-retained top-level const. The app decodes them on first use instead
+    # (decodeAnySeed is a no-op on already-plain payloads, so either form still loads).
+    nflverse_def_weekly = _sidecar(os.path.join(seed_dir, "triplecrown_seed.def_weekly.json"))
     nflverse_ol_weekly = _sidecar(os.path.join(seed_dir, "triplecrown_seed.ol_weekly.json"))
     nflverse_adv_weekly = _sidecar(os.path.join(seed_dir, "triplecrown_seed.adv_weekly.json"))
     # playbook now ships as per-season sidecars (seeds/triplecrown_seed.coaching.<season>.json);
@@ -324,7 +328,7 @@ def main():
     for _p in _glob.glob(os.path.join(seed_dir, "triplecrown_seed.coaching.*.json")):
         _seas = os.path.basename(_p)[len("triplecrown_seed.coaching."):-len(".json")]
         if _seas.isdigit():
-            _blk = _decode_coaching(_sidecar(_p))
+            _blk = _sidecar(_p)   # compact on purpose — decoded lazily in the app
             if _blk:
                 nflverse_coaching[_seas] = _blk
     if not nflverse_coaching:

@@ -1,5 +1,15 @@
-const _RANKINGS_RENDER_CACHE_MAX = 8;
+// The rendered-HTML LRU is bounded by TOTAL SIZE, not entry count. Counting entries looks
+// safe until you notice how big one entry is: a full-width board measured ~1.4M chars, and V8
+// stores these two-byte, so eight of them was ~23MB on a phone / ~60MB on desktop — duplicating
+// what is already in the DOM, on exactly the devices most likely to discard the tab for it.
+// The cache key varies on sort key, direction, position filter, advanced flag, refinement,
+// three min-volume values, search query and scope, so a handful of taps used to fill all eight.
+// A byte budget self-adjusts instead: small phone-capped boards keep several, huge desktop
+// boards keep one or two.
+const _RANKINGS_RENDER_CACHE_MAX = 8;              // hard ceiling on entries
+const _RANKINGS_RENDER_CACHE_MAX_CHARS = 3000000;  // ~6MB of UTF-16, the real limit
 let _rankingsRenderCache = new Map();
+let _rankingsRenderCacheChars = 0;
 let _rankingsMobileAutoFullPass = false;
 let _rankingsMobileAutoToken = 0;
 let _rankingsPrewarmQueued = false;
@@ -13,16 +23,36 @@ function rankingsRenderCacheGet(key){
   return html;
 }
 
+function _rankingsRenderCacheEvictOldest(){
+  const oldest = _rankingsRenderCache.keys().next();
+  if(!oldest || oldest.done) return false;
+  const gone = _rankingsRenderCache.get(oldest.value);
+  _rankingsRenderCache.delete(oldest.value);
+  _rankingsRenderCacheChars -= (gone ? gone.length : 0);
+  if(_rankingsRenderCacheChars < 0) _rankingsRenderCacheChars = 0;
+  return true;
+}
+
 function rankingsRenderCacheSet(key, html){
   if(!key || !html) return;
-  if(_rankingsRenderCache.has(key)) _rankingsRenderCache.delete(key);
+  if(_rankingsRenderCache.has(key)){
+    const prev = _rankingsRenderCache.get(key);
+    _rankingsRenderCacheChars -= (prev ? prev.length : 0);
+    _rankingsRenderCache.delete(key);
+  }
+  // A single render larger than the whole budget is not worth caching at all — storing it
+  // would evict everything else and then sit there alone.
+  if(html.length > _RANKINGS_RENDER_CACHE_MAX_CHARS) return;
   _rankingsRenderCache.set(key, html);
-  while(_rankingsRenderCache.size > _RANKINGS_RENDER_CACHE_MAX){
-    const oldest = _rankingsRenderCache.keys().next();
-    if(oldest && !oldest.done) _rankingsRenderCache.delete(oldest.value);
-    else break;
+  _rankingsRenderCacheChars += html.length;
+  while(_rankingsRenderCache.size > _RANKINGS_RENDER_CACHE_MAX ||
+        (_rankingsRenderCacheChars > _RANKINGS_RENDER_CACHE_MAX_CHARS && _rankingsRenderCache.size > 1)){
+    if(!_rankingsRenderCacheEvictOldest()) break;
   }
 }
+
+// Bytes currently held, for tests and the dev console.
+function rankingsRenderCacheBytes(){ return _rankingsRenderCacheChars; }
 
 function rankHeadshotSlotHtml(p){
   const pid = p && p.player_id!=null ? String(p.player_id) : '';
@@ -64,6 +94,7 @@ function hydrateRankingsHeadshots(){
 
 function invalidateRankingsRenderCache(){
   _rankingsRenderCache.clear();
+  _rankingsRenderCacheChars = 0;   // keep the byte accounting in step with the map
 }
 
 function prewarmRankingsFromSeed(){
@@ -190,6 +221,20 @@ function renderRankings(){
     });
   }
   const fullViewCount = view.length;
+  // One pass to derive each player's value for the active advanced column, so the comparator
+  // below is a Map lookup instead of a full sumerValue() derivation per comparison (which,
+  // at n log n comparisons, means each player's value was recomputed a dozen-plus times).
+  const _sumerSortKeys = new Map();
+  if(rankSortKey.startsWith('sumer:')){
+    const _lbl = rankSortKey.slice(6);
+    view.forEach(p=>_sumerSortKeys.set(p, sumerValue(p, _lbl)));
+  }
+  const _sumerSortKeyFor = (p, label)=>{
+    if(_sumerSortKeys.has(p)) return _sumerSortKeys.get(p);
+    const v = sumerValue(p, label);   // player not in the prepass (shouldn't happen) — derive
+    _sumerSortKeys.set(p, v);
+    return v;
+  };
   view=[...view].sort((a,b)=>{
     if(rankSortKey==='ecr'){
       // Unranked players sort to the bottom regardless of direction.
@@ -208,9 +253,13 @@ function renderRankings(){
       return (av-bv)*(rankSortDir<0?1:-1);
     }
     // SumerSports advanced columns (key "sumer:<label>"): players missing that stat sink.
+    // sumerValue() is not cheap — it allocates a table object under a refinement, normalises
+    // the player name with three regexes, and linear-scans the column list — so calling it
+    // from inside the comparator re-derived both operands on every comparison. The values are
+    // precomputed into _sumerSortKeys before the sort (see below) and read back here.
     if(rankSortKey.startsWith('sumer:')){
       const label=rankSortKey.slice(6);
-      const av=sumerValue(a,label), bv=sumerValue(b,label);
+      const av=_sumerSortKeyFor(a,label), bv=_sumerSortKeyFor(b,label);
       const an=(typeof av==='number'), bn=(typeof bv==='number');
       if(!an && !bn) return b.fpts-a.fpts;
       if(!an) return 1;
@@ -292,16 +341,41 @@ function renderRankings(){
     ? `${PROJ_SEASON} projections · ${teamScoped?`${currentTeam} rankings`:'full rankings'}`
     : `${teamScoped?`${currentTeam} rankings`:'full rankings'} · ${activeSeason}`;
   const rankNoteContext = `${rankBaseContext}${advActive?` · adv metrics${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}`:''}`;
-  const rankValueHtml = (display, p, label, statKey, source)=> noteWrapHtml(display, {
+  // Per-cell note tags carry ONLY what differs cell to cell. Everything constant for the row
+  // — context string, nav payload, player identity, team — is emitted once on the <tr> by
+  // rankNoteScopeAttrs() below and inherited at click time (see noteInfoFromElement).
+  //
+  // Measured on a phone-width board before this split: data-note-* attributes were 848KB,
+  // 57.9% of the table's entire HTML, with the nav JSON re-serialised once per tagged cell
+  // (~2,000 times) for ~32 distinct values.
+  // `value` is omitted on purpose: it is exactly this cell's rendered text, which
+  // noteInfoFromElement reads back from the DOM. `source` is constant for the whole render
+  // and rides on the row. That leaves two genuinely per-cell attributes.
+  const rankValueHtml = (display, p, label, statKey, source)=> noteCellHtml(display, {
     label,
-    value: typeof display==='string' ? display.replace(/<[^>]+>/g,'').trim() : display,
-    source,
     statKey,
+  }, 'note-tag-hit');
+  // Built once per row. The nav object is identical for every cell in a row and takes only a
+  // handful of distinct values across the whole table, so memoise on the one field that varies.
+  const _navByTeam = new Map();
+  const rankNavFor = (team)=>{
+    let n = _navByTeam.get(team);
+    if(!n){
+      n = { type:'rankings', season:String(activeSeason), scope: teamScoped?'team':'all',
+            team: teamScoped?currentTeam:team, advanced: advActive,
+            refinement: sumerRefinement||'', posFilter: rankPosFilter };
+      _navByTeam.set(team, n);
+    }
+    return n;
+  };
+  const rankNoteSource = advActive ? 'rankings_advanced' : 'rankings';
+  const rankNoteScopeAttrs = (p)=> noteScopeAttrs({
     context: rankNoteContext,
+    source: rankNoteSource,
     player: p,
     team: p.team,
-    nav: { type:'rankings', season:String(activeSeason), scope: teamScoped?'team':'all', team: teamScoped?currentTeam:p.team, advanced: advActive, refinement: sumerRefinement||'', posFilter: rankPosFilter },
-  }, 'note-tag-hit');
+    nav: rankNavFor(p.team),
+  });
   const statCell = (v, p, label, statKey)=>{
     if(!(v && v>0)) return '';
     const txt = (+v)%1!==0?(+v).toFixed(1):(+v).toLocaleString();
@@ -357,7 +431,7 @@ function renderRankings(){
     const volAttrs = advActive
       ? ` data-rank-sumer-bucket="${escAttr(volBucket)}" data-rank-sumer-vol="${(volVal!=null && Number.isFinite(+volVal)) ? escAttr(String(+volVal)) : ''}"`
       : '';
-    rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}"${volAttrs}>
+    rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}"${volAttrs}${rankNoteScopeAttrs(p)}>
     <td class="c-ecr">${ecrTxt!=='—'?rankValueHtml(ecrTxt, p, 'Expert Consensus Rank', 'ecr', 'rankings'):ecrTxt}</td>
     <td class="c-tier">${tier!=null?rankValueHtml(`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`, p, 'Tier', 'ecr_tier', 'rankings'):''}</td>
     <td class="fpts">${rankValueHtml(fptsTxt, p, 'Fantasy Points', 'fpts', 'rankings')}</td>

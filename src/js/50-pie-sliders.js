@@ -2,6 +2,15 @@
 // Pie charts
 // ─────────────────────────────────────────────────────────────────────────────
 function initPie(team,kind){
+  // Chart.js is fetched on first use rather than blocking <head> (04-script-loader.js).
+  // The very first pie on a cold load schedules the fetch and re-enters here when the
+  // library lands; every call after that is synchronous. If the fetch fails (offline,
+  // or a baked file with no network) we simply leave the canvas empty — the numbers
+  // beside it are the actual content and they render regardless.
+  if(typeof Chart==='undefined'){
+    tcEnsureChartJs().then(ok=>{ if(ok) initPie(team,kind); }).catch(()=>{});
+    return;
+  }
   const state=userProj[team];
   if(kind==='pass'){
     // Receptions / Rec-Yards tabs: a separate canvas. Build pie data in ORIGINAL player

@@ -46,6 +46,42 @@ function noteWrapHtml(innerHtml, meta, cls){
   return `<span class="${cls||'note-tag-hit'}"${noteTagAttrs(meta)}>${innerHtml}</span>`;
 }
 
+// Row-level half of the split described on noteInfoFromElement: emit the fields that are
+// constant across a row once, on the row element. Pair with noteTagAttrsCell() on each cell.
+function noteScopeAttrs(meta){
+  if(!meta) return '';
+  const attrs = [['data-note-scope', '1']];
+  const put = (k, v)=>{ if(v!=null && v!=='') attrs.push([k, String(v)]); };
+  put('data-note-context', meta.context || '');
+  put('data-note-source', meta.source || '');
+  put('data-note-team', meta.team || '');
+  put('data-note-relevance', Array.isArray(meta.relevance) ? meta.relevance.join(',') : (meta.relevance || ''));
+  if(meta.nav) put('data-note-nav', JSON.stringify(meta.nav));
+  const p = meta.player || null;
+  if(p){
+    put('data-note-player-id', p.player_id || p.pid || p.id || '');
+    put('data-note-player-name', p.name || '');
+    put('data-note-player-pos', p.pos || '');
+    put('data-note-player-team', p.team || meta.team || '');
+  }
+  return attrs.map(([k,v])=>` ${k}="${escAttr(v)}"`).join('');
+}
+
+// Per-cell half: only what actually varies between cells in the same row.
+function noteCellHtml(innerHtml, meta, cls){
+  if(!meta) return innerHtml;
+  const attrs = [['data-noteable', '1']];
+  const put = (k, v)=>{ if(v!=null && v!=='') attrs.push([k, String(v)]); };
+  put('data-note-label', meta.label || 'Stat');
+  put('data-note-value', meta.value);
+  // No 'app' default here: an unset source must fall through to the row scope, and a default
+  // written onto the cell would shadow it. The default is applied when reading instead.
+  put('data-note-source', meta.source);
+  put('data-note-stat-key', meta.statKey || '');
+  const a = attrs.map(([k,v])=>` ${k}="${escAttr(v)}"`).join('');
+  return `<span class="${cls||'note-tag-hit'}"${a}>${innerHtml}</span>`;
+}
+
 function noteDisplayValue(value){
   if(value==null || value==='') return '';
   return String(value);
@@ -164,32 +200,69 @@ function notePickerTargets(info){
   return [];
 }
 
+// Note metadata may be split across two elements: the per-cell hit target carries what
+// actually differs cell to cell (label, value, source, stat key), while whatever is constant
+// for a whole row — player identity, team, context string, nav payload — can live once on an
+// ancestor marked [data-note-scope].
+//
+// This matters at scale. The rankings board wrote all ~11 fields onto EVERY tagged cell:
+// measured on a phone-width board, data-note-* attributes were 848KB, 58% of the entire
+// table's HTML, and the nav JSON alone was re-serialised ~2,000 times for ~32 distinct
+// values. Hoisting the constant half to the <tr> is invisible to callers here: an element's
+// own dataset always wins, and a caller that still puts everything on one element (every
+// other tagging site in the app) finds no scope ancestor and behaves exactly as before.
+function _noteScopeDataset(el){
+  try{
+    if(!el.closest) return null;
+    const scope = el.closest('[data-note-scope]');
+    return (scope && scope!==el && scope.dataset) ? scope.dataset : null;
+  }catch(e){ return null; }
+}
+
 function noteInfoFromElement(el){
   if(!el || !el.dataset) return null;
-  const ds = el.dataset;
-  const info = {
-    label: ds.noteLabel || 'Stat',
-    value: ds.noteValue || '',
-    source: ds.noteSource || 'app',
-    context: ds.noteContext || '',
-    statKey: ds.noteStatKey || '',
-    team: ds.noteTeam || '',
-    relevance: ds.noteRelevance || '',
+  const own = el.dataset;
+  const up = _noteScopeDataset(el);
+  // own value wins; fall back to the row-level scope; then empty.
+  const ds = (k)=>{
+    const v = own[k];
+    if(v!=null && v!=='') return v;
+    const u = up ? up[k] : null;
+    return (u!=null && u!=='') ? u : '';
   };
-  if(ds.notePlayerId || ds.notePlayerName){
+  // A tag's value is, by definition, the number the cell is displaying. Rather than repeat it
+  // in an attribute on every tagged cell, fall back to the element's own text when the
+  // attribute is absent — identical string, ~0 bytes of HTML.
+  let val = own.noteValue;
+  if(val==null || val===''){
+    try{ val = (el.textContent||'').trim(); }catch(e){ val=''; }
+  }
+  const info = {
+    label: ds('noteLabel') || 'Stat',
+    value: val || '',
+    source: ds('noteSource') || 'app',
+    context: ds('noteContext') || '',
+    statKey: ds('noteStatKey') || '',
+    team: ds('noteTeam') || '',
+    relevance: ds('noteRelevance') || '',
+  };
+  const pid = ds('notePlayerId'), pname = ds('notePlayerName');
+  if(pid || pname){
     info.player = {
-      player_id: ds.notePlayerId || '',
-      name: ds.notePlayerName || '',
-      pos: ds.notePlayerPos || '',
-      team: ds.notePlayerTeam || ds.noteTeam || '',
+      player_id: pid || '',
+      name: pname || '',
+      pos: ds('notePlayerPos') || '',
+      team: ds('notePlayerTeam') || info.team || '',
     };
   }
-  if(ds.notePlayers){
-    try{ info.players = JSON.parse(ds.notePlayers); }catch(e){}
+  const players = ds('notePlayers');
+  if(players){
+    try{ info.players = JSON.parse(players); }catch(e){}
   }
-    if(ds.noteNav){
-      try{ info.nav = JSON.parse(ds.noteNav); }catch(e){}
-    }
+  const nav = ds('noteNav');
+  if(nav){
+    try{ info.nav = JSON.parse(nav); }catch(e){}
+  }
   return info;
 }
 

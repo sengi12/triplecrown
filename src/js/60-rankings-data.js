@@ -208,7 +208,27 @@ function fmtSumer(v, isPct){
 // Which minimum-volume bucket a position falls in (WR and TE share the "routes" bucket).
 function sumerBucket(pos){ return pos==='QB' ? 'QB' : pos==='RB' ? 'RB' : 'WRTE'; }
 // The Sumer column that represents "volume" for a position — the one the minimum filter reads.
+// Memoised: the answer depends only on (position, active season table, refinement), yet this
+// was called twice per rendered row — ~1,100 times for one Adv. Metrics render — and each call
+// copied the column array and ran up to six regexes over it.
+// Keyed on the nflverse payload by OBJECT IDENTITY (same trick advSumerData() uses) plus the
+// active season and refinement — all three are plain comparisons, no allocation per call.
+let _sumerVolColMemo = {ref:undefined, season:undefined, refine:undefined, map:null};
 function sumerVolCol(pos){
+  const ref    = (typeof NFLVERSE!=='undefined') ? NFLVERSE : null;
+  const season = (typeof activeSeason!=='undefined') ? activeSeason : '';
+  const refine = (typeof sumerRefinement!=='undefined') ? (sumerRefinement||'') : '';
+  const m = _sumerVolColMemo;
+  if(m.ref!==ref || m.season!==season || m.refine!==refine || !m.map){
+    _sumerVolColMemo = {ref, season, refine, map:new Map()};
+  }
+  const cache = _sumerVolColMemo.map;
+  if(cache.has(pos)) return cache.get(pos);
+  const v = _sumerVolColCompute(pos);
+  cache.set(pos, v);
+  return v;
+}
+function _sumerVolColCompute(pos){
   const t=sumerTableFor(pos);
   const cols=(t && Array.isArray(t.columns)) ? t.columns.slice() : [];
   const pick=(rx)=>cols.find(c=>rx.test(String(c||'').toLowerCase()) && !/\//.test(String(c||''))) || null;
@@ -365,6 +385,32 @@ function buildPlayerList(){
   }
 
   const list=[];
+  // Index of list position by `team|name`. The receiving and rushing passes below need to know
+  // whether a player is already in the list, and used to answer that with list.findIndex() —
+  // a linear scan of a list that grows as they run, i.e. roughly n^2 string comparisons over
+  // ~500 shares. It is survivable at today's ~560 players and gets worse as the pool grows
+  // (mergeRosterPlayers already pushes it higher).
+  const listIdx = new Map();
+  const _lk = (team, name)=>team+'|'+name;
+  const pushPlayer = (obj)=>{ listIdx.set(_lk(obj.team, obj.name), list.length); list.push(obj); };
+  const findPlayer = (team, name)=>{ const i=listIdx.get(_lk(team,name)); return i==null ? -1 : i; };
+  // Per-team lookup of a player's base seed row, built once per team instead of re-spreading
+  // four position arrays into a fresh array on every single lookup.
+  const _baseByTeam = new Map();
+  const teamBaseIndex = (team)=>{
+    let idx = _baseByTeam.get(team);
+    if(!idx){
+      idx = {byName:new Map(), byId:new Map()};
+      ['QB','RB','WR','TE'].forEach(pos=>{
+        (getBase(team,pos)||[]).forEach(x=>{
+          if(x && x.name!=null && !idx.byName.has(x.name)) idx.byName.set(x.name, x);
+          if(x && x.player_id!=null && !idx.byId.has(x.player_id)) idx.byId.set(x.player_id, x);
+        });
+      });
+      _baseByTeam.set(team, idx);
+    }
+    return idx;
+  };
   // Auto-populate: make sure every team with seed data is initialized so all players
   // appear in the rankings without the user opening each team first.
   TEAMS.forEach(team=>{
@@ -381,7 +427,7 @@ function buildPlayerList(){
     const totalTgts=teamTargetPool(state);
     const totalPassTDs=teamPassTDs(state);
     state.qbs.forEach(qb=>{
-      list.push({name:qb.name,team,pos:'QB',headshot:qb.headshot,slug:qb.slug,player_id:qb.player_id||null,
+      pushPlayer({name:qb.name,team,pos:'QB',headshot:qb.headshot,slug:qb.slug,player_id:qb.player_id||null,
         passing_yards:qb.passing_yards,passing_tds:qb.passing_tds,passing_attempts:qb.passing_attempts,
         passing_completions:qb.passing_completions,interceptions_thrown:qb.interceptions_thrown,
         rushing_yards:qb.qb_rush_yards,rushing_tds:qb.qb_rush_tds,rushing_attempts:qb.qb_rush_attempts,
@@ -393,11 +439,11 @@ function buildPlayerList(){
         const projRec=Math.round(projTgts*(p.catch_rate||0.65));
         const projYds=Math.round(projTgts*(p.ypt||9));
         const projTDs=parseFloat((p.td_share*totalPassTDs).toFixed(1));
-        const bp=[...getBase(team,'WR'),...getBase(team,'TE'),...getBase(team,'RB')].find(x=>x.name===p.name)||{};
-        const ex=list.findIndex(x=>x.name===p.name&&x.team===team);
+        const bp=teamBaseIndex(team).byName.get(p.name)||{};
+        const ex=findPlayer(team,p.name);
         if(ex>=0){list[ex].receiving_yards=projYds;list[ex].receiving_tds=projTDs;list[ex].receptions=projRec;list[ex].receiving_targets=projTgts;
           if(p.player_id&&!list[ex].player_id)list[ex].player_id=p.player_id;}
-        else list.push({name:p.name,team,pos:p.pos,headshot:p.headshot,slug:p.slug,player_id:p.player_id||null,
+        else pushPlayer({name:p.name,team,pos:p.pos,headshot:p.headshot,slug:p.slug,player_id:p.player_id||null,
           passing_yards:0,passing_tds:0,passing_attempts:0,passing_completions:0,interceptions_thrown:0,
           rushing_yards:bp.rushing_yards||0,rushing_tds:0,rushing_attempts:bp.rushing_attempts||0,
           receiving_yards:projYds,receiving_tds:projTDs,receptions:projRec,receiving_targets:projTgts,fumbles_lost:0});
@@ -410,11 +456,11 @@ function buildPlayerList(){
         const att=Math.round(p.share*r.total_attempts);
         const yds=Math.round(att*(p.ypc||r.ypa||4));
         const tds=parseFloat((p.td_share*totalRushTDs).toFixed(1));
-        const ex=list.findIndex(x=>x.name===p.name&&x.team===team);
+        const ex=findPlayer(team,p.name);
         if(ex>=0){list[ex].rushing_yards=yds;list[ex].rushing_tds=tds;list[ex].rushing_attempts=att;
           if(p.player_id&&!list[ex].player_id)list[ex].player_id=p.player_id;}
         else{
-          list.push({name:p.name,team,pos:'RB',headshot:p.headshot,slug:p.slug,player_id:p.player_id||null,
+          pushPlayer({name:p.name,team,pos:'RB',headshot:p.headshot,slug:p.slug,player_id:p.player_id||null,
             passing_yards:0,passing_tds:0,passing_attempts:0,passing_completions:0,interceptions_thrown:0,
             rushing_yards:yds,rushing_tds:tds,rushing_attempts:att,
             receiving_yards:0,receiving_tds:0,receptions:0,receiving_targets:0,fumbles_lost:0});}
@@ -428,7 +474,7 @@ function buildPlayerList(){
     p.ecr_tier=ecrTierFor(p);
     p.ypc = (p.rushing_attempts>0) ? p.rushing_yards/p.rushing_attempts : 0;
     // Attach ADP (all formats) from the base seed entry so VONA can model who others draft.
-    const be = basePlayerEntry(p.team, p.pos, p.name, p.player_id);
+    const be = basePlayerEntryIdx(teamBaseIndex(p.team), p.name, p.player_id);
     p.adp = be && be.adp!=null ? be.adp : 999;
     p.adp_ppr = be && be.adp_ppr!=null ? be.adp_ppr : 999;
     p.adp_half_ppr = be && be.adp_half_ppr!=null ? be.adp_half_ppr : 999;
@@ -451,10 +497,17 @@ function buildPlayerList(){
   return list;
 }
 // Find a player's base seed entry (for ADP etc.) by id first, then name+team.
+// Kept for any external caller; buildPlayerList uses the prebuilt per-team index instead of
+// re-spreading four arrays per player.
 function basePlayerEntry(team, pos, name, pid){
   const pool=[...getBase(team,'QB'),...getBase(team,'RB'),...getBase(team,'WR'),...getBase(team,'TE')];
   if(pid){ const byId=pool.find(x=>x.player_id===pid); if(byId) return byId; }
   return pool.find(x=>x.name===name) || null;
+}
+function basePlayerEntryIdx(idx, name, pid){
+  if(!idx) return null;
+  if(pid!=null){ const byId=idx.byId.get(pid); if(byId) return byId; }
+  return idx.byName.get(name) || null;
 }
 // Return the ADP value appropriate to the active scoring format (used for VONA's "who will
 // be drafted before my next pick" model). Superflex/2QB formats boost QBs, so use adp_2qb;

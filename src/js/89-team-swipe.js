@@ -62,13 +62,19 @@ function _thsPlacePair(host, topX, dir){
   under.style.transform = `translateX(${(topX + (dir<0 ? w : -w)).toFixed(1)}px)`;
 }
 
+// Team record for the swipe-preview header. This used to call calcTeamWinsLosses(), which
+// does not exist anywhere in the codebase — the typeof guard meant it failed silently, so the
+// preview header simply never showed a record while the real header (30-sidebar.js:218) did.
+// Use the same source the real header uses: the ESPN record cache, reference seasons only.
 function _thsReco(team){
   try{
-    if(typeof calcTeamWinsLosses!=='function') return '';
-    const wl=calcTeamWinsLosses(team);
-    if(!wl || typeof wl.wins!=='number' || typeof wl.losses!=='number') return '';
-    const ties = Number(wl.ties)||0;
-    return ties ? `${wl.wins}-${wl.losses}-${ties}` : `${wl.wins}-${wl.losses}`;
+    if(typeof activeSeason==='undefined' || activeSeason==='proj') return '';   // no record for a projection
+    if(typeof espnRecordCache==='undefined' || !espnRecordCache) return '';
+    const key = `${activeSeason}:${team}`;
+    // Warm the cache the same way the real header does, so swiping to a team you haven't
+    // opened yet fills in on the next render instead of staying blank forever.
+    if(espnRecordCache[key]==null && typeof fetchTeamRecord==='function') fetchTeamRecord(activeSeason, team);
+    return espnRecordCache[key] || '';
   }catch(e){
     return '';
   }

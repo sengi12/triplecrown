@@ -277,7 +277,15 @@ function assignQBSnapShares(qbs){
 // (file:// / offline), it silently keeps the baked seed. It NEVER touches the user's edited
 // working projections or historical seasons — only the read-only SEED baseline's ADP, plus
 // projection stats for players the user hasn't edited.
-let _bgAdpRefreshed = false;
+// `var`, not `let`: boot() lives in 85-import-export.js, which is concatenated BEFORE this
+// file, and its embedded-seed path calls backgroundRefreshADP() synchronously. The function
+// declaration hoists fine, but a `let` here would still be in the temporal dead zone at that
+// moment — so on a baked/offline file the very first call threw
+// "Cannot access '_bgAdpRefreshed' before initialization" and the background ADP refresh
+// never ran. `var` hoists as undefined, which is falsy, which is exactly the initial state.
+// (The hosted path got away with it only because it calls this from an async continuation,
+// by which time the whole bundle has finished executing.)
+var _bgAdpRefreshed = false;
 async function backgroundRefreshADP(){
   if(_bgAdpRefreshed) return;
   try{

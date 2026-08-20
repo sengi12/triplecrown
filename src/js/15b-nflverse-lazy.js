@@ -257,12 +257,25 @@ async function fetchSeedJson(url){
       const r = await fetch(url + '.gz', TC_SEED_FETCH_OPTS);
       const t1 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
       if(r.ok && r.body){
-        let txt = await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).text();
+        // Who unzipped it? GitHub Pages serves a .gz as an opaque `application/gzip` body, so
+        // WE have to inflate it. Other hosts (Vercel, Cloudflare, nginx with gzip_static) send
+        // `Content-Encoding: gzip` instead, which makes the BROWSER inflate it transparently —
+        // and piping that already-plain text through DecompressionStream throws, dropping us
+        // into the plain-.json fallback. On a deploy that only ships .gz sidecars that fallback
+        // 404s, so the entire seed (ECR, contracts, Sharp, nflverse, projections) silently
+        // vanished and the app looked like it just couldn't reach Sleeper. Check the header.
+        let enc='';
+        try{ enc = String((r.headers && r.headers.get && r.headers.get('content-encoding')) || '').toLowerCase(); }
+        catch(_e){ enc=''; }
+        const alreadyDecoded = enc.indexOf('gzip')>=0 || enc.indexOf('deflate')>=0 || enc.indexOf('br')>=0;
+        let txt = alreadyDecoded
+          ? await r.text()
+          : await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).text();
         const t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
         const parsed = JSON.parse(txt);
         txt = null;   // release the ~6MB source string before the caller starts decoding
         const t3 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
-        tcLatencyLog(url, 'gz', t1 - t0, t2 - t1, t3 - t2, true);
+        tcLatencyLog(url, alreadyDecoded?'gz(host-decoded)':'gz', t1 - t0, t2 - t1, t3 - t2, true);
         return parsed;
       }
       tcLatencyLog(url, 'gz', t1 - t0, 0, 0, false);
@@ -337,9 +350,33 @@ function resetNflverseLazy(){
 
 // Fetch a sidecar section on demand and merge it in. Returns a promise resolving to whether
 // the data is now available. Never throws (file:// / missing file just resolves false).
+// A baked/offline file embeds the sidecars as compact consts (bake_seed.py). Decode the one
+// section being asked for rather than all of them at parse time — same data, but the ~12MB
+// def_weekly expansion only happens if a defensive card is actually opened.
+function _embeddedSection(section){
+  try{
+    if(section==='def_weekly' && typeof SEED_NFLVERSE_DEF_WEEKLY!=='undefined') return SEED_NFLVERSE_DEF_WEEKLY;
+    if(section==='ol_weekly'  && typeof SEED_NFLVERSE_OL_WEEKLY!=='undefined')  return SEED_NFLVERSE_OL_WEEKLY;
+    if(section==='adv_weekly' && typeof SEED_NFLVERSE_ADV_WEEKLY!=='undefined') return SEED_NFLVERSE_ADV_WEEKLY;
+  }catch(e){}
+  return null;
+}
+
 function ensureNflverseSection(section){
   if(nflverseSectionReady(section)) return Promise.resolve(true);
   if(_nflverseLazyPromise[section]) return _nflverseLazyPromise[section];
+  // Offline/baked: the payload is already in memory, just still compact. No fetch needed.
+  const embedded = _embeddedSection(section);
+  if(embedded && typeof embedded==='object' && Object.keys(embedded).length){
+    try{
+      const data = decodeAnySeed(embedded);
+      if(data && Object.keys(data).length){
+        mergeNflverseSection(section, data);
+        _nflverseLazyLoaded[section] = true;
+        return Promise.resolve(true);
+      }
+    }catch(e){ /* fall through to the network path */ }
+  }
   const url = _NFLVERSE_SIDECAR_URL[section];
   _nflverseLazyPromise[section] = (async()=>{
     try{
@@ -361,6 +398,45 @@ function ensureNflverseSection(section){
 // so the typical first open downloads ~1 season instead of the whole multi-season block.
 let _coachingSeasonLoaded = {};
 let _coachingSeasonPromise = {};
+// Seasons whose coaching_scheme block was FETCHED at runtime, newest use last. Each decoded
+// season measures ~15MB of heap and the scheme modal shows exactly one at a time, so without
+// eviction browsing all five permanently added ~70MB — on the phones least able to spare it,
+// and precisely the retention that gets a backgrounded tab discarded. Baked/embedded seasons
+// are never recorded here, so the offline copy keeps everything it shipped with.
+const _COACHING_KEEP = 2;
+let _coachingLru = [];
+
+function _coachingTouch(season){
+  season = String(season);
+  const i = _coachingLru.indexOf(season);
+  if(i>=0) _coachingLru.splice(i,1);
+  _coachingLru.push(season);
+  while(_coachingLru.length > _COACHING_KEEP){
+    const drop = _coachingLru.shift();
+    _coachingReleaseSeason(drop);
+  }
+}
+
+function _coachingReleaseSeason(season){
+  season = String(season);
+  try{
+    if(typeof NFLVERSE==='object' && NFLVERSE && NFLVERSE[season] && NFLVERSE[season].coaching_scheme){
+      delete NFLVERSE[season].coaching_scheme;
+    }
+  }catch(e){}
+  delete _coachingSeasonLoaded[season];
+  delete _coachingSeasonPromise[season];   // so a later visit re-fetches (and re-caches over HTTP)
+}
+
+// Drop everything but the most recent season when the tab goes to the background. That is the
+// moment right before a mobile browser decides whether to kill us, so it is the cheapest
+// possible time to give memory back.
+if(typeof document!=='undefined' && document.addEventListener){
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState!=='hidden') return;
+    while(_coachingLru.length > 1) _coachingReleaseSeason(_coachingLru.shift());
+  });
+}
 
 function coachingSeasonReady(season){
   season = String(season);
@@ -370,8 +446,26 @@ function coachingSeasonReady(season){
 
 function ensureNflverseCoachingSeason(season){
   season = String(season);
-  if(coachingSeasonReady(season)) return Promise.resolve(true);
+  if(coachingSeasonReady(season)){
+    if(_coachingSeasonLoaded[season]) _coachingTouch(season);   // re-viewing keeps it alive
+    return Promise.resolve(true);
+  }
   if(_coachingSeasonPromise[season]) return _coachingSeasonPromise[season];
+  // Offline/baked: this season is embedded (compact) — decode just this one.
+  try{
+    const rawCs = (typeof SEED_NFLVERSE_COACHING!=='undefined') ? SEED_NFLVERSE_COACHING : null;
+    const blk = (rawCs && typeof rawCs==='object') ? rawCs[season] : null;
+    if(blk){
+      const dec = decodeAnySeed(blk);
+      if(dec && typeof dec==='object' && Object.keys(dec).length &&
+         typeof NFLVERSE==='object' && NFLVERSE){
+        (NFLVERSE[season] = NFLVERSE[season] || {}).coaching_scheme = dec;
+        _coachingSeasonLoaded[season] = true;
+        _coachingTouch(season);
+        return Promise.resolve(true);
+      }
+    }
+  }catch(e){ /* fall through to the network path */ }
   _coachingSeasonPromise[season] = (async()=>{
     try{
       const raw = await fetchSeedJson(`seeds/triplecrown_seed.coaching.${season}.json`);
@@ -380,6 +474,7 @@ function ensureNflverseCoachingSeason(season){
       if(data && typeof data==='object' && typeof NFLVERSE==='object' && NFLVERSE){
         (NFLVERSE[season] = NFLVERSE[season] || {}).coaching_scheme = data;
         _coachingSeasonLoaded[season] = true;
+        _coachingTouch(season);   // bounded: evicts the least-recently-viewed season
         return true;
       }
       return false;
@@ -388,25 +483,19 @@ function ensureNflverseCoachingSeason(season){
   return _coachingSeasonPromise[season];
 }
 
-// Merge any embedded sidecars (baked/offline path) into NFLVERSE once at load.
+// Merge the SMALL embedded sidecars (baked/offline path) into NFLVERSE once at load.
+//
+// def_weekly and coaching_scheme are deliberately NOT merged here. They are the two heavy
+// blocks — decoded, they measure ~12MB and ~15MB-per-season respectively — and expanding all
+// of them at script-parse time is what made a baked phone file retain well over a hundred MB
+// before the user had opened anything. Both now decode on first use via ensureNflverseSection()
+// / ensureNflverseCoachingSeason(), which check the embedded consts before any network call,
+// so the offline file still works with no network — it just doesn't pay for what nobody opens.
 (function(){
   try{
-    const dw = decodeAnySeed((typeof SEED_NFLVERSE_DEF_WEEKLY!=='undefined') ? SEED_NFLVERSE_DEF_WEEKLY : null);
     const ow = decodeAnySeed((typeof SEED_NFLVERSE_OL_WEEKLY!=='undefined') ? SEED_NFLVERSE_OL_WEEKLY : null);
     const aw = decodeAnySeed((typeof SEED_NFLVERSE_ADV_WEEKLY!=='undefined') ? SEED_NFLVERSE_ADV_WEEKLY : null);
-    // SEED_NFLVERSE_COACHING is embedded as {season: payload}. Each season payload may itself
-    // be compact-coded, so decode per season before merging into NFLVERSE.
-    const rawCs = (typeof SEED_NFLVERSE_COACHING!=='undefined') ? SEED_NFLVERSE_COACHING : null;
-    const cs = {};
-    if(rawCs && typeof rawCs==='object'){
-      for(const season of Object.keys(rawCs)){
-        const dec = decodeAnySeed(rawCs[season]);
-        if(dec && typeof dec==='object' && Object.keys(dec).length) cs[season] = dec;
-      }
-    }
-    if(dw && Object.keys(dw).length){ mergeNflverseSection('def_weekly', dw); _nflverseLazyLoaded.def_weekly = true; }
     if(ow && Object.keys(ow).length){ mergeNflverseSection('ol_weekly', ow); _nflverseLazyLoaded.ol_weekly = true; }
     if(aw && Object.keys(aw).length){ mergeNflverseSection('adv_weekly', aw); _nflverseLazyLoaded.adv_weekly = true; }
-    if(cs && Object.keys(cs).length){ mergeNflverseSection('coaching_scheme', cs); _nflverseLazyLoaded.coaching_scheme = true; }
   }catch(e){ /* no embedded sidecars — hosted lazy path will fetch on demand */ }
 })();

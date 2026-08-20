@@ -4,10 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TripleCrown — Projection Builder</title>
-<link rel="icon" type="image/svg+xml" href="images/app-icon.png">
-<link rel="shortcut icon" type="image/svg+xml" href="images/app-icon.png">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<link rel="icon" type="image/png" href="images/app-icon.png">
+<link rel="apple-touch-icon" href="images/app-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0d1117">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
 
 :root{
@@ -2524,6 +2526,90 @@ const TC_ICON = (() => {
   return fn;
 })();
 // ═════════════════════════════════════════════════════════════════════════════
+// Lazy third-party script loading
+//
+// Chart.js and the Supabase SDK used to sit in the document head as ordinary blocking
+// script-src tags. That stopped HTML parsing — before the browser had even
+// reached the ~1.3MB inline app script — while it did DNS + TLS + download
+// against two separate third-party origins. Roughly 190KB gzipped on the
+// critical path of every cold load, on a phone, before a single pixel.
+//
+// Neither is needed to boot:
+//   • Chart.js draws exactly one doughnut (mkDoughnut, 50-pie-sliders.js) and is
+//     only reachable once you open a team's Passing/Rushing tab. Every other
+//     chart in the app — passing charts, route trees, rushing fans, the SOS arc —
+//     is hand-rolled SVG/DOM with no library behind it.
+//   • The Supabase SDK is only reachable if you sign in. Signed-out users (and
+//     any offline/baked copy) never touch it.
+//
+// So both are fetched on first use instead. Each URL is loaded at most once, and
+// the promise is cached so concurrent callers share one request.
+// ═════════════════════════════════════════════════════════════════════════════
+const TC_CHARTJS_SRC  = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js';
+const TC_SUPABASE_SDK_SRC = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+
+const _tcScriptPromises = {};
+function tcLoadScriptOnce(url){
+  if(_tcScriptPromises[url]) return _tcScriptPromises[url];
+  _tcScriptPromises[url] = new Promise((resolve, reject)=>{
+    if(typeof document==='undefined' || !document.createElement){
+      reject(new Error('no document')); return;
+    }
+    let el;
+    try{ el = document.createElement('script'); }
+    catch(e){ reject(e); return; }
+    el.src = url;
+    el.async = true;
+    el.onload = ()=>resolve(true);
+    el.onerror = ()=>{
+      // Let a later attempt retry rather than caching the failure forever — a phone
+      // that was offline when you first opened a pie chart should get one on the
+      // next try, not a permanently empty canvas.
+      delete _tcScriptPromises[url];
+      reject(new Error('failed to load '+url));
+    };
+    const host = document.head || document.body || document.documentElement;
+    if(!host){ reject(new Error('no document host')); return; }
+    host.appendChild(el);
+  });
+  return _tcScriptPromises[url];
+}
+
+// Resolves true once window.Chart is usable. Instant when Chart.js is already present
+// (a baked/offline copy, a test harness, or a second call).
+function tcEnsureChartJs(){
+  if(typeof Chart!=='undefined') return Promise.resolve(true);
+  return tcLoadScriptOnce(TC_CHARTJS_SRC).then(()=>typeof Chart!=='undefined').catch(()=>false);
+}
+
+// Resolves true once window.supabase (the UMD SDK) is usable.
+function tcEnsureSupabaseSdk(){
+  if(typeof window!=='undefined' && window.supabase && typeof window.supabase.createClient==='function')
+    return Promise.resolve(true);
+  return tcLoadScriptOnce(TC_SUPABASE_SDK_SRC)
+    .then(()=>!!(typeof window!=='undefined' && window.supabase && typeof window.supabase.createClient==='function'))
+    .catch(()=>false);
+}
+
+if(typeof module!=='undefined') module.exports={tcLoadScriptOnce, tcEnsureChartJs, tcEnsureSupabaseSdk};
+
+// ── Service worker ───────────────────────────────────────────────────────────
+// Registered after load so it never competes with the first paint or the seed fetch.
+// Only over http(s): a file:// (baked) copy has no worker and doesn't need one — it is
+// already fully self-contained.
+if(typeof window!=='undefined' && typeof navigator!=='undefined' && navigator.serviceWorker &&
+   typeof location!=='undefined' && /^https?:$/.test(location.protocol)){
+  window.addEventListener('load', ()=>{
+    // Deliberately late: registration kicks off its own network work, and nothing about the
+    // first visit benefits from it. The payoff is entirely on visit two.
+    setTimeout(()=>{
+      navigator.serviceWorker.register('sw.js').catch(e=>{
+        try{ console.info('[TC] service worker not registered:', e && e.message); }catch(_e){}
+      });
+    }, 1500);
+  });
+}
+// ═════════════════════════════════════════════════════════════════════════════
 // Week-range filtering (reference seasons only) — lets the user drag a dual
 // slider to see what a WR/RB/TE put up over just a stretch of weeks (e.g. Tucker
 // Kraft's hot weeks 1-9 before injury), instead of only the full-season total.
@@ -4034,12 +4120,25 @@ async function fetchSeedJson(url){
       const r = await fetch(url + '.gz', TC_SEED_FETCH_OPTS);
       const t1 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
       if(r.ok && r.body){
-        let txt = await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).text();
+        // Who unzipped it? GitHub Pages serves a .gz as an opaque `application/gzip` body, so
+        // WE have to inflate it. Other hosts (Vercel, Cloudflare, nginx with gzip_static) send
+        // `Content-Encoding: gzip` instead, which makes the BROWSER inflate it transparently —
+        // and piping that already-plain text through DecompressionStream throws, dropping us
+        // into the plain-.json fallback. On a deploy that only ships .gz sidecars that fallback
+        // 404s, so the entire seed (ECR, contracts, Sharp, nflverse, projections) silently
+        // vanished and the app looked like it just couldn't reach Sleeper. Check the header.
+        let enc='';
+        try{ enc = String((r.headers && r.headers.get && r.headers.get('content-encoding')) || '').toLowerCase(); }
+        catch(_e){ enc=''; }
+        const alreadyDecoded = enc.indexOf('gzip')>=0 || enc.indexOf('deflate')>=0 || enc.indexOf('br')>=0;
+        let txt = alreadyDecoded
+          ? await r.text()
+          : await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).text();
         const t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
         const parsed = JSON.parse(txt);
         txt = null;   // release the ~6MB source string before the caller starts decoding
         const t3 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
-        tcLatencyLog(url, 'gz', t1 - t0, t2 - t1, t3 - t2, true);
+        tcLatencyLog(url, alreadyDecoded?'gz(host-decoded)':'gz', t1 - t0, t2 - t1, t3 - t2, true);
         return parsed;
       }
       tcLatencyLog(url, 'gz', t1 - t0, 0, 0, false);
@@ -4114,9 +4213,33 @@ function resetNflverseLazy(){
 
 // Fetch a sidecar section on demand and merge it in. Returns a promise resolving to whether
 // the data is now available. Never throws (file:// / missing file just resolves false).
+// A baked/offline file embeds the sidecars as compact consts (bake_seed.py). Decode the one
+// section being asked for rather than all of them at parse time — same data, but the ~12MB
+// def_weekly expansion only happens if a defensive card is actually opened.
+function _embeddedSection(section){
+  try{
+    if(section==='def_weekly' && typeof SEED_NFLVERSE_DEF_WEEKLY!=='undefined') return SEED_NFLVERSE_DEF_WEEKLY;
+    if(section==='ol_weekly'  && typeof SEED_NFLVERSE_OL_WEEKLY!=='undefined')  return SEED_NFLVERSE_OL_WEEKLY;
+    if(section==='adv_weekly' && typeof SEED_NFLVERSE_ADV_WEEKLY!=='undefined') return SEED_NFLVERSE_ADV_WEEKLY;
+  }catch(e){}
+  return null;
+}
+
 function ensureNflverseSection(section){
   if(nflverseSectionReady(section)) return Promise.resolve(true);
   if(_nflverseLazyPromise[section]) return _nflverseLazyPromise[section];
+  // Offline/baked: the payload is already in memory, just still compact. No fetch needed.
+  const embedded = _embeddedSection(section);
+  if(embedded && typeof embedded==='object' && Object.keys(embedded).length){
+    try{
+      const data = decodeAnySeed(embedded);
+      if(data && Object.keys(data).length){
+        mergeNflverseSection(section, data);
+        _nflverseLazyLoaded[section] = true;
+        return Promise.resolve(true);
+      }
+    }catch(e){ /* fall through to the network path */ }
+  }
   const url = _NFLVERSE_SIDECAR_URL[section];
   _nflverseLazyPromise[section] = (async()=>{
     try{
@@ -4138,6 +4261,45 @@ function ensureNflverseSection(section){
 // so the typical first open downloads ~1 season instead of the whole multi-season block.
 let _coachingSeasonLoaded = {};
 let _coachingSeasonPromise = {};
+// Seasons whose coaching_scheme block was FETCHED at runtime, newest use last. Each decoded
+// season measures ~15MB of heap and the scheme modal shows exactly one at a time, so without
+// eviction browsing all five permanently added ~70MB — on the phones least able to spare it,
+// and precisely the retention that gets a backgrounded tab discarded. Baked/embedded seasons
+// are never recorded here, so the offline copy keeps everything it shipped with.
+const _COACHING_KEEP = 2;
+let _coachingLru = [];
+
+function _coachingTouch(season){
+  season = String(season);
+  const i = _coachingLru.indexOf(season);
+  if(i>=0) _coachingLru.splice(i,1);
+  _coachingLru.push(season);
+  while(_coachingLru.length > _COACHING_KEEP){
+    const drop = _coachingLru.shift();
+    _coachingReleaseSeason(drop);
+  }
+}
+
+function _coachingReleaseSeason(season){
+  season = String(season);
+  try{
+    if(typeof NFLVERSE==='object' && NFLVERSE && NFLVERSE[season] && NFLVERSE[season].coaching_scheme){
+      delete NFLVERSE[season].coaching_scheme;
+    }
+  }catch(e){}
+  delete _coachingSeasonLoaded[season];
+  delete _coachingSeasonPromise[season];   // so a later visit re-fetches (and re-caches over HTTP)
+}
+
+// Drop everything but the most recent season when the tab goes to the background. That is the
+// moment right before a mobile browser decides whether to kill us, so it is the cheapest
+// possible time to give memory back.
+if(typeof document!=='undefined' && document.addEventListener){
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState!=='hidden') return;
+    while(_coachingLru.length > 1) _coachingReleaseSeason(_coachingLru.shift());
+  });
+}
 
 function coachingSeasonReady(season){
   season = String(season);
@@ -4147,8 +4309,26 @@ function coachingSeasonReady(season){
 
 function ensureNflverseCoachingSeason(season){
   season = String(season);
-  if(coachingSeasonReady(season)) return Promise.resolve(true);
+  if(coachingSeasonReady(season)){
+    if(_coachingSeasonLoaded[season]) _coachingTouch(season);   // re-viewing keeps it alive
+    return Promise.resolve(true);
+  }
   if(_coachingSeasonPromise[season]) return _coachingSeasonPromise[season];
+  // Offline/baked: this season is embedded (compact) — decode just this one.
+  try{
+    const rawCs = (typeof SEED_NFLVERSE_COACHING!=='undefined') ? SEED_NFLVERSE_COACHING : null;
+    const blk = (rawCs && typeof rawCs==='object') ? rawCs[season] : null;
+    if(blk){
+      const dec = decodeAnySeed(blk);
+      if(dec && typeof dec==='object' && Object.keys(dec).length &&
+         typeof NFLVERSE==='object' && NFLVERSE){
+        (NFLVERSE[season] = NFLVERSE[season] || {}).coaching_scheme = dec;
+        _coachingSeasonLoaded[season] = true;
+        _coachingTouch(season);
+        return Promise.resolve(true);
+      }
+    }
+  }catch(e){ /* fall through to the network path */ }
   _coachingSeasonPromise[season] = (async()=>{
     try{
       const raw = await fetchSeedJson(`seeds/triplecrown_seed.coaching.${season}.json`);
@@ -4157,6 +4337,7 @@ function ensureNflverseCoachingSeason(season){
       if(data && typeof data==='object' && typeof NFLVERSE==='object' && NFLVERSE){
         (NFLVERSE[season] = NFLVERSE[season] || {}).coaching_scheme = data;
         _coachingSeasonLoaded[season] = true;
+        _coachingTouch(season);   // bounded: evicts the least-recently-viewed season
         return true;
       }
       return false;
@@ -4165,26 +4346,20 @@ function ensureNflverseCoachingSeason(season){
   return _coachingSeasonPromise[season];
 }
 
-// Merge any embedded sidecars (baked/offline path) into NFLVERSE once at load.
+// Merge the SMALL embedded sidecars (baked/offline path) into NFLVERSE once at load.
+//
+// def_weekly and coaching_scheme are deliberately NOT merged here. They are the two heavy
+// blocks — decoded, they measure ~12MB and ~15MB-per-season respectively — and expanding all
+// of them at script-parse time is what made a baked phone file retain well over a hundred MB
+// before the user had opened anything. Both now decode on first use via ensureNflverseSection()
+// / ensureNflverseCoachingSeason(), which check the embedded consts before any network call,
+// so the offline file still works with no network — it just doesn't pay for what nobody opens.
 (function(){
   try{
-    const dw = decodeAnySeed((typeof SEED_NFLVERSE_DEF_WEEKLY!=='undefined') ? SEED_NFLVERSE_DEF_WEEKLY : null);
     const ow = decodeAnySeed((typeof SEED_NFLVERSE_OL_WEEKLY!=='undefined') ? SEED_NFLVERSE_OL_WEEKLY : null);
     const aw = decodeAnySeed((typeof SEED_NFLVERSE_ADV_WEEKLY!=='undefined') ? SEED_NFLVERSE_ADV_WEEKLY : null);
-    // SEED_NFLVERSE_COACHING is embedded as {season: payload}. Each season payload may itself
-    // be compact-coded, so decode per season before merging into NFLVERSE.
-    const rawCs = (typeof SEED_NFLVERSE_COACHING!=='undefined') ? SEED_NFLVERSE_COACHING : null;
-    const cs = {};
-    if(rawCs && typeof rawCs==='object'){
-      for(const season of Object.keys(rawCs)){
-        const dec = decodeAnySeed(rawCs[season]);
-        if(dec && typeof dec==='object' && Object.keys(dec).length) cs[season] = dec;
-      }
-    }
-    if(dw && Object.keys(dw).length){ mergeNflverseSection('def_weekly', dw); _nflverseLazyLoaded.def_weekly = true; }
     if(ow && Object.keys(ow).length){ mergeNflverseSection('ol_weekly', ow); _nflverseLazyLoaded.ol_weekly = true; }
     if(aw && Object.keys(aw).length){ mergeNflverseSection('adv_weekly', aw); _nflverseLazyLoaded.adv_weekly = true; }
-    if(cs && Object.keys(cs).length){ mergeNflverseSection('coaching_scheme', cs); _nflverseLazyLoaded.coaching_scheme = true; }
   }catch(e){ /* no embedded sidecars — hosted lazy path will fetch on demand */ }
 })();
 // ── Player notes + hidden stat tagging ─────────────────────────────────────
@@ -4233,6 +4408,42 @@ function noteTagAttrs(meta){
 
 function noteWrapHtml(innerHtml, meta, cls){
   return `<span class="${cls||'note-tag-hit'}"${noteTagAttrs(meta)}>${innerHtml}</span>`;
+}
+
+// Row-level half of the split described on noteInfoFromElement: emit the fields that are
+// constant across a row once, on the row element. Pair with noteTagAttrsCell() on each cell.
+function noteScopeAttrs(meta){
+  if(!meta) return '';
+  const attrs = [['data-note-scope', '1']];
+  const put = (k, v)=>{ if(v!=null && v!=='') attrs.push([k, String(v)]); };
+  put('data-note-context', meta.context || '');
+  put('data-note-source', meta.source || '');
+  put('data-note-team', meta.team || '');
+  put('data-note-relevance', Array.isArray(meta.relevance) ? meta.relevance.join(',') : (meta.relevance || ''));
+  if(meta.nav) put('data-note-nav', JSON.stringify(meta.nav));
+  const p = meta.player || null;
+  if(p){
+    put('data-note-player-id', p.player_id || p.pid || p.id || '');
+    put('data-note-player-name', p.name || '');
+    put('data-note-player-pos', p.pos || '');
+    put('data-note-player-team', p.team || meta.team || '');
+  }
+  return attrs.map(([k,v])=>` ${k}="${escAttr(v)}"`).join('');
+}
+
+// Per-cell half: only what actually varies between cells in the same row.
+function noteCellHtml(innerHtml, meta, cls){
+  if(!meta) return innerHtml;
+  const attrs = [['data-noteable', '1']];
+  const put = (k, v)=>{ if(v!=null && v!=='') attrs.push([k, String(v)]); };
+  put('data-note-label', meta.label || 'Stat');
+  put('data-note-value', meta.value);
+  // No 'app' default here: an unset source must fall through to the row scope, and a default
+  // written onto the cell would shadow it. The default is applied when reading instead.
+  put('data-note-source', meta.source);
+  put('data-note-stat-key', meta.statKey || '');
+  const a = attrs.map(([k,v])=>` ${k}="${escAttr(v)}"`).join('');
+  return `<span class="${cls||'note-tag-hit'}"${a}>${innerHtml}</span>`;
 }
 
 function noteDisplayValue(value){
@@ -4353,32 +4564,69 @@ function notePickerTargets(info){
   return [];
 }
 
+// Note metadata may be split across two elements: the per-cell hit target carries what
+// actually differs cell to cell (label, value, source, stat key), while whatever is constant
+// for a whole row — player identity, team, context string, nav payload — can live once on an
+// ancestor marked [data-note-scope].
+//
+// This matters at scale. The rankings board wrote all ~11 fields onto EVERY tagged cell:
+// measured on a phone-width board, data-note-* attributes were 848KB, 58% of the entire
+// table's HTML, and the nav JSON alone was re-serialised ~2,000 times for ~32 distinct
+// values. Hoisting the constant half to the <tr> is invisible to callers here: an element's
+// own dataset always wins, and a caller that still puts everything on one element (every
+// other tagging site in the app) finds no scope ancestor and behaves exactly as before.
+function _noteScopeDataset(el){
+  try{
+    if(!el.closest) return null;
+    const scope = el.closest('[data-note-scope]');
+    return (scope && scope!==el && scope.dataset) ? scope.dataset : null;
+  }catch(e){ return null; }
+}
+
 function noteInfoFromElement(el){
   if(!el || !el.dataset) return null;
-  const ds = el.dataset;
-  const info = {
-    label: ds.noteLabel || 'Stat',
-    value: ds.noteValue || '',
-    source: ds.noteSource || 'app',
-    context: ds.noteContext || '',
-    statKey: ds.noteStatKey || '',
-    team: ds.noteTeam || '',
-    relevance: ds.noteRelevance || '',
+  const own = el.dataset;
+  const up = _noteScopeDataset(el);
+  // own value wins; fall back to the row-level scope; then empty.
+  const ds = (k)=>{
+    const v = own[k];
+    if(v!=null && v!=='') return v;
+    const u = up ? up[k] : null;
+    return (u!=null && u!=='') ? u : '';
   };
-  if(ds.notePlayerId || ds.notePlayerName){
+  // A tag's value is, by definition, the number the cell is displaying. Rather than repeat it
+  // in an attribute on every tagged cell, fall back to the element's own text when the
+  // attribute is absent — identical string, ~0 bytes of HTML.
+  let val = own.noteValue;
+  if(val==null || val===''){
+    try{ val = (el.textContent||'').trim(); }catch(e){ val=''; }
+  }
+  const info = {
+    label: ds('noteLabel') || 'Stat',
+    value: val || '',
+    source: ds('noteSource') || 'app',
+    context: ds('noteContext') || '',
+    statKey: ds('noteStatKey') || '',
+    team: ds('noteTeam') || '',
+    relevance: ds('noteRelevance') || '',
+  };
+  const pid = ds('notePlayerId'), pname = ds('notePlayerName');
+  if(pid || pname){
     info.player = {
-      player_id: ds.notePlayerId || '',
-      name: ds.notePlayerName || '',
-      pos: ds.notePlayerPos || '',
-      team: ds.notePlayerTeam || ds.noteTeam || '',
+      player_id: pid || '',
+      name: pname || '',
+      pos: ds('notePlayerPos') || '',
+      team: ds('notePlayerTeam') || info.team || '',
     };
   }
-  if(ds.notePlayers){
-    try{ info.players = JSON.parse(ds.notePlayers); }catch(e){}
+  const players = ds('notePlayers');
+  if(players){
+    try{ info.players = JSON.parse(players); }catch(e){}
   }
-    if(ds.noteNav){
-      try{ info.nav = JSON.parse(ds.noteNav); }catch(e){}
-    }
+  const nav = ds('noteNav');
+  if(nav){
+    try{ info.nav = JSON.parse(nav); }catch(e){}
+  }
   return info;
 }
 
@@ -6145,6 +6393,15 @@ function vacatedRushNote(team){
 // Pie charts
 // ─────────────────────────────────────────────────────────────────────────────
 function initPie(team,kind){
+  // Chart.js is fetched on first use rather than blocking <head> (04-script-loader.js).
+  // The very first pie on a cold load schedules the fetch and re-enters here when the
+  // library lands; every call after that is synchronous. If the fetch fails (offline,
+  // or a baked file with no network) we simply leave the canvas empty — the numbers
+  // beside it are the actual content and they render regardless.
+  if(typeof Chart==='undefined'){
+    tcEnsureChartJs().then(ok=>{ if(ok) initPie(team,kind); }).catch(()=>{});
+    return;
+  }
   const state=userProj[team];
   if(kind==='pass'){
     // Receptions / Rec-Yards tabs: a separate canvas. Build pie data in ORIGINAL player
@@ -6918,7 +7175,27 @@ function fmtSumer(v, isPct){
 // Which minimum-volume bucket a position falls in (WR and TE share the "routes" bucket).
 function sumerBucket(pos){ return pos==='QB' ? 'QB' : pos==='RB' ? 'RB' : 'WRTE'; }
 // The Sumer column that represents "volume" for a position — the one the minimum filter reads.
+// Memoised: the answer depends only on (position, active season table, refinement), yet this
+// was called twice per rendered row — ~1,100 times for one Adv. Metrics render — and each call
+// copied the column array and ran up to six regexes over it.
+// Keyed on the nflverse payload by OBJECT IDENTITY (same trick advSumerData() uses) plus the
+// active season and refinement — all three are plain comparisons, no allocation per call.
+let _sumerVolColMemo = {ref:undefined, season:undefined, refine:undefined, map:null};
 function sumerVolCol(pos){
+  const ref    = (typeof NFLVERSE!=='undefined') ? NFLVERSE : null;
+  const season = (typeof activeSeason!=='undefined') ? activeSeason : '';
+  const refine = (typeof sumerRefinement!=='undefined') ? (sumerRefinement||'') : '';
+  const m = _sumerVolColMemo;
+  if(m.ref!==ref || m.season!==season || m.refine!==refine || !m.map){
+    _sumerVolColMemo = {ref, season, refine, map:new Map()};
+  }
+  const cache = _sumerVolColMemo.map;
+  if(cache.has(pos)) return cache.get(pos);
+  const v = _sumerVolColCompute(pos);
+  cache.set(pos, v);
+  return v;
+}
+function _sumerVolColCompute(pos){
   const t=sumerTableFor(pos);
   const cols=(t && Array.isArray(t.columns)) ? t.columns.slice() : [];
   const pick=(rx)=>cols.find(c=>rx.test(String(c||'').toLowerCase()) && !/\//.test(String(c||''))) || null;
@@ -7075,6 +7352,32 @@ function buildPlayerList(){
   }
 
   const list=[];
+  // Index of list position by `team|name`. The receiving and rushing passes below need to know
+  // whether a player is already in the list, and used to answer that with list.findIndex() —
+  // a linear scan of a list that grows as they run, i.e. roughly n^2 string comparisons over
+  // ~500 shares. It is survivable at today's ~560 players and gets worse as the pool grows
+  // (mergeRosterPlayers already pushes it higher).
+  const listIdx = new Map();
+  const _lk = (team, name)=>team+'|'+name;
+  const pushPlayer = (obj)=>{ listIdx.set(_lk(obj.team, obj.name), list.length); list.push(obj); };
+  const findPlayer = (team, name)=>{ const i=listIdx.get(_lk(team,name)); return i==null ? -1 : i; };
+  // Per-team lookup of a player's base seed row, built once per team instead of re-spreading
+  // four position arrays into a fresh array on every single lookup.
+  const _baseByTeam = new Map();
+  const teamBaseIndex = (team)=>{
+    let idx = _baseByTeam.get(team);
+    if(!idx){
+      idx = {byName:new Map(), byId:new Map()};
+      ['QB','RB','WR','TE'].forEach(pos=>{
+        (getBase(team,pos)||[]).forEach(x=>{
+          if(x && x.name!=null && !idx.byName.has(x.name)) idx.byName.set(x.name, x);
+          if(x && x.player_id!=null && !idx.byId.has(x.player_id)) idx.byId.set(x.player_id, x);
+        });
+      });
+      _baseByTeam.set(team, idx);
+    }
+    return idx;
+  };
   // Auto-populate: make sure every team with seed data is initialized so all players
   // appear in the rankings without the user opening each team first.
   TEAMS.forEach(team=>{
@@ -7091,7 +7394,7 @@ function buildPlayerList(){
     const totalTgts=teamTargetPool(state);
     const totalPassTDs=teamPassTDs(state);
     state.qbs.forEach(qb=>{
-      list.push({name:qb.name,team,pos:'QB',headshot:qb.headshot,slug:qb.slug,player_id:qb.player_id||null,
+      pushPlayer({name:qb.name,team,pos:'QB',headshot:qb.headshot,slug:qb.slug,player_id:qb.player_id||null,
         passing_yards:qb.passing_yards,passing_tds:qb.passing_tds,passing_attempts:qb.passing_attempts,
         passing_completions:qb.passing_completions,interceptions_thrown:qb.interceptions_thrown,
         rushing_yards:qb.qb_rush_yards,rushing_tds:qb.qb_rush_tds,rushing_attempts:qb.qb_rush_attempts,
@@ -7103,11 +7406,11 @@ function buildPlayerList(){
         const projRec=Math.round(projTgts*(p.catch_rate||0.65));
         const projYds=Math.round(projTgts*(p.ypt||9));
         const projTDs=parseFloat((p.td_share*totalPassTDs).toFixed(1));
-        const bp=[...getBase(team,'WR'),...getBase(team,'TE'),...getBase(team,'RB')].find(x=>x.name===p.name)||{};
-        const ex=list.findIndex(x=>x.name===p.name&&x.team===team);
+        const bp=teamBaseIndex(team).byName.get(p.name)||{};
+        const ex=findPlayer(team,p.name);
         if(ex>=0){list[ex].receiving_yards=projYds;list[ex].receiving_tds=projTDs;list[ex].receptions=projRec;list[ex].receiving_targets=projTgts;
           if(p.player_id&&!list[ex].player_id)list[ex].player_id=p.player_id;}
-        else list.push({name:p.name,team,pos:p.pos,headshot:p.headshot,slug:p.slug,player_id:p.player_id||null,
+        else pushPlayer({name:p.name,team,pos:p.pos,headshot:p.headshot,slug:p.slug,player_id:p.player_id||null,
           passing_yards:0,passing_tds:0,passing_attempts:0,passing_completions:0,interceptions_thrown:0,
           rushing_yards:bp.rushing_yards||0,rushing_tds:0,rushing_attempts:bp.rushing_attempts||0,
           receiving_yards:projYds,receiving_tds:projTDs,receptions:projRec,receiving_targets:projTgts,fumbles_lost:0});
@@ -7120,11 +7423,11 @@ function buildPlayerList(){
         const att=Math.round(p.share*r.total_attempts);
         const yds=Math.round(att*(p.ypc||r.ypa||4));
         const tds=parseFloat((p.td_share*totalRushTDs).toFixed(1));
-        const ex=list.findIndex(x=>x.name===p.name&&x.team===team);
+        const ex=findPlayer(team,p.name);
         if(ex>=0){list[ex].rushing_yards=yds;list[ex].rushing_tds=tds;list[ex].rushing_attempts=att;
           if(p.player_id&&!list[ex].player_id)list[ex].player_id=p.player_id;}
         else{
-          list.push({name:p.name,team,pos:'RB',headshot:p.headshot,slug:p.slug,player_id:p.player_id||null,
+          pushPlayer({name:p.name,team,pos:'RB',headshot:p.headshot,slug:p.slug,player_id:p.player_id||null,
             passing_yards:0,passing_tds:0,passing_attempts:0,passing_completions:0,interceptions_thrown:0,
             rushing_yards:yds,rushing_tds:tds,rushing_attempts:att,
             receiving_yards:0,receiving_tds:0,receptions:0,receiving_targets:0,fumbles_lost:0});}
@@ -7138,7 +7441,7 @@ function buildPlayerList(){
     p.ecr_tier=ecrTierFor(p);
     p.ypc = (p.rushing_attempts>0) ? p.rushing_yards/p.rushing_attempts : 0;
     // Attach ADP (all formats) from the base seed entry so VONA can model who others draft.
-    const be = basePlayerEntry(p.team, p.pos, p.name, p.player_id);
+    const be = basePlayerEntryIdx(teamBaseIndex(p.team), p.name, p.player_id);
     p.adp = be && be.adp!=null ? be.adp : 999;
     p.adp_ppr = be && be.adp_ppr!=null ? be.adp_ppr : 999;
     p.adp_half_ppr = be && be.adp_half_ppr!=null ? be.adp_half_ppr : 999;
@@ -7161,10 +7464,17 @@ function buildPlayerList(){
   return list;
 }
 // Find a player's base seed entry (for ADP etc.) by id first, then name+team.
+// Kept for any external caller; buildPlayerList uses the prebuilt per-team index instead of
+// re-spreading four arrays per player.
 function basePlayerEntry(team, pos, name, pid){
   const pool=[...getBase(team,'QB'),...getBase(team,'RB'),...getBase(team,'WR'),...getBase(team,'TE')];
   if(pid){ const byId=pool.find(x=>x.player_id===pid); if(byId) return byId; }
   return pool.find(x=>x.name===name) || null;
+}
+function basePlayerEntryIdx(idx, name, pid){
+  if(!idx) return null;
+  if(pid!=null){ const byId=idx.byId.get(pid); if(byId) return byId; }
+  return idx.byName.get(name) || null;
 }
 // Return the ADP value appropriate to the active scoring format (used for VONA's "who will
 // be drafted before my next pick" model). Superflex/2QB formats boost QBs, so use adp_2qb;
@@ -15238,8 +15548,18 @@ function sortSOSBy(col){
 }
 
 
-const _RANKINGS_RENDER_CACHE_MAX = 8;
+// The rendered-HTML LRU is bounded by TOTAL SIZE, not entry count. Counting entries looks
+// safe until you notice how big one entry is: a full-width board measured ~1.4M chars, and V8
+// stores these two-byte, so eight of them was ~23MB on a phone / ~60MB on desktop — duplicating
+// what is already in the DOM, on exactly the devices most likely to discard the tab for it.
+// The cache key varies on sort key, direction, position filter, advanced flag, refinement,
+// three min-volume values, search query and scope, so a handful of taps used to fill all eight.
+// A byte budget self-adjusts instead: small phone-capped boards keep several, huge desktop
+// boards keep one or two.
+const _RANKINGS_RENDER_CACHE_MAX = 8;              // hard ceiling on entries
+const _RANKINGS_RENDER_CACHE_MAX_CHARS = 3000000;  // ~6MB of UTF-16, the real limit
 let _rankingsRenderCache = new Map();
+let _rankingsRenderCacheChars = 0;
 let _rankingsMobileAutoFullPass = false;
 let _rankingsMobileAutoToken = 0;
 let _rankingsPrewarmQueued = false;
@@ -15253,16 +15573,36 @@ function rankingsRenderCacheGet(key){
   return html;
 }
 
+function _rankingsRenderCacheEvictOldest(){
+  const oldest = _rankingsRenderCache.keys().next();
+  if(!oldest || oldest.done) return false;
+  const gone = _rankingsRenderCache.get(oldest.value);
+  _rankingsRenderCache.delete(oldest.value);
+  _rankingsRenderCacheChars -= (gone ? gone.length : 0);
+  if(_rankingsRenderCacheChars < 0) _rankingsRenderCacheChars = 0;
+  return true;
+}
+
 function rankingsRenderCacheSet(key, html){
   if(!key || !html) return;
-  if(_rankingsRenderCache.has(key)) _rankingsRenderCache.delete(key);
+  if(_rankingsRenderCache.has(key)){
+    const prev = _rankingsRenderCache.get(key);
+    _rankingsRenderCacheChars -= (prev ? prev.length : 0);
+    _rankingsRenderCache.delete(key);
+  }
+  // A single render larger than the whole budget is not worth caching at all — storing it
+  // would evict everything else and then sit there alone.
+  if(html.length > _RANKINGS_RENDER_CACHE_MAX_CHARS) return;
   _rankingsRenderCache.set(key, html);
-  while(_rankingsRenderCache.size > _RANKINGS_RENDER_CACHE_MAX){
-    const oldest = _rankingsRenderCache.keys().next();
-    if(oldest && !oldest.done) _rankingsRenderCache.delete(oldest.value);
-    else break;
+  _rankingsRenderCacheChars += html.length;
+  while(_rankingsRenderCache.size > _RANKINGS_RENDER_CACHE_MAX ||
+        (_rankingsRenderCacheChars > _RANKINGS_RENDER_CACHE_MAX_CHARS && _rankingsRenderCache.size > 1)){
+    if(!_rankingsRenderCacheEvictOldest()) break;
   }
 }
+
+// Bytes currently held, for tests and the dev console.
+function rankingsRenderCacheBytes(){ return _rankingsRenderCacheChars; }
 
 function rankHeadshotSlotHtml(p){
   const pid = p && p.player_id!=null ? String(p.player_id) : '';
@@ -15304,6 +15644,7 @@ function hydrateRankingsHeadshots(){
 
 function invalidateRankingsRenderCache(){
   _rankingsRenderCache.clear();
+  _rankingsRenderCacheChars = 0;   // keep the byte accounting in step with the map
 }
 
 function prewarmRankingsFromSeed(){
@@ -15430,6 +15771,20 @@ function renderRankings(){
     });
   }
   const fullViewCount = view.length;
+  // One pass to derive each player's value for the active advanced column, so the comparator
+  // below is a Map lookup instead of a full sumerValue() derivation per comparison (which,
+  // at n log n comparisons, means each player's value was recomputed a dozen-plus times).
+  const _sumerSortKeys = new Map();
+  if(rankSortKey.startsWith('sumer:')){
+    const _lbl = rankSortKey.slice(6);
+    view.forEach(p=>_sumerSortKeys.set(p, sumerValue(p, _lbl)));
+  }
+  const _sumerSortKeyFor = (p, label)=>{
+    if(_sumerSortKeys.has(p)) return _sumerSortKeys.get(p);
+    const v = sumerValue(p, label);   // player not in the prepass (shouldn't happen) — derive
+    _sumerSortKeys.set(p, v);
+    return v;
+  };
   view=[...view].sort((a,b)=>{
     if(rankSortKey==='ecr'){
       // Unranked players sort to the bottom regardless of direction.
@@ -15448,9 +15803,13 @@ function renderRankings(){
       return (av-bv)*(rankSortDir<0?1:-1);
     }
     // SumerSports advanced columns (key "sumer:<label>"): players missing that stat sink.
+    // sumerValue() is not cheap — it allocates a table object under a refinement, normalises
+    // the player name with three regexes, and linear-scans the column list — so calling it
+    // from inside the comparator re-derived both operands on every comparison. The values are
+    // precomputed into _sumerSortKeys before the sort (see below) and read back here.
     if(rankSortKey.startsWith('sumer:')){
       const label=rankSortKey.slice(6);
-      const av=sumerValue(a,label), bv=sumerValue(b,label);
+      const av=_sumerSortKeyFor(a,label), bv=_sumerSortKeyFor(b,label);
       const an=(typeof av==='number'), bn=(typeof bv==='number');
       if(!an && !bn) return b.fpts-a.fpts;
       if(!an) return 1;
@@ -15532,16 +15891,41 @@ function renderRankings(){
     ? `${PROJ_SEASON} projections · ${teamScoped?`${currentTeam} rankings`:'full rankings'}`
     : `${teamScoped?`${currentTeam} rankings`:'full rankings'} · ${activeSeason}`;
   const rankNoteContext = `${rankBaseContext}${advActive?` · adv metrics${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}`:''}`;
-  const rankValueHtml = (display, p, label, statKey, source)=> noteWrapHtml(display, {
+  // Per-cell note tags carry ONLY what differs cell to cell. Everything constant for the row
+  // — context string, nav payload, player identity, team — is emitted once on the <tr> by
+  // rankNoteScopeAttrs() below and inherited at click time (see noteInfoFromElement).
+  //
+  // Measured on a phone-width board before this split: data-note-* attributes were 848KB,
+  // 57.9% of the table's entire HTML, with the nav JSON re-serialised once per tagged cell
+  // (~2,000 times) for ~32 distinct values.
+  // `value` is omitted on purpose: it is exactly this cell's rendered text, which
+  // noteInfoFromElement reads back from the DOM. `source` is constant for the whole render
+  // and rides on the row. That leaves two genuinely per-cell attributes.
+  const rankValueHtml = (display, p, label, statKey, source)=> noteCellHtml(display, {
     label,
-    value: typeof display==='string' ? display.replace(/<[^>]+>/g,'').trim() : display,
-    source,
     statKey,
+  }, 'note-tag-hit');
+  // Built once per row. The nav object is identical for every cell in a row and takes only a
+  // handful of distinct values across the whole table, so memoise on the one field that varies.
+  const _navByTeam = new Map();
+  const rankNavFor = (team)=>{
+    let n = _navByTeam.get(team);
+    if(!n){
+      n = { type:'rankings', season:String(activeSeason), scope: teamScoped?'team':'all',
+            team: teamScoped?currentTeam:team, advanced: advActive,
+            refinement: sumerRefinement||'', posFilter: rankPosFilter };
+      _navByTeam.set(team, n);
+    }
+    return n;
+  };
+  const rankNoteSource = advActive ? 'rankings_advanced' : 'rankings';
+  const rankNoteScopeAttrs = (p)=> noteScopeAttrs({
     context: rankNoteContext,
+    source: rankNoteSource,
     player: p,
     team: p.team,
-    nav: { type:'rankings', season:String(activeSeason), scope: teamScoped?'team':'all', team: teamScoped?currentTeam:p.team, advanced: advActive, refinement: sumerRefinement||'', posFilter: rankPosFilter },
-  }, 'note-tag-hit');
+    nav: rankNavFor(p.team),
+  });
   const statCell = (v, p, label, statKey)=>{
     if(!(v && v>0)) return '';
     const txt = (+v)%1!==0?(+v).toFixed(1):(+v).toLocaleString();
@@ -15597,7 +15981,7 @@ function renderRankings(){
     const volAttrs = advActive
       ? ` data-rank-sumer-bucket="${escAttr(volBucket)}" data-rank-sumer-vol="${(volVal!=null && Number.isFinite(+volVal)) ? escAttr(String(+volVal)) : ''}"`
       : '';
-    rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}"${volAttrs}>
+    rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}"${volAttrs}${rankNoteScopeAttrs(p)}>
     <td class="c-ecr">${ecrTxt!=='—'?rankValueHtml(ecrTxt, p, 'Expert Consensus Rank', 'ecr', 'rankings'):ecrTxt}</td>
     <td class="c-tier">${tier!=null?rankValueHtml(`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`, p, 'Tier', 'ecr_tier', 'rankings'):''}</td>
     <td class="fpts">${rankValueHtml(fptsTxt, p, 'Fantasy Points', 'fpts', 'rankings')}</td>
@@ -18026,28 +18410,65 @@ let _tcClient = null;
 let _tcUser   = null;
 let _tcMgrProjs = [];   // cached projection list for manager
 
-// ── Initialise Supabase client ────────────────────────────────────────────────
-(function _tcInit(){
-  if(typeof window === 'undefined') return;
-  if(!TC_SUPABASE_URL || !TC_SUPABASE_ANON_KEY) return;  // not yet configured
-  const sb = window.supabase;
-  if(!sb || typeof sb.createClient !== 'function'){
-    console.warn('[TC] Supabase SDK not loaded — cloud features disabled');
-    return;
-  }
+// ── Initialise Supabase client (lazily) ──────────────────────────────────────
+// The SDK is no longer a blocking script tag in the document head (see 04-script-loader.js), so the
+// client is built on demand. tcEnsureSupabase() is idempotent and safe to call from any
+// entry point; it resolves true once _tcClient is usable.
+let _tcInitPromise = null;
+function tcEnsureSupabase(){
+  if(_tcClient) return Promise.resolve(true);
+  if(_tcInitPromise) return _tcInitPromise;
+  if(typeof window === 'undefined') return Promise.resolve(false);
+  if(!TC_SUPABASE_URL || !TC_SUPABASE_ANON_KEY) return Promise.resolve(false);  // not configured
+  _tcInitPromise = tcEnsureSupabaseSdk().then(ok=>{
+    if(!ok){
+      console.warn('[TC] Supabase SDK could not be loaded — cloud features disabled');
+      _tcInitPromise = null;   // allow a retry on the next attempt
+      return false;
+    }
+    try{
+      _tcClient = window.supabase.createClient(TC_SUPABASE_URL, TC_SUPABASE_ANON_KEY);
+      // Restore an existing session from localStorage.
+      _tcClient.auth.getSession().then(({data:{session}})=>{
+        _tcUser = session ? session.user : null;
+        syncAuthChrome();
+      }).catch(e=>console.warn('[TC] getSession error:', e));
+      // Keep state in sync whenever auth changes (sign-in, sign-out, token refresh)
+      _tcClient.auth.onAuthStateChange((_event, session)=>{
+        _tcUser = session ? session.user : null;
+        syncAuthChrome();
+      });
+      return true;
+    }catch(e){
+      console.warn('[TC] Supabase init error:', e);
+      _tcInitPromise = null;
+      return false;
+    }
+  });
+  return _tcInitPromise;
+}
+
+// A signed-in user must still come back to a signed-in app without touching anything,
+// so if supabase-js left an auth token in localStorage on a previous visit we bring the
+// SDK up in the background once boot is out of the way. A signed-OUT visitor — the
+// common case, and every offline/baked copy — never requests it at all.
+function _tcHasStoredSession(){
   try{
-    _tcClient = sb.createClient(TC_SUPABASE_URL, TC_SUPABASE_ANON_KEY);
-    // Restore existing session from localStorage (automatic on every page load)
-    _tcClient.auth.getSession().then(({data:{session}})=>{
-      _tcUser = session ? session.user : null;
-      syncAuthChrome();
-    }).catch(e=>console.warn('[TC] getSession error:', e));
-    // Keep state in sync whenever auth changes (sign-in, sign-out, token refresh)
-    _tcClient.auth.onAuthStateChange((_event, session)=>{
-      _tcUser = session ? session.user : null;
-      syncAuthChrome();
-    });
-  }catch(e){ console.warn('[TC] Supabase init error:', e); }
+    if(typeof localStorage==='undefined' || !localStorage) return false;
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      // supabase-js v2 stores `sb-<project-ref>-auth-token`.
+      if(k && /^sb-.*-auth-token$/.test(k)) return true;
+    }
+  }catch(e){}
+  return false;
+}
+(function _tcRestoreIfSignedIn(){
+  if(typeof window==='undefined') return;
+  if(!_tcHasStoredSession()) return;
+  const go = ()=>{ tcEnsureSupabase().catch(()=>{}); };
+  if(typeof requestIdleCallback==='function') requestIdleCallback(go, {timeout:3000});
+  else setTimeout(go, 1200);
 })();
 
 // Sync chrome once immediately so Save/Manager buttons appear as soon as the
@@ -18091,6 +18512,10 @@ function syncAuthChrome(){
 // ─────────────────────────────────────────────────────────────────────────────
 function tcOpenAuthModal(reason){
   if(document.getElementById('tcAuthOverlay')) return;
+  // Start fetching the SDK now, in parallel with the user reading the form and typing —
+  // by the time they hit Sign In it has almost always landed. The submit handlers await
+  // it anyway, so a slow network just means a brief "Signing in…" instead of an error.
+  tcEnsureSupabase().catch(()=>{});
   const ov = document.createElement('div');
   ov.id = 'tcAuthOverlay';
   ov.className = 'tc-modal-overlay';
@@ -18150,7 +18575,19 @@ function tcSwitchAuthTab(tab){
 }
 
 function tcAuthSubmit(){
-  if(!_tcClient){ toast('Supabase not configured','err'); return; }
+  if(!_tcClient){
+    // SDK still in flight (or this is the first click on a cold load) — wait for it,
+    // then re-enter. tcEnsureSupabase() is idempotent so this can't double-initialise.
+    const btn0 = document.getElementById('tcAuthSubmit');
+    if(btn0){ btn0.disabled = true; btn0.textContent = 'Connecting…'; }
+    tcEnsureSupabase().then(ok=>{
+      if(btn0){ btn0.disabled = false;
+        btn0.textContent = document.getElementById('tcTabSignUp')?.classList.contains('active') ? 'Create Account' : 'Sign In'; }
+      if(ok) tcAuthSubmit();
+      else _tcShowFormErr('tcAuthErr','Could not reach the sign-in service. Check your connection and try again.');
+    });
+    return;
+  }
   const email   = (document.getElementById('tcAuthEmail')?.value||'').trim();
   const pass    = (document.getElementById('tcAuthPass')?.value ||'');
   const isSignUp = document.getElementById('tcTabSignUp')?.classList.contains('active');
@@ -18177,7 +18614,13 @@ function tcAuthSubmit(){
 }
 
 function tcSignInGoogle(){
-  if(!_tcClient){ toast('Supabase not configured','err'); return; }
+  if(!_tcClient){
+    tcEnsureSupabase().then(ok=>{
+      if(ok) tcSignInGoogle();
+      else toast('Could not reach the sign-in service — check your connection','err');
+    });
+    return;
+  }
   _tcClient.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: window.location.href.split('#')[0] },
@@ -19268,13 +19711,19 @@ function _thsPlacePair(host, topX, dir){
   under.style.transform = `translateX(${(topX + (dir<0 ? w : -w)).toFixed(1)}px)`;
 }
 
+// Team record for the swipe-preview header. This used to call calcTeamWinsLosses(), which
+// does not exist anywhere in the codebase — the typeof guard meant it failed silently, so the
+// preview header simply never showed a record while the real header (30-sidebar.js:218) did.
+// Use the same source the real header uses: the ESPN record cache, reference seasons only.
 function _thsReco(team){
   try{
-    if(typeof calcTeamWinsLosses!=='function') return '';
-    const wl=calcTeamWinsLosses(team);
-    if(!wl || typeof wl.wins!=='number' || typeof wl.losses!=='number') return '';
-    const ties = Number(wl.ties)||0;
-    return ties ? `${wl.wins}-${wl.losses}-${ties}` : `${wl.wins}-${wl.losses}`;
+    if(typeof activeSeason==='undefined' || activeSeason==='proj') return '';   // no record for a projection
+    if(typeof espnRecordCache==='undefined' || !espnRecordCache) return '';
+    const key = `${activeSeason}:${team}`;
+    // Warm the cache the same way the real header does, so swiping to a team you haven't
+    // opened yet fills in on the next render instead of staying blank forever.
+    if(espnRecordCache[key]==null && typeof fetchTeamRecord==='function') fetchTeamRecord(activeSeason, team);
+    return espnRecordCache[key] || '';
   }catch(e){
     return '';
   }
@@ -19782,7 +20231,15 @@ function assignQBSnapShares(qbs){
 // (file:// / offline), it silently keeps the baked seed. It NEVER touches the user's edited
 // working projections or historical seasons — only the read-only SEED baseline's ADP, plus
 // projection stats for players the user hasn't edited.
-let _bgAdpRefreshed = false;
+// `var`, not `let`: boot() lives in 85-import-export.js, which is concatenated BEFORE this
+// file, and its embedded-seed path calls backgroundRefreshADP() synchronously. The function
+// declaration hoists fine, but a `let` here would still be in the temporal dead zone at that
+// moment — so on a baked/offline file the very first call threw
+// "Cannot access '_bgAdpRefreshed' before initialization" and the background ADP refresh
+// never ran. `var` hoists as undefined, which is falsy, which is exactly the initial state.
+// (The hosted path got away with it only because it calls this from an async continuation,
+// by which time the whole bundle has finished executing.)
+var _bgAdpRefreshed = false;
 async function backgroundRefreshADP(){
   if(_bgAdpRefreshed) return;
   try{
@@ -23657,6 +24114,13 @@ function laToggleCliffPop(btn, label, body){
     if(top<M) top=M;
     pop.style.position='fixed'; pop.style.left=left+'px'; pop.style.top=top+'px'; pop.style.right='auto';
   }catch(e){}
+}
+// Radar popovers, mirroring laCloseCliffPops above. This was missing entirely, so BOTH
+// call sites threw a ReferenceError: laShowRadarPop() died before it created the popover
+// (so radar dots never opened one at all), and the document-level click handler threw on
+// every single click anywhere in the app.
+function laCloseRadarPops(){
+  if(document && document.querySelectorAll) document.querySelectorAll('.la-radar-pop').forEach(el=>el.remove());
 }
 function laShowRadarPop(btn, label, body){
   if(!btn || !btn.parentNode) return;

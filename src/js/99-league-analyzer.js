@@ -1967,6 +1967,13 @@ function laToggleCliffPop(btn, label, body){
     pop.style.position='fixed'; pop.style.left=left+'px'; pop.style.top=top+'px'; pop.style.right='auto';
   }catch(e){}
 }
+// Radar popovers, mirroring laCloseCliffPops above. This was missing entirely, so BOTH
+// call sites threw a ReferenceError: laShowRadarPop() died before it created the popover
+// (so radar dots never opened one at all), and the document-level click handler threw on
+// every single click anywhere in the app.
+function laCloseRadarPops(){
+  if(document && document.querySelectorAll) document.querySelectorAll('.la-radar-pop').forEach(el=>el.remove());
+}
 function laShowRadarPop(btn, label, body){
   if(!btn || !btn.parentNode) return;
   const wrap=btn.parentNode;

@@ -37,28 +37,65 @@ let _tcClient = null;
 let _tcUser   = null;
 let _tcMgrProjs = [];   // cached projection list for manager
 
-// ── Initialise Supabase client ────────────────────────────────────────────────
-(function _tcInit(){
-  if(typeof window === 'undefined') return;
-  if(!TC_SUPABASE_URL || !TC_SUPABASE_ANON_KEY) return;  // not yet configured
-  const sb = window.supabase;
-  if(!sb || typeof sb.createClient !== 'function'){
-    console.warn('[TC] Supabase SDK not loaded — cloud features disabled');
-    return;
-  }
+// ── Initialise Supabase client (lazily) ──────────────────────────────────────
+// The SDK is no longer a blocking script tag in the document head (see 04-script-loader.js), so the
+// client is built on demand. tcEnsureSupabase() is idempotent and safe to call from any
+// entry point; it resolves true once _tcClient is usable.
+let _tcInitPromise = null;
+function tcEnsureSupabase(){
+  if(_tcClient) return Promise.resolve(true);
+  if(_tcInitPromise) return _tcInitPromise;
+  if(typeof window === 'undefined') return Promise.resolve(false);
+  if(!TC_SUPABASE_URL || !TC_SUPABASE_ANON_KEY) return Promise.resolve(false);  // not configured
+  _tcInitPromise = tcEnsureSupabaseSdk().then(ok=>{
+    if(!ok){
+      console.warn('[TC] Supabase SDK could not be loaded — cloud features disabled');
+      _tcInitPromise = null;   // allow a retry on the next attempt
+      return false;
+    }
+    try{
+      _tcClient = window.supabase.createClient(TC_SUPABASE_URL, TC_SUPABASE_ANON_KEY);
+      // Restore an existing session from localStorage.
+      _tcClient.auth.getSession().then(({data:{session}})=>{
+        _tcUser = session ? session.user : null;
+        syncAuthChrome();
+      }).catch(e=>console.warn('[TC] getSession error:', e));
+      // Keep state in sync whenever auth changes (sign-in, sign-out, token refresh)
+      _tcClient.auth.onAuthStateChange((_event, session)=>{
+        _tcUser = session ? session.user : null;
+        syncAuthChrome();
+      });
+      return true;
+    }catch(e){
+      console.warn('[TC] Supabase init error:', e);
+      _tcInitPromise = null;
+      return false;
+    }
+  });
+  return _tcInitPromise;
+}
+
+// A signed-in user must still come back to a signed-in app without touching anything,
+// so if supabase-js left an auth token in localStorage on a previous visit we bring the
+// SDK up in the background once boot is out of the way. A signed-OUT visitor — the
+// common case, and every offline/baked copy — never requests it at all.
+function _tcHasStoredSession(){
   try{
-    _tcClient = sb.createClient(TC_SUPABASE_URL, TC_SUPABASE_ANON_KEY);
-    // Restore existing session from localStorage (automatic on every page load)
-    _tcClient.auth.getSession().then(({data:{session}})=>{
-      _tcUser = session ? session.user : null;
-      syncAuthChrome();
-    }).catch(e=>console.warn('[TC] getSession error:', e));
-    // Keep state in sync whenever auth changes (sign-in, sign-out, token refresh)
-    _tcClient.auth.onAuthStateChange((_event, session)=>{
-      _tcUser = session ? session.user : null;
-      syncAuthChrome();
-    });
-  }catch(e){ console.warn('[TC] Supabase init error:', e); }
+    if(typeof localStorage==='undefined' || !localStorage) return false;
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      // supabase-js v2 stores `sb-<project-ref>-auth-token`.
+      if(k && /^sb-.*-auth-token$/.test(k)) return true;
+    }
+  }catch(e){}
+  return false;
+}
+(function _tcRestoreIfSignedIn(){
+  if(typeof window==='undefined') return;
+  if(!_tcHasStoredSession()) return;
+  const go = ()=>{ tcEnsureSupabase().catch(()=>{}); };
+  if(typeof requestIdleCallback==='function') requestIdleCallback(go, {timeout:3000});
+  else setTimeout(go, 1200);
 })();
 
 // Sync chrome once immediately so Save/Manager buttons appear as soon as the
@@ -102,6 +139,10 @@ function syncAuthChrome(){
 // ─────────────────────────────────────────────────────────────────────────────
 function tcOpenAuthModal(reason){
   if(document.getElementById('tcAuthOverlay')) return;
+  // Start fetching the SDK now, in parallel with the user reading the form and typing —
+  // by the time they hit Sign In it has almost always landed. The submit handlers await
+  // it anyway, so a slow network just means a brief "Signing in…" instead of an error.
+  tcEnsureSupabase().catch(()=>{});
   const ov = document.createElement('div');
   ov.id = 'tcAuthOverlay';
   ov.className = 'tc-modal-overlay';
@@ -161,7 +202,19 @@ function tcSwitchAuthTab(tab){
 }
 
 function tcAuthSubmit(){
-  if(!_tcClient){ toast('Supabase not configured','err'); return; }
+  if(!_tcClient){
+    // SDK still in flight (or this is the first click on a cold load) — wait for it,
+    // then re-enter. tcEnsureSupabase() is idempotent so this can't double-initialise.
+    const btn0 = document.getElementById('tcAuthSubmit');
+    if(btn0){ btn0.disabled = true; btn0.textContent = 'Connecting…'; }
+    tcEnsureSupabase().then(ok=>{
+      if(btn0){ btn0.disabled = false;
+        btn0.textContent = document.getElementById('tcTabSignUp')?.classList.contains('active') ? 'Create Account' : 'Sign In'; }
+      if(ok) tcAuthSubmit();
+      else _tcShowFormErr('tcAuthErr','Could not reach the sign-in service. Check your connection and try again.');
+    });
+    return;
+  }
   const email   = (document.getElementById('tcAuthEmail')?.value||'').trim();
   const pass    = (document.getElementById('tcAuthPass')?.value ||'');
   const isSignUp = document.getElementById('tcTabSignUp')?.classList.contains('active');
@@ -188,7 +241,13 @@ function tcAuthSubmit(){
 }
 
 function tcSignInGoogle(){
-  if(!_tcClient){ toast('Supabase not configured','err'); return; }
+  if(!_tcClient){
+    tcEnsureSupabase().then(ok=>{
+      if(ok) tcSignInGoogle();
+      else toast('Could not reach the sign-in service — check your connection','err');
+    });
+    return;
+  }
   _tcClient.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: window.location.href.split('#')[0] },

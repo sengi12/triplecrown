@@ -1,0 +1,14 @@
+{
+  "name": "TripleCrown — Projection Builder",
+  "short_name": "TripleCrown",
+  "description": "Build your own NFL season projections, then draft from them.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0d1117",
+  "theme_color": "#1599E6",
+  "icons": [
+    { "src": "images/app-icon.png", "sizes": "614x406", "type": "image/png", "purpose": "any" }
+  ]
+}
