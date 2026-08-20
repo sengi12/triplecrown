@@ -10,3 +10,7 @@ index_baked.html
 # on every deploy, so it never belongs in the repo (it just duplicates index.html,
 # images/, and the seed .gz files).
 _site/
+# Local deploy previews built by tools/preview.py
+_preview/
+_preview_raw/
+_preview_min/
