@@ -1,0 +1,155 @@
+name: Refresh seed data
+
+# Keeps seeds/ current without anyone running build_seed.py by hand.
+#
+# The schedule is intentionally boring — a daily 09:00 UTC wake-up that usually does almost
+# nothing. tools/seed_refresh.py decides what is actually stale (Sleeper daily, FantasyPros
+# weekly, contracts fortnightly, nflverse only when an upstream release timestamp changes) and
+# refreshes just those. Most runs re-fetch one source or none.
+#
+# SAFETY, which is the whole point:
+#   • Several build steps degrade to an EMPTY result when a scrape is blocked — build_ecr()
+#     returns {} if FantasyPros refuses. A human sees the warning; a cron job does not. So the
+#     refresher compares the rebuilt seed against the committed one and aborts on data loss.
+#   • Nothing is committed unless the seed actually changed AND the app's test suite passes
+#     against it.
+#   • Spotrac is never fetched here: it answers 403 to datacenter IPs, and a failed fetch would
+#     empty the offseason roster-change block. It stays a run-it-from-a-laptop source.
+#
+# Deploying is left to pages.yml, which already triggers on a push to main.
+
+on:
+  schedule:
+    - cron: '0 9 * * *'      # 09:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Sources to refresh regardless of schedule (comma-separated, e.g. ecr,ktc)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Report what would change and stop'
+        type: boolean
+        required: false
+        default: false
+
+# Never let two refreshes race for the same commit.
+concurrency:
+  group: refresh-seed
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # nflverse metrics need pandas/pyarrow; the rest of the build is stdlib-only.
+      - name: Install build dependencies
+        run: pip install --quiet 'pandas>=2.2' 'pyarrow>=16.0'
+
+      # The scrape cache is what makes selective refresh possible: a cache MISS is what tells
+      # build_seed.py to re-fetch a source. Restoring it means we only pay for what is stale.
+      #
+      # SPLIT IN TWO, deliberately. cache/cfb holds cfbfastR play-by-play parquets and is ~1 GB
+      # — roughly 20x everything else combined. Rolling that into the daily key would move a
+      # gigabyte on every run to pick up a source that changes once a year. So:
+      #
+      #   • cache/cfb      stable key, effectively write-once. actions/cache only uploads when
+      #                    the key is absent, so this costs one upload ever and a restore only
+      #                    when a run actually needs it.
+      #   • everything else  rotating key, saved fresh each run, restore-keys fall back to the
+      #                    most recent.
+      #
+      # A cold cache is slow but never wrong — build_seed.py simply re-fetches what is missing.
+      - name: Restore college parquet cache
+        uses: actions/cache@v4
+        with:
+          path: cache/cfb
+          key: seed-cache-cfb-v1
+
+      - name: Restore scrape cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            cache
+            !cache/cfb
+          key: seed-cache-${{ github.run_id }}
+          restore-keys: |
+            seed-cache-
+
+      - name: Decide and refresh
+        id: refresh
+        run: |
+          set -o pipefail
+          ARGS=""
+          if [ -n "${{ github.event.inputs.force }}" ]; then
+            ARGS="$ARGS --force ${{ github.event.inputs.force }}"
+          fi
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python3 tools/seed_refresh.py $ARGS 2>&1 | tee refresh.log
+
+      # Rebuild the .gz files the app actually downloads. build_seed.py writes the plain JSON;
+      # pages.yml publishes seeds/*.json.gz, so a refreshed seed that skipped this step would
+      # deploy yesterday's data.
+      - name: Recompress seed artifacts
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for f in seeds/*.json; do
+            case "$f" in
+              seeds/refresh-state.json) continue ;;   # bookkeeping, not app data
+            esac
+            gzip -9 -c "$f" > "$f.gz"
+          done
+          ls -la seeds/ | head -20
+
+      # A refreshed seed changes what the app loads, so the app's own suite runs against it.
+      # This catches a structurally valid seed that the app cannot actually read — a shape
+      # change upstream, a codec mismatch — which the refresher's count guards would miss.
+      - name: Rebuild app and run tests
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          python3 build.py
+          ./tests/run_tests.sh index.html 2>&1 | tail -25
+
+      - name: Commit if anything changed
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          git config user.name  'triplecrown-bot'
+          git config user.email 'triplecrown-bot@users.noreply.github.com'
+          git add -A seeds/
+          if git diff --cached --quiet; then
+            echo "No seed changes — nothing to commit."
+            exit 0
+          fi
+          SUMMARY=$(grep -E '^Refreshed:' refresh.log || echo 'Refreshed: seed data')
+          git commit -m "chore(seed): ${SUMMARY#Refreshed: }" \
+                     -m "Automated refresh via tools/seed_refresh.py." \
+                     -m "$(grep -E '^\s+\[(REFRESH|  skip )\]' refresh.log || true)"
+          git push
+
+      # A rejected build is the interesting failure: it means a source is blocked or has
+      # changed shape. Keep the log so it can be read after the fact.
+      - name: Upload refresh log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: refresh-log
+          path: refresh.log
+          retention-days: 14
+          if-no-files-found: ignore

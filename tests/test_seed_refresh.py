@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""Seed refresh scheduling + the guards that stop a bad seed being published.
+
+The guards matter more than the scheduling. Several build_seed.py steps degrade to an empty
+result when a scrape is blocked — build_ecr() prints a warning and returns {} if FantasyPros
+refuses the request. A person running the build sees that warning; a cron job does not. Without
+these guards an automated run would commit a seed with no rankings, silently replacing good
+data with nothing.
+
+So the bulk of what follows constructs seeds that LOOK like a failed scrape and asserts the
+validator rejects them.
+"""
+import os
+import sys
+import tempfile
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools"))
+import seed_refresh as SR  # noqa: E402
+
+PASS = FAILED = 0
+
+
+def chk(cond, label):
+    global PASS, FAILED
+    if cond:
+        PASS += 1
+        print("  PASS:", label)
+    else:
+        FAILED += 1
+        print("  MISS:", label)
+
+
+def seed(**blocks):
+    """A seed-shaped dict. Each block is a dict of N synthetic entries."""
+    return {k: {f"p{i}": {"x": 1} for i in range(n)} for k, n in blocks.items()}
+
+
+print("=== TEST 1: the exact breakage this exists to prevent ===")
+# build_ecr() returns {} when FantasyPros blocks the request. That must never ship.
+old = seed(ecr=400, seed=1200, history=900, contracts=1600)
+new = seed(ecr=0, seed=1200, history=900, contracts=1600)
+ok, problems, _ = SR.validate(old, new)
+chk(not ok, "a seed whose ECR block emptied is REJECTED")
+chk(any("ecr" in p and "0" in p for p in problems), "the rejection names the ecr block")
+
+new2 = seed(seed=1200, history=900, contracts=1600)   # block absent entirely
+ok2, problems2, _ = SR.validate(old, new2)
+chk(not ok2, "a seed that lost the ECR block entirely is REJECTED")
+chk(any("disappeared" in p for p in problems2), "the rejection says the block disappeared")
+
+print("\n=== TEST 2: partial scrapes that return less data ===")
+# A source returning half its rows is the more insidious case — no error, just less data.
+half = seed(ecr=200, seed=1200, history=900, contracts=1600)
+ok, problems, _ = SR.validate(old, half)
+chk(not ok, "ECR at 50% of previous is REJECTED (floor is 80%)")
+chk(any("50%" in p for p in problems), "the rejection reports the actual percentage")
+
+contracts_gone = seed(ecr=400, seed=1200, history=900, contracts=100)
+ok, _, _ = SR.validate(old, contracts_gone)
+chk(not ok, "contracts collapsing from 1600 to 100 is REJECTED")
+
+core_loss = seed(ecr=400, seed=600, history=900, contracts=1600)
+ok, _, _ = SR.validate(old, core_loss)
+chk(not ok, "the core seed block halving is REJECTED (tightest guard, 90%)")
+
+print("\n=== TEST 3: legitimate change is allowed through ===")
+same = seed(ecr=400, seed=1200, history=900, contracts=1600)
+ok, problems, _ = SR.validate(old, same)
+chk(ok, "an unchanged seed passes")
+
+grown = seed(ecr=460, seed=1250, history=980, contracts=1700)
+ok, _, _ = SR.validate(old, grown)
+chk(ok, "a seed that grew passes")
+
+drift = seed(ecr=380, seed=1180, history=880, contracts=1550)
+ok, _, warnings = SR.validate(old, drift)
+chk(ok, "small real-world shrinkage (players retiring) passes")
+chk(len(warnings) > 0, "…but is reported as a note, so drift stays visible")
+
+print("\n=== TEST 4: a brand-new block is not treated as loss ===")
+fresh = seed(ecr=400, seed=1200, history=900, contracts=1600, ktc=500)
+ok, _, _ = SR.validate(old, fresh)
+chk(ok, "adding a block nobody had before is fine")
+
+ok, _, _ = SR.validate({}, seed(ecr=400, seed=1200))
+chk(ok, "a first-ever build (no previous seed) is not blocked")
+
+print("\n=== TEST 5: additions may legitimately empty ===")
+# The offseason block empties once its content folds into history, so it must NOT be guarded
+# the way a scrape-backed block is.
+old_add = seed(ecr=400, seed=1200, additions=32)
+new_add = seed(ecr=400, seed=1200, additions=0)
+ok, _, _ = SR.validate(old_add, new_add)
+chk(ok, "additions going to zero is allowed (offseason ends)")
+
+print("\n=== TEST 6: a broken build is never accepted ===")
+ok, _, _ = SR.validate(old, {})
+chk(not ok, "an empty seed is rejected")
+ok, _, _ = SR.validate(old, None)
+chk(not ok, "a null seed is rejected")
+ok, _, _ = SR.validate(old, "not a seed")
+chk(not ok, "a non-object seed is rejected")
+
+print("\n=== TEST 7: scheduling ===")
+now = time.time()
+st = {"sources": {}}
+isdue, why = SR.due("sleeper", SR.SOURCES["sleeper"], st, now)
+chk(isdue and "never" in why, "a source never refreshed is due")
+
+st = {"sources": {"sleeper": {"last": now - 2 * SR.DAY}}}
+isdue, _ = SR.due("sleeper", SR.SOURCES["sleeper"], st, now)
+chk(isdue, "sleeper is due after 2 days (daily cadence)")
+
+st = {"sources": {"sleeper": {"last": now - 3600}}}
+isdue, why = SR.due("sleeper", SR.SOURCES["sleeper"], st, now)
+chk(not isdue, "sleeper an hour old is not due")
+chk("fresh" in why, "…and says why")
+
+st = {"sources": {"ecr": {"last": now - 3 * SR.DAY}}}
+isdue, _ = SR.due("ecr", SR.SOURCES["ecr"], st, now)
+chk(not isdue, "ECR is not re-scraped after 3 days (weekly cadence)")
+st = {"sources": {"ecr": {"last": now - 8 * SR.DAY}}}
+isdue, _ = SR.due("ecr", SR.SOURCES["ecr"], st, now)
+chk(isdue, "ECR is due after 8 days")
+
+st = {"sources": {"dynasty": {"last": now - 20 * SR.DAY}}}
+isdue, _ = SR.due("dynasty", SR.SOURCES["dynasty"], st, now)
+chk(not isdue, "the monthly dynasty chart is not scraped at 20 days")
+
+print("\n=== TEST 8: roster movement is scheduled, now that Spotrac is gone ===")
+# Spotrac could never be scheduled (403 from datacenter IPs). nflverse can, which is the
+# whole point of the swap — offseason moves now refresh unattended like everything else.
+chk("spotrac" not in SR.SOURCES, "Spotrac is no longer a source at all")
+chk("roster_moves" in SR.SOURCES, "roster movement is sourced from nflverse")
+# Driven by upstream timestamps, not a clock: the draft and trade feeds move in bursts, so a
+# fixed interval would either re-scrape for nothing or sit stale for days after a real update.
+spec = SR.SOURCES["roster_moves"]
+chk(spec["every"] is None, "roster movement has no fixed interval")
+chk(spec.get("upstream") == ["rosters", "draft_picks", "trades"],
+    "it watches exactly the three feeds build_additions reads")
+chk("trades" in spec["upstream"],
+    "including the trades feed — the one that lags and is backfilled from the baseline")
+
+print("\n=== TEST 9: nflverse freshness is read, not assumed ===")
+state = {"nflverse": {t: "2020-01-01 00:00:00 EST" for t in SR.NFLVERSE_RELEASES}}
+chk(len(SR.NFLVERSE_RELEASES) == 9, "all 9 nflverse releases the project reads are tracked")
+chk("rosters" in SR.NFLVERSE_RELEASES and "pbp" in SR.NFLVERSE_RELEASES,
+    "including rosters and pbp")
+chk(SR.SOURCES["nflverse"]["every"] is None,
+    "nflverse has no fixed cadence — its sections update on different schedules")
+
+print("\n=== TEST 10: cache invalidation hits only its own source ===")
+with tempfile.TemporaryDirectory() as tmp:
+    real_cache = SR.CACHE
+    SR.CACHE = tmp
+    try:
+        for d in ("fantasypros", "contracts", "nflverse", "sharp"):
+            os.makedirs(os.path.join(tmp, d))
+            open(os.path.join(tmp, d, "x.json"), "w").write("{}")
+        for f in ("players.json", "proj_2026.json", "stats_2025.json"):
+            open(os.path.join(tmp, f), "w").write("{}")
+
+        removed = SR.invalidate(SR.SOURCES["ecr"])
+        chk(not os.path.exists(os.path.join(tmp, "fantasypros")), "refreshing ECR clears cache/fantasypros")
+        chk(os.path.exists(os.path.join(tmp, "contracts")), "…and leaves contracts alone")
+        chk(os.path.exists(os.path.join(tmp, "players.json")), "…and leaves Sleeper alone")
+        chk(len(removed) == 1, "it reports what it cleared")
+
+        SR.invalidate(SR.SOURCES["sleeper"])
+        chk(not os.path.exists(os.path.join(tmp, "players.json")), "the sleeper glob clears players.json")
+        chk(not os.path.exists(os.path.join(tmp, "stats_2025.json")), "…and the stats_* glob")
+        chk(os.path.exists(os.path.join(tmp, "nflverse")), "…and still leaves nflverse alone")
+
+        SR.invalidate({"paths": ["does_not_exist_*"]})
+        chk(True, "invalidating a missing path does not raise")
+    finally:
+        SR.CACHE = real_cache
+
+print("\n=== TEST 11: every source is well formed ===")
+for name, spec in SR.SOURCES.items():
+    chk(isinstance(spec.get("paths"), list) and spec["paths"], f"{name}: has cache paths")
+    chk("why" in spec and spec["why"], f"{name}: explains itself in the report")
+
+print(f"\nRESULT: {'PASS' if FAILED == 0 else 'MISS'} ({PASS}/{PASS + FAILED} checks)")
+sys.exit(0 if FAILED == 0 else 1)
