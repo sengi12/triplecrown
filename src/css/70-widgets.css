@@ -216,9 +216,39 @@
   background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);
   padding:10px 12px;cursor:pointer;font-size:12.5px;}
 .la-league:hover{border-color:var(--accent);}
+/* A league we can see listed but cannot read (private on ESPN). Shown rather than hidden, so
+   its absence from the list is never mistaken for "we didn't find it". */
+.la-league-off{opacity:.5;cursor:not-allowed;}
+.la-league-off:hover{border-color:var(--border);}
 .la-league span{color:var(--muted);font-size:11px;white-space:nowrap;}
 .la-busy{margin-top:10px;font-size:12px;color:var(--accent);}
 .la-error{margin-top:10px;font-size:12px;color:#ff6b6b;}
+/* Platform picker on the setup screen — the only place the analyzer admits that more than
+   one fantasy site exists. Everything past the snapshot is provider-blind. */
+.la-prov-tabs{display:flex;gap:6px;margin-bottom:14px;}
+.la-prov{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--muted);
+  border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;cursor:pointer;}
+.la-prov:hover{border-color:var(--accent);color:var(--text);}
+.la-prov.active{border-color:var(--accent);color:var(--accent);
+  box-shadow:0 0 0 1px var(--accent) inset;}
+.la-prov-off{opacity:.55;}
+/* "Where do I find my SWID?" disclosure — collapsed by default so the common path stays clean. */
+.la-help{margin-top:10px;font-size:11.5px;}
+.la-help summary{color:var(--accent);cursor:pointer;list-style:none;}
+.la-help summary::-webkit-details-marker{display:none;}
+.la-help summary::before{content:"?  ";font-weight:900;}
+.la-help-body{color:var(--muted);line-height:1.55;margin-top:6px;padding-left:2px;}
+/* Secondary entry point (paste a league link) under the primary account lookup. */
+.la-alt{margin-top:14px;padding-top:12px;border-top:1px solid var(--border);}
+.la-alt-title{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:6px;}
+/* Limitation callouts: stated up front rather than discovered as a failed sync. */
+.la-note{margin-top:12px;font-size:11px;line-height:1.5;color:var(--muted);}
+.la-warn{border-left:2px solid #e2c08d;padding:6px 0 6px 9px;background:rgba(226,192,141,.07);
+  border-radius:0 4px 4px 0;}
+/* Platform tag on a remembered league in the switcher. */
+.la-plat{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+  border:1px solid var(--border);border-radius:4px;padding:1px 4px;margin-right:6px;color:var(--muted);}
 /* Roster cards */
 .la-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;}
 .la-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;}
@@ -782,3 +812,31 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .la-roster-pick{display:flex;align-items:center;gap:8px;margin:0 0 10px;}
 .la-roster-pick-lbl{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);}
 .la-roster-pick .la-season-sel{margin-left:0;max-width:min(280px,70vw);}
+
+/* ── Roster ownership chip ──────────────────────────────────────────────────
+   "who owns this player in my league?" — rendered next to a player name wherever one
+   appears, once a league is synced. Clicking jumps to that roster in the League Analyzer.
+   Absent entirely for un-owned players, so this never adds noise to a free agent. */
+.tc-own-chip{
+  display:inline-flex;align-items:center;gap:5px;vertical-align:middle;
+  max-width:16rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  background:var(--surface2);border:1px solid var(--border);color:var(--muted);
+  border-radius:100px;padding:2px 9px;margin-left:8px;
+  font-size:11px;font-weight:700;line-height:1.5;cursor:pointer;
+}
+.tc-own-chip::before{
+  content:"";width:5px;height:5px;border-radius:50%;background:var(--muted);flex:none;
+}
+.tc-own-chip:hover{border-color:var(--accent);color:var(--text);}
+.tc-own-chip:hover::before{background:var(--accent);}
+.tc-own-chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+/* Your own team reads as owned, not merely taken. */
+.tc-own-mine{color:var(--accent);border-color:rgba(61,155,255,.4);background:rgba(61,155,255,.1);}
+.tc-own-mine::before{background:var(--accent);}
+.tc-own-mgr{font-weight:400;opacity:.75;}
+/* Compact variant for search rows and dense tables. */
+.tc-own-sm{font-size:10px;padding:1px 7px;margin-left:6px;max-width:9rem;}
+@media (max-width:640px){
+  .tc-own-chip{max-width:8rem;}
+  .tc-own-mgr{display:none;}
+}

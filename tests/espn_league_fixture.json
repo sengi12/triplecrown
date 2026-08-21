@@ -1,0 +1,391 @@
+{
+ "gameId": 1,
+ "id": 1241838,
+ "seasonId": 2025,
+ "segmentId": 0,
+ "status": {
+  "isActive": true,
+  "isExpired": false,
+  "currentMatchupPeriod": 17,
+  "finalScoringPeriod": 17
+ },
+ "settings": {
+  "name": "The Keeper League",
+  "size": 10,
+  "rosterSettings": {
+   "lineupSlotCounts": {
+    "0": 1,
+    "1": 0,
+    "2": 2,
+    "3": 0,
+    "4": 2,
+    "5": 0,
+    "6": 1,
+    "7": 0,
+    "8": 0,
+    "9": 0,
+    "10": 0,
+    "11": 0,
+    "12": 0,
+    "13": 0,
+    "14": 0,
+    "15": 0,
+    "16": 1,
+    "17": 1,
+    "18": 0,
+    "19": 0,
+    "20": 7,
+    "21": 2,
+    "22": 0,
+    "23": 2,
+    "24": 0
+   }
+  },
+  "draftSettings": {
+   "keeperCount": 2,
+   "keeperCountFuture": 2,
+   "type": "AUCTION"
+  },
+  "scoringSettings": {
+   "scoringType": "H2H_POINTS",
+   "scoringItems": [
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "1": 0.5,
+      "2": 0.5,
+      "3": 0.5,
+      "4": 1.0,
+      "15": 0.5
+     },
+     "statId": 53
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 6.0,
+     "statId": 25
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "1": 0.1,
+      "2": 0.1,
+      "3": 0.1,
+      "4": 0.1
+     },
+     "statId": 42
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": -2.0,
+     "statId": 72
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 4.0,
+     "statId": 4
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": -2.0,
+     "statId": 20
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.1,
+     "statId": 24
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.0,
+     "pointsOverrides": {
+      "1": 6.0,
+      "2": 6.0,
+      "3": 6.0,
+      "4": 6.0
+     },
+     "statId": 43
+    },
+    {
+     "isReverseItem": false,
+     "leagueRanking": 0.0,
+     "leagueTotal": 0.0,
+     "points": 0.04,
+     "statId": 3
+    }
+   ]
+  }
+ },
+ "members": [
+  {
+   "id": "{3A2C2DB2-7702-429A-8C0E-BC6C84DAA2EF}",
+   "displayName": "justlikepudge",
+   "firstName": "Austin",
+   "lastName": "Binish"
+  },
+  {
+   "id": "{F17564F5-E8B1-4B6B-B564-F5E8B13B6B01}",
+   "displayName": "LdGaeth",
+   "firstName": "Luke",
+   "lastName": "Gaeth"
+  }
+ ],
+ "teams": [
+  {
+   "id": 1,
+   "abbrev": "BINI",
+   "name": "Team Binish",
+   "logo": "https://g.espncdn.com/s/ffllm/logos/AtTheStadium-RobbHarskamp/At_The_Stadium_09.svg",
+   "primaryOwner": "{3A2C2DB2-7702-429A-8C0E-BC6C84DAA2EF}",
+   "owners": [
+    "{3A2C2DB2-7702-429A-8C0E-BC6C84DAA2EF}"
+   ],
+   "rankCalculatedFinal": 5,
+   "record": {
+    "overall": {
+     "wins": 7,
+     "losses": 7,
+     "ties": 0
+    }
+   },
+   "roster": {
+    "entries": [
+     {
+      "lineupSlotId": 20,
+      "playerId": 4432773,
+      "playerPoolEntry": {
+       "player": {
+        "id": 4432773,
+        "fullName": "Brian Thomas Jr.",
+        "firstName": "Brian",
+        "lastName": "Thomas Jr.",
+        "defaultPositionId": 3,
+        "proTeamId": 30
+       }
+      }
+     },
+     {
+      "lineupSlotId": 2,
+      "playerId": 4429160,
+      "playerPoolEntry": {
+       "player": {
+        "id": 4429160,
+        "fullName": "De'Von Achane",
+        "firstName": "De'Von",
+        "lastName": "Achane",
+        "defaultPositionId": 2,
+        "proTeamId": 15
+       }
+      }
+     },
+     {
+      "lineupSlotId": 23,
+      "playerId": 4258173,
+      "playerPoolEntry": {
+       "player": {
+        "id": 4258173,
+        "fullName": "Nico Collins",
+        "firstName": "Nico",
+        "lastName": "Collins",
+        "defaultPositionId": 3,
+        "proTeamId": 34
+       }
+      }
+     },
+     {
+      "lineupSlotId": 20,
+      "playerId": 16737,
+      "playerPoolEntry": {
+       "player": {
+        "id": 16737,
+        "fullName": "Mike Evans",
+        "firstName": "Mike",
+        "lastName": "Evans",
+        "defaultPositionId": 3,
+        "proTeamId": 27
+       }
+      }
+     },
+     {
+      "lineupSlotId": 2,
+      "playerId": 4685382,
+      "playerPoolEntry": {
+       "player": {
+        "id": 4685382,
+        "fullName": "Omarion Hampton",
+        "firstName": "Omarion",
+        "lastName": "Hampton",
+        "defaultPositionId": 2,
+        "proTeamId": 24
+       }
+      }
+     },
+     {
+      "lineupSlotId": 20,
+      "playerId": 4361529,
+      "playerPoolEntry": {
+       "player": {
+        "id": 4361529,
+        "fullName": "Isiah Pacheco",
+        "firstName": "Isiah",
+        "lastName": "Pacheco",
+        "defaultPositionId": 2,
+        "proTeamId": 12
+       }
+      }
+     },
+     {
+      "lineupSlotId": 16,
+      "playerId": -16023,
+      "playerPoolEntry": {
+       "player": {
+        "id": -16023,
+        "fullName": "Texans D/ST",
+        "defaultPositionId": 16,
+        "proTeamId": 34
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": 2,
+   "abbrev": "16Ks",
+   "name": "Sixteen Kickers",
+   "logo": "https://g.espncdn.com/lm-static/logo-packs/core/Incredibles/incredibles_3.svg",
+   "primaryOwner": "{F17564F5-E8B1-4B6B-B564-F5E8B13B6B01}",
+   "owners": [
+    "{F17564F5-E8B1-4B6B-B564-F5E8B13B6B01}"
+   ],
+   "rankCalculatedFinal": 4,
+   "record": {
+    "overall": {
+     "wins": 8,
+     "losses": 6,
+     "ties": 0
+    }
+   },
+   "roster": {
+    "entries": [
+     {
+      "lineupSlotId": 6,
+      "playerId": 4361307,
+      "playerPoolEntry": {
+       "player": {
+        "id": 4361307,
+        "fullName": "Trey McBride",
+        "firstName": "Trey",
+        "lastName": "McBride",
+        "defaultPositionId": 4,
+        "proTeamId": 22
+       }
+      }
+     },
+     {
+      "lineupSlotId": 4,
+      "playerId": 4262921,
+      "playerPoolEntry": {
+       "player": {
+        "id": 4262921,
+        "fullName": "Justin Jefferson",
+        "firstName": "Justin",
+        "lastName": "Jefferson",
+        "defaultPositionId": 3,
+        "proTeamId": 16
+       }
+      }
+     },
+     {
+      "lineupSlotId": 20,
+      "playerId": 4241416,
+      "playerPoolEntry": {
+       "player": {
+        "id": 4241416,
+        "fullName": "Chuba Hubbard",
+        "firstName": "Chuba",
+        "lastName": "Hubbard",
+        "defaultPositionId": 2,
+        "proTeamId": 29
+       }
+      }
+     },
+     {
+      "lineupSlotId": 21,
+      "playerId": 3045147,
+      "playerPoolEntry": {
+       "player": {
+        "id": 3045147,
+        "fullName": "James Conner",
+        "firstName": "James",
+        "lastName": "Conner",
+        "defaultPositionId": 2,
+        "proTeamId": 22
+       }
+      }
+     },
+     {
+      "lineupSlotId": 21,
+      "playerId": 4569618,
+      "playerPoolEntry": {
+       "player": {
+        "id": 4569618,
+        "fullName": "Garrett Wilson",
+        "firstName": "Garrett",
+        "lastName": "Wilson",
+        "defaultPositionId": 3,
+        "proTeamId": 20
+       }
+      }
+     },
+     {
+      "lineupSlotId": 20,
+      "playerId": 4038524,
+      "playerPoolEntry": {
+       "player": {
+        "id": 4038524,
+        "fullName": "Kenneth Gainwell",
+        "firstName": "Kenneth",
+        "lastName": "Gainwell",
+        "defaultPositionId": 2,
+        "proTeamId": 27
+       }
+      }
+     },
+     {
+      "lineupSlotId": 20,
+      "playerId": 4430807,
+      "playerPoolEntry": {
+       "player": {
+        "id": 4430807,
+        "fullName": "Kenneth Walker III",
+        "firstName": "Kenneth",
+        "lastName": "Walker",
+        "defaultPositionId": 2,
+        "proTeamId": 26
+       }
+      }
+     }
+    ]
+   }
+  }
+ ]
+}

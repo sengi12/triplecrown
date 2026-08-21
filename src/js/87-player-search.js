@@ -155,7 +155,7 @@ function psRender(q){
                     onclick="psPick(this)">
       ${img}
       <span class="ps-nm">${nameText}</span>
-      <span class="ps-meta">${noteBadge}${logo}<span class="ps-pos ps-pos-${e.pos}">${posText}</span></span>
+      <span class="ps-meta">${typeof tcOwnerChip==='function'?tcOwnerChip(e.pid, e.name, 'compact'):''}${noteBadge}${logo}<span class="ps-pos ps-pos-${e.pos}">${posText}</span></span>
     </button>`;
   }).join('');
 }

@@ -16,10 +16,45 @@ const LA_ROSTERS_URL = (lid)=>`https://api.sleeper.app/v1/league/${lid}/rosters`
 const LA_TRADED_PICKS_URL = (lid)=>`https://api.sleeper.app/v1/league/${lid}/traded_picks`;
 const LA_LEAGUE_URL = (lid)=>`https://api.sleeper.app/v1/league/${lid}`;
 
+// ── Provider refs ────────────────────────────────────────────────────────────
+// A league used to be identified by a bare Sleeper league_id, and that id is passed around as
+// a string through saved-league buttons, the season picker, resync and the session payload.
+// ESPN needs TWO values (league id + season, since the same id is reused every year), so a
+// ref is now a namespaced string: "espn:1241838:2026". A bare id still means Sleeper, which
+// keeps every stored session, saved league and existing test working unchanged.
+function laParseRef(ref){
+  if(ref && typeof ref==='object'){
+    return { provider: ref.provider||'sleeper', leagueId: String(ref.leagueId||''),
+             season: ref.season!=null ? String(ref.season) : null };
+  }
+  const s=String(ref==null?'':ref);
+  const m=/^(sleeper|espn):([^:]+)(?::(\d{4}))?$/.exec(s);
+  if(m) return { provider:m[1], leagueId:m[2], season:m[3]||null };
+  return { provider:'sleeper', leagueId:s, season:null };
+}
+// The inverse — the canonical string form. Sleeper stays bare so nothing that already stores
+// a plain id has to migrate.
+function laRefKey(r){
+  const p=laParseRef(r);
+  if(p.provider==='sleeper') return p.leagueId;
+  return `${p.provider}:${p.leagueId}${p.season?`:${p.season}`:''}`;
+}
+// The ref for whatever is currently synced.
+function laSnapshotRef(s){
+  const snap = s || leagueSnapshot;
+  if(!snap) return null;
+  return laRefKey({ provider:snap.provider||'sleeper', leagueId:snap.leagueId, season:snap.season });
+}
+
 // Transient UI state for the analyzer's own league picker (mirrors leaguePickerState but is
 // kept separate so the rankings-page picker and this one can't clobber each other).
 let laState = { step: leagueSnapshot? 'view':'start', busy:false, error:null,
                 user:null, leagues:[], laTab:'myteam',
+                // Which platform the setup screen is asking about. Only affects the setup
+                // step — once a snapshot exists every view is provider-blind.
+                provider:'sleeper',
+                espnMembers:[],    // managers in a pasted ESPN league (the "which one is you?" step)
+                espnLeague:null,   // {leagueId, season, name} the user pasted, pending identification
                 lens:'value',      // Compare lens: 'value' (dynasty chart) | 'proj' (our projections)
                 baPos:'ALL',       // Best Available position filter
                 myLens:'value',    // My Team lens: 'value' (dynasty) | 'proj' (redraft, our projections)
@@ -434,7 +469,36 @@ function laLoadSleeperProfile(){
     return (p && Array.isArray(p.leagues)) ? p : null;
   }catch(e){ return null; }
 }
-// Sync a remembered league straight from the switcher (by id — the saved list is independent
+// ── Remembered ESPN account ──────────────────────────────────────────────────
+// Mirrors the Sleeper profile above, keyed on the SWID instead of a username. Kept in its own
+// key for the same reason: it's tiny, unrelated to projections, and must survive both a season
+// rollover and a cleared working set.
+// Shape: {swid, username, leagues:[{leagueId,season,teamId,name,teams,teamName}], fetchedAt}
+const TC_ESPN_KEY = 'triplecrown.espn.v1';
+function laSaveEspnProfile(swid, leagues, username){
+  if(!persistAvailable()) return;
+  try{
+    localStorage.setItem(TC_ESPN_KEY, JSON.stringify({
+      swid: swid||'', username: username||null,
+      leagues: (leagues||[]).map(l=>({
+        leagueId:l.leagueId, season:l.season, teamId:l.teamId,
+        name:l.name, teams:l.teams, teamName:l.teamName, readable:l.readable,
+      })),
+      fetchedAt: Date.now(),
+    }));
+  }catch(e){ /* quota — the switcher just won't have history */ }
+}
+function laLoadEspnProfile(){
+  if(!persistAvailable()) return null;
+  try{
+    const raw=localStorage.getItem(TC_ESPN_KEY);
+    if(!raw) return null;
+    const p=JSON.parse(raw);
+    return (p && Array.isArray(p.leagues)) ? p : null;
+  }catch(e){ return null; }
+}
+
+// Sync a remembered league straight from the switcher (by ref — the saved list is independent
 // of laState.leagues, so index-based laPickLeague isn't safe here).
 async function laSyncSavedLeague(leagueId){
   if(!leagueId || laState.busy) return;
@@ -447,28 +511,208 @@ async function laSyncSavedLeague(leagueId){
 // offered as its own button right above, so listing it twice would be noise).
 // Returns '' when there's nothing worth showing, so first-run stays clean.
 function laSavedLeaguesHTML(){
-  const p = laLoadSleeperProfile();
-  if(!p || !p.leagues.length) return '';
-  const currentId = leagueSnapshot ? String(leagueSnapshot.leagueId) : null;
-  const linkedId  = (window._laLinkedLeague && String(window._laLinkedLeague.id)) || null;
-  const others = p.leagues.filter(lg=>{
-    const id=String(lg.league_id);
-    return id!==currentId && id!==linkedId;
+  const currentRef = leagueSnapshot ? String(laSnapshotRef()) : null;
+  const linkedRef  = (window._laLinkedLeague && String(window._laLinkedLeague.id)) || null;
+  const rows=[];
+  const sp = laLoadSleeperProfile();
+  (sp && sp.leagues || []).forEach(lg=>{
+    rows.push({ ref:String(lg.league_id), platform:'Sleeper',
+                name:lg.name||'League',
+                sub:`${lg.total_rosters||'?'}-team · ${lg.type===2?'dynasty':lg.type===1?'keeper':'redraft'}${lg.sf?' · SF':''}` });
   });
+  const ep = laLoadEspnProfile();
+  (ep && ep.leagues || []).forEach(lg=>{
+    rows.push({ ref:laRefKey({provider:'espn', leagueId:lg.leagueId, season:lg.season}), platform:'ESPN',
+                name:lg.name||'ESPN League',
+                sub:`${lg.season}${lg.teams?` · ${lg.teams}-team`:''}${lg.teamName?` · ${lg.teamName}`:''}` });
+  });
+  const others = rows.filter(r=>r.ref!==currentRef && r.ref!==linkedRef);
   if(!others.length) return '';
-  const who = p.user && p.user.display_name ? p.user.display_name : (p.username||'your account');
+  const who = (sp && sp.user && sp.user.display_name) || (sp && sp.username) || 'your accounts';
   return `<div class="la-saved">
     <div class="la-saved-title">Your other leagues <span class="la-saved-who">— ${escHtml(who)}</span></div>
     <div class="la-league-list">
       ${others.map(lg=>`
         <button class="la-league" ${laState.busy?'disabled':''}
-                onclick="laSyncSavedLeague('${escJsSingle(lg.league_id)}')">
-          <b>${escHtml(lg.name||'League')}</b>
-          <span>${lg.total_rosters||'?'}-team · ${lg.type===2?'dynasty':lg.type===1?'keeper':'redraft'}${lg.sf?' · SF':''}</span>
+                onclick="laSyncSavedLeague('${escJsSingle(lg.ref)}')">
+          <b>${escHtml(lg.name)}</b>
+          <span><span class="la-plat">${lg.platform}</span>${escHtml(lg.sub)}</span>
         </button>`).join('')}
     </div>
-    <div class="la-saved-note">or enter a different username above to search another account</div>
+    <div class="la-saved-note">or search another account above</div>
   </div>`;
+}
+
+// ── Setup screen ─────────────────────────────────────────────────────────────
+// One screen, one tab per platform. Everything past the snapshot is provider-blind, so this
+// is the only place in the analyzer that knows more than one fantasy site exists.
+// Yahoo is deliberately absent. Its Fantasy Sports scope is not grantable to a self-serve
+// app — `scope=fspt-r` returns invalid_scope, and the registration form no longer offers the
+// permission at all; access now goes through Yahoo's approval queue. Rather than show a
+// greyed-out tab promising something with no timeline, the app simply does not claim to
+// support Yahoo. The gateway retains a working OAuth implementation should that change.
+const LA_PROVIDERS = [
+  { id:'sleeper', label:'Sleeper', on:true },
+  { id:'espn',    label:'ESPN',    on:true },
+];
+function laSetProvider(p){
+  if(laState.busy) return;
+  laState.provider=p; laState.error=null; laState.leagues=[]; laState.step='start';
+  renderLeagueAnalyzer();
+}
+function laSetupStartHTML(){
+  const tabs=`<div class="la-prov-tabs">${LA_PROVIDERS.map(p=>
+    `<button class="la-prov ${laState.provider===p.id?'active':''}${p.on?'':' la-prov-off'}"
+             ${laState.busy?'disabled':''} onclick="laSetProvider('${p.id}')">${p.label}</button>`).join('')}</div>`;
+  const prov=LA_PROVIDERS.find(p=>p.id===laState.provider)||LA_PROVIDERS[0];
+  const values=DYNASTY_VALUES&&DYNASTY_VALUES.asof?` (<b>${DYNASTY_VALUES.asof}</b> update)`:'';
+  const linked=window._laLinkedLeague?`<div class="la-linked">or <button class="btn btn-sm btn-accent" ${laState.busy?'disabled':''}
+    onclick="laTakeSnapshot('${escJsSingle(window._laLinkedLeague.id)}')">${TC_ICON("link")} Sync ${escHtml(window._laLinkedLeague.name)}</button>
+    <span class="la-linked-note">(the league linked on your draft/rankings page)</span></div>`:'';
+
+  if(!prov.on){
+    return `${tabs}
+      <div class="la-setup-title">${escHtml(prov.label)} leagues</div>
+      <div class="la-setup-body">${escHtml(prov.note||'Not available yet.')}</div>
+      ${laSavedLeaguesHTML()}`;
+  }
+  if(laState.provider==='espn'){
+    const prof=laLoadEspnProfile()||{};
+    // Once we know the account, this screen behaves exactly like the Sleeper one: it opens on
+    // the league list. The identify-yourself step only ever happens on first use.
+    const known=!!prof.swid;
+    return `${tabs}
+      <div class="la-setup-title">Sync your ESPN league</div>
+      <div class="la-setup-body">Reads your league's teams, owners, rosters and scoring from ESPN — every player,
+        stat and projection still comes from Sleeper, so rankings and values work exactly as they do for a Sleeper league.</div>
+      <div class="la-row">
+        <input id="laEspnLeague" placeholder="Paste your ESPN league link"
+               onkeydown="if(event.key==='Enter')laSubmitEspnLeague()">
+        <button class="btn btn-accent" ${laState.busy?'disabled':''} onclick="laSubmitEspnLeague()">${laState.busy?'Loading…':known?'Sync':'Continue'}</button>
+      </div>
+      <div class="la-note">Open your league on ESPN and copy the address bar — it looks like
+        <code>fantasy.espn.com/football/league?leagueId=…</code>. ${known?'':'We\u2019ll ask which manager is you, then find your other leagues automatically.'}</div>
+      ${known?`<div class="la-alt">
+        <div class="la-alt-title">or pick from your account</div>
+        <button class="btn btn-sm" ${laState.busy?'disabled':''} onclick="laEspnRefreshLeagues()">${TC_ICON("link")} Show my ESPN leagues</button>
+      </div>`:''}
+      <div class="la-note la-warn">Only leagues set to <b>public</b> can be read. ESPN's private-league cookies
+        can't be sent from another site, so a private league will fail with a message telling you which setting to change.</div>
+      ${linked}
+      ${laSavedLeaguesHTML()}`;
+  }
+  return `${tabs}
+    <div class="la-setup-title">Sync your Sleeper league</div>
+    <div class="la-setup-body">Takes a snapshot of every roster, owner, and future pick — then values them with the
+      FantasyPros dynasty trade chart${values}.
+      Nothing auto-refreshes; you control when the snapshot updates.</div>
+    <div class="la-row">
+      <input id="laUsername" placeholder="Sleeper username" value="${escAttr((laLoadSleeperProfile()||{}).username||'')}"
+             onkeydown="if(event.key==='Enter')laSubmitUsername()">
+      <button class="btn btn-accent" ${laState.busy?'disabled':''} onclick="laSubmitUsername()">${laState.busy?'Looking up…':'Find my leagues'}</button>
+    </div>
+    ${linked}
+    ${laSavedLeaguesHTML()}`;
+}
+
+// ── ESPN: identifying the account ────────────────────────────────────────────
+// ESPN has no username lookup, and a SWID is a cookie value no ordinary user can produce. So
+// we start from the one identifier an ESPN user always has — their league link — and read the
+// account id out of that league's own member list. Flow:
+//
+//   paste league link → "which manager is you?" → SWID learned (and kept) → all their leagues
+//
+// After the first time, the SWID is remembered and the ESPN tab opens straight on the league
+// list, exactly like the Sleeper tab does with a remembered username.
+async function laSubmitEspnLeague(){
+  const inp=document.getElementById('laEspnLeague');
+  const ref=espnParseLeagueRef(inp?inp.value:'');
+  if(!ref){ toast('Paste your ESPN league link (or just the league ID)','err'); return; }
+  const season=ref.season||String(PROJ_SEASON);
+  const prof=laLoadEspnProfile();
+  // Account already known → this is just "sync that league".
+  if(prof && prof.swid){
+    await laTakeSnapshot(laRefKey({provider:'espn', leagueId:ref.leagueId, season}));
+    return;
+  }
+  laState.busy=true; laState.error=null; renderLeagueAnalyzer();
+  try{
+    const got=await espnFetchLeagueMembers(ref.leagueId, season);
+    laState.espnLeague={ leagueId:ref.leagueId, season:got.season, name:got.leagueName };
+    laState.espnMembers=got.members;
+    laState.step='espn-who';
+    laState.busy=false;
+    // A one-manager league (or one we can't read owners from) has nothing to disambiguate.
+    if(got.members.length===1){ laState.busy=true; renderLeagueAnalyzer(); await laEspnPickMember(0); return; }
+    if(!got.members.length){
+      laState.step='start';
+      laState.error='Couldn\u2019t read the managers in that league. It may not be public.';
+    }
+  }catch(e){
+    laState.busy=false; laState.step='start';
+    laState.error=laEspnErrorText(e);
+  }
+  renderLeagueAnalyzer();
+}
+
+// "Which manager is you?" — the click that turns a league into an account.
+async function laEspnPickMember(idx){
+  const m=laState.espnMembers[idx];
+  const lg=laState.espnLeague;
+  if(!m || !lg) return;
+  laState.busy=true; laState.error=null; renderLeagueAnalyzer();
+  let leagues=[];
+  try{
+    leagues=await espnFetchFanLeagues(m.swid);
+  }catch(e){ leagues=[]; }   // non-fatal: we can still sync the league they pasted
+  // Make sure the league they actually pasted is in the list even if the fan profile didn't
+  // mention it (it only reports PUBLIC leagues, and its view can lag a fresh one).
+  if(!leagues.some(l=>String(l.leagueId)===String(lg.leagueId))){
+    leagues.unshift({ leagueId:lg.leagueId, season:lg.season, teamId:m.teamId,
+                      name:lg.name, teams:laState.espnMembers.length, teamName:m.teamName });
+  }
+  // Label the ones we can't read BEFORE showing the list (see espnMarkReadable).
+  try{ await espnMarkReadable(leagues); }catch(e){}
+  laSaveEspnProfile(m.swid, leagues, m.name);
+  laState.leagues=leagues;
+  laState.busy=false;
+  // One league → skip the picker entirely and sync it.
+  const usable=leagues.filter(l=>l.readable!==false);
+  if(usable.length===1 && leagues.length===1){ await laPickLeague(0); return; }
+  laState.step='pick';
+  renderLeagueAnalyzer();
+}
+
+// Re-list the account's leagues (the ☰ "Show my ESPN leagues" path, and after a re-sync).
+async function laEspnRefreshLeagues(){
+  const prof=laLoadEspnProfile();
+  if(!prof || !prof.swid){ laState.step='start'; renderLeagueAnalyzer(); return; }
+  laState.busy=true; laState.error=null; laState.provider='espn'; renderLeagueAnalyzer();
+  try{
+    const leagues=await espnFetchFanLeagues(prof.swid);
+    try{ await espnMarkReadable(leagues); }catch(e){}
+    laSaveEspnProfile(prof.swid, leagues.length?leagues:prof.leagues, prof.username);
+    laState.leagues=leagues.length?leagues:(prof.leagues||[]);
+    laState.step='pick'; laState.busy=false;
+    if(!laState.leagues.length){
+      laState.error=(leagues.totalLeagues>0)
+        ? `ESPN says this account is in ${leagues.totalLeagues} league${leagues.totalLeagues===1?'':'s'}, but none of them are public — so none can be read. Set one to public in ESPN, or paste its link above.`
+        : 'No public fantasy football leagues found on that ESPN account.';
+    }
+  }catch(e){
+    laState.busy=false;
+    laState.leagues=prof.leagues||[];
+    laState.step=laState.leagues.length?'pick':'start';
+    laState.error=`Couldn\u2019t reach ESPN (${e.message}).`;
+  }
+  renderLeagueAnalyzer();
+}
+
+// Start over from the league box (forgetting the remembered account).
+function laEspnForgetAccount(){
+  try{ if(persistAvailable()) localStorage.removeItem(TC_ESPN_KEY); }catch(e){}
+  laState.step='start'; laState.leagues=[]; laState.error=null;
+  renderLeagueAnalyzer();
 }
 
 // Season dropdown: jump to an earlier year of THIS league (discovered via previous_league_id).
@@ -479,12 +723,12 @@ function laSeasonPicker(s){
   if(!Array.isArray(chain) || chain.length<2) return '';
   return `<select class="la-season-sel" title="Look back at an earlier season of this league"
       onchange="laGoToSeason(this.value)">
-    ${chain.map(c=>`<option value="${c.leagueId}" ${String(c.leagueId)===String(s.leagueId)?'selected':''}>${c.season}</option>`).join('')}
+    ${chain.map(c=>`<option value="${escAttr(c.leagueId)}" ${String(c.leagueId)===String(laSnapshotRef(s))?'selected':''}>${c.season}</option>`).join('')}
   </select>`;
 }
 async function laGoToSeason(leagueId){
   if(!leagueId || laState.busy) return;
-  if(leagueSnapshot && String(leagueSnapshot.leagueId)===String(leagueId)) return;
+  if(leagueSnapshot && String(laSnapshotRef())===String(leagueId)) return;
   // Seed the cache with what we already know before switching, so the new snapshot inherits
   // the FULL chain (including the season we're leaving, which its own backward walk can't see).
   laCacheChain(laMergeChain(_laChainCache[String(leagueId)],
@@ -541,11 +785,18 @@ async function laFetchLeaguesForAnalyzer(userId){
 }
 async function laPickLeague(idx){
   const lg=laState.leagues[idx]; if(!lg) return;
+  if(laState.provider==='espn'){
+    // The fan lookup already told us which team is ours in this league — pass it through so
+    // the snapshot stars the right roster without a second round-trip.
+    await laTakeSnapshot(laRefKey({provider:'espn', leagueId:lg.leagueId, season:lg.season}),
+                         { myTeamId: lg.teamId });
+    return;
+  }
   await laTakeSnapshot(lg.league_id);
 }
 async function laResync(){
   if(!leagueSnapshot) return;
-  await laTakeSnapshot(leagueSnapshot.leagueId);
+  await laTakeSnapshot(laSnapshotRef());
 }
 function laChangeLeague(){
   laState.step='start'; laState.error=null; renderLeagueAnalyzer();
@@ -605,6 +856,27 @@ async function laBuildSeasonChain(leagueId, season, name){
   }
   return chain;
 }
+// ESPN keeps ONE league id for the life of the league and varies only the season in the URL,
+// so there's no previous_league_id to follow — we probe backwards a year at a time and stop at
+// the first season that isn't there. Chain entries carry provider REFS (see laRefKey) rather
+// than bare ids, which is what lets the season picker tell 2024 from 2025 for the same league.
+// Bounded to 6 look-backs and stops on the first gap, so a long-running league costs at most a
+// handful of small requests once, in the background, after the snapshot is already on screen.
+async function laBuildSeasonChainEspn(leagueId, season){
+  const cur=parseInt(season,10);
+  const chain=[{ season:String(season), leagueId:laRefKey({provider:'espn',leagueId,season}) }];
+  if(!isFinite(cur)) return chain;
+  for(let i=1;i<=6;i++){
+    const y=String(cur-i);
+    try{
+      const d=await espnFetch(ESPN_LEAGUE_URL(y, leagueId, ['mSettings']));
+      if(!d || !d.seasonId) break;
+      chain.push({ season:y, leagueId:laRefKey({provider:'espn',leagueId,season:y}) });
+    }catch(e){ break; }   // 401/404 = that season isn't public or doesn't exist
+  }
+  return chain;
+}
+
 // Every league in one lineage shares the same chain, so cache it under EVERY id in it. This
 // is what makes the picker work in both directions: previous_league_id only walks BACKWARD,
 // so a chain built from an older league id is [that year..earliest] and would otherwise drop the next season
@@ -624,17 +896,21 @@ function laCacheChain(chain){
 function laRefreshSeasonChain(){
   const s=leagueSnapshot;
   if(!s) return;
+  const ref=laSnapshotRef(s);
   // Anything we already know about this lineage — from the cache, or carried on the snapshot.
-  const known=laMergeChain(_laChainCache[String(s.leagueId)], s.seasonChain);
+  const known=laMergeChain(_laChainCache[String(ref)], s.seasonChain);
   if(known.length){
     s.seasonChain=laCacheChain(known);
-    if(known.some(c=>String(c.leagueId)===String(s.leagueId)) && known.length>1){
+    if(known.some(c=>String(c.leagueId)===String(ref)) && known.length>1){
       // Already complete enough to render the picker; no need to re-walk.
       return;
     }
   }
-  laBuildSeasonChain(s.leagueId, s.season, s.name).then(chain=>{
-    if(!leagueSnapshot || leagueSnapshot.leagueId!==s.leagueId) return;
+  const walk = (s.provider==='espn')
+    ? laBuildSeasonChainEspn(s.leagueId, s.season)
+    : laBuildSeasonChain(s.leagueId, s.season, s.name);
+  walk.then(chain=>{
+    if(!leagueSnapshot || laSnapshotRef()!==ref) return;
     // MERGE, never replace: the walk can only see this season and earlier.
     const merged=laMergeChain(leagueSnapshot.seasonChain, chain);
     leagueSnapshot.seasonChain=laCacheChain(merged);
@@ -643,8 +919,18 @@ function laRefreshSeasonChain(){
   }).catch(()=>{});
 }
 
-async function laTakeSnapshot(leagueId){
+// Dispatcher. Takes a provider ref (see laParseRef) and routes to the adapter that knows how
+// to talk to that platform. Every adapter's contract is the same: produce a leagueSnapshot
+// with players already resolved to Sleeper player_ids and roster slots already in Sleeper's
+// vocabulary, so nothing downstream of here is provider-aware.
+async function laTakeSnapshot(ref){
   const opts = (arguments.length>1 && arguments[1]) ? arguments[1] : null;
+  const r = laParseRef(ref);
+  if(r.provider==='espn') return laTakeSnapshotEspn(r, opts);
+  return laTakeSnapshotSleeper(r.leagueId, opts);
+}
+
+async function laTakeSnapshotSleeper(leagueId, opts){
   const background = !!(opts && opts.background);
   if(!background){
     laState.busy=true; laState.error=null; renderLeagueAnalyzer();
@@ -754,6 +1040,7 @@ async function laTakeSnapshot(leagueId){
       if(mine) _resolvedId=mine.user_id;
     }
     leagueSnapshot = {
+      provider:'sleeper',
       leagueId, name:lg.name||'League', season:lg.season,
       avatar: lg.avatar ? SLEEPER_AVATAR_THUMB(lg.avatar) : null,
       teams:lg.total_rosters||teams.length, superflex, tep, leagueType, kdef,
@@ -792,6 +1079,87 @@ async function laTakeSnapshot(leagueId){
   if(typeof syncAppChrome==='function') syncAppChrome(); else refreshLeagueSyncBtn();
 }
 
+// ESPN adapter. Same contract, same tail: build the snapshot, adopt the league's scoring and
+// lineup shape, refresh the chrome. See 91-espn-league.js for the translation itself.
+async function laTakeSnapshotEspn(ref, opts){
+  const background = !!(opts && opts.background);
+  if(!background){
+    laState.busy=true; laState.error=null; renderLeagueAnalyzer();
+  }
+  try{
+    const season = ref.season || (leagueSnapshot && leagueSnapshot.provider==='espn'
+                                  && String(leagueSnapshot.leagueId)===String(ref.leagueId)
+                                  ? leagueSnapshot.season : null)
+                 || String(PROJ_SEASON);
+    // Which team is ours: prefer what the fan lookup told us for THIS league, then whatever a
+    // prior snapshot of the same league already resolved.
+    const prof = laLoadEspnProfile();
+    let myTeamId = (opts && opts.myTeamId) || null;
+    if(myTeamId==null && prof && prof.leagues){
+      const known = prof.leagues.find(l=>String(l.leagueId)===String(ref.leagueId)
+                                      && String(l.season)===String(season));
+      if(known) myTeamId = known.teamId;
+    }
+    const built = await espnBuildSnapshot(ref.leagueId, season, {
+      myTeamId,
+      mySwid: (prof && prof.swid) || null,
+      username: (prof && prof.username) || null,
+    });
+    // Carry a previously-discovered season chain across a re-sync of the same league.
+    const prevChain = (leagueSnapshot && leagueSnapshot.provider==='espn'
+                       && String(leagueSnapshot.leagueId)===String(ref.leagueId))
+                    ? leagueSnapshot.seasonChain : null;
+    leagueSnapshot = built.snapshot;
+    if(prevChain) leagueSnapshot.seasonChain = prevChain;
+
+    // Same tail as the Sleeper path: one league, one truth. The projection builder, the
+    // rankings page and the 'proj' value lens all score under THIS league's rules.
+    try{
+      if(typeof applySleeperScoring==='function') applySleeperScoring(built.scoring);
+      if(typeof lineupFromRosterPositions==='function' && built.rosterPositions.length){
+        const shape=lineupFromRosterPositions(built.rosterPositions);
+        leagueShape={ teams: leagueSnapshot.teams, lineup: shape.lineup, bench: shape.bench };
+        draftLineup=shape.lineup; draftBenchCount=shape.bench;
+      }
+      window._laLinkedLeague = { id: laSnapshotRef(), name: leagueSnapshot.name };
+    }catch(e){}
+
+    laRefreshSeasonChain();
+    _laTierVals=null;
+    _laPosRankCache=null;
+    laState.step='view';
+    laState.busy=false;
+    saveSession();
+    if(!background){
+      toast(`Snapshot of ${leagueSnapshot.name} taken`,'ok');
+      // Unresolved players stay ON the roster but can't be valued or projected, so say so
+      // rather than letting a team quietly score low for a reason nothing explains.
+      if(built.unresolved.length){
+        const n=built.unresolved.length;
+        toast(`${n} player${n===1?'':'s'} couldn't be matched to Sleeper — they'll show unvalued`,'err');
+        try{ if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE) console.warn('[espn] unresolved:', built.unresolved); }catch(e){}
+      }
+    }
+  }catch(e){
+    laState.busy=false;
+    if(!background) laState.error = laEspnErrorText(e);
+  }
+  renderLeagueAnalyzer();
+  if(typeof syncAppChrome==='function') syncAppChrome(); else refreshLeagueSyncBtn();
+}
+
+// ESPN answers a private (or missing) league with a bare 401, which as a raw "Sync failed:
+// ESPN 401" tells the user nothing actionable. Name the actual cause and the actual fix.
+function laEspnErrorText(e){
+  const msg=(e && e.message) || 'unknown error';
+  if(/\b401\b/.test(msg)){
+    return 'That ESPN league is private. TripleCrown can only read leagues set to public — '
+         + 'in ESPN, open League Settings → Basic Settings and set Make League Viewable to Public, then try again.';
+  }
+  if(/\b404\b/.test(msg)) return 'No ESPN league found with that ID for this season.';
+  return `Sync failed: ${msg}`;
+}
+
 function laMaybeAutoRefreshSnapshot(reason){
   if(currentPhase!=='League') return;
   if(!leagueSnapshot || !leagueSnapshot.leagueId) return;
@@ -803,7 +1171,7 @@ function laMaybeAutoRefreshSnapshot(reason){
   if((now - _laAutoRefreshLastAttempt) < 60 * 1000) return;
   _laAutoRefreshLastAttempt = now;
   _laAutoRefreshInFlight = true;
-  laTakeSnapshot(leagueSnapshot.leagueId, { background: true, reason: reason||'auto' })
+  laTakeSnapshot(laSnapshotRef(), { background: true, reason: reason||'auto' })
     .finally(()=>{ _laAutoRefreshInFlight = false; });
 }
 
@@ -822,31 +1190,41 @@ function renderLeagueAnalyzer(){
         <div class="team-qb-name">dynasty rosters · values · trades — powered by your league snapshot</div></div>
         <div class="team-nav">${back}</div></div>
       <div class="la-setup card">
-        ${laState.step==='start'?`
-          <div class="la-setup-title">Sync your Sleeper league</div>
-          <div class="la-setup-body">Takes a snapshot of every roster, owner, and future pick — then values them with the
-            FantasyPros dynasty trade chart${DYNASTY_VALUES&&DYNASTY_VALUES.asof?` (<b>${DYNASTY_VALUES.asof}</b> update)`:''}.
-            Nothing auto-refreshes; you control when the snapshot updates.</div>
-          <div class="la-row">
-            <input id="laUsername" placeholder="Sleeper username" value="${escAttr((laLoadSleeperProfile()||{}).username||'')}"
-                   onkeydown="if(event.key==='Enter')laSubmitUsername()">
-            <button class="btn btn-accent" ${laState.busy?'disabled':''} onclick="laSubmitUsername()">${laState.busy?'Looking up…':'Find my leagues'}</button>
-          </div>
-          ${window._laLinkedLeague?`<div class="la-linked">or <button class="btn btn-sm btn-accent" ${laState.busy?'disabled':''}
-            onclick="laTakeSnapshot(window._laLinkedLeague.id)">${TC_ICON("link")} Sync ${escHtml(window._laLinkedLeague.name)}</button>
-            <span class="la-linked-note">(the league linked on your draft/rankings page)</span></div>`:''}
-          ${laSavedLeaguesHTML()}`
-        :`
-          <div class="la-setup-title">Pick a league</div>
+        ${laState.step==='start'? laSetupStartHTML()
+          : laState.step==='espn-who'? `
+          <div class="la-setup-title">Which manager are you?</div>
+          <div class="la-setup-body">These are the managers in <b>${escHtml((laState.espnLeague||{}).name||'that league')}</b>.
+            Tap yourself and we'll find the rest of your ESPN leagues — you only do this once.</div>
           <div class="la-league-list">
-            ${laState.leagues.map((lg,i)=>`
-              <button class="la-league" ${laState.busy?'disabled':''} onclick="laPickLeague(${i})">
-                <b>${escHtml(lg.name)}</b>
-                <span>${lg.total_rosters}-team · ${(lg.settings&&lg.settings.type)===2?'dynasty':(lg.settings&&lg.settings.type)===1?'keeper':'redraft'}
-                  ${ (lg.roster_positions||[]).includes('SUPER_FLEX')?' · SF':'' }${lg.stale?` <span class="la-stale-tag">last active ${lg.staleSeason}</span>`:''}</span>
+            ${(laState.espnMembers||[]).map((m,i)=>`
+              <button class="la-league" ${laState.busy?'disabled':''} onclick="laEspnPickMember(${i})">
+                <b>${escHtml(m.name)}</b>
+                <span>${m.teamName?escHtml(m.teamName):''}</span>
               </button>`).join('')}
           </div>
-          <button class="btn btn-ghost btn-sm" onclick="laChangeLeague()">← different username</button>`}
+          <button class="btn btn-ghost btn-sm" onclick="laChangeLeague()">← back</button>`
+          :`
+          <div class="la-setup-title">Pick a league</div>
+          <div class="la-league-list">
+            ${laState.provider==='espn'
+              ? laState.leagues.map((lg,i)=>`
+                <button class="la-league${lg.readable===false?' la-league-off':''}"
+                        ${laState.busy||lg.readable===false?'disabled':''}
+                        ${lg.readable===false?'title="This ESPN league is private. Set it to public in League Settings → Basic Settings to read it here."':''}
+                        onclick="laPickLeague(${i})">
+                  <b>${escHtml(lg.name)}</b>
+                  <span>${lg.readable===false?'<span class="la-stale-tag">private</span> ':''}${lg.season}${lg.teams?` · ${lg.teams}-team`:''}${lg.teamName?` · ${escHtml(lg.teamName)}`:''}</span>
+                </button>`).join('')
+              : laState.leagues.map((lg,i)=>`
+                <button class="la-league" ${laState.busy?'disabled':''} onclick="laPickLeague(${i})">
+                  <b>${escHtml(lg.name)}</b>
+                  <span>${lg.total_rosters}-team · ${(lg.settings&&lg.settings.type)===2?'dynasty':(lg.settings&&lg.settings.type)===1?'keeper':'redraft'}
+                    ${ (lg.roster_positions||[]).includes('SUPER_FLEX')?' · SF':'' }${lg.stale?` <span class="la-stale-tag">last active ${lg.staleSeason}</span>`:''}</span>
+                </button>`).join('')}
+          </div>
+          ${laState.provider==='espn'
+            ? `<button class="btn btn-ghost btn-sm" onclick="laEspnForgetAccount()">← use a different ESPN account</button>`
+            : `<button class="btn btn-ghost btn-sm" onclick="laChangeLeague()">← different username</button>`}`}
         ${laState.busy&&laState.step==='pick'?`<div class="la-busy">Taking snapshot…</div>`:''}
         ${laState.error?`<div class="la-error">${escHtml(laState.error)}</div>`:''}
       </div>`;

@@ -429,7 +429,7 @@ function renderPlayerCardShell(pid, pos, team){
         <img src="${heroPack.src||''}" class="pcard-hero-img" data-fallbacks="${heroFallbacks.join('|')}" onerror="pcardImgFallback(this)">
         <div class="pcard-hero-main">
           <div class="pcard-name">${name}${jersey?`<span class="pcard-jersey">${jersey}</span>`:''}</div>
-          <div class="pcard-sub">${posc?`<span class="pos-badge pos-${posc}">${posc}</span>`:''}${tm?`<span class="pcard-team">${teamDisplayName(tm)}</span>`:''}</div>
+          <div class="pcard-sub">${posc?`<span class="pos-badge pos-${posc}">${posc}</span>`:''}${tm?`<span class="pcard-team">${teamDisplayName(tm)}</span>`:''}${typeof tcOwnerChip==='function'?tcOwnerChip(pid, name):''}</div>
           <div class="pcard-meta">
             ${metaItem('AGE', age)}
             ${metaItem('HT', height)}

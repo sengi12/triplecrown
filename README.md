@@ -65,7 +65,7 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
 - **Cloud save + projections manager (optional).** Sign in to save your projection scenarios to Supabase, then load, delete, and drag-to-reorder them in a built-in manager. If you never sign in, everything continues to work locally in-session as usual.
 - **Player Notes + stat tagging.** Add notes on any player card and tag important stats directly from rankings/cards into those notes so your own scouting context stays attached to the player.
 - **Rankings productivity tools.** Use built-in player search, switch imported analysts when multi-analyst files are loaded, and launch the KeepTradeCut game overlay from the Rankings view.
-- **League Analyzer controls.** Sync Sleeper leagues into explicit snapshots, re-sync on demand, and switch leagues from the menu while keeping all analyzer views tied to the same snapshot context.
+- **League Analyzer controls.** Sync **Sleeper or ESPN** leagues into explicit snapshots, re-sync on demand, and switch leagues from the menu while keeping all analyzer views tied to the same snapshot context. Whichever platform a league lives on, every player, stat and projection still comes from Sleeper — a linked league contributes only its own teams, owners, rosters, scoring and lineup slots.
 
 <!-- Center align -->
 <div align="center">
@@ -210,8 +210,52 @@ bake_seed.py  --embeds-->  index_baked.html   rankings scored to your league
                                                + live Sleeper draft follow
 ```
 
-- **Live-reachable from the browser:** Sleeper and ESPN APIs (projections, stats, records, head coaches, draft picks).
+- **Live-reachable from the browser:** Sleeper and ESPN APIs (projections, stats, records, head coaches, draft picks), including ESPN's fantasy league endpoints — `lm-api-reads.fantasy.espn.com` and `fan.api.espn.com` reflect the caller's origin back in `access-control-allow-origin`, so league linking needs no proxy, key or server.
 - **Not browser-reachable (CORS / bot protection):** FantasyPros, OverTheCap, Warren Sharp, SumerSports, Wikipedia, and Spotrac — these must come from `build_seed.py` and a loaded/baked seed.
+
+---
+
+## Linking an ESPN league
+
+The League Analyzer can snapshot an ESPN league alongside a Sleeper one. **Sleeper remains the
+source of every player, stat and projection** — a linked ESPN league contributes only what a
+league knows about itself: team names, owners, rosters, records, scoring and lineup slots. Each
+ESPN player is resolved to a Sleeper `player_id` (by `espn_id` where Sleeper has one, then by
+normalised name + position), so values, VOR, rankings, headshots and player cards all behave
+exactly as they do for a Sleeper league.
+
+**How linking works.** Paste your ESPN league link — the address bar while you're looking at
+your league. TripleCrown reads that league's manager list and asks **which one is you**; tap your
+name and it finds the rest of your ESPN leagues automatically. That happens once: your account is
+remembered, and afterwards the ESPN tab opens straight onto your league list, exactly like the
+Sleeper tab does with a remembered username.
+
+Why it works this way: ESPN publishes no username lookup, so an account can only be identified by
+its SWID — a cookie value no ordinary user can produce. But any public league hands out the
+display-name→SWID mapping for everyone in it, so pointing at yourself in a league you're already
+in gets there without anyone opening developer tools.
+
+### Known limitations
+
+- **Public leagues only.** ESPN gates private leagues behind the `espn_s2` and `SWID` *cookies*,
+  which are set on `espn.com` with no `SameSite` and no `Secure` attribute. Browsers therefore
+  treat them as `SameSite=Lax` and never send them cross-site, and `SameSite=None` would require
+  `Secure` — so `credentials:'include'` cannot help. This is ESPN's cookie policy, not something
+  a page can work around. A private league fails with a message naming the setting to change
+  (League Settings → Basic Settings → *Make League Viewable to Public*).
+- **No cold username search.** You can't type an ESPN handle and find someone you share no league
+  with — ESPN publishes no such endpoint. Identification always starts from a league link.
+- **Your league list shows public leagues only.** ESPN's account lookup reports how many leagues
+  you're really in, but only lists the ones we're allowed to read; a sampled account showed 9
+  leagues with none listed. Leagues we can see but can't read are shown greyed out and tagged
+  *private*, so a short list is never mistaken for a broken lookup.
+- **No pick capital.** ESPN has no future-pick market or traded-pick feed, so ESPN snapshots
+  carry no draft picks and the value lenses score rosters only.
+- **No dynasty flag.** ESPN models keepers (`keeperCount`) but has no dynasty league type, so an
+  ESPN league never auto-selects the dynasty value lens. The Auto/VOR/Dynasty toggle still forces it.
+- **Undocumented endpoint.** ESPN publishes no fantasy API and makes no compatibility promises;
+  these are the endpoints its own web client uses. They can change without notice, so every
+  failure path degrades to a plain message rather than a broken view.
 
 ---
 
@@ -223,13 +267,17 @@ bake_seed.py  --embeds-->  index_baked.html   rankings scored to your league
 - **Data accuracy is best online.** Some roster-verification steps (e.g. "copy team from last season" filtering out players who left) rely on the live Sleeper roster. Fully offline from a baked file, the app copies the whole reference roster and flags it as unverified.
 - **Local-first by default.** If you do not sign in, all projections live in the browser session only. If you sign in, named scenarios can be saved to your own cloud account and reloaded later. Reference seasons are read-only and never overwrite your working set.
 - **Baked files are snapshots.** Re-run `build_seed.py` then `bake_seed.py` to refresh a phone copy with new data.
+- **A linked league's scoring is adopted whole.** Syncing a league replaces the scoring settings
+  with that league's rules, including leagues that award no points for yardage at all (ESPN omits
+  a stat entirely when it isn't scored, and TripleCrown reads an omission as zero rather than
+  keeping the previous league's value).
 - **Default scoring is Half PPR** (0.5 per reception), matching the default rankings format.
 
 ---
 
 ## Tests
 
-The project ships with a regression suite (Node + Python) covering the projection math, QB games model, week-range filtering, ECR/format sync, Sleeper league linking + scoring detection, dynasty contracts, per-team undo, copy-to-working, Sharp advanced-stat pulling and display, strength of schedule, coordinator/head-coach parsing and scheme carryover, Spotrac roster-change parsing, red-zone rankings, SumerSports advanced metrics + situational splits, player cards (ESPN gamelogs, contract/draft summaries, college stats, playoff-round labels), mobile layout, seed loading/baking, and the season-switching edge cases.
+The project ships with a regression suite (Node + Python) covering the projection math, QB games model, week-range filtering, ECR/format sync, Sleeper league linking + scoring detection, ESPN league linking (SWID→leagues, player resolution to Sleeper ids, slot/scoring translation, zero-yardage leagues, public-only guard), dynasty contracts, per-team undo, copy-to-working, Sharp advanced-stat pulling and display, strength of schedule, coordinator/head-coach parsing and scheme carryover, Spotrac roster-change parsing, red-zone rankings, SumerSports advanced metrics + situational splits, player cards (ESPN gamelogs, contract/draft summaries, college stats, playoff-round labels), mobile layout, seed loading/baking, and the season-switching edge cases.
 
 ```bash
 ./tests/run_tests.sh index.html
@@ -240,8 +288,13 @@ The project ships with a regression suite (Node + Python) covering the projectio
 ## To Do
 ### New Features
 - [ ] clicking on a team logo, takes you to that team's 2026 projections page anywhere in the app
-- [🛠️] add ESPN league support: No Public API, yet public links discovered
-- [🛠️] add Yahoo league support: Requires OAUTH
+- [x] add ESPN league support — see **Linking an ESPN league** below (public leagues only)
+- [🛠️] add Yahoo league support: needs a server. Yahoo's API sends **no CORS headers at all**, so the
+  browser can't call it even with a valid token, and its OAuth2 flow requires a client secret plus hourly
+  token refresh. Plan: one Supabase Edge Function doing the code exchange, refresh and read-only proxying.
+  Two gates first — Yahoo now gates API access behind an application/approval process and requires
+  “Fantasy data provided by Yahoo Fantasy” attribution with their logo; and a Yahoo league would need
+  sign-in plus a live connection, which breaks the local-first and baked-offline guarantees above.
 - [ ] AWS my own Domain
 - [ ] Google Play Store
 - [ ] Apple iOS Store
