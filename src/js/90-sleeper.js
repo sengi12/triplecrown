@@ -618,10 +618,25 @@ function renderSeasonTabs(){
   const hist = (HISTORY_SEASONS && HISTORY_SEASONS.length)
     ? HISTORY_SEASONS
     : Array.from({length:10},(_,n)=>String(PROJ_SEASON-1-n));
-  const seasons=['proj', ...hist];
-  host.innerHTML = seasons.map(s=>{
+  const started = (typeof hasSeasonStarted==='function') && hasSeasonStarted();
+  const yr = String(TC_SEASON.year);
+  // While the season is in progress, the current year lives in the Live segment, not the
+  // history strip; at rollover it drops back in as a normal past-season tab automatically.
+  const shownHist = started ? hist.filter(s=>s!==yr) : hist;
+  const tab = s=>{
     const label = s==='proj' ? `${PROJ_SEASON} Proj` : s;
     return `<button class="season-tab ${activeSeason===s?'active':''}" onclick="loadSeason('${s}')">${label}</button>`;
-  }).join('');
+  };
+  // In-season mode segment: Live = the season to date (read-only reference on the current
+  // year), Pace = actual pace vs the kickoff-frozen projections. Each toggles back to proj.
+  let seg='';
+  if(started){
+    const mode = (typeof currentProjViewMode==='function') ? currentProjViewMode() : null;
+    seg = `<span class="season-mode">`
+      + `<button class="season-tab mode-tab ${mode==='live'?'active':''}" onclick="setProjViewMode('${mode==='live'?'proj':'live'}')" title="${yr} season to date · live from Sleeper">Live</button>`
+      + `<button class="season-tab mode-tab ${mode==='pace'?'active':''}" onclick="setProjViewMode('${mode==='pace'?'proj':'pace'}')" title="Actual pace vs your projections frozen at kickoff">Pace</button>`
+      + `</span>`;
+  }
+  host.innerHTML = tab('proj') + seg + shownHist.map(tab).join('');
 }
 

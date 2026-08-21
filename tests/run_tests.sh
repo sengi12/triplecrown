@@ -189,13 +189,22 @@ run_js_test test_copy_noroster "Copy-from-prev-season works when roster unverifi
 run_js_test test_contracts     "Dynasty contract columns (Age/APY/FA, next-year FA red, dynasty-only)"
 run_js_test test_ktc           "KeepTradeCut player-card link: slug lookup, URL build, position guard, misses"
 run_js_test test_ktc_game      "Keep Trade Cut game deltas enforce KEEP > TRADE > CUT ordering"
+run_js_test test_tc_season      "TC_SEASON: month-aware fallback, full state parsing (phase+week), seed adoption precedence, started/completed truth table"
+run_js_test test_seed_season_adopt "Seed loaders adopt the seed's own season + state block (2030 seed labels itself 2030)"
+run_js_test test_live_season    "Live current-season stats: raw keys survive into HISTORY, working set untouched, once-per-completed-week guard"
+run_js_test test_pace_baseline  "Kickoff snapshot: freeze-once, wrong-year/reference guards, quota degradation, late frozenWeek"
+run_js_test test_pace_view      "Pace view: stint summing, badge thresholds, index vs frozen baseline, cache key varies by mode+epoch"
+run_js_test test_la_inseason    "LA in-season tabs: season gating, matchup pairing + featured card, ESPN empty state, poll gating"
+run_js_test test_la_dvp_lineup  "DvP fppg under league scoring + rank direction; lineup adjustment clamps and degradation"
+run_js_test test_swipe_la_preview "Tab swipe: laSetTab parsing, LA preview whitelist, cache-only previews (no fetch from a gesture)"
+run_js_test test_inseason_sidecar "In-season sidecar: adoption + NFLVERSE merge, baked path, reset, gz URL with query"
 
 # Step 4: Python tests
 echo ""
 PYBUILD="$DIR/../build_seed.py"
 if [ -f "$DIR/test_flacco_split.py" ] && [ -f "$PYBUILD" ]; then
   echo "═══ Python tests ═══"
-  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_roster_moves test_roster_truth test_sumer_pull test_ktc_pull test_seed_refresh test_ol_pipeline; do
+  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_roster_moves test_roster_truth test_sumer_pull test_ktc_pull test_seed_refresh test_ol_pipeline test_state_block; do
     [ -f "$DIR/${pyt}.py" ] || continue
     output=$(python3 "$DIR/${pyt}.py" 2>&1) || true
     p=$(echo "$output" | grep -ciE "PASS" || true)

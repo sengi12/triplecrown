@@ -677,6 +677,9 @@ if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE){
 // Close the player card on Escape.
 if(document&&document.addEventListener) document.addEventListener('keydown', e=>{ if(e.key==='Escape' && pcardOpen) closePlayerCard(); });
 (async function boot(){
+  // A baked/offline copy carries the NFL state it was built under — adopt it before anything
+  // renders so phase/week gating works with zero network (the live probe still overrides).
+  if(typeof SEED_STATE!=='undefined' && SEED_STATE && SEED_STATE.season && typeof _tcApplySeedState==='function') _tcApplySeedState(SEED_STATE);
   const hasEmbeddedProj = SEED && Object.keys(SEED).some(t=>SEED[t] && (SEED[t].QB.length||SEED[t].RB.length||SEED[t].WR.length||SEED[t].TE.length));
   const hasEmbeddedECR  = ECR && Object.keys(ECR).some(f=>ECR[f] && Object.keys(ECR[f]).length);
   // Paint an honest loading state BEFORE the first await. The template ships the "Select a
@@ -712,6 +715,9 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
     loadSleeperPlayers(true).catch(()=>{});
     // Also refresh projection-season ADP live in the background so VONA/VOR stay current without a rebuild.
     backgroundRefreshADP();
+    // In-season: pull current-season actuals + freeze the pace baseline (both no-op pre-season).
+    if(typeof refreshLiveSeasonStats==='function') refreshLiveSeasonStats().catch(()=>{});
+    if(typeof maybeFreezePaceBaseline==='function'){ try{ maybeFreezePaceBaseline(); }catch(e){} }
     return;
   }
   // Now that the season is settled, re-stamp the loading state with the real year.
@@ -737,6 +743,9 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
       // Same background load so copy-to-working can verify current rosters.
       loadSleeperPlayers(true).catch(()=>{});
       backgroundRefreshADP();
+      // In-season: pull current-season actuals + freeze the pace baseline (both no-op pre-season).
+      if(typeof refreshLiveSeasonStats==='function') refreshLiveSeasonStats().catch(()=>{});
+      if(typeof maybeFreezePaceBaseline==='function'){ try{ maybeFreezePaceBaseline(); }catch(e){} }
     }
     else refreshFromSleeper(true);   // ECR (if any) already adopted by tryAutoLoadSeed; restore happens there
   });
@@ -788,6 +797,9 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
     const broken=!contentRendered();
     if(!broken && now-_recoverAt < 1200) return;
     _recoverAt=now;
+    // A tab coming back after hours may have crossed Sleeper's Tue/Wed week flip — re-probe
+    // the NFL state (self-gated to >6h old) so in-season data and gating advance with it.
+    if(typeof tcSeasonRecheck==='function'){ try{ tcSeasonRecheck(); }catch(e){} }
     if(seedInMemory()){
       // Heap survived — cheapest correct fix is to re-render the frozen/blank view.
       if(broken || reason==='pageshow') rerender();
@@ -838,6 +850,12 @@ async function tryAutoLoadSeed(prefetched){
     // reachable for the rest of this function. Drop it so the GC can take it while we're
     // still doing the (allocation-heavy) assignments below.
     raw = null;
+    // Adopt the seed's own season + NFL-state block: the projection label follows what the
+    // data IS (a 2027 seed must not render under a 2026 label), and the state block gives a
+    // phase/week fallback when the live Sleeper probe failed. Live truth still wins inside
+    // _tcApplySeedState. Must happen before restoreSession() checks its season guard.
+    if(j.season && typeof _tcApplyProjSeason==='function') _tcApplyProjSeason(j.season);
+    if(j.state && typeof _tcApplySeedState==='function') _tcApplySeedState(j.state);
     let got=false;
     if(j.ecr){ ECR=j.ecr; got=true; }
     if(j.contracts){ CONTRACTS=j.contracts; got=true; }

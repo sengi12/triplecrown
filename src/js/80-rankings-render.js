@@ -125,6 +125,8 @@ function rankingsRenderCacheKey(teamScoped){
     'rankings',
     buildEpoch,
     String(activeSeason),
+    String(typeof projViewMode!=='undefined' ? projViewMode : 'proj'),
+    String(typeof liveSeasonEpoch==='function' ? liveSeasonEpoch() : 0),
     String(rankFormat),
     scSig,
     String(rankSortKey),
@@ -235,6 +237,20 @@ function renderRankings(){
     _sumerSortKeys.set(p, v);
     return v;
   };
+  // Pace mode: annotate every row with its live pace vs the kickoff baseline BEFORE sorting so
+  // the pace columns are directly sortable through the generic numeric comparator.
+  const paceActive = (typeof currentProjViewMode==='function' && currentProjViewMode()==='pace'
+    && typeof buildPaceIndex==='function' && !!buildPaceIndex());
+  if(paceActive){
+    view.forEach(p=>{
+      const e=paceForPlayer(p.name, p.pos, p.player_id);
+      p.paceBase = e ? e.base : null;
+      p.pace = e && e.gp>0 ? e.pace17 : null;
+      p.paceDelta = e && e.gp>0 ? e.delta : null;
+      p.paceGp = e ? e.gp : 0;
+      p.paceCls = e ? e.cls : '';
+    });
+  }
   view=[...view].sort((a,b)=>{
     if(rankSortKey==='ecr'){
       // Unranked players sort to the bottom regardless of direction.
@@ -330,7 +346,7 @@ function renderRankings(){
       }
     }
   }
-  const totalCols = 7 + (isDynasty?3:0) + nStatCols;  // ecr,tier,fpts,vor,pos,name,tm + stat cols
+  const totalCols = 7 + (paceActive?3:0) + (isDynasty?3:0) + nStatCols;  // ecr,tier,fpts(or pace group),vor,pos,name,tm + stat cols
   const pickLineRow=(round)=>`<tr class="rank-pickline"><td colspan="${totalCols}">
     <span class="rank-pickline-lbl">▸ Your pick ${round==1?'(next up)':`#${round}`} projected here</span></td></tr>`;
 
@@ -423,6 +439,20 @@ function renderRankings(){
         `<td class="grp-pass">${statCell(p.passing_attempts,p,'Pass Attempts','passing_attempts')}</td><td class="grp-pass-mid">${statCell(p.passing_yards,p,'Pass Yards','passing_yards')}</td><td class="grp-pass-mid">${statCell(p.passing_tds,p,'Pass Touchdowns','passing_tds')}</td><td class="grp-pass-end">${statCell(p.interceptions_thrown,p,'Interceptions Thrown','interceptions_thrown')}</td>`;
     }
     const fptsTxt = p.fpts.toFixed(1);
+    // Pace mode swaps the single FPTS cell for BASE (frozen) | PACE (17-game) | Δ | GP.
+    let fptsCells;
+    if(paceActive){
+      const baseTxt = p.paceBase!=null ? p.paceBase.toFixed(1) : '—';
+      const paceTxt = p.pace!=null ? p.pace.toFixed(1) : '—';
+      const dTxt = p.paceDelta!=null ? `${p.paceDelta>=0?'+':'−'}${Math.abs(p.paceDelta).toFixed(1)}` : '—';
+      fptsCells =
+        `<td class="c-pace-base"><span class="num">${baseTxt}</span></td>`+
+        `<td class="fpts ${p.paceCls}">${p.pace!=null?rankValueHtml(`<span class="num">${paceTxt}</span>`, p, '17-Game Pace', 'pace', 'rankings'):'—'}</td>`+
+        `<td class="c-pace-delta ${p.paceCls}"><span class="num">${dTxt}</span></td>`+
+        `<td class="c-pace-gp"><span class="num">${p.paceGp||0}</span></td>`;
+    } else {
+      fptsCells = `<td class="fpts">${rankValueHtml(fptsTxt, p, 'Fantasy Points', 'fpts', 'rankings')}</td>`;
+    }
     const vorTxt = `${p.vor>0?'+':''}${p.vor!=null?p.vor.toFixed(1):'—'}`;
     const pSearchAttr = escAttr(String(p.name||'').toLowerCase());
     const volBucket = advActive ? String(sumerBucket(p.pos)||'') : '';
@@ -434,7 +464,7 @@ function renderRankings(){
     rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}"${volAttrs}${rankNoteScopeAttrs(p)}>
     <td class="c-ecr">${ecrTxt!=='—'?rankValueHtml(ecrTxt, p, 'Expert Consensus Rank', 'ecr', 'rankings'):ecrTxt}</td>
     <td class="c-tier">${tier!=null?rankValueHtml(`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`, p, 'Tier', 'ecr_tier', 'rankings'):''}</td>
-    <td class="fpts">${rankValueHtml(fptsTxt, p, 'Fantasy Points', 'fpts', 'rankings')}</td>
+    ${fptsCells}
     <td class="c-vor">${rankValueHtml(`<span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${vorTxt}</span>`, p, 'Value Over Replacement', 'vor', 'rankings')}</td>
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
     <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${rankHeadshotSlotHtml(p)}<span class="rank-name">${pNameText}</span></div></td>
@@ -557,8 +587,10 @@ function renderRankings(){
         <button class="btn btn-ghost btn-sm" onclick="exportRankingsCSV()">${TC_ICON("download")} CSV</button>
       </div>
       <div class="rank-table-wrap" style="max-height:calc(100vh - 320px)">
-      <table class="rankings-table grouped"><thead><tr>
-        ${th('ecr','ECR','','c-ecr')}${th('ecr_tier','TIER','','c-tier')}${th('fpts','FPTS','')}${th('vor','VOR','','c-vor')}
+      <table class="rankings-table grouped${paceActive?' pace-mode':''}"><thead><tr>
+        ${th('ecr','ECR','','c-ecr')}${th('ecr_tier','TIER','','c-tier')}${paceActive
+          ? `${th('paceBase','YOUR','PROJ','c-pace-base')}${th('pace','PACE','17G')}${th('paceDelta','Δ','','c-pace-delta')}${th('paceGp','GP','','c-pace-gp')}`
+          : th('fpts','FPTS','')}${th('vor','VOR','','c-vor')}
         ${th('pos','POS','')}${th('name','PLAYER','','c-player')}${th('team','TM','','c-team')}
         ${isDynasty?`${th('age','AGE','','c-age',true)}${th('apy','APY','','c-apy')}${th('fa','FA','','c-fa')}`:''}
         ${advActive

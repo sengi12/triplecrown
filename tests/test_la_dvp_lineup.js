@@ -1,0 +1,91 @@
+// DvP + Lineup Helper: fantasy-points-allowed built from raw sidecar components under the
+// LEAGUE's scoring (memo keyed on it), rank direction, small-sample banner, and the lineup
+// adjustment multipliers with their clamps and declared degradation.
+const elStore={};
+function mkEl(id){if(!elStore[id])elStore[id]={innerHTML:'',style:{},textContent:'',value:'',classList:{add(){},remove:()=>{}},children:[],appendChild(){},querySelectorAll:()=>[]};return elStore[id];}
+global.document={getElementById:(id)=>mkEl(id),querySelector:()=>null,querySelectorAll:()=>[],createElement:()=>({click(){},style:{},appendChild(){}}),activeElement:null,body:{appendChild(){},removeChild(){}},addEventListener(){},visibilityState:'visible'};
+global.window={getSelection:()=>({removeAllRanges(){},addRange(){}}),addEventListener(){}};
+global.Chart=function(){return{destroy(){}}};global.confirm=()=>true;global.btoa=s=>s;global.FileReader=function(){};global.Range=function(){};global.fetch=()=>Promise.reject(new Error('no net'));global.AbortController=class{constructor(){this.signal={}}abort(){}};
+const fs=require('fs');
+const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
+const app=new Function(code+`return {
+  TC_SEASON, laDvpTable, laDvpView, laAdjWeekProj, laLineupView, laState,
+  setInseason:(x)=>{TC_INSEASON=x;}, setSnapshot:(s)=>{leagueSnapshot=s;}, setPhaseVar:(p)=>{currentPhase=p;},
+  setSleeperFetch:(f)=>{sleeperFetch=f;},
+  setPaceForPlayer:(f)=>{paceForPlayer=f;},
+  scoring:scoringSettings };`)();
+
+let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
+
+app.TC_SEASON.year=2026; app.TC_SEASON.phase='regular'; app.TC_SEASON.week=3;
+app.setPhaseVar('League');
+app.setSleeperFetch(async()=>{ throw new Error('no net'); });
+
+// DVP fixture: cols must match src/nflverse/inseason.py DVP_COLS. Team AAA is stingy vs WR,
+// team BBB generous (double the yardage/receptions).
+const COLS=["tgt","rec","rec_yd","rec_td","carry","rush_yd","rush_td","pass_att","pass_yd","pass_td","pass_int"];
+const wr=(t,r,y,td)=>{ const a=new Array(COLS.length).fill(0); a[0]=t; a[1]=r; a[2]=y; a[3]=td; return a; };
+app.setInseason({v:1, season:2026, weeks:[1,2], asof:'x',
+  schedule:{MIA:{'3':'AAA'}, BUF:{'3':'BBB'}},
+  def_vs_pos:{cols:COLS, teams:{
+    AAA:{WR:{'1':wr(20,12,110,0),'2':wr(18,10,95,1)},  QB:{'1':new Array(COLS.length).fill(0)}, RB:{}, TE:{}},
+    BBB:{WR:{'1':wr(30,24,230,2),'2':wr(28,22,210,2)}, QB:{'1':new Array(COLS.length).fill(0)}, RB:{}, TE:{}},
+  }}});
+
+console.log('=== DvP table ===');
+const t=app.laDvpTable();
+chk(!!t,'table builds from the sidecar');
+chk(t.ranks.AAA.WR===1 && t.ranks.BBB.WR===2,'fewest points allowed = rank 1');
+chk(t.teams.BBB.WR.fppg > t.teams.AAA.WR.fppg,'generous defense allows more fppg');
+const before=t.teams.BBB.WR.fppg;
+const oldRec=app.scoring.receptions; app.scoring.receptions=oldRec+1;   // league-scoring aware
+const t2=app.laDvpTable();
+chk(t2.teams.BBB.WR.fppg>before,'fppg respects the league scoring (memo re-keys on it)');
+app.scoring.receptions=oldRec;
+
+console.log('=== DvP view ===');
+const dvpHtml=app.laDvpView({});
+chk(dvpHtml.includes('small sample'),'small-sample banner through week 4');
+chk(dvpHtml.includes('la-dvp-table'),'table renders');
+
+console.log('=== lineup adjustment ===');
+const pm=new Map();
+const norm=(n)=>n.toLowerCase();
+// laAdjWeekProj keys pm by ecrNormName(name)+'|'+pos — use simple lowercase-safe names.
+pm.set('gamma wideout|WR', 170);   // 10/wk
+pm.set('epsilon wideout|WR', 170);
+const dvp=app.laDvpTable();
+const good=app.laAdjWeekProj({name:'Gamma Wideout',pos:'WR',team:'MIA',id:'p3'}, 3, pm, dvp);
+chk(Math.abs(good.defMult-0.90)<1e-9,'opponent ranked #1 vs WR → 0.90 multiplier');
+const bad=app.laAdjWeekProj({name:'Epsilon Wideout',pos:'WR',team:'BUF',id:'p5'}, 3, pm, dvp);
+chk(Math.abs(bad.defMult-1.10)<1e-9,'opponent ranked worst vs WR → 1.10 multiplier');
+const noDvp=app.laAdjWeekProj({name:'Gamma Wideout',pos:'WR',team:'MIA',id:'p3'}, 3, pm, null);
+chk(noDvp.defMult===1,'no sidecar → matchup multiplier degrades to 1');
+app.setPaceForPlayer(()=>({gp:5, base:100, pace17:300}));   // wildly ahead → must clamp
+const clamped=app.laAdjWeekProj({name:'Gamma Wideout',pos:'WR',team:'MIA',id:'p3'}, 3, pm, dvp);
+chk(Math.abs(clamped.paceMult-1.10)<1e-9,'pace blend clamps at +10% (ratio capped 1.2, 50% blend)');
+app.setPaceForPlayer(()=>null);
+const noPace=app.laAdjWeekProj({name:'Gamma Wideout',pos:'WR',team:'MIA',id:'p3'}, 3, pm, dvp);
+chk(noPace.paceMult===1,'no pace data → pace multiplier degrades to 1');
+
+console.log('=== lineup view smoke ===');
+app.setSnapshot({provider:'sleeper', leagueId:'L1', season:'2026', myUserId:'u1',
+  rosterPositions:['QB','WR','WR','FLEX','BN'],
+  teamList:[{rosterId:1, ownerId:'u1', teamName:'Me', players:[
+    {id:'p1',name:'Alpha Quarterback',pos:'QB',team:'CIN'},
+    {id:'p3',name:'Gamma Wideout',pos:'WR',team:'MIA'},
+    {id:'p5',name:'Epsilon Wideout',pos:'WR',team:'BUF'},
+    {id:'p2',name:'Beta Back',pos:'RB',team:'DET'}]}]});
+const lh=app.laLineupView({provider:'sleeper', leagueId:'L1', season:'2026', myUserId:'u1',
+  rosterPositions:['QB','WR','WR','FLEX','BN'],
+  teamList:[{rosterId:1, ownerId:'u1', teamName:'Me', players:[
+    {id:'p1',name:'Alpha Quarterback',pos:'QB',team:'CIN'},
+    {id:'p3',name:'Gamma Wideout',pos:'WR',team:'MIA'},
+    {id:'p5',name:'Epsilon Wideout',pos:'WR',team:'BUF'},
+    {id:'p2',name:'Beta Back',pos:'RB',team:'DET'}]}]});
+chk(lh.includes('OPTIMAL LINEUP'),'lineup helper renders');
+chk(lh.includes('Gamma Wideout') && lh.includes('Beta Back'),'roster players placed into slots');
+chk(lh.includes('matchup: opponent defense-vs-position'),'active adjustments footnoted');
+
+console.log(`\n${pass}/${total}`);
+if(pass!==total) process.exit(1);

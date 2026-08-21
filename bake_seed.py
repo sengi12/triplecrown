@@ -17,7 +17,7 @@ Usage:
 
 Then just open the *_baked.html file on your phone — no server, no CORS.
 """
-import argparse, json, os, re, sys
+import argparse, json, os, re, sys, time
 
 # ── Seed compaction codecs ───────────────────────────────────────────────────
 # build_seed.py writes the hosted files in compact form. For the self-contained
@@ -275,7 +275,10 @@ def main():
     with open(args.html, encoding="utf-8") as f:
         html = f.read()
 
-    season  = seed.get("season", 2026)
+    # Fallback is month-aware (Jan/Feb belong to the prior league year), not a frozen literal.
+    _now = time.gmtime()
+    season  = seed.get("season", _now.tm_year - 1 if _now.tm_mon < 3 else _now.tm_year)
+    state   = seed.get("state", {})
     data    = seed.get("seed", {})
     history = seed.get("history", {})
     hseas   = seed.get("history_seasons", [])
@@ -322,6 +325,8 @@ def main():
     nflverse_def_weekly = _sidecar(os.path.join(seed_dir, "triplecrown_seed.def_weekly.json"))
     nflverse_ol_weekly = _sidecar(os.path.join(seed_dir, "triplecrown_seed.ol_weekly.json"))
     nflverse_adv_weekly = _sidecar(os.path.join(seed_dir, "triplecrown_seed.adv_weekly.json"))
+    # In-season weekly sidecar (current season): absent in the offseason, embedded when present.
+    nflverse_inseason = _sidecar(os.path.join(seed_dir, "triplecrown_seed.inseason.json"))
     # Rookie college game logs — same lazy-sidecar treatment, same reason to re-embed offline.
     cfb_logs = _sidecar(os.path.join(seed_dir, "triplecrown_seed.cfb_logs.json"))
     # playbook now ships as per-season sidecars (seeds/triplecrown_seed.coaching.<season>.json);
@@ -354,6 +359,7 @@ def main():
     block = (
         f"{START} (baked by bake_seed.py — self-contained, no fetch needed)\n"
         f"const SEED_SEASON = {season};\n"
+        f"const SEED_STATE = {j(state)};\n"
         f"const SEED_DATA = {j(data)};\n"
         f"const SEED_HISTORY = {j(history)};\n"
         f"const SEED_HISTORY_SEASONS = {j(hseas)};\n"
@@ -376,6 +382,7 @@ def main():
         f"const SEED_NFLVERSE_OL_WEEKLY = {j(nflverse_ol_weekly)};\n"
         f"const SEED_NFLVERSE_ADV_WEEKLY = {j(nflverse_adv_weekly)};\n"
         f"const SEED_NFLVERSE_COACHING = {j(nflverse_coaching)};\n"
+        f"const SEED_NFLVERSE_INSEASON = {j(nflverse_inseason)};\n"
         f"const SEED_CFB = {j(cfb)};\n"
         f"const SEED_CFB_LOGS = {j(cfb_logs)};\n"
         f"{END}"

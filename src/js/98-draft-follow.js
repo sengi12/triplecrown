@@ -107,8 +107,9 @@ async function resolveSleeperUser(username){
   return u;   // { user_id, username, display_name, avatar }
 }
 async function fetchCurrentSeason(){
-  try{ const s=await sleeperFetch(SLEEPER_STATE_URL); return (s&&(s.league_season||s.season))||String(PROJ_SEASON); }
-  catch(e){ return String(PROJ_SEASON); }
+  // One /state/nfl probe app-wide: delegate to the shared TC_SEASON sync (deduped + TTL'd).
+  try{ await syncProjSeasonFromSleeper(); }catch(e){}
+  return String(TC_SEASON.year);
 }
 // Fetch the user's leagues for `season`; if none come back, fall back one year so
 // there's still something to show in the off-season (leagues roll over late).

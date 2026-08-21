@@ -48,7 +48,7 @@ LABELS = {
 
 def build(draft_class, players, ref=None, refresh=False):
     """The full seed block for one rookie class."""
-    ref = ref or percentiles.build_reference()
+    ref = ref or percentiles.build_reference(percentiles.reference_classes(draft_class))
     links = link.build_link_map(players, draft_class, refresh=refresh)
     usable = {pid: l for pid, l in links.items()
               if l.get("athlete_id") and not (l.get("method") or "").endswith("?")}
@@ -105,7 +105,7 @@ def split_for_seed(blk):
 
 
 def main():
-    draft_class = int(sys.argv[1]) if len(sys.argv) > 1 else 2026
+    draft_class = int(sys.argv[1]) if len(sys.argv) > 1 else percentiles.reference_classes().stop
     with open(os.path.join(link.CACHE_DIR, "players.json")) as f:
         players = json.load(f)
     blk = build(draft_class, players)

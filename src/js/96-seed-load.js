@@ -13,6 +13,10 @@ function handleSeedLoad(e){
       const hasSeed = j.seed && Object.keys(j.seed).length;
       const hasECR  = j.ecr && Object.keys(j.ecr).some(k=>j.ecr[k] && Object.keys(j.ecr[k]).length);
       if(!hasSeed && !hasECR) throw new Error('Not an triplecrown_seed.json (no "seed" projections or "ecr" data found)');
+      // Adopt the seed's own season + state block so a hand-loaded seed labels itself correctly
+      // (this path never runs the Sleeper season probe).
+      if(j.season && typeof _tcApplyProjSeason==='function') _tcApplyProjSeason(j.season);
+      if(j.state && typeof _tcApplySeedState==='function') _tcApplySeedState(j.state);
       if(j.ecr) ECR=j.ecr;   // FantasyPros ECR (replaces ADP) — set FIRST so it survives even if seed is empty
       if(j.contracts) CONTRACTS=j.contracts;   // OverTheCap contracts (dynasty Age/APY/FA)
       if(j.sharp) SHARP=j.sharp;   // Warren Sharp advanced offensive stats

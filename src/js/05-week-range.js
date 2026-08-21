@@ -546,8 +546,13 @@ const PCOLORS = ['#4a9eff','#00d4aa','#ff6b35','#c084fc','#fbbf24','#f472b6',
   '#34d399','#a78bfa','#fb923c','#60a5fa','#e879f9','#38bdf8','#f97316','#86efac'];
 const SEASON_GAMES = 17;
 const TARGET_RATE = 0.95; // targets ≈ pass attempts × this
-let PROJ_SEASON = Number((typeof SEED_SEASON!=='undefined') ? SEED_SEASON : new Date().getFullYear());
-if(!Number.isFinite(PROJ_SEASON)) PROJ_SEASON = new Date().getFullYear();
+// Jan/Feb still belong to the previous league year — the season that just played its playoffs.
+function _tcMonthAwareYear(d){ const y=d.getFullYear(); return d.getMonth()<2 ? y-1 : y; }
+let PROJ_SEASON = Number((typeof SEED_SEASON!=='undefined') ? SEED_SEASON : _tcMonthAwareYear(new Date()));
+if(!Number.isFinite(PROJ_SEASON)) PROJ_SEASON = _tcMonthAwareYear(new Date());
+// Single source of truth for "now" in NFL terms. A const object mutated in place so early
+// references (concat order) never see a reassignment. source: 'fallback' | 'seed' | 'sleeper'.
+const TC_SEASON = { year: PROJ_SEASON, phase: 'off', week: 0, source: 'fallback', fetchedAt: 0 };
 const _tcScenarioName = document.getElementById('scenarioName');
 if(_tcScenarioName) _tcScenarioName.value = PROJ_SEASON + ' Projections';
 
@@ -571,19 +576,72 @@ function _tcApplyProjSeason(nextSeason){
   return PROJ_SEASON;
 }
 
-async function syncProjSeasonFromSleeper(){
+// Adopt a full Sleeper /state/nfl payload: season, phase and week — not just the year.
+function _tcApplySleeperState(s){
+  if(!s || typeof s!=='object') return TC_SEASON;
+  const y = Number(s.league_season || s.season);
+  if(Number.isFinite(y) && y>=2000 && y<=2100){ TC_SEASON.year = y; _tcApplyProjSeason(y); }
+  const st = String(s.season_type||'').toLowerCase();
+  if(st==='pre'||st==='regular'||st==='post'||st==='off') TC_SEASON.phase = st;
+  const wk = Number(s.week!=null ? s.week : (s.display_week!=null ? s.display_week : s.leg));
+  if(Number.isFinite(wk) && wk>=0 && wk<=23) TC_SEASON.week = wk;
+  TC_SEASON.source = 'sleeper';
+  TC_SEASON.fetchedAt = Date.now();
+  return TC_SEASON;
+}
+// Adopt the state block a seed carries ({season, season_type, week}); live truth always wins.
+function _tcApplySeedState(st){
+  if(!st || typeof st!=='object' || TC_SEASON.source==='sleeper') return TC_SEASON;
+  const y = Number(st.season);
+  if(Number.isFinite(y) && y>=2000 && y<=2100){ TC_SEASON.year = y; _tcApplyProjSeason(y); }
+  const p = String(st.season_type||'').toLowerCase();
+  if(p==='pre'||p==='regular'||p==='post'||p==='off') TC_SEASON.phase = p;
+  const wk = Number(st.week);
+  if(Number.isFinite(wk) && wk>=0 && wk<=23) TC_SEASON.week = wk;
+  TC_SEASON.source = 'seed';
+  return TC_SEASON;
+}
+// The season has started once Sleeper flips to the regular season (or later).
+function hasSeasonStarted(){
+  return (TC_SEASON.phase==='regular' && TC_SEASON.week>=1) || TC_SEASON.phase==='post';
+}
+// How many weeks are fully in the books — the immutable-data boundary caches key on.
+function completedWeeks(){
+  return TC_SEASON.phase==='post' ? 18
+       : TC_SEASON.phase==='regular' ? Math.max(0, TC_SEASON.week-1) : 0;
+}
+var _tcStatePromise = null;             // shared in-flight probe (var: safe under concat order)
+var _TC_STATE_TTL = 5*60*1000;
+async function syncProjSeasonFromSleeper(force){
   if(typeof SLEEPER_STATE_URL==='undefined' || !SLEEPER_STATE_URL) return PROJ_SEASON;
-  try{
-    const ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
-    const timer = ctrl ? setTimeout(()=>ctrl.abort(), 5000) : null;
-    const res = await fetch(SLEEPER_STATE_URL, {cache:'no-store', signal: ctrl?ctrl.signal:undefined});
-    if(timer) clearTimeout(timer);
-    if(!res || !res.ok) return PROJ_SEASON;
-    const s = await res.json();
-    const y = Number((s && (s.league_season || s.season)) || NaN);
-    if(Number.isFinite(y)) _tcApplyProjSeason(y);
-  }catch(e){ /* keep existing projection season fallback */ }
-  return PROJ_SEASON;
+  if(!force && TC_SEASON.source==='sleeper' && (Date.now()-TC_SEASON.fetchedAt)<_TC_STATE_TTL) return PROJ_SEASON;
+  if(_tcStatePromise) return _tcStatePromise;
+  _tcStatePromise = (async()=>{
+    try{
+      const ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
+      const timer = ctrl ? setTimeout(()=>ctrl.abort(), 5000) : null;
+      const res = await fetch(SLEEPER_STATE_URL, {cache:'no-store', signal: ctrl?ctrl.signal:undefined});
+      if(timer) clearTimeout(timer);
+      if(res && res.ok) _tcApplySleeperState(await res.json());
+    }catch(e){ /* keep existing fallback (seed state or month-aware guess) */ }
+    finally{ _tcStatePromise = null; }
+    return PROJ_SEASON;
+  })();
+  return _tcStatePromise;
+}
+// Re-probe when the state we hold is old (Sleeper advances the week Tue/Wed). Fires the
+// in-season hooks when the week or phase moved under a long-lived tab.
+var _TC_RECHECK_AGE = 6*60*60*1000;
+async function tcSeasonRecheck(force){
+  if(!force && (Date.now()-TC_SEASON.fetchedAt) < _TC_RECHECK_AGE) return TC_SEASON;
+  const prevWeek = completedWeeks(), prevPhase = TC_SEASON.phase, prevYear = TC_SEASON.year;
+  await syncProjSeasonFromSleeper(true);
+  if(completedWeeks()!==prevWeek || TC_SEASON.phase!==prevPhase || TC_SEASON.year!==prevYear){
+    if(typeof maybeFreezePaceBaseline==='function'){ try{ maybeFreezePaceBaseline(); }catch(e){} }
+    if(typeof refreshLiveSeasonStats==='function'){ try{ refreshLiveSeasonStats(); }catch(e){} }
+    if(typeof renderSeasonTabs==='function'){ try{ renderSeasonTabs(); }catch(e){} }
+  }
+  return TC_SEASON;
 }
 
 function hsPack(p){

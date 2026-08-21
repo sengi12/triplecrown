@@ -373,7 +373,10 @@ def build(links, seasons, refresh=False):
 
 
 def main():
-    draft_class = int(sys.argv[1]) if len(sys.argv) > 1 else 2026
+    # Default class = the current league year (Jan/Feb still belong to the prior one).
+    import time as _time
+    _now = _time.gmtime()
+    draft_class = int(sys.argv[1]) if len(sys.argv) > 1 else (_now.tm_year - 1 if _now.tm_mon < 3 else _now.tm_year)
     with open(os.path.join(link.CACHE_DIR, "players.json")) as f:
         players = json.load(f)
     links = link.build_link_map(players, draft_class)

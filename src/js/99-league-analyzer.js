@@ -70,7 +70,13 @@ let laState = { step: leagueSnapshot? 'view':'start', busy:false, error:null,
                 cmpPicks:true,     // Compare: include pick capital in the value lens
                 cmpStarters:false, // Compare: rank on starting lineups only (mirrors My Team)
                 cmpSort:{col:'total',dir:-1},  // Compare column sort (click a header)
-                radarAxis:null };   // My Team radar: selected axis for inline details
+                radarAxis:null,    // My Team radar: selected axis for inline details
+                // In-season tabs (99b-la-inseason.js):
+                muWeek:null,       // Matchup: viewed week (null = the current week)
+                dvpPos:'ALL',      // DvP: single-position filter
+                dvpSort:{col:'QB',dir:1},   // DvP: sorted column + direction
+                trndScope:'rostered',       // Trends: 'rostered' | 'myteam' | 'league'
+                lhShowAll:false }; // Lineup Helper: show the full bench, not just flags
 
 const LA_AUTO_REFRESH_MS = 15 * 60 * 1000;   // 15 min stale window for background refresh
 let _laAutoRefreshInFlight = false;
@@ -1249,8 +1255,14 @@ function renderLeagueAnalyzer(){
     <div class="phase-tabs">
       ${[['myteam','My Team'],['rosters','Rosters'],['compare','Compare'],['best','Waiver Wire'],['trade','Trade Center']]
         .map(([k,l])=>`<button class="phase-tab ${laState.laTab===k?'active':''}" onclick="laSetTab('${k}')">${l}</button>`).join('')}
+      ${(typeof hasSeasonStarted==='function' && hasSeasonStarted())
+        ? `<span class="phase-tab-divider"></span>` +
+          [['matchup','Matchup'],['lineup','Lineup'],['dvp','DvP'],['trends','Trends']]
+            .map(([k,l])=>`<button class="phase-tab ${laState.laTab===k?'active':''}" onclick="laSetTab('${k}')">${l}</button>`).join('')
+        : ''}
     </div>
-    ${laState.laTab==='compare' ? laCompareView(s) : laState.laTab==='best' ? laBestAvailView(s) : laState.laTab==='trade' ? laTradeView(s) : laState.laTab==='rosters' ? laRostersView(s) : laMyTeamView(s)}`;
+    ${(typeof laTabViewHTML==='function' && laTabViewHTML(laState.laTab, s)) ||
+      (laState.laTab==='compare' ? laCompareView(s) : laState.laTab==='best' ? laBestAvailView(s) : laState.laTab==='trade' ? laTradeView(s) : laState.laTab==='rosters' ? laRostersView(s) : laMyTeamView(s))}`;
 }
 
 // One card per team: players sorted by dynasty value, unvalued depth collapsed to a count,

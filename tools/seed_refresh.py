@@ -54,6 +54,29 @@ STATE_PATH = os.path.join(SEEDS, "refresh-state.json")
 
 DAY = 86400
 
+SIDECAR_INSEASON = os.path.join(SEEDS, "triplecrown_seed.inseason.json")
+
+
+def _seed_state():
+    """The committed seed's NFL-state block: {season, season_type, week} (best-effort)."""
+    try:
+        with open(SEED_MAIN) as f:
+            j = json.load(f)
+        st = j.get("state") or {}
+        y = int(st.get("season") or j.get("season") or 0)
+        if 2000 <= y <= 2100:
+            return {"season": y, "season_type": str(st.get("season_type") or "off"),
+                    "week": int(st.get("week") or 0)}
+    except Exception:
+        pass
+    t = time.gmtime()
+    return {"season": t.tm_year - 1 if t.tm_mon < 3 else t.tm_year,
+            "season_type": "off", "week": 0}
+
+
+_SEED_STATE = _seed_state()
+_CUR_SEASON = _SEED_STATE["season"]
+
 # ── Source manifest ───────────────────────────────────────────────────────────
 # `paths`    cache entries to delete (relative to cache/), globs allowed
 # `every`    minimum seconds between refreshes; None = never on a schedule
@@ -136,6 +159,19 @@ SOURCES = {
         "every": None,          # upstream-driven, like nflverse
         "upstream": ["rosters", "draft_picks", "trades"],
         "why": "nflverse rosters/draft/trades — rebuilt only when one of those feeds moves",
+    },
+    # The current-season weekly sidecar (seeds/triplecrown_seed.inseason.json). A FIXED
+    # weekly interval on purpose, not upstream timestamps: nflverse pbp moves nightly during
+    # the season, and timestamp-driven staleness would recreate exactly the daily-commit/
+    # daily-deploy churn this separate sidecar exists to avoid. One Pages deploy a week.
+    # Invalidates only the CURRENT season's pbp/roster raw files, so no other season re-fetches.
+    "inseason": {
+        "paths": [f"nflverse/raw/pbp/pbp_{_CUR_SEASON}.csv.gz",
+                  f"nflverse/raw/aux/*_roster_{_CUR_SEASON}.csv",
+                  "nflverse/raw/aux/*_games.csv"],
+        "every": 7 * DAY,
+        "in_season_only": True,     # dormant in the offseason — nothing is moving
+        "why": "current-season nflverse weekly sidecar — weekly during the season",
     },
 }
 
@@ -294,6 +330,29 @@ def validate(old, new):
     return not problems, problems, warnings
 
 
+def check_inseason_sidecar(old_side):
+    """Sidecar-only guard. The additions-style policy (near-empty at week 1 is fine) is
+    implicit — growth and first appearance always pass. Two hard rules: for the SAME season
+    the weeks list must never shrink (a shrunk list = a failed pbp read), and the file may
+    not vanish mid-season. → (ok, note)."""
+    try:
+        with open(SIDECAR_INSEASON) as f:
+            new_side = json.load(f)
+    except Exception:
+        new_side = None
+    if old_side is None:
+        return True, None                       # nothing to regress against
+    if new_side is None:
+        if _SEED_STATE["season_type"] in ("regular", "post"):
+            return False, "in-season sidecar vanished mid-season"
+        return True, None                       # offseason retirement is correct
+    if int(new_side.get("season") or 0) == int(old_side.get("season") or -1):
+        ow, nw = len(old_side.get("weeks") or []), len(new_side.get("weeks") or [])
+        if nw < ow:
+            return False, f"weeks list shrank {ow} → {nw} for the same season (failed pbp read)"
+    return True, None
+
+
 def run_build(extra_args):
     cmd = [sys.executable, "build_seed.py"] + extra_args
     log(f"  $ {' '.join(cmd)}")
@@ -328,6 +387,9 @@ def main():
         if name in forced:
             stale.append(name)
             reasons[name] = "forced"
+            continue
+        if spec.get("in_season_only") and _SEED_STATE["season_type"] not in ("regular", "post"):
+            reasons[name] = "offseason — dormant"
             continue
         if spec.get("upstream") or name == "nflverse":
             bucket = "nflverse" if name == "nflverse" else f"upstream_{name}"
@@ -386,6 +448,19 @@ def main():
                 old_seed = json.load(f)
         except Exception:
             old_seed = None
+    # The in-season sidecar gets its own backup so a bad build can roll back JUST that file.
+    side_backups = [(SIDECAR_INSEASON, SIDECAR_INSEASON + ".prev"),
+                    (SIDECAR_INSEASON + ".gz", SIDECAR_INSEASON + ".gz.prev")]
+    old_sidecar = None
+    if os.path.exists(SIDECAR_INSEASON):
+        try:
+            with open(SIDECAR_INSEASON) as f:
+                old_sidecar = json.load(f)
+        except Exception:
+            old_sidecar = None
+    for src_p, dst_p in side_backups:
+        if os.path.exists(src_p):
+            shutil.copy2(src_p, dst_p)
 
     # ── Invalidate exactly what is stale ──────────────────────────────────────
     log("\nInvalidating cache entries:")
@@ -402,6 +477,9 @@ def main():
         log("\nBUILD ITSELF FAILED — restoring the previous seed.")
         if os.path.exists(backup):
             shutil.move(backup, SEED_MAIN)
+        for src_p, dst_p in side_backups:
+            if os.path.exists(dst_p):
+                shutil.move(dst_p, src_p)
         return 1
 
     # ── Validate ──────────────────────────────────────────────────────────────
@@ -413,6 +491,9 @@ def main():
         log(f"  new seed will not parse ({e}) — restoring previous.")
         if os.path.exists(backup):
             shutil.move(backup, SEED_MAIN)
+        for src_p, dst_p in side_backups:
+            if os.path.exists(dst_p):
+                shutil.move(dst_p, src_p)
         return 1
 
     ok, problems, warnings = validate(old_seed, new_seed)
@@ -426,11 +507,26 @@ def main():
         log("the next run retries. Nothing has been committed.")
         if os.path.exists(backup):
             shutil.move(backup, SEED_MAIN)
+        for src_p, dst_p in side_backups:
+            if os.path.exists(dst_p):
+                shutil.move(dst_p, src_p)
         return 1
 
     log("  all guards passed")
     if os.path.exists(backup):
         os.remove(backup)
+
+    # ── Sidecar guard (rolls back only the in-season file, never the whole run) ──
+    ok_side, side_note = check_inseason_sidecar(old_sidecar)
+    if not ok_side:
+        log(f"  SIDECAR REJECTED: {side_note} — restoring the previous in-season sidecar only")
+        for src_p, dst_p in side_backups:
+            if os.path.exists(dst_p):
+                shutil.move(dst_p, src_p)
+    else:
+        for _, dst_p in side_backups:
+            if os.path.exists(dst_p):
+                os.remove(dst_p)
 
     # ── Record ────────────────────────────────────────────────────────────────
     stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

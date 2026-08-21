@@ -57,7 +57,7 @@ async function pcardFetchDstSeason(season){
   const WEEKS = 18;
   const reqs = [];
   for(let w=1; w<=WEEKS; w++){
-    const url = `https://api.sleeper.com/stats/nfl/${season}/${w}?season_type=regular&position[]=DEF`;
+    const url = SLEEPER_WEEK_STATS_URL(season, w, 'DEF');
     reqs.push(sleeperFetch(url).then(rows=>({w, rows})).catch(()=>({w, rows:null})));
   }
   const results = await Promise.all(reqs);

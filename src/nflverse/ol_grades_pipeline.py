@@ -1128,7 +1128,15 @@ def attach_espn(out, season=None):
     return out
 
 
-def build_grades_df(seasons=(2022, 2023, 2024, 2025), min_snaps=150, min_poa=60,
+def _default_grade_seasons(n=4):
+    """The last n completed NFL seasons (Jan/Feb still belong to the prior league year)."""
+    import time as _time
+    now = _time.gmtime()
+    league_year = now.tm_year - 1 if now.tm_mon < 3 else now.tm_year
+    return tuple(range(league_year - n, league_year))
+
+
+def build_grades_df(seasons=None, min_snaps=150, min_poa=60,
                     market=False, allpro_csv=None, cache_dir=None, verbose=False):
     """Compute the full OL grades table and return it as an ordered DataFrame.
 
@@ -1143,7 +1151,7 @@ def build_grades_df(seasons=(2022, 2023, 2024, 2025), min_snaps=150, min_poa=60,
     """
     if cache_dir:
         set_cache_dir(cache_dir)
-    seasons = sorted(int(s) for s in seasons)
+    seasons = sorted(int(s) for s in (seasons or _default_grade_seasons()))
     latest = max(seasons)
 
     def _log(msg):
@@ -1298,7 +1306,7 @@ def build_grades_df(seasons=(2022, 2023, 2024, 2025), min_snaps=150, min_poa=60,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--seasons", type=int, nargs="+", default=[2022, 2023, 2024, 2025])
+    ap.add_argument("--seasons", type=int, nargs="+", default=list(_default_grade_seasons()))
     ap.add_argument("--min-snaps", type=int, default=150)
     ap.add_argument("--min-poa", type=int, default=60)
     ap.add_argument("--market", action="store_true", help="add OverTheCap market lens column")

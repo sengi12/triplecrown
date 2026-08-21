@@ -273,6 +273,13 @@ def _load_pbp(season, cols=None):
         legacy_pkl = _legacy_pickle_cache_path("pbp", payload)
         if os.path.exists(legacy_pkl) and not os.path.exists(pkl_path):
             os.replace(legacy_pkl, pkl_path)
+        # A pickle older than its raw csv is stale (the in-season refresher deletes and
+        # re-downloads the current season's pbp weekly) — re-parse rather than mask it.
+        if os.path.exists(pkl_path) and os.path.getmtime(pkl_path) < os.path.getmtime(csv_path):
+            try:
+                os.remove(pkl_path)
+            except OSError:
+                pass
         if os.path.exists(pkl_path):
             _PBP_DF_CACHE[key] = pd.read_pickle(pkl_path)
         else:
@@ -3131,7 +3138,10 @@ def compare_participation(season):
 if __name__ == "__main__":
     if not HAVE_PANDAS:
         sys.exit("pandas not installed — this prototype needs it (the seed builder does not).")
-    season = int(sys.argv[1]) if len(sys.argv) > 1 else 2025
+    # Default = the most recent completed season (Jan/Feb still belong to the prior league year).
+    import time as _time
+    _now = _time.gmtime()
+    season = int(sys.argv[1]) if len(sys.argv) > 1 else (_now.tm_year - 2 if _now.tm_mon < 3 else _now.tm_year - 1)
     mode = sys.argv[2] if len(sys.argv) > 2 else "all"
     if mode in ("all", "sharp"):
         compare(season)

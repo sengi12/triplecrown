@@ -731,7 +731,7 @@ function _olEnrichLineGrades(line){
   return out;
 }
 
-function _olProjectedTeam2026(){
+function _olProjectedTeamNext(){
   const out={};
   if(!(typeof NFLVERSE==='object' && NFLVERSE)) return out;
 
@@ -873,8 +873,8 @@ function _olProjectedTeam2026(){
 // Public accessor: projected OL overall score + league rank for a team.
 // which = 'pass' | 'run'. Returns {score, rank} or null.
 function projectedOlScore(team, which){
-  if(typeof _olProjectedTeam2026!=='function') return null;
-  const proj=_olProjectedTeam2026()[_olTeamCode(team)];
+  if(typeof _olProjectedTeamNext!=='function') return null;
+  const proj=_olProjectedTeamNext()[_olTeamCode(team)];
   if(!proj) return null;
   if(which==='run') return {score:proj.projRunScore, rank:proj.runRank};
   return {score:proj.projPassScore, rank:proj.passRank};
@@ -885,7 +885,7 @@ function _olQbHasSeasonData(pid, season, normName, fallbackTeam){
   const tm=_qbTeamForSeason(pid, s, normName, fallbackTeam) || _qbAnyKnownTeam(pid, normName, fallbackTeam);
   if(!tm) return false;
   if(_olIsProjSeason(s)){
-    const p=_olProjectedTeam2026()[tm];
+    const p=_olProjectedTeamNext()[tm];
     if(p && p.passTbl && p.passTbl.teams && p.passTbl.teams[tm]) return true;
   }
   const pack=NFLVERSE[s]||{};
@@ -991,8 +991,8 @@ function pcardQbOlAvailable(pid){
   if(String(p.position||p.pos||'').toUpperCase()!=='QB') return false;
   const teamNow=_olTeamCode(p.team||'');
   if(!teamNow) return false;
-  const proj2026=_olProjectedTeam2026()[teamNow];
-  if(proj2026 && proj2026.passTbl && proj2026.passTbl.teams && proj2026.passTbl.teams[teamNow]) return true;
+  const projNext=_olProjectedTeamNext()[teamNow];
+  if(projNext && projNext.passTbl && projNext.passTbl.teams && projNext.passTbl.teams[teamNow]) return true;
   return Object.keys(NFLVERSE).some(s=>{
     const pack=NFLVERSE[s]||{};
     const tbl=pack.team&&pack.team.offensive_line_pass;
@@ -1027,7 +1027,7 @@ function renderPcardQbOl(pid){
   const notePlayer = noteTargetFromArgs(pid, 'QB', teamCode);
   const noteCtx = _olIsProjSeason(season) ? `${season} projections · QB OL` : `${season} QB OL`;
 
-  const proj=_olIsProjSeason(season) ? (_olProjectedTeam2026()[teamCode]||null) : null;
+  const proj=_olIsProjSeason(season) ? (_olProjectedTeamNext()[teamCode]||null) : null;
   const passTbl=proj ? proj.passTbl : (pack.team&&pack.team.offensive_line_pass);
   const row=passTbl&&passTbl.teams&&passTbl.teams[teamCode];
   const cols=(passTbl&&passTbl.columns)||[];

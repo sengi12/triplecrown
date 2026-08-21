@@ -190,6 +190,7 @@ let sharpTable = null;      // which Sharp table is active in the league-wide vi
 let sharpSortCol = null;    // active sort column in league-wide view
 let sharpSortDir = 1;       // 1 = best-first (rank asc), -1 = worst-first
 let activeSeason = 'proj';   // 'proj' = working projections, or a year string for read-only reference
+let projViewMode = 'proj';   // in-season sub-mode of 'proj': 'proj' (editable) | 'pace' (vs frozen baseline)
 let sleeperPlayers = null;   // cached Sleeper player DB (id → meta), fetched once
 let sleeperPlayersPromise = null;   // shared in-flight promise so concurrent callers dedupe
 let seasonStatsCache = {};   // season → seed-shaped data built from Sleeper stats

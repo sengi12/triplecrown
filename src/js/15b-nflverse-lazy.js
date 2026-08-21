@@ -251,10 +251,13 @@ function tcLatencyLog(path, mode, msFetch, msDecode, msParse, ok){
 }
 
 async function fetchSeedJson(url){
+  // A query string (cache-busting revalidation) must ride AFTER the .gz extension.
+  const _qi = url.indexOf('?');
+  const _gzUrl = _qi < 0 ? url + '.gz' : url.slice(0, _qi) + '.gz' + url.slice(_qi);
   try{
     if(typeof DecompressionStream==='function'){
       const t0 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
-      const r = await fetch(url + '.gz', TC_SEED_FETCH_OPTS);
+      const r = await fetch(_gzUrl, TC_SEED_FETCH_OPTS);
       const t1 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
       if(r.ok && r.body){
         // Who unzipped it? GitHub Pages serves a .gz as an opaque `application/gzip` body, so
@@ -346,6 +349,56 @@ function resetNflverseLazy(){
   _nflverseLazyPromise = {};
   _coachingSeasonLoaded = {};
   _coachingSeasonPromise = {};
+  TC_INSEASON = null;
+  _inseasonPromise = null;
+}
+
+// ── In-season weekly sidecar (current season only) ───────────────────────────
+// {v, season, weeks, asof, adv_weekly, player_weekly, def_vs_pos, schedule} — built weekly
+// in CI while the season runs; absent (and deleted) in the offseason. Its adv_weekly block
+// merges into NFLVERSE so the existing windowed-recompute decoders see the live season; the
+// rest is read via TC_INSEASON by the in-season tools.
+let TC_INSEASON = null;
+var _inseasonPromise = null;
+var _inseasonRevalidated = false;
+const _INSEASON_URL = 'seeds/triplecrown_seed.inseason.json';
+function _adoptInseason(payload){
+  if(!payload || !payload.season) return false;
+  TC_INSEASON = payload;
+  if(payload.adv_weekly) mergeNflverseSection('adv_weekly', payload.adv_weekly);
+  return true;
+}
+function ensureInseasonSidecar(){
+  if(TC_INSEASON) return Promise.resolve(true);
+  if(_inseasonPromise) return _inseasonPromise;
+  // Baked/offline: the payload is already in memory as a const.
+  try{
+    if(typeof SEED_NFLVERSE_INSEASON!=='undefined' && SEED_NFLVERSE_INSEASON && SEED_NFLVERSE_INSEASON.season){
+      return Promise.resolve(_adoptInseason(SEED_NFLVERSE_INSEASON));
+    }
+  }catch(e){}
+  _inseasonPromise = (async()=>{
+    try{
+      const raw = await fetchSeedJson(_INSEASON_URL);
+      if(!raw || !_adoptInseason(raw)) return false;
+      // The service worker serves seeds/ cache-first, so a returning visitor can get last
+      // week's sidecar. When the payload trails the completed weeks, re-fetch ONCE with a
+      // per-week cache-busting query (a different URL misses both the SW and HTTP caches).
+      try{
+        const wk = (typeof completedWeeks==='function') ? completedWeeks() : 0;
+        const last = (raw.weeks && raw.weeks.length) ? raw.weeks[raw.weeks.length-1] : 0;
+        if(!_inseasonRevalidated && typeof TC_SEASON!=='undefined'
+           && String(raw.season)===String(TC_SEASON.year) && last < wk){
+          _inseasonRevalidated = true;
+          const fresh = await fetchSeedJson(`${_INSEASON_URL}?wk=${wk}`);
+          if(fresh && fresh.season) _adoptInseason(fresh);
+        }
+      }catch(e){ /* stale-but-present beats absent */ }
+      return true;
+    }catch(e){ return false; }
+    finally{ _inseasonPromise = null; }
+  })();
+  return _inseasonPromise;
 }
 
 // Fetch a sidecar section on demand and merge it in. Returns a promise resolving to whether

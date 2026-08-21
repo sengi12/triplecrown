@@ -23,12 +23,18 @@ const TS_MAXSHIFT = 420;   // cap on the content's follow-the-finger travel
 function tsTabPhase(btn){
   if(!btn) return null;
   const oc=btn.getAttribute('onclick')||'';
-  const m=oc.match(/setPhase\('([^']+)'\)/);
+  // Builder tabs use setPhase('X'); League Analyzer tabs use laSetTab('x') — both swipe.
+  const m=oc.match(/(?:setPhase|laSetTab)\('([^']+)'\)/);
   return m ? m[1] : null;
 }
 
 function tsCanPreviewPhase(phase){
   const p=String(phase||'');
+  // League Analyzer tabs (checked BEFORE the currentTeam guard — the analyzer needs no team).
+  if(typeof currentPhase!=='undefined' && currentPhase==='League'){
+    return !!(typeof leagueSnapshot!=='undefined' && leagueSnapshot) &&
+      ['myteam','rosters','compare','best','trade','matchup','lineup','dvp','trends'].includes(p);
+  }
   if(!currentTeam) return false;
   if(['Passing','Receiving','Rushing','Advanced','Additions'].includes(p)) return true;
   if(p==='Rankings') return (typeof rankScope!=='undefined' ? rankScope==='team' : true);
@@ -82,6 +88,29 @@ function tsPreviewTeamRankings(){
 
 function tsRenderPhasePreview(phase){
   if(!tsCanPreviewPhase(phase)) return '';
+  // League Analyzer previews: render the neighbouring tab's view from IN-MEMORY data only.
+  // The strict rule for the in-season tabs is cache-only — a cold matchup/DvP/trends tab
+  // returns '' (blank underlay; the commit-by-click still works) rather than fetching from
+  // a gesture. laTabViewHTML itself never fetches synchronously, so it is safe to call.
+  if(typeof currentPhase!=='undefined' && currentPhase==='League'){
+    const s=(typeof leagueSnapshot!=='undefined')?leagueSnapshot:null;
+    if(!s) return '';
+    try{
+      if(phase==='myteam') return laMyTeamView(s);
+      if(phase==='rosters') return laRostersView(s);
+      if(phase==='compare') return laCompareView(s);
+      if(phase==='best') return laBestAvailView(s);
+      if(phase==='trade') return laTradeView(s);
+      if(['matchup','lineup','dvp','trends'].includes(phase)){
+        // Cache-only: preview only when the data is already loaded.
+        if(phase==='matchup' && !(_laMu.byWeek[laMuWeek()])) return '';
+        if(phase==='lineup' && !(_laMu.byWeek[laCurrentWeek()])) return '';
+        if((phase==='dvp'||phase==='trends') && !(typeof TC_INSEASON!=='undefined' && TC_INSEASON)) return '';
+        return (typeof laTabViewHTML==='function' && laTabViewHTML(phase, s)) || '';
+      }
+    }catch(e){ return ''; }
+    return '';
+  }
   const t=currentTeam;
   const state=userProj[t];
   if(!state) return '';
@@ -210,9 +239,15 @@ function tsScrollerClaims(el, dir){
   let x0=null, y0=null, dx=0, axis=null, bar=null, host=null, tabs=null, cur=-1;
   let previewPhase=null, previewCache={};
 
+  // Per-gesture preview cache key. League previews key on the snapshot, not the team/season.
+  const tsPreviewKey = (phase)=>
+    (typeof currentPhase!=='undefined' && currentPhase==='League')
+      ? `League:${(typeof laSnapshotRef==='function' && laSnapshotRef())||''}:${String(phase)}`
+      : `${String(currentTeam||'')}:${String(activeSeason||'')}:${String(phase)}`;
+
   const cachePreviewForPhase = (phase)=>{
     if(!phase || !tsCanPreviewPhase(phase)) return;
-    const cacheKey = `${String(currentTeam||'')}:${String(activeSeason||'')}:${String(phase)}`;
+    const cacheKey = tsPreviewKey(phase);
     if(previewCache[cacheKey]!=null) return;
     let html='';
     try{ html = tsSanitizePreviewHTML(tsRenderPhasePreview(phase)); }
@@ -237,7 +272,7 @@ function tsScrollerClaims(el, dir){
       return;
     }
     if(previewPhase===phase) return;
-    const cacheKey = `${String(currentTeam||'')}:${String(activeSeason||'')}:${String(phase)}`;
+    const cacheKey = tsPreviewKey(phase);
     if(previewCache[cacheKey]==null) cachePreviewForPhase(phase);
     let html = previewCache[cacheKey];
     if(!html){

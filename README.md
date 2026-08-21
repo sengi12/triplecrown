@@ -66,6 +66,7 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
 - **Player Notes + stat tagging.** Add notes on any player card and tag important stats directly from rankings/cards into those notes so your own scouting context stays attached to the player.
 - **Rankings productivity tools.** Use built-in player search, switch imported analysts when multi-analyst files are loaded, and launch the KeepTradeCut game overlay from the Rankings view.
 - **League Analyzer controls.** Sync **Sleeper or ESPN** leagues into explicit snapshots, re-sync on demand, and switch leagues from the menu while keeping all analyzer views tied to the same snapshot context. Whichever platform a league lives on, every player, stat and projection still comes from Sleeper — a linked league contributes only its own teams, owners, rosters, scoring and lineup slots.
+- **In-season suite (appears automatically once the NFL season kicks off).** The app tracks Sleeper's NFL state (season, phase, week), and when the regular season starts two things happen. The projections view gains a **Live / Pace** toggle: *Live* shows the current season's actual stats to date as a read-only reference season (red-zone and air-yard columns included), and *Pace* keeps you in your editable projections while showing every player's 17-game pace against **your projections frozen at kickoff** — edit all season without moving your own goalposts. And the League Analyzer gains four swipable in-season tabs: **Matchup** (live weekly scoreboard, your matchup featured, auto-refreshing during games), **Lineup** (optimal lineup vs your set starters, adjusted for opponent defense-vs-position and player pace, with every adjustment footnoted when its data is missing), **DvP** (each defense's fantasy points allowed per game vs QB/RB/WR/TE, scored under *your league's* settings), and **Trends** (pace leaders/laggards, TD-regression candidates from volume-vs-TD-rate gaps, and last-3-weeks usage trending). Advanced weekly data ships in a small in-season sidecar rebuilt weekly by CI from nflverse and retired automatically each offseason.
 
 <!-- Center align -->
 <div align="center">
@@ -111,7 +112,7 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
 
 ## Quick start
 
-**Just want to use it?** Open `index.html` in any modern browser. On first load it pulls live 2026 projections from Sleeper. That's it.
+**Just want to use it?** Open `index.html` in any modern browser. On first load it pulls the current season's live projections from Sleeper (the season is detected from Sleeper's NFL state — no yearly code changes). That's it.
 
 For the full experience (expert rankings, contracts, advanced stats, coaching, roster changes, prior-season history), build a **seed** — see below.
 
@@ -136,8 +137,8 @@ For the full experience (expert rankings, contracts, advanced stats, coaching, r
 The app can pull live projections and a few live stats on its own, but several sources **can't be fetched from the browser** — FantasyPros, OverTheCap, Warren Sharp, SumerSports, Wikipedia and nflverse aren't reachable from client-side JavaScript (CORS). The seed builder runs on your own machine, where there's no such restriction, and bundles everything into one file.
 
 ```bash
-python build_seed.py                 # 2026 projections + last 5 seasons of stats + all reference data
-python build_seed.py --season 2026   # choose the projection season
+python build_seed.py                 # current-season projections + last 5 seasons of stats + all reference data
+python build_seed.py --season 2027   # override the projection season (defaults to Sleeper's NFL state)
 python build_seed.py --history 5     # how many prior seasons of stats to bundle
 python build_seed.py --refresh       # ignore caches and re-download everything
 ```
@@ -287,7 +288,7 @@ The project ships with a regression suite (Node + Python) covering the projectio
 
 ## To Do
 ### New Features
-- [ ] clicking on a team logo, takes you to that team's 2026 projections page anywhere in the app
+- [ ] clicking on a team logo, takes you to that team's current-season projections page anywhere in the app
 - [x] add ESPN league support — see **Linking an ESPN league** below (public leagues only)
 - [🛠️] add Yahoo league support: needs a server. Yahoo's API sends **no CORS headers at all**, so the
   browser can't call it even with a valid token, and its OAuth2 flow requires a client secret plus hourly
@@ -305,13 +306,15 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] reach out to Sleeper
 ### League Analyzer
 - [ ] In-Season Tools:
-  - [ ] lineup helper tab
-  - [ ] Implement future schedule on player cards 
-  - [ ] defensive rankings per pos that get more accurate as we get more data (each defense ranked against each fantasy position: QB, RB, WR, TE)
-  - [ ] Rest of season projections
-    - [ ] Current 17-game pace (can overlay with user's ROS projections)
-    - [ ] ROS positive regression candidates highlighted (ex: low in TD output, yet relatively high league-wide in Red Zone volume or just volume in general yet there could be so many other examples)
-    - [ ] Trending Up and Trending Down players each week based on surprising weekly stats from projections
+  - [x] lineup helper tab
+  - [x] live matchup / scoreboard tab (my matchup featured, 45s refresh during games)
+  - [ ] Implement future schedule on player cards (the schedule data now ships in the in-season sidecar)
+  - [x] defensive rankings per pos that get more accurate as we get more data (each defense ranked against each fantasy position: QB, RB, WR, TE)
+  - [x] Rest of season projections
+    - [x] Current 17-game pace vs kickoff-frozen projections (Pace toggle + Trends tab)
+    - [x] ROS positive regression candidates highlighted (volume percentile vs TD-rate percentile gap)
+    - [x] Trending Up and Trending Down players each week (last-3 vs prior-3 target share / touches)
+  - [ ] ESPN live matchup scoring (mMatchupScore through the gateway)
 ### Audit
 ### Import Projections
 ### Adv Metrics

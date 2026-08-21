@@ -28,6 +28,7 @@ Usage:
 import json
 import os
 import sys
+import time
 
 from src.cfb import cfbfastr, link
 
@@ -36,7 +37,17 @@ SCHEMA = "cfb_percentiles_v1"
 # Draft classes that make up the reference pool. 2018 is the practical floor: CFBD's roster
 # files thin out badly before then (2013 has 8.4k rows against 2025's 30k), so earlier classes
 # would be measured against a pool with holes in it.
-REFERENCE_CLASSES = range(2018, 2026)
+REFERENCE_FLOOR = 2018
+
+
+def reference_classes(draft_class=None):
+    """Draft classes making up the reference pool: the floor through the class before
+    `draft_class`. Computed, not frozen, so the pool keeps growing as classes complete."""
+    if draft_class is None:
+        now = time.gmtime()
+        # Jan/Feb still belong to the prior league year; the draft class matches the league year.
+        draft_class = now.tm_year - 1 if now.tm_mon < 3 else now.tm_year
+    return range(REFERENCE_FLOOR, max(REFERENCE_FLOOR + 1, int(draft_class)))
 
 # Metrics ranked per position, and which direction is good. `False` means lower is better, so
 # the percentile is inverted before it's stored — a low sack rate should read as a high score.
@@ -90,8 +101,9 @@ def _quantiles(values):
     return out
 
 
-def build_reference(classes=REFERENCE_CLASSES, refresh=False):
+def build_reference(classes=None, refresh=False):
     """Cut points per position per metric, plus the pool size each was computed from."""
+    classes = classes or reference_classes()
     path = os.path.join(link._cache_subdir("derived", "percentiles"),
                         f"{SCHEMA}_{min(classes)}_{max(classes)}.json")
     if os.path.exists(path) and not refresh:

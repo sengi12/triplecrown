@@ -2058,6 +2058,7 @@ function _schemeRenderTemplate(template, p){
     .replace('__TC_FV_SCRIPT__', script)
     .replace('Detroit Lions &mdash; Playbook', `${full} &mdash; Playbook`)
     .replace(/\b20\d{2}\s+·\s+Routes mapped to players/, `${season} · Routes mapped to players`)
+    .replace(/FTN participation, 20\d{2} REG/, `FTN participation, ${season} REG`)
     .replace('WR1=St. Brown, WR2=Williams', `WR1=${wr1}, WR2=${wr2}`)
     .replace(/const FV=.*?const FORM=FV\.data;\s*const SEASON=FV\.season;\s*const NAMES=FV\.names;\s*const TEAM_CODE=.*?;/s, script);
 }

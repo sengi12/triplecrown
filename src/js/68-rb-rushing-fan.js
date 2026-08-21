@@ -24,7 +24,7 @@ function _rbIsProjSeason(season){
 
 function _rbProjectedTeamAndRow(pid, normName){
   const proj=_rbProjSeed();
-  const olProj=(typeof _olProjectedTeam2026==='function') ? _olProjectedTeam2026() : {};
+  const olProj=(typeof _olProjectedTeamNext==='function') ? _olProjectedTeamNext() : {};
   const player=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[pid])||{};
   const directTeam=_rbTeamCode(player.team||'');
   const matchesRow=(row)=> !!row && ((pid && row.player_id && String(row.player_id)===String(pid)) || _rbNormName(row.name)===normName);
@@ -106,7 +106,7 @@ function _rbProjectedLanes(baseChart, projLine, totals){
 function _rbProjectedChart(pid, normName){
   const pr=_rbProjectedTeamAndRow(pid, normName);
   const teamCode=_rbTeamCode(pr.team||'');
-  const olProj=(typeof _olProjectedTeam2026==='function') ? _olProjectedTeam2026()[teamCode] : null;
+  const olProj=(typeof _olProjectedTeamNext==='function') ? _olProjectedTeamNext()[teamCode] : null;
   if(!teamCode || !olProj) return null;
   const histSeasons=Object.keys(NFLVERSE||{})
     .filter(s=>String(s)!==RB_PROJ_SEASON && NFLVERSE[s] && NFLVERSE[s].rb_fan && NFLVERSE[s].rb_fan[normName])

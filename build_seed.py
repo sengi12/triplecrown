@@ -24,22 +24,40 @@ from urllib import request, error
 SLEEPER_STATE_URL = "https://api.sleeper.app/v1/state/nfl"
 
 
-def _default_proj_season_from_sleeper():
-    """Best-effort current Sleeper NFL season. Falls back to current UTC year."""
-    fallback = time.gmtime().tm_year
+def _nfl_season_for(tm):
+    """The league year a calendar moment belongs to — Jan/Feb still belong to the prior season."""
+    return tm.tm_year - 1 if tm.tm_mon < 3 else tm.tm_year
+
+
+def _sleeper_state():
+    """Best-effort Sleeper NFL state: {season, season_type, week}.
+
+    season_type is one of pre/regular/post/off. Falls back to a month-aware guess of the
+    current league year (offseason, week 0) when the probe fails.
+    """
+    fallback = {"season": _nfl_season_for(time.gmtime()), "season_type": "off", "week": 0}
     try:
         req = request.Request(SLEEPER_STATE_URL, headers={"Accept": "application/json"})
         with request.urlopen(req, timeout=8) as r:
-            state = json.loads(r.read().decode("utf-8", "replace"))
-        y = int((state or {}).get("league_season") or (state or {}).get("season") or fallback)
-        if 2000 <= y <= 2100:
-            return y
+            state = json.loads(r.read().decode("utf-8", "replace")) or {}
+        y = int(state.get("league_season") or state.get("season") or 0)
+        if not (2000 <= y <= 2100):
+            return fallback
+        stype = str(state.get("season_type") or "off").lower()
+        if stype not in ("pre", "regular", "post", "off"):
+            stype = "off"
+        wk_raw = state.get("week") if state.get("week") is not None else state.get("display_week")
+        try:
+            week = int(wk_raw or 0)
+        except (TypeError, ValueError):
+            week = 0
+        return {"season": y, "season_type": stype, "week": max(0, min(23, week))}
     except Exception:
-        pass
-    return fallback
+        return fallback
 
 
-DEFAULT_PROJ_SEASON = _default_proj_season_from_sleeper()
+TC_STATE = _sleeper_state()
+DEFAULT_PROJ_SEASON = TC_STATE["season"]
 
 # ── Seed compaction codecs ───────────────────────────────────────────────────
 # Shrink the hosted downloads: the fantasy seed, the def_weekly sidecar, and each
@@ -2642,6 +2660,18 @@ def main():
         print("\n  college rookie profiles disabled (--no-cfb)")
 
 
+    # In-season weekly sidecar: the one nflverse-shaped block that must move DURING the
+    # season (weekly team aggregates, per-player weekly usage, defense-vs-position, schedule).
+    # Built only while the season is actually running; same fail-soft contract as above.
+    inseason = {}
+    if args.nflverse and TC_STATE["season_type"] in ("regular", "post"):
+        print("\n  in-season weekly sidecar (current-season nflverse)")
+        try:
+            import src.nflverse.inseason as _ins
+            inseason = _ins.build_inseason(args.season)
+        except Exception as e:
+            print(f"    ⚠ in-season sidecar failed: {type(e).__name__}: {e}")
+
     # Split the two largest, rarely-viewed nflverse blocks (def_weekly, coaching_scheme) out of
     # the main seed into sidecar files. The app lazy-loads them on demand (opening a defensive
     # player card / a team's coaching-scheme modal) so the initial seed load stays lean & fast.
@@ -2668,6 +2698,11 @@ def main():
     BUILDER_VERSION = "2.12-adp-fix"   # bump when aggregation logic changes
 
     _fantasy_obj = {"season": args.season, "builder_version": BUILDER_VERSION,
+                    # NFL state at build time: lets the app know the season phase/week without
+                    # a live probe (baked/offline copies especially). Live state still wins.
+                    "state": {"season": TC_STATE["season"], "season_type": TC_STATE["season_type"],
+                              "week": TC_STATE["week"],
+                              "asof": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
                     "seed": seed, "history": history,
                     "history_seasons": nonempty_seasons, "ecr": ecr,
                     "contracts": contracts, "sharp": sharp, "sos": sos,
@@ -2705,6 +2740,18 @@ def main():
     # stay inline (82 KB gz inline vs 219 KB gz together).
     if cfb_logs:
         _write_seed("seeds/triplecrown_seed.cfb_logs.json", cfb_logs)
+    # In-season sidecar: written while the season runs; deleted in the offseason build,
+    # when that season's data ships through the normal history/adv_weekly path instead.
+    _inseason_path = "seeds/triplecrown_seed.inseason.json"
+    if inseason:
+        _write_seed(_inseason_path, inseason)
+    elif TC_STATE["season_type"] in ("off", "pre"):
+        for _p in (_inseason_path, _inseason_path + ".gz"):
+            if os.path.exists(_p):
+                try:
+                    os.remove(_p)
+                except OSError:
+                    pass
     # Playbook is the largest lazy block and is viewed one season at a time, so split it
     # into per-season sidecars the app fetches on demand (a typical user only downloads the
     # current season). Remove any stale combined file from older builds.

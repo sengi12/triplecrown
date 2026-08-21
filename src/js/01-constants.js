@@ -38,6 +38,9 @@ const SLEEPER_PLAYERS_URL = 'https://api.sleeper.app/v1/players/nfl';
 const SLEEPER_PROJ_URL = (season)=>`https://api.sleeper.com/projections/nfl/${season}?season_type=regular&grouping=season`;
 const SLEEPER_STATS_URL = (season)=>`https://api.sleeper.com/stats/nfl/${season}?season_type=regular&grouping=season`;
 const SLEEPER_WEEKLY_URL = (pid,season)=>`https://api.sleeper.com/stats/nfl/player/${pid}?season_type=regular&season=${season}&grouping=week`;
+// League-wide stats for ONE week. (The season endpoint's grouping=week quirk returns an
+// aggregate row, so real weekly data is fetched week by week — see 71b-team-def-card.js.)
+const SLEEPER_WEEK_STATS_URL = (season,week,pos)=>`https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular${pos?`&position[]=${pos}`:''}`;
 const SLEEPER_PICKS_URL = (draftId)=>`https://api.sleeper.app/v1/draft/${draftId}/picks`;
 const SLEEPER_DRAFT_URL = (draftId)=>`https://api.sleeper.app/v1/draft/${draftId}`;
 const SLEEPER_HEADSHOT = (pid)=>`https://sleepercdn.com/content/nfl/players/${pid}.jpg`;

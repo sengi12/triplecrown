@@ -199,5 +199,50 @@ for name, spec in SR.SOURCES.items():
     chk(isinstance(spec.get("paths"), list) and spec["paths"], f"{name}: has cache paths")
     chk("why" in spec and spec["why"], f"{name}: explains itself in the report")
 
+print("\n=== TEST 12: the in-season sidecar source + its own guard ===")
+# Fixed weekly cadence on purpose (nflverse pbp timestamps move nightly in-season — timestamp
+# driven staleness would recreate the daily-deploy churn the sidecar exists to avoid), gated
+# to the season actually running, and scoped to the CURRENT season's cache files only.
+ins = SR.SOURCES["inseason"]
+chk(ins["every"] == 7 * SR.DAY, "inseason: fixed 7-day cadence, not upstream timestamps")
+chk(ins.get("in_season_only") is True, "inseason: dormant outside the season")
+chk(any(str(SR._CUR_SEASON) in p for p in ins["paths"]), "inseason: invalidates only the current season's files")
+
+import json as _json  # noqa: E402
+
+
+def _side_case(old, new, season_type="regular"):
+    """Run check_inseason_sidecar with `new` on disk (None = file absent)."""
+    real_path, real_state = SR.SIDECAR_INSEASON, SR._SEED_STATE
+    fd = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+    try:
+        if new is None:
+            fd.close()
+            os.unlink(fd.name)
+        else:
+            fd.write(_json.dumps(new))
+            fd.close()
+        SR.SIDECAR_INSEASON = fd.name
+        SR._SEED_STATE = dict(real_state, season_type=season_type)
+        return SR.check_inseason_sidecar(old)
+    finally:
+        SR.SIDECAR_INSEASON, SR._SEED_STATE = real_path, real_state
+        if new is not None and os.path.exists(fd.name):
+            os.unlink(fd.name)
+
+
+ok, _ = _side_case({"season": 2026, "weeks": [1, 2, 3]}, {"season": 2026, "weeks": [1, 2]})
+chk(not ok, "weeks list shrinking for the same season is REJECTED (a broken pbp read)")
+ok, _ = _side_case({"season": 2026, "weeks": [1, 2]}, {"season": 2026, "weeks": [1, 2, 3]})
+chk(ok, "weeks growing passes")
+ok, _ = _side_case({"season": 2026, "weeks": [1, 2]}, {"season": 2027, "weeks": [1]})
+chk(ok, "a NEW season starting near-empty passes (additions-style policy)")
+ok, _ = _side_case(None, {"season": 2026, "weeks": [1]})
+chk(ok, "first-ever sidecar passes")
+ok, _ = _side_case({"season": 2026, "weeks": [1, 2]}, None, season_type="regular")
+chk(not ok, "sidecar vanishing MID-SEASON is REJECTED")
+ok, _ = _side_case({"season": 2026, "weeks": list(range(1, 19))}, None, season_type="off")
+chk(ok, "offseason retirement of the sidecar passes")
+
 print(f"\nRESULT: {'PASS' if FAILED == 0 else 'MISS'} ({PASS}/{PASS + FAILED} checks)")
 sys.exit(0 if FAILED == 0 else 1)
