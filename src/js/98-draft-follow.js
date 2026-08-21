@@ -44,20 +44,31 @@ function applySleeperScoring(sc){
     return r2;
   };
   const num=(v,d)=>{ const n=Number(v); return isFinite(n)?clean(n):d; };
-  const perYardToYdg=(v,fallback)=>{ const n=Number(v); return (isFinite(n)&&n>0) ? clean(1/n) : fallback; };
   const s=scoringSettings;
+  // A yardage rate of EXACTLY ZERO means the league awards no points for those yards, which
+  // "yards per point" cannot express (there is no divisor that yields 0). The model already
+  // carries a separate multiplier for this — *_yards_points — so zero the multiplier instead
+  // and leave the divisor alone. Sleeper always sends a non-zero rate, so this only fires for
+  // providers that can express "not scored" (ESPN omits the stat entirely; see
+  // espnScoringToSleeper, which turns an omission into an explicit 0).
+  const setYdg=(v, ydgKey, ptsKey)=>{
+    const n=Number(v);
+    if(!isFinite(n)) return;
+    if(n>0){ s[ydgKey]=clean(1/n); s[ptsKey]=1; }
+    else   { s[ptsKey]=0; }
+  };
   // Passing
-  if(sc.pass_yd!=null) s.passing_yards_yardage = perYardToYdg(sc.pass_yd, s.passing_yards_yardage);
+  if(sc.pass_yd!=null) setYdg(sc.pass_yd, 'passing_yards_yardage', 'passing_yards_points');
   if(sc.pass_td!=null) s.passing_touchdowns = num(sc.pass_td, s.passing_touchdowns);
   if(sc.pass_int!=null) s.interceptions_thrown = num(sc.pass_int, s.interceptions_thrown);
   if(sc.pass_att!=null) s.passing_attempts = num(sc.pass_att, s.passing_attempts);
   if(sc.pass_cmp!=null) s.passing_completions = num(sc.pass_cmp, s.passing_completions);
   // Rushing
-  if(sc.rush_yd!=null) s.rushing_yards_yardage = perYardToYdg(sc.rush_yd, s.rushing_yards_yardage);
+  if(sc.rush_yd!=null) setYdg(sc.rush_yd, 'rushing_yards_yardage', 'rushing_yards_points');
   if(sc.rush_td!=null) s.rushing_touchdowns = num(sc.rush_td, s.rushing_touchdowns);
   if(sc.rush_att!=null) s.rushing_attempts = num(sc.rush_att, s.rushing_attempts);
   // Receiving
-  if(sc.rec_yd!=null) s.receiving_yards_yardage = perYardToYdg(sc.rec_yd, s.receiving_yards_yardage);
+  if(sc.rec_yd!=null) setYdg(sc.rec_yd, 'receiving_yards_yardage', 'receiving_yards_points');
   if(sc.rec_td!=null) s.receiving_touchdowns = num(sc.rec_td, s.receiving_touchdowns);
   if(sc.rec!=null) s.receptions = num(sc.rec, s.receptions);
   // TE Premium. Sleeper models this as a BONUS per TE reception (bonus_rec_te), not a

@@ -152,13 +152,15 @@ function pcardRowValues(pos, s, ctx){
 function pcardFptsFromStats(s){
   s=s||{}; const sc=scoringSettings;
   let pts=0;
-  const perYd=(ydPer, yd)=> (ydPer&&ydPer>0)? (yd/ydPer) : 0;
-  pts += perYd(sc.passing_yards_yardage, s.pass_yd||0);
+  // `mult` is the *_yards_points multiplier calcFpts already applies; a league that scores no
+  // points for yards carries 0 there (see applySleeperScoring).
+  const perYd=(ydPer, yd, mult)=> (ydPer&&ydPer>0)? (yd/ydPer)*(mult!=null?mult:1) : 0;
+  pts += perYd(sc.passing_yards_yardage, s.pass_yd||0, sc.passing_yards_points);
   pts += (s.pass_td||0)*(sc.passing_touchdowns||0);
   pts += (s.pass_int||0)*(sc.interceptions_thrown||0);
-  pts += perYd(sc.rushing_yards_yardage, s.rush_yd||0);
+  pts += perYd(sc.rushing_yards_yardage, s.rush_yd||0, sc.rushing_yards_points);
   pts += (s.rush_td||0)*(sc.rushing_touchdowns||0);
-  pts += perYd(sc.receiving_yards_yardage, s.rec_yd||0);
+  pts += perYd(sc.receiving_yards_yardage, s.rec_yd||0, sc.receiving_yards_points);
   pts += (s.rec||0)*(sc.receptions||0);
   pts += (s.rec_td||0)*(sc.receiving_touchdowns||0);
   pts += (s.pass_att!=null?(s.pass_att*(sc.passing_attempts||0)):0);

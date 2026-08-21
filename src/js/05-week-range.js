@@ -410,10 +410,10 @@ function qbFptsPerGame(qb){
   if(gp <= 0) return null;
   const sc = scoringSettings;
   let fpts = 0;
-  fpts += (qb.passing_yards||0) / (sc.passing_yards_yardage||25);
+  fpts += (qb.passing_yards||0) / (sc.passing_yards_yardage||25) * (sc.passing_yards_points!=null?sc.passing_yards_points:1);
   fpts += (qb.passing_tds||0) * (sc.passing_touchdowns||4);
   fpts += (qb.interceptions_thrown||0) * (sc.interceptions_thrown||-2);
-  fpts += (qb.qb_rush_yards||0) / (sc.rushing_yards_yardage||10);
+  fpts += (qb.qb_rush_yards||0) / (sc.rushing_yards_yardage||10) * (sc.rushing_yards_points!=null?sc.rushing_yards_points:1);
   fpts += (qb.qb_rush_tds||0) * (sc.rushing_touchdowns||6);
   return fpts / gp;
 }
