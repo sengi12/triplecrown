@@ -40,6 +40,13 @@ const SEED_NFLVERSE_DEF_WEEKLY = {};
 const SEED_NFLVERSE_OL_WEEKLY = {};
 const SEED_NFLVERSE_ADV_WEEKLY = {};
 const SEED_NFLVERSE_COACHING = {};
+// College production profiles for the incoming rookie class (build_seed.py --cfb): season
+// lines + percentiles against past draft classes, keyed by Sleeper player id. Rookies have no
+// NFL snaps to show, so this is the only production evidence their card can offer.
+const SEED_CFB = {};
+// Per-game college logs, split into a lazy sidecar (they're ~60% of the college payload and
+// only read when one rookie's card is open). Re-embedded by bake_seed.py for the offline file.
+const SEED_CFB_LOGS = {};
 // ═══ TRIPLECROWN_SEED_END ═══
 
 
@@ -151,6 +158,90 @@ const TC_ICON = (() => {
   fn.has = name => Object.prototype.hasOwnProperty.call(paths, name);
   return fn;
 })();
+// ═════════════════════════════════════════════════════════════════════════════
+// Lazy third-party script loading
+//
+// Chart.js and the Supabase SDK used to sit in the document head as ordinary blocking
+// script-src tags. That stopped HTML parsing — before the browser had even
+// reached the ~1.3MB inline app script — while it did DNS + TLS + download
+// against two separate third-party origins. Roughly 190KB gzipped on the
+// critical path of every cold load, on a phone, before a single pixel.
+//
+// Neither is needed to boot:
+//   • Chart.js draws exactly one doughnut (mkDoughnut, 50-pie-sliders.js) and is
+//     only reachable once you open a team's Passing/Rushing tab. Every other
+//     chart in the app — passing charts, route trees, rushing fans, the SOS arc —
+//     is hand-rolled SVG/DOM with no library behind it.
+//   • The Supabase SDK is only reachable if you sign in. Signed-out users (and
+//     any offline/baked copy) never touch it.
+//
+// So both are fetched on first use instead. Each URL is loaded at most once, and
+// the promise is cached so concurrent callers share one request.
+// ═════════════════════════════════════════════════════════════════════════════
+const TC_CHARTJS_SRC  = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js';
+const TC_SUPABASE_SDK_SRC = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+
+const _tcScriptPromises = {};
+function tcLoadScriptOnce(url){
+  if(_tcScriptPromises[url]) return _tcScriptPromises[url];
+  _tcScriptPromises[url] = new Promise((resolve, reject)=>{
+    if(typeof document==='undefined' || !document.createElement){
+      reject(new Error('no document')); return;
+    }
+    let el;
+    try{ el = document.createElement('script'); }
+    catch(e){ reject(e); return; }
+    el.src = url;
+    el.async = true;
+    el.onload = ()=>resolve(true);
+    el.onerror = ()=>{
+      // Let a later attempt retry rather than caching the failure forever — a phone
+      // that was offline when you first opened a pie chart should get one on the
+      // next try, not a permanently empty canvas.
+      delete _tcScriptPromises[url];
+      reject(new Error('failed to load '+url));
+    };
+    const host = document.head || document.body || document.documentElement;
+    if(!host){ reject(new Error('no document host')); return; }
+    host.appendChild(el);
+  });
+  return _tcScriptPromises[url];
+}
+
+// Resolves true once window.Chart is usable. Instant when Chart.js is already present
+// (a baked/offline copy, a test harness, or a second call).
+function tcEnsureChartJs(){
+  if(typeof Chart!=='undefined') return Promise.resolve(true);
+  return tcLoadScriptOnce(TC_CHARTJS_SRC).then(()=>typeof Chart!=='undefined').catch(()=>false);
+}
+
+// Resolves true once window.supabase (the UMD SDK) is usable.
+function tcEnsureSupabaseSdk(){
+  if(typeof window!=='undefined' && window.supabase && typeof window.supabase.createClient==='function')
+    return Promise.resolve(true);
+  return tcLoadScriptOnce(TC_SUPABASE_SDK_SRC)
+    .then(()=>!!(typeof window!=='undefined' && window.supabase && typeof window.supabase.createClient==='function'))
+    .catch(()=>false);
+}
+
+if(typeof module!=='undefined') module.exports={tcLoadScriptOnce, tcEnsureChartJs, tcEnsureSupabaseSdk};
+
+// ── Service worker ───────────────────────────────────────────────────────────
+// Registered after load so it never competes with the first paint or the seed fetch.
+// Only over http(s): a file:// (baked) copy has no worker and doesn't need one — it is
+// already fully self-contained.
+if(typeof window!=='undefined' && typeof navigator!=='undefined' && navigator.serviceWorker &&
+   typeof location!=='undefined' && /^https?:$/.test(location.protocol)){
+  window.addEventListener('load', ()=>{
+    // Deliberately late: registration kicks off its own network work, and nothing about the
+    // first visit benefits from it. The payoff is entirely on visit two.
+    setTimeout(()=>{
+      navigator.serviceWorker.register('sw.js').catch(e=>{
+        try{ console.info('[TC] service worker not registered:', e && e.message); }catch(_e){}
+      });
+    }, 1500);
+  });
+}
 // ═════════════════════════════════════════════════════════════════════════════
 // Week-range filtering (reference seasons only) — lets the user drag a dual
 // slider to see what a WR/RB/TE put up over just a stretch of weeks (e.g. Tucker
@@ -563,10 +654,10 @@ function qbFptsPerGame(qb){
   if(gp <= 0) return null;
   const sc = scoringSettings;
   let fpts = 0;
-  fpts += (qb.passing_yards||0) / (sc.passing_yards_yardage||25);
+  fpts += (qb.passing_yards||0) / (sc.passing_yards_yardage||25) * (sc.passing_yards_points!=null?sc.passing_yards_points:1);
   fpts += (qb.passing_tds||0) * (sc.passing_touchdowns||4);
   fpts += (qb.interceptions_thrown||0) * (sc.interceptions_thrown||-2);
-  fpts += (qb.qb_rush_yards||0) / (sc.rushing_yards_yardage||10);
+  fpts += (qb.qb_rush_yards||0) / (sc.rushing_yards_yardage||10) * (sc.rushing_yards_points!=null?sc.rushing_yards_points:1);
   fpts += (qb.qb_rush_tds||0) * (sc.rushing_touchdowns||6);
   return fpts / gp;
 }
@@ -913,40 +1004,85 @@ let _persistTimer = null;
 let _persistReady = false;   // becomes true after boot restore, so we don't save during load
 let playerNotes = {};        // player-note state keyed by canonical player key
 const NOTE_TEXT_MAX = 20000; // hard cap on a single note body (chars); matches cloud-save sanitizer
+// How many undo snapshots per team get PERSISTED. In-session undo stays UNDO_LIMIT (40) deep;
+// only the newest few are written to localStorage. Each snapshot deep-copies the team's working
+// set AND its proj-seed roster row, so a full 40-deep stack across ~8 edited teams serialises to
+// >5MB — past the localStorage quota, at which point setItem throws and the user's PROJECTIONS
+// stop being saved. Undo depth is a nice-to-have; the projections are the actual data.
+const UNDO_PERSIST_LIMIT = 5;
+// persistAvailable() does a real setItem+removeItem round-trip. It used to run on every
+// saveSession() call — i.e. on every slider `oninput` tick, ~60x/sec during a drag, so two
+// blocking storage syscalls per frame sat in the input-to-paint path. The answer cannot change
+// within a session, so probe once and remember it.
+let _persistOk = null;
 function persistAvailable(){
-  try{ const k='__tc_test__'; localStorage.setItem(k,'1'); localStorage.removeItem(k); return true; }
-  catch(e){ return false; }
+  if(_persistOk !== null) return _persistOk;
+  try{ const k='__tc_test__'; localStorage.setItem(k,'1'); localStorage.removeItem(k); _persistOk = true; }
+  catch(e){ _persistOk = false; }
+  return _persistOk;
 }
+// Trim undo stacks to the persisted depth without touching the live in-session stacks.
+function _undoStacksForPersist(){
+  const out = {};
+  for(const team in undoStacks){
+    const s = undoStacks[team];
+    if(s && s.length) out[team] = s.length>UNDO_PERSIST_LIMIT ? s.slice(-UNDO_PERSIST_LIMIT) : s;
+  }
+  return out;
+}
+let _persistWarned = false;   // only nag about a degraded save once per session
 function saveSession(){
   if(!_persistReady) return;
   if(!persistAvailable()) return;
   // Debounce: edits fire rapidly (sliders), so coalesce writes.
   clearTimeout(_persistTimer);
   _persistTimer = setTimeout(()=>{
-    try{
-      const payload = {
-        v: 2,
-        season: PROJ_SEASON,          // guard: only restore onto a matching-season seed
-        savedAt: Date.now(),
-        workingProj: workingProj,
-        playerNotes: playerNotes,
-        scoringSettings: scoringSettings,
-        rankFormat: rankFormat,
-        scoringAxis: scoringAxis,
-        rankingsSearchOpen: rankingsSearchOpen,
-        rankingsSearchQuery: rankingsSearchQuery,
-        scoringPanelOpen: scoringPanelOpen,
-        leagueSnapshot: leagueSnapshot,
-        undoStacks: undoStacks,
-      };
-      const serialized = JSON.stringify(payload);
-      localStorage.setItem(TC_STORE_KEY, serialized);
-      if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
-        try{ console.debug('[saveSession] wrote '+Math.round(serialized.length/1024)+'KB'); }catch(_e){}
-    }catch(e){
-      if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
-        try{ console.warn('[saveSession] failed:', e); }catch(_e){}
-      /* quota or serialization issue — skip silently */
+    const base = {
+      v: 2,
+      season: PROJ_SEASON,          // guard: only restore onto a matching-season seed
+      savedAt: Date.now(),
+      workingProj: workingProj,
+      playerNotes: playerNotes,
+      scoringSettings: scoringSettings,
+      rankFormat: rankFormat,
+      scoringAxis: scoringAxis,
+      rankingsSearchOpen: rankingsSearchOpen,
+      rankingsSearchQuery: rankingsSearchQuery,
+      scoringPanelOpen: scoringPanelOpen,
+      leagueSnapshot: leagueSnapshot,
+    };
+    // Write the richest payload that fits. If the quota rejects it, shed the OPTIONAL state
+    // (undo history first, then the league snapshot) and retry — the working projections and
+    // player notes are the last things to go. Previously a single over-quota write threw, the
+    // error was swallowed, and every subsequent edit silently went unsaved until the tab died.
+    const attempts = [
+      Object.assign({}, base, {undoStacks: _undoStacksForPersist()}),
+      base,                                              // drop undo history
+      Object.assign({}, base, {leagueSnapshot: null}),   // drop the league snapshot too
+    ];
+    for(let i=0;i<attempts.length;i++){
+      try{
+        const serialized = JSON.stringify(attempts[i]);
+        localStorage.setItem(TC_STORE_KEY, serialized);
+        if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+          try{ console.debug('[saveSession] wrote '+Math.round(serialized.length/1024)+'KB (tier '+i+')'); }catch(_e){}
+        if(i>0 && !_persistWarned){
+          _persistWarned = true;
+          if(typeof toast==='function')
+            toast('Browser storage is nearly full — undo history won’t survive a refresh. Your projections are still being saved.');
+        }
+        return;
+      }catch(e){
+        if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
+          try{ console.warn('[saveSession] tier '+i+' failed:', e); }catch(_e){}
+      }
+    }
+    // Every tier failed — the projections themselves could not be written. Say so out loud;
+    // silently losing someone's work is the worst outcome available here.
+    if(!_persistWarned){
+      _persistWarned = true;
+      if(typeof toast==='function')
+        toast('Could not save this session to your browser (storage full or blocked) — use Download to keep a copy.','err');
     }
   }, 400);
 }
@@ -1036,6 +1172,9 @@ let DYNASTY_VALUES = (typeof SEED_DYNASTY_VALUES!=='undefined') ? SEED_DYNASTY_V
 let leagueSnapshot = null;
 // nflverse-computed advanced metrics (opt-in A/B source): {season:{team:{...}, players:{QB,RB}}}
 let NFLVERSE = (typeof SEED_NFLVERSE!=='undefined') ? SEED_NFLVERSE : {};
+// College rookie profiles + their lazily-fetched per-game logs (see 70b-cfb-prospect.js).
+let CFB = (typeof SEED_CFB!=='undefined') ? SEED_CFB : {};
+let CFB_LOGS = (typeof SEED_CFB_LOGS!=='undefined') ? SEED_CFB_LOGS : {};
 // Head coaches fetched live from ESPN this session: {CODE:{name,headshot,experience}|null}
 let headCoaches = {};
 let hcInFlight = {};
@@ -1582,6 +1721,15 @@ function decodeFantasy(c){
 // don't compress; CDNs compress at lighter levels). Falls back to the plain .json when the
 // .gz is missing (older deploys) or DecompressionStream is unavailable (older browsers) —
 // so this can never make loading WORSE, only smaller.
+//
+// Caching: these requests deliberately use the DEFAULT HTTP cache mode. They used to pass
+// `cache:'no-store'`, which forbids the browser from both reading AND writing the cache — so
+// every single page open re-downloaded the full ~1.5MB gzipped seed even though the host had
+// already sent a perfectly good ETag. Static hosts (GitHub Pages included) serve these with
+// ETag + Last-Modified, so 'default' gives a free cache hit inside the freshness window and a
+// ~200-byte conditional request (304) outside it. Freshness is still guaranteed: a rebuilt seed
+// has a new ETag, so the very next revalidation picks it up.
+const TC_SEED_FETCH_OPTS = {cache:'default'};
 function tcLatencyDebugEnabled(){
   // Always on in dev builds.
   try{ if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE) return true; }catch(_e){}
@@ -1605,14 +1753,28 @@ async function fetchSeedJson(url){
   try{
     if(typeof DecompressionStream==='function'){
       const t0 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
-      const r = await fetch(url + '.gz', {cache:'no-store'});
+      const r = await fetch(url + '.gz', TC_SEED_FETCH_OPTS);
       const t1 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
       if(r.ok && r.body){
-        const txt = await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).text();
+        // Who unzipped it? GitHub Pages serves a .gz as an opaque `application/gzip` body, so
+        // WE have to inflate it. Other hosts (Vercel, Cloudflare, nginx with gzip_static) send
+        // `Content-Encoding: gzip` instead, which makes the BROWSER inflate it transparently —
+        // and piping that already-plain text through DecompressionStream throws, dropping us
+        // into the plain-.json fallback. On a deploy that only ships .gz sidecars that fallback
+        // 404s, so the entire seed (ECR, contracts, Sharp, nflverse, projections) silently
+        // vanished and the app looked like it just couldn't reach Sleeper. Check the header.
+        let enc='';
+        try{ enc = String((r.headers && r.headers.get && r.headers.get('content-encoding')) || '').toLowerCase(); }
+        catch(_e){ enc=''; }
+        const alreadyDecoded = enc.indexOf('gzip')>=0 || enc.indexOf('deflate')>=0 || enc.indexOf('br')>=0;
+        let txt = alreadyDecoded
+          ? await r.text()
+          : await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).text();
         const t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
         const parsed = JSON.parse(txt);
+        txt = null;   // release the ~6MB source string before the caller starts decoding
         const t3 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
-        tcLatencyLog(url, 'gz', t1 - t0, t2 - t1, t3 - t2, true);
+        tcLatencyLog(url, alreadyDecoded?'gz(host-decoded)':'gz', t1 - t0, t2 - t1, t3 - t2, true);
         return parsed;
       }
       tcLatencyLog(url, 'gz', t1 - t0, 0, 0, false);
@@ -1620,7 +1782,7 @@ async function fetchSeedJson(url){
   }catch(e){ /* fall through to plain */ }
 
   const t0 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
-  const r = await fetch(url, {cache:'no-store'});
+  const r = await fetch(url, TC_SEED_FETCH_OPTS);
   const t1 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
   if(!r.ok){
     tcLatencyLog(url, 'json', t1 - t0, 0, 0, false);
@@ -1629,9 +1791,10 @@ async function fetchSeedJson(url){
   let parsed;
   let t2;
   if(typeof r.text==='function'){
-    const txt = await r.text();
+    let txt = await r.text();
     t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
     parsed = JSON.parse(txt);
+    txt = null;   // release the source string before the caller starts decoding
   }else if(typeof r.json==='function'){
     parsed = await r.json();
     t2 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
@@ -1686,9 +1849,33 @@ function resetNflverseLazy(){
 
 // Fetch a sidecar section on demand and merge it in. Returns a promise resolving to whether
 // the data is now available. Never throws (file:// / missing file just resolves false).
+// A baked/offline file embeds the sidecars as compact consts (bake_seed.py). Decode the one
+// section being asked for rather than all of them at parse time — same data, but the ~12MB
+// def_weekly expansion only happens if a defensive card is actually opened.
+function _embeddedSection(section){
+  try{
+    if(section==='def_weekly' && typeof SEED_NFLVERSE_DEF_WEEKLY!=='undefined') return SEED_NFLVERSE_DEF_WEEKLY;
+    if(section==='ol_weekly'  && typeof SEED_NFLVERSE_OL_WEEKLY!=='undefined')  return SEED_NFLVERSE_OL_WEEKLY;
+    if(section==='adv_weekly' && typeof SEED_NFLVERSE_ADV_WEEKLY!=='undefined') return SEED_NFLVERSE_ADV_WEEKLY;
+  }catch(e){}
+  return null;
+}
+
 function ensureNflverseSection(section){
   if(nflverseSectionReady(section)) return Promise.resolve(true);
   if(_nflverseLazyPromise[section]) return _nflverseLazyPromise[section];
+  // Offline/baked: the payload is already in memory, just still compact. No fetch needed.
+  const embedded = _embeddedSection(section);
+  if(embedded && typeof embedded==='object' && Object.keys(embedded).length){
+    try{
+      const data = decodeAnySeed(embedded);
+      if(data && Object.keys(data).length){
+        mergeNflverseSection(section, data);
+        _nflverseLazyLoaded[section] = true;
+        return Promise.resolve(true);
+      }
+    }catch(e){ /* fall through to the network path */ }
+  }
   const url = _NFLVERSE_SIDECAR_URL[section];
   _nflverseLazyPromise[section] = (async()=>{
     try{
@@ -1710,6 +1897,45 @@ function ensureNflverseSection(section){
 // so the typical first open downloads ~1 season instead of the whole multi-season block.
 let _coachingSeasonLoaded = {};
 let _coachingSeasonPromise = {};
+// Seasons whose coaching_scheme block was FETCHED at runtime, newest use last. Each decoded
+// season measures ~15MB of heap and the scheme modal shows exactly one at a time, so without
+// eviction browsing all five permanently added ~70MB — on the phones least able to spare it,
+// and precisely the retention that gets a backgrounded tab discarded. Baked/embedded seasons
+// are never recorded here, so the offline copy keeps everything it shipped with.
+const _COACHING_KEEP = 2;
+let _coachingLru = [];
+
+function _coachingTouch(season){
+  season = String(season);
+  const i = _coachingLru.indexOf(season);
+  if(i>=0) _coachingLru.splice(i,1);
+  _coachingLru.push(season);
+  while(_coachingLru.length > _COACHING_KEEP){
+    const drop = _coachingLru.shift();
+    _coachingReleaseSeason(drop);
+  }
+}
+
+function _coachingReleaseSeason(season){
+  season = String(season);
+  try{
+    if(typeof NFLVERSE==='object' && NFLVERSE && NFLVERSE[season] && NFLVERSE[season].coaching_scheme){
+      delete NFLVERSE[season].coaching_scheme;
+    }
+  }catch(e){}
+  delete _coachingSeasonLoaded[season];
+  delete _coachingSeasonPromise[season];   // so a later visit re-fetches (and re-caches over HTTP)
+}
+
+// Drop everything but the most recent season when the tab goes to the background. That is the
+// moment right before a mobile browser decides whether to kill us, so it is the cheapest
+// possible time to give memory back.
+if(typeof document!=='undefined' && document.addEventListener){
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState!=='hidden') return;
+    while(_coachingLru.length > 1) _coachingReleaseSeason(_coachingLru.shift());
+  });
+}
 
 function coachingSeasonReady(season){
   season = String(season);
@@ -1719,8 +1945,26 @@ function coachingSeasonReady(season){
 
 function ensureNflverseCoachingSeason(season){
   season = String(season);
-  if(coachingSeasonReady(season)) return Promise.resolve(true);
+  if(coachingSeasonReady(season)){
+    if(_coachingSeasonLoaded[season]) _coachingTouch(season);   // re-viewing keeps it alive
+    return Promise.resolve(true);
+  }
   if(_coachingSeasonPromise[season]) return _coachingSeasonPromise[season];
+  // Offline/baked: this season is embedded (compact) — decode just this one.
+  try{
+    const rawCs = (typeof SEED_NFLVERSE_COACHING!=='undefined') ? SEED_NFLVERSE_COACHING : null;
+    const blk = (rawCs && typeof rawCs==='object') ? rawCs[season] : null;
+    if(blk){
+      const dec = decodeAnySeed(blk);
+      if(dec && typeof dec==='object' && Object.keys(dec).length &&
+         typeof NFLVERSE==='object' && NFLVERSE){
+        (NFLVERSE[season] = NFLVERSE[season] || {}).coaching_scheme = dec;
+        _coachingSeasonLoaded[season] = true;
+        _coachingTouch(season);
+        return Promise.resolve(true);
+      }
+    }
+  }catch(e){ /* fall through to the network path */ }
   _coachingSeasonPromise[season] = (async()=>{
     try{
       const raw = await fetchSeedJson(`seeds/triplecrown_seed.coaching.${season}.json`);
@@ -1729,6 +1973,7 @@ function ensureNflverseCoachingSeason(season){
       if(data && typeof data==='object' && typeof NFLVERSE==='object' && NFLVERSE){
         (NFLVERSE[season] = NFLVERSE[season] || {}).coaching_scheme = data;
         _coachingSeasonLoaded[season] = true;
+        _coachingTouch(season);   // bounded: evicts the least-recently-viewed season
         return true;
       }
       return false;
@@ -1737,26 +1982,20 @@ function ensureNflverseCoachingSeason(season){
   return _coachingSeasonPromise[season];
 }
 
-// Merge any embedded sidecars (baked/offline path) into NFLVERSE once at load.
+// Merge the SMALL embedded sidecars (baked/offline path) into NFLVERSE once at load.
+//
+// def_weekly and coaching_scheme are deliberately NOT merged here. They are the two heavy
+// blocks — decoded, they measure ~12MB and ~15MB-per-season respectively — and expanding all
+// of them at script-parse time is what made a baked phone file retain well over a hundred MB
+// before the user had opened anything. Both now decode on first use via ensureNflverseSection()
+// / ensureNflverseCoachingSeason(), which check the embedded consts before any network call,
+// so the offline file still works with no network — it just doesn't pay for what nobody opens.
 (function(){
   try{
-    const dw = decodeAnySeed((typeof SEED_NFLVERSE_DEF_WEEKLY!=='undefined') ? SEED_NFLVERSE_DEF_WEEKLY : null);
     const ow = decodeAnySeed((typeof SEED_NFLVERSE_OL_WEEKLY!=='undefined') ? SEED_NFLVERSE_OL_WEEKLY : null);
     const aw = decodeAnySeed((typeof SEED_NFLVERSE_ADV_WEEKLY!=='undefined') ? SEED_NFLVERSE_ADV_WEEKLY : null);
-    // SEED_NFLVERSE_COACHING is embedded as {season: payload}. Each season payload may itself
-    // be compact-coded, so decode per season before merging into NFLVERSE.
-    const rawCs = (typeof SEED_NFLVERSE_COACHING!=='undefined') ? SEED_NFLVERSE_COACHING : null;
-    const cs = {};
-    if(rawCs && typeof rawCs==='object'){
-      for(const season of Object.keys(rawCs)){
-        const dec = decodeAnySeed(rawCs[season]);
-        if(dec && typeof dec==='object' && Object.keys(dec).length) cs[season] = dec;
-      }
-    }
-    if(dw && Object.keys(dw).length){ mergeNflverseSection('def_weekly', dw); _nflverseLazyLoaded.def_weekly = true; }
     if(ow && Object.keys(ow).length){ mergeNflverseSection('ol_weekly', ow); _nflverseLazyLoaded.ol_weekly = true; }
     if(aw && Object.keys(aw).length){ mergeNflverseSection('adv_weekly', aw); _nflverseLazyLoaded.adv_weekly = true; }
-    if(cs && Object.keys(cs).length){ mergeNflverseSection('coaching_scheme', cs); _nflverseLazyLoaded.coaching_scheme = true; }
   }catch(e){ /* no embedded sidecars — hosted lazy path will fetch on demand */ }
 })();
 // ── Player notes + hidden stat tagging ─────────────────────────────────────
@@ -1805,6 +2044,42 @@ function noteTagAttrs(meta){
 
 function noteWrapHtml(innerHtml, meta, cls){
   return `<span class="${cls||'note-tag-hit'}"${noteTagAttrs(meta)}>${innerHtml}</span>`;
+}
+
+// Row-level half of the split described on noteInfoFromElement: emit the fields that are
+// constant across a row once, on the row element. Pair with noteTagAttrsCell() on each cell.
+function noteScopeAttrs(meta){
+  if(!meta) return '';
+  const attrs = [['data-note-scope', '1']];
+  const put = (k, v)=>{ if(v!=null && v!=='') attrs.push([k, String(v)]); };
+  put('data-note-context', meta.context || '');
+  put('data-note-source', meta.source || '');
+  put('data-note-team', meta.team || '');
+  put('data-note-relevance', Array.isArray(meta.relevance) ? meta.relevance.join(',') : (meta.relevance || ''));
+  if(meta.nav) put('data-note-nav', JSON.stringify(meta.nav));
+  const p = meta.player || null;
+  if(p){
+    put('data-note-player-id', p.player_id || p.pid || p.id || '');
+    put('data-note-player-name', p.name || '');
+    put('data-note-player-pos', p.pos || '');
+    put('data-note-player-team', p.team || meta.team || '');
+  }
+  return attrs.map(([k,v])=>` ${k}="${escAttr(v)}"`).join('');
+}
+
+// Per-cell half: only what actually varies between cells in the same row.
+function noteCellHtml(innerHtml, meta, cls){
+  if(!meta) return innerHtml;
+  const attrs = [['data-noteable', '1']];
+  const put = (k, v)=>{ if(v!=null && v!=='') attrs.push([k, String(v)]); };
+  put('data-note-label', meta.label || 'Stat');
+  put('data-note-value', meta.value);
+  // No 'app' default here: an unset source must fall through to the row scope, and a default
+  // written onto the cell would shadow it. The default is applied when reading instead.
+  put('data-note-source', meta.source);
+  put('data-note-stat-key', meta.statKey || '');
+  const a = attrs.map(([k,v])=>` ${k}="${escAttr(v)}"`).join('');
+  return `<span class="${cls||'note-tag-hit'}"${a}>${innerHtml}</span>`;
 }
 
 function noteDisplayValue(value){
@@ -1884,37 +2159,88 @@ function noteResolvedName(note){
   return String(note.name||note.pid||'Unknown');
 }
 
+// Offensive linemen are not in SEED — the fantasy seed only carries QB/RB/WR/TE — so they
+// come from the nflverse OL grades map instead. Without this, an OL stat could only ever be
+// tagged to a skill player, which is backwards: the most natural target for "this guard
+// grades a D at run blocking" is the guard, or one of his linemates.
+const _OL_SLOT_ORDER = {LT:0, LG:1, C:2, RG:3, RT:4};
+
+function noteOlPlayersForTeam(team){
+  const tm = String(team||'').toUpperCase();
+  if(!tm || typeof NFLVERSE==='undefined' || !NFLVERSE) return [];
+  const seasons = Object.keys(NFLVERSE).sort((a,b)=>Number(b)-Number(a));
+  for(const s of seasons){
+    const op = NFLVERSE[s] && NFLVERSE[s].ol_players;
+    if(!op) continue;
+    const out = [];
+    for(const k in op){
+      const r = op[k];
+      if(!r || String(r.team||'').toUpperCase()!==tm) continue;
+      if(!r.name) continue;
+      out.push({
+        player_id: '',
+        name: r.name,
+        pos: 'OL',
+        slot: String(r.slot||'').toUpperCase(),
+        team: tm,
+        adp: 999,
+      });
+    }
+    // Left-to-right along the line reads the way a depth chart does.
+    if(out.length){
+      out.sort((a,b)=> (_OL_SLOT_ORDER[a.slot]??9)-(_OL_SLOT_ORDER[b.slot]??9)
+                      || a.name.localeCompare(b.name));
+      return out;
+    }
+  }
+  return [];
+}
+
 function noteRelevantPlayers(team, relevance){
   const tm = String(team||'').toUpperCase();
   if(!tm) return [];
   const want = String(relevance||'QB,RB,WR,TE').split(/[^A-Z]+/i).map(x=>x.toUpperCase()).filter(Boolean);
-  const order = {QB:0,RB:1,WR:2,TE:3};
+  const order = {OL:0,QB:1,RB:2,WR:3,TE:4};
   const wantSet = new Set(want);
   const seen = new Set();
   const out = [];
+  const push = (p, pos, extra)=>{
+    const key = playerNoteKey((p && (p.player_id || p.name)) || '', pos, tm);
+    if(!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(Object.assign({
+      player_id: p.player_id || '',
+      name: p.name || '',
+      pos,
+      team: tm,
+      adp: Number.isFinite(+p.adp) ? +p.adp : 999,
+      relevant: wantSet.has(pos),
+    }, extra||{}));
+  };
+  // Only enumerate the line when the stat is actually about it — a WR's target share has no
+  // business offering five guards as tag targets.
+  if(wantSet.has('OL')) noteOlPlayersForTeam(tm).forEach(p=>push(p,'OL',{slot:p.slot}));
   ['QB','RB','WR','TE'].forEach(pos=>{
-    (getBase(tm, pos) || []).forEach(p=>{
-      const key = playerNoteKey((p && (p.player_id || p.name)) || '', pos, tm);
-      if(!key || seen.has(key)) return;
-      seen.add(key);
-      out.push({
-        player_id: p.player_id || '',
-        name: p.name || '',
-        pos,
-        team: tm,
-        adp: Number.isFinite(+p.adp) ? +p.adp : 999,
-        relevant: wantSet.has(pos),
-      });
-    });
+    (getBase(tm, pos) || []).forEach(p=>push(p, pos));
   });
-  out.sort((a,b)=> (a.relevant===b.relevant?0:(a.relevant?-1:1)) || (order[a.pos]||9)-(order[b.pos]||9) || a.adp-b.adp || a.name.localeCompare(b.name));
+  // `??` not `||`: the first position in `order` maps to 0, and `0 || 9` is 9 — which would
+  // sort the highest-priority group last.
+  const rank = p => order[p] ?? 9;
+  out.sort((a,b)=> (a.relevant===b.relevant?0:(a.relevant?-1:1))
+                  || rank(a.pos)-rank(b.pos)
+                  || (a.pos==='OL' ? ((_OL_SLOT_ORDER[a.slot]??9)-(_OL_SLOT_ORDER[b.slot]??9)) : 0)
+                  || a.adp-b.adp
+                  || a.name.localeCompare(b.name));
   return out;
 }
 
 function noteRelevanceForTableKey(key){
   const k = String(key||'');
-  if(k==='offensive_line_run') return 'RB';
-  if(k==='offensive_line_pass') return 'QB,RB';
+  // The line itself is the first-class target for line stats; the skill players it affects
+  // follow. Run blocking reaches the backs, protection reaches the quarterback.
+  if(k==='offensive_line_run') return 'OL,RB';
+  if(k==='offensive_line_pass') return 'OL,QB,RB';
+  if(k==='offensive_line') return 'OL,QB,RB';
   return 'QB,RB,WR,TE';
 }
 
@@ -1925,32 +2251,69 @@ function notePickerTargets(info){
   return [];
 }
 
+// Note metadata may be split across two elements: the per-cell hit target carries what
+// actually differs cell to cell (label, value, source, stat key), while whatever is constant
+// for a whole row — player identity, team, context string, nav payload — can live once on an
+// ancestor marked [data-note-scope].
+//
+// This matters at scale. The rankings board wrote all ~11 fields onto EVERY tagged cell:
+// measured on a phone-width board, data-note-* attributes were 848KB, 58% of the entire
+// table's HTML, and the nav JSON alone was re-serialised ~2,000 times for ~32 distinct
+// values. Hoisting the constant half to the <tr> is invisible to callers here: an element's
+// own dataset always wins, and a caller that still puts everything on one element (every
+// other tagging site in the app) finds no scope ancestor and behaves exactly as before.
+function _noteScopeDataset(el){
+  try{
+    if(!el.closest) return null;
+    const scope = el.closest('[data-note-scope]');
+    return (scope && scope!==el && scope.dataset) ? scope.dataset : null;
+  }catch(e){ return null; }
+}
+
 function noteInfoFromElement(el){
   if(!el || !el.dataset) return null;
-  const ds = el.dataset;
-  const info = {
-    label: ds.noteLabel || 'Stat',
-    value: ds.noteValue || '',
-    source: ds.noteSource || 'app',
-    context: ds.noteContext || '',
-    statKey: ds.noteStatKey || '',
-    team: ds.noteTeam || '',
-    relevance: ds.noteRelevance || '',
+  const own = el.dataset;
+  const up = _noteScopeDataset(el);
+  // own value wins; fall back to the row-level scope; then empty.
+  const ds = (k)=>{
+    const v = own[k];
+    if(v!=null && v!=='') return v;
+    const u = up ? up[k] : null;
+    return (u!=null && u!=='') ? u : '';
   };
-  if(ds.notePlayerId || ds.notePlayerName){
+  // A tag's value is, by definition, the number the cell is displaying. Rather than repeat it
+  // in an attribute on every tagged cell, fall back to the element's own text when the
+  // attribute is absent — identical string, ~0 bytes of HTML.
+  let val = own.noteValue;
+  if(val==null || val===''){
+    try{ val = (el.textContent||'').trim(); }catch(e){ val=''; }
+  }
+  const info = {
+    label: ds('noteLabel') || 'Stat',
+    value: val || '',
+    source: ds('noteSource') || 'app',
+    context: ds('noteContext') || '',
+    statKey: ds('noteStatKey') || '',
+    team: ds('noteTeam') || '',
+    relevance: ds('noteRelevance') || '',
+  };
+  const pid = ds('notePlayerId'), pname = ds('notePlayerName');
+  if(pid || pname){
     info.player = {
-      player_id: ds.notePlayerId || '',
-      name: ds.notePlayerName || '',
-      pos: ds.notePlayerPos || '',
-      team: ds.notePlayerTeam || ds.noteTeam || '',
+      player_id: pid || '',
+      name: pname || '',
+      pos: ds('notePlayerPos') || '',
+      team: ds('notePlayerTeam') || info.team || '',
     };
   }
-  if(ds.notePlayers){
-    try{ info.players = JSON.parse(ds.notePlayers); }catch(e){}
+  const players = ds('notePlayers');
+  if(players){
+    try{ info.players = JSON.parse(players); }catch(e){}
   }
-    if(ds.noteNav){
-      try{ info.nav = JSON.parse(ds.noteNav); }catch(e){}
-    }
+  const nav = ds('noteNav');
+  if(nav){
+    try{ info.nav = JSON.parse(nav); }catch(e){}
+  }
   return info;
 }
 
@@ -3717,6 +4080,15 @@ function vacatedRushNote(team){
 // Pie charts
 // ─────────────────────────────────────────────────────────────────────────────
 function initPie(team,kind){
+  // Chart.js is fetched on first use rather than blocking <head> (04-script-loader.js).
+  // The very first pie on a cold load schedules the fetch and re-enters here when the
+  // library lands; every call after that is synchronous. If the fetch fails (offline,
+  // or a baked file with no network) we simply leave the canvas empty — the numbers
+  // beside it are the actual content and they render regardless.
+  if(typeof Chart==='undefined'){
+    tcEnsureChartJs().then(ok=>{ if(ok) initPie(team,kind); }).catch(()=>{});
+    return;
+  }
   const state=userProj[team];
   if(kind==='pass'){
     // Receptions / Rec-Yards tabs: a separate canvas. Build pie data in ORIGINAL player
@@ -4490,7 +4862,27 @@ function fmtSumer(v, isPct){
 // Which minimum-volume bucket a position falls in (WR and TE share the "routes" bucket).
 function sumerBucket(pos){ return pos==='QB' ? 'QB' : pos==='RB' ? 'RB' : 'WRTE'; }
 // The Sumer column that represents "volume" for a position — the one the minimum filter reads.
+// Memoised: the answer depends only on (position, active season table, refinement), yet this
+// was called twice per rendered row — ~1,100 times for one Adv. Metrics render — and each call
+// copied the column array and ran up to six regexes over it.
+// Keyed on the nflverse payload by OBJECT IDENTITY (same trick advSumerData() uses) plus the
+// active season and refinement — all three are plain comparisons, no allocation per call.
+let _sumerVolColMemo = {ref:undefined, season:undefined, refine:undefined, map:null};
 function sumerVolCol(pos){
+  const ref    = (typeof NFLVERSE!=='undefined') ? NFLVERSE : null;
+  const season = (typeof activeSeason!=='undefined') ? activeSeason : '';
+  const refine = (typeof sumerRefinement!=='undefined') ? (sumerRefinement||'') : '';
+  const m = _sumerVolColMemo;
+  if(m.ref!==ref || m.season!==season || m.refine!==refine || !m.map){
+    _sumerVolColMemo = {ref, season, refine, map:new Map()};
+  }
+  const cache = _sumerVolColMemo.map;
+  if(cache.has(pos)) return cache.get(pos);
+  const v = _sumerVolColCompute(pos);
+  cache.set(pos, v);
+  return v;
+}
+function _sumerVolColCompute(pos){
   const t=sumerTableFor(pos);
   const cols=(t && Array.isArray(t.columns)) ? t.columns.slice() : [];
   const pick=(rx)=>cols.find(c=>rx.test(String(c||'').toLowerCase()) && !/\//.test(String(c||''))) || null;
@@ -4647,6 +5039,32 @@ function buildPlayerList(){
   }
 
   const list=[];
+  // Index of list position by `team|name`. The receiving and rushing passes below need to know
+  // whether a player is already in the list, and used to answer that with list.findIndex() —
+  // a linear scan of a list that grows as they run, i.e. roughly n^2 string comparisons over
+  // ~500 shares. It is survivable at today's ~560 players and gets worse as the pool grows
+  // (mergeRosterPlayers already pushes it higher).
+  const listIdx = new Map();
+  const _lk = (team, name)=>team+'|'+name;
+  const pushPlayer = (obj)=>{ listIdx.set(_lk(obj.team, obj.name), list.length); list.push(obj); };
+  const findPlayer = (team, name)=>{ const i=listIdx.get(_lk(team,name)); return i==null ? -1 : i; };
+  // Per-team lookup of a player's base seed row, built once per team instead of re-spreading
+  // four position arrays into a fresh array on every single lookup.
+  const _baseByTeam = new Map();
+  const teamBaseIndex = (team)=>{
+    let idx = _baseByTeam.get(team);
+    if(!idx){
+      idx = {byName:new Map(), byId:new Map()};
+      ['QB','RB','WR','TE'].forEach(pos=>{
+        (getBase(team,pos)||[]).forEach(x=>{
+          if(x && x.name!=null && !idx.byName.has(x.name)) idx.byName.set(x.name, x);
+          if(x && x.player_id!=null && !idx.byId.has(x.player_id)) idx.byId.set(x.player_id, x);
+        });
+      });
+      _baseByTeam.set(team, idx);
+    }
+    return idx;
+  };
   // Auto-populate: make sure every team with seed data is initialized so all players
   // appear in the rankings without the user opening each team first.
   TEAMS.forEach(team=>{
@@ -4663,7 +5081,7 @@ function buildPlayerList(){
     const totalTgts=teamTargetPool(state);
     const totalPassTDs=teamPassTDs(state);
     state.qbs.forEach(qb=>{
-      list.push({name:qb.name,team,pos:'QB',headshot:qb.headshot,slug:qb.slug,player_id:qb.player_id||null,
+      pushPlayer({name:qb.name,team,pos:'QB',headshot:qb.headshot,slug:qb.slug,player_id:qb.player_id||null,
         passing_yards:qb.passing_yards,passing_tds:qb.passing_tds,passing_attempts:qb.passing_attempts,
         passing_completions:qb.passing_completions,interceptions_thrown:qb.interceptions_thrown,
         rushing_yards:qb.qb_rush_yards,rushing_tds:qb.qb_rush_tds,rushing_attempts:qb.qb_rush_attempts,
@@ -4675,11 +5093,11 @@ function buildPlayerList(){
         const projRec=Math.round(projTgts*(p.catch_rate||0.65));
         const projYds=Math.round(projTgts*(p.ypt||9));
         const projTDs=parseFloat((p.td_share*totalPassTDs).toFixed(1));
-        const bp=[...getBase(team,'WR'),...getBase(team,'TE'),...getBase(team,'RB')].find(x=>x.name===p.name)||{};
-        const ex=list.findIndex(x=>x.name===p.name&&x.team===team);
+        const bp=teamBaseIndex(team).byName.get(p.name)||{};
+        const ex=findPlayer(team,p.name);
         if(ex>=0){list[ex].receiving_yards=projYds;list[ex].receiving_tds=projTDs;list[ex].receptions=projRec;list[ex].receiving_targets=projTgts;
           if(p.player_id&&!list[ex].player_id)list[ex].player_id=p.player_id;}
-        else list.push({name:p.name,team,pos:p.pos,headshot:p.headshot,slug:p.slug,player_id:p.player_id||null,
+        else pushPlayer({name:p.name,team,pos:p.pos,headshot:p.headshot,slug:p.slug,player_id:p.player_id||null,
           passing_yards:0,passing_tds:0,passing_attempts:0,passing_completions:0,interceptions_thrown:0,
           rushing_yards:bp.rushing_yards||0,rushing_tds:0,rushing_attempts:bp.rushing_attempts||0,
           receiving_yards:projYds,receiving_tds:projTDs,receptions:projRec,receiving_targets:projTgts,fumbles_lost:0});
@@ -4692,11 +5110,11 @@ function buildPlayerList(){
         const att=Math.round(p.share*r.total_attempts);
         const yds=Math.round(att*(p.ypc||r.ypa||4));
         const tds=parseFloat((p.td_share*totalRushTDs).toFixed(1));
-        const ex=list.findIndex(x=>x.name===p.name&&x.team===team);
+        const ex=findPlayer(team,p.name);
         if(ex>=0){list[ex].rushing_yards=yds;list[ex].rushing_tds=tds;list[ex].rushing_attempts=att;
           if(p.player_id&&!list[ex].player_id)list[ex].player_id=p.player_id;}
         else{
-          list.push({name:p.name,team,pos:'RB',headshot:p.headshot,slug:p.slug,player_id:p.player_id||null,
+          pushPlayer({name:p.name,team,pos:'RB',headshot:p.headshot,slug:p.slug,player_id:p.player_id||null,
             passing_yards:0,passing_tds:0,passing_attempts:0,passing_completions:0,interceptions_thrown:0,
             rushing_yards:yds,rushing_tds:tds,rushing_attempts:att,
             receiving_yards:0,receiving_tds:0,receptions:0,receiving_targets:0,fumbles_lost:0});}
@@ -4710,7 +5128,7 @@ function buildPlayerList(){
     p.ecr_tier=ecrTierFor(p);
     p.ypc = (p.rushing_attempts>0) ? p.rushing_yards/p.rushing_attempts : 0;
     // Attach ADP (all formats) from the base seed entry so VONA can model who others draft.
-    const be = basePlayerEntry(p.team, p.pos, p.name, p.player_id);
+    const be = basePlayerEntryIdx(teamBaseIndex(p.team), p.name, p.player_id);
     p.adp = be && be.adp!=null ? be.adp : 999;
     p.adp_ppr = be && be.adp_ppr!=null ? be.adp_ppr : 999;
     p.adp_half_ppr = be && be.adp_half_ppr!=null ? be.adp_half_ppr : 999;
@@ -4733,10 +5151,17 @@ function buildPlayerList(){
   return list;
 }
 // Find a player's base seed entry (for ADP etc.) by id first, then name+team.
+// Kept for any external caller; buildPlayerList uses the prebuilt per-team index instead of
+// re-spreading four arrays per player.
 function basePlayerEntry(team, pos, name, pid){
   const pool=[...getBase(team,'QB'),...getBase(team,'RB'),...getBase(team,'WR'),...getBase(team,'TE')];
   if(pid){ const byId=pool.find(x=>x.player_id===pid); if(byId) return byId; }
   return pool.find(x=>x.name===name) || null;
+}
+function basePlayerEntryIdx(idx, name, pid){
+  if(!idx) return null;
+  if(pid!=null){ const byId=idx.byId.get(pid); if(byId) return byId; }
+  return idx.byName.get(name) || null;
 }
 // Return the ADP value appropriate to the active scoring format (used for VONA's "who will
 // be drafted before my next pick" model). Superflex/2QB formats boost QBs, so use adp_2qb;
@@ -5021,13 +5446,15 @@ function pcardRowValues(pos, s, ctx){
 function pcardFptsFromStats(s){
   s=s||{}; const sc=scoringSettings;
   let pts=0;
-  const perYd=(ydPer, yd)=> (ydPer&&ydPer>0)? (yd/ydPer) : 0;
-  pts += perYd(sc.passing_yards_yardage, s.pass_yd||0);
+  // `mult` is the *_yards_points multiplier calcFpts already applies; a league that scores no
+  // points for yards carries 0 there (see applySleeperScoring).
+  const perYd=(ydPer, yd, mult)=> (ydPer&&ydPer>0)? (yd/ydPer)*(mult!=null?mult:1) : 0;
+  pts += perYd(sc.passing_yards_yardage, s.pass_yd||0, sc.passing_yards_points);
   pts += (s.pass_td||0)*(sc.passing_touchdowns||0);
   pts += (s.pass_int||0)*(sc.interceptions_thrown||0);
-  pts += perYd(sc.rushing_yards_yardage, s.rush_yd||0);
+  pts += perYd(sc.rushing_yards_yardage, s.rush_yd||0, sc.rushing_yards_points);
   pts += (s.rush_td||0)*(sc.rushing_touchdowns||0);
-  pts += perYd(sc.receiving_yards_yardage, s.rec_yd||0);
+  pts += perYd(sc.receiving_yards_yardage, s.rec_yd||0, sc.receiving_yards_points);
   pts += (s.rec||0)*(sc.receptions||0);
   pts += (s.rec_td||0)*(sc.receiving_touchdowns||0);
   pts += (s.pass_att!=null?(s.pass_att*(sc.passing_attempts||0)):0);
@@ -5296,7 +5723,7 @@ function renderPlayerCardShell(pid, pos, team){
         <img src="${heroPack.src||''}" class="pcard-hero-img" data-fallbacks="${heroFallbacks.join('|')}" onerror="pcardImgFallback(this)">
         <div class="pcard-hero-main">
           <div class="pcard-name">${name}${jersey?`<span class="pcard-jersey">${jersey}</span>`:''}</div>
-          <div class="pcard-sub">${posc?`<span class="pos-badge pos-${posc}">${posc}</span>`:''}${tm?`<span class="pcard-team">${teamDisplayName(tm)}</span>`:''}</div>
+          <div class="pcard-sub">${posc?`<span class="pos-badge pos-${posc}">${posc}</span>`:''}${tm?`<span class="pcard-team">${teamDisplayName(tm)}</span>`:''}${typeof tcOwnerChip==='function'?tcOwnerChip(pid, name):''}</div>
           <div class="pcard-meta">
             ${metaItem('AGE', age)}
             ${metaItem('HT', height)}
@@ -7128,6 +7555,97 @@ function _olPct(v){
   return `${Number(v).toFixed(1)}%`;
 }
 
+// Model grades are plus-minus attributions of a team outcome — pressure allowed is charged
+// to all five linemen equally, because no free data source records who lost the rep. Measured
+// split-half reliability of the individual coefficient is r ≈ 0.07, so a percentile carried to
+// a tenth and a league rank to the unit assert precision the pipeline does not have. Report a
+// coarse band instead: the resolution the model can actually support.
+const OL_PCT_BANDS=[
+  [80,'Top 20%'],[60,'Upper third'],[40,'Middle'],[20,'Lower third'],[0,'Bottom 20%']
+];
+function _olPctBand(v){
+  if(v==null || Number.isNaN(v)) return '—';
+  const n=Math.max(0, Math.min(100, Number(v)));
+  const hit=OL_PCT_BANDS.find(([floor])=>n>=floor);
+  return hit?hit[1]:'—';
+}
+
+// Show WHY a grade is what it is. A composite that cannot be explained reads as a black box,
+// and these three components are the whole model.
+const OL_DRIVER_LABELS={Market:'Market Valuation Percentile',Snaps:'Snap Share Percentile',
+                        Draft:'Draft Capital Percentile'};
+const OL_DRIVER_KEYS={Market:'p_market',Snaps:'p_snap',Draft:'p_draft'};
+
+function _olDriverBar(rec, ctx, teamCode){
+  const parts=[['Market',rec.p_market],['Snaps',rec.p_snap],['Draft',rec.p_draft]]
+    .filter(([,v])=>v!=null && !Number.isNaN(Number(v)));
+  if(!parts.length) return '';
+  return `<div class="olc-drivers">${parts.map(([lab,v])=>{
+    const n=Math.max(0,Math.min(100,Number(v)));
+    const bar=`<span>${lab}</span><i><u style="width:${n.toFixed(0)}%"></u></i><em>${n.toFixed(0)}</em>`;
+    return `<div class="olc-driver">${_olTag(bar, OL_DRIVER_LABELS[lab], n.toFixed(0),
+      OL_DRIVER_KEYS[lab], OL_REL_ALL, ctx, teamCode)}</div>`;
+  }).join('')}</div>`;
+}
+
+// Grade movement over the seasons a player has actually played. The market line is the one
+// worth watching: a young lineman outplaying his rookie deal shows up as market climbing a
+// year or two before the composite follows, which is the case the composite is weakest on.
+// Every stat on this card is taggable, and the target list is not limited to the lineman
+// whose card it is. A guard's run grade is just as legitimately a note about the back
+// running behind him; protection is a note about the quarterback. `relevance` decides who
+// the picker offers, with the line itself first — see noteRelevantPlayers.
+//
+// Deliberately no `player:` field: passing one pins the note to that single player and
+// skips the picker entirely (notePickerTargets short-circuits on it), which is exactly the
+// behaviour that made these stats taggable to the lineman and nobody else.
+const OL_REL_PASS = 'OL,QB';           // protection reaches the quarterback
+const OL_REL_RUN  = 'OL,RB';           // run blocking reaches the backs
+const OL_REL_ALL  = 'OL,QB,RB,WR,TE';  // whole-player traits reach the whole offense
+
+function _olTag(html, label, value, statKey, relevance, ctx, teamCode){
+  return noteWrapHtml(html, {
+    label, value: (value==null || value==='') ? '—' : String(value),
+    source: 'ol_grades', statKey, context: ctx, team: teamCode,
+    relevance: relevance || OL_REL_ALL,
+  }, 'note-tag-hit');
+}
+
+function _olMini(label, html, value, statKey, relevance, ctx, teamCode){
+  return `<div>${_olTag(`<span>${label}</span><b>${html}</b>`, label, value, statKey, relevance, ctx, teamCode)}</div>`;
+}
+
+function _olTrend(rec, ctx, teamCode){
+  const yrs=String(rec.hist_seasons||'').split(',').filter(Boolean);
+  const ol=String(rec.ol_pctile_hist||'').split(',').map(v=>v===''?null:Number(v));
+  const mkt=String(rec.market_pctile_hist||'').split(',').map(v=>v===''?null:Number(v));
+  if(yrs.length<2) return '';
+  const W=180,H=34,pad=3;
+  const x=i=>pad+(i*(W-2*pad))/(yrs.length-1);
+  const y=v=>H-pad-((Math.max(0,Math.min(100,v))/100)*(H-2*pad));
+  const path=(arr)=>{
+    const pts=arr.map((v,i)=>v==null?null:`${x(i).toFixed(1)},${y(v).toFixed(1)}`).filter(Boolean);
+    return pts.length>1?pts.join(' '):'';
+  };
+  const olP=path(ol), mkP=path(mkt);
+  if(!olP) return '';
+  const first=ol.find(v=>v!=null), last=[...ol].reverse().find(v=>v!=null);
+  const delta=(first!=null&&last!=null)?Math.round(last-first):null;
+  const arrow=delta==null?'':(delta>4?`▲ ${delta}`:(delta<-4?`▼ ${Math.abs(delta)}`:'flat'));
+  const cls=delta==null?'':(delta>4?'olc-up':(delta<-4?'olc-down':'olc-flat'));
+  const head=`<span>${yrs[0]}–${yrs[yrs.length-1]} trend</span><b class="${cls}">${arrow}</b>`;
+  return `<div class="olc-trend">
+    <div class="olc-trend-head">${_olTag(head, 'Grade Trend',
+      `${yrs[0]}–${yrs[yrs.length-1]}: ${first}→${last}`, 'ol_pctile_hist', OL_REL_ALL, ctx, teamCode)}</div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Grade percentile by season">
+      <line x1="${pad}" y1="${y(50)}" x2="${W-pad}" y2="${y(50)}" class="olc-trend-mid"/>
+      ${mkP?`<polyline points="${mkP}" class="olc-trend-mkt"/>`:''}
+      <polyline points="${olP}" class="olc-trend-ol"/>
+    </svg>
+    <div class="olc-trend-key"><i class="k-ol"></i>Grade${mkP?' <i class="k-mkt"></i>Market':''}</div>
+  </div>`;
+}
+
 function _olRankClass(rank){
   if(typeof sharpRankClass==='function') return sharpRankClass(rank)||'';
   if(rank==null) return '';
@@ -8159,48 +8677,59 @@ function renderPcardOlGrades(pid){
       : '<div class="pcard-loading">Team OL metrics unavailable for this season.</div>');
 
   const flagBits=[];
-  if(rec.shared_credit) flagBits.push(`Shared credit ${rec.shared_credit}`);
+  // The shared-credit dagger is deliberately not shown. It meant "this grade is split with a
+  // linemate rather than measured individually" — true of the old plus-minus model, false of
+  // the composite, which never looks at play-level data. It survives as apm_shared_credit.
   if(rec.consensus_flag) flagBits.push(String(rec.consensus_flag));
   const flags = flagBits.length ? `<div class="olc-flags">${flagBits.join(' · ')}</div>` : '';
 
-  const passPctRank=_olRankFromPct(rec.pass_pctile);
-  const runPctRank=_olRankFromPct(rec.run_pctile);
-  const weightedPctRank=_olRankFromPct(rec.ol_weighted_pctile);
+  // Model-grade ranks are deliberately not derived here — see _olPctBand. Market percentile
+  // comes from observed contract data, so it keeps a real rank.
   const marketPctRank=_olRankFromPct(rec.market_pctile);
 
   return `<div class="olc-wrap">
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns}</div>
-      <div class="rt-summary">${noteWrapHtml(`${teamDisplayName(teamCode)||teamCode||'Team'} · ${rec.slot||rec.pos||'OL'}`, { label:'Offensive line slot', value:`${teamDisplayName(teamCode)||teamCode||'Team'} · ${rec.slot||rec.pos||'OL'}`, source:'ol_grades', statKey:'slot', context:noteCtx, player:notePlayer, team:teamCode }, 'note-tag-hit')} · validated OL pipeline grades</div>
+      <div class="rt-summary">${noteWrapHtml(`${teamDisplayName(teamCode)||teamCode||'Team'} · ${rec.slot||rec.pos||'OL'}`, { label:'Offensive line slot', value:`${teamDisplayName(teamCode)||teamCode||'Team'} · ${rec.slot||rec.pos||'OL'}`, source:'ol_grades', statKey:'slot', context:noteCtx, team:teamCode, relevance:OL_REL_ALL }, 'note-tag-hit')} · validated OL pipeline grades</div>
     </div>
 
     <div class="olc-grades">
+      <div class="olc-grade-tile olc-grade-lead">
+        <label>Overall OL Grade</label>
+        <b class="olc-grade ${_olGradeClass(rec.ol_grade)}">${noteWrapHtml(escHtml(rec.ol_grade||'—'), { label:'Overall OL Grade', value:rec.ol_grade||'—', source:'ol_grades', statKey:'ol_grade', context:noteCtx, team:teamCode, relevance:OL_REL_ALL }, 'note-tag-hit')}</b>
+        <small>${_olTag(`${_olPctBand(rec.ol_pctile)} at ${rec.pos||'OL'}`,'Overall Percentile',rec.ol_pctile,'ol_pctile',OL_REL_ALL,noteCtx,teamCode)} · ${_olTag(`${rec.ol_conf||'—'} conf`,'Grade Confidence',rec.ol_conf,'ol_conf',OL_REL_ALL,noteCtx,teamCode)}</small>
+        ${_olDriverBar(rec, noteCtx, teamCode)}
+        ${_olTrend(rec, noteCtx, teamCode)}
+      </div>
       <div class="olc-grade-tile">
         <label>Pass Grade</label>
-        <b class="olc-grade ${_olGradeClass(rec.pass_grade)}">${noteWrapHtml(escHtml(rec.pass_grade||'—'), { label:'Pass Grade', value:rec.pass_grade||'—', source:'ol_grades', statKey:'pass_grade', context:noteCtx, player:notePlayer, team:teamCode }, 'note-tag-hit')}</b>
-        <small>${_olPct(rec.pass_pctile)} pctile · ${passPctRank!=null?_olRankBadge(passPctRank):'<span class="olc-rank-muted">Rank —</span>'} · ${rec.pass_conf||'—'} conf · ${rec.pass_snaps!=null?Number(rec.pass_snaps).toLocaleString():'—'} snaps</small>
+        <b class="olc-grade ${_olGradeClass(rec.pass_grade)}">${noteWrapHtml(escHtml(rec.pass_grade||'—'), { label:'Pass Grade', value:rec.pass_grade||'—', source:'ol_grades', statKey:'pass_grade', context:noteCtx, team:teamCode, relevance:OL_REL_PASS }, 'note-tag-hit')}</b>
+        <small>${_olTag(_olPctBand(rec.pass_pctile),'Pass Grade Percentile',rec.pass_pctile,'pass_pctile',OL_REL_PASS,noteCtx,teamCode)}${rec.espn_pbwr!=null?` · ${_olTag(`<b class="olc-espn">ESPN ${Math.round(Number(rec.espn_pbwr))}% PBWR</b>`,'ESPN Pass Block Win Rate',`${Math.round(Number(rec.espn_pbwr))}%`,'espn_pbwr',OL_REL_PASS,noteCtx,teamCode)}`:''} · ${_olTag(`line ${_olPctBand(rec.team_pass_pctile)}`,'Team Pass Protection',_olPctBand(rec.team_pass_pctile),'team_pass_pctile',OL_REL_PASS,noteCtx,teamCode)}</small>
       </div>
       <div class="olc-grade-tile">
         <label>Run Grade</label>
-        <b class="olc-grade ${_olGradeClass(rec.run_grade)}">${noteWrapHtml(escHtml(rec.run_grade||'—'), { label:'Run Grade', value:rec.run_grade||'—', source:'ol_grades', statKey:'run_grade', context:noteCtx, player:notePlayer, team:teamCode }, 'note-tag-hit')}</b>
-        <small>${_olPct(rec.run_pctile)} pctile · ${runPctRank!=null?_olRankBadge(runPctRank):'<span class="olc-rank-muted">Rank —</span>'} · ${rec.run_conf||'—'} conf · ${rec.poa_carries!=null?Number(rec.poa_carries).toLocaleString():'—'} POA carries</small>
+        <b class="olc-grade ${_olGradeClass(rec.run_grade)}">${noteWrapHtml(escHtml(rec.run_grade||'—'), { label:'Run Grade', value:rec.run_grade||'—', source:'ol_grades', statKey:'run_grade', context:noteCtx, team:teamCode, relevance:OL_REL_RUN }, 'note-tag-hit')}</b>
+        <small>${_olTag(_olPctBand(rec.run_pctile),'Run Grade Percentile',rec.run_pctile,'run_pctile',OL_REL_RUN,noteCtx,teamCode)}${rec.espn_rbwr!=null?` · ${_olTag(`<b class="olc-espn">ESPN ${Math.round(Number(rec.espn_rbwr))}% RBWR</b>`,'ESPN Run Block Win Rate',`${Math.round(Number(rec.espn_rbwr))}%`,'espn_rbwr',OL_REL_RUN,noteCtx,teamCode)}`:''} · ${_olTag(`line ${_olPctBand(rec.team_run_pctile)}`,'Team Run Blocking (Adj. Line Yards)',_olPctBand(rec.team_run_pctile),'team_run_pctile',OL_REL_RUN,noteCtx,teamCode)}</small>
       </div>
       <div class="olc-grade-tile">
-        <label>Utilization-Weighted OL Grade</label>
-        <b class="olc-grade ${_olGradeClass(rec.ol_weighted_grade)}">${rec.ol_weighted_grade||'—'}</b>
-        <small>${_olPct(rec.ol_weighted_pctile)} pctile · ${weightedPctRank!=null?_olRankBadge(weightedPctRank):'<span class="olc-rank-muted">Rank —</span>'} · pass weight ${rec.pass_rate!=null?`${Number(rec.pass_rate).toFixed(1)}%`:'—'} · run weight ${rec.run_rate!=null?`${Number(rec.run_rate).toFixed(1)}%`:'—'}</small>
+        <label>Utilization-Weighted</label>
+        <b class="olc-grade ${_olGradeClass(rec.ol_weighted_grade)}">${_olTag(escHtml(rec.ol_weighted_grade||'—'),'Utilization-Weighted Grade',rec.ol_weighted_grade,'ol_weighted_grade',OL_REL_ALL,noteCtx,teamCode)}</b>
+        <small>${_olTag(_olPctBand(rec.ol_weighted_pctile),'Utilization-Weighted Percentile',rec.ol_weighted_pctile,'ol_weighted_pctile',OL_REL_ALL,noteCtx,teamCode)} · ${_olTag(`pass weight ${rec.pass_rate!=null?`${Number(rec.pass_rate).toFixed(0)}%`:'—'}`,'Team Pass Rate',rec.pass_rate,'pass_rate',OL_REL_PASS,noteCtx,teamCode)} · ${_olTag(`run weight ${rec.run_rate!=null?`${Number(rec.run_rate).toFixed(0)}%`:'—'}`,'Team Run Rate',rec.run_rate,'run_rate',OL_REL_RUN,noteCtx,teamCode)}</small>
       </div>
       <div class="olc-mini-grid">
-        <div><span>Penalty Rate</span><b>${_olNum(rec.penalty_rate,2)}%</b></div>
-        <div><span>Projected Starter</span><b>${rec.is_projected_starter?'Yes':'No'}</b></div>
-        <div><span>Entanglement Factor</span><b>${rec.entanglement_factor!=null?Number(rec.entanglement_factor).toFixed(2):'—'}</b></div>
-        <div><span>All-Pro Recent</span><b>${rec.allpro_recent||'—'}</b></div>
-        <div><span>Career AP1 / PB</span><b>${rec.career_ap1!=null?rec.career_ap1:'—'} / ${rec.career_pb!=null?rec.career_pb:'—'}</b></div>
-        <div><span>Market Percentile</span><b>${rec.market_pctile==null||Number.isNaN(rec.market_pctile)?'—':`${Math.round(Number(rec.market_pctile))}%`} ${marketPctRank!=null?_olRankBadge(marketPctRank):''}</b></div>
+        ${_olMini('Penalty Rate', `${_olNum(rec.penalty_rate,2)}%`, rec.penalty_rate, 'penalty_rate', OL_REL_ALL, noteCtx, teamCode)}
+        ${_olMini('Holding / False Start', `${_olNum(rec.penalty_hold_rate,2)} / ${_olNum(rec.penalty_fs_rate,2)}%`, `${_olNum(rec.penalty_hold_rate,2)} / ${_olNum(rec.penalty_fs_rate,2)}%`, 'penalty_split', OL_REL_PASS, noteCtx, teamCode)}
+        ${_olMini('Snap Share', rec.snap_pct!=null?`${Number(rec.snap_pct).toFixed(0)}%`:'—', rec.snap_pct, 'snap_pct', OL_REL_ALL, noteCtx, teamCode)}
+        ${_olMini('Projected Starter', rec.is_projected_starter?'Yes':'No', rec.is_projected_starter?'Yes':'No', 'is_projected_starter', OL_REL_ALL, noteCtx, teamCode)}
+        ${_olMini('All-Pro Recent', escHtml(rec.allpro_recent||'—'), rec.allpro_recent, 'allpro_recent', OL_REL_ALL, noteCtx, teamCode)}
+        ${_olMini('Career AP1 / PB', `${rec.career_ap1!=null?rec.career_ap1:'—'} / ${rec.career_pb!=null?rec.career_pb:'—'}`, `${rec.career_ap1||0} / ${rec.career_pb||0}`, 'career_honors', OL_REL_ALL, noteCtx, teamCode)}
+        ${_olMini('Market Percentile', `${rec.market_pctile==null||Number.isNaN(rec.market_pctile)?'—':`${Math.round(Number(rec.market_pctile))}%`} ${marketPctRank!=null?_olRankBadge(marketPctRank):''}`, rec.market_pctile, 'market_pctile', OL_REL_ALL, noteCtx, teamCode)}
       </div>
     </div>
 
     ${flags}
+
+    <div class="olc-caveat">Grades combine the market's valuation, snap share and draft capital — the three signals that measurably track lineman quality — plus ESPN's tracking-derived win rate where it is published. Validated against ESPN's top-20: AUC 0.80 pass, 0.75 run. No free source records which lineman lost a rep, so grades are shown as bands rather than ranks.</div>
 
     <div class="olc-team-head">${teamDisplayName(teamCode)||teamCode||'Team'} Offensive Line Context (${season})</div>
     ${metrics}
@@ -8467,11 +8996,22 @@ async function loadEspnCardData(pid, posc, body, opts){
   const tok = pcardToken;
   const league = opts.league || 'college-football';
   const def = !!opts.def;
-  body.innerHTML = `<div class="pcard-loading">Loading ${league==='nfl'?'':'college '}game logs…</div>`;
+  // The college prospect panel comes from the seed, not from ESPN, so it renders even when the
+  // ESPN lookup below fails or the player has no ESPN page at all. Empty string for veterans,
+  // for the NFL tab, and for the ~3% of rookies with no CFBD coverage.
+  const prospect = (league==='college-football' && typeof renderCfbProspect==='function')
+    ? renderCfbProspect(pid) : '';
+  body.innerHTML = prospect
+    ? prospect + `<div class="pcard-loading">Loading college game logs…</div>`
+    : `<div class="pcard-loading">Loading ${league==='nfl'?'':'college '}game logs…</div>`;
   const aid = await resolveEspnAthleteId(pid, (sleeperPlayers[pid]||{}).name, league);
   if(!pcardOpen) return;
   if(!aid){
-    body.innerHTML = pcardRetryHtml('No ESPN stats found for this player yet.');
+    // Having the prospect panel is a better outcome than an error, so keep it and demote the
+    // missing gamelog to a footnote.
+    body.innerHTML = prospect
+      ? prospect + `<div class="pcard-src">No ESPN game logs found for this player.</div>`
+      : pcardRetryHtml('No ESPN stats found for this player yet.');
     return;
   }
   pcardApplyEspnHeadshot(aid, league);   // fill in an ESPN photo if Sleeper had none
@@ -8497,11 +9037,13 @@ async function loadEspnCardData(pid, posc, body, opts){
     if(!out) out = `<div class="pcard-loading">No game data found for this player.</div>`;
     out += `<div class="pcard-src">${league==='nfl'?'NFL':'College'} per-game stats via ESPN${def?'':' · AVG shown as YPC'}.</div>`;
     if(pcardOpen && tok===pcardToken){
-      body.innerHTML = out;
+      body.innerHTML = prospect + out;
       if(typeof pcardEnableStickyStatHeaders==='function') pcardEnableStickyStatHeaders();
     }
   }catch(e){
-    body.innerHTML = pcardRetryHtml("Couldn't load game logs. Check your connection and try again.");
+    body.innerHTML = prospect
+      ? prospect + `<div class="pcard-src">Couldn't load ESPN game logs.</div>`
+      : pcardRetryHtml("Couldn't load game logs. Check your connection and try again.");
   }
 }
 // Render one season table from an ESPN gamelog payload (data-driven, colored per game).
@@ -8622,6 +9164,267 @@ function fmtMillions(m){
   // Show up to 2 decimals but drop trailing zeros: 60 → $60M, 40.25 → $40.25M, 12.01 → $12.01M.
   const s = Number.isInteger(m) ? String(m) : parseFloat(m.toFixed(2)).toString();
   return '$'+s+'M';
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// College prospect panel (rookie player cards)
+// ─────────────────────────────────────────────────────────────────────────────
+// A rookie has no NFL snaps, so their card's NFL tab is empty and the College tab has
+// historically shown a raw ESPN box score — attempts, yards, TDs, longs. Those numbers can't
+// answer the only question that matters about a prospect: is that good?
+//
+// This panel sits above the ESPN game logs on the College tab and answers it, from the seed's
+// `cfb` block (build_seed.py --cfb, built by src/cfb/). Each headline metric is shown as a
+// percentile against every drafted player at the same position from the 2018-2025 classes, so
+// "25% dominator" reads as "51st percentile" — median, not the star number it looks like.
+//
+// EVERY NUMBER HERE IS NOTE-TAGGABLE. Percentiles, season stats, the summary line and the
+// school itself all carry data-noteable attributes, so any of them can be attached to a player
+// note the same way rankings and OL-card stats are. Percentile rows and season cells tag the
+// PERCENTILE and the RAW STAT respectively, which are different claims about the same player —
+// "84th percentile target share" and "95 targets" are both worth being able to cite.
+//
+// DEGRADES TO NOTHING. Roughly 3% of rookies have no CFBD coverage at all (D2/D3/NAIA/Ivy),
+// and a seed built before --cfb existed has no block. In both cases every function here
+// returns '' and the College tab renders exactly as it did before — the ESPN gamelog below is
+// never replaced, only preceded.
+
+// ── Lazy per-game logs ───────────────────────────────────────────────────────
+// Season lines and percentiles ride inline in the main seed (~81 KB gzipped); the per-game
+// logs are ~60% of the payload and only matter once a specific rookie's card is open, so they
+// follow def_weekly's pattern and live in a sidecar fetched on first use.
+const _CFB_LOGS_URL = 'seeds/triplecrown_seed.cfb_logs.json';
+let _cfbLogsLoaded = false;
+let _cfbLogsPromise = null;
+
+function resetCfbLazy(){
+  _cfbLogsLoaded = false;
+  _cfbLogsPromise = null;
+  CFB_LOGS = (typeof SEED_CFB_LOGS!=='undefined') ? SEED_CFB_LOGS : {};
+}
+
+function cfbLogsReady(){
+  return _cfbLogsLoaded || !!(CFB_LOGS && Object.keys(CFB_LOGS).length);
+}
+
+function ensureCfbLogs(){
+  if(cfbLogsReady()) return Promise.resolve(true);
+  if(_cfbLogsPromise) return _cfbLogsPromise;
+  _cfbLogsPromise = (async()=>{
+    try{
+      const raw = await fetchSeedJson(_CFB_LOGS_URL);
+      if(!raw) return false;
+      CFB_LOGS = raw;
+      _cfbLogsLoaded = true;
+      return true;
+    }catch(e){ return false; }
+  })();
+  return _cfbLogsPromise;
+}
+
+// ── Lookup ───────────────────────────────────────────────────────────────────
+function cfbProfile(pid){
+  const players = CFB && CFB.players;
+  if(!players) return null;
+  return players[String(pid)] || null;
+}
+
+function cfbHasProfile(pid){ return !!cfbProfile(pid); }
+
+// ── Note tagging ─────────────────────────────────────────────────────────────
+// Full names for the season-table columns. The table headers are abbreviated to fit a phone;
+// a note that just said "TGT" a month later would be useless, so tags carry the long form.
+const _CFB_STAT_LABELS = {
+  games:'College games', att:'College pass attempts', comp:'College completions',
+  pass_yds:'College passing yards', pass_td:'College passing TDs', int:'College interceptions',
+  ypa:'College yards per attempt', rushes:'College carries', rush_yds:'College rushing yards',
+  rush_td:'College rushing TDs', ypc:'College yards per carry',
+  epa_play:'College EPA per play', succ:'College success rate',
+  expl_rate:'College explosive rate', stuff_rate:'College stuff rate',
+  rush_share:'College rush share', tgt:'College targets', tgt_share:'College target share',
+  rec:'College receptions', rec_yds:'College receiving yards', rec_td:'College receiving TDs',
+  ypr:'College yards per reception', dominator:'College dominator rating',
+  yptpa:'College yards per team pass attempt',
+};
+
+function _cfbStatLabel(key){ return _CFB_STAT_LABELS[key] || (CFB.labels && CFB.labels[key]) || key; }
+
+// Shared note metadata for everything in this panel. `source` is distinct from the ESPN gamelog
+// below it so a note records which of the two it came from.
+function _cfbNoteBase(prof, pid){
+  const team = (typeof pcardState!=='undefined' && pcardState && pcardState.team) || '';
+  return {
+    source: 'cfb_prospect',
+    team: team,
+    relevance: prof.pos,
+    player: (typeof noteTargetFromArgs==='function')
+      ? noteTargetFromArgs(pid, prof.pos, team) : null,
+  };
+}
+
+function _cfbTagAttrs(meta){
+  return (typeof noteTagAttrs==='function') ? noteTagAttrs(meta) : '';
+}
+
+// ── Rendering ────────────────────────────────────────────────────────────────
+// Percentile → color band. Deliberately the same green/yellow/red vocabulary the gamelog
+// cells already use, so one card doesn't speak two visual languages.
+function _cfbPctClass(v){
+  if(v==null) return '';
+  if(v>=80) return 'cfb-elite';
+  if(v>=60) return 'cfb-good';
+  if(v>=40) return 'cfb-avg';
+  if(v>=20) return 'cfb-poor';
+  return 'cfb-bad';
+}
+
+// The attributes go straight onto the existing value/label divs rather than wrapping them in a
+// span: this row is a CSS grid, and an extra element between the grid and its children would
+// collapse the column alignment.
+function _cfbBar(label, pct, raw, meta){
+  const cls = _cfbPctClass(pct);
+  const w = Math.max(2, Math.min(100, pct));
+  const shown = Math.round(pct);
+  const rawTxt = raw==null ? '' : ` (${_cfbNum(raw)})`;
+  const cellMeta = meta && Object.assign({}, meta, {
+    label: `${label} percentile`,
+    value: `${_cfbOrdinal(shown)} percentile${rawTxt}`,
+  });
+  const attrs = cellMeta ? _cfbTagAttrs(cellMeta) : '';
+  return `<div class="cfb-bar-row">
+      <div class="cfb-bar-label">${escHtml(label)}</div>
+      <div class="cfb-bar-track"><div class="cfb-bar-fill ${cls}" style="width:${w}%"></div></div>
+      <div class="cfb-bar-val ${cls} note-tag-hit"${attrs}>${shown}</div>
+    </div>`;
+}
+
+// Ordinal suffix for the plain-English summary line ("84th percentile").
+function _cfbOrdinal(n){
+  n = Math.round(n);
+  const t = n % 100;
+  if(t>=11 && t<=13) return n + 'th';
+  return n + ({1:'st', 2:'nd', 3:'rd'}[n % 10] || 'th');
+}
+
+// The season table. Columns differ by position because the interesting numbers do.
+const _CFB_SEASON_COLS = {
+  QB: [['games','G'], ['att','ATT'], ['comp','CMP'], ['pass_yds','YDS'], ['pass_td','TD'],
+       ['int','INT'], ['ypa','Y/A'], ['epa_play','EPA/DB'], ['succ','SUCC%'],
+       ['rushes','RU'], ['rush_yds','RUYDS'], ['rush_td','RUTD']],
+  RB: [['games','G'], ['rushes','ATT'], ['rush_yds','YDS'], ['rush_td','TD'], ['ypc','Y/C'],
+       ['epa_play','EPA/RU'], ['succ','SUCC%'], ['expl_rate','EXPL%'], ['stuff_rate','STUFF%'],
+       ['rush_share','RU%'], ['tgt','TGT'], ['rec_yds','RECYDS']],
+  WR: [['games','G'], ['tgt','TGT'], ['rec','REC'], ['rec_yds','YDS'], ['rec_td','TD'],
+       ['ypr','Y/R'], ['epa_play','EPA/TGT'], ['succ','SUCC%'], ['dominator','DOM%'],
+       ['tgt_share','TGT%'], ['yptpa','YPTPA']],
+};
+_CFB_SEASON_COLS.TE = _CFB_SEASON_COLS.WR;
+
+function _cfbNum(v){
+  if(v==null || v==='') return '–';
+  if(typeof v!=='number') return escHtml(String(v));
+  return Number.isInteger(v) ? String(v) : String(Math.round(v*100)/100);
+}
+
+// Row scope carries what's constant for a season (player, team, which season); each cell adds
+// only the label/value/statKey that varies. That split is what noteScopeAttrs/noteCellHtml
+// exist for, and it keeps a twelve-column row from repeating the player on every cell.
+function _cfbSeasonTable(prof, pid, base){
+  const cols = _CFB_SEASON_COLS[prof.pos];
+  if(!cols) return '';
+  const years = Object.keys(prof.seasons||{}).sort();
+  if(!years.length) return '';
+  const head = cols.map(c=>`<th>${c[1]}</th>`).join('');
+  const rows = years.map(y=>{
+    const s = prof.seasons[y] || {};
+    const school = s.team || prof.college || '';
+    const ctx = `${school}${school?' · ':''}${y} college season`;
+    const scope = (typeof noteScopeAttrs==='function')
+      ? noteScopeAttrs(Object.assign({}, base, { context: ctx })) : '';
+    const tds = cols.map(c=>{
+      const key = c[0], v = s[key];
+      const txt = _cfbNum(v);
+      if(v==null) return `<td>${txt}</td>`;   // nothing to cite in an empty cell
+      const cell = (typeof noteCellHtml==='function')
+        ? noteCellHtml(txt, { label:`${_cfbStatLabel(key)} (${y})`, value:txt,
+                              source:'cfb_prospect', statKey:key }, 'note-tag-hit')
+        : txt;
+      return `<td>${cell}</td>`;
+    }).join('');
+    const teamTxt = school ? escHtml(school) : '–';
+    return `<tr${scope}><th class="cfb-season-th">${escHtml(y)}<span class="cfb-season-team">${teamTxt}</span></th>${tds}</tr>`;
+  }).join('');
+  return `<div class="pcard-table-scroll"><table class="pcard-table cfb-table">
+      <thead><tr><th class="cfb-season-th">SEASON</th>${head}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+// The main entry point: the whole panel for one player, or '' when there's nothing to show.
+function renderCfbProspect(pid){
+  const prof = cfbProfile(pid);
+  if(!prof) return '';
+  const headline = (CFB.headline && CFB.headline[prof.pos]) || [];
+  const labels = CFB.labels || {};
+  const pct = prof.pct || {};
+  const cls = (CFB.reference && CFB.reference.classes) || [];
+  const refTxt = cls.length===2 ? `${cls[0]}–${cls[1]} draft classes` : 'past draft classes';
+  const base = _cfbNoteBase(prof, pid);
+  const finalSeason = (prof.seasons && prof.final && prof.seasons[prof.final]) || {};
+  const pctCtx = `${prof.college||''}${prof.college?' · ':''}college percentile vs ${refTxt}`;
+
+  const bars = headline.filter(m=>pct[m]!=null)
+    .map(m=>_cfbBar(labels[m] || m, pct[m], finalSeason[m],
+                    Object.assign({}, base, { statKey:`pct_${m}`, context: pctCtx })))
+    .join('');
+
+  // A one-line plain-English read, using the position's leading metric. Percentile bars are
+  // precise but not immediate; this says the thing out loud.
+  let summary = '';
+  const lead = headline.find(m=>pct[m]!=null);
+  if(lead){
+    const leadLabel = labels[lead] || lead;
+    const inner = `<b class="${_cfbPctClass(pct[lead])}">${_cfbOrdinal(pct[lead])} percentile</b>`;
+    const tagged = (typeof noteWrapHtml==='function')
+      ? noteWrapHtml(inner, Object.assign({}, base, {
+          label: `${leadLabel} percentile`,
+          value: `${_cfbOrdinal(pct[lead])} percentile among ${prof.pos} prospects`,
+          statKey: `pct_${lead}`,
+          context: pctCtx,
+        }), 'note-tag-hit')
+      : inner;
+    summary = `<div class="cfb-summary">${escHtml(leadLabel)} ranks ${tagged}
+      among ${escHtml(prof.pos)} prospects.</div>`;
+  }
+
+  // School/conference/final season: not a stat, but the thing a note most often needs to say
+  // alongside one ("dominant, but in the MAC").
+  const metaBits = [prof.college, prof.conf, prof.final ? `final season ${prof.final}` : '']
+    .filter(Boolean);
+  const metaTxt = metaBits.join(' · ');
+  const metaInner = [
+    prof.college ? escHtml(prof.college) : '',
+    prof.conf ? `<span class="cfb-meta-sep">·</span>${escHtml(prof.conf)}` : '',
+    prof.final ? `<span class="cfb-meta-sep">·</span>final season ${escHtml(prof.final)}` : '',
+  ].join('');
+  const metaTagged = (typeof noteWrapHtml==='function' && metaTxt)
+    ? noteWrapHtml(metaInner, Object.assign({}, base, {
+        label: 'College program', value: metaTxt, statKey: 'college_program',
+        context: `${prof.college||''} college career`,
+      }), 'note-tag-hit')
+    : metaInner;
+
+  return `<div class="cfb-panel">
+      <div class="cfb-head">
+        <div class="cfb-title">College production</div>
+        <div class="cfb-meta">${metaTagged}</div>
+      </div>
+      ${summary}
+      <div class="cfb-bars">${bars}</div>
+      <div class="cfb-bars-note">Percentile vs ${escHtml(refTxt)} at ${escHtml(prof.pos)}. Higher is better on every row.</div>
+      ${_cfbSeasonTable(prof, pid, base)}
+      <div class="pcard-src">College play-by-play via cfbfastR / CollegeFootballData.
+        No air yards, routes or snap data exists for college football, so those cards stay NFL-only.</div>
+    </div>`;
 }
 // ── Defensive weekly card (DL/LB/DB), ESPN-style table layout ─────────────
 // Seed payload: NFLVERSE[season].def_weekly[normName] = {
@@ -10566,6 +11369,51 @@ function _schemeRzTrigger(teamCode, season){
 }
 
 // ── Red-zone TD source (real nflverse pbp production) ──────────────────────
+// Personnel identity naming — matches the playbook's `${g.p} PERSONNEL` label (11 = 1RB/1TE/3WR,
+// 12 = 1RB/2TE/2WR, 21 = 2RB/1TE/2WR, etc). Falls back to composing the code from RB/TE counts
+// when the personnel string is missing/odd.
+function _schemePersonnelName(g){
+  const p = String((g && g.p) || '').trim();
+  if(/^\d{2}$/.test(p)) return `${p} personnel`;
+  const b = _schemeNumber(g && g.backs, 0);
+  const t = _schemeNumber(g && g.te, 0);
+  return `${b}${t} personnel`;
+}
+function _schemePersonnelDetail(g){
+  return `${_schemeNumber(g && g.backs,0)}RB ${_schemeNumber(g && g.te,0)}TE ${_schemeNumber(g && g.wr,0)}WR`;
+}
+
+// League-wide scheme snapshot (pass rate, PA/motion/no-huddle rates, RZ TD air%, and per-personnel
+// usage share) so every scheme metric can carry an NFL rank. Cached per season; one build pass.
+let _schemeSchemeLeagueCache = {};
+function _schemeSchemeLeague(season){
+  const s = String(season || '');
+  if(!s) return null;
+  if(_schemeSchemeLeagueCache[s]) return _schemeSchemeLeagueCache[s];
+  const block = NFLVERSE && NFLVERSE[s] && NFLVERSE[s].coaching_scheme;
+  const teams = block ? Object.keys(block) : [];
+  if(!teams.length) return null;
+  const byTeam = {};
+  const passRate = [], paRate = [], motionRate = [], nohuddleRate = [], rzAir = [];
+  const persShare = {};
+  teams.forEach(tm=>{
+    const pp = { season:s, team:tm, data:block[tm] };
+    const sp = _schemeSchemeProfile(pp);
+    const sc = _schemeRzScoring(pp);
+    const air = sc.totalTD ? (100 * sc.passTD / sc.totalTD) : null;
+    byTeam[tm] = { sp, air };
+    if(Number.isFinite(sp.passRate)) passRate.push(sp.passRate);
+    if(Number.isFinite(sp.paRate)) paRate.push(sp.paRate);
+    if(Number.isFinite(sp.motionRate)) motionRate.push(sp.motionRate);
+    if(Number.isFinite(sp.nohuddleRate)) nohuddleRate.push(sp.nohuddleRate);
+    if(Number.isFinite(air)) rzAir.push(air);
+    (sp.persList || []).forEach(r=>{ (persShare[r.key] = persShare[r.key] || []).push(r.share); });
+  });
+  const snap = { teams: teams.length, byTeam, passRate, paRate, motionRate, nohuddleRate, rzAir, persShare };
+  _schemeSchemeLeagueCache[s] = snap;
+  return snap;
+}
+
 // Sums pass/rush TDs from the red-zone formation charting, by down and by personnel,
 // so we can see WHERE this offense's touchdown equity lives: air vs ground, which
 // personnel package, which down. (Validated: e.g. CIN 2024 = 30 pass / 9 rush RZ TDs.)
@@ -10587,8 +11435,9 @@ function _schemeRzScoring(p){
   if((passTD+rushTD) < (allPtd+allRtd)){ passTD=allPtd; rushTD=allRtd; }
   const pers = {};
   (allNode.groups||[]).forEach(g=>{
-    const key = `${_schemeNumber(g.backs,0)}RB ${_schemeNumber(g.te,0)}TE ${_schemeNumber(g.wr,0)}WR`;
-    const rec = (pers[key] = pers[key] || { key, td:0, ptd:0, rtd:0, n:0 });
+    const key = _schemePersonnelName(g);
+    const detail = _schemePersonnelDetail(g);
+    const rec = (pers[key] = pers[key] || { key, detail, td:0, ptd:0, rtd:0, n:0 });
     rec.ptd += _schemeNumber(g.ptd,0);
     rec.rtd += _schemeNumber(g.rtd,0);
     rec.td  += _schemeNumber(g.ptd,0) + _schemeNumber(g.rtd,0);
@@ -10607,18 +11456,23 @@ function _schemeRenderRzTdSource(p){
   const tag = (html, label, value, statKey)=>noteWrapHtml(html, { label, value, source:'coaching_insights', statKey, context:ctx, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season, tab:'redzone' } }, 'note-tag-hit');
   const airPct = s.totalTD? Math.round(100*s.passTD/s.totalTD):0;
   const grPct = 100-airPct;
+  const lg = _schemeSchemeLeague(season);
+  const nT = lg? lg.teams : 0;
+  const airRank = (lg && s.totalTD)? _schemeRankInLeague(100*s.passTD/s.totalTD, lg.rzAir, 'desc') : null;
+  const grRank  = (lg && s.totalTD)? _schemeRankInLeague(100*s.passTD/s.totalTD, lg.rzAir, 'asc')  : null;
+  const rkTxt = r => (r&&nT)? `${_schemeOrdinal(r)} of ${nT}` : '';
   const dl = {1:'1st',2:'2nd',3:'3rd',4:'4th'};
   const downCells = ['1','2','3','4'].map(dn=>{
     const b=s.byDown[dn]||{ptd:0,rtd:0};
     const td=b.ptd+b.rtd;
     return `<div class="scheme-op-card"><div class="scheme-op-k">${dl[dn]} down</div><div class="scheme-op-v">${tag(`${td} <span class="scheme-insight-rank neutral">(${b.ptd}p / ${b.rtd}r)</span>`, `${dl[dn]}-down RZ TDs`, `${td} RZ TDs on ${dl[dn]} down (${b.ptd} pass, ${b.rtd} rush)`, 'rz_td_down_'+dn)}</div></div>`;
   }).join('');
-  const persCells = s.persList.map(r=>`<div class="scheme-op-card"><div class="scheme-op-k">${_schemeEscHtml(r.key)}</div><div class="scheme-op-v">${tag(`${r.td} <span class="scheme-insight-rank neutral">(${r.ptd}p / ${r.rtd}r)</span>`, `${r.key} RZ TDs`, `${r.td} RZ TDs from ${r.key} personnel (${r.ptd} pass, ${r.rtd} rush)`, 'rz_td_pers')}</div></div>`).join('');
+  const persCells = s.persList.map(r=>`<div class="scheme-op-card"><div class="scheme-op-k">${_schemeEscHtml(r.key)}${r.detail?` <span style="font-weight:700;color:#8a8470">${_schemeEscHtml(r.detail)}</span>`:''}</div><div class="scheme-op-v">${tag(`${r.td} <span class="scheme-insight-rank neutral">(${r.ptd}p / ${r.rtd}r)</span>`, `${r.key} RZ TDs`, `${r.td} RZ TDs from ${r.key}${r.detail?` (${r.detail})`:''} (${r.ptd} pass, ${r.rtd} rush)`, 'rz_td_pers')}</div></div>`).join('');
   return `<div class="scheme-op-wrap">
     <div class="scheme-op-title">Red-Zone TD Source · ${_schemeEscHtml(season)}</div>
     <div class="scheme-insights-grid" style="margin-bottom:8px">
-      <div class="scheme-insight-card"><div class="scheme-insight-k">Through the air</div><div class="scheme-insight-v">${tag(`${airPct}% <span class="scheme-insight-rank neutral">(${s.passTD} pass TD)</span>`, 'RZ TDs through the air', `${airPct}% of RZ TDs via pass (${s.passTD} pass TDs)`, 'rz_td_air')}</div><div class="scheme-insight-sub">Share of red-zone TDs scored passing. Higher ⇒ pass-catchers own the TD equity.</div></div>
-      <div class="scheme-insight-card"><div class="scheme-insight-k">On the ground</div><div class="scheme-insight-v">${tag(`${grPct}% <span class="scheme-insight-rank neutral">(${s.rushTD} rush TD)</span>`, 'RZ TDs on the ground', `${grPct}% of RZ TDs via rush (${s.rushTD} rush TDs)`, 'rz_td_ground')}</div><div class="scheme-insight-sub">Share of red-zone TDs scored rushing. Higher ⇒ the goal-line back carries more value.</div></div>
+      <div class="scheme-insight-card"><div class="scheme-insight-k">Through the air</div><div class="scheme-insight-v">${tag(`${airPct}% <span class="scheme-insight-rank neutral">(${airRank?`${rkTxt(airRank)} · `:''}${s.passTD} pass TD)</span>`, 'RZ TDs through the air', `${airPct}% of RZ TDs via pass${airRank?` — ${rkTxt(airRank)} most pass-heavy`:''} (${s.passTD} pass TDs)`, 'rz_td_air')}</div><div class="scheme-insight-sub">Share of red-zone TDs scored passing. Higher ⇒ pass-catchers own the TD equity.</div></div>
+      <div class="scheme-insight-card"><div class="scheme-insight-k">On the ground</div><div class="scheme-insight-v">${tag(`${grPct}% <span class="scheme-insight-rank neutral">(${grRank?`${rkTxt(grRank)} · `:''}${s.rushTD} rush TD)</span>`, 'RZ TDs on the ground', `${grPct}% of RZ TDs via rush${grRank?` — ${rkTxt(grRank)} most ground-heavy`:''} (${s.rushTD} rush TDs)`, 'rz_td_ground')}</div><div class="scheme-insight-sub">Share of red-zone TDs scored rushing. Higher ⇒ the goal-line back carries more value.</div></div>
     </div>
     <div class="scheme-op-title" style="font-size:11px">TDs by down (pass / rush)</div>
     <div class="scheme-op-grid">${downCells}</div>
@@ -10644,8 +11498,8 @@ function _schemeSchemeProfile(p){
   const motionRate = totalPlays? 100*typeTotal('motion')/totalPlays:null;
   const nohuddleRate = totalPlays? 100*typeTotal('nohuddle')/totalPlays:null;
   const pers = {};
-  (allNode.groups||[]).forEach(g=>{ const key=`${_schemeNumber(g.backs,0)}RB ${_schemeNumber(g.te,0)}TE ${_schemeNumber(g.wr,0)}WR`; const rec=(pers[key]=pers[key]||{key,n:0,np:0,nr:0,epaW:0}); rec.n+=_schemeNumber(g.n,0); rec.np+=_schemeNumber(g.np,0); rec.nr+=_schemeNumber(g.nr,0); rec.epaW+=_schemeNumber(g.epa,0)*_schemeNumber(g.n,0); });
-  const persList = Object.values(pers).map(r=>({ key:r.key, share: totalPlays?100*r.n/totalPlays:0, passRate:(r.np+r.nr)?100*r.np/(r.np+r.nr):null, epa:r.n?r.epaW/r.n:null, n:r.n })).sort((a,b)=>b.share-a.share).slice(0,5);
+  (allNode.groups||[]).forEach(g=>{ const key=_schemePersonnelName(g); const detail=_schemePersonnelDetail(g); const rec=(pers[key]=pers[key]||{key,detail,n:0,np:0,nr:0,epaW:0}); rec.n+=_schemeNumber(g.n,0); rec.np+=_schemeNumber(g.np,0); rec.nr+=_schemeNumber(g.nr,0); rec.epaW+=_schemeNumber(g.epa,0)*_schemeNumber(g.n,0); });
+  const persList = Object.values(pers).map(r=>({ key:r.key, detail:r.detail, share: totalPlays?100*r.n/totalPlays:0, passRate:(r.np+r.nr)?100*r.np/(r.np+r.nr):null, epa:r.n?r.epaW/r.n:null, n:r.n })).sort((a,b)=>b.share-a.share).slice(0,5);
   return { totalPlays, passRate, byDown, paRate, paEpa, motionRate, nohuddleRate, persList };
 }
 
@@ -12759,8 +13613,18 @@ function sortSOSBy(col){
 }
 
 
-const _RANKINGS_RENDER_CACHE_MAX = 8;
+// The rendered-HTML LRU is bounded by TOTAL SIZE, not entry count. Counting entries looks
+// safe until you notice how big one entry is: a full-width board measured ~1.4M chars, and V8
+// stores these two-byte, so eight of them was ~23MB on a phone / ~60MB on desktop — duplicating
+// what is already in the DOM, on exactly the devices most likely to discard the tab for it.
+// The cache key varies on sort key, direction, position filter, advanced flag, refinement,
+// three min-volume values, search query and scope, so a handful of taps used to fill all eight.
+// A byte budget self-adjusts instead: small phone-capped boards keep several, huge desktop
+// boards keep one or two.
+const _RANKINGS_RENDER_CACHE_MAX = 8;              // hard ceiling on entries
+const _RANKINGS_RENDER_CACHE_MAX_CHARS = 3000000;  // ~6MB of UTF-16, the real limit
 let _rankingsRenderCache = new Map();
+let _rankingsRenderCacheChars = 0;
 let _rankingsMobileAutoFullPass = false;
 let _rankingsMobileAutoToken = 0;
 let _rankingsPrewarmQueued = false;
@@ -12774,16 +13638,36 @@ function rankingsRenderCacheGet(key){
   return html;
 }
 
+function _rankingsRenderCacheEvictOldest(){
+  const oldest = _rankingsRenderCache.keys().next();
+  if(!oldest || oldest.done) return false;
+  const gone = _rankingsRenderCache.get(oldest.value);
+  _rankingsRenderCache.delete(oldest.value);
+  _rankingsRenderCacheChars -= (gone ? gone.length : 0);
+  if(_rankingsRenderCacheChars < 0) _rankingsRenderCacheChars = 0;
+  return true;
+}
+
 function rankingsRenderCacheSet(key, html){
   if(!key || !html) return;
-  if(_rankingsRenderCache.has(key)) _rankingsRenderCache.delete(key);
+  if(_rankingsRenderCache.has(key)){
+    const prev = _rankingsRenderCache.get(key);
+    _rankingsRenderCacheChars -= (prev ? prev.length : 0);
+    _rankingsRenderCache.delete(key);
+  }
+  // A single render larger than the whole budget is not worth caching at all — storing it
+  // would evict everything else and then sit there alone.
+  if(html.length > _RANKINGS_RENDER_CACHE_MAX_CHARS) return;
   _rankingsRenderCache.set(key, html);
-  while(_rankingsRenderCache.size > _RANKINGS_RENDER_CACHE_MAX){
-    const oldest = _rankingsRenderCache.keys().next();
-    if(oldest && !oldest.done) _rankingsRenderCache.delete(oldest.value);
-    else break;
+  _rankingsRenderCacheChars += html.length;
+  while(_rankingsRenderCache.size > _RANKINGS_RENDER_CACHE_MAX ||
+        (_rankingsRenderCacheChars > _RANKINGS_RENDER_CACHE_MAX_CHARS && _rankingsRenderCache.size > 1)){
+    if(!_rankingsRenderCacheEvictOldest()) break;
   }
 }
+
+// Bytes currently held, for tests and the dev console.
+function rankingsRenderCacheBytes(){ return _rankingsRenderCacheChars; }
 
 function rankHeadshotSlotHtml(p){
   const pid = p && p.player_id!=null ? String(p.player_id) : '';
@@ -12825,6 +13709,7 @@ function hydrateRankingsHeadshots(){
 
 function invalidateRankingsRenderCache(){
   _rankingsRenderCache.clear();
+  _rankingsRenderCacheChars = 0;   // keep the byte accounting in step with the map
 }
 
 function prewarmRankingsFromSeed(){
@@ -12951,6 +13836,20 @@ function renderRankings(){
     });
   }
   const fullViewCount = view.length;
+  // One pass to derive each player's value for the active advanced column, so the comparator
+  // below is a Map lookup instead of a full sumerValue() derivation per comparison (which,
+  // at n log n comparisons, means each player's value was recomputed a dozen-plus times).
+  const _sumerSortKeys = new Map();
+  if(rankSortKey.startsWith('sumer:')){
+    const _lbl = rankSortKey.slice(6);
+    view.forEach(p=>_sumerSortKeys.set(p, sumerValue(p, _lbl)));
+  }
+  const _sumerSortKeyFor = (p, label)=>{
+    if(_sumerSortKeys.has(p)) return _sumerSortKeys.get(p);
+    const v = sumerValue(p, label);   // player not in the prepass (shouldn't happen) — derive
+    _sumerSortKeys.set(p, v);
+    return v;
+  };
   view=[...view].sort((a,b)=>{
     if(rankSortKey==='ecr'){
       // Unranked players sort to the bottom regardless of direction.
@@ -12969,9 +13868,13 @@ function renderRankings(){
       return (av-bv)*(rankSortDir<0?1:-1);
     }
     // SumerSports advanced columns (key "sumer:<label>"): players missing that stat sink.
+    // sumerValue() is not cheap — it allocates a table object under a refinement, normalises
+    // the player name with three regexes, and linear-scans the column list — so calling it
+    // from inside the comparator re-derived both operands on every comparison. The values are
+    // precomputed into _sumerSortKeys before the sort (see below) and read back here.
     if(rankSortKey.startsWith('sumer:')){
       const label=rankSortKey.slice(6);
-      const av=sumerValue(a,label), bv=sumerValue(b,label);
+      const av=_sumerSortKeyFor(a,label), bv=_sumerSortKeyFor(b,label);
       const an=(typeof av==='number'), bn=(typeof bv==='number');
       if(!an && !bn) return b.fpts-a.fpts;
       if(!an) return 1;
@@ -13053,16 +13956,41 @@ function renderRankings(){
     ? `${PROJ_SEASON} projections · ${teamScoped?`${currentTeam} rankings`:'full rankings'}`
     : `${teamScoped?`${currentTeam} rankings`:'full rankings'} · ${activeSeason}`;
   const rankNoteContext = `${rankBaseContext}${advActive?` · adv metrics${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}`:''}`;
-  const rankValueHtml = (display, p, label, statKey, source)=> noteWrapHtml(display, {
+  // Per-cell note tags carry ONLY what differs cell to cell. Everything constant for the row
+  // — context string, nav payload, player identity, team — is emitted once on the <tr> by
+  // rankNoteScopeAttrs() below and inherited at click time (see noteInfoFromElement).
+  //
+  // Measured on a phone-width board before this split: data-note-* attributes were 848KB,
+  // 57.9% of the table's entire HTML, with the nav JSON re-serialised once per tagged cell
+  // (~2,000 times) for ~32 distinct values.
+  // `value` is omitted on purpose: it is exactly this cell's rendered text, which
+  // noteInfoFromElement reads back from the DOM. `source` is constant for the whole render
+  // and rides on the row. That leaves two genuinely per-cell attributes.
+  const rankValueHtml = (display, p, label, statKey, source)=> noteCellHtml(display, {
     label,
-    value: typeof display==='string' ? display.replace(/<[^>]+>/g,'').trim() : display,
-    source,
     statKey,
+  }, 'note-tag-hit');
+  // Built once per row. The nav object is identical for every cell in a row and takes only a
+  // handful of distinct values across the whole table, so memoise on the one field that varies.
+  const _navByTeam = new Map();
+  const rankNavFor = (team)=>{
+    let n = _navByTeam.get(team);
+    if(!n){
+      n = { type:'rankings', season:String(activeSeason), scope: teamScoped?'team':'all',
+            team: teamScoped?currentTeam:team, advanced: advActive,
+            refinement: sumerRefinement||'', posFilter: rankPosFilter };
+      _navByTeam.set(team, n);
+    }
+    return n;
+  };
+  const rankNoteSource = advActive ? 'rankings_advanced' : 'rankings';
+  const rankNoteScopeAttrs = (p)=> noteScopeAttrs({
     context: rankNoteContext,
+    source: rankNoteSource,
     player: p,
     team: p.team,
-    nav: { type:'rankings', season:String(activeSeason), scope: teamScoped?'team':'all', team: teamScoped?currentTeam:p.team, advanced: advActive, refinement: sumerRefinement||'', posFilter: rankPosFilter },
-  }, 'note-tag-hit');
+    nav: rankNavFor(p.team),
+  });
   const statCell = (v, p, label, statKey)=>{
     if(!(v && v>0)) return '';
     const txt = (+v)%1!==0?(+v).toFixed(1):(+v).toLocaleString();
@@ -13118,7 +14046,7 @@ function renderRankings(){
     const volAttrs = advActive
       ? ` data-rank-sumer-bucket="${escAttr(volBucket)}" data-rank-sumer-vol="${(volVal!=null && Number.isFinite(+volVal)) ? escAttr(String(+volVal)) : ''}"`
       : '';
-    rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}"${volAttrs}>
+    rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}"${volAttrs}${rankNoteScopeAttrs(p)}>
     <td class="c-ecr">${ecrTxt!=='—'?rankValueHtml(ecrTxt, p, 'Expert Consensus Rank', 'ecr', 'rankings'):ecrTxt}</td>
     <td class="c-tier">${tier!=null?rankValueHtml(`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`, p, 'Tier', 'ecr_tier', 'rankings'):''}</td>
     <td class="fpts">${rankValueHtml(fptsTxt, p, 'Fantasy Points', 'fpts', 'rankings')}</td>
@@ -15312,6 +16240,24 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
 (async function boot(){
   const hasEmbeddedProj = SEED && Object.keys(SEED).some(t=>SEED[t] && (SEED[t].QB.length||SEED[t].RB.length||SEED[t].WR.length||SEED[t].TE.length));
   const hasEmbeddedECR  = ECR && Object.keys(ECR).some(f=>ECR[f] && Object.keys(ECR[f]).length);
+  // Paint an honest loading state BEFORE the first await. The template ships the "Select a
+  // team to begin" empty state, which reads as "loaded and idle" — so a phone user used to
+  // stare at a false ready state for the whole Sleeper round-trip, then watch it flip to
+  // "Loading…" and back. (No season in the string: PROJ_SEASON may still be corrected by the
+  // sync below, and a number that changes under you is worse than no number.)
+  let _seedRawP = null;
+  if(!hasEmbeddedProj){
+    const _c = document.getElementById('content');
+    if(_c) _c.innerHTML = `<div class="empty">
+    <div class="empty-icon">${TC_ICON("signal","tc-ico-lg")}</div><div class="empty-title">Loading projections…</div>
+    <div class="empty-body">Checking for a prebuilt seed, then pulling live from Sleeper if needed.</div></div>`;
+    // Start the ~1.5MB seed download NOW rather than after the Sleeper season probe resolves.
+    // These two requests hit different hosts and neither depends on the other's RESULT, so
+    // running them back-to-back was costing a full extra round-trip on every cold load. The
+    // seed is still APPLIED after the season sync below, so ordering semantics are unchanged.
+    try{ _seedRawP = Promise.resolve(fetchSeedJson('seeds/triplecrown_seed.json')).catch(()=>null); }
+    catch(e){ _seedRawP = null; }
+  }
   if(!hasEmbeddedProj && typeof syncProjSeasonFromSleeper==='function'){
     await syncProjSeasonFromSleeper();
   }
@@ -15329,12 +16275,20 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
     backgroundRefreshADP();
     return;
   }
+  // Now that the season is settled, re-stamp the loading state with the real year.
   document.getElementById('content').innerHTML=`<div class="empty">
     <div class="empty-icon">${TC_ICON("signal","tc-ico-lg")}</div><div class="empty-title">Loading ${PROJ_SEASON} data…</div>
     <div class="empty-body">Checking for a prebuilt seed, then pulling live from Sleeper if needed.</div></div>`;
   // No embedded projections. Try a local seed file (works when served over http), which at
   // minimum gives us ECR; then fall back to a live Sleeper pull for projections.
-  tryAutoLoadSeed().then(loaded=>{
+  // The payload is usually already downloaded by now — hand it straight to tryAutoLoadSeed
+  // rather than issuing a second request for it.
+  const _seedRaw = _seedRawP ? await _seedRawP : null;
+  // The prefetch already ran and came back empty — no seed is hosted here (or this is a bare
+  // file:// open). Go straight to the live Sleeper pull instead of letting tryAutoLoadSeed
+  // issue a second request for a file we already know isn't there.
+  if(_seedRawP && !_seedRaw){ refreshFromSleeper(true); return; }
+  tryAutoLoadSeed(_seedRaw).then(loaded=>{
     const hasProj = SEED && Object.keys(SEED).some(t=>SEED[t] && (SEED[t].QB.length||SEED[t].RB.length||SEED[t].WR.length||SEED[t].TE.length));
     if(hasProj){
       const restored = restoreSession();
@@ -15431,13 +16385,20 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
 
 // Attempt to fetch triplecrown_seed.json next to the page. Returns true if it loaded anything
 // useful (at minimum ECR). Never throws — a file:// open or missing file just returns false.
-async function tryAutoLoadSeed(){
+// `prefetched` lets boot() hand over a payload it already downloaded in parallel with the
+// Sleeper season probe. Omitted (every other caller) → fetch it here as before.
+async function tryAutoLoadSeed(prefetched){
   try{
     // gz-first: build_seed ships a pre-compressed .json.gz twin — ~5x smaller on hosts that
     // don't compress, never worse (fetchSeedJson falls back to plain .json automatically).
-    const raw = await fetchSeedJson('seeds/triplecrown_seed.json');
+    let raw = prefetched || await fetchSeedJson('seeds/triplecrown_seed.json');
     if(!raw) return false;
     const j = decodeAnySeed(raw);
+    // decodeAnySeed rebuilds `history` and `nflverse` into new objects, so the compact
+    // originals are dead the moment it returns — but `raw` kept the whole ~22MB tree
+    // reachable for the rest of this function. Drop it so the GC can take it while we're
+    // still doing the (allocation-heavy) assignments below.
+    raw = null;
     let got=false;
     if(j.ecr){ ECR=j.ecr; got=true; }
     if(j.contracts){ CONTRACTS=j.contracts; got=true; }
@@ -15454,6 +16415,7 @@ async function tryAutoLoadSeed(){
     if(j.dynasty_values){ DYNASTY_VALUES=j.dynasty_values; got=true;
       if(typeof laOnValuesLoaded==="function") laOnValuesLoaded(); }   // FP dynasty trade values → refresh analyzer
     if(j.nflverse){ NFLVERSE=j.nflverse; if(typeof resetNflverseLazy==='function') resetNflverseLazy(); got=true; }   // nflverse advanced metrics payload (heavy sections lazy-load)
+    if(j.cfb){ CFB=j.cfb; if(typeof resetCfbLazy==='function') resetCfbLazy(); got=true; }   // college rookie profiles (game logs lazy-load)
     // Only adopt prebuilt projections/history if present and non-trivial.
     if(j.seed && Object.keys(j.seed).length){
       SEED=j.seed; projSeed=SEED; seasonStatsCache={proj:SEED}; rosterMergedTeams.clear();
@@ -15514,28 +16476,65 @@ let _tcClient = null;
 let _tcUser   = null;
 let _tcMgrProjs = [];   // cached projection list for manager
 
-// ── Initialise Supabase client ────────────────────────────────────────────────
-(function _tcInit(){
-  if(typeof window === 'undefined') return;
-  if(!TC_SUPABASE_URL || !TC_SUPABASE_ANON_KEY) return;  // not yet configured
-  const sb = window.supabase;
-  if(!sb || typeof sb.createClient !== 'function'){
-    console.warn('[TC] Supabase SDK not loaded — cloud features disabled');
-    return;
-  }
+// ── Initialise Supabase client (lazily) ──────────────────────────────────────
+// The SDK is no longer a blocking script tag in the document head (see 04-script-loader.js), so the
+// client is built on demand. tcEnsureSupabase() is idempotent and safe to call from any
+// entry point; it resolves true once _tcClient is usable.
+let _tcInitPromise = null;
+function tcEnsureSupabase(){
+  if(_tcClient) return Promise.resolve(true);
+  if(_tcInitPromise) return _tcInitPromise;
+  if(typeof window === 'undefined') return Promise.resolve(false);
+  if(!TC_SUPABASE_URL || !TC_SUPABASE_ANON_KEY) return Promise.resolve(false);  // not configured
+  _tcInitPromise = tcEnsureSupabaseSdk().then(ok=>{
+    if(!ok){
+      console.warn('[TC] Supabase SDK could not be loaded — cloud features disabled');
+      _tcInitPromise = null;   // allow a retry on the next attempt
+      return false;
+    }
+    try{
+      _tcClient = window.supabase.createClient(TC_SUPABASE_URL, TC_SUPABASE_ANON_KEY);
+      // Restore an existing session from localStorage.
+      _tcClient.auth.getSession().then(({data:{session}})=>{
+        _tcUser = session ? session.user : null;
+        syncAuthChrome();
+      }).catch(e=>console.warn('[TC] getSession error:', e));
+      // Keep state in sync whenever auth changes (sign-in, sign-out, token refresh)
+      _tcClient.auth.onAuthStateChange((_event, session)=>{
+        _tcUser = session ? session.user : null;
+        syncAuthChrome();
+      });
+      return true;
+    }catch(e){
+      console.warn('[TC] Supabase init error:', e);
+      _tcInitPromise = null;
+      return false;
+    }
+  });
+  return _tcInitPromise;
+}
+
+// A signed-in user must still come back to a signed-in app without touching anything,
+// so if supabase-js left an auth token in localStorage on a previous visit we bring the
+// SDK up in the background once boot is out of the way. A signed-OUT visitor — the
+// common case, and every offline/baked copy — never requests it at all.
+function _tcHasStoredSession(){
   try{
-    _tcClient = sb.createClient(TC_SUPABASE_URL, TC_SUPABASE_ANON_KEY);
-    // Restore existing session from localStorage (automatic on every page load)
-    _tcClient.auth.getSession().then(({data:{session}})=>{
-      _tcUser = session ? session.user : null;
-      syncAuthChrome();
-    }).catch(e=>console.warn('[TC] getSession error:', e));
-    // Keep state in sync whenever auth changes (sign-in, sign-out, token refresh)
-    _tcClient.auth.onAuthStateChange((_event, session)=>{
-      _tcUser = session ? session.user : null;
-      syncAuthChrome();
-    });
-  }catch(e){ console.warn('[TC] Supabase init error:', e); }
+    if(typeof localStorage==='undefined' || !localStorage) return false;
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      // supabase-js v2 stores `sb-<project-ref>-auth-token`.
+      if(k && /^sb-.*-auth-token$/.test(k)) return true;
+    }
+  }catch(e){}
+  return false;
+}
+(function _tcRestoreIfSignedIn(){
+  if(typeof window==='undefined') return;
+  if(!_tcHasStoredSession()) return;
+  const go = ()=>{ tcEnsureSupabase().catch(()=>{}); };
+  if(typeof requestIdleCallback==='function') requestIdleCallback(go, {timeout:3000});
+  else setTimeout(go, 1200);
 })();
 
 // Sync chrome once immediately so Save/Manager buttons appear as soon as the
@@ -15579,6 +16578,10 @@ function syncAuthChrome(){
 // ─────────────────────────────────────────────────────────────────────────────
 function tcOpenAuthModal(reason){
   if(document.getElementById('tcAuthOverlay')) return;
+  // Start fetching the SDK now, in parallel with the user reading the form and typing —
+  // by the time they hit Sign In it has almost always landed. The submit handlers await
+  // it anyway, so a slow network just means a brief "Signing in…" instead of an error.
+  tcEnsureSupabase().catch(()=>{});
   const ov = document.createElement('div');
   ov.id = 'tcAuthOverlay';
   ov.className = 'tc-modal-overlay';
@@ -15638,7 +16641,19 @@ function tcSwitchAuthTab(tab){
 }
 
 function tcAuthSubmit(){
-  if(!_tcClient){ toast('Supabase not configured','err'); return; }
+  if(!_tcClient){
+    // SDK still in flight (or this is the first click on a cold load) — wait for it,
+    // then re-enter. tcEnsureSupabase() is idempotent so this can't double-initialise.
+    const btn0 = document.getElementById('tcAuthSubmit');
+    if(btn0){ btn0.disabled = true; btn0.textContent = 'Connecting…'; }
+    tcEnsureSupabase().then(ok=>{
+      if(btn0){ btn0.disabled = false;
+        btn0.textContent = document.getElementById('tcTabSignUp')?.classList.contains('active') ? 'Create Account' : 'Sign In'; }
+      if(ok) tcAuthSubmit();
+      else _tcShowFormErr('tcAuthErr','Could not reach the sign-in service. Check your connection and try again.');
+    });
+    return;
+  }
   const email   = (document.getElementById('tcAuthEmail')?.value||'').trim();
   const pass    = (document.getElementById('tcAuthPass')?.value ||'');
   const isSignUp = document.getElementById('tcTabSignUp')?.classList.contains('active');
@@ -15665,7 +16680,13 @@ function tcAuthSubmit(){
 }
 
 function tcSignInGoogle(){
-  if(!_tcClient){ toast('Supabase not configured','err'); return; }
+  if(!_tcClient){
+    tcEnsureSupabase().then(ok=>{
+      if(ok) tcSignInGoogle();
+      else toast('Could not reach the sign-in service — check your connection','err');
+    });
+    return;
+  }
   _tcClient.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo: window.location.href.split('#')[0] },
@@ -16278,7 +17299,7 @@ function psRender(q){
                     onclick="psPick(this)">
       ${img}
       <span class="ps-nm">${nameText}</span>
-      <span class="ps-meta">${noteBadge}${logo}<span class="ps-pos ps-pos-${e.pos}">${posText}</span></span>
+      <span class="ps-meta">${typeof tcOwnerChip==='function'?tcOwnerChip(e.pid, e.name, 'compact'):''}${noteBadge}${logo}<span class="ps-pos ps-pos-${e.pos}">${posText}</span></span>
     </button>`;
   }).join('');
 }
@@ -16582,6 +17603,9 @@ function tsScrollerClaims(el, dir){
     host.classList.remove('ts-swipe-dragging');
     host.classList.remove('ts-swipe-committing');
     previewPhase=null;
+    // Cleared at the END of the gesture (not the start of the next touch): a preview is built
+    // from live projections, week-range filters and scoring settings, any of which may change
+    // between gestures, so one gesture is the only lifetime that's provably safe.
     previewCache={};
     if(anim){
       const t=top; const u=under;
@@ -16596,7 +17620,7 @@ function tsScrollerClaims(el, dir){
   };
 
   document.addEventListener('touchstart', e=>{
-    x0=y0=null; axis=null; dx=0; bar=null; host=null; tabs=null; cur=-1; previewPhase=null; previewCache={};
+    x0=y0=null; axis=null; dx=0; bar=null; host=null; tabs=null; cur=-1; previewPhase=null;
     if(e.touches.length!==1) return;
     // League-wide Advanced Metrics is a standalone page (like Full Rankings):
     // no horizontal phase-swipe navigation from this view.
@@ -16623,9 +17647,11 @@ function tsScrollerClaims(el, dir){
     if(cur<0) return;
     host=tsSwipeHost(b);
     if(!host || (e.target && !host.contains(e.target))) return;
-    // Pre-render only the immediate left/right neighbors for instant direction changes
-    // without precomputing the whole tab stack.
-    preloadAdjacentPreviews();
+    // NOTE: preloadAdjacentPreviews() deliberately does NOT run here. It renders two entire
+    // phase pages (renderTeamAdvanced + a rankings preview ≈ 12ms desktop, 10-60ms on a phone)
+    // and touchstart fires on every tap and every scroll-start — before we even know whether
+    // the gesture is horizontal. It now runs in touchmove, the moment axis==='x' is decided,
+    // which is ~10px of travel and still long before any preview becomes visible.
     x0=t.clientX; y0=t.clientY;
   }, {passive:true});
 
@@ -16640,6 +17666,11 @@ function tsScrollerClaims(el, dir){
       axis = (Math.abs(dx) > Math.abs(dy)*1.4) ? 'x' : 'y';
       if(axis==='x' && tsScrollerClaims(e.target, dx)) axis='y';   // a scroller owns it
       if(axis==='y'){ x0=null; return; }
+      // Horizontal intent confirmed — NOW pre-render the immediate left/right neighbours.
+      // setPreview() below only needs whichever one the finger is heading toward, but doing
+      // both here keeps a mid-gesture direction change instant, and this runs once per swipe
+      // instead of once per tap.
+      preloadAdjacentPreviews();
     }
     if(axis!=='x') return;
     // Ours now: stop the browser from scrolling / pull-to-refreshing underneath.
@@ -16746,13 +17777,19 @@ function _thsPlacePair(host, topX, dir){
   under.style.transform = `translateX(${(topX + (dir<0 ? w : -w)).toFixed(1)}px)`;
 }
 
+// Team record for the swipe-preview header. This used to call calcTeamWinsLosses(), which
+// does not exist anywhere in the codebase — the typeof guard meant it failed silently, so the
+// preview header simply never showed a record while the real header (30-sidebar.js:218) did.
+// Use the same source the real header uses: the ESPN record cache, reference seasons only.
 function _thsReco(team){
   try{
-    if(typeof calcTeamWinsLosses!=='function') return '';
-    const wl=calcTeamWinsLosses(team);
-    if(!wl || typeof wl.wins!=='number' || typeof wl.losses!=='number') return '';
-    const ties = Number(wl.ties)||0;
-    return ties ? `${wl.wins}-${wl.losses}-${ties}` : `${wl.wins}-${wl.losses}`;
+    if(typeof activeSeason==='undefined' || activeSeason==='proj') return '';   // no record for a projection
+    if(typeof espnRecordCache==='undefined' || !espnRecordCache) return '';
+    const key = `${activeSeason}:${team}`;
+    // Warm the cache the same way the real header does, so swiping to a team you haven't
+    // opened yet fills in on the next render instead of staying blank forever.
+    if(espnRecordCache[key]==null && typeof fetchTeamRecord==='function') fetchTeamRecord(activeSeason, team);
+    return espnRecordCache[key] || '';
   }catch(e){
     return '';
   }
@@ -17260,7 +18297,15 @@ function assignQBSnapShares(qbs){
 // (file:// / offline), it silently keeps the baked seed. It NEVER touches the user's edited
 // working projections or historical seasons — only the read-only SEED baseline's ADP, plus
 // projection stats for players the user hasn't edited.
-let _bgAdpRefreshed = false;
+// `var`, not `let`: boot() lives in 85-import-export.js, which is concatenated BEFORE this
+// file, and its embedded-seed path calls backgroundRefreshADP() synchronously. The function
+// declaration hoists fine, but a `let` here would still be in the temporal dead zone at that
+// moment — so on a baked/offline file the very first call threw
+// "Cannot access '_bgAdpRefreshed' before initialization" and the background ADP refresh
+// never ran. `var` hoists as undefined, which is falsy, which is exactly the initial state.
+// (The hosted path got away with it only because it calls this from an async continuation,
+// by which time the whole bundle has finished executing.)
+var _bgAdpRefreshed = false;
 async function backgroundRefreshADP(){
   if(_bgAdpRefreshed) return;
   try{
@@ -17601,6 +18646,450 @@ function renderSeasonTabs(){
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// ESPN league linking
+// ═════════════════════════════════════════════════════════════════════════════
+// TripleCrown sources every STAT, projection and player identity from Sleeper. This module
+// adds a second place a LEAGUE can come from — ESPN — without touching that rule: it reads
+// only the things a league knows about itself (team names, owners, rosters, draft picks,
+// scoring, lineup slots) and then translates every player into a Sleeper player_id before
+// handing the result on. Downstream (values, VOR, projections, player cards, headshots)
+// never learns ESPN was involved.
+//
+// Why this works at all: ESPN's fantasy read API reflects the caller's Origin back in
+// access-control-allow-origin, so a static page can call it directly — no proxy, no key, no
+// server. Verified against lm-api-reads.fantasy.espn.com and fan.api.espn.com.
+//
+// Two hard limits, both surfaced in the UI rather than hidden:
+//  • PUBLIC LEAGUES ONLY. Private leagues need the espn_s2 + SWID cookies, and those are set
+//    on espn.com with no SameSite and no Secure attribute — so browsers treat them as Lax and
+//    never send them cross-site. credentials:'include' cannot fix this; it is a cookie policy
+//    decision on ESPN's side, not something we can work around from a page.
+//  • NO GLOBAL USERNAME LOOKUP. ESPN has no public username→account endpoint, so you cannot
+//    type a handle and find someone cold. The account is keyed on its SWID. But a SWID is a
+//    cookie value no ordinary user can produce, so we never ask for one: a PUBLIC league's
+//    members[] block hands out display-name→SWID for everyone in it, which turns "paste your
+//    league link, then tap your name" into the same two-step flow as Sleeper's username box.
+//    We keep the SWID after that, so it happens once. See espnFetchLeagueMembers.
+//
+// This is an undocumented endpoint ESPN maintains for its own web client. It can change or
+// close without notice, so every failure path here degrades to a plain message.
+
+// The fan profile: every league this SWID is in. Unauthenticated and CORS-open — the SWID
+// alone is the key. The braces in a SWID MUST be percent-encoded or the API 404s.
+const ESPN_FAN_URL = (swid)=>
+  `https://fan.api.espn.com/apis/v2/fans/${encodeURIComponent(swid)}`
+  + `?featureFlags=expandAthlete&showAirings=false&source=ESPN.com&lang=en&section=espn&region=us`;
+
+// The league read endpoint. `views` selects which blocks come back; we ask for settings +
+// teams + rosters in one request (~875KB for a 10-team league) rather than three round-trips.
+const ESPN_LEAGUE_URL = (season, leagueId, views)=>
+  `https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/${season}/segments/0/leagues/${leagueId}`
+  + (views && views.length ? `?${views.map(v=>`view=${v}`).join('&')}` : '');
+
+// ── ESPN's integer vocabularies ──────────────────────────────────────────────
+// lineupSlotId → the Sleeper roster_positions token lineupFromRosterPositions already parses.
+// Mapping to Sleeper's vocabulary (rather than inventing a third one) means the existing
+// lineup/bench logic, the superflex detection and the draft board all work untouched.
+const ESPN_SLOT_MAP = {
+  0:'QB', 1:'QB',            // 1 = "TQB" (team QB), vanishingly rare; treat as a QB slot
+  2:'RB', 3:'WRRB_FLEX',     // 3 = RB/WR
+  4:'WR', 5:'REC_FLEX',      // 5 = WR/TE
+  6:'TE',
+  7:'SUPER_FLEX',            // 7 = "OP" (any offensive player) — ESPN's superflex
+  8:'DL', 9:'DL', 10:'LB', 11:'DL', 12:'DB', 13:'DB', 14:'DB', 15:'IDP_FLEX',
+  16:'DEF', 17:'K', 18:'P', 19:'HC',
+  20:'BN', 21:'IR',
+  23:'FLEX',                 // 23 = RB/WR/TE
+  24:'ER',                   // 24 = "ER" (extra roster), behaves like a bench slot
+};
+// defaultPositionId → our position codes. Only the offensive skill positions plus K/DEF
+// matter for scoring; IDP ids are mapped so an IDP league's rosters still render.
+const ESPN_POS_MAP = {
+  1:'QB', 2:'RB', 3:'WR', 4:'TE', 5:'K', 16:'DEF',
+  9:'DL', 10:'LB', 11:'DL', 12:'DB', 13:'DB', 14:'DB',
+};
+// proTeamId → team abbreviation, in SLEEPER's spelling (WAS not WSH, JAX not JAC). ESPN's
+// franchise ids have been stable for years. This is used ONLY to identify a team defense —
+// for real players the team comes off the matched Sleeper record, so a stale id here can
+// never put a skill player on the wrong team.
+const ESPN_PRO_TEAM = {
+  0:null, 1:'ATL', 2:'BUF', 3:'CHI', 4:'CIN', 5:'CLE', 6:'DAL', 7:'DEN', 8:'DET', 9:'GB',
+  10:'TEN', 11:'IND', 12:'KC', 13:'LV', 14:'LAR', 15:'MIA', 16:'MIN', 17:'NE', 18:'NO',
+  19:'NYG', 20:'NYJ', 21:'PHI', 22:'ARI', 23:'PIT', 24:'LAC', 25:'SF', 26:'SEA', 27:'TB',
+  28:'WAS', 29:'CAR', 30:'JAX', 33:'BAL', 34:'HOU',
+};
+// ESPN scoring statId → the Sleeper scoring_settings key that means the same thing. Only the
+// lines our projection model actually scores are listed; kicker/DEF/IDP and the long tail of
+// bonus lines don't move a skill player's points, exactly as in applySleeperScoring.
+const ESPN_STAT_MAP = {
+  3:'pass_yd', 4:'pass_td', 20:'pass_int', 0:'pass_att', 1:'pass_cmp',
+  24:'rush_yd', 25:'rush_td', 23:'rush_att',
+  42:'rec_yd', 43:'rec_td', 53:'rec', 58:'rec_tgt',
+  72:'fum_lost',
+};
+// pointsOverrides is keyed by defaultPositionId. These are the two we read.
+const ESPN_OVR_TE = '4';
+const ESPN_OVR_WR = '3';
+
+// ── Fetch ────────────────────────────────────────────────────────────────────
+// Deliberately reuses sleeperFetch: it is a plain JSON GET with an AbortController timeout
+// and dev-mode timing, none of which is Sleeper-specific. Errors are re-labelled so a failure
+// never says "Sleeper" when we were talking to ESPN.
+async function espnFetch(url){
+  try{
+    return await sleeperFetch(url);
+  }catch(e){
+    const m=/^Sleeper (\d+)$/.exec(e && e.message || '');
+    if(m) throw new Error(`ESPN ${m[1]}`);
+    throw e;
+  }
+}
+
+// Pull a league id (+ season) out of anything a user is likely to paste: a league URL, a team
+// URL, a fantasycast link, or a bare numeric id. Returns null when there's no id to find.
+function espnParseLeagueRef(raw){
+  if(!raw) return null;
+  const s=String(raw).trim();
+  if(/^\d{2,12}$/.test(s)) return { leagueId:s, season:null };
+  const lid=/[?&]leagueId=(\d+)/i.exec(s);
+  if(!lid) return null;
+  const yr=/[?&]seasonId=(\d{4})/i.exec(s);
+  return { leagueId:lid[1], season:yr?yr[1]:null };
+}
+
+// The managers in one league, each with their ESPN display name AND their SWID.
+//
+// This is what makes a username-style flow possible at all. ESPN publishes no username→account
+// lookup (verified: no fans-by-username route, and their site search returns nothing for a
+// fantasy handle), so the account id can't be searched for globally — but any PUBLIC league
+// hands out the display-name→SWID mapping for everyone in it. Since a league URL is the one
+// thing an ESPN user always has (it's the address bar while they're looking at their league),
+// "paste a league, then point at yourself" gets us the SWID without anyone opening devtools.
+// Once we have it we keep it, and every later visit lists their leagues directly.
+async function espnFetchLeagueMembers(leagueId, season){
+  // mSettings rides along for the league's NAME — the "which manager are you?" screen
+  // names the league so people know they pasted the right link. Neither view carries
+  // rosters, so this stays a small request.
+  const d = await espnFetch(ESPN_LEAGUE_URL(season, leagueId, ['mTeam','mSettings']));
+  const teamByOwner={};
+  (d.teams||[]).forEach(t=>{
+    const owner = t.primaryOwner || (t.owners && t.owners[0]) || null;
+    if(owner && !teamByOwner[owner]) teamByOwner[owner]={ teamId:t.id, teamName:t.name||t.abbrev||`Team ${t.id}` };
+  });
+  const out=(d.members||[]).map(m=>{
+    const t=teamByOwner[m.id]||{};
+    return {
+      swid: m.id,
+      name: m.displayName || `${m.firstName||''} ${m.lastName||''}`.trim() || '(unnamed)',
+      teamId: t.teamId!=null ? t.teamId : null,
+      teamName: t.teamName || null,
+    };
+  }).filter(m=>m.swid);
+  out.sort((a,b)=>String(a.name).toLowerCase().localeCompare(String(b.name).toLowerCase()));
+  return { members:out, leagueName:(d.settings&&d.settings.name)||'ESPN League',
+           season:String(d.seasonId||season) };
+}
+
+// Every FOOTBALL league this account is in. The fan profile returns one `preferences` entry
+// per fantasy entry across all sports; the id encodes it as "gameId:leagueId:entryId:season"
+// where gameId 1 is football. `entryId` is the user's own teamId in that league, which is how
+// we know which roster is theirs without any further lookup.
+//
+// IMPORTANT: unauthenticated, this lists only the account's PUBLIC leagues. `fantasyData
+// .totalFantasyLeagues` reports the true total, and it is routinely higher — one sampled
+// account showed 9 leagues with 0 listed (all private), another 3 with 1 listed. That costs
+// us nothing, because a private league can't be synced either way (see the header), but it
+// does mean an empty result is "no PUBLIC leagues", not "no leagues" — say so, or people with
+// private leagues will think the lookup is broken. laEspnFanCount surfaces the real total.
+async function espnFetchFanLeagues(swid){
+  const fan = await espnFetch(ESPN_FAN_URL(swid));
+  const out=[];
+  // The account's REAL league count, so the UI can distinguish "you're in no leagues" from
+  // "your leagues are all private and therefore invisible to us".
+  out.totalLeagues = (fan && fan.fantasyData && fan.fantasyData.totalFantasyLeagues) || 0;
+  (fan && fan.preferences || []).forEach(p=>{
+    const parts=String(p && p.id || '').split(':');
+    if(parts.length<4 || parts[0]!=='1') return;         // not a football entry
+    const entry=(p.metaData && p.metaData.entry) || {};
+    const grp=(entry.groups && entry.groups[0]) || {};
+    const meta=entry.entryMetadata || {};
+    out.push({
+      leagueId: String(grp.groupId || parts[1]),
+      season:   String(entry.seasonId || parts[3]),
+      teamId:   +(entry.entryId || parts[2]) || null,
+      name:     grp.groupName || 'ESPN League',
+      teams:    grp.groupSize || null,
+      teamName: meta.teamName || null,
+      logo:     entry.logoUrl || null,
+      // leagueTypeId 0 = redraft/standard; keeper and dynasty are flagged on the league
+      // itself, so this is only a hint for the picker label until we sync.
+      draftComplete: !!meta.draftComplete,
+      draftInProgress: !!meta.draftInProgress,
+    });
+  });
+  // Newest season first, then by name, so the current year is what people see at the top.
+  out.sort((a,b)=> a.season===b.season ? String(a.name).localeCompare(String(b.name)) : b.season.localeCompare(a.season));
+  return out;
+}
+
+// Which of these leagues can we actually read?
+//
+// The fan profile lists leagues we have no access to — verified: one sampled account listed a
+// league that answers 404 unauthenticated. Left unchecked, that league sits in the picker
+// looking identical to the others and fails only when tapped. So we probe each one first with
+// a no-view request (under 2KB, ~100ms, all in parallel) and mark it, which turns a confusing
+// dead end into a label you can read before you click. Mutates and returns the list.
+async function espnMarkReadable(leagues){
+  await Promise.all((leagues||[]).map(async (l)=>{
+    try{
+      await espnFetch(ESPN_LEAGUE_URL(l.season, l.leagueId, null));
+      l.readable = true;
+    }catch(e){
+      l.readable = false;
+    }
+  }));
+  return leagues;
+}
+
+// ── Player identity: ESPN → Sleeper ──────────────────────────────────────────
+// The bridge the whole feature rests on. Sleeper's own player records carry an `espn_id`, but
+// coverage is stale: measured against a live 10-team league it resolved only 35.9% of rostered
+// players, missing essentially every 2023-or-later arrival. Falling back to the existing name
+// index lifted that to 99.4% (162/163) with no new matching machinery — so we try the id
+// first (exact, collision-proof) and only then the name.
+let _espnIdIdx = null;   // "espn_id" → sleeper player_id, built lazily from the loaded DB
+function espnBuildIdIndex(){
+  _espnIdIdx = {};
+  if(!sleeperPlayers) return;
+  for(const pid in sleeperPlayers){
+    const e = sleeperPlayers[pid] && sleeperPlayers[pid].espn_id;
+    if(e) _espnIdIdx[String(e)] = pid;
+  }
+}
+// Sleeper stores a handful of players under a short form of their name, which the normalised
+// name match then misses. Measured misses go here rather than into a fuzzier matcher — a
+// looser match risks silently resolving one player to another, which is far worse than a
+// visible miss.
+const ESPN_NAME_ALIASES = {
+  'kenneth gainwell':'kenny gainwell',
+};
+// Resolve one ESPN player object to a Sleeper player_id, or null.
+// `espnPlayer` is the raw `playerPoolEntry.player` node.
+function espnResolvePlayer(espnPlayer){
+  if(!espnPlayer) return null;
+  if(!_espnIdIdx) espnBuildIdIndex();
+  const byId = _espnIdIdx[String(espnPlayer.id)];
+  if(byId) return byId;
+  const pos = ESPN_POS_MAP[espnPlayer.defaultPositionId] || null;
+  const nm  = espnPlayer.fullName
+           || `${espnPlayer.firstName||''} ${espnPlayer.lastName||''}`.trim();
+  if(!nm) return null;
+  let hit = (typeof resolvePlayerId==='function') ? resolvePlayerId(nm, pos) : null;
+  if(hit) return hit;
+  // Alias table, then a last-ditch first-initial + surname pass for the Ken/Kenneth class.
+  const norm = (typeof normName==='function') ? normName(nm) : nm.toLowerCase();
+  const alias = ESPN_NAME_ALIASES[norm];
+  if(alias && typeof resolvePlayerId==='function'){
+    hit = resolvePlayerId(alias, pos);
+    if(hit) return hit;
+  }
+  return null;
+}
+
+// One roster entry → the {id,name,pos,team} shape laTakeSnapshot already produces. Team and
+// name come from the matched SLEEPER record wherever possible, so a linked ESPN league shows
+// exactly the same player identity as a linked Sleeper league.
+function espnRosterPlayer(entry, unresolved){
+  const pl = (entry && entry.playerPoolEntry && entry.playerPoolEntry.player) || null;
+  if(!pl) return null;
+  const espnPos = ESPN_POS_MAP[pl.defaultPositionId] || null;
+  // Team defenses: ESPN gives them a real player id and a proTeamId; Sleeper uses the bare
+  // team abbreviation as the player_id, which is what every downstream lookup expects.
+  if(espnPos==='DEF'){
+    const abbr = ESPN_PRO_TEAM[pl.proTeamId] || null;
+    if(abbr) return { id:abbr, name:`${(typeof teamDisplayName==='function'?teamDisplayName(abbr):abbr)} D/ST`,
+                      pos:'DEF', team:abbr, isDef:true };
+  }
+  const sid = espnResolvePlayer(pl);
+  if(sid && sleeperPlayers && sleeperPlayers[sid]){
+    const sp = sleeperPlayers[sid];
+    return { id:sid, name:sp.name, pos:sp.pos||espnPos||'?', team:sp.team||'FA' };
+  }
+  // Unresolved: keep the player visible on the roster (dropping them would silently shrink a
+  // team) but flag it so the sync can report how many didn't match.
+  if(unresolved) unresolved.push(pl.fullName || String(pl.id));
+  return { id:`espn:${pl.id}`, name:pl.fullName || String(pl.id),
+           pos:espnPos||'?', team:ESPN_PRO_TEAM[pl.proTeamId]||'FA', unresolved:true };
+}
+
+// ── Settings translation ─────────────────────────────────────────────────────
+// lineupSlotCounts ({slotId: count}) → a Sleeper-style roster_positions array. Sorted into a
+// sensible starter order first so the lineup card reads QB → RB → WR → TE → FLEX → K/DEF.
+const ESPN_SLOT_ORDER = [0,1,2,4,6,3,5,23,7,17,16,8,9,10,11,12,13,14,15,18,19,20,24,21];
+function espnRosterPositions(lineupSlotCounts){
+  const out=[];
+  if(!lineupSlotCounts) return out;
+  ESPN_SLOT_ORDER.forEach(slot=>{
+    const n = +(lineupSlotCounts[String(slot)] || lineupSlotCounts[slot] || 0);
+    const tok = ESPN_SLOT_MAP[slot];
+    if(!tok) return;
+    for(let i=0;i<n;i++) out.push(tok==='ER' ? 'BN' : tok);
+  });
+  return out;
+}
+
+// ESPN scoringItems → a Sleeper-shaped scoring_settings object.
+//
+// The subtlety that makes this worth its own function: ESPN lets any scoring line vary BY
+// POSITION via `pointsOverrides`, keyed by defaultPositionId. A TE-premium league therefore
+// reports receptions as points:0 with overrides {QB:.5, RB:.5, WR:.5, TE:1} — read `points`
+// alone and you would label a half-PPR TEP league "standard". We take the non-TE value as the
+// base and the TE excess as Sleeper's bonus_rec_te, which is exactly how Sleeper models it.
+//
+// Yardage is left in ESPN's points-per-yard form because applySleeperScoring already inverts
+// it to yards-per-point (and cleans up the float noise while it's there).
+function espnScoringToSleeper(scoringItems){
+  const sc={};
+  (scoringItems||[]).forEach(it=>{
+    const key = ESPN_STAT_MAP[it.statId];
+    if(!key) return;
+    const ovr = it.pointsOverrides || null;
+    const base = (v)=> (v!=null && isFinite(+v)) ? +v : null;
+    if(key==='rec'){
+      // Prefer an explicit WR override as the base, else any non-TE override, else points.
+      let baseRec = ovr ? base(ovr[ESPN_OVR_WR]) : null;
+      if(baseRec==null && ovr){
+        for(const k in ovr){ if(k!==ESPN_OVR_TE){ baseRec = base(ovr[k]); break; } }
+      }
+      if(baseRec==null) baseRec = base(it.points);
+      if(baseRec==null) return;
+      sc.rec = baseRec;
+      const teRec = ovr ? base(ovr[ESPN_OVR_TE]) : null;
+      if(teRec!=null && teRec>baseRec) sc.bonus_rec_te = +(teRec-baseRec).toFixed(4);
+      return;
+    }
+    // Everything else: an override for a skill position beats a zeroed base value.
+    let v = base(it.points);
+    if(ovr && (v==null || v===0)){
+      let skill=null;
+      [ESPN_OVR_WR,'2','1',ESPN_OVR_TE].forEach(k=>{ if(skill==null) skill = base(ovr[k]); });
+      if(skill!=null) v = skill;
+    }
+    if(v!=null) sc[key]=v;
+  });
+  // ESPN OMITS a scoringItem entirely when a stat isn't scored — it doesn't send a zero. A
+  // real example: league 730841 is touchdown-only + PPR and ships no pass_yd/rush_yd/rec_yd
+  // items at all. If we left those keys absent, applySleeperScoring would keep whatever was
+  // already in scoringSettings (very likely another league's numbers), and the league would
+  // be scored on yardage it doesn't award. So an ESPN league's scoring is COMPLETE by
+  // construction: anything ESPN didn't mention is explicitly zero.
+  for(const id in ESPN_STAT_MAP){
+    const k=ESPN_STAT_MAP[id];
+    if(sc[k]==null) sc[k]=0;
+  }
+  return sc;
+}
+
+// ESPN has no dynasty flag. Keeper leagues declare a keeperCount, which maps to Sleeper's
+// league type 1 (keeper); everything else is redraft (0). Nothing in ESPN's model corresponds
+// to Sleeper's type 2 (dynasty), so an ESPN league never auto-selects the dynasty value lens —
+// the user can still force it with the Auto/VOR/Dynasty toggle.
+function espnLeagueType(settings){
+  const ds=(settings && settings.draftSettings) || {};
+  const keepers = +(ds.keeperCount||0) + +(ds.keeperCountFuture||0);
+  return keepers>0 ? 1 : 0;
+}
+
+// ── Snapshot ─────────────────────────────────────────────────────────────────
+// Produce the SAME leagueSnapshot object laTakeSnapshot builds for Sleeper. Everything after
+// this point in the app is provider-blind. Returns {snapshot, scoring, rosterPositions,
+// unresolved} so the caller can apply scoring and report match failures.
+async function espnBuildSnapshot(leagueId, season, opts){
+  const o = opts || {};
+  const data = await espnFetch(ESPN_LEAGUE_URL(season, leagueId, ['mSettings','mTeam','mRoster']));
+  const settings = data.settings || {};
+  const rosterSettings = settings.rosterSettings || {};
+  const rp = espnRosterPositions(rosterSettings.lineupSlotCounts);
+  const scoring = espnScoringToSleeper((settings.scoringSettings||{}).scoringItems);
+
+  await loadSleeperPlayers(true);
+  espnBuildIdIndex();
+
+  // members[] carries the human behind each team: id is the SWID, displayName the handle.
+  const memberById={};
+  (data.members||[]).forEach(m=>{ if(m && m.id) memberById[m.id]=m; });
+
+  const unresolved=[];
+  const teams=(data.teams||[]).map(t=>{
+    const ownerId = t.primaryOwner || (t.owners && t.owners[0]) || null;
+    const mem = (ownerId && memberById[ownerId]) || {};
+    const rec = (t.record && t.record.overall) || {};
+    const players=((t.roster && t.roster.entries) || [])
+      .map(e=>espnRosterPlayer(e, unresolved))
+      .filter(Boolean);
+    const handle = mem.displayName
+      || `${mem.firstName||''} ${mem.lastName||''}`.trim()
+      || '(orphan)';
+    return {
+      rosterId: t.id,
+      ownerId: ownerId,
+      owner: handle,
+      isChampion: false,          // set below once we know the champion
+      avatar: t.logo || null,
+      teamName: t.name || t.abbrev || `Team ${t.id}`,
+      wins: +(rec.wins||0), losses: +(rec.losses||0),
+      // ESPN leagues have no future-pick market the way Sleeper dynasty leagues do, and no
+      // traded-pick feed on the read API. An empty list is honest: pick capital simply isn't
+      // part of an ESPN snapshot, and the value lenses fall back to roster-only scoring.
+      players, picks: [],
+    };
+  });
+
+  // Champion of a finished season: ESPN marks the winner with rankCalculatedFinal === 1 once
+  // the season completes. isActive/isExpired on status tells us whether that's meaningful yet.
+  const status = data.status || {};
+  let championRosterId = null;
+  if(status.isExpired || (status.currentMatchupPeriod && status.finalScoringPeriod
+      && status.currentMatchupPeriod > status.finalScoringPeriod)){
+    const champ=(data.teams||[]).find(t=>+t.rankCalculatedFinal===1);
+    if(champ) championRosterId = champ.id;
+  }
+  teams.forEach(t=>{ t.isChampion = championRosterId!=null && t.rosterId===championRosterId; });
+
+  const superflex = rp.includes('SUPER_FLEX');
+  const tep = +(scoring.bonus_rec_te||0) > 0;
+
+  // "My team" is identified league-wide by OWNER id (every consumer compares t.ownerId to
+  // snapshot.myUserId), so resolve whatever we know — the account SWID, or the teamId the fan
+  // lookup gave us — down to that one owner id rather than inventing a parallel field.
+  let myOwnerId = null;
+  if(o.mySwid && teams.some(t=>t.ownerId===o.mySwid)) myOwnerId = o.mySwid;
+  if(!myOwnerId && o.myTeamId!=null){
+    const mine = teams.find(t=>String(t.rosterId)===String(o.myTeamId));
+    if(mine) myOwnerId = mine.ownerId;
+  }
+
+  const snapshot = {
+    provider: 'espn',
+    leagueId: String(leagueId),
+    season: String(data.seasonId || season),
+    name: settings.name || 'ESPN League',
+    avatar: null,
+    teams: settings.size || teams.length,
+    superflex, tep,
+    leagueType: espnLeagueType(settings),
+    kdef: [],
+    championRosterId,
+    rosterPositions: rp,
+    takenAt: Date.now(),
+    // Same field, same meaning as the Sleeper path: the owner id of YOUR team.
+    myUserId: myOwnerId,
+    username: o.username || null,
+    teamList: teams,
+  };
+  return { snapshot, scoring, rosterPositions:rp, unresolved };
+}
+// ═════════════════════════════════════════════════════════════════════════════
 // ESPN team records (per season) — shown when viewing a reference season
 // ═════════════════════════════════════════════════════════════════════════════
 const ESPN_TEAM_ID = {ATL:1,BUF:2,CHI:3,CIN:4,CLE:5,DAL:6,DEN:7,DET:8,GB:9,TEN:10,
@@ -17845,6 +19334,121 @@ function copyPlayerToWorking(pid,pos){
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Roster ownership — "who owns this player in my league?"
+// ═════════════════════════════════════════════════════════════════════════════
+// Once a league is synced, most player names in the app can answer a question they currently
+// can't: is this player already taken, and by whom? This module owns that lookup and the small
+// chip that renders it, so every surface (player card hero, search results, rankings) shows the
+// same answer in the same shape rather than each growing its own version.
+//
+// WHY THIS IS CHEAP
+//   Both league providers resolve their rosters to Sleeper player_ids before the snapshot is
+//   built — that is the whole point of the adapter contract in 91-espn-league.js. So a single
+//   id→owner map serves Sleeper and ESPN leagues identically, and nothing here is
+//   provider-aware.
+//
+// WHEN IT SHOWS NOTHING
+//   No league synced, or the player is a free agent in that league. Both are the same case as
+//   far as callers are concerned: the chip helper returns '' and the caller's template
+//   collapses. There is deliberately no "FA" badge — an un-owned player is the common case,
+//   and badging every one of them would be noise on every row in the app.
+
+// pid → {rosterId, teamName, owner, mine}. Rebuilt lazily; invalidated whenever the snapshot
+// changes identity or is re-taken (see tcOwnerIndex).
+let _tcOwnIdx = null;
+let _tcOwnStamp = null;      // which snapshot the index was built from
+let _tcOwnNameIdx = null;    // normalised name → same record, for entries without an id match
+
+// Build (or reuse) the ownership index for the current snapshot.
+//
+// The cache key is league + when the snapshot was taken, so a re-sync or a league switch
+// rebuilds automatically without anyone remembering to call an invalidator. Season is in the
+// key too: looking back at an earlier season of the same league is a different roster set.
+function tcOwnerIndex(){
+  const s = (typeof leagueSnapshot !== 'undefined') ? leagueSnapshot : null;
+  if(!s || !Array.isArray(s.teamList)) { _tcOwnIdx = null; _tcOwnNameIdx = null; _tcOwnStamp = null; return null; }
+  const stamp = `${s.provider||'sleeper'}|${s.leagueId}|${s.season}|${s.takenAt}`;
+  if(_tcOwnIdx && _tcOwnStamp === stamp) return _tcOwnIdx;
+
+  const idx = {}, byName = {};
+  s.teamList.forEach(t=>{
+    const rec = {
+      rosterId: t.rosterId,
+      teamName: t.teamName || `Roster ${t.rosterId}`,
+      owner: t.owner || '',
+      mine: !!(s.myUserId && t.ownerId === s.myUserId),
+    };
+    (t.players||[]).forEach(p=>{
+      if(!p) return;
+      if(p.id) idx[String(p.id)] = rec;
+      // Unresolved ESPN players carry a synthetic "espn:<id>" and their ESPN spelling. Index
+      // them by name too so the chip still appears for a player we couldn't match to Sleeper.
+      if(p.name && typeof normName === 'function') byName[normName(p.name)] = rec;
+    });
+  });
+  _tcOwnIdx = idx; _tcOwnNameIdx = byName; _tcOwnStamp = stamp;
+  return idx;
+}
+
+// Who owns this player? → {rosterId, teamName, owner, mine} or null.
+// `pid` is a Sleeper player_id (or a team code for a D/ST). Name is a fallback only.
+function tcOwnerOf(pid, name){
+  const idx = tcOwnerIndex();
+  if(!idx) return null;
+  if(pid != null && idx[String(pid)]) return idx[String(pid)];
+  if(name && _tcOwnNameIdx && typeof normName === 'function'){
+    const hit = _tcOwnNameIdx[normName(name)];
+    if(hit) return hit;
+  }
+  return null;
+}
+
+// The chip itself. Returns '' when there is nothing to say, so callers can interpolate it
+// unconditionally: `${tcOwnerChip(pid, name)}`.
+//
+// `variant` tunes the density for where it sits:
+//   'full'    player-card hero — team name plus the manager's handle
+//   'compact' search rows and tables — team name only, since space is tight
+function tcOwnerChip(pid, name, variant){
+  const rec = tcOwnerOf(pid, name);
+  if(!rec) return '';
+  const compact = variant === 'compact';
+  const label = compact ? rec.teamName : rec.teamName;
+  const who = (!compact && rec.owner) ? `<span class="tc-own-mgr">@${escHtml(rec.owner)}</span>` : '';
+  const title = rec.mine
+    ? `On your team (${rec.teamName}) — open it in the League Analyzer`
+    : `Rostered by ${rec.owner || rec.teamName} — open that roster in the League Analyzer`;
+  // stopPropagation: these chips sit inside rows and cards that already have their own click
+  // handler (open the player card, pick a search result). Without it, jumping to a roster
+  // would also fire whatever the surrounding element does.
+  // rosterId lands inside an inline handler, so it is coerced to a number rather than
+  // trusted. Both adapters supply an integer today; this makes that a guarantee instead of
+  // an assumption, since the value ultimately originates from a provider's API.
+  const rid = Number(rec.rosterId);
+  if(!isFinite(rid)) return '';
+  return `<button class="tc-own-chip${rec.mine?' tc-own-mine':''}${compact?' tc-own-sm':''}"
+            onclick="event.stopPropagation();tcOwnerJump(${rid})"
+            title="${escAttr(title)}">${rec.mine?'★ ':''}${escHtml(label)}${who}</button>`;
+}
+
+// Jump to this roster in the League Analyzer. Closes the player card first when one is open,
+// otherwise the analyzer renders behind the overlay and nothing appears to happen.
+function tcOwnerJump(rosterId){
+  try{
+    if(typeof closePlayerCard === 'function'){
+      const overlay = document.getElementById('pcardOverlay');
+      if(overlay) closePlayerCard();
+    }
+    if(typeof closePlayerSearch === 'function') closePlayerSearch();
+  }catch(e){}
+  if(typeof laViewTeam !== 'function' || typeof leagueSnapshot === 'undefined' || !leagueSnapshot) return;
+  if(typeof currentPhase !== 'undefined') currentPhase = 'League';
+  if(typeof laState !== 'undefined'){ laState.step = 'view'; laState.laTab = 'myteam'; }
+  if(typeof renderContent === 'function') renderContent();
+  laViewTeam(rosterId);
+  if(typeof syncAppChrome === 'function') syncAppChrome();
+}
+// ═════════════════════════════════════════════════════════════════════════════
 // Load a prebuilt seed file (triplecrown_seed.json from build_seed.py)
 // This is the no-edit path: run the script, then load the JSON here.
 // ═════════════════════════════════════════════════════════════════════════════
@@ -17874,6 +19478,7 @@ function handleSeedLoad(e){
       if(j.dynasty_values){ DYNASTY_VALUES=j.dynasty_values;   // FP dynasty trade values (League Analyzer)
         if(typeof laOnValuesLoaded==="function") laOnValuesLoaded(); }
       if(j.nflverse){ NFLVERSE=j.nflverse; if(typeof resetNflverseLazy==='function') resetNflverseLazy(); }   // nflverse advanced metrics payload (heavy sections lazy-load)
+      if(j.cfb){ CFB=j.cfb; if(typeof resetCfbLazy==='function') resetCfbLazy(); }   // college rookie profiles (game logs lazy-load)
       if(hasSeed){
         SEED=j.seed; rosterMergedTeams.clear();
         HISTORY=j.history||{};
@@ -17942,20 +19547,31 @@ function applySleeperScoring(sc){
     return r2;
   };
   const num=(v,d)=>{ const n=Number(v); return isFinite(n)?clean(n):d; };
-  const perYardToYdg=(v,fallback)=>{ const n=Number(v); return (isFinite(n)&&n>0) ? clean(1/n) : fallback; };
   const s=scoringSettings;
+  // A yardage rate of EXACTLY ZERO means the league awards no points for those yards, which
+  // "yards per point" cannot express (there is no divisor that yields 0). The model already
+  // carries a separate multiplier for this — *_yards_points — so zero the multiplier instead
+  // and leave the divisor alone. Sleeper always sends a non-zero rate, so this only fires for
+  // providers that can express "not scored" (ESPN omits the stat entirely; see
+  // espnScoringToSleeper, which turns an omission into an explicit 0).
+  const setYdg=(v, ydgKey, ptsKey)=>{
+    const n=Number(v);
+    if(!isFinite(n)) return;
+    if(n>0){ s[ydgKey]=clean(1/n); s[ptsKey]=1; }
+    else   { s[ptsKey]=0; }
+  };
   // Passing
-  if(sc.pass_yd!=null) s.passing_yards_yardage = perYardToYdg(sc.pass_yd, s.passing_yards_yardage);
+  if(sc.pass_yd!=null) setYdg(sc.pass_yd, 'passing_yards_yardage', 'passing_yards_points');
   if(sc.pass_td!=null) s.passing_touchdowns = num(sc.pass_td, s.passing_touchdowns);
   if(sc.pass_int!=null) s.interceptions_thrown = num(sc.pass_int, s.interceptions_thrown);
   if(sc.pass_att!=null) s.passing_attempts = num(sc.pass_att, s.passing_attempts);
   if(sc.pass_cmp!=null) s.passing_completions = num(sc.pass_cmp, s.passing_completions);
   // Rushing
-  if(sc.rush_yd!=null) s.rushing_yards_yardage = perYardToYdg(sc.rush_yd, s.rushing_yards_yardage);
+  if(sc.rush_yd!=null) setYdg(sc.rush_yd, 'rushing_yards_yardage', 'rushing_yards_points');
   if(sc.rush_td!=null) s.rushing_touchdowns = num(sc.rush_td, s.rushing_touchdowns);
   if(sc.rush_att!=null) s.rushing_attempts = num(sc.rush_att, s.rushing_attempts);
   // Receiving
-  if(sc.rec_yd!=null) s.receiving_yards_yardage = perYardToYdg(sc.rec_yd, s.receiving_yards_yardage);
+  if(sc.rec_yd!=null) setYdg(sc.rec_yd, 'receiving_yards_yardage', 'receiving_yards_points');
   if(sc.rec_td!=null) s.receiving_touchdowns = num(sc.rec_td, s.receiving_touchdowns);
   if(sc.rec!=null) s.receptions = num(sc.rec, s.receptions);
   // TE Premium. Sleeper models this as a BONUS per TE reception (bonus_rec_te), not a
@@ -19185,10 +20801,45 @@ const LA_ROSTERS_URL = (lid)=>`https://api.sleeper.app/v1/league/${lid}/rosters`
 const LA_TRADED_PICKS_URL = (lid)=>`https://api.sleeper.app/v1/league/${lid}/traded_picks`;
 const LA_LEAGUE_URL = (lid)=>`https://api.sleeper.app/v1/league/${lid}`;
 
+// ── Provider refs ────────────────────────────────────────────────────────────
+// A league used to be identified by a bare Sleeper league_id, and that id is passed around as
+// a string through saved-league buttons, the season picker, resync and the session payload.
+// ESPN needs TWO values (league id + season, since the same id is reused every year), so a
+// ref is now a namespaced string: "espn:1241838:2026". A bare id still means Sleeper, which
+// keeps every stored session, saved league and existing test working unchanged.
+function laParseRef(ref){
+  if(ref && typeof ref==='object'){
+    return { provider: ref.provider||'sleeper', leagueId: String(ref.leagueId||''),
+             season: ref.season!=null ? String(ref.season) : null };
+  }
+  const s=String(ref==null?'':ref);
+  const m=/^(sleeper|espn):([^:]+)(?::(\d{4}))?$/.exec(s);
+  if(m) return { provider:m[1], leagueId:m[2], season:m[3]||null };
+  return { provider:'sleeper', leagueId:s, season:null };
+}
+// The inverse — the canonical string form. Sleeper stays bare so nothing that already stores
+// a plain id has to migrate.
+function laRefKey(r){
+  const p=laParseRef(r);
+  if(p.provider==='sleeper') return p.leagueId;
+  return `${p.provider}:${p.leagueId}${p.season?`:${p.season}`:''}`;
+}
+// The ref for whatever is currently synced.
+function laSnapshotRef(s){
+  const snap = s || leagueSnapshot;
+  if(!snap) return null;
+  return laRefKey({ provider:snap.provider||'sleeper', leagueId:snap.leagueId, season:snap.season });
+}
+
 // Transient UI state for the analyzer's own league picker (mirrors leaguePickerState but is
 // kept separate so the rankings-page picker and this one can't clobber each other).
 let laState = { step: leagueSnapshot? 'view':'start', busy:false, error:null,
                 user:null, leagues:[], laTab:'myteam',
+                // Which platform the setup screen is asking about. Only affects the setup
+                // step — once a snapshot exists every view is provider-blind.
+                provider:'sleeper',
+                espnMembers:[],    // managers in a pasted ESPN league (the "which one is you?" step)
+                espnLeague:null,   // {leagueId, season, name} the user pasted, pending identification
                 lens:'value',      // Compare lens: 'value' (dynasty chart) | 'proj' (our projections)
                 baPos:'ALL',       // Best Available position filter
                 myLens:'value',    // My Team lens: 'value' (dynasty) | 'proj' (redraft, our projections)
@@ -19603,7 +21254,36 @@ function laLoadSleeperProfile(){
     return (p && Array.isArray(p.leagues)) ? p : null;
   }catch(e){ return null; }
 }
-// Sync a remembered league straight from the switcher (by id — the saved list is independent
+// ── Remembered ESPN account ──────────────────────────────────────────────────
+// Mirrors the Sleeper profile above, keyed on the SWID instead of a username. Kept in its own
+// key for the same reason: it's tiny, unrelated to projections, and must survive both a season
+// rollover and a cleared working set.
+// Shape: {swid, username, leagues:[{leagueId,season,teamId,name,teams,teamName}], fetchedAt}
+const TC_ESPN_KEY = 'triplecrown.espn.v1';
+function laSaveEspnProfile(swid, leagues, username){
+  if(!persistAvailable()) return;
+  try{
+    localStorage.setItem(TC_ESPN_KEY, JSON.stringify({
+      swid: swid||'', username: username||null,
+      leagues: (leagues||[]).map(l=>({
+        leagueId:l.leagueId, season:l.season, teamId:l.teamId,
+        name:l.name, teams:l.teams, teamName:l.teamName, readable:l.readable,
+      })),
+      fetchedAt: Date.now(),
+    }));
+  }catch(e){ /* quota — the switcher just won't have history */ }
+}
+function laLoadEspnProfile(){
+  if(!persistAvailable()) return null;
+  try{
+    const raw=localStorage.getItem(TC_ESPN_KEY);
+    if(!raw) return null;
+    const p=JSON.parse(raw);
+    return (p && Array.isArray(p.leagues)) ? p : null;
+  }catch(e){ return null; }
+}
+
+// Sync a remembered league straight from the switcher (by ref — the saved list is independent
 // of laState.leagues, so index-based laPickLeague isn't safe here).
 async function laSyncSavedLeague(leagueId){
   if(!leagueId || laState.busy) return;
@@ -19616,28 +21296,208 @@ async function laSyncSavedLeague(leagueId){
 // offered as its own button right above, so listing it twice would be noise).
 // Returns '' when there's nothing worth showing, so first-run stays clean.
 function laSavedLeaguesHTML(){
-  const p = laLoadSleeperProfile();
-  if(!p || !p.leagues.length) return '';
-  const currentId = leagueSnapshot ? String(leagueSnapshot.leagueId) : null;
-  const linkedId  = (window._laLinkedLeague && String(window._laLinkedLeague.id)) || null;
-  const others = p.leagues.filter(lg=>{
-    const id=String(lg.league_id);
-    return id!==currentId && id!==linkedId;
+  const currentRef = leagueSnapshot ? String(laSnapshotRef()) : null;
+  const linkedRef  = (window._laLinkedLeague && String(window._laLinkedLeague.id)) || null;
+  const rows=[];
+  const sp = laLoadSleeperProfile();
+  (sp && sp.leagues || []).forEach(lg=>{
+    rows.push({ ref:String(lg.league_id), platform:'Sleeper',
+                name:lg.name||'League',
+                sub:`${lg.total_rosters||'?'}-team · ${lg.type===2?'dynasty':lg.type===1?'keeper':'redraft'}${lg.sf?' · SF':''}` });
   });
+  const ep = laLoadEspnProfile();
+  (ep && ep.leagues || []).forEach(lg=>{
+    rows.push({ ref:laRefKey({provider:'espn', leagueId:lg.leagueId, season:lg.season}), platform:'ESPN',
+                name:lg.name||'ESPN League',
+                sub:`${lg.season}${lg.teams?` · ${lg.teams}-team`:''}${lg.teamName?` · ${lg.teamName}`:''}` });
+  });
+  const others = rows.filter(r=>r.ref!==currentRef && r.ref!==linkedRef);
   if(!others.length) return '';
-  const who = p.user && p.user.display_name ? p.user.display_name : (p.username||'your account');
+  const who = (sp && sp.user && sp.user.display_name) || (sp && sp.username) || 'your accounts';
   return `<div class="la-saved">
     <div class="la-saved-title">Your other leagues <span class="la-saved-who">— ${escHtml(who)}</span></div>
     <div class="la-league-list">
       ${others.map(lg=>`
         <button class="la-league" ${laState.busy?'disabled':''}
-                onclick="laSyncSavedLeague('${escJsSingle(lg.league_id)}')">
-          <b>${escHtml(lg.name||'League')}</b>
-          <span>${lg.total_rosters||'?'}-team · ${lg.type===2?'dynasty':lg.type===1?'keeper':'redraft'}${lg.sf?' · SF':''}</span>
+                onclick="laSyncSavedLeague('${escJsSingle(lg.ref)}')">
+          <b>${escHtml(lg.name)}</b>
+          <span><span class="la-plat">${lg.platform}</span>${escHtml(lg.sub)}</span>
         </button>`).join('')}
     </div>
-    <div class="la-saved-note">or enter a different username above to search another account</div>
+    <div class="la-saved-note">or search another account above</div>
   </div>`;
+}
+
+// ── Setup screen ─────────────────────────────────────────────────────────────
+// One screen, one tab per platform. Everything past the snapshot is provider-blind, so this
+// is the only place in the analyzer that knows more than one fantasy site exists.
+// Yahoo is deliberately absent. Its Fantasy Sports scope is not grantable to a self-serve
+// app — `scope=fspt-r` returns invalid_scope, and the registration form no longer offers the
+// permission at all; access now goes through Yahoo's approval queue. Rather than show a
+// greyed-out tab promising something with no timeline, the app simply does not claim to
+// support Yahoo. The gateway retains a working OAuth implementation should that change.
+const LA_PROVIDERS = [
+  { id:'sleeper', label:'Sleeper', on:true },
+  { id:'espn',    label:'ESPN',    on:true },
+];
+function laSetProvider(p){
+  if(laState.busy) return;
+  laState.provider=p; laState.error=null; laState.leagues=[]; laState.step='start';
+  renderLeagueAnalyzer();
+}
+function laSetupStartHTML(){
+  const tabs=`<div class="la-prov-tabs">${LA_PROVIDERS.map(p=>
+    `<button class="la-prov ${laState.provider===p.id?'active':''}${p.on?'':' la-prov-off'}"
+             ${laState.busy?'disabled':''} onclick="laSetProvider('${p.id}')">${p.label}</button>`).join('')}</div>`;
+  const prov=LA_PROVIDERS.find(p=>p.id===laState.provider)||LA_PROVIDERS[0];
+  const values=DYNASTY_VALUES&&DYNASTY_VALUES.asof?` (<b>${DYNASTY_VALUES.asof}</b> update)`:'';
+  const linked=window._laLinkedLeague?`<div class="la-linked">or <button class="btn btn-sm btn-accent" ${laState.busy?'disabled':''}
+    onclick="laTakeSnapshot('${escJsSingle(window._laLinkedLeague.id)}')">${TC_ICON("link")} Sync ${escHtml(window._laLinkedLeague.name)}</button>
+    <span class="la-linked-note">(the league linked on your draft/rankings page)</span></div>`:'';
+
+  if(!prov.on){
+    return `${tabs}
+      <div class="la-setup-title">${escHtml(prov.label)} leagues</div>
+      <div class="la-setup-body">${escHtml(prov.note||'Not available yet.')}</div>
+      ${laSavedLeaguesHTML()}`;
+  }
+  if(laState.provider==='espn'){
+    const prof=laLoadEspnProfile()||{};
+    // Once we know the account, this screen behaves exactly like the Sleeper one: it opens on
+    // the league list. The identify-yourself step only ever happens on first use.
+    const known=!!prof.swid;
+    return `${tabs}
+      <div class="la-setup-title">Sync your ESPN league</div>
+      <div class="la-setup-body">Reads your league's teams, owners, rosters and scoring from ESPN — every player,
+        stat and projection still comes from Sleeper, so rankings and values work exactly as they do for a Sleeper league.</div>
+      <div class="la-row">
+        <input id="laEspnLeague" placeholder="Paste your ESPN league link"
+               onkeydown="if(event.key==='Enter')laSubmitEspnLeague()">
+        <button class="btn btn-accent" ${laState.busy?'disabled':''} onclick="laSubmitEspnLeague()">${laState.busy?'Loading…':known?'Sync':'Continue'}</button>
+      </div>
+      <div class="la-note">Open your league on ESPN and copy the address bar — it looks like
+        <code>fantasy.espn.com/football/league?leagueId=…</code>. ${known?'':'We\u2019ll ask which manager is you, then find your other leagues automatically.'}</div>
+      ${known?`<div class="la-alt">
+        <div class="la-alt-title">or pick from your account</div>
+        <button class="btn btn-sm" ${laState.busy?'disabled':''} onclick="laEspnRefreshLeagues()">${TC_ICON("link")} Show my ESPN leagues</button>
+      </div>`:''}
+      <div class="la-note la-warn">Only leagues set to <b>public</b> can be read. ESPN's private-league cookies
+        can't be sent from another site, so a private league will fail with a message telling you which setting to change.</div>
+      ${linked}
+      ${laSavedLeaguesHTML()}`;
+  }
+  return `${tabs}
+    <div class="la-setup-title">Sync your Sleeper league</div>
+    <div class="la-setup-body">Takes a snapshot of every roster, owner, and future pick — then values them with the
+      FantasyPros dynasty trade chart${values}.
+      Nothing auto-refreshes; you control when the snapshot updates.</div>
+    <div class="la-row">
+      <input id="laUsername" placeholder="Sleeper username" value="${escAttr((laLoadSleeperProfile()||{}).username||'')}"
+             onkeydown="if(event.key==='Enter')laSubmitUsername()">
+      <button class="btn btn-accent" ${laState.busy?'disabled':''} onclick="laSubmitUsername()">${laState.busy?'Looking up…':'Find my leagues'}</button>
+    </div>
+    ${linked}
+    ${laSavedLeaguesHTML()}`;
+}
+
+// ── ESPN: identifying the account ────────────────────────────────────────────
+// ESPN has no username lookup, and a SWID is a cookie value no ordinary user can produce. So
+// we start from the one identifier an ESPN user always has — their league link — and read the
+// account id out of that league's own member list. Flow:
+//
+//   paste league link → "which manager is you?" → SWID learned (and kept) → all their leagues
+//
+// After the first time, the SWID is remembered and the ESPN tab opens straight on the league
+// list, exactly like the Sleeper tab does with a remembered username.
+async function laSubmitEspnLeague(){
+  const inp=document.getElementById('laEspnLeague');
+  const ref=espnParseLeagueRef(inp?inp.value:'');
+  if(!ref){ toast('Paste your ESPN league link (or just the league ID)','err'); return; }
+  const season=ref.season||String(PROJ_SEASON);
+  const prof=laLoadEspnProfile();
+  // Account already known → this is just "sync that league".
+  if(prof && prof.swid){
+    await laTakeSnapshot(laRefKey({provider:'espn', leagueId:ref.leagueId, season}));
+    return;
+  }
+  laState.busy=true; laState.error=null; renderLeagueAnalyzer();
+  try{
+    const got=await espnFetchLeagueMembers(ref.leagueId, season);
+    laState.espnLeague={ leagueId:ref.leagueId, season:got.season, name:got.leagueName };
+    laState.espnMembers=got.members;
+    laState.step='espn-who';
+    laState.busy=false;
+    // A one-manager league (or one we can't read owners from) has nothing to disambiguate.
+    if(got.members.length===1){ laState.busy=true; renderLeagueAnalyzer(); await laEspnPickMember(0); return; }
+    if(!got.members.length){
+      laState.step='start';
+      laState.error='Couldn\u2019t read the managers in that league. It may not be public.';
+    }
+  }catch(e){
+    laState.busy=false; laState.step='start';
+    laState.error=laEspnErrorText(e);
+  }
+  renderLeagueAnalyzer();
+}
+
+// "Which manager is you?" — the click that turns a league into an account.
+async function laEspnPickMember(idx){
+  const m=laState.espnMembers[idx];
+  const lg=laState.espnLeague;
+  if(!m || !lg) return;
+  laState.busy=true; laState.error=null; renderLeagueAnalyzer();
+  let leagues=[];
+  try{
+    leagues=await espnFetchFanLeagues(m.swid);
+  }catch(e){ leagues=[]; }   // non-fatal: we can still sync the league they pasted
+  // Make sure the league they actually pasted is in the list even if the fan profile didn't
+  // mention it (it only reports PUBLIC leagues, and its view can lag a fresh one).
+  if(!leagues.some(l=>String(l.leagueId)===String(lg.leagueId))){
+    leagues.unshift({ leagueId:lg.leagueId, season:lg.season, teamId:m.teamId,
+                      name:lg.name, teams:laState.espnMembers.length, teamName:m.teamName });
+  }
+  // Label the ones we can't read BEFORE showing the list (see espnMarkReadable).
+  try{ await espnMarkReadable(leagues); }catch(e){}
+  laSaveEspnProfile(m.swid, leagues, m.name);
+  laState.leagues=leagues;
+  laState.busy=false;
+  // One league → skip the picker entirely and sync it.
+  const usable=leagues.filter(l=>l.readable!==false);
+  if(usable.length===1 && leagues.length===1){ await laPickLeague(0); return; }
+  laState.step='pick';
+  renderLeagueAnalyzer();
+}
+
+// Re-list the account's leagues (the ☰ "Show my ESPN leagues" path, and after a re-sync).
+async function laEspnRefreshLeagues(){
+  const prof=laLoadEspnProfile();
+  if(!prof || !prof.swid){ laState.step='start'; renderLeagueAnalyzer(); return; }
+  laState.busy=true; laState.error=null; laState.provider='espn'; renderLeagueAnalyzer();
+  try{
+    const leagues=await espnFetchFanLeagues(prof.swid);
+    try{ await espnMarkReadable(leagues); }catch(e){}
+    laSaveEspnProfile(prof.swid, leagues.length?leagues:prof.leagues, prof.username);
+    laState.leagues=leagues.length?leagues:(prof.leagues||[]);
+    laState.step='pick'; laState.busy=false;
+    if(!laState.leagues.length){
+      laState.error=(leagues.totalLeagues>0)
+        ? `ESPN says this account is in ${leagues.totalLeagues} league${leagues.totalLeagues===1?'':'s'}, but none of them are public — so none can be read. Set one to public in ESPN, or paste its link above.`
+        : 'No public fantasy football leagues found on that ESPN account.';
+    }
+  }catch(e){
+    laState.busy=false;
+    laState.leagues=prof.leagues||[];
+    laState.step=laState.leagues.length?'pick':'start';
+    laState.error=`Couldn\u2019t reach ESPN (${e.message}).`;
+  }
+  renderLeagueAnalyzer();
+}
+
+// Start over from the league box (forgetting the remembered account).
+function laEspnForgetAccount(){
+  try{ if(persistAvailable()) localStorage.removeItem(TC_ESPN_KEY); }catch(e){}
+  laState.step='start'; laState.leagues=[]; laState.error=null;
+  renderLeagueAnalyzer();
 }
 
 // Season dropdown: jump to an earlier year of THIS league (discovered via previous_league_id).
@@ -19648,12 +21508,12 @@ function laSeasonPicker(s){
   if(!Array.isArray(chain) || chain.length<2) return '';
   return `<select class="la-season-sel" title="Look back at an earlier season of this league"
       onchange="laGoToSeason(this.value)">
-    ${chain.map(c=>`<option value="${c.leagueId}" ${String(c.leagueId)===String(s.leagueId)?'selected':''}>${c.season}</option>`).join('')}
+    ${chain.map(c=>`<option value="${escAttr(c.leagueId)}" ${String(c.leagueId)===String(laSnapshotRef(s))?'selected':''}>${c.season}</option>`).join('')}
   </select>`;
 }
 async function laGoToSeason(leagueId){
   if(!leagueId || laState.busy) return;
-  if(leagueSnapshot && String(leagueSnapshot.leagueId)===String(leagueId)) return;
+  if(leagueSnapshot && String(laSnapshotRef())===String(leagueId)) return;
   // Seed the cache with what we already know before switching, so the new snapshot inherits
   // the FULL chain (including the season we're leaving, which its own backward walk can't see).
   laCacheChain(laMergeChain(_laChainCache[String(leagueId)],
@@ -19710,11 +21570,18 @@ async function laFetchLeaguesForAnalyzer(userId){
 }
 async function laPickLeague(idx){
   const lg=laState.leagues[idx]; if(!lg) return;
+  if(laState.provider==='espn'){
+    // The fan lookup already told us which team is ours in this league — pass it through so
+    // the snapshot stars the right roster without a second round-trip.
+    await laTakeSnapshot(laRefKey({provider:'espn', leagueId:lg.leagueId, season:lg.season}),
+                         { myTeamId: lg.teamId });
+    return;
+  }
   await laTakeSnapshot(lg.league_id);
 }
 async function laResync(){
   if(!leagueSnapshot) return;
-  await laTakeSnapshot(leagueSnapshot.leagueId);
+  await laTakeSnapshot(laSnapshotRef());
 }
 function laChangeLeague(){
   laState.step='start'; laState.error=null; renderLeagueAnalyzer();
@@ -19774,6 +21641,27 @@ async function laBuildSeasonChain(leagueId, season, name){
   }
   return chain;
 }
+// ESPN keeps ONE league id for the life of the league and varies only the season in the URL,
+// so there's no previous_league_id to follow — we probe backwards a year at a time and stop at
+// the first season that isn't there. Chain entries carry provider REFS (see laRefKey) rather
+// than bare ids, which is what lets the season picker tell 2024 from 2025 for the same league.
+// Bounded to 6 look-backs and stops on the first gap, so a long-running league costs at most a
+// handful of small requests once, in the background, after the snapshot is already on screen.
+async function laBuildSeasonChainEspn(leagueId, season){
+  const cur=parseInt(season,10);
+  const chain=[{ season:String(season), leagueId:laRefKey({provider:'espn',leagueId,season}) }];
+  if(!isFinite(cur)) return chain;
+  for(let i=1;i<=6;i++){
+    const y=String(cur-i);
+    try{
+      const d=await espnFetch(ESPN_LEAGUE_URL(y, leagueId, ['mSettings']));
+      if(!d || !d.seasonId) break;
+      chain.push({ season:y, leagueId:laRefKey({provider:'espn',leagueId,season:y}) });
+    }catch(e){ break; }   // 401/404 = that season isn't public or doesn't exist
+  }
+  return chain;
+}
+
 // Every league in one lineage shares the same chain, so cache it under EVERY id in it. This
 // is what makes the picker work in both directions: previous_league_id only walks BACKWARD,
 // so a chain built from an older league id is [that year..earliest] and would otherwise drop the next season
@@ -19793,17 +21681,21 @@ function laCacheChain(chain){
 function laRefreshSeasonChain(){
   const s=leagueSnapshot;
   if(!s) return;
+  const ref=laSnapshotRef(s);
   // Anything we already know about this lineage — from the cache, or carried on the snapshot.
-  const known=laMergeChain(_laChainCache[String(s.leagueId)], s.seasonChain);
+  const known=laMergeChain(_laChainCache[String(ref)], s.seasonChain);
   if(known.length){
     s.seasonChain=laCacheChain(known);
-    if(known.some(c=>String(c.leagueId)===String(s.leagueId)) && known.length>1){
+    if(known.some(c=>String(c.leagueId)===String(ref)) && known.length>1){
       // Already complete enough to render the picker; no need to re-walk.
       return;
     }
   }
-  laBuildSeasonChain(s.leagueId, s.season, s.name).then(chain=>{
-    if(!leagueSnapshot || leagueSnapshot.leagueId!==s.leagueId) return;
+  const walk = (s.provider==='espn')
+    ? laBuildSeasonChainEspn(s.leagueId, s.season)
+    : laBuildSeasonChain(s.leagueId, s.season, s.name);
+  walk.then(chain=>{
+    if(!leagueSnapshot || laSnapshotRef()!==ref) return;
     // MERGE, never replace: the walk can only see this season and earlier.
     const merged=laMergeChain(leagueSnapshot.seasonChain, chain);
     leagueSnapshot.seasonChain=laCacheChain(merged);
@@ -19812,8 +21704,18 @@ function laRefreshSeasonChain(){
   }).catch(()=>{});
 }
 
-async function laTakeSnapshot(leagueId){
+// Dispatcher. Takes a provider ref (see laParseRef) and routes to the adapter that knows how
+// to talk to that platform. Every adapter's contract is the same: produce a leagueSnapshot
+// with players already resolved to Sleeper player_ids and roster slots already in Sleeper's
+// vocabulary, so nothing downstream of here is provider-aware.
+async function laTakeSnapshot(ref){
   const opts = (arguments.length>1 && arguments[1]) ? arguments[1] : null;
+  const r = laParseRef(ref);
+  if(r.provider==='espn') return laTakeSnapshotEspn(r, opts);
+  return laTakeSnapshotSleeper(r.leagueId, opts);
+}
+
+async function laTakeSnapshotSleeper(leagueId, opts){
   const background = !!(opts && opts.background);
   if(!background){
     laState.busy=true; laState.error=null; renderLeagueAnalyzer();
@@ -19923,6 +21825,7 @@ async function laTakeSnapshot(leagueId){
       if(mine) _resolvedId=mine.user_id;
     }
     leagueSnapshot = {
+      provider:'sleeper',
       leagueId, name:lg.name||'League', season:lg.season,
       avatar: lg.avatar ? SLEEPER_AVATAR_THUMB(lg.avatar) : null,
       teams:lg.total_rosters||teams.length, superflex, tep, leagueType, kdef,
@@ -19961,6 +21864,87 @@ async function laTakeSnapshot(leagueId){
   if(typeof syncAppChrome==='function') syncAppChrome(); else refreshLeagueSyncBtn();
 }
 
+// ESPN adapter. Same contract, same tail: build the snapshot, adopt the league's scoring and
+// lineup shape, refresh the chrome. See 91-espn-league.js for the translation itself.
+async function laTakeSnapshotEspn(ref, opts){
+  const background = !!(opts && opts.background);
+  if(!background){
+    laState.busy=true; laState.error=null; renderLeagueAnalyzer();
+  }
+  try{
+    const season = ref.season || (leagueSnapshot && leagueSnapshot.provider==='espn'
+                                  && String(leagueSnapshot.leagueId)===String(ref.leagueId)
+                                  ? leagueSnapshot.season : null)
+                 || String(PROJ_SEASON);
+    // Which team is ours: prefer what the fan lookup told us for THIS league, then whatever a
+    // prior snapshot of the same league already resolved.
+    const prof = laLoadEspnProfile();
+    let myTeamId = (opts && opts.myTeamId) || null;
+    if(myTeamId==null && prof && prof.leagues){
+      const known = prof.leagues.find(l=>String(l.leagueId)===String(ref.leagueId)
+                                      && String(l.season)===String(season));
+      if(known) myTeamId = known.teamId;
+    }
+    const built = await espnBuildSnapshot(ref.leagueId, season, {
+      myTeamId,
+      mySwid: (prof && prof.swid) || null,
+      username: (prof && prof.username) || null,
+    });
+    // Carry a previously-discovered season chain across a re-sync of the same league.
+    const prevChain = (leagueSnapshot && leagueSnapshot.provider==='espn'
+                       && String(leagueSnapshot.leagueId)===String(ref.leagueId))
+                    ? leagueSnapshot.seasonChain : null;
+    leagueSnapshot = built.snapshot;
+    if(prevChain) leagueSnapshot.seasonChain = prevChain;
+
+    // Same tail as the Sleeper path: one league, one truth. The projection builder, the
+    // rankings page and the 'proj' value lens all score under THIS league's rules.
+    try{
+      if(typeof applySleeperScoring==='function') applySleeperScoring(built.scoring);
+      if(typeof lineupFromRosterPositions==='function' && built.rosterPositions.length){
+        const shape=lineupFromRosterPositions(built.rosterPositions);
+        leagueShape={ teams: leagueSnapshot.teams, lineup: shape.lineup, bench: shape.bench };
+        draftLineup=shape.lineup; draftBenchCount=shape.bench;
+      }
+      window._laLinkedLeague = { id: laSnapshotRef(), name: leagueSnapshot.name };
+    }catch(e){}
+
+    laRefreshSeasonChain();
+    _laTierVals=null;
+    _laPosRankCache=null;
+    laState.step='view';
+    laState.busy=false;
+    saveSession();
+    if(!background){
+      toast(`Snapshot of ${leagueSnapshot.name} taken`,'ok');
+      // Unresolved players stay ON the roster but can't be valued or projected, so say so
+      // rather than letting a team quietly score low for a reason nothing explains.
+      if(built.unresolved.length){
+        const n=built.unresolved.length;
+        toast(`${n} player${n===1?'':'s'} couldn't be matched to Sleeper — they'll show unvalued`,'err');
+        try{ if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE) console.warn('[espn] unresolved:', built.unresolved); }catch(e){}
+      }
+    }
+  }catch(e){
+    laState.busy=false;
+    if(!background) laState.error = laEspnErrorText(e);
+  }
+  renderLeagueAnalyzer();
+  if(typeof syncAppChrome==='function') syncAppChrome(); else refreshLeagueSyncBtn();
+}
+
+// ESPN answers a private (or missing) league with a bare 401, which as a raw "Sync failed:
+// ESPN 401" tells the user nothing actionable. Name the actual cause and the actual fix.
+function laEspnErrorText(e){
+  const msg=(e && e.message) || 'unknown error';
+  if(/\b401\b/.test(msg)){
+    return 'That ESPN league is private. TripleCrown can only read leagues set to public — '
+         + 'in ESPN, open League Settings → Basic Settings and set Make League Viewable to Public, then try again.';
+  }
+  if(/\b404\b/.test(msg)) return 'No ESPN league found with that ID for this season.';
+  return `Sync failed: ${msg}`;
+}
+
 function laMaybeAutoRefreshSnapshot(reason){
   if(currentPhase!=='League') return;
   if(!leagueSnapshot || !leagueSnapshot.leagueId) return;
@@ -19972,7 +21956,7 @@ function laMaybeAutoRefreshSnapshot(reason){
   if((now - _laAutoRefreshLastAttempt) < 60 * 1000) return;
   _laAutoRefreshLastAttempt = now;
   _laAutoRefreshInFlight = true;
-  laTakeSnapshot(leagueSnapshot.leagueId, { background: true, reason: reason||'auto' })
+  laTakeSnapshot(laSnapshotRef(), { background: true, reason: reason||'auto' })
     .finally(()=>{ _laAutoRefreshInFlight = false; });
 }
 
@@ -19991,31 +21975,41 @@ function renderLeagueAnalyzer(){
         <div class="team-qb-name">dynasty rosters · values · trades — powered by your league snapshot</div></div>
         <div class="team-nav">${back}</div></div>
       <div class="la-setup card">
-        ${laState.step==='start'?`
-          <div class="la-setup-title">Sync your Sleeper league</div>
-          <div class="la-setup-body">Takes a snapshot of every roster, owner, and future pick — then values them with the
-            FantasyPros dynasty trade chart${DYNASTY_VALUES&&DYNASTY_VALUES.asof?` (<b>${DYNASTY_VALUES.asof}</b> update)`:''}.
-            Nothing auto-refreshes; you control when the snapshot updates.</div>
-          <div class="la-row">
-            <input id="laUsername" placeholder="Sleeper username" value="${escAttr((laLoadSleeperProfile()||{}).username||'')}"
-                   onkeydown="if(event.key==='Enter')laSubmitUsername()">
-            <button class="btn btn-accent" ${laState.busy?'disabled':''} onclick="laSubmitUsername()">${laState.busy?'Looking up…':'Find my leagues'}</button>
-          </div>
-          ${window._laLinkedLeague?`<div class="la-linked">or <button class="btn btn-sm btn-accent" ${laState.busy?'disabled':''}
-            onclick="laTakeSnapshot(window._laLinkedLeague.id)">${TC_ICON("link")} Sync ${escHtml(window._laLinkedLeague.name)}</button>
-            <span class="la-linked-note">(the league linked on your draft/rankings page)</span></div>`:''}
-          ${laSavedLeaguesHTML()}`
-        :`
-          <div class="la-setup-title">Pick a league</div>
+        ${laState.step==='start'? laSetupStartHTML()
+          : laState.step==='espn-who'? `
+          <div class="la-setup-title">Which manager are you?</div>
+          <div class="la-setup-body">These are the managers in <b>${escHtml((laState.espnLeague||{}).name||'that league')}</b>.
+            Tap yourself and we'll find the rest of your ESPN leagues — you only do this once.</div>
           <div class="la-league-list">
-            ${laState.leagues.map((lg,i)=>`
-              <button class="la-league" ${laState.busy?'disabled':''} onclick="laPickLeague(${i})">
-                <b>${escHtml(lg.name)}</b>
-                <span>${lg.total_rosters}-team · ${(lg.settings&&lg.settings.type)===2?'dynasty':(lg.settings&&lg.settings.type)===1?'keeper':'redraft'}
-                  ${ (lg.roster_positions||[]).includes('SUPER_FLEX')?' · SF':'' }${lg.stale?` <span class="la-stale-tag">last active ${lg.staleSeason}</span>`:''}</span>
+            ${(laState.espnMembers||[]).map((m,i)=>`
+              <button class="la-league" ${laState.busy?'disabled':''} onclick="laEspnPickMember(${i})">
+                <b>${escHtml(m.name)}</b>
+                <span>${m.teamName?escHtml(m.teamName):''}</span>
               </button>`).join('')}
           </div>
-          <button class="btn btn-ghost btn-sm" onclick="laChangeLeague()">← different username</button>`}
+          <button class="btn btn-ghost btn-sm" onclick="laChangeLeague()">← back</button>`
+          :`
+          <div class="la-setup-title">Pick a league</div>
+          <div class="la-league-list">
+            ${laState.provider==='espn'
+              ? laState.leagues.map((lg,i)=>`
+                <button class="la-league${lg.readable===false?' la-league-off':''}"
+                        ${laState.busy||lg.readable===false?'disabled':''}
+                        ${lg.readable===false?'title="This ESPN league is private. Set it to public in League Settings → Basic Settings to read it here."':''}
+                        onclick="laPickLeague(${i})">
+                  <b>${escHtml(lg.name)}</b>
+                  <span>${lg.readable===false?'<span class="la-stale-tag">private</span> ':''}${lg.season}${lg.teams?` · ${lg.teams}-team`:''}${lg.teamName?` · ${escHtml(lg.teamName)}`:''}</span>
+                </button>`).join('')
+              : laState.leagues.map((lg,i)=>`
+                <button class="la-league" ${laState.busy?'disabled':''} onclick="laPickLeague(${i})">
+                  <b>${escHtml(lg.name)}</b>
+                  <span>${lg.total_rosters}-team · ${(lg.settings&&lg.settings.type)===2?'dynasty':(lg.settings&&lg.settings.type)===1?'keeper':'redraft'}
+                    ${ (lg.roster_positions||[]).includes('SUPER_FLEX')?' · SF':'' }${lg.stale?` <span class="la-stale-tag">last active ${lg.staleSeason}</span>`:''}</span>
+                </button>`).join('')}
+          </div>
+          ${laState.provider==='espn'
+            ? `<button class="btn btn-ghost btn-sm" onclick="laEspnForgetAccount()">← use a different ESPN account</button>`
+            : `<button class="btn btn-ghost btn-sm" onclick="laChangeLeague()">← different username</button>`}`}
         ${laState.busy&&laState.step==='pick'?`<div class="la-busy">Taking snapshot…</div>`:''}
         ${laState.error?`<div class="la-error">${escHtml(laState.error)}</div>`:''}
       </div>`;
@@ -21135,6 +23129,13 @@ function laToggleCliffPop(btn, label, body){
     if(top<M) top=M;
     pop.style.position='fixed'; pop.style.left=left+'px'; pop.style.top=top+'px'; pop.style.right='auto';
   }catch(e){}
+}
+// Radar popovers, mirroring laCloseCliffPops above. This was missing entirely, so BOTH
+// call sites threw a ReferenceError: laShowRadarPop() died before it created the popover
+// (so radar dots never opened one at all), and the document-level click handler threw on
+// every single click anywhere in the app.
+function laCloseRadarPops(){
+  if(document && document.querySelectorAll) document.querySelectorAll('.la-radar-pop').forEach(el=>el.remove());
 }
 function laShowRadarPop(btn, label, body){
   if(!btn || !btn.parentNode) return;
