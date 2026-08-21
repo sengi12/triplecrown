@@ -54,6 +54,65 @@ function _olPct(v){
   return `${Number(v).toFixed(1)}%`;
 }
 
+// Model grades are plus-minus attributions of a team outcome — pressure allowed is charged
+// to all five linemen equally, because no free data source records who lost the rep. Measured
+// split-half reliability of the individual coefficient is r ≈ 0.07, so a percentile carried to
+// a tenth and a league rank to the unit assert precision the pipeline does not have. Report a
+// coarse band instead: the resolution the model can actually support.
+const OL_PCT_BANDS=[
+  [80,'Top 20%'],[60,'Upper third'],[40,'Middle'],[20,'Lower third'],[0,'Bottom 20%']
+];
+function _olPctBand(v){
+  if(v==null || Number.isNaN(v)) return '—';
+  const n=Math.max(0, Math.min(100, Number(v)));
+  const hit=OL_PCT_BANDS.find(([floor])=>n>=floor);
+  return hit?hit[1]:'—';
+}
+
+// Show WHY a grade is what it is. A composite that cannot be explained reads as a black box,
+// and these three components are the whole model.
+function _olDriverBar(rec){
+  const parts=[['Market',rec.p_market],['Snaps',rec.p_snap],['Draft',rec.p_draft]]
+    .filter(([,v])=>v!=null && !Number.isNaN(Number(v)));
+  if(!parts.length) return '';
+  return `<div class="olc-drivers">${parts.map(([lab,v])=>{
+    const n=Math.max(0,Math.min(100,Number(v)));
+    return `<div class="olc-driver"><span>${lab}</span><i><u style="width:${n.toFixed(0)}%"></u></i><em>${n.toFixed(0)}</em></div>`;
+  }).join('')}</div>`;
+}
+
+// Grade movement over the seasons a player has actually played. The market line is the one
+// worth watching: a young lineman outplaying his rookie deal shows up as market climbing a
+// year or two before the composite follows, which is the case the composite is weakest on.
+function _olTrend(rec){
+  const yrs=String(rec.hist_seasons||'').split(',').filter(Boolean);
+  const ol=String(rec.ol_pctile_hist||'').split(',').map(v=>v===''?null:Number(v));
+  const mkt=String(rec.market_pctile_hist||'').split(',').map(v=>v===''?null:Number(v));
+  if(yrs.length<2) return '';
+  const W=180,H=34,pad=3;
+  const x=i=>pad+(i*(W-2*pad))/(yrs.length-1);
+  const y=v=>H-pad-((Math.max(0,Math.min(100,v))/100)*(H-2*pad));
+  const path=(arr)=>{
+    const pts=arr.map((v,i)=>v==null?null:`${x(i).toFixed(1)},${y(v).toFixed(1)}`).filter(Boolean);
+    return pts.length>1?pts.join(' '):'';
+  };
+  const olP=path(ol), mkP=path(mkt);
+  if(!olP) return '';
+  const first=ol.find(v=>v!=null), last=[...ol].reverse().find(v=>v!=null);
+  const delta=(first!=null&&last!=null)?Math.round(last-first):null;
+  const arrow=delta==null?'':(delta>4?`▲ ${delta}`:(delta<-4?`▼ ${Math.abs(delta)}`:'flat'));
+  const cls=delta==null?'':(delta>4?'olc-up':(delta<-4?'olc-down':'olc-flat'));
+  return `<div class="olc-trend">
+    <div class="olc-trend-head"><span>${yrs[0]}–${yrs[yrs.length-1]} trend</span><b class="${cls}">${arrow}</b></div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Grade percentile by season">
+      <line x1="${pad}" y1="${y(50)}" x2="${W-pad}" y2="${y(50)}" class="olc-trend-mid"/>
+      ${mkP?`<polyline points="${mkP}" class="olc-trend-mkt"/>`:''}
+      <polyline points="${olP}" class="olc-trend-ol"/>
+    </svg>
+    <div class="olc-trend-key"><i class="k-ol"></i>Grade${mkP?' <i class="k-mkt"></i>Market':''}</div>
+  </div>`;
+}
+
 function _olRankClass(rank){
   if(typeof sharpRankClass==='function') return sharpRankClass(rank)||'';
   if(rank==null) return '';
@@ -1085,13 +1144,14 @@ function renderPcardOlGrades(pid){
       : '<div class="pcard-loading">Team OL metrics unavailable for this season.</div>');
 
   const flagBits=[];
-  if(rec.shared_credit) flagBits.push(`Shared credit ${rec.shared_credit}`);
+  // The shared-credit dagger is deliberately not shown. It meant "this grade is split with a
+  // linemate rather than measured individually" — true of the old plus-minus model, false of
+  // the composite, which never looks at play-level data. It survives as apm_shared_credit.
   if(rec.consensus_flag) flagBits.push(String(rec.consensus_flag));
   const flags = flagBits.length ? `<div class="olc-flags">${flagBits.join(' · ')}</div>` : '';
 
-  const passPctRank=_olRankFromPct(rec.pass_pctile);
-  const runPctRank=_olRankFromPct(rec.run_pctile);
-  const weightedPctRank=_olRankFromPct(rec.ol_weighted_pctile);
+  // Model-grade ranks are deliberately not derived here — see _olPctBand. Market percentile
+  // comes from observed contract data, so it keeps a real rank.
   const marketPctRank=_olRankFromPct(rec.market_pctile);
 
   return `<div class="olc-wrap">
@@ -1101,25 +1161,33 @@ function renderPcardOlGrades(pid){
     </div>
 
     <div class="olc-grades">
+      <div class="olc-grade-tile olc-grade-lead">
+        <label>Overall OL Grade</label>
+        <b class="olc-grade ${_olGradeClass(rec.ol_grade)}">${noteWrapHtml(escHtml(rec.ol_grade||'—'), { label:'Overall OL Grade', value:rec.ol_grade||'—', source:'ol_grades', statKey:'ol_grade', context:noteCtx, player:notePlayer, team:teamCode }, 'note-tag-hit')}</b>
+        <small>${_olPctBand(rec.ol_pctile)} at ${rec.pos||'OL'} · ${rec.ol_conf||'—'} conf</small>
+        ${_olDriverBar(rec)}
+        ${_olTrend(rec)}
+      </div>
       <div class="olc-grade-tile">
         <label>Pass Grade</label>
         <b class="olc-grade ${_olGradeClass(rec.pass_grade)}">${noteWrapHtml(escHtml(rec.pass_grade||'—'), { label:'Pass Grade', value:rec.pass_grade||'—', source:'ol_grades', statKey:'pass_grade', context:noteCtx, player:notePlayer, team:teamCode }, 'note-tag-hit')}</b>
-        <small>${_olPct(rec.pass_pctile)} pctile · ${passPctRank!=null?_olRankBadge(passPctRank):'<span class="olc-rank-muted">Rank —</span>'} · ${rec.pass_conf||'—'} conf · ${rec.pass_snaps!=null?Number(rec.pass_snaps).toLocaleString():'—'} snaps</small>
+        <small>${_olPctBand(rec.pass_pctile)}${rec.espn_pbwr!=null?` · <b class="olc-espn">ESPN ${Math.round(Number(rec.espn_pbwr))}% PBWR</b>`:''} · line ${_olPctBand(rec.team_pass_pctile)}</small>
       </div>
       <div class="olc-grade-tile">
         <label>Run Grade</label>
         <b class="olc-grade ${_olGradeClass(rec.run_grade)}">${noteWrapHtml(escHtml(rec.run_grade||'—'), { label:'Run Grade', value:rec.run_grade||'—', source:'ol_grades', statKey:'run_grade', context:noteCtx, player:notePlayer, team:teamCode }, 'note-tag-hit')}</b>
-        <small>${_olPct(rec.run_pctile)} pctile · ${runPctRank!=null?_olRankBadge(runPctRank):'<span class="olc-rank-muted">Rank —</span>'} · ${rec.run_conf||'—'} conf · ${rec.poa_carries!=null?Number(rec.poa_carries).toLocaleString():'—'} POA carries</small>
+        <small>${_olPctBand(rec.run_pctile)}${rec.espn_rbwr!=null?` · <b class="olc-espn">ESPN ${Math.round(Number(rec.espn_rbwr))}% RBWR</b>`:''} · line ${_olPctBand(rec.team_run_pctile)}</small>
       </div>
       <div class="olc-grade-tile">
-        <label>Utilization-Weighted OL Grade</label>
+        <label>Utilization-Weighted</label>
         <b class="olc-grade ${_olGradeClass(rec.ol_weighted_grade)}">${rec.ol_weighted_grade||'—'}</b>
-        <small>${_olPct(rec.ol_weighted_pctile)} pctile · ${weightedPctRank!=null?_olRankBadge(weightedPctRank):'<span class="olc-rank-muted">Rank —</span>'} · pass weight ${rec.pass_rate!=null?`${Number(rec.pass_rate).toFixed(1)}%`:'—'} · run weight ${rec.run_rate!=null?`${Number(rec.run_rate).toFixed(1)}%`:'—'}</small>
+        <small>${_olPctBand(rec.ol_weighted_pctile)} · pass weight ${rec.pass_rate!=null?`${Number(rec.pass_rate).toFixed(0)}%`:'—'} · run weight ${rec.run_rate!=null?`${Number(rec.run_rate).toFixed(0)}%`:'—'}</small>
       </div>
       <div class="olc-mini-grid">
         <div><span>Penalty Rate</span><b>${_olNum(rec.penalty_rate,2)}%</b></div>
+        <div><span>Holding / False Start</span><b>${_olNum(rec.penalty_hold_rate,2)} / ${_olNum(rec.penalty_fs_rate,2)}%</b></div>
+        <div><span>Snap Share</span><b>${rec.snap_pct!=null?`${Number(rec.snap_pct).toFixed(0)}%`:'—'}</b></div>
         <div><span>Projected Starter</span><b>${rec.is_projected_starter?'Yes':'No'}</b></div>
-        <div><span>Entanglement Factor</span><b>${rec.entanglement_factor!=null?Number(rec.entanglement_factor).toFixed(2):'—'}</b></div>
         <div><span>All-Pro Recent</span><b>${rec.allpro_recent||'—'}</b></div>
         <div><span>Career AP1 / PB</span><b>${rec.career_ap1!=null?rec.career_ap1:'—'} / ${rec.career_pb!=null?rec.career_pb:'—'}</b></div>
         <div><span>Market Percentile</span><b>${rec.market_pctile==null||Number.isNaN(rec.market_pctile)?'—':`${Math.round(Number(rec.market_pctile))}%`} ${marketPctRank!=null?_olRankBadge(marketPctRank):''}</b></div>
@@ -1127,6 +1195,8 @@ function renderPcardOlGrades(pid){
     </div>
 
     ${flags}
+
+    <div class="olc-caveat">Grades combine the market's valuation, snap share and draft capital — the three signals that measurably track lineman quality — plus ESPN's tracking-derived win rate where it is published. Validated against ESPN's top-20: AUC 0.80 pass, 0.75 run. No free source records which lineman lost a rep, so grades are shown as bands rather than ranks.</div>
 
     <div class="olc-team-head">${teamDisplayName(teamCode)||teamCode||'Team'} Offensive Line Context (${season})</div>
     ${metrics}

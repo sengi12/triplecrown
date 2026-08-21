@@ -60,7 +60,11 @@ chk(tabs.includes('Rushing Fan'),'player card tabs include Rushing Fan');
 app.setPcardStatsMode('rbfan');
 const body=app.getBody();
 chk(body.includes('rbf-svg'),'rb fan tab renders SVG chart');
-chk(body.includes('RUN GRADE'),'rb fan tab renders OL run-grade cards');
+// Assert on the data that must appear, not on a header string. The previous check looked
+// for a literal 'RUN GRADE' label that the chart rework dropped; because this suite was
+// never registered in run_tests.sh, the assertion rotted unnoticed while the feature worked.
+chk(['Tunsil','Green','Patterson','Mason','Howard'].every(n=>body.includes(n)),
+    'rb fan tab renders an OL card for all five line slots');
 chk(body.includes('Lane YPC'),'rb fan tab renders lane legend text');
 
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

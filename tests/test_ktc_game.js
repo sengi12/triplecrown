@@ -21,7 +21,7 @@ global.Chart=function(){return{destroy(){},update(){},data:{datasets:[{}]}};};
 const fs=require('fs');
 const path=require('path');
 const code=fs.readFileSync(path.join(__dirname,'check.js'),'utf8');
-const app=new Function(code+`return { ktcPlayerKey, ktcSolveDeltas, ktcTopTierCutoff };`)();
+const app=new Function(code+`return { ktcPlayerKey, ktcSolveDeltas, ktcTopTierCutoff, KTC_TARGET_TIER_MIN, KTC_TARGET_TIER_MAX };`)();
 
 let pass=0,total=0;
 const chk=(cond,label)=>{ total++; if(cond){ pass++; console.log('  PASS:',label);} else console.log('  FAIL:',label); };
@@ -80,7 +80,14 @@ console.log('\n=== Keep Trade Cut top-tier cutoff target ===');
 const boardTiers=[];
 for(let i=1;i<=14;i++) boardTiers.push({ name:`P${i}`, ecr_tier:i });
 const cutoff=app.ktcTopTierCutoff(boardTiers);
-chk(cutoff>=8 && cutoff<=9,'tier cutoff stays focused on top 8-9 ECR tiers');
+// Assert against the configured window rather than a frozen literal. This check hardcoded
+// 8-9, the original values; commit 91f2260 deliberately narrowed the KTC game to the top
+// 4-6 ECR tiers and the assertion was never updated. Because this suite DID run, it sat
+// red instead of rotting silently -- but it was asserting a decision that had been reversed.
+const LO=app.KTC_TARGET_TIER_MIN, HI=app.KTC_TARGET_TIER_MAX;
+chk(cutoff>=LO && cutoff<=HI,`tier cutoff stays inside the configured top-tier window (${LO}-${HI}); got ${cutoff}`);
+chk(app.ktcTopTierCutoff([])===HI,'empty board falls back to the widest configured tier');
+chk(app.ktcTopTierCutoff([{name:'A',ecr_tier:1},{name:'B',ecr_tier:2}])>=LO,'shallow board still clamps to the window floor');
 
 console.log('\nRESULT:', pass===total ? `PASS (${pass} checks)` : `FAIL (${pass}/${total} checks)`);
 process.exit(pass===total?0:1);

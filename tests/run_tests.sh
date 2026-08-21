@@ -114,6 +114,11 @@ run_js_test test_season_click  "Season click loads instantly with real data"
 run_js_test test_roster_merge_flag "mergeRosterPlayers must not pollute SEED[team] with a non-array flag (season-switch bug)"
 run_js_test test_league_picker  "Sleeper league picker: username→leagues, scoring/SF labels, completed-draft handling"
 run_js_test test_link_open       "League picker links an upcoming draft via existing follow machinery"
+run_js_test test_espn_league     "ESPN league linking: league link→manager→account, player resolution to Sleeper ids, slot/scoring translation, public-only guard"
+run_js_test test_espn_ui         "League setup screen: platform tabs render, limitations stated, Sleeper flow unchanged"
+run_js_test test_gateway_crypto  "League gateway envelope encryption: tenant separation, tamper detection, key rotation, no plaintext at rest"
+run_js_test test_gateway_validate "League gateway input validation: Cookie-header injection, SSRF boundary, OneID bundle rejection"
+run_js_test test_roster_ownership "Roster ownership chip: id+name lookup, Sleeper/ESPN parity, leaguemate-controlled text escaping"
 run_js_test test_dynasty_drafts   "Dynasty league /drafts resolution (real Sleeper data: single complete draft)"
 run_js_test test_scoring_apply    "Sleeper scoring→model conversion + format detection (real QCK/dynasty data)"
 run_js_test test_rounding        "Sleeper scoring float-noise rounding (clean 10/25, preserves custom values)"
@@ -141,6 +146,12 @@ run_js_test test_pcard_pos      "Player card positions: QB rushing group, RB/WR/
 run_js_test test_pcard_adv      "Player card advanced: RANK by format, QB/WR/RB new stats, season totals row (sum/max/rate)"
 run_js_test test_pcard_meta     "Player card meta: height format, age decimal, jersey, HT/WT/college, is_away_team + opp logo"
 run_js_test test_qb_passing     "QB passing consolidated: ATT|CMP|PCT|YD|LNG|RTG|RZ|TD order, ATT restored, totals"
+run_js_test test_ol_card        "OL grades card: tab wiring, coarse percentile bands (no false-precision rank), penalty split, attribution caveat"
+run_js_test test_rb_fan         "RB rushing fan: tab wiring, SVG chart, OL slot cards for all five linemen, lane legend"
+run_js_test test_route_tree     "Route tree card: alignment/route distribution rendering"
+run_js_test test_qb_chart       "QB passing chart card rendering"
+run_js_test test_def_weekly     "Defensive weekly card: per-defender logs and totals"
+run_js_test test_cfb_prospect   "College prospect panel: percentile bars vs past draft classes, per-position season tables, escaping, degrades to nothing without college data"
 run_js_test test_qb_extras      "QB extras: ATT/CMP/RZ color coding, vs prefix for home games"
 run_js_test test_pcard_freeze   "Player card: WK + OPP columns frozen (sticky) like league-wide advanced stats"
 run_js_test test_mobile_layout   "Mobile: horizontal-overflow lock, additions tables scroll in-container, frozen team column"
@@ -183,7 +194,7 @@ echo ""
 PYBUILD="$DIR/../build_seed.py"
 if [ -f "$DIR/test_flacco_split.py" ] && [ -f "$PYBUILD" ]; then
   echo "═══ Python tests ═══"
-  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_spotrac_pull test_roster_truth test_sumer_pull test_ktc_pull; do
+  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_roster_moves test_roster_truth test_sumer_pull test_ktc_pull test_seed_refresh test_ol_pipeline; do
     [ -f "$DIR/${pyt}.py" ] || continue
     output=$(python3 "$DIR/${pyt}.py" 2>&1) || true
     p=$(echo "$output" | grep -ciE "PASS" || true)

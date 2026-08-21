@@ -32,9 +32,15 @@ app.setPlayers({'3':{name:'Laremy Tunsil',pos:'LT'}});
 app.setNflverse({'2025':{
   ol_players:{'laremy tunsil':{
     name:'Laremy Tunsil',team:'HOU',slot:'LT',pos:'T',
+    ol_grade:'A',ol_pctile:96.4,ol_conf:'HIGH',
+    p_market:97.2,p_snap:94.8,p_draft:88.1,snap_pct:98.5,
+    team_pass_pctile:71.0,team_run_pctile:44.0,espn_pbwr:94,
+    hist_seasons:'2021,2022,2023,2024,2025',
+    ol_pctile_hist:'82,86,90,94,96', market_pctile_hist:'70,74,80,95,97',
     pass_grade:'A',pass_pctile:98.2,pass_conf:'HIGH',pass_snaps:2100,
     run_grade:'B',run_pctile:84.3,run_conf:'MED',poa_carries:355,
-    shared_credit:'',penalty_rate:0.44,allpro_recent:'',career_ap1:0,career_pb:0,
+    shared_credit:'',penalty_rate:0.44,penalty_hold_rate:0.19,penalty_fs_rate:0.25,
+    allpro_recent:'',career_ap1:0,career_pb:0,
     consensus_flag:'',market_pctile:95
   }},
   team:{
@@ -64,3 +70,32 @@ chk(body.includes('Run Grade'),'OL grades tab renders run-grade section');
 chk(body.includes('Pressure Rate Allowed'),'OL grades tab renders team OL metric names');
 
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));
+
+// ── Regression cover for the OL grade-presentation fixes ──────────────────────
+console.log('\n=== TEST: OL grade bands and penalty split ===');
+chk(!body.includes('98.2%'), 'pass percentile is not rendered to a decimal');
+chk(!/Rank #\d+/.test(body.split('Market Percentile')[0]), 'no league rank badge on any model grade');
+chk(body.includes('Top 20%'), 'grades show a coarse percentile band');
+chk(body.includes('HIGH conf'), 'confidence tier still surfaced');
+chk(body.includes('Holding / False Start'), 'penalty split row renders');
+chk(body.includes('olc-caveat'), 'attribution caveat renders');
+
+// ── grade history trend ───────────────────────────────────────────────────────
+chk(body.includes('olc-trend'), 'grade trend renders when history is present');
+chk(body.includes('2021\u20132025 trend') || body.includes('2021–2025 trend'),
+    'trend labels the season span it covers');
+chk(body.includes('olc-trend-mkt'), 'market line drawn alongside the grade line');
+
+// ── the reworked composite ────────────────────────────────────────────────────
+chk(body.includes('Overall OL Grade'), 'headline composite grade tile renders');
+chk(body.includes('olc-drivers'), 'driver bars explain what produced the grade');
+chk(/Market[\s\S]{0,120}Snaps[\s\S]{0,120}Draft/.test(body), 'all three composite drivers are named');
+chk(body.includes('ESPN 94% PBWR'), 'ESPN tracking win rate surfaces on the pass grade');
+chk(body.includes('Snap Share'), 'snap share (the most reliable individual signal) is shown');
+chk(!body.includes('Entanglement Factor'), 'APM-era entanglement factor no longer shown');
+
+// Market percentile is observed contract data, so it keeps a real rank badge.
+chk(/Market Percentile[\s\S]{0,200}Rank #/.test(body), 'market percentile keeps its rank badge');
+
+console.log('\nFINAL: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));
+if(pass!==total) process.exit(1);

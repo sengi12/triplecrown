@@ -147,7 +147,11 @@ def _ensure_ol_grades_cache(seasons, refresh=False):
     seasons_i = sorted(int(s) for s in seasons)
     print("    → OL grades pipeline: building cache …", end="", flush=True)
     try:
-        df = _olp.build_grades_df(seasons=seasons_i, cache_dir=parquet_cache)
+        # market=True fills the card's Market Percentile tile, which otherwise always renders
+        # "—". Worth having: OverTheCap APY correlates +0.47 with career accolades, making it
+        # the strongest external quality signal available for free — far stronger than the
+        # model's own coefficients. It stays a separate column, never blended into the grade.
+        df = _olp.build_grades_df(seasons=seasons_i, cache_dir=parquet_cache, market=True)
         os.makedirs(os.path.dirname(out_csv), exist_ok=True)
         df.to_csv(out_csv, index=False)
         _OL_GRADES_CACHE_CSV = out_csv
@@ -1888,7 +1892,11 @@ def _ol_grades_by_player(season=None, utilization_by_team=None, team_ol_context=
         "name", "team", "slot", "pos",
         "pass_grade", "pass_pctile", "pass_conf", "pass_snaps",
         "run_grade", "run_pctile", "run_conf", "poa_carries",
-        "shared_credit", "penalty_rate", "allpro_recent", "career_ap1", "career_pb",
+        "ol_grade", "ol_pctile", "ol_conf", "team_pass_pctile", "team_run_pctile", "snap_pct",
+        "p_market", "p_snap", "p_draft", "is_active", "espn_pbwr", "espn_rbwr",
+        "hist_seasons", "ol_pctile_hist", "market_pctile_hist",
+        "shared_credit", "penalty_rate", "penalty_hold_rate", "penalty_fs_rate",
+        "allpro_recent", "career_ap1", "career_pb",
         "consensus_flag", "market_pctile",
         # Contextual fields may already exist when a future pipeline writes them directly.
         "pass_rate", "run_rate", "ol_weighted_pctile", "ol_weighted_grade",
@@ -1973,7 +1981,22 @@ def _ol_grades_by_player(season=None, utilization_by_team=None, team_ol_context=
             "run_conf": _v("run_conf"),
             "poa_carries": _v("poa_carries"),
             "shared_credit": _v("shared_credit"),
+            "ol_grade": _v("ol_grade"),
+            "ol_pctile": _v("ol_pctile"),
+            "ol_conf": _v("ol_conf"),
+            "team_pass_pctile": _v("team_pass_pctile"),
+            "team_run_pctile": _v("team_run_pctile"),
+            "p_market": _v("p_market"),
+            "p_snap": _v("p_snap"),
+            "p_draft": _v("p_draft"),
+            "espn_pbwr": _v("espn_pbwr"),
+            "espn_rbwr": _v("espn_rbwr"),
+            "hist_seasons": _v("hist_seasons"),
+            "ol_pctile_hist": _v("ol_pctile_hist"),
+            "market_pctile_hist": _v("market_pctile_hist"),
             "penalty_rate": _v("penalty_rate"),
+            "penalty_hold_rate": _v("penalty_hold_rate"),
+            "penalty_fs_rate": _v("penalty_fs_rate"),
             "allpro_recent": _v("allpro_recent"),
             "career_ap1": _v("career_ap1"),
             "career_pb": _v("career_pb"),
