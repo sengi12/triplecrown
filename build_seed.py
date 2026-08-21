@@ -1805,222 +1805,324 @@ def build_head_coach_history(proj_season, refresh, coordinators=None):
     return out
 
 
-# ── New Additions (Spotrac offseason: free agency, draft, trades) ─────────────────
-# Spotrac gates plain requests (403), so we send a full browser-like header set — that's
-# enough from a normal machine/IP (no headless browser needed). One page per team contains
-# all three tables we want; we locate them by the nav-tab labels (FREE AGENTS → #tabN,
-# DRAFT → #tabN) and the "accordion-traded" section (Traded Assets).
-SPOTRAC_TEAM = {  # our code → Spotrac's team slug
-    "ARI":"ari","ATL":"atl","BAL":"bal","BUF":"buf","CAR":"car","CHI":"chi","CIN":"cin",
-    "CLE":"cle","DAL":"dal","DEN":"den","DET":"det","GB":"gb","HOU":"hou","IND":"ind",
-    "JAX":"jax","KC":"kc","LAC":"lac","LAR":"lar","LV":"lv","MIA":"mia","MIN":"min",
-    "NE":"ne","NO":"no","NYG":"nyg","NYJ":"nyj","PHI":"phi","PIT":"pit","SEA":"sea",
-    "SF":"sf","TB":"tb","TEN":"ten","WAS":"was",
+# ── New Additions (nflverse: free agency, draft, trades) ─────────────────────────
+# Offseason roster movement for the Roster Changes tab: who a team signed, drafted, traded
+# for, and lost. Emits exactly the shape the tab has always consumed —
+#   {CODE: {free_agents:[…], draft:[…], trades:[…], free_agents_lost:[…]}}
+# — so nothing in the UI changes.
+#
+# WHY NOT SPOTRAC ANY MORE
+#   Spotrac answers 403 to datacenter IPs (a CloudFront WAF), which meant this block could
+#   only ever be refreshed from a personal machine and could never join the scheduled
+#   refresh. Worse, a blocked fetch returned nothing, and "nothing" silently empties the tab.
+#   nflverse publishes the same movement as plain CSV with no bot protection, so this now
+#   rebuilds anywhere — including CI.
+#
+# HOW MOVEMENT IS DERIVED
+#   Two season rosters, diffed, then classified:
+#     absent last season   → drafted if they appear in this year's draft class, else a
+#                            street/undrafted free agent
+#     different team       → a trade if nflverse's trades feed lists them, else free agency
+#     gone from their team → a loss, recorded against the team they left
+#
+#   Rosters are joined on gsis_id (a stable league id), never on name, so "Kenneth Walker III"
+#   vs "Kenneth Walker" cannot split one player into a departure plus an arrival. Trades join
+#   on pfr_id for the same reason.
+#
+# WHERE THE CONTRACT NUMBERS COME FROM
+#   nflverse's movement feeds carry no money. Rather than add a dependency for it, the terms
+#   are read from the OverTheCap block this build ALREADY fetches, which matches Spotrac's
+#   figures exactly — verified against 496 of the 547 signings in the previous seed:
+#     TOTAL ← otc.total     AAV ← otc.apy     TERM ← otc.fa − season
+#   A player OTC does not list (typically a minimum-salary signing) comes through with the
+#   movement recorded and the money blank, which is how the tab already renders a gap.
+NFLVERSE_ROSTER_URL = "https://github.com/nflverse/nflverse-data/releases/download/rosters/roster_{season}.csv"
+NFLVERSE_DRAFT_URL  = "https://github.com/nflverse/nflverse-data/releases/download/draft_picks/draft_picks.csv"
+NFLVERSE_TRADES_URL = "https://github.com/nflverse/nflverse-data/releases/download/trades/trades.csv"
+
+# nflverse is not internally consistent about team codes: the roster feed uses AZ/LA while
+# the draft feed uses Pro-Football-Reference's three-letter codes (GNB, KAN, LVR…). Both are
+# normalised here — a missing entry silently drops that team's rows, which is how 55 of the
+# 257 2026 draft picks went missing the first time this ran.
+NFLVERSE_TEAM_FIX = {
+    "AZ": "ARI", "LA": "LAR",                                    # roster + trades feeds
+    "GNB": "GB", "KAN": "KC", "LVR": "LV", "NOR": "NO",          # draft feed (PFR codes)
+    "NWE": "NE", "SFO": "SF", "TAM": "TB", "CRD": "ARI",
+    "RAM": "LAR", "RAI": "LV", "SDG": "LAC", "OTI": "TEN",
+    "HTX": "HOU", "CLT": "IND", "RAV": "BAL",
 }
-SPOTRAC_URL = ("https://www.spotrac.com/nfl/offseason/spending/_/year/{year}/team/{slug}")
-SPOTRAC_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://www.spotrac.com/nfl/",
-    "Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Site": "same-origin",
-    "Upgrade-Insecure-Requests": "1",
-}
 
-def _spot_money_to_millions(text):
-    """'$60,000,000' → 60.0 (in millions); '' / '-' → None."""
-    if not text: return None
-    m = _re.search(r"\$?\s*([\d,]+(?:\.\d+)?)", text)
-    if not m: return None
-    try:
-        return round(int(m.group(1).replace(",", "")) / 1_000_000, 2)
-    except ValueError:
-        try: return round(float(m.group(1).replace(",", "")) / 1_000_000, 2)
-        except ValueError: return None
 
-def _spot_row_cells(tr_html):
-    return [_strip_tags(c) for c in _re.findall(r"<td[^>]*>(.*?)</td>", tr_html, _re.DOTALL | _re.IGNORECASE)]
+def _nv_team(code):
+    c = (code or "").strip().upper()
+    return NFLVERSE_TEAM_FIX.get(c, c)
 
-def _spot_player_name(tr_html):
-    m = _re.search(r'/nfl/player/\d+"[^>]*>\s*([^<]+?)\s*</a>', tr_html, _re.DOTALL)
-    return m.group(1).strip() if m else None
 
-def _spot_table_in_pane(html, tab_id):
-    """Return the <table> HTML inside the tab-pane div with id=tab_id, or None."""
-    m = _re.search(r'id="' + _re.escape(tab_id) + r'"', html)
-    if not m: return None
-    ts = html.find("<table", m.start())
-    if ts < 0: return None
-    te = html.find("</table>", ts)
-    return html[ts:te] if te > ts else None
-
-def _spot_find_tab_id(html, label):
-    """Find the nav-link href="#tabN" whose visible text matches label (e.g. 'FREE AGENTS')."""
-    for m in _re.finditer(r'href="#(tab\d+)"[^>]*>(.*?)</a>', html, _re.DOTALL | _re.IGNORECASE):
-        txt = _re.sub(r"\s+", " ", _re.sub(r"<[^>]+>", "", m.group(2))).strip().lower()
-        if txt == label.lower():
-            return m.group(1)
-    return None
-
-def _parse_signing_table(table_html, kind):
-    """Free-agents / draft table → list of {player, pos, years, value_m, aav_m, signed}.
-    Columns (both): Player | Pos | (blank) | Sign Team | Years | Value | AAV | ... | Signed."""
-    if not table_html: return []
-    out = []
-    for tr in _re.findall(r"<tr[^>]*>(.*?)</tr>", table_html, _re.DOTALL | _re.IGNORECASE):
-        name = _spot_player_name(tr)
-        if not name: continue
-        cells = _spot_row_cells(tr)
-        if len(cells) < 6: continue
-        pos = cells[1].strip()
-        years = None
-        ym = _re.search(r"\d+", cells[4] or "")
-        if ym: years = int(ym.group(0))
-        value_m = _spot_money_to_millions(cells[5])
-        aav_m = _spot_money_to_millions(cells[6]) if len(cells) > 6 else None
-        signed = cells[-1].strip() if cells else None
-        out.append({"player": name, "pos": pos, "years": years,
-                    "value_m": value_m, "aav_m": aav_m, "signed": signed, "kind": kind})
-    out.sort(key=lambda r: (r["value_m"] is None, -(r["value_m"] or 0)))
-    return out
-
-def _parse_traded_table(table_html):
-    """Traded Assets → list of {player, pos, to_team, cap_m, date, detail}.
-    Columns: Player | Pos | (blank) | To Team | Cap Acquired | Date | Detail."""
-    if not table_html: return []
-    out = []
-    for tr in _re.findall(r"<tr[^>]*>(.*?)</tr>", table_html, _re.DOTALL | _re.IGNORECASE):
-        name = _spot_player_name(tr)
-        if not name: continue
-        cells = _spot_row_cells(tr)
-        if len(cells) < 5: continue
-        pos = cells[1].strip()
-        cap_m = _spot_money_to_millions(cells[4]) if len(cells) > 4 else None
-        date = cells[5].strip() if len(cells) > 5 else None
-        detail = ""
-        # The trade detail is the last non-empty cell (a sentence like "Traded to ...").
-        for c in reversed(cells):
-            cc = c.strip()
-            if len(cc) > 20 and ("trade" in cc.lower() or "for" in cc.lower()):
-                detail = cc; break
-        out.append({"player": name, "pos": pos, "cap_m": cap_m, "date": date, "detail": detail})
-    out.sort(key=lambda r: (r["cap_m"] is None, -(r["cap_m"] or 0)))
-    return out
-
-def _spot_dest_team_from_cell(raw_cell):
-    """The 'Sign Team' cell of a Free-Agents-Lost row shows where the player went, as two
-    logos separated by an arrow then the destination code as text (e.g.
-    <img .../cin.png> &rarr; <img .../jets1.png> NYJ). The clean team CODE after the arrow is
-    the reliable signal — logo filenames don't always match the code (e.g. jets1.png). We
-    read the text-code after the arrow first, and only fall back to the last logo."""
-    if not raw_cell: return None
-    txt = _strip_tags(raw_cell)
-    m = _re.search(r"(?:&rarr;|→|->|&#8594;)\s*([A-Z]{2,3})\b", txt)
-    if m:
-        code = m.group(1)
-        # normalize via reverse Spotrac slug map if needed (codes here are already ours)
-        return code
-    # Fallback: last logo filename (works when it matches a known slug).
-    imgs = _re.findall(r'/images/thumb/([a-z0-9]+)\.png', raw_cell, _re.IGNORECASE)
-    if imgs:
-        cand = imgs[-1].upper()
-        for our, slug in SPOTRAC_TEAM.items():
-            if slug.upper() == cand:
-                return our
-        # strip trailing digits (jets1 → JETS won't map, so give up gracefully)
-        return None
-    return None
-
-def _parse_losses_table(table_html):
-    """Free Agents Lost → list of {player, pos, to_team, years, value_m, aav_m, signed}.
-    Same columns as the signings tables, but the 'Sign Team' cell shows the DESTINATION
-    team (where the player signed) rather than this team."""
-    if not table_html: return []
-    out = []
-    for tr in _re.findall(r"<tr[^>]*>(.*?)</tr>", table_html, _re.DOTALL | _re.IGNORECASE):
-        name = _spot_player_name(tr)
-        if not name: continue
-        # need raw cells to dig the destination logo out of the sign-team column
-        raw_cells = _re.findall(r"<td[^>]*>(.*?)</td>", tr, _re.DOTALL | _re.IGNORECASE)
-        cells = [_strip_tags(c) for c in raw_cells]
-        if len(cells) < 6: continue
-        pos = cells[1].strip()
-        # Sign-team column: index 3 (after player, pos, blank). Get destination team.
-        to_team = _spot_dest_team_from_cell(raw_cells[3]) if len(raw_cells) > 3 else None
-        years = None
-        ym = _re.search(r"\d+", cells[4] or "")
-        if ym: years = int(ym.group(0))
-        value_m = _spot_money_to_millions(cells[5])
-        aav_m = _spot_money_to_millions(cells[6]) if len(cells) > 6 else None
-        signed = cells[-1].strip() if cells else None
-        out.append({"player": name, "pos": pos, "to_team": to_team, "years": years,
-                    "value_m": value_m, "aav_m": aav_m, "signed": signed})
-    out.sort(key=lambda r: (r["value_m"] is None, -(r["value_m"] or 0)))
-    return out
-
-def fetch_team_additions(code, year, refresh):
-    slug = SPOTRAC_TEAM.get(code)
-    if not slug: return None
-    cache_path = os.path.join(CACHE_DIR, "spotrac", f"{code}_{year}.json")
+def _nv_csv(url, label, cache_name, refresh):
+    """Download an nflverse CSV → list of dicts, cached like every other source here."""
+    import csv as _csv
+    cache_path = os.path.join(CACHE_DIR, "nflverse_moves", cache_name)
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     if not refresh and os.path.exists(cache_path):
-        with open(cache_path) as f: return json.load(f)
-    url = SPOTRAC_URL.format(year=year, slug=slug)
+        print(f"  → {label}: using cache")
+        with open(cache_path, newline="", encoding="utf-8") as f:
+            return list(_csv.DictReader(f))
+    print(f"  → fetching {label} ...", end="", flush=True)
     try:
-        req = request.Request(url, headers=SPOTRAC_HEADERS)
-        with request.urlopen(req, timeout=60) as r:
-            html = r.read().decode("utf-8", "replace")
+        req = request.Request(url, headers=UA)
+        with request.urlopen(req, timeout=120) as r:
+            text = r.read().decode("utf-8", "replace")
     except Exception as e:
-        print(f"    {code}: FAILED ({type(e).__name__})", end="")
-        return None
-    fa_id = _spot_find_tab_id(html, "FREE AGENTS")
-    dr_id = _spot_find_tab_id(html, "DRAFT")
-    free_agents = _parse_signing_table(_spot_table_in_pane(html, fa_id), "free_agent") if fa_id else []
-    draft = _parse_signing_table(_spot_table_in_pane(html, dr_id), "draft") if dr_id else []
-    # Traded Assets lives in the accordion-traded section.
-    trades = []
-    tm = _re.search(r'accordion-traded', html)
-    if tm:
-        ts = html.find("<table", tm.start()); te = html.find("</table>", ts)
-        if ts > 0 and te > ts:
-            trades = _parse_traded_table(html[ts:te])
-    # Free Agents Lost lives in the accordion-falost section (same table shape as signings,
-    # but the sign-team column shows where the player went).
-    losses = []
-    lm = _re.search(r'accordion-falost', html)
-    if lm:
-        ts = html.find("<table", lm.start()); te = html.find("</table>", ts)
-        if ts > 0 and te > ts:
-            losses = _parse_losses_table(html[ts:te])
-    out = {"free_agents": free_agents, "draft": draft, "trades": trades,
-           "free_agents_lost": losses}
-    with open(cache_path, "w") as f: json.dump(out, f)
+        print(f" FAILED ({type(e).__name__})")
+        return []
+    with open(cache_path, "w", newline="", encoding="utf-8") as f:
+        f.write(text)
+    rows = list(_csv.DictReader(text.splitlines()))
+    print(f" ok ({len(rows)} rows)")
+    return rows
+
+
+def _otc_terms(contracts, name, season):
+    """Contract TERM/TOTAL/AAV for a player, from the OverTheCap block already in the build.
+
+    Returns (years, value_m, aav_m) with None for anything OTC does not have. `years` is
+    derived as (free-agency year − this season): a deal signed this offseason runs until the
+    player next hits free agency, which is exactly the term Spotrac used to print.
+    """
+    if not contracts:
+        return None, None, None
+    rec = contracts.get(_norm_name(name))
+    if not rec:
+        return None, None, None
+    total = rec.get("total")
+    apy = rec.get("apy")
+    fa = rec.get("fa")
+    years = None
+    if isinstance(fa, int) and fa > season:
+        years = fa - season
+    return (years,
+            round(total / 1e6, 2) if isinstance(total, (int, float)) and total else None,
+            round(apy / 1e6, 2) if isinstance(apy, (int, float)) and apy else None)
+
+
+def _nv_trade_details(trades, season):
+    """Per traded player: (from_team, to_team, human-readable detail).
+
+    nflverse splits one trade across several rows sharing a trade_id — a row per player and a
+    row per pick. Regrouping by trade_id lets us rebuild the sentence the tab used to show
+    ("Traded to X from Y for a 2026 1st round pick"), which no single row contains.
+    """
+    by_id = {}
+    for r in trades:
+        if str(r.get("season")) != str(season):
+            continue
+        by_id.setdefault(r.get("trade_id"), []).append(r)
+
+    def describe(rows, exclude_pfr):
+        bits = []
+        for r in rows:
+            if r.get("pfr_name") and r.get("pfr_id") != exclude_pfr:
+                bits.append(r["pfr_name"])
+            elif r.get("pick_round"):
+                rd = r.get("pick_round")
+                yr = r.get("pick_season") or ""
+                num = f" (#{r['pick_number']})" if r.get("pick_number") else ""
+                sfx = {"1": "st", "2": "nd", "3": "rd"}.get(str(rd), "th")
+                bits.append(f"a {yr} {rd}{sfx} round pick{num}".strip())
+        return bits
+
+    out = {}
+    for tid, rows in by_id.items():
+        for r in rows:
+            pid = r.get("pfr_id")
+            if not pid or not r.get("pfr_name"):
+                continue
+            gave, recv = _nv_team(r.get("gave")), _nv_team(r.get("received"))
+            others = describe(rows, pid)
+            detail = f"Traded to {recv} from {gave}"
+            if others:
+                detail += " for " + ", ".join(others[:4])
+            out[pid] = (gave, recv, detail)
     return out
 
-def build_additions(year, refresh):
-    """Build {CODE: {free_agents, draft, trades, free_agents_lost}} from Spotrac."""
-    print("  Fetching Spotrac offseason roster changes per team ...")
-    additions = {}
-    n_ok = 0
-    for code in TEAMS:
-        data = fetch_team_additions(code, year, refresh)
-        if data and (data["free_agents"] or data["draft"] or data["trades"]
-                     or data.get("free_agents_lost")):
-            additions[code] = data
-            n_ok += 1
-        # gentle pacing so we don't hammer the site
-        if not refresh:
-            pass
+
+def _load_moves_baseline(year):
+    """The frozen Spotrac capture, or None.
+
+    This exists to survive one specific failure: an upstream feed that is correct but behind.
+    It is a fallback, never a source — nothing here is ever re-scraped, and every row it
+    supplies is superseded the moment nflverse publishes the same deal.
+    """
+    path = os.path.join("seeds", "roster_moves_baseline.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except Exception:
+        return None
+    if str(data.get("season")) != str(year):
+        # A baseline from another season describes moves that are now history; using it would
+        # put last year's arrivals in this year's tab.
+        return None
+    return data.get("teams") or None
+
+
+def build_additions(year, refresh, contracts=None):
+    """Build {CODE: {free_agents, draft, trades, free_agents_lost}} from nflverse feeds."""
+    print("  Deriving offseason roster changes from nflverse ...")
+    cur = _nv_csv(NFLVERSE_ROSTER_URL.format(season=year), f"roster {year}", f"roster_{year}.csv", refresh)
+    prev = _nv_csv(NFLVERSE_ROSTER_URL.format(season=year - 1), f"roster {year - 1}", f"roster_{year - 1}.csv", refresh)
+    if not cur or not prev:
+        print("\n  ⚠ WARNING: nflverse rosters unavailable — the Roster Changes tab will be hidden.")
+        return {}
+    draft_rows = _nv_csv(NFLVERSE_DRAFT_URL, "draft picks", "draft_picks.csv", refresh)
+    trade_rows = _nv_csv(NFLVERSE_TRADES_URL, "trades", "trades.csv", refresh)
+
+    def index(rows):
+        d = {}
+        for r in rows:
+            k = r.get("gsis_id") or r.get("pfr_id") or r.get("full_name")
+            if k:
+                d[k] = r
+        return d
+
+    now, before = index(cur), index(prev)
+    traded = _nv_trade_details(trade_rows, year)
+
+    additions = {code: {"free_agents": [], "draft": [], "trades": [], "free_agents_lost": []}
+                 for code in TEAMS}
+
+    def signing(rec, kind):
+        name, pos = rec.get("full_name"), rec.get("position") or ""
+        yrs, val, aav = _otc_terms(contracts, name, year)
+        return {"player": name, "pos": pos, "years": yrs, "value_m": val, "aav_m": aav, "kind": kind}
+
+    # ── Draft ────────────────────────────────────────────────────────────────
+    # Taken straight from the draft feed rather than inferred from a roster, because a pick
+    # who was cut, stashed on IR or sent to the practice squad never appears on the 53 — and
+    # is still that team's draft pick. (Note: draft_picks carries a gsis_id, but for the
+    # current class it does not match the roster's, so the two are joined on name.)
+    drafted_names = set()
+    for r in draft_rows:
+        if str(r.get("season")) != str(year):
+            continue
+        team = _nv_team(r.get("team"))
+        name = r.get("pfr_player_name")
+        if not name or team not in additions:
+            continue
+        drafted_names.add(name)
+        yrs, val, aav = _otc_terms(contracts, name, year)
+        additions[team]["draft"].append({
+            "player": name, "pos": r.get("position") or "",
+            "years": yrs, "value_m": val, "aav_m": aav, "kind": "draft",
+        })
+
+    # ── Signings, trades and losses ──────────────────────────────────────────
+    # Only VETERAN movement counts as free agency. An undrafted rookie is a roster addition
+    # but not a signing anyone means when they say "who did we sign", and including them
+    # would swamp the tab — the 2026 class alone is ~450 undrafted arrivals against ~500 real
+    # veteran signings.
+    for key, rec in now.items():
+        team = _nv_team(rec.get("team"))
+        if team not in additions:
+            continue
+        name = rec.get("full_name")
+        rookie = str(rec.get("entry_year") or rec.get("rookie_year") or "") == str(year)
+        was = before.get(key)
+
+        if was is None:
+            if rookie:
+                continue                              # drafted (already listed) or UDFA
+            additions[team]["free_agents"].append(signing(rec, "free_agent"))
+            continue
+
+        old_team = _nv_team(was.get("team"))
+        if old_team == team:
+            continue                                  # stayed put — not a move
+
+        tr = traded.get(rec.get("pfr_id"))
+        if tr:
+            gave, recv, detail = tr
+            _, _, aav = _otc_terms(contracts, name, year)
+            row = {
+                "player": name, "pos": rec.get("position") or "",
+                # nflverse carries no cap figure; a player's average annual value is the
+                # closest honest stand-in for "cap acquired" and is what the column means.
+                "cap_m": aav, "detail": detail,
+            }
+            # A trade belongs to BOTH teams' tabs — the side that acquired the player and the
+            # side that gave him up. That is how the tab has always read (Spotrac listed each
+            # deal under both clubs), and emitting only the receiving side would have quietly
+            # dropped every outgoing trade from a team's page.
+            for side in {recv, gave}:
+                if side in additions and not any(
+                        (r.get("player") or "").lower() == (name or "").lower()
+                        for r in additions[side]["trades"]):
+                    additions[side]["trades"].append(dict(row))
+        else:
+            additions[team]["free_agents"].append(signing(rec, "free_agent"))
+
+        if old_team in additions:
+            yrs, val, aav = _otc_terms(contracts, name, year)
+            additions[old_team]["free_agents_lost"].append({
+                "player": name, "pos": rec.get("position") or "", "to_team": team,
+                "years": yrs, "value_m": val, "aav_m": aav,
+            })
+
+    # ── Backfill from the frozen Spotrac baseline ────────────────────────────
+    # nflverse's trades feed lags. At the time of the switch it carried 23 of the 39 trades
+    # Spotrac had, and the gap was not random — it was everything after the feed's last
+    # publish. A Bengals fan should not lose the Dexter Lawrence deal because an upstream
+    # CSV has not been regenerated.
+    #
+    # So the last good Spotrac capture is frozen in seeds/roster_moves_baseline.json and used
+    # to fill ONLY the trades nflverse has not published. Matching is by player name within a
+    # team, so once nflverse does publish a trade its version wins and the baseline row is
+    # dropped — no duplicates, and the baseline quietly retires itself deal by deal.
+    #
+    # Only trades are backfilled. nflverse is equal or better on signings, draft and losses,
+    # and merging those would resurrect players who have since moved again.
+    baseline = _load_moves_baseline(year)
+    backfilled = 0
+    if baseline:
+        for team, blocks in baseline.items():
+            if team not in additions:
+                continue
+            have = {(r.get("player") or "").lower() for r in additions[team]["trades"]}
+            for r in blocks.get("trades", []):
+                nm = (r.get("player") or "").lower()
+                if nm and nm not in have:
+                    row = dict(r)
+                    row.pop("date", None)          # not rendered; dropped for shape parity
+                    row["from_baseline"] = True    # provenance, so the gap stays visible
+                    additions[team]["trades"].append(row)
+                    backfilled += 1
+        if backfilled:
+            print(f"    ({backfilled} trade(s) still only in the Spotrac baseline — "
+                  f"nflverse has not published them yet)")
+        else:
+            print("    (nflverse now covers every trade in the baseline — it can be retired)")
+
+    # Biggest money first, matching how the tab has always read.
+    def money(r):
+        return r.get("value_m") or 0
+    for team, blocks in additions.items():
+        for k in ("free_agents", "free_agents_lost"):
+            blocks[k].sort(key=money, reverse=True)
+        # Draft reads in pick order, which is how a draft class is always discussed.
+        # (draft_rows arrive in that order, so this is a no-op kept for clarity.)
+
+    additions = {k: v for k, v in additions.items()
+                 if v["free_agents"] or v["draft"] or v["trades"] or v["free_agents_lost"]}
     if not additions:
-        print("\n  ⚠ WARNING: no Spotrac data fetched — the Roster Changes tab will be hidden.")
-        print("    (Spotrac may be blocking this machine's requests, or the layout changed.)")
+        print("\n  ⚠ WARNING: no roster changes derived — the Roster Changes tab will be hidden.")
     else:
         nfa = sum(len(a["free_agents"]) for a in additions.values())
         ndr = sum(len(a["draft"]) for a in additions.values())
         ntr = sum(len(a["trades"]) for a in additions.values())
-        nlost = sum(len(a.get("free_agents_lost", [])) for a in additions.values())
-        print(f"  Roster Changes loaded: {n_ok} teams · {nfa} FA signings, {ndr} draft picks, "
+        nlost = sum(len(a["free_agents_lost"]) for a in additions.values())
+        print(f"  Roster Changes loaded: {len(additions)} teams · {nfa} FA signings, {ndr} draft picks, "
               f"{ntr} trades, {nlost} FA losses")
     return additions
 
@@ -2415,7 +2517,7 @@ def main():
     ap.add_argument("--refresh-web", action="store_true",
                     help="also re-scrape the slow, season-stable web sources (Warren Sharp, "
                          "strength of schedule, OverTheCap contracts, Wikipedia coordinators/head "
-                         "coaches, Spotrac additions, KeepTradeCut, SumerSports)")
+                         "coaches, nflverse roster changes, KeepTradeCut, SumerSports)")
     ap.add_argument("--refresh-nflverse", action="store_true",
                     help="rebuild the nflverse advanced-metrics block and OL grades cache")
     ap.add_argument("--refresh-all", action="store_true",
@@ -2467,8 +2569,8 @@ def main():
     sos = build_sos(web_refresh, args.season)
     coordinators = build_coordinators(args.season, web_refresh)
     hc_history = build_head_coach_history(args.season, web_refresh, coordinators)
-    print("\n  New Additions (Spotrac free agency / draft / trades)")
-    additions = build_additions(args.season, web_refresh)
+    print("\n  New Additions (nflverse free agency / draft / trades)")
+    additions = build_additions(args.season, web_refresh, contracts)
 
     # SumerSports is now opt-in only (--sumer). nflverse advanced metrics are the app's default
     # advanced source, so we no longer bake the scraped SumerSports tables into the seed unless

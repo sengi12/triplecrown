@@ -45,7 +45,7 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
   <img src="./images/adv_stats.png" alt="Centered Image">
 </div>
 
-- **Roster changes.** A per-team **Roster Changes** tab pulls the offseason's free-agent signings, draft picks, trades, and notable free-agent losses from Spotrac — sorted by contract value — so you can see how a team addressed last season's weaknesses (and where new holes may have opened). The same tab also renders the team's current **depth chart** — ordered starters → backups by position slot, live from ESPN.
+- **Roster changes.** A per-team **Roster Changes** tab pulls the offseason's free-agent signings, draft picks, trades, and notable free-agent losses derived from nflverse rosters, draft picks and trades — sorted by contract value — so you can see how a team addressed last season's weaknesses (and where new holes may have opened). The same tab also renders the team's current **depth chart** — ordered starters → backups by position slot, live from ESPN.
 
 <!-- Center align -->
 <div align="center">
@@ -133,7 +133,7 @@ For the full experience (expert rankings, contracts, advanced stats, coaching, r
 
 ## Building a seed (recommended)
 
-The app can pull live projections and a few live stats on its own, but several sources **can't be fetched from the browser** — FantasyPros, OverTheCap, Warren Sharp, SumerSports, Wikipedia, and Spotrac aren't reachable from client-side JavaScript (CORS and bot protection). The seed builder runs on your own machine, where there's no such restriction, and bundles everything into one file.
+The app can pull live projections and a few live stats on its own, but several sources **can't be fetched from the browser** — FantasyPros, OverTheCap, Warren Sharp, SumerSports, Wikipedia and nflverse aren't reachable from client-side JavaScript (CORS). The seed builder runs on your own machine, where there's no such restriction, and bundles everything into one file.
 
 ```bash
 python build_seed.py                 # 2026 projections + last 5 seasons of stats + all reference data
@@ -153,7 +153,7 @@ It fetches, in order:
 7. Warren Sharp advanced stats (offense + defense) and strength of schedule
 8. SumerSports per-player advanced metrics + situational splits (past seasons, QB/RB/WR/TE)
 9. NFL coordinators and head coaches (Wikipedia), plus a maintained play-calling-HC list
-10. Spotrac offseason roster changes (free agency, draft, trades, losses)
+10. nflverse offseason roster changes (free agency, draft, trades, losses)
 
 Output: **`triplecrown_seed.json`** (plus optional sidecars `triplecrown_seed.def_weekly.json` and `triplecrown_seed.coaching.json` for lazy nflverse sections). Requires only Python 3 standard library — no pip installs. Runs are cached in `cache/`, so re-runs are fast; use `--refresh` to force a re-download.
 
@@ -199,7 +199,7 @@ build_seed.py  --fetches-->  Sleeper (projections, stats, weekly splits, red-zon
       |                       Warren Sharp (advanced stats + strength of schedule)
       |                       SumerSports (advanced metrics + situational splits)
       |                       Wikipedia (coordinators + head coaches)
-      |                       Spotrac (offseason roster changes)
+      |                       nflverse (offseason roster changes)
       v
 triplecrown_seed.json  --loaded by-->  index.html
       |                                    |
@@ -211,7 +211,7 @@ bake_seed.py  --embeds-->  index_baked.html   rankings scored to your league
 ```
 
 - **Live-reachable from the browser:** Sleeper and ESPN APIs (projections, stats, records, head coaches, draft picks), including ESPN's fantasy league endpoints — `lm-api-reads.fantasy.espn.com` and `fan.api.espn.com` reflect the caller's origin back in `access-control-allow-origin`, so league linking needs no proxy, key or server.
-- **Not browser-reachable (CORS / bot protection):** FantasyPros, OverTheCap, Warren Sharp, SumerSports, Wikipedia, and Spotrac — these must come from `build_seed.py` and a loaded/baked seed.
+- **Not browser-reachable (CORS):** FantasyPros, OverTheCap, Warren Sharp, SumerSports and Wikipedia — these must come from `build_seed.py` and a loaded/baked seed. All are reachable from a server, so `.github/workflows/refresh-seed.yml` refreshes them on a schedule.
 
 ---
 
@@ -277,7 +277,7 @@ in gets there without anyone opening developer tools.
 
 ## Tests
 
-The project ships with a regression suite (Node + Python) covering the projection math, QB games model, week-range filtering, ECR/format sync, Sleeper league linking + scoring detection, ESPN league linking (SWID→leagues, player resolution to Sleeper ids, slot/scoring translation, zero-yardage leagues, public-only guard), dynasty contracts, per-team undo, copy-to-working, Sharp advanced-stat pulling and display, strength of schedule, coordinator/head-coach parsing and scheme carryover, Spotrac roster-change parsing, red-zone rankings, SumerSports advanced metrics + situational splits, player cards (ESPN gamelogs, contract/draft summaries, college stats, playoff-round labels), mobile layout, seed loading/baking, and the season-switching edge cases.
+The project ships with a regression suite (Node + Python) covering the projection math, QB games model, week-range filtering, ECR/format sync, Sleeper league linking + scoring detection, ESPN league linking (SWID→leagues, player resolution to Sleeper ids, slot/scoring translation, zero-yardage leagues, public-only guard), dynasty contracts, per-team undo, copy-to-working, Sharp advanced-stat pulling and display, strength of schedule, coordinator/head-coach parsing and scheme carryover, nflverse roster-change derivation, red-zone rankings, SumerSports advanced metrics + situational splits, player cards (ESPN gamelogs, contract/draft summaries, college stats, playoff-round labels), mobile layout, seed loading/baking, and the season-switching edge cases.
 
 ```bash
 ./tests/run_tests.sh index.html
