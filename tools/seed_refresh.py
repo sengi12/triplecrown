@@ -102,15 +102,29 @@ SOURCES = {
         "every": 30 * DAY,
         "why": "Wikipedia coordinators/head coaches — changes in hiring season",
     },
-    # College prospect profiles for the incoming rookie class (src/cfb/). Rebuilt rarely by
-    # design: the underlying cfbfastR play-by-play parquets are ~110-130 MB per season, and a
-    # draft class's college production is finished history the moment the class is drafted.
-    # Once a season, around the draft, is the right cadence — build_seed.py leaves the block
-    # cached otherwise, and degrades to an empty block if it fails.
+    # College prospect profiles for the incoming rookie class (src/cfb/).
+    #
+    # This was 180 days on the assumption that a rebuild was expensive — the underlying
+    # cfbfastR parquets are ~110-130 MB per season. Measured, that assumption is wrong: the
+    # build's cache key is a hash of the linked athlete ids, so an unchanged rookie set is a
+    # plain JSON read. A no-op refresh takes 0.02s and touches no parquet at all.
+    #
+    # With the cost gone, the argument for a long interval goes with it, and a real argument
+    # against it appears: a fixed interval anchors to whenever it last ran, not to the draft.
+    # Land a 180-day tick in January and the next one is July — after most dynasty rookie
+    # drafts. A rookie with no college profile during rookie-draft season is exactly the
+    # failure this feature exists to prevent. The class is not fixed on draft night either;
+    # Sleeper keeps adding UDFAs and camp signings through the summer, and each one changes
+    # the id set and so needs a rebuild to get a profile.
+    #
+    # 90 days is ~4 runs a year and guarantees a rebuild within three months of the draft
+    # whatever the phase. The honest trigger would be "the rookie id set changed" rather than
+    # elapsed time — the cache key already encodes precisely that — but this scheduler has no
+    # event triggers, and at 0.02s a wasted tick costs nothing worth engineering around.
     "cfb": {
         "paths": ["cfb"],
-        "every": 180 * DAY,
-        "why": "cfbfastR college production — a drafted class's college career is settled history",
+        "every": 90 * DAY,
+        "why": "cfbfastR college production — rookie set keeps growing through the summer",
     },
     # Offseason roster movement, derived from nflverse rosters/draft/trades. This used to be
     # Spotrac, which could never be scheduled: it answers 403 to datacenter IPs, and a blocked

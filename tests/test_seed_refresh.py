@@ -142,6 +142,23 @@ chk(spec.get("upstream") == ["rosters", "draft_picks", "trades"],
 chk("trades" in spec["upstream"],
     "including the trades feed — the one that lags and is backfilled from the baseline")
 
+print("\n=== TEST 8b: the college cadence beats the draft, not the clock ===")
+# A rebuild with an unchanged rookie set is 0.02s (measured) — the cache key is a hash of the
+# linked athlete ids, so no parquet is touched. With the cost gone, the only thing a long
+# interval buys is phase drift: a 180-day tick landing in January next fires in July, AFTER
+# dynasty rookie drafts, which is the one window this data exists for. Sleeper also keeps
+# adding UDFAs and camp signings all summer, each changing the id set.
+chk(SR.SOURCES["cfb"]["every"] == 90 * SR.DAY, "college profiles refresh every 90 days")
+chk(SR.SOURCES["cfb"]["every"] <= 90 * SR.DAY,
+    "…and never longer, or a class can miss its own rookie-draft season")
+st = {"sources": {"cfb": {"last": now - 95 * SR.DAY}}}
+isdue, _ = SR.due("cfb", SR.SOURCES["cfb"], st, now)
+chk(isdue, "due once a quarter has passed")
+chk(SR.GUARDS["cfb"]["never_empty"] is False,
+    "an absent pandas degrades the block rather than rejecting the whole build")
+chk(SR.GUARDS["cfb"]["min_ratio"] == 0.70,
+    "a ratio floor tolerates the one big step each April when a class turns over")
+
 print("\n=== TEST 9: nflverse freshness is read, not assumed ===")
 state = {"nflverse": {t: "2020-01-01 00:00:00 EST" for t in SR.NFLVERSE_RELEASES}}
 chk(len(SR.NFLVERSE_RELEASES) == 9, "all 9 nflverse releases the project reads are tracked")
