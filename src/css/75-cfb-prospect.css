@@ -1,0 +1,117 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   College prospect panel (rookie player cards) — see src/js/70b-cfb-prospect.js
+
+   Deliberately in its own file rather than 10-player-card.css: that stylesheet is shared
+   with the OL card work, and a percentile strip is self-contained enough not to need it.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.cfb-panel{
+  padding: 10px 12px 4px;
+  border-bottom: 1px solid var(--line, #2a2f3a);
+}
+
+.cfb-head{
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.cfb-title{
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted, #8b93a7);
+}
+.cfb-meta{
+  font-size: 12px;
+  color: var(--muted, #8b93a7);
+}
+.cfb-meta-sep{ margin: 0 6px; opacity: .5; }
+
+.cfb-summary{
+  font-size: 13px;
+  line-height: 1.45;
+  margin-bottom: 10px;
+  color: var(--fg, #e6e9f0);
+}
+.cfb-summary b{ font-weight: 700; }
+
+/* Percentile bars. The grid keeps labels, tracks and values aligned across every row
+   regardless of label length — a flex row lets long labels shove the tracks out of line. */
+.cfb-bars{
+  display: grid;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.cfb-bar-row{
+  display: grid;
+  grid-template-columns: minmax(84px, 34%) 1fr 28px;
+  align-items: center;
+  gap: 8px;
+}
+.cfb-bar-label{
+  font-size: 12px;
+  color: var(--muted, #8b93a7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cfb-bar-track{
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--track, rgba(255,255,255,.08));
+  overflow: hidden;
+}
+.cfb-bar-fill{
+  height: 100%;
+  border-radius: 4px;
+  transition: width .18s ease;
+}
+.cfb-bar-val{
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Percentile bands, matching the green/yellow/red vocabulary the gamelog cells already use. */
+.cfb-elite{ color: #34d399; }
+.cfb-good { color: #a3e635; }
+.cfb-avg  { color: #fbbf24; }
+.cfb-poor { color: #fb923c; }
+.cfb-bad  { color: #f87171; }
+.cfb-bar-fill.cfb-elite{ background: #34d399; }
+.cfb-bar-fill.cfb-good { background: #a3e635; }
+.cfb-bar-fill.cfb-avg  { background: #fbbf24; }
+.cfb-bar-fill.cfb-poor { background: #fb923c; }
+.cfb-bar-fill.cfb-bad  { background: #f87171; }
+
+.cfb-bars-note{
+  font-size: 11px;
+  color: var(--muted, #8b93a7);
+  opacity: .8;
+  margin: 6px 0 10px;
+  line-height: 1.4;
+}
+
+.cfb-table th.cfb-season-th{
+  text-align: left;
+  white-space: nowrap;
+}
+.cfb-season-team{
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  opacity: .65;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+@media (max-width: 420px){
+  .cfb-bar-row{ grid-template-columns: minmax(72px, 40%) 1fr 26px; }
+  .cfb-bar-label{ font-size: 11px; }
+}

@@ -28,6 +28,7 @@ function handleSeedLoad(e){
       if(j.dynasty_values){ DYNASTY_VALUES=j.dynasty_values;   // FP dynasty trade values (League Analyzer)
         if(typeof laOnValuesLoaded==="function") laOnValuesLoaded(); }
       if(j.nflverse){ NFLVERSE=j.nflverse; if(typeof resetNflverseLazy==='function') resetNflverseLazy(); }   // nflverse advanced metrics payload (heavy sections lazy-load)
+      if(j.cfb){ CFB=j.cfb; if(typeof resetCfbLazy==='function') resetCfbLazy(); }   // college rookie profiles (game logs lazy-load)
       if(hasSeed){
         SEED=j.seed; rosterMergedTeams.clear();
         HISTORY=j.history||{};

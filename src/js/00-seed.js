@@ -39,5 +39,12 @@ const SEED_NFLVERSE_DEF_WEEKLY = {};
 const SEED_NFLVERSE_OL_WEEKLY = {};
 const SEED_NFLVERSE_ADV_WEEKLY = {};
 const SEED_NFLVERSE_COACHING = {};
+// College production profiles for the incoming rookie class (build_seed.py --cfb): season
+// lines + percentiles against past draft classes, keyed by Sleeper player id. Rookies have no
+// NFL snaps to show, so this is the only production evidence their card can offer.
+const SEED_CFB = {};
+// Per-game college logs, split into a lazy sidecar (they're ~60% of the college payload and
+// only read when one rookie's card is open). Re-embedded by bake_seed.py for the offline file.
+const SEED_CFB_LOGS = {};
 // ═══ TRIPLECROWN_SEED_END ═══
 

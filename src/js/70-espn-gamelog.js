@@ -251,11 +251,22 @@ async function loadEspnCardData(pid, posc, body, opts){
   const tok = pcardToken;
   const league = opts.league || 'college-football';
   const def = !!opts.def;
-  body.innerHTML = `<div class="pcard-loading">Loading ${league==='nfl'?'':'college '}game logs…</div>`;
+  // The college prospect panel comes from the seed, not from ESPN, so it renders even when the
+  // ESPN lookup below fails or the player has no ESPN page at all. Empty string for veterans,
+  // for the NFL tab, and for the ~3% of rookies with no CFBD coverage.
+  const prospect = (league==='college-football' && typeof renderCfbProspect==='function')
+    ? renderCfbProspect(pid) : '';
+  body.innerHTML = prospect
+    ? prospect + `<div class="pcard-loading">Loading college game logs…</div>`
+    : `<div class="pcard-loading">Loading ${league==='nfl'?'':'college '}game logs…</div>`;
   const aid = await resolveEspnAthleteId(pid, (sleeperPlayers[pid]||{}).name, league);
   if(!pcardOpen) return;
   if(!aid){
-    body.innerHTML = pcardRetryHtml('No ESPN stats found for this player yet.');
+    // Having the prospect panel is a better outcome than an error, so keep it and demote the
+    // missing gamelog to a footnote.
+    body.innerHTML = prospect
+      ? prospect + `<div class="pcard-src">No ESPN game logs found for this player.</div>`
+      : pcardRetryHtml('No ESPN stats found for this player yet.');
     return;
   }
   pcardApplyEspnHeadshot(aid, league);   // fill in an ESPN photo if Sleeper had none
@@ -281,11 +292,13 @@ async function loadEspnCardData(pid, posc, body, opts){
     if(!out) out = `<div class="pcard-loading">No game data found for this player.</div>`;
     out += `<div class="pcard-src">${league==='nfl'?'NFL':'College'} per-game stats via ESPN${def?'':' · AVG shown as YPC'}.</div>`;
     if(pcardOpen && tok===pcardToken){
-      body.innerHTML = out;
+      body.innerHTML = prospect + out;
       if(typeof pcardEnableStickyStatHeaders==='function') pcardEnableStickyStatHeaders();
     }
   }catch(e){
-    body.innerHTML = pcardRetryHtml("Couldn't load game logs. Check your connection and try again.");
+    body.innerHTML = prospect
+      ? prospect + `<div class="pcard-src">Couldn't load ESPN game logs.</div>`
+      : pcardRetryHtml("Couldn't load game logs. Check your connection and try again.");
   }
 }
 // Render one season table from an ESPN gamelog payload (data-driven, colored per game).

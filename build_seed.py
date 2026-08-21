@@ -2527,6 +2527,13 @@ def main():
                         "them as a parallel 'nflverse' seed block")
     ap.add_argument("--no-nflverse", dest="nflverse", action="store_false",
                     help="skip nflverse advanced metrics")
+    ap.add_argument("--cfb", dest="cfb", action="store_true", default=True,
+                    help="build college production profiles for the incoming rookie class "
+                         "(default: on; requires pandas) and add them as a 'cfb' seed block")
+    ap.add_argument("--no-cfb", dest="cfb", action="store_false",
+                    help="skip college rookie profiles")
+    ap.add_argument("--refresh-cfb", action="store_true",
+                    help="rebuild the college link map, production tables and percentile pool")
     ap.add_argument("--sumer", action="store_true",
                     help="also scrape SumerSports advanced per-player stats into the seed (opt-in; "
                          "the app now defaults to nflverse for advanced metrics, so this is only for A/B analysis)")
@@ -2539,6 +2546,7 @@ def main():
     core_refresh = args.refresh or args.refresh_all
     web_refresh = args.refresh_web or args.refresh_all
     nflverse_refresh = args.refresh_nflverse or args.refresh_all
+    cfb_refresh = args.refresh_cfb or args.refresh_all
 
     print(f"TripleCrown seed builder — projections {args.season}, last {args.history} seasons of stats\n")
     print("Step 1/6: players")
@@ -2608,6 +2616,31 @@ def main():
     else:
         print("\n  nflverse advanced metrics disabled (--no-nflverse)")
 
+    # Default-on, additive, dependency-isolated: college production profiles for the incoming
+    # rookie class, from cfbfastR/CFBD (see src/cfb/). Same contract as the nflverse block —
+    # if pandas is missing or the build fails, the block is empty and the rest of the seed is
+    # unaffected. Rookies are the players with no NFL production to show, so this is the only
+    # evidence a card can offer for them.
+    cfb, cfb_logs = {}, {}
+    if args.cfb:
+        print("\n  college rookie profiles (default-on, additive — requires pandas)")
+        try:
+            import src.cfb.profiles as _cfb
+            if not _cfb.cfbfastr.HAVE_PANDAS:
+                print("    ⚠ pandas not installed — skipping college profiles (the rest of the seed is unaffected)")
+            else:
+                # The slimmed player dict from get_players() drops college/search_rank, which the
+                # linker needs, so re-read the raw Sleeper DB. It's already cached — no refetch.
+                _raw = cached("players.json", PLAYERS_URL, "Sleeper player DB", False)
+                _blk = _cfb.build(args.season, _raw, refresh=cfb_refresh)
+                cfb, cfb_logs = _cfb.split_for_seed(_blk)
+                print(f"    → {len(cfb.get('players', {}))} rookie profiles "
+                      f"(percentiles vs {cfb.get('reference', {}).get('classes')} draft classes)")
+        except Exception as e:
+            print(f"    ⚠ college profiles failed: {type(e).__name__}: {e}")
+    else:
+        print("\n  college rookie profiles disabled (--no-cfb)")
+
 
     # Split the two largest, rarely-viewed nflverse blocks (def_weekly, coaching_scheme) out of
     # the main seed into sidecar files. The app lazy-loads them on demand (opening a defensive
@@ -2643,7 +2676,7 @@ def main():
                     "hc_playcallers": HC_PLAYCALLERS, "sharp_season": args.season-1,
                     "sumer": sumer, "sumer_seasons": sumer_seasons, "ktc": ktc,
                     "dynasty_values": dynasty_values,
-                    "nflverse": nflverse}
+                    "nflverse": nflverse, "cfb": cfb}
     # Every seed also gets a pre-gzipped twin (.json.gz, gzip -9, deterministic mtime=0).
     # The app fetches the .gz first (DecompressionStream) and falls back to plain .json —
     # this guarantees a small download on ANY host (local dev, no-CDN static hosting) and
@@ -2667,6 +2700,11 @@ def main():
         _write_seed("seeds/triplecrown_seed.ol_weekly.json", nflverse_ol_weekly)
     if nflverse_adv_weekly:
         _write_seed("seeds/triplecrown_seed.adv_weekly.json", nflverse_adv_weekly)
+    # Per-game college logs are ~60% of the college payload and are only read when someone
+    # opens one rookie's card, so they ride in a sidecar while the season lines and percentiles
+    # stay inline (82 KB gz inline vs 219 KB gz together).
+    if cfb_logs:
+        _write_seed("seeds/triplecrown_seed.cfb_logs.json", cfb_logs)
     # Playbook is the largest lazy block and is viewed one season at a time, so split it
     # into per-season sidecars the app fetches on demand (a typical user only downloads the
     # current season). Remove any stale combined file from older builds.
@@ -2693,6 +2731,8 @@ def main():
         print("  • seeds/triplecrown_seed.adv_weekly.json → lazy sidecar (advanced weekly range recompute)")
     if coaching_files:
         print(f"  • seeds/triplecrown_seed.coaching.<season>.json → {len(coaching_files)} per-season lazy sidecars (playbook modal)")
+    if cfb_logs:
+        print("  • seeds/triplecrown_seed.cfb_logs.json → lazy sidecar (rookie college game logs)")
     print(f"  • {CACHE_DIR}/ → cached raw API responses (delete to force refresh)")
     print(f"\nNext: open the TripleCrown app (index.html). By default it pulls live {args.season}")
     print("projections from Sleeper on load. To use this prebuilt snapshot (with historical")

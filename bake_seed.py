@@ -294,6 +294,7 @@ def main():
     ktc = seed.get("ktc", {})
     dynasty_values = seed.get("dynasty_values", {})
     nflverse = seed.get("nflverse", {})
+    cfb = seed.get("cfb", {})
 
     # Heavy nflverse sections live in sidecar files (build_seed.py splits them out so the hosted
     # app can lazy-load them). For a self-contained offline/baked file we re-embed them, since
@@ -321,6 +322,8 @@ def main():
     nflverse_def_weekly = _sidecar(os.path.join(seed_dir, "triplecrown_seed.def_weekly.json"))
     nflverse_ol_weekly = _sidecar(os.path.join(seed_dir, "triplecrown_seed.ol_weekly.json"))
     nflverse_adv_weekly = _sidecar(os.path.join(seed_dir, "triplecrown_seed.adv_weekly.json"))
+    # Rookie college game logs — same lazy-sidecar treatment, same reason to re-embed offline.
+    cfb_logs = _sidecar(os.path.join(seed_dir, "triplecrown_seed.cfb_logs.json"))
     # playbook now ships as per-season sidecars (seeds/triplecrown_seed.coaching.<season>.json);
     # re-embed every season for the offline/baked file. Fall back to the old combined file.
     import glob as _glob
@@ -373,6 +376,8 @@ def main():
         f"const SEED_NFLVERSE_OL_WEEKLY = {j(nflverse_ol_weekly)};\n"
         f"const SEED_NFLVERSE_ADV_WEEKLY = {j(nflverse_adv_weekly)};\n"
         f"const SEED_NFLVERSE_COACHING = {j(nflverse_coaching)};\n"
+        f"const SEED_CFB = {j(cfb)};\n"
+        f"const SEED_CFB_LOGS = {j(cfb_logs)};\n"
         f"{END}"
     )
 

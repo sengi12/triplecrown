@@ -1,0 +1,10 @@
+{
+  "_comment": [
+    "Hand-maintained Sleeper player id -> CFBD athlete id, for players src/cfb/link.py can't",
+    "resolve on its own. Set the value to null to record 'confirmed no CFBD coverage' (D2/D3,",
+    "NAIA, international) — that suppresses the player from the unresolved report without",
+    "inventing a link. Find athlete ids at https://api.collegefootballdata.com/roster or in",
+    "the cached cfb_rosters_<season>.parquet files under cache/cfb/raw/."
+  ],
+  "players": {}
+}

@@ -179,6 +179,9 @@ let DYNASTY_VALUES = (typeof SEED_DYNASTY_VALUES!=='undefined') ? SEED_DYNASTY_V
 let leagueSnapshot = null;
 // nflverse-computed advanced metrics (opt-in A/B source): {season:{team:{...}, players:{QB,RB}}}
 let NFLVERSE = (typeof SEED_NFLVERSE!=='undefined') ? SEED_NFLVERSE : {};
+// College rookie profiles + their lazily-fetched per-game logs (see 70b-cfb-prospect.js).
+let CFB = (typeof SEED_CFB!=='undefined') ? SEED_CFB : {};
+let CFB_LOGS = (typeof SEED_CFB_LOGS!=='undefined') ? SEED_CFB_LOGS : {};
 // Head coaches fetched live from ESPN this session: {CODE:{name,headshot,experience}|null}
 let headCoaches = {};
 let hcInFlight = {};
