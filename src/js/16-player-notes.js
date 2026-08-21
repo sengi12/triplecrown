@@ -159,37 +159,88 @@ function noteResolvedName(note){
   return String(note.name||note.pid||'Unknown');
 }
 
+// Offensive linemen are not in SEED — the fantasy seed only carries QB/RB/WR/TE — so they
+// come from the nflverse OL grades map instead. Without this, an OL stat could only ever be
+// tagged to a skill player, which is backwards: the most natural target for "this guard
+// grades a D at run blocking" is the guard, or one of his linemates.
+const _OL_SLOT_ORDER = {LT:0, LG:1, C:2, RG:3, RT:4};
+
+function noteOlPlayersForTeam(team){
+  const tm = String(team||'').toUpperCase();
+  if(!tm || typeof NFLVERSE==='undefined' || !NFLVERSE) return [];
+  const seasons = Object.keys(NFLVERSE).sort((a,b)=>Number(b)-Number(a));
+  for(const s of seasons){
+    const op = NFLVERSE[s] && NFLVERSE[s].ol_players;
+    if(!op) continue;
+    const out = [];
+    for(const k in op){
+      const r = op[k];
+      if(!r || String(r.team||'').toUpperCase()!==tm) continue;
+      if(!r.name) continue;
+      out.push({
+        player_id: '',
+        name: r.name,
+        pos: 'OL',
+        slot: String(r.slot||'').toUpperCase(),
+        team: tm,
+        adp: 999,
+      });
+    }
+    // Left-to-right along the line reads the way a depth chart does.
+    if(out.length){
+      out.sort((a,b)=> (_OL_SLOT_ORDER[a.slot]??9)-(_OL_SLOT_ORDER[b.slot]??9)
+                      || a.name.localeCompare(b.name));
+      return out;
+    }
+  }
+  return [];
+}
+
 function noteRelevantPlayers(team, relevance){
   const tm = String(team||'').toUpperCase();
   if(!tm) return [];
   const want = String(relevance||'QB,RB,WR,TE').split(/[^A-Z]+/i).map(x=>x.toUpperCase()).filter(Boolean);
-  const order = {QB:0,RB:1,WR:2,TE:3};
+  const order = {OL:0,QB:1,RB:2,WR:3,TE:4};
   const wantSet = new Set(want);
   const seen = new Set();
   const out = [];
+  const push = (p, pos, extra)=>{
+    const key = playerNoteKey((p && (p.player_id || p.name)) || '', pos, tm);
+    if(!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(Object.assign({
+      player_id: p.player_id || '',
+      name: p.name || '',
+      pos,
+      team: tm,
+      adp: Number.isFinite(+p.adp) ? +p.adp : 999,
+      relevant: wantSet.has(pos),
+    }, extra||{}));
+  };
+  // Only enumerate the line when the stat is actually about it — a WR's target share has no
+  // business offering five guards as tag targets.
+  if(wantSet.has('OL')) noteOlPlayersForTeam(tm).forEach(p=>push(p,'OL',{slot:p.slot}));
   ['QB','RB','WR','TE'].forEach(pos=>{
-    (getBase(tm, pos) || []).forEach(p=>{
-      const key = playerNoteKey((p && (p.player_id || p.name)) || '', pos, tm);
-      if(!key || seen.has(key)) return;
-      seen.add(key);
-      out.push({
-        player_id: p.player_id || '',
-        name: p.name || '',
-        pos,
-        team: tm,
-        adp: Number.isFinite(+p.adp) ? +p.adp : 999,
-        relevant: wantSet.has(pos),
-      });
-    });
+    (getBase(tm, pos) || []).forEach(p=>push(p, pos));
   });
-  out.sort((a,b)=> (a.relevant===b.relevant?0:(a.relevant?-1:1)) || (order[a.pos]||9)-(order[b.pos]||9) || a.adp-b.adp || a.name.localeCompare(b.name));
+  // `??` not `||`: the first position in `order` maps to 0, and `0 || 9` is 9 — which would
+  // sort the highest-priority group last.
+  const rank = p => order[p] ?? 9;
+  out.sort((a,b)=> (a.relevant===b.relevant?0:(a.relevant?-1:1))
+                  || rank(a.pos)-rank(b.pos)
+                  || (a.pos==='OL' ? ((_OL_SLOT_ORDER[a.slot]??9)-(_OL_SLOT_ORDER[b.slot]??9)) : 0)
+                  || a.adp-b.adp
+                  || a.name.localeCompare(b.name));
   return out;
 }
 
 function noteRelevanceForTableKey(key){
   const k = String(key||'');
-  if(k==='offensive_line_run') return 'RB';
-  if(k==='offensive_line_pass') return 'QB,RB';
+  // The line itself is the first-class target for line stats; the skill players it affects
+  // follow. Run blocking reaches the backs, protection reaches the quarterback.
+  if(k==='offensive_line_run') return 'OL,RB';
+  if(k==='offensive_line_pass') return 'OL,QB,RB';
+  if(k==='offensive_line') return 'OL,QB,RB';
   return 'QB,RB,WR,TE';
 }
 

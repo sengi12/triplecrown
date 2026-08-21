@@ -89,7 +89,11 @@ chk(body.includes('olc-trend-mkt'), 'market line drawn alongside the grade line'
 // ── the reworked composite ────────────────────────────────────────────────────
 chk(body.includes('Overall OL Grade'), 'headline composite grade tile renders');
 chk(body.includes('olc-drivers'), 'driver bars explain what produced the grade');
-chk(/Market[\s\S]{0,120}Snaps[\s\S]{0,120}Draft/.test(body), 'all three composite drivers are named');
+// Assert the labels exist and stay in order, not how many characters apart they sit — the
+// original character-window check broke the moment each driver gained note-tag attributes.
+const _dOrder=['Market','Snaps','Draft'].map(l=>body.indexOf(`<span>${l}</span>`));
+chk(_dOrder.every(i=>i>=0) && _dOrder[0]<_dOrder[1] && _dOrder[1]<_dOrder[2],
+    'all three composite drivers are named, in weight order');
 chk(body.includes('ESPN 94% PBWR'), 'ESPN tracking win rate surfaces on the pass grade');
 chk(body.includes('Snap Share'), 'snap share (the most reliable individual signal) is shown');
 chk(!body.includes('Entanglement Factor'), 'APM-era entanglement factor no longer shown');

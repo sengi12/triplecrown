@@ -146,6 +146,7 @@ run_js_test test_pcard_pos      "Player card positions: QB rushing group, RB/WR/
 run_js_test test_pcard_adv      "Player card advanced: RANK by format, QB/WR/RB new stats, season totals row (sum/max/rate)"
 run_js_test test_pcard_meta     "Player card meta: height format, age decimal, jersey, HT/WT/college, is_away_team + opp logo"
 run_js_test test_qb_passing     "QB passing consolidated: ATT|CMP|PCT|YD|LNG|RTG|RZ|TD order, ATT restored, totals"
+run_js_test test_ol_tagging     "OL stat tagging: every stat taggable, whole line offered as targets, relevance by phase"
 run_js_test test_ol_card        "OL grades card: tab wiring, coarse percentile bands (no false-precision rank), penalty split, attribution caveat"
 run_js_test test_rb_fan         "RB rushing fan: tab wiring, SVG chart, OL slot cards for all five linemen, lane legend"
 run_js_test test_route_tree     "Route tree card: alignment/route distribution rendering"

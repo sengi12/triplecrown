@@ -106,6 +106,13 @@ def main():
     if missing:
         print(f"  note: CSV lacks {len(missing)} optional field(s): {', '.join(missing)}")
 
+    # nflverse team codes ("LA") differ from the seed's ("LAR"); normalize or a whole team
+    # silently fails the downstream TEAMS filter.
+    NFLVERSE_TO_SEED = {"LA": "LAR", "OAK": "LV", "SD": "LAC", "STL": "LAR"}
+    if "team" in g.columns:
+        g["team"] = (g["team"].astype(str).str.strip().str.upper()
+                     .replace(NFLVERSE_TO_SEED))
+
     by_key = {}
     for _, r in g.iterrows():
         k = norm_name(r.get("name"))
@@ -135,11 +142,22 @@ def main():
         if not isinstance(op, dict) or not op:
             continue
         updated = 0
+        drop = []
         for key, rec in op.items():
             total_seen += 1
             src = by_key.get(key) or by_key.get(norm_name(rec.get("name")))
             if not src:
                 continue
+
+            # Scope each season to the players who were actually in the league. The grades
+            # CSV is one pooled table, so a straight merge stamps everyone into every
+            # season — Amarius Mims, a 2024 draftee, carried a graded 2021 on his card.
+            hs = src.get("hist_seasons")
+            if hs:
+                played = [x.strip() for x in str(hs).split(",") if x.strip()]
+                if played and str(season) not in played:
+                    drop.append(key)
+                    continue
             # Team and slot in the seed are season-specific; the CSV only knows the latest.
             for c, v in src.items():
                 if c in ("team", "slot") and rec.get(c):
@@ -163,9 +181,30 @@ def main():
             rec.pop("entanglement_factor", None)
             rec.pop("team_context_weight", None)
             updated += 1
+        for k in drop:
+            op.pop(k, None)
+
+        # Add linemen the seed never had. Until the team-code fix above, the Rams were
+        # missing from every season, so a merge that only updates existing records would
+        # leave them missing forever.
+        added = 0
+        for k, src in by_key.items():
+            if k in op or not src.get("team"):
+                continue
+            hs = src.get("hist_seasons")
+            if hs:
+                played = [x.strip() for x in str(hs).split(",") if x.strip()]
+                if played and str(season) not in played:
+                    continue
+            elif str(season) != str(max(years)):
+                continue
+            op[k] = dict(src)
+            added += 1
         total_updated += updated
         graded = sum(1 for r in op.values() if r.get("ol_grade"))
-        print(f"  season {season}: {updated}/{len(op)} matched, {graded} now carry ol_grade")
+        note = f", {len(drop)} removed (not in the league that season)" if drop else ""
+        note += f", {added} added" if added else ""
+        print(f"  season {season}: {updated} updated, {graded} carry ol_grade{note}")
 
     if a.dry_run:
         print(f"\ndry run — {total_updated}/{total_seen} records would be updated; nothing written")

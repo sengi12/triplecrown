@@ -1934,8 +1934,31 @@ def _ol_grades_by_player(season=None, utilization_by_team=None, team_ol_context=
                 g.loc[valid_slot, "slot"] = season_slot[valid_slot]
         except Exception:
             pass
+    # The grades CSV is a single pooled table, so without this every lineman would be
+    # stamped into every season's payload — Amarius Mims, drafted in 2024, showed a graded
+    # 2021, 2022 and 2023 on his card. `hist_seasons` records the seasons a player actually
+    # took a snap in, so use it to scope each season's map to who was really there.
+    if season is not None and "hist_seasons" in g.columns:
+        want = str(int(season))
+
+        def _played(v):
+            if v is None or (isinstance(v, float) and pd.isna(v)):
+                return True          # no history recorded: keep rather than silently drop
+            parts = [p.strip() for p in str(v).split(",") if p.strip()]
+            return (want in parts) if parts else True
+
+        g = g[g["hist_seasons"].map(_played)]
+        if g.empty:
+            _OL_GRADES_BY_PLAYER[skey] = out
+            return out
+
     g["name"] = g["name"].astype(str).str.strip()
-    g["team"] = g["team"].astype(str).str.strip().str.upper()
+    # Normalize nflverse team codes before the TEAMS filter below. The grades CSV carries
+    # nflverse's own abbreviations ("LA" for the Rams), while TEAMS uses the seed's ("LAR"),
+    # so without this every Rams lineman failed the isin() and the team had no OL grades at
+    # all — 12 players, silently absent rather than visibly broken.
+    g["team"] = (g["team"].astype(str).str.strip().str.upper()
+                 .replace(NFLVERSE_TO_SEED))
     g["slot"] = g["slot"].astype(str).str.strip().str.upper()
     g["pass_snaps"] = pd.to_numeric(g["pass_snaps"], errors="coerce").fillna(0)
     g = g[(g["name"] != "") & g["team"].isin(TEAMS) & g["slot"].isin(["LT", "LG", "C", "RG", "RT"])]
