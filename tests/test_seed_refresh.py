@@ -207,6 +207,11 @@ ins = SR.SOURCES["inseason"]
 chk(ins["every"] == 7 * SR.DAY, "inseason: fixed 7-day cadence, not upstream timestamps")
 chk(ins.get("in_season_only") is True, "inseason: dormant outside the season")
 chk(any(str(SR._CUR_SEASON) in p for p in ins["paths"]), "inseason: invalidates only the current season's files")
+# And the mirror image: the five completed seasons are frozen while games are being played,
+# so nightly nflverse republishes cannot trigger a full five-season rebuild every day.
+chk(SR.SOURCES["nflverse"].get("offseason_only") is True, "nflverse (historical): frozen in season")
+chk(not SR.SOURCES["inseason"].get("offseason_only") and not SR.SOURCES["nflverse"].get("in_season_only"),
+    "the two nflverse sources are gated to opposite halves of the year")
 
 import json as _json  # noqa: E402
 

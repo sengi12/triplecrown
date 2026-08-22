@@ -110,10 +110,19 @@ SOURCES = {
         "every": 14 * DAY,
         "why": "OverTheCap contracts — signings land year-round, heaviest in March",
     },
+    # The HISTORICAL block: five completed seasons of advanced metrics, OL grades, coaching
+    # charting. Completed seasons do not change, so this only needs to move in the OFFSEASON,
+    # when the season that just ended gets folded in (nflverse finishes publishing pbp
+    # participation / FTN / snap counts for it through February). During the season nflverse
+    # republishes pbp, rosters and snap counts nightly; timestamp-driven staleness would wipe
+    # and rebuild all five seasons nearly every day (a full ~1 GB re-download under the job
+    # timeout) for data that is not changing. The CURRENT season lives in the `inseason`
+    # sidecar below, which is what updates weekly while games are being played.
     "nflverse": {
         "paths": ["nflverse"],
         "every": None,          # driven by upstream timestamps, see nflverse_stale()
-        "why": "nflverse advanced metrics — rebuilt only when a release actually changes",
+        "offseason_only": True, # completed seasons only move between the Super Bowl and kickoff
+        "why": "nflverse advanced metrics — rebuilt only when a release actually changes, offseason only",
     },
     "sharp": {
         "paths": ["sharp"],
@@ -392,6 +401,9 @@ def main():
             continue
         if spec.get("in_season_only") and _SEED_STATE["season_type"] not in ("regular", "post"):
             reasons[name] = "offseason — dormant"
+            continue
+        if spec.get("offseason_only") and _SEED_STATE["season_type"] in ("regular", "post"):
+            reasons[name] = "in season — completed seasons are frozen (the inseason sidecar carries the live one)"
             continue
         if spec.get("upstream") or name == "nflverse":
             bucket = "nflverse" if name == "nflverse" else f"upstream_{name}"
