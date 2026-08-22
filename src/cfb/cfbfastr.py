@@ -103,6 +103,8 @@ EXPLOSIVE_RUSH_YDS = 12
 EXPLOSIVE_PASS_YDS = 20
 
 _PBP_CACHE = {}
+# cfbfastR publishes play-by-play from 2014 on; nothing earlier can be read.
+FIRST_PBP_SEASON = 2014
 
 
 def _derived_cache_path(kind, payload):
@@ -354,7 +356,14 @@ def build(links, seasons, refresh=False):
     out = {}
     for season in sorted(seasons):
         print(f"  college {season} …", end="", flush=True)
-        blocks = build_season(season, links)
+        try:
+            blocks = build_season(season, links)
+        except Exception as e:
+            # A season cfbfastR has not published (anything before 2014) is a gap in the
+            # window, not a failed build — a 2015 draftee simply has one readable season.
+            print(f" unavailable ({type(e).__name__})")
+            _PBP_CACHE.pop(season, None)
+            continue
         for pid, block in blocks.items():
             out.setdefault(pid, {"seasons": {}})["seasons"][str(season)] = block
         # Each season frame is hundreds of MB; holding twelve of them at once is what turns a

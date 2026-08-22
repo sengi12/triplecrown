@@ -273,7 +273,11 @@ function _olDepthChartSlotsByTeam(teamCode){
     if(typeof fetchEspnDepth==='function') fetchEspnDepth(teamCode).catch(()=>{});
     return null;
   }
-  if(!Array.isArray(rows) || !rows.length) return null;
+  // ESPN answered but published no depth chart for this team (preseason gaps, 404s). The
+  // current roster from the same fetch is still the best picture of who is on the team, so
+  // build a talent-first line from it rather than dropping to last season's snap leaders —
+  // which for an injury-wrecked line are exactly the backups we do not want.
+  if(!Array.isArray(rows) || !rows.length) return _olRosterFallbackSlots(teamCode);
 
   const bySlot={};
   for(const r of rows){
@@ -356,7 +360,62 @@ function _olDepthChartSlotsByTeam(teamCode){
   fill('RG','G');
 
   const hasAny=Object.values(out).some(v=>v&&v.name);
-  return hasAny ? out : null;
+  return hasAny ? out : _olRosterFallbackSlots(teamCode);
+}
+
+// Does a line object name at least one starter? _olLineByTeamSeason returns an all-null slot
+// map (truthy!) for a season it has no data for, so callers must test THIS, not the object.
+function _olLineHasStarters(line){
+  return !!line && ['LT','LG','C','RG','RT'].some(sl=>line[sl] && line[sl].name);
+}
+
+// Current ESPN roster → five starters, chosen by the player's own multi-year grade (then
+// experience), NOT by last season's snaps. Used only when ESPN has a roster but no depth
+// chart for the projection season.
+function _olRosterFallbackSlots(teamCode){
+  if(typeof espnRosters==='undefined') return null;
+  const roster=espnRosters[teamCode];
+  if(!Array.isArray(roster) || !roster.length) return null;
+  const latestByName=_olLatestPlayerPctileByName();
+  const latestSlot=_olLatestExplicitSlotByName();
+  const hints=_olGradesSlotHints();
+  const fam=(p)=>_olPosFamily(String(p||'').toUpperCase());
+  const cand=roster
+    .filter(p=>p && p.name && ['C','G','OG','T','OT','OL','LT','LG','RG','RT'].includes(String(p.pos||'').toUpperCase()))
+    .filter(p=>!/injured|reserve|pup|nfi/i.test(String(p.status||'')))
+    .map(p=>{
+      const nk=_olNormName(p.name);
+      const g=latestByName[nk]||{};
+      const pct=[g.pass_pctile, g.run_pctile].filter(v=>v!=null && !Number.isNaN(Number(v)));
+      const talent=pct.length ? pct.reduce((a,b)=>a+b,0)/pct.length : (g.market_pctile!=null ? Number(g.market_pctile) : null);
+      const preferred=hints.byTeam[`${teamCode}|${nk}`]||latestSlot[nk]||hints.global[nk]||null;
+      return {name:String(p.name).trim(), pos:String(p.pos||'').toUpperCase(), talent, exp:Number(p.exp||0), preferred,
+        lockFamily:_olSlotFamily(preferred)};
+    })
+    .sort((a,b)=>((b.talent==null?-1:b.talent)-(a.talent==null?-1:a.talent)) || (b.exp-a.exp) || a.name.localeCompare(b.name));
+  if(!cand.length) return null;
+  const out={LT:null,LG:null,C:null,RG:null,RT:null};
+  const used=new Set();
+  const fits=(c, slot)=>{
+    let f=fam(c.pos);
+    if(f==='OL' && c.lockFamily && c.lockFamily!=='OL') f=c.lockFamily;
+    const sf=_olSlotFamily(slot);
+    return f===sf || f==='OL';
+  };
+  const claim=(slot, pred)=>{
+    if(out[slot]) return;
+    const hit=cand.find(c=>!used.has(c.name) && fits(c,slot) && (!pred || pred(c)));
+    if(!hit) return;
+    used.add(hit.name);
+    out[slot]={name:hit.name, pos:hit.pos, snaps:0, prevSnaps:0, explicit:slot, preferred:slot, lockFamily:_olSlotFamily(slot)};
+  };
+  const slots=['LT','LG','C','RG','RT'];
+  for(const sl of slots) claim(sl, c=>c.preferred===sl);
+  claim('C', c=>fam(c.pos)==='C');
+  claim('LT', c=>fam(c.pos)==='T'); claim('RT', c=>fam(c.pos)==='T');
+  claim('LG', c=>fam(c.pos)==='G'); claim('RG', c=>fam(c.pos)==='G');
+  for(const sl of slots) claim(sl, null);
+  return Object.values(out).some(v=>v&&v.name) ? out : null;
 }
 
 function _olRosterSlotsBySeason(season, teamCode, preferredSlotByName){
@@ -671,6 +730,24 @@ function _olStarterTalent(rec, which){
   return {pct:Math.max(1, Math.min(99, v)), known:true};
 }
 
+// Fraction (0..1) of the projected starters who were on the baseline-season line.
+function _olLineContinuity(projLine, baseLine){
+  if(!_olLineHasStarters(projLine) || !_olLineHasStarters(baseLine)) return 0;
+  const prev=new Set();
+  for(const sl of ['LT','LG','C','RG','RT']){
+    const r=baseLine[sl];
+    if(r && r.name) prev.add(_olNormName(r.name));
+  }
+  let n=0, back=0;
+  for(const sl of ['LT','LG','C','RG','RT']){
+    const r=projLine[sl];
+    if(!r || !r.name) continue;
+    n++;
+    if(prev.has(_olNormName(r.name))) back++;
+  }
+  return n ? back/n : 0;
+}
+
 // Weighted team talent (0-100) across the five projected starters.
 function _olTeamTalent(line, which){
   const W = which==='pass' ? _OL_PASS_SLOT_W : _OL_RUN_SLOT_W;
@@ -731,7 +808,34 @@ function _olEnrichLineGrades(line){
   return out;
 }
 
+// Memoised on what can change the answer: which ESPN depth charts/rosters have arrived and
+// which seasons are loaded. Every caller (RB fan, QB OL tab, team Advanced chip, league OL
+// table) recomputes all 32 teams otherwise.
+let _olProjCache=null;
+function _olProjCacheKey(){
+  const d=(typeof espnDepth==='object' && espnDepth) ? Object.keys(espnDepth).filter(k=>espnDepth[k]!==undefined).length : 0;
+  const r=(typeof espnRosters==='object' && espnRosters) ? Object.keys(espnRosters).filter(k=>espnRosters[k]!==undefined).length : 0;
+  const s=(typeof NFLVERSE==='object' && NFLVERSE) ? Object.keys(NFLVERSE).join(',') : '';
+  return `${d}|${r}|${s}`;
+}
 function _olProjectedTeamNext(){
+  const key=_olProjCacheKey();
+  if(_olProjCache && _olProjCache.key===key) return _olProjCache.out;
+  const out=_olProjectedTeamNextUncached();
+  _olProjCache={key, out};
+  return out;
+}
+// Coverage summary for UI hints: how many teams have a projection-season line resolved.
+function _olProjCoverage(){
+  const all=_olProjectedTeamNext();
+  const teams=Object.keys(all);
+  const any=all[teams[0]];
+  if(!any) return {covered:0,total:0,stable:false,pending:0};
+  const pending=(typeof espnDepth==='object' && espnDepth)
+    ? teams.filter(t=>espnDepth[t]===undefined).length : teams.length;
+  return {covered:any.depthCovered||0, total:any.depthTotal||0, stable:!!any.ranksStable, pending};
+}
+function _olProjectedTeamNextUncached(){
   const out={};
   if(!(typeof NFLVERSE==='object' && NFLVERSE)) return out;
 
@@ -758,21 +862,35 @@ function _olProjectedTeamNext(){
   //    prior-season team Pass Score for scheme/coaching continuity. Talent dominates so an
   //    injury-ruined team result no longer drags a healthy projected line down.
   const teamRows={};
+  let depthCovered=0;
   for(const tm of allTeams){
     const teamCode=_olTeamCode(tm);
-    const rawLine=_olLineByTeamSeason(OL_PROJ_SEASON, teamCode) || _olLineByTeamSeason(baselineSeason, teamCode);
-    if(!rawLine) continue;
+    // The projection-season line comes from the live ESPN depth chart (or current roster).
+    // _olLineByTeamSeason hands back an all-null slot map — truthy — when that has not loaded
+    // yet, so test for real starters before falling back to last season's snap leaders.
+    let rawLine=_olLineByTeamSeason(OL_PROJ_SEASON, teamCode);
+    const depthKnown=_olLineHasStarters(rawLine);
+    if(!depthKnown) rawLine=_olLineByTeamSeason(baselineSeason, teamCode);
+    if(!_olLineHasStarters(rawLine)) continue;
+    if(depthKnown) depthCovered++;
     const line=_olEnrichLineGrades(rawLine);
     const tp=_olTeamTalent(line, 'pass');
     const tr=_olTeamTalent(line, 'run');
     const talentPass = tp?tp.talent:50;
     const talentRun  = tr?tr.talent:50;
 
+    // The prior-season team result only says something about THIS line to the extent the
+    // same five are back. Scale the 20% continuity anchor by how many projected starters
+    // were on last season's snap-leader line: a rebuilt (or finally healthy) line is judged
+    // on its starters, while an unchanged line keeps the scheme/cohesion signal.
+    const continuity = depthKnown ? _olLineContinuity(line, _olLineByTeamSeason(baselineSeason, teamCode)) : 1;
+    const anchorW = 0.20 * continuity;
+
     const passBaseRow=basePassTbl.teams[teamCode];
     const bs=(passBaseRow&&passBaseRow.values)?passBaseRow.values['Pass Score']:null;
     const baseScore=(bs!=null && !Number.isNaN(Number(bs)))?Number(bs):null;
     const projPassScore=(baseScore!=null)
-      ? Math.max(0, Math.min(100, 0.80*talentPass + 0.20*baseScore))
+      ? Math.max(0, Math.min(100, (1-anchorW)*talentPass + anchorW*baseScore))
       : talentPass;
 
     const runBaseRow0=baseRunTbl&&baseRunTbl.teams&&baseRunTbl.teams[teamCode];
@@ -782,10 +900,10 @@ function _olProjectedTeamNext(){
       ? Number(brsRun)
       : ((brsOverall!=null && !Number.isNaN(Number(brsOverall))) ? Number(brsOverall) : null);
     const projRunScore=(baseRunScore!=null)
-      ? Math.max(0, Math.min(100, 0.80*talentRun + 0.20*baseRunScore))
+      ? Math.max(0, Math.min(100, (1-anchorW)*talentRun + anchorW*baseRunScore))
       : talentRun;
 
-    teamRows[teamCode]={ team:teamCode, line, talentPass, talentRun, projPassScore, projRunScore, baseRow:passBaseRow };
+    teamRows[teamCode]={ team:teamCode, line, depthKnown, continuity, talentPass, talentRun, projPassScore, projRunScore, baseRow:passBaseRow };
   }
 
   const teamCodes=Object.keys(teamRows);
@@ -799,10 +917,13 @@ function _olProjectedTeamNext(){
   teamCodes.forEach(tm=>{ runScoreMap[tm]=teamRows[tm].projRunScore; });
   const runScoreRank=_olRankMap(runScoreMap, false);
   const n=teamCodes.length;
-  // Early renders can happen before the full league table is hydrated. Using projected
-  // ranks on partial coverage creates volatile #1/#2 flashes, so fall back to baseline
-  // season ranks until coverage is effectively complete.
-  const ranksStable = n >= 28;
+  // Early renders happen before the 32 ESPN depth charts have loaded. A team whose starters
+  // are known scores on real talent while the rest sit on last season's snap leaders (or at
+  // replacement level), so ranking a partially-hydrated league produces #1/#2 flashes and,
+  // worse, freezes the wrong rank on a card that never re-renders. Count teams whose
+  // PROJECTION-season line actually resolved — not `n`, which is always 32 — and fall back
+  // to baseline-season ranks until coverage is effectively complete.
+  const ranksStable = depthCovered >= Math.min(28, allTeams.length);
   const rankNum = (v)=> (v!=null && !Number.isNaN(Number(v))) ? Number(v) : null;
 
   // 3) Baseline league distributions for realistic projected metric values.
@@ -851,9 +972,22 @@ function _olProjectedTeamNext(){
       (tr.baseRow.ranks['Pass Score']!=null ? tr.baseRow.ranks['Pass Score'] : tr.baseRow.ranks['Overall Score']));
     const baseRunRank = rankNum(runBaseRow&&runBaseRow.ranks&&
       (runBaseRow.ranks['Run Score']!=null ? runBaseRow.ranks['Run Score'] : runBaseRow.ranks['Overall Score']));
+    // The QB OL tab reads its headline rank from passTbl ranks; keep those on the baseline
+    // ranks too while coverage is partial, so every surface tells the same story.
+    if(!ranksStable){
+      if(basePassRank!=null){
+        if(passRanks['Pass Score']!=null) passRanks['Pass Score']=basePassRank;
+        if(passRanks['Overall Score']!=null) passRanks['Overall Score']=rankNum(tr.baseRow&&tr.baseRow.ranks&&tr.baseRow.ranks['Overall Score'])||basePassRank;
+      }
+    }
     out[tm]={
       team:tm,
       baselineSeason,
+      depthKnown:!!tr.depthKnown,
+      continuity:tr.continuity,
+      depthCovered,
+      depthTotal:allTeams.length,
+      ranksStable,
       talentPass:tr.talentPass,
       talentRun:tr.talentRun,
       projPassScore:tr.projPassScore,
@@ -1074,6 +1208,7 @@ function renderPcardQbOl(pid){
       + `<div class="olc-metric"><label>${proj.baselineSeason}</label><b>${noteWrapHtml(escHtml(_olFmtMetric('Overall Score', baseScore)), { label:`${proj.baselineSeason} Pass Protection Score`, value:`${_olFmtMetric('Overall Score', baseScore)}${baseRank!=null?` · league rank #${baseRank}`:''}`, source:'qb_ol_context', statKey:'base_overall_score', context:`${teamDisplayName(teamCode)||teamCode} pass protection · ${proj.baselineSeason}`, player:notePlayer, team:teamCode, relevance:'QB', nav:{ type:'advanced', team:teamCode, season:String(proj.baselineSeason) } }, 'note-tag-hit')}</b><small>${_olRankBadge(baseRank)}</small></div>`
       + `</div>`;
     metricColsUse=metricColsUse.filter(c=>c!=='Overall Score');
+    projOverallHtml += _olProjCoverageNote();
   }
 
   const teamMetrics=metricColsUse.map(c=>{
@@ -1127,9 +1262,32 @@ function _olRefreshOpenQbOlForTeam(team){
     const p=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[pcardState.pid])||{};
     const norm=ecrNormName(p.name||'');
     const tm=_qbTeamForSeason(pcardState.pid,OL_PROJ_SEASON,norm,p.team||'')||_qbAnyKnownTeam(pcardState.pid,norm,p.team||'');
-    if(_olTeamCode(team)!==_olTeamCode(tm)) return;
+    // The league RANK depends on all 32 lines, not just this team's. Re-render for this
+    // team's own chart, and again once league coverage is complete enough for projected
+    // ranks to replace the baseline ranks shown until then.
+    if(_olTeamCode(team)!==_olTeamCode(tm) && !_olProjRankJustStabilised(body)) return;
   }catch(e){ /* refresh anyway on lookup failure */ }
   body.innerHTML=renderPcardQbOl(pcardState.pid);
+}
+
+// True (once) when projected ranks have become stable since this card body was last painted.
+function _olProjRankJustStabilised(body){
+  const cov=_olProjCoverage();
+  if(!cov.stable) return false;
+  if(body.dataset.olRanksStable==='1') return false;
+  body.dataset.olRanksStable='1';
+  return true;
+}
+
+// Small caption while depth charts are still loading, so a baseline-season rank is never
+// mistaken for the projection.
+function _olProjCoverageNote(){
+  const cov=_olProjCoverage();
+  if(!cov.total || cov.stable) return '';
+  if(cov.pending>0){
+    return `<div class="olc-overview olc-proj-pending">Loading ${OL_PROJ_SEASON} depth charts (${cov.covered}/${cov.total}) — league ranks show last season until projected starters are known for the whole league.</div>`;
+  }
+  return `<div class="olc-overview olc-proj-pending">${OL_PROJ_SEASON} depth charts unavailable for ${cov.total-cov.covered} of ${cov.total} teams (ESPN did not answer) — league ranks show last season. Scores still reflect this line's projected starters.</div>`;
 }
 
 function renderPcardOlGrades(pid){

@@ -2635,7 +2635,7 @@ def main():
         print("\n  nflverse advanced metrics disabled (--no-nflverse)")
 
     # Default-on, additive, dependency-isolated: college production profiles for the incoming
-    # rookie class, from cfbfastR/CFBD (see src/cfb/). Same contract as the nflverse block —
+    # rookie class AND every projected veteran drafted since 2015, from cfbfastR/CFBD (see src/cfb/). Same contract as the nflverse block —
     # if pandas is missing or the build fails, the block is empty and the rest of the seed is
     # unaffected. Rookies are the players with no NFL production to show, so this is the only
     # evidence a card can offer for them.
@@ -2650,9 +2650,15 @@ def main():
                 # The slimmed player dict from get_players() drops college/search_rank, which the
                 # linker needs, so re-read the raw Sleeper DB. It's already cached — no refetch.
                 _raw = cached("players.json", PLAYERS_URL, "Sleeper player DB", False)
-                _blk = _cfb.build(args.season, _raw, refresh=cfb_refresh)
+                # Every player the seed projects, not only the rookies: a second-year WR's
+                # college profile is the best read on him there is until his NFL sample grows.
+                _pool = {str(p.get("player_id")) for t in seed.values() for rows in t.values()
+                         for p in rows if p.get("player_id")}
+                _blk = _cfb.build_all(args.season, _raw, only_pids=_pool, refresh=cfb_refresh)
                 cfb, cfb_logs = _cfb.split_for_seed(_blk)
-                print(f"    → {len(cfb.get('players', {}))} rookie profiles "
+                _cls = _blk.get("classes") or {}
+                print(f"    → {len(cfb.get('players', {}))} college profiles across "
+                      f"{len(_cls)} draft classes "
                       f"(percentiles vs {cfb.get('reference', {}).get('classes')} draft classes)")
         except Exception as e:
             print(f"    ⚠ college profiles failed: {type(e).__name__}: {e}")

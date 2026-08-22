@@ -2,9 +2,10 @@
 """
 profiles.py — the seed block: one college profile per fantasy-relevant rookie
 ────────────────────────────────────────────────────────────────────────────
-Assembles what the player card actually renders. Each rookie gets their college seasons, a
-per-game log, and — the part that makes the numbers mean anything — a percentile for each
-headline metric against the 2018-2025 drafted prospects at the same position.
+Assembles what the player card actually renders. Each rookie — and, via build_all(), every
+fantasy-relevant veteran drafted since 2015 — gets their college seasons, a per-game log, and
+— the part that makes the numbers mean anything — a percentile for each headline metric
+against the 2018-2025 drafted prospects at the same position.
 
     src/cfb/link.py         Sleeper pid  → CFBD athlete id
     src/cfb/cfbfastr.py     athlete id   → per-season production
@@ -46,17 +47,16 @@ LABELS = {
 }
 
 
-def build(draft_class, players, ref=None, refresh=False):
-    """The full seed block for one rookie class."""
-    ref = ref or percentiles.build_reference(percentiles.reference_classes(draft_class))
-    links = link.build_link_map(players, draft_class, refresh=refresh)
+def _profiles_from_links(links, draft_class, ref, refresh=False):
+    """{pid: profile} for one rookie-year bucket, from its resolved link map."""
     usable = {pid: l for pid, l in links.items()
               if l.get("athlete_id") and not (l.get("method") or "").endswith("?")}
-    data = cfbfastr.build(usable, range(draft_class - 4, draft_class), refresh=refresh)
-
-    out = {"schema": SCHEMA, "class": int(draft_class),
-           "reference": {"classes": ref.get("classes"), "steps": ref.get("steps")},
-           "labels": LABELS, "headline": HEADLINE, "players": {}}
+    if not usable:
+        return {}
+    # College play-by-play starts in 2014; a 2015-2017 draftee gets the seasons that exist.
+    seasons = range(max(cfbfastr.FIRST_PBP_SEASON, draft_class - 4), draft_class)
+    data = cfbfastr.build(usable, seasons, refresh=refresh)
+    out = {}
     for pid, node in data.items():
         pos = node.get("pos")
         if pos not in HEADLINE:
@@ -69,14 +69,67 @@ def build(draft_class, players, ref=None, refresh=False):
             v = percentiles.rank(ref, pos, metric, final.get(metric))
             if v is not None:
                 pct[metric] = v
-        out["players"][pid] = {
+        out[pid] = {
             "name": node.get("name"), "pos": pos, "athlete_id": node.get("athlete_id"),
             "method": node.get("method"), "college": final.get("team"),
             "conf": final.get("conf"), "final": year, "seasons": node["seasons"],
-            "pct": pct,
+            "pct": pct, "class": int(draft_class),
             # Whether the pool this player was ranked against is thin enough to caveat.
             "ref_n": ((ref.get("pos") or {}).get(pos, {}).get(HEADLINE[pos][0], {}) or {}).get("n"),
         }
+    return out
+
+
+def _block(draft_class, ref):
+    return {"schema": SCHEMA, "class": int(draft_class),
+            "reference": {"classes": ref.get("classes"), "steps": ref.get("steps")},
+            "labels": LABELS, "headline": HEADLINE, "players": {}}
+
+
+def build(draft_class, players, ref=None, refresh=False):
+    """The seed block for one rookie class (the original, rookies-only build)."""
+    ref = ref or percentiles.build_reference(percentiles.reference_classes(draft_class))
+    links = link.build_link_map(players, draft_class, refresh=refresh)
+    out = _block(draft_class, ref)
+    out["players"] = _profiles_from_links(links, draft_class, ref, refresh=refresh)
+    return out
+
+
+def build_all(season, players, only_pids=None, ref=None, refresh=False, verbose=True):
+    """College profiles for EVERY fantasy-relevant skill player, not only the rookie class.
+
+    The rookie class is linked exactly as before. Every other player in `only_pids` (the
+    projection pool the seed ships) is bucketed by rookie year and linked against the college
+    rosters of his own years, then scored through the same production tables. One reference
+    pool — the drafted prospects of the classes before the current one — ranks everybody, so
+    a 2022 receiver's dominator percentile means the same thing as a 2026 rookie's. (A player
+    drafted 2018-2025 is therefore ranked against a pool that contains him; with 600+ players
+    per pool that moves nothing.)
+
+    Players drafted before 2015 have no readable college play-by-play and are skipped; the
+    card degrades to the ESPN game log for them, as it always has.
+    """
+    season = int(season)
+    ref = ref or percentiles.build_reference(percentiles.reference_classes(season))
+    out = _block(season, ref)
+    out["classes"] = {}
+    pools = link.class_pools(players, season, only_pids=only_pids)
+    # The rookie class keeps its own, unrestricted pool: a rookie has nothing else to show.
+    rookies = link.build_link_map(players, season, refresh=refresh)
+    rookie_prof = _profiles_from_links(rookies, season, ref, refresh=refresh)
+    out["players"].update(rookie_prof)
+    out["classes"][str(season)] = {"pool": len(rookies), "profiles": len(rookie_prof)}
+    for cls in sorted(pools, reverse=True):
+        if cls == season:
+            continue
+        pool = pools[cls]
+        if verbose:
+            print(f"  class {cls}: {len(pool)} players", flush=True)
+        links = link.build_class_link_map(pool, cls, season, refresh=refresh)
+        prof = _profiles_from_links(links, cls, ref, refresh=refresh)
+        for pid, p in prof.items():
+            out["players"].setdefault(pid, p)
+        out["classes"][str(cls)] = {"pool": len(pool), "profiles": len(prof)}
     return out
 
 

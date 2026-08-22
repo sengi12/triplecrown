@@ -51,6 +51,7 @@ CSV_FIELDS = [
     "pass_grade", "pass_pctile", "pass_conf", "pass_snaps",
     "run_grade", "run_pctile", "run_conf", "poa_carries",
     "team_pass_pctile", "team_run_pctile",
+    "team_ctx_pass_pctile", "team_ctx_run_pctile", "team_ctx_exposure",
     "p_market", "p_snap", "p_draft", "snap_pct",
     "espn_pbwr", "espn_rbwr",
     "hist_seasons", "ol_pctile_hist", "market_pctile_hist",

@@ -433,6 +433,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .olc-espn{color:var(--success);font-weight:800;}
 .olc-drivers{display:flex;flex-direction:column;gap:3px;margin-top:7px;}
 .olc-driver{display:grid;grid-template-columns:44px 1fr 24px;align-items:center;gap:6px;font-size:9.5px;color:var(--muted2);}
+/* The note-tag wrapper (noteWrapHtml) sits between these grid/flex containers and their real
+   children. Without this it becomes the ONE grid item and the whole row collapses into the
+   44px label column — the bars rendered ~40px wide on every screen. display:contents keeps
+   the DOM node (so closest('[data-noteable]') still finds it) but lets the children lay out
+   as the container's direct items. */
+.olc-driver>.note-tag-hit,.olc-mini-grid div>.note-tag-hit,.olc-trend-head>.note-tag-hit{display:contents;}
 .olc-driver i{display:block;height:4px;border-radius:2px;background:var(--surface3);overflow:hidden;}
 .olc-driver u{display:block;height:100%;background:var(--accent);text-decoration:none;}
 .olc-driver em{font-style:normal;text-align:right;font-variant-numeric:tabular-nums;}
@@ -455,6 +461,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .olc-overview{margin:8px 2px 8px;padding:9px 11px;border-radius:8px;border:1px solid rgba(0,212,170,.28);
   background:rgba(0,212,170,.10);font-size:12px;color:var(--text);font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .olc-overview b{font-size:13px;font-weight:900;color:#bff8ea;}
+.olc-overview.olc-proj-pending{border-color:rgba(210,153,34,.3);background:rgba(210,153,34,.1);color:var(--warn);font-size:11px;}
 .olc-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:0 2px 4px;}
 .olc-metric{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 8px 7px;text-align:center;}
 .olc-metric label{display:block;font-size:9px;letter-spacing:.03em;color:var(--muted);font-weight:800;line-height:1.25;min-height:23px;}
@@ -2062,7 +2069,12 @@ html,body{max-width:100%;overflow-x:hidden;}
 .ps-row:hover,.ps-row.ps-active{background:var(--surface2);}
 .ps-hs{width:36px;height:36px;border-radius:50%;object-fit:cover;background:var(--surface2);flex:none;}
 .ps-hs.ps-def{object-fit:contain;padding:3px;}
-.ps-nm{flex:1;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* Row = avatar · position · [name over team] · owner pill on the right edge. */
+.ps-nm{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.ps-nm-main{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px;}
+.ps-nm-sub{font-size:11px;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:5px;}
+.ps-nm-sub .ps-team-logo{width:14px;height:14px;}
+.ps-row .ps-pos{flex:none;}
 .ps-meta{display:flex;align-items:center;gap:8px;flex:none;}
 .ps-note-badge{min-width:17px;height:17px;padding:0 5px;border-radius:999px;display:inline-flex;
   align-items:center;justify-content:center;font-size:10px;font-weight:900;line-height:1;
@@ -2225,7 +2237,7 @@ button.la-cliff:hover{filter:brightness(1.25);}
   max-width:16rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   background:var(--surface2);border:1px solid var(--border);color:var(--muted);
   border-radius:100px;padding:2px 9px;margin-left:8px;
-  font-size:11px;font-weight:700;line-height:1.5;cursor:pointer;
+  font-size:11px;font-weight:700;line-height:1.5;cursor:pointer;user-select:none;font-family:inherit;
 }
 .tc-own-chip::before{
   content:"";width:5px;height:5px;border-radius:50%;background:var(--muted);flex:none;
@@ -2239,6 +2251,16 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .tc-own-mgr{font-weight:400;opacity:.75;}
 /* Compact variant for search rows and dense tables. */
 .tc-own-sm{font-size:10px;padding:1px 7px;margin-left:6px;max-width:9rem;}
+/* Manager-handle pill: sits at the right edge of a row, never steals the name's space. */
+.tc-own-pill{margin-left:auto;flex:none;color:#8fc6ff;border-color:rgba(61,155,255,.35);background:rgba(61,155,255,.10);max-width:7.5rem;}
+.tc-own-pill::before{display:none;}
+.tc-own-pill.tc-own-mine{color:#ffd66b;border-color:rgba(255,200,80,.45);background:rgba(255,200,80,.12);}
+.share-row .tc-own-pill{font-size:9.5px;padding:1px 6px;line-height:1.4;margin-left:0;}
+.player-name .tc-own-pill{margin-left:8px;vertical-align:middle;}
+.snap-info .tc-own-pill{margin-left:6px;vertical-align:middle;}
+.rankings-table td.c-own{white-space:nowrap;}
+.rankings-table td.c-own .tc-own-pill{margin-left:0;}
+@media (max-width:640px){ .tc-own-pill{max-width:6rem;} .share-row .tc-own-pill{max-width:5rem;} }
 @media (max-width:640px){
   .tc-own-chip{max-width:8rem;}
   .tc-own-mgr{display:none;}
@@ -6167,7 +6189,7 @@ function renderPassing(team,state){
         return `<div class="snap-row" style="${active?'border:1px solid var(--qb)':''}">
           <span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${imgTag(hsPack(q),'player-headshot')}</span>
           <div class="snap-info" style="flex:1">
-            <div style="font-size:12px;font-weight:700"><span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${q.name}</span>${projPaceChip(q.name,'QB',q.player_id)}${weekFilterPaceButton(state,q.player_id,'qb')}${qbFptsTag(q)}
+            <div style="font-size:12px;font-weight:700"><span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${q.name}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(q.player_id,q.name):''}${projPaceChip(q.name,'QB',q.player_id)}${weekFilterPaceButton(state,q.player_id,'qb')}${qbFptsTag(q)}
               ${q.games_played?`<span style="font-size:9px;color:var(--muted);font-weight:500">· actually played ${Math.round(q.games_played)}</span>`:''}</div>
             <div style="font-size:10px;color:var(--muted)" id="wl-sub-${i}">${gms} games · ${perGame(q,'passing_yards').toFixed(1)} pass yds/gm</div>
           </div>
@@ -6198,7 +6220,7 @@ function renderPassing(team,state){
       `<button class="qb-tab ${i===idx?'active':''}" onclick="setActiveQB(${i})">${(typeof tcLastName==='function')?tcLastName(q.name):(String(q.name||'').trim().split(/\s+/).slice(-1)[0]||'')}</button>`).join('')}</div>`:''}
     <div class="player-row"><span class="clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${imgTag(hsPack(qb),'player-headshot')}</span>
       <span class="pos-badge pos-QB">QB${idx+1}</span>
-      <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${qb.name}</div>
+      <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${qb.name}${typeof tcOwnerPill==='function'?tcOwnerPill(qb.player_id,qb.name):''}</div>
         ${weekFilterPaceButton(state,qb.player_id,'qb')}${qbFptsTag(qb)}
         <div class="player-sub">${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?`ECR ${e.rank_ecr}`:'';})()}${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?' · ':'';})()}<span id="qb-games-sub">${games}</span> games projected</div></div></div>
     <div class="alert alert-info" style="margin-bottom:11px"><span class="alert-icon">📈</span>
@@ -6520,7 +6542,7 @@ function renderPassDerived(team,state,subTabs,metric){
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${projPaceChip(p.name,p.pos,p.player_id)}${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTag(p,'rec')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${projPaceChip(p.name,p.pos,p.player_id)}${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTag(p,'rec')}
         <span class="share-pct" id="dp-${i}">${sharePct}</span>
         <span class="share-vol" id="dv-${i}">${tagVal(v.toLocaleString()+' '+label, isYds?'Receiving Yards':'Receptions', isYds?'receiving_yards':'receptions')}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -6657,7 +6679,7 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span>
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTag(p,'rec')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTag(p,'rec')}
         <span class="share-pct" id="pp-${i}">${sharePct}</span>
         <span class="share-vol" id="pt-${i}">${tagVal(projTgts+' tgt','Targets','receiving_targets')}</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},${pcardArg(p.pos)})" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
@@ -6738,7 +6760,7 @@ function renderPassTDs(team,state,totalTDs,subTabs){
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}
         <span class="share-pct" id="tdp-${i}">${sharePct}</span>
         <span class="share-vol">${tagVal(projTDs+' TD','Receiving TDs','receiving_tds')}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -6818,7 +6840,7 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
     return `<div class="share-block" id="rblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${projPaceChip(p.name,p.pos,p.player_id)}${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTag(p,'rush')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${projPaceChip(p.name,p.pos,p.player_id)}${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTag(p,'rush')}
         <span class="share-pct" id="rp-${i}">${sharePct}</span>
         <span class="share-vol" id="ra-${i}">${tagVal(att+' att','Rushing Attempts','rushing_attempts')}</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},'RB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
@@ -6880,7 +6902,7 @@ function renderRushTDs(team,state,subTabs){
     return `<div class="share-block" id="rblk-${i}"><div class="share-row">
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTag(p,'rush')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTag(p,'rush')}
         <span class="share-pct" id="rtdp-${i}">${sharePct}</span>
         <span class="share-vol">${tagVal(projTDs+' TD','Rushing TDs','rushing_tds')}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -8503,8 +8525,8 @@ function pcardRowValues(pos, s, ctx){
   return base;
 }
 // Compute a single game's fantasy points from the user's scoring settings.
-function pcardFptsFromStats(s){
-  s=s||{}; const sc=scoringSettings;
+function pcardFptsFromStats(s, scoringOverride){
+  s=s||{}; const sc=scoringOverride||scoringSettings;
   let pts=0;
   // `mult` is the *_yards_points multiplier calcFpts already applies; a league that scores no
   // points for yards carries 0 there (see applySleeperScoring).
@@ -8515,11 +8537,36 @@ function pcardFptsFromStats(s){
   pts += perYd(sc.rushing_yards_yardage, s.rush_yd||0, sc.rushing_yards_points);
   pts += (s.rush_td||0)*(sc.rushing_touchdowns||0);
   pts += perYd(sc.receiving_yards_yardage, s.rec_yd||0, sc.receiving_yards_points);
-  pts += (s.rec||0)*(sc.receptions||0);
+  // Same TE-premium bonus calcFpts applies to season projections (s.pos is stamped by
+  // pcardSeasonRows); a TEP league previously undercounted every TE game here.
+  pts += (s.rec||0)*((sc.receptions||0) + (String(s.pos||'').toUpperCase()==='TE' ? (sc.receptions_te_bonus||0) : 0));
   pts += (s.rec_td||0)*(sc.receiving_touchdowns||0);
   pts += (s.pass_att!=null?(s.pass_att*(sc.passing_attempts||0)):0);
+  pts += (s.pass_cmp!=null?(s.pass_cmp*(sc.passing_completions||0)):0);
+  pts += (s.rush_att!=null?(s.rush_att*(sc.rushing_attempts||0)):0);
   pts += (s.fum_lost||0)*(sc.fumbles_lost||0);
   return Math.round(pts*100)/100;
+}
+// Fixed full-PPR scoring the consistency benchmarks are defined in. The grade is meant to
+// read the same in every league, so it is scored here rather than in the league's settings
+// (a half-PPR or standard league was silently grading every receiver against a bar set one
+// format higher than his points were computed in).
+const PCARD_PPR_SCORING = {
+  passing_yards_yardage:25, passing_yards_points:1, passing_touchdowns:4, interceptions_thrown:-2,
+  passing_attempts:0, passing_completions:0,
+  rushing_yards_yardage:10, rushing_yards_points:1, rushing_touchdowns:6, rushing_attempts:0,
+  receiving_yards_yardage:10, receiving_yards_points:1, receiving_touchdowns:6, receptions:1, receptions_te_bonus:0,
+  fumbles_lost:-2,
+};
+// A game the player barely took part in (left hurt early, mop-up, Week 18 kneel-downs) is
+// not evidence about his consistency. Sleeper gives offensive snaps per week; below this
+// many the week is shown in the log but kept out of the grade.
+const PCARD_CONSISTENCY_MIN_SNAPS = 10;
+function pcardGameCountsForConsistency(r){
+  if(!r || r.bye || !(r.gp>0) || !Number.isFinite(r.fpts)) return false;
+  const st=r.stats||{};
+  if(st.off_snp!=null && Number.isFinite(Number(st.off_snp)) && Number(st.off_snp) < PCARD_CONSISTENCY_MIN_SNAPS) return false;
+  return true;
 }
 
 let pcardOpen=false;
@@ -9093,8 +9140,15 @@ function pcardSeasonRows(weekly, pos){
     const snp = (('off_snp' in s)&&('tm_off_snp' in s)&&s.tm_off_snp>0)? Math.round(s.off_snp/s.tm_off_snp*1000)/10 : null;
     const rankKey = pcardRankKey();
     const rank = (gp>0 && s[rankKey]!=null) ? s[rankKey] : null;
-    rows.push({wk:wn, opp, isAway, gp, bye:(gp===0 && !opp), stats:s, team,
-      fpts: gp>0?pcardFptsFromStats(s):null, snp: gp>0?snp:null, rank});
+    if(pos && s.pos==null) s.pos=String(pos).toUpperCase();
+    // Sleeper's weekly payload never carries an opponent, so (gp===0 && !opp) is true for
+    // EVERY non-played week. A true bye is simply absent (null) from the payload; a row
+    // that exists with gp 0 but a team snap count / gms_active is an inactive, injured or
+    // DNP week and must be labelled so, or every injury reads as a "BYE" in the log.
+    const dnp = (gp===0) && Object.keys(s).some(k=>k!=='gp' && k!=='pos');
+    rows.push({wk:wn, opp, isAway, gp, bye:(gp===0), dnp, stats:s, team,
+      fpts: gp>0?pcardFptsFromStats(s):null, pprFpts: gp>0?pcardFptsFromStats(s, PCARD_PPR_SCORING):null,
+      snp: gp>0?snp:null, rank});
   }
   rows.sort((a,b)=>a.wk-b.wk);
   return rows;
@@ -9158,7 +9212,7 @@ function renderPcardSeason(season, rows, pos){
         const prev=schema.cols[i-1]; const sep=(prev&&prev.grp!==c.grp)?'<td></td>':'';
         return sep+`<td class="pcard-cell bye">–</td>`;
       }).join('');
-      return `<tr><td class="pcard-wk">${r.wk}</td><td class="pcard-opp">BYE</td>${spans}</tr>`;
+      return `<tr><td class="pcard-wk">${r.wk}</td><td class="pcard-opp" title="${r.dnp?'Did not play (inactive / injured) — not counted in the consistency grade':'Bye week'}">${r.dnp?'DNP':'BYE'}</td>${spans}</tr>`;
     }
     const ctx={ fpts:r.fpts, snp:r.snp, rank:r.rank };
     const vals=pcardRowValues(pos, r.stats, ctx);
@@ -9244,19 +9298,20 @@ function pcardConsistencyBenchmarkForPos(pos){
 function pcardSeasonConsistency(rows, pos){
   const benchmark = pcardConsistencyBenchmarkForPos(pos);
   if(!Number.isFinite(benchmark)) return null;
-  const vals = (rows||[])
-    .filter(r=>!r.bye && r.gp>0 && Number.isFinite(r.fpts))
-    .map(r=>Number(r.fpts));
+  const played = (rows||[]).filter(r=>!r.bye && r.gp>0 && Number.isFinite(r.fpts));
+  const counted = played.filter(pcardGameCountsForConsistency);
+  const vals = counted.map(r=>Number.isFinite(r.pprFpts) ? Number(r.pprFpts) : Number(r.fpts));
   const n = vals.length;
   if(n < 2) return null;
   const hits = vals.filter(v=>v >= benchmark).length;
   const rate = hits / n;
+  const skipped = played.length - n;
   let grade = 'F';
   if(rate >= 0.8) grade = 'A';
   else if(rate >= 0.7) grade = 'B';
   else if(rate >= 0.6) grade = 'C';
   else if(rate >= 0.5) grade = 'D';
-  return { grade, benchmark, hits, n, rate };
+  return { grade, benchmark, hits, n, rate, skipped };
 }
 
 function pcardFptsPerGameBadge(rows, pos){
@@ -9274,7 +9329,7 @@ function pcardFptsPerGameBadge(rows, pos){
 function pcardSeasonConsistencyBadge(rows, pos){
   const c = pcardSeasonConsistency(rows, pos);
   if(!c) return '';
-  const tip = `Consistency grade from benchmark hits (games played only): ${c.hits}/${c.n} games (${(c.rate*100).toFixed(1)}%) at or above ${c.benchmark.toFixed(1)} PPR points.`;
+  const tip = `Consistency grade from benchmark hits (games played only): ${c.hits}/${c.n} games (${(c.rate*100).toFixed(1)}%) at or above ${c.benchmark.toFixed(1)} full-PPR points. Scored in full PPR regardless of league settings so the grade means the same everywhere.${c.skipped?` ${c.skipped} game${c.skipped>1?'s':''} under ${PCARD_CONSISTENCY_MIN_SNAPS} snaps excluded.`:''}`;
   return ` <span class="pcard-cons-badge pcard-cons-${c.grade}" title="${escAttr(tip)}">Consistency ${c.grade}</span>`;
 }
 
@@ -9969,9 +10024,13 @@ function _rbProjectedChart(pid, normName){
     is_projection:true,
     baselineSeason:olProj.baselineSeason,
     run_score:olProj.projRunScore,
-    run_rank:(olProj.baselineRunRank!=null && !Number.isNaN(Number(olProj.baselineRunRank)))
-      ? Number(olProj.baselineRunRank)
-      : olProj.runRank,
+    // The rank must describe the same thing as the score: the projected line. runRank is
+    // talent-driven once league depth-chart coverage is complete and falls back to the
+    // baseline-season rank until then (see _olProjectedTeamNext). Showing the baseline
+    // rank next to a projected score is how an injury-wrecked 2025 line kept reading #32.
+    run_rank:olProj.runRank,
+    baseline_run_rank:(olProj.baselineRunRank!=null && !Number.isNaN(Number(olProj.baselineRunRank))) ? Number(olProj.baselineRunRank) : null,
+    ranks_stable:!!olProj.ranksStable,
     team:teamCode,
     totals:{attempts, yards, ypc:Number(ypc.toFixed(2)), success_rate:success, td:tds},
     lanes:_rbProjectedLanes(baseChart, olProj.line||{}, {attempts, ypc}),
@@ -10529,7 +10588,7 @@ function renderPcardRbFan(pid){
       <div class="rt-summary">${noteWrapHtml(`${t.attempts||0} carries`, { label:'Carries', value:String(t.attempts||0), source:'rb_rushing_fan', statKey:'attempts', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.ypc,2)} YPC`, { label:'Yards Per Carry', value:_rbNum(t.ypc,2), source:'rb_rushing_fan', statKey:'ypc', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.success_rate,1)}% success`, { label:'Success Rate', value:`${_rbNum(t.success_rate,1)}%`, source:'rb_rushing_fan', statKey:'success_rate', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</div>
     </div>
     ${runSc.score!=null || runSc.rank!=null ? `<div class="olc-overview">${noteWrapHtml(`<b>Cumulative Run Blocking Score: ${runSc.score!=null?runSc.score.toFixed(1):'—'}</b> ${_rbRankBadge(runSc.rank)}`, { label:'Cumulative Run Blocking Score', value:runSc.score!=null?runSc.score.toFixed(1):'—', source:'rb_offensive_line', statKey:'run_blocking_score', context:`${chart.team||notePlayer.team} offensive line · ${(_rbIsProjSeason(season) && chart.is_projection)?`${season} projections`:`${season}`}`, team:chart.team||notePlayer.team, relevance:'RB' }, 'note-tag-hit')}</div>` : ''}
-    ${chart.is_projection?`<div class="olc-overview"><b>${RB_PROJ_SEASON} Projection:</b> projected depth-chart starters' run grades drive the line cards and cumulative run score. Lane arrows preserve the back's latest directional profile and scale it to projected efficiency/volume.</div>`:''}
+    ${chart.is_projection?`<div class="olc-overview"><b>${RB_PROJ_SEASON} Projection:</b> projected depth-chart starters' run grades drive the line cards, cumulative run score and league rank${chart.baseline_run_rank!=null?` (${chart.baselineSeason}: #${chart.baseline_run_rank})`:''}. Lane arrows preserve the back's latest directional profile and scale it to projected efficiency/volume.</div>${typeof _olProjCoverageNote==='function'?_olProjCoverageNote():''}`:''}
     ${_rbFanSVG(chart, name, season, metric, notePlayer)}
     <div class="rbf-legend">
       <span><i style="background:#2fae4e"></i>Lane YPC above league avg</span>
@@ -10555,7 +10614,8 @@ function _rbRefreshOpenProjectedFanForTeam(team){
   try{
     const norm=_pcardRbNorm(pcardState.pid);
     const proj=_rbProjectedChart(pcardState.pid, norm);
-    if(!proj || _rbTeamCode(proj.team)!==_rbTeamCode(team)) return;
+    const stabilised=(typeof _olProjRankJustStabilised==='function') && _olProjRankJustStabilised(body);
+    if(!proj || (_rbTeamCode(proj.team)!==_rbTeamCode(team) && !stabilised)) return;
   }catch(e){ /* refresh anyway on lookup failure */ }
   body.innerHTML=renderPcardRbFan(pcardState.pid);
 }
@@ -10834,7 +10894,11 @@ function _olDepthChartSlotsByTeam(teamCode){
     if(typeof fetchEspnDepth==='function') fetchEspnDepth(teamCode).catch(()=>{});
     return null;
   }
-  if(!Array.isArray(rows) || !rows.length) return null;
+  // ESPN answered but published no depth chart for this team (preseason gaps, 404s). The
+  // current roster from the same fetch is still the best picture of who is on the team, so
+  // build a talent-first line from it rather than dropping to last season's snap leaders —
+  // which for an injury-wrecked line are exactly the backups we do not want.
+  if(!Array.isArray(rows) || !rows.length) return _olRosterFallbackSlots(teamCode);
 
   const bySlot={};
   for(const r of rows){
@@ -10917,7 +10981,62 @@ function _olDepthChartSlotsByTeam(teamCode){
   fill('RG','G');
 
   const hasAny=Object.values(out).some(v=>v&&v.name);
-  return hasAny ? out : null;
+  return hasAny ? out : _olRosterFallbackSlots(teamCode);
+}
+
+// Does a line object name at least one starter? _olLineByTeamSeason returns an all-null slot
+// map (truthy!) for a season it has no data for, so callers must test THIS, not the object.
+function _olLineHasStarters(line){
+  return !!line && ['LT','LG','C','RG','RT'].some(sl=>line[sl] && line[sl].name);
+}
+
+// Current ESPN roster → five starters, chosen by the player's own multi-year grade (then
+// experience), NOT by last season's snaps. Used only when ESPN has a roster but no depth
+// chart for the projection season.
+function _olRosterFallbackSlots(teamCode){
+  if(typeof espnRosters==='undefined') return null;
+  const roster=espnRosters[teamCode];
+  if(!Array.isArray(roster) || !roster.length) return null;
+  const latestByName=_olLatestPlayerPctileByName();
+  const latestSlot=_olLatestExplicitSlotByName();
+  const hints=_olGradesSlotHints();
+  const fam=(p)=>_olPosFamily(String(p||'').toUpperCase());
+  const cand=roster
+    .filter(p=>p && p.name && ['C','G','OG','T','OT','OL','LT','LG','RG','RT'].includes(String(p.pos||'').toUpperCase()))
+    .filter(p=>!/injured|reserve|pup|nfi/i.test(String(p.status||'')))
+    .map(p=>{
+      const nk=_olNormName(p.name);
+      const g=latestByName[nk]||{};
+      const pct=[g.pass_pctile, g.run_pctile].filter(v=>v!=null && !Number.isNaN(Number(v)));
+      const talent=pct.length ? pct.reduce((a,b)=>a+b,0)/pct.length : (g.market_pctile!=null ? Number(g.market_pctile) : null);
+      const preferred=hints.byTeam[`${teamCode}|${nk}`]||latestSlot[nk]||hints.global[nk]||null;
+      return {name:String(p.name).trim(), pos:String(p.pos||'').toUpperCase(), talent, exp:Number(p.exp||0), preferred,
+        lockFamily:_olSlotFamily(preferred)};
+    })
+    .sort((a,b)=>((b.talent==null?-1:b.talent)-(a.talent==null?-1:a.talent)) || (b.exp-a.exp) || a.name.localeCompare(b.name));
+  if(!cand.length) return null;
+  const out={LT:null,LG:null,C:null,RG:null,RT:null};
+  const used=new Set();
+  const fits=(c, slot)=>{
+    let f=fam(c.pos);
+    if(f==='OL' && c.lockFamily && c.lockFamily!=='OL') f=c.lockFamily;
+    const sf=_olSlotFamily(slot);
+    return f===sf || f==='OL';
+  };
+  const claim=(slot, pred)=>{
+    if(out[slot]) return;
+    const hit=cand.find(c=>!used.has(c.name) && fits(c,slot) && (!pred || pred(c)));
+    if(!hit) return;
+    used.add(hit.name);
+    out[slot]={name:hit.name, pos:hit.pos, snaps:0, prevSnaps:0, explicit:slot, preferred:slot, lockFamily:_olSlotFamily(slot)};
+  };
+  const slots=['LT','LG','C','RG','RT'];
+  for(const sl of slots) claim(sl, c=>c.preferred===sl);
+  claim('C', c=>fam(c.pos)==='C');
+  claim('LT', c=>fam(c.pos)==='T'); claim('RT', c=>fam(c.pos)==='T');
+  claim('LG', c=>fam(c.pos)==='G'); claim('RG', c=>fam(c.pos)==='G');
+  for(const sl of slots) claim(sl, null);
+  return Object.values(out).some(v=>v&&v.name) ? out : null;
 }
 
 function _olRosterSlotsBySeason(season, teamCode, preferredSlotByName){
@@ -11232,6 +11351,24 @@ function _olStarterTalent(rec, which){
   return {pct:Math.max(1, Math.min(99, v)), known:true};
 }
 
+// Fraction (0..1) of the projected starters who were on the baseline-season line.
+function _olLineContinuity(projLine, baseLine){
+  if(!_olLineHasStarters(projLine) || !_olLineHasStarters(baseLine)) return 0;
+  const prev=new Set();
+  for(const sl of ['LT','LG','C','RG','RT']){
+    const r=baseLine[sl];
+    if(r && r.name) prev.add(_olNormName(r.name));
+  }
+  let n=0, back=0;
+  for(const sl of ['LT','LG','C','RG','RT']){
+    const r=projLine[sl];
+    if(!r || !r.name) continue;
+    n++;
+    if(prev.has(_olNormName(r.name))) back++;
+  }
+  return n ? back/n : 0;
+}
+
 // Weighted team talent (0-100) across the five projected starters.
 function _olTeamTalent(line, which){
   const W = which==='pass' ? _OL_PASS_SLOT_W : _OL_RUN_SLOT_W;
@@ -11292,7 +11429,34 @@ function _olEnrichLineGrades(line){
   return out;
 }
 
+// Memoised on what can change the answer: which ESPN depth charts/rosters have arrived and
+// which seasons are loaded. Every caller (RB fan, QB OL tab, team Advanced chip, league OL
+// table) recomputes all 32 teams otherwise.
+let _olProjCache=null;
+function _olProjCacheKey(){
+  const d=(typeof espnDepth==='object' && espnDepth) ? Object.keys(espnDepth).filter(k=>espnDepth[k]!==undefined).length : 0;
+  const r=(typeof espnRosters==='object' && espnRosters) ? Object.keys(espnRosters).filter(k=>espnRosters[k]!==undefined).length : 0;
+  const s=(typeof NFLVERSE==='object' && NFLVERSE) ? Object.keys(NFLVERSE).join(',') : '';
+  return `${d}|${r}|${s}`;
+}
 function _olProjectedTeamNext(){
+  const key=_olProjCacheKey();
+  if(_olProjCache && _olProjCache.key===key) return _olProjCache.out;
+  const out=_olProjectedTeamNextUncached();
+  _olProjCache={key, out};
+  return out;
+}
+// Coverage summary for UI hints: how many teams have a projection-season line resolved.
+function _olProjCoverage(){
+  const all=_olProjectedTeamNext();
+  const teams=Object.keys(all);
+  const any=all[teams[0]];
+  if(!any) return {covered:0,total:0,stable:false,pending:0};
+  const pending=(typeof espnDepth==='object' && espnDepth)
+    ? teams.filter(t=>espnDepth[t]===undefined).length : teams.length;
+  return {covered:any.depthCovered||0, total:any.depthTotal||0, stable:!!any.ranksStable, pending};
+}
+function _olProjectedTeamNextUncached(){
   const out={};
   if(!(typeof NFLVERSE==='object' && NFLVERSE)) return out;
 
@@ -11319,21 +11483,35 @@ function _olProjectedTeamNext(){
   //    prior-season team Pass Score for scheme/coaching continuity. Talent dominates so an
   //    injury-ruined team result no longer drags a healthy projected line down.
   const teamRows={};
+  let depthCovered=0;
   for(const tm of allTeams){
     const teamCode=_olTeamCode(tm);
-    const rawLine=_olLineByTeamSeason(OL_PROJ_SEASON, teamCode) || _olLineByTeamSeason(baselineSeason, teamCode);
-    if(!rawLine) continue;
+    // The projection-season line comes from the live ESPN depth chart (or current roster).
+    // _olLineByTeamSeason hands back an all-null slot map — truthy — when that has not loaded
+    // yet, so test for real starters before falling back to last season's snap leaders.
+    let rawLine=_olLineByTeamSeason(OL_PROJ_SEASON, teamCode);
+    const depthKnown=_olLineHasStarters(rawLine);
+    if(!depthKnown) rawLine=_olLineByTeamSeason(baselineSeason, teamCode);
+    if(!_olLineHasStarters(rawLine)) continue;
+    if(depthKnown) depthCovered++;
     const line=_olEnrichLineGrades(rawLine);
     const tp=_olTeamTalent(line, 'pass');
     const tr=_olTeamTalent(line, 'run');
     const talentPass = tp?tp.talent:50;
     const talentRun  = tr?tr.talent:50;
 
+    // The prior-season team result only says something about THIS line to the extent the
+    // same five are back. Scale the 20% continuity anchor by how many projected starters
+    // were on last season's snap-leader line: a rebuilt (or finally healthy) line is judged
+    // on its starters, while an unchanged line keeps the scheme/cohesion signal.
+    const continuity = depthKnown ? _olLineContinuity(line, _olLineByTeamSeason(baselineSeason, teamCode)) : 1;
+    const anchorW = 0.20 * continuity;
+
     const passBaseRow=basePassTbl.teams[teamCode];
     const bs=(passBaseRow&&passBaseRow.values)?passBaseRow.values['Pass Score']:null;
     const baseScore=(bs!=null && !Number.isNaN(Number(bs)))?Number(bs):null;
     const projPassScore=(baseScore!=null)
-      ? Math.max(0, Math.min(100, 0.80*talentPass + 0.20*baseScore))
+      ? Math.max(0, Math.min(100, (1-anchorW)*talentPass + anchorW*baseScore))
       : talentPass;
 
     const runBaseRow0=baseRunTbl&&baseRunTbl.teams&&baseRunTbl.teams[teamCode];
@@ -11343,10 +11521,10 @@ function _olProjectedTeamNext(){
       ? Number(brsRun)
       : ((brsOverall!=null && !Number.isNaN(Number(brsOverall))) ? Number(brsOverall) : null);
     const projRunScore=(baseRunScore!=null)
-      ? Math.max(0, Math.min(100, 0.80*talentRun + 0.20*baseRunScore))
+      ? Math.max(0, Math.min(100, (1-anchorW)*talentRun + anchorW*baseRunScore))
       : talentRun;
 
-    teamRows[teamCode]={ team:teamCode, line, talentPass, talentRun, projPassScore, projRunScore, baseRow:passBaseRow };
+    teamRows[teamCode]={ team:teamCode, line, depthKnown, continuity, talentPass, talentRun, projPassScore, projRunScore, baseRow:passBaseRow };
   }
 
   const teamCodes=Object.keys(teamRows);
@@ -11360,10 +11538,13 @@ function _olProjectedTeamNext(){
   teamCodes.forEach(tm=>{ runScoreMap[tm]=teamRows[tm].projRunScore; });
   const runScoreRank=_olRankMap(runScoreMap, false);
   const n=teamCodes.length;
-  // Early renders can happen before the full league table is hydrated. Using projected
-  // ranks on partial coverage creates volatile #1/#2 flashes, so fall back to baseline
-  // season ranks until coverage is effectively complete.
-  const ranksStable = n >= 28;
+  // Early renders happen before the 32 ESPN depth charts have loaded. A team whose starters
+  // are known scores on real talent while the rest sit on last season's snap leaders (or at
+  // replacement level), so ranking a partially-hydrated league produces #1/#2 flashes and,
+  // worse, freezes the wrong rank on a card that never re-renders. Count teams whose
+  // PROJECTION-season line actually resolved — not `n`, which is always 32 — and fall back
+  // to baseline-season ranks until coverage is effectively complete.
+  const ranksStable = depthCovered >= Math.min(28, allTeams.length);
   const rankNum = (v)=> (v!=null && !Number.isNaN(Number(v))) ? Number(v) : null;
 
   // 3) Baseline league distributions for realistic projected metric values.
@@ -11412,9 +11593,22 @@ function _olProjectedTeamNext(){
       (tr.baseRow.ranks['Pass Score']!=null ? tr.baseRow.ranks['Pass Score'] : tr.baseRow.ranks['Overall Score']));
     const baseRunRank = rankNum(runBaseRow&&runBaseRow.ranks&&
       (runBaseRow.ranks['Run Score']!=null ? runBaseRow.ranks['Run Score'] : runBaseRow.ranks['Overall Score']));
+    // The QB OL tab reads its headline rank from passTbl ranks; keep those on the baseline
+    // ranks too while coverage is partial, so every surface tells the same story.
+    if(!ranksStable){
+      if(basePassRank!=null){
+        if(passRanks['Pass Score']!=null) passRanks['Pass Score']=basePassRank;
+        if(passRanks['Overall Score']!=null) passRanks['Overall Score']=rankNum(tr.baseRow&&tr.baseRow.ranks&&tr.baseRow.ranks['Overall Score'])||basePassRank;
+      }
+    }
     out[tm]={
       team:tm,
       baselineSeason,
+      depthKnown:!!tr.depthKnown,
+      continuity:tr.continuity,
+      depthCovered,
+      depthTotal:allTeams.length,
+      ranksStable,
       talentPass:tr.talentPass,
       talentRun:tr.talentRun,
       projPassScore:tr.projPassScore,
@@ -11635,6 +11829,7 @@ function renderPcardQbOl(pid){
       + `<div class="olc-metric"><label>${proj.baselineSeason}</label><b>${noteWrapHtml(escHtml(_olFmtMetric('Overall Score', baseScore)), { label:`${proj.baselineSeason} Pass Protection Score`, value:`${_olFmtMetric('Overall Score', baseScore)}${baseRank!=null?` · league rank #${baseRank}`:''}`, source:'qb_ol_context', statKey:'base_overall_score', context:`${teamDisplayName(teamCode)||teamCode} pass protection · ${proj.baselineSeason}`, player:notePlayer, team:teamCode, relevance:'QB', nav:{ type:'advanced', team:teamCode, season:String(proj.baselineSeason) } }, 'note-tag-hit')}</b><small>${_olRankBadge(baseRank)}</small></div>`
       + `</div>`;
     metricColsUse=metricColsUse.filter(c=>c!=='Overall Score');
+    projOverallHtml += _olProjCoverageNote();
   }
 
   const teamMetrics=metricColsUse.map(c=>{
@@ -11688,9 +11883,32 @@ function _olRefreshOpenQbOlForTeam(team){
     const p=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[pcardState.pid])||{};
     const norm=ecrNormName(p.name||'');
     const tm=_qbTeamForSeason(pcardState.pid,OL_PROJ_SEASON,norm,p.team||'')||_qbAnyKnownTeam(pcardState.pid,norm,p.team||'');
-    if(_olTeamCode(team)!==_olTeamCode(tm)) return;
+    // The league RANK depends on all 32 lines, not just this team's. Re-render for this
+    // team's own chart, and again once league coverage is complete enough for projected
+    // ranks to replace the baseline ranks shown until then.
+    if(_olTeamCode(team)!==_olTeamCode(tm) && !_olProjRankJustStabilised(body)) return;
   }catch(e){ /* refresh anyway on lookup failure */ }
   body.innerHTML=renderPcardQbOl(pcardState.pid);
+}
+
+// True (once) when projected ranks have become stable since this card body was last painted.
+function _olProjRankJustStabilised(body){
+  const cov=_olProjCoverage();
+  if(!cov.stable) return false;
+  if(body.dataset.olRanksStable==='1') return false;
+  body.dataset.olRanksStable='1';
+  return true;
+}
+
+// Small caption while depth charts are still loading, so a baseline-season rank is never
+// mistaken for the projection.
+function _olProjCoverageNote(){
+  const cov=_olProjCoverage();
+  if(!cov.total || cov.stable) return '';
+  if(cov.pending>0){
+    return `<div class="olc-overview olc-proj-pending">Loading ${OL_PROJ_SEASON} depth charts (${cov.covered}/${cov.total}) — league ranks show last season until projected starters are known for the whole league.</div>`;
+  }
+  return `<div class="olc-overview olc-proj-pending">${OL_PROJ_SEASON} depth charts unavailable for ${cov.total-cov.covered} of ${cov.total} teams (ESPN did not answer) — league ranks show last season. Scores still reflect this line's projected starters.</div>`;
 }
 
 function renderPcardOlGrades(pid){
@@ -12226,7 +12444,7 @@ function fmtMillions(m){
   return '$'+s+'M';
 }
 // ─────────────────────────────────────────────────────────────────────────────
-// College prospect panel (rookie player cards)
+// College prospect panel (rookie player cards — and every projected veteran drafted since 2015)
 // ─────────────────────────────────────────────────────────────────────────────
 // A rookie has no NFL snaps, so their card's NFL tab is empty and the College tab has
 // historically shown a raw ESPN box score — attempts, yards, TDs, longs. Those numbers can't
@@ -12458,13 +12676,17 @@ function renderCfbProspect(pid){
 
   // School/conference/final season: not a stat, but the thing a note most often needs to say
   // alongside one ("dominant, but in the MAC").
-  const metaBits = [prof.college, prof.conf, prof.final ? `final season ${prof.final}` : '']
+  // Veterans carry their draft class (profiles exist for every projected player drafted
+  // since 2015, not only rookies), so the panel says whose college career this is.
+  const clsTxt = prof.class ? `${prof.class} draft class` : '';
+  const metaBits = [prof.college, prof.conf, prof.final ? `final season ${prof.final}` : '', clsTxt]
     .filter(Boolean);
   const metaTxt = metaBits.join(' · ');
   const metaInner = [
     prof.college ? escHtml(prof.college) : '',
     prof.conf ? `<span class="cfb-meta-sep">·</span>${escHtml(prof.conf)}` : '',
     prof.final ? `<span class="cfb-meta-sep">·</span>final season ${escHtml(prof.final)}` : '',
+    clsTxt ? `<span class="cfb-meta-sep">·</span>${escHtml(clsTxt)}` : '',
   ].join('');
   const metaTagged = (typeof noteWrapHtml==='function' && metaTxt)
     ? noteWrapHtml(metaInner, Object.assign({}, base, {
@@ -16823,6 +17045,7 @@ function rankingsRenderCacheKey(teamScoped){
     String(teamScoped?(currentTeam||''):'all'),
     String(mobileNarrow?1:0),
     String(_rankingsMobileAutoFullPass?1:0),
+    String(typeof tcOwnerStamp==='function' ? tcOwnerStamp() : ''),   // owner column follows the synced league
   ].join('|');
 }
 
@@ -16969,6 +17192,8 @@ function renderRankings(){
   // Dynasty tab only: three extra columns (Age / APY / Free-Agency year) right after TM.
   // FA is highlighted red when it's the very next season (contracts expiring soonest).
   const isDynasty = rankFormat==='dynasty' || rankFormat==='dynasty_superflex';
+  // Synced league → an OWNER column (manager handle) right after TM, on every row.
+  const ownerActive = (typeof tcOwnerActive==='function' && typeof tcOwnerPill==='function') ? tcOwnerActive() : false;
   const nextYear = PROJ_SEASON + 1;
   // Advanced (SumerSports) view: reference-season only. When active, the rush/rec/pass stat
   // columns are replaced by this season's Sumer metrics for the selected position (or the
@@ -17022,7 +17247,7 @@ function renderRankings(){
       }
     }
   }
-  const totalCols = 7 + (paceActive?3:0) + (isDynasty?3:0) + nStatCols;  // ecr,tier,fpts(or pace group),vor,pos,name,tm + stat cols
+  const totalCols = 7 + (paceActive?3:0) + (isDynasty?3:0) + (ownerActive?1:0) + nStatCols;  // ecr,tier,fpts(or pace group),vor,pos,name,tm(+owner) + stat cols
   const pickLineRow=(round)=>`<tr class="rank-pickline"><td colspan="${totalCols}">
     <span class="rank-pickline-lbl">▸ Your pick ${round==1?'(next up)':`#${round}`} projected here</span></td></tr>`;
 
@@ -17145,6 +17370,7 @@ function renderRankings(){
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
     <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${rankHeadshotSlotHtml(p)}<span class="rank-name">${pNameText}</span></div></td>
     <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" alt="${pTeamAttr}" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${pTeamText}</td>
+    ${ownerActive?`<td class="c-own">${tcOwnerPill(p.player_id, p.name)}</td>`:''}
     ${contractCells}
     ${statCells}
   </tr>`);
@@ -17268,6 +17494,7 @@ function renderRankings(){
           ? `${th('paceBase','YOUR','PROJ','c-pace-base')}${th('pace','PACE','17G')}${th('paceDelta','Δ','','c-pace-delta')}${th('paceGp','GP','','c-pace-gp')}`
           : th('fpts','FPTS','')}${th('vor','VOR','','c-vor')}
         ${th('pos','POS','')}${th('name','PLAYER','','c-player')}${th('team','TM','','c-team')}
+        ${ownerActive?`<th class="c-own" title="Rostered by (synced league)"><div class="th-stack">OWNER</div></th>`:''}
         ${isDynasty?`${th('age','AGE','','c-age',true)}${th('apy','APY','','c-apy')}${th('fa','FA','','c-fa')}`:''}
         ${advActive
           ? sumerView.cols.map((label,ci)=>{const key='sumer:'+label;const on=rankSortKey===key;
@@ -20409,8 +20636,9 @@ function psRender(q){
     return `<button class="ps-row${i===0?' ps-active':''}" data-pid="${escAttr(e.pid)}" data-name="${escAttr(e.name)}" data-pos="${escAttr(e.pos)}" data-team="${escAttr(e.team)}" data-notes="${note ? note.count : 0}"
                     onclick="psPick(this)">
       ${img}
-      <span class="ps-nm">${nameText}</span>
-      <span class="ps-meta">${typeof tcOwnerChip==='function'?tcOwnerChip(e.pid, e.name, 'compact'):''}${noteBadge}${logo}<span class="ps-pos ps-pos-${e.pos}">${posText}</span></span>
+      <span class="ps-pos ps-pos-${e.pos}">${posText}</span>
+      <span class="ps-nm"><span class="ps-nm-main">${nameText}${noteBadge}</span><span class="ps-nm-sub">${logo}${e.team?escHtml(String(e.team).toUpperCase()):(isDef?'':'FA')}</span></span>
+      ${typeof tcOwnerPill==='function'?tcOwnerPill(e.pid, e.name):''}
     </button>`;
   }).join('');
 }
@@ -22684,15 +22912,19 @@ function tcOwnerOf(pid, name){
 // `variant` tunes the density for where it sits:
 //   'full'    player-card hero — team name plus the manager's handle
 //   'compact' search rows and tables — team name only, since space is tight
+//   'pill'    projection rows / rankings / search — the MANAGER's handle (what you scan a
+//             league for: "is this one of mine, or Sengi12's?"), team name in the tooltip,
+//             no left margin so the row can push it to the right edge
 function tcOwnerChip(pid, name, variant){
   const rec = tcOwnerOf(pid, name);
   if(!rec) return '';
-  const compact = variant === 'compact';
-  const label = compact ? rec.teamName : rec.teamName;
+  const compact = variant === 'compact' || variant === 'pill';
+  const pill = variant === 'pill';
+  const label = pill ? (rec.owner || rec.teamName) : rec.teamName;
   const who = (!compact && rec.owner) ? `<span class="tc-own-mgr">@${escHtml(rec.owner)}</span>` : '';
   const title = rec.mine
     ? `On your team (${rec.teamName}) — open it in the League Analyzer`
-    : `Rostered by ${rec.owner || rec.teamName} — open that roster in the League Analyzer`;
+    : `Rostered by ${rec.owner || rec.teamName}${rec.owner && rec.teamName ? ` (${rec.teamName})` : ''} — open that roster in the League Analyzer`;
   // stopPropagation: these chips sit inside rows and cards that already have their own click
   // handler (open the player card, pick a search result). Without it, jumping to a roster
   // would also fire whatever the surrounding element does.
@@ -22701,9 +22933,13 @@ function tcOwnerChip(pid, name, variant){
   // an assumption, since the value ultimately originates from a provider's API.
   const rid = Number(rec.rosterId);
   if(!isFinite(rid)) return '';
-  return `<button class="tc-own-chip${rec.mine?' tc-own-mine':''}${compact?' tc-own-sm':''}"
+  // A <span role="button">, not a <button>: the search rows and several projection rows ARE
+  // buttons, and the HTML parser closes an open <button> the moment it meets another one —
+  // a nested chip would be ejected out of its row onto the next line.
+  return `<span class="tc-own-chip${rec.mine?' tc-own-mine':''}${compact?' tc-own-sm':''}${pill?' tc-own-pill':''}" role="button" tabindex="0"
             onclick="event.stopPropagation();tcOwnerJump(${rid})"
-            title="${escAttr(title)}">${rec.mine?'★ ':''}${escHtml(label)}${who}</button>`;
+            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();tcOwnerJump(${rid});}"
+            title="${escAttr(title)}">${rec.mine?'★ ':''}${escHtml(label)}${who}</span>`;
 }
 
 // Jump to this roster in the League Analyzer. Closes the player card first when one is open,
@@ -22722,6 +22958,21 @@ function tcOwnerJump(rosterId){
   if(typeof renderContent === 'function') renderContent();
   laViewTeam(rosterId);
   if(typeof syncAppChrome === 'function') syncAppChrome();
+}
+
+// Is a league synced right now? Lets table renderers add/remove the owner column as a whole
+// rather than leaving an empty column when nothing is linked.
+function tcOwnerActive(){
+  return !!tcOwnerIndex();
+}
+// Cache stamp for renderers that memoise their HTML (rankings): changes when the snapshot does.
+function tcOwnerStamp(){
+  tcOwnerIndex();
+  return _tcOwnStamp || '';
+}
+// Owner pill for a projection row: manager handle, pushed to the right of the name.
+function tcOwnerPill(pid, name){
+  return tcOwnerChip(pid, name, 'pill');
 }
 // ═════════════════════════════════════════════════════════════════════════════
 // Load a prebuilt seed file (triplecrown_seed.json from build_seed.py)

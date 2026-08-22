@@ -188,6 +188,68 @@ chk(b.loc["00-0000", "team_pass_pctile"] == 95.0, "team layer is reported in its
 chk(b.loc["00-0011", "pass_pctile"] > b.loc["00-0000", "pass_pctile"],
     "individual quality still dominates a same-phase comparison across lines")
 
+# ── played-in team context ────────────────────────────────────────────────────────
+print("\n=== blend_phase_grades: the unit a player actually played in, scaled by exposure ===")
+# Same two lines. Player 00-0000 is a DET starter who missed most of the latest season;
+# player 00-0001 is a full-time DET starter. Pooled context says DET pass = 95 for both.
+ctx = pd.DataFrame({
+    "pass_ctx": [40.0, 95.0], "run_ctx": [50.0, 5.0], "exposure": [0.30, 1.00],
+}, index=["00-0000", "00-0001"])
+bc = olp.blend_phase_grades(base, tp, trun, context=ctx)
+ind0 = base.loc["00-0000", "ol_pctile"]
+full0 = ind0 * (1 - olp.TEAM_BLEND) + 40.0 * olp.TEAM_BLEND
+scaled0 = ind0 * (1 - olp.TEAM_BLEND * 0.30) + 40.0 * olp.TEAM_BLEND * 0.30
+chk(abs(bc.loc["00-0000", "pass_pctile"] - round(scaled0, 1)) <= 0.11,
+    "a player who missed most of the window gets his own context at a fraction of the blend")
+chk(abs(bc.loc["00-0000", "pass_pctile"] - ind0) < abs(full0 - ind0),
+    "...which moves him less than the pooled roster number would")
+ind1 = base.loc["00-0001", "ol_pctile"]
+chk(abs(bc.loc["00-0001", "pass_pctile"] - round(ind1 * (1 - olp.TEAM_BLEND) + 95.0 * olp.TEAM_BLEND, 1)) <= 0.11,
+    "a full-time starter keeps the full blend against his own unit's result")
+chk(bc.loc["00-0002", "pass_pctile"] == b.loc["00-0002", "pass_pctile"],
+    "a player with no snap record falls back to the pooled roster context unchanged")
+chk(bc.loc["00-0000", "team_ctx_exposure"] == 0.3 and bc.loc["00-0000", "team_ctx_pass_pctile"] == 40.0,
+    "what entered the blend is reported alongside the pooled team layer")
+chk(bc.loc["00-0000", "team_pass_pctile"] == 95.0, "pooled team layer still reported as before")
+
+print("\n=== player_team_context: snap-weighted, per team-season ===")
+# Two seasons. Player A: 100% of 2024 on LAC (a good line), 40% of 2025 on LAC (a bad one).
+# Player B: every snap of both seasons on the bad line.
+import numpy as _np
+_sc_rows = []
+def _season(s, pid, team, pct, weeks):
+    for w in weeks:
+        _sc_rows.append({"season": s, "game_type": "REG", "week": w, "pfr_player_id": pid,
+                         "position": "T", "team": team, "offense_pct": pct, "offense_snaps": 60})
+for w in range(1, 18):
+    _season(2024, "SlatRa00", "LAC", 1.0, [w]); _season(2025, "PipkTr00", "LAC", 1.0, [w])
+    _season(2024, "PipkTr00", "LAC", 1.0, [w])
+for w in range(1, 8):
+    _season(2025, "SlatRa00", "LAC", 1.0, [w])       # 7 of 17 games, then out
+_snaps = pd.DataFrame(_sc_rows)
+_orig_pq = olp.pq
+def _fake_pq(name, url, columns=None):
+    if name.startswith("snaps_"):
+        s = int(name.split("_")[1].split(".")[0])
+        return _snaps[_snaps.season == s].copy()
+    raise RuntimeError("offline")
+olp.pq = _fake_pq
+olp._pfr_to_gsis = lambda: {"SlatRa00": "00-0036", "PipkTr00": "00-0034"}
+tps = pd.DataFrame({"press_pctile": [80.0, 10.0]},
+                   index=pd.MultiIndex.from_tuples([("LAC", 2024), ("LAC", 2025)]))
+trs = pd.DataFrame({"aly_pctile": [70.0, 20.0]},
+                   index=pd.MultiIndex.from_tuples([("LAC", 2024), ("LAC", 2025)]))
+try:
+    pc = olp.player_team_context([2024, 2025], 2025, tps, trs)
+finally:
+    olp.pq = _orig_pq
+chk(set(pc.index) == {"00-0036", "00-0034"}, "context keyed by gsis id")
+chk(pc.loc["00-0034", "pass_ctx"] < pc.loc["00-0036", "pass_ctx"],
+    "the man who played every snap of the bad season carries more of it than the one who missed most of it")
+chk(pc.loc["00-0034", "exposure"] == 1.0, "a full-time starter is fully exposed")
+chk(0.4 < pc.loc["00-0036", "exposure"] < 0.9, "a 7-game season lowers exposure without zeroing it")
+chk(pc.loc["00-0036", "pass_ctx"] > 10.0, "...and his context is not simply the latest team number")
+
 # ── ESPN anchor data ───────────────────────────────────────────────────────────────
 print("\n=== espn_win_rates: the validation benchmark ships with the repo ===")
 e = olp.espn_win_rates()

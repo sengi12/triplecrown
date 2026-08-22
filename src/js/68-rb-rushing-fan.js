@@ -134,9 +134,13 @@ function _rbProjectedChart(pid, normName){
     is_projection:true,
     baselineSeason:olProj.baselineSeason,
     run_score:olProj.projRunScore,
-    run_rank:(olProj.baselineRunRank!=null && !Number.isNaN(Number(olProj.baselineRunRank)))
-      ? Number(olProj.baselineRunRank)
-      : olProj.runRank,
+    // The rank must describe the same thing as the score: the projected line. runRank is
+    // talent-driven once league depth-chart coverage is complete and falls back to the
+    // baseline-season rank until then (see _olProjectedTeamNext). Showing the baseline
+    // rank next to a projected score is how an injury-wrecked 2025 line kept reading #32.
+    run_rank:olProj.runRank,
+    baseline_run_rank:(olProj.baselineRunRank!=null && !Number.isNaN(Number(olProj.baselineRunRank))) ? Number(olProj.baselineRunRank) : null,
+    ranks_stable:!!olProj.ranksStable,
     team:teamCode,
     totals:{attempts, yards, ypc:Number(ypc.toFixed(2)), success_rate:success, td:tds},
     lanes:_rbProjectedLanes(baseChart, olProj.line||{}, {attempts, ypc}),
@@ -694,7 +698,7 @@ function renderPcardRbFan(pid){
       <div class="rt-summary">${noteWrapHtml(`${t.attempts||0} carries`, { label:'Carries', value:String(t.attempts||0), source:'rb_rushing_fan', statKey:'attempts', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.ypc,2)} YPC`, { label:'Yards Per Carry', value:_rbNum(t.ypc,2), source:'rb_rushing_fan', statKey:'ypc', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.success_rate,1)}% success`, { label:'Success Rate', value:`${_rbNum(t.success_rate,1)}%`, source:'rb_rushing_fan', statKey:'success_rate', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</div>
     </div>
     ${runSc.score!=null || runSc.rank!=null ? `<div class="olc-overview">${noteWrapHtml(`<b>Cumulative Run Blocking Score: ${runSc.score!=null?runSc.score.toFixed(1):'—'}</b> ${_rbRankBadge(runSc.rank)}`, { label:'Cumulative Run Blocking Score', value:runSc.score!=null?runSc.score.toFixed(1):'—', source:'rb_offensive_line', statKey:'run_blocking_score', context:`${chart.team||notePlayer.team} offensive line · ${(_rbIsProjSeason(season) && chart.is_projection)?`${season} projections`:`${season}`}`, team:chart.team||notePlayer.team, relevance:'RB' }, 'note-tag-hit')}</div>` : ''}
-    ${chart.is_projection?`<div class="olc-overview"><b>${RB_PROJ_SEASON} Projection:</b> projected depth-chart starters' run grades drive the line cards and cumulative run score. Lane arrows preserve the back's latest directional profile and scale it to projected efficiency/volume.</div>`:''}
+    ${chart.is_projection?`<div class="olc-overview"><b>${RB_PROJ_SEASON} Projection:</b> projected depth-chart starters' run grades drive the line cards, cumulative run score and league rank${chart.baseline_run_rank!=null?` (${chart.baselineSeason}: #${chart.baseline_run_rank})`:''}. Lane arrows preserve the back's latest directional profile and scale it to projected efficiency/volume.</div>${typeof _olProjCoverageNote==='function'?_olProjCoverageNote():''}`:''}
     ${_rbFanSVG(chart, name, season, metric, notePlayer)}
     <div class="rbf-legend">
       <span><i style="background:#2fae4e"></i>Lane YPC above league avg</span>
@@ -720,7 +724,8 @@ function _rbRefreshOpenProjectedFanForTeam(team){
   try{
     const norm=_pcardRbNorm(pcardState.pid);
     const proj=_rbProjectedChart(pcardState.pid, norm);
-    if(!proj || _rbTeamCode(proj.team)!==_rbTeamCode(team)) return;
+    const stabilised=(typeof _olProjRankJustStabilised==='function') && _olProjRankJustStabilised(body);
+    if(!proj || (_rbTeamCode(proj.team)!==_rbTeamCode(team) && !stabilised)) return;
   }catch(e){ /* refresh anyway on lookup failure */ }
   body.innerHTML=renderPcardRbFan(pcardState.pid);
 }

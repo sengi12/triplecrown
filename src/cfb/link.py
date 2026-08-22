@@ -141,8 +141,19 @@ def _cache_remote(url, label=None):
         try:
             urllib.request.urlretrieve(url, path)
         except Exception:
-            print(" unavailable")
-            raise
+            # github.com/<org>/<repo>/raw/<ref>/ is a redirect to raw.githubusercontent.com;
+            # some proxies refuse the redirect but pass the destination. Try it directly
+            # before giving up — same bytes, same cache path.
+            m = re.match(r"https://github\.com/([^/]+)/([^/]+)/raw/([^/]+)/(.+)$", url)
+            if not m:
+                print(" unavailable")
+                raise
+            alt = f"https://raw.githubusercontent.com/{m.group(1)}/{m.group(2)}/{m.group(3)}/{m.group(4)}"
+            try:
+                urllib.request.urlretrieve(alt, path)
+            except Exception:
+                print(" unavailable")
+                raise
         print(" ok")
     return path
 
@@ -529,6 +540,58 @@ def rookie_pool(players, draft_class=None, positions=SKILL_POSITIONS, max_search
     return out
 
 
+# College play-by-play exists from 2014, so the earliest class whose college seasons can be
+# read at all is 2015 (one season) and the first with a full four-season window is 2018.
+EARLIEST_LINKABLE_CLASS = 2015
+
+
+def draft_class_of(player, season):
+    """The NFL draft class (rookie year) of a Sleeper player record, or None.
+
+    Sleeper stamps `metadata.rookie_year` on some players and `years_exp` on nearly all of
+    them. years_exp counts completed NFL seasons, so in the 2026 league year a player with
+    years_exp 3 was a 2023 rookie. rookie_year wins where both are present and sane.
+    """
+    ry = (player.get("metadata") or {}).get("rookie_year") or ""
+    if str(ry).isdigit() and 2000 < int(ry) <= int(season):
+        return int(ry)
+    ye = player.get("years_exp")
+    if ye is None or not str(ye).lstrip("-").isdigit():
+        return None
+    ye = int(ye)
+    if ye < 0:
+        return None
+    return int(season) - ye
+
+
+def class_pools(players, season, positions=SKILL_POSITIONS, only_pids=None,
+                max_search_rank=None, min_class=EARLIEST_LINKABLE_CLASS):
+    """{draft_class: [player records]} for every fantasy-relevant skill player, by rookie year.
+
+    The rookie class is what the linker has always handled; this just buckets the rest of the
+    player pool the same way so each bucket can be linked against the college rosters of ITS
+    years. `only_pids` restricts to the players the seed actually ships (the projection pool),
+    so a 2016 practice-squad body does not cost a four-season play-by-play scan.
+    """
+    out = {}
+    for pid, p in players.items():
+        if only_pids is not None and str(pid) not in only_pids:
+            continue
+        if not p.get("active"):
+            continue
+        if positions and p.get("position") not in positions:
+            continue
+        if max_search_rank is not None and (p.get("search_rank") or 10 ** 9) > max_search_rank:
+            continue
+        cls = draft_class_of(p, season)
+        if cls is None or cls < min_class:
+            continue
+        rec = dict(p)
+        rec["player_id"] = pid
+        out.setdefault(cls, []).append(rec)
+    return out
+
+
 def draft_pool(draft_class, positions=SKILL_POSITIONS):
     """Skill players drafted in one year, from nflverse draft_picks, as linkable records.
 
@@ -559,14 +622,21 @@ def draft_pool(draft_class, positions=SKILL_POSITIONS):
     return out
 
 
-def _link_pool(pool, draft_class, cache_path, refresh=False):
-    """Link a list of player records, with the resolved map cached to disk."""
+def _link_pool(pool, draft_class, cache_path, refresh=False, espn_seasons=None):
+    """Link a list of player records, with the resolved map cached to disk.
+
+    `espn_seasons`: NFL seasons whose nflverse rosters supply espn_ids. The draft-class year is
+    always included; a veteran bucket also passes the current season, whose roster names him
+    with an id far more often than the one from his rookie year.
+    """
     if os.path.exists(cache_path) and not refresh:
         with open(cache_path) as f:
             return json.load(f)
     idx = roster_index(range(draft_class - LOOKBACK_SEASONS, draft_class))
     overrides = load_overrides()
-    espn_ids = espn_id_index(draft_class)
+    espn_ids = {}
+    for s in sorted({int(draft_class), *(espn_seasons or [])}):
+        espn_ids.update(espn_id_index(s))
     out = {}
     for p in pool:
         link = link_player(p, idx, draft_class, overrides, espn_ids)
@@ -596,6 +666,25 @@ def build_link_map(players, draft_class, positions=SKILL_POSITIONS, max_search_r
         if (refresh or not os.path.exists(cache_path)) else []
     return _link_pool(pool, draft_class, cache_path, refresh)
     return out
+
+
+def build_class_link_map(pool, draft_class, season, refresh=False):
+    """{sleeper_pid: link} for one rookie-year bucket of the current player pool.
+
+    Cached per class to cache/cfb/links/link_<class>.json — the same file the rookie build
+    uses for the current class, so the two never disagree about a player. A bucket whose
+    membership grew since the cache was written is re-linked (a cached map that lacks a pid
+    in the pool is stale, not authoritative).
+    """
+    cache_path = os.path.join(_cache_subdir("links"), f"link_{draft_class}.json")
+    if not refresh and os.path.exists(cache_path):
+        with open(cache_path) as f:
+            cached = json.load(f)
+        if all(str(p["player_id"]) in cached for p in pool):
+            return {str(p["player_id"]): cached[str(p["player_id"])] for p in pool}
+        refresh = True
+    return _link_pool(pool, draft_class, cache_path, refresh,
+                      espn_seasons=[int(season)] if int(season) != int(draft_class) else None)
 
 
 def report(link_map):

@@ -147,6 +147,7 @@ function rankingsRenderCacheKey(teamScoped){
     String(teamScoped?(currentTeam||''):'all'),
     String(mobileNarrow?1:0),
     String(_rankingsMobileAutoFullPass?1:0),
+    String(typeof tcOwnerStamp==='function' ? tcOwnerStamp() : ''),   // owner column follows the synced league
   ].join('|');
 }
 
@@ -293,6 +294,8 @@ function renderRankings(){
   // Dynasty tab only: three extra columns (Age / APY / Free-Agency year) right after TM.
   // FA is highlighted red when it's the very next season (contracts expiring soonest).
   const isDynasty = rankFormat==='dynasty' || rankFormat==='dynasty_superflex';
+  // Synced league → an OWNER column (manager handle) right after TM, on every row.
+  const ownerActive = (typeof tcOwnerActive==='function' && typeof tcOwnerPill==='function') ? tcOwnerActive() : false;
   const nextYear = PROJ_SEASON + 1;
   // Advanced (SumerSports) view: reference-season only. When active, the rush/rec/pass stat
   // columns are replaced by this season's Sumer metrics for the selected position (or the
@@ -346,7 +349,7 @@ function renderRankings(){
       }
     }
   }
-  const totalCols = 7 + (paceActive?3:0) + (isDynasty?3:0) + nStatCols;  // ecr,tier,fpts(or pace group),vor,pos,name,tm + stat cols
+  const totalCols = 7 + (paceActive?3:0) + (isDynasty?3:0) + (ownerActive?1:0) + nStatCols;  // ecr,tier,fpts(or pace group),vor,pos,name,tm(+owner) + stat cols
   const pickLineRow=(round)=>`<tr class="rank-pickline"><td colspan="${totalCols}">
     <span class="rank-pickline-lbl">▸ Your pick ${round==1?'(next up)':`#${round}`} projected here</span></td></tr>`;
 
@@ -469,6 +472,7 @@ function renderRankings(){
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
     <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${rankHeadshotSlotHtml(p)}<span class="rank-name">${pNameText}</span></div></td>
     <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" alt="${pTeamAttr}" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${pTeamText}</td>
+    ${ownerActive?`<td class="c-own">${tcOwnerPill(p.player_id, p.name)}</td>`:''}
     ${contractCells}
     ${statCells}
   </tr>`);
@@ -592,6 +596,7 @@ function renderRankings(){
           ? `${th('paceBase','YOUR','PROJ','c-pace-base')}${th('pace','PACE','17G')}${th('paceDelta','Δ','','c-pace-delta')}${th('paceGp','GP','','c-pace-gp')}`
           : th('fpts','FPTS','')}${th('vor','VOR','','c-vor')}
         ${th('pos','POS','')}${th('name','PLAYER','','c-player')}${th('team','TM','','c-team')}
+        ${ownerActive?`<th class="c-own" title="Rostered by (synced league)"><div class="th-stack">OWNER</div></th>`:''}
         ${isDynasty?`${th('age','AGE','','c-age',true)}${th('apy','APY','','c-apy')}${th('fa','FA','','c-fa')}`:''}
         ${advActive
           ? sumerView.cols.map((label,ci)=>{const key='sumer:'+label;const on=rankSortKey===key;

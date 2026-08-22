@@ -144,6 +144,8 @@ SOURCES = {
     # whatever the phase. The honest trigger would be "the rookie id set changed" rather than
     # elapsed time — the cache key already encodes precisely that — but this scheduler has no
     # event triggers, and at 0.02s a wasted tick costs nothing worth engineering around.
+    # Since the veteran extension (profiles.build_all) the block is one bucket per rookie
+    # year, each cached on its own id set — a roster move only rebuilds the class it touches.
     "cfb": {
         "paths": ["cfb"],
         "every": 90 * DAY,

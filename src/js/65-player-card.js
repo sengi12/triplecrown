@@ -149,8 +149,8 @@ function pcardRowValues(pos, s, ctx){
   return base;
 }
 // Compute a single game's fantasy points from the user's scoring settings.
-function pcardFptsFromStats(s){
-  s=s||{}; const sc=scoringSettings;
+function pcardFptsFromStats(s, scoringOverride){
+  s=s||{}; const sc=scoringOverride||scoringSettings;
   let pts=0;
   // `mult` is the *_yards_points multiplier calcFpts already applies; a league that scores no
   // points for yards carries 0 there (see applySleeperScoring).
@@ -161,11 +161,36 @@ function pcardFptsFromStats(s){
   pts += perYd(sc.rushing_yards_yardage, s.rush_yd||0, sc.rushing_yards_points);
   pts += (s.rush_td||0)*(sc.rushing_touchdowns||0);
   pts += perYd(sc.receiving_yards_yardage, s.rec_yd||0, sc.receiving_yards_points);
-  pts += (s.rec||0)*(sc.receptions||0);
+  // Same TE-premium bonus calcFpts applies to season projections (s.pos is stamped by
+  // pcardSeasonRows); a TEP league previously undercounted every TE game here.
+  pts += (s.rec||0)*((sc.receptions||0) + (String(s.pos||'').toUpperCase()==='TE' ? (sc.receptions_te_bonus||0) : 0));
   pts += (s.rec_td||0)*(sc.receiving_touchdowns||0);
   pts += (s.pass_att!=null?(s.pass_att*(sc.passing_attempts||0)):0);
+  pts += (s.pass_cmp!=null?(s.pass_cmp*(sc.passing_completions||0)):0);
+  pts += (s.rush_att!=null?(s.rush_att*(sc.rushing_attempts||0)):0);
   pts += (s.fum_lost||0)*(sc.fumbles_lost||0);
   return Math.round(pts*100)/100;
+}
+// Fixed full-PPR scoring the consistency benchmarks are defined in. The grade is meant to
+// read the same in every league, so it is scored here rather than in the league's settings
+// (a half-PPR or standard league was silently grading every receiver against a bar set one
+// format higher than his points were computed in).
+const PCARD_PPR_SCORING = {
+  passing_yards_yardage:25, passing_yards_points:1, passing_touchdowns:4, interceptions_thrown:-2,
+  passing_attempts:0, passing_completions:0,
+  rushing_yards_yardage:10, rushing_yards_points:1, rushing_touchdowns:6, rushing_attempts:0,
+  receiving_yards_yardage:10, receiving_yards_points:1, receiving_touchdowns:6, receptions:1, receptions_te_bonus:0,
+  fumbles_lost:-2,
+};
+// A game the player barely took part in (left hurt early, mop-up, Week 18 kneel-downs) is
+// not evidence about his consistency. Sleeper gives offensive snaps per week; below this
+// many the week is shown in the log but kept out of the grade.
+const PCARD_CONSISTENCY_MIN_SNAPS = 10;
+function pcardGameCountsForConsistency(r){
+  if(!r || r.bye || !(r.gp>0) || !Number.isFinite(r.fpts)) return false;
+  const st=r.stats||{};
+  if(st.off_snp!=null && Number.isFinite(Number(st.off_snp)) && Number(st.off_snp) < PCARD_CONSISTENCY_MIN_SNAPS) return false;
+  return true;
 }
 
 let pcardOpen=false;
@@ -739,8 +764,15 @@ function pcardSeasonRows(weekly, pos){
     const snp = (('off_snp' in s)&&('tm_off_snp' in s)&&s.tm_off_snp>0)? Math.round(s.off_snp/s.tm_off_snp*1000)/10 : null;
     const rankKey = pcardRankKey();
     const rank = (gp>0 && s[rankKey]!=null) ? s[rankKey] : null;
-    rows.push({wk:wn, opp, isAway, gp, bye:(gp===0 && !opp), stats:s, team,
-      fpts: gp>0?pcardFptsFromStats(s):null, snp: gp>0?snp:null, rank});
+    if(pos && s.pos==null) s.pos=String(pos).toUpperCase();
+    // Sleeper's weekly payload never carries an opponent, so (gp===0 && !opp) is true for
+    // EVERY non-played week. A true bye is simply absent (null) from the payload; a row
+    // that exists with gp 0 but a team snap count / gms_active is an inactive, injured or
+    // DNP week and must be labelled so, or every injury reads as a "BYE" in the log.
+    const dnp = (gp===0) && Object.keys(s).some(k=>k!=='gp' && k!=='pos');
+    rows.push({wk:wn, opp, isAway, gp, bye:(gp===0), dnp, stats:s, team,
+      fpts: gp>0?pcardFptsFromStats(s):null, pprFpts: gp>0?pcardFptsFromStats(s, PCARD_PPR_SCORING):null,
+      snp: gp>0?snp:null, rank});
   }
   rows.sort((a,b)=>a.wk-b.wk);
   return rows;
@@ -804,7 +836,7 @@ function renderPcardSeason(season, rows, pos){
         const prev=schema.cols[i-1]; const sep=(prev&&prev.grp!==c.grp)?'<td></td>':'';
         return sep+`<td class="pcard-cell bye">–</td>`;
       }).join('');
-      return `<tr><td class="pcard-wk">${r.wk}</td><td class="pcard-opp">BYE</td>${spans}</tr>`;
+      return `<tr><td class="pcard-wk">${r.wk}</td><td class="pcard-opp" title="${r.dnp?'Did not play (inactive / injured) — not counted in the consistency grade':'Bye week'}">${r.dnp?'DNP':'BYE'}</td>${spans}</tr>`;
     }
     const ctx={ fpts:r.fpts, snp:r.snp, rank:r.rank };
     const vals=pcardRowValues(pos, r.stats, ctx);
@@ -890,19 +922,20 @@ function pcardConsistencyBenchmarkForPos(pos){
 function pcardSeasonConsistency(rows, pos){
   const benchmark = pcardConsistencyBenchmarkForPos(pos);
   if(!Number.isFinite(benchmark)) return null;
-  const vals = (rows||[])
-    .filter(r=>!r.bye && r.gp>0 && Number.isFinite(r.fpts))
-    .map(r=>Number(r.fpts));
+  const played = (rows||[]).filter(r=>!r.bye && r.gp>0 && Number.isFinite(r.fpts));
+  const counted = played.filter(pcardGameCountsForConsistency);
+  const vals = counted.map(r=>Number.isFinite(r.pprFpts) ? Number(r.pprFpts) : Number(r.fpts));
   const n = vals.length;
   if(n < 2) return null;
   const hits = vals.filter(v=>v >= benchmark).length;
   const rate = hits / n;
+  const skipped = played.length - n;
   let grade = 'F';
   if(rate >= 0.8) grade = 'A';
   else if(rate >= 0.7) grade = 'B';
   else if(rate >= 0.6) grade = 'C';
   else if(rate >= 0.5) grade = 'D';
-  return { grade, benchmark, hits, n, rate };
+  return { grade, benchmark, hits, n, rate, skipped };
 }
 
 function pcardFptsPerGameBadge(rows, pos){
@@ -920,7 +953,7 @@ function pcardFptsPerGameBadge(rows, pos){
 function pcardSeasonConsistencyBadge(rows, pos){
   const c = pcardSeasonConsistency(rows, pos);
   if(!c) return '';
-  const tip = `Consistency grade from benchmark hits (games played only): ${c.hits}/${c.n} games (${(c.rate*100).toFixed(1)}%) at or above ${c.benchmark.toFixed(1)} PPR points.`;
+  const tip = `Consistency grade from benchmark hits (games played only): ${c.hits}/${c.n} games (${(c.rate*100).toFixed(1)}%) at or above ${c.benchmark.toFixed(1)} full-PPR points. Scored in full PPR regardless of league settings so the grade means the same everywhere.${c.skipped?` ${c.skipped} game${c.skipped>1?'s':''} under ${PCARD_CONSISTENCY_MIN_SNAPS} snaps excluded.`:''}`;
   return ` <span class="pcard-cons-badge pcard-cons-${c.grade}" title="${escAttr(tip)}">Consistency ${c.grade}</span>`;
 }
 

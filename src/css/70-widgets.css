@@ -659,7 +659,12 @@
 .ps-row:hover,.ps-row.ps-active{background:var(--surface2);}
 .ps-hs{width:36px;height:36px;border-radius:50%;object-fit:cover;background:var(--surface2);flex:none;}
 .ps-hs.ps-def{object-fit:contain;padding:3px;}
-.ps-nm{flex:1;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* Row = avatar · position · [name over team] · owner pill on the right edge. */
+.ps-nm{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.ps-nm-main{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px;}
+.ps-nm-sub{font-size:11px;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:5px;}
+.ps-nm-sub .ps-team-logo{width:14px;height:14px;}
+.ps-row .ps-pos{flex:none;}
 .ps-meta{display:flex;align-items:center;gap:8px;flex:none;}
 .ps-note-badge{min-width:17px;height:17px;padding:0 5px;border-radius:999px;display:inline-flex;
   align-items:center;justify-content:center;font-size:10px;font-weight:900;line-height:1;
@@ -822,7 +827,7 @@ button.la-cliff:hover{filter:brightness(1.25);}
   max-width:16rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   background:var(--surface2);border:1px solid var(--border);color:var(--muted);
   border-radius:100px;padding:2px 9px;margin-left:8px;
-  font-size:11px;font-weight:700;line-height:1.5;cursor:pointer;
+  font-size:11px;font-weight:700;line-height:1.5;cursor:pointer;user-select:none;font-family:inherit;
 }
 .tc-own-chip::before{
   content:"";width:5px;height:5px;border-radius:50%;background:var(--muted);flex:none;
@@ -836,6 +841,16 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .tc-own-mgr{font-weight:400;opacity:.75;}
 /* Compact variant for search rows and dense tables. */
 .tc-own-sm{font-size:10px;padding:1px 7px;margin-left:6px;max-width:9rem;}
+/* Manager-handle pill: sits at the right edge of a row, never steals the name's space. */
+.tc-own-pill{margin-left:auto;flex:none;color:#8fc6ff;border-color:rgba(61,155,255,.35);background:rgba(61,155,255,.10);max-width:7.5rem;}
+.tc-own-pill::before{display:none;}
+.tc-own-pill.tc-own-mine{color:#ffd66b;border-color:rgba(255,200,80,.45);background:rgba(255,200,80,.12);}
+.share-row .tc-own-pill{font-size:9.5px;padding:1px 6px;line-height:1.4;margin-left:0;}
+.player-name .tc-own-pill{margin-left:8px;vertical-align:middle;}
+.snap-info .tc-own-pill{margin-left:6px;vertical-align:middle;}
+.rankings-table td.c-own{white-space:nowrap;}
+.rankings-table td.c-own .tc-own-pill{margin-left:0;}
+@media (max-width:640px){ .tc-own-pill{max-width:6rem;} .share-row .tc-own-pill{max-width:5rem;} }
 @media (max-width:640px){
   .tc-own-chip{max-width:8rem;}
   .tc-own-mgr{display:none;}

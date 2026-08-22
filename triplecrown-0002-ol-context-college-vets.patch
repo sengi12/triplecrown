@@ -1,0 +1,1006 @@
+From 5c3ccbe682c070607957ed65ba115416c0c649e3 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 22 Aug 2026 10:06:55 +0000
+Subject: [PATCH 2/3] feat: played-in OL team context, college profiles for
+ every projected player
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+OL grades pipeline (src/nflverse/ol_grades_pipeline.py)
+- The 15% team blend stamped the POOLED multi-season team percentile on every
+  lineman on the latest roster — so a starter who missed most of a bad season
+  (Slater, 42% of 2025 snaps) wore all of it, and a free-agent signing inherited
+  his new team's history on day one. player_team_context() now builds the unit
+  result each lineman actually played in: per team-season percentiles (ranked
+  within season), weighted by his snap share that season and the same 0.45^age
+  recency the snap prior uses, plus an exposure term (share of a starter's
+  workload over his window). blend_phase_grades() uses that context at
+  TEAM_BLEND × exposure; a player with no snap record falls back to the pooled
+  roster number as before. What entered the blend is reported as
+  team_ctx_pass_pctile / team_ctx_run_pctile / team_ctx_exposure and carried
+  through nflverse.py and tools/refresh_ol_seed.py into ol_players.
+  Slater pass 63.2 → 67.8 (exposure 0.45, ctx 39 vs pooled 25).
+
+College profiles (src/cfb/)
+- profiles.build_all(): every projected skill player drafted since 2015 is
+  bucketed by rookie year (link.class_pools / draft_class_of from years_exp or
+  metadata.rookie_year), linked against the college rosters of his own years
+  (link.build_class_link_map, espn_ids from both his class year and the current
+  roster), scored through the same production tables, and ranked against the one
+  2018–(current-1) reference pool so percentiles mean the same for everyone.
+  Each profile carries its draft class; the card panel shows it.
+- cfbfastr.build() tolerates seasons cfbfastR never published (pre-2014).
+  Practical coverage: full from the 2018 class, partial 2017, none before —
+  earlier play-by-play has no player ids.
+- link._cache_remote() falls back to raw.githubusercontent.com when a proxy
+  refuses github.com/.../raw/ redirects.
+- build_seed.py passes the projected pool; tools/refresh_cfb_seed.py rebuilds
+  just this block into an existing seed (same pattern as refresh_ol_seed.py).
+
+Tests: test_ol_pipeline (played-in context + exposure scaling, snap-weighted
+aggregation), test_cfb_classes (class bucketing).
+---
+ build_seed.py                      |  12 ++-
+ index.html                         |   8 +-
+ src/cfb/cfbfastr.py                |  11 +-
+ src/cfb/link.py                    |  99 +++++++++++++++++-
+ src/cfb/profiles.py                |  81 ++++++++++++---
+ src/js/70b-cfb-prospect.js         |   8 +-
+ src/nflverse/nflverse.py           |   3 +-
+ src/nflverse/ol_grades_pipeline.py | 162 +++++++++++++++++++++++++++--
+ tests/check.js                     |   8 +-
+ tests/run_tests.sh                 |   2 +-
+ tests/test_cfb_classes.py          |  44 ++++++++
+ tests/test_ol_pipeline.py          |  62 +++++++++++
+ tools/refresh_cfb_seed.py          | 105 +++++++++++++++++++
+ tools/refresh_ol_seed.py           |   1 +
+ tools/seed_refresh.py              |   2 +
+ 15 files changed, 566 insertions(+), 42 deletions(-)
+ create mode 100644 tests/test_cfb_classes.py
+ create mode 100644 tools/refresh_cfb_seed.py
+
+diff --git a/build_seed.py b/build_seed.py
+index 0a0b839..14f3743 100644
+--- a/build_seed.py
++++ b/build_seed.py
+@@ -2635,7 +2635,7 @@ def main():
+         print("\n  nflverse advanced metrics disabled (--no-nflverse)")
+ 
+     # Default-on, additive, dependency-isolated: college production profiles for the incoming
+-    # rookie class, from cfbfastR/CFBD (see src/cfb/). Same contract as the nflverse block —
++    # rookie class AND every projected veteran drafted since 2015, from cfbfastR/CFBD (see src/cfb/). Same contract as the nflverse block —
+     # if pandas is missing or the build fails, the block is empty and the rest of the seed is
+     # unaffected. Rookies are the players with no NFL production to show, so this is the only
+     # evidence a card can offer for them.
+@@ -2650,9 +2650,15 @@ def main():
+                 # The slimmed player dict from get_players() drops college/search_rank, which the
+                 # linker needs, so re-read the raw Sleeper DB. It's already cached — no refetch.
+                 _raw = cached("players.json", PLAYERS_URL, "Sleeper player DB", False)
+-                _blk = _cfb.build(args.season, _raw, refresh=cfb_refresh)
++                # Every player the seed projects, not only the rookies: a second-year WR's
++                # college profile is the best read on him there is until his NFL sample grows.
++                _pool = {str(p.get("player_id")) for t in seed.values() for rows in t.values()
++                         for p in rows if p.get("player_id")}
++                _blk = _cfb.build_all(args.season, _raw, only_pids=_pool, refresh=cfb_refresh)
+                 cfb, cfb_logs = _cfb.split_for_seed(_blk)
+-                print(f"    → {len(cfb.get('players', {}))} rookie profiles "
++                _cls = _blk.get("classes") or {}
++                print(f"    → {len(cfb.get('players', {}))} college profiles across "
++                      f"{len(_cls)} draft classes "
+                       f"(percentiles vs {cfb.get('reference', {}).get('classes')} draft classes)")
+         except Exception as e:
+             print(f"    ⚠ college profiles failed: {type(e).__name__}: {e}")
+diff --git a/index.html b/index.html
+index 8298700..49d7247 100644
+--- a/index.html
++++ b/index.html
+@@ -12444,7 +12444,7 @@ function fmtMillions(m){
+   return '$'+s+'M';
+ }
+ // ─────────────────────────────────────────────────────────────────────────────
+-// College prospect panel (rookie player cards)
++// College prospect panel (rookie player cards — and every projected veteran drafted since 2015)
+ // ─────────────────────────────────────────────────────────────────────────────
+ // A rookie has no NFL snaps, so their card's NFL tab is empty and the College tab has
+ // historically shown a raw ESPN box score — attempts, yards, TDs, longs. Those numbers can't
+@@ -12676,13 +12676,17 @@ function renderCfbProspect(pid){
+ 
+   // School/conference/final season: not a stat, but the thing a note most often needs to say
+   // alongside one ("dominant, but in the MAC").
+-  const metaBits = [prof.college, prof.conf, prof.final ? `final season ${prof.final}` : '']
++  // Veterans carry their draft class (profiles exist for every projected player drafted
++  // since 2015, not only rookies), so the panel says whose college career this is.
++  const clsTxt = prof.class ? `${prof.class} draft class` : '';
++  const metaBits = [prof.college, prof.conf, prof.final ? `final season ${prof.final}` : '', clsTxt]
+     .filter(Boolean);
+   const metaTxt = metaBits.join(' · ');
+   const metaInner = [
+     prof.college ? escHtml(prof.college) : '',
+     prof.conf ? `<span class="cfb-meta-sep">·</span>${escHtml(prof.conf)}` : '',
+     prof.final ? `<span class="cfb-meta-sep">·</span>final season ${escHtml(prof.final)}` : '',
++    clsTxt ? `<span class="cfb-meta-sep">·</span>${escHtml(clsTxt)}` : '',
+   ].join('');
+   const metaTagged = (typeof noteWrapHtml==='function' && metaTxt)
+     ? noteWrapHtml(metaInner, Object.assign({}, base, {
+diff --git a/src/cfb/cfbfastr.py b/src/cfb/cfbfastr.py
+index dd6443d..593fb83 100644
+--- a/src/cfb/cfbfastr.py
++++ b/src/cfb/cfbfastr.py
+@@ -103,6 +103,8 @@ EXPLOSIVE_RUSH_YDS = 12
+ EXPLOSIVE_PASS_YDS = 20
+ 
+ _PBP_CACHE = {}
++# cfbfastR publishes play-by-play from 2014 on; nothing earlier can be read.
++FIRST_PBP_SEASON = 2014
+ 
+ 
+ def _derived_cache_path(kind, payload):
+@@ -354,7 +356,14 @@ def build(links, seasons, refresh=False):
+     out = {}
+     for season in sorted(seasons):
+         print(f"  college {season} …", end="", flush=True)
+-        blocks = build_season(season, links)
++        try:
++            blocks = build_season(season, links)
++        except Exception as e:
++            # A season cfbfastR has not published (anything before 2014) is a gap in the
++            # window, not a failed build — a 2015 draftee simply has one readable season.
++            print(f" unavailable ({type(e).__name__})")
++            _PBP_CACHE.pop(season, None)
++            continue
+         for pid, block in blocks.items():
+             out.setdefault(pid, {"seasons": {}})["seasons"][str(season)] = block
+         # Each season frame is hundreds of MB; holding twelve of them at once is what turns a
+diff --git a/src/cfb/link.py b/src/cfb/link.py
+index 360c236..04b0bd2 100644
+--- a/src/cfb/link.py
++++ b/src/cfb/link.py
+@@ -141,8 +141,19 @@ def _cache_remote(url, label=None):
+         try:
+             urllib.request.urlretrieve(url, path)
+         except Exception:
+-            print(" unavailable")
+-            raise
++            # github.com/<org>/<repo>/raw/<ref>/ is a redirect to raw.githubusercontent.com;
++            # some proxies refuse the redirect but pass the destination. Try it directly
++            # before giving up — same bytes, same cache path.
++            m = re.match(r"https://github\.com/([^/]+)/([^/]+)/raw/([^/]+)/(.+)$", url)
++            if not m:
++                print(" unavailable")
++                raise
++            alt = f"https://raw.githubusercontent.com/{m.group(1)}/{m.group(2)}/{m.group(3)}/{m.group(4)}"
++            try:
++                urllib.request.urlretrieve(alt, path)
++            except Exception:
++                print(" unavailable")
++                raise
+         print(" ok")
+     return path
+ 
+@@ -529,6 +540,58 @@ def rookie_pool(players, draft_class=None, positions=SKILL_POSITIONS, max_search
+     return out
+ 
+ 
++# College play-by-play exists from 2014, so the earliest class whose college seasons can be
++# read at all is 2015 (one season) and the first with a full four-season window is 2018.
++EARLIEST_LINKABLE_CLASS = 2015
++
++
++def draft_class_of(player, season):
++    """The NFL draft class (rookie year) of a Sleeper player record, or None.
++
++    Sleeper stamps `metadata.rookie_year` on some players and `years_exp` on nearly all of
++    them. years_exp counts completed NFL seasons, so in the 2026 league year a player with
++    years_exp 3 was a 2023 rookie. rookie_year wins where both are present and sane.
++    """
++    ry = (player.get("metadata") or {}).get("rookie_year") or ""
++    if str(ry).isdigit() and 2000 < int(ry) <= int(season):
++        return int(ry)
++    ye = player.get("years_exp")
++    if ye is None or not str(ye).lstrip("-").isdigit():
++        return None
++    ye = int(ye)
++    if ye < 0:
++        return None
++    return int(season) - ye
++
++
++def class_pools(players, season, positions=SKILL_POSITIONS, only_pids=None,
++                max_search_rank=None, min_class=EARLIEST_LINKABLE_CLASS):
++    """{draft_class: [player records]} for every fantasy-relevant skill player, by rookie year.
++
++    The rookie class is what the linker has always handled; this just buckets the rest of the
++    player pool the same way so each bucket can be linked against the college rosters of ITS
++    years. `only_pids` restricts to the players the seed actually ships (the projection pool),
++    so a 2016 practice-squad body does not cost a four-season play-by-play scan.
++    """
++    out = {}
++    for pid, p in players.items():
++        if only_pids is not None and str(pid) not in only_pids:
++            continue
++        if not p.get("active"):
++            continue
++        if positions and p.get("position") not in positions:
++            continue
++        if max_search_rank is not None and (p.get("search_rank") or 10 ** 9) > max_search_rank:
++            continue
++        cls = draft_class_of(p, season)
++        if cls is None or cls < min_class:
++            continue
++        rec = dict(p)
++        rec["player_id"] = pid
++        out.setdefault(cls, []).append(rec)
++    return out
++
++
+ def draft_pool(draft_class, positions=SKILL_POSITIONS):
+     """Skill players drafted in one year, from nflverse draft_picks, as linkable records.
+ 
+@@ -559,14 +622,21 @@ def draft_pool(draft_class, positions=SKILL_POSITIONS):
+     return out
+ 
+ 
+-def _link_pool(pool, draft_class, cache_path, refresh=False):
+-    """Link a list of player records, with the resolved map cached to disk."""
++def _link_pool(pool, draft_class, cache_path, refresh=False, espn_seasons=None):
++    """Link a list of player records, with the resolved map cached to disk.
++
++    `espn_seasons`: NFL seasons whose nflverse rosters supply espn_ids. The draft-class year is
++    always included; a veteran bucket also passes the current season, whose roster names him
++    with an id far more often than the one from his rookie year.
++    """
+     if os.path.exists(cache_path) and not refresh:
+         with open(cache_path) as f:
+             return json.load(f)
+     idx = roster_index(range(draft_class - LOOKBACK_SEASONS, draft_class))
+     overrides = load_overrides()
+-    espn_ids = espn_id_index(draft_class)
++    espn_ids = {}
++    for s in sorted({int(draft_class), *(espn_seasons or [])}):
++        espn_ids.update(espn_id_index(s))
+     out = {}
+     for p in pool:
+         link = link_player(p, idx, draft_class, overrides, espn_ids)
+@@ -598,6 +668,25 @@ def build_link_map(players, draft_class, positions=SKILL_POSITIONS, max_search_r
+     return out
+ 
+ 
++def build_class_link_map(pool, draft_class, season, refresh=False):
++    """{sleeper_pid: link} for one rookie-year bucket of the current player pool.
++
++    Cached per class to cache/cfb/links/link_<class>.json — the same file the rookie build
++    uses for the current class, so the two never disagree about a player. A bucket whose
++    membership grew since the cache was written is re-linked (a cached map that lacks a pid
++    in the pool is stale, not authoritative).
++    """
++    cache_path = os.path.join(_cache_subdir("links"), f"link_{draft_class}.json")
++    if not refresh and os.path.exists(cache_path):
++        with open(cache_path) as f:
++            cached = json.load(f)
++        if all(str(p["player_id"]) in cached for p in pool):
++            return {str(p["player_id"]): cached[str(p["player_id"])] for p in pool}
++        refresh = True
++    return _link_pool(pool, draft_class, cache_path, refresh,
++                      espn_seasons=[int(season)] if int(season) != int(draft_class) else None)
++
++
+ def report(link_map):
+     """Human-readable resolution summary — printed on every build so drift is visible."""
+     total = len(link_map)
+diff --git a/src/cfb/profiles.py b/src/cfb/profiles.py
+index 3772775..4fa00c3 100644
+--- a/src/cfb/profiles.py
++++ b/src/cfb/profiles.py
+@@ -2,9 +2,10 @@
+ """
+ profiles.py — the seed block: one college profile per fantasy-relevant rookie
+ ────────────────────────────────────────────────────────────────────────────
+-Assembles what the player card actually renders. Each rookie gets their college seasons, a
+-per-game log, and — the part that makes the numbers mean anything — a percentile for each
+-headline metric against the 2018-2025 drafted prospects at the same position.
++Assembles what the player card actually renders. Each rookie — and, via build_all(), every
++fantasy-relevant veteran drafted since 2015 — gets their college seasons, a per-game log, and
++— the part that makes the numbers mean anything — a percentile for each headline metric
++against the 2018-2025 drafted prospects at the same position.
+ 
+     src/cfb/link.py         Sleeper pid  → CFBD athlete id
+     src/cfb/cfbfastr.py     athlete id   → per-season production
+@@ -46,17 +47,16 @@ LABELS = {
+ }
+ 
+ 
+-def build(draft_class, players, ref=None, refresh=False):
+-    """The full seed block for one rookie class."""
+-    ref = ref or percentiles.build_reference(percentiles.reference_classes(draft_class))
+-    links = link.build_link_map(players, draft_class, refresh=refresh)
++def _profiles_from_links(links, draft_class, ref, refresh=False):
++    """{pid: profile} for one rookie-year bucket, from its resolved link map."""
+     usable = {pid: l for pid, l in links.items()
+               if l.get("athlete_id") and not (l.get("method") or "").endswith("?")}
+-    data = cfbfastr.build(usable, range(draft_class - 4, draft_class), refresh=refresh)
+-
+-    out = {"schema": SCHEMA, "class": int(draft_class),
+-           "reference": {"classes": ref.get("classes"), "steps": ref.get("steps")},
+-           "labels": LABELS, "headline": HEADLINE, "players": {}}
++    if not usable:
++        return {}
++    # College play-by-play starts in 2014; a 2015-2017 draftee gets the seasons that exist.
++    seasons = range(max(cfbfastr.FIRST_PBP_SEASON, draft_class - 4), draft_class)
++    data = cfbfastr.build(usable, seasons, refresh=refresh)
++    out = {}
+     for pid, node in data.items():
+         pos = node.get("pos")
+         if pos not in HEADLINE:
+@@ -69,17 +69,70 @@ def build(draft_class, players, ref=None, refresh=False):
+             v = percentiles.rank(ref, pos, metric, final.get(metric))
+             if v is not None:
+                 pct[metric] = v
+-        out["players"][pid] = {
++        out[pid] = {
+             "name": node.get("name"), "pos": pos, "athlete_id": node.get("athlete_id"),
+             "method": node.get("method"), "college": final.get("team"),
+             "conf": final.get("conf"), "final": year, "seasons": node["seasons"],
+-            "pct": pct,
++            "pct": pct, "class": int(draft_class),
+             # Whether the pool this player was ranked against is thin enough to caveat.
+             "ref_n": ((ref.get("pos") or {}).get(pos, {}).get(HEADLINE[pos][0], {}) or {}).get("n"),
+         }
+     return out
+ 
+ 
++def _block(draft_class, ref):
++    return {"schema": SCHEMA, "class": int(draft_class),
++            "reference": {"classes": ref.get("classes"), "steps": ref.get("steps")},
++            "labels": LABELS, "headline": HEADLINE, "players": {}}
++
++
++def build(draft_class, players, ref=None, refresh=False):
++    """The seed block for one rookie class (the original, rookies-only build)."""
++    ref = ref or percentiles.build_reference(percentiles.reference_classes(draft_class))
++    links = link.build_link_map(players, draft_class, refresh=refresh)
++    out = _block(draft_class, ref)
++    out["players"] = _profiles_from_links(links, draft_class, ref, refresh=refresh)
++    return out
++
++
++def build_all(season, players, only_pids=None, ref=None, refresh=False, verbose=True):
++    """College profiles for EVERY fantasy-relevant skill player, not only the rookie class.
++
++    The rookie class is linked exactly as before. Every other player in `only_pids` (the
++    projection pool the seed ships) is bucketed by rookie year and linked against the college
++    rosters of his own years, then scored through the same production tables. One reference
++    pool — the drafted prospects of the classes before the current one — ranks everybody, so
++    a 2022 receiver's dominator percentile means the same thing as a 2026 rookie's. (A player
++    drafted 2018-2025 is therefore ranked against a pool that contains him; with 600+ players
++    per pool that moves nothing.)
++
++    Players drafted before 2015 have no readable college play-by-play and are skipped; the
++    card degrades to the ESPN game log for them, as it always has.
++    """
++    season = int(season)
++    ref = ref or percentiles.build_reference(percentiles.reference_classes(season))
++    out = _block(season, ref)
++    out["classes"] = {}
++    pools = link.class_pools(players, season, only_pids=only_pids)
++    # The rookie class keeps its own, unrestricted pool: a rookie has nothing else to show.
++    rookies = link.build_link_map(players, season, refresh=refresh)
++    rookie_prof = _profiles_from_links(rookies, season, ref, refresh=refresh)
++    out["players"].update(rookie_prof)
++    out["classes"][str(season)] = {"pool": len(rookies), "profiles": len(rookie_prof)}
++    for cls in sorted(pools, reverse=True):
++        if cls == season:
++            continue
++        pool = pools[cls]
++        if verbose:
++            print(f"  class {cls}: {len(pool)} players", flush=True)
++        links = link.build_class_link_map(pool, cls, season, refresh=refresh)
++        prof = _profiles_from_links(links, cls, ref, refresh=refresh)
++        for pid, p in prof.items():
++            out["players"].setdefault(pid, p)
++        out["classes"][str(cls)] = {"pool": len(pool), "profiles": len(prof)}
++    return out
++
++
+ def split_for_seed(blk):
+     """Split a profile block into (inline, logs) for the seed and its lazy sidecar.
+ 
+diff --git a/src/js/70b-cfb-prospect.js b/src/js/70b-cfb-prospect.js
+index d2a27f8..e24c0f5 100644
+--- a/src/js/70b-cfb-prospect.js
++++ b/src/js/70b-cfb-prospect.js
+@@ -1,5 +1,5 @@
+ // ─────────────────────────────────────────────────────────────────────────────
+-// College prospect panel (rookie player cards)
++// College prospect panel (rookie player cards — and every projected veteran drafted since 2015)
+ // ─────────────────────────────────────────────────────────────────────────────
+ // A rookie has no NFL snaps, so their card's NFL tab is empty and the College tab has
+ // historically shown a raw ESPN box score — attempts, yards, TDs, longs. Those numbers can't
+@@ -231,13 +231,17 @@ function renderCfbProspect(pid){
+ 
+   // School/conference/final season: not a stat, but the thing a note most often needs to say
+   // alongside one ("dominant, but in the MAC").
+-  const metaBits = [prof.college, prof.conf, prof.final ? `final season ${prof.final}` : '']
++  // Veterans carry their draft class (profiles exist for every projected player drafted
++  // since 2015, not only rookies), so the panel says whose college career this is.
++  const clsTxt = prof.class ? `${prof.class} draft class` : '';
++  const metaBits = [prof.college, prof.conf, prof.final ? `final season ${prof.final}` : '', clsTxt]
+     .filter(Boolean);
+   const metaTxt = metaBits.join(' · ');
+   const metaInner = [
+     prof.college ? escHtml(prof.college) : '',
+     prof.conf ? `<span class="cfb-meta-sep">·</span>${escHtml(prof.conf)}` : '',
+     prof.final ? `<span class="cfb-meta-sep">·</span>final season ${escHtml(prof.final)}` : '',
++    clsTxt ? `<span class="cfb-meta-sep">·</span>${escHtml(clsTxt)}` : '',
+   ].join('');
+   const metaTagged = (typeof noteWrapHtml==='function' && metaTxt)
+     ? noteWrapHtml(metaInner, Object.assign({}, base, {
+diff --git a/src/nflverse/nflverse.py b/src/nflverse/nflverse.py
+index 62b71ad..612a286 100644
+--- a/src/nflverse/nflverse.py
++++ b/src/nflverse/nflverse.py
+@@ -1899,7 +1899,8 @@ def _ol_grades_by_player(season=None, utilization_by_team=None, team_ol_context=
+         "name", "team", "slot", "pos",
+         "pass_grade", "pass_pctile", "pass_conf", "pass_snaps",
+         "run_grade", "run_pctile", "run_conf", "poa_carries",
+-        "ol_grade", "ol_pctile", "ol_conf", "team_pass_pctile", "team_run_pctile", "snap_pct",
++        "ol_grade", "ol_pctile", "ol_conf", "team_pass_pctile", "team_run_pctile",
++        "team_ctx_pass_pctile", "team_ctx_run_pctile", "team_ctx_exposure", "snap_pct",
+         "p_market", "p_snap", "p_draft", "is_active", "espn_pbwr", "espn_rbwr",
+         "hist_seasons", "ol_pctile_hist", "market_pctile_hist",
+         "shared_credit", "penalty_rate", "penalty_hold_rate", "penalty_fs_rate",
+diff --git a/src/nflverse/ol_grades_pipeline.py b/src/nflverse/ol_grades_pipeline.py
+index 5e47d45..869615d 100644
+--- a/src/nflverse/ol_grades_pipeline.py
++++ b/src/nflverse/ol_grades_pipeline.py
+@@ -622,8 +622,12 @@ def aly_weight(y):
+     return 0.0
+ 
+ 
+-def team_run_blocking(seasons):
+-    """Opponent-adjusted Adjusted Line Yards per team, over the given seasons."""
++def team_run_blocking(seasons, by_season=False):
++    """Opponent-adjusted Adjusted Line Yards per team, over the given seasons.
++
++    `by_season=True` returns one row per (team, season), ranked within each season — the
++    shape player_team_context() needs to credit a lineman only for the seasons he played.
++    """
+     frames = []
+     for s in seasons:
+         pbp = pq(f"pbp_{s}.parquet", f"pbp/play_by_play_{s}.parquet",
+@@ -640,17 +644,23 @@ def team_run_blocking(seasons):
+         # helps here where the post-treatment QB adjustments below do not.
+         lg = r.ly.mean()
+         r["ly_adj"] = r.ly - r.defteam.map(r.groupby("defteam").ly.mean()) + lg
+-        frames.append(r[["posteam", "ly_adj"]])
++        r["season"] = int(s)
++        frames.append(r[["posteam", "season", "ly_adj"]])
+     if not frames:
+         return pd.DataFrame(columns=["aly"])
+     allr = pd.concat(frames, ignore_index=True)
++    if by_season:
++        out = allr.groupby(["posteam", "season"]).ly_adj.mean().to_frame("aly")
++        out["aly_pctile"] = out.groupby(level="season").aly.rank(pct=True) * 100
++        return out
+     out = allr.groupby("posteam").ly_adj.mean().to_frame("aly")
+     out["aly_pctile"] = out.aly.rank(pct=True) * 100
+     return out
+ 
+ 
+-def team_pass_protection(seasons):
+-    """Pressure rate allowed per team, over the given seasons.
++def team_pass_protection(seasons, by_season=False):
++    """Pressure rate allowed per team, over the given seasons (per team-season when
++    `by_season`, ranked within each season).
+ 
+     Deliberately UNADJUSTED. Three adjustments were tested and every one made the metric
+     less stable year over year:
+@@ -675,17 +685,112 @@ def team_pass_protection(seasons):
+         d = d[d.was_pressure.notna()]
+         if d.empty:
+             continue
+-        frames.append(pd.DataFrame({"posteam": d.posteam,
++        frames.append(pd.DataFrame({"posteam": d.posteam, "season": int(s),
+                                     "wp": d.was_pressure.astype(float)}))
+     if not frames:
+         return pd.DataFrame(columns=["press_rate"])
+     allp = pd.concat(frames, ignore_index=True)
++    if by_season:
++        out = allp.groupby(["posteam", "season"]).wp.mean().to_frame("press_rate")
++        out["press_pctile"] = (-out.press_rate).groupby(level="season").rank(pct=True) * 100
++        return out
+     out = allp.groupby("posteam").wp.mean().to_frame("press_rate")
+     # Lower pressure allowed is better, so invert before ranking.
+     out["press_pctile"] = (-out.press_rate).rank(pct=True) * 100
+     return out
+ 
+ 
++# Snap share at which a lineman is treated as having fully "owned" his unit's result. A
++# regular starter sits at 85-100%; below this the team context is scaled down in proportion.
++FULL_EXPOSURE_SNAP_PCT = 0.80
++
++
++def _pfr_to_gsis():
++    """{pfr_player_id: gsis_id} from the players release, with the draft table as a fallback
++    bridge (same two-source approach as player_prior_signals, so UDFAs resolve too)."""
++    p2g = {}
++    try:
++        pl = pq("players.parquet", "players/players.parquet")
++        pcol = next((c for c in pl.columns if "pfr" in c.lower() and pl[c].notna().any()), None)
++        if pcol and "gsis_id" in pl.columns:
++            m = pl[[pcol, "gsis_id"]].dropna().drop_duplicates(pcol)
++            p2g = dict(zip(m[pcol].astype(str), m.gsis_id.astype(str)))
++    except Exception:
++        pass
++    try:
++        draft = pq("draft_picks.parquet", "draft_picks/draft_picks.parquet",
++                   ["gsis_id", "pfr_player_id"]).dropna()
++        for g, pid in zip(draft.pfr_player_id, draft.gsis_id):
++            p2g.setdefault(str(g), str(pid))
++    except Exception:
++        pass
++    return p2g
++
++
++def player_team_context(seasons, latest, team_pass_s, team_run_s):
++    """The unit result each lineman actually contributed to, weighted by his snaps in it.
++
++    The team layer used to be the pooled multi-season team number stamped on everyone on the
++    latest roster. That charged a player for seasons he did not play and a team he was not on:
++    Rashawn Slater missed most of 2025 and still wore LAC's 2025 pressure rate in full, and a
++    free-agent signing inherited his NEW team's history on day one.
++
++    Here each (player, team, season) appearance in PFR snap counts is weighted by his snap
++    share that season and the same 0.45^age recency the snap prior uses. Returns, per gsis_id:
++
++        pass_ctx / run_ctx   snap-weighted team percentile across the seasons he played
++        exposure             0..1, how much of a full starter's workload those seasons add up
++                             to over his window (first appearance → latest), so the blend can
++                             be scaled down for a player who was mostly absent
++
++    A team-season he was on but did not play in contributes nothing to either.
++    """
++    rows = []
++    for s in seasons:
++        try:
++            sc = pq(f"snaps_{s}.parquet", f"snap_counts/snap_counts_{s}.parquet")
++        except Exception:
++            continue
++        sc = sc[(sc.game_type == "REG") & sc.position.isin(OLP)]
++        if sc.empty:
++            continue
++        g = sc.groupby(["pfr_player_id", "team"]).agg(
++            snap_pct=("offense_pct", "mean"), games=("offense_pct", "size")).reset_index()
++        # A player's share of HIS team's season: games played × mean share / full schedule.
++        sched = sc.groupby("team").week.nunique()
++        g["share"] = (g.snap_pct * g.games / g.team.map(sched).clip(lower=1)).clip(0, 1)
++        g["season"] = int(s)
++        rows.append(g)
++    if not rows:
++        return pd.DataFrame(columns=["pass_ctx", "run_ctx", "exposure"])
++    snaps = pd.concat(rows, ignore_index=True)
++    snaps["w"] = 0.45 ** (latest - snaps.season)
++    tp = team_pass_s.press_pctile if len(team_pass_s) else pd.Series(dtype=float)
++    tr = team_run_s.aly_pctile if len(team_run_s) else pd.Series(dtype=float)
++    key = list(zip(snaps.team, snaps.season))
++    snaps["pass_pct"] = [tp.get(k, np.nan) for k in key]
++    snaps["run_pct"] = [tr.get(k, np.nan) for k in key]
++    snaps["ws"] = snaps.w * snaps.share
++    wt = {int(s): 0.45 ** (latest - int(s)) for s in seasons}
++
++    def _agg(g):
++        first = int(g.season.min())
++        denom = sum(w for s, w in wt.items() if s >= first) or 1.0
++        exposure = min(1.0, (g.ws.sum() / denom) / FULL_EXPOSURE_SNAP_PCT)
++        def ctx(col):
++            m = g[col].notna()
++            if not m.any() or g.ws[m].sum() <= 0:
++                return np.nan
++            return float((g[col][m] * g.ws[m]).sum() / g.ws[m].sum())
++        return pd.Series({"pass_ctx": ctx("pass_pct"), "run_ctx": ctx("run_pct"),
++                          "exposure": exposure})
++    agg = snaps.groupby("pfr_player_id").apply(_agg)
++    p2g = _pfr_to_gsis()
++    agg.index = [p2g.get(str(i)) for i in agg.index]
++    agg = agg[agg.index.notna()]
++    return agg[~agg.index.duplicated()]
++
++
+ def _stale(kind, have, want, extra=""):
+     """One consistent warning for hand-maintained reference data that has gone out of date.
+ 
+@@ -1070,10 +1175,16 @@ def _hist_str(vals):
+     return ",".join("" if v is None else str(int(v)) for v in vals)
+ 
+ 
+-def blend_phase_grades(df, team_pass, team_run, season=None):
++def blend_phase_grades(df, team_pass, team_run, season=None, context=None):
+     """Phase grades = the player's own composite, contextualized by his unit's measured
+     performance in that phase. Both inputs are validated; the discredited APM is not used.
+ 
++    `context` (from player_team_context) makes the unit layer the unit HE PLAYED IN: the
++    snap-weighted result of his own team-seasons, with the blend weight scaled by how much
++    of a starter's workload those seasons were. A lineman who missed most of a bad year is
++    not bogged down by it; one who anchored it is. Without context (or for a player with no
++    snap record) the pooled latest-roster team number is used, as before.
++
+     Keeping `pass_grade` / `run_grade` populated preserves the schema the player card and
+     the RB rushing-fan card already read.
+     """
+@@ -1084,9 +1195,24 @@ def blend_phase_grades(df, team_pass, team_run, season=None):
+     tr = out.team.map(team_run.aly_pctile) if len(team_run) else nan
+     ind = out.ol_pctile
+ 
+-    for name, team_pct, espn_col in (("pass", tp, "espn_pbwr"), ("run", tr, "espn_rbwr")):
++    ctx = context if context is not None else pd.DataFrame(columns=["pass_ctx", "run_ctx", "exposure"])
++    exposure = pd.to_numeric(out.index.map(ctx.exposure) if "exposure" in ctx else nan,
++                             errors="coerce")
++    exposure = pd.Series(exposure, index=out.index)
++    pass_ctx = pd.Series(pd.to_numeric(out.index.map(ctx.pass_ctx) if "pass_ctx" in ctx else nan,
++                                       errors="coerce"), index=out.index)
++    run_ctx = pd.Series(pd.to_numeric(out.index.map(ctx.run_ctx) if "run_ctx" in ctx else nan,
++                                      errors="coerce"), index=out.index)
++
++    for name, team_pct, own_ctx, espn_col in (("pass", tp, pass_ctx, "espn_pbwr"),
++                                              ("run", tr, run_ctx, "espn_rbwr")):
+         t = pd.Series(team_pct, index=out.index)
+-        blended = ind * (1 - TEAM_BLEND) + t.fillna(ind) * TEAM_BLEND
++        # Played-in context where it exists, scaled by exposure; pooled roster context
++        # at the full weight otherwise.
++        have = own_ctx.notna() & exposure.notna()
++        w = pd.Series(TEAM_BLEND, index=out.index).where(~have, TEAM_BLEND * exposure.fillna(1.0))
++        unit = own_ctx.where(have, t)
++        blended = ind * (1 - w) + unit.fillna(ind) * w
+ 
+         # Where ESPN publishes a win rate, fold it in — it is a direct tracking measurement
+         # of this player in this phase, which nothing else here is. Ranked within position
+@@ -1110,6 +1236,10 @@ def blend_phase_grades(df, team_pass, team_run, season=None):
+ 
+     out["team_pass_pctile"] = pd.Series(tp, index=out.index).round(1)
+     out["team_run_pctile"] = pd.Series(tr, index=out.index).round(1)
++    # What actually went into the blend, so a card (or a test) can see why.
++    out["team_ctx_pass_pctile"] = pass_ctx.round(1)
++    out["team_ctx_run_pctile"] = run_ctx.round(1)
++    out["team_ctx_exposure"] = exposure.round(2)
+     return out
+ 
+ 
+@@ -1216,10 +1346,18 @@ def build_grades_df(seasons=None, min_snaps=150, min_poa=60,
+     _log("building team layer (pressure allowed + adjusted line yards)...")
+     team_pass = team_pass_protection(seasons)
+     team_run = team_run_blocking(seasons)
++    _log("building played-in team context (snap-weighted, per team-season)...")
++    try:
++        context = player_team_context(seasons, latest,
++                                      team_pass_protection(seasons, by_season=True),
++                                      team_run_blocking(seasons, by_season=True))
++    except Exception as e:
++        _log(f"  (team context unavailable, using pooled roster context: {type(e).__name__}: {e})")
++        context = None
+     _log("building individual composite (market + snap share + draft capital)...")
+     priors = player_prior_signals(seasons, latest)
+     out = build_composite(out, priors, latest)
+-    out = blend_phase_grades(out, team_pass, team_run, season=latest)
++    out = blend_phase_grades(out, team_pass, team_run, season=latest, context=context)
+ 
+     _log("building grade history...")
+     try:
+@@ -1282,8 +1420,10 @@ def build_grades_df(seasons=None, min_snaps=150, min_poa=60,
+             # Phase grades = composite contextualized by the team's measured performance.
+             "pass_grade", "pass_pctile", "pass_conf", "pass_snaps",
+             "run_grade", "run_pctile", "run_conf", "poa_carries",
+-            # Team layer, reported in its own right.
++            # Team layer, reported in its own right — and the played-in version of it that
++            # actually enters the phase grades (see player_team_context).
+             "team_pass_pctile", "team_run_pctile",
++            "team_ctx_pass_pctile", "team_ctx_run_pctile", "team_ctx_exposure",
+             # Component percentiles, so a grade can be explained rather than just asserted.
+             "p_market", "p_snap", "p_draft", "snap_pct", "is_active",
+             "hist_seasons", "ol_pctile_hist", "market_pctile_hist",
+diff --git a/tests/check.js b/tests/check.js
+index ad83445..f466bb8 100644
+--- a/tests/check.js
++++ b/tests/check.js
+@@ -9737,7 +9737,7 @@ function fmtMillions(m){
+   return '$'+s+'M';
+ }
+ // ─────────────────────────────────────────────────────────────────────────────
+-// College prospect panel (rookie player cards)
++// College prospect panel (rookie player cards — and every projected veteran drafted since 2015)
+ // ─────────────────────────────────────────────────────────────────────────────
+ // A rookie has no NFL snaps, so their card's NFL tab is empty and the College tab has
+ // historically shown a raw ESPN box score — attempts, yards, TDs, longs. Those numbers can't
+@@ -9969,13 +9969,17 @@ function renderCfbProspect(pid){
+ 
+   // School/conference/final season: not a stat, but the thing a note most often needs to say
+   // alongside one ("dominant, but in the MAC").
+-  const metaBits = [prof.college, prof.conf, prof.final ? `final season ${prof.final}` : '']
++  // Veterans carry their draft class (profiles exist for every projected player drafted
++  // since 2015, not only rookies), so the panel says whose college career this is.
++  const clsTxt = prof.class ? `${prof.class} draft class` : '';
++  const metaBits = [prof.college, prof.conf, prof.final ? `final season ${prof.final}` : '', clsTxt]
+     .filter(Boolean);
+   const metaTxt = metaBits.join(' · ');
+   const metaInner = [
+     prof.college ? escHtml(prof.college) : '',
+     prof.conf ? `<span class="cfb-meta-sep">·</span>${escHtml(prof.conf)}` : '',
+     prof.final ? `<span class="cfb-meta-sep">·</span>final season ${escHtml(prof.final)}` : '',
++    clsTxt ? `<span class="cfb-meta-sep">·</span>${escHtml(clsTxt)}` : '',
+   ].join('');
+   const metaTagged = (typeof noteWrapHtml==='function' && metaTxt)
+     ? noteWrapHtml(metaInner, Object.assign({}, base, {
+diff --git a/tests/run_tests.sh b/tests/run_tests.sh
+index 358023b..6894a67 100755
+--- a/tests/run_tests.sh
++++ b/tests/run_tests.sh
+@@ -207,7 +207,7 @@ echo ""
+ PYBUILD="$DIR/../build_seed.py"
+ if [ -f "$DIR/test_flacco_split.py" ] && [ -f "$PYBUILD" ]; then
+   echo "═══ Python tests ═══"
+-  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_roster_moves test_roster_truth test_sumer_pull test_ktc_pull test_seed_refresh test_ol_pipeline test_state_block; do
++  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_roster_moves test_roster_truth test_sumer_pull test_ktc_pull test_seed_refresh test_ol_pipeline test_state_block test_cfb_classes; do
+     [ -f "$DIR/${pyt}.py" ] || continue
+     output=$(python3 "$DIR/${pyt}.py" 2>&1) || true
+     p=$(echo "$output" | grep -ciE "PASS" || true)
+diff --git a/tests/test_cfb_classes.py b/tests/test_cfb_classes.py
+new file mode 100644
+index 0000000..9b68343
+--- /dev/null
++++ b/tests/test_cfb_classes.py
+@@ -0,0 +1,44 @@
++#!/usr/bin/env python3
++"""Offline tests for bucketing the projected player pool by rookie year (src/cfb/link.py),
++which is what extends college profiles from the rookie class to every projected veteran."""
++import os, sys
++sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
++from src.cfb import link
++
++passed = failed = 0
++def chk(c, label):
++    global passed, failed
++    if c: passed += 1; print("  PASS:", label)
++    else: failed += 1; print("  FAIL:", label)
++
++print("=== draft_class_of ===")
++chk(link.draft_class_of({"years_exp": 0}, 2026) == 2026, "a rookie is the current class")
++chk(link.draft_class_of({"years_exp": 3}, 2026) == 2023, "years_exp counts back from the season")
++chk(link.draft_class_of({"years_exp": 3, "metadata": {"rookie_year": "2022"}}, 2026) == 2022,
++    "rookie_year wins over years_exp when present")
++chk(link.draft_class_of({"years_exp": 3, "metadata": {"rookie_year": "0"}}, 2026) == 2023,
++    "a zero rookie_year is ignored")
++chk(link.draft_class_of({}, 2026) is None, "no signal → no class")
++chk(link.draft_class_of({"years_exp": None}, 2026) is None, "null years_exp → no class")
++
++print("\n=== class_pools ===")
++players = {
++    "1": {"position": "WR", "active": True, "years_exp": 0},
++    "2": {"position": "WR", "active": True, "years_exp": 3},
++    "3": {"position": "RB", "active": True, "years_exp": 12},          # 2014: before college pbp
++    "4": {"position": "K",  "active": True, "years_exp": 2},           # not a skill position
++    "5": {"position": "QB", "active": False, "years_exp": 2},          # retired
++    "6": {"position": "TE", "active": True, "years_exp": 2},           # not in the projected pool
++}
++pools = link.class_pools(players, 2026, only_pids={"1", "2", "3", "4", "5"})
++chk(sorted(pools) == [2023, 2026], f"buckets by rookie year ({sorted(pools)})")
++chk([p["player_id"] for p in pools[2026]] == ["1"], "rookie lands in the current class")
++chk([p["player_id"] for p in pools[2023]] == ["2"], "veteran lands in his own class")
++chk(all("3" != p["player_id"] for ps in pools.values() for p in ps),
++    "pre-2015 draftees are skipped (no college play-by-play exists)")
++chk(all("6" != p["player_id"] for ps in pools.values() for p in ps),
++    "players outside the projected pool are not linked")
++chk(link.EARLIEST_LINKABLE_CLASS == 2015, "earliest class pinned to the first pbp season + 1")
++
++print(f"\nRESULT: {passed}/{passed + failed} " + ("ALL PASS" if not failed else "SOME FAILED"))
++sys.exit(0 if not failed else 1)
+diff --git a/tests/test_ol_pipeline.py b/tests/test_ol_pipeline.py
+index 7d52bd9..b1a61b2 100644
+--- a/tests/test_ol_pipeline.py
++++ b/tests/test_ol_pipeline.py
+@@ -188,6 +188,68 @@ chk(b.loc["00-0000", "team_pass_pctile"] == 95.0, "team layer is reported in its
+ chk(b.loc["00-0011", "pass_pctile"] > b.loc["00-0000", "pass_pctile"],
+     "individual quality still dominates a same-phase comparison across lines")
+ 
++# ── played-in team context ────────────────────────────────────────────────────────
++print("\n=== blend_phase_grades: the unit a player actually played in, scaled by exposure ===")
++# Same two lines. Player 00-0000 is a DET starter who missed most of the latest season;
++# player 00-0001 is a full-time DET starter. Pooled context says DET pass = 95 for both.
++ctx = pd.DataFrame({
++    "pass_ctx": [40.0, 95.0], "run_ctx": [50.0, 5.0], "exposure": [0.30, 1.00],
++}, index=["00-0000", "00-0001"])
++bc = olp.blend_phase_grades(base, tp, trun, context=ctx)
++ind0 = base.loc["00-0000", "ol_pctile"]
++full0 = ind0 * (1 - olp.TEAM_BLEND) + 40.0 * olp.TEAM_BLEND
++scaled0 = ind0 * (1 - olp.TEAM_BLEND * 0.30) + 40.0 * olp.TEAM_BLEND * 0.30
++chk(abs(bc.loc["00-0000", "pass_pctile"] - round(scaled0, 1)) <= 0.11,
++    "a player who missed most of the window gets his own context at a fraction of the blend")
++chk(abs(bc.loc["00-0000", "pass_pctile"] - ind0) < abs(full0 - ind0),
++    "...which moves him less than the pooled roster number would")
++ind1 = base.loc["00-0001", "ol_pctile"]
++chk(abs(bc.loc["00-0001", "pass_pctile"] - round(ind1 * (1 - olp.TEAM_BLEND) + 95.0 * olp.TEAM_BLEND, 1)) <= 0.11,
++    "a full-time starter keeps the full blend against his own unit's result")
++chk(bc.loc["00-0002", "pass_pctile"] == b.loc["00-0002", "pass_pctile"],
++    "a player with no snap record falls back to the pooled roster context unchanged")
++chk(bc.loc["00-0000", "team_ctx_exposure"] == 0.3 and bc.loc["00-0000", "team_ctx_pass_pctile"] == 40.0,
++    "what entered the blend is reported alongside the pooled team layer")
++chk(bc.loc["00-0000", "team_pass_pctile"] == 95.0, "pooled team layer still reported as before")
++
++print("\n=== player_team_context: snap-weighted, per team-season ===")
++# Two seasons. Player A: 100% of 2024 on LAC (a good line), 40% of 2025 on LAC (a bad one).
++# Player B: every snap of both seasons on the bad line.
++import numpy as _np
++_sc_rows = []
++def _season(s, pid, team, pct, weeks):
++    for w in weeks:
++        _sc_rows.append({"season": s, "game_type": "REG", "week": w, "pfr_player_id": pid,
++                         "position": "T", "team": team, "offense_pct": pct, "offense_snaps": 60})
++for w in range(1, 18):
++    _season(2024, "SlatRa00", "LAC", 1.0, [w]); _season(2025, "PipkTr00", "LAC", 1.0, [w])
++    _season(2024, "PipkTr00", "LAC", 1.0, [w])
++for w in range(1, 8):
++    _season(2025, "SlatRa00", "LAC", 1.0, [w])       # 7 of 17 games, then out
++_snaps = pd.DataFrame(_sc_rows)
++_orig_pq = olp.pq
++def _fake_pq(name, url, columns=None):
++    if name.startswith("snaps_"):
++        s = int(name.split("_")[1].split(".")[0])
++        return _snaps[_snaps.season == s].copy()
++    raise RuntimeError("offline")
++olp.pq = _fake_pq
++olp._pfr_to_gsis = lambda: {"SlatRa00": "00-0036", "PipkTr00": "00-0034"}
++tps = pd.DataFrame({"press_pctile": [80.0, 10.0]},
++                   index=pd.MultiIndex.from_tuples([("LAC", 2024), ("LAC", 2025)]))
++trs = pd.DataFrame({"aly_pctile": [70.0, 20.0]},
++                   index=pd.MultiIndex.from_tuples([("LAC", 2024), ("LAC", 2025)]))
++try:
++    pc = olp.player_team_context([2024, 2025], 2025, tps, trs)
++finally:
++    olp.pq = _orig_pq
++chk(set(pc.index) == {"00-0036", "00-0034"}, "context keyed by gsis id")
++chk(pc.loc["00-0034", "pass_ctx"] < pc.loc["00-0036", "pass_ctx"],
++    "the man who played every snap of the bad season carries more of it than the one who missed most of it")
++chk(pc.loc["00-0034", "exposure"] == 1.0, "a full-time starter is fully exposed")
++chk(0.4 < pc.loc["00-0036", "exposure"] < 0.9, "a 7-game season lowers exposure without zeroing it")
++chk(pc.loc["00-0036", "pass_ctx"] > 10.0, "...and his context is not simply the latest team number")
++
+ # ── ESPN anchor data ───────────────────────────────────────────────────────────────
+ print("\n=== espn_win_rates: the validation benchmark ships with the repo ===")
+ e = olp.espn_win_rates()
+diff --git a/tools/refresh_cfb_seed.py b/tools/refresh_cfb_seed.py
+new file mode 100644
+index 0000000..eb3650f
+--- /dev/null
++++ b/tools/refresh_cfb_seed.py
+@@ -0,0 +1,105 @@
++#!/usr/bin/env python3
++"""
++refresh_cfb_seed.py — rebuild only the college-profile block of an existing seed.
++
++WHY THIS EXISTS
++    Same reason as refresh_ol_seed.py: build_seed.py rebuilds everything, and the college
++    profiles are one self-contained block (src/cfb/) that reads nothing from the rest of the
++    build except the list of projected players. Re-running it alone takes a few minutes and
++    touches nothing else — which is what you want when a draft class lands or the linker
++    changes, and also what a phone can finish.
++
++WHAT IT DOES
++    1. Reads the projected player pool from the seed (every player on a team's projection
++       list) and the raw Sleeper player DB from cache/players.json (downloaded if absent).
++    2. Runs src.cfb.profiles.build_all — the rookie class plus every projected veteran
++       drafted since 2015, bucketed by rookie year.
++    3. Writes the inline block back into seeds/triplecrown_seed.json (+ .gz) and the per-game
++       logs into seeds/triplecrown_seed.cfb_logs.json (+ .gz), exactly as build_seed.py does.
++
++Usage:
++    python tools/refresh_cfb_seed.py                 # seeds/triplecrown_seed.json
++    python tools/refresh_cfb_seed.py --refresh       # ignore cached links / tables
++    python tools/refresh_cfb_seed.py --dry-run       # build + report, write nothing
++"""
++import argparse
++import gzip
++import json
++import os
++import sys
++import urllib.request
++
++REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++sys.path.insert(0, REPO)
++os.chdir(REPO)
++
++PLAYERS_URL = "https://api.sleeper.app/v1/players/nfl"
++
++
++def _write(path, obj):
++    blob = json.dumps(obj, separators=(",", ":")).encode()
++    with open(path, "wb") as f:
++        f.write(blob)
++    with open(path + ".gz", "wb") as f:
++        f.write(gzip.compress(blob, compresslevel=9, mtime=0))
++    return len(blob)
++
++
++def main():
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--seed", default=os.path.join(REPO, "seeds", "triplecrown_seed.json"))
++    ap.add_argument("--refresh", action="store_true", help="re-link and re-read play-by-play")
++    ap.add_argument("--dry-run", action="store_true")
++    a = ap.parse_args()
++
++    try:
++        import src.cfb.profiles as profiles
++    except Exception as e:
++        print(f"error: needs pandas + pyarrow ({type(e).__name__}: {e})", file=sys.stderr)
++        return 2
++    if not profiles.cfbfastr.HAVE_PANDAS:
++        print("error: pandas not installed (pip install -r requirements.txt)", file=sys.stderr)
++        return 2
++
++    with open(a.seed) as f:
++        seed = json.load(f)
++    season = int(seed.get("season") or (seed.get("state") or {}).get("season") or 0)
++    if not season:
++        print("error: seed carries no season", file=sys.stderr)
++        return 1
++    pool = {str(p.get("player_id")) for team in (seed.get("seed") or {}).values()
++            for rows in team.values() for p in rows if p.get("player_id")}
++    print(f"  season {season}, {len(pool)} projected players")
++
++    players_path = os.path.join(REPO, "cache", "players.json")
++    if not os.path.exists(players_path):
++        os.makedirs(os.path.dirname(players_path), exist_ok=True)
++        print("  → downloading Sleeper player DB …", end="", flush=True)
++        urllib.request.urlretrieve(PLAYERS_URL, players_path)
++        print(" ok")
++    with open(players_path) as f:
++        players = json.load(f)
++
++    blk = profiles.build_all(season, players, only_pids=pool, refresh=a.refresh)
++    inline, logs = profiles.split_for_seed(blk)
++    classes = blk.get("classes") or {}
++    print(f"\n  {len(inline['players'])} college profiles across {len(classes)} draft classes:")
++    for cls in sorted(classes, reverse=True):
++        c = classes[cls]
++        print(f"    {cls}: {c['profiles']}/{c['pool']}")
++
++    if a.dry_run:
++        print("\n  dry run — nothing written")
++        return 0
++    seed["cfb"] = inline
++    n = _write(a.seed, seed)
++    print(f"\nwrote {os.path.relpath(a.seed, REPO)} ({n:,} bytes) + .gz")
++    if logs:
++        m = _write(os.path.join(REPO, "seeds", "triplecrown_seed.cfb_logs.json"), logs)
++        print(f"wrote seeds/triplecrown_seed.cfb_logs.json ({m:,} bytes) + .gz")
++    print("note: index_baked.html embeds its own copy; re-run bake_seed.py to refresh it.")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tools/refresh_ol_seed.py b/tools/refresh_ol_seed.py
+index 81ac02f..0fb24b8 100644
+--- a/tools/refresh_ol_seed.py
++++ b/tools/refresh_ol_seed.py
+@@ -51,6 +51,7 @@ CSV_FIELDS = [
+     "pass_grade", "pass_pctile", "pass_conf", "pass_snaps",
+     "run_grade", "run_pctile", "run_conf", "poa_carries",
+     "team_pass_pctile", "team_run_pctile",
++    "team_ctx_pass_pctile", "team_ctx_run_pctile", "team_ctx_exposure",
+     "p_market", "p_snap", "p_draft", "snap_pct",
+     "espn_pbwr", "espn_rbwr",
+     "hist_seasons", "ol_pctile_hist", "market_pctile_hist",
+diff --git a/tools/seed_refresh.py b/tools/seed_refresh.py
+index ff6dd65..23f26f6 100644
+--- a/tools/seed_refresh.py
++++ b/tools/seed_refresh.py
+@@ -144,6 +144,8 @@ SOURCES = {
+     # whatever the phase. The honest trigger would be "the rookie id set changed" rather than
+     # elapsed time — the cache key already encodes precisely that — but this scheduler has no
+     # event triggers, and at 0.02s a wasted tick costs nothing worth engineering around.
++    # Since the veteran extension (profiles.build_all) the block is one bucket per rookie
++    # year, each cached on its own id set — a roster move only rebuilds the class it touches.
+     "cfb": {
+         "paths": ["cfb"],
+         "every": 90 * DAY,
+-- 
+2.43.0
+

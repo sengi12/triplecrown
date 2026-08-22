@@ -154,8 +154,9 @@ function psRender(q){
     return `<button class="ps-row${i===0?' ps-active':''}" data-pid="${escAttr(e.pid)}" data-name="${escAttr(e.name)}" data-pos="${escAttr(e.pos)}" data-team="${escAttr(e.team)}" data-notes="${note ? note.count : 0}"
                     onclick="psPick(this)">
       ${img}
-      <span class="ps-nm">${nameText}</span>
-      <span class="ps-meta">${typeof tcOwnerChip==='function'?tcOwnerChip(e.pid, e.name, 'compact'):''}${noteBadge}${logo}<span class="ps-pos ps-pos-${e.pos}">${posText}</span></span>
+      <span class="ps-pos ps-pos-${e.pos}">${posText}</span>
+      <span class="ps-nm"><span class="ps-nm-main">${nameText}${noteBadge}</span><span class="ps-nm-sub">${logo}${e.team?escHtml(String(e.team).toUpperCase()):(isDef?'':'FA')}</span></span>
+      ${typeof tcOwnerPill==='function'?tcOwnerPill(e.pid, e.name):''}
     </button>`;
   }).join('');
 }

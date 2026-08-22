@@ -622,8 +622,12 @@ def aly_weight(y):
     return 0.0
 
 
-def team_run_blocking(seasons):
-    """Opponent-adjusted Adjusted Line Yards per team, over the given seasons."""
+def team_run_blocking(seasons, by_season=False):
+    """Opponent-adjusted Adjusted Line Yards per team, over the given seasons.
+
+    `by_season=True` returns one row per (team, season), ranked within each season — the
+    shape player_team_context() needs to credit a lineman only for the seasons he played.
+    """
     frames = []
     for s in seasons:
         pbp = pq(f"pbp_{s}.parquet", f"pbp/play_by_play_{s}.parquet",
@@ -640,17 +644,23 @@ def team_run_blocking(seasons):
         # helps here where the post-treatment QB adjustments below do not.
         lg = r.ly.mean()
         r["ly_adj"] = r.ly - r.defteam.map(r.groupby("defteam").ly.mean()) + lg
-        frames.append(r[["posteam", "ly_adj"]])
+        r["season"] = int(s)
+        frames.append(r[["posteam", "season", "ly_adj"]])
     if not frames:
         return pd.DataFrame(columns=["aly"])
     allr = pd.concat(frames, ignore_index=True)
+    if by_season:
+        out = allr.groupby(["posteam", "season"]).ly_adj.mean().to_frame("aly")
+        out["aly_pctile"] = out.groupby(level="season").aly.rank(pct=True) * 100
+        return out
     out = allr.groupby("posteam").ly_adj.mean().to_frame("aly")
     out["aly_pctile"] = out.aly.rank(pct=True) * 100
     return out
 
 
-def team_pass_protection(seasons):
-    """Pressure rate allowed per team, over the given seasons.
+def team_pass_protection(seasons, by_season=False):
+    """Pressure rate allowed per team, over the given seasons (per team-season when
+    `by_season`, ranked within each season).
 
     Deliberately UNADJUSTED. Three adjustments were tested and every one made the metric
     less stable year over year:
@@ -675,15 +685,110 @@ def team_pass_protection(seasons):
         d = d[d.was_pressure.notna()]
         if d.empty:
             continue
-        frames.append(pd.DataFrame({"posteam": d.posteam,
+        frames.append(pd.DataFrame({"posteam": d.posteam, "season": int(s),
                                     "wp": d.was_pressure.astype(float)}))
     if not frames:
         return pd.DataFrame(columns=["press_rate"])
     allp = pd.concat(frames, ignore_index=True)
+    if by_season:
+        out = allp.groupby(["posteam", "season"]).wp.mean().to_frame("press_rate")
+        out["press_pctile"] = (-out.press_rate).groupby(level="season").rank(pct=True) * 100
+        return out
     out = allp.groupby("posteam").wp.mean().to_frame("press_rate")
     # Lower pressure allowed is better, so invert before ranking.
     out["press_pctile"] = (-out.press_rate).rank(pct=True) * 100
     return out
+
+
+# Snap share at which a lineman is treated as having fully "owned" his unit's result. A
+# regular starter sits at 85-100%; below this the team context is scaled down in proportion.
+FULL_EXPOSURE_SNAP_PCT = 0.80
+
+
+def _pfr_to_gsis():
+    """{pfr_player_id: gsis_id} from the players release, with the draft table as a fallback
+    bridge (same two-source approach as player_prior_signals, so UDFAs resolve too)."""
+    p2g = {}
+    try:
+        pl = pq("players.parquet", "players/players.parquet")
+        pcol = next((c for c in pl.columns if "pfr" in c.lower() and pl[c].notna().any()), None)
+        if pcol and "gsis_id" in pl.columns:
+            m = pl[[pcol, "gsis_id"]].dropna().drop_duplicates(pcol)
+            p2g = dict(zip(m[pcol].astype(str), m.gsis_id.astype(str)))
+    except Exception:
+        pass
+    try:
+        draft = pq("draft_picks.parquet", "draft_picks/draft_picks.parquet",
+                   ["gsis_id", "pfr_player_id"]).dropna()
+        for g, pid in zip(draft.pfr_player_id, draft.gsis_id):
+            p2g.setdefault(str(g), str(pid))
+    except Exception:
+        pass
+    return p2g
+
+
+def player_team_context(seasons, latest, team_pass_s, team_run_s):
+    """The unit result each lineman actually contributed to, weighted by his snaps in it.
+
+    The team layer used to be the pooled multi-season team number stamped on everyone on the
+    latest roster. That charged a player for seasons he did not play and a team he was not on:
+    Rashawn Slater missed most of 2025 and still wore LAC's 2025 pressure rate in full, and a
+    free-agent signing inherited his NEW team's history on day one.
+
+    Here each (player, team, season) appearance in PFR snap counts is weighted by his snap
+    share that season and the same 0.45^age recency the snap prior uses. Returns, per gsis_id:
+
+        pass_ctx / run_ctx   snap-weighted team percentile across the seasons he played
+        exposure             0..1, how much of a full starter's workload those seasons add up
+                             to over his window (first appearance → latest), so the blend can
+                             be scaled down for a player who was mostly absent
+
+    A team-season he was on but did not play in contributes nothing to either.
+    """
+    rows = []
+    for s in seasons:
+        try:
+            sc = pq(f"snaps_{s}.parquet", f"snap_counts/snap_counts_{s}.parquet")
+        except Exception:
+            continue
+        sc = sc[(sc.game_type == "REG") & sc.position.isin(OLP)]
+        if sc.empty:
+            continue
+        g = sc.groupby(["pfr_player_id", "team"]).agg(
+            snap_pct=("offense_pct", "mean"), games=("offense_pct", "size")).reset_index()
+        # A player's share of HIS team's season: games played × mean share / full schedule.
+        sched = sc.groupby("team").week.nunique()
+        g["share"] = (g.snap_pct * g.games / g.team.map(sched).clip(lower=1)).clip(0, 1)
+        g["season"] = int(s)
+        rows.append(g)
+    if not rows:
+        return pd.DataFrame(columns=["pass_ctx", "run_ctx", "exposure"])
+    snaps = pd.concat(rows, ignore_index=True)
+    snaps["w"] = 0.45 ** (latest - snaps.season)
+    tp = team_pass_s.press_pctile if len(team_pass_s) else pd.Series(dtype=float)
+    tr = team_run_s.aly_pctile if len(team_run_s) else pd.Series(dtype=float)
+    key = list(zip(snaps.team, snaps.season))
+    snaps["pass_pct"] = [tp.get(k, np.nan) for k in key]
+    snaps["run_pct"] = [tr.get(k, np.nan) for k in key]
+    snaps["ws"] = snaps.w * snaps.share
+    wt = {int(s): 0.45 ** (latest - int(s)) for s in seasons}
+
+    def _agg(g):
+        first = int(g.season.min())
+        denom = sum(w for s, w in wt.items() if s >= first) or 1.0
+        exposure = min(1.0, (g.ws.sum() / denom) / FULL_EXPOSURE_SNAP_PCT)
+        def ctx(col):
+            m = g[col].notna()
+            if not m.any() or g.ws[m].sum() <= 0:
+                return np.nan
+            return float((g[col][m] * g.ws[m]).sum() / g.ws[m].sum())
+        return pd.Series({"pass_ctx": ctx("pass_pct"), "run_ctx": ctx("run_pct"),
+                          "exposure": exposure})
+    agg = snaps.groupby("pfr_player_id").apply(_agg)
+    p2g = _pfr_to_gsis()
+    agg.index = [p2g.get(str(i)) for i in agg.index]
+    agg = agg[agg.index.notna()]
+    return agg[~agg.index.duplicated()]
 
 
 def _stale(kind, have, want, extra=""):
@@ -1070,9 +1175,15 @@ def _hist_str(vals):
     return ",".join("" if v is None else str(int(v)) for v in vals)
 
 
-def blend_phase_grades(df, team_pass, team_run, season=None):
+def blend_phase_grades(df, team_pass, team_run, season=None, context=None):
     """Phase grades = the player's own composite, contextualized by his unit's measured
     performance in that phase. Both inputs are validated; the discredited APM is not used.
+
+    `context` (from player_team_context) makes the unit layer the unit HE PLAYED IN: the
+    snap-weighted result of his own team-seasons, with the blend weight scaled by how much
+    of a starter's workload those seasons were. A lineman who missed most of a bad year is
+    not bogged down by it; one who anchored it is. Without context (or for a player with no
+    snap record) the pooled latest-roster team number is used, as before.
 
     Keeping `pass_grade` / `run_grade` populated preserves the schema the player card and
     the RB rushing-fan card already read.
@@ -1084,9 +1195,24 @@ def blend_phase_grades(df, team_pass, team_run, season=None):
     tr = out.team.map(team_run.aly_pctile) if len(team_run) else nan
     ind = out.ol_pctile
 
-    for name, team_pct, espn_col in (("pass", tp, "espn_pbwr"), ("run", tr, "espn_rbwr")):
+    ctx = context if context is not None else pd.DataFrame(columns=["pass_ctx", "run_ctx", "exposure"])
+    exposure = pd.to_numeric(out.index.map(ctx.exposure) if "exposure" in ctx else nan,
+                             errors="coerce")
+    exposure = pd.Series(exposure, index=out.index)
+    pass_ctx = pd.Series(pd.to_numeric(out.index.map(ctx.pass_ctx) if "pass_ctx" in ctx else nan,
+                                       errors="coerce"), index=out.index)
+    run_ctx = pd.Series(pd.to_numeric(out.index.map(ctx.run_ctx) if "run_ctx" in ctx else nan,
+                                      errors="coerce"), index=out.index)
+
+    for name, team_pct, own_ctx, espn_col in (("pass", tp, pass_ctx, "espn_pbwr"),
+                                              ("run", tr, run_ctx, "espn_rbwr")):
         t = pd.Series(team_pct, index=out.index)
-        blended = ind * (1 - TEAM_BLEND) + t.fillna(ind) * TEAM_BLEND
+        # Played-in context where it exists, scaled by exposure; pooled roster context
+        # at the full weight otherwise.
+        have = own_ctx.notna() & exposure.notna()
+        w = pd.Series(TEAM_BLEND, index=out.index).where(~have, TEAM_BLEND * exposure.fillna(1.0))
+        unit = own_ctx.where(have, t)
+        blended = ind * (1 - w) + unit.fillna(ind) * w
 
         # Where ESPN publishes a win rate, fold it in — it is a direct tracking measurement
         # of this player in this phase, which nothing else here is. Ranked within position
@@ -1110,6 +1236,10 @@ def blend_phase_grades(df, team_pass, team_run, season=None):
 
     out["team_pass_pctile"] = pd.Series(tp, index=out.index).round(1)
     out["team_run_pctile"] = pd.Series(tr, index=out.index).round(1)
+    # What actually went into the blend, so a card (or a test) can see why.
+    out["team_ctx_pass_pctile"] = pass_ctx.round(1)
+    out["team_ctx_run_pctile"] = run_ctx.round(1)
+    out["team_ctx_exposure"] = exposure.round(2)
     return out
 
 
@@ -1216,10 +1346,18 @@ def build_grades_df(seasons=None, min_snaps=150, min_poa=60,
     _log("building team layer (pressure allowed + adjusted line yards)...")
     team_pass = team_pass_protection(seasons)
     team_run = team_run_blocking(seasons)
+    _log("building played-in team context (snap-weighted, per team-season)...")
+    try:
+        context = player_team_context(seasons, latest,
+                                      team_pass_protection(seasons, by_season=True),
+                                      team_run_blocking(seasons, by_season=True))
+    except Exception as e:
+        _log(f"  (team context unavailable, using pooled roster context: {type(e).__name__}: {e})")
+        context = None
     _log("building individual composite (market + snap share + draft capital)...")
     priors = player_prior_signals(seasons, latest)
     out = build_composite(out, priors, latest)
-    out = blend_phase_grades(out, team_pass, team_run, season=latest)
+    out = blend_phase_grades(out, team_pass, team_run, season=latest, context=context)
 
     _log("building grade history...")
     try:
@@ -1282,8 +1420,10 @@ def build_grades_df(seasons=None, min_snaps=150, min_poa=60,
             # Phase grades = composite contextualized by the team's measured performance.
             "pass_grade", "pass_pctile", "pass_conf", "pass_snaps",
             "run_grade", "run_pctile", "run_conf", "poa_carries",
-            # Team layer, reported in its own right.
+            # Team layer, reported in its own right — and the played-in version of it that
+            # actually enters the phase grades (see player_team_context).
             "team_pass_pctile", "team_run_pctile",
+            "team_ctx_pass_pctile", "team_ctx_run_pctile", "team_ctx_exposure",
             # Component percentiles, so a grade can be explained rather than just asserted.
             "p_market", "p_snap", "p_draft", "snap_pct", "is_active",
             "hist_seasons", "ol_pctile_hist", "market_pctile_hist",

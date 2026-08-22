@@ -271,6 +271,12 @@
 .olc-espn{color:var(--success);font-weight:800;}
 .olc-drivers{display:flex;flex-direction:column;gap:3px;margin-top:7px;}
 .olc-driver{display:grid;grid-template-columns:44px 1fr 24px;align-items:center;gap:6px;font-size:9.5px;color:var(--muted2);}
+/* The note-tag wrapper (noteWrapHtml) sits between these grid/flex containers and their real
+   children. Without this it becomes the ONE grid item and the whole row collapses into the
+   44px label column — the bars rendered ~40px wide on every screen. display:contents keeps
+   the DOM node (so closest('[data-noteable]') still finds it) but lets the children lay out
+   as the container's direct items. */
+.olc-driver>.note-tag-hit,.olc-mini-grid div>.note-tag-hit,.olc-trend-head>.note-tag-hit{display:contents;}
 .olc-driver i{display:block;height:4px;border-radius:2px;background:var(--surface3);overflow:hidden;}
 .olc-driver u{display:block;height:100%;background:var(--accent);text-decoration:none;}
 .olc-driver em{font-style:normal;text-align:right;font-variant-numeric:tabular-nums;}
@@ -293,6 +299,7 @@
 .olc-overview{margin:8px 2px 8px;padding:9px 11px;border-radius:8px;border:1px solid rgba(0,212,170,.28);
   background:rgba(0,212,170,.10);font-size:12px;color:var(--text);font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .olc-overview b{font-size:13px;font-weight:900;color:#bff8ea;}
+.olc-overview.olc-proj-pending{border-color:rgba(210,153,34,.3);background:rgba(210,153,34,.1);color:var(--warn);font-size:11px;}
 .olc-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:0 2px 4px;}
 .olc-metric{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 8px 7px;text-align:center;}
 .olc-metric label{display:block;font-size:9px;letter-spacing:.03em;color:var(--muted);font-weight:800;line-height:1.25;min-height:23px;}

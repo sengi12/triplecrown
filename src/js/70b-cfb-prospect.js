@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// College prospect panel (rookie player cards)
+// College prospect panel (rookie player cards — and every projected veteran drafted since 2015)
 // ─────────────────────────────────────────────────────────────────────────────
 // A rookie has no NFL snaps, so their card's NFL tab is empty and the College tab has
 // historically shown a raw ESPN box score — attempts, yards, TDs, longs. Those numbers can't
@@ -231,13 +231,17 @@ function renderCfbProspect(pid){
 
   // School/conference/final season: not a stat, but the thing a note most often needs to say
   // alongside one ("dominant, but in the MAC").
-  const metaBits = [prof.college, prof.conf, prof.final ? `final season ${prof.final}` : '']
+  // Veterans carry their draft class (profiles exist for every projected player drafted
+  // since 2015, not only rookies), so the panel says whose college career this is.
+  const clsTxt = prof.class ? `${prof.class} draft class` : '';
+  const metaBits = [prof.college, prof.conf, prof.final ? `final season ${prof.final}` : '', clsTxt]
     .filter(Boolean);
   const metaTxt = metaBits.join(' · ');
   const metaInner = [
     prof.college ? escHtml(prof.college) : '',
     prof.conf ? `<span class="cfb-meta-sep">·</span>${escHtml(prof.conf)}` : '',
     prof.final ? `<span class="cfb-meta-sep">·</span>final season ${escHtml(prof.final)}` : '',
+    clsTxt ? `<span class="cfb-meta-sep">·</span>${escHtml(clsTxt)}` : '',
   ].join('');
   const metaTagged = (typeof noteWrapHtml==='function' && metaTxt)
     ? noteWrapHtml(metaInner, Object.assign({}, base, {

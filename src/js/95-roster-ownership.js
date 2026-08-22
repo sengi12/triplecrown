@@ -74,15 +74,19 @@ function tcOwnerOf(pid, name){
 // `variant` tunes the density for where it sits:
 //   'full'    player-card hero — team name plus the manager's handle
 //   'compact' search rows and tables — team name only, since space is tight
+//   'pill'    projection rows / rankings / search — the MANAGER's handle (what you scan a
+//             league for: "is this one of mine, or Sengi12's?"), team name in the tooltip,
+//             no left margin so the row can push it to the right edge
 function tcOwnerChip(pid, name, variant){
   const rec = tcOwnerOf(pid, name);
   if(!rec) return '';
-  const compact = variant === 'compact';
-  const label = compact ? rec.teamName : rec.teamName;
+  const compact = variant === 'compact' || variant === 'pill';
+  const pill = variant === 'pill';
+  const label = pill ? (rec.owner || rec.teamName) : rec.teamName;
   const who = (!compact && rec.owner) ? `<span class="tc-own-mgr">@${escHtml(rec.owner)}</span>` : '';
   const title = rec.mine
     ? `On your team (${rec.teamName}) — open it in the League Analyzer`
-    : `Rostered by ${rec.owner || rec.teamName} — open that roster in the League Analyzer`;
+    : `Rostered by ${rec.owner || rec.teamName}${rec.owner && rec.teamName ? ` (${rec.teamName})` : ''} — open that roster in the League Analyzer`;
   // stopPropagation: these chips sit inside rows and cards that already have their own click
   // handler (open the player card, pick a search result). Without it, jumping to a roster
   // would also fire whatever the surrounding element does.
@@ -91,9 +95,13 @@ function tcOwnerChip(pid, name, variant){
   // an assumption, since the value ultimately originates from a provider's API.
   const rid = Number(rec.rosterId);
   if(!isFinite(rid)) return '';
-  return `<button class="tc-own-chip${rec.mine?' tc-own-mine':''}${compact?' tc-own-sm':''}"
+  // A <span role="button">, not a <button>: the search rows and several projection rows ARE
+  // buttons, and the HTML parser closes an open <button> the moment it meets another one —
+  // a nested chip would be ejected out of its row onto the next line.
+  return `<span class="tc-own-chip${rec.mine?' tc-own-mine':''}${compact?' tc-own-sm':''}${pill?' tc-own-pill':''}" role="button" tabindex="0"
             onclick="event.stopPropagation();tcOwnerJump(${rid})"
-            title="${escAttr(title)}">${rec.mine?'★ ':''}${escHtml(label)}${who}</button>`;
+            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();tcOwnerJump(${rid});}"
+            title="${escAttr(title)}">${rec.mine?'★ ':''}${escHtml(label)}${who}</span>`;
 }
 
 // Jump to this roster in the League Analyzer. Closes the player card first when one is open,
@@ -112,4 +120,19 @@ function tcOwnerJump(rosterId){
   if(typeof renderContent === 'function') renderContent();
   laViewTeam(rosterId);
   if(typeof syncAppChrome === 'function') syncAppChrome();
+}
+
+// Is a league synced right now? Lets table renderers add/remove the owner column as a whole
+// rather than leaving an empty column when nothing is linked.
+function tcOwnerActive(){
+  return !!tcOwnerIndex();
+}
+// Cache stamp for renderers that memoise their HTML (rankings): changes when the snapshot does.
+function tcOwnerStamp(){
+  tcOwnerIndex();
+  return _tcOwnStamp || '';
+}
+// Owner pill for a projection row: manager handle, pushed to the right of the name.
+function tcOwnerPill(pid, name){
+  return tcOwnerChip(pid, name, 'pill');
 }
