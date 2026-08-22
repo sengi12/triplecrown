@@ -334,7 +334,7 @@ async function refreshFromSleeper(bootRestore){
     projSeed=SEED;
     // reset the working set to the fresh seed
     workingProj={}; userProj=workingProj; importedSnapshot=null; dirtySinceImport=false;
-    importedAnalystData=null; importedRawPayload=null;
+    importedAnalystData=null; importedRawPayload=null; projBaseline=null;
     activeSeason='proj';
     // On the very first (boot) load, restore any saved session over the fresh seed. A manual
     // "refresh from Sleeper" (bootRestore=false) intentionally starts clean instead.

@@ -233,6 +233,9 @@ function loadProjections(data){
   // Snapshot for two-stage reset
   importedSnapshot=deepCopy(userProj);
   dirtySinceImport=false;
+  // A fresh import replaces whatever baseline a Manager load set up (tcLoadProjection
+  // re-baselines right after this call); every team is flagged edited above.
+  projBaseline=null;
 
   // Imported files define projection-season working data; force projection context and
   // bust all rankings/player caches so repeated imports cannot reuse stale rows/FPTS/VOR.
@@ -641,6 +644,7 @@ async function resetAll(){
   if(typeof stopDraftFollow==='function' && typeof draftId!=='undefined' && draftId) stopDraftFollow();
   userProj={}; workingProj=userProj; importedSnapshot=null; dirtySinceImport=false;
   importedAnalystData=null; importedRawPayload=null;
+  projBaseline=null;   // back to counting edits against the Sleeper seed
   playerNotes={};
   currentTeam=null; currentPhase='Passing'; undoStacks={};
   clearSession();   // wipe the saved session so the fresh pull isn't overwritten on next boot

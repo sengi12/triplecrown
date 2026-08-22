@@ -10,6 +10,11 @@ let importedSnapshot = null;   // deep copy of last-imported state (for 2-stage 
 let importedAnalystData = null; // { _avg:[mergedRows], analystName:[rawRows], ... } — null unless multi-analyst import
 let importedRawPayload = null;  // original {projections, playerNotes} from last import (for re-loading)
 let dirtySinceImport = false;  // have edits happened since import/last reset-to-import?
+// Change-tracking baseline for the progress bar / team dots. null = default mode (edits are
+// counted against the Sleeper seed). Set to {name, loadedAt} when a saved set is loaded from
+// the Projections Manager: every team's `edited` flag is cleared at that moment, so the bar
+// and dots then show only what you changed SINCE loading that set. Reset All clears it.
+let projBaseline = null;
 let currentTeam = null;
 let currentPhase = 'Passing';
 let passingSubTab = 'targets';

@@ -81,18 +81,31 @@ function renderSidebar(){
   const hasTeam = !!currentTeam;
   const selectedLabel = hasTeam ? `${sidebarTeamLabel(currentTeam)} (${currentTeam})` : 'Select Team';
   const chevron = mobileTeamPickerExpanded ? '▾' : '▸';
+  // Mobile change markers (the grid hides names + dots): a dot on the collapsed toggle when
+  // the selected team has edits, plus the edited count so you can see changes without
+  // expanding the picker. The grid itself shows a corner dot per edited team (CSS).
+  const curEdited = hasTeam && (typeof teamEdited==='function' ? teamEdited(currentTeam) : false);
+  const toggleDot = curEdited ? `<span class="team-picker-dot" title="${currentTeam} has edits"></span>` : '';
+  const toggleCount = done>0 ? `<span class="team-picker-count" title="${done} team${done===1?'':'s'} with edits">${done}</span>` : '';
   const mobileToggle = `<button class="team-picker-toggle" onclick="toggleMobileTeamPicker()" aria-expanded="${mobileTeamPickerExpanded?'true':'false'}" title="Tap to ${mobileTeamPickerExpanded?'collapse':'expand'} team selector">
-    <span class="team-picker-toggle-label">Teams: ${selectedLabel}</span>
-    <span class="team-picker-toggle-icon">${chevron}</span>
+    <span class="team-picker-toggle-label">Teams: ${selectedLabel}${toggleDot}</span>
+    <span class="team-picker-toggle-right">${toggleCount}<span class="team-picker-toggle-icon">${chevron}</span></span>
   </button>`;
 
   const collapsedClass = (mobile && !mobileTeamPickerExpanded) ? 'mobile-collapsed' : '';
   const html = `${mobileToggle}<div class="sidebar-groups ${collapsedClass}">${groupsHtml}</div>`;
 
   sb.innerHTML=html;
+  // Baseline: after a Projections Manager load the bar counts edits since THAT set was loaded
+  // (not since the Sleeper seed), so it reads "vs saved" and names the set in the tooltip.
+  const baseline = (typeof projBaselineActive==='function' && projBaselineActive()) ? projBaseline : null;
   const pt=document.getElementById('progressText');
-  pt.textContent=`${done}/32 teams`;
-  pt.title=`${done} of 32 teams have edited projections. A team counts once you change something in its working set; opening a tab or the Rankings page does not count.`;
+  pt.textContent = baseline ? `${done}/32 vs saved` : `${done}/32 teams`;
+  pt.title = baseline
+    ? `${done} of 32 teams changed since you loaded "${baseline.name}" from the Projections Manager. Reset All returns to tracking against the Sleeper projections.`
+    : `${done} of 32 teams have edited projections. A team counts once you change something in its working set; opening a tab or the Rankings page does not count.`;
+  const pw = pt.parentElement || (pt.closest ? pt.closest('.progress-wrap') : null);
+  if(pw && pw.classList) pw.classList.toggle('baseline', !!baseline);
   document.getElementById('progressFill').style.width=`${done/32*100}%`;
 }
 

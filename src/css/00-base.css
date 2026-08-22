@@ -45,6 +45,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .progress-text{font-size:9px;color:var(--muted);margin-bottom:2px;}
 .progress-bar{height:3px;background:var(--border);border-radius:2px;overflow:hidden;}
 .progress-fill{height:100%;background:var(--accent);transition:width .3s;}
+/* Tracking edits against a saved set (Projections Manager → Load) rather than the seed. */
+.progress-wrap.baseline .progress-fill{background:var(--warn);}
+.progress-wrap.baseline .progress-text{color:var(--warn);}
+/* Mobile team-picker change markers (hidden on desktop, where the sidebar shows the dots). */
+.team-picker-dot,.team-picker-count,.team-picker-toggle-right{display:none;}
 .main{display:flex;height:calc(100vh - 50px);}
 .sidebar{width:200px;min-width:200px;background:var(--surface);
   border-right:1px solid var(--border);overflow-y:auto;padding:8px 0;flex-shrink:0;}

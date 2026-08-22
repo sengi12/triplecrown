@@ -994,6 +994,11 @@ let importedSnapshot = null;   // deep copy of last-imported state (for 2-stage 
 let importedAnalystData = null; // { _avg:[mergedRows], analystName:[rawRows], ... } — null unless multi-analyst import
 let importedRawPayload = null;  // original {projections, playerNotes} from last import (for re-loading)
 let dirtySinceImport = false;  // have edits happened since import/last reset-to-import?
+// Change-tracking baseline for the progress bar / team dots. null = default mode (edits are
+// counted against the Sleeper seed). Set to {name, loadedAt} when a saved set is loaded from
+// the Projections Manager: every team's `edited` flag is cleared at that moment, so the bar
+// and dots then show only what you changed SINCE loading that set. Reset All clears it.
+let projBaseline = null;
 let currentTeam = null;
 let currentPhase = 'Passing';
 let passingSubTab = 'targets';
@@ -1121,6 +1126,7 @@ function saveSession(){
       season: PROJ_SEASON,          // guard: only restore onto a matching-season seed
       savedAt: Date.now(),
       workingProj: workingProj,
+      projBaseline: projBaseline,
       playerNotes: playerNotes,
       scoringSettings: scoringSettings,
       rankFormat: rankFormat,
@@ -1213,6 +1219,10 @@ function restoreSession(){
     workingProj = p.workingProj;
     if(activeSeason==='proj') userProj = workingProj;
     if(p.undoStacks && typeof p.undoStacks==='object') undoStacks = p.undoStacks;
+    // The change-tracking baseline only means something alongside the working set it was
+    // taken against, so it rides with (and only with) a restored workingProj.
+    projBaseline = (p.projBaseline && typeof p.projBaseline==='object' && p.projBaseline.name)
+      ? { name:String(p.projBaseline.name), loadedAt:Number(p.projBaseline.loadedAt)||0 } : null;
     restored = true;
   }
   // A restored session can carry ghost rosters saved before the roster-truth filter existed —
@@ -1430,6 +1440,21 @@ function teamEdited(team){
   const st = workingProj && workingProj[team];
   return !!(st && st.edited);
 }
+// Re-baseline change tracking on a saved projection set (Projections Manager → Load).
+// loadProjections() flags every imported team as edited (correct for a one-off file import:
+// the file IS the work). For a set you saved yourself that is noise — what you want to see is
+// what has moved since you loaded it. So: clear every working team's flag, remember which set
+// is the baseline, and let the normal markTeamEdited path light teams up again from here.
+function setProjBaseline(name){
+  projBaseline = { name: String(name||'Saved projections'), loadedAt: Date.now() };
+  if(workingProj) for(const t in workingProj){ const st=workingProj[t]; if(st) st.edited=false; }
+  // The undo history predates this baseline; a stale snapshot with edited:true would re-light
+  // a team on undo, so start clean (Reset/Import already drop it the same way).
+  undoStacks = {};
+  saveSession();
+}
+function clearProjBaseline(){ projBaseline = null; }
+function projBaselineActive(){ return !!(projBaseline && projBaseline.name); }
 function markDirty(team){
   if(team) markTeamEdited(team);
   if(importedSnapshot) dirtySinceImport = true;
@@ -3274,18 +3299,31 @@ function renderSidebar(){
   const hasTeam = !!currentTeam;
   const selectedLabel = hasTeam ? `${sidebarTeamLabel(currentTeam)} (${currentTeam})` : 'Select Team';
   const chevron = mobileTeamPickerExpanded ? '▾' : '▸';
+  // Mobile change markers (the grid hides names + dots): a dot on the collapsed toggle when
+  // the selected team has edits, plus the edited count so you can see changes without
+  // expanding the picker. The grid itself shows a corner dot per edited team (CSS).
+  const curEdited = hasTeam && (typeof teamEdited==='function' ? teamEdited(currentTeam) : false);
+  const toggleDot = curEdited ? `<span class="team-picker-dot" title="${currentTeam} has edits"></span>` : '';
+  const toggleCount = done>0 ? `<span class="team-picker-count" title="${done} team${done===1?'':'s'} with edits">${done}</span>` : '';
   const mobileToggle = `<button class="team-picker-toggle" onclick="toggleMobileTeamPicker()" aria-expanded="${mobileTeamPickerExpanded?'true':'false'}" title="Tap to ${mobileTeamPickerExpanded?'collapse':'expand'} team selector">
-    <span class="team-picker-toggle-label">Teams: ${selectedLabel}</span>
-    <span class="team-picker-toggle-icon">${chevron}</span>
+    <span class="team-picker-toggle-label">Teams: ${selectedLabel}${toggleDot}</span>
+    <span class="team-picker-toggle-right">${toggleCount}<span class="team-picker-toggle-icon">${chevron}</span></span>
   </button>`;
 
   const collapsedClass = (mobile && !mobileTeamPickerExpanded) ? 'mobile-collapsed' : '';
   const html = `${mobileToggle}<div class="sidebar-groups ${collapsedClass}">${groupsHtml}</div>`;
 
   sb.innerHTML=html;
+  // Baseline: after a Projections Manager load the bar counts edits since THAT set was loaded
+  // (not since the Sleeper seed), so it reads "vs saved" and names the set in the tooltip.
+  const baseline = (typeof projBaselineActive==='function' && projBaselineActive()) ? projBaseline : null;
   const pt=document.getElementById('progressText');
-  pt.textContent=`${done}/32 teams`;
-  pt.title=`${done} of 32 teams have edited projections. A team counts once you change something in its working set; opening a tab or the Rankings page does not count.`;
+  pt.textContent = baseline ? `${done}/32 vs saved` : `${done}/32 teams`;
+  pt.title = baseline
+    ? `${done} of 32 teams changed since you loaded "${baseline.name}" from the Projections Manager. Reset All returns to tracking against the Sleeper projections.`
+    : `${done} of 32 teams have edited projections. A team counts once you change something in its working set; opening a tab or the Rankings page does not count.`;
+  const pw = pt.parentElement || (pt.closest ? pt.closest('.progress-wrap') : null);
+  if(pw && pw.classList) pw.classList.toggle('baseline', !!baseline);
   document.getElementById('progressFill').style.width=`${done/32*100}%`;
 }
 
@@ -16598,6 +16636,9 @@ function loadProjections(data){
   // Snapshot for two-stage reset
   importedSnapshot=deepCopy(userProj);
   dirtySinceImport=false;
+  // A fresh import replaces whatever baseline a Manager load set up (tcLoadProjection
+  // re-baselines right after this call); every team is flagged edited above.
+  projBaseline=null;
 
   // Imported files define projection-season working data; force projection context and
   // bust all rankings/player caches so repeated imports cannot reuse stale rows/FPTS/VOR.
@@ -17006,6 +17047,7 @@ async function resetAll(){
   if(typeof stopDraftFollow==='function' && typeof draftId!=='undefined' && draftId) stopDraftFollow();
   userProj={}; workingProj=userProj; importedSnapshot=null; dirtySinceImport=false;
   importedAnalystData=null; importedRawPayload=null;
+  projBaseline=null;   // back to counting edits against the Sleeper seed
   playerNotes={};
   currentTeam=null; currentPhase='Passing'; undoStacks={};
   clearSession();   // wipe the saved session so the fresh pull isn't overwritten on next boot
@@ -17947,6 +17989,9 @@ async function tcLoadProjection(id){
     loadProjections(data.data);
     const nameEl = document.getElementById('scenarioName');
     if(nameEl) nameEl.value = data.name;
+    // Track changes against THIS set from here on: the progress bar and team dots start at
+    // zero and light up only for teams you edit after loading. Reset All returns to default.
+    if(typeof setProjBaseline==='function'){ setProjBaseline(data.name); renderSidebar(); }
     toast(`Loaded "${data.name}" ✓`, 'ok');
   }catch(e){
     if(btn){ btn.disabled = false; btn.textContent = 'Load'; }
@@ -19239,7 +19284,7 @@ async function refreshFromSleeper(bootRestore){
     projSeed=SEED;
     // reset the working set to the fresh seed
     workingProj={}; userProj=workingProj; importedSnapshot=null; dirtySinceImport=false;
-    importedAnalystData=null; importedRawPayload=null;
+    importedAnalystData=null; importedRawPayload=null; projBaseline=null;
     activeSeason='proj';
     // On the very first (boot) load, restore any saved session over the fresh seed. A manual
     // "refresh from Sleeper" (bootRestore=false) intentionally starts clean instead.
@@ -20538,7 +20583,7 @@ function handleSeedLoad(e){
         seasonStatsCache={proj:SEED};
         projSeed=SEED;
         workingProj={}; userProj=workingProj; importedSnapshot=null; dirtySinceImport=false; activeSeason='proj';
-        importedAnalystData=null; importedRawPayload=null;
+        importedAnalystData=null; importedRawPayload=null; projBaseline=null;
         currentTeam=null;
       }
       renderSeasonTabs(); renderSidebar();

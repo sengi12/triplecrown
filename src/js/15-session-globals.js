@@ -49,6 +49,7 @@ function saveSession(){
       season: PROJ_SEASON,          // guard: only restore onto a matching-season seed
       savedAt: Date.now(),
       workingProj: workingProj,
+      projBaseline: projBaseline,
       playerNotes: playerNotes,
       scoringSettings: scoringSettings,
       rankFormat: rankFormat,
@@ -141,6 +142,10 @@ function restoreSession(){
     workingProj = p.workingProj;
     if(activeSeason==='proj') userProj = workingProj;
     if(p.undoStacks && typeof p.undoStacks==='object') undoStacks = p.undoStacks;
+    // The change-tracking baseline only means something alongside the working set it was
+    // taken against, so it rides with (and only with) a restored workingProj.
+    projBaseline = (p.projBaseline && typeof p.projBaseline==='object' && p.projBaseline.name)
+      ? { name:String(p.projBaseline.name), loadedAt:Number(p.projBaseline.loadedAt)||0 } : null;
     restored = true;
   }
   // A restored session can carry ghost rosters saved before the roster-truth filter existed —
@@ -358,6 +363,21 @@ function teamEdited(team){
   const st = workingProj && workingProj[team];
   return !!(st && st.edited);
 }
+// Re-baseline change tracking on a saved projection set (Projections Manager → Load).
+// loadProjections() flags every imported team as edited (correct for a one-off file import:
+// the file IS the work). For a set you saved yourself that is noise — what you want to see is
+// what has moved since you loaded it. So: clear every working team's flag, remember which set
+// is the baseline, and let the normal markTeamEdited path light teams up again from here.
+function setProjBaseline(name){
+  projBaseline = { name: String(name||'Saved projections'), loadedAt: Date.now() };
+  if(workingProj) for(const t in workingProj){ const st=workingProj[t]; if(st) st.edited=false; }
+  // The undo history predates this baseline; a stale snapshot with edited:true would re-light
+  // a team on undo, so start clean (Reset/Import already drop it the same way).
+  undoStacks = {};
+  saveSession();
+}
+function clearProjBaseline(){ projBaseline = null; }
+function projBaselineActive(){ return !!(projBaseline && projBaseline.name); }
 function markDirty(team){
   if(team) markTeamEdited(team);
   if(importedSnapshot) dirtySinceImport = true;

@@ -659,6 +659,9 @@ async function tcLoadProjection(id){
     loadProjections(data.data);
     const nameEl = document.getElementById('scenarioName');
     if(nameEl) nameEl.value = data.name;
+    // Track changes against THIS set from here on: the progress bar and team dots start at
+    // zero and light up only for teams you edit after loading. Reset All returns to default.
+    if(typeof setProjBaseline==='function'){ setProjBaseline(data.name); renderSidebar(); }
     toast(`Loaded "${data.name}" ✓`, 'ok');
   }catch(e){
     if(btn){ btn.disabled = false; btn.textContent = 'Load'; }
