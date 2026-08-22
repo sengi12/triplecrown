@@ -446,8 +446,15 @@ function buildPlayerList(){
         rushing_yards:qb.qb_rush_yards,rushing_tds:qb.qb_rush_tds,rushing_attempts:qb.qb_rush_attempts,
         receiving_yards:0,receiving_tds:0,receptions:0,receiving_targets:0,fumbles_lost:0});
     });
+    // Roster fills (camp bodies merged in from the Sleeper DB so they're selectable) stay off
+    // the board until they're given a share. Before this, whether a team's ~9 zero-point
+    // WR/TEs showed up depended on whether its state was built before or after the player DB
+    // loaded — 564 players at boot, 841 after a reset/import — which looked like the pool
+    // "changing on its own".
+    const untouchedFill = p => !!p.fill && !(p.share>0) && !(p.td_share>0);
     if(state.passing_shares){
       state.passing_shares.forEach(p=>{
+        if(untouchedFill(p) && findPlayer(team,p.name)<0) return;
         const projTgts=Math.round(p.share*totalTgts);
         const projRec=Math.round(projTgts*(p.catch_rate||0.65));
         const projYds=Math.round(projTgts*(p.ypt||9));
@@ -466,6 +473,7 @@ function buildPlayerList(){
       const r=state.rushing;
       const totalRushTDs=teamRushTDs(state);
       r.shares.forEach(p=>{
+        if(untouchedFill(p) && findPlayer(team,p.name)<0) return;
         const att=Math.round(p.share*r.total_attempts);
         const yds=Math.round(att*(p.ypc||r.ypa||4));
         const tds=parseFloat((p.td_share*totalRushTDs).toFixed(1));

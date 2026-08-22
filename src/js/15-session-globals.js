@@ -288,6 +288,10 @@ function mergeRosterPlayers(team){
       rushing_yards:0,rushing_tds:0,rushing_attempts:0,
       receiving_targets:0,receptions:0,receiving_yards:0,receiving_tds:0,
       adp:999,adp_ppr:999,adp_half_ppr:999,adp_2qb:999,games_played:0,
+      // Marks a camp-body / practice-squad fill (no projection anywhere). Selectable in the
+      // editors, but the rankings skip it until someone actually dials it up — otherwise every
+      // team built after the player DB arrives dumps ~9 zero-point WR/TEs into the board.
+      roster_fill:true,
     });
   }
   rosterMergedTeams.add(team);
@@ -357,13 +361,25 @@ function deepCopy(o){ return JSON.parse(JSON.stringify(o)); }
 function markTeamEdited(team){
   if(!team || activeSeason!=='proj') return;
   const st = workingProj && workingProj[team];
-  if(st && !st.edited) st.edited = true;
+  if(st && !st.edited){ st.edited = true; queueSidebarRefresh(); }
+}
+// The progress bar / team dots live in the sidebar, which only re-rendered on a team switch —
+// so the first edit to a team showed up in the bar only when you moved to another team, which
+// is what made the bar look like it changed "on its own". Repaint on the next frame instead
+// (coalesced: a slider drag fires dozens of edits per second, one repaint is plenty).
+let _sidebarRefreshQueued = false;
+function queueSidebarRefresh(){
+  if(_sidebarRefreshQueued || typeof renderSidebar!=='function') return;
+  _sidebarRefreshQueued = true;
+  const run = ()=>{ _sidebarRefreshQueued=false; try{ renderSidebar(); }catch(e){} };
+  if(window.requestAnimationFrame) window.requestAnimationFrame(run); else setTimeout(run,0);
 }
 function teamEdited(team){
   const st = workingProj && workingProj[team];
   return !!(st && st.edited);
 }
-// Re-baseline change tracking on a saved projection set (Projections Manager → Load).
+// Re-baseline change tracking on a saved projection set (Projections Manager → Load, and
+// every successful cloud Save — "vs saved" always means since the last load OR save).
 // loadProjections() flags every imported team as edited (correct for a one-off file import:
 // the file IS the work). For a set you saved yourself that is noise — what you want to see is
 // what has moved since you loaded it. So: clear every working team's flag, remember which set
@@ -371,9 +387,12 @@ function teamEdited(team){
 function setProjBaseline(name){
   projBaseline = { name: String(name||'Saved projections'), loadedAt: Date.now() };
   if(workingProj) for(const t in workingProj){ const st=workingProj[t]; if(st) st.edited=false; }
-  // The undo history predates this baseline; a stale snapshot with edited:true would re-light
-  // a team on undo, so start clean (Reset/Import already drop it the same way).
-  undoStacks = {};
+  // The undo history predates this baseline: a snapshot still carrying edited:true would
+  // re-light a team on undo. Scrub the flag inside the snapshots instead of dropping them —
+  // a Save must not cost you your undo history.
+  if(undoStacks) for(const t in undoStacks){
+    (undoStacks[t]||[]).forEach(e=>{ if(e && e.working) e.working.edited=false; });
+  }
   saveSession();
 }
 function clearProjBaseline(){ projBaseline = null; }
@@ -524,6 +543,7 @@ function undoTeam(team){
     else projSeed[team] = prev.seed;
   }
   markDirty();
+  queueSidebarRefresh();   // the team's edited flag may have just flipped back to clean
   // If the working (proj) view is on screen, refresh immediately so the change is visible.
   // (userProj IS workingProj in proj mode.) If undo fully deleted the team (reverted to
   // "never existed"), rebuild a valid default via ensureTeam first — otherwise rendering

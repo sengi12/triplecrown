@@ -164,6 +164,8 @@ run_js_test test_playbook_insights "Playbook modal: swipe-close on every tab, le
 run_js_test test_progress_bar   "Team progress bar: counts edited working-set teams only — not materialised state, not Rankings, not reference seasons; undo/import"
 run_js_test test_audit_fixes    "Live-audit regressions: import merge/targets/season, copy zeroing, shape-aware cache, weekly fetch cache, escaping, D/ST failed weeks, 2QB SF, onerror guards, shape restore"
 run_js_test test_audit_fixes2   "Live-audit regressions II: week-range re-applies after season switch, draft follow lands on the projection season, traded picks credit the receiving roster"
+run_js_test test_progress_baseline "Progress bar re-baselines on a Projections Manager load AND on every cloud Save (vs saved), keeps undo history, survives session restore, drops on reset/import"
+run_js_test test_roster_fill      "Roster fills stay off the rankings/export until dialed up (564 not 841); progress bar repaints on the edit itself"
 run_js_test test_consistency    "Consistency grade: DNP weeks excluded and labelled, <10-snap games skipped, scored in full PPR in every league"
 run_js_test test_route_tree     "Route tree card: alignment/route distribution rendering"
 run_js_test test_qb_chart       "QB passing chart card rendering"

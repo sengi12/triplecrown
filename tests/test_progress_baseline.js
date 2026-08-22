@@ -4,7 +4,7 @@
 //             clean and only teams changed SINCE the load light up; the bar reads "vs saved".
 //   Reset All / refresh / a fresh file import drop the baseline again.
 const elStore={};
-function mkEl(id){if(!elStore[id])elStore[id]={id,innerHTML:'',style:{},textContent:'',value:'',title:'',dataset:{},classList:{add(){},remove(){},toggle(){}},setAttribute(){},getAttribute(){return '';},children:[],appendChild(){},querySelectorAll:()=>[],addEventListener(){}};return elStore[id];}
+function mkEl(id){ global.__mkEl=mkEl;if(!elStore[id])elStore[id]={id,remove(){},innerHTML:'',style:{},textContent:'',value:'',title:'',dataset:{},classList:{add(){},remove(){},toggle(){}},setAttribute(){},getAttribute(){return '';},children:[],appendChild(){},querySelectorAll:()=>[],addEventListener(){}};return elStore[id];}
 global.document={getElementById:(id)=>mkEl(id),querySelector:()=>null,querySelectorAll:()=>[],createElement:()=>({click(){},style:{},appendChild(){}}),activeElement:null,body:{appendChild(){},removeChild(){}}};
 global.window={getSelection:()=>({removeAllRanges(){},addRange(){}}),matchMedia:()=>({matches:false})};
 global.Chart=function(){return{destroy(){},update(){},data:{datasets:[{}]}};};
@@ -13,7 +13,7 @@ global.AbortController=class{constructor(){this.signal={};}abort(){}};
 const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 let stored=null;
-const app=new Function(code+`
+const app=new Function('mkEl',code+`
   toast=function(){};
   return {
   assembleSeed, normalizeSleeperRow, setSEED:(s)=>{SEED=s;seasonStatsCache.proj=s;projSeed=s;},
@@ -33,7 +33,16 @@ const app=new Function(code+`
   snapshot:()=>JSON.parse(JSON.stringify({v:2,season:PROJ_SEASON,workingProj,projBaseline,playerNotes:{},scoringSettings,rankFormat})),
   restoreFrom:(p)=>{ global.localStorage={getItem:()=>JSON.stringify(p),setItem(){},removeItem(){}}; projBaseline=null; workingProj={}; userProj=workingProj; return restoreSession(); },
   resetLike:()=>{ userProj={}; workingProj=userProj; importedSnapshot=null; projBaseline=null; undoStacks={}; },
-};`)();
+  canUndo:(t)=>canUndo(t),
+  fakeCloud:(name)=>{
+    _tcUser={id:'u1'};
+    const rows=[]; const q=()=>({ select:()=>q(), eq:()=>q(), limit:()=>Promise.resolve({data:[],error:null}),
+      update:()=>({ eq:()=>({ eq:()=>Promise.resolve({error:null}) }) }), insert:(r)=>{ rows.push(r); return Promise.resolve({error:null}); } });
+    _tcClient={ from:()=>q() };
+    mkEl('tcSaveName').value=name; return rows;
+  },
+  doSave:async()=>{ try{ await tcDoSave(); }catch(e){ return 'ERR '+e.message; } return mkEl('tcSaveErr').textContent; },
+};`)(mkEl);
 
 let pass=0,total=0;
 const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -94,5 +103,24 @@ chk(!app.projBaselineActive() && /teams$/.test(app.progress()),'clearProjBaselin
 app.setProjBaseline('X'); app.importAll(TM); app.renderSidebar();
 chk(!app.projBaselineActive() && app.progress()==='4/32 teams','a fresh file import after a Manager load returns to default counting');
 
-console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
-process.exit(pass===total?0:1);
+(async()=>{
+  console.log('=== a cloud Save re-baselines to that save and keeps undo history ===');
+  app.resetLike(); app.importAll(TM); app.setProjBaseline('Old load');
+  app.pushUndo('KC'); app.select('KC'); app.slide('KC','passing_yards',4600);
+  app.pushUndo('DET'); app.select('DET'); app.slide('DET','passing_yards',4200); app.renderSidebar();
+  chk(app.progress()==='2/32 vs saved','two teams changed since the load');
+  const rows=app.fakeCloud('Week 2 build');
+  const saveRes=await app.doSave(); console.log('    save:',saveRes);
+  app.renderSidebar();
+  chk(rows.length===1 && rows[0].name==='Week 2 build','save reached the (fake) cloud');
+  chk(app.baseline() && app.baseline().name==='Week 2 build','baseline is now the save name');
+  chk(app.progress()==='0/32 vs saved','bar restarts at 0/32 vs saved after the save');
+  chk(/Week 2 build/.test(app.progressTitle()),'tooltip names the saved set');
+  chk(app.canUndo('KC') && app.canUndo('DET'),'undo history survives the save');
+  app.undo('KC'); app.renderSidebar();
+  chk(!app.teamEdited('KC') && app.progress()==='0/32 vs saved','undoing a pre-save edit does not re-light the team');
+  app.select('DET'); app.slide('DET','passing_yards',4300); app.renderSidebar();
+  chk(app.progress()==='1/32 vs saved','a new edit after the save counts against it');
+  console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
+  process.exit(pass===total?0:1);
+})();

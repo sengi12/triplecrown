@@ -4086,6 +4086,10 @@ function mergeRosterPlayers(team){
       rushing_yards:0,rushing_tds:0,rushing_attempts:0,
       receiving_targets:0,receptions:0,receiving_yards:0,receiving_tds:0,
       adp:999,adp_ppr:999,adp_half_ppr:999,adp_2qb:999,games_played:0,
+      // Marks a camp-body / practice-squad fill (no projection anywhere). Selectable in the
+      // editors, but the rankings skip it until someone actually dials it up — otherwise every
+      // team built after the player DB arrives dumps ~9 zero-point WR/TEs into the board.
+      roster_fill:true,
     });
   }
   rosterMergedTeams.add(team);
@@ -4155,13 +4159,25 @@ function deepCopy(o){ return JSON.parse(JSON.stringify(o)); }
 function markTeamEdited(team){
   if(!team || activeSeason!=='proj') return;
   const st = workingProj && workingProj[team];
-  if(st && !st.edited) st.edited = true;
+  if(st && !st.edited){ st.edited = true; queueSidebarRefresh(); }
+}
+// The progress bar / team dots live in the sidebar, which only re-rendered on a team switch —
+// so the first edit to a team showed up in the bar only when you moved to another team, which
+// is what made the bar look like it changed "on its own". Repaint on the next frame instead
+// (coalesced: a slider drag fires dozens of edits per second, one repaint is plenty).
+let _sidebarRefreshQueued = false;
+function queueSidebarRefresh(){
+  if(_sidebarRefreshQueued || typeof renderSidebar!=='function') return;
+  _sidebarRefreshQueued = true;
+  const run = ()=>{ _sidebarRefreshQueued=false; try{ renderSidebar(); }catch(e){} };
+  if(window.requestAnimationFrame) window.requestAnimationFrame(run); else setTimeout(run,0);
 }
 function teamEdited(team){
   const st = workingProj && workingProj[team];
   return !!(st && st.edited);
 }
-// Re-baseline change tracking on a saved projection set (Projections Manager → Load).
+// Re-baseline change tracking on a saved projection set (Projections Manager → Load, and
+// every successful cloud Save — "vs saved" always means since the last load OR save).
 // loadProjections() flags every imported team as edited (correct for a one-off file import:
 // the file IS the work). For a set you saved yourself that is noise — what you want to see is
 // what has moved since you loaded it. So: clear every working team's flag, remember which set
@@ -4169,9 +4185,12 @@ function teamEdited(team){
 function setProjBaseline(name){
   projBaseline = { name: String(name||'Saved projections'), loadedAt: Date.now() };
   if(workingProj) for(const t in workingProj){ const st=workingProj[t]; if(st) st.edited=false; }
-  // The undo history predates this baseline; a stale snapshot with edited:true would re-light
-  // a team on undo, so start clean (Reset/Import already drop it the same way).
-  undoStacks = {};
+  // The undo history predates this baseline: a snapshot still carrying edited:true would
+  // re-light a team on undo. Scrub the flag inside the snapshots instead of dropping them —
+  // a Save must not cost you your undo history.
+  if(undoStacks) for(const t in undoStacks){
+    (undoStacks[t]||[]).forEach(e=>{ if(e && e.working) e.working.edited=false; });
+  }
   saveSession();
 }
 function clearProjBaseline(){ projBaseline = null; }
@@ -4322,6 +4341,7 @@ function undoTeam(team){
     else projSeed[team] = prev.seed;
   }
   markDirty();
+  queueSidebarRefresh();   // the team's edited flag may have just flipped back to clean
   // If the working (proj) view is on screen, refresh immediately so the change is visible.
   // (userProj IS workingProj in proj mode.) If undo fully deleted the team (reverted to
   // "never existed"), rebuild a valid default via ensureTeam first — otherwise rendering
@@ -5882,6 +5902,7 @@ function initPassingShares(team){
       baseline_tds:p.receiving_tds||0,baseline_rec:p.receptions,
       baseline_rush_yards:p.rushing_yards||0,baseline_rush_tds:p.rushing_tds||0,
       games_played:p.games_played||0,
+      fill:!!p.roster_fill,
       share:weightOf(p)/total,
       td_share:totalTDs>0?(p.receiving_tds||0)/totalTDs:1/all.length,
       ypt:tgts>0?p.receiving_yards/tgts:9,
@@ -5912,6 +5933,7 @@ function initRushingShares(team){
     baseline_att:p.rushing_attempts,baseline_yards:p.rushing_yards,baseline_tds:p.rushing_tds||0,
     baseline_rec:p.receptions||0,baseline_rec_yards:p.receiving_yards||0,baseline_rec_tds:p.receiving_tds||0,
     games_played:p.games_played||0,
+    fill:!!p.roster_fill,
     share:totalAtt>0?p.rushing_attempts/totalAtt:1/src.length,
     td_share:totalTDs>0?(p.rushing_tds||0)/totalTDs:1/src.length,
     ypc:p.rushing_attempts>0?p.rushing_yards/p.rushing_attempts:4.0,
@@ -8302,8 +8324,15 @@ function buildPlayerList(){
         rushing_yards:qb.qb_rush_yards,rushing_tds:qb.qb_rush_tds,rushing_attempts:qb.qb_rush_attempts,
         receiving_yards:0,receiving_tds:0,receptions:0,receiving_targets:0,fumbles_lost:0});
     });
+    // Roster fills (camp bodies merged in from the Sleeper DB so they're selectable) stay off
+    // the board until they're given a share. Before this, whether a team's ~9 zero-point
+    // WR/TEs showed up depended on whether its state was built before or after the player DB
+    // loaded — 564 players at boot, 841 after a reset/import — which looked like the pool
+    // "changing on its own".
+    const untouchedFill = p => !!p.fill && !(p.share>0) && !(p.td_share>0);
     if(state.passing_shares){
       state.passing_shares.forEach(p=>{
+        if(untouchedFill(p) && findPlayer(team,p.name)<0) return;
         const projTgts=Math.round(p.share*totalTgts);
         const projRec=Math.round(projTgts*(p.catch_rate||0.65));
         const projYds=Math.round(projTgts*(p.ypt||9));
@@ -8322,6 +8351,7 @@ function buildPlayerList(){
       const r=state.rushing;
       const totalRushTDs=teamRushTDs(state);
       r.shares.forEach(p=>{
+        if(untouchedFill(p) && findPlayer(team,p.name)<0) return;
         const att=Math.round(p.share*r.total_attempts);
         const yds=Math.round(att*(p.ypc||r.ypa||4));
         const tds=parseFloat((p.td_share*totalRushTDs).toFixed(1));
@@ -19300,7 +19330,7 @@ function loadProjections(data){
         adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
     rosterRecv.forEach(p=>{ const k=projKey(p); if(recvSeen.has(k)) return; recvSeen.add(k);
       recvRows.push({name:p.name,pos:p.pos,headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
-        tgts:0,yds:0,rec:0,tds:0,
+        tgts:0,yds:0,rec:0,tds:0,fill:!!p.roster_fill,
         adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
     if(recvRows.length){
       const importedTargetTotal=recvRows.reduce((s,p)=>s+p.tgts,0);
@@ -19312,7 +19342,7 @@ function loadProjections(data){
       // to the receivers' own total so ratios still render deterministically.
       const tdPool=(qbPassTDTotal>0?qbPassTDTotal:totTDs);
       state.passing_shares=recvRows.map(p=>{
-        return {name:p.name,pos:p.pos,headshot:p.headshot,slug:p.slug,player_id:p.player_id,
+        return {name:p.name,pos:p.pos,headshot:p.headshot,slug:p.slug,player_id:p.player_id,fill:!!p.fill,
           baseline_targets:p.tgts,baseline_yards:p.yds,baseline_tds:p.tds,baseline_rec:p.rec,
           share:p.tgts/tot, td_share:tdPool>0?p.tds/tdPool:1/recvRows.length,
           ypt:p.tgts>0?p.yds/p.tgts:9, catch_rate:p.tgts>0?p.rec/p.tgts:0.65,
@@ -19335,7 +19365,7 @@ function loadProjections(data){
         adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
     rosterRush.forEach(p=>{ const k=projKey(p); if(rushSeen.has(k)) return; rushSeen.add(k);
       rushRows.push({name:p.name,headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
-        att:0,yds:0,tds:0,
+        att:0,yds:0,tds:0,fill:!!p.roster_fill,
         adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
     if(rushRows.length){
       const tot=rushRows.reduce((s,p)=>s+p.att,0)||1;
@@ -19346,7 +19376,7 @@ function loadProjections(data){
       state.rushing.ypa=tot>0?totYds/tot:4.0;
       state.rushing.total_rush_tds=totTDs;
       state.rushing.shares=rushRows.map(p=>{
-        return {name:p.name,pos:'RB',headshot:p.headshot,slug:p.slug,player_id:p.player_id,
+        return {name:p.name,pos:'RB',headshot:p.headshot,slug:p.slug,player_id:p.player_id,fill:!!p.fill,
           baseline_att:p.att,baseline_yards:p.yds,baseline_tds:p.tds,
           share:p.att/tot, td_share:totTDs>0?p.tds/totTDs:1/rushRows.length,
           ypc:p.att>0?p.yds/p.att:4.0,
@@ -19408,8 +19438,12 @@ function buildOutput(){
         fumbles_lost:0,adp:bp.adp||999,adp_ppr:bp.adp_ppr||999,adp_half_ppr:bp.adp_half_ppr||999,adp_2qb:bp.adp_2qb||999,
         bye_week:bp.bye_week||null});
     });
+    // Untouched roster fills carry nothing worth a row (a re-import recreates them from the
+    // roster anyway); leaving them out keeps the file / cloud save at ~560 rows, not 840.
+    const untouchedFill = p => !!p.fill && !(p.share>0) && !(p.td_share>0);
     if(state.passing_shares){
       state.passing_shares.forEach(p=>{
+        if(untouchedFill(p)) return;
         const projTgts=Math.round(p.share*totalTgts);
         const projRec=Math.round(projTgts*(p.catch_rate||0.65));
         const projYds=Math.round(projTgts*(p.ypt||9));
@@ -19432,6 +19466,7 @@ function buildOutput(){
       const r=state.rushing;
       const totRushTDs=teamRushTDs(state);
       r.shares.forEach(p=>{
+        if(untouchedFill(p)) return;
         const att=Math.round(p.share*r.total_attempts);
         const yds=Math.round(att*(p.ypc||r.ypa||4));
         const tds=+(p.td_share*totRushTDs).toFixed(1);
@@ -19772,6 +19807,9 @@ async function resetAll(){
   playerNotes={};
   currentTeam=null; currentPhase='Passing'; undoStacks={};
   clearSession();   // wipe the saved session so the fresh pull isn't overwritten on next boot
+  // Paint the cleared state now: if the Sleeper pull below fails (offline), the bar and dots
+  // must not keep showing the edits that were just thrown away.
+  renderSidebar();
   // refreshFromSleeper resets the working set to the fresh seed, re-renders, and toasts.
   await refreshFromSleeper();
   syncAppChrome();
@@ -20555,6 +20593,11 @@ async function tcDoSave(){
     if(error) throw error;
     document.getElementById('tcSaveOverlay')?.remove();
     _tcMgrProjs = [];   // invalidate cache so Manager refreshes
+    // The save IS the new reference point: "vs saved" now means since THIS save, so the bar
+    // and team dots start over at zero (and the scenario name follows the save name).
+    const nameEl2 = document.getElementById('scenarioName');
+    if(nameEl2) nameEl2.value = name;
+    if(typeof setProjBaseline==='function'){ setProjBaseline(name); renderSidebar(); }
     toast(`"${name}" ${overwrote ? 'updated' : 'saved'} ✓`, 'ok');
   }catch(e){
     if(btn){ btn.disabled = false; btn.textContent = 'Save'; }

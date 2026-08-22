@@ -176,7 +176,7 @@ function loadProjections(data){
         adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
     rosterRecv.forEach(p=>{ const k=projKey(p); if(recvSeen.has(k)) return; recvSeen.add(k);
       recvRows.push({name:p.name,pos:p.pos,headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
-        tgts:0,yds:0,rec:0,tds:0,
+        tgts:0,yds:0,rec:0,tds:0,fill:!!p.roster_fill,
         adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
     if(recvRows.length){
       const importedTargetTotal=recvRows.reduce((s,p)=>s+p.tgts,0);
@@ -188,7 +188,7 @@ function loadProjections(data){
       // to the receivers' own total so ratios still render deterministically.
       const tdPool=(qbPassTDTotal>0?qbPassTDTotal:totTDs);
       state.passing_shares=recvRows.map(p=>{
-        return {name:p.name,pos:p.pos,headshot:p.headshot,slug:p.slug,player_id:p.player_id,
+        return {name:p.name,pos:p.pos,headshot:p.headshot,slug:p.slug,player_id:p.player_id,fill:!!p.fill,
           baseline_targets:p.tgts,baseline_yards:p.yds,baseline_tds:p.tds,baseline_rec:p.rec,
           share:p.tgts/tot, td_share:tdPool>0?p.tds/tdPool:1/recvRows.length,
           ypt:p.tgts>0?p.yds/p.tgts:9, catch_rate:p.tgts>0?p.rec/p.tgts:0.65,
@@ -211,7 +211,7 @@ function loadProjections(data){
         adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
     rosterRush.forEach(p=>{ const k=projKey(p); if(rushSeen.has(k)) return; rushSeen.add(k);
       rushRows.push({name:p.name,headshot:p.headshot||null,slug:p.slug||null,player_id:p.player_id||null,
-        att:0,yds:0,tds:0,
+        att:0,yds:0,tds:0,fill:!!p.roster_fill,
         adp:parseFloat(p.adp)||999,adp_ppr:parseFloat(p.adp_ppr)||999,adp_half_ppr:parseFloat(p.adp_half_ppr)||999,adp_2qb:parseFloat(p.adp_2qb)||999}); });
     if(rushRows.length){
       const tot=rushRows.reduce((s,p)=>s+p.att,0)||1;
@@ -222,7 +222,7 @@ function loadProjections(data){
       state.rushing.ypa=tot>0?totYds/tot:4.0;
       state.rushing.total_rush_tds=totTDs;
       state.rushing.shares=rushRows.map(p=>{
-        return {name:p.name,pos:'RB',headshot:p.headshot,slug:p.slug,player_id:p.player_id,
+        return {name:p.name,pos:'RB',headshot:p.headshot,slug:p.slug,player_id:p.player_id,fill:!!p.fill,
           baseline_att:p.att,baseline_yards:p.yds,baseline_tds:p.tds,
           share:p.att/tot, td_share:totTDs>0?p.tds/totTDs:1/rushRows.length,
           ypc:p.att>0?p.yds/p.att:4.0,
@@ -284,8 +284,12 @@ function buildOutput(){
         fumbles_lost:0,adp:bp.adp||999,adp_ppr:bp.adp_ppr||999,adp_half_ppr:bp.adp_half_ppr||999,adp_2qb:bp.adp_2qb||999,
         bye_week:bp.bye_week||null});
     });
+    // Untouched roster fills carry nothing worth a row (a re-import recreates them from the
+    // roster anyway); leaving them out keeps the file / cloud save at ~560 rows, not 840.
+    const untouchedFill = p => !!p.fill && !(p.share>0) && !(p.td_share>0);
     if(state.passing_shares){
       state.passing_shares.forEach(p=>{
+        if(untouchedFill(p)) return;
         const projTgts=Math.round(p.share*totalTgts);
         const projRec=Math.round(projTgts*(p.catch_rate||0.65));
         const projYds=Math.round(projTgts*(p.ypt||9));
@@ -308,6 +312,7 @@ function buildOutput(){
       const r=state.rushing;
       const totRushTDs=teamRushTDs(state);
       r.shares.forEach(p=>{
+        if(untouchedFill(p)) return;
         const att=Math.round(p.share*r.total_attempts);
         const yds=Math.round(att*(p.ypc||r.ypa||4));
         const tds=+(p.td_share*totRushTDs).toFixed(1);
@@ -648,6 +653,9 @@ async function resetAll(){
   playerNotes={};
   currentTeam=null; currentPhase='Passing'; undoStacks={};
   clearSession();   // wipe the saved session so the fresh pull isn't overwritten on next boot
+  // Paint the cleared state now: if the Sleeper pull below fails (offline), the bar and dots
+  // must not keep showing the edits that were just thrown away.
+  renderSidebar();
   // refreshFromSleeper resets the working set to the fresh seed, re-renders, and toasts.
   await refreshFromSleeper();
   syncAppChrome();

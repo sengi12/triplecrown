@@ -504,6 +504,11 @@ async function tcDoSave(){
     if(error) throw error;
     document.getElementById('tcSaveOverlay')?.remove();
     _tcMgrProjs = [];   // invalidate cache so Manager refreshes
+    // The save IS the new reference point: "vs saved" now means since THIS save, so the bar
+    // and team dots start over at zero (and the scenario name follows the save name).
+    const nameEl2 = document.getElementById('scenarioName');
+    if(nameEl2) nameEl2.value = name;
+    if(typeof setProjBaseline==='function'){ setProjBaseline(name); renderSidebar(); }
     toast(`"${name}" ${overwrote ? 'updated' : 'saved'} ✓`, 'ok');
   }catch(e){
     if(btn){ btn.disabled = false; btn.textContent = 'Save'; }
