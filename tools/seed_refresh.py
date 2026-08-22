@@ -213,9 +213,20 @@ GUARDS = {
     "history":        {"min_ratio": 0.90, "never_empty": True},
     "nflverse":       {"min_ratio": 0.80, "never_empty": True},
     "coordinators":   {"min_ratio": 0.70, "never_empty": True},
-    # `additions` legitimately empties once the offseason is folded into history, so it gets
-    # no never_empty guard — only a warning if it shrinks.
-    "additions":      {"min_ratio": 0.0,  "never_empty": False},
+    # `additions` only empties when an nflverse roster csv fails to download (build_additions
+    # returns {} on any fetch error) — it does NOT fold into history — so it is guarded.
+    "additions":      {"min_ratio": 0.50, "never_empty": True},
+    "sos":            {"min_ratio": 0.80, "never_empty": True},
+    "hc_history":     {"min_ratio": 0.80, "never_empty": True},
+}
+
+# Blocks that are dicts of per-source sub-tables, each fetched by its own request. The total
+# can stay above its floor while one sub-table silently comes back empty (one FantasyPros
+# format rate-limited, one Sharp page blocked, one OverTheCap position page refused): check
+# every sub-key that existed before against its own previous size.
+SUBKEY_GUARDS = {
+    "ecr":   0.80,   # one entry per ranking format
+    "sharp": 0.70,   # one entry per Sharp table
 }
 
 
@@ -332,6 +343,39 @@ def validate(old, new):
             )
         elif was > 0 and now < was:
             warnings.append(f"{key}: {was} → {now} (down {100 * (1 - now / was):.1f}%, within tolerance)")
+
+    # Sub-table guards (see SUBKEY_GUARDS): a format / table that existed before must still
+    # be there at most modestly smaller.
+    for key, ratio in SUBKEY_GUARDS.items():
+        ob, nb = (old or {}).get(key), (new or {}).get(key)
+        if not isinstance(ob, dict) or not isinstance(nb, dict):
+            continue
+        for sub, oval in ob.items():
+            was = block_size(oval)
+            if was <= 0:
+                continue
+            now = block_size(nb.get(sub))
+            if now == 0:
+                problems.append(f"{key}.{sub}: {was} → 0 (that source came back empty)")
+            elif now < was * ratio:
+                problems.append(f"{key}.{sub}: {was} → {now} ({100 * now / was:.0f}% of previous, floor {100 * ratio:.0f}%)")
+
+    # Contracts are fetched one OverTheCap page per position, and a page that gets
+    # rate-limited silently drops that whole position. A total count cannot see it (QB+TE+
+    # defenders still add up), so every position the previous seed had must still be there.
+    try:
+        have_old = {v.get("pos") for v in ((old or {}).get("contracts") or {}).values()}
+        have_new = {v.get("pos") for v in ((new or {}).get("contracts") or {}).values()}
+        need = sorted(p for p in have_old if p and p not in have_new)
+        if need:
+            problems.append(f"contracts: no {', '.join(need)} entries any more (an OverTheCap page failed)")
+    except Exception:
+        pass
+
+    # Any block that had content and is now present-but-empty is a failed fetch, guarded or not.
+    for key, was in before.items():
+        if was > 0 and key in after and after[key] == 0 and key not in GUARDS:
+            problems.append(f"{key}: {was} → 0 (block emptied)")
 
     # A block that existed before and vanished entirely is always a problem, guarded or not.
     for key in before:

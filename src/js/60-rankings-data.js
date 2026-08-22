@@ -370,13 +370,26 @@ function invalidateBuildPlayerCache(){
   if(typeof invalidateRankingsRenderCache==='function') invalidateRankingsRenderCache();
 }
 
+// Everything VOR depends on besides scoring: the league's roster shape (a synced league,
+// a followed draft) and the ADP refresh. None of these were in the cache key, so linking a
+// 10-team 3-WR league with the same scoring as before returned the 12-team 2-WR VOR.
+function buildPlayerShapeSig(){
+  try{
+    const sc = (typeof leagueStarterCounts==='function') ? leagueStarterCounts() : null;
+    return JSON.stringify([sc, (typeof draftId!=='undefined')?draftId:null,
+      (typeof _adpRefreshEpoch!=='undefined')?_adpRefreshEpoch:0]);
+  }catch(e){ return ''; }
+}
+
 function buildPlayerList(){
   const scoringSig = buildPlayerScoringSig();
+  const shapeSig = buildPlayerShapeSig();
   const cacheHit = (_buildPlayerCache.list
     && _buildPlayerCache.userProjRef===userProj
     && _buildPlayerCache.activeSeason===activeSeason
     && _buildPlayerCache.rankFormat===rankFormat
-    && _buildPlayerCache.scoringSig===scoringSig);
+    && _buildPlayerCache.scoringSig===scoringSig
+    && _buildPlayerCache.shapeSig===shapeSig);
   if(cacheHit){
     if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
       try{ console.debug('[buildPlayerList] cache hit ('+_buildPlayerCache.list.length+' players, epoch='+_buildPlayerCacheEpoch+')'); }catch(_e){}
@@ -445,7 +458,7 @@ function buildPlayerList(){
           if(p.player_id&&!list[ex].player_id)list[ex].player_id=p.player_id;}
         else pushPlayer({name:p.name,team,pos:p.pos,headshot:p.headshot,slug:p.slug,player_id:p.player_id||null,
           passing_yards:0,passing_tds:0,passing_attempts:0,passing_completions:0,interceptions_thrown:0,
-          rushing_yards:bp.rushing_yards||0,rushing_tds:0,rushing_attempts:bp.rushing_attempts||0,
+          rushing_yards:bp.rushing_yards||0,rushing_tds:bp.rushing_tds||bp.rushing_touchdowns||0,rushing_attempts:bp.rushing_attempts||0,
           receiving_yards:projYds,receiving_tds:projTDs,receptions:projRec,receiving_targets:projTgts,fumbles_lost:0});
       });
     }
@@ -478,6 +491,7 @@ function buildPlayerList(){
     p.adp = be && be.adp!=null ? be.adp : 999;
     p.adp_ppr = be && be.adp_ppr!=null ? be.adp_ppr : 999;
     p.adp_half_ppr = be && be.adp_half_ppr!=null ? be.adp_half_ppr : 999;
+    p.adp_std = be && be.adp_std!=null ? be.adp_std : 999;
     p.adp_2qb = be && be.adp_2qb!=null ? be.adp_2qb : 999;
     const c=contractEntry(p);
     p.age = rankingAgeFromSleeper(p, be);
@@ -491,6 +505,7 @@ function buildPlayerList(){
   _buildPlayerCache.activeSeason = activeSeason;
   _buildPlayerCache.rankFormat = rankFormat;
   _buildPlayerCache.scoringSig = scoringSig;
+  _buildPlayerCache.shapeSig = shapeSig;
   _buildPlayerCache.list = list.map(p=>Object.assign({}, p));
   if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
     try{ console.debug('[buildPlayerList] rebuilt '+list.length+' players (epoch='+_buildPlayerCacheEpoch+', season='+activeSeason+', fmt='+rankFormat+')'); }catch(_e){}
@@ -518,7 +533,7 @@ function adpFor(p){
   if(f==='superflex'||f==='dynasty_superflex') v=p.adp_2qb;
   else if(f==='ppr') v=p.adp_ppr;
   else if(f==='half_ppr') v=p.adp_half_ppr;
-  else if(f==='std') v=p.adp;
+  else if(f==='std') v=(p.adp_std!=null && p.adp_std<999) ? p.adp_std : p.adp;   // `adp` is the PPR board
   else v=p.adp_ppr;   // dynasty (non-SF) → ppr board as the closest proxy
   if(v==null||v>=999){ v=p.adp_ppr!=null&&p.adp_ppr<999?p.adp_ppr:(p.adp!=null&&p.adp<999?p.adp:999); }
   return v;

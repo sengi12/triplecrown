@@ -1115,7 +1115,7 @@ function _olHeadshot(name, slot, teamCode){
     fallbacks.push(ESPN_HEADSHOT('nfl', aid), ESPN_HEADSHOT('college-football', aid));
   }
   const fb=fallbacks.filter(Boolean).join('|');
-  const onerr = "const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.outerHTML='<div class=\\'olc-qb-hs ph-err\\'></div>'; }";
+  const onerr = "const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else if(this.parentNode){this.outerHTML='<div class=\\'olc-qb-hs ph-err\\'></div>'; }";
   return `<img src="${primary}" class="olc-qb-hs" alt="" data-fallbacks="${fb}" onerror="${onerr}">`;
 }
 

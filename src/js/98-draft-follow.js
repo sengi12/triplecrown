@@ -427,8 +427,16 @@ function applyDraftScoring(d){
 // picked_by when we don't already have them (covers mocks where users weren't preloaded).
 function bucketPicksBySlot(picks){
   const bySlot={};
+  // Who OWNS the pick, not which column it sits in. In a dynasty rookie draft a traded pick
+  // keeps its original draft_slot, so the player was credited to the team that traded it
+  // away. Sleeper stamps roster_id on the pick; map it back through slot_to_roster_id
+  // (roster → the slot that owner drafts from) and fall back to the column for mocks.
+  const rosterToSlot={};
+  const s2r=(typeof draftMeta!=='undefined' && draftMeta && draftMeta.slot_to_roster_id) || null;
+  if(s2r){ for(const sl in s2r){ if(s2r[sl]!=null) rosterToSlot[String(s2r[sl])]=Number(sl); } }
   (picks||[]).forEach(p=>{
-    const slot=p.draft_slot;
+    let slot=p.draft_slot;
+    if(p.roster_id!=null && rosterToSlot[String(p.roster_id)]!=null) slot=rosterToSlot[String(p.roster_id)];
     if(slot==null) return;
     (bySlot[slot]=bySlot[slot]||[]).push({
       player_id: p.player_id!=null ? String(p.player_id) : null,
@@ -465,6 +473,11 @@ function fillLineup(picks){
 
 async function startDraftFollow(applyScoring){
   if(draftTimer) clearInterval(draftTimer);
+  // A draft is drafted off the PROJECTION board. Following one from a reference season
+  // left the LIVE bar over last year's actual-stat rankings, with no pick ever marked.
+  if(activeSeason!=='proj' && typeof loadSeason==='function'){
+    try{ await loadSeason('proj'); }catch(e){}
+  }
   _lastPickCount = -1;   // force the first poll to render
   await loadDraftMeta(applyScoring);   // draft_order, lineup, usernames, my-slot detection, (opt) scoring
   rosterBarVisible=true;
@@ -1121,7 +1134,8 @@ function computeVONA(){
     gap = upcomingSlots.length;
   }
   // Cache: the sim is deterministic for a given draft state, so only redo it when that changes.
-  const cacheKey = `${Object.keys(draftedIds).length}|${mySlot}|${gap}|${rankFormat}|${startPick}`;
+  // ...and when the board itself changes: scoring edits, projection edits (epoch), league shape.
+  const cacheKey = `${Object.keys(draftedIds).length}|${mySlot}|${gap}|${rankFormat}|${startPick}|${buildPlayerScoringSig()}|${_buildPlayerCacheEpoch}|${typeof buildPlayerShapeSig==='function'?buildPlayerShapeSig():''}`;
   if(_vonaCache.key===cacheKey && _vonaCache.val) return _vonaCache.val;
 
   const list = buildPlayerList();

@@ -250,7 +250,18 @@ function tcLatencyLog(path, mode, msFetch, msDecode, msParse, ok){
   catch(_e){}
 }
 
+// Deploy stamp (pages.yml rewrites the token). Seed URLs carry it as ?v= so a new deploy is
+// a new cache key for the service worker AND the HTTP cache: before this the SW answered the
+// seed request cache-first on the first load after every deploy, so users got the new app
+// with yesterday's data once per release. Unstamped (local dev, file://) → no param.
+const TC_BUILD_ID = '__TC_BUILD_ID__';
+function _seedVersioned(url){
+  if(!TC_BUILD_ID || TC_BUILD_ID.indexOf('__')===0) return url;
+  if(/[?&]v=/.test(url)) return url;
+  return url + (url.indexOf('?')<0 ? '?' : '&') + 'v=' + encodeURIComponent(TC_BUILD_ID);
+}
 async function fetchSeedJson(url){
+  url = _seedVersioned(String(url||''));
   // A query string (cache-busting revalidation) must ride AFTER the .gz extension.
   const _qi = url.indexOf('?');
   const _gzUrl = _qi < 0 ? url + '.gz' : url.slice(0, _qi) + '.gz' + url.slice(_qi);

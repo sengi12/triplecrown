@@ -260,7 +260,10 @@ async function loadEspnCardData(pid, posc, body, opts){
     ? prospect + `<div class="pcard-loading">Loading college game logs…</div>`
     : `<div class="pcard-loading">Loading ${league==='nfl'?'':'college '}game logs…</div>`;
   const aid = await resolveEspnAthleteId(pid, (sleeperPlayers[pid]||{}).name, league);
-  if(!pcardOpen) return;
+  // Every write below must still belong to THIS load: the user may have switched tabs
+  // (token bump) or players while the lookup was in flight.
+  const live = ()=> pcardOpen && tok===pcardToken && pcardState && pcardState.pid===pid;
+  if(!live()) return;
   if(!aid){
     // Having the prospect panel is a better outcome than an error, so keep it and demote the
     // missing gamelog to a footnote.
@@ -272,7 +275,7 @@ async function loadEspnCardData(pid, posc, body, opts){
   pcardApplyEspnHeadshot(aid, league);   // fill in an ESPN photo if Sleeper had none
   try{
     const base = await fetchEspnGamelog(aid, league, null);   // default → latest season + season list
-    if(!pcardOpen) return;
+    if(!live()) return;
     let seasons = [];
     for(const f of (base.filters||[])){ if(f.name==='season') seasons=(f.options||[]).map(o=>o.value); }
     if(!seasons.length){
@@ -283,7 +286,7 @@ async function loadEspnCardData(pid, posc, body, opts){
     const perSeason = await Promise.all(seasons.map(async s=>{
       try{ return { season:s, gl: await fetchEspnGamelog(aid, league, s) }; }catch(e){ return { season:s, gl:null }; }
     }));
-    if(!pcardOpen) return;
+    if(!live()) return;
     let out='';
     for(const {season, gl} of perSeason){
       if(!gl) continue;
@@ -296,6 +299,7 @@ async function loadEspnCardData(pid, posc, body, opts){
       if(typeof pcardEnableStickyStatHeaders==='function') pcardEnableStickyStatHeaders();
     }
   }catch(e){
+    if(!live()) return;
     body.innerHTML = prospect
       ? prospect + `<div class="pcard-src">Couldn't load ESPN game logs.</div>`
       : pcardRetryHtml("Couldn't load game logs. Check your connection and try again.");

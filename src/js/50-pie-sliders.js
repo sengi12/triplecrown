@@ -85,7 +85,11 @@ function handleSliderKey(key,val,team,fromManual){
     qbry:'qb_rush_yards',qbrtd:'qb_rush_tds',qbratt:'qb_rush_attempts'};
   if(key in QB_MAP){
     const idx=state.activeQB||0;
-    state.qbs[idx][QB_MAP[key]]=val;
+    const q=state.qbs[idx];
+    q[QB_MAP[key]]=val;
+    // Keep the per-game rate in step: perGame() prefers _rate, which was only refreshed on a
+    // games change, so "pass yds/gm" read the OLD rate after a yardage edit.
+    if(q._rate && (q.games||0)>0) q._rate[QB_MAP[key]]=val/q.games;
     liveQB(state,idx,team,key);
     if(key==='patt') livePassDependents(state,team); // attempts drive the target pool
     return;
@@ -334,7 +338,12 @@ function setDerivedShare(state,team,i,share,metric){
   liveDerivedRows(state,team,metric);
 }
 
-// Populate rec_share / recyds_share from the current per-player values if not present.
+// Populate rec_share / recyds_share from the current per-player values. ALWAYS recomputed:
+// the stored field is only a convenience for the slider, and the per-player rates it was
+// derived from (share, catch_rate, ypt, the QB pool) change on the Targets tab, on inline
+// edits and on imports. Computing it once and trusting it forever is how the Receptions
+// tab came to show "163 rec (40.7%)" beside a Rec cell that said 29. After a derived-share
+// drag applyDerivedShares back-solves the rates, so recomputing reproduces the dragged share.
 function ensureDerivedShares(state,metric){
   const isYds=metric==='recyds';
   const field=isYds?'recyds_share':'rec_share';
@@ -342,9 +351,7 @@ function ensureDerivedShares(state,metric){
   const shares=state.passing_shares;
   const valOf=p=>{const tg=p.share*totalTgts;return isYds?tg*(p.ypt||9):tg*(p.catch_rate||0.65);};
   const pool=shares.reduce((s,p)=>s+valOf(p),0)||1;
-  let needs=false;
-  shares.forEach(p=>{ if(typeof p[field]!=='number') needs=true; });
-  if(needs) shares.forEach(p=>{ p[field]=valOf(p)/pool; });
+  shares.forEach(p=>{ p[field]=valOf(p)/pool; });
 }
 
 // Convert rec_share / recyds_share back into per-player catch_rate / ypt against the pool.

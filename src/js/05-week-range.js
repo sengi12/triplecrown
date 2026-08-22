@@ -4,13 +4,18 @@
 // Kraft's hot weeks 1-9 before injury), instead of only the full-season total.
 // Weekly data is fetched lazily (only for the team being viewed) and cached.
 // ═════════════════════════════════════════════════════════════════════════════
-let weeklySkillCache = {};   // `${season}:${pid}` -> raw weekly json from Sleeper
+let weeklySkillCache = {};   // `${season}:${pid}` -> raw weekly json from Sleeper (null = no stats)
+let _weeklyInFlight = {};    // same key -> pending promise, so concurrent callers share one request
 async function fetchPlayerWeekly(pid, season){
   const key = `${season}:${pid}`;
-  if(weeklySkillCache[key]) return weeklySkillCache[key];
-  const data = await sleeperFetch(SLEEPER_WEEKLY_URL(pid, season));
-  weeklySkillCache[key] = data;
-  return data;
+  // `in` rather than truthiness: Sleeper answers null for a season a player has no stats
+  // in, and re-requesting that for every rookie on every card open was a 429 generator.
+  if(key in weeklySkillCache) return weeklySkillCache[key];
+  if(_weeklyInFlight[key]) return _weeklyInFlight[key];
+  _weeklyInFlight[key] = sleeperFetch(SLEEPER_WEEKLY_URL(pid, season))
+    .then(data=>{ weeklySkillCache[key] = data; return data; })
+    .finally(()=>{ delete _weeklyInFlight[key]; });
+  return _weeklyInFlight[key];
 }
 
 // Shared week-range state across ALL week sliders (QB/RB/WR and Advanced OL).
@@ -481,6 +486,9 @@ async function applyWeekRange(team, fromWk, toWk){
   setSharedWeekRange(team, activeSeason, fromWk, toWk);
   state.weekFilter=[fromWk,toWk];
   state.weekFilterLoading=true;
+  // Two quick commits ([1,9] then [1,5]) used to race: whichever resolved LAST wrote the
+  // data while the label already said the newest range. Only the newest commit may land.
+  const seq = (state._wfSeq = (state._wfSeq||0) + 1);
   renderContent();
   try{
     const [skillData, qbPool, qbData] = await Promise.all([
@@ -488,6 +496,7 @@ async function applyWeekRange(team, fromWk, toWk){
       buildWeekFilterQBPool(team, activeSeason, fromWk, toWk),
       buildWeekFilterQBData(team, activeSeason, fromWk, toWk),
     ]);
+    if(seq !== state._wfSeq) return;   // superseded by a newer range
     // If all player fetches were blocked (CORS / offline), skillData will be empty.
     // Detect this and show a clear message rather than silently leaving stats unchanged.
     const hasData = skillData && Object.keys(skillData).length > 0;
@@ -705,7 +714,7 @@ function imgTag(src,cls,fb=''){
   if(src && typeof src==='object'){ fallbacks=Array.isArray(src.fallbacks)?src.fallbacks:[]; src=src.src||''; }
   if(!src) return `<div class="${cls} ph-err">${fb}</div>`;
   const fbList=fallbacks.filter(Boolean).join('|');
-  const onerr = `const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.outerHTML='<div class=\\'${cls} ph-err\\'>${fb}</div>';}`;
+  const onerr = `const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else if(this.parentNode){this.outerHTML='<div class=\\'${cls} ph-err\\'>${fb}</div>';}`;
   return `<img src="${src}" class="${cls}" alt="" data-fallbacks="${fbList}" loading="lazy" decoding="async" onerror="${onerr}">`;
 }
 function imgSm(src,cls='share-hs',fb=''){
@@ -713,7 +722,7 @@ function imgSm(src,cls='share-hs',fb=''){
   if(src && typeof src==='object'){ fallbacks=Array.isArray(src.fallbacks)?src.fallbacks:[]; src=src.src||''; }
   if(!src) return `<div class="${cls}-err">${fb}</div>`.replace(cls+'-err',cls.replace('share-hs','share-hs')+'-err');
   const fbList=fallbacks.filter(Boolean).join('|');
-  const onerr = `const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.outerHTML='<div class=\\'share-hs-err\\'>${fb}</div>';}`;
+  const onerr = `const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else if(this.parentNode){this.outerHTML='<div class=\\'share-hs-err\\'>${fb}</div>';}`;
   return `<img src="${src}" class="${cls}" alt="" data-fallbacks="${fbList}" onerror="${onerr}">`;
 }
 

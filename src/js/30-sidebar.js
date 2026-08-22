@@ -167,7 +167,7 @@ function teamHeaderQbText(team, qbs, recStr){
     }
     txt = work.join(' / ');
   }
-  return txt + (recStr ? ` · ${recStr}` : '');
+  return escHtml(txt) + (recStr ? ` · ${recStr}` : '');
 }
 
 function teamHeaderHcLine(team, opts){

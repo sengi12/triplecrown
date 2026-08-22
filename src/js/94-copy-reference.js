@@ -57,9 +57,13 @@ function copyTeamToWorking(team){
   // reality for this roster" and the user dials anyone up from 0 — instead of leftover projection-season
   // projections silently polluting the baseline (or, worse, a tiny historical line knocking
   // a player out of the receiving/rushing option filters).
-  const ZERO_STATS=['passing_yards','passing_touchdowns','passing_attempts','passing_completions',
-    'interceptions_thrown','rushing_yards','rushing_tds','rushing_attempts',
-    'receiving_targets','receptions','receiving_yards','receiving_tds','games_played'];
+  // Seed rows carry BOTH spellings of several stats (passing_touchdowns AND passing_tds…)
+  // and ensureTeam reads them with `||` fallbacks, so zeroing one spelling left the other
+  // alive: a QB with no line that season came back with 0 yards and 35 projected TDs.
+  const ZERO_STATS=['passing_yards','passing_touchdowns','passing_tds','passing_attempts','passing_completions',
+    'interceptions_thrown','rushing_yards','rushing_tds','rushing_touchdowns','rushing_attempts',
+    'receiving_targets','receptions','receiving_yards','receiving_tds','receiving_touchdowns',
+    'games_played','games'];
   ['QB','RB','WR','TE'].forEach(pos=>{
     (ps[team][pos]||[]).forEach(p=>{
       if(p.player_id && !copiedIds.has(p.player_id)){

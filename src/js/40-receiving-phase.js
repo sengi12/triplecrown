@@ -49,6 +49,13 @@ function weekRangeSliderHTML(team,state){
   const [lo,hi]=shared;
   state.weekFilter=[lo,hi];
   const active=isWeekFilterActive(state);
+  // The shared range outlives the per-state filtered data: switching 2025 → 2024 → 2025
+  // rebuilds the reference state, so the slider said "weeks 3–10 · Reset" over full-season
+  // numbers. If the range is narrowed but this state has no filtered data, re-apply it.
+  if(active && !state.weekFilterData && !state.weekFilterLoading && typeof applyWeekRange==='function'){
+    state.weekFilterLoading=true;   // mark before the async kick so this render shows "loading…"
+    setTimeout(()=>{ try{ applyWeekRange(team, lo, hi); }catch(e){} }, 0);
+  }
   const loPct=(lo-1)/17*100, hiPct=(18-hi)/17*100;
   const oppRail = (typeof renderWeekOpponentRail==='function')
     ? renderWeekOpponentRail(team, activeSeason, 'wr-opp-main')
@@ -162,7 +169,7 @@ function vacatedNote(team){
   const tagValue=`${v.tgt} targets · ${v.rec} rec · ${v.yds.toLocaleString()} yds · ${v.td} TD${rankText?` · ${rankText}`:''}`;
   const rankLead=rk?`${vacatedOrdinal(rk.rank)}`:'Rank N/A';
   const lineHtml=`<b>${escHtml(rankLead)}: Vacated Targets from ${v.season}:</b> ${escHtml(`${v.tgt} targets · ${v.rec} rec · ${v.yds.toLocaleString()} yds · ${v.td} TD`)}`;
-  const names = v.players.length>3 ? v.players.slice(0,3).join(', ')+` +${v.players.length-3} more` : v.players.join(', ');
+  const names = escHtml(v.players.length>3 ? v.players.slice(0,3).join(', ')+` +${v.players.length-3} more` : v.players.join(', '));
   return `<div class="vacated-note">
     <span class="vacated-icon">${TC_ICON("export")}</span>
     <div> ${noteWrapHtml(lineHtml, { label:'Vacated Targets', value:tagValue, source:'projection_builder_vacated', statKey:'vacated_targets', context:ctx, team:noteTeam, relevance:'WR,TE,RB' }, 'note-tag-hit')}

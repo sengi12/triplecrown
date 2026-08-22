@@ -123,7 +123,19 @@ function restoreSession(){
   if(typeof p.rankingsSearchOpen==='boolean') rankingsSearchOpen = p.rankingsSearchOpen;
   if(typeof p.rankingsSearchQuery==='string') rankingsSearchQuery = p.rankingsSearchQuery;
   if(typeof p.scoringPanelOpen==='boolean') scoringPanelOpen = p.scoringPanelOpen;
-  if(p.leagueSnapshot && p.leagueSnapshot.teams) leagueSnapshot = p.leagueSnapshot;
+  if(p.leagueSnapshot && p.leagueSnapshot.teams){
+    leagueSnapshot = p.leagueSnapshot;
+    // The roster shape VOR is valued against was never persisted, so a reload fell back to
+    // the generic 12-team / 2-WR lineup until the next re-sync. Rebuild it from the snapshot.
+    try{
+      const rp = leagueSnapshot.rosterPositions;
+      if(Array.isArray(rp) && rp.length && typeof lineupFromRosterPositions==='function'){
+        const shape = lineupFromRosterPositions(rp);
+        leagueShape = { teams: leagueSnapshot.teams, lineup: shape.lineup, bench: shape.bench };
+        draftLineup = shape.lineup; draftBenchCount = shape.bench;
+      }
+    }catch(e){}
+  }
   if(p.playerNotes && typeof p.playerNotes==='object') playerNotes = p.playerNotes;
   if(p.season===PROJ_SEASON && p.workingProj && Object.keys(p.workingProj).length){
     workingProj = p.workingProj;

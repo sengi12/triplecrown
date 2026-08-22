@@ -619,7 +619,7 @@ function renderNotesBrowser(query){
       <button class="notes-browser-open" onclick="openNotesBrowserPlayer(${pcardArg(r.pid||r.name)},${pcardArg(r.pos)},${pcardArg(r.team)})">
         ${head}
         <span class="notes-browser-main">
-          <span class="notes-browser-top"><span class="ps-nm">${escHtml(r.name)}</span><span class="ps-meta"><span class="ps-pos ps-pos-${r.pos}">${escHtml(r.pos||'')}</span><span class="notes-browser-team">${escHtml(r.team||'')}</span></span></span>
+          <span class="notes-browser-top"><span class="ps-nm">${escHtml(r.name)}</span><span class="ps-meta"><span class="ps-pos ps-pos-${escAttr(r.pos||"")}">${escHtml(r.pos||'')}</span><span class="notes-browser-team">${escHtml(r.team||'')}</span></span></span>
           ${preview?`<span class="notes-browser-preview">${preview}</span>`:''}
         </span>
         <span class="notes-browser-badge">${r.count}</span>

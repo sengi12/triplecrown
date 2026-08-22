@@ -618,12 +618,28 @@ def fetch_otc_contracts(pos, url, refresh):
         with open(cache_path) as f:
             return json.load(f)
     print(f"  → fetching contracts {pos} ...", end="", flush=True)
-    try:
-        req = request.Request(url, headers=UA)
-        with request.urlopen(req, timeout=60) as r:
-            html = r.read().decode("utf-8", "replace")
-    except Exception as e:
-        print(f" FAILED ({type(e).__name__}: {e}) — skipping {pos}")
+    # OverTheCap rate-limits a burst of 18 position pages; a single failure used to return {}
+    # and move on, which is how the shipped seed came to have QB/TE/FB contracts but no RB,
+    # WR, K or interior-OL ones (331 of 565 projected players blank, and "Justin Jefferson"
+    # resolving to a linebacker). Retry with backoff, and when the page still will not come,
+    # keep the previous cache for that position rather than shipping nothing.
+    html = None
+    last = None
+    for attempt in range(4):
+        try:
+            req = request.Request(url, headers=UA)
+            with request.urlopen(req, timeout=60) as r:
+                html = r.read().decode("utf-8", "replace")
+            break
+        except Exception as e:
+            last = e
+            time.sleep(2 * (attempt + 1))
+    if html is None:
+        if os.path.exists(cache_path):
+            print(f" FAILED ({type(last).__name__}: {last}) — keeping the cached {pos} table")
+            with open(cache_path) as f:
+                return json.load(f)
+        print(f" FAILED ({type(last).__name__}: {last}) — NO {pos} contracts this build")
         return {}
     rows = _parse_otc_table(html)
     out = {}
@@ -650,19 +666,38 @@ def fetch_otc_contracts(pos, url, refresh):
         if m:
             fa = int(m.group(1))
         out[key] = {"age": age, "apy": apy, "fa": fa, "total": total, "gtd": gtd}
+    if not out and os.path.exists(cache_path):
+        # A 200 with no parseable rows is a layout change or a bot page, not an empty position.
+        print(" ok but EMPTY — keeping the cached table")
+        with open(cache_path) as f:
+            return json.load(f)
     print(f" ok ({len(out)} players)")
     with open(cache_path, "w") as f:
         json.dump(out, f)
     return out
 
+# When two players share a normalized name, the one the app can actually show wins: every
+# contract consumer (Dynasty columns, player-card summary) is a skill-position surface.
+_OTC_POS_PRIORITY = {"QB": 0, "RB": 1, "WR": 2, "TE": 3, "K": 4, "FB": 5}
+
 def build_contracts(refresh):
     """Build {nameKey: {age, apy, fa, total, gtd, pos}} merged across all positions."""
     contracts = {}
+    missing = []
     for pos, url in OTC_URLS.items():
         tbl = fetch_otc_contracts(pos, url, refresh)
+        if not tbl:
+            missing.append(pos)
         for key, info in tbl.items():
             info["pos"] = pos
+            prev = contracts.get(key)
+            if prev and _OTC_POS_PRIORITY.get(prev["pos"], 99) < _OTC_POS_PRIORITY.get(pos, 99):
+                continue   # keep the skill-position namesake
             contracts[key] = info
+        time.sleep(1.0)    # be polite between position pages; the burst is what gets blocked
+    if missing:
+        print(f"\n  ⚠ WARNING: no contracts for {', '.join(missing)} — those positions' "
+              f"Age/APY/FA will be blank until the next successful fetch")
     total = len(contracts)
     if total == 0:
         print("\n  ⚠ WARNING: no contract data fetched from OverTheCap — the Dynasty tab's")

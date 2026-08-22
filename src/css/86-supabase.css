@@ -12,14 +12,14 @@
 
 .tc-modal{
   background:var(--surface);border:1px solid var(--border);border-radius:14px;
-  padding:20px;width:min(420px,100%);max-height:calc(100dvh - 40px);max-height:calc(100vh - 40px);
+  padding:20px;width:min(420px,100%);max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);
   overflow:auto;box-shadow:0 20px 48px rgba(0,0,0,.4);
   display:flex;flex-direction:column;gap:12px;
   animation:tcSlideUp .18s ease;}
 @keyframes tcSlideUp{from{transform:translateY(10px);opacity:0}to{transform:none;opacity:1}}
 
 .tc-modal-sm{width:min(340px,100%);}
-.tc-modal-mgr{width:min(480px,100%);max-height:calc(100dvh - 40px);max-height:calc(100vh - 40px);}
+.tc-modal-mgr{width:min(480px,100%);max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);}
 
 .tc-modal-head{
   display:flex;align-items:center;justify-content:space-between;gap:8px;}
@@ -109,7 +109,7 @@
 
 .tc-mgr-list{
   display:flex;flex-direction:column;gap:4px;overflow-y:auto;
-  max-height:calc(100dvh - 320px);max-height:calc(100vh - 320px);
+  max-height:calc(100vh - 320px);max-height:calc(100dvh - 320px);
   min-height:60px;}
 
 .tc-mgr-empty,.tc-mgr-loading{

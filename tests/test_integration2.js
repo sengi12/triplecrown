@@ -19,7 +19,7 @@ const wrapped = new Function(code + `
 `);
 const app = wrapped();
 
-const data = JSON.parse(fs.readFileSync('/mnt/user-data/uploads/season_projections.json','utf8'));
+const data = (()=>{ const F='/mnt/user-data/uploads/season_projections.json'; if(!fs.existsSync(F)){ console.log('SKIP: fixture not present ('+F+')'); process.exit(0);} return JSON.parse(fs.readFileSync(F,'utf8')); })();
 console.log('Loading', data.projections.length, 'rows...');
 app.loadProjections(data);
 

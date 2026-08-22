@@ -41,7 +41,28 @@ function averageGroup(group){
 
 function loadProjections(data){
   const players=data.projections;
-  playerNotes = (data.playerNotes && typeof data.playerNotes==='object') ? data.playerNotes : {};
+  // Notes travel with a file when it has them, but a file WITHOUT a playerNotes block (an
+  // analyst export, an older cloud save) must not wipe the notes you already have — merge.
+  if(data.playerNotes && typeof data.playerNotes==='object'){
+    playerNotes = Object.assign({}, playerNotes||{}, data.playerNotes);
+  }
+  // A file always describes the projection season. Leave any reference season we were
+  // looking at, and point the roster base back at the projection seed, BEFORE the roster
+  // fill below reads getBase() — otherwise 2024's roster is imported as the working set.
+  if(activeSeason!=='proj'){
+    activeSeason='proj';
+    if(typeof projSeed!=='undefined' && projSeed) SEED=projSeed;
+    else if(typeof seasonStatsCache!=='undefined' && seasonStatsCache && seasonStatsCache.proj) SEED=seasonStatsCache.proj;
+  }
+  // Receptions without targets (most analyst exports): derive targets the way the seed does,
+  // or every receiver without a targets column lands at a zero baseline.
+  (players||[]).forEach(p=>{
+    const tg=parseFloat(p.receiving_targets); const rc=parseFloat(p.receptions);
+    if(!(tg>0) && rc>0){
+      const cr = (String(p.fantasy_position||p.pos||'').toUpperCase()==='TE') ? 0.68 : 0.65;
+      p.receiving_targets = Math.round(rc/cr);
+    }
+  });
   // Group by player_id when present, else name+team. Only treat as "same player"
   // when BOTH id matches AND team matches (avoids merging a traded player's two teams).
   const useIds=players.some(p=>p.player_id!==undefined&&p.player_id!==null);
@@ -220,6 +241,8 @@ function loadProjections(data){
   else if(typeof invalidateRankingsRenderCache==='function') invalidateRankingsRenderCache();
 
   if(typeof syncAppChrome==='function') syncAppChrome();
+  if(typeof renderSeasonTabs==='function') renderSeasonTabs();
+  if(typeof saveSession==='function') saveSession();   // an import is an edit; persist it
   renderSidebar();
   if(multiAnalyst) toast(`⚠️ ${analysts.length} analysts averaged: ${analysts.join(', ')}`,'ok');
   else toast(`Loaded ${merged.length} players · ${Object.keys(byTeam).length} teams`,'ok');
@@ -250,6 +273,9 @@ function buildOutput(){
         interceptions_thrown:Math.round(qb.interceptions_thrown),
         rushing_yards:Math.round(qb.qb_rush_yards),rushing_touchdowns:Math.round(qb.qb_rush_tds),
         rushing_attempts:Math.round(qb.qb_rush_attempts),
+        // Games travel with the file so a hand-set timeshare (12/5) survives a round-trip
+        // instead of being re-guessed from the yards split on re-import.
+        games_played:Math.round(qb.games||0),
         rushing_yards_per_attempt:qb.qb_rush_attempts>0?+(qb.qb_rush_yards/qb.qb_rush_attempts).toFixed(2):0,
         receptions:0,receiving_yards:0,receiving_touchdowns:0,receiving_targets:'0',receiving_yards_per_reception:0,
         fumbles_lost:0,adp:bp.adp||999,adp_ppr:bp.adp_ppr||999,adp_half_ppr:bp.adp_half_ppr||999,adp_2qb:bp.adp_2qb||999,
@@ -270,7 +296,7 @@ function buildOutput(){
           player_id:p.player_id||null,
           headshot:p.headshot||null,slug:p.slug||null,
           passing_yards:0,passing_touchdowns:0,passing_attempts:0,passing_completions:0,interceptions_thrown:0,
-          rushing_yards:bp.rushing_yards||0,rushing_touchdowns:0,rushing_attempts:bp.rushing_attempts||0,rushing_yards_per_attempt:0,
+          rushing_yards:bp.rushing_yards||0,rushing_touchdowns:bp.rushing_tds||bp.rushing_touchdowns||0,rushing_attempts:bp.rushing_attempts||0,rushing_yards_per_attempt:0,
           ...rec,fumbles_lost:0,adp:bp.adp||999,adp_ppr:bp.adp_ppr||999,adp_half_ppr:bp.adp_half_ppr||999,adp_2qb:bp.adp_2qb||999,
           bye_week:bp.bye_week||null});
       });

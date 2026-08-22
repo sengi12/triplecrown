@@ -52,15 +52,30 @@ function renderTeamDefShell(pid){
 // individually (1–18) and assemble the gamelog. Weeks are fetched in parallel; missing weeks
 // (bye, or not yet played) simply don't appear.
 const _dstWeekCache = {};
+// Four seasons × 18 weeks used to go out as 72 simultaneous requests, every failure was
+// swallowed into "that week didn't exist", and whatever came back was cached for the
+// session — so a rate-limited open showed a 15-game season (or "No 2024 defensive weeks")
+// with no way to recover. Now: one in-flight promise per season, a small concurrency
+// window, and a season with failed weeks is NOT cached (the next open retries) and says so.
+let _dstInFlight = {};
+const _DST_CONCURRENCY = 4;
 async function pcardFetchDstSeason(season){
   if(_dstWeekCache[season]) return _dstWeekCache[season];
+  if(_dstInFlight[season]) return _dstInFlight[season];
+  _dstInFlight[season] = (async()=>{
   const WEEKS = 18;
-  const reqs = [];
-  for(let w=1; w<=WEEKS; w++){
-    const url = SLEEPER_WEEK_STATS_URL(season, w, 'DEF');
-    reqs.push(sleeperFetch(url).then(rows=>({w, rows})).catch(()=>({w, rows:null})));
-  }
-  const results = await Promise.all(reqs);
+  const weeks = []; for(let w=1; w<=WEEKS; w++) weeks.push(w);
+  const results = [];
+  let i = 0;
+  const worker = async()=>{
+    while(i < weeks.length){
+      const w = weeks[i++];
+      try{ results.push({w, rows: await sleeperFetch(SLEEPER_WEEK_STATS_URL(season, w, 'DEF'))}); }
+      catch(e){ results.push({w, rows:null, failed:true}); }
+    }
+  };
+  await Promise.all(Array.from({length:_DST_CONCURRENCY}, worker));
+  const failed = results.filter(r=>r.failed).map(r=>r.w).sort((a,b)=>a-b);
   const byTeam = {};
   results.forEach(({w, rows})=>{
     (Array.isArray(rows)?rows:[]).forEach(r=>{
@@ -72,8 +87,11 @@ async function pcardFetchDstSeason(season){
     });
   });
   Object.values(byTeam).forEach(list=>list.sort((a,b)=>(a.week||0)-(b.week||0)));
-  _dstWeekCache[season] = byTeam;
+  Object.defineProperty(byTeam, '__failedWeeks', { value: failed, enumerable:false });
+  if(!failed.length) _dstWeekCache[season] = byTeam;   // partial seasons are retried next open
   return byTeam;
+  })().finally(()=>{ delete _dstInFlight[season]; });
+  return _dstInFlight[season];
 }
 
 // Columns to show — the meaningful subset of what Sleeper tracks for a defense, in the order
@@ -142,7 +160,9 @@ function renderPcardTeamDef(pid){
       if(!pcardOpen) return;
       const cell = document.getElementById(`dst_${team}_${season}`);
       if(!cell) return;
-      cell.innerHTML = _dstSeasonBlock(byTeam[team], season, team);
+      const failed = byTeam.__failedWeeks || [];
+      cell.innerHTML = _dstSeasonBlock(byTeam[team], season, team)
+        + (failed.length ? `<div class="pcard-loading">Week${failed.length>1?'s':''} ${failed.join(', ')} did not load (Sleeper rate limit) — close and reopen the card to retry.</div>` : '');
     }).catch(()=>{});
   });
   const blocks = seasons.map(season=>

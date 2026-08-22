@@ -409,7 +409,7 @@ async function espnBuildSnapshot(leagueId, season, opts){
   }
   teams.forEach(t=>{ t.isChampion = championRosterId!=null && t.rosterId===championRosterId; });
 
-  const superflex = rp.includes('SUPER_FLEX');
+  const superflex = (typeof leagueIsSuperflex==='function') ? leagueIsSuperflex(rp) : rp.includes('SUPER_FLEX');
   const tep = +(scoring.bonus_rec_te||0) > 0;
 
   // "My team" is identified league-wide by OWNER id (every consumer compares t.ownerId to

@@ -309,6 +309,15 @@ def _aux_csv(url, **kw):
         legacy_pkl = _legacy_pickle_cache_path("aux", payload)
         if os.path.exists(legacy_pkl) and not os.path.exists(pkl_path):
             os.replace(legacy_pkl, pkl_path)
+        # Same rule as _load_pbp: a pickle older than its csv is stale. The in-season refresher
+        # re-downloads the roster/games csvs weekly; without this the parsed positions/names
+        # stayed frozen at the first fetch and late-season call-ups had no position at all.
+        if os.path.exists(pkl_path) and os.path.exists(csv_path) \
+                and os.path.getmtime(pkl_path) < os.path.getmtime(csv_path):
+            try:
+                os.remove(pkl_path)
+            except OSError:
+                pass
         if os.path.exists(pkl_path):
             _AUX_CACHE[key] = pd.read_pickle(pkl_path)
         else:

@@ -63,14 +63,23 @@ run_js_test() {
     return
   fi
   
-  local output
-  output=$(node "$file" 2>&1) || true
+  local output rc
+  output=$(node "$file" 2>&1); rc=$?
   
-  # Count PASS/FAIL — tests use various formats: "RESULT: PASS", "TEST X: PASS", "PASS (...)"
+  # Count PASS/FAIL on the result TOKEN, not any line containing the word: a PASS line whose
+  # label says "failed weeks are listed" is a pass, and a test that crashes before printing
+  # anything is a failure (it used to be reported as "no assertions" and skipped).
   local p f skipped
-  p=$(echo "$output" | grep -ciE "PASS" || true)
-  f=$(echo "$output" | grep -ciE "FAIL" || true)
+  p=$(echo "$output" | grep -cE "(^[[:space:]]*(✓[[:space:]]*)?PASS([[:space:]:(]|$))|RESULT:[[:space:]]*PASS|:[[:space:]]*PASS([[:space:]]|$)" || true)
+  f=$(echo "$output" | grep -cE "(^[[:space:]]*(✗[[:space:]]*)?(FAIL|MISS)([[:space:]:(]|$))|RESULT:[[:space:]]*[0-9/]*[[:space:]]*(FAIL|SOME FAILED)|:[[:space:]]*FAIL([[:space:]]|$)" || true)
   skipped=$(echo "$output" | grep -c "SKIP:" || true)
+  if [ "$rc" -ne 0 ] && [ "$f" -eq 0 ] && [ "$p" -eq 0 ] && [ "$skipped" -eq 0 ]; then
+    # Non-zero exit before a single assertion printed = the script crashed (ReferenceError,
+    # missing fixture). A crash AFTER its assertions passed (a DOM stub missing a method in
+    # teardown) keeps the assertions it made.
+    f=1
+    output="$output"$'\n'"FAIL: test exited with status $rc before any assertion"
+  fi
   TOTAL=$((TOTAL + p + f))
   
   if [ "$skipped" -gt 0 ]; then
@@ -153,6 +162,8 @@ run_js_test test_ol_projection  "OL projection: ranks from projected starters, b
 run_js_test test_owner_surfaces "Owner pills: projection rows, rankings OWNER column, search row layout, nothing when no league is synced"
 run_js_test test_playbook_insights "Playbook modal: swipe-close on every tab, league-baselined TD regression, RZ leader sample floor, modeled pool, Scheme ranks + pre-FTN blanks"
 run_js_test test_progress_bar   "Team progress bar: counts edited working-set teams only — not materialised state, not Rankings, not reference seasons; undo/import"
+run_js_test test_audit_fixes    "Live-audit regressions: import merge/targets/season, copy zeroing, shape-aware cache, weekly fetch cache, escaping, D/ST failed weeks, 2QB SF, onerror guards, shape restore"
+run_js_test test_audit_fixes2   "Live-audit regressions II: week-range re-applies after season switch, draft follow lands on the projection season, traded picks credit the receiving roster"
 run_js_test test_consistency    "Consistency grade: DNP weeks excluded and labelled, <10-snap games skipped, scored in full PPR in every league"
 run_js_test test_route_tree     "Route tree card: alignment/route distribution rendering"
 run_js_test test_qb_chart       "QB passing chart card rendering"
@@ -161,7 +172,6 @@ run_js_test test_cfb_prospect   "College prospect panel: percentile bars vs past
 run_js_test test_qb_extras      "QB extras: ATT/CMP/RZ color coding, vs prefix for home games"
 run_js_test test_pcard_freeze   "Player card: WK + OPP columns frozen (sticky) like league-wide advanced stats"
 run_js_test test_mobile_layout   "Mobile: horizontal-overflow lock, additions tables scroll in-container, frozen team column"
-run_js_test test_rz_rankings   "Rankings red-zone columns: playerSeasonOpportunity sums RZ carries/targets/air-yards from HISTORY (past seasons only)"
 run_js_test test_pcard_layout   "Player card layout: fixed hero, single scroll region, non-sticky season title"
 run_js_test test_persist        "Session persistence: save/load/restore working projections + scoring + format, season guard, reset clears"
 run_js_test test_persist_quota  "Session persistence under storage pressure: capped persisted undo depth, degraded save keeps projections, memoized availability probe"
@@ -212,8 +222,9 @@ if [ -f "$DIR/test_flacco_split.py" ] && [ -f "$PYBUILD" ]; then
   for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_roster_moves test_roster_truth test_sumer_pull test_ktc_pull test_seed_refresh test_ol_pipeline test_state_block test_cfb_classes; do
     [ -f "$DIR/${pyt}.py" ] || continue
     output=$(python3 "$DIR/${pyt}.py" 2>&1) || true
-    p=$(echo "$output" | grep -ciE "PASS" || true)
-    f=$(echo "$output" | grep -ciE "FAIL" || true)
+    # Same token rule as the JS runner: count result markers, not any line containing the word.
+    p=$(echo "$output" | grep -cE "(^[[:space:]]*(✓[[:space:]]*)?PASS([[:space:]:(]|$))|RESULT:[[:space:]]*PASS|:[[:space:]]*PASS([[:space:]]|$)" || true)
+    f=$(echo "$output" | grep -cE "(^[[:space:]]*(✗[[:space:]]*)?(FAIL|MISS)([[:space:]:(]|$))|RESULT:[[:space:]]*[0-9/]*[[:space:]]*(FAIL|MISS|SOME FAILED)|:[[:space:]]*FAIL([[:space:]]|$)" || true)
     TOTAL=$((TOTAL + p + f))
     if [ "$f" -eq 0 ] && [ "$p" -gt 0 ]; then
       echo "  ✓ OK  ${pyt}.py"

@@ -2510,14 +2510,14 @@ button.la-cliff:hover{filter:brightness(1.25);}
 
 .tc-modal{
   background:var(--surface);border:1px solid var(--border);border-radius:14px;
-  padding:20px;width:min(420px,100%);max-height:calc(100dvh - 40px);max-height:calc(100vh - 40px);
+  padding:20px;width:min(420px,100%);max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);
   overflow:auto;box-shadow:0 20px 48px rgba(0,0,0,.4);
   display:flex;flex-direction:column;gap:12px;
   animation:tcSlideUp .18s ease;}
 @keyframes tcSlideUp{from{transform:translateY(10px);opacity:0}to{transform:none;opacity:1}}
 
 .tc-modal-sm{width:min(340px,100%);}
-.tc-modal-mgr{width:min(480px,100%);max-height:calc(100dvh - 40px);max-height:calc(100vh - 40px);}
+.tc-modal-mgr{width:min(480px,100%);max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);}
 
 .tc-modal-head{
   display:flex;align-items:center;justify-content:space-between;gap:8px;}
@@ -2607,7 +2607,7 @@ button.la-cliff:hover{filter:brightness(1.25);}
 
 .tc-mgr-list{
   display:flex;flex-direction:column;gap:4px;overflow-y:auto;
-  max-height:calc(100dvh - 320px);max-height:calc(100vh - 320px);
+  max-height:calc(100vh - 320px);max-height:calc(100dvh - 320px);
   min-height:60px;}
 
 .tc-mgr-empty,.tc-mgr-loading{
@@ -2967,13 +2967,18 @@ if(typeof window!=='undefined' && typeof navigator!=='undefined' && navigator.se
 // Kraft's hot weeks 1-9 before injury), instead of only the full-season total.
 // Weekly data is fetched lazily (only for the team being viewed) and cached.
 // ═════════════════════════════════════════════════════════════════════════════
-let weeklySkillCache = {};   // `${season}:${pid}` -> raw weekly json from Sleeper
+let weeklySkillCache = {};   // `${season}:${pid}` -> raw weekly json from Sleeper (null = no stats)
+let _weeklyInFlight = {};    // same key -> pending promise, so concurrent callers share one request
 async function fetchPlayerWeekly(pid, season){
   const key = `${season}:${pid}`;
-  if(weeklySkillCache[key]) return weeklySkillCache[key];
-  const data = await sleeperFetch(SLEEPER_WEEKLY_URL(pid, season));
-  weeklySkillCache[key] = data;
-  return data;
+  // `in` rather than truthiness: Sleeper answers null for a season a player has no stats
+  // in, and re-requesting that for every rookie on every card open was a 429 generator.
+  if(key in weeklySkillCache) return weeklySkillCache[key];
+  if(_weeklyInFlight[key]) return _weeklyInFlight[key];
+  _weeklyInFlight[key] = sleeperFetch(SLEEPER_WEEKLY_URL(pid, season))
+    .then(data=>{ weeklySkillCache[key] = data; return data; })
+    .finally(()=>{ delete _weeklyInFlight[key]; });
+  return _weeklyInFlight[key];
 }
 
 // Shared week-range state across ALL week sliders (QB/RB/WR and Advanced OL).
@@ -3444,6 +3449,9 @@ async function applyWeekRange(team, fromWk, toWk){
   setSharedWeekRange(team, activeSeason, fromWk, toWk);
   state.weekFilter=[fromWk,toWk];
   state.weekFilterLoading=true;
+  // Two quick commits ([1,9] then [1,5]) used to race: whichever resolved LAST wrote the
+  // data while the label already said the newest range. Only the newest commit may land.
+  const seq = (state._wfSeq = (state._wfSeq||0) + 1);
   renderContent();
   try{
     const [skillData, qbPool, qbData] = await Promise.all([
@@ -3451,6 +3459,7 @@ async function applyWeekRange(team, fromWk, toWk){
       buildWeekFilterQBPool(team, activeSeason, fromWk, toWk),
       buildWeekFilterQBData(team, activeSeason, fromWk, toWk),
     ]);
+    if(seq !== state._wfSeq) return;   // superseded by a newer range
     // If all player fetches were blocked (CORS / offline), skillData will be empty.
     // Detect this and show a clear message rather than silently leaving stats unchanged.
     const hasData = skillData && Object.keys(skillData).length > 0;
@@ -3668,7 +3677,7 @@ function imgTag(src,cls,fb=''){
   if(src && typeof src==='object'){ fallbacks=Array.isArray(src.fallbacks)?src.fallbacks:[]; src=src.src||''; }
   if(!src) return `<div class="${cls} ph-err">${fb}</div>`;
   const fbList=fallbacks.filter(Boolean).join('|');
-  const onerr = `const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.outerHTML='<div class=\\'${cls} ph-err\\'>${fb}</div>';}`;
+  const onerr = `const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else if(this.parentNode){this.outerHTML='<div class=\\'${cls} ph-err\\'>${fb}</div>';}`;
   return `<img src="${src}" class="${cls}" alt="" data-fallbacks="${fbList}" loading="lazy" decoding="async" onerror="${onerr}">`;
 }
 function imgSm(src,cls='share-hs',fb=''){
@@ -3676,7 +3685,7 @@ function imgSm(src,cls='share-hs',fb=''){
   if(src && typeof src==='object'){ fallbacks=Array.isArray(src.fallbacks)?src.fallbacks:[]; src=src.src||''; }
   if(!src) return `<div class="${cls}-err">${fb}</div>`.replace(cls+'-err',cls.replace('share-hs','share-hs')+'-err');
   const fbList=fallbacks.filter(Boolean).join('|');
-  const onerr = `const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.outerHTML='<div class=\\'share-hs-err\\'>${fb}</div>';}`;
+  const onerr = `const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else if(this.parentNode){this.outerHTML='<div class=\\'share-hs-err\\'>${fb}</div>';}`;
   return `<img src="${src}" class="${cls}" alt="" data-fallbacks="${fbList}" onerror="${onerr}">`;
 }
 
@@ -3893,7 +3902,19 @@ function restoreSession(){
   if(typeof p.rankingsSearchOpen==='boolean') rankingsSearchOpen = p.rankingsSearchOpen;
   if(typeof p.rankingsSearchQuery==='string') rankingsSearchQuery = p.rankingsSearchQuery;
   if(typeof p.scoringPanelOpen==='boolean') scoringPanelOpen = p.scoringPanelOpen;
-  if(p.leagueSnapshot && p.leagueSnapshot.teams) leagueSnapshot = p.leagueSnapshot;
+  if(p.leagueSnapshot && p.leagueSnapshot.teams){
+    leagueSnapshot = p.leagueSnapshot;
+    // The roster shape VOR is valued against was never persisted, so a reload fell back to
+    // the generic 12-team / 2-WR lineup until the next re-sync. Rebuild it from the snapshot.
+    try{
+      const rp = leagueSnapshot.rosterPositions;
+      if(Array.isArray(rp) && rp.length && typeof lineupFromRosterPositions==='function'){
+        const shape = lineupFromRosterPositions(rp);
+        leagueShape = { teams: leagueSnapshot.teams, lineup: shape.lineup, bench: shape.bench };
+        draftLineup = shape.lineup; draftBenchCount = shape.bench;
+      }
+    }catch(e){}
+  }
   if(p.playerNotes && typeof p.playerNotes==='object') playerNotes = p.playerNotes;
   if(p.season===PROJ_SEASON && p.workingProj && Object.keys(p.workingProj).length){
     workingProj = p.workingProj;
@@ -4543,7 +4564,18 @@ function tcLatencyLog(path, mode, msFetch, msDecode, msParse, ok){
   catch(_e){}
 }
 
+// Deploy stamp (pages.yml rewrites the token). Seed URLs carry it as ?v= so a new deploy is
+// a new cache key for the service worker AND the HTTP cache: before this the SW answered the
+// seed request cache-first on the first load after every deploy, so users got the new app
+// with yesterday's data once per release. Unstamped (local dev, file://) → no param.
+const TC_BUILD_ID = '__TC_BUILD_ID__';
+function _seedVersioned(url){
+  if(!TC_BUILD_ID || TC_BUILD_ID.indexOf('__')===0) return url;
+  if(/[?&]v=/.test(url)) return url;
+  return url + (url.indexOf('?')<0 ? '?' : '&') + 'v=' + encodeURIComponent(TC_BUILD_ID);
+}
 async function fetchSeedJson(url){
+  url = _seedVersioned(String(url||''));
   // A query string (cache-busting revalidation) must ride AFTER the .gz extension.
   const _qi = url.indexOf('?');
   const _gzUrl = _qi < 0 ? url + '.gz' : url.slice(0, _qi) + '.gz' + url.slice(_qi);
@@ -5466,7 +5498,7 @@ function renderNotesBrowser(query){
       <button class="notes-browser-open" onclick="openNotesBrowserPlayer(${pcardArg(r.pid||r.name)},${pcardArg(r.pos)},${pcardArg(r.team)})">
         ${head}
         <span class="notes-browser-main">
-          <span class="notes-browser-top"><span class="ps-nm">${escHtml(r.name)}</span><span class="ps-meta"><span class="ps-pos ps-pos-${r.pos}">${escHtml(r.pos||'')}</span><span class="notes-browser-team">${escHtml(r.team||'')}</span></span></span>
+          <span class="notes-browser-top"><span class="ps-nm">${escHtml(r.name)}</span><span class="ps-meta"><span class="ps-pos ps-pos-${escAttr(r.pos||"")}">${escHtml(r.pos||'')}</span><span class="notes-browser-team">${escHtml(r.team||'')}</span></span></span>
           ${preview?`<span class="notes-browser-preview">${preview}</span>`:''}
         </span>
         <span class="notes-browser-badge">${r.count}</span>
@@ -6035,7 +6067,7 @@ function teamHeaderQbText(team, qbs, recStr){
     }
     txt = work.join(' / ');
   }
-  return txt + (recStr ? ` · ${recStr}` : '');
+  return escHtml(txt) + (recStr ? ` · ${recStr}` : '');
 }
 
 function teamHeaderHcLine(team, opts){
@@ -6211,7 +6243,7 @@ function renderPassing(team,state){
         return `<div class="snap-row" style="${active?'border:1px solid var(--qb)':''}">
           <span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${imgTag(hsPack(q),'player-headshot')}</span>
           <div class="snap-info" style="flex:1">
-            <div style="font-size:12px;font-weight:700"><span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${q.name}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(q.player_id,q.name):''}${projPaceChip(q.name,'QB',q.player_id)}${weekFilterPaceButton(state,q.player_id,'qb')}${qbFptsTag(q)}
+            <div style="font-size:12px;font-weight:700"><span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${escHtml(q.name)}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(q.player_id,q.name):''}${projPaceChip(q.name,'QB',q.player_id)}${weekFilterPaceButton(state,q.player_id,'qb')}${qbFptsTag(q)}
               ${q.games_played?`<span style="font-size:9px;color:var(--muted);font-weight:500">· actually played ${Math.round(q.games_played)}</span>`:''}</div>
             <div style="font-size:10px;color:var(--muted)" id="wl-sub-${i}">${gms} games · ${perGame(q,'passing_yards').toFixed(1)} pass yds/gm</div>
           </div>
@@ -6237,12 +6269,12 @@ function renderPassing(team,state){
     relevance:'QB'
   });
   return `${weekSlider}${workloadCard}<div class="card">
-    <div class="card-title">${qb.name} — Passing ${isMulti?`<span style="font-size:9px;color:var(--muted)">(editing QB${idx+1} of ${state.qbs.length})</span>`:''}</div>
+    <div class="card-title">${escHtml(qb.name)} — Passing ${isMulti?`<span style="font-size:9px;color:var(--muted)">(editing QB${idx+1} of ${state.qbs.length})</span>`:''}</div>
     ${isMulti?`<div class="qb-tab-bar">${state.qbs.map((q,i)=>
-      `<button class="qb-tab ${i===idx?'active':''}" onclick="setActiveQB(${i})">${(typeof tcLastName==='function')?tcLastName(q.name):(String(q.name||'').trim().split(/\s+/).slice(-1)[0]||'')}</button>`).join('')}</div>`:''}
+      `<button class="qb-tab ${i===idx?'active':''}" onclick="setActiveQB(${i})">${escHtml((typeof tcLastName==='function')?tcLastName(q.name):(String(q.name||'').trim().split(/\s+/).slice(-1)[0]||''))}</button>`).join('')}</div>`:''}
     <div class="player-row"><span class="clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${imgTag(hsPack(qb),'player-headshot')}</span>
       <span class="pos-badge pos-QB">QB${idx+1}</span>
-      <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${qb.name}${typeof tcOwnerPill==='function'?tcOwnerPill(qb.player_id,qb.name):''}</div>
+      <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${escHtml(qb.name)}${typeof tcOwnerPill==='function'?tcOwnerPill(qb.player_id,qb.name):''}</div>
         ${weekFilterPaceButton(state,qb.player_id,'qb')}${qbFptsTag(qb)}
         <div class="player-sub">${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?`ECR ${e.rank_ecr}`:'';})()}${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?' · ':'';})()}<span id="qb-games-sub">${games}</span> games projected</div></div></div>
     <div class="alert alert-info" style="margin-bottom:11px"><span class="alert-icon">📈</span>
@@ -6383,6 +6415,13 @@ function weekRangeSliderHTML(team,state){
   const [lo,hi]=shared;
   state.weekFilter=[lo,hi];
   const active=isWeekFilterActive(state);
+  // The shared range outlives the per-state filtered data: switching 2025 → 2024 → 2025
+  // rebuilds the reference state, so the slider said "weeks 3–10 · Reset" over full-season
+  // numbers. If the range is narrowed but this state has no filtered data, re-apply it.
+  if(active && !state.weekFilterData && !state.weekFilterLoading && typeof applyWeekRange==='function'){
+    state.weekFilterLoading=true;   // mark before the async kick so this render shows "loading…"
+    setTimeout(()=>{ try{ applyWeekRange(team, lo, hi); }catch(e){} }, 0);
+  }
   const loPct=(lo-1)/17*100, hiPct=(18-hi)/17*100;
   const oppRail = (typeof renderWeekOpponentRail==='function')
     ? renderWeekOpponentRail(team, activeSeason, 'wr-opp-main')
@@ -6496,7 +6535,7 @@ function vacatedNote(team){
   const tagValue=`${v.tgt} targets · ${v.rec} rec · ${v.yds.toLocaleString()} yds · ${v.td} TD${rankText?` · ${rankText}`:''}`;
   const rankLead=rk?`${vacatedOrdinal(rk.rank)}`:'Rank N/A';
   const lineHtml=`<b>${escHtml(rankLead)}: Vacated Targets from ${v.season}:</b> ${escHtml(`${v.tgt} targets · ${v.rec} rec · ${v.yds.toLocaleString()} yds · ${v.td} TD`)}`;
-  const names = v.players.length>3 ? v.players.slice(0,3).join(', ')+` +${v.players.length-3} more` : v.players.join(', ');
+  const names = escHtml(v.players.length>3 ? v.players.slice(0,3).join(', ')+` +${v.players.length-3} more` : v.players.join(', '));
   return `<div class="vacated-note">
     <span class="vacated-icon">${TC_ICON("export")}</span>
     <div> ${noteWrapHtml(lineHtml, { label:'Vacated Targets', value:tagValue, source:'projection_builder_vacated', statKey:'vacated_targets', context:ctx, team:noteTeam, relevance:'WR,TE,RB' }, 'note-tag-hit')}
@@ -7039,7 +7078,7 @@ function vacatedRushNote(team){
   const tagValue=`${v.att} carries · ${v.yds.toLocaleString()} yds · ${v.td} TD${rankText?` · ${rankText}`:''}`;
   const rankLead=rk?`${vacatedOrdinal(rk.rank)}`:'Rank N/A';
   const lineHtml=`<b>${escHtml(rankLead)} Vacated Carries from ${v.season}:</b> ${escHtml(`${v.att} carries · ${v.yds.toLocaleString()} yds · ${v.td} TD`)}`;
-  const names = v.players.length>3 ? v.players.slice(0,3).join(', ')+` +${v.players.length-3} more` : v.players.join(', ');
+  const names = escHtml(v.players.length>3 ? v.players.slice(0,3).join(', ')+` +${v.players.length-3} more` : v.players.join(', '));
   return `<div class="vacated-note">
     <span class="vacated-icon">${TC_ICON("export")}</span>
     <div>${noteWrapHtml(lineHtml, { label:'Vacated Carries', value:tagValue, source:'projection_builder_vacated', statKey:'vacated_carries', context:ctx, team:noteTeam, relevance:'RB,QB,WR' }, 'note-tag-hit')}
@@ -7133,7 +7172,11 @@ function handleSliderKey(key,val,team,fromManual){
     qbry:'qb_rush_yards',qbrtd:'qb_rush_tds',qbratt:'qb_rush_attempts'};
   if(key in QB_MAP){
     const idx=state.activeQB||0;
-    state.qbs[idx][QB_MAP[key]]=val;
+    const q=state.qbs[idx];
+    q[QB_MAP[key]]=val;
+    // Keep the per-game rate in step: perGame() prefers _rate, which was only refreshed on a
+    // games change, so "pass yds/gm" read the OLD rate after a yardage edit.
+    if(q._rate && (q.games||0)>0) q._rate[QB_MAP[key]]=val/q.games;
     liveQB(state,idx,team,key);
     if(key==='patt') livePassDependents(state,team); // attempts drive the target pool
     return;
@@ -7382,7 +7425,12 @@ function setDerivedShare(state,team,i,share,metric){
   liveDerivedRows(state,team,metric);
 }
 
-// Populate rec_share / recyds_share from the current per-player values if not present.
+// Populate rec_share / recyds_share from the current per-player values. ALWAYS recomputed:
+// the stored field is only a convenience for the slider, and the per-player rates it was
+// derived from (share, catch_rate, ypt, the QB pool) change on the Targets tab, on inline
+// edits and on imports. Computing it once and trusting it forever is how the Receptions
+// tab came to show "163 rec (40.7%)" beside a Rec cell that said 29. After a derived-share
+// drag applyDerivedShares back-solves the rates, so recomputing reproduces the dragged share.
 function ensureDerivedShares(state,metric){
   const isYds=metric==='recyds';
   const field=isYds?'recyds_share':'rec_share';
@@ -7390,9 +7438,7 @@ function ensureDerivedShares(state,metric){
   const shares=state.passing_shares;
   const valOf=p=>{const tg=p.share*totalTgts;return isYds?tg*(p.ypt||9):tg*(p.catch_rate||0.65);};
   const pool=shares.reduce((s,p)=>s+valOf(p),0)||1;
-  let needs=false;
-  shares.forEach(p=>{ if(typeof p[field]!=='number') needs=true; });
-  if(needs) shares.forEach(p=>{ p[field]=valOf(p)/pool; });
+  shares.forEach(p=>{ p[field]=valOf(p)/pool; });
 }
 
 // Convert rec_share / recyds_share back into per-player catch_rate / ypt against the pool.
@@ -8128,13 +8174,26 @@ function invalidateBuildPlayerCache(){
   if(typeof invalidateRankingsRenderCache==='function') invalidateRankingsRenderCache();
 }
 
+// Everything VOR depends on besides scoring: the league's roster shape (a synced league,
+// a followed draft) and the ADP refresh. None of these were in the cache key, so linking a
+// 10-team 3-WR league with the same scoring as before returned the 12-team 2-WR VOR.
+function buildPlayerShapeSig(){
+  try{
+    const sc = (typeof leagueStarterCounts==='function') ? leagueStarterCounts() : null;
+    return JSON.stringify([sc, (typeof draftId!=='undefined')?draftId:null,
+      (typeof _adpRefreshEpoch!=='undefined')?_adpRefreshEpoch:0]);
+  }catch(e){ return ''; }
+}
+
 function buildPlayerList(){
   const scoringSig = buildPlayerScoringSig();
+  const shapeSig = buildPlayerShapeSig();
   const cacheHit = (_buildPlayerCache.list
     && _buildPlayerCache.userProjRef===userProj
     && _buildPlayerCache.activeSeason===activeSeason
     && _buildPlayerCache.rankFormat===rankFormat
-    && _buildPlayerCache.scoringSig===scoringSig);
+    && _buildPlayerCache.scoringSig===scoringSig
+    && _buildPlayerCache.shapeSig===shapeSig);
   if(cacheHit){
     if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
       try{ console.debug('[buildPlayerList] cache hit ('+_buildPlayerCache.list.length+' players, epoch='+_buildPlayerCacheEpoch+')'); }catch(_e){}
@@ -8203,7 +8262,7 @@ function buildPlayerList(){
           if(p.player_id&&!list[ex].player_id)list[ex].player_id=p.player_id;}
         else pushPlayer({name:p.name,team,pos:p.pos,headshot:p.headshot,slug:p.slug,player_id:p.player_id||null,
           passing_yards:0,passing_tds:0,passing_attempts:0,passing_completions:0,interceptions_thrown:0,
-          rushing_yards:bp.rushing_yards||0,rushing_tds:0,rushing_attempts:bp.rushing_attempts||0,
+          rushing_yards:bp.rushing_yards||0,rushing_tds:bp.rushing_tds||bp.rushing_touchdowns||0,rushing_attempts:bp.rushing_attempts||0,
           receiving_yards:projYds,receiving_tds:projTDs,receptions:projRec,receiving_targets:projTgts,fumbles_lost:0});
       });
     }
@@ -8236,6 +8295,7 @@ function buildPlayerList(){
     p.adp = be && be.adp!=null ? be.adp : 999;
     p.adp_ppr = be && be.adp_ppr!=null ? be.adp_ppr : 999;
     p.adp_half_ppr = be && be.adp_half_ppr!=null ? be.adp_half_ppr : 999;
+    p.adp_std = be && be.adp_std!=null ? be.adp_std : 999;
     p.adp_2qb = be && be.adp_2qb!=null ? be.adp_2qb : 999;
     const c=contractEntry(p);
     p.age = rankingAgeFromSleeper(p, be);
@@ -8249,6 +8309,7 @@ function buildPlayerList(){
   _buildPlayerCache.activeSeason = activeSeason;
   _buildPlayerCache.rankFormat = rankFormat;
   _buildPlayerCache.scoringSig = scoringSig;
+  _buildPlayerCache.shapeSig = shapeSig;
   _buildPlayerCache.list = list.map(p=>Object.assign({}, p));
   if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
     try{ console.debug('[buildPlayerList] rebuilt '+list.length+' players (epoch='+_buildPlayerCacheEpoch+', season='+activeSeason+', fmt='+rankFormat+')'); }catch(_e){}
@@ -8276,7 +8337,7 @@ function adpFor(p){
   if(f==='superflex'||f==='dynasty_superflex') v=p.adp_2qb;
   else if(f==='ppr') v=p.adp_ppr;
   else if(f==='half_ppr') v=p.adp_half_ppr;
-  else if(f==='std') v=p.adp;
+  else if(f==='std') v=(p.adp_std!=null && p.adp_std<999) ? p.adp_std : p.adp;   // `adp` is the PPR board
   else v=p.adp_ppr;   // dynasty (non-SF) → ppr board as the closest proxy
   if(v==null||v>=999){ v=p.adp_ppr!=null&&p.adp_ppr<999?p.adp_ppr:(p.adp!=null&&p.adp<999?p.adp:999); }
   return v;
@@ -8851,14 +8912,14 @@ function renderPlayerCardShell(pid, pos, team){
         <div class="pcard-hero-logo" style="${tm?`background-image:url('${NFL_LOGO(tm)}')`:''}"></div>
         <img src="${heroPack.src||''}" class="pcard-hero-img" data-fallbacks="${heroFallbacks.join('|')}" onerror="pcardImgFallback(this)">
         <div class="pcard-hero-main">
-          <div class="pcard-name">${name}${jersey?`<span class="pcard-jersey">${jersey}</span>`:''}</div>
+          <div class="pcard-name">${escHtml(name)}${jersey?`<span class="pcard-jersey">${jersey}</span>`:''}</div>
           <div class="pcard-sub">${posc?`<span class="pos-badge pos-${posc}">${posc}</span>`:''}${tm?`<span class="pcard-team">${teamDisplayName(tm)}</span>`:''}${typeof tcOwnerChip==='function'?tcOwnerChip(pid, name):''}</div>
           <div class="pcard-meta">
             ${metaItem('AGE', age)}
             ${metaItem('HT', height)}
             ${metaItem('WT', weight)}
             ${metaItem('EXP', exp)}
-            ${metaItem('COLLEGE', college)}
+            ${metaItem('COLLEGE', college==null?college:escHtml(String(college)))}
           </div>
           <div class="pcard-hero-draft" id="pcardHeroDraft"></div>
         </div>
@@ -8983,7 +9044,8 @@ async function loadPcardDraft(pid){
     const aid = await resolveEspnAthleteId(pid, (sleeperPlayers[pid]||{}).name, 'nfl');
     const info = aid ? await fetchEspnDraftInfo(aid) : null;
     const el = document.getElementById('pcardHeroDraft');
-    if(el && pcardOpen) el.innerHTML = espnDraftHero(info);
+    // Open A, tap B before A's lookup returns → A's draft banner landed in B's hero.
+    if(el && pcardOpen && pcardState && pcardState.pid===pid) el.innerHTML = espnDraftHero(info);
   }catch(e){ /* leave the banner blank on failure */ }
 }
 // Render (or refresh) the NFL / College source toggle above the card body.
@@ -11758,7 +11820,7 @@ function _olHeadshot(name, slot, teamCode){
     fallbacks.push(ESPN_HEADSHOT('nfl', aid), ESPN_HEADSHOT('college-football', aid));
   }
   const fb=fallbacks.filter(Boolean).join('|');
-  const onerr = "const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.outerHTML='<div class=\\'olc-qb-hs ph-err\\'></div>'; }";
+  const onerr = "const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else if(this.parentNode){this.outerHTML='<div class=\\'olc-qb-hs ph-err\\'></div>'; }";
   return `<img src="${primary}" class="olc-qb-hs" alt="" data-fallbacks="${fb}" onerror="${onerr}">`;
 }
 
@@ -12305,7 +12367,10 @@ async function loadEspnCardData(pid, posc, body, opts){
     ? prospect + `<div class="pcard-loading">Loading college game logs…</div>`
     : `<div class="pcard-loading">Loading ${league==='nfl'?'':'college '}game logs…</div>`;
   const aid = await resolveEspnAthleteId(pid, (sleeperPlayers[pid]||{}).name, league);
-  if(!pcardOpen) return;
+  // Every write below must still belong to THIS load: the user may have switched tabs
+  // (token bump) or players while the lookup was in flight.
+  const live = ()=> pcardOpen && tok===pcardToken && pcardState && pcardState.pid===pid;
+  if(!live()) return;
   if(!aid){
     // Having the prospect panel is a better outcome than an error, so keep it and demote the
     // missing gamelog to a footnote.
@@ -12317,7 +12382,7 @@ async function loadEspnCardData(pid, posc, body, opts){
   pcardApplyEspnHeadshot(aid, league);   // fill in an ESPN photo if Sleeper had none
   try{
     const base = await fetchEspnGamelog(aid, league, null);   // default → latest season + season list
-    if(!pcardOpen) return;
+    if(!live()) return;
     let seasons = [];
     for(const f of (base.filters||[])){ if(f.name==='season') seasons=(f.options||[]).map(o=>o.value); }
     if(!seasons.length){
@@ -12328,7 +12393,7 @@ async function loadEspnCardData(pid, posc, body, opts){
     const perSeason = await Promise.all(seasons.map(async s=>{
       try{ return { season:s, gl: await fetchEspnGamelog(aid, league, s) }; }catch(e){ return { season:s, gl:null }; }
     }));
-    if(!pcardOpen) return;
+    if(!live()) return;
     let out='';
     for(const {season, gl} of perSeason){
       if(!gl) continue;
@@ -12341,6 +12406,7 @@ async function loadEspnCardData(pid, posc, body, opts){
       if(typeof pcardEnableStickyStatHeaders==='function') pcardEnableStickyStatHeaders();
     }
   }catch(e){
+    if(!live()) return;
     body.innerHTML = prospect
       ? prospect + `<div class="pcard-src">Couldn't load ESPN game logs.</div>`
       : pcardRetryHtml("Couldn't load game logs. Check your connection and try again.");
@@ -12945,15 +13011,30 @@ function renderTeamDefShell(pid){
 // individually (1–18) and assemble the gamelog. Weeks are fetched in parallel; missing weeks
 // (bye, or not yet played) simply don't appear.
 const _dstWeekCache = {};
+// Four seasons × 18 weeks used to go out as 72 simultaneous requests, every failure was
+// swallowed into "that week didn't exist", and whatever came back was cached for the
+// session — so a rate-limited open showed a 15-game season (or "No 2024 defensive weeks")
+// with no way to recover. Now: one in-flight promise per season, a small concurrency
+// window, and a season with failed weeks is NOT cached (the next open retries) and says so.
+let _dstInFlight = {};
+const _DST_CONCURRENCY = 4;
 async function pcardFetchDstSeason(season){
   if(_dstWeekCache[season]) return _dstWeekCache[season];
+  if(_dstInFlight[season]) return _dstInFlight[season];
+  _dstInFlight[season] = (async()=>{
   const WEEKS = 18;
-  const reqs = [];
-  for(let w=1; w<=WEEKS; w++){
-    const url = SLEEPER_WEEK_STATS_URL(season, w, 'DEF');
-    reqs.push(sleeperFetch(url).then(rows=>({w, rows})).catch(()=>({w, rows:null})));
-  }
-  const results = await Promise.all(reqs);
+  const weeks = []; for(let w=1; w<=WEEKS; w++) weeks.push(w);
+  const results = [];
+  let i = 0;
+  const worker = async()=>{
+    while(i < weeks.length){
+      const w = weeks[i++];
+      try{ results.push({w, rows: await sleeperFetch(SLEEPER_WEEK_STATS_URL(season, w, 'DEF'))}); }
+      catch(e){ results.push({w, rows:null, failed:true}); }
+    }
+  };
+  await Promise.all(Array.from({length:_DST_CONCURRENCY}, worker));
+  const failed = results.filter(r=>r.failed).map(r=>r.w).sort((a,b)=>a-b);
   const byTeam = {};
   results.forEach(({w, rows})=>{
     (Array.isArray(rows)?rows:[]).forEach(r=>{
@@ -12965,8 +13046,11 @@ async function pcardFetchDstSeason(season){
     });
   });
   Object.values(byTeam).forEach(list=>list.sort((a,b)=>(a.week||0)-(b.week||0)));
-  _dstWeekCache[season] = byTeam;
+  Object.defineProperty(byTeam, '__failedWeeks', { value: failed, enumerable:false });
+  if(!failed.length) _dstWeekCache[season] = byTeam;   // partial seasons are retried next open
   return byTeam;
+  })().finally(()=>{ delete _dstInFlight[season]; });
+  return _dstInFlight[season];
 }
 
 // Columns to show — the meaningful subset of what Sleeper tracks for a defense, in the order
@@ -13035,7 +13119,9 @@ function renderPcardTeamDef(pid){
       if(!pcardOpen) return;
       const cell = document.getElementById(`dst_${team}_${season}`);
       if(!cell) return;
-      cell.innerHTML = _dstSeasonBlock(byTeam[team], season, team);
+      const failed = byTeam.__failedWeeks || [];
+      cell.innerHTML = _dstSeasonBlock(byTeam[team], season, team)
+        + (failed.length ? `<div class="pcard-loading">Week${failed.length>1?'s':''} ${failed.join(', ')} did not load (Sleeper rate limit) — close and reopen the card to retry.</div>` : '');
     }).catch(()=>{});
   });
   const blocks = seasons.map(season=>
@@ -14300,7 +14386,7 @@ function _schemePlayerHeadshot(p){
     const fbs = Array.isArray(pack.fallbacks) ? pack.fallbacks.filter(Boolean) : [];
     if(src){
       const fbList = fbs.join('|');
-      const onerr = "const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.outerHTML='<span class=\\'scheme-benefit-hs-err\\'>NA</span>'; }";
+      const onerr = "const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else if(this.parentNode){this.outerHTML='<span class=\\'scheme-benefit-hs-err\\'>NA</span>'; }";
       return `<img src="${src}" class="scheme-benefit-hs" alt="" data-fallbacks="${fbList}" loading="lazy" decoding="async" onerror="${onerr}">`;
     }
   }
@@ -17124,6 +17210,7 @@ function rankingsRenderCacheKey(teamScoped){
   return [
     'rankings',
     buildEpoch,
+    (typeof buildPlayerShapeSig==='function') ? buildPlayerShapeSig() : '',   // league shape / draft / ADP
     String(activeSeason),
     String(typeof projViewMode!=='undefined' ? projViewMode : 'proj'),
     String(typeof liveSeasonEpoch==='function' ? liveSeasonEpoch() : 0),
@@ -17333,7 +17420,9 @@ function renderRankings(){
   // order (sorted by ECR). This is *especially* useful with "hide drafted" on, since the board
   // then shows only available players and the line marks exactly how far down your pick lands.
   const inDraftOrder = rankSortKey==='ecr';
-  const showPickLines = following && mySlot!=null && inDraftOrder;
+  // Pick gaps are counted in TOTAL picks, so the line is only meaningful on the unfiltered
+  // board: with the WR filter on it sat after the 11th available WR, far past your pick.
+  const showPickLines = following && mySlot!=null && inDraftOrder && rankPosFilter==='ALL' && !(rankingsSearchQuery||'').trim();
   let pickGaps=[];   // successive counts of players between your turns
   if(showPickLines){
     const { teams, type, reversalRound, rounds } = draftParams();
@@ -19024,7 +19113,28 @@ function averageGroup(group){
 
 function loadProjections(data){
   const players=data.projections;
-  playerNotes = (data.playerNotes && typeof data.playerNotes==='object') ? data.playerNotes : {};
+  // Notes travel with a file when it has them, but a file WITHOUT a playerNotes block (an
+  // analyst export, an older cloud save) must not wipe the notes you already have — merge.
+  if(data.playerNotes && typeof data.playerNotes==='object'){
+    playerNotes = Object.assign({}, playerNotes||{}, data.playerNotes);
+  }
+  // A file always describes the projection season. Leave any reference season we were
+  // looking at, and point the roster base back at the projection seed, BEFORE the roster
+  // fill below reads getBase() — otherwise 2024's roster is imported as the working set.
+  if(activeSeason!=='proj'){
+    activeSeason='proj';
+    if(typeof projSeed!=='undefined' && projSeed) SEED=projSeed;
+    else if(typeof seasonStatsCache!=='undefined' && seasonStatsCache && seasonStatsCache.proj) SEED=seasonStatsCache.proj;
+  }
+  // Receptions without targets (most analyst exports): derive targets the way the seed does,
+  // or every receiver without a targets column lands at a zero baseline.
+  (players||[]).forEach(p=>{
+    const tg=parseFloat(p.receiving_targets); const rc=parseFloat(p.receptions);
+    if(!(tg>0) && rc>0){
+      const cr = (String(p.fantasy_position||p.pos||'').toUpperCase()==='TE') ? 0.68 : 0.65;
+      p.receiving_targets = Math.round(rc/cr);
+    }
+  });
   // Group by player_id when present, else name+team. Only treat as "same player"
   // when BOTH id matches AND team matches (avoids merging a traded player's two teams).
   const useIds=players.some(p=>p.player_id!==undefined&&p.player_id!==null);
@@ -19203,6 +19313,8 @@ function loadProjections(data){
   else if(typeof invalidateRankingsRenderCache==='function') invalidateRankingsRenderCache();
 
   if(typeof syncAppChrome==='function') syncAppChrome();
+  if(typeof renderSeasonTabs==='function') renderSeasonTabs();
+  if(typeof saveSession==='function') saveSession();   // an import is an edit; persist it
   renderSidebar();
   if(multiAnalyst) toast(`⚠️ ${analysts.length} analysts averaged: ${analysts.join(', ')}`,'ok');
   else toast(`Loaded ${merged.length} players · ${Object.keys(byTeam).length} teams`,'ok');
@@ -19233,6 +19345,9 @@ function buildOutput(){
         interceptions_thrown:Math.round(qb.interceptions_thrown),
         rushing_yards:Math.round(qb.qb_rush_yards),rushing_touchdowns:Math.round(qb.qb_rush_tds),
         rushing_attempts:Math.round(qb.qb_rush_attempts),
+        // Games travel with the file so a hand-set timeshare (12/5) survives a round-trip
+        // instead of being re-guessed from the yards split on re-import.
+        games_played:Math.round(qb.games||0),
         rushing_yards_per_attempt:qb.qb_rush_attempts>0?+(qb.qb_rush_yards/qb.qb_rush_attempts).toFixed(2):0,
         receptions:0,receiving_yards:0,receiving_touchdowns:0,receiving_targets:'0',receiving_yards_per_reception:0,
         fumbles_lost:0,adp:bp.adp||999,adp_ppr:bp.adp_ppr||999,adp_half_ppr:bp.adp_half_ppr||999,adp_2qb:bp.adp_2qb||999,
@@ -19253,7 +19368,7 @@ function buildOutput(){
           player_id:p.player_id||null,
           headshot:p.headshot||null,slug:p.slug||null,
           passing_yards:0,passing_touchdowns:0,passing_attempts:0,passing_completions:0,interceptions_thrown:0,
-          rushing_yards:bp.rushing_yards||0,rushing_touchdowns:0,rushing_attempts:bp.rushing_attempts||0,rushing_yards_per_attempt:0,
+          rushing_yards:bp.rushing_yards||0,rushing_touchdowns:bp.rushing_tds||bp.rushing_touchdowns||0,rushing_attempts:bp.rushing_attempts||0,rushing_yards_per_attempt:0,
           ...rec,fumbles_lost:0,adp:bp.adp||999,adp_ppr:bp.adp_ppr||999,adp_half_ppr:bp.adp_half_ppr||999,adp_2qb:bp.adp_2qb||999,
           bye_week:bp.bye_week||null});
       });
@@ -20739,7 +20854,7 @@ function psRender(q){
     return `<button class="ps-row${i===0?' ps-active':''}" data-pid="${escAttr(e.pid)}" data-name="${escAttr(e.name)}" data-pos="${escAttr(e.pos)}" data-team="${escAttr(e.team)}" data-notes="${note ? note.count : 0}"
                     onclick="psPick(this)">
       ${img}
-      <span class="ps-pos ps-pos-${e.pos}">${posText}</span>
+      <span class="ps-pos ps-pos-${escAttr(e.pos||"")}">${posText}</span>
       <span class="ps-nm"><span class="ps-nm-main">${nameText}${noteBadge}</span><span class="ps-nm-sub">${logo}${e.team?escHtml(String(e.team).toUpperCase()):(isDef?'':'FA')}</span></span>
       ${typeof tcOwnerPill==='function'?tcOwnerPill(e.pid, e.name):''}
     </button>`;
@@ -21809,6 +21924,9 @@ async function backgroundRefreshADP(){
     });
     _bgAdpRefreshed = true;
     if(adpUpdated>0){
+      // The player list caches ADP from the seed rows; bump the epoch so the next build
+      // (and the rankings HTML cache behind it) actually picks the new numbers up.
+      if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();
       // If the rankings or a team view is showing, re-render so fresh ADP flows into VOR/VONA.
       if(currentPhase==='Rankings') renderRankings();
       else if(currentTeam) renderContent();
@@ -22548,7 +22666,7 @@ async function espnBuildSnapshot(leagueId, season, opts){
   }
   teams.forEach(t=>{ t.isChampion = championRosterId!=null && t.rosterId===championRosterId; });
 
-  const superflex = rp.includes('SUPER_FLEX');
+  const superflex = (typeof leagueIsSuperflex==='function') ? leagueIsSuperflex(rp) : rp.includes('SUPER_FLEX');
   const tep = +(scoring.bonus_rec_te||0) > 0;
 
   // "My team" is identified league-wide by OWNER id (every consumer compares t.ownerId to
@@ -22868,9 +22986,13 @@ function copyTeamToWorking(team){
   // reality for this roster" and the user dials anyone up from 0 — instead of leftover projection-season
   // projections silently polluting the baseline (or, worse, a tiny historical line knocking
   // a player out of the receiving/rushing option filters).
-  const ZERO_STATS=['passing_yards','passing_touchdowns','passing_attempts','passing_completions',
-    'interceptions_thrown','rushing_yards','rushing_tds','rushing_attempts',
-    'receiving_targets','receptions','receiving_yards','receiving_tds','games_played'];
+  // Seed rows carry BOTH spellings of several stats (passing_touchdowns AND passing_tds…)
+  // and ensureTeam reads them with `||` fallbacks, so zeroing one spelling left the other
+  // alive: a QB with no line that season came back with 0 yards and 35 projected TDs.
+  const ZERO_STATS=['passing_yards','passing_touchdowns','passing_tds','passing_attempts','passing_completions',
+    'interceptions_thrown','rushing_yards','rushing_tds','rushing_touchdowns','rushing_attempts',
+    'receiving_targets','receptions','receiving_yards','receiving_tds','receiving_touchdowns',
+    'games_played','games'];
   ['QB','RB','WR','TE'].forEach(pos=>{
     (ps[team][pos]||[]).forEach(p=>{
       if(p.player_id && !copiedIds.has(p.player_id)){
@@ -23567,8 +23689,16 @@ function applyDraftScoring(d){
 // picked_by when we don't already have them (covers mocks where users weren't preloaded).
 function bucketPicksBySlot(picks){
   const bySlot={};
+  // Who OWNS the pick, not which column it sits in. In a dynasty rookie draft a traded pick
+  // keeps its original draft_slot, so the player was credited to the team that traded it
+  // away. Sleeper stamps roster_id on the pick; map it back through slot_to_roster_id
+  // (roster → the slot that owner drafts from) and fall back to the column for mocks.
+  const rosterToSlot={};
+  const s2r=(typeof draftMeta!=='undefined' && draftMeta && draftMeta.slot_to_roster_id) || null;
+  if(s2r){ for(const sl in s2r){ if(s2r[sl]!=null) rosterToSlot[String(s2r[sl])]=Number(sl); } }
   (picks||[]).forEach(p=>{
-    const slot=p.draft_slot;
+    let slot=p.draft_slot;
+    if(p.roster_id!=null && rosterToSlot[String(p.roster_id)]!=null) slot=rosterToSlot[String(p.roster_id)];
     if(slot==null) return;
     (bySlot[slot]=bySlot[slot]||[]).push({
       player_id: p.player_id!=null ? String(p.player_id) : null,
@@ -23605,6 +23735,11 @@ function fillLineup(picks){
 
 async function startDraftFollow(applyScoring){
   if(draftTimer) clearInterval(draftTimer);
+  // A draft is drafted off the PROJECTION board. Following one from a reference season
+  // left the LIVE bar over last year's actual-stat rankings, with no pick ever marked.
+  if(activeSeason!=='proj' && typeof loadSeason==='function'){
+    try{ await loadSeason('proj'); }catch(e){}
+  }
   _lastPickCount = -1;   // force the first poll to render
   await loadDraftMeta(applyScoring);   // draft_order, lineup, usernames, my-slot detection, (opt) scoring
   rosterBarVisible=true;
@@ -24261,7 +24396,8 @@ function computeVONA(){
     gap = upcomingSlots.length;
   }
   // Cache: the sim is deterministic for a given draft state, so only redo it when that changes.
-  const cacheKey = `${Object.keys(draftedIds).length}|${mySlot}|${gap}|${rankFormat}|${startPick}`;
+  // ...and when the board itself changes: scoring edits, projection edits (epoch), league shape.
+  const cacheKey = `${Object.keys(draftedIds).length}|${mySlot}|${gap}|${rankFormat}|${startPick}|${buildPlayerScoringSig()}|${_buildPlayerCacheEpoch}|${typeof buildPlayerShapeSig==='function'?buildPlayerShapeSig():''}`;
   if(_vonaCache.key===cacheKey && _vonaCache.val) return _vonaCache.val;
 
   const list = buildPlayerList();
@@ -24832,8 +24968,8 @@ function laPlayerImg(p, cls){
 
 // League / team icons — real Sleeper avatars with emoji fallback (older persisted snapshots
 // predate avatar capture, and orphan rosters have none; both degrade gracefully).
-function laLeagueIcon(s,cls){ return s&&s.avatar?`<img src="${s.avatar}" class="${cls}" onerror="this.outerHTML=TC_ICON('stadium')">`:TC_ICON('stadium'); }
-function laTeamIcon(t,cls){ return t&&t.avatar?`<img src="${t.avatar}" class="${cls}" onerror="this.outerHTML=TC_ICON('football')">`:'<span class="'+cls+' la-av-blank">'+TC_ICON('football')+'</span>'; }
+function laLeagueIcon(s,cls){ return s&&s.avatar?`<img src="${s.avatar}" class="${cls}" onerror="if(this.parentNode)this.outerHTML=TC_ICON('stadium')">`:TC_ICON('stadium'); }
+function laTeamIcon(t,cls){ return t&&t.avatar?`<img src="${t.avatar}" class="${cls}" onerror="if(this.parentNode)this.outerHTML=TC_ICON('football')">`:'<span class="'+cls+' la-av-blank">'+TC_ICON('football')+'</span>'; }
 
 // ── Entry + navigation ───────────────────────────────────────────────────────
 function openLeagueAnalyzer(){
@@ -25352,6 +25488,20 @@ function laRefreshSeasonChain(){
 // to talk to that platform. Every adapter's contract is the same: produce a leagueSnapshot
 // with players already resolved to Sleeper player_ids and roster slots already in Sleeper's
 // vocabulary, so nothing downstream of here is provider-aware.
+// Every sync/link/switch lands here once the new snapshot is in place. One choke point
+// for all the per-league caches and view state that used to leak across leagues: the
+// matchup rows keyed by week only, the redraft VOR map, the defier cut-offs, position
+// ranks, VONA, and a viewTeam roster id that exists in every league.
+let _laSyncSeq = 0;
+function tcLeagueContextChanged(){
+  try{ if(typeof _laMu!=='undefined' && _laMu){ _laMu.byWeek={}; _laMu.fetching={}; _laMu.lastSig=''; } }catch(e){}
+  _laVorCache=null; _laPosRankCache=null; _laDefierCut=null;
+  try{ if(typeof _vonaCache!=='undefined') _vonaCache={key:null,val:null}; }catch(e){}
+  laState.viewTeam=null; laState.trade=null; laState.muWeek=null;
+  if(laState.rosterPick!==undefined) laState.rosterPick='all';
+  if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();
+}
+
 async function laTakeSnapshot(ref){
   const opts = (arguments.length>1 && arguments[1]) ? arguments[1] : null;
   const r = laParseRef(ref);
@@ -25361,6 +25511,7 @@ async function laTakeSnapshot(ref){
 
 async function laTakeSnapshotSleeper(leagueId, opts){
   const background = !!(opts && opts.background);
+  const mySeq = background ? _laSyncSeq : ++_laSyncSeq;
   if(!background){
     laState.busy=true; laState.error=null; renderLeagueAnalyzer();
   }
@@ -25398,9 +25549,14 @@ async function laTakeSnapshotSleeper(leagueId, opts){
       }
     }
     await loadSleeperPlayers(true);
+    // A background refresh of league A that resolves after the user switched to league B
+    // must not overwrite B's snapshot, scoring and shape.
+    if(background && mySeq!==_laSyncSeq) return;
     const uById={}; (users||[]).forEach(u=>uById[u.user_id]=u);
     const rp=lg.roster_positions||[];
-    const superflex = rp.includes('SUPER_FLEX');
+    // Two QB slots without a SUPER_FLEX slot is still a superflex league for valuation —
+    // the draft page already treats it that way (leagueIsSuperflex).
+    const superflex = (typeof leagueIsSuperflex==='function') ? leagueIsSuperflex(rp) : rp.includes('SUPER_FLEX');
     const tep = +((lg.scoring_settings||{}).bonus_rec_te||0) > 0;
     // Sleeper league type: 0 = redraft, 1 = keeper, 2 = dynasty. This is what decides whether
     // a player's worth comes from the dynasty chart or from THIS season's VOR — see laVal().
@@ -25441,8 +25597,8 @@ async function laTakeSnapshotSleeper(leagueId, opts){
       }
       picks.sort((a,b)=> a.season===b.season ? a.round-b.round : a.season.localeCompare(b.season));
       return { rosterId:r.roster_id, ownerId:r.owner_id||null,
+               coOwners:Array.isArray(r.co_owners)?r.co_owners.slice():[],
                owner:u.display_name||'(orphan)',
-               isChampion: championRosterId!=null && r.roster_id===championRosterId,
                isChampion: championRosterId!=null && r.roster_id===championRosterId,
                // Team icon: Sleeper's per-league team avatar (metadata.avatar, a full URL)
                // beats the account avatar (an id we turn into a CDN thumb). Null → emoji.
@@ -25468,6 +25624,13 @@ async function laTakeSnapshotSleeper(leagueId, opts){
       const mine=(users||[]).find(u=>(u.display_name||'').toLowerCase()===String(_prof.username).toLowerCase());
       if(mine) _resolvedId=mine.user_id;
     }
+    // A co-owner's account is on r.co_owners, never r.owner_id, so every "is this mine"
+    // comparison (ownerId === myUserId) used to star roster 1 for co-owners. Re-key that
+    // roster to the user so all consumers agree without learning about co-ownership.
+    if(_resolvedId!=null && !teams.some(t=>t.ownerId===_resolvedId)){
+      const mine=teams.find(t=>(t.coOwners||[]).includes(_resolvedId));
+      if(mine) mine.ownerId=_resolvedId;
+    }
     leagueSnapshot = {
       provider:'sleeper',
       leagueId, name:lg.name||'League', season:lg.season,
@@ -25491,6 +25654,7 @@ async function laTakeSnapshotSleeper(leagueId, opts){
       }
       window._laLinkedLeague = { id: leagueId, name: lg.name||'League' };
     }catch(e){}
+    tcLeagueContextChanged();
     laRefreshSeasonChain();   // background: discover earlier seasons of this league
     _laTierVals=null;   // format (SF/TEP) may have changed → rebuild the pick-tier table
     _laPosRankCache=null;   // roster set changed → positional ranks are stale
@@ -25512,6 +25676,7 @@ async function laTakeSnapshotSleeper(leagueId, opts){
 // lineup shape, refresh the chrome. See 91-espn-league.js for the translation itself.
 async function laTakeSnapshotEspn(ref, opts){
   const background = !!(opts && opts.background);
+  const mySeq = background ? _laSyncSeq : ++_laSyncSeq;
   if(!background){
     laState.busy=true; laState.error=null; renderLeagueAnalyzer();
   }
@@ -25538,6 +25703,7 @@ async function laTakeSnapshotEspn(ref, opts){
     const prevChain = (leagueSnapshot && leagueSnapshot.provider==='espn'
                        && String(leagueSnapshot.leagueId)===String(ref.leagueId))
                     ? leagueSnapshot.seasonChain : null;
+    if(background && mySeq!==_laSyncSeq) return;
     leagueSnapshot = built.snapshot;
     if(prevChain) leagueSnapshot.seasonChain = prevChain;
 
@@ -25552,6 +25718,7 @@ async function laTakeSnapshotEspn(ref, opts){
       }
       window._laLinkedLeague = { id: laSnapshotRef(), name: leagueSnapshot.name };
     }catch(e){}
+    tcLeagueContextChanged();
 
     laRefreshSeasonChain();
     _laTierVals=null;

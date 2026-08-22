@@ -83,7 +83,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: cache/cfb
-          key: seed-cache-cfb-v1
+          # Deliberately OUTSIDE the `seed-cache-` prefix: the scrape cache below restores by
+          # that prefix, and the cfb tarball (saved last, so newest) used to match it — leaving
+          # every fetcher with a cold cache on run 2.
+          key: cfb-parquet-v1
 
       - name: Restore scrape cache
         uses: actions/cache@v4
@@ -118,9 +121,12 @@ jobs:
           shopt -s nullglob
           for f in seeds/*.json; do
             case "$f" in
-              seeds/refresh-state.json) continue ;;   # bookkeeping, not app data
+              seeds/refresh-state.json|seeds/roster_moves_baseline.json) continue ;;   # bookkeeping, not app data
             esac
-            gzip -9 -c "$f" > "$f.gz"
+            # -n: no mtime/filename in the gzip header, so an unchanged seed produces identical
+            # bytes and the "nothing changed" path below can actually fire. Without it every
+            # run re-wrote ~5 MB of .gz, committed, and deployed — daily, with no data change.
+            gzip -9 -n -c "$f" > "$f.gz"
           done
           ls -la seeds/ | head -20
 
@@ -130,6 +136,7 @@ jobs:
       - name: Rebuild app and run tests
         if: github.event.inputs.dry_run != 'true'
         run: |
+          set -o pipefail   # without this the step's status was `tail`'s, and a red suite still committed
           python3 build.py
           ./tests/run_tests.sh index.html 2>&1 | tail -25
 

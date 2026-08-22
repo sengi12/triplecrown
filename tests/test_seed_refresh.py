@@ -86,13 +86,18 @@ chk(ok, "adding a block nobody had before is fine")
 ok, _, _ = SR.validate({}, seed(ecr=400, seed=1200))
 chk(ok, "a first-ever build (no previous seed) is not blocked")
 
-print("\n=== TEST 5: additions may legitimately empty ===")
-# The offseason block empties once its content folds into history, so it must NOT be guarded
-# the way a scrape-backed block is.
+print("\n=== TEST 5: additions emptying is rejected ===")
+# build_additions returns {} ONLY when an nflverse roster csv failed to download — the block
+# never folds into history — so a 32 → 0 drop is a broken build, not the end of an offseason.
 old_add = seed(ecr=400, seed=1200, additions=32)
 new_add = seed(ecr=400, seed=1200, additions=0)
-ok, _, _ = SR.validate(old_add, new_add)
-chk(ok, "additions going to zero is allowed (offseason ends)")
+ok, problems, _ = SR.validate(old_add, new_add)
+chk(not ok and any('additions' in p for p in problems), "additions going to zero is rejected (roster csv download error)")
+# And a sub-table disappearing inside a healthy-looking total is caught too.
+old_sub = seed(ecr=400, seed=1200); old_sub["ecr"] = {"ppr": {str(i): {"x": 1} for i in range(200)}, "half_ppr": {str(i): {"x": 1} for i in range(200)}}
+new_sub = seed(ecr=400, seed=1200); new_sub["ecr"] = {"ppr": {str(i): {"x": 1} for i in range(400)}, "half_ppr": {}}
+ok, problems, _ = SR.validate(old_sub, new_sub)
+chk(not ok and any('ecr.half_ppr' in p for p in problems), "one ECR format emptying is rejected even when the total grew")
 
 print("\n=== TEST 6: a broken build is never accepted ===")
 ok, _, _ = SR.validate(old, {})

@@ -43,6 +43,9 @@ jobs:
           # Stamp the service worker's cache name with this commit so a deploy retires the old
           # cache instead of serving yesterday's index.html forever.
           sed "s/__BUILD_ID__/${GITHUB_SHA::12}/" sw.js > _site/sw.js
+          # The app stamps the same id onto seed URLs (?v=) so a deploy never serves the
+          # previous seed out of the service-worker or HTTP cache.
+          sed -i "s/__TC_BUILD_ID__/${GITHUB_SHA::12}/" _site/index.html
           touch _site/.nojekyll
           du -sh _site
 

@@ -409,8 +409,8 @@ function laPlayerImg(p, cls){
 
 // League / team icons — real Sleeper avatars with emoji fallback (older persisted snapshots
 // predate avatar capture, and orphan rosters have none; both degrade gracefully).
-function laLeagueIcon(s,cls){ return s&&s.avatar?`<img src="${s.avatar}" class="${cls}" onerror="this.outerHTML=TC_ICON('stadium')">`:TC_ICON('stadium'); }
-function laTeamIcon(t,cls){ return t&&t.avatar?`<img src="${t.avatar}" class="${cls}" onerror="this.outerHTML=TC_ICON('football')">`:'<span class="'+cls+' la-av-blank">'+TC_ICON('football')+'</span>'; }
+function laLeagueIcon(s,cls){ return s&&s.avatar?`<img src="${s.avatar}" class="${cls}" onerror="if(this.parentNode)this.outerHTML=TC_ICON('stadium')">`:TC_ICON('stadium'); }
+function laTeamIcon(t,cls){ return t&&t.avatar?`<img src="${t.avatar}" class="${cls}" onerror="if(this.parentNode)this.outerHTML=TC_ICON('football')">`:'<span class="'+cls+' la-av-blank">'+TC_ICON('football')+'</span>'; }
 
 // ── Entry + navigation ───────────────────────────────────────────────────────
 function openLeagueAnalyzer(){
@@ -929,6 +929,20 @@ function laRefreshSeasonChain(){
 // to talk to that platform. Every adapter's contract is the same: produce a leagueSnapshot
 // with players already resolved to Sleeper player_ids and roster slots already in Sleeper's
 // vocabulary, so nothing downstream of here is provider-aware.
+// Every sync/link/switch lands here once the new snapshot is in place. One choke point
+// for all the per-league caches and view state that used to leak across leagues: the
+// matchup rows keyed by week only, the redraft VOR map, the defier cut-offs, position
+// ranks, VONA, and a viewTeam roster id that exists in every league.
+let _laSyncSeq = 0;
+function tcLeagueContextChanged(){
+  try{ if(typeof _laMu!=='undefined' && _laMu){ _laMu.byWeek={}; _laMu.fetching={}; _laMu.lastSig=''; } }catch(e){}
+  _laVorCache=null; _laPosRankCache=null; _laDefierCut=null;
+  try{ if(typeof _vonaCache!=='undefined') _vonaCache={key:null,val:null}; }catch(e){}
+  laState.viewTeam=null; laState.trade=null; laState.muWeek=null;
+  if(laState.rosterPick!==undefined) laState.rosterPick='all';
+  if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();
+}
+
 async function laTakeSnapshot(ref){
   const opts = (arguments.length>1 && arguments[1]) ? arguments[1] : null;
   const r = laParseRef(ref);
@@ -938,6 +952,7 @@ async function laTakeSnapshot(ref){
 
 async function laTakeSnapshotSleeper(leagueId, opts){
   const background = !!(opts && opts.background);
+  const mySeq = background ? _laSyncSeq : ++_laSyncSeq;
   if(!background){
     laState.busy=true; laState.error=null; renderLeagueAnalyzer();
   }
@@ -975,9 +990,14 @@ async function laTakeSnapshotSleeper(leagueId, opts){
       }
     }
     await loadSleeperPlayers(true);
+    // A background refresh of league A that resolves after the user switched to league B
+    // must not overwrite B's snapshot, scoring and shape.
+    if(background && mySeq!==_laSyncSeq) return;
     const uById={}; (users||[]).forEach(u=>uById[u.user_id]=u);
     const rp=lg.roster_positions||[];
-    const superflex = rp.includes('SUPER_FLEX');
+    // Two QB slots without a SUPER_FLEX slot is still a superflex league for valuation —
+    // the draft page already treats it that way (leagueIsSuperflex).
+    const superflex = (typeof leagueIsSuperflex==='function') ? leagueIsSuperflex(rp) : rp.includes('SUPER_FLEX');
     const tep = +((lg.scoring_settings||{}).bonus_rec_te||0) > 0;
     // Sleeper league type: 0 = redraft, 1 = keeper, 2 = dynasty. This is what decides whether
     // a player's worth comes from the dynasty chart or from THIS season's VOR — see laVal().
@@ -1018,8 +1038,8 @@ async function laTakeSnapshotSleeper(leagueId, opts){
       }
       picks.sort((a,b)=> a.season===b.season ? a.round-b.round : a.season.localeCompare(b.season));
       return { rosterId:r.roster_id, ownerId:r.owner_id||null,
+               coOwners:Array.isArray(r.co_owners)?r.co_owners.slice():[],
                owner:u.display_name||'(orphan)',
-               isChampion: championRosterId!=null && r.roster_id===championRosterId,
                isChampion: championRosterId!=null && r.roster_id===championRosterId,
                // Team icon: Sleeper's per-league team avatar (metadata.avatar, a full URL)
                // beats the account avatar (an id we turn into a CDN thumb). Null → emoji.
@@ -1045,6 +1065,13 @@ async function laTakeSnapshotSleeper(leagueId, opts){
       const mine=(users||[]).find(u=>(u.display_name||'').toLowerCase()===String(_prof.username).toLowerCase());
       if(mine) _resolvedId=mine.user_id;
     }
+    // A co-owner's account is on r.co_owners, never r.owner_id, so every "is this mine"
+    // comparison (ownerId === myUserId) used to star roster 1 for co-owners. Re-key that
+    // roster to the user so all consumers agree without learning about co-ownership.
+    if(_resolvedId!=null && !teams.some(t=>t.ownerId===_resolvedId)){
+      const mine=teams.find(t=>(t.coOwners||[]).includes(_resolvedId));
+      if(mine) mine.ownerId=_resolvedId;
+    }
     leagueSnapshot = {
       provider:'sleeper',
       leagueId, name:lg.name||'League', season:lg.season,
@@ -1068,6 +1095,7 @@ async function laTakeSnapshotSleeper(leagueId, opts){
       }
       window._laLinkedLeague = { id: leagueId, name: lg.name||'League' };
     }catch(e){}
+    tcLeagueContextChanged();
     laRefreshSeasonChain();   // background: discover earlier seasons of this league
     _laTierVals=null;   // format (SF/TEP) may have changed → rebuild the pick-tier table
     _laPosRankCache=null;   // roster set changed → positional ranks are stale
@@ -1089,6 +1117,7 @@ async function laTakeSnapshotSleeper(leagueId, opts){
 // lineup shape, refresh the chrome. See 91-espn-league.js for the translation itself.
 async function laTakeSnapshotEspn(ref, opts){
   const background = !!(opts && opts.background);
+  const mySeq = background ? _laSyncSeq : ++_laSyncSeq;
   if(!background){
     laState.busy=true; laState.error=null; renderLeagueAnalyzer();
   }
@@ -1115,6 +1144,7 @@ async function laTakeSnapshotEspn(ref, opts){
     const prevChain = (leagueSnapshot && leagueSnapshot.provider==='espn'
                        && String(leagueSnapshot.leagueId)===String(ref.leagueId))
                     ? leagueSnapshot.seasonChain : null;
+    if(background && mySeq!==_laSyncSeq) return;
     leagueSnapshot = built.snapshot;
     if(prevChain) leagueSnapshot.seasonChain = prevChain;
 
@@ -1129,6 +1159,7 @@ async function laTakeSnapshotEspn(ref, opts){
       }
       window._laLinkedLeague = { id: laSnapshotRef(), name: leagueSnapshot.name };
     }catch(e){}
+    tcLeagueContextChanged();
 
     laRefreshSeasonChain();
     _laTierVals=null;

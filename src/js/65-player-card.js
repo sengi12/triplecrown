@@ -453,14 +453,14 @@ function renderPlayerCardShell(pid, pos, team){
         <div class="pcard-hero-logo" style="${tm?`background-image:url('${NFL_LOGO(tm)}')`:''}"></div>
         <img src="${heroPack.src||''}" class="pcard-hero-img" data-fallbacks="${heroFallbacks.join('|')}" onerror="pcardImgFallback(this)">
         <div class="pcard-hero-main">
-          <div class="pcard-name">${name}${jersey?`<span class="pcard-jersey">${jersey}</span>`:''}</div>
+          <div class="pcard-name">${escHtml(name)}${jersey?`<span class="pcard-jersey">${jersey}</span>`:''}</div>
           <div class="pcard-sub">${posc?`<span class="pos-badge pos-${posc}">${posc}</span>`:''}${tm?`<span class="pcard-team">${teamDisplayName(tm)}</span>`:''}${typeof tcOwnerChip==='function'?tcOwnerChip(pid, name):''}</div>
           <div class="pcard-meta">
             ${metaItem('AGE', age)}
             ${metaItem('HT', height)}
             ${metaItem('WT', weight)}
             ${metaItem('EXP', exp)}
-            ${metaItem('COLLEGE', college)}
+            ${metaItem('COLLEGE', college==null?college:escHtml(String(college)))}
           </div>
           <div class="pcard-hero-draft" id="pcardHeroDraft"></div>
         </div>
@@ -585,7 +585,8 @@ async function loadPcardDraft(pid){
     const aid = await resolveEspnAthleteId(pid, (sleeperPlayers[pid]||{}).name, 'nfl');
     const info = aid ? await fetchEspnDraftInfo(aid) : null;
     const el = document.getElementById('pcardHeroDraft');
-    if(el && pcardOpen) el.innerHTML = espnDraftHero(info);
+    // Open A, tap B before A's lookup returns → A's draft banner landed in B's hero.
+    if(el && pcardOpen && pcardState && pcardState.pid===pid) el.innerHTML = espnDraftHero(info);
   }catch(e){ /* leave the banner blank on failure */ }
 }
 // Render (or refresh) the NFL / College source toggle above the card body.

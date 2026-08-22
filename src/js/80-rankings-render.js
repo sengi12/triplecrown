@@ -124,6 +124,7 @@ function rankingsRenderCacheKey(teamScoped){
   return [
     'rankings',
     buildEpoch,
+    (typeof buildPlayerShapeSig==='function') ? buildPlayerShapeSig() : '',   // league shape / draft / ADP
     String(activeSeason),
     String(typeof projViewMode!=='undefined' ? projViewMode : 'proj'),
     String(typeof liveSeasonEpoch==='function' ? liveSeasonEpoch() : 0),
@@ -333,7 +334,9 @@ function renderRankings(){
   // order (sorted by ECR). This is *especially* useful with "hide drafted" on, since the board
   // then shows only available players and the line marks exactly how far down your pick lands.
   const inDraftOrder = rankSortKey==='ecr';
-  const showPickLines = following && mySlot!=null && inDraftOrder;
+  // Pick gaps are counted in TOTAL picks, so the line is only meaningful on the unfiltered
+  // board: with the WR filter on it sat after the 11th available WR, far past your pick.
+  const showPickLines = following && mySlot!=null && inDraftOrder && rankPosFilter==='ALL' && !(rankingsSearchQuery||'').trim();
   let pickGaps=[];   // successive counts of players between your turns
   if(showPickLines){
     const { teams, type, reversalRound, rounds } = draftParams();

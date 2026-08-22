@@ -18,7 +18,9 @@ const app=new Function(code+`
     initPassingShares, initRushingShares, editRushYds, editRushTDsCarry };
 `)();
 
-const data=JSON.parse(fs.readFileSync('/mnt/user-data/uploads/season_projections.json','utf8'));
+const FIXTURE='/mnt/user-data/uploads/season_projections.json';   // a local analyst export, not in the repo
+if(!fs.existsSync(FIXTURE)){ console.log('SKIP: fixture not present ('+FIXTURE+')'); process.exit(0); }
+const data=JSON.parse(fs.readFileSync(FIXTURE,'utf8'));
 app.loadProjections(data);
 app.setTeam('SF');
 const proj=app.getProj();

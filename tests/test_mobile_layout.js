@@ -3,7 +3,7 @@ const fs=require('fs');
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
 // Read the full HTML (CSS + JS) to verify structural fixes
-const html=fs.readFileSync('/mnt/user-data/outputs/index.html','utf8');
+const html=fs.readFileSync(require('path').join(__dirname,'..','index.html'),'utf8');
 
 console.log('=== Global horizontal-overflow lock ===');
 chk(/html,body\{[^}]*overflow-x:hidden/.test(html),'html,body overflow-x:hidden');

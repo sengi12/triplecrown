@@ -1061,7 +1061,7 @@ function _schemePlayerHeadshot(p){
     const fbs = Array.isArray(pack.fallbacks) ? pack.fallbacks.filter(Boolean) : [];
     if(src){
       const fbList = fbs.join('|');
-      const onerr = "const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.outerHTML='<span class=\\'scheme-benefit-hs-err\\'>NA</span>'; }";
+      const onerr = "const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else if(this.parentNode){this.outerHTML='<span class=\\'scheme-benefit-hs-err\\'>NA</span>'; }";
       return `<img src="${src}" class="scheme-benefit-hs" alt="" data-fallbacks="${fbList}" loading="lazy" decoding="async" onerror="${onerr}">`;
     }
   }

@@ -236,7 +236,7 @@ function vacatedRushNote(team){
   const tagValue=`${v.att} carries · ${v.yds.toLocaleString()} yds · ${v.td} TD${rankText?` · ${rankText}`:''}`;
   const rankLead=rk?`${vacatedOrdinal(rk.rank)}`:'Rank N/A';
   const lineHtml=`<b>${escHtml(rankLead)} Vacated Carries from ${v.season}:</b> ${escHtml(`${v.att} carries · ${v.yds.toLocaleString()} yds · ${v.td} TD`)}`;
-  const names = v.players.length>3 ? v.players.slice(0,3).join(', ')+` +${v.players.length-3} more` : v.players.join(', ');
+  const names = escHtml(v.players.length>3 ? v.players.slice(0,3).join(', ')+` +${v.players.length-3} more` : v.players.join(', '));
   return `<div class="vacated-note">
     <span class="vacated-icon">${TC_ICON("export")}</span>
     <div>${noteWrapHtml(lineHtml, { label:'Vacated Carries', value:tagValue, source:'projection_builder_vacated', statKey:'vacated_carries', context:ctx, team:noteTeam, relevance:'RB,QB,WR' }, 'note-tag-hit')}

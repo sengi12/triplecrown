@@ -312,6 +312,9 @@ async function backgroundRefreshADP(){
     });
     _bgAdpRefreshed = true;
     if(adpUpdated>0){
+      // The player list caches ADP from the seed rows; bump the epoch so the next build
+      // (and the rankings HTML cache behind it) actually picks the new numbers up.
+      if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();
       // If the rankings or a team view is showing, re-render so fresh ADP flows into VOR/VONA.
       if(currentPhase==='Rankings') renderRankings();
       else if(currentTeam) renderContent();
