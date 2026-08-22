@@ -59,9 +59,11 @@ jobs:
         with:
           python-version: '3.11'
 
-      # nflverse metrics need pandas/pyarrow; the rest of the build is stdlib-only.
+      # nflverse metrics need pandas/pyarrow; the OL grades pipeline additionally needs
+      # scipy (sparse matrices + nnls). Without scipy the pipeline is skipped "additively",
+      # the nflverse block halves, and the refresher's 80% guard rejects the whole build.
       - name: Install build dependencies
-        run: pip install --quiet 'pandas>=2.2' 'pyarrow>=16.0'
+        run: pip install --quiet 'pandas>=2.2' 'pyarrow>=16.0' 'scipy>=1.11'
 
       # The scrape cache is what makes selective refresh possible: a cache MISS is what tells
       # build_seed.py to re-fetch a source. Restoring it means we only pay for what is stale.

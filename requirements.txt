@@ -10,5 +10,8 @@
 pandas>=2.2
 pyarrow>=16.0
 
+# OL grades pipeline (src/nflverse/ol_grades_pipeline.py) — sparse matrices + nnls
+scipy>=1.11
+
 # Browser automation helper (sis_search.py)
 selenium>=4.6
