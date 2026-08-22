@@ -16,7 +16,10 @@ name: Refresh seed data
 #   • Spotrac is never fetched here: it answers 403 to datacenter IPs, and a failed fetch would
 #     empty the offseason roster-change block. It stays a run-it-from-a-laptop source.
 #
-# Deploying is left to pages.yml, which already triggers on a push to main.
+# DEPLOYING: pages.yml triggers on push to main, but NOT on this workflow's push — commits
+# made with the default GITHUB_TOKEN never fire other workflows' `on: push` (GitHub's
+# recursion guard). workflow_dispatch is exempt from that guard, so after a successful
+# commit this workflow dispatches pages.yml explicitly.
 
 on:
   schedule:
@@ -40,6 +43,7 @@ concurrency:
 
 permissions:
   contents: write
+  actions: write        # to dispatch pages.yml after a seed commit
 
 jobs:
   refresh:
@@ -128,6 +132,7 @@ jobs:
           ./tests/run_tests.sh index.html 2>&1 | tail -25
 
       - name: Commit if anything changed
+        id: commit
         if: github.event.inputs.dry_run != 'true'
         run: |
           git config user.name  'triplecrown-bot'
@@ -135,6 +140,7 @@ jobs:
           git add -A seeds/
           if git diff --cached --quiet; then
             echo "No seed changes — nothing to commit."
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           SUMMARY=$(grep -E '^Refreshed:' refresh.log || echo 'Refreshed: seed data')
@@ -142,6 +148,15 @@ jobs:
                      -m "Automated refresh via tools/seed_refresh.py." \
                      -m "$(grep -E '^\s+\[(REFRESH|  skip )\]' refresh.log || true)"
           git push
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      # A push made with GITHUB_TOKEN does not fire pages.yml's `on: push`, so kick the
+      # deploy explicitly. workflow_dispatch is exempt from the recursion guard.
+      - name: Trigger Pages deploy
+        if: github.event.inputs.dry_run != 'true' && steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main
 
       # A rejected build is the interesting failure: it means a source is blocked or has
       # changed shape. Keep the log so it can be read after the fact.
