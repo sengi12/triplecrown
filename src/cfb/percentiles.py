@@ -54,8 +54,8 @@ def reference_classes(draft_class=None):
 METRICS = {
     "QB": [("epa_play", True), ("succ", True), ("ypa", True), ("comp_pct", True),
            ("sack_pct", False), ("pass_td", True), ("rush_yds", True)],
-    "RB": [("epa_play", True), ("succ", True), ("ypc", True), ("expl_rate", True),
-           ("stuff_rate", False), ("rush_share", True), ("tgt_share", True)],
+    "RB": [("dominator", True), ("epa_play", True), ("succ", True), ("ypc", True),
+           ("expl_rate", True), ("stuff_rate", False), ("rush_share", True), ("tgt_share", True)],
     "WR": [("dominator", True), ("tgt_share", True), ("yptpa", True), ("epa_play", True),
            ("succ", True), ("ypr", True), ("expl_rate", True)],
 }

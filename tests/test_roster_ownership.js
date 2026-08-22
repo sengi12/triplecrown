@@ -75,7 +75,7 @@ function snap(provider, extra){
   const e=app.tcOwnerOf('4046','Patrick Mahomes');
   chk(e && e.teamName==='Who Dey', 'the same player id resolves in an ESPN snapshot');
   chk(e && e.mine===true, 'and My Team still resolves via ownerId');
-  chk(/Who Dey/.test(app.tcOwnerChip('4046','Patrick Mahomes')), 'the chip renders for an ESPN league');
+  chk(/sengi12/.test(app.tcOwnerChip('4046','Patrick Mahomes')), 'the chip renders for an ESPN league');
 
   console.log('\n=== TEST 4: team defenses ===');
   const def=app.tcOwnerOf('CIN','Cincinnati D/ST');
@@ -97,9 +97,10 @@ function snap(provider, extra){
   const small=app.tcOwnerChip('4046','Patrick Mahomes','compact');
   chk(/tc-own-chip/.test(full), 'full variant carries the chip class');
   chk(/tc-own-mine/.test(full), 'my own player is styled differently');
-  chk(/@sengi12/.test(full), 'full variant shows the manager handle');
+  chk(/>★ sengi12</.test(full), 'full variant shows the manager handle (team names run long)');
+  chk(/Who Dey/.test(full), 'the team name survives in the tooltip');
   chk(/tc-own-sm/.test(small), 'compact variant is marked compact');
-  chk(!/@sengi12/.test(small), 'compact variant drops the handle (tight rows)');
+  chk(/sengi12/.test(small) && !/Who Dey<\/span>/.test(small), 'compact variant shows the handle too');
   chk(/tcOwnerJump\(1\)/.test(full), 'clicking jumps to that rosterId');
   chk(/event\.stopPropagation\(\)/.test(full),
       'the click does not also fire the row/card handler it sits inside');

@@ -32,7 +32,7 @@ SCHEMA = "cfb_profiles_v1"
 # seven bars is readable, fifteen is a spreadsheet.
 HEADLINE = {
     "QB": ["epa_play", "succ", "ypa", "comp_pct", "sack_pct", "pass_td", "rush_yds"],
-    "RB": ["epa_play", "succ", "ypc", "expl_rate", "stuff_rate", "rush_share", "tgt_share"],
+    "RB": ["dominator", "epa_play", "succ", "ypc", "expl_rate", "rush_share", "tgt_share"],
     "WR": ["dominator", "tgt_share", "yptpa", "epa_play", "succ", "ypr", "expl_rate"],
     "TE": ["dominator", "tgt_share", "yptpa", "epa_play", "succ", "ypr", "expl_rate"],
 }
@@ -44,6 +44,7 @@ LABELS = {
     "rush_yds": "Rushing yards", "ypc": "Yards/carry", "expl_rate": "Explosive rate",
     "stuff_rate": "Stuff rate", "rush_share": "Rush share", "tgt_share": "Target share",
     "dominator": "Dominator", "yptpa": "Yds/team pass att", "ypr": "Yards/reception",
+    "scrim_share": "Scrimmage yds share",
 }
 
 

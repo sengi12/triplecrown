@@ -118,7 +118,7 @@ const rb = app.renderCfbProspect('200');
 chk('RB shows carries column', rb.indexOf('>ATT<')>=0);
 chk('RB shows stuff rate', rb.indexOf('>STUFF%<')>=0);
 chk('RB shows rush share', rb.indexOf('>RU%<')>=0);
-chk('RB does not show dominator', rb.indexOf('>DOM%<')<0);
+chk('RB shows dominator (scrimmage-yards share)', rb.indexOf('>DOM%<')>=0);
 chk('TE shows dominator', te.indexOf('>DOM%<')>=0);
 chk('TE does not show stuff rate', te.indexOf('>STUFF%<')<0);
 chk('RB summary leads with EPA/play', rb.indexOf('EPA/play ranks')>=0);

@@ -151,6 +151,7 @@ run_js_test test_ol_card        "OL grades card: tab wiring, coarse percentile b
 run_js_test test_rb_fan         "RB rushing fan: tab wiring, SVG chart, OL slot cards for all five linemen, lane legend"
 run_js_test test_ol_projection  "OL projection: ranks from projected starters, baseline ranks until depth charts load, roster fallback, RB fan rank"
 run_js_test test_owner_surfaces "Owner pills: projection rows, rankings OWNER column, search row layout, nothing when no league is synced"
+run_js_test test_playbook_insights "Playbook modal: swipe-close on every tab, league-baselined TD regression, RZ leader sample floor, modeled pool, Scheme ranks + pre-FTN blanks"
 run_js_test test_consistency    "Consistency grade: DNP weeks excluded and labelled, <10-snap games skipped, scored in full PPR in every league"
 run_js_test test_route_tree     "Route tree card: alignment/route distribution rendering"
 run_js_test test_qb_chart       "QB passing chart card rendering"

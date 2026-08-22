@@ -76,6 +76,7 @@ const _CFB_STAT_LABELS = {
   rush_share:'College rush share', tgt:'College targets', tgt_share:'College target share',
   rec:'College receptions', rec_yds:'College receiving yards', rec_td:'College receiving TDs',
   ypr:'College yards per reception', dominator:'College dominator rating',
+  scrim_share:'College scrimmage-yards share',
   yptpa:'College yards per team pass attempt',
 };
 
@@ -145,7 +146,7 @@ const _CFB_SEASON_COLS = {
        ['rushes','RU'], ['rush_yds','RUYDS'], ['rush_td','RUTD']],
   RB: [['games','G'], ['rushes','ATT'], ['rush_yds','YDS'], ['rush_td','TD'], ['ypc','Y/C'],
        ['epa_play','EPA/RU'], ['succ','SUCC%'], ['expl_rate','EXPL%'], ['stuff_rate','STUFF%'],
-       ['rush_share','RU%'], ['tgt','TGT'], ['rec_yds','RECYDS']],
+       ['rush_share','RU%'], ['tgt','TGT'], ['rec_yds','RECYDS'], ['dominator','DOM%']],
   WR: [['games','G'], ['tgt','TGT'], ['rec','REC'], ['rec_yds','YDS'], ['rec_td','TD'],
        ['ypr','Y/R'], ['epa_play','EPA/TGT'], ['succ','SUCC%'], ['dominator','DOM%'],
        ['tgt_share','TGT%'], ['yptpa','YPTPA']],

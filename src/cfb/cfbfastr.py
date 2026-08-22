@@ -263,6 +263,19 @@ def rb_season(df, aid, totals):
         "rush_share": _rate(len(ru), int(t["rushes"])) if t is not None else None,
         "tgt_share": _rate(len(tg), int(t["targets"])) if t is not None else None,
     }
+    if t is not None:
+        # Dominator rating for a back: his share of the team's yards FROM SCRIMMAGE (rushing
+        # + receiving), the scrimmage-yards market share the prospect models (PlayerProfiler's
+        # RB dominator, RotoViz's market-share work) have found most predictive. Receiving is
+        # in on purpose — a back's pass-game share is the part of his college profile that
+        # translates most directly to PPR value. Yards only, like the WR dominator, because
+        # touchdown attribution in the college feed is too uneven to share out (see the
+        # module docstring).
+        scrim = yds + float(rec["reception_yds"].sum())
+        team_scrim = float(t["rush_yds"]) + float(t["rec_yds"])
+        out["scrim_yds"] = int(scrim)
+        out["scrim_share"] = _rate(scrim, team_scrim, nd=1)
+        out["dominator"] = out["scrim_share"]
     out.update(_epa_block(ru))
     out["log"] = _game_rows(ru, [("att", "rush", "sum"), ("yds", "rush_yds", "sum")])
     return out

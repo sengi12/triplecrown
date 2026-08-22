@@ -72,8 +72,8 @@ function tcOwnerOf(pid, name){
 // unconditionally: `${tcOwnerChip(pid, name)}`.
 //
 // `variant` tunes the density for where it sits:
-//   'full'    player-card hero — team name plus the manager's handle
-//   'compact' search rows and tables — team name only, since space is tight
+//   'full'    player-card hero — the manager's handle at hero size
+//   'compact' dense tables — the handle, smaller
 //   'pill'    projection rows / rankings / search — the MANAGER's handle (what you scan a
 //             league for: "is this one of mine, or Sengi12's?"), team name in the tooltip,
 //             no left margin so the row can push it to the right edge
@@ -82,8 +82,10 @@ function tcOwnerChip(pid, name, variant){
   if(!rec) return '';
   const compact = variant === 'compact' || variant === 'pill';
   const pill = variant === 'pill';
-  const label = pill ? (rec.owner || rec.teamName) : rec.teamName;
-  const who = (!compact && rec.owner) ? `<span class="tc-own-mgr">@${escHtml(rec.owner)}</span>` : '';
+  // The manager's handle everywhere. Team names run long ("The Kittle Mermaids of Pawnee")
+  // and the handle is what you scan a league for; the team name rides in the tooltip.
+  const label = rec.owner || rec.teamName;
+  const who = '';
   const title = rec.mine
     ? `On your team (${rec.teamName}) — open it in the League Analyzer`
     : `Rostered by ${rec.owner || rec.teamName}${rec.owner && rec.teamName ? ` (${rec.teamName})` : ''} — open that roster in the League Analyzer`;
