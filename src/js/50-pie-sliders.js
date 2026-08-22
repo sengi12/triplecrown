@@ -74,7 +74,7 @@ function handleSlider(el){
 
 function handleSliderKey(key,val,team,fromManual){
   const state=userProj[team]; if(!state) return;
-  markDirty();
+  markDirty(currentTeam);
   // mirror numeric into the editable display (unless user is editing it)
   const svEl=document.getElementById(`sv-${key}`);
   if(svEl&&document.activeElement!==svEl) svEl.textContent=(val%1!==0&&val<200)?(+val).toFixed(2):Math.round(val);
@@ -198,7 +198,7 @@ function handleSliderKey(key,val,team,fromManual){
 function editTargets(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){livePassTargets(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   const totalTgts=Math.max(1,teamTargetPool(state));
   state.passing_shares[i].share=Math.max(0,Math.min(1,v/totalTgts));
   normalizeShares(state.passing_shares,i,'share');
@@ -208,7 +208,7 @@ function editTargets(i,raw){
 function editRec(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){livePassTargets(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   const totalTgts=Math.max(1,teamTargetPool(state));
   const projTgts=Math.max(1,Math.round(state.passing_shares[i].share*totalTgts));
   // set catch rate = rec / projected targets
@@ -218,7 +218,7 @@ function editRec(i,raw){
 function editCarries(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){liveRushRows(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   const tot=Math.max(1,state.rushing.total_attempts);
   state.rushing.shares[i].share=Math.max(0,Math.min(1,v/tot));
   normalizeShares(state.rushing.shares,i,'share');
@@ -233,7 +233,7 @@ function editCarries(i,raw){
 function editYpc(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){liveRushRows(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   state.rushing.shares[i].ypc=Math.max(0,Math.min(15,v));
   recomputeTeamRushYards(state);
   liveRushRows(state,currentTeam);
@@ -246,7 +246,7 @@ function editYpc(i,raw){
 function editRushYds(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){liveRushRows(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   const r=state.rushing;
   const att=Math.max(1,Math.round(r.shares[i].share*r.total_attempts));
   r.shares[i].ypc=Math.max(0,Math.min(15,v/att));
@@ -263,7 +263,7 @@ function editRushTDsCarry(i,raw){
   const v=parseFloat(raw);
   const totalTDs=teamRushTDs(state);
   if(isNaN(v)){liveRushRows(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   const others=state.rushing.shares.filter((_,j)=>j!==i).reduce((s,p)=>s+p.td_share*totalTDs,0);
   const newTotal=Math.max(0.1,others+Math.max(0,v));
   state.rushing.total_rush_tds=newTotal;
@@ -274,7 +274,7 @@ function editRushTDsCarry(i,raw){
 // Scale every RB's Y/Carry proportionally so team yards = target.
 function scaleTeamRushYards(state,targetYds){
   const r=state.rushing;
-  markDirty();
+  markDirty(currentTeam);
   const cur=r.total_yards||0;
   if(cur>0){
     const factor=targetYds/cur;
@@ -295,14 +295,14 @@ function syncRushYdsSlider(state){
 function editCatchPct(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){livePassTargets(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   state.passing_shares[i].catch_rate=Math.max(0,Math.min(1.2,v/100));
   livePassTargets(state,currentTeam);
 }
 function editRecYds(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){livePassTargets(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   const totalTgts=Math.max(1,teamTargetPool(state));
   const projTgts=Math.max(1,Math.round(state.passing_shares[i].share*totalTgts));
   // back out Y/Tgt so projected yards = entered value
@@ -312,7 +312,7 @@ function editRecYds(i,raw){
 function editYpt(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){livePassTargets(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   state.passing_shares[i].ypt=Math.max(0,Math.min(25,v));
   livePassTargets(state,currentTeam);
 }
@@ -322,7 +322,7 @@ function editYpt(i,raw){
 // proportionally to fill the remainder. The share is stored on its own field (rec_share /
 // recyds_share) and the per-player rate (catch_rate / ypt) is back-solved so totals match.
 function setDerivedShare(state,team,i,share,metric){
-  markDirty();
+  markDirty(currentTeam);
   const isYds=metric==='recyds';
   const field=isYds?'recyds_share':'rec_share';
   const shares=state.passing_shares;
@@ -393,7 +393,7 @@ function liveDerivedRows(state,team,metric){
 function editRecTDs(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){livePassTargets(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   const totalTDs=teamPassTDs(state);
   if(totalTDs>0){
     state.passing_shares[i].td_share=Math.max(0,Math.min(1,v/totalTDs));
@@ -405,7 +405,7 @@ function editRecTDs(i,raw){
 function editRecTDsAbs(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){liveTDRows('tdp','tdt',state.passing_shares,teamPassTDs(state),'tds_',true);return;}
-  markDirty();
+  markDirty(currentTeam);
   const totalTDs=teamPassTDs(state);
   if(totalTDs>0){
     state.passing_shares[i].td_share=Math.max(0,Math.min(1,v/totalTDs));
@@ -420,7 +420,7 @@ function editRushTDsAbs(i,raw){
   const v=parseFloat(raw);
   const totalTDs=teamRushTDs(state);
   if(isNaN(v)){liveTDRows('rtdp','rtdt',state.rushing.shares,totalTDs,'rtds_',true);return;}
-  markDirty();
+  markDirty(currentTeam);
   const others=state.rushing.shares.filter((_,j)=>j!==i)
     .reduce((s,p)=>s+p.td_share*totalTDs,0);
   const newTotal=Math.max(0.1,others+Math.max(0,v));

@@ -331,7 +331,23 @@ function scrubGhostRosters(){
   return removed;
 }
 function deepCopy(o){ return JSON.parse(JSON.stringify(o)); }
-function markDirty(){
+// A team counts as "worked on" once the user has changed something in its working set —
+// not once its state has merely been built. ensureTeam/initPassingShares/initRushingShares
+// materialise a team's default state whenever a tab (or the Rankings page, for all 32) is
+// opened, which is what the progress bar used to count: it jumped to 32/32 on the first
+// Rankings visit and dropped to near zero on a reference-season tab. The flag lives inside
+// the team's working state so it persists, is snapshotted by undo, and is cleared with it.
+function markTeamEdited(team){
+  if(!team || activeSeason!=='proj') return;
+  const st = workingProj && workingProj[team];
+  if(st && !st.edited) st.edited = true;
+}
+function teamEdited(team){
+  const st = workingProj && workingProj[team];
+  return !!(st && st.edited);
+}
+function markDirty(team){
+  if(team) markTeamEdited(team);
   if(importedSnapshot) dirtySinceImport = true;
   if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();
   saveSession();

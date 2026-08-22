@@ -41,13 +41,17 @@ function toggleMobileTeamPicker(){
 
 function renderSidebar(){
   const sb=document.getElementById('sidebar');
+  // Progress = teams whose WORKING projections you have actually changed. Always read from
+  // the working set, so flipping to a reference season does not change the count, and
+  // never from "has this team's state been built" — the Rankings page builds all 32.
+  //   done     you edited something on this team (slider, inline edit, copy-from-season)
+  //   partial  opened but untouched (still on its seed defaults)
   let done=0;
   const doneClass = t => {
-    const st=userProj[t]; if(!st) return '';
-    const a=st.qbs&&st.qbs[0]&&st.qbs[0].passing_yards>0;
-    const b=!!st.passing_shares;const c=!!st.rushing.shares;
-    if(a&&b&&c){ done++; return 'done'; }
-    return (a||b||c) ? 'partial' : '';
+    const st=(typeof workingProj!=='undefined' && workingProj) ? workingProj[t] : null;
+    if(!st) return '';
+    if(typeof teamEdited==='function' ? teamEdited(t) : !!st.edited){ done++; return 'done'; }
+    return 'partial';
   };
 
   const mkTeamItem = (t, cls) => `<div class="team-item ${t===currentTeam?'active':''}" onclick="selectTeam('${t}')">
@@ -86,7 +90,9 @@ function renderSidebar(){
   const html = `${mobileToggle}<div class="sidebar-groups ${collapsedClass}">${groupsHtml}</div>`;
 
   sb.innerHTML=html;
-  document.getElementById('progressText').textContent=`${done}/32 teams`;
+  const pt=document.getElementById('progressText');
+  pt.textContent=`${done}/32 teams`;
+  pt.title=`${done} of 32 teams have edited projections. A team counts once you change something in its working set; opening a tab or the Rankings page does not count.`;
   document.getElementById('progressFill').style.width=`${done/32*100}%`;
 }
 

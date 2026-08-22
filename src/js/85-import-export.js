@@ -86,6 +86,7 @@ function loadProjections(data){
     const rbs=tp.filter(p=>p.fantasy_position==='RB');
     ensureTeam(team,qbs.length?qbs:null);
     const state=userProj[team];
+    state.edited=true;   // an imported projection IS this team's worked-on state
     if(qbs.length){
       state.qbs=qbs.map((qb,i)=>({
         name:qb.name,headshot:qb.headshot||null,slug:qb.slug||null,player_id:qb.player_id||null,

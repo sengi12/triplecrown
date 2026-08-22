@@ -1394,7 +1394,23 @@ function scrubGhostRosters(){
   return removed;
 }
 function deepCopy(o){ return JSON.parse(JSON.stringify(o)); }
-function markDirty(){
+// A team counts as "worked on" once the user has changed something in its working set —
+// not once its state has merely been built. ensureTeam/initPassingShares/initRushingShares
+// materialise a team's default state whenever a tab (or the Rankings page, for all 32) is
+// opened, which is what the progress bar used to count: it jumped to 32/32 on the first
+// Rankings visit and dropped to near zero on a reference-season tab. The flag lives inside
+// the team's working state so it persists, is snapshotted by undo, and is cleared with it.
+function markTeamEdited(team){
+  if(!team || activeSeason!=='proj') return;
+  const st = workingProj && workingProj[team];
+  if(st && !st.edited) st.edited = true;
+}
+function teamEdited(team){
+  const st = workingProj && workingProj[team];
+  return !!(st && st.edited);
+}
+function markDirty(team){
+  if(team) markTeamEdited(team);
   if(importedSnapshot) dirtySinceImport = true;
   if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();
   saveSession();
@@ -3186,13 +3202,17 @@ function toggleMobileTeamPicker(){
 
 function renderSidebar(){
   const sb=document.getElementById('sidebar');
+  // Progress = teams whose WORKING projections you have actually changed. Always read from
+  // the working set, so flipping to a reference season does not change the count, and
+  // never from "has this team's state been built" — the Rankings page builds all 32.
+  //   done     you edited something on this team (slider, inline edit, copy-from-season)
+  //   partial  opened but untouched (still on its seed defaults)
   let done=0;
   const doneClass = t => {
-    const st=userProj[t]; if(!st) return '';
-    const a=st.qbs&&st.qbs[0]&&st.qbs[0].passing_yards>0;
-    const b=!!st.passing_shares;const c=!!st.rushing.shares;
-    if(a&&b&&c){ done++; return 'done'; }
-    return (a||b||c) ? 'partial' : '';
+    const st=(typeof workingProj!=='undefined' && workingProj) ? workingProj[t] : null;
+    if(!st) return '';
+    if(typeof teamEdited==='function' ? teamEdited(t) : !!st.edited){ done++; return 'done'; }
+    return 'partial';
   };
 
   const mkTeamItem = (t, cls) => `<div class="team-item ${t===currentTeam?'active':''}" onclick="selectTeam('${t}')">
@@ -3231,7 +3251,9 @@ function renderSidebar(){
   const html = `${mobileToggle}<div class="sidebar-groups ${collapsedClass}">${groupsHtml}</div>`;
 
   sb.innerHTML=html;
-  document.getElementById('progressText').textContent=`${done}/32 teams`;
+  const pt=document.getElementById('progressText');
+  pt.textContent=`${done}/32 teams`;
+  pt.title=`${done} of 32 teams have edited projections. A team counts once you change something in its working set; opening a tab or the Rankings page does not count.`;
   document.getElementById('progressFill').style.width=`${done/32*100}%`;
 }
 
@@ -3901,7 +3923,7 @@ function passDerivedSubHtml(state,metric,team){
 // spread proportionally across the existing receiving corps by their current share.
 function reconcileDerived(team,metric){
   const state=userProj[team]; if(!state) return;
-  pushUndo(team,"reconcileDerived:"+metric); markDirty();
+  pushUndo(team,"reconcileDerived:"+metric); markDirty(team);
   const isYds=metric==='recyds';
   const totalTgts=Math.max(1,teamTargetPool(state));
   const qbPool=isYds?teamRecYardsPool(state):teamRecPool(state);
@@ -4018,7 +4040,7 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
 // each receiver's share. Then reanchor team_targets so the per-player targets reflect it.
 function reconcileTargets(team){
   const state=userProj[team]; if(!state) return;
-  pushUndo(team,"reconcileTargets"); markDirty();
+  pushUndo(team,"reconcileTargets"); markDirty(team);
   const expectTgts=Math.round(teamPassAtt(state)*TARGET_RATE);
   // re-anchor: set each player's baseline so share×pool = their new target count
   state.team_targets=expectTgts;
@@ -4393,7 +4415,7 @@ function handleSlider(el){
 
 function handleSliderKey(key,val,team,fromManual){
   const state=userProj[team]; if(!state) return;
-  markDirty();
+  markDirty(currentTeam);
   // mirror numeric into the editable display (unless user is editing it)
   const svEl=document.getElementById(`sv-${key}`);
   if(svEl&&document.activeElement!==svEl) svEl.textContent=(val%1!==0&&val<200)?(+val).toFixed(2):Math.round(val);
@@ -4517,7 +4539,7 @@ function handleSliderKey(key,val,team,fromManual){
 function editTargets(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){livePassTargets(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   const totalTgts=Math.max(1,teamTargetPool(state));
   state.passing_shares[i].share=Math.max(0,Math.min(1,v/totalTgts));
   normalizeShares(state.passing_shares,i,'share');
@@ -4527,7 +4549,7 @@ function editTargets(i,raw){
 function editRec(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){livePassTargets(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   const totalTgts=Math.max(1,teamTargetPool(state));
   const projTgts=Math.max(1,Math.round(state.passing_shares[i].share*totalTgts));
   // set catch rate = rec / projected targets
@@ -4537,7 +4559,7 @@ function editRec(i,raw){
 function editCarries(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){liveRushRows(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   const tot=Math.max(1,state.rushing.total_attempts);
   state.rushing.shares[i].share=Math.max(0,Math.min(1,v/tot));
   normalizeShares(state.rushing.shares,i,'share');
@@ -4552,7 +4574,7 @@ function editCarries(i,raw){
 function editYpc(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){liveRushRows(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   state.rushing.shares[i].ypc=Math.max(0,Math.min(15,v));
   recomputeTeamRushYards(state);
   liveRushRows(state,currentTeam);
@@ -4565,7 +4587,7 @@ function editYpc(i,raw){
 function editRushYds(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){liveRushRows(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   const r=state.rushing;
   const att=Math.max(1,Math.round(r.shares[i].share*r.total_attempts));
   r.shares[i].ypc=Math.max(0,Math.min(15,v/att));
@@ -4582,7 +4604,7 @@ function editRushTDsCarry(i,raw){
   const v=parseFloat(raw);
   const totalTDs=teamRushTDs(state);
   if(isNaN(v)){liveRushRows(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   const others=state.rushing.shares.filter((_,j)=>j!==i).reduce((s,p)=>s+p.td_share*totalTDs,0);
   const newTotal=Math.max(0.1,others+Math.max(0,v));
   state.rushing.total_rush_tds=newTotal;
@@ -4593,7 +4615,7 @@ function editRushTDsCarry(i,raw){
 // Scale every RB's Y/Carry proportionally so team yards = target.
 function scaleTeamRushYards(state,targetYds){
   const r=state.rushing;
-  markDirty();
+  markDirty(currentTeam);
   const cur=r.total_yards||0;
   if(cur>0){
     const factor=targetYds/cur;
@@ -4614,14 +4636,14 @@ function syncRushYdsSlider(state){
 function editCatchPct(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){livePassTargets(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   state.passing_shares[i].catch_rate=Math.max(0,Math.min(1.2,v/100));
   livePassTargets(state,currentTeam);
 }
 function editRecYds(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){livePassTargets(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   const totalTgts=Math.max(1,teamTargetPool(state));
   const projTgts=Math.max(1,Math.round(state.passing_shares[i].share*totalTgts));
   // back out Y/Tgt so projected yards = entered value
@@ -4631,7 +4653,7 @@ function editRecYds(i,raw){
 function editYpt(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){livePassTargets(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   state.passing_shares[i].ypt=Math.max(0,Math.min(25,v));
   livePassTargets(state,currentTeam);
 }
@@ -4641,7 +4663,7 @@ function editYpt(i,raw){
 // proportionally to fill the remainder. The share is stored on its own field (rec_share /
 // recyds_share) and the per-player rate (catch_rate / ypt) is back-solved so totals match.
 function setDerivedShare(state,team,i,share,metric){
-  markDirty();
+  markDirty(currentTeam);
   const isYds=metric==='recyds';
   const field=isYds?'recyds_share':'rec_share';
   const shares=state.passing_shares;
@@ -4712,7 +4734,7 @@ function liveDerivedRows(state,team,metric){
 function editRecTDs(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){livePassTargets(state,currentTeam);return;}
-  markDirty();
+  markDirty(currentTeam);
   const totalTDs=teamPassTDs(state);
   if(totalTDs>0){
     state.passing_shares[i].td_share=Math.max(0,Math.min(1,v/totalTDs));
@@ -4724,7 +4746,7 @@ function editRecTDs(i,raw){
 function editRecTDsAbs(i,raw){
   const state=userProj[currentTeam]; if(!state) return;
   const v=parseFloat(raw); if(isNaN(v)){liveTDRows('tdp','tdt',state.passing_shares,teamPassTDs(state),'tds_',true);return;}
-  markDirty();
+  markDirty(currentTeam);
   const totalTDs=teamPassTDs(state);
   if(totalTDs>0){
     state.passing_shares[i].td_share=Math.max(0,Math.min(1,v/totalTDs));
@@ -4739,7 +4761,7 @@ function editRushTDsAbs(i,raw){
   const v=parseFloat(raw);
   const totalTDs=teamRushTDs(state);
   if(isNaN(v)){liveTDRows('rtdp','rtdt',state.rushing.shares,totalTDs,'rtds_',true);return;}
-  markDirty();
+  markDirty(currentTeam);
   const others=state.rushing.shares.filter((_,j)=>j!==i)
     .reduce((s,p)=>s+p.td_share*totalTDs,0);
   const newTotal=Math.max(0.1,others+Math.max(0,v));
@@ -16340,6 +16362,7 @@ function loadProjections(data){
     const rbs=tp.filter(p=>p.fantasy_position==='RB');
     ensureTeam(team,qbs.length?qbs:null);
     const state=userProj[team];
+    state.edited=true;   // an imported projection IS this team's worked-on state
     if(qbs.length){
       state.qbs=qbs.map((qb,i)=>({
         name:qb.name,headshot:qb.headshot||null,slug:qb.slug||null,player_id:qb.player_id||null,
@@ -20156,6 +20179,7 @@ function copyTeamToWorking(team){
   activeSeason='proj'; userProj=workingProj; SEED=ps; currentTeam=team;
   dirtySinceImport=true;
   ensureTeam(team);
+  markTeamEdited(team);
   saveSession();
   renderSeasonTabs(); renderSidebar(); renderContent();
   const filterNote = ((!canFilter) ? ' (roster unverified — copied all; ↻ Sleeper to refine)' : (skipped?` · skipped ${skipped} no longer on roster`:''))
@@ -20203,6 +20227,7 @@ function copyPlayerToWorking(pid,pos){
   dirtySinceImport=true;
   const sameTeam = destTeam===rt;
   ensureTeam(destTeam);
+  markTeamEdited(destTeam);
   saveSession();
   renderSeasonTabs(); renderSidebar(); renderContent();
   toast(`Copied ${src.name}'s ${refSeason} line → ${destTeam} working set ✓${sameTeam?' · back on the live build view':` · switched to ${destTeam} ${PROJ_SEASON} view`}`,'ok');

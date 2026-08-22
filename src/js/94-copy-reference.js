@@ -75,6 +75,7 @@ function copyTeamToWorking(team){
   activeSeason='proj'; userProj=workingProj; SEED=ps; currentTeam=team;
   dirtySinceImport=true;
   ensureTeam(team);
+  markTeamEdited(team);
   saveSession();
   renderSeasonTabs(); renderSidebar(); renderContent();
   const filterNote = ((!canFilter) ? ' (roster unverified — copied all; ↻ Sleeper to refine)' : (skipped?` · skipped ${skipped} no longer on roster`:''))
@@ -122,6 +123,7 @@ function copyPlayerToWorking(pid,pos){
   dirtySinceImport=true;
   const sameTeam = destTeam===rt;
   ensureTeam(destTeam);
+  markTeamEdited(destTeam);
   saveSession();
   renderSeasonTabs(); renderSidebar(); renderContent();
   toast(`Copied ${src.name}'s ${refSeason} line → ${destTeam} working set ✓${sameTeam?' · back on the live build view':` · switched to ${destTeam} ${PROJ_SEASON} view`}`,'ok');
