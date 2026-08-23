@@ -252,14 +252,6 @@ function renderContent(){
        </div>
      </div>`
     : '';
-  // Pace mode: an honest banner over the (still editable) projection views — the comparison
-  // target is the kickoff-frozen baseline, so editing here never moves the goalposts.
-  const paceBanner = (!isRef && typeof currentProjViewMode==='function' && currentProjViewMode()==='pace')
-    ? (()=>{ const b=(typeof loadPaceBaseline==='function')?loadPaceBaseline():null;
-        const wk=(typeof completedWeeks==='function')?completedWeeks():0;
-        const teamLine=(typeof paceTeamSummaryHTML==='function')?paceTeamSummaryHTML(t):'';
-        return `<div class="discrepancy-note pace-note"><div>${TC_ICON("chart")} <b>Pace view</b> — read-only. Each line reads <i>actual per game vs your projected per game</i>${b&&b.frozenWeek>1?` (frozen wk ${b.frozenWeek})`:''} · thru week ${wk}. ▲ ahead / ▼ behind by 10%+; the amber mark on each slider is where he actually is. Edit on the <b>Proj</b> tab.</div>${teamLine}</div>`; })()
-    : '';
   const sos = SOS && SOS[t];
   const sosBadge = sos ? `<span class="team-sos">SOS: <b>${ordinal(sos.rank)}</b>${sos.win_total!=null?` · Vegas Win Total: <b>${sos.win_total}</b>`:''}</span>` : '';
   const hcLine = teamHeaderHcLine(t, { openTitle: 'Open playbook' });
@@ -276,7 +268,7 @@ function renderContent(){
         ${next?`<button class="btn btn-accent" onclick="selectTeam('${next}')">${next} →</button>`:''}
       </div>
     </div>
-    ${seasonBanner}${paceBanner}
+    ${seasonBanner}
     <div class="phase-tabs">${tabs}</div>${body}
     <div id="schemeOverlayHost"></div>`;
   if(currentPhase==='Receiving') initPie(t,'pass');

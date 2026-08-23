@@ -29,6 +29,10 @@ const TC_ICON = (() => {
     calendar:'<rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 9h16M8 3v4M16 3v4"/>',
     link:   '<path d="M9 15l6-6M10.5 6.5 12 5a4 4 0 0 1 6 6l-1.5 1.5M13.5 17.5 12 19a4 4 0 0 1-6-6l1.5-1.5"/>',
     shield: '<path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3Z"/>',
+    // Balance scale — side-by-side comparison.
+    scale:  '<path d="M12 4v16M8 20h8M12 6H6M12 6h6"/><path d="M6 6l-2.5 5a2.8 2.8 0 0 0 5 0L6 6ZM18 6l-2.5 5a2.8 2.8 0 0 0 5 0L18 6Z"/>',
+    // Two facing chevrons — a head-to-head matchup.
+    versus: '<path d="M9 7l-4 5 4 5M15 7l4 5-4 5"/>',
     football:'<path d="M4 12c0-4 4-8 8-8s8 4 8 8-4 8-8 8-8-4-8-8Z"/><path d="M8 8s2 4 2 8M16 8s-2 4-2 8M9 12h6"/>',
     export: '<path d="M12 15V4M8 8l4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/>',
     download:'<path d="M12 4v11M8 11l4 4 4-4M5 20h14"/>',

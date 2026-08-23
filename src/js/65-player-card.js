@@ -904,7 +904,7 @@ function renderPcardSeason(season, rows, pos){
     const p=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[pcardState.pid])||{};
     const view = pos==='QB'?'qb':(pos==='RB'?'rush':'rec');
     const strip=paceStatChipsHTML(p.name||'', pos, pcardState.pid, view);
-    if(strip) paceLine=`<div class="pcard-pace"><span class="pcard-pace-lbl">vs your projection</span>${strip}</div>`;
+    if(strip) paceLine=`<div class="pcard-pace"><span class="pcard-pace-lbl">vs projection</span>${strip}</div>`;
   }
   return `<div class="pcard-season">
     <div class="pcard-season-title">${season}${liveTag}${pcardSeasonTeamTag(rows)}${pcardFptsPerGameBadge(rows, pos)}${pcardSeasonConsistencyBadge(rows, pos)}</div>${paceLine}

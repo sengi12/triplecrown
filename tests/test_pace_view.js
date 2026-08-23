@@ -15,7 +15,7 @@ const app=new Function(code+`return {
   currentProjViewMode, rankingsRenderCacheKey,
   setBaseline:(b)=>{PACE_BASELINE=b;}, setHistory:(h)=>{HISTORY=h;},
   setLiveWeek:(w)=>{_liveSeasonWeek=w;},
-  setMode:(m)=>{projViewMode=m;}, setActiveSeason:(s)=>{activeSeason=s;} };`)();
+  setLiveDelta:(v)=>{rankLiveDelta=v;}, setActiveSeason:(s)=>{activeSeason=s;} };`)();
 
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -54,18 +54,17 @@ chk(/pace-chip/.test(chip),'chip renders for a baselined player');
 chk(app.paceChipHTML('Nobody','TE',null)==='','no chip without baseline data');
 
 console.log('=== mode + cache key ===');
-app.setActiveSeason('proj'); app.setMode('proj');
+app.setActiveSeason('proj');
 chk(app.currentProjViewMode()==='proj','proj mode reported');
-app.setMode('pace');
-chk(app.currentProjViewMode()==='pace','pace mode reported');
+chk(app.currentProjViewMode()!=='pace','pace is no longer a mode — it folded into Live');
 app.setActiveSeason('2026');
 chk(app.currentProjViewMode()==='live','current-year reference reads as live');
-app.setActiveSeason('proj');
-app.setMode('proj'); const k1=app.rankingsRenderCacheKey(false);
-app.setMode('pace'); const k2=app.rankingsRenderCacheKey(false);
-chk(k1!==k2,'render cache key varies with projViewMode');
+app.setLiveDelta(false); const k1=app.rankingsRenderCacheKey(false);
+app.setLiveDelta(true);  const k2=app.rankingsRenderCacheKey(false);
+chk(k1!==k2,'render cache key varies with the Δ-proj toggle');
 app.setLiveWeek(5); const k3=app.rankingsRenderCacheKey(false);
 chk(k2!==k3,'render cache key varies with the live epoch');
+app.setLiveDelta(false); app.setActiveSeason('proj');
 
 console.log(`\n${pass}/${total}`);
 if(pass!==total) process.exit(1);

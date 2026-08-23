@@ -33,7 +33,7 @@ function tsCanPreviewPhase(phase){
   // League Analyzer tabs (checked BEFORE the currentTeam guard — the analyzer needs no team).
   if(typeof currentPhase!=='undefined' && currentPhase==='League'){
     return !!(typeof leagueSnapshot!=='undefined' && leagueSnapshot) &&
-      ['myteam','rosters','compare','best','trade','matchup','lineup','dvp','trends'].includes(p);
+      ['myteam','rosters','compare','best','trade','season','matchup','lineup','dvp','trends'].includes(p);
   }
   if(!currentTeam) return false;
   if(['Passing','Receiving','Rushing','Advanced','Additions'].includes(p)) return true;
@@ -101,12 +101,15 @@ function tsRenderPhasePreview(phase){
       if(phase==='compare') return laCompareView(s);
       if(phase==='best') return laBestAvailView(s);
       if(phase==='trade') return laTradeView(s);
-      if(['matchup','lineup','dvp','trends'].includes(phase)){
-        // Cache-only: preview only when the data is already loaded.
-        if(phase==='matchup' && !(_laMu.byWeek[laMuWeek()])) return '';
-        if(phase==='lineup' && !(_laMu.byWeek[laCurrentWeek()])) return '';
-        if((phase==='dvp'||phase==='trends') && !(typeof TC_INSEASON!=='undefined' && TC_INSEASON)) return '';
-        return (typeof laTabViewHTML==='function' && laTabViewHTML(phase, s)) || '';
+      if(['season','matchup','lineup','dvp','trends'].includes(phase)){
+        // Cache-only: preview only when the pane's data is already loaded.
+        const pane = phase==='season'
+          ? ((typeof laActivePane==='function' && laActivePane()) || (laState&&laState.seasonPane) || 'matchup')
+          : phase;
+        if(pane==='matchup' && !(_laMu.byWeek[laMuWeek()])) return '';
+        if(pane==='lineup' && !(_laMu.byWeek[laCurrentWeek()])) return '';
+        if((pane==='dvp'||pane==='trends') && !(typeof TC_INSEASON!=='undefined' && TC_INSEASON)) return '';
+        return (typeof laTabViewHTML==='function' && laTabViewHTML(phase==='season'?'season':pane, s)) || '';
       }
     }catch(e){ return ''; }
     return '';

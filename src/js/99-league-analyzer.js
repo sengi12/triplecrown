@@ -72,6 +72,7 @@ let laState = { step: leagueSnapshot? 'view':'start', busy:false, error:null,
                 cmpSort:{col:'total',dir:-1},  // Compare column sort (click a header)
                 radarAxis:null,    // My Team radar: selected axis for inline details
                 // In-season tabs (99b-la-inseason.js):
+                seasonPane:'matchup', // Season tab: which pane is showing (matchup|lineup|dvp|trends)
                 muWeek:null,       // Matchup: viewed week (null = the current week)
                 dvpPos:'ALL',      // DvP: single-position filter
                 dvpSort:{col:'QB',dir:1},   // DvP: sorted column + direction
@@ -1288,14 +1289,17 @@ function renderLeagueAnalyzer(){
               ? ` · values: FantasyPros dynasty chart <b>${DYNASTY_VALUES.asof}</b>`
               : ' · values: value over replacement (VOR)')}</div></div>
       </div>
-    <div class="phase-tabs">
-      ${[['myteam','My Team'],['rosters','Rosters'],['compare','Compare'],['best','Waiver Wire'],['trade','Trade Center']]
-        .map(([k,l])=>`<button class="phase-tab ${laState.laTab===k?'active':''}" onclick="laSetTab('${k}')">${l}</button>`).join('')}
-      ${(typeof hasSeasonStarted==='function' && hasSeasonStarted())
-        ? `<span class="phase-tab-divider"></span>` +
-          [['matchup','Matchup'],['lineup','Lineup'],['dvp','DEF'],['trends','Trends']]
-            .map(([k,l])=>`<button class="phase-tab ${laState.laTab===k?'active':''}" onclick="laSetTab('${k}')">${l}</button>`).join('')
-        : ''}
+    <div class="phase-tabs la-icon-tabs">
+      ${(()=>{
+        // Sleeper-style icon tabs: icon + one-word label, six tabs at most. The four
+        // in-season tools live INSIDE the Season tab as panes, not as tabs of their own.
+        const started = (typeof hasSeasonStarted==='function' && hasSeasonStarted());
+        const onTab = (typeof laActivePane==='function' && laActivePane()) ? 'season' : laState.laTab;
+        const tabs=[['myteam','Team','user'],['rosters','Rosters','clipboard'],['compare','Compare','scale'],
+                    ['best','Waivers','search'],['trade','Trades','swap']];
+        if(started) tabs.push(['season','Season','football']);
+        return tabs.map(([k,l,ic])=>`<button class="phase-tab icon-tab ${onTab===k?'active':''}" onclick="laSetTab('${k}')" title="${l}">${TC_ICON(ic)}<span class="tab-lbl">${l}</span></button>`).join('');
+      })()}
     </div>
     ${(typeof laTabViewHTML==='function' && laTabViewHTML(laState.laTab, s)) ||
       (laState.laTab==='compare' ? laCompareView(s) : laState.laTab==='best' ? laBestAvailView(s) : laState.laTab==='trade' ? laTradeView(s) : laState.laTab==='rosters' ? laRostersView(s) : laMyTeamView(s))}`;

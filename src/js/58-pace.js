@@ -1,13 +1,11 @@
 // ═════════════════════════════════════════════════════════════════════════════
 // Pace — how every player's live season tracks the projections frozen at kickoff.
 //
-// Modes on the projection season (see renderSeasonTabs):
-//   proj  — the normal editable working projections (today's behavior)
-//   live  — the current season to date, viewed through the standard read-only
-//           reference machinery (enterReference on the current year)
-//   pace  — stays on the editable 'proj' dataset, with actual per-game pace ×17
-//           compared to PACE_BASELINE per player. Editing stays enabled: pace
-//           reads live actuals vs the frozen baseline, never the working edits.
+// Deliberately NOT a mode of its own. The projection season has two views —
+// the editable working projections ('proj') and the season to date ('live') —
+// and pace surfaces inside them as small, opt-in touches: a Δ column on the
+// Live board (rankLiveDelta), the player card's live strip, and the League
+// Analyzer's Trends boards. The index below is the one shared engine.
 // ═════════════════════════════════════════════════════════════════════════════
 
 // Sum a HISTORY season record (list of team stints) into one calcFpts-ready row.
@@ -106,32 +104,26 @@ function paceChipHTML(name, pos, pid){
   if(!(e.gp>0)) return `<span class="pace-chip pace-thin" title="No games yet">—</span>`;
   const pctTxt=`${e.pct>=0?'+':'−'}${Math.round(Math.abs(e.pct)*100)}%`;
   const arrow=e.cls==='pace-thin' ? '' : (e.delta>=0?'▲':'▼');
-  const title=`Pace ${e.pace17.toFixed(0)} vs your frozen ${e.base.toFixed(0)} (${e.gp} gm${e.gp===1?'':'s'})`;
+  const title=`Pace ${e.pace17.toFixed(0)} vs proj ${e.base.toFixed(0)} (${e.gp} gm${e.gp===1?'':'s'})`;
   return `<span class="pace-chip ${e.cls}" title="${title}">${arrow}${pctTxt}</span>`;
 }
 
-// Chip wrapper for the team phase views: renders only while pace mode is on, so the
-// insertion sites stay a single unconditional template call.
-function projPaceChip(name, pos, pid){
-  if(typeof currentProjViewMode!=='function' || currentProjViewMode()!=='pace') return '';
-  return paceChipHTML(name, pos, pid);
-}
-
-// Which mode the season bar should show as active right now. null on a past-season tab.
+// Which mode the season bar should show as active right now. Two modes only — the editable
+// projections ('proj') and the season to date ('live'); pace detail lives INSIDE live as an
+// opt-in Δ column, not as a mode of its own. null on a past-season tab.
 function currentProjViewMode(){
   if(typeof hasSeasonStarted!=='function' || !hasSeasonStarted()) return activeSeason==='proj' ? 'proj' : null;
   if(activeSeason===String(TC_SEASON.year)) return 'live';
-  if(activeSeason==='proj') return projViewMode==='pace' ? 'pace' : 'proj';
-  return null;
+  return activeSeason==='proj' ? 'proj' : null;
 }
 
 function setProjViewMode(mode){
-  if(mode!=='proj' && mode!=='live' && mode!=='pace') return;
+  if(mode==='pace') mode='live';   // retired mode — its one number now lives inside Live
+  if(mode!=='proj' && mode!=='live') return;
   const started = (typeof hasSeasonStarted==='function') && hasSeasonStarted();
   if(!started) mode='proj';
   const yr=String(TC_SEASON.year);
   if(mode==='live'){
-    projViewMode='proj';   // live is a dataset (the current-year reference), not a proj sub-mode
     if(activeSeason!==yr){
       // Make sure the live season is fetchable/fresh, then enter it like any reference year.
       if(typeof refreshLiveSeasonStats==='function') refreshLiveSeasonStats().catch(()=>{});
@@ -139,18 +131,39 @@ function setProjViewMode(mode){
     } else renderSeasonTabs();
     return;
   }
-  const changed = (projViewMode!==mode);
-  projViewMode=mode;
-  if(activeSeason!=='proj'){ loadSeason('proj'); return; }   // re-renders via afterSeasonSwitch
-  if(changed){
-    if(mode==='pace' && typeof refreshLiveSeasonStats==='function') refreshLiveSeasonStats().catch(()=>{});
-    renderSeasonTabs();
-    if(currentPhase==='Rankings') renderRankings();
-    else if(currentTeam) renderContent();
-  }
+  if(activeSeason!=='proj') loadSeason('proj');   // re-renders via afterSeasonSwitch
 }
 
-// ── Per-category pace strips (team phase views, pace mode) ───────────────────
+// Live-view opt-in: one Δ-vs-projection column in the rankings, off by default so the live
+// board stays a clean stat sheet until the comparison is asked for.
+let rankLiveDelta = false;
+function toggleRankLiveDelta(){
+  rankLiveDelta = !rankLiveDelta;
+  if(rankLiveDelta && typeof maybeFreezePaceBaseline==='function'){ try{ maybeFreezePaceBaseline(); }catch(e){} }
+  if(typeof renderRankings==='function' && currentPhase==='Rankings') renderRankings();
+}
+
+// ── Injury designations (Sleeper player DB) ──────────────────────────────────
+// {code, sev:'q'|'d'|'o', note, body} or null when healthy/unknown. sev drives the badge
+// color: questionable amber, doubtful orange, out/IR/PUP/suspended red.
+function tcInjuryInfo(pid){
+  const sp = (pid!=null && typeof sleeperPlayers!=='undefined' && sleeperPlayers) ? sleeperPlayers[String(pid)] : null;
+  const st = sp && sp.injury_status ? String(sp.injury_status) : '';
+  if(!st) return null;
+  const code = /^ir/i.test(st)?'IR' : /^out/i.test(st)?'OUT' : /^doubtful/i.test(st)?'D'
+    : /^questionable/i.test(st)?'Q' : /^sus/i.test(st)?'SUS' : /^pup/i.test(st)?'PUP'
+    : st.slice(0,3).toUpperCase();
+  const sev = code==='Q' ? 'q' : code==='D' ? 'd' : 'o';
+  return {code, sev, note:(sp.injury_note||''), body:(sp.injury_body_part||'')};
+}
+function tcInjuryTag(pid){
+  const i=tcInjuryInfo(pid);
+  if(!i) return '';
+  const title=[i.body, i.note].filter(Boolean).join(' — ');
+  return `<span class="inj-tag inj-${i.sev}" title="${typeof escAttr==='function'?escAttr(title||i.code):''}">${i.code}</span>`;
+}
+
+// ── Per-category pace strips (player card, live tab) ─────────────────────────
 // Which categories each view talks about, with short labels.
 const PACE_STRIP_FIELDS = {
   rec:  [['receiving_targets','Tgts'],['receptions','Rec'],['receiving_yards','Yds'],['receiving_tds','TD']],
@@ -179,71 +192,10 @@ function paceStatChipsHTML(name, pos, pid, view){
     const cls = gp>0 ? st.cls : 'pace-thin';
     const pctTxt = (gp>0 && st.bRate>0) ? `${st.pct>=0?'+':'−'}${Math.round(Math.abs(st.pct)*100)}%` : '—';
     const arrow = cls==='pace-ahead'?'▲':cls==='pace-behind'?'▼':'';
-    const title=`${label}: ${_paceRateFmt(st.aRate,f)}/gm over ${gp} game${gp===1?'':'s'} (${_paceFmt(st.act,f)} total) vs your ${_paceRateFmt(st.bRate,f)}/gm (${_paceFmt(st.base,f)} over ${e.projGames} games)`;
+    const title=`${label}: ${_paceRateFmt(st.aRate,f)}/gm over ${gp} game${gp===1?'':'s'} (${_paceFmt(st.act,f)} total) vs proj ${_paceRateFmt(st.bRate,f)}/gm (${_paceFmt(st.base,f)} over ${e.projGames} games)`;
     return `<span class="pace-stat ${cls}" title="${title}"><span class="ps-l">${label}</span><span class="ps-a">${_paceRateFmt(st.aRate,f)}</span><span class="ps-b">vs ${_paceRateFmt(st.bRate,f)}/gm</span><b class="ps-d">${arrow}${pctTxt}</b></span>`;
   }).filter(Boolean).join('');
   if(!chips) return '';
   const gpTxt = gp>0 ? `${gp} gm${gp===1?'':'s'}` : 'no games yet';
-  return `<div class="pace-strip" title="actual per game vs your projected per game (projection ÷ projected games)"><span class="pace-strip-gp">${gpTxt}</span>${chips}</div>`;
-}
-function projPaceStrip(name, pos, pid, view){
-  if(typeof currentProjViewMode!=='function' || currentProjViewMode()!=='pace') return '';
-  return paceStatChipsHTML(name, pos, pid, view);
-}
-// Team-level line for the pace banner: games played + team pass/rush volume pace vs frozen.
-// Team line, also per game: Σ actual ÷ team games played vs Σ projections ÷ 17. Totals-based
-// team sums went "super wonky" the moment one starter missed time; rates always add up.
-function paceTeamSummaryHTML(team){
-  const idx=buildPaceIndex(); if(!idx) return '';
-  const tm=String(team||'').toUpperCase();
-  const seen=new Set(); let gp=0; const tot={passing_attempts:[0,0],rushing_attempts:[0,0],receiving_targets:[0,0],passing_tds:[0,0],rushing_tds:[0,0]};
-  idx.forEach((e,key)=>{ if(key.indexOf('|')<0) return; if(seen.has(key)) return; seen.add(key);
-    if(String(e.team||'').toUpperCase()!==tm || !e.stats) return;
-    gp=Math.max(gp, e.gp||0);
-    for(const f in tot){ const st=e.stats[f]; if(!st) continue; tot[f][0]+=st.act; tot[f][1]+=st.base; } });
-  if(!gp) return '';
-  const cell=(f,label)=>{ const [a,b]=tot[f]; if(!(b>0)) return ''; const aR=a/gp, bR=b/17; const pct=bR>0?(aR-bR)/bR:0; const cls=paceBadgeCls(pct,gp); return `<span class="pace-stat ${cls}" title="team ${label}: ${_paceRateFmt(aR,f)}/gm over ${gp} game${gp===1?'':'s'} vs ${_paceRateFmt(bR,f)}/gm projected (${_paceFmt(b,f)} over 17)"><span class="ps-l">${label}</span><span class="ps-a">${_paceRateFmt(aR,f)}</span><span class="ps-b">vs ${_paceRateFmt(bR,f)}/gm</span><b class="ps-d">${cls==='pace-ahead'?'▲':cls==='pace-behind'?'▼':''}${pct>=0?'+':'−'}${Math.round(Math.abs(pct)*100)}%</b></span>`; };
-  return `<div class="pace-strip pace-strip-team"><span class="pace-strip-gp">${tm} · ${gp} gm${gp===1?'':'s'} played</span>${cell('passing_attempts','Pass att')}${cell('passing_tds','Pass TD')}${cell('receiving_targets','Targets')}${cell('rushing_attempts','Rush att')}${cell('rushing_tds','Rush TD')}</div>`;
-}
-
-// ── Pace mode is read-only ───────────────────────────────────────────────────
-// The pace view compares live production to the FROZEN projection; editing there implied
-// the comparison would follow the sliders (it never did — the frozen line can't move). The
-// projections stay editable one tap away on the Proj tab.
-function paceLockActive(){
-  return typeof currentProjViewMode==='function' && currentProjViewMode()==='pace';
-}
-// A second mark on a slider: where the player actually is. For a stat slider the mark sits
-// at "current per-game rate × his projected games" (what he finishes with at this rate).
-function paceMarker(name, pos, pid, field){
-  if(!paceLockActive()) return null;
-  const e=paceForPlayer(name, pos, pid);
-  const st=e && e.stats && e.stats[field];
-  if(!st || !(e.gp>0)) return null;
-  const val=st.aRate*e.projGames;
-  return {value:val, cls:st.cls,
-    title:`Current pace: ${_paceRateFmt(st.aRate,field)}/gm × ${e.projGames} games = ${_paceFmt(val,field)} (you projected ${_paceFmt(st.base,field)})`};
-}
-// Actual share of the team pie to date (target share / carry share / TD share), 0–100.
-function paceActualShare(team, name, pos, pid, kind){
-  if(!paceLockActive()) return null;
-  const idx=buildPaceIndex(); if(!idx) return null;
-  const e=paceForPlayer(name, pos, pid);
-  if(!e || !e.stats || !(e.gp>0)) return null;
-  const tm=String(team||'').toUpperCase();
-  const F={tgt:'receiving_targets', rush:'rushing_attempts', tdrec:'receiving_tds', tdrush:'rushing_tds'}[kind];
-  if(!F) return null;
-  let team_act=0; const seen=new Set();
-  idx.forEach((x,key)=>{ if(key.indexOf('|')<0 || seen.has(key)) return; seen.add(key);
-    if(String(x.team||'').toUpperCase()!==tm || !x.stats) return;
-    team_act+=x.stats[F]?x.stats[F].act:0; });
-  if(!(team_act>0)) return null;
-  const mine=e.stats[F]?e.stats[F].act:0;
-  return {pct:100*mine/team_act, mine, team:team_act,
-    title:`Actual to date: ${_paceFmt(mine,F)} of the team's ${_paceFmt(team_act,F)} (${(100*mine/team_act).toFixed(1)}%)`};
-}
-function paceShareMarkHTML(team, name, pos, pid, kind){
-  const m=paceActualShare(team, name, pos, pid, kind);
-  if(!m) return '';
-  return `<div class="pace-marker" style="left:${Math.max(0,Math.min(100,m.pct)).toFixed(1)}%" title="${m.title}"></div>`;
+  return `<div class="pace-strip" title="actual per game vs projected per game (projection ÷ projected games)"><span class="pace-strip-gp">${gpTxt}</span>${chips}</div>`;
 }

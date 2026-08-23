@@ -23,16 +23,39 @@ function laCurrentWeek(){
 function laMuWeek(){ return laState.muWeek!=null ? laState.muWeek : laCurrentWeek(); }
 function laSetMuWeek(w){ laState.muWeek = (Number(w)===laCurrentWeek()) ? null : Number(w); laState.muFocus=null; laRerenderKeepScroll(); }
 
+// ── The Season tab: four panes behind one tab ────────────────────────────────
+// The in-season tools are PANES inside a single "Season" tab (icon chips), not four more
+// top-level tabs — one tap deep, and the analyzer bar stays six tabs wide.
+function laActivePane(){
+  const t=laState.laTab;
+  if(t==='season') return laState.seasonPane||'matchup';
+  return (t==='matchup'||t==='lineup'||t==='dvp'||t==='trends') ? t : null;
+}
+function laSetPane(k){
+  laState.laTab='season'; laState.seasonPane=k;
+  laRerenderKeepScroll();
+}
+function laSeasonView(s, paneOverride){
+  const pane=paneOverride||laActivePane()||'matchup';
+  const panes=[['matchup','Matchup','versus'],['lineup','Lineup','clipboard'],['dvp','Defense','shield'],['trends','Trends','chart']];
+  const bar=`<div class="la-pane-tabs">${panes.map(([k,l,ic])=>
+    `<button class="pane-tab ${pane===k?'active':''}" onclick="laSetPane('${k}')" title="${l}">${TC_ICON(ic)}<span class="tab-lbl">${l}</span></button>`).join('')}</div>`;
+  const body = pane==='lineup'?laLineupView(s) : pane==='dvp'?laDvpView(s)
+             : pane==='trends'?laTrendsView(s) : laMatchupView(s);
+  return bar+body;
+}
+
 // ── Dispatch (99's render calls this; also the swipe-preview entry point) ────
 function laTabViewHTML(key, s){
   laLivePollSync();
-  // Off-season (or a stale restored session): the in-season tabs don't exist — fall back.
+  // Off-season (or a stale restored session): the in-season tab doesn't exist — fall back.
   if(typeof hasSeasonStarted!=='function' || !hasSeasonStarted()) return null;
   switch(key){
-    case 'matchup': return laMatchupView(s);
-    case 'lineup':  return laLineupView(s);
-    case 'dvp':     return laDvpView(s);
-    case 'trends':  return laTrendsView(s);
+    case 'season': return laSeasonView(s);
+    case 'matchup':               // legacy keys render their pane, chrome included —
+    case 'lineup':                // no state mutation here (previews call this too)
+    case 'dvp':
+    case 'trends': return laSeasonView(s, key);
     default: return null;
   }
 }
@@ -90,7 +113,7 @@ async function laFetchMatchups(week, silent){
 function laLivePollSync(){
   const want = typeof currentPhase!=='undefined' && currentPhase==='League'
     && leagueSnapshot && leagueSnapshot.provider!=='espn'
-    && laState.laTab==='matchup' && laMuWeek()===laCurrentWeek()
+    && laActivePane()==='matchup' && laMuWeek()===laCurrentWeek()
     && (typeof TC_SEASON!=='undefined' && (TC_SEASON.phase==='regular'||TC_SEASON.phase==='post'))
     && (typeof document==='undefined' || document.visibilityState==='visible');
   if(want && !_laMu.pollTimer){
@@ -333,7 +356,7 @@ function laMatchupView(s){
   return `${head}${featured}
     <div class="la-ins-bar"><span class="la-ins-lbl">SCOREBOARD</span>${asof?`<span class="la-ins-sub">updated ${asof}${wk===cur?' · refreshes every 45s while you watch':''}</span>`:''}</div>
     <div class="la-mu-board">${board}</div>
-    <div class="la-note">win % = current points plus what's still projected to come, against the spread of what's left · projections are your own, matchup- and pace-adjusted</div>`;
+    <div class="la-note">win % = current points plus what's still projected to come, against the spread of what's left · projections are TripleCrown's, matchup- and form-adjusted</div>`;
 }
 
 // ── DvP: fantasy points allowed per game, by position ────────────────────────
@@ -535,7 +558,7 @@ function laLineupView(s){
   const curTotal=allKnown ? scored.filter(p=>currentSet.has(p.id)).reduce((a,p)=>a+p._a.adj,0) : null;
   const gain = curTotal!=null ? projTotal-curTotal : 0;
   const paceTag=(p)=>{ const e=(typeof paceForPlayer==='function')?paceForPlayer(p.name,p.pos,p.id):null;
-    if(!e||!(e.base>0)||!(e.gp>0)) return ''; return `<span class="pace-chip ${e.cls}" title="17-game pace ${e.pace17.toFixed(0)} vs your ${e.base.toFixed(0)}">${e.cls==='pace-thin'?'':(e.delta>=0?'▲':'▼')}${e.pct>=0?'+':'−'}${Math.round(Math.abs(e.pct)*100)}%</span>`; };
+    if(!e||!(e.base>0)||!(e.gp>0)) return ''; return `<span class="pace-chip ${e.cls}" title="17-game pace ${e.pace17.toFixed(0)} vs proj ${e.base.toFixed(0)}">${e.cls==='pace-thin'?'':(e.delta>=0?'▲':'▼')}${e.pct>=0?'+':'−'}${Math.round(Math.abs(e.pct)*100)}%</span>`; };
   const playerRow=(p, slotLbl, kind)=>{
     const a=p._a;
     const inCur=currentSet.has(p.id);
@@ -555,7 +578,7 @@ function laLineupView(s){
         <div class="la-tm-l2">${laGameLineHTML(p, wk, dvp)||'<span class="la-gm la-gm-none">schedule pending</span>'}</div>
         ${flags.length?`<div class="la-tm-l3">${flags.join('')}</div>`:''}
       </div>
-      <div class="la-tm-proj"><b title="${escAttr(`${a.adj.toFixed(1)} = blend of your projection (${(a.baseRate||0).toFixed(1)}/gm)${a.seas!=null?`, season ${a.seas.toFixed(1)} FPPG`:''}${a.rec3!=null?`, last 3 wks ${a.rec3.toFixed(1)} FPPG`:''}${a.defMult!==1?` × ${a.defMult.toFixed(2)} matchup`:''}`)}">${a.bye||a.out?'0.0':a.adj.toFixed(1)}</b>${(a.baseRate>0&&Math.abs(a.adj-a.baseRate)>0.05&&!a.bye&&!a.out)?`<span class="la-lh-base">yours ${a.baseRate.toFixed(1)}</span>`:''}</div>
+      <div class="la-tm-proj"><b title="${escAttr(`${a.adj.toFixed(1)} = blend of the preseason projection (${(a.baseRate||0).toFixed(1)}/gm)${a.seas!=null?`, season ${a.seas.toFixed(1)} FPPG`:''}${a.rec3!=null?`, last 3 wks ${a.rec3.toFixed(1)} FPPG`:''}${a.defMult!==1?` × ${a.defMult.toFixed(2)} matchup`:''}`)}">${a.bye||a.out?'0.0':a.adj.toFixed(1)}</b>${(a.baseRate>0&&Math.abs(a.adj-a.baseRate)>0.05&&!a.bye&&!a.out)?`<span class="la-lh-base">proj ${a.baseRate.toFixed(1)}</span>`:''}</div>
     </div>`;
   };
   const rows=optimal.map((f,i)=>{
@@ -568,7 +591,7 @@ function laLineupView(s){
   const benchList=scored.filter(p=>!optimalSet.has(p.id)&&!sits.includes(p));
   const bench=laState.lhShowAll ? benchList.map(p=>playerRow(p,'BN','bench')).join('') : '';
   const notes=[];
-  notes.push('proj: 35% your season projection + 30% season FPPG + 35% last-3-weeks FPPG');
+  notes.push('proj: 35% season projection + 30% season FPPG + 35% last-3-weeks FPPG');
   notes.push(dvp?'matchup: opponent defense-vs-position (±10%)':'matchup adjustment off — defensive splits not loaded yet');
   if(!haveCurrent) notes.push(s.provider==='espn'?'ESPN league: optimal lineup only (no live starters feed)':'your set starters load with the week’s matchups');
   const g=laGameInfo(null, wk);
@@ -578,7 +601,7 @@ function laLineupView(s){
         <div class="la-tm-herototal"><span class="la-mu-projsm">week ${wk} projected</span><b>${projTotal.toFixed(1)}</b>${curTotal!=null&&gain>0.05?`<span class="la-tm-gain">+${gain.toFixed(1)} with the swaps below</span>`:curTotal!=null?`<span class="la-tm-gain la-tm-gain-ok">lineup is set optimally</span>`:''}</div></div>
     </div>
     <div class="la-ins-bar"><span class="la-ins-lbl">OPTIMAL LINEUP · WEEK ${wk}</span>
-      <span class="la-ins-sub">${haveCurrent?'highlighted rows = start over your current lineup':'suggested from your projections + matchup context'}</span>
+      <span class="la-ins-sub">${haveCurrent?'highlighted rows = start over your current lineup':'projection-driven, adjusted for matchup and recent form'}</span>
       <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="laToggleLhShowAll()">${laState.lhShowAll?'Hide bench':`Show bench (${benchList.length})`}</button></div>
     <div class="card la-tm-card">${rows}${sitRows?`<div class="la-tm-sep">currently starting · not in the optimal lineup</div>${sitRows}`:''}${bench?`<div class="la-tm-sep">bench</div>${bench}`:''}</div>
     <div class="la-note">${notes.join(' · ')} · tap a name for the player card</div>`;
@@ -610,14 +633,30 @@ function _laDisplayName(p, pid){
   if(sp && sp.name) return sp.name;
   return String(p.name||'').replace(/\b[a-z]/g, c=>c.toUpperCase());
 }
-// One trend row: headshot · name (clickable) · detail · verdict.
-function _laTrendRow(p, detail, verdict, cls){
+// One trend row, Sleeper-style: rank · headshot · name over a pos–team sub-line · one big
+// right-aligned value (with a small caption). Everything else rides in the sub-line.
+function _laTrendRow(p, detail, verdict, cls, rank){
   const pid=p.id||p.pid||laPidFromName(p.name,p.pos);
   const pp={id:pid, name:_laDisplayName(p,pid), pos:p.pos, team:p.team};
+  const inj=(typeof tcInjuryTag==='function')?tcInjuryTag(pid):'';
   return `<div class="la-trnd-row ${cls||''}">
+    ${rank?`<span class="la-trnd-rank">${rank}</span>`:''}
     <span class="clickable-player la-trnd-hs" onclick="${pcardOnclick(pid||pp.name,p.pos,p.team||'')}">${laPlayerImg(pp,'la-trnd-hsimg')}</span>
-    <div class="la-trnd-main">${laNameHTML(pp,'la-trnd-name')}<div class="la-trnd-sub"><span class="la-pos-${_laPosOf(p)}">${_laPosOf(p)}</span> · ${escHtml(p.team||'FA')}${detail?` · ${detail}`:''}</div></div>
+    <div class="la-trnd-main">${laNameHTML(pp,'la-trnd-name')}${inj}<div class="la-trnd-sub"><span class="la-pos-${_laPosOf(p)}">${_laPosOf(p)}</span> · ${escHtml(p.team||'FA')}${detail?` · ${detail}`:''}</div></div>
     <div class="la-trnd-verdict">${verdict}</div></div>`;
+}
+// Team-row variant: logo + full team name, same right-hand verdict.
+function _laTeamRow(code, detail, verdict, cls, rank){
+  const nm=(typeof teamDisplayName==='function')?teamDisplayName(code):code;
+  return `<div class="la-trnd-row ${cls||''}">
+    ${rank?`<span class="la-trnd-rank">${rank}</span>`:''}
+    <span class="la-trnd-hs"><img src="${NFL_LOGO(code)}" class="la-trnd-hsimg la-trnd-logo" loading="lazy" decoding="async" onerror="this.style.display='none'"></span>
+    <div class="la-trnd-main"><span class="la-nm la-trnd-name">${escHtml(nm)}</span><div class="la-trnd-sub">${detail||''}</div></div>
+    <div class="la-trnd-verdict">${verdict}</div></div>`;
+}
+// Sleeper-style verdict block: one big colored number, one quiet caption under it.
+function _laVerdict(big, cap, cls){
+  return `<div class="la-trnd-bigwrap"><b class="la-trnd-big ${cls||''}">${big}</b>${cap?`<span class="la-trnd-cap">${cap}</span>`:''}</div>`;
 }
 // Scope filter: whose players a board shows. 'waiver' = unrostered in THIS league.
 function _laScopeKeeps(scope, mySet, lgSet){
@@ -649,17 +688,17 @@ function _laUsagePlayers(){
 function laTrendsView(s){
   const wk=(typeof completedWeeks==='function')?completedWeeks():0;
   const scope=laState.trndScope||'rostered';
-  const tab=laState.trndTab||'pace';
+  const tab=laState.trndTab||(wk>=4?'trending':'pace');
   const my=_laMyTeamRow(s);
   const mySet=new Set(((my&&my.players)||[]).map(p=>ecrNormName(p.name)+'|'+p.pos));
   const lgSet=_laLeagueNameSet(s);
   const keeps=_laScopeKeeps(scope, mySet, lgSet);
   const mineMark=(name,pos)=> mySet.has(ecrNormName(name)+'|'+pos) ? '<span class="la-trnd-mine" title="on your roster">★</span>' : '';
-  const tabs=[['pace','Pace'],['usage','Usage'],['regression','TD Regression'],['trending','Trending']]
+  const tabs=[['trending','Trending'],['pace','Pace'],['usage','Usage'],['regression','TDs'],['teams','Teams'],['ros','ROS']]
     .map(([k,l])=>`<button class="format-btn ${tab===k?'active':''}" onclick="laSetTrndTab('${k}')">${l}</button>`).join('');
-  const scopes=[['rostered','Rostered'],['myteam','My Team'],['waiver','Waivers'],['league','League']]
-    .map(([k,l])=>`<button class="pos-filter-btn ${scope===k?'active':''}" onclick="laSetTrndScope('${k}')">${l}</button>`).join('');
-  const bar=`<div class="la-ins-bar"><div class="format-toggle">${tabs}</div><div class="pos-filter la-trnd-scope">${scopes}</div></div>`;
+  const scopes=(tab==='teams')?'':`<div class="pos-filter la-trnd-scope">${[['rostered','Rostered'],['myteam','My Team'],['waiver','Waivers'],['league','League']]
+    .map(([k,l])=>`<button class="pos-filter-btn ${scope===k?'active':''}" onclick="laSetTrndScope('${k}')">${l}</button>`).join('')}</div>`;
+  const bar=`<div class="la-ins-bar"><div class="format-toggle">${tabs}</div>${scopes}</div>`;
   const two=(title,sub,upLbl,upRows,dnLbl,dnRows)=>`
     <div class="la-ins-bar"><span class="la-ins-lbl">${title}</span><span class="la-ins-sub">${sub}</span></div>
     <div class="card la-trnd-card"><div class="la-trnd-cols">
@@ -675,13 +714,12 @@ function laTrendsView(s){
     const idx=(typeof buildPaceIndex==='function')?buildPaceIndex():null;
     if(!idx){
       body=`<div class="card la-ins-empty"><div class="empty-title">No pace data yet</div>
-        <div class="empty-body">Pace compares live stats to your projections frozen at kickoff — it lights up once week 1 completes${(typeof loadPaceBaseline==='function'&&loadPaceBaseline())?'':' (open the projections view once so the baseline can freeze)'}.</div></div>`;
+        <div class="empty-body">Pace compares live stats to the projections frozen at kickoff — it lights up once week 1 completes.</div></div>`;
     } else {
       const seen=new Set(); let rows=[];
       idx.forEach((e,key)=>{
         if(key.indexOf('|')<0 || seen.has(key)) return; seen.add(key);
-        // gp ≥ 3: one big game extrapolates to a comical 17-game pace (Bowers led the board
-        // off a single week back from injury). THIN players get their read on the card.
+        // gp >= 3: one big game extrapolates to a comical 17-game pace.
         if(!(e.base>=LA_TRND_MIN_BASE) || !(e.gp>=3)) return;
         if(!keeps(e.name,e.pos)) return;
         e.delta = e.pace17 - e.base;
@@ -689,9 +727,9 @@ function laTrendsView(s){
       });
       rows.sort((a,b)=>b.delta-a.delta);
       if(scope==='league'||scope==='waiver') rows=rows.slice(0,80);
-      const half=(list)=>list.map(e=>_laTrendRow(e, `${e.gp} gm${e.gp===1?'':'s'}`,
-        `<span class="la-trnd-nums"><span class="la-trnd-klbl">pace</span> <b>${e.pace17.toFixed(0)}</b> <span class="la-trnd-vs">· yours ${e.base.toFixed(0)}</span></span><b class="la-trnd-pct">${e.pct>=0?'+':'−'}${Math.round(Math.abs(e.pct)*100)}%</b>${mineMark(e.name,e.pos)}`, e.cls)).join('');
-      body=two('PACE VS YOUR PROJECTIONS',`17-game pace vs kickoff baseline · thru wk ${wk} · 3+ games played`,
+      const half=(list)=>list.map((e,i)=>_laTrendRow(e, `${e.gp} gm${e.gp===1?'':'s'} · pace ${e.pace17.toFixed(0)} vs proj ${e.base.toFixed(0)}`,
+        _laVerdict(`${e.pct>=0?'+':'−'}${Math.round(Math.abs(e.pct)*100)}%`, 'vs projection', e.pct>=0?'la-trnd-up':'la-trnd-dn')+mineMark(e.name,e.pos), e.cls, i+1)).join('');
+      body=two('PACE VS PROJECTION',`17-game pace vs the kickoff baseline · thru wk ${wk} · 3+ games`,
         '▲ AHEAD',half(rows.filter(e=>e.delta>0).slice(0,15)),
         '▼ BEHIND',half(rows.filter(e=>e.delta<0).reverse().slice(0,15)));
     }
@@ -702,14 +740,14 @@ function laTrendsView(s){
       const P=U.players.filter(p=>p.pos&&keeps(_laDisplayName(p,p.id),p.pos));
       const tgts=P.filter(p=>p.pos!=='QB'&&p.gp3>0&&p.tgt3>0)
         .sort((a,b)=>(b.tgt3/b.gp3)-(a.tgt3/a.gp3)).slice(0,15)
-        .map(p=>_laTrendRow(p, `${p.share3.toFixed(1)}% tgt share last 3 · ${p.share.toFixed(1)}% season`,
-          `<span class="la-trnd-nums"><b>${(p.tgt3/p.gp3).toFixed(1)}</b> <span class="la-trnd-vs">tgt/gm</span></span>${mineMark(_laDisplayName(p,p.id),p.pos)}`,
-          p.share3>p.share+2?'pace-ahead':p.share3<p.share-2?'pace-behind':'')).join('');
+        .map((p,i)=>_laTrendRow(p, `${p.share3.toFixed(1)}% tgt share last 3 · ${p.share.toFixed(1)}% season`,
+          _laVerdict((p.tgt3/p.gp3).toFixed(1),'tgt / game', p.share3>p.share+2?'la-trnd-up':p.share3<p.share-2?'la-trnd-dn':'')+mineMark(_laDisplayName(p,p.id),p.pos),
+          p.share3>p.share+2?'pace-ahead':p.share3<p.share-2?'pace-behind':'', i+1)).join('');
       const cars=P.filter(p=>p.pos==='RB'&&p.gp3>0&&p.carry3>0)
         .sort((a,b)=>(b.carry3/b.gp3)-(a.carry3/a.gp3)).slice(0,15)
-        .map(p=>_laTrendRow(p, `${(p.carry/Math.max(1,p.gp)).toFixed(1)} car/gm season`,
-          `<span class="la-trnd-nums"><b>${(p.carry3/p.gp3).toFixed(1)}</b> <span class="la-trnd-vs">car/gm last 3</span></span>${mineMark(_laDisplayName(p,p.id),p.pos)}`,
-          (p.carry3/p.gp3)>(p.carry/Math.max(1,p.gp))+2?'pace-ahead':(p.carry3/p.gp3)<(p.carry/Math.max(1,p.gp))-2?'pace-behind':'')).join('');
+        .map((p,i)=>_laTrendRow(p, `${(p.carry/Math.max(1,p.gp)).toFixed(1)} car/gm season`,
+          _laVerdict((p.carry3/p.gp3).toFixed(1),'car / game', (p.carry3/p.gp3)>(p.carry/Math.max(1,p.gp))+2?'la-trnd-up':(p.carry3/p.gp3)<(p.carry/Math.max(1,p.gp))-2?'la-trnd-dn':'')+mineMark(_laDisplayName(p,p.id),p.pos),
+          (p.carry3/p.gp3)>(p.carry/Math.max(1,p.gp))+2?'pace-ahead':(p.carry3/p.gp3)<(p.carry/Math.max(1,p.gp))-2?'pace-behind':'', i+1)).join('');
       body=two('OPPORTUNITY · LAST 3 WEEKS',`who's actually getting the ball · thru wk ${wk}`,
         'TARGETS / GAME',tgts,'CARRIES / GAME (RB)',cars);
     }
@@ -721,7 +759,9 @@ function laTrendsView(s){
       const reg={pos:[],neg:[]};
       ['WR','TE','RB'].forEach(pos=>{
         const grp=U.players.filter(p=>p.pos===pos && (p.tgt+p.carry)>=Math.max(10, wk*3));
-        const vols=grp.map(p=>p.tgt+p.carry);
+        // Real red-zone chances (live Sleeper aggregates) weigh double: scoring-position
+        // volume is the strongest TD-regression signal in the building.
+        const vols=grp.map(p=>{ const rz=_laRzOpp(p.id); return p.tgt+p.carry+(rz!=null?2*rz:0); });
         const tdRates=grp.map(p=>(p.rec_td+p.rush_td)/Math.max(1,p.tgt+p.carry));
         grp.forEach((p,i)=>{
           if(!keeps(_laDisplayName(p,p.id),p.pos)) return;
@@ -731,13 +771,66 @@ function laTrendsView(s){
         });
       });
       reg.pos.sort((a,b)=>b.gap-a.gap); reg.neg.sort((a,b)=>b.gap-a.gap);
-      const regRow=(x,up)=>_laTrendRow(x.p, `${x.p.tgt?`${x.p.tgt} tgt`:''}${x.p.tgt&&x.p.carry?' · ':''}${x.p.carry?`${x.p.carry} car`:''} · ${x.p.rec_td+x.p.rush_td} TD`,
-        `<b class="la-trnd-pct ${up?'la-trnd-up':'la-trnd-dn'}">${up?'TDs due':'TD-dependent'}</b>${mineMark(_laDisplayName(x.p,x.p.id),x.p.pos)}`);
-      body=two('TD REGRESSION CANDIDATES','high volume + few TDs (or the reverse) — touchdown luck evens out',
-        'POSITIVE (TDs coming)',reg.pos.slice(0,12).map(x=>regRow(x,true)).join(''),
-        'NEGATIVE (TD-dependent)',reg.neg.slice(0,12).map(x=>regRow(x,false)).join(''));
+      const regRow=(x,up,i)=>{ const rz=_laRzOpp(x.p.id);
+        return _laTrendRow(x.p, `${x.p.tgt?`${x.p.tgt} tgt`:''}${x.p.tgt&&x.p.carry?' · ':''}${x.p.carry?`${x.p.carry} car`:''}${rz!=null?` · ${rz} RZ chances`:''}`,
+          _laVerdict(`${x.p.rec_td+x.p.rush_td} TD`, up?'TDs coming':'TD-dependent', up?'la-trnd-up':'la-trnd-dn')+mineMark(_laDisplayName(x.p,x.p.id),x.p.pos), '', i+1); };
+      body=two('TD REGRESSION','heavy volume + few TDs (or the reverse) — touchdown luck evens out',
+        'POSITIVE (TDs coming)',reg.pos.slice(0,12).map((x,i)=>regRow(x,true,i)).join(''),
+        'NEGATIVE (TD-dependent)',reg.neg.slice(0,12).map((x,i)=>regRow(x,false,i)).join(''));
     }
-  } else { // trending
+  } else if(tab==='teams'){
+    const T=_laTeamTrends();
+    if(!T) body=needSidecar();
+    else if(wk<3) body=`<div class="card la-ins-empty"><div class="empty-body">Team tendencies need at least 3 completed weeks — check back at week 4.</div></div>`;
+    else {
+      const byLean=[...T].sort((a,b)=>b.dRate-a.dRate);
+      const leanRow=(t,i)=>_laTeamRow(t.tm, `${t.rateA.toFixed(0)}% pass season → <b>${t.rate3.toFixed(0)}%</b> last 3`,
+        _laVerdict(`${t.dRate>=0?'+':'−'}${Math.abs(t.dRate).toFixed(1)}%`, t.dRate>=0?'more passing':'more rushing', t.dRate>=0?'la-trnd-up':'la-trnd-dn'),
+        t.dRate>=3?'pace-ahead':t.dRate<=-3?'pace-behind':'', i+1);
+      const byHeat=[...T].sort((a,b)=>b.dEpa-a.dEpa);
+      const heatRow=(t,i)=>_laTeamRow(t.tm, `${t.epa3>=0?'+':'−'}${Math.abs(t.epa3).toFixed(2)} EPA/play last 3 · ${t.epaA>=0?'+':'−'}${Math.abs(t.epaA).toFixed(2)} season`,
+        _laVerdict(`${t.dEpa>=0?'+':'−'}${Math.abs(t.dEpa).toFixed(2)}`, 'EPA/play swing', t.dEpa>=0?'la-trnd-up':'la-trnd-dn'),
+        t.dEpa>=0.05?'pace-ahead':t.dEpa<=-0.05?'pace-behind':'', i+1);
+      body=two('PASS ↔ RUN LEAN · LAST 3 WEEKS','who is throwing more than their season identity — and who is leaning on the ground game',
+          'PASSING MORE',byLean.filter(t=>t.dRate>0).slice(0,10).map(leanRow).join(''),
+          'RUN-HEAVY LATELY',byLean.filter(t=>t.dRate<0).reverse().slice(0,10).map(leanRow).join(''))
+        + two('OFFENSES · HOT & COLD','efficiency last 3 weeks vs the season baseline (EPA per play)',
+          '🔥 HEATING UP',byHeat.filter(t=>t.dEpa>0).slice(0,10).map(heatRow).join(''),
+          '🧊 GOING COLD',byHeat.filter(t=>t.dEpa<0).reverse().slice(0,10).map(heatRow).join(''));
+    }
+  } else if(tab==='ros'){
+    const idx=(typeof buildPaceIndex==='function')?buildPaceIndex():null;
+    const dvp=laDvpTable();
+    if(!idx) body=`<div class="card la-ins-empty"><div class="empty-body">The rest-of-season outlook needs the kickoff baseline — it lights up once week 1 completes.</div></div>`;
+    else {
+      const form=laWeeklyFormMap();
+      const seen=new Set(); const rows=[];
+      idx.forEach((e,key)=>{
+        if(key.indexOf('|')<0 || seen.has(key)) return; seen.add(key);
+        if(!(e.base>=LA_TRND_MIN_BASE)) return;
+        if(!keeps(e.name,e.pos)) return;
+        const baseR=e.base/(e.projGames||17);
+        const seasR=e.gp>0 ? e.act/e.gp : null;
+        const fe=form ? (form.get(String(e.id)) || form.get(`${ecrNormName(e.name)}|${e.pos}`)) : null;
+        const rec3=(fe && fe.n3>=2) ? fe.f3 : null;
+        let ros = (e.gp>=2 && rec3!=null && seasR!=null) ? 0.35*baseR+0.30*seasR+0.35*rec3
+                : (seasR!=null) ? 0.55*baseR+0.45*seasR : baseR;
+        const sched=_laRosSched(e.team, e.pos, dvp);
+        if(sched) ros*=sched.mult;
+        const inj=(typeof tcInjuryInfo==='function')?tcInjuryInfo(e.id):null;
+        const pct=baseR>0?(ros-baseR)/baseR:0;
+        rows.push({e, ros, baseR, pct, sched, inj});
+      });
+      rows.sort((a,b)=>b.pct-a.pct);
+      const rosRow=(x,i)=>_laTrendRow(x.e,
+        `${x.ros.toFixed(1)} proj/gm rest of season · ${x.baseR.toFixed(1)} preseason${x.sched?` · sched ${x.sched.mult>=1?'+':'−'}${Math.abs((x.sched.mult-1)*100).toFixed(0)}%`:''}`,
+        _laVerdict(`${x.pct>=0?'+':'−'}${Math.round(Math.abs(x.pct)*100)}%`, 'ROS vs projection', x.pct>=0?'la-trnd-up':'la-trnd-dn')+mineMark(x.e.name,x.e.pos),
+        x.pct>=0.08?'pace-ahead':x.pct<=-0.08?'pace-behind':'', i+1);
+      body=two('REST OF SEASON OUTLOOK','projection rate blended with season + recent form, adjusted for the remaining schedule and injuries',
+        '▲ UPGRADED',rows.filter(x=>x.pct>0).slice(0,15).map(rosRow).join(''),
+        '▼ DOWNGRADED',rows.filter(x=>x.pct<0).reverse().slice(0,15).map(rosRow).join(''));
+    }
+  } else { // trending — the Sleeper-style headline board
     const U=_laUsagePlayers();
     if(!U) body=needSidecar();
     else if(wk<4) body=`<div class="card la-ins-empty"><div class="empty-body">Week-over-week trending needs at least 4 completed weeks — check back at week ${Math.max(5, wk+1)}.</div></div>`;
@@ -758,12 +851,70 @@ function laTrendsView(s){
         if(Math.abs(score)>=3) trend.push({p, dShare, dTouch, score});
       });
       trend.sort((a,b)=>b.score-a.score);
-      const tRow=(x)=>_laTrendRow(x.p, x.p.pos==='RB'?`${x.dTouch>=0?'+':''}${x.dTouch.toFixed(1)} touches/gm vs prior 3`:`${x.dShare>=0?'+':''}${x.dShare.toFixed(1)}% tgt share vs prior 3`,
-        `<b class="la-trnd-pct ${x.score>=0?'la-trnd-up':'la-trnd-dn'}">${x.score>=0?'▲':'▼'}</b>${mineMark(_laDisplayName(x.p,x.p.id),x.p.pos)}`);
+      const tRow=(x,i)=>_laTrendRow(x.p, x.p.pos==='RB'?`${(x.p.carry3/Math.max(1,x.p.gp3)).toFixed(1)} touches/gm last 3`:`${x.p.share3.toFixed(1)}% tgt share last 3`,
+        _laVerdict(`${x.score>=0?'+':'−'}${Math.abs(x.p.pos==='RB'?x.dTouch:x.dShare).toFixed(1)}${x.p.pos==='RB'?'':'%'}`, x.p.pos==='RB'?'touches vs prior 3':'share vs prior 3', x.score>=0?'la-trnd-up':'la-trnd-dn')+mineMark(_laDisplayName(x.p,x.p.id),x.p.pos),
+        x.score>=0?'pace-ahead':'pace-behind', i+1);
       body=two('TRENDING · LAST 3 WEEKS VS THE 3 BEFORE','role changes show up here first',
         '▲ TRENDING UP',trend.filter(x=>x.score>0).slice(0,12).map(tRow).join(''),
         '▼ TRENDING DOWN',trend.filter(x=>x.score<0).reverse().slice(0,12).map(tRow).join(''));
     }
   }
   return `${bar}${body}<div class="la-note">★ = on your roster · tap a name for the player card</div>`;
+}
+
+// ── Trends data helpers ──────────────────────────────────────────────────────
+// Team weekly pack (current season): {weeks, cols, teams:{CODE:[[…per week…]]}} — additive
+// counts, so any week window is an exact recompute.
+function _laTeamPack(){
+  const yr=String(TC_SEASON.year);
+  const pack=(typeof NFLVERSE!=='undefined'&&NFLVERSE&&NFLVERSE[yr]&&NFLVERSE[yr].adv_weekly)||null;
+  return (pack && pack.teams && Array.isArray(pack.weeks) && Array.isArray(pack.cols)) ? pack : null;
+}
+function _laTeamTrends(){
+  const pack=_laTeamPack(); if(!pack) return null;
+  const ci={}; pack.cols.forEach((c,i)=>ci[c]=i);
+  if(ci.off_pass_plays==null || ci.off_epa==null) return null;
+  const n=pack.weeks.length;
+  const idxAll=[...Array(n).keys()], idx3=idxAll.slice(-3);
+  const get=(rows,set,c)=>set.reduce((a,i)=>a+((rows[i]||[])[ci[c]]||0),0);
+  const out=[];
+  for(const tm in pack.teams){
+    const rows=pack.teams[tm];
+    if(!Array.isArray(rows)) continue;
+    const passA=get(rows,idxAll,'off_pass_plays'), runA=get(rows,idxAll,'off_run_plays');
+    const pass3=get(rows,idx3,'off_pass_plays'), run3=get(rows,idx3,'off_run_plays');
+    if(!(passA+runA)) continue;
+    const rateA=100*passA/(passA+runA);
+    const rate3=(pass3+run3)?100*pass3/(pass3+run3):rateA;
+    const epaSumA=get(rows,idxAll,'off_epa'), playsA=get(rows,idxAll,'off_plays');
+    const epaSum3=get(rows,idx3,'off_epa'), plays3=get(rows,idx3,'off_plays');
+    const epaA=playsA?epaSumA/playsA:0, epa3=plays3?epaSum3/plays3:epaA;
+    out.push({tm, rateA, rate3, dRate:rate3-rateA, epaA, epa3, dEpa:epa3-epaA});
+  }
+  return out.length?out:null;
+}
+// Real red-zone chances to date, from the live Sleeper season aggregates in HISTORY.
+function _laRzOpp(pid){
+  const yr=String(TC_SEASON.year);
+  const rec=(pid && typeof HISTORY!=='undefined' && HISTORY[pid]) ? HISTORY[pid][yr] : null;
+  if(!rec) return null;
+  const list=Array.isArray(rec)?rec:[rec]; let opp=0, found=false;
+  list.forEach(r=>{ const st=r.stats||{};
+    if(st.rec_rz_tgt!=null||st.rush_rz_att!=null){ found=true; opp+=(st.rec_rz_tgt||0)+(st.rush_rz_att||0); } });
+  return found?opp:null;
+}
+// Average remaining-schedule multiplier for a team+position (same 0.90–1.10 scale the
+// Lineup Helper uses per week). null when the schedule or DvP table isn't loaded.
+function _laRosSched(team, pos, dvp){
+  const ins=(typeof TC_INSEASON!=='undefined'&&TC_INSEASON)||null;
+  if(!ins || !ins.schedule || !dvp || !team) return null;
+  const sch=ins.schedule[String(team).toUpperCase()]; if(!sch) return null;
+  const cur=laCurrentWeek(); let sum=0, ct=0;
+  const nTeams=dvp.codes.length||32;
+  for(let w=cur; w<=18; w++){
+    const opp=sch[String(w)]; if(!opp) continue;               // bye
+    const r=dvp.ranks[opp] && dvp.ranks[opp][pos]; if(!r) continue;
+    sum += 1.10 - 0.20*((r-1)/Math.max(1,nTeams-1)); ct++;     // rank 1 = most generous
+  }
+  return ct ? {mult:sum/ct, games:ct} : null;
 }

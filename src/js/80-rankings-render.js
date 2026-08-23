@@ -126,7 +126,7 @@ function rankingsRenderCacheKey(teamScoped){
     buildEpoch,
     (typeof buildPlayerShapeSig==='function') ? buildPlayerShapeSig() : '',   // league shape / draft / ADP
     String(activeSeason),
-    String(typeof projViewMode!=='undefined' ? projViewMode : 'proj'),
+    String(typeof rankLiveDelta!=='undefined' && rankLiveDelta ? 1 : 0),
     String(typeof liveSeasonEpoch==='function' ? liveSeasonEpoch() : 0),
     String(rankFormat),
     scSig,
@@ -239,17 +239,16 @@ function renderRankings(){
     _sumerSortKeys.set(p, v);
     return v;
   };
-  // Pace mode: annotate every row with its live pace vs the kickoff baseline BEFORE sorting so
-  // the pace columns are directly sortable through the generic numeric comparator.
-  const paceActive = (typeof currentProjViewMode==='function' && currentProjViewMode()==='pace'
+  // Live view, Δ column opted in: annotate every row with its pace vs the kickoff baseline
+  // BEFORE sorting so the column sorts through the generic numeric comparator.
+  const liveView = (typeof currentProjViewMode==='function' && currentProjViewMode()==='live');
+  const paceActive = (liveView && typeof rankLiveDelta!=='undefined' && rankLiveDelta
     && typeof buildPaceIndex==='function' && !!buildPaceIndex());
   if(paceActive){
     view.forEach(p=>{
       const e=paceForPlayer(p.name, p.pos, p.player_id);
-      p.paceBase = e ? e.base : null;
-      p.pace = e && e.gp>0 ? e.pace17 : null;
-      p.paceDelta = e && e.gp>0 ? e.delta : null;
-      p.paceGp = e ? e.gp : 0;
+      p.pacePct = e && e.gp>0 && e.base>0 ? e.pct : null;
+      p.paceTip = e && e.gp>0 ? `17-game pace ${e.pace17.toFixed(0)} vs projected ${e.base.toFixed(0)} · ${e.gp} gm${e.gp===1?'':'s'}` : '';
       p.paceCls = e ? e.cls : '';
     });
   }
@@ -352,7 +351,7 @@ function renderRankings(){
       }
     }
   }
-  const totalCols = 7 + (paceActive?3:0) + (isDynasty?3:0) + (ownerActive?1:0) + nStatCols;  // ecr,tier,fpts(or pace group),vor,pos,name,tm(+owner) + stat cols
+  const totalCols = 7 + (paceActive?1:0) + (isDynasty?3:0) + (ownerActive?1:0) + nStatCols;  // ecr,tier,fpts(+Δ proj),vor,pos,name,tm(+owner) + stat cols
   const pickLineRow=(round)=>`<tr class="rank-pickline"><td colspan="${totalCols}">
     <span class="rank-pickline-lbl">▸ Your pick ${round==1?'(next up)':`#${round}`} projected here</span></td></tr>`;
 
@@ -445,19 +444,14 @@ function renderRankings(){
         `<td class="grp-pass">${statCell(p.passing_attempts,p,'Pass Attempts','passing_attempts')}</td><td class="grp-pass-mid">${statCell(p.passing_yards,p,'Pass Yards','passing_yards')}</td><td class="grp-pass-mid">${statCell(p.passing_tds,p,'Pass Touchdowns','passing_tds')}</td><td class="grp-pass-end">${statCell(p.interceptions_thrown,p,'Interceptions Thrown','interceptions_thrown')}</td>`;
     }
     const fptsTxt = p.fpts.toFixed(1);
-    // Pace mode swaps the single FPTS cell for BASE (frozen) | PACE (17-game) | Δ | GP.
-    let fptsCells;
+    // Live Δ column (opt-in): ONE colored ±% pill vs the kickoff-frozen projection — the
+    // detail rides in the tooltip, not the grid.
+    let fptsCells = `<td class="fpts">${rankValueHtml(fptsTxt, p, 'Fantasy Points', 'fpts', 'rankings')}</td>`;
     if(paceActive){
-      const baseTxt = p.paceBase!=null ? p.paceBase.toFixed(1) : '—';
-      const paceTxt = p.pace!=null ? p.pace.toFixed(1) : '—';
-      const dTxt = p.paceDelta!=null ? `${p.paceDelta>=0?'+':'−'}${Math.abs(p.paceDelta).toFixed(1)}` : '—';
-      fptsCells =
-        `<td class="c-pace-base"><span class="num">${baseTxt}</span></td>`+
-        `<td class="fpts ${p.paceCls}">${p.pace!=null?rankValueHtml(`<span class="num">${paceTxt}</span>`, p, '17-Game Pace', 'pace', 'rankings'):'—'}</td>`+
-        `<td class="c-pace-delta ${p.paceCls}"><span class="num">${dTxt}</span></td>`+
-        `<td class="c-pace-gp"><span class="num">${p.paceGp||0}</span></td>`;
-    } else {
-      fptsCells = `<td class="fpts">${rankValueHtml(fptsTxt, p, 'Fantasy Points', 'fpts', 'rankings')}</td>`;
+      const pill = p.pacePct!=null
+        ? `<span class="pace-chip ${p.paceCls}" title="${escAttr(p.paceTip||'')}">${p.pacePct>=0?'▲+':'▼−'}${Math.round(Math.abs(p.pacePct)*100)}%</span>`
+        : `<span class="pace-chip pace-thin">—</span>`;
+      fptsCells += `<td class="c-pace-delta">${pill}</td>`;
     }
     const vorTxt = `${p.vor>0?'+':''}${p.vor!=null?p.vor.toFixed(1):'—'}`;
     const pSearchAttr = escAttr(String(p.name||'').toLowerCase());
@@ -473,7 +467,7 @@ function renderRankings(){
     ${fptsCells}
     <td class="c-vor">${rankValueHtml(`<span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${vorTxt}</span>`, p, 'Value Over Replacement', 'vor', 'rankings')}</td>
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
-    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${rankHeadshotSlotHtml(p)}<span class="rank-name">${pNameText}</span></div></td>
+    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${rankHeadshotSlotHtml(p)}<span class="rank-name">${pNameText}</span>${liveView&&typeof tcInjuryTag==='function'?tcInjuryTag(p.player_id):''}</div></td>
     <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" alt="${pTeamAttr}" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${pTeamText}</td>
     ${ownerActive?`<td class="c-own">${tcOwnerPill(p.player_id, p.name)}</td>`:''}
     ${contractCells}
@@ -505,6 +499,11 @@ function renderRankings(){
          <button class="format-btn ${!rankAdvanced?'active':''}" onclick="setRankAdvanced(false)">Standard</button>
          <button class="format-btn ${rankAdvanced?'active':''}" onclick="setRankAdvanced(true)" title="nflverse advanced ${sumerSeasonKey()} metrics">Adv. Metrics</button>
        </div>`
+    : '';
+  // Live view only: opt-in Δ-vs-projection column (off by default — the live board stays a
+  // clean stat sheet until the comparison is asked for).
+  const liveDeltaToggle = (liveView && typeof toggleRankLiveDelta==='function' && typeof buildPaceIndex==='function' && buildPaceIndex())
+    ? `<button class="format-btn rank-delta-toggle ${typeof rankLiveDelta!=='undefined'&&rankLiveDelta?'active':''}" onclick="toggleRankLiveDelta()" title="Show each player's pace vs the projections frozen at kickoff">Δ proj</button>`
     : '';
   const minInputs = advActive ? sumerMinInputs() : '';
   // "Situational" dropdown — Adv. Metrics only. Swaps the stat columns to a game-situation
@@ -584,6 +583,7 @@ function renderRankings(){
           ${(rankingsSearchQuery||'').trim() ? `<button class="btn btn-ghost btn-sm" onclick="clearRankingsSearch()" title="Clear search">Clear</button>` : ''}
         </div>` : ''}
         ${advToggle}
+        ${liveDeltaToggle}
         ${situationalSelect}
         ${minInputs}
         ${advNote}
@@ -595,9 +595,8 @@ function renderRankings(){
       </div>
       <div class="rank-table-wrap" style="max-height:calc(100vh - 320px)">
       <table class="rankings-table grouped${paceActive?' pace-mode':''}"><thead><tr>
-        ${th('ecr','ECR','','c-ecr')}${th('ecr_tier','TIER','','c-tier')}${paceActive
-          ? `${th('paceBase','YOUR','PROJ','c-pace-base')}${th('pace','PACE','17G')}${th('paceDelta','Δ','','c-pace-delta')}${th('paceGp','GP','','c-pace-gp')}`
-          : th('fpts','FPTS','')}${th('vor','VOR','','c-vor')}
+        ${th('ecr','ECR','','c-ecr')}${th('ecr_tier','TIER','','c-tier')}${th('fpts','FPTS','')}${paceActive
+          ? th('pacePct','Δ','PROJ','c-pace-delta') : ''}${th('vor','VOR','','c-vor')}
         ${th('pos','POS','')}${th('name','PLAYER','','c-player')}${th('team','TM','','c-team')}
         ${ownerActive?`<th class="c-own" title="Rostered by (synced league)"><div class="th-stack">OWNER</div></th>`:''}
         ${isDynasty?`${th('age','AGE','','c-age',true)}${th('apy','APY','','c-apy')}${th('fa','FA','','c-fa')}`:''}

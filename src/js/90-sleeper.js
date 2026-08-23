@@ -64,6 +64,11 @@ async function loadSleeperPlayers(silent){
         // news separates real roster members from ghosts.
         active:(p.active!==false), status:p.status||null,
         dcp:p.depth_chart_position||null, news:(p.news_updated!=null?p.news_updated:null),
+        // In-season: injury designation for badges/lineup gating, and the gsis id that maps
+        // this player onto nflverse weekly data (both absent = those features quietly no-op).
+        injury_status:p.injury_status||null, injury_note:p.injury_notes||p.injury_note||null,
+        injury_body_part:p.injury_body_part||null,
+        gsis_id:(p.gsis_id!=null?String(p.gsis_id).trim():null),
       };
     }
     sleeperPlayers = slim;
@@ -630,14 +635,13 @@ function renderSeasonTabs(){
     const label = s==='proj' ? `${PROJ_SEASON} Proj` : s;
     return `<button class="season-tab ${activeSeason===s?'active':''}" onclick="loadSeason('${s}')">${label}</button>`;
   };
-  // In-season mode segment: Live = the season to date (read-only reference on the current
-  // year), Pace = actual pace vs the kickoff-frozen projections. Each toggles back to proj.
+  // In-season: one Live toggle — the season to date, viewed through the standard read-only
+  // reference machinery on the current year. Tapping it again returns to the projections.
   let seg='';
   if(started){
     const mode = (typeof currentProjViewMode==='function') ? currentProjViewMode() : null;
     seg = `<span class="season-mode">`
       + `<button class="season-tab mode-tab ${mode==='live'?'active':''}" onclick="setProjViewMode('${mode==='live'?'proj':'live'}')" title="${yr} season to date · live from Sleeper">Live</button>`
-      + `<button class="season-tab mode-tab ${mode==='pace'?'active':''}" onclick="setProjViewMode('${mode==='pace'?'proj':'pace'}')" title="Actual pace vs your projections frozen at kickoff">Pace</button>`
       + `</span>`;
   }
   host.innerHTML = tab('proj') + seg + shownHist.map(tab).join('');
