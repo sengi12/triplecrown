@@ -214,6 +214,31 @@ def _enc_table(cnode):
     return c2
 
 
+def _dec_table(cnode):
+    """Inverse of _enc_table, for reading tables back OUT of a committed seed (which stores
+    the columnarized vcols + parallel-array form). Returns the raw {teams:{TEAM:{values,
+    ranks, …extras}}} shape the build pipeline works with; passes a raw table through."""
+    if not isinstance(cnode, dict) or "vcols" not in cnode or not isinstance(cnode.get("teams"), dict):
+        return cnode
+    vcols = cnode.get("vcols") or []
+    teams = {}
+    for tm, row in cnode["teams"].items():
+        if isinstance(row, dict):   # already raw
+            teams[tm] = row
+            continue
+        vals = row[0] if len(row) > 0 else []
+        ranks = row[1] if len(row) > 1 else []
+        rec = {"values": {cn: (vals[i] if i < len(vals) else None) for i, cn in enumerate(vcols)},
+               "ranks": {cn: ranks[i] for i, cn in enumerate(vcols)
+                         if i < len(ranks) and ranks[i] is not None}}
+        if len(row) > 2 and isinstance(row[2], dict):
+            rec.update(row[2])
+        teams[tm] = rec
+    out = {k: v for k, v in cnode.items() if k not in ("vcols", "teams")}
+    out["teams"] = teams
+    return out
+
+
 def _trim_nulls(arr):
     while arr and arr[-1] is None:
         arr.pop()
@@ -1477,7 +1502,9 @@ def build_sharp(refresh):
         for key in missing:
             tbl = prev.get(key)
             if tbl:
-                sharp[key] = tbl
+                # The committed seed stores tables in the columnarized codec form —
+                # decode back to the raw shape or _encode_fantasy would double-encode.
+                sharp[key] = _dec_table(tbl)
                 why = ("manual-only; re-scrape with --refresh sharp"
                        if key in SHARP_MANUAL_ONLY else "live page had no table")
                 print(f"  → sharp {key}: carried forward from the previous seed ({why})")
