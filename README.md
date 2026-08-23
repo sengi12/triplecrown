@@ -137,11 +137,16 @@ For the full experience (expert rankings, contracts, advanced stats, coaching, r
 The app can pull live projections and a few live stats on its own, but several sources **can't be fetched from the browser** — FantasyPros, OverTheCap, Warren Sharp, SumerSports, Wikipedia and nflverse aren't reachable from client-side JavaScript (CORS). The seed builder runs on your own machine, where there's no such restriction, and bundles everything into one file.
 
 ```bash
-python build_seed.py                 # current-season projections + last 5 seasons of stats + all reference data
-python build_seed.py --season 2027   # override the projection season (defaults to Sleeper's NFL state)
-python build_seed.py --history 5     # how many prior seasons of stats to bundle
-python build_seed.py --refresh       # ignore caches and re-download everything
+python build_seed.py                    # current-season projections + last 5 seasons of stats + all reference data
+python build_seed.py --season 2027      # override the projection season (defaults to Sleeper's NFL state)
+python build_seed.py --history 5        # how many prior seasons of stats to bundle
+python build_seed.py --refresh sleeper  # re-download one source by name; repeat/comma-separate for more
+python build_seed.py --refresh-all      # ignore caches and re-download everything
 ```
+
+Refresh is per-source — each name maps to one upstream site/API, and anything not named
+stays cached: `sleeper`, `ecr`, `dynasty`, `ktc`, `contracts`, `sharp`, `sos`,
+`coordinators`, `roster_moves`, `sumer`, `nflverse`, `cfb` (see `--help` for what each covers).
 
 It fetches, in order:
 
@@ -156,7 +161,7 @@ It fetches, in order:
 9. NFL coordinators and head coaches (Wikipedia), plus a maintained play-calling-HC list
 10. nflverse offseason roster changes (free agency, draft, trades, losses)
 
-Output: **`triplecrown_seed.json`** (plus optional sidecars `triplecrown_seed.def_weekly.json` and `triplecrown_seed.coaching.json` for lazy nflverse sections). Requires only Python 3 standard library — no pip installs. Runs are cached in `cache/`, so re-runs are fast; use `--refresh` to force a re-download.
+Output: **`triplecrown_seed.json`** (plus optional sidecars `triplecrown_seed.def_weekly.json` and `triplecrown_seed.coaching.json` for lazy nflverse sections). Requires only Python 3 standard library — no pip installs. Runs are cached in `cache/`, so re-runs are fast; use `--refresh <source>` (or `--refresh-all`) to force a re-download.
 
 **Load it into the app** by placing it next to `index.html` when hosted over http(s) — it auto-loads on page open. (Manual seed-loading is developer-only: a `python build.py --dev` build adds a 📦 Seed button for loading a `triplecrown_seed.json` by hand; the normal build omits it since hosted copies auto-load the seed.)
 

@@ -2,10 +2,10 @@
 """Refresh only the parts of the seed that are actually stale, then refuse to ship a bad one.
 
 WHY THIS EXISTS
-    build_seed.py rebuilds everything, and its refresh flags are coarse (--refresh,
-    --refresh-web, --refresh-nflverse). Running it unattended on a schedule would re-scrape a
-    dozen sources daily to pick up the one that changed — rude to those sites, slow, and far
-    more likely to trip a rate limit or a bot filter.
+    build_seed.py rebuilds everything (its --refresh flags are per-source, but a human has
+    to pick them). Running it unattended on a schedule would re-scrape a dozen sources daily
+    to pick up the one that changed — rude to those sites, slow, and far more likely to trip
+    a rate limit or a bot filter. This script decides staleness per source instead.
 
     It would also be DANGEROUS, which is the real reason for this script. Several build steps
     degrade to an empty result when a scrape fails: build_ecr() prints a warning and returns
@@ -352,11 +352,14 @@ def validate(old, new):
             continue
         for sub, oval in ob.items():
             was = block_size(oval)
-            if was <= 0:
+            # This guards whole sub-tables (an ECR format, a Sharp table) vanishing or coming
+            # back empty. Tiny sub-keys (single players/rows) come and go legitimately.
+            if was < 10:
                 continue
-            now = block_size(nb.get(sub))
+            # A sub-key that vanished entirely must count as 0, not block_size(None) == 1.
+            now = block_size(nb[sub]) if sub in nb else 0
             if now == 0:
-                problems.append(f"{key}.{sub}: {was} → 0 (that source came back empty)")
+                problems.append(f"{key}.{sub}: {was} → 0 (that source came back empty or vanished)")
             elif now < was * ratio:
                 problems.append(f"{key}.{sub}: {was} → {now} ({100 * now / was:.0f}% of previous, floor {100 * ratio:.0f}%)")
 

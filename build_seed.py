@@ -8,12 +8,18 @@ single `seeds/triplecrown_seed.json` (plus optional nflverse sidecars) that the
 TripleCrown web app auto-loads.
 
 Usage:
-    python build_seed.py                 # build current-season projections + 5 prior seasons of stats
-    python build_seed.py --season <year> # choose the projection season
-    python build_seed.py --history 5     # how many prior seasons of stats to bundle
-    python build_seed.py --refresh       # re-download volatile core data (Sleeper + ECR) only
-    python build_seed.py --refresh-web   # also re-scrape stable web sources (Sharp, SoS, OTC…)
-    python build_seed.py --refresh-all   # refresh everything (old --refresh behavior)
+    python build_seed.py                    # build current-season projections + 5 prior seasons of stats
+    python build_seed.py --season <year>    # choose the projection season
+    python build_seed.py --history 5        # how many prior seasons of stats to bundle
+    python build_seed.py --refresh sleeper  # re-download one source by name (repeat / comma-separate
+                                            # for more: --refresh sleeper,ecr --refresh sharp)
+    python build_seed.py --refresh-all      # refresh every source
+
+Refresh is per-source — each name maps to exactly one upstream site/API:
+    sleeper, ecr, dynasty, ktc, contracts, sharp, sos, coordinators,
+    roster_moves, sumer, nflverse, cfb
+Anything not named stays cached. Run with no flags to rebuild from caches,
+fetching only what is missing.
 
 Mirrors the caching approach in draft.py's update_players(): the big players
 payload is fetched once and saved to players.json, then reused.
@@ -1423,13 +1429,58 @@ def fetch_sharp_table(key, url, refresh):
         json.dump(out, f)
     return out
 
+# Sharp pages the autonomous runner cannot scrape: offensive_line gets a table-less variant
+# on datacenter IPs (HTTP 200, no <table>) though it works from a residential connection;
+# personnel no longer carries a parseable table at all. Treated as frozen snapshots: fetched
+# live only on an explicit `--refresh sharp` (or --refresh-all) run, otherwise served from
+# cache or carried forward from the previous committed seed. The cron runner passes no
+# refresh flags, so it never burns a fetch — or a rejected build — on them.
+SHARP_MANUAL_ONLY = {"offensive_line", "personnel"}
+
+def _cached_sharp_table(key):
+    cache_path = os.path.join(CACHE_DIR, "sharp", f"{key}.json")
+    if os.path.exists(cache_path):
+        with open(cache_path) as f:
+            return json.load(f)
+    return None
+
 def build_sharp(refresh):
     """Build {tableKey: {columns, title, teams:{CODE:{values,ranks}}}} across all pages."""
     sharp = {}
+    missing = []
     for key, url in SHARP_URLS.items():
+        if key in SHARP_MANUAL_ONLY and not refresh:
+            tbl = _cached_sharp_table(key)
+            if tbl:
+                print(f"  → sharp {key}: manual-only — using cache")
+                sharp[key] = tbl
+            else:
+                missing.append(key)
+            continue
         tbl = fetch_sharp_table(key, url, refresh)
         if tbl:
             sharp[key] = tbl
+        else:
+            missing.append(key)
+    # A table the previous seed had that simply vanishes trips the refresher's sharp.*
+    # sub-key guard — rejecting the whole rebuild. Carry the previous committed seed's copy
+    # forward instead. Deliberately NOT written to the scrape cache, so a table that failed
+    # to fetch is retried on the next eligible run and a real scrape replaces the stale
+    # copy the moment Sharp serves it again.
+    if missing:
+        prev = {}
+        try:
+            with open("seeds/triplecrown_seed.json") as f:
+                prev = json.load(f).get("sharp") or {}
+        except Exception:
+            pass
+        for key in missing:
+            tbl = prev.get(key)
+            if tbl:
+                sharp[key] = tbl
+                why = ("manual-only; re-scrape with --refresh sharp"
+                       if key in SHARP_MANUAL_ONLY else "live page had no table")
+                print(f"  → sharp {key}: carried forward from the previous seed ({why})")
     if not sharp:
         print("\n  ⚠ WARNING: no Warren Sharp stats fetched — the Advanced Stats tab will be empty.")
     else:
@@ -2587,24 +2638,40 @@ def _assign_qb_snap_shares(qbs):
         for q in others:
             q["snap_share"] = remainder / len(others)
 
+# Every remote source, individually addressable via --refresh <name>. Names match
+# tools/seed_refresh.py's SOURCES where one exists, so the cron and the CLI speak
+# the same vocabulary.
+REFRESH_SOURCES = {
+    "sleeper":      "Sleeper player DB, projections, historical stats, weekly QB splits",
+    "ecr":          "FantasyPros ECR rankings (all scoring formats)",
+    "dynasty":      "FantasyPros dynasty trade values",
+    "ktc":          "KeepTradeCut dynasty rankings",
+    "contracts":    "OverTheCap contracts (age/APY/free agency)",
+    "sharp":        "Warren Sharp advanced team stats (incl. the manual-only tables)",
+    "sos":          "strength of schedule (nflverse schedule + opponent win totals)",
+    "coordinators": "Wikipedia offensive/defensive coordinators + head-coach history",
+    "roster_moves": "offseason roster changes (nflverse rosters/draft/trades)",
+    "sumer":        "SumerSports per-player stats (only fetched with --sumer)",
+    "nflverse":     "nflverse advanced metrics + the OL grades model",
+    "cfb":          "college rookie profiles (link map, production tables, percentiles)",
+}
+
+
 def main():
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(
+        epilog="refresh sources:\n" + "\n".join(
+            f"  {name:14} {desc}" for name, desc in REFRESH_SOURCES.items()),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--season", type=int, default=DEFAULT_PROJ_SEASON,
                     help=f"projection season (default {DEFAULT_PROJ_SEASON}, from Sleeper state)")
     ap.add_argument("--history", type=int, default=5,
                     help="prior seasons of stats to bundle (default 5; e.g. --history 10 for ten years)")
-    ap.add_argument("--refresh", action="store_true",
-                    help="re-download volatile core data (Sleeper players/projections/stats + "
-                         "FantasyPros ECR). Stable scraped sources (Sharp, SoS, contracts, "
-                         "coordinators, additions…) stay cached — use --refresh-web for those.")
-    ap.add_argument("--refresh-web", action="store_true",
-                    help="also re-scrape the slow, season-stable web sources (Warren Sharp, "
-                         "strength of schedule, OverTheCap contracts, Wikipedia coordinators/head "
-                         "coaches, nflverse roster changes, KeepTradeCut, SumerSports)")
-    ap.add_argument("--refresh-nflverse", action="store_true",
-                    help="rebuild the nflverse advanced-metrics block and OL grades cache")
+    ap.add_argument("--refresh", metavar="SOURCE[,SOURCE…]", action="append", default=[],
+                    help="re-download specific sources by name (see the list below). Repeatable "
+                         "and comma-separable: --refresh sleeper,ecr --refresh sharp. Everything "
+                         "not named stays cached. 'all' is accepted as a shorthand for every source.")
     ap.add_argument("--refresh-all", action="store_true",
-                    help="refresh everything (equivalent to the old --refresh: core + web + nflverse)")
+                    help="refresh every source (same as --refresh all)")
     ap.add_argument("--nflverse", dest="nflverse", action="store_true", default=True,
                     help="compute nflverse advanced metrics (default: on; requires pandas) and add "
                         "them as a parallel 'nflverse' seed block")
@@ -2615,8 +2682,6 @@ def main():
                          "(default: on; requires pandas) and add them as a 'cfb' seed block")
     ap.add_argument("--no-cfb", dest="cfb", action="store_false",
                     help="skip college rookie profiles")
-    ap.add_argument("--refresh-cfb", action="store_true",
-                    help="rebuild the college link map, production tables and percentile pool")
     ap.add_argument("--as-of", dest="as_of", default=None,
                     help="TIME MACHINE: build as of SEASON:WEEK of a past regular season (e.g. "
                          "2025:10) so the in-season tools can be tested in the offseason. The "
@@ -2631,46 +2696,50 @@ def main():
                          "the app now defaults to nflverse for advanced metrics, so this is only for A/B analysis)")
     args = ap.parse_args()
 
-    # Granular refresh: a plain --refresh only re-pulls volatile core data (Sleeper + ECR);
-    # the slow, season-stable web scrapes (Sharp, SoS, contracts, coordinators, additions,
-    # KTC, Sumer) stay cached unless --refresh-web/--refresh-all is given. nflverse (incl. the
-    # OL grades model) rebuilds only on --refresh-nflverse/--refresh-all.
-    core_refresh = args.refresh or args.refresh_all
-    web_refresh = args.refresh_web or args.refresh_all
-    nflverse_refresh = args.refresh_nflverse or args.refresh_all
-    cfb_refresh = args.refresh_cfb or args.refresh_all
+    # Per-source refresh: each name in REFRESH_SOURCES maps to exactly one upstream
+    # site/API. Anything not named stays cached (a cache MISS still re-fetches, so a
+    # cold cache is never wrong — just slower).
+    refresh = set()
+    for spec in args.refresh:
+        refresh |= {s.strip().lower().replace("-", "_") for s in spec.split(",") if s.strip()}
+    if args.refresh_all or "all" in refresh:
+        refresh = set(REFRESH_SOURCES)
+    unknown = refresh - set(REFRESH_SOURCES)
+    if unknown:
+        ap.error(f"unknown refresh source(s): {', '.join(sorted(unknown))} — "
+                 f"valid: {', '.join(REFRESH_SOURCES)}, all")
 
     print(f"TripleCrown seed builder — projections {args.season}, last {args.history} seasons of stats\n")
     print("Step 1/6: players")
-    players = get_players(core_refresh)
+    players = get_players("sleeper" in refresh)
 
     print("\nStep 2/6: projections")
-    proj_idx = build_projection_index(args.season, core_refresh)
+    proj_idx = build_projection_index(args.season, "sleeper" in refresh)
 
     print(f"\nStep 3/6: historical stats ({args.season-args.history}–{args.season-1})")
     stats_by_season = {}
     for yr in range(args.season-1, args.season-1-args.history, -1):
-        stats_by_season[str(yr)] = build_stats_index(yr, core_refresh)
+        stats_by_season[str(yr)] = build_stats_index(yr, "sleeper" in refresh)
 
     print("\nStep 4/8: per-team history (QB weekly splits for traded players)")
-    history = build_history(players, stats_by_season, core_refresh)
+    history = build_history(players, stats_by_season, "sleeper" in refresh)
 
     print("\nStep 5/8: assembling seed")
     seed, history = assemble(players, proj_idx, stats_by_season, history, args.season)
 
     print("\nStep 6/8: FantasyPros ECR (replaces ADP)")
-    ecr = build_ecr(core_refresh)
+    ecr = build_ecr("ecr" in refresh)
 
     print("\nStep 7/8: OverTheCap contracts (dynasty age/APY/FA)")
-    contracts = build_contracts(web_refresh)
+    contracts = build_contracts("contracts" in refresh)
 
     print("\nStep 8/8: Warren Sharp advanced stats (offense + defense) & strength of schedule")
-    sharp = build_sharp(web_refresh)
-    sos = build_sos(web_refresh, args.season)
-    coordinators = build_coordinators(args.season, web_refresh)
-    hc_history = build_head_coach_history(args.season, web_refresh, coordinators)
+    sharp = build_sharp("sharp" in refresh)
+    sos = build_sos("sos" in refresh, args.season)
+    coordinators = build_coordinators(args.season, "coordinators" in refresh)
+    hc_history = build_head_coach_history(args.season, "coordinators" in refresh, coordinators)
     print("\n  New Additions (nflverse free agency / draft / trades)")
-    additions = build_additions(args.season, web_refresh, contracts)
+    additions = build_additions(args.season, "roster_moves" in refresh, contracts)
 
     # SumerSports is now opt-in only (--sumer). nflverse advanced metrics are the app's default
     # advanced source, so we no longer bake the scraped SumerSports tables into the seed unless
@@ -2678,12 +2747,12 @@ def main():
     sumer, sumer_seasons = {}, []
     if args.sumer:
         print("\n  SumerSports advanced per-player stats (opt-in — QB/RB/WR/TE, per season)")
-        sumer = build_sumer(web_refresh, args.season)
+        sumer = build_sumer("sumer" in refresh, args.season)
         sumer_seasons = sorted(sumer.keys(), reverse=True)
 
     print("\n  KeepTradeCut dynasty player IDs (player-card links)")
-    ktc = build_ktc(web_refresh)
-    dynasty_values = build_dynasty_values(web_refresh)
+    ktc = build_ktc("ktc" in refresh)
+    dynasty_values = build_dynasty_values("dynasty" in refresh)
 
     # Keep only seasons that actually returned stats (older years may be unavailable).
     nonempty_seasons = sorted([s for s, idx in stats_by_season.items() if idx], reverse=True)
@@ -2702,7 +2771,7 @@ def main():
                 print("    ⚠ pandas not installed — skipping nflverse metrics (the rest of the seed is unaffected)")
             else:
                 # Cover the same seasons we normally fetch history for (automated for future use).
-                nflverse = _nfl.build_nflverse(nonempty_seasons, refresh=nflverse_refresh)
+                nflverse = _nfl.build_nflverse(nonempty_seasons, refresh="nflverse" in refresh)
         except Exception as e:
             print(f"    ⚠ nflverse metrics failed: {type(e).__name__}: {e}")
     else:
@@ -2732,7 +2801,7 @@ def main():
                     # The player DB is today's; draft classes derive from years_exp against the
                     # live league year, not the frozen one (see src/cfb/link.py DB_SEASON).
                     _cfb.link.DB_SEASON = _sleeper_state()["season"]
-                _blk = _cfb.build_all(args.season, _raw, only_pids=_pool, refresh=cfb_refresh)
+                _blk = _cfb.build_all(args.season, _raw, only_pids=_pool, refresh="cfb" in refresh)
                 cfb, cfb_logs = _cfb.split_for_seed(_blk)
                 _cls = _blk.get("classes") or {}
                 print(f"    → {len(cfb.get('players', {}))} college profiles across "
