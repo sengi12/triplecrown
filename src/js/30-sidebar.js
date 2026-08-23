@@ -244,7 +244,7 @@ function renderContent(){
     : '';
   const seasonBanner = isRef
     ? `<div class="season-readonly">
-       <div class="season-readonly-main">${TC_ICON("calendar")} <b>${activeSeason} actual stats</b>${recStr?` · <b>${recStr}</b> Record`:''}</div>
+       <div class="season-readonly-main">${TC_ICON("calendar")} <b>${activeSeason} actual stats</b>${(typeof tcIsLiveSeason==='function'&&tcIsLiveSeason(activeSeason))?` <span class="pcard-live-tag">live · thru wk ${completedWeeks()}</span>`:''}${recStr?` · <b>${recStr}</b> Record`:''}</div>
        ${powerScoreInline}
        <div class="season-readonly-actions">
          ${canUndo(t)?`<button class="btn btn-ghost btn-sm" onclick="undoTeam('${t}')" title="Undo the last working-set change for ${t}">↶ Undo last copy</button>`:''}
@@ -257,7 +257,8 @@ function renderContent(){
   const paceBanner = (!isRef && typeof currentProjViewMode==='function' && currentProjViewMode()==='pace')
     ? (()=>{ const b=(typeof loadPaceBaseline==='function')?loadPaceBaseline():null;
         const wk=(typeof completedWeeks==='function')?completedWeeks():0;
-        return `<div class="discrepancy-note pace-note">${TC_ICON("chart")} <b>Pace view</b> — live pace vs your projections frozen at kickoff${b&&b.frozenWeek>1?` (frozen wk ${b.frozenWeek})`:''} · thru week ${wk}. Editing stays on; it never changes the frozen baseline.</div>`; })()
+        const teamLine=(typeof paceTeamSummaryHTML==='function')?paceTeamSummaryHTML(t):'';
+        return `<div class="discrepancy-note pace-note"><div>${TC_ICON("chart")} <b>Pace view</b> — read-only. Each line reads <i>actual per game vs your projected per game</i>${b&&b.frozenWeek>1?` (frozen wk ${b.frozenWeek})`:''} · thru week ${wk}. ▲ ahead / ▼ behind by 10%+; the amber mark on each slider is where he actually is. Edit on the <b>Proj</b> tab.</div>${teamLine}</div>`; })()
     : '';
   const sos = SOS && SOS[t];
   const sosBadge = sos ? `<span class="team-sos">SOS: <b>${ordinal(sos.rank)}</b>${sos.win_total!=null?` · Vegas Win Total: <b>${sos.win_total}</b>`:''}</span>` : '';

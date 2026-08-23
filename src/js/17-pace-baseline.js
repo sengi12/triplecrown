@@ -14,7 +14,10 @@ const TC_PACE_KEY = 'triplecrown.paceBaseline.v1';
 // Raw stat columns frozen per player — enough to re-score under ANY league scoring later.
 const _PB_FIELDS = ['passing_yards','passing_tds','passing_attempts','passing_completions',
   'interceptions_thrown','rushing_yards','rushing_tds','rushing_attempts',
-  'receiving_yards','receiving_tds','receptions','receiving_targets','fumbles_lost'];
+  'receiving_yards','receiving_tds','receptions','receiving_targets','fumbles_lost',
+  // Projected games (QB timeshares carry one; everyone else defaults to 17 downstream).
+  // Frozen so per-game comparisons honor the intended workload, not a blanket /17.
+  'proj_games'];
 
 function _pbKey(p){ return (p && p.player_id!=null && p.player_id!=='') ? String(p.player_id) : `${p.name}|${p.pos}`; }
 

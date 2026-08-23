@@ -44,6 +44,9 @@ MIME = {
 }
 
 
+SEEDS_DIR = "seeds"
+
+
 def build_site(dest, minify):
     """Mirror .github/workflows/pages.yml."""
     subprocess.run([sys.executable, os.path.join(ROOT, "build.py")], check=True,
@@ -57,7 +60,7 @@ def build_site(dest, minify):
         src = os.path.join(ROOT, "images", name)
         if os.path.exists(src):
             shutil.copy(src, os.path.join(dest, "images", name))
-    seeds = os.path.join(ROOT, "seeds")
+    seeds = SEEDS_DIR if os.path.isabs(SEEDS_DIR) else os.path.join(ROOT, SEEDS_DIR)
     for f in sorted(os.listdir(seeds)):
         if f.endswith(".json.gz"):
             shutil.copy(os.path.join(seeds, f), os.path.join(dest, "seeds", f))
@@ -169,7 +172,11 @@ def main():
     ap.add_argument("--host-encoded", action="store_true",
                     help="serve .gz with Content-Encoding: gzip (simulates Vercel/Cloudflare)")
     ap.add_argument("--port", type=int, default=8080)
+    ap.add_argument("--seeds", default="seeds",
+                    help="seed directory to serve as /seeds/ (e.g. seeds_tm from build_seed.py --as-of --out-dir)")
     args = ap.parse_args()
+    global SEEDS_DIR
+    SEEDS_DIR = args.seeds
 
     print("Building…")
     if args.compare:

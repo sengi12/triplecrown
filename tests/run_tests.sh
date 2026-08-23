@@ -166,6 +166,7 @@ run_js_test test_audit_fixes    "Live-audit regressions: import merge/targets/se
 run_js_test test_audit_fixes2   "Live-audit regressions II: week-range re-applies after season switch, draft follow lands on the projection season, traded picks credit the receiving roster"
 run_js_test test_progress_baseline "Progress bar re-baselines on a Projections Manager load AND on every cloud Save (vs saved), keeps undo history, survives session restore, drops on reset/import"
 run_js_test test_roster_fill      "Roster fills stay off the rankings/export until dialed up (564 not 841); progress bar repaints on the edit itself"
+run_js_test test_time_machine     "Time machine (--as-of): frozen seed state pins the clock, skips the live probe, truncates live pulls to completed weeks"
 run_js_test test_consistency    "Consistency grade: DNP weeks excluded and labelled, <10-snap games skipped, scored in full PPR in every league"
 run_js_test test_route_tree     "Route tree card: alignment/route distribution rendering"
 run_js_test test_qb_chart       "QB passing chart card rendering"
@@ -221,7 +222,7 @@ echo ""
 PYBUILD="$DIR/../build_seed.py"
 if [ -f "$DIR/test_flacco_split.py" ] && [ -f "$PYBUILD" ]; then
   echo "═══ Python tests ═══"
-  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_roster_moves test_roster_truth test_sumer_pull test_ktc_pull test_seed_refresh test_ol_pipeline test_state_block test_cfb_classes; do
+  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_roster_moves test_roster_truth test_sumer_pull test_ktc_pull test_seed_refresh test_ol_pipeline test_state_block test_cfb_classes test_inseason_truncate; do
     [ -f "$DIR/${pyt}.py" ] || continue
     output=$(python3 "$DIR/${pyt}.py" 2>&1) || true
     # Same token rule as the JS runner: count result markers, not any line containing the word.

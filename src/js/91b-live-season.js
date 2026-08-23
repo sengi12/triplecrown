@@ -32,6 +32,7 @@ function liveSeasonRecordsFromRows(rows){
   return records;
 }
 
+var _liveSeasonRetryTimer = null;
 var _liveSeasonWeek = -1;   // last completedWeeks() we fetched for — also the UI cache epoch
 var _liveSeasonBusy = false;
 function liveSeasonEpoch(){ return _liveSeasonWeek < 0 ? 0 : _liveSeasonWeek; }
@@ -46,7 +47,16 @@ async function refreshLiveSeasonStats(force){
   if(_liveSeasonBusy) return false;
   _liveSeasonBusy = true;
   try{
-    const rows = await sleeperFetch(SLEEPER_STATS_URL(yr));
+    // Time machine: the season-aggregate endpoint would leak the whole (finished) season, so
+    // rebuild the aggregate from the weeks that were complete as of the frozen week.
+    const rows = (typeof tcTimeMachine==='function' && tcTimeMachine())
+      ? await liveSeasonRowsThroughWeek(yr, completedWeeks())
+      : await sleeperFetch(SLEEPER_STATS_URL(yr));
+    if(rows===null && typeof tcTimeMachine==='function' && tcTimeMachine()){
+      // Partial fetch — keep last good data and quietly try again in a bit.
+      if(!_liveSeasonRetryTimer) _liveSeasonRetryTimer=setTimeout(()=>{ _liveSeasonRetryTimer=null; refreshLiveSeasonStats(true).catch(()=>{}); }, 45000);
+      return false;
+    }
     const records = liveSeasonRecordsFromRows(rows);
     if(!records.length) return false;
     const byPid={};
@@ -72,6 +82,46 @@ async function refreshLiveSeasonStats(force){
   finally{ _liveSeasonBusy=false; }
 }
 
+// Season-to-date aggregate built from per-week rows (weeks 1..maxWeek). Counting stats sum;
+// games = weeks with gp>0; team/position follow the latest week. Used by the time machine
+// and usable as a fallback whenever the aggregate endpoint is behind the weekly feed.
+async function liveSeasonRowsThroughWeek(season, maxWeek){
+  const weeks=[]; for(let w=1; w<=Math.max(0,maxWeek); w++) weeks.push(w);
+  if(!weeks.length) return [];
+  // These are big responses; on a phone one or two routinely time out or hit a 429. A season
+  // aggregate built from 3 of 9 weeks poisons everything downstream (pace said "3 gms played",
+  // the Live view showed a third of a season), so: retry the misses with a pause, and if any
+  // week STILL failed, return null — the caller keeps last good data and tries again later.
+  let perWeek = await fetchWeekRange(season, weeks, null);
+  for(let attempt=0; attempt<2; attempt++){
+    const missing = weeks.filter((w,i)=>!Array.isArray(perWeek[i])||!perWeek[i].length);
+    if(!missing.length) break;
+    await new Promise(r=>setTimeout(r, 1200*(attempt+1)));
+    const retry = await fetchWeekRange(season, missing, null);
+    missing.forEach((w,j)=>{ const i=weeks.indexOf(w); if(Array.isArray(retry[j])&&retry[j].length) perWeek[i]=retry[j]; });
+  }
+  if(weeks.some((w,i)=>!Array.isArray(perWeek[i])||!perWeek[i].length)) return null;
+  const agg = {};
+  const SUM_SKIP = /^(pos_rank_|rank_|.*_ypr$|.*_ypt$|.*_ypa$|.*_ypc$|.*_lng$|.*_pct$|.*_rate$)/;
+  perWeek.forEach((rows, i)=>{
+    (Array.isArray(rows)?rows:[]).forEach(row=>{
+      const pid=row.player_id; if(!pid) return;
+      const st=row.stats||{}; if(!Object.keys(st).length) return;
+      const a = agg[pid] = agg[pid] || { player_id:pid, player:row.player, team:row.team, position:row.position, stats:{}, _weeks:0 };
+      a.team=row.team||a.team; a.position=row.position||a.position; if(row.player) a.player=row.player;
+      for(const k in st){
+        const v=st[k]; if(typeof v!=='number' || !Number.isFinite(v)) continue;
+        if(SUM_SKIP.test(k)) continue;
+        a.stats[k]=(a.stats[k]||0)+v;
+      }
+      if((st.gp||0)>0) a._weeks++;   // played, not merely active on the roster
+    });
+  });
+  return Object.values(agg).map(a=>{ a.stats.gp=a._weeks; delete a._weeks; if(a.stats.rec>0) a.stats.rec_ypr=+(a.stats.rec_yd/a.stats.rec).toFixed(2); if(a.stats.rush_att>0) a.stats.rush_ypa=+(a.stats.rush_yd/a.stats.rush_att).toFixed(2); return a; });
+}
+// The truncated aggregate is the honest one whenever the sum of weeks is what's wanted —
+// use it for the frozen build; live seasons still use the single aggregate endpoint.
+
 // ── Per-week league-wide stats (weekly trends, DvP, matchup context) ─────────
 // Completed weeks are immutable, so they cache forever: in-memory first, then the
 // Cache API (its own quota — never squeezes the localStorage session store; simply
@@ -95,6 +145,9 @@ async function fetchWeekStats(season, week, pos){
     try{ const hit=await cache.match(url); if(hit){ const rows=await hit.json(); _weekStatsMem[key]=rows; return rows; } }catch(e){}
   }
   const rows = await sleeperFetch(url);
+  // Only memoize real data: caching a failed/empty pull would freeze the failure for the
+  // whole session (every retry would "succeed" with nothing).
+  if(!(Array.isArray(rows) && rows.length)) return rows;
   _weekStatsMem[key]=rows;
   if(cache && Array.isArray(rows) && rows.length){
     try{ await cache.put(url, new Response(JSON.stringify(rows), {headers:{'Content-Type':'application/json'}})); }catch(e){}
@@ -106,9 +159,9 @@ async function fetchWeekStats(season, week, pos){
 async function _tcPool(tasks, width){
   const out=new Array(tasks.length); let i=0;
   async function worker(){ while(i<tasks.length){ const k=i++; out[k]=await tasks[k]().catch(()=>null); } }
-  await Promise.all(Array.from({length:Math.min(width||6, tasks.length)}, worker));
+  await Promise.all(Array.from({length:Math.min(width||3, tasks.length)}, worker));   // 3-wide: phones and Sleeper rate limits both prefer it
   return out;
 }
 async function fetchWeekRange(season, weeks, pos){
-  return _tcPool(weeks.map(w=>()=>fetchWeekStats(season, w, pos)), 6);
+  return _tcPool(weeks.map(w=>()=>fetchWeekStats(season, w, pos)), 3);
 }

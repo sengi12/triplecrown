@@ -1222,7 +1222,7 @@ function renderPcardQbOl(pid){
     </div>`;
   }).join('');
 
-  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardQbOlSeason('${s}')">${s}</button>`).join('');
+  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardQbOlSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('');
   const projNote=(proj)
     ? `<div class="olc-overview"><b>${OL_PROJ_SEASON} Projection:</b> from projected depth-chart starters' multi-year grades (line talent ${proj.talentPass!=null?Math.round(proj.talentPass):'—'}%), lightly anchored to ${proj.baselineSeason} scheme. Projected pass-protection rank #${proj.passRank!=null?proj.passRank:'—'}.</div>`
     : '';
@@ -1314,7 +1314,7 @@ function renderPcardOlGrades(pid){
     .filter(c=>c!=='Last 5 Sacks Allowed' && c!=='Last 5 Sack Rate');
   const runCols=(olRunTable&&olRunTable.columns)||[];
   const legacyCols=(olLegacyTable&&olLegacyTable.columns)||[];
-  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardOlSeason('${s}')">${s}</button>`).join('');
+  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardOlSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('');
 
     const metricRow = (title, row, cols) => `<div class="olc-team-head" style="margin-top:8px">${title}</div><div class="olc-metrics">${cols.map(c=>{
       const v=row.values ? row.values[c] : null;

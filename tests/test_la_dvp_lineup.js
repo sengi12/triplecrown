@@ -35,7 +35,7 @@ app.setInseason({v:1, season:2026, weeks:[1,2], asof:'x',
 console.log('=== DvP table ===');
 const t=app.laDvpTable();
 chk(!!t,'table builds from the sidecar');
-chk(t.ranks.AAA.WR===1 && t.ranks.BBB.WR===2,'fewest points allowed = rank 1');
+chk(t.ranks.BBB.WR===1 && t.ranks.AAA.WR===2,'MOST points allowed = rank 1 (easiest matchup first — the fantasy read)');
 chk(t.teams.BBB.WR.fppg > t.teams.AAA.WR.fppg,'generous defense allows more fppg');
 const before=t.teams.BBB.WR.fppg;
 const oldRec=app.scoring.receptions; app.scoring.receptions=oldRec+1;   // league-scoring aware
@@ -56,17 +56,19 @@ pm.set('gamma wideout|WR', 170);   // 10/wk
 pm.set('epsilon wideout|WR', 170);
 const dvp=app.laDvpTable();
 const good=app.laAdjWeekProj({name:'Gamma Wideout',pos:'WR',team:'MIA',id:'p3'}, 3, pm, dvp);
-chk(Math.abs(good.defMult-0.90)<1e-9,'opponent ranked #1 vs WR → 0.90 multiplier');
+chk(Math.abs(good.defMult-0.90)<1e-9,'stingiest opponent → 0.90 multiplier');
 const bad=app.laAdjWeekProj({name:'Epsilon Wideout',pos:'WR',team:'BUF',id:'p5'}, 3, pm, dvp);
-chk(Math.abs(bad.defMult-1.10)<1e-9,'opponent ranked worst vs WR → 1.10 multiplier');
+chk(Math.abs(bad.defMult-1.10)<1e-9,'most generous opponent → 1.10 multiplier');
 const noDvp=app.laAdjWeekProj({name:'Gamma Wideout',pos:'WR',team:'MIA',id:'p3'}, 3, pm, null);
 chk(noDvp.defMult===1,'no sidecar → matchup multiplier degrades to 1');
-app.setPaceForPlayer(()=>({gp:5, base:100, pace17:300}));   // wildly ahead → must clamp
-const clamped=app.laAdjWeekProj({name:'Gamma Wideout',pos:'WR',team:'MIA',id:'p3'}, 3, pm, dvp);
-chk(Math.abs(clamped.paceMult-1.10)<1e-9,'pace blend clamps at +10% (ratio capped 1.2, 50% blend)');
+// The weekly number is OUR blend now: 55% season-projection rate + 45% season FPPG when no
+// recent-form data is loaded (the sidecar here carries no player_weekly).
+app.setPaceForPlayer(()=>({gp:5, base:100, act:100, pace17:300}));   // 20 FPPG to date
+const blended=app.laAdjWeekProj({name:'Gamma Wideout',pos:'WR',team:'MIA',id:'p3'}, 3, pm, dvp);
+chk(Math.abs(blended.adj-(0.55*10+0.45*20)*0.90)<1e-6,'weekly proj = 55% yours + 45% season FPPG, × matchup');
 app.setPaceForPlayer(()=>null);
 const noPace=app.laAdjWeekProj({name:'Gamma Wideout',pos:'WR',team:'MIA',id:'p3'}, 3, pm, dvp);
-chk(noPace.paceMult===1,'no pace data → pace multiplier degrades to 1');
+chk(Math.abs(noPace.adj-10*0.90)<1e-6,'no live data → your projection rate alone, × matchup');
 
 console.log('=== lineup view smoke ===');
 app.setSnapshot({provider:'sleeper', leagueId:'L1', season:'2026', myUserId:'u1',

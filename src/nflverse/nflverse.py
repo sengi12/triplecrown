@@ -264,6 +264,10 @@ def _cache_pbp(season):
     return path
 
 def _load_pbp(season, cols=None):
+    # Under a week cap the frame must carry `week` so the cap can be applied, whatever
+    # column subset the caller asked for.
+    if MAX_WEEK is not None and cols and "week" not in cols:
+        cols = list(cols) + ["week"]
     key = (season, tuple(cols) if cols else None)
     if key not in _PBP_DF_CACHE:
         csv_path = _cache_pbp(season)
@@ -286,8 +290,16 @@ def _load_pbp(season, cols=None):
             df = pd.read_csv(csv_path, compression="gzip", usecols=usecols, low_memory=False)
             df.to_pickle(pkl_path)
             _PBP_DF_CACHE[key] = df
-    return _PBP_DF_CACHE[key]
+    df = _PBP_DF_CACHE[key]
+    # Time machine (build_seed.py --as-of): every pbp-derived block sees only the weeks that
+    # were complete as of that week. The cache keeps the full season; the cap is applied on
+    # the way out so it can never leak into a later, uncapped build.
+    if MAX_WEEK is not None and "week" in df.columns:
+        wk = pd.to_numeric(df["week"], errors="coerce")
+        df = df[wk.notna() & (wk <= int(MAX_WEEK))]
+    return df
 
+MAX_WEEK = None   # set by the in-season builder for a time-machine build; None = all weeks
 _PBP_DF_CACHE = {}
 _AUX_CACHE = {}
 _AUX_PARQUET_CACHE = {}
@@ -2806,9 +2818,11 @@ def _players_with_refs(builder, season, refs):
         base["refinements"] = rdict
     return base
 
-def build_nflverse_season(season):
-    """Full nflverse block for one season: Sharp-shaped team tables + Sumer-shaped player tables
-    (each with situational `refinements`)."""
+def build_team_block(season):
+    """The Sharp-shaped team tables for one season (offense/defense/tendencies/pace/personnel/
+    coverage/OL/def tendencies/defensive line). Returns (team, ext) — `ext` is the extended
+    team frame the OL per-player enrichment also reads. Shared by the offseason seed build and
+    the in-season sidecar, so the Advanced tab can show the season in progress."""
     off, dfn = team_metrics(season)
     ext = team_extended(season)
     cover, pers = coverage_personnel(season)
@@ -2884,6 +2898,32 @@ def build_nflverse_season(season):
             team["defensive_line"] = _shape_team(dl, lower_better=["Missed Tackles"])
     except Exception as e:
         print(f"  (skipped defensive line: {type(e).__name__})")
+    return team, ext
+
+
+def build_player_tables(season):
+    """Sumer-shaped per-player tables (+ situational refinements) for one season."""
+    return {
+        "QB": _players_with_refs(sumer_qb, season, _REF_PASS),
+        "RB": _players_with_refs(sumer_rb, season, _REF_RB),
+        "WR": _players_with_refs(sumer_wr, season, _REF_PASS),
+        "TE": _players_with_refs(sumer_te, season, _REF_PASS),
+    }
+
+
+def build_nflverse_season(season):
+    """Full nflverse block for one season: Sharp-shaped team tables + Sumer-shaped player tables
+    (each with situational `refinements`)."""
+    team, ext = build_team_block(season)
+    ol_pass_cols = [c for c in [
+        "Overall Score", "Dropbacks", "Pass Score",
+        "Pressure Rate", "Hit Rate", "Hurry Rate", "Blitz Rate", "No Blitz Pressure Rate",
+        "Sack Rate", "Non-QB Sack Rate", "Pocket Time", "Last 5 Sacks Allowed", "Last 5 Sack Rate",
+    ] if c in ext.columns]
+    ol_run_cols = [c for c in [
+        "Overall Score", "Stuff Rate", "Explosive Run Rate", "Yards/Rush", "YBC/Rush", "YAC/Rush",
+        "Rush 1D Rate", "Broken Tackle Rate", "ROE/Att", "8+ Box Rate", "Time to LOS",
+    ] if c in ext.columns]
     players = {
         "QB": _players_with_refs(sumer_qb, season, _REF_PASS),
         "RB": _players_with_refs(sumer_rb, season, _REF_RB),
@@ -3005,11 +3045,16 @@ def build_nflverse(seasons, refresh=False):
             print(f"    → nflverse {s}: ok")
         except Exception as e:
             print(f"    → nflverse {s}: FAILED ({type(e).__name__}: {e})")
-    try:
-        with open(cache_path, "w", encoding="utf-8") as f:
-            json.dump(out, f, separators=(",", ":"))
-    except Exception:
-        pass
+    # A build with a failed season (a 502 from nflverse, a half-published file) must not be
+    # cached: every later build would silently inherit the hole until someone --refresh'd.
+    if len(out) == len(seasons):
+        try:
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump(out, f, separators=(",", ":"))
+        except Exception:
+            pass
+    else:
+        print(f"    → nflverse: {len(seasons)-len(out)} season(s) failed — not caching this build")
     return out
 
 # ── Comparison against the baked Sharp tables ────────────────────────────────

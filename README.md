@@ -191,6 +191,24 @@ AirDrop or email `index_baked.html` to your phone and open it. Projections, hist
 
 ---
 
+## Testing the in-season tools in the offseason (time machine)
+
+Every in-season feature keys off one clock — Sleeper's NFL state (season · phase · week). The time machine builds a seed as if it were a past regular-season week and freezes that clock, so Live/Pace, the Matchup/Lineup/DvP/Trends tabs, the in-season sidecar and the live season stats all light up against a real season:
+
+```bash
+python build_seed.py --as-of 2025:10 --out-dir seeds_tm    # "it is 2025, week 10" (weeks 1–9 complete)
+python tools/preview.py --seeds seeds_tm                    # hosted: http://localhost:8080/
+python bake_seed.py --seed seeds_tm/triplecrown_seed.json --out index_tm.html   # or a phone copy
+```
+
+What the frozen build does: the projection season is 2025 (Sleeper's 2025 preseason projections, so Pace compares real 2025 actuals to real 2025 projections), the state block is `{season:2025, season_type:"regular", week:10, frozen:true}`, the in-season sidecar carries only weeks 1–9 (schedule stays whole — future opponents are the point), and in the app the live Sleeper state probe is skipped while every live pull for the frozen season (season totals, per-player weekly lines) is cut at the completed weeks, so nothing from week 10 onward leaks in. League sync lists your **2025** leagues, so Matchup shows that league's real week-10 scoreboard and Lineup your real week-10 roster. A ⏱ TIME MACHINE chip sits at the bottom of the screen so the copy can't be mistaken for the live app. `--out-dir` keeps `seeds/` (what CI deploys) untouched; the in-season sidecar in `seeds/` is governed by CI, not by this build.
+
+The in-season sidecar (`triplecrown_seed.inseason.json`, rebuilt weekly by CI during the season) also carries a **live nflverse block** for the season in progress — team tables, per-player advanced tables, route trees, QB passing zones, RB rushing fans, rosters and OL weekly — so the player-card charts, the projection view's Advanced tab and the rankings' Adv. Metrics show *this* season to date ("2026 · wk 9") next to the completed seasons, and the time machine truncates all of it to the frozen week.
+
+Not time-travelled (these are "now" data with no history): ECR, contracts, KTC/dynasty values, Sharp/SoS tables, coordinators and New Additions, the Sleeper player DB (current teams, injury designations, vacated-production notes), ESPN head coaches, and the NGS/PFR season-total columns inside the team tables. Use them as UI fixtures, not as week-10-2025 truth.
+
+---
+
 ## How the data flows
 
 ```

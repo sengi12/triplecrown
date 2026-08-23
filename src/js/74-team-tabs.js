@@ -223,8 +223,10 @@ let _advGenRangeCache = {};        // key: `${season}:${lo}-${hi}` -> recomputed
 const ADV_LEAGUE_RANGE_KEY = '__LEAGUE__';
 
 function _advSeasonCanRange(){
-  if(activeSeason==='proj') return false;
   const s=String(advTeamSeason());
+  // On the projection view the week slider only makes sense when the Advanced tab is showing
+  // the season in progress (live sidecar); a last-season fallback stays un-ranged.
+  if(activeSeason==='proj' && !(typeof tcIsLiveSeason==='function' && tcIsLiveSeason(s))) return false;
   return !!(NFLVERSE && NFLVERSE[s] && NFLVERSE[s].team);
 }
 function _advRangeKey(team){ return `${advTeamSeason()}:${String(team||'').toUpperCase()}`; }
@@ -255,17 +257,19 @@ function _advEnsureWeeklyLoaded(){
 }
 function advWeekRangeDrag(team, which, val){
   team=String(team||'').toUpperCase();
+  const maxWk=(typeof tcSeasonMaxWeek==='function')?tcSeasonMaxWeek(advTeamSeason()):18;
   const [curLo,curHi]=_advGetWeekRange(team);
-  let lo=curLo, hi=curHi;
-  const n=Math.max(1, Math.min(18, parseInt(val,10)||1));
+  let lo=Math.min(curLo,maxWk), hi=Math.min(curHi,maxWk);
+  const n=Math.max(1, Math.min(maxWk, parseInt(val,10)||1));
   if(which==='lo') lo=Math.min(n, hi); else hi=Math.max(n, lo);
   _advWeekDragByTeam[_advRangeKey(team)] = [lo,hi];
   const loEl=document.getElementById(`adv-wr-lo-${team}`); if(loEl) loEl.textContent=lo;
   const hiEl=document.getElementById(`adv-wr-hi-${team}`); if(hiEl) hiEl.textContent=hi;
   const fill=document.getElementById(`adv-wr-fill-${team}`);
+  const span=Math.max(1,maxWk-1);
   if(fill){
-    fill.style.left=((lo-1)/17*100)+'%';
-    fill.style.right=((18-hi)/17*100)+'%';
+    fill.style.left=((lo-1)/span*100)+'%';
+    fill.style.right=((maxWk-hi)/span*100)+'%';
   }
 }
 function advWeekRangeCommit(team){
@@ -660,8 +664,10 @@ function renderAdvWeekRange(team, opts){
   opts = opts || {};
   const showOppRail = opts.showOppRail !== false;
   const extraRail = opts.extraRailHTML || '';
-  const [lo,hi]=_advGetWeekRange(team);
-  const left=((lo-1)/17*100), right=((18-hi)/17*100);
+  const [lo0,hi0]=_advGetWeekRange(team);
+  const maxWk=(typeof tcSeasonMaxWeek==='function')?tcSeasonMaxWeek(advTeamSeason()):18;
+  const lo=Math.min(lo0,maxWk), hi=Math.min(hi0,maxWk), span=Math.max(1,maxWk-1);
+  const left=((lo-1)/span*100), right=((maxWk-hi)/span*100);
   const loading=_advWeeklySeedLoading ? '<span class="week-range-loading">loading…</span>' : '';
   const active = _advWeekRangeActive(team);
   const oppRail = (showOppRail && typeof renderWeekOpponentRail==='function')
@@ -669,14 +675,14 @@ function renderAdvWeekRange(team, opts){
     : '';
   return `<div class="week-range-card adv-week-range-card">
     <div class="week-range-label">
-      <span>${TC_ICON("calendar")} Filter weeks: <b id="adv-wr-lo-${team}">${lo}</b> – <b id="adv-wr-hi-${team}">${hi}</b>${loading ? ' ' + loading : ''}</span>
+      <span>${TC_ICON("calendar")} Filter weeks: <b id="adv-wr-lo-${team}">${lo}</b> – <b id="adv-wr-hi-${team}">${hi}</b>${maxWk<18?` <span class="week-range-hint">of ${maxWk} played</span>`:''}${loading ? ' ' + loading : ''}</span>
       ${active ? `<span class="week-range-reset" onclick="advWeekRangeReset('${escJsSingle(team)}')">↺ Reset to full season</span>` : '<span class="week-range-hint">drag either end to zoom into a stretch of games</span>'}
     </div>
     <div class="dual-slider">
       <div class="dual-slider-track"></div>
       <div class="dual-slider-fill" id="adv-wr-fill-${team}" style="left:${left}%;right:${right}%;"></div>
-      <input class="dual-range" type="range" min="1" max="18" step="1" value="${lo}" oninput="advWeekRangeDrag('${team}','lo',this.value)" onchange="advWeekRangeCommit('${team}')">
-      <input class="dual-range" type="range" min="1" max="18" step="1" value="${hi}" oninput="advWeekRangeDrag('${team}','hi',this.value)" onchange="advWeekRangeCommit('${team}')">
+      <input class="dual-range" type="range" min="1" max="${maxWk}" step="1" value="${lo}" oninput="advWeekRangeDrag('${team}','lo',this.value)" onchange="advWeekRangeCommit('${team}')">
+      <input class="dual-range" type="range" min="1" max="${maxWk}" step="1" value="${hi}" oninput="advWeekRangeDrag('${team}','hi',this.value)" onchange="advWeekRangeCommit('${team}')">
       ${extraRail}
       ${oppRail}
     </div>
@@ -955,13 +961,13 @@ function renderTeamAdvanced(team){
   const srcLabel = 'nflverse (computed from play-by-play)';
   return `<div class="sr-team-wrap">
     ${renderAdvWeekRange(team)}
-    <div class="sr-note">${TC_ICON("chart")} <b>Advanced team stats</b> · ${srcLabel} · <b>${advTeamSeason()} season</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
+    <div class="sr-note">${TC_ICON("chart")} <b>Advanced team stats</b> · ${srcLabel} · <b>${(typeof tcSeasonLabel==='function')?tcSeasonLabel(advTeamSeason()):advTeamSeason()} season${(typeof tcIsLiveSeason==='function'&&tcIsLiveSeason(advTeamSeason()))?' to date':''}</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
       <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="showSharpLeague()">View league-wide tables →</button></div>
     ${sosStrip}
     ${carryBlock}
     ${section('Offense', offKeys, coordInlineLabel(team,oc,'offensive'))}
     ${section('Defense', defKeys, coordInlineLabel(team,dc,'defensive'))}
-    <div class="sr-source">${advTeamSeason()} season · computed from nflverse play-by-play (nflfastR) — for informational use.</div>
+    <div class="sr-source">${(typeof tcSeasonLabel==='function')?tcSeasonLabel(advTeamSeason()):advTeamSeason()} season${(typeof tcIsLiveSeason==='function'&&tcIsLiveSeason(advTeamSeason()))?' · through the completed weeks, rebuilt weekly':''} · computed from nflverse play-by-play (nflfastR) — for informational use.</div>
   </div>`;
 }
 

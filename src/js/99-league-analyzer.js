@@ -1269,6 +1269,11 @@ function renderLeagueAnalyzer(){
   }
   const s=leagueSnapshot;
   laMaybeAutoRefreshSnapshot('render');
+  // Re-renders must not feel like page loads: keep the tab strip where the user scrolled it
+  // (it used to snap back to My Team on every tab tap) and keep the reading position.
+  const _prevTabs=host.querySelector('.phase-tabs');
+  const _tabScroll=_prevTabs?_prevTabs.scrollLeft:null;
+  const _hostScroll=host.scrollTop, _winScroll=(typeof window!=='undefined'&&window.scrollY)||0;
   const taken=new Date(s.takenAt);
   const stamp=`${taken.toLocaleDateString(undefined,{month:'short',day:'numeric'})} ${taken.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}`;
   const fmt=[`${s.teams}-team`, s.superflex?'Superflex':'1QB', s.tep?'TEP':null].filter(Boolean).join(' · ');
@@ -1288,13 +1293,35 @@ function renderLeagueAnalyzer(){
         .map(([k,l])=>`<button class="phase-tab ${laState.laTab===k?'active':''}" onclick="laSetTab('${k}')">${l}</button>`).join('')}
       ${(typeof hasSeasonStarted==='function' && hasSeasonStarted())
         ? `<span class="phase-tab-divider"></span>` +
-          [['matchup','Matchup'],['lineup','Lineup'],['dvp','DvP'],['trends','Trends']]
+          [['matchup','Matchup'],['lineup','Lineup'],['dvp','DEF'],['trends','Trends']]
             .map(([k,l])=>`<button class="phase-tab ${laState.laTab===k?'active':''}" onclick="laSetTab('${k}')">${l}</button>`).join('')
         : ''}
     </div>
     ${(typeof laTabViewHTML==='function' && laTabViewHTML(laState.laTab, s)) ||
       (laState.laTab==='compare' ? laCompareView(s) : laState.laTab==='best' ? laBestAvailView(s) : laState.laTab==='trade' ? laTradeView(s) : laState.laTab==='rosters' ? laRostersView(s) : laMyTeamView(s))}`;
+  try{
+    const tabs=host.querySelector('.phase-tabs');
+    if(tabs){
+      if(_tabScroll!=null) tabs.scrollLeft=_tabScroll;
+      const act=tabs.querySelector('.phase-tab.active');
+      // Keep the active tab visible without yanking the whole page around.
+      if(act && act.offsetLeft!=null){
+        const lo=tabs.scrollLeft, hi=lo+tabs.clientWidth;
+        if(act.offsetLeft<lo || act.offsetLeft+act.offsetWidth>hi)
+          tabs.scrollLeft=Math.max(0, act.offsetLeft-(tabs.clientWidth-act.offsetWidth)/2);
+      }
+    }
+    if(laState._keepScroll){
+      host.scrollTop=_hostScroll;
+      if(typeof window!=='undefined' && window.scrollTo) window.scrollTo(0,_winScroll);
+    }
+    laState._keepScroll=false;
+    if(typeof _laBindMuHeroSwipe==='function') _laBindMuHeroSwipe(host);
+  }catch(e){}
 }
+// In-view controls (scope chips, sort taps, week picks) re-render in place — the page must
+// not jump to the top. Tab CHANGES scroll to the top on purpose (a new page).
+function laRerenderKeepScroll(){ laState._keepScroll=true; renderLeagueAnalyzer(); }
 
 // One card per team: players sorted by dynasty value, unvalued depth collapsed to a count,
 // future picks listed with their tier values. "My" team (the syncing user) sorts first.

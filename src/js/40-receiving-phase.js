@@ -56,21 +56,23 @@ function weekRangeSliderHTML(team,state){
     state.weekFilterLoading=true;   // mark before the async kick so this render shows "loading…"
     setTimeout(()=>{ try{ applyWeekRange(team, lo, hi); }catch(e){} }, 0);
   }
-  const loPct=(lo-1)/17*100, hiPct=(18-hi)/17*100;
+  const maxWk=(typeof tcSeasonMaxWeek==='function')?tcSeasonMaxWeek(activeSeason):18;
+  const hiShown=Math.min(hi,maxWk), span=Math.max(1,maxWk-1);
+  const loPct=(Math.min(lo,maxWk)-1)/span*100, hiPct=(maxWk-hiShown)/span*100;
   const oppRail = (typeof renderWeekOpponentRail==='function')
     ? renderWeekOpponentRail(team, activeSeason, 'wr-opp-main')
     : '';
   return `<div class="week-range-card">
     <div class="week-range-label">
-      <span>${TC_ICON("calendar")} Filter weeks: <b id="wr-lo-${team}">${lo}</b> – <b id="wr-hi-${team}">${hi}</b>${state.weekFilterLoading?' <span class="week-range-loading">loading…</span>':''}</span>
+      <span>${TC_ICON("calendar")} Filter weeks: <b id="wr-lo-${team}">${Math.min(lo,maxWk)}</b> – <b id="wr-hi-${team}">${hiShown}</b>${maxWk<18?` <span class="week-range-hint">of ${maxWk} played</span>`:''}${state.weekFilterLoading?' <span class="week-range-loading">loading…</span>':''}</span>
       ${active?`<span class="week-range-reset" onclick="resetWeekRange('${team}')">↺ Reset to full season</span>`:'<span class="week-range-hint">drag either end to zoom into a stretch of games</span>'}
     </div>
     <div class="dual-slider">
       <div class="dual-slider-track"></div>
       <div class="dual-slider-fill" id="wr-fill-${team}" style="left:${loPct}%;right:${hiPct}%"></div>
-      <input type="range" min="1" max="18" step="1" value="${lo}" class="dual-range dual-range-lo"
+      <input type="range" min="1" max="${maxWk}" step="1" value="${Math.min(lo,maxWk)}" class="dual-range dual-range-lo"
         oninput="weekRangeDrag('${team}','lo',this.value)" onchange="weekRangeCommit('${team}')">
-      <input type="range" min="1" max="18" step="1" value="${hi}" class="dual-range dual-range-hi"
+      <input type="range" min="1" max="${maxWk}" step="1" value="${hiShown}" class="dual-range dual-range-hi"
         oninput="weekRangeDrag('${team}','hi',this.value)" onchange="weekRangeCommit('${team}')">
       ${oppRail}
     </div>
@@ -101,7 +103,13 @@ function teamRecPool(state){
 // target/reception/yard/TD volume needs to be absorbed by the remaining roster.
 function vacatedProduction(team){
   if(activeSeason!=='proj') return null;       // only meaningful for the upcoming season
-  const lastYear = (HISTORY_SEASONS&&HISTORY_SEASONS.length)?HISTORY_SEASONS[0]:String(PROJ_SEASON-1);
+  // The last COMPLETED season — the newest season strictly BEFORE the projection year.
+  // Never HISTORY_SEASONS[0] blindly: once the season starts, the live refresher unshifts
+  // the CURRENT year there, and "vacated" was suddenly computed against the season in
+  // progress (listing this offseason's leavers under the wrong year).
+  const _pastSeasons=[...new Set([...(HISTORY_SEASONS||[]), ...Object.keys(seasonStatsCache||{})])]
+    .map(Number).filter(y=>Number.isFinite(y) && y<Number(PROJ_SEASON)).sort((a,b)=>b-a);
+  const lastYear = String(_pastSeasons.length?_pastSeasons[0]:Number(PROJ_SEASON)-1);
   // Build last year's roster for this team. Prefer embedded HISTORY; if that's empty
   // (e.g. running off a live Sleeper pull with no prebuilt seed), fetch it in the
   // background and re-render when it lands so the note appears without a prebuilt seed.
@@ -183,7 +191,7 @@ function vacatedNote(team){
 // others exactly like target share. A discrepancy banner flags when the receivers' summed
 // production doesn't match what the QBs are projected to throw for, with a one-click fix.
 function renderPassDerived(team,state,subTabs,metric){
-  const lockStats = activeSeason!=='proj';
+  const lockStats = activeSeason!=='proj' || (typeof paceLockActive==='function'&&paceLockActive());
   ensureDerivedShares(state,metric);
   const totalTgts=teamTargetPool(state);
   const isYds = metric==='recyds';
@@ -237,10 +245,11 @@ function renderPassDerived(team,state,subTabs,metric){
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${projPaceChip(p.name,p.pos,p.player_id)}${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTag(p,'rec')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${projPaceChip(p.name,p.pos,p.player_id)}${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTagTop(p,'rec')}
         <span class="share-pct" id="dp-${i}">${sharePct}</span>
         <span class="share-vol" id="dv-${i}">${tagVal(v.toLocaleString()+' '+label, isYds?'Receiving Yards':'Receptions', isYds?'receiving_yards':'receptions')}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
+        ${typeof paceShareMarkHTML==='function'?paceShareMarkHTML(team,p.name,p.pos,p.player_id,'tgt'):''}
         <input class="sl" type="range" min="0" max="100" step="0.5" value="${pct}" data-key="${key}_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
         <span class="share-stat">Tgts ${tgtsCell}</span>
@@ -248,8 +257,8 @@ function renderPassDerived(team,state,subTabs,metric){
         <span class="share-stat">Catch% ${catchCell}</span>
         <span class="share-stat">Yds ${ydsCell}</span>
         <span class="share-stat">Y/Tgt ${yptCell}</span>
-        <span class="share-stat">TDs ${tdCell}</span>
-      </div></div>`;
+        <span class="share-stat">TDs ${tdCell}</span>${sidebarFptsStat(p,'rec')}
+      </div>${typeof projPaceStrip==='function'?projPaceStrip(p.name,p.pos,p.player_id,'rec'):''}</div>`;
   }).join('');
   const unit=isYds?'receiving yards':'receptions';
   const title = isYds ? 'Receiving Yardage Share' : 'Receptions Share';
@@ -329,7 +338,7 @@ function sortedIdx(shares,field){
 }
 
 function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
-  const lockStats = activeSeason!=='proj';
+  const lockStats = activeSeason!=='proj' || (typeof paceLockActive==='function'&&paceLockActive());
   const order=sortedIdx(state.passing_shares,'share');
   const rows=order.map(i=>{
     const p=state.passing_shares[i];
@@ -374,13 +383,14 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span>
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTag(p,'rec')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${projPaceChip(p.name,p.pos,p.player_id)}${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTagTop(p,'rec')}
         <span class="share-pct" id="pp-${i}">${sharePct}</span>
         <span class="share-vol" id="pt-${i}">${tagVal(projTgts+' tgt','Targets','receiving_targets')}</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},${pcardArg(p.pos)})" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
       </div>
       <div class="slider-track">
         <div class="slider-fill" style="width:${pct}%;background:${col}"></div>
+        ${typeof paceShareMarkHTML==='function'?paceShareMarkHTML(team,p.name,p.pos,p.player_id,'tgt'):''}
         <input class="sl" type="range" min="0" max="100" step="0.5" value="${pct}" data-key="ps_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}>
       </div>
       <div class="share-stats">
@@ -389,8 +399,8 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
         <span class="share-stat">Catch% ${catchCell}</span>
         <span class="share-stat">Yds ${ydsCell}</span>
         <span class="share-stat">Y/Tgt ${yptCell}</span>
-        <span class="share-stat">TDs ${tdCell}</span>
-      </div></div>`;
+        <span class="share-stat">TDs ${tdCell}</span>${sidebarFptsStat(p,'rec')}
+      </div>${typeof projPaceStrip==='function'?projPaceStrip(p.name,p.pos,p.player_id,'rec'):''}</div>`;
   }).join('');
   // Discrepancy: the team's pass attempts imply ~att×TARGET_RATE targets, but the
   // receivers' targets sum to state.team_targets. Flag a meaningful gap and offer a fix.
@@ -430,7 +440,7 @@ function reconcileTargets(team){
 }
 
 function renderPassTDs(team,state,totalTDs,subTabs){
-  const lockStats = activeSeason!=='proj';
+  const lockStats = activeSeason!=='proj' || (typeof paceLockActive==='function'&&paceLockActive());
   const order=sortedIdx(state.passing_shares,'td_share');
   const rows=order.map(i=>{
     const p=state.passing_shares[i];
@@ -459,10 +469,11 @@ function renderPassTDs(team,state,totalTDs,subTabs){
         <span class="share-pct" id="tdp-${i}">${sharePct}</span>
         <span class="share-vol">${tagVal(projTDs+' TD','Receiving TDs','receiving_tds')}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
+        ${typeof paceShareMarkHTML==='function'?paceShareMarkHTML(team,p.name,p.pos,p.player_id,'tdrec'):''}
         <input class="sl" type="range" min="0" max="100" step="1" value="${pct}" data-key="tds_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
         <span class="share-stat">Rec TDs ${tdCell}</span>
-      </div></div>`;
+      </div>${typeof projPaceStrip==='function'?projPaceStrip(p.name,p.pos,p.player_id,'rec'):''}</div>`;
   }).join('');
   return `<div class="card"><div class="card-title">Receiving TD Share</div>${subTabs}
     <div class="alert alert-info"><span class="alert-icon">ℹ️</span>

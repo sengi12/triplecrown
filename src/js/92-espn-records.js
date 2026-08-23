@@ -58,6 +58,29 @@ async function fetchTeamRecord(season,team){
   const key=`${season}:${team}`;
   if(espnRecordCache[key]!=null) return espnRecordCache[key];
   const tid=ESPN_TEAM_ID[team]; if(!tid) return null;
+  // Time machine: ESPN's record endpoint is "now" (the finished season). Count it from the
+  // schedule's completed games through the frozen week instead.
+  if(typeof tcTimeMachine==='function' && tcTimeMachine() && String(season)===String(TC_SEASON.year)){
+    try{
+      const data=await sleeperFetch(ESPN_SCHEDULE_URL(tid, season));
+      const maxWk=(typeof completedWeeks==='function')?completedWeeks():0;
+      let w=0,l=0,t=0;
+      for(const ev of ((data&&data.events)||[])){
+        const st=ev.seasonType&&ev.seasonType.type; if(st!=null&&st!==2) continue;
+        const wk=ev.week&&ev.week.number; if(!(wk>=1&&wk<=maxWk)) continue;
+        const comp=ev.competitions&&ev.competitions[0]; if(!comp||!comp.competitors) continue;
+        const me=comp.competitors.find(c=>c.team&&parseInt(c.team.id)===tid); const them=comp.competitors.find(c=>c.team&&parseInt(c.team.id)!==tid);
+        if(!me||!them) continue;
+        const a=Number(me.score&&(me.score.value!=null?me.score.value:me.score)), b=Number(them.score&&(them.score.value!=null?them.score.value:them.score));
+        if(!Number.isFinite(a)||!Number.isFinite(b)) continue;
+        if(a>b) w++; else if(a<b) l++; else t++;
+      }
+      const rec=(w+l+t)?`${w}-${l}${t?'-'+t:''}`:'';
+      espnRecordCache[key]=rec;
+      if(activeSeason===season && currentTeam===team) renderContent();
+      return rec;
+    }catch(e){ espnRecordCache[key]=''; return null; }
+  }
   try{
     const data=await sleeperFetch(ESPN_RECORD_URL(season,tid));
     let rec=null;

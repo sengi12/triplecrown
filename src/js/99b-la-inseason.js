@@ -21,7 +21,7 @@ function laCurrentWeek(){
   return Math.min(18, Math.max(1, w||1));
 }
 function laMuWeek(){ return laState.muWeek!=null ? laState.muWeek : laCurrentWeek(); }
-function laSetMuWeek(w){ laState.muWeek = (w===laCurrentWeek()) ? null : w; renderLeagueAnalyzer(); }
+function laSetMuWeek(w){ laState.muWeek = (Number(w)===laCurrentWeek()) ? null : Number(w); laState.muFocus=null; laRerenderKeepScroll(); }
 
 // ── Dispatch (99's render calls this; also the swipe-preview entry point) ────
 function laTabViewHTML(key, s){
@@ -103,17 +103,119 @@ if(typeof document!=='undefined' && document.addEventListener)
   document.addEventListener('visibilitychange', ()=>{ try{ laLivePollSync(); }catch(e){} });
 
 // ── Matchup / Scoreboard view ────────────────────────────────────────────────
+
+// ── Shared in-season helpers ─────────────────────────────────────────────────
+// Schedule line for a team-week: "Sun 1:00 PM vs TB" / "@ HOU" / "BYE". schedule_meta rides
+// in the sidecar ([opp, home, weekday, kickoff ET, date]); the plain schedule is the fallback.
+function laGameInfo(team, wk){
+  const ins=(typeof TC_INSEASON!=='undefined'&&TC_INSEASON)||null;
+  const tm=String(team||'').toUpperCase();
+  if(!ins || !tm) return null;
+  const m=ins.schedule_meta && ins.schedule_meta[tm];
+  if(m){
+    const row=m[String(wk)];
+    if(!row) return (ins.schedule&&ins.schedule[tm]) ? {bye:true} : null;
+    return {opp:row[0], home:!!row[1], day:row[2]||'', time:row[3]||'', date:row[4]||'', bye:false};
+  }
+  const sch=ins.schedule && ins.schedule[tm];
+  if(!sch) return null;
+  const opp=sch[String(wk)];
+  return opp ? {opp, home:null, day:'', time:'', date:'', bye:false} : {bye:true};
+}
+// Has this team's game for the week kicked off (ET kickoff vs now)? null = unknown.
+function laGameStarted(team, wk){
+  const g=laGameInfo(team, wk);
+  if(!g || g.bye || !g.date) return null;
+  try{
+    // date is YYYY-MM-DD, time "1:00 PM" in ET; build the instant (ET ≈ UTC-4/-5 by month).
+    const m=/^(\d+):(\d+)\s*(AM|PM)$/i.exec(g.time||'');
+    let h=m?Number(m[1])%12+(m[3].toUpperCase()==='PM'?12:0):13, mi=m?Number(m[2]):0;
+    const [y,mo,d]=g.date.split('-').map(Number);
+    const off=(mo>=11||mo<=3)?5:4;   // EST Nov–Mar, EDT otherwise (close enough for "has it started")
+    const t=Date.UTC(y,mo-1,d,h+off,mi,0);
+    return Date.now()>=t;
+  }catch(e){ return null; }
+}
+function laGameLineHTML(p, wk, dvp){
+  const g=laGameInfo(p.team, wk);
+  if(!g) return '';
+  if(g.bye) return `<span class="la-gm la-gm-bye">BYE</span>`;
+  const rk=(dvp&&dvp.ranks[g.opp]&&dvp.ranks[g.opp][p.pos])||null;
+  const n=(dvp&&dvp.codes.length)||32;
+  const rkCls=rk?(rk<=Math.ceil(n/4)?'la-gm-soft':rk>Math.ceil(3*n/4)?'la-gm-hard':''):'';
+  const when=[g.day,g.time].filter(Boolean).join(' ');
+  return `<span class="la-gm">${when?`<span class="la-gm-when">${escHtml(when)}</span> `:''}<span class="la-gm-opp ${rkCls}">${g.home===false?'@':'vs'} ${escHtml(g.opp)}${rk?` <span class="la-gm-rk" title="${escAttr(g.opp)} allows the #${rk} most fantasy points to ${p.pos}s (of ${n}) — ${rk<=Math.ceil(n/4)?'a matchup to attack':rk>Math.ceil(3*n/4)?'a tough draw':'middle of the pack'}">(${ordinal(rk)})</span>`:''}</span></span>`;
+}
+// Normal CDF (Abramowitz–Stegun) for win probability.
+function _laNormCdf(z){ const t=1/(1+0.2316419*Math.abs(z)); const d=0.3989423*Math.exp(-z*z/2);
+  let p=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274)))); return z>0?1-p:p; }
+// Live win probability for side A: margin now + remaining projections, spread by what's left.
+function laWinProb(aPts,aRem,bPts,bRem){
+  const margin=(aPts+aRem)-(bPts+bRem);
+  const sd=Math.sqrt(aRem*aRem+bRem*bRem)*0.45+1.5;
+  return _laNormCdf(margin/sd);
+}
+function laOwnerHandle(t){ return t&&t.owner?`@${escHtml(t.owner)}`:''; }
+function laTeamAvatar(t,cls){ return laTeamIcon(t, cls||'la-mu-av'); }
+function _laPosOf(p){ return String(p.pos||'').toUpperCase(); }
+// Display name: "J. Burrow" on phones, full on desktop — the CSS hides one of the two.
+function laNameHTML(p, cls){
+  const full=escHtml(p.name||'');
+  const short=escHtml(typeof abbrevName==='function'?abbrevName(p.name||''):p.name||'');
+  return `<span class="la-nm ${cls||''} clickable-player" onclick="${pcardOnclick(p.id||p.name,p.pos,p.team||'')}" title="${escAttr(p.name||'')}"><span class="la-nm-full">${full}</span><span class="la-nm-short">${short}</span></span>`;
+}
+// gsis → Sleeper id (for sidecar-keyed rows), built once per player DB.
+var _laGsisMap=null, _laGsisSrc=null;
+function laPidFromGsis(g){
+  if(typeof sleeperPlayers==='undefined' || !sleeperPlayers) return null;
+  if(_laGsisSrc!==sleeperPlayers){ _laGsisMap={}; for(const pid in sleeperPlayers){ const x=sleeperPlayers[pid]; if(x&&x.gsis_id) _laGsisMap[String(x.gsis_id).trim()]=pid; } _laGsisSrc=sleeperPlayers; }
+  return _laGsisMap[String(g||'').trim()]||null;
+}
+function laPidFromName(name,pos){
+  if(typeof resolvePlayerId==='function'){ try{ return resolvePlayerId(name,pos)||null; }catch(e){} }
+  return null;
+}
+
+// ── Matchup / Scoreboard view ────────────────────────────────────────────────
 function _laEspnInseasonNote(){
   return `<div class="card la-ins-empty">
     <div class="empty-title">Live scoring for ESPN leagues is coming</div>
     <div class="empty-body">Sleeper leagues get the live scoreboard today; the Lineup, DvP and Trends tabs work for every league.</div></div>`;
 }
+function laToggleMuBench(){ laState.muBench=!laState.muBench; laRerenderKeepScroll(); }
+// Swipe left/right on the hero card to walk the league's other matchups; swipes anywhere
+// else keep changing tabs like the rest of the app. Tapping a scoreboard card jumps to it.
+function laMuFocus(i){ laState.muFocus=i; laRerenderKeepScroll(); }
+function laMuFocusStep(d, total){
+  const cur=laState.muFocus!=null?laState.muFocus:0;
+  laMuFocus(((cur+d)%total+total)%total);
+}
+function _laBindMuHeroSwipe(host){
+  const hero=host && host.querySelector ? host.querySelector('.la-mu-hero') : null;
+  if(!hero || hero._muSwipeBound) return;
+  hero._muSwipeBound=true;
+  const total=Number(hero.dataset.muTotal||0); if(total<2) return;
+  let x0=null,y0=null,claimed=false;
+  hero.addEventListener('touchstart',e=>{ const t=e.touches[0]; x0=t.clientX; y0=t.clientY; claimed=false; },{passive:true});
+  hero.addEventListener('touchmove',e=>{
+    if(x0==null) return; const t=e.touches[0];
+    const dx=t.clientX-x0, dy=t.clientY-y0;
+    if(!claimed && Math.abs(dx)>18 && Math.abs(dx)>Math.abs(dy)*1.4){ claimed=true; e.stopPropagation(); }
+    else if(claimed){ e.stopPropagation(); }
+  },{passive:true});
+  hero.addEventListener('touchend',e=>{
+    if(x0==null) return; const t=e.changedTouches[0];
+    const dx=t.clientX-x0, dy=t.clientY-y0; x0=null;
+    if(claimed && Math.abs(dx)>55 && Math.abs(dx)>Math.abs(dy)*1.4){ e.stopPropagation(); laMuFocusStep(dx<0?1:-1, total); }
+  },{passive:true});
+}
 function laMatchupView(s){
   if(s.provider==='espn') return _laEspnInseasonNote();
   const wk=laMuWeek(), cur=laCurrentWeek();
-  const weekChips = Array.from({length:cur},(_,i)=>i+1).map(w=>
-    `<button class="format-btn ${w===wk?'active':''}" onclick="laSetMuWeek(${w})">Wk ${w}</button>`).join('');
-  const head = `<div class="la-ins-bar"><span class="la-ins-lbl">WEEK</span><div class="format-toggle la-wk-chips">${weekChips}</div></div>`;
+  const weekSel = `<select class="la-tc-sel la-wk-sel" onchange="laSetMuWeek(this.value)">
+    ${Array.from({length:cur},(_,i)=>cur-i).map(w=>`<option value="${w}" ${w===wk?'selected':''}>Week ${w}${w===cur?' · current':''}</option>`).join('')}
+  </select>`;
+  const head = `<div class="la-ins-bar"><span class="la-ins-lbl">MATCHUPS</span>${weekSel}</div>`;
   const data=_laMu.byWeek[wk];
   if(!data){
     laFetchMatchups(wk);
@@ -124,66 +226,114 @@ function laMatchupView(s){
   const meta=_laRosterMeta(s);
   const teamBy={}; (s.teamList||[]).forEach(t=>{ teamBy[t.rosterId]=t; });
   const pm=laProjMap();
-  const wkProj=(pid)=>{ const p=_laPidMeta(meta,pid);
-    const f=pm.get(ecrNormName(p.name)+'|'+p.pos); return f?f/17:0; };
+  const dvp=laDvpTable();
+  if(!dvp) _laSidecarKick();
+  const projOf=(pid)=>{ const p=_laPidMeta(meta,pid); const a=laAdjWeekProj(p,wk,pm,dvp); return a.adj; };
   const pairs={};
   data.rows.forEach(r=>{ (pairs[r.matchup_id||('solo'+r.roster_id)]=pairs[r.matchup_id||('solo'+r.roster_id)]||[]).push(r); });
   const my=_laMyTeamRow(s);
   const myRow = my && data.rows.find(r=>r.roster_id===my.rosterId);
   const myPair = myRow && pairs[myRow.matchup_id];
 
-  const starterRows=(row)=>{
+  // Per-team summary for a matchup row: points, projected, remaining, yet-to-play.
+  const summarize=(row)=>{
+    const t=teamBy[row.roster_id]||{};
     const starters=row.starters||[], pts=row.starters_points||[];
-    return starters.map((pid,i)=>{
-      if(!pid || pid==='0') return '';
-      const p=_laPidMeta(meta,pid);
-      const proj=wkProj(pid);
-      return `<div class="la-mu-prow">
-        <span class="clickable-player" onclick="${pcardOnclick(p.id||p.name,p.pos,p.team||'')}">${laPlayerImg(p)}</span>
-        <span class="pos-badge pos-${p.pos}">${p.pos||''}</span>
-        <span class="la-mu-pname">${escHtml(p.name)}</span>
-        <span class="la-mu-ppts"><b>${(pts[i]!=null?pts[i]:0).toFixed(1)}</b>${proj?`<span class="la-mu-pproj">/ ${proj.toFixed(1)}</span>`:''}</span>
-      </div>`;
-    }).join('');
+    let proj=0, rem=0, ytp=0;
+    starters.forEach((pid,i)=>{
+      if(!pid||pid==='0') return;
+      const p=_laPidMeta(meta,pid); const pr=projOf(pid); proj+=pr;
+      const started=laGameStarted(p.team, wk);
+      const played = started===true || (started===null && (pts[i]||0)>0) || wk<cur;
+      if(!played){ rem+=pr; ytp++; }
+    });
+    return {t, row, name:t.teamName||`Roster ${row.roster_id}`, rec:`${t.wins!=null?t.wins:'–'}-${t.losses!=null?t.losses:'–'}`,
+      pts:Number(row.points||0), proj, rem, ytp, n:starters.filter(x=>x&&x!=='0').length};
   };
-  const teamTotal=(row)=>{ const t=teamBy[row.roster_id]||{};
-    const proj=(row.starters||[]).reduce((a,pid)=>a+wkProj(pid),0);
-    return {name:t.teamName||`Roster ${row.roster_id}`, rec:`${t.wins!=null?t.wins:'–'}-${t.losses!=null?t.losses:'–'}`,
-      pts:Number(row.points||0), proj}; };
-
-  let featured='';
-  if(myPair && myPair.length===2){
-    const [a,b] = myPair[0].roster_id===my.rosterId ? [myPair[0],myPair[1]] : [myPair[1],myPair[0]];
-    const ta=teamTotal(a), tb=teamTotal(b);
-    featured = `<div class="card la-mu-featured">
-      <div class="la-mu-fhead"><span class="la-ins-lbl">MY MATCHUP · WEEK ${wk}</span>
-        ${wk===cur?`<span class="draft-live">LIVE</span>`:''}</div>
-      <div class="la-mu-fscore">
-        <div class="la-mu-fteam"><b>${escHtml(ta.name)}</b><span class="la-mu-frec">${ta.rec}</span></div>
-        <div class="la-mu-fnums"><span class="la-mu-fpts">${ta.pts.toFixed(1)}</span>
-          <span class="la-mu-fvs">vs</span><span class="la-mu-fpts">${tb.pts.toFixed(1)}</span></div>
-        <div class="la-mu-fteam la-mu-away"><b>${escHtml(tb.name)}</b><span class="la-mu-frec">${tb.rec}</span></div>
-      </div>
-      <div class="la-mu-fproj">projected ${ta.proj.toFixed(1)} · ${tb.proj.toFixed(1)}</div>
-      <div class="la-mu-cols">
-        <div class="la-mu-col">${starterRows(a)}</div>
-        <div class="la-mu-col">${starterRows(b)}</div>
-      </div></div>`;
-  }
-  const board = Object.keys(pairs).map(k=>{
-    const pr=pairs[k]; if(pr.length<2) return '';
-    const [a,b]=pr; const ta=teamTotal(a), tb=teamTotal(b);
-    const mine = my && (a.roster_id===my.rosterId||b.roster_id===my.rosterId);
-    const lead = ta.pts===tb.pts ? 0 : (ta.pts>tb.pts?1:-1);
-    return `<div class="la-mu-game ${mine?'la-mu-mine':''}">
-      <div class="la-mu-grow ${lead>0?'la-mu-lead':''}"><span>${escHtml(ta.name)}</span><b>${ta.pts.toFixed(1)}</b></div>
-      <div class="la-mu-grow ${lead<0?'la-mu-lead':''}"><span>${escHtml(tb.name)}</span><b>${tb.pts.toFixed(1)}</b></div>
+  const sideHTML=(S, side, wp)=>{
+    const pct=Math.round(wp*100);
+    const wcls=pct>=55?'la-wp-up':pct<=45?'la-wp-dn':'';
+    const barPct=Math.max(2, Math.min(100, 100*S.pts/Math.max(S.pts+S.rem, S.proj, 1)));
+    return `<div class="la-mu-side la-mu-${side}">
+      <div class="la-mu-idrow">${laTeamAvatar(S.t,'la-mu-av')}<div class="la-mu-id"><b class="la-mu-tname" title="${escAttr(S.name)}">${escHtml(S.name)}</b><span class="la-mu-sub">${laOwnerHandle(S.t)} · ${S.rec}</span></div></div>
+      <div class="la-mu-score"><span class="la-mu-pts">${S.pts.toFixed(2)}</span><span class="la-mu-projsm">proj ${(S.pts+S.rem).toFixed(1)}</span></div>
+      <div class="la-mu-wp ${wcls}"><b>${pct}%</b> win</div>
+      <div class="la-mu-bar"><div class="la-mu-barfill ${wcls}" style="width:${barPct.toFixed(0)}%"></div></div>
+      <div class="la-mu-ytp">${S.ytp?`yet to play (${S.ytp}) · ${S.rem.toFixed(1)} proj left`:'all players done'}</div>
     </div>`;
+  };
+  const playerCell=(pid, pts, side)=>{
+    if(!pid||pid==='0') return `<div class="la-mu-p la-mu-p-${side} la-mu-p-empty">— empty —</div>`;
+    const p=_laPidMeta(meta,pid);
+    const a=laAdjWeekProj(p,wk,pm,dvp);
+    const started=laGameStarted(p.team, wk);
+    const played = started===true || (started===null && (pts||0)>0) || wk<cur;
+    return `<div class="la-mu-p la-mu-p-${side}">
+      <span class="clickable-player la-mu-hs" onclick="${pcardOnclick(p.id||p.name,p.pos,p.team||'')}">${laPlayerImg(p,'la-mu-hsimg')}</span>
+      <div class="la-mu-pinfo">${laNameHTML(p)}
+        <div class="la-mu-pmeta"><span class="la-pos-${_laPosOf(p)}">${_laPosOf(p)}</span> · ${escHtml(p.team||'FA')}${a.out?` <span class="la-lh-flag la-lh-sit">${escHtml(String(a.status).toUpperCase())}</span>`:''}</div>
+        <div class="la-mu-pgame">${laGameLineHTML(p, wk, dvp)}</div></div>
+      <div class="la-mu-ppts ${played?'':'la-mu-ppts-pre'}"><b>${played?(pts!=null?pts:0).toFixed(2):'–'}</b><span class="la-mu-pproj">${a.bye?'BYE':a.adj.toFixed(2)}</span></div>
+    </div>`;
+  };
+  const slotLabels=laSlotLabels(s.rosterPositions);
+  const benchRows=(row)=>{
+    const starters=new Set((row.starters||[]));
+    return (row.players||[]).filter(pid=>!starters.has(pid)).map(pid=>{ const p=_laPidMeta(meta,pid); const pts=(row.players_points||{})[pid]; return {pid,p,pts:pts!=null?Number(pts):0}; })
+      .sort((a,b)=>b.pts-a.pts);
+  };
+  // Every pairing, ordered with mine first — the hero card walks this list by swipe.
+  const pairList=Object.keys(pairs).map(k=>pairs[k]).filter(pr=>pr.length===2);
+  const myIdx=my ? pairList.findIndex(pr=>pr.some(r=>r.roster_id===my.rosterId)) : -1;
+  if(myIdx>0){ const [mp]=pairList.splice(myIdx,1); pairList.unshift(mp); }
+  let focus=Math.min(Math.max(0, laState.muFocus!=null?laState.muFocus:0), Math.max(0,pairList.length-1));
+  let featured='';
+  if(pairList.length){
+    const pr=pairList[focus];
+    const isMine = my && pr.some(r=>r.roster_id===my.rosterId);
+    const [a,b] = (isMine && pr[1].roster_id===my.rosterId) ? [pr[1],pr[0]] : [pr[0],pr[1]];
+    const A=summarize(a), B=summarize(b);
+    const wpA=laWinProb(A.pts,A.rem,B.pts,B.rem), wpB=1-wpA;
+    const rows=slotLabels.map((lbl,i)=>`<div class="la-mu-row">
+        ${playerCell((a.starters||[])[i], (a.starters_points||[])[i], 'home')}
+        <div class="la-mu-slot"><span class="la-slot la-slot-${lbl.replace(/[^A-Z]/g,'')||'X'}">${escHtml(lbl)}</span></div>
+        ${playerCell((b.starters||[])[i], (b.starters_points||[])[i], 'away')}
+      </div>`).join('');
+    // Bench rows carry the full player cell — headshot, game line, points and projection —
+    // exactly like the starters, so scrolling down never drops into a different design.
+    const bench = laState.muBench ? (()=>{
+      const ba=benchRows(a), bb=benchRows(b); const n=Math.max(ba.length,bb.length);
+      const cell=(x,side)=> x ? playerCell(x.pid, x.pts, side) : `<div class="la-mu-p la-mu-p-${side} la-mu-p-empty"></div>`;
+      return Array.from({length:n},(_,i)=>`<div class="la-mu-row la-mu-row-bn">${cell(ba[i],'home')}<div class="la-mu-slot"><span class="la-slot la-slot-BN">BN</span></div>${cell(bb[i],'away')}</div>`).join('');
+    })() : '';
+    const pager = pairList.length>1
+      ? `<span class="la-mu-pager">${pairList.map((_,i)=>`<span class="la-mu-dot ${i===focus?'on':''}" onclick="laMuFocus(${i})"></span>`).join('')}</span>`
+      : '';
+    featured = `<div class="card la-mu-hero" data-mu-total="${pairList.length}">
+      <div class="la-mu-fhead"><span class="la-ins-lbl">${isMine?'MY MATCHUP':'MATCHUP'} · WEEK ${wk}</span>${wk===cur?`<span class="draft-live">LIVE</span>`:''}${pager}</div>
+      <div class="la-mu-fscore">${sideHTML(A,'home',wpA)}<div class="la-mu-vs">vs</div>${sideHTML(B,'away',wpB)}</div>
+      <div class="la-mu-starters">
+        <div class="la-mu-rowhead"><span>Starters</span><span class="la-ins-sub">points · projected</span></div>
+        ${rows}
+        ${bench}
+        <button class="btn btn-ghost btn-sm la-mu-bnbtn" onclick="laToggleMuBench()">${laState.muBench?'Hide bench':'Show bench'}</button>
+      </div>
+      ${pairList.length>1?`<div class="la-mu-swipehint">swipe the card for the league's other matchups</div>`:''}
+    </div>`;
+  }
+  const board = pairList.map((pr,k)=>{
+    const [a,b]=pr; const A=summarize(a), B=summarize(b);
+    const wp=laWinProb(A.pts,A.rem,B.pts,B.rem);
+    const mine = my && (a.roster_id===my.rosterId||b.roster_id===my.rosterId);
+    const lead = A.pts===B.pts ? 0 : (A.pts>B.pts?1:-1);
+    const line=(S,ld,w)=>`<div class="la-mu-grow ${ld?'la-mu-lead':''}">${laTeamAvatar(S.t,'la-mu-av-sm')}<span class="la-mu-gname"><span>${escHtml(S.name)}</span><span class="la-mu-gsub">${laOwnerHandle(S.t)} · ${S.rec}${S.ytp?` · ${S.ytp} to play`:''}</span></span><span class="la-mu-gwp">${Math.round(w*100)}%</span><b class="la-mu-gpts">${S.pts.toFixed(2)}</b></div>`;
+    return `<div class="la-mu-game ${mine?'la-mu-mine':''} ${k===focus?'la-mu-focus':''}" onclick="laMuFocus(${k})" title="Show this matchup up top">${line(A,lead>0,wp)}${line(B,lead<0,1-wp)}</div>`;
   }).join('');
-  const asof = data.fetchedAt ? new Date(data.fetchedAt).toLocaleTimeString() : '';
+  const asof = data.fetchedAt ? new Date(data.fetchedAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}) : '';
   return `${head}${featured}
     <div class="la-ins-bar"><span class="la-ins-lbl">SCOREBOARD</span>${asof?`<span class="la-ins-sub">updated ${asof}${wk===cur?' · refreshes every 45s while you watch':''}</span>`:''}</div>
-    <div class="la-mu-board">${board}</div>`;
+    <div class="la-mu-board">${board}</div>
+    <div class="la-note">win % = current points plus what's still projected to come, against the spread of what's left · projections are your own, matchup- and pace-adjusted</div>`;
 }
 
 // ── DvP: fantasy points allowed per game, by position ────────────────────────
@@ -216,7 +366,9 @@ function laDvpTable(){
   const codes=Object.keys(teams);
   const ranks={};
   POS.forEach(pos=>{
-    const order=[...codes].sort((a,b)=>teams[a][pos].fppg-teams[b][pos].fppg);  // fewest allowed = rank 1
+    // Rank 1 = MOST points allowed = the matchup you want. Fantasy asks "who do I pick on",
+    // so the whole surface (colors, sorts, the "(3rd)" tags) reads easiest-first.
+    const order=[...codes].sort((a,b)=>teams[b][pos].fppg-teams[a][pos].fppg);
     order.forEach((c,i)=>{ (ranks[c]=ranks[c]||{})[pos]=i+1; });
   });
   _laDvpMemo={teams, ranks, codes:codes.sort()};
@@ -228,7 +380,8 @@ function laSetDvpSort(col){
   laState.dvpSort = (s.col===col) ? {col, dir:-s.dir} : {col, dir:1};
   renderLeagueAnalyzer();
 }
-function laSetDvpPos(p){ laState.dvpPos=p; renderLeagueAnalyzer(); }
+function laSetDvpPos(p){ laState.dvpPos=p; laRerenderKeepScroll(); }
+
 function laDvpView(s){
   const t=laDvpTable();
   if(!t){
@@ -244,7 +397,7 @@ function laDvpView(s){
   const pos1=laState.dvpPos&&laState.dvpPos!=='ALL'?laState.dvpPos:null;
   const codes=[...t.codes].sort((a,b)=>{
     const col=pos1||sort.col;
-    return (t.teams[a][col].fppg-t.teams[b][col].fppg)*(pos1?1:sort.dir);
+    return (t.teams[b][col].fppg-t.teams[a][col].fppg)*(pos1?1:sort.dir);   // easiest matchups first
   });
   const n=t.codes.length;
   const wk=(typeof completedWeeks==='function')?completedWeeks():0;
@@ -252,47 +405,109 @@ function laDvpView(s){
     ? `<div class="discrepancy-note">${TC_ICON("warning")} ${wk} game${wk===1?'':'s'} is a small sample — these ranks move a lot early in the season.</div>` : '';
   const chips = ['ALL',...POS].map(p=>`<button class="pos-filter-btn ${((laState.dvpPos||'ALL')===p)?'active':''}" onclick="laSetDvpPos('${p}')">${p}</button>`).join('');
   const posCols = pos1?[pos1]:POS;
-  const header = `<tr><th>DEFENSE</th>${posCols.map(p=>`<th onclick="laSetDvpSort('${p}')" class="la-dvp-th ${(!pos1&&sort.col===p)?'active':''}">vs ${p}${!pos1&&sort.col===p?(sort.dir<0?' ↓':' ↑'):''}</th>`).join('')}</tr>`;
+  // League average per position, for the bar scale + the "vs avg" read.
+  const avg={}; POS.forEach(p=>{ avg[p]=t.codes.reduce((a,c)=>a+t.teams[c][p].fppg,0)/Math.max(1,n); });
+  const mx={}; POS.forEach(p=>{ mx[p]=Math.max(...t.codes.map(c=>t.teams[c][p].fppg))||1; });
+  const header = `<tr><th class="la-dvp-th-team">DEFENSE</th>${posCols.map(p=>`<th onclick="laSetDvpSort('${p}')" class="la-dvp-th ${(!pos1&&sort.col===p)?'active':''}">vs ${p}${!pos1&&sort.col===p?(sort.dir<0?' ↓':' ↑'):''}</th>`).join('')}</tr>`;
+  const nextOppOf=(code)=>{ const g=laGameInfo(code, laCurrentWeek()); return g? (g.bye?'BYE':`${g.home===false?'@':'vs'} ${g.opp}`) : ''; };
   const rows = codes.map(c=>{
     const cells=posCols.map(p=>{
-      const cell=t.teams[c][p];
-      return `<td class="${laQuartile(t.ranks[c][p], n)}"><b>${cell.fppg.toFixed(1)}</b><span class="la-rk">#${t.ranks[c][p]}</span></td>`;
+      const cell=t.teams[c][p]; const rk=t.ranks[c][p];
+      const d=cell.fppg-avg[p];
+      return `<td class="la-dvp-cell ${laQuartile(rk, n)}">
+        <div class="la-dvp-val"><b>${cell.fppg.toFixed(1)}</b><span class="la-rk">#${rk}</span></div>
+        <div class="la-dvp-barwrap"><div class="la-dvp-bar" style="width:${Math.max(3,100*cell.fppg/mx[p]).toFixed(0)}%"></div></div>
+        <div class="la-dvp-vs">${d>=0?'+':'−'}${Math.abs(d).toFixed(1)} vs avg</div></td>`;
     }).join('');
-    return `<tr><td class="la-dvp-team"><img src="${NFL_LOGO(c)}" class="rank-logo" loading="lazy" onerror="this.style.display='none'"> ${c}</td>${cells}</tr>`;
+    const full=(typeof TEAM_NAMES!=='undefined'&&TEAM_NAMES&&TEAM_NAMES[c])||c;
+    return `<tr><td class="la-dvp-team"><img src="${NFL_LOGO(c)}" class="la-dvp-logo" loading="lazy" onerror="this.style.display='none'"><div><b>${c}</b><span class="la-dvp-tsub">${escHtml(String(full).replace(/^.*\s/,''))}${nextOppOf(c)?` · next ${escHtml(nextOppOf(c))}`:''}</span></div></td>${cells}</tr>`;
   }).join('');
   return `${small}
     <div class="la-ins-bar"><span class="la-ins-lbl">FANTASY POINTS ALLOWED / GAME</span>
       <div class="pos-filter">${chips}</div>
-      <span class="la-ins-sub">your league's scoring · thru wk ${wk} · rank #1 = stingiest</span></div>
+      <span class="la-ins-sub">your league's scoring · thru wk ${wk} · #1 = easiest matchup (most points allowed)</span></div>
     <div class="card" style="padding:0;overflow:hidden"><div class="la-dvp-wrap">
-      <table class="la-dvp-table"><thead>${header}</thead><tbody>${rows}</tbody></table></div></div>`;
+      <table class="la-dvp-table ${pos1?'la-dvp-one':''}"><thead>${header}</thead><tbody>${rows}</tbody></table></div></div>
+    <div class="la-note">green = easy matchup (allows the most points) · red = tough · tap a column to sort</div>`;
 }
 
-// ── Lineup Helper ────────────────────────────────────────────────────────────
-// Adjusted week projection = season proj/17 × defense multiplier × pace multiplier, each
-// clamped and each degrading to 1 when its data source is missing (footnoted).
+// ── Lineup (your team this week) ─────────────────────────────────────────────
+// Injury designations that mean "will not play" — a zero for the week, whatever the pace.
+const LA_OUT_STATUS = { Out:1, IR:1, PUP:1, Sus:1, Suspended:1, NA:1, DNR:1 };
+function laWeekAvailability(p, wk){
+  const sched=(typeof TC_INSEASON!=='undefined' && TC_INSEASON && TC_INSEASON.schedule)||null;
+  const team=String(p.team||'').toUpperCase();
+  // On a bye = the schedule knows the team and has no opponent that week. (No schedule, or
+  // a team code it doesn't know → unknown, assume playing.)
+  const bye = !!(sched && team && sched[team] && !sched[team][String(wk)]);
+  const sp=(typeof sleeperPlayers!=='undefined' && sleeperPlayers && p.id) ? sleeperPlayers[p.id] : null;
+  const st=sp && sp.injury_status ? String(sp.injury_status) : '';
+  const out=!!(st && LA_OUT_STATUS[st]);
+  return { bye, out, status: st };
+}
+// Recent form: fantasy points per game over the last 3 PLAYED weeks, scored under the
+// league's own settings, straight from the sidecar's per-player weekly usage lines.
+var _laFormMemo=null, _laFormSig='';
+function laWeeklyFormMap(){
+  const pw=(typeof TC_INSEASON!=='undefined'&&TC_INSEASON&&TC_INSEASON.player_weekly)||null;
+  if(!pw) return null;
+  const sig=`${TC_INSEASON.asof||''}~${buildPlayerScoringSig()}`;
+  if(_laFormMemo && _laFormSig===sig) return _laFormMemo;
+  const ci={}; (pw.cols||[]).forEach((c,i)=>ci[c]=i);
+  const m=new Map();
+  for(const g in pw.players){
+    const pl=pw.players[g];
+    const weeks=Object.keys(pl.w).map(Number).sort((a,b)=>a-b);
+    if(!weeks.length) continue;
+    const score=(r)=>calcFpts({pos:pl.p, receptions:r[ci['rec']]||0, receiving_yards:r[ci['rec_yd']]||0,
+      receiving_tds:r[ci['rec_td']]||0, receiving_targets:r[ci['tgt']]||0,
+      rushing_yards:r[ci['rush_yd']]||0, rushing_tds:r[ci['rush_td']]||0, rushing_attempts:r[ci['carry']]||0,
+      passing_yards:r[ci['pass_yd']]||0, passing_tds:r[ci['pass_td']]||0, passing_attempts:r[ci['pass_att']]||0,
+      interceptions_thrown:r[ci['pass_int']]||0, fumbles_lost:0});
+    const last3=weeks.slice(-3);
+    const f3=last3.reduce((a,w)=>a+score(pl.w[String(w)]||[]),0)/last3.length;
+    const entry={f3, n3:last3.length, lastWk:weeks[weeks.length-1]};
+    const pid=laPidFromGsis(g);
+    if(pid) m.set(String(pid), entry);
+    m.set(ecrNormName(pl.n||'')+'|'+(pl.p||''), entry);
+  }
+  _laFormMemo=m; _laFormSig=sig;
+  return m;
+}
+// Weekly projection = OUR blend, not a flat season-projection ÷ 17:
+//   35% season projection rate + 30% season-to-date FPPG + 35% last-3-weeks FPPG,
+// then the opponent's defense-vs-position multiplier (±10%). A back who took over the
+// backfield two weeks ago projects like the starter he now is (the old formula gave
+// Kimani Vidal 0.15 the week he scored 17), and a faded role fades the number.
 function laAdjWeekProj(p, wk, pm, dvp){
   const base=(pm.get(ecrNormName(p.name)+'|'+p.pos)||0)/17;
-  if(!base) return {adj:0, base:0, defMult:1, paceMult:1, opp:null};
+  const avail=laWeekAvailability(p, wk);
+  const zero={adj:0, base, baseRate:base, seas:null, rec3:null, defMult:1, opp:null, bye:avail.bye, out:avail.out, status:avail.status};
+  // Bye week / ruled out: zero, so the optimizer never "starts" a player who cannot score.
+  if(avail.bye || avail.out) return zero;
+  const pace=(typeof paceForPlayer==='function')?paceForPlayer(p.name,p.pos,p.id):null;
+  const gp=pace?pace.gp:0;
+  const seas=(pace && gp>0)?pace.act/gp:null;
+  const form=laWeeklyFormMap();
+  const fe=form ? (form.get(String(p.id||''))||form.get(ecrNormName(p.name)+'|'+p.pos)) : null;
+  const rec3=fe?fe.f3:null;
+  let exp;
+  if(!(base>0) && seas==null && rec3==null) return zero;
+  if(seas!=null && rec3!=null && gp>=2)      exp=0.35*base+0.30*seas+0.35*rec3;
+  else if(seas!=null)                        exp=0.55*base+0.45*seas;
+  else                                       exp=base;
   let defMult=1, opp=null;
   const sched=(typeof TC_INSEASON!=='undefined' && TC_INSEASON && TC_INSEASON.schedule)||null;
   if(dvp && sched && p.team && sched[p.team]) opp=sched[p.team][String(wk)]||null;
   if(dvp && opp && dvp.ranks[opp] && dvp.ranks[opp][p.pos]){
-    // rank 1 (stingiest) → 0.90, rank 32 (most generous) → 1.10, linear between.
+    // rank 1 (most generous / easiest) → 1.10, last (stingiest) → 0.90, linear between.
     const r=dvp.ranks[opp][p.pos], n=dvp.codes.length||32;
-    defMult=0.90 + 0.20*((r-1)/Math.max(1,n-1));
+    defMult=1.10 - 0.20*((r-1)/Math.max(1,n-1));
   }
-  let paceMult=1;
-  const pace=(typeof paceForPlayer==='function')?paceForPlayer(p.name,p.pos,p.id):null;
-  if(pace && pace.gp>=1 && pace.base>0){
-    // 50% blend toward the player's actual pace ratio, clamped to ±20%.
-    const ratio=Math.max(0.8, Math.min(1.2, pace.pace17/pace.base));
-    paceMult=1+(ratio-1)*0.5;
-  }
-  return {adj: base*defMult*paceMult, base, defMult, paceMult, opp,
-    thin: !!(pace && pace.gp>0 && pace.gp<3)};
+  return {adj: exp*defMult, base, baseRate:base, seas, rec3, defMult, opp,
+    thin: gp>0 && gp<3};
 }
-function laToggleLhShowAll(){ laState.lhShowAll=!laState.lhShowAll; renderLeagueAnalyzer(); }
+function laToggleLhShowAll(){ laState.lhShowAll=!laState.lhShowAll; laRerenderKeepScroll(); }
 function laLineupView(s){
   const my=_laMyTeamRow(s);
   if(!my) return `<div class="card la-ins-empty"><div class="empty-body">No roster found in this snapshot.</div></div>`;
@@ -312,45 +527,61 @@ function laLineupView(s){
   const currentSet=new Set((myRow&&myRow.starters||[]).filter(pid=>pid&&pid!=='0'));
   const optimalSet=new Set(optimal.filter(f=>f.player).map(f=>f.player.id));
   const haveCurrent=currentSet.size>0;
-  const rows=optimal.map(f=>{
-    const p=f.player;
-    if(!p) return `<tr class="la-lh-empty-slot"><td>${f.slot}</td><td colspan="3">— no eligible player —</td></tr>`;
+  const slotLabels=laSlotLabels(s.rosterPositions);
+  const projTotal=optimal.reduce((a,f)=>a+(f.player?f.player._a.adj:0),0);
+  // Only compare against the set lineup when every set starter is on the snapshot roster —
+  // a starter who has since been dropped would read as a 0 and inflate the "gain".
+  const allKnown = haveCurrent && [...currentSet].every(pid=>scored.some(p=>p.id===pid));
+  const curTotal=allKnown ? scored.filter(p=>currentSet.has(p.id)).reduce((a,p)=>a+p._a.adj,0) : null;
+  const gain = curTotal!=null ? projTotal-curTotal : 0;
+  const paceTag=(p)=>{ const e=(typeof paceForPlayer==='function')?paceForPlayer(p.name,p.pos,p.id):null;
+    if(!e||!(e.base>0)||!(e.gp>0)) return ''; return `<span class="pace-chip ${e.cls}" title="17-game pace ${e.pace17.toFixed(0)} vs your ${e.base.toFixed(0)}">${e.cls==='pace-thin'?'':(e.delta>=0?'▲':'▼')}${e.pct>=0?'+':'−'}${Math.round(Math.abs(e.pct)*100)}%</span>`; };
+  const playerRow=(p, slotLbl, kind)=>{
     const a=p._a;
     const inCur=currentSet.has(p.id);
-    const swap=haveCurrent && !inCur;
+    const swap = kind==='start' && haveCurrent && !inCur && !a.bye && !a.out && a.adj>0;
     const flags=[];
+    if(a.bye) flags.push('<span class="la-lh-flag la-lh-sit" title="On a bye this week">BYE</span>');
+    else if(a.out) flags.push(`<span class="la-lh-flag la-lh-sit" title="Sleeper injury status: ${escAttr(a.status)}">${escHtml(String(a.status).toUpperCase())}</span>`);
     if(swap) flags.push('<span class="la-lh-flag la-lh-start">START</span>');
+    if(kind==='sit') flags.push('<span class="la-lh-flag la-lh-sit">SIT?</span>');
     if(a.thin) flags.push('<span class="la-lh-flag la-lh-thin" title="Fewer than 3 games of live data behind the pace adjustment">THIN</span>');
-    return `<tr class="${swap?'la-lh-swap':''}">
-      <td class="la-lh-slot">${f.slot}</td>
-      <td class="la-lh-p"><span class="clickable-player" onclick="${pcardOnclick(p.id||p.name,p.pos,p.team||'')}">${laPlayerImg(p)}</span>
-        <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${escHtml(p.name)}${a.opp?`<span class="la-lh-opp">@ ${a.opp}${dvp&&dvp.ranks[a.opp]&&dvp.ranks[a.opp][p.pos]?` (#${dvp.ranks[a.opp][p.pos]} vs ${p.pos})`:''}</span>`:''}</td>
-      <td class="la-lh-proj"><b>${a.adj.toFixed(1)}</b>${(a.defMult!==1||a.paceMult!==1)?`<span class="la-lh-base">base ${a.base.toFixed(1)}</span>`:''}</td>
-      <td class="la-lh-flags">${flags.join('')}</td></tr>`;
+    const slotKey=String(slotLbl||'').replace(/[^A-Z]/g,'')||'BN';
+    return `<div class="la-tm-row ${swap?'la-lh-swap':''} ${kind==='sit'?'la-lh-sitrow':''} ${kind==='bench'?'la-lh-benchrow':''}">
+      <span class="la-slot la-slot-${slotKey}">${escHtml(slotLbl||'BN')}</span>
+      <span class="clickable-player la-tm-hs" onclick="${pcardOnclick(p.id||p.name,p.pos,p.team||'')}">${laPlayerImg(p,'la-tm-hsimg')}</span>
+      <div class="la-tm-main">
+        <div class="la-tm-l1">${laNameHTML(p,'la-tm-nm')} <span class="la-tm-pos la-pos-${_laPosOf(p)}">${_laPosOf(p)}</span><span class="la-tm-team">· ${escHtml(p.team||'FA')}</span>${paceTag(p)}</div>
+        <div class="la-tm-l2">${laGameLineHTML(p, wk, dvp)||'<span class="la-gm la-gm-none">schedule pending</span>'}</div>
+        ${flags.length?`<div class="la-tm-l3">${flags.join('')}</div>`:''}
+      </div>
+      <div class="la-tm-proj"><b title="${escAttr(`${a.adj.toFixed(1)} = blend of your projection (${(a.baseRate||0).toFixed(1)}/gm)${a.seas!=null?`, season ${a.seas.toFixed(1)} FPPG`:''}${a.rec3!=null?`, last 3 wks ${a.rec3.toFixed(1)} FPPG`:''}${a.defMult!==1?` × ${a.defMult.toFixed(2)} matchup`:''}`)}">${a.bye||a.out?'0.0':a.adj.toFixed(1)}</b>${(a.baseRate>0&&Math.abs(a.adj-a.baseRate)>0.05&&!a.bye&&!a.out)?`<span class="la-lh-base">yours ${a.baseRate.toFixed(1)}</span>`:''}</div>
+    </div>`;
+  };
+  const rows=optimal.map((f,i)=>{
+    const lbl=slotLabels[i]||f.slot;
+    if(!f.player) return `<div class="la-tm-row la-lh-empty-slot"><span class="la-slot">${escHtml(lbl)}</span><span class="la-tm-main">— no eligible player —</span></div>`;
+    return playerRow(f.player, lbl, 'start');
   }).join('');
-  // Bench sits: currently-started players who did NOT make the optimal lineup.
   const sits=haveCurrent ? scored.filter(p=>currentSet.has(p.id)&&!optimalSet.has(p.id)) : [];
-  const sitRows=sits.map(p=>`<tr class="la-lh-sitrow">
-      <td class="la-lh-slot">—</td>
-      <td class="la-lh-p"><span class="pos-badge pos-${p.pos}">${p.pos}</span> ${escHtml(p.name)}</td>
-      <td class="la-lh-proj"><b>${p._a.adj.toFixed(1)}</b></td>
-      <td class="la-lh-flags"><span class="la-lh-flag la-lh-sit">SIT?</span></td></tr>`).join('');
-  const bench=laState.lhShowAll ? scored.filter(p=>!optimalSet.has(p.id)&&!sits.includes(p)).map(p=>`<tr class="la-lh-benchrow">
-      <td class="la-lh-slot">BN</td>
-      <td class="la-lh-p"><span class="pos-badge pos-${p.pos}">${p.pos}</span> ${escHtml(p.name)}</td>
-      <td class="la-lh-proj">${p._a.adj.toFixed(1)}</td><td></td></tr>`).join('') : '';
+  const sitRows=sits.map(p=>playerRow(p,'—','sit')).join('');
+  const benchList=scored.filter(p=>!optimalSet.has(p.id)&&!sits.includes(p));
+  const bench=laState.lhShowAll ? benchList.map(p=>playerRow(p,'BN','bench')).join('') : '';
   const notes=[];
+  notes.push('proj: 35% your season projection + 30% season FPPG + 35% last-3-weeks FPPG');
   notes.push(dvp?'matchup: opponent defense-vs-position (±10%)':'matchup adjustment off — defensive splits not loaded yet');
-  notes.push((typeof loadPaceBaseline==='function'&&loadPaceBaseline())?'pace: 50% blend toward each player’s live pace (±10%)':'pace adjustment off — no kickoff baseline');
   if(!haveCurrent) notes.push(s.provider==='espn'?'ESPN league: optimal lineup only (no live starters feed)':'your set starters load with the week’s matchups');
+  const g=laGameInfo(null, wk);
   return `
+    <div class="card la-tm-hero">
+      <div class="la-tm-herorow">${laTeamAvatar(my,'la-mu-av')}<div class="la-mu-id"><b class="la-mu-tname">${escHtml(my.teamName||'My team')}</b><span class="la-mu-sub">${laOwnerHandle(my)} · ${my.wins!=null?my.wins:'–'}-${my.losses!=null?my.losses:'–'}</span></div>
+        <div class="la-tm-herototal"><span class="la-mu-projsm">week ${wk} projected</span><b>${projTotal.toFixed(1)}</b>${curTotal!=null&&gain>0.05?`<span class="la-tm-gain">+${gain.toFixed(1)} with the swaps below</span>`:curTotal!=null?`<span class="la-tm-gain la-tm-gain-ok">lineup is set optimally</span>`:''}</div></div>
+    </div>
     <div class="la-ins-bar"><span class="la-ins-lbl">OPTIMAL LINEUP · WEEK ${wk}</span>
-      <span class="la-ins-sub">${haveCurrent?'rows highlighted = start over your current lineup':'suggested from your projections + matchup context'}</span>
-      <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="laToggleLhShowAll()">${laState.lhShowAll?'Hide bench':'Show full bench'}</button></div>
-    <div class="card" style="padding:0;overflow:hidden"><div class="la-dvp-wrap">
-      <table class="la-lh-table"><thead><tr><th>SLOT</th><th>PLAYER</th><th>ADJ&nbsp;PROJ</th><th></th></tr></thead>
-      <tbody>${rows}${sitRows}${bench}</tbody></table></div></div>
-    <div class="la-note">${notes.join(' · ')}</div>`;
+      <span class="la-ins-sub">${haveCurrent?'highlighted rows = start over your current lineup':'suggested from your projections + matchup context'}</span>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="laToggleLhShowAll()">${laState.lhShowAll?'Hide bench':`Show bench (${benchList.length})`}</button></div>
+    <div class="card la-tm-card">${rows}${sitRows?`<div class="la-tm-sep">currently starting · not in the optimal lineup</div>${sitRows}`:''}${bench?`<div class="la-tm-sep">bench</div>${bench}`:''}</div>
+    <div class="la-note">${notes.join(' · ')} · tap a name for the player card</div>`;
 }
 
 // ── Trends: pace vs baseline, regression candidates, weekly trending ─────────
@@ -362,118 +593,177 @@ function _laSidecarKick(){
   ensureInseasonSidecar().then(ok=>{ _laSidecarState=ok?'ready':'error'; if(ok) _laInsRerender(); });
   return _laSidecarState;
 }
-function laSetTrndScope(sc){ laState.trndScope=sc; renderLeagueAnalyzer(); }
-// Names rostered in this league, for the 'rostered' scope filter.
+function laSetTrndScope(sc){ laState.trndScope=sc; laRerenderKeepScroll(); }
+function laSetTrndTab(t){ laState.trndTab=t; laRerenderKeepScroll(); }
+// Names rostered in this league, for the scope filters.
 function _laLeagueNameSet(s){
   const set=new Set();
   (s.teamList||[]).forEach(t=>(t.players||[]).forEach(p=>set.add(ecrNormName(p.name)+'|'+p.pos)));
   return set;
 }
+// Minimum kickoff-baseline (season fantasy points) for the pace board.
+const LA_TRND_MIN_BASE = 60;
+// Proper display name: the sidecar's weekly lines carry lowercased roster names — prefer the
+// Sleeper DB's real name, fall back to title case, never print "jaxon smithnjigba".
+function _laDisplayName(p, pid){
+  const sp=(pid && typeof sleeperPlayers!=='undefined' && sleeperPlayers) ? sleeperPlayers[pid] : null;
+  if(sp && sp.name) return sp.name;
+  return String(p.name||'').replace(/\b[a-z]/g, c=>c.toUpperCase());
+}
+// One trend row: headshot · name (clickable) · detail · verdict.
+function _laTrendRow(p, detail, verdict, cls){
+  const pid=p.id||p.pid||laPidFromName(p.name,p.pos);
+  const pp={id:pid, name:_laDisplayName(p,pid), pos:p.pos, team:p.team};
+  return `<div class="la-trnd-row ${cls||''}">
+    <span class="clickable-player la-trnd-hs" onclick="${pcardOnclick(pid||pp.name,p.pos,p.team||'')}">${laPlayerImg(pp,'la-trnd-hsimg')}</span>
+    <div class="la-trnd-main">${laNameHTML(pp,'la-trnd-name')}<div class="la-trnd-sub"><span class="la-pos-${_laPosOf(p)}">${_laPosOf(p)}</span> · ${escHtml(p.team||'FA')}${detail?` · ${detail}`:''}</div></div>
+    <div class="la-trnd-verdict">${verdict}</div></div>`;
+}
+// Scope filter: whose players a board shows. 'waiver' = unrostered in THIS league.
+function _laScopeKeeps(scope, mySet, lgSet){
+  return (name,pos)=>{
+    const k=ecrNormName(name)+'|'+pos;
+    if(scope==='myteam')   return mySet.has(k);
+    if(scope==='rostered') return lgSet.has(k);
+    if(scope==='waiver')   return !lgSet.has(k);
+    return true;   // league
+  };
+}
+// Sidecar per-player summaries the Usage/Regression/Trending boards share.
+function _laUsagePlayers(){
+  const pw=(typeof TC_INSEASON!=='undefined'&&TC_INSEASON&&TC_INSEASON.player_weekly)||null;
+  if(!pw) return null;
+  const ci={}; (pw.cols||[]).forEach((c,i)=>ci[c]=i);
+  const players=Object.keys(pw.players).map(g=>{
+    const p=pw.players[g]; const weeks=Object.keys(p.w).map(Number).sort((a,b)=>a-b);
+    const sum=(c,set)=> (set||weeks).reduce((a,w)=>a+((p.w[String(w)]||[])[ci[c]]||0),0);
+    const last3=weeks.slice(-3);
+    const shareOf=(set)=>{ let tg=0,tt=0; (set||weeks).forEach(w=>{ const r=p.w[String(w)]||[]; tg+=r[ci['tgt']]||0; tt+=r[ci['team_tgt']]||0; }); return tt?100*tg/tt:0; };
+    return {g, id:laPidFromGsis(g), name:p.n, pos:p.p, team:p.t, weeks, last3,
+      tgt:sum('tgt'), rec_td:sum('rec_td'), carry:sum('carry'), rush_td:sum('rush_td'),
+      tgt3:sum('tgt',last3), carry3:sum('carry',last3),
+      share:shareOf(), share3:shareOf(last3), gp:weeks.length, gp3:last3.length};
+  });
+  return {players, ci, pw};
+}
 function laTrendsView(s){
   const wk=(typeof completedWeeks==='function')?completedWeeks():0;
-  const idx=(typeof buildPaceIndex==='function')?buildPaceIndex():null;
   const scope=laState.trndScope||'rostered';
-  // Card 1 — pace vs the kickoff baseline.
-  let paceCard;
-  if(!idx){
-    paceCard=`<div class="card la-ins-empty"><div class="empty-title">No pace data yet</div>
-      <div class="empty-body">Pace compares live stats to your projections frozen at kickoff — it lights up once week 1 completes${(typeof loadPaceBaseline==='function'&&loadPaceBaseline())?'':' (open the projections view once so the baseline can freeze)'}.</div></div>`;
-  } else {
-    const my=_laMyTeamRow(s);
-    const mySet=new Set(((my&&my.players)||[]).map(p=>ecrNormName(p.name)+'|'+p.pos));
-    const lgSet=_laLeagueNameSet(s);
-    const seen=new Set();
-    let rows=[];
-    idx.forEach((e,key)=>{
-      if(key.indexOf('|')<0) return;              // use only the name|pos keys (deduped view)
-      if(seen.has(key)) return; seen.add(key);
-      if(!(e.base>0)||!(e.gp>0)) return;
-      if(scope==='myteam' && !mySet.has(key)) return;
-      if(scope==='rostered' && !lgSet.has(key)) return;
-      rows.push(e);
-    });
-    rows.sort((a,b)=>b.pct-a.pct);
-    if(scope==='league') rows=rows.slice(0,60);
-    const half=(list)=>list.map(e=>`<div class="la-trnd-row ${e.cls}">
-        <span class="pos-badge pos-${e.pos}">${e.pos}</span><span class="la-trnd-name">${escHtml(e.name)}</span>
-        <span class="la-trnd-nums">${e.pace17.toFixed(0)} <span class="la-trnd-vs">vs ${e.base.toFixed(0)}</span></span>
-        <b class="la-trnd-pct">${e.pct>=0?'+':'−'}${Math.round(Math.abs(e.pct)*100)}%</b></div>`).join('');
-    const chips=['rostered','myteam','league'].map(sc=>`<button class="format-btn ${scope===sc?'active':''}" onclick="laSetTrndScope('${sc}')">${sc==='rostered'?'Rostered':sc==='myteam'?'My Team':'League'}</button>`).join('');
-    paceCard=`<div class="la-ins-bar"><span class="la-ins-lbl">PACE VS YOUR PROJECTIONS</span>
-        <div class="format-toggle">${chips}</div><span class="la-ins-sub">17-game pace vs kickoff baseline · thru wk ${wk}</span></div>
-      <div class="card la-trnd-card"><div class="la-trnd-cols">
-        <div><div class="la-trnd-h la-trnd-up">▲ AHEAD</div>${half(rows.filter(e=>e.pct>0).slice(0,15))||'<div class="la-ins-sub">nobody yet</div>'}</div>
-        <div><div class="la-trnd-h la-trnd-dn">▼ BEHIND</div>${half(rows.filter(e=>e.pct<0).reverse().slice(0,15))||'<div class="la-ins-sub">nobody yet</div>'}</div>
-      </div></div>`;
-  }
-  // Cards 2+3 need the sidecar's per-player weekly lines.
-  const pw=(typeof TC_INSEASON!=='undefined'&&TC_INSEASON&&TC_INSEASON.player_weekly)||null;
-  let regCard='', trndCard='';
-  if(!pw){
+  const tab=laState.trndTab||'pace';
+  const my=_laMyTeamRow(s);
+  const mySet=new Set(((my&&my.players)||[]).map(p=>ecrNormName(p.name)+'|'+p.pos));
+  const lgSet=_laLeagueNameSet(s);
+  const keeps=_laScopeKeeps(scope, mySet, lgSet);
+  const mineMark=(name,pos)=> mySet.has(ecrNormName(name)+'|'+pos) ? '<span class="la-trnd-mine" title="on your roster">★</span>' : '';
+  const tabs=[['pace','Pace'],['usage','Usage'],['regression','TD Regression'],['trending','Trending']]
+    .map(([k,l])=>`<button class="format-btn ${tab===k?'active':''}" onclick="laSetTrndTab('${k}')">${l}</button>`).join('');
+  const scopes=[['rostered','Rostered'],['myteam','My Team'],['waiver','Waivers'],['league','League']]
+    .map(([k,l])=>`<button class="pos-filter-btn ${scope===k?'active':''}" onclick="laSetTrndScope('${k}')">${l}</button>`).join('');
+  const bar=`<div class="la-ins-bar"><div class="format-toggle">${tabs}</div><div class="pos-filter la-trnd-scope">${scopes}</div></div>`;
+  const two=(title,sub,upLbl,upRows,dnLbl,dnRows)=>`
+    <div class="la-ins-bar"><span class="la-ins-lbl">${title}</span><span class="la-ins-sub">${sub}</span></div>
+    <div class="card la-trnd-card"><div class="la-trnd-cols">
+      <div><div class="la-trnd-h la-trnd-up">${upLbl}</div>${upRows||'<div class="la-ins-sub">nobody in this scope yet</div>'}</div>
+      <div><div class="la-trnd-h la-trnd-dn">${dnLbl}</div>${dnRows||'<div class="la-ins-sub">nobody in this scope yet</div>'}</div>
+    </div></div>`;
+  const needSidecar=()=>{
     const st=_laSidecarKick();
-    regCard=`<div class="card la-ins-empty"><div class="empty-body">${st==='loading'?'Loading weekly usage data…':'Regression + weekly trends build from the weekly nflverse sidecar (appears after week 1 on a hosted seed).'}</div></div>`;
-  } else {
-    const ci={}; (pw.cols||[]).forEach((c,i)=>ci[c]=i);
-    const players=Object.keys(pw.players).map(g=>{
-      const p=pw.players[g]; const weeks=Object.keys(p.w).map(Number).sort((a,b)=>a-b);
-      const sum=(c)=>weeks.reduce((a,w)=>a+((p.w[String(w)]||[])[ci[c]]||0),0);
-      return {g, name:p.n, pos:p.p, team:p.t, weeks,
-        tgt:sum('tgt'), rec_td:sum('rec_td'), carry:sum('carry'), rush_td:sum('rush_td'),
-        air:sum('air_yd')};
-    });
-    // Percentile helper within a position group.
-    const pctl=(arr,v)=>{ if(!arr.length) return 0; let c=0; arr.forEach(x=>{ if(x<=v) c++; }); return 100*c/arr.length; };
-    const reg={pos:[],neg:[]};
-    ['WR','TE','RB'].forEach(pos=>{
-      const grp=players.filter(p=>p.pos===pos && (p.tgt+p.carry)>=Math.max(10, wk*3));
-      const vols=grp.map(p=>p.tgt+p.carry);
-      const tdRates=grp.map(p=>(p.rec_td+p.rush_td)/Math.max(1,p.tgt+p.carry));
-      grp.forEach((p,i)=>{
-        const vPct=pctl(vols, vols[i]), tPct=pctl(tdRates, tdRates[i]);
-        if(vPct-tPct>30) reg.pos.push({p, gap:vPct-tPct});
-        else if(tPct-vPct>30) reg.neg.push({p, gap:tPct-vPct});
+    return `<div class="card la-ins-empty"><div class="empty-body">${st==='loading'?'Loading weekly usage…':'Weekly usage needs the in-season nflverse sidecar (hosted seed, first week complete).'}</div></div>`;
+  };
+  let body='';
+  if(tab==='pace'){
+    const idx=(typeof buildPaceIndex==='function')?buildPaceIndex():null;
+    if(!idx){
+      body=`<div class="card la-ins-empty"><div class="empty-title">No pace data yet</div>
+        <div class="empty-body">Pace compares live stats to your projections frozen at kickoff — it lights up once week 1 completes${(typeof loadPaceBaseline==='function'&&loadPaceBaseline())?'':' (open the projections view once so the baseline can freeze)'}.</div></div>`;
+    } else {
+      const seen=new Set(); let rows=[];
+      idx.forEach((e,key)=>{
+        if(key.indexOf('|')<0 || seen.has(key)) return; seen.add(key);
+        // gp ≥ 3: one big game extrapolates to a comical 17-game pace (Bowers led the board
+        // off a single week back from injury). THIN players get their read on the card.
+        if(!(e.base>=LA_TRND_MIN_BASE) || !(e.gp>=3)) return;
+        if(!keeps(e.name,e.pos)) return;
+        e.delta = e.pace17 - e.base;
+        rows.push(e);
       });
-    });
-    reg.pos.sort((a,b)=>b.gap-a.gap); reg.neg.sort((a,b)=>b.gap-a.gap);
-    const regRow=(x,up)=>`<div class="la-trnd-row">
-      <span class="pos-badge pos-${x.p.pos}">${x.p.pos}</span><span class="la-trnd-name">${escHtml(x.p.name)}</span>
-      <span class="la-ins-sub">${x.p.tgt?`${x.p.tgt} tgt`:''}${x.p.tgt&&x.p.carry?' · ':''}${x.p.carry?`${x.p.carry} car`:''} · ${x.p.rec_td+x.p.rush_td} TD</span>
-      <b class="la-trnd-pct ${up?'la-trnd-up':'la-trnd-dn'}">${up?'＋TD due':'−TD due'}</b></div>`;
-    regCard=`<div class="la-ins-bar"><span class="la-ins-lbl">TD REGRESSION CANDIDATES</span>
-        <span class="la-ins-sub">high volume + few TDs (or the reverse) — touchdown luck evens out</span></div>
-      <div class="card la-trnd-card"><div class="la-trnd-cols">
-        <div><div class="la-trnd-h la-trnd-up">POSITIVE (TDs coming)</div>${reg.pos.slice(0,12).map(x=>regRow(x,true)).join('')||'<div class="la-ins-sub">none stand out yet</div>'}</div>
-        <div><div class="la-trnd-h la-trnd-dn">NEGATIVE (TD-dependent)</div>${reg.neg.slice(0,12).map(x=>regRow(x,false)).join('')||'<div class="la-ins-sub">none stand out yet</div>'}</div>
-      </div></div>`;
-    // Weekly trending: last-3 vs prior-3 target share / carries.
-    if(wk>=4){
+      rows.sort((a,b)=>b.delta-a.delta);
+      if(scope==='league'||scope==='waiver') rows=rows.slice(0,80);
+      const half=(list)=>list.map(e=>_laTrendRow(e, `${e.gp} gm${e.gp===1?'':'s'}`,
+        `<span class="la-trnd-nums"><span class="la-trnd-klbl">pace</span> <b>${e.pace17.toFixed(0)}</b> <span class="la-trnd-vs">· yours ${e.base.toFixed(0)}</span></span><b class="la-trnd-pct">${e.pct>=0?'+':'−'}${Math.round(Math.abs(e.pct)*100)}%</b>${mineMark(e.name,e.pos)}`, e.cls)).join('');
+      body=two('PACE VS YOUR PROJECTIONS',`17-game pace vs kickoff baseline · thru wk ${wk} · 3+ games played`,
+        '▲ AHEAD',half(rows.filter(e=>e.delta>0).slice(0,15)),
+        '▼ BEHIND',half(rows.filter(e=>e.delta<0).reverse().slice(0,15)));
+    }
+  } else if(tab==='usage'){
+    const U=_laUsagePlayers();
+    if(!U) body=needSidecar();
+    else {
+      const P=U.players.filter(p=>p.pos&&keeps(_laDisplayName(p,p.id),p.pos));
+      const tgts=P.filter(p=>p.pos!=='QB'&&p.gp3>0&&p.tgt3>0)
+        .sort((a,b)=>(b.tgt3/b.gp3)-(a.tgt3/a.gp3)).slice(0,15)
+        .map(p=>_laTrendRow(p, `${p.share3.toFixed(1)}% tgt share last 3 · ${p.share.toFixed(1)}% season`,
+          `<span class="la-trnd-nums"><b>${(p.tgt3/p.gp3).toFixed(1)}</b> <span class="la-trnd-vs">tgt/gm</span></span>${mineMark(_laDisplayName(p,p.id),p.pos)}`,
+          p.share3>p.share+2?'pace-ahead':p.share3<p.share-2?'pace-behind':'')).join('');
+      const cars=P.filter(p=>p.pos==='RB'&&p.gp3>0&&p.carry3>0)
+        .sort((a,b)=>(b.carry3/b.gp3)-(a.carry3/a.gp3)).slice(0,15)
+        .map(p=>_laTrendRow(p, `${(p.carry/Math.max(1,p.gp)).toFixed(1)} car/gm season`,
+          `<span class="la-trnd-nums"><b>${(p.carry3/p.gp3).toFixed(1)}</b> <span class="la-trnd-vs">car/gm last 3</span></span>${mineMark(_laDisplayName(p,p.id),p.pos)}`,
+          (p.carry3/p.gp3)>(p.carry/Math.max(1,p.gp))+2?'pace-ahead':(p.carry3/p.gp3)<(p.carry/Math.max(1,p.gp))-2?'pace-behind':'')).join('');
+      body=two('OPPORTUNITY · LAST 3 WEEKS',`who's actually getting the ball · thru wk ${wk}`,
+        'TARGETS / GAME',tgts,'CARRIES / GAME (RB)',cars);
+    }
+  } else if(tab==='regression'){
+    const U=_laUsagePlayers();
+    if(!U) body=needSidecar();
+    else {
+      const pctl=(arr,v)=>{ if(!arr.length) return 0; let c=0; arr.forEach(x=>{ if(x<=v) c++; }); return 100*c/arr.length; };
+      const reg={pos:[],neg:[]};
+      ['WR','TE','RB'].forEach(pos=>{
+        const grp=U.players.filter(p=>p.pos===pos && (p.tgt+p.carry)>=Math.max(10, wk*3));
+        const vols=grp.map(p=>p.tgt+p.carry);
+        const tdRates=grp.map(p=>(p.rec_td+p.rush_td)/Math.max(1,p.tgt+p.carry));
+        grp.forEach((p,i)=>{
+          if(!keeps(_laDisplayName(p,p.id),p.pos)) return;
+          const vPct=pctl(vols, vols[i]), tPct=pctl(tdRates, tdRates[i]);
+          if(vPct-tPct>30) reg.pos.push({p, gap:vPct-tPct});
+          else if(tPct-vPct>30) reg.neg.push({p, gap:tPct-vPct});
+        });
+      });
+      reg.pos.sort((a,b)=>b.gap-a.gap); reg.neg.sort((a,b)=>b.gap-a.gap);
+      const regRow=(x,up)=>_laTrendRow(x.p, `${x.p.tgt?`${x.p.tgt} tgt`:''}${x.p.tgt&&x.p.carry?' · ':''}${x.p.carry?`${x.p.carry} car`:''} · ${x.p.rec_td+x.p.rush_td} TD`,
+        `<b class="la-trnd-pct ${up?'la-trnd-up':'la-trnd-dn'}">${up?'TDs due':'TD-dependent'}</b>${mineMark(_laDisplayName(x.p,x.p.id),x.p.pos)}`);
+      body=two('TD REGRESSION CANDIDATES','high volume + few TDs (or the reverse) — touchdown luck evens out',
+        'POSITIVE (TDs coming)',reg.pos.slice(0,12).map(x=>regRow(x,true)).join(''),
+        'NEGATIVE (TD-dependent)',reg.neg.slice(0,12).map(x=>regRow(x,false)).join(''));
+    }
+  } else { // trending
+    const U=_laUsagePlayers();
+    if(!U) body=needSidecar();
+    else if(wk<4) body=`<div class="card la-ins-empty"><div class="empty-body">Week-over-week trending needs at least 4 completed weeks — check back at week ${Math.max(5, wk+1)}.</div></div>`;
+    else {
       const trend=[];
-      players.forEach(p=>{
+      U.players.forEach(p=>{
+        if(!keeps(_laDisplayName(p,p.id),p.pos)) return;
         const wks=p.weeks; if(wks.length<4) return;
         const recent=wks.slice(-3), prior=wks.slice(0,-3).slice(-3);
         if(prior.length<2) return;
-        const rowOf=(w)=>pw.players[p.g].w[String(w)]||[];
+        const rowOf=(w)=>U.pw.players[p.g].w[String(w)]||[];
         const avg=(set,fn)=>set.reduce((a,w)=>a+fn(rowOf(w)),0)/set.length;
-        const tgtShare=(r)=>{ const tt=r[ci['team_tgt']]||0; return tt?100*(r[ci['tgt']]||0)/tt:0; };
-        const touches=(r)=>(r[ci['tgt']]||0)+(r[ci['carry']]||0);
+        const tgtShare=(r)=>{ const tt=r[U.ci['team_tgt']]||0; return tt?100*(r[U.ci['tgt']]||0)/tt:0; };
+        const touches=(r)=>(r[U.ci['tgt']]||0)+(r[U.ci['carry']]||0);
         const dShare=avg(recent,tgtShare)-avg(prior,tgtShare);
         const dTouch=avg(recent,touches)-avg(prior,touches);
         const score=(p.pos==='RB'?dTouch:dShare);
-        if(Math.abs(score)>= (p.pos==='RB'?3:3)) trend.push({p, dShare, dTouch, score});
+        if(Math.abs(score)>=3) trend.push({p, dShare, dTouch, score});
       });
       trend.sort((a,b)=>b.score-a.score);
-      const tRow=(x)=>`<div class="la-trnd-row">
-        <span class="pos-badge pos-${x.p.pos}">${x.p.pos}</span><span class="la-trnd-name">${escHtml(x.p.name)}</span>
-        <span class="la-ins-sub">${x.p.pos==='RB'?`${x.dTouch>=0?'+':''}${x.dTouch.toFixed(1)} touches/gm`:`${x.dShare>=0?'+':''}${x.dShare.toFixed(1)}% tgt share`}</span>
-        <b class="la-trnd-pct ${x.score>=0?'la-trnd-up':'la-trnd-dn'}">${x.score>=0?'▲':'▼'}</b></div>`;
-      trndCard=`<div class="la-ins-bar"><span class="la-ins-lbl">TRENDING · LAST 3 WEEKS VS PRIOR</span></div>
-        <div class="card la-trnd-card"><div class="la-trnd-cols">
-          <div><div class="la-trnd-h la-trnd-up">▲ TRENDING UP</div>${trend.filter(x=>x.score>0).slice(0,12).map(tRow).join('')||'<div class="la-ins-sub">quiet week</div>'}</div>
-          <div><div class="la-trnd-h la-trnd-dn">▼ TRENDING DOWN</div>${trend.filter(x=>x.score<0).reverse().slice(0,12).map(tRow).join('')||'<div class="la-ins-sub">quiet week</div>'}</div>
-        </div></div>`;
-    } else {
-      trndCard=`<div class="card la-ins-empty"><div class="empty-body">Week-over-week trending needs at least 4 completed weeks — check back at week ${Math.max(5, wk+1)}.</div></div>`;
+      const tRow=(x)=>_laTrendRow(x.p, x.p.pos==='RB'?`${x.dTouch>=0?'+':''}${x.dTouch.toFixed(1)} touches/gm vs prior 3`:`${x.dShare>=0?'+':''}${x.dShare.toFixed(1)}% tgt share vs prior 3`,
+        `<b class="la-trnd-pct ${x.score>=0?'la-trnd-up':'la-trnd-dn'}">${x.score>=0?'▲':'▼'}</b>${mineMark(_laDisplayName(x.p,x.p.id),x.p.pos)}`);
+      body=two('TRENDING · LAST 3 WEEKS VS THE 3 BEFORE','role changes show up here first',
+        '▲ TRENDING UP',trend.filter(x=>x.score>0).slice(0,12).map(tRow).join(''),
+        '▼ TRENDING DOWN',trend.filter(x=>x.score<0).reverse().slice(0,12).map(tRow).join(''));
     }
   }
-  return `${paceCard}${regCard}${trndCard}`;
+  return `${bar}${body}<div class="la-note">★ = on your roster · tap a name for the player card</div>`;
 }

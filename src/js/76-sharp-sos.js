@@ -11,6 +11,13 @@ function sharpHasData(){ return activeSharp() && Object.keys(activeSharp()).leng
 function advTeamSeason(){
   const s = String(activeSeason);
   if(activeSeason!=='proj' && NFLVERSE && NFLVERSE[s] && NFLVERSE[s].team) return s;
+  // In-season, the projection view's Advanced tab is about THIS season to date (the live
+  // sidecar merges the current year's team tables). Before the sidecar lands — or in the
+  // offseason — it stays on the last completed season.
+  if(typeof tcIsLiveSeason==='function' && typeof TC_SEASON!=='undefined'){
+    const yr=String(TC_SEASON.year);
+    if(tcIsLiveSeason(yr) && NFLVERSE && NFLVERSE[yr] && NFLVERSE[yr].team) return yr;
+  }
   return String(SHARP_SEASON);
 }
 // Adapt the nflverse team tables for the ACTIVE season into the dict the league view renders

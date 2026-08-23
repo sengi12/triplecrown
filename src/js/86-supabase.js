@@ -90,8 +90,19 @@ function _tcHasStoredSession(){
   }catch(e){}
   return false;
 }
+// An OAuth redirect (Google sign-in) lands back with the session in the URL fragment, NOT in
+// localStorage — only the SDK's detectSessionInUrl can consume it. Before this check, that
+// first landing looked signed-out (no sb- key yet), the fragment was never consumed, and the
+// user had to sign in a second time before the menu showed their name.
+function _tcHasAuthRedirect(){
+  try{
+    return /access_token=|refresh_token=|type=recovery|error_description=|[?&#]code=/.test(
+      (window.location.hash||'') + (window.location.search||''));
+  }catch(e){ return false; }
+}
 (function _tcRestoreIfSignedIn(){
   if(typeof window==='undefined') return;
+  if(_tcHasAuthRedirect()){ tcEnsureSupabase().catch(()=>{}); return; }   // consume it NOW
   if(!_tcHasStoredSession()) return;
   const go = ()=>{ tcEnsureSupabase().catch(()=>{}); };
   if(typeof requestIdleCallback==='function') requestIdleCallback(go, {timeout:3000});

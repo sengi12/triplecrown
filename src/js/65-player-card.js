@@ -420,7 +420,8 @@ function renderPlayerCardShell(pid, pos, team){
   const tm = team || p.team || '';
   // Age: show one decimal if the source has one (e.g. 29.5), else whole.
   const age = (p.age!=null) ? (Number.isInteger(p.age)?p.age:(Math.round(p.age*10)/10)) : '–';
-  const exp = p.years_exp!=null ? (p.years_exp===0?'R':p.years_exp) : '–';
+  const _ye = (typeof tcYearsExpFor==='function') ? tcYearsExpFor(p) : p.years_exp;
+  const exp = _ye!=null ? (_ye===0?'R':_ye) : '–';
   // Height: Sleeper stores total inches (e.g. "76") or sometimes a string; render as 6'4".
   const height = _fmtHeight(p.height);
   const weight = p.weight!=null && p.weight!=='' ? `${p.weight} lbs` : '–';
@@ -831,13 +832,21 @@ function renderPcardSeason(season, rows, pos){
     const sep = (prev && prev.grp!==c.grp) ? '<th></th>' : '';
     return sep+`<th>${c.label}</th>`;
   }).join('');
+  // Season in progress? (declared before bodyRows — the live-week marker reads it)
+  const live = (typeof tcIsLiveSeason==='function') && tcIsLiveSeason(season);
   const bodyRows = rows.map(r=>{
     if(r.bye){
+      // A missed game keeps its opponent (a wall of "DNP" said nothing); snaps read 0 and the
+      // stat cells stay blank. Only a true bye — no game that week — says BYE.
       const spans = schema.cols.map((c,i)=>{
         const prev=schema.cols[i-1]; const sep=(prev&&prev.grp!==c.grp)?'<td></td>':'';
-        return sep+`<td class="pcard-cell bye">–</td>`;
+        const v = (r.dnp && c.key==='snp') ? '0' : '–';
+        return sep+`<td class="pcard-cell bye">${v}</td>`;
       }).join('');
-      return `<tr><td class="pcard-wk">${r.wk}</td><td class="pcard-opp" title="${r.dnp?'Did not play (inactive / injured) — not counted in the consistency grade':'Bye week'}">${r.dnp?'DNP':'BYE'}</td>${spans}</tr>`;
+      const oppCell = (r.dnp && r.opp)
+        ? `<span class="pcard-dnp-opp">${r.isAway?'@':'vs'} ${escHtml(r.opp)}</span> <span class="pcard-dnp-tag">out</span>`
+        : (r.dnp ? 'DNP' : 'BYE');
+      return `<tr class="${r.dnp?'pcard-dnp-row':''}"><td class="pcard-wk">${r.wk}</td><td class="pcard-opp" title="${r.dnp?'Did not play (inactive / injured) — not counted in the consistency grade':'Bye week'}">${oppCell}</td>${spans}</tr>`;
     }
     const ctx={ fpts:r.fpts, snp:r.snp, rank:r.rank };
     const vals=pcardRowValues(pos, r.stats, ctx);
@@ -861,7 +870,9 @@ function renderPcardSeason(season, rows, pos){
     const oppTxt = r.opp
       ? `<span class="pcard-opp-inner">${r.isAway?'<span class="pcard-at">@</span>':'<span class="pcard-vs">vs</span>'}<img src="${NFL_LOGO(r.opp)}" class="pcard-opp-logo" onerror="this.style.display='none'"><span>${r.opp}</span></span>`
       : '–';
-    return `<tr><td class="pcard-wk">${r.wk}</td><td class="pcard-opp ${r.isAway?'away':'home'}">${oppTxt}</td>${cells}</tr>`;
+    // The current week's game, while the season runs, is live data that will still move.
+    const isLiveWk = live && typeof TC_SEASON!=='undefined' && r.wk===Number(TC_SEASON.week) && TC_SEASON.phase==='regular';
+    return `<tr class="${isLiveWk?'pcard-live-row':''}"><td class="pcard-wk">${r.wk}${isLiveWk?'<span class="pcard-live-dot" title="This week is in progress — numbers still moving"></span>':''}</td><td class="pcard-opp ${r.isAway?'away':'home'}">${oppTxt}</td>${cells}</tr>`;
   }).join('');
   // Season totals row (uncolored, bold) — counting stats summed, rates recomputed, LNG maxed.
   let totalsRow='';
@@ -886,8 +897,17 @@ function renderPcardSeason(season, rows, pos){
     totalsRow = `<tr class="pcard-total-row"><td class="pcard-wk">TOT</td>
       <td class="pcard-opp">${tot._games}g</td>${tcells}</tr>`;
   }
+  // Season in progress: say so, and show how the line tracks the user's frozen projection.
+  const liveTag = live ? ` <span class="pcard-live-tag" title="Season in progress — through the completed weeks">thru wk ${completedWeeks()}</span>` : '';
+  let paceLine='';
+  if(live && typeof paceStatChipsHTML==='function' && typeof pcardState!=='undefined' && pcardState){
+    const p=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[pcardState.pid])||{};
+    const view = pos==='QB'?'qb':(pos==='RB'?'rush':'rec');
+    const strip=paceStatChipsHTML(p.name||'', pos, pcardState.pid, view);
+    if(strip) paceLine=`<div class="pcard-pace"><span class="pcard-pace-lbl">vs your projection</span>${strip}</div>`;
+  }
   return `<div class="pcard-season">
-    <div class="pcard-season-title">${season}${pcardSeasonTeamTag(rows)}${pcardFptsPerGameBadge(rows, pos)}${pcardSeasonConsistencyBadge(rows, pos)}</div>
+    <div class="pcard-season-title">${season}${liveTag}${pcardSeasonTeamTag(rows)}${pcardFptsPerGameBadge(rows, pos)}${pcardSeasonConsistencyBadge(rows, pos)}</div>${paceLine}
     <div class="pcard-table-scroll"><table class="pcard-table">
       <thead>
         <tr><th></th><th></th>${grpCells}</tr>

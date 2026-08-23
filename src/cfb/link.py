@@ -527,8 +527,17 @@ def link_player(player, idx, draft_class, overrides=None, espn_ids=None):
 def rookie_pool(players, draft_class=None, positions=SKILL_POSITIONS, max_search_rank=None):
     """Active rookie skill players from a Sleeper player DB, as a list of records with player_id."""
     out = []
+    tgt = int(draft_class) if draft_class else None
     for pid, p in players.items():
-        if p.get("years_exp") != 0 or not p.get("active"):
+        if not p.get("active"):
+            continue
+        # With a class given, membership comes from the rookie year (years_exp relative to the
+        # DB's league year — see DB_SEASON), so a time-machine build for 2025 still finds the
+        # 2025 class in a 2026 player DB. Without one: today's rookies (years_exp == 0).
+        if tgt is not None:
+            if draft_class_of(p, tgt) != tgt:
+                continue
+        elif p.get("years_exp") != 0:
             continue
         if positions and p.get("position") not in positions:
             continue
@@ -543,6 +552,12 @@ def rookie_pool(players, draft_class=None, positions=SKILL_POSITIONS, max_search
 # College play-by-play exists from 2014, so the earliest class whose college seasons can be
 # read at all is 2015 (one season) and the first with a full four-season window is 2018.
 EARLIEST_LINKABLE_CLASS = 2015
+
+
+# The league year the Sleeper player DB describes. years_exp is relative to THIS year, not to
+# the seed's season: a time-machine build for 2025 still reads a 2026 player DB, so a 2025
+# rookie carries years_exp=1 and must map to class 2025, not 2024. None = same as `season`.
+DB_SEASON = None
 
 
 def draft_class_of(player, season):
@@ -561,7 +576,7 @@ def draft_class_of(player, season):
     ye = int(ye)
     if ye < 0:
         return None
-    return int(season) - ye
+    return int(DB_SEASON or season) - ye
 
 
 def class_pools(players, season, positions=SKILL_POSITIONS, only_pids=None,

@@ -67,10 +67,13 @@ def _r1(v):
     return i if abs(f - i) < 1e-9 else round(f, 1)
 
 
-def build_schedule(season):
-    """Full-season opponent map (future weeks included): {TEAM: {week: OPP}}."""
+def build_schedule(season, meta=None):
+    """Full-season opponent map (future weeks included): {TEAM: {week: OPP}}.
+    With `meta` (a dict), also fills {TEAM: {week: [OPP, home(1/0), weekday, kickoff ET]}}
+    so the lineup views can say "Sun 1:00 PM vs TB" the way the Sleeper app does."""
     g = _nfl._aux_csv(NFLDATA_GAMES_URL,
-                      usecols=["season", "game_type", "week", "away_team", "home_team"])
+                      usecols=["season", "game_type", "week", "away_team", "home_team",
+                               "gameday", "weekday", "gametime"])
     g = g[(g["season"] == int(season)) & (g["game_type"] == "REG")]
     out = {}
     for _, row in g.iterrows():
@@ -79,7 +82,28 @@ def build_schedule(season):
         away = _nfl.NFLVERSE_TO_SEED.get(row["away_team"], row["away_team"])
         out.setdefault(home, {})[str(wk)] = away
         out.setdefault(away, {})[str(wk)] = home
+        if meta is not None:
+            wd = str(row.get("weekday") or "")[:3]
+            tm = _kickoff_12h(row.get("gametime"))
+            day = str(row.get("gameday") or "")
+            meta.setdefault(home, {})[str(wk)] = [away, 1, wd, tm, day]
+            meta.setdefault(away, {})[str(wk)] = [home, 0, wd, tm, day]
     return out
+
+
+def _kickoff_12h(t):
+    """'13:00' (ET, as nfldata ships it) → '1:00 PM'; blank when unknown."""
+    s = str(t or "").strip()
+    if not s or s.lower() == "nan":
+        return ""
+    try:
+        hh, mm = s.split(":")[:2]
+        h = int(hh)
+        ap = "AM" if h < 12 else "PM"
+        h12 = h % 12 or 12
+        return f"{h12}:{int(mm):02d} {ap}"
+    except Exception:
+        return s
 
 
 def _weekly_frames(season):
@@ -203,12 +227,85 @@ def build_def_vs_pos(season, pbp):
     return {"cols": DVP_COLS, "teams": teams}
 
 
-def build_inseason(season):
-    """The whole sidecar block for one season. {} whenever the data isn't there yet."""
+def truncate_inseason(blk, max_week):
+    """Time machine: drop every week after max_week from a built sidecar (schedule stays
+    whole — future opponents are the point of it). Mutates and returns blk."""
+    if not blk or max_week is None:
+        return blk
+    mw = int(max_week)
+    blk["weeks"] = [w for w in (blk.get("weeks") or []) if int(w) <= mw]
+    adv = blk.get("adv_weekly") or {}
+    for _season, packed in list(adv.items()):
+        wks = packed.get("weeks") or []
+        keep = [i for i, w in enumerate(wks) if int(w) <= mw]
+        packed["weeks"] = [wks[i] for i in keep]
+        packed["teams"] = {tm: [rows[i] for i in keep if i < len(rows)]
+                           for tm, rows in (packed.get("teams") or {}).items()}
+    pw = (blk.get("player_weekly") or {}).get("players") or {}
+    for gid in list(pw):
+        pw[gid]["w"] = {wk: v for wk, v in pw[gid]["w"].items() if int(wk) <= mw}
+        if not pw[gid]["w"]:
+            del pw[gid]
+    dv = (blk.get("def_vs_pos") or {}).get("teams") or {}
+    for tm in dv:
+        for pos in dv[tm]:
+            dv[tm][pos] = {wk: v for wk, v in dv[tm][pos].items() if int(wk) <= mw}
+    return blk
+
+
+# The per-season nflverse blocks the app's player cards / Advanced tab read, rebuilt weekly
+# for the season in progress so the route tree, pass chart, rushing fan, advanced player
+# tables and team tables show THIS season to date instead of stopping at last year.
+LIVE_NFLVERSE_PARTS = ("team", "players", "routes", "qb_passing", "rb_fan", "rosters", "ol_weekly")
+
+
+def build_live_nflverse(season, parts=LIVE_NFLVERSE_PARTS):
+    """Current-season nflverse blocks. Each part is independent and fail-soft (early September,
+    a lagging upstream, a missing charting file) — whatever builds, ships."""
+    out = {}
+    builders = {
+        "team": lambda: _nfl.build_team_block(season)[0],
+        "players": lambda: _nfl.build_player_tables(season),
+        "routes": lambda: _nfl.route_trees(season),
+        "qb_passing": lambda: _nfl.qb_passing_zones(season),
+        "rb_fan": lambda: _nfl.rb_rushing_fans(season),
+        "rosters": lambda: _nfl.team_rosters(season),
+        "ol_weekly": lambda: _nfl.ol_weekly_team(season),
+    }
+    for part in parts:
+        fn = builders.get(part)
+        if not fn:
+            continue
+        try:
+            blk = fn()
+            if blk:
+                out[part] = blk
+                n = len(blk.get("players", blk)) if isinstance(blk, dict) else 0
+                print(f"  [inseason] live {part}: ok ({n} entries)")
+            else:
+                print(f"  [inseason] live {part}: empty")
+        except Exception as e:
+            print(f"  [inseason] live {part} failed ({type(e).__name__}: {str(e)[:120]}) — omitting")
+    return out
+
+
+def build_inseason(season, max_week=None):
+    """The whole sidecar block for one season. {} whenever the data isn't there yet.
+    max_week (time machine): keep only weeks <= max_week; None = everything available."""
     if not HAVE_PANDAS:
         print("  [inseason] pandas not available — skipping")
         return {}
     season = int(season)
+    # Cap every pbp-derived builder at the completed weeks (time machine). Restored after.
+    _prev_cap = _nfl.MAX_WEEK
+    _nfl.MAX_WEEK = int(max_week) if max_week is not None else None
+    try:
+        return _build_inseason(season, max_week)
+    finally:
+        _nfl.MAX_WEEK = _prev_cap
+
+
+def _build_inseason(season, max_week):
     try:
         pbp = _weekly_frames(season)
     except Exception as e:
@@ -233,9 +330,21 @@ def build_inseason(season):
     except Exception as e:
         print(f"  [inseason] def_vs_pos failed ({e}) — omitting")
     try:
-        out["schedule"] = build_schedule(season)
+        meta = {}
+        out["schedule"] = build_schedule(season, meta)
+        out["schedule_meta"] = meta
     except Exception as e:
         print(f"  [inseason] schedule failed ({e}) — omitting")
+    # Live per-season nflverse blocks (player cards + Advanced tab for the season in progress).
+    live = build_live_nflverse(season)
+    if live:
+        out["nflverse"] = {str(season): live}
+    if max_week is not None:
+        truncate_inseason(out, max_week)
+        weeks = out["weeks"]
+        if not weeks:
+            print(f"  [inseason] {season}: nothing completed before week {int(max_week)+1} — skipping")
+            return {}
     n_players = len((out.get("player_weekly") or {}).get("players", {}))
     print(f"  [inseason] {season}: weeks {weeks[0]}–{weeks[-1]}, {n_players} players")
     return out

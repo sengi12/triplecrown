@@ -13,7 +13,15 @@ async function fetchPlayerWeekly(pid, season){
   if(key in weeklySkillCache) return weeklySkillCache[key];
   if(_weeklyInFlight[key]) return _weeklyInFlight[key];
   _weeklyInFlight[key] = sleeperFetch(SLEEPER_WEEKLY_URL(pid, season))
-    .then(data=>{ weeklySkillCache[key] = data; return data; })
+    .then(data=>{
+      // Time machine: the frozen season only exists up to its completed weeks.
+      if(data && typeof data==='object' && typeof TC_SEASON!=='undefined' && TC_SEASON.frozen
+         && String(season)===String(TC_SEASON.year)){
+        const max=(typeof completedWeeks==='function')?completedWeeks():0;
+        const cut={}; for(const w in data){ if(Number(w)<=max) cut[w]=data[w]; }
+        data = Object.keys(cut).length ? cut : null;
+      }
+      weeklySkillCache[key] = data; return data; })
     .finally(()=>{ delete _weeklyInFlight[key]; });
   return _weeklyInFlight[key];
 }
@@ -120,9 +128,12 @@ function renderWeekOpponentRail(team, season, className=''){
     return `<div class="wr-opp-rail ${className}"><div class="wr-opp-loading">Loading weekly opponents…</div></div>`;
   }
   const cells=[];
-  for(let wk=1; wk<=18; wk++){
+  // Live season: the rail stops at the completed weeks, matching the slider's range.
+  const maxWk=(typeof tcSeasonMaxWeek==='function')?tcSeasonMaxWeek(s):18;
+  const span=Math.max(1,maxWk-1);
+  for(let wk=1; wk<=maxWk; wk++){
     const m=byWeek[wk];
-    const ratio=((wk-1)/17).toFixed(6);
+    const ratio=((wk-1)/span).toFixed(6);
     const pos=`calc(var(--wr-pad, 0px) + (100% - (2 * var(--wr-pad, 0px))) * ${ratio})`;
     const laneCls = (wk%2===0) ? ' wr-opp-top' : ' wr-opp-bottom';
     if(!m || !m.opp){
@@ -142,8 +153,10 @@ function renderWeekOpponentRail(team, season, className=''){
 
 function renderWeekNumberRail(className=''){
   const cells=[];
-  for(let wk=1; wk<=18; wk++){
-    const ratio=((wk-1)/17).toFixed(6);
+  const maxWk=(typeof tcSeasonMaxWeek==='function' && typeof activeSeason!=='undefined')?tcSeasonMaxWeek(activeSeason):18;
+  const span=Math.max(1,maxWk-1);
+  for(let wk=1; wk<=maxWk; wk++){
+    const ratio=((wk-1)/span).toFixed(6);
     const pos=`calc(var(--wr-pad, 0px) + (100% - (2 * var(--wr-pad, 0px))) * ${ratio})`;
     const laneCls = (wk%2===0) ? ' wr-week-top' : ' wr-week-bottom';
     cells.push(`<div class="wr-week-cell${laneCls}" style="left:${pos}" title="Week ${wk}">
@@ -389,6 +402,18 @@ function sidebarFptsPerGame(p, mode){
   fpts += rush_td * (sc.rushing_touchdowns||6);
   return fpts / gp;
 }
+// Phone layout: the pts/g chip fought the player's NAME for width in the share rows (with an
+// owner pill too, names collapsed to one letter). So the name row keeps the chip only on wide
+// screens (.fptsg-top) and phones get it as one more stat in the row below (.fptsg-stat).
+function sidebarFptsTagTop(p, mode){
+  const t=sidebarFptsTag(p, mode);
+  return t?`<span class="fptsg-top">${t}</span>`:'';
+}
+function sidebarFptsStat(p, mode){
+  const v = sidebarFptsPerGame(p, mode);
+  if(v==null) return '';
+  return `<span class="share-stat fptsg-stat">Pts/G <b>${v.toFixed(1)}</b></span>`;
+}
 function sidebarFptsTag(p, mode){
   const v = sidebarFptsPerGame(p, mode);
   if(v==null) return '';
@@ -533,13 +558,15 @@ function resetWeekRange(team){
 function weekRangeDrag(team, which, val){
   const state=userProj[team]; if(!state) return;
   const cur = getSharedWeekRange(team, activeSeason);
-  let [lo,hi]=cur;
+  const maxWk=(typeof tcSeasonMaxWeek==='function')?tcSeasonMaxWeek(activeSeason):18;
+  let [lo,hi]=cur; hi=Math.min(hi,maxWk); lo=Math.min(lo,maxWk);
   val=parseInt(val);
   if(which==='lo'){ lo=Math.min(val,hi); } else { hi=Math.max(val,lo); }
   const loEl=document.getElementById(`wr-lo-${team}`); if(loEl) loEl.textContent=lo;
   const hiEl=document.getElementById(`wr-hi-${team}`); if(hiEl) hiEl.textContent=hi;
   const fill=document.getElementById(`wr-fill-${team}`);
-  if(fill){ fill.style.left=((lo-1)/17*100)+'%'; fill.style.right=((18-hi)/17*100)+'%'; }
+  const span=Math.max(1,maxWk-1);
+  if(fill){ fill.style.left=((lo-1)/span*100)+'%'; fill.style.right=((maxWk-hi)/span*100)+'%'; }
   state._weekDragPending=[lo,hi];
 }
 function weekRangeCommit(team){
@@ -588,6 +615,7 @@ function _tcApplyProjSeason(nextSeason){
 // Adopt a full Sleeper /state/nfl payload: season, phase and week — not just the year.
 function _tcApplySleeperState(s){
   if(!s || typeof s!=='object') return TC_SEASON;
+  if(TC_SEASON.frozen) return TC_SEASON;   // time machine: a live payload never unfreezes the clock
   const y = Number(s.league_season || s.season);
   if(Number.isFinite(y) && y>=2000 && y<=2100){ TC_SEASON.year = y; _tcApplyProjSeason(y); }
   const st = String(s.season_type||'').toLowerCase();
@@ -600,15 +628,38 @@ function _tcApplySleeperState(s){
 }
 // Adopt the state block a seed carries ({season, season_type, week}); live truth always wins.
 function _tcApplySeedState(st){
-  if(!st || typeof st!=='object' || TC_SEASON.source==='sleeper') return TC_SEASON;
+  if(!st || typeof st!=='object') return TC_SEASON;
+  // Time machine (build_seed.py --as-of): the seed's state is the truth, the live probe is
+  // skipped, and live Sleeper pulls are cut off at the completed weeks.
+  if(st.frozen){ TC_SEASON.frozen = true; TC_SEASON.dbYear = Number(st.db_season)||null; }
+  else if(TC_SEASON.source==='sleeper') return TC_SEASON;
   const y = Number(st.season);
   if(Number.isFinite(y) && y>=2000 && y<=2100){ TC_SEASON.year = y; _tcApplyProjSeason(y); }
   const p = String(st.season_type||'').toLowerCase();
   if(p==='pre'||p==='regular'||p==='post'||p==='off') TC_SEASON.phase = p;
   const wk = Number(st.week);
   if(Number.isFinite(wk) && wk>=0 && wk<=23) TC_SEASON.week = wk;
-  TC_SEASON.source = 'seed';
+  TC_SEASON.source = st.frozen ? 'frozen' : 'seed';
+  if(st.frozen && typeof renderTimeMachineBadge==='function'){ try{ renderTimeMachineBadge(); }catch(e){} }
   return TC_SEASON;
+}
+function tcTimeMachine(){ return !!TC_SEASON.frozen; }
+// Last week a week slider may reach for a season: 18 for a finished season, the completed
+// weeks for the season in progress (a slider that runs to 18 in week 9 is just noise).
+function tcSeasonMaxWeek(season){
+  if(typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season)) return Math.max(1, completedWeeks());
+  return 18;
+}
+// A small banner chip so a frozen build is never mistaken for the live app.
+function renderTimeMachineBadge(){
+  if(typeof document==='undefined' || !TC_SEASON.frozen) return;
+  let el=document.getElementById('tcTimeMachine');
+  if(!el){
+    el=document.createElement('div'); el.id='tcTimeMachine'; el.className='tc-time-machine';
+    document.body.appendChild(el);
+  }
+  el.innerHTML=`⏱ TIME MACHINE · ${TC_SEASON.year} · ${TC_SEASON.phase==='post'?'playoffs':'week '+TC_SEASON.week}`;
+  el.title=`This build is frozen at ${TC_SEASON.year} ${TC_SEASON.phase} season, week ${TC_SEASON.week} (build_seed.py --as-of). Live Sleeper pulls stop at week ${completedWeeks()}.`;
 }
 // The season has started once Sleeper flips to the regular season (or later).
 function hasSeasonStarted(){
@@ -623,6 +674,7 @@ var _tcStatePromise = null;             // shared in-flight probe (var: safe und
 var _TC_STATE_TTL = 5*60*1000;
 async function syncProjSeasonFromSleeper(force){
   if(typeof SLEEPER_STATE_URL==='undefined' || !SLEEPER_STATE_URL) return PROJ_SEASON;
+  if(TC_SEASON.frozen) return PROJ_SEASON;   // time machine: the seed's clock is the clock
   if(!force && TC_SEASON.source==='sleeper' && (Date.now()-TC_SEASON.fetchedAt)<_TC_STATE_TTL) return PROJ_SEASON;
   if(_tcStatePromise) return _tcStatePromise;
   _tcStatePromise = (async()=>{
@@ -642,12 +694,14 @@ async function syncProjSeasonFromSleeper(force){
 // in-season hooks when the week or phase moved under a long-lived tab.
 var _TC_RECHECK_AGE = 6*60*60*1000;
 async function tcSeasonRecheck(force){
+  if(TC_SEASON.frozen) return TC_SEASON;
   if(!force && (Date.now()-TC_SEASON.fetchedAt) < _TC_RECHECK_AGE) return TC_SEASON;
   const prevWeek = completedWeeks(), prevPhase = TC_SEASON.phase, prevYear = TC_SEASON.year;
   await syncProjSeasonFromSleeper(true);
   if(completedWeeks()!==prevWeek || TC_SEASON.phase!==prevPhase || TC_SEASON.year!==prevYear){
     if(typeof maybeFreezePaceBaseline==='function'){ try{ maybeFreezePaceBaseline(); }catch(e){} }
     if(typeof refreshLiveSeasonStats==='function'){ try{ refreshLiveSeasonStats(); }catch(e){} }
+    if(typeof ensureInseasonSidecar==='function'){ try{ TC_INSEASON=null; _inseasonRevalidated=false; ensureInseasonSidecar(); }catch(e){} }
     if(typeof renderSeasonTabs==='function'){ try{ renderSeasonTabs(); }catch(e){} }
   }
   return TC_SEASON;

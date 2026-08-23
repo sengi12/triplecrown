@@ -27,9 +27,22 @@ function clearEspnCardCaches(pid){
   delete espnAthleteIdCache[`${pid}:college-football`];
 }
 
+// years_exp in the Sleeper DB is relative to the live league year; a time-machine build for
+// an earlier season asks "was he a rookie THAT year" — rookie_year (when stamped) answers it.
+function tcYearsExpFor(p){
+  if(!p) return null;
+  const ye = (p.years_exp!=null && !Number.isNaN(Number(p.years_exp))) ? Number(p.years_exp) : null;
+  if(typeof tcTimeMachine==='function' && tcTimeMachine() && typeof PROJ_SEASON!=='undefined'){
+    const ry = p.metadata && Number(p.metadata.rookie_year);
+    if(Number.isFinite(ry) && ry>2000) return Math.max(0, Number(PROJ_SEASON)-ry);
+    // No rookie_year: shift years_exp back by the years the build is frozen behind the DB.
+    if(ye!=null && typeof TC_SEASON!=='undefined' && TC_SEASON.dbYear) return Math.max(0, ye-(TC_SEASON.dbYear-Number(PROJ_SEASON)));
+  }
+  return ye;
+}
 function isRookiePlayer(pid){
   const p = sleeperPlayers && sleeperPlayers[pid];
-  return !!(p && p.years_exp===0);
+  return !!(p && tcYearsExpFor(p)===0);
 }
 // Search ESPN for an athlete id by name, preferring the wanted league (uid `~l:<id>~`: 28=NFL,
 // 23=college). Returns an exact-league match when found, else the first player id seen (so a

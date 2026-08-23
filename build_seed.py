@@ -56,8 +56,38 @@ def _sleeper_state():
         return fallback
 
 
-TC_STATE = _sleeper_state()
+# ── Time machine (--as-of SEASON:WEEK) ───────────────────────────────────────
+# Build the seed as if it were that regular-season week: the projection season is SEASON,
+# the NFL state block says "regular season, week WEEK" and is marked frozen (the app skips
+# its live Sleeper state probe and truncates live pulls to the completed weeks), and the
+# in-season sidecar carries only weeks < WEEK. That makes every in-season tool — pace,
+# matchups, lineup, DvP, trends, live season stats — testable from the offseason, against
+# a real season, offline (bake_seed.py) or hosted (preview.py --seeds DIR).
+# Parsed before argparse because the Sleeper state feeds argparse's own defaults.
+def _parse_as_of(argv):
+    for i, a in enumerate(argv):
+        val = None
+        if a.startswith("--as-of="):
+            val = a.split("=", 1)[1]
+        elif a == "--as-of" and i + 1 < len(argv):
+            val = argv[i + 1]
+        if val is None:
+            continue
+        m = re.match(r"^\s*(\d{4})\D+(\d{1,2})\s*$", val)
+        if not m:
+            sys.exit(f"--as-of expects SEASON:WEEK (e.g. 2025:10), got {val!r}")
+        season, week = int(m.group(1)), int(m.group(2))
+        if not (1 <= week <= 18):
+            sys.exit("--as-of week must be 1–18 (a regular-season week)")
+        return {"season": season, "season_type": "regular", "week": week, "frozen": True}
+    return None
+
+
+AS_OF = _parse_as_of(sys.argv[1:])
+TC_STATE = AS_OF or _sleeper_state()
 DEFAULT_PROJ_SEASON = TC_STATE["season"]
+if AS_OF:
+    print(f"TIME MACHINE: building as of {AS_OF['season']} regular season, week {AS_OF['week']}")
 
 # ── Seed compaction codecs ───────────────────────────────────────────────────
 # Shrink the hosted downloads: the fantasy seed, the def_weekly sidecar, and each
@@ -2587,6 +2617,15 @@ def main():
                     help="skip college rookie profiles")
     ap.add_argument("--refresh-cfb", action="store_true",
                     help="rebuild the college link map, production tables and percentile pool")
+    ap.add_argument("--as-of", dest="as_of", default=None,
+                    help="TIME MACHINE: build as of SEASON:WEEK of a past regular season (e.g. "
+                         "2025:10) so the in-season tools can be tested in the offseason. The "
+                         "state block is frozen, the projection season follows, the in-season "
+                         "sidecar stops at the completed weeks. Use with --out-dir to keep the "
+                         "real seeds untouched.")
+    ap.add_argument("--out-dir", default="seeds",
+                    help="where to write the seed + sidecars (default seeds/; e.g. seeds_tm/ for a "
+                         "time-machine build — preview.py --seeds and bake_seed.py --seed read it)")
     ap.add_argument("--sumer", action="store_true",
                     help="also scrape SumerSports advanced per-player stats into the seed (opt-in; "
                          "the app now defaults to nflverse for advanced metrics, so this is only for A/B analysis)")
@@ -2689,6 +2728,10 @@ def main():
                 # college profile is the best read on him there is until his NFL sample grows.
                 _pool = {str(p.get("player_id")) for t in seed.values() for rows in t.values()
                          for p in rows if p.get("player_id")}
+                if AS_OF:
+                    # The player DB is today's; draft classes derive from years_exp against the
+                    # live league year, not the frozen one (see src/cfb/link.py DB_SEASON).
+                    _cfb.link.DB_SEASON = _sleeper_state()["season"]
                 _blk = _cfb.build_all(args.season, _raw, only_pids=_pool, refresh=cfb_refresh)
                 cfb, cfb_logs = _cfb.split_for_seed(_blk)
                 _cls = _blk.get("classes") or {}
@@ -2709,7 +2752,9 @@ def main():
         print("\n  in-season weekly sidecar (current-season nflverse)")
         try:
             import src.nflverse.inseason as _ins
-            inseason = _ins.build_inseason(args.season)
+            # Time machine: only the weeks that were complete as of that week exist yet.
+            _max_week = (TC_STATE["week"] - 1) if AS_OF else None
+            inseason = _ins.build_inseason(args.season, max_week=_max_week)
         except Exception as e:
             print(f"    ⚠ in-season sidecar failed: {type(e).__name__}: {e}")
 
@@ -2743,7 +2788,10 @@ def main():
                     # a live probe (baked/offline copies especially). Live state still wins.
                     "state": {"season": TC_STATE["season"], "season_type": TC_STATE["season_type"],
                               "week": TC_STATE["week"],
-                              "asof": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
+                              "asof": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                              # Time machine: the app must not let the live probe overwrite this,
+                              # and years_exp in the (live) player DB is relative to db_season.
+                              **({"frozen": True, "db_season": _sleeper_state()["season"]} if AS_OF else {})},
                     "seed": seed, "history": history,
                     "history_seasons": nonempty_seasons, "ecr": ecr,
                     "contracts": contracts, "sharp": sharp, "sos": sos,
@@ -2768,22 +2816,24 @@ def main():
             f.write(_gzip.compress(blob, compresslevel=9, mtime=0))
         return len(blob)
 
-    _write_seed("seeds/triplecrown_seed.json", _encode_fantasy(_fantasy_obj))
+    OUT = args.out_dir.rstrip("/") or "seeds"
+    os.makedirs(OUT, exist_ok=True)
+    _write_seed(f"{OUT}/triplecrown_seed.json", _encode_fantasy(_fantasy_obj))
     # Sidecar files — lazy-loaded by the app on demand (hosted). Only written when non-empty.
     if nflverse_def_weekly:
-        _write_seed("seeds/triplecrown_seed.def_weekly.json", _encode_defweekly(nflverse_def_weekly))
+        _write_seed(f"{OUT}/triplecrown_seed.def_weekly.json", _encode_defweekly(nflverse_def_weekly))
     if nflverse_ol_weekly:
-        _write_seed("seeds/triplecrown_seed.ol_weekly.json", nflverse_ol_weekly)
+        _write_seed(f"{OUT}/triplecrown_seed.ol_weekly.json", nflverse_ol_weekly)
     if nflverse_adv_weekly:
-        _write_seed("seeds/triplecrown_seed.adv_weekly.json", nflverse_adv_weekly)
+        _write_seed(f"{OUT}/triplecrown_seed.adv_weekly.json", nflverse_adv_weekly)
     # Per-game college logs are ~60% of the college payload and are only read when someone
     # opens one rookie's card, so they ride in a sidecar while the season lines and percentiles
     # stay inline (82 KB gz inline vs 219 KB gz together).
     if cfb_logs:
-        _write_seed("seeds/triplecrown_seed.cfb_logs.json", cfb_logs)
+        _write_seed(f"{OUT}/triplecrown_seed.cfb_logs.json", cfb_logs)
     # In-season sidecar: written while the season runs; deleted in the offseason build,
     # when that season's data ships through the normal history/adv_weekly path instead.
-    _inseason_path = "seeds/triplecrown_seed.inseason.json"
+    _inseason_path = f"{OUT}/triplecrown_seed.inseason.json"
     if inseason:
         _write_seed(_inseason_path, inseason)
     elif TC_STATE["season_type"] in ("off", "pre"):
@@ -2796,7 +2846,7 @@ def main():
     # Playbook is the largest lazy block and is viewed one season at a time, so split it
     # into per-season sidecars the app fetches on demand (a typical user only downloads the
     # current season). Remove any stale combined file from older builds.
-    _old_combined = "seeds/triplecrown_seed.coaching.json"
+    _old_combined = f"{OUT}/triplecrown_seed.coaching.json"
     if os.path.exists(_old_combined):
         try:
             os.remove(_old_combined)
@@ -2804,7 +2854,7 @@ def main():
             pass
     coaching_files = []
     for _s, _blk in sorted(nflverse_coaching.items(), key=lambda kv: kv[0], reverse=True):
-        _fn = f"seeds/triplecrown_seed.coaching.{_s}.json"
+        _fn = f"{OUT}/triplecrown_seed.coaching.{_s}.json"
         _write_seed(_fn, _encode_coaching(_blk))
         coaching_files.append(_fn)
 

@@ -373,11 +373,39 @@ let TC_INSEASON = null;
 var _inseasonPromise = null;
 var _inseasonRevalidated = false;
 const _INSEASON_URL = 'seeds/triplecrown_seed.inseason.json';
+// Sections of the live nflverse block that merge straight into NFLVERSE[season] — the
+// player-card charts (routes / qb_passing / rb_fan), the Advanced tab + rankings advanced
+// metrics (team / players), the RB fan's line context (rosters) and the OL week-range
+// charts (ol_weekly) then see the season in progress exactly like a completed one.
+const _INSEASON_NV_SECTIONS = ['team','players','routes','qb_passing','rb_fan','rosters','ol_weekly'];
 function _adoptInseason(payload){
   if(!payload || !payload.season) return false;
   TC_INSEASON = payload;
   if(payload.adv_weekly) mergeNflverseSection('adv_weekly', payload.adv_weekly);
+  if(payload.nflverse && typeof payload.nflverse==='object'){
+    for(const s in payload.nflverse){
+      const blk=payload.nflverse[s]; if(!blk || typeof blk!=='object') continue;
+      _INSEASON_NV_SECTIONS.forEach(sec=>{ if(blk[sec]){ const d={}; d[s]=blk[sec]; mergeNflverseSection(sec, d); } });
+    }
+    if(typeof _schemeSchemeLeagueCache!=='undefined') _schemeSchemeLeagueCache={};
+    if(typeof invalidateBuildPlayerCache==='function'){ try{ invalidateBuildPlayerCache(); }catch(e){} }
+  }
+  // A live season arriving after the card / Advanced tab rendered: repaint so it shows up.
+  try{ if(typeof currentPhase!=='undefined' && currentPhase==='Advanced' && typeof renderContent==='function') renderContent(); }catch(e){}
   return true;
+}
+// Label for a season button / caption: the season in progress reads "2026 · wk 9".
+function tcSeasonLabel(s){
+  const yr = (typeof TC_SEASON!=='undefined') ? String(TC_SEASON.year) : '';
+  if(String(s)===yr && typeof hasSeasonStarted==='function' && hasSeasonStarted()){
+    const wk=(typeof completedWeeks==='function')?completedWeeks():0;
+    return wk>0 ? `${s} · wk ${wk}` : `${s} · live`;
+  }
+  return String(s);
+}
+function tcIsLiveSeason(s){
+  return typeof TC_SEASON!=='undefined' && String(s)===String(TC_SEASON.year)
+    && typeof hasSeasonStarted==='function' && hasSeasonStarted();
 }
 function ensureInseasonSidecar(){
   if(TC_INSEASON) return Promise.resolve(true);

@@ -757,6 +757,7 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
     // In-season: pull current-season actuals + freeze the pace baseline (both no-op pre-season).
     if(typeof refreshLiveSeasonStats==='function') refreshLiveSeasonStats().catch(()=>{});
     if(typeof maybeFreezePaceBaseline==='function'){ try{ maybeFreezePaceBaseline(); }catch(e){} }
+    if(typeof hasSeasonStarted==='function' && hasSeasonStarted() && typeof ensureInseasonSidecar==='function') ensureInseasonSidecar().catch(()=>{});
     return;
   }
   // Now that the season is settled, re-stamp the loading state with the real year.
@@ -785,6 +786,8 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
       // In-season: pull current-season actuals + freeze the pace baseline (both no-op pre-season).
       if(typeof refreshLiveSeasonStats==='function') refreshLiveSeasonStats().catch(()=>{});
       if(typeof maybeFreezePaceBaseline==='function'){ try{ maybeFreezePaceBaseline(); }catch(e){} }
+      // The live nflverse sidecar feeds the player-card charts and the Advanced tab in-season.
+      if(typeof hasSeasonStarted==='function' && hasSeasonStarted() && typeof ensureInseasonSidecar==='function') ensureInseasonSidecar().catch(()=>{});
     }
     else refreshFromSleeper(true);   // ECR (if any) already adopted by tryAutoLoadSeed; restore happens there
   });

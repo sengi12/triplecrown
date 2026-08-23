@@ -14,3 +14,8 @@ _site/
 _preview/
 _preview_raw/
 _preview_min/
+
+# time-machine builds (build_seed.py --as-of --out-dir)
+seeds_tm/
+seeds_asof*/
+index_tm.html

@@ -15,7 +15,7 @@ function renderRushing(team,state){
 function setRushSub(t){rushingSubTab=t;renderContent();}
 
 function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
-  const lockStats = activeSeason!=='proj';
+  const lockStats = activeSeason!=='proj' || (typeof paceLockActive==='function'&&paceLockActive());
   const noteTeam=String(team||currentTeam||'').toUpperCase();
   const totalsCtx=activeSeason==='proj'
     ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} rushing totals`
@@ -59,20 +59,21 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
     return `<div class="share-block" id="rblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${projPaceChip(p.name,p.pos,p.player_id)}${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTag(p,'rush')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${projPaceChip(p.name,p.pos,p.player_id)}${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTagTop(p,'rush')}
         <span class="share-pct" id="rp-${i}">${sharePct}</span>
         <span class="share-vol" id="ra-${i}">${tagVal(att+' att','Rushing Attempts','rushing_attempts')}</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},'RB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
         </div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
+        ${typeof paceShareMarkHTML==='function'?paceShareMarkHTML(team,p.name,'RB',p.player_id,'rush'):''}
         <input class="sl" type="range" min="0" max="100" step="1" value="${pct}"
           data-key="rs_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
         <span class="share-stat">Att ${attCell}</span>
         <span class="share-stat">Y/Carry ${ypcCell}</span>
         <span class="share-stat">Yds ${ydsCell}</span>
-        <span class="share-stat">TDs ${tdsCell}</span>
-      </div></div>`;
+        <span class="share-stat">TDs ${tdsCell}</span>${sidebarFptsStat(p,'rush')}
+      </div>${typeof projPaceStrip==='function'?projPaceStrip(p.name,'RB',p.player_id,'rush'):''}</div>`;
   }).join('');
   return `<div class="card"><div class="card-title">Team Rushing Volume</div>
     <div class="alert alert-info"><span class="alert-icon">ℹ️</span>
@@ -90,7 +91,7 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
 }
 
 function renderRushTDs(team,state,subTabs){
-  const lockStats = activeSeason!=='proj';
+  const lockStats = activeSeason!=='proj' || (typeof paceLockActive==='function'&&paceLockActive());
   const noteTeam=String(team||currentTeam||'').toUpperCase();
   const totalsCtx=activeSeason==='proj'
     ? `${PROJ_SEASON} projections · ${(teamDisplayName(noteTeam)||noteTeam||'Team')} rushing totals`
@@ -121,15 +122,16 @@ function renderRushTDs(team,state,subTabs){
     return `<div class="share-block" id="rblk-${i}"><div class="share-row">
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTag(p,'rush')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${projPaceChip(p.name,'RB',p.player_id)}${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTagTop(p,'rush')}
         <span class="share-pct" id="rtdp-${i}">${sharePct}</span>
         <span class="share-vol">${tagVal(projTDs+' TD','Rushing TDs','rushing_tds')}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
+        ${typeof paceShareMarkHTML==='function'?paceShareMarkHTML(team,p.name,'RB',p.player_id,'tdrush'):''}
         <input class="sl" type="range" min="0" max="100" step="1" value="${pct}"
           data-key="rtds_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
         <span class="share-stat">Rush TDs ${tdCell}</span>
-      </div></div>`;
+      </div>${typeof projPaceStrip==='function'?projPaceStrip(p.name,'RB',p.player_id,'rush'):''}</div>`;
   }).join('');
   return `<div class="card"><div class="card-title">Team Rushing TDs</div>
     ${sRow('rush_total_tds','Total RB Rush TDs',totalTDs,Math.round(totalTDs),0,40,1,'var(--rb)',false,{ readOnly:lockStats, noteMeta:{ label:'Team RB Rushing TDs', source:'projection_builder_rushing', statKey:'team_rb_rushing_tds', context:totalsCtx, team:noteTeam, relevance:'RB' } })}
@@ -170,7 +172,13 @@ function rushTotalLabelHtml(state, team){
 // players (RB/WR/QB) who were on the team last season but aren't on the current roster.
 function vacatedRushing(team){
   if(activeSeason!=='proj') return null;
-  const lastYear = (HISTORY_SEASONS&&HISTORY_SEASONS.length)?HISTORY_SEASONS[0]:String(PROJ_SEASON-1);
+  // The last COMPLETED season — the newest season strictly BEFORE the projection year.
+  // Never HISTORY_SEASONS[0] blindly: once the season starts, the live refresher unshifts
+  // the CURRENT year there, and "vacated" was suddenly computed against the season in
+  // progress (listing this offseason's leavers under the wrong year).
+  const _pastSeasons=[...new Set([...(HISTORY_SEASONS||[]), ...Object.keys(seasonStatsCache||{})])]
+    .map(Number).filter(y=>Number.isFinite(y) && y<Number(PROJ_SEASON)).sort((a,b)=>b-a);
+  const lastYear = String(_pastSeasons.length?_pastSeasons[0]:Number(PROJ_SEASON)-1);
   if(!seasonStatsCache[lastYear]){
     if(HISTORY && Object.keys(HISTORY).length){
       const built=buildSeedFromHistory(lastYear); if(built) seasonStatsCache[lastYear]=built;

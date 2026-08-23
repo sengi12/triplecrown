@@ -69,7 +69,14 @@ function hasECR(){ const t=ecrTableFor(rankFormat); return t && Object.keys(t).l
 function sumerSeasonKey(){
   // activeSeason is 'proj' or a year string; return the year only when we have adv data for it.
   const D=advSumerData();
-  return (activeSeason!=='proj' && D && D[activeSeason]) ? String(activeSeason) : null;
+  if(activeSeason!=='proj') return (D && D[activeSeason]) ? String(activeSeason) : null;
+  // Projection view during the season: advanced metrics are this season's, to date (the
+  // live sidecar merges the current year's player tables).
+  if(typeof tcIsLiveSeason==='function' && typeof TC_SEASON!=='undefined'){
+    const yr=String(TC_SEASON.year);
+    if(tcIsLiveSeason(yr) && D && D[yr]) return yr;
+  }
+  return null;
 }
 function sumerAvailable(){ return !!sumerSeasonKey(); }
 // Columns that are percentages in the nflverse player tables (for correct formatting).
@@ -272,7 +279,7 @@ function rankingYearsExpFromSleeper(p, baseEntry){
   const sp = (pid && typeof sleeperPlayers!=='undefined' && sleeperPlayers)
     ? sleeperPlayers[pid]
     : null;
-  if(sp && sp.years_exp!=null && !Number.isNaN(Number(sp.years_exp))) return Number(sp.years_exp);
+  if(sp && sp.years_exp!=null && !Number.isNaN(Number(sp.years_exp))) return (typeof tcYearsExpFor==='function') ? tcYearsExpFor(sp) : Number(sp.years_exp);
   if(baseEntry && baseEntry.years_exp!=null && !Number.isNaN(Number(baseEntry.years_exp))) return Number(baseEntry.years_exp);
   return null;
 }
@@ -444,7 +451,8 @@ function buildPlayerList(){
         passing_yards:qb.passing_yards,passing_tds:qb.passing_tds,passing_attempts:qb.passing_attempts,
         passing_completions:qb.passing_completions,interceptions_thrown:qb.interceptions_thrown,
         rushing_yards:qb.qb_rush_yards,rushing_tds:qb.qb_rush_tds,rushing_attempts:qb.qb_rush_attempts,
-        receiving_yards:0,receiving_tds:0,receptions:0,receiving_targets:0,fumbles_lost:0});
+        receiving_yards:0,receiving_tds:0,receptions:0,receiving_targets:0,fumbles_lost:0,
+        proj_games:(qb.games!=null?Number(qb.games):null)});
     });
     // Roster fills (camp bodies merged in from the Sleeper DB so they're selectable) stay off
     // the board until they're given a share. Before this, whether a team's ~9 zero-point

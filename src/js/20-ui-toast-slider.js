@@ -83,6 +83,7 @@ function sRow(key,label,cur,base,min,max,step,col,invert,opts){
     </div>
     <div class="slider-track">
       <div class="slider-fill" style="width:${pct}%;background:${col}"></div>
+      ${opts.paceMarker&&Number.isFinite(opts.paceMarker.value)?`<div class="pace-marker ${opts.paceMarker.cls||''}" style="left:${Math.max(0,Math.min(100,(opts.paceMarker.value-min)/(max-min)*100)).toFixed(1)}%" title="${escAttr(opts.paceMarker.title||'')}"></div>`:''}
       <input class="sl" type="range" min="${min}" max="${max}" step="${step}" value="${cur}"
         data-key="${key}" data-team="${currentTeam}" data-col="${col}" style="--col:${col}"${readOnly?' disabled':''}>
     </div>
