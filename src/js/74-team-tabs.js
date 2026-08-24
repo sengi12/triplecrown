@@ -941,7 +941,10 @@ function renderTeamAdvanced(team){
     <div class="sr-card-grid">${ks.map(k=>cardFor(k)).join('')}</div>` : '';
   // SOS summary strip
   const sos=SOS && SOS[team];
-  const sosStrip = sos ? `<div class="sr-sos-strip">
+  const sosSched = (typeof renderTeamScheduleStrip==='function') ? renderTeamScheduleStrip(team) : '';
+  const sosOpen = (typeof _sosStripOpen!=='undefined' && _sosStripOpen);
+  const sosStrip = sos ? `<div class="sr-sos-block ${sosSched?'sos-clickable':''}" ${sosSched?`onclick="toggleSosStrip()" title="${sosOpen?'Hide':'Show'} the week-by-week schedule"`:''}>
+  <div class="sr-sos-strip">
     <span class="sr-sos-rank ${sharpRankClass(sos.rank)}">${ordinal(sos.rank)}</span>
     <div class="sr-sos-main"><div class="sr-sos-label">${PROJ_SEASON} Strength of Schedule</div>
       <div class="sr-sos-sub">${noteWrapHtml(`${sos.win_total!=null?`Vegas win total <b>${sos.win_total}</b> · `:''}rank ${sos.rank} of 32 (1 = easiest)`, {
@@ -954,8 +957,9 @@ function renderTeamAdvanced(team){
         relevance: 'QB,RB,WR,TE',
         nav: { type:'advanced', team, season: 'proj' },
       }, 'note-tag-hit')}</div></div>
-    <button class="btn btn-ghost btn-sm sr-sos-btn" onclick="showSharpLeague('sos')">See SOS chart →</button>
-  </div>` : '';
+    ${sosSched?`<span class="sr-sos-caret" aria-hidden="true">${sosOpen?'▾':'▸'}</span>`:''}
+    <button class="btn btn-ghost btn-sm sr-sos-btn" onclick="event.stopPropagation();showSharpLeague('sos')">See SOS chart →</button>
+  </div>${sosSched}</div>` : '';
   // Carryover coordinators → a highlighted section that pulls the former team's scheme stats.
   const carryBlock = renderCoordinatorCarryover(team);
   const srcLabel = 'nflverse (computed from play-by-play)';

@@ -333,3 +333,7 @@
 .tc-nm-wrap{display:flex;align-items:center;gap:5px;flex:1;min-width:0;}
 .tc-nm-wrap .share-name{flex:0 1 auto;}
 .rankings-table.grouped td.c-player .inj-tag{margin-left:5px;}
+
+/* DvP: the team logo/code opens that defense's player card */
+.la-dvp-open{cursor:pointer;}
+.la-dvp-open:hover{opacity:.8;}

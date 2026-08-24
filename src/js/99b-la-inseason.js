@@ -471,7 +471,7 @@ function laDvpView(s){
         <div class="la-dvp-vs">${d>=0?'+':'−'}${Math.abs(d).toFixed(1)} vs avg</div></td>`;
     }).join('');
     const full=(typeof TEAM_NAMES!=='undefined'&&TEAM_NAMES&&TEAM_NAMES[c])||c;
-    return `<tr><td class="la-dvp-team"><img src="${NFL_LOGO(c)}" class="la-dvp-logo" loading="lazy" onerror="this.style.display='none'"><div><b>${c}</b><span class="la-dvp-tsub">${escHtml(String(full).replace(/^.*\s/,''))}${nextOppOf(c)?` · next ${escHtml(nextOppOf(c))}`:''}</span></div></td>${cells}</tr>`;
+    return `<tr><td class="la-dvp-team"><span class="la-dvp-open clickable-player" onclick="openPlayerCard('${c}','DEF','${c}')" title="${escHtml(String(full))} defense — season to date"><img src="${NFL_LOGO(c)}" class="la-dvp-logo" loading="lazy" onerror="this.style.display='none'"></span><div><b class="la-dvp-open" onclick="openPlayerCard('${c}','DEF','${c}')" title="Open the ${c} defense card">${c}</b><span class="la-dvp-tsub">${escHtml(String(full).replace(/^.*\s/,''))}${nextOppOf(c)?` · next ${escHtml(nextOppOf(c))}`:''}</span></div></td>${cells}</tr>`;
   }).join('');
   return `${small}
     <div class="la-ins-bar"><span class="la-ins-lbl">FANTASY POINTS ALLOWED / GAME</span>
