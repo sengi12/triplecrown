@@ -10,7 +10,7 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   TC_SEASON, laState, laActivePane, laSeasonView, laTabViewHTML,
-  _laTeamTrends, _laRzOpp, _laRosSched, tcInjuryInfo, tcInjuryTag, laDvpTable,
+  _laTeamTrends, _laRzOpp, _laRosSched, tcInjuryInfo, tcInjuryTag, tcInjuryAbsenceWeeks, laDvpTable,
   setNflverse:(n)=>{NFLVERSE=n;}, setInseason:(x)=>{TC_INSEASON=x;},
   setHistory:(h)=>{HISTORY=h;}, setPlayers:(p)=>{sleeperPlayers=p;},
   setSnapshot:(s)=>{leagueSnapshot=s;}, setPhaseVar:(p)=>{currentPhase=p;},
@@ -71,6 +71,15 @@ const sched=app._laRosSched('CIN','WR',dvp);
 chk(!!sched && sched.games===3,'covers the remaining scheduled games');
 chk(sched.mult>1,'two easy matchups out of three → multiplier above 1');
 chk(app._laRosSched('CIN','WR',null)===null,'no DvP table → declared degradation (null)');
+
+console.log('=== injury knowledge book ===');
+app.setPlayers({'p9':{player_id:'p9',name:'Test',pos:'QB',team:'CIN',injury_status:'IR',injury_body_part:'Foot',injury_note:'surgery on his foot'}});
+const irFoot=app.tcInjuryInfo('p9');
+chk(app.tcInjuryAbsenceWeeks(irFoot)>=6,'IR + foot surgery → type estimate beats the 4-week IR floor');
+app.setPlayers({'p9':{player_id:'p9',name:'Test',pos:'WR',team:'CIN',injury_status:'IR',injury_body_part:'Knee',injury_note:'torn ACL'}});
+chk(app.tcInjuryAbsenceWeeks(app.tcInjuryInfo('p9'))===18,'ACL → season');
+app.setPlayers({'p9':{player_id:'p9',name:'Test',pos:'WR',team:'CIN',injury_status:'Questionable',injury_body_part:'Hamstring'}});
+chk(app.tcInjuryAbsenceWeeks(app.tcInjuryInfo('p9'))===0,'Questionable never assumes multi-week absence');
 
 console.log('=== injury designations ===');
 app.setPlayers({'p9':{player_id:'p9',name:'Test',pos:'WR',team:'CIN',injury_status:'Questionable',injury_note:'hamstring'}});

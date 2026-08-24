@@ -861,7 +861,7 @@ function laTrendsView(s){
           const remain=(sched&&sched.games)||Math.max(1, 19-laCurrentWeek());
           const miss=Math.min(remain, tcInjuryAbsenceWeeks(inj));
           ros*=(remain-miss)/remain;
-          injNote=` · ${inj.code} est. ${miss}${miss>=4?'+':''} wk${miss===1?'':'s'} out`;
+          injNote=` · ${inj.code} ${miss>=remain?'likely out for the season':`est. ${miss}${miss>=4?'+':''} wk${miss===1?'':'s'} out`}`;
         }
         const pct=baseR>0?(ros-baseR)/baseR:0;
         rows.push({e, ros, baseR, pct, sched, inj, injNote});

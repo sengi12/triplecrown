@@ -177,12 +177,16 @@ function tcInjuryPop(ev, pid){
   const est=tcInjuryAbsenceWeeks(i);
   const div=document.createElement('div');
   div.id='tcInjPop'; div.className='inj-pop';
+  const book=tcInjuryOutlook(i);
+  const desig = i.sev==='o'
+    ? `${i.code} — typically ${est>=4?`${est}+ weeks`:`${est} week${est===1?'':'s'}`} out at minimum.`
+    : i.sev==='d' ? 'Doubtful — sits far more often than he plays.'
+    : 'Questionable — game-time decision.';
   div.innerHTML=`<b>${escHtml(sp.name||'Injury')} · ${i.code}</b>
     ${i.body?`<div>${escHtml(i.body)}</div>`:''}
     ${i.note?`<div>${escHtml(i.note)}</div>`:''}
-    <div class="inj-pop-sub">${i.sev==='o'
-      ? `Typically ${est>=4?`${est}+ weeks`:`${est} week${est===1?'':'s'}`} out for this designation — a rough floor, not a diagnosis.`
-      : i.sev==='d' ? 'Doubtful — unlikely to play this week.' : 'Questionable — monitor before kickoff.'}</div>`;
+    <div class="inj-pop-sub">${desig}${book?` ${book.blurb}${book.range?` Typical timetable: <b>${book.range}</b>.`:''}`:''}
+    ${book||i.sev!=='q'?'<br>Ranges are typical for the injury type, not a diagnosis.':''}</div>`;
   document.body.appendChild(div);
   const r=(ev.target&&ev.target.getBoundingClientRect)?ev.target.getBoundingClientRect():{left:40,bottom:40};
   const pw=div.offsetWidth||240, ph=div.offsetHeight||80;
@@ -192,15 +196,55 @@ function tcInjuryPop(ev, pid){
   setTimeout(()=>{ const off=(e)=>{ if(!div.contains(e.target)){ div.remove(); document.removeEventListener('click',off,true); } };
     document.addEventListener('click',off,true); },0);
 }
-// Rough absence floor by designation — used to discount rest-of-season outlooks, never to
-// silently rewrite the user's projections.
+// What we know about common injury TYPES: a typical return range, a one-line read on what
+// it means for fantasy, and an absence estimate in weeks (18 = effectively the season).
+// Matched against Sleeper's injury_body_part + note text. Ranges are population-typical for
+// NFL players — context, never a diagnosis.
+const TC_INJURY_BOOK=[
+  {re:/\bacl\b/i, range:'season (8–12 months)', est:18, blurb:'A torn ACL ends the season in nearly every case; early-season tears sometimes allow a late playoff return, but production rarely follows.'},
+  {re:/achilles/i, range:'season (9–12 months)', est:18, blurb:'Achilles ruptures are season-ending, and explosiveness often lags into the following year.'},
+  {re:/pector/i, range:'often season (4–6 months torn)', est:18, blurb:'A torn pec usually requires surgery and ends the season.'},
+  {re:/lisfranc/i, range:'6+ weeks, often season', est:10, blurb:'Lisfranc injuries are slow healers with frequent setbacks.'},
+  {re:/jones fracture|fifth metatarsal/i, range:'6–10 weeks', est:8, blurb:'Jones fractures typically need surgery and a couple of months.'},
+  {re:/high ankle/i, range:'4–6 weeks', est:5, blurb:'High ankle sprains linger — cutting and burst are limited for a stretch after the return.'},
+  {re:/ankle/i, range:'1–3 weeks', est:2, blurb:'Low ankle sprains often mean a game or two, with limited mobility in the first game back.'},
+  {re:/hamstring/i, range:'1–3 weeks', est:2, blurb:'Soft-tissue with a real re-injury risk; snap counts are usually capped in the first game back, and speed players are hit hardest.'},
+  {re:/groin|adductor/i, range:'1–3 weeks', est:2, blurb:'Groin strains recur when rushed — watch practice reports over designations.'},
+  {re:/\bcalf\b/i, range:'1–3 weeks', est:2, blurb:'Calf strains behave like hamstrings: quick returns, frequent setbacks.'},
+  {re:/quad/i, range:'1–3 weeks', est:2, blurb:'Quad strains sap burst; usage often eases back over two weeks.'},
+  {re:/\bmcl\b/i, range:'2–6 weeks', est:4, blurb:'MCL sprains usually heal without surgery; grade decides the timeline.'},
+  {re:/meniscus/i, range:'4–8 weeks (scope)', est:6, blurb:'A scoped meniscus is a month-plus; repairs run far longer.'},
+  {re:/concussion/i, range:'protocol, usually 1–2 weeks', est:1, blurb:'Five-stage protocol — clearing it is binary, so the practice-week signals matter more than the tag.'},
+  {re:/collarbone|clavicle/i, range:'4–8 weeks', est:6, blurb:'Fractured collarbones cost a month-plus; non-throwing-side returns come quicker.'},
+  {re:/shoulder|labrum|rotator|\bac joint\b/i, range:'1–4 weeks (sprain)', est:2, blurb:'AC sprains are often played through with pain management; labrum/rotator damage tends to be managed until offseason surgery.'},
+  {re:/\brib/i, range:'1–3 weeks', est:2, blurb:'Ribs are usually pain-tolerance calls — effectiveness suffers more than availability.'},
+  {re:/oblique|core muscle|abdomen|sports hernia/i, range:'2–6 weeks', est:4, blurb:'Core injuries limit rotation — throwing and cutting both suffer, and they recur when rushed.'},
+  {re:/\bback\b|spine|disc/i, range:'1–4 weeks, recurring', est:2, blurb:'Back injuries are the classic in-and-out designation — treat week-to-week.'},
+  {re:/\bhip\b/i, range:'1–4 weeks', est:2, blurb:'Hip injuries range widely; watch whether practice participation trends up.'},
+  {re:/forearm/i, range:'4–6 weeks', est:5, blurb:'Forearm fractures usually mean about a month; skill players need grip strength back first.'},
+  {re:/wrist|thumb|finger|\bhand\b/i, range:'1–4 weeks', est:2, blurb:'Hand injuries are often played through with a cast or club — catching and ball security take the hit.'},
+  {re:/elbow/i, range:'2–6 weeks', est:3, blurb:'For QBs an elbow on the throwing arm is the one to worry about; grade decides everything.'},
+  {re:/turf toe|\btoe\b/i, range:'1–4 weeks, lingering', est:2, blurb:'Turf toe limits push-off and lingers all season for bigger-bodied players.'},
+  {re:/\bfoot\b/i, range:'varies — 2–8+ weeks', est:6, blurb:'Foot injuries span sprains to fractures; surgical cases (like a plantar plate or navicular) often threaten the season.'},
+  {re:/\bknee\b/i, range:'varies — 1–6+ weeks', est:3, blurb:'Unspecified knee injuries span hyperextensions to structural damage — the practice week tells you which.'},
+  {re:/illness|flu/i, range:'day-to-day', est:0, blurb:'Illness rarely costs a game; late-week practice returns are the signal.'},
+];
+function tcInjuryOutlook(info){
+  if(!info) return null;
+  const text=`${info.body||''} ${info.note||''}`;
+  if(!text.trim()) return null;
+  for(const b of TC_INJURY_BOOK){ if(b.re.test(text)) return b; }
+  return null;
+}
+// Absence estimate in weeks — the injury TYPE first (when we recognize it), floored by the
+// designation's minimum stay. Used to discount rest-of-season outlooks, never to silently
+// rewrite the user's projections.
 function tcInjuryAbsenceWeeks(info){
   if(!info) return 0;
-  if(info.code==='IR') return 4;      // IR minimum stay
-  if(info.code==='PUP') return 4;
-  if(info.code==='SUS') return 2;
-  if(info.code==='OUT') return 1;
-  return 0;
+  const floor = info.code==='IR' ? 4 : info.code==='PUP' ? 4 : info.code==='SUS' ? 2 : info.code==='OUT' ? 1 : 0;
+  if(!floor) return 0;                     // Q/D: no multi-week absence assumed
+  const book=tcInjuryOutlook(info);
+  return book ? Math.max(floor, book.est) : floor;
 }
 
 // ── Per-category pace strips (player card, live tab) ─────────────────────────

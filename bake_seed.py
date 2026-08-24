@@ -274,6 +274,9 @@ def main():
         sys.exit(f"ERROR: seed not found: {args.seed} (or .gz)")
     with open(args.html, encoding="utf-8") as f:
         html = f.read()
+    # A baked file opens over file://, where the PWA manifest can never load — the link only
+    # produces CORS noise in the console. Strip it from the offline copy.
+    html = re.sub(r'\s*<link rel="manifest"[^>]*>', "", html)
 
     # Fallback is month-aware (Jan/Feb belong to the prior league year), not a frozen literal.
     _now = time.gmtime()
