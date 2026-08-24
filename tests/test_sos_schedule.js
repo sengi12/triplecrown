@@ -74,5 +74,24 @@ const dvp=app.laDvpView({});
 chk(dvp.includes("openPlayerCard('CIN','DEF','CIN')"),'defense logo opens that team\'s DEF card');
 chk((dvp.match(/la-dvp-open/g)||[]).length>=2,'both the logo and the code are clickable');
 
-console.log(`\n${pass}/${total}`);
-if(pass!==total) process.exit(1);
+console.log('=== D/ST card includes the season in progress ===');
+(function(){
+  const dst=new Function(code+`return {
+    _dstSeasons, pcardFetchDstSeason, TC_SEASON,
+    setProj:(y)=>{PROJ_SEASON=y;}, setFetch:(f)=>{sleeperFetch=f;} };`)();
+  dst.TC_SEASON.year=2025; dst.TC_SEASON.phase='regular'; dst.TC_SEASON.week=6; dst.setProj(2025);
+  const seas=dst._dstSeasons();
+  chk(seas[0]==='2025','in-progress season leads the card (was: only completed seasons)');
+  chk(seas.indexOf('2024')===1 && seas.length>=4,'completed seasons still follow as reference');
+  chk(new Set(seas).size===seas.length,'no duplicate season blocks');
+  // Only the completed weeks are requested — a frozen/live season must not fetch the future.
+  const asked=[];
+  dst.setFetch(async(url)=>{ const m=String(url).match(/nfl\/2025\/(\d+)/); if(m) asked.push(+m[1]); return []; });
+  return dst.pcardFetchDstSeason('2025').then(()=>{
+    chk(asked.length>0 && Math.max(...asked)===5,'fetches weeks 1-5 only (completed weeks), not 18');
+    dst.TC_SEASON.phase='off'; dst.TC_SEASON.week=0;
+    chk(dst._dstSeasons()[0]==='2024','off-season: the card goes back to completed seasons only');
+    console.log(`\n${pass}/${total}`);
+    if(pass!==total) process.exit(1);
+  });
+})();
