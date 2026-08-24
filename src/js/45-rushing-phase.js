@@ -59,7 +59,7 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
     return `<div class="share-block" id="rblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTagTop(p,'rush')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTagTop(p,'rush')}
         <span class="share-pct" id="rp-${i}">${sharePct}</span>
         <span class="share-vol" id="ra-${i}">${tagVal(att+' att','Rushing Attempts','rushing_attempts')}</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},'RB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
@@ -121,7 +121,7 @@ function renderRushTDs(team,state,subTabs){
     return `<div class="share-block" id="rblk-${i}"><div class="share-row">
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTagTop(p,'rush')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTagTop(p,'rush')}
         <span class="share-pct" id="rtdp-${i}">${sharePct}</span>
         <span class="share-vol">${tagVal(projTDs+' TD','Rushing TDs','rushing_tds')}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>

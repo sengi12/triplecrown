@@ -52,7 +52,7 @@ function renderPassing(team,state){
         return `<div class="snap-row" style="${active?'border:1px solid var(--qb)':''}">
           <span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${imgTag(hsPack(q),'player-headshot')}</span>
           <div class="snap-info" style="flex:1">
-            <div style="font-size:12px;font-weight:700"><span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${escHtml(q.name)}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(q.player_id,q.name):''}${weekFilterPaceButton(state,q.player_id,'qb')}${qbFptsTag(q)}
+            <div style="font-size:12px;font-weight:700"><span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${escHtml(q.name)}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(q.player_id,q.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(q.player_id):''}${weekFilterPaceButton(state,q.player_id,'qb')}${qbFptsTag(q)}
               ${activeSeason!=='proj'&&q.games_played?`<span style="font-size:9px;color:var(--muted);font-weight:500">· actually played ${Math.round(q.games_played)}</span>`
                 : ''}</div>
             <div style="font-size:10px;color:var(--muted)" id="wl-sub-${i}">${gms} games · ${perGame(q,'passing_yards').toFixed(1)} pass yds/gm</div>
@@ -68,7 +68,7 @@ function renderPassing(team,state){
           if(typeof tcInjuryInfo!=='function' || !q.player_id) return '';
           const inj=tcInjuryInfo(q.player_id);
           if(!inj || inj.sev!=='o' || !((q.games||0)>0)) return '';
-          return `<div class="qb-inj-note">${typeof tcInjuryTag==='function'?tcInjuryTag(q.player_id):inj.code} listed ${inj.code}${inj.body?` (${escHtml(inj.body)})`:''} but projected for ${Math.round(q.games||0)} games — adjust Games Played, or use games-only mode below to shift games without rescaling stats.</div>`;
+          return `<div class="qb-inj-note">${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(q.player_id):inj.code} listed ${inj.code}${inj.body?` (${escHtml(inj.body)})`:''} but projected for ${Math.round(q.games||0)} games — adjust Games Played, or use games-only mode below to shift games without rescaling stats.</div>`;
         })()}`;
       }).join('')}
       <div class="qb-gmode"><label title="Advanced: changing Games Played keeps each QB's season totals fixed and re-derives the per-game rates — for committee or injury situations where the season number is already right.">
@@ -92,7 +92,7 @@ function renderPassing(team,state){
       `<button class="qb-tab ${i===idx?'active':''}" onclick="setActiveQB(${i})">${escHtml((typeof tcLastName==='function')?tcLastName(q.name):(String(q.name||'').trim().split(/\s+/).slice(-1)[0]||''))}</button>`).join('')}</div>`:''}
     <div class="player-row"><span class="clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${imgTag(hsPack(qb),'player-headshot')}</span>
       <span class="pos-badge pos-QB">QB${idx+1}</span>
-      <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${escHtml(qb.name)}${typeof tcOwnerPill==='function'?tcOwnerPill(qb.player_id,qb.name):''}</div>
+      <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${escHtml(qb.name)}${typeof tcOwnerPill==='function'?tcOwnerPill(qb.player_id,qb.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(qb.player_id):''}</div>
         ${weekFilterPaceButton(state,qb.player_id,'qb')}${qbFptsTag(qb)}
         <div class="player-sub">${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?`ECR ${e.rank_ecr}`:'';})()}${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?' · ':'';})()}<span id="qb-games-sub">${games}</span> games projected</div></div></div>
     <div class="alert alert-info" style="margin-bottom:11px"><span class="alert-icon">📈</span>

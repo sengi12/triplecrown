@@ -127,6 +127,9 @@ function rankingsRenderCacheKey(teamScoped){
     (typeof buildPlayerShapeSig==='function') ? buildPlayerShapeSig() : '',   // league shape / draft / ADP
     String(activeSeason),
     String(typeof rankLiveDelta!=='undefined' && rankLiveDelta ? 1 : 0),
+    // Injury tags come from the Sleeper player DB, which lands asynchronously — a board
+    // rendered before it arrives must not stay cached without designations.
+    String(typeof sleeperPlayers!=='undefined' && sleeperPlayers ? 1 : 0),
     String(typeof liveSeasonEpoch==='function' ? liveSeasonEpoch() : 0),
     String(rankFormat),
     scSig,
@@ -467,7 +470,7 @@ function renderRankings(){
     ${fptsCells}
     <td class="c-vor">${rankValueHtml(`<span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${vorTxt}</span>`, p, 'Value Over Replacement', 'vor', 'rankings')}</td>
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
-    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${rankHeadshotSlotHtml(p)}<span class="rank-name">${pNameText}</span>${liveView&&typeof tcInjuryTag==='function'?tcInjuryTag(p.player_id):''}</div></td>
+    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${rankHeadshotSlotHtml(p)}<span class="rank-name">${pNameText}</span>${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</div></td>
     <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" alt="${pTeamAttr}" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${pTeamText}</td>
     ${ownerActive?`<td class="c-own">${tcOwnerPill(p.player_id, p.name)}</td>`:''}
     ${contractCells}
