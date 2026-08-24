@@ -162,6 +162,46 @@ function tcInjuryTag(pid){
   const title=[i.body, i.note].filter(Boolean).join(' — ');
   return `<span class="inj-tag inj-${i.sev}" title="${typeof escAttr==='function'?escAttr(title||i.code):''}">${i.code}</span>`;
 }
+// Clickable variant (player card): tapping opens the detail popup.
+function tcInjuryTagBtn(pid){
+  const i=tcInjuryInfo(pid);
+  if(!i) return '';
+  return `<span class="inj-tag inj-click inj-${i.sev}" onclick="tcInjuryPop(event,'${String(pid)}')" title="Injury details">${i.code}</span>`;
+}
+// Small detail popup, clamped inside the viewport; any outside tap dismisses it.
+function tcInjuryPop(ev, pid){
+  try{ ev.stopPropagation(); }catch(e){}
+  const old=document.getElementById('tcInjPop'); if(old) old.remove();
+  const i=tcInjuryInfo(pid); if(!i) return;
+  const sp=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[String(pid)])||{};
+  const est=tcInjuryAbsenceWeeks(i);
+  const div=document.createElement('div');
+  div.id='tcInjPop'; div.className='inj-pop';
+  div.innerHTML=`<b>${escHtml(sp.name||'Injury')} · ${i.code}</b>
+    ${i.body?`<div>${escHtml(i.body)}</div>`:''}
+    ${i.note?`<div>${escHtml(i.note)}</div>`:''}
+    <div class="inj-pop-sub">${i.sev==='o'
+      ? `Typically ${est>=4?`${est}+ weeks`:`${est} week${est===1?'':'s'}`} out for this designation — a rough floor, not a diagnosis.`
+      : i.sev==='d' ? 'Doubtful — unlikely to play this week.' : 'Questionable — monitor before kickoff.'}</div>`;
+  document.body.appendChild(div);
+  const r=(ev.target&&ev.target.getBoundingClientRect)?ev.target.getBoundingClientRect():{left:40,bottom:40};
+  const pw=div.offsetWidth||240, ph=div.offsetHeight||80;
+  const vw=window.innerWidth||360, vh=window.innerHeight||640;
+  div.style.left=Math.max(8, Math.min(vw-pw-8, r.left))+'px';
+  div.style.top=(r.bottom+6+ph>vh ? Math.max(8, r.top-ph-6) : r.bottom+6)+'px';
+  setTimeout(()=>{ const off=(e)=>{ if(!div.contains(e.target)){ div.remove(); document.removeEventListener('click',off,true); } };
+    document.addEventListener('click',off,true); },0);
+}
+// Rough absence floor by designation — used to discount rest-of-season outlooks, never to
+// silently rewrite the user's projections.
+function tcInjuryAbsenceWeeks(info){
+  if(!info) return 0;
+  if(info.code==='IR') return 4;      // IR minimum stay
+  if(info.code==='PUP') return 4;
+  if(info.code==='SUS') return 2;
+  if(info.code==='OUT') return 1;
+  return 0;
+}
 
 // ── Per-category pace strips (player card, live tab) ─────────────────────────
 // Which categories each view talks about, with short labels.

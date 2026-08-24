@@ -72,6 +72,17 @@ function handleSlider(el){
   handleSliderKey(el.dataset.key,parseFloat(el.value),el.dataset.team,false);
 }
 
+// Advanced: per-team toggle — the Games Played sliders stop rescaling totals (see the
+// games_ branch below). Lives on the team state so it persists with the working set.
+function toggleQbGamesOnly(team){
+  const state=userProj[team]; if(!state) return;
+  state._qbGamesOnly=!state._qbGamesOnly;
+  if(typeof toast==='function') toast(state._qbGamesOnly
+    ? 'Games-only mode: Games Played now shifts games without rescaling season totals'
+    : 'Games sliders back to normal: totals scale with games again','ok');
+  renderContent();
+}
+
 function handleSliderKey(key,val,team,fromManual){
   const state=userProj[team]; if(!state) return;
   markDirty(currentTeam);
@@ -98,7 +109,24 @@ function handleSliderKey(key,val,team,fromManual){
   if(key.startsWith('games_')){
     const qi=parseInt(key.slice(6));
     const q=state.qbs[qi];
-    const newGames=Math.max(0,Math.round(val));
+    let newGames=Math.max(0,Math.round(val));
+    // Games-only mode (advanced): shift games WITHOUT rescaling the season totals — for
+    // committee/injury situations where a starter's games change but his projection is
+    // already the season number you want. Per-game rates re-derive from totals ÷ games.
+    // Floor of 1: zero games with kept totals would contribute stats the model says never
+    // happened.
+    if(state._qbGamesOnly){
+      newGames=Math.max(1,newGames);
+      q.games=newGames; q.games_played=newGames; q.base_games=newGames;
+      const STATK=['passing_yards','passing_tds','passing_attempts','passing_completions',
+        'interceptions_thrown','qb_rush_yards','qb_rush_tds','qb_rush_attempts'];
+      q._rate={}; STATK.forEach(k=>{ q._rate[k]=(q[k]||0)/newGames; });
+      updateWorkloadUI(state,qi,team);
+      liveQB(state,qi,team,null);
+      refreshQBStatSliders(state,qi);
+      livePassDependents(state,team);
+      return;
+    }
     const STATK=['passing_yards','passing_tds','passing_attempts','passing_completions',
       'interceptions_thrown','qb_rush_yards','qb_rush_tds','qb_rush_attempts'];
     // Capture per-game rates from the CURRENT totals/games before changing games, so the

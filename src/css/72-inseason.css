@@ -296,3 +296,34 @@
 
 /* Live board Δ-proj toggle sits with the other chips */
 .rank-delta-toggle{margin-left:8px;}
+
+
+/* Active tabs paint accent — the global .tc-ico accent tint would vanish into it */
+.la-icon-tabs .icon-tab.active .tc-ico,
+.la-pane-tabs .pane-tab.active .tc-ico{color:#000;}
+
+/* Trend board chips ride the pane-chip look, no icons (plain text, never collapsed) */
+.la-trnd-tabs{margin:0;}
+.la-trnd-tabs .pane-tab{padding:6px 12px;}
+
+/* Injury tag stays a small chip beside the name, never a stretched line */
+.inj-tag{align-self:flex-start;flex-shrink:0;cursor:default;}
+.la-trnd-nmline{display:flex;align-items:center;gap:5px;min-width:0;}
+.la-trnd-nmline .la-nm{min-width:0;overflow:hidden;text-overflow:ellipsis;}
+.inj-tag.inj-click{cursor:pointer;}
+.pcard-name .inj-tag{vertical-align:4px;}
+
+/* Injury detail popup (player card) */
+.inj-pop{position:fixed;z-index:12000;max-width:260px;background:var(--surface2);
+  border:1px solid var(--border);border-radius:10px;padding:10px 12px;
+  box-shadow:0 8px 28px rgba(0,0,0,.5);font-size:12px;line-height:1.45;}
+.inj-pop b{display:block;margin-bottom:3px;}
+.inj-pop .inj-pop-sub{color:var(--muted);font-size:11px;}
+
+/* Matchup hero slide (follow-the-finger between matchups) */
+.la-mu-hero{touch-action:pan-y;will-change:transform;}
+
+/* Games-only mode (projection builder, advanced) */
+.qb-gmode{margin:2px 0 8px;font-size:10px;color:var(--muted);display:flex;align-items:center;gap:6px;}
+.qb-gmode label{display:flex;align-items:center;gap:5px;cursor:pointer;}
+.qb-inj-note{margin:2px 0 8px;font-size:10px;color:var(--warn);display:flex;align-items:center;gap:6px;}

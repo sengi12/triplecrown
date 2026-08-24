@@ -24,7 +24,7 @@ function tsTabPhase(btn){
   if(!btn) return null;
   const oc=btn.getAttribute('onclick')||'';
   // Builder tabs use setPhase('X'); League Analyzer tabs use laSetTab('x') — both swipe.
-  const m=oc.match(/(?:setPhase|laSetTab)\('([^']+)'\)/);
+  const m=oc.match(/(?:setPhase|laSetTab|laSetPane)\('([^']+)'\)/);
   return m ? m[1] : null;
 }
 
@@ -109,7 +109,9 @@ function tsRenderPhasePreview(phase){
         if(pane==='matchup' && !(_laMu.byWeek[laMuWeek()])) return '';
         if(pane==='lineup' && !(_laMu.byWeek[laCurrentWeek()])) return '';
         if((pane==='dvp'||pane==='trends') && !(typeof TC_INSEASON!=='undefined' && TC_INSEASON)) return '';
-        return (typeof laTabViewHTML==='function' && laTabViewHTML(phase==='season'?'season':pane, s)) || '';
+        if(phase==='season') return (typeof laTabViewHTML==='function' && laTabViewHTML('season', s)) || '';
+        return (pane==='lineup'?laLineupView(s) : pane==='dvp'?laDvpView(s)
+              : pane==='trends'?laTrendsView(s) : laMatchupView(s)) || '';
       }
     }catch(e){ return ''; }
     return '';
@@ -214,8 +216,11 @@ function tsAnimateTabTurn(host, tabs, next, moved, opts){
 // The visible tab bar, if any. Multiple can exist in the DOM across views, so take the first
 // one that's actually laid out.
 function tsActiveBar(){
-  const bars=[...document.querySelectorAll('.phase-tabs')];
-  return bars.find(b=>b.offsetParent!==null && b.getClientRects().length>0) || null;
+  const bars=[...document.querySelectorAll('.phase-tabs')]
+    .filter(b=>b.offsetParent!==null && b.getClientRects().length>0);
+  // A bar marked data-swipe-primary owns the gesture even when another bar renders above it
+  // (the Season tab: the outer icon bar stays tappable, but swipes move between the PANES).
+  return bars.find(b=>b.hasAttribute && b.hasAttribute('data-swipe-primary')) || bars[0] || null;
 }
 
 // True when this element (or an ancestor) is a horizontal scroller with somewhere left to go in
@@ -406,7 +411,17 @@ function tsScrollerClaims(el, dir){
     if(!tabs || cur<0){ clearShift(true); return; }
     // Swipe left → next tab (content moves left, like turning a page).
     const next = moved<0 ? cur+1 : cur-1;
-    if(next<0 || next>=tabs.length){ clearShift(true); return; }
+    if(next<0 || next>=tabs.length){
+      // A bar can name where a swipe past its first tab continues (Season panes → Trades).
+      if(next<0 && bar.dataset && bar.dataset.swipePrev && typeof laSetTab==='function'){
+        const prevTab=bar.dataset.swipePrev;
+        const top=tsSwipeTop(host)||host, w=tsHostWidth(host);
+        if(top){ top.style.transition='transform .18s ease-out'; top.style.transform=`translateX(${w}px)`; }
+        setTimeout(()=>{ laSetTab(prevTab); }, 145);
+        return;
+      }
+      clearShift(true); return;
+    }
     tsAnimateTabTurn(host, tabs, next, moved, {});
   };
   document.addEventListener('touchend', finish, {passive:true});

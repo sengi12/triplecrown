@@ -215,6 +215,7 @@ run_js_test test_pace_view      "Pace view: stint summing, badge thresholds, ind
 run_js_test test_la_inseason    "LA in-season tabs: season gating, matchup pairing + featured card, ESPN empty state, poll gating"
 run_js_test test_la_dvp_lineup  "DvP fppg under league scoring + rank direction; lineup adjustment clamps and degradation"
 run_js_test test_la_trends      "Trends overhaul: Season panes, team tendencies, real RZ regression input, ROS schedule multiplier, injury tags"
+run_js_test test_qb_games_only  "Games-only mode: games shift without rescaling totals (rates re-derive), floor of 1, per-team toggle"
 run_js_test test_swipe_la_preview "Tab swipe: laSetTab parsing, LA preview whitelist, cache-only previews (no fetch from a gesture)"
 run_js_test test_inseason_sidecar "In-season sidecar: adoption + NFLVERSE merge, baked path, reset, gz URL with query"
 

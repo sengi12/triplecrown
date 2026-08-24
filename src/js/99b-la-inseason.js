@@ -38,8 +38,12 @@ function laSetPane(k){
 function laSeasonView(s, paneOverride){
   const pane=paneOverride||laActivePane()||'matchup';
   const panes=[['matchup','Matchup','versus'],['lineup','Lineup','clipboard'],['dvp','Defense','shield'],['trends','Trends','chart']];
-  const bar=`<div class="la-pane-tabs">${panes.map(([k,l,ic])=>
-    `<button class="pane-tab ${pane===k?'active':''}" onclick="laSetPane('${k}')" title="${l}">${TC_ICON(ic)}<span class="tab-lbl">${l}</span></button>`).join('')}</div>`;
+  // phase-tabs + data-swipe-primary: within the Season tab, left/right swipes slide between
+  // these PANES (the outer icon bar stays tappable); swiping back past Matchup continues to
+  // the Trades tab (data-swipe-prev). Touches inside the matchup hero are claimed by the
+  // hero's own matchup pager first.
+  const bar=`<div class="phase-tabs la-pane-tabs" data-swipe-primary data-swipe-prev="trade">${panes.map(([k,l,ic])=>
+    `<button class="phase-tab pane-tab ${pane===k?'active':''}" onclick="laSetPane('${k}')" title="${l}">${TC_ICON(ic)}<span class="tab-lbl">${l}</span></button>`).join('')}</div>`;
   const body = pane==='lineup'?laLineupView(s) : pane==='dvp'?laDvpView(s)
              : pane==='trends'?laTrendsView(s) : laMatchupView(s);
   return bar+body;
@@ -217,20 +221,44 @@ function _laBindMuHeroSwipe(host){
   const hero=host && host.querySelector ? host.querySelector('.la-mu-hero') : null;
   if(!hero || hero._muSwipeBound) return;
   hero._muSwipeBound=true;
+  // Landing after a hero swipe: the fresh hero slides in from the side it was pulled toward.
+  if(laState._muSlideIn){
+    const dir=laState._muSlideIn; laState._muSlideIn=null;
+    const w=hero.offsetWidth||320;
+    hero.style.transition='none'; hero.style.transform=`translateX(${dir>0?w:-w}px)`;
+    requestAnimationFrame(()=>{ hero.style.transition='transform .18s ease-out'; hero.style.transform='translateX(0px)'; });
+  }
   const total=Number(hero.dataset.muTotal||0); if(total<2) return;
   let x0=null,y0=null,claimed=false;
-  hero.addEventListener('touchstart',e=>{ const t=e.touches[0]; x0=t.clientX; y0=t.clientY; claimed=false; },{passive:true});
+  hero.addEventListener('touchstart',e=>{ const t=e.touches[0]; x0=t.clientX; y0=t.clientY; claimed=false;
+    hero.style.transition='none'; },{passive:true});
   hero.addEventListener('touchmove',e=>{
     if(x0==null) return; const t=e.touches[0];
     const dx=t.clientX-x0, dy=t.clientY-y0;
-    if(!claimed && Math.abs(dx)>18 && Math.abs(dx)>Math.abs(dy)*1.4){ claimed=true; e.stopPropagation(); }
-    else if(claimed){ e.stopPropagation(); }
+    if(!claimed && Math.abs(dx)>18 && Math.abs(dx)>Math.abs(dy)*1.4) claimed=true;
+    if(claimed){
+      e.stopPropagation();
+      // Follow the finger with a little resistance, same feel as the tab swipe.
+      hero.style.transform=`translateX(${Math.sign(dx)*Math.min(300,Math.abs(dx)*0.9)}px)`;
+    }
   },{passive:true});
-  hero.addEventListener('touchend',e=>{
+  const settle=(e)=>{
     if(x0==null) return; const t=e.changedTouches[0];
     const dx=t.clientX-x0, dy=t.clientY-y0; x0=null;
-    if(claimed && Math.abs(dx)>55 && Math.abs(dx)>Math.abs(dy)*1.4){ e.stopPropagation(); laMuFocusStep(dx<0?1:-1, total); }
-  },{passive:true});
+    if(claimed && Math.abs(dx)>55 && Math.abs(dx)>Math.abs(dy)*1.4){
+      e.stopPropagation();
+      const w=hero.offsetWidth||320;
+      hero.style.transition='transform .16s ease-out';
+      hero.style.transform=`translateX(${dx<0?-w:w}px)`;
+      laState._muSlideIn = dx<0?1:-1;
+      setTimeout(()=>{ laMuFocusStep(dx<0?1:-1, total); }, 130);
+    } else {
+      hero.style.transition='transform .16s ease-out';
+      hero.style.transform='translateX(0px)';
+    }
+  };
+  hero.addEventListener('touchend',settle,{passive:true});
+  hero.addEventListener('touchcancel',settle,{passive:true});
 }
 function laMatchupView(s){
   if(s.provider==='espn') return _laEspnInseasonNote();
@@ -642,7 +670,7 @@ function _laTrendRow(p, detail, verdict, cls, rank){
   return `<div class="la-trnd-row ${cls||''}">
     ${rank?`<span class="la-trnd-rank">${rank}</span>`:''}
     <span class="clickable-player la-trnd-hs" onclick="${pcardOnclick(pid||pp.name,p.pos,p.team||'')}">${laPlayerImg(pp,'la-trnd-hsimg')}</span>
-    <div class="la-trnd-main">${laNameHTML(pp,'la-trnd-name')}${inj}<div class="la-trnd-sub"><span class="la-pos-${_laPosOf(p)}">${_laPosOf(p)}</span> · ${escHtml(p.team||'FA')}${detail?` · ${detail}`:''}</div></div>
+    <div class="la-trnd-main"><span class="la-trnd-nmline">${laNameHTML(pp,'la-trnd-name')}${inj}</span><div class="la-trnd-sub"><span class="la-pos-${_laPosOf(p)}">${_laPosOf(p)}</span> · ${escHtml(p.team||'FA')}${detail?` · ${detail}`:''}</div></div>
     <div class="la-trnd-verdict">${verdict}</div></div>`;
 }
 // Team-row variant: logo + full team name, same right-hand verdict.
@@ -695,10 +723,10 @@ function laTrendsView(s){
   const keeps=_laScopeKeeps(scope, mySet, lgSet);
   const mineMark=(name,pos)=> mySet.has(ecrNormName(name)+'|'+pos) ? '<span class="la-trnd-mine" title="on your roster">★</span>' : '';
   const tabs=[['trending','Trending'],['pace','Pace'],['usage','Usage'],['regression','TDs'],['teams','Teams'],['ros','ROS']]
-    .map(([k,l])=>`<button class="format-btn ${tab===k?'active':''}" onclick="laSetTrndTab('${k}')">${l}</button>`).join('');
+    .map(([k,l])=>`<button class="pane-tab ${tab===k?'active':''}" onclick="laSetTrndTab('${k}')">${l}</button>`).join('');
   const scopes=(tab==='teams')?'':`<div class="pos-filter la-trnd-scope">${[['rostered','Rostered'],['myteam','My Team'],['waiver','Waivers'],['league','League']]
     .map(([k,l])=>`<button class="pos-filter-btn ${scope===k?'active':''}" onclick="laSetTrndScope('${k}')">${l}</button>`).join('')}</div>`;
-  const bar=`<div class="la-ins-bar"><div class="format-toggle">${tabs}</div>${scopes}</div>`;
+  const bar=`<div class="la-ins-bar"><div class="la-pane-tabs la-trnd-tabs">${tabs}</div>${scopes}</div>`;
   const two=(title,sub,upLbl,upRows,dnLbl,dnRows)=>`
     <div class="la-ins-bar"><span class="la-ins-lbl">${title}</span><span class="la-ins-sub">${sub}</span></div>
     <div class="card la-trnd-card"><div class="la-trnd-cols">
@@ -734,22 +762,29 @@ function laTrendsView(s){
         '▼ BEHIND',half(rows.filter(e=>e.delta<0).reverse().slice(0,15)));
     }
   } else if(tab==='usage'){
-    const U=_laUsagePlayers();
-    if(!U) body=needSidecar();
-    else {
-      const P=U.players.filter(p=>p.pos&&keeps(_laDisplayName(p,p.id),p.pos));
-      const tgts=P.filter(p=>p.pos!=='QB'&&p.gp3>0&&p.tgt3>0)
-        .sort((a,b)=>(b.tgt3/b.gp3)-(a.tgt3/a.gp3)).slice(0,15)
-        .map((p,i)=>_laTrendRow(p, `${p.share3.toFixed(1)}% tgt share last 3 · ${p.share.toFixed(1)}% season`,
-          _laVerdict((p.tgt3/p.gp3).toFixed(1),'tgt / game', p.share3>p.share+2?'la-trnd-up':p.share3<p.share-2?'la-trnd-dn':'')+mineMark(_laDisplayName(p,p.id),p.pos),
-          p.share3>p.share+2?'pace-ahead':p.share3<p.share-2?'pace-behind':'', i+1)).join('');
-      const cars=P.filter(p=>p.pos==='RB'&&p.gp3>0&&p.carry3>0)
-        .sort((a,b)=>(b.carry3/b.gp3)-(a.carry3/a.gp3)).slice(0,15)
-        .map((p,i)=>_laTrendRow(p, `${(p.carry/Math.max(1,p.gp)).toFixed(1)} car/gm season`,
-          _laVerdict((p.carry3/p.gp3).toFixed(1),'car / game', (p.carry3/p.gp3)>(p.carry/Math.max(1,p.gp))+2?'la-trnd-up':(p.carry3/p.gp3)<(p.carry/Math.max(1,p.gp))-2?'la-trnd-dn':'')+mineMark(_laDisplayName(p,p.id),p.pos),
-          (p.carry3/p.gp3)>(p.carry/Math.max(1,p.gp))+2?'pace-ahead':(p.carry3/p.gp3)<(p.carry/Math.max(1,p.gp))-2?'pace-behind':'', i+1)).join('');
-      body=two('OPPORTUNITY · LAST 3 WEEKS',`who's actually getting the ball · thru wk ${wk}`,
-        'TARGETS / GAME',tgts,'CARRIES / GAME (RB)',cars);
+    const idx=(typeof buildPaceIndex==='function')?buildPaceIndex():null;
+    if(!idx){
+      body=`<div class="card la-ins-empty"><div class="empty-body">Opportunity vs projection needs the kickoff baseline — it lights up once week 1 completes.</div></div>`;
+    } else {
+      const seen=new Set(); const tgtRows=[], carRows=[];
+      idx.forEach((e,key)=>{
+        if(key.indexOf('|')<0 || seen.has(key)) return; seen.add(key);
+        if(!(e.gp>=3) || !e.stats) return;
+        if(!keeps(e.name,e.pos)) return;
+        const tg=e.stats.receiving_targets, ca=e.stats.rushing_attempts;
+        if(tg && tg.bRate>=2.5 && e.pos!=='QB') tgtRows.push({e, st:tg});
+        if(ca && ca.bRate>=4 && e.pos==='RB') carRows.push({e, st:ca});
+      });
+      tgtRows.sort((a,b)=>b.st.pct-a.st.pct); carRows.sort((a,b)=>b.st.pct-a.st.pct);
+      const uRow=(x,i,cap)=>_laTrendRow(x.e, `${x.st.aRate.toFixed(1)}/gm vs proj ${x.st.bRate.toFixed(1)} · ${x.e.gp} gm${x.e.gp===1?'':'s'}`,
+        _laVerdict(`${x.st.pct>=0?'+':'−'}${Math.round(Math.abs(x.st.pct)*100)}%`, cap, x.st.pct>=0?'la-trnd-up':'la-trnd-dn')+mineMark(x.e.name,x.e.pos),
+        x.st.pct>=0.1?'pace-ahead':x.st.pct<=-0.1?'pace-behind':'', i+1);
+      body=two('TARGETS VS PROJECTION',`who's seeing more (or less) than the projection called for · thru wk ${wk}`,
+          '▲ MORE THAN PROJECTED',tgtRows.filter(x=>x.st.pct>0).slice(0,12).map((x,i)=>uRow(x,i,'tgt volume')).join(''),
+          '▼ LESS THAN PROJECTED',tgtRows.filter(x=>x.st.pct<0).reverse().slice(0,12).map((x,i)=>uRow(x,i,'tgt volume')).join(''))
+        + two('CARRIES VS PROJECTION','rushing workload against the projected share (RB)',
+          '▲ MORE THAN PROJECTED',carRows.filter(x=>x.st.pct>0).slice(0,12).map((x,i)=>uRow(x,i,'carry volume')).join(''),
+          '▼ LESS THAN PROJECTED',carRows.filter(x=>x.st.pct<0).reverse().slice(0,12).map((x,i)=>uRow(x,i,'carry volume')).join(''));
     }
   } else if(tab==='regression'){
     const U=_laUsagePlayers();
@@ -817,13 +852,23 @@ function laTrendsView(s){
                 : (seasR!=null) ? 0.55*baseR+0.45*seasR : baseR;
         const sched=_laRosSched(e.team, e.pos, dvp);
         if(sched) ros*=sched.mult;
+        // Injury-aware: an active OUT/IR/PUP/SUS designation discounts the outlook by the
+        // estimated missed share of the remaining schedule (a floor, user-visible, never a
+        // silent projection rewrite).
         const inj=(typeof tcInjuryInfo==='function')?tcInjuryInfo(e.id):null;
+        let injNote='';
+        if(inj && inj.sev==='o' && typeof tcInjuryAbsenceWeeks==='function'){
+          const remain=(sched&&sched.games)||Math.max(1, 19-laCurrentWeek());
+          const miss=Math.min(remain, tcInjuryAbsenceWeeks(inj));
+          ros*=(remain-miss)/remain;
+          injNote=` · ${inj.code} est. ${miss}${miss>=4?'+':''} wk${miss===1?'':'s'} out`;
+        }
         const pct=baseR>0?(ros-baseR)/baseR:0;
-        rows.push({e, ros, baseR, pct, sched, inj});
+        rows.push({e, ros, baseR, pct, sched, inj, injNote});
       });
       rows.sort((a,b)=>b.pct-a.pct);
       const rosRow=(x,i)=>_laTrendRow(x.e,
-        `${x.ros.toFixed(1)} proj/gm rest of season · ${x.baseR.toFixed(1)} preseason${x.sched?` · sched ${x.sched.mult>=1?'+':'−'}${Math.abs((x.sched.mult-1)*100).toFixed(0)}%`:''}`,
+        `${x.ros.toFixed(1)} proj/gm rest of season · ${x.baseR.toFixed(1)} preseason${x.sched?` · sched ${x.sched.mult>=1?'+':'−'}${Math.abs((x.sched.mult-1)*100).toFixed(0)}%`:''}${x.injNote||''}`,
         _laVerdict(`${x.pct>=0?'+':'−'}${Math.round(Math.abs(x.pct)*100)}%`, 'ROS vs projection', x.pct>=0?'la-trnd-up':'la-trnd-dn')+mineMark(x.e.name,x.e.pos),
         x.pct>=0.08?'pace-ahead':x.pct<=-0.08?'pace-behind':'', i+1);
       body=two('REST OF SEASON OUTLOOK','projection rate blended with season + recent form, adjusted for the remaining schedule and injuries',

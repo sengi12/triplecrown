@@ -63,8 +63,16 @@ function renderPassing(team,state){
         ${sRow('games_'+i,'Games Played',gms,Math.round(q.games_played||q.games||0),0,SEASON_GAMES,1,'var(--qb)',false,{
           readOnly:historicalLocked,
           noteMeta:{ label:'Games Played', source:'projection_builder_qb', statKey:'games_played', context:noteCtx, player:notePlayerFor(q), team:noteTeam, relevance:'QB' }
-        })}`;
+        })}
+        ${(()=>{ // In-season: flag a projected workload that an active OUT/IR designation contradicts.
+          if(typeof tcInjuryInfo!=='function' || !q.player_id) return '';
+          const inj=tcInjuryInfo(q.player_id);
+          if(!inj || inj.sev!=='o' || !((q.games||0)>0)) return '';
+          return `<div class="qb-inj-note">${typeof tcInjuryTag==='function'?tcInjuryTag(q.player_id):inj.code} listed ${inj.code}${inj.body?` (${escHtml(inj.body)})`:''} but projected for ${Math.round(q.games||0)} games — adjust Games Played, or use games-only mode below to shift games without rescaling stats.</div>`;
+        })()}`;
       }).join('')}
+      <div class="qb-gmode"><label title="Advanced: changing Games Played keeps each QB's season totals fixed and re-derives the per-game rates — for committee or injury situations where the season number is already right.">
+        <input type="checkbox" ${state._qbGamesOnly?'checked':''} onchange="toggleQbGamesOnly('${team}')"> games-only mode <span>(shift games without rescaling stats)</span></label></div>
       <div class="derived-note" id="qbWorkloadNote" style="${overBudget?'color:var(--warn)':''}">${qbWorkloadNoteHtml(teamGames, overBudget, team)}</div>
     </div>`;
   const games=Math.round(qb.games||0);
