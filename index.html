@@ -13727,10 +13727,14 @@ const _dstWeekCache = {};
 let _dstInFlight = {};
 const _DST_CONCURRENCY = 4;
 async function pcardFetchDstSeason(season){
-  if(_dstWeekCache[season]) return _dstWeekCache[season];
-  if(_dstInFlight[season]) return _dstInFlight[season];
-  _dstInFlight[season] = (async()=>{
-  const WEEKS = 18;
+  // An in-progress season only has weeks up to the last completed one; asking for the rest
+  // wastes 12 round trips and (in a frozen build) would leak weeks that "haven't happened".
+  const maxWk = (typeof tcSeasonMaxWeek==='function') ? tcSeasonMaxWeek(season) : 18;
+  const ck = `${season}:${maxWk}`;
+  if(_dstWeekCache[ck]) return _dstWeekCache[ck];
+  if(_dstInFlight[ck]) return _dstInFlight[ck];
+  _dstInFlight[ck] = (async()=>{
+  const WEEKS = maxWk;
   const weeks = []; for(let w=1; w<=WEEKS; w++) weeks.push(w);
   const results = [];
   let i = 0;
@@ -13755,10 +13759,10 @@ async function pcardFetchDstSeason(season){
   });
   Object.values(byTeam).forEach(list=>list.sort((a,b)=>(a.week||0)-(b.week||0)));
   Object.defineProperty(byTeam, '__failedWeeks', { value: failed, enumerable:false });
-  if(!failed.length) _dstWeekCache[season] = byTeam;   // partial seasons are retried next open
+  if(!failed.length) _dstWeekCache[ck] = byTeam;   // partial seasons are retried next open
   return byTeam;
-  })().finally(()=>{ delete _dstInFlight[season]; });
-  return _dstInFlight[season];
+  })().finally(()=>{ delete _dstInFlight[ck]; });
+  return _dstInFlight[ck];
 }
 
 // Columns to show — the meaningful subset of what Sleeper tracks for a defense, in the order
@@ -13811,7 +13815,13 @@ function _dstNum(v, d){
 function _dstSeasons(){
   const proj = (typeof PROJ_SEASON!=='undefined') ? parseInt(PROJ_SEASON,10) : new Date().getFullYear();
   const out = [];
-  for(let y=proj-1; y>=proj-4; y--) out.push(String(y));
+  // The season in progress goes first — "how has this defense done so far" is the whole
+  // point of opening the card in-season. Completed seasons follow as reference.
+  if(typeof hasSeasonStarted==='function' && hasSeasonStarted() &&
+     typeof completedWeeks==='function' && completedWeeks()>0 && typeof TC_SEASON!=='undefined'){
+    out.push(String(TC_SEASON.year));
+  }
+  for(let y=proj-1; y>=proj-4; y--){ const v=String(y); if(out.indexOf(v)<0) out.push(v); }
   return out;
 }
 
@@ -13833,14 +13843,14 @@ function renderPcardTeamDef(pid){
     }).catch(()=>{});
   });
   const blocks = seasons.map(season=>
-    `<div id="dst_${team}_${season}" class="pcard-season"><div class="pcard-loading">Loading ${season}…</div></div>`
+    `<div id="dst_${team}_${season}" class="pcard-season"><div class="pcard-loading">Loading ${(typeof tcSeasonLabel==='function')?tcSeasonLabel(season):season}…</div></div>`
   ).join('');
   return `<div class="dw-wrap" id="${host}">${blocks}
     <div class="pcard-src">Team defense weekly stats from Sleeper · base (std) scoring.</div></div>`;
 }
 
 function _dstSeasonBlock(weeks, season, team){
-  if(!weeks || !weeks.length) return `<div class="pcard-mini-note">No ${season} defensive weeks.</div>`;
+  if(!weeks || !weeks.length) return `<div class="pcard-mini-note">No ${(typeof tcSeasonLabel==='function')?tcSeasonLabel(season):season} defensive weeks yet.</div>`;
   const noteTeam=String(team||'').toUpperCase();
   const colHead = _DST_COLS.map(c=>`<th>${c.l}</th>`).join('');
   const tot = {};
@@ -13872,7 +13882,10 @@ function _dstSeasonBlock(weeks, season, team){
   }).join('');
   const totalRow = `<tr class="pcard-total-row"><td class="pcard-wk">TOT</td><td class="pcard-opp" title="${gp} games (PA/YA shown per game)">${gp}g</td>${totCells}</tr>`;
   const full = (typeof teamDisplayName==='function' ? teamDisplayName(team) : team);
-  return `<div class="pcard-season-title"><img src="${NFL_LOGO(team)}" class="pcard-dst-logo" onerror="this.style.display='none'"> ${full} D/ST · ${season}</div>
+  const seasonLbl = (typeof tcSeasonLabel==='function') ? tcSeasonLabel(season) : season;
+  const liveTag = (typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season))
+    ? ` <span class="pcard-live-tag" title="Season in progress — through the completed weeks">in progress</span>` : '';
+  return `<div class="pcard-season-title"><img src="${NFL_LOGO(team)}" class="pcard-dst-logo" onerror="this.style.display='none'"> ${full} D/ST · ${seasonLbl}${liveTag}</div>
     <div class="pcard-table-scroll"><table class="pcard-table">
       <thead><tr><th class="pcard-th-wk">WK</th><th>OPP</th>${colHead}</tr></thead>
       <tbody>${bodyRows}${totalRow}</tbody>
