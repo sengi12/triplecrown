@@ -6618,7 +6618,7 @@ function renderPassing(team,state){
         return `<div class="snap-row" style="${active?'border:1px solid var(--qb)':''}">
           <span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${imgTag(hsPack(q),'player-headshot')}</span>
           <div class="snap-info" style="flex:1">
-            <div style="font-size:12px;font-weight:700"><span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${escHtml(q.name)}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(q.player_id,q.name):''}${weekFilterPaceButton(state,q.player_id,'qb')}${qbFptsTag(q)}
+            <div style="font-size:12px;font-weight:700"><span class="clickable-player" onclick="${pcardOnclick(q.player_id||q.name,'QB',currentTeam||'')}">${escHtml(q.name)}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(q.player_id,q.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(q.player_id):''}${weekFilterPaceButton(state,q.player_id,'qb')}${qbFptsTag(q)}
               ${activeSeason!=='proj'&&q.games_played?`<span style="font-size:9px;color:var(--muted);font-weight:500">· actually played ${Math.round(q.games_played)}</span>`
                 : ''}</div>
             <div style="font-size:10px;color:var(--muted)" id="wl-sub-${i}">${gms} games · ${perGame(q,'passing_yards').toFixed(1)} pass yds/gm</div>
@@ -6634,7 +6634,7 @@ function renderPassing(team,state){
           if(typeof tcInjuryInfo!=='function' || !q.player_id) return '';
           const inj=tcInjuryInfo(q.player_id);
           if(!inj || inj.sev!=='o' || !((q.games||0)>0)) return '';
-          return `<div class="qb-inj-note">${typeof tcInjuryTag==='function'?tcInjuryTag(q.player_id):inj.code} listed ${inj.code}${inj.body?` (${escHtml(inj.body)})`:''} but projected for ${Math.round(q.games||0)} games — adjust Games Played, or use games-only mode below to shift games without rescaling stats.</div>`;
+          return `<div class="qb-inj-note">${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(q.player_id):inj.code} listed ${inj.code}${inj.body?` (${escHtml(inj.body)})`:''} but projected for ${Math.round(q.games||0)} games — adjust Games Played, or use games-only mode below to shift games without rescaling stats.</div>`;
         })()}`;
       }).join('')}
       <div class="qb-gmode"><label title="Advanced: changing Games Played keeps each QB's season totals fixed and re-derives the per-game rates — for committee or injury situations where the season number is already right.">
@@ -6658,7 +6658,7 @@ function renderPassing(team,state){
       `<button class="qb-tab ${i===idx?'active':''}" onclick="setActiveQB(${i})">${escHtml((typeof tcLastName==='function')?tcLastName(q.name):(String(q.name||'').trim().split(/\s+/).slice(-1)[0]||''))}</button>`).join('')}</div>`:''}
     <div class="player-row"><span class="clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${imgTag(hsPack(qb),'player-headshot')}</span>
       <span class="pos-badge pos-QB">QB${idx+1}</span>
-      <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${escHtml(qb.name)}${typeof tcOwnerPill==='function'?tcOwnerPill(qb.player_id,qb.name):''}</div>
+      <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${escHtml(qb.name)}${typeof tcOwnerPill==='function'?tcOwnerPill(qb.player_id,qb.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(qb.player_id):''}</div>
         ${weekFilterPaceButton(state,qb.player_id,'qb')}${qbFptsTag(qb)}
         <div class="player-sub">${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?`ECR ${e.rank_ecr}`:'';})()}${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?' · ':'';})()}<span id="qb-games-sub">${games}</span> games projected</div></div></div>
     <div class="alert alert-info" style="margin-bottom:11px"><span class="alert-icon">📈</span>
@@ -6995,7 +6995,7 @@ function renderPassDerived(team,state,subTabs,metric){
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTagTop(p,'rec')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTagTop(p,'rec')}
         <span class="share-pct" id="dp-${i}">${sharePct}</span>
         <span class="share-vol" id="dv-${i}">${tagVal(v.toLocaleString()+' '+label, isYds?'Receiving Yards':'Receptions', isYds?'receiving_yards':'receptions')}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -7132,7 +7132,7 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span>
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTagTop(p,'rec')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTagTop(p,'rec')}
         <span class="share-pct" id="pp-${i}">${sharePct}</span>
         <span class="share-vol" id="pt-${i}">${tagVal(projTgts+' tgt','Targets','receiving_targets')}</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},${pcardArg(p.pos)})" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
@@ -7213,7 +7213,7 @@ function renderPassTDs(team,state,totalTDs,subTabs){
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}
         <span class="share-pct" id="tdp-${i}">${sharePct}</span>
         <span class="share-vol">${tagVal(projTDs+' TD','Receiving TDs','receiving_tds')}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -7293,7 +7293,7 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
     return `<div class="share-block" id="rblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTagTop(p,'rush')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTagTop(p,'rush')}
         <span class="share-pct" id="rp-${i}">${sharePct}</span>
         <span class="share-vol" id="ra-${i}">${tagVal(att+' att','Rushing Attempts','rushing_attempts')}</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},'RB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
@@ -7355,7 +7355,7 @@ function renderRushTDs(team,state,subTabs){
     return `<div class="share-block" id="rblk-${i}"><div class="share-row">
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
-        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTagTop(p,'rush')}
+        <span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTagTop(p,'rush')}
         <span class="share-pct" id="rtdp-${i}">${sharePct}</span>
         <span class="share-vol">${tagVal(projTDs+' TD','Rushing TDs','rushing_tds')}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
@@ -17860,6 +17860,9 @@ function rankingsRenderCacheKey(teamScoped){
     (typeof buildPlayerShapeSig==='function') ? buildPlayerShapeSig() : '',   // league shape / draft / ADP
     String(activeSeason),
     String(typeof rankLiveDelta!=='undefined' && rankLiveDelta ? 1 : 0),
+    // Injury tags come from the Sleeper player DB, which lands asynchronously — a board
+    // rendered before it arrives must not stay cached without designations.
+    String(typeof sleeperPlayers!=='undefined' && sleeperPlayers ? 1 : 0),
     String(typeof liveSeasonEpoch==='function' ? liveSeasonEpoch() : 0),
     String(rankFormat),
     scSig,
@@ -18200,7 +18203,7 @@ function renderRankings(){
     ${fptsCells}
     <td class="c-vor">${rankValueHtml(`<span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${vorTxt}</span>`, p, 'Value Over Replacement', 'vor', 'rankings')}</td>
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
-    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${rankHeadshotSlotHtml(p)}<span class="rank-name">${pNameText}</span>${liveView&&typeof tcInjuryTag==='function'?tcInjuryTag(p.player_id):''}</div></td>
+    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${rankHeadshotSlotHtml(p)}<span class="rank-name">${pNameText}</span>${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</div></td>
     <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" alt="${pTeamAttr}" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${pTeamText}</td>
     ${ownerActive?`<td class="c-own">${tcOwnerPill(p.player_id, p.name)}</td>`:''}
     ${contractCells}
