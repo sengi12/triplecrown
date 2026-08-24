@@ -3689,8 +3689,16 @@ function renderPassing(team,state){
         ${sRow('games_'+i,'Games Played',gms,Math.round(q.games_played||q.games||0),0,SEASON_GAMES,1,'var(--qb)',false,{
           readOnly:historicalLocked,
           noteMeta:{ label:'Games Played', source:'projection_builder_qb', statKey:'games_played', context:noteCtx, player:notePlayerFor(q), team:noteTeam, relevance:'QB' }
-        })}`;
+        })}
+        ${(()=>{ // In-season: flag a projected workload that an active OUT/IR designation contradicts.
+          if(typeof tcInjuryInfo!=='function' || !q.player_id) return '';
+          const inj=tcInjuryInfo(q.player_id);
+          if(!inj || inj.sev!=='o' || !((q.games||0)>0)) return '';
+          return `<div class="qb-inj-note">${typeof tcInjuryTag==='function'?tcInjuryTag(q.player_id):inj.code} listed ${inj.code}${inj.body?` (${escHtml(inj.body)})`:''} but projected for ${Math.round(q.games||0)} games — adjust Games Played, or use games-only mode below to shift games without rescaling stats.</div>`;
+        })()}`;
       }).join('')}
+      <div class="qb-gmode"><label title="Advanced: changing Games Played keeps each QB's season totals fixed and re-derives the per-game rates — for committee or injury situations where the season number is already right.">
+        <input type="checkbox" ${state._qbGamesOnly?'checked':''} onchange="toggleQbGamesOnly('${team}')"> games-only mode <span>(shift games without rescaling stats)</span></label></div>
       <div class="derived-note" id="qbWorkloadNote" style="${overBudget?'color:var(--warn)':''}">${qbWorkloadNoteHtml(teamGames, overBudget, team)}</div>
     </div>`;
   const games=Math.round(qb.games||0);
@@ -4609,6 +4617,17 @@ function handleSlider(el){
   handleSliderKey(el.dataset.key,parseFloat(el.value),el.dataset.team,false);
 }
 
+// Advanced: per-team toggle — the Games Played sliders stop rescaling totals (see the
+// games_ branch below). Lives on the team state so it persists with the working set.
+function toggleQbGamesOnly(team){
+  const state=userProj[team]; if(!state) return;
+  state._qbGamesOnly=!state._qbGamesOnly;
+  if(typeof toast==='function') toast(state._qbGamesOnly
+    ? 'Games-only mode: Games Played now shifts games without rescaling season totals'
+    : 'Games sliders back to normal: totals scale with games again','ok');
+  renderContent();
+}
+
 function handleSliderKey(key,val,team,fromManual){
   const state=userProj[team]; if(!state) return;
   markDirty(currentTeam);
@@ -4635,7 +4654,24 @@ function handleSliderKey(key,val,team,fromManual){
   if(key.startsWith('games_')){
     const qi=parseInt(key.slice(6));
     const q=state.qbs[qi];
-    const newGames=Math.max(0,Math.round(val));
+    let newGames=Math.max(0,Math.round(val));
+    // Games-only mode (advanced): shift games WITHOUT rescaling the season totals — for
+    // committee/injury situations where a starter's games change but his projection is
+    // already the season number you want. Per-game rates re-derive from totals ÷ games.
+    // Floor of 1: zero games with kept totals would contribute stats the model says never
+    // happened.
+    if(state._qbGamesOnly){
+      newGames=Math.max(1,newGames);
+      q.games=newGames; q.games_played=newGames; q.base_games=newGames;
+      const STATK=['passing_yards','passing_tds','passing_attempts','passing_completions',
+        'interceptions_thrown','qb_rush_yards','qb_rush_tds','qb_rush_attempts'];
+      q._rate={}; STATK.forEach(k=>{ q._rate[k]=(q[k]||0)/newGames; });
+      updateWorkloadUI(state,qi,team);
+      liveQB(state,qi,team,null);
+      refreshQBStatSliders(state,qi);
+      livePassDependents(state,team);
+      return;
+    }
     const STATK=['passing_yards','passing_tds','passing_attempts','passing_completions',
       'interceptions_thrown','qb_rush_yards','qb_rush_tds','qb_rush_attempts'];
     // Capture per-game rates from the CURRENT totals/games before changing games, so the
@@ -5281,6 +5317,46 @@ function tcInjuryTag(pid){
   if(!i) return '';
   const title=[i.body, i.note].filter(Boolean).join(' — ');
   return `<span class="inj-tag inj-${i.sev}" title="${typeof escAttr==='function'?escAttr(title||i.code):''}">${i.code}</span>`;
+}
+// Clickable variant (player card): tapping opens the detail popup.
+function tcInjuryTagBtn(pid){
+  const i=tcInjuryInfo(pid);
+  if(!i) return '';
+  return `<span class="inj-tag inj-click inj-${i.sev}" onclick="tcInjuryPop(event,'${String(pid)}')" title="Injury details">${i.code}</span>`;
+}
+// Small detail popup, clamped inside the viewport; any outside tap dismisses it.
+function tcInjuryPop(ev, pid){
+  try{ ev.stopPropagation(); }catch(e){}
+  const old=document.getElementById('tcInjPop'); if(old) old.remove();
+  const i=tcInjuryInfo(pid); if(!i) return;
+  const sp=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[String(pid)])||{};
+  const est=tcInjuryAbsenceWeeks(i);
+  const div=document.createElement('div');
+  div.id='tcInjPop'; div.className='inj-pop';
+  div.innerHTML=`<b>${escHtml(sp.name||'Injury')} · ${i.code}</b>
+    ${i.body?`<div>${escHtml(i.body)}</div>`:''}
+    ${i.note?`<div>${escHtml(i.note)}</div>`:''}
+    <div class="inj-pop-sub">${i.sev==='o'
+      ? `Typically ${est>=4?`${est}+ weeks`:`${est} week${est===1?'':'s'}`} out for this designation — a rough floor, not a diagnosis.`
+      : i.sev==='d' ? 'Doubtful — unlikely to play this week.' : 'Questionable — monitor before kickoff.'}</div>`;
+  document.body.appendChild(div);
+  const r=(ev.target&&ev.target.getBoundingClientRect)?ev.target.getBoundingClientRect():{left:40,bottom:40};
+  const pw=div.offsetWidth||240, ph=div.offsetHeight||80;
+  const vw=window.innerWidth||360, vh=window.innerHeight||640;
+  div.style.left=Math.max(8, Math.min(vw-pw-8, r.left))+'px';
+  div.style.top=(r.bottom+6+ph>vh ? Math.max(8, r.top-ph-6) : r.bottom+6)+'px';
+  setTimeout(()=>{ const off=(e)=>{ if(!div.contains(e.target)){ div.remove(); document.removeEventListener('click',off,true); } };
+    document.addEventListener('click',off,true); },0);
+}
+// Rough absence floor by designation — used to discount rest-of-season outlooks, never to
+// silently rewrite the user's projections.
+function tcInjuryAbsenceWeeks(info){
+  if(!info) return 0;
+  if(info.code==='IR') return 4;      // IR minimum stay
+  if(info.code==='PUP') return 4;
+  if(info.code==='SUS') return 2;
+  if(info.code==='OUT') return 1;
+  return 0;
 }
 
 // ── Per-category pace strips (player card, live tab) ─────────────────────────
@@ -6446,7 +6522,7 @@ function renderPlayerCardShell(pid, pos, team){
         <div class="pcard-hero-logo" style="${tm?`background-image:url('${NFL_LOGO(tm)}')`:''}"></div>
         <img src="${heroPack.src||''}" class="pcard-hero-img" data-fallbacks="${heroFallbacks.join('|')}" onerror="pcardImgFallback(this)">
         <div class="pcard-hero-main">
-          <div class="pcard-name">${escHtml(name)}${jersey?`<span class="pcard-jersey">${jersey}</span>`:''}</div>
+          <div class="pcard-name">${escHtml(name)}${jersey?`<span class="pcard-jersey">${jersey}</span>`:''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(pid):''}</div>
           <div class="pcard-sub">${posc?`<span class="pos-badge pos-${posc}">${posc}</span>`:''}${tm?`<span class="pcard-team">${teamDisplayName(tm)}</span>`:''}${typeof tcOwnerChip==='function'?tcOwnerChip(pid, name):''}</div>
           <div class="pcard-meta">
             ${metaItem('AGE', age)}
@@ -18540,7 +18616,7 @@ function tsTabPhase(btn){
   if(!btn) return null;
   const oc=btn.getAttribute('onclick')||'';
   // Builder tabs use setPhase('X'); League Analyzer tabs use laSetTab('x') — both swipe.
-  const m=oc.match(/(?:setPhase|laSetTab)\('([^']+)'\)/);
+  const m=oc.match(/(?:setPhase|laSetTab|laSetPane)\('([^']+)'\)/);
   return m ? m[1] : null;
 }
 
@@ -18625,7 +18701,9 @@ function tsRenderPhasePreview(phase){
         if(pane==='matchup' && !(_laMu.byWeek[laMuWeek()])) return '';
         if(pane==='lineup' && !(_laMu.byWeek[laCurrentWeek()])) return '';
         if((pane==='dvp'||pane==='trends') && !(typeof TC_INSEASON!=='undefined' && TC_INSEASON)) return '';
-        return (typeof laTabViewHTML==='function' && laTabViewHTML(phase==='season'?'season':pane, s)) || '';
+        if(phase==='season') return (typeof laTabViewHTML==='function' && laTabViewHTML('season', s)) || '';
+        return (pane==='lineup'?laLineupView(s) : pane==='dvp'?laDvpView(s)
+              : pane==='trends'?laTrendsView(s) : laMatchupView(s)) || '';
       }
     }catch(e){ return ''; }
     return '';
@@ -18730,8 +18808,11 @@ function tsAnimateTabTurn(host, tabs, next, moved, opts){
 // The visible tab bar, if any. Multiple can exist in the DOM across views, so take the first
 // one that's actually laid out.
 function tsActiveBar(){
-  const bars=[...document.querySelectorAll('.phase-tabs')];
-  return bars.find(b=>b.offsetParent!==null && b.getClientRects().length>0) || null;
+  const bars=[...document.querySelectorAll('.phase-tabs')]
+    .filter(b=>b.offsetParent!==null && b.getClientRects().length>0);
+  // A bar marked data-swipe-primary owns the gesture even when another bar renders above it
+  // (the Season tab: the outer icon bar stays tappable, but swipes move between the PANES).
+  return bars.find(b=>b.hasAttribute && b.hasAttribute('data-swipe-primary')) || bars[0] || null;
 }
 
 // True when this element (or an ancestor) is a horizontal scroller with somewhere left to go in
@@ -18922,7 +19003,17 @@ function tsScrollerClaims(el, dir){
     if(!tabs || cur<0){ clearShift(true); return; }
     // Swipe left → next tab (content moves left, like turning a page).
     const next = moved<0 ? cur+1 : cur-1;
-    if(next<0 || next>=tabs.length){ clearShift(true); return; }
+    if(next<0 || next>=tabs.length){
+      // A bar can name where a swipe past its first tab continues (Season panes → Trades).
+      if(next<0 && bar.dataset && bar.dataset.swipePrev && typeof laSetTab==='function'){
+        const prevTab=bar.dataset.swipePrev;
+        const top=tsSwipeTop(host)||host, w=tsHostWidth(host);
+        if(top){ top.style.transition='transform .18s ease-out'; top.style.transform=`translateX(${w}px)`; }
+        setTimeout(()=>{ laSetTab(prevTab); }, 145);
+        return;
+      }
+      clearShift(true); return;
+    }
     tsAnimateTabTurn(host, tabs, next, moved, {});
   };
   document.addEventListener('touchend', finish, {passive:true});
@@ -25046,8 +25137,12 @@ function laSetPane(k){
 function laSeasonView(s, paneOverride){
   const pane=paneOverride||laActivePane()||'matchup';
   const panes=[['matchup','Matchup','versus'],['lineup','Lineup','clipboard'],['dvp','Defense','shield'],['trends','Trends','chart']];
-  const bar=`<div class="la-pane-tabs">${panes.map(([k,l,ic])=>
-    `<button class="pane-tab ${pane===k?'active':''}" onclick="laSetPane('${k}')" title="${l}">${TC_ICON(ic)}<span class="tab-lbl">${l}</span></button>`).join('')}</div>`;
+  // phase-tabs + data-swipe-primary: within the Season tab, left/right swipes slide between
+  // these PANES (the outer icon bar stays tappable); swiping back past Matchup continues to
+  // the Trades tab (data-swipe-prev). Touches inside the matchup hero are claimed by the
+  // hero's own matchup pager first.
+  const bar=`<div class="phase-tabs la-pane-tabs" data-swipe-primary data-swipe-prev="trade">${panes.map(([k,l,ic])=>
+    `<button class="phase-tab pane-tab ${pane===k?'active':''}" onclick="laSetPane('${k}')" title="${l}">${TC_ICON(ic)}<span class="tab-lbl">${l}</span></button>`).join('')}</div>`;
   const body = pane==='lineup'?laLineupView(s) : pane==='dvp'?laDvpView(s)
              : pane==='trends'?laTrendsView(s) : laMatchupView(s);
   return bar+body;
@@ -25225,20 +25320,44 @@ function _laBindMuHeroSwipe(host){
   const hero=host && host.querySelector ? host.querySelector('.la-mu-hero') : null;
   if(!hero || hero._muSwipeBound) return;
   hero._muSwipeBound=true;
+  // Landing after a hero swipe: the fresh hero slides in from the side it was pulled toward.
+  if(laState._muSlideIn){
+    const dir=laState._muSlideIn; laState._muSlideIn=null;
+    const w=hero.offsetWidth||320;
+    hero.style.transition='none'; hero.style.transform=`translateX(${dir>0?w:-w}px)`;
+    requestAnimationFrame(()=>{ hero.style.transition='transform .18s ease-out'; hero.style.transform='translateX(0px)'; });
+  }
   const total=Number(hero.dataset.muTotal||0); if(total<2) return;
   let x0=null,y0=null,claimed=false;
-  hero.addEventListener('touchstart',e=>{ const t=e.touches[0]; x0=t.clientX; y0=t.clientY; claimed=false; },{passive:true});
+  hero.addEventListener('touchstart',e=>{ const t=e.touches[0]; x0=t.clientX; y0=t.clientY; claimed=false;
+    hero.style.transition='none'; },{passive:true});
   hero.addEventListener('touchmove',e=>{
     if(x0==null) return; const t=e.touches[0];
     const dx=t.clientX-x0, dy=t.clientY-y0;
-    if(!claimed && Math.abs(dx)>18 && Math.abs(dx)>Math.abs(dy)*1.4){ claimed=true; e.stopPropagation(); }
-    else if(claimed){ e.stopPropagation(); }
+    if(!claimed && Math.abs(dx)>18 && Math.abs(dx)>Math.abs(dy)*1.4) claimed=true;
+    if(claimed){
+      e.stopPropagation();
+      // Follow the finger with a little resistance, same feel as the tab swipe.
+      hero.style.transform=`translateX(${Math.sign(dx)*Math.min(300,Math.abs(dx)*0.9)}px)`;
+    }
   },{passive:true});
-  hero.addEventListener('touchend',e=>{
+  const settle=(e)=>{
     if(x0==null) return; const t=e.changedTouches[0];
     const dx=t.clientX-x0, dy=t.clientY-y0; x0=null;
-    if(claimed && Math.abs(dx)>55 && Math.abs(dx)>Math.abs(dy)*1.4){ e.stopPropagation(); laMuFocusStep(dx<0?1:-1, total); }
-  },{passive:true});
+    if(claimed && Math.abs(dx)>55 && Math.abs(dx)>Math.abs(dy)*1.4){
+      e.stopPropagation();
+      const w=hero.offsetWidth||320;
+      hero.style.transition='transform .16s ease-out';
+      hero.style.transform=`translateX(${dx<0?-w:w}px)`;
+      laState._muSlideIn = dx<0?1:-1;
+      setTimeout(()=>{ laMuFocusStep(dx<0?1:-1, total); }, 130);
+    } else {
+      hero.style.transition='transform .16s ease-out';
+      hero.style.transform='translateX(0px)';
+    }
+  };
+  hero.addEventListener('touchend',settle,{passive:true});
+  hero.addEventListener('touchcancel',settle,{passive:true});
 }
 function laMatchupView(s){
   if(s.provider==='espn') return _laEspnInseasonNote();
@@ -25650,7 +25769,7 @@ function _laTrendRow(p, detail, verdict, cls, rank){
   return `<div class="la-trnd-row ${cls||''}">
     ${rank?`<span class="la-trnd-rank">${rank}</span>`:''}
     <span class="clickable-player la-trnd-hs" onclick="${pcardOnclick(pid||pp.name,p.pos,p.team||'')}">${laPlayerImg(pp,'la-trnd-hsimg')}</span>
-    <div class="la-trnd-main">${laNameHTML(pp,'la-trnd-name')}${inj}<div class="la-trnd-sub"><span class="la-pos-${_laPosOf(p)}">${_laPosOf(p)}</span> · ${escHtml(p.team||'FA')}${detail?` · ${detail}`:''}</div></div>
+    <div class="la-trnd-main"><span class="la-trnd-nmline">${laNameHTML(pp,'la-trnd-name')}${inj}</span><div class="la-trnd-sub"><span class="la-pos-${_laPosOf(p)}">${_laPosOf(p)}</span> · ${escHtml(p.team||'FA')}${detail?` · ${detail}`:''}</div></div>
     <div class="la-trnd-verdict">${verdict}</div></div>`;
 }
 // Team-row variant: logo + full team name, same right-hand verdict.
@@ -25703,10 +25822,10 @@ function laTrendsView(s){
   const keeps=_laScopeKeeps(scope, mySet, lgSet);
   const mineMark=(name,pos)=> mySet.has(ecrNormName(name)+'|'+pos) ? '<span class="la-trnd-mine" title="on your roster">★</span>' : '';
   const tabs=[['trending','Trending'],['pace','Pace'],['usage','Usage'],['regression','TDs'],['teams','Teams'],['ros','ROS']]
-    .map(([k,l])=>`<button class="format-btn ${tab===k?'active':''}" onclick="laSetTrndTab('${k}')">${l}</button>`).join('');
+    .map(([k,l])=>`<button class="pane-tab ${tab===k?'active':''}" onclick="laSetTrndTab('${k}')">${l}</button>`).join('');
   const scopes=(tab==='teams')?'':`<div class="pos-filter la-trnd-scope">${[['rostered','Rostered'],['myteam','My Team'],['waiver','Waivers'],['league','League']]
     .map(([k,l])=>`<button class="pos-filter-btn ${scope===k?'active':''}" onclick="laSetTrndScope('${k}')">${l}</button>`).join('')}</div>`;
-  const bar=`<div class="la-ins-bar"><div class="format-toggle">${tabs}</div>${scopes}</div>`;
+  const bar=`<div class="la-ins-bar"><div class="la-pane-tabs la-trnd-tabs">${tabs}</div>${scopes}</div>`;
   const two=(title,sub,upLbl,upRows,dnLbl,dnRows)=>`
     <div class="la-ins-bar"><span class="la-ins-lbl">${title}</span><span class="la-ins-sub">${sub}</span></div>
     <div class="card la-trnd-card"><div class="la-trnd-cols">
@@ -25742,22 +25861,29 @@ function laTrendsView(s){
         '▼ BEHIND',half(rows.filter(e=>e.delta<0).reverse().slice(0,15)));
     }
   } else if(tab==='usage'){
-    const U=_laUsagePlayers();
-    if(!U) body=needSidecar();
-    else {
-      const P=U.players.filter(p=>p.pos&&keeps(_laDisplayName(p,p.id),p.pos));
-      const tgts=P.filter(p=>p.pos!=='QB'&&p.gp3>0&&p.tgt3>0)
-        .sort((a,b)=>(b.tgt3/b.gp3)-(a.tgt3/a.gp3)).slice(0,15)
-        .map((p,i)=>_laTrendRow(p, `${p.share3.toFixed(1)}% tgt share last 3 · ${p.share.toFixed(1)}% season`,
-          _laVerdict((p.tgt3/p.gp3).toFixed(1),'tgt / game', p.share3>p.share+2?'la-trnd-up':p.share3<p.share-2?'la-trnd-dn':'')+mineMark(_laDisplayName(p,p.id),p.pos),
-          p.share3>p.share+2?'pace-ahead':p.share3<p.share-2?'pace-behind':'', i+1)).join('');
-      const cars=P.filter(p=>p.pos==='RB'&&p.gp3>0&&p.carry3>0)
-        .sort((a,b)=>(b.carry3/b.gp3)-(a.carry3/a.gp3)).slice(0,15)
-        .map((p,i)=>_laTrendRow(p, `${(p.carry/Math.max(1,p.gp)).toFixed(1)} car/gm season`,
-          _laVerdict((p.carry3/p.gp3).toFixed(1),'car / game', (p.carry3/p.gp3)>(p.carry/Math.max(1,p.gp))+2?'la-trnd-up':(p.carry3/p.gp3)<(p.carry/Math.max(1,p.gp))-2?'la-trnd-dn':'')+mineMark(_laDisplayName(p,p.id),p.pos),
-          (p.carry3/p.gp3)>(p.carry/Math.max(1,p.gp))+2?'pace-ahead':(p.carry3/p.gp3)<(p.carry/Math.max(1,p.gp))-2?'pace-behind':'', i+1)).join('');
-      body=two('OPPORTUNITY · LAST 3 WEEKS',`who's actually getting the ball · thru wk ${wk}`,
-        'TARGETS / GAME',tgts,'CARRIES / GAME (RB)',cars);
+    const idx=(typeof buildPaceIndex==='function')?buildPaceIndex():null;
+    if(!idx){
+      body=`<div class="card la-ins-empty"><div class="empty-body">Opportunity vs projection needs the kickoff baseline — it lights up once week 1 completes.</div></div>`;
+    } else {
+      const seen=new Set(); const tgtRows=[], carRows=[];
+      idx.forEach((e,key)=>{
+        if(key.indexOf('|')<0 || seen.has(key)) return; seen.add(key);
+        if(!(e.gp>=3) || !e.stats) return;
+        if(!keeps(e.name,e.pos)) return;
+        const tg=e.stats.receiving_targets, ca=e.stats.rushing_attempts;
+        if(tg && tg.bRate>=2.5 && e.pos!=='QB') tgtRows.push({e, st:tg});
+        if(ca && ca.bRate>=4 && e.pos==='RB') carRows.push({e, st:ca});
+      });
+      tgtRows.sort((a,b)=>b.st.pct-a.st.pct); carRows.sort((a,b)=>b.st.pct-a.st.pct);
+      const uRow=(x,i,cap)=>_laTrendRow(x.e, `${x.st.aRate.toFixed(1)}/gm vs proj ${x.st.bRate.toFixed(1)} · ${x.e.gp} gm${x.e.gp===1?'':'s'}`,
+        _laVerdict(`${x.st.pct>=0?'+':'−'}${Math.round(Math.abs(x.st.pct)*100)}%`, cap, x.st.pct>=0?'la-trnd-up':'la-trnd-dn')+mineMark(x.e.name,x.e.pos),
+        x.st.pct>=0.1?'pace-ahead':x.st.pct<=-0.1?'pace-behind':'', i+1);
+      body=two('TARGETS VS PROJECTION',`who's seeing more (or less) than the projection called for · thru wk ${wk}`,
+          '▲ MORE THAN PROJECTED',tgtRows.filter(x=>x.st.pct>0).slice(0,12).map((x,i)=>uRow(x,i,'tgt volume')).join(''),
+          '▼ LESS THAN PROJECTED',tgtRows.filter(x=>x.st.pct<0).reverse().slice(0,12).map((x,i)=>uRow(x,i,'tgt volume')).join(''))
+        + two('CARRIES VS PROJECTION','rushing workload against the projected share (RB)',
+          '▲ MORE THAN PROJECTED',carRows.filter(x=>x.st.pct>0).slice(0,12).map((x,i)=>uRow(x,i,'carry volume')).join(''),
+          '▼ LESS THAN PROJECTED',carRows.filter(x=>x.st.pct<0).reverse().slice(0,12).map((x,i)=>uRow(x,i,'carry volume')).join(''));
     }
   } else if(tab==='regression'){
     const U=_laUsagePlayers();
@@ -25825,13 +25951,23 @@ function laTrendsView(s){
                 : (seasR!=null) ? 0.55*baseR+0.45*seasR : baseR;
         const sched=_laRosSched(e.team, e.pos, dvp);
         if(sched) ros*=sched.mult;
+        // Injury-aware: an active OUT/IR/PUP/SUS designation discounts the outlook by the
+        // estimated missed share of the remaining schedule (a floor, user-visible, never a
+        // silent projection rewrite).
         const inj=(typeof tcInjuryInfo==='function')?tcInjuryInfo(e.id):null;
+        let injNote='';
+        if(inj && inj.sev==='o' && typeof tcInjuryAbsenceWeeks==='function'){
+          const remain=(sched&&sched.games)||Math.max(1, 19-laCurrentWeek());
+          const miss=Math.min(remain, tcInjuryAbsenceWeeks(inj));
+          ros*=(remain-miss)/remain;
+          injNote=` · ${inj.code} est. ${miss}${miss>=4?'+':''} wk${miss===1?'':'s'} out`;
+        }
         const pct=baseR>0?(ros-baseR)/baseR:0;
-        rows.push({e, ros, baseR, pct, sched, inj});
+        rows.push({e, ros, baseR, pct, sched, inj, injNote});
       });
       rows.sort((a,b)=>b.pct-a.pct);
       const rosRow=(x,i)=>_laTrendRow(x.e,
-        `${x.ros.toFixed(1)} proj/gm rest of season · ${x.baseR.toFixed(1)} preseason${x.sched?` · sched ${x.sched.mult>=1?'+':'−'}${Math.abs((x.sched.mult-1)*100).toFixed(0)}%`:''}`,
+        `${x.ros.toFixed(1)} proj/gm rest of season · ${x.baseR.toFixed(1)} preseason${x.sched?` · sched ${x.sched.mult>=1?'+':'−'}${Math.abs((x.sched.mult-1)*100).toFixed(0)}%`:''}${x.injNote||''}`,
         _laVerdict(`${x.pct>=0?'+':'−'}${Math.round(Math.abs(x.pct)*100)}%`, 'ROS vs projection', x.pct>=0?'la-trnd-up':'la-trnd-dn')+mineMark(x.e.name,x.e.pos),
         x.pct>=0.08?'pace-ahead':x.pct<=-0.08?'pace-behind':'', i+1);
       body=two('REST OF SEASON OUTLOOK','projection rate blended with season + recent form, adjusted for the remaining schedule and injuries',
