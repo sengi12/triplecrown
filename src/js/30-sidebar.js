@@ -51,7 +51,7 @@ function renderSidebar(){
     const st=(typeof workingProj!=='undefined' && workingProj) ? workingProj[t] : null;
     if(!st) return '';
     if(typeof teamEdited==='function' ? teamEdited(t) : !!st.edited){ done++; return 'done'; }
-    return 'partial';
+    return st._auto ? '' : 'partial';   // auto-materialised ≠ opened
   };
 
   const mkTeamItem = (t, cls) => `<div class="team-item ${t===currentTeam?'active':''}" onclick="selectTeam('${t}')">
@@ -111,6 +111,8 @@ function renderSidebar(){
 
 function selectTeam(t){
   currentTeam=t;
+  // An explicit open clears the auto-materialised mark, so the dot can go amber.
+  try{ if(activeSeason==='proj' && typeof workingProj!=='undefined' && workingProj && workingProj[t]) delete workingProj[t]._auto; }catch(e){}
   // Keep whatever phase the user was on (Targets stays Targets across teams). Only the
   // global Rankings view falls back to a per-team phase since it isn't team-scoped here.
   if(currentPhase==='Rankings' && rankScope==='all') currentPhase='Receiving';

@@ -437,6 +437,10 @@ function buildPlayerList(){
     if(!userProj[team] && SEED[team] &&
        (SEED[team].QB.length||SEED[team].RB.length||SEED[team].WR.length||SEED[team].TE.length)){
       ensureTeam(team);
+      // Materialised for the rankings math — NOT opened by the user. Without this mark the
+      // sidebar's "opened, untouched" dot lit up all 32 teams the moment anything computed
+      // fantasy points (opening one team does, via its per-row point tags).
+      if(userProj[team]) userProj[team]._auto = true;
     }
   });
   TEAMS.forEach(team=>{

@@ -50,6 +50,7 @@ app.selectTeam('KC'); app.initPassingShares('KC'); app.initRushingShares('KC'); 
 chk(app.progress()==='0/32 teams' && app.dots().partial===1,'opening every tab of a team: still 0/32, team dot is "partial" (was: counted as done)');
 app.buildPlayerList(); app.renderSidebar();
 chk(app.progress()==='0/32 teams','opening Rankings (materialises all 32) does not move the bar (was: jumped to 32/32)');
+chk(app.dots().partial===1,'…and only the team you actually opened stays amber (was: all 32 lit up)');
 app.slide('KC','passing_yards',4500); app.renderSidebar();
 chk(app.progress()==='1/32 teams' && app.dots().done===1,'one slider edit on KC → 1/32, KC dot is done');
 chk(app.teamEdited('KC') && !app.teamEdited('DET'),'only the edited team is flagged');
