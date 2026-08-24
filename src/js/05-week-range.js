@@ -694,6 +694,9 @@ async function syncProjSeasonFromSleeper(force){
 // in-season hooks when the week or phase moved under a long-lived tab.
 var _TC_RECHECK_AGE = 6*60*60*1000;
 async function tcSeasonRecheck(force){
+  // Piggyback the same resume hook: refresh the Sleeper player DB when it has gone stale,
+  // so injury designations in a long-lived tab don't freeze on the day it was opened.
+  if(typeof refreshSleeperPlayersIfStale==='function'){ try{ refreshSleeperPlayersIfStale(); }catch(e){} }
   if(TC_SEASON.frozen) return TC_SEASON;
   if(!force && (Date.now()-TC_SEASON.fetchedAt) < _TC_RECHECK_AGE) return TC_SEASON;
   const prevWeek = completedWeeks(), prevPhase = TC_SEASON.phase, prevYear = TC_SEASON.year;

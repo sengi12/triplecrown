@@ -41,9 +41,10 @@ async function sleeperFetch(url){
 // background load could be awaited by a season click, stranding it (and the season's
 // seasonLoading guard) until that fetch resolved. On rejection we clear the promise so
 // a later call can retry.
-async function loadSleeperPlayers(silent){
-  if(sleeperPlayers) return sleeperPlayers;
-  if(sleeperPlayersPromise) return sleeperPlayersPromise;   // a load is already running — reuse it
+var _sleeperPlayersAt = 0;   // when the DB last landed (injury designations ride on it)
+async function loadSleeperPlayers(silent, force){
+  if(sleeperPlayers && !force) return sleeperPlayers;
+  if(sleeperPlayersPromise && !force) return sleeperPlayersPromise;   // a load is already running — reuse it
   if(!silent) toast('Fetching Sleeper player database…');
   sleeperPlayersPromise = (async()=>{
     const raw = await sleeperFetch(SLEEPER_PLAYERS_URL);
@@ -72,6 +73,7 @@ async function loadSleeperPlayers(silent){
       };
     }
     sleeperPlayers = slim;
+    _sleeperPlayersAt = Date.now();
     buildSleeperNameIndex();
     // Player DB just landed: scrub any ghost rosters loaded from a stale seed or a restored
     // session (see scrubGhostRosters — this is the half of the race where the DB arrives
@@ -326,6 +328,29 @@ async function backgroundRefreshADP(){
       toast(`ADP refreshed from Sleeper (${adpUpdated} players) ✓`,'ok');
     }
   }catch(e){ /* offline / CORS / file:// — keep the baked seed silently */ }
+}
+
+// Injury designations (and depth-chart/roster truth) come from the Sleeper player DB, which
+// is fetched once per session. A tab left open across days would keep showing the day it was
+// opened, so re-pull when it goes stale — cheap, cross-origin (never SW-cached), and it
+// repaints the boards that show designations.
+var _spRefreshing = false;
+async function refreshSleeperPlayersIfStale(maxAgeMs){
+  const maxAge = maxAgeMs || 6*60*60*1000;
+  if(_spRefreshing || !sleeperPlayers) return false;
+  if(Date.now() - _sleeperPlayersAt < maxAge) return false;
+  _spRefreshing = true;
+  try{
+    await loadSleeperPlayers(true, true);
+    if(typeof invalidateRankingsRenderCache==='function') invalidateRankingsRenderCache();
+    if(typeof currentPhase!=='undefined'){
+      if(currentPhase==='Rankings' && typeof renderRankings==='function') renderRankings();
+      else if(currentPhase==='League' && typeof renderLeagueAnalyzer==='function') renderLeagueAnalyzer();
+      else if(typeof currentTeam!=='undefined' && currentTeam && typeof renderContent==='function') renderContent();
+    }
+    return true;
+  }catch(e){ return false; }
+  finally{ _spRefreshing = false; }
 }
 
 async function refreshFromSleeper(bootRestore){
