@@ -1238,6 +1238,61 @@ html.scheme-locked, html.scheme-locked body{overflow:hidden;overscroll-behavior:
 .depth-ir{font-size:7.5px;font-weight:800;color:#ff6b6b;border:1px solid rgba(255,107,107,.4);
   border-radius:4px;padding:0 3px;margin-left:4px;vertical-align:middle;}
 .depth-starter-key{color:var(--accent);}
+
+/* ── SOS block: week-by-week schedule strip (collapsed rail → expanded bars) ── */
+.sr-sos-block.sos-clickable{cursor:pointer;border-radius:10px;}
+.sr-sos-block.sos-clickable:hover{background:rgba(255,255,255,.02);}
+.sr-sos-caret{color:var(--muted);font-size:11px;margin-left:6px;flex-shrink:0;}
+.sr-team-jump{cursor:pointer;}
+.sr-team-jump:hover{color:var(--accent);}
+.sr-sos-dot{cursor:pointer;}
+
+.sos-sched{margin:6px 0 2px;}
+.sos-sched-rail{display:flex;gap:3px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:2px 0 4px;}
+.sos-wk{flex:1 0 44px;min-width:44px;display:flex;flex-direction:column;align-items:center;gap:1px;
+  padding:4px 2px;border-radius:7px;border:1px solid var(--border);background:var(--surface2);cursor:pointer;}
+.sos-wk:hover{border-color:var(--accent);}
+.sos-wk-num{font-size:8px;color:var(--muted);font-weight:700;line-height:1;}
+.sos-wk-logo{width:20px;height:20px;object-fit:contain;}
+.sos-wk-ha{font-size:8px;color:var(--muted);line-height:1;}
+.sos-wk-wt{font-size:10px;font-weight:800;line-height:1.2;}
+.sos-wk-bye{opacity:.55;justify-content:center;}
+.sos-wk-bye-lbl{font-size:9px;font-weight:800;color:var(--muted);}
+.sos-easy .sos-wk-wt,.sos-easy.sos-wk{border-color:rgba(63,185,80,.45);}
+.sos-easy .sos-wk-wt{color:var(--success);}
+.sos-hard .sos-wk-wt,.sos-hard.sos-wk{border-color:rgba(248,81,73,.45);}
+.sos-hard .sos-wk-wt{color:var(--danger);}
+.sos-mid .sos-wk-wt{color:var(--muted2);}
+
+.sos-sched-chart{margin-top:8px;padding-top:8px;border-top:1px solid var(--border);}
+.sos-bar-grid{display:flex;gap:4px;align-items:flex-end;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.sos-bar-col{flex:1 0 44px;min-width:44px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;}
+.sos-bar-slot{position:relative;width:100%;height:150px;display:flex;align-items:flex-end;justify-content:center;}
+.sos-bar{width:78%;border-radius:5px 5px 0 0;display:flex;align-items:flex-end;justify-content:center;
+  padding-bottom:4px;transition:height .18s ease-out;}
+.sos-bar-val{font-size:10px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5);}
+.sos-bar.sos-easy{background:var(--success);}
+.sos-bar.sos-hard{background:var(--danger);}
+.sos-bar.sos-mid{background:var(--muted);}
+.sos-bar-top{position:absolute;left:0;right:0;bottom:100%;display:flex;flex-direction:column;
+  align-items:center;gap:1px;padding-bottom:3px;}
+.sos-bar-top .sos-wk-logo{width:22px;height:22px;}
+.sos-bar-ha{font-size:8px;color:var(--muted);font-weight:700;}
+.sos-bar-wk{font-size:9px;color:var(--muted);font-weight:700;}
+.sos-bar-bye{opacity:.5;}
+.sos-bar-lbl{font-size:9px;font-weight:800;color:var(--muted);}
+.sos-sched-legend{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;
+  font-size:10px;color:var(--muted);}
+.sos-key{width:9px;height:9px;border-radius:2px;display:inline-block;}
+.sos-key.sos-easy{background:var(--success);}
+.sos-key.sos-mid{background:var(--muted);}
+.sos-key.sos-hard{background:var(--danger);}
+.sos-sched-avg{margin-left:auto;}
+@media (max-width:760px){
+  .sos-wk{flex:0 0 40px;min-width:40px;}
+  .sos-bar-col{flex:0 0 42px;min-width:42px;}
+  .sos-bar-slot{height:118px;}
+}
 /* Season tabs */
 .season-bar{display:flex;align-items:center;gap:6px;padding:6px 16px;
   background:var(--surface);border-bottom:1px solid var(--border);overflow-x:auto;}
@@ -2618,6 +2673,10 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .tc-nm-wrap{display:flex;align-items:center;gap:5px;flex:1;min-width:0;}
 .tc-nm-wrap .share-name{flex:0 1 auto;}
 .rankings-table.grouped td.c-player .inj-tag{margin-left:5px;}
+
+/* DvP: the team logo/code opens that defense's player card */
+.la-dvp-open{cursor:pointer;}
+.la-dvp-open:hover{opacity:.8;}
 /* ─────────────────────────────────────────────────────────────────────────────
    College prospect panel (rookie player cards) — see src/js/70b-cfb-prospect.js
 
@@ -17292,7 +17351,10 @@ function renderTeamAdvanced(team){
     <div class="sr-card-grid">${ks.map(k=>cardFor(k)).join('')}</div>` : '';
   // SOS summary strip
   const sos=SOS && SOS[team];
-  const sosStrip = sos ? `<div class="sr-sos-strip">
+  const sosSched = (typeof renderTeamScheduleStrip==='function') ? renderTeamScheduleStrip(team) : '';
+  const sosOpen = (typeof _sosStripOpen!=='undefined' && _sosStripOpen);
+  const sosStrip = sos ? `<div class="sr-sos-block ${sosSched?'sos-clickable':''}" ${sosSched?`onclick="toggleSosStrip()" title="${sosOpen?'Hide':'Show'} the week-by-week schedule"`:''}>
+  <div class="sr-sos-strip">
     <span class="sr-sos-rank ${sharpRankClass(sos.rank)}">${ordinal(sos.rank)}</span>
     <div class="sr-sos-main"><div class="sr-sos-label">${PROJ_SEASON} Strength of Schedule</div>
       <div class="sr-sos-sub">${noteWrapHtml(`${sos.win_total!=null?`Vegas win total <b>${sos.win_total}</b> · `:''}rank ${sos.rank} of 32 (1 = easiest)`, {
@@ -17305,8 +17367,9 @@ function renderTeamAdvanced(team){
         relevance: 'QB,RB,WR,TE',
         nav: { type:'advanced', team, season: 'proj' },
       }, 'note-tag-hit')}</div></div>
-    <button class="btn btn-ghost btn-sm sr-sos-btn" onclick="showSharpLeague('sos')">See SOS chart →</button>
-  </div>` : '';
+    ${sosSched?`<span class="sr-sos-caret" aria-hidden="true">${sosOpen?'▾':'▸'}</span>`:''}
+    <button class="btn btn-ghost btn-sm sr-sos-btn" onclick="event.stopPropagation();showSharpLeague('sos')">See SOS chart →</button>
+  </div>${sosSched}</div>` : '';
   // Carryover coordinators → a highlighted section that pulls the former team's scheme stats.
   const carryBlock = renderCoordinatorCarryover(team);
   const srcLabel = 'nflverse (computed from play-by-play)';
@@ -17692,8 +17755,9 @@ function renderSOSView(){
   const logos=entries.map(e=>{
     const cx=x(e.rank), cy=y(e);
     const oppNote = e.oppTotal!=null ? ` · opp win total ${e.oppTotal.toFixed(1)}${e.oppGames<17?` (${e.oppGames} tracked)`:''}` : '';
-    return `<image href="${NFL_LOGO(e.code)}" x="${cx-13}" y="${cy-13}" width="26" height="26">
-      <title>${e.name||e.code} — SOS ${ordinal(e.rank)}, Vegas win total ${e.win_total}${oppNote}</title></image>
+    return `<image href="${NFL_LOGO(e.code)}" x="${cx-13}" y="${cy-13}" width="26" height="26"
+        class="sr-sos-dot" onclick="tcGotoTeamProjections('${e.code}')">
+      <title>${e.name||e.code} — SOS ${ordinal(e.rank)}, Vegas win total ${e.win_total}${oppNote} · tap for their projections</title></image>
       <text x="${cx}" y="${cy+22}" class="sos-rank-lbl" text-anchor="middle">${e.rank}</text>`;
   }).join('');
   const subline = useArc
@@ -17725,7 +17789,7 @@ function renderSOSView(){
     return `<th class="sr-th ${active?'active':''}" onclick="sortSOSBy('${col}')">${label}${arrow}</th>`;
   };
   const body=rows.map(e=>`<tr>
-    <td class="sr-td-team"><span class="sr-td-team-inner"><img src="${NFL_LOGO(e.code)}" class="sr-logo" onerror="this.style.display='none'">${teamDisplayName(e.code)}</span></td>
+    <td class="sr-td-team"><span class="sr-td-team-inner sr-team-jump" onclick="tcGotoTeamProjections('${e.code}')" title="Open ${teamDisplayName(e.code)}'s projections"><img src="${NFL_LOGO(e.code)}" class="sr-logo" onerror="this.style.display='none'">${teamDisplayName(e.code)}</span></td>
     <td class="sr-td ${sharpRankClass(e.rank)}"><span class="sr-td-val">${ordinal(e.rank)}</span></td>
     <td class="sr-td"><span class="sr-td-val">${e.oppTotal!=null?e.oppTotal.toFixed(1):'—'}</span></td>
     <td class="sr-td"><span class="sr-td-val">${e.win_total!=null?e.win_total:'—'}</span></td>
@@ -17746,6 +17810,98 @@ function sortSOSBy(col){
 }
 
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-team schedule strip (Advanced tab → SOS block)
+// Week-by-week opponents with their Vegas win totals, colored by difficulty. Collapsed it
+// is a single rail of logos; tapping the block expands it into a bar chart (bar height =
+// the opponent's win total), the same read Warren Sharp's SOS graphic gives.
+// Schedule comes from the runtime nflverse games.csv map that already backs the slider
+// opponent rails; win totals come from SOS[code].win_total.
+// ─────────────────────────────────────────────────────────────────────────────
+let _sosStripOpen = false;
+var _sosStripSchedTried = false;
+function toggleSosStrip(){
+  _sosStripOpen = !_sosStripOpen;
+  if(typeof renderContent==='function') renderContent();
+}
+// Jump straight to a team's projections page from any logo in the app.
+function tcGotoTeamProjections(code){
+  const t=String(code||'').toUpperCase();
+  if(!t || typeof selectTeam!=='function') return;
+  try{
+    if(typeof currentPhase!=='undefined' && currentPhase==='League' && typeof leaveLeagueAnalyzer==='function') leaveLeagueAnalyzer();
+    // League-wide views aren't team-scoped, so land on the team's main projections tab.
+    if(typeof currentPhase!=='undefined' && (currentPhase==='AdvancedLeague'||currentPhase==='League'||
+       (currentPhase==='Rankings' && typeof rankScope!=='undefined' && rankScope==='all'))) currentPhase='Receiving';
+    selectTeam(t);
+  }catch(e){}
+}
+// Difficulty bucket for an opponent's win total (Vegas). Mirrors the Sharp read:
+// sub-7-win opponents are green, 9.5+ are red, the middle is neutral.
+function sosDiffCls(wt){
+  if(wt==null || !Number.isFinite(+wt)) return 'sos-na';
+  const v=+wt;
+  if(v < 7) return 'sos-easy';
+  if(v >= 9.5) return 'sos-hard';
+  return 'sos-mid';
+}
+function renderTeamScheduleStrip(team){
+  const tm=String(team||'').toUpperCase();
+  const season=String(PROJ_SEASON);
+  const byWeek=(typeof weekOpponentMap==='function') ? weekOpponentMap(tm, season) : null;
+  if(!byWeek){
+    // Not fetched yet — kick the shared schedule load once and repaint when it lands.
+    if(!_sosStripSchedTried && typeof ensureWeeklyOppSchedule==='function'){
+      _sosStripSchedTried = true;
+      ensureWeeklyOppSchedule(season).then(ok=>{ if(ok && typeof renderContent==='function' && currentPhase==='Advanced') renderContent(); }).catch(()=>{});
+    }
+    return '';
+  }
+  const wt=(code)=>{ const s=(typeof SOS!=='undefined' && SOS) ? SOS[code] : null; return (s && s.win_total!=null) ? +s.win_total : null; };
+  const WEEKS=18;
+  const cells=[];
+  for(let w=1; w<=WEEKS; w++){
+    const g=byWeek[w] || byWeek[String(w)];
+    if(!g || !g.opp){ cells.push({w, bye:true}); continue; }
+    const opp=String(g.opp).toUpperCase();
+    cells.push({w, opp, home:!!g.home, wt:wt(opp), cls:sosDiffCls(wt(opp))});
+  }
+  const played=cells.filter(c=>!c.bye && c.wt!=null);
+  if(!played.length) return '';
+  // Bar geometry: a fixed 3–13 win domain keeps every team's chart directly comparable.
+  const LO=3, HI=13;
+  const pct=(v)=> Math.max(4, Math.min(100, ((v-LO)/(HI-LO))*100));
+  const logo=(c)=>`<img src="${NFL_LOGO(c.opp)}" class="sos-wk-logo" alt="${c.opp}" loading="lazy" decoding="async" onerror="this.style.display='none'">`;
+  const railCell=(c)=> c.bye
+    ? `<div class="sos-wk sos-wk-bye" title="Week ${c.w} — bye"><span class="sos-wk-num">${c.w}</span><span class="sos-wk-bye-lbl">BYE</span></div>`
+    : `<div class="sos-wk ${c.cls}" title="Week ${c.w} · ${c.home?'vs':'@'} ${c.opp}${c.wt!=null?` · Vegas win total ${c.wt}`:''} — tap for ${c.opp}'s projections"
+         onclick="event.stopPropagation();tcGotoTeamProjections('${c.opp}')">
+        <span class="sos-wk-num">${c.w}</span>${logo(c)}
+        <span class="sos-wk-ha">${c.home?'vs':'@'}</span>
+        <span class="sos-wk-wt">${c.wt!=null?c.wt:'—'}</span></div>`;
+  const barCell=(c)=> c.bye
+    ? `<div class="sos-bar-col sos-bar-bye"><div class="sos-bar-slot"></div><span class="sos-bar-lbl">BYE</span><span class="sos-bar-wk">${c.w}</span></div>`
+    : `<div class="sos-bar-col" title="Week ${c.w} · ${c.home?'vs':'@'} ${c.opp}${c.wt!=null?` · ${c.wt} projected wins`:''} — tap for ${c.opp}'s projections"
+         onclick="event.stopPropagation();tcGotoTeamProjections('${c.opp}')">
+        <div class="sos-bar-slot">
+          ${c.wt!=null?`<div class="sos-bar ${c.cls}" style="height:${pct(c.wt).toFixed(1)}%"><span class="sos-bar-val">${c.wt}</span></div>`:''}
+          <div class="sos-bar-top">${logo(c)}<span class="sos-bar-ha">${c.home?'H':'A'}</span></div>
+        </div>
+        <span class="sos-bar-wk">${c.w}</span></div>`;
+  const avg=(played.reduce((s,c)=>s+c.wt,0)/played.length);
+  return `<div class="sos-sched ${_sosStripOpen?'open':''}">
+    <div class="sos-sched-rail">${cells.map(railCell).join('')}</div>
+    ${_sosStripOpen ? `<div class="sos-sched-chart">
+      <div class="sos-bar-grid">${cells.map(barCell).join('')}</div>
+      <div class="sos-sched-legend">
+        <span class="sos-key sos-easy"></span> under 7 wins
+        <span class="sos-key sos-mid"></span> 7–9.5
+        <span class="sos-key sos-hard"></span> 9.5+
+        <span class="sos-sched-avg">opponent average <b>${avg.toFixed(1)}</b> projected wins</span>
+      </div></div>` : ''}
+  </div>`;
+}
 // The rendered-HTML LRU is bounded by TOTAL SIZE, not entry count. Counting entries looks
 // safe until you notice how big one entry is: a full-width board measured ~1.4M chars, and V8
 // stores these two-byte, so eight of them was ~23MB on a phone / ~60MB on desktop — duplicating
@@ -28597,7 +28753,7 @@ function laDvpView(s){
         <div class="la-dvp-vs">${d>=0?'+':'−'}${Math.abs(d).toFixed(1)} vs avg</div></td>`;
     }).join('');
     const full=(typeof TEAM_NAMES!=='undefined'&&TEAM_NAMES&&TEAM_NAMES[c])||c;
-    return `<tr><td class="la-dvp-team"><img src="${NFL_LOGO(c)}" class="la-dvp-logo" loading="lazy" onerror="this.style.display='none'"><div><b>${c}</b><span class="la-dvp-tsub">${escHtml(String(full).replace(/^.*\s/,''))}${nextOppOf(c)?` · next ${escHtml(nextOppOf(c))}`:''}</span></div></td>${cells}</tr>`;
+    return `<tr><td class="la-dvp-team"><span class="la-dvp-open clickable-player" onclick="openPlayerCard('${c}','DEF','${c}')" title="${escHtml(String(full))} defense — season to date"><img src="${NFL_LOGO(c)}" class="la-dvp-logo" loading="lazy" onerror="this.style.display='none'"></span><div><b class="la-dvp-open" onclick="openPlayerCard('${c}','DEF','${c}')" title="Open the ${c} defense card">${c}</b><span class="la-dvp-tsub">${escHtml(String(full).replace(/^.*\s/,''))}${nextOppOf(c)?` · next ${escHtml(nextOppOf(c))}`:''}</span></div></td>${cells}</tr>`;
   }).join('');
   return `${small}
     <div class="la-ins-bar"><span class="la-ins-lbl">FANTASY POINTS ALLOWED / GAME</span>
