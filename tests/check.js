@@ -1421,7 +1421,17 @@ let sharpSortCol = null;    // active sort column in league-wide view
 let sharpSortDir = 1;       // 1 = best-first (rank asc), -1 = worst-first
 let activeSeason = 'proj';
 let rankFiltersOpen = false;  // rankings toolbar: league/scoring/stat filters row (mobile collapses it)
-function toggleRankFilters(){ rankFiltersOpen=!rankFiltersOpen;
+function toggleRankFilters(){
+  rankFiltersOpen=!rankFiltersOpen;
+  // Toggle in place — this is a pure show/hide of an already-rendered row. A full
+  // renderRankings() here rebuilt ~17k table cells on a phone just to open the drawer.
+  const row = (typeof document!=='undefined' && document.querySelector) ? document.querySelector('#content .rank-toolbar .rank-filters') : null;
+  if(row && row.classList && typeof row.classList.toggle==='function'){
+    row.classList.toggle('open', rankFiltersOpen);
+    const btn = document.querySelector('#content .rank-filters-toggle');
+    if(btn && btn.classList) btn.classList.toggle('active', rankFiltersOpen);
+    return;
+  }
   if(typeof renderRankings==='function' && currentPhase==='Rankings') renderRankings(); }   // 'proj' = working projections, or a year string for read-only reference
 let sleeperPlayers = null;   // cached Sleeper player DB (id → meta), fetched once
 let sleeperPlayersPromise = null;   // shared in-flight promise so concurrent callers dedupe
@@ -15141,9 +15151,75 @@ const _RANKINGS_RENDER_CACHE_MAX = 8;              // hard ceiling on entries
 const _RANKINGS_RENDER_CACHE_MAX_CHARS = 3000000;  // ~6MB of UTF-16, the real limit
 let _rankingsRenderCache = new Map();
 let _rankingsRenderCacheChars = 0;
-let _rankingsMobileAutoFullPass = false;
-let _rankingsMobileAutoToken = 0;
 let _rankingsPrewarmQueued = false;
+
+// ── Chunked row streaming (phones) ──────────────────────────────────────────
+// A full-width board is ~900 rows / ~17k cells; parsing that in one innerHTML pass
+// measured ~1.2s on a 4x-throttled phone, and the old two-phase answer (paint a trimmed
+// board + a "Mobile quick-open" notice, then re-render the WHOLE page on idle) meant every
+// control tap flashed the notice and re-parsed the page twice. Instead: paint the chrome +
+// the first slice synchronously, then append the remaining rows into the live <tbody> over
+// successive frames. They land below the fold, so nothing visibly "loads" — the page is
+// just interactive immediately, and there is exactly one chrome parse per render.
+const RANKINGS_STREAM_FIRST = 180;   // rows in the synchronous first paint
+const RANKINGS_STREAM_SLICE = 250;   // rows appended per subsequent frame
+let _rankingsStreamToken = 0;        // bumped by every render; abandons stale streams
+let _rankingsStreamPending = false;  // a stream is currently appending rows
+let _rankingsScrollTargetY = null;   // deep WINDOW scroll restore that needs more rows to exist
+let _rankingsScrollTargetWrapY = null; // same, for the .rank-table-wrap scroller (phones scroll it, not the page)
+
+function _rankingsRaf(fn){
+  if(typeof window!=='undefined' && window.requestAnimationFrame) window.requestAnimationFrame(fn);
+  else setTimeout(fn, 16);
+}
+
+function _rankingsStreamRows(token, chunks, onDone){
+  _rankingsStreamPending = true;
+  const step = ()=>{
+    if(token!==_rankingsStreamToken) return;   // a newer render owns the board (and the flag)
+    const tbody = (typeof document!=='undefined') ? document.querySelector('#content .rankings-table tbody') : null;
+    if(!tbody || (tbody.isConnected===false)){ _rankingsStreamPending=false; _rankingsScrollTargetY=null; _rankingsScrollTargetWrapY=null; return; }
+    const slice = chunks.splice(0, RANKINGS_STREAM_SLICE);
+    if(slice.length) tbody.insertAdjacentHTML('beforeend', slice.join(''));
+    // Rows that land after an in-place search / min-volume / position filter must obey it.
+    if(typeof applyRankingsFiltersInPlace==='function' && _rankingsInPlaceFiltersActive()) applyRankingsFiltersInPlace();
+    // A sort tap deep in the table wants its scroll position back, but the restore that ran
+    // right after the first paint could only clamp to the rows that existed then. Keep
+    // nudging toward the target as the table grows tall enough to honor it.
+    if(_rankingsScrollTargetY!=null && typeof window!=='undefined'){
+      const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      window.scrollTo(0, Math.min(_rankingsScrollTargetY, max));
+      if(max>=_rankingsScrollTargetY || !chunks.length) _rankingsScrollTargetY = null;
+    }
+    if(_rankingsScrollTargetWrapY!=null){
+      const wrap = document.querySelector('#content .rank-table-wrap');
+      if(!wrap){ _rankingsScrollTargetWrapY = null; }
+      else {
+        const maxW = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
+        wrap.scrollTop = Math.min(_rankingsScrollTargetWrapY, maxW);
+        if(maxW>=_rankingsScrollTargetWrapY || !chunks.length) _rankingsScrollTargetWrapY = null;
+      }
+    }
+    if(chunks.length) _rankingsRaf(step);
+    else { _rankingsStreamPending=false; if(onDone) onDone(); }
+  };
+  _rankingsRaf(step);
+}
+
+// Split a cached full-page HTML string into (chrome-before, row strings, chrome-after) so
+// cache hits can stream on phones too. Returns null when there's no point (small board).
+function _rankingsSplitCachedRows(html){
+  const open = html.indexOf('<tbody>');
+  const close = html.lastIndexOf('</tbody>');
+  if(open<0 || close<=open) return null;
+  const rows = html.slice(open+7, close).split(/(?=<tr[\s>])/);
+  if(rows.length <= RANKINGS_STREAM_FIRST+60) return null;   // two phases not worth it
+  return { pre: html.slice(0, open+7), rows, post: html.slice(close) };
+}
+
+function _rankingsMobileNarrow(){
+  return !!(typeof window!=='undefined' && window.matchMedia && window.matchMedia('(max-width: 760px)').matches);
+}
 
 function rankingsRenderCacheGet(key){
   if(!key || !_rankingsRenderCache.has(key)) return '';
@@ -15251,7 +15327,6 @@ function rankingsRenderCacheKey(teamScoped){
     ? ((sumerColumnsForFilter()||{}).cols||[]).join(',')
     : '';
   const buildEpoch = (typeof _buildPlayerCacheEpoch!=='undefined') ? _buildPlayerCacheEpoch : 0;
-  const mobileNarrow = !!(typeof window!=='undefined' && window.matchMedia && window.matchMedia('(max-width: 760px)').matches);
   return [
     'rankings',
     buildEpoch,
@@ -15281,8 +15356,8 @@ function rankingsRenderCacheKey(teamScoped){
     String(rankScope||'all'),
     String(teamScoped?1:0),
     String(teamScoped?(currentTeam||''):'all'),
-    String(mobileNarrow?1:0),
-    String(_rankingsMobileAutoFullPass?1:0),
+    // The cached HTML always carries the FULL row set (phones stream it in on hit), so the
+    // key is deliberately viewport-independent — rotating the phone reuses the same entry.
     String(typeof tcOwnerStamp==='function' ? tcOwnerStamp() : ''),   // owner column follows the synced league
   ].join('|');
 }
@@ -15291,15 +15366,30 @@ function renderRankings(){
   const _rkNow = ()=>((typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now());
   const _rkDebug = (typeof tcLatencyDebugEnabled==='function' && tcLatencyDebugEnabled());
   const _rkT0 = _rkNow();
+  // Every render supersedes any in-flight row stream from the previous one.
+  ++_rankingsStreamToken;
+  _rankingsStreamPending = false;
+  _rankingsScrollTargetY = null;       // stale deep-restore targets die with the old stream
+  _rankingsScrollTargetWrapY = null;   // (handlers that want one set it AFTER their render)
   const teamScoped = (rankScope==='team' && currentTeam);
   const cacheKey = rankingsRenderCacheKey(teamScoped);
   const cachedHtml = rankingsRenderCacheGet(cacheKey);
   if(cachedHtml){
-    document.getElementById('content').innerHTML = cachedHtml;
-    hydrateRankingsHeadshots();
+    // Phones: don't pay one giant parse for a board that's 80% below the fold — paint the
+    // chrome + first slice, stream the rest into the live tbody over the next few frames.
+    const split = _rankingsMobileNarrow() ? _rankingsSplitCachedRows(cachedHtml) : null;
+    if(split){
+      const token = ++_rankingsStreamToken;
+      document.getElementById('content').innerHTML = split.pre + split.rows.slice(0, RANKINGS_STREAM_FIRST).join('') + split.post;
+      hydrateRankingsHeadshots();
+      _rankingsStreamRows(token, split.rows.slice(RANKINGS_STREAM_FIRST), ()=>hydrateRankingsHeadshots());
+    } else {
+      document.getElementById('content').innerHTML = cachedHtml;
+      hydrateRankingsHeadshots();
+    }
     if(_rkDebug){
       const dt = (_rkNow()-_rkT0).toFixed(1);
-      try{ console.info(`[rankings-latency] cache-hit total=${dt}ms`); }catch(_e){}
+      try{ console.info(`[rankings-latency] cache-hit total=${dt}ms stream=${split?1:0}`); }catch(_e){}
     }
     return;
   }
@@ -15359,7 +15449,6 @@ function renderRankings(){
       return searchTokens.some(tok=>nm.includes(tok));
     });
   }
-  const fullViewCount = view.length;
   // One pass to derive each player's value for the active advanced column, so the comparator
   // below is a Map lookup instead of a full sumerValue() derivation per comparison (which,
   // at n log n comparisons, means each player's value was recomputed a dozen-plus times).
@@ -15470,14 +15559,7 @@ function renderRankings(){
     });
   }
   const searchActive = !!(rankingsSearchOpen || (rankingsSearchQuery||'').trim());
-  const mobileNarrow = !!(typeof window!=='undefined' && window.matchMedia && window.matchMedia('(max-width: 760px)').matches);
-  const mobileCapApplies = mobileNarrow && !teamScoped && rankPosFilter==='ALL' && !following && !searchActive;
-  const MOBILE_ROW_CAP = 180;
-  let mobileTrimmedCount = 0;
-  if(mobileCapApplies && !_rankingsMobileAutoFullPass && view.length>MOBILE_ROW_CAP){
-    mobileTrimmedCount = view.length - MOBILE_ROW_CAP;
-    view = view.slice(0, MOBILE_ROW_CAP);
-  }
+  const mobileNarrow = _rankingsMobileNarrow();
   const tSortDone = _rkNow();
   // Projected-pick lines: when following a draft with a known seat and the board is in draft
   // order (sorted by ECR). This is *especially* useful with "hide drafted" on, since the board
@@ -15624,7 +15706,7 @@ function renderRankings(){
     const volAttrs = advActive
       ? ` data-rank-sumer-bucket="${escAttr(volBucket)}" data-rank-sumer-vol="${(volVal!=null && Number.isFinite(+volVal)) ? escAttr(String(+volVal)) : ''}"`
       : '';
-    rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}"${volAttrs}${rankNoteScopeAttrs(p)}>
+    rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}" data-rank-pos="${p.pos}"${rankIsRookie(p)?' data-rank-rk="1"':''}${volAttrs}${rankNoteScopeAttrs(p)}>
     <td class="c-ecr">${ecrTxt!=='—'?rankValueHtml(ecrTxt, p, 'Expert Consensus Rank', 'ecr', 'rankings'):ecrTxt}</td>
     <td class="c-tier">${tier!=null?rankValueHtml(`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`, p, 'Tier', 'ecr_tier', 'rankings'):''}</td>
     <td class="c-adp"${adpTxt!=='—'?` title="Market ADP (${rankFormat.replace(/_/g,' ')} board)"`:''}>${adpTxt!=='—'?`<span class="num">${adpTxt}</span>`:''}</td>
@@ -15684,7 +15766,7 @@ function renderRankings(){
     ? `<span class="ecr-missing" style="color:var(--muted)">${TC_ICON("chart")} nflverse advanced ${sumerSeasonKey()} stats${sumerRefinement?` · ${SUMER_REFINE_LABELS[sumerRefinement]||sumerRefinement}`:''}${sumerView.single?'':' · common columns (pick a position for the full set)'}${((sumerRefinement==='vs_man'||sumerRefinement==='vs_zone'))?' · coverage counts approximate, rates accurate':''}</span>`
     : '';
   const ecrNote = hasECR() ? '' : `<span class="ecr-missing">${TC_ICON("warning")} No FantasyPros ECR loaded — run build_seed.py and load the seed to populate ECR/Tier</span>`;
-  const pageHtml = `
+  const pageOf = (rowsHtml)=>`
     ${teamScoped ? `${teamHeader}<div class="phase-tabs la-icon-tabs">${tabBar()}</div>` : ''}
     <div class="rankings-scope-bar">
       ${teamScoped
@@ -15692,11 +15774,6 @@ function renderRankings(){
            <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="showFullRankings()">View full league →</button>`
         : `<span class="scope-title">Full League Rankings</span><span class="scope-sub">all ${all.length} players</span>`}
     </div>
-    ${(mobileTrimmedCount>0)
-      ? `<div class="card" style="margin-bottom:10px;padding:10px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <span style="font-size:12px;color:var(--muted)">Mobile quick-open: rendering top ${view.length} first; full list is loading automatically.</span>
-        </div>`
-      : ''}
     <div class="card card-flush scoring-card ${scoringPanelOpen?'open':''}" style="margin-bottom:12px">
       <div class="scoring-head" onclick="toggleScoringPanel()" title="Show / hide scoring settings">
         <span class="scoring-caret">\u25b8</span>
@@ -15740,13 +15817,13 @@ function renderRankings(){
         <div class="rank-toolbar-row">
           <div class="pos-filter">${posBtns}</div>
           <button class="btn btn-ghost btn-sm rank-search-toggle ${searchOpen?'active':''}" onclick="toggleRankingsSearch()" title="Search rankings players">${TC_ICON("search")}</button>
-          ${searchOpen ? `<div class="rank-search-wrap">
+          <div class="rank-search-wrap ${searchOpen?'':'rank-search-hidden'}">
             <input id="rankSearchInput" class="rank-search-input" type="text" value="${escAttr(rankingsSearchQuery||'')}" placeholder="${searchPlaceholder}" oninput="setRankingsSearchQuery(this.value, this.selectionStart, this.selectionEnd)">
-            ${(rankingsSearchQuery||'').trim() ? `<button class="btn btn-ghost btn-sm" onclick="clearRankingsSearch()" title="Clear search">Clear</button>` : ''}
-          </div>` : ''}
+            <button class="btn btn-ghost btn-sm rank-search-clear ${(rankingsSearchQuery||'').trim()?'':'rank-search-hidden'}" onclick="clearRankingsSearch()" title="Clear search">Clear</button>
+          </div>
           ${liveDeltaToggle}
           <button class="btn btn-ghost btn-sm rank-filters-toggle ${rankFiltersOpen?'active':''}" onclick="toggleRankFilters()" title="League, scoring and stat filters">${TC_ICON("menu")}<span class="tab-lbl">Filters</span></button>
-          <span id="rankPlayerCount" data-default-label="${escAttr(`${view.length}${mobileTrimmedCount>0?` / ${fullViewCount}`:''} players`)}" class="rank-count">${view.length}${mobileTrimmedCount>0?` / ${fullViewCount}`:''} players</span>
+          <span id="rankPlayerCount" data-default-label="${escAttr(`${view.length} players`)}" class="rank-count">${view.length} players</span>
         </div>
         <div class="rank-toolbar-row rank-filters ${rankFiltersOpen?'open':''}">
           <span class="tc-label">LEAGUE</span>
@@ -15765,7 +15842,7 @@ function renderRankings(){
         </div>
       </div>
       <div class="rank-table-wrap" style="max-height:calc(100vh - 320px)">
-      <table class="rankings-table grouped${paceActive?' pace-mode':''}"><thead><tr>
+      <table class="rankings-table grouped${paceActive?' pace-mode':''}" data-rank-rendered-pos="${rankPosFilter}" data-rank-adv="${advActive?1:0}"><thead><tr>
         ${th('ecr','ECR','','c-ecr')}${th('ecr_tier','TIER','','c-tier')}${th('adp','ADP','','c-adp')}${th('fpts','FPTS','')}${paceActive
           ? th('pacePct','Δ','PROJ','c-pace-delta') : ''}${th('vor','VOR','','c-vor')}
         ${th('pos','POS','')}${th('name','PLAYER','','c-player')}${th('team','TM','','c-team')}
@@ -15777,10 +15854,16 @@ function renderRankings(){
           : `${th('rushing_attempts','RUSH','ATT','grp-rush',true)}${th('rushing_yards','RUSH','YDS','grp-rush-mid')}${th('ypc','YPC','','grp-rush-mid')}${th('rushing_tds','RUSH','TDS','grp-rush-end')}
         ${th('receiving_targets','TGTS','','grp-rec',true)}${th('receptions','REC','','grp-rec-mid')}${th('receiving_yards','REC','YDS','grp-rec-mid')}${th('receiving_tds','REC','TDS','grp-rec-end')}
         ${th('passing_attempts','PASS','ATT','grp-pass',true)}${th('passing_yards','PASS','YDS','grp-pass-mid')}${th('passing_tds','PASS','TDS','grp-pass-mid')}${th('interceptions_thrown','PASS','INTS','grp-pass-end')}`}
-      </tr></thead><tbody>${rows}</tbody></table></div>
+      </tr></thead><tbody>${rowsHtml}</tbody></table></div>
     </div>`;
+  // The cached entry always carries every row; on phones the DOM gets the first slice now
+  // and the rest streamed into the tbody by _rankingsStreamRows below.
+  const streaming = mobileNarrow && rowChunks.length > RANKINGS_STREAM_FIRST+60;
+  const pageHtml = pageOf(rows);
   const tHtmlDone = _rkNow();
-  document.getElementById('content').innerHTML = pageHtml;
+  document.getElementById('content').innerHTML = streaming
+    ? pageOf(rowChunks.slice(0, RANKINGS_STREAM_FIRST).join(''))
+    : pageHtml;
   hydrateRankingsHeadshots();
   const tDomDone = _rkNow();
   // A team-scoped board renders "Loading head coach…" / no record until those async fetches
@@ -15789,24 +15872,9 @@ function renderRankings(){
   const _hcPending = teamScoped && ((typeof headCoaches!=='undefined' && headCoaches && headCoaches[currentTeam]===undefined)
     || (activeSeason!=='proj' && typeof espnRecordCache!=='undefined' && espnRecordCache && espnRecordCache[`${activeSeason}:${currentTeam}`]==null));
   if(!_hcPending) rankingsRenderCacheSet(cacheKey, pageHtml);
-  // Mobile first paint: show a fast initial slice, then auto-render the full list on idle.
-  if(mobileTrimmedCount>0){
-    const token = ++_rankingsMobileAutoToken;
-    const runFull = ()=>{
-      if(token!==_rankingsMobileAutoToken) return;
-      if(typeof currentPhase!=='undefined' && currentPhase!=='Rankings') return;
-      if(typeof rankScope!=='undefined' && rankScope!=='all') return;
-      if(typeof rankPosFilter!=='undefined' && rankPosFilter!=='ALL') return;
-      if(typeof rankingsSearchOpen!=='undefined' && rankingsSearchOpen) return;
-      if(typeof rankingsSearchQuery!=='undefined' && String(rankingsSearchQuery||'').trim()) return;
-      if(typeof draftId!=='undefined' && draftId) return;
-      if(typeof ktcGameState!=='undefined' && ktcGameState && ktcGameState.active) return;
-      _rankingsMobileAutoFullPass = true;
-      try{ renderRankings(); }
-      finally{ _rankingsMobileAutoFullPass = false; }
-    };
-    if(typeof requestIdleCallback==='function') requestIdleCallback(runFull, { timeout: 500 });
-    else setTimeout(runFull, 60);
+  if(streaming){
+    const token = ++_rankingsStreamToken;
+    _rankingsStreamRows(token, rowChunks.slice(RANKINGS_STREAM_FIRST), ()=>hydrateRankingsHeadshots());
   }
   if(_rkDebug){
     const mBuild = (tBuildDone - tBuildStart).toFixed(1);
@@ -15815,7 +15883,7 @@ function renderRankings(){
     const mHtml = (tHtmlDone - tRowsDone).toFixed(1);
     const mDom = (tDomDone - tHtmlDone).toFixed(1);
     const mTotal = (tDomDone - _rkT0).toFixed(1);
-    const meta = `players=${all.length} shown=${view.length} adv=${advActive?1:0} mobile=${mobileNarrow?1:0} cap=${mobileTrimmedCount>0?1:0}`;
+    const meta = `players=${all.length} shown=${view.length} adv=${advActive?1:0} mobile=${mobileNarrow?1:0} stream=${streaming?1:0}`;
     try{ console.info(`[rankings-latency] total=${mTotal}ms build=${mBuild} sort/filter=${mSort} rows=${mRows} html=${mHtml} dom=${mDom} ${meta}`); }catch(_e){}
   }
 }
@@ -15829,8 +15897,15 @@ function rankSort(k){
   const y = window.scrollY || document.documentElement.scrollTop || 0;
   const wrapBefore = document.querySelector('.rank-table-wrap');
   const x = wrapBefore ? wrapBefore.scrollLeft : 0;
+  const wy = wrapBefore ? wrapBefore.scrollTop : 0;   // phones scroll the wrap, not the page
   renderRankings();
-  // Restore after layout settles. Both axes are clamped to the NEW content size, since a
+  // On phones the rows are still streaming in, so the board may not be tall enough yet for a
+  // deep restore — hand the targets to the streamer, which keeps nudging as the table grows.
+  if(_rankingsStreamPending){
+    if(y>0) _rankingsScrollTargetY = y;
+    if(wy>0) _rankingsScrollTargetWrapY = wy;
+  }
+  // Restore after layout settles. All axes are clamped to the NEW content size, since a
   // different sort can change the table's height (and column widths).
   requestAnimationFrame(()=>{
     const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
@@ -15839,6 +15914,10 @@ function rankSort(k){
     if(wrap && x){
       const maxX = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
       wrap.scrollLeft = Math.min(x, maxX);
+    }
+    if(wrap && wy){
+      const maxY = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
+      wrap.scrollTop = Math.min(wy, maxY);
     }
   });
 }
@@ -15922,11 +16001,41 @@ function syncFormatFromScoring(){
     toast(`Reception value ${r} → switched to ${({ppr:'Full PPR',half_ppr:'Half PPR',std:'Standard'})[f]} (ECR follows)`,'ok'); }
 }
 function rankingsRenderWithViewPreserved(){
+  const y = (typeof window!=='undefined') ? (window.scrollY || document.documentElement.scrollTop || 0) : 0;
+  const wrapBefore = (typeof document!=='undefined') ? document.querySelector('.rank-table-wrap') : null;
+  const wy = wrapBefore ? wrapBefore.scrollTop : 0;
   if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRankings(), ['.rank-table-wrap']);
   else renderRankings();
+  // Streaming render: the immediate restore above clamped to the first row slice — let the
+  // streamer finish the job as rows land.
+  if(_rankingsStreamPending){
+    if(y>0) _rankingsScrollTargetY = y;
+    if(wy>0) _rankingsScrollTargetWrapY = wy;
+  }
 }
 
-function setPosFilter(p){rankPosFilter=p;rankingsRenderWithViewPreserved();}
+// Position-filter taps: when the DOM already holds the unfiltered (ALL) standard board, a
+// filter is just "hide the rows that don't match" — no rebuild, no innerHTML, ~1ms. The
+// Adv. Metrics board can't do this (its columns change per position), and a board rendered
+// under some other filter doesn't have the missing rows to reveal; both fall back to a render.
+function rankingsPosFilterInPlace(){
+  if(typeof document==='undefined') return false;
+  const table = document.querySelector('#content .rankings-table');
+  if(!table || typeof table.getAttribute!=='function') return false;
+  if(table.getAttribute('data-rank-rendered-pos')!=='ALL') return false;
+  if(table.getAttribute('data-rank-adv')==='1') return false;
+  if(rankAdvanced && typeof sumerAvailable==='function' && sumerAvailable()) return false;
+  const btns = document.querySelectorAll('#content .rank-toolbar .pos-filter-btn');
+  if(!btns || !btns.length) return false;
+  btns.forEach(b=>{ b.classList.toggle('active', String(b.textContent).trim()===rankPosFilter); });
+  return applyRankingsFiltersInPlace();
+}
+
+function setPosFilter(p){
+  rankPosFilter=p;
+  if(rankingsPosFilterInPlace()) return;
+  rankingsRenderWithViewPreserved();
+}
 
 function rankingsSearchTokens(q){
   const s = String(q||'').trim().toLowerCase();
@@ -15938,7 +16047,11 @@ function rankingsSearchTokens(q){
 function setRankingsSearchQuery(v, selStart, selEnd){
   rankingsSearchQuery = String(v||'');
   const keepFocus = (typeof document!=='undefined' && document.activeElement && document.activeElement.id==='rankSearchInput');
-  if(keepFocus && applyRankingsFiltersInPlace()) return;
+  if(keepFocus && applyRankingsFiltersInPlace()){
+    const clr = document.querySelector('.rank-search-clear');
+    if(clr) clr.classList.toggle('rank-search-hidden', !String(rankingsSearchQuery||'').trim());
+    return;
+  }
   renderRankings();
   if(!keepFocus) return;
   requestAnimationFrame(()=>{
@@ -15962,6 +16075,19 @@ function activeSumerMinFilters(){
   return out;
 }
 
+// True when some in-place filter (search tokens, Adv. min-volume, or a position filter over
+// an ALL-rendered board) diverges the visible rows from what the last full render painted.
+// The row streamer checks this so late-arriving rows obey the filter too.
+function _rankingsInPlaceFiltersActive(){
+  if(rankingsSearchTokens(rankingsSearchQuery).length) return true;
+  if(Object.keys(activeSumerMinFilters()).length) return true;
+  if(typeof document!=='undefined' && rankPosFilter!=='ALL'){
+    const table = document.querySelector('#content .rankings-table');
+    if(table && typeof table.getAttribute==='function' && table.getAttribute('data-rank-rendered-pos')==='ALL') return true;
+  }
+  return false;
+}
+
 function applyRankingsFiltersInPlace(){
   if(typeof document==='undefined') return false;
   const tbody = document.querySelector('.rankings-table tbody');
@@ -15969,12 +16095,16 @@ function applyRankingsFiltersInPlace(){
   const tokens = rankingsSearchTokens(rankingsSearchQuery);
   const minFilters = activeSumerMinFilters();
   const hasMinFilters = Object.keys(minFilters).length>0;
+  // Position filter over a board rendered unfiltered (see rankingsPosFilterInPlace).
+  const table = document.querySelector('.rankings-table');
+  const posF = (table && typeof table.getAttribute==='function' && table.getAttribute('data-rank-rendered-pos')==='ALL' && rankPosFilter!=='ALL')
+    ? rankPosFilter : null;
   let shown = 0;
   const rows = tbody.querySelectorAll('tr');
   rows.forEach((row)=>{
     if(row.classList.contains('rank-pickline')){
       // Pick-line markers become misleading during ad-hoc filtering.
-      row.style.display = (tokens.length || hasMinFilters) ? 'none' : '';
+      row.style.display = (tokens.length || hasMinFilters || posF) ? 'none' : '';
       return;
     }
     const hay = String(row.getAttribute('data-rank-search')||'').toLowerCase();
@@ -15985,14 +16115,21 @@ function applyRankingsFiltersInPlace(){
     const matchMin = !hasMinFilters || !bucket || !Object.prototype.hasOwnProperty.call(minFilters, bucket)
       ? true
       : (Number.isFinite(vol) && vol>=minFilters[bucket]);
-    const match = matchSearch && matchMin;
+    let matchPos = true;
+    if(posF){
+      const rowPos = String(row.getAttribute('data-rank-pos')||'');
+      matchPos = posF==='FLEX' ? (rowPos!=='' && rowPos!=='QB')
+        : posF==='ROOKIES' ? row.getAttribute('data-rank-rk')==='1'
+        : rowPos===posF;
+    }
+    const match = matchSearch && matchMin && matchPos;
     row.style.display = match ? '' : 'none';
     if(match) shown++;
   });
   const countEl = document.getElementById('rankPlayerCount');
   if(countEl){
     const def = String(countEl.getAttribute('data-default-label')||'').trim();
-    countEl.textContent = (tokens.length || hasMinFilters) ? `${shown} players` : (def || `${shown} players`);
+    countEl.textContent = (tokens.length || hasMinFilters || posF) ? `${shown} players` : (def || `${shown} players`);
   }
   return true;
 }
@@ -16001,9 +16138,30 @@ function applyRankingsSearchInPlace(){
   return applyRankingsFiltersInPlace();
 }
 
+// The search wrap is ALWAYS in the toolbar DOM, hidden by a class when closed — so opening,
+// clearing and closing are class flips on the mounted page, never a page rebuild. (The old
+// conditional markup meant every tap of the magnifier re-rendered ~17k table cells.)
+function _rankSearchEls(){
+  if(typeof document==='undefined') return null;
+  const wrap = document.querySelector('#content .rank-search-wrap');
+  const input = document.getElementById('rankSearchInput');
+  if(!wrap || !input || !wrap.classList || typeof wrap.classList.toggle!=='function') return null;
+  return { wrap, input,
+    btn: document.querySelector('#content .rank-search-toggle'),
+    clr: document.querySelector('#content .rank-search-clear') };
+}
+
 function clearRankingsSearch(){
   rankingsSearchQuery = '';
   rankingsSearchOpen = true;
+  const els = _rankSearchEls();
+  if(els){
+    els.input.value = '';
+    if(els.clr) els.clr.classList.add('rank-search-hidden');
+    applyRankingsFiltersInPlace();
+    if(typeof els.input.focus==='function') els.input.focus();
+    return;
+  }
   renderRankings();
   requestAnimationFrame(()=>{
     const el = document.getElementById('rankSearchInput');
@@ -16012,19 +16170,29 @@ function clearRankingsSearch(){
 }
 
 function toggleRankingsSearch(){
-  const hasQuery = !!String(rankingsSearchQuery||'').trim();
-  if(rankingsSearchOpen && !hasQuery){
+  const els = _rankSearchEls();
+  if(rankingsSearchOpen){
+    // Closing also clears any query, restoring the full board.
     rankingsSearchOpen = false;
-    renderRankings();
-    return;
-  }
-  if(rankingsSearchOpen && hasQuery){
     rankingsSearchQuery = '';
-    rankingsSearchOpen = false;
+    if(els){
+      els.input.value = '';
+      els.wrap.classList.add('rank-search-hidden');
+      if(els.btn) els.btn.classList.remove('active');
+      if(els.clr) els.clr.classList.add('rank-search-hidden');
+      applyRankingsFiltersInPlace();
+      return;
+    }
     renderRankings();
     return;
   }
   rankingsSearchOpen = true;
+  if(els){
+    els.wrap.classList.remove('rank-search-hidden');
+    if(els.btn) els.btn.classList.add('active');
+    if(typeof els.input.focus==='function') els.input.focus();
+    return;
+  }
   renderRankings();
   requestAnimationFrame(()=>{
     const el = document.getElementById('rankSearchInput');

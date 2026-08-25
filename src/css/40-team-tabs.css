@@ -159,6 +159,9 @@
 .rank-search-toggle.active{border-color:rgba(90,169,230,.45);color:var(--accent);background:rgba(90,169,230,.12);}
 .rank-search-wrap{display:inline-flex;align-items:center;gap:6px;background:var(--surface2);
   border:1px solid var(--border);border-radius:6px;padding:3px 5px;}
+/* The search wrap (and its Clear button) stay mounted and are shown/hidden by this class,
+   so opening search is a class flip instead of a full page re-render. */
+.rank-search-hidden{display:none !important;}
 .rank-search-input{min-width:220px;max-width:36vw;border:none;background:transparent;color:var(--text);
   font-size:12px;font-weight:600;outline:none;padding:3px 4px;}
 .rank-search-input::placeholder{color:var(--muted2);font-weight:600;}

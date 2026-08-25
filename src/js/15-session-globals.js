@@ -236,7 +236,17 @@ let sharpSortCol = null;    // active sort column in league-wide view
 let sharpSortDir = 1;       // 1 = best-first (rank asc), -1 = worst-first
 let activeSeason = 'proj';
 let rankFiltersOpen = false;  // rankings toolbar: league/scoring/stat filters row (mobile collapses it)
-function toggleRankFilters(){ rankFiltersOpen=!rankFiltersOpen;
+function toggleRankFilters(){
+  rankFiltersOpen=!rankFiltersOpen;
+  // Toggle in place — this is a pure show/hide of an already-rendered row. A full
+  // renderRankings() here rebuilt ~17k table cells on a phone just to open the drawer.
+  const row = (typeof document!=='undefined' && document.querySelector) ? document.querySelector('#content .rank-toolbar .rank-filters') : null;
+  if(row && row.classList && typeof row.classList.toggle==='function'){
+    row.classList.toggle('open', rankFiltersOpen);
+    const btn = document.querySelector('#content .rank-filters-toggle');
+    if(btn && btn.classList) btn.classList.toggle('active', rankFiltersOpen);
+    return;
+  }
   if(typeof renderRankings==='function' && currentPhase==='Rankings') renderRankings(); }   // 'proj' = working projections, or a year string for read-only reference
 let sleeperPlayers = null;   // cached Sleeper player DB (id → meta), fetched once
 let sleeperPlayersPromise = null;   // shared in-flight promise so concurrent callers dedupe
