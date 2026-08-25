@@ -1,7 +1,7 @@
 const elStore={};
-function mkEl(id){if(!elStore[id])elStore[id]={innerHTML:'',style:{},textContent:'',value:'',disabled:false,classList:{add(){},remove(){},toggle(){}},setAttribute(){},getAttribute(){return '';},appendChild(){},querySelectorAll:()=>[],addEventListener(){}};return elStore[id];}
-global.document={getElementById:(id)=>mkEl(id),querySelector:()=>null,querySelectorAll:()=>[],createElement:()=>({click(){},style:{},appendChild(){}}),activeElement:null,body:{appendChild(){},removeChild(){}}};
-global.window={getSelection:()=>({removeAllRanges(){},addRange(){}})};
+function mkEl(id){if(!elStore[id])elStore[id]={innerHTML:'',style:{},textContent:'',value:'',disabled:false,classList:{add(){},remove(){},toggle(){}},setAttribute(){},getAttribute(){return '';},appendChild(){},querySelectorAll:()=>[],querySelector:()=>null,offsetHeight:40,addEventListener(){}};return elStore[id];}
+global.document={documentElement:{scrollTop:0,scrollHeight:0,style:{setProperty(){}}},getElementById:(id)=>mkEl(id),querySelector:()=>null,querySelectorAll:()=>[],createElement:()=>({click(){},style:{},appendChild(){}}),activeElement:null,body:{appendChild(){},removeChild(){}}};
+global.requestAnimationFrame=(f)=>{try{f()}catch(e){}};global.window={scrollY:0,innerHeight:800,scrollTo(){},getSelection:()=>({removeAllRanges(){},addRange(){}})};
 global.Chart=function(){return{destroy(){},update(){},data:{datasets:[{}]}};};
 global.confirm=()=>true;global.btoa=s=>Buffer.from(s,'binary').toString('base64');global.FileReader=function(){};global.Range=function(){};global.AbortController=class{constructor(){this.signal={};}abort(){}};
 global.setInterval=()=>0; global.clearInterval=()=>{};

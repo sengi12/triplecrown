@@ -206,22 +206,32 @@ function _injPopHTML(pid, i){
   const sp=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[String(pid)])||{};
   const est=tcInjuryAbsenceWeeks(i);
   const book=tcInjuryOutlook(i);
+  const stated=tcInjuryStatedTimeline(i);
+  const rep=stated?` Reported timeline: <b>${stated.label}</b>.`:'';
   const desig = (i.sev==='o' && i.seasonOut)
     ? `${i.code} — season-ending. Not expected back this year.`
+    : (i.sev==='o' && stated)
+    ? `${i.code} — reported timeline: <b>${stated.label}</b>.`
     : i.sev==='o'
     ? `${i.code} — typically ${est>=4?`${est}+ weeks`:`${est} week${est===1?'':'s'}`} out at minimum.`
-    : i.sev==='d' ? 'Doubtful — sits far more often than he plays.'
-    : 'Questionable — game-time decision.';
+    : i.sev==='d' ? `Doubtful — sits far more often than he plays.${rep}`
+    : `Questionable — game-time decision.${rep}`;
   return `<b>${escHtml(sp.name||'Injury')} · ${i.code}${i.seasonOut?' · out for the season':''}</b>
     ${i.body?`<div>${escHtml(i.body)}</div>`:''}
     ${i.note?`<div>${escHtml(i.note)}</div>`:''}
     ${i.newsLine?`<div class="inj-pop-news">${escHtml(i.newsLine)}</div>`:''}
-    <div class="inj-pop-sub">${desig}${book&&!i.seasonOut?` ${book.blurb}${book.range?` Typical timetable: <b>${book.range}</b>`:''}`:''}</div>
-    ${(book||i.sev!=='q')&&!i.seasonOut?'<div class="inj-pop-sub">Ranges are typical for the injury type, not a diagnosis.</div>':''}`;
+    <div class="inj-pop-sub">${desig}${book&&!i.seasonOut?` ${book.blurb}${book.range&&!stated?` Typical timetable: <b>${book.range}</b>`:''}`:''}</div>
+    ${(book||i.sev!=='q')&&!i.seasonOut&&!stated?'<div class="inj-pop-sub">Ranges are typical for the injury type, not a diagnosis.</div>':''}`;
 }
+var _injPopOff=null;
 function tcInjuryPop(ev, pid){
   try{ ev.stopPropagation(); }catch(e){}
-  const old=document.getElementById('tcInjPop'); if(old) old.remove();
+  const old=document.getElementById('tcInjPop');
+  if(old){
+    old.remove();
+    if(_injPopOff){ try{ document.removeEventListener('click',_injPopOff,true); }catch(e){} _injPopOff=null; }
+    if(old.dataset && old.dataset.pid===String(pid)) return;   // same tag again = toggle closed
+  }
   const i=tcInjuryInfo(pid); if(!i) return;
   if(i.sev==='o' && !i.seasonOut) tcInjuryNewsProbe(pid);   // the answer may live in the news
   const div=document.createElement('div');
@@ -234,8 +244,29 @@ function tcInjuryPop(ev, pid){
   const vw=window.innerWidth||360, vh=window.innerHeight||640;
   div.style.left=Math.max(8, Math.min(vw-pw-8, r.left))+'px';
   div.style.top=(r.bottom+6+ph>vh ? Math.max(8, r.top-ph-6) : r.bottom+6)+'px';
-  setTimeout(()=>{ const off=(e)=>{ if(!div.contains(e.target)){ div.remove(); document.removeEventListener('click',off,true); } };
-    document.addEventListener('click',off,true); },0);
+  setTimeout(()=>{ const off=(e)=>{
+      if(e.target && e.target.closest && e.target.closest('.inj-click')) return;   // tags manage their own toggle
+      if(!div.contains(e.target)){ div.remove(); document.removeEventListener('click',off,true); if(_injPopOff===off) _injPopOff=null; } };
+    _injPopOff=off; document.addEventListener('click',off,true); },0);
+}
+const _INJ_NUM_WORDS={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10};
+function tcInjuryStatedTimeline(info){
+  if(!info) return null;
+  const text=`${info.note||''} ${info.newsLine||''}`;
+  if(!text.trim()) return null;
+  const num=(w)=>{ const n=parseInt(w,10); return Number.isFinite(n)?n:(_INJ_NUM_WORDS[String(w).toLowerCase()]||null); };
+  let m=text.match(/(?:out|miss(?:es|ing)?|sidelined|shelved|absent|return(?:s|ing)?\s+in|expected\s+(?:to\s+miss|back\s+in)|timetable\s+of|at\s+least)[^.;]{0,30}?(\d+|one|two|three|four|five|six|seven|eight|nine|ten)(?:\s*(?:-|–|to)\s*(\d+|one|two|three|four|five|six|seven|eight|nine|ten))?\s*(week|month)s?/i);
+  if(m){
+    const lo=num(m[1]), hi=m[2]?num(m[2]):null, unit=m[3].toLowerCase();
+    if(lo!=null){
+      const mult=unit==='month'?4:1;
+      return { label:`${lo}${hi!=null?`–${hi}`:''} ${unit}${((hi!=null?hi:lo)>1)?'s':''}`, weeks:(hi!=null?hi:lo)*mult };
+    }
+  }
+  m=text.match(/(?:out|sidelined)\s+until\s+week\s+(\d+)/i);
+  if(m) return { label:`until Week ${m[1]}`, weeks:null };
+  if(/week[-\s]to[-\s]week/i.test(text)) return { label:'week-to-week', weeks:null };
+  return null;
 }
 // What we know about common injury TYPES: a typical return range, a one-line read on what
 // it means for fantasy, and an absence estimate in weeks (18 = effectively the season).
@@ -284,6 +315,9 @@ function tcInjuryAbsenceWeeks(info){
   if(!info) return 0;
   if(info.seasonOut) return 18;            // note text says the year is over
   const floor = info.code==='IR' ? 4 : info.code==='PUP' ? 4 : info.code==='SUS' ? 2 : info.code==='OUT' ? 1 : 0;
+  // A concrete reported timeline ("out 4-6 weeks") beats the population-typical estimate.
+  const stated=tcInjuryStatedTimeline(info);
+  if(stated && stated.weeks!=null && floor) return Math.max(floor, stated.weeks);
   if(!floor) return 0;                     // Q/D: no multi-week absence assumed
   const book=tcInjuryOutlook(info);
   return book ? Math.max(floor, book.est) : floor;

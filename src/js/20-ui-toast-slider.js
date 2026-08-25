@@ -1,6 +1,40 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Toast
 // ─────────────────────────────────────────────────────────────────────────────
+// ── Scroll containment for floating surfaces ─────────────────────────────────
+// While a popup or modal is at the forefront, swiping/wheeling must never move the page
+// behind it. One document-level guard instead of per-popup lock bookkeeping: any scroll
+// gesture that doesn't land in a genuinely scrollable region of a floating surface is
+// cancelled. (Each region's own overscroll-behavior:contain keeps edge-scrolls from
+// chaining once the region runs out of room.)
+const TC_FLOAT_SEL='.pcard-overlay,.scheme-overlay,.ps-overlay,.note-picker-overlay,.note-info-overlay,.tc-modal-overlay,#vonaOptPop,#tcInjPop';
+function _tcScrollGuard(e){
+  let floaters;
+  try{ floaters=document.querySelectorAll(TC_FLOAT_SEL); }catch(_e){ return; }
+  if(!floaters.length) return;
+  const t=e.target;
+  let within=null;
+  floaters.forEach(f=>{ if(f.contains(t)) within=f; });
+  if(!within){ if(e.cancelable) e.preventDefault(); return; }
+  // Inside the surface: fine as long as the gesture lands in something that can actually
+  // scroll (either axis — cards hold horizontally-scrolling tables).
+  let n=(t && t.nodeType===1)?t:(t&&t.parentElement);
+  while(n){
+    const canY=n.scrollHeight>n.clientHeight+1, canX=n.scrollWidth>n.clientWidth+1;
+    if(canY||canX){
+      let st=null; try{ st=getComputedStyle(n); }catch(_e){}
+      if(st && ((canY && /(auto|scroll)/.test(st.overflowY)) || (canX && /(auto|scroll)/.test(st.overflowX)))) return;
+    }
+    if(n===within) break;
+    n=n.parentElement;
+  }
+  if(e.cancelable) e.preventDefault();
+}
+try{
+  document.addEventListener('touchmove',_tcScrollGuard,{passive:false});
+  document.addEventListener('wheel',_tcScrollGuard,{passive:false});
+}catch(_e){}
+
 function toast(msg,type=''){
   const el=document.getElementById('toast');
   el.textContent=msg;

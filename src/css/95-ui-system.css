@@ -188,3 +188,67 @@
 .la-trnd-scoperow{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;}
 .la-trnd-scoperow .pos-filter-btn{min-height:26px;padding:4px 10px;font-size:10px;}
 .la-trnd-nmline .la-trnd-mine{font-size:11px;line-height:1;}
+
+/* ── Live draft surfaces (roster follow bar, draft banner, pick lines) ─────── */
+/* "Your pick projected here": a slim marker line, not a full glaring row — the pick number
+   floats as a small accent chip on a 2px rule, so it reads at a glance and steals no rows. */
+.rank-pickline-lbl{
+  background:none;border:none;position:relative;padding:0;margin:3px 0;
+  height:12px;display:flex;align-items:center;}
+.rank-pickline-lbl::before{content:'';position:absolute;left:0;right:0;top:50%;
+  height:2px;background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 15%,transparent));}
+.rank-pickline-lbl span,
+.rank-pickline-lbl{color:transparent;font-size:0;}
+.rank-pickline-lbl::after{content:attr(data-pick);position:relative;margin-left:10px;
+  background:var(--accent);color:#000;font-size:9px;font-weight:900;letter-spacing:.04em;
+  padding:1px 8px;border-radius:999px;line-height:1.6;white-space:nowrap;}
+@media (max-width:760px){
+  .rank-pickline-lbl{margin:2px 0;height:10px;}
+}
+
+/* Draft banner + tracker chrome ride the system grammar */
+.draft-onclock{border-radius:999px;color:#000;}
+.draft-upturn{border-radius:999px;}
+.rt-chip{border-radius:999px;padding:4px 9px;min-height:24px;display:inline-flex;align-items:center;}
+.rt-reseat{border-radius:999px;padding:4px 10px;min-height:26px;}
+.rt-toggle{min-height:34px;}
+.rt-season-btn,.rt-metric-btn{border-radius:999px;min-height:26px;padding:4px 10px;
+  display:inline-flex;align-items:center;border:1px solid var(--border);background:var(--surface2);color:var(--muted);}
+.rt-season-btn.active,.rt-metric-btn.active{background:var(--accent);color:#000;border-color:var(--accent);}
+.vona-box{border-radius:var(--r-lg);}
+@media (max-width:760px){
+  .rt-chip{min-height:28px;}
+  .rt-reseat{min-height:30px;}
+}
+.draft-done{background:var(--success);color:#000;font-weight:900;font-size:11px;
+  padding:2px 10px;border-radius:999px;letter-spacing:.03em;}
+
+/* ── Roster follow: friendlier VONA rows + the per-position options popover ── */
+.vona-row{gap:8px;}
+.vona-hs{flex-shrink:0;display:inline-flex;}
+.vona-hs .rt-thumb{width:30px;height:30px;background:var(--surface3);}
+.vona-more{flex-shrink:0;width:28px;height:28px;border-radius:50%;border:1px solid var(--border);
+  background:var(--surface2);color:var(--muted);cursor:pointer;font-size:11px;line-height:1;
+  display:inline-flex;align-items:center;justify-content:center;}
+.vona-more:hover{border-color:var(--accent);color:var(--accent);}
+/* Under the player card (1305): a card opened from a row goes overtop, and the list is
+   still there when the card closes. */
+.vona-opt-pop{position:fixed;z-index:1250;width:min(330px,calc(100vw - 16px));
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
+  box-shadow:0 14px 44px rgba(0,0,0,.55);overflow:hidden;}
+.vona-opt-head{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border);}
+.vona-opt-title{font-weight:800;font-size:12px;}
+.vona-opt-key{font-size:9px;color:var(--muted);margin-left:auto;white-space:nowrap;}
+.vona-opt-close{width:26px;height:26px;border-radius:50%;border:none;background:var(--surface2);
+  color:var(--muted);cursor:pointer;flex-shrink:0;}
+.vona-opt-close:hover{color:var(--text);}
+.vona-opt-list{max-height:min(320px,50vh);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:4px;}
+.vona-opt{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;}
+.vona-opt:hover{background:var(--surface2);}
+.vona-opt .rt-thumb{width:26px;height:26px;background:var(--surface3);flex:none;}
+.vona-opt-rank{min-width:16px;text-align:center;font-size:10px;font-weight:800;color:var(--muted);flex-shrink:0;}
+.vona-opt-main{flex:1;min-width:0;}
+.vona-opt-name{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.vona-opt-sub{font-size:10px;color:var(--muted);}
+.lp-synced{border-color:var(--accent);}
+.lp-synced .lp-lg-name{color:var(--accent);}

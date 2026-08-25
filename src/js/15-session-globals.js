@@ -67,6 +67,13 @@ function _saveSessionNow(){
       rankingsSearchQuery: rankingsSearchQuery,
       scoringPanelOpen: scoringPanelOpen,
       leagueSnapshot: leagueSnapshot,
+      // Live-draft follow: id + seat + hide toggle, so a mid-draft reload (or the mobile
+      // discarded-tab reload in installResumeRecovery) re-arms instead of dropping the
+      // follow mid-clock. draftedIds are NOT stored — the first poll rebuilds them.
+      draftFollow: (typeof draftId!=='undefined' && draftId)
+        ? { id:String(draftId), slot:(typeof mySlot!=='undefined'?mySlot:null),
+            hide:(typeof hideDrafted!=='undefined'?!!hideDrafted:false), at:Date.now() }
+        : null,
     };
     // Write the richest payload that fits. If the quota rejects it, shed the OPTIONAL state
     // (undo history first, then the league snapshot) and retry — the working projections and
@@ -147,6 +154,18 @@ function restoreSession(){
     }catch(e){}
   }
   if(p.playerNotes && typeof p.playerNotes==='object') playerNotes = p.playerNotes;
+  // Re-arm a fresh draft follow (drafts run hours, not days — 24h cap keeps a stale id from
+  // polling forever after the fact).
+  if(p.draftFollow && p.draftFollow.id && (Date.now()-(p.draftFollow.at||0)) < 24*3600*1000
+     && typeof startDraftFollow==='function'){
+    try{
+      draftId=String(p.draftFollow.id);
+      if(p.draftFollow.slot!=null) mySlot=p.draftFollow.slot;
+      hideDrafted=!!p.draftFollow.hide;
+      setTimeout(()=>{ try{ startDraftFollow(false).catch(()=>{}); }catch(e){} }, 0);
+      restored=true;
+    }catch(e){}
+  }
   if(p.season===PROJ_SEASON && p.workingProj && Object.keys(p.workingProj).length){
     workingProj = p.workingProj;
     if(activeSeason==='proj') userProj = workingProj;
@@ -245,6 +264,7 @@ let draftUsers = {};         // user_id → display_name
 let draftPicksBySlot = {};   // slot number → [ {player_id, name, pos, team, pick_no}, ... ]
 let mySlot = null;           // which draft slot is "mine"
 let trackerOpen = false;     // is the expanded tracker panel showing?
+let trackerMax = false;      // ...and stretched to most of the window (drag-up on the bar)?
 let trackerViewSlot = null;  // which slot's roster is being viewed in the panel (null = mine)
 let rosterBarVisible = false;// is the pinned bar shown at all?
 let _trackerNeedsSlotPick = false;  // mock draft: waiting for the user to tap their seat

@@ -73,12 +73,12 @@ run_js_test() {
   p=$(echo "$output" | grep -cE "(^[[:space:]]*(✓[[:space:]]*)?PASS([[:space:]:(]|$))|RESULT:[[:space:]]*PASS|:[[:space:]]*PASS([[:space:]]|$)" || true)
   f=$(echo "$output" | grep -cE "(^[[:space:]]*(✗[[:space:]]*)?(FAIL|MISS)([[:space:]:(]|$))|RESULT:[[:space:]]*[0-9/]*[[:space:]]*(FAIL|SOME FAILED)|:[[:space:]]*FAIL([[:space:]]|$)" || true)
   skipped=$(echo "$output" | grep -c "SKIP:" || true)
-  if [ "$rc" -ne 0 ] && [ "$f" -eq 0 ] && [ "$p" -eq 0 ] && [ "$skipped" -eq 0 ]; then
-    # Non-zero exit before a single assertion printed = the script crashed (ReferenceError,
-    # missing fixture). A crash AFTER its assertions passed (a DOM stub missing a method in
-    # teardown) keeps the assertions it made.
+  if [ "$rc" -ne 0 ] && [ "$f" -eq 0 ] && [ "$skipped" -eq 0 ]; then
+    # Non-zero exit with no printed failure = the script CRASHED. Even a crash after some
+    # passes is a failure now: the assertions past the throw never ran, and treating it as
+    # OK hid a renderRosterBar crash that skipped half the roster-tracker suite.
     f=1
-    output="$output"$'\n'"FAIL: test exited with status $rc before any assertion"
+    output="$output"$'\n'"FAIL: test crashed (exit $rc) — assertions after the crash never ran"
   fi
   TOTAL=$((TOTAL + p + f))
   
@@ -180,11 +180,15 @@ run_js_test test_persist        "Session persistence: save/load/restore working 
 run_js_test test_persist_quota  "Session persistence under storage pressure: capped persisted undo depth, degraded save keeps projections, memoized availability probe"
 run_js_test test_sos_arc        "SOS arc: ESPN schedule parse, opponent win-total sum, missing-data skip, arc render"
 run_js_test test_sos_schedule   "SOS schedule strip: difficulty buckets, BYE weeks, collapse/expand bars, logo jumps (team projections, DvP defense card)"
-run_js_test test_roster_tracker "Roster tracker: lineup from league settings, pick bucketing, slot-fill w/ FLEX+bench, username resolution, seat claim, bar+panel render"
+run_js_test test_roster_tracker "Roster tracker: lineup from league settings, pick bucketing, slot-fill w/ FLEX+bench, username resolution, seat claim, bar+panel render, drawer swipe open/max/close"
 run_js_test test_draft_scoring  "Draft scoring sync: mock draft applies its own scoring_type (ppr/half/std/2qb/dynasty), default bench=5"
 run_js_test test_pick_projection "Projected-pick line: slot-on-clock for snake/linear/3RR, picks-until-my-turn (3 worked examples)"
 run_js_test test_slot_counts   "Mock-draft lineup from settings.slots_* counts + bench = rounds - starters"
-run_js_test test_pickline_hide  "Pick lines render with hide-drafted ON and OFF, placed correctly"
+run_js_test test_pickline_hide  "Pick lines render with hide-drafted ON and OFF, placed correctly; ADP column after TIER sorts the market board"
+run_js_test test_draft_lifecycle "Draft follow lifecycle: start/stop generation token, completion detection, keeper-aware clock, stop cleanup, follow persistence"
+run_js_test test_vona_options   "VONA pools/pAvail export, options popover (render/toggle/empty), synced-league picker row + username carry-over"
+run_js_test test_injury_timeline "Reported injury timelines beat the book estimate (popup + absence weeks); injury tag popup toggle-closes"
+run_js_test test_scroll_guard   "Floating-surface scroll guard: page frozen behind popups/cards, inner scrollables (both axes) keep working"
 run_js_test test_vacated_rush    "Vacated carries note (+ RZ enrichment on vacated targets/carries)"
 run_js_test test_history_path  "Prebuilt seed HISTORY path produces correct splits"
 run_js_test test_snap_fallback "Snap-data-missing fallback counts games correctly"
@@ -196,7 +200,7 @@ run_js_test test_undo          "Per-team undo: restore, multi-step, isolation, d
 run_js_test test_autoload      "Auto-load ffforge_seed.json at boot (ECR), graceful CORS fallback"
 run_js_test test_boot_parallel  "Boot network shape: seed download overlaps the Sleeper season probe, fetched once, cacheable"
 run_js_test test_seed_fetch_encoding "Seed .gz loads whether the host inflates it (Content-Encoding) or serves it opaquely (GitHub Pages)"
-run_js_test test_guarded_globals "Every `typeof x === 'function'` guard names something that actually exists"
+run_js_test test_guarded_globals "Every 'typeof x' guard names something that actually exists"
 run_js_test test_la_popovers    "League Analyzer radar/cliff popovers open, replace, and close without throwing"
 run_js_test test_note_scope     "Stat-tag metadata splits across row scope + cell and reassembles identically"
 run_js_test test_bounded_caches "Rankings HTML cache is byte-bounded; coaching seasons are LRU-evicted and trimmed on tab-hide"

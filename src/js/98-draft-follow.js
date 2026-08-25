@@ -185,6 +185,21 @@ async function submitLeagueUsername(){
 // settings and switch the rankings to the matching format (PPR/Half/Std/Superflex/Dynasty).
 async function pickLeague(idx){
   const lg=leaguePickerState.leagues[idx]; if(!lg) return;
+  return linkLeagueObject(lg);
+}
+// One-tap path from the League Analyzer's synced league: fetch the league object by id and
+// run it through the exact same link flow the picker uses.
+async function linkSnapshotLeagueDraft(){
+  const snap=(typeof leagueSnapshot!=='undefined')?leagueSnapshot:null;
+  if(!snap || snap.provider==='espn' || !snap.leagueId){ toast('No synced Sleeper league to link','err'); return; }
+  leaguePickerState.loading=true; renderRankings();
+  try{
+    const lg=await sleeperFetch(LA_LEAGUE_URL(snap.leagueId));
+    if(!lg || !lg.league_id){ leaguePickerState.loading=false; toast('Could not load the synced league','err'); renderRankings(); return; }
+    return linkLeagueObject(lg);
+  }catch(e){ leaguePickerState.loading=false; toast('Could not load the synced league','err'); renderRankings(); }
+}
+async function linkLeagueObject(lg){
   leaguePickerState.loading=true; renderRankings();
   const { draftId:did, status, scoringType }=await resolveLeagueDraft(lg);
   leaguePickerState.loading=false;
@@ -249,9 +264,24 @@ function renderLeaguePicker(){
 
   // Stage 1: ask for username (shown until we have a resolved user with leagues).
   if(!st.user){
+    // The League Analyzer already knows this user's league — offer it first, and at minimum
+    // carry the username over so nobody types it twice.
+    const snap=(typeof leagueSnapshot!=='undefined')?leagueSnapshot:null;
+    const syncedRow=(snap && snap.provider!=='espn' && snap.leagueId)
+      ? `<button class="lp-league lp-synced" ${st.loading?'disabled':''} onclick="linkSnapshotLeagueDraft()">
+           ${typeof laLeagueIcon==='function'?laLeagueIcon(snap,'lp-lg-avatar'):''}
+           <div class="lp-lg-main">
+             <div class="lp-lg-name">★ ${escHtml(snap.name||'Your synced league')}</div>
+             <div class="lp-lg-meta">synced in the League Analyzer · link its draft</div>
+           </div>
+           <span class="lp-lg-go">Link →</span>
+         </button>`
+      : '';
+    const prefill=(snap && snap.provider!=='espn' && snap.username) ? escAttr(snap.username) : '';
     return `<div class="lp-panel">${head}
+      ${syncedRow}
       <div class="lp-row">
-        <input id="lpUsername" class="lp-input" type="text" placeholder="Your Sleeper username"
+        <input id="lpUsername" class="lp-input" type="text" placeholder="Your Sleeper username" value="${prefill}"
                ${st.loading?'disabled':''} onkeydown="if(event.key==='Enter')submitLeagueUsername()">
         <button class="btn btn-accent btn-sm" ${st.loading?'disabled':''} onclick="submitLeagueUsername()">
           ${st.loading?'Looking…':'Find my leagues'}</button>
@@ -342,7 +372,7 @@ async function loadDraftMeta(applyScoring){
   if(!draftId) return;
   try{
     const d=await sleeperFetch(SLEEPER_DRAFT_URL(draftId));
-    if(!d) return;
+    if(!d || !d.draft_id){ toast('That draft ID returned nothing — double-check it','err'); return; }
     draftMeta=d;
     let gotLineup=false;
     // 1) Explicit roster_positions (league drafts) → use the exact ordered slot list.
@@ -471,8 +501,10 @@ function fillLineup(picks){
   return { slots:filled, bench, needs };
 }
 
+var _draftFollowGen = 0;   // bumped by every start AND stop — stale async starts abort
 async function startDraftFollow(applyScoring){
-  if(draftTimer) clearInterval(draftTimer);
+  const gen = ++_draftFollowGen;
+  if(draftTimer){ clearInterval(draftTimer); draftTimer=null; }
   // A draft is drafted off the PROJECTION board. Following one from a reference season
   // left the LIVE bar over last year's actual-stat rankings, with no pick ever marked.
   if(activeSeason!=='proj' && typeof loadSeason==='function'){
@@ -480,27 +512,38 @@ async function startDraftFollow(applyScoring){
   }
   _lastPickCount = -1;   // force the first poll to render
   await loadDraftMeta(applyScoring);   // draft_order, lineup, usernames, my-slot detection, (opt) scoring
+  // Another start superseded us, or Stop was clicked while we awaited — do not resurrect.
+  if(gen!==_draftFollowGen || !draftId) return;
   rosterBarVisible=true;
   await pollDraft();
+  if(gen!==_draftFollowGen || !draftId) return;
+  _draftDone=false; _pollFails=0;
   draftTimer=setInterval(pollDraft, 2500); // poll every 2.5s for lower latency on the board
+  if(typeof saveSession==='function') saveSession();   // survive a mid-draft reload
   toast(`Following draft ${draftId} ✓`,'ok');
   if(currentPhase==='Rankings') renderRankings();
   renderRosterBar();
 }
 function stopDraftFollow(){
+  _draftFollowGen++;
   if(draftTimer){clearInterval(draftTimer);draftTimer=null;}
-  draftId=null; draftedIds={};
+  draftId=null; draftedIds={}; _draftDone=false;
+  hideDrafted=false;               // don't resurface pre-checked on the next follow
+  _vonaCache={key:null,val:null};
   draftMeta=null; draftPicksBySlot={}; draftUsers={}; mySlot=null;
   draftLineup=DEFAULT_LINEUP.slice(); draftBenchCount=DEFAULT_BENCH;
-  rosterBarVisible=false; trackerOpen=false; trackerViewSlot=null; _trackerNeedsSlotPick=false;
+  rosterBarVisible=false; trackerOpen=false; trackerMax=false; trackerViewSlot=null; _trackerNeedsSlotPick=false;
   toast('Stopped following draft','ok');
   renderRosterBar();
   if(currentPhase==='Rankings') renderRankings();
 }
+var _draftDone=false, _pollFails=0, _pollInFlight=false;
 async function pollDraft(){
-  if(!draftId) return;
+  if(!draftId || _pollInFlight) return;
+  _pollInFlight=true;
   try{
     const picks=await sleeperFetch(SLEEPER_PICKS_URL(draftId));
+    _pollFails=0;
     const next={};
     (picks||[]).forEach(p=>{ if(p.player_id) next[String(p.player_id)]=true; });
     const pickCount = (picks||[]).length;
@@ -517,11 +560,77 @@ async function pollDraft(){
       renderRosterBar();
       if(currentPhase==='Rankings') renderRankings();
     }
+    // Draft complete: every slot of every round is in. Stop hammering the API (the banner
+    // used to say LIVE forever and poll for the tab's whole lifetime), keep the tracker and
+    // drafted marks for review.
+    if(!_draftDone){
+      const dp=draftParams();
+      if(dp && dp.teams>0 && dp.rounds>0 && pickCount >= dp.teams*dp.rounds){
+        _draftDone=true;
+        if(draftTimer){ clearInterval(draftTimer); draftTimer=null; }
+        toast('Draft complete ✓ — board and rosters kept for review','ok');
+        if(currentPhase==='Rankings') renderRankings();
+        renderRosterBar();
+      }
+    }
   }catch(e){
     if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
       try{ console.warn('[pollDraft]', e); }catch(_e){}
-    /* keep polling quietly */
+    // Surface a persistent outage ONCE (a typo'd id or lost connection used to poll a 404
+    // silently forever), then keep trying quietly — drafts outlive brief outages.
+    if(++_pollFails===8) toast('Draft feed unreachable — check the draft ID / connection. Still retrying…','err');
   }
+  finally{ _pollInFlight=false; }
+}
+// Per-position "who else is out there" popover — the advisory names ONE guy; this shows the
+// shelf behind him so the pick is a choice, not a leap of faith.
+var _vonaPopOff=null;
+function vonaOptionsPop(ev, pos){
+  try{ ev.stopPropagation(); }catch(e){}
+  const old=document.getElementById('vonaOptPop');
+  if(old){
+    old.remove();
+    if(_vonaPopOff){ try{ document.removeEventListener('click',_vonaPopOff,true); }catch(e){} _vonaPopOff=null; }
+    if(old.dataset && old.dataset.pos===pos) return;   // same button again = toggle closed
+  }
+  const v=(typeof activeSeason==='undefined' || activeSeason==='proj') ? computeVONA() : null;
+  if(!v || !v.pools || !v.pools[pos] || !v.pools[pos].length){ toast('No available players left at '+pos,'err'); return; }
+  const pidOf=(p)=>p.player_id||p.name;
+  const pct=(x)=>Math.round((x||0)*100);
+  const pcls=(x)=> x>=0.6 ? 'vp-hi' : (x>=0.3 ? 'vp-mid' : 'vp-lo');
+  const rows=v.pools[pos].slice(0,12).map((p,i)=>{
+    const pa=v.pAvail && v.pAvail.get ? v.pAvail.get(pidOf(p)) : null;
+    const open=(typeof pcardOnclick==='function')?`onclick="event.stopPropagation();${pcardOnclick(p.player_id||p.name,p.pos,p.team||'')}"`:'';
+    return `<div class="vona-opt clickable-player" ${open} title="${escAttr(p.name)} — open player card">
+      <span class="vona-opt-rank">${i+1}</span>
+      ${playerThumb(p)}
+      <div class="vona-opt-main">
+        <div class="vona-opt-name">${escHtml(p.name)}${typeof tcInjuryTag==='function'?tcInjuryTag(p.player_id):''}</div>
+        <div class="vona-opt-sub">${escHtml(p.team||'FA')}${p.ecr!=null?` · ECR ${p.ecr}`:''}</div>
+      </div>
+      <span class="vona-vor">${(p.vor||0)>0?'+':''}${(p.vor||0).toFixed(0)}</span>
+      ${pa!=null?`<span class="vona-pct ${pcls(pa)}" title="Chance they're still on the board at your next pick">${pct(pa)}%</span>`:''}
+    </div>`;
+  }).join('');
+  const div=document.createElement('div');
+  div.id='vonaOptPop'; div.className='vona-opt-pop';
+  if(div.dataset) div.dataset.pos=pos;
+  div.innerHTML=`<div class="vona-opt-head"><span class="rt-slot ${slotClass(pos)}">${pos}</span>
+      <span class="vona-opt-title">Next up at ${pos}</span>
+      <span class="vona-opt-key">VOR · % still there at your pick</span>
+      <button class="vona-opt-close" onclick="this.closest('.vona-opt-pop').remove()" aria-label="Close">✕</button></div>
+    <div class="vona-opt-list">${rows}</div>`;
+  document.body.appendChild(div);
+  const r=(ev.target&&ev.target.getBoundingClientRect)?ev.target.getBoundingClientRect():{left:20,right:320,top:100,bottom:120};
+  const pw=div.offsetWidth||300, ph=div.offsetHeight||200;
+  const vw=window.innerWidth||360, vh=window.innerHeight||640;
+  div.style.left=Math.max(8, Math.min(vw-pw-8, r.right-pw))+'px';
+  div.style.top=(r.top-ph-8>8 ? r.top-ph-8 : Math.max(8, Math.min(vh-ph-8, r.bottom+8)))+'px';
+  setTimeout(()=>{ const off=(e)=>{
+      if(e.target && e.target.closest && e.target.closest('.vona-more')) return;  // the buttons manage their own toggle
+      if(e.target && e.target.closest && e.target.closest('.pcard-overlay')) return;  // browsing a card (incl. closing it) keeps the list
+      if(!div.contains(e.target)){ div.remove(); document.removeEventListener('click',off,true); if(_vonaPopOff===off) _vonaPopOff=null; } };
+    _vonaPopOff=off; document.addEventListener('click',off,true); },0);
 }
 function toggleHideDrafted(){ hideDrafted=!hideDrafted; renderRankings(); }
 
@@ -608,6 +717,77 @@ function renderRosterBar(){
         document.documentElement.style.setProperty('--rt-h', h+'px');
       }).observe(host);
     }
+    // Drag on the band (the bar, or the panel's header): the panel's height FOLLOWS the
+    // finger — no repaint mid-gesture, the markup is already in the DOM — then settles to
+    // the nearest of closed / default / maximized on release (a quick flick always advances
+    // one state in its direction; flicking down closes, from maximized too). The panel body
+    // keeps its own scroll — gestures never start there.
+    let _rtDrag=null;
+    const _rtHeights=()=>{
+      const p=host.querySelector('.rt-panel'); if(!p) return null;
+      const vh=window.innerHeight||640;
+      const narrow=!!(window.matchMedia && window.matchMedia('(max-width:760px)').matches);
+      const defH=Math.min(p.scrollHeight+30, Math.round(vh*(narrow?0.42:0.5)));
+      const maxH=Math.max(defH, vh-(narrow?96:120));
+      return {p, defH, maxH};
+    };
+    // A touch that starts inside the drawer must never scroll the rankings behind it:
+    // the horizontal rails and a genuinely-scrollable roster list handle themselves
+    // (overscroll contained); everything else is the drawer's, so the page stays put.
+    host.addEventListener('touchmove',(e)=>{
+      const t=e.target;
+      if(t && t.closest && t.closest('.rt-chips,.rt-seats')) return;
+      const p=t && t.closest && t.closest('.rt-panel');
+      if(p && !_rtDrag && p.scrollHeight>p.clientHeight+1) return;
+      if(e.cancelable) e.preventDefault();
+    },{passive:false});
+    host.addEventListener('touchstart',(e)=>{
+      const band=e.target && e.target.closest && e.target.closest('.rt-bar,.rt-panel-head');
+      const t=e.touches && e.touches[0];
+      if(!band || !t){ _rtDrag=null; return; }
+      const H=_rtHeights(); if(!H){ _rtDrag=null; return; }
+      _rtDrag={y:t.clientY, x:t.clientX, h0:H.p.offsetHeight, defH:H.defH, maxH:H.maxH,
+        t0:Date.now(), moved:false};
+    },{passive:true});
+    host.addEventListener('touchmove',(e)=>{
+      if(!_rtDrag) return;
+      const t=e.touches && e.touches[0]; if(!t) return;
+      const dy=t.clientY-_rtDrag.y, dx=t.clientX-_rtDrag.x;
+      if(!_rtDrag.moved){
+        if(Math.abs(dy)<6) return;                       // ignore jitter
+        if(Math.abs(dy)<=Math.abs(dx)){ _rtDrag=null; return; }   // horizontal — the chips rail
+        _rtDrag.moved=true;
+      }
+      const p=host.querySelector('.rt-panel'); if(!p){ _rtDrag=null; return; }
+      p.classList.add('rt-dragging');
+      const h=Math.max(0, Math.min(_rtDrag.maxH, _rtDrag.h0-dy));
+      p.style.maxHeight=h+'px';
+    },{passive:true});
+    host.addEventListener('touchend',(e)=>{
+      const d=_rtDrag; _rtDrag=null;
+      if(!d || !d.moved) return;
+      const p=host.querySelector('.rt-panel'); if(!p) return;
+      const t=e.changedTouches && e.changedTouches[0];
+      const dy=t ? t.clientY-d.y : 0;
+      const h=Math.max(0, Math.min(d.maxH, d.h0-dy));
+      let target;
+      const flick = (Date.now()-d.t0)<280 && Math.abs(dy)>30;
+      if(flick){
+        target = dy<0 ? (d.h0<d.defH*0.5 ? d.defH : d.maxH)   // up: closed→default, else →max
+                      : 0;                                     // down: close, from anywhere
+      } else {
+        target = h<d.defH*0.5 ? 0 : (h<(d.defH+d.maxH)/2 ? d.defH : d.maxH);
+      }
+      p.classList.remove('rt-dragging');                       // transition back on
+      p.style.maxHeight=target+'px';
+      setTimeout(()=>{
+        trackerOpen = target>0;
+        trackerMax = target>0 && target===d.maxH && d.maxH>d.defH;
+        const np=host.querySelector('.rt-panel');
+        if(np) np.style.maxHeight='';
+        renderRosterBar();
+      },240);
+    },{passive:true});
   }
   if(!rosterBarVisible){
     host.innerHTML=''; host.style.display='none';
@@ -671,7 +851,7 @@ function renderRosterBar(){
     </button>
     <div class="rt-chips">${chips}</div>
   </div>`;
-  const panel = trackerOpen ? renderTrackerPanel(viewSlot) : '';
+  const panel = renderTrackerPanel(viewSlot);   // always in the DOM; .rt-closed collapses it
   host.innerHTML = bar + panel;
   // restore scroll on the freshly-rendered panel
   if(trackerOpen && prevScroll){
@@ -718,7 +898,9 @@ function renderTrackerPanel(viewSlot){
   // VONA advisory — only for MY roster, only while a live draft is running.
   let advisory='';
   if(viewSlot===mySlot && draftId){
-    const v=computeVONA();
+    // The advisory prices picks off buildPlayerList(), which follows activeSeason — on a
+    // reference season it would advise from LAST YEAR'S actual points. Projection board only.
+    const v=(typeof activeSeason==='undefined' || activeSeason==='proj') ? computeVONA() : null;
     if(v && v.rows.length){
       // Surname only (space is tight), but clickable — opens the full player card so you can
       // check a name before spending a pick on it. Falls back to plain text if the card
@@ -748,8 +930,10 @@ function renderTrackerPanel(viewSlot){
                <span class="vona-vor">${(r.bestNext.vor||0)>0?'+':''}${(r.bestNext.vor||0).toFixed(0)}</span>
                <span class="vona-pct ${pcls(r.nextShare)}">${pct(r.nextShare)}% likely available</span></div>`
           : `<div class="vona-wait vona-wait-safe">wait \u2192 <b>${nm(r.bestNow)}</b> likely still available</div>`;
+        const hs=(p)=> p ? `<span class="clickable-player vona-hs" onclick="event.stopPropagation();${typeof pcardOnclick==='function'?pcardOnclick(p.player_id||p.name,p.pos,p.team||''):''}">${playerThumb(p)}</span>` : '';
         return `<div class="vona-row ${r.need?'':'vona-filled'} ${cls}">
           <span class="rt-slot ${slotClass(r.pos)}">${r.pos}</span>
+          ${hs(r.bestNow)}
           <div class="vona-main">
             <div class="vona-now"><b>${nm(r.bestNow)}</b>
               <span class="vona-vor">${(r.bestNow.vor||0)>0?'+':''}${(r.bestNow.vor||0).toFixed(0)}</span>
@@ -758,6 +942,7 @@ function renderTrackerPanel(viewSlot){
             ${r.why?`<div class="vona-why">${r.why}</div>`:''}
           </div>
           <span class="vona-drop" title="Your VOR now minus the VOR you'd expect to settle for">${star}${dropTxt}</span>
+          <button class="vona-more" onclick="event.stopPropagation();vonaOptionsPop(event,'${r.pos}')" title="Next viable ${r.pos}s on the board" aria-label="More ${r.pos} options">▾</button>
         </div>`;
       }).join('');
       // headline = biggest drop among positions I still NEED; fall back to top row
@@ -784,7 +969,7 @@ function renderTrackerPanel(viewSlot){
       </div>`;
     }
   }
-  return `<div class="rt-panel">
+  return `<div class="rt-panel${trackerOpen?'':' rt-closed'}${trackerMax?' rt-max':''}">
     <div class="rt-panel-head">
       <span class="rt-panel-title">${viewSlot===mySlot?'\u2605 My roster':slotOwnerName(viewSlot)} <span class="rt-panel-slot">\u00b7 seat ${viewSlot}</span></span>
       <button class="rt-reseat" onclick="reclaimSeat()" title="Wrong seat? Pick it again">\u21bb change seat</button>
@@ -796,7 +981,12 @@ function renderTrackerPanel(viewSlot){
     <div class="rt-lineup">${rows}${benchRows}</div>
   </div>`;
 }
-function toggleTracker(){ trackerOpen=!trackerOpen; renderRosterBar(); }
+function toggleTracker(){ trackerOpen=!trackerOpen; if(!trackerOpen) trackerMax=false; renderRosterBar(); }
+function trackerSwipe(dy){
+  if(dy<0){ if(!trackerOpen) trackerOpen=true; else trackerMax=true; }
+  else { trackerOpen=false; trackerMax=false; }
+  renderRosterBar();
+}
 function viewTrackerSlot(slot){ trackerViewSlot = (slot===trackerViewSlot? null : slot); renderRosterBar(); }
 // Re-open the seat picker. Needed when auto-detection picked the wrong seat (pasted draft
 // IDs can't be matched to your user), or you simply mis-tapped.
@@ -837,8 +1027,18 @@ function draftParams(){
 }
 // The global pick number currently ON THE CLOCK = picks made so far + 1.
 function currentPickNo(){
+  // NOT count+1: keeper drafts pre-populate future picks in the feed from the start, which
+  // inflated the count and shifted the clock/pick-lines early. The pick on the clock is the
+  // smallest positive pick number missing from the feed.
+  const taken=new Set();
   let made=0;
-  for(const slot in draftPicksBySlot) made += draftPicksBySlot[slot].length;
+  for(const slot in draftPicksBySlot){
+    draftPicksBySlot[slot].forEach(pk=>{ made++; if(pk && pk.pick_no>0) taken.add(pk.pick_no); });
+  }
+  if(taken.size){
+    for(let n=1; n<=made+1; n++){ if(!taken.has(n)) return n; }
+    return made+1;
+  }
   return made + 1;
 }
 // The list of global pick numbers that belong to `slot` from the current pick onward
@@ -1238,7 +1438,7 @@ function computeVONA(){
           : (st.pressure>=1.15 ? `${st.supply} left \u00b7 ${Math.round(st.demand)} slots` : '');
   });
   out.sort((a,b)=> b.score-a.score);
-  const res = { gap, rows: out, onClock, struct };
+  const res = { gap, rows: out, onClock, struct, pools, pAvail: sim.pAvail };
   _vonaCache = { key:cacheKey, val:res };
   return res;
 }

@@ -262,6 +262,14 @@ function renderRankings(){
       const av=a.ecr==null?99999:a.ecr, bv=b.ecr==null?99999:b.ecr;
       return (av-bv)*(rankSortDir<0?1:-1);
     }
+    if(rankSortKey==='adp'){
+      const av=adpFor(a), bv=adpFor(b);
+      const am=(av==null||av>=999), bm=(bv==null||bv>=999);
+      if(am&&bm) return b.fpts-a.fpts;
+      if(am) return 1;
+      if(bm) return -1;
+      return (av-bv)*(rankSortDir<0?1:-1);
+    }
     if(rankSortKey==='name') return a.name.localeCompare(b.name)*(rankSortDir<0?1:-1);
     if(rankSortKey==='team') return a.team.localeCompare(b.team)*(rankSortDir<0?1:-1);
     if(rankSortKey==='pos') return (({QB:1,RB:2,WR:3,TE:4})[a.pos]-({QB:1,RB:2,WR:3,TE:4})[b.pos])*(rankSortDir<0?1:-1)||b.fpts-a.fpts;
@@ -362,9 +370,9 @@ function renderRankings(){
       }
     }
   }
-  const totalCols = 7 + (paceActive?1:0) + (isDynasty?3:0) + (ownerActive?1:0) + nStatCols;  // ecr,tier,fpts(+Δ proj),vor,pos,name,tm(+owner) + stat cols
+  const totalCols = 8 + (paceActive?1:0) + (isDynasty?3:0) + (ownerActive?1:0) + nStatCols;  // ecr,tier,adp,fpts(+Δ proj),vor,pos,name,tm(+owner) + stat cols
   const pickLineRow=(round)=>`<tr class="rank-pickline"><td colspan="${totalCols}">
-    <span class="rank-pickline-lbl">▸ Your pick ${round==1?'(next up)':`#${round}`} projected here</span></td></tr>`;
+    <span class="rank-pickline-lbl" data-pick="${round==1?'Your pick · next up':`Your pick #${round}`}">▸ Your pick ${round==1?'(next up)':`#${round}`} projected here</span></td></tr>`;
 
   let undraftedSeen=0, nextGapIdx=0, gapRemaining=(pickGaps[0]!=null?pickGaps[0]:-1);
   const rowChunks=[];
@@ -418,11 +426,24 @@ function renderRankings(){
     if(showPickLines && nextGapIdx<pickGaps.length && !p.drafted && undraftedSeen===gapRemaining){
       rowChunks.push(pickLineRow(nextGapIdx+1));
       nextGapIdx++;
-      undraftedSeen=0;
+      // -1, not 0: the row rendered under this line is YOUR projected pick — it consumes a
+      // board row but is not one of the OTHER teams' picks the next gap counts. Counting it
+      // drifted every later line a row too high, and a snake-corner seat (gap 0 between its
+      // back-to-back picks) could never re-match and silently lost every remaining line.
+      undraftedSeen=-1;
       gapRemaining=(pickGaps[nextGapIdx]!=null?pickGaps[nextGapIdx]:-1);
+      // Corner seat: the very next line has gap 0 — emit it immediately after this row.
+      while(nextGapIdx<pickGaps.length && gapRemaining===0){
+        rowChunks.push(pickLineRow(nextGapIdx+1));
+        nextGapIdx++;
+        gapRemaining=(pickGaps[nextGapIdx]!=null?pickGaps[nextGapIdx]:-1);
+        undraftedSeen=-2;   // two of the next rows are our own picks
+      }
     }
     const ecrTxt = p.ecr!=null ? p.ecr : '—';
     const tier = p.ecr_tier;
+    const adpV = adpFor(p);
+    const adpTxt = (adpV!=null && adpV<999) ? (adpV%1 ? adpV.toFixed(1) : String(adpV)) : '—';
     const ypc = p.ypc>0 ? p.ypc.toFixed(1) : '';
     const pNameAttr = escAttr(p.name);
     const pNameText = escHtml(p.name);
@@ -475,6 +496,7 @@ function renderRankings(){
     rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}"${volAttrs}${rankNoteScopeAttrs(p)}>
     <td class="c-ecr">${ecrTxt!=='—'?rankValueHtml(ecrTxt, p, 'Expert Consensus Rank', 'ecr', 'rankings'):ecrTxt}</td>
     <td class="c-tier">${tier!=null?rankValueHtml(`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`, p, 'Tier', 'ecr_tier', 'rankings'):''}</td>
+    <td class="c-adp"${adpTxt!=='—'?` title="Market ADP (${rankFormat.replace(/_/g,' ')} board)"`:''}>${adpTxt!=='—'?`<span class="num">${adpTxt}</span>`:''}</td>
     ${fptsCells}
     <td class="c-vor">${rankValueHtml(`<span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${vorTxt}</span>`, p, 'Value Over Replacement', 'vor', 'rankings')}</td>
     <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
@@ -573,7 +595,9 @@ function renderRankings(){
     <div class="card card-flush">
       ${following ? `<div style="padding:8px 14px;border-bottom:1px solid var(--border)">
         <div class="draft-banner">
-          <span class="draft-live">LIVE</span>
+          ${typeof _draftDone!=='undefined' && _draftDone
+            ? `<span class="draft-done">DRAFT COMPLETE</span>`
+            : `<span class="draft-live">LIVE</span>`}
           <span>Following draft <b>${draftId}</b> · ${Object.keys(draftedIds).length} picks made</span>
           ${(mySlot!=null)?(()=>{const u=picksUntilMyTurn(mySlot);return u===0?`<span class="draft-onclock">★ YOU'RE ON THE CLOCK</span>`:u!=null?`<span class="draft-upturn">seat ${mySlot} · ${u} pick${u===1?'':'s'} until you're up</span>`:`<span class="draft-upturn">seat ${mySlot}</span>`;})():`<span class="draft-upturn">tap your seat in the bar below ↓</span>`}
           <label style="display:flex;align-items:center;gap:5px;cursor:pointer;margin-left:8px">
@@ -611,7 +635,7 @@ function renderRankings(){
       </div>
       <div class="rank-table-wrap" style="max-height:calc(100vh - 320px)">
       <table class="rankings-table grouped${paceActive?' pace-mode':''}"><thead><tr>
-        ${th('ecr','ECR','','c-ecr')}${th('ecr_tier','TIER','','c-tier')}${th('fpts','FPTS','')}${paceActive
+        ${th('ecr','ECR','','c-ecr')}${th('ecr_tier','TIER','','c-tier')}${th('adp','ADP','','c-adp')}${th('fpts','FPTS','')}${paceActive
           ? th('pacePct','Δ','PROJ','c-pace-delta') : ''}${th('vor','VOR','','c-vor')}
         ${th('pos','POS','')}${th('name','PLAYER','','c-player')}${th('team','TM','','c-team')}
         ${ownerActive?`<th class="c-own" title="Rostered by (synced league)"><div class="th-stack">OWNER</div></th>`:''}
@@ -982,13 +1006,13 @@ function recalcRankings(){
 function exportRankingsCSV(){
   let all=buildPlayerList();all.sort((a,b)=>b.fpts-a.fpts);
   const dyn = rankFormat==='dynasty' || rankFormat==='dynasty_superflex';
-  const keys=['ecr','tier','fpts','pos','name','team',
+  const keys=['ecr','tier','adp','fpts','pos','name','team',
     ...(dyn?['age','apy','fa']:[]),
     'rushing_attempts','rushing_yards','ypc','rushing_tds',
     'receiving_targets','receptions','receiving_yards','receiving_tds',
     'passing_attempts','passing_yards','passing_tds','interceptions_thrown'];
   const csv=[keys.join(','),...all.map(p=>[
-    p.ecr!=null?p.ecr:'', p.ecr_tier!=null?p.ecr_tier:'', p.fpts.toFixed(1), p.pos, p.name, p.team,
+    p.ecr!=null?p.ecr:'', p.ecr_tier!=null?p.ecr_tier:'', (()=>{const v=adpFor(p);return (v!=null&&v<999)?v:'';})(), p.fpts.toFixed(1), p.pos, p.name, p.team,
     ...(dyn?[p.age!=null?p.age:'', p.apy!=null?p.apy:'', p.fa!=null?p.fa:'']:[]),
     p.rushing_attempts, p.rushing_yards, p.ypc>0?p.ypc.toFixed(1):'', p.rushing_tds,
     p.receiving_targets, p.receptions, p.receiving_yards, p.receiving_tds,

@@ -1,11 +1,12 @@
 const elStore={};
-function mkEl(id){if(!elStore[id])elStore[id]={innerHTML:'',style:{},dataset:{},classList:{add(){},remove(){},toggle(){}},setAttribute(){},getAttribute(){return '';},appendChild(){},querySelectorAll:()=>[],addEventListener(){}};return elStore[id];}
-global.document={getElementById:(id)=>mkEl(id),querySelector:()=>null,querySelectorAll:()=>[],createElement:()=>mkEl('_new'+Math.random()),body:{appendChild(){}},addEventListener(){}};
+function mkEl(id){if(!elStore[id])elStore[id]={innerHTML:'',style:{},dataset:{},classList:{add(){},remove(){},toggle(){}},setAttribute(){},getAttribute(){return '';},appendChild(){},querySelectorAll:()=>[],querySelector:()=>null,addEventListener(){},offsetHeight:40};return elStore[id];}
+global.document={documentElement:{style:{setProperty(){}}},getElementById:(id)=>mkEl(id),querySelector:()=>null,querySelectorAll:()=>[],createElement:()=>mkEl('_new'+Math.random()),body:{appendChild(){}},addEventListener(){}};
 global.window={};global.Chart=function(){return{destroy(){}}};global.confirm=()=>1;global.btoa=s=>s;global.FileReader=function(){};global.Range=function(){};global.AbortController=class{constructor(){this.signal={}}abort(){}};global.localStorage={getItem:()=>null,setItem(){},removeItem(){}};
 const fs=require('fs');const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   lineupFromRosterPositions, bucketPicksBySlot, fillLineup, slotOwnerName, renderRosterBar, renderTrackerPanel, claimSlot, fillLineupWith:(picks,lineup,bench)=>{draftLineup=lineup;draftBenchCount=bench||0;return fillLineup(picks);},
   setLineup:(l,b)=>{draftLineup=l;draftBenchCount=b||0;}, setPicks:(p)=>{draftPicksBySlot=p;}, setMeta:(m)=>{draftMeta=m;}, setUsers:(u)=>{draftUsers=u;}, setMySlot:(s)=>{mySlot=s;}, setBarVisible:(v)=>{rosterBarVisible=v;}, setNeedsPick:(v)=>{_trackerNeedsSlotPick=v;}, setTrackerOpen:(v)=>{trackerOpen=v;},
+  trackerSwipe, toggleTracker, getOpen:()=>trackerOpen, getMax:()=>trackerMax,
   getMySlot:()=>mySlot };`)();
 
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -82,5 +83,25 @@ const h=global.document.getElementById('rosterBar').innerHTML;
 chk(h.includes('rt-panel'),'panel present when open');
 chk(h.includes('Still needs')||h.includes('complete'),'needs line present');
 chk(h.includes('rt-switcher'),'team switcher present');
+
+console.log('=== drawer swipe state machine ===');
+app.setTrackerOpen(false); app.renderRosterBar();
+app.trackerSwipe(-60);
+chk(app.getOpen()===true && app.getMax()===false,'swipe up from closed → open at default height');
+app.trackerSwipe(-60);
+chk(app.getOpen()===true && app.getMax()===true,'swipe up again → maximized');
+chk(global.document.getElementById('rosterBar').innerHTML.includes('rt-panel rt-max'),'panel wears the maximized class');
+app.trackerSwipe(60);
+chk(app.getOpen()===false && app.getMax()===false,'swipe down from maximized closes in one motion');
+chk(global.document.getElementById('rosterBar').innerHTML.includes('rt-closed'),
+  'closed panel stays in the DOM collapsed — the drag can slide it open without a repaint');
+app.trackerSwipe(-60); app.trackerSwipe(60);
+chk(app.getOpen()===false,'swipe down from default-open closes too');
+app.trackerSwipe(-60); app.trackerSwipe(-60);
+app.toggleTracker();
+chk(app.getOpen()===false && app.getMax()===false,'caret click from maximized closes AND resets the stretch');
+app.toggleTracker();
+chk(app.getOpen()===true && app.getMax()===false,'…so the next open returns at default height');
+app.setTrackerOpen(false); app.renderRosterBar();
 
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));
