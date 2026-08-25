@@ -127,6 +127,7 @@ function rankingsRenderCacheKey(teamScoped){
     (typeof buildPlayerShapeSig==='function') ? buildPlayerShapeSig() : '',   // league shape / draft / ADP
     String(activeSeason),
     String(typeof rankLiveDelta!=='undefined' && rankLiveDelta ? 1 : 0),
+    String(typeof rankFiltersOpen!=='undefined' && rankFiltersOpen ? 1 : 0),   // mobile Filters row
     // Injury tags come from the Sleeper player DB, which lands asynchronously — a board
     // rendered before it arrives must not stay cached without designations.
     String(typeof sleeperPlayers!=='undefined' && sleeperPlayers ? 1 : 0),
@@ -203,7 +204,7 @@ function renderRankings(){
   }
   if(teamScoped) all=all.filter(p=>p.team===currentTeam);
   if(!all.length){document.getElementById('content').innerHTML=
-    `${teamScoped?`${teamHeader}<div class="phase-tabs">${tabBar()}</div>`:''}<div class="empty"><div class="empty-icon">${TC_ICON("trophy","tc-ico-lg")}</div>
+    `${teamScoped?`${teamHeader}<div class="phase-tabs la-icon-tabs">${tabBar()}</div>`:''}<div class="empty"><div class="empty-icon">${TC_ICON("trophy","tc-ico-lg")}</div>
      <div class="empty-title">No projections yet</div><div class="empty-body">Set at least one team's stats to see rankings.</div></div>`;return;}
   // Overall order is by fantasy points (your projections). ECR/tier come from FantasyPros.
   const tSortStart = _rkNow();
@@ -265,6 +266,13 @@ function renderRankings(){
     if(rankSortKey==='team') return a.team.localeCompare(b.team)*(rankSortDir<0?1:-1);
     if(rankSortKey==='pos') return (({QB:1,RB:2,WR:3,TE:4})[a.pos]-({QB:1,RB:2,WR:3,TE:4})[b.pos])*(rankSortDir<0?1:-1)||b.fpts-a.fpts;
     // Contract columns: players with no contract data always sort to the bottom.
+    if(rankSortKey==='pacePct'){
+      const av=a.pacePct, bv=b.pacePct;
+      if(av==null && bv==null) return b.fpts-a.fpts;
+      if(av==null) return 1;
+      if(bv==null) return -1;
+      return (bv-av)*(rankSortDir<0?1:-1);
+    }
     if(rankSortKey==='age'||rankSortKey==='apy'||rankSortKey==='fa'){
       const av=a[rankSortKey], bv=b[rankSortKey];
       if(av==null && bv==null) return b.fpts-a.fpts;
@@ -497,7 +505,7 @@ function renderRankings(){
   // nflverse play-by-play; SumerSports was retired as a source).
   const sumerOn = sumerAvailable();
   const advToggle = sumerOn
-    ? `<span style="font-size:11px;color:var(--muted);font-weight:700;margin-left:8px">STATS</span>
+    ? `<span class="tc-label">STATS</span>
        <div class="format-toggle">
          <button class="format-btn ${!rankAdvanced?'active':''}" onclick="setRankAdvanced(false)">Standard</button>
          <button class="format-btn ${rankAdvanced?'active':''}" onclick="setRankAdvanced(true)" title="nflverse advanced ${sumerSeasonKey()} metrics">Adv. Metrics</button>
@@ -513,7 +521,7 @@ function renderRankings(){
   // split (Red Zone / When Trailing / vs. Man / per-down / box counts …) for the season.
   const refineOpts = advActive ? sumerRefinementsForFilter() : [];
   const situationalSelect = (advActive && refineOpts.length)
-    ? `<span style="font-size:11px;color:var(--muted);font-weight:700;margin-left:8px">SITUATIONAL</span>
+    ? `<span class="tc-label">SITUATIONAL</span>
        <select class="sumer-situational" onchange="setSumerRefinement(this.value)" title="Filter Adv. Metrics by game situation">
          <option value=""${!sumerRefinement?' selected':''}>Standard</option>
          ${refineOpts.map(r=>`<option value="${r}"${sumerRefinement===r?' selected':''}>${SUMER_REFINE_LABELS[r]||r}</option>`).join('')}
@@ -524,7 +532,7 @@ function renderRankings(){
     : '';
   const ecrNote = hasECR() ? '' : `<span class="ecr-missing">${TC_ICON("warning")} No FantasyPros ECR loaded — run build_seed.py and load the seed to populate ECR/Tier</span>`;
   const pageHtml = `
-    ${teamScoped ? `${teamHeader}<div class="phase-tabs">${tabBar()}</div>` : ''}
+    ${teamScoped ? `${teamHeader}<div class="phase-tabs la-icon-tabs">${tabBar()}</div>` : ''}
     <div class="rankings-scope-bar">
       ${teamScoped
         ? `<span class="scope-title">${currentTeam} Rankings</span><span class="scope-sub">this team only</span>
@@ -536,7 +544,7 @@ function renderRankings(){
           <span style="font-size:12px;color:var(--muted)">Mobile quick-open: rendering top ${view.length} first; full list is loading automatically.</span>
         </div>`
       : ''}
-    <div class="card scoring-card ${scoringPanelOpen?'open':''}" style="margin-bottom:12px;padding:0">
+    <div class="card card-flush scoring-card ${scoringPanelOpen?'open':''}" style="margin-bottom:12px">
       <div class="scoring-head" onclick="toggleScoringPanel()" title="Show / hide scoring settings">
         <span class="scoring-caret">\u25b8</span>
         <span class="scoring-title">Scoring Settings</span>
@@ -562,7 +570,7 @@ function renderRankings(){
         </div>
       </div>
     </div>
-    <div class="card" style="padding:0;overflow:hidden">
+    <div class="card card-flush">
       ${following ? `<div style="padding:8px 14px;border-bottom:1px solid var(--border)">
         <div class="draft-banner">
           <span class="draft-live">LIVE</span>
@@ -573,28 +581,33 @@ function renderRankings(){
           <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="stopDraftFollow()">Stop</button>
         </div></div>` : ''}
       ${(!following && leaguePickerState.open) ? renderLeaguePicker() : ''}
-      <div style="padding:11px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);flex-wrap:wrap">
-        <span style="font-size:11px;color:var(--muted);font-weight:700">LEAGUE</span>
-        <div class="ltype-toggle">${typeBtns}</div>
-        <span style="font-size:11px;color:var(--muted);font-weight:700;margin-left:8px">SCORING (ECR)</span>
-        <div class="format-toggle">${fmtBtns}</div>
-        <span style="font-size:11px;color:var(--muted);font-weight:700;margin-left:8px">POSITION</span>
-        <div class="pos-filter">${posBtns}</div>
-        <button class="btn btn-ghost btn-sm rank-search-toggle ${searchOpen?'active':''}" onclick="toggleRankingsSearch()" title="Search rankings players">${TC_ICON("search")}</button>
-        ${searchOpen ? `<div class="rank-search-wrap">
-          <input id="rankSearchInput" class="rank-search-input" type="text" value="${escAttr(rankingsSearchQuery||'')}" placeholder="${searchPlaceholder}" oninput="setRankingsSearchQuery(this.value, this.selectionStart, this.selectionEnd)">
-          ${(rankingsSearchQuery||'').trim() ? `<button class="btn btn-ghost btn-sm" onclick="clearRankingsSearch()" title="Clear search">Clear</button>` : ''}
-        </div>` : ''}
-        ${advToggle}
-        ${liveDeltaToggle}
-        ${situationalSelect}
-        ${minInputs}
-        ${advNote}
-        ${ecrNote}
-        <span id="rankPlayerCount" data-default-label="${escAttr(`${view.length}${mobileTrimmedCount>0?` / ${fullViewCount}`:''} players`)}" style="font-size:11px;font-weight:700;margin-left:auto">${view.length}${mobileTrimmedCount>0?` / ${fullViewCount}`:''} players</span>
-        ${following?'':`<button class="btn btn-accent btn-sm" onclick="openLeaguePicker()">🔗 Link Sleeper League</button>
-        <button class="btn btn-ghost btn-sm" onclick="promptDraftFollow()" title="Follow a live or mock draft by its ID">Paste draft ID</button>`}
-        <button class="btn btn-ghost btn-sm" onclick="exportRankingsCSV()">${TC_ICON("download")} CSV</button>
+      <div class="rank-toolbar">
+        <div class="rank-toolbar-row">
+          <div class="pos-filter">${posBtns}</div>
+          <button class="btn btn-ghost btn-sm rank-search-toggle ${searchOpen?'active':''}" onclick="toggleRankingsSearch()" title="Search rankings players">${TC_ICON("search")}</button>
+          ${searchOpen ? `<div class="rank-search-wrap">
+            <input id="rankSearchInput" class="rank-search-input" type="text" value="${escAttr(rankingsSearchQuery||'')}" placeholder="${searchPlaceholder}" oninput="setRankingsSearchQuery(this.value, this.selectionStart, this.selectionEnd)">
+            ${(rankingsSearchQuery||'').trim() ? `<button class="btn btn-ghost btn-sm" onclick="clearRankingsSearch()" title="Clear search">Clear</button>` : ''}
+          </div>` : ''}
+          ${liveDeltaToggle}
+          <button class="btn btn-ghost btn-sm rank-filters-toggle ${rankFiltersOpen?'active':''}" onclick="toggleRankFilters()" title="League, scoring and stat filters">${TC_ICON("menu")}<span class="tab-lbl">Filters</span></button>
+          <span id="rankPlayerCount" data-default-label="${escAttr(`${view.length}${mobileTrimmedCount>0?` / ${fullViewCount}`:''} players`)}" class="rank-count">${view.length}${mobileTrimmedCount>0?` / ${fullViewCount}`:''} players</span>
+        </div>
+        <div class="rank-toolbar-row rank-filters ${rankFiltersOpen?'open':''}">
+          <span class="tc-label">LEAGUE</span>
+          <div class="ltype-toggle">${typeBtns}</div>
+          <span class="tc-label">SCORING (ECR)</span>
+          <div class="format-toggle">${fmtBtns}</div>
+          ${advToggle}
+          ${situationalSelect}
+          ${minInputs}
+          ${advNote}
+          ${ecrNote}
+          <span class="rank-toolbar-spacer"></span>
+          ${following?'':`<button class="btn btn-accent btn-sm" onclick="openLeaguePicker()">🔗 Link Sleeper League</button>
+          <button class="btn btn-ghost btn-sm" onclick="promptDraftFollow()" title="Follow a live or mock draft by its ID">Paste draft ID</button>`}
+          <button class="btn btn-ghost btn-sm" onclick="exportRankingsCSV()">${TC_ICON("download")} CSV</button>
+        </div>
       </div>
       <div class="rank-table-wrap" style="max-height:calc(100vh - 320px)">
       <table class="rankings-table grouped${paceActive?' pace-mode':''}"><thead><tr>
@@ -615,7 +628,12 @@ function renderRankings(){
   document.getElementById('content').innerHTML = pageHtml;
   hydrateRankingsHeadshots();
   const tDomDone = _rkNow();
-  rankingsRenderCacheSet(cacheKey, pageHtml);
+  // A team-scoped board renders "Loading head coach…" / no record until those async fetches
+  // land — and their completion re-renders into the SAME cache key. Never cache the pending
+  // state, or it becomes permanent.
+  const _hcPending = teamScoped && ((typeof headCoaches!=='undefined' && headCoaches && headCoaches[currentTeam]===undefined)
+    || (activeSeason!=='proj' && typeof espnRecordCache!=='undefined' && espnRecordCache && espnRecordCache[`${activeSeason}:${currentTeam}`]==null));
+  if(!_hcPending) rankingsRenderCacheSet(cacheKey, pageHtml);
   // Mobile first paint: show a fast initial slice, then auto-render the full list on idle.
   if(mobileTrimmedCount>0){
     const token = ++_rankingsMobileAutoToken;

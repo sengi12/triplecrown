@@ -8,8 +8,13 @@
   --danger:#f85149;--success:#3fb950;--warn:#d29922;--info:#4a9eff;
   --font:'SF Pro Display','Segoe UI',system-ui,sans-serif;
   --mono:'SF Mono','Fira Code',monospace;
+  /* Design tokens (UI system — see 95-ui-system.css). Radius + tracking + z ladder. */
+  --r-sm:6px;--r-md:9px;--r-lg:12px;--r-xl:16px;
+  --tracking-label:.05em;
+  --z-bar:900;--z-overlay:1300;--z-modal:1800;--z-toast:2000;--z-pop:2100;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
+:root{color-scheme:dark;}
 body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;font-size:14px;}
 .header{background:var(--surface);border-bottom:1px solid var(--border);
   padding:9px 16px;display:flex;align-items:center;gap:10px;

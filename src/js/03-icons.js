@@ -33,6 +33,22 @@ const TC_ICON = (() => {
     scale:  '<path d="M12 4v16M8 20h8M12 6H6M12 6h6"/><path d="M6 6l-2.5 5a2.8 2.8 0 0 0 5 0L6 6ZM18 6l-2.5 5a2.8 2.8 0 0 0 5 0L18 6Z"/>',
     // Two facing chevrons — a head-to-head matchup.
     versus: '<path d="M9 7l-4 5 4 5M15 7l4 5-4 5"/>',
+    // Passing: a football in flight climbing to the upper right, speed dashes trailing.
+    pass:   '<g transform="rotate(-33 15.2 8.6)"><ellipse cx="15.2" cy="8.6" rx="5.4" ry="3.4"/>' +
+            '<path d="M12.2 8.6h6M13.7 7.5v2.2M15.2 7.5v2.2M16.7 7.5v2.2"/></g>' +
+            '<path d="M3 21l4.6-4.6M3.4 15.6l2.5-2.5M8.5 19.8l2.5-2.5"/>',
+    // Receiving: the same ball dropping in to the lower right — the catch point.
+    catch:  '<g transform="rotate(33 15.2 15.4)"><ellipse cx="15.2" cy="15.4" rx="5.4" ry="3.4"/>' +
+            '<path d="M12.2 15.4h6M13.7 14.3v2.2M15.2 14.3v2.2M16.7 14.3v2.2"/></g>' +
+            '<path d="M3 3l4.6 4.6M3.4 8.4l2.5 2.5M8.5 4.2l2.5 2.5"/>',
+    // Rushing: the Heisman pose — stiff-arm out front, ball tucked, legs mid-stride.
+    run:    '<circle cx="14.8" cy="4.3" r="1.9"/>' +
+            '<path d="M14.4 6.4 13 12"/>' +                     // torso
+            '<path d="M14 7.4l5.8 1.3"/>' +                     // stiff-arm
+            '<path d="M13.9 7.6l-2.2 1.7"/>' +                  // tucked arm
+            '<ellipse cx="10.5" cy="10.5" rx="1.9" ry="1.2" transform="rotate(-24 10.5 10.5)"/>' +
+            '<path d="M13 12l2.9 2.1-1.1 3.2"/>' +              // front leg, knee up
+            '<path d="M13 12l-2.5 4.3-2 3.2"/>',                // trailing leg
     football:'<path d="M4 12c0-4 4-8 8-8s8 4 8 8-4 8-8 8-8-4-8-8Z"/><path d="M8 8s2 4 2 8M16 8s-2 4-2 8M9 12h6"/>',
     export: '<path d="M12 15V4M8 8l4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/>',
     download:'<path d="M12 4v11M8 11l4 4 4-4M5 20h14"/>',

@@ -146,6 +146,32 @@ function toggleRankLiveDelta(){
 // ── Injury designations (Sleeper player DB) ──────────────────────────────────
 // {code, sev:'q'|'d'|'o', note, body} or null when healthy/unknown. sev drives the badge
 // color: questionable amber, doubtful orange, out/IR/PUP/suspended red.
+// Season-ending detection often lives ONLY in news copy (Sleeper's structured fields for
+// Biadasz: status IR, body part Knee, note null — nothing to parse). ESPN's athlete
+// overview carries the headline ("…placed on season-ending injured reserve"), so probe it
+// lazily when an IR/OUT popup opens, cache per player for the session, and let the ROS
+// engine see the answer through tcInjuryInfo.
+var _injNewsCache = {};   // pid → {seasonOut, headline} | 'pending' | null(failed)
+function tcInjuryNewsProbe(pid){
+  const sp=(pid!=null && typeof sleeperPlayers!=='undefined' && sleeperPlayers) ? sleeperPlayers[String(pid)] : null;
+  if(!sp || !sp.espn_id) return;
+  if(_injNewsCache[String(pid)]!==undefined) return;
+  _injNewsCache[String(pid)]='pending';
+  fetch(`https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/${sp.espn_id}/overview`)
+    .then(r=>r&&r.ok?r.json():null)
+    .then(j=>{
+      const items=(j && Array.isArray(j.news)) ? j.news : [];
+      const re=/season[-\s]?ending|out for (the )?(season|year)|miss (the )?(rest of the )?(season|year)|lost for the (season|year)/i;
+      const hit=items.slice(0,5).map(n=>(n&&n.headline)||'').find(h=>re.test(h));
+      _injNewsCache[String(pid)]={seasonOut:!!hit, headline:hit||''};
+      const pop=document.getElementById('tcInjPop');
+      if(hit && pop && pop.dataset && pop.dataset.pid===String(pid)){
+        const i=tcInjuryInfo(pid);
+        if(i) pop.innerHTML=_injPopHTML(pid, i);
+      }
+    })
+    .catch(()=>{ _injNewsCache[String(pid)]=null; });
+}
 function tcInjuryInfo(pid){
   const sp = (pid!=null && typeof sleeperPlayers!=='undefined' && sleeperPlayers) ? sleeperPlayers[String(pid)] : null;
   const st = sp && sp.injury_status ? String(sp.injury_status) : '';
@@ -154,7 +180,14 @@ function tcInjuryInfo(pid){
     : /^questionable/i.test(st)?'Q' : /^sus/i.test(st)?'SUS' : /^pup/i.test(st)?'PUP'
     : st.slice(0,3).toUpperCase();
   const sev = code==='Q' ? 'q' : code==='D' ? 'd' : 'o';
-  return {code, sev, note:(sp.injury_note||''), body:(sp.injury_body_part||'')};
+  // No structured "season-ending" flag exists on Sleeper — but the note text nearly always
+  // says it. Parse for it so IR-for-the-year reads (and discounts) as exactly that.
+  const txt=`${sp.injury_body_part||''} ${sp.injury_note||''}`;
+  let seasonOut = /season[-\s]?ending|out for (the )?(season|year)|miss (the )?(rest of the )?(season|year)|lost for the (season|year)|placed on (the )?injured reserve.*(season|year)/i.test(txt);
+  let newsLine='';
+  const nc=_injNewsCache[String(pid)];
+  if(nc && nc!=='pending' && nc.seasonOut){ seasonOut=true; newsLine=nc.headline||''; }
+  return {code, sev, seasonOut, newsLine, note:(sp.injury_note||''), body:(sp.injury_body_part||'')};
 }
 function tcInjuryTag(pid){
   const i=tcInjuryInfo(pid);
@@ -169,26 +202,34 @@ function tcInjuryTagBtn(pid){
   return `<span class="inj-tag inj-click inj-${i.sev}" onclick="tcInjuryPop(event,'${String(pid)}')" title="Injury details">${i.code}</span>`;
 }
 // Small detail popup, clamped inside the viewport; any outside tap dismisses it.
+function _injPopHTML(pid, i){
+  const sp=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[String(pid)])||{};
+  const est=tcInjuryAbsenceWeeks(i);
+  const book=tcInjuryOutlook(i);
+  const desig = (i.sev==='o' && i.seasonOut)
+    ? `${i.code} — season-ending. Not expected back this year.`
+    : i.sev==='o'
+    ? `${i.code} — typically ${est>=4?`${est}+ weeks`:`${est} week${est===1?'':'s'}`} out at minimum.`
+    : i.sev==='d' ? 'Doubtful — sits far more often than he plays.'
+    : 'Questionable — game-time decision.';
+  return `<b>${escHtml(sp.name||'Injury')} · ${i.code}${i.seasonOut?' · out for the season':''}</b>
+    ${i.body?`<div>${escHtml(i.body)}</div>`:''}
+    ${i.note?`<div>${escHtml(i.note)}</div>`:''}
+    ${i.newsLine?`<div class="inj-pop-news">${escHtml(i.newsLine)}</div>`:''}
+    <div class="inj-pop-sub">${desig}${book&&!i.seasonOut?` ${book.blurb}${book.range?` Typical timetable: <b>${book.range}</b>`:''}`:''}</div>
+    ${(book||i.sev!=='q')&&!i.seasonOut?'<div class="inj-pop-sub">Ranges are typical for the injury type, not a diagnosis.</div>':''}`;
+}
 function tcInjuryPop(ev, pid){
   try{ ev.stopPropagation(); }catch(e){}
   const old=document.getElementById('tcInjPop'); if(old) old.remove();
   const i=tcInjuryInfo(pid); if(!i) return;
-  const sp=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[String(pid)])||{};
-  const est=tcInjuryAbsenceWeeks(i);
+  if(i.sev==='o' && !i.seasonOut) tcInjuryNewsProbe(pid);   // the answer may live in the news
   const div=document.createElement('div');
   div.id='tcInjPop'; div.className='inj-pop';
-  const book=tcInjuryOutlook(i);
-  const desig = i.sev==='o'
-    ? `${i.code} — typically ${est>=4?`${est}+ weeks`:`${est} week${est===1?'':'s'}`} out at minimum.`
-    : i.sev==='d' ? 'Doubtful — sits far more often than he plays.'
-    : 'Questionable — game-time decision.';
-  div.innerHTML=`<b>${escHtml(sp.name||'Injury')} · ${i.code}</b>
-    ${i.body?`<div>${escHtml(i.body)}</div>`:''}
-    ${i.note?`<div>${escHtml(i.note)}</div>`:''}
-    <div class="inj-pop-sub">${desig}${book?` ${book.blurb}${book.range?` Typical timetable: <b>${book.range}</b>.`:''}`:''}
-    ${book||i.sev!=='q'?'<br>Ranges are typical for the injury type, not a diagnosis.':''}</div>`;
+  if(div.dataset) div.dataset.pid=String(pid);
+  div.innerHTML=_injPopHTML(pid, i);
   document.body.appendChild(div);
-  const r=(ev.target&&ev.target.getBoundingClientRect)?ev.target.getBoundingClientRect():{left:40,bottom:40};
+  const r=(ev.target&&ev.target.getBoundingClientRect)?ev.target.getBoundingClientRect():{left:40,top:40,bottom:40};
   const pw=div.offsetWidth||240, ph=div.offsetHeight||80;
   const vw=window.innerWidth||360, vh=window.innerHeight||640;
   div.style.left=Math.max(8, Math.min(vw-pw-8, r.left))+'px';
@@ -241,6 +282,7 @@ function tcInjuryOutlook(info){
 // rewrite the user's projections.
 function tcInjuryAbsenceWeeks(info){
   if(!info) return 0;
+  if(info.seasonOut) return 18;            // note text says the year is over
   const floor = info.code==='IR' ? 4 : info.code==='PUP' ? 4 : info.code==='SUS' ? 2 : info.code==='OUT' ? 1 : 0;
   if(!floor) return 0;                     // Q/D: no multi-week absence assumed
   const book=tcInjuryOutlook(info);
@@ -277,7 +319,16 @@ function paceStatChipsHTML(name, pos, pid, view){
     const pctTxt = (gp>0 && st.bRate>0) ? `${st.pct>=0?'+':'−'}${Math.round(Math.abs(st.pct)*100)}%` : '—';
     const arrow = cls==='pace-ahead'?'▲':cls==='pace-behind'?'▼':'';
     const title=`${label}: ${_paceRateFmt(st.aRate,f)}/gm over ${gp} game${gp===1?'':'s'} (${_paceFmt(st.act,f)} total) vs proj ${_paceRateFmt(st.bRate,f)}/gm (${_paceFmt(st.base,f)} over ${e.projGames} games)`;
-    return `<span class="pace-stat ${cls}" title="${title}"><span class="ps-l">${label}</span><span class="ps-a">${_paceRateFmt(st.aRate,f)}</span><span class="ps-b">vs ${_paceRateFmt(st.bRate,f)}/gm</span><b class="ps-d">${arrow}${pctTxt}</b></span>`;
+    const chip=`<span class="pace-stat ${cls}" title="${title}"><span class="ps-l">${label}</span><span class="ps-a">${_paceRateFmt(st.aRate,f)}</span><span class="ps-b">vs ${_paceRateFmt(st.bRate,f)}/gm</span><b class="ps-d">${arrow}${pctTxt}</b></span>`;
+    // Taggable like every other stat: tap-to-tag into player notes with full context.
+    if(typeof noteWrapHtml==='function' && typeof noteTargetFromArgs==='function'){
+      const target=noteTargetFromArgs(pid, pos, (e.team||''));
+      return noteWrapHtml(chip, { label:`${label} pace`,
+        value:`${_paceRateFmt(st.aRate,f)}/gm vs proj ${_paceRateFmt(st.bRate,f)}/gm (${gp} gm${gp===1?'':'s'})`,
+        source:'pcard_live_pace', statKey:`pace_${f}`,
+        context:`${TC_SEASON.year} season to date`, player:target, team:(e.team||'') }, 'note-tag-hit');
+    }
+    return chip;
   }).filter(Boolean).join('');
   if(!chips) return '';
   const gpTxt = gp>0 ? `${gp} gm${gp===1?'':'s'}` : 'no games yet';

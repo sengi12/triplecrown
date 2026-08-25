@@ -844,7 +844,7 @@ function renderPcardSeason(season, rows, pos){
         return sep+`<td class="pcard-cell bye">${v}</td>`;
       }).join('');
       const oppCell = (r.dnp && r.opp)
-        ? `<span class="pcard-dnp-opp">${r.isAway?'@':'vs'} ${escHtml(r.opp)}</span> <span class="pcard-dnp-tag">out</span>`
+        ? `<span class="pcard-dnp-opp">${r.isAway?'@':'vs'} ${escHtml(r.opp)}</span>`
         : (r.dnp ? 'DNP' : 'BYE');
       return `<tr class="${r.dnp?'pcard-dnp-row':''}"><td class="pcard-wk">${r.wk}</td><td class="pcard-opp" title="${r.dnp?'Did not play (inactive / injured) — not counted in the consistency grade':'Bye week'}">${oppCell}</td>${spans}</tr>`;
     }
@@ -945,7 +945,10 @@ function pcardSeasonConsistency(rows, pos){
   if(!Number.isFinite(benchmark)) return null;
   const played = (rows||[]).filter(r=>!r.bye && r.gp>0 && Number.isFinite(r.fpts));
   const counted = played.filter(pcardGameCountsForConsistency);
-  const vals = counted.map(r=>Number.isFinite(r.pprFpts) ? Number(r.pprFpts) : Number(r.fpts));
+  // Grade against the SAME scoring the card displays. The old full-PPR/4-pt normalization
+  // was internally consistent but read as nonsense: a 27 pts/g season in a 6-pt-passing
+  // league graded C because the grader silently re-scored it lower than the visible column.
+  const vals = counted.map(r=>Number(r.fpts));
   const n = vals.length;
   if(n < 2) return null;
   const hits = vals.filter(v=>v >= benchmark).length;
@@ -974,7 +977,7 @@ function pcardFptsPerGameBadge(rows, pos){
 function pcardSeasonConsistencyBadge(rows, pos){
   const c = pcardSeasonConsistency(rows, pos);
   if(!c) return '';
-  const tip = `Consistency grade from benchmark hits (games played only): ${c.hits}/${c.n} games (${(c.rate*100).toFixed(1)}%) at or above ${c.benchmark.toFixed(1)} full-PPR points. Scored in full PPR regardless of league settings so the grade means the same everywhere.${c.skipped?` ${c.skipped} game${c.skipped>1?'s':''} under ${PCARD_CONSISTENCY_MIN_SNAPS} snaps excluded.`:''}`;
+  const tip = `Consistency grade from benchmark hits (games played only): ${c.hits}/${c.n} games (${(c.rate*100).toFixed(1)}%) at or above ${c.benchmark.toFixed(1)} points under the scoring shown on this card.${c.skipped?` ${c.skipped} game${c.skipped>1?'s':''} under ${PCARD_CONSISTENCY_MIN_SNAPS} snaps excluded.`:''}`;
   return ` <span class="pcard-cons-badge pcard-cons-${c.grade}" title="${escAttr(tip)}">Consistency ${c.grade}</span>`;
 }
 

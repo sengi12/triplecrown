@@ -26,13 +26,15 @@ const c=app.pcardSeasonConsistency(rows,'TE');
 chk(c && c.n===rows.filter(r=>r.gp>0).length - (c.skipped||0),'only games played are counted');
 chk(c && c.n < rows.length,'DNP weeks are not counted as zero-point games');
 
-// Scoring-format independence: the grade is scored in full PPR whatever the league uses.
+// The grade follows the scoring SHOWN on the card. The old full-PPR normalization was
+// internally consistent but read as nonsense next to the visible column (a 27 pts/g season
+// in a 6-pt-passing league graded C because the grader silently re-scored it lower).
 const half=Object.assign({}, app.getScoring(), {receptions:0.5});
 const std=Object.assign({}, app.getScoring(), {receptions:0});
 const full=Object.assign({}, app.getScoring(), {receptions:1});
 const gradeUnder=(sc)=>{ app.setScoring(sc); return app.pcardSeasonConsistency(app.pcardSeasonRows(weekly,'TE'),'TE'); };
 const gH=gradeUnder(half), gS=gradeUnder(std), gF=gradeUnder(full);
-chk(gH.hits===gF.hits && gS.hits===gF.hits,`same hits in half/standard/full PPR (${gH.hits}/${gH.n})`);
+chk(gF.hits>=gH.hits && gH.hits>=gS.hits,`hits track the displayed scoring (full ${gF.hits} ≥ half ${gH.hits} ≥ std ${gS.hits})`);
 app.setScoring(std); const r2=app.pcardSeasonRows(weekly,'TE');
 const played=r2.find(r=>r.gp>0 && (r.stats.rec||0)>0);
 chk(played && played.pprFpts > played.fpts,'displayed FPTS still follow league scoring (standard < PPR)');

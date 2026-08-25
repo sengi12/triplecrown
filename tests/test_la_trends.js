@@ -80,6 +80,9 @@ app.setPlayers({'p9':{player_id:'p9',name:'Test',pos:'WR',team:'CIN',injury_stat
 chk(app.tcInjuryAbsenceWeeks(app.tcInjuryInfo('p9'))===18,'ACL → season');
 app.setPlayers({'p9':{player_id:'p9',name:'Test',pos:'WR',team:'CIN',injury_status:'Questionable',injury_body_part:'Hamstring'}});
 chk(app.tcInjuryAbsenceWeeks(app.tcInjuryInfo('p9'))===0,'Questionable never assumes multi-week absence');
+app.setPlayers({'p9':{player_id:'p9',name:'Test',pos:'OL',team:'WAS',injury_status:'IR',injury_body_part:'Knee',injury_note:'placed on season-ending injured reserve'}});
+const so=app.tcInjuryInfo('p9');
+chk(so.seasonOut===true && app.tcInjuryAbsenceWeeks(so)===18,'note saying season-ending → flagged and discounted as the full year');
 
 console.log('=== injury designations ===');
 app.setPlayers({'p9':{player_id:'p9',name:'Test',pos:'WR',team:'CIN',injury_status:'Questionable',injury_note:'hamstring'}});

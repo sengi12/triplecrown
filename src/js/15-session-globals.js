@@ -8,6 +8,11 @@
 // ═════════════════════════════════════════════════════════════════════════════
 const TC_STORE_KEY = 'triplecrown.session.v1';
 let _persistTimer = null;
+if(typeof window!=='undefined' && window.addEventListener){
+  window.addEventListener('pagehide', ()=>{ try{
+    if(_persistTimer){ clearTimeout(_persistTimer); _saveSessionNow(); }
+  }catch(e){} });
+}
 let _persistReady = false;   // becomes true after boot restore, so we don't save during load
 let playerNotes = {};        // player-note state keyed by canonical player key
 const NOTE_TEXT_MAX = 20000; // hard cap on a single note body (chars); matches cloud-save sanitizer
@@ -41,9 +46,13 @@ let _persistWarned = false;   // only nag about a degraded save once per session
 function saveSession(){
   if(!_persistReady) return;
   if(!persistAvailable()) return;
-  // Debounce: edits fire rapidly (sliders), so coalesce writes.
+  // Debounce: edits fire rapidly (sliders), so coalesce writes. pagehide flushes the
+  // pending write synchronously so an edit made moments before closing isn't lost.
   clearTimeout(_persistTimer);
-  _persistTimer = setTimeout(()=>{
+  _persistTimer = setTimeout(_saveSessionNow, 400);
+}
+function _saveSessionNow(){
+    _persistTimer = null;
     const base = {
       v: 2,
       season: PROJ_SEASON,          // guard: only restore onto a matching-season seed
@@ -92,8 +101,8 @@ function saveSession(){
       if(typeof toast==='function')
         toast('Could not save this session to your browser (storage full or blocked) — use Download to keep a copy.','err');
     }
-  }, 400);
 }
+
 function loadSession(){
   if(!persistAvailable()) return null;
   try{
@@ -206,7 +215,10 @@ let sharpCategory = 'offense';   // 'offense' | 'defense' — which side to show
 let sharpTable = null;      // which Sharp table is active in the league-wide view (set on first render)
 let sharpSortCol = null;    // active sort column in league-wide view
 let sharpSortDir = 1;       // 1 = best-first (rank asc), -1 = worst-first
-let activeSeason = 'proj';   // 'proj' = working projections, or a year string for read-only reference
+let activeSeason = 'proj';
+let rankFiltersOpen = false;  // rankings toolbar: league/scoring/stat filters row (mobile collapses it)
+function toggleRankFilters(){ rankFiltersOpen=!rankFiltersOpen;
+  if(typeof renderRankings==='function' && currentPhase==='Rankings') renderRankings(); }   // 'proj' = working projections, or a year string for read-only reference
 let sleeperPlayers = null;   // cached Sleeper player DB (id → meta), fetched once
 let sleeperPlayersPromise = null;   // shared in-flight promise so concurrent callers dedupe
 let seasonStatsCache = {};   // season → seed-shaped data built from Sleeper stats
@@ -344,7 +356,8 @@ function scrubGhostRosters(){
   }
   if(removed>0){
     try{
-      if(typeof saveSession==='function') saveSession();   // persist the healed session
+      if(typeof saveSession==='function') if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();
+    saveSession();   // persist the healed session
       if(typeof currentTeam!=='undefined' && currentTeam && typeof renderContent==='function') renderContent();
     }catch(e){}
   }

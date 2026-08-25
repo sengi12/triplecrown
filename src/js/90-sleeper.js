@@ -342,7 +342,7 @@ async function refreshSleeperPlayersIfStale(maxAgeMs){
   _spRefreshing = true;
   try{
     await loadSleeperPlayers(true, true);
-    if(typeof invalidateRankingsRenderCache==='function') invalidateRankingsRenderCache();
+    if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();   // age/rookie cols ride the DB too
     if(typeof currentPhase!=='undefined'){
       if(currentPhase==='Rankings' && typeof renderRankings==='function') renderRankings();
       else if(currentPhase==='League' && typeof renderLeagueAnalyzer==='function') renderLeagueAnalyzer();
@@ -370,10 +370,17 @@ async function refreshFromSleeper(bootRestore){
     // "refresh from Sleeper" (bootRestore=false) intentionally starts clean instead.
     let restored=false;
     if(bootRestore){ restored=restoreSession(); _persistReady=true; }
+    // The board is a different dataset now — a cached pre-reset/pre-load rankings page must
+    // never be served over it (the cache key has no seed identity).
+    if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();
     renderSeasonTabs(); renderSidebar();
     if(currentTeam){ ensureTeam(currentTeam); renderContent(); }
     else document.getElementById('content').innerHTML=emptyHTML();
     toast(`Loaded live ${PROJ_SEASON} projections from Sleeper${restored?' · session restored':''} ✓`,'ok');
+    // In-season, the live-pull boot path needs the same hooks the seed paths get: pull the
+    // running season into HISTORY and freeze the kickoff baseline (both no-op pre-season).
+    if(typeof refreshLiveSeasonStats==='function') refreshLiveSeasonStats().catch(()=>{});
+    if(typeof maybeFreezePaceBaseline==='function'){ try{ maybeFreezePaceBaseline(); }catch(e){} }
   }catch(e){
     if(bootRestore) _persistReady = true;   // allow saves once the app is interactive
     toast('Sleeper fetch failed: '+e.message,'err');

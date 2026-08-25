@@ -940,7 +940,9 @@ function renderTeamAdvanced(team){
   const section=(label,ks,coordLbl)=> ks.length ? `<div class="sr-section-head">${label} ${coordLbl||''}</div>
     <div class="sr-card-grid">${ks.map(k=>cardFor(k)).join('')}</div>` : '';
   // SOS summary strip
-  const sos=SOS && SOS[team];
+  // The SOS block describes the PROJECTION season's slate — on a past-season reference
+  // view it would be a 2026 schedule pinned over 2024 stats.
+  const sos=(activeSeason==='proj') && SOS && SOS[team];
   const sosSched = (typeof renderTeamScheduleStrip==='function') ? renderTeamScheduleStrip(team) : '';
   const sosOpen = (typeof _sosStripOpen!=='undefined' && _sosStripOpen);
   const sosStrip = sos ? `<div class="sr-sos-block ${sosSched?'sos-clickable':''}" ${sosSched?`onclick="toggleSosStrip()" title="${sosOpen?'Hide':'Show'} the week-by-week schedule"`:''}>

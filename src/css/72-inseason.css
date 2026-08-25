@@ -337,3 +337,4 @@
 /* DvP: the team logo/code opens that defense's player card */
 .la-dvp-open{cursor:pointer;}
 .la-dvp-open:hover{opacity:.8;}
+.inj-pop-news{font-size:11px;color:var(--accent);margin-top:3px;}

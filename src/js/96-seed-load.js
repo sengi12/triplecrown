@@ -43,6 +43,9 @@ function handleSeedLoad(e){
         importedAnalystData=null; importedRawPayload=null; projBaseline=null;
         currentTeam=null;
       }
+      // New dataset: drop the memoized player list + rankings HTML so the cached pre-load
+      // board can't be served over the freshly loaded seed (incl. ECR-only loads).
+      if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();
       renderSeasonTabs(); renderSidebar();
       // If the rankings page is open, re-render it so ECR/Tier appear immediately.
       if(currentPhase==='Rankings') renderRankings();

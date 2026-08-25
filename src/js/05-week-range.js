@@ -110,6 +110,9 @@ async function ensureWeeklyOppSchedule(season){
       return false;
     }
   })();
+  // A transient network failure must not disable the schedule for the whole session —
+  // clear the cached promise on a false/rejected result so the next caller retries.
+  _weeklyOppPromise[s].then(ok=>{ if(!ok) delete _weeklyOppPromise[s]; }, ()=>{ delete _weeklyOppPromise[s]; });
   return _weeklyOppPromise[s];
 }
 function weekOpponentMap(team, season){
@@ -468,11 +471,39 @@ function qbFptsTag(qb){
   }, 'note-tag-hit');
 }
 
+// 17-game pace for the season IN PROGRESS, from the aggregates already in HISTORY — the
+// Live view gets the same ⓘ popup the week-range slider gives past seasons, no filter (and
+// no extra fetches) required.
+function liveSeasonPaceText(pid, mode){
+  if(typeof tcIsLiveSeason!=='function' || !tcIsLiveSeason(activeSeason)) return '';
+  const rec=(pid && typeof HISTORY!=='undefined' && HISTORY[pid]) ? HISTORY[pid][String(activeSeason)] : null;
+  if(!rec) return '';
+  const sum=(typeof _paceSumStints==='function') ? _paceSumStints(rec) : null;
+  if(!sum || !(sum.games_played>0)) return '';
+  const gp=sum.games_played;
+  const scale=v=>Math.round((v||0)/gp*SEASON_GAMES);
+  let parts=[];
+  if(mode==='qb'){
+    parts=[`${scale(sum.passing_yards).toLocaleString()} pass yds`, `${scale(sum.passing_tds)} pass TD`, `${scale(sum.passing_attempts)} att`,
+           `${scale(sum.rushing_attempts)} rush att`, `${scale(sum.rushing_yards)} rush yds`, `${scale(sum.rushing_tds)} rush TD`];
+  } else if(mode==='rush'){
+    parts=[`${scale(sum.rushing_attempts)} att`, `${scale(sum.rushing_yards).toLocaleString()} rush yds`, `${scale(sum.rushing_tds)} rush TD`, `${scale(sum.receptions)} rec`];
+  } else {
+    parts=[`${scale(sum.receiving_targets)} tgt`, `${scale(sum.receptions)} rec`, `${scale(sum.receiving_yards).toLocaleString()} rec yds`, `${scale(sum.receiving_tds)} rec TD`];
+  }
+  const wk=(typeof completedWeeks==='function' && completedWeeks()>0) ? completedWeeks() : gp;
+  return `17-game pace thru week ${wk} (${gp} game${gp===1?'':'s'}): ${parts.join(' · ')}`;
+}
 function weekFilterPaceButton(state, pid, mode){
-  const text = weekFilterPaceText(state, pid, mode);
+  let text = weekFilterPaceText(state, pid, mode);
+  let source='week_range_pace', ctxBase=`${activeSeason} week range`;
+  if(!text){
+    text = liveSeasonPaceText(pid, mode);
+    if(text){ source='live_season_pace'; ctxBase=`${activeSeason} season to date`; }
+  }
   if(!text) return '';
   const target = noteTargetFromArgs(pid, '', currentTeam||'');
-  return `<span class="pace-info-wrap"${noteTagAttrs({ label:'17-game pace', value:text, source:'week_range_pace', statKey:'pace', context:historicalTagContext(`${activeSeason} week range`, target&&target.team, activeSeason), player:target, team:target&&target.team })}><button class="pace-info-btn" onclick="toggleWeekFilterPace(this, ${pcardArg(text)})" aria-label="Show 17-game pace">i</button></span>`;
+  return `<span class="pace-info-wrap"${noteTagAttrs({ label:'17-game pace', value:text, source, statKey:'pace', context:historicalTagContext(ctxBase, target&&target.team, activeSeason), player:target, team:target&&target.team })}><button class="pace-info-btn" onclick="toggleWeekFilterPace(this, ${pcardArg(text)})" aria-label="Show 17-game pace">i</button></span>`;
 }
 
 function isWeekFilterActive(state){

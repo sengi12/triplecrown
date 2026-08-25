@@ -95,8 +95,12 @@ async function laFetchMatchups(week, silent){
   const s=leagueSnapshot;
   if(!s || s.provider==='espn' || _laMu.fetching[week]) return;
   _laMu.fetching[week]=true;
+  // Snapshot identity guard: if the user switches leagues while this request is in flight,
+  // league A's late rows must not repopulate the cache under league B.
+  const ref=(typeof laSnapshotRef==='function')?laSnapshotRef(s):null;
   try{
     const rows = await sleeperFetch(LA_MATCHUPS_URL(s.leagueId, week));
+    if(ref && typeof laSnapshotRef==='function' && laSnapshotRef()!==ref) return;
     if(Array.isArray(rows) && rows.length){
       const sig = rows.map(r=>`${r.roster_id}:${r.points}`).sort().join('|');
       const prev = _laMu.byWeek[week];
@@ -230,12 +234,18 @@ function _laBindMuHeroSwipe(host){
   }
   const total=Number(hero.dataset.muTotal||0); if(total<2) return;
   let x0=null,y0=null,claimed=false;
-  hero.addEventListener('touchstart',e=>{ const t=e.touches[0]; x0=t.clientX; y0=t.clientY; claimed=false;
+  hero.addEventListener('touchstart',e=>{ const t=e.touches[0];
+    // Only the SCORE HEADER pages between matchups (team names, score, win bars, pager dots).
+    // A swipe starting on the starters/bench rows falls through to the pane-swipe engine, so
+    // the roster area changes VIEWS left/right like everywhere else in the Season tab.
+    const hdr = e.target && e.target.closest && e.target.closest('.la-mu-fhead,.la-mu-fscore,.la-mu-fproj,.la-mu-pager');
+    if(!hdr){ x0=null; return; }
+    x0=t.clientX; y0=t.clientY; claimed=false;
     hero.style.transition='none'; },{passive:true});
   hero.addEventListener('touchmove',e=>{
     if(x0==null) return; const t=e.touches[0];
     const dx=t.clientX-x0, dy=t.clientY-y0;
-    if(!claimed && Math.abs(dx)>18 && Math.abs(dx)>Math.abs(dy)*1.4) claimed=true;
+    if(!claimed && Math.abs(dx)>10 && Math.abs(dx)>Math.abs(dy)*1.4) claimed=true;
     if(claimed){
       e.stopPropagation();
       // Follow the finger with a little resistance, same feel as the tab swipe.
@@ -369,7 +379,7 @@ function laMatchupView(s){
         ${bench}
         <button class="btn btn-ghost btn-sm la-mu-bnbtn" onclick="laToggleMuBench()">${laState.muBench?'Hide bench':'Show bench'}</button>
       </div>
-      ${pairList.length>1?`<div class="la-mu-swipehint">swipe the card for the league's other matchups</div>`:''}
+      ${pairList.length>1?`<div class="la-mu-swipehint">swipe the scoreboard for the league's other matchups · swipe the rosters to change views</div>`:''}
     </div>`;
   }
   const board = pairList.map((pr,k)=>{
@@ -401,6 +411,12 @@ function laDvpTable(){
   const teams={};
   for(const code in (dv.teams||{})){
     teams[code]={};
+    // Divisor = games this defense actually played in the sidecar window (schedule-derived),
+    // NOT weeks-with-rows: a positional shutout used to shrink the divisor and make the
+    // defense's BEST performance read as an easier matchup.
+    const schedGames=(()=>{ const sch=TC_INSEASON.schedule && TC_INSEASON.schedule[code];
+      if(!sch || !Array.isArray(TC_INSEASON.weeks)) return null;
+      return TC_INSEASON.weeks.filter(w=>sch[String(w)]).length || null; })();
     POS.forEach(pos=>{
       const wkMap=(dv.teams[code]||{})[pos]||{};
       const weeks=Object.keys(wkMap);
@@ -410,8 +426,8 @@ function laDvpTable(){
         rushing_attempts:sum('carry'), rushing_yards:sum('rush_yd'), rushing_tds:sum('rush_td'),
         passing_attempts:sum('pass_att'), passing_yards:sum('pass_yd'),
         passing_tds:sum('pass_td'), interceptions_thrown:sum('pass_int')};
-      const g=weeks.length||1;
-      teams[code][pos]={fppg: calcFpts(row)/g, games:weeks.length};
+      const g=schedGames || weeks.length || 1;
+      teams[code][pos]={fppg: calcFpts(row)/g, games:g};
     });
   }
   const codes=Object.keys(teams);
@@ -429,7 +445,7 @@ function laDvpTable(){
 function laSetDvpSort(col){
   const s=laState.dvpSort||{col:'QB',dir:1};
   laState.dvpSort = (s.col===col) ? {col, dir:-s.dir} : {col, dir:1};
-  renderLeagueAnalyzer();
+  laRerenderKeepScroll();
 }
 function laSetDvpPos(p){ laState.dvpPos=p; laRerenderKeepScroll(); }
 
@@ -477,7 +493,7 @@ function laDvpView(s){
     <div class="la-ins-bar"><span class="la-ins-lbl">FANTASY POINTS ALLOWED / GAME</span>
       <div class="pos-filter">${chips}</div>
       <span class="la-ins-sub">your league's scoring · thru wk ${wk} · #1 = easiest matchup (most points allowed)</span></div>
-    <div class="card" style="padding:0;overflow:hidden"><div class="la-dvp-wrap">
+    <div class="card card-flush"><div class="la-dvp-wrap">
       <table class="la-dvp-table ${pos1?'la-dvp-one':''}"><thead>${header}</thead><tbody>${rows}</tbody></table></div></div>
     <div class="la-note">green = easy matchup (allows the most points) · red = tough · tap a column to sort</div>`;
 }
@@ -531,7 +547,9 @@ function laWeeklyFormMap(){
 // backfield two weeks ago projects like the starter he now is (the old formula gave
 // Kimani Vidal 0.15 the week he scored 17), and a faded role fades the number.
 function laAdjWeekProj(p, wk, pm, dvp){
-  const base=(pm.get(ecrNormName(p.name)+'|'+p.pos)||0)/17;
+  const paceE=(typeof paceForPlayer==='function')?paceForPlayer(p.name,p.pos,p.id):null;
+  const projG=(paceE && paceE.projGames>0)?paceE.projGames:17;
+  const base=(pm.get(ecrNormName(p.name)+'|'+p.pos)||0)/projG;
   const avail=laWeekAvailability(p, wk);
   const zero={adj:0, base, baseRate:base, seas:null, rec3:null, defMult:1, opp:null, bye:avail.bye, out:avail.out, status:avail.status};
   // Bye week / ruled out: zero, so the optimizer never "starts" a player who cannot score.
@@ -638,6 +656,9 @@ function laLineupView(s){
 // ── Trends: pace vs baseline, regression candidates, weekly trending ─────────
 var _laSidecarState='cold';
 function _laSidecarKick(){
+  // 'ready' is only believable while the payload is actually in memory — the week-advance
+  // recheck (and seed reloads) null TC_INSEASON without touching this flag.
+  if(_laSidecarState==='ready' && !(typeof TC_INSEASON!=='undefined' && TC_INSEASON)) _laSidecarState='cold';
   if(_laSidecarState==='ready'||_laSidecarState==='loading') return _laSidecarState;
   if(typeof ensureInseasonSidecar!=='function'){ _laSidecarState='error'; return _laSidecarState; }
   _laSidecarState='loading';
@@ -667,10 +688,16 @@ function _laTrendRow(p, detail, verdict, cls, rank){
   const pid=p.id||p.pid||laPidFromName(p.name,p.pos);
   const pp={id:pid, name:_laDisplayName(p,pid), pos:p.pos, team:p.team};
   const inj=(typeof tcInjuryTag==='function')?tcInjuryTag(pid):'';
+  // The on-your-roster ★ rides the NAME line, never the verdict column — boards append it
+  // to the verdict string for convenience, so lift it out here to keep the numbers aligned.
+  verdict=String(verdict||'');
+  let star='';
+  const sm=verdict.match(/<span class="la-trnd-mine"[^>]*>[^<]*<\/span>/);
+  if(sm){ star=sm[0]; verdict=verdict.replace(sm[0],''); }
   return `<div class="la-trnd-row ${cls||''}">
     ${rank?`<span class="la-trnd-rank">${rank}</span>`:''}
     <span class="clickable-player la-trnd-hs" onclick="${pcardOnclick(pid||pp.name,p.pos,p.team||'')}">${laPlayerImg(pp,'la-trnd-hsimg')}</span>
-    <div class="la-trnd-main"><span class="la-trnd-nmline">${laNameHTML(pp,'la-trnd-name')}${inj}</span><div class="la-trnd-sub"><span class="la-pos-${_laPosOf(p)}">${_laPosOf(p)}</span> · ${escHtml(p.team||'FA')}${detail?` · ${detail}`:''}</div></div>
+    <div class="la-trnd-main"><span class="la-trnd-nmline">${laNameHTML(pp,'la-trnd-name')}${star}${inj}</span><div class="la-trnd-sub"><span class="la-pos-${_laPosOf(p)}">${_laPosOf(p)}</span> · ${escHtml(p.team||'FA')}${detail?` · ${detail}`:''}</div></div>
     <div class="la-trnd-verdict">${verdict}</div></div>`;
 }
 // Team-row variant: logo + full team name, same right-hand verdict.
@@ -726,7 +753,8 @@ function laTrendsView(s){
     .map(([k,l])=>`<button class="pane-tab ${tab===k?'active':''}" onclick="laSetTrndTab('${k}')">${l}</button>`).join('');
   const scopes=(tab==='teams')?'':`<div class="pos-filter la-trnd-scope">${[['rostered','Rostered'],['myteam','My Team'],['waiver','Waivers'],['league','League']]
     .map(([k,l])=>`<button class="pos-filter-btn ${scope===k?'active':''}" onclick="laSetTrndScope('${k}')">${l}</button>`).join('')}</div>`;
-  const bar=`<div class="la-ins-bar"><div class="la-pane-tabs la-trnd-tabs">${tabs}</div>${scopes}</div>`;
+  const bar=`<div class="la-trnd-bar"><div class="la-pane-tabs la-trnd-tabs">${tabs}</div>
+    ${scopes?`<div class="la-trnd-scoperow"><span class="tc-label">Scope</span>${scopes}</div>`:''}</div>`;
   const two=(title,sub,upLbl,upRows,dnLbl,dnRows)=>`
     <div class="la-ins-bar"><span class="la-ins-lbl">${title}</span><span class="la-ins-sub">${sub}</span></div>
     <div class="card la-trnd-card"><div class="la-trnd-cols">
@@ -754,7 +782,6 @@ function laTrendsView(s){
         rows.push(e);
       });
       rows.sort((a,b)=>b.delta-a.delta);
-      if(scope==='league'||scope==='waiver') rows=rows.slice(0,80);
       const half=(list)=>list.map((e,i)=>_laTrendRow(e, `${e.gp} gm${e.gp===1?'':'s'} · pace ${e.pace17.toFixed(0)} vs proj ${e.base.toFixed(0)}`,
         _laVerdict(`${e.pct>=0?'+':'−'}${Math.round(Math.abs(e.pct)*100)}%`, 'vs projection', e.pct>=0?'la-trnd-up':'la-trnd-dn')+mineMark(e.name,e.pos), e.cls, i+1)).join('');
       body=two('PACE VS PROJECTION',`17-game pace vs the kickoff baseline · thru wk ${wk} · 3+ games`,
@@ -896,7 +923,7 @@ function laTrendsView(s){
         if(Math.abs(score)>=3) trend.push({p, dShare, dTouch, score});
       });
       trend.sort((a,b)=>b.score-a.score);
-      const tRow=(x,i)=>_laTrendRow(x.p, x.p.pos==='RB'?`${(x.p.carry3/Math.max(1,x.p.gp3)).toFixed(1)} touches/gm last 3`:`${x.p.share3.toFixed(1)}% tgt share last 3`,
+      const tRow=(x,i)=>_laTrendRow(x.p, x.p.pos==='RB'?`${((x.p.carry3+x.p.tgt3)/Math.max(1,x.p.gp3)).toFixed(1)} touches/gm last 3`:`${x.p.share3.toFixed(1)}% tgt share last 3`,
         _laVerdict(`${x.score>=0?'+':'−'}${Math.abs(x.p.pos==='RB'?x.dTouch:x.dShare).toFixed(1)}${x.p.pos==='RB'?'':'%'}`, x.p.pos==='RB'?'touches vs prior 3':'share vs prior 3', x.score>=0?'la-trnd-up':'la-trnd-dn')+mineMark(_laDisplayName(x.p,x.p.id),x.p.pos),
         x.score>=0?'pace-ahead':'pace-behind', i+1);
       body=two('TRENDING · LAST 3 WEEKS VS THE 3 BEFORE','role changes show up here first',

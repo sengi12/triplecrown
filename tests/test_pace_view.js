@@ -11,7 +11,7 @@ global.Chart=function(){return{destroy(){}}};global.confirm=()=>true;global.btoa
 const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
-  TC_SEASON, _paceSumStints, paceBadgeCls, buildPaceIndex, paceForPlayer, paceChipHTML,
+  TC_SEASON, _paceSumStints, paceBadgeCls, buildPaceIndex, paceForPlayer, paceChipHTML, liveSeasonPaceText,
   currentProjViewMode, rankingsRenderCacheKey,
   setBaseline:(b)=>{PACE_BASELINE=b;}, setHistory:(h)=>{HISTORY=h;},
   setLiveWeek:(w)=>{_liveSeasonWeek=w;},
@@ -52,6 +52,17 @@ chk(e && e.base>0 && e.pct===(e.pace17-e.base)/e.base,'delta measured against th
 const chip=app.paceChipHTML('Test Receiver','WR','1');
 chk(/pace-chip/.test(chip),'chip renders for a baselined player');
 chk(app.paceChipHTML('Nobody','TE',null)==='','no chip without baseline data');
+
+console.log('=== live-season ⓘ pace popup (no week filter needed) ===');
+app.TC_SEASON.year=2026; app.TC_SEASON.phase='regular'; app.TC_SEASON.week=5;
+app.setActiveSeason('2026');
+const liveTxt=app.liveSeasonPaceText('1','rec');
+chk(/17-game pace thru week 4 \(4 games\)/.test(liveTxt),'pace text from season-to-date aggregates');
+chk(/170 tgt/.test(liveTxt),'volume scaled to 17 games (40 tgt over 4 → 170)');
+chk(app.liveSeasonPaceText('nobody','rec')==='','unknown player → no button');
+app.setActiveSeason('2024');
+chk(app.liveSeasonPaceText('1','rec')==='','past seasons keep the week-range gate');
+app.setActiveSeason('proj');
 
 console.log('=== mode + cache key ===');
 app.setActiveSeason('proj');

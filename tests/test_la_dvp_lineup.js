@@ -26,17 +26,23 @@ app.setSleeperFetch(async()=>{ throw new Error('no net'); });
 const COLS=["tgt","rec","rec_yd","rec_td","carry","rush_yd","rush_td","pass_att","pass_yd","pass_td","pass_int"];
 const wr=(t,r,y,td)=>{ const a=new Array(COLS.length).fill(0); a[0]=t; a[1]=r; a[2]=y; a[3]=td; return a; };
 app.setInseason({v:1, season:2026, weeks:[1,2], asof:'x',
-  schedule:{MIA:{'3':'AAA'}, BUF:{'3':'BBB'}},
+  schedule:{MIA:{'3':'AAA'}, BUF:{'3':'BBB'}, CCC:{'1':'MIA','2':'BUF'}},
   def_vs_pos:{cols:COLS, teams:{
     AAA:{WR:{'1':wr(20,12,110,0),'2':wr(18,10,95,1)},  QB:{'1':new Array(COLS.length).fill(0)}, RB:{}, TE:{}},
     BBB:{WR:{'1':wr(30,24,230,2),'2':wr(28,22,210,2)}, QB:{'1':new Array(COLS.length).fill(0)}, RB:{}, TE:{}},
+    CCC:{WR:{'1':wr(30,24,230,2)}, QB:{}, RB:{}, TE:{}},   // one big week, then a shutout
   }}});
 
 console.log('=== DvP table ===');
 const t=app.laDvpTable();
 chk(!!t,'table builds from the sidecar');
-chk(t.ranks.BBB.WR===1 && t.ranks.AAA.WR===2,'MOST points allowed = rank 1 (easiest matchup first — the fantasy read)');
+chk(t.ranks.BBB.WR===1 && t.ranks.CCC.WR===2 && t.ranks.AAA.WR===3,'MOST points allowed = rank 1 (easiest matchup first — the fantasy read)');
 chk(t.teams.BBB.WR.fppg > t.teams.AAA.WR.fppg,'generous defense allows more fppg');
+// CCC allowed BBB's week-1 line, then shut WRs out in week 2. The divisor must be games
+// PLAYED (2, schedule-derived), not weeks-with-rows (1) — under the old math the shutout
+// made CCC read MORE generous than BBB (fppg = the one big week undivided).
+chk(t.teams.CCC.WR.games===2,'shutout week still counts as a game played');
+chk(t.teams.CCC.WR.fppg < t.teams.BBB.WR.fppg,'positional shutout lowers fppg (was: inflated past BBB)');
 const before=t.teams.BBB.WR.fppg;
 const oldRec=app.scoring.receptions; app.scoring.receptions=oldRec+1;   // league-scoring aware
 const t2=app.laDvpTable();

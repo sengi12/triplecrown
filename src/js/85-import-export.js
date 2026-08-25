@@ -758,6 +758,8 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
     if(typeof refreshLiveSeasonStats==='function') refreshLiveSeasonStats().catch(()=>{});
     if(typeof maybeFreezePaceBaseline==='function'){ try{ maybeFreezePaceBaseline(); }catch(e){} }
     if(typeof hasSeasonStarted==='function' && hasSeasonStarted() && typeof ensureInseasonSidecar==='function') ensureInseasonSidecar().catch(()=>{});
+    // A baked copy opened over http can still learn the real week — self-gated, frozen-safe.
+    if(typeof tcSeasonRecheck==='function'){ try{ tcSeasonRecheck(); }catch(e){} }
     return;
   }
   // Now that the season is settled, re-stamp the loading state with the real year.

@@ -271,7 +271,7 @@ function renderContent(){
       </div>
     </div>
     ${seasonBanner}
-    <div class="phase-tabs">${tabs}</div>${body}
+    <div class="phase-tabs la-icon-tabs">${tabs}</div>${body}
     <div id="schemeOverlayHost"></div>`;
   if(currentPhase==='Receiving') initPie(t,'pass');
   else if(currentPhase==='Rushing') initPie(t,'rush');
@@ -280,16 +280,18 @@ function renderContent(){
 }
 function tabBar(){
   const hasSharp = (typeof sharpHasData==='function' ? sharpHasData() : false) || (SOS && Object.keys(SOS).length>0);
-  const tabs=[['Passing','Passing'],['Receiving','Receiving'],['Rushing','Rushing']];
-  if(hasSharp) tabs.push(['Advanced','Adv Metrics']);
+  const tabs=[['Passing','Passing','pass'],['Receiving','Receiving','catch'],['Rushing','Rushing','run']];
+  if(hasSharp) tabs.push(['Advanced','Adv Metrics','chart']);
   // "Roster Changes" appears when the currently-selected team has Spotrac data.
   // "Roster" shows Spotrac offseason moves on the projection season, and the actual nflverse
   // roster for that year on any completed season — so it's available whenever either exists.
-  if(currentTeam && ((ADDITIONS && ADDITIONS[currentTeam]) || nflverseRosterFor(currentTeam))) tabs.push(['Additions','Roster']);
-  tabs.push(['Rankings','Rankings']);
+  if(currentTeam && ((ADDITIONS && ADDITIONS[currentTeam]) || nflverseRosterFor(currentTeam))) tabs.push(['Additions','Roster','clipboard']);
+  tabs.push(['Rankings','Rankings','trophy']);
   // Treat the league-wide advanced view as the same visual tab as the per-team one.
   const phaseForTab = (currentPhase==='AdvancedLeague') ? 'Advanced' : currentPhase;
-  return tabs.map(([p,l])=>`<button class="phase-tab ${phaseForTab===p?'active':''}" onclick="setPhase('${p}')">${l}</button>`).join('');
+  // Icon + one-word label, same grammar as the League Analyzer bar; on phones the inactive
+  // tabs collapse to their icons (the container carries la-icon-tabs for that rule).
+  return tabs.map(([p,l,ic])=>`<button class="phase-tab icon-tab ${phaseForTab===p?'active':''}" onclick="setPhase('${p}')" title="${l}">${TC_ICON(ic)}<span class="tab-lbl">${l}</span></button>`).join('');
 }
 function emptyHTML(){return`<div class="logo-icon-lg"><img src="images/app-icon.png" class="logo-icon-lg" alt="Centered Image"></div>
   <div class="empty-title">Select a team to begin</div>

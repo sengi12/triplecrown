@@ -410,8 +410,14 @@ function laPlayerImg(p, cls){
 
 // League / team icons — real Sleeper avatars with emoji fallback (older persisted snapshots
 // predate avatar capture, and orphan rosters have none; both degrade gracefully).
-function laLeagueIcon(s,cls){ return s&&s.avatar?`<img src="${s.avatar}" class="${cls}" onerror="if(this.parentNode)this.outerHTML=TC_ICON('stadium')">`:TC_ICON('stadium'); }
-function laTeamIcon(t,cls){ return t&&t.avatar?`<img src="${t.avatar}" class="${cls}" onerror="if(this.parentNode)this.outerHTML=TC_ICON('football')">`:'<span class="'+cls+' la-av-blank">'+TC_ICON('football')+'</span>'; }
+// Avatar URLs are MEMBER-CONTROLLED strings (Sleeper metadata.avatar / ESPN team logo) —
+// escape them and accept only http(s) so a crafted value can't inject markup or a javascript: URL.
+function _laSafeAvatar(u){
+  const v=String(u||'').trim();
+  return /^https?:\/\//i.test(v) ? escAttr(v) : null;
+}
+function laLeagueIcon(s,cls){ const u=s&&_laSafeAvatar(s.avatar); return u?`<img src="${u}" class="${cls}" onerror="if(this.parentNode)this.outerHTML=TC_ICON('stadium')">`:TC_ICON('stadium'); }
+function laTeamIcon(t,cls){ const u=t&&_laSafeAvatar(t.avatar); return u?`<img src="${u}" class="${cls}" onerror="if(this.parentNode)this.outerHTML=TC_ICON('football')">`:'<span class="'+cls+' la-av-blank">'+TC_ICON('football')+'</span>'; }
 
 // ── Entry + navigation ───────────────────────────────────────────────────────
 function openLeagueAnalyzer(){

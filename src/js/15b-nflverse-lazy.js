@@ -362,6 +362,14 @@ function resetNflverseLazy(){
   _coachingSeasonPromise = {};
   TC_INSEASON = null;
   _inseasonPromise = null;
+  _inseasonRevalidated = false;
+  // The League Analyzer's sidecar gate lives in 99b; without this a mid-session seed reload
+  // left it 'ready' with TC_INSEASON null — DvP/Trends dead with no loading path.
+  if(typeof _laSidecarState!=='undefined') _laSidecarState='cold';
+  // Re-adopt promptly when the season is running (baked path resolves from the embedded const).
+  if(typeof hasSeasonStarted==='function' && hasSeasonStarted() && typeof ensureInseasonSidecar==='function'){
+    try{ setTimeout(()=>{ ensureInseasonSidecar().catch(()=>{}); }, 0); }catch(e){}
+  }
 }
 
 // ── In-season weekly sidecar (current season only) ───────────────────────────
@@ -392,6 +400,7 @@ function _adoptInseason(payload){
   }
   // A live season arriving after the card / Advanced tab rendered: repaint so it shows up.
   try{ if(typeof currentPhase!=='undefined' && currentPhase==='Advanced' && typeof renderContent==='function') renderContent(); }catch(e){}
+  if(typeof currentPhase!=='undefined' && currentPhase==='League' && typeof _laInsRerender==='function'){ try{ _laInsRerender(); }catch(e){} }
   return true;
 }
 // Label for a season button / caption: the season in progress reads "2026 · wk 9".

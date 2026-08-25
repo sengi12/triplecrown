@@ -71,7 +71,7 @@ function tsPreviewTeamRankings(){
     </div>
     <div class="card ts-rankings-preview-card" style="padding:0;overflow:hidden">
       <div style="padding:11px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--border);flex-wrap:wrap">
-        <span style="font-size:11px;color:var(--muted);font-weight:700">PREVIEW</span>
+        <span class="tc-label">PREVIEW</span>
         <span style="font-size:11px;color:var(--muted)">Top ${Math.min(view.length,28)} players · full controls after tab settle</span>
       </div>
       <div class="rank-table-wrap ts-rankings-preview-wrap" style="max-height:calc(100vh - 380px)">
@@ -403,6 +403,9 @@ function tsScrollerClaims(el, dir){
   }, {passive:false});
 
   const finish = ()=>{
+    // The preview cache's lifetime is ONE gesture — committed swipes included (a cached
+    // pre-edit page must never underlay the next swipe).
+    previewCache={}; previewPhase=null;
     if(x0==null || axis!=='x'){ x0=null; axis=null; clearShift(false); return; }
     const moved=dx;
     x0=null; axis=null;

@@ -77,6 +77,7 @@ function handleSlider(el){
 function toggleQbGamesOnly(team){
   const state=userProj[team]; if(!state) return;
   state._qbGamesOnly=!state._qbGamesOnly;
+  if(typeof saveSession==='function') saveSession();   // survive a refresh without another edit
   if(typeof toast==='function') toast(state._qbGamesOnly
     ? 'Games-only mode: Games Played now shifts games without rescaling season totals'
     : 'Games sliders back to normal: totals scale with games again','ok');

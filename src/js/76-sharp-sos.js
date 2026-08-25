@@ -405,7 +405,10 @@ function renderTeamScheduleStrip(team){
     // Not fetched yet — kick the shared schedule load once and repaint when it lands.
     if(!_sosStripSchedTried && typeof ensureWeeklyOppSchedule==='function'){
       _sosStripSchedTried = true;
-      ensureWeeklyOppSchedule(season).then(ok=>{ if(ok && typeof renderContent==='function' && currentPhase==='Advanced') renderContent(); }).catch(()=>{});
+      ensureWeeklyOppSchedule(season).then(ok=>{
+        if(ok && typeof renderContent==='function' && currentPhase==='Advanced') renderContent();
+        if(!ok) _sosStripSchedTried = false;   // transient failure — allow a later retry
+      }).catch(()=>{ _sosStripSchedTried = false; });
     }
     return '';
   }
@@ -442,7 +445,7 @@ function renderTeamScheduleStrip(team){
         <span class="sos-bar-wk">${c.w}</span></div>`;
   const avg=(played.reduce((s,c)=>s+c.wt,0)/played.length);
   return `<div class="sos-sched ${_sosStripOpen?'open':''}">
-    <div class="sos-sched-rail">${cells.map(railCell).join('')}</div>
+    ${_sosStripOpen ? '' : `<div class="sos-sched-rail">${cells.map(railCell).join('')}</div>`}
     ${_sosStripOpen ? `<div class="sos-sched-chart">
       <div class="sos-bar-grid">${cells.map(barCell).join('')}</div>
       <div class="sos-sched-legend">

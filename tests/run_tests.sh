@@ -167,7 +167,7 @@ run_js_test test_audit_fixes2   "Live-audit regressions II: week-range re-applie
 run_js_test test_progress_baseline "Progress bar re-baselines on a Projections Manager load AND on every cloud Save (vs saved), keeps undo history, survives session restore, drops on reset/import"
 run_js_test test_roster_fill      "Roster fills stay off the rankings/export until dialed up (564 not 841); progress bar repaints on the edit itself"
 run_js_test test_time_machine     "Time machine (--as-of): frozen seed state pins the clock, skips the live probe, truncates live pulls to completed weeks"
-run_js_test test_consistency    "Consistency grade: DNP weeks excluded and labelled, <10-snap games skipped, scored in full PPR in every league"
+run_js_test test_consistency    "Consistency grade: DNP weeks excluded and labelled, <10-snap games skipped, graded under the scoring shown on the card"
 run_js_test test_route_tree     "Route tree card: alignment/route distribution rendering"
 run_js_test test_qb_chart       "QB passing chart card rendering"
 run_js_test test_def_weekly     "Defensive weekly card: per-defender logs and totals"
