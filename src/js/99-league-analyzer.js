@@ -1552,9 +1552,7 @@ function laCompareView(s){
           ${cell('total',r.total,'Total')}</tr>`;
       }).join('')}
       </tbody></table></div>
-    <div class="la-note">${lens==='value'
-      ?'Dynasty strength = consolidation-adjusted (stars count full, depth at 75/55/40/30/25%), boosted by dynasty-ECR tier (T1 \u00d715%). TOTAL is the same power score as the My Team page: starters + 35% bench'+(withPicks?' + 50% picks':'')+'. Click any column to sort.'
-      :'Projected points = your projection engine, best legal starting lineup per team under this league\u2019s roster slots. TOTAL matches the My Team redraft power score. Click any column to sort.'}</div>`;
+    <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn(lens==='value'?'lacmpvalue':'lacmpproj','How TOTAL is computed'):''}</div>`;
 }
 function laCmpSort(col){
   const sc=laState.cmpSort||(laState.cmpSort={col:'total',dir:-1});
@@ -1628,7 +1626,7 @@ function laBestAvailView(s){
         <span class="la-ba-val">${noteWrapHtml(String(r.v), { label:'Value', value:String(r.v), source:'league_analyzer_best_avail', statKey:'value', context:`League Analyzer best available · ${posF}`, player:noteTargetFromArgs(r.name,r.pos,r.team||''), team:r.team||'' }, 'note-tag-hit')}</span>
         <span class="la-ba-fpts">${noteWrapHtml(escHtml(r.fpts?r.fpts.toFixed(0):'–'), { label:'Projected Points', value:r.fpts?r.fpts.toFixed(0):'–', source:'league_analyzer_best_avail', statKey:'proj', context:`League Analyzer best available · ${posF}`, player:noteTargetFromArgs(r.name,r.pos,r.team||''), team:r.team||'' }, 'note-tag-hit')}</span></div>`).join('')}
     </div>
-    <div class="la-note">Free agents = FP value chart minus every rostered player in the snapshot. PROJ is your projection engine under current scoring — a high PROJ on a cheap value is the classic dynasty waiver add.</div>`;
+    <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn('lafa','About these free agents'):''}</div>`;
 }
 
 // ═══ Phase 3: Trade Calculator + Finder ═══════════════════════════════════════
@@ -2196,7 +2194,7 @@ function laTradeView(s){
         <button class="btn btn-sm btn-ghost la-fnd-refresh" onclick="laState.fndSeed++;renderLeagueAnalyzer()" title="Deal me different variations">${TC_ICON("refresh")} refresh</button></div>
       ${fndHtml}
     </div>
-    <div class="la-note">Verdicts use consolidation-adjusted values: extra assets on a side count at 75/55/40/30/25%, and the side holding the single best player gets a premium worth 25% of the best-asset gap \u2014 so a stack of depth can\u2019t buy a stud, but star + real piece can. Fair = within \u00b1max(4, 5%).</div>`;
+    <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn('latrade','How verdicts are judged'):''}</div>`;
 }
 
 // Switch analyzer tabs. Also scrolls back to the tab bar: these views differ wildly in
@@ -2746,7 +2744,29 @@ function laMyTeamView(s){
     + '</div></div>';
   return switcher + controls + summary
     + '<div class="la-my-grid">' + powerTbl + posTbl + slotTbl + radar + lineup + '</div>'
-    + '<div class="la-note">' + (lens==='value'
-        ? 'Dynasty lens: tier-boosted FantasyPros values (T1 \u00d71.15), consolidation-adjusted \u2014 stars carry, depth decays. Power score = starters + 35% bench' + (laState.myPicks ? ' + 50% picks' : '') + ', league best = 100.'
-        : 'Redraft lens: this season\u2019s projected points from your own projection engine under this league\u2019s scoring. Picks excluded (they don\u2019t score).') + '</div>';
+    + '<div class="la-note la-note-min">' + ((typeof tcInfoBtn==='function')?tcInfoBtn(lens==='value'?'lamyvalue':'lamyproj','How the power score works'):'') + '</div>';
+}
+
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.lacmpvalue={title:'Dynasty strength (TOTAL)', body:`
+    Consolidation-adjusted FantasyPros values: stars count full, depth decays at 75/55/40/30/25%,
+    dynasty-ECR tier 1 gets a \u00d71.15 boost. TOTAL is the same power score as the My Team page:
+    starters + 35% bench (+ 50% picks when picks are synced). Click any column to sort.`};
+  TC_INFO_BOOK.lacmpproj={title:'Projected points (TOTAL)', body:`
+    Your projection engine, scoring each team's best legal starting lineup under this league's
+    roster slots. TOTAL matches the My Team redraft power score. Click any column to sort.`};
+  TC_INFO_BOOK.lafa={title:'Best available', body:`
+    Free agents = the FantasyPros value chart minus every rostered player in the snapshot.
+    <b>PROJ</b> is your projection engine under current scoring \u2014 a high PROJ on a cheap value
+    is the classic dynasty waiver add.`};
+  TC_INFO_BOOK.latrade={title:'Trade verdicts', body:`
+    Consolidation-adjusted values: extra assets on a side count at 75/55/40/30/25%, and the side
+    holding the single best player gets a premium worth 25% of the best-asset gap \u2014 a stack of
+    depth can't buy a stud, but star + real piece can. Fair = within \u00b1max(4, 5%).`};
+  TC_INFO_BOOK.lamyvalue={title:'Dynasty power score', body:`
+    Tier-boosted FantasyPros values (T1 \u00d71.15), consolidation-adjusted \u2014 stars carry, depth
+    decays. Power score = starters + 35% bench (+ 50% picks when synced), league best = 100.`};
+  TC_INFO_BOOK.lamyproj={title:'Redraft power score', body:`
+    This season's projected points from your own projection engine under this league's scoring.
+    Picks are excluded \u2014 they don't score.`};
 }

@@ -125,7 +125,7 @@ function renderSharpLeague(){
   const headerBar=`
     <div class="team-header sr-league-header">
       <div><div class="team-abbr">${TC_ICON("chart")} Advanced Stats — League-Wide</div>
-        <div class="team-qb-name">${srcLabel} · <b>${advTeamSeason()} season</b> · click any column to sort (best→worst)</div></div>
+        <div class="team-qb-name"><b>${advTeamSeason()} season</b> ${(typeof tcInfoBtn==='function')?tcInfoBtn('advleague','About these tables'):''}</div></div>
       <div class="team-nav">
         ${currentTeam?`<button class="btn btn-ghost" onclick="showCurrentTeamAdvanced()">← ${teamDisplayName(currentTeam)} card</button>`:''}
         <button class="btn btn-ghost" onclick="setPhase('Rankings')">Rankings</button></div>
@@ -230,11 +230,9 @@ function renderSharpLeague(){
   }).join('');
   host.innerHTML = headerBar + leagueWeekRange + renderCategoryTabs() + `
     <div class="sr-league-tabs">${tableTabs}</div>
-    <div class="sr-desc">${tbl.title} · <b>${advTeamSeason()} season</b> — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
     <div class="card sr-table-wrap" style="padding:0;overflow-x:auto">
       <table class="sr-league-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
-    </div>
-    <div class="sr-source">Computed from nflverse play-by-play (nflfastR).</div>`;
+    </div>`;
 }
 
 // Offense / Defense / SOS category selector row for the league-wide view.
@@ -345,14 +343,12 @@ function renderSOSView(){
     <td class="sr-td"><span class="sr-td-val">${e.oppTotal!=null?e.oppTotal.toFixed(1):'—'}</span></td>
     <td class="sr-td"><span class="sr-td-val">${e.win_total!=null?e.win_total:'—'}</span></td>
   </tr>`).join('');
-  return `<div class="sr-desc">${PROJ_SEASON} strength of schedule — our own ranking by the <b>sum of each team's opponents' Vegas win totals</b>. Rank 1 = easiest slate, ${n} = hardest.</div>
-    <div class="card sos-card">${chart}</div>
+  return `<div class="card sos-card">${chart}</div>
     <div class="card sr-table-wrap" style="padding:0;overflow-x:auto;margin-top:12px">
       <table class="sr-league-table sos-table"><thead><tr>
         <th class="sr-th-team">TEAM</th>${th('rank',PROJ_SEASON+' SOS RANK')}${th('opp','OPP WIN TOTAL')}${th('win_total','VEGAS WIN TOTAL')}
       </tr></thead><tbody>${body}</tbody></table>
-    </div>
-    <div class="sr-source">Rank = sum of opponents' ${PROJ_SEASON} Vegas win totals · schedule via nflverse — for informational use.</div>`;
+    </div>`;
 }
 function sortSOSBy(col){
   if(sharpSortCol===col){ sharpSortDir*=-1; } else { sharpSortCol=col; sharpSortDir=1; }
@@ -370,11 +366,18 @@ function sortSOSBy(col){
 // Schedule comes from the runtime nflverse games.csv map that already backs the slider
 // opponent rails; win totals come from SOS[code].win_total.
 // ─────────────────────────────────────────────────────────────────────────────
-let _sosStripOpen = false;
 var _sosStripSchedTried = false;
-function toggleSosStrip(){
-  _sosStripOpen = !_sosStripOpen;
-  if(typeof renderContent==='function') renderContent();
+// Jump to a team but KEEP the current view: clicking the Ravens on the Bengals' passing
+// page lands on the Ravens' passing page. League-wide surfaces fall back to projections.
+function tcGotoTeamSameView(code){
+  const t=String(code||'').toUpperCase();
+  if(!t || typeof selectTeam!=='function') return;
+  const teamViews=['Passing','Receiving','Rushing','Advanced','Additions'];
+  if(typeof currentPhase!=='undefined' && teamViews.includes(currentPhase)){
+    try{ selectTeam(t); }catch(e){}
+    return;
+  }
+  tcGotoTeamProjections(t);
 }
 // Jump straight to a team's projections page from any logo in the app.
 function tcGotoTeamProjections(code){
@@ -384,7 +387,7 @@ function tcGotoTeamProjections(code){
     if(typeof currentPhase!=='undefined' && currentPhase==='League' && typeof leaveLeagueAnalyzer==='function') leaveLeagueAnalyzer();
     // League-wide views aren't team-scoped, so land on the team's main projections tab.
     if(typeof currentPhase!=='undefined' && (currentPhase==='AdvancedLeague'||currentPhase==='League'||
-       (currentPhase==='Rankings' && typeof rankScope!=='undefined' && rankScope==='all'))) currentPhase='Receiving';
+       (currentPhase==='Rankings' && typeof rankScope!=='undefined' && rankScope==='all'))) currentPhase='Passing';
     selectTeam(t);
   }catch(e){}
 }
@@ -406,7 +409,9 @@ function renderTeamScheduleStrip(team){
     if(!_sosStripSchedTried && typeof ensureWeeklyOppSchedule==='function'){
       _sosStripSchedTried = true;
       ensureWeeklyOppSchedule(season).then(ok=>{
-        if(ok && typeof renderContent==='function' && currentPhase==='Advanced') renderContent();
+        // The rail now rides every team view, so repaint whichever one is showing.
+        if(ok && typeof renderContent==='function'
+           && ['Passing','Receiving','Rushing','Advanced'].includes(currentPhase)) renderContent();
         if(!ok) _sosStripSchedTried = false;   // transient failure — allow a later retry
       }).catch(()=>{ _sosStripSchedTried = false; });
     }
@@ -429,30 +434,29 @@ function renderTeamScheduleStrip(team){
   const logo=(c)=>`<img src="${NFL_LOGO(c.opp)}" class="sos-wk-logo" alt="${c.opp}" loading="lazy" decoding="async" onerror="this.style.display='none'">`;
   const railCell=(c)=> c.bye
     ? `<div class="sos-wk sos-wk-bye" title="Week ${c.w} — bye"><span class="sos-wk-num">${c.w}</span><span class="sos-wk-bye-lbl">BYE</span></div>`
-    : `<div class="sos-wk ${c.cls}" title="Week ${c.w} · ${c.home?'vs':'@'} ${c.opp}${c.wt!=null?` · Vegas win total ${c.wt}`:''} — tap for ${c.opp}'s projections"
-         onclick="event.stopPropagation();tcGotoTeamProjections('${c.opp}')">
+    : `<div class="sos-wk ${c.cls}" title="Week ${c.w} · ${c.home?'vs':'@'} ${c.opp}${c.wt!=null?` · Vegas win total ${c.wt}`:''} — tap to open ${c.opp} here"
+         onclick="event.stopPropagation();tcGotoTeamSameView('${c.opp}')">
         <span class="sos-wk-num">${c.w}</span>${logo(c)}
         <span class="sos-wk-ha">${c.home?'vs':'@'}</span>
         <span class="sos-wk-wt">${c.wt!=null?c.wt:'—'}</span></div>`;
-  const barCell=(c)=> c.bye
-    ? `<div class="sos-bar-col sos-bar-bye"><div class="sos-bar-slot"></div><span class="sos-bar-lbl">BYE</span><span class="sos-bar-wk">${c.w}</span></div>`
-    : `<div class="sos-bar-col" title="Week ${c.w} · ${c.home?'vs':'@'} ${c.opp}${c.wt!=null?` · ${c.wt} projected wins`:''} — tap for ${c.opp}'s projections"
-         onclick="event.stopPropagation();tcGotoTeamProjections('${c.opp}')">
-        <div class="sos-bar-slot">
-          ${c.wt!=null?`<div class="sos-bar ${c.cls}" style="height:${pct(c.wt).toFixed(1)}%"><span class="sos-bar-val">${c.wt}</span></div>`:''}
-          <div class="sos-bar-top">${logo(c)}<span class="sos-bar-ha">${c.home?'H':'A'}</span></div>
-        </div>
-        <span class="sos-bar-wk">${c.w}</span></div>`;
   const avg=(played.reduce((s,c)=>s+c.wt,0)/played.length);
-  return `<div class="sos-sched ${_sosStripOpen?'open':''}">
-    ${_sosStripOpen ? '' : `<div class="sos-sched-rail">${cells.map(railCell).join('')}</div>`}
-    ${_sosStripOpen ? `<div class="sos-sched-chart">
-      <div class="sos-bar-grid">${cells.map(barCell).join('')}</div>
-      <div class="sos-sched-legend">
-        <span class="sos-key sos-easy"></span> under 7 wins
-        <span class="sos-key sos-mid"></span> 7–9.5
-        <span class="sos-key sos-hard"></span> 9.5+
-        <span class="sos-sched-avg">opponent average <b>${avg.toFixed(1)}</b> projected wins</span>
-      </div></div>` : ''}
+  const infoBtn=(typeof tcInfoBtn==='function')?tcInfoBtn('sos','About this schedule strip'):'';
+  return `<div class="sos-sched">
+    <div class="sos-sched-rail">${cells.map(railCell).join('')}${infoBtn?`<div class="sos-wk sos-wk-info">${infoBtn}</div>`:''}</div>
   </div>`;
+}
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.advleague={title:'League-wide advanced stats', body:()=>`
+    All 32 teams, <b>${advTeamSeason()} season</b>, computed from nflverse play-by-play (nflfastR).
+    Each cell shows the stat value with its league rank; cell color is the quartile —
+    <b style="color:#00d4aa">green</b> best through <b style="color:#ff6b6b">red</b> worst.
+    Click any column header to sort (best→worst, click again to flip).
+    The SOS view ranks schedules by the <b>sum of each team's opponents' Vegas win totals</b> —
+    rank 1 is the easiest slate, 32 the hardest.`};
+  TC_INFO_BOOK.sos={title:'Schedule & strength of schedule', body:()=>`
+    The <b>${PROJ_SEASON}</b> week-by-week slate. Each cell is one opponent, colored by their
+    Vegas win total: <b style="color:#00d4aa">green</b> under 7 wins (softer matchup),
+    neutral 7–9.5, <b style="color:#ff6b6b">red</b> 9.5+ (tougher). Tap any opponent to open
+    that team in the view you're already on. Schedule from nflverse; win totals from the
+    Vegas markets — context for your projections, never a projection itself.`};
 }

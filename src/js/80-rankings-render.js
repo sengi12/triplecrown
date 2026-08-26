@@ -192,7 +192,9 @@ function rankingsRenderCacheKey(teamScoped){
     (typeof buildPlayerShapeSig==='function') ? buildPlayerShapeSig() : '',   // league shape / draft / ADP
     String(activeSeason),
     String(typeof rankLiveDelta!=='undefined' && rankLiveDelta ? 1 : 0),
-    String(typeof rankFiltersOpen!=='undefined' && rankFiltersOpen ? 1 : 0),   // mobile Filters row
+    String(typeof rankFiltersOpen!=='undefined' && rankFiltersOpen ? 1 : 0),   // hamburger menu row
+    String(typeof draftBannerOpen!=='undefined' && draftBannerOpen ? 1 : 0),   // follow banner expanded?
+    String(typeof hideDrafted!=='undefined' && hideDrafted ? 1 : 0),
     // Injury tags come from the Sleeper player DB, which lands asynchronously — a board
     // rendered before it arrives must not stay cached without designations.
     String(typeof sleeperPlayers!=='undefined' && sleeperPlayers ? 1 : 0),
@@ -660,17 +662,25 @@ function renderRankings(){
       </div>
     </div>
     <div class="card card-flush">
-      ${following ? `<div style="padding:8px 14px;border-bottom:1px solid var(--border)">
+      ${following ? (()=>{
+        const bannerOpen = typeof draftBannerOpen!=='undefined' && draftBannerOpen;
+        const done = typeof _draftDone!=='undefined' && _draftDone;
+        const statusPill = done ? `<span class="draft-done">DRAFT COMPLETE</span>` : `<span class="draft-live">LIVE</span>`;
+        const u = (mySlot!=null) ? picksUntilMyTurn(mySlot) : null;
+        // Collapsed: just the glowing pill — plus the one thing that can't wait, being on the clock.
+        if(!bannerOpen) return `<div class="draft-mini">
+          <button class="draft-mini-pill" onclick="toggleDraftBanner()" title="Draft status — tap for details">${statusPill}${(u===0&&!done)?`<span class="draft-onclock">★ YOU'RE UP</span>`:''}<span class="draft-mini-caret">▾</span></button>
+        </div>`;
+        return `<div style="padding:8px 14px;border-bottom:1px solid var(--border)">
         <div class="draft-banner">
-          ${typeof _draftDone!=='undefined' && _draftDone
-            ? `<span class="draft-done">DRAFT COMPLETE</span>`
-            : `<span class="draft-live">LIVE</span>`}
+          <button class="draft-mini-pill" onclick="toggleDraftBanner()" title="Collapse">${statusPill}<span class="draft-mini-caret">▴</span></button>
           <span>Following draft <b>${draftId}</b> · ${Object.keys(draftedIds).length} picks made</span>
-          ${(mySlot!=null)?(()=>{const u=picksUntilMyTurn(mySlot);return u===0?`<span class="draft-onclock">★ YOU'RE ON THE CLOCK</span>`:u!=null?`<span class="draft-upturn">seat ${mySlot} · ${u} pick${u===1?'':'s'} until you're up</span>`:`<span class="draft-upturn">seat ${mySlot}</span>`;})():`<span class="draft-upturn">tap your seat in the bar below ↓</span>`}
+          ${(mySlot!=null)?(u===0?`<span class="draft-onclock">★ YOU'RE ON THE CLOCK</span>`:u!=null?`<span class="draft-upturn">seat ${mySlot} · ${u} pick${u===1?'':'s'} until you're up</span>`:`<span class="draft-upturn">seat ${mySlot}</span>`):`<span class="draft-upturn">tap your seat in the bar below ↓</span>`}
           <label style="display:flex;align-items:center;gap:5px;cursor:pointer;margin-left:8px">
             <input type="checkbox" ${hideDrafted?'checked':''} onchange="toggleHideDrafted()"> hide drafted</label>
           <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="stopDraftFollow()">Stop</button>
-        </div></div>` : ''}
+        </div></div>`;
+      })() : ''}
       ${(!following && leaguePickerState.open) ? renderLeaguePicker() : ''}
       <div class="rank-toolbar">
         <div class="rank-toolbar-row">
@@ -681,7 +691,7 @@ function renderRankings(){
             <button class="btn btn-ghost btn-sm rank-search-clear ${(rankingsSearchQuery||'').trim()?'':'rank-search-hidden'}" onclick="clearRankingsSearch()" title="Clear search">Clear</button>
           </div>
           ${liveDeltaToggle}
-          <button class="btn btn-ghost btn-sm rank-filters-toggle ${rankFiltersOpen?'active':''}" onclick="toggleRankFilters()" title="League, scoring and stat filters">${TC_ICON("menu")}<span class="tab-lbl">Filters</span></button>
+          <button class="btn btn-ghost btn-sm rank-filters-toggle ${rankFiltersOpen?'active':''}" onclick="toggleRankFilters()" title="League, scoring, stat views &amp; filters" aria-label="Menu">${TC_ICON("menu")}</button>
           <span id="rankPlayerCount" data-default-label="${escAttr(`${view.length} players`)}" class="rank-count">${view.length} players</span>
         </div>
         <div class="rank-toolbar-row rank-filters ${rankFiltersOpen?'open':''}">

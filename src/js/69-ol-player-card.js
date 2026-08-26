@@ -1386,7 +1386,7 @@ function renderPcardOlGrades(pid){
 
     ${flags}
 
-    <div class="olc-caveat">Grades combine the market's valuation, snap share and draft capital — the three signals that measurably track lineman quality — plus ESPN's tracking-derived win rate where it is published. Validated against ESPN's top-20: AUC 0.80 pass, 0.75 run. No free source records which lineman lost a rep, so grades are shown as bands rather than ranks.</div>
+    <div class="olc-caveat olc-caveat-min">Grades are bands, not ranks ${(typeof tcInfoBtn==='function')?tcInfoBtn('olgrades','How OL grades are built'):''}</div>
 
     <div class="olc-team-head">${teamDisplayName(teamCode)||teamCode||'Team'} Offensive Line Context (${season})</div>
     ${metrics}
@@ -1399,4 +1399,14 @@ function setPcardOlSeason(season){
   pcardOlSeason=season;
   const body=document.getElementById('pcardBody');
   if(body && pcardState) body.innerHTML=renderPcardOlGrades(pcardState.pid);
+}
+
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.olgrades={title:'How OL grades are built', body:`
+    Grades combine the market's valuation, snap share and draft capital \u2014 the three signals
+    that measurably track lineman quality \u2014 plus ESPN's tracking-derived win rate where it is
+    published. Validated against ESPN's top-20: AUC 0.80 pass, 0.75 run. No free source records
+    which lineman lost a rep, so grades are shown as <b>bands rather than ranks</b>.
+    Player grades come from the local OL pipeline; team context from the nflverse
+    offensive-line season table.`};
 }

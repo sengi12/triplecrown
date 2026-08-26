@@ -1,6 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Passing Phase
 // ─────────────────────────────────────────────────────────────────────────────
+// QB-room drawer state: per-team so switching teams re-collapses to the clean default.
+var _qbRoomOpenTeam=null;
+let _qbRoomOpen=false;
+function toggleQbRoom(team){
+  if(_qbRoomOpenTeam!==team){ _qbRoomOpenTeam=team; _qbRoomOpen=true; }
+  else _qbRoomOpen=!_qbRoomOpen;
+  if(typeof renderContent==='function') renderContent();
+}
 function renderPassing(team,state){
   const historicalLocked = activeSeason!=='proj';
   const noteTeam=String(team||currentTeam||'').toUpperCase();
@@ -43,10 +51,16 @@ function renderPassing(team,state){
   const weekSlider=weekRangeSliderHTML(team,state);
   // Workload card: per-QB Games (0–17) slider. Drives pace extrapolation. A QB at 0
   // games contributes nothing to team totals but keeps his per-game pace for later.
-  const workloadCard = `
-    <div class="card">
-      <div class="card-title">QB Workload ${isMulti?'<span class="split-badge">SPLIT SQUAD</span>':''}</div>
-      ${qbs.map((q,i)=>{
+  //
+  // SPLIT SQUAD only means something when MULTIPLE QBs have projected starts. Most rooms
+  // have one starter penciled in for all 17 — those collapse to a one-line block (tap to
+  // open the room and split starts). A real committee shows only the QBs with starts, and
+  // the rest of the room stays behind a toggle.
+  const starters=qbs.map((q,i)=>({q,i})).filter(x=>Math.round(x.q.games||0)>0);
+  const benchQbs=qbs.map((q,i)=>({q,i})).filter(x=>Math.round(x.q.games||0)<=0);
+  const isSplit=starters.length>1;
+  const roomOpen=(typeof _qbRoomOpen!=='undefined' && _qbRoomOpen && _qbRoomOpenTeam===team) || !starters.length;
+  const qbWlRow=(q,i)=>{
         const gms=Math.round(q.games||0);
         const active = i===idx;
         return `<div class="snap-row" style="${active?'border:1px solid var(--qb)':''}">
@@ -70,11 +84,35 @@ function renderPassing(team,state){
           if(!inj || inj.sev!=='o' || !((q.games||0)>0)) return '';
           return `<div class="qb-inj-note">${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(q.player_id):inj.code} listed ${inj.code}${inj.body?` (${escHtml(inj.body)})`:''} but projected for ${Math.round(q.games||0)} games — adjust Games Played, or use games-only mode below to shift games without rescaling stats.</div>`;
         })()}`;
-      }).join('')}
+      };
+  let workloadCard;
+  if(!isSplit && !roomOpen){
+    // One projected starter: a minimized line — his name, his starts, and the way in.
+    const st=starters[0]?starters[0].q:qbs[0];
+    workloadCard=`<div class="card qb-wl-min">
+      <div class="qb-wl-minrow tc-collapse-head" onclick="toggleQbRoom('${team}')" role="button" aria-expanded="false">
+        <span class="clickable-player" onclick="event.stopPropagation();${pcardOnclick(st.player_id||st.name,'QB',currentTeam||'')}">${imgTag(hsPack(st),'player-headshot')}</span>
+        <div class="qb-wl-mininfo">
+          <span class="qb-wl-name"><b>${escHtml(st.name)}</b>${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(st.player_id):''}</span>
+          <span class="qb-wl-games">${Math.round(st.games||0)} games projected</span>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();toggleQbRoom('${team}')" title="See the full QB room and split starts">QB room${qbs.length>1?` (${qbs.length})`:''} ▸</button>
+      </div>
+    </div>`;
+  } else {
+    const shown = roomOpen ? qbs.map((q,i)=>({q,i})) : starters;
+    const benchToggle = (!roomOpen && benchQbs.length)
+      ? `<button class="qb-room-toggle" onclick="toggleQbRoom('${team}')">▾ Full QB room (${benchQbs.length} more)</button>`
+      : (roomOpen ? `<button class="qb-room-toggle" onclick="toggleQbRoom('${team}')">▴ ${isSplit?'Starters only':'Collapse'}</button>` : '');
+    workloadCard=`<div class="card">
+      <div class="card-title tc-collapse-head" onclick="toggleQbRoom('${team}')" role="button" aria-expanded="true" title="Collapse">QB Workload ${isSplit?'<span class="split-badge">SPLIT SQUAD</span>':''}<span class="tc-collapse-caret" style="margin-left:auto">▾</span></div>
+      ${shown.map(x=>qbWlRow(x.q,x.i)).join('')}
+      ${benchToggle}
       <div class="qb-gmode"><label title="Advanced: changing Games Played keeps each QB's season totals fixed and re-derives the per-game rates — for committee or injury situations where the season number is already right.">
         <input type="checkbox" ${state._qbGamesOnly?'checked':''} onchange="toggleQbGamesOnly('${team}')"> games-only mode <span>(shift games without rescaling stats)</span></label></div>
       <div class="derived-note" id="qbWorkloadNote" style="${overBudget?'color:var(--warn)':''}">${qbWorkloadNoteHtml(teamGames, overBudget, team)}</div>
     </div>`;
+  }
   const games=Math.round(qb.games||0);
   const qbBoxAttrs=(label, value, statKey)=>noteTagAttrs({
     label,
@@ -95,8 +133,8 @@ function renderPassing(team,state){
       <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${escHtml(qb.name)}${typeof tcOwnerPill==='function'?tcOwnerPill(qb.player_id,qb.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(qb.player_id):''}</div>
         ${weekFilterPaceButton(state,qb.player_id,'qb')}${qbFptsTag(qb)}
         <div class="player-sub">${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?`ECR ${e.rank_ecr}`:'';})()}${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?' · ':'';})()}<span id="qb-games-sub">${games}</span> games projected</div></div></div>
-    <div class="alert alert-info" style="margin-bottom:11px"><span class="alert-icon">📈</span>
-      <div>These are this QB's totals across <b>${games} games</b>. Adjust <b>Games Played</b> above to extrapolate a full-season pace (e.g. an 8-game stint scaled to 17), and the stats below scale with it.</div></div>
+    <div class="tc-pool-line">Totals across <b>${games} games</b>
+      ${(typeof tcInfoBtn==='function')?tcInfoBtn('qbgames','How games scaling works'):''}</div>
     ${sRow('py','Passing Yards',Math.round(qb.passing_yards),Math.round(seed.passing_yards||4000),0,7500,50,undefined,false,{
       readOnly:historicalLocked,
       noteMeta:{ label:'Passing Yards', source:'projection_builder_qb', statKey:'passing_yards', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
@@ -182,3 +220,19 @@ function qbTotalsText(state, opts){
 }
 function setActiveQB(idx){userProj[currentTeam].activeQB=idx;saveSession();renderContent();}
 
+
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.shares={title:'How shares work', body:`
+    The team's totals (targets, receiving yards, passing TDs) come from the QB tab; each
+    player's projection is <b>his share × the team total</b>. Drag a share and the others
+    rebalance to keep the pool at 100%. You can also edit <b>Tgts</b>/<b>Rec</b>/TD counts
+    directly — the shares recompute from the numbers.`};
+  TC_INFO_BOOK.rushmodel={title:'How the rushing model works', body:`
+    Set the team's total RB carries and total rushing yards (QB rushing lives on the QB tab).
+    Each back's yards = <b>his carries × his yards-per-carry</b>. Changing a team total scales
+    every back proportionally; changing one back's share rebalances the rest of the backfield.`};
+  TC_INFO_BOOK.qbgames={title:'Games scaling', body:`
+    These are the QB's totals across his projected games. Adjust <b>Games Played</b> to
+    extrapolate a stint to a full season — an 8-game sample scaled to 17 — and every stat
+    below scales with it. Use games-only mode to shift games without rescaling the totals.`};
+}

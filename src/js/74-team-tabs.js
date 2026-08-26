@@ -113,8 +113,16 @@ function renderTeamAdditions(team){
       <th class="add-num">TERM</th><th class="add-num">TOTAL</th><th class="add-num">AAV</th>
       </tr></thead><tbody>${body}</tbody></table></div>`;
   };
+  const changesOpen = (typeof _addChangesOpen!=='undefined' && _addChangesOpen && _addChangesTeam===team);
+  const nAdds=(a.free_agents||[]).length+(a.draft||[]).length+(a.trades||[]).length;
+  const nLost=(a.free_agents_lost||[]).length;
   return `<div class="add-wrap">
-    <div class="add-note"><b>${teamDisplayName(team)}</b> ${PROJ_SEASON} roster changes — additions via free agency, the draft, and trades, plus notable departures. Sorted by contract/cap value. Pair this with the ${advTeamSeason()} Advanced Stats to see how weaknesses were addressed — and where new holes may have opened.</div>
+    <div class="tc-collapse-head" onclick="toggleAddChanges('${team}')" role="button" aria-expanded="${changesOpen}">
+      <span class="tc-collapse-caret">${changesOpen?'▾':'▸'}</span>
+      <b>${PROJ_SEASON} Roster changes</b>
+      <span class="tc-collapse-sum">${nAdds} addition${nAdds===1?'':'s'} · ${nLost} departure${nLost===1?'':'s'}</span>
+      ${(typeof tcInfoBtn==='function')?tcInfoBtn('additions','About this section'):''}</div>
+    <div class="tc-collapse-body${changesOpen?'':' tc-collapsed'}">
 
     <div class="add-section">
       <div class="add-section-head">Free Agency ${count((a.free_agents||[]).length)}</div>
@@ -136,11 +144,19 @@ function renderTeamAdditions(team){
       <div class="add-losses-sub">Free agents who signed elsewhere this offseason.</div>
       ${lossTable(a.free_agents_lost)}
     </div>
+    </div>
 
     ${renderDepthChart(team)}
-
-    <div class="sr-source">${PROJ_SEASON} offseason moves · depth chart via ESPN · for informational use.</div>
   </div>`;
+}
+
+// Roster-changes drawer state (per-team, like the QB room): collapsed by default.
+var _addChangesTeam=null;
+let _addChangesOpen=false;
+function toggleAddChanges(team){
+  if(_addChangesTeam!==team){ _addChangesTeam=team; _addChangesOpen=true; }
+  else _addChangesOpen=!_addChangesOpen;
+  if(typeof renderContent==='function') renderContent();
 }
 
 // Per-team advanced view: one card per Sharp table, each showing this team's value + rank.
@@ -203,9 +219,8 @@ function coordInlineLabel(a,b,c){
   if(!coord) return '';
   if(!coord.name) return '';
   if(coordCarriesOver(coord)){
-    const role = coord.prev_role || 'coordinator';
     return `<span ${attrs}>
-      ${sideWord==='offensive'?'OC':'DC'}: <b>${coord.name}</b> <span class="coord-new-tag">NEW · from ${teamDisplayName(coord.prev_code)} ${role}</span></span>`;
+      ${sideWord==='offensive'?'OC':'DC'}: <b>${coord.name}</b> <span class="coord-new-tag" title="New for this season · from ${escAttr(teamDisplayName(coord.prev_code))} — tap the ! for details">NEW</span></span>`;
   }
   // carryover/internal: last season's stats apply directly
   const since = coord.since?` · since ${coord.since}`:'';
@@ -937,105 +952,81 @@ function renderTeamAdvanced(team){
   const offKeys=keys.filter(k=>(SRC[k].category||'offense')==='offense');
   const defKeys=keys.filter(k=>SRC[k].category==='defense');
   const oc=coordFor(team,'offense'), dc=coordFor(team,'defense');
-  const section=(label,ks,coordLbl)=> ks.length ? `<div class="sr-section-head">${label} ${coordLbl||''}</div>
+  const section=(label,ks,coordLbl,actions)=> ks.length ? `<div class="sr-section-head">${label} ${coordLbl||''}${actions?`<span class="sr-head-actions">${actions}</span>`:''}</div>
     <div class="sr-card-grid">${ks.map(k=>cardFor(k)).join('')}</div>` : '';
-  // SOS summary strip
-  // The SOS block describes the PROJECTION season's slate — on a past-season reference
-  // view it would be a 2026 schedule pinned over 2024 stats.
-  const sos=(activeSeason==='proj') && SOS && SOS[team];
-  const sosSched = (typeof renderTeamScheduleStrip==='function') ? renderTeamScheduleStrip(team) : '';
-  const sosOpen = (typeof _sosStripOpen!=='undefined' && _sosStripOpen);
-  const sosStrip = sos ? `<div class="sr-sos-block ${sosSched?'sos-clickable':''}" ${sosSched?`onclick="toggleSosStrip()" title="${sosOpen?'Hide':'Show'} the week-by-week schedule"`:''}>
-  <div class="sr-sos-strip">
-    <span class="sr-sos-rank ${sharpRankClass(sos.rank)}">${ordinal(sos.rank)}</span>
-    <div class="sr-sos-main"><div class="sr-sos-label">${PROJ_SEASON} Strength of Schedule</div>
-      <div class="sr-sos-sub">${noteWrapHtml(`${sos.win_total!=null?`Vegas win total <b>${sos.win_total}</b> · `:''}rank ${sos.rank} of 32 (1 = easiest)`, {
-        label: `${PROJ_SEASON} Strength of Schedule`,
-        value: `${sos.win_total!=null?`Vegas win total ${sos.win_total} · `:''}rank ${sos.rank} of 32`,
-        source: 'team_sos',
-        statKey: 'sos',
-        context: `${teamDisplayName(team)} · ${PROJ_SEASON} schedule`,
-        team,
-        relevance: 'QB,RB,WR,TE',
-        nav: { type:'advanced', team, season: 'proj' },
-      }, 'note-tag-hit')}</div></div>
-    ${sosSched?`<span class="sr-sos-caret" aria-hidden="true">${sosOpen?'▾':'▸'}</span>`:''}
-    <button class="btn btn-ghost btn-sm sr-sos-btn" onclick="event.stopPropagation();showSharpLeague('sos')">See SOS chart →</button>
-  </div>${sosSched}</div>` : '';
-  // Carryover coordinators → a highlighted section that pulls the former team's scheme stats.
-  const carryBlock = renderCoordinatorCarryover(team);
-  const srcLabel = 'nflverse (computed from play-by-play)';
+  // Incoming play-callers: no card — a yellow ! beside the section head opens the detail
+  // popup (badge, real former role, jump chip). Small footprint, full story on demand.
+  const carryFlag=(side)=>{
+    const c=_carrySideSource(team, side);
+    if(!c) return '';
+    return `<button class="tc-info-btn tc-info-warn" onclick="tcInfoPop(event,'${side==='offense'?'carry_off':'carry_def'}')"
+      title="New ${c._fromHC?'play-calling head coach':(side==='offense'?'offensive':'defensive')+' coordinator'} — scheme likely changing" aria-label="Incoming play-caller">!</button>`;
+  };
+  // No header row of its own: the League button + ⓘ ride the FIRST section head, and the
+  // season is part of the section label ("2025 Offense …"). SOS lives inside the league
+  // view's category tabs, so one button covers both.
+  const yr=(typeof tcSeasonLabel==='function')?tcSeasonLabel(advTeamSeason()):advTeamSeason();
+  const actions=`<button class="btn btn-accent btn-sm" onclick="showSharpLeague()">League</button>${(typeof tcInfoBtn==='function')?tcInfoBtn('advteam','About these stats'):''}`;
+  const offHtml=section(`${yr} Offense ${carryFlag('offense')}`, offKeys, coordInlineLabel(team,oc,'offensive'), actions);
+  const defHtml=section(`${yr} Defense ${carryFlag('defense')}`, defKeys, coordInlineLabel(team,dc,'defensive'), offKeys.length?'':actions);
   return `<div class="sr-team-wrap">
     ${renderAdvWeekRange(team)}
-    <div class="sr-note">${TC_ICON("chart")} <b>Advanced team stats</b> · ${srcLabel} · <b>${(typeof tcSeasonLabel==='function')?tcSeasonLabel(advTeamSeason()):advTeamSeason()} season${(typeof tcIsLiveSeason==='function'&&tcIsLiveSeason(advTeamSeason()))?' to date':''}</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
-      <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="showSharpLeague()">View league-wide tables →</button></div>
-    ${sosStrip}
-    ${carryBlock}
-    ${section('Offense', offKeys, coordInlineLabel(team,oc,'offensive'))}
-    ${section('Defense', defKeys, coordInlineLabel(team,dc,'defensive'))}
-    <div class="sr-source">${(typeof tcSeasonLabel==='function')?tcSeasonLabel(advTeamSeason()):advTeamSeason()} season${(typeof tcIsLiveSeason==='function'&&tcIsLiveSeason(advTeamSeason()))?' · through the completed weeks, rebuilt weekly':''} · computed from nflverse play-by-play (nflfastR) — for informational use.</div>
+    ${(!offKeys.length && !defKeys.length)?`<div class="sr-head-min"><span class="sr-head-actions">${actions}</span></div>`:''}
+    ${offHtml}
+    ${defHtml}
   </div>`;
+}
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.advteam={title:'Advanced team stats', body:()=>{
+    const yr=(typeof tcSeasonLabel==='function')?tcSeasonLabel(advTeamSeason()):advTeamSeason();
+    const live=(typeof tcIsLiveSeason==='function'&&tcIsLiveSeason(advTeamSeason()));
+    return `Team-level advanced stats for the <b>${yr}</b> season${live?' to date (through the completed weeks, rebuilt weekly)':''},
+      computed from nflverse play-by-play (nflfastR). Every stat carries its <b>league rank out of 32</b>.
+      This page is a read-only reference to inform your ${PROJ_SEASON} projections — nothing here
+      edits them. <b>League</b> opens the same stats as league-wide sortable tables; <b>SOS</b>
+      opens the strength-of-schedule chart.`;
+  }};
 }
 
 // The Coordinators carryover block: when a NEW coordinator came from another NFL team, show
 // their former team's carry-over scheme stats (tendencies + personnel for OC; tendencies +
 // coverage for DC — the aspects that travel with a coordinator), clearly labeled.
-function renderCoordinatorCarryover(team){
-  const oc=coordFor(team,'offense'), dc=coordFor(team,'defense');
-  const blocks=[];
-  // OFFENSE: when the head coach is the primary playcaller and is new-from-another-team, the
-  // scheme travels with the HC → point at the HC's former team. Otherwise use the OC.
-  const hcSrc = playcallerHCOffenseSource(team);
-  const offSrc = hcSrc || (coordCarriesOver(oc) ? oc : null);
-  if(offSrc) blocks.push(coordCarryCard('offensive', offSrc));
-  if(coordCarriesOver(dc)) blocks.push(coordCarryCard('defensive', dc));
-  if(!blocks.length) return '';
-  return `<div class="coord-carry-wrap">
-    <div class="coord-carry-head">${TC_ICON("refresh")} New coordinator for ${PROJ_SEASON}</div>
-    ${blocks.join('')}
-  </div>`;
+// Which incoming play-caller affects this side, if any: a new play-calling HC beats the
+// OC on offense (the scheme travels with him); otherwise the new-from-elsewhere coordinator.
+function _carrySideSource(team, side){
+  if(side==='offense'){
+    const oc=coordFor(team,'offense');
+    return playcallerHCOffenseSource(team) || (coordCarriesOver(oc)?oc:null);
+  }
+  const dc=coordFor(team,'defense');
+  return coordCarriesOver(dc)?dc:null;
 }
-
-// Jump to another team's Adv Metrics from a carryover link. Stays on the Advanced phase so
-// you land on the same view you were reading, rather than being bounced to a default tab.
-function advJumpToTeam(code){
-  if(!code) return;
-  currentPhase='Advanced';
-  selectTeam(String(code).toUpperCase());
-  if(typeof renderContent==='function') renderContent();
-  try{ window.scrollTo({top:0, behavior:'smooth'}); }catch(e){ window.scrollTo(0,0); }
-}
-function coordCarryCard(sideWord, c){
-  const from = teamDisplayName(c.prev_code);
-  const prevPlaycaller = (sideWord==='offensive' && !c._fromHC)
-    ? offensivePlaycallerContextFor(c.prev_code)
-    : null;
-  // A LINK, not an embedded copy of the other team's tables. Inlining the former team's stat
-  // cards doubled the length of the Adv Metrics page and put another team's numbers directly
-  // beside this team's — easy to misread as this team's own. The pointer is the useful part;
-  // the reader can follow it when they want the detail, in the full context of that team.
-  const jump = `advJumpToTeam('${escAttr(c.prev_code)}')`;
-  const link = `<button class="adv-carry-link" onclick="${jump}" title="View ${escAttr(from)}\u2019s advanced metrics">`
-    + `<img src="${NFL_LOGO(String(c.prev_code).toUpperCase())}" class="adv-carry-logo" alt="" onerror="this.style.display='none'">`
-    + `${from}</button>`;
-  const roleNote = c.prev_role
-    ? `previously ${link} <b>${c.prev_role}</b>${c.prev_years?` (${c.prev_years})`:''}`
-    : `previously with ${link}`;
-  const playcallerHint = prevPlaycaller && prevPlaycaller.name
-    ? ` · offense there was called by <b>${prevPlaycaller.name}</b>${Number.isFinite(prevPlaycaller.since)?` (since ${prevPlaycaller.since})`:''}`
-    : '';
-  // When the offensive source is a play-calling head coach, label it as such (the scheme
-  // follows the HC, not the OC).
-  const badge = c._fromHC ? 'New play-calling Head Coach'
-    : (sideWord==='offensive' ? 'New Offensive Coordinator' : 'New Defensive Coordinator');
-  const schemeOwner = c._fromHC ? 'play-calling head coach' : `${sideWord} coordinator`;
-  return `<div class="coord-carry-block">
-    <div class="coord-carry-title">
-      <span class="coord-side">${badge}</span>
-      <b>${c.name||'(name unavailable)'}</b> — ${roleNote}${playcallerHint}
-    </div>
-    <div class="coord-carry-sub">The tendencies &amp; personnel that travel with a ${schemeOwner} tend to follow them here \u2014 open ${from} to see their ${advTeamSeason()} ${sideWord} scheme.</div>
-  </div>`;
+function _carryPopBody(side){
+  const team=currentTeam;
+  const c=_carrySideSource(team, side);
+  if(!c) return 'No incoming play-caller this season.';
+  const from=teamDisplayName(c.prev_code)||c.prev_code||'';
+  const badge=c._fromHC?'New play-calling HC':(side==='offense'?'New OC':'New DC');
+  const jump=c.prev_code?`advJumpToTeam('${escAttr(c.prev_code)}');var _p=document.getElementById('tcInfoPop');if(_p)_p.remove();`:'';
+  const chip=c.prev_code?`<button class="adv-carry-link" onclick="${jump}" title="Open ${escAttr(from)}'s advanced metrics">`
+    +`<img src="${NFL_LOGO(String(c.prev_code).toUpperCase())}" class="adv-carry-logo" alt="" onerror="this.style.display='none'">${escHtml(from)}</button>`:'';
+  const prevLine=c.prev_code
+    ? `Previously ${c.prev_role?`<b>${escHtml(c.prev_role)}</b>`:'with'}${c.prev_years?` (${escHtml(c.prev_years)})`:''} — ${chip}`
+    : 'Former team unknown.';
+  return `<div class="coord-carry-poprow"><span class="coord-side">${badge}</span> <b>${escHtml(c.name||'')}</b></div>
+    <div class="coord-carry-poprow">${prevLine}</div>
+    The tendencies and personnel that travel with a ${c._fromHC?'play-calling head coach':'coordinator'}
+    tend to follow them here — ${c.prev_code?`tap ${escHtml(from)} above to preview the scheme arriving`:'watch the early-season tendencies'}.`;
 }
 
 // League-wide advanced view: pick a table, see all 32 teams, sortable by any column.
+
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.carry_off={title:'Incoming offensive play-caller', body:()=>_carryPopBody('offense')};
+  TC_INFO_BOOK.carry_def={title:'Incoming defensive play-caller', body:()=>_carryPopBody('defense')};
+  TC_INFO_BOOK.additions={title:'Roster changes', body:()=>`
+    Additions via free agency, the draft, and trades \u2014 plus notable departures \u2014 for the
+    <b>${PROJ_SEASON}</b> season, sorted by contract/cap value. Pair this with the
+    ${(typeof advTeamSeason==='function')?advTeamSeason():''} Advanced Stats to see how weaknesses
+    were addressed, and where new holes may have opened. Depth chart via ESPN.`};
+}

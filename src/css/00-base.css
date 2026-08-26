@@ -15,6 +15,10 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{color-scheme:dark;}
+/* iOS rubber-band suppression is done in JS (the edge check in _tcScrollGuard) —
+   overscroll-behavior on the ROOT breaks page scrolling outright in some iOS Safari
+   builds, so it must never be set on html/body. */
+html{background:var(--bg);}
 body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;font-size:14px;}
 .header{background:var(--surface);border-bottom:1px solid var(--border);
   padding:9px 16px;display:flex;align-items:center;gap:10px;

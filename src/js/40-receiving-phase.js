@@ -185,6 +185,57 @@ function vacatedNote(team){
     <span style="color:var(--muted)">This production is up for grabs among the current roster.</span></div></div>`;
 }
 
+// Flag icons: the vacated summary and the mismatch warnings live in popups now — the icon
+// (same glyph as the old banner) sits beside the ⓘ; tap it for the full taggable detail,
+// reconcile button included. No banner eats the top of the view.
+function vacatedIconBtn(team){
+  const v=vacatedProduction(team);
+  if(!v || !(v.tgt>0)) return '';
+  return (typeof tcInfoBtn==='function')?tcInfoBtn('vac_rec','Vacated production',TC_ICON('export')):'';
+}
+function _tgtDiscrepState(team){
+  const state=userProj[team]; if(!state) return null;
+  const totalTgts=teamTargetPool(state);
+  const expectTgts=Math.round(teamPassAtt(state)*TARGET_RATE);
+  const tgtDiff=expectTgts-Math.round(totalTgts);
+  return { totalTgts, expectTgts, tgtDiff, off: Math.abs(tgtDiff)>Math.max(8, expectTgts*0.03) };
+}
+function _tgtDiscrepBody(){
+  const team=currentTeam; const d=_tgtDiscrepState(team);
+  if(!d || !d.off) return 'Targets and QB attempts are aligned.';
+  const lockStats = activeSeason!=='proj';
+  return `<b>${Math.abs(d.tgtDiff)} targets ${d.tgtDiff>0?'unaccounted for':'over the QB total'}.</b>
+    The QBs' ${teamPassAtt(userProj[team])} attempts imply about <b>${d.expectTgts} targets</b>, but the receivers add up to <b>${Math.round(d.totalTgts)}</b>.
+    ${lockStats?'':`<button class="btn btn-accent btn-sm" style="margin-top:8px" onclick="reconcileTargets('${team}');tcInfoPop(event,'discrep_tgt')">${d.tgtDiff>0?'Distribute':'Reconcile'} the difference →</button>`}`;
+}
+function _derivedDiscrepState(team,metric){
+  const state=userProj[team]; if(!state) return null;
+  ensureDerivedShares(state,metric);
+  const isYds=metric==='recyds';
+  const qbPool=isYds?teamRecYardsPool(state):teamRecPool(state);
+  const field=isYds?'recyds_share':'rec_share';
+  const receiverSum=(state.passing_shares||[]).reduce((a,p)=>a+qbPool*((p[field]||0)/100),0);
+  const diff=Math.round(qbPool-receiverSum);
+  const threshold=isYds?Math.max(40,qbPool*0.02):Math.max(3,qbPool*0.02);
+  return { qbPool, receiverSum, diff, off: Math.abs(diff)>threshold, unit:isYds?'receiving yards':'receptions' };
+}
+function _derivedDiscrepBody(metric){
+  const team=currentTeam; const d=_derivedDiscrepState(team,metric);
+  if(!d || !d.off) return 'Receivers match the QB totals.';
+  const lockStats = activeSeason!=='proj';
+  const sign=d.diff>0?'short of':'over';
+  return `<b>${Math.abs(d.diff).toLocaleString()} ${d.unit} ${sign} the QB total.</b>
+    The QBs are projected for <b>${d.qbPool.toLocaleString()} ${d.unit}</b>, but the receivers currently add up to <b>${Math.round(d.receiverSum).toLocaleString()}</b>.
+    ${d.diff>0?'That production is unclaimed — distribute it across the receiving corps.':'The receivers exceed the QBs\' output — trim it down to reconcile.'}
+    ${lockStats?'':`<button class="btn btn-accent btn-sm" style="margin-top:8px" onclick="reconcileDerived('${team}','${metric}');tcInfoPop(event,'discrep_${metric}')">${d.diff>0?'Distribute':'Reconcile'} the ${d.diff>0?'difference':'overage'} →</button>`}`;
+}
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.vac_rec={title:'Vacated production', body:()=>vacatedNote(currentTeam)||'No vacated production.'};
+  TC_INFO_BOOK.discrep_tgt={title:'Targets vs QB attempts', body:()=>_tgtDiscrepBody()};
+  TC_INFO_BOOK.discrep_rec={title:'Receptions vs QB total', body:()=>_derivedDiscrepBody('rec')};
+  TC_INFO_BOOK.discrep_recyds={title:'Receiving yards vs QB total', body:()=>_derivedDiscrepBody('recyds')};
+}
+
 // Receptions / Receiving-Yards share view — editable, mirrors the target-share tab.
 // Colors are keyed to each player's ORIGINAL index (PCOLORS[i]) so the pie slices and
 // the rows always line up. Each player has a rec_share / recyds_share that rebalances the
@@ -248,8 +299,8 @@ function renderPassDerived(team,state,subTabs,metric){
         <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTagTop(p,'rec')}
         <span class="share-pct" id="dp-${i}">${sharePct}</span>
         <span class="share-vol" id="dv-${i}">${tagVal(v.toLocaleString()+' '+label, isYds?'Receiving Yards':'Receptions', isYds?'receiving_yards':'receptions')}</span></div>
-      <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
-        <input class="sl" type="range" min="0" max="100" step="0.5" value="${pct}" data-key="${key}_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
+      <div class="slider-track"><div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,40):100)*100).toFixed(1)}%;background:${col}"></div>
+        <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,40):100}" step="0.5" value="${pct}" data-key="${key}_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
         <span class="share-stat">Tgts ${tgtsCell}</span>
         <span class="share-stat">Rec ${recCell}</span>
@@ -263,24 +314,11 @@ function renderPassDerived(team,state,subTabs,metric){
   const title = isYds ? 'Receiving Yardage Share' : 'Receptions Share';
   // Discrepancy banner: only meaningful when the gap is non-trivial (>2% of the pool).
   const threshold = isYds ? Math.max(40, qbPool*0.02) : Math.max(3, qbPool*0.02);
-  let banner;
-  if(Math.abs(diff) > threshold){
-    const sign = diff>0?'short of':'over';
-    banner = `<div class="discrepancy-note">
-      <span class="vacated-icon">${TC_ICON("warning")}</span>
-      <div><b>${Math.abs(diff).toLocaleString()} ${unit} ${sign} the QB total.</b>
-      The QBs are projected for <b>${qbPool.toLocaleString()} ${unit}</b>, but the receivers currently add up to
-      <b>${Math.round(receiverSum).toLocaleString()}</b>. ${diff>0
-        ? 'That production is unclaimed — distribute it across the receiving corps.'
-        : 'The receivers exceed the QBs\' output — trim it down to reconcile.'}
-      ${lockStats?'':`<button class="btn btn-accent btn-sm" style="margin-top:6px" onclick="reconcileDerived('${team}','${metric}')">
-        ${diff>0?'Distribute':'Reconcile'} the ${diff>0?'difference':'overage'} →</button>`}</div></div>`;
-  } else {
-    banner = `<div class="reconciled-note">${TC_ICON("check")} Receivers match the QBs' projected ${unit} (${qbPool.toLocaleString()}).</div>`;
-  }
+  const discrepFlag=(Math.abs(diff) > threshold && typeof tcInfoBtn==='function')
+    ? tcInfoBtn('discrep_'+metric, `${Math.abs(diff).toLocaleString()} ${unit} ${diff>0?'short of':'over'} the QB total`, TC_ICON('warning')) : '';
   return `<div class="card"><div class="card-title">${title}</div>${subTabs}
-    ${vacatedNote(team)}
-    ${banner}
+    <div class="tc-pool-line"><b>${qbPool.toLocaleString()}</b> ${unit} from the QBs
+      ${vacatedIconBtn(team)}${discrepFlag}${(typeof tcInfoBtn==='function')?tcInfoBtn('shares','How shares work'):''}</div>
     <div class="pie-section">
       <div class="pie-wrap"><canvas id="derivedPieChart" width="150" height="150"></canvas>
         <div class="pie-sub" id="derivedSub">${passDerivedSubHtml(state, metric, team)}</div></div>
@@ -388,8 +426,8 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},${pcardArg(p.pos)})" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
       </div>
       <div class="slider-track">
-        <div class="slider-fill" style="width:${pct}%;background:${col}"></div>
-        <input class="sl" type="range" min="0" max="100" step="0.5" value="${pct}" data-key="ps_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}>
+        <div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,40):100)*100).toFixed(1)}%;background:${col}"></div>
+        <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,40):100}" step="0.5" value="${pct}" data-key="ps_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}>
       </div>
       <div class="share-stats">
         <span class="share-stat">Tgts ${tgtsCell}</span>
@@ -405,19 +443,11 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
   const expectTgts=Math.round(teamPassAtt(state)*TARGET_RATE);
   const tgtDiff=expectTgts-Math.round(totalTgts);
   const tThresh=Math.max(8, expectTgts*0.03);
-  let tgtBanner='';
-  if(Math.abs(tgtDiff)>tThresh){
-    tgtBanner=`<div class="discrepancy-note"><span class="vacated-icon">${tgtDiff>0?'⚠️':'❗'}</span>
-      <div><b>${Math.abs(tgtDiff)} targets ${tgtDiff>0?'unaccounted for':'over the QB total'}.</b>
-      The QBs' ${teamPassAtt(state)} attempts imply about <b>${expectTgts} targets</b>, but the receivers add up to <b>${Math.round(totalTgts)}</b>.
-      ${lockStats?'':`<button class="btn btn-accent btn-sm" style="margin-top:6px" onclick="reconcileTargets('${team}')">${tgtDiff>0?'Distribute':'Reconcile'} the difference →</button>`}</div></div>`;
-  }
+  const tgtFlag=(Math.abs(tgtDiff)>tThresh && typeof tcInfoBtn==='function')
+    ? tcInfoBtn('discrep_tgt',`${Math.abs(tgtDiff)} targets ${tgtDiff>0?'unaccounted for':'over the QB total'}`, tgtDiff>0?'⚠️':'❗') : '';
   return `<div class="card"><div class="card-title">Receiver Target Share</div>${subTabs}
-    ${vacatedNote(team)}
-    ${tgtBanner}
-    <div class="alert alert-info"><span class="alert-icon">ℹ️</span>
-      <div>${totalTgts} total targets (${teamPassAtt(state)} att × ${TARGET_RATE}) · ${teamRecYardsPool(state).toLocaleString()} receiving yards available · ${totalTDs} pass TDs.
-      Drag a share to 100% and others rebalance. Or edit <b>Tgts</b>/<b>Rec</b> directly — shares recompute.</div></div>
+    <div class="tc-pool-line"><b>${totalTgts}</b> targets · <b>${teamRecYardsPool(state).toLocaleString()}</b> rec yds · <b>${totalTDs}</b> pass TDs
+      ${vacatedIconBtn(team)}${tgtFlag}${(typeof tcInfoBtn==='function')?tcInfoBtn('shares','How shares work'):''}</div>
     <div class="pie-section">
       <div class="pie-wrap"><canvas id="pieChart" width="150" height="150"></canvas>
         <div class="pie-sub" id="pieSub">${passPieSubHtml(state,totalTgts,team)}</div></div>
@@ -466,15 +496,15 @@ function renderPassTDs(team,state,totalTDs,subTabs){
         <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>
         <span class="share-pct" id="tdp-${i}">${sharePct}</span>
         <span class="share-vol">${tagVal(projTDs+' TD','Receiving TDs','receiving_tds')}</span></div>
-      <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
-        <input class="sl" type="range" min="0" max="100" step="1" value="${pct}" data-key="tds_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
+      <div class="slider-track"><div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,50):100)*100).toFixed(1)}%;background:${col}"></div>
+        <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,50):100}" step="1" value="${pct}" data-key="tds_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
         <span class="share-stat">Rec TDs ${tdCell}</span>
       </div></div>`;
   }).join('');
   return `<div class="card"><div class="card-title">Receiving TD Share</div>${subTabs}
-    <div class="alert alert-info"><span class="alert-icon">ℹ️</span>
-      <div>${totalTDs} total passing TDs (from the QB tab). Each player's projected receiving TDs = share × ${totalTDs}.</div></div>
+    <div class="tc-pool-line"><b>${totalTDs}</b> passing TDs to distribute
+      ${(typeof tcInfoBtn==='function')?tcInfoBtn('shares','How shares work'):''}</div>
     <div class="pie-section">
       <div class="pie-wrap"><canvas id="pieChart" width="150" height="150"></canvas>
         <div class="pie-sub">${totalTDs} rec TDs</div></div>

@@ -271,7 +271,10 @@ function renderContent(){
       </div>
     </div>
     ${seasonBanner}
-    <div class="phase-tabs la-icon-tabs">${tabs}</div>${body}
+    <div class="phase-tabs la-icon-tabs">${tabs}</div>${
+      (activeSeason==='proj' && ['Passing','Receiving','Rushing','Advanced'].includes(currentPhase)
+        && typeof renderTeamScheduleStrip==='function') ? renderTeamScheduleStrip(t) : ''
+    }${body}
     <div id="schemeOverlayHost"></div>`;
   if(currentPhase==='Receiving') initPie(t,'pass');
   else if(currentPhase==='Rushing') initPie(t,'rush');

@@ -64,8 +64,8 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
         <span class="share-vol" id="ra-${i}">${tagVal(att+' att','Rushing Attempts','rushing_attempts')}</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},'RB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
         </div>
-      <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
-        <input class="sl" type="range" min="0" max="100" step="1" value="${pct}"
+      <div class="slider-track"><div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,85):100)*100).toFixed(1)}%;background:${col}"></div>
+        <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,85):100}" step="1" value="${pct}"
           data-key="rs_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
         <span class="share-stat">Att ${attCell}</span>
@@ -75,14 +75,14 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
       </div></div>`;
   }).join('');
   return `<div class="card"><div class="card-title">Team Rushing Volume</div>
-    <div class="alert alert-info"><span class="alert-icon">ℹ️</span>
-      <div>Set total RB carries and total rushing yards. Each RB's yards = their carries × their Y/Carry;
-      changing the team total scales every RB's efficiency proportionally.</div></div>
+    <div class="tc-pool-line">Team totals feed every back below
+      ${(typeof tcInfoBtn==='function')?tcInfoBtn('rushmodel','How the rushing model works'):''}</div>
     ${sRow('rush_total_att','RB Carries (excl QB)',r.total_attempts,baseAtt,0,600,5,'var(--rb)',false,{ readOnly:lockStats, noteMeta:{ label:'Team RB Carries', source:'projection_builder_rushing', statKey:'team_rb_carries', context:totalsCtx, team:noteTeam, relevance:'RB' } })}
     ${sRow('rush_total_yds','Total RB Rush Yards',r.total_yards,baseYds,0,3500,25,'var(--rb)',false,{ readOnly:lockStats, noteMeta:{ label:'Team RB Rushing Yards', source:'projection_builder_rushing', statKey:'team_rb_total_yards', context:totalsCtx, team:noteTeam, relevance:'RB' } })}
     <div class="derived-note" id="rushDerived">${rushNote(state,{asHtml:true,team})}</div></div>
   <div class="card"><div class="card-title">RB Carry Share</div>${subTabs}
-    ${vacatedRushNote(team)}
+    <div class="tc-pool-line"><b>${Math.round(r.total_attempts).toLocaleString()}</b> carries · <b>${Math.round(r.total_yards).toLocaleString()}</b> rush yds
+      ${(vacatedRushing(team)&&typeof tcInfoBtn==='function')?tcInfoBtn('vac_rush','Vacated carries',TC_ICON('export')):''}${(typeof tcInfoBtn==='function')?tcInfoBtn('rushmodel','How the rushing model works'):''}</div>
     <div class="pie-section">
       <div class="pie-wrap"><canvas id="rushPieChart" width="150" height="150"></canvas>
         <div class="pie-sub" id="rushTotalLbl">${rushTotalLabelHtml(state,team)}</div></div>
@@ -124,8 +124,8 @@ function renderRushTDs(team,state,subTabs){
         <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTagTop(p,'rush')}
         <span class="share-pct" id="rtdp-${i}">${sharePct}</span>
         <span class="share-vol">${tagVal(projTDs+' TD','Rushing TDs','rushing_tds')}</span></div>
-      <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
-        <input class="sl" type="range" min="0" max="100" step="1" value="${pct}"
+      <div class="slider-track"><div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,50):100)*100).toFixed(1)}%;background:${col}"></div>
+        <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,50):100}" step="1" value="${pct}"
           data-key="rtds_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
         <span class="share-stat">Rush TDs ${tdCell}</span>
@@ -135,8 +135,8 @@ function renderRushTDs(team,state,subTabs){
     ${sRow('rush_total_tds','Total RB Rush TDs',totalTDs,Math.round(totalTDs),0,40,1,'var(--rb)',false,{ readOnly:lockStats, noteMeta:{ label:'Team RB Rushing TDs', source:'projection_builder_rushing', statKey:'team_rb_rushing_tds', context:totalsCtx, team:noteTeam, relevance:'RB' } })}
     <div class="derived-note">Set the team's total RB rushing TDs; each back's share below splits this total.</div></div>
   <div class="card"><div class="card-title">Rushing TD Share</div>${subTabs}
-    <div class="alert alert-info"><span class="alert-icon">ℹ️</span>
-      <div>${totalTDs.toFixed(0)} projected RB rushing TDs. QB rushing TDs are set separately on the QB tab.</div></div>
+    <div class="tc-pool-line"><b>${totalTDs.toFixed(0)}</b> RB rushing TDs to distribute
+      ${(typeof tcInfoBtn==='function')?tcInfoBtn('rushtds','Where these TDs come from'):''}</div>
     <div class="pie-section">
       <div class="pie-wrap"><canvas id="rushPieChart" width="150" height="150"></canvas>
         <div class="pie-sub" id="rushTDLbl">${totalTDs.toFixed(0)} rush TDs</div></div>
@@ -248,4 +248,13 @@ function vacatedRushNote(team){
     <div>${noteWrapHtml(lineHtml, { label:'Vacated Carries', value:tagValue, source:'projection_builder_vacated', statKey:'vacated_carries', context:ctx, team:noteTeam, relevance:'RB,QB,WR' }, 'note-tag-hit')}
     <span style="color:var(--muted)"> — left by ${names}.</span>
     <span style="color:var(--muted)">These carries are up for grabs among the current backfield.</span></div></div>`;
+}
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.vac_rush={title:'Vacated carries', body:()=>{
+    // 45 has its own vacated builder for carries — find it under the rushing view.
+    return (typeof vacatedRushNote==='function' ? vacatedRushNote(currentTeam) : '') || 'No vacated carries.';
+  }};
+  TC_INFO_BOOK.rushtds={title:'RB rushing TDs', body:`
+    The projected RB rushing TDs, split by the shares below. <b>QB rushing TDs are set
+    separately on the QB tab</b> — they never come out of this pool.`};
 }

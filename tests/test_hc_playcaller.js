@@ -4,7 +4,8 @@ global.document={getElementById:(id)=>mkEl(id),querySelector:()=>null,querySelec
 global.window={getSelection:()=>({removeAllRanges(){},addRange(){}})};global.Chart=function(){return{destroy(){},update(){}};};global.confirm=()=>true;global.btoa=s=>s;global.FileReader=function(){};global.Range=function(){};global.AbortController=class{constructor(){this.signal={};}abort(){}};
 const fs=require('fs');const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
-  renderTeamAdvanced, playcallerHCOffenseSource, hcIsPlaycaller,
+  renderTeamAdvanced, playcallerHCOffenseSource, hcIsPlaycaller, _carryPopBody,
+  setTeamVar:(t)=>{currentTeam=t;},
   setNflverse:(n)=>{NFLVERSE=n;}, setCoord:(c)=>{COORDINATORS=c;}, setNames:(n)=>{TEAM_NAMES=n;},
   setSharpSeason:(y)=>{SHARP_SEASON=y;}, setHC:(t,v)=>{headCoaches[t]=v;},
   setPlaycallers:(p)=>{HC_PLAYCALLERS=p;}, setHCHist:(h)=>{HC_HISTORY=h;} };`)();
@@ -31,27 +32,24 @@ chk(app.hcIsPlaycaller('ATL')===true,'Stefanski is playcaller');
 console.log('\n=== TEST 2: Falcons carryover pulls CLEVELAND scheme, labeled as play-calling HC ===');
 // Give ATL an OC that came from a DIFFERENT team (Detroit) to prove HC wins over OC
 app.setCoord({ATL:{offense:{name:'Some OC',since:2026,is_new:true,internal:false,carryover:false,prev_code:'DET',prev_role:'passing game coordinator'}}});
+app.setTeamVar('ATL');
 const html=app.renderTeamAdvanced('ATL');
-chk(html.includes('New coordinator for'),'carryover block present');
-chk(html.includes('play-calling HC')||html.includes('play-calling head coach'),'labeled as play-calling HC');
-chk(html.includes('Kevin Stefanski'),'shows HC name');
-chk(html.includes('Cleveland Browns'),'pulls Cleveland, not Detroit');
-const carryStart=html.indexOf('New coordinator for');
-const carryEnd=html.indexOf('sr-section-head', carryStart>=0?carryStart:0);
-const carry=html.slice(carryStart, carryEnd>=0?carryEnd:html.length);
-chk(carry.includes('View Cleveland Browns') || carry.includes('Cleveland Browns'),'carryover links to Cleveland advanced view');
-chk(!carry.includes('Detroit'),'carryover block does not point to Detroit');
+chk(html.includes('tc-info-warn'),'yellow ! flag on the section head (the card is gone)');
+const body=app._carryPopBody('offense');
+chk(/play-calling HC/i.test(body),'popup labeled as play-calling HC (badge)');
+chk(body.includes('Kevin Stefanski'),'popup shows HC name');
+chk(body.includes('Cleveland Browns'),'popup pulls Cleveland, not Detroit');
+chk(body.includes("advJumpToTeam('CLE')"),'popup chip jumps to Cleveland advanced view');
+chk(!body.includes('Detroit'),'popup does not point to Detroit');
 
 console.log('\n=== TEST 3: non-playcaller HC → OC drives carryover (unchanged behavior) ===');
 app.setPlaycallers({});  // ATL HC not a playcaller now
 app.setHCHist({ATL:{name:'Kevin Stefanski',since:2026,is_new:true,prev_code:'CLE',prev_role:'head coach'}});
 app.setCoord({ATL:{offense:{name:'Some OC',since:2026,is_new:true,internal:false,carryover:false,prev_code:'DET',prev_role:'offensive coordinator'}}});
-const html3=app.renderTeamAdvanced('ATL');
-const cs=html3.indexOf('New coordinator for');
-const ce=html3.indexOf('sr-section-head', cs>=0?cs:0);
-const carry3=html3.slice(cs, ce>=0?ce:html3.length);
-chk(carry3.includes('Detroit'),'non-playcaller HC → carryover uses OC former team (Detroit)');
-chk(!carry3.includes('play-calling'),'not labeled as play-calling HC');
+app.renderTeamAdvanced('ATL');
+const body3=app._carryPopBody('offense');
+chk(body3.includes('Detroit'),'non-playcaller HC → popup uses OC former team (Detroit)');
+chk(!body3.includes('play-calling'),'not labeled as play-calling HC');
 
 console.log('\n=== TEST 4: playcaller HC who is NOT new → no HC carryover ===');
 app.setPlaycallers({ATL:'Kevin Stefanski'});

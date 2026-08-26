@@ -249,6 +249,7 @@ async function linkLeagueObject(lg){
   mySlot=null;   // fresh link → re-detect my seat from this draft's order
   leaguePickerState.open=false;
   rankSortKey='ecr'; rankSortDir=-1;
+  hideDrafted=true;          // fresh follow: a clean board by default — untick to see everyone
   startDraftFollow(false);   // league scoring/format already applied above
   toast(`Linked to ${lg.name} · ${formatLabel(fmt)} scoring applied ✓`,'ok');
 }
@@ -325,6 +326,7 @@ function promptDraftFollow(){
   if(!m){ toast('Could not find a draft ID in that input','err'); return; }
   draftId=m[1];
   mySlot=null;   // pasted draft: forget any prior seat; we'll auto-detect or ask
+  hideDrafted=true;         // fresh follow: a clean board by default
   startDraftFollow(true);   // adopt this draft's own scoring/format (don't inherit a stale league)
 }
 // ── Roster tracker: data ────────────────────────────────────────────────────
@@ -533,6 +535,7 @@ function stopDraftFollow(){
   draftMeta=null; draftPicksBySlot={}; draftUsers={}; mySlot=null;
   draftLineup=DEFAULT_LINEUP.slice(); draftBenchCount=DEFAULT_BENCH;
   rosterBarVisible=false; trackerOpen=false; trackerMax=false; trackerViewSlot=null; _trackerNeedsSlotPick=false;
+  draftBannerOpen=false;
   toast('Stopped following draft','ok');
   renderRosterBar();
   if(currentPhase==='Rankings') renderRankings();
@@ -631,6 +634,13 @@ function vonaOptionsPop(ev, pos){
       if(e.target && e.target.closest && e.target.closest('.pcard-overlay')) return;  // browsing a card (incl. closing it) keeps the list
       if(!div.contains(e.target)){ div.remove(); document.removeEventListener('click',off,true); if(_vonaPopOff===off) _vonaPopOff=null; } };
     _vonaPopOff=off; document.addEventListener('click',off,true); },0);
+}
+// The follow banner starts as a lone glowing LIVE pill; tapping it expands the detail
+// (draft id, picks made, your seat, hide-drafted, Stop) and tapping again re-collapses.
+let draftBannerOpen=false;
+function toggleDraftBanner(){
+  draftBannerOpen=!draftBannerOpen;
+  if(typeof renderRankings==='function' && currentPhase==='Rankings') renderRankings();
 }
 function toggleHideDrafted(){ hideDrafted=!hideDrafted; renderRankings(); }
 
@@ -962,10 +972,10 @@ function renderTrackerPanel(viewSlot){
         ? `All starters filled \u2014 now drafting for value/depth.`
         : (alsoBig ? `Also watch <b>${alsoBig.pos}</b> (\u2212${alsoBig.dropoff}).` : '');
       advisory=`<div class="vona-box">
-        <div class="vona-head">${TC_ICON('chart')} On-the-clock advice ${v.onClock?'\u00b7 <b style="color:var(--accent)">YOU\u2019RE UP</b>':`\u00b7 next pick in ${v.gap}`}</div>
+        <div class="vona-head">${TC_ICON('chart')} On-the-clock advice ${v.onClock?'\u00b7 <b style="color:var(--accent)">YOU\u2019RE UP</b>':`\u00b7 next pick in ${v.gap}`} ${(typeof tcInfoBtn==='function')?tcInfoBtn('vona','How this advice works'):''}</div>
         <div class="vona-sub">${recTxt}${noteTxt?` \u00b7 ${noteTxt}`:''}</div>
         <div class="vona-rows">${chips}</div>
-        <div class="vona-legend">Value from your VOR board \u00b7 availability from Sleeper ${formatLabel(rankFormat)} ADP, simulated over the ${v.gap} pick${v.gap===1?'':'s'} before you\u2019re up.</div>
+
       </div>`;
     }
   }
@@ -1495,3 +1505,12 @@ function computeVONA(){
 
 
 
+
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.vona={title:'On-the-clock advice', body:()=>`
+    Value comes from <b>your VOR board</b> \u2014 what a player is worth to you. Availability comes
+    from the market: Sleeper ${typeof formatLabel==='function'?formatLabel(rankFormat):''} ADP,
+    Monte-Carlo simulated over the picks before you're up, with each opposing team drafting by
+    noisy ADP restricted to positions it still needs. The %-pill is the chance a player makes
+    it back to your next pick; \u25be lists the next viable options at that position.`};
+}

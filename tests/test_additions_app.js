@@ -56,4 +56,8 @@ console.log('\n=== TEST 5: FA sorted by value (Mafe > Cook > Allen) ===');
 const mafeI=faSec.indexOf('Mafe'),cookI=faSec.indexOf('Cook'),allenI=faSec.indexOf('Allen');
 chk(mafeI<cookI&&cookI<allenI,'FA sorted by descending value');
 
+// ── The whole page folds under one "Roster changes" header, closed by default ──
+chk(html.includes('tc-collapse-head') && /Roster changes/.test(html),'collapsible header present');
+chk(/tc-collapse-body tc-collapsed/.test(html),'sections collapsed by default (content stays in the DOM)');
+chk(/\d+ additions? · \d+ departures?/.test(html),'header summarizes the counts');
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

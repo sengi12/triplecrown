@@ -3180,11 +3180,51 @@ function resetPaceBaseline(){
 // gesture that doesn't land in a genuinely scrollable region of a floating surface is
 // cancelled. (Each region's own overscroll-behavior:contain keeps edge-scrolls from
 // chaining once the region runs out of room.)
-const TC_FLOAT_SEL='.pcard-overlay,.scheme-overlay,.ps-overlay,.note-picker-overlay,.note-info-overlay,.tc-modal-overlay,#vonaOptPop,#tcInjPop';
+const TC_FLOAT_SEL='.pcard-overlay,.scheme-overlay,.ps-overlay,.note-picker-overlay,.note-info-overlay,.tc-modal-overlay,#vonaOptPop,#tcInjPop,#tcInfoPop';
+var _tcLastTouchY=null, _tcGestureFloaters=null;
+function _tcTouchAnchor(e){
+  const t=e.touches&&e.touches[0]; _tcLastTouchY=t?t.clientY:null;
+  // Resolve the visible floating surfaces ONCE per gesture — running a 9-selector
+  // querySelectorAll on every touchmove is wasted work on a phone mid-scroll.
+  let fl=[];
+  try{ document.querySelectorAll(TC_FLOAT_SEL).forEach(f=>{ if(f.offsetWidth||f.offsetHeight) fl.push(f); }); }catch(_e){}
+  _tcGestureFloaters=fl;
+}
+// Can anything between `el` and the page actually scroll this gesture? (Used to decide
+// whether a touch would land on the PAGE scroller — the one we edge-guard on iOS.)
+function _tcInInnerScroller(el){
+  let n=(el && el.nodeType===1)?el:(el&&el.parentElement);
+  while(n && n!==document.body && n!==document.documentElement){
+    if(n.scrollHeight>n.clientHeight+1 || n.scrollWidth>n.clientWidth+1){
+      let st=null; try{ st=getComputedStyle(n); }catch(_e){}
+      if(st && (/(auto|scroll)/.test(st.overflowY) || /(auto|scroll)/.test(st.overflowX))) return true;
+    }
+    n=n.parentElement;
+  }
+  return false;
+}
 function _tcScrollGuard(e){
+  // Only VISIBLE floating surfaces count — an overlay some path left hidden in the DOM
+  // must never freeze the page. Touch gestures reuse the touchstart snapshot; wheel
+  // events (no gesture anchor) resolve fresh.
   let floaters;
-  try{ floaters=document.querySelectorAll(TC_FLOAT_SEL); }catch(_e){ return; }
-  if(!floaters.length) return;
+  if(e.type==='touchmove' && _tcGestureFloaters){ floaters=_tcGestureFloaters; }
+  else {
+    floaters=[];
+    try{ document.querySelectorAll(TC_FLOAT_SEL).forEach(f=>{ if(f.offsetWidth||f.offsetHeight) floaters.push(f); }); }catch(_e){ return; }
+  }
+  if(!floaters.length){
+    // No popup up. One job remains, touch only: cancel iOS rubber-banding — a pull past
+    // either page edge that no inner scroller claims. Never cancel an in-range scroll.
+    if(e.type!=='touchmove' || _tcLastTouchY==null) return;
+    const t0=e.touches&&e.touches[0]; if(!t0) return;
+    const dy=t0.clientY-_tcLastTouchY; _tcLastTouchY=t0.clientY;
+    if(!dy || _tcInInnerScroller(e.target)) return;
+    const sc=document.scrollingElement||document.documentElement;
+    const atTop=sc.scrollTop<=0, atBottom=sc.scrollTop+window.innerHeight>=sc.scrollHeight-1;
+    if((atTop && dy>0) || (atBottom && dy<0)){ if(e.cancelable) e.preventDefault(); }
+    return;
+  }
   const t=e.target;
   let within=null;
   floaters.forEach(f=>{ if(f.contains(t)) within=f; });
@@ -3204,9 +3244,49 @@ function _tcScrollGuard(e){
   if(e.cancelable) e.preventDefault();
 }
 try{
+  document.addEventListener('touchstart',_tcTouchAnchor,{passive:true});
   document.addEventListener('touchmove',_tcScrollGuard,{passive:false});
   document.addEventListener('wheel',_tcScrollGuard,{passive:false});
 }catch(_e){}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The ⓘ system: methodology / source / caveat prose lives in popups, not in the
+// layout. Views render one small round button; the words appear on demand and
+// stay inside the window. Register copy in TC_INFO_BOOK (title + html body).
+// ─────────────────────────────────────────────────────────────────────────────
+const TC_INFO_BOOK={};
+function tcInfoBtn(key, label, icon){
+  if(!TC_INFO_BOOK[key]) return '';
+  return `<button class="tc-info-btn ${icon?'tc-info-ico':''}" onclick="tcInfoPop(event,'${key}')" title="${escAttr(label||'What am I looking at?')}" aria-label="${escAttr(label||'About this section')}">${icon||'i'}</button>`;
+}
+var _infoPopOff=null;
+function tcInfoPop(ev, key){
+  try{ ev.stopPropagation(); }catch(e){}
+  const old=document.getElementById('tcInfoPop');
+  if(old){
+    old.remove();
+    if(_infoPopOff){ try{ document.removeEventListener('click',_infoPopOff,true); }catch(e){} _infoPopOff=null; }
+    if(old.dataset && old.dataset.key===key) return;   // same button again = toggle closed
+  }
+  const info=TC_INFO_BOOK[key]; if(!info) return;
+  const div=document.createElement('div');
+  div.id='tcInfoPop'; div.className='tc-info-pop';
+  if(div.dataset) div.dataset.key=key;
+  const body=(typeof info.body==='function')?info.body():info.body;
+  div.innerHTML=`<div class="tc-info-head"><b>${info.title||''}</b>
+      <button class="tc-info-close" onclick="tcInfoPop(event,'${key}')" aria-label="Close">✕</button></div>
+    <div class="tc-info-body">${body||''}</div>`;
+  document.body.appendChild(div);
+  const r=(ev.target&&ev.target.getBoundingClientRect)?ev.target.getBoundingClientRect():{left:20,right:40,top:60,bottom:80};
+  const pw=div.offsetWidth||280, ph=div.offsetHeight||120;
+  const vw=window.innerWidth||360, vh=window.innerHeight||640;
+  div.style.left=Math.max(8, Math.min(vw-pw-8, r.left))+'px';
+  div.style.top=(r.bottom+6+ph>vh ? Math.max(8, r.top-ph-6) : r.bottom+6)+'px';
+  setTimeout(()=>{ const off=(e)=>{
+      if(e.target && e.target.closest && e.target.closest('.tc-info-btn')) return;   // buttons manage their own toggle
+      if(!div.contains(e.target)){ div.remove(); document.removeEventListener('click',off,true); if(_infoPopOff===off) _infoPopOff=null; } };
+    _infoPopOff=off; document.addEventListener('click',off,true); },0);
+}
 
 function toast(msg,type=''){
   const el=document.getElementById('toast');
@@ -3224,6 +3304,28 @@ function mkDelta(cur,base,invert){
   // For "bad" stats (interceptions, fumbles) an increase should read RED, not green.
   const good = invert ? (d<0) : (d>0);
   return `<span class="${good?'delta-up':'delta-dn'}">${s}${v}</span>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mobile slider scale
+// On a phone the full stat domain makes small values nearly impossible to grab —
+// a 22% target share lives in the first fifth of a 0–100 track. Compress the
+// draggable range to realistic headroom (a 30% share reads as an almost-full bar,
+// which is the honest picture). Desktop keeps the full domain. Typed values may
+// exceed the visual cap: the bar pins full and the next paint rescales around it.
+// ─────────────────────────────────────────────────────────────────────────────
+function tcNiceCeil(v){
+  if(!(v>0)) return 0;
+  const p=Math.pow(10, Math.floor(Math.log10(v)));
+  for(const m of [1,1.5,2,2.5,3,4,5,6,8,10]){ if(m*p>=v) return m*p; }
+  return 10*p;
+}
+function tcSliderScaleMax(cur, base, staticMax, floorCap){
+  const mm=(typeof window!=='undefined' && window.matchMedia) ? window.matchMedia('(max-width:760px)') : null;
+  if(!mm || !mm.matches) return staticMax;
+  const v=Math.max(Number(cur)||0, Number(base)||0);
+  let cap=Math.max(Number(floorCap)||0, tcNiceCeil(v*1.35), staticMax*0.12);
+  return Math.min(staticMax, cap);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3269,7 +3371,9 @@ function sRow(key,label,cur,base,min,max,step,col,invert,opts){
   const readOnly=!!opts.readOnly;
   const noteMeta=opts.noteMeta||null;
   col=col||'var(--accent)';
-  const pct=Math.max(0,Math.min(100,(cur-min)/(max-min)*100));
+  const markerV=(opts.paceMarker&&Number.isFinite(opts.paceMarker.value))?opts.paceMarker.value:0;
+  const effMax=tcSliderScaleMax(Math.max(cur,markerV), base, max, opts.floorCap);
+  const pct=Math.max(0,Math.min(100,(cur-min)/(effMax-min)*100));
   const disp=(step<1&&cur%1!==0)?(+cur).toFixed(2):Math.round(cur*10)/10;
   const bDisp=(step<1&&base%1!==0)?(+base).toFixed(2):Math.round(+base);
   const curHtml = readOnly
@@ -3290,11 +3394,11 @@ function sRow(key,label,cur,base,min,max,step,col,invert,opts){
     </div>
     <div class="slider-track">
       <div class="slider-fill" style="width:${pct}%;background:${col}"></div>
-      ${opts.paceMarker&&Number.isFinite(opts.paceMarker.value)?`<div class="pace-marker ${opts.paceMarker.cls||''}" style="left:${Math.max(0,Math.min(100,(opts.paceMarker.value-min)/(max-min)*100)).toFixed(1)}%" title="${escAttr(opts.paceMarker.title||'')}"></div>`:''}
-      <input class="sl" type="range" min="${min}" max="${max}" step="${step}" value="${cur}"
+      ${opts.paceMarker&&Number.isFinite(opts.paceMarker.value)?`<div class="pace-marker ${opts.paceMarker.cls||''}" style="left:${Math.max(0,Math.min(100,(opts.paceMarker.value-min)/(effMax-min)*100)).toFixed(1)}%" title="${escAttr(opts.paceMarker.title||'')}"></div>`:''}
+      <input class="sl" type="range" min="${min}" max="${effMax}" step="${step}" value="${cur}"
         data-key="${key}" data-team="${currentTeam}" data-col="${col}" style="--col:${col}"${readOnly?' disabled':''}>
     </div>
-    <div class="slider-labels"><span>${min}</span><span>${max}</span></div>
+    <div class="slider-labels"><span>${min}</span><span>${effMax}</span></div>
   </div>`;
 }
 function selAll(el){
@@ -3736,7 +3840,10 @@ function renderContent(){
       </div>
     </div>
     ${seasonBanner}
-    <div class="phase-tabs la-icon-tabs">${tabs}</div>${body}
+    <div class="phase-tabs la-icon-tabs">${tabs}</div>${
+      (activeSeason==='proj' && ['Passing','Receiving','Rushing','Advanced'].includes(currentPhase)
+        && typeof renderTeamScheduleStrip==='function') ? renderTeamScheduleStrip(t) : ''
+    }${body}
     <div id="schemeOverlayHost"></div>`;
   if(currentPhase==='Receiving') initPie(t,'pass');
   else if(currentPhase==='Rushing') initPie(t,'rush');
@@ -3767,6 +3874,14 @@ function emptyHTML(){return`<div class="logo-icon-lg"><img src="images/app-icon.
 // ─────────────────────────────────────────────────────────────────────────────
 // Passing Phase
 // ─────────────────────────────────────────────────────────────────────────────
+// QB-room drawer state: per-team so switching teams re-collapses to the clean default.
+var _qbRoomOpenTeam=null;
+let _qbRoomOpen=false;
+function toggleQbRoom(team){
+  if(_qbRoomOpenTeam!==team){ _qbRoomOpenTeam=team; _qbRoomOpen=true; }
+  else _qbRoomOpen=!_qbRoomOpen;
+  if(typeof renderContent==='function') renderContent();
+}
 function renderPassing(team,state){
   const historicalLocked = activeSeason!=='proj';
   const noteTeam=String(team||currentTeam||'').toUpperCase();
@@ -3809,10 +3924,16 @@ function renderPassing(team,state){
   const weekSlider=weekRangeSliderHTML(team,state);
   // Workload card: per-QB Games (0–17) slider. Drives pace extrapolation. A QB at 0
   // games contributes nothing to team totals but keeps his per-game pace for later.
-  const workloadCard = `
-    <div class="card">
-      <div class="card-title">QB Workload ${isMulti?'<span class="split-badge">SPLIT SQUAD</span>':''}</div>
-      ${qbs.map((q,i)=>{
+  //
+  // SPLIT SQUAD only means something when MULTIPLE QBs have projected starts. Most rooms
+  // have one starter penciled in for all 17 — those collapse to a one-line block (tap to
+  // open the room and split starts). A real committee shows only the QBs with starts, and
+  // the rest of the room stays behind a toggle.
+  const starters=qbs.map((q,i)=>({q,i})).filter(x=>Math.round(x.q.games||0)>0);
+  const benchQbs=qbs.map((q,i)=>({q,i})).filter(x=>Math.round(x.q.games||0)<=0);
+  const isSplit=starters.length>1;
+  const roomOpen=(typeof _qbRoomOpen!=='undefined' && _qbRoomOpen && _qbRoomOpenTeam===team) || !starters.length;
+  const qbWlRow=(q,i)=>{
         const gms=Math.round(q.games||0);
         const active = i===idx;
         return `<div class="snap-row" style="${active?'border:1px solid var(--qb)':''}">
@@ -3836,11 +3957,35 @@ function renderPassing(team,state){
           if(!inj || inj.sev!=='o' || !((q.games||0)>0)) return '';
           return `<div class="qb-inj-note">${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(q.player_id):inj.code} listed ${inj.code}${inj.body?` (${escHtml(inj.body)})`:''} but projected for ${Math.round(q.games||0)} games — adjust Games Played, or use games-only mode below to shift games without rescaling stats.</div>`;
         })()}`;
-      }).join('')}
+      };
+  let workloadCard;
+  if(!isSplit && !roomOpen){
+    // One projected starter: a minimized line — his name, his starts, and the way in.
+    const st=starters[0]?starters[0].q:qbs[0];
+    workloadCard=`<div class="card qb-wl-min">
+      <div class="qb-wl-minrow tc-collapse-head" onclick="toggleQbRoom('${team}')" role="button" aria-expanded="false">
+        <span class="clickable-player" onclick="event.stopPropagation();${pcardOnclick(st.player_id||st.name,'QB',currentTeam||'')}">${imgTag(hsPack(st),'player-headshot')}</span>
+        <div class="qb-wl-mininfo">
+          <span class="qb-wl-name"><b>${escHtml(st.name)}</b>${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(st.player_id):''}</span>
+          <span class="qb-wl-games">${Math.round(st.games||0)} games projected</span>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();toggleQbRoom('${team}')" title="See the full QB room and split starts">QB room${qbs.length>1?` (${qbs.length})`:''} ▸</button>
+      </div>
+    </div>`;
+  } else {
+    const shown = roomOpen ? qbs.map((q,i)=>({q,i})) : starters;
+    const benchToggle = (!roomOpen && benchQbs.length)
+      ? `<button class="qb-room-toggle" onclick="toggleQbRoom('${team}')">▾ Full QB room (${benchQbs.length} more)</button>`
+      : (roomOpen ? `<button class="qb-room-toggle" onclick="toggleQbRoom('${team}')">▴ ${isSplit?'Starters only':'Collapse'}</button>` : '');
+    workloadCard=`<div class="card">
+      <div class="card-title tc-collapse-head" onclick="toggleQbRoom('${team}')" role="button" aria-expanded="true" title="Collapse">QB Workload ${isSplit?'<span class="split-badge">SPLIT SQUAD</span>':''}<span class="tc-collapse-caret" style="margin-left:auto">▾</span></div>
+      ${shown.map(x=>qbWlRow(x.q,x.i)).join('')}
+      ${benchToggle}
       <div class="qb-gmode"><label title="Advanced: changing Games Played keeps each QB's season totals fixed and re-derives the per-game rates — for committee or injury situations where the season number is already right.">
         <input type="checkbox" ${state._qbGamesOnly?'checked':''} onchange="toggleQbGamesOnly('${team}')"> games-only mode <span>(shift games without rescaling stats)</span></label></div>
       <div class="derived-note" id="qbWorkloadNote" style="${overBudget?'color:var(--warn)':''}">${qbWorkloadNoteHtml(teamGames, overBudget, team)}</div>
     </div>`;
+  }
   const games=Math.round(qb.games||0);
   const qbBoxAttrs=(label, value, statKey)=>noteTagAttrs({
     label,
@@ -3861,8 +4006,8 @@ function renderPassing(team,state){
       <div class="player-name-block"><div class="player-name clickable-player" onclick="${pcardOnclick(qb.player_id||qb.name,'QB',currentTeam||'')}">${escHtml(qb.name)}${typeof tcOwnerPill==='function'?tcOwnerPill(qb.player_id,qb.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(qb.player_id):''}</div>
         ${weekFilterPaceButton(state,qb.player_id,'qb')}${qbFptsTag(qb)}
         <div class="player-sub">${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?`ECR ${e.rank_ecr}`:'';})()}${(()=>{const e=ecrEntry({name:qb.name});return e&&e.rank_ecr!=null?' · ':'';})()}<span id="qb-games-sub">${games}</span> games projected</div></div></div>
-    <div class="alert alert-info" style="margin-bottom:11px"><span class="alert-icon">📈</span>
-      <div>These are this QB's totals across <b>${games} games</b>. Adjust <b>Games Played</b> above to extrapolate a full-season pace (e.g. an 8-game stint scaled to 17), and the stats below scale with it.</div></div>
+    <div class="tc-pool-line">Totals across <b>${games} games</b>
+      ${(typeof tcInfoBtn==='function')?tcInfoBtn('qbgames','How games scaling works'):''}</div>
     ${sRow('py','Passing Yards',Math.round(qb.passing_yards),Math.round(seed.passing_yards||4000),0,7500,50,undefined,false,{
       readOnly:historicalLocked,
       noteMeta:{ label:'Passing Yards', source:'projection_builder_qb', statKey:'passing_yards', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
@@ -3948,6 +4093,22 @@ function qbTotalsText(state, opts){
 }
 function setActiveQB(idx){userProj[currentTeam].activeQB=idx;saveSession();renderContent();}
 
+
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.shares={title:'How shares work', body:`
+    The team's totals (targets, receiving yards, passing TDs) come from the QB tab; each
+    player's projection is <b>his share × the team total</b>. Drag a share and the others
+    rebalance to keep the pool at 100%. You can also edit <b>Tgts</b>/<b>Rec</b>/TD counts
+    directly — the shares recompute from the numbers.`};
+  TC_INFO_BOOK.rushmodel={title:'How the rushing model works', body:`
+    Set the team's total RB carries and total rushing yards (QB rushing lives on the QB tab).
+    Each back's yards = <b>his carries × his yards-per-carry</b>. Changing a team total scales
+    every back proportionally; changing one back's share rebalances the rest of the backfield.`};
+  TC_INFO_BOOK.qbgames={title:'Games scaling', body:`
+    These are the QB's totals across his projected games. Adjust <b>Games Played</b> to
+    extrapolate a stint to a full season — an 8-game sample scaled to 17 — and every stat
+    below scales with it. Use games-only mode to shift games without rescaling the totals.`};
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // Receiving Phase
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4135,6 +4296,57 @@ function vacatedNote(team){
     <span style="color:var(--muted)">This production is up for grabs among the current roster.</span></div></div>`;
 }
 
+// Flag icons: the vacated summary and the mismatch warnings live in popups now — the icon
+// (same glyph as the old banner) sits beside the ⓘ; tap it for the full taggable detail,
+// reconcile button included. No banner eats the top of the view.
+function vacatedIconBtn(team){
+  const v=vacatedProduction(team);
+  if(!v || !(v.tgt>0)) return '';
+  return (typeof tcInfoBtn==='function')?tcInfoBtn('vac_rec','Vacated production',TC_ICON('export')):'';
+}
+function _tgtDiscrepState(team){
+  const state=userProj[team]; if(!state) return null;
+  const totalTgts=teamTargetPool(state);
+  const expectTgts=Math.round(teamPassAtt(state)*TARGET_RATE);
+  const tgtDiff=expectTgts-Math.round(totalTgts);
+  return { totalTgts, expectTgts, tgtDiff, off: Math.abs(tgtDiff)>Math.max(8, expectTgts*0.03) };
+}
+function _tgtDiscrepBody(){
+  const team=currentTeam; const d=_tgtDiscrepState(team);
+  if(!d || !d.off) return 'Targets and QB attempts are aligned.';
+  const lockStats = activeSeason!=='proj';
+  return `<b>${Math.abs(d.tgtDiff)} targets ${d.tgtDiff>0?'unaccounted for':'over the QB total'}.</b>
+    The QBs' ${teamPassAtt(userProj[team])} attempts imply about <b>${d.expectTgts} targets</b>, but the receivers add up to <b>${Math.round(d.totalTgts)}</b>.
+    ${lockStats?'':`<button class="btn btn-accent btn-sm" style="margin-top:8px" onclick="reconcileTargets('${team}');tcInfoPop(event,'discrep_tgt')">${d.tgtDiff>0?'Distribute':'Reconcile'} the difference →</button>`}`;
+}
+function _derivedDiscrepState(team,metric){
+  const state=userProj[team]; if(!state) return null;
+  ensureDerivedShares(state,metric);
+  const isYds=metric==='recyds';
+  const qbPool=isYds?teamRecYardsPool(state):teamRecPool(state);
+  const field=isYds?'recyds_share':'rec_share';
+  const receiverSum=(state.passing_shares||[]).reduce((a,p)=>a+qbPool*((p[field]||0)/100),0);
+  const diff=Math.round(qbPool-receiverSum);
+  const threshold=isYds?Math.max(40,qbPool*0.02):Math.max(3,qbPool*0.02);
+  return { qbPool, receiverSum, diff, off: Math.abs(diff)>threshold, unit:isYds?'receiving yards':'receptions' };
+}
+function _derivedDiscrepBody(metric){
+  const team=currentTeam; const d=_derivedDiscrepState(team,metric);
+  if(!d || !d.off) return 'Receivers match the QB totals.';
+  const lockStats = activeSeason!=='proj';
+  const sign=d.diff>0?'short of':'over';
+  return `<b>${Math.abs(d.diff).toLocaleString()} ${d.unit} ${sign} the QB total.</b>
+    The QBs are projected for <b>${d.qbPool.toLocaleString()} ${d.unit}</b>, but the receivers currently add up to <b>${Math.round(d.receiverSum).toLocaleString()}</b>.
+    ${d.diff>0?'That production is unclaimed — distribute it across the receiving corps.':'The receivers exceed the QBs\' output — trim it down to reconcile.'}
+    ${lockStats?'':`<button class="btn btn-accent btn-sm" style="margin-top:8px" onclick="reconcileDerived('${team}','${metric}');tcInfoPop(event,'discrep_${metric}')">${d.diff>0?'Distribute':'Reconcile'} the ${d.diff>0?'difference':'overage'} →</button>`}`;
+}
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.vac_rec={title:'Vacated production', body:()=>vacatedNote(currentTeam)||'No vacated production.'};
+  TC_INFO_BOOK.discrep_tgt={title:'Targets vs QB attempts', body:()=>_tgtDiscrepBody()};
+  TC_INFO_BOOK.discrep_rec={title:'Receptions vs QB total', body:()=>_derivedDiscrepBody('rec')};
+  TC_INFO_BOOK.discrep_recyds={title:'Receiving yards vs QB total', body:()=>_derivedDiscrepBody('recyds')};
+}
+
 // Receptions / Receiving-Yards share view — editable, mirrors the target-share tab.
 // Colors are keyed to each player's ORIGINAL index (PCOLORS[i]) so the pie slices and
 // the rows always line up. Each player has a rec_share / recyds_share that rebalances the
@@ -4198,8 +4410,8 @@ function renderPassDerived(team,state,subTabs,metric){
         <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTagTop(p,'rec')}
         <span class="share-pct" id="dp-${i}">${sharePct}</span>
         <span class="share-vol" id="dv-${i}">${tagVal(v.toLocaleString()+' '+label, isYds?'Receiving Yards':'Receptions', isYds?'receiving_yards':'receptions')}</span></div>
-      <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
-        <input class="sl" type="range" min="0" max="100" step="0.5" value="${pct}" data-key="${key}_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
+      <div class="slider-track"><div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,40):100)*100).toFixed(1)}%;background:${col}"></div>
+        <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,40):100}" step="0.5" value="${pct}" data-key="${key}_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
         <span class="share-stat">Tgts ${tgtsCell}</span>
         <span class="share-stat">Rec ${recCell}</span>
@@ -4213,24 +4425,11 @@ function renderPassDerived(team,state,subTabs,metric){
   const title = isYds ? 'Receiving Yardage Share' : 'Receptions Share';
   // Discrepancy banner: only meaningful when the gap is non-trivial (>2% of the pool).
   const threshold = isYds ? Math.max(40, qbPool*0.02) : Math.max(3, qbPool*0.02);
-  let banner;
-  if(Math.abs(diff) > threshold){
-    const sign = diff>0?'short of':'over';
-    banner = `<div class="discrepancy-note">
-      <span class="vacated-icon">${TC_ICON("warning")}</span>
-      <div><b>${Math.abs(diff).toLocaleString()} ${unit} ${sign} the QB total.</b>
-      The QBs are projected for <b>${qbPool.toLocaleString()} ${unit}</b>, but the receivers currently add up to
-      <b>${Math.round(receiverSum).toLocaleString()}</b>. ${diff>0
-        ? 'That production is unclaimed — distribute it across the receiving corps.'
-        : 'The receivers exceed the QBs\' output — trim it down to reconcile.'}
-      ${lockStats?'':`<button class="btn btn-accent btn-sm" style="margin-top:6px" onclick="reconcileDerived('${team}','${metric}')">
-        ${diff>0?'Distribute':'Reconcile'} the ${diff>0?'difference':'overage'} →</button>`}</div></div>`;
-  } else {
-    banner = `<div class="reconciled-note">${TC_ICON("check")} Receivers match the QBs' projected ${unit} (${qbPool.toLocaleString()}).</div>`;
-  }
+  const discrepFlag=(Math.abs(diff) > threshold && typeof tcInfoBtn==='function')
+    ? tcInfoBtn('discrep_'+metric, `${Math.abs(diff).toLocaleString()} ${unit} ${diff>0?'short of':'over'} the QB total`, TC_ICON('warning')) : '';
   return `<div class="card"><div class="card-title">${title}</div>${subTabs}
-    ${vacatedNote(team)}
-    ${banner}
+    <div class="tc-pool-line"><b>${qbPool.toLocaleString()}</b> ${unit} from the QBs
+      ${vacatedIconBtn(team)}${discrepFlag}${(typeof tcInfoBtn==='function')?tcInfoBtn('shares','How shares work'):''}</div>
     <div class="pie-section">
       <div class="pie-wrap"><canvas id="derivedPieChart" width="150" height="150"></canvas>
         <div class="pie-sub" id="derivedSub">${passDerivedSubHtml(state, metric, team)}</div></div>
@@ -4338,8 +4537,8 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},${pcardArg(p.pos)})" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
       </div>
       <div class="slider-track">
-        <div class="slider-fill" style="width:${pct}%;background:${col}"></div>
-        <input class="sl" type="range" min="0" max="100" step="0.5" value="${pct}" data-key="ps_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}>
+        <div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,40):100)*100).toFixed(1)}%;background:${col}"></div>
+        <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,40):100}" step="0.5" value="${pct}" data-key="ps_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}>
       </div>
       <div class="share-stats">
         <span class="share-stat">Tgts ${tgtsCell}</span>
@@ -4355,19 +4554,11 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
   const expectTgts=Math.round(teamPassAtt(state)*TARGET_RATE);
   const tgtDiff=expectTgts-Math.round(totalTgts);
   const tThresh=Math.max(8, expectTgts*0.03);
-  let tgtBanner='';
-  if(Math.abs(tgtDiff)>tThresh){
-    tgtBanner=`<div class="discrepancy-note"><span class="vacated-icon">${tgtDiff>0?'⚠️':'❗'}</span>
-      <div><b>${Math.abs(tgtDiff)} targets ${tgtDiff>0?'unaccounted for':'over the QB total'}.</b>
-      The QBs' ${teamPassAtt(state)} attempts imply about <b>${expectTgts} targets</b>, but the receivers add up to <b>${Math.round(totalTgts)}</b>.
-      ${lockStats?'':`<button class="btn btn-accent btn-sm" style="margin-top:6px" onclick="reconcileTargets('${team}')">${tgtDiff>0?'Distribute':'Reconcile'} the difference →</button>`}</div></div>`;
-  }
+  const tgtFlag=(Math.abs(tgtDiff)>tThresh && typeof tcInfoBtn==='function')
+    ? tcInfoBtn('discrep_tgt',`${Math.abs(tgtDiff)} targets ${tgtDiff>0?'unaccounted for':'over the QB total'}`, tgtDiff>0?'⚠️':'❗') : '';
   return `<div class="card"><div class="card-title">Receiver Target Share</div>${subTabs}
-    ${vacatedNote(team)}
-    ${tgtBanner}
-    <div class="alert alert-info"><span class="alert-icon">ℹ️</span>
-      <div>${totalTgts} total targets (${teamPassAtt(state)} att × ${TARGET_RATE}) · ${teamRecYardsPool(state).toLocaleString()} receiving yards available · ${totalTDs} pass TDs.
-      Drag a share to 100% and others rebalance. Or edit <b>Tgts</b>/<b>Rec</b> directly — shares recompute.</div></div>
+    <div class="tc-pool-line"><b>${totalTgts}</b> targets · <b>${teamRecYardsPool(state).toLocaleString()}</b> rec yds · <b>${totalTDs}</b> pass TDs
+      ${vacatedIconBtn(team)}${tgtFlag}${(typeof tcInfoBtn==='function')?tcInfoBtn('shares','How shares work'):''}</div>
     <div class="pie-section">
       <div class="pie-wrap"><canvas id="pieChart" width="150" height="150"></canvas>
         <div class="pie-sub" id="pieSub">${passPieSubHtml(state,totalTgts,team)}</div></div>
@@ -4416,15 +4607,15 @@ function renderPassTDs(team,state,totalTDs,subTabs){
         <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>
         <span class="share-pct" id="tdp-${i}">${sharePct}</span>
         <span class="share-vol">${tagVal(projTDs+' TD','Receiving TDs','receiving_tds')}</span></div>
-      <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
-        <input class="sl" type="range" min="0" max="100" step="1" value="${pct}" data-key="tds_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
+      <div class="slider-track"><div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,50):100)*100).toFixed(1)}%;background:${col}"></div>
+        <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,50):100}" step="1" value="${pct}" data-key="tds_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
         <span class="share-stat">Rec TDs ${tdCell}</span>
       </div></div>`;
   }).join('');
   return `<div class="card"><div class="card-title">Receiving TD Share</div>${subTabs}
-    <div class="alert alert-info"><span class="alert-icon">ℹ️</span>
-      <div>${totalTDs} total passing TDs (from the QB tab). Each player's projected receiving TDs = share × ${totalTDs}.</div></div>
+    <div class="tc-pool-line"><b>${totalTDs}</b> passing TDs to distribute
+      ${(typeof tcInfoBtn==='function')?tcInfoBtn('shares','How shares work'):''}</div>
     <div class="pie-section">
       <div class="pie-wrap"><canvas id="pieChart" width="150" height="150"></canvas>
         <div class="pie-sub">${totalTDs} rec TDs</div></div>
@@ -4498,8 +4689,8 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
         <span class="share-vol" id="ra-${i}">${tagVal(att+' att','Rushing Attempts','rushing_attempts')}</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},'RB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
         </div>
-      <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
-        <input class="sl" type="range" min="0" max="100" step="1" value="${pct}"
+      <div class="slider-track"><div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,85):100)*100).toFixed(1)}%;background:${col}"></div>
+        <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,85):100}" step="1" value="${pct}"
           data-key="rs_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
         <span class="share-stat">Att ${attCell}</span>
@@ -4509,14 +4700,14 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
       </div></div>`;
   }).join('');
   return `<div class="card"><div class="card-title">Team Rushing Volume</div>
-    <div class="alert alert-info"><span class="alert-icon">ℹ️</span>
-      <div>Set total RB carries and total rushing yards. Each RB's yards = their carries × their Y/Carry;
-      changing the team total scales every RB's efficiency proportionally.</div></div>
+    <div class="tc-pool-line">Team totals feed every back below
+      ${(typeof tcInfoBtn==='function')?tcInfoBtn('rushmodel','How the rushing model works'):''}</div>
     ${sRow('rush_total_att','RB Carries (excl QB)',r.total_attempts,baseAtt,0,600,5,'var(--rb)',false,{ readOnly:lockStats, noteMeta:{ label:'Team RB Carries', source:'projection_builder_rushing', statKey:'team_rb_carries', context:totalsCtx, team:noteTeam, relevance:'RB' } })}
     ${sRow('rush_total_yds','Total RB Rush Yards',r.total_yards,baseYds,0,3500,25,'var(--rb)',false,{ readOnly:lockStats, noteMeta:{ label:'Team RB Rushing Yards', source:'projection_builder_rushing', statKey:'team_rb_total_yards', context:totalsCtx, team:noteTeam, relevance:'RB' } })}
     <div class="derived-note" id="rushDerived">${rushNote(state,{asHtml:true,team})}</div></div>
   <div class="card"><div class="card-title">RB Carry Share</div>${subTabs}
-    ${vacatedRushNote(team)}
+    <div class="tc-pool-line"><b>${Math.round(r.total_attempts).toLocaleString()}</b> carries · <b>${Math.round(r.total_yards).toLocaleString()}</b> rush yds
+      ${(vacatedRushing(team)&&typeof tcInfoBtn==='function')?tcInfoBtn('vac_rush','Vacated carries',TC_ICON('export')):''}${(typeof tcInfoBtn==='function')?tcInfoBtn('rushmodel','How the rushing model works'):''}</div>
     <div class="pie-section">
       <div class="pie-wrap"><canvas id="rushPieChart" width="150" height="150"></canvas>
         <div class="pie-sub" id="rushTotalLbl">${rushTotalLabelHtml(state,team)}</div></div>
@@ -4558,8 +4749,8 @@ function renderRushTDs(team,state,subTabs){
         <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTagTop(p,'rush')}
         <span class="share-pct" id="rtdp-${i}">${sharePct}</span>
         <span class="share-vol">${tagVal(projTDs+' TD','Rushing TDs','rushing_tds')}</span></div>
-      <div class="slider-track"><div class="slider-fill" style="width:${pct}%;background:${col}"></div>
-        <input class="sl" type="range" min="0" max="100" step="1" value="${pct}"
+      <div class="slider-track"><div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,50):100)*100).toFixed(1)}%;background:${col}"></div>
+        <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,50):100}" step="1" value="${pct}"
           data-key="rtds_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
         <span class="share-stat">Rush TDs ${tdCell}</span>
@@ -4569,8 +4760,8 @@ function renderRushTDs(team,state,subTabs){
     ${sRow('rush_total_tds','Total RB Rush TDs',totalTDs,Math.round(totalTDs),0,40,1,'var(--rb)',false,{ readOnly:lockStats, noteMeta:{ label:'Team RB Rushing TDs', source:'projection_builder_rushing', statKey:'team_rb_rushing_tds', context:totalsCtx, team:noteTeam, relevance:'RB' } })}
     <div class="derived-note">Set the team's total RB rushing TDs; each back's share below splits this total.</div></div>
   <div class="card"><div class="card-title">Rushing TD Share</div>${subTabs}
-    <div class="alert alert-info"><span class="alert-icon">ℹ️</span>
-      <div>${totalTDs.toFixed(0)} projected RB rushing TDs. QB rushing TDs are set separately on the QB tab.</div></div>
+    <div class="tc-pool-line"><b>${totalTDs.toFixed(0)}</b> RB rushing TDs to distribute
+      ${(typeof tcInfoBtn==='function')?tcInfoBtn('rushtds','Where these TDs come from'):''}</div>
     <div class="pie-section">
       <div class="pie-wrap"><canvas id="rushPieChart" width="150" height="150"></canvas>
         <div class="pie-sub" id="rushTDLbl">${totalTDs.toFixed(0)} rush TDs</div></div>
@@ -4682,6 +4873,15 @@ function vacatedRushNote(team){
     <div>${noteWrapHtml(lineHtml, { label:'Vacated Carries', value:tagValue, source:'projection_builder_vacated', statKey:'vacated_carries', context:ctx, team:noteTeam, relevance:'RB,QB,WR' }, 'note-tag-hit')}
     <span style="color:var(--muted)"> — left by ${names}.</span>
     <span style="color:var(--muted)">These carries are up for grabs among the current backfield.</span></div></div>`;
+}
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.vac_rush={title:'Vacated carries', body:()=>{
+    // 45 has its own vacated builder for carries — find it under the rushing view.
+    return (typeof vacatedRushNote==='function' ? vacatedRushNote(currentTeam) : '') || 'No vacated carries.';
+  }};
+  TC_INFO_BOOK.rushtds={title:'RB rushing TDs', body:`
+    The projected RB rushing TDs, split by the shares below. <b>QB rushing TDs are set
+    separately on the QB tab</b> — they never come out of this pool.`};
 }
 // ─────────────────────────────────────────────────────────────────────────────
 // Pie charts
@@ -8531,9 +8731,6 @@ function _rbFanSVG(chart, playerName, season, metric, notePlayer){
   parts.push(`<text x="${rbx}" y="${G.rbNameY}" fill="#fff" font-size="${mobileNarrow?15:13}" font-weight="800" text-anchor="middle">${String(playerName||'RB').toUpperCase()}</text>`);
   parts.push(`<text x="${rbx}" y="${G.rbMetaY}" fill="#9aa0a6" font-size="${mobileNarrow?12:11}" text-anchor="middle">${t.attempts||0} carries · ${(t.yards!=null?Number(t.yards).toLocaleString():'—')} yds · ${_rbNum(t.ypc,2)} YPC · ${_rbNum(t.success_rate,1)}% success</text>`);
 
-  parts.push(`<text x="30" y="${G.footY1}" fill="#6b7075" font-size="10">OL card grades are from the validated local OL pipeline (${chart.is_projection?`projected ${_rbProjYear()} run grades`:'historical rushing grades'}, slot by pass-snaps).</text>`);
-  parts.push(`<text x="30" y="${G.footY2}" fill="#6b7075" font-size="10">Lanes shown when attempts >= 3. ${chart.is_projection?'Projected lanes keep the back\u2019s last known directional profile and scale it to projected volume/efficiency.' : (MET.key? 'Color scales to this back\u2019s best gap.' : 'Color compares lane YPC to league average for that lane in-season.')}</text>`);
-  parts.push(`<text x="30" y="${G.footY3}" fill="#6b7075" font-size="10">Data: nflverse play-by-play + local OL grades. Not affiliated with the NFL.</text>`);
   parts.push('</svg>');
   return parts.join('');
 }
@@ -8583,10 +8780,10 @@ function renderPcardRbFan(pid){
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns}</div>
       <div class="rt-metrics">${metricBtns}</div>
-      <div class="rt-summary">${noteWrapHtml(`${t.attempts||0} carries`, { label:'Carries', value:String(t.attempts||0), source:'rb_rushing_fan', statKey:'attempts', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.ypc,2)} YPC`, { label:'Yards Per Carry', value:_rbNum(t.ypc,2), source:'rb_rushing_fan', statKey:'ypc', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.success_rate,1)}% success`, { label:'Success Rate', value:`${_rbNum(t.success_rate,1)}%`, source:'rb_rushing_fan', statKey:'success_rate', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</div>
+      <div class="rt-summary">${noteWrapHtml(`${t.attempts||0} carries`, { label:'Carries', value:String(t.attempts||0), source:'rb_rushing_fan', statKey:'attempts', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.ypc,2)} YPC`, { label:'Yards Per Carry', value:_rbNum(t.ypc,2), source:'rb_rushing_fan', statKey:'ypc', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.success_rate,1)}% success`, { label:'Success Rate', value:`${_rbNum(t.success_rate,1)}%`, source:'rb_rushing_fan', statKey:'success_rate', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} ${(typeof tcInfoBtn==='function')?tcInfoBtn('rbfan','Reading this chart'):''}</div>
     </div>
     ${runSc.score!=null || runSc.rank!=null ? `<div class="olc-overview">${noteWrapHtml(`<b>Cumulative Run Blocking Score: ${runSc.score!=null?runSc.score.toFixed(1):'—'}</b> ${_rbRankBadge(runSc.rank)}`, { label:'Cumulative Run Blocking Score', value:runSc.score!=null?runSc.score.toFixed(1):'—', source:'rb_offensive_line', statKey:'run_blocking_score', context:`${chart.team||notePlayer.team} offensive line · ${(_rbIsProjSeason(season) && chart.is_projection)?`${_rbProjYear()} projections`:`${season}`}`, team:chart.team||notePlayer.team, relevance:'RB' }, 'note-tag-hit')}</div>` : ''}
-    ${chart.is_projection?`<div class="olc-overview"><b>${_rbProjYear()} Projection:</b> projected depth-chart starters' run grades drive the line cards, cumulative run score and league rank${chart.baseline_run_rank!=null?` (${chart.baselineSeason}: #${chart.baseline_run_rank})`:''}. Lane arrows preserve the back's latest directional profile and scale it to projected efficiency/volume.</div>${typeof _olProjCoverageNote==='function'?_olProjCoverageNote():''}`:''}
+    ${chart.is_projection?`<div class="olc-overview"><b>${_rbProjYear()} projection</b> · projected starters drive the line${chart.baseline_run_rank!=null?` (${chart.baselineSeason}: #${chart.baseline_run_rank})`:''}</div>${typeof _olProjCoverageNote==='function'?_olProjCoverageNote():''}`:''}
     ${_rbFanSVG(chart, name, season, metric, notePlayer)}
     <div class="rbf-legend">
       <span><i style="background:#2fae4e"></i>Lane YPC above league avg</span>
@@ -8616,6 +8813,16 @@ function _rbRefreshOpenProjectedFanForTeam(team){
     if(!proj || (_rbTeamCode(proj.team)!==_rbTeamCode(team) && !stabilised)) return;
   }catch(e){ /* refresh anyway on lookup failure */ }
   body.innerHTML=renderPcardRbFan(pcardState.pid);
+}
+
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.rbfan={title:'Reading the rushing fan', body:`
+    Arrow width = lane success rate; arrow color = efficiency (for historical seasons, lane
+    YPC vs the league average for that lane; for a single back's view, scaled to his best gap).
+    Lanes appear once a gap has 3+ attempts. OL grades along the line come from the validated
+    local OL pipeline (projected run grades for the projection season, historical otherwise).
+    Projected lanes keep the back's last known directional profile, scaled to projected volume.
+    Data: nflverse play-by-play + local OL grades.`};
 }
 // ── OL grades card (player-card "OL Grades" tab) ───────────────────────────
 // Seed payload: NFLVERSE[season].ol_players[normName] = {
@@ -10005,7 +10212,7 @@ function renderPcardOlGrades(pid){
 
     ${flags}
 
-    <div class="olc-caveat">Grades combine the market's valuation, snap share and draft capital — the three signals that measurably track lineman quality — plus ESPN's tracking-derived win rate where it is published. Validated against ESPN's top-20: AUC 0.80 pass, 0.75 run. No free source records which lineman lost a rep, so grades are shown as bands rather than ranks.</div>
+    <div class="olc-caveat olc-caveat-min">Grades are bands, not ranks ${(typeof tcInfoBtn==='function')?tcInfoBtn('olgrades','How OL grades are built'):''}</div>
 
     <div class="olc-team-head">${teamDisplayName(teamCode)||teamCode||'Team'} Offensive Line Context (${season})</div>
     ${metrics}
@@ -10018,6 +10225,16 @@ function setPcardOlSeason(season){
   pcardOlSeason=season;
   const body=document.getElementById('pcardBody');
   if(body && pcardState) body.innerHTML=renderPcardOlGrades(pcardState.pid);
+}
+
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.olgrades={title:'How OL grades are built', body:`
+    Grades combine the market's valuation, snap share and draft capital \u2014 the three signals
+    that measurably track lineman quality \u2014 plus ESPN's tracking-derived win rate where it is
+    published. Validated against ESPN's top-20: AUC 0.80 pass, 0.75 run. No free source records
+    which lineman lost a rep, so grades are shown as <b>bands rather than ranks</b>.
+    Player grades come from the local OL pipeline; team context from the nflverse
+    offensive-line season table.`};
 }
 // ── Rookie college stats (ESPN) ─────────────────────────────────────────────
 // Rookies have no NFL game log yet, so their player card shows their COLLEGE game logs from
@@ -11262,7 +11479,7 @@ function renderDepthChartFallback(team){
 }
 // Readable source lives in src/templates/coaching-template.html; build.py inlines it here
 // as a JSON string so the shipped index.html remains a single self-contained file.
-const SCHEME_TEMPLATE_INLINE = "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><title>Formation Playsheet</title>\n<style>\n  :root{--paper:#f4efe2;--ink:#1a1a17;--rule:#c9c1ab;--hl-yel:#f5e04b;--hl-grn:#8fd06a;--hl-pnk:#f7a8c4;--red:#a8321f;}\n  *{box-sizing:border-box;}\n  body{margin:0;background:#2a2723;font-family:\"Courier New\",monospace;padding:14px;color:var(--ink);}\n  .sheet{max-width:1040px;margin:0 auto;background:var(--paper);border:2px solid #000;box-shadow:0 8px 40px rgba(0,0,0,.6);}\n  .hdr{background:var(--ink);color:var(--paper);padding:10px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}\n  .hdr h1{font-size:18px;margin:0;letter-spacing:1px;text-transform:uppercase;}\n  .hdr .wk{font-size:12px;color:#c9c1ab;}\n  .controls{display:flex;flex-wrap:wrap;gap:10px;padding:10px 16px;background:#e8e1d0;border-bottom:2px solid #000;align-items:flex-end;}\n  .ctrl{display:flex;flex-direction:column;gap:3px;}\n  .ctrl label{font-size:9px;text-transform:uppercase;letter-spacing:1px;font-weight:bold;color:#5a5545;}\n  select{font-family:\"Courier New\",monospace;background:var(--paper);border:1.5px solid #000;padding:5px 8px;font-size:13px;font-weight:bold;cursor:pointer;}\n  .banner{background:var(--red);color:#fff;text-align:center;font-weight:bold;font-size:13px;padding:4px;letter-spacing:2px;text-transform:uppercase;}\n  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));}\n  .card{border:1px solid #000;border-top:none;border-left:none;padding:8px 12px 12px;position:relative;}\n  .rank{position:absolute;top:6px;left:8px;font-size:10px;font-weight:bold;color:#8a8470;}\n  .plabel{text-align:center;font-weight:bold;font-size:14px;letter-spacing:1px;border-bottom:1.5px solid #000;padding-bottom:3px;margin-bottom:2px;}\n  .plabel .pers{background:var(--hl-yel);padding:1px 6px;}\n  .plabel .fname{font-size:11px;color:#5a5545;}\n  .subttl{text-align:center;font-size:10px;color:#5a5545;margin-bottom:4px;}\n.prod{font-family:'Courier New',monospace;font-size:9.5px;font-weight:700;letter-spacing:.02em;\n  margin:2px 0 4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}\n.prod-pass{color:#4f83cc;}\n.prod-run{color:#4a7f2c;}\n.prod-sep{color:#b9b295;}\n  svg{display:block;margin:0 auto;}\n  .stats{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;margin-top:6px;font-size:12px;}\n  .stat{display:flex;justify-content:space-between;border-bottom:1px dotted var(--rule);}\n  .rp{height:20px;background:#ddd6c4;border:1px solid #000;position:relative;margin-top:8px;overflow:hidden;font-size:10px;display:flex;cursor:pointer;}\n  .rp .run,.rp .pass{position:relative;display:flex;align-items:center;height:100%;transition:filter .1s;}\n  .rp .run{background:var(--hl-grn);justify-content:flex-start;padding-left:5px;}\n  .rp .pass{background:#4f83cc;color:#fff;justify-content:flex-end;padding-right:5px;}\n  .rp .run:hover,.rp .pass:hover{filter:brightness(1.12);}\n  .rp .seg.active{outline:2px solid #1a1a17;outline-offset:-2px;}\n  .rp b{font-weight:bold;}\n  .hintbar{text-align:center;font-size:9px;color:#8a8470;margin-top:2px;}\n  .nt{display:inline;}\n  .dia{margin-top:8px;border-top:2px dashed var(--rule);padding-top:6px;display:none;}\n  .dia.show{display:block;}\n  .diahead{font-size:10px;font-weight:bold;text-transform:uppercase;text-align:center;margin-bottom:3px;}\n  .empty{padding:30px;text-align:center;color:#8a8470;font-size:13px;grid-column:1/-1;}\n  .foot{padding:8px 16px;font-size:9px;color:#6a6455;border-top:2px solid #000;line-height:1.5;}\n  .hint{text-align:center;font-size:10px;color:#8a8470;padding:6px;background:#ece5d3;border-bottom:1px solid #000;}\n  .hl-p{background:var(--hl-pnk);} .hl-g{background:var(--hl-grn);}\n</style></head>\n<body><div class=\"sheet\">\n  <div class=\"hdr\"><h1>Detroit Lions &mdash; Playbook</h1><span class=\"wk\">2025 \u00b7 Routes mapped to players</span></div>\n  <div class=\"controls\">\n    <div class=\"ctrl\"><label>Down</label><select id=\"down\"><option value=\"all\">All downs</option><option value=\"1\">1st</option><option value=\"2\">2nd</option><option value=\"3\">3rd</option><option value=\"4\">4th</option></select></div>\n    <div class=\"ctrl\"><label>Distance to sticks</label><select id=\"dist\"><option value=\"all\">Any</option><option value=\"short\">Short (1-3)</option><option value=\"med\">Medium (4-7)</option><option value=\"long\">Long (8+)</option></select></div>\n    <div class=\"ctrl\"><label>Play type</label><select id=\"field\"><option value=\"all\">All plays</option><option value=\"pa\">Play-action</option><option value=\"motion\">Pre-snap motion</option><option value=\"nohuddle\">No-huddle</option><option value=\"redzone\">Red zone</option></select></div>\n    <div class=\"ctrl\"><label>&nbsp;</label><span id=\"ctx\" style=\"font-size:12px;font-weight:bold;padding:5px;\"></span></div>\n  </div>\n  <div class=\"hint\">\u25b8 Click the GREEN part of a formation's bar to see its top-3 run lanes \u00b7 click the BLUE part to see each player's most-common route</div>\n  <div class=\"banner\" id=\"banner\">All Situations</div>\n  <div class=\"grid\" id=\"grid\"></div>\n  <div class=\"foot\">Play diagrams: routes are each skill player's single most-common route WHEN TARGETED out of this formation (season pool, all situations, for stable sample), mapped to players by target rank (WR1=St. Brown, WR2=Williams, etc.); the outermost WR is treated as WR1. Run mode shows the 3 most-used gaps, arrow width = frequency, color = EPA. Alignment is authentic; exact pre-snap WR splits are schematic. Data: nflverse pbp + FTN participation, 2025 REG. Not affiliated with the NFL.</div>\n</div>\n__TC_SCRIPT_OPEN____TC_FV_SCRIPT____TC_SCRIPT_CLOSE__\n__TC_SCRIPT_OPEN__\nfunction nEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }\nconst NOTE_NAV=nEsc(JSON.stringify({type:'coaching',team:TEAM_CODE,season:String(SEASON),tab:'playbook'}));\nfunction noteWrap(label,value,context,relevance,html){\n  return `<span class=\"nt\" data-noteable=\"1\" data-note-label=\"${nEsc(label)}\" data-note-value=\"${nEsc(value)}\" data-note-context=\"${nEsc(context)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"${nEsc(label)}\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"${nEsc(relevance||'QB,RB,WR,TE')}\" data-note-nav=\"${NOTE_NAV}\">${html}</span>`;\n}\nfunction ec(e){ if(e==null)return\"#999\"; let t=Math.max(-0.4,Math.min(0.4,e))/0.4;\n  if(t>=0)return `rgb(${Math.round(216+(47-216)*t)},${Math.round(165+(174-165)*t)},${Math.round(29+(78-29)*t)})`;\n  let a=-t; return `rgb(${Math.round(216+(211-216)*a)},${Math.round(165+(59-165)*a)},${Math.round(29+(47-29)*a)})`; }\n\n// compute skill-player positions on a tall play diagram; returns {ol:[...], skill:[{role,x,y,side,label}]}\n// full 1-9 route tree (fallback when a player has no route data at all)\nconst FULL_TREE=[['FLAT',null],['SLANT',null],['COMEBACK',null],['HITCH/CURL',null],['OUT',null],['IN/DIG',null],['CORNER',null],['POST',null],['GO',null]];\nconst FULL_TREE_RB=[['FLAT',null],['SWING',null],['SCREEN',null],['TEXAS/ANGLE',null],['WHEEL',null],['SLANT',null],['HITCH/CURL',null]];\n\n// alignment variations for a personnel grouping (schematic \u2014 nflverse gives personnel, not splits)\nfunction variantsFor(g){\n  const wr=g.wr, te=g.te; const out=[];\n  const half=Math.ceil(wr/2);\n  const add=(name,o)=>out.push(Object.assign({name:name,wrR:half,wrBunch:null,teR:Math.ceil(te/2),teBunch:false,rbSide:null},o));\n  add('Base '+half+'x'+(wr-half));\n  if(wr>=2){ add('Trips Rt',{wrR:wr,teR:0}); add('Trips Lt',{wrR:0,teR:te}); }\n  if(wr>=3){ add('Bunch Rt',{wrR:wr,wrBunch:'R',triangle:true,teR:0,rbSide:'L'}); add('Bunch Lt',{wrR:0,wrBunch:'L',triangle:true,teR:te,rbSide:'R'}); }\n  if(wr==2){ add('Doubles Rt',{wrR:2,teR:0}); add('Doubles Lt',{wrR:0,teR:te}); }\n  if(wr>=4){ add('4-Strong Rt',{wrR:4,wrBunch:'R',teR:0}); add('3x1 Rt',{wrR:3,teR:0}); }\n  if(te>=2){ add('TE Bunch Rt',{teR:te,teBunch:true,wrR:half}); add('TE Bunch Lt',{teR:0,teBunch:true,wrR:half}); add('TE Split',{teR:1,wrR:half}); }\n  if(te>=3){ add('TE Trips Rt',{teR:3,teBunch:true,wrR:0}); add('TE Trips Lt',{teR:0,teBunch:true,wrR:wr}); }\n  return out;\n}\nfunction positions(g, av){\n  const cx=165, olY=200, gap=22, sq=15;\n  const olX=[cx-2*gap,cx-gap,cx,cx+gap,cx+2*gap];\n  const skill=[]; const al=g.align, backs=g.backs, te=g.te, wr=g.wr;\n  const vars=variantsFor(g); const v=vars[(av||0)%vars.length]||vars[0];\n  let qbY = al=='uc'?olY+16:(al=='pistol'?olY+34:olY+42);\n  skill.push({role:'QB',x:cx,y:qbY,side:'M',label:'QB'});\n  // RB placement (shotgun/pistol can flip to weak side of a bunch)\n  const rbSide = v.rbSide;\n  if(al=='uc'){\n    if(backs>=3){ // full house: FB/lead back tight, two halfbacks split behind\n      skill.push({role:'RB',x:cx,y:qbY+22,side:'M',label:'FB'});\n      skill.push({role:'RB',x:cx-20,y:qbY+40,side:'L',label:'RB'});\n      skill.push({role:'RB',x:cx+20,y:qbY+40,side:'R',label:'RB'}); }\n    else if(backs>=2){skill.push({role:'RB',x:cx,y:qbY+22,side:'M',label:'FB'});skill.push({role:'RB',x:cx,y:qbY+40,side:'M',label:'RB'});}\n    else if(backs==1)skill.push({role:'RB',x:cx,y:qbY+38,side:'M',label:'RB'}); }\n  else if(al=='pistol'){\n    skill.push({role:'RB',x:cx,y:qbY+20,side:'M',label:'RB'});\n    if(backs>=2)skill.push({role:'RB',x:cx-24,y:qbY+14,side:'L',label:'RB'});\n    if(backs>=3)skill.push({role:'RB',x:cx+24,y:qbY+14,side:'R',label:'RB'}); }\n  else { const rx=rbSide=='L'?cx-22:(rbSide=='R'?cx+22:cx+22);\n    if(backs>=1)skill.push({role:'RB',x:rx,y:qbY,side:rx<cx?'L':'R',label:'RB'});\n    if(backs>=2)skill.push({role:'RB',x:cx-22,y:qbY,side:'L',label:'RB'});\n    if(backs>=3)skill.push({role:'RB',x:cx,y:qbY+20,side:'M',label:'RB'}); }  // 3rd back offset behind QB\n  // TEs: teR on right (attached beyond RT), rest left; bunch = tighter cluster to one side\n  const jumboOff = g.ol >= 6 ? 22 : 0;\n  const teRightN=Math.min(v.teR,te), teLeftN=te-teRightN;\n  const rTE=v.teBunch?[olX[4]+20+jumboOff,olX[4]+38+jumboOff,olX[4]+56+jumboOff]:[olX[4]+22+jumboOff,olX[4]+44+jumboOff];\n  const lTE=v.teBunch?[olX[0]-20,olX[0]-38,olX[0]-56]:[olX[0]-22,olX[0]-44];\n  for(let i=0;i<teRightN;i++){ let x=rTE[i]; skill.push({role:'TE',x:x,y:olY,side:'R',label:'TE'}); }\n  for(let i=0;i<teLeftN;i++){ let x=lTE[i]; skill.push({role:'TE',x:x,y:olY,side:'L',label:'TE'}); }\n  // WRs: wrR on right, rest left; bunch clusters them tight. Triangle bunch staggers depth so they don't overlap.\n  const wrRightN=Math.min(v.wrR,wr), wrLeftN=wr-wrRightN;\n  const losWR=olY-4;\n  if(v.triangle && (wrRightN>=3 || wrLeftN>=3)){\n    // two receivers on the LOS, third backed off behind the middle of them (triangle apex at the back)\n    const onR = wrRightN>=3;\n    const losX1 = onR?306:24, losX2 = onR?262:68;   // two on the line (outside + inside)\n    const backX = onR?284:46;                        // point man off the ball, centered behind the two\n    skill.push({role:'WR',x:losX1,y:losWR,side:onR?'R':'L',label:'WR'});      // #1 on line, outside\n    skill.push({role:'WR',x:losX2,y:losWR,side:onR?'R':'L',label:'WR'});      // #2 on line, inside\n    skill.push({role:'WR',x:backX,y:losWR+16,side:onR?'R':'L',label:'WR'});   // #3 off ball, behind the middle\n    // any extra WRs (4+) split to the opposite side\n    const rest = wr-3;\n    const oppWide = onR?[30,58,84]:[300,272,246];\n    for(let i=0;i<rest;i++){ skill.push({role:'WR',x:oppWide[i],y:losWR,side:onR?'L':'R',label:'WR'}); }\n  } else {\n    const rWide=v.wrBunch=='R'?[300,286,272,258]:[300,272,246,224];\n    const lWide=v.wrBunch=='L'?[30,44,58,72]:[30,58,84,106];\n    for(let i=0;i<wrRightN;i++){ let x=rWide[i]; skill.push({role:'WR',x:x,y:losWR,side:'R',label:'WR'}); }\n    for(let i=0;i<wrLeftN;i++){ let x=lWide[i]; skill.push({role:'WR',x:x,y:losWR,side:'L',label:'WR'}); }\n  }\n  return {olX, olY, sq, cx, skill, variantName:v.name, nVariants:vars.length};\n}\n// arrowhead marker id counter to keep unique\nlet _mk=0;\nfunction arrow(color){ const id='a'+(_mk++); return {def:`<marker id=\"${id}\" viewBox=\"0 0 10 10\" refX=\"7\" refY=\"5\" markerWidth=\"5\" markerHeight=\"5\" orient=\"auto-start-reverse\"><path d=\"M1 1L8 5L1 9\" fill=\"none\" stroke=\"${color}\" stroke-width=\"2\"/></marker>`, url:`url(#${id})`}; }\n\n// route path from (x,y); side L/R. Most RB backfield routes stem up to cross the LOS,\n// but SCREEN/SWING/TEXAS release from the backfield without stemming up first.\nfunction routePath(x,y,side,route,losY){\n  const c=(side=='L')?1:-1;\n  const backfieldRelease = (route=='SCREEN'||route=='SWING'||route=='TEXAS/ANGLE'||route=='FLAT'||route=='WHEEL');\n  let sx=x, sy=y, pre=`M${x},${y} `;\n  // RB below the LOS: for downfield routes, stem up to just past the LOS so short breaks are visible.\n  // Backfield-release routes stay put and work out of the backfield.\n  if(y > losY+6 && !backfieldRelease){ const upTo = losY-8; pre=`M${x},${y} L${x},${upTo} `; sx=x; sy=upTo; }\n  const P={\n    'GO':`V${sy-140}`, 'FADE/GO':`V${sy-140}`,'HITCH/CURL':`V${sy-55} l${-6*c},12`,'HITCH':`V${sy-55} l${-6*c},12`, 'COMEBACK':`V${sy-90} l${-8*c},14`,\n    'SLANT':`l${90*c},-40`, 'QUICK OUT':`V${sy-32} h${-30*c}`, 'SPEED OUT':`V${sy-30} h${-28*c}`, 'OUT':`V${sy-72} h${-32*c}`, 'DEEP OUT':`V${sy-90} h${-32*c}`,\n    'IN/DIG':`V${sy-76} h${54*c}`,'IN':`V${sy-76} h${54*c}`, 'POST':`V${sy-88} l${40*c},-40`, 'CROSS':`V${sy-72} l${80*c},-30`, 'CORNER':`V${sy-88} l${-38*c},-38`,\n    'SHALLOW CROSS/DRAG':`V${sy-5} h${120*c}`, 'SCREEN':`q${25*c},25 ${50*c},22`, 'FLAT':`q${-70*c},-50 ${-120*c},-60`, 'SPEED':`V${sy-12} h${-28*c}`,\n    'SWING':`q${-50*c},18 ${-80*c},2`, 'WHEEL':`q${-70*c},-40 ${-80*c},-170`,\n    'TEXAS/ANGLE':`l${-60*c},-40 l${60*c},-40`, 'ARROW':`l${-24*c},-18`\n  };\n  const seg=P[route]||`V${sy-46}`;\n  return pre+seg;\n}\nfunction drawPlayDiagram(g, mode, sel, wrRot, av){\n  sel=sel||{}; wrRot=wrRot||0; _mk=0;\n  const W=330,H=290; const pos=positions(g, av); const {olX,olY,sq,cx,skill}=pos; const losY=olY-11;\n  let defs=''; let s=`<svg width=\"${W}\" height=\"${H}\" viewBox=\"0 0 ${W} ${H}\">`;\n  s+=`<line x1=\"10\" y1=\"${losY}\" x2=\"${W-10}\" y2=\"${losY}\" stroke=\"#000\" stroke-dasharray=\"5 3\" opacity=\"0.4\"/>`;\n  s+=`<text x=\"${W-14}\" y=\"${losY-4}\" font-size=\"8\" fill=\"#8a8470\" text-anchor=\"end\">LOS</text>`;\n  if(pos.nVariants>1) s+=`<text x=\"14\" y=\"14\" font-size=\"8.5\" fill=\"#a8321f\" font-weight=\"bold\">\u25b8 ${pos.variantName} <tspan fill=\"#8a8470\" font-weight=\"normal\">(tap label)</tspan></text>`;\n  const olL=[\"LT\",\"LG\",\"C\",\"RG\",\"RT\"];\n  for(let i=0;i<5;i++){s+=`<rect x=\"${olX[i]-sq/2}\" y=\"${olY-sq/2}\" width=\"${sq}\" height=\"${sq}\" fill=\"#1f3a6d\" stroke=\"#000\"/><text x=\"${olX[i]}\" y=\"${olY+3}\" fill=\"#fff\" font-size=\"7\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">${olL[i]}</text>`;}\n  if(g.ol>=6){let x=olX[4]+22;s+=`<rect x=\"${x-sq/2}\" y=\"${olY-sq/2}\" width=\"${sq}\" height=\"${sq}\" fill=\"#2d4f8a\" stroke=\"#000\"/><text x=\"${x}\" y=\"${olY+3}\" fill=\"#fff\" font-size=\"6.5\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">ST</text>`;}\n  const bySlot={}; (g.assigns||[]).forEach(a=>bySlot[a.slot]=a);\n  // rotate WRs: collect WR skill entries in order, rotate their slot assignment\n  const wrPlayers=skill.filter(p=>p.role=='WR');\n  let wrN=0,teN=0,rbN=0;\n  skill.forEach(p=>{ if(p.role=='WR'){p.slot='WR'+(((wrN++)+wrRot)%Math.max(wrPlayers.length,1)+1);} else if(p.role=='TE'){teN++;p.slot='TE'+teN;} else if(p.role=='RB'){rbN++;p.slot='RB'+rbN;} });\n  function routesFor(p){ const a=bySlot[p.slot]; if(a&&a.routes&&a.routes.length) return {name:a.name,list:a.routes,src:a.src};\n    // fallback to full tree\n    if(p.role=='RB') return {name:(a?a.name:''),list:FULL_TREE_RB,src:'tree'};\n    return {name:(a?a.name:''),list:FULL_TREE,src:'tree'}; }\n\n  // ---- RUN MODE: OL blocking \"T\" + RB lanes ----\n  if(mode=='run'){\n    const side=g.run_side||'mid';\n    const dx = side=='right'?12:(side=='left'?-12:0);\n    // OL blocking lines forming a T: each lineman a short line up, drifting toward run side\n    olX.forEach((ox,i)=>{ const tipx=ox+dx, tipy=olY-24;\n      s+=`<path d=\"M${ox},${olY-8} L${tipx},${tipy}\" stroke=\"#1a1a17\" stroke-width=\"2\" fill=\"none\" stroke-linecap=\"round\"/>`;\n      // small cross-cap at the top = the \"T\"\n      s+=`<line x1=\"${tipx-5}\" y1=\"${tipy}\" x2=\"${tipx+5}\" y2=\"${tipy}\" stroke=\"#1a1a17\" stroke-width=\"2\"/>`;\n    });\n    const rb=skill.find(p=>p.role=='RB')||skill.find(p=>p.role=='QB');\n    const laneX={LE:olX[0]-30,LT:olX[0]-6,LG:olX[1]-4,MID:cx,RG:olX[3]+4,RT:olX[4]+6,RE:olX[4]+30};\n    const tot=(g.lanes||[]).reduce((a,l)=>a+l[1],0)||1;\n    (g.lanes||[]).forEach(l=>{ const tx=laneX[l[0]]; if(tx==null)return;\n      const w=1.5+l[1]/tot*7; const ty=olY-52; const ar=arrow(ec(l[2])); defs+=ar.def;\n      s+=`<path d=\"M${rb.x},${rb.y} C${rb.x+(tx-rb.x)*0.4},${rb.y-20} ${tx},${olY+16} ${tx},${ty}\" fill=\"none\" stroke=\"${ec(l[2])}\" stroke-width=\"${w.toFixed(1)}\" stroke-linecap=\"round\" marker-end=\"${ar.url}\"/>`;\n      s+=`<text x=\"${tx}\" y=\"${ty-4}\" font-size=\"8\" fill=\"#1a1a17\" text-anchor=\"middle\" font-weight=\"bold\" data-noteable=\"1\" data-note-label=\"Run lane\" data-note-value=\"${nEsc(l[0]+' '+Math.round(100*l[1]/tot)+'%')}\" data-note-context=\"${nEsc(SEASON+' playbook \u00b7 '+g.p+' personnel \u00b7 '+g.name)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"run_lane\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"RB,QB\" data-note-nav=\"${NOTE_NAV}\">${l[0]} ${Math.round(100*l[1]/tot)}%</text>`;\n    });\n  }\n  // ---- PASS MODE: routes per player + TE block T ----\n  if(mode=='pass'){\n    skill.forEach(p=>{ if(!p.slot||p.role=='QB') return; const rf=routesFor(p); if(!rf.list||!rf.list.length) return;\n      const idx=(sel[p.slot]||0)%rf.list.length; const rt=rf.list[idx];\n      const ar=arrow('#a8321f'); defs+=ar.def;\n      s+=`<path d=\"${routePath(p.x,p.y,p.side,rt[0],losY)}\" fill=\"none\" stroke=\"#a8321f\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" marker-end=\"${ar.url}\"/>`;\n    });\n  }\n  // ---- skill circles + labels ----\n  wrN=0;\n  skill.forEach(p=>{\n    let fill=p.role=='WR'?'#cdd2e0':(p.role=='TE'?'#3f6db5':'#1f3a6d'), tc=p.role=='WR'?'#1a1a17':'#fff';\n    const rf=(p.slot&&p.role!='QB')?routesFor(p):null;\n    const tappable=(mode=='pass' && rf && rf.list && rf.list.length);\n    const qbTap=(mode=='pass' && p.role=='QB' && wrPlayers.length>1);\n    if(tappable) s+=`<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"12.5\" fill=\"none\" stroke=\"#a8321f\" stroke-width=\"1\" stroke-dasharray=\"2 2\" opacity=\"0.5\"/>`;\n    if(qbTap) s+=`<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"12.5\" fill=\"none\" stroke=\"#4f83cc\" stroke-width=\"1\" stroke-dasharray=\"2 2\" opacity=\"0.6\"/>`;\n    const cls = tappable?`<g class=\"tap\" data-slot=\"${p.slot}\" style=\"cursor:pointer\">`:(qbTap?`<g class=\"qbtap\" style=\"cursor:pointer\">`:'<g>');\n    s+=`${cls}<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"9\" fill=\"${fill}\" stroke=\"#000\"/><text x=\"${p.x}\" y=\"${p.y+3}\" fill=\"${tc}\" font-size=\"7\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">${p.label}</text></g>`;\n    if(qbTap) s+=`<text x=\"${p.x}\" y=\"${p.y+20}\" font-size=\"5.5\" fill=\"#4f83cc\" text-anchor=\"middle\">tap: rotate WRs</text>`;\n    if(mode=='pass' && rf && rf.name && rf.name!='\\u2014'){\n      const idx=(sel[p.slot]||0)%rf.list.length; const rt=rf.list[idx];\n      const belowLOS = p.y>losY;\n      let ny=belowLOS?p.y+20:p.y+20;\n      s+=`<text x=\"${p.x}\" y=\"${ny}\" font-size=\"7.5\" fill=\"#1a1a17\" text-anchor=\"middle\" font-weight=\"bold\" data-noteable=\"1\" data-note-label=\"Player role\" data-note-value=\"${nEsc(rf.name)}\" data-note-context=\"${nEsc(SEASON+' playbook \u00b7 '+g.p+' personnel \u00b7 '+g.name)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"player_role\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"QB,RB,WR,TE\" data-note-nav=\"${NOTE_NAV}\">${rf.name}</text>`;\n      const pctTxt = rt[1]!=null?` ${rt[1]}%`:'';\n      const srcTxt = rf.src=='tree'?' (tree)':(rf.src=='season'?' (szn)':'');\n      s+=`<text x=\"${p.x}\" y=\"${ny+9}\" font-size=\"6\" fill=\"#a8321f\" text-anchor=\"middle\" data-noteable=\"1\" data-note-label=\"Route tendency\" data-note-value=\"${nEsc(rt[0].split('/')[0]+pctTxt+srcTxt)}\" data-note-context=\"${nEsc(SEASON+' playbook \u00b7 '+g.p+' personnel \u00b7 '+g.name+' \u00b7 '+rf.name)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"route_tendency\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"QB,RB,WR,TE\" data-note-nav=\"${NOTE_NAV}\">${rt[0].split('/')[0]}${pctTxt}${srcTxt}</text>`;\n      if(rf.list.length>1) s+=`<text x=\"${p.x}\" y=\"${ny+17}\" font-size=\"5.5\" fill=\"#8a8470\" text-anchor=\"middle\">${idx+1}/${rf.list.length} tap</text>`;\n    }\n  });\n  return s.replace('<svg ',`<svg `).replace(`viewBox=\"0 0 ${W} ${H}\">`,`viewBox=\"0 0 ${W} ${H}\"><defs>${defs}</defs>`)+`</svg>`;\n}\nfunction draw(){\n  const dn=document.getElementById('down').value,ds=document.getElementById('dist').value,fl=document.getElementById('field').value;\n  const node=FORM[dn][ds][fl],grid=document.getElementById('grid');\n  document.getElementById('banner').textContent=({all:'All Downs','1':'1st Down','2':'2nd Down','3':'3rd Down','4':'4th Down'}[dn])+({all:'',short:' & Short',med:' & Medium',long:' & Long'}[ds])+({all:'',pa:' \u00b7 Play-Action',motion:' \u00b7 Motion',nohuddle:' \u00b7 No-Huddle',redzone:' \u00b7 Red Zone'}[fl]);\n  if(!node||!node.groups.length){grid.innerHTML='<div class=\"empty\">No plays match this situation.</div>';document.getElementById('ctx').textContent='';return;}\n  document.getElementById('ctx').textContent=node.total+' plays';\n  window._G=node.groups;\n  // Production out of this formation: yards + TDs, split pass vs run. Moves with the filters.\n  function prodLine(g, mode){\n    const P=noteWrap('Pass production', `PASS ${(+g.py||0).toLocaleString()} yds \u00b7 ${+g.ptd||0} TD`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,WR,TE,RB', `<span class=\"prod-pass\">PASS ${(+g.py||0).toLocaleString()} yds \u00b7 ${+g.ptd||0} TD</span>`);\n    const R=noteWrap('Run production', `RUN ${(+g.ry||0).toLocaleString()} yds \u00b7 ${+g.rtd||0} TD`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'RB,QB', `<span class=\"prod-run\">RUN ${(+g.ry||0).toLocaleString()} yds \u00b7 ${+g.rtd||0} TD</span>`);\n    if(mode==='pass') return P;\n    if(mode==='run')  return R;\n    return `${P}<span class=\"prod-sep\">\u00b7</span>${R}`;\n  }\n  let html=\"\";\n  node.groups.forEach((g,i)=>{const noise=g.n<8?' <span class=\"hl-p\" style=\"font-size:9px;padding:0 3px;\">SMALL</span>':'';\n    html+=`<div class=\"card\"><div class=\"rank\">#${i+1}</div>\n      <div class=\"plabel\"><span class=\"pers alt\" data-i=\"${i}\" title=\"tap to change alignment\" style=\"cursor:pointer\">${g.p} PERSONNEL \u21c4</span> <span class=\"fname\">${g.name}</span></div>\n      <div class=\"subttl\">${g.backs} BACK \u00b7 ${g.te} TE \u00b7 ${g.wr} WR \u2014 ${g.share}% of snaps${noise}</div>\n      <div class=\"prod\" id=\"prd${i}\">${prodLine(g)}</div>\n      <div class=\"fieldbox\">${fieldSvg(g,'none',{},0,0)}</div>\n      <div class=\"stats\"><div class=\"stat\"><span id=\"snl${i}\">Snaps</span><b id=\"snv${i}\">${noteWrap('Snaps', String(g.n), `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', String(g.n))}</b></div><div class=\"stat\"><span>Success</span><b id=\"scv${i}\">${noteWrap('Success Rate', `${g.succ}%`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', `${g.succ}%`)}</b></div>\n      <div class=\"stat\"><span>EPA/play</span><b id=\"epv${i}\" class=\"${g.epa>=.05?'hl-g':(g.epa<=-.05?'hl-p':'')}\">${noteWrap('EPA/play', `${g.epa>=0?'+':''}${g.epa.toFixed(2)}`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', `${g.epa>=0?'+':''}${g.epa.toFixed(2)}`)}</b></div><div class=\"stat\"><span>Share</span><b>${noteWrap('Formation Share', `${g.share}%`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', `${g.share}%`)}</b></div></div>\n      <div class=\"rp\" data-i=\"${i}\"><div class=\"run seg\" data-mode=\"run\" style=\"width:${(100-Number(g.pass_rate||0)).toFixed(2)}%\"><b>RUN ${(100-Number(g.pass_rate||0)).toFixed(2)}%</b></div><div class=\"pass seg\" data-mode=\"pass\" style=\"width:${Number(g.pass_rate||0).toFixed(2)}%\"><b>PASS ${Number(g.pass_rate||0).toFixed(2)}%</b></div></div>\n      <div class=\"hintbar\" id=\"hint${i}\">tap label \u21c4 change look \u00b7 click bar \u25b8 runs / routes</div></div>`;});\n  grid.innerHTML=html;\n  function setStats(i,mode,g){\n    const snl=document.getElementById('snl'+i),snv=document.getElementById('snv'+i),scv=document.getElementById('scv'+i),epv=document.getElementById('epv'+i);\n    let n=g.n,sc=g.succ,ep=g.epa,lbl='Snaps';\n    if(mode=='run'){ n=g.nr;sc=g.sr;ep=g.er;lbl='Run snaps'; }\n    else if(mode=='pass'){ n=g.np;sc=g.sp;ep=g.ep;lbl='Pass snaps'; }\n    const prd=document.getElementById('prd'+i);\n    if(prd) prd.innerHTML=prodLine(g, mode==='none'?null:mode);\n    snl.textContent=lbl; snv.textContent=n; scv.textContent=sc+'%';\n    epv.textContent=(ep>=0?'+':'')+ep.toFixed(2);\n    epv.className = ep>=.05?'hl-g':(ep<=-.05?'hl-p':'');\n  }\n  document.querySelectorAll('.seg').forEach(seg=>{\n    seg.onclick=(e)=>{ e.stopPropagation();\n      const card=seg.closest('.card'), i=+seg.closest('.rp').dataset.i, mode=seg.dataset.mode, g=window._G[i];\n      const box=card.querySelector('.fieldbox'), hint=card.querySelector('.hintbar');\n      const cur=box.dataset.mode||'none';\n      card.querySelectorAll('.seg').forEach(x=>x.classList.remove('active'));\n      if(cur==mode){ box.innerHTML=fieldSvg(g,'none',{},0,box._av||0); box.dataset.mode='none';\n        hint.textContent='tap label \u21c4 change look \u00b7 click bar \u25b8 runs / routes'; hint.style.color=''; setStats(i,'none',g); return; }\n      seg.classList.add('active');\n      if(!box._sel) box._sel={};\n      box.innerHTML=fieldSvg(g,mode,box._sel,box._rot||0,box._av||0); box.dataset.mode=mode;\n      if(mode=='pass') wireTaps(box,g);\n      setStats(i,mode,g);\n      hint.textContent = mode=='pass'?'ROUTES \u2014 most common per player when targeted':'RUN LANES \u2014 top 3 gaps (color = EPA)';\n      hint.style.color = mode=='pass'?'#4f83cc':'#4a7f2c';\n    };\n  });\n  // clickable personnel label cycles alignment variant\n  document.querySelectorAll('.pers.alt').forEach(lab=>{\n    lab.onclick=(e)=>{ e.stopPropagation();\n      const i=+lab.dataset.i, g=window._G[i], card=lab.closest('.card'), box=card.querySelector('.fieldbox');\n      box._av=(box._av||0)+1; box._sel={}; box._rot=box._rot||0;\n      const mode=box.dataset.mode||'none';\n      box.innerHTML=fieldSvg(g,mode,box._sel,box._rot,box._av); \n      if(mode=='pass') wireTaps(box,g);\n    };\n  });\n}\n// formation diagram rendered in the card; overlay drawn in-place on click\nfunction fieldSvg(g, mode, sel, wrRot, av){ return drawPlayDiagram(g, mode, sel, wrRot, av); }\nfunction wireTaps(box,g){\n  box.querySelectorAll('.tap').forEach(el=>{\n    el.onclick=(ev)=>{ ev.stopPropagation();\n      const slot=el.getAttribute('data-slot'); if(!box._sel) box._sel={};\n      box._sel[slot]=(box._sel[slot]||0)+1;\n      box.innerHTML=fieldSvg(g,'pass',box._sel,box._rot||0,box._av||0); box.dataset.mode='pass';\n      wireTaps(box,g);\n    };\n  });\n  box.querySelectorAll('.qbtap').forEach(el=>{\n    el.onclick=(ev)=>{ ev.stopPropagation();\n      box._rot=(box._rot||0)+1; box._sel={};\n      box.innerHTML=fieldSvg(g,'pass',{},box._rot,box._av||0); box.dataset.mode='pass';\n      wireTaps(box,g);\n    };\n  });\n}\n\n(function noteBridge(){\n  const DBL_MS=360, MOVE=10;\n  let st=null;\n  function clear(){ st=null; }\n  function info(el){\n    if(!el || !el.dataset) return null;\n    return {\n      label: el.dataset.noteLabel || 'Playbook stat',\n      value: el.dataset.noteValue || '',\n      context: el.dataset.noteContext || '',\n      source: el.dataset.noteSource || 'coaching_playbook',\n      statKey: el.dataset.noteStatKey || '',\n      team: el.dataset.noteTeam || TEAM_CODE || '',\n      relevance: el.dataset.noteRelevance || 'QB,RB,WR,TE',\n      nav: el.dataset.noteNav ? (function(){ try{return JSON.parse(el.dataset.noteNav);}catch(e){return null;} })() : null,\n    };\n  }\n  function open(el){\n    const parentWin = window.parent;\n    if(!parentWin || typeof parentWin.noteOpenPicker!=='function') return;\n    const payload = info(el);\n    if(payload) parentWin.noteOpenPicker(payload);\n  }\n  function tap(el,x,y){\n    const now=Date.now();\n    if(!st){ st={el,x,y,t:now}; return; }\n    const same=st.el===el;\n    const soon=(now-st.t)<=DBL_MS;\n    const close=Math.abs(x-st.x)<=MOVE && Math.abs(y-st.y)<=MOVE;\n    if(same&&soon&&close){ clear(); open(el); return; }\n    st={el,x,y,t:now};\n  }\n  document.addEventListener('touchstart', e=>{\n    if(e.touches.length!==1) return clear();\n    const el=e.target&&e.target.closest?e.target.closest('[data-noteable=\"1\"]'):null;\n    if(!el) return;\n    const t=e.touches[0];\n    tap(el,t.clientX,t.clientY);\n  }, {passive:true});\n  document.addEventListener('touchcancel', clear, {passive:true});\n  document.addEventListener('mousedown', e=>{\n    const el=e.target&&e.target.closest?e.target.closest('[data-noteable=\"1\"]'):null;\n    if(!el||e.button!==0) return;\n    tap(el,e.clientX,e.clientY);\n  });\n  document.addEventListener('mouseleave', clear);\n})();\n\n['down','dist','field'].forEach(id=>document.getElementById(id).onchange=draw); draw();\n__TC_SCRIPT_CLOSE__</body></html>\n";
+const SCHEME_TEMPLATE_INLINE = "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><title>Formation Playsheet</title>\n<style>\n  :root{--paper:#f4efe2;--ink:#1a1a17;--rule:#c9c1ab;--hl-yel:#f5e04b;--hl-grn:#8fd06a;--hl-pnk:#f7a8c4;--red:#a8321f;}\n  *{box-sizing:border-box;}\n  body{margin:0;background:#2a2723;font-family:\"Courier New\",monospace;padding:14px;color:var(--ink);}\n  .sheet{max-width:1040px;margin:0 auto;background:var(--paper);border:2px solid #000;box-shadow:0 8px 40px rgba(0,0,0,.6);}\n  .hdr{background:var(--ink);color:var(--paper);padding:10px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}\n  .hdr h1{font-size:18px;margin:0;letter-spacing:1px;text-transform:uppercase;}\n  .hdr .wk{font-size:12px;color:#c9c1ab;}\n  .controls{display:flex;flex-wrap:wrap;gap:10px;padding:10px 16px;background:#e8e1d0;border-bottom:2px solid #000;align-items:flex-end;}\n  .ctrl{display:flex;flex-direction:column;gap:3px;}\n  .ctrl label{font-size:9px;text-transform:uppercase;letter-spacing:1px;font-weight:bold;color:#5a5545;}\n  select{font-family:\"Courier New\",monospace;background:var(--paper);border:1.5px solid #000;padding:5px 8px;font-size:13px;font-weight:bold;cursor:pointer;}\n  .banner{background:var(--red);color:#fff;text-align:center;font-weight:bold;font-size:13px;padding:4px;letter-spacing:2px;text-transform:uppercase;}\n  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));}\n  .card{border:1px solid #000;border-top:none;border-left:none;padding:8px 12px 12px;position:relative;}\n  .rank{position:absolute;top:6px;left:8px;font-size:10px;font-weight:bold;color:#8a8470;}\n  .plabel{text-align:center;font-weight:bold;font-size:14px;letter-spacing:1px;border-bottom:1.5px solid #000;padding-bottom:3px;margin-bottom:2px;}\n  .plabel .pers{background:var(--hl-yel);padding:1px 6px;}\n  .plabel .fname{font-size:11px;color:#5a5545;}\n  .subttl{text-align:center;font-size:10px;color:#5a5545;margin-bottom:4px;}\n.prod{font-family:'Courier New',monospace;font-size:9.5px;font-weight:700;letter-spacing:.02em;\n  margin:2px 0 4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;}\n.prod-pass{color:#4f83cc;}\n.prod-run{color:#4a7f2c;}\n.prod-sep{color:#b9b295;}\n  svg{display:block;margin:0 auto;}\n  .stats{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;margin-top:6px;font-size:12px;}\n  .stat{display:flex;justify-content:space-between;border-bottom:1px dotted var(--rule);}\n  .rp{height:20px;background:#ddd6c4;border:1px solid #000;position:relative;margin-top:8px;overflow:hidden;font-size:10px;display:flex;cursor:pointer;}\n  .rp .run,.rp .pass{position:relative;display:flex;align-items:center;height:100%;transition:filter .1s;}\n  .rp .run{background:var(--hl-grn);justify-content:flex-start;padding-left:5px;}\n  .rp .pass{background:#4f83cc;color:#fff;justify-content:flex-end;padding-right:5px;}\n  .rp .run:hover,.rp .pass:hover{filter:brightness(1.12);}\n  .rp .seg.active{outline:2px solid #1a1a17;outline-offset:-2px;}\n  .rp b{font-weight:bold;}\n  .hintbar{text-align:center;font-size:9px;color:#8a8470;margin-top:2px;}\n  .nt{display:inline;}\n  .dia{margin-top:8px;border-top:2px dashed var(--rule);padding-top:6px;display:none;}\n  .dia.show{display:block;}\n  .diahead{font-size:10px;font-weight:bold;text-transform:uppercase;text-align:center;margin-bottom:3px;}\n  .empty{padding:30px;text-align:center;color:#8a8470;font-size:13px;grid-column:1/-1;}\n  .foot{padding:8px 16px;font-size:9px;color:#6a6455;border-top:2px solid #000;line-height:1.5;}\n  .hint{text-align:center;font-size:10px;color:#8a8470;padding:6px;background:#ece5d3;border-bottom:1px solid #000;}\n  .hl-p{background:var(--hl-pnk);} .hl-g{background:var(--hl-grn);}\n</style></head>\n<body><div class=\"sheet\">\n  <div class=\"hdr\"><h1>Detroit Lions &mdash; Playbook</h1><span class=\"wk\">2025 \u00b7 Routes mapped to players</span></div>\n  <div class=\"controls\">\n    <div class=\"ctrl\"><label>Down</label><select id=\"down\"><option value=\"all\">All downs</option><option value=\"1\">1st</option><option value=\"2\">2nd</option><option value=\"3\">3rd</option><option value=\"4\">4th</option></select></div>\n    <div class=\"ctrl\"><label>Distance to sticks</label><select id=\"dist\"><option value=\"all\">Any</option><option value=\"short\">Short (1-3)</option><option value=\"med\">Medium (4-7)</option><option value=\"long\">Long (8+)</option></select></div>\n    <div class=\"ctrl\"><label>Play type</label><select id=\"field\"><option value=\"all\">All plays</option><option value=\"pa\">Play-action</option><option value=\"motion\">Pre-snap motion</option><option value=\"nohuddle\">No-huddle</option><option value=\"redzone\">Red zone</option></select></div>\n    <div class=\"ctrl\"><label>&nbsp;</label><span id=\"ctx\" style=\"font-size:12px;font-weight:bold;padding:5px;\"></span></div>\n  </div>\n  <div class=\"hint hint-min\"><details class=\"scheme-help\"><summary class=\"scheme-help-btn\" aria-label=\"How to read the formations\">i</summary><div class=\"scheme-help-pop\"><b>Reading the formations</b><span>Click the GREEN part of a formation's bar to see its top-3 run lanes; click the BLUE part to see each player's most-common route. Tap any label on the diagram for detail.</span></div></details> tap a bar's colors to explore</div>\n  <div class=\"banner\" id=\"banner\">All Situations</div>\n  <div class=\"grid\" id=\"grid\"></div>\n  <div class=\"foot\">Play diagrams: routes are each skill player's single most-common route WHEN TARGETED out of this formation (season pool, all situations, for stable sample), mapped to players by target rank (WR1=St. Brown, WR2=Williams, etc.); the outermost WR is treated as WR1. Run mode shows the 3 most-used gaps, arrow width = frequency, color = EPA. Alignment is authentic; exact pre-snap WR splits are schematic. Data: nflverse pbp + FTN participation, 2025 REG. Not affiliated with the NFL.</div>\n</div>\n__TC_SCRIPT_OPEN____TC_FV_SCRIPT____TC_SCRIPT_CLOSE__\n__TC_SCRIPT_OPEN__\nfunction nEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/\"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }\nconst NOTE_NAV=nEsc(JSON.stringify({type:'coaching',team:TEAM_CODE,season:String(SEASON),tab:'playbook'}));\nfunction noteWrap(label,value,context,relevance,html){\n  return `<span class=\"nt\" data-noteable=\"1\" data-note-label=\"${nEsc(label)}\" data-note-value=\"${nEsc(value)}\" data-note-context=\"${nEsc(context)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"${nEsc(label)}\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"${nEsc(relevance||'QB,RB,WR,TE')}\" data-note-nav=\"${NOTE_NAV}\">${html}</span>`;\n}\nfunction ec(e){ if(e==null)return\"#999\"; let t=Math.max(-0.4,Math.min(0.4,e))/0.4;\n  if(t>=0)return `rgb(${Math.round(216+(47-216)*t)},${Math.round(165+(174-165)*t)},${Math.round(29+(78-29)*t)})`;\n  let a=-t; return `rgb(${Math.round(216+(211-216)*a)},${Math.round(165+(59-165)*a)},${Math.round(29+(47-29)*a)})`; }\n\n// compute skill-player positions on a tall play diagram; returns {ol:[...], skill:[{role,x,y,side,label}]}\n// full 1-9 route tree (fallback when a player has no route data at all)\nconst FULL_TREE=[['FLAT',null],['SLANT',null],['COMEBACK',null],['HITCH/CURL',null],['OUT',null],['IN/DIG',null],['CORNER',null],['POST',null],['GO',null]];\nconst FULL_TREE_RB=[['FLAT',null],['SWING',null],['SCREEN',null],['TEXAS/ANGLE',null],['WHEEL',null],['SLANT',null],['HITCH/CURL',null]];\n\n// alignment variations for a personnel grouping (schematic \u2014 nflverse gives personnel, not splits)\nfunction variantsFor(g){\n  const wr=g.wr, te=g.te; const out=[];\n  const half=Math.ceil(wr/2);\n  const add=(name,o)=>out.push(Object.assign({name:name,wrR:half,wrBunch:null,teR:Math.ceil(te/2),teBunch:false,rbSide:null},o));\n  add('Base '+half+'x'+(wr-half));\n  if(wr>=2){ add('Trips Rt',{wrR:wr,teR:0}); add('Trips Lt',{wrR:0,teR:te}); }\n  if(wr>=3){ add('Bunch Rt',{wrR:wr,wrBunch:'R',triangle:true,teR:0,rbSide:'L'}); add('Bunch Lt',{wrR:0,wrBunch:'L',triangle:true,teR:te,rbSide:'R'}); }\n  if(wr==2){ add('Doubles Rt',{wrR:2,teR:0}); add('Doubles Lt',{wrR:0,teR:te}); }\n  if(wr>=4){ add('4-Strong Rt',{wrR:4,wrBunch:'R',teR:0}); add('3x1 Rt',{wrR:3,teR:0}); }\n  if(te>=2){ add('TE Bunch Rt',{teR:te,teBunch:true,wrR:half}); add('TE Bunch Lt',{teR:0,teBunch:true,wrR:half}); add('TE Split',{teR:1,wrR:half}); }\n  if(te>=3){ add('TE Trips Rt',{teR:3,teBunch:true,wrR:0}); add('TE Trips Lt',{teR:0,teBunch:true,wrR:wr}); }\n  return out;\n}\nfunction positions(g, av){\n  const cx=165, olY=200, gap=22, sq=15;\n  const olX=[cx-2*gap,cx-gap,cx,cx+gap,cx+2*gap];\n  const skill=[]; const al=g.align, backs=g.backs, te=g.te, wr=g.wr;\n  const vars=variantsFor(g); const v=vars[(av||0)%vars.length]||vars[0];\n  let qbY = al=='uc'?olY+16:(al=='pistol'?olY+34:olY+42);\n  skill.push({role:'QB',x:cx,y:qbY,side:'M',label:'QB'});\n  // RB placement (shotgun/pistol can flip to weak side of a bunch)\n  const rbSide = v.rbSide;\n  if(al=='uc'){\n    if(backs>=3){ // full house: FB/lead back tight, two halfbacks split behind\n      skill.push({role:'RB',x:cx,y:qbY+22,side:'M',label:'FB'});\n      skill.push({role:'RB',x:cx-20,y:qbY+40,side:'L',label:'RB'});\n      skill.push({role:'RB',x:cx+20,y:qbY+40,side:'R',label:'RB'}); }\n    else if(backs>=2){skill.push({role:'RB',x:cx,y:qbY+22,side:'M',label:'FB'});skill.push({role:'RB',x:cx,y:qbY+40,side:'M',label:'RB'});}\n    else if(backs==1)skill.push({role:'RB',x:cx,y:qbY+38,side:'M',label:'RB'}); }\n  else if(al=='pistol'){\n    skill.push({role:'RB',x:cx,y:qbY+20,side:'M',label:'RB'});\n    if(backs>=2)skill.push({role:'RB',x:cx-24,y:qbY+14,side:'L',label:'RB'});\n    if(backs>=3)skill.push({role:'RB',x:cx+24,y:qbY+14,side:'R',label:'RB'}); }\n  else { const rx=rbSide=='L'?cx-22:(rbSide=='R'?cx+22:cx+22);\n    if(backs>=1)skill.push({role:'RB',x:rx,y:qbY,side:rx<cx?'L':'R',label:'RB'});\n    if(backs>=2)skill.push({role:'RB',x:cx-22,y:qbY,side:'L',label:'RB'});\n    if(backs>=3)skill.push({role:'RB',x:cx,y:qbY+20,side:'M',label:'RB'}); }  // 3rd back offset behind QB\n  // TEs: teR on right (attached beyond RT), rest left; bunch = tighter cluster to one side\n  const jumboOff = g.ol >= 6 ? 22 : 0;\n  const teRightN=Math.min(v.teR,te), teLeftN=te-teRightN;\n  const rTE=v.teBunch?[olX[4]+20+jumboOff,olX[4]+38+jumboOff,olX[4]+56+jumboOff]:[olX[4]+22+jumboOff,olX[4]+44+jumboOff];\n  const lTE=v.teBunch?[olX[0]-20,olX[0]-38,olX[0]-56]:[olX[0]-22,olX[0]-44];\n  for(let i=0;i<teRightN;i++){ let x=rTE[i]; skill.push({role:'TE',x:x,y:olY,side:'R',label:'TE'}); }\n  for(let i=0;i<teLeftN;i++){ let x=lTE[i]; skill.push({role:'TE',x:x,y:olY,side:'L',label:'TE'}); }\n  // WRs: wrR on right, rest left; bunch clusters them tight. Triangle bunch staggers depth so they don't overlap.\n  const wrRightN=Math.min(v.wrR,wr), wrLeftN=wr-wrRightN;\n  const losWR=olY-4;\n  if(v.triangle && (wrRightN>=3 || wrLeftN>=3)){\n    // two receivers on the LOS, third backed off behind the middle of them (triangle apex at the back)\n    const onR = wrRightN>=3;\n    const losX1 = onR?306:24, losX2 = onR?262:68;   // two on the line (outside + inside)\n    const backX = onR?284:46;                        // point man off the ball, centered behind the two\n    skill.push({role:'WR',x:losX1,y:losWR,side:onR?'R':'L',label:'WR'});      // #1 on line, outside\n    skill.push({role:'WR',x:losX2,y:losWR,side:onR?'R':'L',label:'WR'});      // #2 on line, inside\n    skill.push({role:'WR',x:backX,y:losWR+16,side:onR?'R':'L',label:'WR'});   // #3 off ball, behind the middle\n    // any extra WRs (4+) split to the opposite side\n    const rest = wr-3;\n    const oppWide = onR?[30,58,84]:[300,272,246];\n    for(let i=0;i<rest;i++){ skill.push({role:'WR',x:oppWide[i],y:losWR,side:onR?'L':'R',label:'WR'}); }\n  } else {\n    const rWide=v.wrBunch=='R'?[300,286,272,258]:[300,272,246,224];\n    const lWide=v.wrBunch=='L'?[30,44,58,72]:[30,58,84,106];\n    for(let i=0;i<wrRightN;i++){ let x=rWide[i]; skill.push({role:'WR',x:x,y:losWR,side:'R',label:'WR'}); }\n    for(let i=0;i<wrLeftN;i++){ let x=lWide[i]; skill.push({role:'WR',x:x,y:losWR,side:'L',label:'WR'}); }\n  }\n  return {olX, olY, sq, cx, skill, variantName:v.name, nVariants:vars.length};\n}\n// arrowhead marker id counter to keep unique\nlet _mk=0;\nfunction arrow(color){ const id='a'+(_mk++); return {def:`<marker id=\"${id}\" viewBox=\"0 0 10 10\" refX=\"7\" refY=\"5\" markerWidth=\"5\" markerHeight=\"5\" orient=\"auto-start-reverse\"><path d=\"M1 1L8 5L1 9\" fill=\"none\" stroke=\"${color}\" stroke-width=\"2\"/></marker>`, url:`url(#${id})`}; }\n\n// route path from (x,y); side L/R. Most RB backfield routes stem up to cross the LOS,\n// but SCREEN/SWING/TEXAS release from the backfield without stemming up first.\nfunction routePath(x,y,side,route,losY){\n  const c=(side=='L')?1:-1;\n  const backfieldRelease = (route=='SCREEN'||route=='SWING'||route=='TEXAS/ANGLE'||route=='FLAT'||route=='WHEEL');\n  let sx=x, sy=y, pre=`M${x},${y} `;\n  // RB below the LOS: for downfield routes, stem up to just past the LOS so short breaks are visible.\n  // Backfield-release routes stay put and work out of the backfield.\n  if(y > losY+6 && !backfieldRelease){ const upTo = losY-8; pre=`M${x},${y} L${x},${upTo} `; sx=x; sy=upTo; }\n  const P={\n    'GO':`V${sy-140}`, 'FADE/GO':`V${sy-140}`,'HITCH/CURL':`V${sy-55} l${-6*c},12`,'HITCH':`V${sy-55} l${-6*c},12`, 'COMEBACK':`V${sy-90} l${-8*c},14`,\n    'SLANT':`l${90*c},-40`, 'QUICK OUT':`V${sy-32} h${-30*c}`, 'SPEED OUT':`V${sy-30} h${-28*c}`, 'OUT':`V${sy-72} h${-32*c}`, 'DEEP OUT':`V${sy-90} h${-32*c}`,\n    'IN/DIG':`V${sy-76} h${54*c}`,'IN':`V${sy-76} h${54*c}`, 'POST':`V${sy-88} l${40*c},-40`, 'CROSS':`V${sy-72} l${80*c},-30`, 'CORNER':`V${sy-88} l${-38*c},-38`,\n    'SHALLOW CROSS/DRAG':`V${sy-5} h${120*c}`, 'SCREEN':`q${25*c},25 ${50*c},22`, 'FLAT':`q${-70*c},-50 ${-120*c},-60`, 'SPEED':`V${sy-12} h${-28*c}`,\n    'SWING':`q${-50*c},18 ${-80*c},2`, 'WHEEL':`q${-70*c},-40 ${-80*c},-170`,\n    'TEXAS/ANGLE':`l${-60*c},-40 l${60*c},-40`, 'ARROW':`l${-24*c},-18`\n  };\n  const seg=P[route]||`V${sy-46}`;\n  return pre+seg;\n}\nfunction drawPlayDiagram(g, mode, sel, wrRot, av){\n  sel=sel||{}; wrRot=wrRot||0; _mk=0;\n  const W=330,H=290; const pos=positions(g, av); const {olX,olY,sq,cx,skill}=pos; const losY=olY-11;\n  let defs=''; let s=`<svg width=\"${W}\" height=\"${H}\" viewBox=\"0 0 ${W} ${H}\">`;\n  s+=`<line x1=\"10\" y1=\"${losY}\" x2=\"${W-10}\" y2=\"${losY}\" stroke=\"#000\" stroke-dasharray=\"5 3\" opacity=\"0.4\"/>`;\n  s+=`<text x=\"${W-14}\" y=\"${losY-4}\" font-size=\"8\" fill=\"#8a8470\" text-anchor=\"end\">LOS</text>`;\n  if(pos.nVariants>1) s+=`<text x=\"14\" y=\"14\" font-size=\"8.5\" fill=\"#a8321f\" font-weight=\"bold\">\u25b8 ${pos.variantName} <tspan fill=\"#8a8470\" font-weight=\"normal\">(tap label)</tspan></text>`;\n  const olL=[\"LT\",\"LG\",\"C\",\"RG\",\"RT\"];\n  for(let i=0;i<5;i++){s+=`<rect x=\"${olX[i]-sq/2}\" y=\"${olY-sq/2}\" width=\"${sq}\" height=\"${sq}\" fill=\"#1f3a6d\" stroke=\"#000\"/><text x=\"${olX[i]}\" y=\"${olY+3}\" fill=\"#fff\" font-size=\"7\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">${olL[i]}</text>`;}\n  if(g.ol>=6){let x=olX[4]+22;s+=`<rect x=\"${x-sq/2}\" y=\"${olY-sq/2}\" width=\"${sq}\" height=\"${sq}\" fill=\"#2d4f8a\" stroke=\"#000\"/><text x=\"${x}\" y=\"${olY+3}\" fill=\"#fff\" font-size=\"6.5\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">ST</text>`;}\n  const bySlot={}; (g.assigns||[]).forEach(a=>bySlot[a.slot]=a);\n  // rotate WRs: collect WR skill entries in order, rotate their slot assignment\n  const wrPlayers=skill.filter(p=>p.role=='WR');\n  let wrN=0,teN=0,rbN=0;\n  skill.forEach(p=>{ if(p.role=='WR'){p.slot='WR'+(((wrN++)+wrRot)%Math.max(wrPlayers.length,1)+1);} else if(p.role=='TE'){teN++;p.slot='TE'+teN;} else if(p.role=='RB'){rbN++;p.slot='RB'+rbN;} });\n  function routesFor(p){ const a=bySlot[p.slot]; if(a&&a.routes&&a.routes.length) return {name:a.name,list:a.routes,src:a.src};\n    // fallback to full tree\n    if(p.role=='RB') return {name:(a?a.name:''),list:FULL_TREE_RB,src:'tree'};\n    return {name:(a?a.name:''),list:FULL_TREE,src:'tree'}; }\n\n  // ---- RUN MODE: OL blocking \"T\" + RB lanes ----\n  if(mode=='run'){\n    const side=g.run_side||'mid';\n    const dx = side=='right'?12:(side=='left'?-12:0);\n    // OL blocking lines forming a T: each lineman a short line up, drifting toward run side\n    olX.forEach((ox,i)=>{ const tipx=ox+dx, tipy=olY-24;\n      s+=`<path d=\"M${ox},${olY-8} L${tipx},${tipy}\" stroke=\"#1a1a17\" stroke-width=\"2\" fill=\"none\" stroke-linecap=\"round\"/>`;\n      // small cross-cap at the top = the \"T\"\n      s+=`<line x1=\"${tipx-5}\" y1=\"${tipy}\" x2=\"${tipx+5}\" y2=\"${tipy}\" stroke=\"#1a1a17\" stroke-width=\"2\"/>`;\n    });\n    const rb=skill.find(p=>p.role=='RB')||skill.find(p=>p.role=='QB');\n    const laneX={LE:olX[0]-30,LT:olX[0]-6,LG:olX[1]-4,MID:cx,RG:olX[3]+4,RT:olX[4]+6,RE:olX[4]+30};\n    const tot=(g.lanes||[]).reduce((a,l)=>a+l[1],0)||1;\n    (g.lanes||[]).forEach(l=>{ const tx=laneX[l[0]]; if(tx==null)return;\n      const w=1.5+l[1]/tot*7; const ty=olY-52; const ar=arrow(ec(l[2])); defs+=ar.def;\n      s+=`<path d=\"M${rb.x},${rb.y} C${rb.x+(tx-rb.x)*0.4},${rb.y-20} ${tx},${olY+16} ${tx},${ty}\" fill=\"none\" stroke=\"${ec(l[2])}\" stroke-width=\"${w.toFixed(1)}\" stroke-linecap=\"round\" marker-end=\"${ar.url}\"/>`;\n      s+=`<text x=\"${tx}\" y=\"${ty-4}\" font-size=\"8\" fill=\"#1a1a17\" text-anchor=\"middle\" font-weight=\"bold\" data-noteable=\"1\" data-note-label=\"Run lane\" data-note-value=\"${nEsc(l[0]+' '+Math.round(100*l[1]/tot)+'%')}\" data-note-context=\"${nEsc(SEASON+' playbook \u00b7 '+g.p+' personnel \u00b7 '+g.name)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"run_lane\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"RB,QB\" data-note-nav=\"${NOTE_NAV}\">${l[0]} ${Math.round(100*l[1]/tot)}%</text>`;\n    });\n  }\n  // ---- PASS MODE: routes per player + TE block T ----\n  if(mode=='pass'){\n    skill.forEach(p=>{ if(!p.slot||p.role=='QB') return; const rf=routesFor(p); if(!rf.list||!rf.list.length) return;\n      const idx=(sel[p.slot]||0)%rf.list.length; const rt=rf.list[idx];\n      const ar=arrow('#a8321f'); defs+=ar.def;\n      s+=`<path d=\"${routePath(p.x,p.y,p.side,rt[0],losY)}\" fill=\"none\" stroke=\"#a8321f\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" marker-end=\"${ar.url}\"/>`;\n    });\n  }\n  // ---- skill circles + labels ----\n  wrN=0;\n  skill.forEach(p=>{\n    let fill=p.role=='WR'?'#cdd2e0':(p.role=='TE'?'#3f6db5':'#1f3a6d'), tc=p.role=='WR'?'#1a1a17':'#fff';\n    const rf=(p.slot&&p.role!='QB')?routesFor(p):null;\n    const tappable=(mode=='pass' && rf && rf.list && rf.list.length);\n    const qbTap=(mode=='pass' && p.role=='QB' && wrPlayers.length>1);\n    if(tappable) s+=`<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"12.5\" fill=\"none\" stroke=\"#a8321f\" stroke-width=\"1\" stroke-dasharray=\"2 2\" opacity=\"0.5\"/>`;\n    if(qbTap) s+=`<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"12.5\" fill=\"none\" stroke=\"#4f83cc\" stroke-width=\"1\" stroke-dasharray=\"2 2\" opacity=\"0.6\"/>`;\n    const cls = tappable?`<g class=\"tap\" data-slot=\"${p.slot}\" style=\"cursor:pointer\">`:(qbTap?`<g class=\"qbtap\" style=\"cursor:pointer\">`:'<g>');\n    s+=`${cls}<circle cx=\"${p.x}\" cy=\"${p.y}\" r=\"9\" fill=\"${fill}\" stroke=\"#000\"/><text x=\"${p.x}\" y=\"${p.y+3}\" fill=\"${tc}\" font-size=\"7\" text-anchor=\"middle\" font-family=\"Arial\" font-weight=\"bold\">${p.label}</text></g>`;\n    if(qbTap) s+=`<text x=\"${p.x}\" y=\"${p.y+20}\" font-size=\"5.5\" fill=\"#4f83cc\" text-anchor=\"middle\">tap: rotate WRs</text>`;\n    if(mode=='pass' && rf && rf.name && rf.name!='\\u2014'){\n      const idx=(sel[p.slot]||0)%rf.list.length; const rt=rf.list[idx];\n      const belowLOS = p.y>losY;\n      let ny=belowLOS?p.y+20:p.y+20;\n      s+=`<text x=\"${p.x}\" y=\"${ny}\" font-size=\"7.5\" fill=\"#1a1a17\" text-anchor=\"middle\" font-weight=\"bold\" data-noteable=\"1\" data-note-label=\"Player role\" data-note-value=\"${nEsc(rf.name)}\" data-note-context=\"${nEsc(SEASON+' playbook \u00b7 '+g.p+' personnel \u00b7 '+g.name)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"player_role\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"QB,RB,WR,TE\" data-note-nav=\"${NOTE_NAV}\">${rf.name}</text>`;\n      const pctTxt = rt[1]!=null?` ${rt[1]}%`:'';\n      const srcTxt = rf.src=='tree'?' (tree)':(rf.src=='season'?' (szn)':'');\n      s+=`<text x=\"${p.x}\" y=\"${ny+9}\" font-size=\"6\" fill=\"#a8321f\" text-anchor=\"middle\" data-noteable=\"1\" data-note-label=\"Route tendency\" data-note-value=\"${nEsc(rt[0].split('/')[0]+pctTxt+srcTxt)}\" data-note-context=\"${nEsc(SEASON+' playbook \u00b7 '+g.p+' personnel \u00b7 '+g.name+' \u00b7 '+rf.name)}\" data-note-source=\"coaching_playbook\" data-note-stat-key=\"route_tendency\" data-note-team=\"${nEsc(TEAM_CODE)}\" data-note-relevance=\"QB,RB,WR,TE\" data-note-nav=\"${NOTE_NAV}\">${rt[0].split('/')[0]}${pctTxt}${srcTxt}</text>`;\n      if(rf.list.length>1) s+=`<text x=\"${p.x}\" y=\"${ny+17}\" font-size=\"5.5\" fill=\"#8a8470\" text-anchor=\"middle\">${idx+1}/${rf.list.length} tap</text>`;\n    }\n  });\n  return s.replace('<svg ',`<svg `).replace(`viewBox=\"0 0 ${W} ${H}\">`,`viewBox=\"0 0 ${W} ${H}\"><defs>${defs}</defs>`)+`</svg>`;\n}\nfunction draw(){\n  const dn=document.getElementById('down').value,ds=document.getElementById('dist').value,fl=document.getElementById('field').value;\n  const node=FORM[dn][ds][fl],grid=document.getElementById('grid');\n  document.getElementById('banner').textContent=({all:'All Downs','1':'1st Down','2':'2nd Down','3':'3rd Down','4':'4th Down'}[dn])+({all:'',short:' & Short',med:' & Medium',long:' & Long'}[ds])+({all:'',pa:' \u00b7 Play-Action',motion:' \u00b7 Motion',nohuddle:' \u00b7 No-Huddle',redzone:' \u00b7 Red Zone'}[fl]);\n  if(!node||!node.groups.length){grid.innerHTML='<div class=\"empty\">No plays match this situation.</div>';document.getElementById('ctx').textContent='';return;}\n  document.getElementById('ctx').textContent=node.total+' plays';\n  window._G=node.groups;\n  // Production out of this formation: yards + TDs, split pass vs run. Moves with the filters.\n  function prodLine(g, mode){\n    const P=noteWrap('Pass production', `PASS ${(+g.py||0).toLocaleString()} yds \u00b7 ${+g.ptd||0} TD`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,WR,TE,RB', `<span class=\"prod-pass\">PASS ${(+g.py||0).toLocaleString()} yds \u00b7 ${+g.ptd||0} TD</span>`);\n    const R=noteWrap('Run production', `RUN ${(+g.ry||0).toLocaleString()} yds \u00b7 ${+g.rtd||0} TD`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'RB,QB', `<span class=\"prod-run\">RUN ${(+g.ry||0).toLocaleString()} yds \u00b7 ${+g.rtd||0} TD</span>`);\n    if(mode==='pass') return P;\n    if(mode==='run')  return R;\n    return `${P}<span class=\"prod-sep\">\u00b7</span>${R}`;\n  }\n  let html=\"\";\n  node.groups.forEach((g,i)=>{const noise=g.n<8?' <span class=\"hl-p\" style=\"font-size:9px;padding:0 3px;\">SMALL</span>':'';\n    html+=`<div class=\"card\"><div class=\"rank\">#${i+1}</div>\n      <div class=\"plabel\"><span class=\"pers alt\" data-i=\"${i}\" title=\"tap to change alignment\" style=\"cursor:pointer\">${g.p} PERSONNEL \u21c4</span> <span class=\"fname\">${g.name}</span></div>\n      <div class=\"subttl\">${g.backs} BACK \u00b7 ${g.te} TE \u00b7 ${g.wr} WR \u2014 ${g.share}% of snaps${noise}</div>\n      <div class=\"prod\" id=\"prd${i}\">${prodLine(g)}</div>\n      <div class=\"fieldbox\">${fieldSvg(g,'none',{},0,0)}</div>\n      <div class=\"stats\"><div class=\"stat\"><span id=\"snl${i}\">Snaps</span><b id=\"snv${i}\">${noteWrap('Snaps', String(g.n), `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', String(g.n))}</b></div><div class=\"stat\"><span>Success</span><b id=\"scv${i}\">${noteWrap('Success Rate', `${g.succ}%`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', `${g.succ}%`)}</b></div>\n      <div class=\"stat\"><span>EPA/play</span><b id=\"epv${i}\" class=\"${g.epa>=.05?'hl-g':(g.epa<=-.05?'hl-p':'')}\">${noteWrap('EPA/play', `${g.epa>=0?'+':''}${g.epa.toFixed(2)}`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', `${g.epa>=0?'+':''}${g.epa.toFixed(2)}`)}</b></div><div class=\"stat\"><span>Share</span><b>${noteWrap('Formation Share', `${g.share}%`, `${SEASON} playbook \u00b7 ${g.p} personnel \u00b7 ${g.name}`, 'QB,RB,WR,TE', `${g.share}%`)}</b></div></div>\n      <div class=\"rp\" data-i=\"${i}\"><div class=\"run seg\" data-mode=\"run\" style=\"width:${(100-Number(g.pass_rate||0)).toFixed(2)}%\"><b>RUN ${(100-Number(g.pass_rate||0)).toFixed(2)}%</b></div><div class=\"pass seg\" data-mode=\"pass\" style=\"width:${Number(g.pass_rate||0).toFixed(2)}%\"><b>PASS ${Number(g.pass_rate||0).toFixed(2)}%</b></div></div>\n      <div class=\"hintbar\" id=\"hint${i}\">tap label \u21c4 change look \u00b7 click bar \u25b8 runs / routes</div></div>`;});\n  grid.innerHTML=html;\n  function setStats(i,mode,g){\n    const snl=document.getElementById('snl'+i),snv=document.getElementById('snv'+i),scv=document.getElementById('scv'+i),epv=document.getElementById('epv'+i);\n    let n=g.n,sc=g.succ,ep=g.epa,lbl='Snaps';\n    if(mode=='run'){ n=g.nr;sc=g.sr;ep=g.er;lbl='Run snaps'; }\n    else if(mode=='pass'){ n=g.np;sc=g.sp;ep=g.ep;lbl='Pass snaps'; }\n    const prd=document.getElementById('prd'+i);\n    if(prd) prd.innerHTML=prodLine(g, mode==='none'?null:mode);\n    snl.textContent=lbl; snv.textContent=n; scv.textContent=sc+'%';\n    epv.textContent=(ep>=0?'+':'')+ep.toFixed(2);\n    epv.className = ep>=.05?'hl-g':(ep<=-.05?'hl-p':'');\n  }\n  document.querySelectorAll('.seg').forEach(seg=>{\n    seg.onclick=(e)=>{ e.stopPropagation();\n      const card=seg.closest('.card'), i=+seg.closest('.rp').dataset.i, mode=seg.dataset.mode, g=window._G[i];\n      const box=card.querySelector('.fieldbox'), hint=card.querySelector('.hintbar');\n      const cur=box.dataset.mode||'none';\n      card.querySelectorAll('.seg').forEach(x=>x.classList.remove('active'));\n      if(cur==mode){ box.innerHTML=fieldSvg(g,'none',{},0,box._av||0); box.dataset.mode='none';\n        hint.textContent='tap label \u21c4 change look \u00b7 click bar \u25b8 runs / routes'; hint.style.color=''; setStats(i,'none',g); return; }\n      seg.classList.add('active');\n      if(!box._sel) box._sel={};\n      box.innerHTML=fieldSvg(g,mode,box._sel,box._rot||0,box._av||0); box.dataset.mode=mode;\n      if(mode=='pass') wireTaps(box,g);\n      setStats(i,mode,g);\n      hint.textContent = mode=='pass'?'ROUTES \u2014 most common per player when targeted':'RUN LANES \u2014 top 3 gaps (color = EPA)';\n      hint.style.color = mode=='pass'?'#4f83cc':'#4a7f2c';\n    };\n  });\n  // clickable personnel label cycles alignment variant\n  document.querySelectorAll('.pers.alt').forEach(lab=>{\n    lab.onclick=(e)=>{ e.stopPropagation();\n      const i=+lab.dataset.i, g=window._G[i], card=lab.closest('.card'), box=card.querySelector('.fieldbox');\n      box._av=(box._av||0)+1; box._sel={}; box._rot=box._rot||0;\n      const mode=box.dataset.mode||'none';\n      box.innerHTML=fieldSvg(g,mode,box._sel,box._rot,box._av); \n      if(mode=='pass') wireTaps(box,g);\n    };\n  });\n}\n// formation diagram rendered in the card; overlay drawn in-place on click\nfunction fieldSvg(g, mode, sel, wrRot, av){ return drawPlayDiagram(g, mode, sel, wrRot, av); }\nfunction wireTaps(box,g){\n  box.querySelectorAll('.tap').forEach(el=>{\n    el.onclick=(ev)=>{ ev.stopPropagation();\n      const slot=el.getAttribute('data-slot'); if(!box._sel) box._sel={};\n      box._sel[slot]=(box._sel[slot]||0)+1;\n      box.innerHTML=fieldSvg(g,'pass',box._sel,box._rot||0,box._av||0); box.dataset.mode='pass';\n      wireTaps(box,g);\n    };\n  });\n  box.querySelectorAll('.qbtap').forEach(el=>{\n    el.onclick=(ev)=>{ ev.stopPropagation();\n      box._rot=(box._rot||0)+1; box._sel={};\n      box.innerHTML=fieldSvg(g,'pass',{},box._rot,box._av||0); box.dataset.mode='pass';\n      wireTaps(box,g);\n    };\n  });\n}\n\n(function noteBridge(){\n  const DBL_MS=360, MOVE=10;\n  let st=null;\n  function clear(){ st=null; }\n  function info(el){\n    if(!el || !el.dataset) return null;\n    return {\n      label: el.dataset.noteLabel || 'Playbook stat',\n      value: el.dataset.noteValue || '',\n      context: el.dataset.noteContext || '',\n      source: el.dataset.noteSource || 'coaching_playbook',\n      statKey: el.dataset.noteStatKey || '',\n      team: el.dataset.noteTeam || TEAM_CODE || '',\n      relevance: el.dataset.noteRelevance || 'QB,RB,WR,TE',\n      nav: el.dataset.noteNav ? (function(){ try{return JSON.parse(el.dataset.noteNav);}catch(e){return null;} })() : null,\n    };\n  }\n  function open(el){\n    const parentWin = window.parent;\n    if(!parentWin || typeof parentWin.noteOpenPicker!=='function') return;\n    const payload = info(el);\n    if(payload) parentWin.noteOpenPicker(payload);\n  }\n  function tap(el,x,y){\n    const now=Date.now();\n    if(!st){ st={el,x,y,t:now}; return; }\n    const same=st.el===el;\n    const soon=(now-st.t)<=DBL_MS;\n    const close=Math.abs(x-st.x)<=MOVE && Math.abs(y-st.y)<=MOVE;\n    if(same&&soon&&close){ clear(); open(el); return; }\n    st={el,x,y,t:now};\n  }\n  document.addEventListener('touchstart', e=>{\n    if(e.touches.length!==1) return clear();\n    const el=e.target&&e.target.closest?e.target.closest('[data-noteable=\"1\"]'):null;\n    if(!el) return;\n    const t=e.touches[0];\n    tap(el,t.clientX,t.clientY);\n  }, {passive:true});\n  document.addEventListener('touchcancel', clear, {passive:true});\n  document.addEventListener('mousedown', e=>{\n    const el=e.target&&e.target.closest?e.target.closest('[data-noteable=\"1\"]'):null;\n    if(!el||e.button!==0) return;\n    tap(el,e.clientX,e.clientY);\n  });\n  document.addEventListener('mouseleave', clear);\n})();\n\n['down','dist','field'].forEach(id=>document.getElementById(id).onchange=draw); draw();\n__TC_SCRIPT_CLOSE__</body></html>\n";
 // ─────────────────────────────────────────────────────────────────────────────
 // Team playbook modal (nflverse)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -12076,11 +12293,9 @@ function _schemeRenderRzOpportunityVolume(p, d, league, rankText, rankClass){
     html: `${playsTxt}${playRank ? ` <span class="scheme-insight-rank ${rankClass(playRank)}">(${rankText(playRank)})</span>` : ''}`,
   });
   return `<div class="scheme-insight-card">
-    <div class="scheme-insight-k">Red-Zone Opportunity Volume (League-Wide)</div>
+    <div class="scheme-insight-k">Red-Zone Opportunity Volume (League-Wide) ${_schemeInfoTip('RZ opportunity volume', "Top number: RZ drives per game — the volume baseline for touchdown opportunities. Bottom: RZ plays per game, for comparing opportunity volume against usage concentration.")}</div>
     <div class="scheme-insight-v">${drives}</div>
-    <div class="scheme-insight-sub">RZ drives per game. Volume baseline for touchdown opportunities.</div>
     <div class="scheme-insight-v" style="margin-top:7px">${plays}</div>
-    <div class="scheme-insight-sub">RZ plays per game. Helps compare opportunity volume against usage concentration.</div>
   </div>`;
 }
 
@@ -12646,7 +12861,6 @@ function _schemeRenderActualBenefactorList(title, subtitle, list, teamCode, seas
         ${chips}
       </span>
       <span class="scheme-benefit-score">${scoreHtml}</span>
-      <span class="scheme-benefit-why">${_schemeEscHtml(reason)}</span>
     </div>`;
   }).join('');
   return `<div class="scheme-benefactors-wrap">
@@ -12677,18 +12891,18 @@ function _schemeRenderActualBenefactors(snap, teamCode, season){
     "Real inside-the-20 target and carry logs from Sleeper weekly data — not modeled from formations. Target share = a player's RZ targets ÷ team RZ targets. Opportunity share = (RZ targets + RZ carries) ÷ team RZ touches, which is the best single read on who actually gets the ball near the goal line (great for dual-threat backs and target hogs)."
   );
   const controls = `<div class="scheme-benefit-sort" role="group" aria-label="Sort red-zone leaders">
-    <span class="scheme-benefit-sort-label">Sort target leaders by ${tip}</span>
+    <span class="scheme-benefit-sort-label">Sort by ${tip}</span>
     <button type="button" class="scheme-benefit-sort-btn ${targetSort==='tgt'?'active':''}" onclick="event.stopPropagation();setTeamCoachingSchemeBenefactorSort('tgt')">RZ target share</button>
     <button type="button" class="scheme-benefit-sort-btn ${targetSort==='opp'?'active':''}" onclick="event.stopPropagation();setTeamCoachingSchemeBenefactorSort('opp')">RZ opportunity share</button>
   </div>`;
   const tgtList = _schemeRenderActualBenefactorList(
     'Red-Zone Target Leaders',
-    `actual RZ target logs · team ${snap.teamTgt} RZ targets · ${targetSort==='opp'?'sorted by opportunity (touch) share':'sorted by target share'}`,
+    `team ${snap.teamTgt} RZ targets`,
     targetRows, teamCode, season, 'target'
   );
   const rushList = _schemeRenderActualBenefactorList(
     'Red-Zone Rushing Leaders',
-    `actual RZ carry logs · team ${snap.teamAtt} RZ carries · sorted by carry share`,
+    `team ${snap.teamAtt} RZ carries`,
     rushRows, teamCode, season, 'rush'
   );
   return `${controls}${tgtList}${rushList}`;
@@ -12825,8 +13039,8 @@ function _schemeRenderRzTdSource(p){
   return `<div class="scheme-op-wrap">
     <div class="scheme-op-title">Red-Zone TD Source · ${_schemeEscHtml(season)}</div>
     <div class="scheme-insights-grid" style="margin-bottom:8px">
-      <div class="scheme-insight-card"><div class="scheme-insight-k">Through the air</div><div class="scheme-insight-v">${tag(`${airPct}% <span class="scheme-insight-rank neutral">(${airRank?`${rkTxt(airRank)} · `:''}${s.passTD} pass TD)</span>`, 'RZ TDs through the air', `${airPct}% of RZ TDs via pass${airRank?` — ${rkTxt(airRank)} most pass-heavy`:''} (${s.passTD} pass TDs)`, 'rz_td_air')}</div><div class="scheme-insight-sub">Share of red-zone TDs scored passing. Higher ⇒ pass-catchers own the TD equity.</div></div>
-      <div class="scheme-insight-card"><div class="scheme-insight-k">On the ground</div><div class="scheme-insight-v">${tag(`${grPct}% <span class="scheme-insight-rank neutral">(${grRank?`${rkTxt(grRank)} · `:''}${s.rushTD} rush TD)</span>`, 'RZ TDs on the ground', `${grPct}% of RZ TDs via rush${grRank?` — ${rkTxt(grRank)} most ground-heavy`:''} (${s.rushTD} rush TDs)`, 'rz_td_ground')}</div><div class="scheme-insight-sub">Share of red-zone TDs scored rushing. Higher ⇒ the goal-line back carries more value.</div></div>
+      <div class="scheme-insight-card"><div class="scheme-insight-k">Through the air ${_schemeInfoTip('RZ TDs through the air', "Share of red-zone TDs scored passing. Higher means the pass-catchers own the TD equity.")}</div><div class="scheme-insight-v">${tag(`${airPct}% <span class="scheme-insight-rank neutral">(${airRank?`${rkTxt(airRank)} · `:''}${s.passTD} pass TD)</span>`, 'RZ TDs through the air', `${airPct}% of RZ TDs via pass${airRank?` — ${rkTxt(airRank)} most pass-heavy`:''} (${s.passTD} pass TDs)`, 'rz_td_air')}</div></div>
+      <div class="scheme-insight-card"><div class="scheme-insight-k">On the ground ${_schemeInfoTip('RZ TDs on the ground', "Share of red-zone TDs scored rushing. Higher means the goal-line back carries more value.")}</div><div class="scheme-insight-v">${tag(`${grPct}% <span class="scheme-insight-rank neutral">(${grRank?`${rkTxt(grRank)} · `:''}${s.rushTD} rush TD)</span>`, 'RZ TDs on the ground', `${grPct}% of RZ TDs via rush${grRank?` — ${rkTxt(grRank)} most ground-heavy`:''} (${s.rushTD} rush TDs)`, 'rz_td_ground')}</div></div>
     </div>
     <div class="scheme-op-title" style="font-size:11px">TDs by down (pass / rush)</div>
     <div class="scheme-op-grid">${downCells}</div>
@@ -12880,10 +13094,10 @@ function _schemeRenderScheme(p){
   const passRk=rankOf(sp.passRate, lg&&lg.passRate), paRk=rankOf(sp.paRate, lg&&lg.paRate);
   const moRk=rankOf(sp.motionRate, lg&&lg.motionRate), nhRk=rankOf(sp.nohuddleRate, lg&&lg.nohuddleRate);
   const cards=`<div class="scheme-insights-grid">
-    <div class="scheme-insight-card"><div class="scheme-insight-k">Pass rate</div><div class="scheme-insight-v">${tag(`${pct(sp.passRate)} ${rkHtml(passRk, lg&&lg.passRate)}`,'Pass rate',`${pct(sp.passRate)} overall pass rate${rkTxt(passRk, lg&&lg.passRate)}`,'pass_rate')}</div><div class="scheme-insight-sub">Overall pass tendency (rank = most pass-heavy). 1st ${pct(sp.byDown['1'])} · 2nd ${pct(sp.byDown['2'])} · 3rd ${pct(sp.byDown['3'])}.</div></div>
-    <div class="scheme-insight-card"><div class="scheme-insight-k">Play-action rate</div><div class="scheme-insight-v">${tag(`${pct(sp.paRate)} ${rkHtml(paRk, lg&&lg.paRate)} <span class="scheme-insight-rank neutral">(EPA ${epaTxt(sp.paEpa)})</span>`,'Play-action rate',`${pct(sp.paRate)} play-action rate${rkTxt(paRk, lg&&lg.paRate)} · ${epaTxt(sp.paEpa)} EPA/play`,'pa_rate')}</div><div class="scheme-insight-sub">PA volume + efficiency. High PA lifts deep-shot WRs and QB efficiency.${Number.isFinite(sp.paRate)?'':' Not charted for this season.'}</div></div>
-    <div class="scheme-insight-card"><div class="scheme-insight-k">Pre-snap motion</div><div class="scheme-insight-v">${tag(`${pct(sp.motionRate)} ${rkHtml(moRk, lg&&lg.motionRate)}`,'Motion rate',`${pct(sp.motionRate)} of plays use pre-snap motion${rkTxt(moRk, lg&&lg.motionRate)}`,'motion_rate')}</div><div class="scheme-insight-sub">Motion usage schemes easy touches / YAC for movement players.${Number.isFinite(sp.motionRate)?'':' Not charted for this season.'}</div></div>
-    <div class="scheme-insight-card"><div class="scheme-insight-k">No-huddle rate</div><div class="scheme-insight-v">${tag(`${pct(sp.nohuddleRate)} ${rkHtml(nhRk, lg&&lg.nohuddleRate)}`,'No-huddle rate',`${pct(sp.nohuddleRate)} of plays run no-huddle${rkTxt(nhRk, lg&&lg.nohuddleRate)}`,'nohuddle_rate')}</div><div class="scheme-insight-sub">Tempo. More no-huddle ⇒ more total plays and volume for everyone.${Number.isFinite(sp.nohuddleRate)?'':' Not charted for this season.'}</div></div>
+    <div class="scheme-insight-card"><div class="scheme-insight-k">Pass rate ${_schemeInfoTip('Pass rate', "Overall pass tendency; rank 1 = most pass-heavy. The line below is the rate by down.")}</div><div class="scheme-insight-v">${tag(`${pct(sp.passRate)} ${rkHtml(passRk, lg&&lg.passRate)}`,'Pass rate',`${pct(sp.passRate)} overall pass rate${rkTxt(passRk, lg&&lg.passRate)}`,'pass_rate')}</div><div class="scheme-insight-sub">1st ${pct(sp.byDown['1'])} · 2nd ${pct(sp.byDown['2'])} · 3rd ${pct(sp.byDown['3'])}</div></div>
+    <div class="scheme-insight-card"><div class="scheme-insight-k">Play-action rate ${_schemeInfoTip('Play-action rate', "PA volume plus efficiency. A high play-action rate lifts deep-shot WRs and QB efficiency.")}</div><div class="scheme-insight-v">${tag(`${pct(sp.paRate)} ${rkHtml(paRk, lg&&lg.paRate)} <span class="scheme-insight-rank neutral">(EPA ${epaTxt(sp.paEpa)})</span>`,'Play-action rate',`${pct(sp.paRate)} play-action rate${rkTxt(paRk, lg&&lg.paRate)} · ${epaTxt(sp.paEpa)} EPA/play`,'pa_rate')}</div>${Number.isFinite(sp.paRate)?'':'<div class="scheme-insight-sub">Not charted for this season.</div>'}</div>
+    <div class="scheme-insight-card"><div class="scheme-insight-k">Pre-snap motion ${_schemeInfoTip('Pre-snap motion', "Motion usage schemes easy touches and YAC for movement players.")}</div><div class="scheme-insight-v">${tag(`${pct(sp.motionRate)} ${rkHtml(moRk, lg&&lg.motionRate)}`,'Motion rate',`${pct(sp.motionRate)} of plays use pre-snap motion${rkTxt(moRk, lg&&lg.motionRate)}`,'motion_rate')}</div>${Number.isFinite(sp.motionRate)?'':'<div class="scheme-insight-sub">Not charted for this season.</div>'}</div>
+    <div class="scheme-insight-card"><div class="scheme-insight-k">No-huddle rate ${_schemeInfoTip('No-huddle rate', "Tempo. More no-huddle means more total plays — more volume for everyone.")}</div><div class="scheme-insight-v">${tag(`${pct(sp.nohuddleRate)} ${rkHtml(nhRk, lg&&lg.nohuddleRate)}`,'No-huddle rate',`${pct(sp.nohuddleRate)} of plays run no-huddle${rkTxt(nhRk, lg&&lg.nohuddleRate)}`,'nohuddle_rate')}</div>${Number.isFinite(sp.nohuddleRate)?'':'<div class="scheme-insight-sub">Not charted for this season.</div>'}</div>
   </div>`;
   const persCards = sp.persList.map(r=>{
     // The league pool for a package only holds teams that use it enough to make their own
@@ -12999,12 +13213,11 @@ function _schemeRenderRegression(p){
       <span class="scheme-benefit-rank">${i+1}</span>
       <span class="scheme-benefit-head scheme-benefit-head-btn" ${headClick}>${_schemePlayerHeadshot(r)}</span>
       <span class="scheme-benefit-main">
-        <span class="scheme-benefit-name">${_schemeEscHtml(r.name)} <span style="font-size:9px;padding:1px 5px;border-radius:6px;font-weight:700;${_schemeRegFlagStyle(flag)}">${flagTxt}</span></span>
+        <span class="scheme-benefit-name">${_schemeEscHtml(r.name)} <span title="${_schemeEscHtml(reason)}" style="font-size:9px;padding:1px 5px;border-radius:6px;font-weight:700;cursor:help;${_schemeRegFlagStyle(flag)}">${flagTxt}</span></span>
         <span class="scheme-benefit-meta">${_schemeEscHtml(r.pos)} · ${r.rzTgt} RZ tgt · ${r.rzAtt} RZ carr</span>
         ${chips}
       </span>
       <span class="scheme-benefit-score">${scoreHtml}</span>
-      <span class="scheme-benefit-why">${_schemeEscHtml(reason)}</span>
     </div>`;
   };
   const buys=reg.rows.filter(r=>r.opp>=4 && r.delta<=-_SCHEME_REG_FLAG).sort((a,b)=>a.delta-b.delta).slice(0,6);
@@ -13013,8 +13226,8 @@ function _schemeRenderRegression(p){
   const empty = (!buys.length && !sells.length) ? `<div class="scheme-benefactors-wrap"><div class="scheme-empty">No strong over/under-performers — this offense's RZ scoring closely matches workload.</div></div>`:'';
   return `<div class="scheme-insights-wrap">
     <div class="scheme-insights-head"><span class="scheme-insights-pill neutral">TD Regression ${tip}</span><span class="scheme-insights-sample">${reg.teamTD} skill-player TDs vs ${reg.teamExp.toFixed(1)} league-expected · ${reg.teamOpp} RZ touches</span></div>
-    ${list('Buy-Low — under-scored RZ workload','sorted by biggest TD shortfall',buys)}
-    ${list('Sell-High — TD-dependent','sorted by biggest TD surplus',sells)}
+    ${list('Buy-Low — under-scored RZ workload','',buys)}
+    ${list('Sell-High — TD-dependent','',sells)}
     ${empty}
   </div>`;
 }
@@ -13228,8 +13441,8 @@ function _schemeRenderBenefactorList(title, subtitle, list, scoreFmt, metaFmt){
         <span class="scheme-benefit-meta">${noteWrapHtml(metaFmt(p), { label:`${title} role context`, value:`${p.pos||''} · ${p.slot||''}${p.oppShare!=null?` · opp share ${p.oppShare.toFixed(2)}%`:''}${p.tgtShare!=null?` · tgt share ${p.tgtShare.toFixed(2)}%`:''}`, source:'coaching_insights', statKey:'role_context', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:notePlayer, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
         ${splits}
       </span>
-      <span class="scheme-benefit-score">${noteWrapHtml(scoreFmt(p), { label:`${title} leader score`, value:`${p.tgtShare!=null?`RZ target share ${p.tgtShare.toFixed(2)}% · `:''}${p.oppShare!=null?`team share ${p.oppShare.toFixed(2)}%`:''}`.trim() || scoreFmt(p).replace(/<[^>]+>/g,''), source:'coaching_insights', statKey:'leader_score', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:notePlayer, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
-      <span class="scheme-benefit-why">${_schemeEscHtml(p.reason)}</span>
+      <span class="scheme-benefit-score" title="${_schemeEscHtml(p.reason||'')}">${noteWrapHtml(scoreFmt(p), { label:`${title} leader score`, value:`${p.tgtShare!=null?`RZ target share ${p.tgtShare.toFixed(2)}% · `:''}${p.oppShare!=null?`team share ${p.oppShare.toFixed(2)}%`:''}`.trim() || scoreFmt(p).replace(/<[^>]+>/g,''), source:'coaching_insights', statKey:'leader_score', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:notePlayer, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
+
     ${wrapClose}`;
   }).join('');
   return `<div class="scheme-benefactors-wrap">
@@ -13251,20 +13464,20 @@ function _schemeRenderBenefactors(targets, rushers){
     'These are modeled shares, not exact target logs. Opportunity share emphasizes route-role usage; target share is the neutral split baseline for red-zone pass concepts.'
   );
   const targetSortControls = `<div class="scheme-benefit-sort" role="group" aria-label="Sort target leaders">
-    <span class="scheme-benefit-sort-label">Sort target leaders by ${targetSortTip}</span>
+    <span class="scheme-benefit-sort-label">Sort by ${targetSortTip}</span>
     <button type="button" class="scheme-benefit-sort-btn ${targetSort==='opp'?'active':''}" onclick="event.stopPropagation();setTeamCoachingSchemeBenefactorSort('opp')">RZ target opportunity share</button>
     <button type="button" class="scheme-benefit-sort-btn ${targetSort==='tgt'?'active':''}" onclick="event.stopPropagation();setTeamCoachingSchemeBenefactorSort('tgt')">RZ target share</button>
   </div>`;
 
   return `${targetSortControls}${_schemeRenderBenefactorList(
     'Red-Zone Target Opportunity Leaders',
-    `sorted by ${_schemeTargetSortLabel(targetSort).toLowerCase()} · modeled red-zone shares (not play-by-play target logs)`,
+    `modeled shares`,
     sortedTargets,
     p=>`${byTgt ? 'RZ TGT' : 'RZ OPP'} ${byTgt ? p.tgtShare.toFixed(2) : p.oppShare.toFixed(2)}% ${teamShareTip}`,
     p=>`${_schemeEscHtml(p.pos)} · ${_schemeEscHtml(p.slot)} · RZ opp share ${p.oppShare.toFixed(2)}% · RZ target share ${p.tgtShare.toFixed(2)}%`
   )}${_schemeRenderBenefactorList(
     'Rushing TD Paths',
-    'modeled team share of red-zone rushing TD path volume',
+    'modeled rush-path shares',
     rushers,
     p=>`TEAM ${p.oppShare.toFixed(2)}% ${teamShareTip}`,
     p=>`${_schemeEscHtml(p.pos)} · ${_schemeEscHtml(p.slot)} · Team rush-path share ${p.oppShare.toFixed(2)}%`
@@ -13334,25 +13547,25 @@ function _schemeRenderRedZone(p){
         <div class="scheme-insight-sub">Share of red-zone plays that reach 3rd or 4th down.</div>
       </div>
       <div class="scheme-insight-card">
-        <div class="scheme-insight-k">Early down red zone success (1st/2nd)</div>
+        <div class="scheme-insight-k">Early down red zone success (1st/2nd) ${_schemeInfoTip('Early down RZ success', "Weighted by formation usage on early downs inside the red zone.")}</div>
         <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.earlySucc)} <span class="scheme-insight-rank ${rankClass(earlySuccRank)}">(${rankText(earlySuccRank)})</span>`, _itm('Early down red zone success', _schemePct(d.earlySucc), 'early_succ'), 'note-tag-hit')}</div>
-        <div class="scheme-insight-sub">Weighted by formation usage on early downs inside the red zone.</div>
+        
       </div>
       <div class="scheme-insight-card">
-        <div class="scheme-insight-k">Late down red zone success (3rd/4th)</div>
+        <div class="scheme-insight-k">Late down red zone success (3rd/4th) ${_schemeInfoTip('Late down RZ success', "How efficiently this team finishes once drives get extended.")}</div>
         <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.lateSucc)} <span class="scheme-insight-rank ${rankClass(lateSuccRank)}">(${rankText(lateSuccRank)})</span>`, _itm('Late down red zone success', _schemePct(d.lateSucc), 'late_succ'), 'note-tag-hit')}</div>
-        <div class="scheme-insight-sub">How efficiently this team finishes once drives get extended.</div>
+        
       </div>
       <div class="scheme-insight-card">
         <div class="scheme-insight-k">Drive friction ranking ${frictionTip}</div>
         <div class="scheme-insight-v">${noteWrapHtml(`${rankText(frictionRank)} <span class="scheme-insight-rank ${frictionRankClass}">(score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'})</span>`, _itm('Drive friction ranking', `${rankText(frictionRank)} · score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'}`, 'friction_rank'), 'note-tag-hit')}</div>
-        <div class="scheme-insight-sub">Ranked by drive cleanliness (1 = least friction / cleanest drives, 32 = most friction / toughest drives).</div>
+        
       </div>
       ${rzVolumeCard}
     </div>
     ${frictionComponents}
     ${tdSourceHtml}
-    <div class="scheme-insight-note"><b>Fantasy angle:</b> ${_schemeEscHtml(blurb)}</div>
+    <div class="scheme-insight-note scheme-insight-min"><b>Fantasy angle</b> ${_schemeInfoTip('Fantasy angle', blurb)}</div>
     ${benefactorsHtml}
   </div>`;
 }
@@ -13449,7 +13662,7 @@ function _renderTeamCoachingScheme(){
         <img src="${NFL_LOGO(schemeTeam)}" class="scheme-team-logo" onerror="this.style.display='none'">
         <div>
           <div class="scheme-title">${teamDisplayName(schemeTeam)} Playbook</div>
-          <div class="scheme-subtitle">Interactive playsheet · nflverse charting · ${p.season} regular season</div>
+          <div class="scheme-subtitle">${p.season} playsheet</div>
           ${_schemeOcCallout(schemeTeam)}
         </div>
       </div>
@@ -13755,8 +13968,16 @@ function renderTeamAdditions(team){
       <th class="add-num">TERM</th><th class="add-num">TOTAL</th><th class="add-num">AAV</th>
       </tr></thead><tbody>${body}</tbody></table></div>`;
   };
+  const changesOpen = (typeof _addChangesOpen!=='undefined' && _addChangesOpen && _addChangesTeam===team);
+  const nAdds=(a.free_agents||[]).length+(a.draft||[]).length+(a.trades||[]).length;
+  const nLost=(a.free_agents_lost||[]).length;
   return `<div class="add-wrap">
-    <div class="add-note"><b>${teamDisplayName(team)}</b> ${PROJ_SEASON} roster changes — additions via free agency, the draft, and trades, plus notable departures. Sorted by contract/cap value. Pair this with the ${advTeamSeason()} Advanced Stats to see how weaknesses were addressed — and where new holes may have opened.</div>
+    <div class="tc-collapse-head" onclick="toggleAddChanges('${team}')" role="button" aria-expanded="${changesOpen}">
+      <span class="tc-collapse-caret">${changesOpen?'▾':'▸'}</span>
+      <b>${PROJ_SEASON} Roster changes</b>
+      <span class="tc-collapse-sum">${nAdds} addition${nAdds===1?'':'s'} · ${nLost} departure${nLost===1?'':'s'}</span>
+      ${(typeof tcInfoBtn==='function')?tcInfoBtn('additions','About this section'):''}</div>
+    <div class="tc-collapse-body${changesOpen?'':' tc-collapsed'}">
 
     <div class="add-section">
       <div class="add-section-head">Free Agency ${count((a.free_agents||[]).length)}</div>
@@ -13778,11 +13999,19 @@ function renderTeamAdditions(team){
       <div class="add-losses-sub">Free agents who signed elsewhere this offseason.</div>
       ${lossTable(a.free_agents_lost)}
     </div>
+    </div>
 
     ${renderDepthChart(team)}
-
-    <div class="sr-source">${PROJ_SEASON} offseason moves · depth chart via ESPN · for informational use.</div>
   </div>`;
+}
+
+// Roster-changes drawer state (per-team, like the QB room): collapsed by default.
+var _addChangesTeam=null;
+let _addChangesOpen=false;
+function toggleAddChanges(team){
+  if(_addChangesTeam!==team){ _addChangesTeam=team; _addChangesOpen=true; }
+  else _addChangesOpen=!_addChangesOpen;
+  if(typeof renderContent==='function') renderContent();
 }
 
 // Per-team advanced view: one card per Sharp table, each showing this team's value + rank.
@@ -13845,9 +14074,8 @@ function coordInlineLabel(a,b,c){
   if(!coord) return '';
   if(!coord.name) return '';
   if(coordCarriesOver(coord)){
-    const role = coord.prev_role || 'coordinator';
     return `<span ${attrs}>
-      ${sideWord==='offensive'?'OC':'DC'}: <b>${coord.name}</b> <span class="coord-new-tag">NEW · from ${teamDisplayName(coord.prev_code)} ${role}</span></span>`;
+      ${sideWord==='offensive'?'OC':'DC'}: <b>${coord.name}</b> <span class="coord-new-tag" title="New for this season · from ${escAttr(teamDisplayName(coord.prev_code))} — tap the ! for details">NEW</span></span>`;
   }
   // carryover/internal: last season's stats apply directly
   const since = coord.since?` · since ${coord.since}`:'';
@@ -14579,108 +14807,84 @@ function renderTeamAdvanced(team){
   const offKeys=keys.filter(k=>(SRC[k].category||'offense')==='offense');
   const defKeys=keys.filter(k=>SRC[k].category==='defense');
   const oc=coordFor(team,'offense'), dc=coordFor(team,'defense');
-  const section=(label,ks,coordLbl)=> ks.length ? `<div class="sr-section-head">${label} ${coordLbl||''}</div>
+  const section=(label,ks,coordLbl,actions)=> ks.length ? `<div class="sr-section-head">${label} ${coordLbl||''}${actions?`<span class="sr-head-actions">${actions}</span>`:''}</div>
     <div class="sr-card-grid">${ks.map(k=>cardFor(k)).join('')}</div>` : '';
-  // SOS summary strip
-  // The SOS block describes the PROJECTION season's slate — on a past-season reference
-  // view it would be a 2026 schedule pinned over 2024 stats.
-  const sos=(activeSeason==='proj') && SOS && SOS[team];
-  const sosSched = (typeof renderTeamScheduleStrip==='function') ? renderTeamScheduleStrip(team) : '';
-  const sosOpen = (typeof _sosStripOpen!=='undefined' && _sosStripOpen);
-  const sosStrip = sos ? `<div class="sr-sos-block ${sosSched?'sos-clickable':''}" ${sosSched?`onclick="toggleSosStrip()" title="${sosOpen?'Hide':'Show'} the week-by-week schedule"`:''}>
-  <div class="sr-sos-strip">
-    <span class="sr-sos-rank ${sharpRankClass(sos.rank)}">${ordinal(sos.rank)}</span>
-    <div class="sr-sos-main"><div class="sr-sos-label">${PROJ_SEASON} Strength of Schedule</div>
-      <div class="sr-sos-sub">${noteWrapHtml(`${sos.win_total!=null?`Vegas win total <b>${sos.win_total}</b> · `:''}rank ${sos.rank} of 32 (1 = easiest)`, {
-        label: `${PROJ_SEASON} Strength of Schedule`,
-        value: `${sos.win_total!=null?`Vegas win total ${sos.win_total} · `:''}rank ${sos.rank} of 32`,
-        source: 'team_sos',
-        statKey: 'sos',
-        context: `${teamDisplayName(team)} · ${PROJ_SEASON} schedule`,
-        team,
-        relevance: 'QB,RB,WR,TE',
-        nav: { type:'advanced', team, season: 'proj' },
-      }, 'note-tag-hit')}</div></div>
-    ${sosSched?`<span class="sr-sos-caret" aria-hidden="true">${sosOpen?'▾':'▸'}</span>`:''}
-    <button class="btn btn-ghost btn-sm sr-sos-btn" onclick="event.stopPropagation();showSharpLeague('sos')">See SOS chart →</button>
-  </div>${sosSched}</div>` : '';
-  // Carryover coordinators → a highlighted section that pulls the former team's scheme stats.
-  const carryBlock = renderCoordinatorCarryover(team);
-  const srcLabel = 'nflverse (computed from play-by-play)';
+  // Incoming play-callers: no card — a yellow ! beside the section head opens the detail
+  // popup (badge, real former role, jump chip). Small footprint, full story on demand.
+  const carryFlag=(side)=>{
+    const c=_carrySideSource(team, side);
+    if(!c) return '';
+    return `<button class="tc-info-btn tc-info-warn" onclick="tcInfoPop(event,'${side==='offense'?'carry_off':'carry_def'}')"
+      title="New ${c._fromHC?'play-calling head coach':(side==='offense'?'offensive':'defensive')+' coordinator'} — scheme likely changing" aria-label="Incoming play-caller">!</button>`;
+  };
+  // No header row of its own: the League button + ⓘ ride the FIRST section head, and the
+  // season is part of the section label ("2025 Offense …"). SOS lives inside the league
+  // view's category tabs, so one button covers both.
+  const yr=(typeof tcSeasonLabel==='function')?tcSeasonLabel(advTeamSeason()):advTeamSeason();
+  const actions=`<button class="btn btn-accent btn-sm" onclick="showSharpLeague()">League</button>${(typeof tcInfoBtn==='function')?tcInfoBtn('advteam','About these stats'):''}`;
+  const offHtml=section(`${yr} Offense ${carryFlag('offense')}`, offKeys, coordInlineLabel(team,oc,'offensive'), actions);
+  const defHtml=section(`${yr} Defense ${carryFlag('defense')}`, defKeys, coordInlineLabel(team,dc,'defensive'), offKeys.length?'':actions);
   return `<div class="sr-team-wrap">
     ${renderAdvWeekRange(team)}
-    <div class="sr-note">${TC_ICON("chart")} <b>Advanced team stats</b> · ${srcLabel} · <b>${(typeof tcSeasonLabel==='function')?tcSeasonLabel(advTeamSeason()):advTeamSeason()} season${(typeof tcIsLiveSeason==='function'&&tcIsLiveSeason(advTeamSeason()))?' to date':''}</b> · league rank out of 32 · read-only reference to inform your ${PROJ_SEASON} decisions.
-      <button class="btn btn-ghost btn-sm" style="margin-left:6px" onclick="showSharpLeague()">View league-wide tables →</button></div>
-    ${sosStrip}
-    ${carryBlock}
-    ${section('Offense', offKeys, coordInlineLabel(team,oc,'offensive'))}
-    ${section('Defense', defKeys, coordInlineLabel(team,dc,'defensive'))}
-    <div class="sr-source">${(typeof tcSeasonLabel==='function')?tcSeasonLabel(advTeamSeason()):advTeamSeason()} season${(typeof tcIsLiveSeason==='function'&&tcIsLiveSeason(advTeamSeason()))?' · through the completed weeks, rebuilt weekly':''} · computed from nflverse play-by-play (nflfastR) — for informational use.</div>
+    ${(!offKeys.length && !defKeys.length)?`<div class="sr-head-min"><span class="sr-head-actions">${actions}</span></div>`:''}
+    ${offHtml}
+    ${defHtml}
   </div>`;
+}
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.advteam={title:'Advanced team stats', body:()=>{
+    const yr=(typeof tcSeasonLabel==='function')?tcSeasonLabel(advTeamSeason()):advTeamSeason();
+    const live=(typeof tcIsLiveSeason==='function'&&tcIsLiveSeason(advTeamSeason()));
+    return `Team-level advanced stats for the <b>${yr}</b> season${live?' to date (through the completed weeks, rebuilt weekly)':''},
+      computed from nflverse play-by-play (nflfastR). Every stat carries its <b>league rank out of 32</b>.
+      This page is a read-only reference to inform your ${PROJ_SEASON} projections — nothing here
+      edits them. <b>League</b> opens the same stats as league-wide sortable tables; <b>SOS</b>
+      opens the strength-of-schedule chart.`;
+  }};
 }
 
 // The Coordinators carryover block: when a NEW coordinator came from another NFL team, show
 // their former team's carry-over scheme stats (tendencies + personnel for OC; tendencies +
 // coverage for DC — the aspects that travel with a coordinator), clearly labeled.
-function renderCoordinatorCarryover(team){
-  const oc=coordFor(team,'offense'), dc=coordFor(team,'defense');
-  const blocks=[];
-  // OFFENSE: when the head coach is the primary playcaller and is new-from-another-team, the
-  // scheme travels with the HC → point at the HC's former team. Otherwise use the OC.
-  const hcSrc = playcallerHCOffenseSource(team);
-  const offSrc = hcSrc || (coordCarriesOver(oc) ? oc : null);
-  if(offSrc) blocks.push(coordCarryCard('offensive', offSrc));
-  if(coordCarriesOver(dc)) blocks.push(coordCarryCard('defensive', dc));
-  if(!blocks.length) return '';
-  return `<div class="coord-carry-wrap">
-    <div class="coord-carry-head">${TC_ICON("refresh")} New coordinator for ${PROJ_SEASON}</div>
-    ${blocks.join('')}
-  </div>`;
+// Which incoming play-caller affects this side, if any: a new play-calling HC beats the
+// OC on offense (the scheme travels with him); otherwise the new-from-elsewhere coordinator.
+function _carrySideSource(team, side){
+  if(side==='offense'){
+    const oc=coordFor(team,'offense');
+    return playcallerHCOffenseSource(team) || (coordCarriesOver(oc)?oc:null);
+  }
+  const dc=coordFor(team,'defense');
+  return coordCarriesOver(dc)?dc:null;
 }
-
-// Jump to another team's Adv Metrics from a carryover link. Stays on the Advanced phase so
-// you land on the same view you were reading, rather than being bounced to a default tab.
-function advJumpToTeam(code){
-  if(!code) return;
-  currentPhase='Advanced';
-  selectTeam(String(code).toUpperCase());
-  if(typeof renderContent==='function') renderContent();
-  try{ window.scrollTo({top:0, behavior:'smooth'}); }catch(e){ window.scrollTo(0,0); }
-}
-function coordCarryCard(sideWord, c){
-  const from = teamDisplayName(c.prev_code);
-  const prevPlaycaller = (sideWord==='offensive' && !c._fromHC)
-    ? offensivePlaycallerContextFor(c.prev_code)
-    : null;
-  // A LINK, not an embedded copy of the other team's tables. Inlining the former team's stat
-  // cards doubled the length of the Adv Metrics page and put another team's numbers directly
-  // beside this team's — easy to misread as this team's own. The pointer is the useful part;
-  // the reader can follow it when they want the detail, in the full context of that team.
-  const jump = `advJumpToTeam('${escAttr(c.prev_code)}')`;
-  const link = `<button class="adv-carry-link" onclick="${jump}" title="View ${escAttr(from)}\u2019s advanced metrics">`
-    + `<img src="${NFL_LOGO(String(c.prev_code).toUpperCase())}" class="adv-carry-logo" alt="" onerror="this.style.display='none'">`
-    + `${from}</button>`;
-  const roleNote = c.prev_role
-    ? `previously ${link} <b>${c.prev_role}</b>${c.prev_years?` (${c.prev_years})`:''}`
-    : `previously with ${link}`;
-  const playcallerHint = prevPlaycaller && prevPlaycaller.name
-    ? ` · offense there was called by <b>${prevPlaycaller.name}</b>${Number.isFinite(prevPlaycaller.since)?` (since ${prevPlaycaller.since})`:''}`
-    : '';
-  // When the offensive source is a play-calling head coach, label it as such (the scheme
-  // follows the HC, not the OC).
-  const badge = c._fromHC ? 'New play-calling Head Coach'
-    : (sideWord==='offensive' ? 'New Offensive Coordinator' : 'New Defensive Coordinator');
-  const schemeOwner = c._fromHC ? 'play-calling head coach' : `${sideWord} coordinator`;
-  return `<div class="coord-carry-block">
-    <div class="coord-carry-title">
-      <span class="coord-side">${badge}</span>
-      <b>${c.name||'(name unavailable)'}</b> — ${roleNote}${playcallerHint}
-    </div>
-    <div class="coord-carry-sub">The tendencies &amp; personnel that travel with a ${schemeOwner} tend to follow them here \u2014 open ${from} to see their ${advTeamSeason()} ${sideWord} scheme.</div>
-  </div>`;
+function _carryPopBody(side){
+  const team=currentTeam;
+  const c=_carrySideSource(team, side);
+  if(!c) return 'No incoming play-caller this season.';
+  const from=teamDisplayName(c.prev_code)||c.prev_code||'';
+  const badge=c._fromHC?'New play-calling HC':(side==='offense'?'New OC':'New DC');
+  const jump=c.prev_code?`advJumpToTeam('${escAttr(c.prev_code)}');var _p=document.getElementById('tcInfoPop');if(_p)_p.remove();`:'';
+  const chip=c.prev_code?`<button class="adv-carry-link" onclick="${jump}" title="Open ${escAttr(from)}'s advanced metrics">`
+    +`<img src="${NFL_LOGO(String(c.prev_code).toUpperCase())}" class="adv-carry-logo" alt="" onerror="this.style.display='none'">${escHtml(from)}</button>`:'';
+  const prevLine=c.prev_code
+    ? `Previously ${c.prev_role?`<b>${escHtml(c.prev_role)}</b>`:'with'}${c.prev_years?` (${escHtml(c.prev_years)})`:''} — ${chip}`
+    : 'Former team unknown.';
+  return `<div class="coord-carry-poprow"><span class="coord-side">${badge}</span> <b>${escHtml(c.name||'')}</b></div>
+    <div class="coord-carry-poprow">${prevLine}</div>
+    The tendencies and personnel that travel with a ${c._fromHC?'play-calling head coach':'coordinator'}
+    tend to follow them here — ${c.prev_code?`tap ${escHtml(from)} above to preview the scheme arriving`:'watch the early-season tendencies'}.`;
 }
 
 // League-wide advanced view: pick a table, see all 32 teams, sortable by any column.
+
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.carry_off={title:'Incoming offensive play-caller', body:()=>_carryPopBody('offense')};
+  TC_INFO_BOOK.carry_def={title:'Incoming defensive play-caller', body:()=>_carryPopBody('defense')};
+  TC_INFO_BOOK.additions={title:'Roster changes', body:()=>`
+    Additions via free agency, the draft, and trades \u2014 plus notable departures \u2014 for the
+    <b>${PROJ_SEASON}</b> season, sorted by contract/cap value. Pair this with the
+    ${(typeof advTeamSeason==='function')?advTeamSeason():''} Advanced Stats to see how weaknesses
+    were addressed, and where new holes may have opened. Depth chart via ESPN.`};
+}
 // ── Advanced Stats (nflverse "Sharp") data helpers ──────────────────────────
 // Read-only reference feeding both the per-team Advanced card and the league-wide sortable
 // table below. None of this touches projections. (Named "Sharp" for historical reasons — the
@@ -14808,7 +15012,7 @@ function renderSharpLeague(){
   const headerBar=`
     <div class="team-header sr-league-header">
       <div><div class="team-abbr">${TC_ICON("chart")} Advanced Stats — League-Wide</div>
-        <div class="team-qb-name">${srcLabel} · <b>${advTeamSeason()} season</b> · click any column to sort (best→worst)</div></div>
+        <div class="team-qb-name"><b>${advTeamSeason()} season</b> ${(typeof tcInfoBtn==='function')?tcInfoBtn('advleague','About these tables'):''}</div></div>
       <div class="team-nav">
         ${currentTeam?`<button class="btn btn-ghost" onclick="showCurrentTeamAdvanced()">← ${teamDisplayName(currentTeam)} card</button>`:''}
         <button class="btn btn-ghost" onclick="setPhase('Rankings')">Rankings</button></div>
@@ -14913,11 +15117,9 @@ function renderSharpLeague(){
   }).join('');
   host.innerHTML = headerBar + leagueWeekRange + renderCategoryTabs() + `
     <div class="sr-league-tabs">${tableTabs}</div>
-    <div class="sr-desc">${tbl.title} · <b>${advTeamSeason()} season</b> — all 32 teams. Cell shows the stat value with its league rank; color = quartile (green best → red worst).</div>
     <div class="card sr-table-wrap" style="padding:0;overflow-x:auto">
       <table class="sr-league-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
-    </div>
-    <div class="sr-source">Computed from nflverse play-by-play (nflfastR).</div>`;
+    </div>`;
 }
 
 // Offense / Defense / SOS category selector row for the league-wide view.
@@ -15028,14 +15230,12 @@ function renderSOSView(){
     <td class="sr-td"><span class="sr-td-val">${e.oppTotal!=null?e.oppTotal.toFixed(1):'—'}</span></td>
     <td class="sr-td"><span class="sr-td-val">${e.win_total!=null?e.win_total:'—'}</span></td>
   </tr>`).join('');
-  return `<div class="sr-desc">${PROJ_SEASON} strength of schedule — our own ranking by the <b>sum of each team's opponents' Vegas win totals</b>. Rank 1 = easiest slate, ${n} = hardest.</div>
-    <div class="card sos-card">${chart}</div>
+  return `<div class="card sos-card">${chart}</div>
     <div class="card sr-table-wrap" style="padding:0;overflow-x:auto;margin-top:12px">
       <table class="sr-league-table sos-table"><thead><tr>
         <th class="sr-th-team">TEAM</th>${th('rank',PROJ_SEASON+' SOS RANK')}${th('opp','OPP WIN TOTAL')}${th('win_total','VEGAS WIN TOTAL')}
       </tr></thead><tbody>${body}</tbody></table>
-    </div>
-    <div class="sr-source">Rank = sum of opponents' ${PROJ_SEASON} Vegas win totals · schedule via nflverse — for informational use.</div>`;
+    </div>`;
 }
 function sortSOSBy(col){
   if(sharpSortCol===col){ sharpSortDir*=-1; } else { sharpSortCol=col; sharpSortDir=1; }
@@ -15053,11 +15253,18 @@ function sortSOSBy(col){
 // Schedule comes from the runtime nflverse games.csv map that already backs the slider
 // opponent rails; win totals come from SOS[code].win_total.
 // ─────────────────────────────────────────────────────────────────────────────
-let _sosStripOpen = false;
 var _sosStripSchedTried = false;
-function toggleSosStrip(){
-  _sosStripOpen = !_sosStripOpen;
-  if(typeof renderContent==='function') renderContent();
+// Jump to a team but KEEP the current view: clicking the Ravens on the Bengals' passing
+// page lands on the Ravens' passing page. League-wide surfaces fall back to projections.
+function tcGotoTeamSameView(code){
+  const t=String(code||'').toUpperCase();
+  if(!t || typeof selectTeam!=='function') return;
+  const teamViews=['Passing','Receiving','Rushing','Advanced','Additions'];
+  if(typeof currentPhase!=='undefined' && teamViews.includes(currentPhase)){
+    try{ selectTeam(t); }catch(e){}
+    return;
+  }
+  tcGotoTeamProjections(t);
 }
 // Jump straight to a team's projections page from any logo in the app.
 function tcGotoTeamProjections(code){
@@ -15067,7 +15274,7 @@ function tcGotoTeamProjections(code){
     if(typeof currentPhase!=='undefined' && currentPhase==='League' && typeof leaveLeagueAnalyzer==='function') leaveLeagueAnalyzer();
     // League-wide views aren't team-scoped, so land on the team's main projections tab.
     if(typeof currentPhase!=='undefined' && (currentPhase==='AdvancedLeague'||currentPhase==='League'||
-       (currentPhase==='Rankings' && typeof rankScope!=='undefined' && rankScope==='all'))) currentPhase='Receiving';
+       (currentPhase==='Rankings' && typeof rankScope!=='undefined' && rankScope==='all'))) currentPhase='Passing';
     selectTeam(t);
   }catch(e){}
 }
@@ -15089,7 +15296,9 @@ function renderTeamScheduleStrip(team){
     if(!_sosStripSchedTried && typeof ensureWeeklyOppSchedule==='function'){
       _sosStripSchedTried = true;
       ensureWeeklyOppSchedule(season).then(ok=>{
-        if(ok && typeof renderContent==='function' && currentPhase==='Advanced') renderContent();
+        // The rail now rides every team view, so repaint whichever one is showing.
+        if(ok && typeof renderContent==='function'
+           && ['Passing','Receiving','Rushing','Advanced'].includes(currentPhase)) renderContent();
         if(!ok) _sosStripSchedTried = false;   // transient failure — allow a later retry
       }).catch(()=>{ _sosStripSchedTried = false; });
     }
@@ -15112,32 +15321,31 @@ function renderTeamScheduleStrip(team){
   const logo=(c)=>`<img src="${NFL_LOGO(c.opp)}" class="sos-wk-logo" alt="${c.opp}" loading="lazy" decoding="async" onerror="this.style.display='none'">`;
   const railCell=(c)=> c.bye
     ? `<div class="sos-wk sos-wk-bye" title="Week ${c.w} — bye"><span class="sos-wk-num">${c.w}</span><span class="sos-wk-bye-lbl">BYE</span></div>`
-    : `<div class="sos-wk ${c.cls}" title="Week ${c.w} · ${c.home?'vs':'@'} ${c.opp}${c.wt!=null?` · Vegas win total ${c.wt}`:''} — tap for ${c.opp}'s projections"
-         onclick="event.stopPropagation();tcGotoTeamProjections('${c.opp}')">
+    : `<div class="sos-wk ${c.cls}" title="Week ${c.w} · ${c.home?'vs':'@'} ${c.opp}${c.wt!=null?` · Vegas win total ${c.wt}`:''} — tap to open ${c.opp} here"
+         onclick="event.stopPropagation();tcGotoTeamSameView('${c.opp}')">
         <span class="sos-wk-num">${c.w}</span>${logo(c)}
         <span class="sos-wk-ha">${c.home?'vs':'@'}</span>
         <span class="sos-wk-wt">${c.wt!=null?c.wt:'—'}</span></div>`;
-  const barCell=(c)=> c.bye
-    ? `<div class="sos-bar-col sos-bar-bye"><div class="sos-bar-slot"></div><span class="sos-bar-lbl">BYE</span><span class="sos-bar-wk">${c.w}</span></div>`
-    : `<div class="sos-bar-col" title="Week ${c.w} · ${c.home?'vs':'@'} ${c.opp}${c.wt!=null?` · ${c.wt} projected wins`:''} — tap for ${c.opp}'s projections"
-         onclick="event.stopPropagation();tcGotoTeamProjections('${c.opp}')">
-        <div class="sos-bar-slot">
-          ${c.wt!=null?`<div class="sos-bar ${c.cls}" style="height:${pct(c.wt).toFixed(1)}%"><span class="sos-bar-val">${c.wt}</span></div>`:''}
-          <div class="sos-bar-top">${logo(c)}<span class="sos-bar-ha">${c.home?'H':'A'}</span></div>
-        </div>
-        <span class="sos-bar-wk">${c.w}</span></div>`;
   const avg=(played.reduce((s,c)=>s+c.wt,0)/played.length);
-  return `<div class="sos-sched ${_sosStripOpen?'open':''}">
-    ${_sosStripOpen ? '' : `<div class="sos-sched-rail">${cells.map(railCell).join('')}</div>`}
-    ${_sosStripOpen ? `<div class="sos-sched-chart">
-      <div class="sos-bar-grid">${cells.map(barCell).join('')}</div>
-      <div class="sos-sched-legend">
-        <span class="sos-key sos-easy"></span> under 7 wins
-        <span class="sos-key sos-mid"></span> 7–9.5
-        <span class="sos-key sos-hard"></span> 9.5+
-        <span class="sos-sched-avg">opponent average <b>${avg.toFixed(1)}</b> projected wins</span>
-      </div></div>` : ''}
+  const infoBtn=(typeof tcInfoBtn==='function')?tcInfoBtn('sos','About this schedule strip'):'';
+  return `<div class="sos-sched">
+    <div class="sos-sched-rail">${cells.map(railCell).join('')}${infoBtn?`<div class="sos-wk sos-wk-info">${infoBtn}</div>`:''}</div>
   </div>`;
+}
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.advleague={title:'League-wide advanced stats', body:()=>`
+    All 32 teams, <b>${advTeamSeason()} season</b>, computed from nflverse play-by-play (nflfastR).
+    Each cell shows the stat value with its league rank; cell color is the quartile —
+    <b style="color:#00d4aa">green</b> best through <b style="color:#ff6b6b">red</b> worst.
+    Click any column header to sort (best→worst, click again to flip).
+    The SOS view ranks schedules by the <b>sum of each team's opponents' Vegas win totals</b> —
+    rank 1 is the easiest slate, 32 the hardest.`};
+  TC_INFO_BOOK.sos={title:'Schedule & strength of schedule', body:()=>`
+    The <b>${PROJ_SEASON}</b> week-by-week slate. Each cell is one opponent, colored by their
+    Vegas win total: <b style="color:#00d4aa">green</b> under 7 wins (softer matchup),
+    neutral 7–9.5, <b style="color:#ff6b6b">red</b> 9.5+ (tougher). Tap any opponent to open
+    that team in the view you're already on. Schedule from nflverse; win totals from the
+    Vegas markets — context for your projections, never a projection itself.`};
 }
 // The rendered-HTML LRU is bounded by TOTAL SIZE, not entry count. Counting entries looks
 // safe until you notice how big one entry is: a full-width board measured ~1.4M chars, and V8
@@ -15333,7 +15541,9 @@ function rankingsRenderCacheKey(teamScoped){
     (typeof buildPlayerShapeSig==='function') ? buildPlayerShapeSig() : '',   // league shape / draft / ADP
     String(activeSeason),
     String(typeof rankLiveDelta!=='undefined' && rankLiveDelta ? 1 : 0),
-    String(typeof rankFiltersOpen!=='undefined' && rankFiltersOpen ? 1 : 0),   // mobile Filters row
+    String(typeof rankFiltersOpen!=='undefined' && rankFiltersOpen ? 1 : 0),   // hamburger menu row
+    String(typeof draftBannerOpen!=='undefined' && draftBannerOpen ? 1 : 0),   // follow banner expanded?
+    String(typeof hideDrafted!=='undefined' && hideDrafted ? 1 : 0),
     // Injury tags come from the Sleeper player DB, which lands asynchronously — a board
     // rendered before it arrives must not stay cached without designations.
     String(typeof sleeperPlayers!=='undefined' && sleeperPlayers ? 1 : 0),
@@ -15801,17 +16011,25 @@ function renderRankings(){
       </div>
     </div>
     <div class="card card-flush">
-      ${following ? `<div style="padding:8px 14px;border-bottom:1px solid var(--border)">
+      ${following ? (()=>{
+        const bannerOpen = typeof draftBannerOpen!=='undefined' && draftBannerOpen;
+        const done = typeof _draftDone!=='undefined' && _draftDone;
+        const statusPill = done ? `<span class="draft-done">DRAFT COMPLETE</span>` : `<span class="draft-live">LIVE</span>`;
+        const u = (mySlot!=null) ? picksUntilMyTurn(mySlot) : null;
+        // Collapsed: just the glowing pill — plus the one thing that can't wait, being on the clock.
+        if(!bannerOpen) return `<div class="draft-mini">
+          <button class="draft-mini-pill" onclick="toggleDraftBanner()" title="Draft status — tap for details">${statusPill}${(u===0&&!done)?`<span class="draft-onclock">★ YOU'RE UP</span>`:''}<span class="draft-mini-caret">▾</span></button>
+        </div>`;
+        return `<div style="padding:8px 14px;border-bottom:1px solid var(--border)">
         <div class="draft-banner">
-          ${typeof _draftDone!=='undefined' && _draftDone
-            ? `<span class="draft-done">DRAFT COMPLETE</span>`
-            : `<span class="draft-live">LIVE</span>`}
+          <button class="draft-mini-pill" onclick="toggleDraftBanner()" title="Collapse">${statusPill}<span class="draft-mini-caret">▴</span></button>
           <span>Following draft <b>${draftId}</b> · ${Object.keys(draftedIds).length} picks made</span>
-          ${(mySlot!=null)?(()=>{const u=picksUntilMyTurn(mySlot);return u===0?`<span class="draft-onclock">★ YOU'RE ON THE CLOCK</span>`:u!=null?`<span class="draft-upturn">seat ${mySlot} · ${u} pick${u===1?'':'s'} until you're up</span>`:`<span class="draft-upturn">seat ${mySlot}</span>`;})():`<span class="draft-upturn">tap your seat in the bar below ↓</span>`}
+          ${(mySlot!=null)?(u===0?`<span class="draft-onclock">★ YOU'RE ON THE CLOCK</span>`:u!=null?`<span class="draft-upturn">seat ${mySlot} · ${u} pick${u===1?'':'s'} until you're up</span>`:`<span class="draft-upturn">seat ${mySlot}</span>`):`<span class="draft-upturn">tap your seat in the bar below ↓</span>`}
           <label style="display:flex;align-items:center;gap:5px;cursor:pointer;margin-left:8px">
             <input type="checkbox" ${hideDrafted?'checked':''} onchange="toggleHideDrafted()"> hide drafted</label>
           <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="stopDraftFollow()">Stop</button>
-        </div></div>` : ''}
+        </div></div>`;
+      })() : ''}
       ${(!following && leaguePickerState.open) ? renderLeaguePicker() : ''}
       <div class="rank-toolbar">
         <div class="rank-toolbar-row">
@@ -15822,7 +16040,7 @@ function renderRankings(){
             <button class="btn btn-ghost btn-sm rank-search-clear ${(rankingsSearchQuery||'').trim()?'':'rank-search-hidden'}" onclick="clearRankingsSearch()" title="Clear search">Clear</button>
           </div>
           ${liveDeltaToggle}
-          <button class="btn btn-ghost btn-sm rank-filters-toggle ${rankFiltersOpen?'active':''}" onclick="toggleRankFilters()" title="League, scoring and stat filters">${TC_ICON("menu")}<span class="tab-lbl">Filters</span></button>
+          <button class="btn btn-ghost btn-sm rank-filters-toggle ${rankFiltersOpen?'active':''}" onclick="toggleRankFilters()" title="League, scoring, stat views &amp; filters" aria-label="Menu">${TC_ICON("menu")}</button>
           <span id="rankPlayerCount" data-default-label="${escAttr(`${view.length} players`)}" class="rank-count">${view.length} players</span>
         </div>
         <div class="rank-toolbar-row rank-filters ${rankFiltersOpen?'open':''}">
@@ -17879,12 +18097,21 @@ function rememberProjectionsView(){
 function showProjectionsView(){
   if(currentPhase==='League'){
     const v=_preLeagueView;
-    // Restore the remembered spot when it's still valid; otherwise fall back as before.
-    if(v && v.phase && v.phase!=='League' && (v.team ? v.team===currentTeam || !currentTeam : true)){
-      if(v.team && !currentTeam) currentTeam=v.team;
+    // Restore the remembered spot. The stash always wins on the team too — requiring
+    // currentTeam to still match silently discarded a valid stash whenever something
+    // inside the analyzer touched the team, and the fallback then dumped users on the
+    // full rankings ("← Projections" must mean the builder, not the rankings page).
+    if(v && v.phase && v.phase!=='League'){
+      if(v.team) currentTeam = v.team;
       currentPhase = v.phase;
       if(v.scope && typeof rankScope!=='undefined') rankScope = v.scope;
     } else {
+      // No stash (a reload wiped the in-memory snapshot): land on a team's builder page,
+      // never the rankings dump.
+      if(!currentTeam && typeof TEAMS!=='undefined' && TEAMS && TEAMS.length){
+        currentTeam = TEAMS[0];
+        if(typeof ensureTeam==='function'){ try{ ensureTeam(currentTeam); }catch(e){} }
+      }
       currentPhase = currentTeam ? 'Passing' : 'Rankings';
     }
     renderContent();
@@ -21940,6 +22167,7 @@ async function linkLeagueObject(lg){
   mySlot=null;   // fresh link → re-detect my seat from this draft's order
   leaguePickerState.open=false;
   rankSortKey='ecr'; rankSortDir=-1;
+  hideDrafted=true;          // fresh follow: a clean board by default — untick to see everyone
   startDraftFollow(false);   // league scoring/format already applied above
   toast(`Linked to ${lg.name} · ${formatLabel(fmt)} scoring applied ✓`,'ok');
 }
@@ -22016,6 +22244,7 @@ function promptDraftFollow(){
   if(!m){ toast('Could not find a draft ID in that input','err'); return; }
   draftId=m[1];
   mySlot=null;   // pasted draft: forget any prior seat; we'll auto-detect or ask
+  hideDrafted=true;         // fresh follow: a clean board by default
   startDraftFollow(true);   // adopt this draft's own scoring/format (don't inherit a stale league)
 }
 // ── Roster tracker: data ────────────────────────────────────────────────────
@@ -22224,6 +22453,7 @@ function stopDraftFollow(){
   draftMeta=null; draftPicksBySlot={}; draftUsers={}; mySlot=null;
   draftLineup=DEFAULT_LINEUP.slice(); draftBenchCount=DEFAULT_BENCH;
   rosterBarVisible=false; trackerOpen=false; trackerMax=false; trackerViewSlot=null; _trackerNeedsSlotPick=false;
+  draftBannerOpen=false;
   toast('Stopped following draft','ok');
   renderRosterBar();
   if(currentPhase==='Rankings') renderRankings();
@@ -22322,6 +22552,13 @@ function vonaOptionsPop(ev, pos){
       if(e.target && e.target.closest && e.target.closest('.pcard-overlay')) return;  // browsing a card (incl. closing it) keeps the list
       if(!div.contains(e.target)){ div.remove(); document.removeEventListener('click',off,true); if(_vonaPopOff===off) _vonaPopOff=null; } };
     _vonaPopOff=off; document.addEventListener('click',off,true); },0);
+}
+// The follow banner starts as a lone glowing LIVE pill; tapping it expands the detail
+// (draft id, picks made, your seat, hide-drafted, Stop) and tapping again re-collapses.
+let draftBannerOpen=false;
+function toggleDraftBanner(){
+  draftBannerOpen=!draftBannerOpen;
+  if(typeof renderRankings==='function' && currentPhase==='Rankings') renderRankings();
 }
 function toggleHideDrafted(){ hideDrafted=!hideDrafted; renderRankings(); }
 
@@ -22653,10 +22890,10 @@ function renderTrackerPanel(viewSlot){
         ? `All starters filled \u2014 now drafting for value/depth.`
         : (alsoBig ? `Also watch <b>${alsoBig.pos}</b> (\u2212${alsoBig.dropoff}).` : '');
       advisory=`<div class="vona-box">
-        <div class="vona-head">${TC_ICON('chart')} On-the-clock advice ${v.onClock?'\u00b7 <b style="color:var(--accent)">YOU\u2019RE UP</b>':`\u00b7 next pick in ${v.gap}`}</div>
+        <div class="vona-head">${TC_ICON('chart')} On-the-clock advice ${v.onClock?'\u00b7 <b style="color:var(--accent)">YOU\u2019RE UP</b>':`\u00b7 next pick in ${v.gap}`} ${(typeof tcInfoBtn==='function')?tcInfoBtn('vona','How this advice works'):''}</div>
         <div class="vona-sub">${recTxt}${noteTxt?` \u00b7 ${noteTxt}`:''}</div>
         <div class="vona-rows">${chips}</div>
-        <div class="vona-legend">Value from your VOR board \u00b7 availability from Sleeper ${formatLabel(rankFormat)} ADP, simulated over the ${v.gap} pick${v.gap===1?'':'s'} before you\u2019re up.</div>
+
       </div>`;
     }
   }
@@ -23186,6 +23423,15 @@ function computeVONA(){
 
 
 
+
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.vona={title:'On-the-clock advice', body:()=>`
+    Value comes from <b>your VOR board</b> \u2014 what a player is worth to you. Availability comes
+    from the market: Sleeper ${typeof formatLabel==='function'?formatLabel(rankFormat):''} ADP,
+    Monte-Carlo simulated over the picks before you're up, with each opposing team drafting by
+    noisy ADP restricted to positions it still needs. The %-pill is the chance a player makes
+    it back to your next pick; \u25be lists the next viable options at that position.`};
+}
 // ═══ League Analyzer (dynasty) ═══════════════════════════════════════════════
 // Sync a Sleeper league → take a point-in-time SNAPSHOT of every roster, owner, and future
 // pick, then analyze it against the FantasyPros dynasty trade values baked into the seed
@@ -24740,9 +24986,7 @@ function laCompareView(s){
           ${cell('total',r.total,'Total')}</tr>`;
       }).join('')}
       </tbody></table></div>
-    <div class="la-note">${lens==='value'
-      ?'Dynasty strength = consolidation-adjusted (stars count full, depth at 75/55/40/30/25%), boosted by dynasty-ECR tier (T1 \u00d715%). TOTAL is the same power score as the My Team page: starters + 35% bench'+(withPicks?' + 50% picks':'')+'. Click any column to sort.'
-      :'Projected points = your projection engine, best legal starting lineup per team under this league\u2019s roster slots. TOTAL matches the My Team redraft power score. Click any column to sort.'}</div>`;
+    <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn(lens==='value'?'lacmpvalue':'lacmpproj','How TOTAL is computed'):''}</div>`;
 }
 function laCmpSort(col){
   const sc=laState.cmpSort||(laState.cmpSort={col:'total',dir:-1});
@@ -24816,7 +25060,7 @@ function laBestAvailView(s){
         <span class="la-ba-val">${noteWrapHtml(String(r.v), { label:'Value', value:String(r.v), source:'league_analyzer_best_avail', statKey:'value', context:`League Analyzer best available · ${posF}`, player:noteTargetFromArgs(r.name,r.pos,r.team||''), team:r.team||'' }, 'note-tag-hit')}</span>
         <span class="la-ba-fpts">${noteWrapHtml(escHtml(r.fpts?r.fpts.toFixed(0):'–'), { label:'Projected Points', value:r.fpts?r.fpts.toFixed(0):'–', source:'league_analyzer_best_avail', statKey:'proj', context:`League Analyzer best available · ${posF}`, player:noteTargetFromArgs(r.name,r.pos,r.team||''), team:r.team||'' }, 'note-tag-hit')}</span></div>`).join('')}
     </div>
-    <div class="la-note">Free agents = FP value chart minus every rostered player in the snapshot. PROJ is your projection engine under current scoring — a high PROJ on a cheap value is the classic dynasty waiver add.</div>`;
+    <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn('lafa','About these free agents'):''}</div>`;
 }
 
 // ═══ Phase 3: Trade Calculator + Finder ═══════════════════════════════════════
@@ -25384,7 +25628,7 @@ function laTradeView(s){
         <button class="btn btn-sm btn-ghost la-fnd-refresh" onclick="laState.fndSeed++;renderLeagueAnalyzer()" title="Deal me different variations">${TC_ICON("refresh")} refresh</button></div>
       ${fndHtml}
     </div>
-    <div class="la-note">Verdicts use consolidation-adjusted values: extra assets on a side count at 75/55/40/30/25%, and the side holding the single best player gets a premium worth 25% of the best-asset gap \u2014 so a stack of depth can\u2019t buy a stud, but star + real piece can. Fair = within \u00b1max(4, 5%).</div>`;
+    <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn('latrade','How verdicts are judged'):''}</div>`;
 }
 
 // Switch analyzer tabs. Also scrolls back to the tab bar: these views differ wildly in
@@ -25934,9 +26178,31 @@ function laMyTeamView(s){
     + '</div></div>';
   return switcher + controls + summary
     + '<div class="la-my-grid">' + powerTbl + posTbl + slotTbl + radar + lineup + '</div>'
-    + '<div class="la-note">' + (lens==='value'
-        ? 'Dynasty lens: tier-boosted FantasyPros values (T1 \u00d71.15), consolidation-adjusted \u2014 stars carry, depth decays. Power score = starters + 35% bench' + (laState.myPicks ? ' + 50% picks' : '') + ', league best = 100.'
-        : 'Redraft lens: this season\u2019s projected points from your own projection engine under this league\u2019s scoring. Picks excluded (they don\u2019t score).') + '</div>';
+    + '<div class="la-note la-note-min">' + ((typeof tcInfoBtn==='function')?tcInfoBtn(lens==='value'?'lamyvalue':'lamyproj','How the power score works'):'') + '</div>';
+}
+
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.lacmpvalue={title:'Dynasty strength (TOTAL)', body:`
+    Consolidation-adjusted FantasyPros values: stars count full, depth decays at 75/55/40/30/25%,
+    dynasty-ECR tier 1 gets a \u00d71.15 boost. TOTAL is the same power score as the My Team page:
+    starters + 35% bench (+ 50% picks when picks are synced). Click any column to sort.`};
+  TC_INFO_BOOK.lacmpproj={title:'Projected points (TOTAL)', body:`
+    Your projection engine, scoring each team's best legal starting lineup under this league's
+    roster slots. TOTAL matches the My Team redraft power score. Click any column to sort.`};
+  TC_INFO_BOOK.lafa={title:'Best available', body:`
+    Free agents = the FantasyPros value chart minus every rostered player in the snapshot.
+    <b>PROJ</b> is your projection engine under current scoring \u2014 a high PROJ on a cheap value
+    is the classic dynasty waiver add.`};
+  TC_INFO_BOOK.latrade={title:'Trade verdicts', body:`
+    Consolidation-adjusted values: extra assets on a side count at 75/55/40/30/25%, and the side
+    holding the single best player gets a premium worth 25% of the best-asset gap \u2014 a stack of
+    depth can't buy a stud, but star + real piece can. Fair = within \u00b1max(4, 5%).`};
+  TC_INFO_BOOK.lamyvalue={title:'Dynasty power score', body:`
+    Tier-boosted FantasyPros values (T1 \u00d71.15), consolidation-adjusted \u2014 stars carry, depth
+    decays. Power score = starters + 35% bench (+ 50% picks when synced), league best = 100.`};
+  TC_INFO_BOOK.lamyproj={title:'Redraft power score', body:`
+    This season's projected points from your own projection engine under this league's scoring.
+    Picks are excluded \u2014 they don't score.`};
 }
 // ═════════════════════════════════════════════════════════════════════════════
 // League Analyzer — in-season tools (Matchup · Lineup · DvP · Trends)
@@ -26334,7 +26600,7 @@ function laMatchupView(s){
   return `${head}${featured}
     <div class="la-ins-bar"><span class="la-ins-lbl">SCOREBOARD</span>${asof?`<span class="la-ins-sub">updated ${asof}${wk===cur?' · refreshes every 45s while you watch':''}</span>`:''}</div>
     <div class="la-mu-board">${board}</div>
-    <div class="la-note">win % = current points plus what's still projected to come, against the spread of what's left · projections are TripleCrown's, matchup- and form-adjusted</div>`;
+    <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn('lawinpct','How win % works'):''}</div>`;
 }
 
 // ── DvP: fantasy points allowed per game, by position ────────────────────────
@@ -26435,7 +26701,7 @@ function laDvpView(s){
       <span class="la-ins-sub">your league's scoring · thru wk ${wk} · #1 = easiest matchup (most points allowed)</span></div>
     <div class="card card-flush"><div class="la-dvp-wrap">
       <table class="la-dvp-table ${pos1?'la-dvp-one':''}"><thead>${header}</thead><tbody>${rows}</tbody></table></div></div>
-    <div class="la-note">green = easy matchup (allows the most points) · red = tough · tap a column to sort</div>`;
+    <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn('ladvp','Reading this table'):''}</div>`;
 }
 
 // ── Lineup (your team this week) ─────────────────────────────────────────────
@@ -26929,4 +27195,14 @@ function _laRosSched(team, pos, dvp){
     sum += 1.10 - 0.20*((r-1)/Math.max(1,nTeams-1)); ct++;     // rank 1 = most generous
   }
   return ct ? {mult:sum/ct, games:ct} : null;
+}
+
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.lawinpct={title:'Live win %', body:`
+    Current points plus what's still projected to come, weighed against the spread of what's
+    left on both rosters. Projections are TripleCrown's \u2014 matchup- and form-adjusted.`};
+  TC_INFO_BOOK.ladvp={title:'Defense vs position', body:`
+    Fantasy points allowed per game to each position, under your league's scoring.
+    <b style="color:#00d4aa">Green</b> = easy matchup (allows the most points),
+    <b style="color:#ff6b6b">red</b> = tough. Tap a column to sort; #1 = easiest matchup.`};
 }

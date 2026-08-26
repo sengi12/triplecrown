@@ -394,7 +394,7 @@ function laMatchupView(s){
   return `${head}${featured}
     <div class="la-ins-bar"><span class="la-ins-lbl">SCOREBOARD</span>${asof?`<span class="la-ins-sub">updated ${asof}${wk===cur?' · refreshes every 45s while you watch':''}</span>`:''}</div>
     <div class="la-mu-board">${board}</div>
-    <div class="la-note">win % = current points plus what's still projected to come, against the spread of what's left · projections are TripleCrown's, matchup- and form-adjusted</div>`;
+    <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn('lawinpct','How win % works'):''}</div>`;
 }
 
 // ── DvP: fantasy points allowed per game, by position ────────────────────────
@@ -495,7 +495,7 @@ function laDvpView(s){
       <span class="la-ins-sub">your league's scoring · thru wk ${wk} · #1 = easiest matchup (most points allowed)</span></div>
     <div class="card card-flush"><div class="la-dvp-wrap">
       <table class="la-dvp-table ${pos1?'la-dvp-one':''}"><thead>${header}</thead><tbody>${rows}</tbody></table></div></div>
-    <div class="la-note">green = easy matchup (allows the most points) · red = tough · tap a column to sort</div>`;
+    <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn('ladvp','Reading this table'):''}</div>`;
 }
 
 // ── Lineup (your team this week) ─────────────────────────────────────────────
@@ -989,4 +989,14 @@ function _laRosSched(team, pos, dvp){
     sum += 1.10 - 0.20*((r-1)/Math.max(1,nTeams-1)); ct++;     // rank 1 = most generous
   }
   return ct ? {mult:sum/ct, games:ct} : null;
+}
+
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.lawinpct={title:'Live win %', body:`
+    Current points plus what's still projected to come, weighed against the spread of what's
+    left on both rosters. Projections are TripleCrown's \u2014 matchup- and form-adjusted.`};
+  TC_INFO_BOOK.ladvp={title:'Defense vs position', body:`
+    Fantasy points allowed per game to each position, under your league's scoring.
+    <b style="color:#00d4aa">Green</b> = easy matchup (allows the most points),
+    <b style="color:#ff6b6b">red</b> = tough. Tap a column to sort; #1 = easiest matchup.`};
 }

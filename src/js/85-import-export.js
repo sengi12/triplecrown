@@ -550,12 +550,21 @@ function rememberProjectionsView(){
 function showProjectionsView(){
   if(currentPhase==='League'){
     const v=_preLeagueView;
-    // Restore the remembered spot when it's still valid; otherwise fall back as before.
-    if(v && v.phase && v.phase!=='League' && (v.team ? v.team===currentTeam || !currentTeam : true)){
-      if(v.team && !currentTeam) currentTeam=v.team;
+    // Restore the remembered spot. The stash always wins on the team too — requiring
+    // currentTeam to still match silently discarded a valid stash whenever something
+    // inside the analyzer touched the team, and the fallback then dumped users on the
+    // full rankings ("← Projections" must mean the builder, not the rankings page).
+    if(v && v.phase && v.phase!=='League'){
+      if(v.team) currentTeam = v.team;
       currentPhase = v.phase;
       if(v.scope && typeof rankScope!=='undefined') rankScope = v.scope;
     } else {
+      // No stash (a reload wiped the in-memory snapshot): land on a team's builder page,
+      // never the rankings dump.
+      if(!currentTeam && typeof TEAMS!=='undefined' && TEAMS && TEAMS.length){
+        currentTeam = TEAMS[0];
+        if(typeof ensureTeam==='function'){ try{ ensureTeam(currentTeam); }catch(e){} }
+      }
       currentPhase = currentTeam ? 'Passing' : 'Rankings';
     }
     renderContent();

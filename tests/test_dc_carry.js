@@ -4,7 +4,7 @@ global.document={getElementById:(id)=>mkEl(id),querySelector:()=>null,querySelec
 global.window={getSelection:()=>({removeAllRanges(){},addRange(){}})};global.Chart=function(){return{destroy(){},update(){}};};global.confirm=()=>true;global.btoa=s=>s;global.FileReader=function(){};global.Range=function(){};global.AbortController=class{constructor(){this.signal={};}abort(){}};
 const fs=require('fs');const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
-  renderTeamAdvanced,
+  renderTeamAdvanced, _carryPopBody, setTeamVar:(t)=>{currentTeam=t;},
   setNflverse:(n)=>{NFLVERSE=n;}, setCoord:(c)=>{COORDINATORS=c;}, setNames:(n)=>{TEAM_NAMES=n;}, setSharpSeason:(y)=>{SHARP_SEASON=y;}, setHC:(t,v)=>{headCoaches[t]=v;} };`)();
 
 // Defensive Sharp tables incl BOTH coverage tables
@@ -22,13 +22,13 @@ const html=app.renderTeamAdvanced('TEN');
 console.log('=== Defensive carryover: tendencies + coverage schemes, NOT coverage-by-position ===');
 chk(html.includes('Defensive Tendencies'),'includes Defensive Tendencies');
 chk(html.includes('Coverage (man/zone)'),'includes Coverage table');
-// The carryover block is between the coordinator banner and the first section head.
-const carryStart=html.indexOf('New coordinator for');
-const carryEnd=html.indexOf('sr-section-head', carryStart>=0?carryStart:0);
-const carryBlock=(carryStart>=0)?html.slice(carryStart, carryEnd>=0?carryEnd:html.length):'';
-chk(carryBlock.includes('New Defensive Coordinator'),'carryover block shows defensive coordinator label');
-chk(html.includes('assistant head coach'),'shows former role "assistant head coach" (not collapsed to head coach)');
-chk(html.includes('San Francisco 49ers'),'shows former team');
-chk(carryBlock.includes('View San Francisco 49ers') || carryBlock.includes('San Francisco 49ers'),'carryover links to former-team advanced view');
+// The card is gone: a yellow ! on the Defense head opens the popup with the detail.
+chk(html.includes("tcInfoPop(event,'carry_def')"),'yellow ! flag wired on the Defense head');
+app.setTeamVar('TEN');
+const popBody=app._carryPopBody('defense');
+chk(popBody.includes('New DC'),'popup shows the (compact) DC badge');
+chk(popBody.includes('assistant head coach'),'shows former role "assistant head coach" (not collapsed to head coach)');
+chk(popBody.includes('San Francisco 49ers'),'shows former team');
+chk(popBody.includes("advJumpToTeam('SF')"),'popup chip links to the former-team advanced view');
 
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

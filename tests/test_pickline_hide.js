@@ -7,6 +7,7 @@ const app=new Function(code+`return {
   renderRankings, setBuild:(fn)=>{buildPlayerList=fn;}, setFollowing:(id)=>{draftId=id;}, setMySlot:(s)=>{mySlot=s;},
   setMeta:(m)=>{draftMeta=m;}, setPicks:(p)=>{draftPicksBySlot=p;}, setDrafted:(d)=>{draftedIds=d;}, setHide:(v)=>{hideDrafted=v;},
   setSort:(k,d)=>{rankSortKey=k;rankSortDir=d;}, setFormat:(f)=>{rankFormat=f;},
+  setBannerOpen:(v)=>{draftBannerOpen=v;},
   getContent:()=>document.getElementById('content').innerHTML };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const players=[]; for(let i=1;i<=40;i++)players.push({name:'P'+i,player_id:''+i,pos:'RB',team:'X',fpts:400-i,ecr:i,ecr_tier:1,rushing_attempts:1,rushing_yards:1,ypc:4,rushing_tds:1,receiving_targets:1,receptions:1,receiving_yards:1,receiving_tds:1,passing_attempts:0,passing_yards:0,passing_tds:0,interceptions_thrown:0});
@@ -70,5 +71,17 @@ app.setFormat('ppr'); app.setSort('adp',-1); app.renderRankings();
 names6=[...app.getContent().matchAll(/rank-name">(P\d+)</g)].map(m=>m[1]);
 chk(names6.slice(0,5).join()==='P5,P4,P3,P2,P1','switching back to PPR re-renders on the PPR board (cache key follows format)');
 app.setSort('ecr',-1); app.renderRankings();
+
+// ── Follow banner: collapsed pill by default, full detail on demand ──
+app.renderRankings();
+let hb=app.getContent();
+chk(hb.includes('draft-mini-pill') && !hb.includes('Following draft'),'banner collapses to the LIVE pill by default');
+app.setBannerOpen(true); app.renderRankings();
+hb=app.getContent();
+chk(hb.includes('Following draft') && hb.includes('hide drafted') && hb.includes('stopDraftFollow'),
+  'expanding shows the id, picks, hide-drafted and Stop');
+app.setBannerOpen(false); app.renderRankings();
+chk(app.getContent().includes('rank-filters-toggle') && !app.getContent().includes('>Filters<'),
+  'the toolbar toggle is a pure hamburger now — no Filters label');
 
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

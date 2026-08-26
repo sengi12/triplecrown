@@ -7,6 +7,7 @@ const elStore={};
 function mkEl(id){if(!elStore[id])elStore[id]={id,innerHTML:'',style:{},dataset:{},classList:{add(){},remove(){}},appendChild(){},querySelectorAll:()=>[],addEventListener(){}};return elStore[id];}
 function node(opts){
   return Object.assign({nodeType:1,scrollHeight:0,clientHeight:100,scrollWidth:0,clientWidth:100,
+    offsetWidth:300,offsetHeight:200,
     parentElement:null,contains(t){let n=t;while(n){if(n===this)return true;n=n.parentElement;}return false;}},opts);
 }
 global.document={
@@ -56,6 +57,11 @@ floaters=[overlay,pop];
 chk(fire(popList)===false,'the topmost popup scrolls its own list');
 chk(fire(scrollList)===false,'the card behind it keeps its scroll region usable');
 chk(fire(pageEl)===true,'…but the page behind both is still frozen');
+
+console.log('=== a hidden overlay must never freeze the page ===');
+const ghost=node({offsetWidth:0,offsetHeight:0});   // display:none leftover from some close path
+floaters=[ghost];
+chk(fire(pageEl)===false,'invisible floater is ignored — the page scrolls normally');
 
 console.log(`\n${pass}/${total}`);
 process.exit(pass===total?0:1);

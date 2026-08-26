@@ -52,7 +52,7 @@ chk(teamHtml.includes('Offensive Metrics'),'shows Offensive Metrics card');
 chk(teamHtml.includes('Pace'),'shows Pace card');
 chk(teamHtml.includes('EPA/Play'),'shows stat labels');
 chk(teamHtml.includes('16th')||teamHtml.includes('16'),'shows CIN EPA rank (16)');
-chk(teamHtml.includes('nflverse (computed from play-by-play)'),'shows nflverse-only source label');
+chk(teamHtml.includes("tcInfoPop(event,'advteam')"),'source/methodology prose lives behind the ⓘ button now');
 chk(!teamHtml.includes('Curated'),'does not show curated toggle text');
 
 console.log('\n=== TEST 3: rank badge suffixes ===');

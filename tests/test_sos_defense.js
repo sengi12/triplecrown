@@ -56,8 +56,8 @@ app.setNames({CIN:'Cincinnati Bengals',CHI:'Chicago Bears',DET:'Detroit Lions',D
 const advMissing=app.renderTeamAdvanced('DAL');
 const adv=app.renderTeamAdvanced('CHI');
 chk(advMissing.includes('No data for Dallas Cowboys'),'missing-team card uses full name');
-chk(adv.includes('2026 Strength of Schedule'),'SOS strip present');
-chk(adv.includes('27th'),'SOS rank shown as 27th');
+chk(adv.includes('>League<') && adv.includes('sr-head-actions'),'League button rides the first section head (SOS lives inside the league view)');
+chk(adv.includes("tcInfoPop(event,'advteam')"),'methodology prose behind the ⓘ');
 chk(adv.includes('Offense'),'Offense section head');
 chk(adv.includes('Defense'),'Defense section head');
 chk(adv.includes('%'),'percentage rendered somewhere (rate col)');

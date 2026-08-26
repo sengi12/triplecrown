@@ -19,6 +19,7 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   fetchHeadCoach, hcIsPlaycaller, renderTeamAdvanced, coordCarriesOver, coordInlineLabel, coordFor,
+  _carryPopBody, withTeam:(t,f)=>{const o=currentTeam;currentTeam=t;try{f();}finally{currentTeam=o;}},
   setCoord:(c)=>{COORDINATORS=c;}, setPlaycallers:(p)=>{HC_PLAYCALLERS=p;}, setNflverse:(n)=>{NFLVERSE=n;},
   setNames:(n)=>{TEAM_NAMES=n;}, setSharpSeason:(y)=>{SHARP_SEASON=y;},
   getHC:(t)=>headCoaches[t], setHC:(t,v)=>{headCoaches[t]=v;} };
@@ -72,15 +73,16 @@ app.setPlaycallers({CIN:'Zac Taylor'});
   console.log('\n=== TEST 5: carryover block pulls former team stats ===');
   app.setNflverse(NFLV); app.setSharpSeason(2025);
   const balHtml=app.renderTeamAdvanced('BAL');
-  chk(balHtml.includes('New coordinator for'),'carryover block present');
+  chk(balHtml.includes('tc-info-warn'),'incoming play-caller flagged on the section head');
   chk(balHtml.includes('Declan Doyle'),'shows new OC name');
-  chk(balHtml.includes('Chicago Bears offensive coordinator'),'shows former role');
+  chk(balHtml.includes('Chicago Bears') && /\bOC\b/.test(balHtml),'shows former team + role (compact OC)');
   chk(balHtml.includes('View Chicago Bears') || balHtml.includes('Chicago Bears'),'shows former-team advanced-metrics link');
 
   console.log('\n=== TEST 6: LAC new OC was a HEAD COACH ===');
   const lacHtml=app.renderTeamAdvanced('LAC');
   chk(lacHtml.includes('Mike McDaniel'),'LAC shows McDaniel');
-  chk(lacHtml.includes('Miami Dolphins head coach'),'LAC spells out former HC role');
+  const lacBody=(()=>{ let out; app.withTeam('LAC',()=>{ out=app._carryPopBody('offense'); }); return out; })();
+  chk(lacBody.includes('Miami Dolphins') && /head coach/i.test(lacBody),'popup shows former team + HC role');
   chk(lacHtml.includes('View Miami Dolphins') || lacHtml.includes('Miami Dolphins'),'LAC links to Miami advanced view');
 
   console.log('\n=== TEST 7: Bengals (carryover) shows NO carryover block ===');
@@ -90,7 +92,7 @@ app.setPlaycallers({CIN:'Zac Taylor'});
   chk(cinHtml.includes("openTeamCoachingScheme('CIN')") || cinHtml.includes('openTeamCoachingScheme'), 'advanced section embeds playbook trigger');
 
   console.log('\n=== TEST 8: season labels ===');
-  chk(cinHtml.includes('2025 season'),'advanced note shows 2025 season');
+  chk(cinHtml.includes('2025 Offense'),'section head labels the season ("2025 Offense")');
 
   console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));
 })();

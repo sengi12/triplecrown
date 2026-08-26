@@ -30,7 +30,7 @@ const app=new Function(code+`
   toast=function(m,t){toasts.push({m,t});};
   return { submitLeagueUsername, pickLeague, openLeaguePicker,
     setUsernameInput:(v)=>{document.getElementById('lpUsername').value=v;},
-    getState:()=>leaguePickerState, getDraftId:()=>draftId, getDrafted:()=>draftedIds, getToasts:()=>toasts };
+    getState:()=>leaguePickerState, getDraftId:()=>draftId, getDrafted:()=>draftedIds, getHide:()=>hideDrafted, getToasts:()=>toasts };
 `)();
 global.toasts=toasts;
 
@@ -50,6 +50,7 @@ global.toasts=toasts;
   chk(app.getState().open===false,'picker closed after linking');
   chk(Object.keys(app.getDrafted()).length===2,'picks fetched (2 drafted) via existing follow machinery');
   chk(app.getToasts().some(t=>/Linked to Mock Season League/.test(t.m)),'shows "Linked to <league>" toast');
+  chk(app.getHide()===true,'fresh link starts with hide-drafted ON (untick to see everyone)');
 
   console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));
 })();

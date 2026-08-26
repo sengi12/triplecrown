@@ -1,6 +1,6 @@
 // SOS schedule strip: week-by-week opponents with Vegas win totals, difficulty buckets,
-// BYE handling, the collapsed→expanded bar chart, and the logo jumps (team projections from
-// the SOS surfaces, team-defense player card from the in-season DvP table).
+// BYE handling, rail-only (the bar chart is gone by design), and the logo jumps (SAME view
+// from a team view, projections from league-wide surfaces, DEF card from the DvP table).
 const elStore={};
 function mkEl(id){if(!elStore[id])elStore[id]={innerHTML:'',style:{},textContent:'',value:'',classList:{add(){},remove(){},toggle(){}},children:[],appendChild(){},querySelectorAll:()=>[]};return elStore[id];}
 global.document={getElementById:(id)=>mkEl(id),querySelector:()=>null,querySelectorAll:()=>[],createElement:()=>({click(){},style:{},appendChild(){}}),activeElement:null,body:{appendChild(){},removeChild(){}},addEventListener(){}};
@@ -9,12 +9,11 @@ global.Chart=function(){return{destroy(){}}};global.confirm=()=>true;global.btoa
 const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
-  renderTeamScheduleStrip, sosDiffCls, toggleSosStrip, tcGotoTeamProjections, laDvpView,
+  renderTeamScheduleStrip, sosDiffCls, tcGotoTeamProjections, tcGotoTeamSameView, laDvpView,
   setSOS:(s)=>{SOS=s;}, setSched:(m)=>{_weeklyOppBySeason=m;}, setProjSeason:(y)=>{PROJ_SEASON=y;},
   setInseason:(x)=>{TC_INSEASON=x;}, TC_SEASON,
   setPhaseVar:(p)=>{currentPhase=p;}, getPhase:()=>currentPhase, getTeam:()=>currentTeam,
-  stubSelect:()=>{ selectTeam=(t)=>{ currentTeam=t; }; },
-  isOpen:()=>_sosStripOpen };`)();
+  stubSelect:()=>{ selectTeam=(t)=>{ currentTeam=t; }; } };`)();
 
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -36,18 +35,8 @@ chk(/sos-wk sos-hard[\s\S]*11\.7/.test(html),'tough opponent colored hard');
 chk(/sos-wk sos-easy[\s\S]*5\.6/.test(html),'weak opponent colored easy');
 chk((html.match(/sos-wk-bye/g)||[]).length>=2,'missing weeks render as BYE');
 chk(html.includes('@') && html.includes('vs'),'home/away marked');
-chk(html.includes("tcGotoTeamProjections('KC')"),'opponent logo jumps to that team');
-chk(!html.includes('sos-sched-chart'),'collapsed by default — no bar chart');
-
-console.log('=== expand ===');
-app.toggleSosStrip();
-chk(app.isOpen()===true,'toggle opens');
-const open=app.renderTeamScheduleStrip('ARI');
-chk(open.includes('sos-sched-chart') && open.includes('sos-bar-grid'),'expanded shows the bar chart');
-chk(/sos-bar sos-hard" style="height:8[0-9]/.test(open) || /sos-bar sos-hard" style="height:\d/.test(open),'bars are height-scaled by win total');
-chk(open.includes('opponent average'),'expanded footer reports the opponent average');
-app.toggleSosStrip();
-chk(app.isOpen()===false,'toggle closes again');
+chk(html.includes("tcGotoTeamSameView('KC')"),'opponent logo jumps to that team in the CURRENT view');
+chk(!html.includes('sos-sched-chart') && !html.includes('sos-bar-grid'),'rail only — the bar chart is gone');
 
 console.log('=== no schedule → nothing (never a broken block) ===');
 app.setSched({});
@@ -58,10 +47,16 @@ app.stubSelect();
 app.setPhaseVar('AdvancedLeague');
 app.tcGotoTeamProjections('SEA');
 chk(app.getTeam()==='SEA','jump selects the team');
-chk(app.getPhase()==='Receiving','from a league-wide view it lands on the projections tab');
+chk(app.getPhase()==='Passing','from a league-wide view it always lands on the Passing tab');
 app.setPhaseVar('Passing');
-app.tcGotoTeamProjections('KC');
-chk(app.getPhase()==='Passing','from a team view it keeps the tab you were on');
+app.tcGotoTeamSameView('KC');
+chk(app.getPhase()==='Passing' && app.getTeam()==='KC','same-view jump: Bengals passing → Ravens passing');
+app.setPhaseVar('Advanced');
+app.tcGotoTeamSameView('NYJ');
+chk(app.getPhase()==='Advanced' && app.getTeam()==='NYJ','…and it holds on Adv Metrics too');
+app.setPhaseVar('AdvancedLeague');
+app.tcGotoTeamSameView('SEA');
+chk(app.getPhase()==='Passing','league-wide surface falls back to the Passing tab');
 
 console.log('=== DvP logo opens the team defense card ===');
 app.TC_SEASON.year=2026; app.TC_SEASON.phase='regular'; app.TC_SEASON.week=6;

@@ -3,8 +3,9 @@
 // projection board.
 const elStore={};
 function mkEl(id){if(!elStore[id])elStore[id]={id,innerHTML:'',style:{},textContent:'',value:'',dataset:{},classList:{add(){},remove(){},toggle(){}},setAttribute(){},getAttribute(){return '';},children:[],appendChild(){},querySelector:()=>null,querySelectorAll:()=>[],addEventListener(){}};return elStore[id];}
-global.document={getElementById:(id)=>mkEl(id),querySelector:()=>null,querySelectorAll:()=>[],createElement:()=>({click(){},style:{},appendChild(){}}),activeElement:null,body:{appendChild(){},removeChild(){}}};
-global.window={getSelection:()=>({removeAllRanges(){},addRange(){}}),matchMedia:()=>({matches:false})};
+global.document={documentElement:{scrollTop:0,scrollHeight:0,style:{setProperty(){}}},getElementById:(id)=>mkEl(id),querySelector:()=>null,querySelectorAll:()=>[],createElement:()=>({click(){},style:{},appendChild(){}}),activeElement:null,body:{appendChild(){},removeChild(){}},addEventListener(){}};
+global.window={scrollY:0,innerHeight:800,scrollTo(){},getSelection:()=>({removeAllRanges(){},addRange(){}}),matchMedia:()=>({matches:false}),addEventListener(){}};
+global.requestAnimationFrame=(f)=>{try{f()}catch(e){}};
 global.Chart=function(){return{destroy(){},update(){},data:{datasets:[{}]}};};
 global.confirm=()=>true;global.btoa=s=>Buffer.from(s,'binary').toString('base64');global.FileReader=function(){};global.Range=function(){};global.fetch=()=>Promise.reject(new Error('no net'));
 global.AbortController=class{constructor(){this.signal={};}abort(){}};
@@ -18,6 +19,10 @@ const app=new Function(code+`
   bucketPicksBySlot, setMeta:(m)=>{draftMeta=m;},
   weekRangeSliderHTML, setActive:(s)=>{activeSeason=s;}, setShared:(t,s,lo,hi)=>setSharedWeekRange(t,s,lo,hi), applied:()=>__applied,
   startDraftFollow, getActive:()=>activeSeason, setProj:(p)=>{projSeed=p;SEED=p;seasonStatsCache.proj=p;workingProj={};userProj=workingProj;}, setDraftId:(d)=>{draftId=d;},
+  rememberProjectionsView, showProjectionsView, syncNoop:()=>{syncAppChrome=function(){};},
+  setPhaseVar:(p)=>{currentPhase=p;}, getPhase:()=>currentPhase,
+  setTeamVar:(t)=>{currentTeam=t;}, getTeam:()=>currentTeam,
+  clearStash:()=>{_preLeagueView=null;},
 };`)();
 let pass=0,total=0;
 const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -52,7 +57,20 @@ setTimeout(()=>{
     app.setProj({KC:{QB:[],RB:[],WR:[],TE:[]}}); app.setActive('2025'); app.setDraftId('123');
     await app.startDraftFollow(false);
     chk(app.getActive()==='proj','activeSeason is proj after startDraftFollow');
-    console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
+    
+console.log('=== leaving the League Analyzer returns to the remembered view ===');
+app.syncNoop();
+app.setTeamVar('CIN'); app.setPhaseVar('Advanced');
+app.rememberProjectionsView();
+app.setPhaseVar('League'); app.setTeamVar('BAL');   // something inside the analyzer touched the team
+app.showProjectionsView();
+chk(app.getPhase()==='Advanced' && app.getTeam()==='CIN',
+  'the stash wins even after the analyzer changed currentTeam (was: dumped to fallback)');
+app.setPhaseVar('League'); app.clearStash(); app.setTeamVar(null);
+app.showProjectionsView();
+chk(app.getPhase()==='Passing' && !!app.getTeam(),
+  'no stash + no team (reload) → a team builder page, never the full rankings dump');
+console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
     process.exit(pass===total?0:1);
   },5);
 },5);

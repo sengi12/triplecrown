@@ -811,11 +811,9 @@ function _schemeRenderRzOpportunityVolume(p, d, league, rankText, rankClass){
     html: `${playsTxt}${playRank ? ` <span class="scheme-insight-rank ${rankClass(playRank)}">(${rankText(playRank)})</span>` : ''}`,
   });
   return `<div class="scheme-insight-card">
-    <div class="scheme-insight-k">Red-Zone Opportunity Volume (League-Wide)</div>
+    <div class="scheme-insight-k">Red-Zone Opportunity Volume (League-Wide) ${_schemeInfoTip('RZ opportunity volume', "Top number: RZ drives per game — the volume baseline for touchdown opportunities. Bottom: RZ plays per game, for comparing opportunity volume against usage concentration.")}</div>
     <div class="scheme-insight-v">${drives}</div>
-    <div class="scheme-insight-sub">RZ drives per game. Volume baseline for touchdown opportunities.</div>
     <div class="scheme-insight-v" style="margin-top:7px">${plays}</div>
-    <div class="scheme-insight-sub">RZ plays per game. Helps compare opportunity volume against usage concentration.</div>
   </div>`;
 }
 
@@ -1381,7 +1379,6 @@ function _schemeRenderActualBenefactorList(title, subtitle, list, teamCode, seas
         ${chips}
       </span>
       <span class="scheme-benefit-score">${scoreHtml}</span>
-      <span class="scheme-benefit-why">${_schemeEscHtml(reason)}</span>
     </div>`;
   }).join('');
   return `<div class="scheme-benefactors-wrap">
@@ -1412,18 +1409,18 @@ function _schemeRenderActualBenefactors(snap, teamCode, season){
     "Real inside-the-20 target and carry logs from Sleeper weekly data — not modeled from formations. Target share = a player's RZ targets ÷ team RZ targets. Opportunity share = (RZ targets + RZ carries) ÷ team RZ touches, which is the best single read on who actually gets the ball near the goal line (great for dual-threat backs and target hogs)."
   );
   const controls = `<div class="scheme-benefit-sort" role="group" aria-label="Sort red-zone leaders">
-    <span class="scheme-benefit-sort-label">Sort target leaders by ${tip}</span>
+    <span class="scheme-benefit-sort-label">Sort by ${tip}</span>
     <button type="button" class="scheme-benefit-sort-btn ${targetSort==='tgt'?'active':''}" onclick="event.stopPropagation();setTeamCoachingSchemeBenefactorSort('tgt')">RZ target share</button>
     <button type="button" class="scheme-benefit-sort-btn ${targetSort==='opp'?'active':''}" onclick="event.stopPropagation();setTeamCoachingSchemeBenefactorSort('opp')">RZ opportunity share</button>
   </div>`;
   const tgtList = _schemeRenderActualBenefactorList(
     'Red-Zone Target Leaders',
-    `actual RZ target logs · team ${snap.teamTgt} RZ targets · ${targetSort==='opp'?'sorted by opportunity (touch) share':'sorted by target share'}`,
+    `team ${snap.teamTgt} RZ targets`,
     targetRows, teamCode, season, 'target'
   );
   const rushList = _schemeRenderActualBenefactorList(
     'Red-Zone Rushing Leaders',
-    `actual RZ carry logs · team ${snap.teamAtt} RZ carries · sorted by carry share`,
+    `team ${snap.teamAtt} RZ carries`,
     rushRows, teamCode, season, 'rush'
   );
   return `${controls}${tgtList}${rushList}`;
@@ -1560,8 +1557,8 @@ function _schemeRenderRzTdSource(p){
   return `<div class="scheme-op-wrap">
     <div class="scheme-op-title">Red-Zone TD Source · ${_schemeEscHtml(season)}</div>
     <div class="scheme-insights-grid" style="margin-bottom:8px">
-      <div class="scheme-insight-card"><div class="scheme-insight-k">Through the air</div><div class="scheme-insight-v">${tag(`${airPct}% <span class="scheme-insight-rank neutral">(${airRank?`${rkTxt(airRank)} · `:''}${s.passTD} pass TD)</span>`, 'RZ TDs through the air', `${airPct}% of RZ TDs via pass${airRank?` — ${rkTxt(airRank)} most pass-heavy`:''} (${s.passTD} pass TDs)`, 'rz_td_air')}</div><div class="scheme-insight-sub">Share of red-zone TDs scored passing. Higher ⇒ pass-catchers own the TD equity.</div></div>
-      <div class="scheme-insight-card"><div class="scheme-insight-k">On the ground</div><div class="scheme-insight-v">${tag(`${grPct}% <span class="scheme-insight-rank neutral">(${grRank?`${rkTxt(grRank)} · `:''}${s.rushTD} rush TD)</span>`, 'RZ TDs on the ground', `${grPct}% of RZ TDs via rush${grRank?` — ${rkTxt(grRank)} most ground-heavy`:''} (${s.rushTD} rush TDs)`, 'rz_td_ground')}</div><div class="scheme-insight-sub">Share of red-zone TDs scored rushing. Higher ⇒ the goal-line back carries more value.</div></div>
+      <div class="scheme-insight-card"><div class="scheme-insight-k">Through the air ${_schemeInfoTip('RZ TDs through the air', "Share of red-zone TDs scored passing. Higher means the pass-catchers own the TD equity.")}</div><div class="scheme-insight-v">${tag(`${airPct}% <span class="scheme-insight-rank neutral">(${airRank?`${rkTxt(airRank)} · `:''}${s.passTD} pass TD)</span>`, 'RZ TDs through the air', `${airPct}% of RZ TDs via pass${airRank?` — ${rkTxt(airRank)} most pass-heavy`:''} (${s.passTD} pass TDs)`, 'rz_td_air')}</div></div>
+      <div class="scheme-insight-card"><div class="scheme-insight-k">On the ground ${_schemeInfoTip('RZ TDs on the ground', "Share of red-zone TDs scored rushing. Higher means the goal-line back carries more value.")}</div><div class="scheme-insight-v">${tag(`${grPct}% <span class="scheme-insight-rank neutral">(${grRank?`${rkTxt(grRank)} · `:''}${s.rushTD} rush TD)</span>`, 'RZ TDs on the ground', `${grPct}% of RZ TDs via rush${grRank?` — ${rkTxt(grRank)} most ground-heavy`:''} (${s.rushTD} rush TDs)`, 'rz_td_ground')}</div></div>
     </div>
     <div class="scheme-op-title" style="font-size:11px">TDs by down (pass / rush)</div>
     <div class="scheme-op-grid">${downCells}</div>
@@ -1615,10 +1612,10 @@ function _schemeRenderScheme(p){
   const passRk=rankOf(sp.passRate, lg&&lg.passRate), paRk=rankOf(sp.paRate, lg&&lg.paRate);
   const moRk=rankOf(sp.motionRate, lg&&lg.motionRate), nhRk=rankOf(sp.nohuddleRate, lg&&lg.nohuddleRate);
   const cards=`<div class="scheme-insights-grid">
-    <div class="scheme-insight-card"><div class="scheme-insight-k">Pass rate</div><div class="scheme-insight-v">${tag(`${pct(sp.passRate)} ${rkHtml(passRk, lg&&lg.passRate)}`,'Pass rate',`${pct(sp.passRate)} overall pass rate${rkTxt(passRk, lg&&lg.passRate)}`,'pass_rate')}</div><div class="scheme-insight-sub">Overall pass tendency (rank = most pass-heavy). 1st ${pct(sp.byDown['1'])} · 2nd ${pct(sp.byDown['2'])} · 3rd ${pct(sp.byDown['3'])}.</div></div>
-    <div class="scheme-insight-card"><div class="scheme-insight-k">Play-action rate</div><div class="scheme-insight-v">${tag(`${pct(sp.paRate)} ${rkHtml(paRk, lg&&lg.paRate)} <span class="scheme-insight-rank neutral">(EPA ${epaTxt(sp.paEpa)})</span>`,'Play-action rate',`${pct(sp.paRate)} play-action rate${rkTxt(paRk, lg&&lg.paRate)} · ${epaTxt(sp.paEpa)} EPA/play`,'pa_rate')}</div><div class="scheme-insight-sub">PA volume + efficiency. High PA lifts deep-shot WRs and QB efficiency.${Number.isFinite(sp.paRate)?'':' Not charted for this season.'}</div></div>
-    <div class="scheme-insight-card"><div class="scheme-insight-k">Pre-snap motion</div><div class="scheme-insight-v">${tag(`${pct(sp.motionRate)} ${rkHtml(moRk, lg&&lg.motionRate)}`,'Motion rate',`${pct(sp.motionRate)} of plays use pre-snap motion${rkTxt(moRk, lg&&lg.motionRate)}`,'motion_rate')}</div><div class="scheme-insight-sub">Motion usage schemes easy touches / YAC for movement players.${Number.isFinite(sp.motionRate)?'':' Not charted for this season.'}</div></div>
-    <div class="scheme-insight-card"><div class="scheme-insight-k">No-huddle rate</div><div class="scheme-insight-v">${tag(`${pct(sp.nohuddleRate)} ${rkHtml(nhRk, lg&&lg.nohuddleRate)}`,'No-huddle rate',`${pct(sp.nohuddleRate)} of plays run no-huddle${rkTxt(nhRk, lg&&lg.nohuddleRate)}`,'nohuddle_rate')}</div><div class="scheme-insight-sub">Tempo. More no-huddle ⇒ more total plays and volume for everyone.${Number.isFinite(sp.nohuddleRate)?'':' Not charted for this season.'}</div></div>
+    <div class="scheme-insight-card"><div class="scheme-insight-k">Pass rate ${_schemeInfoTip('Pass rate', "Overall pass tendency; rank 1 = most pass-heavy. The line below is the rate by down.")}</div><div class="scheme-insight-v">${tag(`${pct(sp.passRate)} ${rkHtml(passRk, lg&&lg.passRate)}`,'Pass rate',`${pct(sp.passRate)} overall pass rate${rkTxt(passRk, lg&&lg.passRate)}`,'pass_rate')}</div><div class="scheme-insight-sub">1st ${pct(sp.byDown['1'])} · 2nd ${pct(sp.byDown['2'])} · 3rd ${pct(sp.byDown['3'])}</div></div>
+    <div class="scheme-insight-card"><div class="scheme-insight-k">Play-action rate ${_schemeInfoTip('Play-action rate', "PA volume plus efficiency. A high play-action rate lifts deep-shot WRs and QB efficiency.")}</div><div class="scheme-insight-v">${tag(`${pct(sp.paRate)} ${rkHtml(paRk, lg&&lg.paRate)} <span class="scheme-insight-rank neutral">(EPA ${epaTxt(sp.paEpa)})</span>`,'Play-action rate',`${pct(sp.paRate)} play-action rate${rkTxt(paRk, lg&&lg.paRate)} · ${epaTxt(sp.paEpa)} EPA/play`,'pa_rate')}</div>${Number.isFinite(sp.paRate)?'':'<div class="scheme-insight-sub">Not charted for this season.</div>'}</div>
+    <div class="scheme-insight-card"><div class="scheme-insight-k">Pre-snap motion ${_schemeInfoTip('Pre-snap motion', "Motion usage schemes easy touches and YAC for movement players.")}</div><div class="scheme-insight-v">${tag(`${pct(sp.motionRate)} ${rkHtml(moRk, lg&&lg.motionRate)}`,'Motion rate',`${pct(sp.motionRate)} of plays use pre-snap motion${rkTxt(moRk, lg&&lg.motionRate)}`,'motion_rate')}</div>${Number.isFinite(sp.motionRate)?'':'<div class="scheme-insight-sub">Not charted for this season.</div>'}</div>
+    <div class="scheme-insight-card"><div class="scheme-insight-k">No-huddle rate ${_schemeInfoTip('No-huddle rate', "Tempo. More no-huddle means more total plays — more volume for everyone.")}</div><div class="scheme-insight-v">${tag(`${pct(sp.nohuddleRate)} ${rkHtml(nhRk, lg&&lg.nohuddleRate)}`,'No-huddle rate',`${pct(sp.nohuddleRate)} of plays run no-huddle${rkTxt(nhRk, lg&&lg.nohuddleRate)}`,'nohuddle_rate')}</div>${Number.isFinite(sp.nohuddleRate)?'':'<div class="scheme-insight-sub">Not charted for this season.</div>'}</div>
   </div>`;
   const persCards = sp.persList.map(r=>{
     // The league pool for a package only holds teams that use it enough to make their own
@@ -1734,12 +1731,11 @@ function _schemeRenderRegression(p){
       <span class="scheme-benefit-rank">${i+1}</span>
       <span class="scheme-benefit-head scheme-benefit-head-btn" ${headClick}>${_schemePlayerHeadshot(r)}</span>
       <span class="scheme-benefit-main">
-        <span class="scheme-benefit-name">${_schemeEscHtml(r.name)} <span style="font-size:9px;padding:1px 5px;border-radius:6px;font-weight:700;${_schemeRegFlagStyle(flag)}">${flagTxt}</span></span>
+        <span class="scheme-benefit-name">${_schemeEscHtml(r.name)} <span title="${_schemeEscHtml(reason)}" style="font-size:9px;padding:1px 5px;border-radius:6px;font-weight:700;cursor:help;${_schemeRegFlagStyle(flag)}">${flagTxt}</span></span>
         <span class="scheme-benefit-meta">${_schemeEscHtml(r.pos)} · ${r.rzTgt} RZ tgt · ${r.rzAtt} RZ carr</span>
         ${chips}
       </span>
       <span class="scheme-benefit-score">${scoreHtml}</span>
-      <span class="scheme-benefit-why">${_schemeEscHtml(reason)}</span>
     </div>`;
   };
   const buys=reg.rows.filter(r=>r.opp>=4 && r.delta<=-_SCHEME_REG_FLAG).sort((a,b)=>a.delta-b.delta).slice(0,6);
@@ -1748,8 +1744,8 @@ function _schemeRenderRegression(p){
   const empty = (!buys.length && !sells.length) ? `<div class="scheme-benefactors-wrap"><div class="scheme-empty">No strong over/under-performers — this offense's RZ scoring closely matches workload.</div></div>`:'';
   return `<div class="scheme-insights-wrap">
     <div class="scheme-insights-head"><span class="scheme-insights-pill neutral">TD Regression ${tip}</span><span class="scheme-insights-sample">${reg.teamTD} skill-player TDs vs ${reg.teamExp.toFixed(1)} league-expected · ${reg.teamOpp} RZ touches</span></div>
-    ${list('Buy-Low — under-scored RZ workload','sorted by biggest TD shortfall',buys)}
-    ${list('Sell-High — TD-dependent','sorted by biggest TD surplus',sells)}
+    ${list('Buy-Low — under-scored RZ workload','',buys)}
+    ${list('Sell-High — TD-dependent','',sells)}
     ${empty}
   </div>`;
 }
@@ -1963,8 +1959,8 @@ function _schemeRenderBenefactorList(title, subtitle, list, scoreFmt, metaFmt){
         <span class="scheme-benefit-meta">${noteWrapHtml(metaFmt(p), { label:`${title} role context`, value:`${p.pos||''} · ${p.slot||''}${p.oppShare!=null?` · opp share ${p.oppShare.toFixed(2)}%`:''}${p.tgtShare!=null?` · tgt share ${p.tgtShare.toFixed(2)}%`:''}`, source:'coaching_insights', statKey:'role_context', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:notePlayer, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
         ${splits}
       </span>
-      <span class="scheme-benefit-score">${noteWrapHtml(scoreFmt(p), { label:`${title} leader score`, value:`${p.tgtShare!=null?`RZ target share ${p.tgtShare.toFixed(2)}% · `:''}${p.oppShare!=null?`team share ${p.oppShare.toFixed(2)}%`:''}`.trim() || scoreFmt(p).replace(/<[^>]+>/g,''), source:'coaching_insights', statKey:'leader_score', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:notePlayer, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
-      <span class="scheme-benefit-why">${_schemeEscHtml(p.reason)}</span>
+      <span class="scheme-benefit-score" title="${_schemeEscHtml(p.reason||'')}">${noteWrapHtml(scoreFmt(p), { label:`${title} leader score`, value:`${p.tgtShare!=null?`RZ target share ${p.tgtShare.toFixed(2)}% · `:''}${p.oppShare!=null?`team share ${p.oppShare.toFixed(2)}%`:''}`.trim() || scoreFmt(p).replace(/<[^>]+>/g,''), source:'coaching_insights', statKey:'leader_score', context:`${teamDisplayName(teamCode)} ${title.toLowerCase()} · ${season}`, player:notePlayer, team:teamCode, relevance:'QB,RB,WR,TE', nav:{ type:'coaching', team:teamCode, season:String(season), tab:'insights' } }, 'note-tag-hit')}</span>
+
     ${wrapClose}`;
   }).join('');
   return `<div class="scheme-benefactors-wrap">
@@ -1986,20 +1982,20 @@ function _schemeRenderBenefactors(targets, rushers){
     'These are modeled shares, not exact target logs. Opportunity share emphasizes route-role usage; target share is the neutral split baseline for red-zone pass concepts.'
   );
   const targetSortControls = `<div class="scheme-benefit-sort" role="group" aria-label="Sort target leaders">
-    <span class="scheme-benefit-sort-label">Sort target leaders by ${targetSortTip}</span>
+    <span class="scheme-benefit-sort-label">Sort by ${targetSortTip}</span>
     <button type="button" class="scheme-benefit-sort-btn ${targetSort==='opp'?'active':''}" onclick="event.stopPropagation();setTeamCoachingSchemeBenefactorSort('opp')">RZ target opportunity share</button>
     <button type="button" class="scheme-benefit-sort-btn ${targetSort==='tgt'?'active':''}" onclick="event.stopPropagation();setTeamCoachingSchemeBenefactorSort('tgt')">RZ target share</button>
   </div>`;
 
   return `${targetSortControls}${_schemeRenderBenefactorList(
     'Red-Zone Target Opportunity Leaders',
-    `sorted by ${_schemeTargetSortLabel(targetSort).toLowerCase()} · modeled red-zone shares (not play-by-play target logs)`,
+    `modeled shares`,
     sortedTargets,
     p=>`${byTgt ? 'RZ TGT' : 'RZ OPP'} ${byTgt ? p.tgtShare.toFixed(2) : p.oppShare.toFixed(2)}% ${teamShareTip}`,
     p=>`${_schemeEscHtml(p.pos)} · ${_schemeEscHtml(p.slot)} · RZ opp share ${p.oppShare.toFixed(2)}% · RZ target share ${p.tgtShare.toFixed(2)}%`
   )}${_schemeRenderBenefactorList(
     'Rushing TD Paths',
-    'modeled team share of red-zone rushing TD path volume',
+    'modeled rush-path shares',
     rushers,
     p=>`TEAM ${p.oppShare.toFixed(2)}% ${teamShareTip}`,
     p=>`${_schemeEscHtml(p.pos)} · ${_schemeEscHtml(p.slot)} · Team rush-path share ${p.oppShare.toFixed(2)}%`
@@ -2069,25 +2065,25 @@ function _schemeRenderRedZone(p){
         <div class="scheme-insight-sub">Share of red-zone plays that reach 3rd or 4th down.</div>
       </div>
       <div class="scheme-insight-card">
-        <div class="scheme-insight-k">Early down red zone success (1st/2nd)</div>
+        <div class="scheme-insight-k">Early down red zone success (1st/2nd) ${_schemeInfoTip('Early down RZ success', "Weighted by formation usage on early downs inside the red zone.")}</div>
         <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.earlySucc)} <span class="scheme-insight-rank ${rankClass(earlySuccRank)}">(${rankText(earlySuccRank)})</span>`, _itm('Early down red zone success', _schemePct(d.earlySucc), 'early_succ'), 'note-tag-hit')}</div>
-        <div class="scheme-insight-sub">Weighted by formation usage on early downs inside the red zone.</div>
+        
       </div>
       <div class="scheme-insight-card">
-        <div class="scheme-insight-k">Late down red zone success (3rd/4th)</div>
+        <div class="scheme-insight-k">Late down red zone success (3rd/4th) ${_schemeInfoTip('Late down RZ success', "How efficiently this team finishes once drives get extended.")}</div>
         <div class="scheme-insight-v">${noteWrapHtml(`${_schemePct(d.lateSucc)} <span class="scheme-insight-rank ${rankClass(lateSuccRank)}">(${rankText(lateSuccRank)})</span>`, _itm('Late down red zone success', _schemePct(d.lateSucc), 'late_succ'), 'note-tag-hit')}</div>
-        <div class="scheme-insight-sub">How efficiently this team finishes once drives get extended.</div>
+        
       </div>
       <div class="scheme-insight-card">
         <div class="scheme-insight-k">Drive friction ranking ${frictionTip}</div>
         <div class="scheme-insight-v">${noteWrapHtml(`${rankText(frictionRank)} <span class="scheme-insight-rank ${frictionRankClass}">(score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'})</span>`, _itm('Drive friction ranking', `${rankText(frictionRank)} · score ${Number.isFinite(d.frictionScore)?d.frictionScore.toFixed(0):'—'}`, 'friction_rank'), 'note-tag-hit')}</div>
-        <div class="scheme-insight-sub">Ranked by drive cleanliness (1 = least friction / cleanest drives, 32 = most friction / toughest drives).</div>
+        
       </div>
       ${rzVolumeCard}
     </div>
     ${frictionComponents}
     ${tdSourceHtml}
-    <div class="scheme-insight-note"><b>Fantasy angle:</b> ${_schemeEscHtml(blurb)}</div>
+    <div class="scheme-insight-note scheme-insight-min"><b>Fantasy angle</b> ${_schemeInfoTip('Fantasy angle', blurb)}</div>
     ${benefactorsHtml}
   </div>`;
 }
@@ -2184,7 +2180,7 @@ function _renderTeamCoachingScheme(){
         <img src="${NFL_LOGO(schemeTeam)}" class="scheme-team-logo" onerror="this.style.display='none'">
         <div>
           <div class="scheme-title">${teamDisplayName(schemeTeam)} Playbook</div>
-          <div class="scheme-subtitle">Interactive playsheet · nflverse charting · ${p.season} regular season</div>
+          <div class="scheme-subtitle">${p.season} playsheet</div>
           ${_schemeOcCallout(schemeTeam)}
         </div>
       </div>

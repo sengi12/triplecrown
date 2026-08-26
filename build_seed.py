@@ -1928,6 +1928,12 @@ def build_head_coach_history(proj_season, refresh, coordinators=None):
     the projection season, the app can carry over the HC's FORMER team's offensive scheme —
     because with a playcalling HC the scheme travels with the coach, not the coordinator."""
     hc_html = _fetch_wiki_html(WIKI_HC_TITLE, refresh, "head coaches (Wikipedia)")
+    # Curated prior jobs for NEW head coaches — Wikipedia's HC table no longer carries a
+    # previous-position column and no free feed does. Verified by hand; names must match
+    # the wiki table exactly. A coach absent here simply shows no former-team line.
+    HC_PRIOR_JOBS = {
+        "Mike McCarthy": ("DAL", "head coach", "2020\u20132024"),
+    }
     hc = _parse_head_coach_page(hc_html, proj_season)
 
     # NOTE: Wikipedia's HC table no longer provides a stable previous-position column.
@@ -1940,16 +1946,15 @@ def build_head_coach_history(proj_season, refresh, coordinators=None):
         prev_role = None
         prev_years = None
 
-        oc = (coordinators or {}).get(code, {}).get("offense") if coordinators else None
-        is_playcaller_hc = code in HC_PLAYCALLERS
-        if d.get("is_new") and is_playcaller_hc and oc and oc.get("is_new") and (not oc.get("internal")) and oc.get("prev_code"):
-            # Best-effort fallback for missing HC previous-team data.
-            prev_code = oc.get("prev_code")
-            prev_team_name = oc.get("prev_team_name")
-            prev_role = "head coach"
-            # Keep years nullable here: UI logic may widen to full available HC era when
-            # explicit tenure years are absent, instead of pinning to the OC's years.
-            prev_years = None
+        # No scraping fallback, ever. The old "borrow the new OC's former team" guess
+        # stamped the OC's résumé onto the HC as 'head coach' — inventing jobs coaches
+        # never held (Mike McCarthy shipped as a former Vikings HC). Unknown stays null.
+        # HC_PRIOR_JOBS below is the one sanctioned source: a hand-maintained table of
+        # REAL prior jobs for new head coaches (a handful per season, updated at refresh).
+        prior = HC_PRIOR_JOBS.get(str(d.get("name") or "").strip()) if d.get("is_new") else None
+        if prior:
+            prev_code, prev_role, prev_years = prior
+            prev_team_name = CODE_TO_FULLNAME.get(prev_code)
 
         out[code] = {
             "name": d.get("name"), "since": d.get("since"),

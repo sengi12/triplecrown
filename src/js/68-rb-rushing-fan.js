@@ -651,9 +651,6 @@ function _rbFanSVG(chart, playerName, season, metric, notePlayer){
   parts.push(`<text x="${rbx}" y="${G.rbNameY}" fill="#fff" font-size="${mobileNarrow?15:13}" font-weight="800" text-anchor="middle">${String(playerName||'RB').toUpperCase()}</text>`);
   parts.push(`<text x="${rbx}" y="${G.rbMetaY}" fill="#9aa0a6" font-size="${mobileNarrow?12:11}" text-anchor="middle">${t.attempts||0} carries · ${(t.yards!=null?Number(t.yards).toLocaleString():'—')} yds · ${_rbNum(t.ypc,2)} YPC · ${_rbNum(t.success_rate,1)}% success</text>`);
 
-  parts.push(`<text x="30" y="${G.footY1}" fill="#6b7075" font-size="10">OL card grades are from the validated local OL pipeline (${chart.is_projection?`projected ${_rbProjYear()} run grades`:'historical rushing grades'}, slot by pass-snaps).</text>`);
-  parts.push(`<text x="30" y="${G.footY2}" fill="#6b7075" font-size="10">Lanes shown when attempts >= 3. ${chart.is_projection?'Projected lanes keep the back\u2019s last known directional profile and scale it to projected volume/efficiency.' : (MET.key? 'Color scales to this back\u2019s best gap.' : 'Color compares lane YPC to league average for that lane in-season.')}</text>`);
-  parts.push(`<text x="30" y="${G.footY3}" fill="#6b7075" font-size="10">Data: nflverse play-by-play + local OL grades. Not affiliated with the NFL.</text>`);
   parts.push('</svg>');
   return parts.join('');
 }
@@ -703,10 +700,10 @@ function renderPcardRbFan(pid){
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns}</div>
       <div class="rt-metrics">${metricBtns}</div>
-      <div class="rt-summary">${noteWrapHtml(`${t.attempts||0} carries`, { label:'Carries', value:String(t.attempts||0), source:'rb_rushing_fan', statKey:'attempts', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.ypc,2)} YPC`, { label:'Yards Per Carry', value:_rbNum(t.ypc,2), source:'rb_rushing_fan', statKey:'ypc', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.success_rate,1)}% success`, { label:'Success Rate', value:`${_rbNum(t.success_rate,1)}%`, source:'rb_rushing_fan', statKey:'success_rate', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</div>
+      <div class="rt-summary">${noteWrapHtml(`${t.attempts||0} carries`, { label:'Carries', value:String(t.attempts||0), source:'rb_rushing_fan', statKey:'attempts', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.ypc,2)} YPC`, { label:'Yards Per Carry', value:_rbNum(t.ypc,2), source:'rb_rushing_fan', statKey:'ypc', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.success_rate,1)}% success`, { label:'Success Rate', value:`${_rbNum(t.success_rate,1)}%`, source:'rb_rushing_fan', statKey:'success_rate', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} ${(typeof tcInfoBtn==='function')?tcInfoBtn('rbfan','Reading this chart'):''}</div>
     </div>
     ${runSc.score!=null || runSc.rank!=null ? `<div class="olc-overview">${noteWrapHtml(`<b>Cumulative Run Blocking Score: ${runSc.score!=null?runSc.score.toFixed(1):'—'}</b> ${_rbRankBadge(runSc.rank)}`, { label:'Cumulative Run Blocking Score', value:runSc.score!=null?runSc.score.toFixed(1):'—', source:'rb_offensive_line', statKey:'run_blocking_score', context:`${chart.team||notePlayer.team} offensive line · ${(_rbIsProjSeason(season) && chart.is_projection)?`${_rbProjYear()} projections`:`${season}`}`, team:chart.team||notePlayer.team, relevance:'RB' }, 'note-tag-hit')}</div>` : ''}
-    ${chart.is_projection?`<div class="olc-overview"><b>${_rbProjYear()} Projection:</b> projected depth-chart starters' run grades drive the line cards, cumulative run score and league rank${chart.baseline_run_rank!=null?` (${chart.baselineSeason}: #${chart.baseline_run_rank})`:''}. Lane arrows preserve the back's latest directional profile and scale it to projected efficiency/volume.</div>${typeof _olProjCoverageNote==='function'?_olProjCoverageNote():''}`:''}
+    ${chart.is_projection?`<div class="olc-overview"><b>${_rbProjYear()} projection</b> · projected starters drive the line${chart.baseline_run_rank!=null?` (${chart.baselineSeason}: #${chart.baseline_run_rank})`:''}</div>${typeof _olProjCoverageNote==='function'?_olProjCoverageNote():''}`:''}
     ${_rbFanSVG(chart, name, season, metric, notePlayer)}
     <div class="rbf-legend">
       <span><i style="background:#2fae4e"></i>Lane YPC above league avg</span>
@@ -736,4 +733,14 @@ function _rbRefreshOpenProjectedFanForTeam(team){
     if(!proj || (_rbTeamCode(proj.team)!==_rbTeamCode(team) && !stabilised)) return;
   }catch(e){ /* refresh anyway on lookup failure */ }
   body.innerHTML=renderPcardRbFan(pcardState.pid);
+}
+
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.rbfan={title:'Reading the rushing fan', body:`
+    Arrow width = lane success rate; arrow color = efficiency (for historical seasons, lane
+    YPC vs the league average for that lane; for a single back's view, scaled to his best gap).
+    Lanes appear once a gap has 3+ attempts. OL grades along the line come from the validated
+    local OL pipeline (projected run grades for the projection season, historical otherwise).
+    Projected lanes keep the back's last known directional profile, scaled to projected volume.
+    Data: nflverse play-by-play + local OL grades.`};
 }
