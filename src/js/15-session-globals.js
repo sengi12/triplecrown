@@ -572,6 +572,27 @@ function pushUndo(team, coalesceKey){
 }
 function clearUndoCoalesce(){ _lastUndoKey=null; }
 function canUndo(team){ return !!(team && undoStacks[team] && undoStacks[team].length); }
+// Cmd+Z (mac) / Ctrl+Z (elsewhere) fires the team Undo button. Never while typing —
+// inputs and the contenteditable stat fields keep their NATIVE text undo — and never
+// while a modal/popup is up (its own context owns the keys there).
+function tcUndoHotkey(e){
+  if(!(e && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey
+      && String(e.key||'').toLowerCase()==='z')) return false;
+  const t=e.target;
+  if(t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName||''))) return false;
+  try{
+    const fl=document.querySelector('.pcard-overlay,.scheme-overlay,.ps-overlay,.note-picker-overlay,.note-info-overlay,.tc-modal-overlay');
+    if(fl && (fl.offsetWidth||fl.offsetHeight)) return false;
+  }catch(_e){}
+  const teamViews=['Passing','Receiving','Rushing','Advanced','Additions'];
+  if(typeof currentPhase==='undefined' || !teamViews.includes(currentPhase)) return false;
+  if(typeof currentTeam==='undefined' || !currentTeam || !canUndo(currentTeam)) return false;
+  if(e.preventDefault) e.preventDefault();
+  undoTeam(currentTeam);
+  return true;
+}
+try{ document.addEventListener('keydown', tcUndoHotkey); }catch(_e){}
+
 function undoTeam(team){
   if(!canUndo(team)) return;
   const prev = undoStacks[team].pop();

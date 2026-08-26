@@ -8,7 +8,8 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   assembleSeed, normalizeSleeperRow, ensureTeam, initPassingShares, handleSliderKey,
-  pushUndo, undoTeam, canUndo, clearUndoCoalesce,
+  pushUndo, undoTeam, canUndo, clearUndoCoalesce, tcUndoHotkey,
+  setPhaseVar:(p)=>{currentPhase=p;},
   setSEED:(s)=>{SEED=s;projSeed=s;seasonStatsCache.proj=s;workingProj={};userProj=workingProj;activeSeason='proj';},
   selectTeam:t=>{currentTeam=t;ensureTeam(t);initPassingShares(t);},
   getProj:()=>userProj, getCurrentTeam:()=>currentTeam,
@@ -37,6 +38,7 @@ console.log('canUndo:', app.canUndo('KC'));
 app.undoTeam('KC');
 const restored=app.getProj()['KC'].passing_shares[0].share;
 console.log('After undo:', (restored*100).toFixed(1)+'%');
+
 console.log('RESULT:', Math.abs(restored-origShare)<0.001?'PASS (restored original)':'FAIL');
 
 console.log('\n=== TEST 2: multi-step undo ===');
@@ -82,3 +84,26 @@ let depth=0; // count via repeated undo
 while(app.canUndo('SF')){app.undoTeam('SF');depth++;if(depth>5)break;}
 console.log('Undo depth from no-op snapshots:', depth, '(expect ≤1)');
 console.log('RESULT:', depth<=1?'PASS (identical snapshots deduped)':'FAIL');
+
+console.log('\n=== TEST 5: Cmd/Ctrl+Z fires the Undo button ===');
+app.setPhaseVar('Receiving'); app.selectTeam('KC'); app.setCurrentTeam('KC');
+app.pushUndo('KC','hotkey-test'); app.clearUndoCoalesce();
+const hkBefore=app.getProj()['KC'].passing_shares[0].share;
+app.getProj()['KC'].passing_shares[0].share=1;
+let prevented=false;
+const ev=(o)=>Object.assign({key:'z',metaKey:false,ctrlKey:true,shiftKey:false,altKey:false,target:{tagName:'DIV'},preventDefault(){prevented=true;}},o);
+const hk1=app.tcUndoHotkey(ev({}));
+console.log('RESULT:', (hk1===true && prevented && Math.abs(app.getProj()['KC'].passing_shares[0].share-hkBefore)<0.001)
+  ? 'PASS (Ctrl+Z undoes on a team view, claims the event, restores the share)' : 'FAIL');
+app.pushUndo('KC','hotkey-test2'); app.clearUndoCoalesce();
+console.log('RESULT:', app.tcUndoHotkey(ev({metaKey:true,ctrlKey:false}))===true ? 'PASS (Cmd+Z works the same on mac)' : 'FAIL');
+console.log('RESULT:', (app.tcUndoHotkey(ev({target:{tagName:'INPUT'}}))===false
+  && app.tcUndoHotkey(ev({target:{tagName:'DIV',isContentEditable:true}}))===false)
+  ? 'PASS (typing keeps native undo — inputs and contenteditable untouched)' : 'FAIL');
+console.log('RESULT:', app.tcUndoHotkey(ev({shiftKey:true}))===false ? 'PASS (Shift+Cmd+Z redo left alone)' : 'FAIL');
+app.setPhaseVar('Rankings'); app.pushUndo('KC','hotkey-test3'); app.clearUndoCoalesce();
+const hkRank=app.tcUndoHotkey(ev({}));
+app.setPhaseVar('Passing');
+while(app.canUndo('KC')) app.undoTeam('KC');
+console.log('RESULT:', (hkRank===false && app.tcUndoHotkey(ev({}))===false)
+  ? 'PASS (inactive off team views; empty stack never claims the event)' : 'FAIL');

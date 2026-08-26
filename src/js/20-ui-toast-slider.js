@@ -134,12 +134,12 @@ function mkDelta(cur,base,invert){
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mobile slider scale
-// On a phone the full stat domain makes small values nearly impossible to grab —
-// a 22% target share lives in the first fifth of a 0–100 track. Compress the
-// draggable range to realistic headroom (a 30% share reads as an almost-full bar,
-// which is the honest picture). Desktop keeps the full domain. Typed values may
-// exceed the visual cap: the bar pins full and the next paint rescales around it.
+// Slider scale (every width)
+// The full stat domain makes small values nearly impossible to work with — a 22%
+// target share lives in the first fifth of a 0–100 track. Compress the draggable
+// range to realistic headroom (a 30% share reads as an almost-full bar, which is
+// the honest picture). Typed values may exceed the visual cap: the bar pins full
+// and the next paint rescales around it.
 // ─────────────────────────────────────────────────────────────────────────────
 function tcNiceCeil(v){
   if(!(v>0)) return 0;
@@ -148,8 +148,6 @@ function tcNiceCeil(v){
   return 10*p;
 }
 function tcSliderScaleMax(cur, base, staticMax, floorCap){
-  const mm=(typeof window!=='undefined' && window.matchMedia) ? window.matchMedia('(max-width:760px)') : null;
-  if(!mm || !mm.matches) return staticMax;
   const v=Math.max(Number(cur)||0, Number(base)||0);
   let cap=Math.max(Number(floorCap)||0, tcNiceCeil(v*1.35), staticMax*0.12);
   return Math.min(staticMax, cap);

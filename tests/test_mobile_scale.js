@@ -1,7 +1,7 @@
-// Mobile slider scale + the ⓘ system. On a phone the slider range compresses to realistic
-// headroom (a 30% target share reads nearly full); desktop keeps the full domain; typed
-// values above the cap stay legal (the number field clamps to the TRUE max, not the visual
-// one). The ⓘ buttons put methodology prose in viewport-clamped popups that toggle-close.
+// Slider scale + the ⓘ system. At EVERY width the slider range compresses to realistic
+// headroom (a 30% target share reads nearly full); typed values above the cap stay legal
+// (the number field clamps to the TRUE max, not the visual one). The ⓘ buttons put
+// methodology prose in viewport-clamped popups that toggle-close.
 let mobile=false;
 const reg={};
 const elStore={};
@@ -32,11 +32,11 @@ chk(app.tcNiceCeil(168)===200,'168 → 200');
 chk(app.tcNiceCeil(6440)===8000,'6440 → 8000');
 chk(app.tcNiceCeil(0)===0,'0 → 0');
 
-console.log('=== scale: desktop untouched, mobile compressed ===');
+console.log('=== scale: compressed at EVERY width (desktop included) ===');
 mobile=false;
-chk(app.tcSliderScaleMax(28,25,100,40)===100,'desktop: full 0–100 domain');
+chk(app.tcSliderScaleMax(28,25,100,40)===40,'desktop compresses too: a 28% share rides a 0–40 track');
 mobile=true;
-chk(app.tcSliderScaleMax(28,25,100,40)===40,'mobile: a 28% share rides a 0–40 track (~70% full)');
+chk(app.tcSliderScaleMax(28,25,100,40)===40,'mobile: same 0–40 track (~70% full)');
 chk(app.tcSliderScaleMax(3,2,100,40)===40,'small values never shrink below the floor cap');
 chk(app.tcSliderScaleMax(65,60,100,40)===100,'a 65% share needs headroom → 1.35× → capped at the true max');
 chk(app.tcSliderScaleMax(55,10,100,85)===85,'floor caps above the value win (rush share style)');
@@ -52,7 +52,7 @@ chk(row.includes("manualEdit('py',this.textContent,0,7500)"),'the number field s
 chk(/<span>0<\/span><span>(900|1000)<\/span>/.test(row),'scale labels show the compressed domain');
 mobile=false;
 const rowD=app.sRow('py','Passing Yards',600,500,0,7500,50,undefined,false,{});
-chk(/max="7500"/.test(rowD),'desktop slider keeps the full domain');
+chk(/max="(900|1000)"/.test(rowD),'desktop slider rides the same compressed domain');
 
 console.log('=== the ⓘ system ===');
 chk(Object.keys(app.TC_INFO_BOOK).length>=10,'info book carries the moved prose (10+ entries)');

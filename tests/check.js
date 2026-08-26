@@ -1757,6 +1757,27 @@ function pushUndo(team, coalesceKey){
 }
 function clearUndoCoalesce(){ _lastUndoKey=null; }
 function canUndo(team){ return !!(team && undoStacks[team] && undoStacks[team].length); }
+// Cmd+Z (mac) / Ctrl+Z (elsewhere) fires the team Undo button. Never while typing —
+// inputs and the contenteditable stat fields keep their NATIVE text undo — and never
+// while a modal/popup is up (its own context owns the keys there).
+function tcUndoHotkey(e){
+  if(!(e && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey
+      && String(e.key||'').toLowerCase()==='z')) return false;
+  const t=e.target;
+  if(t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName||''))) return false;
+  try{
+    const fl=document.querySelector('.pcard-overlay,.scheme-overlay,.ps-overlay,.note-picker-overlay,.note-info-overlay,.tc-modal-overlay');
+    if(fl && (fl.offsetWidth||fl.offsetHeight)) return false;
+  }catch(_e){}
+  const teamViews=['Passing','Receiving','Rushing','Advanced','Additions'];
+  if(typeof currentPhase==='undefined' || !teamViews.includes(currentPhase)) return false;
+  if(typeof currentTeam==='undefined' || !currentTeam || !canUndo(currentTeam)) return false;
+  if(e.preventDefault) e.preventDefault();
+  undoTeam(currentTeam);
+  return true;
+}
+try{ document.addEventListener('keydown', tcUndoHotkey); }catch(_e){}
+
 function undoTeam(team){
   if(!canUndo(team)) return;
   const prev = undoStacks[team].pop();
@@ -3307,12 +3328,12 @@ function mkDelta(cur,base,invert){
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mobile slider scale
-// On a phone the full stat domain makes small values nearly impossible to grab —
-// a 22% target share lives in the first fifth of a 0–100 track. Compress the
-// draggable range to realistic headroom (a 30% share reads as an almost-full bar,
-// which is the honest picture). Desktop keeps the full domain. Typed values may
-// exceed the visual cap: the bar pins full and the next paint rescales around it.
+// Slider scale (every width)
+// The full stat domain makes small values nearly impossible to work with — a 22%
+// target share lives in the first fifth of a 0–100 track. Compress the draggable
+// range to realistic headroom (a 30% share reads as an almost-full bar, which is
+// the honest picture). Typed values may exceed the visual cap: the bar pins full
+// and the next paint rescales around it.
 // ─────────────────────────────────────────────────────────────────────────────
 function tcNiceCeil(v){
   if(!(v>0)) return 0;
@@ -3321,8 +3342,6 @@ function tcNiceCeil(v){
   return 10*p;
 }
 function tcSliderScaleMax(cur, base, staticMax, floorCap){
-  const mm=(typeof window!=='undefined' && window.matchMedia) ? window.matchMedia('(max-width:760px)') : null;
-  if(!mm || !mm.matches) return staticMax;
   const v=Math.max(Number(cur)||0, Number(base)||0);
   let cap=Math.max(Number(floorCap)||0, tcNiceCeil(v*1.35), staticMax*0.12);
   return Math.min(staticMax, cap);

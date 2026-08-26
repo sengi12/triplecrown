@@ -150,11 +150,12 @@
 .rank-toolbar-row + .rank-toolbar-row{border-top:1px solid var(--border);}
 .rank-toolbar-spacer{margin-left:auto;}
 .rank-count{font-size:11px;font-weight:700;margin-left:auto;color:var(--muted2);white-space:nowrap;}
-.rank-filters-toggle{display:none;}
+/* The hamburger governs the filters row at EVERY width — the desktop toolbar earns the
+   same clean default as mobile. */
+.rank-filters-toggle{display:inline-flex;}
+.rank-filters{display:none;}
+.rank-filters.open{display:flex;}
 @media (max-width:760px){
-  .rank-filters-toggle{display:inline-flex;}
-  .rank-filters{display:none;}
-  .rank-filters.open{display:flex;}
   .pos-filter{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none;max-width:60vw;}
   .pos-filter::-webkit-scrollbar{display:none;}
 }
@@ -279,12 +280,15 @@
 .tc-pool-line b{color:var(--text);}
 .la-note-min{display:flex;justify-content:flex-end;padding:4px 2px 0;background:none;border:none;}
 
-/* Mobile sliders: a thumb you can actually grab (pairs with the compressed scale) */
+/* Sliders: a thumb you can actually grab, at every width (pairs with the compressed scale).
+   Mobile gets the larger touch size. */
+input.sl::-webkit-slider-thumb{width:20px;height:20px;border:2.5px solid var(--surface);
+  box-shadow:0 2px 8px rgba(0,0,0,.4);}
+input.sl::-moz-range-thumb{width:18px;height:18px;border:2.5px solid var(--surface);}
 @media (max-width:760px){
   input.sl{height:30px;top:-11px;}
-  input.sl::-webkit-slider-thumb{width:24px;height:24px;border:2.5px solid var(--surface);
-    box-shadow:0 2px 8px rgba(0,0,0,.4);}
-  input.sl::-moz-range-thumb{width:22px;height:22px;border:2.5px solid var(--surface);}
+  input.sl::-webkit-slider-thumb{width:24px;height:24px;}
+  input.sl::-moz-range-thumb{width:22px;height:22px;}
 }
 
 .sr-section-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
