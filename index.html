@@ -6711,8 +6711,13 @@ function tcNiceCeil(v){
   return 10*p;
 }
 function tcSliderScaleMax(cur, base, staticMax, floorCap){
-  const v=Math.max(Number(cur)||0, Number(base)||0);
-  let cap=Math.max(Number(floorCap)||0, tcNiceCeil(v*1.35), staticMax*0.12);
+  // The cap keys off the BASELINE, not the live value — otherwise dragging a stat up and
+  // then re-rendering (an undo, a tab hop) recomputed a wider track and every thumb slid
+  // sideways with its value unchanged, which read as a phantom undo. The track only grows
+  // when the value actually exceeds it, and holds still otherwise.
+  const b=Number(base)||0, c=Number(cur)||0;
+  let cap=Math.max(Number(floorCap)||0, tcNiceCeil(b*1.35), staticMax*0.12);
+  if(c>cap) cap=tcNiceCeil(c*1.25);
   return Math.min(staticMax, cap);
 }
 
