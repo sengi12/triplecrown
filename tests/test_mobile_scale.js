@@ -41,7 +41,12 @@ chk(app.tcSliderScaleMax(3,2,100,40)===40,'small values never shrink below the f
 chk(app.tcSliderScaleMax(65,60,100,40)===100,'a 65% share needs headroom → 1.35× → capped at the true max');
 chk(app.tcSliderScaleMax(55,10,100,85)===85,'floor caps above the value win (rush share style)');
 chk(app.tcSliderScaleMax(120,100,7500,0)===900,'QB backup yards: 0–7500 becomes a usable 0–900');
-chk(app.tcSliderScaleMax(4600,4000,7500,0)===7500,'starter volume ≈ full domain — barely changes');
+chk(app.tcSliderScaleMax(4600,4000,7500,0)===6000,'starter volume: honest headroom above the baseline (0–6000)');
+// The regression from the field: drag 4008 → 5400, then undo re-renders. The cap keys off
+// the baseline, so as long as the value fits, the track must NOT move between renders.
+chk(app.tcSliderScaleMax(4008,4008,7500,0)===app.tcSliderScaleMax(5400,4008,7500,0),
+  'dragging within the cap never rescales the track (undo cannot fake a slider jump)');
+chk(app.tcSliderScaleMax(7000,4008,7500,0)===7500,'…the track grows only when the value truly exceeds it');
 
 console.log('=== sRow wires the compressed scale in, keeps the true max for typing ===');
 app.setTeam('CIN');
