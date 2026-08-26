@@ -7,14 +7,13 @@
 
 **Build your own NFL season projections, then draft from them.**
 
-TripleCrown is a self-contained fantasy football projection tool. Instead of trusting someone else's rankings, you build the season yourself — team by team, slider by slider — and the app turns your projections into live draft rankings entirely from your browser.
+TripleCrown is a self-contained fantasy football projection tool. Instead of trusting someone else's rankings, you build the season yourself — team by team, slider by slider — and the app turns your projections into live draft rankings entirely from your browser. Highly configured to function well on both desktop and mobile.
 
 ---
 
-<!-- Center align -->
-<div align="center">
-  <img src="./images/receiving.png" alt="Centered Image">
-</div>
+| | |
+|:--:|:--:|
+| <img src="./images/rec_mobile.png" width="330"> | <img src="./images/receiving.png" width="660"> |
 
 ## What it does
 
@@ -62,53 +61,57 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
 
 - **Live draft follow.** Point it at a Sleeper draft (or one-tap link the league you already synced in the League Analyzer) and drafted players are hidden from your board in real time — hide-drafted is on by default for a clean board. A glowing **LIVE** pill keeps the follow out of your way until you tap it (being on the clock always shows), pick lines mark exactly where your turns land, a sortable **ADP** column (matched to your scoring format's market board) sits beside your ranks, and the roster tracker is a slide-up drawer: drag it open, keep pulling to maximize, flick down to close.
 - **VOR and VONA roster advice.** Your projections drive VOR (Value Over Replacement — what a player is worth against what's left at his position under your league's exact lineup) and VONA (Value Over Next Available — a Monte-Carlo sim of the picks before your next turn, using the market's ADP for your format). The on-the-clock advisory shows the best pick at every position with headshots, the odds each player makes it back to you, and a ▾ popover listing the next viable options at that position.
+
+| | |
+|:--:|:--:|
+| <img src="./images/vor.png" width="330"> | <img src="./images/live_draft.png" width="660"> |
+
 - **Cloud save + projections manager (optional).** Sign in to save your projection scenarios to Supabase, then load, delete, and drag-to-reorder them in a built-in manager. If you never sign in, everything continues to work locally in-session as usual.
 - **Player Notes + stat tagging.** Add notes on any player card and tag important stats directly from rankings/cards into those notes so your own scouting context stays attached to the player.
 - **Rankings productivity tools.** Use built-in player search, switch imported analysts when multi-analyst files are loaded, and launch the KeepTradeCut game overlay from the Rankings view.
-- **Injury-aware everywhere.** Sleeper injury designations (Q/D/OUT/IR/SUS/PUP) badge player names across the app; tapping one opens a knowledge-book popup with a typical timetable for that injury type — and when a concrete timeline has been reported ("out 4–6 weeks", "out until Week 12") the popup shows *that* instead of an estimate. Season-ending IR is detected even when the structured feed misses it, by scanning ESPN news headlines.
-- **A UI that stays out of the way.** Methodology and source notes live behind small ⓘ buttons (popups that stay in the window) instead of paragraphs in the layout; sliders compress to realistic ranges so small values are actually draggable (a 30% target share reads as a nearly-full bar — typed values above the visual cap still work); warnings like vacated production and receiver-vs-QB mismatches are compact flag icons whose popups keep the one-click reconcile actions; roster changes and the QB room fold into collapsible blocks; **Cmd/Ctrl+Z** fires undo with a toast naming what it reverted. Scrolling is contained — popups and cards never scroll the page behind them, and iOS doesn't rubber-band.
-- **Schedule on every team view.** For the current season, a week-by-week opponent rail (colored by Vegas win totals) rides the top of Passing/Receiving/Rushing/Adv Metrics — tap any opponent to jump to that team *in the same view*.
 - **League Analyzer controls.** Sync **Sleeper or ESPN** leagues into explicit snapshots, re-sync on demand, and switch leagues from the menu while keeping all analyzer views tied to the same snapshot context. Whichever platform a league lives on, every player, stat and projection still comes from Sleeper — a linked league contributes only its own teams, owners, rosters, scoring and lineup slots.
 - **In-season suite (appears automatically once the NFL season kicks off).** The app tracks Sleeper's NFL state (season, phase, week), and when the regular season starts two things happen. The projections view gains a **Live** toggle — the current season's actual stats to date as a read-only reference season (red-zone and air-yard columns, injury designations, and an opt-in **Δ proj** column showing each player's pace against the projections frozen at kickoff, so you can edit all season without moving your own goalposts). And the League Analyzer gains one **Season** tab holding four panes behind Sleeper-style icon chips: **Matchup** (live weekly scoreboard, your matchup featured, auto-refreshing during games), **Lineup** (optimal lineup vs your set starters, blending your projections with season and recent form, adjusted for opponent defense-vs-position and injuries), **Defense** (each defense's fantasy points allowed per game vs QB/RB/WR/TE, scored under *your league's* settings), and **Trends** — Sleeper-style ranked boards for weekly risers/fallers, pace vs projection, raw opportunity, TD-regression candidates built on real red-zone volume, **team tendencies** (who's passing more lately, whose offense is heating up or going cold by EPA), and a **rest-of-season outlook** that re-projects every player from form, remaining schedule and injury status. Advanced weekly data ships in a small in-season sidecar rebuilt weekly by CI from nflverse and retired automatically each offseason.
 
-<!-- Center align -->
-<div align="center">
-  <img src="./images/live_draft.png" alt="Centered Image">
-</div>
+| | |
+|:--:|:--:|
+| <img src="./images/la_mobile.png" width="330"> | <img src="./images/la_pc.png" width="660"> |
 
+- **Injury-aware everywhere.** Sleeper injury designations (Q/D/OUT/IR/SUS/PUP) badge player names across the app; tapping one opens a knowledge-book popup with a typical timetable for that injury type — and when a concrete timeline has been reported ("out 4–6 weeks", "out until Week 12") the popup shows *that* instead of an estimate. Season-ending IR is detected even when the structured feed misses it, by scanning ESPN news headlines.
+- **A UI that stays out of the way.** Methodology and source notes live behind small ⓘ buttons (popups that stay in the window) instead of paragraphs in the layout; sliders compress to realistic ranges so small values are actually draggable (a 30% target share reads as a nearly-full bar — typed values above the visual cap still work); warnings like vacated production and receiver-vs-QB mismatches are compact flag icons whose popups keep the one-click reconcile actions; roster changes and the QB room fold into collapsible blocks; **Cmd/Ctrl+Z** fires undo with a toast naming what it reverted. Scrolling is contained — popups and cards never scroll the page behind them, and iOS doesn't rubber-band.
+- **Schedule on every team view.** For the current season, a week-by-week opponent rail (colored by Vegas win totals) rides the top of Passing/Receiving/Rushing/Adv Metrics — tap any opponent to jump to that team *in the same view*.
 - **Player Cards.** Every Player has a back story as to how they got here and the best way to see that summarized is in their player card. Here you'll find a summary of their current contract, draft selection and past performance with the added bonus of being able to see their college per game stats as well. Their pro gamelogs are color-graded per game and label playoff weeks by round (WC / DIV / AFC / NFC / SB).
 
 <!-- Center align -->
 <div align="center">
-  <img src="./images/player_cards.png" alt="Centered Image">
+  <img src="./images/player_cards.png" alt="Centered Image" width="600">
 </div>
 
 - **Passing Charts.** Every QB has strengths and weakness and it can difficult to determine what those are when just looking at raw fantasy totals at the end of each week. Introducing Passing Charts attached to every QB's player card where you can visually see how a QB performs doing what matters most for fantasy and see beyond the fantasy point totals.
 
 <!-- Center align -->
 <div align="center">
-  <img src="./images/pass_chart.png" alt="Centered Image">
+  <img src="./images/pass_chart.png" alt="Centered Image" width="600">
 </div>
 
 - **Route Trees.** Every Player that was targeted on routes in the past five seasons has a dedicated tab on their player cards that showcases their route trees. This feature shows what routes receivers tend to run more as they progress in their careers and adds more context to routes run as well as target totals to really showcase what type of receiver this player is.
 
 <!-- Center align -->
 <div align="center">
-  <img src="./images/route_tree.png" alt="Centered Image">
+  <img src="./images/route_tree.png" alt="Centered Image" width="600">
 </div>
 
 - **Rushing Fans.** A Major aspect of fantasy football, and the sport itself, that is often overlooked is the offensive line. Although available data for individual OL performance is poor, I created an ever evolving +/- algorithm that hands out rush and pass block grades to every qualifying offensive linemen so that you can see clearly how offensive line talent, performance, entanglement, and health directly affects key areas of the run and pass game with every rusher's rushing fan chart!
 
 <!-- Center align -->
 <div align="center">
-  <img src="./images/rushing_fan.png" alt="Centered Image">
+  <img src="./images/rushing_fan.png" alt="Centered Image" width="600">
 </div>
 
 - **Playbooks.** Every team has been had their personnel groupings, formations, run success rates vs gaps and route concepts mapped into trends in this new visualization tool which allows you to see all the different passing and rushing concepts that these teams rely on in different situations in game!
 
 <!-- Center align -->
 <div align="center">
-  <img src="./images/coach_scheme.png" alt="Centered Image">
+  <img src="./images/playbook.png" alt="Centered Image">
 </div>
 
 ---
