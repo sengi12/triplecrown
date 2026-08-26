@@ -170,9 +170,15 @@ function initSliders(){
   document.querySelectorAll('input.sl').forEach(el=>{
     setFill(el,el.dataset.col||null);
     el.oninput=function(){ setFill(this,this.dataset.col||null); handleSlider(this); };
+    // A fresh grab = a fresh undo step, even on the same slider twice in a row.
+    el.onpointerdown=function(){ clearUndoCoalesce(); };
+    el.onkeydown=function(){ clearUndoCoalesce(); };
     // Resort the player list only when the user releases the slider (avoids glitchy
-    // reordering mid-drag). 'change' fires on pointer-up / keyboard commit.
+    // reordering mid-drag). 'change' fires on pointer-up / keyboard commit — but a drag
+    // returned to its start value fires NO change event, so pointerup is the safety net
+    // that always ends the drag session.
     el.onchange=function(){ resortAfterRelease(this); };
+    el.onpointerup=function(){ resortAfterRelease(this); };
   });
 }
 // Set true while a share slider is mid-drag so live updaters skip the DOM reorder.
@@ -229,7 +235,7 @@ function sRow(key,label,cur,base,min,max,step,col,invert,opts){
 function selAll(el){
   // Snapshot the team before this field is edited, so a single edit is one undo step.
   // Coalesced per element so re-selecting the same field doesn't stack duplicates.
-  pushUndo(currentTeam, 'edit:'+(el.id||el.getAttribute('onblur')||'field'));
+  pushUndo(currentTeam, 'edit:'+(el.id||el.getAttribute('onblur')||'field'), 'field edit');
   setTimeout(()=>{ const r=document.createRange();r.selectNodeContents(el);
     const s=window.getSelection();s.removeAllRanges();s.addRange(r);},0);
 }

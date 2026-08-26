@@ -13,7 +13,7 @@ function copyTeamToWorking(team){
   // either, so this whole copy can be undone in one step (e.g. you copy a prior Colts season
   // onto Michael Pittman's new Steelers slot, don't like it, and want it all back exactly
   // as it was — this must run before any mutation below, not after).
-  pushUndo(team);
+  pushUndo(team, null, 'copy to working set');
   const ps=projSeed||seasonStatsCache['proj']||{};
   ps[team]=ps[team]||{QB:[],RB:[],WR:[],TE:[]};
   // Build the set of player_ids currently on this team (projection roster + full Sleeper DB).
@@ -109,7 +109,7 @@ function copyPlayerToWorking(pid,pos){
   // Snapshot destTeam's working state AND proj-seed roster row before ANY mutation below
   // (including creating the roster skeleton if this team never had one), so a single undo
   // fully removes this copy.
-  pushUndo(destTeam);
+  pushUndo(destTeam, null, 'player copy');
   ps[destTeam]=ps[destTeam]||{QB:[],RB:[],WR:[],TE:[]};
   const arr=ps[destTeam][src.pos]||(ps[destTeam][src.pos]=[]);
   const copy=deepCopy(src); copy.team=destTeam;

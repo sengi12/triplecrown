@@ -1736,7 +1736,7 @@ let undoStacks = {};   // team -> [snapshot|null, ...] (oldest first; null = "di
 // (copy-to-working) should omit coalesceKey so every call attempts a fresh snapshot (true
 // no-ops are still caught by the dedup check).
 let _lastUndoKey = null;
-function pushUndo(team, coalesceKey){
+function pushUndo(team, coalesceKey, label){
   if(!team) return;
   if(coalesceKey && coalesceKey===_lastUndoKey) return;  // same interaction, already snapped
   _lastUndoKey = coalesceKey || null;
@@ -1746,11 +1746,12 @@ function pushUndo(team, coalesceKey){
   const snap = {
     working: curWorking ? deepCopy(curWorking) : null,   // null = team had no working state yet
     seed: curSeed ? deepCopy(curSeed) : null,             // null = team had no proj-seed roster row yet
+    label: label || null,                                 // what the NEXT mutation is (for the undo toast)
   };
-  const snapStr = JSON.stringify(snap);
-  // Skip if identical to the most recent snapshot (e.g. focus+blur with no real change,
-  // or clicking "copy" twice with nothing different to copy).
-  if(stack.length && JSON.stringify(stack[stack.length-1])===snapStr) return;
+  // Dedup on STATE only, never the label — focus+blur with no real change, or clicking
+  // "copy" twice with nothing new, must not stack a phantom step.
+  const stateStr = JSON.stringify([snap.working, snap.seed]);
+  if(stack.length && JSON.stringify([stack[stack.length-1].working, stack[stack.length-1].seed])===stateStr) return;
   stack.push(snap);
   if(stack.length>UNDO_LIMIT) stack.shift();
   updateUndoButton();
@@ -1781,6 +1782,7 @@ try{ document.addEventListener('keydown', tcUndoHotkey); }catch(_e){}
 function undoTeam(team){
   if(!canUndo(team)) return;
   const prev = undoStacks[team].pop();
+  if(typeof toast==='function') toast(`Undid ${prev.label||'last change'} \u2713`,'ok');
   if(prev.working===null) delete workingProj[team];   // reverts to "never copied/edited"
   else workingProj[team] = prev.working;
   // Also revert the underlying proj-seed roster row (copy-to-working mutates the seed
@@ -3364,9 +3366,15 @@ function initSliders(){
   document.querySelectorAll('input.sl').forEach(el=>{
     setFill(el,el.dataset.col||null);
     el.oninput=function(){ setFill(this,this.dataset.col||null); handleSlider(this); };
+    // A fresh grab = a fresh undo step, even on the same slider twice in a row.
+    el.onpointerdown=function(){ clearUndoCoalesce(); };
+    el.onkeydown=function(){ clearUndoCoalesce(); };
     // Resort the player list only when the user releases the slider (avoids glitchy
-    // reordering mid-drag). 'change' fires on pointer-up / keyboard commit.
+    // reordering mid-drag). 'change' fires on pointer-up / keyboard commit — but a drag
+    // returned to its start value fires NO change event, so pointerup is the safety net
+    // that always ends the drag session.
     el.onchange=function(){ resortAfterRelease(this); };
+    el.onpointerup=function(){ resortAfterRelease(this); };
   });
 }
 // Set true while a share slider is mid-drag so live updaters skip the DOM reorder.
@@ -3423,7 +3431,7 @@ function sRow(key,label,cur,base,min,max,step,col,invert,opts){
 function selAll(el){
   // Snapshot the team before this field is edited, so a single edit is one undo step.
   // Coalesced per element so re-selecting the same field doesn't stack duplicates.
-  pushUndo(currentTeam, 'edit:'+(el.id||el.getAttribute('onblur')||'field'));
+  pushUndo(currentTeam, 'edit:'+(el.id||el.getAttribute('onblur')||'field'), 'field edit');
   setTimeout(()=>{ const r=document.createRange();r.selectNodeContents(el);
     const s=window.getSelection();s.removeAllRanges();s.addRange(r);},0);
 }
@@ -4479,7 +4487,7 @@ function passDerivedSubHtml(state,metric,team){
 // spread proportionally across the existing receiving corps by their current share.
 function reconcileDerived(team,metric){
   const state=userProj[team]; if(!state) return;
-  pushUndo(team,"reconcileDerived:"+metric); markDirty(team);
+  pushUndo(team,"reconcileDerived:"+metric,"reconcile"); markDirty(team);
   const isYds=metric==='recyds';
   const totalTgts=Math.max(1,teamTargetPool(state));
   const qbPool=isYds?teamRecYardsPool(state):teamRecPool(state);
@@ -4588,7 +4596,7 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
 // each receiver's share. Then reanchor team_targets so the per-player targets reflect it.
 function reconcileTargets(team){
   const state=userProj[team]; if(!state) return;
-  pushUndo(team,"reconcileTargets"); markDirty(team);
+  pushUndo(team,"reconcileTargets","reconcile"); markDirty(team);
   const expectTgts=Math.round(teamPassAtt(state)*TARGET_RATE);
   // re-anchor: set each player's baseline so share×pool = their new target count
   state.team_targets=expectTgts;
@@ -4968,10 +4976,24 @@ function normalizeShares(shares,idx,field){
 // ─────────────────────────────────────────────────────────────────────────────
 // Slider / edit handlers
 // ─────────────────────────────────────────────────────────────────────────────
+// Human name for a slider's undo step, from its data-key.
+function sliderUndoLabel(key){
+  const k=String(key||'');
+  if(/^ps_/.test(k)) return 'target share';
+  if(/^tds_/.test(k)) return 'receiving TD share';
+  if(/^rs_/.test(k)) return 'carry share';
+  if(/^rtds_/.test(k)) return 'rushing TD share';
+  if(/^(rec|recyds)_/.test(k)||/^ys_/.test(k)) return 'receiving share';
+  if(/^games_/.test(k)) return 'games played';
+  if(/^rush_total/.test(k)) return 'team rushing total';
+  return 'slider change';
+}
 function handleSlider(el){
-  // Snapshot once at the start of a drag (coalesced by the slider's key so a continuous
-  // drag pushes a single undo step, not one per tick).
-  if(!sliderDragging) pushUndo(el.dataset.team, 'slider:'+(el.dataset.key||''));
+  // Snapshot once at the start of a drag. Coalesced by the slider's KEY — never by the
+  // sliderDragging flag: if a release event is ever lost (a re-render mid-drag, a drag
+  // returned to its start value), that flag wedges true and every later drag would
+  // mutate WITHOUT a snapshot — one Undo then yanked every slider back at once.
+  pushUndo(el.dataset.team, 'slider:'+(el.dataset.key||''), sliderUndoLabel(el.dataset.key));
   sliderDragging=true;
   handleSliderKey(el.dataset.key,parseFloat(el.value),el.dataset.team,false);
 }
@@ -21614,7 +21636,7 @@ function copyTeamToWorking(team){
   // either, so this whole copy can be undone in one step (e.g. you copy a prior Colts season
   // onto Michael Pittman's new Steelers slot, don't like it, and want it all back exactly
   // as it was — this must run before any mutation below, not after).
-  pushUndo(team);
+  pushUndo(team, null, 'copy to working set');
   const ps=projSeed||seasonStatsCache['proj']||{};
   ps[team]=ps[team]||{QB:[],RB:[],WR:[],TE:[]};
   // Build the set of player_ids currently on this team (projection roster + full Sleeper DB).
@@ -21710,7 +21732,7 @@ function copyPlayerToWorking(pid,pos){
   // Snapshot destTeam's working state AND proj-seed roster row before ANY mutation below
   // (including creating the roster skeleton if this team never had one), so a single undo
   // fully removes this copy.
-  pushUndo(destTeam);
+  pushUndo(destTeam, null, 'player copy');
   ps[destTeam]=ps[destTeam]||{QB:[],RB:[],WR:[],TE:[]};
   const arr=ps[destTeam][src.pos]||(ps[destTeam][src.pos]=[]);
   const copy=deepCopy(src); copy.team=destTeam;

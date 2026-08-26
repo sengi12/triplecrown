@@ -64,10 +64,24 @@ function normalizeShares(shares,idx,field){
 // ─────────────────────────────────────────────────────────────────────────────
 // Slider / edit handlers
 // ─────────────────────────────────────────────────────────────────────────────
+// Human name for a slider's undo step, from its data-key.
+function sliderUndoLabel(key){
+  const k=String(key||'');
+  if(/^ps_/.test(k)) return 'target share';
+  if(/^tds_/.test(k)) return 'receiving TD share';
+  if(/^rs_/.test(k)) return 'carry share';
+  if(/^rtds_/.test(k)) return 'rushing TD share';
+  if(/^(rec|recyds)_/.test(k)||/^ys_/.test(k)) return 'receiving share';
+  if(/^games_/.test(k)) return 'games played';
+  if(/^rush_total/.test(k)) return 'team rushing total';
+  return 'slider change';
+}
 function handleSlider(el){
-  // Snapshot once at the start of a drag (coalesced by the slider's key so a continuous
-  // drag pushes a single undo step, not one per tick).
-  if(!sliderDragging) pushUndo(el.dataset.team, 'slider:'+(el.dataset.key||''));
+  // Snapshot once at the start of a drag. Coalesced by the slider's KEY — never by the
+  // sliderDragging flag: if a release event is ever lost (a re-render mid-drag, a drag
+  // returned to its start value), that flag wedges true and every later drag would
+  // mutate WITHOUT a snapshot — one Undo then yanked every slider back at once.
+  pushUndo(el.dataset.team, 'slider:'+(el.dataset.key||''), sliderUndoLabel(el.dataset.key));
   sliderDragging=true;
   handleSliderKey(el.dataset.key,parseFloat(el.value),el.dataset.team,false);
 }

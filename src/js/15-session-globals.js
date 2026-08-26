@@ -551,7 +551,7 @@ let undoStacks = {};   // team -> [snapshot|null, ...] (oldest first; null = "di
 // (copy-to-working) should omit coalesceKey so every call attempts a fresh snapshot (true
 // no-ops are still caught by the dedup check).
 let _lastUndoKey = null;
-function pushUndo(team, coalesceKey){
+function pushUndo(team, coalesceKey, label){
   if(!team) return;
   if(coalesceKey && coalesceKey===_lastUndoKey) return;  // same interaction, already snapped
   _lastUndoKey = coalesceKey || null;
@@ -561,11 +561,12 @@ function pushUndo(team, coalesceKey){
   const snap = {
     working: curWorking ? deepCopy(curWorking) : null,   // null = team had no working state yet
     seed: curSeed ? deepCopy(curSeed) : null,             // null = team had no proj-seed roster row yet
+    label: label || null,                                 // what the NEXT mutation is (for the undo toast)
   };
-  const snapStr = JSON.stringify(snap);
-  // Skip if identical to the most recent snapshot (e.g. focus+blur with no real change,
-  // or clicking "copy" twice with nothing different to copy).
-  if(stack.length && JSON.stringify(stack[stack.length-1])===snapStr) return;
+  // Dedup on STATE only, never the label — focus+blur with no real change, or clicking
+  // "copy" twice with nothing new, must not stack a phantom step.
+  const stateStr = JSON.stringify([snap.working, snap.seed]);
+  if(stack.length && JSON.stringify([stack[stack.length-1].working, stack[stack.length-1].seed])===stateStr) return;
   stack.push(snap);
   if(stack.length>UNDO_LIMIT) stack.shift();
   updateUndoButton();
@@ -596,6 +597,7 @@ try{ document.addEventListener('keydown', tcUndoHotkey); }catch(_e){}
 function undoTeam(team){
   if(!canUndo(team)) return;
   const prev = undoStacks[team].pop();
+  if(typeof toast==='function') toast(`Undid ${prev.label||'last change'} \u2713`,'ok');
   if(prev.working===null) delete workingProj[team];   // reverts to "never copied/edited"
   else workingProj[team] = prev.working;
   // Also revert the underlying proj-seed roster row (copy-to-working mutates the seed

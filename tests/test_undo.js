@@ -8,8 +8,9 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   assembleSeed, normalizeSleeperRow, ensureTeam, initPassingShares, handleSliderKey,
-  pushUndo, undoTeam, canUndo, clearUndoCoalesce, tcUndoHotkey,
-  setPhaseVar:(p)=>{currentPhase=p;},
+  pushUndo, undoTeam, canUndo, clearUndoCoalesce, tcUndoHotkey, handleSlider,
+  setPhaseVar:(p)=>{currentPhase=p;}, undoDepth:(t)=>(undoStacks[t]||[]).length,
+  peekLabel:(t)=>{const st=undoStacks[t]||[];return st.length?st[st.length-1].label:null;},
   setSEED:(s)=>{SEED=s;projSeed=s;seasonStatsCache.proj=s;workingProj={};userProj=workingProj;activeSeason='proj';},
   selectTeam:t=>{currentTeam=t;ensureTeam(t);initPassingShares(t);},
   getProj:()=>userProj, getCurrentTeam:()=>currentTeam,
@@ -107,3 +108,26 @@ app.setPhaseVar('Passing');
 while(app.canUndo('KC')) app.undoTeam('KC');
 console.log('RESULT:', (hkRank===false && app.tcUndoHotkey(ev({}))===false)
   ? 'PASS (inactive off team views; empty stack never claims the event)' : 'FAIL');
+
+console.log('\n=== TEST 6: a lost release event can no longer merge separate drags ===');
+app.selectTeam('KC'); app.setCurrentTeam('KC'); app.setPhaseVar('Receiving');
+app.clearUndoCoalesce();
+const d0=app.undoDepth('KC');
+const elA={dataset:{team:'KC',key:'ps_0'},value:'60'};
+const elB={dataset:{team:'KC',key:'ps_1'},value:'25'};
+app.handleSlider(elA); elA.value='61'; app.handleSlider(elA);       // drag A: two ticks, ONE snapshot
+console.log('RESULT:', app.undoDepth('KC')===d0+1 ? 'PASS (a continuous drag is one undo step)' : 'FAIL');
+// The release event is LOST (no change/resort fires — a mid-drag re-render, or a drag
+// returned to its start value). The next grab must still get its own snapshot.
+const postA=app.getProj()['KC'].passing_shares.map(p=>p.share);
+app.clearUndoCoalesce();                                            // = the pointerdown handler
+app.handleSlider(elB);
+console.log('RESULT:', app.undoDepth('KC')===d0+2 ? 'PASS (next drag snapshots even with the drag flag wedged — was: silently merged)' : 'FAIL');
+console.log('RESULT:', app.peekLabel('KC')==='target share' ? 'PASS (undo step labeled — the toast can say what it undid)' : 'FAIL');
+app.undoTeam('KC');
+const sharesAfter=app.getProj()['KC'].passing_shares.map(p=>p.share);
+// NOTE: every share slider moves on undo — they rebalance against one pool, so undoing
+// drag B restores the exact post-drag-A state (A's edit survives). That whole-row motion
+// is correct; the toast label is what tells the user WHICH change was undone.
+console.log('RESULT:', postA.every((v,i)=>Math.abs(sharesAfter[i]-v)<0.001)
+  ? 'PASS (one undo restores exactly the post-drag-A state — A\'s edit survives)' : 'FAIL');

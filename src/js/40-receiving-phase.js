@@ -349,7 +349,7 @@ function passDerivedSubHtml(state,metric,team){
 // spread proportionally across the existing receiving corps by their current share.
 function reconcileDerived(team,metric){
   const state=userProj[team]; if(!state) return;
-  pushUndo(team,"reconcileDerived:"+metric); markDirty(team);
+  pushUndo(team,"reconcileDerived:"+metric,"reconcile"); markDirty(team);
   const isYds=metric==='recyds';
   const totalTgts=Math.max(1,teamTargetPool(state));
   const qbPool=isYds?teamRecYardsPool(state):teamRecPool(state);
@@ -458,7 +458,7 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
 // each receiver's share. Then reanchor team_targets so the per-player targets reflect it.
 function reconcileTargets(team){
   const state=userProj[team]; if(!state) return;
-  pushUndo(team,"reconcileTargets"); markDirty(team);
+  pushUndo(team,"reconcileTargets","reconcile"); markDirty(team);
   const expectTgts=Math.round(teamPassAtt(state)*TARGET_RATE);
   // re-anchor: set each player's baseline so share×pool = their new target count
   state.team_targets=expectTgts;
