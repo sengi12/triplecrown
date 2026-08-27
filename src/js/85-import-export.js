@@ -826,8 +826,11 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
   }
   // Did the current view actually paint something?
   function contentRendered(){
+    // childElementCount, not innerHTML: reading innerHTML serializes the entire subtree
+    // (megabytes on the rankings board) and this runs on every visibilitychange/pageshow —
+    // i.e. every app-switch and screen-off on a phone.
     const c=document.getElementById('content');
-    return !!c && c.innerHTML && c.innerHTML.trim().length>40;
+    return !!c && c.childElementCount>0;
   }
   // Re-render whatever view we're on, without touching data or re-fetching.
   function rerender(){

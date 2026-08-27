@@ -198,35 +198,36 @@ function renderSharpLeague(){
     return `<th class="sr-th ${active?'active':''}" onclick="sortSharpBy('${c.replace(/'/g,"\\'")}')" title="${title}">${c}${arrow}</th>`;
   }).join('');
 
+  // Row/cell attribute split (same as the rankings table): context, source, team and
+  // relevance are constant for a whole row — emitting them per CELL serialized + escaped
+  // the same strings ~384 times per render, and a header-sort tap re-renders everything.
+  const _noteRelev = noteRelevanceForTableKey(sharpTable);
+  const _noteSeason = advTeamSeason();
   const body = rows.map(r=>{
+    const rowScope = noteScopeAttrs({
+      context: `${teamDisplayName(r.code)} · ${tbl.title} · ${_noteSeason} season`,
+      source: 'league_advanced',
+      team: r.code,
+      relevance: _noteRelev,
+    });
     const cells = cols.map(c=>{
+      let v, rk, txt;
       if(c===projCol){
-        const v=r._projScore, rk=r._projRank;
-        const txt = v!=null?Number(v).toFixed(1):'—';
-        return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${noteWrapHtml(escHtml(txt), {
-          label: c,
-          value: txt,
-          source: 'league_advanced',
-          statKey: sharpTable,
-          context: `${teamDisplayName(r.code)} · ${tbl.title} · ${advTeamSeason()} season`,
-          team: r.code,
-          relevance: noteRelevanceForTableKey(sharpTable),
-        }, 'note-tag-hit')}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
+        v=r._projScore; rk=r._projRank;
+        txt = v!=null?Number(v).toFixed(1):'—';
+      } else {
+        const srcCol=colSource[c]||c;
+        v=r.values?r.values[srcCol]:null; rk=r.ranks?r.ranks[srcCol]:null;
+        txt = fmtSharpVal(v, sharpColIsPct(tbl,c));
       }
-      const srcCol=colSource[c]||c;
-      const v=r.values?r.values[srcCol]:null, rk=r.ranks?r.ranks[srcCol]:null;
-      const txt = fmtSharpVal(v, sharpColIsPct(tbl,c));
-      return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${noteWrapHtml(escHtml(txt), {
+      // `value` omitted on purpose: it's exactly the cell's rendered text, read back from
+      // the DOM at click time (see the rankings table's identical note).
+      return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${noteCellHtml(escHtml(txt), {
         label: c,
-        value: txt,
-        source: 'league_advanced',
         statKey: sharpTable,
-        context: `${teamDisplayName(r.code)} · ${tbl.title} · ${advTeamSeason()} season`,
-        team: r.code,
-        relevance: noteRelevanceForTableKey(sharpTable),
       }, 'note-tag-hit')}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
     }).join('');
-    return `<tr><td class="sr-td-team"><span class="sr-td-team-inner"><img src="${NFL_LOGO(r.code)}" class="sr-logo" onerror="this.style.display='none'">${r.code}</span></td>${cells}</tr>`;
+    return `<tr${rowScope}><td class="sr-td-team"><span class="sr-td-team-inner"><img src="${NFL_LOGO(r.code)}" class="sr-logo" loading="lazy" decoding="async" onerror="this.style.display='none'">${r.code}</span></td>${cells}</tr>`;
   }).join('');
   host.innerHTML = headerBar + leagueWeekRange + renderCategoryTabs() + `
     <div class="sr-league-tabs">${tableTabs}</div>

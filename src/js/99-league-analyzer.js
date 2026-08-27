@@ -365,11 +365,26 @@ function laHistoricalPlayerList(season){
   finally{ SEED=savedSeed; userProj=savedProj; activeSeason=savedActive; }
 }
 
-// name|pos → VOR. Rebuilt once per analyzer render (renderLeagueAnalyzer clears the cache),
-// so edits to your projections show up immediately — same cost profile as laProjMap().
+// Everything the analyzer's derived maps depend on: projection edits bump the build-list
+// epoch (markTeamEdited → invalidateBuildPlayerCache), scoring/format/league shape have
+// their own signatures, and the historical lens + snapshot ride alongside. Keying the memo
+// on this instead of clearing per render means a tab/chip tap stops paying a full
+// buildPlayerList walk (~1,100 object clones + ~4,500 regex calls) before any HTML renders.
+function _laDerivedSig(){
+  return [
+    (typeof _buildPlayerCacheEpoch!=='undefined')?_buildPlayerCacheEpoch:0,
+    String(activeSeason), String(rankFormat),
+    (typeof buildPlayerScoringSig==='function')?buildPlayerScoringSig():'',
+    (typeof buildPlayerShapeSig==='function')?buildPlayerShapeSig():'',
+    String(laHistoricalSeason()||''),
+  ].join('|');
+}
+// name|pos → VOR. Memoized on _laDerivedSig + the snapshot object, so edits to your
+// projections still show up immediately (they bump the epoch) while plain re-renders reuse it.
 let _laVorCache=null;
 function laVorMap(){
-  if(_laVorCache) return _laVorCache;
+  const sig=_laDerivedSig();
+  if(_laVorCache && _laVorCache.sig===sig && _laVorCache.snap===leagueSnapshot) return _laVorCache.m;
   const m=new Map();
   try{
     const hist=laHistoricalSeason();
@@ -377,7 +392,7 @@ function laVorMap(){
     list.forEach(p=>{ if(p.vor!=null) m.set(ecrNormName(p.name)+'|'+p.pos, p.vor); });
   }catch(e){ /* seed not loaded → empty map; views render 0s rather than crashing */ }
   laKdefVorMap().forEach((v,k)=>m.set(k,v));
-  _laVorCache=m;
+  _laVorCache={sig, snap:leagueSnapshot, m};
   return m;
 }
 const LA_VOR_SCALE = 100;   // lift VOR into the same working range as (chart pts x LA_VAL_SCALE)
@@ -1223,9 +1238,8 @@ function laMaybeAutoRefreshSnapshot(reason){
 function renderLeagueAnalyzer(){
   const host=document.getElementById('content'); if(!host) return;
   if(currentPhase!=='League') return;
-  // VOR is derived from the live projections, so rebuild it once per render — edit a slider
-  // and the redraft values follow. Same cost profile as laProjMap(), which renders already pay.
-  _laVorCache=null;
+  // laVorMap/laProjMap are memoized on _laDerivedSig(): projection edits bump the build
+  // epoch and rebuild them; plain tab/chip re-renders reuse the maps.
   if(laIsRedraft()) laEnsureKdef();   // heal pre-kdef snapshots (see laEnsureKdef)
   const back=`<button class="btn btn-ghost" onclick="leaveLeagueAnalyzer()">← Projections</button>`;
   if(laState.step!=='view' || !leagueSnapshot){
@@ -1402,7 +1416,7 @@ function laTeamCard(t,s){
         <span class="rt-slot ${slotClass(p.pos)}">${p.pos}</span>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name,p.pos,p.team||'')}">${laPlayerImg(p)}</span>
         <span class="share-name clickable-player" title="${escAttr(p.name)}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${escHtml(p.name)}</span>${laCliffMark(p.name,p.pos)}
-        <span class="team-header"><img src="${NFL_LOGO(p.team)}" class="team-logo-sm" alt="${p.team}"</span>
+        <img src="${NFL_LOGO(p.team)}" class="team-logo-sm" alt="${escAttr(p.team||'')}" loading="lazy" decoding="async" onerror="this.style.display='none'">
         <span class="la-pval">${p.v}</span></div>`).join('')}
       ${depth.length?`<div class="la-depth">+ ${depth.length} unvalued depth</div>`:''}
     </div>
@@ -1425,11 +1439,15 @@ setTimeout(refreshLeagueSyncBtn, 0);
 // builder's own projection engine (buildPlayerList). This is the analyzer's second lens: the
 // dynasty chart says what the market thinks a player is WORTH; this says what our projections
 // think his roster will actually SCORE. Both on the same screen is the whole point.
+let _laProjCache=null;
 function laProjMap(){
+  const sig=_laDerivedSig();
+  if(_laProjCache && _laProjCache.sig===sig) return _laProjCache.m;
   const m=new Map();
   try{
     buildPlayerList().forEach(p=>{ m.set(ecrNormName(p.name)+'|'+p.pos, p.fpts||0); });
   }catch(e){ /* seed not loaded yet → empty map; views render 0s rather than crashing */ }
+  _laProjCache={sig, m};
   return m;
 }
 
@@ -2392,7 +2410,9 @@ function laCliffInfo(name,pos){
 // Marker span for player rows: ⚠ near/past the cliff (amber/red), 🛡 defier (hold).
 // Persistent, tappable explanation for a cliff badge. Deliberately reuses the pace popover's
 // classes so it inherits that styling and viewport clamping rather than inventing a second look.
+let _laPopsMaybeOpen=false;   // set on open; closers no-op until then (see closeWeekFilterPacePops)
 function laCloseCliffPops(){
+  if(!_laPopsMaybeOpen) return;
   if(document && document.querySelectorAll) document.querySelectorAll('.la-cliff-pop').forEach(el=>el.remove());
 }
 function laToggleCliffPop(btn, label, body){
@@ -2410,6 +2430,7 @@ function laToggleCliffPop(btn, label, body){
     </div>
     <div class="pace-info-pop-body">${escHtml(body)}</div>`;
   wrap.appendChild(pop);
+  _laPopsMaybeOpen=true;
   // Viewport-fixed and clamped so it can't run off a narrow screen; flips above when needed.
   try{
     const M=8, vw=window.innerWidth, vh=window.innerHeight;
@@ -2428,6 +2449,7 @@ function laToggleCliffPop(btn, label, body){
 // (so radar dots never opened one at all), and the document-level click handler threw on
 // every single click anywhere in the app.
 function laCloseRadarPops(){
+  if(!_laPopsMaybeOpen) return;
   if(document && document.querySelectorAll) document.querySelectorAll('.la-radar-pop').forEach(el=>el.remove());
 }
 function laShowRadarPop(btn, label, body){
@@ -2446,6 +2468,7 @@ function laShowRadarPop(btn, label, body){
     </div>
     <div class="pace-info-pop-body">${escHtml(body)}</div>`;
   wrap.appendChild(pop);
+  _laPopsMaybeOpen=true;
   try{
     const M=8;
     const wr=wrap.getBoundingClientRect();
@@ -2469,6 +2492,7 @@ if(typeof document!=='undefined' && document.addEventListener){
     if(t && t.closest && (t.closest('.la-cliff-wrap') || t.closest('.la-radar-wrap'))) return;
     laCloseCliffPops();
     laCloseRadarPops();
+    _laPopsMaybeOpen=false;
   });
 }
 function laCliffMark(name,pos){

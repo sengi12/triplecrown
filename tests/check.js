@@ -297,7 +297,7 @@ async function fetchPlayerWeekly(pid, season){
         const cut={}; for(const w in data){ if(Number(w)<=max) cut[w]=data[w]; }
         data = Object.keys(cut).length ? cut : null;
       }
-      weeklySkillCache[key] = data; return data; })
+      _tcCachePut(weeklySkillCache, key, data, 400); return data; })
     .finally(()=>{ delete _weeklyInFlight[key]; });
   return _weeklyInFlight[key];
 }
@@ -578,6 +578,13 @@ function escHtml(s){
     .replace(/'/g,'&#39;');
 }
 
+// Viewport size for positioning fixed popups. visualViewport (when present) tracks the
+// iOS/Android on-screen keyboard, which window.innerHeight does NOT — a popup opened while
+// an input is focused would otherwise be placed under the keyboard and be unreachable.
+function tcViewportSize(){
+  const vv=(typeof window!=='undefined' && window.visualViewport) ? window.visualViewport : null;
+  return { vw:(vv&&vv.width)||window.innerWidth||360, vh:(vv&&vv.height)||window.innerHeight||640 };
+}
 // Escape for JS single-quoted string literals used inside inline event attributes.
 function escJsSingle(s){
   return String(s==null?'':s)
@@ -588,10 +595,16 @@ function escJsSingle(s){
     .replace(/\u2028/g,'\\u2028')
     .replace(/\u2029/g,'\\u2029');
 }
-// Close any open 17-game pace popovers.
+// Close any open 17-game pace popovers. The document-level click and capture-phase scroll
+// listeners below call this on EVERY tap/scroll in the app — the flag makes those calls a
+// boolean check instead of an app-wide querySelectorAll. ("Maybe open" is fine: a pop closed
+// via its own ✕ leaves the flag set, and the next call does one sweep and clears it.)
+let _pacePopsMaybeOpen=false;
 function closeWeekFilterPacePops(){
+  if(!_pacePopsMaybeOpen) return;
   if(!document || !document.querySelectorAll) return;
   document.querySelectorAll('.pace-info-pop').forEach(el=>el.remove());
+  _pacePopsMaybeOpen=false;
 }
 // Toggle a persistent, selectable popover containing the 17-game pace text so the user can
 // copy it without racing a hover tooltip.
@@ -610,10 +623,11 @@ function toggleWeekFilterPace(btn, text){
     </div>
     <div class="pace-info-pop-body">${escAttr(text)}</div>`;
   wrap.appendChild(pop);
+  _pacePopsMaybeOpen=true;
   // Position as viewport-fixed and clamp so it never runs off-screen (mobile or narrow desktop).
   // Prefer right-aligned to the button and below it; flip above / clamp to the edges as needed.
   try{
-    const M=8, vw=window.innerWidth, vh=window.innerHeight;
+    const M=8, {vw, vh}=tcViewportSize();
     const br=btn.getBoundingClientRect(), pr=pop.getBoundingClientRect();
     let left=br.right-pr.width;
     if(left+pr.width>vw-M) left=vw-M-pr.width;
@@ -1087,7 +1101,7 @@ function imgSm(src,cls='share-hs',fb=''){
   if(!src) return `<div class="${cls}-err">${fb}</div>`.replace(cls+'-err',cls.replace('share-hs','share-hs')+'-err');
   const fbList=fallbacks.filter(Boolean).join('|');
   const onerr = `const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else if(this.parentNode){this.outerHTML='<div class=\\'share-hs-err\\'>${fb}</div>';}`;
-  return `<img src="${src}" class="${cls}" alt="" data-fallbacks="${fbList}" onerror="${onerr}">`;
+  return `<img src="${src}" class="${cls}" alt="" data-fallbacks="${fbList}" loading="lazy" decoding="async" onerror="${onerr}">`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1790,6 +1804,7 @@ function removePlayerNoteTag(nameOrId, pos, team, tagId){
 // A snapshot is taken right before a mutation begins (slider drag start, an editable-
 // field commit, or a copy-to-working action). We cap the stack so memory stays bounded.
 const UNDO_LIMIT = 40;
+const UNDO_TOTAL_LIMIT = 160;   // across all teams — see the budget sweep in pushUndo
 let undoStacks = {};   // team -> [snapshot|null, ...] (oldest first; null = "didn't exist yet")
 // Snapshot the given team's working-set state (AND the underlying proj-seed roster row,
 // since copy-to-working actions mutate both — see copyTeamToWorking/copyPlayerToWorking)
@@ -1811,11 +1826,31 @@ function pushUndo(team, coalesceKey, label){
     label: label || null,                                 // what the NEXT mutation is (for the undo toast)
   };
   // Dedup on STATE only, never the label — focus+blur with no real change, or clicking
-  // "copy" twice with nothing new, must not stack a phantom step.
+  // "copy" twice with nothing new, must not stack a phantom step. Each snapshot remembers
+  // its own serialization so the compare doesn't re-stringify the whole stack top on every
+  // slider grab (that stringify sat directly in the touch-down → first-paint path).
   const stateStr = JSON.stringify([snap.working, snap.seed]);
-  if(stack.length && JSON.stringify([stack[stack.length-1].working, stack[stack.length-1].seed])===stateStr) return;
+  snap._sig = stateStr;
+  const prev = stack.length ? stack[stack.length-1] : null;
+  const prevSig = prev ? (prev._sig!=null ? prev._sig : (prev._sig=JSON.stringify([prev.working, prev.seed]))) : null;
+  if(prev && prevSig===stateStr) return;
   stack.push(snap);
   if(stack.length>UNDO_LIMIT) stack.shift();
+  // Global budget across ALL teams: each snapshot deep-copies a team's working set + seed
+  // row, so a long session editing many teams could hold hundreds of MB of clones. Evict
+  // oldest-first from the deepest OTHER stacks; the team being edited keeps its depth.
+  let total=0; for(const tm in undoStacks) total += undoStacks[tm].length;
+  while(total>UNDO_TOTAL_LIMIT){
+    let worst=null, worstLen=1;
+    for(const tm in undoStacks){
+      if(tm===team) continue;
+      const L=undoStacks[tm].length;
+      if(L>worstLen){ worst=tm; worstLen=L; }
+    }
+    if(!worst) break;                 // only the active team is deep — leave it alone
+    undoStacks[worst].shift();
+    total--;
+  }
   updateUndoButton();
 }
 function clearUndoCoalesce(){ _lastUndoKey=null; }
@@ -3268,6 +3303,18 @@ function resetPaceBaseline(){
 // chaining once the region runs out of room.)
 const TC_FLOAT_SEL='.pcard-overlay,.scheme-overlay,.ps-overlay,.note-picker-overlay,.note-info-overlay,.tc-modal-overlay,#vonaOptPop,#tcInjPop,#tcInfoPop';
 var _tcLastTouchY=null, _tcLastTouchX=null, _tcGestureFloaters=null;
+var _tcGestureInner=null, _tcGestureInnerFor=null, _tcGestureFloatOk=null;
+// Tiny bound for the plain-object fetch caches sprinkled through the app (weekly stats, ESPN
+// gamelogs, …). String-keyed objects iterate in insertion order, so dropping the first key
+// evicts the oldest entry — enough to keep a long phone session from holding every payload
+// it ever fetched.
+function _tcCachePut(cache, key, val, max){
+  if(!(key in cache)){
+    const ks=Object.keys(cache);
+    if(ks.length>=max) delete cache[ks[0]];
+  }
+  cache[key]=val;
+}
 function _tcTouchAnchor(e){
   const t=e.touches&&e.touches[0];
   _tcLastTouchY=t?t.clientY:null; _tcLastTouchX=t?t.clientX:null;
@@ -3276,6 +3323,13 @@ function _tcTouchAnchor(e){
   let fl=[];
   try{ document.querySelectorAll(TC_FLOAT_SEL).forEach(f=>{ if(f.offsetWidth||f.offsetHeight) fl.push(f); }); }catch(_e){}
   _tcGestureFloaters=fl;
+  // Resolve the nearest scrollable ancestor ONCE per gesture as well. Touch events dispatch
+  // to the touchstart element for the whole gesture, so the answer cannot change mid-drag —
+  // but the old per-touchmove walk ran getComputedStyle per ancestor at 60-120Hz, a forced
+  // style recalc on the main thread in the middle of every scroll anywhere in the app.
+  _tcGestureInnerFor=e.target||null;
+  _tcGestureInner=_tcInnerScrollerEl(e.target);
+  _tcGestureFloatOk=null;   // floater-branch scrollability verdict, cached lazily per gesture
 }
 // The nearest ancestor that actually scrolls, or null when the gesture belongs to the page.
 function _tcInnerScrollerEl(el){
@@ -3323,7 +3377,7 @@ function _tcScrollGuard(e){
     const dy=t0.clientY-_tcLastTouchY, dx=t0.clientX-(_tcLastTouchX!=null?_tcLastTouchX:t0.clientX);
     _tcLastTouchY=t0.clientY; _tcLastTouchX=t0.clientX;
     if(!dy && !dx) return;
-    const inner=_tcInnerScrollerEl(e.target);
+    const inner=(e.target===_tcGestureInnerFor)?_tcGestureInner:_tcInnerScrollerEl(e.target);
     if(inner){
       const verdict=_tcEdgeCancel(inner, dx, dy);
       if(verdict===true){ if(e.cancelable) e.preventDefault(); return; }
@@ -3341,17 +3395,27 @@ function _tcScrollGuard(e){
   floaters.forEach(f=>{ if(f.contains(t)) within=f; });
   if(!within){ if(e.cancelable) e.preventDefault(); return; }
   // Inside the surface: fine as long as the gesture lands in something that can actually
-  // scroll (either axis — cards hold horizontally-scrolling tables).
-  let n=(t && t.nodeType===1)?t:(t&&t.parentElement);
-  while(n){
-    const canY=n.scrollHeight>n.clientHeight+1, canX=n.scrollWidth>n.clientWidth+1;
-    if(canY||canX){
-      let st=null; try{ st=getComputedStyle(n); }catch(_e){}
-      if(st && ((canY && /(auto|scroll)/.test(st.overflowY)) || (canX && /(auto|scroll)/.test(st.overflowX)))) return;
+  // scroll (either axis — cards hold horizontally-scrolling tables). The walk's verdict is
+  // constant for a touch gesture (same start element throughout), so compute it once and
+  // reuse — this branch used to re-run getComputedStyle per ancestor on every touchmove.
+  let ok;
+  if(e.type==='touchmove' && t===_tcGestureInnerFor && _tcGestureFloatOk!==null){
+    ok=_tcGestureFloatOk;
+  } else {
+    ok=false;
+    let n=(t && t.nodeType===1)?t:(t&&t.parentElement);
+    while(n){
+      const canY=n.scrollHeight>n.clientHeight+1, canX=n.scrollWidth>n.clientWidth+1;
+      if(canY||canX){
+        let st=null; try{ st=getComputedStyle(n); }catch(_e){}
+        if(st && ((canY && /(auto|scroll)/.test(st.overflowY)) || (canX && /(auto|scroll)/.test(st.overflowX)))){ ok=true; break; }
+      }
+      if(n===within) break;
+      n=n.parentElement;
     }
-    if(n===within) break;
-    n=n.parentElement;
+    if(e.type==='touchmove' && t===_tcGestureInnerFor) _tcGestureFloatOk=ok;
   }
+  if(ok) return;
   if(e.cancelable) e.preventDefault();
 }
 try{
@@ -3390,7 +3454,7 @@ function tcInfoPop(ev, key){
   document.body.appendChild(div);
   const r=(ev.target&&ev.target.getBoundingClientRect)?ev.target.getBoundingClientRect():{left:20,right:40,top:60,bottom:80};
   const pw=div.offsetWidth||280, ph=div.offsetHeight||120;
-  const vw=window.innerWidth||360, vh=window.innerHeight||640;
+  const {vw, vh}=tcViewportSize();
   div.style.left=Math.max(8, Math.min(vw-pw-8, r.left))+'px';
   div.style.top=(r.bottom+6+ph>vh ? Math.max(8, r.top-ph-6) : r.bottom+6)+'px';
   setTimeout(()=>{ const off=(e)=>{
@@ -3744,7 +3808,7 @@ function renderSidebar(){
   };
 
   const mkTeamItem = (t, cls) => `<div class="team-item ${t===currentTeam?'active':''}" onclick="selectTeam('${t}')">
-    <img src="${NFL_LOGO(t)}" class="team-logo-sm" alt="${t}" onerror="this.style.display='none'">
+    <img src="${NFL_LOGO(t)}" class="team-logo-sm" alt="${t}" loading="lazy" decoding="async" onerror="this.style.display='none'">
     <div class="team-dot ${cls}"></div><span class="team-name">${sidebarTeamLabel(t)}</span></div>`;
 
   const conferences = [
@@ -5872,7 +5936,7 @@ function tcInjuryPop(ev, pid){
   document.body.appendChild(div);
   const r=(ev.target&&ev.target.getBoundingClientRect)?ev.target.getBoundingClientRect():{left:40,top:40,bottom:40};
   const pw=div.offsetWidth||240, ph=div.offsetHeight||80;
-  const vw=window.innerWidth||360, vh=window.innerHeight||640;
+  const {vw, vh}=tcViewportSize();
   div.style.left=Math.max(8, Math.min(vw-pw-8, r.left))+'px';
   div.style.top=(r.bottom+6+ph>vh ? Math.max(8, r.top-ph-6) : r.bottom+6)+'px';
   setTimeout(()=>{ const off=(e)=>{
@@ -7222,38 +7286,59 @@ function renderPlayerCardShell(pid, pos, team){
 let pcardState = null;        // {pid, posc, team, isSkill}
 let pcardStatsMode = 'pro';
 let pcardToken = 0;           // bumped on each source switch so a slow in-flight load can't clobber a newer one
-let _pcardStickyHeadersBound = false;
+let _pcardStickyResizeBound = false;
+let _pcardStickyRaf = 0;
 
 function pcardRefreshStickyStatHeaders(){
+  _pcardStickyRaf = 0;
   const body = document.getElementById('pcardBody');
-  if(!body) return;
-  const bodyRect = body.getBoundingClientRect();
-  const stickyTop = bodyRect.top;
+  if(!body || typeof body.getBoundingClientRect!=='function') return;
+  const stickyTop = body.getBoundingClientRect().top;
   const wraps = body.querySelectorAll('.pcard-table-scroll');
+  // All measurements first, then all writes — the old read→write→read alternation per table
+  // forced a fresh style/layout pass for every table on every scroll tick.
+  const jobs = [];
   wraps.forEach((wrap)=>{
     const table = wrap.querySelector('.pcard-table');
     const thead = table && table.tHead;
     if(!thead || !thead.rows || !thead.rows.length) return;
     const wrapRect = wrap.getBoundingClientRect();
-    const rowHeights = Array.from(thead.rows).map(r=>r.getBoundingClientRect().height || 0);
-    const headerHeight = rowHeights.reduce((a,b)=>a+b,0);
+    let headerHeight = 0;
+    for(let i=0;i<thead.rows.length;i++) headerHeight += (thead.rows[i].getBoundingClientRect().height || 0);
     const maxOffset = Math.max(0, (wrapRect.bottom - wrapRect.top) - headerHeight);
     const offset = Math.max(0, Math.min(maxOffset, stickyTop - wrapRect.top));
-    thead.style.transform = offset>0 ? `translateY(${offset}px)` : '';
+    jobs.push([thead, offset]);
   });
+  jobs.forEach(([thead, offset])=>{ thead.style.transform = offset>0 ? `translateY(${offset}px)` : ''; });
+}
+
+// Coalesce the scroll-driven refreshes to one per frame — iOS fires scroll much faster than
+// paint during momentum, and each refresh forces layout.
+function pcardScheduleStickyStatHeaders(){
+  if(_pcardStickyRaf) return;
+  if(typeof window!=='undefined' && window.requestAnimationFrame){
+    _pcardStickyRaf = window.requestAnimationFrame(pcardRefreshStickyStatHeaders);
+  } else {
+    _pcardStickyRaf = 1;
+    setTimeout(pcardRefreshStickyStatHeaders, 16);
+  }
 }
 
 function pcardEnableStickyStatHeaders(){
   const body = document.getElementById('pcardBody');
   if(!body) return;
-  if(!_pcardStickyHeadersBound){
-    body.addEventListener('scroll', pcardRefreshStickyStatHeaders, { passive:true });
-    if(typeof window!=='undefined' && window.addEventListener){
-      window.addEventListener('resize', pcardRefreshStickyStatHeaders, { passive:true });
-    }
-    _pcardStickyHeadersBound = true;
+  // The overlay — and with it #pcardBody — is rebuilt for every card open, so the scroll
+  // listener must bind per ELEMENT. The old module-wide flag bound it to the FIRST session's
+  // body only: every card after the first had no scroll listener, and sticky headers died.
+  if(!body._pcardStickyBound){
+    body._pcardStickyBound = true;
+    body.addEventListener('scroll', pcardScheduleStickyStatHeaders, { passive:true });
   }
-  requestAnimationFrame(pcardRefreshStickyStatHeaders);
+  if(!_pcardStickyResizeBound && typeof window!=='undefined' && window.addEventListener){
+    window.addEventListener('resize', pcardScheduleStickyStatHeaders, { passive:true });
+    _pcardStickyResizeBound = true;   // the window listener really is once per session
+  }
+  pcardScheduleStickyStatHeaders();
 }
 
 async function loadPlayerCardData(pid, pos, team){
@@ -10666,7 +10751,7 @@ async function fetchEspnGamelog(aid, league, season){
   const key = `${league}:${aid}:${season||'_'}`;
   if(espnGamelogCache[key]) return espnGamelogCache[key];
   const data = await sleeperFetch(ESPN_GAMELOG_URL(league, aid, season));
-  espnGamelogCache[key] = data;
+  _tcCachePut(espnGamelogCache, key, data, 120);
   return data;
 }
 async function fetchEspnCoreAthlete(aid){
@@ -11829,7 +11914,7 @@ function renderDepthChart(team){
     const chips=row.players.map((p,i)=>{
       total++;
       const hp = (typeof hsPack==='function') ? hsPack({name:p.name, pos:(p.pos||row.label), team, headshot:p.headshot}) : {src:(p.headshot||''), fallbacks:[]};
-      const hs = hp.src ? `<img src="${hp.src}" class="depth-hs" data-fallbacks="${(hp.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">` : '';
+      const hs = hp.src ? `<img src="${hp.src}" class="depth-hs" loading="lazy" decoding="async" data-fallbacks="${(hp.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">` : '';
       const rk = p.exp===0 ? `<span class="depth-rookie">R</span>` : '';
       const jersey = p.jersey ? `<span class="depth-jersey">#${p.jersey}</span>` : '';
       const starter = i===0 ? ' depth-starter' : '';
@@ -11862,7 +11947,7 @@ function renderDepthChartFallback(team){
   const groups=posKeys.map(pos=>{
     const chips=byPos[pos].map(p=>{
       const hp = (typeof hsPack==='function') ? hsPack({name:p.name, pos:p.pos, team, headshot:p.headshot}) : {src:(p.headshot||''), fallbacks:[]};
-      const hs = hp.src ? `<img src="${hp.src}" class="depth-hs" data-fallbacks="${(hp.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">` : '';
+      const hs = hp.src ? `<img src="${hp.src}" class="depth-hs" loading="lazy" decoding="async" data-fallbacks="${(hp.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">` : '';
       const rk = p.exp===0 ? `<span class="depth-rookie">R</span>` : '';
       const jersey = p.jersey ? `<span class="depth-jersey">#${p.jersey}</span>` : '';
       return `<span class="depth-player clickable-player" onclick="${pcardOnclick(p.name, p.pos, team)}">${hs}<span class="depth-name">${p.name}</span>${jersey}${rk}</span>`;
@@ -13073,8 +13158,10 @@ function _schemeBindSwipeClose(host){
     const dx = Math.abs(t.clientX - x0);
     if(dy <= 0){ modal.style.transform=''; modal.style.opacity=''; return; }
     if(dy > 20 && dy > dx * 1.25){
-      // Keep the pull gesture from chaining into page refresh behind the modal.
-      e.preventDefault();
+      // Keep the pull gesture from chaining into page refresh behind the modal. cancelable
+      // can be false once momentum owns the sequence — calling through logs a warning per
+      // frame on iOS and the claim silently fails anyway.
+      if(e.cancelable) e.preventDefault();
       const shift = dy<CLOSE_AT ? dy*0.7 : CLOSE_AT*0.7 + (dy-CLOSE_AT)*0.35;
       modal.style.transform = `translateY(${shift.toFixed(1)}px)`;
       modal.style.opacity = String(Math.max(0.6, 1 - dy/650));
@@ -14285,7 +14372,7 @@ function renderNflverseRoster(team){
       const sleeperId = (sid!=null && /^\d+$/.test(String(sid))) ? String(sid) : null;
       const hpack = sleeperId ? hsPack({player_id:sleeperId, name, pos:ps, team}) : hsPack({name, pos:ps, team});
       const hs = hpack && hpack.src
-        ? `<img src="${hpack.src}" class="depth-hs" data-fallbacks="${(hpack.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">`
+        ? `<img src="${hpack.src}" class="depth-hs" loading="lazy" decoding="async" data-fallbacks="${(hpack.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">`
         : '';
       const rk = exp===0 ? `<span class="depth-rookie">R</span>` : '';
       const jr = jersey!=null ? `<span class="depth-jersey">#${jersey}</span>` : '';
@@ -15483,35 +15570,36 @@ function renderSharpLeague(){
     return `<th class="sr-th ${active?'active':''}" onclick="sortSharpBy('${c.replace(/'/g,"\\'")}')" title="${title}">${c}${arrow}</th>`;
   }).join('');
 
+  // Row/cell attribute split (same as the rankings table): context, source, team and
+  // relevance are constant for a whole row — emitting them per CELL serialized + escaped
+  // the same strings ~384 times per render, and a header-sort tap re-renders everything.
+  const _noteRelev = noteRelevanceForTableKey(sharpTable);
+  const _noteSeason = advTeamSeason();
   const body = rows.map(r=>{
+    const rowScope = noteScopeAttrs({
+      context: `${teamDisplayName(r.code)} · ${tbl.title} · ${_noteSeason} season`,
+      source: 'league_advanced',
+      team: r.code,
+      relevance: _noteRelev,
+    });
     const cells = cols.map(c=>{
+      let v, rk, txt;
       if(c===projCol){
-        const v=r._projScore, rk=r._projRank;
-        const txt = v!=null?Number(v).toFixed(1):'—';
-        return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${noteWrapHtml(escHtml(txt), {
-          label: c,
-          value: txt,
-          source: 'league_advanced',
-          statKey: sharpTable,
-          context: `${teamDisplayName(r.code)} · ${tbl.title} · ${advTeamSeason()} season`,
-          team: r.code,
-          relevance: noteRelevanceForTableKey(sharpTable),
-        }, 'note-tag-hit')}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
+        v=r._projScore; rk=r._projRank;
+        txt = v!=null?Number(v).toFixed(1):'—';
+      } else {
+        const srcCol=colSource[c]||c;
+        v=r.values?r.values[srcCol]:null; rk=r.ranks?r.ranks[srcCol]:null;
+        txt = fmtSharpVal(v, sharpColIsPct(tbl,c));
       }
-      const srcCol=colSource[c]||c;
-      const v=r.values?r.values[srcCol]:null, rk=r.ranks?r.ranks[srcCol]:null;
-      const txt = fmtSharpVal(v, sharpColIsPct(tbl,c));
-      return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${noteWrapHtml(escHtml(txt), {
+      // `value` omitted on purpose: it's exactly the cell's rendered text, read back from
+      // the DOM at click time (see the rankings table's identical note).
+      return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${noteCellHtml(escHtml(txt), {
         label: c,
-        value: txt,
-        source: 'league_advanced',
         statKey: sharpTable,
-        context: `${teamDisplayName(r.code)} · ${tbl.title} · ${advTeamSeason()} season`,
-        team: r.code,
-        relevance: noteRelevanceForTableKey(sharpTable),
       }, 'note-tag-hit')}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
     }).join('');
-    return `<tr><td class="sr-td-team"><span class="sr-td-team-inner"><img src="${NFL_LOGO(r.code)}" class="sr-logo" onerror="this.style.display='none'">${r.code}</span></td>${cells}</tr>`;
+    return `<tr${rowScope}><td class="sr-td-team"><span class="sr-td-team-inner"><img src="${NFL_LOGO(r.code)}" class="sr-logo" loading="lazy" decoding="async" onerror="this.style.display='none'">${r.code}</span></td>${cells}</tr>`;
   }).join('');
   host.innerHTML = headerBar + leagueWeekRange + renderCategoryTabs() + `
     <div class="sr-league-tabs">${tableTabs}</div>
@@ -16502,7 +16590,7 @@ function renderRankings(){
           <button class="btn btn-ghost btn-sm" onclick="exportRankingsCSV()">${TC_ICON("download")} CSV</button>
         </div>
       </div>
-      <div class="rank-table-wrap" style="max-height:calc(100vh - 320px)">
+      <div class="rank-table-wrap">
       <table class="rankings-table grouped${paceActive?' pace-mode':''}" data-rank-rendered-pos="${rankPosFilter}" data-rank-rendered-rk="${rankRookiesOnly?1:0}" data-rank-adv="${advActive?1:0}"><thead><tr>
         ${metaOrder.map(k=>({
           ecr: ()=>th('ecr','ECR','','c-ecr',false,'ecr'),
@@ -19084,8 +19172,11 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
   }
   // Did the current view actually paint something?
   function contentRendered(){
+    // childElementCount, not innerHTML: reading innerHTML serializes the entire subtree
+    // (megabytes on the rankings board) and this runs on every visibilitychange/pageshow —
+    // i.e. every app-switch and screen-off on a phone.
     const c=document.getElementById('content');
-    return !!c && c.innerHTML && c.innerHTML.trim().length>40;
+    return !!c && c.childElementCount>0;
   }
   // Re-render whatever view we're on, without touching data or re-fetching.
   function rerender(){
@@ -19969,7 +20060,9 @@ function openPlayerSearch(opts){
   ov.addEventListener('mousedown', e=>{ if(e.target===ov) closePlayerSearch(); });
   document.body.appendChild(ov);
   const inp = document.getElementById('psInput');
-  inp.addEventListener('input', ()=>psRender(inp.value));
+  // Debounced: a fast typist on a phone fired a full-index scan per keystroke.
+  let _psDeb=null;
+  inp.addEventListener('input', ()=>{ clearTimeout(_psDeb); _psDeb=setTimeout(()=>psRender(inp.value), 110); });
   inp.addEventListener('keydown', psKey);
   psSyncModeUi();
   psRender('');
@@ -20020,7 +20113,11 @@ function psBuildIndex(){
   for(const pid in sleeperPlayers){
     const p = sleeperPlayers[pid];
     if(!p || !p.name) continue;
-    out.push({ pid, name:p.name, norm:ecrNormName(p.name), pos:p.pos||'', team:p.team||'' });
+    const norm=ecrNormName(p.name);
+    // Precompute the full haystack (and its space-free form) here — building them per entry
+    // per keystroke ran ~12 regex passes × every player in the DB on each input event.
+    const hay=`${norm} ${ecrNormName(p.team||'')} ${ecrNormName(p.pos||'')}`.trim();
+    out.push({ pid, name:p.name, norm, pos:p.pos||'', team:p.team||'', hay, hayC:hay.replace(/\s/g,'') });
   }
   // Team defenses aren't in the slim player DB (it drops position 'DEF'), but they're real
   // roster units people search for. Add one entry per NFL team, keyed by the abbreviation the
@@ -20029,7 +20126,9 @@ function psBuildIndex(){
     TEAMS.forEach(tc=>{
       const full = (typeof teamDisplayName==='function' ? teamDisplayName(tc) : tc);
       const label = `${full} D/ST`;
-      out.push({ pid:tc, name:label, norm:ecrNormName(full+' '+tc), pos:'DEF', team:tc });
+      const norm=ecrNormName(full+' '+tc);
+      const hay=`${norm} ${ecrNormName(tc)} def dst`.trim();
+      out.push({ pid:tc, name:label, norm, pos:'DEF', team:tc, hay, hayC:hay.replace(/\s/g,'') });
     });
   }
   return out;
@@ -20044,21 +20143,23 @@ function psRender(q){
     return;
   }
   const nq = ecrNormName(raw);
+  const nqC = nq.replace(/\s/g,'');
 
   const scored = [];
   for(const e of _psIndex){
     const note = psNoteDataForEntry(e);
     if(_psNotesOnly && !note) continue;
 
-    const noteHay = note ? [note.text].concat((note.tags||[]).map(t=>`${t.label||''} ${t.value||''} ${t.context||''}`)).join(' ') : '';
-    const hayNorm = `${e.norm} ${ecrNormName(e.team||'')} ${ecrNormName(e.pos||'')} ${ecrNormName(noteHay)}`.trim();
+    // Note text is the only per-render haystack piece (notes can change between opens);
+    // the name/team/pos part rides precomputed on the index entry.
+    const noteNorm = note ? ecrNormName([note.text].concat((note.tags||[]).map(t=>`${t.label||''} ${t.value||''} ${t.context||''}`)).join(' ')) : '';
     let s = -1;
     if(!raw){
       s = 2;
     } else if(e.norm === nq) s = 0;
     else if(e.norm.startsWith(nq)) s = 1;
-    else if(hayNorm.includes(nq)) s = 2;
-    else if(nq.length>=3 && hayNorm.replace(/\s/g,'').includes(nq.replace(/\s/g,''))) s = 3;
+    else if(e.hay.includes(nq) || (noteNorm && noteNorm.includes(nq))) s = 2;
+    else if(nqC.length>=3 && (e.hayC.includes(nqC) || (noteNorm && noteNorm.replace(/\s/g,'').includes(nqC)))) s = 3;
     if(s>=0) scored.push({e, s, note});
   }
   scored.sort((a,b)=>{
@@ -20202,7 +20303,7 @@ function tsPreviewTeamRankings(){
         <span class="tc-label">PREVIEW</span>
         <span style="font-size:11px;color:var(--muted)">Top ${Math.min(view.length,28)} players · full controls after tab settle</span>
       </div>
-      <div class="rank-table-wrap ts-rankings-preview-wrap" style="max-height:calc(100vh - 380px)">
+      <div class="rank-table-wrap ts-rankings-preview-wrap">
         <table class="rankings-table grouped ts-rankings-preview-table"><thead><tr>
           <th><div class="th-stack">RK</div></th>
           <th><div class="th-stack">FPTS</div></th>
@@ -20391,11 +20492,14 @@ function tsScrollerClaims(el, dir){
     previewCache[cacheKey]=html||'';
   };
 
-  const preloadAdjacentPreviews = ()=>{
+  const preloadAdjacentPreviews = (dxNow)=>{
     if(!tabs || cur<0) return;
-    const left = cur-1, right = cur+1;
-    if(left>=0) cachePreviewForPhase(tsTabPhase(tabs[left]));
-    if(right<tabs.length) cachePreviewForPhase(tsTabPhase(tabs[right]));
+    // Only the neighbour the finger is heading toward (dx>0 = swiping right = previous tab).
+    // Rendering BOTH at the axis-lock instant doubled the mid-gesture spike (each preview is
+    // a full phase render, 10-60ms on a phone); a direction reversal renders the other side
+    // on demand in setPreview().
+    const idx = (typeof dxNow==='number' && dxNow>0) ? cur-1 : cur+1;
+    if(idx>=0 && idx<tabs.length) cachePreviewForPhase(tsTabPhase(tabs[idx]));
   };
 
   const setPreview = (phase, label)=>{
@@ -20502,7 +20606,7 @@ function tsScrollerClaims(el, dir){
       // setPreview() below only needs whichever one the finger is heading toward, but doing
       // both here keeps a mid-gesture direction change instant, and this runs once per swipe
       // instead of once per tap.
-      preloadAdjacentPreviews();
+      preloadAdjacentPreviews(dx);
     }
     if(axis!=='x') return;
     // Ours now: stop the browser from scrolling / pull-to-refreshing underneath.
@@ -20674,8 +20778,10 @@ function _thsPrimeAdjacent(idx){
   if(!Array.isArray(TEAMS) || idx<0) return;
   const prev = TEAMS[idx-1];
   const next = TEAMS[idx+1];
-  if(prev) _thsCachePreview(prev);
-  if(next) _thsCachePreview(next);
+  // _thsGetPreview respects the cache; the old unconditional _thsCachePreview rebuilt both
+  // neighbours' header HTML on every call.
+  if(prev) _thsGetPreview(prev);
+  if(next) _thsGetPreview(next);
 }
 
 function _thsSetInitialUnder(host, idx){
@@ -20805,12 +20911,14 @@ function _thsHeaderPreviewHtml(team){
     const idx = TEAMS.indexOf(currentTeam);
     if(idx < 0) return;
     if(!TEAMS[idx-1] && !TEAMS[idx+1]) return;
-    _thsPrimeAdjacent(idx);
 
     header = _thsActiveHeader() || h;
     host = _thsHostForHeader(header);
     if(!host) return;
-    _thsSetInitialUnder(host, idx);
+    // NOTE: priming previews + parking the under layer moved to touchmove (axis==='x') —
+    // touchstart fires on every tap and scroll-start inside a team header, and this work
+    // rendered two header previews + wrote to the DOM before the gesture was even known to
+    // be a swipe (88-tab-swipe learned the same lesson).
     x0=t.clientX;
     y0=t.clientY;
   }, {passive:true});
@@ -20825,6 +20933,9 @@ function _thsHeaderPreviewHtml(team){
       if(Math.abs(dx) < THS_DECIDE && Math.abs(dy) < THS_DECIDE) return;
       axis = (Math.abs(dx) > Math.abs(dy)*1.35) ? 'x' : 'y';
       if(axis==='y'){ x0=null; y0=null; clearShift(false); header=null; host=null; return; }
+      // Horizontal confirmed — prime the neighbour previews and park the under layer now.
+      const pidx = Array.isArray(TEAMS) ? TEAMS.indexOf(currentTeam) : -1;
+      if(pidx>=0){ _thsPrimeAdjacent(pidx); _thsSetInitialUnder(host, pidx); }
     }
     if(axis!=='x') return;
 
@@ -23171,6 +23282,19 @@ function stopDraftFollow(){
   if(currentPhase==='Rankings') renderRankings();
 }
 var _draftDone=false, _pollFails=0, _pollInFlight=false;
+// A backgrounded phone kept polling Sleeper every 2.5s for the tab's whole lifetime.
+// Pause while hidden, poll immediately + resume on return (mirrors laLivePollSync).
+if(typeof document!=='undefined' && document.addEventListener){
+  document.addEventListener('visibilitychange', ()=>{
+    if(!draftId || _draftDone) return;
+    if(document.visibilityState==='hidden'){
+      if(draftTimer){ clearInterval(draftTimer); draftTimer=null; }
+    } else if(!draftTimer){
+      pollDraft();
+      draftTimer=setInterval(pollDraft, 2500);
+    }
+  });
+}
 async function pollDraft(){
   if(!draftId || _pollInFlight) return;
   _pollInFlight=true;
@@ -23256,7 +23380,7 @@ function vonaOptionsPop(ev, pos){
   document.body.appendChild(div);
   const r=(ev.target&&ev.target.getBoundingClientRect)?ev.target.getBoundingClientRect():{left:20,right:320,top:100,bottom:120};
   const pw=div.offsetWidth||300, ph=div.offsetHeight||200;
-  const vw=window.innerWidth||360, vh=window.innerHeight||640;
+  const {vw, vh}=tcViewportSize();
   div.style.left=Math.max(8, Math.min(vw-pw-8, r.right-pw))+'px';
   div.style.top=(r.top-ph-8>8 ? r.top-ph-8 : Math.max(8, Math.min(vh-ph-8, r.bottom+8)))+'px';
   setTimeout(()=>{ const off=(e)=>{
@@ -23351,11 +23475,17 @@ function renderRosterBar(){
     // stretch of the rankings sits permanently underneath it and can't be scrolled to. Publish
     // the drawer's live height as --rt-h and let the page reserve exactly that much space —
     // measured rather than hard-coded, since the panel grows and shrinks as it opens/closes.
+    const _rtPublishH = ()=>{
+      const h = (host.style.display==='none') ? 0 : host.offsetHeight;
+      document.documentElement.style.setProperty('--rt-h', h+'px');
+    };
     if(typeof ResizeObserver==='function'){
-      new ResizeObserver(()=>{
-        const h = (host.style.display==='none') ? 0 : host.offsetHeight;
-        document.documentElement.style.setProperty('--rt-h', h+'px');
-      }).observe(host);
+      new ResizeObserver(_rtPublishH).observe(host);
+    } else {
+      // No ResizeObserver (old WebKit): publish after each render + on resize so the fixed
+      // drawer never permanently occludes the last rankings rows.
+      host._rtPublishH = _rtPublishH;
+      if(typeof window!=='undefined' && window.addEventListener) window.addEventListener('resize', _rtPublishH, {passive:true});
     }
     // Drag on the band (the bar, or the panel's header): the panel's height FOLLOWS the
     // finger — no repaint mid-gesture, the markup is already in the DOM — then settles to
@@ -23366,7 +23496,7 @@ function renderRosterBar(){
     const _rtHeights=()=>{
       const p=host.querySelector('.rt-panel'); if(!p) return null;
       const vh=window.innerHeight||640;
-      const narrow=!!(window.matchMedia && window.matchMedia('(max-width:760px)').matches);
+      const narrow=(typeof _rankingsMobileNarrow==='function') ? _rankingsMobileNarrow() : !!(window.matchMedia && window.matchMedia('(max-width:760px)').matches);
       const defH=Math.min(p.scrollHeight+30, Math.round(vh*(narrow?0.42:0.5)));
       const maxH=Math.max(defH, vh-(narrow?96:120));
       return {p, defH, maxH};
@@ -23493,6 +23623,7 @@ function renderRosterBar(){
   </div>`;
   const panel = renderTrackerPanel(viewSlot);   // always in the DOM; .rt-closed collapses it
   host.innerHTML = bar + panel;
+  if(host._rtPublishH) host._rtPublishH();   // no-ResizeObserver fallback (see creation above)
   // restore scroll on the freshly-rendered panel
   if(trackerOpen && prevScroll){
     const np = host.querySelector('.rt-panel');
@@ -24511,11 +24642,26 @@ function laHistoricalPlayerList(season){
   finally{ SEED=savedSeed; userProj=savedProj; activeSeason=savedActive; }
 }
 
-// name|pos → VOR. Rebuilt once per analyzer render (renderLeagueAnalyzer clears the cache),
-// so edits to your projections show up immediately — same cost profile as laProjMap().
+// Everything the analyzer's derived maps depend on: projection edits bump the build-list
+// epoch (markTeamEdited → invalidateBuildPlayerCache), scoring/format/league shape have
+// their own signatures, and the historical lens + snapshot ride alongside. Keying the memo
+// on this instead of clearing per render means a tab/chip tap stops paying a full
+// buildPlayerList walk (~1,100 object clones + ~4,500 regex calls) before any HTML renders.
+function _laDerivedSig(){
+  return [
+    (typeof _buildPlayerCacheEpoch!=='undefined')?_buildPlayerCacheEpoch:0,
+    String(activeSeason), String(rankFormat),
+    (typeof buildPlayerScoringSig==='function')?buildPlayerScoringSig():'',
+    (typeof buildPlayerShapeSig==='function')?buildPlayerShapeSig():'',
+    String(laHistoricalSeason()||''),
+  ].join('|');
+}
+// name|pos → VOR. Memoized on _laDerivedSig + the snapshot object, so edits to your
+// projections still show up immediately (they bump the epoch) while plain re-renders reuse it.
 let _laVorCache=null;
 function laVorMap(){
-  if(_laVorCache) return _laVorCache;
+  const sig=_laDerivedSig();
+  if(_laVorCache && _laVorCache.sig===sig && _laVorCache.snap===leagueSnapshot) return _laVorCache.m;
   const m=new Map();
   try{
     const hist=laHistoricalSeason();
@@ -24523,7 +24669,7 @@ function laVorMap(){
     list.forEach(p=>{ if(p.vor!=null) m.set(ecrNormName(p.name)+'|'+p.pos, p.vor); });
   }catch(e){ /* seed not loaded → empty map; views render 0s rather than crashing */ }
   laKdefVorMap().forEach((v,k)=>m.set(k,v));
-  _laVorCache=m;
+  _laVorCache={sig, snap:leagueSnapshot, m};
   return m;
 }
 const LA_VOR_SCALE = 100;   // lift VOR into the same working range as (chart pts x LA_VAL_SCALE)
@@ -25369,9 +25515,8 @@ function laMaybeAutoRefreshSnapshot(reason){
 function renderLeagueAnalyzer(){
   const host=document.getElementById('content'); if(!host) return;
   if(currentPhase!=='League') return;
-  // VOR is derived from the live projections, so rebuild it once per render — edit a slider
-  // and the redraft values follow. Same cost profile as laProjMap(), which renders already pay.
-  _laVorCache=null;
+  // laVorMap/laProjMap are memoized on _laDerivedSig(): projection edits bump the build
+  // epoch and rebuild them; plain tab/chip re-renders reuse the maps.
   if(laIsRedraft()) laEnsureKdef();   // heal pre-kdef snapshots (see laEnsureKdef)
   const back=`<button class="btn btn-ghost" onclick="leaveLeagueAnalyzer()">← Projections</button>`;
   if(laState.step!=='view' || !leagueSnapshot){
@@ -25548,7 +25693,7 @@ function laTeamCard(t,s){
         <span class="rt-slot ${slotClass(p.pos)}">${p.pos}</span>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name,p.pos,p.team||'')}">${laPlayerImg(p)}</span>
         <span class="share-name clickable-player" title="${escAttr(p.name)}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${escHtml(p.name)}</span>${laCliffMark(p.name,p.pos)}
-        <span class="team-header"><img src="${NFL_LOGO(p.team)}" class="team-logo-sm" alt="${p.team}"</span>
+        <img src="${NFL_LOGO(p.team)}" class="team-logo-sm" alt="${escAttr(p.team||'')}" loading="lazy" decoding="async" onerror="this.style.display='none'">
         <span class="la-pval">${p.v}</span></div>`).join('')}
       ${depth.length?`<div class="la-depth">+ ${depth.length} unvalued depth</div>`:''}
     </div>
@@ -25571,11 +25716,15 @@ setTimeout(refreshLeagueSyncBtn, 0);
 // builder's own projection engine (buildPlayerList). This is the analyzer's second lens: the
 // dynasty chart says what the market thinks a player is WORTH; this says what our projections
 // think his roster will actually SCORE. Both on the same screen is the whole point.
+let _laProjCache=null;
 function laProjMap(){
+  const sig=_laDerivedSig();
+  if(_laProjCache && _laProjCache.sig===sig) return _laProjCache.m;
   const m=new Map();
   try{
     buildPlayerList().forEach(p=>{ m.set(ecrNormName(p.name)+'|'+p.pos, p.fpts||0); });
   }catch(e){ /* seed not loaded yet → empty map; views render 0s rather than crashing */ }
+  _laProjCache={sig, m};
   return m;
 }
 
@@ -26538,7 +26687,9 @@ function laCliffInfo(name,pos){
 // Marker span for player rows: ⚠ near/past the cliff (amber/red), 🛡 defier (hold).
 // Persistent, tappable explanation for a cliff badge. Deliberately reuses the pace popover's
 // classes so it inherits that styling and viewport clamping rather than inventing a second look.
+let _laPopsMaybeOpen=false;   // set on open; closers no-op until then (see closeWeekFilterPacePops)
 function laCloseCliffPops(){
+  if(!_laPopsMaybeOpen) return;
   if(document && document.querySelectorAll) document.querySelectorAll('.la-cliff-pop').forEach(el=>el.remove());
 }
 function laToggleCliffPop(btn, label, body){
@@ -26556,6 +26707,7 @@ function laToggleCliffPop(btn, label, body){
     </div>
     <div class="pace-info-pop-body">${escHtml(body)}</div>`;
   wrap.appendChild(pop);
+  _laPopsMaybeOpen=true;
   // Viewport-fixed and clamped so it can't run off a narrow screen; flips above when needed.
   try{
     const M=8, vw=window.innerWidth, vh=window.innerHeight;
@@ -26574,6 +26726,7 @@ function laToggleCliffPop(btn, label, body){
 // (so radar dots never opened one at all), and the document-level click handler threw on
 // every single click anywhere in the app.
 function laCloseRadarPops(){
+  if(!_laPopsMaybeOpen) return;
   if(document && document.querySelectorAll) document.querySelectorAll('.la-radar-pop').forEach(el=>el.remove());
 }
 function laShowRadarPop(btn, label, body){
@@ -26592,6 +26745,7 @@ function laShowRadarPop(btn, label, body){
     </div>
     <div class="pace-info-pop-body">${escHtml(body)}</div>`;
   wrap.appendChild(pop);
+  _laPopsMaybeOpen=true;
   try{
     const M=8;
     const wr=wrap.getBoundingClientRect();
@@ -26615,6 +26769,7 @@ if(typeof document!=='undefined' && document.addEventListener){
     if(t && t.closest && (t.closest('.la-cliff-wrap') || t.closest('.la-radar-wrap'))) return;
     laCloseCliffPops();
     laCloseRadarPops();
+    _laPopsMaybeOpen=false;
   });
 }
 function laCliffMark(name,pos){

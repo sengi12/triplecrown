@@ -55,7 +55,7 @@ function renderSidebar(){
   };
 
   const mkTeamItem = (t, cls) => `<div class="team-item ${t===currentTeam?'active':''}" onclick="selectTeam('${t}')">
-    <img src="${NFL_LOGO(t)}" class="team-logo-sm" alt="${t}" onerror="this.style.display='none'">
+    <img src="${NFL_LOGO(t)}" class="team-logo-sm" alt="${t}" loading="lazy" decoding="async" onerror="this.style.display='none'">
     <div class="team-dot ${cls}"></div><span class="team-name">${sidebarTeamLabel(t)}</span></div>`;
 
   const conferences = [

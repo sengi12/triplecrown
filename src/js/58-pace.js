@@ -241,7 +241,7 @@ function tcInjuryPop(ev, pid){
   document.body.appendChild(div);
   const r=(ev.target&&ev.target.getBoundingClientRect)?ev.target.getBoundingClientRect():{left:40,top:40,bottom:40};
   const pw=div.offsetWidth||240, ph=div.offsetHeight||80;
-  const vw=window.innerWidth||360, vh=window.innerHeight||640;
+  const {vw, vh}=tcViewportSize();
   div.style.left=Math.max(8, Math.min(vw-pw-8, r.left))+'px';
   div.style.top=(r.bottom+6+ph>vh ? Math.max(8, r.top-ph-6) : r.bottom+6)+'px';
   setTimeout(()=>{ const off=(e)=>{

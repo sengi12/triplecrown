@@ -604,6 +604,7 @@ function removePlayerNoteTag(nameOrId, pos, team, tagId){
 // A snapshot is taken right before a mutation begins (slider drag start, an editable-
 // field commit, or a copy-to-working action). We cap the stack so memory stays bounded.
 const UNDO_LIMIT = 40;
+const UNDO_TOTAL_LIMIT = 160;   // across all teams — see the budget sweep in pushUndo
 let undoStacks = {};   // team -> [snapshot|null, ...] (oldest first; null = "didn't exist yet")
 // Snapshot the given team's working-set state (AND the underlying proj-seed roster row,
 // since copy-to-working actions mutate both — see copyTeamToWorking/copyPlayerToWorking)
@@ -625,11 +626,31 @@ function pushUndo(team, coalesceKey, label){
     label: label || null,                                 // what the NEXT mutation is (for the undo toast)
   };
   // Dedup on STATE only, never the label — focus+blur with no real change, or clicking
-  // "copy" twice with nothing new, must not stack a phantom step.
+  // "copy" twice with nothing new, must not stack a phantom step. Each snapshot remembers
+  // its own serialization so the compare doesn't re-stringify the whole stack top on every
+  // slider grab (that stringify sat directly in the touch-down → first-paint path).
   const stateStr = JSON.stringify([snap.working, snap.seed]);
-  if(stack.length && JSON.stringify([stack[stack.length-1].working, stack[stack.length-1].seed])===stateStr) return;
+  snap._sig = stateStr;
+  const prev = stack.length ? stack[stack.length-1] : null;
+  const prevSig = prev ? (prev._sig!=null ? prev._sig : (prev._sig=JSON.stringify([prev.working, prev.seed]))) : null;
+  if(prev && prevSig===stateStr) return;
   stack.push(snap);
   if(stack.length>UNDO_LIMIT) stack.shift();
+  // Global budget across ALL teams: each snapshot deep-copies a team's working set + seed
+  // row, so a long session editing many teams could hold hundreds of MB of clones. Evict
+  // oldest-first from the deepest OTHER stacks; the team being edited keeps its depth.
+  let total=0; for(const tm in undoStacks) total += undoStacks[tm].length;
+  while(total>UNDO_TOTAL_LIMIT){
+    let worst=null, worstLen=1;
+    for(const tm in undoStacks){
+      if(tm===team) continue;
+      const L=undoStacks[tm].length;
+      if(L>worstLen){ worst=tm; worstLen=L; }
+    }
+    if(!worst) break;                 // only the active team is deep — leave it alone
+    undoStacks[worst].shift();
+    total--;
+  }
   updateUndoButton();
 }
 function clearUndoCoalesce(){ _lastUndoKey=null; }

@@ -108,7 +108,7 @@
 .tc-mgr-new-btn{width:100%;font-size:13px;}
 
 .tc-mgr-list{
-  display:flex;flex-direction:column;gap:4px;overflow-y:auto;
+  display:flex;flex-direction:column;gap:4px;overflow-y:auto;overscroll-behavior:contain;
   max-height:calc(100vh - 320px);max-height:calc(100dvh - 320px);
   min-height:60px;}
 

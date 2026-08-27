@@ -541,6 +541,19 @@ function stopDraftFollow(){
   if(currentPhase==='Rankings') renderRankings();
 }
 var _draftDone=false, _pollFails=0, _pollInFlight=false;
+// A backgrounded phone kept polling Sleeper every 2.5s for the tab's whole lifetime.
+// Pause while hidden, poll immediately + resume on return (mirrors laLivePollSync).
+if(typeof document!=='undefined' && document.addEventListener){
+  document.addEventListener('visibilitychange', ()=>{
+    if(!draftId || _draftDone) return;
+    if(document.visibilityState==='hidden'){
+      if(draftTimer){ clearInterval(draftTimer); draftTimer=null; }
+    } else if(!draftTimer){
+      pollDraft();
+      draftTimer=setInterval(pollDraft, 2500);
+    }
+  });
+}
 async function pollDraft(){
   if(!draftId || _pollInFlight) return;
   _pollInFlight=true;
@@ -626,7 +639,7 @@ function vonaOptionsPop(ev, pos){
   document.body.appendChild(div);
   const r=(ev.target&&ev.target.getBoundingClientRect)?ev.target.getBoundingClientRect():{left:20,right:320,top:100,bottom:120};
   const pw=div.offsetWidth||300, ph=div.offsetHeight||200;
-  const vw=window.innerWidth||360, vh=window.innerHeight||640;
+  const {vw, vh}=tcViewportSize();
   div.style.left=Math.max(8, Math.min(vw-pw-8, r.right-pw))+'px';
   div.style.top=(r.top-ph-8>8 ? r.top-ph-8 : Math.max(8, Math.min(vh-ph-8, r.bottom+8)))+'px';
   setTimeout(()=>{ const off=(e)=>{
@@ -721,11 +734,17 @@ function renderRosterBar(){
     // stretch of the rankings sits permanently underneath it and can't be scrolled to. Publish
     // the drawer's live height as --rt-h and let the page reserve exactly that much space —
     // measured rather than hard-coded, since the panel grows and shrinks as it opens/closes.
+    const _rtPublishH = ()=>{
+      const h = (host.style.display==='none') ? 0 : host.offsetHeight;
+      document.documentElement.style.setProperty('--rt-h', h+'px');
+    };
     if(typeof ResizeObserver==='function'){
-      new ResizeObserver(()=>{
-        const h = (host.style.display==='none') ? 0 : host.offsetHeight;
-        document.documentElement.style.setProperty('--rt-h', h+'px');
-      }).observe(host);
+      new ResizeObserver(_rtPublishH).observe(host);
+    } else {
+      // No ResizeObserver (old WebKit): publish after each render + on resize so the fixed
+      // drawer never permanently occludes the last rankings rows.
+      host._rtPublishH = _rtPublishH;
+      if(typeof window!=='undefined' && window.addEventListener) window.addEventListener('resize', _rtPublishH, {passive:true});
     }
     // Drag on the band (the bar, or the panel's header): the panel's height FOLLOWS the
     // finger — no repaint mid-gesture, the markup is already in the DOM — then settles to
@@ -736,7 +755,7 @@ function renderRosterBar(){
     const _rtHeights=()=>{
       const p=host.querySelector('.rt-panel'); if(!p) return null;
       const vh=window.innerHeight||640;
-      const narrow=!!(window.matchMedia && window.matchMedia('(max-width:760px)').matches);
+      const narrow=(typeof _rankingsMobileNarrow==='function') ? _rankingsMobileNarrow() : !!(window.matchMedia && window.matchMedia('(max-width:760px)').matches);
       const defH=Math.min(p.scrollHeight+30, Math.round(vh*(narrow?0.42:0.5)));
       const maxH=Math.max(defH, vh-(narrow?96:120));
       return {p, defH, maxH};
@@ -863,6 +882,7 @@ function renderRosterBar(){
   </div>`;
   const panel = renderTrackerPanel(viewSlot);   // always in the DOM; .rt-closed collapses it
   host.innerHTML = bar + panel;
+  if(host._rtPublishH) host._rtPublishH();   // no-ResizeObserver fallback (see creation above)
   // restore scroll on the freshly-rendered panel
   if(trackerOpen && prevScroll){
     const np = host.querySelector('.rt-panel');

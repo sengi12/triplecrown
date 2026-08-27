@@ -755,7 +755,7 @@ function renderRankings(){
           <button class="btn btn-ghost btn-sm" onclick="exportRankingsCSV()">${TC_ICON("download")} CSV</button>
         </div>
       </div>
-      <div class="rank-table-wrap" style="max-height:calc(100vh - 320px)">
+      <div class="rank-table-wrap">
       <table class="rankings-table grouped${paceActive?' pace-mode':''}" data-rank-rendered-pos="${rankPosFilter}" data-rank-rendered-rk="${rankRookiesOnly?1:0}" data-rank-adv="${advActive?1:0}"><thead><tr>
         ${metaOrder.map(k=>({
           ecr: ()=>th('ecr','ECR','','c-ecr',false,'ecr'),

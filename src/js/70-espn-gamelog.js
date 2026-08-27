@@ -103,7 +103,7 @@ async function fetchEspnGamelog(aid, league, season){
   const key = `${league}:${aid}:${season||'_'}`;
   if(espnGamelogCache[key]) return espnGamelogCache[key];
   const data = await sleeperFetch(ESPN_GAMELOG_URL(league, aid, season));
-  espnGamelogCache[key] = data;
+  _tcCachePut(espnGamelogCache, key, data, 120);
   return data;
 }
 async function fetchEspnCoreAthlete(aid){

@@ -339,7 +339,11 @@ input.sl::-moz-range-thumb{width:18px;height:18px;border:2.5px solid var(--surfa
 
 /* The rankings board scrolls inside its own wrap (both axes). A fling that hits its edge
    must die there — chaining into the page is what read as the whole app bouncing. */
-.rank-table-wrap{overscroll-behavior:none;}
+.rank-table-wrap{overscroll-behavior:none;touch-action:pan-x pan-y;
+  /* Was an inline style in the rankings template; here it can carry the dvh fallback so the
+     bottom rows aren't hidden behind the iOS URL bar. */
+  max-height:calc(100vh - 320px);max-height:calc(100dvh - 320px);}
+.ts-rankings-preview-wrap{max-height:calc(100vh - 380px);max-height:calc(100dvh - 380px);}
 
 /* College prospect: the fantasy-relevance headline row + combine section */
 .cfb-rel-row{display:flex;align-items:center;gap:10px;padding:9px 10px;margin-bottom:10px;

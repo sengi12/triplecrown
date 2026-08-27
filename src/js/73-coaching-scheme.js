@@ -1193,8 +1193,10 @@ function _schemeBindSwipeClose(host){
     const dx = Math.abs(t.clientX - x0);
     if(dy <= 0){ modal.style.transform=''; modal.style.opacity=''; return; }
     if(dy > 20 && dy > dx * 1.25){
-      // Keep the pull gesture from chaining into page refresh behind the modal.
-      e.preventDefault();
+      // Keep the pull gesture from chaining into page refresh behind the modal. cancelable
+      // can be false once momentum owns the sequence — calling through logs a warning per
+      // frame on iOS and the claim silently fails anyway.
+      if(e.cancelable) e.preventDefault();
       const shift = dy<CLOSE_AT ? dy*0.7 : CLOSE_AT*0.7 + (dy-CLOSE_AT)*0.35;
       modal.style.transform = `translateY(${shift.toFixed(1)}px)`;
       modal.style.opacity = String(Math.max(0.6, 1 - dy/650));

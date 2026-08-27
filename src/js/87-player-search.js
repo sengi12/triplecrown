@@ -38,7 +38,9 @@ function openPlayerSearch(opts){
   ov.addEventListener('mousedown', e=>{ if(e.target===ov) closePlayerSearch(); });
   document.body.appendChild(ov);
   const inp = document.getElementById('psInput');
-  inp.addEventListener('input', ()=>psRender(inp.value));
+  // Debounced: a fast typist on a phone fired a full-index scan per keystroke.
+  let _psDeb=null;
+  inp.addEventListener('input', ()=>{ clearTimeout(_psDeb); _psDeb=setTimeout(()=>psRender(inp.value), 110); });
   inp.addEventListener('keydown', psKey);
   psSyncModeUi();
   psRender('');
@@ -89,7 +91,11 @@ function psBuildIndex(){
   for(const pid in sleeperPlayers){
     const p = sleeperPlayers[pid];
     if(!p || !p.name) continue;
-    out.push({ pid, name:p.name, norm:ecrNormName(p.name), pos:p.pos||'', team:p.team||'' });
+    const norm=ecrNormName(p.name);
+    // Precompute the full haystack (and its space-free form) here — building them per entry
+    // per keystroke ran ~12 regex passes × every player in the DB on each input event.
+    const hay=`${norm} ${ecrNormName(p.team||'')} ${ecrNormName(p.pos||'')}`.trim();
+    out.push({ pid, name:p.name, norm, pos:p.pos||'', team:p.team||'', hay, hayC:hay.replace(/\s/g,'') });
   }
   // Team defenses aren't in the slim player DB (it drops position 'DEF'), but they're real
   // roster units people search for. Add one entry per NFL team, keyed by the abbreviation the
@@ -98,7 +104,9 @@ function psBuildIndex(){
     TEAMS.forEach(tc=>{
       const full = (typeof teamDisplayName==='function' ? teamDisplayName(tc) : tc);
       const label = `${full} D/ST`;
-      out.push({ pid:tc, name:label, norm:ecrNormName(full+' '+tc), pos:'DEF', team:tc });
+      const norm=ecrNormName(full+' '+tc);
+      const hay=`${norm} ${ecrNormName(tc)} def dst`.trim();
+      out.push({ pid:tc, name:label, norm, pos:'DEF', team:tc, hay, hayC:hay.replace(/\s/g,'') });
     });
   }
   return out;
@@ -113,21 +121,23 @@ function psRender(q){
     return;
   }
   const nq = ecrNormName(raw);
+  const nqC = nq.replace(/\s/g,'');
 
   const scored = [];
   for(const e of _psIndex){
     const note = psNoteDataForEntry(e);
     if(_psNotesOnly && !note) continue;
 
-    const noteHay = note ? [note.text].concat((note.tags||[]).map(t=>`${t.label||''} ${t.value||''} ${t.context||''}`)).join(' ') : '';
-    const hayNorm = `${e.norm} ${ecrNormName(e.team||'')} ${ecrNormName(e.pos||'')} ${ecrNormName(noteHay)}`.trim();
+    // Note text is the only per-render haystack piece (notes can change between opens);
+    // the name/team/pos part rides precomputed on the index entry.
+    const noteNorm = note ? ecrNormName([note.text].concat((note.tags||[]).map(t=>`${t.label||''} ${t.value||''} ${t.context||''}`)).join(' ')) : '';
     let s = -1;
     if(!raw){
       s = 2;
     } else if(e.norm === nq) s = 0;
     else if(e.norm.startsWith(nq)) s = 1;
-    else if(hayNorm.includes(nq)) s = 2;
-    else if(nq.length>=3 && hayNorm.replace(/\s/g,'').includes(nq.replace(/\s/g,''))) s = 3;
+    else if(e.hay.includes(nq) || (noteNorm && noteNorm.includes(nq))) s = 2;
+    else if(nqC.length>=3 && (e.hayC.includes(nqC) || (noteNorm && noteNorm.replace(/\s/g,'').includes(nqC)))) s = 3;
     if(s>=0) scored.push({e, s, note});
   }
   scored.sort((a,b)=>{

@@ -114,8 +114,10 @@ function _thsPrimeAdjacent(idx){
   if(!Array.isArray(TEAMS) || idx<0) return;
   const prev = TEAMS[idx-1];
   const next = TEAMS[idx+1];
-  if(prev) _thsCachePreview(prev);
-  if(next) _thsCachePreview(next);
+  // _thsGetPreview respects the cache; the old unconditional _thsCachePreview rebuilt both
+  // neighbours' header HTML on every call.
+  if(prev) _thsGetPreview(prev);
+  if(next) _thsGetPreview(next);
 }
 
 function _thsSetInitialUnder(host, idx){
@@ -245,12 +247,14 @@ function _thsHeaderPreviewHtml(team){
     const idx = TEAMS.indexOf(currentTeam);
     if(idx < 0) return;
     if(!TEAMS[idx-1] && !TEAMS[idx+1]) return;
-    _thsPrimeAdjacent(idx);
 
     header = _thsActiveHeader() || h;
     host = _thsHostForHeader(header);
     if(!host) return;
-    _thsSetInitialUnder(host, idx);
+    // NOTE: priming previews + parking the under layer moved to touchmove (axis==='x') —
+    // touchstart fires on every tap and scroll-start inside a team header, and this work
+    // rendered two header previews + wrote to the DOM before the gesture was even known to
+    // be a swipe (88-tab-swipe learned the same lesson).
     x0=t.clientX;
     y0=t.clientY;
   }, {passive:true});
@@ -265,6 +269,9 @@ function _thsHeaderPreviewHtml(team){
       if(Math.abs(dx) < THS_DECIDE && Math.abs(dy) < THS_DECIDE) return;
       axis = (Math.abs(dx) > Math.abs(dy)*1.35) ? 'x' : 'y';
       if(axis==='y'){ x0=null; y0=null; clearShift(false); header=null; host=null; return; }
+      // Horizontal confirmed — prime the neighbour previews and park the under layer now.
+      const pidx = Array.isArray(TEAMS) ? TEAMS.indexOf(currentTeam) : -1;
+      if(pidx>=0){ _thsPrimeAdjacent(pidx); _thsSetInitialUnder(host, pidx); }
     }
     if(axis!=='x') return;
 

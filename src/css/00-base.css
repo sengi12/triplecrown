@@ -22,6 +22,9 @@ html{background:var(--bg);}
 body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;font-size:14px;}
 .header{background:var(--surface);border-bottom:1px solid var(--border);
   padding:9px 16px;display:flex;align-items:center;gap:10px;
+  /* Installed-PWA mode (black-translucent) draws under the iPhone status bar/notch —
+     pad the sticky header down past it. env() is 0 everywhere else, so no visual change. */
+  padding-top:calc(9px + env(safe-area-inset-top, 0px));
   position:sticky;top:0;z-index:200;flex-wrap:wrap;}
 .logo{font-size:16px;font-weight:900;color:var(--accent);letter-spacing:-.5px;white-space:nowrap;}
 .logo span{color:var(--text);}
@@ -59,7 +62,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .progress-wrap.baseline .progress-text{color:var(--warn);}
 /* Mobile team-picker change markers (hidden on desktop, where the sidebar shows the dots). */
 .team-picker-dot,.team-picker-count,.team-picker-toggle-right{display:none;}
-.main{display:flex;height:calc(100vh - 50px);}
+/* 100vh on iOS includes the space behind the URL bar; dvh tracks the VISIBLE viewport, so
+   the bottom of the sidebar/content shell stays reachable without scrolling the bar away. */
+.main{display:flex;height:calc(100vh - 50px);height:calc(100dvh - 50px);}
 .sidebar{width:200px;min-width:200px;background:var(--surface);
   border-right:1px solid var(--border);overflow-y:auto;padding:8px 0;flex-shrink:0;}
 .team-picker-toggle{display:none;}

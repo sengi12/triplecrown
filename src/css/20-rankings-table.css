@@ -80,7 +80,7 @@
 /* ── Keep Trade Cut overlay ───────────────────────────────────────────────── */
 .ktc-overlay{position:fixed;inset:0;z-index:1200;pointer-events:none;}
 .ktc-backdrop{position:absolute;inset:0;background:rgba(7,10,16,.58);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:18px;pointer-events:auto;}
-.ktc-modal{width:min(1040px,calc(100vw - 26px));max-height:calc(100vh - 28px);overflow:auto;background:linear-gradient(165deg,#0f151d 0%,#111a24 65%,#0f1722 100%);border:1px solid rgba(132,154,194,.28);border-radius:16px;box-shadow:0 26px 80px rgba(0,0,0,.48);padding:18px 18px 14px;}
+.ktc-modal{width:min(1040px,calc(100vw - 26px));max-height:calc(100vh - 28px);max-height:calc(100dvh - 28px);overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;background:linear-gradient(165deg,#0f151d 0%,#111a24 65%,#0f1722 100%);border:1px solid rgba(132,154,194,.28);border-radius:16px;box-shadow:0 26px 80px rgba(0,0,0,.48);padding:18px 18px 14px;}
 .ktc-head{display:flex;align-items:center;justify-content:space-between;gap:10px;}
 .ktc-title{font-size:22px;font-weight:900;letter-spacing:.3px;color:#8fd2ff;}
 .ktc-x{border:1px solid var(--border);background:#111824;color:var(--text);border-radius:10px;padding:4px 9px;cursor:pointer;}

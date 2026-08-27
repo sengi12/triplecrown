@@ -208,6 +208,7 @@ run_js_test test_la_popovers    "League Analyzer radar/cliff popovers open, repl
 run_js_test test_note_scope     "Stat-tag metadata splits across row scope + cell and reassembles identically"
 run_js_test test_bounded_caches "Rankings HTML cache is byte-bounded; coaching seasons are LRU-evicted and trimmed on tab-hide"
 run_js_test test_rankings_stream "Rankings mobile: rows stream into the tbody (no quick-open notice); Filters/search/pos taps update in place"
+run_js_test test_mobile_hardening "iOS/Android hardening: safe-area+dvh in the build, keyboard-aware popups, bounded caches, undo budget, per-body sticky headers"
 run_js_test test_boot_embedded_tdz "Baked/embedded boot path touches no not-yet-initialised binding (concat-order TDZ)"
 run_js_test test_baked_boot    "Baked-in seed boots self-contained with no fetch (phone/file:// safe)"
 run_js_test test_ecr_load      "Seed load populates ECR (incl. ECR-only seeds, the empty-seed bug fix)"

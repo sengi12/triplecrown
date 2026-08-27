@@ -102,7 +102,7 @@ function renderDepthChart(team){
     const chips=row.players.map((p,i)=>{
       total++;
       const hp = (typeof hsPack==='function') ? hsPack({name:p.name, pos:(p.pos||row.label), team, headshot:p.headshot}) : {src:(p.headshot||''), fallbacks:[]};
-      const hs = hp.src ? `<img src="${hp.src}" class="depth-hs" data-fallbacks="${(hp.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">` : '';
+      const hs = hp.src ? `<img src="${hp.src}" class="depth-hs" loading="lazy" decoding="async" data-fallbacks="${(hp.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">` : '';
       const rk = p.exp===0 ? `<span class="depth-rookie">R</span>` : '';
       const jersey = p.jersey ? `<span class="depth-jersey">#${p.jersey}</span>` : '';
       const starter = i===0 ? ' depth-starter' : '';
@@ -135,7 +135,7 @@ function renderDepthChartFallback(team){
   const groups=posKeys.map(pos=>{
     const chips=byPos[pos].map(p=>{
       const hp = (typeof hsPack==='function') ? hsPack({name:p.name, pos:p.pos, team, headshot:p.headshot}) : {src:(p.headshot||''), fallbacks:[]};
-      const hs = hp.src ? `<img src="${hp.src}" class="depth-hs" data-fallbacks="${(hp.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">` : '';
+      const hs = hp.src ? `<img src="${hp.src}" class="depth-hs" loading="lazy" decoding="async" data-fallbacks="${(hp.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">` : '';
       const rk = p.exp===0 ? `<span class="depth-rookie">R</span>` : '';
       const jersey = p.jersey ? `<span class="depth-jersey">#${p.jersey}</span>` : '';
       return `<span class="depth-player clickable-player" onclick="${pcardOnclick(p.name, p.pos, team)}">${hs}<span class="depth-name">${p.name}</span>${jersey}${rk}</span>`;

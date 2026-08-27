@@ -21,7 +21,7 @@ async function fetchPlayerWeekly(pid, season){
         const cut={}; for(const w in data){ if(Number(w)<=max) cut[w]=data[w]; }
         data = Object.keys(cut).length ? cut : null;
       }
-      weeklySkillCache[key] = data; return data; })
+      _tcCachePut(weeklySkillCache, key, data, 400); return data; })
     .finally(()=>{ delete _weeklyInFlight[key]; });
   return _weeklyInFlight[key];
 }
@@ -302,6 +302,13 @@ function escHtml(s){
     .replace(/'/g,'&#39;');
 }
 
+// Viewport size for positioning fixed popups. visualViewport (when present) tracks the
+// iOS/Android on-screen keyboard, which window.innerHeight does NOT — a popup opened while
+// an input is focused would otherwise be placed under the keyboard and be unreachable.
+function tcViewportSize(){
+  const vv=(typeof window!=='undefined' && window.visualViewport) ? window.visualViewport : null;
+  return { vw:(vv&&vv.width)||window.innerWidth||360, vh:(vv&&vv.height)||window.innerHeight||640 };
+}
 // Escape for JS single-quoted string literals used inside inline event attributes.
 function escJsSingle(s){
   return String(s==null?'':s)
@@ -312,10 +319,16 @@ function escJsSingle(s){
     .replace(/\u2028/g,'\\u2028')
     .replace(/\u2029/g,'\\u2029');
 }
-// Close any open 17-game pace popovers.
+// Close any open 17-game pace popovers. The document-level click and capture-phase scroll
+// listeners below call this on EVERY tap/scroll in the app — the flag makes those calls a
+// boolean check instead of an app-wide querySelectorAll. ("Maybe open" is fine: a pop closed
+// via its own ✕ leaves the flag set, and the next call does one sweep and clears it.)
+let _pacePopsMaybeOpen=false;
 function closeWeekFilterPacePops(){
+  if(!_pacePopsMaybeOpen) return;
   if(!document || !document.querySelectorAll) return;
   document.querySelectorAll('.pace-info-pop').forEach(el=>el.remove());
+  _pacePopsMaybeOpen=false;
 }
 // Toggle a persistent, selectable popover containing the 17-game pace text so the user can
 // copy it without racing a hover tooltip.
@@ -334,10 +347,11 @@ function toggleWeekFilterPace(btn, text){
     </div>
     <div class="pace-info-pop-body">${escAttr(text)}</div>`;
   wrap.appendChild(pop);
+  _pacePopsMaybeOpen=true;
   // Position as viewport-fixed and clamp so it never runs off-screen (mobile or narrow desktop).
   // Prefer right-aligned to the button and below it; flip above / clamp to the edges as needed.
   try{
-    const M=8, vw=window.innerWidth, vh=window.innerHeight;
+    const M=8, {vw, vh}=tcViewportSize();
     const br=btn.getBoundingClientRect(), pr=pop.getBoundingClientRect();
     let left=br.right-pr.width;
     if(left+pr.width>vw-M) left=vw-M-pr.width;
@@ -811,6 +825,6 @@ function imgSm(src,cls='share-hs',fb=''){
   if(!src) return `<div class="${cls}-err">${fb}</div>`.replace(cls+'-err',cls.replace('share-hs','share-hs')+'-err');
   const fbList=fallbacks.filter(Boolean).join('|');
   const onerr = `const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else if(this.parentNode){this.outerHTML='<div class=\\'share-hs-err\\'>${fb}</div>';}`;
-  return `<img src="${src}" class="${cls}" alt="" data-fallbacks="${fbList}" onerror="${onerr}">`;
+  return `<img src="${src}" class="${cls}" alt="" data-fallbacks="${fbList}" loading="lazy" decoding="async" onerror="${onerr}">`;
 }
 

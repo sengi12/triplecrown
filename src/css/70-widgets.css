@@ -52,7 +52,11 @@
 .wr-week-num{font-size:10px;color:var(--text);font-weight:800;}
 
 /* ── Roster tracker (pinned bottom bar + expandable panel) ── */
-.rt-bar-host{position:fixed;left:0;right:0;bottom:0;z-index:900;pointer-events:none;}
+.rt-bar-host{position:fixed;left:0;right:0;bottom:0;z-index:900;pointer-events:none;
+  /* Keep the drag band above the iPhone home indicator — iOS reserves that strip for the
+     system swipe-up, which was eating the drawer's drag gesture. The host paints the inset
+     area in the bar's surface color so no page content peeks through the gap. */
+  padding-bottom:env(safe-area-inset-bottom, 0px);background:var(--surface);}
 .rt-bar-host>*{pointer-events:auto;}
 .rt-bar{display:flex;align-items:center;gap:10px;background:var(--surface);
   border-top:1px solid var(--border);box-shadow:0 -6px 24px rgba(0,0,0,.35);

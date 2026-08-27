@@ -105,3 +105,11 @@ html,body{max-width:100%;overflow-x:hidden;}
 .sr-team-wrap,.add-wrap,.coord-carry-wrap,.sr-card-grid,.stats-grid,.scoring-grid{max-width:100%;}
 .rank-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
 
+/* iOS zooms the whole page when a focused control's computed font-size is under 16px — and
+   never zooms back out, leaving the layout cropped. Bump every text-entry control to 16px on
+   touch devices only; desktop keeps the compact sizes. */
+@media (pointer:coarse){
+  .scenario-name,.rank-search-input,.lp-input,.la-row input,.tc-input,
+  .scoring-field input,.sumer-situational,.la-season-sel,.la-tc-sel{font-size:16px;}
+  input[data-rank-min-bucket]{font-size:16px !important;}  /* inline 12px style needs the override */
+}

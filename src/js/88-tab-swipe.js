@@ -75,7 +75,7 @@ function tsPreviewTeamRankings(){
         <span class="tc-label">PREVIEW</span>
         <span style="font-size:11px;color:var(--muted)">Top ${Math.min(view.length,28)} players · full controls after tab settle</span>
       </div>
-      <div class="rank-table-wrap ts-rankings-preview-wrap" style="max-height:calc(100vh - 380px)">
+      <div class="rank-table-wrap ts-rankings-preview-wrap">
         <table class="rankings-table grouped ts-rankings-preview-table"><thead><tr>
           <th><div class="th-stack">RK</div></th>
           <th><div class="th-stack">FPTS</div></th>
@@ -264,11 +264,14 @@ function tsScrollerClaims(el, dir){
     previewCache[cacheKey]=html||'';
   };
 
-  const preloadAdjacentPreviews = ()=>{
+  const preloadAdjacentPreviews = (dxNow)=>{
     if(!tabs || cur<0) return;
-    const left = cur-1, right = cur+1;
-    if(left>=0) cachePreviewForPhase(tsTabPhase(tabs[left]));
-    if(right<tabs.length) cachePreviewForPhase(tsTabPhase(tabs[right]));
+    // Only the neighbour the finger is heading toward (dx>0 = swiping right = previous tab).
+    // Rendering BOTH at the axis-lock instant doubled the mid-gesture spike (each preview is
+    // a full phase render, 10-60ms on a phone); a direction reversal renders the other side
+    // on demand in setPreview().
+    const idx = (typeof dxNow==='number' && dxNow>0) ? cur-1 : cur+1;
+    if(idx>=0 && idx<tabs.length) cachePreviewForPhase(tsTabPhase(tabs[idx]));
   };
 
   const setPreview = (phase, label)=>{
@@ -375,7 +378,7 @@ function tsScrollerClaims(el, dir){
       // setPreview() below only needs whichever one the finger is heading toward, but doing
       // both here keeps a mid-gesture direction change instant, and this runs once per swipe
       // instead of once per tap.
-      preloadAdjacentPreviews();
+      preloadAdjacentPreviews(dx);
     }
     if(axis!=='x') return;
     // Ours now: stop the browser from scrolling / pull-to-refreshing underneath.

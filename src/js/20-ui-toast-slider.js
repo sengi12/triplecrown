@@ -9,6 +9,18 @@
 // chaining once the region runs out of room.)
 const TC_FLOAT_SEL='.pcard-overlay,.scheme-overlay,.ps-overlay,.note-picker-overlay,.note-info-overlay,.tc-modal-overlay,#vonaOptPop,#tcInjPop,#tcInfoPop';
 var _tcLastTouchY=null, _tcLastTouchX=null, _tcGestureFloaters=null;
+var _tcGestureInner=null, _tcGestureInnerFor=null, _tcGestureFloatOk=null;
+// Tiny bound for the plain-object fetch caches sprinkled through the app (weekly stats, ESPN
+// gamelogs, …). String-keyed objects iterate in insertion order, so dropping the first key
+// evicts the oldest entry — enough to keep a long phone session from holding every payload
+// it ever fetched.
+function _tcCachePut(cache, key, val, max){
+  if(!(key in cache)){
+    const ks=Object.keys(cache);
+    if(ks.length>=max) delete cache[ks[0]];
+  }
+  cache[key]=val;
+}
 function _tcTouchAnchor(e){
   const t=e.touches&&e.touches[0];
   _tcLastTouchY=t?t.clientY:null; _tcLastTouchX=t?t.clientX:null;
@@ -17,6 +29,13 @@ function _tcTouchAnchor(e){
   let fl=[];
   try{ document.querySelectorAll(TC_FLOAT_SEL).forEach(f=>{ if(f.offsetWidth||f.offsetHeight) fl.push(f); }); }catch(_e){}
   _tcGestureFloaters=fl;
+  // Resolve the nearest scrollable ancestor ONCE per gesture as well. Touch events dispatch
+  // to the touchstart element for the whole gesture, so the answer cannot change mid-drag —
+  // but the old per-touchmove walk ran getComputedStyle per ancestor at 60-120Hz, a forced
+  // style recalc on the main thread in the middle of every scroll anywhere in the app.
+  _tcGestureInnerFor=e.target||null;
+  _tcGestureInner=_tcInnerScrollerEl(e.target);
+  _tcGestureFloatOk=null;   // floater-branch scrollability verdict, cached lazily per gesture
 }
 // The nearest ancestor that actually scrolls, or null when the gesture belongs to the page.
 function _tcInnerScrollerEl(el){
@@ -64,7 +83,7 @@ function _tcScrollGuard(e){
     const dy=t0.clientY-_tcLastTouchY, dx=t0.clientX-(_tcLastTouchX!=null?_tcLastTouchX:t0.clientX);
     _tcLastTouchY=t0.clientY; _tcLastTouchX=t0.clientX;
     if(!dy && !dx) return;
-    const inner=_tcInnerScrollerEl(e.target);
+    const inner=(e.target===_tcGestureInnerFor)?_tcGestureInner:_tcInnerScrollerEl(e.target);
     if(inner){
       const verdict=_tcEdgeCancel(inner, dx, dy);
       if(verdict===true){ if(e.cancelable) e.preventDefault(); return; }
@@ -82,17 +101,27 @@ function _tcScrollGuard(e){
   floaters.forEach(f=>{ if(f.contains(t)) within=f; });
   if(!within){ if(e.cancelable) e.preventDefault(); return; }
   // Inside the surface: fine as long as the gesture lands in something that can actually
-  // scroll (either axis — cards hold horizontally-scrolling tables).
-  let n=(t && t.nodeType===1)?t:(t&&t.parentElement);
-  while(n){
-    const canY=n.scrollHeight>n.clientHeight+1, canX=n.scrollWidth>n.clientWidth+1;
-    if(canY||canX){
-      let st=null; try{ st=getComputedStyle(n); }catch(_e){}
-      if(st && ((canY && /(auto|scroll)/.test(st.overflowY)) || (canX && /(auto|scroll)/.test(st.overflowX)))) return;
+  // scroll (either axis — cards hold horizontally-scrolling tables). The walk's verdict is
+  // constant for a touch gesture (same start element throughout), so compute it once and
+  // reuse — this branch used to re-run getComputedStyle per ancestor on every touchmove.
+  let ok;
+  if(e.type==='touchmove' && t===_tcGestureInnerFor && _tcGestureFloatOk!==null){
+    ok=_tcGestureFloatOk;
+  } else {
+    ok=false;
+    let n=(t && t.nodeType===1)?t:(t&&t.parentElement);
+    while(n){
+      const canY=n.scrollHeight>n.clientHeight+1, canX=n.scrollWidth>n.clientWidth+1;
+      if(canY||canX){
+        let st=null; try{ st=getComputedStyle(n); }catch(_e){}
+        if(st && ((canY && /(auto|scroll)/.test(st.overflowY)) || (canX && /(auto|scroll)/.test(st.overflowX)))){ ok=true; break; }
+      }
+      if(n===within) break;
+      n=n.parentElement;
     }
-    if(n===within) break;
-    n=n.parentElement;
+    if(e.type==='touchmove' && t===_tcGestureInnerFor) _tcGestureFloatOk=ok;
   }
+  if(ok) return;
   if(e.cancelable) e.preventDefault();
 }
 try{
@@ -131,7 +160,7 @@ function tcInfoPop(ev, key){
   document.body.appendChild(div);
   const r=(ev.target&&ev.target.getBoundingClientRect)?ev.target.getBoundingClientRect():{left:20,right:40,top:60,bottom:80};
   const pw=div.offsetWidth||280, ph=div.offsetHeight||120;
-  const vw=window.innerWidth||360, vh=window.innerHeight||640;
+  const {vw, vh}=tcViewportSize();
   div.style.left=Math.max(8, Math.min(vw-pw-8, r.left))+'px';
   div.style.top=(r.bottom+6+ph>vh ? Math.max(8, r.top-ph-6) : r.bottom+6)+'px';
   setTimeout(()=>{ const off=(e)=>{

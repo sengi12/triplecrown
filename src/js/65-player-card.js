@@ -533,38 +533,59 @@ function renderPlayerCardShell(pid, pos, team){
 let pcardState = null;        // {pid, posc, team, isSkill}
 let pcardStatsMode = 'pro';
 let pcardToken = 0;           // bumped on each source switch so a slow in-flight load can't clobber a newer one
-let _pcardStickyHeadersBound = false;
+let _pcardStickyResizeBound = false;
+let _pcardStickyRaf = 0;
 
 function pcardRefreshStickyStatHeaders(){
+  _pcardStickyRaf = 0;
   const body = document.getElementById('pcardBody');
-  if(!body) return;
-  const bodyRect = body.getBoundingClientRect();
-  const stickyTop = bodyRect.top;
+  if(!body || typeof body.getBoundingClientRect!=='function') return;
+  const stickyTop = body.getBoundingClientRect().top;
   const wraps = body.querySelectorAll('.pcard-table-scroll');
+  // All measurements first, then all writes — the old read→write→read alternation per table
+  // forced a fresh style/layout pass for every table on every scroll tick.
+  const jobs = [];
   wraps.forEach((wrap)=>{
     const table = wrap.querySelector('.pcard-table');
     const thead = table && table.tHead;
     if(!thead || !thead.rows || !thead.rows.length) return;
     const wrapRect = wrap.getBoundingClientRect();
-    const rowHeights = Array.from(thead.rows).map(r=>r.getBoundingClientRect().height || 0);
-    const headerHeight = rowHeights.reduce((a,b)=>a+b,0);
+    let headerHeight = 0;
+    for(let i=0;i<thead.rows.length;i++) headerHeight += (thead.rows[i].getBoundingClientRect().height || 0);
     const maxOffset = Math.max(0, (wrapRect.bottom - wrapRect.top) - headerHeight);
     const offset = Math.max(0, Math.min(maxOffset, stickyTop - wrapRect.top));
-    thead.style.transform = offset>0 ? `translateY(${offset}px)` : '';
+    jobs.push([thead, offset]);
   });
+  jobs.forEach(([thead, offset])=>{ thead.style.transform = offset>0 ? `translateY(${offset}px)` : ''; });
+}
+
+// Coalesce the scroll-driven refreshes to one per frame — iOS fires scroll much faster than
+// paint during momentum, and each refresh forces layout.
+function pcardScheduleStickyStatHeaders(){
+  if(_pcardStickyRaf) return;
+  if(typeof window!=='undefined' && window.requestAnimationFrame){
+    _pcardStickyRaf = window.requestAnimationFrame(pcardRefreshStickyStatHeaders);
+  } else {
+    _pcardStickyRaf = 1;
+    setTimeout(pcardRefreshStickyStatHeaders, 16);
+  }
 }
 
 function pcardEnableStickyStatHeaders(){
   const body = document.getElementById('pcardBody');
   if(!body) return;
-  if(!_pcardStickyHeadersBound){
-    body.addEventListener('scroll', pcardRefreshStickyStatHeaders, { passive:true });
-    if(typeof window!=='undefined' && window.addEventListener){
-      window.addEventListener('resize', pcardRefreshStickyStatHeaders, { passive:true });
-    }
-    _pcardStickyHeadersBound = true;
+  // The overlay — and with it #pcardBody — is rebuilt for every card open, so the scroll
+  // listener must bind per ELEMENT. The old module-wide flag bound it to the FIRST session's
+  // body only: every card after the first had no scroll listener, and sticky headers died.
+  if(!body._pcardStickyBound){
+    body._pcardStickyBound = true;
+    body.addEventListener('scroll', pcardScheduleStickyStatHeaders, { passive:true });
   }
-  requestAnimationFrame(pcardRefreshStickyStatHeaders);
+  if(!_pcardStickyResizeBound && typeof window!=='undefined' && window.addEventListener){
+    window.addEventListener('resize', pcardScheduleStickyStatHeaders, { passive:true });
+    _pcardStickyResizeBound = true;   // the window listener really is once per session
+  }
+  pcardScheduleStickyStatHeaders();
 }
 
 async function loadPlayerCardData(pid, pos, team){

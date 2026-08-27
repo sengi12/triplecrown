@@ -32,7 +32,7 @@ function renderNflverseRoster(team){
       const sleeperId = (sid!=null && /^\d+$/.test(String(sid))) ? String(sid) : null;
       const hpack = sleeperId ? hsPack({player_id:sleeperId, name, pos:ps, team}) : hsPack({name, pos:ps, team});
       const hs = hpack && hpack.src
-        ? `<img src="${hpack.src}" class="depth-hs" data-fallbacks="${(hpack.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">`
+        ? `<img src="${hpack.src}" class="depth-hs" loading="lazy" decoding="async" data-fallbacks="${(hpack.fallbacks||[]).join('|')}" onerror="const l=(this.dataset.fallbacks||'').split('|').filter(Boolean);if(l.length){this.dataset.fallbacks=l.slice(1).join('|');this.src=l[0];}else{this.style.display='none';}">`
         : '';
       const rk = exp===0 ? `<span class="depth-rookie">R</span>` : '';
       const jr = jersey!=null ? `<span class="depth-jersey">#${jersey}</span>` : '';
