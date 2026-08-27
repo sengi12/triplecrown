@@ -139,6 +139,7 @@ def build_all(season, players, only_pids=None, ref=None, refresh=False, verbose=
         for pid, pr in pros.items():
             out["players"][pid]["prospect"] = pr
         out["prospect_meta"] = meta
+        out["team_logos"] = _combine.team_logo_map()
     except Exception as e:
         if verbose:
             print(f"    ! prospect model skipped: {type(e).__name__}: {e}")

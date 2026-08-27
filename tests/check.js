@@ -7102,7 +7102,12 @@ function renderPlayerCardShell(pid, pos, team){
               ${metaItem('HT', height)}
               ${metaItem('WT', weight)}
               ${metaItem('EXP', exp)}
-              ${metaItem('COLLEGE', college==null?college:escHtml(String(college)))}
+              ${(()=>{ // the school's LOGO where we know it — the text name is the fallback
+                const u=(typeof cfbCollegeLogo==='function' && college && college!=='–')?cfbCollegeLogo(college):'';
+                if(!u) return metaItem('COLLEGE', college==null?college:escHtml(String(college)));
+                return `<div class="pcard-meta-item"><span class="pcard-meta-label">COLLEGE</span>
+                  <span class="pcard-meta-val pcard-college-val"><img src="${u}" class="pcard-college-ico" alt="${escAttr(String(college))}" title="${escAttr(String(college))}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display=''"><span style="display:none">${escHtml(String(college))}</span></span></div>`;
+              })()}
             </div>
           </div>
         </div>
@@ -10971,6 +10976,22 @@ function _cfbSeasonTable(prof, pid, base){
       <thead><tr><th class="cfb-season-th">SEASON</th>${head}</tr></thead>
       <tbody>${rows}</tbody>
     </table></div>`;
+}
+
+// College logo lookup (ESPN NCAA CDN), from the seed-baked name→id map. '' when unmapped —
+// callers fall back to the text name.
+function cfbCollegeLogo(college){
+  const m = (typeof CFB!=='undefined' && CFB && CFB.team_logos) || null;
+  if(!m || !college) return '';
+  const norm = (x)=>String(x).normalize('NFKD').replace(/[^a-zA-Z0-9]/g,'').toLowerCase();
+  // Sleeper and ESPN disagree on qualifiers ('Miami (FL)' vs 'Miami') — try exact, then
+  // parenthetical-stripped, then the pre-comma piece.
+  const cands = [college, String(college).replace(/\s*\(.*?\)/g,''), String(college).split(',')[0]];
+  for(const c of cands){
+    const id = m[norm(c)];
+    if(id) return `https://a.espncdn.com/i/teamlogos/ncaa/500/${id}.png`;
+  }
+  return '';
 }
 
 // The main entry point: the whole panel for one player, or '' when there's nothing to show.

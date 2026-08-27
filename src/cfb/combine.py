@@ -176,6 +176,49 @@ def college_extras(prof, teammate_cap):
     return ex
 
 
+def team_logo_map():
+    """{normalized college name: espn ncaa team id} from the committed ESPN teams list
+    (src/cfb/espn_college_teams.json — refresh by re-pulling ESPN's college-football teams
+    API; the list changes ~never). Every name variant maps, plus a parenthetical-stripped
+    alias so Sleeper's 'Miami (FL)' finds the same id as ESPN's 'Miami'. Stdlib only."""
+    import re as _re
+    import unicodedata as _u
+    def _n(x):
+        x = _u.normalize("NFKD", str(x or "")).encode("ascii", "ignore").decode()
+        return _re.sub(r"[^a-z0-9]", "", x.lower())
+    path = os.path.join(os.path.dirname(__file__), "espn_college_teams.json")
+    with open(path) as f:
+        teams = json.load(f)
+    m = {}
+    # Pass 1: EXACT name variants only. Pass 2: stripped aliases fill gaps but never
+    # override an exact claim — otherwise Miami (OH)'s stripped alias steals 'miami'
+    # from the Hurricanes, whose exact name it is.
+    for t in teams:
+        tid = t.get("id")
+        for name in t.get("names") or []:
+            k = _n(name)
+            if k and k not in m:
+                m[k] = tid
+    for t in teams:
+        tid = t.get("id")
+        for name in t.get("names") or []:
+            name = str(name)
+            for variant in (_re.sub(r"\s*\(.*?\)", "", name), name.split(",")[0],
+                            name.replace(" State", " St"),        # Sleeper's 'Utah St.' style
+                            name.replace(" St", " State")):        # …and ESPN's clipped 'App State'
+                k = _n(variant)
+                if k and k not in m:
+                    m[k] = tid
+    # Curated Sleeper-isms that no mechanical rule reaches (alias -> the key ESPN answers to).
+    for alias, target in {"northcarolinastate": "ncstate", "mcneesestate": "mcneese",
+                          "appalachianstate": "appstate", "centralflorida": "ucf",
+                          "louisianamonroe": "ulmonroe", "mississippi": "olemiss",
+                          "southerncalifornia": "usc", "brighamyoung": "byu"}.items():
+        if target in m and alias not in m:
+            m[alias] = m[target]
+    return m
+
+
 def _match(rows, nm, college):
     """Best row for a normalized name: school agreement breaks ties."""
     cand = rows[rows["nm"] == nm]

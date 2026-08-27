@@ -517,3 +517,10 @@ html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:no
 .pcard-hero-v2 .pcard-close{top:10px;}
 .pcard-inj-banner ~ .pcard-back,.pcard-inj-banner ~ .pcard-close{top:40px!important;}
 .pcard-hero-v2 .pcard-inj-banner ~ .pcard-note-btn{top:40px;}
+/* College logo in the hero meta line (text name is the onerror fallback). Stacked white
+   drop-shadows trace the logo's own silhouette — an outline that hugs the mark instead
+   of a blocky chip — with one soft dark shadow underneath for lift. */
+.pcard-college-ico{height:24px;width:auto;display:block;
+  filter:drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff)
+         drop-shadow(0 2px 3px rgba(0,0,0,.35));}
+.pcard-college-val{display:inline-flex;align-items:center;min-height:20px;}

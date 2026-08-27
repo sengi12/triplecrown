@@ -50,6 +50,13 @@ chk(combine._percentile(vals, 4.70, True)  < 20, "slowest 40 → low percentile"
 chk(combine._percentile([30,33,36,39,42], 42, False) > 80, "highest vert → high percentile")
 chk(combine._percentile(vals, 4.50, True) == 50, "midrank lands at 50")
 
+print("=== college logo map ===")
+m = combine.team_logo_map()
+chk(m.get('miami') == '2390', "'Miami' is the Hurricanes (exact names beat stripped aliases)")
+chk(m.get('miamioh') == '193', "'Miami (OH)' keeps its own id")
+chk(m.get('boisestate') is not None and m.get('lsu') is not None, "common schools resolve")
+chk(len(m) > 2000, f"map covers the college landscape ({len(m)} keys)")
+
 print("=== height parsing ===")
 chk(combine._ht_inches('6-2') == 74, "6-2 → 74 in")
 chk(combine._ht_inches(74) == 74, "numeric passthrough")

@@ -193,6 +193,22 @@ function _cfbSeasonTable(prof, pid, base){
     </table></div>`;
 }
 
+// College logo lookup (ESPN NCAA CDN), from the seed-baked name→id map. '' when unmapped —
+// callers fall back to the text name.
+function cfbCollegeLogo(college){
+  const m = (typeof CFB!=='undefined' && CFB && CFB.team_logos) || null;
+  if(!m || !college) return '';
+  const norm = (x)=>String(x).normalize('NFKD').replace(/[^a-zA-Z0-9]/g,'').toLowerCase();
+  // Sleeper and ESPN disagree on qualifiers ('Miami (FL)' vs 'Miami') — try exact, then
+  // parenthetical-stripped, then the pre-comma piece.
+  const cands = [college, String(college).replace(/\s*\(.*?\)/g,''), String(college).split(',')[0]];
+  for(const c of cands){
+    const id = m[norm(c)];
+    if(id) return `https://a.espncdn.com/i/teamlogos/ncaa/500/${id}.png`;
+  }
+  return '';
+}
+
 // The main entry point: the whole panel for one player, or '' when there's nothing to show.
 function renderCfbProspect(pid){
   const prof = cfbProfile(pid);

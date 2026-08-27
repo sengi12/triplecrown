@@ -489,7 +489,12 @@ function renderPlayerCardShell(pid, pos, team){
               ${metaItem('HT', height)}
               ${metaItem('WT', weight)}
               ${metaItem('EXP', exp)}
-              ${metaItem('COLLEGE', college==null?college:escHtml(String(college)))}
+              ${(()=>{ // the school's LOGO where we know it — the text name is the fallback
+                const u=(typeof cfbCollegeLogo==='function' && college && college!=='–')?cfbCollegeLogo(college):'';
+                if(!u) return metaItem('COLLEGE', college==null?college:escHtml(String(college)));
+                return `<div class="pcard-meta-item"><span class="pcard-meta-label">COLLEGE</span>
+                  <span class="pcard-meta-val pcard-college-val"><img src="${u}" class="pcard-college-ico" alt="${escAttr(String(college))}" title="${escAttr(String(college))}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display=''"><span style="display:none">${escHtml(String(college))}</span></span></div>`;
+              })()}
             </div>
           </div>
         </div>
