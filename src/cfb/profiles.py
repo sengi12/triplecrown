@@ -131,6 +131,17 @@ def build_all(season, players, only_pids=None, ref=None, refresh=False, verbose=
         for pid, p in prof.items():
             out["players"].setdefault(pid, p)
         out["classes"][str(cls)] = {"pool": len(pool), "profiles": len(prof)}
+    # Combine percentiles + the fantasy-relevance model, attached per profile. Fail-soft:
+    # a bad download or join leaves the profiles exactly as they were.
+    try:
+        from . import combine as _combine
+        pros, meta = _combine.build(out["players"], refresh=refresh, verbose=verbose)
+        for pid, pr in pros.items():
+            out["players"][pid]["prospect"] = pr
+        out["prospect_meta"] = meta
+    except Exception as e:
+        if verbose:
+            print(f"    ! prospect model skipped: {type(e).__name__}: {e}")
     return out
 
 

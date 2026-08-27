@@ -317,8 +317,6 @@ The project ships with a regression suite (Node + Python) covering the projectio
 
 ## To Do
 ### New Features
-- [x] clicking on a team logo, takes you to that team's current-season projections page anywhere in the app (team views keep your current tab; league-wide views land on Passing)
-- [x] add ESPN league support — see **Linking an ESPN league** below (public leagues only)
 - [🛠️] add Yahoo league support: needs a server. Yahoo's API sends **no CORS headers at all**, so the
   browser can't call it even with a valid token, and its OAuth2 flow requires a client secret plus hourly
   token refresh. Plan: one Supabase Edge Function doing the code exchange, refresh and read-only proxying.
@@ -335,14 +333,7 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] reach out to Sleeper
 ### League Analyzer
 - [ ] In-Season Tools:
-  - [x] lineup helper tab
-  - [x] live matchup / scoreboard tab (my matchup featured, 45s refresh during games)
   - [ ] Implement future schedule on player cards (the schedule data now ships in the in-season sidecar)
-  - [x] defensive rankings per pos that get more accurate as we get more data (each defense ranked against each fantasy position: QB, RB, WR, TE)
-  - [x] Rest of season projections
-    - [x] Current 17-game pace vs kickoff-frozen projections (Pace toggle + Trends tab)
-    - [x] ROS positive regression candidates highlighted (volume percentile vs TD-rate percentile gap)
-    - [x] Trending Up and Trending Down players each week (last-3 vs prior-3 target share / touches)
   - [ ] ESPN live matchup scoring (mMatchupScore through the gateway)
 ### Audit
 ### Import Projections

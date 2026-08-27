@@ -1,0 +1,19 @@
+{
+ "_doc": {
+  "what": "Tunable weights for the OL grading pipeline (ol_grades_pipeline.py). Loaded at pipeline run time; delete a key (or this file) and the code's built-in defaults apply. Same tweak pattern as src/cfb/prospect_model.json.",
+  "tweak_workflow": "Edit this file -> re-run the OL pipeline (it feeds ol grades into the seed via build_seed) -> rebake to preview. Player cards read the baked grades; nothing recomputes client-side.",
+  "keys": {
+    "composite_w": "The core blend for a lineman's overall grade: market (APY percentile), snap share, draft capital. Fit by non-negative least squares against NEXT-season snap share (train 2021-23, holdout 2024-25, r=+0.685, n=271). Career accolades came out at exactly zero weight - the market already prices them. Weights are renormalized to sum to 1 after loading, so you can think in ratios.",
+    "team_blend": "How much of a PHASE grade (pass/run) comes from the validated team layer rather than the individual composite. Swept vs the ESPN win-rate benchmark: 0.00->AUC .797/.761 (pass/run), 0.15->.790/.744, 0.25->.777/.729, 0.35->.760/.706, 0.50->.723/.660. Zero is best for pure ranking but makes pass and run grades identical; 0.15 buys real phase differentiation for ~0.01 AUC.",
+    "espn_blend": "Weight of ESPN's published win rate where it exists (~60 linemen). The only free signal that is both individual and phase-specific, so it earns a heavy hand there.",
+    "recency_decay": "Per-season decay when blending multiple seasons: weight = 1 - decay * seasons_ago.",
+    "aly_weights": "Adjusted Line Yards crediting (Football Outsiders): losses count loss_mult (the line got beaten), 0-4 yards fully, 5-10 at mid_mult, 10+ at long_mult. Measured reliability r=+0.427 vs +0.351 for raw stuff rate."
+  },
+  "validation": "Blind APM from play-by-play alone FAILED validation (split-half r=0.07, AUC 0.541 vs ESPN) and is retained as diagnostics only - see the pipeline docstring. The composite above identifies ESPN PBWR top-20 at AUC 0.802 and RBWR top-10 at 0.752."
+ },
+ "composite_w": {"market": 0.417, "snap": 0.403, "draft": 0.180},
+ "team_blend": 0.15,
+ "espn_blend": 0.50,
+ "recency_decay": 0.20,
+ "aly_weights": {"loss_mult": 1.20, "mid_mult": 0.50, "long_mult": 0.0}
+}

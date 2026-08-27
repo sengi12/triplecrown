@@ -163,7 +163,8 @@ def pq_optional(name, url_path, columns=None):
 
 
 def recency_weights(seasons):
-    return {s: 1.0 - 0.2 * (max(seasons) - s) for s in seasons}
+    d = float(_OLM.get("recency_decay", 0.20)) if "_OLM" in globals() else 0.20
+    return {s: 1.0 - d * (max(seasons) - s) for s in seasons}
 
 
 def slot_maps(seasons):
@@ -585,6 +586,22 @@ def market_lens(out, grp_map):
 # exactly zero weight: the market prices them in already, so they add nothing on top of APY.
 COMPOSITE_W = {"market": 0.417, "snap": 0.403, "draft": 0.180}
 
+# ── Tunables live in ol_model.json (same documented-JSON pattern as the prospect model) —
+#    the constants above/below are the fallbacks when the file is absent or partial.
+def _load_ol_model():
+    import json as _json
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ol_model.json")
+    try:
+        with open(path) as f:
+            return {k: v for k, v in _json.load(f).items() if not k.startswith("_")}
+    except Exception:
+        return {}
+_OLM = _load_ol_model()
+if isinstance(_OLM.get("composite_w"), dict):
+    _cw = {k: float(v) for k, v in _OLM["composite_w"].items() if k in COMPOSITE_W}
+    _tot = sum(_cw.values()) or 1.0
+    COMPOSITE_W = {k: v / _tot for k, v in _cw.items()}   # ratios, renormalized
+
 # How much of a phase grade is the unit rather than the individual. Swept against the ESPN
 # win-rate benchmark, where every increment costs individual accuracy:
 #     blend  0.00   0.15   0.25   0.35   0.50
@@ -594,13 +611,13 @@ COMPOSITE_W = {"market": 0.417, "snap": 0.403, "draft": 0.180}
 # identical — the composite has no phase-specific content of its own. 0.15 buys real
 # pass-vs-run differentiation from the validated team layer for ~0.01 AUC, which is the
 # trade worth making for a card that has to say something about protection vs. run lanes.
-TEAM_BLEND = 0.15
+TEAM_BLEND = float(_OLM.get("team_blend", 0.15))
 
 # Weight given to ESPN's published win rate in a phase grade, where it exists. This is the
 # only free per-lineman signal that is BOTH individual and phase-specific, so it dominates
 # for the ~60 players it covers. Excluded from the validation AUC above, which would be
 # circular — those numbers are measured without any ESPN input.
-ESPN_BLEND = 0.50
+ESPN_BLEND = float(_OLM.get("espn_blend", 0.50))
 
 _DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
@@ -613,13 +630,14 @@ def aly_weight(y):
     half, and anything past 10 not at all. Measured year-over-year reliability r = +0.427,
     against +0.351 for raw stuff rate — the better team run-blocking metric of the two.
     """
+    aw = _OLM.get("aly_weights") or {}
     if y < 0:
-        return 1.20
+        return float(aw.get("loss_mult", 1.20))
     if y <= 4:
         return 1.00
     if y <= 10:
-        return 0.50
-    return 0.0
+        return float(aw.get("mid_mult", 0.50))
+    return float(aw.get("long_mult", 0.0))
 
 
 def team_run_blocking(seasons, by_season=False):

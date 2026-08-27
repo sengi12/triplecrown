@@ -251,16 +251,67 @@ function renderCfbProspect(pid){
       }), 'note-tag-hit')
     : metaInner;
 
+  // ── Fantasy relevance + combine (nflverse) ──────────────────────────────────
+  // The HIGHLIGHTED row at the very top: the calibrated pre-NFL hit probability, so
+  // card-to-card glances compare on one number. Below it, official combine percentiles.
+  const pro = prof.prospect || null;
+  let relevanceRow = '';
+  let combineRows = '';
+  if(pro){
+    if(pro.prob!=null){
+      const pp = Math.round(pro.prob*100);
+      const ptl = pro.pctl!=null ? pro.pctl : pp;
+      const cls2 = _cfbPctClass(ptl);
+      const pickTxt = pro.pick!=null ? `pick ${pro.pick}` : 'undrafted';
+      // Veterans keep the row for glance-comparison, framed honestly as their PRE-NFL read.
+      const curCls = Number(CFB['class'])||null;
+      const vet = prof.class && curCls && Number(prof.class) < curCls;
+      // One word everywhere — the ⓘ owns the explanation, the bar owns the row.
+      const relLabel = `PROSPECT${vet?` <span class="cfb-rel-vet">pre-NFL · '${String(prof.class).slice(2)}</span>`:''}`;
+      const relInner = `<div class="cfb-rel-row" title="Calibrated probability of a top-12 (QB/TE) / top-24 (RB/WR) PPR season within 3 years — from draft capital, age and athletic testing">
+        <div class="cfb-rel-label">${relLabel} ${(typeof tcInfoBtn==='function')?tcInfoBtn('prospect','How this number is built'):''}</div>
+        <div class="cfb-bar-track cfb-rel-track"><div class="cfb-bar-fill ${cls2}" style="width:${Math.max(3,ptl)}%"></div></div>
+        <div class="cfb-rel-val ${cls2}" title="${pp}% calibrated hit probability">${(typeof noteWrapHtml==='function')?noteWrapHtml(`${_cfbOrdinal(ptl)}`, Object.assign({}, base, {
+          label:'Fantasy relevance', value:`${_cfbOrdinal(ptl)} percentile vs two decades of drafted ${prof.pos}s · ${pp}% hit probability (${pickTxt}${pro.age!=null?`, age ${pro.age}`:''})`,
+          statKey:'prospect_prob', context:'pre-NFL model · drafted-cohort percentile',
+        }), 'note-tag-hit'):`${_cfbOrdinal(ptl)}`}</div>
+      </div>`;
+      relevanceRow = relInner;
+    }
+    const CMB=[['forty','40 Yd'],['vertical','Vert'],['broad_jump','Broad'],['cone','3-Cone'],['shuttle','Shuttle'],['bench','Bench']];
+    const rows = CMB.filter(([k])=>pro.pct && pro.pct[k]!=null)
+      .map(([k,lb])=>_cfbBar(lb, pro.pct[k], pro.stats?pro.stats[k]:null,
+        Object.assign({}, base, { statKey:`combine_${k}`, context:`NFL combine · percentile vs 2000+ ${prof.pos}s` })))
+      .join('');
+    if(rows) combineRows = `<div class="cfb-sec-label">COMBINE${pro.pick!=null?` · <span class="cfb-sec-pick">Pick ${pro.pick}</span>`:''}</div><div class="cfb-bars">${rows}</div>`;
+    else if(pro.prob!=null) combineRows = `<div class="cfb-sec-label cfb-sec-empty">No combine testing on record</div>`;
+  }
+
   return `<div class="cfb-panel">
+      ${relevanceRow}
       <div class="cfb-head">
         <div class="cfb-title">College production</div>
         <div class="cfb-meta">${metaTagged}</div>
       </div>
       ${summary}
       <div class="cfb-bars">${bars}</div>
-      <div class="cfb-bars-note">Percentile vs ${escHtml(refTxt)} at ${escHtml(prof.pos)}. Higher is better on every row.</div>
+      ${combineRows}
       ${_cfbSeasonTable(prof, pid, base)}
-      <div class="pcard-src">College play-by-play via cfbfastR / CollegeFootballData.
-        No air yards, routes or snap data exists for college football, so those cards stay NFL-only.</div>
+      <div class="pcard-src">College play-by-play via cfbfastR / CollegeFootballData; combine + draft via nflverse. No air yards, routes or snap data exists for college football.</div>
     </div>`;
+}
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.prospect={title:'Prospect grade', body:`
+    <b>A grade measuring this player's percentage chance of becoming fantasy-relevant</b>,
+    shown as a percentile vs two decades of drafted players at the position —
+    where this prospect's pre-NFL profile ranks among everyone who came before him (hover or
+    tag for the underlying calibrated hit probability: a top-12 QB/TE / top-24 RB/WR PPR
+    season within three years). Built from draft capital (by far the strongest signal), age
+    at draft, weight-adjusted speed and jump burst — and for <b>QB</b> college success rate
+    + completion % / for <b>TE</b> teammate-adjusted dominator + yards per team pass attempt,
+    the two positions where the 2016–2022 study showed college production adds real signal
+    beyond the draft slot (for RB/WR the scouts already priced it in). Calibrated so the
+    probability means what it says; capped at 97% because no model gets certainty. A base
+    rate, not a verdict: Trent Richardson scored high and busted. Combine bars are
+    percentiles vs every combine at the position since 2000 (times inverted).`};
 }

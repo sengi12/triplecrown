@@ -35,6 +35,9 @@ const CFB={
   players:{
     "100":{name:'Eli Stowers', pos:'TE', athlete_id:'123', method:'espn_id',
            college:'Vanderbilt', conf:'SEC', final:'2025',
+           prospect:{pick:54, age:22.5, prob:0.37, pctl:88,
+                     stats:{forty:4.65, vertical:34, broad_jump:118, cone:7.1, bench:18},
+                     pct:{forty:71, vertical:62, broad_jump:55, cone:64, bench:48}},
            pct:{dominator:74, tgt_share:84, yptpa:87, epa_play:37, succ:38, ypr:36, expl_rate:25},
            seasons:{"2024":{team:'Vanderbilt', games:12, tgt:80, rec:60, rec_yds:700, rec_td:5,
                             ypr:11.67, epa_play:0.55, succ:57.5, dominator:22.1, tgt_share:20.0, yptpa:1.9},
@@ -102,7 +105,7 @@ chk('shows the school', te.indexOf('Vanderbilt')>=0);
 chk('shows the conference', te.indexOf('SEC')>=0);
 chk('names the final season', te.indexOf('final season 2025')>=0);
 chk('states the reference classes', te.indexOf('2018')>=0 && te.indexOf('2025')>=0);
-chk('one bar per headline metric', (te.match(/cfb-bar-row/g)||[]).length===7);
+chk('one bar per headline metric + five combine bars', (te.match(/cfb-bar-row/g)||[]).length===12);
 chk('leading metric drives the summary', te.indexOf('Dominator ranks')>=0);
 chk('summary uses an ordinal', te.indexOf('74th percentile')>=0);
 chk('elite metric banded elite', te.indexOf('cfb-bar-fill cfb-elite')>=0);
@@ -141,7 +144,7 @@ console.log('\n=== TEST 9: every stat is note-taggable ===');
 // The whole panel must be attachable to a player note, the same as rankings and OL stats.
 const noteable = (te.match(/data-noteable="1"/g)||[]).length;
 chk('panel emits noteable elements', noteable>0);
-chk('every percentile bar is taggable', (te.match(/cfb-bar-val[^>]*data-noteable/g)||[]).length===7);
+chk('every percentile bar is taggable (production + combine)', (te.match(/cfb-bar-val[^>]*data-noteable/g)||[]).length===12);
 chk('percentile tags carry a stat key', te.indexOf('data-note-stat-key="pct_dominator"')>=0);
 chk('percentile tag value is human readable', te.indexOf('74th percentile')>=0);
 chk('percentile tag names the raw stat too', te.indexOf('28.4')>=0);
@@ -170,5 +173,21 @@ chk('logs ready once populated', app.cfbLogsReady()===true);
 // Summary follows the harness convention: run_tests.sh counts assertions by grepping the
 // output for "PASS"/"FAIL", so a summary that says "0 failed" on a clean run registers as a
 // failure. Only emit the word when there actually is one.
+
+console.log('=== fantasy relevance + combine (nflverse) ===');
+const hp=app.renderCfbProspect('100');
+chk('relevance row is the FIRST thing on the panel', hp.indexOf('cfb-rel-row')>=0 && hp.indexOf('cfb-rel-row') < hp.indexOf('College production'));
+chk('headline is the cohort PERCENTILE', hp.indexOf('88th')>=0);
+chk('the calibrated probability rides the tooltip/tag', hp.indexOf('37% calibrated hit probability')>=0 || hp.indexOf('37% hit probability')>=0);
+chk('relevance value is taggable', /prospect_prob/.test(hp));
+chk('combine section renders with the draft pick', hp.indexOf('COMBINE')>=0 && hp.indexOf('Pick 54')>=0);
+chk('combine bars carry percentiles (40 Yd at 71)', /40 Yd/.test(hp) && />71</.test(hp));
+chk('info button explains the model', hp.indexOf("tcInfoPop(event,'prospect')")>=0);
+const proSave=CFB.players['100'].prospect;
+delete CFB.players['100'].prospect;
+const hp2=app.renderCfbProspect('100');
+chk('no prospect payload degrades to exactly the old layout', hp2.indexOf('cfb-rel-row')<0 && hp2.indexOf('College production')>=0);
+CFB.players['100'].prospect=proSave;
+
 console.log('\nRESULT:', fail===0 ? `PASS (${pass} checks)` : `FAIL (${fail}/${pass+fail})`);
 process.exit(fail?1:0);
