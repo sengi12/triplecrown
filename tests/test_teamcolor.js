@@ -22,8 +22,9 @@ console.log('=== hero renders with team gradient ===');
 app.setPlayers({'6770':{player_id:'6770',name:'Joe Burrow',pos:'QB',team:'CIN',age:29,years_exp:6}});
 app.renderPlayerCardShell('6770','QB','CIN');
 const h=app.getOverlayHTML();
-chk(h.includes('#FB4F14'),'Bengals color in hero gradient');
+chk(/pcard-hero[^>]*style="background:#[0-9a-fA-F]{6}/.test(h) && !h.includes('#FB4F14'),
+  'hero paints a DIMMED team hex (raw brand orange reads neon — Sleeper-style mute)');
 chk(h.includes('pcard-hero-logo'),'watermark logo element');
-chk(h.includes('linear-gradient'),'gradient applied');
+chk(/pcard-hero[^>]*style="background:#/.test(h) || /background:#[0-9a-fA-F]{6}/.test(h),'flat team color applied (Sleeper-style hero)');
 
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

@@ -348,7 +348,7 @@ function openPlayerCard(nameOrId, pos, team){
 function attachPcardSwipe(cardEl){
   if(!cardEl || cardEl._swipeWired) return;
   cardEl._swipeWired = true;
-  const CLOSE_AT = 90;      // px dragged before it dismisses
+  const CLOSE_AT = 110;     // px dragged before it dismisses
   let y0=null, dy=0, dragging=false;
   const reset = (anim)=>{
     cardEl.style.transition = anim ? 'transform .18s ease-out' : '';
@@ -373,19 +373,25 @@ function attachPcardSwipe(cardEl){
   cardEl.addEventListener('touchmove', e=>{
     if(!dragging || y0==null) return;
     dy = e.touches[0].clientY - y0;
-    if(dy<=0){ cardEl.style.transform=''; cardEl.style.opacity=''; return; }
+    if(dy<=0){ cardEl.style.transform=''; return; }
     // We own this gesture now: suppress native scroll / pull-to-refresh for the whole drag.
     if(e.cancelable) e.preventDefault();
-    // Resistance so the card feels attached rather than free-falling.
-    const shift = dy<CLOSE_AT ? dy*0.7 : CLOSE_AT*0.7 + (dy-CLOSE_AT)*0.35;
-    cardEl.style.transform = `translateY(${shift.toFixed(1)}px)`;
-    cardEl.style.opacity = String(Math.max(0.55, 1 - dy/600));
+    // 1:1 with the finger — the sheet is attached to the thumb, no fading, no resistance.
+    cardEl.style.transform = `translateY(${dy.toFixed(1)}px)`;
   }, {passive:false});
   const finish = ()=>{
     if(!dragging){ return; }
     dragging=false; y0=null;
-    cardEl.style.opacity='';
-    if(dy > CLOSE_AT) closePlayerCard();
+    if(dy > CLOSE_AT){
+      // Sleeper-style dismissal: the card keeps going and slides off the BOTTOM of the
+      // screen from wherever the finger let go — it never fades in place.
+      const rest = Math.max(200, (window.innerHeight||800) - dy);
+      cardEl.style.transition = `transform ${Math.min(0.32, rest/1600).toFixed(2)}s ease-in`;
+      cardEl.style.transform = `translateY(${(window.innerHeight||800)+60}px)`;
+      const ov=document.getElementById('pcardOverlay');
+      if(ov) ov.style.transition='background .25s ease', ov.style.background='rgba(0,0,0,0)';
+      setTimeout(closePlayerCard, 300);
+    }
     else reset(true);
     dy=0;
   };
@@ -441,34 +447,60 @@ function renderPlayerCardShell(pid, pos, team){
   // A few team primaries are light (e.g. PIT gold, NO gold); darken those so the white hero
   // text stays legible while keeping the hue recognizable.
   if(_hexLum(tc) > 0.4) tc = _darken(tc, 0.45);
-  const heroStyle = tm ? `background:linear-gradient(135deg, ${tc} 0%, ${tc} 42%, var(--surface) 100%);` : '';
+  // …and every hero gets pulled a notch toward Sleeper's muted tone — full-saturation
+  // team paint reads neon next to their look.
+  tc = _darken(tc, 0.16);
+  const heroStyle = tm ? `background:${tc};` : '';
   const metaItem=(label,val)=> (val==null||val==='–'||val==='') ?
     `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val pcard-meta-empty">–</span></div>` :
     `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val">${val}</span></div>`;
   const contractBand = contractSummaryHTML(name);
   const ktcBand = ktcLinkHTML(name, posc);
   const noteCount = playerNoteCount(pid, posc, tm);
+  // Sleeper-style hero: an injury BANNER across the top; the name stacked on two lines; the
+  // headshot large and anchored to the hero's bottom edge on the flat team color; a dark
+  // rounded team plate (nickname · pos · code · jersey) tucked under the headshot.
+  const inj = (typeof tcInjuryInfo==='function') ? tcInjuryInfo(pid) : null;
+  const injWord = inj ? ({Q:'QUESTIONABLE', D:'DOUBTFUL', OUT:'OUT', IR:(inj.seasonOut?'IR · OUT FOR SEASON':'IR'), SUS:'SUSPENDED', PUP:'PUP'}[inj.code] || inj.code) : '';
+  const injBanner = inj ? `<button class="pcard-inj-banner pcard-inj-${inj.sev}" onclick="event.stopPropagation();tcInjuryPop(event,'${String(pid)}')" title="Injury details"><span class="pcard-inj-dot">${inj.sev==='q'?'?':'!'}</span>${injWord}</button>` : '';
+  const nmParts = String(name).trim().split(/\s+/);
+  const nameHtml = nmParts.length>1
+    ? `<span class="pcard-name-l1">${escHtml(nmParts[0])}</span><span class="pcard-name-l2">${escHtml(nmParts.slice(1).join(' '))}</span>`
+    : `<span class="pcard-name-l1">${escHtml(name)}</span>`;
+  const nick = tm ? String(teamDisplayName(tm)||tm).trim().split(/\s+/).slice(-1)[0] : '';
+  const teamPlate = `<div class="pcard-team-plate">
+        <div class="pcard-plate-team">${tm?escHtml(nick).toUpperCase():''}</div>
+        <div class="pcard-plate-sub">${posc?`<span class="pcard-plate-pos pos-${posc}-t">${posc}</span>`:''}${tm?` · ${tm}`:''}${jersey?` · <span class="pcard-jersey">${jersey}</span>`:''}</div>
+      </div>`;
   const html = `
     <div class="pcard" onclick="event.stopPropagation()">
-      <div class="pcard-hero" style="${heroStyle}">
-        <div class="pcard-hero-logo" style="${tm?`background-image:url('${NFL_LOGO(tm)}')`:''}"></div>
-        <img src="${heroPack.src||''}" class="pcard-hero-img" data-fallbacks="${heroFallbacks.join('|')}" onerror="pcardImgFallback(this)">
-        <div class="pcard-hero-main">
-          <div class="pcard-name">${escHtml(name)}${jersey?`<span class="pcard-jersey">${jersey}</span>`:''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(pid):''}</div>
-          <div class="pcard-sub">${posc?`<span class="pos-badge pos-${posc}">${posc}</span>`:''}${tm?`<span class="pcard-team">${teamDisplayName(tm)}</span>`:''}${typeof tcOwnerChip==='function'?tcOwnerChip(pid, name):''}</div>
-          <div class="pcard-meta">
-            ${metaItem('AGE', age)}
-            ${metaItem('HT', height)}
-            ${metaItem('WT', weight)}
-            ${metaItem('EXP', exp)}
-            ${metaItem('COLLEGE', college==null?college:escHtml(String(college)))}
+      <div class="pcard-hero pcard-hero-v2" style="${heroStyle}">
+        ${injBanner}
+        <div class="pcard-hero-row">
+          <div class="pcard-hero-shot">
+            <img src="${heroPack.src||''}" class="pcard-hero-img" data-fallbacks="${heroFallbacks.join('|')}" onerror="pcardImgFallback(this)">
           </div>
+          <div class="pcard-hero-logo" style="${tm?`background-image:url('${NFL_LOGO(tm)}')`:''}"></div>
+          <div class="pcard-hero-main">
+            <div class="pcard-name">${nameHtml}</div>
+            <div class="pcard-sub">${typeof tcOwnerChip==='function'?tcOwnerChip(pid, name):''}</div>
+            <div class="pcard-meta">
+              ${metaItem('AGE', age)}
+              ${metaItem('HT', height)}
+              ${metaItem('WT', weight)}
+              ${metaItem('EXP', exp)}
+              ${metaItem('COLLEGE', college==null?college:escHtml(String(college)))}
+            </div>
+          </div>
+        </div>
+        <div class="pcard-hero-foot">
+          ${teamPlate}
           <div class="pcard-hero-draft" id="pcardHeroDraft"></div>
+          ${ktcBand}
         </div>
         ${pcardBackButtonHTML()}
         <button id="pcardNoteBtn" class="pcard-note-btn" onclick="openPcardNotes()" aria-label="Open player notes" title="Player notes">${TC_ICON('clipboard')}${noteCount?`<span class="pcard-note-badge">${noteCount}</span>`:''}</button>
         <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">✕</button>
-        ${ktcBand}
       </div>
       ${contractBand}
       <div class="pcard-tabs" id="pcardTabs"></div>

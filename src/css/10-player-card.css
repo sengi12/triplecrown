@@ -456,3 +456,64 @@ html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:no
 .pcard-overlay{overscroll-behavior:none;}
 .pcard-body{overscroll-behavior:none;}
 .pcard-hero{touch-action:none;}
+
+/* ── Sleeper-style hero (v2) ──
+   Banner on top; a compact row of big bottom-anchored headshot + name/meta; then a FOOT
+   row: the team plate (a rounded, subtly-slanted pedestal exactly as wide as the headshot
+   column, text centered) with the draft band beside it, hugging the KTC badge at the right.
+   Everything scales with the viewport via clamp(). */
+.pcard-hero-v2{flex-direction:column;padding:0;gap:0;align-items:stretch;}
+.pcard-inj-banner{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+  border:none;cursor:pointer;padding:6px 10px;font-size:11.5px;font-weight:900;letter-spacing:.14em;
+  color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.3);}
+.pcard-inj-dot{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;
+  border-radius:50%;background:rgba(255,255,255,.85);font-size:11px;font-weight:900;letter-spacing:0;}
+.pcard-inj-banner.pcard-inj-q{background:linear-gradient(180deg,#d99a27,#c78a1e);}
+.pcard-inj-banner.pcard-inj-q .pcard-inj-dot{color:#b07708;}
+.pcard-inj-banner.pcard-inj-d{background:linear-gradient(180deg,#d97b27,#c76a1e);}
+.pcard-inj-banner.pcard-inj-d .pcard-inj-dot{color:#b05808;}
+.pcard-inj-banner.pcard-inj-o{background:linear-gradient(180deg,#cf3d33,#b52f27);}
+.pcard-inj-banner.pcard-inj-o .pcard-inj-dot{color:#a32620;}
+/* One shared width for the headshot column AND the plate below it. */
+.pcard-hero-v2{--plateW:clamp(132px,38vw,176px);}
+.pcard-hero-row{display:flex;gap:10px;align-items:flex-end;padding:0 12px 0 0;position:relative;}
+.pcard-hero-shot{width:var(--plateW);flex-shrink:0;display:flex;justify-content:center;
+  align-items:flex-end;z-index:2;margin-top:clamp(3px,1vw,6px);}
+.pcard-hero-v2 .pcard-hero-img{width:auto;height:clamp(112px,31vw,142px);max-width:100%;
+  border-radius:0;background:none;box-shadow:none;object-fit:contain;object-position:bottom center;
+  display:block;}
+.pcard-hero-v2 .pcard-hero-main{padding:clamp(5px,1.4vw,8px) 12px clamp(4px,1.2vw,7px) 0;
+  align-self:stretch;min-width:0;flex:1;display:flex;flex-direction:column;}
+.pcard-hero-v2 .pcard-name{display:flex;flex-direction:column;gap:0;align-items:flex-start;}
+.pcard-name-l1,.pcard-name-l2{font-size:clamp(19px,5.4vw,24px);font-weight:900;line-height:1.04;}
+.pcard-hero-v2 .pcard-sub{margin-top:3px;}
+.pcard-hero-v2 .pcard-meta{margin-top:auto;padding-top:6px;gap:clamp(8px,2.4vw,14px);flex-wrap:nowrap;min-width:0;}
+.pcard-hero-v2 .pcard-meta-val{font-size:clamp(12px,3.4vw,15px);white-space:nowrap;}
+.pcard-hero-v2 .pcard-meta-item:last-child{min-width:0;}
+.pcard-hero-v2 .pcard-meta-item:last-child .pcard-meta-val{overflow:hidden;text-overflow:ellipsis;max-width:clamp(54px,16vw,110px);}
+/* Foot: pedestal + draft band + KTC on one line at the hero's bottom. */
+.pcard-hero-foot{display:flex;align-items:center;gap:8px;margin-top:0;position:relative;z-index:2;}
+/* Narrow phones: the DRAFT label pill yields so the year/round/pick line never clips. */
+@media (max-width:500px){ .pcard-hero-foot .pcard-draft-lbl{display:none;} }
+.pcard-team-plate{width:var(--plateW);flex-shrink:0;box-sizing:border-box;position:relative;
+  padding:clamp(6px,1.6vw,8px) 12px;text-align:center;}
+.pcard-team-plate::before{content:'';position:absolute;inset:0 0 0 -12px;background:var(--surface);
+  border-radius:0 14px 0 0;transform:skewX(7deg);transform-origin:top left;z-index:-1;
+  box-shadow:6px -2px 16px rgba(0,0,0,.28);}
+.pcard-plate-team{font-size:clamp(12.5px,3.6vw,15px);font-weight:900;letter-spacing:.02em;color:var(--text);line-height:1.1;}
+.pcard-plate-sub{font-size:clamp(9.5px,2.8vw,11px);font-weight:800;color:var(--muted);margin-top:1px;white-space:nowrap;}
+.pcard-plate-pos{font-weight:900;}
+.pcard-plate-pos.pos-QB-t{color:#ef74a1;} .pcard-plate-pos.pos-RB-t{color:#58c9b5;}
+.pcard-plate-pos.pos-WR-t{color:#59a7ff;} .pcard-plate-pos.pos-TE-t{color:#f0a355;}
+.pcard-plate-pos.pos-K-t{color:#b48eff;}  .pcard-plate-pos.pos-DEF-t{color:#9aa5b1;}
+.pcard-hero-v2 .pcard-hero-draft{margin:0 0 0 auto;min-width:0;display:flex;justify-content:flex-end;}
+.pcard-hero-v2 .pcard-hero-draft-line{white-space:nowrap;font-size:clamp(9px,2.6vw,10.5px);padding:4px 8px;}
+.pcard-hero-v2 .pcard-ktc{position:static;flex-shrink:0;margin-right:10px;margin-bottom:6px;align-self:center;}
+.pcard-hero-v2 .pcard-hero-logo{left:56%;right:auto;top:52%;transform:translate(-50%,-50%);
+  width:clamp(140px,42vw,190px);height:clamp(140px,42vw,190px);opacity:.15;}
+/* Control cluster: notes right next to the ✕. */
+.pcard-hero-v2 .pcard-note-btn{left:auto;right:52px;top:10px;bottom:auto;width:34px;height:34px;border-radius:50%;}
+.pcard-hero-v2 .pcard-back{right:94px;top:10px;}
+.pcard-hero-v2 .pcard-close{top:10px;}
+.pcard-inj-banner ~ .pcard-back,.pcard-inj-banner ~ .pcard-close{top:40px!important;}
+.pcard-hero-v2 .pcard-inj-banner ~ .pcard-note-btn{top:40px;}
