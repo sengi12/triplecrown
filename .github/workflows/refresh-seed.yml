@@ -147,7 +147,7 @@ jobs:
         run: |
           git config user.name  'triplecrown-bot'
           git config user.email 'triplecrown-bot@users.noreply.github.com'
-          git add -A seeds/
+          git add -A seeds/ archives/
           if git diff --cached --quiet; then
             echo "No seed changes — nothing to commit."
             echo "pushed=false" >> "$GITHUB_OUTPUT"

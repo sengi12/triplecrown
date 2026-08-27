@@ -353,7 +353,24 @@ input.sl::-moz-range-thumb{width:18px;height:18px;border:2.5px solid var(--surfa
 .cfb-sec-pick{color:var(--accent);}
 .cfb-sec-empty{font-weight:700;letter-spacing:0;text-transform:none;}
 .cfb-rel-vet{font-size:8.5px;color:var(--muted);letter-spacing:.04em;font-weight:800;}
+
+/* TC model: the veterans' counterpart of the PROSPECT row — Sleeper baseline vs our model,
+   one agree/disagree chip. Shares the cfb-rel-row visual family on purpose. */
+.tc-model-row{display:flex;align-items:center;gap:10px;padding:9px 10px;margin-bottom:10px;
+  background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md);}
+.tc-md-vals{flex:1;display:flex;align-items:baseline;gap:7px;min-width:0;flex-wrap:wrap;}
+.tc-md-src{font-size:12px;font-weight:700;color:var(--muted);white-space:nowrap;}
+.tc-md-src b{font-size:15px;font-weight:900;color:var(--text);}
+.tc-md-sep{font-size:10px;font-weight:800;color:var(--muted);}
+.tc-md-unit{font-size:8.5px;font-weight:800;letter-spacing:.06em;color:var(--muted);}
+.tc-md-chip{font-size:11px;font-weight:900;white-space:nowrap;padding:3px 8px;border-radius:999px;}
+.tc-md-up{color:var(--success);background:color-mix(in srgb,var(--success) 14%,transparent);}
+.tc-md-dn{color:var(--danger);background:color-mix(in srgb,var(--danger) 14%,transparent);}
+.tc-md-eq{color:var(--muted);background:var(--surface3);border:1px solid var(--border);}
 @media (max-width:760px){
   .cfb-rel-row{gap:8px;padding:8px 10px;}
   .cfb-rel-val{min-width:40px;font-size:14px;}
+  .tc-model-row{gap:8px;padding:8px 10px;}
+  .tc-md-src b{font-size:14px;}
+  .tc-md-chip{font-size:10px;padding:2px 7px;}
 }

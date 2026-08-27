@@ -538,6 +538,7 @@ async function noteJumpToTag(noteKey, tagId){
     else if(nav.season==='proj') await loadSeason('proj');
     rankScope = nav.scope || 'all';
     rankPosFilter = nav.posFilter || rankPosFilter;
+    if(typeof nav.rookies==='boolean') rankRookiesOnly = nav.rookies;
     if(typeof nav.advanced==='boolean') rankAdvanced = !!nav.advanced;
     sumerRefinement = nav.refinement || null;
     currentPhase = 'Rankings';

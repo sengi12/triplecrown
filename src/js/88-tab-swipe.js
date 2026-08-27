@@ -55,9 +55,10 @@ function tsPreviewTeamRankings(){
     ? !!rankingIsRookieForSeason(p, activeSeason)
     : !!(p && (p.is_rookie===true || Number(p.years_exp)===0));
   let view=rankPosFilter==='ALL'?all
-    :rankPosFilter==='ROOKIES'?all.filter(rankIsRookie)
+    :rankPosFilter==='ROOKIES'?all.filter(rankIsRookie)   // legacy value, still honored
     :rankPosFilter==='FLEX'?all.filter(p=>p.pos!=='QB')
     :all.filter(p=>p.pos===rankPosFilter);
+  if(typeof rankRookiesOnly!=='undefined' && rankRookiesOnly) view=view.filter(rankIsRookie);
   const rows=view.slice(0,28).map((p,i)=>`<tr>
     <td class="c-ecr">${i+1}</td>
     <td class="fpts">${(Number(p.fpts)||0).toFixed(1)}</td>
@@ -339,7 +340,7 @@ function tsScrollerClaims(el, dir){
     // overlays that run their own handlers.
     if(e.target && e.target.closest && e.target.closest(
         'input, select, textarea, .slider-wrap, .slider-track, [role="slider"], ' +
-        '.ps-overlay, .scheme-overlay, .rt-bar-host')) return;
+        '.ps-overlay, .scheme-overlay, .rt-bar-host, .rankings-table thead')) return;   // header long-press/drag owns its gesture (81-rank-coledit.js)
     const b=tsActiveBar();
     if(!b) return;
     if(e.target && e.target.closest && e.target.closest('.phase-tabs')) return;

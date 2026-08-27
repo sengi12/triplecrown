@@ -267,8 +267,14 @@ async function loadEspnCardData(pid, posc, body, opts){
   // The college prospect panel comes from the seed, not from ESPN, so it renders even when the
   // ESPN lookup below fails or the player has no ESPN page at all. Empty string for veterans,
   // for the NFL tab, and for the ~3% of rookies with no CFBD coverage.
-  const prospect = (league==='college-football' && typeof renderCfbProspect==='function')
-    ? renderCfbProspect(pid) : '';
+  // Rookies with a TC rookie projection get the same comparison row veterans do, above the
+  // PROSPECT panel. Gated to rookie tc blocks (in.rk) — a veteran browsing his own college
+  // tab already has the TC row on his NFL tab, and twice is noise.
+  const _tcRec = (league==='college-football' && typeof tcModelRec==='function') ? tcModelRec(pid) : null;
+  const tcRow = (_tcRec && _tcRec.tc && _tcRec.tc.in && _tcRec.tc.in.rk && typeof renderTcModel==='function')
+    ? renderTcModel(pid) : '';
+  const prospect = tcRow + ((league==='college-football' && typeof renderCfbProspect==='function')
+    ? renderCfbProspect(pid) : '');
   body.innerHTML = prospect
     ? prospect + `<div class="pcard-loading">Loading college game logs…</div>`
     : `<div class="pcard-loading">Loading ${league==='nfl'?'':'college '}game logs…</div>`;

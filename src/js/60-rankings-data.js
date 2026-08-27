@@ -509,6 +509,19 @@ function buildPlayerList(){
     // Attach ADP (all formats) from the base seed entry so VONA can model who others draft.
     const be = basePlayerEntryIdx(teamBaseIndex(p.team), p.name, p.player_id);
     p.adp = be && be.adp!=null ? be.adp : 999;
+    // TC model projection rides on the projection-seed entry; null for rookies and in
+    // reference seasons (whose seed rows never carry a tc block) — the column hides there.
+    // The column shows a SEASON total in the league's scoring so it reads next to FPTS:
+    // the model's opinion is a ratio vs the Sleeper baseline (both PPR/G), applied to this
+    // player's league-scored fpts. Deep-bench baselines (<5 PPR/G) bake in playing time the
+    // model doesn't predict, so the ratio is meaningless there — fall back to the model's
+    // 17-game PPR pace. Ratio clamped: the model's edge is an adjustment, not a rewrite.
+    const _tc = be && be.tc;
+    p.tcFpg = (_tc && _tc.fpg!=null) ? _tc.fpg : null;
+    if(p.tcFpg==null) p.tcPts = null;
+    else if(_tc.base!=null && _tc.base>=5 && p.fpts>0)
+      p.tcPts = p.fpts * Math.min(2, Math.max(0.25, _tc.fpg/_tc.base));
+    else p.tcPts = p.tcFpg*17;
     p.adp_ppr = be && be.adp_ppr!=null ? be.adp_ppr : 999;
     p.adp_half_ppr = be && be.adp_half_ppr!=null ? be.adp_half_ppr : 999;
     p.adp_std = be && be.adp_std!=null ? be.adp_std : 999;

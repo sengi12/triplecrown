@@ -66,6 +66,9 @@ function _saveSessionNow(){
       rankingsSearchOpen: rankingsSearchOpen,
       rankingsSearchQuery: rankingsSearchQuery,
       scoringPanelOpen: scoringPanelOpen,
+      // Tiny, survives every quota tier by riding in base.
+      rankColPrefs: (typeof rankColPrefsCustomized==='function' && rankColPrefsCustomized())
+        ? { order: rankColPrefs.order, hidden: rankColPrefs.hidden, advOrder: rankColPrefs.advOrder } : null,
       leagueSnapshot: leagueSnapshot,
       // Live-draft follow: id + seat + hide toggle, so a mid-draft reload (or the mobile
       // discarded-tab reload in installResumeRecovery) re-arms instead of dropping the
@@ -140,6 +143,19 @@ function restoreSession(){
   if(typeof p.rankingsSearchOpen==='boolean') rankingsSearchOpen = p.rankingsSearchOpen;
   if(typeof p.rankingsSearchQuery==='string') rankingsSearchQuery = p.rankingsSearchQuery;
   if(typeof p.scoringPanelOpen==='boolean') scoringPanelOpen = p.scoringPanelOpen;
+  if(p.rankColPrefs && typeof p.rankColPrefs==='object'){
+    // Whitelist on restore: a stale save must never resurrect columns that no longer exist.
+    rankColPrefs = {
+      order: Array.isArray(p.rankColPrefs.order)
+        ? p.rankColPrefs.order.filter(k=>RANK_COL_CANON.includes(k)) : null,
+      hidden: Array.isArray(p.rankColPrefs.hidden)
+        ? p.rankColPrefs.hidden.filter(k=>RANK_COL_CANON.includes(k)||RANK_COL_GROUPS.includes(k)
+            ||(typeof k==='string'&&k.startsWith('adv:')&&k.length<=60)).slice(0,80) : [],
+      advOrder: Array.isArray(p.rankColPrefs.advOrder)
+        ? p.rankColPrefs.advOrder.filter(l=>typeof l==='string'&&l.length<=50).slice(0,40) : null,
+    };
+    restored = true;
+  }
   if(p.leagueSnapshot && p.leagueSnapshot.teams){
     leagueSnapshot = p.leagueSnapshot;
     // The roster shape VOR is valued against was never persisted, so a reload fell back to
@@ -248,6 +264,51 @@ function toggleRankFilters(){
     return;
   }
   if(typeof renderRankings==='function' && currentPhase==='Rankings') renderRankings(); }   // 'proj' = working projections, or a year string for read-only reference
+
+// ── Rankings column customization ─────────────────────────────────────────────────────
+// Long-press a rankings header to hide or drag-reorder columns (engine in 81-rank-coledit.js).
+// order = canonical meta-column sequence (a superset — render filters to what's available in
+// the current mode), hidden = removed keys (meta keys, or grp_rush/grp_rec/grp_pass for the
+// three stat groups). ECR and PLAYER are the table's sticky spine and can never move or hide;
+// OWNER follows its synced-league toggle and stays put.
+const RANK_COL_CANON = ['ecr','ecr_tier','tc','adp','fpts','vor','pos','name','team','own','age','apy','fa'];
+const RANK_COL_LOCKED = {ecr:1, name:1, own:1};
+const RANK_COL_GROUPS = ['grp_rush','grp_rec','grp_pass'];
+let rankColPrefs = { order: null, hidden: [], advOrder: null };
+// Adv. Metrics columns are dynamic (per position/season), so their prefs key by LABEL:
+// hidden entries are 'adv:<label>', order lives in advOrder. Unknown labels (a different
+// position's view, a new season's column) keep their default spot.
+function rankAdvApplyPrefs(cols){
+  let out = cols.slice();
+  const ord = rankColPrefs && rankColPrefs.advOrder;
+  if(Array.isArray(ord) && ord.length){
+    const first = ord.filter(l=>out.includes(l));
+    out = first.concat(out.filter(l=>!first.includes(l)));
+  }
+  const hid = rankColHidden();
+  return out.filter(l=>!hid.has('adv:'+l));
+}
+function rankColOrder(){
+  if(!rankColPrefs || !Array.isArray(rankColPrefs.order) || !rankColPrefs.order.length)
+    return RANK_COL_CANON.slice();
+  // Saved orders survive app updates: unknown keys drop, keys the save predates append in
+  // their default position, and ECR is pinned back to the front no matter what was stored.
+  const out = rankColPrefs.order.filter(k=>RANK_COL_CANON.includes(k));
+  RANK_COL_CANON.forEach(k=>{ if(!out.includes(k)) out.push(k); });
+  const ei = out.indexOf('ecr');
+  if(ei>0){ out.splice(ei,1); out.unshift('ecr'); }
+  return out;
+}
+function rankColHidden(){
+  const h=(rankColPrefs && rankColPrefs.hidden)||[];
+  return new Set(h.filter(k=>!RANK_COL_LOCKED[k]));
+}
+function rankColPrefsCustomized(){
+  if(!rankColPrefs) return false;
+  if((rankColPrefs.hidden||[]).length) return true;
+  if(Array.isArray(rankColPrefs.advOrder) && rankColPrefs.advOrder.length) return true;
+  return !!rankColPrefs.order && rankColOrder().join()!==RANK_COL_CANON.join();
+}
 let sleeperPlayers = null;   // cached Sleeper player DB (id → meta), fetched once
 let sleeperPlayersPromise = null;   // shared in-flight promise so concurrent callers dedupe
 let seasonStatsCache = {};   // season → seed-shaped data built from Sleeper stats

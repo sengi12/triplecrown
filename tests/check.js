@@ -1131,6 +1131,7 @@ let scoringPanelOpen = false;
 // a finished league actually move VOR instead of silently using a generic 12-team 2-WR board.
 let leagueShape = null;   // {teams, lineup:[slots], bench}
 let rankPosFilter = 'ALL';
+let rankRookiesOnly = false;  // ROOKIES chip: stacks ON TOP of the position filter (WR + ROOKIES = rookie WRs)
 let rankScope = 'all';   // 'all' = full league rankings, 'team' = current team only
 let rankAdvanced = false; // rankings "Adv. Metrics" (SumerSports) view — swaps stat columns for advanced metrics
 let rankingsSearchOpen = false;
@@ -1251,6 +1252,9 @@ function _saveSessionNow(){
       rankingsSearchOpen: rankingsSearchOpen,
       rankingsSearchQuery: rankingsSearchQuery,
       scoringPanelOpen: scoringPanelOpen,
+      // Tiny, survives every quota tier by riding in base.
+      rankColPrefs: (typeof rankColPrefsCustomized==='function' && rankColPrefsCustomized())
+        ? { order: rankColPrefs.order, hidden: rankColPrefs.hidden, advOrder: rankColPrefs.advOrder } : null,
       leagueSnapshot: leagueSnapshot,
       // Live-draft follow: id + seat + hide toggle, so a mid-draft reload (or the mobile
       // discarded-tab reload in installResumeRecovery) re-arms instead of dropping the
@@ -1325,6 +1329,19 @@ function restoreSession(){
   if(typeof p.rankingsSearchOpen==='boolean') rankingsSearchOpen = p.rankingsSearchOpen;
   if(typeof p.rankingsSearchQuery==='string') rankingsSearchQuery = p.rankingsSearchQuery;
   if(typeof p.scoringPanelOpen==='boolean') scoringPanelOpen = p.scoringPanelOpen;
+  if(p.rankColPrefs && typeof p.rankColPrefs==='object'){
+    // Whitelist on restore: a stale save must never resurrect columns that no longer exist.
+    rankColPrefs = {
+      order: Array.isArray(p.rankColPrefs.order)
+        ? p.rankColPrefs.order.filter(k=>RANK_COL_CANON.includes(k)) : null,
+      hidden: Array.isArray(p.rankColPrefs.hidden)
+        ? p.rankColPrefs.hidden.filter(k=>RANK_COL_CANON.includes(k)||RANK_COL_GROUPS.includes(k)
+            ||(typeof k==='string'&&k.startsWith('adv:')&&k.length<=60)).slice(0,80) : [],
+      advOrder: Array.isArray(p.rankColPrefs.advOrder)
+        ? p.rankColPrefs.advOrder.filter(l=>typeof l==='string'&&l.length<=50).slice(0,40) : null,
+    };
+    restored = true;
+  }
   if(p.leagueSnapshot && p.leagueSnapshot.teams){
     leagueSnapshot = p.leagueSnapshot;
     // The roster shape VOR is valued against was never persisted, so a reload fell back to
@@ -1433,6 +1450,51 @@ function toggleRankFilters(){
     return;
   }
   if(typeof renderRankings==='function' && currentPhase==='Rankings') renderRankings(); }   // 'proj' = working projections, or a year string for read-only reference
+
+// ── Rankings column customization ─────────────────────────────────────────────────────
+// Long-press a rankings header to hide or drag-reorder columns (engine in 81-rank-coledit.js).
+// order = canonical meta-column sequence (a superset — render filters to what's available in
+// the current mode), hidden = removed keys (meta keys, or grp_rush/grp_rec/grp_pass for the
+// three stat groups). ECR and PLAYER are the table's sticky spine and can never move or hide;
+// OWNER follows its synced-league toggle and stays put.
+const RANK_COL_CANON = ['ecr','ecr_tier','tc','adp','fpts','vor','pos','name','team','own','age','apy','fa'];
+const RANK_COL_LOCKED = {ecr:1, name:1, own:1};
+const RANK_COL_GROUPS = ['grp_rush','grp_rec','grp_pass'];
+let rankColPrefs = { order: null, hidden: [], advOrder: null };
+// Adv. Metrics columns are dynamic (per position/season), so their prefs key by LABEL:
+// hidden entries are 'adv:<label>', order lives in advOrder. Unknown labels (a different
+// position's view, a new season's column) keep their default spot.
+function rankAdvApplyPrefs(cols){
+  let out = cols.slice();
+  const ord = rankColPrefs && rankColPrefs.advOrder;
+  if(Array.isArray(ord) && ord.length){
+    const first = ord.filter(l=>out.includes(l));
+    out = first.concat(out.filter(l=>!first.includes(l)));
+  }
+  const hid = rankColHidden();
+  return out.filter(l=>!hid.has('adv:'+l));
+}
+function rankColOrder(){
+  if(!rankColPrefs || !Array.isArray(rankColPrefs.order) || !rankColPrefs.order.length)
+    return RANK_COL_CANON.slice();
+  // Saved orders survive app updates: unknown keys drop, keys the save predates append in
+  // their default position, and ECR is pinned back to the front no matter what was stored.
+  const out = rankColPrefs.order.filter(k=>RANK_COL_CANON.includes(k));
+  RANK_COL_CANON.forEach(k=>{ if(!out.includes(k)) out.push(k); });
+  const ei = out.indexOf('ecr');
+  if(ei>0){ out.splice(ei,1); out.unshift('ecr'); }
+  return out;
+}
+function rankColHidden(){
+  const h=(rankColPrefs && rankColPrefs.hidden)||[];
+  return new Set(h.filter(k=>!RANK_COL_LOCKED[k]));
+}
+function rankColPrefsCustomized(){
+  if(!rankColPrefs) return false;
+  if((rankColPrefs.hidden||[]).length) return true;
+  if(Array.isArray(rankColPrefs.advOrder) && rankColPrefs.advOrder.length) return true;
+  return !!rankColPrefs.order && rankColOrder().join()!==RANK_COL_CANON.join();
+}
 let sleeperPlayers = null;   // cached Sleeper player DB (id → meta), fetched once
 let sleeperPlayersPromise = null;   // shared in-flight promise so concurrent callers dedupe
 let seasonStatsCache = {};   // season → seed-shaped data built from Sleeper stats
@@ -2965,6 +3027,7 @@ async function noteJumpToTag(noteKey, tagId){
     else if(nav.season==='proj') await loadSeason('proj');
     rankScope = nav.scope || 'all';
     rankPosFilter = nav.posFilter || rankPosFilter;
+    if(typeof nav.rookies==='boolean') rankRookiesOnly = nav.rookies;
     if(typeof nav.advanced==='boolean') rankAdvanced = !!nav.advanced;
     sumerRefinement = nav.refinement || null;
     currentPhase = 'Rankings';
@@ -6447,6 +6510,19 @@ function buildPlayerList(){
     // Attach ADP (all formats) from the base seed entry so VONA can model who others draft.
     const be = basePlayerEntryIdx(teamBaseIndex(p.team), p.name, p.player_id);
     p.adp = be && be.adp!=null ? be.adp : 999;
+    // TC model projection rides on the projection-seed entry; null for rookies and in
+    // reference seasons (whose seed rows never carry a tc block) — the column hides there.
+    // The column shows a SEASON total in the league's scoring so it reads next to FPTS:
+    // the model's opinion is a ratio vs the Sleeper baseline (both PPR/G), applied to this
+    // player's league-scored fpts. Deep-bench baselines (<5 PPR/G) bake in playing time the
+    // model doesn't predict, so the ratio is meaningless there — fall back to the model's
+    // 17-game PPR pace. Ratio clamped: the model's edge is an adjustment, not a rewrite.
+    const _tc = be && be.tc;
+    p.tcFpg = (_tc && _tc.fpg!=null) ? _tc.fpg : null;
+    if(p.tcFpg==null) p.tcPts = null;
+    else if(_tc.base!=null && _tc.base>=5 && p.fpts>0)
+      p.tcPts = p.fpts * Math.min(2, Math.max(0.25, _tc.fpg/_tc.base));
+    else p.tcPts = p.tcFpg*17;
     p.adp_ppr = be && be.adp_ppr!=null ? be.adp_ppr : 999;
     p.adp_half_ppr = be && be.adp_half_ppr!=null ? be.adp_half_ppr : 999;
     p.adp_std = be && be.adp_std!=null ? be.adp_std : 999;
@@ -7377,7 +7453,10 @@ async function loadSleeperCareerStats(pid, posc, body){
     body.innerHTML = `<div class="pcard-loading">No historical seasons loaded. Load a 📦 seed with history to see game logs.</div>`;
     return;
   }
-  body.innerHTML = `<div class="pcard-loading">Loading game logs…</div>`;
+  // TC model comparison row (veterans only): rendered before the async fetch so it shows
+  // immediately and survives a gamelog failure — same shape as the rookies' prospect panel.
+  const tcRow = (typeof renderTcModel==='function') ? renderTcModel(pid) : '';
+  body.innerHTML = tcRow + `<div class="pcard-loading">Loading game logs…</div>`;
   try{
     const perSeason = await Promise.all(seasons.map(async s=>({season:s, weekly:await fetchPlayerWeekly(pid, s)})));
     if(!pcardOpen || tok!==pcardToken) return; // closed or switched sources while loading
@@ -7390,12 +7469,12 @@ async function loadSleeperCareerStats(pid, posc, body){
     if(!out) out = `<div class="pcard-loading">No game data found for this player.</div>`;
     out += `<div class="pcard-src">Per-game stats via Sleeper · FPTS uses your current scoring settings.</div>`;
     if(pcardOpen && tok===pcardToken){
-      body.innerHTML = out;
+      body.innerHTML = tcRow + out;
       pcardEnableStickyStatHeaders();
     }
   }catch(e){
     if(pcardOpen && tok===pcardToken){
-      body.innerHTML = `<div class="pcard-loading pcard-loading-retry"><span>Couldn't load game logs. Check your connection and try again.</span><button class="pcard-retry-btn" onclick="retryPlayerCardData()">Refresh</button></div>`;
+      body.innerHTML = tcRow + `<div class="pcard-loading pcard-loading-retry"><span>Couldn't load game logs. Check your connection and try again.</span><button class="pcard-retry-btn" onclick="retryPlayerCardData()">Refresh</button></div>`;
     }
   }
 }
@@ -7631,6 +7710,144 @@ function pcardSeasonConsistencyBadge(rows, pos){
   return ` <span class="pcard-cons-badge pcard-cons-${c.grade}" title="${escAttr(tip)}">Consistency ${c.grade}</span>`;
 }
 
+// ── TC Model row on the player card ──────────────────────────────────────────────
+// The seed's per-player `tc` block (built by src/nflverse/tc_projections.py) carries the
+// TC model's predicted PPR FPG next to the Sleeper baseline's implied PPR FPG, plus the
+// compact inputs the ⓘ popup explains the number with. This renders the comparison row
+// veterans get at the top of their card — the vet counterpart of the rookies' PROSPECT
+// row. Rookies have no `tc` (no NFL season on tape) and fall through to ''.
+
+// Lazy pid→player index over the live seed; rebuilt only when SEED is swapped out
+// (live Sleeper pull, seed load, import), same cache-by-source-identity pattern as
+// the League Analyzer's gsis map.
+var _tcMdIdx = null, _tcMdIdxSrc = null;
+function tcModelRec(pid){
+  // Prefer the preserved PROJECTION seed: reference mode swaps the global SEED to a
+  // historical season whose rows carry no tc block, but the model's read is about the
+  // upcoming season and belongs on the card whichever season view is open.
+  const src = (typeof projSeed !== 'undefined' && projSeed && Object.keys(projSeed).length)
+    ? projSeed : ((typeof SEED !== 'undefined') ? SEED : null);
+  if(!src) return null;
+  if(_tcMdIdxSrc !== src){
+    _tcMdIdx = {};
+    for(const t in src){
+      const posmap = src[t] || {};
+      for(const pos in posmap){
+        (posmap[pos] || []).forEach(p => {
+          if(p && p.player_id != null && p.tc) _tcMdIdx[String(p.player_id)] = p;
+        });
+      }
+    }
+    _tcMdIdxSrc = src;
+  }
+  return _tcMdIdx[String(pid)] || null;
+}
+
+// Agreement threshold: within ±6% of the baseline the two projections are the same
+// number for draft purposes; beyond it the chip says which way the model leans.
+const TC_MD_AGREE_PCT = 0.06;
+// Below this baseline the two numbers measure different things — Sleeper's projection
+// bakes playing time into a backup's number (Mariota: 0.8) while the model reads
+// production per game WHEN he plays (15.3). A percent chip on that pair is nonsense,
+// so deep-bench rows show both numbers and let the ⓘ explain the basis difference.
+const TC_MD_MIN_BASE = 5;
+
+function tcModelDelta(tc){
+  if(!tc || tc.fpg == null || tc.base == null || !(tc.base > 0)) return null;
+  return (tc.fpg - tc.base) / tc.base;
+}
+
+function renderTcModel(pid){
+  const p = tcModelRec(pid);
+  if(!p || !p.tc || p.tc.fpg == null) return '';
+  const tc = p.tc;
+  const d = tcModelDelta(tc);
+  let chip = '';
+  if(d != null && tc.base < TC_MD_MIN_BASE){
+    chip = `<span class="tc-md-chip tc-md-eq" title="Sleeper's number bakes in limited playing time; the model's is per game played — not comparable, so no verdict">per-game read</span>`;
+  }else if(d != null){
+    const pct = Math.round(Math.abs(d) * 100);
+    if(Math.abs(d) < TC_MD_AGREE_PCT){
+      chip = `<span class="tc-md-chip tc-md-eq" title="The model and Sleeper's baseline agree (within ±${Math.round(TC_MD_AGREE_PCT*100)}%)">≈ agrees</span>`;
+    }else if(d > 0){
+      chip = `<span class="tc-md-chip tc-md-up" title="The model projects ${pct}% MORE than Sleeper's baseline">▲ +${pct}%</span>`;
+    }else{
+      chip = `<span class="tc-md-chip tc-md-dn" title="The model projects ${pct}% LESS than Sleeper's baseline">▼ −${pct}%</span>`;
+    }
+  }
+  // Show the comparison in the USER'S scoring whenever possible. The model's internals are
+  // PPR, but a 6-pt-pass-TD league scores a QB ~25% higher — quoting Burrow "16.9 PPR/G" to
+  // someone whose own card badges read 21-27 pts/g made the model look absurd when it was
+  // merely speaking a different unit. The model's opinion is a RATIO vs the baseline (unit-
+  // invariant), so both numbers convert by scaling the league-scored per-game baseline.
+  let base = tc.base, fpg = tc.fpg, unit = 'PPR/G';
+  if(tc.base != null && tc.base >= TC_MD_MIN_BASE && typeof calcFpts === 'function'){
+    // Seed rows name passing TDs differently than the rankings rows calcFpts was built for;
+    // the games divisor mirrors baseline_ppr_fpg (min(gp,17)) so both sides share one basis.
+    const lgRow = (p.passing_tds == null && p.passing_touchdowns != null)
+      ? Object.assign({}, p, {passing_tds: p.passing_touchdowns}) : p;
+    const gp = Math.max(1, Math.min(Number(p.games_played) || 17, 17));
+    const lg = calcFpts(lgRow) / gp;
+    if(lg > 1){ base = lg; fpg = lg * (tc.fpg / tc.base); unit = 'PTS/G · your scoring'; }
+  }
+  const baseTxt = base != null
+    ? `<span class="tc-md-src">Sleeper <b>${Number(base).toFixed(1)}</b></span><span class="tc-md-sep">vs</span>`
+    : '';
+  return `<div class="tc-model-row" title="TC model: our own projection of next-season points per game, next to Sleeper's baseline">
+    <div class="cfb-rel-label">TC MODEL ${(typeof tcInfoBtn==='function') ? tcInfoBtn('tcmodel','How this number is built') : ''}</div>
+    <div class="tc-md-vals">${baseTxt}<span class="tc-md-src">model <b>${Number(fpg).toFixed(1)}</b></span><span class="tc-md-unit">${unit}</span></div>
+    ${chip}
+  </div>`;
+}
+
+// ⓘ copy — dynamic body so the popup explains THIS player's number with his own inputs.
+if(typeof TC_INFO_BOOK !== 'undefined'){
+  TC_INFO_BOOK.tcmodel = {
+    title: 'TC model projection',
+    body: () => {
+      const p = (typeof pcardState !== 'undefined' && pcardState) ? tcModelRec(pcardState.pid) : null;
+      const tc = p && p.tc;
+      let mine = '';
+      if(tc && tc.in && tc.in.rk){
+        const i = tc.in;
+        const bits = [];
+        if(i.pick != null) bits.push(`drafted <b>pick ${i.pick}</b>`);
+        if(i.prob != null) bits.push(`prospect-model hit probability <b>${Math.round(i.prob*100)}%</b>`);
+        mine = `<p><b>Rookie projection:</b> ${bits.join(' · ')}. No NFL tape exists, so this number comes
+          from a separate rookie model — predicted rookie-season points per 17 games, trained on every
+          drafted player since 2016 with <b>bust risk priced in</b> (draftees who never played count as
+          zero in training). Draft capital carries most of the signal; the PROSPECT grade below feeds in
+          where it proved predictive (RB/TE).</p>`;
+      }else if(tc && tc.in){
+        const i = tc.in;
+        const bits = [];
+        if(i.fpg != null) bits.push(`<b>${i.fpg}</b> PPR FPG over <b>${i.g}</b> games`);
+        if(i.xfpg != null) bits.push(`expected (XFP) <b>${i.xfpg}</b>`);
+        if(i.tdoe != null) bits.push(`TDs vs expected <b>${i.tdoe > 0 ? '+' : ''}${i.tdoe}</b>`);
+        if(i.age != null) bits.push(`age <b>${i.age}</b>`);
+        if(i.mv) bits.push(`<b>changed teams</b> since`);
+        if(i.pk!=null && i.pk>i.fpg+0.5) bits.push(`career-best season <b>${i.pk}</b> FPG`);
+        mine = `<p><b>${i.yr} inputs:</b> ${bits.join(' · ')}.</p>`;
+      }
+      return `<p>TripleCrown's own projection of next-season <b>points per game</b> — independent
+        of Sleeper's baseline, so the two can be compared honestly. When your scoring settings are
+        loaded, both numbers on the row are converted into <b>your league's scoring</b> (the model
+        thinks in PPR internally; its verdict is a percentage, which survives the conversion).</p>
+        ${mine}
+        <p>The model is trained on every NFL season since 2015 and reads the season just played:
+        <b>opportunity</b> (target share, WOPR, carries), <b>expected fantasy points</b> (what the
+        usage was worth before efficiency), <b>touchdown luck</b> (TDs over expectation regress hard
+        the following year), <b>age</b>, and <b>offseason movement</b> (changing teams, and how much
+        opportunity vacated the new roster). Out-of-sample on 2023–25 it beat regressed-repeat-production
+        baselines at every position — most at WR and QB.</p>
+        <p>▲/▼ marks where the model meaningfully disagrees with Sleeper's baseline; ≈ means the two
+        are within ±6%. The model does <b>not</b> project playing time — for deep bench players
+        Sleeper's small number bakes in "he probably won't play" while the model's answers "what
+        would he score per game if he did", so those rows get a <i>per-game read</i> tag instead of
+        a verdict. Rookies have no row — their read is the PROSPECT grade.</p>`;
+    },
+  };
+}
 // ── Route tree (player-card "Routes" tab) ────────────────────────────────────
 // nflverse participation tags each pass play with the route the TARGETED receiver ran, so
 // counting those per receiver gives a "routes run when targeted" distribution — exactly what a
@@ -10613,8 +10830,14 @@ async function loadEspnCardData(pid, posc, body, opts){
   // The college prospect panel comes from the seed, not from ESPN, so it renders even when the
   // ESPN lookup below fails or the player has no ESPN page at all. Empty string for veterans,
   // for the NFL tab, and for the ~3% of rookies with no CFBD coverage.
-  const prospect = (league==='college-football' && typeof renderCfbProspect==='function')
-    ? renderCfbProspect(pid) : '';
+  // Rookies with a TC rookie projection get the same comparison row veterans do, above the
+  // PROSPECT panel. Gated to rookie tc blocks (in.rk) — a veteran browsing his own college
+  // tab already has the TC row on his NFL tab, and twice is noise.
+  const _tcRec = (league==='college-football' && typeof tcModelRec==='function') ? tcModelRec(pid) : null;
+  const tcRow = (_tcRec && _tcRec.tc && _tcRec.tc.in && _tcRec.tc.in.rk && typeof renderTcModel==='function')
+    ? renderTcModel(pid) : '';
+  const prospect = tcRow + ((league==='college-football' && typeof renderCfbProspect==='function')
+    ? renderCfbProspect(pid) : '');
   body.innerHTML = prospect
     ? prospect + `<div class="pcard-loading">Loading college game logs…</div>`
     : `<div class="pcard-loading">Loading ${league==='nfl'?'':'college '}game logs…</div>`;
@@ -15728,6 +15951,7 @@ function rankingsRenderCacheKey(teamScoped){
     String(rankSortKey),
     String(rankSortDir),
     String(rankPosFilter),
+    String(rankRookiesOnly?1:0),
     String(!!rankAdvanced),
     String(sumerRefinement||''),
     String(sumerMin && Number.isFinite(+sumerMin.QB) ? +sumerMin.QB : 0),
@@ -15744,6 +15968,8 @@ function rankingsRenderCacheKey(teamScoped){
     // The cached HTML always carries the FULL row set (phones stream it in on hit), so the
     // key is deliberately viewport-independent — rotating the phone reuses the same entry.
     String(typeof tcOwnerStamp==='function' ? tcOwnerStamp() : ''),   // owner column follows the synced league
+    // Column customization (hide/reorder) changes the header AND every row.
+    (typeof rankColPrefs!=='undefined' && rankColPrefs) ? JSON.stringify(rankColPrefs) : '',
   ].join('|');
 }
 
@@ -15772,6 +15998,8 @@ function renderRankings(){
       document.getElementById('content').innerHTML = cachedHtml;
       hydrateRankingsHeadshots();
     }
+    // Cached HTML is always pristine — re-augment it if the column editor is open.
+    if(typeof rankColEditAugment==='function' && typeof rankColEditActive!=='undefined' && rankColEditActive) rankColEditAugment();
     if(_rkDebug){
       const dt = (_rkNow()-_rkT0).toFixed(1);
       try{ console.info(`[rankings-latency] cache-hit total=${dt}ms stream=${split?1:0}`); }catch(_e){}
@@ -15822,10 +16050,15 @@ function renderRankings(){
   const rankIsRookie = (p)=> (typeof rankingIsRookieForSeason==='function')
     ? !!rankingIsRookieForSeason(p, activeSeason)
     : !!(p && (p.is_rookie===true || Number(p.years_exp)===0));
+  // Legacy: 'ROOKIES' used to BE the position filter (old note-nav payloads may still carry it).
+  if(rankPosFilter==='ROOKIES'){ rankPosFilter='ALL'; rankRookiesOnly=true; }
   let view=rankPosFilter==='ALL'?all
-    :rankPosFilter==='ROOKIES'?all.filter(rankIsRookie)
     :rankPosFilter==='FLEX'?all.filter(p=>p.pos!=='QB')
     :all.filter(p=>p.pos===rankPosFilter);
+  // ROOKIES stacks on top of the position filter — WR + ROOKIES = rookie WRs. Because the
+  // position filter stays what it is, the Adv. Metrics view keeps that position's own
+  // column set instead of collapsing to the all-position common columns.
+  if(rankRookiesOnly) view=view.filter(rankIsRookie);
   if(following && hideDrafted) view=view.filter(p=>!p.drafted);
   const searchTokens = rankingsSearchTokens(rankingsSearchQuery);
   if(searchTokens.length){
@@ -15893,6 +16126,14 @@ function renderRankings(){
       if(bv==null) return -1;
       return (av-bv)*(rankSortDir<0?1:-1);
     }
+    // TC model column: rookies/unscored players have no number and always sink.
+    if(rankSortKey==='tc'){
+      const av=a.tcPts, bv=b.tcPts;
+      if(av==null && bv==null) return b.fpts-a.fpts;
+      if(av==null) return 1;
+      if(bv==null) return -1;
+      return (bv-av)*(rankSortDir<0?1:-1);   // default high→low
+    }
     // SumerSports advanced columns (key "sumer:<label>"): players missing that stat sink.
     // sumerValue() is not cheap — it allocates a table object under a refinement, normalises
     // the player name with three regexes, and linear-scans the column list — so calling it
@@ -15912,8 +16153,12 @@ function renderRankings(){
   const tierC=['','var(--accent)','var(--info)','var(--warn)','var(--danger)','var(--muted)','#8b7cff','#6ad1c4'];
   const tierColor=t=>t?tierC[Math.min(t,7)]:'var(--border)';
   // Two-line header helper. `grp` adds a left border to mark a stat group's start.
-  const th=(k,l1,l2,cls,grp)=>{const a=rankSortKey===k;
-    return `<th onclick="rankSort('${k}')" class="${cls||''} ${grp?'grp-start':''}" style="${a?'color:var(--accent)':''}">
+  const th=(k,l1,l2,cls,grp,rc)=>{const a=rankSortKey===k;
+    // data-rc / data-rcg mark customizable columns for the long-press editor (81-rank-coledit.js):
+    // rc = a meta column's pref key; stat-group columns carry their group derived from class.
+    const g=(cls||'').match(/^grp-(rush|rec|pass)/);
+    const tag = rc ? ` data-rc="${rc}"` : (g ? ` data-rcg="${g[1]}"` : '');
+    return `<th onclick="rankSort('${k}')" class="${cls||''} ${grp?'grp-start':''}"${tag} style="${a?'color:var(--accent)':''}">
       <div class="th-stack">${l1}${l2?`<br>${l2}`:''}${a?(rankSortDir<0?' ↓':' ↑'):''}</div></th>`;};
   // Dynasty tab only: three extra columns (Age / APY / Free-Agency year) right after TM.
   // FA is highlighted red when it's the very next season (contracts expiring soonest).
@@ -15929,6 +16174,9 @@ function renderRankings(){
   // the current season/position no longer offers so the table + dropdown stay in sync.
   if(rankAdvanced && sumerRefinement && !sumerRefinementsForFilter().includes(sumerRefinement)) sumerRefinement=null;
   const sumerView = (rankAdvanced && sumerAvailable()) ? sumerColumnsForFilter() : null;
+  // User column prefs apply to the adv view too — hide by 'adv:<label>', reorder by advOrder.
+  // Header and cells both iterate sumerView.cols, so one permuted array keeps them in sync.
+  if(sumerView && typeof rankAdvApplyPrefs==='function') sumerView.cols = rankAdvApplyPrefs(sumerView.cols);
   const advActive = !!sumerView;
   const nStatCols = advActive ? sumerView.cols.length : 12;
   // Two-line-ify a Sumer column label so headers stack like the standard ones.
@@ -15952,7 +16200,7 @@ function renderRankings(){
   const inDraftOrder = rankSortKey==='ecr';
   // Pick gaps are counted in TOTAL picks, so the line is only meaningful on the unfiltered
   // board: with the WR filter on it sat after the 11th available WR, far past your pick.
-  const showPickLines = following && mySlot!=null && inDraftOrder && rankPosFilter==='ALL' && !(rankingsSearchQuery||'').trim();
+  const showPickLines = following && mySlot!=null && inDraftOrder && rankPosFilter==='ALL' && !rankRookiesOnly && !(rankingsSearchQuery||'').trim();
   let pickGaps=[];   // successive counts of players between your turns
   if(showPickLines){
     const { teams, type, reversalRound, rounds } = draftParams();
@@ -15968,7 +16216,24 @@ function renderRankings(){
       }
     }
   }
-  const totalCols = 8 + (paceActive?1:0) + (isDynasty?3:0) + (ownerActive?1:0) + nStatCols;  // ecr,tier,adp,fpts(+Δ proj),vor,pos,name,tm(+owner) + stat cols
+  // ── Customizable columns ──────────────────────────────────────────────────────────────
+  // The meta columns render from ONE ordered key list so user prefs (hide / drag-reorder,
+  // 81-rank-coledit.js) permute a single array instead of two parallel template literals.
+  // ADP and TC exist only on the projection board: reference seasons have no market ADP and
+  // the TC model projects the UPCOMING season, so both drop entirely there (not just go blank).
+  const projBoard = activeSeason==='proj';
+  const availMeta = new Set(['ecr','ecr_tier','fpts','vor','pos','name','team']);
+  if(projBoard){ availMeta.add('tc'); availMeta.add('adp'); }
+  if(ownerActive) availMeta.add('own');
+  if(isDynasty){ availMeta.add('age'); availMeta.add('apy'); availMeta.add('fa'); }
+  const hiddenCols = (typeof rankColHidden==='function') ? rankColHidden() : new Set();
+  const metaOrder = ((typeof rankColOrder==='function') ? rankColOrder() : ['ecr','ecr_tier','tc','adp','fpts','vor','pos','name','team','own','age','apy','fa'])
+    .filter(k=>availMeta.has(k) && !hiddenCols.has(k));
+  // Stat groups hide as whole units (ATT/YDS/… of a group live or die together); the adv view
+  // is its own opt-in column set and ignores group prefs.
+  const statGroupsVisible = advActive ? [] : ['rush','rec','pass'].filter(g=>!hiddenCols.has('grp_'+g));
+  const nStatColsVis = advActive ? nStatCols : statGroupsVisible.length*4;
+  const totalCols = metaOrder.length + (paceActive && metaOrder.includes('fpts') ? 1 : 0) + nStatColsVis;
   const pickLineRow=(round)=>`<tr class="rank-pickline"><td colspan="${totalCols}">
     <span class="rank-pickline-lbl" data-pick="${round==1?'Your pick · next up':`Your pick #${round}`}">▸ Your pick ${round==1?'(next up)':`#${round}`} projected here</span></td></tr>`;
 
@@ -16001,7 +16266,7 @@ function renderRankings(){
     if(!n){
       n = { type:'rankings', season:String(activeSeason), scope: teamScoped?'team':'all',
             team: teamScoped?currentTeam:team, advanced: advActive,
-            refinement: sumerRefinement||'', posFilter: rankPosFilter };
+            refinement: sumerRefinement||'', posFilter: rankPosFilter, rookies: rankRookiesOnly };
       _navByTeam.set(team, n);
     }
     return n;
@@ -16047,17 +16312,6 @@ function renderRankings(){
     const pNameText = escHtml(p.name);
     const pTeamAttr = escAttr(p.team);
     const pTeamText = escHtml(p.team);
-    let contractCells='';
-    if(isDynasty){
-      const ageTxt = p.age!=null ? p.age : '';
-      const apyTxt = p.apy!=null ? fmtAPY(p.apy) : '';
-      const faTxt = p.fa!=null ? p.fa : '';
-      const faSoon = p.fa!=null && p.fa===nextYear;   // hits free agency next season
-      contractCells =
-        `<td class="c-age">${ageTxt?`<span class="num">${ageTxt}</span>`:''}</td>`+
-        `<td class="c-apy">${apyTxt?`<span class="num">${apyTxt}</span>`:''}</td>`+
-        `<td class="c-fa ${faSoon?'fa-soon':''}">${faTxt?`<span class="num">${faTxt}</span>`:''}</td>`;
-    }
     // Stat cells: standard rush/rec/pass groups, or SumerSports advanced columns when active.
     let statCells;
     if(advActive){
@@ -16068,10 +16322,12 @@ function renderRankings(){
         return `<td class="grp-adv${ci===0?' grp-start':''}">${txt?rankValueHtml(`<span class="num">${txt}</span>`, p, label, `sumer:${label}`, 'rankings_advanced'):''}</td>`;
       }).join('');
     } else {
-      statCells =
-        `<td class="grp-rush">${statCell(p.rushing_attempts,p,'Rush Attempts','rushing_attempts')}</td><td class="grp-rush-mid">${statCell(p.rushing_yards,p,'Rush Yards','rushing_yards')}</td><td class="grp-rush-mid">${ypc?rankValueHtml(`<span class="num">${ypc}</span>`, p, 'Yards Per Carry', 'ypc', 'rankings'):''}</td><td class="grp-rush-end">${statCell(p.rushing_tds,p,'Rush Touchdowns','rushing_tds')}</td>`+
-        `<td class="grp-rec">${statCell(p.receiving_targets,p,'Targets','receiving_targets')}</td><td class="grp-rec-mid">${statCell(p.receptions,p,'Receptions','receptions')}</td><td class="grp-rec-mid">${statCell(p.receiving_yards,p,'Receiving Yards','receiving_yards')}</td><td class="grp-rec-end">${statCell(p.receiving_tds,p,'Receiving Touchdowns','receiving_tds')}</td>`+
-        `<td class="grp-pass">${statCell(p.passing_attempts,p,'Pass Attempts','passing_attempts')}</td><td class="grp-pass-mid">${statCell(p.passing_yards,p,'Pass Yards','passing_yards')}</td><td class="grp-pass-mid">${statCell(p.passing_tds,p,'Pass Touchdowns','passing_tds')}</td><td class="grp-pass-end">${statCell(p.interceptions_thrown,p,'Interceptions Thrown','interceptions_thrown')}</td>`;
+      const grpCells = {
+        rush: `<td class="grp-rush">${statCell(p.rushing_attempts,p,'Rush Attempts','rushing_attempts')}</td><td class="grp-rush-mid">${statCell(p.rushing_yards,p,'Rush Yards','rushing_yards')}</td><td class="grp-rush-mid">${ypc?rankValueHtml(`<span class="num">${ypc}</span>`, p, 'Yards Per Carry', 'ypc', 'rankings'):''}</td><td class="grp-rush-end">${statCell(p.rushing_tds,p,'Rush Touchdowns','rushing_tds')}</td>`,
+        rec:  `<td class="grp-rec">${statCell(p.receiving_targets,p,'Targets','receiving_targets')}</td><td class="grp-rec-mid">${statCell(p.receptions,p,'Receptions','receptions')}</td><td class="grp-rec-mid">${statCell(p.receiving_yards,p,'Receiving Yards','receiving_yards')}</td><td class="grp-rec-end">${statCell(p.receiving_tds,p,'Receiving Touchdowns','receiving_tds')}</td>`,
+        pass: `<td class="grp-pass">${statCell(p.passing_attempts,p,'Pass Attempts','passing_attempts')}</td><td class="grp-pass-mid">${statCell(p.passing_yards,p,'Pass Yards','passing_yards')}</td><td class="grp-pass-mid">${statCell(p.passing_tds,p,'Pass Touchdowns','passing_tds')}</td><td class="grp-pass-end">${statCell(p.interceptions_thrown,p,'Interceptions Thrown','interceptions_thrown')}</td>`,
+      };
+      statCells = statGroupsVisible.map(g=>grpCells[g]).join('');
     }
     const fptsTxt = p.fpts.toFixed(1);
     // Live Δ column (opt-in): ONE colored ±% pill vs the kickoff-frozen projection — the
@@ -16091,17 +16347,26 @@ function renderRankings(){
     const volAttrs = advActive
       ? ` data-rank-sumer-bucket="${escAttr(volBucket)}" data-rank-sumer-vol="${(volVal!=null && Number.isFinite(+volVal)) ? escAttr(String(+volVal)) : ''}"`
       : '';
+    // Meta cells keyed by pref key; the row emits them in the user's column order. Keys not
+    // in metaOrder are simply never built into the string (the ternaries below stay cheap).
+    const faSoon = p.fa!=null && p.fa===nextYear;   // hits free agency next season
+    const metaTd = {
+      ecr: `<td class="c-ecr">${ecrTxt!=='—'?rankValueHtml(ecrTxt, p, 'Expert Consensus Rank', 'ecr', 'rankings'):ecrTxt}</td>`,
+      ecr_tier: `<td class="c-tier">${tier!=null?rankValueHtml(`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`, p, 'Tier', 'ecr_tier', 'rankings'):''}</td>`,
+      tc: `<td class="c-tc"${p.tcPts!=null?` title="TC model · projected season fantasy points (your scoring)"`:''}>${p.tcPts!=null?rankValueHtml(`<span class="num">${p.tcPts.toFixed(1)}</span>`, p, 'TC Model Projection', 'tcPts', 'rankings'):''}</td>`,
+      adp: `<td class="c-adp"${adpTxt!=='—'?` title="Market ADP (${rankFormat.replace(/_/g,' ')} board)"`:''}>${adpTxt!=='—'?`<span class="num">${adpTxt}</span>`:''}</td>`,
+      fpts: fptsCells,
+      vor: `<td class="c-vor">${rankValueHtml(`<span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${vorTxt}</span>`, p, 'Value Over Replacement', 'vor', 'rankings')}</td>`,
+      pos: `<td class="c-pos"><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>`,
+      name: `<td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${rankHeadshotSlotHtml(p)}<span class="rank-name">${pNameText}</span>${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</div></td>`,
+      team: `<td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" alt="${pTeamAttr}" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${pTeamText}</td>`,
+      own: ownerActive?`<td class="c-own">${tcOwnerPill(p.player_id, p.name)}</td>`:'',
+      age: `<td class="c-age">${p.age!=null?`<span class="num">${p.age}</span>`:''}</td>`,
+      apy: `<td class="c-apy">${p.apy!=null?`<span class="num">${fmtAPY(p.apy)}</span>`:''}</td>`,
+      fa: `<td class="c-fa ${faSoon?'fa-soon':''}">${p.fa!=null?`<span class="num">${p.fa}</span>`:''}</td>`,
+    };
     rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}" data-rank-pos="${p.pos}"${rankIsRookie(p)?' data-rank-rk="1"':''}${volAttrs}${rankNoteScopeAttrs(p)}>
-    <td class="c-ecr">${ecrTxt!=='—'?rankValueHtml(ecrTxt, p, 'Expert Consensus Rank', 'ecr', 'rankings'):ecrTxt}</td>
-    <td class="c-tier">${tier!=null?rankValueHtml(`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`, p, 'Tier', 'ecr_tier', 'rankings'):''}</td>
-    <td class="c-adp"${adpTxt!=='—'?` title="Market ADP (${rankFormat.replace(/_/g,' ')} board)"`:''}>${adpTxt!=='—'?`<span class="num">${adpTxt}</span>`:''}</td>
-    ${fptsCells}
-    <td class="c-vor">${rankValueHtml(`<span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${vorTxt}</span>`, p, 'Value Over Replacement', 'vor', 'rankings')}</td>
-    <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
-    <td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${rankHeadshotSlotHtml(p)}<span class="rank-name">${pNameText}</span>${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</div></td>
-    <td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" alt="${pTeamAttr}" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${pTeamText}</td>
-    ${ownerActive?`<td class="c-own">${tcOwnerPill(p.player_id, p.name)}</td>`:''}
-    ${contractCells}
+    ${metaOrder.map(k=>metaTd[k]).join('\n    ')}
     ${statCells}
   </tr>`);
     if(!p.drafted) undraftedSeen++;
@@ -16116,8 +16381,10 @@ function renderRankings(){
   const scoringList=[['std','Standard'],['half_ppr','Half PPR'],['ppr','Full PPR'],['superflex','Superflex']];
   const fmtBtns=scoringList
     .map(([s,l])=>`<button class="format-btn ${curScoring===s?'active':''}" onclick="setScoringAxis('${s}')">${l}</button>`).join('');
-  const posBtns=['ALL','QB','RB','WR','TE','FLEX','ROOKIES'].map(pos=>
-    `<button class="pos-filter-btn ${rankPosFilter===pos?'active':''}" onclick="setPosFilter('${pos}')">${pos}</button>`).join('');
+  const posBtns=['ALL','QB','RB','WR','TE','FLEX'].map(pos=>
+    `<button class="pos-filter-btn ${rankPosFilter===pos?'active':''}" onclick="setPosFilter('${pos}')">${pos}</button>`).join('')
+    // ROOKIES is an overlay, not a position: it stays lit NEXT TO the active position chip.
+    +`<button class="pos-filter-btn rookies-filter-btn ${rankRookiesOnly?'active':''}" onclick="toggleRookiesFilter()" title="Show only rookies — stacks with the position filter">ROOKIES</button>`;
   const searchOpen = searchActive;
   const searchPlaceholder = 'Search players (comma separated)';
   // Advanced-metrics toggle — only on a reference season nflverse has player data for.
@@ -16231,22 +16498,35 @@ function renderRankings(){
           <span class="rank-toolbar-spacer"></span>
           ${following?'':`<button class="btn btn-accent btn-sm" onclick="openLeaguePicker()">🔗 Link Sleeper League</button>
           <button class="btn btn-ghost btn-sm" onclick="promptDraftFollow()" title="Follow a live or mock draft by its ID">Paste draft ID</button>`}
+          ${(typeof rankColPrefsCustomized==='function' && rankColPrefsCustomized())?`<button class="btn btn-ghost btn-sm" onclick="resetRankColPrefs()" title="Restore hidden and reordered columns to the default layout">↺ Reset table</button>`:''}
           <button class="btn btn-ghost btn-sm" onclick="exportRankingsCSV()">${TC_ICON("download")} CSV</button>
         </div>
       </div>
       <div class="rank-table-wrap" style="max-height:calc(100vh - 320px)">
-      <table class="rankings-table grouped${paceActive?' pace-mode':''}" data-rank-rendered-pos="${rankPosFilter}" data-rank-adv="${advActive?1:0}"><thead><tr>
-        ${th('ecr','ECR','','c-ecr')}${th('ecr_tier','TIER','','c-tier')}${th('adp','ADP','','c-adp')}${th('fpts','FPTS','')}${paceActive
-          ? th('pacePct','Δ','PROJ','c-pace-delta') : ''}${th('vor','VOR','','c-vor')}
-        ${th('pos','POS','')}${th('name','PLAYER','','c-player')}${th('team','TM','','c-team')}
-        ${ownerActive?`<th class="c-own" title="Rostered by (synced league)"><div class="th-stack">OWNER</div></th>`:''}
-        ${isDynasty?`${th('age','AGE','','c-age',true)}${th('apy','APY','','c-apy')}${th('fa','FA','','c-fa')}`:''}
+      <table class="rankings-table grouped${paceActive?' pace-mode':''}" data-rank-rendered-pos="${rankPosFilter}" data-rank-rendered-rk="${rankRookiesOnly?1:0}" data-rank-adv="${advActive?1:0}"><thead><tr>
+        ${metaOrder.map(k=>({
+          ecr: ()=>th('ecr','ECR','','c-ecr',false,'ecr'),
+          ecr_tier: ()=>th('ecr_tier','TIER','','c-tier',false,'ecr_tier'),
+          tc: ()=>th('tc','TC','','c-tc',false,'tc'),
+          adp: ()=>th('adp','ADP','','c-adp',false,'adp'),
+          fpts: ()=>th('fpts','FPTS','','',false,'fpts')+(paceActive?th('pacePct','Δ','PROJ','c-pace-delta'):''),
+          vor: ()=>th('vor','VOR','','c-vor',false,'vor'),
+          pos: ()=>th('pos','POS','','c-pos',false,'pos'),
+          name: ()=>th('name','PLAYER','','c-player',false,'name'),
+          team: ()=>th('team','TM','','c-team',false,'team'),
+          own: ()=>`<th class="c-own" data-rc="own" title="Rostered by (synced league)"><div class="th-stack">OWNER</div></th>`,
+          age: ()=>th('age','AGE','','c-age',true,'age'),
+          apy: ()=>th('apy','APY','','c-apy',false,'apy'),
+          fa: ()=>th('fa','FA','','c-fa',false,'fa'),
+        })[k]()).join('')}
         ${advActive
           ? sumerView.cols.map((label,ci)=>{const key='sumer:'+label;const on=rankSortKey===key;
-              return `<th onclick="rankSort('sumer:${label.replace(/'/g,"\\'")}')" class="grp-adv${ci===0?' grp-start':''}" style="${on?'color:var(--accent)':''}" title="${label}"><div class="th-stack">${sumerHead(label)}${on?(rankSortDir<0?' ↓':' ↑'):''}</div></th>`;}).join('')
-          : `${th('rushing_attempts','RUSH','ATT','grp-rush',true)}${th('rushing_yards','RUSH','YDS','grp-rush-mid')}${th('ypc','YPC','','grp-rush-mid')}${th('rushing_tds','RUSH','TDS','grp-rush-end')}
-        ${th('receiving_targets','TGTS','','grp-rec',true)}${th('receptions','REC','','grp-rec-mid')}${th('receiving_yards','REC','YDS','grp-rec-mid')}${th('receiving_tds','REC','TDS','grp-rec-end')}
-        ${th('passing_attempts','PASS','ATT','grp-pass',true)}${th('passing_yards','PASS','YDS','grp-pass-mid')}${th('passing_tds','PASS','TDS','grp-pass-mid')}${th('interceptions_thrown','PASS','INTS','grp-pass-end')}`}
+              return `<th onclick="rankSort('sumer:${label.replace(/'/g,"\\'")}')" class="grp-adv${ci===0?' grp-start':''}" data-rc-adv="${escAttr(label)}" style="${on?'color:var(--accent)':''}" title="${label}"><div class="th-stack">${sumerHead(label)}${on?(rankSortDir<0?' ↓':' ↑'):''}</div></th>`;}).join('')
+          : [
+        statGroupsVisible.includes('rush')?`${th('rushing_attempts','RUSH','ATT','grp-rush',true)}${th('rushing_yards','RUSH','YDS','grp-rush-mid')}${th('ypc','YPC','','grp-rush-mid')}${th('rushing_tds','RUSH','TDS','grp-rush-end')}`:'',
+        statGroupsVisible.includes('rec')?`${th('receiving_targets','TGTS','','grp-rec',true)}${th('receptions','REC','','grp-rec-mid')}${th('receiving_yards','REC','YDS','grp-rec-mid')}${th('receiving_tds','REC','TDS','grp-rec-end')}`:'',
+        statGroupsVisible.includes('pass')?`${th('passing_attempts','PASS','ATT','grp-pass',true)}${th('passing_yards','PASS','YDS','grp-pass-mid')}${th('passing_tds','PASS','TDS','grp-pass-mid')}${th('interceptions_thrown','PASS','INTS','grp-pass-end')}`:'',
+          ].join('')}
       </tr></thead><tbody>${rowsHtml}</tbody></table></div>
     </div>`;
   // The cached entry always carries every row; on phones the DOM gets the first slice now
@@ -16258,6 +16538,8 @@ function renderRankings(){
     ? pageOf(rowChunks.slice(0, RANKINGS_STREAM_FIRST).join(''))
     : pageHtml;
   hydrateRankingsHeadshots();
+  // A hide/reorder re-render happens WITH the editor still open — put its ✕ badges back.
+  if(typeof rankColEditAugment==='function' && typeof rankColEditActive!=='undefined' && rankColEditActive) rankColEditAugment();
   const tDomDone = _rkNow();
   // A team-scoped board renders "Loading head coach…" / no record until those async fetches
   // land — and their completion re-renders into the SAME cache key. Never cache the pending
@@ -16281,6 +16563,8 @@ function renderRankings(){
   }
 }
 function rankSort(k){
+  // In column-edit mode headers are drag handles, not sort buttons.
+  if(typeof rankColEditActive!=='undefined' && rankColEditActive) return;
   if(rankSortKey===k) rankSortDir*=-1;
   else { rankSortKey=k; rankSortDir=k==='ecr'?-1:-1; }
   // renderRankings() replaces #content wholesale, so BOTH scroll positions are lost: the page's
@@ -16416,16 +16700,23 @@ function rankingsPosFilterInPlace(){
   const table = document.querySelector('#content .rankings-table');
   if(!table || typeof table.getAttribute!=='function') return false;
   if(table.getAttribute('data-rank-rendered-pos')!=='ALL') return false;
+  if(table.getAttribute('data-rank-rendered-rk')==='1') return false;   // board rendered pre-filtered to rookies: full render to widen
   if(table.getAttribute('data-rank-adv')==='1') return false;
   if(rankAdvanced && typeof sumerAvailable==='function' && sumerAvailable()) return false;
   const btns = document.querySelectorAll('#content .rank-toolbar .pos-filter-btn');
   if(!btns || !btns.length) return false;
-  btns.forEach(b=>{ b.classList.toggle('active', String(b.textContent).trim()===rankPosFilter); });
+  btns.forEach(b=>{ const t=String(b.textContent).trim();
+    b.classList.toggle('active', t==='ROOKIES' ? rankRookiesOnly : t===rankPosFilter); });
   return applyRankingsFiltersInPlace();
 }
 
 function setPosFilter(p){
   rankPosFilter=p;
+  if(rankingsPosFilterInPlace()) return;
+  rankingsRenderWithViewPreserved();
+}
+function toggleRookiesFilter(){
+  rankRookiesOnly=!rankRookiesOnly;
   if(rankingsPosFilterInPlace()) return;
   rankingsRenderWithViewPreserved();
 }
@@ -16474,9 +16765,10 @@ function activeSumerMinFilters(){
 function _rankingsInPlaceFiltersActive(){
   if(rankingsSearchTokens(rankingsSearchQuery).length) return true;
   if(Object.keys(activeSumerMinFilters()).length) return true;
-  if(typeof document!=='undefined' && rankPosFilter!=='ALL'){
+  if(typeof document!=='undefined' && (rankPosFilter!=='ALL' || rankRookiesOnly)){
     const table = document.querySelector('#content .rankings-table');
-    if(table && typeof table.getAttribute==='function' && table.getAttribute('data-rank-rendered-pos')==='ALL') return true;
+    if(table && typeof table.getAttribute==='function' && table.getAttribute('data-rank-rendered-pos')==='ALL'
+       && table.getAttribute('data-rank-rendered-rk')!=='1') return true;
   }
   return false;
 }
@@ -16490,14 +16782,17 @@ function applyRankingsFiltersInPlace(){
   const hasMinFilters = Object.keys(minFilters).length>0;
   // Position filter over a board rendered unfiltered (see rankingsPosFilterInPlace).
   const table = document.querySelector('.rankings-table');
-  const posF = (table && typeof table.getAttribute==='function' && table.getAttribute('data-rank-rendered-pos')==='ALL' && rankPosFilter!=='ALL')
-    ? rankPosFilter : null;
+  const _onAllBoard = table && typeof table.getAttribute==='function'
+    && table.getAttribute('data-rank-rendered-pos')==='ALL' && table.getAttribute('data-rank-rendered-rk')!=='1';
+  const posF = (_onAllBoard && rankPosFilter!=='ALL') ? rankPosFilter : null;
+  // ROOKIES overlays the position filter — both can be active at once.
+  const rkF = !!(_onAllBoard && rankRookiesOnly);
   let shown = 0;
   const rows = tbody.querySelectorAll('tr');
   rows.forEach((row)=>{
     if(row.classList.contains('rank-pickline')){
       // Pick-line markers become misleading during ad-hoc filtering.
-      row.style.display = (tokens.length || hasMinFilters || posF) ? 'none' : '';
+      row.style.display = (tokens.length || hasMinFilters || posF || rkF) ? 'none' : '';
       return;
     }
     const hay = String(row.getAttribute('data-rank-search')||'').toLowerCase();
@@ -16512,17 +16807,18 @@ function applyRankingsFiltersInPlace(){
     if(posF){
       const rowPos = String(row.getAttribute('data-rank-pos')||'');
       matchPos = posF==='FLEX' ? (rowPos!=='' && rowPos!=='QB')
-        : posF==='ROOKIES' ? row.getAttribute('data-rank-rk')==='1'
+        : posF==='ROOKIES' ? row.getAttribute('data-rank-rk')==='1'   // legacy value, still honored
         : rowPos===posF;
     }
-    const match = matchSearch && matchMin && matchPos;
+    const matchRk = !rkF || row.getAttribute('data-rank-rk')==='1';
+    const match = matchSearch && matchMin && matchPos && matchRk;
     row.style.display = match ? '' : 'none';
     if(match) shown++;
   });
   const countEl = document.getElementById('rankPlayerCount');
   if(countEl){
     const def = String(countEl.getAttribute('data-default-label')||'').trim();
-    countEl.textContent = (tokens.length || hasMinFilters || posF) ? `${shown} players` : (def || `${shown} players`);
+    countEl.textContent = (tokens.length || hasMinFilters || posF || rkF) ? `${shown} players` : (def || `${shown} players`);
   }
   return true;
 }
@@ -16698,13 +16994,17 @@ function recalcRankings(){
 function exportRankingsCSV(){
   let all=buildPlayerList();all.sort((a,b)=>b.fpts-a.fpts);
   const dyn = rankFormat==='dynasty' || rankFormat==='dynasty_superflex';
-  const keys=['ecr','tier','adp','fpts','pos','name','team',
+  // TC + ADP are projection-board concepts; reference-season exports drop both columns.
+  const proj = activeSeason==='proj';
+  const keys=['ecr','tier',...(proj?['tc','adp']:[]),'fpts','pos','name','team',
     ...(dyn?['age','apy','fa']:[]),
     'rushing_attempts','rushing_yards','ypc','rushing_tds',
     'receiving_targets','receptions','receiving_yards','receiving_tds',
     'passing_attempts','passing_yards','passing_tds','interceptions_thrown'];
   const csv=[keys.join(','),...all.map(p=>[
-    p.ecr!=null?p.ecr:'', p.ecr_tier!=null?p.ecr_tier:'', (()=>{const v=adpFor(p);return (v!=null&&v<999)?v:'';})(), p.fpts.toFixed(1), p.pos, p.name, p.team,
+    p.ecr!=null?p.ecr:'', p.ecr_tier!=null?p.ecr_tier:'',
+    ...(proj?[p.tcPts!=null?p.tcPts.toFixed(1):'', (()=>{const v=adpFor(p);return (v!=null&&v<999)?v:'';})()]:[]),
+    p.fpts.toFixed(1), p.pos, p.name, p.team,
     ...(dyn?[p.age!=null?p.age:'', p.apy!=null?p.apy:'', p.fa!=null?p.fa:'']:[]),
     p.rushing_attempts, p.rushing_yards, p.ypc>0?p.ypc.toFixed(1):'', p.rushing_tds,
     p.receiving_targets, p.receptions, p.receiving_yards, p.receiving_tds,
@@ -17720,6 +18020,242 @@ async function startKtcGame(){
   renderKtcOverlay();
   toast('Keep Trade Cut started — submit picks to personalize rankings.','ok');
 }
+// ── Rankings column editor ─────────────────────────────────────────────────────────────
+// Long-press any customizable rankings header → home-screen-style edit mode: headers wobble
+// with an ✕ badge (tap to hide; stat groups hide as whole units), and meta columns drag to
+// reorder. Prefs live in rankColPrefs (15-session-globals.js), persist with the session, and
+// "↺ Reset table" in the rankings hamburger restores the default layout.
+// Mobile-first: delegated listeners only, one cloned ghost moved by transform, header rects
+// re-read only while a drag is live — nothing here touches the 17k-cell body.
+
+let rankColEditActive = false;
+let _rcLP = null;     // pending long-press {x, y, timer}
+let _rcDrag = null;   // live drag {key, ghost, items, beforeKey, raf, px}
+
+const RC_LP_MS = 450;      // press-and-hold before edit mode arms
+const RC_LP_SLOP = 8;      // px of movement that cancels the press (it's a scroll)
+
+function _rcHeadThs(){
+  return Array.from(document.querySelectorAll('.rankings-table thead th[data-rc], .rankings-table thead th[data-rcg], .rankings-table thead th[data-rc-adv]'));
+}
+function _rcIsLocked(key){ return !!(typeof RANK_COL_LOCKED!=='undefined' && RANK_COL_LOCKED[key]); }
+
+function rankColEditAugment(){
+  // (Re)apply edit-mode chrome to the CURRENT header DOM — called on entry and after any
+  // re-render while editing. Idempotent.
+  const wrap = document.querySelector('.rank-table-wrap');
+  if(!wrap) return;
+  wrap.classList.add('rank-coledit');
+  _rcHeadThs().forEach(el=>{
+    const key = el.getAttribute('data-rc');
+    const grp = el.getAttribute('data-rcg');
+    const adv = el.getAttribute('data-rc-adv');
+    if(key && _rcIsLocked(key)){ el.classList.add('rc-locked'); return; }
+    el.classList.add('rc-edit');
+    // A stat group hides as one unit, so only its FIRST column wears the ✕ — twelve badges
+    // across RUSH/REC/PASS read as noise and imply per-column hiding that doesn't exist.
+    // Adv columns are individual metrics, so each wears its own.
+    if(grp && !el.classList.contains('grp-'+grp)) return;
+    if(!el.querySelector('.rc-x')){
+      const x=document.createElement('span');
+      x.className='rc-x'; x.textContent='✕';
+      x.title = grp ? 'Hide this stat group' : 'Hide this column';
+      x.addEventListener('click',(e)=>{ e.stopPropagation(); e.preventDefault();
+        rankColHide(adv!=null?('adv:'+adv):grp?('grp_'+grp):key); });
+      el.appendChild(x);
+    }
+  });
+  if(!document.getElementById('rcDoneChip')){
+    const b=document.createElement('button');
+    b.id='rcDoneChip'; b.textContent='Done';
+    b.title='Finish editing columns';
+    b.addEventListener('click', exitRankColEdit);
+    document.body.appendChild(b);
+  }
+}
+
+function enterRankColEdit(){
+  if(rankColEditActive) return;
+  rankColEditActive = true;
+  try{ if(navigator.vibrate) navigator.vibrate(10); }catch(_e){}
+  rankColEditAugment();
+}
+
+function exitRankColEdit(){
+  if(!rankColEditActive) return;
+  rankColEditActive = false;
+  _rcCancelDrag();
+  const wrap = document.querySelector('.rank-table-wrap');
+  if(wrap) wrap.classList.remove('rank-coledit');
+  document.querySelectorAll('.rankings-table thead th.rc-edit, .rankings-table thead th.rc-locked').forEach(el=>{
+    el.classList.remove('rc-edit','rc-locked','rc-drop','rc-drop-end','rc-dragging');
+  });
+  document.querySelectorAll('.rankings-table .rc-x').forEach(el=>el.remove());
+  const chip=document.getElementById('rcDoneChip');
+  if(chip) chip.remove();
+}
+
+function rankColHide(key){
+  const hid=(rankColPrefs.hidden||[]).slice();
+  if(!hid.includes(key)) hid.push(key);
+  rankColPrefs.hidden = hid;
+  _rcCommit();
+}
+
+// Move `key` so it renders immediately before `beforeKey` (null = end of the meta segment).
+// Operates on the CANONICAL order so hidden/unavailable columns keep their relative slots.
+// ECR is the sticky rank spine: nothing may land in front of it.
+function rankColMove(key, beforeKey){
+  if(_rcIsLocked(key)) return;
+  const ord = rankColOrder();
+  const from = ord.indexOf(key);
+  if(from<0) return;
+  ord.splice(from,1);
+  let at = beforeKey!=null ? ord.indexOf(beforeKey) : ord.length;
+  if(at<0) at = ord.length;
+  ord.splice(Math.max(at, 1), 0, key);   // index 0 is forever ECR
+  rankColPrefs.order = ord;
+  _rcCommit();
+}
+
+// Reorder an Adv. Metrics column. Canonical advOrder = the table's current (prefs-applied)
+// label sequence, with stored-but-not-in-view labels appended so other views keep theirs.
+function rankAdvMove(label, beforeLabel){
+  const ord=_rcHeadThs().filter(el=>el.getAttribute('data-rc-adv'))
+    .map(el=>el.getAttribute('data-rc-adv'));
+  ((rankColPrefs&&rankColPrefs.advOrder)||[]).forEach(l=>{ if(!ord.includes(l)) ord.push(l); });
+  const i=ord.indexOf(label); if(i<0) return;
+  ord.splice(i,1);
+  let at=beforeLabel!=null?ord.indexOf(beforeLabel):-1;
+  if(at<0) at=ord.length;
+  ord.splice(at,0,label);
+  rankColPrefs.advOrder=ord;
+  _rcCommit();
+}
+
+function resetRankColPrefs(){
+  rankColPrefs = { order: null, hidden: [], advOrder: null };
+  exitRankColEdit();
+  if(typeof saveSession==='function') saveSession();
+  if(typeof renderRankings==='function') renderRankings();
+  if(typeof toast==='function') toast('Table layout reset ✓','ok');
+}
+
+function _rcCommit(){
+  if(typeof saveSession==='function') saveSession();
+  if(typeof renderRankings==='function') renderRankings();   // re-augments via the editor hook
+}
+
+// ── gesture wiring (delegated, bound once) ────────────────────────────────────────────
+function _rcThFromEvent(e){
+  const t=e.target;
+  if(!t || !t.closest) return null;
+  if(t.closest('.rc-x')) return null;              // the ✕ owns its own click
+  return t.closest('.rankings-table thead th[data-rc], .rankings-table thead th[data-rcg], .rankings-table thead th[data-rc-adv]');
+}
+
+function _rcCancelLP(){
+  if(_rcLP){ clearTimeout(_rcLP.timer); _rcLP=null; }
+}
+
+function _rcCancelDrag(){
+  if(!_rcDrag) return;
+  if(_rcDrag.raf) cancelAnimationFrame(_rcDrag.raf);
+  if(_rcDrag.ghost) _rcDrag.ghost.remove();
+  document.querySelectorAll('.rc-drop,.rc-drop-end').forEach(el=>el.classList.remove('rc-drop','rc-drop-end'));
+  document.querySelectorAll('.rc-dragging').forEach(el=>el.classList.remove('rc-dragging'));
+  _rcDrag=null;
+}
+
+function _rcStartDrag(th, e){
+  const key = th.getAttribute('data-rc');
+  const adv = th.getAttribute('data-rc-adv');
+  if(adv==null && (!key || _rcIsLocked(key))) return;   // stat groups hide-only; locked cols inert
+  const ghost=document.createElement('div');
+  ghost.className='rc-ghost';
+  ghost.textContent=(th.textContent||'').replace('✕','').trim();
+  document.body.appendChild(ghost);
+  th.classList.add('rc-dragging');
+  _rcDrag={ key, adv, ghost, beforeKey:undefined, raf:0, px:e.clientX, py:e.clientY, th };
+  try{ th.setPointerCapture && e.pointerId!=null && th.setPointerCapture(e.pointerId); }catch(_e){}
+  _rcDragFrame();
+}
+
+function _rcDragFrame(){
+  if(!_rcDrag) return;
+  const d=_rcDrag;
+  d.ghost.style.transform=`translate(${d.px+10}px, ${d.py-34}px)`;
+  // Edge auto-scroll so a phone can drag a column across the whole strip.
+  const wrap=document.querySelector('.rank-table-wrap');
+  if(wrap){
+    const r=wrap.getBoundingClientRect();
+    if(d.px < r.left+36) wrap.scrollLeft -= 12;
+    else if(d.px > r.right-36) wrap.scrollLeft += 12;
+  }
+  // Insertion target: the first header (of the dragged column's own segment) whose center
+  // lies right of the pointer. A meta column reorders among meta columns; an adv metric
+  // reorders among adv metrics. Rects re-read per frame only while dragging.
+  const ths=_rcHeadThs().filter(el=> d.adv!=null ? el.getAttribute('data-rc-adv')
+                                                 : el.getAttribute('data-rc'));
+  let before=null, beforeEl=null, lastEl=null;
+  const self = d.adv!=null ? d.adv : d.key;
+  for(const el of ths){
+    lastEl=el;
+    const k = d.adv!=null ? el.getAttribute('data-rc-adv') : el.getAttribute('data-rc');
+    if(k===self) continue;
+    const r=el.getBoundingClientRect();
+    if(before==null && d.px < r.left + r.width/2){ before=k; beforeEl=el; }
+  }
+  if(before!==d.beforeKey){
+    document.querySelectorAll('.rc-drop,.rc-drop-end').forEach(el=>el.classList.remove('rc-drop','rc-drop-end'));
+    if(beforeEl) beforeEl.classList.add('rc-drop');
+    else if(lastEl) lastEl.classList.add('rc-drop-end');
+    d.beforeKey=before;
+  }
+  d.raf=requestAnimationFrame(_rcDragFrame);
+}
+
+function _rcInstall(){
+  if(typeof document==='undefined' || !document.addEventListener) return;
+  document.addEventListener('pointerdown',(e)=>{
+    const th=_rcThFromEvent(e);
+    if(!th){
+      // Tapping anywhere outside the header strip dismisses edit mode — but the ✕ badges and
+      // the Done chip ARE the editor's own controls: dismissing on their pointerdown removed
+      // them before their click could ever fire (the "✕ doesn't work" bug).
+      if(rankColEditActive && e.target && e.target.closest && !e.target.closest('#rcDoneChip') && !e.target.closest('.rc-x')) exitRankColEdit();
+      return;
+    }
+    if(rankColEditActive){
+      e.preventDefault();
+      _rcStartDrag(th, e);
+      return;
+    }
+    _rcCancelLP();
+    _rcLP={ x:e.clientX, y:e.clientY, timer:setTimeout(()=>{ _rcLP=null; enterRankColEdit(); }, RC_LP_MS) };
+  }, true);
+  document.addEventListener('pointermove',(e)=>{
+    if(_rcLP && (Math.abs(e.clientX-_rcLP.x)>RC_LP_SLOP || Math.abs(e.clientY-_rcLP.y)>RC_LP_SLOP)) _rcCancelLP();
+    if(_rcDrag){ _rcDrag.px=e.clientX; _rcDrag.py=e.clientY; e.preventDefault(); }
+  }, {passive:false, capture:true});
+  const up=(e)=>{
+    _rcCancelLP();
+    if(_rcDrag){
+      const {key, adv, beforeKey}=_rcDrag;
+      _rcCancelDrag();
+      if(adv!=null) rankAdvMove(adv, beforeKey!=null?beforeKey:null);
+      else rankColMove(key, beforeKey!=null?beforeKey:null);
+    }
+  };
+  document.addEventListener('pointerup', up, true);
+  document.addEventListener('pointercancel', ()=>{ _rcCancelLP(); _rcCancelDrag(); }, true);
+  // iOS long-press callout / desktop context menu would hijack the hold gesture.
+  document.addEventListener('contextmenu',(e)=>{
+    if(e.target && e.target.closest && e.target.closest('.rankings-table thead')) e.preventDefault();
+  });
+  document.addEventListener('keydown',(e)=>{ if(e.key==='Escape') exitRankColEdit(); });
+}
+_rcInstall();
 // Import — with corrected multi-analyst averaging
 // ─────────────────────────────────────────────────────────────────────────────
 function triggerImport(){document.getElementById('importFile').click();}
@@ -19646,9 +20182,10 @@ function tsPreviewTeamRankings(){
     ? !!rankingIsRookieForSeason(p, activeSeason)
     : !!(p && (p.is_rookie===true || Number(p.years_exp)===0));
   let view=rankPosFilter==='ALL'?all
-    :rankPosFilter==='ROOKIES'?all.filter(rankIsRookie)
+    :rankPosFilter==='ROOKIES'?all.filter(rankIsRookie)   // legacy value, still honored
     :rankPosFilter==='FLEX'?all.filter(p=>p.pos!=='QB')
     :all.filter(p=>p.pos===rankPosFilter);
+  if(typeof rankRookiesOnly!=='undefined' && rankRookiesOnly) view=view.filter(rankIsRookie);
   const rows=view.slice(0,28).map((p,i)=>`<tr>
     <td class="c-ecr">${i+1}</td>
     <td class="fpts">${(Number(p.fpts)||0).toFixed(1)}</td>
@@ -19930,7 +20467,7 @@ function tsScrollerClaims(el, dir){
     // overlays that run their own handlers.
     if(e.target && e.target.closest && e.target.closest(
         'input, select, textarea, .slider-wrap, .slider-track, [role="slider"], ' +
-        '.ps-overlay, .scheme-overlay, .rt-bar-host')) return;
+        '.ps-overlay, .scheme-overlay, .rt-bar-host, .rankings-table thead')) return;   // header long-press/drag owns its gesture (81-rank-coledit.js)
     const b=tsActiveBar();
     if(!b) return;
     if(e.target && e.target.closest && e.target.closest('.phase-tabs')) return;

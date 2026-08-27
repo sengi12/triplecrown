@@ -764,7 +764,10 @@ async function loadSleeperCareerStats(pid, posc, body){
     body.innerHTML = `<div class="pcard-loading">No historical seasons loaded. Load a 📦 seed with history to see game logs.</div>`;
     return;
   }
-  body.innerHTML = `<div class="pcard-loading">Loading game logs…</div>`;
+  // TC model comparison row (veterans only): rendered before the async fetch so it shows
+  // immediately and survives a gamelog failure — same shape as the rookies' prospect panel.
+  const tcRow = (typeof renderTcModel==='function') ? renderTcModel(pid) : '';
+  body.innerHTML = tcRow + `<div class="pcard-loading">Loading game logs…</div>`;
   try{
     const perSeason = await Promise.all(seasons.map(async s=>({season:s, weekly:await fetchPlayerWeekly(pid, s)})));
     if(!pcardOpen || tok!==pcardToken) return; // closed or switched sources while loading
@@ -777,12 +780,12 @@ async function loadSleeperCareerStats(pid, posc, body){
     if(!out) out = `<div class="pcard-loading">No game data found for this player.</div>`;
     out += `<div class="pcard-src">Per-game stats via Sleeper · FPTS uses your current scoring settings.</div>`;
     if(pcardOpen && tok===pcardToken){
-      body.innerHTML = out;
+      body.innerHTML = tcRow + out;
       pcardEnableStickyStatHeaders();
     }
   }catch(e){
     if(pcardOpen && tok===pcardToken){
-      body.innerHTML = `<div class="pcard-loading pcard-loading-retry"><span>Couldn't load game logs. Check your connection and try again.</span><button class="pcard-retry-btn" onclick="retryPlayerCardData()">Refresh</button></div>`;
+      body.innerHTML = tcRow + `<div class="pcard-loading pcard-loading-retry"><span>Couldn't load game logs. Check your connection and try again.</span><button class="pcard-retry-btn" onclick="retryPlayerCardData()">Refresh</button></div>`;
     }
   }
 }

@@ -172,6 +172,7 @@ run_js_test test_route_tree     "Route tree card: alignment/route distribution r
 run_js_test test_qb_chart       "QB passing chart card rendering"
 run_js_test test_def_weekly     "Defensive weekly card: per-defender logs and totals"
 run_js_test test_cfb_prospect   "College prospect panel: percentile bars vs past draft classes, per-position season tables, escaping, degrades to nothing without college data"
+run_js_test test_tc_model       "TC model row on the player card: Sleeper-vs-model comparison, agree/disagree chip thresholds, degrades to nothing without a tc block"
 run_js_test test_qb_extras      "QB extras: ATT/CMP/RZ color coding, vs prefix for home games"
 run_js_test test_pcard_freeze   "Player card: WK + OPP columns frozen (sticky) like league-wide advanced stats"
 run_js_test test_mobile_layout   "Mobile: horizontal-overflow lock, additions tables scroll in-container, frozen team column"
@@ -185,6 +186,7 @@ run_js_test test_draft_scoring  "Draft scoring sync: mock draft applies its own 
 run_js_test test_pick_projection "Projected-pick line: slot-on-clock for snake/linear/3RR, picks-until-my-turn (3 worked examples)"
 run_js_test test_slot_counts   "Mock-draft lineup from settings.slots_* counts + bench = rounds - starters"
 run_js_test test_pickline_hide  "Pick lines render with hide-drafted ON and OFF, placed correctly; ADP column after TIER sorts the market board"
+run_js_test test_rank_cols      "Rankings column customization: TC column left of ADP, hide/reorder prefs, stat-group hiding, Reset button, reference seasons drop ADP+TC, persist round-trip"
 run_js_test test_draft_lifecycle "Draft follow lifecycle: start/stop generation token, completion detection, keeper-aware clock, stop cleanup, follow persistence"
 run_js_test test_vona_options   "VONA pools/pAvail export, options popover (render/toggle/empty), synced-league picker row + username carry-over"
 run_js_test test_injury_timeline "Reported injury timelines beat the book estimate (popup + absence weeks); injury tag popup toggle-closes"
@@ -232,7 +234,7 @@ echo ""
 PYBUILD="$DIR/../build_seed.py"
 if [ -f "$DIR/test_flacco_split.py" ] && [ -f "$PYBUILD" ]; then
   echo "═══ Python tests ═══"
-  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_roster_moves test_roster_truth test_sumer_pull test_ktc_pull test_seed_refresh test_ol_pipeline test_state_block test_cfb_classes test_combine_prospect test_inseason_truncate; do
+  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_roster_moves test_roster_truth test_sumer_pull test_ktc_pull test_seed_refresh test_ol_pipeline test_state_block test_cfb_classes test_combine_prospect test_tc_projections test_market_archive test_inseason_truncate; do
     [ -f "$DIR/${pyt}.py" ] || continue
     output=$(python3 "$DIR/${pyt}.py" 2>&1) || true
     # Same token rule as the JS runner: count result markers, not any line containing the word.

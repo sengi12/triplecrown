@@ -39,6 +39,7 @@ let scoringPanelOpen = false;
 // a finished league actually move VOR instead of silently using a generic 12-team 2-WR board.
 let leagueShape = null;   // {teams, lineup:[slots], bench}
 let rankPosFilter = 'ALL';
+let rankRookiesOnly = false;  // ROOKIES chip: stacks ON TOP of the position filter (WR + ROOKIES = rookie WRs)
 let rankScope = 'all';   // 'all' = full league rankings, 'team' = current team only
 let rankAdvanced = false; // rankings "Adv. Metrics" (SumerSports) view — swaps stat columns for advanced metrics
 let rankingsSearchOpen = false;

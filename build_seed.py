@@ -2686,6 +2686,7 @@ REFRESH_SOURCES = {
     "sumer":        "SumerSports per-player stats (only fetched with --sumer)",
     "nflverse":     "nflverse advanced metrics + the OL grades model",
     "cfb":          "college rookie profiles (link map, production tables, percentiles)",
+    "tcproj":       "TC veteran projection model inputs (nflverse weekly stats + ffopportunity XFP)",
 }
 
 
@@ -2714,6 +2715,11 @@ def main():
                          "(default: on; requires pandas) and add them as a 'cfb' seed block")
     ap.add_argument("--no-cfb", dest="cfb", action="store_false",
                     help="skip college rookie profiles")
+    ap.add_argument("--tcproj", dest="tcproj", action="store_true", default=True,
+                    help="score every veteran with the TC projection model (default: on; requires "
+                         "pandas) and attach a per-player 'tc' block next to the Sleeper baseline")
+    ap.add_argument("--no-tcproj", dest="tcproj", action="store_false",
+                    help="skip the TC projection model")
     ap.add_argument("--as-of", dest="as_of", default=None,
                     help="TIME MACHINE: build as of SEASON:WEEK of a past regular season (e.g. "
                          "2025:10) so the in-season tools can be tested in the offseason. The "
@@ -2843,6 +2849,63 @@ def main():
             print(f"    ⚠ college profiles failed: {type(e).__name__}: {e}")
     else:
         print("\n  college rookie profiles disabled (--no-cfb)")
+
+    # Market archive: ADP + ECR snapshots appended at build time (tools/market_archive.py).
+    # The market digests news the stats can't see, and history can't be backfilled — every
+    # build files a dated line so model-vs-market becomes testable in a few seasons.
+    try:
+        from tools.market_archive import append_snapshot as _arch
+        print("  market archive:", _arch(seed, ecr, args.season))
+    except Exception as e:
+        print(f"  ⚠ market archive skipped: {type(e).__name__}: {e}")
+
+    # TC veteran projection model (default-on, additive, dependency-isolated — same contract
+    # as the cfb block). Scores every player with an NFL season on tape and attaches a small
+    # per-player "tc" block: the model's predicted PPR FPG, the Sleeper baseline's implied
+    # PPR FPG (so the card compares both on one scoring basis), and the compact inputs the
+    # ⓘ popup explains the number with. Rookies simply have no entry — the prospect model
+    # is their read. Riding inside seed["seed"] means no new encode/bake/JS-global wiring.
+    if args.tcproj:
+        print("\n  TC projection model (default-on, additive — requires pandas)")
+        try:
+            import src.nflverse.tc_projections as _tcp
+            _raw_tc = cached("players.json", PLAYERS_URL, "Sleeper player DB", False)
+            _tc = _tcp.build_tc_projections(args.season, _raw_tc, refresh="tcproj" in refresh)
+            _n = _nrk = 0
+            for _t in seed.values():
+                for _rows in _t.values():
+                    for _p in _rows:
+                        _pid = str(_p.get("player_id"))
+                        _rec = _tc.get(_pid)
+                        if _rec:
+                            _p["tc"] = {"fpg": _rec["fpg"],
+                                        "base": _tcp.baseline_ppr_fpg(_p),
+                                        "in": _rec["in"]}
+                            _n += 1
+                            continue
+                        # No NFL tape → the ROOKIE block: draft capital + draft age + the
+                        # cfb prospect model's hit probability (the two models compose).
+                        # Gated to the CURRENT draft class: college profiles exist for
+                        # veterans too, and an injured vet with no recent tape must not be
+                        # re-scored as if his rookie year were ahead of him.
+                        _cp = (cfb.get("players") or {}).get(_pid) if cfb else None
+                        _pr = (_cp or {}).get("prospect")
+                        if _pr and _cp.get("class") == cfb.get("class"):
+                            _fpg = _tcp.score_rookie(_p.get("pos"), _pr.get("pick") or 263,
+                                                     _pr.get("age"), _pr.get("prob"))
+                            if _fpg is not None:
+                                _p["tc"] = {"fpg": round(_fpg, 1),
+                                            "base": _tcp.baseline_ppr_fpg(_p),
+                                            "in": {"rk": 1, "pick": _pr.get("pick"),
+                                                   "prob": _pr.get("prob")}}
+                                _nrk += 1
+            print(f"    → TC model on {_n} veterans + {_nrk} rookies of "
+                  f"{sum(len(r) for t in seed.values() for r in t.values())} projected players "
+                  f"({len(_tc)} scored league-wide)")
+        except Exception as e:
+            print(f"    ⚠ TC projection model failed: {type(e).__name__}: {e}")
+    else:
+        print("\n  TC projection model disabled (--no-tcproj)")
 
 
     # In-season weekly sidecar: the one nflverse-shaped block that must move DURING the

@@ -160,6 +160,19 @@ SOURCES = {
         "every": 90 * DAY,
         "why": "cfbfastR college production — rookie set keeps growing through the summer",
     },
+    # The TC veteran projection model's inputs (nflverse weekly stats + ffopportunity XFP).
+    # The prior-season stats it scores from are frozen once a season ends; what actually
+    # moves between builds is the DESTINATION context — a signing or trade changes
+    # team_changed/dest_vacated for everyone involved. The Sleeper player DB that carries
+    # those teams refreshes on its own cadence; this entry just makes sure the model's raw
+    # stat downloads themselves get re-pulled now and then (upstream stat corrections land
+    # for weeks after a season wraps). Weekly, cheap, and build_seed's tcproj block is
+    # fail-soft + floor-guarded (MIN_SCORED) so a bad pull can't silently gut the block.
+    "tcproj": {
+        "paths": ["tcproj"],
+        "every": 7 * DAY,
+        "why": "TC projection model inputs — stat corrections + roster-movement context",
+    },
     # Offseason roster movement, derived from nflverse rosters/draft/trades. This used to be
     # Spotrac, which could never be scheduled: it answers 403 to datacenter IPs, and a blocked
     # fetch would have emptied the tab. nflverse has no bot protection, so it now runs here
@@ -372,6 +385,21 @@ def validate(old, new):
         need = sorted(p for p in have_old if p and p not in have_new)
         if need:
             problems.append(f"contracts: no {', '.join(need)} entries any more (an OverTheCap page failed)")
+    except Exception:
+        pass
+
+    # The TC model rides INSIDE seed["seed"] player objects (no top-level block of its own),
+    # so the block guards above can't see it. If most players carried a "tc" projection
+    # before and it collapsed, the tcproj build failed — reject rather than silently ship a
+    # seed that lost the model.
+    try:
+        def _tc_count(s):
+            return sum(1 for t in ((s or {}).get("seed") or {}).values()
+                       for rows in t.values() for p in rows if isinstance(p, dict) and p.get("tc"))
+        tc_was, tc_now = _tc_count(old), _tc_count(new)
+        if tc_was >= 50 and tc_now < tc_was * 0.70:
+            problems.append(f"tc model: {tc_was} → {tc_now} players carry a projection "
+                            f"({100 * tc_now / tc_was:.0f}% of previous, floor 70%)")
     except Exception:
         pass
 
