@@ -241,7 +241,7 @@
 .vona-opt-close{width:26px;height:26px;border-radius:50%;border:none;background:var(--surface2);
   color:var(--muted);cursor:pointer;flex-shrink:0;}
 .vona-opt-close:hover{color:var(--text);}
-.vona-opt-list{max-height:min(320px,50vh);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding:4px;}
+.vona-opt-list{max-height:min(320px,50vh);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:none;padding:4px;}
 .vona-opt{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;}
 .vona-opt:hover{background:var(--surface2);}
 .vona-opt .rt-thumb{width:26px;height:26px;background:var(--surface3);flex:none;}
@@ -266,7 +266,7 @@
   color:var(--muted);cursor:pointer;flex-shrink:0;margin-left:auto;}
 .tc-info-close:hover{color:var(--text);}
 .tc-info-body{padding:0 12px 11px;font-size:11.5px;line-height:1.55;color:var(--muted);
-  max-height:min(300px,55vh);overflow-y:auto;overscroll-behavior:contain;}
+  max-height:min(300px,55vh);overflow-y:auto;overscroll-behavior:none;}
 .tc-info-body b{color:var(--text);}
 
 /* Slim Adv-Metrics header + the ⓘ cell at the end of the schedule rail */
@@ -336,3 +336,7 @@ input.sl::-moz-range-thumb{width:18px;height:18px;border:2.5px solid var(--surfa
   font-style:normal;font-family:var(--font);font-weight:900;}
 .tc-info-btn.tc-info-warn:hover{background:rgba(251,191,36,.12);}
 .coord-carry-poprow{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:7px;color:var(--text);}
+
+/* The rankings board scrolls inside its own wrap (both axes). A fling that hits its edge
+   must die there — chaining into the page is what read as the whole app bouncing. */
+.rank-table-wrap{overscroll-behavior:none;}

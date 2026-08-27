@@ -26,7 +26,7 @@ global.localStorage={getItem:()=>null,setItem(){},removeItem(){}};
 
 const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
-const app=new Function(code+`return { _tcScrollGuard };`)();
+const app=new Function(code+`return { _tcScrollGuard, _tcEdgeCancel };`)();
 
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const fire=(target)=>{ const e={target,cancelable:true,prevented:false,preventDefault(){this.prevented=true;}}; app._tcScrollGuard(e); return e.prevented; };
@@ -62,6 +62,15 @@ console.log('=== a hidden overlay must never freeze the page ===');
 const ghost=node({offsetWidth:0,offsetHeight:0});   // display:none leftover from some close path
 floaters=[ghost];
 chk(fire(pageEl)===false,'invisible floater is ignored — the page scrolls normally');
+
+console.log('=== inner-scroller edge pulls are cancelled (the rankings-table bounce) ===');
+const wrap=(o)=>Object.assign({scrollTop:0,scrollHeight:1000,clientHeight:400,scrollLeft:0,scrollWidth:2000,clientWidth:800},o);
+chk(app._tcEdgeCancel(wrap({scrollTop:0}),0,40)===true,'at the top, pulling down past the edge → cancelled');
+chk(app._tcEdgeCancel(wrap({scrollTop:600}),0,-40)===true,'at the bottom, pulling up past the edge → cancelled');
+chk(app._tcEdgeCancel(wrap({scrollTop:300}),0,-40)===false,'mid-scroll → never touched');
+chk(app._tcEdgeCancel(wrap({scrollLeft:1200}),-40,4)===true,'right edge, pulling further right → cancelled (horizontal fling)');
+chk(app._tcEdgeCancel(wrap({scrollLeft:500}),-40,4)===false,'horizontal in range → scrolls');
+chk(app._tcEdgeCancel(wrap({scrollHeight:400,clientHeight:400}),0,40)==='page','scroller cannot handle the axis → defer to the page edges');
 
 console.log(`\n${pass}/${total}`);
 process.exit(pass===total?0:1);

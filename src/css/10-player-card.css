@@ -8,7 +8,7 @@
   padding:24px 12px;
   padding-top:max(24px,env(safe-area-inset-top));
   padding-bottom:max(24px,env(safe-area-inset-bottom));
-  overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;backdrop-filter:blur(2px);}
+  overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:none;backdrop-filter:blur(2px);}
 .pcard{background:var(--surface);border:1px solid var(--border);border-radius:16px;
   width:100%;max-width:560px;margin:auto;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);
   animation:pcardIn .18s ease;display:flex;flex-direction:column;
@@ -60,7 +60,7 @@
 .pcard-note-badge{position:absolute;right:-4px;top:-4px;min-width:15px;height:15px;padding:0 4px;
   border-radius:999px;background:var(--accent);color:#fff;font-size:9px;font-weight:900;
   display:flex;align-items:center;justify-content:center;box-shadow:0 1px 6px rgba(0,0,0,.35);}
-.pcard-body{padding:8px 12px 16px;flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;}
+.pcard-body{padding:8px 12px 16px;flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:none;}
 .pcard-season{margin-top:12px;}
 .pcard-season-title{font-size:13px;font-weight:800;color:var(--text);margin:6px 2px 6px;
   padding:4px 0;}
@@ -176,7 +176,7 @@
 .pcard-notes-count{font-size:10px;color:var(--muted);text-align:right;margin-top:3px;font-variant-numeric:tabular-nums;}
 .note-picker-overlay{position:fixed;inset:0;z-index:1500;}
 .note-picker-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:18px;}
-.note-picker{width:min(420px,100%);max-height:min(78vh,640px);overflow:auto;overscroll-behavior:contain;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 22px 60px rgba(0,0,0,.45);padding:14px;}
+.note-picker{width:min(420px,100%);max-height:min(78vh,640px);overflow:auto;overscroll-behavior:none;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 22px 60px rgba(0,0,0,.45);padding:14px;}
 .note-picker-head{display:flex;align-items:center;justify-content:space-between;gap:10px;}
 .note-picker-title{font-size:15px;font-weight:900;color:var(--text);}
 .note-picker-close{width:30px;height:30px;border:none;border-radius:999px;background:var(--surface2);color:var(--text);cursor:pointer;}
@@ -184,7 +184,7 @@
 .note-picker-label{font-size:10px;font-weight:900;letter-spacing:.04em;color:var(--accent);text-transform:uppercase;display:block;}
 .note-picker-value{font-size:13px;font-weight:800;color:var(--text);text-align:right;}
 .note-picker-context{margin-top:8px;font-size:11px;color:var(--muted);}
-.note-picker-list{display:flex;flex-direction:column;gap:8px;margin-top:12px;max-height:min(46vh,420px);overflow:auto;overscroll-behavior:contain;padding-right:2px;}
+.note-picker-list{display:flex;flex-direction:column;gap:8px;margin-top:12px;max-height:min(46vh,420px);overflow:auto;overscroll-behavior:none;padding-right:2px;}
 .note-picker-row{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--surface2);color:var(--text);cursor:pointer;text-align:left;}
 .note-picker-row:hover{border-color:var(--accent);}
 .note-picker-main{display:flex;align-items:center;gap:8px;min-width:0;}
@@ -193,7 +193,7 @@
 .note-picker-empty{padding:12px;border:1px dashed var(--border);border-radius:10px;color:var(--muted);font-size:11px;background:var(--surface2);}
 .note-info-overlay{position:fixed;inset:0;z-index:1510;}
 .note-info-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.56);display:flex;align-items:center;justify-content:center;padding:14px;}
-.note-info-modal{width:min(440px,100%);max-height:min(78vh,560px);overflow:auto;overscroll-behavior:contain;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,.45);padding:12px;}
+.note-info-modal{width:min(440px,100%);max-height:min(78vh,560px);overflow:auto;overscroll-behavior:none;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,.45);padding:12px;}
 .note-info-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;}
 .note-info-title{font-size:14px;font-weight:900;color:var(--text);}
 .note-info-close{width:28px;height:28px;border:none;border-radius:999px;background:var(--surface2);color:var(--text);cursor:pointer;}
@@ -453,6 +453,6 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
    overscroll-behavior:contain stops a scroll that reaches the end of the card's body from
    chaining out to the page (which is what triggers pull-to-refresh on Android/iOS). */
 html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:none;}
-.pcard-overlay{overscroll-behavior:contain;}
-.pcard-body{overscroll-behavior:contain;}
+.pcard-overlay{overscroll-behavior:none;}
+.pcard-body{overscroll-behavior:none;}
 .pcard-hero{touch-action:none;}

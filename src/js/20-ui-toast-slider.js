@@ -8,27 +8,42 @@
 // cancelled. (Each region's own overscroll-behavior:contain keeps edge-scrolls from
 // chaining once the region runs out of room.)
 const TC_FLOAT_SEL='.pcard-overlay,.scheme-overlay,.ps-overlay,.note-picker-overlay,.note-info-overlay,.tc-modal-overlay,#vonaOptPop,#tcInjPop,#tcInfoPop';
-var _tcLastTouchY=null, _tcGestureFloaters=null;
+var _tcLastTouchY=null, _tcLastTouchX=null, _tcGestureFloaters=null;
 function _tcTouchAnchor(e){
-  const t=e.touches&&e.touches[0]; _tcLastTouchY=t?t.clientY:null;
+  const t=e.touches&&e.touches[0];
+  _tcLastTouchY=t?t.clientY:null; _tcLastTouchX=t?t.clientX:null;
   // Resolve the visible floating surfaces ONCE per gesture — running a 9-selector
   // querySelectorAll on every touchmove is wasted work on a phone mid-scroll.
   let fl=[];
   try{ document.querySelectorAll(TC_FLOAT_SEL).forEach(f=>{ if(f.offsetWidth||f.offsetHeight) fl.push(f); }); }catch(_e){}
   _tcGestureFloaters=fl;
 }
-// Can anything between `el` and the page actually scroll this gesture? (Used to decide
-// whether a touch would land on the PAGE scroller — the one we edge-guard on iOS.)
-function _tcInInnerScroller(el){
+// The nearest ancestor that actually scrolls, or null when the gesture belongs to the page.
+function _tcInnerScrollerEl(el){
   let n=(el && el.nodeType===1)?el:(el&&el.parentElement);
   while(n && n!==document.body && n!==document.documentElement){
     if(n.scrollHeight>n.clientHeight+1 || n.scrollWidth>n.clientWidth+1){
       let st=null; try{ st=getComputedStyle(n); }catch(_e){}
-      if(st && (/(auto|scroll)/.test(st.overflowY) || /(auto|scroll)/.test(st.overflowX))) return true;
+      if(st && (/(auto|scroll)/.test(st.overflowY) || /(auto|scroll)/.test(st.overflowX))) return n;
     }
     n=n.parentElement;
   }
-  return false;
+  return null;
+}
+// Should this drag be cancelled? Only a pull PAST the scroller's edge on the gesture's
+// dominant axis — that pull is what starts iOS's rubber-band and the chain into the page
+// (the rankings-table fling that sent the whole app flying). An in-range scroll is never
+// touched. Returns 'page' when the scroller can't handle the dominant axis at all.
+function _tcEdgeCancel(sc, dx, dy){
+  const vert=Math.abs(dy)>=Math.abs(dx);
+  if(vert){
+    if(!(sc.scrollHeight>sc.clientHeight+1)) return 'page';
+    const atTop=sc.scrollTop<=0, atBot=sc.scrollTop+sc.clientHeight>=sc.scrollHeight-1;
+    return ((atTop&&dy>0)||(atBot&&dy<0)) ? true : false;
+  }
+  if(!(sc.scrollWidth>sc.clientWidth+1)) return 'page';
+  const atL=sc.scrollLeft<=0, atR=sc.scrollLeft+sc.clientWidth>=sc.scrollWidth-1;
+  return ((atL&&dx>0)||(atR&&dx<0)) ? true : false;
 }
 function _tcScrollGuard(e){
   // Only VISIBLE floating surfaces count — an overlay some path left hidden in the DOM
@@ -42,11 +57,21 @@ function _tcScrollGuard(e){
   }
   if(!floaters.length){
     // No popup up. One job remains, touch only: cancel iOS rubber-banding — a pull past
-    // either page edge that no inner scroller claims. Never cancel an in-range scroll.
+    // an edge, whether the edge belongs to an inner scroller (rankings table, drawers,
+    // rails) or to the page itself. Never cancel an in-range scroll.
     if(e.type!=='touchmove' || _tcLastTouchY==null) return;
     const t0=e.touches&&e.touches[0]; if(!t0) return;
-    const dy=t0.clientY-_tcLastTouchY; _tcLastTouchY=t0.clientY;
-    if(!dy || _tcInInnerScroller(e.target)) return;
+    const dy=t0.clientY-_tcLastTouchY, dx=t0.clientX-(_tcLastTouchX!=null?_tcLastTouchX:t0.clientX);
+    _tcLastTouchY=t0.clientY; _tcLastTouchX=t0.clientX;
+    if(!dy && !dx) return;
+    const inner=_tcInnerScrollerEl(e.target);
+    if(inner){
+      const verdict=_tcEdgeCancel(inner, dx, dy);
+      if(verdict===true){ if(e.cancelable) e.preventDefault(); return; }
+      if(verdict===false) return;              // scroller owns it, in range
+      // 'page': the scroller can't handle this axis — fall through to the page edges.
+    }
+    if(Math.abs(dy)<Math.abs(dx)) return;      // horizontal on the page: nothing to bounce
     const sc=document.scrollingElement||document.documentElement;
     const atTop=sc.scrollTop<=0, atBottom=sc.scrollTop+window.innerHeight>=sc.scrollHeight-1;
     if((atTop && dy>0) || (atBottom && dy<0)){ if(e.cancelable) e.preventDefault(); }
