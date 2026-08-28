@@ -48,7 +48,7 @@ permissions:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -151,6 +151,19 @@ jobs:
           if git diff --cached --quiet; then
             echo "No seed changes — nothing to commit."
             echo "pushed=false" >> "$GITHUB_OUTPUT"
+            echo "data=false"   >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Bookkeeping vs data: refresh-state.json is the scheduler's anchor, not app data.
+          # It still gets committed (so cadences don't re-anchor every run), but a commit that
+          # touches ONLY it must not trigger a Pages deploy — nothing the app loads changed.
+          DATA=$(git diff --cached --name-only | grep -v '^seeds/refresh-state.json$' || true)
+          if [ -z "$DATA" ]; then
+            git commit -m "chore(seed): refresh bookkeeping (no data change)" \
+                       -m "Only seeds/refresh-state.json moved — schedule anchors and upstream stamps. Not deploying."
+            git push
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+            echo "data=false"  >> "$GITHUB_OUTPUT"
             exit 0
           fi
           SUMMARY=$(grep -E '^Refreshed:' refresh.log || echo 'Refreshed: seed data')
@@ -159,11 +172,12 @@ jobs:
                      -m "$(grep -E '^\s+\[(REFRESH|  skip )\]' refresh.log || true)"
           git push
           echo "pushed=true" >> "$GITHUB_OUTPUT"
+          echo "data=true"   >> "$GITHUB_OUTPUT"
 
       # A push made with GITHUB_TOKEN does not fire pages.yml's `on: push`, so kick the
       # deploy explicitly. workflow_dispatch is exempt from the recursion guard.
       - name: Trigger Pages deploy
-        if: github.event.inputs.dry_run != 'true' && steps.commit.outputs.pushed == 'true'
+        if: github.event.inputs.dry_run != 'true' && steps.commit.outputs.data == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run pages.yml --ref main

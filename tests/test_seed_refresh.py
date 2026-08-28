@@ -166,9 +166,9 @@ chk(SR.GUARDS["cfb"]["min_ratio"] == 0.70,
 
 print("\n=== TEST 9: nflverse freshness is read, not assumed ===")
 state = {"nflverse": {t: "2020-01-01 00:00:00 EST" for t in SR.NFLVERSE_RELEASES}}
-chk(len(SR.NFLVERSE_RELEASES) == 9, "all 9 nflverse releases the project reads are tracked")
-chk("rosters" in SR.NFLVERSE_RELEASES and "pbp" in SR.NFLVERSE_RELEASES,
-    "including rosters and pbp")
+chk(len(SR.NFLVERSE_RELEASES) == 6, "the 6 frozen-feed releases are tracked (living feeds moved out — see TEST 13)")
+chk("pbp" in SR.NFLVERSE_RELEASES and "ftn_charting" in SR.NFLVERSE_RELEASES,
+    "including pbp and the charting family")
 chk(SR.SOURCES["nflverse"]["every"] is None,
     "nflverse has no fixed cadence — its sections update on different schedules")
 
@@ -253,6 +253,45 @@ ok, _ = _side_case({"season": 2026, "weeks": [1, 2]}, None, season_type="regular
 chk(not ok, "sidecar vanishing MID-SEASON is REJECTED")
 ok, _ = _side_case({"season": 2026, "weeks": list(range(1, 19))}, None, season_type="off")
 chk(ok, "offseason retirement of the sidecar passes")
+
+print("\n=== TEST 13: the historical block only watches frozen-feed releases ===")
+# players/rosters/weekly_rosters release stamps move near-daily (camp churn / nightly in
+# season) while their completed-season files are frozen — watching them rebuilt the whole
+# historical block daily. See the NFLVERSE_RELEASES note.
+for tag in ("players", "rosters", "weekly_rosters"):
+    chk(tag not in SR.NFLVERSE_RELEASES, f"'{tag}' is not a historical-block trigger any more")
+for tag in ("pbp", "pfr_advstats", "ftn_charting", "snap_counts"):
+    chk(tag in SR.NFLVERSE_RELEASES, f"'{tag}' still is")
+chk(set(SR.SOURCES["roster_moves"]["upstream"]) == {"rosters", "draft_picks", "trades"},
+    "roster_moves keeps watching the living roster feeds on its own")
+
+print("\n=== TEST 14: upstream damping — at most one historical rebuild per min_gap ===")
+_now = time.time()
+_spec = SR.SOURCES["nflverse"]
+chk(_spec.get("min_gap") == 7 * SR.DAY, "nflverse carries a 7d min gap")
+d, why = SR.upstream_damped("nflverse", _spec, {"sources": {"nflverse": {"last": _now - 2 * SR.DAY}}}, _now)
+chk(d and "damped" in why, "upstream moved 2d after a rebuild → damped")
+d, _ = SR.upstream_damped("nflverse", _spec, {"sources": {"nflverse": {"last": _now - 8 * SR.DAY}}}, _now)
+chk(not d, "8d after a rebuild the movement goes through")
+d, _ = SR.upstream_damped("nflverse", _spec, {"sources": {}}, _now)
+chk(not d, "never-refreshed is never damped")
+d, _ = SR.upstream_damped("roster_moves", SR.SOURCES["roster_moves"], {"sources": {"roster_moves": {"last": _now - 1}}}, _now)
+chk(not d, "sources without a min_gap (roster_moves) are never damped")
+
+print("\n=== TEST 15: a rebuild that only moved the state.asof build stamp is a no-op ===")
+_old = {"state": {"season": 2026, "season_type": "pre", "week": 3, "asof": "2026-08-27T09:00:00Z"},
+        "seed": {"KC": {"QB": [{"name": "Mahomes"}]}}, "ecr": {"ppr": {"a": 1}}}
+import copy as _copy
+_new = _copy.deepcopy(_old)
+_new["state"]["asof"] = "2026-08-28T09:00:00Z"
+chk(SR.effectively_unchanged(_old, _new), "asof-only difference → effectively unchanged (previous bytes kept)")
+_new2 = _copy.deepcopy(_new)
+_new2["seed"]["KC"]["QB"][0]["name"] = "Smith"
+chk(not SR.effectively_unchanged(_old, _new2), "a real data change is never masked")
+_new3 = _copy.deepcopy(_new)
+_new3["state"]["week"] = 4
+chk(not SR.effectively_unchanged(_old, _new3), "a real STATE change (week rollover) is never masked")
+chk(not SR.effectively_unchanged(None, _new), "no previous seed → not 'unchanged'")
 
 print(f"\nRESULT: {'PASS' if FAILED == 0 else 'MISS'} ({PASS}/{PASS + FAILED} checks)")
 sys.exit(0 if FAILED == 0 else 1)

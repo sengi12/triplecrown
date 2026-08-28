@@ -122,7 +122,12 @@ SOURCES = {
         "paths": ["nflverse"],
         "every": None,          # driven by upstream timestamps, see nflverse_stale()
         "offseason_only": True, # completed seasons only move between the Super Bowl and kickoff
-        "why": "nflverse advanced metrics — rebuilt only when a release actually changes, offseason only",
+        # Even when a watched release moves, a full rebuild wipes cache/nflverse and
+        # re-snapshots LIVING inputs (historical contracts, players) into frozen-season
+        # outputs — so back-to-back rebuilds always differ a little. Damping bounds that
+        # churn: at most one historical rebuild a week, whatever upstream does.
+        "min_gap": 7 * DAY,
+        "why": "nflverse advanced metrics — rebuilt when a release changes, at most weekly, offseason only",
     },
     "sharp": {
         "paths": ["sharp"],
@@ -199,11 +204,21 @@ SOURCES = {
     },
 }
 
-# nflverse releases this project actually reads. Each exposes a timestamp.json, so we compare
-# the published timestamp to what we saw last time rather than assuming a cadence.
+# nflverse releases whose movement means the HISTORICAL block's inputs changed. Each exposes
+# a timestamp.json, so we compare the published timestamp to what we saw last time rather
+# than assuming a cadence.
+#
+# players / rosters / weekly_rosters are deliberately NOT here any more: their release
+# timestamps move near-daily in August (camp churn) and nightly in season, while the
+# completed-season files inside them are frozen. Watching them meant the historical block
+# rebuilt almost every day — a ~50-minute full re-download whose only output change was
+# living inputs (today's contracts table, roster snapshots) being re-photographed into
+# frozen-season percentiles: a one-point OL-percentile wiggle committed and deployed daily.
+# Those living feeds have their own consumers with their own cadences (roster_moves watches
+# rosters/draft_picks/trades; tcproj and sleeper carry current-season context).
 NFLVERSE_RELEASES = [
     "pbp", "pbp_participation", "pfr_advstats", "nextgen_stats",
-    "ftn_charting", "players", "rosters", "weekly_rosters", "snap_counts",
+    "ftn_charting", "snap_counts",
 ]
 NFLVERSE_TS = "https://github.com/nflverse/nflverse-data/releases/download/{tag}/timestamp.json"
 
@@ -292,6 +307,21 @@ def nflverse_stale(state, tags=None, bucket="nflverse"):
         if seen.get(tag) != ts:
             changed.append(f"{tag} → {ts}")
     return bool(changed), latest, notes + [f"changed: {c}" for c in changed]
+
+
+def upstream_damped(name, spec, state, now):
+    """Upstream moved, but this source rebuilt recently enough that another full rebuild
+    isn't worth its cost yet (see the nflverse min_gap note). → (damped, reason). The
+    caller must NOT record the new upstream timestamps when damped — the movement has to
+    stay visible so the rebuild fires once the gap has passed."""
+    gap = spec.get("min_gap")
+    if not gap:
+        return False, ""
+    last = state.get("sources", {}).get(name, {}).get("last", 0)
+    age = now - last
+    if last and age < gap:
+        return True, f"upstream moved, but rebuilt {age / DAY:.1f}d ago (min gap {gap / DAY:.0f}d) — damped"
+    return False, ""
 
 
 def due(name, spec, state, now):
@@ -439,6 +469,25 @@ def check_inseason_sidecar(old_side):
     return True, None
 
 
+def effectively_unchanged(old, new):
+    """True when the rebuilt seed differs from the previous one ONLY by state.asof.
+    build_seed stamps the state block with the build time on every run, so byte-comparing
+    the files would call every rebuild 'changed' — and the workflow would commit and deploy
+    a seed whose sole difference is a timestamp."""
+    if not isinstance(old, dict) or not isinstance(new, dict):
+        return False
+
+    def norm(s):
+        t = dict(s)
+        st = t.get("state")
+        if isinstance(st, dict):
+            st = dict(st)
+            st.pop("asof", None)
+            t["state"] = st
+        return t
+    return norm(old) == norm(new)
+
+
 def run_build(extra_args):
     cmd = [sys.executable, "build_seed.py"] + extra_args
     log(f"  $ {' '.join(cmd)}")
@@ -488,6 +537,11 @@ def main():
             if name == "nflverse":
                 nfl_latest, nfl_notes = latest, notes
             if is_stale:
+                damped, dreason = upstream_damped(name, spec, state, now)
+                if damped:
+                    reasons[name] = dreason
+                    upstream_latest.pop(bucket, None)   # keep the old stamps: still stale next run
+                    continue
                 stale.append(name)
                 reasons[name] = "upstream release changed"
                 # The trades feed is the one that has been visibly behind: until it catches
@@ -515,10 +569,12 @@ def main():
 
     if not stale:
         log("\nNothing is stale. No build needed.")
-        for bucket, latest in upstream_latest.items():
-            if latest:
+        # Only rewrite the state file when a recorded timestamp actually moved — save_state
+        # bumps updated_at, and committing a bookkeeping-only change would deploy for nothing.
+        moved = {b: l for b, l in upstream_latest.items() if l and state.get(b) != l}
+        if moved and not args.check and not args.dry_run:
+            for bucket, latest in moved.items():
                 state[bucket] = latest
-        if upstream_latest and not args.check and not args.dry_run:
             save_state(state)
         return 0
 
@@ -602,7 +658,11 @@ def main():
         return 1
 
     log("  all guards passed")
-    if os.path.exists(backup):
+    if effectively_unchanged(old_seed, new_seed) and os.path.exists(backup):
+        log("  content identical to the previous seed (only the state.asof build stamp moved)")
+        log("  — keeping the previous bytes so nothing is committed or deployed for a timestamp.")
+        shutil.move(backup, SEED_MAIN)
+    elif os.path.exists(backup):
         os.remove(backup)
 
     # ── Sidecar guard (rolls back only the in-season file, never the whole run) ──
