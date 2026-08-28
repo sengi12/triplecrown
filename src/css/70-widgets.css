@@ -869,3 +869,8 @@ button.la-cliff:hover{filter:brightness(1.25);}
   .tc-own-chip{max-width:8rem;}
   .tc-own-mgr{display:none;}
 }
+
+/* K/DEF endgame alert inside the on-the-clock advisory. */
+.vona-kdef{display:flex;align-items:center;gap:6px;margin:4px 0 6px;padding:5px 8px;
+  border:1px solid rgba(233,181,86,.4);border-radius:7px;background:rgba(233,181,86,.08);
+  font-size:11.5px;color:var(--warn);}

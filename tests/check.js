@@ -6666,42 +6666,51 @@ function leagueStarterCounts(){
   }
   const base = { QB:1, RB:2, WR:2, TE:1 };
   let flex=0, superflex=0;
+  // Flex demand PER TYPE: a WRRB or REC flex must never hand its demand to an ineligible
+  // position (folding them into generic FLEX let RBs absorb a WR/TE-only slot's demand,
+  // deflating the WR/TE baselines in exactly the leagues built around that restriction).
+  let flexTypes={FLEX:0, WRRB_FLEX:0, REC_FLEX:0};
   if(lineup){
-    const c={QB:0,RB:0,WR:0,TE:0,FLEX:0,SUPER_FLEX:0};
-    lineup.forEach(s=>{ if(c[s]!=null) c[s]++; else if(s==='WRRB_FLEX'||s==='REC_FLEX') c.FLEX++; });
+    const c={QB:0,RB:0,WR:0,TE:0,FLEX:0,WRRB_FLEX:0,REC_FLEX:0,SUPER_FLEX:0};
+    lineup.forEach(s=>{ if(c[s]!=null) c[s]++; });
     // Use the REAL counts. A zero is meaningful (e.g. a superflex-only lineup with no
     // dedicated QB slot) — the old `c.QB||1` defaults masked that.
     base.QB=c.QB; base.RB=c.RB; base.WR=c.WR; base.TE=c.TE;
-    flex=c.FLEX; superflex=c.SUPER_FLEX;
+    flexTypes={FLEX:c.FLEX, WRRB_FLEX:c.WRRB_FLEX, REC_FLEX:c.REC_FLEX};
+    flex=c.FLEX+c.WRRB_FLEX+c.REC_FLEX; superflex=c.SUPER_FLEX;
   } else {
     teams = 12;
     flex  = 1;
+    flexTypes={FLEX:1, WRRB_FLEX:0, REC_FLEX:0};
     if(rankFormat==='superflex' || rankFormat==='dynasty_superflex') superflex=1;
   }
-  return { teams: teams||12, base, flex, superflex };
+  return { teams: teams||12, base, flex, flexTypes, superflex };
 }
 function computeVOR(list){
   if(!list||!list.length) return;
-  const { teams, base, flex, superflex } = leagueStarterCounts();
+  const { teams, base, flexTypes, superflex } = leagueStarterCounts();
   // Pools sorted by projected points (best first) per position.
   const byPos={QB:[],RB:[],WR:[],TE:[]};
   list.forEach(p=>{ if(byPos[p.pos]) byPos[p.pos].push(p); });
   Object.keys(byPos).forEach(k=>byPos[k].sort((a,b)=>b.fpts-a.fpts));
   // Fill dedicated starter slots first.
   const used={QB:base.QB*teams, RB:base.RB*teams, WR:base.WR*teams, TE:base.TE*teams};
-  // FLEX demand (RB/WR/TE): consume best remaining across those positions.
-  let flexLeft=flex*teams;
+  // FLEX demand: consume the best remaining player among the positions ELIGIBLE for each
+  // flex type. Restricted types run first so the generic flex absorbs whatever's left.
   const flexIdx={RB:used.RB, WR:used.WR, TE:used.TE};
-  while(flexLeft>0){
-    // pick the position whose NEXT available player has the highest fpts
-    let bestPos=null, bestVal=-Infinity;
-    ['RB','WR','TE'].forEach(pos=>{
-      const nx=byPos[pos][flexIdx[pos]];
-      if(nx && nx.fpts>bestVal){ bestVal=nx.fpts; bestPos=pos; }
-    });
-    if(!bestPos) break;
-    flexIdx[bestPos]++; used[bestPos]++; flexLeft--;
-  }
+  [['WRRB_FLEX',['RB','WR']], ['REC_FLEX',['WR','TE']], ['FLEX',['RB','WR','TE']]].forEach(([ft, eligible])=>{
+    let flexLeft=((flexTypes&&flexTypes[ft])||0)*teams;
+    while(flexLeft>0){
+      // pick the position whose NEXT available player has the highest fpts
+      let bestPos=null, bestVal=-Infinity;
+      eligible.forEach(pos=>{
+        const nx=byPos[pos][flexIdx[pos]];
+        if(nx && nx.fpts>bestVal){ bestVal=nx.fpts; bestPos=pos; }
+      });
+      if(!bestPos) break;
+      flexIdx[bestPos]++; used[bestPos]++; flexLeft--;
+    }
+  });
   // SUPERFLEX demand (QB/RB/WR/TE): usually consumed by QBs.
   let sfLeft=superflex*teams;
   const sfIdx={QB:used.QB, RB:used.RB, WR:used.WR, TE:used.TE};
@@ -15877,6 +15886,7 @@ function _rankingsStreamRows(token, chunks, onDone){
     if(slice.length) tbody.insertAdjacentHTML('beforeend', slice.join(''));
     // Rows that land after an in-place search / min-volume / position filter must obey it.
     if(typeof applyRankingsFiltersInPlace==='function' && _rankingsInPlaceFiltersActive()) applyRankingsFiltersInPlace();
+    else if(typeof rankingsUpdateReplacementLine==='function') rankingsUpdateReplacementLine();
     // A sort tap deep in the table wants its scroll position back, but the restore that ran
     // right after the first paint could only clamp to the rows that existed then. Keep
     // nudging toward the target as the table grows tall enough to honor it.
@@ -16081,10 +16091,12 @@ function renderRankings(){
       const token = ++_rankingsStreamToken;
       document.getElementById('content').innerHTML = split.pre + split.rows.slice(0, RANKINGS_STREAM_FIRST).join('') + split.post;
       hydrateRankingsHeadshots();
+      rankingsUpdateReplacementLine();
       _rankingsStreamRows(token, split.rows.slice(RANKINGS_STREAM_FIRST), ()=>hydrateRankingsHeadshots());
     } else {
       document.getElementById('content').innerHTML = cachedHtml;
       hydrateRankingsHeadshots();
+      rankingsUpdateReplacementLine();
     }
     // Cached HTML is always pristine — re-augment it if the column editor is open.
     if(typeof rankColEditAugment==='function' && typeof rankColEditActive!=='undefined' && rankColEditActive) rankColEditAugment();
@@ -16238,6 +16250,14 @@ function renderRankings(){
     }
     return ((b[rankSortKey]||0)-(a[rankSortKey]||0))*(rankSortDir<0?1:-1);
   });
+  // During a live follow, the VONA sim (cached per draft state) knows every player's odds of
+  // surviving to my next pick — dim the rows the market will almost certainly take first, and
+  // hang scarcity tooltips on the position chips. One Map read per row; no new computation.
+  let vonaLive=null;
+  if(following && mySlot!=null && !teamScoped && activeSeason==='proj' && typeof computeVONA==='function'){
+    try{ vonaLive=computeVONA(); }catch(e){ vonaLive=null; }
+  }
+  const vonaAvail = vonaLive && vonaLive.pAvail;
   const tierC=['','var(--accent)','var(--info)','var(--warn)','var(--danger)','var(--muted)','#8b7cff','#6ad1c4'];
   const tierColor=t=>t?tierC[Math.min(t,7)]:'var(--border)';
   // Two-line header helper. `grp` adds a left border to mark a stat group's start.
@@ -16294,14 +16314,20 @@ function renderRankings(){
     const { teams, type, reversalRound, rounds } = draftParams();
     const start = currentPickNo();
     const maxPick = teams*rounds;
-    // gaps: from now, how many other picks between each of your turns
-    let prev=start-1;
+    // gaps: from now, how many LIVE picks between each of your turns. Keeper drafts
+    // pre-populate future picks in the feed — those consume no board player (their players
+    // are already marked drafted), so counting them drifted every line too deep. A future
+    // pick of MINE that's already a keeper doesn't get a line either: that turn is spent.
+    const feed = (typeof _draftFeedPickNos==='function') ? _draftFeedPickNos() : new Set();
+    let liveBetween=0;
     for(let n=start; n<=maxPick; n++){
       if(slotOnClock(n, teams, type, reversalRound)===mySlot){
-        pickGaps.push(n-prev-1);   // players taken by others before this, your turn
-        prev=n;
-        if(pickGaps.length>=rounds) break;
-      }
+        if(!feed.has(n)){
+          pickGaps.push(liveBetween);   // players taken by others before this, your turn
+          liveBetween=0;
+          if(pickGaps.length>=rounds) break;
+        }
+      } else if(!feed.has(n)) liveBetween++;
     }
   }
   // ── Customizable columns ──────────────────────────────────────────────────────────────
@@ -16453,7 +16479,12 @@ function renderRankings(){
       apy: `<td class="c-apy">${p.apy!=null?`<span class="num">${fmtAPY(p.apy)}</span>`:''}</td>`,
       fa: `<td class="c-fa ${faSoon?'fa-soon':''}">${p.fa!=null?`<span class="num">${p.fa}</span>`:''}</td>`,
     };
-    rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}" data-rank-pos="${p.pos}"${rankIsRookie(p)?' data-rank-rk="1"':''}${volAttrs}${rankNoteScopeAttrs(p)}>
+    let fadeCls='';
+    if(vonaAvail && !p.drafted){
+      const pa=vonaAvail.get(p.player_id||p.name);
+      if(pa!=null && pa<0.25) fadeCls=' rank-fade';
+    }
+    rowChunks.push(`<tr class="${p.drafted?'drafted':''}${fadeCls}" data-rank-search="${pSearchAttr}" data-rank-pos="${p.pos}" data-rank-vor="${p.vor>0?'1':'0'}"${rankIsRookie(p)?' data-rank-rk="1"':''}${volAttrs}${rankNoteScopeAttrs(p)}>
     ${metaOrder.map(k=>metaTd[k]).join('\n    ')}
     ${statCells}
   </tr>`);
@@ -16469,8 +16500,12 @@ function renderRankings(){
   const scoringList=[['std','Standard'],['half_ppr','Half PPR'],['ppr','Full PPR'],['superflex','Superflex']];
   const fmtBtns=scoringList
     .map(([s,l])=>`<button class="format-btn ${curScoring===s?'active':''}" onclick="setScoringAxis('${s}')">${l}</button>`).join('');
-  const posBtns=['ALL','QB','RB','WR','TE','FLEX'].map(pos=>
-    `<button class="pos-filter-btn ${rankPosFilter===pos?'active':''}" onclick="setPosFilter('${pos}')">${pos}</button>`).join('')
+  const posBtns=['ALL','QB','RB','WR','TE','FLEX'].map(pos=>{
+    let tip='';
+    const st = vonaLive && vonaLive.struct && vonaLive.struct[pos];
+    if(st) tip=` title="${st.supply} startable ${pos}s left \u00b7 ${Math.round(st.demand)} league starter slots still open"`;
+    return `<button class="pos-filter-btn ${rankPosFilter===pos?'active':''}" onclick="setPosFilter('${pos}')"${tip}>${pos}</button>`;
+  }).join('')
     // ROOKIES is an overlay, not a position: it stays lit NEXT TO the active position chip.
     +`<button class="pos-filter-btn rookies-filter-btn ${rankRookiesOnly?'active':''}" onclick="toggleRookiesFilter()" title="Show only rookies — stacks with the position filter">ROOKIES</button>`;
   const searchOpen = searchActive;
@@ -16572,6 +16607,7 @@ function renderRankings(){
           ${liveDeltaToggle}
           <button class="btn btn-ghost btn-sm rank-filters-toggle ${rankFiltersOpen?'active':''}" onclick="toggleRankFilters()" title="League, scoring, stat views &amp; filters" aria-label="Menu">${TC_ICON("menu")}</button>
           <span id="rankPlayerCount" data-default-label="${escAttr(`${view.length} players`)}" class="rank-count">${view.length} players</span>
+          ${vonaAvail?`<span class="rank-fade-key" title="From the availability model: under a 25% chance they last until your next pick">dimmed = likely gone before your pick</span>`:''}
         </div>
         <div class="rank-toolbar-row rank-filters ${rankFiltersOpen?'open':''}">
           <span class="tc-label">LEAGUE</span>
@@ -16598,7 +16634,8 @@ function renderRankings(){
           tc: ()=>th('tc','TC','','c-tc',false,'tc'),
           adp: ()=>th('adp','ADP','','c-adp',false,'adp'),
           fpts: ()=>th('fpts','FPTS','','',false,'fpts')+(paceActive?th('pacePct','Δ','PROJ','c-pace-delta'):''),
-          vor: ()=>th('vor','VOR','','c-vor',false,'vor'),
+          vor: ()=>{const a=rankSortKey==='vor';
+            return `<th onclick="rankSort('vor')" class="c-vor" data-rc="vor" style="${a?'color:var(--accent)':''}"><div class="th-stack">VOR${a?(rankSortDir<0?' \u2193':' \u2191'):''}${(typeof tcInfoBtn==='function')?tcInfoBtn('rank_vor','What is VOR?'):''}</div></th>`;},
           pos: ()=>th('pos','POS','','c-pos',false,'pos'),
           name: ()=>th('name','PLAYER','','c-player',false,'name'),
           team: ()=>th('team','TM','','c-team',false,'team'),
@@ -16626,6 +16663,7 @@ function renderRankings(){
     ? pageOf(rowChunks.slice(0, RANKINGS_STREAM_FIRST).join(''))
     : pageHtml;
   hydrateRankingsHeadshots();
+  rankingsUpdateReplacementLine();
   // A hide/reorder re-render happens WITH the editor still open — put its ✕ badges back.
   if(typeof rankColEditAugment==='function' && typeof rankColEditActive!=='undefined' && rankColEditActive) rankColEditAugment();
   const tDomDone = _rkNow();
@@ -16861,6 +16899,47 @@ function _rankingsInPlaceFiltersActive(){
   return false;
 }
 
+// ── Replacement-level marker ────────────────────────────────────────────────
+// On a single-position view, one marker row sits between the startable tier (VOR>0) and the
+// sub-replacement rest — the visual answer to "where does the position stop mattering?".
+// Only rendered when the visible rows are MONOTONE (startables first, then the rest) under
+// the active sort, so the line is always truthful: FPTS/VOR sorts qualify, an ECR sort only
+// when the market happens to agree. Returns the visible-row index the marker goes before.
+function _rankReplacementBoundary(flags){
+  let idx=-1;
+  for(let i=0;i<flags.length;i++){
+    if(flags[i]){ if(idx>=0) return -1; }   // a startable BELOW the boundary → not monotone
+    else if(idx<0) idx=i;
+  }
+  return (idx>0 && idx<flags.length) ? idx : -1;   // needs rows on both sides
+}
+function rankingsUpdateReplacementLine(){
+  if(typeof document==='undefined') return;
+  // Defensive DOM handling throughout: this also runs under the test harness's stub
+  // elements, and a marker glitch must never take the board down with it.
+  const kill=(el)=>{ if(el && typeof el.remove==='function') el.remove(); };
+  const old=document.getElementById('rankReplacementLine');
+  const tbody=document.querySelector('#content .rankings-table tbody');
+  if(!tbody || typeof tbody.insertBefore!=='function'){ kill(old); return; }
+  const posF=(rankPosFilter==='QB'||rankPosFilter==='RB'||rankPosFilter==='WR'||rankPosFilter==='TE') ? rankPosFilter : null;
+  if(!posF || typeof VOR_BASELINE==='undefined' || !(VOR_BASELINE[posF]>0)){ kill(old); return; }
+  const rows=[];
+  tbody.querySelectorAll('tr').forEach(r=>{
+    if(r.classList.contains('rank-pickline') || r.classList.contains('rank-replacement-line')) return;
+    if(r.style && r.style.display==='none') return;
+    rows.push(r);
+  });
+  const flags=rows.map(r=>r.getAttribute('data-rank-vor')==='1');
+  const at=_rankReplacementBoundary(flags);
+  if(at<0){ kill(old); return; }
+  const startable=flags.filter(Boolean).length;
+  const el=(old && typeof old.remove==='function') ? old : document.createElement('tr');
+  el.id='rankReplacementLine'; el.className='rank-replacement-line';
+  const cols=(rows[0] && rows[0].children) ? rows[0].children.length : 12;
+  el.innerHTML=`<td colspan="${cols}"><span class="rank-repl-lbl">▼ replacement level · ${posF}${startable+1} (${(VOR_BASELINE[posF]||0).toFixed(0)} pts) — players below are roughly free on waivers</span></td>`;
+  try{ tbody.insertBefore(el, rows[at]); }catch(e){ kill(el); }
+}
+
 function applyRankingsFiltersInPlace(){
   if(typeof document==='undefined') return false;
   const tbody = document.querySelector('.rankings-table tbody');
@@ -16878,6 +16957,7 @@ function applyRankingsFiltersInPlace(){
   let shown = 0;
   const rows = tbody.querySelectorAll('tr');
   rows.forEach((row)=>{
+    if(row.classList.contains('rank-replacement-line')) return;   // repositioned below, not filtered
     if(row.classList.contains('rank-pickline')){
       // Pick-line markers become misleading during ad-hoc filtering.
       row.style.display = (tokens.length || hasMinFilters || posF || rkF) ? 'none' : '';
@@ -16908,6 +16988,7 @@ function applyRankingsFiltersInPlace(){
     const def = String(countEl.getAttribute('data-default-label')||'').trim();
     countEl.textContent = (tokens.length || hasMinFilters || posF || rkF) ? `${shown} players` : (def || `${shown} players`);
   }
+  rankingsUpdateReplacementLine();
   return true;
 }
 
@@ -17103,6 +17184,23 @@ function exportRankingsCSV(){
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ── VOR explainer (the column header's ⓘ) ───────────────────────────────────
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.rank_vor={title:'Value Over Replacement', body:()=>{
+    const b=(typeof VOR_BASELINE!=='undefined' && VOR_BASELINE) || {};
+    const line=['QB','RB','WR','TE'].filter(p=>b[p]>0).map(p=>`${p} ${b[p].toFixed(0)}`).join(' · ');
+    return `Points above the <b>last starter</b> your league shape forces someone to start —
+      the fairest way to compare players across positions. The baseline is rebuilt from your
+      projections whenever scoring, roster slots, or format change: dedicated starter slots
+      fill first, then FLEX demand goes to whichever position\u2019s next player scores most
+      (restricted flexes only draw from their eligible positions). Superflex assumes ~2.3 QBs
+      rostered per team, matching how those leagues actually draft.${line?`<br><br>Current
+      replacement level: <b>${line}</b> fantasy points.`:''}<br><br>+VOR = start-worthy;
+      0 or below = replaceable from waivers. On a position filter (sorted by FPTS or VOR),
+      the board draws the replacement line right in the table.`;
+  }};
+}
 // ── Keep Trade Cut mini-game (rankings personalization loop) ───────────────
 // Lightweight preference game layered on top of Full Rankings. Each round presents
 // three closely-ranked players; KEEP/TRADE/CUT ordering nudges underlying projections so
@@ -23357,6 +23455,7 @@ function vonaOptionsPop(ev, pos){
   const pcls=(x)=> x>=0.6 ? 'vp-hi' : (x>=0.3 ? 'vp-mid' : 'vp-lo');
   const rows=v.pools[pos].slice(0,12).map((p,i)=>{
     const pa=v.pAvail && v.pAvail.get ? v.pAvail.get(pidOf(p)) : null;
+    const noAdp = typeof adpFor==='function' && adpFor(p)>=999;
     const open=(typeof pcardOnclick==='function')?`onclick="event.stopPropagation();${pcardOnclick(p.player_id||p.name,p.pos,p.team||'')}"`:'';
     return `<div class="vona-opt clickable-player" ${open} title="${escAttr(p.name)} — open player card">
       <span class="vona-opt-rank">${i+1}</span>
@@ -23366,7 +23465,7 @@ function vonaOptionsPop(ev, pos){
         <div class="vona-opt-sub">${escHtml(p.team||'FA')}${p.ecr!=null?` · ECR ${p.ecr}`:''}</div>
       </div>
       <span class="vona-vor">${(p.vor||0)>0?'+':''}${(p.vor||0).toFixed(0)}</span>
-      ${pa!=null?`<span class="vona-pct ${pcls(pa)}" title="Chance they're still on the board at your next pick">${pct(pa)}%</span>`:''}
+      ${pa!=null?`<span class="vona-pct ${pcls(pa)}" title="${noAdp?'No market ADP for this player \u2014 the availability model can\u2019t see him':'Chance they\u2019re still on the board at your next pick'}">${_vonaPctDisp(p,pa)}%</span>`:''}
     </div>`;
   }).join('');
   const div=document.createElement('div');
@@ -23697,7 +23796,7 @@ function renderTrackerPanel(viewSlot){
         // Line 1: the guy you'd take right now, and the market's odds he lasts to your next pick.
         // Line 2: who you'd most likely settle for instead — the concrete cost of waiting.
         const waitLine = r.bestNext && r.bestNext!==r.bestNow
-          ? `<div class="vona-wait">wait \u2192 <b>${nm(r.bestNext)}</b>
+          ? `<div class="vona-wait">wait \u2192 <b>${nm(r.bestNext)}</b>${typeof tcInjuryTag==='function'?tcInjuryTag(r.bestNext.player_id):''}
                <span class="vona-vor">${(r.bestNext.vor||0)>0?'+':''}${(r.bestNext.vor||0).toFixed(0)}</span>
                <span class="vona-pct ${pcls(r.nextShare)}">${pct(r.nextShare)}% likely available</span></div>`
           : `<div class="vona-wait vona-wait-safe">wait \u2192 <b>${nm(r.bestNow)}</b> likely still available</div>`;
@@ -23706,9 +23805,9 @@ function renderTrackerPanel(viewSlot){
           <span class="rt-slot ${slotClass(r.pos)}">${r.pos}</span>
           ${hs(r.bestNow)}
           <div class="vona-main">
-            <div class="vona-now"><b>${nm(r.bestNow)}</b>
+            <div class="vona-now"><b>${nm(r.bestNow)}</b>${typeof tcInjuryTag==='function'?tcInjuryTag(r.bestNow.player_id):''}
               <span class="vona-vor">${(r.bestNow.vor||0)>0?'+':''}${(r.bestNow.vor||0).toFixed(0)}</span>
-              <span class="vona-pct ${pcls(r.pHold)}" title="Chance they make it back to your next pick, per market ADP"><span class="vona-pct-long">${pct(r.pHold)}% chance they make it back</span><span class="vona-pct-short">${pct(r.pHold)}% back</span></span>${tag}</div>
+              <span class="vona-pct ${pcls(r.pHold)}" title="Chance they make it back to your next pick, per market ADP"><span class="vona-pct-long">${_vonaPctDisp(r.bestNow,r.pHold)}% chance they make it back</span><span class="vona-pct-short">${_vonaPctDisp(r.bestNow,r.pHold)}% back</span></span>${tag}</div>
             ${waitLine}
             ${r.why?`<div class="vona-why">${r.why}</div>`:''}
           </div>
@@ -23732,9 +23831,13 @@ function renderTrackerPanel(viewSlot){
       const noteTxt = (rec && !rec.need && needRows.length===0)
         ? `All starters filled \u2014 now drafting for value/depth.`
         : (alsoBig ? `Also watch <b>${alsoBig.pos}</b> (\u2212${alsoBig.dropoff}).` : '');
+      const kdefLine = v.kdefAlert
+        ? `<div class="vona-kdef">${TC_ICON('warning')} <b>${v.kdefAlert.picksLeft} pick${v.kdefAlert.picksLeft===1?'':'s'} left</b> \u00b7 ${v.kdefAlert.open.join(' + ')} still open \u2014 save room</div>`
+        : '';
       advisory=`<div class="vona-box">
         <div class="vona-head">${TC_ICON('chart')} On-the-clock advice ${v.onClock?'\u00b7 <b style="color:var(--accent)">YOU\u2019RE UP</b>':`\u00b7 next pick in ${v.gap}`} ${(typeof tcInfoBtn==='function')?tcInfoBtn('vona','How this advice works'):''}</div>
         <div class="vona-sub">${recTxt}${noteTxt?` \u00b7 ${noteTxt}`:''}</div>
+        ${kdefLine}
         <div class="vona-rows">${chips}</div>
 
       </div>`;
@@ -23837,6 +23940,17 @@ function picksUntilMyTurn(slot){
   }
   return null;
 }
+// Pick numbers already present in the feed (keeper drafts pre-populate future picks).
+// currentPickNo() already skips these when finding the clock; the pick WINDOWS must skip
+// them too — a keeper pick is not a live market pick, so counting it made every VONA
+// survival probability read low and drifted the board's pick lines in keeper leagues.
+function _draftFeedPickNos(){
+  const s=new Set();
+  for(const slot in draftPicksBySlot){
+    draftPicksBySlot[slot].forEach(pk=>{ if(pk && pk.pick_no>0) s.add(pk.pick_no); });
+  }
+  return s;
+}
 // ── VONA: Value Over Next Available ─────────────────────────────────────────
 // The on-the-clock advisory. Two different sources of truth, deliberately:
 //   • VALUE comes from YOUR board (VOR) — what a player is worth to you.
@@ -23880,24 +23994,36 @@ function adpSigma(adp){
   if(adp == null || adp >= 999) return 999;   // no market data -> effectively undraftable by ADP
   return Math.min(24, Math.max(3.5, adp * 0.18));
 }
-const VONA_SIMS = 240;          // sims per advisory (stable via the seeded RNG)
+const VONA_SIMS = 500;          // sims per advisory (stable via the seeded RNG; SE ≈ ±2.2% at p=0.5)
 const VONA_MKT_DEPTH = 40;      // per position, hard cap on who the market can realistically take
 let _vonaCache = { key:null, val:null };
 
-// The positions a given draft slot still needs (from that team's actual filled lineup).
-function vonaPosNeedsForSlot(slot){
+// What a draft slot still needs, in enough detail for the sim to reason with:
+//   set     — skill positions it can still use (dedicated + flex-eligible)
+//   ded     — COUNT of unfilled dedicated slots per position (a slot with one open QB slot
+//             must not draft two QBs inside one simulated window)
+//   flexSet — positions usable only via a flex slot
+//   kdOpen  — unfilled K/DEF starter slots (real late-round demand the skill-only market
+//             model used to ignore entirely)
+//   remaining — picks this slot has left in the whole draft
+function _vonaSlotProfile(slot){
   const picks = (draftPicksBySlot[slot]) || [];
   const { needs } = fillLineup(picks);
-  const set = new Set();
+  const set = new Set(); const ded = {QB:0,RB:0,WR:0,TE:0}; const flexSet = new Set();
+  let kdOpen = 0;
   needs.forEach(s=>{
-    if(s==='QB'||s==='RB'||s==='WR'||s==='TE') set.add(s);
+    if(s==='QB'||s==='RB'||s==='WR'||s==='TE'){ set.add(s); ded[s]++; }
+    else if(s==='K'||s==='DEF'){ kdOpen++; }
     else {
       const elig = FLEX_ELIGIBLE[s];
-      if(elig) elig.forEach(p=>set.add(p));
+      if(elig) elig.forEach(p=>{ set.add(p); flexSet.add(p); });
     }
   });
-  return set;
+  const { rounds } = draftParams();
+  const remaining = Math.max(1, rounds - picks.length);
+  return { set, ded, flexSet, kdOpen, remaining };
 }
+function vonaPosNeedsForSlot(slot){ return _vonaSlotProfile(slot).set; }
 
 // Monte-Carlo the pick window. Returns per-player survival probability and, per position,
 // how often each player ends up being the best-VOR guy left on YOUR board.
@@ -23914,7 +24040,10 @@ function vonaSimulate(avail, upcomingSlots, pools){
   const POSL=['QB','RB','WR','TE'];
   const pidOf = (p)=> p.player_id || p.name;
   const nUp = upcomingSlots.length;
-  const needsBySlot = upcomingSlots.map(s=>vonaPosNeedsForSlot(s));
+  const profiles = upcomingSlots.map(s=>_vonaSlotProfile(s));
+  // A slot's PREVIOUS appearance in this window (snake turns give every other team two picks
+  // in my widest windows) — used to stop one team double-drafting a single dedicated need.
+  const prevOcc = upcomingSlots.map((s,i)=> upcomingSlots.slice(0,i).lastIndexOf(s));
   // At most `nUp` players come off the board, so we never need more than nUp+10 deep.
   const depth = Math.min(VONA_MKT_DEPTH, nUp + 10);
 
@@ -23948,10 +24077,12 @@ function vonaSimulate(avail, upcomingSlots, pools){
 
   // Scratch reused across sims.
   const order={}, noisy={}, ptr={};
+  const pickedPos = new Array(nUp);   // what each window pick took this sim ('KD' | pos | undefined)
   POSL.forEach(pos=>{ order[pos]=new Int32Array(mkt[pos].length); noisy[pos]=new Float64Array(mkt[pos].length); });
 
   for(let s=0; s<VONA_SIMS; s++){
     taken.fill(0);
+    pickedPos.fill(null);
     // Draw one noisy market position per candidate, then sort that position by it.
     POSL.forEach(pos=>{
       const n=mkt[pos].length, no=noisy[pos], od=order[pos], ad=mktAdp[pos], sg=mktSig[pos];
@@ -23963,11 +24094,27 @@ function vonaSimulate(avail, upcomingSlots, pools){
     });
     // Walk the window: each team takes its lowest noisy-ADP player among positions it needs.
     for(let i=0;i<nUp;i++){
-      const need=needsBySlot[i];
+      const prof=profiles[i];
+      const need=prof.set;
+      const prev=prevOcc[i];
+      const prevPick = prev>=0 ? pickedPos[prev] : null;
+      // K/DEF exodus: a team with open K/DEF starter slots spends SOME late picks on them —
+      // the skill-only model both starved those picks (pessimistic survival) and treated a
+      // team whose ONLY remaining needs were K/DEF as an unconstrained skill drafter (the
+      // opposite of reality). Hazard = open K/DEF slots over picks remaining, so it ramps to
+      // certainty as the draft runs out of room. A K/DEF pick removes no skill player.
+      let kdOpen = prof.kdOpen - (prevPick==='KD' ? 1 : 0);
+      if(kdOpen>0){
+        const pKd = Math.min(0.95, kdOpen / prof.remaining);
+        if(rnd() < pKd){ pickedPos[i]='KD'; continue; }
+      }
       let bestPos=null, best=Infinity;
       for(let c=0;c<POSL.length;c++){
         const pos=POSL[c];
         if(need.size && !need.has(pos)) continue;
+        // This slot already took its single dedicated `pos` earlier in the window and has no
+        // flex route to another one — a second is off the table for THIS sim.
+        if(prevPick===pos && prof.ded[pos]<=1 && !prof.flexSet.has(pos)) continue;
         const k=ptr[pos];
         if(k>=mkt[pos].length) continue;
         const v=noisy[pos][order[pos][k]];
@@ -23976,6 +24123,7 @@ function vonaSimulate(avail, upcomingSlots, pools){
       if(bestPos!=null){
         taken[ mktIds[bestPos][ order[bestPos][ ptr[bestPos] ] ] ] = 1;
         ptr[bestPos]++;
+        pickedPos[i]=bestPos;
       }
     }
     // Tally survival + who's the best VOR left at each position.
@@ -23998,6 +24146,8 @@ function vonaSimulate(avail, upcomingSlots, pools){
     pAvail.set(pidOf(p), inMarket[i] ? survCount[i]/VONA_SIMS : 1);
   });
   const expVor = {};
+  // Divided by SIMS, not by survivor count, on purpose: a sim where the position emptied
+  // means waiting got you nothing — that zero belongs in the expectation.
   POSL.forEach(pos=>{ expVor[pos] = vorSum[pos]/VONA_SIMS; });
   return { pAvail, bestCount, expVor, pidOf };
 }
@@ -24056,10 +24206,11 @@ function vonaPosStructure(pools){
                pressure: supply>0 ? (demand[pos]||0)/supply : (demand[pos]>0?3:0) };
   });
   // Flat = "the value has dropped off and the rest aren't really different from each other",
-  // measured on evidence rather than roster counts. Two conditions, both required:
-  //   • the ENTIRE remaining startable tier spans little value (VOR is points-over-replacement,
-  //     so it's directly comparable across positions — a tier spanning <14 VOR is roughly one
-  //     point per game from top to bottom, i.e. interchangeable), and
+  // measured on evidence rather than roster counts. Two conditions, both required —
+  // INTERCHANGEABLE and SUPPLY — where interchangeable is itself an either/or:
+  //   • the remaining startable tier is interchangeable: its total span is small (<14 VOR ≈
+  //     one point per game top to bottom) OR its per-player step is tiny (<1.5 VOR — a wide
+  //     but gently-sloped pool punts just as safely), and
   //   • supply comfortably outruns what the league still needs, so waiting still lands you one.
   // Deliberately NOT relative to the steepest position: late in a draft the other positions
   // exhaust and their step collapses to 0, which made a relative test stop firing exactly when
@@ -24080,14 +24231,40 @@ function vonaPosStructure(pools){
 // SOMEONE, so a player's true marginal worth is his value over the replacement who'd
 // otherwise occupy that slot. Using raw points instead would hand every QB a ~350-point
 // "gain" in a 1QB league purely because quarterbacks score more, which is not an edge.
+// Value-optimal starters for a hypothetical roster: best-VOR-first, dedicated slots before
+// flex (mirrors laFillStarters). The ORDER-greedy fillLineup is right for rendering what you
+// actually drafted, but for pricing a candidate it benched any RB whose flex spot was already
+// occupied by a weaker WR — scoring a real lineup upgrade as zero gain.
+function _vonaOptimalLineupVor(picks, vorOf){
+  const slots=draftLineup.map(s=>({slot:s, player:null}));
+  const sorted=[...picks].sort((a,b)=>(vorOf(b)||0)-(vorOf(a)||0));
+  sorted.forEach(pk=>{
+    let idx=slots.findIndex(f=>!f.player && f.slot===pk.pos);
+    if(idx<0) idx=slots.findIndex(f=>!f.player && (FLEX_ELIGIBLE[f.slot]||[]).includes(pk.pos));
+    if(idx>=0) slots[idx].player=pk;
+  });
+  return slots.reduce((sum,f)=> sum + (f.player ? Math.max(0, vorOf(f.player)||0) : 0), 0);
+}
 function vonaLineupGain(myPicks, cand, vorOf){
-  const val = picks => fillLineup(picks).slots
-    .reduce((sum,f)=> sum + (f.player ? Math.max(0, vorOf(f.player)||0) : 0), 0);
-  const before = val(myPicks);
-  const after  = val(myPicks.concat([{ pos:cand.pos, name:cand.name, player_id:cand.player_id }]));
+  const before = _vonaOptimalLineupVor(myPicks, vorOf);
+  const after  = _vonaOptimalLineupVor(myPicks.concat([{ pos:cand.pos, name:cand.name, player_id:cand.player_id }]), vorOf);
   return Math.max(0, +(after-before).toFixed(1));
 }
 
+// Definitely-out-for-the-year players (IR season-enders) shouldn't headline "take him NOW" —
+// they stay in the pools and the options popup (with their tag), they just can't be bestNow.
+function _vonaSeasonOut(p){
+  if(!p || typeof tcInjuryInfo!=='function') return false;
+  try{ const inj=tcInjuryInfo(p.player_id); return !!(inj && inj.seasonOut); }catch(e){ return false; }
+}
+// Displayed availability %: players outside the ADP universe are "100% available" only in the
+// sense that the market model can't see them — cap the display at 99 so it never reads as a
+// guarantee for a hyped name the ADP source simply lacks.
+function _vonaPctDisp(p, x){
+  const v=Math.round((x||0)*100);
+  if(v>=100 && p && typeof adpFor==='function' && adpFor(p)>=999) return 99;
+  return v;
+}
 function computeVONA(){
   if(mySlot==null) return null;
   let gap = picksUntilMyTurn(mySlot);              // picks between now and my next turn
@@ -24101,7 +24278,11 @@ function computeVONA(){
     const myUps = myUpcomingPickNumbers(mySlot);
     const endPick = onClock ? (myUps[1]!=null?myUps[1]:startPick) : (myUps[0]!=null?myUps[0]:startPick);
     const from = onClock ? startPick+1 : startPick;   // on the clock: picks AFTER mine
-    for(let n=from; n<endPick; n++) upcomingSlots.push(slotOnClock(n, teams, type, reversalRound));
+    const feed = _draftFeedPickNos();                 // keeper picks are already spent
+    for(let n=from; n<endPick; n++){
+      if(feed.has(n)) continue;
+      upcomingSlots.push(slotOnClock(n, teams, type, reversalRound));
+    }
     gap = upcomingSlots.length;
   }
   // Cache: the sim is deterministic for a given draft state, so only redo it when that changes.
@@ -24118,7 +24299,7 @@ function computeVONA(){
   avail.forEach(p=>{ if(pools[p.pos]) pools[p.pos].push(p); });
   Object.keys(pools).forEach(k=>pools[k].sort((a,b)=>(b.vor||0)-(a.vor||0)));
   const bestNow={};
-  ['QB','RB','WR','TE'].forEach(pos=>{ bestNow[pos]=pools[pos][0]||null; });
+  ['QB','RB','WR','TE'].forEach(pos=>{ bestNow[pos]=pools[pos].find(p=>!_vonaSeasonOut(p)) || pools[pos][0] || null; });
 
   const sim = vonaSimulate(avail, upcomingSlots, pools);
   const byId = new Map(avail.map(p=>[sim.pidOf(p), p]));
@@ -24209,7 +24390,18 @@ function computeVONA(){
           : (st.pressure>=1.15 ? `${st.supply} left \u00b7 ${Math.round(st.demand)} slots` : '');
   });
   out.sort((a,b)=> b.score-a.score);
-  const res = { gap, rows: out, onClock, struct, pools, pAvail: sim.pAvail };
+  // My own K/DEF endgame: when my remaining LIVE picks barely cover my open K/DEF starter
+  // slots, say so — the four skill rows above will happily spend every last pick otherwise.
+  let kdefAlert=null;
+  {
+    const kdList = myNeeds.filter(s=>s==='K'||s==='DEF');
+    if(kdList.length){
+      const feed=_draftFeedPickNos();
+      const picksLeft = myUpcomingPickNumbers(mySlot).filter(n=>!feed.has(n)).length;
+      if(picksLeft>0 && picksLeft <= kdList.length+1) kdefAlert={ open:kdList, picksLeft };
+    }
+  }
+  const res = { gap, rows: out, onClock, struct, pools, pAvail: sim.pAvail, kdefAlert };
   _vonaCache = { key:cacheKey, val:res };
   return res;
 }
@@ -24692,10 +24884,27 @@ function laPickValFor(season,round){ return laIsRedraft() ? 0 : laPickVal(season
 // Player thumbnail. Team defenses have no headshot (they're not people and aren't in the
 // Sleeper player DB), so they render the club logo instead — Sleeper keys a DEF by its team
 // abbreviation, which is exactly what NFL_LOGO wants.
+// Resolve a defense's TEAM CODE from however it's named — "PHI", "Philadelphia Eagles",
+// "philadelphia eagles dst" (the VOR map's normalized keys) all land on PHI. Defenses have
+// no headshot; the club logo IS the icon, so a missing code means a blank row.
+function laDefTeamCode(name){
+  const raw=String(name||'').trim();
+  if(!raw) return '';
+  const up=raw.toUpperCase();
+  if(/^[A-Z]{2,3}$/.test(up) && typeof TEAM_NAMES!=='undefined' && TEAM_NAMES[up]) return up;
+  const n=ecrNormName(raw);
+  if(Array.isArray(TEAMS)){
+    for(const c of TEAMS){
+      if(n.startsWith(ecrNormName(teamDisplayName(c)))) return c;
+    }
+  }
+  return '';
+}
 function laPlayerImg(p, cls){
   cls = cls || 'player-headshot';
   const isDef = p.pos==='DEF';
-  const code = isDef ? (p.team || p.id || p.player_id) : null;
+  let code = isDef ? (p.team || p.id || p.player_id) : null;
+  if(isDef && !code) code = laDefTeamCode(p.name);   // waiver rows arrive team-less
   if(isDef && code) return imgTag(NFL_LOGO(String(code).toUpperCase()), cls+' la-def-logo');
   return imgTag(hsPack({player_id:p.player_id||p.id, name:p.name, pos:p.pos}), cls);
 }
@@ -25871,12 +26080,38 @@ function laBestAvailView(s){
     // Redraft: the free-agent universe is everyone our projections cover (plus K/DEF), ranked
     // by VOR. Walking the dynasty chart instead would both miss K/DEF entirely and rank the
     // waiver wire by long-term worth — the wrong question when the season is all there is.
+    //
+    // K/DEF metadata: the VOR map is keyed by normalized strings and registers a team-code
+    // ALIAS per defense — walked raw, a defense rendered as a lowercase, icon-less row, its
+    // alias rendered as a DUPLICATE row, and a rostered D/ST could sneak back in through the
+    // alias. Resolve each key through the snapshot's kdef block (real names + team codes).
+    const kdefMeta=new Map();
+    ((s&&s.kdef)||[]).forEach(x=>{
+      if(!x || !x.name || !x.pos) return;
+      const meta={name:x.name, team:String(x.team||'').toUpperCase(), pos:x.pos};
+      kdefMeta.set(ecrNormName(x.name)+'|'+x.pos, meta);
+      if(x.pos==='DEF' && x.team) kdefMeta.set(ecrNormName(x.team)+'|DEF', meta);
+    });
+    const seenDef=new Set();
     laVorMap().forEach((vor,key)=>{
       const i=key.lastIndexOf('|'); if(i<0) return;
       const k=key.slice(0,i), pos=key.slice(i+1);
-      if(rostered.has(k)) return;
       if(posF!=='ALL' && pos!==posF) return;
-      rows.push({name:k, pos, team:'', v:Math.max(0,Math.round(vor*LA_VOR_SCALE)),
+      let name=k, team='';
+      const meta=(pos==='K'||pos==='DEF') ? kdefMeta.get(key) : null;
+      if(meta){
+        name=meta.name; team=meta.team;
+        if(pos==='DEF'){
+          const code=team || laDefTeamCode(name);
+          if(code){ if(seenDef.has(code)) return; seenDef.add(code); team=code; }
+        }
+        if(rostered.has(ecrNormName(name))) return;
+      } else if(pos==='DEF'){
+        const code=laDefTeamCode(k);
+        if(code){ if(seenDef.has(code)) return; seenDef.add(code); team=code; name=`${teamDisplayName(code)} D/ST`; }
+      }
+      if(rostered.has(k)) return;
+      rows.push({name, pos, team, v:Math.max(0,Math.round(vor*LA_VOR_SCALE)),
                  fpts:pm.get(key)||0});
     });
     // Prefer the projection list's display name/team where we have it (the VOR map is keyed
@@ -25915,8 +26150,8 @@ function laBestAvailView(s){
       ${top.map((r,i)=>`<div class="la-ba-row">
         <span class="la-ba-rk">${i+1}</span>
         <span class="rt-slot ${slotClass(r.pos)}">${r.pos}</span>
-        <span class="clickable-player" onclick="${pcardOnclick(r.name,r.pos,r.team||'')}">${laPlayerImg(r)}</span>
-        <span class="la-ba-name clickable-player" onclick="${pcardOnclick(r.name,r.pos,r.team||'')}">${escHtml(r.name)}</span>
+        <span class="clickable-player" onclick="${pcardOnclick(r.pos==='DEF'?(r.team||r.name):r.name,r.pos,r.team||'')}">${laPlayerImg(r)}</span>
+        <span class="la-ba-name clickable-player" onclick="${pcardOnclick(r.pos==='DEF'?(r.team||r.name):r.name,r.pos,r.team||'')}">${escHtml(r.name)}</span>
         <span class="la-ba-team">${escHtml(r.team)}</span>
         <span class="la-ba-val">${noteWrapHtml(String(r.v), { label:'Value', value:String(r.v), source:'league_analyzer_best_avail', statKey:'value', context:`League Analyzer best available · ${posF}`, player:noteTargetFromArgs(r.name,r.pos,r.team||''), team:r.team||'' }, 'note-tag-hit')}</span>
         <span class="la-ba-fpts">${noteWrapHtml(escHtml(r.fpts?r.fpts.toFixed(0):'–'), { label:'Projected Points', value:r.fpts?r.fpts.toFixed(0):'–', source:'league_analyzer_best_avail', statKey:'proj', context:`League Analyzer best available · ${posF}`, player:noteTargetFromArgs(r.name,r.pos,r.team||''), team:r.team||'' }, 'note-tag-hit')}</span></div>`).join('')}

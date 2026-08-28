@@ -42,6 +42,7 @@ function _rankingsStreamRows(token, chunks, onDone){
     if(slice.length) tbody.insertAdjacentHTML('beforeend', slice.join(''));
     // Rows that land after an in-place search / min-volume / position filter must obey it.
     if(typeof applyRankingsFiltersInPlace==='function' && _rankingsInPlaceFiltersActive()) applyRankingsFiltersInPlace();
+    else if(typeof rankingsUpdateReplacementLine==='function') rankingsUpdateReplacementLine();
     // A sort tap deep in the table wants its scroll position back, but the restore that ran
     // right after the first paint could only clamp to the rows that existed then. Keep
     // nudging toward the target as the table grows tall enough to honor it.
@@ -246,10 +247,12 @@ function renderRankings(){
       const token = ++_rankingsStreamToken;
       document.getElementById('content').innerHTML = split.pre + split.rows.slice(0, RANKINGS_STREAM_FIRST).join('') + split.post;
       hydrateRankingsHeadshots();
+      rankingsUpdateReplacementLine();
       _rankingsStreamRows(token, split.rows.slice(RANKINGS_STREAM_FIRST), ()=>hydrateRankingsHeadshots());
     } else {
       document.getElementById('content').innerHTML = cachedHtml;
       hydrateRankingsHeadshots();
+      rankingsUpdateReplacementLine();
     }
     // Cached HTML is always pristine — re-augment it if the column editor is open.
     if(typeof rankColEditAugment==='function' && typeof rankColEditActive!=='undefined' && rankColEditActive) rankColEditAugment();
@@ -403,6 +406,14 @@ function renderRankings(){
     }
     return ((b[rankSortKey]||0)-(a[rankSortKey]||0))*(rankSortDir<0?1:-1);
   });
+  // During a live follow, the VONA sim (cached per draft state) knows every player's odds of
+  // surviving to my next pick — dim the rows the market will almost certainly take first, and
+  // hang scarcity tooltips on the position chips. One Map read per row; no new computation.
+  let vonaLive=null;
+  if(following && mySlot!=null && !teamScoped && activeSeason==='proj' && typeof computeVONA==='function'){
+    try{ vonaLive=computeVONA(); }catch(e){ vonaLive=null; }
+  }
+  const vonaAvail = vonaLive && vonaLive.pAvail;
   const tierC=['','var(--accent)','var(--info)','var(--warn)','var(--danger)','var(--muted)','#8b7cff','#6ad1c4'];
   const tierColor=t=>t?tierC[Math.min(t,7)]:'var(--border)';
   // Two-line header helper. `grp` adds a left border to mark a stat group's start.
@@ -459,14 +470,20 @@ function renderRankings(){
     const { teams, type, reversalRound, rounds } = draftParams();
     const start = currentPickNo();
     const maxPick = teams*rounds;
-    // gaps: from now, how many other picks between each of your turns
-    let prev=start-1;
+    // gaps: from now, how many LIVE picks between each of your turns. Keeper drafts
+    // pre-populate future picks in the feed — those consume no board player (their players
+    // are already marked drafted), so counting them drifted every line too deep. A future
+    // pick of MINE that's already a keeper doesn't get a line either: that turn is spent.
+    const feed = (typeof _draftFeedPickNos==='function') ? _draftFeedPickNos() : new Set();
+    let liveBetween=0;
     for(let n=start; n<=maxPick; n++){
       if(slotOnClock(n, teams, type, reversalRound)===mySlot){
-        pickGaps.push(n-prev-1);   // players taken by others before this, your turn
-        prev=n;
-        if(pickGaps.length>=rounds) break;
-      }
+        if(!feed.has(n)){
+          pickGaps.push(liveBetween);   // players taken by others before this, your turn
+          liveBetween=0;
+          if(pickGaps.length>=rounds) break;
+        }
+      } else if(!feed.has(n)) liveBetween++;
     }
   }
   // ── Customizable columns ──────────────────────────────────────────────────────────────
@@ -618,7 +635,12 @@ function renderRankings(){
       apy: `<td class="c-apy">${p.apy!=null?`<span class="num">${fmtAPY(p.apy)}</span>`:''}</td>`,
       fa: `<td class="c-fa ${faSoon?'fa-soon':''}">${p.fa!=null?`<span class="num">${p.fa}</span>`:''}</td>`,
     };
-    rowChunks.push(`<tr class="${p.drafted?'drafted':''}" data-rank-search="${pSearchAttr}" data-rank-pos="${p.pos}"${rankIsRookie(p)?' data-rank-rk="1"':''}${volAttrs}${rankNoteScopeAttrs(p)}>
+    let fadeCls='';
+    if(vonaAvail && !p.drafted){
+      const pa=vonaAvail.get(p.player_id||p.name);
+      if(pa!=null && pa<0.25) fadeCls=' rank-fade';
+    }
+    rowChunks.push(`<tr class="${p.drafted?'drafted':''}${fadeCls}" data-rank-search="${pSearchAttr}" data-rank-pos="${p.pos}" data-rank-vor="${p.vor>0?'1':'0'}"${rankIsRookie(p)?' data-rank-rk="1"':''}${volAttrs}${rankNoteScopeAttrs(p)}>
     ${metaOrder.map(k=>metaTd[k]).join('\n    ')}
     ${statCells}
   </tr>`);
@@ -634,8 +656,12 @@ function renderRankings(){
   const scoringList=[['std','Standard'],['half_ppr','Half PPR'],['ppr','Full PPR'],['superflex','Superflex']];
   const fmtBtns=scoringList
     .map(([s,l])=>`<button class="format-btn ${curScoring===s?'active':''}" onclick="setScoringAxis('${s}')">${l}</button>`).join('');
-  const posBtns=['ALL','QB','RB','WR','TE','FLEX'].map(pos=>
-    `<button class="pos-filter-btn ${rankPosFilter===pos?'active':''}" onclick="setPosFilter('${pos}')">${pos}</button>`).join('')
+  const posBtns=['ALL','QB','RB','WR','TE','FLEX'].map(pos=>{
+    let tip='';
+    const st = vonaLive && vonaLive.struct && vonaLive.struct[pos];
+    if(st) tip=` title="${st.supply} startable ${pos}s left \u00b7 ${Math.round(st.demand)} league starter slots still open"`;
+    return `<button class="pos-filter-btn ${rankPosFilter===pos?'active':''}" onclick="setPosFilter('${pos}')"${tip}>${pos}</button>`;
+  }).join('')
     // ROOKIES is an overlay, not a position: it stays lit NEXT TO the active position chip.
     +`<button class="pos-filter-btn rookies-filter-btn ${rankRookiesOnly?'active':''}" onclick="toggleRookiesFilter()" title="Show only rookies — stacks with the position filter">ROOKIES</button>`;
   const searchOpen = searchActive;
@@ -737,6 +763,7 @@ function renderRankings(){
           ${liveDeltaToggle}
           <button class="btn btn-ghost btn-sm rank-filters-toggle ${rankFiltersOpen?'active':''}" onclick="toggleRankFilters()" title="League, scoring, stat views &amp; filters" aria-label="Menu">${TC_ICON("menu")}</button>
           <span id="rankPlayerCount" data-default-label="${escAttr(`${view.length} players`)}" class="rank-count">${view.length} players</span>
+          ${vonaAvail?`<span class="rank-fade-key" title="From the availability model: under a 25% chance they last until your next pick">dimmed = likely gone before your pick</span>`:''}
         </div>
         <div class="rank-toolbar-row rank-filters ${rankFiltersOpen?'open':''}">
           <span class="tc-label">LEAGUE</span>
@@ -763,7 +790,8 @@ function renderRankings(){
           tc: ()=>th('tc','TC','','c-tc',false,'tc'),
           adp: ()=>th('adp','ADP','','c-adp',false,'adp'),
           fpts: ()=>th('fpts','FPTS','','',false,'fpts')+(paceActive?th('pacePct','Δ','PROJ','c-pace-delta'):''),
-          vor: ()=>th('vor','VOR','','c-vor',false,'vor'),
+          vor: ()=>{const a=rankSortKey==='vor';
+            return `<th onclick="rankSort('vor')" class="c-vor" data-rc="vor" style="${a?'color:var(--accent)':''}"><div class="th-stack">VOR${a?(rankSortDir<0?' \u2193':' \u2191'):''}${(typeof tcInfoBtn==='function')?tcInfoBtn('rank_vor','What is VOR?'):''}</div></th>`;},
           pos: ()=>th('pos','POS','','c-pos',false,'pos'),
           name: ()=>th('name','PLAYER','','c-player',false,'name'),
           team: ()=>th('team','TM','','c-team',false,'team'),
@@ -791,6 +819,7 @@ function renderRankings(){
     ? pageOf(rowChunks.slice(0, RANKINGS_STREAM_FIRST).join(''))
     : pageHtml;
   hydrateRankingsHeadshots();
+  rankingsUpdateReplacementLine();
   // A hide/reorder re-render happens WITH the editor still open — put its ✕ badges back.
   if(typeof rankColEditAugment==='function' && typeof rankColEditActive!=='undefined' && rankColEditActive) rankColEditAugment();
   const tDomDone = _rkNow();
@@ -1026,6 +1055,47 @@ function _rankingsInPlaceFiltersActive(){
   return false;
 }
 
+// ── Replacement-level marker ────────────────────────────────────────────────
+// On a single-position view, one marker row sits between the startable tier (VOR>0) and the
+// sub-replacement rest — the visual answer to "where does the position stop mattering?".
+// Only rendered when the visible rows are MONOTONE (startables first, then the rest) under
+// the active sort, so the line is always truthful: FPTS/VOR sorts qualify, an ECR sort only
+// when the market happens to agree. Returns the visible-row index the marker goes before.
+function _rankReplacementBoundary(flags){
+  let idx=-1;
+  for(let i=0;i<flags.length;i++){
+    if(flags[i]){ if(idx>=0) return -1; }   // a startable BELOW the boundary → not monotone
+    else if(idx<0) idx=i;
+  }
+  return (idx>0 && idx<flags.length) ? idx : -1;   // needs rows on both sides
+}
+function rankingsUpdateReplacementLine(){
+  if(typeof document==='undefined') return;
+  // Defensive DOM handling throughout: this also runs under the test harness's stub
+  // elements, and a marker glitch must never take the board down with it.
+  const kill=(el)=>{ if(el && typeof el.remove==='function') el.remove(); };
+  const old=document.getElementById('rankReplacementLine');
+  const tbody=document.querySelector('#content .rankings-table tbody');
+  if(!tbody || typeof tbody.insertBefore!=='function'){ kill(old); return; }
+  const posF=(rankPosFilter==='QB'||rankPosFilter==='RB'||rankPosFilter==='WR'||rankPosFilter==='TE') ? rankPosFilter : null;
+  if(!posF || typeof VOR_BASELINE==='undefined' || !(VOR_BASELINE[posF]>0)){ kill(old); return; }
+  const rows=[];
+  tbody.querySelectorAll('tr').forEach(r=>{
+    if(r.classList.contains('rank-pickline') || r.classList.contains('rank-replacement-line')) return;
+    if(r.style && r.style.display==='none') return;
+    rows.push(r);
+  });
+  const flags=rows.map(r=>r.getAttribute('data-rank-vor')==='1');
+  const at=_rankReplacementBoundary(flags);
+  if(at<0){ kill(old); return; }
+  const startable=flags.filter(Boolean).length;
+  const el=(old && typeof old.remove==='function') ? old : document.createElement('tr');
+  el.id='rankReplacementLine'; el.className='rank-replacement-line';
+  const cols=(rows[0] && rows[0].children) ? rows[0].children.length : 12;
+  el.innerHTML=`<td colspan="${cols}"><span class="rank-repl-lbl">▼ replacement level · ${posF}${startable+1} (${(VOR_BASELINE[posF]||0).toFixed(0)} pts) — players below are roughly free on waivers</span></td>`;
+  try{ tbody.insertBefore(el, rows[at]); }catch(e){ kill(el); }
+}
+
 function applyRankingsFiltersInPlace(){
   if(typeof document==='undefined') return false;
   const tbody = document.querySelector('.rankings-table tbody');
@@ -1043,6 +1113,7 @@ function applyRankingsFiltersInPlace(){
   let shown = 0;
   const rows = tbody.querySelectorAll('tr');
   rows.forEach((row)=>{
+    if(row.classList.contains('rank-replacement-line')) return;   // repositioned below, not filtered
     if(row.classList.contains('rank-pickline')){
       // Pick-line markers become misleading during ad-hoc filtering.
       row.style.display = (tokens.length || hasMinFilters || posF || rkF) ? 'none' : '';
@@ -1073,6 +1144,7 @@ function applyRankingsFiltersInPlace(){
     const def = String(countEl.getAttribute('data-default-label')||'').trim();
     countEl.textContent = (tokens.length || hasMinFilters || posF || rkF) ? `${shown} players` : (def || `${shown} players`);
   }
+  rankingsUpdateReplacementLine();
   return true;
 }
 
@@ -1268,3 +1340,20 @@ function exportRankingsCSV(){
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ── VOR explainer (the column header's ⓘ) ───────────────────────────────────
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.rank_vor={title:'Value Over Replacement', body:()=>{
+    const b=(typeof VOR_BASELINE!=='undefined' && VOR_BASELINE) || {};
+    const line=['QB','RB','WR','TE'].filter(p=>b[p]>0).map(p=>`${p} ${b[p].toFixed(0)}`).join(' · ');
+    return `Points above the <b>last starter</b> your league shape forces someone to start —
+      the fairest way to compare players across positions. The baseline is rebuilt from your
+      projections whenever scoring, roster slots, or format change: dedicated starter slots
+      fill first, then FLEX demand goes to whichever position\u2019s next player scores most
+      (restricted flexes only draw from their eligible positions). Superflex assumes ~2.3 QBs
+      rostered per team, matching how those leagues actually draft.${line?`<br><br>Current
+      replacement level: <b>${line}</b> fantasy points.`:''}<br><br>+VOR = start-worthy;
+      0 or below = replaceable from waivers. On a position filter (sorted by FPTS or VOR),
+      the board draws the replacement line right in the table.`;
+  }};
+}

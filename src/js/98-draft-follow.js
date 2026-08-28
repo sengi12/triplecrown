@@ -616,6 +616,7 @@ function vonaOptionsPop(ev, pos){
   const pcls=(x)=> x>=0.6 ? 'vp-hi' : (x>=0.3 ? 'vp-mid' : 'vp-lo');
   const rows=v.pools[pos].slice(0,12).map((p,i)=>{
     const pa=v.pAvail && v.pAvail.get ? v.pAvail.get(pidOf(p)) : null;
+    const noAdp = typeof adpFor==='function' && adpFor(p)>=999;
     const open=(typeof pcardOnclick==='function')?`onclick="event.stopPropagation();${pcardOnclick(p.player_id||p.name,p.pos,p.team||'')}"`:'';
     return `<div class="vona-opt clickable-player" ${open} title="${escAttr(p.name)} — open player card">
       <span class="vona-opt-rank">${i+1}</span>
@@ -625,7 +626,7 @@ function vonaOptionsPop(ev, pos){
         <div class="vona-opt-sub">${escHtml(p.team||'FA')}${p.ecr!=null?` · ECR ${p.ecr}`:''}</div>
       </div>
       <span class="vona-vor">${(p.vor||0)>0?'+':''}${(p.vor||0).toFixed(0)}</span>
-      ${pa!=null?`<span class="vona-pct ${pcls(pa)}" title="Chance they're still on the board at your next pick">${pct(pa)}%</span>`:''}
+      ${pa!=null?`<span class="vona-pct ${pcls(pa)}" title="${noAdp?'No market ADP for this player \u2014 the availability model can\u2019t see him':'Chance they\u2019re still on the board at your next pick'}">${_vonaPctDisp(p,pa)}%</span>`:''}
     </div>`;
   }).join('');
   const div=document.createElement('div');
@@ -956,7 +957,7 @@ function renderTrackerPanel(viewSlot){
         // Line 1: the guy you'd take right now, and the market's odds he lasts to your next pick.
         // Line 2: who you'd most likely settle for instead — the concrete cost of waiting.
         const waitLine = r.bestNext && r.bestNext!==r.bestNow
-          ? `<div class="vona-wait">wait \u2192 <b>${nm(r.bestNext)}</b>
+          ? `<div class="vona-wait">wait \u2192 <b>${nm(r.bestNext)}</b>${typeof tcInjuryTag==='function'?tcInjuryTag(r.bestNext.player_id):''}
                <span class="vona-vor">${(r.bestNext.vor||0)>0?'+':''}${(r.bestNext.vor||0).toFixed(0)}</span>
                <span class="vona-pct ${pcls(r.nextShare)}">${pct(r.nextShare)}% likely available</span></div>`
           : `<div class="vona-wait vona-wait-safe">wait \u2192 <b>${nm(r.bestNow)}</b> likely still available</div>`;
@@ -965,9 +966,9 @@ function renderTrackerPanel(viewSlot){
           <span class="rt-slot ${slotClass(r.pos)}">${r.pos}</span>
           ${hs(r.bestNow)}
           <div class="vona-main">
-            <div class="vona-now"><b>${nm(r.bestNow)}</b>
+            <div class="vona-now"><b>${nm(r.bestNow)}</b>${typeof tcInjuryTag==='function'?tcInjuryTag(r.bestNow.player_id):''}
               <span class="vona-vor">${(r.bestNow.vor||0)>0?'+':''}${(r.bestNow.vor||0).toFixed(0)}</span>
-              <span class="vona-pct ${pcls(r.pHold)}" title="Chance they make it back to your next pick, per market ADP"><span class="vona-pct-long">${pct(r.pHold)}% chance they make it back</span><span class="vona-pct-short">${pct(r.pHold)}% back</span></span>${tag}</div>
+              <span class="vona-pct ${pcls(r.pHold)}" title="Chance they make it back to your next pick, per market ADP"><span class="vona-pct-long">${_vonaPctDisp(r.bestNow,r.pHold)}% chance they make it back</span><span class="vona-pct-short">${_vonaPctDisp(r.bestNow,r.pHold)}% back</span></span>${tag}</div>
             ${waitLine}
             ${r.why?`<div class="vona-why">${r.why}</div>`:''}
           </div>
@@ -991,9 +992,13 @@ function renderTrackerPanel(viewSlot){
       const noteTxt = (rec && !rec.need && needRows.length===0)
         ? `All starters filled \u2014 now drafting for value/depth.`
         : (alsoBig ? `Also watch <b>${alsoBig.pos}</b> (\u2212${alsoBig.dropoff}).` : '');
+      const kdefLine = v.kdefAlert
+        ? `<div class="vona-kdef">${TC_ICON('warning')} <b>${v.kdefAlert.picksLeft} pick${v.kdefAlert.picksLeft===1?'':'s'} left</b> \u00b7 ${v.kdefAlert.open.join(' + ')} still open \u2014 save room</div>`
+        : '';
       advisory=`<div class="vona-box">
         <div class="vona-head">${TC_ICON('chart')} On-the-clock advice ${v.onClock?'\u00b7 <b style="color:var(--accent)">YOU\u2019RE UP</b>':`\u00b7 next pick in ${v.gap}`} ${(typeof tcInfoBtn==='function')?tcInfoBtn('vona','How this advice works'):''}</div>
         <div class="vona-sub">${recTxt}${noteTxt?` \u00b7 ${noteTxt}`:''}</div>
+        ${kdefLine}
         <div class="vona-rows">${chips}</div>
 
       </div>`;
@@ -1096,6 +1101,17 @@ function picksUntilMyTurn(slot){
   }
   return null;
 }
+// Pick numbers already present in the feed (keeper drafts pre-populate future picks).
+// currentPickNo() already skips these when finding the clock; the pick WINDOWS must skip
+// them too — a keeper pick is not a live market pick, so counting it made every VONA
+// survival probability read low and drifted the board's pick lines in keeper leagues.
+function _draftFeedPickNos(){
+  const s=new Set();
+  for(const slot in draftPicksBySlot){
+    draftPicksBySlot[slot].forEach(pk=>{ if(pk && pk.pick_no>0) s.add(pk.pick_no); });
+  }
+  return s;
+}
 // ── VONA: Value Over Next Available ─────────────────────────────────────────
 // The on-the-clock advisory. Two different sources of truth, deliberately:
 //   • VALUE comes from YOUR board (VOR) — what a player is worth to you.
@@ -1139,24 +1155,36 @@ function adpSigma(adp){
   if(adp == null || adp >= 999) return 999;   // no market data -> effectively undraftable by ADP
   return Math.min(24, Math.max(3.5, adp * 0.18));
 }
-const VONA_SIMS = 240;          // sims per advisory (stable via the seeded RNG)
+const VONA_SIMS = 500;          // sims per advisory (stable via the seeded RNG; SE ≈ ±2.2% at p=0.5)
 const VONA_MKT_DEPTH = 40;      // per position, hard cap on who the market can realistically take
 let _vonaCache = { key:null, val:null };
 
-// The positions a given draft slot still needs (from that team's actual filled lineup).
-function vonaPosNeedsForSlot(slot){
+// What a draft slot still needs, in enough detail for the sim to reason with:
+//   set     — skill positions it can still use (dedicated + flex-eligible)
+//   ded     — COUNT of unfilled dedicated slots per position (a slot with one open QB slot
+//             must not draft two QBs inside one simulated window)
+//   flexSet — positions usable only via a flex slot
+//   kdOpen  — unfilled K/DEF starter slots (real late-round demand the skill-only market
+//             model used to ignore entirely)
+//   remaining — picks this slot has left in the whole draft
+function _vonaSlotProfile(slot){
   const picks = (draftPicksBySlot[slot]) || [];
   const { needs } = fillLineup(picks);
-  const set = new Set();
+  const set = new Set(); const ded = {QB:0,RB:0,WR:0,TE:0}; const flexSet = new Set();
+  let kdOpen = 0;
   needs.forEach(s=>{
-    if(s==='QB'||s==='RB'||s==='WR'||s==='TE') set.add(s);
+    if(s==='QB'||s==='RB'||s==='WR'||s==='TE'){ set.add(s); ded[s]++; }
+    else if(s==='K'||s==='DEF'){ kdOpen++; }
     else {
       const elig = FLEX_ELIGIBLE[s];
-      if(elig) elig.forEach(p=>set.add(p));
+      if(elig) elig.forEach(p=>{ set.add(p); flexSet.add(p); });
     }
   });
-  return set;
+  const { rounds } = draftParams();
+  const remaining = Math.max(1, rounds - picks.length);
+  return { set, ded, flexSet, kdOpen, remaining };
 }
+function vonaPosNeedsForSlot(slot){ return _vonaSlotProfile(slot).set; }
 
 // Monte-Carlo the pick window. Returns per-player survival probability and, per position,
 // how often each player ends up being the best-VOR guy left on YOUR board.
@@ -1173,7 +1201,10 @@ function vonaSimulate(avail, upcomingSlots, pools){
   const POSL=['QB','RB','WR','TE'];
   const pidOf = (p)=> p.player_id || p.name;
   const nUp = upcomingSlots.length;
-  const needsBySlot = upcomingSlots.map(s=>vonaPosNeedsForSlot(s));
+  const profiles = upcomingSlots.map(s=>_vonaSlotProfile(s));
+  // A slot's PREVIOUS appearance in this window (snake turns give every other team two picks
+  // in my widest windows) — used to stop one team double-drafting a single dedicated need.
+  const prevOcc = upcomingSlots.map((s,i)=> upcomingSlots.slice(0,i).lastIndexOf(s));
   // At most `nUp` players come off the board, so we never need more than nUp+10 deep.
   const depth = Math.min(VONA_MKT_DEPTH, nUp + 10);
 
@@ -1207,10 +1238,12 @@ function vonaSimulate(avail, upcomingSlots, pools){
 
   // Scratch reused across sims.
   const order={}, noisy={}, ptr={};
+  const pickedPos = new Array(nUp);   // what each window pick took this sim ('KD' | pos | undefined)
   POSL.forEach(pos=>{ order[pos]=new Int32Array(mkt[pos].length); noisy[pos]=new Float64Array(mkt[pos].length); });
 
   for(let s=0; s<VONA_SIMS; s++){
     taken.fill(0);
+    pickedPos.fill(null);
     // Draw one noisy market position per candidate, then sort that position by it.
     POSL.forEach(pos=>{
       const n=mkt[pos].length, no=noisy[pos], od=order[pos], ad=mktAdp[pos], sg=mktSig[pos];
@@ -1222,11 +1255,27 @@ function vonaSimulate(avail, upcomingSlots, pools){
     });
     // Walk the window: each team takes its lowest noisy-ADP player among positions it needs.
     for(let i=0;i<nUp;i++){
-      const need=needsBySlot[i];
+      const prof=profiles[i];
+      const need=prof.set;
+      const prev=prevOcc[i];
+      const prevPick = prev>=0 ? pickedPos[prev] : null;
+      // K/DEF exodus: a team with open K/DEF starter slots spends SOME late picks on them —
+      // the skill-only model both starved those picks (pessimistic survival) and treated a
+      // team whose ONLY remaining needs were K/DEF as an unconstrained skill drafter (the
+      // opposite of reality). Hazard = open K/DEF slots over picks remaining, so it ramps to
+      // certainty as the draft runs out of room. A K/DEF pick removes no skill player.
+      let kdOpen = prof.kdOpen - (prevPick==='KD' ? 1 : 0);
+      if(kdOpen>0){
+        const pKd = Math.min(0.95, kdOpen / prof.remaining);
+        if(rnd() < pKd){ pickedPos[i]='KD'; continue; }
+      }
       let bestPos=null, best=Infinity;
       for(let c=0;c<POSL.length;c++){
         const pos=POSL[c];
         if(need.size && !need.has(pos)) continue;
+        // This slot already took its single dedicated `pos` earlier in the window and has no
+        // flex route to another one — a second is off the table for THIS sim.
+        if(prevPick===pos && prof.ded[pos]<=1 && !prof.flexSet.has(pos)) continue;
         const k=ptr[pos];
         if(k>=mkt[pos].length) continue;
         const v=noisy[pos][order[pos][k]];
@@ -1235,6 +1284,7 @@ function vonaSimulate(avail, upcomingSlots, pools){
       if(bestPos!=null){
         taken[ mktIds[bestPos][ order[bestPos][ ptr[bestPos] ] ] ] = 1;
         ptr[bestPos]++;
+        pickedPos[i]=bestPos;
       }
     }
     // Tally survival + who's the best VOR left at each position.
@@ -1257,6 +1307,8 @@ function vonaSimulate(avail, upcomingSlots, pools){
     pAvail.set(pidOf(p), inMarket[i] ? survCount[i]/VONA_SIMS : 1);
   });
   const expVor = {};
+  // Divided by SIMS, not by survivor count, on purpose: a sim where the position emptied
+  // means waiting got you nothing — that zero belongs in the expectation.
   POSL.forEach(pos=>{ expVor[pos] = vorSum[pos]/VONA_SIMS; });
   return { pAvail, bestCount, expVor, pidOf };
 }
@@ -1315,10 +1367,11 @@ function vonaPosStructure(pools){
                pressure: supply>0 ? (demand[pos]||0)/supply : (demand[pos]>0?3:0) };
   });
   // Flat = "the value has dropped off and the rest aren't really different from each other",
-  // measured on evidence rather than roster counts. Two conditions, both required:
-  //   • the ENTIRE remaining startable tier spans little value (VOR is points-over-replacement,
-  //     so it's directly comparable across positions — a tier spanning <14 VOR is roughly one
-  //     point per game from top to bottom, i.e. interchangeable), and
+  // measured on evidence rather than roster counts. Two conditions, both required —
+  // INTERCHANGEABLE and SUPPLY — where interchangeable is itself an either/or:
+  //   • the remaining startable tier is interchangeable: its total span is small (<14 VOR ≈
+  //     one point per game top to bottom) OR its per-player step is tiny (<1.5 VOR — a wide
+  //     but gently-sloped pool punts just as safely), and
   //   • supply comfortably outruns what the league still needs, so waiting still lands you one.
   // Deliberately NOT relative to the steepest position: late in a draft the other positions
   // exhaust and their step collapses to 0, which made a relative test stop firing exactly when
@@ -1339,14 +1392,40 @@ function vonaPosStructure(pools){
 // SOMEONE, so a player's true marginal worth is his value over the replacement who'd
 // otherwise occupy that slot. Using raw points instead would hand every QB a ~350-point
 // "gain" in a 1QB league purely because quarterbacks score more, which is not an edge.
+// Value-optimal starters for a hypothetical roster: best-VOR-first, dedicated slots before
+// flex (mirrors laFillStarters). The ORDER-greedy fillLineup is right for rendering what you
+// actually drafted, but for pricing a candidate it benched any RB whose flex spot was already
+// occupied by a weaker WR — scoring a real lineup upgrade as zero gain.
+function _vonaOptimalLineupVor(picks, vorOf){
+  const slots=draftLineup.map(s=>({slot:s, player:null}));
+  const sorted=[...picks].sort((a,b)=>(vorOf(b)||0)-(vorOf(a)||0));
+  sorted.forEach(pk=>{
+    let idx=slots.findIndex(f=>!f.player && f.slot===pk.pos);
+    if(idx<0) idx=slots.findIndex(f=>!f.player && (FLEX_ELIGIBLE[f.slot]||[]).includes(pk.pos));
+    if(idx>=0) slots[idx].player=pk;
+  });
+  return slots.reduce((sum,f)=> sum + (f.player ? Math.max(0, vorOf(f.player)||0) : 0), 0);
+}
 function vonaLineupGain(myPicks, cand, vorOf){
-  const val = picks => fillLineup(picks).slots
-    .reduce((sum,f)=> sum + (f.player ? Math.max(0, vorOf(f.player)||0) : 0), 0);
-  const before = val(myPicks);
-  const after  = val(myPicks.concat([{ pos:cand.pos, name:cand.name, player_id:cand.player_id }]));
+  const before = _vonaOptimalLineupVor(myPicks, vorOf);
+  const after  = _vonaOptimalLineupVor(myPicks.concat([{ pos:cand.pos, name:cand.name, player_id:cand.player_id }]), vorOf);
   return Math.max(0, +(after-before).toFixed(1));
 }
 
+// Definitely-out-for-the-year players (IR season-enders) shouldn't headline "take him NOW" —
+// they stay in the pools and the options popup (with their tag), they just can't be bestNow.
+function _vonaSeasonOut(p){
+  if(!p || typeof tcInjuryInfo!=='function') return false;
+  try{ const inj=tcInjuryInfo(p.player_id); return !!(inj && inj.seasonOut); }catch(e){ return false; }
+}
+// Displayed availability %: players outside the ADP universe are "100% available" only in the
+// sense that the market model can't see them — cap the display at 99 so it never reads as a
+// guarantee for a hyped name the ADP source simply lacks.
+function _vonaPctDisp(p, x){
+  const v=Math.round((x||0)*100);
+  if(v>=100 && p && typeof adpFor==='function' && adpFor(p)>=999) return 99;
+  return v;
+}
 function computeVONA(){
   if(mySlot==null) return null;
   let gap = picksUntilMyTurn(mySlot);              // picks between now and my next turn
@@ -1360,7 +1439,11 @@ function computeVONA(){
     const myUps = myUpcomingPickNumbers(mySlot);
     const endPick = onClock ? (myUps[1]!=null?myUps[1]:startPick) : (myUps[0]!=null?myUps[0]:startPick);
     const from = onClock ? startPick+1 : startPick;   // on the clock: picks AFTER mine
-    for(let n=from; n<endPick; n++) upcomingSlots.push(slotOnClock(n, teams, type, reversalRound));
+    const feed = _draftFeedPickNos();                 // keeper picks are already spent
+    for(let n=from; n<endPick; n++){
+      if(feed.has(n)) continue;
+      upcomingSlots.push(slotOnClock(n, teams, type, reversalRound));
+    }
     gap = upcomingSlots.length;
   }
   // Cache: the sim is deterministic for a given draft state, so only redo it when that changes.
@@ -1377,7 +1460,7 @@ function computeVONA(){
   avail.forEach(p=>{ if(pools[p.pos]) pools[p.pos].push(p); });
   Object.keys(pools).forEach(k=>pools[k].sort((a,b)=>(b.vor||0)-(a.vor||0)));
   const bestNow={};
-  ['QB','RB','WR','TE'].forEach(pos=>{ bestNow[pos]=pools[pos][0]||null; });
+  ['QB','RB','WR','TE'].forEach(pos=>{ bestNow[pos]=pools[pos].find(p=>!_vonaSeasonOut(p)) || pools[pos][0] || null; });
 
   const sim = vonaSimulate(avail, upcomingSlots, pools);
   const byId = new Map(avail.map(p=>[sim.pidOf(p), p]));
@@ -1468,7 +1551,18 @@ function computeVONA(){
           : (st.pressure>=1.15 ? `${st.supply} left \u00b7 ${Math.round(st.demand)} slots` : '');
   });
   out.sort((a,b)=> b.score-a.score);
-  const res = { gap, rows: out, onClock, struct, pools, pAvail: sim.pAvail };
+  // My own K/DEF endgame: when my remaining LIVE picks barely cover my open K/DEF starter
+  // slots, say so — the four skill rows above will happily spend every last pick otherwise.
+  let kdefAlert=null;
+  {
+    const kdList = myNeeds.filter(s=>s==='K'||s==='DEF');
+    if(kdList.length){
+      const feed=_draftFeedPickNos();
+      const picksLeft = myUpcomingPickNumbers(mySlot).filter(n=>!feed.has(n)).length;
+      if(picksLeft>0 && picksLeft <= kdList.length+1) kdefAlert={ open:kdList, picksLeft };
+    }
+  }
+  const res = { gap, rows: out, onClock, struct, pools, pAvail: sim.pAvail, kdefAlert };
   _vonaCache = { key:cacheKey, val:res };
   return res;
 }

@@ -415,10 +415,27 @@ function laPickValFor(season,round){ return laIsRedraft() ? 0 : laPickVal(season
 // Player thumbnail. Team defenses have no headshot (they're not people and aren't in the
 // Sleeper player DB), so they render the club logo instead — Sleeper keys a DEF by its team
 // abbreviation, which is exactly what NFL_LOGO wants.
+// Resolve a defense's TEAM CODE from however it's named — "PHI", "Philadelphia Eagles",
+// "philadelphia eagles dst" (the VOR map's normalized keys) all land on PHI. Defenses have
+// no headshot; the club logo IS the icon, so a missing code means a blank row.
+function laDefTeamCode(name){
+  const raw=String(name||'').trim();
+  if(!raw) return '';
+  const up=raw.toUpperCase();
+  if(/^[A-Z]{2,3}$/.test(up) && typeof TEAM_NAMES!=='undefined' && TEAM_NAMES[up]) return up;
+  const n=ecrNormName(raw);
+  if(Array.isArray(TEAMS)){
+    for(const c of TEAMS){
+      if(n.startsWith(ecrNormName(teamDisplayName(c)))) return c;
+    }
+  }
+  return '';
+}
 function laPlayerImg(p, cls){
   cls = cls || 'player-headshot';
   const isDef = p.pos==='DEF';
-  const code = isDef ? (p.team || p.id || p.player_id) : null;
+  let code = isDef ? (p.team || p.id || p.player_id) : null;
+  if(isDef && !code) code = laDefTeamCode(p.name);   // waiver rows arrive team-less
   if(isDef && code) return imgTag(NFL_LOGO(String(code).toUpperCase()), cls+' la-def-logo');
   return imgTag(hsPack({player_id:p.player_id||p.id, name:p.name, pos:p.pos}), cls);
 }
@@ -1594,12 +1611,38 @@ function laBestAvailView(s){
     // Redraft: the free-agent universe is everyone our projections cover (plus K/DEF), ranked
     // by VOR. Walking the dynasty chart instead would both miss K/DEF entirely and rank the
     // waiver wire by long-term worth — the wrong question when the season is all there is.
+    //
+    // K/DEF metadata: the VOR map is keyed by normalized strings and registers a team-code
+    // ALIAS per defense — walked raw, a defense rendered as a lowercase, icon-less row, its
+    // alias rendered as a DUPLICATE row, and a rostered D/ST could sneak back in through the
+    // alias. Resolve each key through the snapshot's kdef block (real names + team codes).
+    const kdefMeta=new Map();
+    ((s&&s.kdef)||[]).forEach(x=>{
+      if(!x || !x.name || !x.pos) return;
+      const meta={name:x.name, team:String(x.team||'').toUpperCase(), pos:x.pos};
+      kdefMeta.set(ecrNormName(x.name)+'|'+x.pos, meta);
+      if(x.pos==='DEF' && x.team) kdefMeta.set(ecrNormName(x.team)+'|DEF', meta);
+    });
+    const seenDef=new Set();
     laVorMap().forEach((vor,key)=>{
       const i=key.lastIndexOf('|'); if(i<0) return;
       const k=key.slice(0,i), pos=key.slice(i+1);
-      if(rostered.has(k)) return;
       if(posF!=='ALL' && pos!==posF) return;
-      rows.push({name:k, pos, team:'', v:Math.max(0,Math.round(vor*LA_VOR_SCALE)),
+      let name=k, team='';
+      const meta=(pos==='K'||pos==='DEF') ? kdefMeta.get(key) : null;
+      if(meta){
+        name=meta.name; team=meta.team;
+        if(pos==='DEF'){
+          const code=team || laDefTeamCode(name);
+          if(code){ if(seenDef.has(code)) return; seenDef.add(code); team=code; }
+        }
+        if(rostered.has(ecrNormName(name))) return;
+      } else if(pos==='DEF'){
+        const code=laDefTeamCode(k);
+        if(code){ if(seenDef.has(code)) return; seenDef.add(code); team=code; name=`${teamDisplayName(code)} D/ST`; }
+      }
+      if(rostered.has(k)) return;
+      rows.push({name, pos, team, v:Math.max(0,Math.round(vor*LA_VOR_SCALE)),
                  fpts:pm.get(key)||0});
     });
     // Prefer the projection list's display name/team where we have it (the VOR map is keyed
@@ -1638,8 +1681,8 @@ function laBestAvailView(s){
       ${top.map((r,i)=>`<div class="la-ba-row">
         <span class="la-ba-rk">${i+1}</span>
         <span class="rt-slot ${slotClass(r.pos)}">${r.pos}</span>
-        <span class="clickable-player" onclick="${pcardOnclick(r.name,r.pos,r.team||'')}">${laPlayerImg(r)}</span>
-        <span class="la-ba-name clickable-player" onclick="${pcardOnclick(r.name,r.pos,r.team||'')}">${escHtml(r.name)}</span>
+        <span class="clickable-player" onclick="${pcardOnclick(r.pos==='DEF'?(r.team||r.name):r.name,r.pos,r.team||'')}">${laPlayerImg(r)}</span>
+        <span class="la-ba-name clickable-player" onclick="${pcardOnclick(r.pos==='DEF'?(r.team||r.name):r.name,r.pos,r.team||'')}">${escHtml(r.name)}</span>
         <span class="la-ba-team">${escHtml(r.team)}</span>
         <span class="la-ba-val">${noteWrapHtml(String(r.v), { label:'Value', value:String(r.v), source:'league_analyzer_best_avail', statKey:'value', context:`League Analyzer best available · ${posF}`, player:noteTargetFromArgs(r.name,r.pos,r.team||''), team:r.team||'' }, 'note-tag-hit')}</span>
         <span class="la-ba-fpts">${noteWrapHtml(escHtml(r.fpts?r.fpts.toFixed(0):'–'), { label:'Projected Points', value:r.fpts?r.fpts.toFixed(0):'–', source:'league_analyzer_best_avail', statKey:'proj', context:`League Analyzer best available · ${posF}`, player:noteTargetFromArgs(r.name,r.pos,r.team||''), team:r.team||'' }, 'note-tag-hit')}</span></div>`).join('')}

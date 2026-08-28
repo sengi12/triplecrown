@@ -601,42 +601,51 @@ function leagueStarterCounts(){
   }
   const base = { QB:1, RB:2, WR:2, TE:1 };
   let flex=0, superflex=0;
+  // Flex demand PER TYPE: a WRRB or REC flex must never hand its demand to an ineligible
+  // position (folding them into generic FLEX let RBs absorb a WR/TE-only slot's demand,
+  // deflating the WR/TE baselines in exactly the leagues built around that restriction).
+  let flexTypes={FLEX:0, WRRB_FLEX:0, REC_FLEX:0};
   if(lineup){
-    const c={QB:0,RB:0,WR:0,TE:0,FLEX:0,SUPER_FLEX:0};
-    lineup.forEach(s=>{ if(c[s]!=null) c[s]++; else if(s==='WRRB_FLEX'||s==='REC_FLEX') c.FLEX++; });
+    const c={QB:0,RB:0,WR:0,TE:0,FLEX:0,WRRB_FLEX:0,REC_FLEX:0,SUPER_FLEX:0};
+    lineup.forEach(s=>{ if(c[s]!=null) c[s]++; });
     // Use the REAL counts. A zero is meaningful (e.g. a superflex-only lineup with no
     // dedicated QB slot) — the old `c.QB||1` defaults masked that.
     base.QB=c.QB; base.RB=c.RB; base.WR=c.WR; base.TE=c.TE;
-    flex=c.FLEX; superflex=c.SUPER_FLEX;
+    flexTypes={FLEX:c.FLEX, WRRB_FLEX:c.WRRB_FLEX, REC_FLEX:c.REC_FLEX};
+    flex=c.FLEX+c.WRRB_FLEX+c.REC_FLEX; superflex=c.SUPER_FLEX;
   } else {
     teams = 12;
     flex  = 1;
+    flexTypes={FLEX:1, WRRB_FLEX:0, REC_FLEX:0};
     if(rankFormat==='superflex' || rankFormat==='dynasty_superflex') superflex=1;
   }
-  return { teams: teams||12, base, flex, superflex };
+  return { teams: teams||12, base, flex, flexTypes, superflex };
 }
 function computeVOR(list){
   if(!list||!list.length) return;
-  const { teams, base, flex, superflex } = leagueStarterCounts();
+  const { teams, base, flexTypes, superflex } = leagueStarterCounts();
   // Pools sorted by projected points (best first) per position.
   const byPos={QB:[],RB:[],WR:[],TE:[]};
   list.forEach(p=>{ if(byPos[p.pos]) byPos[p.pos].push(p); });
   Object.keys(byPos).forEach(k=>byPos[k].sort((a,b)=>b.fpts-a.fpts));
   // Fill dedicated starter slots first.
   const used={QB:base.QB*teams, RB:base.RB*teams, WR:base.WR*teams, TE:base.TE*teams};
-  // FLEX demand (RB/WR/TE): consume best remaining across those positions.
-  let flexLeft=flex*teams;
+  // FLEX demand: consume the best remaining player among the positions ELIGIBLE for each
+  // flex type. Restricted types run first so the generic flex absorbs whatever's left.
   const flexIdx={RB:used.RB, WR:used.WR, TE:used.TE};
-  while(flexLeft>0){
-    // pick the position whose NEXT available player has the highest fpts
-    let bestPos=null, bestVal=-Infinity;
-    ['RB','WR','TE'].forEach(pos=>{
-      const nx=byPos[pos][flexIdx[pos]];
-      if(nx && nx.fpts>bestVal){ bestVal=nx.fpts; bestPos=pos; }
-    });
-    if(!bestPos) break;
-    flexIdx[bestPos]++; used[bestPos]++; flexLeft--;
-  }
+  [['WRRB_FLEX',['RB','WR']], ['REC_FLEX',['WR','TE']], ['FLEX',['RB','WR','TE']]].forEach(([ft, eligible])=>{
+    let flexLeft=((flexTypes&&flexTypes[ft])||0)*teams;
+    while(flexLeft>0){
+      // pick the position whose NEXT available player has the highest fpts
+      let bestPos=null, bestVal=-Infinity;
+      eligible.forEach(pos=>{
+        const nx=byPos[pos][flexIdx[pos]];
+        if(nx && nx.fpts>bestVal){ bestVal=nx.fpts; bestPos=pos; }
+      });
+      if(!bestPos) break;
+      flexIdx[bestPos]++; used[bestPos]++; flexLeft--;
+    }
+  });
   // SUPERFLEX demand (QB/RB/WR/TE): usually consumed by QBs.
   let sfLeft=superflex*teams;
   const sfIdx={QB:used.QB, RB:used.RB, WR:used.WR, TE:used.TE};
