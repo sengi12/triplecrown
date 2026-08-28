@@ -78,13 +78,18 @@ function renderTcModel(pid){
     const lg = calcFpts(lgRow) / gp;
     if(lg > 1){ base = lg; fpg = lg * (tc.fpg / tc.base); unit = 'PTS/G · your scoring'; }
   }
-  const baseTxt = base != null
-    ? `<span class="tc-md-src">Sleeper <b>${Number(base).toFixed(1)}</b></span><span class="tc-md-sep">vs</span>`
+  // Source ICONS carry the "whose number" cue (words made the row wrap on phones); if an
+  // icon can't load (fully offline bake without the images dir) it degrades to a text tag.
+  const icoTc = `<img src="${typeof TC_APP_ICON!=='undefined'?TC_APP_ICON:'images/app-icon.png'}" class="tc-md-ico" alt="TripleCrown model" onerror="if(this.parentNode)this.outerHTML='<b class=tc-md-srcword>TC</b>'">`;
+  const icoSl = `<img src="${typeof SLEEPER_ICON!=='undefined'?SLEEPER_ICON:'images/sleeper.png'}" class="tc-md-ico" alt="Sleeper baseline" onerror="if(this.parentNode)this.outerHTML='<b class=tc-md-srcword>SLPR</b>'">`;
+  const slPart = base != null
+    ? `<span class="tc-md-sep tc-md-sep-in">vs</span><span class="tc-md-src tc-md-src2" title="Sleeper's baseline projection">${icoSl}<span class="tc-md-colon">:</span><b>${Number(base).toFixed(1)}</b><span class="tc-md-unit">FPTS/G</span></span>`
     : '';
-  return `<div class="tc-model-row" title="TC model: our own projection of next-season points per game, next to Sleeper's baseline">
-    <div class="cfb-rel-label">TC MODEL ${(typeof tcInfoBtn==='function') ? tcInfoBtn('tcmodel','How this number is built') : ''}</div>
-    <div class="tc-md-vals">${baseTxt}<span class="tc-md-src">model <b>${Number(fpg).toFixed(1)}</b></span><span class="tc-md-unit">${unit}</span></div>
-    ${chip}
+  const sepOut = base != null ? `<span class="tc-md-sep tc-md-sep-out">vs</span>` : '';
+  return `<div class="tc-model-row" title="Projected fantasy points per game (${unit}) — the TC model next to Sleeper's baseline">
+    <div class="cfb-rel-label">PROJECTIONS ${(typeof tcInfoBtn==='function') ? tcInfoBtn('tcmodel','How this number is built') : ''}</div>
+    <div class="tc-md-vals"><span class="tc-md-src" title="TC model projection">${icoTc}<span class="tc-md-colon">:</span><b>${Number(fpg).toFixed(1)}</b><span class="tc-md-unit">FPTS/G</span></span>${slPart}</div>
+    ${sepOut}${chip}
   </div>`;
 }
 

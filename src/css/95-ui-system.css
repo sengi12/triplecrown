@@ -346,7 +346,7 @@ input.sl::-moz-range-thumb{width:18px;height:18px;border:2.5px solid var(--surfa
 .ts-rankings-preview-wrap{max-height:calc(100vh - 380px);max-height:calc(100dvh - 380px);}
 
 /* College prospect: the fantasy-relevance headline row + combine section */
-.cfb-rel-row{display:flex;align-items:center;gap:10px;padding:9px 10px;margin-bottom:10px;
+.cfb-rel-row{display:flex;align-items:center;gap:10px;padding:9px 10px;margin-bottom:10px;min-height:40px;
   background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md);}
 .cfb-rel-label{font-size:10px;font-weight:900;letter-spacing:.08em;color:var(--text);
   white-space:nowrap;display:flex;align-items:center;gap:6px;}
@@ -360,21 +360,36 @@ input.sl::-moz-range-thumb{width:18px;height:18px;border:2.5px solid var(--surfa
 
 /* TC model: the veterans' counterpart of the PROSPECT row — Sleeper baseline vs our model,
    one agree/disagree chip. Shares the cfb-rel-row visual family on purpose. */
-.tc-model-row{display:flex;align-items:center;gap:10px;padding:9px 10px;margin-bottom:10px;
+.tc-model-row{display:flex;align-items:center;gap:10px;padding:9px 10px;
+  /* Same box as the PROSPECT row below it: the prospect row lives inside .cfb-panel's 12px
+     padding, so this one takes 12px side margins — the two read as one aligned family. */
+  margin:0 12px 10px;min-height:40px;
   background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md);}
+.tc-md-ico{width:18px;height:18px;border-radius:5px;display:inline-block;vertical-align:-4px;}
+.tc-md-colon{font-weight:900;color:var(--muted);margin-right:2px;}
+.tc-md-srcword{font-size:9.5px;font-weight:900;color:var(--muted);letter-spacing:.05em;}
 .tc-md-vals{flex:1;display:flex;align-items:baseline;gap:7px;min-width:0;flex-wrap:wrap;}
 .tc-md-src{font-size:12px;font-weight:700;color:var(--muted);white-space:nowrap;}
 .tc-md-src b{font-size:15px;font-weight:900;color:var(--text);}
 .tc-md-sep{font-size:10px;font-weight:800;color:var(--muted);}
+.tc-md-sep-out{display:none;}
 .tc-md-unit{font-size:8.5px;font-weight:800;letter-spacing:.06em;color:var(--muted);}
-.tc-md-chip{font-size:11px;font-weight:900;white-space:nowrap;padding:3px 8px;border-radius:999px;}
+.tc-md-chip{font-size:11px;font-weight:900;white-space:nowrap;padding:3px 8px;border-radius:999px;margin-left:auto;}
 .tc-md-up{color:var(--success);background:color-mix(in srgb,var(--success) 14%,transparent);}
 .tc-md-dn{color:var(--danger);background:color-mix(in srgb,var(--danger) 14%,transparent);}
 .tc-md-eq{color:var(--muted);background:var(--surface3);border:1px solid var(--border);}
 @media (max-width:760px){
   .cfb-rel-row{gap:8px;padding:8px 10px;}
   .cfb-rel-val{min-width:40px;font-size:14px;}
-  .tc-model-row{gap:8px;padding:8px 10px;}
-  .tc-md-src b{font-size:14px;}
+  .tc-model-row{gap:8px;padding:8px 10px;min-height:36px;}
+  .cfb-rel-row{min-height:36px;}
+  /* Phones: the two projections stack; "vs" steps OUTSIDE the stack and sits vertically
+     centered on the chip's line — after the icons/values, in line with the ▲/▼ verdict. */
+  .tc-md-vals{flex:0 1 auto;display:block;width:max-content;}
+  .tc-md-sep-in{display:none;}
+  .tc-md-sep-out{display:block;font-size:9.5px;opacity:.85;}
+  .tc-md-src2{display:block;margin-top:3px;}
+  .tc-md-src{font-size:11.5px;}
+  .tc-md-src b{font-size:15px;}
   .tc-md-chip{font-size:10px;padding:2px 7px;}
 }

@@ -38,7 +38,8 @@ chk(app.tcModelRec('9999')===null, 'unknown pid -> null');
 
 console.log('=== render: disagree low ===');
 const low=app.renderTcModel('1001');
-chk(low.includes('TC MODEL'), 'row carries the TC MODEL label');
+chk(low.includes('PROJECTIONS'), 'row carries the PROJECTIONS label');
+chk(low.includes('tc-md-ico') && low.includes('sleeper.png') && low.includes('app-icon.png'), 'both source icons render (TC + Sleeper)');
 chk(low.includes('15.4') && low.includes('13.2'), 'shows Sleeper baseline and model FPG');
 chk(low.includes('PPR/G'), 'unit is explicit (PPR per game)');
 chk(low.includes('tc-md-dn') && low.includes('▼'), 'model-below-baseline gets the down chip');
@@ -92,7 +93,7 @@ app.setSeed({ARI:{RB:[{name:'First Round Rook', player_id:'5001', pos:'RB', team
   rushing_yards:900, rushing_tds:5, receptions:45, receiving_yards:350, receiving_tds:2,
   tc:{fpg:9.4, base:10.2, in:{rk:1, pick:3, prob:0.62}}}]}});
 const rk1=app.renderTcModel('5001');
-chk(rk1.includes('TC MODEL') && rk1.includes('your scoring'), 'rookie tc block renders the row with league conversion');
+chk(rk1.includes('PROJECTIONS') && rk1.includes('your scoring'), 'rookie tc block renders the row with league conversion');
 app.setPcardState({pid:'5001'});
 const rkInfo=app.TC_INFO_BOOK.tcmodel.body();
 chk(rkInfo.includes('Rookie projection') && rkInfo.includes('pick 3') && rkInfo.includes('62%'),

@@ -56,7 +56,7 @@ def build_site(dest, minify):
     os.makedirs(os.path.join(dest, "seeds"))
     os.makedirs(os.path.join(dest, "images"))
     shutil.copy(os.path.join(ROOT, "index.html"), os.path.join(dest, "index.html"))
-    for name in ("app-icon.png", "ktc.png"):
+    for name in ("app-icon.png", "ktc.png", "sleeper.png"):
         src = os.path.join(ROOT, "images", name)
         if os.path.exists(src):
             shutil.copy(src, os.path.join(dest, "images", name))

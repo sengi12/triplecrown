@@ -37,7 +37,7 @@ jobs:
           cp index.html _site/index.html
           # Only the images the APP actually references. The rest of images/ is README
           # screenshots (~2MB), which GitHub renders from the repo, not from Pages.
-          cp images/app-icon.png images/ktc.png _site/images/
+          cp images/app-icon.png images/ktc.png images/sleeper.png _site/images/
           cp seeds/*.json.gz _site/seeds/
           cp manifest.webmanifest _site/manifest.webmanifest
           # Stamp the service worker's cache name with this commit so a deploy retires the old
