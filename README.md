@@ -327,14 +327,36 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] Google Play Store
 - [ ] Apple iOS Store
 - [ ] Generate my own proprietary projections based on all the metrics we have
+- [ ] TC model: add opponent-strength / strength-of-schedule as a projection input (era-split tested) —
+  SOS is display-only today, and only the in-season lineup optimizer adjusts for defense-vs-position
+- [ ] TC model: add a coaching/coordinator-change signal (offense and defense) as a model feature —
+  the current `env_*` features are prior-season team output, not a change flag, and scheme carryover
+  is display-only
+- [ ] TC model: measure and calibrate systematic under-projection — add signed mean error /
+  calibration-slope per position and decile to `proj_eval.py`, and diagnose the QB `td_oe`
+  construction (rush+rec TDs differenced against *total* expected TDs incl. passing)
+- [ ] Bring-your-own-model: let users plug in an OpenAI-compatible endpoint (e.g. OpenRouter) for AI
+  features (no LLM integration exists yet; the league-gateway Edge Function could host the proxy route)
+- [ ] AI deep-analysis fan-out: a lead "ranker" model orchestrating specialized sub-agents (offense,
+  defense, player context, coaching, deep stats) rolled into an in-depth TripleCrown rank
 ### UI / UX
 ### Playercards
 ### Live Draft
 - [ ] reach out to Sleeper
+- [ ] "TripleCrown Rating" column on the draft board: blend draft rank with team-context signals
+  (landing spot / vacated opportunity, open target share, coaching, other analysts' ranks) into one
+  composite — the TC column today is raw projected points, and the context lives only on player
+  cards and team views
+- [ ] Live league-relative team rank while drafting — wire the League Analyzer's team-score engine
+  to live draft rosters (`draftPicksBySlot`) and show "your team ranks Nth of M" in the roster drawer
+- [ ] "Stuck between two players" button: on-demand AI deep comparison of two players (pairs with
+  the AI fan-out item under New Features)
 ### League Analyzer
 - [ ] In-Season Tools:
   - [ ] Implement future schedule on player cards (the schedule data now ships in the in-season sidecar)
   - [ ] ESPN live matchup scoring (mMatchupScore through the gateway)
+  - [ ] Player-level weekly matchup-rankings view — the Defense pane ranks defenses and roster rows
+    show "vs BUF (3rd)", but nothing ranks the player pool by matchup quality for the week
 ### Audit
 ### Import Projections
 ### Adv Metrics
