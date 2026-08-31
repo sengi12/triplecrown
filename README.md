@@ -60,7 +60,7 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
 </div>
 
 - **Live draft follow.** Point it at a Sleeper draft (or one-tap link the league you already synced in the League Analyzer) and drafted players are hidden from your board in real time — hide-drafted is on by default for a clean board. A glowing **LIVE** pill keeps the follow out of your way until you tap it (being on the clock always shows), pick lines mark exactly where your turns land, a sortable **ADP** column (matched to your scoring format's market board) sits beside your ranks, and the roster tracker is a slide-up drawer: drag it open, keep pulling to maximize, flick down to close.
-- **VOR and VONA roster advice.** Your projections drive VOR (Value Over Replacement — what a player is worth against what's left at his position under your league's exact lineup) and VONA (Value Over Next Available — a Monte-Carlo sim of the picks before your next turn, using the market's ADP for your format). The on-the-clock advisory shows the best pick at every position with headshots, the odds each player makes it back to you, and a ▾ popover listing the next viable options at that position.
+- **VOR and VONA roster advice.** Your projections drive VOR (Value Over Replacement — what a player is worth against what's left at his position under your league's exact lineup) and VONA (Value Over Next Available — a Monte-Carlo sim of the picks before your next turn, using the market's ADP for your format). The on-the-clock advisory ranks positions by what the pick does for your weekly starting lineup — value added now vs what the position is expected to hand you at your next turn — under a pick budget that weighs every remaining pick against unfilled starters, RB/WR depth, and your K/DEF slots, so following the headline never strands a roster hole (the decision core is tuned and validated by full mock-draft Monte Carlo in `tools/draft_sim.py`, which can also replay the advisory itself via `--strategy`). Each position row shows the best pick with headshots, the odds each player makes it back to you, and a ▾ popover listing the next viable options. **Those odds read the room, not just the market.** ADP is a national average and the twelve people in front of you are not — in this sample's superflex leagues 5.8 quarterbacks go in round one where the 2QB board says three — so the advisory measures how far ahead of the board each position is actually running and prices the rest of that position accordingly, with a dead zone so an ordinary room's wobble doesn't move anything. In mock drafts against rooms calibrated to real league history this cuts the survival model's error at the hoarded position from +10.4pp to +2.7pp (a single-QB room chasing RBs) and from +6.2pp to −1.6pp (superflex QBs), and when a row's odds move for this reason it says so ("room 8 picks ahead here").
 
 | | |
 |:--:|:--:|
@@ -133,6 +133,9 @@ For the full experience (expert rankings, contracts, advanced stats, coaching, r
 | `build.py` | Concatenates `src/` back into `index.html`. Output is byte-identical to a hand-edited single file — the shipped app is unchanged. Add `--dev` for a developer build that includes the 📦 Seed loader button and other developer-only UI. |
 | `build_seed.py` | Run locally to fetch all the data and produce `triplecrown_seed.json`. |
 | `bake_seed.py` | Embeds a seed directly into the HTML for a phone-friendly, offline copy. |
+| `tools/draft_sim.py` | Monte-Carlo mock-draft simulator that tunes and validates the app's on-the-clock advisory. `--proj` swaps in an analyst projection file as the value baseline. |
+| `tools/draft_history.py` | Scores every past manager-season in a league's history on what its draft-day roster really did, so "what wins here" is measured rather than assumed. |
+| `tools/draft_playbook.py` | Drives the other two and writes one markdown playbook for one league and one seat. |
 
 > **Why a build step?** The app ships as one file on purpose (works offline from `file://`, bakes onto a phone, zero runtime dependencies). That's great for *users* but unwieldy to *edit*, so the source lives split under `src/` and `build.py` (Python 3 stdlib, no installs) reassembles it. It's plain concatenation — everything stays in one shared scope, so the app and test suite behave exactly as before. `run_tests.sh` rebuilds from `src/` automatically, and `python build.py --check` verifies `src/` matches the committed `index.html`. The default build is the normal user-facing app; `python build.py --dev` keeps the manual 📦 Seed loader and other developer-only UI.
 
@@ -170,6 +173,91 @@ It fetches, in order:
 Output: **`triplecrown_seed.json`** (plus optional sidecars `triplecrown_seed.def_weekly.json` and `triplecrown_seed.coaching.json` for lazy nflverse sections). Requires only Python 3 standard library — no pip installs. Runs are cached in `cache/`, so re-runs are fast; use `--refresh <source>` (or `--refresh-all`) to force a re-download.
 
 **Load it into the app** by placing it next to `index.html` when hosted over http(s) — it auto-loads on page open. (Manual seed-loading is developer-only: a `python build.py --dev` build adds a 📦 Seed button for loading a `triplecrown_seed.json` by hand; the normal build omits it since hosted copies auto-load the seed.)
+
+---
+
+## Working out a draft strategy
+
+Three command-line tools under `tools/` answer the strategy question the app faces
+live, and they answer it from *your* league rather than from received wisdom. Each
+is stdlib-only and each is useful alone, but they are built to chain.
+
+### 1. What has actually won your league — `tools/draft_history.py`
+
+Walks a league's `previous_league_id` chain and, for every manager-season it finds,
+rebuilds the draft as a shape (which positions, which rounds) and scores it against
+what really happened. The scoring matters: each drafted player is valued on his real
+end-of-season stats under **that league's own settings**, and only the draft-day
+roster is counted — waivers and trades are held out — so what comes back is what
+the *draft* was worth, not what the manager did afterwards. Results are converted to
+a percentile within each room before pooling, so a 10-team standard league and a
+12-team PPR superflex league can sit in one table.
+
+```bash
+python3 tools/draft_history.py --league <league_id> --redraft-only
+python3 tools/draft_history.py --user <sleeper_user_id> --redraft-only --split-format
+```
+
+It reports whether the champion won the draft or won the season some other way, the
+share of each lineup's points that came from each block of rounds, hit rate by round,
+and outcome broken out by opening pattern, by RB/WR count in the first six rounds,
+by when the first QB and TE went, and by draft slot.
+
+### 2. Draft off the analysts' board — `tools/draft_sim.py --proj`
+
+The simulator can now take an external projection file as its value baseline:
+
+```bash
+python3 tools/draft_sim.py --league <league_id> --slot 5 --sims 2000 \
+  --proj path/to/projections.json --proj-analyst consensus
+```
+
+The file is keyed by Sleeper `player_id` with one row per analyst; `consensus`
+averages every analyst who projected that player, or name one to use them alone.
+Those stat lines then replace the seed's for everyone they cover, and the players
+they *don't* cover are rescaled per position onto the same scale by the median
+ratio across the overlap — so the deep board stays comparable with the top of it
+instead of quietly ranking above or below it. Because the board is what VOR and
+VONA are computed from, this makes every downstream number an expression of what
+the analysts project. Consensus rows also carry the analysts' spread, which is a
+usable proxy for how contested a player's outlook is.
+
+`--tc-weight 0` uses the projections alone; the default `0.5` blends them with the
+TC model exactly as the app's `tcPts` does.
+
+**Format awareness.** The simulator picks the ADP board the room actually drafts
+off — `adp_2qb` for superflex/2QB, otherwise the column matching the scoring —
+the same rule as `adpFor()` in `src/js/60-rankings-data.js`, and it models a
+`SUPER_FLEX` slot as a slot a quarterback can start in: replacement level is set
+after the superflex slots are consumed (with the app's 2.3-QB-per-team floor),
+the second QB counts toward the starting lineup, and league-wide flex demand is
+spread over four positions rather than three. Without that a superflex board
+prices quarterbacks off the 1QB replacement level, which reads as "wait on QB" in
+exactly the format where waiting is worst — in a 12-team superflex room it moves
+the QB1 from +53 VOR to +154, and the simulated agent from taking its first QB in
+round 13 to round 4.
+
+### 3. The playbook — `tools/draft_playbook.py`
+
+Ties the two together into one page for one league and one seat:
+
+```bash
+python3 tools/draft_playbook.py --league <league_id> --slot 5 \
+  --proj path/to/projections.json --sims 400 --out playbook.md
+```
+
+It reads that league's history, builds the board from the projections under the
+league's scoring, forces every opening pattern onto the same simulated rooms
+(common random numbers, so the differences are the strategy's and not the RNG's),
+lets the advisory's decision core draft freely for comparison, and writes: what has
+won in that room, whether the opening pattern is worth committing to, the
+round-by-round positional plan the agent converges on, per-pick targets with the
+odds each one survives to the next turn, and the players this market prices above
+and below what the board says they are worth.
+
+Every number is computed at run time from that league's data. Point it at a
+different league, seat, or projection source and the advice moves with it.
+
 
 ---
 

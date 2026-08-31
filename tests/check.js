@@ -23808,7 +23808,7 @@ function renderTrackerPanel(viewSlot){
                <span class="vona-pct ${pcls(r.nextShare)}">${pct(r.nextShare)}% likely available</span></div>`
           : `<div class="vona-wait vona-wait-safe">wait \u2192 <b>${nm(r.bestNow)}</b> likely still available</div>`;
         const hs=(p)=> p ? `<span class="clickable-player vona-hs" onclick="event.stopPropagation();${typeof pcardOnclick==='function'?pcardOnclick(p.player_id||p.name,p.pos,p.team||''):''}">${playerThumb(p)}</span>` : '';
-        return `<div class="vona-row ${r.need?'':'vona-filled'} ${cls}">
+        return `<div class="vona-row ${r.need?'':'vona-filled'} ${r.gated?'vona-gated ':''}${cls}">
           <span class="rt-slot ${slotClass(r.pos)}">${r.pos}</span>
           ${hs(r.bestNow)}
           <div class="vona-main">
@@ -23822,12 +23822,16 @@ function renderTrackerPanel(viewSlot){
           <button class="vona-more" onclick="event.stopPropagation();vonaOptionsPop(event,'${r.pos}')" title="Next viable ${r.pos}s on the board" aria-label="More ${r.pos} options">▾</button>
         </div>`;
       }).join('');
-      // headline = biggest drop among positions I still NEED; fall back to top row
+      // headline = the top row of the ranking (gated rows are already sorted last; a
+      // last-call starter is already sorted first) — the score itself now carries need,
+      // budget, and lineup impact, so no second re-ranking here.
       const needRows=v.rows.filter(r=>r.need);
-      const rec = needRows[0] || v.rows[0];
-      const alsoBig = v.rows.find(r=>r!==rec && r.dropoff>=12);
+      const rec = v.rows.find(r=>!r.gated) || v.rows[0];
+      const alsoBig = v.rows.find(r=>r!==rec && !r.gated && r.dropoff>=12);
       let recTxt='';
-      if(rec){
+      if(v.kdNow){
+        recTxt = `Take your <b>K / DEF</b> — every remaining pick is spoken for`;
+      } else if(rec){
         // Lead with the ACTION and the player, not a raw cliff number — "(\u22121.6)" reads like
         // an error on a phone and means nothing without the board in front of you.
         const who = rec.bestNow ? (((typeof tcLastName==='function')?tcLastName(rec.bestNow.name):(String(rec.bestNow.name||'').trim().split(/\s+/).slice(-1)[0])) || '') : '';
@@ -24043,7 +24047,70 @@ function vonaPosNeedsForSlot(slot){ return _vonaSlotProfile(slot).set; }
 //   • each sim sorts each position ONCE by noisy ADP, then walks a pointer per position —
 //     since a team always takes the lowest noisy-ADP player it needs, picks come off the head
 //     of a position's list in order, so pointers advance monotonically. O(4) per pick.
-function vonaSimulate(avail, upcomingSlots, pools){
+// ── Reading the room ────────────────────────────────────────────────────────
+// ADP is a national average; the room in front of you is not. In this sample's
+// superflex leagues 5.8 quarterbacks go in round one where the 2QB board says
+// three — so a survival model that trusts the board tells you a QB is coming
+// back to you when he is already gone. Every pick that has happened is evidence
+// about THIS room: measure how far ahead of the board each position is running
+// and price the rest of that position as if its ADP were that much earlier.
+//
+// Measured in mock drafts (tools/draft_sim.py): in a room calibrated to how
+// these leagues really draft, this cuts the survival model's error at the
+// hoarded position from +10.4pp to −0.5pp (1QB, RB-hungry room) and from +6.2pp
+// to −4.2pp (superflex QB), improving overall Brier by ~6%. Keep it in sync with
+// market_drift() in tools/draft_sim.py.
+const VONA_DRIFT_CAP = 24;    // picks — one strange run must not rewrite the board
+const VONA_DRIFT_PRIOR = 4;   // pseudo-picks of "the board is right", damping early noise
+const VONA_DRIFT_DEADZONE = 2; // picks — below this the "signal" is just a normal room
+function vonaMarketDrift(list){
+  const out={QB:0,RB:0,WR:0,TE:0};
+  const pickNo = currentPickNo();
+  if(!pickNo || pickNo < 2) return out;
+  const { teams } = draftParams();
+  // What the ROOM has taken, excluding my own picks — my seat must not teach the
+  // model that everyone else shares my habits (and that feedback loop compounds).
+  const gone={QB:0,RB:0,WR:0,TE:0};
+  for(const slot in draftPicksBySlot){
+    if(mySlot!=null && Number(slot)===Number(mySlot)) continue;
+    (draftPicksBySlot[slot]||[]).forEach(pk=>{ if(pk && gone[pk.pos]!=null) gone[pk.pos]++; });
+  }
+  const scale = (mySlot!=null && teams>1) ? teams/(teams-1) : 1;
+  // The board's own schedule per position: the ADP of its 1st, 2nd, … player.
+  const sched={QB:[],RB:[],WR:[],TE:[]};
+  (list||[]).forEach(p=>{
+    if(!sched[p.pos]) return;
+    const a=adpFor(p);
+    if(a!=null && a<999) sched[p.pos].push(a);
+  });
+  Object.keys(sched).forEach(pos=>{
+    const sc=sched[pos];
+    if(!sc.length) return;
+    sc.sort((a,b)=>a-b);
+    const k = gone[pos]*scale;
+    // If the room's kth player here was due at pick `due` and it is only pickNo,
+    // the room is running (due − pickNo) picks early at this position. With none
+    // gone, the signal is that the position's BEST player is still sitting there.
+    const due = k>=1 ? sc[Math.min(Math.round(k), sc.length) - 1] : sc[0];
+    // Evidence is the larger of what happened and what the board predicted would
+    // have happened: "five receivers should be gone and none are" is as strong a
+    // statement as five going early, and neither is worth much on pick two.
+    let expected=0;
+    for(let i=0;i<sc.length && sc[i]<=pickNo;i++) expected++;
+    const m = Math.max(k, expected);
+    if(m < 1) return;
+    const raw = Math.max(-VONA_DRIFT_CAP, Math.min(VONA_DRIFT_CAP, due - pickNo));
+    const val = raw * (m/(m+VONA_DRIFT_PRIOR));
+    // Every room wobbles a few picks around the board by chance; correcting for
+    // that is fitting noise. Move only once the gap is real, and only by the
+    // part of it that exceeds the wobble.
+    if(Math.abs(val) <= VONA_DRIFT_DEADZONE) return;
+    out[pos] = +(val - Math.sign(val)*VONA_DRIFT_DEADZONE).toFixed(2);
+  });
+  return out;
+}
+
+function vonaSimulate(avail, upcomingSlots, pools, drift){
   const POSL=['QB','RB','WR','TE'];
   const pidOf = (p)=> p.player_id || p.name;
   const nUp = upcomingSlots.length;
@@ -24064,7 +24131,10 @@ function vonaSimulate(avail, upcomingSlots, pools){
     const arr = avail.filter(p=>p.pos===pos && adpFor(p)<999).sort((a,b)=>adpFor(a)-adpFor(b)).slice(0,depth);
     mkt[pos]=arr;
     mktIds[pos]=Int32Array.from(arr.map(p=>idOf.get(pidOf(p))));
-    mktAdp[pos]=Float64Array.from(arr.map(p=>adpFor(p)));
+    // Shift the whole position by the room's drift; sigma still comes from the
+    // player's own ADP, since how uncertain his price is hasn't changed.
+    const sh=(drift && drift[pos]) || 0;
+    mktAdp[pos]=Float64Array.from(arr.map(p=>adpFor(p)-sh));
     mktSig[pos]=Float64Array.from(arr.map(p=>adpSigma(adpFor(p))));
   });
   const inMarket = new Uint8Array(avail.length);
@@ -24272,6 +24342,65 @@ function _vonaPctDisp(p, x){
   if(v>=100 && p && typeof adpFor==='function' && adpFor(p)>=999) return 99;
   return v;
 }
+// ── Decision core (ported from tools/draft_sim.py) ──────────────────────────
+// The advisory's ranking used to be "biggest positional value drop this window",
+// which follows value right off a roster cliff: Monte-Carlo mock drafts against
+// this logic finished RB-thin in up to a quarter of drafts and spent picks on a
+// 3rd TE in half of them. The sim's agent — scored on actual weekly lineups —
+// prices every pick as: weekly value it adds to MY roster now, vs what the same
+// position is expected to hand me at my NEXT pick. That core, plus hard budget
+// guards (below), eliminated the holes and beat the old advisory by ~4 lineup
+// points/wk of composite team quality across seats. See tools/draft_sim.py.
+
+// Weekly value a candidate with season VOR `vor` adds to my roster (the sim's
+// candidate_score in the app's units): his optimal-lineup VOR gain when he
+// cracks the starting lineup, else bench value — insurance weighted by position
+// (RB/WR injuries cash a bench pick in far more often than a backup QB does)
+// with a thin-roster kicker until the dedicated slots are doubled. /17 turns
+// season VOR into per-week points.
+function _vonaCandScore(myPicks, myCounts, dedBase, pos, vor, vorOf){
+  const PSEUDO='__vona_cand__';
+  const vf=(pk)=> (pk.player_id===PSEUDO ? vor : vorOf(pk));
+  const before=_vonaOptimalLineupVor(myPicks, vf);
+  const after=_vonaOptimalLineupVor(myPicks.concat([{pos, name:PSEUDO, player_id:PSEUDO}]), vf);
+  const gain=(after-before)/17;
+  if(gain>0.05) return gain;
+  const over=Math.max(0, vor)/17;
+  const thin = myCounts[pos] <= (dedBase[pos]||0) ? 0.15 : 0;
+  const w=(pos==='QB'?0.15:pos==='TE'?0.12:0.30)+thin;
+  return w*over + 0.04*over;
+}
+
+// The pick budget: how many LIVE picks I have left, which of those the roster
+// minimums already claim, and the guards that fall out of that arithmetic.
+//   skillLeft — remaining live picks minus my open K/DEF starters (those picks
+//               are spoken for; the sim harness proves teams that don't reserve
+//               them punt a starter instead)
+//   minTargets— every dedicated starter, plus flex/bye/injury depth at RB and
+//               WR (+2 each), plus a QB body per superflex slot
+//   mustFill  — unmet minimums need every remaining pick: anything else is a
+//               pick the roster can't afford (gates those rows)
+//   lastCall  — a QB/TE starter slot that must be filled within the next pick
+//               or two (forces that row to the top)
+//   posCap    — headline caps: 2 QB / 2 TE in 1-QB leagues (superflex raises
+//               the QB room) — a 3rd is a wasted pick the sim punishes hard
+function _vonaBudget(myLivePicks, kdOpenMine, myCounts, dedBase, sfSlots, dedicatedNeed){
+  const skillLeft=Math.max(0, myLivePicks - kdOpenMine);
+  const minTargets={ QB:dedBase.QB+sfSlots, TE:dedBase.TE, RB:dedBase.RB+2, WR:dedBase.WR+2 };
+  const unmet={}; let unmetTotal=0;
+  Object.keys(minTargets).forEach(pos=>{
+    unmet[pos]=Math.max(0, minTargets[pos]-myCounts[pos]); unmetTotal+=unmet[pos];
+  });
+  const mustFill = unmetTotal>0 && unmetTotal >= skillLeft;
+  const picksAfter = skillLeft-1;
+  const lastCall={};
+  [['QB',2],['TE',1]].forEach(([pos,room])=>{
+    if(dedicatedNeed.has(pos) && picksAfter<=room) lastCall[pos]=true;
+  });
+  const posCap={ QB: sfSlots? dedBase.QB+sfSlots+1 : 2, TE: Math.max(2, dedBase.TE+1), RB:8, WR:9 };
+  return { skillLeft, minTargets, unmet, unmetTotal, mustFill, picksAfter, lastCall, posCap };
+}
+
 function computeVONA(){
   if(mySlot==null) return null;
   let gap = picksUntilMyTurn(mySlot);              // picks between now and my next turn
@@ -24308,7 +24437,8 @@ function computeVONA(){
   const bestNow={};
   ['QB','RB','WR','TE'].forEach(pos=>{ bestNow[pos]=pools[pos].find(p=>!_vonaSeasonOut(p)) || pools[pos][0] || null; });
 
-  const sim = vonaSimulate(avail, upcomingSlots, pools);
+  const drift = vonaMarketDrift(list);
+  const sim = vonaSimulate(avail, upcomingSlots, pools, drift);
   const byId = new Map(avail.map(p=>[sim.pidOf(p), p]));
 
   // ── My own remaining needs (for the discount) ─────────────────────────────
@@ -24328,6 +24458,19 @@ function computeVONA(){
   const vorById = new Map();
   list.forEach(p=>{ vorById.set(p.player_id||p.name, p.vor||0); });
   const vorOf = pk => vorById.get(pk.player_id || pk.name) || 0;
+
+  // ── Pick budget + roster-minimum guards (see _vonaBudget) ─────────────────
+  const feedNos=_draftFeedPickNos();
+  const myLivePicks=myUpcomingPickNumbers(mySlot).filter(n=>!feedNos.has(n)).length;
+  const kdOpenMine=myNeeds.filter(s=>s==='K'||s==='DEF').length;
+  const myCounts={QB:0,RB:0,WR:0,TE:0};
+  myPicks.forEach(pk=>{ if(myCounts[pk.pos]!=null) myCounts[pk.pos]++; });
+  const dedBase={QB:0,RB:0,WR:0,TE:0}; let sfSlots=0;
+  draftLineup.forEach(s=>{
+    if(dedBase[s]!=null) dedBase[s]++;
+    else if(s==='SUPER_FLEX') sfSlots++;
+  });
+  const budget=_vonaBudget(myLivePicks, kdOpenMine, myCounts, dedBase, sfSlots, dedicatedNeed);
   const out=[];
   ['QB','RB','WR','TE'].forEach(pos=>{
     const now=bestNow[pos];
@@ -24360,6 +24503,13 @@ function computeVONA(){
     const puntMult = puntable ? 0.45 : 1;
     weight = weight * scarcity * puntMult;
     const lineupGain = vonaLineupGain(myPicks, now, vorOf);
+    // Decision core: value added now vs value expected at my next pick, priced
+    // on MY roster (expVor comes from the availability MC above). The gates:
+    // a position past its cap, or one the must-fill budget can't spare a pick
+    // for, ranks below every live option no matter its score.
+    const gNow = _vonaCandScore(myPicks, myCounts, dedBase, pos, (now.vor||0), vorOf);
+    const gNext = _vonaCandScore(myPicks, myCounts, dedBase, pos, Math.max(0, expVor), vorOf);
+    const gated = (myCounts[pos] >= budget.posCap[pos]) || (budget.mustFill && !budget.unmet[pos]);
     out.push({
       pos,
       struct: st, scarcity:+scarcity.toFixed(2), puntable, lineupGain,
@@ -24375,40 +24525,50 @@ function computeVONA(){
       filled: !isDedicated,
       flexEligible: isFlexElig,
       studBackup: !isDedicated && (now.vor||0)>=WORTH_A_BACKUP,
+      gated,
+      drift: +(((drift && drift[pos]) || 0).toFixed(1)),
+      lastCall: !!budget.lastCall[pos],
+      score: +(Math.max(0, gNow-gNext) + 0.25*gNow).toFixed(2),
     });
   });
-  // LINEUP IMPACT (the cross-positional tiebreak). adjDrop says how much value evaporates if
-  // you wait; lineupGain says how much of that value would actually reach your STARTING
-  // lineup. Multiplying them is what separates "3rd RB fills my empty FLEX" from "2nd TE
-  // rides my bench" when the two have similar positional gaps. Normalized against the best
-  // position this pick and floored at 0.35, so a position that adds nothing to the lineup
-  // today is damped but never zeroed out (it can still be a real future upgrade).
+  // lineupFactor stays as display metadata; the row score already prices lineup impact
+  // directly through _vonaCandScore's optimal-lineup gain.
   const maxGain = Math.max(1, ...out.map(r=>r.lineupGain||0));
   out.forEach(r=>{
     r.lineupFactor = +(0.35 + 0.65*((r.lineupGain||0)/maxGain)).toFixed(2);
-    r.score = +((r.adjDrop||0) * r.lineupFactor).toFixed(1);
     // Short human reason for why this row sits where it does — shown under the pick.
     const st=r.struct||{};
     // Keep this SHORT and rare. A sentence on every row buries the recommendation and, on a
     // phone, squeezes the player's name into an ellipsis. Only genuinely decision-changing
-    // signals earn a line: the pool is flat enough to punt, or supply is tight enough that
-    // waiting risks not getting one at all.
-    r.why = r.puntable ? 'flat \u2014 safe to wait'
-          : (st.pressure>=1.15 ? `${st.supply} left \u00b7 ${Math.round(st.demand)} slots` : '');
+    // signals earn a line: a starter is about to become unfillable, the budget can't spare
+    // the pick, the pool is flat enough to punt, or supply is so tight that waiting risks
+    // not getting one at all.
+    const dr = (drift && drift[r.pos]) || 0;
+    r.why = r.lastCall ? 'last call \u2014 starter still open'
+          : r.gated ? (myCounts[r.pos]>=budget.posCap[r.pos]
+              ? 'roster full here'
+              : `${budget.skillLeft} pick${budget.skillLeft===1?'':'s'} left \u2014 needs elsewhere`)
+          : r.puntable ? 'flat \u2014 safe to wait'
+          // The room outrunning the board is decision-changing on its own: it is
+          // why the odds below moved without the player's ranking moving.
+          : (dr>=6 ? `room ${Math.round(dr)} picks ahead here`
+          : (st.pressure>=1.15 ? `${st.supply} left \u00b7 ${Math.round(st.demand)} slots` : ''));
   });
-  out.sort((a,b)=> b.score-a.score);
+  // Gated rows sink below every live option; a last-call starter overrides everything.
+  out.sort((a,b)=> ((a.gated?1:0)-(b.gated?1:0))
+    || ((b.lastCall?1:0)-(a.lastCall?1:0))
+    || (b.score-a.score));
   // My own K/DEF endgame: when my remaining LIVE picks barely cover my open K/DEF starter
   // slots, say so — the four skill rows above will happily spend every last pick otherwise.
   let kdefAlert=null;
-  {
-    const kdList = myNeeds.filter(s=>s==='K'||s==='DEF');
-    if(kdList.length){
-      const feed=_draftFeedPickNos();
-      const picksLeft = myUpcomingPickNumbers(mySlot).filter(n=>!feed.has(n)).length;
-      if(picksLeft>0 && picksLeft <= kdList.length+1) kdefAlert={ open:kdList, picksLeft };
-    }
+  if(kdOpenMine>0 && myLivePicks>0 && myLivePicks <= kdOpenMine+1){
+    kdefAlert={ open:myNeeds.filter(s=>s==='K'||s==='DEF'), picksLeft:myLivePicks };
   }
-  const res = { gap, rows: out, onClock, struct, pools, pAvail: sim.pAvail, kdefAlert };
+  // Every remaining live pick belongs to K/DEF: the skill rows are moot and the headline
+  // should say so instead of naming a player there's no pick left for.
+  const kdNow = kdOpenMine>0 && myLivePicks>0 && myLivePicks <= kdOpenMine;
+  const res = { gap, rows: out, onClock, struct, pools, pAvail: sim.pAvail, kdefAlert, kdNow,
+                budget, drift };
   _vonaCache = { key:cacheKey, val:res };
   return res;
 }
@@ -24471,8 +24631,14 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     Value comes from <b>your VOR board</b> \u2014 what a player is worth to you. Availability comes
     from the market: Sleeper ${typeof formatLabel==='function'?formatLabel(rankFormat):''} ADP,
     Monte-Carlo simulated over the picks before you're up, with each opposing team drafting by
-    noisy ADP restricted to positions it still needs. The %-pill is the chance a player makes
-    it back to your next pick; \u25be lists the next viable options at that position.`};
+    noisy ADP restricted to positions it still needs. Positions are ranked by what the pick does
+    for <b>your weekly starting lineup</b>: value added now vs what the same position is expected
+    to hand you at your next pick \u2014 so a FLEX-filling RB outranks a bench TE automatically.
+    A pick <b>budget</b> guards your roster: every remaining pick is weighed against unfilled
+    starters, RB/WR depth, and your K/DEF slots, so following the headline never strands a hole.
+    Dimmed rows are parked by that budget; \u201clast call\u201d means a starter must be taken now.
+    The %-pill is the chance a player makes it back to your next pick; \u25be lists the next
+    viable options at that position.`};
 }
 // ═══ League Analyzer (dynasty) ═══════════════════════════════════════════════
 // Sync a Sleeper league → take a point-in-time SNAPSHOT of every roster, owner, and future

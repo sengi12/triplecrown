@@ -142,6 +142,10 @@
    depth), and a 0.55 wash made the whole advisory hard to read. Distinguish it with a muted
    left edge and a slightly dimmer position badge instead, keeping the text at full contrast. */
 .vona-row.vona-filled{opacity:1;box-shadow:inset 2px 0 0 var(--border);}
+/* Gated: the pick budget says this position can't have a pick right now (roster full
+   or every remaining pick is claimed by needs) — visibly parked, not hidden. */
+.vona-row.vona-gated{opacity:.55;}
+.vona-row.vona-gated .vona-drop{color:var(--muted);}
 .vona-row.vona-filled .rt-slot{opacity:.7;}
 .vona-row.vona-filled .vona-now{color:var(--text);}
 .vona-row.vona-filled .vona-vor{opacity:.85;}

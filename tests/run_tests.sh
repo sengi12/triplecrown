@@ -236,7 +236,7 @@ echo ""
 PYBUILD="$DIR/../build_seed.py"
 if [ -f "$DIR/test_flacco_split.py" ] && [ -f "$PYBUILD" ]; then
   echo "═══ Python tests ═══"
-  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_roster_moves test_roster_truth test_sumer_pull test_ktc_pull test_seed_refresh test_ol_pipeline test_state_block test_cfb_classes test_combine_prospect test_tc_projections test_market_archive test_inseason_truncate; do
+  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_roster_moves test_roster_truth test_sumer_pull test_ktc_pull test_seed_refresh test_ol_pipeline test_state_block test_cfb_classes test_combine_prospect test_tc_projections test_market_archive test_inseason_truncate test_draft_sim test_draft_history test_draft_playbook; do
     [ -f "$DIR/${pyt}.py" ] || continue
     output=$(python3 "$DIR/${pyt}.py" 2>&1) || true
     # Same token rule as the JS runner: count result markers, not any line containing the word.

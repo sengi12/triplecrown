@@ -9,6 +9,7 @@
 //   • replacement-line boundary only fires on monotone startable→rest ordering
 //   • availability % display capped for players the ADP universe can't see
 //   • League Analyzer resolves defenses to team codes (waiver rows get icons)
+//   • market drift: the survival model reads the room instead of trusting ADP
 // ═══════════════════════════════════════════════════════════════════════════
 
 const elStore={};
@@ -40,6 +41,10 @@ const app=new Function(code+`return {
   _vonaPctDisp,
   laDefTeamCode,
   adpFor,
+  _vonaCandScore, _vonaBudget,
+  vonaMarketDrift, vonaSimulate,
+  setMySlot:(v)=>{mySlot=v;}, setDraftMeta:(m)=>{draftMeta=m;},
+  setDraftedIds:(v)=>{draftedIds=v;},
 };`)();
 
 let pass=0,total=0;
@@ -98,6 +103,41 @@ chk(gain===30, `RB3 (40) displaces WR3 (10) from FLEX: gain 30 (got ${gain}) —
 const gain2=app.vonaLineupGain(myPicks, {pos:'WR',name:'WRlow',player_id:'WRX'}, vorOf);
 chk(gain2===0, 'a 0-VOR bench candidate adds nothing');
 
+console.log('=== pick budget: must-fill, last call, caps (sim-validated guards) ===');
+const dedC={QB:1,RB:1,WR:2,TE:1};
+// 4 live picks, 2 owed to K/DEF → 2 skill picks; only QB unmet → no must-fill,
+// but the QB starter is on last call (1 pick after this one).
+let bud=app._vonaBudget(4, 2, {QB:0,RB:3,WR:4,TE:1}, dedC, 0, new Set(['QB']));
+chk(bud.skillLeft===2, `skillLeft reserves K/DEF picks (got ${bud.skillLeft})`);
+chk(bud.unmetTotal===1 && !bud.mustFill, `one unmet minimum, budget still has slack (unmet=${bud.unmetTotal})`);
+chk(bud.lastCall.QB===true, 'QB starter on last call with 1 pick to spare');
+// Early-ish roster with the budget exhausted: unmet (QB1+TE1+RB2+WR2=6) ≥ 5 picks → must-fill.
+bud=app._vonaBudget(5, 0, {QB:0,RB:1,WR:2,TE:0}, dedC, 0, new Set(['QB','TE']));
+chk(bud.mustFill===true && bud.unmet.RB===2 && bud.unmet.WR===2, `must-fill engages when minimums claim every pick (unmet=${bud.unmetTotal}/${bud.skillLeft})`);
+chk(bud.posCap.QB===2 && bud.posCap.TE===2, '1-QB league caps QB/TE headlines at 2');
+// Superflex: the QB minimum and cap both grow with the extra QB-eligible slot.
+bud=app._vonaBudget(10, 0, {QB:1,RB:1,WR:2,TE:1}, dedC, 1, new Set());
+chk(bud.minTargets.QB===2 && bud.unmet.QB===1, `superflex wants a 2nd QB body (target ${bud.minTargets.QB})`);
+chk(bud.posCap.QB===3, `superflex raises the QB cap (got ${bud.posCap.QB})`);
+
+console.log('=== candidate score: lineup gain when he starts, bench value when he rides ===');
+app.setDraftLineup(['QB','RB','WR','FLEX']);
+// Empty roster: a 170-VOR RB is pure starting-lineup gain → 10 pts/wk.
+let cs=app._vonaCandScore([], {QB:0,RB:0,WR:0,TE:0}, dedC, 'RB', 170, ()=>0);
+chk(cs===10, `starter path: 170 season VOR → 10/wk lineup gain (got ${cs})`);
+// RB slot + FLEX already hold better RBs: a 51-VOR RB is a bench pick →
+// (0.30 depth weight + 0.04 tiebreak) × 3/wk = 1.02.
+const benchVor={RB1:100,RB2:80};
+const benchPicks=[{pos:'RB',name:'RB1',player_id:'RB1'},{pos:'RB',name:'RB2',player_id:'RB2'}];
+cs=app._vonaCandScore(benchPicks, {QB:0,RB:2,WR:0,TE:0}, dedC, 'RB', 51, pk=>benchVor[pk.player_id]||0);
+chk(Math.abs(cs-1.02)<1e-9, `bench path: depth-weighted insurance value (got ${cs})`);
+// A 3rd QB (same 51 VOR) is worth far less than the bench RB: the QB insurance
+// weight is smaller and the thin-roster kicker is gone once the slot is doubled.
+const qbVor={QB1:120,QB2:90};
+cs=app._vonaCandScore([{pos:'QB',name:'QB1',player_id:'QB1'},{pos:'QB',name:'QB2',player_id:'QB2'}],
+  {QB:2,RB:0,WR:0,TE:0}, dedC, 'QB', 51, pk=>qbVor[pk.player_id]||0);
+chk(Math.abs(cs-(0.19*3))<1e-9, `3rd-QB bench value uses the bare QB weight (got ${cs})`);
+
 console.log('=== keeper picks are recognized as spent ===');
 app.setPicksBySlot({1:[{player_id:'a',pick_no:1,pos:'RB',name:'A'},{player_id:'b',pick_no:7,pos:'WR',name:'B'}],
                     2:[{player_id:'c',pick_no:2,pos:'QB',name:'C'}]});
@@ -130,6 +170,75 @@ chk(app.laDefTeamCode('PHI')==='PHI', 'bare code passes through');
 chk(app.laDefTeamCode('Philadelphia Eagles D/ST')==='PHI', 'full club name resolves');
 chk(app.laDefTeamCode('philadelphia eagles dst')==='PHI', 'normalized VOR-map key resolves');
 chk(app.laDefTeamCode('Totally Fake Team')==='', 'unknown names return empty, not garbage');
+
+console.log('=== market drift: the survival model learns from the room ===');
+// A 12-team room, 12 picks in. The board (adpFor) says the first 12 off the
+// board are 3 QB / 4 RB / 5 WR; this room has taken 8 QBs instead. The 9th QB
+// on the board is due at pick 40, so the room is running ~28 picks early there
+// — clamped to 24, then damped by k/(k+4).
+const driftList=[];
+let adpN=0;
+const addP=(pos,n,startAdp,step)=>{ for(let i=0;i<n;i++) driftList.push(
+  {name:`${pos}${i+1}`, pos, player_id:`${pos}${i+1}`, adp_ppr:startAdp+i*step,
+   adp_half_ppr:startAdp+i*step, adp_2qb:startAdp+i*step, adp_std:startAdp+i*step, fpts:300-i}); };
+addP('QB',20,4,4);      // QBs at 4, 8, 12, ... (3 inside the first 12)
+addP('RB',20,2,3);
+addP('WR',20,1,2.4);
+addP('TE',20,20,6);
+app.setFormat('ppr');
+app.setShape({teams:12, lineup:['QB','RB','RB','WR','WR','WR','TE','FLEX','SUPER_FLEX','DEF']});
+app.setDraftMeta({settings:{teams:12, rounds:16}});
+app.setMySlot(1);
+
+// Nobody has picked yet → no evidence, no correction.
+app.setPicksBySlot({});
+let d0 = app.vonaMarketDrift(driftList);
+chk(d0.QB===0 && d0.RB===0 && d0.WR===0 && d0.TE===0, 'an empty board produces no drift');
+
+// 11 other seats, 12 picks made, 8 of them quarterbacks.
+const picksBySlot={};
+let made=0;
+const push=(slot,pos)=>{ made++; (picksBySlot[slot]=picksBySlot[slot]||[]).push(
+  {player_id:`${pos}${picksBySlot[slot].filter?0:0}`, pos, pick_no:made}); };
+for(let i=0;i<8;i++) push(i+2,'QB');
+for(let i=0;i<4;i++) push(i+2,'RB');
+app.setPicksBySlot(picksBySlot);
+const d1 = app.vonaMarketDrift(driftList);
+chk(d1.QB>0, 'a QB-hungry room reads as QBs going early');
+chk(d1.QB>6, `the correction is material, not cosmetic (${d1.QB})`);
+chk(d1.QB<=24, 'the correction is clamped');
+chk(d1.WR<0, `a position the room is ignoring reads as falling (${d1.WR})`);
+chk(Math.abs(d1.TE)<=Math.abs(d1.QB), 'an untouched position drifts less than a hoarded one');
+
+// Damping: the same imbalance one pick in must not move the board as far as
+// the same imbalance twelve picks in.
+const early={}; early[2]=[{player_id:'QB1', pos:'QB', pick_no:1}];
+app.setPicksBySlot(early);
+const dEarly = app.vonaMarketDrift(driftList);
+app.setPicksBySlot(picksBySlot);
+chk(dEarly.QB < d1.QB, 'one pick of evidence moves the board less than twelve');
+
+// My own picks are evidence about me, not about the room.
+const mine={}; mine[1]=[]; for(let i=0;i<6;i++) mine[1].push({player_id:`TE${i}`, pos:'TE', pick_no:i+1});
+app.setPicksBySlot(mine);
+chk(app.vonaMarketDrift(driftList).TE===0, 'my own picks never teach the model about the room');
+
+// And it reaches the survival numbers: the same player, same window, is less
+// likely to come back once the room has shown it wants his position.
+app.setPicksBySlot(picksBySlot);
+app.setDraftedIds({});
+const avail = driftList.slice();
+const pools = {QB:[],RB:[],WR:[],TE:[]};
+avail.forEach(p=>{ if(pools[p.pos]) pools[p.pos].push(p); });
+const upcoming=[2,3,4,5,6,7,8,9,10,11,12];
+const noDrift = app.vonaSimulate(avail, upcoming, pools, null);
+const withDrift = app.vonaSimulate(avail, upcoming, pools, d1);
+const qbId='QB5';
+const pNo = noDrift.pAvail.get(qbId)||0, pYes = withDrift.pAvail.get(qbId)||0;
+chk(pYes < pNo, `reading the room lowers a hoarded QB's survival odds (${pNo.toFixed(2)} → ${pYes.toFixed(2)})`);
+const wrId='WR12';
+chk((withDrift.pAvail.get(wrId)||0) >= (noDrift.pAvail.get(wrId)||0) - 0.02,
+    'a position the room is skipping does not get harder to wait for');
 
 console.log(`\n${pass}/${total} checks passed`);
 process.exit(pass===total?0:1);
