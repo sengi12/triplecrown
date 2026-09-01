@@ -1539,6 +1539,12 @@ let mySlot = null;           // which draft slot is "mine"
 let trackerOpen = false;     // is the expanded tracker panel showing?
 let trackerMax = false;      // ...and stretched to most of the window (drag-up on the bar)?
 let trackerViewSlot = null;  // which slot's roster is being viewed in the panel (null = mine)
+let vonaSugFilter = 'ALL'; // suggestions panel: 'ALL' or a position — which board you're browsing
+// Players you've starred while browsing the board. Survives a reload (a draft can
+// span an evening and a refresh must not lose your shortlist).
+let draftStars = (function(){
+  try{ return JSON.parse(localStorage.getItem('tc_draft_stars')||'{}') || {}; }catch(e){ return {}; }
+})();
 let rosterBarVisible = false;// is the pinned bar shown at all?
 let _trackerNeedsSlotPick = false;  // mock draft: waiting for the user to tap their seat
 let _lastPickCount = -1;            // last seen pick count (skip redundant bar re-renders)
@@ -16315,8 +16321,16 @@ function renderRankings(){
   const inDraftOrder = rankSortKey==='ecr';
   // Pick gaps are counted in TOTAL picks, so the line is only meaningful on the unfiltered
   // board: with the WR filter on it sat after the 11th available WR, far past your pick.
-  const showPickLines = following && mySlot!=null && inDraftOrder && rankPosFilter==='ALL' && !rankRookiesOnly && !(rankingsSearchQuery||'').trim();
+  // The line used to require an unfiltered board, because gaps were counted in
+  // TOTAL picks: with a WR filter on, "18 picks away" landed 18 WRs down. But the
+  // filtered board is exactly where you want it — "which of these reaches me?".
+  // So under a filter, count in MARKET terms instead: how many of the players
+  // SHOWN are priced to go before that turn of yours. Same question, asked of the
+  // ADP board for this format rather than of raw pick numbers.
+  const showPickLines = following && mySlot!=null && inDraftOrder && !(rankingsSearchQuery||'').trim();
+  const filteredBoard = !(rankPosFilter==='ALL' && !rankRookiesOnly);
   let pickGaps=[];   // successive counts of players between your turns
+  let myPickNos=[];  // the actual pick numbers those turns land on
   if(showPickLines){
     const { teams, type, reversalRound, rounds } = draftParams();
     const start = currentPickNo();
@@ -16327,14 +16341,30 @@ function renderRankings(){
     // pick of MINE that's already a keeper doesn't get a line either: that turn is spent.
     const feed = (typeof _draftFeedPickNos==='function') ? _draftFeedPickNos() : new Set();
     let liveBetween=0;
+    myPickNos=[];
     for(let n=start; n<=maxPick; n++){
       if(slotOnClock(n, teams, type, reversalRound)===mySlot){
         if(!feed.has(n)){
           pickGaps.push(liveBetween);   // players taken by others before this, your turn
+          myPickNos.push(n);
           liveBetween=0;
           if(pickGaps.length>=rounds) break;
         }
       } else if(!feed.has(n)) liveBetween++;
+    }
+    // Filtered board: a line goes after the shown players the market expects to be
+    // gone by that pick — i.e. those whose ADP is earlier than it. Counted over the
+    // rows actually on screen, so it lands where you can see it.
+    if(filteredBoard){
+      const shown=view.filter(p=>!p.drafted);
+      pickGaps=myPickNos.map((n,k)=>{
+        let c=0;
+        shown.forEach(p=>{ const a=adpFor(p); if(a!=null && a<999 && a<n) c++; });
+        return Math.max(0, c-k);   // your own earlier picks consumed a row each
+      });
+      // Successive counts, mirroring the unfiltered path's "players between turns".
+      let prev=0;
+      pickGaps=pickGaps.map(c=>{ const g=Math.max(0,c-prev); prev=c; return g; });
     }
   }
   // ── Customizable columns ──────────────────────────────────────────────────────────────
@@ -16479,7 +16509,9 @@ function renderRankings(){
       fpts: fptsCells,
       vor: `<td class="c-vor">${rankValueHtml(`<span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${vorTxt}</span>`, p, 'Value Over Replacement', 'vor', 'rankings')}</td>`,
       pos: `<td class="c-pos"><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>`,
-      name: `<td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${rankHeadshotSlotHtml(p)}<span class="rank-name">${pNameText}</span>${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</div></td>`,
+      name: `<td class="c-player"><div style="display:flex;align-items:center;gap:6px">${
+        (typeof draftStars!=='undefined' && following) ? rankStarBtn(p) : ''
+      }<div class="clickable-player" style="display:flex;align-items:center;gap:6px;min-width:0" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${rankHeadshotSlotHtml(p)}<span class="rank-name">${pNameText}</span>${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</div></div></td>`,
       team: `<td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" alt="${pTeamAttr}" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${pTeamText}</td>`,
       own: ownerActive?`<td class="c-own">${tcOwnerPill(p.player_id, p.name)}</td>`:'',
       age: `<td class="c-age">${p.age!=null?`<span class="num">${p.age}</span>`:''}</td>`,
@@ -16491,7 +16523,8 @@ function renderRankings(){
       const pa=vonaAvail.get(p.player_id||p.name);
       if(pa!=null && pa<0.25) fadeCls=' rank-fade';
     }
-    rowChunks.push(`<tr class="${p.drafted?'drafted':''}${fadeCls}" data-rank-search="${pSearchAttr}" data-rank-pos="${p.pos}" data-rank-vor="${p.vor>0?'1':'0'}"${rankIsRookie(p)?' data-rank-rk="1"':''}${volAttrs}${rankNoteScopeAttrs(p)}>
+    const starCls=(typeof isDraftStar==='function' && isDraftStar(p)) ? ' rank-starred' : '';
+    rowChunks.push(`<tr class="${p.drafted?'drafted':''}${fadeCls}${starCls}" data-star-row="${escAttr(String(p.player_id||p.name))}" data-rank-search="${pSearchAttr}" data-rank-pos="${p.pos}" data-rank-vor="${p.vor>0?'1':'0'}"${rankIsRookie(p)?' data-rank-rk="1"':''}${volAttrs}${rankNoteScopeAttrs(p)}>
     ${metaOrder.map(k=>metaTd[k]).join('\n    ')}
     ${statCells}
   </tr>`);
@@ -23612,7 +23645,7 @@ function renderRosterBar(){
     // (overscroll contained); everything else is the drawer's, so the page stays put.
     host.addEventListener('touchmove',(e)=>{
       const t=e.target;
-      if(t && t.closest && t.closest('.rt-chips,.rt-seats')) return;
+      if(t && t.closest && t.closest('.rt-chips,.rt-seats,.vsg-tabs,.vsg-board,.vsg-cheat,.rt-col-main,.rt-col-side')) return;
       const p=t && t.closest && t.closest('.rt-panel');
       if(p && !_rtDrag && p.scrollHeight>p.clientHeight+1) return;
       if(e.cancelable) e.preventDefault();
@@ -23672,14 +23705,11 @@ function renderRosterBar(){
   }
   host.style.display='block';
 
-  // Preserve the expanded panel's scroll position across re-renders (the 2.5s poll rebuilds
-  // this element; without this the user gets bounced to the top mid-scroll).
-  const prevPanel = host.querySelector('.rt-panel');
-  const prevScroll = prevPanel ? prevPanel.scrollTop : 0;
-  // Also preserve the seat-picker's HORIZONTAL scroll (mobile: slots 8-12 are scrolled off to
-  // the right, and a reset makes them impossible to tap).
-  const prevSeats = host.querySelector('.rt-seats');
-  const prevSeatScroll = prevSeats ? prevSeats.scrollLeft : 0;
+  // Preserve scroll across re-renders. The 2.5s poll rebuilds this element wholesale,
+  // and so does starring a player — without this you are bounced to the top of
+  // whatever you were reading, every time. Every independently-scrollable region
+  // in the drawer is listed here; missing one is invisible until someone scrolls it.
+  const prevScrolls = _rtSnapScroll(host);
 
   // Which slot are we showing? default = mine; in the panel you can switch teams.
   const viewSlot = (trackerViewSlot!=null) ? trackerViewSlot : mySlot;
@@ -23699,7 +23729,7 @@ function renderRosterBar(){
       </div>
     </div>`;
     // restore horizontal scroll so the user's spot doesn't jump back to seat 1
-    if(prevSeatScroll){ const ns=host.querySelector('.rt-seats'); if(ns) ns.scrollLeft=prevSeatScroll; }
+    _rtRestoreScroll(host, prevScrolls);
     return;
   }
 
@@ -23730,11 +23760,582 @@ function renderRosterBar(){
   const panel = renderTrackerPanel(viewSlot);   // always in the DOM; .rt-closed collapses it
   host.innerHTML = bar + panel;
   if(host._rtPublishH) host._rtPublishH();   // no-ResizeObserver fallback (see creation above)
-  // restore scroll on the freshly-rendered panel
-  if(trackerOpen && prevScroll){
-    const np = host.querySelector('.rt-panel');
-    if(np) np.scrollTop = prevScroll;
+  _rtRestoreScroll(host, prevScrolls);
+}
+// Vertical scrollers keyed by selector; '|x' marks the horizontal rails.
+const _RT_SCROLLERS = ['.rt-panel','.rt-col-main','.rt-col-side','.vsg-board','.vsg-cheat',
+                       '.rt-seats|x','.rt-chips|x','.vsg-tabs|x'];
+function _rtSnapScroll(host){
+  const m={};
+  if(!host) return m;
+  _RT_SCROLLERS.forEach(k=>{
+    const x=k.endsWith('|x'), sel=x?k.slice(0,-2):k;
+    const el=host.querySelector(sel); if(!el) return;
+    const v = x ? el.scrollLeft : el.scrollTop;
+    if(v) m[k]=v;
+  });
+  return m;
+}
+function _rtRestoreScroll(host, m){
+  if(!host || !m) return;
+  Object.keys(m).forEach(k=>{
+    const x=k.endsWith('|x'), sel=x?k.slice(0,-2):k;
+    const el=host.querySelector(sel); if(!el) return;
+    if(x) el.scrollLeft=m[k]; else el.scrollTop=m[k];
+  });
+}
+function setVonaSugFilter(pos){ vonaSugFilter = (vonaSugFilter===pos && pos!=='ALL') ? 'ALL' : pos; renderRosterBar(); }
+// ── Shortlist ───────────────────────────────────────────────────────────────
+// Click a star anywhere on the board and the player joins your list. It survives
+// a reload, highlights him wherever he shows up, and — the point of it — the
+// advisory reminds you he's still there when your pick comes round.
+function toggleDraftStar(pid){
+  if(!pid) return;
+  const on = !draftStars[pid];
+  if(on) draftStars[pid]=1; else delete draftStars[pid];
+  try{ localStorage.setItem('tc_draft_stars', JSON.stringify(draftStars)); }catch(e){}
+  // Repaint exactly what changed. Re-rendering the rankings table for a star was
+  // a full rebuild of hundreds of rows that looked, correctly, like nothing had
+  // happened — and it threw away your scroll position.
+  try{
+    const sel=(typeof CSS!=='undefined' && CSS.escape) ? CSS.escape(pid) : pid.replace(/"/g,'\\"');
+    document.querySelectorAll(`[data-star-row="${sel}"]`).forEach(tr=>{
+      tr.classList.toggle('rank-starred', on);
+    });
+    document.querySelectorAll(`[data-starid="${sel}"]`).forEach(b=>{
+      b.classList.toggle('on', on);
+      b.textContent = on ? '\u2605' : '\u2606';
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }catch(e){}
+  // The advisory's shortlist strip and the plan's targets do change — but the
+  // VONA maths doesn't, so the cache stands.
+  _cheatCache={key:null,val:null};
+  renderRosterBar();
+}
+// Star control for a rankings row (the draft board is where you spot the ones
+// you'd otherwise forget).
+function rankStarBtn(p){
+  const pid=escAttr(String(p.player_id||p.name));
+  const on=isDraftStar(p);
+  return `<button class="vsg-star rank-star${on?' on':''}" data-starid="${pid}"
+    title="${on?'Remove from your shortlist':'Add to your shortlist'}" aria-pressed="${on}"
+    aria-label="${on?'Remove from shortlist':'Add to shortlist'}"
+    onclick="event.stopPropagation();toggleDraftStar('${pid}')">${on?'\u2605':'\u2606'}</button>`;
+}
+function isDraftStar(p){ return !!(p && draftStars[p.player_id||p.name]); }
+function _starBtn(p){
+  const pid=escAttr(String(p.player_id||p.name));
+  const on=isDraftStar(p);
+  return `<button class="vsg-star${on?' on':''}" data-starid="${pid}" title="${on?'Remove from your shortlist':'Add to your shortlist'}"
+    aria-label="${on?'Remove from shortlist':'Add to shortlist'}" aria-pressed="${on}"
+    onclick="event.stopPropagation();toggleDraftStar('${pid}')">${on?'\u2605':'\u2606'}</button>`;
+}
+// ── Draft plan: mock drafts from YOUR seat ──────────────────────────────────
+// The advisory answers "what now?". This answers the question you have the night
+// before: from seat N in THIS league, who actually reaches me in each round?
+// It runs full mock drafts on your own board — opponents buying by noisy ADP,
+// the same market model the availability odds use — and reports, per pick of
+// yours, how often each player is still there. Aim at the ones that survive;
+// there is no point planning round 2 around a man who is gone 92% of the time.
+//
+// Deliberately NOT a projection of who you'd take: that's the live advisory's
+// job with the board in front of it. This is the shape of the opportunity.
+// Standard normal CDF (Abramowitz & Stegun 7.1.26 on erf) — the closed-form
+// survival curve the plan uses where the drawn-sample MC would be overkill.
+// Matches norm_cdf in tools/draft_sim.py.
+function _vonaNormCdf(z){
+  const s=z<0?-1:1, x=Math.abs(z)/Math.SQRT2;
+  const t=1/(1+0.3275911*x);
+  const y=1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t
+            +0.254829592)*t*Math.exp(-x*x);
+  return 0.5*(1+s*y);
+}
+const CHEAT_SIMS = 150;
+const CHEAT_MKT_DEPTH = 260;
+let _cheatCache = {key:null, val:null};
+function buildDraftCheatSheet(){
+  if(mySlot==null) return null;
+  const { teams, type, reversalRound, rounds } = draftParams();
+  if(!teams || !rounds) return null;
+  const list = buildPlayerList();
+  const avail = list.filter(p=>!draftedIds[p.player_id]);
+  const startPick = currentPickNo() || 1;
+  const feed = _draftFeedPickNos();
+  const myPicks = myUpcomingPickNumbers(mySlot).filter(n=>!feed.has(n));
+  if(!myPicks.length) return null;
+  const starSig = Object.keys(draftStars||{}).sort().join(',');
+  const key = `${Object.keys(draftedIds).length}|${mySlot}|${startPick}|${rankFormat}|${buildPlayerScoringSig()}|${_buildPlayerCacheEpoch}|${starSig}`;
+  if(_cheatCache.key===key && _cheatCache.val) return _cheatCache.val;
+  // Only players the market prices can be modelled as going anywhere. adpFor()
+  // already reads the board for THIS format — the 2QB column in superflex — which
+  // is the whole reason a superflex plan looks different from a 1QB one.
+  const mkt = avail.filter(p=>adpFor(p)<999)
+                   .sort((a,b)=>adpFor(a)-adpFor(b)).slice(0, CHEAT_MKT_DEPTH);
+  if(mkt.length<20) return null;
+  const ded={QB:0,RB:0,WR:0,TE:0}; let sfN=0, flexN=0, kd=0;
+  draftLineup.forEach(sl=>{
+    if(ded[sl]!=null) ded[sl]++;
+    else if(sl==='SUPER_FLEX') sfN++;
+    else if(sl==='K'||sl==='DEF') kd++;
+    else flexN++;
+  });
+  const val=_cheatSimulate(mkt, { teams, rounds, type, reversalRound, startPick, myPicks,
+    mySlot, feed, ded, sfN, flexN, kd, sims:CHEAT_SIMS,
+    seed:((Object.keys(draftedIds).length*7919) ^ (mySlot*104729) ^ 0x9e3779b9)>>>0 });
+  _cheatCache={key, val};
+  return val;
+}
+// Optimal-lineup VOR for a hypothetical roster held as per-position VOR arrays —
+// the plan's inner loop, so it works on numbers rather than player objects.
+// Same fill as _vonaOptimalLineupVor: dedicated slots, then flex, then superflex.
+function _planLineup(vors, ded, flexN, sfN){
+  let total=0; const left=[], qbLeft=[];
+  ['QB','RB','WR','TE'].forEach(q=>{
+    const v=vors[q].slice().sort((x,y)=>y-x);
+    for(let i=0;i<ded[q] && i<v.length;i++) total+=Math.max(0,v[i]);
+    const rest=v.slice(ded[q]);
+    if(q==='QB') qbLeft.push(...rest); else left.push(...rest);
+  });
+  left.sort((x,y)=>y-x);
+  for(let i=0;i<flexN && i<left.length;i++) total+=Math.max(0,left[i]);
+  const sfPool=left.slice(flexN).concat(qbLeft).sort((x,y)=>y-x);
+  for(let i=0;i<sfN && i<sfPool.length;i++) total+=Math.max(0,sfPool[i]);
+  return total;
+}
+// What one more player at `pos` worth `vor` does for this roster, per week.
+function _planCand(vors, cnt, ded, flexN, sfN, pos, vor, before){
+  const v2={QB:vors.QB,RB:vors.RB,WR:vors.WR,TE:vors.TE};
+  v2[pos]=vors[pos].concat([vor]);
+  const gain=(_planLineup(v2, ded, flexN, sfN)-before)/17;
+  if(gain>0.05) return gain;
+  const over=Math.max(0,vor)/17;
+  const thin=(cnt[pos]<=ded[pos])?0.15:0;
+  const w=(pos==='QB'?0.15:pos==='TE'?0.12:0.30)+thin;
+  return w*over + 0.04*over;
+}
+// The simulation, with every input passed in so it can be tested without a live
+// draft. `mkt` is ADP-ordered; each entry needs {pos, vor} and an adp via adpFor().
+function _cheatSimulate(mkt, cfg){
+  const POSL=['QB','RB','WR','TE'];
+  const { teams, rounds, type, reversalRound, startPick, myPicks, mySlot, feed,
+          ded, sfN, flexN, kd } = cfg;
+  const sims=cfg.sims||CHEAT_SIMS;
+  const n=mkt.length;
+  const adp=Float64Array.from(mkt.map(p=>adpFor(p)));
+  const sig=Float64Array.from(mkt.map(p=>adpSigma(adpFor(p))));
+  const vor=Float64Array.from(mkt.map(p=>p.vor||0));
+  const byPos={}; POSL.forEach(q=>byPos[q]=[]);
+  mkt.forEach((p,i)=>{ if(byPos[p.pos]) byPos[p.pos].push(i); });
+  // Opponent ceilings — how many of a position a team takes before it stops caring.
+  const cap={QB:(sfN?ded.QB+sfN+1:2), TE:Math.max(2,ded.TE+1),
+             RB:ded.RB+flexN+2, WR:ded.WR+flexN+2};
+  // MY ceilings are the advisory's, which is why the plan stops at two quarterbacks
+  // in a 1QB league and doesn't spend six straight rounds on them in superflex.
+  const myCap={QB:(sfN?ded.QB+sfN+1:2), TE:Math.max(2,ded.TE+1), RB:8, WR:9};
+  const minTargets={QB:ded.QB+sfN, TE:ded.TE, RB:ded.RB+2, WR:ded.WR+2};
+
+  const availCount=myPicks.map(()=>new Int32Array(n));
+  const tookCount=myPicks.map(()=>new Int32Array(n));
+  const tookPos=myPicks.map(()=>({QB:0,RB:0,WR:0,TE:0,KD:0}));
+  const lastPick=teams*rounds;
+  const taken=new Uint8Array(n);
+  const ptr={}, ord={}, noisy=new Float64Array(n);
+  let seed=(cfg.seed||1)>>>0;
+  const rnd=()=>{ seed+=0x6D2B79F5; let t=Math.imul(seed^(seed>>>15),1|seed);
+                  t^=t+Math.imul(t^(t>>>7),61|t); return ((t^(t>>>14))>>>0)/4294967296; };
+
+  for(let s=0;s<sims;s++){
+    taken.fill(0);
+    for(let i=0;i<n;i++) noisy[i]=adp[i]+_VONA_NORMALS[(rnd()*4096)|0]*sig[i];
+    POSL.forEach(q=>{ ord[q]=byPos[q].slice().sort((x,y)=>noisy[x]-noisy[y]); ptr[q]=0; });
+    const cnt={}; for(let t=1;t<=teams;t++) cnt[t]={QB:0,RB:0,WR:0,TE:0,KD:0};
+    const myVors={QB:[],RB:[],WR:[],TE:[]};
+    let mi=0;
+    for(let pk=startPick; pk<=lastPick; pk++){
+      if(feed && feed.has && feed.has(pk)) continue;
+      const slot=slotOnClock(pk, teams, type, reversalRound);
+      const c=cnt[slot]||{QB:0,RB:0,WR:0,TE:0,KD:0};
+      const atMine=(slot===mySlot && mi<myPicks.length && pk===myPicks[mi]);
+      if(atMine){ const ac=availCount[mi]; for(let i=0;i<n;i++) if(!taken[i]) ac[i]++; }
+      const picksLeftForTeam=Math.max(1, Math.ceil((lastPick-pk+1)/teams));
+      let pick=-1, pickPos=null;
+      if(slot===mySlot){
+        // ── My seat drafts a ROSTER, not a list of the best players left ──────
+        const myLeft=myPicks.length-mi;                 // picks I have from here
+        const kdOpen=kd-c.KD;
+        if(kdOpen>0 && myLeft<=kdOpen){                 // the last picks are spoken for
+          c.KD++;
+          if(atMine){ tookPos[mi].KD++; mi++; }
+          continue;
+        }
+        const skillLeft=Math.max(0, myLeft-kdOpen);
+        const unmet={}; let unmetTotal=0;
+        POSL.forEach(q=>{ unmet[q]=Math.max(0,minTargets[q]-c[q]); unmetTotal+=unmet[q]; });
+        const mustFill = unmetTotal>0 && unmetTotal>=skillLeft;
+        const before=_planLineup(myVors, ded, flexN, sfN);
+        const nextMine=myPicks[mi+1]||null;
+        let bestScore=-Infinity;
+        POSL.forEach(q=>{
+          if(c[q]>=myCap[q]) return;
+          if(mustFill && !unmet[q]) return;
+          // best available at this position on MY board
+          let top=-1, topV=-Infinity;
+          for(let k=0;k<byPos[q].length;k++){
+            const i=byPos[q][k];
+            if(taken[i]) continue;
+            if(vor[i]>topV){ topV=vor[i]; top=i; }
+          }
+          if(top<0) return;
+          const vNow=_planCand(myVors, c, ded, flexN, sfN, q, topV, before);
+          // What this position is expected to hand me next time round — the
+          // regret of waiting, which is what stops the plan hoarding one spot.
+          let vNext=vNow*0.8;
+          if(nextMine){
+            let ev=0, pNone=1;
+            for(let k=0;k<byPos[q].length;k++){
+              const i=byPos[q][k];
+              if(taken[i]) continue;
+              const su=Math.min(0.995, _vonaNormCdf((adp[i]-(nextMine-0.5))/sig[i]));
+              ev += pNone*su*vor[i]; pNone *= (1-su);
+              if(pNone<1e-3) break;
+            }
+            vNext=_planCand(myVors, c, ded, flexN, sfN, q, Math.max(0,ev), before);
+          }
+          const sc=Math.max(0, vNow-vNext) + VONA_NOW_WEIGHT*vNow;
+          if(sc>bestScore){ bestScore=sc; pick=top; pickPos=q; }
+        });
+      } else {
+        let want=POSL.filter(q=>c[q]<ded[q]);
+        if(!want.length) want=POSL.filter(q=>c[q]<cap[q]);
+        if(!want.length) want=POSL.slice();
+        const kdOpen=kd-c.KD;
+        if(kdOpen>0 && rnd() < Math.min(0.95, kdOpen/picksLeftForTeam)){ c.KD++; continue; }
+        let best=Infinity;
+        want.forEach(q=>{
+          let k=ptr[q];
+          while(k<ord[q].length && taken[ord[q][k]]) k++;
+          ptr[q]=k;
+          if(k>=ord[q].length) return;
+          const v=noisy[ord[q][k]];
+          if(v<best){ best=v; pick=ord[q][k]; pickPos=q; }
+        });
+      }
+      if(pick<0) continue;
+      taken[pick]=1; c[pickPos]++;
+      if(slot===mySlot) myVors[pickPos].push(vor[pick]);
+      if(atMine){ tookCount[mi][pick]++; tookPos[mi][pickPos]++; mi++; }
+    }
   }
+
+  // ── Report ────────────────────────────────────────────────────────────────
+  // Per pick: what the plan actually TAKES there (roster-aware, so it reads like
+  // a build), each with how often he's even available — the gap between the two
+  // is the edge. Availability alone would just list whoever the market ignores.
+  const picks=myPicks.map((pkNo,j)=>{
+    const tc=tookCount[j], ac=availCount[j];
+    const rows=[];
+    for(let i=0;i<n;i++){
+      if(tc[i]/sims >= 0.04) rows.push({p:mkt[i], pTake:tc[i]/sims, pAvail:ac[i]/sims, vor:vor[i]});
+    }
+    rows.sort((x,y)=>y.pTake-x.pTake);
+    const tp=tookPos[j];
+    const bestPos=Object.keys(tp).reduce((x,y)=>tp[y]>tp[x]?y:x,'RB');
+    return { pickNo:pkNo, round:Math.ceil(pkNo/teams), rows:rows.slice(0,5),
+             tookPos:tp, likelyPos:bestPos, likelyShare:tp[bestPos]/sims, targets:[] };
+  });
+
+  // ── Your shortlist, slotted into the round where you can actually get him ──
+  // The edge is timing: don't spend an early pick on a man the market leaves
+  // alone. Target the LAST of your picks where he's still comfortably there;
+  // if he never is, the first where he's even plausible; otherwise say so.
+  const starred=[];
+  for(let i=0;i<n;i++){
+    const pid=mkt[i].player_id||mkt[i].name;
+    if(!draftStars || !draftStars[pid]) continue;
+    let target=-1, kind='wait';
+    for(let j=0;j<myPicks.length;j++) if(availCount[j][i]/sims>=0.55) target=j;
+    if(target<0){
+      for(let j=0;j<myPicks.length;j++){ if(availCount[j][i]/sims>=0.15){ target=j; kind='now'; break; } }
+    }
+    const rec={ p:mkt[i], vor:vor[i], adp:adp[i],
+                pAvailAt: target>=0 ? availCount[target][i]/sims : 0,
+                pAvailFirst: availCount[0][i]/sims, kind, target };
+    starred.push(rec);
+    if(target>=0) picks[target].targets.push(rec);
+  }
+  picks.forEach(pk=>pk.targets.sort((a,b)=>b.vor-a.vor));
+  return { picks, sims, slot:mySlot, starred, unreachable:starred.filter(x=>x.target<0) };
+}
+function vonaCheatPanel(){
+  const cs=buildDraftCheatSheet();
+  if(!cs) return '<div class="vsg-empty">No plan available \u2014 the draft has no picks left for you.</div>';
+  const shape=cs.picks.map(pk=>pk.likelyPos==='KD'?'K/D':pk.likelyPos).join(' \u00b7 ');
+  const blocks=cs.picks.map(pk=>{
+    // Your starred men first, flagged as targets for THIS pick.
+    const tgt=pk.targets.map(t=>{
+      const open=(typeof pcardOnclick==='function')
+        ? `onclick="${pcardOnclick(t.p.player_id||t.p.name, t.p.pos, t.p.team||'')}"` : '';
+      // Why he sits in THIS round: it's the last one you can count on him in.
+      const note = t.kind==='now'
+        ? `last chance \u2014 ${Math.round(t.pAvailAt*100)}% here`
+        : `your last safe round \u2014 ${Math.round(t.pAvailAt*100)}% here`;
+      return `<div class="vsg-crow tgt">
+        ${_starBtn(t.p)}
+        <span class="rt-slot ${slotClass(t.p.pos)}">${t.p.pos}</span>
+        <span class="vsg-cname clickable-player" ${open}>${escHtml(t.p.name)}</span>
+        <span class="vsg-tnote ${t.kind==='now'?'urgent':''}">${note}</span>
+        <span class="vsg-bnum">ADP ${Math.round(t.adp)}</span>
+        <span class="vsg-bnum ${t.pAvailAt<0.35?'vsg-now':(t.pAvailAt<0.7?'vsg-close':'vsg-wait')}">${Math.round(t.pAvailAt*100)}%</span>
+      </div>`;
+    }).join('');
+    // A starred target is already rendered above — don't list him again.
+    const shown=new Set(pk.targets.map(t=>t.p.player_id||t.p.name));
+    const rows=pk.rows.filter(r=>!shown.has(r.p.player_id||r.p.name)).map(r=>{
+      const open=(typeof pcardOnclick==='function')
+        ? `onclick="${pcardOnclick(r.p.player_id||r.p.name, r.p.pos, r.p.team||'')}"` : '';
+      const ac = r.pAvail<0.35 ? 'vsg-now' : (r.pAvail<0.7 ? 'vsg-close' : 'vsg-wait');
+      return `<div class="vsg-crow${isDraftStar(r.p)?' starred':''}">
+        ${_starBtn(r.p)}
+        <span class="rt-slot ${slotClass(r.p.pos)}">${r.p.pos}</span>
+        <span class="vsg-cname clickable-player" ${open}>${escHtml(r.p.name)}</span>
+        <span class="vsg-take" title="How often the plan takes him here">${Math.round(r.pTake*100)}% taken</span>
+        <span class="vsg-bnum">${(r.vor||0)>0?'+':''}${(r.vor||0).toFixed(0)}</span>
+        <span class="vsg-bnum ${ac}" title="How often he is still on the board at this pick">${Math.round(r.pAvail*100)}%</span>
+      </div>`;
+    }).join('');
+    return `<div class="vsg-cblock">
+      <div class="vsg-chead"><b>Round ${pk.round}</b> \u00b7 pick ${pk.pickNo}
+        <span class="vsg-cpos">usually <span class="rt-slot ${slotClass(pk.likelyPos)}">${pk.likelyPos==='KD'?'K/DEF':pk.likelyPos}</span>
+          ${Math.round(pk.likelyShare*100)}%</span></div>
+      <div class="vsg-clist">${tgt}${rows||(tgt?'':'<div class="vsg-empty">Reserved \u2014 no skill pick here.</div>')}</div>
+    </div>`;
+  }).join('');
+  const miss=(cs.unreachable||[]).length
+    ? `<div class="vsg-cmiss">\u2605 ${cs.unreachable.map(t=>escHtml(t.p.name)).join(', ')}
+        \u2014 gone before your first pick in almost every simulation. Taking one means reaching past his market price.</div>`
+    : '';
+  // On a phone the explanation is seven lines of prose above the thing you came
+  // to read. It lives behind the \u2139 instead; the build line is the one part
+  // worth its space, so that stays.
+  return `<div class="vsg-cheat">
+    <div class="vsg-cnote">
+      <div class="vsg-cnote-txt">${cs.sims} mock drafts from seat ${cs.slot}: opponents buy at
+        <b>${typeof formatLabel==='function'?formatLabel(rankFormat):''} ADP</b>, you draft with the
+        advisory's own rules. <b>% taken</b> is how often the plan spends this pick on him;
+        <b>%</b> on the right is how often he's even there. A player who's always available and
+        rarely taken is one you can wait on \u2014 that gap is the edge.</div>
+      <div class="vsg-shape"><span class="vsg-shape-l">Typical build</span>
+        ${(typeof tcInfoBtn==='function')?tcInfoBtn('vonaplan','How the draft plan works'):''}
+        <b>${shape}</b></div>
+      <div class="vsg-ckey">% taken \u00b7 % still there</div></div>
+    ${miss}
+    ${blocks}</div>`;
+}
+// ── "If I wait, what does the board look like?" ──────────────────────────────
+// The row shows the one man you'd most often settle for. This opens the rest of
+// it: every position's realistic survivors at your next pick, so "wait" is a
+// board you can look at rather than a single name you have to trust.
+// A phone doesn't want a four-column board popped over the card it came from.
+// The \u25be "next up at this position" list already answers "who'll be there?"
+// well enough there, so narrow screens get that instead.
+function vonaWaitOpen(ev, pos){
+  const narrow = (typeof window!=='undefined' && window.matchMedia)
+    ? window.matchMedia('(max-width:640px)').matches : false;
+  return narrow ? vonaOptionsPop(ev, pos) : vonaWaitPop(ev);
+}
+function vonaWaitPop(ev){
+  const old=document.getElementById('vonaWaitPop'); if(old) old.remove();
+  const v=computeVONA(); if(!v) return;
+  const ups=myUpcomingPickNumbers(mySlot)||[];
+  const nxt = v.onClock ? (ups[1]!=null?ups[1]:null) : (ups[0]!=null?ups[0]:null);
+  const availOf=(p)=> (v.pAvail && v.pAvail.get(p.player_id||p.name)) || 0;
+  const cols=['QB','RB','WR','TE'].map(pos=>{
+    const pool=((v.pools&&v.pools[pos])||[]).filter(p=>!_vonaSeasonOut(p));
+    // Realistic survivors only — a 3% name is not "what waiting buys you".
+    const live=pool.filter(p=>availOf(p)>=0.25).slice(0,5);
+    const use=live.length?live:pool.slice(0,2);
+    if(!use.length) return '';
+    const rows=use.map((p,i)=>{
+      const a=availOf(p);
+      const cl = a<0.35 ? 'vsg-now' : (a<0.7 ? 'vsg-close' : 'vsg-wait');
+      const open=(typeof pcardOnclick==='function')
+        ? `onclick="event.stopPropagation();${pcardOnclick(p.player_id||p.name,p.pos,p.team||'')}"` : '';
+      return `<div class="vwp-row${i===0?' best':''} clickable-player" ${open}
+          title="${escAttr(p.name)} \u2014 open player card">
+        <span class="vwp-nm">${escHtml(p.name)}</span>
+        <span class="vwp-team">${escHtml(p.team||'FA')}</span>
+        <span class="vwp-vor">${(p.vor||0)>0?'+':''}${(p.vor||0).toFixed(0)}</span>
+        <span class="vwp-pct ${cl}">${_vonaPctDisp(p,a)}%</span></div>`;
+    }).join('');
+    const top=use[0];
+    return `<div class="vwp-col">
+      <div class="vwp-h"><span class="rt-slot ${slotClass(pos)}">${pos}</span>
+        <span class="vwp-hnote">likely yours: <b>${escHtml(((typeof tcLastName==='function')?tcLastName(top.name):top.name))}</b></span></div>
+      ${rows}</div>`;
+  }).filter(Boolean).join('');
+  const div=document.createElement('div');
+  div.id='vonaWaitPop'; div.className='vona-opt-pop vwp';
+  div.innerHTML=`<div class="vona-opt-head">
+      <span class="vona-opt-title">If you wait${nxt?` \u2014 the board at pick ${nxt}`:''}</span>
+      <button class="vona-opt-close" onclick="this.closest('.vona-opt-pop').remove()" aria-label="Close">\u2715</button>
+    </div>
+    <div class="vwp-key"><span>Player</span><span class="vwp-kr">Value \u00b7 chance he lasts</span></div>
+    <div class="vwp-grid">${cols}</div>
+    <div class="vwp-foot">The highlighted name in each column is who you'd most likely end up with.</div>`;
+  document.body.appendChild(div);
+  const r=(ev&&ev.currentTarget&&ev.currentTarget.getBoundingClientRect)
+    ? ev.currentTarget.getBoundingClientRect() : {left:40, bottom:80};
+  const w=div.offsetWidth, h=div.offsetHeight;
+  div.style.left=Math.max(8, Math.min(window.innerWidth-w-8, r.left-40))+'px';
+  // Prefer below; flip above when it would run off the bottom.
+  div.style.top=(r.bottom+6+h > window.innerHeight-8 && r.top-h-6 > 8)
+    ? (r.top-h-6)+'px' : Math.max(8, Math.min(window.innerHeight-h-8, r.bottom+6))+'px';
+  setTimeout(()=>{
+    const off=(e)=>{ if(!div.contains(e.target)){ div.remove(); document.removeEventListener('click',off,true); } };
+    document.addEventListener('click',off,true);
+  },0);
+}
+// ── Suggestions panel (desktop) ─────────────────────────────────────────────
+// The drawer's four position rows pack a lot into very little width, which is
+// fine on a phone and wasteful on a monitor. On desktop the same advice is a
+// scannable list of PLAYERS — the thing you actually have to decide on — beside
+// your own roster, with a position tab for browsing the rest of a board.
+// Content is the same computeVONA result; nothing here re-ranks anything.
+function vonaSuggestPanel(v){
+  const POSL=['QB','RB','WR','TE'];
+  const has={}; (v.picks||[]).forEach(r=>has[r.pos]=true);
+  const tabNames=['ALL'].concat(POSL.filter(p=>has[p])).concat(['PLAN']);
+  const tabs=tabNames.map(t=>{
+    const on = (vonaSugFilter===t) || (t==='ALL' && !tabNames.slice(1).includes(vonaSugFilter));
+    const lbl = t==='ALL' ? 'All' : (t==='PLAN' ? 'Draft plan' : t);
+    return `<button class="vsg-tab${on?' active':''}${t==='PLAN'?' vsg-tab-plan':''}" onclick="event.stopPropagation();setVonaSugFilter('${t}')">${lbl}</button>`;
+  }).join('');
+  const myNext=(function(){
+    const ups=myUpcomingPickNumbers(mySlot)||[];
+    return v.onClock ? (ups[1]!=null?ups[1]:null) : (ups[0]!=null?ups[0]:null);
+  })();
+  const availOf=(p)=> (v.pAvail && v.pAvail.get(p.player_id||p.name)) || 0;
+  const pcls=(x)=> x<0.35 ? 'vsg-now' : (x<0.7 ? 'vsg-close' : 'vsg-wait');
+  const openAttr=(p)=> (typeof pcardOnclick==='function')
+    ? `onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}"` : '';
+  const adpOf=(p)=> (typeof adpFor==='function') ? adpFor(p) : 999;
+
+  // ── Planning: what reaches this seat, round by round ──────────────────────
+  if(vonaSugFilter==='PLAN'){
+    return `<div class="vsg">
+      <div class="vsg-tabs">${tabs}<span class="vsg-spacer"></span>
+        <span class="vsg-hint">mock drafts from your seat</span></div>
+      ${vonaCheatPanel()}
+    </div>`;
+  }
+  // ── Browsing one position: the whole board, with the numbers you'd want ────
+  if(POSL.includes(vonaSugFilter)){
+    const pos=vonaSugFilter;
+    const row=(v.picks||[]).find(r=>r.pos===pos);
+    const takeId=row && row.p ? (row.p.player_id||row.p.name) : null;
+    const list=(v.pools && v.pools[pos]) || [];
+    const rows=list.slice(0, VONA_BOARD_DEPTH).map((p,i)=>{
+      const a=availOf(p), adp=adpOf(p);
+      const mine=(p.player_id||p.name)===takeId;
+      return `<div class="vsg-brow${mine?' pick':''}${isDraftStar(p)?' starred':''} clickable-player" ${openAttr(p)}>
+        ${_starBtn(p)}
+        <span class="vsg-bi">${i+1}</span>
+        <span class="vsg-bname">${escHtml(p.name)}${typeof tcInjuryTag==='function'?tcInjuryTag(p.player_id):''}</span>
+        <span class="vsg-bteam">${escHtml(p.team||'FA')}</span>
+        <span class="vsg-bnum">${p.fpts!=null?Math.round(p.fpts):'\u2013'}</span>
+        <span class="vsg-bnum">${(p.vor||0)>0?'+':''}${(p.vor||0).toFixed(0)}</span>
+        <span class="vsg-bnum">${adp<999?Math.round(adp):'\u2013'}</span>
+        <span class="vsg-bnum ${pcls(a)}">${_vonaPctDisp(p,a)}%</span>
+      </div>`;
+    }).join('');
+    return `<div class="vsg">
+      <div class="vsg-tabs">${tabs}<span class="vsg-spacer"></span>
+        <span class="vsg-hint">${list.length} ${pos}s left \u00b7 \u2606 to shortlist</span></div>
+      <div class="vsg-bhead"><span></span><span></span><span>Player</span><span>Team</span>
+        <span>Proj</span><span>Value</span><span>ADP</span><span>${myNext?`Back at ${myNext}`:'Back'}</span></div>
+      <div class="vsg-board">${rows||'<div class="vsg-empty">Nobody left here.</div>'}</div>
+    </div>`;
+  }
+
+  // ── Deciding: one card per position, in engine order ───────────────────────
+  const items=(v.picks||[]).slice(0,4);
+  if(!items.length) return '';
+  const cards=items.map(r=>{
+    const p=r.p; if(!p) return '';
+    const pct=Math.round((r.pHold||0)*100);
+    let vcls='vsg-wait', vtxt='can wait';
+    if(r.lastCall){ vcls='vsg-now'; vtxt='last call'; }
+    else if(r.gated){ vcls='vsg-off'; vtxt='parked'; }
+    else if(pct<35){ vcls='vsg-now'; vtxt='take now'; }
+    else if(pct<70){ vcls='vsg-close'; vtxt='toss-up'; }
+    const adp=adpOf(p);
+    const adpTxt=(adp!=null && adp<999) ? `ADP ${Math.round(adp)}` : 'no ADP';
+    const edge=(adp!=null && adp<999 && v.pickNo) ? Math.round(adp-v.pickNo) : null;
+    const edgeTxt = edge==null ? ''
+      : edge>=8 ? `<span class="vsg-edge reach">${edge} picks early</span>`
+      : edge<=-6 ? `<span class="vsg-edge value">${-edge} picks of value</span>` : '';
+    // What waiting actually costs: the man you'd most often settle for instead.
+    const nx=r.bestNext;
+    const waitLine = (nx && nx!==p)
+      ? `<div class="vsg-next act" onclick="event.stopPropagation();vonaWaitOpen(event,'${p.pos}')" title="See the board if you wait">wait \u2192 <b>${escHtml(nx.name)}</b>
+           <span class="vsg-nvor">${(nx.vor||0)>0?'+':''}${(nx.vor||0).toFixed(0)}</span>
+           <span class="vsg-nshare">${Math.round((r.nextShare||0)*100)}% likely</span></div>`
+      : `<div class="vsg-next safe act" onclick="event.stopPropagation();vonaWaitOpen(event,'${p.pos}')" title="See the board if you wait">wait \u2192 <b>${escHtml(p.name)}</b> likely still there</div>`;
+    return `<div class="vsg-card${r.gated?' gated':''}${r.rank===1&&!r.gated?' lead':''}${isDraftStar(p)?' starred':''}">
+      <span class="vsg-rank">${r.rank}</span>
+      <span class="vsg-hs clickable-player" ${openAttr(p)}>${playerThumb(p)}</span>
+      <div class="vsg-main clickable-player" ${openAttr(p)}>
+        <div class="vsg-name">${_starBtn(p)}<span class="vsg-nm">${escHtml(p.name)}</span>${typeof tcInjuryTag==='function'?tcInjuryTag(p.player_id):''}</div>
+        <div class="vsg-meta"><span class="rt-slot ${slotClass(p.pos)}">${p.pos}</span>
+          <span class="vsg-team">${escHtml(p.team||'FA')}</span>
+          <span class="vsg-vor">${(p.vor||0)>0?'+':''}${(p.vor||0).toFixed(0)} value</span>
+          <span class="vsg-adp">${adpTxt}</span>${edgeTxt}</div>
+        ${waitLine}
+        ${r.why?`<div class="vsg-why">${r.why}</div>`:''}
+      </div>
+      <div class="vsg-verdict">
+        <span class="vsg-pct ${vcls}">${_vonaPctDisp(p,r.pHold)}%</span>
+        <span class="vsg-lbl">${myNext?`back at ${myNext}`:'still there'}</span>
+        <span class="vsg-chip ${vcls}">${vtxt}</span>
+        <button class="vona-more vsg-more" onclick="event.stopPropagation();vonaOptionsPop(event,'${r.pos}')"
+          title="Next viable ${r.pos}s on the board" aria-label="More ${r.pos} options">\u25be</button>
+      </div>
+    </div>`;
+  }).join('');
+  return `<div class="vsg">
+    <div class="vsg-tabs">${tabs}<span class="vsg-spacer"></span>
+      <span class="vsg-hint">value now vs what comes back to you</span></div>
+    <div class="vsg-list">${cards}</div>
+    ${vonaStarStrip(v, myNext)}
+  </div>`;
+}
+// Your shortlist, filtered to who's actually still on the board, nearest-to-gone
+// first. This is the reminder: you starred him three rounds ago, he's still here.
+function vonaStarStrip(v, myNext){
+  const ids=Object.keys(draftStars||{});
+  if(!ids.length) return '';
+  const live=[];
+  ['QB','RB','WR','TE'].forEach(pos=>{
+    ((v.pools&&v.pools[pos])||[]).forEach(p=>{ if(isDraftStar(p)) live.push(p); });
+  });
+  if(!live.length) return '';
+  const availOf=(p)=> (v.pAvail && v.pAvail.get(p.player_id||p.name)) || 0;
+  live.sort((a,b)=>availOf(a)-availOf(b));
+  const chips=live.slice(0,6).map(p=>{
+    const a=availOf(p);
+    const cls = a<0.35 ? 'vsg-now' : (a<0.7 ? 'vsg-close' : 'vsg-wait');
+    const open=(typeof pcardOnclick==='function')
+      ? `onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}"` : '';
+    return `<span class="vsg-schip clickable-player" ${open}>
+      <span class="rt-slot ${slotClass(p.pos)}">${p.pos}</span>${escHtml(p.name)}
+      <b class="${cls}">${_vonaPctDisp(p,a)}%</b></span>`;
+  }).join('');
+  const gone=live.length-Math.min(6,live.length);
+  return `<div class="vsg-strip"><span class="vsg-strip-lbl">
+      <span class="vsg-lbl-long">\u2605 Your list \u2014 still on the board${myNext?`, odds they reach pick ${myNext}`:''}</span>
+      <span class="vsg-lbl-short">\u2605 Your list${myNext?` \u00b7 odds at ${myNext}`:''}</span></span>
+    <div class="vsg-strip-row">${chips}${gone>0?`<span class="vsg-schip more">+${gone} more</span>`:''}</div></div>`;
 }
 // The expanded panel: full lineup with drafted players, remaining needs, a team switcher.
 function renderTrackerPanel(viewSlot){
@@ -23792,36 +24393,6 @@ function renderTrackerPanel(viewSlot){
       const pct=(x)=> Math.round((x||0)*100);
       // Colour the availability % like a traffic light: green = safe to wait, red = he's gone.
       const pcls=(x)=> x>=0.6 ? 'vp-hi' : (x>=0.3 ? 'vp-mid' : 'vp-lo');
-      const chips=v.rows.slice(0,4).map((r,i)=>{
-        const cls = r.adjDrop>=25?'vona-hot':r.adjDrop>=12?'vona-warm':'vona-cool';
-        const star = (i===0 && r.need) ? '\u2605 ' : '';
-        const tag = r.filled ? (r.studBackup?`<span class="vona-tag stud">stud backup</span>`:`<span class="vona-tag">filled</span>`) : '';
-        // A drop that rounds to zero means "no real cost to waiting" — say that with a dash
-        // rather than rendering "\u22120", which looks like a bug.
-        const dz = (x)=> (Math.abs(x)<0.05 ? '\u2013' : `\u2212${x}`);
-        const dropTxt = r.filled ? `${dz(r.dropoff)} <span class="vona-adj">(adj ${dz(r.adjDrop)})</span>` : dz(r.dropoff);
-        // Line 1: the guy you'd take right now, and the market's odds he lasts to your next pick.
-        // Line 2: who you'd most likely settle for instead — the concrete cost of waiting.
-        const waitLine = r.bestNext && r.bestNext!==r.bestNow
-          ? `<div class="vona-wait">wait \u2192 <b>${nm(r.bestNext)}</b>${typeof tcInjuryTag==='function'?tcInjuryTag(r.bestNext.player_id):''}
-               <span class="vona-vor">${(r.bestNext.vor||0)>0?'+':''}${(r.bestNext.vor||0).toFixed(0)}</span>
-               <span class="vona-pct ${pcls(r.nextShare)}">${pct(r.nextShare)}% likely available</span></div>`
-          : `<div class="vona-wait vona-wait-safe">wait \u2192 <b>${nm(r.bestNow)}</b> likely still available</div>`;
-        const hs=(p)=> p ? `<span class="clickable-player vona-hs" onclick="event.stopPropagation();${typeof pcardOnclick==='function'?pcardOnclick(p.player_id||p.name,p.pos,p.team||''):''}">${playerThumb(p)}</span>` : '';
-        return `<div class="vona-row ${r.need?'':'vona-filled'} ${r.gated?'vona-gated ':''}${cls}">
-          <span class="rt-slot ${slotClass(r.pos)}">${r.pos}</span>
-          ${hs(r.bestNow)}
-          <div class="vona-main">
-            <div class="vona-now"><b>${nm(r.bestNow)}</b>${typeof tcInjuryTag==='function'?tcInjuryTag(r.bestNow.player_id):''}
-              <span class="vona-vor">${(r.bestNow.vor||0)>0?'+':''}${(r.bestNow.vor||0).toFixed(0)}</span>
-              <span class="vona-pct ${pcls(r.pHold)}" title="Chance they make it back to your next pick, per market ADP"><span class="vona-pct-long">${_vonaPctDisp(r.bestNow,r.pHold)}% chance they make it back</span><span class="vona-pct-short">${_vonaPctDisp(r.bestNow,r.pHold)}% back</span></span>${tag}</div>
-            ${waitLine}
-            ${r.why?`<div class="vona-why">${r.why}</div>`:''}
-          </div>
-          <span class="vona-drop" title="Your VOR now minus the VOR you'd expect to settle for">${star}${dropTxt}</span>
-          <button class="vona-more" onclick="event.stopPropagation();vonaOptionsPop(event,'${r.pos}')" title="Next viable ${r.pos}s on the board" aria-label="More ${r.pos} options">▾</button>
-        </div>`;
-      }).join('');
       // headline = the top row of the ranking (gated rows are already sorted last; a
       // last-call starter is already sorted first) — the score itself now carries need,
       // budget, and lineup impact, so no second re-ranking here.
@@ -23849,8 +24420,7 @@ function renderTrackerPanel(viewSlot){
         <div class="vona-head">${TC_ICON('chart')} On-the-clock advice ${v.onClock?'\u00b7 <b style="color:var(--accent)">YOU\u2019RE UP</b>':`\u00b7 next pick in ${v.gap}`} ${(typeof tcInfoBtn==='function')?tcInfoBtn('vona','How this advice works'):''}</div>
         <div class="vona-sub">${recTxt}${noteTxt?` \u00b7 ${noteTxt}`:''}</div>
         ${kdefLine}
-        <div class="vona-rows">${chips}</div>
-
+        ${vonaSuggestPanel(v)}
       </div>`;
     }
   }
@@ -23861,9 +24431,13 @@ function renderTrackerPanel(viewSlot){
     </div>
     <div class="rt-switch-head">Jump to a team</div>
     <div class="rt-switcher">${switcher}</div>
-    ${advisory}
-    ${needsLine}
-    <div class="rt-lineup">${rows}${benchRows}</div>
+    <div class="rt-cols">
+      <div class="rt-col-main">${advisory}</div>
+      <div class="rt-col-side">
+        ${needsLine}
+        <div class="rt-lineup">${rows}${benchRows}</div>
+      </div>
+    </div>
   </div>`;
 }
 function toggleTracker(){ trackerOpen=!trackerOpen; if(!trackerOpen) trackerMax=false; renderRosterBar(); }
@@ -24358,10 +24932,10 @@ function _vonaPctDisp(p, x){
 // (RB/WR injuries cash a bench pick in far more often than a backup QB does)
 // with a thin-roster kicker until the dedicated slots are doubled. /17 turns
 // season VOR into per-week points.
-function _vonaCandScore(myPicks, myCounts, dedBase, pos, vor, vorOf){
+function _vonaCandScore(myPicks, myCounts, dedBase, pos, vor, vorOf, before){
   const PSEUDO='__vona_cand__';
   const vf=(pk)=> (pk.player_id===PSEUDO ? vor : vorOf(pk));
-  const before=_vonaOptimalLineupVor(myPicks, vf);
+  if(before==null) before=_vonaOptimalLineupVor(myPicks, vf);
   const after=_vonaOptimalLineupVor(myPicks.concat([{pos, name:PSEUDO, player_id:PSEUDO}]), vf);
   const gain=(after-before)/17;
   if(gain>0.05) return gain;
@@ -24399,6 +24973,66 @@ function _vonaBudget(myLivePicks, kdOpenMine, myCounts, dedBase, sfSlots, dedica
   });
   const posCap={ QB: sfSlots? dedBase.QB+sfSlots+1 : 2, TE: Math.max(2, dedBase.TE+1), RB:8, WR:9 };
   return { skillLeft, minTargets, unmet, unmetTotal, mustFill, picksAfter, lastCall, posCap };
+}
+
+// ── Which PLAYER at that position — the reach guard ────────────────────────
+// The core above answers "which POSITION?" and then names that position's top
+// player on YOUR board. That is where reaching comes from: a player your
+// projections love and the market does not stays the top of his position every
+// pick until you spend one on him, and nothing notices he would still be sitting
+// there two rounds later.
+//
+// So decide between the men at that position over two picks:
+//
+//   total(p) = what p adds to my lineup now
+//            + what the best of the OTHERS is worth if he survives to my next pick
+//
+// Restricted to one position this is well posed, and it says the obvious thing:
+// if your #1 will last and your #2 will not, take #2 now and let #1 come back.
+// The cost of reaching is just the value you forfeit at your next pick — no
+// hand-tuned "reach penalty" needed.
+//
+// Applying the same two-ply ACROSS positions was measured and is worse (1QB
+// -0.07, superflex -1.25 over 12 seats): a one-pick horizon always promises a
+// good player is still coming, so the agent waits on scarce positions until they
+// are gone. Cross-positional judgement stays with the scarcity/need scoring
+// above. Keep in sync with _best_in_pos in tools/draft_sim.py.
+// How hard raw board value pulls against the regret of waiting. Swept over
+// 0/.10/.15/.25/.40/.60 across 12 seats x 2 formats: 0 is much worse (when two
+// players will both last you should still take the better one) and 0.25 — what
+// this shipped before — reaches. 0.15 measured best. Keep in step with
+// V5_NOW_WEIGHT in tools/draft_sim.py.
+const VONA_NOW_WEIGHT = 0.15;
+// How deep the position tab lets you browse. Deeper than anyone drafts from, but
+// bounded so the scroll list stays a list and not the whole player universe.
+const VONA_BOARD_DEPTH = 40;
+const VONA_CAND_PER_POS = 4;    // players per position considered
+const VONA_TAIL = 0.9;          // residual when none of the others survive
+const VONA_SURV_CAP = 0.995;
+function _vonaRankInPos(cands, myPicks, myCounts, dedBase, vorOf, survOf, before0){
+  const top=cands.slice(0, VONA_CAND_PER_POS);
+  if(!top.length) return [];
+  const surv=top.map(q=>Math.min(VONA_SURV_CAP, survOf(q)));
+  const out=[];
+  top.forEach((p,i)=>{
+    const vNow=_vonaCandScore(myPicks, myCounts, dedBase, p.pos, (p.vor||0), vorOf, before0);
+    const picks2=myPicks.concat([{pos:p.pos, name:p.name, player_id:p.player_id}]);
+    const counts2=Object.assign({}, myCounts); counts2[p.pos]=(counts2[p.pos]||0)+1;
+    const before2=_vonaOptimalLineupVor(picks2, (pk)=>vorOf(pk));
+    let ev=0, pNone=1;
+    top.forEach((q,j)=>{
+      if(j===i) return;
+      const sc=_vonaCandScore(picks2, counts2, dedBase, q.pos, (q.vor||0), vorOf, before2);
+      ev += pNone*surv[j]*sc;
+      pNone *= (1-surv[j]);
+    });
+    const last=top[top.length-1];
+    ev += pNone*_vonaCandScore(picks2, counts2, dedBase, last.pos, (last.vor||0), vorOf, before2)*VONA_TAIL;
+    out.push({ p, pos:p.pos, vNow:+vNow.toFixed(3), vNext:+ev.toFixed(3),
+               total:+(vNow+ev).toFixed(3), pHold:surv[i] });
+  });
+  out.sort((a,b)=> (b.total-a.total) || (b.vNow-a.vNow));
+  return out;
 }
 
 function computeVONA(){
@@ -24471,6 +25105,18 @@ function computeVONA(){
     else if(s==='SUPER_FLEX') sfSlots++;
   });
   const budget=_vonaBudget(myLivePicks, kdOpenMine, myCounts, dedBase, sfSlots, dedicatedNeed);
+  // Reach guard: at each position, decide WHICH player to take over a two-pick
+  // horizon (see _vonaRankInPos). rankedByPos also feeds the position filter in
+  // the suggestions panel, so the list you can browse is ranked the same way the
+  // headline is chosen.
+  const survOf=(q)=> sim.pAvail.get(sim.pidOf(q)) || 0;
+  const before0=_vonaOptimalLineupVor(myPicks, vorOf);
+  const rankedByPos={};
+  ['QB','RB','WR','TE'].forEach(pos=>{
+    const live=(pools[pos]||[]).filter(q=>!_vonaSeasonOut(q));
+    rankedByPos[pos]=_vonaRankInPos(live.length?live:(pools[pos]||[]), myPicks, myCounts,
+                                    dedBase, vorOf, survOf, before0);
+  });
   const out=[];
   ['QB','RB','WR','TE'].forEach(pos=>{
     const now=bestNow[pos];
@@ -24510,11 +25156,20 @@ function computeVONA(){
     const gNow = _vonaCandScore(myPicks, myCounts, dedBase, pos, (now.vor||0), vorOf);
     const gNext = _vonaCandScore(myPicks, myCounts, dedBase, pos, Math.max(0, expVor), vorOf);
     const gated = (myCounts[pos] >= budget.posCap[pos]) || (budget.mustFill && !budget.unmet[pos]);
+    // WHO to take here: the reach guard's winner, not automatically the top of
+    // your board. The position's SCORE below is still computed from `now` (the
+    // board leader) — that is the ranking the mock drafts validated; the guard
+    // only changes which man at the position it names.
+    const take=(rankedByPos[pos] && rankedByPos[pos][0] && rankedByPos[pos][0].p) || now;
+    const reached=(take!==now);
     out.push({
       pos,
       struct: st, scarcity:+scarcity.toFixed(2), puntable, lineupGain,
-      bestNow: now,
-      pHold: sim.pAvail.get(sim.pidOf(now)) || 0,          // P(the guy you'd take now is still there)
+      bestNow: take,
+      boardTop: now,
+      reached,
+      ranked: rankedByPos[pos]||[],
+      pHold: sim.pAvail.get(sim.pidOf(take)) || 0,         // P(the guy you'd take now is still there)
       bestNext,
       pNext: bestNext ? (sim.pAvail.get(bestNextId)||0) : 0,
       nextShare: bestNextHits>0 ? bestNextHits/VONA_SIMS : 0,  // how often he IS the fallback
@@ -24528,7 +25183,7 @@ function computeVONA(){
       gated,
       drift: +(((drift && drift[pos]) || 0).toFixed(1)),
       lastCall: !!budget.lastCall[pos],
-      score: +(Math.max(0, gNow-gNext) + 0.25*gNow).toFixed(2),
+      score: +(Math.max(0, gNow-gNext) + VONA_NOW_WEIGHT*gNow).toFixed(2),
     });
   });
   // lineupFactor stays as display metadata; the row score already prices lineup impact
@@ -24567,8 +25222,17 @@ function computeVONA(){
   // Every remaining live pick belongs to K/DEF: the skill rows are moot and the headline
   // should say so instead of naming a player there's no pick left for.
   const kdNow = kdOpenMine>0 && myLivePicks>0 && myLivePicks <= kdOpenMine;
-  const res = { gap, rows: out, onClock, struct, pools, pAvail: sim.pAvail, kdefAlert, kdNow,
-                budget, drift };
+  // The suggestions panel reads PLAYERS, not positions: the rows are already in
+  // engine order (gated last, last-call first), so the top of each row is the
+  // nth-best thing to do right now.
+  const picks = out.filter(r=>r.bestNow).map((r,i)=>({
+    rank:i+1, pos:r.pos, p:r.bestNow, pHold:r.pHold, why:r.why, gated:r.gated,
+    lastCall:r.lastCall, need:r.need, reached:r.reached, boardTop:r.boardTop,
+    ranked:r.ranked, score:r.score,
+    bestNext:r.bestNext, nextShare:r.nextShare, pNext:r.pNext,
+  }));
+  const res = { gap, rows: out, picks, onClock, struct, pools, pAvail: sim.pAvail, kdefAlert,
+                kdNow, budget, drift, pickNo: startPick };
   _vonaCache = { key:cacheKey, val:res };
   return res;
 }
@@ -24627,6 +25291,15 @@ function computeVONA(){
 
 
 if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK['vonaplan']={title:'The draft plan', body:`
+    Full mock drafts run from <b>your seat</b>, on <b>your board</b>: the other teams buy at market
+    ADP for this format, and you draft with the advisory's own rules \u2014 so it builds a roster
+    rather than listing whoever has the highest projection left.
+    <b>% taken</b> is how often the plan spends that pick on him. The <b>%</b> beside it is how often
+    he is even still on the board there. A player who is nearly always available and rarely taken is
+    one you can afford to wait on, and that gap is the edge worth having.
+    \u2605 anyone and he is pinned to the last round you can still count on getting him \u2014 or
+    flagged as unreachable from this seat, rather than dangled as a target you can't have.`};
   TC_INFO_BOOK.vona={title:'On-the-clock advice', body:()=>`
     Value comes from <b>your VOR board</b> \u2014 what a player is worth to you. Availability comes
     from the market: Sleeper ${typeof formatLabel==='function'?formatLabel(rankFormat):''} ADP,
@@ -24637,6 +25310,10 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     A pick <b>budget</b> guards your roster: every remaining pick is weighed against unfilled
     starters, RB/WR depth, and your K/DEF slots, so following the headline never strands a hole.
     Dimmed rows are parked by that budget; \u201clast call\u201d means a starter must be taken now.
+    Within a position the named player is chosen over <b>two picks</b>, not just by your board:
+    if your #1 there would still be sitting at your next pick and your #2 would not, it names
+    the #2 and lets the other come back to you \u2014 so following it never spends a pick on a
+    player the market was going to leave you anyway.
     The %-pill is the chance a player makes it back to your next pick; \u25be lists the next
     viable options at that position.`};
 }

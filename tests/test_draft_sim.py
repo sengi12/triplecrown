@@ -621,6 +621,76 @@ def _sched(step, n=30, start=None):
     return [(start if start is not None else step) + i * step for i in range(n)]
 
 
+def test_reach_guard_picks_the_man_who_will_not_be_back():
+    """The whole point: when your board's #1 will still be there next round and
+    your #2 will not, take #2 now and let #1 come back to you."""
+    league = ds.League(LEAGUE_JSON, DRAFT_JSON)
+    league.repl_vpg = {"QB": 16.0, "RB": 10.0, "WR": 10.5, "TE": 9.0}
+    league.flex_repl_vpg = 9.0
+    st = ds.TeamState(league.kd_slots)
+    # Board leader is slightly better but the market has him going 40 picks later;
+    # the runner-up is due to go immediately.
+    faller = _mk("faller", "WR", 15.0, 70)
+    faller.vor = 60.0
+    goes_now = _mk("goes_now", "WR", 14.0, 28)
+    goes_now.vor = 55.0
+    cands = [faller, goes_now]
+    got = ds._best_in_pos(st, cands, 46, league)
+    check("takes the man who won't survive, not the board leader",
+          got is goes_now, got.pid)
+
+    # Flip the market: now the leader is the one about to go.
+    faller.adp = faller.adp_eff = 28
+    faller.sigma = ds.adp_sigma(28)
+    goes_now.adp = goes_now.adp_eff = 70
+    goes_now.sigma = ds.adp_sigma(70)
+    got2 = ds._best_in_pos(st, cands, 46, league)
+    check("and takes the board leader when HE is the one going",
+          got2 is faller, got2.pid)
+
+
+def test_reach_guard_is_inert_without_a_next_pick():
+    league = ds.League(LEAGUE_JSON, DRAFT_JSON)
+    league.repl_vpg = {"QB": 16.0, "RB": 10.0, "WR": 10.5, "TE": 9.0}
+    league.flex_repl_vpg = 9.0
+    st = ds.TeamState(league.kd_slots)
+    a = _mk("a", "WR", 15.0, 70); a.vor = 60.0
+    b = _mk("b", "WR", 14.0, 28); b.vor = 55.0
+    check("last pick of the draft just takes the best player",
+          ds._best_in_pos(st, [a, b], None, league) is a)
+    check("a single candidate is returned unchanged",
+          ds._best_in_pos(st, [a], 46, league) is a)
+
+
+def test_v3_default_is_unchanged_by_the_guard():
+    """app_pick_v3 must still behave exactly as it did before pick_in_pos existed
+    — it is the baseline every A/B is measured against."""
+    check("v3's default within-position choice is the top of the board",
+          ds._take_top(None, ["top", "second"], 46, None) == "top")
+
+
+def test_v5_keeps_the_position_guards():
+    """The reach guard changes WHICH player, never whether a cap or a last call
+    is respected."""
+    league = ds.League(LEAGUE_JSON, DRAFT_JSON)
+    league.repl_vpg = {"QB": 16.0, "RB": 10.0, "WR": 10.5, "TE": 9.0}
+    league.flex_repl_vpg = 9.0
+    st = ds.TeamState(league.kd_slots)
+    # Roster is one pick from the end with no QB: last call must fire.
+    for i in range(league.skill_picks - 1):
+        pk = _mk(f"rb{i}", "RB", 11.0, 30 + i)
+        pk.vor = 20.0
+        st.roster.append(pk)
+        st.counts["RB"] += 1
+    avail = {"QB": [_mk("qb1", "QB", 20.0, 200)], "RB": [_mk("rb9", "RB", 12.0, 40)],
+             "WR": [_mk("wr9", "WR", 12.0, 41)], "TE": [_mk("te9", "TE", 11.0, 42)]}
+    for k in avail:
+        for q in avail[k]:
+            q.vor = 25.0
+    got = ds.app_pick_v5(st, avail, 200, league, {})
+    check("last call still forces the empty QB slot", got.pos == "QB", got.pos)
+
+
 def test_market_drift():
     # QBs due every 4 picks, RBs every 3. At pick 12 the board expects 3 QBs gone.
     idx = {"QB": _sched(4), "RB": _sched(3), "WR": _sched(2), "TE": _sched(6)}
@@ -728,6 +798,10 @@ if __name__ == "__main__":
     test_superflex_league_demand()
     test_superflex_agent_takes_two_qbs()
     test_flex_open_ignores_a_spare_qb_in_one_qb_rooms()
+    test_reach_guard_picks_the_man_who_will_not_be_back()
+    test_reach_guard_is_inert_without_a_next_pick()
+    test_v3_default_is_unchanged_by_the_guard()
+    test_v5_keeps_the_position_guards()
     test_market_drift()
     test_market_drift_moves_survival()
     test_drift_is_opt_in()

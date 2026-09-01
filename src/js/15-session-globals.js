@@ -337,6 +337,12 @@ let mySlot = null;           // which draft slot is "mine"
 let trackerOpen = false;     // is the expanded tracker panel showing?
 let trackerMax = false;      // ...and stretched to most of the window (drag-up on the bar)?
 let trackerViewSlot = null;  // which slot's roster is being viewed in the panel (null = mine)
+let vonaSugFilter = 'ALL'; // suggestions panel: 'ALL' or a position — which board you're browsing
+// Players you've starred while browsing the board. Survives a reload (a draft can
+// span an evening and a refresh must not lose your shortlist).
+let draftStars = (function(){
+  try{ return JSON.parse(localStorage.getItem('tc_draft_stars')||'{}') || {}; }catch(e){ return {}; }
+})();
 let rosterBarVisible = false;// is the pinned bar shown at all?
 let _trackerNeedsSlotPick = false;  // mock draft: waiting for the user to tap their seat
 let _lastPickCount = -1;            // last seen pick count (skip redundant bar re-renders)

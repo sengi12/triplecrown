@@ -844,6 +844,11 @@ class _Cand:
 # rather than argued about. Defaults are the values the app shipped with; see
 # tests/test_draft_sim.py for what each one is allowed to do.
 V3_NOW_WEIGHT = 0.25      # share of "value added now" added to the regret of waiting
+                          # (frozen: this is the pre-2026-09-01 shipped baseline)
+V5_NOW_WEIGHT = 0.15      # ...and what the app ships now. Swept 0/.10/.15/.25/.40/.60
+                          # over 12 seats x 2 formats: 0 is much worse (you must
+                          # still prefer the better player when both will last),
+                          # 0.25 reaches. 0.15 is the measured best of the range.
 V3_DEPTH_RB = 2           # RB bodies wanted beyond the dedicated starters
 V3_DEPTH_WR = 2           # WR bodies wanted beyond the dedicated starters
 CAND_W_QB = 0.15          # bench weight: a QB behind a filled QB room
@@ -855,26 +860,108 @@ V3_BYE_PENALTY = 0.0      # score multiplier per starter already on that bye wee
 V3_BYE_FREE = 2           # byes at a week that cost nothing
 
 
-def _cand_score_vor(state, pos, vor, league):
-    """my_pick's candidate_score, but computed in the webapp's units: VOR and
-    the optimal-lineup fill the app already has (empty slots ~ replacement = 0
-    VOR). Returns weekly value added: starting-lineup gain, else bench value."""
-    before = _optimal_lineup_vor(state.roster, league)
-    after = _optimal_lineup_vor(state.roster, league, extra=_Cand(pos, vor))
+def _cand_score_ros(roster, counts, pos, vor, league, before=None):
+    """candidate_score against an EXPLICIT roster/counts pair. `before` is the
+    roster's own optimal-lineup VOR; pass it in when scoring many candidates
+    against the same roster, which is the inner loop of the two-ply lookahead."""
+    if before is None:
+        before = _optimal_lineup_vor(roster, league)
+    after = _optimal_lineup_vor(roster, league, extra=_Cand(pos, vor))
     gain = (after - before) / 17.0
     if gain > 0.05:
         return gain
     over_repl = max(0.0, vor) / 17.0
-    thin = CAND_THIN if state.counts[pos] <= league.lineup[pos] else 0.0
+    thin = CAND_THIN if counts[pos] <= league.lineup[pos] else 0.0
     w = (CAND_W_QB if pos == "QB" else CAND_W_TE if pos == "TE" else CAND_W_FLEX) + thin
     return w * over_repl + CAND_TIE * over_repl
 
 
-def app_pick_v3(state, avail_by_pos, next_pick, league, states):
+def _cand_score_vor(state, pos, vor, league):
+    """my_pick's candidate_score, but computed in the webapp's units: VOR and
+    the optimal-lineup fill the app already has (empty slots ~ replacement = 0
+    VOR). Returns weekly value added: starting-lineup gain, else bench value."""
+    return _cand_score_ros(state.roster, state.counts, pos, vor, league)
+
+
+def _take_top(state, cands, next_pick, league):
+    """Default within-position choice: the best player on your board."""
+    return cands[0]
+
+
+# ── Which PLAYER at that position — the reach guard ─────────────────────────
+# v3 answers "which position?" and then always takes that position's top-VOR
+# player. That is where reaching comes from: a player your projections love and
+# the market does not stays the top of his position every pick until you spend
+# one on him, and nothing notices that he would still be sitting there two rounds
+# later.
+#
+# So decide between the men at that position over two picks:
+#
+#     total(p) = what p adds now
+#              + what the best of the OTHERS is worth if he survives to my next pick
+#
+# Restricted to one position this is well posed, and it says the obvious thing:
+# if your #1 will last and your #2 will not, take #2 now and let #1 come back to
+# you. The cost of reaching is simply the value you forfeit at your next pick —
+# no hand-tuned "reach penalty" required.
+#
+# (Applying the same two-ply ACROSS positions was measured and is worse: 1QB -0.07,
+# superflex -1.25 over 12 seats. A one-pick horizon always promises that a good
+# player is still coming, so the agent waits on scarce positions until they are
+# gone. The cross-positional judgement stays with v3's scarcity/need scoring.)
+V5_CAND = 4      # players per position considered
+V5_TAIL = 0.9
+
+
+def _best_in_pos(state, cands, next_pick, league):
+    top = cands[:V5_CAND]
+    if len(top) < 2 or not next_pick:
+        return cands[0]
+    surv = [_v4_survival(q, next_pick, league) for q in top]
+    before0 = _optimal_lineup_vor(state.roster, league)
+    best, best_total = None, None
+    for i, p in enumerate(top):
+        v_now = _cand_score_ros(state.roster, state.counts, p.pos, p.vor, league,
+                                before=before0)
+        ros2 = state.roster + [p]
+        cnt2 = dict(state.counts)
+        cnt2[p.pos] += 1
+        before2 = _optimal_lineup_vor(ros2, league)
+        ev, p_none = 0.0, 1.0
+        for j, q in enumerate(top):
+            if j == i:
+                continue
+            sc = _cand_score_ros(ros2, cnt2, q.pos, q.vor, league, before=before2)
+            ev += p_none * surv[j] * sc
+            p_none *= (1.0 - surv[j])
+        if top:
+            ev += p_none * _cand_score_ros(ros2, cnt2, top[-1].pos, top[-1].vor,
+                                           league, before=before2) * V5_TAIL
+        total = v_now + ev
+        if best_total is None or total > best_total:
+            best, best_total = p, total
+    return best
+
+
+def app_pick_v5(state, avail_by_pos, next_pick, league, states):
+    """The engine the webapp ships: v3's position judgement, a lighter pull
+    toward raw board value, and the PLAYER at that position chosen over two picks
+    so the agent stops reaching on its own board. See _best_in_pos."""
+    return app_pick_v3(state, avail_by_pos, next_pick, league, states,
+                       pick_in_pos=_best_in_pos, now_weight=V5_NOW_WEIGHT)
+
+
+def app_pick_v3(state, avail_by_pos, next_pick, league, states, pick_in_pos=_take_top,
+                now_weight=None):
     """Candidate webapp advisory: the sim agent's decision core (my_pick) driven
     entirely by data the webapp already computes — VOR pools, expected best VOR
     at the next pick, roster counts. score = regret of waiting + a share of the
-    value added now; hard roster-minimum and last-call guards on top."""
+    value added now; hard roster-minimum and last-call guards on top.
+    `pick_in_pos` decides WHICH player at the winning position (default: the top
+    of your board) and `now_weight` how hard raw board value pulls; app_pick_v5
+    passes the two-ply reach guard and the lighter weight the app ships."""
+    if now_weight is None:
+        now_weight = V3_NOW_WEIGHT
     base, _flex_n, _sf_n = league.starters_skill()
     min_targets = {"QB": league.qb_starters(), "TE": base["TE"],
                    "RB": base["RB"] + V3_DEPTH_RB, "WR": base["WR"] + V3_DEPTH_WR}
@@ -891,7 +978,7 @@ def app_pick_v3(state, avail_by_pos, next_pick, league, states):
             bye_load[q.bye] = bye_load.get(q.bye, 0) + 1
     for pos, room in (("QB", 2), ("TE", 1)):
         if state.counts[pos] < need[pos] and picks_after <= room and avail_by_pos[pos]:
-            return avail_by_pos[pos][0]
+            return pick_in_pos(state, avail_by_pos[pos], next_pick, league)
     choices = []
     for pos in ("QB", "RB", "WR", "TE"):
         cands = avail_by_pos[pos]
@@ -911,7 +998,7 @@ def app_pick_v3(state, avail_by_pos, next_pick, league, states):
                                      _expected_best_vor(cands, next_pick, shift=sh), league)
         else:
             v_next = v_now * 0.8
-        score = max(0.0, v_now - v_next) + V3_NOW_WEIGHT * v_now
+        score = max(0.0, v_now - v_next) + now_weight * v_now
         if V3_BYE_PENALTY and now.bye:
             stacked = max(0, bye_load.get(now.bye, 0) - V3_BYE_FREE + 1)
             score *= max(0.0, 1.0 - V3_BYE_PENALTY * stacked)
@@ -919,7 +1006,111 @@ def app_pick_v3(state, avail_by_pos, next_pick, league, states):
     if not choices:
         return my_pick_fallback(state, avail_by_pos, league)
     choices.sort(key=lambda t: -t[0])
-    return choices[0][2]
+    return pick_in_pos(state, avail_by_pos[choices[0][1]], next_pick, league)
+
+
+# ── v4: choose the PLAYER, not the position ─────────────────────────────────
+# v3 asks "which POSITION should I take?" and then always takes that position's
+# top-VOR player. That is where reaching comes from: if your board loves a
+# receiver the market does not, he is cands[0] every single pick until you take
+# him, and nothing in the score notices that he would still be sitting there two
+# rounds later.
+#
+# v4 evaluates PLAYERS over a two-pick horizon:
+#
+#     total(p) = value p adds now  +  value of the best thing still on the board
+#                                     at my next pick, GIVEN I took p
+#
+# The second term is the whole point. Taking a player who was going to fall back
+# to you removes a high-value survivor from your own next pick, so his total is
+# low — the board is telling you to take the guy who will NOT be there and
+# collect the faller later. Taking a player who is about to be gone costs the
+# next pick almost nothing, so his total is high. No hand-tuned "reach penalty"
+# is needed: the cost of reaching is just the value you forfeit at your next
+# pick, priced in the same units as everything else.
+V4_CAND_PER_POS = 3    # players per position evaluated individually
+V4_HORIZON_POS = 5     # players per position in the "what's left next pick" pool
+V4_DEPTH = 20          # how deep the survival expectation runs
+V4_NEXT_WEIGHT = 1.0   # weight on what the next pick is still worth
+V4_TAIL = 0.9          # residual factor when nothing in the horizon survives
+V4_SURV_CAP = 0.995    # a certainty of 1.0 would make the exclusion term blow up
+
+
+def _v4_survival(p, next_pick, league):
+    sh = league.drift.get(p.pos, 0.0) if league.use_drift else 0.0
+    return min(V4_SURV_CAP,
+               norm_cdf((p.adp_eff - sh - (next_pick - 0.5)) / p.sigma))
+
+
+def app_pick_v4(state, avail_by_pos, next_pick, league, states):
+    """Two-ply, player-level advisory. Same roster guards as v3 (caps, must-fill,
+    last call); the ranking underneath them is value-now plus value-still-there,
+    which is what stops the agent reaching on its own board."""
+    base, _flex_n, _sf_n = league.starters_skill()
+    min_targets = {"QB": league.qb_starters(), "TE": base["TE"],
+                   "RB": base["RB"] + V3_DEPTH_RB, "WR": base["WR"] + V3_DEPTH_WR}
+    unmet = {q: max(0, min_targets[q] - state.counts[q]) for q in min_targets}
+    skill_left = league.skill_picks - len(state.roster)
+    must_fill = sum(unmet.values()) >= skill_left
+    picks_after = skill_left - 1
+    need = {"QB": league.qb_starters(), "TE": base["TE"]}
+    for pos, room in (("QB", 2), ("TE", 1)):
+        if state.counts[pos] < need[pos] and picks_after <= room and avail_by_pos[pos]:
+            return avail_by_pos[pos][0]
+
+    def legal(pos, counts):
+        c = counts[pos]
+        if c >= POS_CAPS[pos]:
+            return False
+        if pos == "QB" and c >= league.qb_cap():
+            return False
+        if pos == "TE" and c >= league.te_cap():
+            return False
+        if must_fill and unmet[pos] == 0:
+            return False
+        return True
+
+    cands, horizon = [], []
+    for pos in ("QB", "RB", "WR", "TE"):
+        if not legal(pos, state.counts):
+            continue
+        cands.extend(avail_by_pos[pos][:V4_CAND_PER_POS])
+        horizon.extend(avail_by_pos[pos][:V4_HORIZON_POS])
+    if not cands:
+        return my_pick_fallback(state, avail_by_pos, league)
+    if not next_pick:
+        return max(cands, key=lambda q: _cand_score_vor(state, q.pos, q.vor, league))
+
+    surv = {id(q): _v4_survival(q, next_pick, league) for q in horizon}
+    before0 = _optimal_lineup_vor(state.roster, league)
+    best, best_total = None, None
+    for p in cands:
+        v_now = _cand_score_ros(state.roster, state.counts, p.pos, p.vor, league,
+                                before=before0)
+        ros2 = state.roster + [p]
+        cnt2 = dict(state.counts)
+        cnt2[p.pos] += 1
+        before2 = _optimal_lineup_vor(ros2, league)
+        scored = []
+        for q in horizon:
+            if q is p or not legal(q.pos, cnt2):
+                continue
+            scored.append((_cand_score_ros(ros2, cnt2, q.pos, q.vor, league,
+                                           before=before2), q))
+        scored.sort(key=lambda t: -t[0])
+        ev, p_none = 0.0, 1.0
+        for sc, q in scored[:V4_DEPTH]:
+            s = surv[id(q)]
+            ev += p_none * s * sc
+            p_none *= (1.0 - s)
+            if p_none < 1e-4:
+                break
+        if scored:
+            ev += p_none * scored[-1][0] * V4_TAIL
+        total = v_now + V4_NEXT_WEIGHT * ev
+        if best_total is None or total > best_total:
+            best, best_total = p, total
+    return best
 
 
 def run_draft(pool, league, my_slot, rng, pattern=None, avail_hook=None, market_only=False,
@@ -1173,9 +1364,12 @@ def main():
     ap.add_argument("--sims", type=int, default=1000)
     ap.add_argument("--compare", action="store_true", help="compare early-round position patterns")
     ap.add_argument("--pattern", default="", help="force an early-round pattern (see PATTERNS)")
-    ap.add_argument("--strategy", default="smart", choices=["smart", "app", "app2", "app3"],
+    ap.add_argument("--strategy", default="smart",
+                    choices=["smart", "app", "app2", "app3", "app4", "app5"],
                     help="our seat's agent: smart=my_pick; app=webapp advisory replica (as shipped); "
-                         "app2=replica+budget guards; app3=ported decision core (overrides --pattern)")
+                         "app2=replica+budget guards; app3=ported decision core; "
+                         "app4=two-ply across positions; "
+                         "app5=app3 + the two-ply reach guard (overrides --pattern)")
     ap.add_argument("--proj", default="", help="analyst projections JSON: use it as the "
                     "value/VOR baseline instead of the seed's own projections")
     ap.add_argument("--proj-analyst", default="consensus",
@@ -1257,6 +1451,8 @@ def main():
         "app": lambda st, av, nxt, lg, sts: app_pick(st, av, nxt, lg, sts, guards=False),
         "app2": lambda st, av, nxt, lg, sts: app_pick(st, av, nxt, lg, sts, guards=True),
         "app3": app_pick_v3,
+        "app4": app_pick_v4,
+        "app5": app_pick_v5,
     }[args.strategy]
     n_my = len(my_picks)
     avail_count = [[0] * len(pool) for _ in range(n_my)]

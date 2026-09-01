@@ -172,3 +172,23 @@
 .rank-repl-lbl{font-size:10.5px;font-weight:800;letter-spacing:.04em;color:var(--warn);
   text-transform:uppercase;white-space:nowrap;}
 @media (max-width:760px){ .rank-repl-lbl{white-space:normal;} }
+
+/* ── Draft shortlist on the board ─────────────────────────────────────────────
+   A starred player keeps a warm left rail so he's findable while scrolling a
+   200-row table, without washing out the row's own text. */
+tr.rank-starred{background:rgba(210,153,34,.07);box-shadow:inset 3px 0 0 var(--warn);}
+tr.rank-starred:hover{background:rgba(210,153,34,.12);}
+.rank-star{flex:none;font-size:13px;line-height:1;padding:1px 2px;background:none;border:0;
+  cursor:pointer;color:var(--border2);transition:color .12s,transform .1s;}
+.rank-star:hover{color:var(--warn);transform:scale(1.18);}
+.rank-star.on{color:var(--warn);}
+.rank-star:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
+/* The pinned ECR and PLAYER columns paint their own background (they have to —
+   they scroll over the rest of the row), so a row tint stops dead at the name
+   unless it is repainted here too. Same reason tr:hover repaints them above.
+   The literals are the row's own rgba(210,153,34,.07)/.12 resolved over
+   --surface (#161b22), so the tint is continuous across the whole row. */
+.rankings-table.grouped tr.rank-starred td.c-ecr,
+.rankings-table.grouped tr.rank-starred td.c-player{background:#232422;}
+.rankings-table.grouped tr.rank-starred:hover td.c-ecr,
+.rankings-table.grouped tr.rank-starred:hover td.c-player{background:#2d2a22;}

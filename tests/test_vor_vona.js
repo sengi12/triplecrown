@@ -42,7 +42,9 @@ const app=new Function(code+`return {
   laDefTeamCode,
   adpFor,
   _vonaCandScore, _vonaBudget,
-  vonaMarketDrift, vonaSimulate,
+  vonaMarketDrift, vonaSimulate, _vonaRankInPos,
+  _cheatSimulate, toggleDraftStar, isDraftStar, starsRef:()=>draftStars,
+  _rtSnapScroll, _rtRestoreScroll, _RT_SCROLLERS,
   setMySlot:(v)=>{mySlot=v;}, setDraftMeta:(m)=>{draftMeta=m;},
   setDraftedIds:(v)=>{draftedIds=v;},
 };`)();
@@ -239,6 +241,180 @@ chk(pYes < pNo, `reading the room lowers a hoarded QB's survival odds (${pNo.toF
 const wrId='WR12';
 chk((withDrift.pAvail.get(wrId)||0) >= (noDrift.pAvail.get(wrId)||0) - 0.02,
     'a position the room is skipping does not get harder to wait for');
+
+// === the reach guard: which PLAYER at the position ===========================
+// Mirrors test_reach_guard_picks_the_man_who_will_not_be_back in
+// tests/test_draft_sim.py — the two implementations must agree.
+console.log('=== reach guard: take the man who will not be back ===');
+{
+  app.setDraftLineup(['QB','RB','WR','WR','TE','FLEX','K','DEF']);
+  const wr=(id,vor)=>({name:id, pos:'WR', team:'KC', player_id:id, vor});
+  const leader=wr('leader',60), goesNow=wr('goesNow',55);
+  const vorOf=(pk)=>({leader:60, goesNow:55})[pk.player_id]||0;
+  const counts={QB:0,RB:0,WR:0,TE:0}, ded={QB:1,RB:1,WR:2,TE:1};
+  // Board leader is better but survives; the runner-up is about to go.
+  let surv=(q)=> q.player_id==='leader' ? 0.92 : 0.05;
+  let r=app._vonaRankInPos([leader,goesNow], [], counts, ded, vorOf, surv, 0);
+  chk(r[0].p.player_id==='goesNow', "takes the man who won't survive, not the board leader");
+  // Flip the market and the answer flips back.
+  surv=(q)=> q.player_id==='leader' ? 0.05 : 0.92;
+  r=app._vonaRankInPos([leader,goesNow], [], counts, ded, vorOf, surv, 0);
+  chk(r[0].p.player_id==='leader', 'and takes the board leader when HE is the one going');
+  // Both certain to survive: value decides, so the board leader wins.
+  surv=()=>0.95;
+  r=app._vonaRankInPos([leader,goesNow], [], counts, ded, vorOf, surv, 0);
+  chk(r[0].p.player_id==='leader', 'when both will last, the better player wins');
+  // A lone candidate comes back untouched.
+  r=app._vonaRankInPos([leader], [], counts, ded, vorOf, ()=>0.5, 0);
+  chk(r.length===1 && r[0].p.player_id==='leader', 'a single candidate is returned unchanged');
+  chk(app._vonaRankInPos([], [], counts, ded, vorOf, ()=>0.5, 0).length===0,
+      'an empty position produces no suggestions');
+}
+
+// === draft plan: a BUILD, not a list of the best players left ================
+console.log('=== draft plan: rounds build a roster ===');
+{
+  const mkPool=()=>{
+    const mk=(pos,i,adp,vor)=>({name:`${pos}${i}`, pos, team:'KC',
+      player_id:`${pos}${i}`, adp_ppr:adp, adp_2qb:adp, adp:adp, vor});
+    const out=[]; let a=1;
+    // QBs are the most valuable thing on the board — the superflex shape that
+    // made the old plan recommend a quarterback in every single round.
+    for(let i=1;i<=16;i++) out.push(mk('QB',i,a++,200-i*6));
+    for(let i=1;i<=30;i++) out.push(mk('RB',i,a++,120-i*3));
+    for(let i=1;i<=30;i++) out.push(mk('WR',i,a++,115-i*3));
+    for(let i=1;i<=12;i++) out.push(mk('TE',i,a++,60-i*3));
+    return out.sort((x,y)=>x.adp-y.adp);
+  };
+  const run=(lineup, ded, sfN, flexN)=>{
+    app.setDraftLineup(lineup);
+    app.setDraftMeta({teams:12, rounds:9, type:'snake', reversal_round:0});
+    return app._cheatSimulate(mkPool(), {teams:12, rounds:9, type:'snake', reversalRound:0,
+      startPick:1, myPicks:[3,22,27,46,51,70,75,94,99], mySlot:3, feed:new Set(),
+      ded, sfN, flexN, kd:2, sims:80, seed:2468});
+  };
+  // ── Superflex: two QBs are worth having; nine are not ──────────────────────
+  const sf=run(['QB','RB','RB','WR','WR','TE','FLEX','SUPER_FLEX','K','DEF'],
+               {QB:1,RB:2,WR:2,TE:1}, 1, 1);
+  const sfShape=sf.picks.map(x=>x.likelyPos);
+  const sfQB=sfShape.filter(x=>x==='QB').length;
+  chk(sfQB>=1, `superflex still values QBs early (${sfQB} QB rounds)`);
+  chk(sfQB<=3, `superflex does NOT draft a QB every round (${sfQB} of ${sfShape.length})`);
+  chk(new Set(sfShape).size>=3, `the superflex build spans positions (${sfShape.join('/')})`);
+  // ── One-QB: the cap is two, so at most two rounds go to QB ─────────────────
+  const one=run(['QB','RB','RB','WR','WR','TE','FLEX','K','DEF'],
+                {QB:1,RB:2,WR:2,TE:1}, 0, 1);
+  const oneShape=one.picks.map(x=>x.likelyPos);
+  chk(oneShape.filter(x=>x==='QB').length<=2,
+      `a 1QB build never spends three rounds on QBs (${oneShape.join('/')})`);
+  chk(oneShape.filter(x=>x==='RB'||x==='WR').length>=4,
+      'a 1QB build is mostly RB/WR, as it should be');
+  // ── Each round names players, and both numbers are probabilities ───────────
+  chk(sf.picks.length===9, 'a plan row per pick I own');
+  chk(sf.picks[0].round===1 && sf.picks[8].round===9, 'rounds line up with the snake');
+  // K/DEF rounds name nobody by design — those picks are reserved, not chosen.
+  chk(sf.picks.filter(x=>x.likelyPos!=='KD').every(x=>x.rows.length>0),
+      'every skill round names players you can get');
+  chk(sf.picks.some(x=>x.likelyPos==='KD'), 'and the last picks are reserved for K/DEF');
+  const all=sf.picks.flatMap(x=>x.rows);
+  chk(all.every(r=>r.pTake>0 && r.pTake<=1), 'take-rate is a probability');
+  chk(all.every(r=>r.pAvail>=0 && r.pAvail<=1), 'availability is a probability');
+  // Later picks can't have better odds than earlier ones for the same player.
+  const at=(j,id)=>{ const r=sf.picks[j].rows.find(x=>x.p.player_id===id); return r?r.pAvail:null; };
+  const early=at(0,'QB1'), late=at(4,'QB1');
+  chk(early===null || late===null || late<=early+1e-9,
+      "a player's odds only fall as the draft moves on");
+}
+
+// === draft plan: your shortlist gets slotted into a round ====================
+console.log('=== draft plan: bookmarks become targets ===');
+{
+  const mk=(pos,i,adp,vor)=>({name:`${pos}${i}`, pos, team:'KC',
+    player_id:`${pos}${i}`, adp_ppr:adp, adp_2qb:adp, adp:adp, vor});
+  const pool=[]; let a=1;
+  for(let i=1;i<=30;i++) pool.push(mk('RB',i,a++,120-i*3));
+  for(let i=1;i<=30;i++) pool.push(mk('WR',i,a++,115-i*3));
+  for(let i=1;i<=12;i++) pool.push(mk('QB',i,a++,60-i*3));
+  for(let i=1;i<=12;i++) pool.push(mk('TE',i,a++,55-i*3));
+  pool.sort((x,y)=>x.adp-y.adp);
+  app.setDraftLineup(['QB','RB','RB','WR','WR','TE','FLEX','K','DEF']);
+  app.setDraftMeta({teams:12, rounds:6, type:'snake', reversal_round:0});
+  const cfg={teams:12, rounds:6, type:'snake', reversalRound:0, startPick:1,
+    myPicks:[3,22,27,46,51,70], mySlot:3, feed:new Set(),
+    ded:{QB:1,RB:2,WR:2,TE:1}, sfN:0, flexN:1, kd:2, sims:80, seed:777};
+  // A late-ADP receiver: you should be told to wait, not to reach in round 1.
+  app.toggleDraftStar('WR20');
+  const cs=app._cheatSimulate(pool, cfg);
+  const tgt=cs.starred.find(t=>t.p.player_id==='WR20');
+  chk(!!tgt, 'a starred player becomes a target');
+  chk(tgt.target>0, `a late-ADP star is targeted after round 1 (round ${tgt.target+1})`);
+  chk(cs.picks[tgt.target].targets.some(t=>t.p.player_id==='WR20'),
+      'and he is pinned to that round in the plan');
+  chk(tgt.kind==='wait' && tgt.pAvailAt>=0.55,
+      'the target round is one where he is still comfortably there');
+  app.toggleDraftStar('WR20');
+  // An elite name you cannot get: say so rather than pretending.
+  app.toggleDraftStar('RB1');
+  const cs2=app._cheatSimulate(pool, {...cfg, myPicks:[46,51,70], startPick:1});
+  const t2=cs2.starred.find(t=>t.p.player_id==='RB1');
+  chk(!!t2 && t2.target<0, 'a player who never reaches you is reported unreachable');
+  chk(cs2.unreachable.some(t=>t.p.player_id==='RB1'), 'and is listed as such');
+  app.toggleDraftStar('RB1');
+}
+
+// === shortlist ===============================================================
+console.log('=== shortlist: star, persist, un-star ===');
+{
+  const p={player_id:'RB7', name:'RB7', pos:'RB'};
+  chk(!app.isDraftStar(p), 'nothing is starred to begin with');
+  app.toggleDraftStar('RB7');
+  chk(app.isDraftStar(p), 'a star sticks');
+  chk(app.starsRef()['RB7']===1, 'and is recorded for persistence');
+  app.toggleDraftStar('RB7');
+  chk(!app.isDraftStar(p), 'and toggles back off');
+  app.toggleDraftStar('');
+  chk(!app.isDraftStar({player_id:''}), 'an empty id is ignored');
+}
+
+// === the drawer keeps your place across a re-render =========================
+// The tracker rebuilds itself every 2.5s during a live draft, and again on every
+// star. Without this, scrolling a position board or the plan is impossible —
+// you're thrown back to the top before you can read it.
+console.log('=== drawer scroll survives a re-render ===');
+{
+  const mkHost=(vals)=>({
+    _els:vals,
+    querySelector(sel){ return this._els[sel] || null; },
+  });
+  const el=(top,left)=>({scrollTop:top, scrollLeft:left});
+  const els={'.rt-panel':el(120,0), '.vsg-board':el(340,0), '.vsg-cheat':el(75,0),
+             '.rt-col-main':el(60,0), '.rt-col-side':el(15,0),
+             '.rt-seats':el(0,88), '.vsg-tabs':el(0,42)};
+  const host=mkHost(els);
+  const snap=app._rtSnapScroll(host);
+  chk(snap['.vsg-board']===340, 'a scrolled position board is captured');
+  chk(snap['.vsg-cheat']===75, 'so is the draft plan');
+  chk(snap['.rt-seats|x']===88, 'and the horizontal seat rail');
+  chk(snap['.vsg-tabs|x']===42, 'and the tab rail');
+  // Re-render: fresh elements, all at zero.
+  const fresh={}; Object.keys(els).forEach(k=>fresh[k]=el(0,0));
+  const host2=mkHost(fresh);
+  app._rtRestoreScroll(host2, snap);
+  chk(fresh['.vsg-board'].scrollTop===340, 'the board comes back where you left it');
+  chk(fresh['.rt-panel'].scrollTop===120, 'so does the panel');
+  chk(fresh['.rt-seats'].scrollLeft===88, 'and the rails restore horizontally');
+  chk(fresh['.vsg-tabs'].scrollLeft===42, 'both of them');
+  // A region that no longer exists must not throw.
+  const host3=mkHost({'.rt-panel':el(0,0)});
+  let threw=false;
+  try{ app._rtRestoreScroll(host3, snap); }catch(e){ threw=true; }
+  chk(!threw, 'a region that vanished between renders is skipped, not fatal');
+  chk(host3._els['.rt-panel'].scrollTop===120, 'and the ones still there still restore');
+  // Every scrollable region in the drawer must be listed, or it silently resets.
+  chk(app._RT_SCROLLERS.includes('.vsg-board') && app._RT_SCROLLERS.includes('.vsg-cheat')
+      && app._RT_SCROLLERS.includes('.rt-col-main') && app._RT_SCROLLERS.includes('.rt-col-side'),
+      'every scrollable region of the drawer is registered');
+}
 
 console.log(`\n${pass}/${total} checks passed`);
 process.exit(pass===total?0:1);

@@ -464,8 +464,16 @@ function renderRankings(){
   const inDraftOrder = rankSortKey==='ecr';
   // Pick gaps are counted in TOTAL picks, so the line is only meaningful on the unfiltered
   // board: with the WR filter on it sat after the 11th available WR, far past your pick.
-  const showPickLines = following && mySlot!=null && inDraftOrder && rankPosFilter==='ALL' && !rankRookiesOnly && !(rankingsSearchQuery||'').trim();
+  // The line used to require an unfiltered board, because gaps were counted in
+  // TOTAL picks: with a WR filter on, "18 picks away" landed 18 WRs down. But the
+  // filtered board is exactly where you want it — "which of these reaches me?".
+  // So under a filter, count in MARKET terms instead: how many of the players
+  // SHOWN are priced to go before that turn of yours. Same question, asked of the
+  // ADP board for this format rather than of raw pick numbers.
+  const showPickLines = following && mySlot!=null && inDraftOrder && !(rankingsSearchQuery||'').trim();
+  const filteredBoard = !(rankPosFilter==='ALL' && !rankRookiesOnly);
   let pickGaps=[];   // successive counts of players between your turns
+  let myPickNos=[];  // the actual pick numbers those turns land on
   if(showPickLines){
     const { teams, type, reversalRound, rounds } = draftParams();
     const start = currentPickNo();
@@ -476,14 +484,30 @@ function renderRankings(){
     // pick of MINE that's already a keeper doesn't get a line either: that turn is spent.
     const feed = (typeof _draftFeedPickNos==='function') ? _draftFeedPickNos() : new Set();
     let liveBetween=0;
+    myPickNos=[];
     for(let n=start; n<=maxPick; n++){
       if(slotOnClock(n, teams, type, reversalRound)===mySlot){
         if(!feed.has(n)){
           pickGaps.push(liveBetween);   // players taken by others before this, your turn
+          myPickNos.push(n);
           liveBetween=0;
           if(pickGaps.length>=rounds) break;
         }
       } else if(!feed.has(n)) liveBetween++;
+    }
+    // Filtered board: a line goes after the shown players the market expects to be
+    // gone by that pick — i.e. those whose ADP is earlier than it. Counted over the
+    // rows actually on screen, so it lands where you can see it.
+    if(filteredBoard){
+      const shown=view.filter(p=>!p.drafted);
+      pickGaps=myPickNos.map((n,k)=>{
+        let c=0;
+        shown.forEach(p=>{ const a=adpFor(p); if(a!=null && a<999 && a<n) c++; });
+        return Math.max(0, c-k);   // your own earlier picks consumed a row each
+      });
+      // Successive counts, mirroring the unfiltered path's "players between turns".
+      let prev=0;
+      pickGaps=pickGaps.map(c=>{ const g=Math.max(0,c-prev); prev=c; return g; });
     }
   }
   // ── Customizable columns ──────────────────────────────────────────────────────────────
@@ -628,7 +652,9 @@ function renderRankings(){
       fpts: fptsCells,
       vor: `<td class="c-vor">${rankValueHtml(`<span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${vorTxt}</span>`, p, 'Value Over Replacement', 'vor', 'rankings')}</td>`,
       pos: `<td class="c-pos"><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>`,
-      name: `<td class="c-player"><div class="clickable-player" style="display:flex;align-items:center;gap:6px" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${rankHeadshotSlotHtml(p)}<span class="rank-name">${pNameText}</span>${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</div></td>`,
+      name: `<td class="c-player"><div style="display:flex;align-items:center;gap:6px">${
+        (typeof draftStars!=='undefined' && following) ? rankStarBtn(p) : ''
+      }<div class="clickable-player" style="display:flex;align-items:center;gap:6px;min-width:0" title="${pNameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, p.team||'')}">${rankHeadshotSlotHtml(p)}<span class="rank-name">${pNameText}</span>${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</div></div></td>`,
       team: `<td class="c-team"><img src="${NFL_LOGO(p.team)}" class="rank-logo" alt="${pTeamAttr}" loading="lazy" decoding="async" onerror="this.style.display='none'"> ${pTeamText}</td>`,
       own: ownerActive?`<td class="c-own">${tcOwnerPill(p.player_id, p.name)}</td>`:'',
       age: `<td class="c-age">${p.age!=null?`<span class="num">${p.age}</span>`:''}</td>`,
@@ -640,7 +666,8 @@ function renderRankings(){
       const pa=vonaAvail.get(p.player_id||p.name);
       if(pa!=null && pa<0.25) fadeCls=' rank-fade';
     }
-    rowChunks.push(`<tr class="${p.drafted?'drafted':''}${fadeCls}" data-rank-search="${pSearchAttr}" data-rank-pos="${p.pos}" data-rank-vor="${p.vor>0?'1':'0'}"${rankIsRookie(p)?' data-rank-rk="1"':''}${volAttrs}${rankNoteScopeAttrs(p)}>
+    const starCls=(typeof isDraftStar==='function' && isDraftStar(p)) ? ' rank-starred' : '';
+    rowChunks.push(`<tr class="${p.drafted?'drafted':''}${fadeCls}${starCls}" data-star-row="${escAttr(String(p.player_id||p.name))}" data-rank-search="${pSearchAttr}" data-rank-pos="${p.pos}" data-rank-vor="${p.vor>0?'1':'0'}"${rankIsRookie(p)?' data-rank-rk="1"':''}${volAttrs}${rankNoteScopeAttrs(p)}>
     ${metaOrder.map(k=>metaTd[k]).join('\n    ')}
     ${statCells}
   </tr>`);

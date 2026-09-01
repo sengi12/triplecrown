@@ -878,3 +878,277 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .vona-kdef{display:flex;align-items:center;gap:6px;margin:4px 0 6px;padding:5px 8px;
   border:1px solid rgba(233,181,86,.4);border-radius:7px;background:rgba(233,181,86,.08);
   font-size:11.5px;color:var(--warn);}
+
+/* ── Suggestions panel (desktop) ──────────────────────────────────────────────
+   Same advice as .vona-rows, laid out for a monitor instead of a phone: advice
+   on the left, your own roster beside it, one scannable card per PLAYER, and a
+   position tab that opens that position's whole board. The verdict is carried by
+   a chip as well as a colour, so it never depends on hue alone. Below 900px the
+   compact .vona-rows layout is still what shows. */
+.vsg{display:block;margin-top:10px;}
+.rt-cols{display:block;}
+@media (min-width:900px){
+  /* Advice and roster side by side, each scrolling on its own, so you can read
+     your team while you decide without losing your place in either. */
+  .rt-panel{max-height:min(78vh,860px);overflow:hidden;display:flex;flex-direction:column;}
+  .rt-cols{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(280px,1fr);
+    gap:16px;flex:1 1 auto;min-height:0;padding:0 2px 2px;}
+  .rt-col-main,.rt-col-side{min-width:0;overflow-y:auto;overscroll-behavior:contain;}
+  .rt-col-side{border-left:1px solid var(--border);padding-left:16px;}
+  .vona-box{padding:14px 16px 16px;}
+}
+.vsg-tabs{display:flex;align-items:center;gap:6px;margin:0 0 10px;flex-wrap:wrap;}
+.vsg-tab{border:1px solid var(--border);background:var(--surface2);color:var(--muted2);
+  border-radius:999px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;
+  letter-spacing:.02em;transition:background .12s,color .12s,border-color .12s;}
+.vsg-tab:hover{color:var(--text);border-color:var(--border2);}
+.vsg-tab.active{background:var(--accent);border-color:var(--accent);color:#08111c;}
+.vsg-tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.vsg-spacer{flex:1 1 auto;}
+.vsg-hint{font-size:11px;color:var(--muted);white-space:nowrap;}
+.vsg-list{display:flex;flex-direction:column;gap:6px;}
+.vsg-card{display:grid;grid-template-columns:22px 62px 1fr auto;align-items:center;gap:12px;
+  padding:10px 14px;border:1px solid var(--border);border-radius:12px;background:var(--surface2);
+  transition:border-color .12s,background .12s;}
+.vsg-card:hover{border-color:var(--border2);background:var(--surface3);}
+/* The lead suggestion gets a left rail rather than a wash, so its text keeps
+   full contrast (the same call the .vona-filled row makes). */
+.vsg-card.lead{border-color:rgba(61,155,255,.45);box-shadow:inset 3px 0 0 var(--accent);}
+.vsg-card.gated{opacity:.55;}
+.vsg-card.starred,.vsg-brow.starred{background:rgba(210,153,34,.07);}
+.vsg-rank{font-size:14px;font-weight:800;color:var(--muted);text-align:center;
+  font-variant-numeric:tabular-nums;}
+.vsg-card.lead .vsg-rank{color:var(--accent);}
+/* A real headshot, not a coin. playerThumb wraps the image in .rt-thumb (a 24px
+   circle for the roster rows) — override it here rather than fight it. */
+.vsg-hs{display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.vsg-hs .rt-thumb{width:62px;height:62px;border-radius:10px;overflow:hidden;flex:none;
+  background:linear-gradient(180deg,var(--surface3),var(--surface2));
+  border:1px solid var(--border);display:block;}
+.vsg-hs .rt-thumb img{width:100%;height:100%;object-fit:cover;object-position:top center;
+  display:block;}
+.vsg-main{min-width:0;cursor:pointer;}
+.vsg-name{font-size:16px;font-weight:800;color:var(--text);letter-spacing:-.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.vsg-meta{display:flex;align-items:center;gap:8px;margin-top:3px;flex-wrap:wrap;
+  font-size:12px;color:var(--muted2);font-variant-numeric:tabular-nums;}
+.vsg-team{font-weight:600;}
+.vsg-vor{font-weight:700;color:var(--text);}
+.vsg-adp{color:var(--muted);}
+.vsg-edge{font-weight:700;border-radius:999px;padding:1px 8px;font-size:11px;}
+.vsg-edge.reach{background:rgba(210,153,34,.14);color:var(--warn);}
+.vsg-edge.value{background:rgba(63,185,80,.14);color:var(--success);}
+/* What waiting costs: the man you'd most often settle for instead. */
+.vsg-next{margin-top:5px;font-size:12px;color:var(--muted2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.vsg-next b{color:var(--text);font-weight:700;}
+.vsg-next.safe{color:var(--muted);}
+.vsg-nvor{font-weight:700;color:var(--muted2);margin-left:4px;}
+.vsg-nshare{margin-left:6px;font-size:11px;color:var(--muted);}
+.vsg-why{margin-top:4px;font-size:11px;color:var(--muted);}
+.vsg-verdict{display:flex;flex-direction:column;align-items:flex-end;gap:2px;min-width:104px;}
+.vsg-pct{font-size:22px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums;}
+.vsg-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+.vsg-chip{margin-top:3px;font-size:10px;font-weight:800;text-transform:uppercase;
+  letter-spacing:.06em;border-radius:999px;padding:2px 9px;border:1px solid transparent;}
+.vsg-now{color:var(--danger);}
+.vsg-chip.vsg-now{background:rgba(248,81,73,.14);border-color:rgba(248,81,73,.35);}
+.vsg-close{color:var(--warn);}
+.vsg-chip.vsg-close{background:rgba(210,153,34,.14);border-color:rgba(210,153,34,.35);}
+.vsg-wait{color:var(--success);}
+.vsg-chip.vsg-wait{background:rgba(63,185,80,.12);border-color:rgba(63,185,80,.3);}
+.vsg-off{color:var(--muted);}
+.vsg-chip.vsg-off{background:var(--surface3);border-color:var(--border);}
+/* ── Shortlist ─────────────────────────────────────────────────────────────── */
+.vsg-star{background:none;border:0;cursor:pointer;font-size:15px;line-height:1;padding:2px 3px;
+  color:var(--muted);transition:color .12s,transform .1s;}
+.vsg-star:hover{color:var(--warn);transform:scale(1.15);}
+.vsg-star.on{color:var(--warn);}
+.vsg-star:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
+.vsg-verdict .vsg-star{margin-top:2px;}
+.vsg-strip{margin-top:10px;padding:9px 11px;border:1px solid rgba(210,153,34,.28);
+  border-radius:10px;background:rgba(210,153,34,.06);}
+.vsg-strip-lbl{display:block;font-size:10px;font-weight:800;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--warn);margin-bottom:6px;}
+.vsg-strip-row{display:flex;flex-wrap:wrap;gap:6px;}
+.vsg-schip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+  color:var(--text);background:var(--surface2);border:1px solid var(--border);
+  border-radius:999px;padding:3px 10px;cursor:pointer;}
+.vsg-schip:hover{border-color:var(--border2);}
+.vsg-schip b{font-variant-numeric:tabular-nums;}
+.vsg-schip.more{color:var(--muted);cursor:default;}
+/* ── One position's whole board ────────────────────────────────────────────── */
+.vsg-bhead,.vsg-brow{display:grid;
+  grid-template-columns:26px 26px minmax(0,1fr) 42px 46px 50px 46px 52px;
+  align-items:center;gap:8px;}
+.vsg-bhead{padding:0 10px 5px;font-size:9px;font-weight:800;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);}
+.vsg-bhead span:nth-child(n+4){text-align:right;}
+.vsg-board{max-height:min(46vh,420px);overflow-y:auto;overscroll-behavior:contain;
+  margin-top:2px;}
+.vsg-brow{padding:7px 10px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;}
+.vsg-brow:hover{background:var(--surface3);}
+.vsg-brow.pick{background:rgba(61,155,255,.09);box-shadow:inset 3px 0 0 var(--accent);}
+.vsg-bi{font-size:11px;color:var(--muted);text-align:center;font-variant-numeric:tabular-nums;}
+.vsg-bname{font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;}
+.vsg-bteam{font-size:11px;color:var(--muted);text-align:right;}
+.vsg-bnum{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;
+  color:var(--muted2);font-size:12px;}
+.vsg-empty{padding:16px;text-align:center;color:var(--muted);font-size:12px;}
+/* ── Draft plan (mock drafts from your seat) ───────────────────────────────── */
+.vsg-cheat{max-height:min(56vh,520px);overflow-y:auto;overscroll-behavior:contain;padding-right:4px;}
+.vsg-cnote{font-size:11px;color:var(--muted);line-height:1.55;margin:0 0 10px;
+  padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);}
+.vsg-cnote b{color:var(--text);}
+.vsg-cblock{margin-bottom:12px;}
+.vsg-chead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;
+  color:var(--muted2);padding:0 2px 5px;border-bottom:1px solid var(--border);
+  font-variant-numeric:tabular-nums;}
+.vsg-chead b{color:var(--text);font-size:13px;}
+.vsg-cpos{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:11px;
+  color:var(--muted);}
+.vsg-clist{margin-top:2px;}
+.vsg-crow{display:grid;grid-template-columns:26px 30px minmax(0,1fr) 42px 46px 46px;
+  align-items:center;gap:8px;padding:5px 4px;font-size:13px;border-bottom:1px solid var(--border);}
+.vsg-crow:hover{background:var(--surface3);}
+.vsg-cname{font-weight:700;color:var(--text);cursor:pointer;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;}
+.vsg-tab-plan{border-style:dashed;}
+.vsg-tab-plan.active{border-style:solid;}
+/* Plan rows carry two numbers that mean different things: how often the plan
+   spends this pick on him, and how often he's even there. The gap is the edge. */
+.vsg-crow{grid-template-columns:26px 30px minmax(0,1fr) auto 46px 46px;}
+.vsg-take{font-size:11px;color:var(--muted);white-space:nowrap;
+  font-variant-numeric:tabular-nums;}
+.vsg-crow.tgt{background:rgba(210,153,34,.09);border-radius:6px;}
+.vsg-tnote{font-size:11px;color:var(--success);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;}
+.vsg-tnote.urgent{color:var(--warn);font-weight:700;}
+.vsg-shape{margin-top:6px;padding-top:6px;border-top:1px solid var(--border);
+  font-size:11px;color:var(--muted);}
+.vsg-shape b{color:var(--text);letter-spacing:.02em;}
+.vsg-cmiss{margin:0 0 10px;padding:8px 10px;border-radius:8px;font-size:11px;line-height:1.55;
+  border:1px solid rgba(248,81,73,.3);background:rgba(248,81,73,.08);color:var(--muted2);}
+/* ── "The board if you wait" popup ─────────────────────────────────────────────
+   .vona-opt-pop caps itself at 330px in 95-ui-system.css, which loads after this
+   file — so this override has to out-SPECIFY it, not just follow it. At 330px
+   four columns left no room for a name and the popup rendered as bare numbers.
+   Two columns of two, with the name given the space it needs. */
+.vona-opt-pop.vwp{width:min(720px,calc(100vw - 20px));}
+.vwp .vwp-key{display:flex;justify-content:space-between;padding:7px 14px 0;
+  font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);}
+.vwp .vwp-kr{text-align:right;}
+.vwp .vwp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px 14px;padding:8px 14px 4px;}
+@media (max-width:620px){ .vwp .vwp-grid{grid-template-columns:minmax(0,1fr);} }
+.vwp .vwp-col{min-width:0;border:1px solid var(--border);border-radius:10px;
+  background:var(--surface2);padding:7px 8px 6px;}
+.vwp .vwp-h{display:flex;align-items:center;gap:7px;margin-bottom:5px;
+  padding-bottom:5px;border-bottom:1px solid var(--border);}
+.vwp .vwp-hnote{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;}
+.vwp .vwp-hnote b{color:var(--text);font-weight:700;}
+.vwp .vwp-row{display:grid;grid-template-columns:minmax(0,1fr) 34px 38px 42px;
+  gap:6px;align-items:center;padding:4px 5px;border-radius:6px;font-size:12.5px;cursor:pointer;}
+.vwp .vwp-row:hover{background:var(--surface3);}
+.vwp .vwp-row.best{background:rgba(61,155,255,.10);box-shadow:inset 2px 0 0 var(--accent);}
+.vwp .vwp-nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;
+  color:var(--text);}
+.vwp .vwp-team{font-size:10.5px;color:var(--muted);text-align:right;}
+.vwp .vwp-vor{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted2);font-weight:700;}
+.vwp .vwp-pct{text-align:right;font-variant-numeric:tabular-nums;font-weight:800;}
+.vwp .vwp-foot{padding:7px 14px 11px;font-size:11px;color:var(--muted);}
+.vsg-next.act{cursor:pointer;border-radius:5px;margin-left:-3px;padding-left:3px;}
+.vsg-next.act:hover{background:var(--surface3);color:var(--text);}
+
+/* The star lives beside the name here, matching the rankings board, so the
+   gesture is the same wherever you spot someone. */
+.vsg-name{display:flex;align-items:center;gap:6px;}
+.vsg-nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.vsg-name .vsg-star{flex:none;font-size:14px;}
+.vsg-verdict{justify-content:center;}
+
+/* ── Narrow screens ───────────────────────────────────────────────────────────
+   Same advisory, same data, re-proportioned for a thumb. The rank number goes
+   (order already says it), the headshot shrinks, the tab rail scrolls sideways
+   rather than wrapping onto three lines, and anything that was a comfortable
+   extra column becomes a second line instead of squeezing the player's name. */
+@media (max-width:640px){
+  .vsg{margin-top:8px;}
+  .vsg-tabs{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;
+    -webkit-overflow-scrolling:touch;scrollbar-width:none;gap:5px;margin-bottom:8px;
+    padding-bottom:2px;}
+  .vsg-tabs::-webkit-scrollbar{display:none;}
+  .vsg-tab{flex:none;padding:5px 12px;font-size:11.5px;}
+  .vsg-hint,.vsg-spacer{display:none;}
+  /* Cards: photo, everything about him, verdict. No rank column. */
+  .vsg-card{grid-template-columns:46px minmax(0,1fr) auto;gap:9px;padding:9px 10px;
+    border-radius:10px;}
+  .vsg-rank{display:none;}
+  .vsg-hs .rt-thumb{width:46px;height:46px;border-radius:8px;}
+  .vsg-name{font-size:14.5px;}
+  .vsg-meta{font-size:11px;gap:6px;margin-top:2px;}
+  .vsg-next{font-size:11px;margin-top:4px;}
+  .vsg-nshare{margin-left:4px;}
+  .vsg-why{font-size:10.5px;}
+  .vsg-verdict{min-width:60px;gap:1px;}
+  .vsg-pct{font-size:17px;}
+  .vsg-lbl{font-size:9px;letter-spacing:.04em;}
+  .vsg-chip{font-size:9px;padding:2px 7px;margin-top:2px;}
+  .vsg-more{margin-top:2px;}
+  /* One position's board: Proj is the column to lose first — value and ADP are
+     what the decision turns on. */
+  .vsg-bhead,.vsg-brow{grid-template-columns:24px 20px minmax(0,1fr) 34px 42px 40px 44px;gap:6px;}
+  .vsg-bhead>span:nth-child(5),.vsg-brow>*:nth-child(5){display:none;}
+  .vsg-bhead{font-size:8.5px;padding:0 6px 5px;}
+  .vsg-brow{padding:7px 6px;font-size:12.5px;}
+  .vsg-board{max-height:52vh;}
+  /* Plan rows: the reason a player is here gets its own line rather than
+     eating the name. */
+  .vsg-crow{grid-template-columns:24px 28px minmax(0,1fr) 40px 42px;row-gap:1px;
+    padding:6px 3px;}
+  .vsg-crow>*{grid-row:1;}
+  .vsg-crow .vsg-take,.vsg-crow .vsg-tnote{grid-row:2;grid-column:3 / -1;font-size:10.5px;
+    white-space:normal;}
+  .vsg-cheat{max-height:60vh;}
+  .vsg-cnote{font-size:10.5px;padding:7px 8px;}
+  .vsg-chead{font-size:11.5px;}
+  .vsg-cpos{margin-left:0;width:100%;}
+  .vsg-strip{padding:8px 9px;}
+  .vsg-schip{font-size:11px;padding:3px 8px;}
+}
+/* The drawer's own scrollers must not hand the gesture to the page mid-list. */
+.vsg-board,.vsg-cheat,.rt-col-main,.rt-col-side{-webkit-overflow-scrolling:touch;}
+.vsg-more{background:none;border:0;color:var(--muted);cursor:pointer;font-size:12px;
+  line-height:1;padding:2px 4px;}
+.vsg-more:hover{color:var(--text);}
+.vsg-more:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
+
+/* Plan header: the build line is the summary worth keeping on screen; the prose
+   sits behind the ⓘ. The key line replaces it on narrow screens so the two
+   percentage columns still say what they are. */
+.vsg-shape{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+.vsg-shape-l{font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);}
+.vsg-ckey{display:none;}
+.vsg-lbl-short{display:none;}
+@media (max-width:640px){
+  /* One block of prose above the thing you opened is one too many on a phone. */
+  .vsg-cnote-txt{display:none;}
+  .vsg-cnote{padding:6px 9px;}
+  .vsg-shape{margin-top:0;padding-top:0;border-top:0;}
+  .vsg-ckey{display:block;margin-top:5px;padding-top:5px;border-top:1px solid var(--border);
+    font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);}
+  .vsg-lbl-long{display:none;}
+  .vsg-lbl-short{display:inline;}
+  .vsg-cmiss{font-size:10.5px;padding:7px 9px;line-height:1.5;}
+  /* The seat switcher is a 12-button grid above the advice — shrink it rather
+     than pushing the suggestions below the fold. */
+  .rt-switcher{gap:4px;}
+  .rt-teamchip{padding:4px 9px;font-size:11px;}
+  .rt-switch-head{font-size:9px;margin-bottom:4px;}
+  /* Long single-line labels wrap instead of ellipsing into nothing. */
+  .vona-sub{font-size:12px;line-height:1.5;}
+  .rt-needs{font-size:11.5px;}
+}

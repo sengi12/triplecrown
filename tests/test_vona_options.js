@@ -2,11 +2,15 @@
 // vonaOptionsPop renders a scrollable "next viable options" popover (with working toggle-close),
 // and the league picker offers the League Analyzer's synced league + carries its username over.
 const reg={};                       // elements registered via body.appendChild, by id
+const POPUP_IDS=new Set(['vonaOptPop','vonaWaitPop','tcInfoPop']);
 const elStore={};
 function mkEl(id){if(!elStore[id])elStore[id]={id,innerHTML:'',style:{},value:'',dataset:{},classList:{add(){},remove(){},toggle(){}},setAttribute(){},getAttribute(){return '';},appendChild(){},querySelectorAll:()=>[],querySelector:()=>null,addEventListener(){},offsetHeight:40};return elStore[id];}
 global.document={
   documentElement:{style:{setProperty(){}}},
-  getElementById:(id)=> reg[id]!==undefined ? reg[id] : (id==='vonaOptPop' ? null : mkEl(id)),
+  // Popovers ask "am I already open?" — a real DOM answers null when they aren't,
+  // and mkEl's always-truthy stub would make them try to .remove() a phantom.
+  getElementById:(id)=> reg[id]!==undefined ? reg[id]
+    : (POPUP_IDS.has(id) ? null : mkEl(id)),
   querySelector:()=>null,querySelectorAll:()=>[],
   createElement:(tag)=>{
     const el={tag,id:'',className:'',innerHTML:'',style:{},dataset:{},offsetWidth:300,offsetHeight:200,
@@ -26,7 +30,7 @@ const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`
   toast=function(m,t){ toasts.push({m,t}); };
   return {
-    computeVONA, vonaOptionsPop, renderLeaguePicker,
+    computeVONA, vonaOptionsPop, vonaWaitOpen, vonaWaitPop, renderLeaguePicker,
     setMySlot:(s)=>{mySlot=s;}, setPicks:(p)=>{draftPicksBySlot=p;}, setMeta:(m)=>{draftMeta=m;},
     setBPL:(f)=>{buildPlayerList=f;}, setDrafted:(d)=>{draftedIds=d;},
     setSnapshot:(s)=>{leagueSnapshot=s;}, getPickerState:()=>leaguePickerState };
@@ -91,6 +95,31 @@ chk(!html.includes('lp-synced') && html.includes('value=""'),'ESPN sync → no q
 app.setSnapshot(null);
 html=app.renderLeaguePicker();
 chk(!html.includes('lp-synced') && html.includes('value=""'),'no sync → the picker looks exactly as before');
+
+
+console.log('=== "wait" opens the right thing for the screen ===');
+{
+  const clean=()=>{ ['vonaOptPop','vonaWaitPop'].forEach(k=>{ if(reg[k]&&reg[k].remove) reg[k].remove(); delete reg[k]; }); };
+  // Phone: the compact "next up at this position" list, not a four-column board
+  // popped over the card it came from.
+  clean();
+  global.window.matchMedia=(q)=>({matches:/max-width:\s*640px/.test(q)});
+  app.vonaWaitOpen({target:null,currentTarget:null,stopPropagation(){}},'RB');
+  chk(!!reg['vonaOptPop'], 'narrow screens get the compact position list');
+  chk(!reg['vonaWaitPop'], 'and not the full wait board');
+  chk(reg['vonaOptPop'].innerHTML.includes('Next up at RB'), 'for the position that was clicked');
+  // Desktop: the full board, where there is room for it.
+  clean();
+  global.window.matchMedia=()=>({matches:false});
+  app.vonaWaitOpen({target:null,currentTarget:null,stopPropagation(){}},'RB');
+  chk(!!reg['vonaWaitPop'], 'wide screens get the whole board');
+  chk(!reg['vonaOptPop'], 'and not the compact list');
+  const h=reg['vonaWaitPop'].innerHTML;
+  chk(h.includes('If you wait'), 'headed by what waiting buys you');
+  chk(/vwp-nm/.test(h), 'and it actually carries player names');
+  chk((h.match(/vwp-col/g)||[]).length>=2, 'laid out as position columns');
+  clean();
+}
 
 console.log(`\n${pass}/${total}`);
 process.exit(pass===total?0:1);
