@@ -79,7 +79,7 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
 - **Injury-aware everywhere.** Sleeper injury designations (Q/D/OUT/IR/SUS/PUP) badge player names across the app; tapping one opens a knowledge-book popup with a typical timetable for that injury type — and when a concrete timeline has been reported ("out 4–6 weeks", "out until Week 12") the popup shows *that* instead of an estimate. Season-ending IR is detected even when the structured feed misses it, by scanning ESPN news headlines.
 - **A UI that stays out of the way.** Methodology and source notes live behind small ⓘ buttons (popups that stay in the window) instead of paragraphs in the layout; sliders compress to realistic ranges so small values are actually draggable (a 30% target share reads as a nearly-full bar — typed values above the visual cap still work); warnings like vacated production and receiver-vs-QB mismatches are compact flag icons whose popups keep the one-click reconcile actions; roster changes and the QB room fold into collapsible blocks; **Cmd/Ctrl+Z** fires undo with a toast naming what it reverted. Scrolling is contained — popups and cards never scroll the page behind them, and iOS doesn't rubber-band.
 - **Schedule on every team view.** For the current season, a week-by-week opponent rail (colored by Vegas win totals) rides the top of Passing/Receiving/Rushing/Adv Metrics — tap any opponent to jump to that team *in the same view*.
-- **Player Cards.** Every Player has a back story as to how they got here and the best way to see that summarized is in their player card. Here you'll find a summary of their current contract, draft selection and past performance with the added bonus of being able to see their college per game stats as well. Their pro gamelogs are color-graded per game and label playoff weeks by round (WC / DIV / AFC / NFC / SB). In season, a **NEXT** strip under the hero shows the player's coming six weeks — each opponent tinted by how generously that defense treats his position (the same defense-vs-position table the Lineup pane and This-Week waivers run on), byes included.
+- **Player Cards.** Every Player has a back story as to how they got here and the best way to see that summarized is in their player card. Here you'll find a summary of their current contract, draft selection and past performance with the added bonus of being able to see their college per game stats as well. Their pro gamelogs are color-graded per game and label playoff weeks by round (WC / DIV / AFC / NFC / SB). Once the season's first games are underway, the live season joins the gamelog in the same format as every completed one — played weeks with their stats, remaining weeks listed with their opponents and byes, filling in as the season goes. Deliberately absent before week 1: draft-season cards stay uncrowded, and the whole rollover is driven by Sleeper's state plus the weekly seed cron, so it repeats itself every year without a code change.
 
 <!-- Center align -->
 <div align="center">
@@ -435,7 +435,11 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] "TripleCrown Rating" column on the draft board: blend draft rank with team-context signals
   (landing spot / vacated opportunity, open target share, coaching, other analysts' ranks) into one
   composite — the TC column today is raw projected points, and the context lives only on player
-  cards and team views
+  cards and team views. **Gated on validation (checked 2026-09-02):** the honest test is whether a
+  blend orders players closer to *realized* season points than the plain board does, which needs a
+  preseason market snapshot from a completed season — and the market archive only began with 2026
+  (3 snapshots, no 2025). The 2026 snapshots now accruing make this testable after this season;
+  don't ship the column as an unvalidated number before then
 - [x] Live league-relative team rank while drafting — wire the League Analyzer's team-score engine
   to live draft rosters (`draftPicksBySlot`) and show "your team ranks Nth of M" in the roster drawer
 - [ ] "Stuck between two players" button: on-demand AI deep comparison of two players (pairs with

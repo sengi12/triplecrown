@@ -10,7 +10,7 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   TC_SEASON, laDvpTable, laDvpView, laAdjWeekProj, laLineupView, laState,
-  laWeekPickupsHTML, laBestAvailView, pcardScheduleBand,
+  laWeekPickupsHTML, laBestAvailView, pcardAppendFutureWeeks,
   setBPL:(f)=>{buildPlayerList=f;}, setProjMap:(f)=>{laProjMap=f;},
   setSeasonStarted:(f)=>{hasSeasonStarted=f;}, setIsRedraft:(f)=>{laIsRedraft=f;},
   setInseason:(x)=>{TC_INSEASON=x;}, setSnapshot:(s)=>{leagueSnapshot=s;}, setPhaseVar:(p)=>{currentPhase=p;},
@@ -146,23 +146,35 @@ console.log('=== waivers: the This-Week lens ===');
   app.laState.baLens='value';
 }
 
-console.log('=== player card: upcoming schedule strip ===');
+console.log('=== player card: the live season lists what is coming ===');
 {
-  // Fixture schedule: MIA plays AAA in week 3 and nothing after (bye cells);
-  // BUF plays BBB. Ranks from the same DvP table as everything else.
-  const mia=app.pcardScheduleBand('MIA','WR');
-  chk(mia.includes('pcard-sched'), 'the strip renders in season');
-  chk(mia.includes('AAA'), "week 3 shows the opponent");
-  chk(mia.includes('pc-sch-hard'), 'a stingy WR defense reads hard (red)');
-  chk(mia.includes('BYE'), 'a scheduled gap reads as a bye, not a blank');
-  const buf=app.pcardScheduleBand('BUF','WR');
-  chk(buf.includes('pc-sch-easy') && buf.includes('1st'),
-      'the most generous defense reads easy, with its ordinal rank');
-  const k=app.pcardScheduleBand('MIA','K');
-  chk(k.includes('AAA') && !k.includes('pc-sch-rk'),
-      'a kicker sees his opponents but no position rank — the table has none for him');
+  // Restore the sidecar the earlier block cleared.
+  app.setInseason({v:1, season:2026, weeks:[1,2], asof:'x',
+    schedule:{MIA:{'3':'AAA','5':'BUF'}},
+    schedule_meta:{MIA:{'3':['AAA',1,'Sun','1:00 PM','d'],'5':['BUF',0,'Mon','8:15 PM','d']}},
+    def_vs_pos:null});
+  app.TC_SEASON.year=2026; app.TC_SEASON.phase='regular'; app.TC_SEASON.week=3;
+  const played=[{wk:1, opp:'CCC', isAway:false, gp:1, bye:false, dnp:false, stats:{gp:1},
+                 team:'MIA', fpts:10, pprFpts:12, snp:80, rank:5},
+                {wk:2, opp:'DDD', isAway:true, gp:1, bye:false, dnp:false, stats:{gp:1},
+                 team:'MIA', fpts:8, pprFpts:9, snp:75, rank:9}];
+  const rows=played.slice();
+  app.pcardAppendFutureWeeks(rows, 'MIA');
+  chk(rows.length===18, 'the log runs to week 18');
+  const w3=rows.find(r=>r.wk===3), w4=rows.find(r=>r.wk===4), w5=rows.find(r=>r.wk===5);
+  chk(w3 && w3.future && w3.opp==='AAA' && w3.isAway===false,
+      'a scheduled future week carries its opponent and venue');
+  chk(w5 && w5.future && w5.opp==='BUF' && w5.isAway===true, 'road games read as away');
+  chk(w4 && !w4.future && w4.bye && !w4.opp, 'a week with no game is a BYE, not a blank');
+  chk(rows.filter(r=>r.future).every(r=>r.gp===0 && r.fpts==null),
+      'future rows carry no invented production');
+  // Totals must ignore them entirely.
+  const tot=rows.filter(r=>r.gp>0).length;
+  chk(tot===2, 'played games still count exactly themselves');
+  // No sidecar, no team → untouched.
+  chk(app.pcardAppendFutureWeeks(played.slice(), null).length===2, 'a free agent gets no schedule');
   app.setInseason(null);
-  chk(app.pcardScheduleBand('MIA','WR')==='', 'no sidecar (preseason) → no strip');
+  chk(app.pcardAppendFutureWeeks(played.slice(), 'MIA').length===2, 'preseason (no sidecar) appends nothing');
 }
 
 console.log(`\n${pass}/${total}`);

@@ -218,47 +218,6 @@ function pcardBackButtonHTML(){
   return `<button class="pcard-back" onclick="pcardGoBack()" aria-label="Back">${typeof TC_ICON==='function'?TC_ICON('undo'):'←'}</button>`;
 }
 
-// ── Upcoming schedule strip ─────────────────────────────────────────────────
-// In season only (the sidecar carries the full-season schedule): the player's
-// next six weeks, each opponent colored by how generously that defense treats
-// HIS position — the same defense-vs-position table the Lineup pane and the
-// This-Week waiver lens run on, so the three views can never disagree about a
-// matchup. Before the sidecar lands (preseason, offline copies) the band simply
-// isn't there.
-function pcardScheduleBand(team, pos){
-  const ins=(typeof TC_INSEASON!=='undefined'&&TC_INSEASON)||null;
-  const sch=ins&&ins.schedule&&team?ins.schedule[team]:null;
-  if(!sch) return '';
-  let wkNow=1;
-  if(typeof laCurrentWeek==='function'){ try{ wkNow=laCurrentWeek()||1; }catch(e){} }
-  let dvp=null;
-  if(typeof laDvpTable==='function'){ try{ dvp=laDvpTable(); }catch(e){} }
-  const skill=['QB','RB','WR','TE'].includes(pos);
-  const cells=[];
-  for(let w=wkNow; w<=18 && cells.length<6; w++){
-    const opp=sch[String(w)];
-    if(!opp){
-      cells.push(`<div class="pc-sch-cell pc-sch-bye" title="Week ${w}: bye">
-        <span class="pc-sch-wk">W${w}</span><span class="pc-sch-opp">BYE</span></div>`);
-      continue;
-    }
-    const meta=(ins.schedule_meta&&ins.schedule_meta[team]&&ins.schedule_meta[team][String(w)])||null;
-    const at=meta ? (meta[1]?'':'@') : '';
-    let rkHtml='', cls='', rkTxt='';
-    if(skill && dvp && dvp.ranks[opp] && dvp.ranks[opp][pos]){
-      const r=dvp.ranks[opp][pos], n=dvp.codes.length||32;
-      cls = r<=Math.ceil(n/3) ? 'pc-sch-easy' : (r>n-Math.ceil(n/3) ? 'pc-sch-hard' : '');
-      rkHtml=`<span class="pc-sch-rk">${ordinal(r)}</span>`;
-      rkTxt=` — allows the ${ordinal(r)}-most fantasy points to ${pos}s`;
-    }
-    cells.push(`<div class="pc-sch-cell ${cls}" title="Week ${w}: ${at?'at':'vs'} ${opp}${rkTxt}${meta&&meta[2]?` · ${meta[2]} ${meta[3]||''}`:''}">
-      <span class="pc-sch-wk">W${w}</span><span class="pc-sch-opp">${at}${opp}</span>${rkHtml}</div>`);
-  }
-  if(!cells.length) return '';
-  return `<div class="pcard-sched" title="Upcoming schedule${skill&&dvp?' · rank = how many fantasy points that defense allows to this position (1st = most generous)':''}">
-    <span class="pc-sch-lbl">NEXT</span>${cells.join('')}</div>`;
-}
-
 function openPlayerCardFromCard(nameOrId, pos, team){
   if(pcardState){
     const snap = pcardCaptureNavState();
@@ -496,7 +455,6 @@ function renderPlayerCardShell(pid, pos, team){
     `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val pcard-meta-empty">–</span></div>` :
     `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val">${val}</span></div>`;
   const contractBand = contractSummaryHTML(name);
-  const scheduleBand = pcardScheduleBand(tm, posc);
   const ktcBand = ktcLinkHTML(name, posc);
   const noteCount = playerNoteCount(pid, posc, tm);
   // Sleeper-style hero: an injury BANNER across the top; the name stacked on two lines; the
@@ -550,7 +508,6 @@ function renderPlayerCardShell(pid, pos, team){
         <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">✕</button>
       </div>
       ${contractBand}
-      ${scheduleBand}
       <div class="pcard-tabs" id="pcardTabs"></div>
       <div class="pcard-body" id="pcardBody">
         <div class="pcard-loading">Loading game logs…</div>
@@ -836,8 +793,18 @@ async function loadSleeperCareerStats(pid, posc, body){
     const perSeason = await Promise.all(seasons.map(async s=>({season:s, weekly:await fetchPlayerWeekly(pid, s)})));
     if(!pcardOpen || tok!==pcardToken) return; // closed or switched sources while loading
     let out='';
+    const liveTeam = (sleeperPlayers && sleeperPlayers[pid] && sleeperPlayers[pid].team) || null;
     for(const {season, weekly} of perSeason){
       const rows = pcardSeasonRows(weekly, posc);
+      // The season in progress also lists what's COMING — remaining opponents
+      // from the sidecar schedule as empty rows, the same shape a missed week
+      // already renders. Note the gate is implicit and year-agnostic: this
+      // season only reaches the card at all once the live refresher has seen
+      // real stat records (week 1 underway), so nothing crowds draft-season
+      // cards, this year or any other.
+      if(typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season)){
+        pcardAppendFutureWeeks(rows, liveTeam);
+      }
       if(!rows.length) continue;
       out += renderPcardSeason(season, rows, posc);
     }
@@ -853,6 +820,25 @@ async function loadSleeperCareerStats(pid, posc, body){
     }
   }
 }
+// Fill the live season's remaining weeks from the sidecar schedule: opponent
+// shown, stat cells empty, byes labelled — the exact format a completed
+// season's missed weeks already use. Mutates `rows` in place; a no-op without
+// the sidecar or a team (free agents have no schedule).
+function pcardAppendFutureWeeks(rows, team){
+  const ins=(typeof TC_INSEASON!=='undefined'&&TC_INSEASON)||null;
+  const sch=ins&&ins.schedule&&team?ins.schedule[team]:null;
+  if(!sch) return rows;
+  const last=rows.length?Math.max(...rows.map(r=>r.wk)):0;
+  const wkNow=(typeof TC_SEASON!=='undefined'&&TC_SEASON.phase==='regular')?Number(TC_SEASON.week)||0:0;
+  for(let w=Math.max(last, wkNow-1)+1; w<=18; w++){
+    const opp=sch[String(w)]||null;
+    const meta=(opp&&ins.schedule_meta&&ins.schedule_meta[team]&&ins.schedule_meta[team][String(w)])||null;
+    rows.push({wk:w, opp, isAway:meta?!meta[1]:false, gp:0, bye:true, dnp:false,
+               future:!!opp, stats:{}, team, fpts:null, pprFpts:null, snp:null, rank:null});
+  }
+  return rows;
+}
+
 // Build sorted weekly rows for one season from Sleeper weekly data.
 function pcardSeasonRows(weekly, pos){
   const rows=[];
@@ -947,10 +933,13 @@ function renderPcardSeason(season, rows, pos){
         const v = (r.dnp && c.key==='snp') ? '0' : '–';
         return sep+`<td class="pcard-cell bye">${v}</td>`;
       }).join('');
-      const oppCell = (r.dnp && r.opp)
+      const oppCell = ((r.dnp||r.future) && r.opp)
         ? `<span class="pcard-dnp-opp">${r.isAway?'@':'vs'} ${escHtml(r.opp)}</span>`
         : (r.dnp ? 'DNP' : 'BYE');
-      return `<tr class="${r.dnp?'pcard-dnp-row':''}"><td class="pcard-wk">${r.wk}</td><td class="pcard-opp" title="${r.dnp?'Did not play (inactive / injured) — not counted in the consistency grade':'Bye week'}">${oppCell}</td>${spans}</tr>`;
+      const rowTitle = r.future ? 'Upcoming game'
+        : r.dnp ? 'Did not play (inactive / injured) — not counted in the consistency grade'
+        : 'Bye week';
+      return `<tr class="${r.dnp?'pcard-dnp-row':''}${r.future?'pcard-future-row':''}"><td class="pcard-wk">${r.wk}</td><td class="pcard-opp" title="${rowTitle}">${oppCell}</td>${spans}</tr>`;
     }
     const ctx={ fpts:r.fpts, snp:r.snp, rank:r.rank };
     const vals=pcardRowValues(pos, r.stats, ctx);
