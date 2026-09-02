@@ -305,15 +305,35 @@ def build_inseason(season, max_week=None):
         _nfl.MAX_WEEK = _prev_cap
 
 
+def _schedule_only(season):
+    """Week zero: no plays exist yet, but the season's full schedule does — and
+    opening week is exactly when the app's game lines, player-card schedule
+    strips and bye handling are first needed. Ship a sidecar with the schedule
+    and an empty weeks list; every stats consumer (DvP, weekly form, advanced
+    blocks) already degrades cleanly when its block is absent, and the next
+    weekly refresh replaces this with the real thing."""
+    out = {"v": 1, "season": season, "weeks": [],
+           "asof": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    try:
+        meta = {}
+        out["schedule"] = build_schedule(season, meta)
+        out["schedule_meta"] = meta
+    except Exception as e:
+        print(f"  [inseason] schedule-only build failed too ({e}) — skipping")
+        return {}
+    print(f"  [inseason] no plays for {season} yet — shipping schedule-only sidecar")
+    return out
+
+
 def _build_inseason(season, max_week):
     try:
         pbp = _weekly_frames(season)
     except Exception as e:
-        print(f"  [inseason] no pbp for {season} yet ({e}) — skipping")
-        return {}
+        print(f"  [inseason] no pbp for {season} yet ({e})")
+        return _schedule_only(season)
     if pbp is None or pbp.empty:
-        print(f"  [inseason] no regular-season plays for {season} yet — skipping")
-        return {}
+        print(f"  [inseason] no regular-season plays for {season} yet")
+        return _schedule_only(season)
     weeks = sorted(int(w) for w in pbp["week"].unique())
     out = {"v": 1, "season": season, "weeks": weeks,
            "asof": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
