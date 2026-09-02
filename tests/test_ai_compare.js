@@ -34,6 +34,7 @@ const app=new Function(code+`return { tcAiSettings, tcAiSaveSettings, tcAiUsage,
   setWebLlmLoader:(f)=>{_aiWebLlmLoader=f;}, resetLocal:()=>{_aiLocalEngine=null;_aiLocalLoading=null;},
   setContracts:(c)=>{CONTRACTS=c;}, setSos:(x)=>{SOS=x;},
   TC_AI_LOCAL_MODELS, _aiLocalModelPref, tcAiGpuProbe, tcAiLocalPlan, resetProbe:()=>{_aiGpuProbe=null;},
+  tcAiDeltas,
   TC_AI_MAX_TOKENS, TC_AI_FREE_MODELS,
   setFormat:(f)=>{rankFormat=f;}, setDraftLineup:(l)=>{draftLineup=l;} };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -63,6 +64,31 @@ chk(ctx.includes('1150 rush yds'), 'and the position-appropriate stat line');
 const msgs=app.tcAiCompareMessages(pa,pb);
 chk(msgs.length===2 && msgs[0].role==='system', 'system+user message pair');
 chk(msgs[1].content.includes('PLAYER A') && msgs[1].content.includes('Beta Back'), 'both players aboard');
+
+console.log('=== anti-parroting: the model judges computed evidence ===');
+{
+  // Close on the board, different underneath: exactly the case that was being
+  // answered by restating the rank.
+  const ca={player_id:'c1', name:'Close A', pos:'RB', team:'KC', fpts:240, vor:60,
+            receiving_targets:'70', rushing_attempts:'180', rushing_tds:'6', receiving_tds:'3', adp_ppr:20};
+  const cb={player_id:'c2', name:'Close B', pos:'RB', team:'DET', fpts:236, vor:55,
+            receiving_targets:'28', rushing_attempts:'255', rushing_tds:'11', receiving_tds:'1', adp_ppr:24};
+  const d=app.tcAiDeltas(ca,cb);
+  chk(d.close, 'a 5-VOR gap on a 60-VOR pair reads as effectively tied');
+  chk(d.lines.some(l=>/EFFECTIVELY TIED/.test(l)), 'and says so in the evidence');
+  chk(d.lines.some(l=>/targets: Close A by 42/.test(l)), 'the target gap is computed, with the right owner');
+  chk(d.lines.some(l=>/carries: Close B by 75/.test(l)), 'so is the carry gap, the other way');
+  chk(d.lines.some(l=>/total TDs: Close B by 3/.test(l)), 'and touchdown access across all routes');
+  const far=app.tcAiDeltas(ca, Object.assign({},cb,{vor:15}));
+  chk(!far.close, 'a genuine value gap is not called a tie');
+  const m=app.tcAiCompareMessages(ca,cb);
+  chk(m[0].content.includes('never cite a rank as your reason'), 'the system prompt forbids rank-parroting');
+  chk(m[0].content.includes('ranks CANNOT be the answer'), 'and hardens further on a board tie');
+  chk(m[0].content.includes('PICK:') && m[0].content.includes('FLIP IF:'), 'a structured verdict is demanded');
+  chk(m[1].content.includes('COMPUTED HEAD-TO-HEAD DIFFERENCES'), 'the deltas ride the user message');
+  const m2=app.tcAiCompareMessages(ca, Object.assign({},cb,{vor:15}));
+  chk(!m2[0].content.includes('ranks CANNOT be the answer'), 'the tie clause only appears on actual ties');
+}
 chk(app.tcAiEstTokens(msgs)>50 && app.tcAiEstTokens(msgs)<2000, 'estimate is sane and shown before sending');
 
 (async()=>{

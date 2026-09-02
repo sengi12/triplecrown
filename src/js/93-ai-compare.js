@@ -266,16 +266,24 @@ function tcAiPlayerContext(p){
   // stat-line projection, position-appropriate
   const st=[];
   const n=(k)=>{ const v=parseFloat(p[k]); return isFinite(v)&&v>0?Math.round(v):null; };
+  const g=n('games')||n('games_played')||17;
   if(p.pos==='QB'){
     if(n('passing_yards')) st.push(`${n('passing_yards')} pass yds`);
     if(n('passing_touchdowns')) st.push(`${n('passing_touchdowns')} pass TD`);
+    if(n('passing_attempts')) st.push(`${n('passing_attempts')} att`);
     if(n('rushing_yards')) st.push(`${n('rushing_yards')} rush yds`);
+    if(n('rushing_tds')) st.push(`${n('rushing_tds')} rush TD`);
   } else {
+    if(n('rushing_attempts')) st.push(`${n('rushing_attempts')} carries`);
     if(n('rushing_yards')) st.push(`${n('rushing_yards')} rush yds`);
+    if(n('rushing_tds')) st.push(`${n('rushing_tds')} rush TD`);
+    if(n('receiving_targets')) st.push(`${n('receiving_targets')} targets`);
     if(n('receptions')) st.push(`${n('receptions')} rec`);
     if(n('receiving_yards')) st.push(`${n('receiving_yards')} rec yds`);
+    if(n('receiving_tds')) st.push(`${n('receiving_tds')} rec TD`);
   }
-  if(st.length) L.push('  projection: '+st.join(', '));
+  if(st.length) L.push(`  projection (${g} gm): `+st.join(', ')
+    +(p.fpts!=null&&g?` → ${(p.fpts/g).toFixed(1)} FP/gm`:''));
   // QB accuracy charting (last completed season)
   try{
     if(p.pos==='QB' && typeof NFLVERSE!=='undefined' && NFLVERSE){
@@ -308,15 +316,60 @@ function tcAiPlayerContext(p){
   return L.join('\n');
 }
 
+// Small models don't FIND differences — they anchor on the first ordinal they
+// see and restate it. They're far better at JUDGING differences someone else
+// computed. So the head-to-head contrasts are calculated here, numerically,
+// and the model's job is reduced to weighing highlighted evidence.
+function tcAiDeltas(pa, pb){
+  const L=[];
+  const num=(p,k)=>{ const v=parseFloat(p&&p[k]); return isFinite(v)?v:null; };
+  const gap=(label,a,b,unit,perGm)=>{
+    if(a==null||b==null) return;
+    const d=a-b;
+    if(Math.abs(d)<1e-9) return;
+    const who=d>0?pa.name:pb.name;
+    L.push(`${label}: ${who} by ${Math.abs(perGm?d:Math.round(d))}${unit||''}`);
+  };
+  const va=num(pa,'vor'), vb=num(pb,'vor');
+  let close=false;
+  if(va!=null && vb!=null){
+    const span=Math.max(Math.abs(va),Math.abs(vb),1);
+    close=Math.abs(va-vb)/span<=0.15 || Math.abs(va-vb)<8;
+    L.push(close
+      ? `board value: EFFECTIVELY TIED (${Math.abs(va-vb).toFixed(0)} VOR apart) — the ranks cannot decide this one`
+      : `board value: ${va>vb?pa.name:pb.name} by ${Math.abs(va-vb).toFixed(0)} VOR`);
+  }
+  gap('projected points', num(pa,'fpts'), num(pb,'fpts'), ' pts');
+  gap('targets', num(pa,'receiving_targets'), num(pb,'receiving_targets'));
+  gap('carries', num(pa,'rushing_attempts'), num(pb,'rushing_attempts'));
+  gap('total TDs', (num(pa,'rushing_tds')||0)+(num(pa,'receiving_tds')||0)+(num(pa,'passing_touchdowns')||0),
+                   (num(pb,'rushing_tds')||0)+(num(pb,'receiving_tds')||0)+(num(pb,'passing_touchdowns')||0));
+  const aa=(typeof adpFor==='function')?adpFor(pa):null, ab=(typeof adpFor==='function')?adpFor(pb):null;
+  if(aa!=null&&ab!=null&&aa<999&&ab<999&&Math.round(aa)!==Math.round(ab))
+    L.push(`market: drafters take ${aa<ab?pa.name:pb.name} ${Math.abs(Math.round(aa-ab))} picks earlier`);
+  try{
+    const so=(t)=>((typeof SOS!=='undefined'&&SOS&&t&&SOS[t])||null);
+    const sa=so(pa.team), sb=so(pb.team);
+    if(sa&&sb&&sa.rank!==sb.rank) L.push(`easier season schedule: ${sa.rank<sb.rank?pa.name:pb.name} (SOS ${sa.rank} vs ${sb.rank})`);
+  }catch(e){}
+  return { lines:L, close };
+}
+
 function tcAiCompareMessages(pa, pb, question){
   const fmt=(typeof formatLabel==='function' && typeof rankFormat!=='undefined')?formatLabel(rankFormat):'';
   const shape=(typeof draftLineup!=='undefined' && draftLineup && draftLineup.length)
     ? draftLineup.join('/') : '';
-  const sys='You are a fantasy football analyst. Decide between the two players using ONLY '
-    +'the data provided plus general football knowledge. Be direct: name a pick in the first '
-    +'sentence, then at most three short paragraphs of reasoning. If the data genuinely '
-    +'favors neither, say it is a coin flip and what would tip it.';
-  const user=`League: ${fmt}${shape?` · lineup ${shape}`:''}\n\nPLAYER A\n${tcAiPlayerContext(pa)}\n\nPLAYER B\n${tcAiPlayerContext(pb)}\n\nQuestion: ${question||'Who should I take?'}`;
+  const d=tcAiDeltas(pa, pb);
+  const sys='You are a fantasy football analyst auditing a draft board, not reading it back. '
+    +'The board ranks (VOR/ECR/ADP) are the CONSENSUS UNDER REVIEW — never cite a rank as your '
+    +'reason. Decide from the underlying evidence: volume (targets, carries, attempts), '
+    +'touchdown access, per-game rates, schedule, role, age, injury, contract situation and '
+    +'the computed head-to-head differences. '
+    +(d.close?'The board values here are effectively tied, so the ranks CANNOT be the answer. ':'')
+    +'Answer in exactly this shape: "PICK: <name>." then "WHY:" with 2-4 sentences that cite '
+    +'specific numbers from the data, then "FLIP IF:" one sentence naming what would reverse it. '
+    +'If the evidence truly cannot separate them, say "PICK: coin flip" and what would tip it.';
+  const user=`League: ${fmt}${shape?` · lineup ${shape}`:''}\n\nPLAYER A\n${tcAiPlayerContext(pa)}\n\nPLAYER B\n${tcAiPlayerContext(pb)}\n\nCOMPUTED HEAD-TO-HEAD DIFFERENCES\n${d.lines.map(l=>'- '+l).join('\n')||'- none material'}\n\nQuestion: ${question||'Who should I take?'}`;
   return [{role:'system',content:sys},{role:'user',content:user}];
 }
 // Rough token estimate for the pre-send label (chars/4 is the usual budget rule).
