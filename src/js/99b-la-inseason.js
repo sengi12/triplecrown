@@ -576,6 +576,77 @@ function laAdjWeekProj(p, wk, pm, dvp){
   return {adj: exp*defMult, base, baseRate:base, seas, rec3, defMult, opp,
     thin: gp>0 && gp<3};
 }
+// ── Waivers, ranked for THIS WEEK ───────────────────────────────────────────
+// The Waivers tab's season lens answers "who is worth rostering"; this lens
+// answers the in-season question that actually recurs — "who do I add to start
+// THIS week" — by pricing the unrostered pool with the same week-adjusted
+// projection the Lineup pane trusts (base/season/last-3 blend × defense-vs-
+// position), and flagging anyone who would beat the weakest starter he could
+// displace in YOUR optimal lineup. Skill positions only: the weekly model has
+// no defensive matchup table for K/DEF, and pretending otherwise would just be
+// the season lens with extra steps.
+function laWeekPickupsHTML(s){
+  const wk=laCurrentWeek();
+  const pm=laProjMap();
+  const dvp=laDvpTable();
+  if(!dvp) _laSidecarKick();
+  const rostered=new Set();
+  s.teamList.forEach(t=>t.players.forEach(p=>rostered.add(ecrNormName(p.name))));
+  const posF=laState.baPos||'ALL';
+  let pool=[];
+  try{ pool=buildPlayerList()||[]; }catch(e){}
+  const scored=pool
+    .filter(p=>['QB','RB','WR','TE'].includes(p.pos)
+      && !rostered.has(ecrNormName(p.name))
+      && (posF==='ALL'||p.pos===posF))
+    .map(p=>({ p, a: laAdjWeekProj({id:p.player_id, name:p.name, pos:p.pos, team:p.team}, wk, pm, dvp) }))
+    .filter(x=>x.a.adj>0 && !x.a.bye && !x.a.out)
+    .sort((x,y)=>y.a.adj-x.a.adj).slice(0,40);
+  // Your lineup's floor at each position: what a pickup would have to beat to
+  // actually PLAY rather than sit on your bench.
+  const my=_laMyTeamRow(s);
+  let floorOf=()=>null;
+  if(my){
+    const mine=(my.players||[]).filter(p=>p&&p.pos)
+      .map(p=>Object.assign({},p,{_a:laAdjWeekProj(p,wk,pm,dvp)}))
+      .sort((a,b)=>b._a.adj-a._a.adj);
+    const filled=laFillStarters(mine, s.rosterPositions);
+    floorOf=(pos)=>{
+      const elig=filled.filter(f=>f.player &&
+        (f.slot===pos || (FLEX_ELIGIBLE[f.slot]||[]).includes(pos)));
+      return elig.length ? Math.min(...elig.map(f=>f.player._a.adj)) : null;
+    };
+  }
+  const chips=['ALL','QB','RB','WR','TE'].map(x=>
+    `<button class="format-btn ${posF===x?'active':''}" onclick="laState.baPos='${x}';renderLeagueAnalyzer()">${x}</button>`).join('');
+  if(!scored.length)
+    return `<div class="la-lens"><span class="la-lens-lbl">Position:</span>${chips}</div>
+      <div class="la-note">Nobody unrostered projects for week ${wk}${posF!=='ALL'?` at ${posF}`:''}.</div>`;
+  const rows=scored.map((x,i)=>{
+    const {p,a}=x;
+    const fl=floorOf(p.pos);
+    const startable=(fl!=null && a.adj>fl+0.05);
+    const pr={id:p.player_id, name:p.name, pos:p.pos, team:p.team};
+    return `<div class="la-ba-row ${startable?'la-ba-startable':''}">
+      <span class="la-ba-rk">${i+1}</span>
+      <span class="rt-slot ${slotClass(p.pos)}">${p.pos}</span>
+      <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name,p.pos,p.team||'')}">${laPlayerImg(pr)}</span>
+      <span class="la-ba-name clickable-player" onclick="${pcardOnclick(p.player_id||p.name,p.pos,p.team||'')}">${escHtml(p.name)}
+        ${startable?`<span class="la-lh-flag la-lh-start" title="Projects ${(a.adj-fl).toFixed(1)} above the weakest starter he could displace in your optimal lineup">STARTS +${(a.adj-fl).toFixed(1)}</span>`:''}</span>
+      <span class="la-ba-game">${laGameLineHTML(pr, wk, dvp)||'<span class="la-gm la-gm-none">—</span>'}</span>
+      <span class="la-ba-fpts"><b title="${escAttr(`${a.adj.toFixed(1)} = projection blend${a.defMult!==1?` × ${a.defMult.toFixed(2)} matchup`:''}`)}">${a.adj.toFixed(1)}</b></span>
+    </div>`;
+  }).join('');
+  return `<div class="la-lens"><span class="la-lens-lbl">Position:</span>${chips}</div>
+    <div class="la-ba la-ba-week">
+      <div class="la-ba-row la-ba-head"><span class="la-ba-rk">#</span><span class="rt-slot" style="visibility:hidden">POS</span>
+        <span class="la-ba-name">PLAYER</span><span class="la-ba-game">WEEK ${wk}</span>
+        <span class="la-ba-fpts" title="Week-adjusted projection: 35% preseason + 30% season FPPG + 35% last-3, × defense-vs-position">WK PROJ</span></div>
+      ${rows}
+    </div>
+    <div class="la-note la-note-min">${dvp?'':'matchup adjustment pending — defensive splits still loading · '}rostered players in this league are excluded · K/DEF live on the Season value lens</div>`;
+}
+
 function laToggleLhShowAll(){ laState.lhShowAll=!laState.lhShowAll; laRerenderKeepScroll(); }
 function laLineupView(s){
   const my=_laMyTeamRow(s);

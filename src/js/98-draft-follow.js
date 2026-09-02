@@ -911,6 +911,34 @@ function _rtRestoreScroll(host, m){
   });
 }
 function setVonaSugFilter(pos){ vonaSugFilter = (vonaSugFilter===pos && pos!=='ALL') ? 'ALL' : pos; renderRosterBar(); }
+// ── Live league-relative rank ───────────────────────────────────────────────
+// "Your team ranks Nth of M, as drafted so far" — every slot's roster priced by
+// the same optimal-lineup VOR the advisory itself drafts to maximize, so the
+// rank and the advice can never disagree about what a good team is. A light
+// bench term keeps two teams with equal lineups from tying when one's bench is
+// real and the other's is air. Mid-round, teams that have picked more rank
+// higher — that is the truth of the moment, not a bug.
+const LIVE_RANK_BENCH_W = 0.15;
+function vonaLiveTeamRanks(){
+  const { teams } = draftParams();
+  if(!teams) return null;
+  const list = buildPlayerList();
+  const vorById = new Map();
+  list.forEach(p=>{ vorById.set(p.player_id||p.name, p.vor||0); });
+  const vorOf = pk => vorById.get(pk.player_id || pk.name) || 0;
+  const rows=[];
+  for(let slot=1; slot<=teams; slot++){
+    const picks=(draftPicksBySlot[slot]||[]).filter(pk=>pk && pk.pos!=='K' && pk.pos!=='DEF');
+    const lineup=_vonaOptimalLineupVor(picks, vorOf);
+    const total=picks.reduce((a,pk)=>a+Math.max(0,vorOf(pk)),0);
+    rows.push({ slot, val: lineup + LIVE_RANK_BENCH_W*Math.max(0,total-lineup),
+                picked: picks.length });
+  }
+  const sorted=[...rows].sort((a,b)=>b.val-a.val);
+  rows.forEach(r=>{ r.rank = sorted.findIndex(x=>x.val<=r.val+1e-9)+1; });
+  return { rows, teams, of:(slot)=>rows.find(r=>r.slot===slot)||null };
+}
+
 // ── Shortlist ───────────────────────────────────────────────────────────────
 // Click a star anywhere on the board and the player joins your list. It survives
 // a reload, highlights him wherever he shows up, and — the point of it — the
@@ -1564,11 +1592,16 @@ function renderTrackerPanel(viewSlot){
 
   // Team switcher: chips for every slot in the draft, current highlighted.
   const n=draftSlotCount()||12;
+  // Live standings: only while a draft is running and something has been picked.
+  const lr = (draftId && Object.keys(draftedIds).length>0) ? vonaLiveTeamRanks() : null;
   let switcher='';
   for(let s=1;s<=n;s++){
     const active = s===viewSlot ? 'active' : '';
     const mine = s===mySlot ? ' rt-mine' : '';
-    switcher+=`<button class="rt-teamchip ${active}${mine}" onclick="viewTrackerSlot(${s})" title="${slotOwnerName(s)}">${s===mySlot?'★ ':''}${s}</button>`;
+    const rr = lr && lr.of(s);
+    const badge = (rr && rr.picked>0) ? `<span class="rt-chip-rank">${ordinal(rr.rank)}</span>` : '';
+    switcher+=`<button class="rt-teamchip ${active}${mine}" onclick="viewTrackerSlot(${s})"
+      title="${slotOwnerName(s)}${rr&&rr.picked>0?` — drafted value ranks ${ordinal(rr.rank)} of ${n}`:''}">${s===mySlot?'★ ':''}${s}${badge}</button>`;
   }
   // VONA advisory — only for MY roster, only while a live draft is running.
   let advisory='';
@@ -1623,7 +1656,12 @@ function renderTrackerPanel(viewSlot){
   }
   return `<div class="rt-panel${trackerOpen?'':' rt-closed'}${trackerMax?' rt-max':''}">
     <div class="rt-panel-head">
-      <span class="rt-panel-title">${viewSlot===mySlot?'\u2605 My roster':slotOwnerName(viewSlot)} <span class="rt-panel-slot">\u00b7 seat ${viewSlot}</span></span>
+      <span class="rt-panel-title">${viewSlot===mySlot?'\u2605 My roster':slotOwnerName(viewSlot)} <span class="rt-panel-slot">\u00b7 seat ${viewSlot}</span>${
+        (()=>{ const rr=lr && lr.of(viewSlot);
+          if(!rr || !rr.picked) return '';
+          const cls = rr.rank<=Math.ceil(n/3) ? 'good' : (rr.rank>n-Math.ceil(n/3) ? 'bad' : '');
+          return ` <span class="rt-rank ${cls}" title="This roster's drafted starting-lineup value, ranked against the room — the same yardstick the advisory drafts by">${ordinal(rr.rank)} of ${n}</span>`; })()
+      }</span>
       <button class="rt-reseat" onclick="reclaimSeat()" title="Wrong seat? Pick it again">\u21bb change seat</button>
     </div>
     <div class="rt-switch-head">Jump to a team</div>

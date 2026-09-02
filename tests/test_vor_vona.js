@@ -47,6 +47,7 @@ const app=new Function(code+`return {
   _rtSnapScroll, _rtRestoreScroll, _RT_SCROLLERS, _vonaInvNorm, _vonaNormCdf,
   _vonaMixParams, setMarketModel:(v)=>{MARKET_MODEL=v;},
   _roomHistSummarize, _roomHistAggregate, _roomHistPrior, setRoomHistory:(v)=>{roomHistory=v;},
+  vonaLiveTeamRanks, setBPL:(f)=>{buildPlayerList=f;}, setDraftId:(v)=>{draftId=v;},
   setMySlot:(v)=>{mySlot=v;}, setDraftMeta:(m)=>{draftMeta=m;},
   setDraftedIds:(v)=>{draftedIds=v;},
 };`)();
@@ -554,6 +555,39 @@ console.log('=== dedicated 2QB lineups are not choked at their starters ===');
   chk(one.posCap.QB===2, 'a normal 1QB league still caps at two');
   const sf=app._vonaBudget(10, 2, {QB:1,RB:1,WR:1,TE:0}, {QB:1,RB:2,WR:2,TE:1}, 1, new Set(['TE']));
   chk(sf.posCap.QB===3, 'and superflex still gets its usual room');
+}
+
+// === live league rank while drafting =========================================
+console.log('=== live rank: the room, priced by the advisory\'s own yardstick ===');
+{
+  app.setDraftLineup(['QB','RB','WR','TE','K']);
+  app.setDraftMeta({teams:3, rounds:5, type:'snake', reversal_round:0});
+  const P=(id,pos,vor)=>({player_id:id,name:id,pos,team:'KC',vor});
+  app.setBPL(()=>[P('r1','RB',60),P('r2','RB',30),P('r3','RB',30),P('w1','WR',20),
+                  P('q1','QB',15),P('k1','K',99)]);
+  app.setPicksBySlot({
+    1:[{player_id:'r1',pos:'RB',name:'r1',pick_no:1}],
+    2:[{player_id:'r2',pos:'RB',name:'r2',pick_no:2},
+       {player_id:'k1',pos:'K',name:'k1',pick_no:5}],
+    3:[{player_id:'r3',pos:'RB',name:'r3',pick_no:3},
+       {player_id:'w1',pos:'WR',name:'w1',pick_no:4}],
+  });
+  const lr=app.vonaLiveTeamRanks();
+  chk(lr && lr.rows.length===3, 'one row per seat');
+  chk(lr.of(1).rank===1, 'the stud roster ranks first');
+  chk(lr.of(3).rank===2, 'lineup + real depth beats lineup alone');
+  chk(lr.of(2).rank===3, 'a kicker adds nothing to the skill yardstick');
+  chk(lr.of(2).picked===1, 'and does not count as a skill pick');
+  // Ties share a rank rather than inventing an order.
+  app.setPicksBySlot({
+    1:[{player_id:'r2',pos:'RB',name:'r2',pick_no:1}],
+    2:[{player_id:'r3',pos:'RB',name:'r3',pick_no:2}],
+    3:[],
+  });
+  const t=app.vonaLiveTeamRanks();
+  chk(t.of(1).rank===1 && t.of(2).rank===1, 'equal rosters share first');
+  chk(t.of(3).rank===3, 'an empty roster is last, not missing');
+  app.setPicksBySlot({}); app.setBPL(null);
 }
 
 console.log(`\n${pass}/${total} checks passed`);

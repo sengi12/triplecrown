@@ -10,6 +10,9 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   TC_SEASON, laDvpTable, laDvpView, laAdjWeekProj, laLineupView, laState,
+  laWeekPickupsHTML, laBestAvailView,
+  setBPL:(f)=>{buildPlayerList=f;}, setProjMap:(f)=>{laProjMap=f;},
+  setSeasonStarted:(f)=>{hasSeasonStarted=f;}, setIsRedraft:(f)=>{laIsRedraft=f;},
   setInseason:(x)=>{TC_INSEASON=x;}, setSnapshot:(s)=>{leagueSnapshot=s;}, setPhaseVar:(p)=>{currentPhase=p;},
   setSleeperFetch:(f)=>{sleeperFetch=f;},
   setPaceForPlayer:(f)=>{paceForPlayer=f;},
@@ -94,6 +97,54 @@ const lh=app.laLineupView({provider:'sleeper', leagueId:'L1', season:'2026', myU
 chk(lh.includes('OPTIMAL LINEUP'),'lineup helper renders');
 chk(lh.includes('Gamma Wideout') && lh.includes('Beta Back'),'roster players placed into slots');
 chk(lh.includes('matchup: opponent defense-vs-position'),'active adjustments footnoted');
+
+console.log('=== waivers: the This-Week lens ===');
+{
+  // FA universe: one stud WR into the generous matchup, one afterthought, one QB,
+  // plus the rostered names (which must be excluded, not re-listed).
+  app.setBPL(()=>[
+    {player_id:'f1', name:'Zeta Wideout',  pos:'WR', team:'BUF'},
+    {player_id:'f2', name:'Eta Wideout',   pos:'WR', team:'MIA'},
+    {player_id:'f3', name:'Theta Passer',  pos:'QB', team:'CIN'},
+    {player_id:'p3', name:'Gamma Wideout', pos:'WR', team:'MIA'},   // rostered
+  ]);
+  // My own starters need projections too, or their floor is zero and every FA
+  // "starts" — which is exactly what this test exists to catch.
+  const pm=new Map([['zeta wideout|WR',180],['eta wideout|WR',34],
+                    ['theta passer|QB',150],['gamma wideout|WR',170],
+                    ['alpha quarterback|QB',300],['epsilon wideout|WR',150],
+                    ['beta back|RB',140]]);
+  app.setProjMap(()=>pm);
+  app.setPaceForPlayer(()=>null);
+  const snap={provider:'sleeper', leagueId:'L1', season:'2026', myUserId:'u1',
+    rosterPositions:['QB','WR','WR','FLEX','BN'],
+    teamList:[{rosterId:1, ownerId:'u1', teamName:'Me', players:[
+      {id:'p1',name:'Alpha Quarterback',pos:'QB',team:'CIN'},
+      {id:'p3',name:'Gamma Wideout',pos:'WR',team:'MIA'},
+      {id:'p5',name:'Epsilon Wideout',pos:'WR',team:'BUF'},
+      {id:'p2',name:'Beta Back',pos:'RB',team:'DET'}]}]};
+  app.laState.baPos='ALL'; app.laState.baLens='week';
+  const html=app.laWeekPickupsHTML(snap);
+  chk(html.includes('WK PROJ'), 'the weekly table renders');
+  const zi=html.indexOf('Zeta Wideout'), ei=html.indexOf('Eta Wideout');
+  chk(zi>=0 && ei>=0, 'free agents are listed');
+  chk(zi<ei, 'the better weekly projection ranks first');
+  chk(html.indexOf('>Gamma Wideout<')<0, 'players rostered in the league are excluded');
+  chk(html.includes('STARTS +'), 'a pickup who beats your weakest starter is flagged');
+  // Eta (2 fppg) must not carry the flag — assert the flag count, not just presence.
+  chk((html.match(/STARTS \+/g)||[]).length===1, 'and only the one who actually would');
+  app.laState.baPos='QB';
+  const qb=app.laWeekPickupsHTML(snap);
+  chk(qb.includes('Theta Passer') && !qb.includes('Zeta Wideout'), 'the position filter holds');
+  app.laState.baPos='ALL';
+  // The lens toggle: in season the Waivers tab offers both lenses and routes.
+  app.setSeasonStarted(()=>true);
+  app.setIsRedraft(()=>true);
+  const tab=app.laBestAvailView(snap);
+  chk(tab.includes('Season value') && tab.includes('This week'), 'both lenses offered in season');
+  chk(tab.includes('WK PROJ'), "and baLens='week' routes to the weekly table");
+  app.laState.baLens='value';
+}
 
 console.log(`\n${pass}/${total}`);
 if(pass!==total) process.exit(1);

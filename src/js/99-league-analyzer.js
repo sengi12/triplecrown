@@ -1602,6 +1602,15 @@ function laCmpSort(col){
 // dynasty value, with our projected points alongside so you can spot the "worth little,
 // scores plenty" waiver adds that dynasty charts systematically underrate.
 function laBestAvailView(s){
+  // In season, the tab has two lenses: season-long value (below) and "this
+  // week" (laWeekPickupsHTML) — who to add to START, not just to roster.
+  const inSeason = laIsRedraft() && typeof hasSeasonStarted==='function' && hasSeasonStarted()
+    && typeof laWeekPickupsHTML==='function';
+  const lens = (inSeason && laState.baLens==='week') ? 'week' : 'value';
+  const lensBar = inSeason ? `<div class="la-lens"><span class="la-lens-lbl">Rank by:</span>
+      <button class="format-btn ${lens==='value'?'active':''}" onclick="laState.baLens='value';renderLeagueAnalyzer()">Season value</button>
+      <button class="format-btn ${lens==='week'?'active':''}" onclick="laState.baLens='week';renderLeagueAnalyzer()">This week</button></div>` : '';
+  if(lens==='week') return lensBar + laWeekPickupsHTML(s);
   const rostered=new Set();
   s.teamList.forEach(t=>t.players.forEach(p=>rostered.add(ecrNormName(p.name))));
   const pm=laProjMap();
@@ -1670,8 +1679,8 @@ function laBestAvailView(s){
   const extraPos=(laIsRedraft()?['K','DEF']:[]).filter(x=>(s.rosterPositions||[]).includes(x));
   const chips=['ALL','QB','RB','WR','TE'].concat(extraPos).map(p=>
     `<button class="format-btn ${posF===p?'active':''}" onclick="laState.baPos='${p}';renderLeagueAnalyzer()">${p}</button>`).join('');
-  if(!top.length) return `<div class="la-lens">${chips}</div><div class="la-note">No unrostered players on the value chart${posF!=='ALL'?` at ${posF}`:''} — deep league!</div>`;
-  return `
+  if(!top.length) return `${lensBar}<div class="la-lens">${chips}</div><div class="la-note">No unrostered players on the value chart${posF!=='ALL'?` at ${posF}`:''} — deep league!</div>`;
+  return `${lensBar}
     <div class="la-lens"><span class="la-lens-lbl">Position:</span>${chips}</div>
     <div class="la-ba">
       <div class="la-ba-row la-ba-head"><span class="la-ba-rk">#</span><span class="rt-slot" style="visibility:hidden">POS</span>
