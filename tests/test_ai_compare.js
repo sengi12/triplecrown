@@ -19,10 +19,11 @@ const MODELS={data:[
   {id:'gamma/three:free', pricing:{prompt:'0',    completion:'0'}},
   {id:'delta/promo',      pricing:{prompt:'0',    completion:'0.001'}},  // half-free is not free
 ]};
+let aiResponse=null;   // per-test override for the chat endpoint's body
 global.fetch=(url,opts)=>{
   fetchCalls.push({url,opts});
   if(String(url).includes('/models')) return Promise.resolve({ok:true,json:()=>Promise.resolve(MODELS)});
-  return Promise.resolve({ok:true,json:()=>Promise.resolve({
+  return Promise.resolve({ok:true,json:()=>Promise.resolve(aiResponse||{
     usage:{prompt_tokens:400,completion_tokens:150},
     choices:[{message:{content:'Take Player A.\n\nHe has the better <b>numbers</b>.'}}]})});
 };
@@ -111,19 +112,53 @@ await (async()=>{
   chk(app.tcAiUsage().calls===2, 'and accumulates');
 })();
 
+console.log('=== empty responses decoded, not shrugged at ===');
+await (async()=>{
+  // Reasoning models burn the budget thinking: OpenRouter calls carry the
+  // opt-out, and a thinking-only reply still yields its text.
+  const call=fetchCalls.filter(f=>String(f.url).includes('chat/completions')).pop();
+  const sent=JSON.parse(call.opts.body);
+  chk(sent.reasoning && sent.reasoning.enabled===false, 'OpenRouter calls opt out of reasoning spend');
+  aiResponse={usage:{}, choices:[{message:{content:'', reasoning:'PICK: A. The targets decide it.'}}]};
+  const t1=await app.tcAiCall([{role:'user',content:'u'}]);
+  chk(t1.includes('targets decide'), 'a reasoning-only reply still surfaces its text');
+  // Budget entirely consumed thinking: the error explains and redirects.
+  aiResponse={usage:{}, choices:[{message:{content:''}, finish_reason:'length'}]};
+  let m1=''; try{ await app.tcAiCall([{role:'user',content:'u'}]); }catch(e){ m1=e.message; }
+  chk(/thinks out loud/.test(m1) && /free list/.test(m1),
+      'an all-reasoning burn is explained, with the way out');
+  // Free tiers report failures INSIDE a 200 body.
+  aiResponse={error:{message:'Rate limit exceeded: free-models-per-day'}};
+  let m2=''; try{ await app.tcAiCall([{role:'user',content:'u'}]); }catch(e){ m2=e.message; }
+  chk(/Rate limit exceeded/.test(m2), 'an error hidden in a 200 body surfaces as itself');
+  // And a custom endpoint never gets the OpenRouter-only parameter.
+  app.tcAiSaveSettings({endpoint:'https://my-proxy.example/v1/chat/completions'});
+  aiResponse=null;
+  await app.tcAiCall([{role:'user',content:'u'}]);
+  const custom=JSON.parse(fetchCalls[fetchCalls.length-1].opts.body);
+  chk(!('reasoning' in custom), 'non-OpenRouter endpoints are not sent the vendor param');
+  app.tcAiSaveSettings({endpoint:'https://openrouter.ai/api/v1/chat/completions'});
+})();
+
 console.log('=== the free list is LIVE, not remembered ===');
 await (async()=>{
   const before=fetchCalls.filter(f=>String(f.url).includes('/models')).length;
   const list=await app.tcAiFreeModels(true);
   chk(list.length===2 && list.includes('alpha/one:free') && list.includes('gamma/three:free'),
       'only fully-$0 models qualify');
+  // The DEFAULT (list head) must be a general chat model, not a niche id.
+  MODELS.data.push({id:'zeta/qwen-chat-9b:free', pricing:{prompt:'0',completion:'0'}});
+  const l2=await app.tcAiFreeModels(true);
+  chk(l2[0]==='zeta/qwen-chat-9b:free', 'a general chat model heads the list over niche ids');
+  MODELS.data.pop();
   chk(!list.includes('delta/promo'), 'a model with any paid leg is not free');
   const call=fetchCalls.filter(f=>String(f.url).includes('/models')).pop();
   chk(!call.opts || !call.opts.headers || !call.opts.headers.Authorization,
       'the public index is fetched WITHOUT the key');
+  const preCached=fetchCalls.filter(f=>String(f.url).includes('/models')).length;
   await app.tcAiFreeModels();
   const after=fetchCalls.filter(f=>String(f.url).includes('/models')).length;
-  chk(after===before+1, 'a fresh list is cached — the second ask costs no request');
+  chk(after===preCached, 'a fresh list is cached — the second ask costs no request');
   // Provider index down: the stale-but-safe fallback, never a crash.
   LSTORE.delete('tc_ai_free_models');
   const realFetch=global.fetch;

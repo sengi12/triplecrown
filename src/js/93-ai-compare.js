@@ -31,10 +31,15 @@ async function tcAiFreeModels(force){
   try{
     const res=await fetch(TC_AI_MODELS_URL);          // public index — never sends the key
     const j=await res.json();
+    const general=/instruct|chat|llama|qwen|deepseek|gemma|mistral|nemotron/i;
     const models=(j.data||[])
       .filter(m=>{ const pr=m.pricing||{};
         return String(pr.prompt)==='0' && String(pr.completion)==='0'; })
-      .map(m=>m.id);
+      .map(m=>m.id)
+      // General-purpose models first: the top of this list becomes the DEFAULT
+      // for someone who never picks, and a finance-tuned or preview oddity is
+      // a bad first experience (field report: it answered with nothing).
+      .sort((a,b)=>(general.test(b)?1:0)-(general.test(a)?1:0));
     if(models.length){
       try{ localStorage.setItem('tc_ai_free_models', JSON.stringify({at:Date.now(), models})); }catch(e){}
       return models;
@@ -422,10 +427,18 @@ function tcAiEstTokens(messages){
 async function tcAiCall(messages){
   const s=tcAiSettings();
   if(!s.key) throw new Error('No API key set');
+  const body={ model:s.model, messages, max_tokens:TC_AI_MAX_TOKENS };
+  // Most current free tiers are REASONING models: left alone they spend the
+  // whole max_tokens budget "thinking" and never emit visible content — the
+  // response comes back 200 with an empty message (field report: mobile,
+  // every free model, "Empty response"). Ask OpenRouter to keep the thinking
+  // out of the budget. Only on OpenRouter: other OpenAI-compatible endpoints
+  // may reject the unknown parameter.
+  if(/openrouter\.ai/.test(s.endpoint)) body.reasoning={ enabled:false, exclude:true };
   const res=await fetch(s.endpoint, {
     method:'POST',
     headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${s.key}` },
-    body: JSON.stringify({ model:s.model, messages, max_tokens:TC_AI_MAX_TOKENS }),
+    body: JSON.stringify(body),
   });
   if(!res.ok){
     let msg=`HTTP ${res.status}`;
@@ -433,9 +446,19 @@ async function tcAiCall(messages){
     throw new Error(msg);
   }
   const j=await res.json();
+  // Providers (free tiers especially) report failures INSIDE a 200 body.
+  if(j && j.error && j.error.message) throw new Error(String(j.error.message));
   tcAiRecordUsage(j.usage);
-  const txt=j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
-  if(!txt) throw new Error('Empty response');
+  const ch=j.choices && j.choices[0];
+  const msg=(ch && ch.message) || {};
+  // A reasoning model that ignored the opt-out still leaves its thinking here.
+  const txt=msg.content || msg.reasoning || '';
+  if(!txt){
+    const fr=ch && ch.finish_reason;
+    throw new Error(fr==='length'
+      ? 'The model spent its whole token budget reasoning and never answered — this free tier thinks out loud. Pick a chat/instruct model from the free list instead.'
+      : `Empty response${fr?` (finish_reason: ${fr})`:''} — the model returned nothing; try another free model from the list.`);
+  }
   return String(txt);
 }
 // Model output is untrusted text: escape everything, keep only paragraph breaks.
