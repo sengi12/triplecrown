@@ -104,9 +104,10 @@ function tcAiMode(){
   if(m==='key' && s.key) return 'key';
   if(m==='builtin' && tcAiBuiltinAvailable()) return 'builtin';
   if(m==='local' && tcAiWebGpuAvailable()) return 'local';
-  // No explicit (working) choice: a saved key wins, then the built-in model.
-  if(s.key) return 'key';
+  // No explicit choice: FREE leads. The browser's own model when it exists;
+  // a saved key only answers by default when nothing keyless is available.
   if(tcAiBuiltinAvailable()) return 'builtin';
+  if(s.key) return 'key';
   return null;
 }
 async function tcAiGenerate(messages, onProgress){
@@ -144,18 +145,49 @@ function tcAiRecordUsage(u){
   return next;
 }
 
-// ── Grounding: one compact fact sheet per player, from the app's own data ────
+// ── Grounding: everything the app knows about the player, one sheet ─────────
+// The owner's rule: whichever model answers, it answers from the ENTIRETY of
+// TripleCrown's data on these two players — board, market, model, contract,
+// schedule, injury, live form, charting, the user's own notes — compacted to
+// fit even a local 3B model's context. What the app doesn't know isn't invented.
 function tcAiPlayerContext(p){
   if(!p) return '';
   const L=[];
   const adp=(typeof adpFor==='function')?adpFor(p):null;
-  L.push(`${p.name} (${p.pos}, ${p.team||'FA'})`);
+  const sp=(typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[p.player_id])||{};
+  const idbits=[];
+  if(sp.age!=null) idbits.push(`age ${sp.age}`);
+  if(sp.years_exp!=null) idbits.push(`${sp.years_exp} yrs exp`);
+  L.push(`${p.name} (${p.pos}, ${p.team||'FA'}${idbits.length?'; '+idbits.join(', '):''})`);
+  try{
+    if(typeof tcInjuryInfo==='function'){
+      const inj=tcInjuryInfo(p.player_id);
+      if(inj && (inj.status||inj.seasonOut))
+        L.push(`  injury: ${inj.seasonOut?'OUT FOR SEASON':(inj.status||'')}${inj.note?` — ${String(inj.note).slice(0,120)}`:''}`);
+    }
+  }catch(e){}
   const bits=[];
   if(p.fpts!=null) bits.push(`projected ${Math.round(p.fpts)} pts (this league's scoring)`);
   if(p.vor!=null) bits.push(`value over replacement ${p.vor>0?'+':''}${Math.round(p.vor)}`);
   if(p.ecr!=null) bits.push(`expert consensus rank ${p.ecr}`);
   if(adp!=null && adp<999) bits.push(`market ADP ${Math.round(adp)}`);
+  if(p.ecr_tier!=null) bits.push(`tier ${p.ecr_tier}`);
+  if(p.tcPts!=null) bits.push(`TC model ${Math.round(p.tcPts)} pts`);
   if(bits.length) L.push('  board: '+bits.join(' · '));
+  try{
+    const c=(typeof CONTRACTS!=='undefined' && CONTRACTS && CONTRACTS[ecrNormName(p.name)])||null;
+    if(c && c.apy) L.push(`  contract: $${Math.round(c.apy/1e6)}M/yr through ${c.fa?c.fa-1:'?'} (FA ${c.fa||'?'})`);
+  }catch(e){}
+  try{
+    const so=(typeof SOS!=='undefined' && SOS && p.team && SOS[p.team])||null;
+    if(so) L.push(`  team: SOS rank ${so.rank} of 32 · Vegas win total ${so.win_total}`);
+  }catch(e){}
+  try{
+    if(typeof paceForPlayer==='function'){
+      const e=paceForPlayer(p.name, p.pos, p.player_id);
+      if(e && e.gp>0) L.push(`  this season: ${(e.act/e.gp).toFixed(1)} FPPG over ${e.gp} gm (17-game pace ${Math.round(e.pace17)} vs proj ${Math.round(e.base)})`);
+    }
+  }catch(e){}
   // stat-line projection, position-appropriate
   const st=[];
   const n=(k)=>{ const v=parseFloat(p[k]); return isFinite(v)&&v>0?Math.round(v):null; };
@@ -280,23 +312,18 @@ function renderAiCompare(){
   if(tcAiMode()===null || _aiCfgOpen){
     const builtin=tcAiBuiltinAvailable(), gpu=tcAiWebGpuAvailable();
     body.innerHTML=`<div class="ai-cmp-setup">
-      <p><b>Pick how the model runs. Every option is $0 by construction.</b></p>
+      <div class="ai-cmp-setup-h">How should the model run? ${(typeof tcInfoBtn==='function')?tcInfoBtn('aicmp','About the compare feature'):''}</div>
       <div class="ai-cmp-modes">
         <button class="ai-cmp-mode ${s.mode==='builtin'?'on':''}" ${builtin?'':'disabled'}
           onclick="_aiCfgOpen=false;tcAiSaveSettings({mode:'builtin'});renderAiCompare()">
-          <b>This browser's built-in AI</b>
-          <span>${builtin?'No key, no download — Chrome runs the model on-device.'
-                        :'Not available in this browser (Chrome\u2019s built-in model only).'}</span></button>
+          <b>Browser's built-in AI ${builtin?'<em class="ai-cmp-rec">free · default</em>':''}</b>
+          <span>${builtin?'No key, no download.':'Not in this browser.'}</span></button>
         <button class="ai-cmp-mode ${s.mode==='local'?'on':''}" ${gpu?'':'disabled'}
           onclick="_aiCfgOpen=false;tcAiSaveSettings({mode:'local'});renderAiCompare()">
-          <b>Download a local model</b>
-          <span>${gpu?'No key, no account. One-time ~1.8 GB download, cached by the browser, then works offline. Needs a decent GPU; a small model \u2014 grounded but junior.'
-                     :'Needs WebGPU — not available in this browser.'}</span></button>
+          <b>Local model ${gpu&&!builtin?'<em class="ai-cmp-rec">free · recommended</em>':''}</b>
+          <span>${gpu?'No key. One-time ~1.8 GB download, then offline.':'Needs WebGPU.'}</span></button>
       </div>
-      <p class="ai-cmp-or">— or bring your own key —</p>
-      <p>Get a free key at openrouter.ai; the picker below lists what's <b>$0 right now</b>.
-      Your key stays in this browser's localStorage and is sent only to the endpoint
-      configured here. Don't paste it on shared machines.</p>
+      <div class="ai-cmp-or">or your own key</div>
       <label class="ai-cmp-lbl">API key</label>
       <input id="aiKey" class="ai-cmp-in" type="password" placeholder="sk-or-…" autocomplete="off" value="${escAttr(s.key)}">
       <label class="ai-cmp-lbl">Model <span id="aiFreeCount" class="ai-cmp-free-note">checking what's free right now…</span></label>
@@ -366,4 +393,20 @@ function renderAiCompare_footOnly(){
   const f=document.querySelector('#aiCmpBody .ai-cmp-foot span');
   const u=tcAiUsage();
   if(f) f.textContent=`${u.calls||0} calls · ${(u.prompt||0)+(u.completion||0)} tokens total, this browser`;
+}
+
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK['aicmp']={title:'Stuck between two players', body:`
+    A grounded second opinion: the model is handed <b>everything TripleCrown knows</b> about the
+    two players \u2014 projections under this league's scoring, VOR, market ADP, tier, TC model,
+    contract, team SOS, upcoming schedule, injury status, live-season form, QB charting, and your
+    own notes \u2014 and told to reason from that, not from its training data.
+    <b>Every default is $0.</b> The browser's built-in model needs no key and no download; the
+    local model downloads once (~1.8 GB, cached, offline afterwards) and runs on your GPU; a
+    small local model is a junior analyst \u2014 grounded, but junior. Bringing your own key is
+    optional: get one free at openrouter.ai, the picker lists what costs $0 <i>right now</i>
+    (free tiers rotate), the key lives only in this browser's localStorage and is sent only to
+    the endpoint you configure \u2014 don't paste it on shared machines. Whatever the engine:
+    one click is one capped request, nothing retries, nothing runs in the background, and the
+    footer counts every call.`};
 }

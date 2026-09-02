@@ -1233,3 +1233,7 @@ button.la-cliff:hover{filter:brightness(1.25);}
   color:var(--muted);text-align:center;margin:8px 0 2px;}
 .ai-cmp-dl{font-size:12px;color:var(--muted2);padding:8px 0;}
 .ai-cmp-dl span{font-size:11px;color:var(--muted);}
+.ai-cmp-setup-h{font-size:13px;font-weight:800;margin:2px 0 8px;display:flex;
+  align-items:center;gap:6px;}
+.ai-cmp-rec{font-style:normal;font-size:9px;font-weight:800;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--success);margin-left:6px;}

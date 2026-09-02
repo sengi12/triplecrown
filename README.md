@@ -426,7 +426,10 @@ The project ships with a regression suite (Node + Python) covering the projectio
   construction (rush+rec TDs differenced against *total* expected TDs incl. passing)
 - [x] Bring-your-own-model: the ⚖ button on every player card opens **"Stuck between two players"** —
   a grounded compare fed the app's own numbers (projections, VOR, ADP, schedule, QB charting, your
-  notes), calling any OpenAI-compatible endpoint with YOUR key, client-side only. **Free-first by
+  notes). **Free is the default, keys are the opt-in.** Three ways to run the model: the **browser's built-in AI**
+  (Chrome's on-device model — no key, no download, feature-detected), a **local WebLLM model**
+  (no key, no account; one-time ~1.8 GB download cached by the browser, works offline after,
+  needs WebGPU), or **your own key** against any OpenAI-compatible endpoint, client-side only. **Free-first by
   design**: ships with no key, the model picker is fed by OpenRouter's **live** free-model index (fetched keyless, cached a day — free tiers rotate, so a hardcoded list goes stale in days), one click = one capped request
   (never a retry, never a background call), token estimate shown before sending, and a local usage
   counter in the modal. A gateway proxy route stays possible later for server-held keys

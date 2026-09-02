@@ -30,6 +30,9 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return { tcAiSettings, tcAiSaveSettings, tcAiUsage, tcAiRecordUsage,
   tcAiPlayerContext, tcAiCompareMessages, tcAiEstTokens, tcAiCall, tcAiRenderText, tcAiFreeModels,
+  tcAiMode, tcAiGenerate, tcAiBuiltinAvailable, tcAiWebGpuAvailable,
+  setWebLlmLoader:(f)=>{_aiWebLlmLoader=f;}, resetLocal:()=>{_aiLocalEngine=null;_aiLocalLoading=null;},
+  setContracts:(c)=>{CONTRACTS=c;}, setSos:(x)=>{SOS=x;},
   TC_AI_MAX_TOKENS, TC_AI_FREE_MODELS,
   setFormat:(f)=>{rankFormat=f;}, setDraftLineup:(l)=>{draftLineup=l;} };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -48,8 +51,12 @@ app.setFormat('ppr'); app.setDraftLineup(['QB','RB','WR','TE']);
 const pa={player_id:'1', name:'Alpha Back', pos:'RB', team:'KC', fpts:245.2, vor:61.4, ecr:9,
   adp_ppr:11, rushing_yards:'1150', receptions:'48', receiving_yards:'390'};
 const pb={player_id:'2', name:'Beta Back', pos:'RB', team:'DET', fpts:238.8, vor:55.0, ecr:12, adp_ppr:14};
+app.setContracts({'alpha back':{apy:14000000, fa:2029}});
+app.setSos({KC:{rank:31, win_total:11.5}});
 const ctx=app.tcAiPlayerContext(pa);
 chk(ctx.includes('Alpha Back') && ctx.includes('+61'), 'context carries name and VOR');
+chk(ctx.includes('$14M/yr') && ctx.includes('FA 2029'), 'and the contract');
+chk(ctx.includes('SOS rank 31') && ctx.includes('11.5'), 'and team strength-of-schedule');
 chk(ctx.includes('ADP 11') && ctx.includes('245 pts'), 'and market price and projection');
 chk(ctx.includes('1150 rush yds'), 'and the position-appropriate stat line');
 const msgs=app.tcAiCompareMessages(pa,pb);
@@ -98,6 +105,51 @@ await (async()=>{
   const fb=await app.tcAiFreeModels(true);
   chk(Array.isArray(fb) && fb.length>0, 'index unreachable → static fallback, not a crash');
   global.fetch=realFetch;
+})();
+
+console.log('=== keyless engines: $0 by construction ===');
+await (async()=>{
+  // This harness has no browser AI and no WebGPU: honesty about absence.
+  chk(app.tcAiBuiltinAvailable()===false, 'built-in AI is feature-detected, never assumed');
+  chk(app.tcAiWebGpuAvailable()===false, 'so is WebGPU');
+  // With a saved key and no explicit mode, the key answers (back-compat).
+  chk(app.tcAiMode()==='key', 'a saved key still routes to the key path');
+  // Local mode, with an injected fake engine: the router uses it, the key path is
+  // never touched, and usage counts the call with zero tokens.
+  global.navigator={gpu:{}};
+  app.tcAiSaveSettings({mode:'local'});
+  let engineCalls=0;
+  app.setWebLlmLoader(async()=>({ CreateMLCEngine: async(model,opts)=>{
+    opts.initProgressCallback({text:'fetching shards 3/9'});
+    return { chat:{ completions:{ create: async(req)=>{
+      engineCalls++;
+      if(req.max_tokens!==app.TC_AI_MAX_TOKENS) throw new Error('uncapped');
+      return {choices:[{message:{content:'Local verdict: Player B.'}}]};
+    }}}};
+  }}));
+  app.resetLocal();
+  const keyCallsBefore=fetchCalls.filter(f=>String(f.url).includes('chat/completions')).length;
+  const u0=(app.tcAiUsage().calls||0);
+  let progress='';
+  const txt=await app.tcAiGenerate([{role:'system',content:'s'},{role:'user',content:'u'}],
+    (p)=>{progress=p;});
+  chk(txt.includes('Player B'), 'the local engine answers');
+  chk(progress.includes('shards'), 'download progress reaches the UI');
+  chk(fetchCalls.filter(f=>String(f.url).includes('chat/completions')).length===keyCallsBefore,
+      'the key path was never touched');
+  chk(app.tcAiUsage().calls===u0+1, 'local calls still count in the usage ledger');
+  await app.tcAiGenerate([{role:'user',content:'u2'}]);
+  chk(engineCalls===2, 'the engine loads once and is reused');
+  // A mode this browser cannot honor falls back rather than breaking.
+  delete global.navigator;
+  chk(app.tcAiMode()==='key', 'local mode without WebGPU falls back to the saved key');
+  // FREE IS THE DEFAULT: with no explicit mode, a browser that HAS a built-in
+  // model uses it even when a key is saved — the key is the opt-in, not the default.
+  app.tcAiSaveSettings({mode:'', key:'sk-test'});
+  global.LanguageModel={create:async()=>({prompt:async()=>'x',destroy(){}})};
+  chk(app.tcAiMode()==='builtin', 'free built-in model outranks a saved key by default');
+  delete global.LanguageModel;
+  chk(app.tcAiMode()==='key', 'and without it the key still answers');
 })();
 
 console.log('=== output is untrusted text ===');
