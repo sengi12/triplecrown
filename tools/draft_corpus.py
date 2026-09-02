@@ -32,6 +32,20 @@ import time
 import urllib.request
 
 API = "https://api.sleeper.app/v1"
+
+
+def current_season():
+    """The season the crawl and the weekly re-fit should target, from Sleeper's
+    own state — never a hardcoded year, or the self-training loop would quietly
+    keep studying the season this file was written in."""
+    try:
+        with urllib.request.urlopen(f"{API}/state/nfl", timeout=15) as r:
+            return str(json.load(r).get("season"))
+    except Exception:
+        import datetime
+        # Offline fallback: an NFL "season year" runs March→February.
+        now = datetime.date.today()
+        return str(now.year if now.month >= 3 else now.year - 1)
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(HERE, "..", "cache", "corpus")
 SLEEP = 0.12          # polite crawl pace; Sleeper's public API is generous but not ours to hammer
@@ -381,7 +395,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("crawl")
     c.add_argument("--league", action="append", required=True)
-    c.add_argument("--season", default="2026")
+    c.add_argument("--season", default=None, help="defaults to Sleeper's current season")
     c.add_argument("--max-leagues", type=int, default=400)
     c.add_argument("--out", default=os.path.join(HERE, "..", "cache", "corpus.json"))
     f = sub.add_parser("fit")
@@ -396,11 +410,14 @@ def main():
     sc.add_argument("--min-obs", type=int, default=5)
     rf = sub.add_parser("refresh")
     rf.add_argument("--league", action="append")
-    rf.add_argument("--season", default="2026")
+    rf.add_argument("--season", default=None, help="defaults to Sleeper's current season")
     rf.add_argument("--max-leagues", type=int, default=400)
     rf.add_argument("--corpus", default=os.path.join(HERE, "..", "cache", "corpus_live.json"))
     rf.add_argument("--out", default=os.path.join(HERE, "..", "cache", "market_model.json"))
     args = ap.parse_args()
+    if getattr(args, "season", "-") is None:
+        args.season = current_season()
+        print(f"season (from Sleeper state): {args.season}")
     {"crawl": crawl, "fit": fit, "score": score, "refresh": refresh}[args.cmd](args)
 
 

@@ -424,10 +424,16 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] TC model: measure and calibrate systematic under-projection — add signed mean error /
   calibration-slope per position and decile to `proj_eval.py`, and diagnose the QB `td_oe`
   construction (rush+rec TDs differenced against *total* expected TDs incl. passing)
-- [ ] Bring-your-own-model: let users plug in an OpenAI-compatible endpoint (e.g. OpenRouter) for AI
-  features (no LLM integration exists yet; the league-gateway Edge Function could host the proxy route)
+- [x] Bring-your-own-model: the ⚖ button on every player card opens **"Stuck between two players"** —
+  a grounded compare fed the app's own numbers (projections, VOR, ADP, schedule, QB charting, your
+  notes), calling any OpenAI-compatible endpoint with YOUR key, client-side only. **Free-first by
+  design**: ships with no key, defaults to an OpenRouter free tier, one click = one capped request
+  (never a retry, never a background call), token estimate shown before sending, and a local usage
+  counter in the modal. A gateway proxy route stays possible later for server-held keys
 - [ ] AI deep-analysis fan-out: a lead "ranker" model orchestrating specialized sub-agents (offense,
-  defense, player context, coaching, deep stats) rolled into an in-depth TripleCrown rank
+  defense, player context, coaching, deep stats) rolled into an in-depth TripleCrown rank —
+  **deliberately deferred**: fan-out is exactly the shape of feature that racks up tokens, and the
+  free-first rule (one click, one call) comes first
 ### UI / UX
 ### Playercards
 ### Live Draft
@@ -442,8 +448,8 @@ The project ships with a regression suite (Node + Python) covering the projectio
   don't ship the column as an unvalidated number before then
 - [x] Live league-relative team rank while drafting — wire the League Analyzer's team-score engine
   to live draft rosters (`draftPicksBySlot`) and show "your team ranks Nth of M" in the roster drawer
-- [ ] "Stuck between two players" button: on-demand AI deep comparison of two players (pairs with
-  the AI fan-out item under New Features)
+- [x] "Stuck between two players" button: on-demand AI deep comparison of two players — shipped as
+  the first BYO-model feature (see New Features)
 ### League Analyzer
 - [ ] In-Season Tools:
   - [x] Implement future schedule on player cards (the schedule data now ships in the in-season sidecar)
@@ -453,7 +459,7 @@ The project ships with a regression suite (Node + Python) covering the projectio
 ### Audit
 ### Import Projections
 ### Adv Metrics
-- [ ] QB Metrics: on_tgt_throws, bad_throw_pct, batted_balls, is_interception_worthy, is_catchable_ball
+- [x] QB Metrics: on_tgt_throws, bad_throw_pct, batted_balls, is_interception_worthy, is_catchable_ball — an Accuracy & Decisions band on the QB passing chart (PFR + FTN per-play charting), every tile colored against that season's league median
 - [ ] Charts that show team progress over the last 5 years in specific categories
 ### Playcalling Stats
 - [ ] Improve Playbooks is_qb_sneak, n_offense_backfield

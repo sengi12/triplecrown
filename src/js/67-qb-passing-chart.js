@@ -221,7 +221,55 @@ function renderPcardQbPassing(pid){
       <div class="qpc-tile"><label>TD/INT</label><b>${noteWrapHtml(escHtml(tdInt), { label:'TD/INT', value:tdInt, source:'qb_passing_chart', statKey:'td_int', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
       <div class="qpc-tile"><label>Attempts*</label><b>${noteWrapHtml(escHtml(t.attempts!=null?t.attempts:'—'), { label:'Located Attempts', value:t.attempts!=null?t.attempts:'—', source:'qb_passing_chart', statKey:'attempts', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
     </div>
+    ${pcardQbChartingBand(norm, season, notePlayer)}
     <div class="pcard-src">*Located pass attempts (excl. sacks, 2-pt) · depth via air yards, location via nflverse charting.</div>
+  </div>`;
+}
+
+// ── Accuracy & decision charting band ───────────────────────────────────────
+// Seed payload: NFLVERSE[season].qb_charting = { players:{norm:{...}}, lg:{medians} }
+// (PFR advanced passing + FTN per-play charting; see qb_charting in
+// src/nflverse/nflverse.py). Rendered under the zone totals: six tiles, each
+// colored against the LEAGUE MEDIAN for that season — no hardcoded notion of
+// good. Directions differ per stat (on-target high = good, bad-throw high =
+// bad), so each tile declares its own.
+const QB_CHARTING_TILES = [
+  ['on_tgt_pct',    'On-Target %',  'hi', 'Throws charted on target (PFR) — accuracy independent of drops and YAC'],
+  ['bad_throw_pct', 'Bad Throw %',  'lo', 'Uncatchable throws excluding throwaways/spikes (PFR)'],
+  ['catchable_pct', 'Catchable %',  'hi', 'Charted catchable balls per attempt (FTN)'],
+  ['intw_pct',      'INT-Worthy %', 'lo', 'Interception-worthy throws per attempt (FTN) — the true turnover risk, luck removed'],
+  ['pressure_pct',  'Pressured %',  'lo', 'Dropbacks under pressure (PFR) — much of this is the line, not the QB'],
+  ['batted',        'Batted',       null, 'Passes batted at the line (PFR)'],
+];
+function pcardQbChartingBand(norm, season, notePlayer){
+  const blk=(typeof NFLVERSE!=='undefined' && NFLVERSE && NFLVERSE[season]
+             && NFLVERSE[season].qb_charting) || null;
+  const q=blk && blk.players && blk.players[norm];
+  if(!q) return '';
+  const lg=blk.lg||{};
+  const tiles=QB_CHARTING_TILES.map(([k,label,dir,tip])=>{
+    if(q[k]==null) return '';
+    const v=q[k];
+    const med=lg[k];
+    let cls='';
+    if(dir && med!=null){
+      const edge=Math.abs(med)*0.08 + 0.4;         // a real gap, not decimal jitter
+      const better = dir==='hi' ? v>med+edge : v<med-edge;
+      const worse  = dir==='hi' ? v<med-edge : v>med+edge;
+      cls = better?'qpc-good':(worse?'qpc-bad':'');
+    }
+    const disp = (k==='batted') ? String(v) : `${Number(v).toFixed(1)}%`;
+    const medTxt = med!=null ? ` · league median ${med}%` : '';
+    return `<div class="qpc-tile ${cls}" title="${escAttr(tip+medTxt)}"><label>${label}</label>
+      <b>${noteWrapHtml(escHtml(disp), { label, value:disp, source:'qb_charting',
+        statKey:k, context:`${season} QB charting`, player:notePlayer,
+        team:notePlayer&&notePlayer.team }, 'note-tag-hit')}</b>
+      ${med!=null && k!=='batted' ? `<span class="qpc-med">lg ${med}%</span>` : ''}</div>`;
+  }).join('');
+  if(!tiles) return '';
+  return `<div class="qpc-charting">
+    <div class="qpc-charting-h">Accuracy &amp; decisions <span class="qpc-charting-sub">PFR + FTN charting · colored vs the league median</span></div>
+    <div class="qpc-totals">${tiles}</div>
   </div>`;
 }
 

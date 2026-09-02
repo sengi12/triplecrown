@@ -113,7 +113,26 @@ def test_fit_params_guardrails():
         check("a clean world may also fit nothing at all", True)
 
 
+def test_current_season_fallback():
+    """Offline, the season guess must follow the NFL year (March rollover), so
+    the automated loop degrades sanely rather than crashing or going stale."""
+    import urllib.request as _ur
+    import datetime
+    real = _ur.urlopen
+    def _down(*a, **k):
+        raise OSError("offline")
+    _ur.urlopen = _down
+    try:
+        got = dc.current_season()
+        now = datetime.date.today()
+        want = str(now.year if now.month >= 3 else now.year - 1)
+        check("offline fallback tracks the NFL year", got == want, (got, want))
+    finally:
+        _ur.urlopen = real
+
+
 if __name__ == "__main__":
+    test_current_season_fallback()
     test_format_bucket()
     test_sigma_current_matches_the_app()
     test_sigma_fit_interpolates()

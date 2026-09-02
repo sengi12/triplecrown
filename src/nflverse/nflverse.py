@@ -1778,6 +1778,87 @@ def route_trees(season, min_routes=12):
         }
     return out
 
+def qb_charting(season, min_attempts=50):
+    """Per-QB accuracy & decision charting for the player card's passing view.
+
+    Two sources, one row per QB, keyed by normalized full name like the zone
+    matrix so the card looks players up the same way:
+      - PFR advanced passing: on-target %, bad-throw %, batted balls,
+        pressure % (the README's on_tgt_throws / bad_throw_pct / batted_balls)
+      - FTN per-play charting joined to pbp passers: interception-worthy % and
+        catchable-throw % of attempts (is_interception_worthy /
+        is_catchable_ball)
+    League medians ride along so the card colors against the field instead of
+    against a hardcoded notion of good."""
+    out = {"players": {}, "lg": {}}
+    # ── PFR ──────────────────────────────────────────────────────────────────
+    try:
+        df = _aux_csv(PFR_PASS_URL)
+        df = df[(df["season"] == season)].copy()
+        g = df.groupby("player")           # sums the 2TM split rows per player
+        att = g["pass_attempts"].sum()
+        keep = att[att >= min_attempts].index
+        pfr = pd.DataFrame({
+            "att": att,
+            "on_tgt_pct": (g["on_tgt_throws"].sum() / att * 100).round(1),
+            "bad_throw_pct": (g["bad_throws"].sum() / att * 100).round(1),
+            "batted": g["batted_balls"].sum(),
+            "pressure_pct": (g["times_pressured"].sum()
+                             / g["pass_attempts"].sum() * 100).round(1),
+        }).loc[keep]
+    except Exception as e:
+        print(f"  (qb_charting: PFR pass failed: {e})")
+        return {}
+    # ── FTN (joined to pbp for passer identity) ──────────────────────────────
+    ftn_by_name = {}
+    try:
+        from src.nflverse.ol_grades_pipeline import pq_optional
+        ftn = pq_optional(f"ftn_{season}.parquet",
+                          f"ftn_charting/ftn_charting_{season}.parquet",
+                          ["nflverse_game_id", "nflverse_play_id",
+                           "is_interception_worthy", "is_catchable_ball"])
+        if ftn is not None and not ftn.empty:
+            pbp = _load_pbp(season, ["game_id", "play_id", "passer_player_id",
+                                     "pass_attempt", "season_type"])
+            pbp = pbp[(pbp["season_type"] == "REG") & (pbp["pass_attempt"] == 1)
+                      & pbp["passer_player_id"].notna()]
+            j = pbp.merge(ftn, left_on=["game_id", "play_id"],
+                          right_on=["nflverse_game_id", "nflverse_play_id"],
+                          how="inner")
+            names = _name_map(season)
+            j["passer_key"] = j["passer_player_id"].map(names)
+            j = j[j["passer_key"].notna()]
+            gg = j.groupby("passer_key")
+            n = gg.size()
+            iw = (gg["is_interception_worthy"].sum() / n * 100).round(1)
+            cb = (gg["is_catchable_ball"].sum() / n * 100).round(1)
+            for key, v in iw.items():
+                ftn_by_name[key] = {"intw_pct": float(v),
+                                    "catchable_pct": float(cb[key]),
+                                    "charted": int(n[key])}
+    except Exception as e:
+        print(f"  (qb_charting: FTN join failed: {e})")
+    for full, r in pfr.iterrows():
+        key = _norm(full)
+        f = ftn_by_name.get(key, {})
+        out["players"][key] = {
+            "name": full, "att": int(r["att"]),
+            "on_tgt_pct": float(r["on_tgt_pct"]),
+            "bad_throw_pct": float(r["bad_throw_pct"]),
+            "batted": int(r["batted"]),
+            "pressure_pct": float(r["pressure_pct"]),
+            **f,
+        }
+    if out["players"]:
+        import statistics as _st
+        for k in ("on_tgt_pct", "bad_throw_pct", "pressure_pct", "intw_pct",
+                  "catchable_pct"):
+            vs = [p[k] for p in out["players"].values() if k in p]
+            if vs:
+                out["lg"][k] = round(_st.median(vs), 1)
+    return out
+
+
 def qb_passing_zones(season, min_attempts=25):
     """Per-QB NGS-style passer-rating zone matrix keyed by normalized full name.
 
@@ -2946,6 +3027,7 @@ def build_nflverse_season(season):
         "players": players,
         "routes": route_trees(season),
         "qb_passing": qb_passing_zones(season),
+        "qb_charting": qb_charting(season),
         "rb_fan": rb_rushing_fans(season),
         "ol_weekly": ol_weekly_team(season),
         "adv_weekly": adv_weekly_team(season),
@@ -2967,8 +3049,18 @@ def build_nflverse_season(season):
     }
 
 def _nflverse_built_cache_path(seasons):
-    """Path for cached built nflverse output keyed by requested seasons."""
-    payload = {"seasons": [str(s) for s in seasons], "schema": "nflverse_seed_v8_hc_history"}
+    """Path for cached built nflverse output, keyed by requested seasons AND this
+    module's own bytes. The schema tag used to be bumped by hand, which meant a
+    new builder (qb_charting, 2026-09-02) silently never ran: the old cache hit
+    forever. Hashing the source makes the cache self-invalidating on any code
+    change — the autonomous behaviour, at the cost of one rebuild per edit."""
+    try:
+        with open(os.path.abspath(__file__), "rb") as _f:
+            src_digest = hashlib.md5(_f.read()).hexdigest()
+    except Exception:
+        src_digest = "unknown"
+    payload = {"seasons": [str(s) for s in seasons], "schema": "nflverse_seed_v8_hc_history",
+               "builder": src_digest}
     digest = hashlib.md5(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
     return os.path.join(_nflverse_cache_subdir("built"), f"{digest}.json")
 

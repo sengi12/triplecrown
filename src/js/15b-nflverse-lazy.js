@@ -385,7 +385,7 @@ const _INSEASON_URL = 'seeds/triplecrown_seed.inseason.json';
 // player-card charts (routes / qb_passing / rb_fan), the Advanced tab + rankings advanced
 // metrics (team / players), the RB fan's line context (rosters) and the OL week-range
 // charts (ol_weekly) then see the season in progress exactly like a completed one.
-const _INSEASON_NV_SECTIONS = ['team','players','routes','qb_passing','rb_fan','rosters','ol_weekly'];
+const _INSEASON_NV_SECTIONS = ['team','players','routes','qb_passing','qb_charting','rb_fan','rosters','ol_weekly'];
 function _adoptInseason(payload){
   if(!payload || !payload.season) return false;
   TC_INSEASON = payload;

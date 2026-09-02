@@ -505,6 +505,7 @@ function renderPlayerCardShell(pid, pos, team){
         </div>
         ${pcardBackButtonHTML()}
         <button id="pcardNoteBtn" class="pcard-note-btn" onclick="openPcardNotes()" aria-label="Open player notes" title="Player notes">${TC_ICON('clipboard')}${noteCount?`<span class="pcard-note-badge">${noteCount}</span>`:''}</button>
+        ${(typeof openAiCompare==='function')?`<button class="pcard-note-btn pcard-ai-btn" onclick="openAiCompare('${escAttr(String(pid))}')" aria-label="Compare with another player" title="Stuck between two players? Compare (your own AI key)">⚖</button>`:''}
         <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">✕</button>
       </div>
       ${contractBand}

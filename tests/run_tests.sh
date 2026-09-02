@@ -170,6 +170,7 @@ run_js_test test_time_machine     "Time machine (--as-of): frozen seed state pin
 run_js_test test_consistency    "Consistency grade: DNP weeks excluded and labelled, <10-snap games skipped, graded under the scoring shown on the card"
 run_js_test test_route_tree     "Route tree card: alignment/route distribution rendering"
 run_js_test test_qb_chart       "QB passing chart card rendering"
+run_js_test test_ai_compare     "AI compare: BYO-model grounding, free-first call discipline, output escaping"
 run_js_test test_def_weekly     "Defensive weekly card: per-defender logs and totals"
 run_js_test test_cfb_prospect   "College prospect panel: percentile bars vs past draft classes, per-position season tables, escaping, degrades to nothing without college data"
 run_js_test test_tc_model       "TC model row on the player card: Sleeper-vs-model comparison, agree/disagree chip thresholds, degrades to nothing without a tc block"

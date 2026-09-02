@@ -52,4 +52,33 @@ chk(body.includes('qpc-svg'),'passing tab renders SVG chart');
 chk(body.includes('Passer Rating'),'passing tab renders totals tiles');
 chk(body.includes('BETTER THAN AVG') || body.includes('Better than average'),'passing tab renders legend');
 
+// ── accuracy & decision charting band ────────────────────────────────────────
+console.log('=== qb_charting band ===');
+{
+  // Rebuild the fixture WITH a charting block: Burrow accurate but pressured.
+  app.setNflverse({'2025':{
+    qb_passing:{'joe burrow':{ totals:{passer_rating:100.7,comp_pct:66.8,yards:1809,td:17,int:5,attempts:259},
+      zones:{ short:{left:{rating:96.4,league_avg:93.7,attempts:42}} } }},
+    qb_charting:{ players:{'joe burrow':{name:'Joe Burrow', att:460, on_tgt_pct:78.2,
+        bad_throw_pct:12.1, batted:4, pressure_pct:29.0, intw_pct:2.1, catchable_pct:70.4, charted:500}},
+      lg:{on_tgt_pct:70.6, bad_throw_pct:15.2, pressure_pct:23.9, intw_pct:3.0, catchable_pct:65.8} },
+  }});
+  const html=app.renderPcardQbPassing('1');
+  chk(html.includes('Accuracy &amp; decisions'), 'the charting band renders');
+  chk(html.includes('On-Target %') && html.includes('78.2%'), 'PFR accuracy tile shows');
+  chk(html.includes('INT-Worthy %') && html.includes('2.1%'), 'FTN decision tile shows');
+  chk(html.includes('lg 70.6%'), 'the league median rides along');
+  // direction-aware coloring: on-target above median = good; pressured above = bad
+  chk(/qpc-tile qpc-good[^>]*>\s*<label>On-Target %/.test(html.replace(/\n/g,'')),
+      'beating the median on a high-is-good stat reads good');
+  chk(/qpc-tile qpc-bad[^>]*>\s*<label>Pressured %/.test(html.replace(/\n/g,'')),
+      'exceeding the median on a low-is-good stat reads bad');
+  chk(/qpc-tile qpc-good[^>]*>\s*<label>Bad Throw %/.test(html.replace(/\n/g,'')),
+      'and a LOW bad-throw rate also reads good — direction is per-stat');
+  // An old seed without the block: the band simply is not there.
+  app.setNflverse({'2025':{qb_passing:{'joe burrow':{ totals:{attempts:259},
+    zones:{ short:{left:{rating:96.4,league_avg:93.7,attempts:42}} } }}}});
+  chk(!app.renderPcardQbPassing('1').includes('Accuracy'), 'no block, no band — older seeds degrade');
+}
+
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));
