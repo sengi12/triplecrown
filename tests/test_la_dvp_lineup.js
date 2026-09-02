@@ -10,7 +10,7 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   TC_SEASON, laDvpTable, laDvpView, laAdjWeekProj, laLineupView, laState,
-  laWeekPickupsHTML, laBestAvailView,
+  laWeekPickupsHTML, laBestAvailView, pcardScheduleBand,
   setBPL:(f)=>{buildPlayerList=f;}, setProjMap:(f)=>{laProjMap=f;},
   setSeasonStarted:(f)=>{hasSeasonStarted=f;}, setIsRedraft:(f)=>{laIsRedraft=f;},
   setInseason:(x)=>{TC_INSEASON=x;}, setSnapshot:(s)=>{leagueSnapshot=s;}, setPhaseVar:(p)=>{currentPhase=p;},
@@ -144,6 +144,25 @@ console.log('=== waivers: the This-Week lens ===');
   chk(tab.includes('Season value') && tab.includes('This week'), 'both lenses offered in season');
   chk(tab.includes('WK PROJ'), "and baLens='week' routes to the weekly table");
   app.laState.baLens='value';
+}
+
+console.log('=== player card: upcoming schedule strip ===');
+{
+  // Fixture schedule: MIA plays AAA in week 3 and nothing after (bye cells);
+  // BUF plays BBB. Ranks from the same DvP table as everything else.
+  const mia=app.pcardScheduleBand('MIA','WR');
+  chk(mia.includes('pcard-sched'), 'the strip renders in season');
+  chk(mia.includes('AAA'), "week 3 shows the opponent");
+  chk(mia.includes('pc-sch-hard'), 'a stingy WR defense reads hard (red)');
+  chk(mia.includes('BYE'), 'a scheduled gap reads as a bye, not a blank');
+  const buf=app.pcardScheduleBand('BUF','WR');
+  chk(buf.includes('pc-sch-easy') && buf.includes('1st'),
+      'the most generous defense reads easy, with its ordinal rank');
+  const k=app.pcardScheduleBand('MIA','K');
+  chk(k.includes('AAA') && !k.includes('pc-sch-rk'),
+      'a kicker sees his opponents but no position rank — the table has none for him');
+  app.setInseason(null);
+  chk(app.pcardScheduleBand('MIA','WR')==='', 'no sidecar (preseason) → no strip');
 }
 
 console.log(`\n${pass}/${total}`);

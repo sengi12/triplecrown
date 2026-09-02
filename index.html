@@ -712,6 +712,27 @@ html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:no
   filter:drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff)
          drop-shadow(0 2px 3px rgba(0,0,0,.35));}
 .pcard-college-val{display:inline-flex;align-items:center;min-height:20px;}
+
+/* ── Upcoming schedule strip (in season) ──────────────────────────────────────
+   Six cells, each opponent tinted by defense-vs-position: green = generous to
+   this position, red = stingy. Scrolls sideways on narrow cards. */
+.pcard-sched{display:flex;align-items:stretch;gap:5px;padding:7px 12px;
+  border-bottom:1px solid var(--border);overflow-x:auto;
+  -webkit-overflow-scrolling:touch;scrollbar-width:none;}
+.pcard-sched::-webkit-scrollbar{display:none;}
+.pc-sch-lbl{font-size:8.5px;font-weight:800;letter-spacing:.08em;color:var(--muted);
+  align-self:center;flex:none;}
+.pc-sch-cell{flex:none;display:flex;flex-direction:column;align-items:center;gap:1px;
+  min-width:46px;padding:3px 7px;border:1px solid var(--border);border-radius:8px;
+  background:var(--surface2);}
+.pc-sch-wk{font-size:8px;font-weight:800;letter-spacing:.05em;color:var(--muted);}
+.pc-sch-opp{font-size:11px;font-weight:800;color:var(--text);white-space:nowrap;}
+.pc-sch-rk{font-size:9px;font-weight:700;color:var(--muted2);font-variant-numeric:tabular-nums;}
+.pc-sch-cell.pc-sch-easy{border-color:rgba(63,185,80,.35);background:rgba(63,185,80,.08);}
+.pc-sch-cell.pc-sch-easy .pc-sch-rk{color:var(--success);}
+.pc-sch-cell.pc-sch-hard{border-color:rgba(248,81,73,.3);background:rgba(248,81,73,.07);}
+.pc-sch-cell.pc-sch-hard .pc-sch-rk{color:var(--danger);}
+.pc-sch-cell.pc-sch-bye{opacity:.55;}
 /* ── Grouped rankings table (ECR / Tier / FPTS / stat groups) ── */
 .rankings-table.grouped{font-size:11.5px;}
 .rankings-table.grouped th,.rankings-table.grouped td{padding:5px 7px;text-align:center;}
@@ -10875,6 +10896,47 @@ function pcardBackButtonHTML(){
   return `<button class="pcard-back" onclick="pcardGoBack()" aria-label="Back">${typeof TC_ICON==='function'?TC_ICON('undo'):'←'}</button>`;
 }
 
+// ── Upcoming schedule strip ─────────────────────────────────────────────────
+// In season only (the sidecar carries the full-season schedule): the player's
+// next six weeks, each opponent colored by how generously that defense treats
+// HIS position — the same defense-vs-position table the Lineup pane and the
+// This-Week waiver lens run on, so the three views can never disagree about a
+// matchup. Before the sidecar lands (preseason, offline copies) the band simply
+// isn't there.
+function pcardScheduleBand(team, pos){
+  const ins=(typeof TC_INSEASON!=='undefined'&&TC_INSEASON)||null;
+  const sch=ins&&ins.schedule&&team?ins.schedule[team]:null;
+  if(!sch) return '';
+  let wkNow=1;
+  if(typeof laCurrentWeek==='function'){ try{ wkNow=laCurrentWeek()||1; }catch(e){} }
+  let dvp=null;
+  if(typeof laDvpTable==='function'){ try{ dvp=laDvpTable(); }catch(e){} }
+  const skill=['QB','RB','WR','TE'].includes(pos);
+  const cells=[];
+  for(let w=wkNow; w<=18 && cells.length<6; w++){
+    const opp=sch[String(w)];
+    if(!opp){
+      cells.push(`<div class="pc-sch-cell pc-sch-bye" title="Week ${w}: bye">
+        <span class="pc-sch-wk">W${w}</span><span class="pc-sch-opp">BYE</span></div>`);
+      continue;
+    }
+    const meta=(ins.schedule_meta&&ins.schedule_meta[team]&&ins.schedule_meta[team][String(w)])||null;
+    const at=meta ? (meta[1]?'':'@') : '';
+    let rkHtml='', cls='', rkTxt='';
+    if(skill && dvp && dvp.ranks[opp] && dvp.ranks[opp][pos]){
+      const r=dvp.ranks[opp][pos], n=dvp.codes.length||32;
+      cls = r<=Math.ceil(n/3) ? 'pc-sch-easy' : (r>n-Math.ceil(n/3) ? 'pc-sch-hard' : '');
+      rkHtml=`<span class="pc-sch-rk">${ordinal(r)}</span>`;
+      rkTxt=` — allows the ${ordinal(r)}-most fantasy points to ${pos}s`;
+    }
+    cells.push(`<div class="pc-sch-cell ${cls}" title="Week ${w}: ${at?'at':'vs'} ${opp}${rkTxt}${meta&&meta[2]?` · ${meta[2]} ${meta[3]||''}`:''}">
+      <span class="pc-sch-wk">W${w}</span><span class="pc-sch-opp">${at}${opp}</span>${rkHtml}</div>`);
+  }
+  if(!cells.length) return '';
+  return `<div class="pcard-sched" title="Upcoming schedule${skill&&dvp?' · rank = how many fantasy points that defense allows to this position (1st = most generous)':''}">
+    <span class="pc-sch-lbl">NEXT</span>${cells.join('')}</div>`;
+}
+
 function openPlayerCardFromCard(nameOrId, pos, team){
   if(pcardState){
     const snap = pcardCaptureNavState();
@@ -11112,6 +11174,7 @@ function renderPlayerCardShell(pid, pos, team){
     `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val pcard-meta-empty">–</span></div>` :
     `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val">${val}</span></div>`;
   const contractBand = contractSummaryHTML(name);
+  const scheduleBand = pcardScheduleBand(tm, posc);
   const ktcBand = ktcLinkHTML(name, posc);
   const noteCount = playerNoteCount(pid, posc, tm);
   // Sleeper-style hero: an injury BANNER across the top; the name stacked on two lines; the
@@ -11165,6 +11228,7 @@ function renderPlayerCardShell(pid, pos, team){
         <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">✕</button>
       </div>
       ${contractBand}
+      ${scheduleBand}
       <div class="pcard-tabs" id="pcardTabs"></div>
       <div class="pcard-body" id="pcardBody">
         <div class="pcard-loading">Loading game logs…</div>

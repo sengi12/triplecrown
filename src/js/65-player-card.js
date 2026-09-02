@@ -218,6 +218,47 @@ function pcardBackButtonHTML(){
   return `<button class="pcard-back" onclick="pcardGoBack()" aria-label="Back">${typeof TC_ICON==='function'?TC_ICON('undo'):'←'}</button>`;
 }
 
+// ── Upcoming schedule strip ─────────────────────────────────────────────────
+// In season only (the sidecar carries the full-season schedule): the player's
+// next six weeks, each opponent colored by how generously that defense treats
+// HIS position — the same defense-vs-position table the Lineup pane and the
+// This-Week waiver lens run on, so the three views can never disagree about a
+// matchup. Before the sidecar lands (preseason, offline copies) the band simply
+// isn't there.
+function pcardScheduleBand(team, pos){
+  const ins=(typeof TC_INSEASON!=='undefined'&&TC_INSEASON)||null;
+  const sch=ins&&ins.schedule&&team?ins.schedule[team]:null;
+  if(!sch) return '';
+  let wkNow=1;
+  if(typeof laCurrentWeek==='function'){ try{ wkNow=laCurrentWeek()||1; }catch(e){} }
+  let dvp=null;
+  if(typeof laDvpTable==='function'){ try{ dvp=laDvpTable(); }catch(e){} }
+  const skill=['QB','RB','WR','TE'].includes(pos);
+  const cells=[];
+  for(let w=wkNow; w<=18 && cells.length<6; w++){
+    const opp=sch[String(w)];
+    if(!opp){
+      cells.push(`<div class="pc-sch-cell pc-sch-bye" title="Week ${w}: bye">
+        <span class="pc-sch-wk">W${w}</span><span class="pc-sch-opp">BYE</span></div>`);
+      continue;
+    }
+    const meta=(ins.schedule_meta&&ins.schedule_meta[team]&&ins.schedule_meta[team][String(w)])||null;
+    const at=meta ? (meta[1]?'':'@') : '';
+    let rkHtml='', cls='', rkTxt='';
+    if(skill && dvp && dvp.ranks[opp] && dvp.ranks[opp][pos]){
+      const r=dvp.ranks[opp][pos], n=dvp.codes.length||32;
+      cls = r<=Math.ceil(n/3) ? 'pc-sch-easy' : (r>n-Math.ceil(n/3) ? 'pc-sch-hard' : '');
+      rkHtml=`<span class="pc-sch-rk">${ordinal(r)}</span>`;
+      rkTxt=` — allows the ${ordinal(r)}-most fantasy points to ${pos}s`;
+    }
+    cells.push(`<div class="pc-sch-cell ${cls}" title="Week ${w}: ${at?'at':'vs'} ${opp}${rkTxt}${meta&&meta[2]?` · ${meta[2]} ${meta[3]||''}`:''}">
+      <span class="pc-sch-wk">W${w}</span><span class="pc-sch-opp">${at}${opp}</span>${rkHtml}</div>`);
+  }
+  if(!cells.length) return '';
+  return `<div class="pcard-sched" title="Upcoming schedule${skill&&dvp?' · rank = how many fantasy points that defense allows to this position (1st = most generous)':''}">
+    <span class="pc-sch-lbl">NEXT</span>${cells.join('')}</div>`;
+}
+
 function openPlayerCardFromCard(nameOrId, pos, team){
   if(pcardState){
     const snap = pcardCaptureNavState();
@@ -455,6 +496,7 @@ function renderPlayerCardShell(pid, pos, team){
     `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val pcard-meta-empty">–</span></div>` :
     `<div class="pcard-meta-item"><span class="pcard-meta-label">${label}</span><span class="pcard-meta-val">${val}</span></div>`;
   const contractBand = contractSummaryHTML(name);
+  const scheduleBand = pcardScheduleBand(tm, posc);
   const ktcBand = ktcLinkHTML(name, posc);
   const noteCount = playerNoteCount(pid, posc, tm);
   // Sleeper-style hero: an injury BANNER across the top; the name stacked on two lines; the
@@ -508,6 +550,7 @@ function renderPlayerCardShell(pid, pos, team){
         <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">✕</button>
       </div>
       ${contractBand}
+      ${scheduleBand}
       <div class="pcard-tabs" id="pcardTabs"></div>
       <div class="pcard-body" id="pcardBody">
         <div class="pcard-loading">Loading game logs…</div>

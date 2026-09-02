@@ -79,7 +79,7 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
 - **Injury-aware everywhere.** Sleeper injury designations (Q/D/OUT/IR/SUS/PUP) badge player names across the app; tapping one opens a knowledge-book popup with a typical timetable for that injury type — and when a concrete timeline has been reported ("out 4–6 weeks", "out until Week 12") the popup shows *that* instead of an estimate. Season-ending IR is detected even when the structured feed misses it, by scanning ESPN news headlines.
 - **A UI that stays out of the way.** Methodology and source notes live behind small ⓘ buttons (popups that stay in the window) instead of paragraphs in the layout; sliders compress to realistic ranges so small values are actually draggable (a 30% target share reads as a nearly-full bar — typed values above the visual cap still work); warnings like vacated production and receiver-vs-QB mismatches are compact flag icons whose popups keep the one-click reconcile actions; roster changes and the QB room fold into collapsible blocks; **Cmd/Ctrl+Z** fires undo with a toast naming what it reverted. Scrolling is contained — popups and cards never scroll the page behind them, and iOS doesn't rubber-band.
 - **Schedule on every team view.** For the current season, a week-by-week opponent rail (colored by Vegas win totals) rides the top of Passing/Receiving/Rushing/Adv Metrics — tap any opponent to jump to that team *in the same view*.
-- **Player Cards.** Every Player has a back story as to how they got here and the best way to see that summarized is in their player card. Here you'll find a summary of their current contract, draft selection and past performance with the added bonus of being able to see their college per game stats as well. Their pro gamelogs are color-graded per game and label playoff weeks by round (WC / DIV / AFC / NFC / SB).
+- **Player Cards.** Every Player has a back story as to how they got here and the best way to see that summarized is in their player card. Here you'll find a summary of their current contract, draft selection and past performance with the added bonus of being able to see their college per game stats as well. Their pro gamelogs are color-graded per game and label playoff weeks by round (WC / DIV / AFC / NFC / SB). In season, a **NEXT** strip under the hero shows the player's coming six weeks — each opponent tinted by how generously that defense treats his position (the same defense-vs-position table the Lineup pane and This-Week waivers run on), byes included.
 
 <!-- Center align -->
 <div align="center">
@@ -442,7 +442,7 @@ The project ships with a regression suite (Node + Python) covering the projectio
   the AI fan-out item under New Features)
 ### League Analyzer
 - [ ] In-Season Tools:
-  - [ ] Implement future schedule on player cards (the schedule data now ships in the in-season sidecar)
+  - [x] Implement future schedule on player cards (the schedule data now ships in the in-season sidecar)
   - [ ] ESPN live matchup scoring (mMatchupScore through the gateway)
   - [x] Player-level weekly matchup-rankings view — the Defense pane ranks defenses and roster rows
     show "vs BUF (3rd)", but nothing ranks the player pool by matchup quality for the week
