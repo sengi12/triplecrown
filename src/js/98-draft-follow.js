@@ -945,6 +945,26 @@ function rankStarBtn(p){
     onclick="event.stopPropagation();toggleDraftStar('${pid}')">${on?'\u2605':'\u2606'}</button>`;
 }
 function isDraftStar(p){ return !!(p && draftStars[p.player_id||p.name]); }
+function clearDraftStars(){
+  const ids=Object.keys(draftStars||{});
+  if(!ids.length) return;
+  if(!confirm(`Clear all ${ids.length} bookmarked player${ids.length===1?'':'s'}?`)) return;
+  draftStars={};
+  try{ localStorage.setItem('tc_draft_stars','{}'); }catch(e){}
+  // Same surgical repaint as a single toggle, for every row that carried a star.
+  try{
+    ids.forEach(pid=>{
+      const sel=(typeof CSS!=='undefined' && CSS.escape) ? CSS.escape(pid) : pid.replace(/"/g,'\\"');
+      document.querySelectorAll(`[data-star-row="${sel}"]`).forEach(tr=>tr.classList.toggle('rank-starred', false));
+      document.querySelectorAll(`[data-starid="${sel}"]`).forEach(b=>{
+        b.classList.toggle('on', false); b.textContent='\u2606'; b.setAttribute('aria-pressed','false');
+      });
+    });
+  }catch(e){}
+  _cheatCache={key:null,val:null};
+  renderRosterBar();
+  if(typeof toast==='function') toast('Shortlist cleared','ok');
+}
 function _starBtn(p){
   const pid=escAttr(String(p.player_id||p.name));
   const on=isDraftStar(p);
@@ -965,6 +985,26 @@ function _starBtn(p){
 // Standard normal CDF (Abramowitz & Stegun 7.1.26 on erf) — the closed-form
 // survival curve the plan uses where the drawn-sample MC would be overkill.
 // Matches norm_cdf in tools/draft_sim.py.
+// Inverse standard normal CDF (Acklam's rational approximation, |err|<1.2e-9)
+// — lets the availability MC sample a player's market position CONDITIONED on
+// him still being on the board, instead of pretending the draft hasn't started.
+function _vonaInvNorm(p){
+  const a=[-3.969683028665376e+01,2.209460984245205e+02,-2.759285104469687e+02,
+           1.383577518672690e+02,-3.066479806614716e+01,2.506628277459239e+00];
+  const b=[-5.447609879822406e+01,1.615858368580409e+02,-1.556989798598866e+02,
+           6.680131188771972e+01,-1.328068155288572e+01];
+  const c=[-7.784894002430293e-03,-3.223964580411365e-01,-2.400758277161838e+00,
+           -2.549732539343734e+00,4.374664141464968e+00,2.938163982698783e+00];
+  const d=[7.784695709041462e-03,3.224671290700398e-01,2.445134137142996e+00,
+           3.754408661907416e+00];
+  const pl=0.02425;
+  if(p<pl){ const q=Math.sqrt(-2*Math.log(p));
+    return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1); }
+  if(p>1-pl){ const q=Math.sqrt(-2*Math.log(1-p));
+    return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1); }
+  const q=p-0.5, r=q*q;
+  return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+}
 function _vonaNormCdf(z){
   const s=z<0?-1:1, x=Math.abs(z)/Math.SQRT2;
   const t=1/(1+0.3275911*x);
@@ -1039,6 +1079,7 @@ function _planCand(vors, cnt, ded, flexN, sfN, pos, vor, before){
 // draft. `mkt` is ADP-ordered; each entry needs {pos, vor} and an adp via adpFor().
 function _cheatSimulate(mkt, cfg){
   const POSL=['QB','RB','WR','TE'];
+  const {eps:mixEps, tau:mixTau}=_vonaMixParams();
   const { teams, rounds, type, reversalRound, startPick, myPicks, mySlot, feed,
           ded, sfN, flexN, kd } = cfg;
   const sims=cfg.sims||CHEAT_SIMS;
@@ -1066,9 +1107,22 @@ function _cheatSimulate(mkt, cfg){
   const rnd=()=>{ seed+=0x6D2B79F5; let t=Math.imul(seed^(seed>>>15),1|seed);
                   t^=t+Math.imul(t^(t>>>7),61|t); return ((t^(t>>>14))>>>0)/4294967296; };
 
+  // Mid-draft, a survivor's market position is conditioned on him surviving
+  // this far — same truncation as vonaSimulate, same reason.
+  const u0=new Float64Array(n);
+  for(let i=0;i<n;i++) u0[i]=(startPick>1)
+    ? Math.min(0.999999, _vonaNormCdf((startPick-0.5-adp[i])/sig[i])) : 0;
   for(let s=0;s<sims;s++){
     taken.fill(0);
-    for(let i=0;i<n;i++) noisy[i]=adp[i]+_VONA_NORMALS[(rnd()*4096)|0]*sig[i];
+    for(let i=0;i<n;i++){
+      if(startPick>1 && rnd()<mixEps){
+        noisy[i]=startPick - Math.log(1-rnd())*mixTau;
+      } else {
+        noisy[i]=(u0[i]<0.02)
+          ? adp[i]+_VONA_NORMALS[(rnd()*4096)|0]*sig[i]
+          : adp[i]+_vonaInvNorm(Math.min(0.999999, u0[i]+(1-u0[i])*rnd()))*sig[i];
+      }
+    }
     POSL.forEach(q=>{ ord[q]=byPos[q].slice().sort((x,y)=>noisy[x]-noisy[y]); ptr[q]=0; });
     const cnt={}; for(let t=1;t<=teams;t++) cnt[t]={QB:0,RB:0,WR:0,TE:0,KD:0};
     const myVors={QB:[],RB:[],WR:[],TE:[]};
@@ -1456,6 +1510,8 @@ function vonaStarStrip(v, myNext){
   return `<div class="vsg-strip"><span class="vsg-strip-lbl">
       <span class="vsg-lbl-long">\u2605 Your list \u2014 still on the board${myNext?`, odds they reach pick ${myNext}`:''}</span>
       <span class="vsg-lbl-short">\u2605 Your list${myNext?` \u00b7 odds at ${myNext}`:''}</span></span>
+    <button class="vsg-strip-clear" onclick="event.stopPropagation();clearDraftStars()"
+      title="Clear every bookmarked player">clear</button>
     <div class="vsg-strip-row">${chips}${gone>0?`<span class="vsg-schip more">+${gone} more</span>`:''}</div></div>`;
 }
 // The expanded panel: full lineup with drafted players, remaining needs, a team switcher.
@@ -1755,6 +1811,25 @@ function vonaPosNeedsForSlot(slot){ return _vonaSlotProfile(slot).set; }
 // hoarded position from +10.4pp to −0.5pp (1QB, RB-hungry room) and from +6.2pp
 // to −4.2pp (superflex QB), improving overall Brier by ~6%. Keep it in sync with
 // market_drift() in tools/draft_sim.py.
+// Survival-belief contamination, fitted on 116 real 2026 drafts (see
+// tools/draft_corpus.py score): with probability EPS a still-available player's
+// ADP anchor is simply WRONG for this room — news, a fade — and his hazard is a
+// slow exp(-picks/TAU) decay rather than a normal tail. With the truncated
+// conditioning this takes the survival model from Brier .18-.20 to .11-.13 on
+// held-out real drafts (bias -0.19 -> -0.02). Keep in step with MIX_EPS/MIX_TAU
+// in tools/draft_sim.py.
+// Defaults only — the LIVE values come from the seed's market_model block,
+// which the weekly corpus refresh re-fits from real completed drafts (this
+// year's rooms, not last year's). Bounds are enforced here so a bad blob can
+// never reach a draft: outside them, the defaults stand.
+const VONA_MIX_EPS = 0.25;
+const VONA_MIX_TAU = 120;
+function _vonaMixParams(){
+  const mm=(typeof MARKET_MODEL!=='undefined' && MARKET_MODEL) || null;
+  const eps=(mm && typeof mm.eps==='number' && mm.eps>=0 && mm.eps<=0.5) ? mm.eps : VONA_MIX_EPS;
+  const tau=(mm && typeof mm.tau==='number' && mm.tau>=20 && mm.tau<=300) ? mm.tau : VONA_MIX_TAU;
+  return {eps, tau};
+}
 const VONA_DRIFT_CAP = 24;    // picks — one strange run must not rewrite the board
 const VONA_DRIFT_PRIOR = 4;   // pseudo-picks of "the board is right", damping early noise
 const VONA_DRIFT_DEADZONE = 2; // picks — below this the "signal" is just a normal room
@@ -1805,8 +1880,9 @@ function vonaMarketDrift(list){
   return out;
 }
 
-function vonaSimulate(avail, upcomingSlots, pools, drift){
+function vonaSimulate(avail, upcomingSlots, pools, drift, nowPick){
   const POSL=['QB','RB','WR','TE'];
+  const {eps:mixEps, tau:mixTau}=_vonaMixParams();
   const pidOf = (p)=> p.player_id || p.name;
   const nUp = upcomingSlots.length;
   const profiles = upcomingSlots.map(s=>_vonaSlotProfile(s));
@@ -1821,7 +1897,7 @@ function vonaSimulate(avail, upcomingSlots, pools, drift){
   avail.forEach((p,i)=>idOf.set(pidOf(p), i));
 
   // MARKET pools: ordered by ADP, capped. These are who opponents actually consider.
-  const mkt={}, mktIds={}, mktAdp={}, mktSig={};
+  const mkt={}, mktIds={}, mktAdp={}, mktSig={}, mktU0={};
   POSL.forEach(pos=>{
     const arr = avail.filter(p=>p.pos===pos && adpFor(p)<999).sort((a,b)=>adpFor(a)-adpFor(b)).slice(0,depth);
     mkt[pos]=arr;
@@ -1831,6 +1907,16 @@ function vonaSimulate(avail, upcomingSlots, pools, drift){
     const sh=(drift && drift[pos]) || 0;
     mktAdp[pos]=Float64Array.from(arr.map(p=>adpFor(p)-sh));
     mktSig[pos]=Float64Array.from(arr.map(p=>adpSigma(adpFor(p))));
+    // A player still on the board at pick N cannot have a market position before
+    // N — but the unconditioned draw says he does, prices every faller as "gone
+    // immediately", and that is worth a third of the model's error against real
+    // drafts (Brier 0.18-0.20 -> 0.11-0.14; when it said 3% back, reality was
+    // ~45%). u0 = P(market position <= now); each sim then draws from the
+    // truncated remainder. See tools/draft_corpus.py score.
+    mktU0[pos]=Float64Array.from(arr.map((p,i)=>{
+      if(!(nowPick>1)) return 0;
+      return Math.min(0.999999, _vonaNormCdf((nowPick-0.5-mktAdp[pos][i])/mktSig[pos][i]));
+    }));
   });
   const inMarket = new Uint8Array(avail.length);
   POSL.forEach(pos=>{ for(const id of mktIds[pos]) inMarket[id]=1; });
@@ -1857,8 +1943,21 @@ function vonaSimulate(avail, upcomingSlots, pools, drift){
     pickedPos.fill(null);
     // Draw one noisy market position per candidate, then sort that position by it.
     POSL.forEach(pos=>{
-      const n=mkt[pos].length, no=noisy[pos], od=order[pos], ad=mktAdp[pos], sg=mktSig[pos];
-      for(let i=0;i<n;i++){ no[i] = ad[i] + _VONA_NORMALS[(rnd()*4096)|0]*sg[i]; od[i]=i; }
+      const n=mkt[pos].length, no=noisy[pos], od=order[pos], ad=mktAdp[pos], sg=mktSig[pos], u0=mktU0[pos];
+      for(let i=0;i<n;i++){
+        if(nowPick>1 && rnd()<mixEps){
+          // The anchor-is-wrong arm: he goes when this room feels like it,
+          // memorylessly, not when national ADP said he would.
+          no[i] = nowPick - Math.log(1-rnd())*mixTau;
+        } else {
+          // Fast path for players nowhere near due; the truncated inverse-CDF
+          // draw only where the conditioning actually moves the answer.
+          no[i] = (u0[i]<0.02)
+            ? ad[i] + _VONA_NORMALS[(rnd()*4096)|0]*sg[i]
+            : ad[i] + _vonaInvNorm(Math.min(0.999999, u0[i]+(1-u0[i])*rnd()))*sg[i];
+        }
+        od[i]=i;
+      }
       // small n (<=50) — a plain sort on the index array is fine
       const idx=Array.prototype.slice.call(od).sort((a,b)=>no[a]-no[b]);
       for(let i=0;i<n;i++) od[i]=idx[i];
@@ -2193,7 +2292,7 @@ function computeVONA(){
   ['QB','RB','WR','TE'].forEach(pos=>{ bestNow[pos]=pools[pos].find(p=>!_vonaSeasonOut(p)) || pools[pos][0] || null; });
 
   const drift = vonaMarketDrift(list);
-  const sim = vonaSimulate(avail, upcomingSlots, pools, drift);
+  const sim = vonaSimulate(avail, upcomingSlots, pools, drift, startPick);
   const byId = new Map(avail.map(p=>[sim.pidOf(p), p]));
 
   // ── My own remaining needs (for the discount) ─────────────────────────────

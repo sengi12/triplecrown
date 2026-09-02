@@ -2947,7 +2947,19 @@ def main():
     # download and faster parse with identical data).
     BUILDER_VERSION = "2.12-adp-fix"   # bump when aggregation logic changes
 
+    # Market model: the draft advisory's fitted survival calibration
+    # (tools/draft_corpus.py refresh). A committed artifact, not a fetch — the
+    # weekly refresh workflow rewrites it; a build just carries it.
+    market_model = None
+    _mm_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "seeds", "market_model.json")
+    if os.path.exists(_mm_path):
+        try:
+            with open(_mm_path) as _f:
+                market_model = json.load(_f)
+        except Exception:
+            market_model = None
     _fantasy_obj = {"season": args.season, "builder_version": BUILDER_VERSION,
+                    "market_model": market_model,
                     # NFL state at build time: lets the app know the season phase/week without
                     # a live probe (baked/offline copies especially). Live state still wins.
                     "state": {"season": TC_STATE["season"], "season_type": TC_STATE["season_type"],

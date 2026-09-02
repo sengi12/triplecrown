@@ -210,6 +210,7 @@ let CONTRACTS = (typeof SEED_CONTRACTS!=='undefined') ? SEED_CONTRACTS : {};
 let SHARP = (typeof SEED_SHARP!=='undefined') ? SEED_SHARP : {};
 // Projection-season Strength of Schedule: {CODE:{rank, win_total, name}}
 let SOS = (typeof SEED_SOS!=='undefined') ? SEED_SOS : {};
+let MARKET_MODEL = {};       // fitted survival calibration from the seed (draft_corpus.py refresh)
 let _sosSchedLoading=false, _sosSchedLoaded=false;   // opponent-schedule fetch state (SOS arc)
 // Full team display names: {CODE:"Cincinnati Bengals"}
 let TEAM_NAMES = (typeof SEED_TEAM_NAMES!=='undefined') ? SEED_TEAM_NAMES : {};

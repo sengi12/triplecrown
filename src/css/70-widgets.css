@@ -1152,3 +1152,9 @@ button.la-cliff:hover{filter:brightness(1.25);}
   .vona-sub{font-size:12px;line-height:1.5;}
   .rt-needs{font-size:11.5px;}
 }
+.vsg-strip{position:relative;}
+.vsg-strip-clear{position:absolute;top:7px;right:9px;background:none;border:0;cursor:pointer;
+  font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--muted);padding:2px 4px;}
+.vsg-strip-clear:hover{color:var(--danger);}
+.vsg-strip-clear:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}

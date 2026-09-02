@@ -99,6 +99,23 @@ jobs:
           restore-keys: |
             seed-cache-
 
+      # ── Market-model self-training ──────────────────────────────────────────
+      # Once a week, re-crawl real completed drafts of the current season and
+      # re-fit the advisory's survival calibration (eps/tau) from them, so the
+      # model tracks THIS year's rooms instead of the year it was hand-fitted.
+      # The blob is committed (seeds/market_model.json) and baked into the seed
+      # by build_seed.py; consumers bound-check it, and the fitter refuses to
+      # emit anything from a thin corpus — so the worst case is "keep last week's".
+      # Weekly, not daily: parameters move slowly and the crawl is ~1.5k polite
+      # requests cold (cheap warm — cache/corpus rides the scrape cache below).
+      - name: Refresh market model (Mondays)
+        run: |
+          if [ "$(date -u +%u)" = "1" ] || [ "${{ github.event.inputs.force }}" = "market_model" ]; then
+            python3 tools/draft_corpus.py refresh --out seeds/market_model.json 2>&1 | tail -5
+          else
+            echo "not Monday — keeping last week's market model"
+          fi
+
       - name: Decide and refresh
         id: refresh
         run: |

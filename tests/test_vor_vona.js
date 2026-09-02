@@ -43,8 +43,9 @@ const app=new Function(code+`return {
   adpFor,
   _vonaCandScore, _vonaBudget,
   vonaMarketDrift, vonaSimulate, _vonaRankInPos,
-  _cheatSimulate, toggleDraftStar, isDraftStar, starsRef:()=>draftStars,
-  _rtSnapScroll, _rtRestoreScroll, _RT_SCROLLERS,
+  _cheatSimulate, toggleDraftStar, isDraftStar, clearDraftStars, starsRef:()=>draftStars,
+  _rtSnapScroll, _rtRestoreScroll, _RT_SCROLLERS, _vonaInvNorm, _vonaNormCdf,
+  _vonaMixParams, setMarketModel:(v)=>{MARKET_MODEL=v;},
   setMySlot:(v)=>{mySlot=v;}, setDraftMeta:(m)=>{draftMeta=m;},
   setDraftedIds:(v)=>{draftedIds=v;},
 };`)();
@@ -374,6 +375,20 @@ console.log('=== shortlist: star, persist, un-star ===');
   chk(!app.isDraftStar(p), 'and toggles back off');
   app.toggleDraftStar('');
   chk(!app.isDraftStar({player_id:''}), 'an empty id is ignored');
+  // Reset: one action, everything unstarred, persistence included.
+  app.toggleDraftStar('RB7'); app.toggleDraftStar('WR3'); app.toggleDraftStar('QB1');
+  chk(Object.keys(app.starsRef()).length===3, 'three stars set for the reset');
+  global.confirm=()=>true;
+  app.clearDraftStars();
+  chk(Object.keys(app.starsRef()).length===0, 'clear-all empties the shortlist');
+  chk(!app.isDraftStar({player_id:'RB7'}), 'and every player reads unstarred');
+  // Declining the confirm must not clear.
+  app.toggleDraftStar('RB7');
+  global.confirm=()=>false;
+  app.clearDraftStars();
+  chk(app.isDraftStar({player_id:'RB7'}), 'declining the confirm keeps the list');
+  global.confirm=()=>true;
+  app.clearDraftStars();
 }
 
 // === the drawer keeps your place across a re-render =========================
@@ -414,6 +429,64 @@ console.log('=== drawer scroll survives a re-render ===');
   chk(app._RT_SCROLLERS.includes('.vsg-board') && app._RT_SCROLLERS.includes('.vsg-cheat')
       && app._RT_SCROLLERS.includes('.rt-col-main') && app._RT_SCROLLERS.includes('.rt-col-side'),
       'every scrollable region of the drawer is registered');
+}
+
+// === conditional survival: a faller is not "gone" =============================
+// Measured on 116 real 2026 drafts (tools/draft_corpus.py score): pretending the
+// draft hasn't started prices a past-due player at 3% back when reality is ~45%,
+// and conditioning on "he's still here" removes a third of the model's error.
+console.log('=== conditional survival: the board you can SEE is evidence ===');
+{
+  let inv_ok=true;
+  for(const z of [-2.5,-1,-0.3,0,0.7,1.9]){
+    if(Math.abs(app._vonaInvNorm(app._vonaNormCdf(z))-z)>2e-4) inv_ok=false;
+  }
+  chk(inv_ok, 'invNorm inverts normCdf across the range');
+  app.setDraftLineup(['QB','RB','WR','WR','TE','FLEX','K','DEF']);
+  app.setDraftMeta({teams:12, rounds:14, type:'snake', reversal_round:0});
+  // One RB long past his price (ADP 5, we are at pick 30) plus fillers.
+  const mk=(id,pos,vor,adp)=>({player_id:id,name:id,pos,team:'KC',vor,adp_ppr:adp,adp});
+  const avail=[mk('faller','RB',60,5)];
+  for(let i=1;i<=8;i++) avail.push(mk('rb'+i,'RB',40-i,28+i*3));
+  for(let i=1;i<=8;i++) avail.push(mk('wr'+i,'WR',38-i,30+i*3));
+  const pools={QB:[],RB:avail.filter(p=>p.pos==='RB'),WR:avail.filter(p=>p.pos==='WR'),TE:[]};
+  pools.RB.sort((a,b)=>b.vor-a.vor); pools.WR.sort((a,b)=>b.vor-a.vor);
+  app.setPicksBySlot({}); app.setDraftedIds({}); app.setMySlot(1);
+  const up=[2,3,4,5,6,7,8,9,10,11,12];
+  const unc=app.vonaSimulate(avail, up, pools, null);          // no nowPick: old model
+  const cond=app.vonaSimulate(avail, up, pools, null, 30);     // conditioned at pick 30
+  const pu=unc.pAvail.get('faller')||0, pc=cond.pAvail.get('faller')||0;
+  chk(pu<0.05, `unconditioned, the faller reads as gone (${(pu*100).toFixed(0)}%)`);
+  // 25 picks past his price and 12 to survive: mostly the contamination arm —
+  // (1-eps)*~0 + eps*exp(-12/120) ≈ 0.22. He is a live wait, not a ghost.
+  chk(pc>0.12 && pc<0.35, `conditioned+mixed, he has real odds of lasting (${(pc*100).toFixed(0)}%)`);
+  const closed=0.25*Math.exp(-12/120);
+  chk(Math.abs(pc-closed)<0.08, `and roughly matches the closed form (${pc.toFixed(2)} vs ${closed.toFixed(2)})`);
+  // A player nowhere near due is untouched by the conditioning.
+  // Freeing the faller shifts demand onto everyone else, so a not-yet-due
+  // player's odds legitimately MOVE — they just must not swing wildly.
+  const farU=unc.pAvail.get('wr8')||0, farC=cond.pAvail.get('wr8')||0;
+  chk(Math.abs(farC-farU)<0.25, `a not-yet-due player moves modestly, not wildly (${farU.toFixed(2)} -> ${farC.toFixed(2)})`);
+  chk(pc<farC, 'the 25-picks-past-due man is still riskier than the not-yet-due one');
+}
+
+// === the market model trains itself — and the app trusts it only so far =======
+console.log('=== fitted calibration: seed overrides, bounds protect ===');
+{
+  app.setMarketModel({});
+  let m=app._vonaMixParams();
+  chk(m.eps===0.25 && m.tau===120, 'no blob -> shipped defaults');
+  app.setMarketModel({eps:0.35, tau:100, season:'2026'});
+  m=app._vonaMixParams();
+  chk(m.eps===0.35 && m.tau===100, "this season's fit overrides the defaults");
+  app.setMarketModel({eps:0.9, tau:100});
+  chk(app._vonaMixParams().eps===0.25, 'an eps outside bounds falls back');
+  app.setMarketModel({eps:0.3, tau:5000});
+  chk(app._vonaMixParams().tau===120, 'a tau outside bounds falls back');
+  app.setMarketModel({eps:'0.35', tau:null});
+  m=app._vonaMixParams();
+  chk(m.eps===0.25 && m.tau===120, 'non-numeric junk falls back entirely');
+  app.setMarketModel({});
 }
 
 console.log(`\n${pass}/${total} checks passed`);

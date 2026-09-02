@@ -46,6 +46,16 @@ function loadProjections(data){
   if(data.playerNotes && typeof data.playerNotes==='object'){
     playerNotes = Object.assign({}, playerNotes||{}, data.playerNotes);
   }
+  // The draft shortlist travels the same way, under the same rule: merge, never
+  // wipe on a file that simply doesn't carry one.
+  if(typeof draftStars!=='undefined' && data.draftStars && typeof data.draftStars==='object'
+     && !Array.isArray(data.draftStars)){
+    Object.keys(data.draftStars).forEach(k=>{
+      if(k==='__proto__'||k==='constructor'||k==='prototype') return;
+      if(data.draftStars[k]) draftStars[k]=1;
+    });
+    try{ localStorage.setItem('tc_draft_stars', JSON.stringify(draftStars)); }catch(e){}
+  }
   // A file always describes the projection season. Leave any reference season we were
   // looking at, and point the roster base back at the projection seed, BEFORE the roster
   // fill below reads getBase() — otherwise 2024's roster is imported as the working set.
@@ -81,7 +91,8 @@ function loadProjections(data){
   // Store per-analyst data so the Rankings "Switch Analyst" picker can replay any single
   // analyst's rows (or the averaged default) without re-importing.
   if(multiAnalyst){
-    importedRawPayload={projections:players, playerNotes:data.playerNotes||{}};
+    importedRawPayload={projections:players, playerNotes:data.playerNotes||{},
+      draftStars:data.draftStars||{}};
     importedAnalystData={_avg:merged};
     analysts.forEach(a=>{ importedAnalystData[a]=players.filter(p=>p.analyst_name===a); });
   } else {
@@ -331,7 +342,8 @@ function buildOutput(){
       });
     }
   });
-  return {projections:out, playerNotes:playerNotes};
+  return {projections:out, playerNotes:playerNotes,
+          draftStars:(typeof draftStars!=='undefined'?draftStars:{})};
 }
 function dlFile(content,filename,mime){
   const b64=btoa(unescape(encodeURIComponent(content)));
@@ -422,7 +434,8 @@ function switchToAnalyst(key){
   } else {
     const rows = savedAnalystData[key];
     if(!rows || !rows.length){ toast('No data for '+escHtml(key),'err'); return; }
-    loadProjections({ projections: rows, playerNotes: savedRawPayload.playerNotes });
+    loadProjections({ projections: rows, playerNotes: savedRawPayload.playerNotes,
+      draftStars: savedRawPayload.draftStars });
   }
   // Restore draft state and analyst index unconditionally.
   if(typeof draftId!=='undefined')     draftId     = savedDraftId;
@@ -917,6 +930,7 @@ async function tryAutoLoadSeed(prefetched){
     if(j.contracts){ CONTRACTS=j.contracts; got=true; }
     if(j.sharp){ SHARP=j.sharp; got=true; }
     if(j.sos){ SOS=j.sos; got=true; }
+    if(j.market_model){ MARKET_MODEL=j.market_model; got=true; }
     if(j.team_names){ TEAM_NAMES=j.team_names; got=true; }
     if(j.coordinators){ COORDINATORS=j.coordinators; got=true; }
     if(j.hc_playcallers){ HC_PLAYCALLERS=j.hc_playcallers; got=true; }

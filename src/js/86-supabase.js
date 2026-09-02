@@ -297,6 +297,7 @@ const TC_SAVE_LIMITS = {
   MAX_JSON_BYTES: 4 * 1024 * 1024,   // 4 MB ceiling on the serialized payload
   MAX_PROJECTIONS: 4000,             // 32 teams × generous roster ceiling
   MAX_NOTES: 6000,
+  MAX_STARS: 300,                    // bookmarked players (a shortlist, not a roster dump)
   MAX_TAGS_PER_NOTE: 300,
   MAX_STR: 400,                      // generic string field cap
   MAX_NAME: 120,
@@ -423,7 +424,19 @@ function tcSanitizeSavePayload(raw){
     });
   }
 
-  const cleaned = { projections, playerNotes: notes };
+  // 3b. Whitelist + cap the draft shortlist (pid -> 1). Tiny, but it crosses the
+  // trust boundary like everything else that reaches the account.
+  const stars = {};
+  const ds = src.draftStars;
+  if(ds && typeof ds==='object' && !Array.isArray(ds)){
+    const sk = Object.keys(ds).filter(k=>k!=='__proto__' && k!=='constructor' && k!=='prototype');
+    if(sk.length > TC_SAVE_LIMITS.MAX_STARS){
+      return { ok:false, error:`Too many bookmarked players (${sk.length}); limit ${TC_SAVE_LIMITS.MAX_STARS}` };
+    }
+    sk.forEach(k=>{ if(ds[k]) stars[_tcStr(k, 40)] = 1; });
+  }
+
+  const cleaned = { projections, playerNotes: notes, draftStars: stars };
 
   // 4. Final byte-size ceiling on the serialized result.
   let size;

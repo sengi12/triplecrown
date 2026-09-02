@@ -691,6 +691,24 @@ def test_v5_keeps_the_position_guards():
     check("last call still forces the empty QB slot", got.pos == "QB", got.pos)
 
 
+def test_apply_market_model():
+    """The sim adopts the seed's fitted calibration, inside hard bounds."""
+    e0, t0 = ds.MIX_EPS, ds.MIX_TAU
+    try:
+        ds.apply_market_model({"market_model": {"eps": 0.35, "tau": 100}})
+        check("a sane blob is adopted", ds.MIX_EPS == 0.35 and ds.MIX_TAU == 100.0)
+        ds.MIX_EPS, ds.MIX_TAU = e0, t0
+        ds.apply_market_model({"market_model": {"eps": 0.9, "tau": 5000}})
+        check("an insane blob is refused wholesale",
+              ds.MIX_EPS == e0 and ds.MIX_TAU == t0, (ds.MIX_EPS, ds.MIX_TAU))
+        ds.apply_market_model({})
+        check("an absent blob changes nothing", ds.MIX_EPS == e0 and ds.MIX_TAU == t0)
+        ds.apply_market_model({"market_model": {"eps": "0.4", "tau": [1]}})
+        check("junk types change nothing", ds.MIX_EPS == e0 and ds.MIX_TAU == t0)
+    finally:
+        ds.MIX_EPS, ds.MIX_TAU = e0, t0
+
+
 def test_market_drift():
     # QBs due every 4 picks, RBs every 3. At pick 12 the board expects 3 QBs gone.
     idx = {"QB": _sched(4), "RB": _sched(3), "WR": _sched(2), "TE": _sched(6)}
@@ -802,6 +820,7 @@ if __name__ == "__main__":
     test_reach_guard_is_inert_without_a_next_pick()
     test_v3_default_is_unchanged_by_the_guard()
     test_v5_keeps_the_position_guards()
+    test_apply_market_model()
     test_market_drift()
     test_market_drift_moves_survival()
     test_drift_is_opt_in()

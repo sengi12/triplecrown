@@ -108,5 +108,33 @@ const nav = r.cleaned.playerNotes.k.tags[0].nav;
 chk(nav && nav.type === 'coaching' && nav.team === 'CIN', 'nav primitives preserved');
 chk(nav && !('nested' in nav), 'nav nested object dropped');
 
+// ── draftStars: the shortlist crosses the trust boundary like everything else ──
+console.log('=== draftStars sanitization ===');
+{
+  const base=()=>({ projections:[{ season:'2026', name:'Joe Burrow', fantasy_position:'QB',
+    team:'CIN', player_id:'6770', passing_yards:4800 }], playerNotes:{} });
+  const chkFn=tcSanitizeSavePayload;
+  let r=chkFn({ ...base(), draftStars:{ '4046':1, '9221':1 } });
+  chk(r.ok && r.cleaned.draftStars && r.cleaned.draftStars['4046']===1
+      && r.cleaned.draftStars['9221']===1, 'star ids pass through as pid->1');
+  r=chkFn({ ...base(), draftStars:{ '4046':'yes-truthy', 'x':0, 'y':'' } });
+  chk(r.ok && r.cleaned.draftStars['4046']===1, 'truthy values normalize to 1');
+  chk(r.ok && !('x' in r.cleaned.draftStars) && !('y' in r.cleaned.draftStars),
+      'falsy entries are dropped, not stored');
+  r=chkFn({ ...base(), draftStars: JSON.parse('{"__proto__":1,"constructor":1,"ok":1}') });
+  chk(r.ok && Object.keys(r.cleaned.draftStars).length===1 && r.cleaned.draftStars.ok===1,
+      'prototype-pollution keys are stripped');
+  r=chkFn({ ...base(), draftStars:{ ['k'.repeat(500)]:1 } });
+  chk(r.ok && Object.keys(r.cleaned.draftStars)[0].length<=40, 'ids are length-capped');
+  const many={}; for(let i=0;i<301;i++) many['p'+i]=1;
+  r=chkFn({ ...base(), draftStars:many });
+  chk(!r.ok && /Too many bookmarked/.test(r.error||''), 'a 301-star payload is refused');
+  r=chkFn({ ...base(), draftStars:[1,2,3] });
+  chk(r.ok && Object.keys(r.cleaned.draftStars||{}).length===0, 'an array is not a shortlist');
+  r=chkFn(base());
+  chk(r.ok && r.cleaned.draftStars && Object.keys(r.cleaned.draftStars).length===0,
+      'absent shortlist saves as empty, never undefined');
+}
+
 console.log(`\nRESULT: ${pass}/${total} ${pass === total ? 'ALL PASS' : 'FAILURES'}`);
 process.exit(pass === total ? 0 : 1);

@@ -122,6 +122,7 @@ class League:
         # Market context for one run: how far ahead of the ADP board this room
         # is running (read live), and how far ahead we make it run (for tests).
         self.adp_index = {}
+        self.now_pick = None    # set by run_draft before each chooser call
         self.use_drift = False
         self.drift = {"QB": 0.0, "RB": 0.0, "WR": 0.0, "TE": 0.0}
         self.opp_drift = {}
@@ -385,6 +386,19 @@ def build_pool(seed, sc, byes, tc_weight, floor_kappa, pro=None, fmt="ppr"):
 SF_QB_FLOOR = 2.3   # QBs per team a superflex room ends up needing (app: computeVOR)
 
 
+def apply_market_model(fantasy_obj):
+    """Adopt the seed's fitted survival calibration (draft_corpus.py refresh),
+    within hard bounds so a bad blob can never reach a simulation. Mirrors
+    _vonaMixParams in the app."""
+    global MIX_EPS, MIX_TAU
+    mm = (fantasy_obj or {}).get("market_model") or {}
+    eps, tau = mm.get("eps"), mm.get("tau")
+    if isinstance(eps, (int, float)) and 0.0 <= eps <= 0.5:
+        MIX_EPS = float(eps)
+    if isinstance(tau, (int, float)) and 20.0 <= tau <= 300.0:
+        MIX_TAU = float(tau)
+
+
 def build_board(seed, league, byes, tc_weight=0.0, floor_kappa=0.08, pro=None):
     """The one correct way to get a scored, VOR'd board for a league.
 
@@ -393,6 +407,7 @@ def build_board(seed, league, byes, tc_weight=0.0, floor_kappa=0.08, pro=None):
     quarterbacks then fall two rounds late and every conclusion drawn from the
     run is wrong. Deriving it from the league here means a caller cannot make
     that mistake by omission."""
+    apply_market_model(seed)
     pool = build_pool(seed, league.scoring, byes, tc_weight, floor_kappa,
                       pro=pro, fmt=market_format(league))
     compute_vor(pool, league)
@@ -745,13 +760,24 @@ def _optimal_lineup_vor(roster, league, extra=None):
     return total + sum(max(0.0, v) for v in sf_pool[:sf_n])
 
 
-def _expected_best_vor(cands, next_pick, top_n=12, shift=0.0):
+def _expected_best_vor(cands, next_pick, top_n=12, shift=0.0, now_pick=None):
     """E[best-VOR survivor at our next pick] — closed-form survival stand-in for
     the app's per-window MC (same independence assumption as expected_best_vpg).
-    `shift` moves this position's whole board earlier by the room's drift."""
+    `shift` moves this position's whole board earlier by the room's drift.
+
+    `now_pick` conditions on what we can SEE: the player is still on the board
+    at this pick, so his survival is S(next)/S(now), not S(next). Without it a
+    faller reads as "gone by your next pick" at 3% when reality is ~45% — the
+    2026 corpus (tools/draft_corpus.py score) puts the unconditional model at
+    Brier 0.18-0.20 and the conditional at 0.11-0.14 on held-out real drafts.
+    Kept optional so the frozen baselines (app/app3) replay exactly as shipped."""
     ev, p_none = 0.0, 1.0
     for p in cands[:top_n]:
         s = norm_cdf((p.adp_eff - shift - (next_pick - 0.5)) / p.sigma)
+        if now_pick is not None:
+            s_now = norm_cdf((p.adp_eff - shift - (now_pick - 0.5)) / p.sigma)
+            s = (s / s_now) if s_now > 1e-9 else 1.0
+            s = (1.0 - MIX_EPS) * s + MIX_EPS * math.exp(-(next_pick - now_pick) / MIX_TAU)
         ev += p_none * s * p.vor
         p_none *= (1.0 - s)
         if p_none < 1e-4:
@@ -845,6 +871,22 @@ class _Cand:
 # tests/test_draft_sim.py for what each one is allowed to do.
 V3_NOW_WEIGHT = 0.25      # share of "value added now" added to the regret of waiting
                           # (frozen: this is the pre-2026-09-01 shipped baseline)
+# Survival-belief contamination, fitted on 116 real 2026 drafts (draft_corpus.py
+# score, leave-one-out): with probability MIX_EPS a still-available player's ADP
+# anchor is simply WRONG for this room (news, a fade) and his hazard is a slow
+# exp(-picks/MIX_TAU) decay instead of a normal tail. Both formats independently
+# land on eps 0.2-0.3, tau 80-120; together with conditioning this takes the
+# survival model from Brier .18-.20 to .11-.13 with bias -0.19 -> -0.02.
+MIX_EPS = 0.25
+MIX_TAU = 120.0
+# World-model counterpart, OFF by default: when set, the simulated ROOM also
+# contains anchor-is-wrong players (their market position drawn Exp(WORLD_TAU)
+# instead of N(adp, sigma)). The measured world (draft_corpus.py) has them; the
+# legacy world does not, which is why an agent holding the corpus-validated
+# belief can only lose in-sim until this is on. Kept as a switch so every
+# historical baseline still replays exactly.
+WORLD_EPS = 0.0
+WORLD_TAU = 120.0
 V5_NOW_WEIGHT = 0.15      # ...and what the app ships now. Swept 0/.10/.15/.25/.40/.60
                           # over 12 seats x 2 formats: 0 is much worse (you must
                           # still prefer the better player when both will last),
@@ -917,7 +959,7 @@ def _best_in_pos(state, cands, next_pick, league):
     top = cands[:V5_CAND]
     if len(top) < 2 or not next_pick:
         return cands[0]
-    surv = [_v4_survival(q, next_pick, league) for q in top]
+    surv = [_v4_survival(q, next_pick, league, now_pick=league.now_pick) for q in top]
     before0 = _optimal_lineup_vor(state.roster, league)
     best, best_total = None, None
     for i, p in enumerate(top):
@@ -945,14 +987,16 @@ def _best_in_pos(state, cands, next_pick, league):
 
 def app_pick_v5(state, avail_by_pos, next_pick, league, states):
     """The engine the webapp ships: v3's position judgement, a lighter pull
-    toward raw board value, and the PLAYER at that position chosen over two picks
-    so the agent stops reaching on its own board. See _best_in_pos."""
+    toward raw board value, the PLAYER at that position chosen over two picks so
+    the agent stops reaching on its own board (see _best_in_pos), and survival
+    CONDITIONED on the board it can see (see _expected_best_vor's now_pick)."""
     return app_pick_v3(state, avail_by_pos, next_pick, league, states,
-                       pick_in_pos=_best_in_pos, now_weight=V5_NOW_WEIGHT)
+                       pick_in_pos=_best_in_pos, now_weight=V5_NOW_WEIGHT,
+                       cond=True)
 
 
 def app_pick_v3(state, avail_by_pos, next_pick, league, states, pick_in_pos=_take_top,
-                now_weight=None):
+                now_weight=None, cond=False):
     """Candidate webapp advisory: the sim agent's decision core (my_pick) driven
     entirely by data the webapp already computes — VOR pools, expected best VOR
     at the next pick, roster counts. score = regret of waiting + a share of the
@@ -994,8 +1038,10 @@ def app_pick_v3(state, avail_by_pos, next_pick, league, states, pick_in_pos=_tak
         v_now = _cand_score_vor(state, pos, now.vor, league)
         if next_pick:
             sh = league.drift.get(pos, 0.0) if league.use_drift else 0.0
+            np_ = league.now_pick if cond else None
             v_next = _cand_score_vor(state, pos,
-                                     _expected_best_vor(cands, next_pick, shift=sh), league)
+                                     _expected_best_vor(cands, next_pick, shift=sh,
+                                                        now_pick=np_), league)
         else:
             v_next = v_now * 0.8
         score = max(0.0, v_now - v_next) + now_weight * v_now
@@ -1036,10 +1082,14 @@ V4_TAIL = 0.9          # residual factor when nothing in the horizon survives
 V4_SURV_CAP = 0.995    # a certainty of 1.0 would make the exclusion term blow up
 
 
-def _v4_survival(p, next_pick, league):
+def _v4_survival(p, next_pick, league, now_pick=None):
     sh = league.drift.get(p.pos, 0.0) if league.use_drift else 0.0
-    return min(V4_SURV_CAP,
-               norm_cdf((p.adp_eff - sh - (next_pick - 0.5)) / p.sigma))
+    s = norm_cdf((p.adp_eff - sh - (next_pick - 0.5)) / p.sigma)
+    if now_pick is not None:
+        s_now = norm_cdf((p.adp_eff - sh - (now_pick - 0.5)) / p.sigma)
+        s = (s / s_now) if s_now > 1e-9 else 1.0
+        s = (1.0 - MIX_EPS) * s + MIX_EPS * math.exp(-(next_pick - now_pick) / MIX_TAU)
+    return min(V4_SURV_CAP, s)
 
 
 def app_pick_v4(state, avail_by_pos, next_pick, league, states):
@@ -1121,7 +1171,10 @@ def run_draft(pool, league, my_slot, rng, pattern=None, avail_hook=None, market_
     neutral availability ("would he be there if I waited")."""
     od = league.opp_drift or {}
     for p in pool:
-        p.noisy = p.adp_eff - od.get(p.pos, 0.0) + rng.gauss(0.0, p.sigma)
+        if WORLD_EPS and rng.random() < WORLD_EPS:
+            p.noisy = rng.expovariate(1.0 / WORLD_TAU)
+        else:
+            p.noisy = p.adp_eff - od.get(p.pos, 0.0) + rng.gauss(0.0, p.sigma)
     order = sorted(pool, key=lambda p: p.noisy)
     if league.use_drift and not league.adp_index:
         league.adp_index = position_adp_index(pool)
@@ -1153,6 +1206,7 @@ def run_draft(pool, league, my_slot, rng, pattern=None, avail_hook=None, market_
                 league.drift = market_drift(seen, pick_no, league.adp_index,
                                             league.teams, league.teams - 1)
             if chooser:
+                league.now_pick = pick_no
                 choice = chooser(st, avail_by_pos, nxt, league, states)
             else:
                 forced = None
