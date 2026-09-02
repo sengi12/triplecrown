@@ -33,6 +33,7 @@ const app=new Function(code+`return { tcAiSettings, tcAiSaveSettings, tcAiUsage,
   tcAiMode, tcAiGenerate, tcAiBuiltinAvailable, tcAiWebGpuAvailable,
   setWebLlmLoader:(f)=>{_aiWebLlmLoader=f;}, resetLocal:()=>{_aiLocalEngine=null;_aiLocalLoading=null;},
   setContracts:(c)=>{CONTRACTS=c;}, setSos:(x)=>{SOS=x;},
+  TC_AI_LOCAL_MODELS, _aiLocalModelPref, tcAiGpuProbe, tcAiLocalPlan, resetProbe:()=>{_aiGpuProbe=null;},
   TC_AI_MAX_TOKENS, TC_AI_FREE_MODELS,
   setFormat:(f)=>{rankFormat=f;}, setDraftLineup:(l)=>{draftLineup=l;} };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -150,6 +151,95 @@ await (async()=>{
   chk(app.tcAiMode()==='builtin', 'free built-in model outranks a saved key by default');
   delete global.LanguageModel;
   chk(app.tcAiMode()==='key', 'and without it the key still answers');
+})();
+
+console.log('=== the probe: know before you download ===');
+await (async()=>{
+  const mk=(buffers,f16)=>({ requestAdapter:async()=>({
+    limits:{maxStorageBuffersPerShaderStage:buffers},
+    features:{has:(k)=>f16&&k==='shader-f16'} }) });
+  // A healthy desktop GPU: the 3B fits and the card says so.
+  app.resetProbe(); global.navigator={gpu:mk(10,true)};
+  let plan=app.tcAiLocalPlan(await app.tcAiGpuProbe());
+  chk(plan.model && plan.model.includes('3B'), 'a 10-buffer f16 GPU is offered the 3B');
+  chk(/3B build/.test(plan.note), 'and told so in one line');
+  // The exact browser from the field report: 9 buffers → the 1B, BEFORE download.
+  app.resetProbe(); global.navigator={gpu:mk(9,true)};
+  plan=app.tcAiLocalPlan(await app.tcAiGpuProbe());
+  chk(plan.model && plan.model.includes('1B'), 'a 9-buffer GPU is routed to the 1B up front');
+  // No f16 support also rules the 3B out, whatever the buffer count.
+  app.resetProbe(); global.navigator={gpu:mk(12,false)};
+  plan=app.tcAiLocalPlan(await app.tcAiGpuProbe());
+  chk(plan.model && plan.model.includes('1B'), 'missing shader-f16 also rules out the 3B');
+  // A GPU below even the 1B: the card disables itself with the reason.
+  app.resetProbe(); global.navigator={gpu:mk(6,false)};
+  plan=app.tcAiLocalPlan(await app.tcAiGpuProbe());
+  chk(plan.model===null && /6 shader buffers/.test(plan.note),
+      'a too-small GPU gets a plain no, with its own numbers');
+  // No WebGPU at all.
+  app.resetProbe(); delete global.navigator;
+  plan=app.tcAiLocalPlan(await app.tcAiGpuProbe());
+  chk(plan.model===null, 'no WebGPU, no local plan');
+  // And the init path USES the plan: on a 9-buffer GPU the 3B never downloads.
+  app.resetProbe(); global.navigator={gpu:mk(9,true)};
+  LSTORE.delete('tc_ai_local_model');
+  app.tcAiSaveSettings({mode:'local'});
+  const tried2=[];
+  app.setWebLlmLoader(async()=>({ CreateMLCEngine: async(model,opts)=>{
+    tried2.push(model); opts.initProgressCallback({text:'ok'});
+    return { chat:{ completions:{ create: async()=>({choices:[{message:{content:'v'}}]}) }}};
+  }}));
+  app.resetLocal();
+  await app.tcAiGenerate([{role:'user',content:'u'}]);
+  chk(tried2.length===1 && tried2[0].includes('1B'),
+      'the doomed 3B download is skipped entirely — probe first, bytes second');
+  delete global.navigator; app.tcAiSaveSettings({mode:'', key:'sk-test'});
+})();
+
+console.log('=== GPU limits: fall down a model, never poison the loader ===');
+await (async()=>{
+  // A gpu the probe can't read: the ladder is the only safety net — which is
+  // exactly the case this block exists to prove.
+  app.resetProbe(); global.navigator={gpu:{}};
+  app.tcAiSaveSettings({mode:'local'});
+  LSTORE.delete('tc_ai_local_model');
+  // First engine build hits the Safari-style buffer limit; the 1B build works.
+  let tried=[];
+  app.setWebLlmLoader(async()=>({ CreateMLCEngine: async(model,opts)=>{
+    tried.push(model);
+    if(model.includes('3B')) throw new Error('Cannot initialize runtime because of requested maxStorageBuffersPerShaderStage exceeds limit. requested=10, limit=9.');
+    opts.initProgressCallback({text:'ok'});
+    return { chat:{ completions:{ create: async()=>({choices:[{message:{content:'small model verdict'}}]}) }}};
+  }}));
+  app.resetLocal();
+  let prog=[];
+  const txt=await app.tcAiGenerate([{role:'user',content:'u'}], (p)=>prog.push(p));
+  chk(txt.includes('small model'), 'the smaller build answers when the big one cannot fit');
+  chk(tried.length===2 && tried[0].includes('3B') && tried[1].includes('1B'),
+      'exactly one step down the ladder');
+  chk(prog.some(p=>/smaller build/.test(p)), 'and the user is told why');
+  chk(app._aiLocalModelPref().includes('1B'), 'the working model is remembered');
+  tried=[];
+  await app.tcAiGenerate([{role:'user',content:'u2'}]);
+  chk(tried.length===0, 'next ask reuses the engine — no re-init, no re-download');
+  // A NON-limit failure must surface untouched and must NOT poison later tries.
+  app.resetLocal(); LSTORE.delete('tc_ai_local_model');
+  let calls=0;
+  app.setWebLlmLoader(async()=>({ CreateMLCEngine: async(model)=>{
+    calls++;
+    if(calls===1) throw new Error('network dropped mid-download');
+    return { chat:{ completions:{ create: async()=>({choices:[{message:{content:'recovered'}}]}) }}};
+  }}));
+  let failed=false;
+  try{ await app.tcAiGenerate([{role:'user',content:'u'}]); }catch(e){
+    failed=true;
+    chk(/network dropped/.test(e.message), 'a non-GPU failure surfaces as itself — no silent downgrade');
+  }
+  chk(failed, 'the failure was surfaced, not swallowed');
+  const again=await app.tcAiGenerate([{role:'user',content:'u'}]);
+  chk(again.includes('recovered'), 'a failed init does not poison the next attempt');
+  delete global.navigator;
+  app.tcAiSaveSettings({mode:'', key:'sk-test'});
 })();
 
 console.log('=== output is untrusted text ===');

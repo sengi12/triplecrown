@@ -54,7 +54,56 @@ const TC_AI_MAX_TOKENS = 600;
 //      3B model is a junior analyst: fine for reasoning over the numbers we
 //      hand it, which is all this feature asks.
 const TC_AI_WEBLLM_URL = 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.84/+esm';
-const TC_AI_LOCAL_MODEL = 'Llama-3.2-3B-Instruct-q4f16_1-MLC';
+// Preference order. The 3B is the better analyst; the 1B q4f32 variant compiles
+// to shaders that fit tighter WebGPU limits — some browsers (Safari notably)
+// expose only 9 storage buffers per shader stage where the 3B needs 10, which
+// surfaces as "maxStorageBuffersPerShaderStage exceeds limit". When that
+// happens we drop down ONCE, remember what worked, and say so.
+const TC_AI_LOCAL_MODELS = ['Llama-3.2-3B-Instruct-q4f16_1-MLC',
+                            'Llama-3.2-1B-Instruct-q4f32_1-MLC'];
+const TC_AI_LOCAL_MODEL = TC_AI_LOCAL_MODELS[0];
+function _aiLocalModelPref(){
+  try{ const m=localStorage.getItem('tc_ai_local_model');
+       if(TC_AI_LOCAL_MODELS.includes(m)) return m; }catch(e){}
+  return TC_AI_LOCAL_MODELS[0];
+}
+function _aiIsGpuLimitError(e){
+  return /maxStorageBuffers|exceeds limit|maxBufferSize|maxComputeWorkgroup/i.test(String(e&&e.message||e||''));
+}
+// ── Know before you download ─────────────────────────────────────────────────
+// WebGPU publishes its limits table up front — the same numbers whose breach
+// produced "requested=10, limit=9" AFTER a download. Probe once, pick the model
+// that fits BEFORE any bytes move, and say on the card what this GPU can run.
+// What each build needs, from its compiled shaders:
+const TC_AI_LOCAL_REQS = {
+  'Llama-3.2-3B-Instruct-q4f16_1-MLC': { buffers:10, f16:true,  dlGB:1.8, label:'3B' },
+  'Llama-3.2-1B-Instruct-q4f32_1-MLC': { buffers:8,  f16:false, dlGB:1.2, label:'1B' },
+};
+let _aiGpuProbe=null;
+async function tcAiGpuProbe(){
+  if(_aiGpuProbe) return _aiGpuProbe;
+  try{
+    if(typeof navigator==='undefined' || !navigator.gpu) return (_aiGpuProbe={ok:false});
+    const ad=await navigator.gpu.requestAdapter();
+    if(!ad) return (_aiGpuProbe={ok:false});
+    const L=ad.limits||{};
+    _aiGpuProbe={ ok:true,
+      buffers:Number(L.maxStorageBuffersPerShaderStage)||0,
+      f16:!!(ad.features && ad.features.has && ad.features.has('shader-f16')) };
+  }catch(e){ _aiGpuProbe={ok:false}; }
+  return _aiGpuProbe;
+}
+// Pure: which local build this GPU can run, and the one-line honest label.
+function tcAiLocalPlan(probe){
+  if(!probe || !probe.ok) return { model:null, note:'Needs WebGPU.' };
+  for(const m of TC_AI_LOCAL_MODELS){
+    const r=TC_AI_LOCAL_REQS[m]||{};
+    if(probe.buffers>=(r.buffers||0) && (!r.f16 || probe.f16))
+      return { model:m, note:`Your GPU fits the ${r.label} build — one-time ~${r.dlGB} GB, then offline.` };
+  }
+  return { model:null,
+    note:`This GPU exposes ${probe.buffers} shader buffers — below what even the smallest build needs. Chrome desktop usually clears this.` };
+}
 function tcAiBuiltinAvailable(){
   try{
     if(typeof LanguageModel!=='undefined' && LanguageModel && LanguageModel.create) return true;
@@ -79,15 +128,41 @@ async function _aiBuiltinGenerate(messages){
 let _aiLocalEngine=null, _aiLocalLoading=null;
 // Injectable for tests; real path dynamically imports the pinned CDN build.
 let _aiWebLlmLoader = ()=>import(/* webpackIgnore: true */ TC_AI_WEBLLM_URL);
+async function _aiLocalInit(onProgress){
+  const webllm=await _aiWebLlmLoader();
+  // Probe first: skip straight past builds this GPU provably can't run, so a
+  // doomed 3B never downloads. The error-ladder below stays as the backstop
+  // for whatever the probe can't see.
+  let start=_aiLocalModelPref();
+  try{
+    const plan=tcAiLocalPlan(await tcAiGpuProbe());
+    if(plan.model && !localStorage.getItem('tc_ai_local_model')) start=plan.model;
+  }catch(e){}
+  const order=[start, ...TC_AI_LOCAL_MODELS.filter(m=>m!==start)];
+  let lastErr=null;
+  for(const model of order){
+    try{
+      const eng=await webllm.CreateMLCEngine(model, {
+        initProgressCallback:(r)=>{ if(onProgress) onProgress(r&&r.text||''); },
+      });
+      try{ localStorage.setItem('tc_ai_local_model', model); }catch(e){}
+      return eng;
+    }catch(e){
+      lastErr=e;
+      // Only a GPU-limits failure earns the smaller model; anything else
+      // (network, cancelled download) surfaces as-is — no silent downgrades.
+      if(!_aiIsGpuLimitError(e)) throw e;
+      if(onProgress) onProgress(`this GPU can't fit ${model} — trying a smaller build…`);
+    }
+  }
+  throw new Error(`This browser's WebGPU exposes fewer GPU buffers than even the smallest local model needs (${String(lastErr&&lastErr.message||'').slice(0,120)}). Chrome desktop usually works; the built-in-AI or own-key options are unaffected.`);
+}
 async function _aiLocalGenerate(messages, onProgress){
   if(!_aiLocalEngine){
     if(!_aiLocalLoading){
-      _aiLocalLoading=(async()=>{
-        const webllm=await _aiWebLlmLoader();
-        return webllm.CreateMLCEngine(TC_AI_LOCAL_MODEL, {
-          initProgressCallback:(r)=>{ if(onProgress) onProgress(r&&r.text||''); },
-        });
-      })();
+      // A failed init must not poison later attempts: clear the latch on the
+      // way out of a rejection so the next click starts clean.
+      _aiLocalLoading=_aiLocalInit(onProgress).catch(e=>{ _aiLocalLoading=null; throw e; });
     }
     _aiLocalEngine=await _aiLocalLoading;
   }
@@ -318,10 +393,10 @@ function renderAiCompare(){
           onclick="_aiCfgOpen=false;tcAiSaveSettings({mode:'builtin'});renderAiCompare()">
           <b>Browser's built-in AI ${builtin?'<em class="ai-cmp-rec">free · default</em>':''}</b>
           <span>${builtin?'No key, no download.':'Not in this browser.'}</span></button>
-        <button class="ai-cmp-mode ${s.mode==='local'?'on':''}" ${gpu?'':'disabled'}
+        <button id="aiLocalCard" class="ai-cmp-mode ${s.mode==='local'?'on':''}" ${gpu?'':'disabled'}
           onclick="_aiCfgOpen=false;tcAiSaveSettings({mode:'local'});renderAiCompare()">
           <b>Local model ${gpu&&!builtin?'<em class="ai-cmp-rec">free · recommended</em>':''}</b>
-          <span>${gpu?'No key. One-time ~1.8 GB download, then offline.':'Needs WebGPU.'}</span></button>
+          <span id="aiLocalNote">${gpu?'Checking what your GPU can run…':'Needs WebGPU.'}</span></button>
       </div>
       <div class="ai-cmp-or">or your own key</div>
       <label class="ai-cmp-lbl">API key</label>
@@ -333,6 +408,15 @@ function renderAiCompare(){
       <input id="aiEndpoint" class="ai-cmp-in" value="${escAttr(s.endpoint)}">
       <button class="btn-accent ai-cmp-go" onclick="_aiCfgOpen=false;tcAiSaveSettings({mode:'key',key:document.getElementById('aiKey').value.trim(),model:document.getElementById('aiModel').value.trim(),endpoint:document.getElementById('aiEndpoint').value.trim()});renderAiCompare()">Save key</button>
     </div>`;
+    // The GPU probe is instant and download-free: the card says which build
+    // THIS machine can run before anyone commits to gigabytes.
+    if(gpu) tcAiGpuProbe().then(pr=>{
+      const plan=tcAiLocalPlan(pr);
+      const note=document.getElementById('aiLocalNote');
+      const card=document.getElementById('aiLocalCard');
+      if(note) note.textContent=plan.note;
+      if(card && !plan.model) card.disabled=true;
+    }).catch(()=>{});
     // Free tiers rotate weekly — the list is fetched live (public index, no key,
     // no tokens) so the picker can never go stale the way a hardcoded one did.
     tcAiFreeModels().then(models=>{
