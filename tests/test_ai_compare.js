@@ -189,25 +189,29 @@ await (async()=>{
   let plan=app.tcAiLocalPlan(await app.tcAiGpuProbe());
   chk(plan.model && plan.model.includes('3B'), 'a 10-buffer f16 GPU is offered the 3B');
   chk(/3B build/.test(plan.note), 'and told so in one line');
-  // The exact browser from the field report: 9 buffers → the 1B, BEFORE download.
+  // The Firefox field report: 9 buffers — and the 1B failed there too, so the
+  // requirement is the RUNTIME's. Below 10, local is off the table, pre-download.
   app.resetProbe(); global.navigator={gpu:mk(9,true)};
   plan=app.tcAiLocalPlan(await app.tcAiGpuProbe());
-  chk(plan.model && plan.model.includes('1B'), 'a 9-buffer GPU is routed to the 1B up front');
+  chk(plan.model===null, 'a 9-buffer GPU gets NO local build — the runtime needs 10, whatever the model');
+  chk(/allows 9 .*needs 10/.test(plan.note) && /Firefox/.test(plan.note),
+      'and the note names the numbers and the usual culprit');
   // No f16 support also rules the 3B out, whatever the buffer count.
   app.resetProbe(); global.navigator={gpu:mk(12,false)};
   plan=app.tcAiLocalPlan(await app.tcAiGpuProbe());
   chk(plan.model && plan.model.includes('1B'), 'missing shader-f16 also rules out the 3B');
-  // A GPU below even the 1B: the card disables itself with the reason.
+  // Well below the bar: same verdict, same honesty.
   app.resetProbe(); global.navigator={gpu:mk(6,false)};
   plan=app.tcAiLocalPlan(await app.tcAiGpuProbe());
-  chk(plan.model===null && /6 shader buffers/.test(plan.note),
+  chk(plan.model===null && /allows 6/.test(plan.note),
       'a too-small GPU gets a plain no, with its own numbers');
   // No WebGPU at all.
   app.resetProbe(); delete global.navigator;
   plan=app.tcAiLocalPlan(await app.tcAiGpuProbe());
   chk(plan.model===null, 'no WebGPU, no local plan');
-  // And the init path USES the plan: on a 9-buffer GPU the 3B never downloads.
-  app.resetProbe(); global.navigator={gpu:mk(9,true)};
+  // And the init path USES the plan: a no-f16 12-buffer GPU starts at the 1B —
+  // the 3B's f16 shaders never download.
+  app.resetProbe(); global.navigator={gpu:mk(12,false)};
   LSTORE.delete('tc_ai_local_model');
   app.tcAiSaveSettings({mode:'local'});
   const tried2=[];

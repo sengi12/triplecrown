@@ -26720,10 +26720,15 @@ function _aiIsGpuLimitError(e){
 // WebGPU publishes its limits table up front — the same numbers whose breach
 // produced "requested=10, limit=9" AFTER a download. Probe once, pick the model
 // that fits BEFORE any bytes move, and say on the card what this GPU can run.
-// What each build needs, from its compiled shaders:
+// What each build needs. Field-tested correction (Firefox, 2026-09-02): the
+// 10-storage-buffer demand is the WebLLM RUNTIME's, not the big model's — the
+// 1B q4f32 build failed on a 9-buffer adapter with the identical error, so no
+// build runs below 10. What still distinguishes the 1B: no shader-f16
+// requirement and half the memory, for adapters that clear the buffer bar.
+const TC_AI_RUNTIME_BUFFERS = 10;
 const TC_AI_LOCAL_REQS = {
-  'Llama-3.2-3B-Instruct-q4f16_1-MLC': { buffers:10, f16:true,  dlGB:1.8, label:'3B' },
-  'Llama-3.2-1B-Instruct-q4f32_1-MLC': { buffers:8,  f16:false, dlGB:1.2, label:'1B' },
+  'Llama-3.2-3B-Instruct-q4f16_1-MLC': { f16:true,  dlGB:1.8, label:'3B' },
+  'Llama-3.2-1B-Instruct-q4f32_1-MLC': { f16:false, dlGB:1.2, label:'1B' },
 };
 let _aiGpuProbe=null;
 async function tcAiGpuProbe(){
@@ -26742,13 +26747,15 @@ async function tcAiGpuProbe(){
 // Pure: which local build this GPU can run, and the one-line honest label.
 function tcAiLocalPlan(probe){
   if(!probe || !probe.ok) return { model:null, note:'Needs WebGPU.' };
+  if(probe.buffers < TC_AI_RUNTIME_BUFFERS)
+    return { model:null,
+      note:`This browser's WebGPU allows ${probe.buffers} storage buffers per shader stage; the local runtime needs ${TC_AI_RUNTIME_BUFFERS} — no build fits (Firefox commonly caps here; Chrome/Edge desktop usually clear it). The built-in-AI and own-key options are unaffected.` };
   for(const m of TC_AI_LOCAL_MODELS){
     const r=TC_AI_LOCAL_REQS[m]||{};
-    if(probe.buffers>=(r.buffers||0) && (!r.f16 || probe.f16))
+    if(!r.f16 || probe.f16)
       return { model:m, note:`Your GPU fits the ${r.label} build — one-time ~${r.dlGB} GB, then offline.` };
   }
-  return { model:null,
-    note:`This GPU exposes ${probe.buffers} shader buffers — below what even the smallest build needs. Chrome desktop usually clears this.` };
+  return { model:null, note:'This GPU lacks the shader features every build needs.' };
 }
 function tcAiBuiltinAvailable(){
   try{
@@ -26801,7 +26808,7 @@ async function _aiLocalInit(onProgress){
       if(onProgress) onProgress(`this GPU can't fit ${model} — trying a smaller build…`);
     }
   }
-  throw new Error(`This browser's WebGPU exposes fewer GPU buffers than even the smallest local model needs (${String(lastErr&&lastErr.message||'').slice(0,120)}). Chrome desktop usually works; the built-in-AI or own-key options are unaffected.`);
+  throw new Error(`This browser's WebGPU can't satisfy the local runtime — every build needs ${TC_AI_RUNTIME_BUFFERS} storage buffers per shader stage and this adapter offers fewer (${String(lastErr&&lastErr.message||'').slice(0,110)}). Firefox commonly caps here; Chrome/Edge desktop usually work. Built-in-AI and own-key options are unaffected.`);
 }
 async function _aiLocalGenerate(messages, onProgress){
   if(!_aiLocalEngine){
