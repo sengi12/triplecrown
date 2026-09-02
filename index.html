@@ -26716,6 +26716,12 @@ function _aiLocalModelPref(){
 function _aiIsGpuLimitError(e){
   return /maxStorageBuffers|exceeds limit|maxBufferSize|maxComputeWorkgroup/i.test(String(e&&e.message||e||''));
 }
+// The give-up-mid-upload class (Android/Vivaldi field report): the device or
+// tab lost its GPU context under the weight transfer. Not a limits problem, not
+// model-dependent, not retryable — the machine is telling us it can't do this.
+function _aiIsGpuFatalError(e){
+  return /mapAsync|unmapped|device.?lost|GPUDevice|destroyed/i.test(String(e&&e.message||e||''));
+}
 // ── Know before you download ─────────────────────────────────────────────────
 // WebGPU publishes its limits table up front — the same numbers whose breach
 // produced "requested=10, limit=9" AFTER a download. Probe once, pick the model
@@ -26736,9 +26742,14 @@ let _aiGpuProbe=null;
 function tcAiIsMobile(){
   try{
     if(typeof navigator==='undefined') return false;
-    if(navigator.userAgentData && typeof navigator.userAgentData.mobile==='boolean')
-      return navigator.userAgentData.mobile;
-    return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||'');
+    if(navigator.userAgentData && navigator.userAgentData.mobile===true) return true;
+    if(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||'')) return true;
+    // UA masking (Vivaldi) and "desktop site" mode strip every token above —
+    // but the HARDWARE still tells the truth: a coarse primary pointer means a
+    // touch-first device, and touch-first devices don't hold these weights.
+    if(typeof window!=='undefined' && window.matchMedia
+       && window.matchMedia('(pointer: coarse)').matches) return true;
+    return false;
   }catch(e){ return false; }
 }
 async function tcAiGpuProbe(){
@@ -26823,6 +26834,8 @@ async function _aiLocalInit(onProgress){
       return eng;
     }catch(e){
       lastErr=e;
+      if(_aiIsGpuFatalError(e))
+        throw new Error(`This device's GPU gave up while loading the model weights (${String(e&&e.message||'').slice(0,90)}). That is the hardware's answer, not a glitch \u2014 on phones and tablets use the built-in model or a free-tier key instead; both are network-light and $0.`);
       // Only a GPU-limits failure earns the smaller model; anything else
       // (network, cancelled download) surfaces as-is — no silent downgrades.
       if(!_aiIsGpuLimitError(e)) throw e;

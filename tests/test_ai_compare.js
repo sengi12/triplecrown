@@ -199,6 +199,16 @@ await (async()=>{
   plan=app.tcAiLocalPlan(await app.tcAiGpuProbe());
   chk(plan.model===null && /512 MB/.test(plan.note),
       'a 512MB-buffer GPU is refused before downloading weights it cannot hold');
+  // Vivaldi-on-Android field report: masked UA, no userAgentData.mobile, no
+  // "Mobile" token — but the primary pointer is coarse. Hardware outs it.
+  app.resetProbe();
+  global.navigator={gpu:mk(12,true), userAgent:'Mozilla/5.0 (X11; Linux x86_64) Chrome/140'};
+  const oldMM=global.window.matchMedia;
+  global.window.matchMedia=(q)=>({matches:/pointer:\s*coarse/.test(q)});
+  plan=app.tcAiLocalPlan(await app.tcAiGpuProbe());
+  chk(plan.model===null && /crashes the tab/.test(plan.note),
+      'a UA-masked phone is still caught by its coarse pointer');
+  global.window.matchMedia=oldMM;
   // A healthy desktop GPU: the 3B fits and the card says so.
   app.resetProbe(); global.navigator={gpu:mk(10,true)};
   plan=app.tcAiLocalPlan(await app.tcAiGpuProbe());
@@ -283,6 +293,18 @@ await (async()=>{
   chk(failed, 'the failure was surfaced, not swallowed');
   const again=await app.tcAiGenerate([{role:'user',content:'u'}]);
   chk(again.includes('recovered'), 'a failed init does not poison the next attempt');
+  // The give-up-mid-upload class: terminal, plain-language, no ladder step.
+  app.resetLocal(); LSTORE.delete('tc_ai_local_model');
+  let tried3=[];
+  app.setWebLlmLoader(async()=>({ CreateMLCEngine: async(model)=>{
+    tried3.push(model);
+    throw new Error("Failed to execute 'mapAsync' on 'GPUBuffer': Buffer was unmapped before mapping was resolved.");
+  }}));
+  let fatalMsg='';
+  try{ await app.tcAiGenerate([{role:'user',content:'u'}]); }catch(e){ fatalMsg=e.message; }
+  chk(tried3.length===1, 'a GPU give-up is terminal — no pointless second download');
+  chk(/gave up while loading/.test(fatalMsg) && /built-in model|free-tier key/.test(fatalMsg),
+      'and the message is the verdict plus the working paths, not raw WebGPU internals');
   delete global.navigator;
   app.tcAiSaveSettings({mode:'', key:'sk-test'});
 })();
