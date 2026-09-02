@@ -151,8 +151,47 @@ def test_pct():
     check("pct handles the ends", pb.pct(0.0) == "0%" and pb.pct(1.0) == "100%")
 
 
+def test_history_merges_unlinked_chains():
+    """A room that predates Sleeper's own linking: extra chains merge in, and
+    duplicates never double-count a season."""
+    fake = {
+        "A": [{"league_id": "A", "season": "2026"}, {"league_id": "B", "season": "2025"}],
+        "C": [{"league_id": "C", "season": "2024"}, {"league_id": "D", "season": "2023"}],
+        "B": [{"league_id": "B", "season": "2025"}],
+    }
+    recs = {
+        "A": [{"league_id": "A", "season": "2026", "champion": True, "haul_pct": 0.9,
+               "manager": "m", "slot": 1, "pattern3": "RB-RB-WR"},
+              {"league_id": "A", "season": "2026", "champion": False, "haul_pct": 0.4,
+               "manager": "n", "slot": 2, "pattern3": "WR-RB-RB"}],
+        "B": [{"league_id": "B", "season": "2025", "champion": False, "haul_pct": 0.5,
+               "manager": "n", "slot": 2, "pattern3": "WR-RB-RB"}],
+        "C": [{"league_id": "C", "season": "2024", "champion": True, "haul_pct": 0.8,
+               "manager": "m", "slot": 3, "pattern3": "RB-WR-WW"}],
+        "D": [],
+    }
+    orig_chain, orig_collect = pb.dh.chain, pb.dh.collect_season
+    try:
+        pb.dh.chain = lambda lid: list(fake[lid])
+        pb.dh.collect_season = lambda lg, redraft_only=True: list(recs[lg["league_id"]])
+        base = pb.history_evidence("A")
+        check("linked chain alone sees two seasons", base["league_seasons"] == 2,
+              base["league_seasons"])
+        merged = pb.history_evidence("A", extra=["C"])
+        check("an unlinked chain's seasons merge in", merged["league_seasons"] == 3,
+              merged["league_seasons"])
+        check("its champions join the table",
+              any(c["season"] == "2024" for c in merged["champions"]))
+        dup = pb.history_evidence("A", extra=["B", "C"])
+        check("an id already in the main chain never double-counts",
+              dup["manager_seasons"] == merged["manager_seasons"],
+              (dup["manager_seasons"], merged["manager_seasons"]))
+    finally:
+        pb.dh.chain, pb.dh.collect_season = orig_chain, orig_collect
+
+
 for fn in (test_ordinal, test_market_gaps, test_rules_follow_the_numbers,
-           test_rules_use_history, test_pct):
+           test_rules_use_history, test_pct, test_history_merges_unlinked_chains):
     fn()
 ok = sum(1 for r in RESULTS if r)
 print(f"\nRESULT: {'PASS' if ok == len(RESULTS) else 'FAIL'} ({ok}/{len(RESULTS)})")

@@ -46,6 +46,7 @@ const app=new Function(code+`return {
   _cheatSimulate, toggleDraftStar, isDraftStar, clearDraftStars, starsRef:()=>draftStars,
   _rtSnapScroll, _rtRestoreScroll, _RT_SCROLLERS, _vonaInvNorm, _vonaNormCdf,
   _vonaMixParams, setMarketModel:(v)=>{MARKET_MODEL=v;},
+  _roomHistSummarize, _roomHistAggregate, _roomHistPrior, setRoomHistory:(v)=>{roomHistory=v;},
   setMySlot:(v)=>{mySlot=v;}, setDraftMeta:(m)=>{draftMeta=m;},
   setDraftedIds:(v)=>{draftedIds=v;},
 };`)();
@@ -487,6 +488,72 @@ console.log('=== fitted calibration: seed overrides, bounds protect ===');
   m=app._vonaMixParams();
   chk(m.eps===0.25 && m.tau===120, 'non-numeric junk falls back entirely');
   app.setMarketModel({});
+}
+
+// === the room's history seeds the drift =======================================
+console.log('=== room history: what this league has done before, as a prior ===');
+{
+  // One past draft: QBs fly (every 3rd pick), TEs crawl.
+  const mkPicks=(qbEvery)=>{
+    const picks=[]; let q=1;
+    for(let no=1;no<=96;no++){
+      picks.push({no, pos: no%qbEvery===0 ? 'QB' : (no%4===1?'RB':no%4===2?'WR':no%4===3?'WR':'TE')});
+    }
+    return picks;
+  };
+  const s1=app._roomHistSummarize(mkPicks(3), 12);
+  chk(!!s1 && s1.sched.QB.length>0, 'a past draft summarizes');
+  chk(s1.byR3.QB===12, 'and counts the QBs its first three rounds took');
+  chk(app._roomHistSummarize([{no:1,pos:'RB'}], 12)===null,
+      'a fragment of a draft summarizes to nothing');
+  const agg=app._roomHistAggregate([s1, app._roomHistSummarize(mkPicks(3), 12), null]);
+  chk(agg.drafts===2, 'aggregation counts only real summaries');
+  chk(Math.abs(agg.sched.QB[0]-3)<1e-9, "the room's first QB historically goes 3rd overall");
+  // Prior: the current board prices QB1 at pick 12; this room takes him 3rd.
+  const board={QB:[12,18,24,30,36,42,48,54], RB:[1,2,3,4,5,6,7,8],
+               WR:[1.5,2.5,3.5,4.5,5.5,6.5,7.5,8.5], TE:[10,20,30,40,50,60,70,80]};
+  const pr=app._roomHistPrior(agg.sched, board, 12);
+  chk(pr.QB>4, `a QB-hungry room reads as a positive QB prior (${pr.QB})`);
+  chk(pr.RB<0, `a position the room historically waits on reads negative (${pr.RB})`);
+  chk(pr.QB<=24, 'the prior is capped like the live drift');
+  chk(app._roomHistPrior(null, board, 12).QB===0, 'no history, no prior');
+
+  // And the drift model actually LISTENS at pick one, before any live evidence.
+  app.setDraftLineup(['QB','RB','WR','WR','TE','FLEX','K','DEF']);
+  app.setDraftMeta({teams:12, rounds:14, type:'snake', reversal_round:0});
+  app.setPicksBySlot({}); app.setDraftedIds({}); app.setMySlot(1);
+  const mk=(id,pos,vor,adp)=>({player_id:id,name:id,pos,team:'KC',vor,adp_ppr:adp,adp});
+  const list=[];
+  for(let i=1;i<=8;i++){ list.push(mk('q'+i,'QB',40-i,12+6*i)); list.push(mk('r'+i,'RB',50-i,i));
+    list.push(mk('w'+i,'WR',45-i,i+0.5)); list.push(mk('t'+i,'TE',30-i,10*i)); }
+  app.setRoomHistory(null);
+  const cold=app.vonaMarketDrift(list);
+  app.setRoomHistory({drafts:2, teams:12, sched:agg.sched, byR3:agg.byR3, kdFirst:12});
+  const warm=app.vonaMarketDrift(list);
+  chk(Math.abs(cold.QB)<1e-9, 'with no history and no picks, the model stays silent');
+  chk(warm.QB>0, `with history it speaks at pick one (${cold.QB} -> ${warm.QB})`);
+  // A few live picks that CONTRADICT the history (zero QBs taken) pull it back.
+  app.setPicksBySlot({2:[{pos:'RB',player_id:'x1',pick_no:1,name:'x1'},
+                         {pos:'RB',player_id:'x2',pick_no:2,name:'x2'},
+                         {pos:'WR',player_id:'x3',pick_no:3,name:'x3'},
+                         {pos:'WR',player_id:'x4',pick_no:4,name:'x4'}]});
+  app.setDraftedIds({x1:1,x2:1,x3:1,x4:1});
+  const live=app.vonaMarketDrift(list);
+  chk(live.QB<=warm.QB+1e-9, `live evidence outvotes the prior as picks land (${warm.QB} -> ${live.QB})`);
+  app.setRoomHistory(null); app.setPicksBySlot({}); app.setDraftedIds({});
+}
+
+// === a dedicated 2-QB lineup gets QB depth ====================================
+// BAFL-shaped rooms (QB, QB, ... with no SUPER_FLEX slot): the cap must leave
+// room for a spare behind two starters, not gate the row at them.
+console.log('=== dedicated 2QB lineups are not choked at their starters ===');
+{
+  const b=app._vonaBudget(10, 2, {QB:2,RB:1,WR:1,TE:0}, {QB:2,RB:2,WR:2,TE:1}, 0, new Set(['TE']));
+  chk(b.posCap.QB===3, `two dedicated QB slots allow a third QB (cap ${b.posCap.QB})`);
+  const one=app._vonaBudget(10, 2, {QB:1,RB:1,WR:1,TE:0}, {QB:1,RB:2,WR:2,TE:1}, 0, new Set(['TE']));
+  chk(one.posCap.QB===2, 'a normal 1QB league still caps at two');
+  const sf=app._vonaBudget(10, 2, {QB:1,RB:1,WR:1,TE:0}, {QB:1,RB:2,WR:2,TE:1}, 1, new Set(['TE']));
+  chk(sf.posCap.QB===3, 'and superflex still gets its usual room');
 }
 
 console.log(`\n${pass}/${total} checks passed`);

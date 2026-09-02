@@ -475,7 +475,8 @@ def test_superflex_shape():
     two = ds.League(dict(LEAGUE_JSON, roster_positions=["QB", "QB", "RB", "WR", "TE", "BN"]),
                     DRAFT_JSON)
     check("a 2QB room needs two starters", two.qb_starters() == 2, two.qb_starters())
-    check("a 2QB room caps QB at two, as the app does", two.qb_cap() == 2, two.qb_cap())
+    check("a dedicated 2QB room allows a spare behind its starters",
+          two.qb_cap() == 3, two.qb_cap())
     check("TE cap follows the dedicated TE slots",
           two.te_cap() == 2 and ds.League(
               dict(LEAGUE_JSON, roster_positions=["QB", "TE", "TE", "BN"]),

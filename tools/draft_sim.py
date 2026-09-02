@@ -148,7 +148,11 @@ class League:
         _vonaBudget (src/js/98-draft-follow.js), bounded by the league's own
         position limit, which Sleeper enforces in the real draft."""
         sf = self.lineup["SUPER_FLEX"]
-        return min(self.qb_limit, (self.lineup["QB"] + sf + 1) if sf else 2)
+        slots = self.lineup["QB"] + sf
+        # One spare behind the startable slots wherever more than one QB starts —
+        # a dedicated 2-QB lineup counts exactly like a superflex here (the old
+        # `if sf` capped BAFL-style rooms at their bare starters).
+        return min(self.qb_limit, slots + 1 if slots >= 2 else 2)
 
     def te_cap(self):
         return max(2, self.lineup["TE"] + 1)

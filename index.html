@@ -2799,6 +2799,11 @@ button.la-cliff:hover{filter:brightness(1.25);}
   color:var(--muted);padding:2px 4px;}
 .vsg-strip-clear:hover{color:var(--danger);}
 .vsg-strip-clear:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
+/* What this room has done before — the plan's provenance line. */
+.vsg-room{margin:0 0 8px;padding:8px 10px;border:1px solid rgba(61,155,255,.3);
+  background:rgba(61,155,255,.07);border-radius:8px;font-size:11.5px;line-height:1.55;
+  color:var(--muted2);}
+.vsg-room b{color:var(--text);}
 /* ── In-season: pace view + Live/Pace mode segment (League Analyzer in-season
       tabs also style from here — sorts after 70-widgets so .la-* overrides win) ── */
 
@@ -27286,6 +27291,11 @@ async function startDraftFollow(applyScoring){
   await loadDraftMeta(applyScoring);   // draft_order, lineup, usernames, my-slot detection, (opt) scoring
   // Another start superseded us, or Stop was clicked while we awaited — do not resurrect.
   if(gen!==_draftFollowGen || !draftId) return;
+  // The room's past drafts, loaded behind the follow (never blocking it): they
+  // seed the drift prior and the plan header. Summaries cache locally, so this
+  // is one cheap fetch per league after the first time.
+  roomHistory=null;
+  if(draftMeta && draftMeta.league_id) loadRoomHistory(draftMeta.league_id);
   rosterBarVisible=true;
   await pollDraft();
   if(gen!==_draftFollowGen || !draftId) return;
@@ -27299,7 +27309,7 @@ async function startDraftFollow(applyScoring){
 function stopDraftFollow(){
   _draftFollowGen++;
   if(draftTimer){clearInterval(draftTimer);draftTimer=null;}
-  draftId=null; draftedIds={}; _draftDone=false;
+  draftId=null; draftedIds={}; _draftDone=false; roomHistory=null;
   hideDrafted=false;               // don't resurface pre-checked on the next follow
   _vonaCache={key:null,val:null};
   draftMeta=null; draftPicksBySlot={}; draftUsers={}; mySlot=null;
@@ -27811,8 +27821,11 @@ function buildDraftCheatSheet(){
     else if(sl==='K'||sl==='DEF') kd++;
     else flexN++;
   });
+  // The plan's opponents draft the way the drift model currently believes THIS
+  // room drafts — live evidence blended with the room's own history.
+  const drift = vonaMarketDrift(list);
   const val=_cheatSimulate(mkt, { teams, rounds, type, reversalRound, startPick, myPicks,
-    mySlot, feed, ded, sfN, flexN, kd, sims:CHEAT_SIMS,
+    mySlot, feed, ded, sfN, flexN, kd, sims:CHEAT_SIMS, drift,
     seed:((Object.keys(draftedIds).length*7919) ^ (mySlot*104729) ^ 0x9e3779b9)>>>0 });
   _cheatCache={key, val};
   return val;
@@ -27854,7 +27867,8 @@ function _cheatSimulate(mkt, cfg){
           ded, sfN, flexN, kd } = cfg;
   const sims=cfg.sims||CHEAT_SIMS;
   const n=mkt.length;
-  const adp=Float64Array.from(mkt.map(p=>adpFor(p)));
+  const dr=cfg.drift||{};
+  const adp=Float64Array.from(mkt.map(p=>adpFor(p)-(dr[p.pos]||0)));
   const sig=Float64Array.from(mkt.map(p=>adpSigma(adpFor(p))));
   const vor=Float64Array.from(mkt.map(p=>p.vor||0));
   const byPos={}; POSL.forEach(q=>byPos[q]=[]);
@@ -28016,6 +28030,16 @@ function vonaCheatPanel(){
   const cs=buildDraftCheatSheet();
   if(!cs) return '<div class="vsg-empty">No plan available \u2014 the draft has no picks left for you.</div>';
   const shape=cs.picks.map(pk=>pk.likelyPos==='KD'?'K/D':pk.likelyPos).join(' \u00b7 ');
+  // What this room has actually done, when we know it.
+  let roomLine='';
+  if(typeof roomHistory!=='undefined' && roomHistory && roomHistory.drafts){
+    const h=roomHistory;
+    const hot=['QB','RB','WR','TE'].map(p=>[p,h.byR3[p]]).sort((a,b)=>b[1]-a[1]);
+    roomLine=`<div class="vsg-room">\u25c9 This room, last ${h.drafts} draft${h.drafts===1?'':'s'}:
+      takes <b>${hot[0][1]} ${hot[0][0]}s</b> and <b>${hot[1][1]} ${hot[1][0]}s</b> in the first
+      three rounds${h.kdFirst?`, first K/DEF in <b>round ${h.kdFirst}</b>`:''} \u2014 the mock
+      opponents below draft with this habit until the live room shows otherwise.</div>`;
+  }
   const blocks=cs.picks.map(pk=>{
     // Your starred men first, flagged as targets for THIS pick.
     const tgt=pk.targets.map(t=>{
@@ -28064,6 +28088,7 @@ function vonaCheatPanel(){
   // to read. It lives behind the \u2139 instead; the build line is the one part
   // worth its space, so that stays.
   return `<div class="vsg-cheat">
+    ${roomLine}
     <div class="vsg-cnote">
       <div class="vsg-cnote-txt">${cs.sims} mock drafts from seat ${cs.slot}: opponents buy at
         <b>${typeof formatLabel==='function'?formatLabel(rankFormat):''} ADP</b>, you draft with the
@@ -28600,13 +28625,121 @@ function _vonaMixParams(){
   const tau=(mm && typeof mm.tau==='number' && mm.tau>=20 && mm.tau<=300) ? mm.tau : VONA_MIX_TAU;
   return {eps, tau};
 }
+// ── What this room has done before ──────────────────────────────────────────
+// The drift correction below learns the room from its live picks — but it
+// starts every draft knowing nothing. A league's PAST drafts are free evidence:
+// if this room has taken its 6th QB by pick 30 three years running, that is
+// worth knowing at pick one, not at pick forty. loadRoomHistory walks the
+// previous_league_id chain when a follow starts, summarizes each completed
+// draft (immutable, so summaries cache in localStorage forever), and the
+// summary seeds the drift as a PRIOR that live evidence then overrides.
+let roomHistory = null;          // {seasons:[summary], sched:{pos:[...]}, champs:[...]}
+const ROOM_HIST_SEASONS = 4;     // how far back to walk
+const ROOM_HIST_W = 6;           // pseudo-picks of evidence the prior is worth
+
+// Pure: one past draft's picks -> this room's positional schedule and habits.
+// picks: [{no, pos}]. Returns null when the data can't describe a snake room.
+function _roomHistSummarize(picks, teams){
+  if(!Array.isArray(picks) || !teams || picks.length < teams*4) return null;
+  const sched={QB:[],RB:[],WR:[],TE:[]};
+  let kdFirst=null;
+  [...picks].sort((a,b)=>a.no-b.no).forEach(p=>{
+    if(sched[p.pos]) sched[p.pos].push(p.no);
+    else if((p.pos==='K'||p.pos==='DEF') && kdFirst==null) kdFirst=Math.ceil(p.no/teams);
+  });
+  const byR3={}, byR6={};
+  Object.keys(sched).forEach(pos=>{
+    byR3[pos]=sched[pos].filter(n=>n<=teams*3).length;
+    byR6[pos]=sched[pos].filter(n=>n<=teams*6).length;
+  });
+  return { teams, sched, kdFirst, byR3, byR6 };
+}
+
+// Pure: average the per-draft schedules into one "this room" schedule.
+function _roomHistAggregate(summaries){
+  const use=summaries.filter(Boolean);
+  if(!use.length) return null;
+  const sched={QB:[],RB:[],WR:[],TE:[]};
+  Object.keys(sched).forEach(pos=>{
+    const maxK=Math.min(...use.map(s=>s.sched[pos].length));
+    for(let k=0;k<maxK;k++)
+      sched[pos].push(use.reduce((a,s)=>a+s.sched[pos][k],0)/use.length);
+  });
+  const mean=(f)=>use.reduce((a,s)=>a+f(s),0)/use.length;
+  return { drafts:use.length, teams:use[0].teams, sched,
+           kdFirst: use.some(s=>s.kdFirst!=null)
+             ? Math.round(mean(s=>s.kdFirst!=null?s.kdFirst:20)) : null,
+           byR3:{QB:+mean(s=>s.byR3.QB).toFixed(1), RB:+mean(s=>s.byR3.RB).toFixed(1),
+                 WR:+mean(s=>s.byR3.WR).toFixed(1), TE:+mean(s=>s.byR3.TE).toFixed(1)} };
+}
+
+// Pure: how many picks EARLY this room historically runs at a position, judged
+// against the current board's schedule. Positive = they take them sooner than
+// the market prices them. Compared rank-by-rank ("their 4th QB vs the board's
+// 4th QB"), which survives the year-to-year change in player names — it is the
+// room's structure being measured, not any player.
+function _roomHistPrior(histSched, boardSched, teams){
+  const out={QB:0,RB:0,WR:0,TE:0};
+  if(!histSched) return out;
+  Object.keys(out).forEach(pos=>{
+    const hs=histSched[pos]||[], sc=boardSched[pos]||[];
+    // Judge over the early board — where the habit actually bites.
+    const K=Math.min(hs.length, sc.length, Math.max(4, Math.round((teams||12)*0.75)));
+    if(K<2) return;
+    let d=0;
+    for(let k=0;k<K;k++) d += sc[k]-hs[k];
+    out[pos]=+(Math.max(-VONA_DRIFT_CAP, Math.min(VONA_DRIFT_CAP, d/K))).toFixed(2);
+  });
+  return out;
+}
+
+async function loadRoomHistory(leagueId){
+  if(!leagueId){ roomHistory=null; return; }
+  try{
+    const { teams } = draftParams();
+    const sums=[], champs=[];
+    let lid=leagueId;
+    for(let i=0;i<ROOM_HIST_SEASONS && lid;i++){
+      const lg=await sleeperFetch(`https://api.sleeper.app/v1/league/${lid}`);
+      if(!lg) break;
+      if(i>0){                                     // past seasons only — this one is live
+        for(const d of (await sleeperFetch(`https://api.sleeper.app/v1/league/${lid}/drafts`))||[]){
+          if(d.status!=='complete' || d.type!=='snake') continue;
+          const dTeams=(d.settings&&d.settings.teams)||lg.total_rosters;
+          if(teams && dTeams!==teams) continue;    // an 18-team habit says nothing about a 12
+          const ck=`tc_room_hist_${d.draft_id}`;
+          let sum=null;
+          try{ sum=JSON.parse(localStorage.getItem(ck)||'null'); }catch(e){}
+          if(!sum){
+            const picks=await sleeperFetch(`https://api.sleeper.app/v1/draft/${d.draft_id}/picks`);
+            sum=_roomHistSummarize((picks||[]).map(p=>({no:p.pick_no,
+              pos:((p.metadata||{}).position)||''})), dTeams);
+            if(sum){ sum.season=lg.season;
+              try{ localStorage.setItem(ck, JSON.stringify(sum)); }catch(e){} }
+          }
+          if(sum) sums.push(sum);
+        }
+      }
+      lid=lg.previous_league_id;
+    }
+    roomHistory = _roomHistAggregate(sums);
+    if(roomHistory){
+      _vonaCache={key:null,val:null};
+      _cheatCache={key:null,val:null};
+      renderRosterBar();
+    }
+  }catch(e){ roomHistory=null; }
+}
 const VONA_DRIFT_CAP = 24;    // picks — one strange run must not rewrite the board
 const VONA_DRIFT_PRIOR = 4;   // pseudo-picks of "the board is right", damping early noise
 const VONA_DRIFT_DEADZONE = 2; // picks — below this the "signal" is just a normal room
 function vonaMarketDrift(list){
   const out={QB:0,RB:0,WR:0,TE:0};
   const pickNo = currentPickNo();
-  if(!pickNo || pickNo < 2) return out;
+  // Before any pick there is no LIVE evidence — but a room with a known history
+  // has a prior, and pick one is precisely when it is most of what we know.
+  const hasHist = (typeof roomHistory!=='undefined' && !!roomHistory);
+  if(!pickNo || (pickNo < 2 && !hasHist)) return out;
   const { teams } = draftParams();
   // What the ROOM has taken, excluding my own picks — my seat must not teach the
   // model that everyone else shares my habits (and that feedback loop compounds).
@@ -28623,10 +28756,14 @@ function vonaMarketDrift(list){
     const a=adpFor(p);
     if(a!=null && a<999) sched[p.pos].push(a);
   });
+  // The room's own past, as a prior: worth ROOM_HIST_W picks of evidence at the
+  // start, outvoted by the live room as real picks arrive.
+  Object.keys(sched).forEach(pos=>sched[pos].sort((a,b)=>a-b));
+  const prior = hasHist ? _roomHistPrior(roomHistory.sched, sched, teams)
+                        : {QB:0,RB:0,WR:0,TE:0};
   Object.keys(sched).forEach(pos=>{
     const sc=sched[pos];
     if(!sc.length) return;
-    sc.sort((a,b)=>a-b);
     const k = gone[pos]*scale;
     // If the room's kth player here was due at pick `due` and it is only pickNo,
     // the room is running (due − pickNo) picks early at this position. With none
@@ -28638,9 +28775,14 @@ function vonaMarketDrift(list){
     let expected=0;
     for(let i=0;i<sc.length && sc[i]<=pickNo;i++) expected++;
     const m = Math.max(k, expected);
-    if(m < 1) return;
-    const raw = Math.max(-VONA_DRIFT_CAP, Math.min(VONA_DRIFT_CAP, due - pickNo));
-    const val = raw * (m/(m+VONA_DRIFT_PRIOR));
+    const pw = prior[pos] ? ROOM_HIST_W : 0;
+    if(m + pw < 1) return;
+    const raw = Math.max(-VONA_DRIFT_CAP, Math.min(VONA_DRIFT_CAP, m>=1 ? due - pickNo : 0));
+    // Evidence-weighted blend of what THIS draft shows and what this room has
+    // done before, then the same damping and dead zone as ever. By the middle
+    // rounds the live term dominates; at pick one the prior is all there is.
+    const mixed = (m*raw + pw*prior[pos]) / Math.max(1, m + pw);
+    const val = mixed * ((m+pw)/(m+pw+VONA_DRIFT_PRIOR));
     // Every room wobbles a few picks around the board by chance; correcting for
     // that is fitting noise. Move only once the gap is real, and only by the
     // part of it that exceeds the wobble.
@@ -28961,7 +29103,12 @@ function _vonaBudget(myLivePicks, kdOpenMine, myCounts, dedBase, sfSlots, dedica
   [['QB',2],['TE',1]].forEach(([pos,room])=>{
     if(dedicatedNeed.has(pos) && picksAfter<=room) lastCall[pos]=true;
   });
-  const posCap={ QB: sfSlots? dedBase.QB+sfSlots+1 : 2, TE: Math.max(2, dedBase.TE+1), RB:8, WR:9 };
+  // QB room: one spare behind the startable slots wherever the lineup starts
+  // more than one QB — dedicated 2-QB lineups (BAFL) count exactly like a
+  // superflex here. The old `sfSlots ? … : 2` capped a 2-QB league at its bare
+  // starters and gated the row forever, in rooms whose winners carry five.
+  const qbSlots=dedBase.QB+sfSlots;
+  const posCap={ QB: qbSlots>=2 ? qbSlots+1 : 2, TE: Math.max(2, dedBase.TE+1), RB:8, WR:9 };
   return { skillLeft, minTargets, unmet, unmetTotal, mustFill, picksAfter, lastCall, posCap };
 }
 
@@ -29294,7 +29441,10 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     Value comes from <b>your VOR board</b> \u2014 what a player is worth to you. Availability comes
     from the market: Sleeper ${typeof formatLabel==='function'?formatLabel(rankFormat):''} ADP,
     Monte-Carlo simulated over the picks before you're up, with each opposing team drafting by
-    noisy ADP restricted to positions it still needs. Positions are ranked by what the pick does
+    noisy ADP restricted to positions it still needs \u2014 and when this league has past drafts,
+    the room model starts from <b>what this room has actually done before</b> (its own draft
+    history, cached locally) and lets the live picks outvote that prior as they land. Positions
+    are ranked by what the pick does
     for <b>your weekly starting lineup</b>: value added now vs what the same position is expected
     to hand you at your next pick \u2014 so a FLEX-filling RB outranks a bench TE automatically.
     A pick <b>budget</b> guards your roster: every remaining pick is weighed against unfilled

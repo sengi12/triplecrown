@@ -48,9 +48,24 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ── Evidence from the league's own past ─────────────────────────────────────
 
-def history_evidence(league_id):
-    """Champion-vs-field draft quality in this room, and the shapes that won."""
+def history_evidence(league_id, extra=()):
+    """Champion-vs-field draft quality in this room, and the shapes that won.
+
+    `extra` takes additional league ids whose chains belong to the SAME room but
+    were never linked by previous_league_id — common when a league predates the
+    Sleeper feature it now uses (e.g. an eliminator run manually for years and
+    recreated when Sleeper added the format). Each extra chain is walked and
+    de-duplicated, so passing an id already in the main chain is harmless."""
     seasons = dh.chain(league_id)
+    seen = {lg.get("league_id") for lg in seasons}
+    for x in extra or ():
+        try:
+            for lg in dh.chain(x):
+                if lg.get("league_id") not in seen:
+                    seasons.append(lg)
+                    seen.add(lg.get("league_id"))
+        except Exception:
+            continue
     recs = []
     for lg in seasons:
         try:
@@ -88,7 +103,7 @@ def run_grid(pool, league, slot, sims, rng_seed=9001):
     """Objective for each forced opening pattern and each free-form agent,
     all replaying the same rooms (common random numbers)."""
     out = {"patterns": {}, "agents": {}}
-    agents = {"advisory (app3)": ds.app_pick_v3, "sim agent (smart)": None}
+    agents = {"advisory (app5)": ds.app_pick_v5, "sim agent (smart)": None}
     for name, pat in ds.PATTERNS.items():
         out["patterns"][name] = _score(pool, league, slot, sims, rng_seed, pat, None)
     for name, chooser in agents.items():
@@ -133,7 +148,7 @@ def run_board(pool, league, slot, sims, rng_seed=4242):
 
     rng = random.Random(rng_seed + slot)
     for _ in range(sims):
-        _r, _s, log = ds.run_draft(pool, league, slot, rng, chooser=ds.app_pick_v3)
+        _r, _s, log = ds.run_draft(pool, league, slot, rng, chooser=ds.app_pick_v5)
         for k, (_rnd, _pick, choice) in enumerate(log):
             if k < n_my:
                 taken_pos[k][choice.pos] += 1
@@ -414,6 +429,9 @@ def main():
     ap.add_argument("--league", required=True, help="Sleeper league id")
     ap.add_argument("--slot", type=int, default=0)
     ap.add_argument("--user", default="", help="Sleeper user id (to find the slot)")
+    ap.add_argument("--history-league", action="append",
+                    help="extra league id whose past seasons belong to this room "
+                         "but aren't linked by previous_league_id (repeatable)")
     ap.add_argument("--proj", default="", help="analyst projections JSON for the board")
     ap.add_argument("--proj-analyst", default="consensus")
     ap.add_argument("--tc-weight", type=float, default=0.0,
@@ -450,7 +468,7 @@ def main():
     label += f"; the room drafts off the {fmt} ADP board"
     print(f"league={league.name} slot={slot} pool={len(pool)}  [{label}]", file=sys.stderr)
     print("  reading league history…", file=sys.stderr)
-    hist = history_evidence(args.league)
+    hist = history_evidence(args.league, extra=args.history_league or [])
     print("  simulating openings…", file=sys.stderr)
     grid = run_grid(pool, league, slot, args.sims)
     print("  simulating the board…", file=sys.stderr)
