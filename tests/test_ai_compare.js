@@ -13,8 +13,15 @@ global.localStorage={getItem:k=>(LSTORE.has(k)?LSTORE.get(k):null),
 global.Chart=function(){return{destroy(){}}};global.confirm=()=>true;global.btoa=s=>s;
 global.FileReader=function(){};global.Range=function(){};global.AbortController=class{constructor(){this.signal={}}abort(){}};
 let fetchCalls=[];
+const MODELS={data:[
+  {id:'alpha/one:free',   pricing:{prompt:'0',    completion:'0'}},
+  {id:'beta/two',         pricing:{prompt:'0.002',completion:'0.004'}},
+  {id:'gamma/three:free', pricing:{prompt:'0',    completion:'0'}},
+  {id:'delta/promo',      pricing:{prompt:'0',    completion:'0.001'}},  // half-free is not free
+]};
 global.fetch=(url,opts)=>{
   fetchCalls.push({url,opts});
+  if(String(url).includes('/models')) return Promise.resolve({ok:true,json:()=>Promise.resolve(MODELS)});
   return Promise.resolve({ok:true,json:()=>Promise.resolve({
     usage:{prompt_tokens:400,completion_tokens:150},
     choices:[{message:{content:'Take Player A.\n\nHe has the better <b>numbers</b>.'}}]})});
@@ -22,7 +29,7 @@ global.fetch=(url,opts)=>{
 const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return { tcAiSettings, tcAiSaveSettings, tcAiUsage, tcAiRecordUsage,
-  tcAiPlayerContext, tcAiCompareMessages, tcAiEstTokens, tcAiCall, tcAiRenderText,
+  tcAiPlayerContext, tcAiCompareMessages, tcAiEstTokens, tcAiCall, tcAiRenderText, tcAiFreeModels,
   TC_AI_MAX_TOKENS, TC_AI_FREE_MODELS,
   setFormat:(f)=>{rankFormat=f;}, setDraftLineup:(l)=>{draftLineup=l;} };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -68,6 +75,29 @@ await (async()=>{
   chk(u.calls===1 && u.prompt===400 && u.completion===150, 'usage is recorded locally');
   await app.tcAiCall(msgs);
   chk(app.tcAiUsage().calls===2, 'and accumulates');
+})();
+
+console.log('=== the free list is LIVE, not remembered ===');
+await (async()=>{
+  const before=fetchCalls.filter(f=>String(f.url).includes('/models')).length;
+  const list=await app.tcAiFreeModels(true);
+  chk(list.length===2 && list.includes('alpha/one:free') && list.includes('gamma/three:free'),
+      'only fully-$0 models qualify');
+  chk(!list.includes('delta/promo'), 'a model with any paid leg is not free');
+  const call=fetchCalls.filter(f=>String(f.url).includes('/models')).pop();
+  chk(!call.opts || !call.opts.headers || !call.opts.headers.Authorization,
+      'the public index is fetched WITHOUT the key');
+  await app.tcAiFreeModels();
+  const after=fetchCalls.filter(f=>String(f.url).includes('/models')).length;
+  chk(after===before+1, 'a fresh list is cached — the second ask costs no request');
+  // Provider index down: the stale-but-safe fallback, never a crash.
+  LSTORE.delete('tc_ai_free_models');
+  const realFetch=global.fetch;
+  global.fetch=(url,opts)=>{ if(String(url).includes('/models')) return Promise.reject(new Error('down'));
+    return realFetch(url,opts); };
+  const fb=await app.tcAiFreeModels(true);
+  chk(Array.isArray(fb) && fb.length>0, 'index unreachable → static fallback, not a crash');
+  global.fetch=realFetch;
 })();
 
 console.log('=== output is untrusted text ===');
