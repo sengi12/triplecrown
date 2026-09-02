@@ -18,6 +18,20 @@ global.localStorage={ getItem:k=>(LSTORE.has(k)?LSTORE.get(k):null),
 const fs=require('fs'), path=require('path');
 const LEAGUE=JSON.parse(fs.readFileSync(path.join(__dirname,'espn_league_fixture.json'),'utf8'));
 const PLAYERS=JSON.parse(fs.readFileSync(path.join(__dirname,'espn_sleeper_players_fixture.json'),'utf8'));
+// mMatchupScore fixture: week 3 is live (home mid-game, away final-only), week 2
+// is history. Teams/rosters ride the LEAGUE fixture so starters resolve through
+// the same player index as everything else.
+const MATCHUPS=Object.assign({}, LEAGUE, {
+  status:{ currentMatchupPeriod:3 },
+  schedule:[
+    { id:7, matchupPeriodId:3,
+      home:{ teamId:1, totalPoints:88.2, totalPointsLive:91.5 },
+      away:{ teamId:2, totalPoints:77.0 } },
+    { id:3, matchupPeriodId:2,
+      home:{ teamId:1, totalPoints:101.4 },
+      away:{ teamId:2, totalPoints:99.9 } },
+  ],
+});
 
 // Real fan-profile shape: preferences keyed "gameId:leagueId:entryId:season". gameId 1 is
 // football; the MLB row must be filtered out.
@@ -46,6 +60,7 @@ global.fetch=(u)=>{
     return J(FAN);
   }
   if(u.includes('lm-api-reads.fantasy.espn.com')){
+    if(u.includes('mMatchupScore')) return J(MATCHUPS);
     if(/leagues\/BADLEAGUE/.test(u)) return Promise.resolve({ok:false,status:404});
     if(leagueStatus!==200) return Promise.resolve({ok:false,status:leagueStatus});
     // The second league on the fan profile, so "discovered a league we weren't told about"
@@ -71,7 +86,7 @@ const app=new Function(code+`
   return {
     espnParseLeagueRef, espnFetchFanLeagues, espnFetchLeagueMembers, espnMarkReadable,
     espnRosterPositions, espnScoringToSleeper, espnLeagueType, espnBuildSnapshot,
-    espnResolvePlayer, laParseRef, laRefKey, laEspnErrorText,
+    espnResolvePlayer, espnFetchMatchupRows, laParseRef, laRefKey, laEspnErrorText,
     laTakeSnapshot, loadSleeperPlayers, calcFpts,
     laSubmitEspnLeague, laEspnPickMember, laEspnRefreshLeagues, laSetupStartHTML,
     getSnapshot:()=>leagueSnapshot,
@@ -317,6 +332,28 @@ global.toasts=toasts;
   chk(app.getLaState().step==='pick','and it goes straight to the league list');
   chk(app.getLaState().leagues.length===2,'with the same leagues');
 
-  console.log(`\nRESULT: ${pass===total?'PASS':'FAIL'} (${pass}/${total} checks)`);
+  
+console.log('=== live matchup rows (mMatchupScore -> Sleeper shape) ===');
+await (async ()=>{
+  const rows=await app.espnFetchMatchupRows(23007935, 2026, 3);
+  chk(rows.length===2, 'one row per side of the week-3 matchup');
+  const home=rows.find(r=>r.roster_id===1), away=rows.find(r=>r.roster_id===2);
+  chk(!!home && !!away, 'roster ids are the ESPN team ids the snapshot already uses');
+  chk(home.points===91.5, 'the LIVE total wins while ESPN is mid-scoring');
+  chk(away.points===77.0, 'and the final total stands when there is no live one');
+  chk(home.matchup_id===7 && away.matchup_id===7, 'both sides share the matchup id, so pairing works');
+  chk(home.starters.length>0, "the current week carries the team's set starters");
+  const bench=LEAGUE.teams[0].roster.entries.filter(e=>+e.lineupSlotId===20)
+    .map(e=>app.espnResolvePlayer(e.playerPoolEntry.player)).filter(Boolean);
+  chk(bench.length>0 && bench.every(id=>!home.starters.includes(id)),
+      'bench players are not starters');
+  const wk2=await app.espnFetchMatchupRows(23007935, 2026, 2);
+  chk(wk2.length===2 && wk2.find(r=>r.roster_id===1).points===101.4,
+      'a past week returns its final totals');
+  chk(wk2.every(r=>r.starters.length===0),
+      "and no starters — ESPN only exposes the current period's lineup");
+})();
+
+console.log(`\nRESULT: ${pass===total?'PASS':'FAIL'} (${pass}/${total} checks)`);
   process.exit(pass===total?0:1);
 })();

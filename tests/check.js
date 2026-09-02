@@ -22219,6 +22219,45 @@ function espnLeagueType(settings){
   return keepers>0 ? 1 : 0;
 }
 
+// ── Live matchup rows ────────────────────────────────────────────────────────
+// mMatchupScore + mRoster, reshaped into EXACTLY the rows Sleeper's matchup
+// endpoint returns ({roster_id, matchup_id, points, starters}) so the Season
+// tab stays provider-blind past this point. Points prefer the live total when
+// ESPN is mid-scoring; starters come from the current period's lineupSlotIds
+// (so only the CURRENT week can say who was actually started — for past weeks
+// the totals stand alone, which is all the scoreboard needs).
+const ESPN_BENCH_SLOTS = new Set([20, 21, 24]);   // Bench, IR, ER
+async function espnFetchMatchupRows(leagueId, season, week){
+  const data = await espnFetch(ESPN_LEAGUE_URL(season, leagueId, ['mMatchupScore', 'mRoster']));
+  const status = data.status || {};
+  const curPeriod = +(status.currentMatchupPeriod || 0);
+  const startersByTeam = {};
+  if(+week === curPeriod){
+    await loadSleeperPlayers(true);
+    espnBuildIdIndex();
+    (data.teams || []).forEach(t=>{
+      startersByTeam[t.id] = ((t.roster && t.roster.entries) || [])
+        .filter(e => !ESPN_BENCH_SLOTS.has(+e.lineupSlotId))
+        .map(e => { const p = espnRosterPlayer(e, null); return p && p.id; })
+        .filter(Boolean);
+    });
+  }
+  const rows = [];
+  (data.schedule || []).forEach(m=>{
+    if(+m.matchupPeriodId !== +week) return;
+    ['home', 'away'].forEach(side=>{
+      const t = m[side];
+      if(!t || t.teamId == null) return;
+      const pts = (t.totalPointsLive != null) ? t.totalPointsLive : t.totalPoints;
+      rows.push({ roster_id: t.teamId,
+                  matchup_id: (m.id != null) ? m.id : `p${m.matchupPeriodId}`,
+                  points: +(pts || 0),
+                  starters: startersByTeam[t.teamId] || [] });
+    });
+  });
+  return rows;
+}
+
 // ── Snapshot ─────────────────────────────────────────────────────────────────
 // Produce the SAME leagueSnapshot object laTakeSnapshot builds for Sleeper. Everything after
 // this point in the app is provider-blind. Returns {snapshot, scoring, rosterPositions,
@@ -28614,13 +28653,17 @@ function _laMyTeamRow(s){
 // ── Matchups: fetch + poll ───────────────────────────────────────────────────
 async function laFetchMatchups(week, silent){
   const s=leagueSnapshot;
-  if(!s || s.provider==='espn' || _laMu.fetching[week]) return;
+  if(!s || _laMu.fetching[week]) return;
+  if(s.provider==='espn' && typeof espnFetchMatchupRows!=='function') return;
   _laMu.fetching[week]=true;
   // Snapshot identity guard: if the user switches leagues while this request is in flight,
   // league A's late rows must not repopulate the cache under league B.
   const ref=(typeof laSnapshotRef==='function')?laSnapshotRef(s):null;
   try{
-    const rows = await sleeperFetch(LA_MATCHUPS_URL(s.leagueId, week));
+    // Provider-specific fetch, identical row shape from here down.
+    const rows = s.provider==='espn'
+      ? await espnFetchMatchupRows(s.leagueId, s.season, week)
+      : await sleeperFetch(LA_MATCHUPS_URL(s.leagueId, week));
     if(ref && typeof laSnapshotRef==='function' && laSnapshotRef()!==ref) return;
     if(Array.isArray(rows) && rows.length){
       const sig = rows.map(r=>`${r.roster_id}:${r.points}`).sort().join('|');
@@ -28641,7 +28684,7 @@ async function laFetchMatchups(week, silent){
 // clears the timer; a stray tick self-heals by calling this first.
 function laLivePollSync(){
   const want = typeof currentPhase!=='undefined' && currentPhase==='League'
-    && leagueSnapshot && leagueSnapshot.provider!=='espn'
+    && leagueSnapshot
     && laActivePane()==='matchup' && laMuWeek()===laCurrentWeek()
     && (typeof TC_SEASON!=='undefined' && (TC_SEASON.phase==='regular'||TC_SEASON.phase==='post'))
     && (typeof document==='undefined' || document.visibilityState==='visible');
@@ -29183,7 +29226,7 @@ function laLineupView(s){
   const optimal=laFillStarters(scored, s.rosterPositions);
   // Current lineup: the week's matchup row carries the set starters.
   const mu=_laMu.byWeek[wk];
-  if(!mu && s.provider!=='espn') laFetchMatchups(wk);
+  if(!mu) laFetchMatchups(wk);
   const myRow=mu && mu.rows.find(r=>r.roster_id===my.rosterId);
   const currentSet=new Set((myRow&&myRow.starters||[]).filter(pid=>pid&&pid!=='0'));
   const optimalSet=new Set(optimal.filter(f=>f.player).map(f=>f.player.id));

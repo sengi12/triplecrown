@@ -93,13 +93,17 @@ function _laMyTeamRow(s){
 // ── Matchups: fetch + poll ───────────────────────────────────────────────────
 async function laFetchMatchups(week, silent){
   const s=leagueSnapshot;
-  if(!s || s.provider==='espn' || _laMu.fetching[week]) return;
+  if(!s || _laMu.fetching[week]) return;
+  if(s.provider==='espn' && typeof espnFetchMatchupRows!=='function') return;
   _laMu.fetching[week]=true;
   // Snapshot identity guard: if the user switches leagues while this request is in flight,
   // league A's late rows must not repopulate the cache under league B.
   const ref=(typeof laSnapshotRef==='function')?laSnapshotRef(s):null;
   try{
-    const rows = await sleeperFetch(LA_MATCHUPS_URL(s.leagueId, week));
+    // Provider-specific fetch, identical row shape from here down.
+    const rows = s.provider==='espn'
+      ? await espnFetchMatchupRows(s.leagueId, s.season, week)
+      : await sleeperFetch(LA_MATCHUPS_URL(s.leagueId, week));
     if(ref && typeof laSnapshotRef==='function' && laSnapshotRef()!==ref) return;
     if(Array.isArray(rows) && rows.length){
       const sig = rows.map(r=>`${r.roster_id}:${r.points}`).sort().join('|');
@@ -120,7 +124,7 @@ async function laFetchMatchups(week, silent){
 // clears the timer; a stray tick self-heals by calling this first.
 function laLivePollSync(){
   const want = typeof currentPhase!=='undefined' && currentPhase==='League'
-    && leagueSnapshot && leagueSnapshot.provider!=='espn'
+    && leagueSnapshot
     && laActivePane()==='matchup' && laMuWeek()===laCurrentWeek()
     && (typeof TC_SEASON!=='undefined' && (TC_SEASON.phase==='regular'||TC_SEASON.phase==='post'))
     && (typeof document==='undefined' || document.visibilityState==='visible');
@@ -662,7 +666,7 @@ function laLineupView(s){
   const optimal=laFillStarters(scored, s.rosterPositions);
   // Current lineup: the week's matchup row carries the set starters.
   const mu=_laMu.byWeek[wk];
-  if(!mu && s.provider!=='espn') laFetchMatchups(wk);
+  if(!mu) laFetchMatchups(wk);
   const myRow=mu && mu.rows.find(r=>r.roster_id===my.rosterId);
   const currentSet=new Set((myRow&&myRow.starters||[]).filter(pid=>pid&&pid!=='0'));
   const optimalSet=new Set(optimal.filter(f=>f.player).map(f=>f.player.id));
