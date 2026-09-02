@@ -181,12 +181,27 @@ await (async()=>{
 
 console.log('=== the probe: know before you download ===');
 await (async()=>{
-  const mk=(buffers,f16)=>({ requestAdapter:async()=>({
-    limits:{maxStorageBuffersPerShaderStage:buffers},
+  const mk=(buffers,f16,maxBufMB)=>({ requestAdapter:async()=>({
+    limits:{maxStorageBuffersPerShaderStage:buffers,
+            maxBufferSize:(maxBufMB||4096)*1048576},
     features:{has:(k)=>f16&&k==='shader-f16'} }) });
+  // Android field report: a capable-LOOKING mobile GPU still gets no local
+  // plan — the weights crash the tab, and a crash can only be prevented.
+  app.resetProbe();
+  global.navigator={gpu:mk(12,true), userAgentData:{mobile:true}};
+  let plan=app.tcAiLocalPlan(await app.tcAiGpuProbe());
+  chk(plan.model===null && /crashes the tab/.test(plan.note),
+      'mobile gets no local build, with the reason stated');
+  chk(/built-in model|free-tier key/.test(plan.note),
+      'and is pointed at the paths that DO work on a phone');
+  // A desktop GPU that can't address the weights: same verdict, its own numbers.
+  app.resetProbe(); global.navigator={gpu:mk(12,true,512)};
+  plan=app.tcAiLocalPlan(await app.tcAiGpuProbe());
+  chk(plan.model===null && /512 MB/.test(plan.note),
+      'a 512MB-buffer GPU is refused before downloading weights it cannot hold');
   // A healthy desktop GPU: the 3B fits and the card says so.
   app.resetProbe(); global.navigator={gpu:mk(10,true)};
-  let plan=app.tcAiLocalPlan(await app.tcAiGpuProbe());
+  plan=app.tcAiLocalPlan(await app.tcAiGpuProbe());
   chk(plan.model && plan.model.includes('3B'), 'a 10-buffer f16 GPU is offered the 3B');
   chk(/3B build/.test(plan.note), 'and told so in one line');
   // The Firefox field report: 9 buffers — and the 1B failed there too, so the

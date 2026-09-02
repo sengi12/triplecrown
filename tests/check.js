@@ -22776,6 +22776,16 @@ const TC_AI_LOCAL_REQS = {
   'Llama-3.2-1B-Instruct-q4f32_1-MLC': { f16:false, dlGB:1.2, label:'1B' },
 };
 let _aiGpuProbe=null;
+// A phone can pass every adapter limit and still die uploading gigabytes of
+// weights — and a crashed browser process can't be caught, only prevented.
+function tcAiIsMobile(){
+  try{
+    if(typeof navigator==='undefined') return false;
+    if(navigator.userAgentData && typeof navigator.userAgentData.mobile==='boolean')
+      return navigator.userAgentData.mobile;
+    return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||'');
+  }catch(e){ return false; }
+}
 async function tcAiGpuProbe(){
   if(_aiGpuProbe) return _aiGpuProbe;
   try{
@@ -22784,7 +22794,9 @@ async function tcAiGpuProbe(){
     if(!ad) return (_aiGpuProbe={ok:false});
     const L=ad.limits||{};
     _aiGpuProbe={ ok:true,
+      mobile:tcAiIsMobile(),
       buffers:Number(L.maxStorageBuffersPerShaderStage)||0,
+      maxBufMB:Math.round((Number(L.maxBufferSize)||0)/1048576),
       f16:!!(ad.features && ad.features.has && ad.features.has('shader-f16')) };
   }catch(e){ _aiGpuProbe={ok:false}; }
   return _aiGpuProbe;
@@ -22792,6 +22804,15 @@ async function tcAiGpuProbe(){
 // Pure: which local build this GPU can run, and the one-line honest label.
 function tcAiLocalPlan(probe){
   if(!probe || !probe.ok) return { model:null, note:'Needs WebGPU.' };
+  // Field report (Android, 2026-09-02): the download crashed the browser
+  // outright — phones can pass every limit and still not hold the weights.
+  if(probe.mobile)
+    return { model:null,
+      note:'Phones can\u2019t hold the local model \u2014 the download crashes the tab. On mobile, use the built-in model (newer Android Chrome offers it automatically) or a free-tier key: both are network-light and $0.' };
+  // Not enough addressable buffer memory for even the small build's weights.
+  if(probe.maxBufMB && probe.maxBufMB < 1024)
+    return { model:null,
+      note:`This GPU can address ${probe.maxBufMB} MB per buffer \u2014 under what the smallest build's weights need. The built-in-AI and own-key options are unaffected.` };
   if(probe.buffers < TC_AI_RUNTIME_BUFFERS)
     return { model:null,
       note:`This browser's WebGPU allows ${probe.buffers} storage buffers per shader stage; the local runtime needs ${TC_AI_RUNTIME_BUFFERS} — no build fits (Firefox commonly caps here; Chrome/Edge desktop usually clear it). The built-in-AI and own-key options are unaffected.` };
@@ -23146,7 +23167,7 @@ function renderAiCompare(){
           <span>${builtin?'No key, no download.':'Not in this browser.'}</span></button>
         <button id="aiLocalCard" class="ai-cmp-mode ${s.mode==='local'?'on':''}" ${gpu?'':'disabled'}
           onclick="_aiCfgOpen=false;tcAiSaveSettings({mode:'local'});renderAiCompare()">
-          <b>Local model ${gpu&&!builtin?'<em class="ai-cmp-rec">free · recommended</em>':''}</b>
+          <b>Local model <em id="aiLocalRec" class="ai-cmp-rec" hidden>free · recommended</em></b>
           <span id="aiLocalNote">${gpu?'Checking what your GPU can run…':'Needs WebGPU.'}</span></button>
       </div>
       <div class="ai-cmp-or">or your own key</div>
@@ -23165,8 +23186,10 @@ function renderAiCompare(){
       const plan=tcAiLocalPlan(pr);
       const note=document.getElementById('aiLocalNote');
       const card=document.getElementById('aiLocalCard');
+      const rec=document.getElementById('aiLocalRec');
       if(note) note.textContent=plan.note;
       if(card && !plan.model) card.disabled=true;
+      if(rec && plan.model && !builtin) rec.hidden=false;
     }).catch(()=>{});
     // Free tiers rotate weekly — the list is fetched live (public index, no key,
     // no tokens) so the picker can never go stale the way a hardcoded one did.
