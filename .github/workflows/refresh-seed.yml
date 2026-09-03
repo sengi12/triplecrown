@@ -154,9 +154,26 @@ jobs:
       - name: Rebuild app and run tests
         if: github.event.inputs.dry_run != 'true'
         run: |
-          set -o pipefail   # without this the step's status was `tail`'s, and a red suite still committed
           python3 build.py
-          ./tests/run_tests.sh index.html 2>&1 | tail -25
+          # The whole run goes to a file; the log shows the summary, and on red the failing
+          # suites' own lines — a bare "1 FAILED" in the tail names nothing.
+          if ./tests/run_tests.sh index.html > suite.out 2>&1; then
+            tail -25 suite.out
+          else
+            tail -25 suite.out
+            echo "::group::failing suites"
+            grep -nE "✗|FAIL|crashed" tests/last_run.log | grep -v "✓" | head -80 || true
+            echo "::endgroup::"
+            exit 1
+          fi
+
+      - name: Keep the full test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-log
+          path: tests/last_run.log
+          retention-days: 7
 
       - name: Commit if anything changed
         id: commit
