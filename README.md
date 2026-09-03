@@ -136,7 +136,7 @@ For the full experience (expert rankings, contracts, advanced stats, coaching, r
 | `tools/draft_sim.py` | Monte-Carlo mock-draft simulator that tunes and validates the app's on-the-clock advisory. `--proj` swaps in an analyst projection file as the value baseline. |
 | `tools/draft_history.py` | Scores every past manager-season in a league's history on what its draft-day roster really did, so "what wins here" is measured rather than assumed. |
 | `tools/draft_playbook.py` | Drives the other two and writes one markdown playbook for one league and one seat. |
-| `tools/mcp_worker/` | The same MCP tools as an always-on **remote** server: a dependency-free Cloudflare Worker (free plan) reading the shards `tc_mcp.py --bake` writes into the Pages site. Deploy once with `wrangler deploy`. |
+| `tools/mcp_worker/` | The MCP tools as an always-on **remote** server: a dependency-free Cloudflare Worker (free plan) reading shards baked into the Pages site — the curated tools from `tc_mcp.py --bake`, and the **entire seed** from `bake_seed.js` (`seed_ls` / `seed_get` / `player_data`, every format). Deploy once with `wrangler deploy`. |
 | `tools/tc_mcp.py` | An MCP server over the seed: TripleCrown's data as tools for Claude Desktop / Claude Code / any MCP client. Stdlib-only, stdio, zero hosting — see [TripleCrown as an MCP server](#triplecrown-as-an-mcp-server). |
 | `tools/draft_corpus.py` | Harvests real completed Sleeper drafts (league → managers → their leagues), fits the market model to them — sigma curve, K/DEF timing, QB volume — and Brier-scores the advisory's survival predictions against held-out drafts. |
 
@@ -294,34 +294,55 @@ Register it — Claude Desktop (`claude_desktop_config.json`):
 
 Claude Code: `claude mcp add triplecrown -- python3 /path/to/triplecrown/tools/tc_mcp.py --format superflex`
 
-Pass `--league <sleeper_league_id>` instead of `--format` to score everything under a real league's
-settings (fetched once, cached). Tools: `search_players`, `get_player` (the whole sheet — projection,
+`--format` is any of the app's six (`ppr`, `half_ppr`, `std`, `superflex`, `dynasty`, `dynasty_superflex`);
+pass `--league <sleeper_league_id>` instead to score everything under a real league's settings (fetched
+once, cached). Tools: `search_players`, `get_player` (the whole sheet — projection,
 VOR, ECR/tier, ADP, TC model, stat line, last seasons, contract, schedule/SOS, coaching change,
 dynasty value), `compare` (both sheets + the computed head-to-head differences + the app's own analyst
 framing), `rankings`, `team`, `schedule`, `sos`, `state`. What lives only in the browser stays there:
 injuries, Sleeper rosters, your notes and in-season pace are live data the seed doesn't carry.
 
-### Always on: the same server as a free Cloudflare Worker
+### Always on: the same server as a free Cloudflare Worker — with the whole seed behind it
 
 The local server needs a machine running Python. For the Claude app on a phone, claude.ai, or any
-client that only takes a URL, `tools/mcp_worker/` is the same eight tools as a **remote MCP server**
-(Streamable HTTP, no auth, no state) on Cloudflare's free Workers plan — 100k requests a day, no card.
+client that only takes a URL, `tools/mcp_worker/` is a **remote MCP server** (Streamable HTTP, no auth,
+no state) on Cloudflare's free Workers plan — 100k requests a day, no card — with two layers of tools:
 
-It never parses the seed: every Pages deploy also bakes `python3 tools/tc_mcp.py --bake _site/mcp`,
-~800 small JSON shards (a player's sheet in every format, the ranking tables, the team pages), and the
-worker answers a tool call from one or two edge-cached reads. That is what keeps it inside the free
-plan's 10 ms of CPU per request, and it means the worker is deployed **once** — new data arrives with
-the next Pages deploy, nothing to redeploy. The Python remains the single source: the tool list,
-descriptions and analyst framing travel in `mcp/manifest.json`, and `tests/test_mcp_worker.js` holds
-every tool byte-equal to the stdio server.
+- **The eight curated tools**, byte-equal to the stdio server, in every format the app has:
+  `/mcp` is PPR; `/half_ppr/mcp`, `/std/mcp`, `/superflex/mcp`, `/dynasty/mcp`, `/dynasty_superflex/mcp`
+  (dynasty = the app's other league type: half-PPR board, dynasty ECR, `rankings sort=dynasty` orders
+  by trade value, superflex or 1QB to match the path).
+- **The entire seed**, raw. `seed_ls` with no path is a table of contents with a line on every section —
+  projections, ECR per format, five seasons of nflverse advanced stats (per player, per situation),
+  route trees, passing and rushing charts, player history, college profiles and game logs, contracts,
+  dynasty values, team metrics, coordinators, schedules, weekly team / offensive-line / defender rows,
+  coaching formations. `seed_ls path=nflverse/2025` walks in; `seed_get path=nflverse/2025/routes/amonra st brown`
+  returns the JSON; `player_data name="Jahmyr Gibbs" section=nflverse/2024` is every table's row for one
+  player in a single read. Nothing the app ships is left out, and nothing is summarised on the way.
+
+It never parses the seed. Every Pages deploy bakes `python3 tools/tc_mcp.py --bake _site/mcp` (the
+curated shards: a player's sheet in every format, ranking tables, team pages) and
+`node tools/mcp_worker/bake_seed.js _site/mcp`, which decodes the seed with the **app's own decoder**
+(`src/js/15b-nflverse-lazy.js`, so the two can't drift), makes the positional tables self-describing, and
+cuts the tree into ~2,200 shards of ≲64 KB: any node bigger than that becomes a directory of chunks, a
+key's chunk is a hash, and one 29 KB map (`seed/_tree.json`) tells the worker which file holds any path.
+A tool call is one to three edge-cached reads, which is what keeps it inside the free plan's 10 ms of
+CPU per request — and it means the worker is deployed **once**: new data arrives with the next Pages
+deploy, nothing to redeploy. The Python remains the source for the curated tools (the tool list,
+descriptions and analyst framing travel in `mcp/manifest.json`); `tests/test_mcp_worker.js` holds every
+curated tool byte-equal to the stdio server and every raw read byte-equal to the decoded seed. The raw
+tools are remote-only — the stdio server has no JS decoder, and the app already has the seed.
 
 ```bash
 cd tools/mcp_worker && npx wrangler login && npx wrangler deploy   # Node 22+; on Node 20 use npx wrangler@3
 #  → https://triplecrown-mcp.<your-subdomain>.workers.dev
 ```
 
-Then, per client (pick the scoring in the path — `/mcp` is PPR; `/superflex/mcp`, `/half_ppr/mcp`,
-`/std/mcp`):
+Worker *code* changes (not data) need that command again — or set the repo secrets `CLOUDFLARE_API_TOKEN`
+(token template "Edit Cloudflare Workers") and `CLOUDFLARE_ACCOUNT_ID`, and `.github/workflows/deploy-worker.yml`
+redeploys on every push that touches `tools/mcp_worker/`.
+
+Then, per client (pick the format in the path):
 
 - **claude.ai / Claude app (phone too)** — Settings → Connectors → *Add custom connector* → the URL.
   Free plan allows one custom connector.
@@ -511,7 +532,9 @@ The project ships with a regression suite (Node + Python) covering the projectio
   full grounding packet by prompt). Local stdio process, stdlib-only, zero hosting, zero bytes in
   `index.html`. **Remote too** (`tools/mcp_worker/`): the same tools as a free Cloudflare Worker for
   the Claude phone app / claude.ai connectors / any URL-only client — stateless, reads the per-deploy
-  `mcp/` shards from Pages instead of the seed (free plan's 10 ms CPU), deployed once. Next, gated on
+  `mcp/` shards from Pages instead of the seed (free plan's 10 ms CPU), deployed once; all six app
+  formats by path, and the **entire seed** browsable raw (`seed_ls` / `seed_get` / `player_data`) from
+  shards the app's own decoder bakes. Next, gated on
   the free-first rule: optional in-browser tool calling for the ⚖ compare (the model asks for more
   data on demand) — desktop-only and opt-in, because every tool round-trip is another request against
   a free tier's daily cap

@@ -43,6 +43,10 @@ jobs:
           # tool call, so it never has to parse the seed. Rebaked on every deploy; the worker
           # itself never needs redeploying for new data.
           python3 tools/tc_mcp.py --bake _site/mcp
+          # And the ENTIRE seed, cut into shards (tools/mcp_worker/bake_seed.js, using the
+          # app's own decoder): seed_ls / seed_get / player_data read one small file per call.
+          node tools/mcp_worker/bake_seed.js _site/mcp
+          du -sh _site/mcp
           cp manifest.webmanifest _site/manifest.webmanifest
           # Stamp the service worker's cache name with this commit so a deploy retires the old
           # cache instead of serving yesterday's index.html forever.

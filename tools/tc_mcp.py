@@ -55,12 +55,20 @@ SKILL = ("QB", "RB", "WR", "TE")
 _BASE_SCORING = {"pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0, "rush_yd": 0.1,
                  "rush_td": 6.0, "rec": 1.0, "rec_yd": 0.1, "rec_td": 6.0}
 _BASE_ROSTER = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF"] + ["BN"] * 6
+_SF_ROSTER = _BASE_ROSTER[:7] + ["SUPER_FLEX"] + _BASE_ROSTER[7:]
 FORMATS = {
     "ppr": (dict(_BASE_SCORING), _BASE_ROSTER),
     "half_ppr": (dict(_BASE_SCORING, rec=0.5), _BASE_ROSTER),
     "std": (dict(_BASE_SCORING, rec=0.0), _BASE_ROSTER),
-    "superflex": (dict(_BASE_SCORING), _BASE_ROSTER[:7] + ["SUPER_FLEX"] + _BASE_ROSTER[7:]),
+    "superflex": (dict(_BASE_SCORING), _SF_ROSTER),
+    # Dynasty is the app's other league TYPE: same half-PPR scoring the app defaults to, the
+    # dynasty expert-consensus tables, and the board sortable by dynasty trade value.
+    "dynasty": (dict(_BASE_SCORING, rec=0.5), _BASE_ROSTER),
+    "dynasty_superflex": (dict(_BASE_SCORING, rec=0.5), _SF_ROSTER),
 }
+# Which ECR table a format reads (mirror of ecrTableFor in src/js/60-rankings-data.js).
+ECR_TABLE = {"dynasty": ("dynasty",), "dynasty_superflex": ("dynasty_superflex", "dynasty", "superflex"),
+             "superflex": ("superflex", "superflex_ppr")}
 
 # The instruction the in-app compare gives its model, so an MCP client's model
 # judges from the same footing instead of reading the board back.
@@ -162,7 +170,10 @@ class TripleCrown:
             except FileNotFoundError:
                 self.inseason = {}
         self.league = league or synthetic_league(fmt)
-        self.fmt = ds.market_format(self.league)
+        # adp_fmt is the market board the league's shape implies (dynasty leagues draft off
+        # the redraft ADP columns); fmt is the served format name, which also picks the ECR table.
+        self.adp_fmt = ds.market_format(self.league)
+        self.fmt = fmt if league is None else self.adp_fmt
         self.byes = byes_from_schedule(self.inseason.get("schedule"))
         self.rows = []            # every seed projection row
         self.by_pid = {}
@@ -177,9 +188,11 @@ class TripleCrown:
         self.board = {}           # pid -> scored Player (VOR, ADP on this format)
         for p in ds.build_board(self.seed, self.league, self.byes):
             self.board[p.pid] = p
-        self.ecr = (self.seed.get("ecr") or {}).get(
-            "superflex" if self.fmt == "superflex" else self.fmt) or \
-            (self.seed.get("ecr") or {}).get("ppr") or {}
+        ecr = self.seed.get("ecr") or {}
+        self.ecr = next((ecr[t] for t in ECR_TABLE.get(self.fmt, (self.fmt,)) if ecr.get(t)), None) \
+            or ecr.get("ppr") or {}
+        self.dyn = (self.seed.get("dynasty_values") or {}).get("players") or {}
+        self.dyn_key = "sf" if (self.league.lineup or {}).get("SUPER_FLEX") else "v"
 
     # ── lookup ──────────────────────────────────────────────────────────────
     def find(self, query, pos=None, limit=8):
@@ -206,7 +219,12 @@ class TripleCrown:
         return hits[0] if hits else None
 
     def adp(self, r):
-        return ds.adp_for(r, self.fmt)
+        return ds.adp_for(r, self.adp_fmt)
+
+    def dyn_value(self, name):
+        """Dynasty trade value for this league's QB count, or None."""
+        dv = self.dyn.get(ecr_norm(name)) or {}
+        return _num(dv.get(self.dyn_key))
 
     def points(self, r):
         games = min(17.0, float(r.get("games") or r.get("games_played") or 17))
@@ -424,7 +442,7 @@ class TripleCrown:
             f" · as of {st.get('asof')} · builder {self.seed.get('builder_version')}",
             f"league: {self.league.name} · {self.league.teams} teams · lineup "
             + "/".join(f"{k}{v}" for k, v in self.league.lineup.items() if v)
-            + f" · ADP board: {self.fmt}",
+            + f" · ADP board: {self.adp_fmt}",
             f"players on the board: {len(self.board)} scored of {len(self.rows)} projected",
             f"schedule: {'loaded' if self.inseason.get('schedule') else 'not available'}"
             f" · byes known for {len(self.byes)} teams",
@@ -482,22 +500,25 @@ class TripleCrown:
         if pos:
             players = [p for p in players if p.pos == pos.upper()]
         key = {"vor": lambda p: -p.vor, "adp": lambda p: p.adp_eff,
-               "points": lambda p: -p.val, "ecr": lambda p: p.ecr or 9999}.get(sort or "vor")
+               "points": lambda p: -p.val, "ecr": lambda p: p.ecr or 9999,
+               "dynasty": lambda p: -(self.dyn_value(p.name) or -1e9)}.get(sort or "vor")
         if key is None:
             return None
         players.sort(key=key)
-        head = f"{'#':>3} {'player':<24} {'pos':<3} {'tm':<3} {'pts':>5} {'VOR':>5} {'ADP':>5} {'ECR':>4} tier"
+        head = f"{'#':>3} {'player':<24} {'pos':<3} {'tm':<3} {'pts':>5} {'VOR':>5} {'ADP':>5} {'ECR':>4} {'tier':<4} dyn"
         rows = [f"{i:>3} {p.name[:24]:<24} {p.pos:<3} {(p.team or 'FA'):<3} {p.val:>5.0f} {p.vor:>+5.0f} "
-                f"{(f'{p.adp:.0f}' if p.adp < 999 else '-'):>5} {(p.ecr or '-'):>4} {p.tier or ''}"
+                f"{(f'{p.adp:.0f}' if p.adp < 999 else '-'):>5} {(p.ecr or '-'):>4} {(p.tier or ''):<4} "
+                f"{(f'{self.dyn_value(p.name):.0f}' if self.dyn_value(p.name) is not None else '')}".rstrip()
                 for i, p in enumerate(players[:int(limit or 25)], 1)]
         foot = (f"({self.league.name}; replacement level per week: "
-                + ", ".join(f"{k} {v:.1f}" for k, v in self.league.repl_vpg.items()) + ")")
+                + ", ".join(f"{k} {v:.1f}" for k, v in self.league.repl_vpg.items())
+                + f"; dyn = dynasty trade value, {'superflex' if self.dyn_key == 'sf' else '1QB'})")
         return head, rows, foot
 
     def t_rankings(self, pos=None, limit=25, sort="vor"):
         t = self.rank_table(pos, limit, sort)
         if t is None:
-            return f"unknown sort {sort!r}; one of vor, adp, points, ecr"
+            return f"unknown sort {sort!r}; one of vor, adp, points, ecr, dynasty"
         head, rows, foot = t
         return "\n".join([head, *rows, foot])
 
@@ -539,7 +560,7 @@ class TripleCrown:
             _dump(pf, cur)
         _dump(os.path.join(fmt_dir, "index.json"), index)
         for pos in (None, *SKILL):
-            for sort in ("vor", "adp", "points", "ecr"):
+            for sort in ("vor", "adp", "points", "ecr", "dynasty"):
                 head, rows, foot = self.rank_table(pos, 100, sort)
                 _dump(os.path.join(fmt_dir, "rank", f"{pos or 'all'}.{sort}.json"),
                       {"head": head, "rows": rows, "foot": foot})
@@ -661,11 +682,11 @@ TOOLS = [
          "a": {"type": "string"}, "b": {"type": "string"},
          "question": {"type": "string", "description": "the user's actual question, if any"}}}},
     {"name": "rankings", "description": "The scored draft board under this league's scoring — value over "
-     "replacement, projected points, ADP, expert consensus rank and tier.",
+     "replacement, projected points, ADP, expert consensus rank, tier and dynasty trade value.",
      "inputSchema": {"type": "object", "properties": {
          "pos": {"type": "string", "description": "QB/RB/WR/TE; omit for overall"},
          "limit": {"type": "integer", "default": 25},
-         "sort": {"type": "string", "description": "vor (default), adp, points, ecr"}}}},
+         "sort": {"type": "string", "description": "vor (default), adp, points, ecr, dynasty"}}}},
     {"name": "team", "description": "One NFL team: SOS, win total, bye, coaches (new/returning), "
      "projected skill depth chart, offseason skill-position moves, full schedule.",
      "inputSchema": {"type": "object", "required": ["team"], "properties": {

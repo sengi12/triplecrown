@@ -70,7 +70,8 @@ def synthetic_seed():
         "seed": teams,
         "ecr": {"ppr": {"jahmyr gibbs": {"rank_ecr": 2, "tier": 1}, "derrick henry": {"rank_ecr": 20, "tier": 4},
                         "amonra st brown": {"rank_ecr": 5, "tier": 1}, "lamar jackson": {"rank_ecr": 30, "tier": 5}},
-                "superflex": {"lamar jackson": {"rank_ecr": 2, "tier": 1}, "jahmyr gibbs": {"rank_ecr": 3, "tier": 1}}},
+                "superflex": {"lamar jackson": {"rank_ecr": 2, "tier": 1}, "jahmyr gibbs": {"rank_ecr": 3, "tier": 1}},
+                "dynasty": {"jahmyr gibbs": {"rank_ecr": 1, "tier": 1}, "lamar jackson": {"rank_ecr": 9, "tier": 2}}},
         "contracts": {"derrick henry": {"apy": 15000000, "fa": 2028}, "lamar jackson": {"apy": 52000000, "fa": 2028}},
         "sos": {"DET": {"rank": 1, "win_total": 10.5, "name": "Detroit Lions"},
                 "BAL": {"rank": 7, "win_total": 11.5, "name": "Baltimore Ravens"}},
@@ -84,7 +85,7 @@ def synthetic_seed():
                               "trades": [{"player": "David Montgomery", "pos": "RB", "detail": "Traded to HOU from DET for x"},
                                          {"player": "Juice Scruggs", "pos": "G", "detail": "Traded to DET from HOU"}],
                               "draft": [], "free_agents_lost": [{"player": "David Montgomery", "pos": "RB", "to_team": "HOU"}]}},
-        "dynasty_values": {"players": {"jahmyr gibbs": {"v": 60, "sf": None}}},
+        "dynasty_values": {"players": {"jahmyr gibbs": {"v": 60, "sf": None}, "lamar jackson": {"v": 40, "sf": 90}}},
         "history": {"sf": ["games_played", "games_started", "off_snaps", "team_off_snaps", "receptions", "receiving_yards",
                            "receiving_touchdowns", "receiving_targets", "rushing_yards", "rushing_attempts", "rushing_touchdowns"],
                     "players": {"9221": ["Jahmyr Gibbs", "RB", {"2025": [["DET", 17, 17, None,
@@ -196,8 +197,23 @@ def test_rankings_and_formats():
     check("superflex ECR table", "expert consensus rank 2" in sf.sheet(sf.one("Lamar Jackson")))
     check("superflex ADP board", sf.fmt == "superflex" and "SUPER_FLEX1" in sf.t_state(), sf.t_state())
     check("state lists gaps", "not in this server" in d.t_state())
+    # dynasty is the app's other league type: half-PPR board, dynasty ECR, sortable by trade value
+    dy = make("dynasty")
+    check("dynasty: half-PPR ADP board, no superflex slot", dy.fmt == "dynasty" and dy.adp_fmt == "half_ppr"
+          and "ADP board: half_ppr" in dy.t_state() and "SUPER_FLEX" not in dy.t_state(), dy.t_state())
+    check("dynasty ECR table", "expert consensus rank 1" in dy.sheet(dy.one("Jahmyr Gibbs")))
+    dyn = dy.t_rankings(sort="dynasty", limit=3)
+    rows = dyn.splitlines()[1:-1]
+    check("dynasty sort: 1QB trade value leads", "Jahmyr Gibbs" in rows[0] and rows[0].rstrip().endswith("60")
+          and "Lamar Jackson" in rows[1] and "1QB)" in dyn, dyn)
+    dsf = make("dynasty_superflex")
+    dsf_rows = dsf.t_rankings(sort="dynasty", limit=3).splitlines()
+    check("dynasty superflex: superflex values, QB first", "SUPER_FLEX1" in dsf.t_state() and "ADP board: superflex" in dsf.t_state()
+          and "Lamar Jackson" in dsf_rows[1] and dsf_rows[1].rstrip().endswith("90") and "superflex)" in dsf_rows[-1], dsf_rows)
+    check("dynasty superflex ECR falls back to dynasty", "expert consensus rank 9" in dsf.sheet(dsf.one("Lamar Jackson")))
+    check("every app format is a league", set(M.FORMATS) == {"ppr", "half_ppr", "std", "superflex", "dynasty", "dynasty_superflex"})
     try:
-        M.synthetic_league("dynasty")
+        M.synthetic_league("bestball")
         check("bad format rejected", False)
     except ValueError:
         check("bad format rejected", True)

@@ -1,0 +1,32 @@
+# Redeploys the Cloudflare Worker when its code changes. Data never needs this — the Pages
+# deploy rebakes the shards the worker reads. Runs only if the repo has the two Cloudflare
+# secrets (CLOUDFLARE_API_TOKEN with the "Edit Cloudflare Workers" template, and
+# CLOUDFLARE_ACCOUNT_ID); without them it just says how to deploy by hand.
+name: Deploy MCP worker
+
+on:
+  push:
+    branches: [main]
+    paths: ['tools/mcp_worker/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::No Cloudflare secrets — deploy by hand: cd tools/mcp_worker && npx wrangler deploy"
+            exit 0
+          fi
+          cd tools/mcp_worker && npx --yes wrangler@4 deploy

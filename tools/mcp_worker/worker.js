@@ -8,13 +8,21 @@
 //
 // Transport: MCP Streamable HTTP, stateless. POST /mcp with a JSON-RPC message (or batch),
 // JSON back. GET /mcp is 405 (no server-initiated stream), DELETE /mcp is 200 (nothing to end).
-// Pick the scoring format by path: /mcp (env.TC_FORMAT, default ppr), /ppr/mcp, /half_ppr/mcp,
-// /std/mcp, /superflex/mcp.
+// Pick the scoring format by path: /mcp (env.TC_FORMAT, default ppr), then /<format>/mcp for
+// every format the bake lists (ppr, half_ppr, std, superflex, dynasty, dynasty_superflex).
+//
+// Two layers of tools. The curated ones (state … sos) are the stdio server's, byte for byte,
+// read from its bake. The raw ones (seed_ls, seed_get, player_data) open the ENTIRE seed —
+// every table TripleCrown ships, sidecars included — cut into shards by bake_seed.js so any
+// path is one small read (layout in shards.js).
 //
 // The data lives on GitHub Pages (env.TC_DATA); this worker never needs redeploying for a new
 // seed — the Pages deploy rebakes the shards and the edge cache turns over within TTL.
 
-const FORMATS = ["ppr", "half_ppr", "std", "superflex"];
+import { chunkIndex, dirOf, resolve, splitPath, SEP } from "./shards.js";
+
+const DEFAULT_FORMAT = "ppr";
+const MAX_OUT = 12000;         // characters of JSON a raw read returns before it is cut
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const CACHE_TTL = 600;         // seconds; matches Pages' own max-age
 const JSON_HDR = { "content-type": "application/json; charset=utf-8" };
@@ -50,6 +58,11 @@ class Data {
   rank(pos, sort) { return this.get(`${this.fmt}/rank/${pos || "all"}.${sort}.json`, true); }
   sched(code) { return this.get(`sched/${code}.json`, true); }
   sos() { return this.get("sos.json"); }
+  // the whole-seed shards (bake_seed.js)
+  tree() { return this.get("seed/_tree.json"); }
+  ls(parts) { return this.get(`${dirOf(parts)}/_ls.json`, true); }
+  chunk(parts, i) { return this.get(`${dirOf(parts)}/c${i}.json`, true); }
+  pd(id) { return this.get(`pd/${encodeURIComponent(id)}.json`, true); }
 }
 
 // ── lookup: mirror of TripleCrown.find in tc_mcp.py ────────────────────────────────────────
@@ -123,6 +136,80 @@ async function teamCode(d, team) {
   return Object.keys(codes).find(c => String(codes[c]).toLowerCase().includes(lo)) || null;
 }
 
+// ── the raw seed: any path, one read ───────────────────────────────────────────────────────
+// Walk `parts` through the shard tree: the deepest directory node, then the chunk holding the
+// next key, then plain property access for the rest.
+async function seedNode(d, parts) {
+  const tree = await d.tree();
+  const [k, rec] = resolve(tree, parts);
+  if (k === parts.length) return { dir: rec, parts, ls: await d.ls(parts) };
+  const key = parts[k];
+  const ch = await d.chunk(parts.slice(0, k), chunkIndex(rec, key));
+  if (!ch || !Object.prototype.hasOwnProperty.call(ch, key)) return { missing: key, at: parts.slice(0, k), ls: await d.ls(parts.slice(0, k)) };
+  let v = ch[key];
+  for (let i = k + 1; i < parts.length; i++) {
+    const p = parts[i];
+    const ok = v && typeof v === "object" && (Array.isArray(v) ? /^\d+$/.test(p) && Number(p) < v.length : Object.prototype.hasOwnProperty.call(v, p));
+    if (!ok) return { missing: p, at: parts.slice(0, i), value: v };
+    v = v[p];
+  }
+  return { value: v, parts };
+}
+const here = parts => parts.length ? parts.join(SEP) : "(root)";
+const brief = v => v === null ? "null" : Array.isArray(v) ? `[${v.length} items]` : typeof v === "object" ? `{${Object.keys(v).length} keys}` : JSON.stringify(v);
+function keysLine(keys, limit = 300) {
+  const shown = keys.slice(0, limit).join(", ");
+  return keys.length > limit ? `${shown} … (${keys.length - limit} more)` : shown;
+}
+function describe(parts, v) {
+  const L = [];
+  if (v && typeof v === "object") {
+    const keys = Array.isArray(v) ? null : Object.keys(v);
+    L.push(`${here(parts)} — ${keys ? `dict, ${keys.length} keys` : `list, ${v.length} items`}`);
+    const items = keys ? keys.slice(0, 300).map(k => `${k}: ${brief(v[k])}`) : v.slice(0, 40).map((x, i) => `${i}: ${brief(x)}`);
+    L.push(...items.map(x => "  " + x));
+    const rest = keys ? keys.length - 300 : v.length - 40;
+    if (rest > 0) L.push(`  … ${rest} more`);
+  } else {
+    L.push(`${here(parts)} = ${JSON.stringify(v)}`);
+  }
+  return L.join("\n");
+}
+function cut(text, note) {
+  if (text.length <= MAX_OUT) return text;
+  return `${text.slice(0, MAX_OUT)}\n…[cut at ${MAX_OUT} of ${text.length} chars${note ? "; " + note : ""}]`;
+}
+function dirText(parts, ls, rec) {
+  const L = [`${here(parts)} — ${ls.t === "list" ? `list, ${ls.n} items` : `dict, ${ls.n} keys`} (large section: read one key at a time with seed_get, or pass keys=[…])`];
+  if (ls.doc) L.push(...Object.keys(ls.doc).map(k => `  ${k} — ${ls.doc[k]}`));
+  else if (ls.keys) L.push("  keys: " + keysLine(ls.keys));
+  if (rec && rec.split && rec.split.length) L.push("  large keys (sections of their own): " + keysLine(rec.split));
+  return L.join("\n");
+}
+function missingText(r) {
+  const sib = r.ls ? (r.ls.keys || []) : (r.value && typeof r.value === "object" ? Object.keys(r.value) : []);
+  return `No key ${JSON.stringify(r.missing)} under ${here(r.at)}.` + (sib.length ? ` Keys there: ${keysLine(sib, 60)}` : ` It is a ${brief(r.value)}.`);
+}
+
+const RAW_TOOLS = [
+  { name: "seed_ls", description: "Browse the ENTIRE TripleCrown seed — every table the app ships (projections, ECR per format, "
+    + "5 seasons of nflverse advanced stats, route trees, passing/rushing charts, player history, college profiles and game logs, contracts, "
+    + "dynasty values, team metrics, coaches, schedules, weekly team/OL/defender data, coaching formations). Lists what is at a path; "
+    + "call with no path for the table of contents with a description of each section. Paths are slash-separated keys, e.g. "
+    + "nflverse/2025/routes/amonra st brown.",
+    inputSchema: { type: "object", properties: { path: { type: "string", description: "slash-separated keys; empty for the root" } } } },
+  { name: "seed_get", description: "Read the raw JSON at a seed path (see seed_ls for the map). Large sections are directories: "
+    + "read one key, or pass keys=[…] to read several children at once. Output is cut at 12k characters — narrow the path instead of paging.",
+    inputSchema: { type: "object", required: ["path"], properties: {
+      path: { type: "string" }, keys: { type: "array", items: { type: "string" }, description: "children to read from a large section (max 20)" } } } },
+  { name: "player_data", description: "Every raw table row for one player in one read: projection row (with per-format ADP and the TC model), "
+    + "ECR in every format, contract, dynasty value, season history, 5 seasons of nflverse advanced stats by situation, route tree, "
+    + "passing/rushing charts, roster rows, college profile and game logs. Omit section for the list of sections; name one to read it.",
+    inputSchema: { type: "object", required: ["name"], properties: {
+      name: { type: "string", description: "player name or Sleeper id" }, pos: { type: "string", description: "QB/RB/WR/TE" },
+      section: { type: "string", description: "projection, ecr, contract, ktc, dynasty_value, history, nflverse, nflverse/<year>, cfb, cfb_logs" } } } },
+];
+
 const TOOLS = {
   async state(d) { return (await d.meta()).state; },
   async search_players(d, { query, pos, limit }) {
@@ -150,7 +237,7 @@ const TOOLS = {
   },
   async rankings(d, { pos, limit, sort }) {
     sort = String(sort || "vor");
-    if (!["vor", "adp", "points", "ecr"].includes(sort)) return `unknown sort ${JSON.stringify(sort)}; one of vor, adp, points, ecr`;
+    if (!["vor", "adp", "points", "ecr", "dynasty"].includes(sort)) return `unknown sort ${JSON.stringify(sort)}; one of vor, adp, points, ecr, dynasty`;
     const p = pos ? String(pos).toUpperCase() : "all";
     const t = await d.rank(p, sort);
     if (!t) return `No rankings for ${JSON.stringify(pos)}; one of QB, RB, WR, TE or omit.`;
@@ -171,6 +258,55 @@ const TOOLS = {
     return `${code} schedule\n${rows.join("\n")}`;
   },
   async sos(d) { return (await d.sos()).text; },
+  async seed_ls(d, { path }) {
+    const parts = splitPath(path);
+    const r = await seedNode(d, parts);
+    if (r.missing) return missingText(r);
+    if (r.dir) return r.ls ? dirText(parts, r.ls, r.dir) : `No shard for ${here(parts)} (is the seed baked?).`;
+    return cut(describe(parts, r.value));
+  },
+  async seed_get(d, { path, keys }) {
+    const parts = splitPath(path);
+    const r = await seedNode(d, parts);
+    if (r.missing) return missingText(r);
+    const want = Array.isArray(keys) ? keys.map(String).slice(0, 20) : null;
+    if (r.dir) {
+      if (!want) return dirText(parts, r.ls || { t: r.dir.t, n: r.dir.n }, r.dir);
+      const out = {}, miss = [];
+      const chunks = new Map();
+      for (const k of want) { const i = chunkIndex(r.dir, k); if (!chunks.has(i)) chunks.set(i, d.chunk(parts, i)); }
+      for (const k of want) {
+        const ch = await chunks.get(chunkIndex(r.dir, k));
+        if (r.dir.split.includes(k)) miss.push(`${k} (a large section — read it by path)`);
+        else if (ch && Object.prototype.hasOwnProperty.call(ch, k)) out[k] = ch[k];
+        else miss.push(k);
+      }
+      return cut(JSON.stringify(out), `keys: ${Object.keys(out).join(", ")}`) + (miss.length ? `\nnot found: ${miss.join(", ")}` : "");
+    }
+    let v = r.value;
+    if (want && v && typeof v === "object" && !Array.isArray(v)) { const o = {}; for (const k of want) if (k in v) o[k] = v[k]; v = o; }
+    const note = v && typeof v === "object" ? (Array.isArray(v) ? `${v.length} items` : `keys: ${keysLine(Object.keys(v), 60)}`) : "";
+    return cut(JSON.stringify(v), note);
+  },
+  async player_data(d, { name, pos, section }) {
+    const hits = find(await d.index(), name, pos, 1);
+    if (!hits.length) return `No player matches ${JSON.stringify(name ?? "")}. Try search_players.`;
+    const p = await d.pd(hits[0].id);
+    if (!p) return `${hits[0].n} has no raw data file (no Sleeper id on the projection row).`;
+    const secs = p.sections || {};
+    if (!section) {
+      return [`${p.n} (${p.pos}, ${p.team || "FA"}) — sections:`,
+        ...Object.keys(secs).map(k => `  ${k}: ${brief(secs[k])}${k === "nflverse" ? " — seasons " + Object.keys(secs[k]).join(", ") + "; pass section nflverse/<year>" : ""}`),
+        "", "projection: " + JSON.stringify(secs.projection)].join("\n");
+    }
+    const parts = splitPath(section);
+    let v = secs;
+    for (const k of parts) {
+      if (v && typeof v === "object" && Object.prototype.hasOwnProperty.call(v, k)) v = v[k];
+      else return `No section ${JSON.stringify(section)} for ${p.n}. Sections: ${Object.keys(secs).join(", ")}`;
+    }
+    return cut(JSON.stringify(v), v && typeof v === "object" && !Array.isArray(v) ? `keys: ${keysLine(Object.keys(v), 40)}` : "");
+  },
 };
 
 // ── JSON-RPC ───────────────────────────────────────────────────────────────────────────────
@@ -190,12 +326,12 @@ async function handle(d, msg) {
         protocolVersion: PROTOCOL_VERSIONS.includes(want) ? want : PROTOCOL_VERSIONS[PROTOCOL_VERSIONS.length - 1],
         capabilities: { tools: { listChanged: false }, resources: {} },
         serverInfo: { name: man.server.name, version: man.server.version },
-        instructions: man.instructions,
+        instructions: man.instructions + " The whole seed is here too: seed_ls (no path) for the table of contents, seed_get for any table, player_data for every raw row on one player.",
       };
     } else if (method === "ping") {
       result = {};
     } else if (method === "tools/list") {
-      result = { tools: (await d.manifest()).tools };
+      result = { tools: [...(await d.manifest()).tools, ...RAW_TOOLS] };
     } else if (method === "tools/call") {
       const name = params.name, fn = Object.prototype.hasOwnProperty.call(TOOLS, name) ? TOOLS[name] : null;
       if (!fn) return rpcError(id, -32602, `unknown tool ${JSON.stringify(name)}`);
@@ -221,12 +357,15 @@ async function handle(d, msg) {
   return { jsonrpc: "2.0", id: id ?? null, result };
 }
 
-function landing(base, fmt) {
+function landing(base, fmt, formats) {
   return [
     "TripleCrown MCP — fantasy football data as tools, for any MCP client.",
     "",
     `POST ${base}/mcp                 (${fmt} scoring)`,
-    ...FORMATS.map(f => `POST ${base}/${f}/mcp`),
+    ...formats.map(f => `POST ${base}/${f}/mcp`),
+    "",
+    "Tools: state, search_players, get_player, compare, rankings, team, schedule, sos — plus seed_ls / seed_get / player_data,",
+    "which open the entire seed (every table, every season, every sidecar) one small read at a time.",
     "",
     "Claude Code:   claude mcp add --transport http triplecrown " + base + "/superflex/mcp",
     "claude.ai:     Settings → Connectors → Add custom connector → that URL",
@@ -239,13 +378,20 @@ function landing(base, fmt) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const m = url.pathname.match(/^\/(?:(ppr|half_ppr|std|superflex)\/)?mcp\/?$/);
+    const m = url.pathname.match(/^\/(?:([a-z_]+)\/)?mcp\/?$/);
     const base = `${url.protocol}//${url.host}`;
-    const fmt = (m && m[1]) || (FORMATS.includes(env.TC_FORMAT) ? env.TC_FORMAT : "ppr");
+    const dataBase = env.TC_DATA || "https://sengi12.github.io/triplecrown/mcp";
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
-    if (!m) {
-      if (url.pathname === "/" || url.pathname === "") return new Response(landing(base, fmt), { headers: { "content-type": "text/plain; charset=utf-8", ...CORS } });
-      return new Response("not found", { status: 404, headers: CORS });
+    // The formats are whatever the bake lists (the manifest is one cached read, kept for the call).
+    const d = new Data(dataBase, DEFAULT_FORMAT);
+    let formats;
+    try { formats = (await d.manifest()).formats || [DEFAULT_FORMAT]; }
+    catch (e) { return new Response(JSON.stringify(rpcError(null, -32603, `data unavailable: ${e.message}`)), { status: 503, headers: { ...JSON_HDR, ...CORS } }); }
+    const fmt = (m && m[1]) || (formats.includes(env.TC_FORMAT) ? env.TC_FORMAT : DEFAULT_FORMAT);
+    d.fmt = fmt;
+    if (!m || !formats.includes(fmt)) {
+      if (url.pathname === "/" || url.pathname === "") return new Response(landing(base, fmt, formats), { headers: { "content-type": "text/plain; charset=utf-8", ...CORS } });
+      return new Response(m ? `unknown format ${JSON.stringify(fmt)}; one of ${formats.join(", ")}` : "not found", { status: 404, headers: CORS });
     }
     if (request.method === "GET") return new Response("MCP endpoint: POST JSON-RPC here. No server-initiated stream.", { status: 405, headers: { allow: "POST, DELETE, OPTIONS", ...CORS } });
     if (request.method === "DELETE") return new Response(null, { status: 200, headers: CORS });
@@ -254,7 +400,6 @@ export default {
     let body;
     try { body = await request.json(); }
     catch { return new Response(JSON.stringify(rpcError(null, -32700, "parse error")), { status: 400, headers: { ...JSON_HDR, ...CORS } }); }
-    const d = new Data(env.TC_DATA || "https://sengi12.github.io/triplecrown/mcp", fmt);
     const msgs = Array.isArray(body) ? body : [body];
     const out = (await Promise.all(msgs.map(x => handle(d, x)))).filter(x => x !== null);
     if (!out.length) return new Response(null, { status: 202, headers: CORS });   // notifications only
@@ -263,4 +408,4 @@ export default {
   },
 };
 
-export { find, normName, deltas, handle, Data, TOOLS };
+export { find, normName, deltas, handle, Data, TOOLS, RAW_TOOLS };
