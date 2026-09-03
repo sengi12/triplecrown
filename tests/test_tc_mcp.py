@@ -303,6 +303,37 @@ def test_real_seed_smoke():
     check("real seed: ECR keyed on board", any(p.ecr for p in d.board.values()))
 
 
+def test_bake():
+    """--bake writes the shards the Cloudflare Worker serves; same answers, small files."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as out:
+        d = make("ppr")
+        d.bake_shared(out)
+        n = d.bake(out)
+        man = M._load_json(os.path.join(out, "manifest.json"))
+        check("bake: manifest tools/frame/instructions", man["tools"] == M.TOOLS and man["frame"] == M.ANALYST_FRAME
+              and man["instructions"] == M.INSTRUCTIONS and man["teams"] == synthetic_seed()["team_names"])
+        idx = M._load_json(os.path.join(out, "ppr", "index.json"))
+        check("bake: one index row per player", n == len(idx) == len({r["id"] for r in idx}))
+        g = next(r for r in idx if r["id"] == "9221")
+        check("bake: index row = search line", g["line"] == d._row_line(d.one("9221")) and g["k"] == "jahmyrgibbs")
+        pf = M._load_json(os.path.join(out, "p", "9221.json"))
+        check("bake: player shard = sheet + facts", pf["by"]["ppr"]["sheet"] == d.sheet(d.one("9221"))
+              and pf["by"]["ppr"]["f"]["vor"] == d.board["9221"].vor and pf["by"]["ppr"]["f"]["sos"] == 1)
+        meta = M._load_json(os.path.join(out, "ppr", "meta.json"))
+        check("bake: meta = state + league shape", meta["state"] == d.t_state() and meta["league"] == d.league.name)
+        rk = M._load_json(os.path.join(out, "ppr", "rank", "RB.adp.json"))
+        check("bake: rank table = t_rankings", "\n".join([rk["head"], *rk["rows"][:5], rk["foot"]]) == d.t_rankings("RB", 5, "adp"))
+        check("bake: team shard", M._load_json(os.path.join(out, "ppr", "team", "DET.json"))["text"] == d.t_team("DET"))
+        sch = M._load_json(os.path.join(out, "sched", "DET.json"))
+        check("bake: schedule lines from week 1", sch["lines"][0][0] == 1 and sch["lines"][5][1].startswith("wk6  BYE"), sch["lines"][:6])
+        check("bake: sos shard", M._load_json(os.path.join(out, "sos.json"))["text"] == d.t_sos())
+        # a second format lands in the same player file
+        make("superflex").bake(out)
+        pf = M._load_json(os.path.join(out, "p", "9221.json"))
+        check("bake: formats accumulate per player", set(pf["by"]) == {"ppr", "superflex"})
+
+
 if __name__ == "__main__":
     test_norm()
     test_lookup()
@@ -313,6 +344,7 @@ if __name__ == "__main__":
     test_call_tool_covers_every_tool()
     test_protocol()
     test_cli_kv()
+    test_bake()
     test_real_seed_smoke()
     ok = all(RESULTS)
     print(f"RESULT: {'PASS' if ok else 'SOME FAILED'} ({sum(RESULTS)}/{len(RESULTS)})")

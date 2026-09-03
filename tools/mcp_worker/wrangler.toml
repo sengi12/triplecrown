@@ -1,0 +1,13 @@
+# TripleCrown remote MCP — deploy once, free:  cd tools/mcp_worker && npx wrangler deploy
+# Data comes from GitHub Pages (TC_DATA); a new seed needs no redeploy.
+name = "triplecrown-mcp"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+[vars]
+TC_DATA = "https://sengi12.github.io/triplecrown/mcp"
+TC_FORMAT = "ppr"   # scoring at the bare /mcp path; /superflex/mcp etc. override per URL
+
+[observability]
+enabled = true

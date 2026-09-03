@@ -19,3 +19,6 @@ _preview_min/
 seeds_tm/
 seeds_asof*/
 index_tm.html
+
+# wrangler (tools/mcp_worker) local state
+.wrangler/

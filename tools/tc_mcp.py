@@ -36,6 +36,7 @@ import gzip
 import json
 import os
 import re
+import shutil
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -80,6 +81,12 @@ def log(msg):
     """stderr only — stdout is the protocol channel."""
     sys.stderr.write(f"[tc_mcp] {msg}\n")
     sys.stderr.flush()
+
+
+def _dump(path, obj):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(obj, f, ensure_ascii=False, separators=(",", ":"))
 
 
 def _load_json(path):
@@ -469,22 +476,94 @@ class TripleCrown:
             "", f"Question: {question or 'Who should I take?'}",
         ])
 
-    def t_rankings(self, pos=None, limit=25, sort="vor"):
+    def rank_table(self, pos=None, limit=25, sort="vor"):
+        """(header, rows, footer) of the board, or None for an unknown sort."""
         players = list(self.board.values())
         if pos:
             players = [p for p in players if p.pos == pos.upper()]
         key = {"vor": lambda p: -p.vor, "adp": lambda p: p.adp_eff,
                "points": lambda p: -p.val, "ecr": lambda p: p.ecr or 9999}.get(sort or "vor")
         if key is None:
-            return f"unknown sort {sort!r}; one of vor, adp, points, ecr"
+            return None
         players.sort(key=key)
-        out = [f"{'#':>3} {'player':<24} {'pos':<3} {'tm':<3} {'pts':>5} {'VOR':>5} {'ADP':>5} {'ECR':>4} tier"]
-        for i, p in enumerate(players[:int(limit or 25)], 1):
-            out.append(f"{i:>3} {p.name[:24]:<24} {p.pos:<3} {(p.team or 'FA'):<3} {p.val:>5.0f} {p.vor:>+5.0f} "
-                       f"{(f'{p.adp:.0f}' if p.adp < 999 else '-'):>5} {(p.ecr or '-'):>4} {p.tier or ''}")
-        out.append(f"({self.league.name}; replacement level per week: "
-                   + ", ".join(f"{k} {v:.1f}" for k, v in self.league.repl_vpg.items()) + ")")
-        return "\n".join(out)
+        head = f"{'#':>3} {'player':<24} {'pos':<3} {'tm':<3} {'pts':>5} {'VOR':>5} {'ADP':>5} {'ECR':>4} tier"
+        rows = [f"{i:>3} {p.name[:24]:<24} {p.pos:<3} {(p.team or 'FA'):<3} {p.val:>5.0f} {p.vor:>+5.0f} "
+                f"{(f'{p.adp:.0f}' if p.adp < 999 else '-'):>5} {(p.ecr or '-'):>4} {p.tier or ''}"
+                for i, p in enumerate(players[:int(limit or 25)], 1)]
+        foot = (f"({self.league.name}; replacement level per week: "
+                + ", ".join(f"{k} {v:.1f}" for k, v in self.league.repl_vpg.items()) + ")")
+        return head, rows, foot
+
+    def t_rankings(self, pos=None, limit=25, sort="vor"):
+        t = self.rank_table(pos, limit, sort)
+        if t is None:
+            return f"unknown sort {sort!r}; one of vor, adp, points, ecr"
+        head, rows, foot = t
+        return "\n".join([head, *rows, foot])
+
+    # ── the static bake: the same answers as small JSON shards ─────────────
+    def row_key(self, r):
+        return str(r.get("player_id") or "n-" + ds.norm_name(r["name"]))
+
+    def facts(self, r):
+        """The numbers deltas() compares, so a thin client can compute them."""
+        p = self.board.get(str(r.get("player_id")))
+        so = (self.seed.get("sos") or {}).get(r.get("team") or "") or {}
+        adp = self.adp(r)
+        return {"vor": p.vor if p is not None else None, "pts": self.points(r),
+                "tgt": _num(r.get("receiving_targets")), "car": _num(r.get("rushing_attempts")),
+                "td": sum((_num(r.get(k)) or 0) for k in ("rushing_tds", "receiving_tds", "passing_touchdowns")),
+                "adp": adp if adp < 999 else None, "sos": so.get("rank"), "tc": self.tc_pts(r)}
+
+    def bake(self, out_dir):
+        """Write this format's shards under out_dir/<fmt>/ plus the format-free ones."""
+        fmt_dir = os.path.join(out_dir, self.fmt)
+        shape = "/".join(f"{k}{v}" for k, v in self.league.lineup.items() if v)
+        _dump(os.path.join(fmt_dir, "meta.json"),
+              {"format": self.fmt, "league": self.league.name, "lineup": shape,
+               "week": self.week(), "state": self.t_state()})
+        index = []
+        seen = set()
+        for r in self.rows:
+            k = self.row_key(r)
+            if k in seen:
+                continue
+            seen.add(k)
+            adp = self.adp(r)
+            index.append({"id": k, "n": r["name"], "k": ds.norm_name(r["name"]), "pos": r.get("pos"),
+                          "team": r.get("team"), "adp": adp if adp < 999 else None, "line": self._row_line(r)})
+            # One file per player holding every format, so a deploy ships ~600 shards, not 2,400.
+            pf = os.path.join(out_dir, "p", k + ".json")
+            cur = _load_json(pf) if os.path.exists(pf) else {"n": r["name"], "pos": r.get("pos"), "team": r.get("team"), "by": {}}
+            cur["by"][self.fmt] = {"sheet": self.sheet(r), "f": self.facts(r)}
+            _dump(pf, cur)
+        _dump(os.path.join(fmt_dir, "index.json"), index)
+        for pos in (None, *SKILL):
+            for sort in ("vor", "adp", "points", "ecr"):
+                head, rows, foot = self.rank_table(pos, 100, sort)
+                _dump(os.path.join(fmt_dir, "rank", f"{pos or 'all'}.{sort}.json"),
+                      {"head": head, "rows": rows, "foot": foot})
+        for code in (self.seed.get("team_names") or {}):
+            _dump(os.path.join(fmt_dir, "team", code + ".json"), {"text": self.t_team(code)})
+        return len(index)
+
+    def bake_shared(self, out_dir):
+        """The format-independent shards: manifest, SOS, schedules."""
+        st = self.seed.get("state") or {}
+        _dump(os.path.join(out_dir, "manifest.json"),
+              {"server": {"name": SERVER_NAME, "version": SERVER_VERSION},
+               "season": self.seed.get("season"), "week": st.get("week"), "asof": st.get("asof"),
+               "formats": sorted(FORMATS), "tools": TOOLS, "resources": RESOURCES,
+               "frame": ANALYST_FRAME, "instructions": INSTRUCTIONS,
+               "teams": self.seed.get("team_names") or {}})
+        _dump(os.path.join(out_dir, "sos.json"), {"text": self.t_sos()})
+        sos = self.seed.get("sos") or {}
+        for code in (self.inseason.get("schedule") or {}):
+            lines = []
+            for w, o in self.schedule(code, from_week=1):
+                so = sos.get(o) if o != "BYE" else None
+                lines.append([w, f"wk{w:<2} {o}" + (f"  (opp win total {so.get('win_total')})" if so else "")])
+            _dump(os.path.join(out_dir, "sched", code + ".json"), {"team": code, "week": self.week(), "lines": lines})
 
     def t_team(self, team):
         team = str(team or "").upper()
@@ -598,6 +677,10 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {}}},
 ]
 
+INSTRUCTIONS = ("Fantasy football data from TripleCrown. For any 'A or B' question call compare first; "
+                "for a single player call get_player; use search_players when a name is uncertain. "
+                "Cite the numbers, not the ranks.")
+
 RESOURCES = [{"uri": "triplecrown://state", "name": "TripleCrown state", "mimeType": "text/plain",
               "description": "Season, week, league shape and data coverage of this server."}]
 
@@ -646,9 +729,7 @@ class Server:
                 result = {"protocolVersion": want if want in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[-1],
                           "capabilities": {"tools": {"listChanged": False}, "resources": {}},
                           "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
-                          "instructions": "Fantasy football data from TripleCrown. For any 'A or B' question "
-                                          "call compare first; for a single player call get_player; use "
-                                          "search_players when a name is uncertain. Cite the numbers, not the ranks."}
+                          "instructions": INSTRUCTIONS}
             elif method == "ping":
                 result = {}
             elif method == "tools/list":
@@ -709,6 +790,23 @@ def _parse_kv(pairs):
     return out
 
 
+def bake_all(out_dir, seed_path=SEED_PATH, inseason_path=INSEASON_PATH):
+    """Every format's shards plus the shared ones; the seed is read once."""
+    seed = _load_json(seed_path)
+    try:
+        inseason = _load_json(inseason_path)
+    except FileNotFoundError:
+        inseason = {}
+    n = 0
+    shutil.rmtree(os.path.join(out_dir, "p"), ignore_errors=True)   # player shards accumulate formats
+    for i, fmt in enumerate(sorted(FORMATS)):
+        tc = TripleCrown(seed=seed, inseason=inseason, fmt=fmt)
+        if i == 0:
+            tc.bake_shared(out_dir)
+        n = tc.bake(out_dir)
+    return n
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--seed", default=SEED_PATH)
@@ -718,7 +816,14 @@ def main(argv=None):
     ap.add_argument("--league", help="Sleeper league id: score under its real settings (fetched once, cached)")
     ap.add_argument("--call", nargs="+", metavar="TOOL [k=v ...]",
                     help="run one tool from the command line and exit")
+    ap.add_argument("--bake", metavar="DIR",
+                    help="write the static shards the Cloudflare Worker serves (all formats) and exit")
     a = ap.parse_args(argv)
+
+    if a.bake:
+        n = bake_all(a.bake, seed_path=a.seed, inseason_path=a.inseason)
+        log(f"baked {n} players x {len(FORMATS)} formats into {a.bake}")
+        return 0
 
     def factory():
         league = sleeper_league(a.league) if a.league else None

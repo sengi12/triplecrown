@@ -231,6 +231,7 @@ run_js_test test_qb_room       "QB room: SPLIT SQUAD only with 2+ projected star
 run_js_test test_qb_games_only  "Games-only mode: games shift without rescaling totals (rates re-derive), floor of 1, per-team toggle"
 run_js_test test_swipe_la_preview "Tab swipe: laSetTab parsing, LA preview whitelist, cache-only previews (no fetch from a gesture)"
 run_js_test test_inseason_sidecar "In-season sidecar: adoption + NFLVERSE merge, baked path, reset, gz URL with query"
+run_js_test test_mcp_worker     "Cloudflare MCP worker: the bake, Streamable HTTP protocol, every tool byte-equal to the stdio server"
 
 # Step 4: Python tests
 echo ""

@@ -136,6 +136,7 @@ For the full experience (expert rankings, contracts, advanced stats, coaching, r
 | `tools/draft_sim.py` | Monte-Carlo mock-draft simulator that tunes and validates the app's on-the-clock advisory. `--proj` swaps in an analyst projection file as the value baseline. |
 | `tools/draft_history.py` | Scores every past manager-season in a league's history on what its draft-day roster really did, so "what wins here" is measured rather than assumed. |
 | `tools/draft_playbook.py` | Drives the other two and writes one markdown playbook for one league and one seat. |
+| `tools/mcp_worker/` | The same MCP tools as an always-on **remote** server: a dependency-free Cloudflare Worker (free plan) reading the shards `tc_mcp.py --bake` writes into the Pages site. Deploy once with `wrangler deploy`. |
 | `tools/tc_mcp.py` | An MCP server over the seed: TripleCrown's data as tools for Claude Desktop / Claude Code / any MCP client. Stdlib-only, stdio, zero hosting — see [TripleCrown as an MCP server](#triplecrown-as-an-mcp-server). |
 | `tools/draft_corpus.py` | Harvests real completed Sleeper drafts (league → managers → their leagues), fits the market model to them — sigma curve, K/DEF timing, QB volume — and Brier-scores the advisory's survival predictions against held-out drafts. |
 
@@ -299,6 +300,36 @@ VOR, ECR/tier, ADP, TC model, stat line, last seasons, contract, schedule/SOS, c
 dynasty value), `compare` (both sheets + the computed head-to-head differences + the app's own analyst
 framing), `rankings`, `team`, `schedule`, `sos`, `state`. What lives only in the browser stays there:
 injuries, Sleeper rosters, your notes and in-season pace are live data the seed doesn't carry.
+
+### Always on: the same server as a free Cloudflare Worker
+
+The local server needs a machine running Python. For the Claude app on a phone, claude.ai, or any
+client that only takes a URL, `tools/mcp_worker/` is the same eight tools as a **remote MCP server**
+(Streamable HTTP, no auth, no state) on Cloudflare's free Workers plan — 100k requests a day, no card.
+
+It never parses the seed: every Pages deploy also bakes `python3 tools/tc_mcp.py --bake _site/mcp`,
+~800 small JSON shards (a player's sheet in every format, the ranking tables, the team pages), and the
+worker answers a tool call from one or two edge-cached reads. That is what keeps it inside the free
+plan's 10 ms of CPU per request, and it means the worker is deployed **once** — new data arrives with
+the next Pages deploy, nothing to redeploy. The Python remains the single source: the tool list,
+descriptions and analyst framing travel in `mcp/manifest.json`, and `tests/test_mcp_worker.js` holds
+every tool byte-equal to the stdio server.
+
+```bash
+cd tools/mcp_worker && npx wrangler login && npx wrangler deploy   # Node 22+; on Node 20 use npx wrangler@3
+#  → https://triplecrown-mcp.<your-subdomain>.workers.dev
+```
+
+Then, per client (pick the scoring in the path — `/mcp` is PPR; `/superflex/mcp`, `/half_ppr/mcp`,
+`/std/mcp`):
+
+- **claude.ai / Claude app (phone too)** — Settings → Connectors → *Add custom connector* → the URL.
+  Free plan allows one custom connector.
+- **Claude Code** — `claude mcp add --transport http triplecrown https://…workers.dev/superflex/mcp`
+- **Claude Desktop** — the same Connectors setting, or the stdio config above.
+
+The data is the public seed Pages already serves, so an open endpoint exposes nothing new; there is
+no per-league scoring here (that stays a `--league` feature of the local server).
 
 ---
 
@@ -478,9 +509,12 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [x] MCP server (`tools/tc_mcp.py`): TripleCrown's data as tools for Claude Desktop / Claude Code —
   a new door for *outside* AI into the seed, not a change to the in-app compare (which already gets the
   full grounding packet by prompt). Local stdio process, stdlib-only, zero hosting, zero bytes in
-  `index.html`. Next, gated on the free-first rule: optional in-browser tool calling for the ⚖ compare
-  (the model asks for more data on demand) — desktop-only and opt-in, because every tool round-trip is
-  another request against a free tier's daily cap
+  `index.html`. **Remote too** (`tools/mcp_worker/`): the same tools as a free Cloudflare Worker for
+  the Claude phone app / claude.ai connectors / any URL-only client — stateless, reads the per-deploy
+  `mcp/` shards from Pages instead of the seed (free plan's 10 ms CPU), deployed once. Next, gated on
+  the free-first rule: optional in-browser tool calling for the ⚖ compare (the model asks for more
+  data on demand) — desktop-only and opt-in, because every tool round-trip is another request against
+  a free tier's daily cap
 - [ ] AI deep-analysis fan-out: a lead "ranker" model orchestrating specialized sub-agents (offense,
   defense, player context, coaching, deep stats) rolled into an in-depth TripleCrown rank —
   **deliberately deferred**: fan-out is exactly the shape of feature that racks up tokens, and the
