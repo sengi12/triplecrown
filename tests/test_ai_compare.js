@@ -54,7 +54,10 @@ const app=new Function(code+`return { tcAiSettings, tcAiSaveSettings, tcAiUsage,
   setDrafted:(d)=>{draftedIds=d;},
   tcAiPacketText, tcAiCopyPacket, renderAiCompare, setCmp:(a,b)=>{_aiCmp.a=a;_aiCmp.b=b;_aiCmp.list=[a,b];},
   TC_AI_MAX_TOKENS, TC_AI_FREE_MODELS,
-  setFormat:(f)=>{rankFormat=f;}, setDraftLineup:(l)=>{draftLineup=l;} };`)();
+  setFormat:(f)=>{rankFormat=f;}, setDraftLineup:(l)=>{draftLineup=l;},
+  tcMcpUrl, tcMcpToOpenAiTools, tcMcpCallLabel, tcMcpTools, resetMcpTools:()=>{_mcpTools=null;},
+  openMcpConnector, renderMcpConnector, TC_MCP_FORMATS, TC_AI_MAX_TOOL_ROUNDS, TC_AI_TOOL_RESULT_CAP,
+  tcAiToolModels, lastLookups:()=>_aiLastLookups, TC_INFO_BOOK };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
 console.log('=== settings: free by default, bounded by design ===');
@@ -500,6 +503,122 @@ await (async()=>{
   const body2=global.document.getElementById('aiCmpBody').innerHTML;
   chk(/id="aiAskBtn"/.test(body2) && /id="aiCopyBtn"/.test(body2), 'with a model configured, Ask leads and copy sits beside it');
   app.tcAiSaveSettings({mode:'', key:'sk-test'}); app.setCmp(null,null);
+})();
+
+console.log('=== the connector: the URL for your format, no request to get it ===');
+{
+  const beforeFetch=fetchCalls.length;
+  app.setFormat('superflex');
+  chk(app.tcMcpUrl()==='https://triplecrown-mcp.sengi.workers.dev/superflex/mcp', 'the URL follows the app\'s format');
+  chk(app.tcMcpUrl('dynasty')==='https://triplecrown-mcp.sengi.workers.dev/dynasty/mcp', 'or the one asked for');
+  chk(app.tcMcpUrl('bestball')==='https://triplecrown-mcp.sengi.workers.dev/superflex/mcp', 'an unknown format falls back to the app\'s');
+  app.tcAiSaveSettings({mcp:'http://evil.example'});
+  chk(app.tcAiSettings().mcp==='' && app.tcMcpUrl().startsWith('https://triplecrown-mcp'), 'a non-https override is refused');
+  app.tcAiSaveSettings({mcp:'https://my.worker.example/'});
+  chk(app.tcMcpUrl('ppr')==='https://my.worker.example/ppr/mcp', 'a self-hosted https worker replaces the base only');
+  app.tcAiSaveSettings({mcp:''});
+  app.openMcpConnector();
+  const body=document.getElementById('mcpBody').innerHTML;
+  chk(body.includes('/superflex/mcp') && body.includes('mcp-fmt on'), 'the modal shows the URL for the current format, chip lit');
+  chk(app.TC_MCP_FORMATS.every(f=>body.includes(`_mcpPickFmt='${f}'`)), 'every served format is a chip');
+  chk(fetchCalls.length===beforeFetch, 'handing over the URL costs no request');
+  chk(app.TC_INFO_BOOK.mcp && /Add custom connector/.test(app.TC_INFO_BOOK.mcp.body), 'the how-to lives behind the info button');
+  chk(app.tcMcpCallLabel('seed_get',{path:'nflverse/2025/routes/x'})==='seed_get nflverse/2025/routes/x', 'a lookup is labeled by tool and target');
+  chk(app.tcMcpCallLabel('compare',{a:'Gibbs',b:'Bijan'})==='compare Gibbs vs Bijan', 'compare names both players');
+  const oa=app.tcMcpToOpenAiTools([{name:'t',description:'d',inputSchema:{type:'object',properties:{q:{type:'string'}}}},{name:'u'}]);
+  chk(oa[0].type==='function' && oa[0].function.name==='t' && oa[0].function.parameters.properties.q, 'MCP tools map to the OpenAI tool shape');
+  chk(oa[1].function.parameters.type==='object' && oa[1].function.description==='', 'a schema-less tool still gets a valid empty schema');
+  app.setFormat('ppr');
+}
+
+console.log('=== look things up: opt-in, bounded, counted ===');
+await (async()=>{
+  const ep=app.tcAiSettings().endpoint;
+  const aiCalls=()=>fetchCalls.filter(f=>f.url===ep);
+  const mcpCalls=()=>fetchCalls.filter(f=>String(f.url).includes('/mcp'));
+  const realFetch=global.fetch;
+  let toolAnswers=[];   // queue of chat responses, popped per request
+  global.fetch=(url,opts)=>{
+    fetchCalls.push({url,opts});
+    if(String(url).includes('/mcp')){
+      const req=JSON.parse(opts.body);
+      if(req.method==='tools/list') return Promise.resolve({ok:true,json:()=>Promise.resolve({jsonrpc:'2.0',id:1,result:{tools:[
+        {name:'player_data',description:'d',inputSchema:{type:'object',properties:{name:{type:'string'}}}}]}})});
+      return Promise.resolve({ok:true,json:()=>Promise.resolve({jsonrpc:'2.0',id:1,result:{content:[{type:'text',text:'ROUTES '+req.params.arguments.name+' '+'x'.repeat(9000)}]}})});
+    }
+    if(url===ep){
+      const r=toolAnswers.length?toolAnswers.shift():{usage:{prompt_tokens:10,completion_tokens:5},choices:[{message:{content:'Final: Player A.'}}]};
+      return Promise.resolve({ok:true,json:()=>Promise.resolve(r)});
+    }
+    return realFetch(url,opts);
+  };
+  // Off by default: nothing about tools reaches the wire.
+  chk(app.tcAiSettings().tools===false, 'lookups are off by default');
+  let b0=aiCalls().length, m0=mcpCalls().length;
+  await app.tcAiCall(msgs);
+  let body=JSON.parse(aiCalls().pop().opts.body);
+  chk(!('tools' in body) && mcpCalls().length===m0 && aiCalls().length===b0+1, 'off → one request, no tools field, connector never touched');
+  chk(!body.messages[0].content.includes('TripleCrown\'s tools'), 'and the prompt says nothing about tools');
+  // On: the tool list is offered, a tool call is honored, the answer comes after.
+  app.tcAiSaveSettings({tools:true});
+  app.resetMcpTools();
+  const call=(name,args)=>({id:'c1',type:'function',function:{name,arguments:JSON.stringify(args)}});
+  toolAnswers=[{usage:{prompt_tokens:100,completion_tokens:20},choices:[{message:{content:null,tool_calls:[call('player_data',{name:'Alpha Back'})]}}]}];
+  const uBefore=app.tcAiUsage();
+  b0=aiCalls().length; m0=mcpCalls().length;
+  const seen=[];
+  const txt=await app.tcAiCall(msgs, p=>seen.push(p));
+  chk(txt==='Final: Player A.', 'the model\'s answer after a lookup comes back');
+  chk(aiCalls().length===b0+2, 'one lookup round = two model requests');
+  chk(mcpCalls().length===m0+2, 'one tools/list + one tools/call');
+  const first=JSON.parse(aiCalls()[aiCalls().length-2].opts.body);
+  chk(Array.isArray(first.tools) && first.tools[0].function.name==='player_data', 'the connector\'s tools ride the request');
+  chk(first.messages[0].content.includes('only when it would change the pick'), 'the prompt tells the model lookups are rare');
+  const second=JSON.parse(aiCalls().pop().opts.body);
+  const tm=second.messages[second.messages.length-1];
+  chk(tm.role==='tool' && tm.tool_call_id==='c1' && tm.content.startsWith('ROUTES Alpha Back'), 'the tool result goes back under its call id');
+  chk(tm.content.length<=app.TC_AI_TOOL_RESULT_CAP, 'and is capped');
+  chk(second.messages[second.messages.length-2].tool_calls[0].id==='c1', 'after the assistant\'s own tool_calls turn');
+  chk(seen.length===1 && seen[0].lookup==='player_data Alpha Back', 'progress names the lookup');
+  chk(app.lastLookups().join()==='player_data Alpha Back', 'and the footer list has it');
+  const u=app.tcAiUsage();
+  chk(u.calls===uBefore.calls+2 && u.prompt===uBefore.prompt+110, 'every round is counted in usage');
+  // Bounded: a model that keeps asking is cut off at the cap and made to answer.
+  // The stub keeps asking for lookups for as long as it is offered tools; once the request
+  // carries none it answers (the default reply) — as a real model does.
+  toolAnswers=Array.from({length:app.TC_AI_MAX_TOOL_ROUNDS},()=>({usage:{prompt_tokens:1,completion_tokens:1},choices:[{message:{content:null,tool_calls:[call('player_data',{name:'Loop'})]}}]}));
+  b0=aiCalls().length;
+  const t2=await app.tcAiCall(msgs);
+  chk(aiCalls().length===b0+app.TC_AI_MAX_TOOL_ROUNDS+1, `never more than 1+${app.TC_AI_MAX_TOOL_ROUNDS} requests per click`);
+  const last=JSON.parse(aiCalls().pop().opts.body);
+  chk(!('tools' in last), 'the final request offers no tools, so the model must answer');
+  chk(app.lastLookups().length===app.TC_AI_MAX_TOOL_ROUNDS, 'the footer shows exactly the lookups made');
+  chk(t2==='Final: Player A.', 'and the answer comes back');
+  // Connector down → the answer still comes, plain.
+  app.resetMcpTools();
+  const fetch2=global.fetch;
+  global.fetch=(url,opts)=>{ if(String(url).includes('/mcp')){ fetchCalls.push({url,opts}); return Promise.reject(new Error('down')); } return fetch2(url,opts); };
+  toolAnswers=[];
+  b0=aiCalls().length;
+  const t3=await app.tcAiCall(msgs);
+  chk(t3==='Final: Player A.' && aiCalls().length===b0+1 && !('tools' in JSON.parse(aiCalls().pop().opts.body)), 'connector unreachable → one plain request, still an answer');
+  global.fetch=realFetch;
+  // The free list remembers which models can call tools; the hint knows the failure.
+  MODELS.data.push({id:'omega/tooler:free', pricing:{prompt:'0',completion:'0'}, supported_parameters:['tools','max_tokens']});
+  await app.tcAiFreeModels(true);
+  chk(app.tcAiToolModels().includes('omega/tooler:free') && !app.tcAiToolModels().includes('alpha/one:free'), 'tool-capable free models are remembered');
+  MODELS.data.pop();
+  chk(/tools/.test(app.tcAiErrorHint('No endpoints found that support tool use').hint||''), 'a "no tool use" error points at the switch');
+  chk(/comes back|capacity/i.test(app.tcAiErrorHint('Upstream error from Nvidia: ResourceExhausted: Worker local total request limit reached (16/16)').hint||''), 'an upstream request-limit error reads as weather, not a wall');
+  // UI: the switch shows in key mode and the cost label says how many requests.
+  app.setCmp(pa,pb);
+  app.renderAiCompare();
+  const ui=document.getElementById('aiCmpBody').innerHTML;
+  chk(ui.includes('Research') && ui.includes(`\u2264${1+app.TC_AI_MAX_TOOL_ROUNDS} requests`), 'the Research switch is visible and the cost label counts the bound');
+  chk(ui.includes('Reasoning'), 'the reasoning switch wears its name');
+  app.tcAiSaveSettings({tools:false});
+  app.renderAiCompare();
+  chk(document.getElementById('aiCmpBody').innerHTML.includes('1 request'), 'off → "1 request"');
 })();
 
 console.log('=== output is untrusted text ===');

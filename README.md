@@ -275,7 +275,8 @@ remembers about last season.
 
 It runs as a local process reading the seed on disk. Nothing is hosted, nothing is sent anywhere your
 MCP client wasn't already talking to, and **nothing changes in the web app**: not a byte is added to
-`index.html`, so desktop and mobile are untouched.
+`index.html` beyond the two small doors described below (the ☰ menu item that shows the URL, and the
+opt-in ⚖ lookups), so desktop and mobile are otherwise untouched.
 
 ```bash
 # try a tool from the shell
@@ -342,7 +343,8 @@ Worker *code* changes (not data) need that command again — or set the repo sec
 (token template "Edit Cloudflare Workers") and `CLOUDFLARE_ACCOUNT_ID`, and `.github/workflows/deploy-worker.yml`
 redeploys on every push that touches `tools/mcp_worker/`.
 
-Then, per client (pick the format in the path):
+Then, per client (pick the format in the path — or in the app, **☰ → Ask in Claude** shows the URL
+for your league's format with a copy button and the steps behind ⓘ; the ⚖ setup screen links there too):
 
 - **claude.ai / Claude app (phone too)** — Settings → Connectors → *Add custom connector* → the URL.
   Free plan allows one custom connector.
@@ -534,10 +536,12 @@ The project ships with a regression suite (Node + Python) covering the projectio
   the Claude phone app / claude.ai connectors / any URL-only client — stateless, reads the per-deploy
   `mcp/` shards from Pages instead of the seed (free plan's 10 ms CPU), deployed once; all six app
   formats by path, and the **entire seed** browsable raw (`seed_ls` / `seed_get` / `player_data`) from
-  shards the app's own decoder bakes. Next, gated on
-  the free-first rule: optional in-browser tool calling for the ⚖ compare (the model asks for more
-  data on demand) — desktop-only and opt-in, because every tool round-trip is another request against
-  a free tier's daily cap
+  shards the app's own decoder bakes. In the app: **☰ → Ask in Claude** hands over the URL for your
+  format, and the ⚖ compare has an opt-in **Research** switch (key mode only, off by default)
+  that lets the model call the same connector mid-answer — bounded at 3 lookup rounds per click (≤4
+  requests), every round counted in the usage footer, every lookup named under the answer, tool-capable
+  free models marked in the picker, connector down → plain answer. The one deliberate exception to
+  one-click-one-request, and it says so on the switch
 - [ ] AI deep-analysis fan-out: a lead "ranker" model orchestrating specialized sub-agents (offense,
   defense, player context, coaching, deep stats) rolled into an in-depth TripleCrown rank —
   **deliberately deferred**: fan-out is exactly the shape of feature that racks up tokens, and the

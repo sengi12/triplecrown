@@ -6,6 +6,9 @@
 //
 // FREE-FIRST, BY DESIGN. Nothing here ever calls a model on its own:
 //   • one click = one request, no retries, no background calls, no fan-out
+//     (the one exception is opt-in: "Look things up" lets a keyed model call
+//     TripleCrown's own MCP tools mid-answer, at most TC_AI_MAX_TOOL_ROUNDS
+//     extra requests per click, each named in the footer — see 93b)
 //   • the default model is an OpenRouter ":free" tier; the picker labels cost
 //   • responses are capped (TC_AI_MAX_TOKENS) and the prompt is shown as an
 //     estimate BEFORE you send
@@ -41,19 +44,35 @@ async function tcAiFreeModels(force){
     const general=/instruct|chat|llama|qwen|deepseek|gemma|mistral|nemotron|dots|ling/i;
     const prank=(id)=>{ for(let i=0;i<PREF.length;i++) if(PREF[i].test(id)) return i;
                         return general.test(id)?PREF.length:PREF.length+1; };
-    const models=(j.data||[])
+    const free=(j.data||[])
       .filter(m=>{ const pr=m.pricing||{};
-        return String(pr.prompt)==='0' && String(pr.completion)==='0'; })
-      .map(m=>m.id)
-      .sort((a,b)=>prank(a)-prank(b));
+        return String(pr.prompt)==='0' && String(pr.completion)==='0'; });
+    const models=free.map(m=>m.id).sort((a,b)=>prank(a)-prank(b));
+    // Which of them can call tools (the index says so) — the "Look things up"
+    // switch only works with these, and the picker marks them.
+    const tools=free.filter(m=>Array.isArray(m.supported_parameters) && m.supported_parameters.includes('tools')).map(m=>m.id);
     if(models.length){
-      try{ localStorage.setItem('tc_ai_free_models', JSON.stringify({at:Date.now(), models})); }catch(e){}
+      try{ localStorage.setItem('tc_ai_free_models', JSON.stringify({at:Date.now(), models, tools})); }catch(e){}
       return models;
     }
   }catch(e){}
   return TC_AI_FREE_MODELS.slice();
 }
+// Free models that can call tools, from the same cached index (empty until the
+// list has been fetched once).
+function tcAiToolModels(){
+  try{ const c=JSON.parse(localStorage.getItem('tc_ai_free_models')||'null');
+       return (c && Array.isArray(c.tools)) ? c.tools : []; }catch(e){ return []; }
+}
 const TC_AI_MAX_TOKENS = 600;
+// Opt-in lookups: how many tool rounds one click may take, and how much of a
+// tool's answer the model is handed (the worker already cuts at 12k).
+const TC_AI_MAX_TOOL_ROUNDS = 3;
+const TC_AI_TOOL_RESULT_CAP = 6000;
+const TC_AI_TOOLS_HINT = ' You can also call TripleCrown\'s tools for data the packet lacks — route trees, '
+  +'situational splits, weekly team EPA, college logs, contracts (player_data name=… section=…, '
+  +'seed_get path=…). The packet already has the basics: look something up only when it would '
+  +'change the pick, at most a few calls, then answer.';
 // With "think first" on, the model's hidden reasoning shares the output budget —
 // at 600 it burns the lot and answers with silence (field report). Opt-in only,
 // and the cap rises with it so the answer actually arrives.
@@ -247,7 +266,7 @@ async function tcAiGenerate(messages, onProgress){
   if(mode==='paste') throw new Error('Paste mode: copy the packet and ask your own AI');
   if(mode==='builtin'){ const t=await _aiBuiltinGenerate(messages); tcAiRecordUsage(null); return t; }
   if(mode==='local'){ const t=await _aiLocalGenerate(messages, onProgress); tcAiRecordUsage(null); return t; }
-  return tcAiCall(messages);   // 'key' — records real token usage itself
+  return tcAiCall(messages, onProgress);   // 'key' — records real token usage itself
 }
 
 function tcAiSettings(){
@@ -258,6 +277,8 @@ function tcAiSettings(){
            model:(typeof s.model==='string' && s.model)?s.model:TC_AI_FREE_MODELS[0],
            modelChosen: !!s.model,
            reasoning: s.reasoning===true,
+           tools: s.tools===true,
+           mcp:(typeof s.mcp==='string' && /^https:\/\//.test(s.mcp))?s.mcp:'',
            mode:(['key','builtin','local','paste'].includes(s.mode))?s.mode:'' };
 }
 // The default model when the user hasn't chosen one, off the live free list:
@@ -480,11 +501,27 @@ function tcAiEstTokens(messages){
 }
 
 // One click, one request. No retries — a failure renders and waits for a human.
-async function tcAiCall(messages){
+// With "Look things up" on, the model may answer with tool calls instead of text:
+// each is run against TripleCrown's MCP worker and the conversation continues,
+// at most TC_AI_MAX_TOOL_ROUNDS times — so a click is bounded at 1+ROUNDS requests,
+// every one counted, every lookup named in _aiLastLookups for the footer.
+let _aiLastLookups=[];
+async function tcAiCall(messages, onProgress){
   const s=tcAiSettings();
   if(!s.key) throw new Error('No API key set');
-  const body={ model:s.model, messages,
+  _aiLastLookups=[];
+  let tools=null;
+  if(s.tools && typeof tcMcpTools==='function'){
+    try{ tools=tcMcpToOpenAiTools(await tcMcpTools()); }catch(e){ tools=null; }   // connector down → plain answer
+  }
+  const msgs=messages.slice();
+  if(tools && tools.length && msgs[0] && msgs[0].role==='system')
+    msgs[0]={ role:'system', content: msgs[0].content+TC_AI_TOOLS_HINT };
+  let rounds=0;
+  for(;;){
+  const body={ model:s.model, messages:msgs,
                max_tokens: s.reasoning ? TC_AI_MAX_TOKENS_REASONING : TC_AI_MAX_TOKENS };
+  if(tools && tools.length && rounds<TC_AI_MAX_TOOL_ROUNDS) body.tools=tools;
   // Most current free tiers are REASONING models: left alone they spend the
   // whole max_tokens budget "thinking" and never emit visible content — the
   // response comes back 200 with an empty message (field report: mobile,
@@ -520,6 +557,23 @@ async function tcAiCall(messages){
   tcAiRecordUsage(j.usage);
   const ch=j.choices && j.choices[0];
   const msg=(ch && ch.message) || {};
+  const calls=(body.tools && Array.isArray(msg.tool_calls)) ? msg.tool_calls.filter(c=>c&&c.function&&c.function.name).slice(0,4) : [];
+  if(calls.length){
+    rounds++;
+    msgs.push({ role:'assistant', content: msg.content||null, tool_calls: calls });
+    const results=await Promise.all(calls.map(async tc=>{
+      let args={}; try{ args=JSON.parse(tc.function.arguments||'{}')||{}; }catch(e){}
+      const label=tcMcpCallLabel(tc.function.name, args);
+      _aiLastLookups.push(label);
+      if(onProgress) onProgress({ lookup:label });
+      let text;
+      try{ text=await tcMcpCallTool(tc.function.name, args); }
+      catch(e){ text=`lookup failed: ${String(e&&e.message||e)}`; }
+      return { role:'tool', tool_call_id: tc.id||label, content: String(text).slice(0,TC_AI_TOOL_RESULT_CAP) };
+    }));
+    msgs.push(...results);
+    continue;
+  }
   // A reasoning model that ignored the opt-out still leaves its thinking here.
   const txt=msg.content || msg.reasoning || '';
   if(!txt){
@@ -529,12 +583,15 @@ async function tcAiCall(messages){
       : `Empty response${fr?` (finish_reason: ${fr})`:''} — the model returned nothing; try another free model from the list.`);
   }
   return String(txt);
+  }
 }
 // Which failures earn the one-click road to another free model, and the one
 // sentence of interpretation that goes with it. Pure, so it's testable.
 function tcAiErrorHint(msg){
   const m=String(msg||'');
-  if(/429|rate.?limit|busy|capacity/i.test(m))
+  if(/tool.?use|tools? (is|are) not supported|support tool/i.test(m))
+    return { hint:'This model can\u2019t call tools. Pick a free model marked \u201ctools\u201d, or switch Research off.' };
+  if(/429|rate.?limit|busy|capacity|resource.?exhausted|request limit/i.test(m))
     return { hint:'Free capacity is shared and comes back on its own — or a different free pool answers right now.' };
   if(/thinks out loud|free|404|model/i.test(m))
     return { hint:'Free tiers rotate and vary on the provider\u2019s side — nothing you did.' };
@@ -663,6 +720,10 @@ function renderAiCompare(){
       <label class="ai-cmp-lbl">Endpoint (OpenAI-compatible, https)</label>
       <input id="aiEndpoint" class="ai-cmp-in" value="${escAttr(s.endpoint)}">
       <button class="btn-accent ai-cmp-go" onclick="_aiCfgOpen=false;tcAiSaveSettings({mode:'key',key:document.getElementById('aiKey').value.trim(),model:document.getElementById('aiModel').value.trim(),endpoint:document.getElementById('aiEndpoint').value.trim()});renderAiCompare()">Save key</button>
+      ${(typeof openMcpConnector==='function')?`<div class="ai-cmp-or">or outside the app</div>
+      <button class="ai-cmp-mode ai-cmp-mcp" onclick="openMcpConnector()">
+        <b>TripleCrown in the Claude app <em class="ai-cmp-rec">free \u00b7 connector</em></b>
+        <span>Every tool and the whole seed, from any Claude \u2014 phone included.</span></button>`:''}
     </div>`;
     // The GPU probe is instant and download-free: the card says which build
     // THIS machine can run before anyone commits to gigabytes.
@@ -681,7 +742,8 @@ function renderAiCompare(){
       const dl=document.getElementById('aiFreeModels');
       const note=document.getElementById('aiFreeCount');
       const inp=document.getElementById('aiModel');
-      if(dl) dl.innerHTML=models.map(m=>`<option value="${escAttr(m)}">FREE — ${escAttr(m)}</option>`).join('');
+      const tm=new Set(tcAiToolModels());
+      if(dl) dl.innerHTML=models.map(m=>`<option value="${escAttr(m)}">FREE — ${escAttr(m)}${tm.has(m)?' · tools':''}</option>`).join('');
       if(note) note.textContent=`${models.length} free right now — pick from the list`;
       // A default the user never chose that is no longer free gets upgraded to
       // a live free model; anything the user typed themselves is respected.
@@ -705,10 +767,14 @@ function renderAiCompare(){
                 : mode==='local' ? TC_AI_LOCAL_MODEL.replace(/-q4.*$/,'')+' (local)'
                 : escHtml(s.model.split('/').pop());
       const cap = s.reasoning ? TC_AI_MAX_TOKENS_REASONING : TC_AI_MAX_TOKENS;
-      const cost = mode==='key' ? `~${est} tokens in \u00b7 \u2264${cap} out \u00b7 your key`
+      const lookups = mode==='key' && s.tools && typeof tcMcpTools==='function';
+      const cost = mode==='key' ? `~${est} tokens in \u00b7 \u2264${cap} out \u00b7 ${lookups?`\u2264${1+TC_AI_MAX_TOOL_ROUNDS} requests`:'1 request'} \u00b7 your key`
                 : 'runs on this device \u00b7 $0';
-      const think = mode==='key' ? `<label class="ai-cmp-tgl" title="Lets a reasoning model think before it answers \u2014 deeper, several times slower, and it costs more of a free tier's daily budget. Off is the fast path.">
-          <input type="checkbox" ${s.reasoning?'checked':''} onchange="tcAiSaveSettings({reasoning:this.checked});renderAiCompare()"> Think first <span class="ai-cmp-tgl-sub">slower \u00b7 deeper</span></label>` : '';
+      const think = mode==='key' ? `<div class="ai-cmp-tgls">
+        <button class="ai-cmp-sw ${s.reasoning?'on':''}" title="Lets a reasoning model think before it answers \u2014 deeper, several times slower, and it costs more of a free tier's daily budget. Off is the fast path."
+          onclick="tcAiSaveSettings({reasoning:${s.reasoning?'false':'true'}});renderAiCompare()">Reasoning <span class="ai-cmp-sw-sub">slower \u00b7 deeper</span></button>
+        ${(typeof tcMcpTools==='function')?`<button class="ai-cmp-sw ${s.tools?'on':''}" title="Lets the model call TripleCrown's own tools mid-answer (route trees, splits, weekly EPA, college logs) instead of guessing. Up to ${TC_AI_MAX_TOOL_ROUNDS} extra requests per click, each named below the answer. Needs a model marked \u201ctools\u201d."
+          onclick="tcAiSaveSettings({tools:${s.tools?'false':'true'}});renderAiCompare()">Research <span class="ai-cmp-sw-sub">deeper \u00b7 more requests</span></button>`:''}</div>` : '';
       if(mode==='paste')
         return `<button id="aiCopyBtn" class="btn-accent ai-cmp-go" onclick="tcAiCopyPacket()">Copy for any AI <span class="ai-cmp-est">~${est} tokens \u00b7 $0 here</span></button>`;
       return `${think}<div class="ai-cmp-askrow"><button id="aiAskBtn" class="btn-accent ai-cmp-go" onclick="_aiAsk()">Ask ${who} <span class="ai-cmp-est">${cost}</span></button>
@@ -726,8 +792,11 @@ async function _aiAsk(){
   out.innerHTML='';
   try{
     const txt=await tcAiGenerate(tcAiCompareMessages(_aiCmp.a,_aiCmp.b),
-      (p)=>{ if(out) out.innerHTML=`<div class="ai-cmp-dl">Preparing the local model \u2014 one-time download, cached after this.<br><span>${escHtml(p||'')}</span></div>`; });
-    out.innerHTML=tcAiRenderText(txt)+`<div class="ai-cmp-src">Model output — judgment, not data. The numbers it saw are the app's.</div>`;
+      (p)=>{ if(!out) return;
+        if(p && p.lookup) out.innerHTML=`<div class="ai-cmp-dl">Looking up <span>${escHtml(p.lookup)}</span>\u2026</div>`;
+        else out.innerHTML=`<div class="ai-cmp-dl">Preparing the local model \u2014 one-time download, cached after this.<br><span>${escHtml(p||'')}</span></div>`; });
+    const looked=(_aiLastLookups||[]).length ? `<div class="ai-cmp-src">Looked up: ${_aiLastLookups.map(escHtml).join(' \u00b7 ')}</div>` : '';
+    out.innerHTML=tcAiRenderText(txt)+looked+`<div class="ai-cmp-src">Model output — judgment, not data. The numbers it saw are the app's.</div>`;
   }catch(e){
     const msg=String(e.message||'failed');
     const h=tcAiErrorHint(msg);
@@ -761,6 +830,12 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     one click is one capped request, nothing retries, nothing runs in the background, and the
     footer counts every call. Tap the <b>Player B</b> box for the players in the same
     conversation — nearest at the position first, then the nearest at other positions.
-    <b>Think first</b> lets a reasoning model deliberate before answering: deeper, several
-    times slower, and it spends more of a free tier's daily allowance — off is the fast path.`};
+    <b>Reasoning</b> lets a reasoning model deliberate before answering: deeper, several
+    times slower, and it spends more of a free tier's daily allowance — off is the fast path.
+    <b>Research</b> (with a key, off by default) lets the model call TripleCrown's own
+    connector mid-answer — route trees, situational splits, weekly team EPA, college logs, the
+    whole seed — instead of guessing at what the packet left out. Bounded: at most three extra
+    requests per click, every one counted in the footer and named under the answer; needs a
+    model marked “tools” in the free list. The same connector works in the Claude app on its own —
+    <b>TripleCrown in the Claude app</b> in the setup screen hands you the URL.`};
 }
