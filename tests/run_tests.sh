@@ -245,7 +245,11 @@ if [ -f "$DIR/test_flacco_split.py" ] && [ -f "$PYBUILD" ]; then
     p=$(echo "$output" | grep -cE "(^[[:space:]]*(✓[[:space:]]*)?PASS([[:space:]:(]|$))|RESULT:[[:space:]]*PASS|:[[:space:]]*PASS([[:space:]]|$)" || true)
     f=$(echo "$output" | grep -cE "(^[[:space:]]*(✗[[:space:]]*)?(FAIL|MISS)([[:space:]:(]|$))|RESULT:[[:space:]]*[0-9/]*[[:space:]]*(FAIL|MISS|SOME FAILED)|:[[:space:]]*FAIL([[:space:]]|$)" || true)
     TOTAL=$((TOTAL + p + f))
-    if [ "$f" -eq 0 ] && [ "$p" -gt 0 ]; then
+    if [ "$f" -eq 0 ] && [ "$p" -eq 0 ] && echo "$output" | grep -q "^SKIP:"; then
+      # Same as the JS runner: a test that declines to run (no numpy, no seed) is a skip, not a fail.
+      echo "  SKIP  ${pyt}.py ($(echo "$output" | grep -m1 "^SKIP:" | cut -c7-70))"
+      SKIP=$((SKIP + 1))
+    elif [ "$f" -eq 0 ] && [ "$p" -gt 0 ]; then
       echo "  ✓ OK  ${pyt}.py"
       PASS=$((PASS + 1))
     else

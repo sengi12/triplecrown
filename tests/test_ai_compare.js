@@ -26,6 +26,9 @@ const BENCH_MODELS={data:[
   {id:'dots-studio/dots-3-note-preview:free', pricing:{prompt:'0',completion:'0'}},
   {id:'meta/llama-3.3-70b:free', pricing:{prompt:'0',completion:'0'}},
 ]};
+// Node 21+ ships a built-in `navigator` as a getter-only global: assigning to it is a silent
+// no-op, so the device stubs below would never take. Start from a clean global instead.
+delete global.navigator;
 let aiResponse=null;   // per-test override for the chat endpoint's body
 let aiHttp=null;       // per-test override for status/headers: {status, retryAfter}
 global.fetch=(url,opts)=>{
