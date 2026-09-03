@@ -2903,6 +2903,15 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .ai-cmp-tgl{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;margin:6px 0 8px;cursor:pointer;user-select:none;}
 .ai-cmp-tgl input{margin:0;accent-color:var(--accent);}
 .ai-cmp-tgl-sub{color:var(--muted);font-weight:500;font-size:11px;}
+
+/* ⚖ compare: copy-the-packet path (any AI app, by paste) */
+.ai-cmp-askrow{display:flex;gap:6px;align-items:stretch;}
+.ai-cmp-askrow .ai-cmp-go{flex:1;min-width:0;}
+.ai-cmp-copy{flex:0 0 auto;border:1px solid var(--border);background:var(--surface2);color:var(--text);
+  border-radius:9px;padding:0 12px;font-weight:700;font-size:12px;cursor:pointer;}
+.ai-cmp-copy:hover{border-color:var(--accent);}
+.ai-cmp-paste{width:100%;min-height:160px;margin-top:8px;font:11px/1.4 var(--mono);
+  border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);padding:8px;resize:vertical;}
 /* ── In-season: pace view + Live/Pace mode segment (League Analyzer in-season
       tabs also style from here — sorts after 70-widgets so .la-* overrides win) ── */
 
@@ -26892,6 +26901,7 @@ function tcAiMode(){
   if(m==='key' && s.key) return 'key';
   if(m==='builtin' && tcAiBuiltinAvailable()) return 'builtin';
   if(m==='local' && tcAiWebGpuAvailable()) return 'local';
+  if(m==='paste') return 'paste';   // any AI app, by clipboard — always available
   // No explicit choice: FREE leads. The browser's own model when it exists;
   // a saved key only answers by default when nothing keyless is available.
   if(tcAiBuiltinAvailable()) return 'builtin';
@@ -26900,6 +26910,7 @@ function tcAiMode(){
 }
 async function tcAiGenerate(messages, onProgress){
   const mode=tcAiMode();
+  if(mode==='paste') throw new Error('Paste mode: copy the packet and ask your own AI');
   if(mode==='builtin'){ const t=await _aiBuiltinGenerate(messages); tcAiRecordUsage(null); return t; }
   if(mode==='local'){ const t=await _aiLocalGenerate(messages, onProgress); tcAiRecordUsage(null); return t; }
   return tcAiCall(messages);   // 'key' — records real token usage itself
@@ -26913,7 +26924,7 @@ function tcAiSettings(){
            model:(typeof s.model==='string' && s.model)?s.model:TC_AI_FREE_MODELS[0],
            modelChosen: !!s.model,
            reasoning: s.reasoning===true,
-           mode:(['key','builtin','local'].includes(s.mode))?s.mode:'' };
+           mode:(['key','builtin','local','paste'].includes(s.mode))?s.mode:'' };
 }
 // The default model when the user hasn't chosen one, off the live free list:
 // on a phone the fastest performer, on desktop the most grounded (both from the
@@ -27098,6 +27109,37 @@ function tcAiCompareMessages(pa, pb, question){
   const user=`League: ${fmt}${shape?` · lineup ${shape}`:''}\n\nPLAYER A\n${tcAiPlayerContext(pa)}\n\nPLAYER B\n${tcAiPlayerContext(pb)}\n\nCOMPUTED HEAD-TO-HEAD DIFFERENCES\n${d.lines.map(l=>'- '+l).join('\n')||'- none material'}\n\nQuestion: ${question||'Who should I take?'}`;
   return [{role:'system',content:sys},{role:'user',content:user}];
 }
+// The same packet as plain text, for any AI the user already has open (the Claude
+// or ChatGPT app on a phone, Perplexity, a work assistant). Zero tokens spent here;
+// the app does the grounding, whatever they paste it into does the judging.
+function tcAiPacketText(pa, pb, question){
+  const m=tcAiCompareMessages(pa, pb, question);
+  return m.map(x=>x.content).join('\n\n')+'\n\n(Data: TripleCrown — every number above is from the app, not from memory.)';
+}
+async function tcAiCopyPacket(){
+  const btn=document.getElementById('aiCopyBtn'), out=document.getElementById('aiCmpOut');
+  if(!_aiCmp.a||!_aiCmp.b) return false;
+  const txt=tcAiPacketText(_aiCmp.a,_aiCmp.b);
+  let ok=false;
+  try{
+    if(typeof navigator!=='undefined' && navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(txt); ok=true;
+    }
+  }catch(e){}
+  if(!ok){
+    // No clipboard API (file://, older WebViews): hand the text over for a manual select-all.
+    try{
+      const ta=document.createElement('textarea'); ta.value=txt;
+      document.body.appendChild(ta); ta.select();
+      ok=!!(document.execCommand && document.execCommand('copy')); ta.remove();
+    }catch(e){}
+  }
+  if(btn){ const was=btn.dataset.label||btn.textContent; btn.dataset.label=was;
+    btn.textContent= ok ? 'Copied — paste it into any AI' : 'Select and copy below';
+    setTimeout(()=>{ if(document.getElementById('aiCopyBtn')) btn.textContent=was; }, 2200); }
+  if(!ok && out) out.innerHTML=`<textarea class="ai-cmp-paste" readonly onclick="this.select()">${escHtml(txt)}</textarea>`;
+  return ok;
+}
 // Rough token estimate for the pre-send label (chars/4 is the usual budget rule).
 function tcAiEstTokens(messages){
   return Math.round(messages.reduce((a,m)=>a+(m.content||'').length,0)/4);
@@ -27273,6 +27315,10 @@ function renderAiCompare(){
           onclick="_aiCfgOpen=false;tcAiSaveSettings({mode:'local'});renderAiCompare()">
           <b>Local model <em id="aiLocalRec" class="ai-cmp-rec" hidden>free · recommended</em></b>
           <span id="aiLocalNote">${gpu?'Checking what your GPU can run…':'Needs WebGPU.'}</span></button>
+        <button class="ai-cmp-mode ${s.mode==='paste'?'on':''}"
+          onclick="_aiCfgOpen=false;tcAiSaveSettings({mode:'paste'});renderAiCompare()">
+          <b>Any AI app, by paste ${(!builtin&&!gpu)?'<em class="ai-cmp-rec">free · works here</em>':''}</b>
+          <span>Copy the packet, paste it into the AI you already use.</span></button>
       </div>
       <div class="ai-cmp-or">or your own key</div>
       <label class="ai-cmp-lbl">API key</label>
@@ -27329,7 +27375,10 @@ function renderAiCompare(){
                 : 'runs on this device \u00b7 $0';
       const think = mode==='key' ? `<label class="ai-cmp-tgl" title="Lets a reasoning model think before it answers \u2014 deeper, several times slower, and it costs more of a free tier's daily budget. Off is the fast path.">
           <input type="checkbox" ${s.reasoning?'checked':''} onchange="tcAiSaveSettings({reasoning:this.checked});renderAiCompare()"> Think first <span class="ai-cmp-tgl-sub">slower \u00b7 deeper</span></label>` : '';
-      return `${think}<button id="aiAskBtn" class="btn-accent ai-cmp-go" onclick="_aiAsk()">Ask ${who} <span class="ai-cmp-est">${cost}</span></button>`; })():''}
+      if(mode==='paste')
+        return `<button id="aiCopyBtn" class="btn-accent ai-cmp-go" onclick="tcAiCopyPacket()">Copy for any AI <span class="ai-cmp-est">~${est} tokens \u00b7 $0 here</span></button>`;
+      return `${think}<div class="ai-cmp-askrow"><button id="aiAskBtn" class="btn-accent ai-cmp-go" onclick="_aiAsk()">Ask ${who} <span class="ai-cmp-est">${cost}</span></button>
+        <button id="aiCopyBtn" class="ai-cmp-copy" onclick="tcAiCopyPacket()" title="Copy the data packet for any AI app">⧉ copy</button></div>`; })():''}
     <div id="aiCmpOut" class="ai-cmp-out"></div>
     <div class="ai-cmp-foot">
       <span>${escHtml(usage)}</span>
@@ -27367,7 +27416,9 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     two players \u2014 projections under this league's scoring, VOR, market ADP, tier, TC model,
     contract, team SOS, upcoming schedule, injury status, live-season form, QB charting, and your
     own notes \u2014 and told to reason from that, not from its training data.
-    <b>Every default is $0.</b> The browser's built-in model needs no key and no download; the
+    <b>Every default is $0.</b> <b>Copy for any AI</b> puts the whole packet on the clipboard for
+    whatever assistant you already have open \u2014 no model needed here at all, and it works on
+    any phone. The browser's built-in model needs no key and no download; the
     local model downloads once (~1.8 GB, cached, offline afterwards) and runs on your GPU; a
     small local model is a junior analyst \u2014 grounded, but junior. Bringing your own key is
     optional: get one free at openrouter.ai, the picker lists what costs $0 <i>right now</i>

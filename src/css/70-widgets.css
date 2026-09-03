@@ -1248,3 +1248,12 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .ai-cmp-tgl{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;margin:6px 0 8px;cursor:pointer;user-select:none;}
 .ai-cmp-tgl input{margin:0;accent-color:var(--accent);}
 .ai-cmp-tgl-sub{color:var(--muted);font-weight:500;font-size:11px;}
+
+/* ⚖ compare: copy-the-packet path (any AI app, by paste) */
+.ai-cmp-askrow{display:flex;gap:6px;align-items:stretch;}
+.ai-cmp-askrow .ai-cmp-go{flex:1;min-width:0;}
+.ai-cmp-copy{flex:0 0 auto;border:1px solid var(--border);background:var(--surface2);color:var(--text);
+  border-radius:9px;padding:0 12px;font-weight:700;font-size:12px;cursor:pointer;}
+.ai-cmp-copy:hover{border-color:var(--accent);}
+.ai-cmp-paste{width:100%;min-height:160px;margin-top:8px;font:11px/1.4 var(--mono);
+  border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);padding:8px;resize:vertical;}

@@ -49,6 +49,7 @@ const app=new Function(code+`return { tcAiSettings, tcAiSaveSettings, tcAiUsage,
   tcAiDeltas, tcAiErrorHint, tcAiDefaultModel, _aiSimilarToA, _aiCompareCandidates,
   TC_AI_MAX_TOKENS, TC_AI_MAX_TOKENS_REASONING,
   setDrafted:(d)=>{draftedIds=d;},
+  tcAiPacketText, tcAiCopyPacket, renderAiCompare, setCmp:(a,b)=>{_aiCmp.a=a;_aiCmp.b=b;_aiCmp.list=[a,b];},
   TC_AI_MAX_TOKENS, TC_AI_FREE_MODELS,
   setFormat:(f)=>{rankFormat=f;}, setDraftLineup:(l)=>{draftLineup=l;} };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -463,6 +464,39 @@ await (async()=>{
       'and the message is the verdict plus the working paths, not raw WebGPU internals');
   delete global.navigator;
   app.tcAiSaveSettings({mode:'', key:'sk-test'});
+})();
+
+console.log('=== copy for any AI: the packet leaves, no token is spent ===');
+await (async()=>{
+  const before=app.tcAiUsage().calls||0, beforeFetch=fetchCalls.length;
+  const txt=app.tcAiPacketText(pa,pb,'Flex this week?');
+  chk(txt.includes('Alpha Back') && txt.includes('Beta Back'), 'the packet carries both sheets');
+  chk(/PICK:/.test(txt) && /FLIP IF/.test(txt), 'and the analyst framing, so the pasted-into model answers in shape');
+  chk(/COMPUTED HEAD-TO-HEAD/.test(txt) && /Question: Flex this week\?/.test(txt), 'computed deltas and the question travel too');
+  chk(/TripleCrown/.test(txt), 'signed as the app\'s data');
+  app.tcAiSaveSettings({mode:'paste'});
+  chk(app.tcAiMode()==='paste', 'paste is an engine of its own — always available, needs nothing');
+  let threw=null; try{ await app.tcAiGenerate([{role:'user',content:'u'}]); }catch(e){ threw=e.message; }
+  chk(/paste/i.test(threw||''), 'and never calls a model');
+  app.setCmp(pa,pb); app.renderAiCompare();
+  const body=global.document.getElementById('aiCmpBody').innerHTML;
+  chk(/id="aiCopyBtn"/.test(body) && !/id="aiAskBtn"/.test(body), 'in paste mode Copy is the main button, there is no Ask');
+  chk(/\$0 here/.test(body), 'labelled as free');
+  let written=null; global.navigator={clipboard:{writeText:(t)=>{written=t;return Promise.resolve();}}};
+  const ok=await app.tcAiCopyPacket();
+  chk(ok && written===app.tcAiPacketText(pa,pb), 'copy writes the exact packet to the clipboard');
+  chk(/Copied/.test(global.document.getElementById('aiCopyBtn').textContent), 'button confirms');
+  chk((app.tcAiUsage().calls||0)===before && fetchCalls.length===beforeFetch, 'no call counted, no fetch made');
+  global.navigator={clipboard:{writeText:()=>Promise.reject(new Error('denied'))}};
+  global.document.getElementById('aiCmpOut').innerHTML='';
+  const ok2=await app.tcAiCopyPacket();
+  chk(!ok2 && /<textarea class="ai-cmp-paste"/.test(global.document.getElementById('aiCmpOut').innerHTML),
+      'when the clipboard is refused the text is shown for a manual copy');
+  delete global.navigator;
+  app.tcAiSaveSettings({mode:'key', key:'sk-test'}); app.renderAiCompare();
+  const body2=global.document.getElementById('aiCmpBody').innerHTML;
+  chk(/id="aiAskBtn"/.test(body2) && /id="aiCopyBtn"/.test(body2), 'with a model configured, Ask leads and copy sits beside it');
+  app.tcAiSaveSettings({mode:'', key:'sk-test'}); app.setCmp(null,null);
 })();
 
 console.log('=== output is untrusted text ===');
