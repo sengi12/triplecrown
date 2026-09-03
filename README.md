@@ -430,7 +430,7 @@ The project ships with a regression suite (Node + Python) covering the projectio
   (Chrome's on-device model — no key, no download, feature-detected), a **local WebLLM model**
   (no key, no account; one-time ~1.8 GB download cached by the browser, works offline after,
   needs WebGPU), or **your own key** against any OpenAI-compatible endpoint, client-side only. **Free-first by
-  design**: ships with no key, the model picker is fed by OpenRouter's **live** free-model index (fetched keyless, cached a day — free tiers rotate, so a hardcoded list goes stale in days), one click = one capped request
+  design**: ships with no key, the model picker is fed by OpenRouter's **live** free-model index (fetched keyless, cached a day — free tiers rotate, so a hardcoded list goes stale in days), ordered by a benchmark of the app's own compare prompts so the device-appropriate default (fastest on mobile, most grounded on desktop) leads whatever's free that day, one click = one capped request
   (never a retry, never a background call), token estimate shown before sending, and a local usage
   counter in the modal. A gateway proxy route stays possible later for server-held keys
 - [ ] AI deep-analysis fan-out: a lead "ranker" model orchestrating specialized sub-agents (offense,

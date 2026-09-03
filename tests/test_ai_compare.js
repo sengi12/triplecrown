@@ -19,11 +19,18 @@ const MODELS={data:[
   {id:'gamma/three:free', pricing:{prompt:'0',    completion:'0'}},
   {id:'delta/promo',      pricing:{prompt:'0',    completion:'0.001'}},  // half-free is not free
 ]};
+// The benchmarked names, for the preference/default tests.
+const BENCH_MODELS={data:[
+  {id:'inclusionai/ling-3.0-flash-fin:free', pricing:{prompt:'0',completion:'0'}},
+  {id:'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free', pricing:{prompt:'0',completion:'0'}},
+  {id:'dots-studio/dots-3-note-preview:free', pricing:{prompt:'0',completion:'0'}},
+  {id:'meta/llama-3.3-70b:free', pricing:{prompt:'0',completion:'0'}},
+]};
 let aiResponse=null;   // per-test override for the chat endpoint's body
 let aiHttp=null;       // per-test override for status/headers: {status, retryAfter}
 global.fetch=(url,opts)=>{
   fetchCalls.push({url,opts});
-  if(String(url).includes('/models')) return Promise.resolve({ok:true,json:()=>Promise.resolve(MODELS)});
+  if(String(url).includes('/models')) return Promise.resolve({ok:true,json:()=>Promise.resolve(global.MODELS_SET||MODELS)});
   if(aiHttp) return Promise.resolve({ok:false, status:aiHttp.status,
     headers:{get:(k)=>k==='Retry-After'?aiHttp.retryAfter:null},
     json:()=>Promise.resolve({error:{message:'Provider returned error'}})});
@@ -39,7 +46,8 @@ const app=new Function(code+`return { tcAiSettings, tcAiSaveSettings, tcAiUsage,
   setWebLlmLoader:(f)=>{_aiWebLlmLoader=f;}, resetLocal:()=>{_aiLocalEngine=null;_aiLocalLoading=null;},
   setContracts:(c)=>{CONTRACTS=c;}, setSos:(x)=>{SOS=x;},
   TC_AI_LOCAL_MODELS, _aiLocalModelPref, tcAiGpuProbe, tcAiLocalPlan, resetProbe:()=>{_aiGpuProbe=null;},
-  tcAiDeltas, tcAiErrorHint,
+  tcAiDeltas, tcAiErrorHint, tcAiDefaultModel, _aiSimilarToA,
+  setDrafted:(d)=>{draftedIds=d;},
   TC_AI_MAX_TOKENS, TC_AI_FREE_MODELS,
   setFormat:(f)=>{rankFormat=f;}, setDraftLineup:(l)=>{draftLineup=l;} };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -69,6 +77,31 @@ chk(ctx.includes('1150 rush yds'), 'and the position-appropriate stat line');
 const msgs=app.tcAiCompareMessages(pa,pb);
 chk(msgs.length===2 && msgs[0].role==='system', 'system+user message pair');
 chk(msgs[1].content.includes('PLAYER A') && msgs[1].content.includes('Beta Back'), 'both players aboard');
+
+console.log('=== Player B suggestions: same conversation as A ===');
+{
+  const P=(id,pos,ecr,fpts,adp,drafted)=>({player_id:id,name:id,pos,team:'KC',ecr,fpts,adp_ppr:adp});
+  const list=[
+    P('rbA','RB',10,240,10), P('rbNear1','RB',12,232,13), P('rbNear2','RB',9,246,8),
+    P('rbFar','RB',55,120,60), P('wr1','WR',11,238,11), P('qb1','QB',10,300,10),
+    {player_id:'rbGone',name:'rbGone',pos:'RB',ecr:11,fpts:236,adp_ppr:11},
+  ];
+  const a=list[0];
+  let sim=app._aiSimilarToA(a, list, 6);
+  chk(sim.every(p=>p.pos==='RB'), 'only same-position players are suggested');
+  chk(!sim.some(p=>p.player_id==='wr1'||p.player_id==='qb1'), 'other positions excluded');
+  chk(!sim.some(p=>p.player_id==='rbA'), 'the player himself is never his own comparison');
+  chk(['rbNear1','rbNear2','rbGone'].includes(sim[0].player_id),
+      'a near-ranked back leads, not a far one');
+  chk(sim.indexOf(sim.find(p=>p.player_id==='rbFar')) === sim.length-1
+      || !sim.some(p=>p.player_id==='rbFar') || sim.length<6,
+      'the distant RB sinks to the bottom or off the short list');
+  // A drafted player can't be your pick.
+  app.setDrafted({rbGone:1});
+  sim=app._aiSimilarToA(a, list, 6);
+  chk(!sim.some(p=>p.player_id==='rbGone'), 'a drafted player is not suggested');
+  app.setDrafted({});
+}
 
 console.log('=== anti-parroting: the model judges computed evidence ===');
 {
@@ -142,6 +175,26 @@ await (async()=>{
   const custom=JSON.parse(fetchCalls[fetchCalls.length-1].opts.body);
   chk(!('reasoning' in custom), 'non-OpenRouter endpoints are not sent the vendor param');
   app.tcAiSaveSettings({endpoint:'https://openrouter.ai/api/v1/chat/completions'});
+})();
+
+console.log('=== preference layer + device-aware default ===');
+await (async()=>{
+  global.MODELS_SET=BENCH_MODELS;
+  const list=await app.tcAiFreeModels(true);
+  // The benchmark winner leads the live list, niche/finance model sinks.
+  chk(/dots-3-note/.test(list[0]), 'the fastest benchmarked model heads the list');
+  chk(list.indexOf('nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free') < list.indexOf('inclusionai/ling-3.0-flash-fin:free'),
+      'the grounded model outranks the finance-tuned one');
+  // Mobile default = fastest; desktop default = most grounded — from the SAME list.
+  global.navigator={userAgentData:{mobile:true}};
+  chk(/dots-3-note/.test(app.tcAiDefaultModel(list)), 'on mobile the default is the fastest model');
+  global.navigator={userAgentData:{mobile:false}};
+  chk(/nano-omni/.test(app.tcAiDefaultModel(list)), 'on desktop the default is the most grounded');
+  // Rotation resilience: the favourite gone, the default falls to the next pref.
+  const without=list.filter(m=>!/dots-3-note/.test(m));
+  chk(/nano-omni/.test(app.tcAiDefaultModel(without)), 'a rotated-out favourite yields to the next preference, not a crash');
+  chk(app.tcAiDefaultModel([])!=='', 'an empty list still yields a static fallback');
+  delete global.MODELS_SET; delete global.navigator; LSTORE.delete('tc_ai_free_models');
 })();
 
 console.log('=== 429 is weather, not a wall ===');

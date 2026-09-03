@@ -2892,6 +2892,11 @@ button.la-cliff:hover{filter:brightness(1.25);}
   align-items:center;gap:6px;}
 .ai-cmp-rec{font-style:normal;font-size:9px;font-weight:800;letter-spacing:.05em;
   text-transform:uppercase;color:var(--success);margin-left:6px;}
+.ai-cmp-simhead{font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);margin:8px 0 5px;}
+.ai-cmp-hit-nm{font-weight:700;}
+.ai-cmp-hit{display:flex;flex-direction:column;gap:1px;}
+.ai-cmp-hit .ai-cmp-hit-sub{margin-left:0;}
 /* ── In-season: pace view + Live/Pace mode segment (League Analyzer in-season
       tabs also style from here — sorts after 70-widgets so .la-* overrides win) ── */
 
@@ -26677,15 +26682,21 @@ async function tcAiFreeModels(force){
   try{
     const res=await fetch(TC_AI_MODELS_URL);          // public index — never sends the key
     const j=await res.json();
-    const general=/instruct|chat|llama|qwen|deepseek|gemma|mistral|nemotron/i;
+    // Preference ranking from a real benchmark of the app's OWN prompts
+    // (2026-09-02, close pair + blowout, scored on grounding / PICK-WHY-FLIP
+    // structure / honesty / LATENCY). NOT a hardcoded default — ranked over
+    // whatever is live, so a rotated-out favourite yields to the next free one.
+    // dots: fastest (~2.5s), clean → mobile. nano-omni: most grounded, ~4s →
+    // desktop. lightning/ultra: great but 15-30s, kept as later fallbacks.
+    const PREF=[/dots-3-note/i, /nemotron-3-nano-omni/i, /nemotron-3\.5-lightning/i, /nemotron-3-ultra/i];
+    const general=/instruct|chat|llama|qwen|deepseek|gemma|mistral|nemotron|dots|ling/i;
+    const prank=(id)=>{ for(let i=0;i<PREF.length;i++) if(PREF[i].test(id)) return i;
+                        return general.test(id)?PREF.length:PREF.length+1; };
     const models=(j.data||[])
       .filter(m=>{ const pr=m.pricing||{};
         return String(pr.prompt)==='0' && String(pr.completion)==='0'; })
       .map(m=>m.id)
-      // General-purpose models first: the top of this list becomes the DEFAULT
-      // for someone who never picks, and a finance-tuned or preview oddity is
-      // a bad first experience (field report: it answered with nothing).
-      .sort((a,b)=>(general.test(b)?1:0)-(general.test(a)?1:0));
+      .sort((a,b)=>prank(a)-prank(b));
     if(models.length){
       try{ localStorage.setItem('tc_ai_free_models', JSON.stringify({at:Date.now(), models})); }catch(e){}
       return models;
@@ -26892,6 +26903,18 @@ function tcAiSettings(){
            model:(typeof s.model==='string' && s.model)?s.model:TC_AI_FREE_MODELS[0],
            modelChosen: !!s.model,
            mode:(['key','builtin','local'].includes(s.mode))?s.mode:'' };
+}
+// The default model when the user hasn't chosen one, off the live free list:
+// on a phone the fastest performer, on desktop the most grounded (both from the
+// 2026-09-02 benchmark). Falls back to the preference-sorted list head, then the
+// static default — never a hardcoded slug that can rotate out.
+function tcAiDefaultModel(freeList){
+  const list=Array.isArray(freeList)?freeList:[];
+  const mobile=(typeof tcAiIsMobile==='function' && tcAiIsMobile());
+  const wants= mobile ? [/dots-3-note/i, /nemotron-3-nano-omni/i]
+                      : [/nemotron-3-nano-omni/i, /dots-3-note/i];
+  for(const re of wants){ const hit=list.find(m=>re.test(m)); if(hit) return hit; }
+  return list[0] || TC_AI_FREE_MODELS[0];
 }
 function tcAiSaveSettings(patch){
   const cur=tcAiSettings();
@@ -27151,13 +27174,48 @@ function openAiCompare(pidA){
   renderAiCompare();
 }
 function _aiPickB(pid){ _aiCmp.b=_aiCmp.byId.get(String(pid))||null; renderAiCompare(); }
+// The players worth comparing A against: same position, closest on the board.
+// "Closest" blends ADP/ECR rank proximity with projected-points proximity, so
+// the list is genuinely "same tier / similar rank / similar FPTS" rather than
+// just the next names alphabetically. Draft context first — a drafted player
+// can't be your pick — then nearest by that blend.
+function _aiSimilarToA(a, list, n){
+  if(!a) return [];
+  const rankOf=(p)=> (typeof adpFor==='function' && adpFor(p)<999) ? adpFor(p)
+                    : (p.ecr!=null ? p.ecr*1.2 : 999);
+  const aRank=rankOf(a), aF=(a.fpts!=null)?a.fpts:null;
+  const pool=(list||[]).filter(p=>p && p.pos===a.pos
+    && String(p.player_id||p.name)!==String(a.player_id||a.name)
+    && !(typeof draftedIds!=='undefined' && draftedIds && draftedIds[p.player_id]));
+  const score=(p)=>{
+    let d=Math.abs(rankOf(p)-aRank);                    // picks apart on the board
+    if(aF!=null && p.fpts!=null) d += Math.abs(p.fpts-aF)*0.25;   // and projected-points apart
+    return d;
+  };
+  return pool.sort((x,y)=>score(x)-score(y)).slice(0, n||6);
+}
+function _aiSimilarRows(players){
+  const rk=(p)=> (typeof adpFor==='function' && adpFor(p)<999) ? `ADP ${Math.round(adpFor(p))}`
+              : (p.ecr!=null ? `ECR ${p.ecr}` : '');
+  return (players||[]).map(p=>`<button class="ai-cmp-hit" onclick="_aiPickB('${escAttr(String(p.player_id||p.name))}')">
+    <span class="ai-cmp-hit-nm">${escHtml(p.name)}</span>
+    <span class="ai-cmp-hit-sub">${p.pos} · ${escHtml(p.team||'FA')}${rk(p)?' · '+rk(p):''}${p.fpts!=null?` · ${Math.round(p.fpts)} pts`:''}</span></button>`).join('')
+    || '<div class="ai-cmp-none">No similar players on the board.</div>';
+}
 function _aiCmpSearch(q){
   const box=document.getElementById('aiCmpMatches'); if(!box) return;
+  const head=document.getElementById('aiCmpSimHead');
   q=(q||'').trim().toLowerCase();
-  if(q.length<2){ box.innerHTML=''; return; }
+  // Empty box → the "similar to A" shortlist; typing → name search.
+  if(q.length<2){
+    box.innerHTML=_aiSimilarRows(_aiSimilarToA(_aiCmp.a, _aiCmp.list, 6));
+    if(head) head.textContent=_aiCmp.a?`Similar ${_aiCmp.a.pos}s \u00b7 nearest on the board`:'';
+    return;
+  }
   const hits=(_aiCmp.list||[]).filter(p=>String(p.name||'').toLowerCase().includes(q)).slice(0,6);
+  if(head) head.textContent='Search results';
   box.innerHTML=hits.map(p=>`<button class="ai-cmp-hit" onclick="_aiPickB('${escAttr(String(p.player_id||p.name))}')">
-    ${escHtml(p.name)} <span class="ai-cmp-hit-sub">${p.pos} · ${escHtml(p.team||'FA')}</span></button>`).join('')
+    <span class="ai-cmp-hit-nm">${escHtml(p.name)}</span> <span class="ai-cmp-hit-sub">${p.pos} · ${escHtml(p.team||'FA')}</span></button>`).join('')
     || '<div class="ai-cmp-none">No match on the board.</div>';
 }
 let _aiCfgOpen=false;
@@ -27211,7 +27269,7 @@ function renderAiCompare(){
       if(note) note.textContent=`${models.length} free right now — pick from the list`;
       // A default the user never chose that is no longer free gets upgraded to
       // a live free model; anything the user typed themselves is respected.
-      if(inp && !s.modelChosen && !models.includes(inp.value)) inp.value=models[0]||inp.value;
+      if(inp && !s.modelChosen && !models.includes(inp.value)) inp.value=tcAiDefaultModel(models);
     }).catch(()=>{});
     return;
   }
@@ -27223,8 +27281,9 @@ function renderAiCompare(){
   const est=msgs?tcAiEstTokens(msgs):0;
   body.innerHTML=`
     <div class="ai-cmp-pair">${chip(a,'A')}<span class="ai-cmp-vs">vs</span>${chip(b,'B')}</div>
-    ${!b?`<input class="ai-cmp-in" placeholder="Type the other player's name…" oninput="_aiCmpSearch(this.value)" autocomplete="off">
-          <div id="aiCmpMatches" class="ai-cmp-matches"></div>`:''}
+    ${!b?`<input class="ai-cmp-in" placeholder="Compare ${a?escHtml(a.name)+' with…':'with…'}" oninput="_aiCmpSearch(this.value)" onfocus="_aiCmpSearch('')" autocomplete="off">
+          ${a?`<div id="aiCmpSimHead" class="ai-cmp-simhead">Similar ${a.pos}s \u00b7 nearest on the board</div>`:''}
+          <div id="aiCmpMatches" class="ai-cmp-matches">${a?_aiSimilarRows(_aiSimilarToA(a,_aiCmp.list,6)):''}</div>`:''}
     ${a&&b?(()=>{ const mode=tcAiMode();
       const who = mode==='builtin' ? 'the browser\u2019s built-in model'
                 : mode==='local' ? TC_AI_LOCAL_MODEL.replace(/-q4.*$/,'')+' (local)'
