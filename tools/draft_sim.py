@@ -318,7 +318,11 @@ def build_pool(seed, sc, byes, tc_weight, floor_kappa, pro=None, fmt="ppr"):
     for team, posmap in seed["seed"].items():
         for pos in ("QB", "RB", "WR", "TE"):
             rows.extend(posmap.get(pos) or [])
-    ecr_tbl = (seed.get("ecr") or {}).get("ppr") or {}
+    # The ECR table is keyed the app's way ("jahmyr gibbs"); re-key it on
+    # norm_name so the lookup below actually hits (it never did before).
+    ecr_tbl = {norm_name(k): v for k, v in
+               ((seed.get("ecr") or {}).get("superflex" if fmt == "superflex" else fmt)
+                or (seed.get("ecr") or {}).get("ppr") or {}).items()}
 
     # Pass 1: score every row on both sources, so the two can be reconciled.
     scored = []

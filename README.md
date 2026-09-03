@@ -136,6 +136,7 @@ For the full experience (expert rankings, contracts, advanced stats, coaching, r
 | `tools/draft_sim.py` | Monte-Carlo mock-draft simulator that tunes and validates the app's on-the-clock advisory. `--proj` swaps in an analyst projection file as the value baseline. |
 | `tools/draft_history.py` | Scores every past manager-season in a league's history on what its draft-day roster really did, so "what wins here" is measured rather than assumed. |
 | `tools/draft_playbook.py` | Drives the other two and writes one markdown playbook for one league and one seat. |
+| `tools/tc_mcp.py` | An MCP server over the seed: TripleCrown's data as tools for Claude Desktop / Claude Code / any MCP client. Stdlib-only, stdio, zero hosting — see [TripleCrown as an MCP server](#triplecrown-as-an-mcp-server). |
 | `tools/draft_corpus.py` | Harvests real completed Sleeper drafts (league → managers → their leagues), fits the market model to them — sigma curve, K/DEF timing, QB volume — and Brier-scores the advisory's survival predictions against held-out drafts. |
 
 > **Why a build step?** The app ships as one file on purpose (works offline from `file://`, bakes onto a phone, zero runtime dependencies). That's great for *users* but unwieldy to *edit*, so the source lives split under `src/` and `build.py` (Python 3 stdlib, no installs) reassembles it. It's plain concatenation — everything stays in one shared scope, so the app and test suite behave exactly as before. `run_tests.sh` rebuilds from `src/` automatically, and `python build.py --check` verifies `src/` matches the committed `index.html`. The default build is the normal user-facing app; `python build.py --dev` keeps the manual 📦 Seed loader and other developer-only UI.
@@ -259,6 +260,45 @@ and below what the board says they are worth.
 Every number is computed at run time from that league's data. Point it at a
 different league, seat, or projection source and the advice moves with it.
 
+
+---
+
+## TripleCrown as an MCP server
+
+**MCP** — the *Model Context Protocol* — is the open standard AI assistants use to call outside tools:
+Claude Desktop, Claude Code, Cursor and most agent frameworks speak it. `tools/tc_mcp.py` is a complete,
+dependency-free MCP server over TripleCrown's data. Register it once and "who do I start, Brown or
+Henry, in my superflex league?" is answered from the app's own numbers — the same grounding sheet the
+in-app ⚖ compare builds, the same VOR board `draft_sim.py` scores — instead of from whatever the model
+remembers about last season.
+
+It runs as a local process reading the seed on disk. Nothing is hosted, nothing is sent anywhere your
+MCP client wasn't already talking to, and **nothing changes in the web app**: not a byte is added to
+`index.html`, so desktop and mobile are untouched.
+
+```bash
+# try a tool from the shell
+python3 tools/tc_mcp.py --format superflex --call compare a="Chase Brown" b="Derrick Henry"
+python3 tools/tc_mcp.py --call rankings pos=RB limit=15
+python3 tools/tc_mcp.py --call team team=DET
+```
+
+Register it — Claude Desktop (`claude_desktop_config.json`):
+
+```json
+{"mcpServers": {"triplecrown": {
+  "command": "python3",
+  "args": ["/path/to/triplecrown/tools/tc_mcp.py", "--format", "superflex"]}}}
+```
+
+Claude Code: `claude mcp add triplecrown -- python3 /path/to/triplecrown/tools/tc_mcp.py --format superflex`
+
+Pass `--league <sleeper_league_id>` instead of `--format` to score everything under a real league's
+settings (fetched once, cached). Tools: `search_players`, `get_player` (the whole sheet — projection,
+VOR, ECR/tier, ADP, TC model, stat line, last seasons, contract, schedule/SOS, coaching change,
+dynasty value), `compare` (both sheets + the computed head-to-head differences + the app's own analyst
+framing), `rankings`, `team`, `schedule`, `sos`, `state`. What lives only in the browser stays there:
+injuries, Sleeper rosters, your notes and in-season pace are live data the seed doesn't carry.
 
 ---
 
@@ -433,6 +473,12 @@ The project ships with a regression suite (Node + Python) covering the projectio
   design**: ships with no key, the model picker is fed by OpenRouter's **live** free-model index (fetched keyless, cached a day — free tiers rotate, so a hardcoded list goes stale in days), ordered by a benchmark of the app's own compare prompts so the device-appropriate default (fastest on mobile, most grounded on desktop) leads whatever's free that day, one click = one capped request
   (never a retry, never a background call), token estimate shown before sending, and a local usage
   counter in the modal. A gateway proxy route stays possible later for server-held keys
+- [x] MCP server (`tools/tc_mcp.py`): TripleCrown's data as tools for Claude Desktop / Claude Code —
+  a new door for *outside* AI into the seed, not a change to the in-app compare (which already gets the
+  full grounding packet by prompt). Local stdio process, stdlib-only, zero hosting, zero bytes in
+  `index.html`. Next, gated on the free-first rule: optional in-browser tool calling for the ⚖ compare
+  (the model asks for more data on demand) — desktop-only and opt-in, because every tool round-trip is
+  another request against a free tier's daily cap
 - [ ] AI deep-analysis fan-out: a lead "ranker" model orchestrating specialized sub-agents (offense,
   defense, player context, coaching, deep stats) rolled into an in-depth TripleCrown rank —
   **deliberately deferred**: fan-out is exactly the shape of feature that racks up tokens, and the
