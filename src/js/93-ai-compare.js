@@ -621,6 +621,13 @@ function openAiCompare(pidA){
   document.body.appendChild(ov);
   renderAiCompare();
 }
+// A hit fills the first empty slot: A when the modal opened bare (☰ → Compare),
+// otherwise B — after which the flow is the same either way.
+function _aiPick(pid){
+  const p=_aiCmp.byId.get(String(pid))||null;
+  if(!_aiCmp.a) _aiCmp.a=p; else _aiCmp.b=p;
+  renderAiCompare();
+}
 function _aiPickB(pid){ _aiCmp.b=_aiCmp.byId.get(String(pid))||null; renderAiCompare(); }
 // The players worth comparing A against: same position, closest on the board.
 // "Closest" blends ADP/ECR rank proximity with projected-points proximity, so
@@ -666,7 +673,7 @@ function _aiCandidateRows(a, list){
 function _aiSimilarRows(players){
   const rk=(p)=> (typeof adpFor==='function' && adpFor(p)<999) ? `ADP ${Math.round(adpFor(p))}`
               : (p.ecr!=null ? `ECR ${p.ecr}` : '');
-  return (players||[]).map(p=>`<button class="ai-cmp-hit" onclick="_aiPickB('${escAttr(String(p.player_id||p.name))}')">
+  return (players||[]).map(p=>`<button class="ai-cmp-hit" onclick="_aiPick('${escAttr(String(p.player_id||p.name))}')">
     <span class="ai-cmp-hit-nm">${escHtml(p.name)}</span>
     <span class="ai-cmp-hit-sub">${p.pos} · ${escHtml(p.team||'FA')}${rk(p)?' · '+rk(p):''}${p.fpts!=null?` · ${Math.round(p.fpts)} pts`:''}</span></button>`).join('')
     || '<div class="ai-cmp-none">No similar players on the board.</div>';
@@ -683,31 +690,30 @@ function _aiCmpSearch(q){
   }
   const hits=(_aiCmp.list||[]).filter(p=>String(p.name||'').toLowerCase().includes(q)).slice(0,12);
   if(head) head.textContent='Search results';
-  box.innerHTML=hits.map(p=>`<button class="ai-cmp-hit" onclick="_aiPickB('${escAttr(String(p.player_id||p.name))}')">
+  box.innerHTML=hits.map(p=>`<button class="ai-cmp-hit" onclick="_aiPick('${escAttr(String(p.player_id||p.name))}')">
     <span class="ai-cmp-hit-nm">${escHtml(p.name)}</span> <span class="ai-cmp-hit-sub">${p.pos} · ${escHtml(p.team||'FA')}</span></button>`).join('')
     || '<div class="ai-cmp-none">No match on the board.</div>';
 }
 let _aiCfgOpen=false;
 function tcAiOpenSetup(){ _aiCfgOpen=true; renderAiCompare(); }
-function renderAiCompare(){
-  const body=document.getElementById('aiCmpBody'); if(!body) return;
-  const s=tcAiSettings(), u=tcAiUsage();
-  const usage=`${u.calls||0} calls · ${(u.prompt||0)+(u.completion||0)} tokens total, this browser`;
-  if(tcAiMode()===null || _aiCfgOpen){
+// The engine picker, host-agnostic: the ⚖ compare and the chat both render it
+// into their own body; rr names the caller's re-render so every handler comes home.
+function tcAiRenderSetup(body, rr){
+  const s=tcAiSettings();
     const builtin=tcAiBuiltinAvailable(), gpu=tcAiWebGpuAvailable();
     body.innerHTML=`<div class="ai-cmp-setup">
       <div class="ai-cmp-setup-h">How should the model run? ${(typeof tcInfoBtn==='function')?tcInfoBtn('aicmp','About the compare feature'):''}</div>
       <div class="ai-cmp-modes">
         <button class="ai-cmp-mode ${s.mode==='builtin'?'on':''}" ${builtin?'':'disabled'}
-          onclick="_aiCfgOpen=false;tcAiSaveSettings({mode:'builtin'});renderAiCompare()">
+          onclick="_aiCfgOpen=false;tcAiSaveSettings({mode:'builtin'});${rr}()">
           <b>Browser's built-in AI ${builtin?'<em class="ai-cmp-rec">free · default</em>':''}</b>
           <span>${builtin?'No key, no download.':'Not in this browser.'}</span></button>
         <button id="aiLocalCard" class="ai-cmp-mode ${s.mode==='local'?'on':''}" ${gpu?'':'disabled'}
-          onclick="_aiCfgOpen=false;tcAiSaveSettings({mode:'local'});renderAiCompare()">
+          onclick="_aiCfgOpen=false;tcAiSaveSettings({mode:'local'});${rr}()">
           <b>Local model <em id="aiLocalRec" class="ai-cmp-rec" hidden>free · recommended</em></b>
           <span id="aiLocalNote">${gpu?'Checking what your GPU can run…':'Needs WebGPU.'}</span></button>
         <button class="ai-cmp-mode ${s.mode==='paste'?'on':''}"
-          onclick="_aiCfgOpen=false;tcAiSaveSettings({mode:'paste'});renderAiCompare()">
+          onclick="_aiCfgOpen=false;tcAiSaveSettings({mode:'paste'});${rr}()">
           <b>Any AI app, by paste ${(!builtin&&!gpu)?'<em class="ai-cmp-rec">free · works here</em>':''}</b>
           <span>Copy the packet, paste it into the AI you already use.</span></button>
       </div>
@@ -719,7 +725,7 @@ function renderAiCompare(){
       <datalist id="aiFreeModels"></datalist>
       <label class="ai-cmp-lbl">Endpoint (OpenAI-compatible, https)</label>
       <input id="aiEndpoint" class="ai-cmp-in" value="${escAttr(s.endpoint)}">
-      <button class="btn-accent ai-cmp-go" onclick="_aiCfgOpen=false;tcAiSaveSettings({mode:'key',key:document.getElementById('aiKey').value.trim(),model:document.getElementById('aiModel').value.trim(),endpoint:document.getElementById('aiEndpoint').value.trim()});renderAiCompare()">Save key</button>
+      <button class="btn-accent ai-cmp-go" onclick="_aiCfgOpen=false;tcAiSaveSettings({mode:'key',key:document.getElementById('aiKey').value.trim(),model:document.getElementById('aiModel').value.trim(),endpoint:document.getElementById('aiEndpoint').value.trim()});${rr}()">Save key</button>
       ${(typeof openMcpConnector==='function')?`<div class="ai-cmp-or">or outside the app</div>
       <button class="ai-cmp-mode ai-cmp-mcp" onclick="openMcpConnector()">
         <b>TripleCrown in the Claude app <em class="ai-cmp-rec">free \u00b7 connector</em></b>
@@ -749,8 +755,13 @@ function renderAiCompare(){
       // a live free model; anything the user typed themselves is respected.
       if(inp && !s.modelChosen && !models.includes(inp.value)) inp.value=tcAiDefaultModel(models);
     }).catch(()=>{});
-    return;
-  }
+}
+
+function renderAiCompare(){
+  const body=document.getElementById('aiCmpBody'); if(!body) return;
+  const s=tcAiSettings(), u=tcAiUsage();
+  const usage=`${u.calls||0} calls · ${(u.prompt||0)+(u.completion||0)} tokens total, this browser`;
+  if(tcAiMode()===null || _aiCfgOpen){ tcAiRenderSetup(body,'renderAiCompare'); return; }
   const a=_aiCmp.a, b=_aiCmp.b;
   const chip=(p,side)=> p
     ? `<div class="ai-cmp-chip"><b>${escHtml(p.name)}</b><span>${p.pos} · ${escHtml(p.team||'FA')}</span></div>`
@@ -759,7 +770,7 @@ function renderAiCompare(){
   const est=msgs?tcAiEstTokens(msgs):0;
   body.innerHTML=`
     <div class="ai-cmp-pair">${chip(a,'A')}<span class="ai-cmp-vs">vs</span>${chip(b,'B')}</div>
-    ${!b?`<input class="ai-cmp-in" placeholder="Compare ${a?escHtml(a.name)+' with…':'with…'}" oninput="_aiCmpSearch(this.value)" onfocus="_aiCmpSearch('')" autocomplete="off">
+    ${!b?`<input class="ai-cmp-in" placeholder="${a?`Compare ${escHtml(a.name)} with…`:'Player A — search the board…'}" oninput="_aiCmpSearch(this.value)" onfocus="_aiCmpSearch('')" autocomplete="off">
           ${a?`<div id="aiCmpSimHead" class="ai-cmp-simhead">Similar ${a.pos}s \u00b7 nearest on the board</div>`:''}
           <div id="aiCmpMatches" class="ai-cmp-matches">${a?_aiCandidateRows(a,_aiCmp.list):''}</div>`:''}
     ${a&&b?(()=>{ const mode=tcAiMode();

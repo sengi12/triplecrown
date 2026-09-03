@@ -2,7 +2,7 @@
 // (single-shot calls, capped responses, usage accounting), and untrusted-output
 // escaping. The network is stubbed — this suite must never spend a token.
 const elStore={};
-function mkEl(id){if(!elStore[id])elStore[id]={id,innerHTML:'',style:{},value:'',dataset:{},disabled:false,textContent:'',classList:{add(){},remove(){}},setAttribute(){},appendChild(){},addEventListener(){},remove(){},querySelectorAll:()=>[]};return elStore[id];}
+function mkEl(id){if(!elStore[id])elStore[id]={id,innerHTML:'',style:{},value:'',dataset:{},disabled:false,textContent:'',classList:{add(){},remove(){}},setAttribute(){},appendChild(){},addEventListener(){},remove(){},focus(){},querySelectorAll:()=>[]};return elStore[id];}
 global.document={getElementById:id=>mkEl(id),querySelector:()=>null,querySelectorAll:()=>[],
   createElement:()=>({style:{},appendChild(){},addEventListener(){},classList:{add(){}}}),
   body:{appendChild(){}},addEventListener(){}};
@@ -57,7 +57,10 @@ const app=new Function(code+`return { tcAiSettings, tcAiSaveSettings, tcAiUsage,
   setFormat:(f)=>{rankFormat=f;}, setDraftLineup:(l)=>{draftLineup=l;},
   tcMcpUrl, tcMcpToOpenAiTools, tcMcpCallLabel, tcMcpTools, resetMcpTools:()=>{_mcpTools=null;},
   openMcpConnector, renderMcpConnector, TC_MCP_FORMATS, TC_AI_MAX_TOOL_ROUNDS, TC_AI_TOOL_RESULT_CAP,
-  tcAiToolModels, lastLookups:()=>_aiLastLookups, TC_INFO_BOOK };`)();
+  tcAiToolModels, lastLookups:()=>_aiLastLookups, TC_INFO_BOOK,
+  openTcChat, tcChatRender, _chatSend, _chatGuide, tcChatMessages, TC_CHAT_GUIDES, TC_CHAT_KEEP,
+  chatState:()=>_chat, resetChat:()=>{_chat={msgs:[],guide:null,draft:'',busy:false};},
+  openAiCompare, _aiPick, cmpState:()=>_aiCmp };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
 console.log('=== settings: free by default, bounded by design ===');
@@ -619,6 +622,81 @@ await (async()=>{
   app.tcAiSaveSettings({tools:false});
   app.renderAiCompare();
   chk(document.getElementById('aiCmpBody').innerHTML.includes('1 request'), 'off → "1 request"');
+})();
+
+console.log('=== \u2630 Compare: opens bare, search fills A then B ===');
+{
+  app.openAiCompare();
+  const st=app.cmpState();
+  chk(st.a===null && st.b===null, 'from the menu both slots start empty');
+  let ui=document.getElementById('aiCmpBody').innerHTML;
+  chk(ui.includes('pick player A') && ui.includes('Player A \u2014 search the board'), 'the modal says to search for player A');
+  st.byId=new Map([['1',pa],['2',pb]]); st.list=[pa,pb];
+  app._aiPick('1');
+  chk(app.cmpState().a===pa && app.cmpState().b===null, 'the first hit fills A');
+  ui=document.getElementById('aiCmpBody').innerHTML;
+  chk(ui.includes('Compare Alpha Back with'), 'and the search flips to finding B');
+  app._aiPick('2');
+  chk(app.cmpState().b===pb, 'the next hit fills B — the normal flow from here');
+  chk(document.getElementById('aiCmpBody').innerHTML.includes('Ask '), 'both aboard \u2192 the Ask button appears');
+}
+
+console.log('=== the chat: same engines, same bounds, guided ===');
+await (async()=>{
+  const ep=app.tcAiSettings().endpoint;
+  const aiCalls=()=>fetchCalls.filter(f=>f.url===ep);
+  app.tcAiSaveSettings({mode:'key',key:'sk-test',tools:false,reasoning:false});
+  app.setFormat('ppr');
+  // The five guided workflows are the SAME five the connector ships as prompts.
+  const wp=await import(require('url').pathToFileURL(require('path').join(__dirname,'../tools/mcp_worker/prompts.js')).href);
+  chk(app.TC_CHAT_GUIDES.map(g=>g.k).join()===wp.PROMPTS.map(p=>p.name).join(),
+      'the app\'s guide chips and the connector\'s prompts are the same five workflows');
+  app.resetChat();
+  app.openTcChat();
+  let ui=document.getElementById('tcChatBody').innerHTML;
+  chk(app.TC_CHAT_GUIDES.every(g=>ui.includes(g.label)), 'an empty chat opens on the guide chips');
+  chk(ui.includes('1 request'), 'and says what a send costs');
+  app._chatGuide('trade_eval');
+  chk(app.chatState().guide==='trade_eval' && /I give/.test(app.chatState().draft), 'a chip arms its workflow and starts the sentence');
+  chk(/trade evaluation/.test(app.tcChatMessages()[0].content), 'the workflow\'s coaching rides the system message');
+  // One send = one request; the history is the wire.
+  const before=aiCalls().length;
+  document.getElementById('tcChatIn').value='Evaluate this trade. I give: Gibbs. I get: Bijan.';
+  await app._chatSend();
+  chk(aiCalls().length===before+1, 'one send, one request');
+  let body=JSON.parse(aiCalls().pop().opts.body);
+  chk(body.messages[0].role==='system' && /fantasy football assistant/.test(body.messages[0].content)
+      && /PPR/i.test(body.messages[0].content), 'the system line knows the app and the league format');
+  chk(body.messages[body.messages.length-1].content.includes('I give: Gibbs'), 'the user\'s words arrive last');
+  chk(app.chatState().msgs.length===2 && !app.chatState().msgs[1].error, 'question and answer both live in the log');
+  // Turn two carries turn one.
+  document.getElementById('tcChatIn').value='And in dynasty?';
+  await app._chatSend();
+  body=JSON.parse(aiCalls().pop().opts.body);
+  chk(body.messages.length===4 && body.messages[2].role==='assistant', 'the next send carries the conversation');
+  // A failed turn shows its hint and never rides again.
+  aiHttp={status:429, retryAfter:'30'};
+  document.getElementById('tcChatIn').value='again?';
+  await app._chatSend();
+  aiHttp=null;
+  const last=app.chatState().msgs[app.chatState().msgs.length-1];
+  chk(last.error===true && last.hint.length>0, 'a failure is a red bubble with the usual hint');
+  chk(!app.tcChatMessages().some(m=>m.content===last.content), 'and never rides the wire again');
+  // Long chats stay bounded.
+  for(let i=0;i<30;i++) app.chatState().msgs.push({role:i%2?'assistant':'user',content:'turn '+i});
+  chk(app.tcChatMessages().length===1+app.TC_CHAT_KEEP, `only the last ${app.TC_CHAT_KEEP} turns ride a request`);
+  // Model output stays untrusted in the log.
+  app.resetChat();
+  app.chatState().msgs.push({role:'assistant',content:'Take A. <script>alert(1)</script>'});
+  app.tcChatRender();
+  ui=document.getElementById('tcChatBody').innerHTML;
+  chk(!ui.includes('<script>alert') && ui.includes('&lt;script&gt;'), 'model markup is escaped in the chat log');
+  // Paste mode has no model in the app; the chat says so instead of breaking.
+  app.tcAiSaveSettings({mode:'paste'});
+  app.tcChatRender();
+  chk(/Choose how the model runs/.test(document.getElementById('tcChatBody').innerHTML), 'paste mode → pick an engine, not a dead end');
+  app.tcAiSaveSettings({mode:'key'});
+  app.resetChat();
 })();
 
 console.log('=== output is untrusted text ===');

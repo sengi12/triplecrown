@@ -652,7 +652,7 @@ function syncAppChrome(){
   });
 
   const viewSpecificSec = document.getElementById('menuViewSpecificSec');
-  if(viewSpecificSec) viewSpecificSec.textContent = `View-specific: ${viewLabel}`;
+  if(viewSpecificSec) viewSpecificSec.textContent = viewLabel;
 
   // "Switch Analyst" appears in any view when imported projections have multiple analysts.
   const menuSA = document.getElementById('menuSwitchAnalyst');

@@ -136,7 +136,7 @@ For the full experience (expert rankings, contracts, advanced stats, coaching, r
 | `tools/draft_sim.py` | Monte-Carlo mock-draft simulator that tunes and validates the app's on-the-clock advisory. `--proj` swaps in an analyst projection file as the value baseline. |
 | `tools/draft_history.py` | Scores every past manager-season in a league's history on what its draft-day roster really did, so "what wins here" is measured rather than assumed. |
 | `tools/draft_playbook.py` | Drives the other two and writes one markdown playbook for one league and one seat. |
-| `tools/mcp_worker/` | The MCP tools as an always-on **remote** server: a dependency-free Cloudflare Worker (free plan) reading shards baked into the Pages site — the curated tools from `tc_mcp.py --bake`, and the **entire seed** from `bake_seed.js` (`seed_ls` / `seed_get` / `player_data`, every format). Deploy once with `wrangler deploy`. |
+| `tools/mcp_worker/` | The MCP tools as an always-on **remote** server: a dependency-free Cloudflare Worker (free plan) reading shards baked into the Pages site — the curated tools from `tc_mcp.py --bake`, the **entire seed** from `bake_seed.js` (`seed_ls` / `seed_get` / `player_data`, every format), and five **guided workflows as MCP prompts** (`prompts.js`: start/sit, draft pick, trade eval, waiver scan, player deep dive) that surface as ready-made starts in any Claude chat. Deploy once with `wrangler deploy`. |
 | `tools/tc_mcp.py` | An MCP server over the seed: TripleCrown's data as tools for Claude Desktop / Claude Code / any MCP client. Stdlib-only, stdio, zero hosting — see [TripleCrown as an MCP server](#triplecrown-as-an-mcp-server). |
 | `tools/draft_corpus.py` | Harvests real completed Sleeper drafts (league → managers → their leagues), fits the market model to them — sigma curve, K/DEF timing, QB volume — and Brier-scores the advisory's survival predictions against held-out drafts. |
 
@@ -538,10 +538,17 @@ The project ships with a regression suite (Node + Python) covering the projectio
   formats by path, and the **entire seed** browsable raw (`seed_ls` / `seed_get` / `player_data`) from
   shards the app's own decoder bakes. In the app: **☰ → Ask in Claude** hands over the URL for your
   format, and the ⚖ compare has an opt-in **Research** switch (key mode only, off by default)
+  — see the in-app chat below for the same loop in conversation form
   that lets the model call the same connector mid-answer — bounded at 3 lookup rounds per click (≤4
   requests), every round counted in the usage footer, every lookup named under the answer, tool-capable
   free models marked in the picker, connector down → plain answer. The one deliberate exception to
-  one-click-one-request, and it says so on the switch
+  one-click-one-request, and it says so on the switch. **The guided experience** ships on both sides
+  of the connector: the worker serves five workflows as MCP prompts (start/sit, draft pick, trade
+  eval, waiver scan, player deep dive — `tools/mcp_worker/prompts.js`), and the same five are guide
+  chips in **☰ → Ask TripleCrown** (`src/js/95-tc-chat.js`), an in-app chat on the compare's own
+  engines (browser AI / local model / your key, Reasoning and Research switches included): one send
+  = one request, the last 12 turns ride the wire, failed turns never re-send, model output stays
+  escaped text
 - [ ] AI deep-analysis fan-out: a lead "ranker" model orchestrating specialized sub-agents (offense,
   defense, player context, coaching, deep stats) rolled into an in-depth TripleCrown rank —
   **deliberately deferred**: fan-out is exactly the shape of feature that racks up tokens, and the

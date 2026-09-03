@@ -46,7 +46,7 @@
         <button class="hdr-menu-item" id="menuRankView" onclick="closeAppMenu();showFullRankings()">@@ICON_trophy@@ Rankings</button>
         <button class="hdr-menu-item" id="menuLeagueView" onclick="closeAppMenu();openLeagueAnalyzer()">@@ICON_stadium@@ Leagues</button>
 
-        <div class="app-menu-sec" id="menuViewSpecificSec">View-specific</div>
+        <div class="app-menu-sec" id="menuViewSpecificSec">Projections</div>
         <button class="hdr-menu-item menu-view-proj" id="menuImport" hidden onclick="closeAppMenu();triggerImport()">@@ICON_export@@ Import</button>
         <button class="hdr-menu-item menu-view-proj" id="menuDownload" hidden onclick="closeAppMenu();menuDownloadPrompt()">@@ICON_download@@ Download</button>
         <button class="hdr-menu-item menu-view-rank" id="menuKtc" hidden onclick="closeAppMenu();startKtcGame()">@@ICON_trophy@@ Keep Trade Cut</button>
@@ -54,8 +54,12 @@
         <button class="hdr-menu-item menu-view-league" id="menuResync" hidden onclick="closeAppMenu();laResync()">@@ICON_refresh@@ Re-sync league</button>
         <button class="hdr-menu-item menu-view-league" id="menuChangeLeague" hidden onclick="closeAppMenu();laMenuChangeLeague()">@@ICON_link@@ Change league</button>
 
+        <div class="app-menu-sec">AI</div>
+        <button class="hdr-menu-item" id="menuChat"       onclick="closeAppMenu();openTcChat()" title="Chat over the app's numbers — start/sit, trades, waivers">@@ICON_chat@@ Ask TripleCrown</button>
+        <button class="hdr-menu-item" id="menuMcp"        onclick="closeAppMenu();openMcpConnector()" title="TripleCrown's data as a connector for the Claude app">@@ICON_link@@ Ask Claude</button>
+        <button class="hdr-menu-item" id="menuCompare"    onclick="closeAppMenu();openAiCompare()" title="Stuck between two players — pick both and get a grounded verdict">@@ICON_scale@@ Compare</button>
+
         <div class="app-menu-sec">General</div>
-        <button class="hdr-menu-item" id="menuMcp"        onclick="closeAppMenu();openMcpConnector()" title="TripleCrown's data as a connector for the Claude app">@@ICON_link@@ Ask in Claude</button>
         <button class="hdr-menu-item" id="menuAuthBtn"    onclick="tcMenuSignIn()">Sign In</button>
         <button class="hdr-menu-item" id="menuSaveBtn"    onclick="tcSaveClick()" style="display:none">@@ICON_save@@ Save</button>
         <button class="hdr-menu-item" id="menuManagerBtn" onclick="tcOpenManager()" style="display:none">@@ICON_folder@@ Manager</button>

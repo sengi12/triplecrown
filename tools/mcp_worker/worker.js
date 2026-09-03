@@ -20,6 +20,7 @@
 // seed — the Pages deploy rebakes the shards and the edge cache turns over within TTL.
 
 import { chunkIndex, dirOf, resolve, splitPath, SEP } from "./shards.js";
+import { promptList, promptGet } from "./prompts.js";
 
 const DEFAULT_FORMAT = "ppr";
 const MAX_OUT = 12000;         // characters of JSON a raw read returns before it is cut
@@ -324,9 +325,9 @@ async function handle(d, msg) {
       const want = params.protocolVersion;
       result = {
         protocolVersion: PROTOCOL_VERSIONS.includes(want) ? want : PROTOCOL_VERSIONS[PROTOCOL_VERSIONS.length - 1],
-        capabilities: { tools: { listChanged: false }, resources: {} },
+        capabilities: { tools: { listChanged: false }, resources: {}, prompts: { listChanged: false } },
         serverInfo: { name: man.server.name, version: man.server.version },
-        instructions: man.instructions + " The whole seed is here too: seed_ls (no path) for the table of contents, seed_get for any table, player_data for every raw row on one player.",
+        instructions: man.instructions + " The whole seed is here too: seed_ls (no path) for the table of contents, seed_get for any table, player_data for every raw row on one player. Guided workflows ship as prompts (start_sit, draft_pick, trade_eval, waiver_scan, player_deep_dive) — prefer them when the user's ask matches one.",
       };
     } else if (method === "ping") {
       result = {};
@@ -347,7 +348,10 @@ async function handle(d, msg) {
       if (params.uri !== res.uri) return rpcError(id, -32002, `unknown resource ${JSON.stringify(params.uri)}`);
       result = { contents: [{ uri: res.uri, mimeType: "text/plain", text: (await d.meta()).state }] };
     } else if (method === "prompts/list") {
-      result = { prompts: [] };
+      result = { prompts: promptList() };
+    } else if (method === "prompts/get") {
+      try { result = promptGet(params.name, params.arguments, d.fmt); }
+      catch (e) { return rpcError(id, e.rpc || -32603, e.message); }
     } else {
       return rpcError(id, -32601, `method not found: ${method}`);
     }
