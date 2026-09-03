@@ -27089,6 +27089,15 @@ async function tcAiCall(messages){
   if(!res.ok){
     let msg=`HTTP ${res.status}`;
     try{ const j=await res.json(); if(j&&j.error&&j.error.message) msg+=` — ${j.error.message}`; }catch(e){}
+    // 429 on a free tier is the shared pool being busy or the daily free cap —
+    // ordinary weather, not a fault. Say so, with the provider's own timing
+    // when it offers one.
+    if(res.status===429){
+      let wait='';
+      try{ const ra=res.headers && res.headers.get && res.headers.get('Retry-After');
+           if(ra && isFinite(+ra)) wait=` Provider says retry in ~${Math.ceil(+ra)}s.`; }catch(e){}
+      msg+=` — this model's FREE pool is busy (capacity is shared), or the daily free cap is reached.${wait} Another free model usually answers immediately.`;
+    }
     throw new Error(msg);
   }
   const j=await res.json();
@@ -27106,6 +27115,16 @@ async function tcAiCall(messages){
       : `Empty response${fr?` (finish_reason: ${fr})`:''} — the model returned nothing; try another free model from the list.`);
   }
   return String(txt);
+}
+// Which failures earn the one-click road to another free model, and the one
+// sentence of interpretation that goes with it. Pure, so it's testable.
+function tcAiErrorHint(msg){
+  const m=String(msg||'');
+  if(/429|rate.?limit|busy|capacity/i.test(m))
+    return { hint:'Free capacity is shared and comes back on its own — or a different free pool answers right now.' };
+  if(/thinks out loud|free|404|model/i.test(m))
+    return { hint:'Free tiers rotate and vary on the provider\u2019s side — nothing you did.' };
+  return null;
 }
 // Model output is untrusted text: escape everything, keep only paragraph breaks.
 function tcAiRenderText(txt){
@@ -27230,9 +27249,9 @@ async function _aiAsk(){
     out.innerHTML=tcAiRenderText(txt)+`<div class="ai-cmp-src">Model output — judgment, not data. The numbers it saw are the app's.</div>`;
   }catch(e){
     const msg=String(e.message||'failed');
-    const modelGone=/free|404|model/i.test(msg);
+    const h=tcAiErrorHint(msg);
     out.innerHTML=`<div class="ai-cmp-err">${escHtml(msg)} — nothing was retried.</div>`
-      +(modelGone?`<div class="ai-cmp-err-hint">Free tiers rotate on the provider's side — nothing you did.
+      +(h?`<div class="ai-cmp-err-hint">${escHtml(h.hint)}
         <button class="ai-cmp-cfg" onclick="localStorage.removeItem('tc_ai_free_models');tcAiOpenSetup()">show what's free right now</button></div>`:'');
   }finally{
     if(document.getElementById('aiAskBtn')){ btn.disabled=false; renderAiCompare_footOnly(); btn.textContent='Ask again'; }

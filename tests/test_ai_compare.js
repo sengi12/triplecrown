@@ -20,9 +20,13 @@ const MODELS={data:[
   {id:'delta/promo',      pricing:{prompt:'0',    completion:'0.001'}},  // half-free is not free
 ]};
 let aiResponse=null;   // per-test override for the chat endpoint's body
+let aiHttp=null;       // per-test override for status/headers: {status, retryAfter}
 global.fetch=(url,opts)=>{
   fetchCalls.push({url,opts});
   if(String(url).includes('/models')) return Promise.resolve({ok:true,json:()=>Promise.resolve(MODELS)});
+  if(aiHttp) return Promise.resolve({ok:false, status:aiHttp.status,
+    headers:{get:(k)=>k==='Retry-After'?aiHttp.retryAfter:null},
+    json:()=>Promise.resolve({error:{message:'Provider returned error'}})});
   return Promise.resolve({ok:true,json:()=>Promise.resolve(aiResponse||{
     usage:{prompt_tokens:400,completion_tokens:150},
     choices:[{message:{content:'Take Player A.\n\nHe has the better <b>numbers</b>.'}}]})});
@@ -35,7 +39,7 @@ const app=new Function(code+`return { tcAiSettings, tcAiSaveSettings, tcAiUsage,
   setWebLlmLoader:(f)=>{_aiWebLlmLoader=f;}, resetLocal:()=>{_aiLocalEngine=null;_aiLocalLoading=null;},
   setContracts:(c)=>{CONTRACTS=c;}, setSos:(x)=>{SOS=x;},
   TC_AI_LOCAL_MODELS, _aiLocalModelPref, tcAiGpuProbe, tcAiLocalPlan, resetProbe:()=>{_aiGpuProbe=null;},
-  tcAiDeltas,
+  tcAiDeltas, tcAiErrorHint,
   TC_AI_MAX_TOKENS, TC_AI_FREE_MODELS,
   setFormat:(f)=>{rankFormat=f;}, setDraftLineup:(l)=>{draftLineup=l;} };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -138,6 +142,22 @@ await (async()=>{
   const custom=JSON.parse(fetchCalls[fetchCalls.length-1].opts.body);
   chk(!('reasoning' in custom), 'non-OpenRouter endpoints are not sent the vendor param');
   app.tcAiSaveSettings({endpoint:'https://openrouter.ai/api/v1/chat/completions'});
+})();
+
+console.log('=== 429 is weather, not a wall ===');
+await (async()=>{
+  aiHttp={status:429, retryAfter:'38'};
+  let m=''; try{ await app.tcAiCall([{role:'user',content:'u'}]); }catch(e){ m=e.message; }
+  chk(/FREE pool is busy/.test(m) && /daily free cap/.test(m), 'a 429 is interpreted, not parroted');
+  chk(/~38s/.test(m), "the provider's own retry timing rides along when offered");
+  aiHttp={status:429, retryAfter:null};
+  m=''; try{ await app.tcAiCall([{role:'user',content:'u'}]); }catch(e){ m=e.message; }
+  chk(/answers immediately/.test(m) && !/~\d+s/.test(m), 'and is omitted when absent');
+  aiHttp=null;
+  const h=app.tcAiErrorHint('HTTP 429 — Provider returned error — the FREE pool is busy');
+  chk(h && /comes back on its own/.test(h.hint), 'the hint layer offers the road to another free model');
+  chk(app.tcAiErrorHint('network dropped mid-download')===null,
+      'but an unrelated failure earns no model-hopping hint');
 })();
 
 console.log('=== the free list is LIVE, not remembered ===');
