@@ -2897,6 +2897,12 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .ai-cmp-hit-nm{font-weight:700;}
 .ai-cmp-hit{display:flex;flex-direction:column;gap:1px;}
 .ai-cmp-hit .ai-cmp-hit-sub{margin-left:0;}
+.ai-cmp-matches{max-height:min(46vh,320px);overflow-y:auto;padding-right:2px;overscroll-behavior:contain;}
+.ai-cmp-simdiv{font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);margin:10px 0 4px;padding-top:8px;border-top:1px dashed var(--border);}
+.ai-cmp-tgl{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;margin:6px 0 8px;cursor:pointer;user-select:none;}
+.ai-cmp-tgl input{margin:0;accent-color:var(--accent);}
+.ai-cmp-tgl-sub{color:var(--muted);font-weight:500;font-size:11px;}
 /* ── In-season: pace view + Live/Pace mode segment (League Analyzer in-season
       tabs also style from here — sorts after 70-widgets so .la-* overrides win) ── */
 
@@ -26705,6 +26711,10 @@ async function tcAiFreeModels(force){
   return TC_AI_FREE_MODELS.slice();
 }
 const TC_AI_MAX_TOKENS = 600;
+// With "think first" on, the model's hidden reasoning shares the output budget —
+// at 600 it burns the lot and answers with silence (field report). Opt-in only,
+// and the cap rises with it so the answer actually arrives.
+const TC_AI_MAX_TOKENS_REASONING = 2400;
 
 // ── No-key engines: the model runs IN the browser ───────────────────────────
 // For people who don't want an account anywhere. Two tiers, tried in order:
@@ -26902,6 +26912,7 @@ function tcAiSettings(){
   return { endpoint, key:(typeof s.key==='string')?s.key:'',
            model:(typeof s.model==='string' && s.model)?s.model:TC_AI_FREE_MODELS[0],
            modelChosen: !!s.model,
+           reasoning: s.reasoning===true,
            mode:(['key','builtin','local'].includes(s.mode))?s.mode:'' };
 }
 // The default model when the user hasn't chosen one, off the live free list:
@@ -27096,14 +27107,18 @@ function tcAiEstTokens(messages){
 async function tcAiCall(messages){
   const s=tcAiSettings();
   if(!s.key) throw new Error('No API key set');
-  const body={ model:s.model, messages, max_tokens:TC_AI_MAX_TOKENS };
+  const body={ model:s.model, messages,
+               max_tokens: s.reasoning ? TC_AI_MAX_TOKENS_REASONING : TC_AI_MAX_TOKENS };
   // Most current free tiers are REASONING models: left alone they spend the
   // whole max_tokens budget "thinking" and never emit visible content — the
   // response comes back 200 with an empty message (field report: mobile,
-  // every free model, "Empty response"). Ask OpenRouter to keep the thinking
-  // out of the budget. Only on OpenRouter: other OpenAI-compatible endpoints
-  // may reject the unknown parameter.
-  if(/openrouter\.ai/.test(s.endpoint)) body.reasoning={ enabled:false, exclude:true };
+  // every free model, "Empty response"). Default: ask OpenRouter to keep the
+  // thinking out of the budget. "Think first" (opt-in) turns it on WITH the
+  // bigger cap; the reasoning itself stays out of the reply either way. Only on
+  // OpenRouter: other OpenAI-compatible endpoints may reject the parameter.
+  if(/openrouter\.ai/.test(s.endpoint))
+    body.reasoning= s.reasoning ? { enabled:true, exclude:true, effort:'medium' }
+                                : { enabled:false, exclude:true };
   const res=await fetch(s.endpoint, {
     method:'POST',
     headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${s.key}` },
@@ -27194,6 +27209,27 @@ function _aiSimilarToA(a, list, n){
   };
   return pool.sort((x,y)=>score(x)-score(y)).slice(0, n||6);
 }
+// The full candidate set for the B box: the same-position shortlist first
+// (that's the usual question), then the nearest players at OTHER positions —
+// flex calls and "which of these two do I want at all" are real questions too.
+// Cross-position nearness is rank-only: projected points don't compare across
+// positions (a QB3 out-scores an RB1).
+function _aiCompareCandidates(a, list){
+  if(!a) return { same:[], other:[] };
+  const same=_aiSimilarToA(a, list, 10);
+  const rankOf=(p)=> (typeof adpFor==='function' && adpFor(p)<999) ? adpFor(p)
+                    : (p.ecr!=null ? p.ecr*1.2 : 999);
+  const aRank=rankOf(a);
+  const other=(list||[]).filter(p=>p && p.pos!==a.pos && p.pos!=='K' && p.pos!=='DEF'
+      && !(typeof draftedIds!=='undefined' && draftedIds && draftedIds[p.player_id]))
+    .sort((x,y)=>Math.abs(rankOf(x)-aRank)-Math.abs(rankOf(y)-aRank)).slice(0,12);
+  return { same, other };
+}
+function _aiCandidateRows(a, list){
+  const c=_aiCompareCandidates(a, list);
+  return _aiSimilarRows(c.same)
+    + (c.other.length ? `<div class="ai-cmp-simdiv">Other positions \u00b7 nearest by rank</div>` + _aiSimilarRows(c.other) : '');
+}
 function _aiSimilarRows(players){
   const rk=(p)=> (typeof adpFor==='function' && adpFor(p)<999) ? `ADP ${Math.round(adpFor(p))}`
               : (p.ecr!=null ? `ECR ${p.ecr}` : '');
@@ -27208,11 +27244,11 @@ function _aiCmpSearch(q){
   q=(q||'').trim().toLowerCase();
   // Empty box → the "similar to A" shortlist; typing → name search.
   if(q.length<2){
-    box.innerHTML=_aiSimilarRows(_aiSimilarToA(_aiCmp.a, _aiCmp.list, 6));
+    box.innerHTML=_aiCandidateRows(_aiCmp.a, _aiCmp.list);
     if(head) head.textContent=_aiCmp.a?`Similar ${_aiCmp.a.pos}s \u00b7 nearest on the board`:'';
     return;
   }
-  const hits=(_aiCmp.list||[]).filter(p=>String(p.name||'').toLowerCase().includes(q)).slice(0,6);
+  const hits=(_aiCmp.list||[]).filter(p=>String(p.name||'').toLowerCase().includes(q)).slice(0,12);
   if(head) head.textContent='Search results';
   box.innerHTML=hits.map(p=>`<button class="ai-cmp-hit" onclick="_aiPickB('${escAttr(String(p.player_id||p.name))}')">
     <span class="ai-cmp-hit-nm">${escHtml(p.name)}</span> <span class="ai-cmp-hit-sub">${p.pos} · ${escHtml(p.team||'FA')}</span></button>`).join('')
@@ -27283,14 +27319,17 @@ function renderAiCompare(){
     <div class="ai-cmp-pair">${chip(a,'A')}<span class="ai-cmp-vs">vs</span>${chip(b,'B')}</div>
     ${!b?`<input class="ai-cmp-in" placeholder="Compare ${a?escHtml(a.name)+' with…':'with…'}" oninput="_aiCmpSearch(this.value)" onfocus="_aiCmpSearch('')" autocomplete="off">
           ${a?`<div id="aiCmpSimHead" class="ai-cmp-simhead">Similar ${a.pos}s \u00b7 nearest on the board</div>`:''}
-          <div id="aiCmpMatches" class="ai-cmp-matches">${a?_aiSimilarRows(_aiSimilarToA(a,_aiCmp.list,6)):''}</div>`:''}
+          <div id="aiCmpMatches" class="ai-cmp-matches">${a?_aiCandidateRows(a,_aiCmp.list):''}</div>`:''}
     ${a&&b?(()=>{ const mode=tcAiMode();
       const who = mode==='builtin' ? 'the browser\u2019s built-in model'
                 : mode==='local' ? TC_AI_LOCAL_MODEL.replace(/-q4.*$/,'')+' (local)'
                 : escHtml(s.model.split('/').pop());
-      const cost = mode==='key' ? `~${est} tokens in \u00b7 \u2264${TC_AI_MAX_TOKENS} out \u00b7 your key`
+      const cap = s.reasoning ? TC_AI_MAX_TOKENS_REASONING : TC_AI_MAX_TOKENS;
+      const cost = mode==='key' ? `~${est} tokens in \u00b7 \u2264${cap} out \u00b7 your key`
                 : 'runs on this device \u00b7 $0';
-      return `<button id="aiAskBtn" class="btn-accent ai-cmp-go" onclick="_aiAsk()">Ask ${who} <span class="ai-cmp-est">${cost}</span></button>`; })():''}
+      const think = mode==='key' ? `<label class="ai-cmp-tgl" title="Lets a reasoning model think before it answers \u2014 deeper, several times slower, and it costs more of a free tier's daily budget. Off is the fast path.">
+          <input type="checkbox" ${s.reasoning?'checked':''} onchange="tcAiSaveSettings({reasoning:this.checked});renderAiCompare()"> Think first <span class="ai-cmp-tgl-sub">slower \u00b7 deeper</span></label>` : '';
+      return `${think}<button id="aiAskBtn" class="btn-accent ai-cmp-go" onclick="_aiAsk()">Ask ${who} <span class="ai-cmp-est">${cost}</span></button>`; })():''}
     <div id="aiCmpOut" class="ai-cmp-out"></div>
     <div class="ai-cmp-foot">
       <span>${escHtml(usage)}</span>
@@ -27335,7 +27374,10 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     (free tiers rotate), the key lives only in this browser's localStorage and is sent only to
     the endpoint you configure \u2014 don't paste it on shared machines. Whatever the engine:
     one click is one capped request, nothing retries, nothing runs in the background, and the
-    footer counts every call.`};
+    footer counts every call. Tap the <b>Player B</b> box for the players in the same
+    conversation — nearest at the position first, then the nearest at other positions.
+    <b>Think first</b> lets a reasoning model deliberate before answering: deeper, several
+    times slower, and it spends more of a free tier's daily allowance — off is the fast path.`};
 }
 // ═════════════════════════════════════════════════════════════════════════════
 // Copy reference-season stats into the working (projection) set

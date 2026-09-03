@@ -46,7 +46,8 @@ const app=new Function(code+`return { tcAiSettings, tcAiSaveSettings, tcAiUsage,
   setWebLlmLoader:(f)=>{_aiWebLlmLoader=f;}, resetLocal:()=>{_aiLocalEngine=null;_aiLocalLoading=null;},
   setContracts:(c)=>{CONTRACTS=c;}, setSos:(x)=>{SOS=x;},
   TC_AI_LOCAL_MODELS, _aiLocalModelPref, tcAiGpuProbe, tcAiLocalPlan, resetProbe:()=>{_aiGpuProbe=null;},
-  tcAiDeltas, tcAiErrorHint, tcAiDefaultModel, _aiSimilarToA,
+  tcAiDeltas, tcAiErrorHint, tcAiDefaultModel, _aiSimilarToA, _aiCompareCandidates,
+  TC_AI_MAX_TOKENS, TC_AI_MAX_TOKENS_REASONING,
   setDrafted:(d)=>{draftedIds=d;},
   TC_AI_MAX_TOKENS, TC_AI_FREE_MODELS,
   setFormat:(f)=>{rankFormat=f;}, setDraftLineup:(l)=>{draftLineup=l;} };`)();
@@ -103,6 +104,24 @@ console.log('=== Player B suggestions: same conversation as A ===');
   app.setDrafted({});
 }
 
+console.log('=== the B box: same position first, then the rest of the board ===');
+{
+  const P=(id,pos,ecr,fpts,adp)=>({player_id:id,name:id,pos,team:'KC',ecr,fpts,adp_ppr:adp});
+  const list=[ P('rbA','RB',10,240,10), P('rbNear','RB',12,232,13), P('rbFar','RB',55,120,60),
+               P('wrNear','WR',11,238,11), P('qbNear','QB',9,300,9), P('teFar','TE',80,90,90),
+               P('k1','K',150,120,150), P('d1','DEF',140,110,140) ];
+  const c=app._aiCompareCandidates(list[0], list);
+  chk(c.same.every(p=>p.pos==='RB') && c.same.length===2, 'the same-position shortlist comes first');
+  chk(c.other.length>0 && c.other.every(p=>p.pos!=='RB'), 'other positions follow');
+  chk(!c.other.some(p=>p.pos==='K'||p.pos==='DEF'), 'kickers and defenses are not offered as comparisons');
+  chk(['wrNear','qbNear'].includes(c.other[0].player_id), 'the nearest-ranked other-position player leads that group');
+  chk(c.other[c.other.length-1].player_id==='teFar', 'the far one sinks to the bottom');
+  app.setDrafted({wrNear:1});
+  chk(!app._aiCompareCandidates(list[0], list).other.some(p=>p.player_id==='wrNear'),
+      'a drafted player is excluded from the other-position group too');
+  app.setDrafted({});
+}
+
 console.log('=== anti-parroting: the model judges computed evidence ===');
 {
   // Close on the board, different underneath: exactly the case that was being
@@ -147,6 +166,35 @@ await (async()=>{
   chk(u.calls===1 && u.prompt===400 && u.completion===150, 'usage is recorded locally');
   await app.tcAiCall(msgs);
   chk(app.tcAiUsage().calls===2, 'and accumulates');
+})();
+
+console.log('=== think first: opt-in reasoning with the budget it needs ===');
+await (async()=>{
+  // Boot-time fetches share the stub: read back only the AI endpoint's last body.
+  const lastBody=()=>{ const ep=app.tcAiSettings().endpoint;
+    const c=fetchCalls.filter(f=>f.url===ep).pop(); return JSON.parse(c.opts.body); };
+  chk(app.tcAiSettings().reasoning===false, 'reasoning is OFF by default');
+  aiResponse=null; aiHttp=null;
+  app.tcAiSaveSettings({endpoint:'https://openrouter.ai/api/v1/chat/completions', key:'sk-test'});
+  await app.tcAiCall([{role:'user',content:'u'}]);
+  let sent=lastBody();
+  chk(sent.reasoning.enabled===false && sent.max_tokens===app.TC_AI_MAX_TOKENS,
+      'off: reasoning disabled and the tight cap');
+  app.tcAiSaveSettings({reasoning:true});
+  chk(app.tcAiSettings().reasoning===true, 'the toggle persists');
+  await app.tcAiCall([{role:'user',content:'u'}]);
+  sent=lastBody();
+  chk(sent.reasoning.enabled===true && sent.reasoning.exclude===true,
+      'on: reasoning enabled, its transcript still kept out of the reply');
+  chk(sent.max_tokens===app.TC_AI_MAX_TOKENS_REASONING && sent.max_tokens>app.TC_AI_MAX_TOKENS,
+      'and the cap rises so the answer actually arrives');
+  app.tcAiSaveSettings({endpoint:'https://my-proxy.example/v1/chat/completions'});
+  await app.tcAiCall([{role:'user',content:'u'}]);
+  sent=lastBody();
+  chk(!('reasoning' in sent) && sent.max_tokens===app.TC_AI_MAX_TOKENS_REASONING,
+      'a custom endpoint never sees the vendor param but still gets the bigger cap');
+  app.tcAiSaveSettings({reasoning:false, endpoint:'https://openrouter.ai/api/v1/chat/completions'});
+  await app.tcAiCall([{role:'user',content:'u'}]);   // leave the defaults as the last call on record
 })();
 
 console.log('=== empty responses decoded, not shrugged at ===');

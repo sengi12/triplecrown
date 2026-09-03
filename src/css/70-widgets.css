@@ -1242,3 +1242,9 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .ai-cmp-hit-nm{font-weight:700;}
 .ai-cmp-hit{display:flex;flex-direction:column;gap:1px;}
 .ai-cmp-hit .ai-cmp-hit-sub{margin-left:0;}
+.ai-cmp-matches{max-height:min(46vh,320px);overflow-y:auto;padding-right:2px;overscroll-behavior:contain;}
+.ai-cmp-simdiv{font-size:9.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);margin:10px 0 4px;padding-top:8px;border-top:1px dashed var(--border);}
+.ai-cmp-tgl{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;margin:6px 0 8px;cursor:pointer;user-select:none;}
+.ai-cmp-tgl input{margin:0;accent-color:var(--accent);}
+.ai-cmp-tgl-sub{color:var(--muted);font-weight:500;font-size:11px;}
