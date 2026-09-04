@@ -831,6 +831,9 @@ await (async()=>{
   // Football sails through — including personal phrasing around a football ask.
   chk(app.tcChatGuard('who do I start this week?')==='ok', 'football talk passes');
   chk(app.tcChatGuard('my wife thinks I should trade my whole roster')==='ok', 'personal words around a football question still pass');
+  chk(app.tcChatGuard('what do you think of my squad?')==='ok', '"my squad" is football in a fantasy app');
+  chk(app.tcChatGuard('what do you think about my team?')==='ok', 'so is "my team" — no fantasy keyword needed');
+  chk(app.tcChatGuard('rate my starters')==='ok', 'and "my starters"');
   chk(app.tcChatGuard('thoughts?')==='offtopic' || app.chatState().guide, 'no signal at all is off-topic');
   // Crisis: never sent, the chat ends, help is pointed at.
   let b0=aiCalls().length;
@@ -989,11 +992,23 @@ await (async()=>{
   app.tcAiSaveSettings({mode:'key', tools:false});
 })();
 
-console.log('=== output is untrusted text ===');
+console.log('=== output is untrusted text — now rendered as markdown, still only text ===');
 const html=app.tcAiRenderText('Take A.\n\nHe has <script>alert(1)</script> upside.');
 chk(!html.includes('<script>'), 'markup in model output is escaped');
 chk(html.includes('&lt;script&gt;'), 'visibly, not silently dropped');
 chk(html.split('<p>').length===3, 'paragraphs survive');
+{
+  let h=app.tcAiRenderText('**Verdict:** stash him.\n\n- **Team Context:** SOS 32/32\n- upside play\n\n1. first\n2. second\n\n### Risks\nhype > rank');
+  chk(h.includes('<b>Verdict:</b>') && !h.includes('**'), 'bold renders, the stars are gone');
+  chk(/<ul><li><b>Team Context:<\/b> SOS 32\/32<\/li><li>upside play<\/li><\/ul>/.test(h), 'bullets become a real list');
+  chk(/<ol><li>first<\/li><li>second<\/li><\/ol>/.test(h), 'numbered lists too');
+  chk(/<b>Risks<\/b><br>hype &gt; rank/.test(h), 'headings bold, and the text inside is still escaped');
+  chk(app.tcAiRenderText('use `player_data` here').includes('<code>player_data</code>'), 'inline code renders');
+  h=app.tcAiRenderText('**<img src=x onerror=alert(1)>**');
+  chk(h==='<p><b>&lt;img src=x onerror=alert(1)&gt;</b></p>', 'markup smuggled inside markdown stays visible text');
+  chk(!app.tcAiRenderText('5 * 3 * 2 = 30').includes('<i>'), 'stray asterisks in math never italicize');
+  chk(!/[<]a\s/i.test(app.tcAiRenderText('[click](https://evil.example)')), 'markdown links never become links');
+}
 
 console.log(`\n${pass}/${total} checks passed`);
 process.exit(pass===total?0:1);

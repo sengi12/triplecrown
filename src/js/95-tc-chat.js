@@ -45,13 +45,14 @@ let _chat={ msgs:[], guide:null, draft:'', busy:false, board:null, lastGrounded:
 // answers too, so a manipulated or misbehaving model ends the chat the same way.
 const TC_CHAT_CRISIS=/\b(suicide|suicidal|self[- ]?harm|kill (myself|himself|herself|themselves)|end (my|his|her) life|want to die|hurt myself|overdose)\b/i;
 const TC_CHAT_DANGER=/\b(kill (him|her|them|someone)|build (a |an )?(bomb|gun|weapon)|make (a |an )?(bomb|explosive)|molotov|ghost gun|fentanyl|hack (into|someone)|steal (a car|money|someone)|launder money|stalk(ing)? (her|him|them|someone))\b/i;
-const TC_CHAT_FOOTBALL=/\b(fantasy|football|nfl|draft(ed|ing)?|waivers?|trade[ds]?|roster|lineup|start(ing)?|sit|bench|sleeper|espn|dynasty|superflex|keeper|ppr|qbs?|rbs?|wrs?|tes?|dst|kicker|defense|touchdowns?|yards?|receptions?|targets?|carr(y|ies)|snaps?|adp|vor|ecr|projections?|rankings?|tiers?|matchups?|playoffs?|league|picks?|bye|injur(y|ies|ed)|red ?zone|handcuffs?|flex|stream(ing|er)?|rookie|breakouts?|busts?|stash|handcuff)\b/i;
+const TC_CHAT_FOOTBALL=/\b(fantasy|football|nfl|draft(ed|ing)?|waivers?|trade[ds]?|roster|lineup|teams?|squads?|starters?|start(ing)?|sit|bench|sleeper|espn|dynasty|superflex|keeper|ppr|qbs?|rbs?|wrs?|tes?|dst|kicker|defense|touchdowns?|yards?|receptions?|targets?|carr(y|ies)|snaps?|adp|vor|ecr|projections?|rankings?|tiers?|matchups?|playoffs?|league|picks?|bye|injur(y|ies|ed)|red ?zone|handcuffs?|flex|stream(ing|er)?|rookie|breakouts?|busts?|stash|handcuff)\b/i;
 // verdicts: ok | crisis | danger | offtopic
 function tcChatGuard(text){
   const q=String(text||'');
   if(TC_CHAT_CRISIS.test(q)) return 'crisis';
   if(TC_CHAT_DANGER.test(q)) return 'danger';
   if(TC_CHAT_FOOTBALL.test(q)) return 'ok';
+  if(TC_CHAT_TEAMQ.test(q)) return 'ok';                         // "my team / my squad" IS football here
   if(_chat.guide) return 'ok';                                   // a workflow chip is armed
   if(tcChatGroundPlayers(q).length) return 'ok';                 // names a player on the board
   if(tcChatAppContext(q)) return 'ok';                           // asks about the app

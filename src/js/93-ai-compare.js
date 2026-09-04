@@ -650,10 +650,33 @@ function tcAiErrorHint(msg){
     return { hint:'Free tiers rotate and vary on the provider\u2019s side — nothing you did.' };
   return null;
 }
-// Model output is untrusted text: escape everything, keep only paragraph breaks.
+// Model output is untrusted text that usually ARRIVES as markdown. Escape
+// everything first, then rebuild only from the escaped text — the sole tags that
+// can ever exist are the ones this function emits (<b> <i> <code> <ul> <ol> <li>
+// <p>). No links, no images: text stays text, per the guardrails.
 function tcAiRenderText(txt){
-  return String(txt).split(/\n{2,}/).map(par=>
-    `<p>${escHtml(par).replace(/\n/g,'<br>')}</p>`).join('');
+  const inline=(t)=>t
+    .replace(/\*\*(\S(?:[^*\n]*\S)?)\*\*/g,'<b>$1</b>')
+    .replace(/(^|[\s(])\*(\S(?:[^*\n]*\S)?)\*(?=[\s).,;:!?]|$)/g,'$1<i>$2</i>')
+    .replace(/`([^`\n]+)`/g,'<code>$1</code>');
+  return String(txt).split(/\n{2,}/).map(b=>{
+    const lines=escHtml(b).split('\n');
+    const out=[]; let list=null;
+    const flush=()=>{ if(list){ out.push(`<${list.t}>`+list.items.map(x=>`<li>${x}</li>`).join('')+`</${list.t}>`); list=null; } };
+    for(const raw of lines){
+      const line=raw.replace(/^#{1,4}\s+(.*)$/,'<b>$1</b>');
+      let m;
+      if((m=/^\s*(?:[-*\u2022])\s+(.*)$/.exec(line))){ if(!list||list.t!=='ul'){flush();list={t:'ul',items:[]};} list.items.push(inline(m[1])); continue; }
+      if((m=/^\s*\d{1,2}[.)]\s+(.*)$/.exec(line))){ if(!list||list.t!=='ol'){flush();list={t:'ol',items:[]};} list.items.push(inline(m[1])); continue; }
+      flush(); out.push(inline(line));
+    }
+    flush();
+    let html='', para=[];
+    const fp=()=>{ if(para.length){ html+=`<p>${para.join('<br>')}</p>`; para=[]; } };
+    for(const piece of out){ if(/^<[uo]l>/.test(piece)){ fp(); html+=piece; } else para.push(piece); }
+    fp();
+    return html;
+  }).join('');
 }
 
 // ── The modal ────────────────────────────────────────────────────────────────
