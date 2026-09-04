@@ -292,6 +292,31 @@ def test_protocol():
     r = srv.handle({"jsonrpc": "2.0", "id": 10, "method": "resources/read", "params": {"uri": "triplecrown://nope"}})
     check("resources/read unknown", "error" in r)
     check("data loaded once overall", loads == [1])
+
+    # One server, every format: `format` rides the call, parity with the Worker.
+    srv2 = M.Server(lambda fmt=None: make(fmt or "ppr"))
+    tl = srv2.handle({"jsonrpc": "2.0", "id": 20, "method": "tools/list"})["result"]["tools"]
+    check("every tool advertises the optional format",
+          all(t["inputSchema"]["properties"].get("format", {}).get("enum") == sorted(M.FORMATS) for t in tl))
+    base = srv2.handle({"jsonrpc": "2.0", "id": 21, "method": "tools/call",
+                        "params": {"name": "rankings", "arguments": {"sort": "vor"}}})
+    via = srv2.handle({"jsonrpc": "2.0", "id": 22, "method": "tools/call",
+                       "params": {"name": "rankings", "arguments": {"sort": "vor", "format": "superflex"}}})
+    sfd = M.Server(lambda fmt=None: make(fmt or "superflex"))
+    path = sfd.handle({"jsonrpc": "2.0", "id": 23, "method": "tools/call",
+                       "params": {"name": "rankings", "arguments": {"sort": "vor"}}})
+    check("format-as-argument equals a server configured for that format",
+          via["result"]["content"][0]["text"] == path["result"]["content"][0]["text"])
+    check("and differs from the default format's answer",
+          via["result"]["content"][0]["text"] != base["result"]["content"][0]["text"])
+    bad = srv2.handle({"jsonrpc": "2.0", "id": 24, "method": "tools/call",
+                       "params": {"name": "rankings", "arguments": {"format": "bestball"}}})
+    check("a bad format names the real ones",
+          bad["result"]["isError"] is True and "one of" in bad["result"]["content"][0]["text"])
+    again = srv2.handle({"jsonrpc": "2.0", "id": 25, "method": "tools/call",
+                         "params": {"name": "state", "arguments": {"format": "superflex"}}})
+    check("a repeated format reuses its dataset", "result" in again and len(srv2._datasets) == 2)
+    check("instructions teach the format argument", "optional format" in M.INSTRUCTIONS)
     # The stdio loop: one JSON per line, garbage answered with a parse error, output line-delimited.
     inp = io.StringIO('{"jsonrpc":"2.0","id":1,"method":"ping"}\n\nnot json\n'
                       '{"jsonrpc":"2.0","method":"notifications/cancelled"}\n'

@@ -700,7 +700,8 @@ TOOLS = [
 
 INSTRUCTIONS = ("Fantasy football data from TripleCrown. For any 'A or B' question call compare first; "
                 "for a single player call get_player; use search_players when a name is uncertain. "
-                "Cite the numbers, not the ranks.")
+                "Cite the numbers, not the ranks. Every tool takes an optional format "
+                "(" + "|".join(sorted(FORMATS)) + ") when the user's league differs from this server's default.")
 
 RESOURCES = [{"uri": "triplecrown://state", "name": "TripleCrown state", "mimeType": "text/plain",
               "description": "Season, week, league shape and data coverage of this server."}]
@@ -711,18 +712,29 @@ class Server:
 
     def __init__(self, data_factory):
         self._factory = data_factory
-        self._data = None
+        self._datasets = {}       # fmt (or None = the configured default) -> TripleCrown
         self.initialized = False
 
     @property
     def data(self):
-        if self._data is None:
-            self._data = self._factory()
-        return self._data
+        return self.dataset(None)
+
+    def dataset(self, fmt):
+        # Parity with the Worker: every scoring tool takes an optional `format`, so one
+        # configured server answers for any league. Datasets are heavy (a full scored
+        # board each), so each requested format is built once and kept.
+        if fmt not in self._datasets:
+            self._datasets[fmt] = self._factory() if fmt is None else self._factory(fmt)
+        return self._datasets[fmt]
 
     def call_tool(self, name, args):
-        d = self.data
         args = args or {}
+        fmt = args.get("format")
+        if fmt is not None:
+            fmt = str(fmt)
+            if fmt not in FORMATS:
+                raise ValueError(f"unknown format {fmt!r}; one of {', '.join(sorted(FORMATS))}")
+        d = self.dataset(fmt)
         fn = {"state": lambda: d.t_state(),
               "search_players": lambda: d.t_search(args.get("query"), args.get("pos"), args.get("limit") or 8),
               "get_player": lambda: d.t_player(args.get("name"), args.get("pos")),
@@ -754,7 +766,14 @@ class Server:
             elif method == "ping":
                 result = {}
             elif method == "tools/list":
-                result = {"tools": TOOLS}
+                fmts = sorted(FORMATS)
+                def _with_fmt(t):
+                    sch = dict(t["inputSchema"]); props = dict(sch.get("properties") or {})
+                    props["format"] = {"type": "string", "enum": fmts,
+                                       "description": "scoring format for this call (default: this server's --format)"}
+                    sch["properties"] = props
+                    return {**t, "inputSchema": sch}
+                result = {"tools": [_with_fmt(t) for t in TOOLS]}
             elif method == "tools/call":
                 name = params.get("name")
                 try:
@@ -846,9 +865,11 @@ def main(argv=None):
         log(f"baked {n} players x {len(FORMATS)} formats into {a.bake}")
         return 0
 
-    def factory():
-        league = sleeper_league(a.league) if a.league else None
-        return TripleCrown(league=league, fmt=a.format, seed_path=a.seed, inseason_path=a.inseason)
+    def factory(fmt=None):
+        # No-argument call builds the configured default (a real --league keeps its true
+        # settings); a format argument builds that format's synthetic-league dataset.
+        league = sleeper_league(a.league) if (a.league and fmt is None) else None
+        return TripleCrown(league=league, fmt=fmt or a.format, seed_path=a.seed, inseason_path=a.inseason)
 
     srv = Server(factory)
     if a.call:

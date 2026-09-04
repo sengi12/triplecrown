@@ -346,7 +346,9 @@ redeploys on every push that touches `tools/mcp_worker/`.
 Every scoring tool (and prompt) also takes an optional `format` argument, so the bare
 `https://…workers.dev/mcp` URL is a **one-connector-for-every-format** endpoint — the per-format
 paths just set the default (handy on Claude's free plan, which allows one custom connector; the
-in-app modal has an "All formats" chip for it).
+in-app modal has an "All formats" chip for it). The local stdio server (`tools/tc_mcp.py`) speaks
+the same argument — one configured server, any league — building each requested format's board
+once and keeping it.
 
 Then, per client (pick the format in the path — or in the app, **☰ → Ask in Claude** shows the URL
 for your league's format with a copy button and the steps behind ⓘ; the ⚖ setup screen links there too):
