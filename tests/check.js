@@ -30433,7 +30433,10 @@ function laMatchupView(s){
   const sideHTML=(S, side, wp)=>{
     const pct=Math.round(wp*100);
     const wcls=pct>=55?'la-wp-up':pct<=45?'la-wp-dn':'';
-    const barPct=Math.max(2, Math.min(100, 100*S.pts/Math.max(S.pts+S.rem, S.proj, 1)));
+    // The bar sits under the "X% win" label, so it FILLS to the win probability —
+    // it used to fill by game progress (points banked / projected), which read as a
+    // broken 2% sliver at 0-0 kickoff under a "37% win" caption.
+    const barPct=Math.max(2, Math.min(100, pct));
     return `<div class="la-mu-side la-mu-${side}">
       <div class="la-mu-idrow">${laTeamAvatar(S.t,'la-mu-av')}<div class="la-mu-id"><b class="la-mu-tname" title="${escAttr(S.name)}">${escHtml(S.name)}</b><span class="la-mu-sub">${laOwnerHandle(S.t)} · ${S.rec}</span></div></div>
       <div class="la-mu-score"><span class="la-mu-pts">${S.pts.toFixed(2)}</span><span class="la-mu-projsm">proj ${(S.pts+S.rem).toFixed(1)}</span></div>
@@ -30567,6 +30570,94 @@ function laSetDvpSort(col){
   laRerenderKeepScroll();
 }
 function laSetDvpPos(p){ laState.dvpPos=p; laRerenderKeepScroll(); }
+function laSetDvpMode(m){ laState.dvpMode=m; laRerenderKeepScroll(); }
+function laToggleDvpAvail(){ laState.dvpAvail=!laState.dvpAvail; laRerenderKeepScroll(); }
+// The two lenses over one table: who gives up points (Defenses), and who's positioned
+// to take them THIS week (Players).
+function laDvpModeToggle(){
+  const m=laState.dvpMode||'def';
+  return `<div class="mode-toggle la-dvp-mode">
+    <button class="mode-btn ${m==='def'?'active':''}" onclick="laSetDvpMode('def')">Defenses</button>
+    <button class="mode-btn ${m==='pool'?'active':''}" onclick="laSetDvpMode('pool')">Players</button></div>`;
+}
+// ── Players lens: the pool ranked by THIS week's matchup-adjusted projection ──
+// Same engine as the Lineup pane (laAdjWeekProj: 35% season proj + 30% season-to-date
+// + 35% last-3 form, × the DvP ±10% multiplier, zeroed on bye/out) — one number,
+// three surfaces. With a league synced, ★ = yours and rostered players grey out,
+// so the top ungreyed rows ARE the week's waiver list.
+function laDvpPoolView(t){
+  const wk=laCurrentWeek(), n=t.codes.length;
+  const pm=laProjMap();
+  const list=(typeof buildPlayerList==='function')?buildPlayerList():[];
+  const pos1=(laState.dvpPos&&laState.dvpPos!=='ALL')?laState.dvpPos:null;
+  const snap=(typeof leagueSnapshot!=='undefined')&&leagueSnapshot;
+  let mine=null, taken=null;
+  if(snap && Array.isArray(snap.teamList)){
+    mine=new Set(); taken=new Set();
+    snap.teamList.forEach(tm=>(tm.players||[]).forEach(pl=>{
+      const k=ecrNormName(pl.name);
+      taken.add(k);
+      if(snap.myUserId!=null && tm.ownerId===snap.myUserId) mine.add(k);
+    }));
+  }
+  const availOnly=!!(taken && laState.dvpAvail);
+  const rows=[];
+  for(const p of list){
+    if(!['QB','RB','WR','TE'].includes(p.pos)) continue;
+    if(pos1 && p.pos!==pos1) continue;
+    if(availOnly && taken.has(ecrNormName(p.name))) continue;   // the waiver cut: unrostered only
+    const a=laAdjWeekProj({id:p.player_id||p.id, name:p.name, pos:p.pos, team:p.team}, wk, pm, t);
+    // relevance floor: a playing fringe body stays off; a sidelined STAR stays on
+    // (his zero + the reason is the information).
+    if((a.adj||0)<2 && (a.baseRate||0)<3) continue;
+    rows.push({p, a});
+  }
+  // bar scale: the most generous defense per position pins 100%, like the Defenses table
+  const mxA={}; ['QB','RB','WR','TE'].forEach(pp=>{ mxA[pp]=Math.max(...t.codes.map(c=>t.teams[c][pp].fppg))||1; });
+  rows.sort((x,y)=>(y.a.adj-x.a.adj)||(y.a.baseRate-x.a.baseRate));
+  const top=rows.slice(0, pos1?45:60);
+  const body=top.map(({p,a},i)=>{
+    const key=ecrNormName(p.name);
+    const isMine=mine&&mine.has(key), isTaken=taken&&taken.has(key)&&!isMine;
+    const rk=(a.opp&&t.ranks[a.opp])?t.ranks[a.opp][p.pos]:null;
+    const allowed=(a.opp&&t.teams[a.opp])?t.teams[a.opp][p.pos].fppg:null;
+    const g=laGameInfo(p.team, wk);
+    const oppTxt=a.bye?'BYE':(a.opp?`${g&&g.home===false?'@':'vs'} ${a.opp}`:'—');
+    const qcls=rk?laQuartile(rk,n):'';
+    const oppCell=a.bye
+      ? `<td class="la-pool-opp la-pool-off">BYE</td>`
+      : a.out
+      ? `<td class="la-pool-opp la-pool-off">${escHtml(a.status||'Out')}</td>`
+      : `<td class="la-pool-opp ${qcls}"><span class="la-pool-oppline">${escHtml(oppTxt)}${rk?` <span class="la-rk">#${rk}</span>`:''}</span>
+          ${allowed!=null?`<div class="la-pool-barwrap"><div class="la-pool-bar ${qcls}" style="width:${Math.max(4,100*allowed/mxA[p.pos]).toFixed(0)}%"></div></div>
+          <div class="la-pool-allowed">${allowed.toFixed(1)} allowed</div>`:''}</td>`;
+    const multTxt=(a.bye||a.out)?'—':`×${a.defMult.toFixed(2)}`;
+    const projTxt=(a.bye||a.out)?'0.0':a.adj.toFixed(1);
+    const parts=[`season rate ${a.baseRate!=null?a.baseRate.toFixed(1):'—'}`,
+                 a.seas!=null?`to-date ${a.seas.toFixed(1)}`:null,
+                 a.rec3!=null?`last 3 ${a.rec3.toFixed(1)}`:null].filter(Boolean).join(' · ');
+    return `<tr class="${isTaken?'la-pool-taken':''}${(a.bye||a.out)?' la-pool-down':''}">
+      <td class="la-pool-num">${i+1}</td>
+      <td class="la-pool-player"><span class="clickable-player la-pool-idrow" onclick="${pcardOnclick(p.player_id||p.id||p.name,p.pos,p.team||'')}">
+        ${(p.player_id||p.id)?`<img src="${SLEEPER_HEADSHOT(p.player_id||p.id)}" class="la-pool-face" loading="lazy" onerror="this.style.display='none'">`:''}
+        <span class="la-pool-idtxt"><b>${isMine?'★ ':''}${escHtml(p.name)}</b>
+        <span class="la-pool-sub">${p.pos} · ${escHtml(p.team||'FA')}${isTaken?' · rostered':''}</span></span></span></td>
+      ${oppCell}
+      <td class="la-pool-mult">${multTxt}</td>
+      <td class="la-pool-proj" title="${escAttr(parts)} × matchup"><b>${projTxt}</b></td></tr>`;
+  }).join('');
+  const wkDone=(typeof completedWeeks==='function')?completedWeeks():0;
+  const chips=['ALL','QB','RB','WR','TE'].map(pp=>`<button class="pos-filter-btn ${((laState.dvpPos||'ALL')===pp)?'active':''}" onclick="laSetDvpPos('${pp}')">${pp}</button>`).join('');
+  return `
+    <div class="la-ins-bar"><span class="la-ins-lbl">THIS WEEK'S MATCHUPS — WEEK ${wk}</span>
+      ${laDvpModeToggle()}
+      <div class="pos-filter">${chips}${taken?`<button class="pos-filter-btn ${laState.dvpAvail?'active':''}" onclick="laToggleDvpAvail()" title="Only players NOT on any roster in your league — the waiver wire, ranked for this week">Available</button>`:''}</div>
+      <span class="la-ins-sub">week-adjusted projection · same math as the Lineup pane${mine?' · ★ yours, grey = rostered':''}</span></div>
+    <div class="card card-flush"><div class="la-dvp-wrap">
+      <table class="la-pool-table"><thead><tr><th></th><th>PLAYER</th><th>MATCHUP</th><th>ADJ</th><th>PROJ WK</th></tr></thead>
+      <tbody>${body}</tbody></table></div></div>
+    <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn('ladvp','Reading this table'):''}</div>`;
+}
 
 function laDvpView(s){
   const t=laDvpTable();
@@ -30576,8 +30667,11 @@ function laDvpView(s){
       if(st==='loading') return `<div class="card la-ins-empty"><div class="empty-body">Loading defensive splits…</div></div>`;
     }
     return `<div class="card la-ins-empty"><div class="empty-title">No defensive data yet</div>
-      <div class="empty-body">Defense-vs-position builds from the weekly nflverse sidecar — it appears once the first week of the season is in the books (and needs a hosted seed).</div></div>`;
+      <div class="empty-body">Defense-vs-position builds from played games — both lenses here (<b>Defenses</b>:
+      points allowed by every defense · <b>Players</b>: the whole pool ranked by the week's
+      matchup-adjusted projection) light up once week 1 is in the books and the hosted seed refreshes.</div></div>`;
   }
+  if((laState.dvpMode||'def')==='pool') return laDvpPoolView(t);
   const POS=['QB','RB','WR','TE'];
   const sort=laState.dvpSort||{col:'QB',dir:1};
   const pos1=laState.dvpPos&&laState.dvpPos!=='ALL'?laState.dvpPos:null;
@@ -30610,6 +30704,7 @@ function laDvpView(s){
   }).join('');
   return `${small}
     <div class="la-ins-bar"><span class="la-ins-lbl">FANTASY POINTS ALLOWED / GAME</span>
+      ${laDvpModeToggle()}
       <div class="pos-filter">${chips}</div>
       <span class="la-ins-sub">your league's scoring · thru wk ${wk} · #1 = easiest matchup (most points allowed)</span></div>
     <div class="card card-flush"><div class="la-dvp-wrap">
@@ -31188,5 +31283,10 @@ if(typeof TC_INFO_BOOK!=='undefined'){
   TC_INFO_BOOK.ladvp={title:'Defense vs position', body:`
     Fantasy points allowed per game to each position, under your league's scoring.
     <b style="color:#00d4aa">Green</b> = easy matchup (allows the most points),
-    <b style="color:#ff6b6b">red</b> = tough. Tap a column to sort; #1 = easiest matchup.`};
+    <b style="color:#ff6b6b">red</b> = tough. Tap a column to sort; #1 = easiest matchup.
+    <b>Players</b> flips the same table around: the player pool ranked by THIS week's
+    matchup-adjusted projection — the Lineup pane's exact math (35% season projection,
+    30% season to date, 35% last-3 form, ±10% by the defense faced), byes and ruled-out
+    players zeroed. With a league synced, ★ marks your players and rostered ones grey
+    out — the top ungreyed rows are the week's waiver list.`};
 }

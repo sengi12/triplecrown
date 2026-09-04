@@ -9,7 +9,7 @@ global.Chart=function(){return{destroy(){}}};global.confirm=()=>true;global.btoa
 const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
-  TC_SEASON, laDvpTable, laDvpView, laAdjWeekProj, laLineupView, laState,
+  TC_SEASON, laDvpTable, laDvpView, laDvpPoolView, laAdjWeekProj, laLineupView, laState,
   laWeekPickupsHTML, laBestAvailView, pcardAppendFutureWeeks,
   setBPL:(f)=>{buildPlayerList=f;}, setProjMap:(f)=>{laProjMap=f;},
   setSeasonStarted:(f)=>{hasSeasonStarted=f;}, setIsRedraft:(f)=>{laIsRedraft=f;},
@@ -56,6 +56,46 @@ console.log('=== DvP view ===');
 const dvpHtml=app.laDvpView({});
 chk(dvpHtml.includes('small sample'),'small-sample banner through week 4');
 chk(dvpHtml.includes('la-dvp-table'),'table renders');
+
+console.log('=== Players lens: the pool ranked for THIS week ===');
+{
+  const P=(id,name,pos,team,fpts)=>({player_id:id,name,pos,team,fpts});
+  app.setBPL(()=>[
+    P('w1','Easy Street','WR','BUF',180),     // faces BBB (rank 1, most generous)
+    P('w2','Hard Knocks','WR','MIA',180),     // faces AAA (rank 3, stingy)
+    P('w3','Bye Guy','WR','CCC',200),         // CCC has no week-3 game → bye
+    P('w4','Fringe Fellow','WR','BUF',20),    // irrelevant, filtered
+  ]);
+  app.setProjMap(()=>new Map([['easy street|WR',180],['hard knocks|WR',180],['bye guy|WR',200],['fringe fellow|WR',20]]));
+  app.laState.dvpMode='pool'; app.laState.dvpPos='WR';
+  const html=app.laDvpView({});
+  chk(html.includes('la-pool-table') && /Defenses/.test(html) && /Players/.test(html), 'the lens renders with the mode toggle');
+  const iEasy=html.indexOf('Easy Street'), iHard=html.indexOf('Hard Knocks');
+  chk(iEasy>=0 && iHard>iEasy, 'identical players sort by matchup — the soft draw leads');
+  chk(/vs BBB.*#1/s.test(html), 'the opponent cell carries the easiest-first rank');
+  chk(/BYE/.test(html), 'a bye player shows BYE, projection zeroed');
+  chk(!html.includes('Fringe Fellow'), 'sub-relevant players stay off the board');
+  chk(/allowed/.test(html), 'the defense\u2019s allowed fppg is shown for the matchup');
+  // league synced → mine starred, rostered greyed
+  app.setSnapshot({myUserId:'u1', teamList:[
+    {ownerId:'u1', players:[{name:'Easy Street'}]},
+    {ownerId:'u2', players:[{name:'Hard Knocks'}]}]});
+  const html2=app.laDvpView({});
+  chk(/★ Easy Street/.test(html2), 'your player wears the star');
+  chk(/la-pool-taken/.test(html2) && /rostered/.test(html2), 'someone else\u2019s player greys out as rostered');
+  chk(/la-pool-opp la-q1/.test(html2) && /la-pool-bar la-q1/.test(html2),
+      'the matchup cell wears the quartile color AND a filled bar, like the Defenses table');
+  chk(/sleepercdn\.com\/content\/nfl\/players\/w1\.jpg/.test(html2), 'headshots ride the row');
+  chk(/Available/.test(html2), 'a synced league offers the Available filter');
+  app.laState.dvpAvail=true;
+  const html3=app.laDvpView({});
+  chk(!/Easy Street/.test(html3) && !/Hard Knocks/.test(html3), 'Available hides every rostered player — yours included');
+  chk(/Bye Guy/.test(html3), 'the unrostered pool remains');
+  app.laState.dvpAvail=false;
+  app.setSnapshot(null);
+  app.laState.dvpMode='def'; app.laState.dvpPos='ALL';
+  chk(app.laDvpView({}).includes('la-dvp-table'), 'toggling back restores the Defenses lens');
+}
 
 console.log('=== lineup adjustment ===');
 const pm=new Map();
