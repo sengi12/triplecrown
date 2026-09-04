@@ -20,6 +20,7 @@ STATS_URL = "https://github.com/nflverse/nflverse-data/releases/download/stats_p
 STATS_URL_LEGACY = "https://github.com/nflverse/nflverse-data/releases/download/player_stats/stats_player_week_{season}.csv.gz"
 EP_URL = "https://github.com/ffverse/ffopportunity/releases/download/latest-data/ep_weekly_{season}.parquet"
 CONTRACTS_URL = "https://github.com/nflverse/nflverse-data/releases/download/contracts/historical_contracts.parquet"
+SCHED_URL = "https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv"
 NV_PLAYERS_URL = "https://github.com/nflverse/nflverse-data/releases/download/players/players.csv"
 
 # Sanity floor: if the pipeline scores fewer players than this, something upstream broke
@@ -274,9 +275,35 @@ def build_tc_projections(season, players_raw, refresh=False):
         cur["d" + c] = cur.team_next.map(emap[c])
         cur[c + "_d"] = cur["d" + c] - cur[c]
 
+    # Schedule softness (v1.7; QB feature): the projection season's opponents are already
+    # known (schedule formula), so average their prior-season PPR allowed per game to MY
+    # position, z-scored within position. Fail-soft: no schedule -> NaN -> imputed median.
+    try:
+        spath = _cached_download(SCHED_URL, "games.csv", refresh)
+        gsch = pd.read_csv(spath, usecols=["season", "game_type", "home_team", "away_team"])
+        gsch = gsch[(gsch.game_type == "REG") & (gsch.season == season)]
+        oppl = pd.concat([gsch.rename(columns={"home_team": "team", "away_team": "opp"})[["team", "opp"]],
+                          gsch.rename(columns={"away_team": "team", "home_team": "opp"})[["team", "opp"]]])
+        for c in ("team", "opp"):
+            oppl[c] = oppl[c].replace({"OAK": "LV", "SD": "LAC", "STL": "LA"})
+        dvp = wk.groupby(["opponent_team", "position"]).agg(allowed=("fantasy_points_ppr", "sum")).reset_index()
+        dgames = wk.groupby("opponent_team").week.nunique().rename("dgames").reset_index()
+        dvp = dvp.merge(dgames, on="opponent_team")
+        dvp["allowed_g"] = dvp.allowed / dvp.dgames.clip(lower=1)
+        dvp["z"] = dvp.groupby("position").allowed_g.transform(lambda x: (x - x.mean()) / x.std())
+        posz = {(r.opponent_team, r.position): r.z for r in dvp.itertuples()}
+        by_team = {t: list(g.opp) for t, g in oppl.groupby("team")}
+        def _sos(r):
+            vals = [posz.get((o, r.position)) for o in by_team.get(r.team_next, [])]
+            vals = [v for v in vals if v is not None and v == v]
+            return float(np.mean(vals)) if vals else np.nan
+        cur["sos_pos"] = cur.apply(_sos, axis=1)
+    except Exception:
+        cur["sos_pos"] = np.nan
+
     out = {}
     feat_cols = ["fpg", "fpg_2yr", "tgt_sh", "wopr", "tgt_g", "car_g", "opps_g",
-                 "pa_g", "py_g", "xfpg", "fpoe_g", "td_oe", "exp_td_g", "age",
+                 "pa_g", "py_g", "xfpg", "fpoe_g", "td_oe", "exp_td_g", "sos_pos", "age",
                  "team_changed", "dest_vacated", "g", "peak_fpg",
                  "env_plays", "env_pass", "env_pts",
                  "denv_plays", "denv_pass", "denv_pts",
