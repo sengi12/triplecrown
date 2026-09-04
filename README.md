@@ -552,7 +552,19 @@ The project ships with a regression suite (Node + Python) covering the projectio
   (projection, VOR, ADP, contract, SOS) is attached to the send automatically — the "Grounded:"
   line shows who, and the system prompt quarantines the model's stale roster memory; ask how to
   do something and the app's own tour + ⓘ docs ride instead (the `app_help` workflow, on both
-  the chips and the connector prompts)
+  the chips and the connector prompts); with a league synced in the Analyzer (or a live draft
+  followed), your roster, record, rookie picks and live draft selections ride too — "who do I
+  start", "my RBs", "who did I just draft" resolve to YOUR team, and the empty chat says whose
+  roster is aboard. **Fenced to football**: a two-layer guard scopes the chat — the system
+  prompt fences the model (no other topics, no personas, no life advice, answer without
+  restating the question), and a client-side gate scopes the conversation itself: crisis and
+  dangerous messages never reach a model (crisis gets a 988 pointer), a benign off-topic
+  message gets one unsent nudge, a second ends the conversation, and the gate reads the
+  model's answers the same way. Hardened along OWASP's LLM Top 10: attached blocks and lookup
+  results are declared data-never-instructions (LLM01, indirect injection via notes or tool
+  output), all model output renders as escaped text so no element — image included — can
+  materialize (LLM05), the rules are non-disclosable (LLM07), and inputs, turns, tool rounds
+  and responses are all capped (LLM10)
 - [ ] AI deep-analysis fan-out: a lead "ranker" model orchestrating specialized sub-agents (offense,
   defense, player context, coaching, deep stats) rolled into an in-depth TripleCrown rank —
   **deliberately deferred**: fan-out is exactly the shape of feature that racks up tokens, and the
