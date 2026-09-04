@@ -163,6 +163,7 @@ def build_tc_projections(season, players_raw, refresh=False):
             tgt=("targets", "sum"), car=("carries", "sum"),
             pa=("attempts", "sum"), py=("passing_yards", "sum"),
             rec_td=("receiving_tds", "sum"), ru_td=("rushing_tds", "sum"),
+            ptd=("passing_tds", "sum"),
             tgt_sh=("target_share", "mean"), wopr=("wopr", "mean"),
         ).reset_index()
         agg["fpg"] = agg.ppr / agg.g.clip(lower=1)
@@ -185,7 +186,12 @@ def build_tc_projections(season, players_raw, refresh=False):
     epa["xfpg"] = epa.xfp / epa.ep_g.clip(lower=1)
     epa["fpoe_g"] = (epa.afp - epa.xfp) / epa.ep_g.clip(lower=1)
     cur = cur.merge(epa[["player_id", "xfpg", "fpoe_g", "exp_td"]], on="player_id", how="left")
-    cur["td_oe"] = (cur.rec_td + cur.ru_td) - cur.exp_td
+    # v1.6: ALL touchdowns vs ALL expected touchdowns — total_touchdown_exp includes passing
+    # for QBs, so the actual side must too (the old rec+rush-only construction made every QB
+    # ~-20 "unlucky" and the term an accidental passing-volume proxy).
+    cur["td_oe"] = (cur.ptd.fillna(0) + cur.rec_td + cur.ru_td) - cur.exp_td
+    # v1.6 QB feature: expected total TDs per game, same denominator as the training set (games played)
+    cur["exp_td_g"] = cur.exp_td / cur.g.clip(lower=1)
 
     # two-year blend — GAMES-WEIGHTED (v1.1): a 17-game season out-votes an 8-game one
     # whichever year it was, so an injury-shortened season defers to the healthy one.
@@ -270,7 +276,7 @@ def build_tc_projections(season, players_raw, refresh=False):
 
     out = {}
     feat_cols = ["fpg", "fpg_2yr", "tgt_sh", "wopr", "tgt_g", "car_g", "opps_g",
-                 "pa_g", "py_g", "xfpg", "fpoe_g", "td_oe", "age",
+                 "pa_g", "py_g", "xfpg", "fpoe_g", "td_oe", "exp_td_g", "age",
                  "team_changed", "dest_vacated", "g", "peak_fpg",
                  "env_plays", "env_pass", "env_pts",
                  "denv_plays", "denv_pass", "denv_pts",
