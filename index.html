@@ -28000,10 +28000,67 @@ const TC_CHAT_GUIDES=[
    coach:'This is a waiver scan. Recommend at most three moves — add who, drop who, and the numbers that justify each — or say the wire beats nobody they have.'},
   {k:'player_deep_dive', label:'Player deep dive', fill:'Give me the full picture on ',
    coach:'This is a player deep dive: role and usage now, what the underlying data says, then the fantasy read — what they are right now and the one thing that would change it.'},
+  {k:'app_help', label:'App help', fill:'How do I ',
+   coach:'This is an app how-to question. Answer from the APP CONTEXT block: name the exact menu path or button, then the steps, briefly. If the context does not cover it, say so plainly.'},
 ];
 const TC_CHAT_KEEP=12;   // conversation turns per request (plus the system message)
 
-let _chat={ msgs:[], guide:null, draft:'', busy:false };
+// What the app IS — the skeleton the chat hands a model asked "how do I…".
+// The ⓘ info book (TC_INFO_BOOK) supplies depth per feature; this map is the tour.
+const TC_CHAT_APP_MAP=
+`TripleCrown — a free, self-contained fantasy football app; all data lives in this browser and nothing leaves it unless the user sends it. Everything is reachable from the ☰ menu:
+- Views — Projections: per-team builders (QB output, receiving and rushing distributions) that roll up into every player's projection; edit a team and the whole board updates. Rankings: the full draft board — VOR, tiers, ECR, market ADP, the TC model — sortable, columns customizable, with the scoring-format switch (half/full PPR, standard, superflex, dynasty, dynasty superflex). Leagues: sync a Sleeper league for live matchup scoring, a this-week waiver lens and live league rank.
+- The header year tabs switch seasons; the Live tab follows a draft in progress with the pick advisory (VONA — value over what survives to your next pick).
+- Tap any player for their playercard: NFL gamelogs and schedule, College logs, rushing/receiving fan charts, route trees, contract — plus notes (clipboard button) and compare (⚖ button).
+- AI — Ask TripleCrown: this chat. Compare: pick any two players for a grounded verdict, or Copy the data packet for any AI app. Ask Claude: the URL that adds TripleCrown's data to the Claude app as a connector (Claude → Settings → Connectors → Add custom connector).
+- View-specific — Projections: Import analyst projections, Download yours. Rankings: the Keep Trade Cut game. Leagues: Re-sync or Change league.
+- General — Sign In and Save keep work in the cloud; Manager handles saved scenarios; Reset all clears edits and re-pulls live Sleeper projections.`;
+
+let _chat={ msgs:[], guide:null, draft:'', busy:false, board:null, lastGrounded:[] };
+
+// ── grounding: the board the app already holds, attached before anything ships ──
+function _chatNorm(s){ return (' '+String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ')+' ').replace(/\s+/g,' '); }
+function _chatBoardList(){ return _chat.board || ((typeof buildPlayerList==='function')?buildPlayerList():[]) || []; }
+// Players the text names — full names first, then last names that are unique on
+// the board ("chase brown" and "brown" both find Chase Brown; "smith" finds no one).
+function tcChatGroundPlayers(text){
+  const list=_chatBoardList(); if(!list.length) return [];
+  const t=_chatNorm(text);
+  const hits=[], seen=new Set();
+  const byLast={};
+  for(const p of list){
+    const parts=_chatNorm(p.name).trim().split(' ');
+    const ln=parts[parts.length-1];
+    if(ln && ln.length>3) (byLast[ln]=byLast[ln]||[]).push(p);
+  }
+  for(const p of list){
+    const n=_chatNorm(p.name).trim();
+    if(n && t.includes(' '+n+' ') && !seen.has(p)){ seen.add(p); hits.push(p); }
+  }
+  for(const ln in byLast){
+    if(byLast[ln].length===1 && t.includes(' '+ln+' ')){
+      const p=byLast[ln][0];
+      if(!seen.has(p)){ seen.add(p); hits.push(p); }
+    }
+  }
+  return hits.slice(0,4);
+}
+// App questions get the tour, plus whichever ⓘ info-book pages share the
+// question's words — the same docs the app shows its users, so never stale.
+function tcChatAppContext(text){
+  const q=String(text||'').toLowerCase();
+  const appish=_chat.guide==='app_help'
+    || /\b(how (do|can|to)|where (is|do|can)|what (is|does|are)|feature|button|menu|view|tab|import|export|download|save|sync|seed|connector|app|triplecrown)\b/.test(q);
+  if(!appish) return '';
+  const words=[...new Set(q.split(/[^a-z0-9]+/).filter(w=>w.length>3))];
+  const strip=h=>String(h||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+  const extras=Object.keys(typeof TC_INFO_BOOK!=='undefined'?TC_INFO_BOOK:{}).map(k=>{
+    const e=TC_INFO_BOOK[k], body=strip((e.title||'')+'. '+(e.body||''));
+    const low=body.toLowerCase();
+    return { score: words.reduce((n,w)=>n+(low.includes(w)?1:0),0), text: body.slice(0,1100) };
+  }).filter(x=>x.score>=2).sort((a,b)=>b.score-a.score).slice(0,2).map(x=>x.text);
+  return TC_CHAT_APP_MAP+(extras.length?'\n\n'+extras.join('\n\n'):'');
+}
 
 // The wire messages: one system line that knows the league and the chosen
 // workflow, then the last TC_CHAT_KEEP turns (failed turns never ride again).
@@ -28016,9 +28073,30 @@ function tcChatMessages(){
     +' The app’s own numbers are the ground truth — cite the ones you use, never invent a stat.'
     +' Be concise: verdict first, then the case.'
     +' The user’s roster and league are private to them — ask when the answer depends on them.'
+    +' A DATA block on a message is the app’s live board for the players it names — it outranks'
+    +' anything you remember; rosters and roles in your memory are stale. If a named player has no'
+    +' DATA and you cannot look them up, say the data isn’t at hand instead of recalling.'
+    +' An APP CONTEXT block is TripleCrown’s own documentation — answer app how-to questions from'
+    +' it, naming the exact menu path.'
     +(g?' '+g.coach:'');
-  return [{role:'system',content:sys},
-          ..._chat.msgs.filter(m=>!m.error).slice(-TC_CHAT_KEEP).map(m=>({role:m.role,content:m.content}))];
+  const turns=_chat.msgs.filter(m=>!m.error).slice(-TC_CHAT_KEEP).map(m=>({role:m.role,content:m.content}));
+  // The newest user turn carries the grounding; older turns ride bare (the model
+  // answered them already, and thin history keeps a send cheap).
+  _chat.lastGrounded=[];
+  const lastIdx=turns.length-1;
+  if(lastIdx>=0 && turns[lastIdx].role==='user'){
+    const q=turns[lastIdx].content;
+    const ground=tcChatGroundPlayers(q);
+    const appCtx=tcChatAppContext(q);
+    let add='';
+    if(ground.length && typeof tcAiPlayerContext==='function'){
+      _chat.lastGrounded=ground.map(p=>p.name);
+      add+='\n\n[DATA — TripleCrown’s board, attached by the app]\n'+ground.map(p=>tcAiPlayerContext(p)).join('\n\n');
+    }
+    if(appCtx) add+='\n\n[APP CONTEXT — TripleCrown’s own docs, attached by the app]\n'+appCtx;
+    if(add) turns[lastIdx]={role:'user', content:q+add};
+  }
+  return [{role:'system',content:sys}, ...turns];
 }
 
 function openTcChat(){
@@ -28069,7 +28147,7 @@ function tcChatRender(){
     ? `<div class="tc-chat-msg me"><div class="tc-chat-bub">${escHtml(m.content)}</div></div>`
     : m.error
       ? `<div class="tc-chat-msg"><div class="tc-chat-bub err">${escHtml(m.content)}${m.hint?`<div class="tc-chat-hint">${escHtml(m.hint)}</div>`:''}</div></div>`
-      : `<div class="tc-chat-msg"><div class="tc-chat-bub">${tcAiRenderText(m.content)}${(m.lookups&&m.lookups.length)?`<div class="tc-chat-lk">Looked up: ${m.lookups.map(escHtml).join(' · ')}</div>`:''}</div></div>`;
+      : `<div class="tc-chat-msg"><div class="tc-chat-bub">${tcAiRenderText(m.content)}${(m.grounded&&m.grounded.length)?`<div class="tc-chat-lk">Grounded: ${m.grounded.map(escHtml).join(' · ')}</div>`:''}${(m.lookups&&m.lookups.length)?`<div class="tc-chat-lk">Looked up: ${m.lookups.map(escHtml).join(' · ')}</div>`:''}</div></div>`;
   const hello=!_chat.msgs.length?`<div class="tc-chat-hello">
       <div class="tc-chat-guides">${TC_CHAT_GUIDES.map(g=>`<button class="tc-chat-guide ${_chat.guide===g.k?'on':''}" onclick="_chatGuide('${g.k}')">${escHtml(g.label)}</button>`).join('')}</div>
       <div class="tc-chat-sub">Grounded in the app’s numbers — pick a play or just ask.${lookups?'':' Research (with a key) lets it look things up.'}</div>
@@ -28109,6 +28187,7 @@ async function _chatSend(){
       if(w) w.textContent=(p && p.lookup)?`Looking up ${p.lookup}…`:(typeof p==='string'&&p?p:'…');
     });
     _chat.msgs.push({role:'assistant', content:String(txt),
+      grounded:(_chat.lastGrounded||[]).slice(),
       lookups:(typeof _aiLastLookups!=='undefined' && _aiLastLookups)?_aiLastLookups.slice():[]});
   }catch(e){
     const msg=String(e&&e.message||e);
@@ -28120,7 +28199,9 @@ async function _chatSend(){
 
 if(typeof TC_INFO_BOOK!=='undefined'){
   TC_INFO_BOOK['tcchat']={title:'Ask TripleCrown', body:`
-    A chat over the app’s own numbers, on the same engine the ⚖ compare uses — the browser’s
+    A chat over the app’s own numbers — and over the app itself: name a player and their live
+    board data rides along automatically (the <i>Grounded:</i> line shows who); ask how to do
+    something and the app’s own docs ride along instead. Same engine as the ⚖ compare uses — the browser’s
     built-in AI, a local model on your GPU, or your own key with a free model (change it any time
     under <i>key & model…</i>). <b>The guide chips</b> are ready-made plays — start/sit, draft pick,
     trade eval, waiver scan, deep dive — each one teaches the model that job’s shape before your

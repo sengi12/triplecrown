@@ -81,11 +81,15 @@ globalThis.fetch = async (url) => {
   const bad = await w.default.fetch(new Request('https://tc.test/mcp', { method: 'POST', body: '{not json' }), env);
   chk(bad.status === 400 && (await bad.json()).error.code === -32700, 'garbage → parse error');
   const batch = await post([{ jsonrpc: '2.0', id: 5, method: 'ping' }, { jsonrpc: '2.0', method: 'notifications/x' }, { jsonrpc: '2.0', id: 6, method: 'prompts/list' }]);
-  chk(Array.isArray(batch.body) && batch.body.length === 2 && batch.body[1].result.prompts.length === 5, 'a batch answers each request, skips notifications');
+  chk(Array.isArray(batch.body) && batch.body.length === 2 && batch.body[1].result.prompts.length === 6, 'a batch answers each request, skips notifications');
 
   console.log('=== the guided experience: prompts any Claude chat can run ===');
   const pl = batch.body[1].result.prompts;
-  chk(pl.map(p => p.name).join() === 'start_sit,draft_pick,trade_eval,waiver_scan,player_deep_dive', 'five workflows, in draft-season order');
+  chk(pl.map(p => p.name).join() === 'start_sit,draft_pick,trade_eval,waiver_scan,player_deep_dive,app_help', 'six workflows, in draft-season order');
+  const ah = await post({ jsonrpc: '2.0', id: 12, method: 'prompts/get', params: { name: 'app_help', arguments: { question: 'How do I import projections?' } } });
+  const atxt = ah.body.result.messages[0].content.text;
+  chk(/How do I import projections\?/.test(atxt) && /Import analyst projections/.test(atxt) && /cannot click the app/.test(atxt),
+      'app_help carries the question, the app tour, and knows its own limits');
   chk(pl.every(p => p.title && p.description && Array.isArray(p.arguments)), 'each carries title, description and arguments for the client UI');
   chk(init.body.result.capabilities.prompts && /start_sit/.test(init.body.result.instructions), 'initialize declares prompts and the instructions point at them');
   const pg = await post({ jsonrpc: '2.0', id: 8, method: 'prompts/get', params: { name: 'start_sit', arguments: { players: 'Gibbs or Bijan', roster: 'my guys' } } });

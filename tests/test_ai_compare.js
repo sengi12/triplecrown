@@ -60,7 +60,8 @@ const app=new Function(code+`return { tcAiSettings, tcAiSaveSettings, tcAiUsage,
   tcAiToolModels, lastLookups:()=>_aiLastLookups, TC_INFO_BOOK,
   openTcChat, tcChatRender, _chatSend, _chatGuide, tcChatMessages, TC_CHAT_GUIDES, TC_CHAT_KEEP,
   chatState:()=>_chat, resetChat:()=>{_chat={msgs:[],guide:null,draft:'',busy:false};},
-  openAiCompare, _aiPick, cmpState:()=>_aiCmp };`)();
+  openAiCompare, _aiPick, cmpState:()=>_aiCmp,
+  tcChatGroundPlayers, tcChatAppContext, TC_CHAT_APP_MAP };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
 console.log('=== settings: free by default, bounded by design ===');
@@ -650,7 +651,7 @@ await (async()=>{
   // The five guided workflows are the SAME five the connector ships as prompts.
   const wp=await import(require('url').pathToFileURL(require('path').join(__dirname,'../tools/mcp_worker/prompts.js')).href);
   chk(app.TC_CHAT_GUIDES.map(g=>g.k).join()===wp.PROMPTS.map(p=>p.name).join(),
-      'the app\'s guide chips and the connector\'s prompts are the same five workflows');
+      'the app\'s guide chips and the connector\'s prompts are the same six workflows');
   app.resetChat();
   app.openTcChat();
   let ui=document.getElementById('tcChatBody').innerHTML;
@@ -697,6 +698,59 @@ await (async()=>{
   chk(/Choose how the model runs/.test(document.getElementById('tcChatBody').innerHTML), 'paste mode → pick an engine, not a dead end');
   app.tcAiSaveSettings({mode:'key'});
   app.resetChat();
+})();
+
+console.log('=== the chat is grounded in the app: board data and the app itself ===');
+await (async()=>{
+  const ep=app.tcAiSettings().endpoint;
+  const aiCalls=()=>fetchCalls.filter(f=>f.url===ep);
+  app.tcAiSaveSettings({mode:'key',key:'sk-test',tools:false});
+  app.resetChat();
+  app.openTcChat();
+  // Name a board player → their live packet rides the wire, unasked.
+  app.chatState().board=[pa,pb];
+  document.getElementById('tcChatIn').value='Is Alpha Back worth his price this year?';
+  await app._chatSend();
+  let body=JSON.parse(aiCalls().pop().opts.body);
+  let sent=body.messages[body.messages.length-1].content;
+  chk(sent.includes('[DATA') && sent.includes('+61') && sent.includes('$14M/yr'),
+      'a named player\'s board packet is attached to the send');
+  chk(app.chatState().msgs[0].content==='Is Alpha Back worth his price this year?',
+      'but the stored turn stays what the user typed');
+  chk(app.chatState().msgs[1].grounded.join()==='Alpha Back', 'the answer records who grounded it');
+  chk(document.getElementById('tcChatBody').innerHTML.includes('Grounded: Alpha Back'),
+      'and the log shows it under the answer');
+  chk(/outranks anything you remember/.test(body.messages[0].content) && /instead of recalling/.test(body.messages[0].content),
+      'the system line quarantines the model\'s stale memory');
+  // A unique last name is enough; an ambiguous one is not.
+  chk(app.tcChatGroundPlayers('what about beta back and alpha back?').length===2, 'full names both land');
+  app.chatState().board=[pa,pb,{player_id:'3',name:'Gamma Back',pos:'RB',team:'SF'},{player_id:'4',name:'Delta Back',pos:'WR',team:'DAL'}];
+  chk(app.tcChatGroundPlayers('thoughts on gamma?').length===0, 'a first name alone is not a match');
+  chk(app.tcChatGroundPlayers('is back a buy?').length===0, 'an ambiguous last name grounds nobody');
+  app.chatState().board=[pa,{player_id:'9',name:'Chase Brown',pos:'RB',team:'CIN',fpts:210,ecr:20}];
+  chk(app.tcChatGroundPlayers('what do you think of brown?')[0].name==='Chase Brown', 'a unique last name is enough');
+  // An app question rides with the app's own docs.
+  document.getElementById('tcChatIn').value='How do I import analyst projections into the app?';
+  await app._chatSend();
+  body=JSON.parse(aiCalls().pop().opts.body);
+  sent=body.messages[body.messages.length-1].content;
+  chk(sent.includes('[APP CONTEXT') && sent.includes('\u2630 menu') && /Import analyst projections/.test(sent),
+      'an app question carries the tour');
+  chk(/answer app how-to questions from/i.test(body.messages[0].content), 'and the system line says the docs are authoritative');
+  // Plain football talk carries neither block.
+  app.chatState().board=[];
+  document.getElementById('tcChatIn').value='zero rb or hero rb this year?';
+  await app._chatSend();
+  body=JSON.parse(aiCalls().pop().opts.body);
+  sent=body.messages[body.messages.length-1].content;
+  chk(!sent.includes('[DATA') && !sent.includes('[APP CONTEXT'), 'no names, no app question \u2192 nothing extra rides');
+  // The App help chip forces the tour even without trigger words.
+  app.resetChat(); app._chatGuide('app_help');
+  document.getElementById('tcChatIn').value='projections import?';
+  await app._chatSend();
+  body=JSON.parse(aiCalls().pop().opts.body);
+  chk(body.messages[body.messages.length-1].content.includes('[APP CONTEXT'), 'the App help chip always brings the docs');
+  app.resetChat(); app.chatState().board=null;
 })();
 
 console.log('=== output is untrusted text ===');

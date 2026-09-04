@@ -92,6 +92,30 @@ export const PROMPTS = [
       `End with the fantasy read: what the numbers say they are right now, and the one thing that would ` +
       `change it. ${GROUND(fmt)}`,
   },
+  {
+    name: "app_help",
+    title: "App help",
+    description: "How to do something in the TripleCrown app itself — features, menu paths, steps.",
+    arguments: [
+      { name: "question", description: "What you're trying to do in the app", required: true },
+    ],
+    text: (a) =>
+      `${a.question}\n\nThis is a question about using the TripleCrown app itself. Answer from this ` +
+      `overview, naming the exact menu path and steps — briefly. If it isn't covered, say so.\n\n` +
+      `TripleCrown is a free, self-contained fantasy football web app; its data lives in the user's browser. ` +
+      `Everything is in the \u2630 menu. Views \u2014 Projections: per-team builders (QB output, receiving/rushing ` +
+      `distributions) that roll up into every player's projection. Rankings: the full draft board (VOR, tiers, ECR, ` +
+      `ADP, TC model; sortable, customizable columns, scoring-format switch incl. superflex and dynasty). Leagues: ` +
+      `Sleeper league sync with live matchup scoring, a waiver lens and live league rank. Header year tabs switch ` +
+      `seasons; the Live tab follows a draft with the pick advisory (VONA). Tap any player for their playercard: ` +
+      `NFL gamelogs and schedule, college logs, fan charts, route trees, contract, notes (clipboard button), and ` +
+      `compare (\u2696 button). AI section \u2014 Ask TripleCrown (in-app chat), Compare (two players, grounded ` +
+      `verdict, or Copy the packet for any AI), Ask Claude (this very connector's URL). View-specific \u2014 ` +
+      `Projections: Import analyst projections / Download yours; Rankings: the Keep Trade Cut game; Leagues: ` +
+      `Re-sync / Change league. General \u2014 Sign In & Save (cloud), Manager (saved scenarios), Reset all ` +
+      `(clears edits, re-pulls live Sleeper projections). Note: this connector serves the app's DATA as tools; ` +
+      `it cannot click the app \u2014 give the user directions instead.`,
+  },
 ];
 
 // prompts/list shape (metadata only, no template).

@@ -548,7 +548,11 @@ The project ships with a regression suite (Node + Python) covering the projectio
   chips in **☰ → Ask TripleCrown** (`src/js/95-tc-chat.js`), an in-app chat on the compare's own
   engines (browser AI / local model / your key, Reasoning and Research switches included): one send
   = one request, the last 12 turns ride the wire, failed turns never re-send, model output stays
-  escaped text
+  escaped text. **Grounded in the app twice over**: name a player and their live board packet
+  (projection, VOR, ADP, contract, SOS) is attached to the send automatically — the "Grounded:"
+  line shows who, and the system prompt quarantines the model's stale roster memory; ask how to
+  do something and the app's own tour + ⓘ docs ride instead (the `app_help` workflow, on both
+  the chips and the connector prompts)
 - [ ] AI deep-analysis fan-out: a lead "ranker" model orchestrating specialized sub-agents (offense,
   defense, player context, coaching, deep stats) rolled into an in-depth TripleCrown rank —
   **deliberately deferred**: fan-out is exactly the shape of feature that racks up tokens, and the
