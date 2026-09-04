@@ -1263,12 +1263,6 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .ai-cmp-mcp{display:block;width:100%;box-sizing:border-box;margin-top:2px;}
 /* ☰ Ask in Claude — the connector URL for your format */
 .mcp-modal{max-width:440px;animation:pcardIn .18s ease;}
-.mcp-fmts{display:flex;flex-wrap:wrap;gap:6px;margin:5px 0 12px;}
-.mcp-fmt{font:inherit;font-size:11px;font-weight:700;padding:5px 11px;border-radius:999px;cursor:pointer;
-  transition:all .15s;border:1px solid var(--border);background:var(--surface2);color:var(--muted);}
-.mcp-fmt:hover{color:var(--text);border-color:var(--muted);}
-.mcp-fmt.on{color:#9fd7ff;background:rgba(61,155,255,.16);border-color:transparent;
-  box-shadow:0 0 0 1px rgba(61,155,255,.35) inset;}
 .mcp-urlrow{display:flex;gap:6px;align-items:stretch;margin-top:5px;}
 .mcp-url{flex:1;min-width:0;margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;
   text-overflow:ellipsis;cursor:text;}

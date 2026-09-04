@@ -23709,12 +23709,13 @@ function tcMcpCallLabel(name, args){
 }
 
 // ── ☰ Ask in Claude: the URL for your format, copy, and how-to behind ⓘ ─────
-let _mcpPickFmt=null;
-// The URL the modal is showing: a per-format path, or the bare generic endpoint.
-function _mcpShownUrl(){ return _mcpPickFmt==='all' ? `${tcMcpBase()}/mcp` : tcMcpUrl(_mcpPickFmt); }
+// The one URL the modal hands out: the generic endpoint. Every tool and prompt
+// takes the format as an argument, so one connector serves every league — the
+// per-format paths still answer (for anyone who added one), they're just no
+// longer offered.
+function _mcpShownUrl(){ return `${tcMcpBase()}/mcp`; }
 function openMcpConnector(){
   const old=document.getElementById('mcpOverlay'); if(old) old.remove();
-  _mcpPickFmt=(typeof rankFormat!=='undefined' && TC_MCP_FORMATS.includes(rankFormat))?rankFormat:'half_ppr';
   const ov=document.createElement('div');
   ov.id='mcpOverlay'; ov.className='ps-overlay';
   ov.innerHTML=`<div class="ps-modal mcp-modal" role="dialog" aria-label="TripleCrown in Claude">
@@ -23728,17 +23729,13 @@ function openMcpConnector(){
 }
 function renderMcpConnector(){
   const body=document.getElementById('mcpBody'); if(!body) return;
-  // 'all' is the generic endpoint: one connector, every format — Claude passes the
-  // format per question (each tool takes it as an argument; the path just sets a default).
   const url=_mcpShownUrl();
   body.innerHTML=`
-    <div class="ai-cmp-lbl">League format</div>
-    <div class="mcp-fmts">${TC_MCP_FORMATS.map(f=>`<button class="mcp-fmt ${f===_mcpPickFmt?'on':''}" onclick="_mcpPickFmt='${f}';renderMcpConnector()">${escHtml((typeof formatLabel==='function')?formatLabel(f):f)}</button>`).join('')}<button class="mcp-fmt ${_mcpPickFmt==='all'?'on':''}" onclick="_mcpPickFmt='all';renderMcpConnector()" title="One connector for every format — name your league's format in the question">All formats</button></div>
-    <div class="ai-cmp-lbl">Connector URL</div>
+    <div class="ai-cmp-lbl">Connector URL — every format, one link</div>
     <div class="mcp-urlrow"><input id="mcpUrl" class="ai-cmp-in mcp-url" readonly value="${escAttr(url)}" onclick="this.select()">
       <button id="mcpCopyBtn" class="btn-accent mcp-copy" onclick="tcMcpCopyUrl()">Copy</button></div>
     <div class="mcp-steps">Claude app <i>\u203a</i> Settings <i>\u203a</i> Connectors <i>\u203a</i> <b>Add custom connector</b> <i>\u203a</i> paste</div>
-    <div class="mcp-foot">free · public seed only · one connector on Claude's free plan</div>`;
+    <div class="mcp-foot">free · every scoring format (name yours in the question) · public seed only</div>`;
 }
 async function tcMcpCopyUrl(){
   const url=_mcpShownUrl(), btn=document.getElementById('mcpCopyBtn');
@@ -23755,9 +23752,8 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     call — the compare sheet, rankings, team pages, schedules, and the <b>entire seed</b> raw
     (five seasons of advanced stats and situational splits, route trees, passing and rushing charts,
     college logs, contracts, dynasty values, weekly team and line data, coaching formations).
-    <b>Pick your league's format</b> — or <b>All formats</b>, one connector that answers for any
-    league (every tool takes the format as an argument; name yours in the question) — copy the
-    URL, then: <b>claude.ai or the Claude app</b> →
+    <b>One link serves every scoring format</b> — every tool takes the format as an argument, so
+    just name your league's format in the question. Copy the URL, then: <b>claude.ai or the Claude app</b> →
     Settings → Connectors → <i>Add custom connector</i> → paste (the free plan allows one
     custom connector, so pick the format you play). <b>Claude Code</b>:
     <code>claude mcp add --transport http triplecrown &lt;url&gt;</code>. Then ask — “who do I
