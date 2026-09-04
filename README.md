@@ -517,11 +517,16 @@ The project ships with a regression suite (Node + Python) covering the projectio
 - [ ] Google Play Store
 - [ ] Apple iOS Store
 - [ ] Generate my own proprietary projections based on all the metrics we have
-- [ ] TC model: add opponent-strength / strength-of-schedule as a projection input (era-split tested) —
-  SOS is display-only today, and only the in-season lineup optimizer adjusts for defense-vs-position
-- [ ] TC model: add a coaching/coordinator-change signal (offense and defense) as a model feature —
-  the current `env_*` features are prior-season team output, not a change flag, and scheme carryover
-  is display-only
+- [x] TC model: opponent-strength / SOS as a projection input — **shipped in v1.7 (2026-09-05), QB
+  only**: mean softness of the known next-season schedule vs the position, era-split tested at all
+  four positions; RB/WR null, TE rejected (backwards coefficient), QB +0.009 R² with the gain
+  positive in every test year (emerging post-2022 signal — rechecked each retrain)
+- [x] TC model: coaching/coordinator-change signal — **investigated and REJECTED (2026-09-05)**:
+  playcaller career track records (Wikipedia staff history 2010–2026), change flags, upgrade deltas,
+  and changed-only subsets all add nothing over `env_*` at any position — the offense's level is
+  already priced; the name carries no player-level signal. The track-record table itself validates
+  (Ben Johnson +1.52 team-offense z, Matt Nagy +0.07) and is available as display data; defense-side
+  is out of scope (the TC model doesn't project team defenses)
 - [ ] TC model: measure and calibrate systematic under-projection — add signed mean error /
   calibration-slope per position and decile to `proj_eval.py`, and diagnose the QB `td_oe`
   construction (rush+rec TDs differenced against *total* expected TDs incl. passing)
