@@ -566,7 +566,11 @@ The project ships with a regression suite (Node + Python) covering the projectio
   the chips and the connector prompts); with a league synced in the Analyzer (or a live draft
   followed), your roster, record, rookie picks and live draft selections ride too — "who do I
   start", "my RBs", "who did I just draft" resolve to YOUR team, and the empty chat says whose
-  roster is aboard. **Fenced to football**: a two-layer guard scopes the chat — the system
+  roster is aboard. Every roster name carries the board's numbers (projection, VOR, ECR, dynasty
+  value, age) plus the Analyzer's own verdict — power rank, persona, positional and slot ranks —
+  so the model starts from the app's read instead of pricing players from stale memory; a
+  whole-team question ("rate my dynasty squad") additionally attaches every projected starter's
+  full packet for real roster-construction analysis. **Fenced to football**: a two-layer guard scopes the chat — the system
   prompt fences the model (no other topics, no personas, no life advice, answer without
   restating the question), and a client-side gate scopes the conversation itself: crisis and
   dangerous messages never reach a model (crisis gets a 988 pointer), a benign off-topic

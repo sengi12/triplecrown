@@ -770,7 +770,7 @@ await (async()=>{
   chk(app.tcChatLeagueContext()==='', 'no synced league, no live draft \u2192 no personal block');
   // Sync a league: the analyzer snapshot IS the context.
   app.setLeague({ provider:'sleeper', name:'Dynasty Degens', season:'2026', teams:12,
-    superflex:true, tep:false, leagueType:'dynasty', myUserId:'u1',
+    superflex:true, tep:false, leagueType:'dynasty', myUserId:'u1', rosterPositions:['QB','RB','FLEX'],
     teamList:[
       { rosterId:1, ownerId:'u1', teamName:'Sengi Dynasty', owner:'sengi', wins:2, losses:1,
         players:[ {id:'p1',name:'Josh Allen',pos:'QB',team:'BUF'}, {id:'p2',name:'Chase Brown',pos:'RB',team:'CIN'},
@@ -778,12 +778,30 @@ await (async()=>{
         picks:[ {season:'2027', round:1, origRosterId:1} ] },
       { rosterId:2, ownerId:'u2', teamName:'Rivals', owner:'them', players:[{id:'p9',name:'Other Guy',pos:'RB',team:'SF'}], picks:[] },
     ]});
+  app.chatState().board=[
+    {player_id:'x1',name:'Josh Allen',pos:'QB',team:'BUF',fpts:352,vor:148,ecr:1},
+    {player_id:'x2',name:'Chase Brown',pos:'RB',team:'CIN',fpts:232,vor:41,ecr:18},
+  ];
   const lg=app.tcChatLeagueContext();
   chk(/MY TEAM — "Sengi Dynasty" in Dynasty Degens \(12-team · superflex · dynasty · 2-1\)/.test(lg),
       'the block names the team, the league, the format and the record');
-  chk(/QB: Josh Allen \(BUF\)/.test(lg) && /RB: Chase Brown \(CIN\)/.test(lg) && /Rookie picks: 2027 R1/.test(lg),
-      'roster by position, picks included');
+  chk(/Josh Allen \(BUF\) — proj 352 pts · VOR \+148 · ECR 1/.test(lg)
+      && /Chase Brown \(CIN\) — proj 232 pts/.test(lg) && /Rookie picks: 2027 R1/.test(lg),
+      'every roster name carries the board\u2019s numbers — names never travel naked');
+  chk(/evaluate from THESE, not from memory/.test(lg), 'and the block says so');
+  chk(/Analyzer verdict: #\d of 2 power · "/.test(lg) && /Positional rank \(league\): QB \d/.test(lg),
+      'the Analyzer\u2019s own power rank, persona and positional ranks ride along');
+  chk(/Projected starters, ranked at their slot: QB Josh Allen \(1st in league\)/.test(lg),
+      'starters come slot-ranked against the league');
   chk(!/Other Guy/.test(lg), 'only MY roster — never another manager\u2019s');
+  // A whole-team question additionally attaches every starter's FULL packet.
+  app.chatState().lastGrounded=[];
+  const lgTeam=app.tcChatLeagueContext('what do you think of my dynasty squad?');
+  chk(/\[DATA — your projected starters, in full/.test(lgTeam) && /value over replacement \+148/.test(lgTeam),
+      'a team question rides with the starters\u2019 full packets');
+  chk(app.chatState().lastGrounded.includes('Josh Allen'), 'and the Grounded line will name them');
+  chk(!/\[DATA — your projected starters/.test(app.tcChatLeagueContext('should I trade for a TE?')),
+      'a narrow question skips the packets — tokens are spent only when the shape needs them');
   app.resetChat(); app.openTcChat();
   chk(/Synced: <b>Sengi Dynasty<\/b>/.test(document.getElementById('tcChatBody').innerHTML),
       'the empty chat says whose roster rides along');

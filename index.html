@@ -28169,29 +28169,106 @@ function tcChatMyTeam(){
   const t=(s.myUserId!=null && s.teamList.find(x=>x.ownerId===s.myUserId)) || null;
   return (t && Array.isArray(t.players) && t.players.length) ? {snap:s, team:t} : null;
 }
-function tcChatLeagueContext(){
+// One roster player → the board's one-line read (projection, VOR, ECR; dynasty
+// value and age when the league prices later years). Names never travel naked:
+// a line without numbers invites the model to price the player from stale memory.
+function _chatBoardLine(rp){
+  const list=_chatBoardList();
+  const bp=list.find(x=>String(x.player_id||'')===String(rp.id||''))
+        || list.find(x=>typeof ecrNormName==='function' && ecrNormName(x.name)===ecrNormName(rp.name));
+  let line=`${rp.name}${rp.team?` (${rp.team})`:''}`;
+  if(bp && bp.fpts!=null){
+    line+=` — proj ${Math.round(bp.fpts)} pts`;
+    if(bp.vor!=null) line+=` · VOR ${bp.vor>=0?'+':''}${Math.round(bp.vor)}`;
+    if(bp.ecr!=null) line+=` · ECR ${bp.ecr}`;
+  } else line+=' — no board data (likely not fantasy-relevant right now)';
+  try{
+    if(typeof leagueSnapshot!=='undefined' && leagueSnapshot && !/redraft/.test(leagueSnapshot.leagueType||'')){
+      const dv=(typeof laDynVal==='function')?laDynVal(rp.name,rp.pos):0;
+      const age=(typeof laDynAge==='function')?laDynAge(rp.name):null;
+      if(dv>0) line+=` · dyn ${Math.round(dv)}`;
+      if(age!=null) line+=` · age ${Math.round(age)}`;
+    }
+  }catch(e){}
+  return line;
+}
+// The Analyzer's own read of the synced team — power rank, persona, positional and
+// per-slot starter ranks — so the chat starts from the app's verdict instead of
+// contradicting it. Best-effort: any analyzer hiccup just omits these lines.
+function _chatTeamVerdict(sn, t){
+  try{
+    const pm=laProjMap();
+    const eng=sn.teamList.map(x=>laTeamEngine(sn,x,'value',pm));
+    const mine=eng.find(e=>e.t===t)||eng.find(e=>e.t.rosterId===t.rosterId);
+    if(!mine) return {lines:[], starters:[]};
+    const traj=laTrajectories(sn,pm);
+    const my=traj[t.rosterId];
+    const lines=[];
+    if(my) lines.push(`Analyzer verdict: #${my.rank} of ${sn.teamList.length} power · "${my.title}" — ${my.advice}`);
+    const posR=['QB','RB','WR','TE'].map(pos=>`${pos} ${ordinal(laRankOf(mine.pos[pos], eng.map(e=>e.pos[pos])))}`);
+    posR.push(`starters ${ordinal(laRankOf(mine.startersAdj, eng.map(e=>e.startersAdj)))}`);
+    posR.push(`bench ${ordinal(laRankOf(mine.benchAdj, eng.map(e=>e.benchAdj)))}`);
+    lines.push(`Positional rank (league): ${posR.join(' · ')}`);
+    // Starters from the PROJECTED best lineup — the season in front of you.
+    const engNow=sn.teamList.map(x=>laTeamEngine(sn,x,'proj',pm));
+    const mineNow=engNow.find(e=>e.t.rosterId===t.rosterId);
+    const labels=laSlotLabels(sn.rosterPositions);
+    const starters=[];
+    if(mineNow && labels.length){
+      const slotLines=labels.map((lbl,i)=>{
+        const f=mineNow.starters[i], p=f&&f.player;
+        if(!p) return `${lbl} —`;
+        starters.push(p);
+        const rank=laRankOf(p._v||0, engNow.map(e=>(e.starters[i]&&e.starters[i].player)?e.starters[i].player._v:0));
+        return `${lbl} ${p.name} (${ordinal(rank)} in league)`;
+      });
+      lines.push('Projected starters, ranked at their slot: '+slotLines.join(' · '));
+    }
+    return {lines, starters};
+  }catch(e){ return {lines:[], starters:[]}; }
+}
+// Whole-team questions get the starters' FULL packets, so the model can talk about
+// how the roster fits together rather than eyeballing names.
+const TC_CHAT_TEAMQ=/\b(my (team|squad|roster|lineup|starters)|whole (team|roster)|(dynasty|redraft) (squad|team|roster)|roster (build|construction)|how am i built|rate my (team|roster|squad))\b/i;
+function tcChatLeagueContext(q){
   const out=[];
   const mt=tcChatMyTeam();
+  let starterPackets='';
   if(mt){
     const {snap:sn, team:t}=mt;
+    const verdict=_chatTeamVerdict(sn,t);
     const byPos={};
-    for(const p of t.players){ const k=p.pos||'?'; (byPos[k]=byPos[k]||[]).push(`${p.name}${p.team?` (${p.team})`:''}`); }
+    for(const p of t.players){ const k=p.pos||'?'; (byPos[k]=byPos[k]||[]).push('  '+_chatBoardLine(p)); }
     const order=['QB','RB','WR','TE','K','DEF'];
     const roster=[...order.filter(k=>byPos[k]), ...Object.keys(byPos).filter(k=>!order.includes(k))]
-      .map(k=>`${k}: ${byPos[k].join(', ')}`).join('\n');
+      .map(k=>`${k}:\n${byPos[k].join('\n')}`).join('\n');
     const picks=(t.picks||[]).map(pk=>`${pk.season} R${pk.round}`).join(', ');
     const rec=(t.wins!=null)?` · ${t.wins}-${t.losses}`:'';
     const fmt=[sn.superflex?'superflex':'', sn.tep?'TEP':'', sn.leagueType].filter(Boolean).join(' · ');
-    out.push(`MY TEAM — "${t.teamName||t.owner||'mine'}" in ${sn.name||'the synced league'} (${sn.teams||'?'}-team${fmt?` · ${fmt}`:''}${rec})
-${roster}${picks?`
-Rookie picks: ${picks}`:''}`);
+    out.push(`MY TEAM — "${t.teamName||t.owner||'mine'}" in ${sn.name||'the synced league'} (${sn.teams||'?'}-team${fmt?` · ${fmt}`:''}${rec})`
+      +(verdict.lines.length?`\n${verdict.lines.join('\n')}`:'')
+      +`\nRoster (the app's numbers — evaluate from THESE, not from memory):\n${roster}${picks?`\nRookie picks: ${picks}`:''}`);
+    // A question about the whole team → every projected starter's full packet rides too.
+    if(q!=null && TC_CHAT_TEAMQ.test(String(q)) && verdict.starters.length && typeof tcAiPlayerContext==='function'){
+      const list=_chatBoardList();
+      const packs=[], names=[];
+      for(const sp of verdict.starters.slice(0,12)){
+        const bp=list.find(x=>String(x.player_id||'')===String(sp.id||''))
+              || list.find(x=>typeof ecrNormName==='function' && ecrNormName(x.name)===ecrNormName(sp.name));
+        if(bp){ packs.push(tcAiPlayerContext(bp)); names.push(bp.name); }
+      }
+      if(packs.length){
+        starterPackets='\n\n[DATA — your projected starters, in full, attached by the app]\n'+packs.join('\n\n');
+        _chat.lastGrounded=[...new Set([..._chat.lastGrounded, ...names])];
+      }
+    }
   }
   if(typeof mySlot!=='undefined' && mySlot!=null
      && typeof draftPicksBySlot!=='undefined' && draftPicksBySlot && (draftPicksBySlot[mySlot]||[]).length){
     const mine=draftPicksBySlot[mySlot].map(p=>`${p.name||p.player_id}${p.pos?` (${p.pos})`:''}`);
     out.push(`MY DRAFT (live, from my seat) — picks so far: ${mine.join(', ')}`);
   }
-  return out.join('\n\n');
+  return out.join('\n\n')+starterPackets;
 }
 
 // App questions get the tour, plus whichever ⓘ info-book pages share the
@@ -28254,7 +28331,7 @@ function tcChatMessages(){
       add+='\n\n[DATA — TripleCrown’s board, attached by the app]\n'+ground.map(p=>tcAiPlayerContext(p)).join('\n\n');
     }
     if(appCtx) add+='\n\n[APP CONTEXT — TripleCrown’s own docs, attached by the app]\n'+appCtx;
-    const lg=tcChatLeagueContext();
+    const lg=tcChatLeagueContext(q);
     if(lg) add+='\n\n[SYNCED — attached by the app from your League Analyzer]\n'+lg;
     if(add) turns[lastIdx]={role:'user', content:q+add};
   }
