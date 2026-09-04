@@ -20,6 +20,7 @@ const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   fetchHeadCoach, hcIsPlaycaller, renderTeamAdvanced, coordCarriesOver, coordInlineLabel, coordFor,
   coachRecChip, coachDefRecChip, setCoachRecords:(r)=>{COACH_RECORDS=r;},
+  advTrendFor, advSparkSvg,
   _carryPopBody, withTeam:(t,f)=>{const o=currentTeam;currentTeam=t;try{f();}finally{currentTeam=o;}},
   setCoord:(c)=>{COORDINATORS=c;}, setPlaycallers:(p)=>{HC_PLAYCALLERS=p;}, setNflverse:(n)=>{NFLVERSE=n;},
   setNames:(n)=>{TEAM_NAMES=n;}, setSharpSeason:(y)=>{SHARP_SEASON=y;},
@@ -107,6 +108,24 @@ app.setPlaycallers({CIN:'Zac Taylor'});
   chk(/z-score/.test(app.coachRecChip('Ben Johnson')), 'the method is explained on hover, not on screen');
   const lbl=app.coordInlineLabel({name:'Ben Johnson', since:2024},'offensive');
   chk(/coord-rec good/.test(lbl), 'the chip rides the OC inline label');
+  console.log('\n=== TEST 10b: 5-year trend sparklines ===');
+  {
+    const mk=(v,r)=>({columns:['EPA/Play','Yards Per Play'],teams:{DET:[[v,v*30],[r,r]],KC:[[0.1,6],[5,5]]}});
+    app.setNflverse({'2022':{team:{offense:mk(0.02,20)}}, '2023':{team:{offense:mk(0.08,11)}},
+              '2024':{team:{offense:mk(0.17,3)}}, 'meta':{}});
+    const tr=app.advTrendFor('DET','offense','EPA/Play');
+    chk(tr && tr.length===3 && tr[0].y===2022 && tr[2].v===0.17 && tr[2].r===3,
+        'a trend reads packed year rows in season order');
+    const svg=app.advSparkSvg(tr,false);
+    chk(/sr-spark-line/.test(svg) && /sr-spark-dot sr-good/.test(svg),
+        'the sparkline draws with the endpoint in the CURRENT rank\u2019s color');
+    chk(/2022: 0.02 · #20/.test(svg) && /2024: 0.17 · #3/.test(svg),
+        'hover tells the season-by-season story');
+    app.setNflverse({'2024':{team:{offense:mk(0.17,3)}}});
+    chk(app.advTrendFor('DET','offense','EPA/Play')===null, 'fewer than 3 seasons is not a trend — no spark');
+    app.setNflverse({});
+  }
+
   console.log('\n=== TEST 10: side-aware chips — DCs get DEFENSE records, never the offense ===');
   app.setCoachRecords({'Vic Fangio':{dz:0.97,dn:11,side:'def'},'Lou Anarumo':{dz:-0.2,dn:6,side:'def'},'Ben Johnson':{z:1.52,n:4,side:'off'}});
   chk(app.coachRecChip('Vic Fangio')==='', 'a defensive coach has NO offense chip — no more passenger credit');

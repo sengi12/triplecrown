@@ -615,7 +615,10 @@ The project ships with a regression suite (Node + Python) covering the projectio
 ### Import Projections
 ### Adv Metrics
 - [x] QB Metrics: on_tgt_throws, bad_throw_pct, batted_balls, is_interception_worthy, is_catchable_ball — an Accuracy & Decisions band on the QB passing chart (PFR + FTN per-play charting), every tile colored against that season's league median
-- [ ] Charts that show team progress over the last 5 years in specific categories
+- [x] Charts that show team progress over the last 5 years in specific categories — every stat
+  row on the team Advanced tab carries a 5-season sparkline (values 2021–2025, endpoint dotted in
+  the current league-rank's color, season-by-season story on hover; fewer than 3 seasons renders
+  nothing rather than a fake trend)
 ### Playcalling Stats
 - [ ] Improve Playbooks is_qb_sneak, n_offense_backfield
 

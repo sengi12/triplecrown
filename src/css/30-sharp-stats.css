@@ -37,7 +37,7 @@
 .sr-proj-badge.sr-oklo{background:rgba(240,180,80,.13);color:#e0b060;border-color:rgba(240,180,80,.28);}
 .sr-proj-badge.sr-bad{background:rgba(255,90,90,.14);color:#ff6a6a;border-color:rgba(255,90,90,.3);}
 .sr-stat-grid{display:flex;flex-direction:column;gap:2px;}
-.sr-stat{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;
+.sr-stat{display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:10px;
   padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);}
 .sr-stat:last-child{border-bottom:none;}
 .sr-stat-label{font-size:11.5px;color:var(--muted);}
@@ -116,3 +116,12 @@
 .coord-side{display:inline-block;font-size:10px;font-weight:800;color:var(--accent);
   background:var(--surface3);padding:2px 7px;border-radius:5px;margin-right:6px;}
 .coord-carry-sub{font-size:10.5px;color:var(--muted);margin-bottom:8px;}
+
+/* 5-year trend sparklines on every Advanced stat row */
+.sr-stat-spark{line-height:0;}
+.sr-spark{width:56px;height:16px;cursor:help;}
+.sr-spark-line{fill:none;stroke:var(--muted);stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;opacity:.75;}
+.sr-spark-dot{fill:var(--muted);}
+.sr-spark-dot.sr-good{fill:#00d4aa;} .sr-spark-dot.sr-okhi{fill:#9fd48a;}
+.sr-spark-dot.sr-oklo{fill:#fbbf24;} .sr-spark-dot.sr-bad{fill:#ff6b6b;}
+@media (max-width:480px){ .sr-spark{width:44px;} }

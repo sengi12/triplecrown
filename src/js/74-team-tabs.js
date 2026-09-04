@@ -927,6 +927,43 @@ function _renderAdvPowerScore(team, src, opts){
     }, 'note-tag-hit');
 }
 
+// ── 5-year trends (roadmap: "team progress over the last 5 years") ──────────
+// Every Advanced stat row carries a tiny sparkline: the raw values across the
+// seed's nflverse seasons, endpoint dotted in the CURRENT rank's color. The line
+// shows direction, the rank colors good/bad, and hover tells the whole story
+// (year: value · #rank, season by season). Values only — no second axis, ever.
+function advTrendFor(team, tableKey, col){
+  if(typeof NFLVERSE==='undefined' || !NFLVERSE) return null;
+  const yrs=Object.keys(NFLVERSE).filter(y=>/^\d{4}$/.test(y) && NFLVERSE[y] && NFLVERSE[y].team && NFLVERSE[y].team[tableKey]).sort();
+  const pts=[];
+  for(const y of yrs){
+    const tbl=NFLVERSE[y].team[tableKey];
+    const row=tbl.teams && tbl.teams[team];
+    if(!row) continue;
+    let v=null, r=null;
+    if(Array.isArray(row)){                    // packed seed rows: [[values...],[ranks...]]
+      const ci=(tbl.columns||[]).indexOf(col);
+      if(ci>=0){ v=row[0]?row[0][ci]:null; r=row[1]?row[1][ci]:null; }
+    } else {                                   // decoded rows: {values:{col}, ranks:{col}}
+      v=row.values?row.values[col]:null; r=row.ranks?row.ranks[col]:null;
+    }
+    if(typeof v==='number') pts.push({y:+y, v, r});
+  }
+  return pts.length>=3 ? pts : null;           // fewer than 3 seasons isn't a trend
+}
+function advSparkSvg(pts, isPct){
+  const W=56, H=16, P=2.5;
+  const vs=pts.map(p=>p.v);
+  const mn=Math.min(...vs), mx=Math.max(...vs);
+  const X=i=>P+(W-2*P)*(pts.length===1?0.5:i/(pts.length-1));
+  const Y=v=>mx===mn?H/2:P+(H-2*P)*(1-(v-mn)/(mx-mn));
+  const d=pts.map((p,i)=>`${i?'L':'M'}${X(i).toFixed(1)},${Y(p.v).toFixed(1)}`).join(' ');
+  const last=pts[pts.length-1];
+  const title=pts.map(p=>`${p.y}: ${fmtSharpVal(p.v,isPct)}${p.r!=null?` · #${p.r}`:''}`).join('   ');
+  return `<svg class="sr-spark" viewBox="0 0 ${W} ${H}"><title>${escAttr(title)}</title>
+    <path d="${d}" class="sr-spark-line"/>
+    <circle cx="${X(pts.length-1).toFixed(1)}" cy="${Y(last.v).toFixed(1)}" r="2.4" class="sr-spark-dot ${sharpRankClass(last.r)}"/></svg>`;
+}
 function renderTeamAdvanced(team){
   const hasSharp=sharpHasData(), hasSOS=SOS&&Object.keys(SOS).length>0;
   const hasCoord = COORDINATORS && COORDINATORS[team];
@@ -963,6 +1000,7 @@ function renderTeamAdvanced(team){
           relevance: noteRelevanceForTableKey(key),
           nav: { type:'advanced', team: useTeam, season: String(advTeamSeason()) },
         }, 'note-tag-hit'):txt}</div>
+        <div class="sr-stat-spark">${(()=>{const tr=advTrendFor(useTeam,key,col); return tr?advSparkSvg(tr, sharpColIsPct(tbl,col)):'';})()}</div>
         <div class="sr-stat-rank">${sharpRankBadge(r)}</div>
       </div>`;
     }).join('');
