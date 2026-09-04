@@ -230,15 +230,18 @@ function tcChatRender(){
   }
   const s=tcAiSettings(), u=tcAiUsage();
   const usage=`${u.calls||0} calls · ${(u.prompt||0)+(u.completion||0)} tokens total, this browser`;
-  const lookups= mode==='key' && s.tools && typeof tcMcpTools==='function';
+  const lookups= s.tools && typeof tcMcpTools==='function' && mode!=='paste';
   const cost= mode==='key'
     ? `${lookups?`≤${1+TC_AI_MAX_TOOL_ROUNDS} requests`:'1 request'} per send · your key`
-    : 'runs on this device · $0';
+    : `runs on this device · $0${lookups?` · ≤${TC_AI_MAX_TOOL_ROUNDS} lookups`:''}`;
   const sw= mode==='key' ? `<div class="ai-cmp-tgls tc-chat-tgls">
       <button class="ai-cmp-sw ${s.reasoning?'on':''}" title="Lets a reasoning model think before it answers — deeper, several times slower, and it costs more of a free tier's daily budget."
         onclick="tcAiSaveSettings({reasoning:${s.reasoning?'false':'true'}});tcChatRender()">Reasoning <span class="ai-cmp-sw-sub">slower · deeper</span></button>
       ${(typeof tcMcpTools==='function')?`<button class="ai-cmp-sw ${s.tools?'on':''}" title="Lets the model call TripleCrown's own tools mid-answer (route trees, splits, weekly EPA, college logs) instead of guessing. Up to ${TC_AI_MAX_TOOL_ROUNDS} extra requests per send, each named under the answer. Needs a model marked “tools”."
-        onclick="tcAiSaveSettings({tools:${s.tools?'false':'true'}});tcChatRender()">Research <span class="ai-cmp-sw-sub">deeper · more requests</span></button>`:''}</div>` : '';
+        onclick="tcAiSaveSettings({tools:${s.tools?'false':'true'}});tcChatRender()">Research <span class="ai-cmp-sw-sub">deeper · more requests</span></button>`:''}</div>`
+    : (typeof tcMcpTools==='function' ? `<div class="ai-cmp-tgls tc-chat-tgls">
+      <button class="ai-cmp-sw ${s.tools?'on':''}" title="Lets the on-device model ask TripleCrown's connector for route trees, splits, weekly EPA or college logs mid-answer instead of guessing. Up to ${TC_AI_MAX_TOOL_ROUNDS} lookups per send — slower, still $0."
+        onclick="tcAiSaveSettings({tools:${s.tools?'false':'true'}});tcChatRender()">Research <span class="ai-cmp-sw-sub">deeper · slower · $0</span></button></div>` : '');
   const bub=(m)=> m.role==='notice'
     ? `<div class="tc-chat-note">${escHtml(m.content)}</div>`
     : m.role==='user'
@@ -320,9 +323,10 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     under <i>key & model…</i>). <b>The guide chips</b> are ready-made plays — start/sit, draft pick,
     trade eval, waiver scan, deep dive — each one teaches the model that job’s shape before your
     words arrive; the same five ship as prompts on the Claude connector (☰ → Ask in Claude).
-    <b>Free-first, as always:</b> one send is one request — with <b>Research</b> on (key mode), at
-    most ${1+TC_AI_MAX_TOOL_ROUNDS}, every one counted in the footer and every lookup named under
-    the answer. Only the last ${TC_CHAT_KEEP} turns ride each request, so long chats don’t quietly
+    <b>Free-first, as always:</b> one send is one request — with <b>Research</b> on, at most
+    ${1+TC_AI_MAX_TOOL_ROUNDS}, every one counted in the footer and every lookup named under the
+    answer. Research works keyless too: an on-device model asks for a lookup in plain JSON and
+    the app fetches it — slower, still $0. Only the last ${TC_CHAT_KEEP} turns ride each request, so long chats don’t quietly
     grow the bill. <b>Your team:</b> with a league synced in the Analyzer (or a live draft
     followed), your roster, record, picks and live draft selections ride along automatically —
     “who do I start”, “my RBs”, “who did I just draft” all resolve to <i>your</i> team. That

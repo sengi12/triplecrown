@@ -541,7 +541,11 @@ The project ships with a regression suite (Node + Python) covering the projectio
   — see the in-app chat below for the same loop in conversation form
   that lets the model call the same connector mid-answer — bounded at 3 lookup rounds per click (≤4
   requests), every round counted in the usage footer, every lookup named under the answer, tool-capable
-  free models marked in the picker, connector down → plain answer. The one deliberate exception to
+  free models marked in the picker, connector down → plain answer. **Keyless Research too**: the
+  on-device engines (browser built-in, local WebGPU) have no native tool calling, so the app runs
+  the loop itself — the model may reply with one JSON lookup request, the app calls the worker,
+  hands the data back quarantined as a plain turn, same 3-round cap; a model that never asks just
+  answers normally. Research at $0, no key. The one deliberate exception to
   one-click-one-request, and it says so on the switch. **The guided experience** ships on both sides
   of the connector: the worker serves five workflows as MCP prompts (start/sit, draft pick, trade
   eval, waiver scan, player deep dive — `tools/mcp_worker/prompts.js`), and the same five are guide
