@@ -933,6 +933,7 @@ async function tryAutoLoadSeed(prefetched){
     if(j.market_model){ MARKET_MODEL=j.market_model; got=true; }
     if(j.team_names){ TEAM_NAMES=j.team_names; got=true; }
     if(j.coordinators){ COORDINATORS=j.coordinators; got=true; }
+    if(j.coach_records){ COACH_RECORDS=j.coach_records; }
     if(j.hc_playcallers){ HC_PLAYCALLERS=j.hc_playcallers; got=true; }
     if(j.hc_history){ HC_HISTORY=j.hc_history; got=true; }
     if(j.additions){ ADDITIONS=j.additions; got=true; }

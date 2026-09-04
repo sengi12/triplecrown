@@ -1420,6 +1420,7 @@ let _sosSchedLoading=false, _sosSchedLoaded=false;   // opponent-schedule fetch 
 let TEAM_NAMES = (typeof SEED_TEAM_NAMES!=='undefined') ? SEED_TEAM_NAMES : {};
 // Coordinators (from Wikipedia via seed): {CODE:{offense:{...},defense:{...}}}
 let COORDINATORS = (typeof SEED_COORDINATORS!=='undefined') ? SEED_COORDINATORS : {};
+let COACH_RECORDS = (typeof SEED_COACH_RECORDS!=='undefined') ? SEED_COACH_RECORDS : {};   // playcaller career records {name:{z,n}}
 // Head coaches who call their own plays: {CODE:"Name"}
 let HC_PLAYCALLERS = (typeof SEED_HC_PLAYCALLERS!=='undefined') ? SEED_HC_PLAYCALLERS : {};
 // Head-coach history (Wikipedia via seed): {CODE:{name,since,prev_code,prev_role,prev_years,is_new}}
@@ -3971,7 +3972,7 @@ function teamHeaderHcLine(team, opts){
   return hc ? `<div class="team-hc scheme-open" role="button" tabindex="0" title="${openTitleEsc}" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">
       ${hc.headshot?`<img src="${hc.headshot}" class="team-hc-img" onerror="this.style.display='none'">`:''}
       <span class="team-hc-label">HC</span> <b>${hc.name}</b>${hc.experience!=null?` · yr ${hc.experience}`:''}
-      ${hcCaller?`<span class="hc-caller" title="This head coach is the team's primary offensive playcaller — the OC is less pivotal for scheme continuity.">🎧 Primary playcaller</span>`:''}
+      ${hcCaller?`<span class="hc-caller" title="This head coach is the team's primary offensive playcaller — the OC is less pivotal for scheme continuity.">🎧 Primary playcaller</span>${(typeof coachRecChip==='function')?coachRecChip(hc.name):''}`:''}
     </div>` : (headCoaches[t]===null?'':`<div class="team-hc team-hc-loading">Loading head coach…</div>`);
 }
 
@@ -14608,6 +14609,31 @@ function toggleAddChanges(team){
 // Per-team advanced view: one card per Sharp table, each showing this team's value + rank.
 // Coordinator helpers -------------------------------------------------------
 function coordFor(team, side){ return COORDINATORS && COORDINATORS[team] && COORDINATORS[team][side]; }
+// Playcaller career record chip: mean team-offense z while running an offense (HC or OC of
+// record, 2010+), from the model research's validated staff history. ±0.35 is roughly the
+// league's top/bottom third — chips only color outside that band, so a middling record stays
+// quiet. One season of record is noise; require 2+.
+function coachRecFor(name){
+  const r = (typeof COACH_RECORDS!=='undefined') && COACH_RECORDS && COACH_RECORDS[name];
+  return (r && r.n>=2 && r.z!=null) ? r : null;
+}
+function coachDefRecFor(name){
+  const r = (typeof COACH_RECORDS!=='undefined') && COACH_RECORDS && COACH_RECORDS[name];
+  return (r && r.dn>=2 && r.dz!=null) ? r : null;
+}
+function _recChip(z, n, what){
+  const cls = z>=0.35 ? 'coord-rec good' : z<=-0.35 ? 'coord-rec bad' : 'coord-rec';
+  const sign = z>=0 ? '+' : '−';
+  return ` <span class="${cls}" title="Career ${what} vs league while running that side (z-score): ${z>=0?'+':''}${z.toFixed(2)} over ${n} season${n>1?'s':''} as coordinator or same-side head coach — side-aware credit: a defensive head coach never inherits his OC's offense">${sign}${Math.abs(z).toFixed(1)} · ${n}yr</span>`;
+}
+function coachRecChip(name){
+  const r=coachRecFor(name);
+  return r ? _recChip(r.z, r.n, 'offense') : '';
+}
+function coachDefRecChip(name){
+  const r=coachDefRecFor(name);
+  return r ? _recChip(r.dz, r.dn, 'defense (points allowed, sign flipped: + is stingy)') : '';
+}
 // A coordinator "carries over" another team's scheme when they're brand-new this season
 // AND came from another NFL team. Those get the Coordinators tab.
 function coordCarriesOver(c){ return !!(c && c.is_new && !c.internal && c.prev_code); }
@@ -14666,11 +14692,11 @@ function coordInlineLabel(a,b,c){
   if(!coord.name) return '';
   if(coordCarriesOver(coord)){
     return `<span ${attrs}>
-      ${sideWord==='offensive'?'OC':'DC'}: <b>${coord.name}</b> <span class="coord-new-tag" title="New for this season · from ${escAttr(teamDisplayName(coord.prev_code))} — tap the ! for details">NEW</span></span>`;
+      ${sideWord==='offensive'?'OC':'DC'}: <b>${coord.name}</b>${sideWord==='offensive'?coachRecChip(coord.name):coachDefRecChip(coord.name)} <span class="coord-new-tag" title="New for this season · from ${escAttr(teamDisplayName(coord.prev_code))} — tap the ! for details">NEW</span></span>`;
   }
   // carryover/internal: last season's stats apply directly
   const since = coord.since?` · since ${coord.since}`:'';
-  return `<span ${attrs}>${sideWord==='offensive'?'OC':'DC'}: <b>${coord.name}</b>${since}</span>`;
+  return `<span ${attrs}>${sideWord==='offensive'?'OC':'DC'}: <b>${coord.name}</b>${sideWord==='offensive'?coachRecChip(coord.name):coachDefRecChip(coord.name)}${since}</span>`;
 }
 
 // ── Advanced week-range control (team cards) ───────────────────────────────
@@ -19501,6 +19527,7 @@ async function tryAutoLoadSeed(prefetched){
     if(j.market_model){ MARKET_MODEL=j.market_model; got=true; }
     if(j.team_names){ TEAM_NAMES=j.team_names; got=true; }
     if(j.coordinators){ COORDINATORS=j.coordinators; got=true; }
+    if(j.coach_records){ COACH_RECORDS=j.coach_records; }
     if(j.hc_playcallers){ HC_PLAYCALLERS=j.hc_playcallers; got=true; }
     if(j.hc_history){ HC_HISTORY=j.hc_history; got=true; }
     if(j.additions){ ADDITIONS=j.additions; got=true; }

@@ -216,6 +216,7 @@ let _sosSchedLoading=false, _sosSchedLoaded=false;   // opponent-schedule fetch 
 let TEAM_NAMES = (typeof SEED_TEAM_NAMES!=='undefined') ? SEED_TEAM_NAMES : {};
 // Coordinators (from Wikipedia via seed): {CODE:{offense:{...},defense:{...}}}
 let COORDINATORS = (typeof SEED_COORDINATORS!=='undefined') ? SEED_COORDINATORS : {};
+let COACH_RECORDS = (typeof SEED_COACH_RECORDS!=='undefined') ? SEED_COACH_RECORDS : {};   // playcaller career records {name:{z,n}}
 // Head coaches who call their own plays: {CODE:"Name"}
 let HC_PLAYCALLERS = (typeof SEED_HC_PLAYCALLERS!=='undefined') ? SEED_HC_PLAYCALLERS : {};
 // Head-coach history (Wikipedia via seed): {CODE:{name,since,prev_code,prev_role,prev_years,is_new}}

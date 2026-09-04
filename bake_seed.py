@@ -291,6 +291,7 @@ def main():
     sos = seed.get("sos", {})
     team_names = seed.get("team_names", {})
     coordinators = seed.get("coordinators", {})
+    coach_records = seed.get("coach_records", {})
     hc_playcallers = seed.get("hc_playcallers", {})
     hc_history = seed.get("hc_history", {})
     additions = seed.get("additions", {})
@@ -372,6 +373,7 @@ def main():
         f"const SEED_SOS = {j(sos)};\n"
         f"const SEED_TEAM_NAMES = {j(team_names)};\n"
         f"const SEED_COORDINATORS = {j(coordinators)};\n"
+        f"const SEED_COACH_RECORDS = {j(coach_records)};\n"
         f"const SEED_HC_PLAYCALLERS = {j(hc_playcallers)};\n"
         f"const SEED_HC_HISTORY = {j(hc_history)};\n"
         f"const SEED_ADDITIONS = {j(additions)};\n"

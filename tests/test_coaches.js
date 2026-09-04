@@ -19,6 +19,7 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   fetchHeadCoach, hcIsPlaycaller, renderTeamAdvanced, coordCarriesOver, coordInlineLabel, coordFor,
+  coachRecChip, coachDefRecChip, setCoachRecords:(r)=>{COACH_RECORDS=r;},
   _carryPopBody, withTeam:(t,f)=>{const o=currentTeam;currentTeam=t;try{f();}finally{currentTeam=o;}},
   setCoord:(c)=>{COORDINATORS=c;}, setPlaycallers:(p)=>{HC_PLAYCALLERS=p;}, setNflverse:(n)=>{NFLVERSE=n;},
   setNames:(n)=>{TEAM_NAMES=n;}, setSharpSeason:(y)=>{SHARP_SEASON=y;},
@@ -93,6 +94,30 @@ app.setPlaycallers({CIN:'Zac Taylor'});
 
   console.log('\n=== TEST 8: season labels ===');
   chk(cinHtml.includes('2025 Offense'),'section head labels the season ("2025 Offense")');
+
+  console.log('\n=== TEST 9: playcaller track-record chips ===');
+  app.setCoachRecords({'Ben Johnson':{z:1.52,n:4},'Matt Nagy':{z:0.07,n:7},'Brian Daboll':{z:-0.61,n:11},'Rook Ie':{z:2.0,n:1}});
+  chk(/coord-rec good/.test(app.coachRecChip('Ben Johnson')) && /\+1\.5 · 4yr/.test(app.coachRecChip('Ben Johnson')),
+      'a strong record wears the green chip with the number');
+  chk(/coord-rec bad/.test(app.coachRecChip('Brian Daboll')), 'a poor record wears the red one');
+  const nagy=app.coachRecChip('Matt Nagy');
+  chk(/coord-rec"/.test(nagy) && !/good|bad/.test(nagy), 'a middling record stays quiet — neutral chip, no color');
+  chk(app.coachRecChip('Rook Ie')==='', 'one season of record is noise — no chip until 2+');
+  chk(app.coachRecChip('Nobody Named')==='', 'no record, no chip');
+  chk(/z-score/.test(app.coachRecChip('Ben Johnson')), 'the method is explained on hover, not on screen');
+  const lbl=app.coordInlineLabel({name:'Ben Johnson', since:2024},'offensive');
+  chk(/coord-rec good/.test(lbl), 'the chip rides the OC inline label');
+  console.log('\n=== TEST 10: side-aware chips — DCs get DEFENSE records, never the offense ===');
+  app.setCoachRecords({'Vic Fangio':{dz:0.97,dn:11,side:'def'},'Lou Anarumo':{dz:-0.2,dn:6,side:'def'},'Ben Johnson':{z:1.52,n:4,side:'off'}});
+  chk(app.coachRecChip('Vic Fangio')==='', 'a defensive coach has NO offense chip — no more passenger credit');
+  chk(/coord-rec good/.test(app.coachDefRecChip('Vic Fangio')) && /\+1\.0 · 11yr/.test(app.coachDefRecChip('Vic Fangio')),
+      'his DEFENSE record chips green (points allowed, sign flipped)');
+  const dl=app.coordInlineLabel({name:'Vic Fangio', since:2025},'defensive');
+  chk(/coord-rec good/.test(dl), 'the DC inline label carries the defense chip');
+  const dl2=app.coordInlineLabel({name:'Lou Anarumo', since:2019},'defensive');
+  chk(/coord-rec"/.test(dl2) && !/good|bad/.test(dl2), 'a middling defense stays quiet too');
+  chk(app.coachDefRecChip('Ben Johnson')==='', 'an offense-sided coach has no defense chip');
+  app.setCoachRecords({});
 
   console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));
 })();

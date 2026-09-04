@@ -162,6 +162,31 @@ function toggleAddChanges(team){
 // Per-team advanced view: one card per Sharp table, each showing this team's value + rank.
 // Coordinator helpers -------------------------------------------------------
 function coordFor(team, side){ return COORDINATORS && COORDINATORS[team] && COORDINATORS[team][side]; }
+// Playcaller career record chip: mean team-offense z while running an offense (HC or OC of
+// record, 2010+), from the model research's validated staff history. ±0.35 is roughly the
+// league's top/bottom third — chips only color outside that band, so a middling record stays
+// quiet. One season of record is noise; require 2+.
+function coachRecFor(name){
+  const r = (typeof COACH_RECORDS!=='undefined') && COACH_RECORDS && COACH_RECORDS[name];
+  return (r && r.n>=2 && r.z!=null) ? r : null;
+}
+function coachDefRecFor(name){
+  const r = (typeof COACH_RECORDS!=='undefined') && COACH_RECORDS && COACH_RECORDS[name];
+  return (r && r.dn>=2 && r.dz!=null) ? r : null;
+}
+function _recChip(z, n, what){
+  const cls = z>=0.35 ? 'coord-rec good' : z<=-0.35 ? 'coord-rec bad' : 'coord-rec';
+  const sign = z>=0 ? '+' : '−';
+  return ` <span class="${cls}" title="Career ${what} vs league while running that side (z-score): ${z>=0?'+':''}${z.toFixed(2)} over ${n} season${n>1?'s':''} as coordinator or same-side head coach — side-aware credit: a defensive head coach never inherits his OC's offense">${sign}${Math.abs(z).toFixed(1)} · ${n}yr</span>`;
+}
+function coachRecChip(name){
+  const r=coachRecFor(name);
+  return r ? _recChip(r.z, r.n, 'offense') : '';
+}
+function coachDefRecChip(name){
+  const r=coachDefRecFor(name);
+  return r ? _recChip(r.dz, r.dn, 'defense (points allowed, sign flipped: + is stingy)') : '';
+}
 // A coordinator "carries over" another team's scheme when they're brand-new this season
 // AND came from another NFL team. Those get the Coordinators tab.
 function coordCarriesOver(c){ return !!(c && c.is_new && !c.internal && c.prev_code); }
@@ -220,11 +245,11 @@ function coordInlineLabel(a,b,c){
   if(!coord.name) return '';
   if(coordCarriesOver(coord)){
     return `<span ${attrs}>
-      ${sideWord==='offensive'?'OC':'DC'}: <b>${coord.name}</b> <span class="coord-new-tag" title="New for this season · from ${escAttr(teamDisplayName(coord.prev_code))} — tap the ! for details">NEW</span></span>`;
+      ${sideWord==='offensive'?'OC':'DC'}: <b>${coord.name}</b>${sideWord==='offensive'?coachRecChip(coord.name):coachDefRecChip(coord.name)} <span class="coord-new-tag" title="New for this season · from ${escAttr(teamDisplayName(coord.prev_code))} — tap the ! for details">NEW</span></span>`;
   }
   // carryover/internal: last season's stats apply directly
   const since = coord.since?` · since ${coord.since}`:'';
-  return `<span ${attrs}>${sideWord==='offensive'?'OC':'DC'}: <b>${coord.name}</b>${since}</span>`;
+  return `<span ${attrs}>${sideWord==='offensive'?'OC':'DC'}: <b>${coord.name}</b>${sideWord==='offensive'?coachRecChip(coord.name):coachDefRecChip(coord.name)}${since}</span>`;
 }
 
 // ── Advanced week-range control (team cards) ───────────────────────────────

@@ -2776,6 +2776,16 @@ def main():
     sos = build_sos("sos" in refresh, args.season)
     coordinators = build_coordinators(args.season, "coordinators" in refresh)
     hc_history = build_head_coach_history(args.season, "coordinators" in refresh, coordinators)
+    # Playcaller track records: career mean team-offense z (2010+) per HC/OC, from the model
+    # research pipeline's Wikipedia staff history — a static file regenerated at each retrain
+    # (projections/tc_model_research/coach_study.py emits seeds/coach_records.json).
+    coach_records = {}
+    try:
+        with open(os.path.join("seeds", "coach_records.json"), encoding="utf-8") as fh:
+            coach_records = json.load(fh)
+        print(f"  Playcaller track records: {len(coach_records)} coaches (static, retrain-refreshed)")
+    except FileNotFoundError:
+        print("  (no seeds/coach_records.json — coordinator record chips will be absent)")
     print("\n  New Additions (nflverse free agency / draft / trades)")
     additions = build_additions(args.season, "roster_moves" in refresh, contracts)
 
@@ -2972,6 +2982,7 @@ def main():
                     "history_seasons": nonempty_seasons, "ecr": ecr,
                     "contracts": contracts, "sharp": sharp, "sos": sos,
                     "team_names": CODE_TO_FULLNAME, "coordinators": coordinators,
+                    "coach_records": coach_records,
                     "hc_history": hc_history, "additions": additions,
                     "hc_playcallers": HC_PLAYCALLERS, "sharp_season": args.season-1,
                     "sumer": sumer, "sumer_seasons": sumer_seasons, "ktc": ktc,

@@ -1273,6 +1273,11 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .mcp-steps b{color:var(--text);}
 .mcp-steps i{font-style:normal;color:var(--muted2,var(--muted));opacity:.7;padding:0 1px;}
 .mcp-foot{font-size:10.5px;color:var(--muted);opacity:.8;margin-top:9px;}
+/* playcaller career-record chip beside the OC name */
+.coord-rec{font-size:9.5px;font-weight:800;letter-spacing:.02em;padding:1px 6px;border-radius:999px;
+  background:var(--surface2);color:var(--muted);border:1px solid var(--border);cursor:help;white-space:nowrap;}
+.coord-rec.good{color:#7ee2a8;background:rgba(63,185,120,.14);border-color:transparent;}
+.coord-rec.bad{color:#f0918b;background:rgba(229,83,75,.13);border-color:transparent;}
 /* 💬 Ask TripleCrown — the in-app chat */
 .tc-chat{max-width:560px;animation:pcardIn .18s ease;}
 .tc-chat-body{display:flex;flex-direction:column;}
