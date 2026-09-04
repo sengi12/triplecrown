@@ -21,6 +21,8 @@ STATS_URL_LEGACY = "https://github.com/nflverse/nflverse-data/releases/download/
 EP_URL = "https://github.com/ffverse/ffopportunity/releases/download/latest-data/ep_weekly_{season}.parquet"
 CONTRACTS_URL = "https://github.com/nflverse/nflverse-data/releases/download/contracts/historical_contracts.parquet"
 SCHED_URL = "https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv"
+NGS_PASS_URL = "https://github.com/nflverse/nflverse-data/releases/download/nextgen_stats/ngs_passing.csv.gz"
+PBP_URL = "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_{season}.parquet"
 NV_PLAYERS_URL = "https://github.com/nflverse/nflverse-data/releases/download/players/players.csv"
 
 # Sanity floor: if the pipeline scores fewer players than this, something upstream broke
@@ -301,9 +303,52 @@ def build_tc_projections(season, players_raw, refresh=False):
     except Exception:
         cur["sos_pos"] = np.nan
 
+    # v1.8 destination features, from the trait screen. Both fail-soft to NaN/median.
+    # dest_aggr: the destination's NGS aggressiveness z — tight-window throw rate, the
+    # screen's strongest decay marker (negative weight in the QB model).
+    try:
+        npath = _cached_download(NGS_PASS_URL, "ngs_passing.csv.gz", refresh)
+        ng = pd.read_csv(npath)
+        ng = ng[(ng.season == prior)]
+        if "week" in ng.columns and (ng.week == 0).any():
+            ng = ng[ng.week == 0]
+        ok = ng.dropna(subset=["aggressiveness"])
+        na = ok.groupby("team_abbr").apply(
+            lambda g: np.average(g.aggressiveness, weights=g.attempts) if g.attempts.sum() > 0 else np.nan,
+            include_groups=False).rename("aggr").reset_index()
+        na["aggr_z"] = (na.aggr - na.aggr.mean()) / na.aggr.std()
+        amap = dict(zip(na.team_abbr, na.aggr_z))
+        cur["dest_aggr"] = cur.team_next.map(amap)
+    except Exception:
+        cur["dest_aggr"] = np.nan
+    # dest_pred_pts: the destination's PREDICTED next-season points_z — the frozen team
+    # forecast (points + success rate + 3rd-down conversion; coefficients frozen with the
+    # recipe in the model JSON's _doc.team_forecast, mirrored here).
+    try:
+        TFC = {"ppg_z": 0.1875, "success_rt_z": 0.1988, "third_conv_z": 0.0641}
+        ppath = _cached_download(PBP_URL.format(season=prior), f"pbp_{prior}.parquet", refresh)
+        pb = pd.read_parquet(ppath, columns=["posteam", "season_type", "play_type", "down", "success"])
+        pb = pb[(pb.season_type == "REG") & pb.posteam.notna() & pb.play_type.isin(["pass", "run"])]
+        tf = pb.groupby("posteam").agg(success_rt=("success", "mean")).reset_index()
+        tf["third_conv"] = pb[pb.down == 3].groupby("posteam").success.mean().reindex(tf.posteam).values
+        spath = _cached_download(SCHED_URL, "games.csv", refresh)
+        gg = pd.read_csv(spath, usecols=["season", "game_type", "home_team", "away_team", "home_score", "away_score"])
+        gg = gg[(gg.game_type == "REG") & (gg.season == prior)]
+        pf = pd.concat([gg.rename(columns={"home_team": "t", "home_score": "pf"})[["t", "pf"]],
+                        gg.rename(columns={"away_team": "t", "away_score": "pf"})[["t", "pf"]]])
+        ppg = pf.groupby("t").pf.mean().rename("ppg").reset_index()
+        tf = tf.merge(ppg, left_on="posteam", right_on="t")
+        for c in ("ppg", "success_rt", "third_conv"):
+            tf[c + "_z"] = (tf[c] - tf[c].mean()) / tf[c].std()
+        tf["pred"] = sum(tf[k] * v for k, v in TFC.items())
+        pmapd = dict(zip(tf.posteam, tf.pred))
+        cur["dest_pred_pts"] = cur.team_next.map(pmapd)
+    except Exception:
+        cur["dest_pred_pts"] = np.nan
+
     out = {}
     feat_cols = ["fpg", "fpg_2yr", "tgt_sh", "wopr", "tgt_g", "car_g", "opps_g",
-                 "pa_g", "py_g", "xfpg", "fpoe_g", "td_oe", "exp_td_g", "sos_pos", "age",
+                 "pa_g", "py_g", "xfpg", "fpoe_g", "td_oe", "exp_td_g", "sos_pos", "dest_aggr", "dest_pred_pts", "age",
                  "team_changed", "dest_vacated", "g", "peak_fpg",
                  "env_plays", "env_pass", "env_pts",
                  "denv_plays", "denv_pass", "denv_pts",
