@@ -23,6 +23,8 @@ CONTRACTS_URL = "https://github.com/nflverse/nflverse-data/releases/download/con
 SCHED_URL = "https://github.com/nflverse/nflverse-data/releases/download/schedules/games.csv"
 NGS_PASS_URL = "https://github.com/nflverse/nflverse-data/releases/download/nextgen_stats/ngs_passing.csv.gz"
 PBP_URL = "https://github.com/nflverse/nflverse-data/releases/download/pbp/play_by_play_{season}.parquet"
+NGS_REC_URL = "https://github.com/nflverse/nflverse-data/releases/download/nextgen_stats/ngs_receiving.csv.gz"
+DRAFT_URL = "https://github.com/nflverse/nflverse-data/releases/download/draft_picks/draft_picks.csv"
 NV_PLAYERS_URL = "https://github.com/nflverse/nflverse-data/releases/download/players/players.csv"
 
 # Sanity floor: if the pipeline scores fewer players than this, something upstream broke
@@ -346,9 +348,29 @@ def build_tc_projections(season, players_raw, refresh=False):
     except Exception:
         cur["dest_pred_pts"] = np.nan
 
+    # v1.9 player traits (player-level LEAD screen). Fail-soft to NaN/median as usual.
+    # iay_share (WR): NGS share of team intended air yards. yac_oe (TE): NGS YAC above
+    # expectation. draft_round (TE): pedigree prior, undrafted = 8.
+    try:
+        rpath = _cached_download(NGS_REC_URL, "ngs_receiving.csv.gz", refresh)
+        nr = pd.read_csv(rpath)
+        nr = nr[(nr.season == prior) & (nr.week == 0)]
+        nmap = nr.set_index("player_gsis_id")[["percent_share_of_intended_air_yards", "avg_yac_above_expectation"]]
+        cur["iay_share"] = cur.player_id.map(nmap.percent_share_of_intended_air_yards)
+        cur["yac_oe"] = cur.player_id.map(nmap.avg_yac_above_expectation)
+    except Exception:
+        cur["iay_share"] = np.nan
+        cur["yac_oe"] = np.nan
+    try:
+        dpath = _cached_download(DRAFT_URL, "draft_picks.csv", refresh)
+        dk = pd.read_csv(dpath, usecols=["gsis_id", "round"]).dropna().drop_duplicates("gsis_id")
+        cur["draft_round"] = cur.player_id.map(dk.set_index("gsis_id")["round"]).fillna(8)
+    except Exception:
+        cur["draft_round"] = np.nan
+
     out = {}
     feat_cols = ["fpg", "fpg_2yr", "tgt_sh", "wopr", "tgt_g", "car_g", "opps_g",
-                 "pa_g", "py_g", "xfpg", "fpoe_g", "td_oe", "exp_td_g", "sos_pos", "dest_aggr", "dest_pred_pts", "age",
+                 "pa_g", "py_g", "xfpg", "fpoe_g", "td_oe", "exp_td_g", "sos_pos", "dest_aggr", "dest_pred_pts", "iay_share", "yac_oe", "draft_round", "age",
                  "team_changed", "dest_vacated", "g", "peak_fpg",
                  "env_plays", "env_pass", "env_pts",
                  "denv_plays", "denv_pass", "denv_pts",

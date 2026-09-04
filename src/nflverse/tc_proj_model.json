@@ -10,15 +10,15 @@
     "baseline_r2": 0.496
    },
    "WR": {
-    "r2": 0.6,
-    "mae": 2.63,
-    "spearman": 0.779,
+    "r2": 0.608,
+    "mae": 2.61,
+    "spearman": 0.78,
     "baseline_r2": 0.504
    },
    "TE": {
-    "r2": 0.592,
-    "mae": 1.95,
-    "spearman": 0.745,
+    "r2": 0.623,
+    "mae": 1.91,
+    "spearman": 0.754,
     "baseline_r2": 0.531
    },
    "QB": {
@@ -59,7 +59,10 @@
    "exp_td_g": "expected total TDs per game (ffopportunity) \u2014 QB volume/quality of chances",
    "sos_pos": "mean softness of the KNOWN next-season schedule vs my position: each opponent's prior-season PPR allowed/game to the position, z-scored within (season, position), averaged over the 17 opponents",
    "dest_aggr": "destination team's NGS aggressiveness (tight-window throw rate), z within season \u2014 a decay marker; negative weight",
-   "dest_pred_pts": "destination team's PREDICTED next-season points_z (frozen team forecast: points+success+3rd-down)"
+   "dest_pred_pts": "destination team's PREDICTED next-season points_z (frozen team forecast: points+success+3rd-down)",
+   "iay_share": "NGS share of team intended air yards \u2014 alpha-role depth beyond target share (WR)",
+   "yac_oe": "NGS YAC above expectation per reception \u2014 after-catch athleticism (TE)",
+   "draft_round": "draft round, undrafted=8 \u2014 pedigree prior (TE); early picks keep outperforming"
   },
   "scoring": "score = intercept + sum(coef_i * (impute(x_i, median_i) - mean_i)/sd_i); clamp to [0, 30]. Pure math over this file \u2014 no sklearn at runtime.",
   "tweak_workflow": "Edit coefs here -> python build_seed.py (the tcproj block rescoring is cheap and cached) -> python bake_seed.py to preview. Coefs are in STANDARDIZED units: +1.0 means +1 predicted FPG per one standard deviation of that feature.",
@@ -81,7 +84,8 @@
     "third_conv_z": 0.0641
    }
   },
-  "v1_8_note": "The trait screen (2026-09-05): every team-level playcalling/efficiency stat the app tracks, screened describe/persist/LEAD against next-season scoreboard points, 2011-2025. Findings: success rate is the master leading trait (predicts next-year points better than points do); red-zone TD rate is luck (persist .09, lead -.05); motion is the stickiest identity (persist .71) but does not lead; NGS aggressiveness is the strongest decay marker (lead -.12, negative 8 of 9 seasons). Adopted: QB dest_aggr (destination aggressiveness z, coef negative) and RB dest_pred_pts (destination PREDICTED next-season scoring via the frozen team forecast \u2014 predicted beats realized env at RB, which had no environment features). Rejected with cause: pressure_rt (backwards sign, confounded), pace/sec_play (per-year sign flips), rz/explosive/epa_rush (symptoms, no lead), shotgun/no-huddle/scramble/motion (identities, no lead). Watchlist: RPO rate and 4th-down aggression (single-window leads), pace."
+  "v1_8_note": "The trait screen (2026-09-05): every team-level playcalling/efficiency stat the app tracks, screened describe/persist/LEAD against next-season scoreboard points, 2011-2025. Findings: success rate is the master leading trait (predicts next-year points better than points do); red-zone TD rate is luck (persist .09, lead -.05); motion is the stickiest identity (persist .71) but does not lead; NGS aggressiveness is the strongest decay marker (lead -.12, negative 8 of 9 seasons). Adopted: QB dest_aggr (destination aggressiveness z, coef negative) and RB dest_pred_pts (destination PREDICTED next-season scoring via the frozen team forecast \u2014 predicted beats realized env at RB, which had no environment features). Rejected with cause: pressure_rt (backwards sign, confounded), pace/sec_play (per-year sign flips), rz/explosive/epa_rush (symptoms, no lead), shotgun/no-huddle/scramble/motion (identities, no lead). Watchlist: RPO rate and 4th-down aggression (single-window leads), pace.",
+  "v1_9_note": "The player-level LEAD screen (2026-09-05, player_traits_study.py): ~20 player traits vs the SHIPPED model's own residuals (OOF in train, era-split in test). Adopted: TE yac_oe (NGS YAC above expectation \u2014 the athletic-TE marker; residual lead +0.26, model R2 .592->.622, wins every test year) with draft_round (pedigree persists at TE), and WR iay_share (NGS intended air-yards share \u2014 alpha-role beyond target share; R2 .600->.608). Rejected with cause: QB draft_round (one good year), RB everything (post-2022-only leads: carry/snap/rz shares \u2014 watchlist), QB CPOE (fpoe_g already prices it), WR separation (identity, no lead), RYOE at RB (hurts). NGS traits cover 2016+; earlier rows impute to the median."
  },
  "QB": {
   "features": [
@@ -294,7 +298,8 @@
    "denv_pts",
    "env_plays_d",
    "env_pass_d",
-   "env_pts_d"
+   "env_pts_d",
+   "iay_share"
   ],
   "median": {
    "fpg": 8.3276,
@@ -318,7 +323,8 @@
    "denv_pts": 85.6641,
    "env_plays_d": 0.0,
    "env_pass_d": 0.0,
-   "env_pts_d": 0.0
+   "env_pts_d": 0.0,
+   "iay_share": 21.8867
   },
   "mean": {
    "fpg": 8.9392,
@@ -342,7 +348,8 @@
    "denv_pts": 85.9841,
    "env_plays_d": -0.0907,
    "env_pass_d": -0.0008,
-   "env_pts_d": -0.6548
+   "env_pts_d": -0.6548,
+   "iay_share": 22.3386
   },
   "sd": {
    "fpg": 5.0326,
@@ -366,31 +373,33 @@
    "denv_pts": 10.8543,
    "env_plays_d": 2.1831,
    "env_pass_d": 0.0336,
-   "env_pts_d": 7.4118
+   "env_pts_d": 7.4118,
+   "iay_share": 6.8897
   },
   "coef": {
-   "fpg": -2.0517,
-   "fpg_2yr": 2.5686,
-   "tgt_sh": 0.626,
-   "wopr": 0.3343,
-   "tgt_g": 0.4274,
-   "opps_g": -0.5026,
-   "xfpg": 2.0885,
-   "fpoe_g": 0.7293,
-   "td_oe": -0.2646,
-   "age": -0.7977,
-   "team_changed": -0.4133,
-   "dest_vacated": 0.2905,
-   "g": 0.3959,
-   "env_plays": -0.0671,
-   "env_pass": -0.0367,
-   "env_pts": 0.3207,
-   "denv_plays": 0.0139,
-   "denv_pass": 0.1,
-   "denv_pts": 0.0968,
-   "env_plays_d": 0.1098,
-   "env_pass_d": 0.1937,
-   "env_pts_d": -0.3207
+   "fpg": -2.1197,
+   "fpg_2yr": 2.5612,
+   "tgt_sh": 1.1581,
+   "wopr": -0.4848,
+   "tgt_g": 0.6688,
+   "opps_g": -0.5248,
+   "xfpg": 1.9736,
+   "fpoe_g": 0.7211,
+   "td_oe": -0.2306,
+   "age": -0.7928,
+   "team_changed": -0.3859,
+   "dest_vacated": 0.2997,
+   "g": 0.413,
+   "env_plays": -0.0568,
+   "env_pass": -0.0333,
+   "env_pts": 0.3171,
+   "denv_plays": 0.0229,
+   "denv_pass": 0.0883,
+   "denv_pts": 0.1033,
+   "env_plays_d": 0.1082,
+   "env_pass_d": 0.1723,
+   "env_pts_d": -0.306,
+   "iay_share": 0.499
   },
   "intercept": 8.639,
   "n_train": 1248
@@ -410,7 +419,9 @@
    "team_changed",
    "dest_vacated",
    "g",
-   "apy_cap_pct"
+   "apy_cap_pct",
+   "yac_oe",
+   "draft_round"
   ],
   "median": {
    "fpg": 5.2737,
@@ -426,7 +437,9 @@
    "team_changed": 0.0,
    "dest_vacated": 0.1822,
    "g": 12.0,
-   "apy_cap_pct": 0.011
+   "apy_cap_pct": 0.011,
+   "yac_oe": 0.4045,
+   "draft_round": 4.0
   },
   "mean": {
    "fpg": 6.1952,
@@ -442,7 +455,9 @@
    "team_changed": 0.2187,
    "dest_vacated": 0.2068,
    "g": 11.0146,
-   "apy_cap_pct": 0.0202
+   "apy_cap_pct": 0.0202,
+   "yac_oe": 0.4454,
+   "draft_round": 4.3557
   },
   "sd": {
    "fpg": 3.8075,
@@ -458,23 +473,27 @@
    "team_changed": 0.4133,
    "dest_vacated": 0.1419,
    "g": 4.5375,
-   "apy_cap_pct": 0.0201
+   "apy_cap_pct": 0.0201,
+   "yac_oe": 0.5287,
+   "draft_round": 2.3755
   },
   "coef": {
-   "fpg": -0.2177,
-   "fpg_2yr": 0.9983,
-   "tgt_sh": -0.5695,
-   "wopr": 1.3302,
-   "tgt_g": -0.6244,
-   "opps_g": 0.6,
-   "xfpg": 0.6609,
-   "fpoe_g": 0.5848,
-   "td_oe": -0.4358,
-   "age": -0.5308,
-   "team_changed": -0.1168,
-   "dest_vacated": -0.0214,
-   "g": 0.2046,
-   "apy_cap_pct": 0.6419
+   "fpg": -0.2196,
+   "fpg_2yr": 0.9774,
+   "tgt_sh": -0.7966,
+   "wopr": 1.3106,
+   "tgt_g": -0.471,
+   "opps_g": 0.5981,
+   "xfpg": 0.7083,
+   "fpoe_g": 0.4464,
+   "td_oe": -0.369,
+   "age": -0.4557,
+   "team_changed": -0.1297,
+   "dest_vacated": -0.0114,
+   "g": 0.1585,
+   "apy_cap_pct": 0.6279,
+   "yac_oe": 0.5118,
+   "draft_round": -0.1733
   },
   "intercept": 6.1177,
   "n_train": 686
