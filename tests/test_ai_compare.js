@@ -64,7 +64,8 @@ const app=new Function(code+`return { tcAiSettings, tcAiSaveSettings, tcAiUsage,
   tcChatGroundPlayers, tcChatAppContext, TC_CHAT_APP_MAP,
   tcChatLeagueContext, tcChatMyTeam,
   setLeague:(x)=>{leagueSnapshot=x;}, setDraftSeat:(slot,by)=>{mySlot=slot;draftPicksBySlot=by||{};},
-  tcChatGuard, _aiCmpMatches, _aiParseLookup };`)();
+  tcChatGuard, _aiCmpMatches, _aiParseLookup,
+  pickAll:()=>{_mcpPickFmt='all';renderMcpConnector();}, pickFmt:(f)=>{_mcpPickFmt=f;renderMcpConnector();} };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
 console.log('=== settings: free by default, bounded by design ===');
@@ -528,6 +529,10 @@ console.log('=== the connector: the URL for your format, no request to get it ==
   const body=document.getElementById('mcpBody').innerHTML;
   chk(body.includes('/superflex/mcp') && body.includes('mcp-fmt on'), 'the modal shows the URL for the current format, chip lit');
   chk(app.TC_MCP_FORMATS.every(f=>body.includes(`_mcpPickFmt='${f}'`)), 'every served format is a chip');
+  chk(body.includes("_mcpPickFmt='all'") && body.includes('All formats'), 'plus the one-connector-for-everything chip');
+  app.pickAll();
+  chk(document.getElementById('mcpBody').innerHTML.includes('workers.dev/mcp"'), 'All formats hands over the bare generic endpoint');
+  app.pickFmt('superflex');
   chk(fetchCalls.length===beforeFetch, 'handing over the URL costs no request');
   chk(app.TC_INFO_BOOK.mcp && /Add custom connector/.test(app.TC_INFO_BOOK.mcp.body), 'the how-to lives behind the info button');
   chk(app.tcMcpCallLabel('seed_get',{path:'nflverse/2025/routes/x'})==='seed_get nflverse/2025/routes/x', 'a lookup is labeled by tool and target');

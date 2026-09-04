@@ -327,17 +327,35 @@ async function handle(d, msg) {
         protocolVersion: PROTOCOL_VERSIONS.includes(want) ? want : PROTOCOL_VERSIONS[PROTOCOL_VERSIONS.length - 1],
         capabilities: { tools: { listChanged: false }, resources: {}, prompts: { listChanged: false } },
         serverInfo: { name: man.server.name, version: man.server.version },
-        instructions: man.instructions + " The whole seed is here too: seed_ls (no path) for the table of contents, seed_get for any table, player_data for every raw row on one player. Guided workflows ship as prompts (start_sit, draft_pick, trade_eval, waiver_scan, player_deep_dive) — prefer them when the user's ask matches one.",
+        instructions: man.instructions + " The whole seed is here too: seed_ls (no path) for the table of contents, seed_get for any table, player_data for every raw row on one player. Guided workflows ship as prompts (start_sit, draft_pick, trade_eval, waiver_scan, player_deep_dive, app_help) — prefer them when the user's ask matches one. Every scoring tool also takes an optional format (" + (man.formats || []).join("|") + "), so this one connector answers for any league — pass it when the user names a format different from this endpoint's default.",
       };
     } else if (method === "ping") {
       result = {};
     } else if (method === "tools/list") {
-      result = { tools: [...(await d.manifest()).tools, ...RAW_TOOLS] };
+      // Every scoring-dependent tool also takes an optional `format`, so ONE connector
+      // (the bare /mcp URL) can serve every format — the path segment is just the default.
+      // The raw-seed tools are format-independent and stay unadorned.
+      const man = await d.manifest();
+      const fmts = man.formats || [d.fmt];
+      const withFmt = (t) => ({ ...t, inputSchema: { ...t.inputSchema,
+        properties: { ...((t.inputSchema && t.inputSchema.properties) || {}),
+          format: { type: "string", enum: fmts,
+                    description: `scoring format for this call (default: ${d.fmt}, this endpoint's)` } } } });
+      result = { tools: [...man.tools.map(withFmt), ...RAW_TOOLS] };
     } else if (method === "tools/call") {
       const name = params.name, fn = Object.prototype.hasOwnProperty.call(TOOLS, name) ? TOOLS[name] : null;
       if (!fn) return rpcError(id, -32602, `unknown tool ${JSON.stringify(name)}`);
+      const args = params.arguments || {};
+      let dd = d;
+      if (args.format != null) {   // per-call format override, validated against the bake
+        const fmts = (await d.manifest()).formats || [];
+        const f = String(args.format);
+        if (!fmts.includes(f)) return rpcError(id, -32602, `unknown format ${JSON.stringify(f)}; one of ${fmts.join(", ")}`);
+        dd = Object.create(d);     // same shared cache, this call's fmt
+        dd.fmt = f;
+      }
       try {
-        result = { content: [{ type: "text", text: await fn(d, params.arguments || {}) }], isError: false };
+        result = { content: [{ type: "text", text: await fn(dd, args) }], isError: false };
       } catch (e) {
         result = { content: [{ type: "text", text: `${e.name}: ${e.message}` }], isError: true };
       }
@@ -348,9 +366,18 @@ async function handle(d, msg) {
       if (params.uri !== res.uri) return rpcError(id, -32002, `unknown resource ${JSON.stringify(params.uri)}`);
       result = { contents: [{ uri: res.uri, mimeType: "text/plain", text: (await d.meta()).state }] };
     } else if (method === "prompts/list") {
-      result = { prompts: promptList() };
+      const fmts = (await d.manifest()).formats || [d.fmt];
+      result = { prompts: promptList().map(p => ({ ...p, arguments: [...p.arguments,
+        { name: "format", description: `scoring format (${fmts.join("|")}; default ${d.fmt})`, required: false }] })) };
     } else if (method === "prompts/get") {
-      try { result = promptGet(params.name, params.arguments, d.fmt); }
+      const args = params.arguments || {};
+      let fmt = d.fmt;
+      if (args.format != null) {
+        const fmts = (await d.manifest()).formats || [];
+        if (!fmts.includes(String(args.format))) return rpcError(id, -32602, `unknown format ${JSON.stringify(String(args.format))}; one of ${fmts.join(", ")}`);
+        fmt = String(args.format);
+      }
+      try { result = promptGet(params.name, args, fmt); }
       catch (e) { return rpcError(id, e.rpc || -32603, e.message); }
     } else {
       return rpcError(id, -32601, `method not found: ${method}`);
@@ -370,6 +397,8 @@ function landing(base, fmt, formats) {
     "",
     "Tools: state, search_players, get_player, compare, rankings, team, schedule, sos — plus seed_ls / seed_get / player_data,",
     "which open the entire seed (every table, every season, every sidecar) one small read at a time.",
+    "Every scoring tool takes an optional format argument, so the bare /mcp URL serves every format from one connector;",
+    "the per-format paths just set the default.",
     "",
     "Claude Code:   claude mcp add --transport http triplecrown " + base + "/superflex/mcp",
     "claude.ai:     Settings → Connectors → Add custom connector → that URL",

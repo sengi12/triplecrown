@@ -83,6 +83,24 @@ globalThis.fetch = async (url) => {
   const batch = await post([{ jsonrpc: '2.0', id: 5, method: 'ping' }, { jsonrpc: '2.0', method: 'notifications/x' }, { jsonrpc: '2.0', id: 6, method: 'prompts/list' }]);
   chk(Array.isArray(batch.body) && batch.body.length === 2 && batch.body[1].result.prompts.length === 6, 'a batch answers each request, skips notifications');
 
+  console.log('=== one connector, every format: format is a per-call argument ===');
+  const tl2 = (await post({ jsonrpc: '2.0', id: 20, method: 'tools/list' })).body.result.tools;
+  const rk = tl2.find(t => t.name === 'rankings'), sg = tl2.find(t => t.name === 'seed_get');
+  chk(rk.inputSchema.properties.format && rk.inputSchema.properties.format.enum.length >= 4,
+      'scoring tools advertise the format argument with the real format list');
+  chk(!sg.inputSchema.properties.format, 'raw-seed tools stay format-free (they never depended on scoring)');
+  const viaArg = await post({ jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'rankings', arguments: { sort: 'dynasty', format: 'dynasty_superflex' } } });
+  const viaPath = await w.default.fetch(new Request('https://tc.test/dynasty_superflex/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 22, method: 'tools/call', params: { name: 'rankings', arguments: { sort: 'dynasty' } } }) }), env);
+  chk(viaArg.body.result.content[0].text === (await viaPath.json()).result.content[0].text,
+      'format-as-argument answers byte-identically to format-in-path');
+  const badf = await post({ jsonrpc: '2.0', id: 23, method: 'tools/call', params: { name: 'rankings', arguments: { format: 'bestball' } } });
+  chk(badf.body.error && badf.body.error.code === -32602 && /one of/.test(badf.body.error.message), 'a bad format names the real ones');
+  const pfd = await post({ jsonrpc: '2.0', id: 24, method: 'prompts/get', params: { name: 'trade_eval', arguments: { give: 'CMC', format: 'dynasty' } } });
+  chk(/dynasty value/.test(pfd.body.result.messages[0].content.text), 'prompts take the format argument too');
+  const pl2 = (await post({ jsonrpc: '2.0', id: 25, method: 'prompts/list' })).body.result.prompts;
+  chk(pl2.every(pp => pp.arguments.some(ar => ar.name === 'format' && !ar.required)), 'every prompt advertises the optional format');
+  chk(/optional format/.test((await post({ jsonrpc: '2.0', id: 26, method: 'initialize', params: { protocolVersion: '2025-03-26' } })).body.result.instructions), 'the instructions teach it');
+
   console.log('=== the guided experience: prompts any Claude chat can run ===');
   const pl = batch.body[1].result.prompts;
   chk(pl.map(p => p.name).join() === 'start_sit,draft_pick,trade_eval,waiver_scan,player_deep_dive,app_help', 'six workflows, in draft-season order');

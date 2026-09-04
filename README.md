@@ -343,6 +343,11 @@ Worker *code* changes (not data) need that command again — or set the repo sec
 (token template "Edit Cloudflare Workers") and `CLOUDFLARE_ACCOUNT_ID`, and `.github/workflows/deploy-worker.yml`
 redeploys on every push that touches `tools/mcp_worker/`.
 
+Every scoring tool (and prompt) also takes an optional `format` argument, so the bare
+`https://…workers.dev/mcp` URL is a **one-connector-for-every-format** endpoint — the per-format
+paths just set the default (handy on Claude's free plan, which allows one custom connector; the
+in-app modal has an "All formats" chip for it).
+
 Then, per client (pick the format in the path — or in the app, **☰ → Ask in Claude** shows the URL
 for your league's format with a copy button and the steps behind ⓘ; the ⚖ setup screen links there too):
 
