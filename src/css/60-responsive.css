@@ -29,7 +29,7 @@
   .team-item .team-rec{display:none;}
   .team-item.active{border-left-color:transparent;border-color:var(--accent);}
   .team-logo-sm{width:20px;height:20px;}
-  .content{padding:12px 12px 40px;height:auto;overflow-y:visible;overflow-x:hidden;}
+  .content{padding:12px 12px calc(40px + env(safe-area-inset-bottom, 0px));height:auto;overflow-y:visible;overflow-x:hidden;}
   .main{height:auto;}
   body,html{height:auto;overflow-y:auto;}
   .team-header{flex-wrap:wrap;gap:8px;}
@@ -88,7 +88,7 @@
 }
 @media (max-width: 420px){
   .stats-grid{grid-template-columns:1fr 1fr;}
-  .content{padding:9px 9px 40px;}
+  .content{padding:9px 9px calc(40px + env(safe-area-inset-bottom, 0px));}
   .card{padding:11px;}
   .share-name{max-width:90px;}
 }

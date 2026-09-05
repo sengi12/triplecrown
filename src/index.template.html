@@ -7,6 +7,10 @@
      already draws under the notch, so the insets must be real. -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>TripleCrown — Projection Builder</title>
+<!-- Warm the Sleeper connections at page load: linking a league is round-trip-bound on
+     mobile, and without these the first tap also pays DNS + TCP + TLS setup. -->
+<link rel="preconnect" href="https://api.sleeper.app" crossorigin>
+<link rel="preconnect" href="https://sleepercdn.com">
 <link rel="icon" type="image/png" href="images/app-icon.png">
 <link rel="apple-touch-icon" href="images/app-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
