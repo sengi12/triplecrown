@@ -158,6 +158,11 @@ function _rcThFromEvent(e){
   return t.closest('.rankings-table thead th[data-rc], .rankings-table thead th[data-rcg], .rankings-table thead th[data-rc-adv]');
 }
 
+// Every element that belongs to the editor's chrome. ADD NEW EDITOR UI HERE, or its
+// taps will dismiss the editor out from under themselves (see the pointerdown handler).
+function _rcIsEditorControl(t){
+  return !!(t && t.closest && (t.closest('#rcDoneChip') || t.closest('.rc-x') || t.closest('#rcHiddenTray')));
+}
 function _rcCancelLP(){
   if(_rcLP){ clearTimeout(_rcLP.timer); _rcLP=null; }
 }
@@ -224,10 +229,12 @@ function _rcInstall(){
   document.addEventListener('pointerdown',(e)=>{
     const th=_rcThFromEvent(e);
     if(!th){
-      // Tapping anywhere outside the header strip dismisses edit mode — but the ✕ badges and
-      // the Done chip ARE the editor's own controls: dismissing on their pointerdown removed
-      // them before their click could ever fire (the "✕ doesn't work" bug).
-      if(rankColEditActive && e.target && e.target.closest && !e.target.closest('#rcDoneChip') && !e.target.closest('.rc-x')) exitRankColEdit();
+      // Tapping outside the header strip dismisses edit mode — but the editor's OWN
+      // controls must be exempt, or their pointerdown removes them before their click
+      // can fire. This list has now claimed two victims (the "✕ doesn't work" bug,
+      // then the "+ tray doesn't work" bug the day the tray shipped) — hence a named,
+      // unit-tested predicate instead of an inline chain someone forgets to extend.
+      if(rankColEditActive && e.target && !_rcIsEditorControl(e.target)) exitRankColEdit();
       return;
     }
     if(rankColEditActive){
