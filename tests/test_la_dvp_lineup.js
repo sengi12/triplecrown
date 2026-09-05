@@ -9,7 +9,7 @@ global.Chart=function(){return{destroy(){}}};global.confirm=()=>true;global.btoa
 const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
-  TC_SEASON, laDvpTable, laDvpView, laDvpPoolView, laAdjWeekProj, laLineupView, laState,
+  TC_SEASON, NFL_LOGO, laDvpTable, laDvpView, laDvpPoolView, laAdjWeekProj, laLineupView, laState,
   laWeekPickupsHTML, laBestAvailView, pcardAppendFutureWeeks,
   setBPL:(f)=>{buildPlayerList=f;}, setProjMap:(f)=>{laProjMap=f;},
   setSeasonStarted:(f)=>{hasSeasonStarted=f;}, setIsRedraft:(f)=>{laIsRedraft=f;},
@@ -35,6 +35,11 @@ app.setInseason({v:1, season:2026, weeks:[1,2], asof:'x',
     BBB:{WR:{'1':wr(30,24,230,2),'2':wr(28,22,210,2)}, QB:{'1':new Array(COLS.length).fill(0)}, RB:{}, TE:{}},
     CCC:{WR:{'1':wr(30,24,230,2)}, QB:{}, RB:{}, TE:{}},   // one big week, then a shutout
   }}});
+
+console.log('=== team logos: baked-in, never a mobile fetch stampede ===');
+chk(String(app.NFL_LOGO('DET')).startsWith('data:image/webp'), 'a real team logo is a baked data URI — zero network');
+chk(String(app.NFL_LOGO('ZZZ')).startsWith('https://'), 'an unknown code still falls back to the CDN');
+chk(['ARI','BUF','KC','LA','WAS','JAX'].every(c=>String(app.NFL_LOGO(c)).length<9000), 'every baked logo stays tiny');
 
 console.log('=== DvP table ===');
 const t=app.laDvpTable();
