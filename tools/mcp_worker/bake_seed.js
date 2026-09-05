@@ -35,6 +35,7 @@ export const DOC = {
   sharp: "team metrics for sharp_season: offense, tendencies, pace, defensive, defensive_line, defensive_tendencies, coverage_schemes, coverage_by_position, offensive_line → teams/{TEAM} {values, ranks}",
   coordinators: "coordinators/{TEAM} → offense/defense {name, since, prev_role, prev_team_name, is_new}",
   hc_history: "head coach per team {name, since, prev_role, prev_team_name, is_new}",
+  coach_records: "playcaller career records {name → {z: offense z while calling plays, n: seasons, dz/dn: defense record, side}} — side-aware, 2002-2026 staff history",
   hc_playcallers: "teams whose head coach calls the offensive plays",
   sos: "strength of schedule per team {rank (1 = easiest), win_total (Vegas), opp_win_total, opp_games}",
   team_names: "team code → full name",
