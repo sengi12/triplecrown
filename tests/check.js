@@ -1525,7 +1525,7 @@ const RANK_COL_GROUPS = ['grp_rush','grp_rec','grp_pass'];
 // default was noise — VOR is the board's decision currency and stands alone; the other
 // three hide until revealed (long-press a header → "+" chips). hidden:null = these
 // defaults; an explicit array (any customization, or a pre-existing save) is exact.
-const RANK_COL_DEFAULT_HIDDEN = ['tc','tcr','fpts'];
+const RANK_COL_DEFAULT_HIDDEN = ['tc','tcr','fpts','adp'];
 let rankColPrefs = { order: null, hidden: null, advOrder: null };
 // Adv. Metrics columns are dynamic (per position/season), so their prefs key by LABEL:
 // hidden entries are 'adv:<label>', order lives in advOrder. Unknown labels (a different
@@ -16628,10 +16628,12 @@ function renderRankings(){
   // the TC model projects the UPCOMING season, so both drop entirely there (not just go blank).
   const projBoard = activeSeason==='proj';
   const availMeta = new Set(['ecr','ecr_tier','fpts','vor','pos','name','team']);
-  if(projBoard){ availMeta.add('tc'); availMeta.add('adp');
-    // TC★ only when someone is actually rated — a seedless board (live-Sleeper
-    // fallback, no TC model) would otherwise show a confusing blank column.
+  if(projBoard){ availMeta.add('adp');
+    // TC/TC★ only when someone actually carries model data — a seedless board (live-Sleeper
+    // fallback, no TC model) would otherwise offer columns that render entirely blank.
+    if(all.some(p=>p.tcPts!=null)) availMeta.add('tc');
     if(tcrMap.size) availMeta.add('tcr'); }
+  _rcLastAvail = availMeta;   // the reveal tray only offers chips this board can populate
   if(ownerActive) availMeta.add('own');
   if(isDynasty){ availMeta.add('age'); availMeta.add('apy'); availMeta.add('fa'); }
   const hiddenCols = (typeof rankColHidden==='function') ? rankColHidden() : new Set();
@@ -17499,7 +17501,7 @@ if(typeof TC_INFO_BOOK!=='undefined'){
       that beat the market out-of-sample (0–100, within position). <b>VOR</b> — the one
       shown by default, because it’s the draft decision itself:<br><br>`;
     const reveal=`<br><br>Only VOR shows by default — <b>long-press any column header</b> and
-      tap the <b>+ chips</b> to add TC, TC★ or FPTS (or hide anything else).`;
+      tap the <b>+ chips</b> to add TC, TC★, ADP or FPTS (or hide anything else).`;
     return four+_rankVorBody()+reveal;
   }};
   const _rankVorBody=()=>{
@@ -18613,9 +18615,14 @@ function rankColShow(key){
 const RC_LABELS = { ecr:'ECR', ecr_tier:'TIER', tc:'TC', tcr:'TC★', adp:'ADP', fpts:'FPTS',
   vor:'VOR', pos:'POS', name:'PLAYER', team:'TM', own:'OWNER', age:'AGE', apy:'APY', fa:'FA',
   grp_rush:'RUSH', grp_rec:'REC', grp_pass:'PASS' };
+var _rcLastAvail=null;   // written by renderRankings — what THIS board can actually show
 function _rcHiddenTray(){
   let tray=document.getElementById('rcHiddenTray');
-  const hid=[...rankColHidden()];
+  // Offer only chips the current board can populate: a seedless fallback board has no TC
+  // model, so "+ TC" would add an all-blank column and "+ TC★" nothing at all. Non-canonical
+  // keys (stat groups, adv:*) aren't availability-gated — pass them through.
+  const hid=[...rankColHidden()].filter(k=>
+    !_rcLastAvail || (typeof RANK_COL_CANON!=='undefined' && RANK_COL_CANON.indexOf(k)<0) || _rcLastAvail.has(k));
   if(!hid.length){ if(tray) tray.remove(); return; }
   if(!tray){
     tray=document.createElement('div');
@@ -19588,7 +19595,7 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
   // The prefetch already ran and came back empty — no seed is hosted here (or this is a bare
   // file:// open). Go straight to the live Sleeper pull instead of letting tryAutoLoadSeed
   // issue a second request for a file we already know isn't there.
-  if(_seedRawP && !_seedRaw){ refreshFromSleeper(true); return; }
+  if(_seedRawP && !_seedRaw){ refreshFromSleeper(true); _seedRetrySchedule(); return; }
   tryAutoLoadSeed(_seedRaw).then(loaded=>{
     const hasProj = SEED && Object.keys(SEED).some(t=>SEED[t] && (SEED[t].QB.length||SEED[t].RB.length||SEED[t].WR.length||SEED[t].TE.length));
     if(hasProj){
@@ -19605,9 +19612,43 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
       // The live nflverse sidecar feeds the player-card charts and the Advanced tab in-season.
       if(typeof hasSeasonStarted==='function' && hasSeasonStarted() && typeof ensureInseasonSidecar==='function') ensureInseasonSidecar().catch(()=>{});
     }
-    else refreshFromSleeper(true);   // ECR (if any) already adopted by tryAutoLoadSeed; restore happens there
+    else{ refreshFromSleeper(true);   // ECR (if any) already adopted by tryAutoLoadSeed; restore happens there
+      if(!loaded) _seedRetrySchedule(); }   // fetch failed outright → keep trying behind the live board
   });
 })();
+
+// One failed seed fetch on a cold phone radio used to strand the WHOLE session seedless —
+// blank TC, no TC★, no ECR — until a manual reload. The app still falls back to the live
+// Sleeper board instantly, but keeps retrying the seed quietly behind it; when it lands,
+// tryAutoLoadSeed adopts everything and the board upgrades in place. Gives up after three
+// tries, and never adopts over a board the user has started editing (adoption resets the
+// working set). Coming back online restarts the ladder.
+var _seedRetryN=0;
+function _seedRetrySchedule(){
+  // window.setTimeout on purpose: only a real browser runtime retries — the node test
+  // harnesses stub window as {}, and a live 5s timer there keeps the process alive.
+  if(typeof window==='undefined' || typeof window.setTimeout!=='function') return;
+  if(_seedRetryN>=3) return;
+  const wait=[5000,15000,45000][_seedRetryN++];
+  window.setTimeout(async()=>{
+    try{
+      if(typeof workingProj!=='undefined' && Object.keys(workingProj||{}).length) return;
+      const ok=await tryAutoLoadSeed();
+      if(ok){
+        renderSeasonTabs(); renderSidebar();
+        if(typeof currentPhase!=='undefined' && currentPhase==='Rankings' && typeof renderRankings==='function') renderRankings();
+        return;
+      }
+    }catch(e){}
+    _seedRetrySchedule();
+  }, wait);
+}
+if(typeof window!=='undefined' && window.addEventListener){
+  window.addEventListener('online', ()=>{
+    // Radio came back: if any retry ladder ever started, give the seed a fresh chance now.
+    if(_seedRetryN>0){ _seedRetryN=Math.min(_seedRetryN,2); _seedRetrySchedule(); }
+  });
+}
 
 // ── Resume / back-forward-cache recovery ─────────────────────────────────────
 // Mobile browsers freeze a backgrounded tab in the bfcache and later restore the frozen DOM

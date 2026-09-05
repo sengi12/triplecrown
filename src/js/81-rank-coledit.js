@@ -90,9 +90,14 @@ function rankColShow(key){
 const RC_LABELS = { ecr:'ECR', ecr_tier:'TIER', tc:'TC', tcr:'TC★', adp:'ADP', fpts:'FPTS',
   vor:'VOR', pos:'POS', name:'PLAYER', team:'TM', own:'OWNER', age:'AGE', apy:'APY', fa:'FA',
   grp_rush:'RUSH', grp_rec:'REC', grp_pass:'PASS' };
+var _rcLastAvail=null;   // written by renderRankings — what THIS board can actually show
 function _rcHiddenTray(){
   let tray=document.getElementById('rcHiddenTray');
-  const hid=[...rankColHidden()];
+  // Offer only chips the current board can populate: a seedless fallback board has no TC
+  // model, so "+ TC" would add an all-blank column and "+ TC★" nothing at all. Non-canonical
+  // keys (stat groups, adv:*) aren't availability-gated — pass them through.
+  const hid=[...rankColHidden()].filter(k=>
+    !_rcLastAvail || (typeof RANK_COL_CANON!=='undefined' && RANK_COL_CANON.indexOf(k)<0) || _rcLastAvail.has(k));
   if(!hid.length){ if(tray) tray.remove(); return; }
   if(!tray){
     tray=document.createElement('div');
