@@ -129,25 +129,25 @@ async function fetchUserLeagues(userId, season){
 // several, /drafts returns them most-recent-first. We take the most recent, then read the
 // draft object to learn its status so we can tell "linkable" (pre_draft/drafting) from
 // "already done" (complete).
+var _resolvedDraft=null;   // draft object cached by resolveLeagueDraft for loadDraftMeta to reuse
 async function resolveLeagueDraft(league){
   let draftId = league.draft_id || null;
-  // For leagues that might have multiple drafts (e.g. dynasty), prefer the freshest one.
-  try{
-    const drafts = await sleeperFetch(SLEEPER_LG_DRAFTS_URL(league.league_id));
-    if(Array.isArray(drafts) && drafts.length){
-      // Sorted most-recent first per Sleeper docs; prefer an open one if present.
-      const open = drafts.find(d=>d.status==='pre_draft'||d.status==='drafting');
-      draftId = (open||drafts[0]).draft_id || draftId;
-    }
-  }catch(e){ /* fall back to league.draft_id */ }
+  // Mobile linking is round-trip-bound, so the /drafts list and the likeliest draft object
+  // (the league's own draft_id) load in PARALLEL; only when the list picks a different
+  // draft — rare: a dynasty league with a fresh open draft — do we pay a second trip.
+  const listP  = sleeperFetch(SLEEPER_LG_DRAFTS_URL(league.league_id)).catch(()=>null);
+  const guessP = draftId ? sleeperFetch(SLEEPER_DRAFT_URL(draftId)).catch(()=>null) : Promise.resolve(null);
+  const [drafts, guess] = await Promise.all([listP, guessP]);
+  if(Array.isArray(drafts) && drafts.length){
+    // Sorted most-recent first per Sleeper docs; prefer an open one if present.
+    const open = drafts.find(d=>d.status==='pre_draft'||d.status==='drafting');
+    draftId = (open||drafts[0]).draft_id || draftId;
+  }
   if(!draftId) return { draftId:null, status:null, scoringType:null };
-  let status=null, scoringType=null;
-  try{
-    const d=await sleeperFetch(SLEEPER_DRAFT_URL(draftId));
-    status=d&&d.status;
-    scoringType = d&&d.metadata&&d.metadata.scoring_type || null;
-  }catch(e){}
-  return { draftId, status, scoringType };
+  let d = (guess && guess.draft_id===draftId) ? guess : null;
+  if(!d){ try{ d = await sleeperFetch(SLEEPER_DRAFT_URL(draftId)); }catch(e){} }
+  _resolvedDraft = d;   // loadDraftMeta picks this up — saves re-fetching the same object
+  return { draftId, status: (d&&d.status)||null, scoringType: (d&&d.metadata&&d.metadata.scoring_type)||null };
 }
 
 // UI entry point — open the username prompt / league list.
@@ -159,25 +159,33 @@ function closeLeaguePicker(){
   leaguePickerState.open=false;
   renderRankings();
 }
+// Loading/error flips during linking only change the picker panel — patch it in place
+// instead of re-rendering the whole rankings board (the board rebuild is what made the
+// link flow feel slow on phones). Falls back to a full render when the panel isn't up.
+function _lpRender(){
+  const el=(typeof document!=='undefined' && document.querySelector) ? document.querySelector('.lp-panel') : null;
+  if(el && leaguePickerState.open) el.outerHTML=renderLeaguePicker();
+  else renderRankings();
+}
 async function submitLeagueUsername(){
   const inp=document.getElementById('lpUsername');
   const username=inp?inp.value.trim():'';
   if(!username){ toast('Enter your Sleeper username','err'); return; }
-  leaguePickerState.loading=true; leaguePickerState.error=null; renderRankings();
+  leaguePickerState.loading=true; leaguePickerState.error=null; _lpRender();
   try{
-    const user=await resolveSleeperUser(username);
-    const season=await fetchCurrentSeason();
+    // user and season probes are independent — overlap them (mobile RTTs are the cost here)
+    const [user, season]=await Promise.all([resolveSleeperUser(username), fetchCurrentSeason()]);
     const { leagues, usedSeason }=await fetchUserLeagues(user.user_id, season);
     leaguePickerState.user=user;
     leaguePickerState.season=usedSeason;
     leaguePickerState.leagues=leagues;
     leaguePickerState.loading=false;
     if(!leagues.length) leaguePickerState.error='No NFL leagues found for this account.';
-    renderRankings();
+    _lpRender();
   }catch(e){
     leaguePickerState.loading=false;
     leaguePickerState.error = /No such/.test(e.message)? 'Username not found on Sleeper.' : `Couldn't reach Sleeper (${e.message}).`;
-    renderRankings();
+    _lpRender();
   }
 }
 // User clicked a league in the list → resolve its draft and either follow it or explain
@@ -192,18 +200,18 @@ async function pickLeague(idx){
 async function linkSnapshotLeagueDraft(){
   const snap=(typeof leagueSnapshot!=='undefined')?leagueSnapshot:null;
   if(!snap || snap.provider==='espn' || !snap.leagueId){ toast('No synced Sleeper league to link','err'); return; }
-  leaguePickerState.loading=true; renderRankings();
+  leaguePickerState.loading=true; _lpRender();
   try{
     const lg=await sleeperFetch(LA_LEAGUE_URL(snap.leagueId));
-    if(!lg || !lg.league_id){ leaguePickerState.loading=false; toast('Could not load the synced league','err'); renderRankings(); return; }
+    if(!lg || !lg.league_id){ leaguePickerState.loading=false; toast('Could not load the synced league','err'); _lpRender(); return; }
     return linkLeagueObject(lg);
-  }catch(e){ leaguePickerState.loading=false; toast('Could not load the synced league','err'); renderRankings(); }
+  }catch(e){ leaguePickerState.loading=false; toast('Could not load the synced league','err'); _lpRender(); }
 }
 async function linkLeagueObject(lg){
-  leaguePickerState.loading=true; renderRankings();
+  leaguePickerState.loading=true; _lpRender();
   const { draftId:did, status, scoringType }=await resolveLeagueDraft(lg);
   leaguePickerState.loading=false;
-  if(!did){ toast(`No draft found for "${lg.name}"`,'err'); renderRankings(); return; }
+  if(!did){ toast(`No draft found for "${lg.name}"`,'err'); _lpRender(); return; }
 
   // Adopt the league's SHAPE (roster slots + size) up front, before any early return.
   // This is what VOR baselines read, and it must survive the "draft already complete" path —
@@ -373,7 +381,9 @@ function lineupFromSlotCounts(s){
 async function loadDraftMeta(applyScoring){
   if(!draftId) return;
   try{
-    const d=await sleeperFetch(SLEEPER_DRAFT_URL(draftId));
+    // resolveLeagueDraft just fetched this exact object on the link path — reuse it.
+    const d=(_resolvedDraft && _resolvedDraft.draft_id===draftId) ? _resolvedDraft : await sleeperFetch(SLEEPER_DRAFT_URL(draftId));
+    _resolvedDraft=null;
     if(!d || !d.draft_id){ toast('That draft ID returned nothing — double-check it','err'); return; }
     draftMeta=d;
     let gotLineup=false;
@@ -387,22 +397,18 @@ async function loadDraftMeta(applyScoring){
       const built=lineupFromSlotCounts(d.settings);
       if(built){ draftLineup=built.lineup; draftBenchCount=built.bench; gotLineup=true; }
     }
-    // 3) League-linked draft with no inline roster → pull the league's roster_positions.
-    if(!gotLineup && d.league_id){
-      try{
-        const lg=await sleeperFetch(`https://api.sleeper.app/v1/league/${d.league_id}`);
-        if(lg && Array.isArray(lg.roster_positions)){
-          const { lineup, bench }=lineupFromRosterPositions(lg.roster_positions);
-          draftLineup=lineup; draftBenchCount=bench; gotLineup=true;
-        }
-      }catch(e){}
-    }
-    // Usernames: pull league users when the draft is tied to a league (for the switcher).
+    // 3) League-linked draft with no inline roster → pull the league's roster_positions,
+    //    and the league users (for the switcher) — independent fetches, so in parallel.
     if(d.league_id){
-      try{
-        const users=await sleeperFetch(SLEEPER_LG_USERS_URL(d.league_id));
-        if(Array.isArray(users)) users.forEach(u=>{ if(u.user_id) draftUsers[u.user_id]=u.display_name||u.username||('User '+u.user_id); });
-      }catch(e){}
+      const [lg, users]=await Promise.all([
+        gotLineup ? Promise.resolve(null) : sleeperFetch(`https://api.sleeper.app/v1/league/${d.league_id}`).catch(()=>null),
+        sleeperFetch(SLEEPER_LG_USERS_URL(d.league_id)).catch(()=>null),
+      ]);
+      if(!gotLineup && lg && Array.isArray(lg.roster_positions)){
+        const { lineup, bench }=lineupFromRosterPositions(lg.roster_positions);
+        draftLineup=lineup; draftBenchCount=bench; gotLineup=true;
+      }
+      if(Array.isArray(users)) users.forEach(u=>{ if(u.user_id) draftUsers[u.user_id]=u.display_name||u.username||('User '+u.user_id); });
     }
     // If we still couldn't get a real roster shape, fall back to the generic default.
     if(!gotLineup){ draftLineup=DEFAULT_LINEUP.slice(); draftBenchCount=DEFAULT_BENCH; }
@@ -513,6 +519,8 @@ async function startDraftFollow(applyScoring){
     try{ await loadSeason('proj'); }catch(e){}
   }
   _lastPickCount = -1;   // force the first poll to render
+  // First picks fetch overlaps the meta fetches — the board marks drafted players sooner.
+  const _picksP = sleeperFetch(SLEEPER_PICKS_URL(draftId)).catch(()=>null);
   await loadDraftMeta(applyScoring);   // draft_order, lineup, usernames, my-slot detection, (opt) scoring
   // Another start superseded us, or Stop was clicked while we awaited — do not resurrect.
   if(gen!==_draftFollowGen || !draftId) return;
@@ -522,7 +530,7 @@ async function startDraftFollow(applyScoring){
   roomHistory=null;
   if(draftMeta && draftMeta.league_id) loadRoomHistory(draftMeta.league_id);
   rosterBarVisible=true;
-  await pollDraft();
+  await pollDraft(_picksP);
   if(gen!==_draftFollowGen || !draftId) return;
   _draftDone=false; _pollFails=0;
   draftTimer=setInterval(pollDraft, 2500); // poll every 2.5s for lower latency on the board
@@ -559,11 +567,12 @@ if(typeof document!=='undefined' && document.addEventListener){
     }
   });
 }
-async function pollDraft(){
+async function pollDraft(prefetchedPicks){
   if(!draftId || _pollInFlight) return;
   _pollInFlight=true;
   try{
-    const picks=await sleeperFetch(SLEEPER_PICKS_URL(draftId));
+    let picks = prefetchedPicks ? await prefetchedPicks : null;   // startDraftFollow's overlapped fetch
+    if(!picks) picks=await sleeperFetch(SLEEPER_PICKS_URL(draftId));
     _pollFails=0;
     const next={};
     (picks||[]).forEach(p=>{ if(p.player_id) next[String(p.player_id)]=true; });

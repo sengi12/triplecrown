@@ -64,7 +64,17 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .team-picker-dot,.team-picker-count,.team-picker-toggle-right{display:none;}
 /* 100vh on iOS includes the space behind the URL bar; dvh tracks the VISIBLE viewport, so
    the bottom of the sidebar/content shell stays reachable without scrolling the bar away. */
-.main{display:flex;height:calc(100vh - 50px);height:calc(100dvh - 50px);}
+.main{display:flex;}
+/* Desktop app shell: the WINDOW must never scroll — sidebar and .content scroll internally.
+   The old height:calc(100dvh - 50px) hardcoded a 50px header and ignored the season bar
+   entirely, so the shell overflowed the viewport and the sidebar's last teams sat below the
+   fold (scrolling the sidebar couldn't reach them without also scrolling the window). Flex
+   sizes .main to exactly the leftover height, whatever the header/season bar measure. */
+@media (min-width: 761px){
+  body{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden;}
+  .header,.season-bar{flex-shrink:0;}
+  .main{flex:1;min-height:0;}
+}
 .sidebar{width:200px;min-width:200px;background:var(--surface);
   border-right:1px solid var(--border);overflow-y:auto;padding:8px 0;flex-shrink:0;}
 .team-picker-toggle{display:none;}
