@@ -844,8 +844,11 @@ function renderRankings(){
         ${metaOrder.map(k=>({
           ecr: ()=>th('ecr','ECR','','c-ecr',false,'ecr'),
           ecr_tier: ()=>th('ecr_tier','TIER','','c-tier',false,'ecr_tier'),
-          tc: ()=>th('tc','TC','','c-tc',false,'tc'),
-          tcr: ()=>th('tcr','TC★','','c-tcr',false,'tcr'),
+          // The house columns wear the house crest: the crown IS "TripleCrown's number".
+          // alt text keeps the header readable anywhere the image can't load (offline
+          // bakes ship without images/), and screen readers still hear TC / TC★.
+          tc: ()=>th('tc','<img src="images/app-icon.png" class="th-logo" alt="TC">','','c-tc',false,'tc'),
+          tcr: ()=>th('tcr','<span class="th-crownstar"><img src="images/app-icon.png" class="th-logo" alt="TC">★</span>','','c-tcr',false,'tcr'),
           adp: ()=>th('adp','ADP','','c-adp',false,'adp'),
           fpts: ()=>th('fpts','FPTS','','',false,'fpts')+(paceActive?th('pacePct','Δ','PROJ','c-pace-delta'):''),
           vor: ()=>{const a=rankSortKey==='vor';
