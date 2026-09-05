@@ -67,7 +67,7 @@ app.setPrefs({order:null, hidden:['adp']}); app.invalidate(); app.renderRankings
 hd=head();
 chk(!hd.includes('>ADP'), 'hidden ADP header gone');
 chk(!app.getContent().includes('c-adp'), 'hidden ADP cells gone');
-chk(hd.includes('>TC'), 'TC unaffected by hiding ADP');
+chk(hd.includes('data-rc="tc"'), 'TC (the crown header) unaffected by hiding ADP');
 chk(app.rankColPrefsCustomized(), 'hiding marks the table customized');
 
 console.log('=== hide a stat group ===');
