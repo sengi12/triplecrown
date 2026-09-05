@@ -169,7 +169,7 @@ chk('draft: null input → null (unavailable)', app.normalizeEspnDraft(null)===n
 const dl=app.espnDraftHero(nd);
 chk('draftLine: shows year/round/pick', /2026/.test(dl) && /5/.test(dl) && /161/.test(dl));
 chk('draftLine: DRAFT label', /pcard-draft-lbl/.test(dl) && /DRAFT/.test(dl));
-chk('draftLine: KC logo + code', /clubs\/logos\/KC/.test(dl) && /KC/.test(dl));
+chk('draftLine: KC logo + code', (/clubs\/logos\/KC/.test(dl) || /data:image\/webp/.test(dl)) && /KC/.test(dl));  // logos are baked data URIs now; CDN stays the fallback
 chk('draftLine: undrafted → shows "Undrafted"', /Undrafted/.test(app.espnDraftHero({undrafted:true})));
 chk('draftLine: empty when null', app.espnDraftHero(null)==='');
 
@@ -238,7 +238,7 @@ app.resolveEspnAthleteId('1','Rook One').then(id=>{
   console.log('\n=== TEST 9: pcardSeasonTeamTag (NFL cards, with logos) ===');
   const t1=app.pcardSeasonTeamTag([{team:'CLE'},{team:'CLE'}]);
   chk('single team tag', /CLE/.test(t1));
-  chk('team tag has NFL logo', /pcard-season-logo/.test(t1) && /clubs\/logos\/CLE/.test(t1));
+  chk('team tag has NFL logo', /pcard-season-logo/.test(t1) && (/clubs\/logos\/CLE/.test(t1) || /data:image\/webp/.test(t1)));
   chk('traded → both teams', (()=>{const t=app.pcardSeasonTeamTag([{team:'CLE'},{team:'CIN'}]);return /CLE/.test(t)&&/CIN/.test(t);})());
   chk('no team → empty', app.pcardSeasonTeamTag([{bye:true}])==='');
 
