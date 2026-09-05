@@ -1,3 +1,12 @@
+let _tcrCache=null, _tcrSig='';
+function _tcrMap(){
+  const list=(typeof buildPlayerList==='function')?buildPlayerList():[];
+  const sig=`${list.length}~${typeof rankFormat!=='undefined'?rankFormat:''}~${list.length?String(list[0].player_id||''):''}`;
+  if(_tcrCache && _tcrSig===sig) return _tcrCache;
+  _tcrCache=(typeof tcRatingsFor==='function')?tcRatingsFor(list):new Map();
+  _tcrSig=sig;
+  return _tcrCache;
+}
 // The rendered-HTML LRU is bounded by TOTAL SIZE, not entry count. Counting entries looks
 // safe until you notice how big one entry is: a full-width board measured ~1.4M chars, and V8
 // stores these two-byte, so eight of them was ~23MB on a phone / ~60MB on desktop — duplicating
@@ -390,6 +399,15 @@ function renderRankings(){
       if(bv==null) return -1;
       return (bv-av)*(rankSortDir<0?1:-1);   // default high→low
     }
+    // TC Rating: unrated players (no ADP or no TC number) sink.
+    if(rankSortKey==='tcr'){
+      const m=_tcrMap();
+      const av=m.get(String(a.player_id||a.name)), bv=m.get(String(b.player_id||b.name));
+      if(av==null && bv==null) return b.fpts-a.fpts;
+      if(av==null) return 1;
+      if(bv==null) return -1;
+      return (bv-av)*(rankSortDir<0?1:-1);
+    }
     // SumerSports advanced columns (key "sumer:<label>"): players missing that stat sink.
     // sumerValue() is not cheap — it allocates a table object under a refinement, normalises
     // the player name with three regexes, and linear-scans the column list — so calling it
@@ -417,6 +435,7 @@ function renderRankings(){
   const tierC=['','var(--accent)','var(--info)','var(--warn)','var(--danger)','var(--muted)','#8b7cff','#6ad1c4'];
   const tierColor=t=>t?tierC[Math.min(t,7)]:'var(--border)';
   // Two-line header helper. `grp` adds a left border to mark a stat group's start.
+  // TC Rating map, memoized per board signature (rebuilds on format/board change).
   const th=(k,l1,l2,cls,grp,rc)=>{const a=rankSortKey===k;
     // data-rc / data-rcg mark customizable columns for the long-press editor (81-rank-coledit.js):
     // rc = a meta column's pref key; stat-group columns carry their group derived from class.
@@ -517,11 +536,11 @@ function renderRankings(){
   // the TC model projects the UPCOMING season, so both drop entirely there (not just go blank).
   const projBoard = activeSeason==='proj';
   const availMeta = new Set(['ecr','ecr_tier','fpts','vor','pos','name','team']);
-  if(projBoard){ availMeta.add('tc'); availMeta.add('adp'); }
+  if(projBoard){ availMeta.add('tc'); availMeta.add('adp'); availMeta.add('tcr'); }
   if(ownerActive) availMeta.add('own');
   if(isDynasty){ availMeta.add('age'); availMeta.add('apy'); availMeta.add('fa'); }
   const hiddenCols = (typeof rankColHidden==='function') ? rankColHidden() : new Set();
-  const metaOrder = ((typeof rankColOrder==='function') ? rankColOrder() : ['ecr','ecr_tier','tc','adp','fpts','vor','pos','name','team','own','age','apy','fa'])
+  const metaOrder = ((typeof rankColOrder==='function') ? rankColOrder() : ['ecr','ecr_tier','tc','tcr','adp','fpts','vor','pos','name','team','own','age','apy','fa'])
     .filter(k=>availMeta.has(k) && !hiddenCols.has(k));
   // Stat groups hide as whole units (ATT/YDS/… of a group live or die together); the adv view
   // is its own opt-in column set and ignores group prefs.
@@ -648,6 +667,9 @@ function renderRankings(){
       ecr: `<td class="c-ecr">${ecrTxt!=='—'?rankValueHtml(ecrTxt, p, 'Expert Consensus Rank', 'ecr', 'rankings'):ecrTxt}</td>`,
       ecr_tier: `<td class="c-tier">${tier!=null?rankValueHtml(`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`, p, 'Tier', 'ecr_tier', 'rankings'):''}</td>`,
       tc: `<td class="c-tc"${p.tcPts!=null?` title="TC model · projected season fantasy points (your scoring)"`:''}>${p.tcPts!=null?rankValueHtml(`<span class="num">${p.tcPts.toFixed(1)}</span>`, p, 'TC Model Projection', 'tcPts', 'rankings'):''}</td>`,
+      tcr: (()=>{ const v=_tcrMap().get(String(p.player_id||p.name));
+        const cls=v==null?'':v>=75?' tcr-hi':v<=25?' tcr-lo':'';
+        return `<td class="c-tcr${cls}"${v!=null?` title="TripleCrown Rating ${v} · market ADP blended with the TC model at the validated per-position weight (QB 12% · RB 0% · WR 50% · TE 25% model) — percentile within position"`:''}>${v!=null?`<span class="num">${v}</span>`:''}</td>`;})(),
       adp: `<td class="c-adp"${adpTxt!=='—'?` title="Market ADP (${rankFormat.replace(/_/g,' ')} board)"`:''}>${adpTxt!=='—'?`<span class="num">${adpTxt}</span>`:''}</td>`,
       fpts: fptsCells,
       vor: `<td class="c-vor">${rankValueHtml(`<span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${vorTxt}</span>`, p, 'Value Over Replacement', 'vor', 'rankings')}</td>`,
@@ -815,6 +837,7 @@ function renderRankings(){
           ecr: ()=>th('ecr','ECR','','c-ecr',false,'ecr'),
           ecr_tier: ()=>th('ecr_tier','TIER','','c-tier',false,'ecr_tier'),
           tc: ()=>th('tc','TC','','c-tc',false,'tc'),
+          tcr: ()=>th('tcr','TC★','','c-tcr',false,'tcr'),
           adp: ()=>th('adp','ADP','','c-adp',false,'adp'),
           fpts: ()=>th('fpts','FPTS','','',false,'fpts')+(paceActive?th('pacePct','Δ','PROJ','c-pace-delta'):''),
           vor: ()=>{const a=rankSortKey==='vor';

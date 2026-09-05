@@ -192,3 +192,8 @@ tr.rank-starred:hover{background:rgba(210,153,34,.12);}
 .rankings-table.grouped tr.rank-starred td.c-player{background:#232422;}
 .rankings-table.grouped tr.rank-starred:hover td.c-ecr,
 .rankings-table.grouped tr.rank-starred:hover td.c-player{background:#2d2a22;}
+
+/* TripleCrown Rating column */
+.c-tcr .num{font-weight:800;}
+.c-tcr.tcr-hi .num{color:#00d4aa;}
+.c-tcr.tcr-lo .num{color:#ff6b6b;}

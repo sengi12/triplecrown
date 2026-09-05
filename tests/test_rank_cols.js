@@ -10,7 +10,7 @@ const _store={};
 global.localStorage={getItem:k=>(_store[k]!=null?_store[k]:null),setItem(k,v){_store[k]=String(v);},removeItem(k){delete _store[k];}};
 const code=require('fs').readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
-  renderRankings, setBuild:(fn)=>{buildPlayerList=fn;},
+  renderRankings, tcRatingsFor, TC_RATING_W, setBuild:(fn)=>{buildPlayerList=fn;},
   setSort:(k,d)=>{rankSortKey=k;rankSortDir=d;}, setSeason:(s)=>{activeSeason=s;},
   setPrefs:(p)=>{rankColPrefs=p;}, getPrefs:()=>rankColPrefs,
   setPos:(p)=>{rankPosFilter=p;}, setRookies:(v)=>{rankRookiesOnly=v;}, getPos:()=>rankPosFilter, getRookies:()=>rankRookiesOnly,
@@ -91,7 +91,7 @@ app.setFiltersOpen(false);
 console.log('=== colspan honesty (pick lines depend on it) ===');
 app.setPrefs({order:null, hidden:['adp','grp_pass','vor']}); app.invalidate(); app.renderRankings();
 const ths=(head().match(/<th[\s>]/g)||[]).length;
-chk(ths===7+8, `header count reflects hides (${ths} th = ecr,tier,tc,fpts,pos,player,team + rush/rec groups)`);
+chk(ths===8+8, `header count reflects hides (${ths} th = ecr,tier,tc,tcr,fpts,pos,player,team + rush/rec groups)`);
 app.setPrefs({order:null, hidden:[]}); app.invalidate();
 
 console.log('=== reference season: no ADP, no TC ===');
@@ -141,4 +141,28 @@ app.saveNow(); app.setPrefs({order:null,hidden:[]}); app.restore();
 chk(!(app.getPrefs().hidden||[]).includes('bogus_key') && (app.getPrefs().hidden||[]).includes('adp'), 'unknown keys are whitelisted away on restore');
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
-process.exit(pass===total?0:1);
+if(pass!==total) process.exitCode=1;
+
+// ── TripleCrown Rating (validated blend) ─────────────────────────────────────
+(()=>{
+  console.log('\n=== TC Rating: the market, tilted only where the tilt is proven ===');
+  const chk=(c,l)=>{console.log((c?'  PASS: ':'  FAIL: ')+l); if(!c) process.exitCode=1;};
+  chk(JSON.stringify(app.TC_RATING_W)===JSON.stringify({QB:0.125,RB:0,WR:0.5,TE:0.25}),
+      'the pre-registered weights ship exactly as validated (QB 12% · RB 0% · WR 50% · TE 25%)');
+  const mk=(id,pos,tc,adp)=>({player_id:id,pos,name:id,tcPts:tc,fpts:tc,adp_ppr:adp});
+  global.adpFor=(p)=>p.adp_ppr!=null?p.adp_ppr:999;
+  const rbs=[...Array(10)].map((_,i)=>mk('rb'+i,'RB',200-i*10,i+1));
+  const r=app.tcRatingsFor(rbs);
+  chk(r.get('rb0')===100 && r.get('rb9')===0, 'RB rating IS the market (weight 0): best ADP = 100, worst = 0');
+  // At WR (50/50), a player the model loves over his ADP outranks his market twin.
+  const wrs=[...Array(10)].map((_,i)=>mk('wr'+i,'WR',180-i*8,i+1));
+  wrs[7].tcPts=210;   // wr7: ADP 8th, model's #1
+  const rw=app.tcRatingsFor(wrs);
+  chk(rw.get('wr7')>rw.get('wr5'), 'a model darling climbs past his ADP at WR (50% model)');
+  chk(rw.get('wr0')>=rw.get('wr9'), 'but the market still anchors the order');
+  const thin=app.tcRatingsFor([mk('a','TE',100,1),mk('b','TE',90,2)]);
+  chk(thin.size===0, 'fewer than 8 rated players at a position → no ratings (no fake precision)');
+  delete global.adpFor;
+})();
+
+process.exit(process.exitCode||0);

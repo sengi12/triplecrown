@@ -273,7 +273,7 @@ function toggleRankFilters(){
 // the current mode), hidden = removed keys (meta keys, or grp_rush/grp_rec/grp_pass for the
 // three stat groups). ECR and PLAYER are the table's sticky spine and can never move or hide;
 // OWNER follows its synced-league toggle and stays put.
-const RANK_COL_CANON = ['ecr','ecr_tier','tc','adp','fpts','vor','pos','name','team','own','age','apy','fa'];
+const RANK_COL_CANON = ['ecr','ecr_tier','tc','tcr','adp','fpts','vor','pos','name','team','own','age','apy','fa'];
 const RANK_COL_LOCKED = {ecr:1, name:1, own:1};
 const RANK_COL_GROUPS = ['grp_rush','grp_rec','grp_pass'];
 let rankColPrefs = { order: null, hidden: [], advOrder: null };

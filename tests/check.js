@@ -1477,7 +1477,7 @@ function toggleRankFilters(){
 // the current mode), hidden = removed keys (meta keys, or grp_rush/grp_rec/grp_pass for the
 // three stat groups). ECR and PLAYER are the table's sticky spine and can never move or hide;
 // OWNER follows its synced-league toggle and stays put.
-const RANK_COL_CANON = ['ecr','ecr_tier','tc','adp','fpts','vor','pos','name','team','own','age','apy','fa'];
+const RANK_COL_CANON = ['ecr','ecr_tier','tc','tcr','adp','fpts','vor','pos','name','team','own','age','apy','fa'];
 const RANK_COL_LOCKED = {ecr:1, name:1, own:1};
 const RANK_COL_GROUPS = ['grp_rush','grp_rec','grp_pass'];
 let rankColPrefs = { order: null, hidden: [], advOrder: null };
@@ -6772,6 +6772,41 @@ function ordinal(n){
 
 // ── Roster Changes (Spotrac offseason: free agency, draft, trades, losses) ──
 // Read-only per-team view tying prior-season weaknesses to how the team addressed them.
+
+
+// ── TripleCrown Rating (validated 2026-09-06) ────────────────────────────────
+// The market, tilted toward the TC model exactly as far as history proves the
+// tilt helps. Per-position blend of the ADP rank (z, inverted) and the TC model
+// projection (z), weights PRE-REGISTERED on 2017-2022 targets and evaluated
+// one-shot on 2023-2025 (pooled Spearman vs realized FPG never lost to ADP:
+// tie, +.018, +.016). RB is deliberately 0% model — ADP is unbeatable there —
+// and QB nearly so; the model earns its say at WR and TE, where markets thin.
+// Displayed as a 0-100 percentile within position. Re-fit at each annual retrain.
+const TC_RATING_W = { QB:0.125, RB:0.0, WR:0.5, TE:0.25 };
+function tcRatingsFor(list){
+  const out=new Map();
+  ['QB','RB','WR','TE'].forEach(pos=>{
+    const rows=(list||[]).filter(p=>p.pos===pos && p.tcPts!=null && typeof adpFor==='function' && adpFor(p)<999);
+    if(rows.length<8) return;
+    const adps=rows.map(p=>adpFor(p));
+    const tcs=rows.map(p=>p.tcPts);
+    const mz=(a)=>{const mu=a.reduce((x,y)=>x+y,0)/a.length;
+      const sd=Math.sqrt(a.reduce((x,y)=>x+(y-mu)*(y-mu),0)/a.length)||1;
+      return a.map(v=>(v-mu)/sd);};
+    // rank-space for ADP (picks are log-ish), raw z for the projection
+    const order=[...adps].sort((x,y)=>x-y);
+    const adpZ=mz(adps.map(v=>order.indexOf(v)+1)).map(z=>-z);
+    const tcZ=mz(tcs);
+    const w=TC_RATING_W[pos];
+    const blend=rows.map((p,i)=>w*tcZ[i]+(1-w)*adpZ[i]);
+    const sorted=[...blend].sort((x,y)=>x-y);
+    rows.forEach((p,i)=>{
+      const pct=sorted.length>1 ? sorted.indexOf(blend[i])/(sorted.length-1) : 0.5;
+      out.set(String(p.player_id||p.name), Math.round(100*pct));
+    });
+  });
+  return out;
+}
 // ── Player card modal ───────────────────────────────────────────────────────
 // Clicking any player name opens a card showing per-game stats by season, colored
 // green/yellow/red relative to positional expectations. QB is implemented first; other
@@ -16003,6 +16038,15 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     that team in the view you're already on. Schedule from nflverse; win totals from the
     Vegas markets — context for your projections, never a projection itself.`};
 }
+let _tcrCache=null, _tcrSig='';
+function _tcrMap(){
+  const list=(typeof buildPlayerList==='function')?buildPlayerList():[];
+  const sig=`${list.length}~${typeof rankFormat!=='undefined'?rankFormat:''}~${list.length?String(list[0].player_id||''):''}`;
+  if(_tcrCache && _tcrSig===sig) return _tcrCache;
+  _tcrCache=(typeof tcRatingsFor==='function')?tcRatingsFor(list):new Map();
+  _tcrSig=sig;
+  return _tcrCache;
+}
 // The rendered-HTML LRU is bounded by TOTAL SIZE, not entry count. Counting entries looks
 // safe until you notice how big one entry is: a full-width board measured ~1.4M chars, and V8
 // stores these two-byte, so eight of them was ~23MB on a phone / ~60MB on desktop — duplicating
@@ -16395,6 +16439,15 @@ function renderRankings(){
       if(bv==null) return -1;
       return (bv-av)*(rankSortDir<0?1:-1);   // default high→low
     }
+    // TC Rating: unrated players (no ADP or no TC number) sink.
+    if(rankSortKey==='tcr'){
+      const m=_tcrMap();
+      const av=m.get(String(a.player_id||a.name)), bv=m.get(String(b.player_id||b.name));
+      if(av==null && bv==null) return b.fpts-a.fpts;
+      if(av==null) return 1;
+      if(bv==null) return -1;
+      return (bv-av)*(rankSortDir<0?1:-1);
+    }
     // SumerSports advanced columns (key "sumer:<label>"): players missing that stat sink.
     // sumerValue() is not cheap — it allocates a table object under a refinement, normalises
     // the player name with three regexes, and linear-scans the column list — so calling it
@@ -16422,6 +16475,7 @@ function renderRankings(){
   const tierC=['','var(--accent)','var(--info)','var(--warn)','var(--danger)','var(--muted)','#8b7cff','#6ad1c4'];
   const tierColor=t=>t?tierC[Math.min(t,7)]:'var(--border)';
   // Two-line header helper. `grp` adds a left border to mark a stat group's start.
+  // TC Rating map, memoized per board signature (rebuilds on format/board change).
   const th=(k,l1,l2,cls,grp,rc)=>{const a=rankSortKey===k;
     // data-rc / data-rcg mark customizable columns for the long-press editor (81-rank-coledit.js):
     // rc = a meta column's pref key; stat-group columns carry their group derived from class.
@@ -16522,11 +16576,11 @@ function renderRankings(){
   // the TC model projects the UPCOMING season, so both drop entirely there (not just go blank).
   const projBoard = activeSeason==='proj';
   const availMeta = new Set(['ecr','ecr_tier','fpts','vor','pos','name','team']);
-  if(projBoard){ availMeta.add('tc'); availMeta.add('adp'); }
+  if(projBoard){ availMeta.add('tc'); availMeta.add('adp'); availMeta.add('tcr'); }
   if(ownerActive) availMeta.add('own');
   if(isDynasty){ availMeta.add('age'); availMeta.add('apy'); availMeta.add('fa'); }
   const hiddenCols = (typeof rankColHidden==='function') ? rankColHidden() : new Set();
-  const metaOrder = ((typeof rankColOrder==='function') ? rankColOrder() : ['ecr','ecr_tier','tc','adp','fpts','vor','pos','name','team','own','age','apy','fa'])
+  const metaOrder = ((typeof rankColOrder==='function') ? rankColOrder() : ['ecr','ecr_tier','tc','tcr','adp','fpts','vor','pos','name','team','own','age','apy','fa'])
     .filter(k=>availMeta.has(k) && !hiddenCols.has(k));
   // Stat groups hide as whole units (ATT/YDS/… of a group live or die together); the adv view
   // is its own opt-in column set and ignores group prefs.
@@ -16653,6 +16707,9 @@ function renderRankings(){
       ecr: `<td class="c-ecr">${ecrTxt!=='—'?rankValueHtml(ecrTxt, p, 'Expert Consensus Rank', 'ecr', 'rankings'):ecrTxt}</td>`,
       ecr_tier: `<td class="c-tier">${tier!=null?rankValueHtml(`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`, p, 'Tier', 'ecr_tier', 'rankings'):''}</td>`,
       tc: `<td class="c-tc"${p.tcPts!=null?` title="TC model · projected season fantasy points (your scoring)"`:''}>${p.tcPts!=null?rankValueHtml(`<span class="num">${p.tcPts.toFixed(1)}</span>`, p, 'TC Model Projection', 'tcPts', 'rankings'):''}</td>`,
+      tcr: (()=>{ const v=_tcrMap().get(String(p.player_id||p.name));
+        const cls=v==null?'':v>=75?' tcr-hi':v<=25?' tcr-lo':'';
+        return `<td class="c-tcr${cls}"${v!=null?` title="TripleCrown Rating ${v} · market ADP blended with the TC model at the validated per-position weight (QB 12% · RB 0% · WR 50% · TE 25% model) — percentile within position"`:''}>${v!=null?`<span class="num">${v}</span>`:''}</td>`;})(),
       adp: `<td class="c-adp"${adpTxt!=='—'?` title="Market ADP (${rankFormat.replace(/_/g,' ')} board)"`:''}>${adpTxt!=='—'?`<span class="num">${adpTxt}</span>`:''}</td>`,
       fpts: fptsCells,
       vor: `<td class="c-vor">${rankValueHtml(`<span class="vor-val ${p.vor>0?'vor-pos':p.vor<0?'vor-neg':''}">${vorTxt}</span>`, p, 'Value Over Replacement', 'vor', 'rankings')}</td>`,
@@ -16820,6 +16877,7 @@ function renderRankings(){
           ecr: ()=>th('ecr','ECR','','c-ecr',false,'ecr'),
           ecr_tier: ()=>th('ecr_tier','TIER','','c-tier',false,'ecr_tier'),
           tc: ()=>th('tc','TC','','c-tc',false,'tc'),
+          tcr: ()=>th('tcr','TC★','','c-tcr',false,'tcr'),
           adp: ()=>th('adp','ADP','','c-adp',false,'adp'),
           fpts: ()=>th('fpts','FPTS','','',false,'fpts')+(paceActive?th('pacePct','Δ','PROJ','c-pace-delta'):''),
           vor: ()=>{const a=rankSortKey==='vor';

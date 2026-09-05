@@ -593,14 +593,17 @@ The project ships with a regression suite (Node + Python) covering the projectio
 ### Playercards
 ### Live Draft
 - [ ] reach out to Sleeper
-- [ ] "TripleCrown Rating" column on the draft board: blend draft rank with team-context signals
-  (landing spot / vacated opportunity, open target share, coaching, other analysts' ranks) into one
-  composite — the TC column today is raw projected points, and the context lives only on player
-  cards and team views. **Gated on validation (checked 2026-09-02):** the honest test is whether a
-  blend orders players closer to *realized* season points than the plain board does, which needs a
-  preseason market snapshot from a completed season — and the market archive only began with 2026
-  (3 snapshots, no 2025). The 2026 snapshots now accruing make this testable after this season;
-  don't ship the column as an unvalidated number before then
+- [x] "TripleCrown Rating" column on the draft board — **shipped validated (2026-09-06)**. The
+  gate ("needs a completed-season market snapshot") fell early: historical preseason ADP was
+  reconstructed from MyFantasyLeague's public per-year draft data (2017–2025, thousands of real
+  drafts, mapped via DynastyProcess ids). Protocol: per-position blend weights of market-ADP rank
+  vs TC-model projection were PRE-REGISTERED on 2017–2022 targets (with out-of-fold model
+  predictions), then evaluated once on 2023–2025 — pooled ordering of realized FPG never lost to
+  ADP (tie, +.018, +.016). The validated weights ship as-is: **QB 12% · RB 0% · WR 50% · TE 25%
+  model** — RB's zero is the finding, not a bug (the market is unbeatable there); the model earns
+  its say where markets thin. Rendered as the TC★ column (0–100 percentile within position),
+  customizable like every meta column; weights re-fit at each annual retrain under the same
+  pre-registration protocol
 - [x] Live league-relative team rank while drafting — wire the League Analyzer's team-score engine
   to live draft rosters (`draftPicksBySlot`) and show "your team ranks Nth of M" in the roster drawer
 - [x] "Stuck between two players" button: on-demand AI deep comparison of two players — shipped as

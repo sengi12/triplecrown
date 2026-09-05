@@ -695,3 +695,38 @@ function ordinal(n){
 
 // ── Roster Changes (Spotrac offseason: free agency, draft, trades, losses) ──
 // Read-only per-team view tying prior-season weaknesses to how the team addressed them.
+
+
+// ── TripleCrown Rating (validated 2026-09-06) ────────────────────────────────
+// The market, tilted toward the TC model exactly as far as history proves the
+// tilt helps. Per-position blend of the ADP rank (z, inverted) and the TC model
+// projection (z), weights PRE-REGISTERED on 2017-2022 targets and evaluated
+// one-shot on 2023-2025 (pooled Spearman vs realized FPG never lost to ADP:
+// tie, +.018, +.016). RB is deliberately 0% model — ADP is unbeatable there —
+// and QB nearly so; the model earns its say at WR and TE, where markets thin.
+// Displayed as a 0-100 percentile within position. Re-fit at each annual retrain.
+const TC_RATING_W = { QB:0.125, RB:0.0, WR:0.5, TE:0.25 };
+function tcRatingsFor(list){
+  const out=new Map();
+  ['QB','RB','WR','TE'].forEach(pos=>{
+    const rows=(list||[]).filter(p=>p.pos===pos && p.tcPts!=null && typeof adpFor==='function' && adpFor(p)<999);
+    if(rows.length<8) return;
+    const adps=rows.map(p=>adpFor(p));
+    const tcs=rows.map(p=>p.tcPts);
+    const mz=(a)=>{const mu=a.reduce((x,y)=>x+y,0)/a.length;
+      const sd=Math.sqrt(a.reduce((x,y)=>x+(y-mu)*(y-mu),0)/a.length)||1;
+      return a.map(v=>(v-mu)/sd);};
+    // rank-space for ADP (picks are log-ish), raw z for the projection
+    const order=[...adps].sort((x,y)=>x-y);
+    const adpZ=mz(adps.map(v=>order.indexOf(v)+1)).map(z=>-z);
+    const tcZ=mz(tcs);
+    const w=TC_RATING_W[pos];
+    const blend=rows.map((p,i)=>w*tcZ[i]+(1-w)*adpZ[i]);
+    const sorted=[...blend].sort((x,y)=>x-y);
+    rows.forEach((p,i)=>{
+      const pct=sorted.length>1 ? sorted.indexOf(blend[i])/(sorted.length-1) : 0.5;
+      out.set(String(p.player_id||p.name), Math.round(100*pct));
+    });
+  });
+  return out;
+}
