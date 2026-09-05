@@ -45,8 +45,10 @@ chk(!app.rankColPrefsCustomized(), 'the default-hidden trio does NOT count as cu
 app.setPrefs({order:null, hidden:[]}); app.invalidate(); app.renderRankings();
 hd=head();
 chk(app.rankColPrefsCustomized(), 'revealing everything IS a customization (Reset returns to VOR-only)');
-chk(hd.indexOf('>TC')>hd.indexOf('>TIER') && hd.indexOf('>TC')<hd.indexOf('>ADP'), 'TC header sits between TIER and ADP');
-chk(hd.indexOf('>ADP')<hd.indexOf('>FPTS'), 'ADP still precedes FPTS');
+chk(hd.indexOf('data-rc="tc"')>hd.indexOf('>TIER') && hd.indexOf('data-rc="tc"')<hd.indexOf('data-rc="adp"'), 'TC header sits between TIER and ADP');
+chk(hd.indexOf('data-rc="adp"')<hd.indexOf('data-rc="fpts"'), 'ADP still precedes FPTS');
+chk(/th-logo[^>]*alt="TC"/.test(hd), 'the TC header wears the crown, with alt text for imageless bakes');
+chk(/th-crownstar/.test(hd) && hd.indexOf('th-crownstar')>0, 'TC★ is the crown plus the star');
 chk(app.getContent().includes('c-tc'), 'TC cells render');
 chk((app.getContent().match(/TC model · projected season fantasy points/g)||[]).length>=1, 'TC cells carry the explanatory title');
 chk(app.getContent().includes('>331.5<'), 'TC renders as a season total (19.5 FPG × 17), not per-game');
@@ -65,7 +67,7 @@ app.setPrefs({order:null, hidden:['adp']}); app.invalidate(); app.renderRankings
 hd=head();
 chk(!hd.includes('>ADP'), 'hidden ADP header gone');
 chk(!app.getContent().includes('c-adp'), 'hidden ADP cells gone');
-chk(hd.includes('>TC'), 'TC unaffected by hiding ADP');
+chk(hd.includes('data-rc="tc"'), 'TC (the crown header) unaffected by hiding ADP');
 chk(app.rankColPrefsCustomized(), 'hiding marks the table customized');
 
 console.log('=== hide a stat group ===');
