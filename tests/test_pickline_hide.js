@@ -7,7 +7,7 @@ const app=new Function(code+`return {
   renderRankings, setBuild:(fn)=>{buildPlayerList=fn;}, setFollowing:(id)=>{draftId=id;}, setMySlot:(s)=>{mySlot=s;},
   setMeta:(m)=>{draftMeta=m;}, setPicks:(p)=>{draftPicksBySlot=p;}, setDrafted:(d)=>{draftedIds=d;}, setHide:(v)=>{hideDrafted=v;},
   setSort:(k,d)=>{rankSortKey=k;rankSortDir=d;}, setFormat:(f)=>{rankFormat=f;},
-  setBannerOpen:(v)=>{draftBannerOpen=v;},
+  setBannerOpen:(v)=>{draftBannerOpen=v;}, setPrefs:(x)=>{rankColPrefs=x;},
   getContent:()=>document.getElementById('content').innerHTML };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const players=[]; for(let i=1;i<=40;i++)players.push({name:'P'+i,player_id:''+i,pos:'RB',team:'X',fpts:400-i,ecr:i,ecr_tier:1,rushing_attempts:1,rushing_yards:1,ypc:4,rushing_tds:1,receiving_targets:1,receptions:1,receiving_yards:1,receiving_tds:1,passing_attempts:0,passing_yards:0,passing_tds:0,interceptions_thrown:0});
@@ -41,6 +41,7 @@ chk(cs[0]===11 && cs[1]===11,'corner picks 12+13 render adjacent lines');
 // ── ADP column: sits right after TIER, sortable, missing market data sinks ──
 players.forEach((p,i)=>{ if(i<5) p.adp_ppr=50-i*10; });   // P1..P5 carry ADP 50/40/30/20/10
 app.setMySlot(4); app.setHide(false);
+app.setPrefs({order:null, hidden:['tc','tcr','fpts']});   // ADP hides by default now — reveal it alone for this block
 app.setSort('adp',-1); app.renderRankings();
 let h4=app.getContent();
 const headEnd=h4.indexOf('</thead>');

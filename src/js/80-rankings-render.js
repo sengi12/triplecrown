@@ -541,10 +541,12 @@ function renderRankings(){
   // the TC model projects the UPCOMING season, so both drop entirely there (not just go blank).
   const projBoard = activeSeason==='proj';
   const availMeta = new Set(['ecr','ecr_tier','fpts','vor','pos','name','team']);
-  if(projBoard){ availMeta.add('tc'); availMeta.add('adp');
-    // TC★ only when someone is actually rated — a seedless board (live-Sleeper
-    // fallback, no TC model) would otherwise show a confusing blank column.
+  if(projBoard){ availMeta.add('adp');
+    // TC/TC★ only when someone actually carries model data — a seedless board (live-Sleeper
+    // fallback, no TC model) would otherwise offer columns that render entirely blank.
+    if(all.some(p=>p.tcPts!=null)) availMeta.add('tc');
     if(tcrMap.size) availMeta.add('tcr'); }
+  _rcLastAvail = availMeta;   // the reveal tray only offers chips this board can populate
   if(ownerActive) availMeta.add('own');
   if(isDynasty){ availMeta.add('age'); availMeta.add('apy'); availMeta.add('fa'); }
   const hiddenCols = (typeof rankColHidden==='function') ? rankColHidden() : new Set();
@@ -1412,7 +1414,7 @@ if(typeof TC_INFO_BOOK!=='undefined'){
       that beat the market out-of-sample (0–100, within position). <b>VOR</b> — the one
       shown by default, because it’s the draft decision itself:<br><br>`;
     const reveal=`<br><br>Only VOR shows by default — <b>long-press any column header</b> and
-      tap the <b>+ chips</b> to add TC, TC★ or FPTS (or hide anything else).`;
+      tap the <b>+ chips</b> to add TC, TC★, ADP or FPTS (or hide anything else).`;
     return four+_rankVorBody()+reveal;
   }};
   const _rankVorBody=()=>{

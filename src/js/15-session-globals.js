@@ -280,7 +280,7 @@ const RANK_COL_GROUPS = ['grp_rush','grp_rec','grp_pass'];
 // default was noise — VOR is the board's decision currency and stands alone; the other
 // three hide until revealed (long-press a header → "+" chips). hidden:null = these
 // defaults; an explicit array (any customization, or a pre-existing save) is exact.
-const RANK_COL_DEFAULT_HIDDEN = ['tc','tcr','fpts'];
+const RANK_COL_DEFAULT_HIDDEN = ['tc','tcr','fpts','adp'];
 let rankColPrefs = { order: null, hidden: null, advOrder: null };
 // Adv. Metrics columns are dynamic (per position/season), so their prefs key by LABEL:
 // hidden entries are 'adv:<label>', order lives in advOrder. Unknown labels (a different

@@ -796,7 +796,7 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
   // The prefetch already ran and came back empty — no seed is hosted here (or this is a bare
   // file:// open). Go straight to the live Sleeper pull instead of letting tryAutoLoadSeed
   // issue a second request for a file we already know isn't there.
-  if(_seedRawP && !_seedRaw){ refreshFromSleeper(true); return; }
+  if(_seedRawP && !_seedRaw){ refreshFromSleeper(true); _seedRetrySchedule(); return; }
   tryAutoLoadSeed(_seedRaw).then(loaded=>{
     const hasProj = SEED && Object.keys(SEED).some(t=>SEED[t] && (SEED[t].QB.length||SEED[t].RB.length||SEED[t].WR.length||SEED[t].TE.length));
     if(hasProj){
@@ -813,9 +813,43 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
       // The live nflverse sidecar feeds the player-card charts and the Advanced tab in-season.
       if(typeof hasSeasonStarted==='function' && hasSeasonStarted() && typeof ensureInseasonSidecar==='function') ensureInseasonSidecar().catch(()=>{});
     }
-    else refreshFromSleeper(true);   // ECR (if any) already adopted by tryAutoLoadSeed; restore happens there
+    else{ refreshFromSleeper(true);   // ECR (if any) already adopted by tryAutoLoadSeed; restore happens there
+      if(!loaded) _seedRetrySchedule(); }   // fetch failed outright → keep trying behind the live board
   });
 })();
+
+// One failed seed fetch on a cold phone radio used to strand the WHOLE session seedless —
+// blank TC, no TC★, no ECR — until a manual reload. The app still falls back to the live
+// Sleeper board instantly, but keeps retrying the seed quietly behind it; when it lands,
+// tryAutoLoadSeed adopts everything and the board upgrades in place. Gives up after three
+// tries, and never adopts over a board the user has started editing (adoption resets the
+// working set). Coming back online restarts the ladder.
+var _seedRetryN=0;
+function _seedRetrySchedule(){
+  // window.setTimeout on purpose: only a real browser runtime retries — the node test
+  // harnesses stub window as {}, and a live 5s timer there keeps the process alive.
+  if(typeof window==='undefined' || typeof window.setTimeout!=='function') return;
+  if(_seedRetryN>=3) return;
+  const wait=[5000,15000,45000][_seedRetryN++];
+  window.setTimeout(async()=>{
+    try{
+      if(typeof workingProj!=='undefined' && Object.keys(workingProj||{}).length) return;
+      const ok=await tryAutoLoadSeed();
+      if(ok){
+        renderSeasonTabs(); renderSidebar();
+        if(typeof currentPhase!=='undefined' && currentPhase==='Rankings' && typeof renderRankings==='function') renderRankings();
+        return;
+      }
+    }catch(e){}
+    _seedRetrySchedule();
+  }, wait);
+}
+if(typeof window!=='undefined' && window.addEventListener){
+  window.addEventListener('online', ()=>{
+    // Radio came back: if any retry ladder ever started, give the seed a fresh chance now.
+    if(_seedRetryN>0){ _seedRetryN=Math.min(_seedRetryN,2); _seedRetrySchedule(); }
+  });
+}
 
 // ── Resume / back-forward-cache recovery ─────────────────────────────────────
 // Mobile browsers freeze a backgrounded tab in the bfcache and later restore the frozen DOM

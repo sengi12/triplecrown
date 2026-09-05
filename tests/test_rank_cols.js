@@ -19,7 +19,7 @@ const app=new Function(code+`return {
   setFiltersOpen:(v)=>{rankFiltersOpen=v;},
   saveNow:()=>{_saveSessionNow();}, restore:()=>restoreSession(),
   invalidate:()=>{invalidateRankingsRenderCache();},
-  rankColShow, rankColHide, TC_INFO_BOOK, _rcIsEditorControl,
+  rankColShow, rankColHide, TC_INFO_BOOK, _rcIsEditorControl, getAvail:()=>_rcLastAvail,
   getContent:()=>document.getElementById('content').innerHTML };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -34,14 +34,14 @@ const colspanOk=()=>{const h=app.getContent();
   const ths=(head().match(/<th[\s>]/g)||[]).length;
   return {ths, h};};
 
-console.log('=== default layout: VOR stands alone; TC/TC★/FPTS wait behind the + tray ===');
+console.log('=== default layout: VOR stands alone; TC/TC★/FPTS/ADP wait behind the + tray ===');
 app.setSort('ecr',-1); app.renderRankings();
 let hd=head();
-chk(!hd.includes('data-rc="tc"') && !hd.includes('data-rc="tcr"') && !hd.includes('data-rc="fpts"'),
-    'TC, TC★ and FPTS are hidden by default — four ways to say "how good" was noise');
-chk(hd.includes('data-rc="vor"') && hd.includes('data-rc="adp"'),
-    'VOR (the decision number) and ADP (the market) remain');
-chk(!app.rankColPrefsCustomized(), 'the default-hidden trio does NOT count as customized');
+chk(!hd.includes('data-rc="tc"') && !hd.includes('data-rc="tcr"') && !hd.includes('data-rc="fpts"') && !hd.includes('data-rc="adp"'),
+    'TC, TC★, FPTS and ADP are hidden by default — five ways to rank the same guy was noise');
+chk(hd.includes('data-rc="vor"'),
+    'VOR (the decision number) stands alone');
+chk(!app.rankColPrefsCustomized(), 'the default-hidden quartet does NOT count as customized');
 app.setPrefs({order:null, hidden:[]}); app.invalidate(); app.renderRankings();
 hd=head();
 chk(app.rankColPrefsCustomized(), 'revealing everything IS a customization (Reset returns to VOR-only)');
@@ -96,7 +96,7 @@ app.resetRankColPrefs();
 chk(!app.rankColPrefsCustomized(), 'reset restores defaults');
 chk(!app.getContent().includes('Reset table'), 'Reset button hides when layout is default');
 hd=head();
-chk(!hd.includes('data-rc="tc"') && hd.indexOf('>TIER')<hd.indexOf('>ADP'), 'default restored: TC hidden again, TIER before ADP');
+chk(!hd.includes('data-rc="tc"') && !hd.includes('data-rc="adp"') && hd.indexOf('>TIER')<hd.indexOf('>VOR'), 'default restored: TC and ADP hidden again, TIER before VOR');
 app.setFiltersOpen(false);
 
 console.log('=== colspan honesty (pick lines depend on it) ===');
@@ -185,6 +185,22 @@ if(pass!==total) process.exitCode=1;
   app.setBuild(()=>{builds++; return [];});
   app.invalidate(); app.renderRankings();
   chk(!/c-tcr/.test(app.getContent().replace(/<style[^]*?<\/style>/g,'')), 'a board nobody can rate (seedless fallback) hides the TC★ column instead of showing blanks');
+
+  console.log('\n=== a board with no model data offers no model columns (mobile seed-fetch fallback) ===');
+  const noModel=board.map(p=>({...p, tcPts:null, tcFpg:null}));
+  app.setBuild(()=>noModel);
+  app.setPrefs({order:null, hidden:[]});   // user reveals EVERYTHING — still no dead columns
+  app.invalidate(); app.renderRankings();
+  chk(!head().includes('data-rc="tc"') && !app.getContent().includes('c-tc"'),
+      'TC drops entirely on a board with no tcPts — revealing it cannot summon a blank column');
+  chk(app.getAvail() && !app.getAvail().has('tc') && !app.getAvail().has('tcr'),
+      'the tray’s availability set excludes TC and TC★ (so + chips never offer them)');
+  chk(app.getAvail().has('adp') && app.getAvail().has('vor'),
+      'ADP and VOR stay available — the live fallback board CAN populate those');
+  app.setBuild(()=>board);
+  app.invalidate(); app.renderRankings();
+  chk(app.getAvail().has('tc') && app.getAvail().has('tcr'),
+      'model columns come back the moment the board carries model data again (seed retry)');
 
   console.log('\n=== the reveal tray: hide has an inverse now ===');
   app.setBuild(()=>board);
