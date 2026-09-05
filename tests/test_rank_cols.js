@@ -163,6 +163,17 @@ if(pass!==total) process.exitCode=1;
   const thin=app.tcRatingsFor([mk('a','TE',100,1),mk('b','TE',90,2)]);
   chk(thin.size===0, 'fewer than 8 rated players at a position → no ratings (no fake precision)');
   delete global.adpFor;
+
+  console.log('\n=== perf guard: one board build per render, never per cell ===');
+  let builds=0;
+  const board=[...Array(120)].map((_,i)=>({player_id:'p'+i,name:'P '+i,pos:['QB','RB','WR','TE'][i%4],team:'KC',fpts:300-i,tcPts:290-i,adp_ppr:i+1,ecr:i+1,vor:200-i}));
+  app.setBuild(()=>{builds++; return board;});
+  app.invalidate(); app.renderRankings();
+  chk(builds<=2, `rendering 120 rows built the board ${builds}x (was O(rows) before the fix — per-cell cache keys)`);
+  chk((app.getContent().match(/c-tcr/g)||[]).length>100, 'and TC★ cells carry values');
+  app.setBuild(()=>{builds++; return [];});
+  app.invalidate(); app.renderRankings();
+  chk(!/c-tcr/.test(app.getContent().replace(/<style[^]*?<\/style>/g,'')), 'a board nobody can rate (seedless fallback) hides the TC★ column instead of showing blanks');
 })();
 
 process.exit(process.exitCode||0);

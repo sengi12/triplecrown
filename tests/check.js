@@ -6794,14 +6794,14 @@ function tcRatingsFor(list){
       const sd=Math.sqrt(a.reduce((x,y)=>x+(y-mu)*(y-mu),0)/a.length)||1;
       return a.map(v=>(v-mu)/sd);};
     // rank-space for ADP (picks are log-ish), raw z for the projection
-    const order=[...adps].sort((x,y)=>x-y);
-    const adpZ=mz(adps.map(v=>order.indexOf(v)+1)).map(z=>-z);
+    const rankOf=new Map([...adps].sort((x,y)=>x-y).map((v,i)=>[v,i+1]));
+    const adpZ=mz(adps.map(v=>rankOf.get(v))).map(z=>-z);
     const tcZ=mz(tcs);
     const w=TC_RATING_W[pos];
     const blend=rows.map((p,i)=>w*tcZ[i]+(1-w)*adpZ[i]);
-    const sorted=[...blend].sort((x,y)=>x-y);
+    const pctOf=new Map([...blend].sort((x,y)=>x-y).map((v,i)=>[v,i]));
     rows.forEach((p,i)=>{
-      const pct=sorted.length>1 ? sorted.indexOf(blend[i])/(sorted.length-1) : 0.5;
+      const pct=blend.length>1 ? pctOf.get(blend[i])/(blend.length-1) : 0.5;
       out.set(String(p.player_id||p.name), Math.round(100*pct));
     });
   });
@@ -16038,13 +16038,17 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     that team in the view you're already on. Schedule from nflverse; win totals from the
     Vegas markets — context for your projections, never a projection itself.`};
 }
-let _tcrCache=null, _tcrSig='';
-function _tcrMap(){
-  const list=(typeof buildPlayerList==='function')?buildPlayerList():[];
-  const sig=`${list.length}~${typeof rankFormat!=='undefined'?rankFormat:''}~${list.length?String(list[0].player_id||''):''}`;
-  if(_tcrCache && _tcrSig===sig) return _tcrCache;
+// TC Rating cache, keyed on the board array's IDENTITY: a rebuilt board is a new
+// array, so invalidation is automatic and computing the key costs nothing. The
+// first version derived its key by calling buildPlayerList() — a full 516-player
+// board build — PER CELL from the row renderer: O(n²) board builds per render,
+// which crawled on phones. Never compute a cache key with the thing you cached.
+let _tcrForList=null, _tcrCache=null;
+function _tcrMap(list){
+  if(!list) list=(typeof buildPlayerList==='function')?buildPlayerList():[];
+  if(_tcrForList===list && _tcrCache) return _tcrCache;
   _tcrCache=(typeof tcRatingsFor==='function')?tcRatingsFor(list):new Map();
-  _tcrSig=sig;
+  _tcrForList=list;
   return _tcrCache;
 }
 // The rendered-HTML LRU is bounded by TOTAL SIZE, not entry count. Counting entries looks
@@ -16314,6 +16318,7 @@ function renderRankings(){
 
   const tBuildStart = _rkNow();
   let all=buildPlayerList();
+  const tcrMap=_tcrMap(all);   // once per render — the rows and the sort both read this
   const tBuildDone = _rkNow();
   // Team-scoped rankings (from a team's Rankings tab) show only that team's players.
   let teamHeader='';
@@ -16441,7 +16446,7 @@ function renderRankings(){
     }
     // TC Rating: unrated players (no ADP or no TC number) sink.
     if(rankSortKey==='tcr'){
-      const m=_tcrMap();
+      const m=tcrMap;
       const av=m.get(String(a.player_id||a.name)), bv=m.get(String(b.player_id||b.name));
       if(av==null && bv==null) return b.fpts-a.fpts;
       if(av==null) return 1;
@@ -16576,7 +16581,10 @@ function renderRankings(){
   // the TC model projects the UPCOMING season, so both drop entirely there (not just go blank).
   const projBoard = activeSeason==='proj';
   const availMeta = new Set(['ecr','ecr_tier','fpts','vor','pos','name','team']);
-  if(projBoard){ availMeta.add('tc'); availMeta.add('adp'); availMeta.add('tcr'); }
+  if(projBoard){ availMeta.add('tc'); availMeta.add('adp');
+    // TC★ only when someone is actually rated — a seedless board (live-Sleeper
+    // fallback, no TC model) would otherwise show a confusing blank column.
+    if(tcrMap.size) availMeta.add('tcr'); }
   if(ownerActive) availMeta.add('own');
   if(isDynasty){ availMeta.add('age'); availMeta.add('apy'); availMeta.add('fa'); }
   const hiddenCols = (typeof rankColHidden==='function') ? rankColHidden() : new Set();
@@ -16707,7 +16715,7 @@ function renderRankings(){
       ecr: `<td class="c-ecr">${ecrTxt!=='—'?rankValueHtml(ecrTxt, p, 'Expert Consensus Rank', 'ecr', 'rankings'):ecrTxt}</td>`,
       ecr_tier: `<td class="c-tier">${tier!=null?rankValueHtml(`<span class="tier-pill" style="background:${tierColor(tier)}">${tier}</span>`, p, 'Tier', 'ecr_tier', 'rankings'):''}</td>`,
       tc: `<td class="c-tc"${p.tcPts!=null?` title="TC model · projected season fantasy points (your scoring)"`:''}>${p.tcPts!=null?rankValueHtml(`<span class="num">${p.tcPts.toFixed(1)}</span>`, p, 'TC Model Projection', 'tcPts', 'rankings'):''}</td>`,
-      tcr: (()=>{ const v=_tcrMap().get(String(p.player_id||p.name));
+      tcr: (()=>{ const v=tcrMap.get(String(p.player_id||p.name));
         const cls=v==null?'':v>=75?' tcr-hi':v<=25?' tcr-lo':'';
         return `<td class="c-tcr${cls}"${v!=null?` title="TripleCrown Rating ${v} · market ADP blended with the TC model at the validated per-position weight (QB 12% · RB 0% · WR 50% · TE 25% model) — percentile within position"`:''}>${v!=null?`<span class="num">${v}</span>`:''}</td>`;})(),
       adp: `<td class="c-adp"${adpTxt!=='—'?` title="Market ADP (${rankFormat.replace(/_/g,' ')} board)"`:''}>${adpTxt!=='—'?`<span class="num">${adpTxt}</span>`:''}</td>`,

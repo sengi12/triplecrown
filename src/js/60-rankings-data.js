@@ -717,14 +717,14 @@ function tcRatingsFor(list){
       const sd=Math.sqrt(a.reduce((x,y)=>x+(y-mu)*(y-mu),0)/a.length)||1;
       return a.map(v=>(v-mu)/sd);};
     // rank-space for ADP (picks are log-ish), raw z for the projection
-    const order=[...adps].sort((x,y)=>x-y);
-    const adpZ=mz(adps.map(v=>order.indexOf(v)+1)).map(z=>-z);
+    const rankOf=new Map([...adps].sort((x,y)=>x-y).map((v,i)=>[v,i+1]));
+    const adpZ=mz(adps.map(v=>rankOf.get(v))).map(z=>-z);
     const tcZ=mz(tcs);
     const w=TC_RATING_W[pos];
     const blend=rows.map((p,i)=>w*tcZ[i]+(1-w)*adpZ[i]);
-    const sorted=[...blend].sort((x,y)=>x-y);
+    const pctOf=new Map([...blend].sort((x,y)=>x-y).map((v,i)=>[v,i]));
     rows.forEach((p,i)=>{
-      const pct=sorted.length>1 ? sorted.indexOf(blend[i])/(sorted.length-1) : 0.5;
+      const pct=blend.length>1 ? pctOf.get(blend[i])/(blend.length-1) : 0.5;
       out.set(String(p.player_id||p.name), Math.round(100*pct));
     });
   });
