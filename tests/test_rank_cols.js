@@ -19,7 +19,7 @@ const app=new Function(code+`return {
   setFiltersOpen:(v)=>{rankFiltersOpen=v;},
   saveNow:()=>{_saveSessionNow();}, restore:()=>restoreSession(),
   invalidate:()=>{invalidateRankingsRenderCache();},
-  rankColShow, rankColHide, TC_INFO_BOOK,
+  rankColShow, rankColHide, TC_INFO_BOOK, _rcIsEditorControl,
   getContent:()=>document.getElementById('content').innerHTML };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -201,6 +201,14 @@ if(pass!==total) process.exitCode=1;
       'the \u24d8 explains all four numbers AND how to reveal them');
   chk(/FPTS<\/b>/.test(String(app.TC_INFO_BOOK.rank_vor.body())) && /TC\u2605|TC★/.test(String(app.TC_INFO_BOOK.rank_vor.body())),
       'FPTS, TC, TC★ and VOR each get a line');
+
+  console.log('\n=== editor chrome survives its own taps (the twice-bitten pointerdown bug) ===');
+  const inside=(sel)=>({ closest:(q)=>q===sel?{}:null });
+  chk(app._rcIsEditorControl(inside('#rcHiddenTray')), 'a tap on the + tray is the editor\u2019s own — never dismisses it');
+  chk(app._rcIsEditorControl(inside('#rcDoneChip')) && app._rcIsEditorControl(inside('.rc-x')),
+      'Done and \u2715 stay exempt too');
+  chk(!app._rcIsEditorControl(inside('.rankings-table')), 'anything else still dismisses edit mode');
+  chk(!app._rcIsEditorControl(null), 'null target is safe');
 })();
 
 process.exit(process.exitCode||0);
