@@ -43,6 +43,7 @@ function rankColEditAugment(){
       el.appendChild(x);
     }
   });
+  _rcHiddenTray();
   if(!document.getElementById('rcDoneChip')){
     const b=document.createElement('button');
     b.id='rcDoneChip'; b.textContent='Done';
@@ -71,13 +72,38 @@ function exitRankColEdit(){
   document.querySelectorAll('.rankings-table .rc-x').forEach(el=>el.remove());
   const chip=document.getElementById('rcDoneChip');
   if(chip) chip.remove();
+  const tray=document.getElementById('rcHiddenTray');
+  if(tray) tray.remove();
 }
 
 function rankColHide(key){
-  const hid=(rankColPrefs.hidden||[]).slice();
+  const hid=[...rankColHidden()];      // start from the EFFECTIVE set (defaults included)
   if(!hid.includes(key)) hid.push(key);
   rankColPrefs.hidden = hid;
   _rcCommit();
+}
+function rankColShow(key){
+  rankColPrefs.hidden = [...rankColHidden()].filter(k=>k!==key);
+  _rcCommit();
+}
+// Labels for the "+ add back" tray in edit mode — the reveal half of hide.
+const RC_LABELS = { ecr:'ECR', ecr_tier:'TIER', tc:'TC', tcr:'TC★', adp:'ADP', fpts:'FPTS',
+  vor:'VOR', pos:'POS', name:'PLAYER', team:'TM', own:'OWNER', age:'AGE', apy:'APY', fa:'FA',
+  grp_rush:'RUSH', grp_rec:'REC', grp_pass:'PASS' };
+function _rcHiddenTray(){
+  let tray=document.getElementById('rcHiddenTray');
+  const hid=[...rankColHidden()];
+  if(!hid.length){ if(tray) tray.remove(); return; }
+  if(!tray){
+    tray=document.createElement('div');
+    tray.id='rcHiddenTray';
+    document.body.appendChild(tray);
+  }
+  tray.innerHTML='<span class="rc-tray-lbl">hidden</span>'+hid.map(k=>{
+    const lbl=RC_LABELS[k]||(k.startsWith('adv:')?k.slice(4):k);
+    return `<button class="rc-add" data-k="${k}">+ ${lbl}</button>`;
+  }).join('');
+  tray.querySelectorAll('.rc-add').forEach(b=>b.addEventListener('click',()=>rankColShow(b.getAttribute('data-k'))));
 }
 
 // Move `key` so it renders immediately before `beforeKey` (null = end of the meta segment).
@@ -112,7 +138,7 @@ function rankAdvMove(label, beforeLabel){
 }
 
 function resetRankColPrefs(){
-  rankColPrefs = { order: null, hidden: [], advOrder: null };
+  rankColPrefs = { order: null, hidden: null, advOrder: null };   // null = the default-hidden set
   exitRankColEdit();
   if(typeof saveSession==='function') saveSession();
   if(typeof renderRankings==='function') renderRankings();

@@ -45,8 +45,8 @@ app.setSort('adp',-1); app.renderRankings();
 let h4=app.getContent();
 const headEnd=h4.indexOf('</thead>');
 const hd=h4.slice(0,headEnd);
-chk(hd.indexOf('>TIER')>-1 && hd.indexOf('>ADP')>hd.indexOf('>TIER') && hd.indexOf('>ADP')<hd.indexOf('>FPTS'),
-  'ADP header sits between TIER and FPTS');
+chk(hd.indexOf('>TIER')>-1 && hd.indexOf('>ADP')>hd.indexOf('>TIER') && hd.indexOf('>VOR')>hd.indexOf('>ADP'),
+  'ADP header sits between TIER and VOR (FPTS hides by default now)');
 const firstNames=[...h4.matchAll(/rank-name">(P\d+)</g)].map(m=>m[1]);
 chk(firstNames[0]==='P5' && firstNames[1]==='P4' && firstNames[2]==='P3',
   'sorting by ADP orders the market board ascending (P5 first at ADP 10)');

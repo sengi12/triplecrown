@@ -1401,7 +1401,18 @@ function exportRankingsCSV(){
 
 // ── VOR explainer (the column header's ⓘ) ───────────────────────────────────
 if(typeof TC_INFO_BOOK!=='undefined'){
-  TC_INFO_BOOK.rank_vor={title:'Value Over Replacement', body:()=>{
+  TC_INFO_BOOK.rank_vor={title:'The projection numbers', body:()=>{
+    const four=`Four columns answer “how good is this player”, each a different lens:
+      <b>FPTS</b> — projected season points under your scoring (the Sleeper baseline the app
+      edits). <b>TC</b> — the TripleCrown model’s own season points, a validated second
+      opinion. <b>TC★</b> — market ADP blended with the TC model at per-position weights
+      that beat the market out-of-sample (0–100, within position). <b>VOR</b> — the one
+      shown by default, because it’s the draft decision itself:<br><br>`;
+    const reveal=`<br><br>Only VOR shows by default — <b>long-press any column header</b> and
+      tap the <b>+ chips</b> to add TC, TC★ or FPTS (or hide anything else).`;
+    return four+_rankVorBody()+reveal;
+  }};
+  const _rankVorBody=()=>{
     const b=(typeof VOR_BASELINE!=='undefined' && VOR_BASELINE) || {};
     const line=['QB','RB','WR','TE'].filter(p=>b[p]>0).map(p=>`${p} ${b[p].toFixed(0)}`).join(' · ');
     return `Points above the <b>last starter</b> your league shape forces someone to start —
@@ -1413,5 +1424,5 @@ if(typeof TC_INFO_BOOK!=='undefined'){
       replacement level: <b>${line}</b> fantasy points.`:''}<br><br>+VOR = start-worthy;
       0 or below = replaceable from waivers. On a position filter (sorted by FPTS or VOR),
       the board draws the replacement line right in the table.`;
-  }};
+  };
 }

@@ -19,6 +19,7 @@ const app=new Function(code+`return {
   setFiltersOpen:(v)=>{rankFiltersOpen=v;},
   saveNow:()=>{_saveSessionNow();}, restore:()=>restoreSession(),
   invalidate:()=>{invalidateRankingsRenderCache();},
+  rankColShow, rankColHide, TC_INFO_BOOK,
   getContent:()=>document.getElementById('content').innerHTML };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -33,9 +34,17 @@ const colspanOk=()=>{const h=app.getContent();
   const ths=(head().match(/<th[\s>]/g)||[]).length;
   return {ths, h};};
 
-console.log('=== TC column (default layout) ===');
+console.log('=== default layout: VOR stands alone; TC/TC★/FPTS wait behind the + tray ===');
 app.setSort('ecr',-1); app.renderRankings();
 let hd=head();
+chk(!hd.includes('data-rc="tc"') && !hd.includes('data-rc="tcr"') && !hd.includes('data-rc="fpts"'),
+    'TC, TC★ and FPTS are hidden by default — four ways to say "how good" was noise');
+chk(hd.includes('data-rc="vor"') && hd.includes('data-rc="adp"'),
+    'VOR (the decision number) and ADP (the market) remain');
+chk(!app.rankColPrefsCustomized(), 'the default-hidden trio does NOT count as customized');
+app.setPrefs({order:null, hidden:[]}); app.invalidate(); app.renderRankings();
+hd=head();
+chk(app.rankColPrefsCustomized(), 'revealing everything IS a customization (Reset returns to VOR-only)');
 chk(hd.indexOf('>TC')>hd.indexOf('>TIER') && hd.indexOf('>TC')<hd.indexOf('>ADP'), 'TC header sits between TIER and ADP');
 chk(hd.indexOf('>ADP')<hd.indexOf('>FPTS'), 'ADP still precedes FPTS');
 chk(app.getContent().includes('c-tc'), 'TC cells render');
@@ -85,7 +94,7 @@ app.resetRankColPrefs();
 chk(!app.rankColPrefsCustomized(), 'reset restores defaults');
 chk(!app.getContent().includes('Reset table'), 'Reset button hides when layout is default');
 hd=head();
-chk(hd.indexOf('>TIER')<hd.indexOf('>TC') && hd.indexOf('>TC')<hd.indexOf('>ADP'), 'default order restored');
+chk(!hd.includes('data-rc="tc"') && hd.indexOf('>TIER')<hd.indexOf('>ADP'), 'default restored: TC hidden again, TIER before ADP');
 app.setFiltersOpen(false);
 
 console.log('=== colspan honesty (pick lines depend on it) ===');
@@ -174,6 +183,22 @@ if(pass!==total) process.exitCode=1;
   app.setBuild(()=>{builds++; return [];});
   app.invalidate(); app.renderRankings();
   chk(!/c-tcr/.test(app.getContent().replace(/<style[^]*?<\/style>/g,'')), 'a board nobody can rate (seedless fallback) hides the TC★ column instead of showing blanks');
+
+  console.log('\n=== the reveal tray: hide has an inverse now ===');
+  app.setBuild(()=>board);
+  app.setPrefs({order:null, hidden:null});     // pristine defaults
+  app.invalidate(); app.renderRankings();
+  chk(!head().includes('data-rc="tcr"'), 'TC★ starts behind the tray');
+  app.rankColShow('tcr'); app.invalidate(); app.renderRankings();
+  chk(head().includes('data-rc="tcr"'), 'one + tap reveals it');
+  chk(app.rankColPrefsCustomized(), 'and that counts as customized');
+  app.rankColHide('tcr'); app.invalidate(); app.renderRankings();
+  chk(!head().includes('data-rc="tcr"') && !app.rankColPrefsCustomized(),
+      'hiding it again lands exactly back on the default set');
+  chk(/long-press any column header/.test(String(app.TC_INFO_BOOK && app.TC_INFO_BOOK.rank_vor ? app.TC_INFO_BOOK.rank_vor.body() : '')),
+      'the \u24d8 explains all four numbers AND how to reveal them');
+  chk(/FPTS<\/b>/.test(String(app.TC_INFO_BOOK.rank_vor.body())) && /TC\u2605|TC★/.test(String(app.TC_INFO_BOOK.rank_vor.body())),
+      'FPTS, TC, TC★ and VOR each get a line');
 })();
 
 process.exit(process.exitCode||0);

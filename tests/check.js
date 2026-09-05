@@ -1354,7 +1354,7 @@ function restoreSession(){
         ? p.rankColPrefs.order.filter(k=>RANK_COL_CANON.includes(k)) : null,
       hidden: Array.isArray(p.rankColPrefs.hidden)
         ? p.rankColPrefs.hidden.filter(k=>RANK_COL_CANON.includes(k)||RANK_COL_GROUPS.includes(k)
-            ||(typeof k==='string'&&k.startsWith('adv:')&&k.length<=60)).slice(0,80) : [],
+            ||(typeof k==='string'&&k.startsWith('adv:')&&k.length<=60)).slice(0,80) : null,
       advOrder: Array.isArray(p.rankColPrefs.advOrder)
         ? p.rankColPrefs.advOrder.filter(l=>typeof l==='string'&&l.length<=50).slice(0,40) : null,
     };
@@ -1480,7 +1480,12 @@ function toggleRankFilters(){
 const RANK_COL_CANON = ['ecr','ecr_tier','tc','tcr','adp','fpts','vor','pos','name','team','own','age','apy','fa'];
 const RANK_COL_LOCKED = {ecr:1, name:1, own:1};
 const RANK_COL_GROUPS = ['grp_rush','grp_rec','grp_pass'];
-let rankColPrefs = { order: null, hidden: [], advOrder: null };
+// Four columns say "how good is this player" (FPTS, TC, TC★, VOR). Showing all four by
+// default was noise — VOR is the board's decision currency and stands alone; the other
+// three hide until revealed (long-press a header → "+" chips). hidden:null = these
+// defaults; an explicit array (any customization, or a pre-existing save) is exact.
+const RANK_COL_DEFAULT_HIDDEN = ['tc','tcr','fpts'];
+let rankColPrefs = { order: null, hidden: null, advOrder: null };
 // Adv. Metrics columns are dynamic (per position/season), so their prefs key by LABEL:
 // hidden entries are 'adv:<label>', order lives in advOrder. Unknown labels (a different
 // position's view, a new season's column) keep their default spot.
@@ -1506,12 +1511,13 @@ function rankColOrder(){
   return out;
 }
 function rankColHidden(){
-  const h=(rankColPrefs && rankColPrefs.hidden)||[];
+  const h=(rankColPrefs && Array.isArray(rankColPrefs.hidden)) ? rankColPrefs.hidden : RANK_COL_DEFAULT_HIDDEN;
   return new Set(h.filter(k=>!RANK_COL_LOCKED[k]));
 }
 function rankColPrefsCustomized(){
   if(!rankColPrefs) return false;
-  if((rankColPrefs.hidden||[]).length) return true;
+  if(Array.isArray(rankColPrefs.hidden)
+     && rankColPrefs.hidden.slice().sort().join()!==RANK_COL_DEFAULT_HIDDEN.slice().sort().join()) return true;
   if(Array.isArray(rankColPrefs.advOrder) && rankColPrefs.advOrder.length) return true;
   return !!rankColPrefs.order && rankColOrder().join()!==RANK_COL_CANON.join();
 }
@@ -17441,7 +17447,18 @@ function exportRankingsCSV(){
 
 // ── VOR explainer (the column header's ⓘ) ───────────────────────────────────
 if(typeof TC_INFO_BOOK!=='undefined'){
-  TC_INFO_BOOK.rank_vor={title:'Value Over Replacement', body:()=>{
+  TC_INFO_BOOK.rank_vor={title:'The projection numbers', body:()=>{
+    const four=`Four columns answer “how good is this player”, each a different lens:
+      <b>FPTS</b> — projected season points under your scoring (the Sleeper baseline the app
+      edits). <b>TC</b> — the TripleCrown model’s own season points, a validated second
+      opinion. <b>TC★</b> — market ADP blended with the TC model at per-position weights
+      that beat the market out-of-sample (0–100, within position). <b>VOR</b> — the one
+      shown by default, because it’s the draft decision itself:<br><br>`;
+    const reveal=`<br><br>Only VOR shows by default — <b>long-press any column header</b> and
+      tap the <b>+ chips</b> to add TC, TC★ or FPTS (or hide anything else).`;
+    return four+_rankVorBody()+reveal;
+  }};
+  const _rankVorBody=()=>{
     const b=(typeof VOR_BASELINE!=='undefined' && VOR_BASELINE) || {};
     const line=['QB','RB','WR','TE'].filter(p=>b[p]>0).map(p=>`${p} ${b[p].toFixed(0)}`).join(' · ');
     return `Points above the <b>last starter</b> your league shape forces someone to start —
@@ -17453,7 +17470,7 @@ if(typeof TC_INFO_BOOK!=='undefined'){
       replacement level: <b>${line}</b> fantasy points.`:''}<br><br>+VOR = start-worthy;
       0 or below = replaceable from waivers. On a position filter (sorted by FPTS or VOR),
       the board draws the replacement line right in the table.`;
-  }};
+  };
 }
 // ── Keep Trade Cut mini-game (rankings personalization loop) ───────────────
 // Lightweight preference game layered on top of Full Rankings. Each round presents
@@ -18505,6 +18522,7 @@ function rankColEditAugment(){
       el.appendChild(x);
     }
   });
+  _rcHiddenTray();
   if(!document.getElementById('rcDoneChip')){
     const b=document.createElement('button');
     b.id='rcDoneChip'; b.textContent='Done';
@@ -18533,13 +18551,38 @@ function exitRankColEdit(){
   document.querySelectorAll('.rankings-table .rc-x').forEach(el=>el.remove());
   const chip=document.getElementById('rcDoneChip');
   if(chip) chip.remove();
+  const tray=document.getElementById('rcHiddenTray');
+  if(tray) tray.remove();
 }
 
 function rankColHide(key){
-  const hid=(rankColPrefs.hidden||[]).slice();
+  const hid=[...rankColHidden()];      // start from the EFFECTIVE set (defaults included)
   if(!hid.includes(key)) hid.push(key);
   rankColPrefs.hidden = hid;
   _rcCommit();
+}
+function rankColShow(key){
+  rankColPrefs.hidden = [...rankColHidden()].filter(k=>k!==key);
+  _rcCommit();
+}
+// Labels for the "+ add back" tray in edit mode — the reveal half of hide.
+const RC_LABELS = { ecr:'ECR', ecr_tier:'TIER', tc:'TC', tcr:'TC★', adp:'ADP', fpts:'FPTS',
+  vor:'VOR', pos:'POS', name:'PLAYER', team:'TM', own:'OWNER', age:'AGE', apy:'APY', fa:'FA',
+  grp_rush:'RUSH', grp_rec:'REC', grp_pass:'PASS' };
+function _rcHiddenTray(){
+  let tray=document.getElementById('rcHiddenTray');
+  const hid=[...rankColHidden()];
+  if(!hid.length){ if(tray) tray.remove(); return; }
+  if(!tray){
+    tray=document.createElement('div');
+    tray.id='rcHiddenTray';
+    document.body.appendChild(tray);
+  }
+  tray.innerHTML='<span class="rc-tray-lbl">hidden</span>'+hid.map(k=>{
+    const lbl=RC_LABELS[k]||(k.startsWith('adv:')?k.slice(4):k);
+    return `<button class="rc-add" data-k="${k}">+ ${lbl}</button>`;
+  }).join('');
+  tray.querySelectorAll('.rc-add').forEach(b=>b.addEventListener('click',()=>rankColShow(b.getAttribute('data-k'))));
 }
 
 // Move `key` so it renders immediately before `beforeKey` (null = end of the meta segment).
@@ -18574,7 +18617,7 @@ function rankAdvMove(label, beforeLabel){
 }
 
 function resetRankColPrefs(){
-  rankColPrefs = { order: null, hidden: [], advOrder: null };
+  rankColPrefs = { order: null, hidden: null, advOrder: null };   // null = the default-hidden set
   exitRankColEdit();
   if(typeof saveSession==='function') saveSession();
   if(typeof renderRankings==='function') renderRankings();

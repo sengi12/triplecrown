@@ -197,3 +197,13 @@ tr.rank-starred:hover{background:rgba(210,153,34,.12);}
 .c-tcr .num{font-weight:800;}
 .c-tcr.tcr-hi .num{color:#00d4aa;}
 .c-tcr.tcr-lo .num{color:#ff6b6b;}
+
+/* hidden-column reveal tray (column edit mode) */
+#rcHiddenTray{position:fixed;left:50%;transform:translateX(-50%);bottom:64px;z-index:1350;
+  display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:center;max-width:92vw;
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px 12px;
+  box-shadow:0 10px 30px rgba(0,0,0,.45);}
+.rc-tray-lbl{font-size:9px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);}
+.rc-add{font:inherit;font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:999px;cursor:pointer;
+  background:var(--surface2);border:1px solid var(--border);color:var(--text);}
+.rc-add:hover{border-color:var(--accent);color:var(--accent);}

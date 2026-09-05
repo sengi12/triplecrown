@@ -150,7 +150,7 @@ function restoreSession(){
         ? p.rankColPrefs.order.filter(k=>RANK_COL_CANON.includes(k)) : null,
       hidden: Array.isArray(p.rankColPrefs.hidden)
         ? p.rankColPrefs.hidden.filter(k=>RANK_COL_CANON.includes(k)||RANK_COL_GROUPS.includes(k)
-            ||(typeof k==='string'&&k.startsWith('adv:')&&k.length<=60)).slice(0,80) : [],
+            ||(typeof k==='string'&&k.startsWith('adv:')&&k.length<=60)).slice(0,80) : null,
       advOrder: Array.isArray(p.rankColPrefs.advOrder)
         ? p.rankColPrefs.advOrder.filter(l=>typeof l==='string'&&l.length<=50).slice(0,40) : null,
     };
@@ -276,7 +276,12 @@ function toggleRankFilters(){
 const RANK_COL_CANON = ['ecr','ecr_tier','tc','tcr','adp','fpts','vor','pos','name','team','own','age','apy','fa'];
 const RANK_COL_LOCKED = {ecr:1, name:1, own:1};
 const RANK_COL_GROUPS = ['grp_rush','grp_rec','grp_pass'];
-let rankColPrefs = { order: null, hidden: [], advOrder: null };
+// Four columns say "how good is this player" (FPTS, TC, TC★, VOR). Showing all four by
+// default was noise — VOR is the board's decision currency and stands alone; the other
+// three hide until revealed (long-press a header → "+" chips). hidden:null = these
+// defaults; an explicit array (any customization, or a pre-existing save) is exact.
+const RANK_COL_DEFAULT_HIDDEN = ['tc','tcr','fpts'];
+let rankColPrefs = { order: null, hidden: null, advOrder: null };
 // Adv. Metrics columns are dynamic (per position/season), so their prefs key by LABEL:
 // hidden entries are 'adv:<label>', order lives in advOrder. Unknown labels (a different
 // position's view, a new season's column) keep their default spot.
@@ -302,12 +307,13 @@ function rankColOrder(){
   return out;
 }
 function rankColHidden(){
-  const h=(rankColPrefs && rankColPrefs.hidden)||[];
+  const h=(rankColPrefs && Array.isArray(rankColPrefs.hidden)) ? rankColPrefs.hidden : RANK_COL_DEFAULT_HIDDEN;
   return new Set(h.filter(k=>!RANK_COL_LOCKED[k]));
 }
 function rankColPrefsCustomized(){
   if(!rankColPrefs) return false;
-  if((rankColPrefs.hidden||[]).length) return true;
+  if(Array.isArray(rankColPrefs.hidden)
+     && rankColPrefs.hidden.slice().sort().join()!==RANK_COL_DEFAULT_HIDDEN.slice().sort().join()) return true;
   if(Array.isArray(rankColPrefs.advOrder) && rankColPrefs.advOrder.length) return true;
   return !!rankColPrefs.order && rankColOrder().join()!==RANK_COL_CANON.join();
 }
