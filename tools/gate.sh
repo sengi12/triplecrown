@@ -27,9 +27,18 @@ if [ "$CI" = "1" ]; then
   git commit -F "$MSG"
   git push -u origin "$BR"
   gh pr create --fill-first --body-file "$MSG" >/dev/null
-  gh pr merge --auto --squash
   git checkout main
-  echo "CI gate open: suite runs on GitHub; auto-merges on green. Branch: $BR"
+  # Wait for the Tests workflow, merge only on green. Self-contained: needs no branch
+  # protection, and a dropped connection just leaves the PR open to merge later.
+  # the check can take ~30s to register on a fresh PR — poll before watching
+  for i in 1 2 3 4 5 6; do gh pr checks "$BR" >/dev/null 2>&1 && break; sleep 10; done
+  if gh pr checks "$BR" --watch --fail-fast; then
+    gh pr merge "$BR" --squash --delete-branch
+    echo "CI gate MERGED on green. Branch: $BR"
+  else
+    echo "CI gate: suite FAILED on GitHub — PR left open on $BR (fix, push to the branch, it re-runs)"
+    exit 1
+  fi
 else
   bash tests/run_tests.sh > /tmp/gate_tests.log 2>&1 || { echo "SUITE FAILED"; tail -20 /tmp/gate_tests.log; exit 1; }
   tail -3 /tmp/gate_tests.log

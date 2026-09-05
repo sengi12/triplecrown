@@ -2,7 +2,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants & URLs
 // ─────────────────────────────────────────────────────────────────────────────
-const NFL_LOGO = t => `https://static.www.nfl.com/t_headshot_desktop/f_auto/league/api/clubs/logos/${t==='JAX'?'JAC':t}`;
+// Team logos: baked 48px data URIs first (02b-team-logos.js — instant, offline, no
+// 32-fetch stampede when the team dropdown opens on cellular); the NFL CDN only for
+// codes that aren't baked. Mobile performance is a feature.
+const NFL_LOGO = t => (typeof TEAM_LOGO_DATA!=='undefined' && TEAM_LOGO_DATA[t])
+  ? TEAM_LOGO_DATA[t]
+  : `https://static.www.nfl.com/t_headshot_desktop/f_auto/league/api/clubs/logos/${t==='JAX'?'JAC':t}`;
 // ESPN college-team logo by ESPN team id (used on rookie player cards' college game logs).
 const NCAA_LOGO = id => `https://a.espncdn.com/i/teamlogos/ncaa/500/${id}.png`;
 // ESPN athlete headshot (fallback when Sleeper has no photo). league = 'nfl' | 'college-football'.
