@@ -49,7 +49,7 @@ NGS_PASS_URL = "https://github.com/nflverse/nflverse-data/releases/download/next
 # Columns we actually need (usecols keeps the ~370-col file fast + small in memory).
 PBP_COLS = [
     "game_id", "season", "season_type", "week", "posteam", "defteam", "play_type",
-    "pass", "rush", "epa", "success", "yards_gained",
+    "pass", "rush", "epa", "success", "yards_gained", "rusher_player_id",
     "fixed_drive", "fixed_drive_result", "series_result", "down",
     "shotgun", "no_huddle", "air_yards", "vegas_wp",
 ]
@@ -780,7 +780,7 @@ def ol_weekly_team(season):
     pbp_cols = [
         "game_id", "play_id", "season_type", "week", "posteam", "play_type",
         "qb_dropback", "rush_attempt", "qb_scramble", "qb_kneel", "sack", "yards_gained",
-        "ydstogo", "first_down", "success",
+        "ydstogo", "first_down", "success", "rusher_player_id",
     ]
     pbp = _load_pbp(season, pbp_cols)
     pbp = pbp[(pbp["season_type"] == "REG") & pbp["play_type"].isin(["pass", "run"]) & pbp["posteam"].notna()].copy()
@@ -806,9 +806,15 @@ def ol_weekly_team(season):
     out["sacks"] = db.groupby(["posteam", "week"])["sack"].sum(min_count=1).reindex(idx)
 
     out["stuffed"] = run.groupby(["posteam", "week"]).apply(lambda d: (d["yards_gained"] <= 0).sum()).reindex(idx)
-    if "success" in run.columns:
-        out["rush_successes"] = pd.to_numeric(run["success"], errors="coerce").groupby(
-            [run["posteam"], run["week"]]).sum(min_count=1).reindex(idx)
+    if "success" in run.columns and "rusher_player_id" in run.columns:
+        try:
+            _pos = _pos_map(season)
+            _rb = run[run["rusher_player_id"].map(lambda i: _pos.get(i) == "RB").fillna(False)]
+            out["rush_successes"] = pd.to_numeric(_rb["success"], errors="coerce").groupby(
+                [_rb["posteam"], _rb["week"]]).sum(min_count=1).reindex(idx)
+            out["rush_rb_att"] = _rb.groupby(["posteam", "week"]).size().reindex(idx)
+        except Exception as e:
+            print(f"  (skipped weekly RB success: {type(e).__name__})")
     out["explosive"] = run.groupby(["posteam", "week"]).apply(lambda d: (d["yards_gained"] >= 10).sum()).reindex(idx)
     out["rush_yards"] = run.groupby(["posteam", "week"])["yards_gained"].sum(min_count=1).reindex(idx)
 
@@ -934,7 +940,7 @@ def ol_weekly_team(season):
     run_cols = [
         "designed_rushes", "stuffed", "explosive", "rush_yards", "ybc", "yac",
         "broken_tackles", "rush_first_downs", "ngs_att", "roe_w", "box8_w", "tlos_w",
-        "rush_successes",
+        "rush_successes", "rush_rb_att",
     ]
 
     for c in pass_cols + run_cols:
@@ -1349,11 +1355,20 @@ def team_extended(season):
     rush["explosive"] = rush["yards_gained"] >= 10
     stuff = rush.groupby("posteam")["stuff"].mean() * 100
     explosive = rush.groupby("posteam")["explosive"].mean() * 100
-    # Rush success rate (EPA > 0 per nflverse's own `success` flag): the ground game's
-    # down-and-distance honesty, next to the OL's stuff/explosive physicality.
+    # RB rush success rate (EPA > 0 per nflverse's own `success` flag), over the team's
+    # RUNNING BACKS only — the same per-RB Success % the RB advanced tables track, rolled
+    # up attempt-weighted per team. QB scrambles/kneels are already out of `rush`; this
+    # also drops designed QB runs and WR sweeps, so the row reads "how the backs ran
+    # behind this line", not "how the offense ran".
     succ = None
-    if "success" in rush.columns:
-        succ = pd.to_numeric(rush["success"], errors="coerce").groupby(rush["posteam"]).mean() * 100
+    if "success" in rush.columns and "rusher_player_id" in rush.columns:
+        try:
+            _pos = _pos_map(season)
+            rb = rush[rush["rusher_player_id"].map(lambda i: _pos.get(i) == "RB").fillna(False)]
+            if len(rb):
+                succ = pd.to_numeric(rb["success"], errors="coerce").groupby(rb["posteam"]).mean() * 100
+        except Exception as e:
+            print(f"  (skipped RB success rate: {type(e).__name__})")
     out = pd.DataFrame({
         "Shotgun Rate": shotgun.round(1),
         "NoHuddle Rate": nohuddle.round(1),
@@ -1374,6 +1389,17 @@ def team_extended(season):
     # Enriched OL pass-protection metrics and utilization-weighted score stack.
     try:
         out = out.join(_ol_pass_metrics(season))
+        # The run-blocking HALF of the Overall Score. _ol_pass_metrics computes the pass
+        # half but never sees Stuff/Success Rate (both are built in this function, after
+        # its join) — so its internal run_proxy fallback was a CONSTANT 50 and the run
+        # half of every team's Overall Score was flat. Recompute the blend here, where
+        # both halves exist: stuff rate (physicality) + RB success rate (efficiency).
+        if "Overall Score" in out.columns and "Pass Score" in out.columns:
+            run_proxy = _pct_rank(out["Stuff Rate"], lower_better=True)
+            if "Success Rate" in out.columns:
+                run_proxy = 0.5 * run_proxy + 0.5 * _pct_rank(out["Success Rate"], lower_better=False)
+            util = out["Pass Rate"].fillna(50) / 100
+            out["Overall Score"] = util * out["Pass Score"] + (1 - util) * run_proxy
     except Exception as e:
         print(f"  (skipped _ol_pass_metrics: {type(e).__name__})")
     # Join FTN charting tendencies (2022+): motion / play-action / RPO / screen / trick / drop.

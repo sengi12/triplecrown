@@ -14926,8 +14926,10 @@ function _advComputeOlRangeTables(season, lo, hi){
 
     const ra=rs[ridx.designed_rushes]||0;
     // Old baked packs predate rush_successes — the row must go BLANK there, never 0%.
-    const hasSucc=ridx.rush_successes!=null;
+    // Success is RB-only, so it carries its own attempt denominator (rush_rb_att).
+    const hasSucc=ridx.rush_successes!=null && ridx.rush_rb_att!=null;
     const succ=hasSucc?(rs[ridx.rush_successes]||0):null;
+    const rbAtt=hasSucc?(rs[ridx.rush_rb_att]||0):0;
     const stuffed=rs[ridx.stuffed]||0;
     const expl=rs[ridx.explosive]||0;
     const ry=rs[ridx.rush_yards]||0;
@@ -14956,7 +14958,7 @@ function _advComputeOlRangeTables(season, lo, hi){
       run:{
         'Stuff Rate': _advNum(ra>0 ? (stuffed/ra)*100 : null,1),
         'Explosive Run Rate': _advNum(ra>0 ? (expl/ra)*100 : null,1),
-        'Success Rate': _advNum(hasSucc && ra>0 ? (succ/ra)*100 : null,1),
+        'Success Rate': _advNum(hasSucc && rbAtt>0 ? (succ/rbAtt)*100 : null,1),
         'Yards/Rush': _advNum(ra>0 ? (ry/ra) : null,2),
         'YBC/Rush': _advNum(ra>0 ? (ybc/ra) : null,2),
         'YAC/Rush': _advNum(ra>0 ? (yac/ra) : null,2),
@@ -14980,7 +14982,17 @@ function _advComputeOlRangeTables(season, lo, hi){
     nb:_advPctRank(map('pass','No Blitz Pressure Rate'), true),
     pt:_advPctRank(map('pass','Pocket Time'), false),
   };
-  const runProxy=_advPctRank(map('run','Stuff Rate'), true);
+  // Run half of the Overall Score: stuff rate (physicality) + RB success rate
+  // (efficiency), matching the season-level blend; teams without success data
+  // (old packs) fall back to stuff alone rather than eating a fake 50.
+  const stuffRank=_advPctRank(map('run','Stuff Rate'), true);
+  const succRank=_advPctRank(map('run','Success Rate'), false);
+  const runProxy={};
+  for(const tm in teams){
+    const st=Number(stuffRank[tm]);
+    runProxy[tm]=(succRank[tm]!=null && Number.isFinite(Number(succRank[tm])))
+      ? 0.5*st + 0.5*Number(succRank[tm]) : st;
+  }
   for(const tm in teams){
     const ps=(Number(passScore.p[tm]||0)*0.30)+(Number(passScore.h[tm]||0)*0.10)+(Number(passScore.hu[tm]||0)*0.10)+
       (Number(passScore.s[tm]||0)*0.20)+(Number(passScore.n[tm]||0)*0.15)+(Number(passScore.nb[tm]||0)*0.10)+
