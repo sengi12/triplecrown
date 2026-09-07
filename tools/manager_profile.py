@@ -356,6 +356,48 @@ def _features(data):
     return feats
 
 
+def build_profiles(data):
+    """The JSON draft_sim.load_profiles consumes: per-manager per-format trait
+    means (only formats with >= 2 non-autodraft drafts — one draft is an
+    anecdote) plus each format's own means for the deltas."""
+    feats = _features(data)
+    fmt_qb, fmt_rb = defaultdict(list), defaultdict(list)
+    managers = {}
+    for uid, fs in feats.items():
+        by_fmt = defaultdict(list)
+        for f in fs:
+            if not f["autodraft"]:
+                by_fmt[f["format"]].append(f)
+        entry = {}
+        for fmt, lst in by_fmt.items():
+            qs = [f["first_qb"] for f in lst if f["first_qb"] is not None]
+            ss = [f["rb_share8"] for f in lst if f.get("rb_share8") is not None]
+            fmt_qb[fmt].extend(qs); fmt_rb[fmt].extend(ss)
+            if len(lst) < 2:
+                continue
+            rs = [f["reach"] for f in lst if f["reach"] is not None]
+            entry[fmt] = {"n": len(lst),
+                          "first_qb": statistics.fmean(qs) if qs else None,
+                          "reach": statistics.fmean(rs) if rs else None,
+                          "rb_share8": statistics.fmean(ss) if ss else None}
+        if entry:
+            managers[uid] = entry
+    means = {}
+    for fmt in set(fmt_qb) | set(fmt_rb):
+        means[fmt] = {"first_qb": statistics.fmean(fmt_qb[fmt]) if fmt_qb.get(fmt) else None,
+                      "rb_share8": statistics.fmean(fmt_rb[fmt]) if fmt_rb.get(fmt) else None}
+    return {"format_means": means, "managers": managers,
+            "names": data.get("managers", {})}
+
+
+def profiles_cmd(args):
+    data = json.load(open(args.data))
+    out = build_profiles(data)
+    with open(args.out, "w") as f:
+        json.dump(out, f)
+    print(f"{len(out['managers'])} managers profiled -> {args.out}")
+
+
 def study(args):
     data = json.load(open(args.data))
     feats = _features(data)
@@ -397,6 +439,9 @@ def main():
     c.set_defaults(fn=crawl)
     s = sub.add_parser("study"); s.add_argument("--data", required=True); s.set_defaults(fn=study)
     r = sub.add_parser("report"); r.add_argument("--data", required=True); r.set_defaults(fn=report)
+    pr = sub.add_parser("profiles"); pr.add_argument("--data", required=True)
+    pr.add_argument("--out", default=os.path.join(HERE, "..", "cache", "profiles.json"))
+    pr.set_defaults(fn=profiles_cmd)
     args = ap.parse_args()
     args.fn(args)
 
