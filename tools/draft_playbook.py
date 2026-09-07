@@ -439,6 +439,8 @@ def main():
     ap.add_argument("--floor-kappa", type=float, default=0.08)
     ap.add_argument("--sims", type=int, default=400)
     ap.add_argument("--seed-file", default=ds.SEED_PATH)
+    ap.add_argument("--profiles", default="", help="manager_profile.py profiles JSON: this room's "
+                    "opponents wear their own validated tendencies in every simulation")
     ap.add_argument("--out", default="", help="write the playbook here (default: stdout)")
     args = ap.parse_args()
 
@@ -449,6 +451,13 @@ def main():
     draft_json = drafts[0] if drafts else {}
     league = ds.League(lg_json, draft_json)
     slot = args.slot or (draft_json.get("draft_order") or {}).get(args.user, 0)
+    if getattr(args, "profiles", ""):
+        try:
+            league.opp_profiles = ds.load_profiles(args.profiles, draft_json.get("draft_order"),
+                                                   ds.market_format(league), league.teams, my_slot=slot)
+            print(f"profiles: {len(league.opp_profiles)} opponents personalized")
+        except Exception as e:
+            print(f"profiles: skipped ({type(e).__name__}: {e})")
     if not slot:
         ap.error("no draft slot — pass --slot or a --user who is in the draft order")
 

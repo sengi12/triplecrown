@@ -126,6 +126,10 @@ class League:
         self.use_drift = False
         self.drift = {"QB": 0.0, "RB": 0.0, "WR": 0.0, "TE": 0.0}
         self.opp_drift = {}
+        # Per-seat manager profiles (slot -> {dq, ds, jitter}), from the validated
+        # manager_profile study (split-half r: first_qb .82, reach .59, rb_share8 .41).
+        # Empty = every opponent keeps the aggregate market brain.
+        self.opp_profiles = {}
 
     def starters_skill(self):
         """(dedicated starters, RB/WR/TE flex slots, superflex slots).
@@ -276,6 +280,34 @@ def load_pro_projections(path, analyst="consensus"):
         mu = sum(tot) / len(tot)
         line["_spread"] = ((statistics.pstdev(tot) / mu) if len(tot) > 1 and mu > 0 else 0.0)
         out[pid] = line
+    return out
+
+
+def load_profiles(path, draft_order, fmt, teams, my_slot=0):
+    """Slot-keyed opponent profiles from manager_profile.py's `profiles` JSON.
+    Deltas are vs the format's own mean, clamped, and shrunk by w = n/(n+4);
+    a manager without same-format history simply keeps the market brain."""
+    with open(path) as f:
+        data = json.load(f)
+    fm = (data.get("format_means") or {}).get(fmt) or {}
+    out = {}
+    for uid, slot in (draft_order or {}).items():
+        if slot == my_slot:
+            continue
+        m = ((data.get("managers") or {}).get(str(uid)) or {}).get(fmt)
+        if not m:
+            continue
+        n = m.get("n") or 0
+        w = n / (n + 4.0)
+        prof = {}
+        if m.get("first_qb") is not None and fm.get("first_qb") is not None:
+            prof["dq"] = max(-3.0, min(3.0, m["first_qb"] - fm["first_qb"])) * w
+        if m.get("rb_share8") is not None and fm.get("rb_share8") is not None:
+            prof["ds"] = max(-0.3, min(0.3, m["rb_share8"] - fm["rb_share8"])) * w
+        if m.get("reach") is not None and m["reach"] > 0:
+            prof["jitter"] = m["reach"] * teams * 0.6 * w
+        if prof:
+            out[slot] = prof
     return out
 
 
@@ -538,9 +570,14 @@ class TeamState:
 POS_CAPS = {"QB": 3, "RB": 8, "WR": 9, "TE": 3}
 
 
-def opponent_pick(state, order, taken, rnd, picks_left, league, rng):
+def opponent_pick(state, order, taken, rnd, picks_left, league, rng, prof=None):
     """Pick for a market-driven opponent: best noisy-ADP with need adjustments.
-    Returns a Player, or None for a K/DEF pick (consumes no skill player)."""
+    Returns a Player, or None for a K/DEF pick (consumes no skill player).
+    `prof` personalizes this seat with the three VALIDATED manager traits
+    (tools/manager_profile.py, split-half study 2026-09-07): dq shifts when
+    they take their first QB (rounds -> picks), ds promotes/demotes RBs in the
+    early rounds, jitter is a reacher's extra per-candidate dispersion. All
+    three arrive pre-shrunk by sample size (w = n/(n+4))."""
     if state.kd_open > 0:
         if picks_left <= state.kd_open:
             state.kd_open -= 1
@@ -564,6 +601,15 @@ def opponent_pick(state, order, taken, rnd, picks_left, league, rng):
         if c >= POS_CAPS[p.pos] or (p.pos == "QB" and c >= league.qb_limit):
             continue
         score = p.noisy
+        if prof:
+            if p.pos == "QB" and state.counts["QB"] == 0 and prof.get("dq"):
+                score += prof["dq"] * league.teams
+            if rnd <= 8 and p.pos == "RB" and prof.get("ds"):
+                score -= prof["ds"] * league.teams * 4.0
+            if prof.get("jitter"):
+                j = rng.gauss(0.0, prof["jitter"])
+                lim = 2.0 * prof["jitter"]
+                score += max(-lim, min(lim, j))
         if p.pos == "QB" and c >= league.qb_starters():
             score += 30 if rnd <= 9 else 12
         if p.pos == "TE" and c >= 1:
@@ -580,7 +626,10 @@ def opponent_pick(state, order, taken, rnd, picks_left, league, rng):
                 continue
         if best_score is None or score < best_score:
             best, best_score = p, score
-        if best_score is not None and p.noisy > best_score + 40:
+        # A profiled seat can promote deep candidates (early-QB habit, RB
+        # appetite, jitter) by up to ~60 picks — widen the scan margin so the
+        # shortcut never pre-empts a promoted winner.
+        if best_score is not None and p.noisy > best_score + (100 if prof else 40):
             break  # order is by noisy adp: nothing further can win
     return best
 
@@ -1230,11 +1279,14 @@ def run_draft(pool, league, my_slot, rng, pattern=None, avail_hook=None, market_
             if avail_hook:
                 avail_hook(my_k, taken)
             my_k += 1
+            # market_only measures NEUTRAL availability: our own seat never
+            # wears a personality, here or below.
             choice = opponent_pick(st, order, taken, rnd, picks_left, league, rng)
             if choice is None:
                 continue
         else:
-            choice = opponent_pick(st, order, taken, rnd, picks_left, league, rng)
+            choice = opponent_pick(st, order, taken, rnd, picks_left, league, rng,
+                                   prof=league.opp_profiles.get(slot))
             if choice is None:
                 continue
         taken[choice.idx] = True
@@ -1437,6 +1489,8 @@ def main():
     ap.add_argument("--proj-analyst", default="consensus",
                     help="which analyst in --proj to use (default: consensus of all)")
     ap.add_argument("--tc-weight", type=float, default=0.5, help="TC-model blend weight vs Sleeper baseline")
+    ap.add_argument("--profiles", default="", help="manager_profile.py profiles JSON: opponents "
+                    "wear their own validated tendencies instead of the aggregate market brain")
     ap.add_argument("--floor-kappa", type=float, default=0.08, help="weekly-floor tilt (0 = pure expectation)")
     ap.add_argument("--rng-seed", type=int, default=42)
     ap.add_argument("--seed-file", default=SEED_PATH)
@@ -1461,6 +1515,13 @@ def main():
     draft_json = drafts[0] if drafts else {}
     league = League(lg_json, draft_json)
     slot = args.slot or (draft_json.get("draft_order") or {}).get(args.user, 0)
+    if getattr(args, "profiles", ""):
+        try:
+            league.opp_profiles = load_profiles(args.profiles, draft_json.get("draft_order"),
+                                                market_format(league), league.teams, my_slot=slot)
+            print(f"profiles: {len(league.opp_profiles)} of {league.teams - 1} opponents personalized")
+        except Exception as e:
+            print(f"profiles: skipped ({type(e).__name__}: {e})")
     if not slot:
         print("No draft slot: pass --slot or --user")
         sys.exit(1)

@@ -796,6 +796,76 @@ def test_build_board_derives_the_format():
     check("build_board also sets replacement levels", one.repl_vpg["RB"] > 0, one.repl_vpg)
 
 
+def _profile_pool(league):
+    pool = []
+    specs = [("QB", 22.0, 40), ("RB", 34.0, 44), ("WR", 30.0, 56), ("TE", 28.0, 30)]
+    for pos, top, n in specs:
+        for i in range(n):
+            pool.append(_mk(f"{pos}{i}", pos, top - i * 0.45, 999))
+    pool.sort(key=lambda p: -p.vpg)
+    for i, p in enumerate(pool):
+        p.adp = p.adp_eff = i + 1.0
+        p.sigma = ds.adp_sigma(p.adp_eff)
+        p.idx = i
+    ds.compute_vor(pool, league)
+    return pool
+
+
+def test_opponent_profiles():
+    """The validated traits actually change simulated behavior, seat-local."""
+    league = ds.League(LEAGUE_JSON, DRAFT_JSON)
+    pool = _profile_pool(league)
+
+    def run(profiles, sims=30):
+        rounds_qb, rb8 = [], []
+        rng = random.Random(11)
+        league.opp_profiles = profiles
+        for _ in range(sims):
+            _r, states, _log = ds.run_draft(pool, league, 12, rng, market_only=True)
+            log = states[3].roster
+            qb_at = next((i + 1 for i, p in enumerate(log) if p.pos == "QB"), None)
+            if qb_at:
+                rounds_qb.append(qb_at)
+            rb8.append(sum(1 for p in log[:8] if p.pos == "RB"))
+        league.opp_profiles = {}
+        return (sum(rounds_qb) / len(rounds_qb), sum(rb8) / len(rb8))
+
+    base_qb, base_rb = run({})
+    early_qb, _ = run({3: {"dq": -2.5}})
+    check("an early-QB profile pulls that seat's first QB forward",
+          early_qb < base_qb - 0.7, (base_qb, early_qb))
+    late_qb, _ = run({3: {"dq": 2.5}})
+    check("a late-QB profile pushes it back", late_qb > base_qb + 0.7, (base_qb, late_qb))
+    _, hog_rb = run({3: {"ds": 0.25}})
+    check("an RB-appetite profile hoards early RBs", hog_rb > base_rb + 0.5, (base_rb, hog_rb))
+    _q, other_rb = run({7: {"ds": 0.25}})
+    check("the profile is seat-local (seat 3 unchanged when seat 7 wears it)",
+          abs(other_rb - base_rb) < 0.5, (base_rb, other_rb))
+
+
+def test_load_profiles_shrink_and_clamp():
+    import json as _json, tempfile
+    data = {"format_means": {"ppr": {"first_qb": 5.0, "rb_share8": 0.4}},
+            "managers": {
+                "u_vet": {"ppr": {"n": 12, "first_qb": 2.0, "reach": 0.5, "rb_share8": 0.6}},
+                "u_thin": {"ppr": {"n": 1, "first_qb": 1.0, "reach": 2.0, "rb_share8": 0.9}},
+                "u_extreme": {"ppr": {"n": 100, "first_qb": 20.0, "reach": None, "rb_share8": 0.0}},
+                "u_none": {"superflex": {"n": 9, "first_qb": 2.0, "reach": 0.1, "rb_share8": 0.5}}}}
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        _json.dump(data, f); path = f.name
+    order = {"u_vet": 2, "u_thin": 3, "u_extreme": 4, "u_none": 5, "me": 6}
+    prof = ds.load_profiles(path, order, "ppr", 12, my_slot=6)
+    w12 = 12 / 16.0
+    check("a veteran's QB delta is shrunk by n/(n+4)",
+          abs(prof[2]["dq"] - (-3.0 * w12)) < 1e-9, prof.get(2))
+    check("reach becomes bounded per-seat jitter", abs(prof[2]["jitter"] - 0.5 * 12 * 0.6 * w12) < 1e-9)
+    check("one draft of history barely moves the needle", abs(prof[3]["dq"]) < 0.7, prof.get(3))
+    check("an absurd delta is clamped before shrinkage", abs(prof[4]["dq"]) <= 3.0, prof.get(4))
+    check("no same-format history = market brain (absent, not zeroed)", 5 not in prof)
+    check("our own seat never wears a personality", 6 not in prof)
+    os.unlink(path)
+
+
 if __name__ == "__main__":
     test_3rr_pick_order()
     test_league_shape()
@@ -826,6 +896,8 @@ if __name__ == "__main__":
     test_market_drift_moves_survival()
     test_drift_is_opt_in()
     test_build_board_derives_the_format()
+    test_opponent_profiles()
+    test_load_profiles_shrink_and_clamp()
     ok = all(RESULTS)
     print(f"RESULT: {'PASS' if ok else 'SOME FAILED'} ({sum(RESULTS)}/{len(RESULTS)})")
     sys.exit(0 if ok else 1)

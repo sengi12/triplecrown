@@ -153,6 +153,22 @@ def test_splithalf():
     check("fewer than 4 drafts in a format is no unit", mp.splithalf_units(thin) == [])
 
 
+def test_build_profiles():
+    # 4 uniform + 3 shifted drafts: the shifted trio drags every pid's consensus
+    # off both camps, so no draft sits exactly on it and none flags autodraft.
+    ds = [_uniform_draft(f"d{i}", 100 + i, 2025) for i in range(4)]
+    ds += [_uniform_draft(f"r{i}", 200 + i, 2025, shift=6) for i in range(3)]
+    data = {"target_league_ids": ["100"], "managers": {"u2": "Bob", "u9": "Ghost"},
+            "drafts": ds}
+    out = mp.build_profiles(data)
+    check("profiles carry the format means the deltas need",
+          out["format_means"]["ppr"]["first_qb"] is not None)
+    prof = out["managers"]["u2"]["ppr"]
+    check("a manager's per-format entry carries n + all three traits",
+          prof["n"] == 7 and prof["first_qb"] == 2.5 and prof["rb_share8"] is not None)
+    check("a manager with no drafts is absent, not zeroed", "u9" not in out["managers"])
+
+
 def test_autodrafts_excluded_from_transfer():
     feats = {"m1": [
         {"draft": "a", "league": "1", "season": "2025", "format": "ppr",
@@ -178,6 +194,7 @@ def main():
     test_transfer_rows_and_study()
     test_format_matching()
     test_splithalf()
+    test_build_profiles()
     test_autodrafts_excluded_from_transfer()
     total, passed = len(RESULTS), sum(RESULTS)
     print(f"\nRESULT: {passed}/{total} {'ALL PASS' if passed == total else 'SOME FAILED'}")
