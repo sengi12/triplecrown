@@ -780,7 +780,7 @@ def ol_weekly_team(season):
     pbp_cols = [
         "game_id", "play_id", "season_type", "week", "posteam", "play_type",
         "qb_dropback", "rush_attempt", "qb_scramble", "qb_kneel", "sack", "yards_gained",
-        "ydstogo", "first_down",
+        "ydstogo", "first_down", "success",
     ]
     pbp = _load_pbp(season, pbp_cols)
     pbp = pbp[(pbp["season_type"] == "REG") & pbp["play_type"].isin(["pass", "run"]) & pbp["posteam"].notna()].copy()
@@ -806,6 +806,9 @@ def ol_weekly_team(season):
     out["sacks"] = db.groupby(["posteam", "week"])["sack"].sum(min_count=1).reindex(idx)
 
     out["stuffed"] = run.groupby(["posteam", "week"]).apply(lambda d: (d["yards_gained"] <= 0).sum()).reindex(idx)
+    if "success" in run.columns:
+        out["rush_successes"] = pd.to_numeric(run["success"], errors="coerce").groupby(
+            [run["posteam"], run["week"]]).sum(min_count=1).reindex(idx)
     out["explosive"] = run.groupby(["posteam", "week"]).apply(lambda d: (d["yards_gained"] >= 10).sum()).reindex(idx)
     out["rush_yards"] = run.groupby(["posteam", "week"])["yards_gained"].sum(min_count=1).reindex(idx)
 
@@ -931,6 +934,7 @@ def ol_weekly_team(season):
     run_cols = [
         "designed_rushes", "stuffed", "explosive", "rush_yards", "ybc", "yac",
         "broken_tackles", "rush_first_downs", "ngs_att", "roe_w", "box8_w", "tlos_w",
+        "rush_successes",
     ]
 
     for c in pass_cols + run_cols:
@@ -1345,6 +1349,11 @@ def team_extended(season):
     rush["explosive"] = rush["yards_gained"] >= 10
     stuff = rush.groupby("posteam")["stuff"].mean() * 100
     explosive = rush.groupby("posteam")["explosive"].mean() * 100
+    # Rush success rate (EPA > 0 per nflverse's own `success` flag): the ground game's
+    # down-and-distance honesty, next to the OL's stuff/explosive physicality.
+    succ = None
+    if "success" in rush.columns:
+        succ = pd.to_numeric(rush["success"], errors="coerce").groupby(rush["posteam"]).mean() * 100
     out = pd.DataFrame({
         "Shotgun Rate": shotgun.round(1),
         "NoHuddle Rate": nohuddle.round(1),
@@ -1354,6 +1363,8 @@ def team_extended(season):
         "Stuff Rate": stuff.round(1),
         "Explosive Run Rate": explosive.round(1),
     })
+    if succ is not None:
+        out["Success Rate"] = succ.round(1)
     # Join PFR + NGS derived columns
     for fn in (_pfr_rush_team, _ngs_pass_team, _ngs_rush_team):
         try:
@@ -2929,7 +2940,7 @@ def build_team_block(season):
     ]
     ol_pass_cols = [c for c in ol_pass_cols if c in ext.columns]
     ol_run_cols = [
-        "Overall Score", "Stuff Rate", "Explosive Run Rate", "Yards/Rush", "YBC/Rush", "YAC/Rush",
+        "Overall Score", "Stuff Rate", "Explosive Run Rate", "Success Rate", "Yards/Rush", "YBC/Rush", "YAC/Rush",
         "Rush 1D Rate", "Broken Tackle Rate", "ROE/Att", "8+ Box Rate", "Time to LOS",
     ]
     ol_run_cols = [c for c in ol_run_cols if c in ext.columns]
