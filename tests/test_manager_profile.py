@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""Unit tests for tools/manager_profile.py — the pure parts only (no network)."""
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools"))
+import manager_profile as mp  # noqa: E402
+
+RESULTS = []
+
+
+def check(name, ok, detail=""):
+    RESULTS.append(ok)
+    print(f"{'PASS' if ok else 'FAIL'}: {name}{'' if ok else ' — ' + str(detail)}")
+
+
+def _draft(did, lid, season, teams, picks_by_slot, fmt="ppr"):
+    """picks_by_slot: list of (pid, pos, by) in overall pick order."""
+    picks = [{"no": i + 1, "pid": pid, "pos": pos, "by": by}
+             for i, (pid, pos, by) in enumerate(picks_by_slot)]
+    return {"draft": did, "league": str(lid), "season": str(season),
+            "teams": teams, "rounds": max(1, len(picks) // teams),
+            "format": fmt, "picks": picks}
+
+
+def test_norm_round():
+    check("pick 1 is round 1.0", mp.norm_round(1, 12) == 1.0)
+    check("pick 13 of a 12-teamer opens round 2", mp.norm_round(13, 12) == 2.0)
+    check("pick 11 of a 10-teamer closes round 1", abs(mp.norm_round(11, 10) - 2.0) < 1e-9)
+    check("10- and 12-team rooms land on the same scale",
+          abs(mp.norm_round(25, 12) - mp.norm_round(21, 10)) < 1e-9)
+
+
+def _snake_order(teams, rounds):
+    order = []
+    for r in range(rounds):
+        slots = range(1, teams + 1) if r % 2 == 0 else range(teams, 0, -1)
+        order.extend(f"u{s}" for s in slots)
+    return order
+
+
+def _uniform_draft(did, lid, season, teams=4, rounds=6, shift=0):
+    """Every room drafts p1..pN in the same order; `shift` rotates who picks."""
+    order = _snake_order(teams, rounds)
+    picks = []
+    for i, by in enumerate(order):
+        pos = ["RB", "WR", "QB", "TE"][i % 4]
+        picks.append((f"p{(i + shift) % (teams * rounds)}", pos, by))
+    return _draft(did, lid, season, teams, picks)
+
+
+def test_consensus_and_reach():
+    ds = [_uniform_draft(f"d{i}", 100 + i, 2025) for i in range(4)]
+    cons = mp.build_consensus(ds)
+    key = ("2025", "ppr")
+    check("consensus keyed by season+format", key in cons)
+    m, n = cons[key]["p0"]
+    check("a player always taken 1.01 has consensus round 1.0", abs(m - 1.0) < 1e-9 and n == 4)
+    f = mp.draft_features(ds[0], "u1", cons)
+    check("a pure-consensus draft has ~zero reach", f is not None and abs(f["reach"]) < 1e-9)
+    check("and is flagged as autodraft (default-queue suspect)", f["autodraft"] is True)
+
+
+def test_reacher_is_measured_and_not_autodraft():
+    ds = [_uniform_draft(f"d{i}", 100 + i, 2025) for i in range(4)]
+    # u1 in a fifth draft reaches: takes later players (higher index) early.
+    reach = _uniform_draft("d9", 900, 2025, shift=6)
+    ds.append(reach)
+    cons = mp.build_consensus(ds[:4])
+    f = mp.draft_features(reach, "u2", cons)
+    check("reaching for later-consensus players yields positive reach",
+          f is not None and f["reach"] is not None and f["reach"] >= 0.5)
+    check("a real reacher is NOT flagged autodraft", f["autodraft"] is False)
+
+
+def test_features_shape():
+    ds = [_uniform_draft("d0", 100, 2025)]
+    cons = mp.build_consensus(ds)
+    f = mp.draft_features(ds[0], "u2", cons)
+    check("open pair reads the first two picks (snake: pick 2 then pick 7)",
+          f["open_pair"] == "WR-QB")
+    check("first QB round recorded", f["first_qb"] == 2.5)
+    check("a manager with no picks yields None",
+          mp.draft_features(ds[0], "ghost", cons) is None)
+
+
+def test_spearman():
+    check("perfect order is +1", abs(mp.spearman([1, 2, 3, 4], [10, 20, 30, 40]) - 1) < 1e-9)
+    check("reversed order is -1", abs(mp.spearman([1, 2, 3, 4], [4, 3, 2, 1]) + 1) < 1e-9)
+    check("constant input is 0 not a crash", mp.spearman([1, 1, 1], [1, 2, 3]) == 0.0)
+
+
+def test_transfer_rows_and_study():
+    # 14 managers, each: one target-league draft + two other-league drafts.
+    feats = {}
+    for i in range(14):
+        uid = f"m{i}"
+        r = (i - 7) / 10.0            # stable personal reach, -0.7 .. +0.6
+        mk = lambda lid, rr: {"draft": f"x{lid}{uid}", "league": str(lid),
+                              "season": "2025", "format": "ppr",
+                              "open_pair": "RB-RB" if i % 2 else "WR-WR",
+                              "first_qb": 4.0 + r, "first_te": 6.0,
+                              "reach": rr, "n_reach_obs": 8, "autodraft": False}
+        feats[uid] = [mk(1, r), mk(2, r + 0.02), mk(999, r - 0.01)]
+    rows = mp.transfer_rows(feats, {"999"})
+    check("every manager-season with a target draft + 2 others is a row", len(rows) == 14)
+    v = mp.run_study(rows)
+    check("stable reach transfers (spearman ~1, PASSES)",
+          v["reach"]["pass"] is True and v["reach"]["spearman"] > 0.9)
+    check("stable openers beat the format base rate",
+          v["open_pair"]["profile_hit"] == 1.0)
+    # Now scramble: reach in the target is noise — transfer must FAIL, not flatter us.
+    for i, (uid, fs) in enumerate(feats.items()):
+        fs[2]["reach"] = ((i * 7919) % 14 - 7) / 10.0
+    v2 = mp.run_study(mp.transfer_rows(feats, {"999"}))
+    check("noise in the target league does not pass the reach gate",
+          v2["reach"]["pass"] is False)
+
+
+def test_autodrafts_excluded_from_transfer():
+    feats = {"m1": [
+        {"draft": "a", "league": "1", "season": "2025", "format": "ppr",
+         "open_pair": "RB-RB", "first_qb": 4.0, "first_te": 6.0,
+         "reach": 0.0, "n_reach_obs": 8, "autodraft": True},
+        {"draft": "b", "league": "2", "season": "2025", "format": "ppr",
+         "open_pair": "RB-RB", "first_qb": 4.0, "first_te": 6.0,
+         "reach": 0.3, "n_reach_obs": 8, "autodraft": False},
+        {"draft": "t", "league": "999", "season": "2025", "format": "ppr",
+         "open_pair": "RB-RB", "first_qb": 4.0, "first_te": 6.0,
+         "reach": 0.3, "n_reach_obs": 8, "autodraft": False},
+    ]}
+    check("autodraft evidence never counts toward a profile",
+          mp.transfer_rows(feats, {"999"}) == [])
+
+
+def main():
+    test_norm_round()
+    test_consensus_and_reach()
+    test_reacher_is_measured_and_not_autodraft()
+    test_features_shape()
+    test_spearman()
+    test_transfer_rows_and_study()
+    test_autodrafts_excluded_from_transfer()
+    total, passed = len(RESULTS), sum(RESULTS)
+    print(f"\nRESULT: {passed}/{total} {'ALL PASS' if passed == total else 'SOME FAILED'}")
+    sys.exit(0 if passed == total else 1)
+
+
+if __name__ == "__main__":
+    main()
