@@ -1,18 +1,19 @@
 {
  "season": "2026",
- "fitted_at": "2026-09-02",
- "drafts": 67,
+ "fitted_at": "2026-09-07",
+ "drafts": 86,
  "eps": 0.35,
- "tau": 100.0,
+ "tau": 120.0,
  "brier": {
-  "uncond": 0.2331,
-  "cond": 0.1451,
-  "mix": 0.1242
+  "uncond": 0.2589,
+  "cond": 0.1497,
+  "mix": 0.1214
  },
  "behavior": {
   "qb_round1": {
-   "superflex": 3.68,
-   "ppr": 0.24
+   "superflex": 3.41,
+   "ppr": 0.12,
+   "half": 0.0
   }
  },
  "seeds": [
