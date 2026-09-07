@@ -118,11 +118,22 @@ app.setPlaycallers({CIN:'Zac Taylor'});
         'a trend reads packed year rows in season order');
     const svg=app.advSparkSvg(tr,false);
     chk(/sr-spark-line/.test(svg) && /sr-spark-dot sr-good/.test(svg),
-        'the sparkline draws with the endpoint in the CURRENT rank\u2019s color');
+        'the sparkline draws with the newest season\u2019s dot by default');
     chk(/2022: 0.02 · #20/.test(svg) && /2024: 0.17 · #3/.test(svg),
         'hover tells the season-by-season story');
+    // Rank IS the y-axis (fixed 1→32): rank 3 sits near the top, rank 20 in the lower half.
+    const cy=(sv)=>Number((sv.match(/circle[^>]*cy="([\d.]+)"/)||[])[1]);
+    chk(cy(svg)<6, 'rank 3 dot sits near the TOP of the fixed 1-32 rank scale');
+    const svg22=app.advSparkSvg(tr,false,2022);
+    chk(/sr-spark-dot sr-oklo/.test(svg22) && cy(svg22)>8,
+        'viewing 2022 moves the dot to 2022\u2019s point, recolored to rank 20\u2019s class');
+    chk(/circle[^>]*cx="2.5"/.test(svg22), 'and repositions it to the first season\u2019s x');
+    app.setNflverse({'2023':{team:{offense:mk(0.08,11)}}, '2024':{team:{offense:mk(0.17,3)}}});
+    const tr2=app.advTrendFor('DET','offense','EPA/Play');
+    chk(tr2 && tr2.length===2 && /sr-spark-line/.test(app.advSparkSvg(tr2,false)),
+        'two seasons IS a trend now (data that starts after 2021 still charts)');
     app.setNflverse({'2024':{team:{offense:mk(0.17,3)}}});
-    chk(app.advTrendFor('DET','offense','EPA/Play')===null, 'fewer than 3 seasons is not a trend — no spark');
+    chk(app.advTrendFor('DET','offense','EPA/Play')===null, 'a single season is not a trend — no spark');
     app.setNflverse({});
   }
 

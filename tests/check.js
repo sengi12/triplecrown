@@ -14925,6 +14925,9 @@ function _advComputeOlRangeTables(season, lo, hi){
     const ptAtt=ps[pidx.pocket_time_att]||0;
 
     const ra=rs[ridx.designed_rushes]||0;
+    // Old baked packs predate rush_successes — the row must go BLANK there, never 0%.
+    const hasSucc=ridx.rush_successes!=null;
+    const succ=hasSucc?(rs[ridx.rush_successes]||0):null;
     const stuffed=rs[ridx.stuffed]||0;
     const expl=rs[ridx.explosive]||0;
     const ry=rs[ridx.rush_yards]||0;
@@ -14953,6 +14956,7 @@ function _advComputeOlRangeTables(season, lo, hi){
       run:{
         'Stuff Rate': _advNum(ra>0 ? (stuffed/ra)*100 : null,1),
         'Explosive Run Rate': _advNum(ra>0 ? (expl/ra)*100 : null,1),
+        'Success Rate': _advNum(hasSucc && ra>0 ? (succ/ra)*100 : null,1),
         'Yards/Rush': _advNum(ra>0 ? (ry/ra) : null,2),
         'YBC/Rush': _advNum(ra>0 ? (ybc/ra) : null,2),
         'YAC/Rush': _advNum(ra>0 ? (yac/ra) : null,2),
@@ -14989,12 +14993,12 @@ function _advComputeOlRangeTables(season, lo, hi){
   }
 
   const passCols=['Overall Score','Dropbacks','Pass Score','Pressure Rate','Hit Rate','Hurry Rate','Blitz Rate','No Blitz Pressure Rate','Sack Rate','Non-QB Sack Rate','Pocket Time'];
-  const runCols=['Overall Score','Stuff Rate','Explosive Run Rate','Yards/Rush','YBC/Rush','YAC/Rush','Rush 1D Rate','Broken Tackle Rate','ROE/Att','8+ Box Rate','Time to LOS'];
+  const runCols=['Overall Score','Stuff Rate','Explosive Run Rate','Success Rate','Yards/Rush','YBC/Rush','YAC/Rush','Rush 1D Rate','Broken Tackle Rate','ROE/Att','8+ Box Rate','Time to LOS'];
   const passLower=new Set(['Pressure Rate','Hit Rate','Hurry Rate','Sack Rate','Non-QB Sack Rate','No Blitz Pressure Rate']);
   const runLower=new Set(['Stuff Rate','8+ Box Rate','Time to LOS']);
 
   const passTbl={columns:passCols, pct_cols:['Pass Rate','Pressure Rate','Hit Rate','Hurry Rate','Blitz Rate','No Blitz Pressure Rate','Sack Rate','Non-QB Sack Rate'], teams:{}};
-  const runTbl={columns:runCols, pct_cols:['Stuff Rate','Explosive Run Rate','Rush 1D Rate','Broken Tackle Rate','8+ Box Rate'], teams:{}};
+  const runTbl={columns:runCols, pct_cols:['Stuff Rate','Explosive Run Rate','Success Rate','Rush 1D Rate','Broken Tackle Rate','8+ Box Rate'], teams:{}};
   passCols.forEach(col=>{
     const vals={}; for(const tm in teams) vals[tm]=teams[tm].pass[col];
     const rk=_advRankMap(vals, passLower.has(col));
@@ -15478,20 +15482,35 @@ function advTrendFor(team, tableKey, col){
     }
     if(typeof v==='number') pts.push({y:+y, v, r});
   }
-  return pts.length>=3 ? pts : null;           // fewer than 3 seasons isn't a trend
+  // Two seasons is already a direction (a stat FTN only charts from 2022, a metric added
+  // mid-history) — only a single point renders nothing. Missing years simply aren't points.
+  return pts.length>=2 ? pts : null;
 }
-function advSparkSvg(pts, isPct){
+function advSparkSvg(pts, isPct, viewYear){
   const W=56, H=16, P=2.5;
-  const vs=pts.map(p=>p.v);
-  const mn=Math.min(...vs), mx=Math.max(...vs);
+  // League RANK is the y-axis whenever every season carries one — FIXED 1 (top) → 32
+  // (bottom), so the line means "vs the league", not "vs our own best year", and a flat
+  // line at the top reads as sustained dominance instead of noise. Raw-value min-max
+  // scaling stays as the fallback for series without ranks.
+  const ranked=pts.every(p=>p.r!=null);
+  let Y;
+  if(ranked){ Y=p=>P+(H-2*P)*((p.r-1)/31); }
+  else{
+    const vs=pts.map(p=>p.v);
+    const mn=Math.min(...vs), mx=Math.max(...vs);
+    Y=p=>mx===mn?H/2:P+(H-2*P)*(1-(p.v-mn)/(mx-mn));
+  }
   const X=i=>P+(W-2*P)*(pts.length===1?0.5:i/(pts.length-1));
-  const Y=v=>mx===mn?H/2:P+(H-2*P)*(1-(v-mn)/(mx-mn));
-  const d=pts.map((p,i)=>`${i?'L':'M'}${X(i).toFixed(1)},${Y(p.v).toFixed(1)}`).join(' ');
-  const last=pts[pts.length-1];
+  const d=pts.map((p,i)=>`${i?'L':'M'}${X(i).toFixed(1)},${Y(p).toFixed(1)}`).join(' ');
+  // The dot marks the season being VIEWED (season tabs), not blindly the newest — on the
+  // 2023 tab it sits on 2023's point in 2023's rank color. Unknown/absent year → newest.
+  let di=viewYear!=null ? pts.findIndex(p=>String(p.y)===String(viewYear)) : -1;
+  if(di<0) di=pts.length-1;
+  const dp=pts[di];
   const title=pts.map(p=>`${p.y}: ${fmtSharpVal(p.v,isPct)}${p.r!=null?` · #${p.r}`:''}`).join('   ');
   return `<svg class="sr-spark" viewBox="0 0 ${W} ${H}"><title>${escAttr(title)}</title>
     <path d="${d}" class="sr-spark-line"/>
-    <circle cx="${X(pts.length-1).toFixed(1)}" cy="${Y(last.v).toFixed(1)}" r="2.4" class="sr-spark-dot ${sharpRankClass(last.r)}"/></svg>`;
+    <circle cx="${X(di).toFixed(1)}" cy="${Y(dp).toFixed(1)}" r="2.4" class="sr-spark-dot ${sharpRankClass(dp.r)}"/></svg>`;
 }
 function renderTeamAdvanced(team){
   const hasSharp=sharpHasData(), hasSOS=SOS&&Object.keys(SOS).length>0;
@@ -15529,7 +15548,7 @@ function renderTeamAdvanced(team){
           relevance: noteRelevanceForTableKey(key),
           nav: { type:'advanced', team: useTeam, season: String(advTeamSeason()) },
         }, 'note-tag-hit'):txt}</div>
-        <div class="sr-stat-spark">${(()=>{const tr=advTrendFor(useTeam,key,col); return tr?advSparkSvg(tr, sharpColIsPct(tbl,col)):'';})()}</div>
+        <div class="sr-stat-spark">${(()=>{const tr=advTrendFor(useTeam,key,col); return tr?advSparkSvg(tr, sharpColIsPct(tbl,col), advTeamSeason()):'';})()}</div>
         <div class="sr-stat-rank">${sharpRankBadge(r)}</div>
       </div>`;
     }).join('');
@@ -15666,7 +15685,7 @@ function nflverseSharpTables(){
     'Motion Rate','Play Action Rate','RPO Rate','Screen Rate','Trick Play Rate','Drop Rate','Blitz Rate',
     'Pressure Rate Allowed','Rush Stuff Rate','Pressure Rate','No Blitz Pressure Rate',
     'Hit Rate','Hurry Rate','Sack Rate','Non-QB Sack Rate','Last 5 Sack Rate',
-    'Stuff Rate','Explosive Run Rate','Rush 1D Rate','Broken Tackle Rate','8+ Box Rate',
+    'Stuff Rate','Explosive Run Rate','Success Rate','Rush 1D Rate','Broken Tackle Rate','8+ Box Rate',
     '11 Personnel','12 Personnel','13 Personnel','21 Personnel','Multi RB Rate','Sub Package Rate','Nickel Rate','Dime+ Rate',
     'Neutral DB Rate','Neutral DB Rate Last 5','Middle Closed Rate','Middle Open Rate','Cover 1','Cover 2','Cover 3'];
   const out={};
