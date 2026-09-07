@@ -100,6 +100,7 @@ def test_transfer_rows_and_study():
                               "season": "2025", "format": "ppr",
                               "open_pair": "RB-RB" if i % 2 else "WR-WR",
                               "first_qb": 4.0 + r, "first_te": 6.0,
+                              "rb_share8": 0.5 + r / 4.0,
                               "reach": rr, "n_reach_obs": 8, "autodraft": False}
         feats[uid] = [mk(1, r), mk(2, r + 0.02), mk(999, r - 0.01)]
     rows = mp.transfer_rows(feats, {"999"})
@@ -107,14 +108,49 @@ def test_transfer_rows_and_study():
     v = mp.run_study(rows)
     check("stable reach transfers (spearman ~1, PASSES)",
           v["reach"]["pass"] is True and v["reach"]["spearman"] > 0.9)
-    check("stable openers beat the format base rate",
-          v["open_pair"]["profile_hit"] == 1.0)
+    check("a stable RB-early habit beats the format baseline",
+          v["rb_share8"]["pass"] is True)
     # Now scramble: reach in the target is noise — transfer must FAIL, not flatter us.
     for i, (uid, fs) in enumerate(feats.items()):
         fs[2]["reach"] = ((i * 7919) % 14 - 7) / 10.0
     v2 = mp.run_study(mp.transfer_rows(feats, {"999"}))
     check("noise in the target league does not pass the reach gate",
           v2["reach"]["pass"] is False)
+
+
+def test_format_matching():
+    mk = lambda lid, fmt: {"draft": f"f{lid}", "league": str(lid), "season": "2025",
+                           "format": fmt, "open_pair": "RB-RB", "first_qb": 4.0,
+                           "first_te": 6.0, "rb_share8": 0.5, "reach": 0.3,
+                           "n_reach_obs": 8, "autodraft": False}
+    feats = {"m1": [mk(1, "superflex"), mk(2, "superflex"), mk(999, "ppr")]}
+    check("other-format drafts never vouch for a different market (v1's confound)",
+          mp.transfer_rows(feats, {"999"}) == [])
+    feats["m1"][0]["format"] = feats["m1"][1]["format"] = "ppr"
+    check("same-format drafts do", len(mp.transfer_rows(feats, {"999"})) == 1)
+
+
+def test_splithalf():
+    import random
+    rnd = random.Random(7)
+    mk = lambda i, uid, fmt, r: {"draft": f"s{uid}{i}", "league": str(i), "season": str(2021 + i % 5),
+                                 "format": fmt, "open_pair": "RB-RB", "first_qb": 3.0 + r,
+                                 "first_te": 6.0, "rb_share8": 0.4 + r / 5.0,
+                                 "reach": r, "n_reach_obs": 8, "autodraft": False}
+    stable = {f"m{j}": [mk(i, f"m{j}", "ppr", (j - 7) / 10.0 + rnd.gauss(0, 0.02))
+                        for i in range(6)] for j in range(14)}
+    units = mp.splithalf_units(stable)
+    check("every manager with >= 4 same-format drafts is a unit", len(units) == 14)
+    v = mp.run_splithalf(units)
+    check("stable traits pass all three split-half gates",
+          all(v[k]["pass"] for k in ("reach", "first_qb", "rb_share8")))
+    noisy = {f"m{j}": [mk(i, f"m{j}", "ppr", rnd.gauss(0, 0.5)) for i in range(6)]
+             for j in range(14)}
+    v2 = mp.run_splithalf(mp.splithalf_units(noisy))
+    check("pure noise does not pass (the baseline is exactly r=0)",
+          not v2["reach"]["pass"])
+    thin = {"m1": [mk(i, "m1", "ppr", 0.3) for i in range(3)]}
+    check("fewer than 4 drafts in a format is no unit", mp.splithalf_units(thin) == [])
 
 
 def test_autodrafts_excluded_from_transfer():
@@ -140,6 +176,8 @@ def main():
     test_features_shape()
     test_spearman()
     test_transfer_rows_and_study()
+    test_format_matching()
+    test_splithalf()
     test_autodrafts_excluded_from_transfer()
     total, passed = len(RESULTS), sum(RESULTS)
     print(f"\nRESULT: {passed}/{total} {'ALL PASS' if passed == total else 'SOME FAILED'}")

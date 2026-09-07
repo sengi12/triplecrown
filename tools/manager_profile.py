@@ -12,18 +12,38 @@ that season, all public, all with full pick logs (mocks are invisible to the
 API and mostly autopicker noise anyway — real drafts are both bigger and
 better data). A typical multi-league opponent yields dozens of real drafts.
 
-The study is a TRANSFER test, pre-registered here before the first run:
+The study is a TRANSFER test. v1 (2026-09-07, 18 manager-seasons) failed all
+three of its gates — but two design flaws confounded it: a manager's OTHER-
+format drafts predicted their target-format behavior (superflex QB timing
+polluting 1QB predictions), and the R1-R2 opening pair is slot-driven (what
+you do picking 1st vs 12th differs regardless of who you are). v2, pre-
+registered here before its first run, fixes exactly those two and nothing
+else — same thresholds, no tuning:
   1. Reach: a manager's mean reach (consensus round minus their pick round,
-     positive = takes players early) in their OTHER leagues, vs their reach in
-     the target league. PASS: Spearman r >= +0.25 with n >= 12 manager-seasons.
-  2. QB timing: predict the round of their first QB from their other drafts
-     (same format bucket); baseline predicts the format's mean. PASS: the
-     profile beats the baseline in >= 60% of manager-seasons.
-  3. Opening pair: the modal R1-R2 position pair from their other drafts,
-     hit rate vs always guessing the format's most common pair. PASS: profile
-     hit rate >= baseline + 10 points.
-Only PASSing measures get wired into draft_sim's opponents (reach additionally
-shrunk toward 0 by sample size). Failing measures die here, in public.
+     positive = takes players early) in their other SAME-FORMAT drafts, vs
+     their reach in the target league. PASS: Spearman r >= +0.25, n >= 12.
+  2. QB timing: predict the round of their first QB from their other
+     same-format drafts; baseline predicts the format's mean. PASS: the
+     profile beats the baseline in >= 60% of manager-seasons (n >= 10).
+  3. RB early share (slot-invariant, replaces the opening pair): share of
+     the manager's first 8 picks spent on RB, predicted from their other
+     same-format drafts vs the format's mean. PASS: beats baseline in
+     >= 60% (n >= 10). The opening pair stays in the report as color only.
+Dynasty startups are their own market: the format bucket gains a "-dyn"
+suffix when the league is dynasty (settings.type == 2), so startup rooms
+never share a consensus or a baseline with redraft rooms.
+v2 ran 2026-09-07: 7 eligible manager-seasons — format matching (correct)
+collapsed the sample; qb_timing beat its baseline 7/7 but n < 10. Verdict:
+underpowered, not null. v3, pre-registered here before its first run, changes
+the DESIGN's power, not the thresholds: split-half reliability. For each
+(manager, format) with >= 4 non-autodraft drafts, the drafts are split
+even/odd by date; the halves' means are correlated across units. A stable
+personal tendency shows r > 0; the format-mean baseline is exactly r = 0.
+PASS per measure (reach, first_qb, rb_share8): Spearman r >= +0.25 with
+n >= 12 units. Only PASSing measures get wired into draft_sim's opponents
+(reach additionally shrunk toward 0 by sample size); the `study` command
+still reports the v2 target-league transfer alongside. Failing measures
+die here, in public.
 
 Consensus is self-consistent, like draft_corpus: a player's expected slot is
 his mean normalized round across the harvested drafts of that season+format,
@@ -112,12 +132,15 @@ def draft_features(draft, uid, consensus):
         if pos and pos not in first_round:
             first_round[pos] = norm_round(p["no"], teams)
     open_pair = "-".join(p["pos"] or "?" for p in mine[:2])
+    early = mine[:8]
+    rb_share8 = sum(1 for p in early if p["pos"] == "RB") / len(early) if len(early) >= 6 else None
     return {
         "draft": draft["draft"], "league": draft["league"],
         "season": str(draft["season"]), "format": draft["format"],
         "open_pair": open_pair,
         "first_qb": first_round.get("QB"),
         "first_te": first_round.get("TE"),
+        "rb_share8": rb_share8,
         "reach": reach_mean,
         "n_reach_obs": len(reaches),
         "autodraft": autodraft,
@@ -157,12 +180,49 @@ def transfer_rows(feats_by_manager, target_league_ids):
             by_season[f["season"]].append(f)
         for season, fs in by_season.items():
             tgt = [f for f in fs if str(f["league"]) in target_league_ids]
+            # v2: only SAME-FORMAT evidence transfers — a superflex habit says
+            # nothing about a 1QB room, and v1 proved it the hard way.
             oth = [f for f in fs if str(f["league"]) not in target_league_ids
-                   and not f["autodraft"]]
+                   and not f["autodraft"] and tgt and f["format"] == tgt[0]["format"]]
             if tgt and len(oth) >= 2:
                 rows.append({"uid": uid, "season": season,
                              "others": oth, "target": tgt[0]})
     return rows
+
+
+def splithalf_units(feats_by_manager, min_drafts=4):
+    """v3 units: (manager, format) -> (half1 feats, half2 feats), split even/odd
+    over the manager's same-format non-autodraft drafts ordered by season+draft id."""
+    units = []
+    for uid, feats in feats_by_manager.items():
+        by_fmt = defaultdict(list)
+        for f in feats:
+            if not f["autodraft"]:
+                by_fmt[f["format"]].append(f)
+        for fmt, fs in by_fmt.items():
+            if len(fs) < min_drafts:
+                continue
+            fs = sorted(fs, key=lambda f: (f["season"], f["draft"]))
+            units.append({"uid": uid, "format": fmt,
+                          "h1": fs[0::2], "h2": fs[1::2]})
+    return units
+
+
+def run_splithalf(units):
+    """Split-half reliability per measure: mean(half1) vs mean(half2) across
+    units. r=0 is exactly the format-mean baseline; r>=0.25 with n>=12 PASSes."""
+    out = {}
+    for key in ("reach", "first_qb", "rb_share8"):
+        xs, ys = [], []
+        for u in units:
+            a = [f.get(key) for f in u["h1"] if f.get(key) is not None]
+            b = [f.get(key) for f in u["h2"] if f.get(key) is not None]
+            if a and b:
+                xs.append(statistics.fmean(a)); ys.append(statistics.fmean(b))
+        r = spearman(xs, ys) if len(xs) >= 5 else None
+        out[key] = {"n": len(xs), "spearman": r,
+                    "pass": r is not None and len(xs) >= 12 and r >= 0.25}
+    return out
 
 
 def run_study(rows):
@@ -197,24 +257,24 @@ def run_study(rows):
                 wins += profile_err < base_err
     out["qb_timing"] = {"n": tries, "profile_beats_baseline": (wins / tries) if tries else None,
                         "pass": tries >= 10 and wins / tries >= 0.60}
-    # 3. Opening pair: modal-from-others vs format's most common pair
-    fmt_pairs = defaultdict(Counter)
+    # 3. RB early share (slot-invariant) vs the format's mean, same MAE contest
+    fmt_rb = defaultdict(list)
     for r in rows:
         for f in r["others"] + [r["target"]]:
-            fmt_pairs[f["format"]][f["open_pair"]] += 1
-    hits = base_hits = tries3 = 0
+            if f.get("rb_share8") is not None:
+                fmt_rb[f["format"]].append(f["rb_share8"])
+    fmt_rb = {k: statistics.fmean(v) for k, v in fmt_rb.items()}
+    wins3 = tries3 = 0
     for r in rows:
-        pairs = Counter(f["open_pair"] for f in r["others"])
-        if not pairs:
-            continue
-        tries3 += 1
-        hits += pairs.most_common(1)[0][0] == r["target"]["open_pair"]
-        fmt = r["target"]["format"]
-        base_hits += fmt_pairs[fmt].most_common(1)[0][0] == r["target"]["open_pair"]
-    out["open_pair"] = {"n": tries3,
-                        "profile_hit": (hits / tries3) if tries3 else None,
-                        "baseline_hit": (base_hits / tries3) if tries3 else None,
-                        "pass": tries3 >= 10 and hits / tries3 >= base_hits / tries3 + 0.10}
+        o = [f["rb_share8"] for f in r["others"] if f.get("rb_share8") is not None]
+        t, fmt = r["target"].get("rb_share8"), r["target"]["format"]
+        if o and t is not None and fmt in fmt_rb:
+            pe, be = abs(statistics.fmean(o) - t), abs(fmt_rb[fmt] - t)
+            if pe != be:
+                tries3 += 1
+                wins3 += pe < be
+    out["rb_share8"] = {"n": tries3, "profile_beats_baseline": (wins3 / tries3) if tries3 else None,
+                        "pass": tries3 >= 10 and wins3 / tries3 >= 0.60}
     return out
 
 
@@ -266,7 +326,7 @@ def crawl(args):
                         for p in picks if p.get("pick_no")]
                 drafts.append({"draft": did, "league": str(lid), "season": str(season),
                                "teams": teams, "rounds": rounds,
-                               "format": dc.fmt_of(lg),
+                               "format": dc.fmt_of(lg) + ("-dyn" if (lg.get("settings") or {}).get("type") == 2 else ""),
                                "picks": sorted(rows, key=lambda r: r["no"])})
                 kept += 1
         print(f"  {name}: {kept} drafts", flush=True)
@@ -298,9 +358,14 @@ def _features(data):
 
 def study(args):
     data = json.load(open(args.data))
-    rows = transfer_rows(_features(data), set(data["target_league_ids"]))
-    print(f"manager-seasons eligible for transfer test: {len(rows)}")
-    verdicts = run_study(rows)
+    feats = _features(data)
+    rows = transfer_rows(feats, set(data["target_league_ids"]))
+    print(f"v2 target-league transfer — manager-seasons eligible: {len(rows)}")
+    for name, v in run_study(rows).items():
+        print(f"  {name}: {json.dumps(v)}")
+    units = splithalf_units(feats)
+    print(f"v3 split-half reliability — (manager,format) units: {len(units)}")
+    verdicts = run_splithalf(units)
     for name, v in verdicts.items():
         print(f"  {name}: {json.dumps(v)}")
     passing = [k for k, v in verdicts.items() if v["pass"]]
