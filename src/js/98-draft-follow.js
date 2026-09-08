@@ -231,6 +231,11 @@ async function linkLeagueObject(lg){
   // "sync the league you linked here" instead of asking for the username again.
   window._laLinkedLeague = { id: lg.league_id, name: lg.name };
   const applied = applySleeperScoring(lg.scoring_settings);
+  // BAFL is a category league wearing points-league clothes on Sleeper: flip the whole
+  // advisory to the category lens when ITS draft links, and back off for any other league.
+  const wasBafl = !!scoringSettings.baflMode;
+  scoringSettings.baflMode = /\bBAFL\b/i.test(lg.name||'');
+  if(scoringSettings.baflMode && !wasBafl) toast('BAFL Mode: category scoring \u2713','ok');
   const fmt = detectLeagueFormat(lg.scoring_settings, lg.roster_positions, scoringType, lg.settings&&lg.settings.type);
   if(fmt){
     rankFormat=fmt;

@@ -1612,6 +1612,8 @@ let scoringSettings = {
   rushing_yards_points:1, rushing_yards_yardage:10,
   rushing_touchdowns:6, rushing_attempts:0,
   fumbles_lost:-2,
+  // BAFL Mode: value players by CATEGORY leverage (best-3-of-5 league) instead of points.
+  baflMode:false,
 };
 
 function getBase(team,pos){ return (SEED[team]||{})[pos]||[]; }
@@ -6131,6 +6133,7 @@ function paceStatChipsHTML(name, pos, pid, view){
 //   f  = the running points total
 // `*_yardage` fields are yards-PER-POINT (25 = 1pt per 25 yds), which is why they divide.
 function calcFpts(p){
+  if(scoringSettings.baflMode) return calcBaflCat(p);
   const sc=scoringSettings;let f=0;
   f+=(p.passing_yards||0)/sc.passing_yards_yardage*sc.passing_yards_points;
   f+=(p.passing_tds||0)*sc.passing_touchdowns;
@@ -6148,6 +6151,22 @@ function calcFpts(p){
   f+=(p.rushing_attempts||0)*sc.rushing_attempts;
   f+=(p.fumbles_lost||0)*sc.fumbles_lost;
   return f;
+}
+// BAFL Mode: matchups are best-3-of-5 CATEGORIES (pass yds −20/INT · rush yds · rec yds ·
+// all TDs · kicking), so a player's worth is his push on the category scoreboard, not points.
+// Each stat is scaled by its category's season-level variability (weekly team-category SD
+// × 17: pass 1547, rush 833, rec 1343, TD 29.75 — from the BAFL room simulations,
+// 2026-09-08), so one "unit" moves every category's win odds about equally; ×60 only to
+// land in a familiar fantasy-points range. Receptions are worth 0 here — BAFL has no
+// catches category — and a rushing QB is a three-category player, which this makes visible.
+// VOR/VONA/tracker all read these fpts, so the whole advisory inherits the category lens.
+function calcBaflCat(p){
+  const pass=(p.passing_yards||0) - 20*(p.interceptions_thrown||0);
+  const lev = pass/1547
+            + (p.rushing_yards||0)/833
+            + (p.receiving_yards||0)/1343
+            + ((p.passing_tds||0)+(p.rushing_tds||0)+(p.receiving_tds||0))/29.75;
+  return lev*60;
 }
 // ── FantasyPros ECR lookup (replaces ADP) ──
 // Normalize a name to match the ECR keys built by build_seed.py.
@@ -16905,6 +16924,9 @@ function renderRankings(){
           <div class="scoring-field"><label>PASS ATT</label><input id="sc_pass_att" type="number" value="${scoringSettings.passing_attempts}" step="0.1"></div>
           <div class="scoring-field"><label>PASS COMP</label><input id="sc_pass_comp" type="number" value="${scoringSettings.passing_completions}" step="0.1"></div>
           <div class="scoring-field"><label>RUSH ATT</label><input id="sc_rush_att" type="number" value="${scoringSettings.rushing_attempts}" step="0.1"></div>
+          <div class="scoring-field scoring-toggle"><label>BAFL MODE</label>
+            <input id="sc_bafl" type="checkbox" ${scoringSettings.baflMode?'checked':''}
+              title="Category league: value = push on pass/rush/rec yards + TDs (best 3 of 5), not points. Auto-on when the BAFL league is linked."></div>
         </div>
       </div>
     </div>
@@ -17456,6 +17478,7 @@ function setSumerMin(bucket, val, selStart, selEnd){
 // confirm your settings without expanding it. Only surfaces the fields people actually vary.
 function scoringSummary(){
   const sc=scoringSettings;
+  if(sc.baflMode) return 'BAFL categories \u00b7 pass/rush/rec yds \u00b7 TDs \u00b7 no PPR';
   const rec=+sc.receptions;
   const recTxt = rec>=1 ? 'Full PPR' : (rec>0 ? `${rec} PPR` : 'Standard');
   const tep=+sc.receptions_te_bonus||0;
@@ -17493,6 +17516,8 @@ function recalcRankings(){
   scoringSettings.passing_attempts=g('sc_pass_att',0);
   scoringSettings.passing_completions=g('sc_pass_comp',0);
   scoringSettings.rushing_attempts=g('sc_rush_att',0);
+  const bafl=document.getElementById('sc_bafl');
+  if(bafl) scoringSettings.baflMode=!!bafl.checked;
   syncFormatFromScoring();  // 1.0/0.5/0 reception value keeps the format label + ECR in sync
   saveSession();
   renderRankings();toast('Rankings recalculated ✓','ok');
@@ -25046,6 +25071,11 @@ async function linkLeagueObject(lg){
   // "sync the league you linked here" instead of asking for the username again.
   window._laLinkedLeague = { id: lg.league_id, name: lg.name };
   const applied = applySleeperScoring(lg.scoring_settings);
+  // BAFL is a category league wearing points-league clothes on Sleeper: flip the whole
+  // advisory to the category lens when ITS draft links, and back off for any other league.
+  const wasBafl = !!scoringSettings.baflMode;
+  scoringSettings.baflMode = /\bBAFL\b/i.test(lg.name||'');
+  if(scoringSettings.baflMode && !wasBafl) toast('BAFL Mode: category scoring \u2713','ok');
   const fmt = detectLeagueFormat(lg.scoring_settings, lg.roster_positions, scoringType, lg.settings&&lg.settings.type);
   if(fmt){
     rankFormat=fmt;
