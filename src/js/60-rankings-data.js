@@ -7,6 +7,7 @@
 //   f  = the running points total
 // `*_yardage` fields are yards-PER-POINT (25 = 1pt per 25 yds), which is why they divide.
 function calcFpts(p){
+  if(scoringSettings.baflMode) return calcBaflCat(p);
   const sc=scoringSettings;let f=0;
   f+=(p.passing_yards||0)/sc.passing_yards_yardage*sc.passing_yards_points;
   f+=(p.passing_tds||0)*sc.passing_touchdowns;
@@ -24,6 +25,22 @@ function calcFpts(p){
   f+=(p.rushing_attempts||0)*sc.rushing_attempts;
   f+=(p.fumbles_lost||0)*sc.fumbles_lost;
   return f;
+}
+// BAFL Mode: matchups are best-3-of-5 CATEGORIES (pass yds −20/INT · rush yds · rec yds ·
+// all TDs · kicking), so a player's worth is his push on the category scoreboard, not points.
+// Each stat is scaled by its category's season-level variability (weekly team-category SD
+// × 17: pass 1547, rush 833, rec 1343, TD 29.75 — from the BAFL room simulations,
+// 2026-09-08), so one "unit" moves every category's win odds about equally; ×60 only to
+// land in a familiar fantasy-points range. Receptions are worth 0 here — BAFL has no
+// catches category — and a rushing QB is a three-category player, which this makes visible.
+// VOR/VONA/tracker all read these fpts, so the whole advisory inherits the category lens.
+function calcBaflCat(p){
+  const pass=(p.passing_yards||0) - 20*(p.interceptions_thrown||0);
+  const lev = pass/1547
+            + (p.rushing_yards||0)/833
+            + (p.receiving_yards||0)/1343
+            + ((p.passing_tds||0)+(p.rushing_tds||0)+(p.receiving_tds||0))/29.75;
+  return lev*60;
 }
 // ── FantasyPros ECR lookup (replaces ADP) ──
 // Normalize a name to match the ECR keys built by build_seed.py.

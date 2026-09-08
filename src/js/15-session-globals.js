@@ -367,6 +367,8 @@ let scoringSettings = {
   rushing_yards_points:1, rushing_yards_yardage:10,
   rushing_touchdowns:6, rushing_attempts:0,
   fumbles_lost:-2,
+  // BAFL Mode: value players by CATEGORY leverage (best-3-of-5 league) instead of points.
+  baflMode:false,
 };
 
 function getBase(team,pos){ return (SEED[team]||{})[pos]||[]; }

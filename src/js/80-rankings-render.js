@@ -787,6 +787,9 @@ function renderRankings(){
           <div class="scoring-field"><label>PASS ATT</label><input id="sc_pass_att" type="number" value="${scoringSettings.passing_attempts}" step="0.1"></div>
           <div class="scoring-field"><label>PASS COMP</label><input id="sc_pass_comp" type="number" value="${scoringSettings.passing_completions}" step="0.1"></div>
           <div class="scoring-field"><label>RUSH ATT</label><input id="sc_rush_att" type="number" value="${scoringSettings.rushing_attempts}" step="0.1"></div>
+          <div class="scoring-field scoring-toggle"><label>BAFL MODE</label>
+            <input id="sc_bafl" type="checkbox" ${scoringSettings.baflMode?'checked':''}
+              title="Category league: value = push on pass/rush/rec yards + TDs (best 3 of 5), not points. Auto-on when the BAFL league is linked."></div>
         </div>
       </div>
     </div>
@@ -1338,6 +1341,7 @@ function setSumerMin(bucket, val, selStart, selEnd){
 // confirm your settings without expanding it. Only surfaces the fields people actually vary.
 function scoringSummary(){
   const sc=scoringSettings;
+  if(sc.baflMode) return 'BAFL categories \u00b7 pass/rush/rec yds \u00b7 TDs \u00b7 no PPR';
   const rec=+sc.receptions;
   const recTxt = rec>=1 ? 'Full PPR' : (rec>0 ? `${rec} PPR` : 'Standard');
   const tep=+sc.receptions_te_bonus||0;
@@ -1375,6 +1379,8 @@ function recalcRankings(){
   scoringSettings.passing_attempts=g('sc_pass_att',0);
   scoringSettings.passing_completions=g('sc_pass_comp',0);
   scoringSettings.rushing_attempts=g('sc_rush_att',0);
+  const bafl=document.getElementById('sc_bafl');
+  if(bafl) scoringSettings.baflMode=!!bafl.checked;
   syncFormatFromScoring();  // 1.0/0.5/0 reception value keeps the format label + ECR in sync
   saveSession();
   renderRankings();toast('Rankings recalculated ✓','ok');
