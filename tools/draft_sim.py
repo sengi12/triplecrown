@@ -1458,6 +1458,12 @@ def load_byes(season):
 PATTERNS = {
     "free": None,
     "rb-rb-rb": ["RB", "RB", "RB"],
+    # QB-first lines: in 2QB/superflex rooms these are what champions actually
+    # open with — a grid that never forces them can't say whether the room's
+    # habit is wisdom or a tax (BAFL, 2026-09-08: it was a 4-to-6-point tax).
+    "qb-rb-wr": ["QB", "RB", "WR"],
+    "qb-wr-rb": ["QB", "WR", "RB"],
+    "qb-qb-rb": ["QB", "QB", "RB"],
     "rb-rb-wr": ["RB", "RB", "WR"],
     "rb-wr-rb": ["RB", "WR", "RB"],
     "rb-wr-wr": ["RB", "WR", "WR"],
