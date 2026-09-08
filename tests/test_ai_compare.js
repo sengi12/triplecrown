@@ -581,7 +581,9 @@ await (async()=>{
   chk(aiCalls().length===b0+2, 'one lookup round = two model requests');
   chk(mcpCalls().length===m0+2, 'one tools/list + one tools/call');
   const first=JSON.parse(aiCalls()[aiCalls().length-2].opts.body);
-  chk(Array.isArray(first.tools) && first.tools[0].function.name==='player_data', 'the connector\'s tools ride the request');
+  chk(Array.isArray(first.tools) && first.tools.some(t=>t.function.name==='player_data')
+      && first.tools.some(t=>t.function.name==='league_team'),
+      'the connector\'s tools AND the local app-data tools ride the request');
   chk(first.messages[0].content.includes('only when it would change the pick'), 'the prompt tells the model lookups are rare');
   const second=JSON.parse(aiCalls().pop().opts.body);
   const tm=second.messages[second.messages.length-1];
@@ -610,7 +612,15 @@ await (async()=>{
   toolAnswers=[];
   b0=aiCalls().length;
   const t3=await app.tcAiCall(msgs);
-  chk(t3==='Final: Player A.' && aiCalls().length===b0+1 && !('tools' in JSON.parse(aiCalls().pop().opts.body)), 'connector unreachable → one plain request, still an answer');
+  {
+    const req=JSON.parse(aiCalls().pop().opts.body);
+    // The worker being down no longer strips ALL tools — the local app-data
+    // tools resolve on-device and still ride; only the remote ones vanish.
+    chk(t3==='Final: Player A.' && aiCalls().length===b0+1
+        && Array.isArray(req.tools) && req.tools.every(t=>t.function.name!=='player_data')
+        && req.tools.some(t=>t.function.name==='league_team'),
+        'connector unreachable → local tools still ride, remote ones gone, answer still comes');
+  }
   global.fetch=realFetch;
   // The free list remembers which models can call tools; the hint knows the failure.
   MODELS.data.push({id:'omega/tooler:free', pricing:{prompt:'0',completion:'0'}, supported_parameters:['tools','max_tokens']});
