@@ -42,6 +42,11 @@ async function tcMcpRpc(method, params, fmt){
 // The tool list, once per session (it only changes when the worker is redeployed).
 let _mcpTools=null;
 async function tcMcpTools(fmt){
+  const local=(typeof tcLocalToolDefs==='function')?tcLocalToolDefs():[];
+  try{ return local.concat(await _tcMcpRemoteTools(fmt)); }
+  catch(e){ return local; }
+}
+async function _tcMcpRemoteTools(fmt){
   if(!_mcpTools) _mcpTools=tcMcpRpc('tools/list', {}, fmt).then(r=>(r&&r.tools)||[]).catch(e=>{ _mcpTools=null; throw e; });
   return _mcpTools;
 }
@@ -53,6 +58,12 @@ function tcMcpToOpenAiTools(tools){
 }
 // Run one tool; the text the model gets back.
 async function tcMcpCallTool(name, args, fmt){
+  // App-data tools resolve on-device (93c-ai-local-tools.js) — instant, free,
+  // and they work even when the worker is unreachable. Everything else → worker.
+  if(typeof tcLocalToolCall==='function'){
+    const loc=await tcLocalToolCall(name, args);
+    if(loc!=null) return loc;
+  }
   const r=await tcMcpRpc('tools/call', { name, arguments:args||{} }, fmt);
   const parts=(r&&r.content)||[];
   return parts.map(c=>c&&c.text||'').join('\n') || '(empty)';

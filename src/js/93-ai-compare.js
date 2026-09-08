@@ -93,7 +93,8 @@ function _aiParseLookup(txt){
 async function _aiKeylessLookups(gen, messages, onProgress){
   const msgs=messages.slice();
   if(msgs[0] && msgs[0].role==='system')
-    msgs[0]={ role:'system', content: msgs[0].content+TC_AI_KEYLESS_HINT };
+    msgs[0]={ role:'system', content: msgs[0].content+TC_AI_KEYLESS_HINT
+      +(typeof TC_LOCAL_TOOL_HINT!=='undefined'?TC_LOCAL_TOOL_HINT:'') };
   for(let round=0;;round++){
     const txt=String(await gen(msgs));
     const req= round<TC_AI_MAX_TOOL_ROUNDS ? _aiParseLookup(txt) : null;
@@ -569,7 +570,8 @@ async function tcAiCall(messages, onProgress){
   }
   const msgs=messages.slice();
   if(tools && tools.length && msgs[0] && msgs[0].role==='system')
-    msgs[0]={ role:'system', content: msgs[0].content+TC_AI_TOOLS_HINT };
+    msgs[0]={ role:'system', content: msgs[0].content+TC_AI_TOOLS_HINT
+      +(typeof TC_LOCAL_TOOL_HINT!=='undefined'?TC_LOCAL_TOOL_HINT:'') };
   let rounds=0;
   for(;;){
   const body={ model:s.model, messages:msgs,

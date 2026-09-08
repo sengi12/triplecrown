@@ -2454,6 +2454,73 @@ function draftStackPartner(p, myPicks, statById){
   return null;
 }
 let _stackStatCache={key:null, map:null};
+// ── Tier break ──────────────────────────────────────────────────────────────
+// The VOR cliff (dropoff) already prices the points; the TIER is the same cliff
+// in human units, and "last ones of the tier" is a real timing signal. For a
+// position's current tier (the best available player's), how many are left and
+// the chance AT LEAST ONE survives to my next pick.
+function _vonaTierBreak(pool, now, survOf){
+  const tNow=(now && now.ecr_tier!=null)?now.ecr_tier:null;
+  if(tNow==null) return null;
+  const inTier=(pool||[]).filter(q=>q.ecr_tier===tNow && !_vonaSeasonOut(q));
+  if(!inTier.length) return null;
+  let pNone=1;
+  inTier.forEach(q=>{ pNone*=(1-Math.min(VONA_SURV_CAP, survOf(q))); });
+  return { n:tNow, left:inTier.length, pHold:+(1-pNone).toFixed(2) };
+}
+// Bounded score nudge: only when the tier is genuinely closing (few left, likely
+// gone) — up to +20%. Granular VOR still carries the decision; this leans it.
+function _vonaTierUrgency(tier, rawDrop){
+  if(!tier || tier.left>3 || rawDrop<=0) return 1;
+  return tier.pHold<0.55 ? 1+0.2*(1-tier.pHold) : 1;
+}
+// ── BAFL derivative weighting ───────────────────────────────────────────────
+// Static BAFL Mode weights every category equally. Live, the marginal value of
+// a category is the probability DENSITY at its current margin: a category this
+// roster has locked (or lost) is worth less than one still in the balance.
+// m_k = exp(-z²/2) with z = (their sum − my sum)/σ_k season; adj re-prices a
+// candidate's stats DOWN for non-contested categories (m<1) relative to the
+// static base, which assumed m=1 everywhere. Early draft, sums≈equal → z≈0 →
+// m≈1 → no distortion; the weighting emerges as rosters diverge. Kicking is
+// out of board scope; TDs/yards use the same divisors as calcBaflCat.
+const BAFL_CAT_DIV={ pass:1547, rush:833, rec:1343, td:29.75 };
+function _baflCatSums(picks, statById){
+  const c={pass:0,rush:0,rec:0,td:0};
+  (picks||[]).forEach(pk=>{
+    const s=statById.get(String(pk.player_id||'')); if(!s) return;
+    c.pass+=(s.passing_yards||0)-20*(s.interceptions_thrown||0);
+    c.rush+=(s.rushing_yards||0); c.rec+=(s.receiving_yards||0);
+    c.td+=(s.passing_tds||0)+(s.rushing_tds||0)+(s.receiving_tds||0);
+  });
+  return c;
+}
+function _baflCatWeights(mine, opp){
+  const m={};
+  for(const k in BAFL_CAT_DIV){
+    const z=((opp[k]||0)-(mine[k]||0))/BAFL_CAT_DIV[k];
+    m[k]=Math.exp(-0.5*z*z);
+  }
+  return m;
+}
+function _vonaBaflCatAdj(statById){
+  try{
+    if(!scoringSettings.baflMode || typeof draftPicksBySlot==='undefined' || mySlot==null) return null;
+    const mine=_baflCatSums(draftPicksBySlot[mySlot]||[], statById);
+    const others=Object.keys(draftPicksBySlot).filter(s=>Number(s)!==Number(mySlot));
+    if(!others.length) return null;
+    const opp={pass:0,rush:0,rec:0,td:0};
+    others.forEach(s=>{ const c=_baflCatSums(draftPicksBySlot[s], statById);
+      for(const k in opp) opp[k]+=c[k]/others.length; });
+    const m=_baflCatWeights(mine, opp);
+    return (p)=>{
+      const pass=(p.passing_yards||0)-20*(p.interceptions_thrown||0);
+      return ( pass/BAFL_CAT_DIV.pass*(m.pass-1)
+             + (p.rushing_yards||0)/BAFL_CAT_DIV.rush*(m.rush-1)
+             + (p.receiving_yards||0)/BAFL_CAT_DIV.rec*(m.rec-1)
+             + ((p.passing_tds||0)+(p.rushing_tds||0)+(p.receiving_tds||0))/BAFL_CAT_DIV.td*(m.td-1) )*60;
+    };
+  }catch(e){ return null; }
+}
 // UI wrapper: the stack partner for a candidate against MY current live roster.
 function _uiStackPartner(p){
   try{
@@ -2581,7 +2648,8 @@ function computeVONA(){
   const before0=_vonaOptimalLineupVor(myPicks, vorOf);
   // Stack context: my picks + a board-stat lookup so partner TDs resolve.
   const statById=new Map(); list.forEach(p=>{ if(p.player_id) statById.set(String(p.player_id), p); });
-  const stackOf=(p)=>vonaStackBonus(p, myPicks, statById);
+  const catAdjOf=_vonaBaflCatAdj(statById);
+  const stackOf=(p)=>vonaStackBonus(p, myPicks, statById) + (catAdjOf ? catAdjOf(p) : 0);
   const rankedByPos={};
   ['QB','RB','WR','TE'].forEach(pos=>{
     const live=(pools[pos]||[]).filter(q=>!_vonaSeasonOut(q));
@@ -2633,8 +2701,11 @@ function computeVONA(){
     // only changes which man at the position it names.
     const take=(rankedByPos[pos] && rankedByPos[pos][0] && rankedByPos[pos][0].p) || now;
     const reached=(take!==now);
+    const tier=_vonaTierBreak(pools[pos], now, survOf);
+    const tierU=_vonaTierUrgency(tier, rawDrop);
     out.push({
       pos,
+      tier, tierU:+tierU.toFixed(2),
       struct: st, scarcity:+scarcity.toFixed(2), puntable, lineupGain,
       bestNow: take,
       boardTop: now,
@@ -2654,7 +2725,7 @@ function computeVONA(){
       gated,
       drift: +(((drift && drift[pos]) || 0).toFixed(1)),
       lastCall: !!budget.lastCall[pos],
-      score: +(Math.max(0, gNow-gNext) + VONA_NOW_WEIGHT*gNow).toFixed(2),
+      score: +((Math.max(0, gNow-gNext) + VONA_NOW_WEIGHT*gNow)*tierU).toFixed(2),
     });
   });
   // lineupFactor stays as display metadata; the row score already prices lineup impact
@@ -2675,10 +2746,13 @@ function computeVONA(){
               ? 'roster full here'
               : `${budget.skillLeft} pick${budget.skillLeft===1?'':'s'} left \u2014 needs elsewhere`)
           : r.puntable ? 'flat \u2014 safe to wait'
+          // A closing tier is the classic draft-room signal: name it when it's real.
+          : (r.tier && r.tier.left<=2 && r.tier.pHold<0.6
+              ? `tier ${r.tier.n} closing \u2014 ${r.tier.left} left, ${Math.round(r.tier.pHold*100)}% one survives`
           // The room outrunning the board is decision-changing on its own: it is
           // why the odds below moved without the player's ranking moving.
           : (dr>=6 ? `room ${Math.round(dr)} picks ahead here`
-          : (st.pressure>=1.15 ? `${st.supply} left \u00b7 ${Math.round(st.demand)} slots` : ''));
+          : (st.pressure>=1.15 ? `${st.supply} left \u00b7 ${Math.round(st.demand)} slots` : '')));
   });
   // Gated rows sink below every live option; a last-call starter overrides everything.
   out.sort((a,b)=> ((a.gated?1:0)-(b.gated?1:0))
