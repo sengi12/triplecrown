@@ -259,7 +259,12 @@ def _seed_for(rows):
 def test_pro_projection_load():
     path = _pro_file()
     con = ds.load_pro_projections(path)
-    check("consensus covers each player once", sorted(con) == ["1", "2"], sorted(con))
+    pids = sorted(k for k in con if ":" not in k)
+    check("consensus covers each player once", pids == ["1", "2"], pids)
+    check("slug/name aliases point at the same line, not a copy",
+          any(k.startswith("nm:") for k in con)
+          and all(con[k] is con.get(next(p for p in con if ":" not in p and con[p] is con[k]), con[k])
+                  for k in con if k.startswith("nm:")))
     rb = con["1"]
     check("consensus averages the analysts",
           rb["rushing_yards"] == 1200.0 and rb["rushing_tds"] == 10.0
@@ -866,6 +871,39 @@ def test_load_profiles_shrink_and_clamp():
     os.unlink(path)
 
 
+def test_room_prior_load_and_hoarding():
+    import json as _json, tempfile
+    data = {"format_means": {"ppr": {"first_qb": 5.0, "rb_share8": 0.4, "qb_drafted": 1.5}},
+            "managers": {"u1": {"ppr": {"n": 3, "first_qb": 2.5, "qb_drafted": 3.5}}},
+            "room": {"format": "ppr", "drafts": 3, "qb_per_roster_max": 6,
+                     "qb_per_roster_mean": 4.5, "first_qb_room": 4.0, "qb_drafted_room": 2.7}}
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        _json.dump(data, f); path = f.name
+    league = ds.League(LEAGUE_JSON, DRAFT_JSON)
+    order = {"u1": 2, "u_new": 3, "me": 6}
+    prof = ds.load_profiles(path, order, "ppr", 12, my_slot=6, league=league)
+    check("the room's observed QB ceiling raises the league's sim limit",
+          league.qb_limit == 6)
+    check("a personally-profiled seat keeps its own (stronger) traits",
+          prof[2]["dqs"] > prof[3]["dqs"] and prof[2]["dq"] < prof[3]["dq"])
+    check("a seat with no history inherits the ROOM's culture, not the market's",
+          prof[3].get("dqs", 0) > 0.2 and prof[3].get("dq", 0) < 0)
+    check("our own seat still wears nothing", 6 not in prof)
+    os.unlink(path)
+
+    # Behavioral: a QB-hoarding room drafts past the old hard cap of 3.
+    pool = _profile_pool(league)
+    league.opp_profiles = {s: {"dqs": 1.2, "dq": -2.0} for s in range(1, 13) if s != 12}
+    rng = random.Random(5)
+    tops = []
+    for _ in range(12):
+        _r, states, _l = ds.run_draft(pool, league, 12, rng, market_only=True)
+        tops.append(max(st.counts["QB"] for st in states.values()))
+    check("with appetite + a raised limit, somebody hoards past three QBs",
+          max(tops) > 3, tops)
+    league.opp_profiles = {}
+
+
 if __name__ == "__main__":
     test_3rr_pick_order()
     test_league_shape()
@@ -898,6 +936,7 @@ if __name__ == "__main__":
     test_build_board_derives_the_format()
     test_opponent_profiles()
     test_load_profiles_shrink_and_clamp()
+    test_room_prior_load_and_hoarding()
     ok = all(RESULTS)
     print(f"RESULT: {'PASS' if ok else 'SOME FAILED'} ({sum(RESULTS)}/{len(RESULTS)})")
     sys.exit(0 if ok else 1)

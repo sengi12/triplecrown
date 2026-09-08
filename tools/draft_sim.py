@@ -156,7 +156,10 @@ class League:
         # One spare behind the startable slots wherever more than one QB starts —
         # a dedicated 2-QB lineup counts exactly like a superflex here (the old
         # `if sf` capped BAFL-style rooms at their bare starters).
-        return min(self.qb_limit, slots + 1 if slots >= 2 else 2)
+        # A room prior that RAISED qb_limit (observed hoarding) also frees our
+        # own seat to consider one more spare — value still has to earn it.
+        spare = 2 if self.qb_limit > slots + 1 else 1
+        return min(self.qb_limit, slots + spare if slots >= 2 else 2)
 
     def te_cap(self):
         return max(2, self.lineup["TE"] + 1)
@@ -262,9 +265,20 @@ def load_pro_projections(path, analyst="consensus"):
             continue
         by_pid.setdefault(pid, []).append(r)
     out = {}
+    aliases = {}
     for pid, rs in by_pid.items():
         line = {"name": rs[0].get("name"), "pos": rs[0].get("fantasy_position"),
                 "team": rs[0].get("team"), "games": PRO_GAMES, "_n": len(rs)}
+        # The export's player_id is the ANALYST platform's own id, not Sleeper's
+        # (2026 exports dropped the nested sleeper block, and every pid silently
+        # missed — a playbook run on "0 of 400 players"). Slug and normalized
+        # name+pos are the join keys that survive either id space.
+        slug = rs[0].get("slug")
+        if slug:
+            aliases["slug:" + str(slug)] = line
+        nm = norm_name(rs[0].get("name") or "")
+        if nm:
+            aliases["nm:" + nm + ":" + str(rs[0].get("fantasy_position") or "")] = line
         for src, dst in PRO_FIELD_MAP.items():
             # Same rule as the app's averageGroup (src/js/85-import-export.js):
             # average the analysts who actually carry the field, not all of them,
@@ -280,10 +294,12 @@ def load_pro_projections(path, analyst="consensus"):
         mu = sum(tot) / len(tot)
         line["_spread"] = ((statistics.pstdev(tot) / mu) if len(tot) > 1 and mu > 0 else 0.0)
         out[pid] = line
+    for k, line in aliases.items():
+        out.setdefault(k, line)
     return out
 
 
-def load_profiles(path, draft_order, fmt, teams, my_slot=0):
+def load_profiles(path, draft_order, fmt, teams, my_slot=0, league=None):
     """Slot-keyed opponent profiles from manager_profile.py's `profiles` JSON.
     Deltas are vs the format's own mean, clamped, and shrunk by w = n/(n+4);
     a manager without same-format history simply keeps the market brain."""
@@ -306,8 +322,35 @@ def load_profiles(path, draft_order, fmt, teams, my_slot=0):
             prof["ds"] = max(-0.3, min(0.3, m["rb_share8"] - fm["rb_share8"])) * w
         if m.get("reach") is not None and m["reach"] > 0:
             prof["jitter"] = m["reach"] * teams * 0.6 * w
+        if m.get("qb_drafted") is not None and fm.get("qb_drafted") is not None:
+            # Room-prior-only trait (see build_room_prior): appetite for QBs
+            # BEYOND the starters, keyed on how many QBs they actually roster
+            # (BAFL: 4.6/roster vs a normal superflex ~2.3). 0..1.5 of the
+            # surplus penalty forgiven, plus active promotion.
+            prof["dqs"] = max(0.0, min(1.5, (m["qb_drafted"] - fm["qb_drafted"]) / 1.5)) * w
         if prof:
             out[slot] = prof
+    room = data.get("room") or {}
+    if league is not None and room.get("qb_per_roster_max"):
+        league.qb_limit = max(league.qb_limit, min(int(room["qb_per_roster_max"]), 8))
+    # Seats with no personal evidence still live in this room: a league-mate who
+    # joined last year drafts inside the same culture the walls impose (in BAFL
+    # nobody waits on QBs, because waiting means there are none). They get the
+    # ROOM's mean tendencies at the room's own shrinkage.
+    if room.get("drafts"):
+        wr = room["drafts"] / (room["drafts"] + 4.0)
+        fill = {}
+        if room.get("first_qb_room") is not None and fm.get("first_qb") is not None:
+            fill["dq"] = max(-3.0, min(3.0, room["first_qb_room"] - fm["first_qb"])) * wr
+        if room.get("qb_drafted_room") is not None and fm.get("qb_drafted") is not None:
+            fill["dqs"] = max(0.0, min(1.5, (room["qb_drafted_room"] - fm["qb_drafted"]) / 1.5)) * wr
+        if fill:
+            for uid, slot in (draft_order or {}).items():
+                if slot == my_slot:
+                    continue
+                prof = out.setdefault(slot, {})
+                for k, v in fill.items():
+                    prof.setdefault(k, v)
     return out
 
 
@@ -362,6 +405,9 @@ def build_pool(seed, sc, byes, tc_weight, floor_kappa, pro=None, fmt="ppr"):
         games = min(17.0, float(r.get("games") or r.get("games_played") or 17))
         seed_pts = league_points(r, sc, games)
         line = (pro or {}).get(str(r.get("player_id") or ""))
+        if line is None and pro:
+            line = (r.get("slug") and pro.get("slug:" + str(r.get("slug")))) \
+                or pro.get("nm:" + norm_name(r.get("name") or "") + ":" + str(r.get("pos") or ""))
         pro_pts = league_points(line, sc, PRO_GAMES) if line else None
         scored.append((r, games, seed_pts, line, pro_pts))
     # Per-position calibration: the analysts' median view of a player the seed
@@ -598,7 +644,10 @@ def opponent_pick(state, order, taken, rnd, picks_left, league, rng, prof=None):
         if taken[p.idx]:
             continue
         c = state.counts[p.pos]
-        if c >= POS_CAPS[p.pos] or (p.pos == "QB" and c >= league.qb_limit):
+        # QB answers ONLY to the league's limit: a room whose history shows
+        # 5-7-QB rosters (BAFL) gets its limit raised by the room prior, and a
+        # hardcoded cap of 3 would quietly forbid what that room actually does.
+        if (p.pos == "QB" and c >= league.qb_limit) or (p.pos != "QB" and c >= POS_CAPS[p.pos]):
             continue
         score = p.noisy
         if prof:
@@ -611,7 +660,12 @@ def opponent_pick(state, order, taken, rnd, picks_left, league, rng, prof=None):
                 lim = 2.0 * prof["jitter"]
                 score += max(-lim, min(lim, j))
         if p.pos == "QB" and c >= league.qb_starters():
-            score += 30 if rnd <= 9 else 12
+            pen = 30 if rnd <= 9 else 12
+            if prof and prof.get("dqs"):
+                # A QB-hoarding room barely blinks at surplus QBs — and shops for more.
+                pen *= max(0.0, 1.0 - prof["dqs"])
+                score -= prof["dqs"] * league.teams * 2.0
+            score += pen
         if p.pos == "TE" and c >= 1:
             score += 22 if rnd <= 9 else 8
         if rnd >= 9 and need_qb and p.pos == "QB":
@@ -1518,7 +1572,8 @@ def main():
     if getattr(args, "profiles", ""):
         try:
             league.opp_profiles = load_profiles(args.profiles, draft_json.get("draft_order"),
-                                                market_format(league), league.teams, my_slot=slot)
+                                                market_format(league), league.teams, my_slot=slot,
+                                                league=league)
             print(f"profiles: {len(league.opp_profiles)} of {league.teams - 1} opponents personalized")
         except Exception as e:
             print(f"profiles: skipped ({type(e).__name__}: {e})")

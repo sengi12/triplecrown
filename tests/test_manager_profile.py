@@ -169,6 +169,37 @@ def test_build_profiles():
     check("a manager with no drafts is absent, not zeroed", "u9" not in out["managers"])
 
 
+def test_room_prior():
+    # Room chain: 3 QB-mad drafts (QB with every early pick) + one draft of a
+    # DIFFERENT format in the chain that must be ignored.
+    def qb_draft(did, lid, fmt="superflex"):
+        order = _snake_order(4, 6)
+        picks = []
+        for i, by in enumerate(order):
+            pos = "QB" if i < 12 else ["RB", "WR", "TE"][i % 3]
+            picks.append((f"p{i}", pos, by))
+        d = _draft(did, lid, 2025, 4, picks)
+        d["format"] = fmt
+        return d
+    ds = [qb_draft(f"room{i}", 900) for i in range(3)] + [qb_draft("old", 900, fmt="half")]
+    ds += [_uniform_draft(f"d{i}", 100 + i, 2025) for i in range(3)]   # cross-league noise
+    base = {"format_means": {"superflex": {"first_qb": 3.0, "rb_share8": 0.3,
+                                           "qb_share8": 0.2, "qb_drafted": 2.0}},
+            "managers": {"u1": {"superflex": {"n": 9, "reach": 0.4, "first_qb": 3.0}}}}
+    data = {"target_league_ids": ["900"], "managers": {f"u{i}": f"U{i}" for i in (1, 2, 3, 4)},
+            "drafts": ds}
+    out = mp.build_room_prior(data, ["900"], "superflex", base=base)
+    check("only same-format chain drafts count", out["room"]["drafts"] == 3)
+    e = out["managers"]["u1"]["superflex"]
+    check("room evidence overrides the cross-league entry",
+          e["n"] == 3 and e["first_qb"] < 2.0 and e["qb_drafted"] >= 3.0)
+    check("the base's reach survives the overlay (room measures no reach)",
+          e["reach"] == 0.4)
+    check("room block carries the culture the sim needs",
+          out["room"]["qb_per_roster_max"] >= 3 and out["room"]["qb_drafted_room"] >= 3.0
+          and out["room"]["first_qb_room"] is not None)
+
+
 def test_autodrafts_excluded_from_transfer():
     feats = {"m1": [
         {"draft": "a", "league": "1", "season": "2025", "format": "ppr",
@@ -195,6 +226,7 @@ def main():
     test_format_matching()
     test_splithalf()
     test_build_profiles()
+    test_room_prior()
     test_autodrafts_excluded_from_transfer()
     total, passed = len(RESULTS), sum(RESULTS)
     print(f"\nRESULT: {passed}/{total} {'ALL PASS' if passed == total else 'SOME FAILED'}")

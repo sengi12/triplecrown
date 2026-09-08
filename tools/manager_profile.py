@@ -134,6 +134,7 @@ def draft_features(draft, uid, consensus):
     open_pair = "-".join(p["pos"] or "?" for p in mine[:2])
     early = mine[:8]
     rb_share8 = sum(1 for p in early if p["pos"] == "RB") / len(early) if len(early) >= 6 else None
+    qb_share8 = sum(1 for p in early if p["pos"] == "QB") / len(early) if len(early) >= 6 else None
     return {
         "draft": draft["draft"], "league": draft["league"],
         "season": str(draft["season"]), "format": draft["format"],
@@ -141,6 +142,8 @@ def draft_features(draft, uid, consensus):
         "first_qb": first_round.get("QB"),
         "first_te": first_round.get("TE"),
         "rb_share8": rb_share8,
+        "qb_share8": qb_share8,
+        "n_qb": sum(1 for p in mine if p["pos"] == "QB"),
         "reach": reach_mean,
         "n_reach_obs": len(reaches),
         "autodraft": autodraft,
@@ -361,7 +364,7 @@ def build_profiles(data):
     means (only formats with >= 2 non-autodraft drafts — one draft is an
     anecdote) plus each format's own means for the deltas."""
     feats = _features(data)
-    fmt_qb, fmt_rb = defaultdict(list), defaultdict(list)
+    fmt_qb, fmt_rb, fmt_qbs, fmt_nqb = defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list)
     managers = {}
     for uid, fs in feats.items():
         by_fmt = defaultdict(list)
@@ -372,7 +375,9 @@ def build_profiles(data):
         for fmt, lst in by_fmt.items():
             qs = [f["first_qb"] for f in lst if f["first_qb"] is not None]
             ss = [f["rb_share8"] for f in lst if f.get("rb_share8") is not None]
-            fmt_qb[fmt].extend(qs); fmt_rb[fmt].extend(ss)
+            qshares = [f["qb_share8"] for f in lst if f.get("qb_share8") is not None]
+            fmt_qb[fmt].extend(qs); fmt_rb[fmt].extend(ss); fmt_qbs[fmt].extend(qshares)
+            fmt_nqb[fmt].extend(f["n_qb"] for f in lst)
             if len(lst) < 2:
                 continue
             rs = [f["reach"] for f in lst if f["reach"] is not None]
@@ -383,11 +388,95 @@ def build_profiles(data):
         if entry:
             managers[uid] = entry
     means = {}
-    for fmt in set(fmt_qb) | set(fmt_rb):
+    for fmt in set(fmt_qb) | set(fmt_rb) | set(fmt_qbs):
         means[fmt] = {"first_qb": statistics.fmean(fmt_qb[fmt]) if fmt_qb.get(fmt) else None,
-                      "rb_share8": statistics.fmean(fmt_rb[fmt]) if fmt_rb.get(fmt) else None}
+                      "rb_share8": statistics.fmean(fmt_rb[fmt]) if fmt_rb.get(fmt) else None,
+                      "qb_share8": statistics.fmean(fmt_qbs[fmt]) if fmt_qbs.get(fmt) else None,
+                      "qb_drafted": statistics.fmean(fmt_nqb[fmt]) if fmt_nqb.get(fmt) else None}
     return {"format_means": means, "managers": managers,
             "names": data.get("managers", {})}
+
+
+def build_room_prior(data, chain_league_ids, room_fmt, base=None):
+    """Room-culture profiles: THIS room's own historical drafts as evidence,
+    overriding cross-league behavior — a league can have a culture its members
+    show nowhere else (BAFL's champions carry 5+ QBs; its first eight picks
+    have been all-QB three drafts running). Only chain drafts whose OWN format
+    matches the current one count (a league that changed formats over the years
+    — QCK — contributes only its same-format seasons). qb_share8 ships ONLY
+    through this room path: as a cross-league personal trait it never faced the
+    split-half gate, but here the room's own history IS the target distribution.
+    Room-draft counts are the n the shrinkage sees; managers with < 2 matching
+    room drafts fall back to the --base (cross-league) profile untouched."""
+    chain = set(str(x) for x in chain_league_ids)
+    room_drafts = [d for d in data["drafts"]
+                   if str(d["league"]) in chain and d["format"] == room_fmt]
+    consensus = build_consensus(data["drafts"])
+    out = json.loads(json.dumps(base)) if base else {"format_means": {}, "managers": {}}
+    out.setdefault("format_means", {}).setdefault(room_fmt, {})
+    feats = defaultdict(list)
+    qb_counts = []
+    for d in room_drafts:
+        per_mgr_qb = defaultdict(int)
+        for p in d["picks"]:
+            if p["pos"] == "QB" and p.get("by"):
+                per_mgr_qb[p["by"]] += 1
+        qb_counts.extend(per_mgr_qb.values())
+        for uid in data["managers"]:
+            f = draft_features(d, uid, consensus)
+            if f:
+                feats[uid].append(f)
+    room_first_qb, room_rb, room_qbs, room_nqb = [], [], [], []
+    for uid, fs in feats.items():
+        room_nqb += [f["n_qb"] for f in fs]
+        room_first_qb += [f["first_qb"] for f in fs if f["first_qb"] is not None]
+        room_rb += [f["rb_share8"] for f in fs if f.get("rb_share8") is not None]
+        room_qbs += [f["qb_share8"] for f in fs if f.get("qb_share8") is not None]
+        if len(fs) < 2:
+            continue
+        entry = out["managers"].setdefault(uid, {}).setdefault(room_fmt, {})
+        entry["n"] = len(fs)
+        qs = [f["first_qb"] for f in fs if f["first_qb"] is not None]
+        ss = [f["rb_share8"] for f in fs if f.get("rb_share8") is not None]
+        qsh = [f["qb_share8"] for f in fs if f.get("qb_share8") is not None]
+        if qs: entry["first_qb"] = statistics.fmean(qs)
+        if ss: entry["rb_share8"] = statistics.fmean(ss)
+        if qsh: entry["qb_share8"] = statistics.fmean(qsh)
+        entry["qb_drafted"] = statistics.fmean([f["n_qb"] for f in fs])
+    fm = out["format_means"][room_fmt]
+    if room_first_qb and fm.get("first_qb") is None:
+        fm["first_qb"] = statistics.fmean(room_first_qb)
+    if room_rb and fm.get("rb_share8") is None:
+        fm["rb_share8"] = statistics.fmean(room_rb)
+    if room_qbs:
+        fm.setdefault("qb_share8", statistics.fmean(room_qbs))
+    out["room"] = {"format": room_fmt, "drafts": len(room_drafts),
+                   "first_qb_room": statistics.fmean(room_first_qb) if room_first_qb else None,
+                   "qb_per_roster_max": max(qb_counts) if qb_counts else None,
+                   "qb_per_roster_mean": statistics.fmean(qb_counts) if qb_counts else None,
+                   "qb_share8_room": statistics.fmean(room_qbs) if room_qbs else None,
+                   "qb_drafted_room": statistics.fmean(room_nqb) if room_nqb else None}
+    return out
+
+
+def room_prior_cmd(args):
+    data = json.load(open(args.data))
+    lg = dc.fetch(f"{API}/league/{args.league}", f"league_{args.league}.json") or {}
+    fmt = dc.fmt_of(lg) + ("-dyn" if (lg.get("settings") or {}).get("type") == 2 else "")
+    chain = [str(args.league)]
+    prev = lg.get("previous_league_id")
+    while prev:
+        chain.append(str(prev))
+        plg = dc.fetch(f"{API}/league/{prev}", f"league_{prev}.json") or {}
+        prev = plg.get("previous_league_id")
+    base = json.load(open(args.base)) if args.base else None
+    out = build_room_prior(data, chain, fmt, base=base)
+    with open(args.out, "w") as f:
+        json.dump(out, f)
+    r = out["room"]
+    print(f"room prior for {lg.get('name','?')} ({fmt}): {r['drafts']} matching chain drafts, "
+          f"max QBs/roster {r['qb_per_roster_max']}, room qb_share8 "
+          f"{r['qb_share8_room'] and round(r['qb_share8_room'],2)} -> {args.out}")
 
 
 def profiles_cmd(args):
@@ -442,6 +531,11 @@ def main():
     pr = sub.add_parser("profiles"); pr.add_argument("--data", required=True)
     pr.add_argument("--out", default=os.path.join(HERE, "..", "cache", "profiles.json"))
     pr.set_defaults(fn=profiles_cmd)
+    rm = sub.add_parser("room-prior"); rm.add_argument("--data", required=True)
+    rm.add_argument("--league", required=True, help="the room whose chain supplies the culture")
+    rm.add_argument("--base", default="", help="cross-league profiles JSON to overlay onto")
+    rm.add_argument("--out", default=os.path.join(HERE, "..", "cache", "room_prior.json"))
+    rm.set_defaults(fn=room_prior_cmd)
     args = ap.parse_args()
     args.fn(args)
 
