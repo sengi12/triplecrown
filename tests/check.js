@@ -25482,7 +25482,7 @@ function vonaOptionsPop(ev, pos){
       ${playerThumb(p)}
       <div class="vona-opt-main">
         <div class="vona-opt-name">${escHtml(p.name)}${typeof tcInjuryTag==='function'?tcInjuryTag(p.player_id):''}</div>
-        <div class="vona-opt-sub">${escHtml(p.team||'FA')}${p.ecr!=null?` · ECR ${p.ecr}`:''}</div>
+        <div class="vona-opt-sub">${escHtml(p.team||'FA')}${p.ecr!=null?` · ECR ${p.ecr}`:''}${(()=>{const st=_uiStackPartner(p);return st?` <span class="vona-stack" title="Completes a stack: same-team TDs pay this roster twice">\u26a1 ${escHtml(st.name.split(' ').pop())}</span>`:'';})()}</div>
       </div>
       <span class="vona-vor">${(p.vor||0)>0?'+':''}${(p.vor||0).toFixed(0)}</span>
       ${pa!=null?`<span class="vona-pct ${pcls(pa)}" title="${noAdp?'No market ADP for this player \u2014 the availability model can\u2019t see him':'Chance they\u2019re still on the board at your next pick'}">${_vonaPctDisp(p,pa)}%</span>`:''}
@@ -26159,7 +26159,7 @@ function vonaCheatPanel(){
       return `<div class="vsg-crow tgt">
         ${_starBtn(t.p)}
         <span class="rt-slot ${slotClass(t.p.pos)}">${t.p.pos}</span>
-        <span class="vsg-cname clickable-player" ${open}>${escHtml(t.p.name)}</span>
+        <span class="vsg-cname clickable-player" ${open}>${escHtml(t.p.name)}</span>${(()=>{const st=_uiStackPartner(t.p);return st?`<span class="vona-stack" title="Completes a stack with ${escAttr(st.name)}">\u26a1</span>`:'';})()}
         <span class="vsg-tnote ${t.kind==='now'?'urgent':''}">${note}</span>
         <span class="vsg-bnum">ADP ${Math.round(t.adp)}</span>
         <span class="vsg-bnum ${t.pAvailAt<0.35?'vsg-now':(t.pAvailAt<0.7?'vsg-close':'vsg-wait')}">${Math.round(t.pAvailAt*100)}%</span>
@@ -27262,14 +27262,68 @@ const VONA_NOW_WEIGHT = 0.15;
 const VONA_BOARD_DEPTH = 40;
 const VONA_CAND_PER_POS = 4;    // players per position considered
 const VONA_TAIL = 0.9;          // residual when none of the others survive
+// ── Stacking ────────────────────────────────────────────────────────────────
+// A same-team QB↔pass-catcher pair scores the SAME real touchdown twice in the
+// same week — correlated upside, the explosive-week engine. The mean doesn't
+// move (both players score their points on any roster), so this is a bounded
+// TIE-BREAKER, never a value override — and it scales with the receiver's
+// projected receiving TDs, because the connected TD is the entire payoff:
+// Burrow→Chase is a real stack, a 3-TD possession slot guy is barely one.
+const STACK_TD_W  = 1.0;    // season pts of tie-break per projected connected TD
+const STACK_CAP   = 12;     // ≈0.7/wk max — leapfrogs near-ties, can't beat real VOR gaps
+// The stack partner a candidate would complete with MY roster (live draft only):
+// {name, tds} or null. QB candidate → my best same-team receiver; WR/TE candidate
+// → my same-team QB, valued by the CANDIDATE's receiving TDs.
+function draftStackPartner(p, myPicks, statById){
+  if(!p || !p.team || !myPicks || !myPicks.length) return null;
+  const stat = (pk)=> statById ? statById.get(String(pk.player_id||'')) : null;
+  if(p.pos==='QB'){
+    let best=null;
+    myPicks.forEach(pk=>{
+      if((pk.pos==='WR'||pk.pos==='TE') && pk.team===p.team){
+        const s=stat(pk); const tds=(s&&s.receiving_tds)||0;
+        if(!best || tds>best.tds) best={name:pk.name, tds};
+      }
+    });
+    return best;
+  }
+  if(p.pos==='WR'||p.pos==='TE'){
+    const qb=myPicks.find(pk=>pk.pos==='QB' && pk.team===p.team);
+    return qb ? {name:qb.name, tds:(p.receiving_tds||0)} : null;
+  }
+  return null;
+}
+let _stackStatCache={key:null, map:null};
+// UI wrapper: the stack partner for a candidate against MY current live roster.
+function _uiStackPartner(p){
+  try{
+    if(typeof mySlot==='undefined' || mySlot==null || typeof draftPicksBySlot==='undefined') return null;
+    const mine=draftPicksBySlot[mySlot]||[];
+    if(!mine.length) return null;
+    const list=(typeof buildPlayerList==='function')?buildPlayerList():[];
+    // Board-identity memo (rankings-hot-path discipline): one map per board build,
+    // not one per rendered row.
+    if(_stackStatCache.key!==list){
+      const m=new Map(); list.forEach(q=>{ if(q.player_id) m.set(String(q.player_id), q); });
+      _stackStatCache={key:list, map:m};
+    }
+    const st=draftStackPartner(p, mine, _stackStatCache.map);
+    return (st && (st.tds||0)>=3) ? st : null;   // only surface stacks with real TD juice
+  }catch(e){ return null; }
+}
+function vonaStackBonus(p, myPicks, statById){
+  const st=draftStackPartner(p, myPicks, statById);
+  return st ? Math.min(STACK_CAP, STACK_TD_W*(st.tds||0)) : 0;
+}
 const VONA_SURV_CAP = 0.995;
-function _vonaRankInPos(cands, myPicks, myCounts, dedBase, vorOf, survOf, before0){
+function _vonaRankInPos(cands, myPicks, myCounts, dedBase, vorOf, survOf, before0, stackOf){
   const top=cands.slice(0, VONA_CAND_PER_POS);
   if(!top.length) return [];
   const surv=top.map(q=>Math.min(VONA_SURV_CAP, survOf(q)));
   const out=[];
   top.forEach((p,i)=>{
-    const vNow=_vonaCandScore(myPicks, myCounts, dedBase, p.pos, (p.vor||0), vorOf, before0);
+    const vNow=_vonaCandScore(myPicks, myCounts, dedBase, p.pos, (p.vor||0), vorOf, before0)
+             + (stackOf ? stackOf(p) : 0);
     const picks2=myPicks.concat([{pos:p.pos, name:p.name, player_id:p.player_id}]);
     const counts2=Object.assign({}, myCounts); counts2[p.pos]=(counts2[p.pos]||0)+1;
     const before2=_vonaOptimalLineupVor(picks2, (pk)=>vorOf(pk));
@@ -27365,11 +27419,14 @@ function computeVONA(){
   // headline is chosen.
   const survOf=(q)=> sim.pAvail.get(sim.pidOf(q)) || 0;
   const before0=_vonaOptimalLineupVor(myPicks, vorOf);
+  // Stack context: my picks + a board-stat lookup so partner TDs resolve.
+  const statById=new Map(); list.forEach(p=>{ if(p.player_id) statById.set(String(p.player_id), p); });
+  const stackOf=(p)=>vonaStackBonus(p, myPicks, statById);
   const rankedByPos={};
   ['QB','RB','WR','TE'].forEach(pos=>{
     const live=(pools[pos]||[]).filter(q=>!_vonaSeasonOut(q));
     rankedByPos[pos]=_vonaRankInPos(live.length?live:(pools[pos]||[]), myPicks, myCounts,
-                                    dedBase, vorOf, survOf, before0);
+                                    dedBase, vorOf, survOf, before0, stackOf);
   });
   const out=[];
   ['QB','RB','WR','TE'].forEach(pos=>{

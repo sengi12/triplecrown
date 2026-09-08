@@ -189,6 +189,7 @@ run_js_test test_slot_counts   "Mock-draft lineup from settings.slots_* counts +
 run_js_test test_pickline_hide  "Pick lines render with hide-drafted ON and OFF, placed correctly; ADP column after TIER sorts the market board"
 run_js_test test_rank_cols      "Rankings column customization: TC column left of ADP, hide/reorder prefs, stat-group hiding, Reset button, reference seasons drop ADP+TC, persist round-trip"
 run_js_test test_bafl_mode      "BAFL Mode: category-league lens through calcFpts (yardage over PPR, rushing QBs, INT bite), auto-on when the BAFL league links, panel toggle round-trip"
+run_js_test test_stacking       "Stacking: TD-scaled QB-receiver correlation tie-breaker in the advisory, partner finder, cap, within-position leapfrog"
 run_js_test test_draft_lifecycle "Draft follow lifecycle: start/stop generation token, completion detection, keeper-aware clock, stop cleanup, follow persistence"
 run_js_test test_vona_options   "VONA pools/pAvail export, options popover (render/toggle/empty), synced-league picker row + username carry-over"
 run_js_test test_injury_timeline "Reported injury timelines beat the book estimate (popup + absence weeks); injury tag popup toggle-closes"
