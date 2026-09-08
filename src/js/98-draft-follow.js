@@ -1291,7 +1291,23 @@ function _cheatSimulate(mkt, cfg){
     if(target>=0) picks[target].targets.push(rec);
   }
   picks.forEach(pk=>pk.targets.sort((a,b)=>b.vor-a.vor));
-  return { picks, sims, slot:mySlot, starred, unreachable:starred.filter(x=>x.target<0) };
+  // QB OUTLOOK: the whole draft's QB shelf, one row per upcoming pick — which
+  // QBs the model expects to still be there when each of YOUR turns comes
+  // around, from the same full-draft availability MC the targets use. QB gets
+  // the dedicated view because it is the scarce, cliffed position everywhere
+  // (and in a 2QB room the shelf empties on a schedule worth planning around).
+  const qbOutlook=[];
+  for(let j=0;j<myPicks.length;j++){
+    const qbs=[];
+    for(let i=0;i<n && qbs.length<5;i++){
+      if(mkt[i].pos!=='QB') continue;
+      const pct=availCount[j][i]/sims;
+      if(pct>=0.15) qbs.push({ p:mkt[i], pct:+pct.toFixed(2) });
+    }
+    if(qbs.length) qbOutlook.push({ pickNo:myPicks[j], k:j+1, qbs });
+  }
+  return { picks, sims, slot:mySlot, starred, qbOutlook,
+           unreachable:starred.filter(x=>x.target<0) };
 }
 function vonaCheatPanel(){
   const cs=buildDraftCheatSheet();
@@ -1306,6 +1322,22 @@ function vonaCheatPanel(){
       takes <b>${hot[0][1]} ${hot[0][0]}s</b> and <b>${hot[1][1]} ${hot[1][0]}s</b> in the first
       three rounds${h.kdFirst?`, first K/DEF in <b>round ${h.kdFirst}</b>`:''} \u2014 the mock
       opponents below draft with this habit until the live room shows otherwise.</div>`;
+  }
+  // The QB shelf, every one of your picks: draft the position on a schedule.
+  let qbOut='';
+  if(cs.qbOutlook && cs.qbOutlook.length){
+    const rows=cs.qbOutlook.map(r=>{
+      const names=r.qbs.map(q=>{
+        const pct=Math.round(q.pct*100);
+        const cls=pct<35?'vsg-now':(pct<70?'vsg-close':'vsg-wait');
+        const open=(typeof pcardOnclick==='function')
+          ? `onclick="${pcardOnclick(q.p.player_id||q.p.name, q.p.pos, q.p.team||'')}"` : '';
+        return `<span class="vsg-qb clickable-player" ${open}>${escHtml(abbrevName(q.p.name))} <b class="${cls}">${pct}%</b></span>`;
+      }).join(' ');
+      return `<div class="vsg-qbrow"><span class="vsg-qbpick">#${r.pickNo}</span>${names}</div>`;
+    }).join('');
+    qbOut=`<div class="vsg-qbout"><div class="vsg-qbout-head">QB shelf at each of your picks
+        <span class="vsg-qbout-sub">% still on the board · updates with the room</span></div>${rows}</div>`;
   }
   const blocks=cs.picks.map(pk=>{
     // Your starred men first, flagged as targets for THIS pick.
@@ -1354,7 +1386,7 @@ function vonaCheatPanel(){
   // On a phone the explanation is seven lines of prose above the thing you came
   // to read. It lives behind the \u2139 instead; the build line is the one part
   // worth its space, so that stays.
-  return `<div class="vsg-cheat">
+  return `<div class="vsg-cheat">${qbOut}
     ${roomLine}
     <div class="vsg-cnote">
       <div class="vsg-cnote-txt">${cs.sims} mock drafts from seat ${cs.slot}: opponents buy at

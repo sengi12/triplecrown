@@ -363,6 +363,20 @@ console.log('=== draft plan: bookmarks become targets ===');
   chk(!!t2 && t2.target<0, 'a player who never reaches you is reported unreachable');
   chk(cs2.unreachable.some(t=>t.p.player_id==='RB1'), 'and is listed as such');
   app.toggleDraftStar('RB1');
+
+  console.log('\n=== the QB outlook: the whole draft\'s shelf, one row per pick ===');
+  const qo=cs.qbOutlook;
+  chk(Array.isArray(qo) && qo.length>0, 'the plan carries a QB outlook');
+  chk(qo.every(r=>cfg.myPicks.includes(r.pickNo)), 'rows are MY picks, by number');
+  chk(qo.every(r=>r.qbs.length<=5 && r.qbs.every(q=>q.p.pos==='QB' && q.pct>=0.15)),
+      'each row: at most five QBs, all QBs, none below 15%');
+  const byName={};
+  qo.forEach(r=>r.qbs.forEach(q=>{ (byName[q.p.player_id]=byName[q.p.player_id]||[]).push(q.pct); }));
+  const monotone=Object.values(byName).every(a=>a.every((v,i)=>i===0 || v<=a[i-1]+0.08));
+  chk(monotone, 'a QB\'s availability only decays as the draft goes (within MC noise)');
+  const early=qo[0], late=qo[qo.length-1];
+  chk(early.qbs.length>=late.qbs.length || late.qbs.every(q=>q.pct<=Math.max(...early.qbs.map(x=>x.pct))),
+      'the shelf thins: later picks never show a richer board than earlier ones');
 }
 
 // === shortlist ===============================================================
