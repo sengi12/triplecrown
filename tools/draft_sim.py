@@ -345,7 +345,11 @@ def load_profiles(path, draft_order, fmt, teams, my_slot=0, league=None):
         if room.get("qb_drafted_room") is not None and fm.get("qb_drafted") is not None:
             fill["dqs"] = max(0.0, min(1.5, (room["qb_drafted_room"] - fm["qb_drafted"]) / 1.5)) * wr
         if fill:
-            for uid, slot in (draft_order or {}).items():
+            # Pre-draft, Sleeper hasn't assigned seats yet (draft_order is
+            # empty) — personal traits can't be mapped, but the room's culture
+            # belongs to every chair regardless of who sits down in it.
+            slots = set((draft_order or {}).values()) or set(range(1, teams + 1))
+            for slot in slots:
                 if slot == my_slot:
                     continue
                 prof = out.setdefault(slot, {})
