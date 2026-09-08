@@ -27241,7 +27241,8 @@ function _aiParseLookup(txt){
 async function _aiKeylessLookups(gen, messages, onProgress){
   const msgs=messages.slice();
   if(msgs[0] && msgs[0].role==='system')
-    msgs[0]={ role:'system', content: msgs[0].content+TC_AI_KEYLESS_HINT };
+    msgs[0]={ role:'system', content: msgs[0].content+TC_AI_KEYLESS_HINT
+      +(typeof TC_LOCAL_TOOL_HINT!=='undefined'?TC_LOCAL_TOOL_HINT:'') };
   for(let round=0;;round++){
     const txt=String(await gen(msgs));
     const req= round<TC_AI_MAX_TOOL_ROUNDS ? _aiParseLookup(txt) : null;
@@ -27717,7 +27718,8 @@ async function tcAiCall(messages, onProgress){
   }
   const msgs=messages.slice();
   if(tools && tools.length && msgs[0] && msgs[0].role==='system')
-    msgs[0]={ role:'system', content: msgs[0].content+TC_AI_TOOLS_HINT };
+    msgs[0]={ role:'system', content: msgs[0].content+TC_AI_TOOLS_HINT
+      +(typeof TC_LOCAL_TOOL_HINT!=='undefined'?TC_LOCAL_TOOL_HINT:'') };
   let rounds=0;
   for(;;){
   const body={ model:s.model, messages:msgs,
@@ -28141,6 +28143,11 @@ async function tcMcpRpc(method, params, fmt){
 // The tool list, once per session (it only changes when the worker is redeployed).
 let _mcpTools=null;
 async function tcMcpTools(fmt){
+  const local=(typeof tcLocalToolDefs==='function')?tcLocalToolDefs():[];
+  try{ return local.concat(await _tcMcpRemoteTools(fmt)); }
+  catch(e){ return local; }
+}
+async function _tcMcpRemoteTools(fmt){
   if(!_mcpTools) _mcpTools=tcMcpRpc('tools/list', {}, fmt).then(r=>(r&&r.tools)||[]).catch(e=>{ _mcpTools=null; throw e; });
   return _mcpTools;
 }
@@ -28152,6 +28159,12 @@ function tcMcpToOpenAiTools(tools){
 }
 // Run one tool; the text the model gets back.
 async function tcMcpCallTool(name, args, fmt){
+  // App-data tools resolve on-device (93c-ai-local-tools.js) — instant, free,
+  // and they work even when the worker is unreachable. Everything else → worker.
+  if(typeof tcLocalToolCall==='function'){
+    const loc=await tcLocalToolCall(name, args);
+    if(loc!=null) return loc;
+  }
   const r=await tcMcpRpc('tools/call', { name, arguments:args||{} }, fmt);
   const parts=(r&&r.content)||[];
   return parts.map(c=>c&&c.text||'').join('\n') || '(empty)';
@@ -28217,6 +28230,167 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     site already serves: nothing from this browser (your roster, notes, keys) is in it, so paste your
     roster into the chat when the question needs it. Costs nothing, sends nothing, and needs no account
     beyond the Claude you already use.`};
+}
+// ── Local app-data tools for the AI loops ───────────────────────────────────
+// "Ask TripleCrown" could ground YOUR team; everything else the app can render
+// (any league team, the analyzer's standings, the nflverse advanced tables,
+// defense-vs-position, coaching) was visible to the user but invisible to the
+// model. These tools close that gap ON-DEVICE: they resolve from app state, so
+// they cost no network, no tokens of transport, and work on the free engines.
+// They ride the existing loops — tcMcpCallTool tries local first, the keyless
+// JSON protocol and the tool-capable path both advertise them — under the same
+// 3-round cap and the same data-never-instructions quarantine as everything
+// else. Every resolver is best-effort: missing state returns a short "not
+// available" line, never a throw (a lookup that explodes would eat one of the
+// model's three rounds with a stack trace).
+
+function tcLocalToolDefs(){
+  return [
+    { name:'league_team', description:'Any team in the synced league: roster with the board’s numbers plus the Analyzer’s verdict (power rank, persona, positional ranks, projected starters). args: {name} — owner or team name, fuzzy.',
+      inputSchema:{ type:'object', properties:{ name:{type:'string'} }, required:['name'] } },
+    { name:'league_overview', description:'The synced league at a glance: every team’s power rank, persona and record.',
+      inputSchema:{ type:'object', properties:{} } },
+    { name:'adv_team', description:'nflverse advanced team tables (the Advanced tab): offense, defense, tendencies, O-line, coverage, pace, personnel — values with league ranks. args: {team, table?}.',
+      inputSchema:{ type:'object', properties:{ team:{type:'string'}, table:{type:'string'} }, required:['team'] } },
+    { name:'dvp', description:'Defense-vs-position for the season in progress: which defenses give up the most to each position. args: {pos?}.',
+      inputSchema:{ type:'object', properties:{ pos:{type:'string'} } } },
+    { name:'coaching', description:'A team’s coaching staff with career fantasy track records (offense/defense z-scores). args: {team}.',
+      inputSchema:{ type:'object', properties:{ team:{type:'string'} }, required:['team'] } },
+  ];
+}
+const TC_LOCAL_TOOL_NAMES = new Set(tcLocalToolDefs().map(t=>t.name));
+// One line appended to both AI hints — the model learns these exist.
+const TC_LOCAL_TOOL_HINT = ' Local app tools (instant): league_team{name} — any synced-league team’s '
+  +'roster + analyzer verdict; league_overview{} — all power ranks; adv_team{team,table?} — nflverse '
+  +'advanced tables; dvp{pos?} — defense-vs-position; coaching{team}.';
+
+function _ltNorm(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+function _ltSnap(){
+  return (typeof leagueSnapshot!=='undefined' && leagueSnapshot
+          && Array.isArray(leagueSnapshot.teamList)) ? leagueSnapshot : null;
+}
+
+function _ltLeagueTeam(args){
+  const sn=_ltSnap();
+  if(!sn) return 'No league is synced in the League Analyzer — ask the user to sync one first.';
+  const q=_ltNorm(args && args.name);
+  if(!q) return 'league_team needs {name}: an owner or team name from the synced league.';
+  const t=sn.teamList.find(x=>_ltNorm(x.teamName)===q || _ltNorm(x.owner)===q)
+       || sn.teamList.find(x=>_ltNorm(x.teamName).includes(q) || _ltNorm(x.owner).includes(q));
+  if(!t) return `No team matching "${args.name}" — teams: ${sn.teamList.map(x=>x.teamName||x.owner).join(', ')}`;
+  const out=[`TEAM "${t.teamName||t.owner}" (owner ${t.owner||'?'}) in ${sn.name||'the synced league'}`
+    +((t.wins!=null)?` · ${t.wins}-${t.losses}`:'')];
+  try{
+    const v=(typeof _chatTeamVerdict==='function')?_chatTeamVerdict(sn,t):{lines:[]};
+    if(v.lines && v.lines.length) out.push(v.lines.join('\n'));
+  }catch(e){}
+  try{
+    const byPos={};
+    for(const p of (t.players||[])){ const k=p.pos||'?'; (byPos[k]=byPos[k]||[]).push('  '+((typeof _chatBoardLine==='function')?_chatBoardLine(p):p.name)); }
+    const order=['QB','RB','WR','TE','K','DEF'];
+    out.push('Roster (the app’s numbers — evaluate from these, not from memory):\n'
+      +[...order.filter(k=>byPos[k]), ...Object.keys(byPos).filter(k=>!order.includes(k))]
+        .map(k=>`${k}:\n${byPos[k].join('\n')}`).join('\n'));
+  }catch(e){}
+  return out.join('\n');
+}
+
+function _ltLeagueOverview(){
+  const sn=_ltSnap();
+  if(!sn) return 'No league is synced in the League Analyzer.';
+  try{
+    const pm=laProjMap();
+    const traj=laTrajectories(sn,pm);
+    const rows=sn.teamList.map(t=>{
+      const my=traj[t.rosterId]||{};
+      return { rank:my.rank||99, line:`#${my.rank||'?'} ${t.teamName||t.owner}`
+        +((t.wins!=null)?` (${t.wins}-${t.losses})`:'')
+        +(my.title?` · "${my.title}"`:'') };
+    }).sort((a,b)=>a.rank-b.rank).map(r=>r.line);
+    return `${sn.name||'League'} — power ranks (Analyzer):\n`+rows.join('\n');
+  }catch(e){ return 'Analyzer standings unavailable right now.'; }
+}
+
+function _ltAdvTeam(args){
+  const team=String(args&&args.team||'').toUpperCase().trim();
+  if(!team) return 'adv_team needs {team}: an NFL team code like DET.';
+  try{
+    const SRC=(typeof nflverseSharpTables==='function')?nflverseSharpTables():{};
+    const keys=Object.keys(SRC);
+    if(!keys.length) return 'Advanced tables not loaded (seed still booting?).';
+    const want=args&&args.table?_ltNorm(args.table):null;
+    const out=[];
+    for(const k of keys){
+      if(want && !_ltNorm(k).includes(want) && !_ltNorm(SRC[k].title||'').includes(want)) continue;
+      const tbl=SRC[k]; const row=tbl.teams&&tbl.teams[team];
+      if(!row) continue;
+      const vals=Array.isArray(row)?row[0]:null, ranks=Array.isArray(row)?row[1]:null;
+      const cols=(tbl.columns||[]);
+      const parts=cols.map((c,i)=>{
+        const v=vals?vals[i]:(row.values&&row.values[c]);
+        const r=ranks?ranks[i]:(row.ranks&&row.ranks[c]);
+        return (v==null)?null:`${c} ${v}${r!=null?` (#${r})`:''}`;
+      }).filter(Boolean);
+      if(parts.length) out.push(`${tbl.title||k}: ${parts.join(' · ')}`);
+    }
+    return out.length ? `${team} advanced (${(typeof advTeamSeason==='function')?advTeamSeason():''} season, rank of 32):\n`+out.join('\n')
+                      : `No advanced rows for ${team}${want?` matching "${args.table}"`:''}. Tables: ${keys.join(', ')}`;
+  }catch(e){ return 'Advanced tables unavailable right now.'; }
+}
+
+function _ltDvp(args){
+  try{
+    const tbl=(typeof laDvpTable==='function')?laDvpTable():null;
+    if(!tbl) return 'Defense-vs-position needs the season in progress (no weekly data yet).';
+    const want=String(args&&args.pos||'').toUpperCase().trim();
+    const out=[];
+    for(const pos of (want?[want]:['QB','RB','WR','TE'])){
+      const rows=tbl[pos]; if(!rows) continue;
+      const rank=Object.entries(rows).sort((a,b)=>b[1]-a[1]);
+      out.push(`${pos} — most points allowed first: `+rank.map(([tm,v],i)=>`${tm} ${v.toFixed(1)}`).slice(0,32).join(' · '));
+    }
+    return out.length?('Defense vs position (avg fantasy pts allowed/game):\n'+out.join('\n')):'No DvP data.';
+  }catch(e){ return 'Defense-vs-position unavailable right now.'; }
+}
+
+function _ltCoaching(args){
+  const team=String(args&&args.team||'').toUpperCase().trim();
+  if(!team) return 'coaching needs {team}: an NFL team code like DET.';
+  try{
+    const c=(typeof COORDINATORS!=='undefined' && COORDINATORS)?COORDINATORS[team]:null;
+    if(!c) return `No coaching data for ${team}.`;
+    const rec=(name)=>{
+      try{
+        const r=(typeof coachRecFor==='function')?coachRecFor(name):null;
+        const d=(typeof coachDefRecFor==='function')?coachDefRecFor(name):null;
+        const bits=[];
+        if(r && r.n>=2) bits.push(`offense ${r.z>0?'+':''}${r.z.toFixed(2)}z over ${r.n} seasons`);
+        if(d && d.dn>=2) bits.push(`defense ${d.dz>0?'+':''}${d.dz.toFixed(2)}z over ${d.dn} seasons`);
+        return bits.length?` — career: ${bits.join(', ')}`:'';
+      }catch(e){ return ''; }
+    };
+    const lines=[];
+    if(c.hc) lines.push(`HC: ${c.hc}${rec(c.hc)}`);
+    if(c.oc) lines.push(`OC: ${c.oc}${rec(c.oc)}`);
+    if(c.dc) lines.push(`DC: ${c.dc}${rec(c.dc)}`);
+    return lines.length?`${team} coaching:\n`+lines.join('\n'):`No coaching data for ${team}.`;
+  }catch(e){ return 'Coaching data unavailable right now.'; }
+}
+
+// The dispatcher: local name → resolved string; anything else → null (caller
+// falls through to the worker). Never throws.
+async function tcLocalToolCall(name, args){
+  if(!TC_LOCAL_TOOL_NAMES.has(name)) return null;
+  try{
+    switch(name){
+      case 'league_team':     return _ltLeagueTeam(args);
+      case 'league_overview': return _ltLeagueOverview();
+      case 'adv_team':        return _ltAdvTeam(args);
+      case 'dvp':             return _ltDvp(args);
+      case 'coaching':        return _ltCoaching(args);
+    }
+  }catch(e){ return 'lookup failed locally: '+String(e&&e.message||e); }
+  return null;
 }
 // ═════════════════════════════════════════════════════════════════════════════
 // Copy reference-season stats into the working (projection) set
@@ -31427,6 +31601,73 @@ function draftStackPartner(p, myPicks, statById){
   return null;
 }
 let _stackStatCache={key:null, map:null};
+// ── Tier break ──────────────────────────────────────────────────────────────
+// The VOR cliff (dropoff) already prices the points; the TIER is the same cliff
+// in human units, and "last ones of the tier" is a real timing signal. For a
+// position's current tier (the best available player's), how many are left and
+// the chance AT LEAST ONE survives to my next pick.
+function _vonaTierBreak(pool, now, survOf){
+  const tNow=(now && now.ecr_tier!=null)?now.ecr_tier:null;
+  if(tNow==null) return null;
+  const inTier=(pool||[]).filter(q=>q.ecr_tier===tNow && !_vonaSeasonOut(q));
+  if(!inTier.length) return null;
+  let pNone=1;
+  inTier.forEach(q=>{ pNone*=(1-Math.min(VONA_SURV_CAP, survOf(q))); });
+  return { n:tNow, left:inTier.length, pHold:+(1-pNone).toFixed(2) };
+}
+// Bounded score nudge: only when the tier is genuinely closing (few left, likely
+// gone) — up to +20%. Granular VOR still carries the decision; this leans it.
+function _vonaTierUrgency(tier, rawDrop){
+  if(!tier || tier.left>3 || rawDrop<=0) return 1;
+  return tier.pHold<0.55 ? 1+0.2*(1-tier.pHold) : 1;
+}
+// ── BAFL derivative weighting ───────────────────────────────────────────────
+// Static BAFL Mode weights every category equally. Live, the marginal value of
+// a category is the probability DENSITY at its current margin: a category this
+// roster has locked (or lost) is worth less than one still in the balance.
+// m_k = exp(-z²/2) with z = (their sum − my sum)/σ_k season; adj re-prices a
+// candidate's stats DOWN for non-contested categories (m<1) relative to the
+// static base, which assumed m=1 everywhere. Early draft, sums≈equal → z≈0 →
+// m≈1 → no distortion; the weighting emerges as rosters diverge. Kicking is
+// out of board scope; TDs/yards use the same divisors as calcBaflCat.
+const BAFL_CAT_DIV={ pass:1547, rush:833, rec:1343, td:29.75 };
+function _baflCatSums(picks, statById){
+  const c={pass:0,rush:0,rec:0,td:0};
+  (picks||[]).forEach(pk=>{
+    const s=statById.get(String(pk.player_id||'')); if(!s) return;
+    c.pass+=(s.passing_yards||0)-20*(s.interceptions_thrown||0);
+    c.rush+=(s.rushing_yards||0); c.rec+=(s.receiving_yards||0);
+    c.td+=(s.passing_tds||0)+(s.rushing_tds||0)+(s.receiving_tds||0);
+  });
+  return c;
+}
+function _baflCatWeights(mine, opp){
+  const m={};
+  for(const k in BAFL_CAT_DIV){
+    const z=((opp[k]||0)-(mine[k]||0))/BAFL_CAT_DIV[k];
+    m[k]=Math.exp(-0.5*z*z);
+  }
+  return m;
+}
+function _vonaBaflCatAdj(statById){
+  try{
+    if(!scoringSettings.baflMode || typeof draftPicksBySlot==='undefined' || mySlot==null) return null;
+    const mine=_baflCatSums(draftPicksBySlot[mySlot]||[], statById);
+    const others=Object.keys(draftPicksBySlot).filter(s=>Number(s)!==Number(mySlot));
+    if(!others.length) return null;
+    const opp={pass:0,rush:0,rec:0,td:0};
+    others.forEach(s=>{ const c=_baflCatSums(draftPicksBySlot[s], statById);
+      for(const k in opp) opp[k]+=c[k]/others.length; });
+    const m=_baflCatWeights(mine, opp);
+    return (p)=>{
+      const pass=(p.passing_yards||0)-20*(p.interceptions_thrown||0);
+      return ( pass/BAFL_CAT_DIV.pass*(m.pass-1)
+             + (p.rushing_yards||0)/BAFL_CAT_DIV.rush*(m.rush-1)
+             + (p.receiving_yards||0)/BAFL_CAT_DIV.rec*(m.rec-1)
+             + ((p.passing_tds||0)+(p.rushing_tds||0)+(p.receiving_tds||0))/BAFL_CAT_DIV.td*(m.td-1) )*60;
+    };
+  }catch(e){ return null; }
+}
 // UI wrapper: the stack partner for a candidate against MY current live roster.
 function _uiStackPartner(p){
   try{
@@ -31554,7 +31795,8 @@ function computeVONA(){
   const before0=_vonaOptimalLineupVor(myPicks, vorOf);
   // Stack context: my picks + a board-stat lookup so partner TDs resolve.
   const statById=new Map(); list.forEach(p=>{ if(p.player_id) statById.set(String(p.player_id), p); });
-  const stackOf=(p)=>vonaStackBonus(p, myPicks, statById);
+  const catAdjOf=_vonaBaflCatAdj(statById);
+  const stackOf=(p)=>vonaStackBonus(p, myPicks, statById) + (catAdjOf ? catAdjOf(p) : 0);
   const rankedByPos={};
   ['QB','RB','WR','TE'].forEach(pos=>{
     const live=(pools[pos]||[]).filter(q=>!_vonaSeasonOut(q));
@@ -31606,8 +31848,11 @@ function computeVONA(){
     // only changes which man at the position it names.
     const take=(rankedByPos[pos] && rankedByPos[pos][0] && rankedByPos[pos][0].p) || now;
     const reached=(take!==now);
+    const tier=_vonaTierBreak(pools[pos], now, survOf);
+    const tierU=_vonaTierUrgency(tier, rawDrop);
     out.push({
       pos,
+      tier, tierU:+tierU.toFixed(2),
       struct: st, scarcity:+scarcity.toFixed(2), puntable, lineupGain,
       bestNow: take,
       boardTop: now,
@@ -31627,7 +31872,7 @@ function computeVONA(){
       gated,
       drift: +(((drift && drift[pos]) || 0).toFixed(1)),
       lastCall: !!budget.lastCall[pos],
-      score: +(Math.max(0, gNow-gNext) + VONA_NOW_WEIGHT*gNow).toFixed(2),
+      score: +((Math.max(0, gNow-gNext) + VONA_NOW_WEIGHT*gNow)*tierU).toFixed(2),
     });
   });
   // lineupFactor stays as display metadata; the row score already prices lineup impact
@@ -31648,10 +31893,13 @@ function computeVONA(){
               ? 'roster full here'
               : `${budget.skillLeft} pick${budget.skillLeft===1?'':'s'} left \u2014 needs elsewhere`)
           : r.puntable ? 'flat \u2014 safe to wait'
+          // A closing tier is the classic draft-room signal: name it when it's real.
+          : (r.tier && r.tier.left<=2 && r.tier.pHold<0.6
+              ? `tier ${r.tier.n} closing \u2014 ${r.tier.left} left, ${Math.round(r.tier.pHold*100)}% one survives`
           // The room outrunning the board is decision-changing on its own: it is
           // why the odds below moved without the player's ranking moving.
           : (dr>=6 ? `room ${Math.round(dr)} picks ahead here`
-          : (st.pressure>=1.15 ? `${st.supply} left \u00b7 ${Math.round(st.demand)} slots` : ''));
+          : (st.pressure>=1.15 ? `${st.supply} left \u00b7 ${Math.round(st.demand)} slots` : '')));
   });
   // Gated rows sink below every live option; a last-call starter overrides everything.
   out.sort((a,b)=> ((a.gated?1:0)-(b.gated?1:0))
