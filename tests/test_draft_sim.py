@@ -904,6 +904,30 @@ def test_room_prior_load_and_hoarding():
     league.opp_profiles = {}
 
 
+def test_stack_bonus():
+    """Mirrors vonaStackBonus in the app: TD-scaled, capped, QB<->receiver only."""
+    qb = _mk("QB_CIN", "QB", 20.0, 5); qb.team = "CIN"
+    wr_my = _mk("WR_SEA", "WR", 12.0, 30); wr_my.team = "SEA"; wr_my.rec_tds = 9.0
+    roster = [qb, wr_my]
+    chase = _mk("WR_CIN", "WR", 15.0, 20); chase.team = "CIN"; chase.rec_tds = 10.0
+    slot_guy = _mk("WR_CIN2", "WR", 15.0, 40); slot_guy.team = "CIN"; slot_guy.rec_tds = 2.0
+    other = _mk("WR_DAL", "WR", 15.0, 21); other.team = "DAL"; other.rec_tds = 10.0
+    rb = _mk("RB_CIN", "RB", 15.0, 22); rb.team = "CIN"; rb.rec_tds = 3.0
+    sea_qb = _mk("QB_SEA", "QB", 18.0, 50); sea_qb.team = "SEA"
+    check("a WR completing my QB's stack earns the TD-scaled bonus",
+          abs(ds.stack_bonus(chase, roster) - 10.0 / 17.0) < 1e-9)
+    check("TDs are king: the low-TD same-team receiver earns a fifth of it",
+          abs(ds.stack_bonus(slot_guy, roster) - 2.0 / 17.0) < 1e-9)
+    check("a different-team WR earns nothing", ds.stack_bonus(other, roster) == 0.0)
+    check("RBs never stack", ds.stack_bonus(rb, roster) == 0.0)
+    check("a QB completing MY receiver's stack is valued by the receiver's TDs",
+          abs(ds.stack_bonus(sea_qb, roster) - 9.0 / 17.0) < 1e-9)
+    monster = _mk("WR_CIN3", "WR", 15.0, 23); monster.team = "CIN"; monster.rec_tds = 25.0
+    check("capped at the tie-breaker ceiling",
+          abs(ds.stack_bonus(monster, roster) - ds.STACK_CAP_VPG) < 1e-9)
+    check("no relevant roster, no bonus", ds.stack_bonus(chase, []) == 0.0)
+
+
 if __name__ == "__main__":
     test_3rr_pick_order()
     test_league_shape()
@@ -937,6 +961,7 @@ if __name__ == "__main__":
     test_opponent_profiles()
     test_load_profiles_shrink_and_clamp()
     test_room_prior_load_and_hoarding()
+    test_stack_bonus()
     ok = all(RESULTS)
     print(f"RESULT: {'PASS' if ok else 'SOME FAILED'} ({sum(RESULTS)}/{len(RESULTS)})")
     sys.exit(0 if ok else 1)

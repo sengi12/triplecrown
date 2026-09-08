@@ -218,7 +218,7 @@ def league_points(p, sc, games):
 # ── Player pool ──────────────────────────────────────────────────────────────
 
 class Player:
-    __slots__ = ("pid", "name", "pos", "team", "adp", "adp_eff", "sigma", "val",
+    __slots__ = ("pid", "name", "pos", "team", "adp", "adp_eff", "sigma", "val", "rec_tds",
                  "vpg", "vpg_active", "sd_week", "vor", "bye", "ecr", "tier",
                  "tc_mult", "idx", "noisy", "src", "risk", "upside", "spread")
 
@@ -435,6 +435,7 @@ def build_pool(seed, sc, byes, tc_weight, floor_kappa, pro=None, fmt="ppr"):
         p.name = r["name"]
         p.pos = r["pos"]
         p.team = r.get("team") or ""
+        p.rec_tds = float((line or {}).get("receiving_tds") or r.get("receiving_tds") or 0.0)
         p.adp = adp_for(r, fmt)
         p.src = "pro" if line else ("seed*" if pro else "seed")
         p.risk = (line or {}).get("_risk") if line else r.get("risk")
@@ -716,6 +717,27 @@ def lineup_value(roster, league, extra_vpg=None, extra_pos=None):
     return total
 
 
+# Stacking (mirrors vonaStackBonus in src/js/98-draft-follow.js): same-team
+# QB↔pass-catcher pairs share the same real TD — correlated upside. A bounded
+# tie-breaker scaled by the receiver's projected receiving TDs, never a value
+# override. Units: vpg (the season-pts constants over 17).
+STACK_TD_W_VPG = 1.0 / 17.0
+STACK_CAP_VPG = 12.0 / 17.0
+def stack_bonus(p, roster):
+    if p.pos == "QB":
+        tds = 0.0
+        for q in roster:
+            if q.pos in ("WR", "TE") and q.team and q.team == p.team:
+                tds = max(tds, getattr(q, "rec_tds", 0.0) or 0.0)
+    elif p.pos in ("WR", "TE"):
+        if not any(q.pos == "QB" and q.team and q.team == p.team for q in roster):
+            return 0.0
+        tds = getattr(p, "rec_tds", 0.0) or 0.0
+    else:
+        return 0.0
+    return min(STACK_CAP_VPG, STACK_TD_W_VPG * tds)
+
+
 def candidate_score(state, pos, vpg, league):
     """Weekly value a candidate adds: starting-lineup gain, else bench value."""
     gain = lineup_value(state.roster, league, extra_vpg=vpg, extra_pos=pos) \
@@ -781,8 +803,11 @@ def my_pick(state, avail_by_pos, next_pick, league, forced_pos=None):
             continue
         if must_fill and unmet[pos] == 0:
             continue
-        best_now = cands[0]
-        v_now = candidate_score(state, pos, best_now.vpg, league)
+        # Within the position, a stack partner may leapfrog a near-tie: compare
+        # the top few by vpg + stack bonus (bounded, so real gaps still win).
+        best_now = max(cands[:4], key=lambda q: q.vpg + stack_bonus(q, state.roster))
+        v_now = candidate_score(state, pos, best_now.vpg, league) \
+            + stack_bonus(best_now, state.roster)
         if next_pick:
             sh = league.drift.get(pos, 0.0) if league.use_drift else 0.0
             v_next = candidate_score(state, pos,

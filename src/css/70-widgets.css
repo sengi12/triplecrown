@@ -1326,3 +1326,6 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .ai-cmp-copy:hover{border-color:var(--accent);}
 .ai-cmp-paste{width:100%;min-height:160px;margin-top:8px;font:11px/1.4 var(--mono);
   border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);padding:8px;resize:vertical;}
+
+/* Stack badge: a candidate that completes a QB↔receiver pairing with the live roster. */
+.vona-stack{color:var(--warn);font-size:9.5px;font-weight:800;letter-spacing:.02em;margin-left:4px;white-space:nowrap;}
