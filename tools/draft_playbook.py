@@ -454,7 +454,8 @@ def main():
     if getattr(args, "profiles", ""):
         try:
             league.opp_profiles = ds.load_profiles(args.profiles, draft_json.get("draft_order"),
-                                                   ds.market_format(league), league.teams, my_slot=slot)
+                                                   ds.market_format(league), league.teams, my_slot=slot,
+                                                   league=league)
             print(f"profiles: {len(league.opp_profiles)} opponents personalized")
         except Exception as e:
             print(f"profiles: skipped ({type(e).__name__}: {e})")

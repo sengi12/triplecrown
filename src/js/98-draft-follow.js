@@ -2526,30 +2526,72 @@ function _baflCatSums(picks, statById){
   });
   return c;
 }
+// z calibration: the divisors are weekly-SD × 17, but a season head-to-head
+// margin varies like weekly-SD × √17 × √2 ≈ div × 0.34 — so a real one-σ
+// margin needs z scaled up ~3× to register as one σ here.
+const BAFL_Z_SCALE = 3.0;
 function _baflCatWeights(mine, opp){
   const m={};
   for(const k in BAFL_CAT_DIV){
-    const z=((opp[k]||0)-(mine[k]||0))/BAFL_CAT_DIV[k];
+    const z=BAFL_Z_SCALE*((opp[k]||0)-(mine[k]||0))/BAFL_CAT_DIV[k];
     m[k]=Math.exp(-0.5*z*z);
   }
   return m;
 }
-function _vonaBaflCatAdj(statById){
+// One player's category stat line (the same shape _baflCatSums accumulates).
+function _baflCatLine(s){
+  return { pass:(s.passing_yards||0)-20*(s.interceptions_thrown||0),
+           rush:(s.rushing_yards||0), rec:(s.receiving_yards||0),
+           td:(s.passing_tds||0)+(s.rushing_tds||0)+(s.receiving_tds||0) };
+}
+// SLOT-FILL (the 2026-09-08 draft-night bug): comparing PARTIAL draft sums read
+// "my QB2 isn't drafted yet" as "passing is lost" — mid-draft in a QB-rush room
+// the weights hit m≈0.04 and the adjuster docked QB candidates by −170 points,
+// overruling every VOR gap on the board (field report: Puka suggested over a
+// higher-VOR Chase, QBs buried all night). Both sides now have their UNFILLED
+// starter slots filled with a common replacement line — the average of the top
+// `teams` still-available players at the position — so a gap only registers
+// when the projected FINAL starters genuinely differ, and an empty slot means
+// "a normal future pick", not "zero forever".
+function _baflFilledSums(picks, statById, dedBase, fillLines){
+  const sums=_baflCatSums(picks, statById);
+  const have={QB:0,RB:0,WR:0,TE:0};
+  (picks||[]).forEach(pk=>{ if(have[pk.pos]!=null) have[pk.pos]++; });
+  for(const pos in dedBase){
+    const missing=Math.max(0, (dedBase[pos]||0)-have[pos]);
+    const fl=fillLines[pos];
+    if(!missing || !fl) continue;
+    for(const k in sums) sums[k]+=missing*fl[k];
+  }
+  return sums;
+}
+function _vonaBaflCatAdj(statById, pools, dedBase, teams){
   try{
     if(!scoringSettings.baflMode || typeof draftPicksBySlot==='undefined' || mySlot==null) return null;
-    const mine=_baflCatSums(draftPicksBySlot[mySlot]||[], statById);
     const others=Object.keys(draftPicksBySlot).filter(s=>Number(s)!==Number(mySlot));
     if(!others.length) return null;
+    // Replacement line per position: the average of the top `teams` available.
+    const fillLines={};
+    for(const pos in (dedBase||{})){
+      const top=((pools&&pools[pos])||[]).slice(0, Math.max(1, teams||10));
+      if(!top.length) continue;
+      const acc={pass:0,rush:0,rec:0,td:0};
+      top.forEach(q=>{ const l=_baflCatLine(q); for(const k in acc) acc[k]+=l[k]/top.length; });
+      fillLines[pos]=acc;
+    }
+    const mine=_baflFilledSums(draftPicksBySlot[mySlot]||[], statById, dedBase||{}, fillLines);
     const opp={pass:0,rush:0,rec:0,td:0};
-    others.forEach(s=>{ const c=_baflCatSums(draftPicksBySlot[s], statById);
+    others.forEach(s=>{ const c=_baflFilledSums(draftPicksBySlot[s], statById, dedBase||{}, fillLines);
       for(const k in opp) opp[k]+=c[k]/others.length; });
     const m=_baflCatWeights(mine, opp);
     return (p)=>{
-      const pass=(p.passing_yards||0)-20*(p.interceptions_thrown||0);
-      return ( pass/BAFL_CAT_DIV.pass*(m.pass-1)
-             + (p.rushing_yards||0)/BAFL_CAT_DIV.rush*(m.rush-1)
-             + (p.receiving_yards||0)/BAFL_CAT_DIV.rec*(m.rec-1)
-             + ((p.passing_tds||0)+(p.rushing_tds||0)+(p.receiving_tds||0))/BAFL_CAT_DIV.td*(m.td-1) )*60;
+      const l=_baflCatLine(p);
+      const raw=( l.pass/BAFL_CAT_DIV.pass*(m.pass-1)
+                + l.rush/BAFL_CAT_DIV.rush*(m.rush-1)
+                + l.rec/BAFL_CAT_DIV.rec*(m.rec-1)
+                + l.td/BAFL_CAT_DIV.td*(m.td-1) )*60;
+      // Tie-breaker, never a verdict: same ceiling as the stack bonus.
+      return Math.max(-12, raw);
     };
   }catch(e){ return null; }
 }
@@ -2680,8 +2722,11 @@ function computeVONA(){
   const before0=_vonaOptimalLineupVor(myPicks, vorOf);
   // Stack context: my picks + a board-stat lookup so partner TDs resolve.
   const statById=new Map(); list.forEach(p=>{ if(p.player_id) statById.set(String(p.player_id), p); });
-  const catAdjOf=_vonaBaflCatAdj(statById);
-  const stackOf=(p)=>vonaStackBonus(p, myPicks, statById) + (catAdjOf ? catAdjOf(p) : 0);
+  const catAdjOf=_vonaBaflCatAdj(statById, pools, dedBase, teams);
+  // Stack + category adjustments together stay a BOUNDED tie-breaker: a lower-VOR
+  // player may win a near-tie, never a real gap (the draft-night lesson).
+  const stackOf=(p)=>{ const b=vonaStackBonus(p, myPicks, statById) + (catAdjOf ? catAdjOf(p) : 0);
+    return Math.max(-12, Math.min(12, b)); };
   const rankedByPos={};
   ['QB','RB','WR','TE'].forEach(pos=>{
     const live=(pools[pos]||[]).filter(q=>!_vonaSeasonOut(q));
