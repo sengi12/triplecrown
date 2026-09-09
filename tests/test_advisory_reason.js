@@ -45,15 +45,59 @@ const stat=new Map([['q',{passing_yards:4000,interceptions_thrown:10,passing_tds
                     ['r',{rushing_yards:1200,rushing_tds:8}]]);
 const sums=app._baflCatSums([{player_id:'q'},{player_id:'r'}], stat);
 chk(sums.pass===3800 && sums.rush===1200 && sums.td===36, 'sums follow the BAFL formulas (pass −20/INT, all TDs)');
-app.scoringSettings.baflMode=true; app.setSlot(1);
-app.setPicks({1:[{player_id:'q'}], 2:[{player_id:'r'}], 3:[{player_id:'r'}]});
-const adj=app._vonaBaflCatAdj(stat);
+
+// The 2026-09-08 draft-night bug, as a fixture: a QB-rush room mid-draft.
+// Every opponent holds two QBs; I hold skill players and ONE QB. The old
+// partial-sum compare read that as "passing is lost" (m≈0.04) and docked QB
+// candidates by −170 points — suggesting lower-VOR players all night.
+const P=(o)=>Object.assign({player_id:'x'},o);
+const pools={
+  QB:[P({passing_yards:4600,passing_tds:36,interceptions_thrown:8}),
+      P({passing_yards:3800,passing_tds:26,interceptions_thrown:10,rushing_yards:500,rushing_tds:4})],
+  RB:[P({rushing_yards:1100,rushing_tds:8,receiving_yards:300,receiving_tds:1})],
+  WR:[P({receiving_yards:1200,receiving_tds:8})],
+  TE:[P({receiving_yards:800,receiving_tds:5})],
+};
+const ded={QB:2,RB:2,WR:2,TE:1};
+const nightStat=new Map(Object.entries({
+  gibbs:{rushing_yards:1450,rushing_tds:12,receiving_yards:420,receiving_tds:2,pos:'RB'},
+  jt:{rushing_yards:1350,rushing_tds:10,receiving_yards:250,receiving_tds:1,pos:'RB'},
+  mayf:{passing_yards:4300,passing_tds:32,interceptions_thrown:12,pos:'QB'},
+  mcb:{receiving_yards:1050,receiving_tds:6,pos:'TE'},
+  oq1:{passing_yards:4400,passing_tds:34,interceptions_thrown:9,rushing_yards:450,rushing_tds:4,pos:'QB'},
+  oq2:{passing_yards:4000,passing_tds:28,interceptions_thrown:10,pos:'QB'},
+  orb:{rushing_yards:1000,rushing_tds:7,receiving_yards:300,receiving_tds:2,pos:'RB'},
+  owr:{receiving_yards:1100,receiving_tds:7,pos:'WR'},
+}));
+const pk=(id)=>({player_id:id, pos:nightStat.get(id).pos});
+const night={10:[pk('gibbs'),pk('jt'),pk('mayf'),pk('mcb')]};
+for(let sl=1;sl<=9;sl++) night[sl]=[pk('oq1'),pk('oq2'),pk('orb'),pk('owr')];
+app.scoringSettings.baflMode=true; app.setSlot(10); app.setPicks(night);
+const adj=app._vonaBaflCatAdj(nightStat, pools, ded, 10);
 chk(typeof adj==='function', 'live draft + BAFL Mode yields a candidate adjuster');
-const rusher={rushing_yards:1000,rushing_tds:5};
-const equal={receiving_yards:0,rushing_yards:0};
-chk(adj(rusher)<adj(equal)+0.01 && adj(rusher)<0, 'stats in a category I’ve lost ground in are DISCOUNTED vs the static lens');
+const kyler={passing_yards:3800,passing_tds:25,interceptions_thrown:9,rushing_yards:550,rushing_tds:5};
+const chase={receiving_yards:1350,receiving_tds:11};
+const puka ={receiving_yards:1420,receiving_tds:6,rushing_yards:40};
+chk(adj(kyler)>=-12 && adj(kyler)<=0,
+    'a mid-draft QB candidate is LEANED on, never assassinated (was −170 on draft night)');
+chk(Math.abs(adj(chase)-adj(puka))<3,
+    'same-position candidates move together — the VOR order between them survives');
+
+// Empty draft: both sides are pure slot-fill → perfectly symmetric → silent.
+app.setPicks({10:[], 1:[], 2:[]});
+const adj0=app._vonaBaflCatAdj(nightStat, pools, ded, 10);
+chk(Math.abs(adj0(chase))<0.5 && Math.abs(adj0(kyler))<0.5,
+    'an empty draft adjusts nothing (slot-fill makes the sides identical)');
+
+// A genuine, modest projected margin grades smoothly between 0 and the cap.
+const mild={10:[pk('mcb')], 1:[], 2:[]};
+app.setPicks(mild);
+const adjM=app._vonaBaflCatAdj(nightStat, pools, ded, 10);
+const aM=adjM(chase);
+chk(aM<-0.05 && aM>-12, `a mild real edge discounts smoothly, unsaturated (${aM.toFixed(1)})`);
+
 app.scoringSettings.baflMode=false;
-chk(app._vonaBaflCatAdj(stat)===null, 'off outside BAFL Mode');
+chk(app._vonaBaflCatAdj(nightStat, pools, ded, 10)===null, 'off outside BAFL Mode');
 
 console.log('\n=== local app-data tools: on-device, quarantined, never throwing ===');
 const defs=app.tcLocalToolDefs();
