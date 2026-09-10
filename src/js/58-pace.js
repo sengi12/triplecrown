@@ -126,8 +126,7 @@ function setProjViewMode(mode){
   if(mode==='live'){
     if(activeSeason!==yr){
       // Make sure the live season is fetchable/fresh, then enter it like any reference year.
-      if(typeof refreshLiveSeasonStats==='function') refreshLiveSeasonStats().catch(()=>{});
-      loadSeason(yr);
+      loadSeason(yr).then(()=>{ if(typeof liveSeasonPollSync==='function') liveSeasonPollSync(); });
     } else renderSeasonTabs();
     return;
   }

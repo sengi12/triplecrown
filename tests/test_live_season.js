@@ -12,7 +12,10 @@ const app=new Function(code+`return {
   TC_SEASON, liveSeasonRecordsFromRows, refreshLiveSeasonStats, liveSeasonEpoch,
   setSleeperFetch:(f)=>{sleeperFetch=f;},
   getHistory:()=>HISTORY, getHistSeasons:()=>HISTORY_SEASONS,
-  getWorking:()=>workingProj, setWorking:(w)=>{workingProj=w;} };`)();
+  getWorking:()=>workingProj, setWorking:(w)=>{workingProj=w;},
+  ageLiveFetch:(ms)=>{_liveSeasonAt-=ms;},
+  setProjViewMode, getActive:()=>activeSeason, getSeed:()=>SEED,
+  setProjCache:(x)=>{seasonStatsCache={proj:x}; projSeed=x;} };`)();
 
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -57,11 +60,27 @@ const ROWS=[
   chk(JSON.stringify(app.getWorking())===workingBefore,'workingProj untouched (deep-equal before/after)');
   chk(app.liveSeasonEpoch()===2,'epoch = completed weeks fetched');
 
-  console.log('=== once-per-completed-week ===');
-  chk(await app.refreshLiveSeasonStats()===false && fetches===1,'same completed week → no refetch');
+  console.log('=== once-per-completed-week, with a live TTL ===');
+  chk(await app.refreshLiveSeasonStats()===false && fetches===1,'same completed week, fresh fetch → no refetch');
   chk(await app.refreshLiveSeasonStats(true)===true && fetches===2,'force refetches');
+  // The season-opener bug: completedWeeks() is constant DURING a week, but the aggregate
+  // keeps moving as games play. A fetch older than the TTL must refresh on its own.
+  app.ageLiveFetch(6*60*1000);
+  chk(await app.refreshLiveSeasonStats()===true && fetches===3,'a stale fetch refreshes mid-week (games are live)');
   app.TC_SEASON.week=4;
-  chk(await app.refreshLiveSeasonStats()===true && fetches===3,'week advance refetches');
+  chk(await app.refreshLiveSeasonStats()===true && fetches===4,'week advance refetches');
+
+  console.log('=== entering Live is refresh-first, never blank ===');
+  // A minimal proj base so buildSeedFromHistory has team scaffolding.
+  app.setProjCache({CIN:{QB:[{player_id:'456',name:'Test Passer',pos:'QB',team:'CIN'}],
+                         RB:[],WR:[{player_id:'123',name:'Test Receiver',pos:'WR',team:'CIN'}],TE:[]}});
+  app.setProjViewMode('live');
+  await new Promise(r=>setTimeout(r,50));
+  chk(app.getActive()==='2026','the Live tab lands on the current season');
+  const seed=app.getSeed()||{};
+  const cin=(seed.CIN&&seed.CIN.WR||[]).find(r=>r.player_id==='123');
+  chk(!!cin && cin.receiving_yards===230,
+      'and the view carries the fetched stats — the opening-night blank is dead');
 
   console.log(`\n${pass}/${total}`);
   if(pass!==total) process.exit(1);

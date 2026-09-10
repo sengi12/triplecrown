@@ -552,10 +552,30 @@ async function loadSeason(season){
     afterSeasonSwitch();
     return;
   }
+  // The season IN PROGRESS enters through the live refresher, awaited: on opening night the
+  // old flow raced it — loadSeason built from a HISTORY that had no current-season rows yet
+  // and fell through to the heavyweight players-dump path (or rendered blank) while the
+  // proper fetch was still in flight. Refresh first, then build like any reference year.
+  if(typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season)
+     && typeof refreshLiveSeasonStats==='function' && !seasonStatsCache[season]){
+    if(seasonLoading){ toast('Still loading another season — one moment…'); return; }
+    seasonLoading=true;
+    const host0=document.getElementById('seasonTabs');
+    if(host0){ host0.querySelectorAll('.season-tab').forEach(b=>{if(b.textContent===season)b.textContent=season+' …';}); }
+    try{ await refreshLiveSeasonStats(true); }catch(e){}
+    seasonLoading=false;
+  }
   // entering reference mode — build that season's seed from embedded history if possible
   if(!seasonStatsCache[season] && HISTORY && Object.keys(HISTORY).length){
     const built=buildSeedFromHistory(season);
     if(built) seasonStatsCache[season]=built;
+  }
+  if(!seasonStatsCache[season] && typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season)){
+    // Live year with nothing to show yet (kickoff hasn't happened / fetch failed):
+    // say so honestly instead of dead-ending into the players-dump path.
+    renderSeasonTabs();
+    toast('No completed games in the season yet — stats appear as games finish','ok');
+    return;
   }
   if(seasonStatsCache[season]){ enterReference(season); return; }
   // Past here we need a live Sleeper fetch. Only THIS path is guarded, so a stuck/slow
