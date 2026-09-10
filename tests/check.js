@@ -16274,7 +16274,27 @@ function sharpHasData(){ return activeSharp() && Object.keys(activeSharp()).leng
 // projection view (or a season with no team data) it falls back to the seed's reference season
 // (SHARP_SEASON, the newest completed year). Single hook for the whole feature — every renderer
 // reads activeSharp(), which reads this.
+// The league view's own season pills. A pick sticks until the header season tabs move
+// (then the header wins again), so "2025 → 2026 · wk 1 → 2025" is two taps, not a trip
+// through the header.
+let sharpSeasonOverride = null;
+let _sharpSeasonAtOverride = null;
+function advSeasonsAvailable(){
+  if(typeof NFLVERSE==='undefined' || !NFLVERSE) return [];
+  return Object.keys(NFLVERSE).filter(y=>/^\d{4}$/.test(y) && NFLVERSE[y] && NFLVERSE[y].team).sort((a,b)=>b-a);
+}
+function setSharpSeason(s){
+  s=String(s||'');
+  sharpSeasonOverride = advSeasonsAvailable().includes(s) ? s : null;
+  _sharpSeasonAtOverride = String(activeSeason);
+  sharpSortCol=null;
+  renderSharpLeague();
+}
 function advTeamSeason(){
+  if(sharpSeasonOverride){
+    if(String(activeSeason)===_sharpSeasonAtOverride && NFLVERSE && NFLVERSE[sharpSeasonOverride] && NFLVERSE[sharpSeasonOverride].team) return sharpSeasonOverride;
+    sharpSeasonOverride=null;   // the header moved: follow it
+  }
   const s = String(activeSeason);
   if(activeSeason!=='proj' && NFLVERSE && NFLVERSE[s] && NFLVERSE[s].team) return s;
   // In-season, the projection view's Advanced tab is about THIS season to date (the live
@@ -16391,7 +16411,8 @@ function renderSharpLeague(){
   const headerBar=`
     <div class="team-header sr-league-header">
       <div><div class="team-abbr">${TC_ICON("chart")} Advanced Stats — League-Wide</div>
-        <div class="team-qb-name"><b>${advTeamSeason()} season</b> ${(typeof tcInfoBtn==='function')?tcInfoBtn('advleague','About these tables'):''}</div></div>
+        <div class="team-qb-name"><b>${(typeof tcSeasonLabel==='function')?tcSeasonLabel(advTeamSeason()):advTeamSeason()} season</b> ${(typeof tcInfoBtn==='function')?tcInfoBtn('advleague','About these tables'):''}</div>
+        <div class="rt-seasons sr-league-seasons">${advSeasonsAvailable().map(y=>`<button class="rt-season-btn ${String(y)===String(advTeamSeason())?'active':''}" onclick="setSharpSeason('${y}')">${(typeof tcSeasonLabel==='function')?tcSeasonLabel(y):y}</button>`).join('')}</div></div>
       <div class="team-nav">
         ${currentTeam?`<button class="btn btn-ghost" onclick="showCurrentTeamAdvanced()">← ${teamDisplayName(currentTeam)} card</button>`:''}
         <button class="btn btn-ghost" onclick="setPhase('Rankings')">Rankings</button></div>
@@ -16488,10 +16509,17 @@ function renderSharpLeague(){
       }
       // `value` omitted on purpose: it's exactly the cell's rendered text, read back from
       // the DOM at click time (see the rankings table's identical note).
+      // The sorted column carries each team's season-over-season sparkline (the same one
+      // the team card draws per stat) — how this year compares to the last few, at a glance.
+      let spark='';
+      if(c===sortCol && c!==projCol && typeof advTrendFor==='function' && typeof advSparkSvg==='function'){
+        const tr=advTrendFor(r.code, sharpTable, colSource[c]||c);
+        if(tr) spark=`<span class="sr-td-spark">${advSparkSvg(tr, sharpColIsPct(tbl,c), _noteSeason)}</span>`;
+      }
       return `<td class="sr-td ${sharpRankClass(rk)}"><span class="sr-td-val">${noteCellHtml(escHtml(txt), {
         label: c,
         statKey: sharpTable,
-      }, 'note-tag-hit')}</span><span class="sr-td-rank">${rk!=null?rk:''}</span></td>`;
+      }, 'note-tag-hit')}</span><span class="sr-td-rank">${rk!=null?rk:''}</span>${spark}</td>`;
     }).join('');
     return `<tr${rowScope}><td class="sr-td-team"><span class="sr-td-team-inner"><img src="${NFL_LOGO(r.code)}" class="sr-logo" loading="lazy" decoding="async" onerror="this.style.display='none'">${r.code}</span></td>${cells}</tr>`;
   }).join('');

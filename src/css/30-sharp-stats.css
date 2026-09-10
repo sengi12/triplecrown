@@ -125,3 +125,7 @@
 .sr-spark-dot.sr-good{fill:#00d4aa;} .sr-spark-dot.sr-okhi{fill:#9fd48a;}
 .sr-spark-dot.sr-oklo{fill:#fbbf24;} .sr-spark-dot.sr-bad{fill:#ff6b6b;}
 @media (max-width:480px){ .sr-spark{width:44px;} }
+/* League-wide view: its own season pills + the sorted column's season-over-season sparkline */
+.sr-league-seasons{margin:6px 0 0;flex-wrap:wrap;}
+.sr-td-spark{display:block;margin:2px auto 0;line-height:0;}
+.sr-td-spark .sr-spark{width:48px;height:13px;}
