@@ -38,3 +38,4 @@
 .hub-bid{flex:0 0 auto;font-family:var(--mono);font-size:12px;font-weight:900;color:var(--text);background:var(--surface3);border-radius:6px;padding:3px 7px;cursor:help;}
 .hub-foot{border-top:1px solid var(--border);padding:7px 12px;font-size:10px;color:var(--muted);display:flex;align-items:center;gap:6px;}
 .hub-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:2px 0 10px;}
+.hub-why-net{background:rgba(0,207,159,.14);color:var(--rb);font-family:var(--mono);}
