@@ -14,7 +14,7 @@ const app=new Function(code+`return {
   setTeam:(t)=>{currentTeam=t;},
   setPhaseVar:(p)=>{currentPhase=p;},
   getContent:()=>document.getElementById('content').innerHTML,
-  getSharpTable:()=>sharpTable };
+  getSharpTable:()=>sharpTable, setSharpSeason, advTeamSeason, setActive:(s)=>{activeSeason=s;} };
 `)();
 
 const NFLV={'2024':{team:{
@@ -88,5 +88,18 @@ html=app.getContent();
 chk(html.includes('13 Personnel'),'league table shows 13 Personnel column');
 const t6=app.renderTeamAdvanced('CIN');
 chk(t6.includes('13 Personnel'),'team card includes 13 Personnel stat');
+
+console.log('\n=== TEST 7: league view season pills + sorted-column sparklines ===');
+const NV2=JSON.parse(JSON.stringify(NFLV)); NV2['2025']=JSON.parse(JSON.stringify(NFLV['2024']));
+app.setNflverse(NV2); app.setSharpSeasonVar('2025'); app.setActive('proj');
+app.setSharpTable('offense');
+html=app.getContent();
+chk(/sr-league-seasons/.test(html) && /setSharpSeason\('2025'\)/.test(html) && /setSharpSeason\('2024'\)/.test(html), 'season pills list every season with team tables');
+chk(/sr-td-spark/.test(html) && /sr-spark-line/.test(html), 'the sorted column carries season-over-season sparklines');
+app.setSharpSeason('2024');
+chk(app.advTeamSeason()==='2024', 'a pill switches the league view to that season');
+chk(/rt-season-btn active"[^>]*onclick="setSharpSeason\('2024'\)"/.test(app.getContent()), 'and the pill reads active');
+app.setActive('2025');
+chk(app.advTeamSeason()==='2025', 'moving the header season tabs releases the pill');
 
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));
