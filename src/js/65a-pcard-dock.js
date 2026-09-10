@@ -72,7 +72,71 @@ function pcardDockClose(pid, ev){
   }
 }
 
-function _pcardDockReset(){ _pcardDock=[]; _pcardDockActive=null; }
+function _pcardDockReset(){ _pcardDock=[]; _pcardDockActive=null; _pcardAddOpen=false; }
+
+// ── Open another player alongside ────────────────────────────────────────────
+// The ＋ in the card header (and the ＋ tab when the strip is showing) opens a
+// search INSIDE the card, seeded with the players you would want next to this
+// one: his teammates at the position (the depth chart) and his projection
+// neighbours (the "similar player"). The pick opens as a new tab on the SAME
+// chart, season and game, so JSN's target chart → Kupp's target chart is one tap
+// and the strip flips between them.
+let _pcardAddOpen=false;
+function _pcardAddBoard(){
+  try{ return (typeof buildPlayerList==='function') ? buildPlayerList() : []; }catch(e){ return []; }
+}
+function _pcardAddRow(p){
+  return `<button class="pcard-add-hit" onclick="pcardDockOpenLike('${escAttr(String(p.player_id||p.name))}','${escAttr(p.pos||'')}','${escAttr(p.team||'')}')">
+    <span class="pcard-add-nm">${escHtml(p.name)}</span><span class="pcard-add-sub">${escHtml(p.pos||'')} · ${escHtml(p.team||'FA')}${p.fpts!=null?` · ${Math.round(p.fpts)} pts`:''}</span></button>`;
+}
+function _pcardAddRows(q){
+  const cur = pcardState || {};
+  const list = _pcardAddBoard();
+  const me = list.find(p=>String(p.player_id)===String(cur.pid)) || null;
+  q=String(q||'').trim();
+  if(q.length>=2 && typeof _aiCmpMatches==='function'){
+    const seen=new Set([String(cur.pid)]);
+    const hits=_aiCmpMatches(q, list).filter(p=>!seen.has(String(p.player_id)) && seen.add(String(p.player_id))).slice(0,10);
+    // beyond the projection board: the whole Sleeper DB, same lazy match, so any player opens
+    if(hits.length<10 && typeof sleeperPlayers!=='undefined' && sleeperPlayers){
+      const rest=[];
+      for(const id in sleeperPlayers){ if(seen.has(String(id))) continue; const sp=sleeperPlayers[id];
+        if(!sp || !sp.name || !sp.pos || !['QB','RB','WR','TE','K','DEF'].includes(sp.pos)) continue;
+        rest.push({player_id:id, name:sp.name, pos:sp.pos, team:sp.team||'FA', fpts:null}); }
+      _aiCmpMatches(q, rest).slice(0, 10-hits.length).forEach(p=>hits.push(p));
+    }
+    return hits.length ? `<div class="pcard-add-sec">Search</div>${hits.map(_pcardAddRow).join('')}` : '<div class="pcard-add-none">No match.</div>';
+  }
+  const team=String((me&&me.team)||cur.team||'').toUpperCase(), pos=(me&&me.pos)||cur.posc||'';
+  const mates=list.filter(p=>String(p.team||'').toUpperCase()===team && p.pos===pos && String(p.player_id)!==String(cur.pid)).sort((a,b)=>(b.fpts||0)-(a.fpts||0)).slice(0,5);
+  const near=(me && typeof _aiSimilarToA==='function') ? _aiSimilarToA(me, list, 6).filter(p=>!mates.includes(p)) : [];
+  return (mates.length?`<div class="pcard-add-sec">${escHtml(team)} ${escHtml(pos)}s</div>${mates.map(_pcardAddRow).join('')}`:'')
+       + (near.length?`<div class="pcard-add-sec">Nearby ${escHtml(pos)}s</div>${near.map(_pcardAddRow).join('')}`:'')
+       || '<div class="pcard-add-none">Type a name.</div>';
+}
+function pcardDockAddOpen(ev){
+  if(ev && ev.stopPropagation) ev.stopPropagation();
+  const card=document.querySelector('#pcardOverlay .pcard'); if(!card) return;
+  let pop=card.querySelector('.pcard-addpop');
+  if(pop){ pop.remove(); _pcardAddOpen=false; return; }
+  _pcardAddOpen=true;
+  pop=document.createElement('div'); pop.className='pcard-addpop';
+  pop.innerHTML=`<div class="pcard-add-head"><input class="pcard-add-in" type="search" placeholder="Open alongside… (name, team)" autocomplete="off" oninput="_pcardAddSearch(this.value)" onclick="event.stopPropagation()"><button class="pcard-add-x" onclick="pcardDockAddOpen(event)" aria-label="Close">✕</button></div><div class="pcard-add-list" id="pcardAddList">${_pcardAddRows('')}</div>`;
+  pop.onclick=(e)=>{ if(e && e.stopPropagation) e.stopPropagation(); };
+  const tabs=card.querySelector('#pcardTabs');
+  if(tabs && tabs.parentNode===card) card.insertBefore(pop, tabs); else card.appendChild(pop);
+  const inp=pop.querySelector('.pcard-add-in'); if(inp && inp.focus) try{ inp.focus(); }catch(e){}
+}
+function _pcardAddSearch(q){ const el=document.getElementById('pcardAddList'); if(el) el.innerHTML=_pcardAddRows(q); }
+// Same chart, same season, same game — the tab strip does the flipping.
+function pcardDockOpenLike(pid, pos, team){
+  const snap=(typeof pcardCaptureNavState==='function') ? pcardCaptureNavState() : null;
+  if(snap){ pcardRestoreState=Object.assign({}, snap, {pid:String(pid), pos:pos||'', team:team||''}); }
+  if(typeof pcardChartGame!=='undefined') _pcardGameCarry=Object.assign({}, pcardChartGame||{});
+  _pcardAddOpen=false;
+  pcardSuppressNavPush=true;
+  openPlayerCard(String(pid), pos||'', team||'');
+}
 
 function _pcardDockRender(){
   const card=document.querySelector('#pcardOverlay .pcard');
@@ -85,7 +149,7 @@ function _pcardDockRender(){
     dock.setAttribute('role','tablist');
     card.insertBefore(dock, card.firstChild);
   }
-  dock.innerHTML=_pcardDock.map(t=>{
+  dock.innerHTML=`<button class="pcard-dock-add" onclick="pcardDockAddOpen(event)" title="Open another player alongside" aria-label="Open another player alongside">＋</button>`+_pcardDock.map(t=>{
     const on=t.pid===_pcardDockActive;
     return `<div class="pcard-dock-tab${on?' active':''}" role="tab" aria-selected="${on}"
       ${t.color?`style="--dock-c:${escAttr(t.color)}"`:''} onclick="pcardDockGo('${escAttr(t.pid)}')">
