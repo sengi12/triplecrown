@@ -270,6 +270,8 @@ def build_live_nflverse(season, parts=LIVE_NFLVERSE_PARTS):
         # file and simply omits itself until then.
         "qb_passing_weekly": lambda: _nfl.qb_passing_weekly(season),
         "rb_fan_weekly": lambda: _nfl.rb_fan_weekly(season),
+        "scheme_weekly": lambda: _nfl.scheme_weekly(season),
+        "target_trees": lambda: _nfl.target_trees_weekly(season),
         "routes_weekly": lambda: _nfl.routes_weekly(season),
         "players": lambda: _nfl.build_player_tables(season),
         "routes": lambda: _nfl.route_trees(season),

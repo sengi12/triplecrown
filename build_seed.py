@@ -2922,6 +2922,7 @@ def main():
     # season (weekly team aggregates, per-player weekly usage, defense-vs-position, schedule).
     # Built only while the season is actually running; same fail-soft contract as above.
     inseason = {}
+    _live_coaching = {}
     if args.nflverse and TC_STATE["season_type"] in ("regular", "post"):
         print("\n  in-season weekly sidecar (current-season nflverse)")
         try:
@@ -2931,6 +2932,20 @@ def main():
             inseason = _ins.build_inseason(args.season, max_week=_max_week)
         except Exception as e:
             print(f"    ⚠ in-season sidecar failed: {type(e).__name__}: {e}")
+        # Live-season Playbook sidecar. Its formations/personnel/routes come from the
+        # participation file, which FTN hands nflverse only AFTER the post-season — so
+        # in-season this stays empty and the season's full Playbook backfills in February.
+        # (The live per-game scheme summaries ride the inseason sidecar instead —
+        # scheme_weekly builds from pbp + FTN charting, which DO update in-season.)
+        try:
+            _lc = _nfl.coaching_scheme(int(args.season))
+            if _lc:
+                _live_coaching[str(args.season)] = _lc
+                print(f"    → live coaching_scheme: {len(_lc)} teams (Playbook gets a {args.season} tab)")
+            else:
+                print("    → live coaching_scheme: empty (participation publishes post-season)")
+        except Exception as e:
+            print(f"    → live coaching_scheme skipped ({type(e).__name__}: {str(e)[:80]})")
 
     # Split the two largest, rarely-viewed nflverse blocks (def_weekly, coaching_scheme) out of
     # the main seed into sidecar files. The app lazy-loads them on demand (opening a defensive
@@ -2950,6 +2965,9 @@ def main():
                 nflverse_adv_weekly[_s] = _blk.pop("adv_weekly")
             if "coaching_scheme" in _blk:
                 nflverse_coaching[_s] = _blk.pop("coaching_scheme")
+    # The live season's block (built in the inseason path — the frozen-season loop above
+    # deliberately skips the season in progress).
+    nflverse_coaching.update(_live_coaching)
 
 
     # Emit the seed json the app loads (compact — no indentation. Pretty-printing this
