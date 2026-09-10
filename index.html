@@ -29067,7 +29067,7 @@ let _chat={ msgs:[], guide:null, draft:'', busy:false, board:null, lastGrounded:
 // answers too, so a manipulated or misbehaving model ends the chat the same way.
 const TC_CHAT_CRISIS=/\b(suicide|suicidal|self[- ]?harm|kill (myself|himself|herself|themselves)|end (my|his|her) life|want to die|hurt myself|overdose)\b/i;
 const TC_CHAT_DANGER=/\b(kill (him|her|them|someone)|build (a |an )?(bomb|gun|weapon)|make (a |an )?(bomb|explosive)|molotov|ghost gun|fentanyl|hack (into|someone)|steal (a car|money|someone)|launder money|stalk(ing)? (her|him|them|someone))\b/i;
-const TC_CHAT_FOOTBALL=/\b(fantasy|football|nfl|draft(ed|ing)?|waivers?|trade[ds]?|roster|lineup|teams?|squads?|starters?|start(ing)?|sit|bench|sleeper|espn|dynasty|superflex|keeper|ppr|qbs?|rbs?|wrs?|tes?|dst|kicker|defense|touchdowns?|yards?|receptions?|targets?|carr(y|ies)|snaps?|adp|vor|ecr|projections?|rankings?|tiers?|matchups?|playoffs?|league|picks?|bye|injur(y|ies|ed)|red ?zone|handcuffs?|flex|stream(ing|er)?|rookie|breakouts?|busts?|stash|handcuff)\b/i;
+const TC_CHAT_FOOTBALL=/\b(fantasy|football|nfl|draft(ed|ing)?|waivers?|trade[ds]?|roster|lineup|teams?|squads?|starters?|start(ing)?|sit|bench|sleeper|espn|dynasty|superflex|keeper|ppr|qbs?|rbs?|wrs?|tes?|dst|kicker|defense|touchdowns?|yards?|receptions?|targets?|carr(y|ies)|snaps?|adp|vor|ecr|projections?|rankings?|tiers?|matchups?|playoffs?|league|picks?|bye|injur(y|ies|ed)|red ?zone|handcuffs?|flex|stream(ing|er)?|rookie|breakouts?|busts?|stash|handcuff|stat ?lines?|stats?|box ?scores?|game ?logs?|points?|scor(e[ds]?|ing)|last night|this week|week \d+|played?|performance)\b/i;
 // verdicts: ok | crisis | danger | offtopic
 function tcChatGuard(text){
   const q=String(text||'');
@@ -29078,8 +29078,14 @@ function tcChatGuard(text){
   if(_chat.guide) return 'ok';                                   // a workflow chip is armed
   if(tcChatGroundPlayers(q).length) return 'ok';                 // names a player on the board
   if(tcChatAppContext(q)) return 'ok';                           // asks about the app
+  // The board hasn't loaded yet (early boot, slow phone): the name check above
+  // couldn't run, so a message that LOOKS like it names someone (an initialism
+  // like JSN, a First Last pair) must not end the conversation over a race. Let
+  // just those through — the system-prompt fence still scopes the model.
+  if(!_chatBoardList().length && TC_CHAT_NAMEISH.test(q)) return 'ok';
   return 'offtopic';
 }
+const TC_CHAT_NAMEISH=/\b[A-Z]{2,5}\b|\b[A-Z][a-z]+(?:['’.-][A-Za-z]+)?\s+[A-Z][a-z]+/;
 const TC_CHAT_NOTE_CRISIS='This chat can\u2019t help with that \u2014 it\u2019s only for fantasy football, and this sounds bigger than football. If you\u2019re struggling, call or text 988 (US) or your local crisis line. The conversation was ended.';
 const TC_CHAT_NOTE_STOP='This chat is for fantasy football only. The conversation was ended \u2014 start a new one about your team, a trade, or the app.';
 const TC_CHAT_NOTE_NUDGE='This chat is for fantasy football only \u2014 that message wasn\u2019t sent. Ask about players, trades, waivers, drafts, or the app.';
@@ -29094,6 +29100,25 @@ function _chatNorm(s){ return (' '+String(s||'').toLowerCase().replace(/[^a-z0-9
 function _chatBoardList(){ return _chat.board || ((typeof buildPlayerList==='function')?buildPlayerList():[]) || []; }
 // Players the text names — full names first, then last names that are unique on
 // the board ("chase brown" and "brown" both find Chase Brown; "smith" finds no one).
+// Community initialisms: generated from name tokens (jaxon smith njigba → jsn,
+// amon ra st brown → arsb) when unique on the board, plus a tiny curated list
+// for the irregular famous ones the generator can't derive.
+const TC_CHAT_ALIASES={ cmc:'christian mccaffrey', dhop:'deandre hopkins', obj:'odell beckham' };
+let _chatInitCache={key:null, map:null};
+function _chatInitialisms(list){
+  if(_chatInitCache.key===list) return _chatInitCache.map;
+  const m={};
+  for(const p of list){
+    const parts=_chatNorm(p.name).trim().split(' ').filter(Boolean);
+    if(parts.length>=3){
+      const ini=parts.map(x=>x[0]).join('');
+      if(ini.length>=3 && ini.length<=4) (m[ini]=m[ini]||[]).push(p);
+    }
+  }
+  for(const k in m) if(m[k].length!==1) delete m[k];   // ambiguous initials match no one
+  _chatInitCache={key:list, map:m};
+  return m;
+}
 function tcChatGroundPlayers(text){
   const list=_chatBoardList(); if(!list.length) return [];
   const t=_chatNorm(text);
@@ -29112,6 +29137,20 @@ function tcChatGroundPlayers(text){
     if(byLast[ln].length===1 && t.includes(' '+ln+' ')){
       const p=byLast[ln][0];
       if(!seen.has(p)){ seen.add(p); hits.push(p); }
+    }
+  }
+  const inits=_chatInitialisms(list);
+  for(const k in inits){
+    if(t.includes(' '+k+' ')){
+      const p=inits[k][0];                    // unique-filtered, so [0] is the one player
+      if(p && !seen.has(p)){ seen.add(p); hits.push(p); }
+    }
+  }
+  for(const a in TC_CHAT_ALIASES){
+    if(t.includes(' '+a+' ')){
+      const full=TC_CHAT_ALIASES[a];
+      const p=list.find(x=>_chatNorm(x.name).trim()===full);
+      if(p && !seen.has(p)){ seen.add(p); hits.push(p); }
     }
   }
   return hits.slice(0,4);
