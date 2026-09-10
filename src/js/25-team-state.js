@@ -1,6 +1,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // State init
 // ─────────────────────────────────────────────────────────────────────────────
+// Does an RB belong in the receiving view? >5 targets/receptions was a FULL-season
+// bar — after week 1 of a live season it hid every back who caught passes (field
+// report, 2026 opener). Early in a season (≤4 games) any target or catch counts;
+// past that the season-scale bar applies again.
+function rbReceivingQualifies(p){
+  if((p.receiving_targets||0)>5 || (p.receptions||0)>5) return true;
+  const g=Number(p.games_played)||0;
+  return g>0 && g<=4 && ((p.receiving_targets||0)>=1 || (p.receptions||0)>=1);
+}
 function ensureTeam(team,qbsFromData){
   if(userProj[team]) return userProj[team];
   mergeRosterPlayers(team);   // add zero-stat rostered players so they're selectable
@@ -60,12 +69,13 @@ function initPassingShares(team){
   // projection-season role — so copying a season where a featured back barely caught passes
   // (or hadn't debuted) can't knock him out of the receiving options. Roster membership is
   // decided by the projected roster; the copied stats only set his baseline (possibly 0).
+  // (rbReceivingQualifies lives at module level so the season-opener rule is testable.)
   const projRbQualifies = p => {
     const r=p._proj_role;   // projected role snapshotted before a reference copy overwrote the row
     return !!(r && ((r.tgt>5)||(r.rec>5)));
   };
   let all=[...getBase(team,'WR'),...getBase(team,'TE'),
-    ...getBase(team,'RB').filter(p=>(p.receiving_targets>5)||(p.receptions>5)||projRbQualifies(p))];
+    ...getBase(team,'RB').filter(p=>rbReceivingQualifies(p)||projRbQualifies(p))];
   // Reference-season week-range filter active? Overlay windowed totals onto the roster
   // before computing shares — everything downstream (pies, edits) just works on it.
   if(isWeekFilterActive(state) && state.weekFilterData) all=applyWeekFilterOverrides(all, state.weekFilterData);

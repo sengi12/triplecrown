@@ -65,15 +65,29 @@ def _profiles_from_links(links, draft_class, ref, refresh=False):
         year, final = percentiles.final_season(node)
         if not final:
             continue
+        # REPRESENTATIVE season, not blindly the final one. The reference pool
+        # admits only seasons past a volume floor (percentiles.qualifies), so an
+        # injury-shortened final year — JSN 2022: 3 games, 1.2% dominator — was
+        # being measured against a pool it could never have joined, and read as
+        # an all-zeros prospect. Rank the most recent season that WOULD qualify;
+        # keep `final` as-is and expose `rep` so the UI can label the choice.
+        rep_year, rep = year, final
+        if not percentiles.qualifies(pos, final):
+            for y in sorted(node.get("seasons") or {}, key=int, reverse=True):
+                blk = node["seasons"][y]
+                if percentiles.qualifies(pos, blk):
+                    rep_year, rep = y, blk
+                    break
         pct = {}
         for metric in HEADLINE[pos]:
-            v = percentiles.rank(ref, pos, metric, final.get(metric))
+            v = percentiles.rank(ref, pos, metric, rep.get(metric))
             if v is not None:
                 pct[metric] = v
         out[pid] = {
             "name": node.get("name"), "pos": pos, "athlete_id": node.get("athlete_id"),
-            "method": node.get("method"), "college": final.get("team"),
-            "conf": final.get("conf"), "final": year, "seasons": node["seasons"],
+            "method": node.get("method"), "college": rep.get("team") or final.get("team"),
+            "conf": rep.get("conf") or final.get("conf"), "final": year,
+            "rep": rep_year, "seasons": node["seasons"],
             "pct": pct, "class": int(draft_class),
             # Whether the pool this player was ranked against is thin enough to caveat.
             "ref_n": ((ref.get("pos") or {}).get(pos, {}).get(HEADLINE[pos][0], {}) or {}).get("n"),
