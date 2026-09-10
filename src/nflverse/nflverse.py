@@ -1471,6 +1471,15 @@ _QB_COLS = ["season_type", "game_id", "play_id", "passer_player_id", "passer_pla
             "passing_yards", "pass_touchdown", "interception", "air_yards", "epa",
             "success", "rushing_yards", "rush_touchdown", "rush", "yards_gained", "touchdown"]
 
+# The player tables' minimums (150 QB plays, 40 carries, 15 targets) describe a full
+# season. The in-season sidecar sets this to weeks_played/17 so a table exists after
+# week 1 and tightens toward the full-season bar as the season goes; floors keep a
+# two-carry game out of the ranks.
+MIN_SCALE = 1.0
+
+def _scaled_min(base, floor):
+    return max(int(floor), int(round(base * MIN_SCALE)))
+
 def sumer_qb(season, min_plays=150, refinement=None):
     """Per-QB advanced table keyed by normalized name — compare to Sumer's QB table."""
     pbp = _load_pbp(season, _QB_COLS)
@@ -1491,7 +1500,7 @@ def sumer_qb(season, min_plays=150, refinement=None):
         db = _refine_filter(db, season, refinement)
     gd = db.groupby("qb")
     rows = {}
-    eff_min = 25 if refinement else min_plays   # situational splits have far fewer dropbacks
+    eff_min = min(25, _scaled_min(min_plays, 15)) if refinement else _scaled_min(min_plays, 15)   # situational splits have far fewer dropbacks
     for qid, d in gd:
         dropbacks = len(d)
         if dropbacks < eff_min:
@@ -1547,6 +1556,7 @@ _RB_COLS = ["season_type", "game_id", "play_id", "rusher_player_id", "rusher_pla
             "pass_touchdown", "posteam"]
 
 def sumer_rb(season, min_rush=40, refinement=None):
+    min_rush = _scaled_min(min_rush, 5)
     """Per-RB advanced table keyed by normalized name — compare to Sumer's RB table."""
     pbp = _load_pbp(season, _RB_COLS)
     pbp = pbp[pbp["season_type"] == "REG"]
@@ -1569,7 +1579,7 @@ def sumer_rb(season, min_rush=40, refinement=None):
         lambda s: s.mode().iloc[0] if len(s.mode()) else None).to_dict()
     g = ru.groupby("rusher_player_id")
     rows = {}
-    eff_min = 8 if refinement else min_rush   # situational splits have far fewer carries
+    eff_min = min(8, min_rush) if refinement else min_rush   # situational splits have far fewer carries
     for rid, d in g:
         att = len(d)
         if att < eff_min:
@@ -1685,8 +1695,15 @@ def _routes_map(season, refinement=None):
     key = (season, refinement)
     if key in _ROUTES_CACHE:
         return _ROUTES_CACHE[key]
-    part = _aux_csv(PART_URL.format(season=season),
-                    usecols=["nflverse_game_id", "play_id", "offense_players"])
+    # Routes run is the one receiver column that needs the participation file, which
+    # publishes after the post-season. In-season the table ships without it (Routes
+    # Run 0, TPRR/YPRR blank) rather than not at all.
+    try:
+        part = _aux_csv(PART_URL.format(season=season),
+                        usecols=["nflverse_game_id", "play_id", "offense_players"])
+    except Exception:
+        _ROUTES_CACHE[key] = {}
+        return _ROUTES_CACHE[key]
     pbp = _load_pbp(season, ["game_id", "play_id", "qb_dropback", "season_type"])
     pbp = pbp[pbp["season_type"] == "REG"]
     m = part.merge(pbp, left_on=["nflverse_game_id", "play_id"], right_on=["game_id", "play_id"])
@@ -1727,7 +1744,7 @@ def _receivers(season, min_targets=15, refinement=None):
     names = _name_map(season)
     pos = _pos_map(season)
     rows = {}
-    eff_min = 5 if refinement else min_targets   # situational splits have far fewer targets
+    eff_min = min(5, _scaled_min(min_targets, 3)) if refinement else _scaled_min(min_targets, 3)   # situational splits have far fewer targets
     for rid, d in tgt.groupby("receiver_player_id"):
         tgts = len(d)
         if tgts < eff_min:
@@ -3230,7 +3247,15 @@ def build_team_block(season):
     the in-season sidecar, so the Advanced tab can show the season in progress."""
     off, dfn = team_metrics(season)
     ext = team_extended(season)
-    cover, pers = coverage_personnel(season)
+    # Coverage + base personnel come from the participation file, which FTN hands
+    # nflverse only after the post-season. In-season those two cards are simply
+    # absent — the pbp/FTN-charting tables (offense, defense, tendencies, pace, OL,
+    # defensive line) must still ship, so this cannot take the whole block down.
+    try:
+        cover, pers = coverage_personnel(season)
+    except Exception as e:
+        print(f"  (skipped coverage/personnel: {type(e).__name__} — participation not published)")
+        cover, pers = None, None
     # FTN charting tendencies (2022+): motion/PA/RPO/screen/trick/drop (offense) + blitz (defense).
     try:
         _, ftn_def = _ftn_team(season)
@@ -3259,7 +3284,9 @@ def build_team_block(season):
     ol_run_cols = [c for c in ol_run_cols if c in ext.columns]
     # Personnel: base 3WR/multi-TE (coverage_personnel) + 11/12/21 + multi-RB grouping rates.
     if off_pers is not None:
-        pers = pers.join(off_pers)
+        pers = off_pers if pers is None else pers.join(off_pers)
+    if pers is None:
+        pers = pd.DataFrame(index=off.index)
     pers_cols = ["11 Personnel", "12 Personnel", "13 Personnel", "21 Personnel", "3WR Rate", "Multi TE Rate", "Multi RB Rate"]
     pers_cols = [c for c in pers_cols if c in pers.columns]
     # Defensive tendencies: FTN blitz + personnel sub-package/nickel/dime+.
@@ -3275,9 +3302,11 @@ def build_team_block(season):
         "defense": _shape_team(dfn, lower_better=_DEF_LOWER_BETTER),
         "tendencies": _shape_team(ext[tend_cols], lower_better=["Drop Rate"]),
         "pace": _shape_team(team_pace(season), lower_better=["Sec/Play", "Sec/Play Last 5"]),
-        "personnel": _shape_team(pers[pers_cols]),
-        "coverage": _shape_team(cover),   # man/zone solid; MOFC/MOFO validated ρ≈0.8 vs Sharp
     }
+    if pers_cols:
+        team["personnel"] = _shape_team(pers[pers_cols])
+    if cover is not None:
+        team["coverage"] = _shape_team(cover)   # man/zone solid; MOFC/MOFO validated ρ≈0.8 vs Sharp
     if ol_pass_cols:
         team["offensive_line_pass"] = _shape_team(
             ext[ol_pass_cols],

@@ -277,8 +277,12 @@ def build_live_nflverse(season, parts=LIVE_NFLVERSE_PARTS):
         "routes_weekly": lambda: _nfl.routes_weekly(season),
         "players": lambda: _nfl.build_player_tables(season),
         "routes": lambda: _nfl.route_trees(season),
-        "qb_passing": lambda: _nfl.qb_passing_zones(season),
-        "rb_fan": lambda: _nfl.rb_rushing_fans(season),
+        # Season charts for the season in progress use the PER-GAME bars (8 attempts /
+        # 5 carries): after one game nobody clears a full-season minimum, and the
+        # season tab is what the game chips hang off. The seed's frozen seasons keep
+        # their own thresholds.
+        "qb_passing": lambda: _nfl.qb_passing_zones(season, min_attempts=8),
+        "rb_fan": lambda: _nfl.rb_rushing_fans(season, min_attempts=5, min_lane_attempts=1),
         "rosters": lambda: _nfl.team_rosters(season),
         "ol_weekly": lambda: _nfl.ol_weekly_team(season),
     }
@@ -366,7 +370,13 @@ def _build_inseason(season, max_week):
     except Exception as e:
         print(f"  [inseason] schedule failed ({e}) — omitting")
     # Live per-season nflverse blocks (player cards + Advanced tab for the season in progress).
-    live = build_live_nflverse(season)
+    # The player tables' full-season minimums scale to the weeks actually played.
+    _prev_scale = _nfl.MIN_SCALE
+    _nfl.MIN_SCALE = max(1, weeks[-1]) / 17.0
+    try:
+        live = build_live_nflverse(season)
+    finally:
+        _nfl.MIN_SCALE = _prev_scale
     if live:
         out["nflverse"] = {str(season): live}
     if max_week is not None:
