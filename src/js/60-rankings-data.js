@@ -199,7 +199,7 @@ function sumerColumnsForFilter(){
   const k=sumerSeasonKey(); if(!k) return null;
   const pos=rankPosFilter;
   if(pos==='QB'||pos==='RB'||pos==='WR'||pos==='TE'){
-    const t=sumerTableFor(pos); return t ? {cols:t.columns.slice(), pct:new Set(t.pct_cols||[]), single:pos} : null;
+    const t=sumerTableFor(pos); return t ? {cols:t.columns.slice(), pct:new Set(t.pct_cols||[]), single:pos, est:_sumerEstCols([t])} : null;
   }
   // ALL / FLEX → intersection of columns across the positions in view (FLEX excludes QB).
   const posList = (pos==='FLEX') ? ['RB','WR','TE'] : ['QB','RB','WR','TE'];
@@ -209,7 +209,13 @@ function sumerColumnsForFilter(){
   const pct = new Set();
   tables.forEach(t=>{ common = common.filter(c=>t.columns.includes(c)); (t.pct_cols||[]).forEach(c=>pct.add(c)); });
   if(!common.length) return null;
-  return {cols:common, pct, single:null};
+  return {cols:common, pct, single:null, est:_sumerEstCols(tables)};
+}
+// In-season, Routes Run (and everything per route) is the snap-count estimate until the
+// charted participation file publishes after the post-season — the header says so.
+const _SUMER_ROUTE_COLS=['Routes Run','Targets/Route Run','YPRR'];
+function _sumerEstCols(tables){
+  return (tables||[]).some(t=>t && t.routes_estimated) ? new Set(_SUMER_ROUTE_COLS) : null;
 }
 // Look up one player's value for a Sumer column label (indexes into their position's table),
 // so ALL/FLEX views can read a common column from each player's own position row.

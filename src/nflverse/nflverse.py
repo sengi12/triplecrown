@@ -1636,7 +1636,7 @@ def _play_context(season):
     if season in _CTX_CACHE:
         return _CTX_CACHE[season]
     pbp = _load_pbp(season, ["game_id", "play_id", "season_type", "down", "yardline_100",
-                             "score_differential", "vegas_wp"])
+                             "score_differential", "vegas_wp", "qb_hit", "sack"])
     pbp = pbp[pbp["season_type"] == "REG"]
     try:
         part = _aux_csv(PART_URL.format(season=season),
@@ -1647,13 +1647,28 @@ def _play_context(season):
     except Exception:
         for c in ("defense_man_zone_type", "was_pressure", "number_of_pass_rushers", "defenders_in_box"):
             pbp[c] = None
-    try:  # FTN play-action (2022+ only)
+    try:  # FTN charting (2022+): play-action, plus the in-season stand-ins below
         ftn = _aux_csv(FTN_URL.format(season=season),
-                       usecols=["nflverse_game_id", "nflverse_play_id", "is_play_action"])
+                       usecols=["nflverse_game_id", "nflverse_play_id", "is_play_action",
+                                "n_pass_rushers", "n_defense_box"])
         pbp = pbp.merge(ftn, left_on=["game_id", "play_id"],
                         right_on=["nflverse_game_id", "nflverse_play_id"], how="left")
     except Exception:
-        pbp["is_play_action"] = None
+        for c in ("is_play_action", "n_pass_rushers", "n_defense_box"):
+            pbp[c] = None
+    # In-season the participation file (pass rushers, box count, pressure) is not
+    # published yet — it arrives after the post-season. FTN charts pass rushers and
+    # box counts within 48h, and pbp knows hits and sacks, so the blitzed / box /
+    # pressured splits keep working on the season in progress. (Pressure without
+    # a hit or sack is invisible until participation lands — an under-count, never
+    # a wrong play.)
+    for src, dst in (("n_pass_rushers", "number_of_pass_rushers"), ("n_defense_box", "defenders_in_box")):
+        if pbp[dst].isna().all() and pbp[src].notna().any():
+            pbp[dst] = pd.to_numeric(pbp[src], errors="coerce")
+    if pbp["was_pressure"].isna().all():
+        hit = pd.to_numeric(pbp["qb_hit"], errors="coerce").fillna(0)
+        sk = pd.to_numeric(pbp["sack"], errors="coerce").fillna(0)
+        pbp["was_pressure"] = ((hit == 1) | (sk == 1))
     _CTX_CACHE[season] = pbp.set_index(["game_id", "play_id"])
     return _CTX_CACHE[season]
 
@@ -1702,7 +1717,7 @@ def _routes_map(season, refinement=None):
         part = _aux_csv(PART_URL.format(season=season),
                         usecols=["nflverse_game_id", "play_id", "offense_players"])
     except Exception:
-        _ROUTES_CACHE[key] = {}
+        _ROUTES_CACHE[key] = _routes_estimate(season) if not refinement else {}
         return _ROUTES_CACHE[key]
     pbp = _load_pbp(season, ["game_id", "play_id", "qb_dropback", "season_type"])
     pbp = pbp[pbp["season_type"] == "REG"]
@@ -1713,6 +1728,42 @@ def _routes_map(season, refinement=None):
     db["ids"] = db["offense_players"].str.findall(r"00-\d+")
     _ROUTES_CACHE[key] = db.explode("ids").groupby("ids").size().to_dict()
     return _ROUTES_CACHE[key]
+
+_ROUTES_ESTIMATED = set()   # seasons whose routes run are the snap-count estimate
+
+def _routes_estimate(season):
+    """Routes run ≈ offensive snaps × the team's dropback rate that week — the standard
+    stand-in while the participation file (true routes) waits for the post-season.
+    Snap counts publish weekly (Tuesdays); before they do this is {} and the receiver
+    table simply has no routes column values yet."""
+    try:
+        snaps = _aux_parquet(SNAP_COUNTS_URL.format(season=season),
+                             columns=["game_type", "week", "team", "pfr_player_id", "offense_snaps"])
+    except Exception:
+        return {}
+    snaps = snaps[(snaps["game_type"] == "REG") & (pd.to_numeric(snaps["offense_snaps"], errors="coerce").fillna(0) > 0)]
+    if snaps.empty:
+        return {}
+    pbp = _load_pbp(season, ["posteam", "week", "season_type", "play_type", "qb_dropback"])
+    pbp = pbp[(pbp["season_type"] == "REG") & pbp["play_type"].isin(["pass", "run"]) & pbp["posteam"].notna()]
+    if pbp.empty:
+        return {}
+    rate = pbp.groupby(["posteam", "week"])["qb_dropback"].mean()   # dropbacks / offensive plays
+    p2g = _pfr_to_gsis_map()
+    out = {}
+    for _, r in snaps.iterrows():
+        gid = p2g.get(str(r["pfr_player_id"]))
+        if not gid:
+            continue
+        tm = str(r["team"]).upper()
+        rt = rate.get((tm, int(r["week"])))
+        if rt is None or rt != rt:
+            continue
+        out[gid] = out.get(gid, 0.0) + float(r["offense_snaps"]) * float(rt)
+    out = {g: int(round(v)) for g, v in out.items()}
+    if out:
+        _ROUTES_ESTIMATED.add(int(season))
+    return out
 
 def _pos_map(season):
     """gsis id → roster position (to split receivers into WR / TE)."""
@@ -2256,6 +2307,98 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
         node["games"].sort(key=lambda x: x["wk"])
         players[name] = node
     return {"players": players, "lg": lg}
+
+
+NGS_REC_URL = "https://github.com/nflverse/nflverse-data/releases/download/nextgen_stats/ngs_receiving.csv.gz"
+
+# Next Gen Stats, per player per GAME. NGS is player-tracking (not charting), so
+# it updates the morning after every game — the one advanced feed that never
+# waits on FTN. Week 0 in the file is the season-to-date line. Field names are
+# short on purpose (this rides the phone-sized sidecar).
+_NGS_FIELDS = {
+    "rec": [("sep", "avg_separation"), ("cush", "avg_cushion"), ("iay", "avg_intended_air_yards"),
+            ("share", "percent_share_of_intended_air_yards"), ("yac_oe", "avg_yac_above_expectation"),
+            ("tgt", "targets"), ("rec", "receptions"), ("yds", "yards"), ("td", "rec_touchdowns"),
+            ("catch", "catch_percentage")],
+    "qb":  [("ttt", "avg_time_to_throw"), ("agg", "aggressiveness"), ("cpoe", "completion_percentage_above_expectation"),
+            ("cay", "avg_completed_air_yards"), ("iay", "avg_intended_air_yards"), ("sticks", "avg_air_yards_to_sticks"),
+            ("att", "attempts"), ("rating", "passer_rating")],
+    "rb":  [("eff", "efficiency"), ("box8", "percent_attempts_gte_eight_defenders"), ("tlos", "avg_time_to_los"),
+            ("ryoe", "rush_yards_over_expected_per_att"), ("ryoe_tot", "rush_yards_over_expected"),
+            ("att", "rush_attempts"), ("yds", "rush_yards"), ("td", "rush_touchdowns")],
+}
+_NGS_VOL = {"rec": "targets", "qb": "attempts", "rb": "rush_attempts"}
+# League medians come from season-to-date lines with a real sample; per-game tiles
+# are read against those, not against a single game's spread.
+_NGS_LG_MIN = {"rec": 8, "qb": 30, "rb": 15}
+
+
+def ngs_weekly(season):
+    """{players:{norm:{pos, team, kind, season:{...}, games:[{wk,...}]}}, lg:{kind:{field:median}}}."""
+    names = _name_map(season)
+    out, lg = {}, {}
+    for kind, url in (("rec", NGS_REC_URL), ("qb", NGS_PASS_URL), ("rb", NGS_RUSH_URL)):
+        try:
+            full = _aux_csv(url, compression="gzip")
+        except Exception:
+            continue
+        df = full[(pd.to_numeric(full["season"], errors="coerce") == int(season))
+                  & (full["season_type"] == "REG")].copy()
+        if df.empty:
+            continue
+        df["week"] = pd.to_numeric(df["week"], errors="coerce").fillna(0).astype(int)
+        if MAX_WEEK is not None:
+            df = df[df["week"] <= int(MAX_WEEK)]
+        fields = _NGS_FIELDS[kind]
+        vol = _NGS_VOL[kind]
+
+        def _line(row):
+            d = {}
+            for short, col in fields:
+                v = row.get(col)
+                try:
+                    f = float(v)
+                except (TypeError, ValueError):
+                    continue
+                if f != f:      # NaN
+                    continue
+                d[short] = int(f) if f == int(f) and short in ("tgt", "rec", "yds", "td", "att") else round(f, 2)
+            return d
+
+        # Week 0 = season to date. Prefer it when present; else roll our own from the games.
+        for gid, g in df.groupby("player_gsis_id"):
+            name = names.get(gid) or _norm(str(g["player_display_name"].iloc[0]))
+            if not name:
+                continue
+            node = out.setdefault(name, {"pos": str(g["player_position"].iloc[0]),
+                                         "team": NFLVERSE_TO_SEED.get(str(g["team_abbr"].iloc[0]), str(g["team_abbr"].iloc[0])),
+                                         "kind": kind, "season": {}, "games": []})
+            for _, row in g.sort_values("week").iterrows():
+                wk = int(row["week"])
+                line = _line(row)
+                if wk == 0:
+                    node["season"] = line
+                else:
+                    line["wk"] = wk
+                    node["games"].append(line)
+        # League medians (season-to-date rows with a sample). Early in a season too few
+        # players have one, so the previous season's medians stand in until ~a dozen do.
+        s0 = df[(df["week"] == 0) & (pd.to_numeric(df[vol], errors="coerce") >= _NGS_LG_MIN[kind])]
+        if len(s0) < 12:
+            prev = full[(pd.to_numeric(full["season"], errors="coerce") == int(season) - 1)
+                        & (full["season_type"] == "REG")
+                        & (pd.to_numeric(full["week"], errors="coerce") == 0)
+                        & (pd.to_numeric(full[vol], errors="coerce") >= _NGS_LG_MIN[kind])]
+            if len(prev) >= 12:
+                s0 = prev
+        med = {}
+        for short, col in fields:
+            v = pd.to_numeric(s0[col], errors="coerce").dropna() if col in s0.columns else None
+            if v is not None and len(v):
+                med[short] = round(float(v.median()), 2)
+        if med:
+            lg[kind] = med
+    return {"players": out, "lg": lg} if out else {}
 
 
 def _ol_grades_by_team(season=None):
@@ -3337,12 +3480,17 @@ def build_team_block(season):
 
 def build_player_tables(season):
     """Sumer-shaped per-player tables (+ situational refinements) for one season."""
-    return {
+    out = {
         "QB": _players_with_refs(sumer_qb, season, _REF_PASS),
         "RB": _players_with_refs(sumer_rb, season, _REF_RB),
         "WR": _players_with_refs(sumer_wr, season, _REF_PASS),
         "TE": _players_with_refs(sumer_te, season, _REF_PASS),
     }
+    if int(season) in _ROUTES_ESTIMATED:
+        # Routes Run / TPRR / YPRR came from the snap-count estimate, not charted routes.
+        out["WR"]["routes_estimated"] = True
+        out["TE"]["routes_estimated"] = True
+    return out
 
 
 def build_nflverse_season(season):

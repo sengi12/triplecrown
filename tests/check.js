@@ -2371,7 +2371,9 @@ const _INSEASON_URL = 'seeds/triplecrown_seed.inseason.json';
 // charts (ol_weekly) then see the season in progress exactly like a completed one.
 const _INSEASON_NV_SECTIONS = ['team','players','routes','qb_passing','qb_charting','rb_fan','rosters','ol_weekly',
   // Per-GAME chart splits (current season only — they live in the sidecar, never the seed).
-  'qb_passing_weekly','rb_fan_weekly','routes_weekly','scheme_weekly','target_trees'];
+  'qb_passing_weekly','rb_fan_weekly','routes_weekly','scheme_weekly','target_trees',
+  // Next Gen Stats per game (tracking data — the morning after, no charting lag).
+  'ngs_weekly'];
 function _adoptInseason(payload){
   if(!payload || !payload.season) return false;
   TC_INSEASON = payload;
@@ -6344,7 +6346,7 @@ function sumerColumnsForFilter(){
   const k=sumerSeasonKey(); if(!k) return null;
   const pos=rankPosFilter;
   if(pos==='QB'||pos==='RB'||pos==='WR'||pos==='TE'){
-    const t=sumerTableFor(pos); return t ? {cols:t.columns.slice(), pct:new Set(t.pct_cols||[]), single:pos} : null;
+    const t=sumerTableFor(pos); return t ? {cols:t.columns.slice(), pct:new Set(t.pct_cols||[]), single:pos, est:_sumerEstCols([t])} : null;
   }
   // ALL / FLEX → intersection of columns across the positions in view (FLEX excludes QB).
   const posList = (pos==='FLEX') ? ['RB','WR','TE'] : ['QB','RB','WR','TE'];
@@ -6354,7 +6356,13 @@ function sumerColumnsForFilter(){
   const pct = new Set();
   tables.forEach(t=>{ common = common.filter(c=>t.columns.includes(c)); (t.pct_cols||[]).forEach(c=>pct.add(c)); });
   if(!common.length) return null;
-  return {cols:common, pct, single:null};
+  return {cols:common, pct, single:null, est:_sumerEstCols(tables)};
+}
+// In-season, Routes Run (and everything per route) is the snap-count estimate until the
+// charted participation file publishes after the post-season — the header says so.
+const _SUMER_ROUTE_COLS=['Routes Run','Targets/Route Run','YPRR'];
+function _sumerEstCols(tables){
+  return (tables||[]).some(t=>t && t.routes_estimated) ? new Set(_SUMER_ROUTE_COLS) : null;
 }
 // Look up one player's value for a Sumer column label (indexes into their position's table),
 // so ALL/FLEX views can read a common column from each player's own position row.
@@ -8416,6 +8424,7 @@ function _renderTargetTree(pid, node, season){
     </div>
     ${chips}
     <svg viewBox="0 0 ${W} ${H}" class="qpc-svg" role="img" aria-label="Target chart">${cells.join('')}${colHeads}</svg>
+    ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('rec', norm, season, selWk) : ''}
     <div class="qpc-legend"><span><i style="background:var(--accent);opacity:.8"></i>heat = yardage from that zone</span>
       <span style="color:var(--success)">catch% ≥ league</span><span style="color:var(--danger)">below league</span></div>
     <div class="qpc-totals">
@@ -8962,6 +8971,7 @@ function renderPcardQbPassing(pid){
       <div class="qpc-tile"><label>TD/INT</label><b>${noteWrapHtml(escHtml(tdInt), { label:'TD/INT', value:tdInt, source:'qb_passing_chart', statKey:'td_int', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
       <div class="qpc-tile"><label>Attempts*</label><b>${noteWrapHtml(escHtml(t.attempts!=null?t.attempts:'—'), { label:'Located Attempts', value:t.attempts!=null?t.attempts:'—', source:'qb_passing_chart', statKey:'attempts', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
     </div>
+    ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('qb', norm, season, _selWk) : ''}
     ${pcardQbChartingBand(norm, season, notePlayer)}
     <div class="pcard-src">*Located pass attempts (excl. sacks, 2-pt) · depth via air yards, location via nflverse charting.</div>
   </div>`;
@@ -9745,6 +9755,7 @@ function renderPcardRbFan(pid){
       <span><i style="background:#d8a51d"></i>Lane YPC near league avg</span>
       <span><i style="background:#d33b2f"></i>Lane YPC below league avg</span>
     </div>
+    ${(typeof pcardNgsStrip==='function' && !_rbIsProjSeason(season)) ? pcardNgsStrip('rb', norm, season, _selWk) : ''}
     <div class="pcard-src">Rushing lanes from nflverse run-location/gap charting (regular season).</div>
   </div>`;
 }
@@ -9778,6 +9789,80 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     local OL pipeline (projected run grades for the projection season, historical otherwise).
     Projected lanes keep the back's last known directional profile, scaled to projected volume.
     Data: nflverse play-by-play + local OL grades.`};
+}
+// ── Next Gen Stats · live ──────────────────────────────────────────────────
+// The in-season companion under each chart. NGS is player TRACKING (not
+// charting), so it updates the morning after every game — separation and
+// cushion for receivers, time-to-throw and CPOE for passers, efficiency and
+// yards over expected for rushers. The sidecar bakes it per game
+// (NFLVERSE[season].ngs_weekly, see ngs_weekly in src/nflverse/nflverse.py);
+// the strip follows the chart's game chip, and reads every tile against the
+// league median — no hardcoded notion of good.
+const NGS_TILES = {
+  rec: [
+    ['sep',    'Separation', 'hi', 'yds', 'Average yards of separation from the nearest defender at the catch/incompletion (NGS)'],
+    ['cush',   'Cushion',    null, 'yds', 'Average yards between the receiver and the defender lined up across him at the snap — press vs off coverage (NGS)'],
+    ['yac_oe', 'YAC +/−',    'hi', 'yds', 'Yards after catch above what the tracking model expected from that catch point (NGS)'],
+    ['share',  'Air-Yd Share','hi', '%',  'Share of the team\'s intended air yards that went his way (NGS)'],
+    ['iay',    'aDOT',       null, 'yds', 'Average intended air yards per target (NGS)'],
+  ],
+  qb: [
+    ['ttt',    'Time to Throw', null, 's', 'Average seconds from snap to release (NGS)'],
+    ['cpoe',   'CPOE',          'hi', '%', 'Completion percentage above the tracking model\'s expectation for those throws (NGS)'],
+    ['agg',    'Aggressive',    null, '%', 'Share of throws into tight coverage (a defender within a yard) (NGS)'],
+    ['sticks', 'Air to Sticks', null, 'yds', 'Average intended air yards relative to the first-down marker (NGS)'],
+    ['cay',    'Comp Air Yds',  null, 'yds', 'Average air yards on completions (NGS)'],
+  ],
+  rb: [
+    ['ryoe',   'RYOE / att', 'hi', 'yds', 'Rush yards over the tracking model\'s expectation per carry — the runner minus his blocking (NGS)'],
+    ['eff',    'Efficiency', 'lo', '',    'Yards travelled per yard gained — lower is more north-south (NGS)'],
+    ['box8',   '8+ in Box',  null, '%',   'Share of carries against eight or more defenders in the box (NGS)'],
+    ['tlos',   'Time to LOS', 'lo', 's',  'Average seconds to reach the line of scrimmage (NGS)'],
+  ],
+};
+
+function _ngsNode(norm, season){
+  const blk=(typeof NFLVERSE!=='undefined' && NFLVERSE && NFLVERSE[String(season)] && NFLVERSE[String(season)].ngs_weekly)||null;
+  return blk && blk.players && blk.players[norm] ? {node:blk.players[norm], lg:(blk.lg||{})} : null;
+}
+
+function _ngsFmt(v, unit){
+  if(v==null || Number.isNaN(Number(v))) return '—';
+  const n=Number(v);
+  if(unit==='%') return `${n.toFixed(1)}%`;
+  if(unit==='s') return `${n.toFixed(2)}s`;
+  if(unit==='') return n.toFixed(2);
+  return (Math.abs(n)>=10 ? n.toFixed(1) : n.toFixed(2));
+}
+
+// kind: 'rec' | 'qb' | 'rb'. selWk: the chart's selected game (null = season to date).
+function pcardNgsStrip(kind, norm, season, selWk){
+  const found=_ngsNode(norm, season);
+  if(!found || !NGS_TILES[kind]) return '';
+  const {node, lg}=found;
+  if(node.kind!==kind) return '';
+  const line = (selWk!=null) ? (node.games||[]).find(g=>g.wk===Number(selWk)) : (node.season && Object.keys(node.season).length ? node.season : null);
+  if(!line) return '';
+  const med=lg[kind]||{};
+  const tiles=NGS_TILES[kind].map(([k,label,dir,unit,tip])=>{
+    const v=line[k];
+    if(v==null) return '';
+    const m=med[k];
+    let cls='';
+    if(dir && m!=null){
+      const d=Number(v)-Number(m);
+      const good = dir==='hi' ? d>0 : d<0;
+      cls = Math.abs(d)<1e-9 ? '' : (good ? 'ngs-good' : 'ngs-bad');
+    }
+    return `<div class="qpc-tile ngs-tile ${cls}" title="${escAttr(tip)}"><label>${label}</label><b>${_ngsFmt(v,unit)}</b>${m!=null?`<small>lg ${_ngsFmt(m,unit)}</small>`:''}</div>`;
+  }).join('');
+  if(!tiles) return '';
+  const scope = selWk!=null ? `Wk ${selWk}` : 'season';
+  const vol = kind==='rec' ? (line.tgt!=null?`${line.tgt} tgt`:'') : kind==='qb' ? (line.att!=null?`${line.att} att`:'') : (line.att!=null?`${line.att} att`:'');
+  return `<div class="ngs-wrap">
+    <div class="ngs-head"><span class="tt-badge" title="Next Gen Stats player tracking — updates the morning after each game, no charting lag. Tiles are colored against the league median.">◉ NEXT GEN · live</span><span class="tt-sub">${escHtml(scope)}${vol?` · ${escHtml(vol)}`:''}</span></div>
+    <div class="qpc-totals ngs-tiles">${tiles}</div>
+  </div>`;
 }
 // ── OL grades card (player-card "OL Grades" tab) ───────────────────────────
 // Seed payload: NFLVERSE[season].ol_players[normName] = {
@@ -17409,7 +17494,8 @@ function renderRankings(){
         })[k]()).join('')}
         ${advActive
           ? sumerView.cols.map((label,ci)=>{const key='sumer:'+label;const on=rankSortKey===key;
-              return `<th onclick="rankSort('sumer:${label.replace(/'/g,"\\'")}')" class="grp-adv${ci===0?' grp-start':''}" data-rc-adv="${escAttr(label)}" style="${on?'color:var(--accent)':''}" title="${label}"><div class="th-stack">${sumerHead(label)}${on?(rankSortDir<0?' ↓':' ↑'):''}</div></th>`;}).join('')
+              const est=!!(sumerView.est && sumerView.est.has(label));
+              return `<th onclick="rankSort('sumer:${label.replace(/'/g,"\\'")}')" class="grp-adv${ci===0?' grp-start':''}" data-rc-adv="${escAttr(label)}" style="${on?'color:var(--accent)':''}" title="${est?escAttr(label+' ≈ estimated from snap counts × dropback rate until charted routes publish after the season'):label}"><div class="th-stack">${sumerHead(label)}${est?'<span class="th-est">≈</span>':''}${on?(rankSortDir<0?' ↓':' ↑'):''}</div></th>`;}).join('')
           : [
         statGroupsVisible.includes('rush')?`${th('rushing_attempts','RUSH','ATT','grp-rush',true)}${th('rushing_yards','RUSH','YDS','grp-rush-mid')}${th('ypc','YPC','','grp-rush-mid')}${th('rushing_tds','RUSH','TDS','grp-rush-end')}`:'',
         statGroupsVisible.includes('rec')?`${th('receiving_targets','TGTS','','grp-rec',true)}${th('receptions','REC','','grp-rec-mid')}${th('receiving_yards','REC','YDS','grp-rec-mid')}${th('receiving_tds','REC','TDS','grp-rec-end')}`:'',

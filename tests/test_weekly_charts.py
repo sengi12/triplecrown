@@ -130,6 +130,37 @@ def main():
           g2["pass_rate"]==50.0 and g2["shotgun_rate"] is not None
           and g2["motion_rate"] is None and g2["formations"]=={})
 
+    # ── Next Gen Stats per game: season-to-date line + games, medians borrowed from
+    #    last season while too few players qualify ─────────────────────────────
+    def _ngs_rec():
+        rows = []
+        # last season: 14 qualified receivers → the medians come from here
+        for i in range(14):
+            rows.append(dict(season=2025, season_type="REG", week=0, player_display_name=f"Old Guy{i}",
+                             player_position="WR", team_abbr="CIN", avg_cushion=6.0+i*0.1, avg_separation=2.5+i*0.1,
+                             avg_intended_air_yards=9.0, percent_share_of_intended_air_yards=20.0,
+                             receptions=50, targets=80, catch_percentage=62.5, yards=700, rec_touchdowns=5,
+                             avg_yac=4.0, avg_expected_yac=3.8, avg_yac_above_expectation=0.2, player_gsis_id=f"o{i}"))
+        for wk in (0, 1):
+            rows.append(dict(season=2026, season_type="REG", week=wk, player_display_name="Test Receiver",
+                             player_position="WR", team_abbr="CIN", avg_cushion=7.1, avg_separation=3.4,
+                             avg_intended_air_yards=8.2, percent_share_of_intended_air_yards=41.0,
+                             receptions=8, targets=11, catch_percentage=72.7, yards=122, rec_touchdowns=1,
+                             avg_yac=6.0, avg_expected_yac=1.7, avg_yac_above_expectation=4.3, player_gsis_id="w1"))
+        return pd.DataFrame(rows)
+    nv._aux_csv = lambda url, **kw: _ngs_rec() if "ngs_receiving" in url else (_ for _ in ()).throw(Exception("404"))
+    nv.MAX_WEEK = None
+    ngs = nv.ngs_weekly(2026)
+    r = (ngs.get("players") or {}).get("test receiver")
+    check("ngs_weekly: the receiver has a season line and a week-1 game",
+          r is not None and r["kind"]=="rec" and r["season"].get("sep")==3.4
+          and len(r["games"])==1 and r["games"][0]["wk"]==1 and r["games"][0]["tgt"]==11)
+    check("ngs_weekly: passing/rushing feeds missing → receiving still ships",
+          "qb" not in (ngs.get("lg") or {}) and "rec" in (ngs.get("lg") or {}))
+    med = ngs["lg"]["rec"]["sep"]
+    check("ngs_weekly: with one qualified 2026 receiver the median is LAST season's (not his own number)",
+          abs(med - 3.15) < 0.06 and med != 3.4)
+
     total, passed = len(RESULTS), sum(RESULTS)
     print(f"\nRESULT: {passed}/{total} {'ALL PASS' if passed == total else 'SOME FAILED'}")
     sys.exit(0 if passed == total else 1)

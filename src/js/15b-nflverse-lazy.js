@@ -388,7 +388,9 @@ const _INSEASON_URL = 'seeds/triplecrown_seed.inseason.json';
 // charts (ol_weekly) then see the season in progress exactly like a completed one.
 const _INSEASON_NV_SECTIONS = ['team','players','routes','qb_passing','qb_charting','rb_fan','rosters','ol_weekly',
   // Per-GAME chart splits (current season only — they live in the sidecar, never the seed).
-  'qb_passing_weekly','rb_fan_weekly','routes_weekly','scheme_weekly','target_trees'];
+  'qb_passing_weekly','rb_fan_weekly','routes_weekly','scheme_weekly','target_trees',
+  // Next Gen Stats per game (tracking data — the morning after, no charting lag).
+  'ngs_weekly'];
 function _adoptInseason(payload){
   if(!payload || !payload.season) return false;
   TC_INSEASON = payload;

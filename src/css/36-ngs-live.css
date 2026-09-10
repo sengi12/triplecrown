@@ -1,0 +1,9 @@
+/* ── Next Gen Stats · live strip under the charts ── */
+.ngs-wrap{margin:10px 2px 0;}
+.ngs-head{display:flex;align-items:center;gap:8px;margin:0 0 6px;}
+.ngs-tiles{grid-template-columns:repeat(auto-fit,minmax(88px,1fr));}
+.ngs-tile small{display:block;margin-top:2px;font-size:9px;color:var(--muted);font-weight:700;}
+.ngs-tile.ngs-good b{color:#2fae4e;}
+.ngs-tile.ngs-bad b{color:#d33b2f;}
+/* Advanced rankings header: routes-derived columns that are the in-season estimate */
+.th-est{font-size:9px;font-weight:900;color:var(--warn);margin-left:2px;}
