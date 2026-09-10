@@ -1334,7 +1334,7 @@ function renderLeagueAnalyzer(){
         const onTab = (typeof laActivePane==='function' && laActivePane()) ? 'season' : laState.laTab;
         const tabs=[['myteam','Team','user'],['rosters','Rosters','clipboard'],['compare','Compare','scale'],
                     ['best','Waivers','search'],['trade','Trades','swap']];
-        if(started) tabs.push(['season','Season','football']);
+        if(started){ tabs.push(['season','Season','football']); tabs.push(['hub','Week','calendar']); }
         return tabs.map(([k,l,ic])=>`<button class="phase-tab icon-tab ${onTab===k?'active':''}" onclick="laSetTab('${k}')" title="${l}">${TC_ICON(ic)}<span class="tab-lbl">${l}</span></button>`).join('');
       })()}
     </div>
