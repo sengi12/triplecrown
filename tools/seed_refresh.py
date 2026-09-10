@@ -189,16 +189,18 @@ SOURCES = {
         "upstream": ["rosters", "draft_picks", "trades"],
         "why": "nflverse rosters/draft/trades — rebuilt only when one of those feeds moves",
     },
-    # The current-season weekly sidecar (seeds/triplecrown_seed.inseason.json). A FIXED
-    # weekly interval on purpose, not upstream timestamps: nflverse pbp moves nightly during
-    # the season, and timestamp-driven staleness would recreate exactly the daily-commit/
-    # daily-deploy churn this separate sidecar exists to avoid. One Pages deploy a week.
+    # The current-season sidecar (seeds/triplecrown_seed.inseason.json), DAILY in-season.
+    # It was weekly ("one Pages deploy a week") until the 2026 opener, when the Advanced
+    # tab, DvP and the per-game charts sat on Wednesday data all weekend — and the churn
+    # rationale had quietly died anyway: sleeper/roster_moves already commit most days, so
+    # a daily sidecar adds no extra deploys. nflverse pbp lands nightly (~04:30-06:00 UTC);
+    # the 06:37 UTC cron slot exists to chase it.
     # Invalidates only the CURRENT season's pbp/roster raw files, so no other season re-fetches.
     "inseason": {
         "paths": [f"nflverse/raw/pbp/pbp_{_CUR_SEASON}.csv.gz",
                   f"nflverse/raw/aux/*_roster_{_CUR_SEASON}.csv",
                   "nflverse/raw/aux/*_games.csv"],
-        "every": 7 * DAY,
+        "every": 1 * DAY,
         "in_season_only": True,     # dormant in the offseason — nothing is moving
         "why": "current-season nflverse weekly sidecar — weekly during the season",
     },

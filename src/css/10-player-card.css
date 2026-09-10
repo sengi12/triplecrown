@@ -549,3 +549,9 @@ tr.pcard-future-row td{opacity:.75;}
   background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:7px;}
 .pcard-season-tab.active{background:var(--accent);color:#000;border-color:var(--accent);}
 .pcard-season-tab.empty{opacity:.38;text-decoration:line-through;}
+
+/* Per-game chips under the chart season strips (current season only). */
+.rt-games{display:flex;gap:4px;flex-wrap:wrap;margin:4px 0 2px;}
+.rt-game-btn{padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;
+  background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:6px;}
+.rt-game-btn.active{background:var(--accent);color:#000;border-color:var(--accent);}

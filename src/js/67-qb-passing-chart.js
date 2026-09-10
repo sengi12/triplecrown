@@ -183,14 +183,33 @@ function renderPcardQbPassing(pid){
   if(!seasons.length) return `<div class="pcard-loading">No passing-chart data for this QB.</div>`;
   if(pcardQbPassingSeason==null || !seasons.includes(String(pcardQbPassingSeason))) pcardQbPassingSeason=seasons[0];
   const season=String(pcardQbPassingSeason);
-  const chart=NFLVERSE[season].qb_passing[norm];
+  let chart=NFLVERSE[season].qb_passing[norm];
   if(!chart) return `<div class="pcard-loading">No passing-chart data for this season.</div>`;
+  _pcardGameReset(norm);
+  const _games=pcardWeeklyGames('qb_passing_weekly', norm, season);
+  const _selWk=_games ? pcardChartGame.qbpass : null;
+  const _game=_games && _selWk!=null ? _games.find(g=>g.wk===_selWk) : null;
+  if(_game){
+    // One game, season-shaped: each cell borrows the SEASON league average —
+    // a single game is read against the stable baseline, not against itself.
+    const zones={};
+    for(const depth in (chart.zones||{})){
+      zones[depth]={};
+      for(const loc in chart.zones[depth]){
+        const wkCell=(_game.zones[depth]||{})[loc];
+        zones[depth][loc]=Object.assign({rating:null,attempts:0,yards:0,td:0},
+          wkCell||{}, {league_avg:(chart.zones[depth][loc]||{}).league_avg});
+      }
+    }
+    chart={ team:chart.team, totals:_game.totals, zones };
+  }
 
   const p=(sleeperPlayers&&sleeperPlayers[pid])||{};
   const name=p.name||'QB';
   const notePlayer = noteTargetFromArgs(pid, 'QB', p.team||chart.team||'');
   const t=chart.totals||{};
-  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardQbPassingSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('');
+  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardQbPassingSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('')
+    + (_games ? _pcardGameChips('qbpass', _games, _selWk) : '');
   if(!QB_ZONE_METRICS[pcardQbMetric]) pcardQbMetric='rating';
   let metric=pcardQbMetric;
   if(!_qbMetricKnown(chart, metric)) metric='rating';   // older seed without yards/TD
