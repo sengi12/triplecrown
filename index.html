@@ -11112,13 +11112,14 @@ function tcRatingsFor(list){
 // see _attach_ranks in src/nflverse/nflverse.py — season totals against the
 // season, a game against that week). "#3 / 41" beside a number is the context
 // the number lacks; the color is the quartile.
-function pcardRankTag(rk, key){
+function pcardRankTag(rk, key, pos){
   const r=rk && rk[key];
   if(!r || !(r[1]>1)) return '';
   const rank=+r[0], n=+r[1];
   const p=(rank-1)/(n-1);
   const cls = p<=0.25 ? 'rk-good' : p<=0.5 ? 'rk-okhi' : p<=0.75 ? 'rk-oklo' : 'rk-bad';
-  return `<small class="pc-rank ${cls}" title="Rank ${rank} of ${n} league-wide">#${rank}<span class="pc-rank-n">/${n}</span></small>`;
+  const who = pos ? `${String(pos).toUpperCase()}s` : 'players';
+  return `<small class="pc-rank ${cls}" title="Rank ${rank} of ${n} ${who} league-wide (season vs season, a game vs that week)">#${rank}<span class="pc-rank-n">/${n}</span></small>`;
 }
 // ── Player card modal ───────────────────────────────────────────────────────
 // Clicking any player name opens a card showing per-game stats by season, colored
@@ -12679,7 +12680,7 @@ function _renderTargetTree(pid, node, season, seasonBtns){
   const metricBtns=Object.entries(TT_METRICS).map(([k,m])=>`<button class="rt-metric-btn ${k===pcardTargetMetric?'active':''}" title="Show ${m.short}" onclick="setPcardTargetMetric('${k}')">${m.short}</button>`).join('');
   const cr=v.tgt ? Math.round((v.rec||0)/v.tgt*100) : null;
   const rk=v.rk||{};
-  const tile=(label, val, key, rkKey)=>`<div class="qpc-tile"><label>${label}</label><b>${wrap(escHtml(val), {label, value:String(val), statKey:key})}</b>${(typeof pcardRankTag==='function' && rkKey)?pcardRankTag(rk, rkKey):''}</div>`;
+  const tile=(label, val, key, rkKey)=>`<div class="qpc-tile"><label>${label}</label><b>${wrap(escHtml(val), {label, value:String(val), statKey:key})}</b>${(typeof pcardRankTag==='function' && rkKey)?pcardRankTag(rk, rkKey, (pcardState&&pcardState.posc)||node.pos):''}</div>`;
   return `<div class="rt-wrap">
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns||''}${games?_pcardGameChips('routes', games, selWk, team):''}</div>
@@ -13226,7 +13227,7 @@ function renderPcardQbPassing(pid){
       onclick="setPcardQbMetric('${k}')">${m.short}</button>`;
   }).join('');
   const tdInt = `${t.td!=null?t.td:'—'}/${t.int!=null?t.int:'—'}`;
-  const _rk=(k)=>(typeof pcardRankTag==='function') ? pcardRankTag(t.rk||{}, k) : '';
+  const _rk=(k)=>(typeof pcardRankTag==='function') ? pcardRankTag(t.rk||{}, k, 'QB') : '';
 
   return `<div class="qpc-wrap">
     <div class="rt-head">
@@ -14037,7 +14038,7 @@ function renderPcardRbFan(pid){
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns}</div>
       <div class="rt-metrics">${metricBtns}</div>
-      <div class="rt-summary">${noteWrapHtml(`${t.attempts||0} carries`, { label:'Carries', value:String(t.attempts||0), source:'rb_rushing_fan', statKey:'attempts', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.ypc,2)} YPC`, { label:'Yards Per Carry', value:_rbNum(t.ypc,2), source:'rb_rushing_fan', statKey:'ypc', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}${(typeof pcardRankTag==='function')?pcardRankTag(t.rk||{},'ypc'):''} · ${noteWrapHtml(`${_rbNum(t.success_rate,1)}% success`, { label:'Success Rate', value:`${_rbNum(t.success_rate,1)}%`, source:'rb_rushing_fan', statKey:'success_rate', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} ${(typeof tcInfoBtn==='function')?tcInfoBtn('rbfan','Reading this chart'):''}</div>
+      <div class="rt-summary">${noteWrapHtml(`${t.attempts||0} carries`, { label:'Carries', value:String(t.attempts||0), source:'rb_rushing_fan', statKey:'attempts', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.ypc,2)} YPC`, { label:'Yards Per Carry', value:_rbNum(t.ypc,2), source:'rb_rushing_fan', statKey:'ypc', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}${(typeof pcardRankTag==='function')?pcardRankTag(t.rk||{},'ypc','RB'):''} · ${noteWrapHtml(`${_rbNum(t.success_rate,1)}% success`, { label:'Success Rate', value:`${_rbNum(t.success_rate,1)}%`, source:'rb_rushing_fan', statKey:'success_rate', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} ${(typeof tcInfoBtn==='function')?tcInfoBtn('rbfan','Reading this chart'):''}</div>
     </div>
     ${runSc.score!=null || runSc.rank!=null ? `<div class="olc-overview">${noteWrapHtml(`<b>Cumulative Run Blocking Score: ${runSc.score!=null?runSc.score.toFixed(1):'—'}</b> ${_rbRankBadge(runSc.rank)}`, { label:'Cumulative Run Blocking Score', value:runSc.score!=null?runSc.score.toFixed(1):'—', source:'rb_offensive_line', statKey:'run_blocking_score', context:`${chart.team||notePlayer.team} offensive line · ${(_rbIsProjSeason(season) && chart.is_projection)?`${_rbProjYear()} projections`:`${season}`}`, team:chart.team||notePlayer.team, relevance:'RB' }, 'note-tag-hit')}</div>` : ''}
     ${chart.is_projection?`<div class="olc-overview"><b>${_rbProjYear()} projection</b> · projected starters drive the line${chart.baseline_run_rank!=null?` (${chart.baselineSeason}: #${chart.baseline_run_rank})`:''}</div>${typeof _olProjCoverageNote==='function'?_olProjCoverageNote():''}`:''}
@@ -14151,7 +14152,7 @@ function pcardNgsStrip(kind, norm, season, selWk){
       const good = dir==='hi' ? d>0 : d<0;
       cls = Math.abs(d)<1e-9 ? '' : (good ? 'ngs-good' : 'ngs-bad');
     }
-    return `<div class="qpc-tile ngs-tile ${cls}" title="${escAttr(tip)}"><label>${label}</label><b>${wrap(_ngsFmt(v,unit), label, _ngsFmt(v,unit), k)}</b>${m!=null?`<small>lg ${_ngsFmt(m,unit)}</small>`:''}${(typeof pcardRankTag==='function')?pcardRankTag(line.rk||{}, k):''}</div>`;
+    return `<div class="qpc-tile ngs-tile ${cls}" title="${escAttr(tip)}"><label>${label}</label><b>${wrap(_ngsFmt(v,unit), label, _ngsFmt(v,unit), k)}</b>${m!=null?`<small>lg ${_ngsFmt(m,unit)}</small>`:''}${(typeof pcardRankTag==='function')?pcardRankTag(line.rk||{}, k, node.pos):''}</div>`;
   }).join('');
   if(!tiles) return '';
   const scope = selWk!=null ? `Wk ${selWk}` : 'season';

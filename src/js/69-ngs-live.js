@@ -67,7 +67,7 @@ function pcardNgsStrip(kind, norm, season, selWk){
       const good = dir==='hi' ? d>0 : d<0;
       cls = Math.abs(d)<1e-9 ? '' : (good ? 'ngs-good' : 'ngs-bad');
     }
-    return `<div class="qpc-tile ngs-tile ${cls}" title="${escAttr(tip)}"><label>${label}</label><b>${wrap(_ngsFmt(v,unit), label, _ngsFmt(v,unit), k)}</b>${m!=null?`<small>lg ${_ngsFmt(m,unit)}</small>`:''}${(typeof pcardRankTag==='function')?pcardRankTag(line.rk||{}, k):''}</div>`;
+    return `<div class="qpc-tile ngs-tile ${cls}" title="${escAttr(tip)}"><label>${label}</label><b>${wrap(_ngsFmt(v,unit), label, _ngsFmt(v,unit), k)}</b>${m!=null?`<small>lg ${_ngsFmt(m,unit)}</small>`:''}${(typeof pcardRankTag==='function')?pcardRankTag(line.rk||{}, k, node.pos):''}</div>`;
   }).join('');
   if(!tiles) return '';
   const scope = selWk!=null ? `Wk ${selWk}` : 'season';

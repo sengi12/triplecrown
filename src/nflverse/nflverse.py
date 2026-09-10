@@ -2021,6 +2021,20 @@ def _attach_ranks(rows, fields, key="rk"):
             rows[i].setdefault(key, {})[f] = [rank, n]
 
 
+_POS_FOLD_RANK = {"HB": "RB", "FB": "RB"}
+
+def _rank_within_pos(nodes, fields, line_key="season"):
+    """Receiving ranks mean nothing across positions (a back's 3 targets vs a WR's 11):
+    rank each node's line and games against the SAME position only."""
+    groups = {}
+    for n in nodes:
+        pos = _POS_FOLD_RANK.get(str(n.get("pos") or ""), str(n.get("pos") or "")) or "?"
+        groups.setdefault(pos, []).append(n)
+    for grp in groups.values():
+        _attach_ranks([n[line_key] for n in grp if isinstance(n.get(line_key), dict)], fields)
+        _rank_by_week(grp, fields)
+
+
 def _rank_by_week(nodes, fields, games_key="games"):
     """Per-game ranks: each week's game rows ranked against the same week league-wide."""
     by_wk = {}
@@ -2419,8 +2433,7 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
                 zones=_zones(gg), **_tt_line(gg)))
         node["games"].sort(key=lambda x: x["wk"])
         players[name] = node
-    _attach_ranks([p["season"] for p in players.values()], _TT_TOTAL_RANKS)
-    _rank_by_week(players.values(), _TT_TOTAL_RANKS)
+    _rank_within_pos(list(players.values()), _TT_TOTAL_RANKS)
     return {"players": players, "lg": lg}
 
 
@@ -2515,8 +2528,7 @@ def ngs_weekly(season):
             lg[kind] = med
     for kind, fields in _NGS_RANKS.items():
         nodes = [n for n in out.values() if n["kind"] == kind]
-        _attach_ranks([n["season"] for n in nodes], fields)
-        _rank_by_week(nodes, fields)
+        _rank_within_pos(nodes, fields)     # receivers split WR / TE / RB; QBs and RBs are one group anyway
     return {"players": out, "lg": lg} if out else {}
 
 

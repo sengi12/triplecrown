@@ -53,7 +53,7 @@ def _pbp_rush():
 
 
 def main():
-    nv._name_map = lambda season: {"q1": "test quarterback", "q2": "backup guy", "r1": "test back", "w1": "test receiver"}
+    nv._name_map = lambda season: {"q1": "test quarterback", "q2": "backup guy", "r1": "test back", "w1": "test receiver", "w2": "other wideout", "r9": "pass catching back"}
     nv._pos_map = lambda season: {"w1": "WR"}
 
     print("=== qb_passing_weekly ===")
@@ -141,6 +141,13 @@ def main():
                              avg_intended_air_yards=9.0, percent_share_of_intended_air_yards=20.0,
                              receptions=50, targets=80, catch_percentage=62.5, yards=700, rec_touchdowns=5,
                              avg_yac=4.0, avg_expected_yac=3.8, avg_yac_above_expectation=0.2, player_gsis_id=f"o{i}"))
+        # a second WR and a back in 2026: receiving ranks must be WR-vs-WR only
+        for nm, gid, ps, sep in (("Other Wideout", "w2", "WR", 2.0), ("Pass Catching Back", "r9", "RB", 9.9)):
+            rows.append(dict(season=2026, season_type="REG", week=0, player_display_name=nm,
+                             player_position=ps, team_abbr="CIN", avg_cushion=5.0, avg_separation=sep,
+                             avg_intended_air_yards=3.0, percent_share_of_intended_air_yards=5.0,
+                             receptions=3, targets=4, catch_percentage=75.0, yards=20, rec_touchdowns=0,
+                             avg_yac=5.0, avg_expected_yac=5.0, avg_yac_above_expectation=0.0, player_gsis_id=gid))
         for wk in (0, 1):
             rows.append(dict(season=2026, season_type="REG", week=wk, player_display_name="Test Receiver",
                              player_position="WR", team_abbr="CIN", avg_cushion=7.1, avg_separation=3.4,
@@ -157,6 +164,9 @@ def main():
           and len(r["games"])==1 and r["games"][0]["wk"]==1 and r["games"][0]["tgt"]==11)
     check("ngs_weekly: passing/rushing feeds missing → receiving still ships",
           "qb" not in (ngs.get("lg") or {}) and "rec" in (ngs.get("lg") or {}))
+    rk = (r.get("season") or {}).get("rk") or {}
+    check("ngs_weekly: receiving ranks are per POSITION — the WR is #1 of 2 WRs, the back's 9.9 separation never counts",
+          rk.get("sep") == [1, 2])
     med = ngs["lg"]["rec"]["sep"]
     check("ngs_weekly: with one qualified 2026 receiver the median is LAST season's (not his own number)",
           abs(med - 3.15) < 0.06 and med != 3.4)
