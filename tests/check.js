@@ -2343,6 +2343,7 @@ function resetNflverseLazy(){
   _nflverseLazyPromise = {};
   _coachingSeasonLoaded = {};
   _coachingSeasonPromise = {};
+  _coachingSeasonFailed = {};
   TC_INSEASON = null;
   _inseasonPromise = null;
   _inseasonRevalidated = false;
@@ -2484,6 +2485,11 @@ function ensureNflverseSection(section){
 // so the typical first open downloads ~1 season instead of the whole multi-season block.
 let _coachingSeasonLoaded = {};
 let _coachingSeasonPromise = {};
+// Seasons whose sidecar the host does not have (a 404). The season in progress is the
+// standing case: its formations/personnel come from the participation file, which is
+// published after the post-season. Remembered for the session so the modal never asks
+// again — a resolved "no" that gets re-asked is how the Playbook spun a tab to death.
+let _coachingSeasonFailed = {};
 // Seasons whose coaching_scheme block was FETCHED at runtime, newest use last. Each decoded
 // season measures ~15MB of heap and the scheme modal shows exactly one at a time, so without
 // eviction browsing all five permanently added ~70MB — on the phones least able to spare it,
@@ -2529,6 +2535,7 @@ function coachingSeasonReady(season){
   if(_coachingSeasonLoaded[season]) return true;
   return !!(typeof NFLVERSE==='object' && NFLVERSE && NFLVERSE[season] && NFLVERSE[season].coaching_scheme);
 }
+function coachingSeasonUnavailable(season){ return !!_coachingSeasonFailed[String(season)]; }
 
 function ensureNflverseCoachingSeason(season){
   season = String(season);
@@ -2555,7 +2562,7 @@ function ensureNflverseCoachingSeason(season){
   _coachingSeasonPromise[season] = (async()=>{
     try{
       const raw = await fetchSeedJson(`seeds/triplecrown_seed.coaching.${season}.json`);
-      if(!raw) return false;
+      if(!raw){ _coachingSeasonFailed[season] = true; return false; }
       const data = decodeAnySeed(raw);
       if(data && typeof data==='object' && typeof NFLVERSE==='object' && NFLVERSE){
         (NFLVERSE[season] = NFLVERSE[season] || {}).coaching_scheme = data;
@@ -2563,8 +2570,9 @@ function ensureNflverseCoachingSeason(season){
         _coachingTouch(season);   // bounded: evicts the least-recently-viewed season
         return true;
       }
+      _coachingSeasonFailed[season] = true;
       return false;
-    }catch(e){ return false; }
+    }catch(e){ _coachingSeasonFailed[season] = true; return false; }
   })();
   return _coachingSeasonPromise[season];
 }
@@ -12498,8 +12506,17 @@ function _schemeSeasons(team){
   return _schemeAllSeasons();
 }
 
+// Does this season's Playbook still need (and can it still get) its sidecar?
+function _schemeHasPlaybook(season){
+  return !(typeof coachingSeasonUnavailable==='function' && coachingSeasonUnavailable(season));
+}
+function _schemeNeedsLoad(season){
+  return !!season && typeof coachingSeasonReady==='function' && !coachingSeasonReady(season)
+    && _schemeHasPlaybook(season);
+}
+let _schemeMissingSeason = null;   // the season the user asked for that has no playsheet yet
 function _schemePreferredSeason(team){
-  const seasons = _schemeAllSeasons();
+  const seasons = _schemeAllSeasons().filter(_schemeHasPlaybook);
   if(!seasons.length) return null;
   if(schemeSeason && seasons.includes(String(schemeSeason))) return String(schemeSeason);
   if(activeSeason!=='proj' && seasons.includes(String(activeSeason))) return String(activeSeason);
@@ -14585,11 +14602,25 @@ function _renderTeamCoachingScheme(){
   const host = _schemeOverlayHost(true);
   if(!host || !schemeTeam){ return; }
   const seasons = _schemeAllSeasons();
-  const pick = (schemeSeason && seasons.includes(String(schemeSeason)))
+  let pick = (schemeSeason && seasons.includes(String(schemeSeason)))
     ? String(schemeSeason) : _schemePreferredSeason(schemeTeam);
+  // A season with no playsheet on the host (the season in progress, until its
+  // participation file publishes after the post-season) must not re-enter the
+  // loading path: the cached "no" resolves at once, and render → load → render
+  // was an unbounded microtask loop that hung the tab. Fall to the newest season
+  // that has one, and say so in the subtitle.
+  if(pick && !_schemeHasPlaybook(pick)){
+    _schemeMissingSeason = pick;
+    pick = _schemePreferredSeason(schemeTeam);
+  }else if(pick && _schemeMissingSeason && String(pick)!==String(_schemeMissingSeason)
+           && !_schemeHasPlaybook(_schemeMissingSeason)){
+    // keep the note while the fallback season is showing
+  }else{
+    _schemeMissingSeason = null;
+  }
   schemeSeason = pick;
   // Ensure the selected season's coaching sidecar is loaded before we read it (per-season lazy).
-  if(pick && typeof coachingSeasonReady==='function' && !coachingSeasonReady(pick)){
+  if(_schemeNeedsLoad(pick)){
     _renderSchemeLoadingShell();
     if(typeof ensureNflverseCoachingSeason==='function'){
       ensureNflverseCoachingSeason(pick).then(()=>{
@@ -14600,6 +14631,8 @@ function _renderTeamCoachingScheme(){
   }
   const p = _schemePayload(schemeTeam, pick);
   schemeSeason = p ? p.season : pick;
+  const missingNote = _schemeMissingSeason
+    ? ` · ${_schemeEscHtml(_schemeMissingSeason)} playsheet publishes after the season` : '';
   if(!p){
     host.innerHTML = `<div class="scheme-overlay" onclick="closeTeamCoachingScheme()">
       <div class="scheme-modal" onclick="event.stopPropagation()">
@@ -14607,7 +14640,7 @@ function _renderTeamCoachingScheme(){
         <div class="scheme-head">
           <img src="${NFL_LOGO(schemeTeam)}" class="scheme-team-logo" onerror="this.style.display='none'">
           <div><div class="scheme-title">${teamDisplayName(schemeTeam)} Playbook</div>
-          <div class="scheme-subtitle">No nflverse coaching-scheme payload found for this team.</div></div>
+          <div class="scheme-subtitle">${_schemeMissingSeason ? `${_schemeEscHtml(_schemeMissingSeason)} playsheet publishes after the season.` : 'No nflverse coaching-scheme payload found for this team.'}</div></div>
         </div>
       </div>
     </div>`;
@@ -14623,7 +14656,7 @@ function _renderTeamCoachingScheme(){
         <img src="${NFL_LOGO(schemeTeam)}" class="scheme-team-logo" onerror="this.style.display='none'">
         <div>
           <div class="scheme-title">${teamDisplayName(schemeTeam)} Playbook</div>
-          <div class="scheme-subtitle">${p.season} playsheet</div>
+          <div class="scheme-subtitle">${p.season} playsheet${missingNote}</div>
           ${_schemeOcCallout(schemeTeam)}
         </div>
       </div>
@@ -14634,7 +14667,7 @@ function _renderTeamCoachingScheme(){
         <button class="scheme-view-tab ${schemeViewTab==='scheme'?'active':''}" onclick="setTeamCoachingSchemeTab('scheme')">Scheme</button>
       </div>
       <div class="scheme-loading">Loading playsheet template…</div>
-      ${seasons.length>1?`<div class="scheme-tabs">${seasons.map(s=>`<button class="scheme-tab ${String(s)===String(schemeSeason)?'active':''}" onclick="setTeamCoachingSchemeSeason('${s}')"><span>${s}</span></button>`).join('')}</div>`:''}
+      ${seasons.length>1?`<div class="scheme-tabs">${seasons.map(s=>`<button class="scheme-tab ${String(s)===String(schemeSeason)?'active':''} ${_schemeHasPlaybook(s)?'':'scheme-tab-off'}" onclick="setTeamCoachingSchemeSeason('${s}')"><span>${s}</span></button>`).join('')}</div>`:''}
     </div>
   </div>`;
   _schemeBindSwipeClose(host);
@@ -14716,7 +14749,7 @@ function openTeamCoachingScheme(team, initialView){
   // Coaching-scheme payloads are lazy-loaded per season (triplecrown_seed.coaching.<season>.json)
   // so we only fetch the season being viewed. Load it first (showing a loading shell), then render.
   const want = schemeSeason;
-  if(want && typeof ensureNflverseCoachingSeason==='function' && !coachingSeasonReady(want)){
+  if(typeof ensureNflverseCoachingSeason==='function' && _schemeNeedsLoad(want)){
     _renderSchemeLoadingShell();
     ensureNflverseCoachingSeason(want).then(()=>{
       if(schemeOverlayOpen && schemeTeam===team) _renderTeamCoachingScheme();
@@ -14755,6 +14788,7 @@ function closeTeamCoachingScheme(){
   schemeViewTab = 'playbook';
   _schemeNavStack = [];
   _schemeCoachContext = null;
+  _schemeMissingSeason = null;
   const host = _schemeOverlayHost(false);
   if(host) host.remove();
 }
@@ -14770,7 +14804,7 @@ function backTeamCoachingScheme(){
   _schemeCoachContext = prev.coachContext || null;
 
   const want = schemeSeason;
-  if(want && typeof ensureNflverseCoachingSeason==='function' && !coachingSeasonReady(want)){
+  if(typeof ensureNflverseCoachingSeason==='function' && _schemeNeedsLoad(want)){
     _renderSchemeLoadingShell();
     ensureNflverseCoachingSeason(want).then(()=>{
       if(
@@ -14790,7 +14824,7 @@ function setTeamCoachingSchemeSeason(season){
   if(!s) return;
   schemeSeason = s;
   // Load this season's coaching sidecar on demand before re-rendering.
-  if(typeof coachingSeasonReady==='function' && !coachingSeasonReady(s)){
+  if(_schemeNeedsLoad(s)){
     _renderSchemeLoadingShell();
     if(typeof ensureNflverseCoachingSeason==='function'){
       ensureNflverseCoachingSeason(s).then(()=>{

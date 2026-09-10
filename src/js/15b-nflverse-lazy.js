@@ -360,6 +360,7 @@ function resetNflverseLazy(){
   _nflverseLazyPromise = {};
   _coachingSeasonLoaded = {};
   _coachingSeasonPromise = {};
+  _coachingSeasonFailed = {};
   TC_INSEASON = null;
   _inseasonPromise = null;
   _inseasonRevalidated = false;
@@ -501,6 +502,11 @@ function ensureNflverseSection(section){
 // so the typical first open downloads ~1 season instead of the whole multi-season block.
 let _coachingSeasonLoaded = {};
 let _coachingSeasonPromise = {};
+// Seasons whose sidecar the host does not have (a 404). The season in progress is the
+// standing case: its formations/personnel come from the participation file, which is
+// published after the post-season. Remembered for the session so the modal never asks
+// again — a resolved "no" that gets re-asked is how the Playbook spun a tab to death.
+let _coachingSeasonFailed = {};
 // Seasons whose coaching_scheme block was FETCHED at runtime, newest use last. Each decoded
 // season measures ~15MB of heap and the scheme modal shows exactly one at a time, so without
 // eviction browsing all five permanently added ~70MB — on the phones least able to spare it,
@@ -546,6 +552,7 @@ function coachingSeasonReady(season){
   if(_coachingSeasonLoaded[season]) return true;
   return !!(typeof NFLVERSE==='object' && NFLVERSE && NFLVERSE[season] && NFLVERSE[season].coaching_scheme);
 }
+function coachingSeasonUnavailable(season){ return !!_coachingSeasonFailed[String(season)]; }
 
 function ensureNflverseCoachingSeason(season){
   season = String(season);
@@ -572,7 +579,7 @@ function ensureNflverseCoachingSeason(season){
   _coachingSeasonPromise[season] = (async()=>{
     try{
       const raw = await fetchSeedJson(`seeds/triplecrown_seed.coaching.${season}.json`);
-      if(!raw) return false;
+      if(!raw){ _coachingSeasonFailed[season] = true; return false; }
       const data = decodeAnySeed(raw);
       if(data && typeof data==='object' && typeof NFLVERSE==='object' && NFLVERSE){
         (NFLVERSE[season] = NFLVERSE[season] || {}).coaching_scheme = data;
@@ -580,8 +587,9 @@ function ensureNflverseCoachingSeason(season){
         _coachingTouch(season);   // bounded: evicts the least-recently-viewed season
         return true;
       }
+      _coachingSeasonFailed[season] = true;
       return false;
-    }catch(e){ return false; }
+    }catch(e){ _coachingSeasonFailed[season] = true; return false; }
   })();
   return _coachingSeasonPromise[season];
 }

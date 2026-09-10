@@ -193,6 +193,7 @@ run_js_test test_stacking       "Stacking: TD-scaled QB-receiver correlation tie
 run_js_test test_advisory_reason "Advisory reasoning: tier-break urgency (bounded, VOR still decides), BAFL derivative category weighting, local app-data AI tools"
 run_js_test test_pcard_seasons   "Player card seasons: BAFL-style tabs (lazy, newest auto-opens, empty greys), opponent logos on future/missed rows, college rep-season honesty + career row, week-1 RB receiving"
 run_js_test test_chat_guard      "Chat guard: stats vocabulary, player initialisms/aliases ground and pass (JSN field report), empty-board race fails open, fence holds"
+run_js_test test_playbook_live   "Playbook on the live season: a missing coaching sidecar is remembered, the modal falls to the newest playsheet, render path bounded (no microtask spin)"
 run_js_test test_draft_lifecycle "Draft follow lifecycle: start/stop generation token, completion detection, keeper-aware clock, stop cleanup, follow persistence"
 run_js_test test_vona_options   "VONA pools/pAvail export, options popover (render/toggle/empty), synced-league picker row + username carry-over"
 run_js_test test_injury_timeline "Reported injury timelines beat the book estimate (popup + absence weeks); injury tag popup toggle-closes"

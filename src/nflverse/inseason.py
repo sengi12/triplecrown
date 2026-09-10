@@ -256,7 +256,9 @@ def truncate_inseason(blk, max_week):
 # The per-season nflverse blocks the app's player cards / Advanced tab read, rebuilt weekly
 # for the season in progress so the route tree, pass chart, rushing fan, advanced player
 # tables and team tables show THIS season to date instead of stopping at last year.
-LIVE_NFLVERSE_PARTS = ("team", "players", "routes", "qb_passing", "rb_fan", "rosters", "ol_weekly")
+LIVE_NFLVERSE_PARTS = ("team", "players", "routes", "qb_passing", "rb_fan", "rosters", "ol_weekly",
+                       # per-game companions (current season only): they ride the sidecar, never the seed
+                       "qb_passing_weekly", "rb_fan_weekly", "scheme_weekly", "target_trees", "routes_weekly")
 
 
 def build_live_nflverse(season, parts=LIVE_NFLVERSE_PARTS):
