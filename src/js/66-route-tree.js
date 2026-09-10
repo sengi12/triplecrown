@@ -158,6 +158,7 @@ function _renderTargetTree(pid, node, season){
     </div>
     ${chips}
     <svg viewBox="0 0 ${W} ${H}" class="qpc-svg" role="img" aria-label="Target chart">${cells.join('')}${colHeads}</svg>
+    ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('rec', norm, season, selWk) : ''}
     <div class="qpc-legend"><span><i style="background:var(--accent);opacity:.8"></i>heat = yardage from that zone</span>
       <span style="color:var(--success)">catch% ≥ league</span><span style="color:var(--danger)">below league</span></div>
     <div class="qpc-totals">

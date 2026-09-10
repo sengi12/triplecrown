@@ -724,6 +724,7 @@ function renderPcardRbFan(pid){
       <span><i style="background:#d8a51d"></i>Lane YPC near league avg</span>
       <span><i style="background:#d33b2f"></i>Lane YPC below league avg</span>
     </div>
+    ${(typeof pcardNgsStrip==='function' && !_rbIsProjSeason(season)) ? pcardNgsStrip('rb', norm, season, _selWk) : ''}
     <div class="pcard-src">Rushing lanes from nflverse run-location/gap charting (regular season).</div>
   </div>`;
 }

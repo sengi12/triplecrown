@@ -187,6 +187,9 @@ jobs:
           git config user.name  'triplecrown-bot'
           git config user.email 'triplecrown-bot@users.noreply.github.com'
           git add -A seeds/ archives/
+          # A code merge can land on main while the seed bakes (~15 min); the seed commit
+          # touches only seeds/ + archives/, so rebase onto it and push again.
+          _push(){ for i in 1 2 3; do git push && return 0; git pull --rebase origin main || return 1; done; return 1; }
           if git diff --cached --quiet; then
             echo "No seed changes — nothing to commit."
             echo "pushed=false" >> "$GITHUB_OUTPUT"
@@ -200,7 +203,7 @@ jobs:
           if [ -z "$DATA" ]; then
             git commit -m "chore(seed): refresh bookkeeping (no data change)" \
                        -m "Only seeds/refresh-state.json moved — schedule anchors and upstream stamps. Not deploying."
-            git push
+            _push
             echo "pushed=true" >> "$GITHUB_OUTPUT"
             echo "data=false"  >> "$GITHUB_OUTPUT"
             exit 0
@@ -209,7 +212,7 @@ jobs:
           git commit -m "chore(seed): ${SUMMARY#Refreshed: }" \
                      -m "Automated refresh via tools/seed_refresh.py." \
                      -m "$(grep -E '^\s+\[(REFRESH|  skip )\]' refresh.log || true)"
-          git push
+          _push
           echo "pushed=true" >> "$GITHUB_OUTPUT"
           echo "data=true"   >> "$GITHUB_OUTPUT"
 

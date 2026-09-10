@@ -868,7 +868,8 @@ function renderRankings(){
         })[k]()).join('')}
         ${advActive
           ? sumerView.cols.map((label,ci)=>{const key='sumer:'+label;const on=rankSortKey===key;
-              return `<th onclick="rankSort('sumer:${label.replace(/'/g,"\\'")}')" class="grp-adv${ci===0?' grp-start':''}" data-rc-adv="${escAttr(label)}" style="${on?'color:var(--accent)':''}" title="${label}"><div class="th-stack">${sumerHead(label)}${on?(rankSortDir<0?' ↓':' ↑'):''}</div></th>`;}).join('')
+              const est=!!(sumerView.est && sumerView.est.has(label));
+              return `<th onclick="rankSort('sumer:${label.replace(/'/g,"\\'")}')" class="grp-adv${ci===0?' grp-start':''}" data-rc-adv="${escAttr(label)}" style="${on?'color:var(--accent)':''}" title="${est?escAttr(label+' ≈ estimated from snap counts × dropback rate until charted routes publish after the season'):label}"><div class="th-stack">${sumerHead(label)}${est?'<span class="th-est">≈</span>':''}${on?(rankSortDir<0?' ↓':' ↑'):''}</div></th>`;}).join('')
           : [
         statGroupsVisible.includes('rush')?`${th('rushing_attempts','RUSH','ATT','grp-rush',true)}${th('rushing_yards','RUSH','YDS','grp-rush-mid')}${th('ypc','YPC','','grp-rush-mid')}${th('rushing_tds','RUSH','TDS','grp-rush-end')}`:'',
         statGroupsVisible.includes('rec')?`${th('receiving_targets','TGTS','','grp-rec',true)}${th('receptions','REC','','grp-rec-mid')}${th('receiving_yards','REC','YDS','grp-rec-mid')}${th('receiving_tds','REC','TDS','grp-rec-end')}`:'',
