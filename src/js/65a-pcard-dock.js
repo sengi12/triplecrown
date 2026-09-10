@@ -147,6 +147,9 @@ function _pcardDockRender(){
     dock=document.createElement('div');
     dock.className='pcard-dock';
     dock.setAttribute('role','tablist');
+    // A mouse wheel over the strip scrolls it sideways (trackpads already do); the
+    // arrow keys step between tabs (97b-keys.js).
+    if(dock.addEventListener) dock.addEventListener('wheel', (e)=>{ if(Math.abs(e.deltaY)>Math.abs(e.deltaX)){ dock.scrollLeft+=e.deltaY; if(e.preventDefault) e.preventDefault(); } }, {passive:false});
     card.insertBefore(dock, card.firstChild);
   }
   dock.innerHTML=`<button class="pcard-dock-add" onclick="pcardDockAddOpen(event)" title="Open another player alongside" aria-label="Open another player alongside">＋</button>`+_pcardDock.map(t=>{

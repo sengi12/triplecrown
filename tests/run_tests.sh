@@ -198,6 +198,7 @@ run_js_test test_pcard_dock      "Player tabs (dock): drill-downs add tabs, swit
 run_js_test test_ngs_live        "Next Gen Stats live strip: per-game/season tiles under the charts, colored vs league median with per-stat direction, honest absences"
 run_js_test test_week_hub        "This Week hub: per-league scoring contexts, week projection, lineup fill + lineup.py callout grades, waiver reasons, FAAB pacing, end-to-end league"
 run_js_test test_ai_compare_week "Compare in-season: this-week line (projection, opponent DvP rank, last-3, live ranks) in the packet, start/sit prompt; off-season untouched"
+run_js_test test_keys            "Keyboard shortcuts: one table drives handler + sheet; Mod is ⌘/Ctrl; never while typing (Esc excepted); card arrows step dock tabs; Esc closes the top layer"
 run_js_test test_draft_lifecycle "Draft follow lifecycle: start/stop generation token, completion detection, keeper-aware clock, stop cleanup, follow persistence"
 run_js_test test_vona_options   "VONA pools/pAvail export, options popover (render/toggle/empty), synced-league picker row + username carry-over"
 run_js_test test_injury_timeline "Reported injury timelines beat the book estimate (popup + absence weeks); injury tag popup toggle-closes"
