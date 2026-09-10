@@ -668,8 +668,21 @@ function renderPcardRbFan(pid){
   if(!seasonOpts.length) return '<div class="pcard-loading">No rushing-fan data for this RB.</div>';
   if(pcardRbFanSeason==null || !seasonOpts.includes(String(pcardRbFanSeason))) pcardRbFanSeason=seasonOpts[0];
   const season=String(pcardRbFanSeason);
-  const chart=(_rbIsProjSeason(season) && projChart) ? projChart : (NFLVERSE[season]&&NFLVERSE[season].rb_fan&&NFLVERSE[season].rb_fan[norm]);
+  let chart=(_rbIsProjSeason(season) && projChart) ? projChart : (NFLVERSE[season]&&NFLVERSE[season].rb_fan&&NFLVERSE[season].rb_fan[norm]);
   if(!chart) return '<div class="pcard-loading">No rushing-fan data for this season.</div>';
+  _pcardGameReset(norm);
+  const _games=(!_rbIsProjSeason(season)) ? pcardWeeklyGames('rb_fan_weekly', norm, season) : null;
+  const _selWk=_games ? pcardChartGame.rbfan : null;
+  const _game=_games && _selWk!=null ? _games.find(g=>g.wk===_selWk) : null;
+  if(_game){
+    const lanes={};
+    for(const lane in (_game.lanes||{})){
+      lanes[lane]=Object.assign({}, _game.lanes[lane],
+        { league_ypc:((chart.lanes||{})[lane]||{}).league_ypc });
+    }
+    chart=Object.assign({}, chart, { lanes,
+      attempts:_game.attempts, yards:_game.yards, ypc:_game.ypc, _game:_game.wk });
+  }
   const pack=NFLVERSE[season]||{};
   const teamCode=_rbTeamCode(chart.team||'');
   const runTbl=pack.team&&pack.team.offensive_line_run;
@@ -685,7 +698,8 @@ function renderPcardRbFan(pid){
   const notePlayer = noteTargetFromArgs(pid, 'RB', p.team||chart.team||'');
   const noteCtx = (_rbIsProjSeason(season) && chart.is_projection) ? `${_rbProjYear()} projection rushing fan` : `${season} rushing fan`;
   const t=chart.totals||{};
-  const seasonBtns=seasonOpts.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardRbFanSeason('${s}')">${_rbIsProjSeason(s)?_rbProjYear()+' proj':(typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s)}</button>`).join('');
+  const seasonBtns=seasonOpts.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardRbFanSeason('${s}')">${_rbIsProjSeason(s)?_rbProjYear()+' proj':(typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s)}</button>`).join('')
+    + (_games ? _pcardGameChips('rbfan', _games, _selWk) : '');
   if(!RB_LANE_METRICS[pcardRbMetric]) pcardRbMetric='eff';
   let metric=pcardRbMetric;
   if(!_rbMetricKnown(chart, metric)) metric='eff';   // older seed without per-gap yards/TD

@@ -26,6 +26,8 @@ const app=new Function(code+`
   toast=function(){};
   pcardToken=1; pcardOpen=true;
   return { pcardEligibleSeasons, loadSleeperCareerStats, pcardSelectSeason, rbReceivingQualifies,
+    pcardWeeklyGames, _routeGameAsSeason, _pcardGameChips, setPcardChartGame,
+    getChartGame:()=>pcardChartGame, setNflverse:(n)=>{NFLVERSE=n;},
     pcardAppendFutureWeeks, pcardSeasonRows, renderPcardSeason,
     _cfbCareerRow, _CFB_SEASON_COLS, renderCfbProspect,
     TC_SEASON, setPlayers:(p)=>{sleeperPlayers=p;},
@@ -105,6 +107,25 @@ chk(!app.rbReceivingQualifies({receiving_targets:0, receptions:0, games_played:1
 chk(!app.rbReceivingQualifies({receiving_targets:3, games_played:12}),
     'past the early-season window the season-scale bar applies again');
 chk(app.rbReceivingQualifies({receiving_targets:40, games_played:12}), 'a real receiving back always qualifies');
+
+console.log('\n=== per-game chart chips (current season only) ===');
+app.TC_SEASON.year=2026; app.TC_SEASON.phase='regular'; app.TC_SEASON.week=2;
+app.setNflverse({'2026':{routes_weekly:{'test wr':{pos:'WR',games:[
+  {wk:1,opp:'KC',total:8,tree:{'GO':{tgt:3,rec:2,yds:60,td:1},'SLANT':{tgt:5,rec:4,yds:35,td:0}}}]}}},
+  '2025':{routes_weekly:{'test wr':{games:[{wk:1,opp:'X',total:1,tree:{}}]}}}});
+chk(!!app.pcardWeeklyGames('routes_weekly','test wr','2026'), 'the live season offers per-game views');
+chk(app.pcardWeeklyGames('routes_weekly','test wr','2025')===null,
+    'a PAST season never does — per-game data is current-season only by design');
+const adapted=app._routeGameAsSeason({total:8,tree:{'GO':{tgt:3,rec:2,yds:60,td:1},'SLANT':{tgt:5,rec:4,yds:35,td:0}}});
+chk(adapted.tree.GO===3 && adapted.route_yds.GO===60 && adapted.total_td===undefined && adapted.total_tds===1,
+    'the adapter reshapes a game into the season shape the renderer already reads');
+chk(adapted.total_rec===6 && adapted.total_yds===95, 'and totals recompute from the game');
+const chips=app._pcardGameChips('routes', [{wk:1,opp:'KC'}], null);
+chk(/Season/.test(chips) && /Wk1 KC/.test(chips), 'chips: Season plus one per game');
+app.setPcardChartGame('routes', 1);
+chk(app.getChartGame().routes===1, 'selecting a game sticks');
+app.setPcardChartGame('routes', '');
+chk(app.getChartGame().routes===null, 'and Season clears it');
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);

@@ -206,10 +206,11 @@ for name, spec in SR.SOURCES.items():
 
 print("\n=== TEST 12: the in-season sidecar source + its own guard ===")
 # Fixed weekly cadence on purpose (nflverse pbp timestamps move nightly in-season — timestamp
-# driven staleness would recreate the daily-deploy churn the sidecar exists to avoid), gated
-# to the season actually running, and scoped to the CURRENT season's cache files only.
+# the season actually running, and scoped to the CURRENT season's cache files only. DAILY
+# since the 2026 opener: the Advanced tab / DvP / per-game charts read this sidecar, and a
+# weekly cadence left them on Wednesday data all weekend.
 ins = SR.SOURCES["inseason"]
-chk(ins["every"] == 7 * SR.DAY, "inseason: fixed 7-day cadence, not upstream timestamps")
+chk(ins["every"] == 1 * SR.DAY, "inseason: fixed DAILY cadence in-season, not upstream timestamps")
 chk(ins.get("in_season_only") is True, "inseason: dormant outside the season")
 chk(any(str(SR._CUR_SEASON) in p for p in ins["paths"]), "inseason: invalidates only the current season's files")
 # And the mirror image: the five completed seasons are frozen while games are being played,

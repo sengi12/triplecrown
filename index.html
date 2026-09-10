@@ -751,6 +751,12 @@ tr.pcard-future-row td{opacity:.75;}
   background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:7px;}
 .pcard-season-tab.active{background:var(--accent);color:#000;border-color:var(--accent);}
 .pcard-season-tab.empty{opacity:.38;text-decoration:line-through;}
+
+/* Per-game chips under the chart season strips (current season only). */
+.rt-games{display:flex;gap:4px;flex-wrap:wrap;margin:4px 0 2px;}
+.rt-game-btn{padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;
+  background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:6px;}
+.rt-game-btn.active{background:var(--accent);color:#000;border-color:var(--accent);}
 /* ── Grouped rankings table (ECR / Tier / FPTS / stat groups) ── */
 .rankings-table.grouped{font-size:11.5px;}
 .rankings-table.grouped th,.rankings-table.grouped td{padding:5px 7px;text-align:center;}
@@ -6522,7 +6528,9 @@ const _INSEASON_URL = 'seeds/triplecrown_seed.inseason.json';
 // player-card charts (routes / qb_passing / rb_fan), the Advanced tab + rankings advanced
 // metrics (team / players), the RB fan's line context (rosters) and the OL week-range
 // charts (ol_weekly) then see the season in progress exactly like a completed one.
-const _INSEASON_NV_SECTIONS = ['team','players','routes','qb_passing','qb_charting','rb_fan','rosters','ol_weekly'];
+const _INSEASON_NV_SECTIONS = ['team','players','routes','qb_passing','qb_charting','rb_fan','rosters','ol_weekly',
+  // Per-GAME chart splits (current season only — they live in the sidecar, never the seed).
+  'qb_passing_weekly','rb_fan_weekly','routes_weekly'];
 function _adoptInseason(payload){
   if(!payload || !payload.season) return false;
   TC_INSEASON = payload;
@@ -12572,14 +12580,57 @@ function routeTreeList(rt, metric){
 }
 
 // The full Routes-tab body: season selector + tree + list.
+// ── Per-game view (current season) ──────────────────────────────────────────
+// The sidecar bakes *_weekly blocks for the season in progress; a game chip
+// strip appears under the season buttons and the selected game re-renders the
+// SAME chart through a shape adapter, so the renderers never learn about weeks.
+let pcardChartGame = {};   // chartKey -> selected wk (null = full season); reset per player
+let _pcardChartGameNorm = null;
+function _pcardGameReset(norm){
+  if(_pcardChartGameNorm!==norm){ pcardChartGame={}; _pcardChartGameNorm=norm; }
+}
+function pcardWeeklyGames(section, norm, season){
+  if(typeof tcIsLiveSeason!=='function' || !tcIsLiveSeason(season)) return null;
+  const blk=(typeof NFLVERSE!=='undefined' && NFLVERSE[String(season)] && NFLVERSE[String(season)][section])||null;
+  const node=blk && blk[norm];
+  return (node && Array.isArray(node.games) && node.games.length) ? node.games : null;
+}
+function setPcardChartGame(chartKey, wk){
+  pcardChartGame[chartKey] = (wk==='' || wk==null) ? null : Number(wk);
+  if(typeof renderPcardStatsBody==='function') renderPcardStatsBody();
+  else if(typeof rerenderPlayerCard==='function') rerenderPlayerCard();
+}
+function _pcardGameChips(chartKey, games, selWk){
+  const chips = [`<button class="rt-game-btn ${selWk==null?'active':''}" onclick="setPcardChartGame('${chartKey}','')">Season</button>`]
+    .concat(games.map(g=>`<button class="rt-game-btn ${selWk===g.wk?'active':''}"
+      onclick="setPcardChartGame('${chartKey}',${g.wk})">Wk${g.wk}${g.opp?` ${escHtml(g.opp)}`:''}</button>`));
+  return `<div class="rt-games">${chips.join('')}</div>`;
+}
+// One weekly route game → the season-shaped object the renderer already reads.
+function _routeGameAsSeason(g){
+  const tree={}, rec={}, yds={}, tds={};
+  let trec=0, tyds=0, ttds=0;
+  for(const r in (g.tree||{})){
+    const c=g.tree[r]||{};
+    tree[r]=c.tgt||0; rec[r]=c.rec||0; yds[r]=c.yds||0; tds[r]=c.td||0;
+    trec+=c.rec||0; tyds+=c.yds||0; ttds+=c.td||0;
+  }
+  return { tree, route_rec:rec, route_yds:yds, route_tds:tds,
+           total:g.total||0, total_rec:trec, total_yds:tyds, total_tds:ttds };
+}
 function renderPcardRoutes(pid){
   const norm=_pcardNorm(pid);
   const seasons=pcardRouteSeasons(norm);
   if(!seasons.length) return `<div class="pcard-loading">No route data for this player.</div>`;
   if(pcardRouteSeason==null || !seasons.includes(String(pcardRouteSeason))) pcardRouteSeason=seasons[0];
-  const rt=NFLVERSE[pcardRouteSeason].routes[norm];
+  _pcardGameReset(norm);
+  const _games=pcardWeeklyGames('routes_weekly', norm, pcardRouteSeason);
+  const _selWk=_games ? pcardChartGame.routes : null;
+  const _game=_games && _selWk!=null ? _games.find(g=>g.wk===_selWk) : null;
+  const rt=_game ? _routeGameAsSeason(_game) : NFLVERSE[pcardRouteSeason].routes[norm];
   if(!ROUTE_TREE_METRICS[pcardRouteMetric]) pcardRouteMetric='td';
-  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===String(pcardRouteSeason)?'active':''}" onclick="setPcardRouteSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('');
+  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===String(pcardRouteSeason)?'active':''}" onclick="setPcardRouteSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('')
+    + (_games ? _pcardGameChips('routes', _games, _selWk) : '');
   const metricBtns=Object.entries(ROUTE_TREE_METRICS).map(([k,m])=>{
     const known=_routeMetricKnown(rt,k);
     const active=(k===pcardRouteMetric)?'active':'';
@@ -12806,14 +12857,33 @@ function renderPcardQbPassing(pid){
   if(!seasons.length) return `<div class="pcard-loading">No passing-chart data for this QB.</div>`;
   if(pcardQbPassingSeason==null || !seasons.includes(String(pcardQbPassingSeason))) pcardQbPassingSeason=seasons[0];
   const season=String(pcardQbPassingSeason);
-  const chart=NFLVERSE[season].qb_passing[norm];
+  let chart=NFLVERSE[season].qb_passing[norm];
   if(!chart) return `<div class="pcard-loading">No passing-chart data for this season.</div>`;
+  _pcardGameReset(norm);
+  const _games=pcardWeeklyGames('qb_passing_weekly', norm, season);
+  const _selWk=_games ? pcardChartGame.qbpass : null;
+  const _game=_games && _selWk!=null ? _games.find(g=>g.wk===_selWk) : null;
+  if(_game){
+    // One game, season-shaped: each cell borrows the SEASON league average —
+    // a single game is read against the stable baseline, not against itself.
+    const zones={};
+    for(const depth in (chart.zones||{})){
+      zones[depth]={};
+      for(const loc in chart.zones[depth]){
+        const wkCell=(_game.zones[depth]||{})[loc];
+        zones[depth][loc]=Object.assign({rating:null,attempts:0,yards:0,td:0},
+          wkCell||{}, {league_avg:(chart.zones[depth][loc]||{}).league_avg});
+      }
+    }
+    chart={ team:chart.team, totals:_game.totals, zones };
+  }
 
   const p=(sleeperPlayers&&sleeperPlayers[pid])||{};
   const name=p.name||'QB';
   const notePlayer = noteTargetFromArgs(pid, 'QB', p.team||chart.team||'');
   const t=chart.totals||{};
-  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardQbPassingSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('');
+  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardQbPassingSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('')
+    + (_games ? _pcardGameChips('qbpass', _games, _selWk) : '');
   if(!QB_ZONE_METRICS[pcardQbMetric]) pcardQbMetric='rating';
   let metric=pcardQbMetric;
   if(!_qbMetricKnown(chart, metric)) metric='rating';   // older seed without yards/TD
@@ -13571,8 +13641,21 @@ function renderPcardRbFan(pid){
   if(!seasonOpts.length) return '<div class="pcard-loading">No rushing-fan data for this RB.</div>';
   if(pcardRbFanSeason==null || !seasonOpts.includes(String(pcardRbFanSeason))) pcardRbFanSeason=seasonOpts[0];
   const season=String(pcardRbFanSeason);
-  const chart=(_rbIsProjSeason(season) && projChart) ? projChart : (NFLVERSE[season]&&NFLVERSE[season].rb_fan&&NFLVERSE[season].rb_fan[norm]);
+  let chart=(_rbIsProjSeason(season) && projChart) ? projChart : (NFLVERSE[season]&&NFLVERSE[season].rb_fan&&NFLVERSE[season].rb_fan[norm]);
   if(!chart) return '<div class="pcard-loading">No rushing-fan data for this season.</div>';
+  _pcardGameReset(norm);
+  const _games=(!_rbIsProjSeason(season)) ? pcardWeeklyGames('rb_fan_weekly', norm, season) : null;
+  const _selWk=_games ? pcardChartGame.rbfan : null;
+  const _game=_games && _selWk!=null ? _games.find(g=>g.wk===_selWk) : null;
+  if(_game){
+    const lanes={};
+    for(const lane in (_game.lanes||{})){
+      lanes[lane]=Object.assign({}, _game.lanes[lane],
+        { league_ypc:((chart.lanes||{})[lane]||{}).league_ypc });
+    }
+    chart=Object.assign({}, chart, { lanes,
+      attempts:_game.attempts, yards:_game.yards, ypc:_game.ypc, _game:_game.wk });
+  }
   const pack=NFLVERSE[season]||{};
   const teamCode=_rbTeamCode(chart.team||'');
   const runTbl=pack.team&&pack.team.offensive_line_run;
@@ -13588,7 +13671,8 @@ function renderPcardRbFan(pid){
   const notePlayer = noteTargetFromArgs(pid, 'RB', p.team||chart.team||'');
   const noteCtx = (_rbIsProjSeason(season) && chart.is_projection) ? `${_rbProjYear()} projection rushing fan` : `${season} rushing fan`;
   const t=chart.totals||{};
-  const seasonBtns=seasonOpts.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardRbFanSeason('${s}')">${_rbIsProjSeason(s)?_rbProjYear()+' proj':(typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s)}</button>`).join('');
+  const seasonBtns=seasonOpts.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardRbFanSeason('${s}')">${_rbIsProjSeason(s)?_rbProjYear()+' proj':(typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s)}</button>`).join('')
+    + (_games ? _pcardGameChips('rbfan', _games, _selWk) : '');
   if(!RB_LANE_METRICS[pcardRbMetric]) pcardRbMetric='eff';
   let metric=pcardRbMetric;
   if(!_rbMetricKnown(chart, metric)) metric='eff';   // older seed without per-gap yards/TD
