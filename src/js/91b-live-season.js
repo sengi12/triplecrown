@@ -34,8 +34,37 @@ function liveSeasonRecordsFromRows(rows){
 
 var _liveSeasonRetryTimer = null;
 var _liveSeasonWeek = -1;   // last completedWeeks() we fetched for — also the UI cache epoch
+var _liveSeasonAt = 0;      // when we last fetched — the aggregate moves DURING games
 var _liveSeasonBusy = false;
+// The completedWeeks() latch alone froze the season opener: completedWeeks() is 0 for all
+// of week 1, so one successful Thursday fetch latched and Sunday never refetched. Completed
+// weeks are immutable, but the aggregate always carries the week IN PROGRESS too — so the
+// latch only holds for a short TTL while the season is live.
+var _LIVE_SEASON_TTL = 5*60*1000;
 function liveSeasonEpoch(){ return _liveSeasonWeek < 0 ? 0 : _liveSeasonWeek; }
+// While the user is ON the live season view, keep it breathing: a gentle poll that the
+// TTL makes cheap (one aggregate call at most every 5 minutes), paused when hidden.
+var _liveSeasonPollTimer = null;
+function liveSeasonPollSync(){
+  const on = typeof tcIsLiveSeason==='function' && typeof activeSeason!=='undefined'
+    && tcIsLiveSeason(activeSeason)
+    && (typeof document==='undefined' || document.visibilityState!=='hidden');
+  // window.setInterval on purpose: only a real browser polls — the node test
+  // harnesses stub window bare, and a live 3-minute timer there hangs the process.
+  if(on && !_liveSeasonPollTimer && typeof window!=='undefined' && typeof window.setInterval==='function'){
+    _liveSeasonPollTimer = window.setInterval(()=>{ refreshLiveSeasonStats().catch(()=>{}); }, 3*60*1000);
+  } else if(!on && _liveSeasonPollTimer){
+    clearInterval(_liveSeasonPollTimer); _liveSeasonPollTimer = null;
+  }
+}
+if(typeof document!=='undefined' && document.addEventListener){
+  document.addEventListener('visibilitychange', ()=>{
+    liveSeasonPollSync();
+    if(document.visibilityState!=='hidden' && typeof tcIsLiveSeason==='function'
+       && typeof activeSeason!=='undefined' && tcIsLiveSeason(activeSeason))
+      refreshLiveSeasonStats().catch(()=>{});
+  });
+}
 
 // Fetch this season's aggregate stats and fold them into HISTORY. Idempotent: refetches at
 // most once per completed week (force overrides). Writes ONLY HISTORY / HISTORY_SEASONS /
@@ -43,7 +72,8 @@ function liveSeasonEpoch(){ return _liveSeasonWeek < 0 ? 0 : _liveSeasonWeek; }
 async function refreshLiveSeasonStats(force){
   if(typeof hasSeasonStarted!=='function' || !hasSeasonStarted()) return false;
   const yr = String(TC_SEASON.year);
-  if(!force && _liveSeasonWeek === completedWeeks()) return false;
+  if(!force && _liveSeasonWeek === completedWeeks()
+     && (Date.now()-_liveSeasonAt) < _LIVE_SEASON_TTL) return false;
   if(_liveSeasonBusy) return false;
   _liveSeasonBusy = true;
   try{
@@ -67,6 +97,7 @@ async function refreshLiveSeasonStats(force){
     if(HISTORY_SEASONS.indexOf(yr)<0) HISTORY_SEASONS.unshift(yr);
     delete seasonStatsCache[yr];   // stale assembly — rebuilt from HISTORY on next view
     _liveSeasonWeek = completedWeeks();
+    _liveSeasonAt = Date.now();
     if(typeof renderSeasonTabs==='function') renderSeasonTabs();
     if(activeSeason===yr){
       const built=buildSeedFromHistory(yr);
