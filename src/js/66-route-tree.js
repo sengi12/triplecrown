@@ -193,7 +193,7 @@ function _renderTargetTree(pid, node, season, seasonBtns){
   const metricBtns=Object.entries(TT_METRICS).map(([k,m])=>`<button class="rt-metric-btn ${k===pcardTargetMetric?'active':''}" title="Show ${m.short}" onclick="setPcardTargetMetric('${k}')">${m.short}</button>`).join('');
   const cr=v.tgt ? Math.round((v.rec||0)/v.tgt*100) : null;
   const rk=v.rk||{};
-  const tile=(label, val, key, rkKey)=>`<div class="qpc-tile"><label>${label}</label><b>${wrap(escHtml(val), {label, value:String(val), statKey:key})}</b>${(typeof pcardRankTag==='function' && rkKey)?pcardRankTag(rk, rkKey):''}</div>`;
+  const tile=(label, val, key, rkKey)=>`<div class="qpc-tile"><label>${label}</label><b>${wrap(escHtml(val), {label, value:String(val), statKey:key})}</b>${(typeof pcardRankTag==='function' && rkKey)?pcardRankTag(rk, rkKey, (pcardState&&pcardState.posc)||node.pos):''}</div>`;
   return `<div class="rt-wrap">
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns||''}${games?_pcardGameChips('routes', games, selWk, team):''}</div>

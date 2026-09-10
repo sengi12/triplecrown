@@ -220,7 +220,7 @@ function renderPcardQbPassing(pid){
       onclick="setPcardQbMetric('${k}')">${m.short}</button>`;
   }).join('');
   const tdInt = `${t.td!=null?t.td:'—'}/${t.int!=null?t.int:'—'}`;
-  const _rk=(k)=>(typeof pcardRankTag==='function') ? pcardRankTag(t.rk||{}, k) : '';
+  const _rk=(k)=>(typeof pcardRankTag==='function') ? pcardRankTag(t.rk||{}, k, 'QB') : '';
 
   return `<div class="qpc-wrap">
     <div class="rt-head">
