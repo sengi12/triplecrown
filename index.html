@@ -1313,6 +1313,46 @@ html.scheme-locked, html.scheme-locked body{overflow:hidden;overscroll-behavior:
 .pc-rank-n{opacity:.6;font-weight:700;}
 .pc-rank.rk-good{color:#2fae4e;} .pc-rank.rk-okhi{color:#84b93f;} .pc-rank.rk-oklo{color:#d8a51d;} .pc-rank.rk-bad{color:#d33b2f;}
 .qpc-tile .pc-rank{display:block;margin:3px auto 0;width:max-content;}
+/* ── This Week hub: every league, one action list ── */
+.hub-league{padding:0;overflow:hidden;}
+.hub-lg-head{display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer;user-select:none;}
+.hub-lg-head b{font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.hub-lg-sum{flex:1;min-width:0;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.hub-caret{font-size:11px;color:var(--muted);}
+.hub-err{font-size:11px;color:var(--danger);}
+.hub-faab{font-size:11px;font-weight:900;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:999px;padding:2px 8px;white-space:nowrap;cursor:help;}
+.hub-faab-of{font-weight:700;color:var(--muted);margin-left:2px;}
+.hub-sec{border-top:1px solid var(--border);padding:4px 8px;}
+.hub-sec-calls{background:var(--surface2);}
+.hub-row{display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.04);}
+.hub-row:last-child{border-bottom:none;}
+.hub-kind{flex:0 0 auto;font-size:8.5px;font-weight:900;letter-spacing:.07em;padding:3px 6px;border-radius:5px;background:var(--surface3);color:var(--muted);min-width:44px;text-align:center;}
+.hub-k-obv{background:rgba(0,207,159,.18);color:var(--rb);}
+.hub-k-close{background:rgba(255,201,77,.18);color:var(--te);}
+.hub-k-call{background:var(--surface3);color:var(--muted2);}
+.hub-k-sit{background:rgba(255,90,90,.18);color:#ff9d9d;}
+.hub-k-add{background:rgba(86,165,255,.18);color:var(--wr);}
+.hub-k-drop{background:rgba(255,90,90,.14);color:#ff9d9d;}
+.hub-slot{flex:0 0 auto;font-size:9px;font-weight:800;color:var(--muted);min-width:26px;}
+.hub-body{flex:1;min-width:0;font-size:12px;line-height:1.35;}
+.hub-p{white-space:nowrap;}
+.hub-pos{font-size:9px;font-weight:900;margin-left:2px;}
+.hub-opp{font-size:10px;color:var(--muted);margin-left:4px;}
+.hub-dvp{font-size:9px;font-weight:800;color:var(--muted2);}
+.hub-val{font-family:var(--mono);font-size:11px;font-weight:800;color:var(--text);margin-left:5px;}
+.hub-arrow{font-size:10px;color:var(--muted);margin:0 4px;}
+.hub-delta{flex:0 0 auto;font-family:var(--mono);font-size:12px;font-weight:900;color:var(--muted);min-width:40px;text-align:right;}
+.hub-delta.up{color:var(--rb);}
+.hub-whys{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px;}
+.hub-why{font-size:9px;font-weight:800;letter-spacing:.03em;padding:1px 6px;border-radius:999px;background:var(--surface3);color:var(--muted2);cursor:help;}
+.hub-why-vacancy{background:rgba(0,207,159,.14);color:var(--rb);}
+.hub-why-spike{background:rgba(86,165,255,.14);color:var(--wr);}
+.hub-why-schedule{background:rgba(255,201,77,.14);color:var(--te);}
+.hub-why-efficiency{background:rgba(168,85,247,.16);color:#c9a3ff;}
+.hub-why-starts{background:rgba(0,207,159,.10);color:var(--rb);}
+.hub-bid{flex:0 0 auto;font-family:var(--mono);font-size:12px;font-weight:900;color:var(--text);background:var(--surface3);border-radius:6px;padding:3px 7px;cursor:help;}
+.hub-foot{border-top:1px solid var(--border);padding:7px 12px;font-size:10px;color:var(--muted);display:flex;align-items:center;gap:6px;}
+.hub-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:2px 0 10px;}
 /* ── New Additions (Spotrac) ── */
 .add-wrap{display:flex;flex-direction:column;gap:16px;}
 .add-note{padding:11px 14px;background:rgba(61,155,255,.07);border:1px solid rgba(61,155,255,.22);
@@ -34214,7 +34254,7 @@ function renderLeagueAnalyzer(){
         const onTab = (typeof laActivePane==='function' && laActivePane()) ? 'season' : laState.laTab;
         const tabs=[['myteam','Team','user'],['rosters','Rosters','clipboard'],['compare','Compare','scale'],
                     ['best','Waivers','search'],['trade','Trades','swap']];
-        if(started) tabs.push(['season','Season','football']);
+        if(started){ tabs.push(['season','Season','football']); tabs.push(['hub','Week','calendar']); }
         return tabs.map(([k,l,ic])=>`<button class="phase-tab icon-tab ${onTab===k?'active':''}" onclick="laSetTab('${k}')" title="${l}">${TC_ICON(ic)}<span class="tab-lbl">${l}</span></button>`).join('');
       })()}
     </div>
@@ -35788,6 +35828,7 @@ function laTabViewHTML(key, s){
     case 'lineup':                // no state mutation here (previews call this too)
     case 'dvp':
     case 'trends': return laSeasonView(s, key);
+    case 'hub': return (typeof hubViewHTML==='function') ? hubViewHTML(s) : null;   // This Week: every league
     default: return null;
   }
 }
@@ -36903,6 +36944,536 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     players zeroed. With a league synced, ★ marks your players and rostered ones grey
     out — the top ungreyed rows are the week's waiver list.`};
 }
+// ── This Week: every league, one action list ────────────────────────────────
+// The lineup and waiver helpers the user ran as scripts (../Live-Draft-Analyzer
+// lineup.py / waivers.py: Footballers projections × Sleeper leagues), rebuilt on
+// the app's own data — the season projection, the sidecar's weekly usage lines,
+// defense-vs-position, the schedule, injuries — and run for EVERY synced league
+// at once. Output is not a table per league; it is the short list of things to
+// do before kickoff: start X over Y, add A (why), drop B, bid this much.
+//
+// Everything here is scored under EACH league's own scoring (a league context is
+// built per league and never touches the global settings), so the same player
+// reads differently in a PPR league and in BAFL — as he should.
+//
+// Layout: pure engine (hubWeekProj, hubFill, hubCallouts, hubWaivers, hubFaab*)
+// → fetch layer (hubLoadLeague) → view (renderWeekHub). The engine takes a
+// context object so the Node tests drive it with fixtures.
+
+const HUB_CLOSE = 3;        // lineup.py --close: a swap under this many points is "close"
+const HUB_RANK_CLOSE = 6;   // lineup.py --rank-close: a bench player this close in rank is a call
+const HUB_TOP_ADDS = 6;
+const HUB_TOP_DROPS = 3;
+const HUB_LAST_WEEK = 18;   // Sleeper regular season (17 games, 18 weeks)
+const HUB_OUT = { Out:1, IR:1, PUP:1, Sus:1, NA:1, COV:1, DNR:1, Doubtful:1 };
+
+let hubState = { busy:false, error:null, week:null, leagues:[], results:{}, openLeague:null, loadedAt:0 };
+
+// ── Scoring under a league's own settings (no global mutation survives) ────────
+function hubScoringFor(lg){
+  const base = JSON.parse(JSON.stringify(scoringSettings));
+  base.baflMode = /\bbafl\b/i.test(String(lg && lg.name || ''));
+  const prev = scoringSettings;
+  scoringSettings = base;
+  try{ if(typeof applySleeperScoring==='function') applySleeperScoring(lg && lg.scoring_settings); }
+  finally{ scoringSettings = prev; }
+  return base;
+}
+function calcFptsUnder(row, sc){
+  if(!sc) return calcFpts(row);
+  const prev = scoringSettings;
+  scoringSettings = sc;
+  try{ return calcFpts(row); }
+  finally{ scoringSettings = prev; }
+}
+
+// ── The week-projection primitive ────────────────────────────────────────────
+// ctx: { sc, wk, dvp, form (pid → {gp, fppg, f3, weeks:[{wk,pts,tgt,teamTgt,carry}]}),
+//        sched (TEAM → {wk: OPP}), now }
+// row: a projection row (buildPlayerList shape: stats + player_id + pos + team + proj_games)
+function hubWeekProj(row, ctx){
+  const wk = ctx.wk;
+  const projG = Number(row.proj_games)>0 ? Number(row.proj_games) : 17;
+  const base = calcFptsUnder(row, ctx.sc)/projG;
+  const avail = (typeof laWeekAvailability==='function') ? laWeekAvailability({id:row.player_id, team:row.team}, wk)
+                : {bye:false, out:false, status:''};
+  const sched = ctx.sched || null;
+  const team = String(row.team||'').toUpperCase();
+  const opp = (sched && sched[team]) ? (sched[team][String(wk)]||null) : null;
+  const zero = {adj:0, base, seas:null, rec3:null, gp:0, defMult:1, opp, oppRank:null, bye:avail.bye, out:avail.out, status:avail.status, thin:false};
+  if(avail.bye || avail.out) return zero;
+  const fe = ctx.form ? ctx.form.get(String(row.player_id)) : null;
+  const gp = fe ? fe.gp : 0;
+  const seas = (fe && gp>0) ? fe.fppg : null;
+  const rec3 = fe ? fe.f3 : null;
+  let exp;
+  if(!(base>0) && seas==null && rec3==null) return zero;
+  if(seas!=null && rec3!=null && gp>=2)      exp = 0.35*base + 0.30*seas + 0.35*rec3;
+  else if(seas!=null)                        exp = 0.55*base + 0.45*seas;
+  else                                       exp = base;
+  let defMult = 1, oppRank = null;
+  if(ctx.dvp && opp && ctx.dvp.ranks[opp] && ctx.dvp.ranks[opp][row.pos]){
+    const r = ctx.dvp.ranks[opp][row.pos], n = ctx.dvp.codes.length||32;
+    oppRank = r;
+    defMult = 1.10 - 0.20*((r-1)/Math.max(1, n-1));   // rank 1 = most generous → +10%
+  }
+  return {adj: exp*defMult, base, seas, rec3, gp, defMult, opp, oppRank, bye:false, out:false, status:avail.status, thin: gp>0 && gp<3};
+}
+
+// Per-player weekly lines under a league's scoring, from the sidecar's usage lines.
+function hubFormMap(sc){
+  const pw = (typeof TC_INSEASON!=='undefined' && TC_INSEASON && TC_INSEASON.player_weekly) || null;
+  const m = new Map();
+  if(!pw) return m;
+  const ci = {}; (pw.cols||[]).forEach((c,i)=>ci[c]=i);
+  for(const g in pw.players){
+    const pl = pw.players[g];
+    const weeks = Object.keys(pl.w||{}).map(Number).sort((a,b)=>a-b);
+    if(!weeks.length) continue;
+    const lines = weeks.map(w=>{
+      const r = pl.w[String(w)]||[];
+      const pts = calcFptsUnder({pos:pl.p, receptions:r[ci.rec]||0, receiving_yards:r[ci.rec_yd]||0,
+        receiving_tds:r[ci.rec_td]||0, receiving_targets:r[ci.tgt]||0,
+        rushing_yards:r[ci.rush_yd]||0, rushing_tds:r[ci.rush_td]||0, rushing_attempts:r[ci.carry]||0,
+        passing_yards:r[ci.pass_yd]||0, passing_tds:r[ci.pass_td]||0, passing_attempts:r[ci.pass_att]||0,
+        interceptions_thrown:r[ci.pass_int]||0, fumbles_lost:0}, sc);
+      return {wk:w, pts, tgt:r[ci.tgt]||0, teamTgt:r[ci.team_tgt]||0, carry:r[ci.carry]||0, touches:(r[ci.tgt]||0)+(r[ci.carry]||0)};
+    });
+    const last3 = lines.slice(-3);
+    const entry = { gp:lines.length, fppg: lines.reduce((a,l)=>a+l.pts,0)/lines.length,
+                    f3: last3.reduce((a,l)=>a+l.pts,0)/last3.length, weeks:lines, pos:pl.p, team:pl.t, name:pl.n };
+    const pid = (typeof laPidFromGsis==='function') ? laPidFromGsis(g) : null;
+    if(pid) m.set(String(pid), entry);
+    m.set(ecrNormName(pl.n||'')+'|'+(pl.p||''), entry);
+  }
+  return m;
+}
+
+// ── Lineup: fill, then say what changes ──────────────────────────────────────
+// players: [{id, pos, name, team, value, locked, unavailable}] best-first.
+// current: {slotIndex → player} (the set lineup). Locked starters keep their slot.
+function hubFill(slots, players, current){
+  const filled = slots.map((slot,i)=>({slot, i, player:null}));
+  const used = new Set();
+  // locked starters stay where they are
+  Object.keys(current||{}).forEach(i=>{ const p=current[i]; if(p && p.locked && filled[i]){ filled[i].player=p; used.add(p.id); } });
+  const pool = players.filter(p=>!used.has(p.id) && !p.lockedOut && !p.unavailable && p.value>0);
+  filled.forEach(f=>{ if(f.player || FLEX_ELIGIBLE[f.slot]) return;
+    const p = pool.find(x=>!used.has(x.id) && x.pos===f.slot); if(p){ f.player=p; used.add(p.id); } });
+  filled.forEach(f=>{ if(f.player || !FLEX_ELIGIBLE[f.slot]) return;
+    const elig = FLEX_ELIGIBLE[f.slot];
+    const p = pool.find(x=>!used.has(x.id) && elig.includes(x.pos)); if(p){ f.player=p; used.add(p.id); } });
+  return filled;
+}
+function hubEligible(p, slot){ return p.pos===slot || !!(FLEX_ELIGIBLE[slot] && FLEX_ELIGIBLE[slot].includes(p.pos)); }
+
+// lineup.py's callouts: newcomers paired with who they displace (same position first,
+// then anyone they could replace through the slot, then the weakest), graded OBVIOUS /
+// CLOSE / EMPTY; then CLOSE CALLs — a bench player within reach of the weakest starter
+// he could replace.
+function hubCallouts(slots, optimal, current, bench){
+  const out = [];
+  const curIds = new Set(Object.values(current).map(p=>p.id));
+  const optIds = new Set(optimal.filter(f=>f.player).map(f=>f.player.id));
+  const optSlot = {}; optimal.forEach(f=>{ if(f.player) optSlot[f.player.id]=f.slot; });
+  const curSlot = {}; Object.keys(current).forEach(i=>{ curSlot[current[i].id]=slots[i]; });
+  const newcomers = optimal.filter(f=>f.player && !curIds.has(f.player.id)).map(f=>f.player).sort((a,b)=>b.value-a.value);
+  let dropped = Object.values(current).filter(p=>!optIds.has(p.id)).sort((a,b)=>a.value-b.value);
+  for(const nc of newcomers){
+    const pick = dropped.find(d=>d.pos===nc.pos) || dropped.find(d=>hubEligible(nc, curSlot[d.id])) || dropped[0] || null;
+    if(pick) dropped = dropped.filter(d=>d!==pick);
+    const delta = nc.value - (pick ? pick.value : 0);
+    const kind = !pick ? 'EMPTY' : (pick.unavailable ? 'OBVIOUS' : (delta>=HUB_CLOSE ? 'OBVIOUS' : 'CLOSE'));
+    out.push({kind, slot:optSlot[nc.id], start:nc, sit:pick, delta:+delta.toFixed(1)});
+  }
+  for(const d of dropped) out.push({kind:'SIT', slot:curSlot[d.id], start:null, sit:d, delta:0});
+  for(const b of bench.slice().sort((a,b)=>b.value-a.value)){
+    if(optIds.has(b.id) || b.unavailable || b.lockedOut || !(b.value>0)) continue;
+    const targets = optimal.filter(f=>f.player && !f.player.locked && hubEligible(b, f.slot));
+    if(!targets.length) continue;
+    const t = targets.reduce((m,f)=>(!m || f.player.value<m.player.value) ? f : m, null);
+    const gap = t.player.value - b.value;
+    let rankGap = null;
+    const samePos = targets.filter(f=>f.player.pos===b.pos);
+    if(b.rank!=null && samePos.length){
+      const weak = samePos.reduce((m,f)=>(!m || f.player.value<m.player.value) ? f : m, null).player;
+      if(weak.rank!=null) rankGap = b.rank - weak.rank;
+    }
+    if(gap<=HUB_CLOSE || (rankGap!=null && rankGap<=HUB_RANK_CLOSE)) out.push({kind:'CALL', slot:t.slot, start:t.player, sit:b, delta:+gap.toFixed(1)});
+  }
+  const seen = new Set();
+  return out.filter(c=>{ const k=`${c.start?c.start.id:''}|${c.sit?c.sit.id:''}`; if(seen.has(k)) return false; seen.add(k); return true; });
+}
+
+// ── Waivers: opportunity first ───────────────────────────────────────────────
+// Each candidate carries WHY, from data the sidecar already bakes:
+//   vacancy  — a teammate ahead of him at the position is out (role is predictable)
+//   spike    — last week's usage far above his season / projection standing
+//   schedule — the next three opponents are soft for his position
+//   efficiency — his per-target / per-carry rank backs the volume
+// plus "starts over X" from the league's own optimal lineup.
+function hubNextOpps(team, wk, sched, n){
+  const out=[]; if(!sched || !sched[team]) return out;
+  for(let w=wk+1; w<=HUB_LAST_WEEK && out.length<(n||3); w++){ const o=sched[team][String(w)]; if(o) out.push({wk:w, opp:o}); }
+  return out;
+}
+function hubWaiverReasons(row, wp, ctx, teammates){
+  const reasons = [];
+  const pos = row.pos, team = String(row.team||'').toUpperCase();
+  // vacancy: a teammate at the same position, projected ahead of him, who is out
+  (teammates||[]).forEach(t=>{
+    if(t.pos!==pos || t.player_id===row.player_id) return;
+    const st = (typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[t.player_id]) ? sleeperPlayers[t.player_id].injury_status : '';
+    if(st && HUB_OUT[st] && calcFptsUnder(t, ctx.sc) > calcFptsUnder(row, ctx.sc)) reasons.push({k:'vacancy', w:3, text:`${t.name} ${st}`});
+  });
+  // usage spike: last week's touches vs his own earlier weeks, or (week 1) vs projection standing
+  const fe = ctx.form ? ctx.form.get(String(row.player_id)) : null;
+  if(fe && fe.weeks.length){
+    const last = fe.weeks[fe.weeks.length-1];
+    const prior = fe.weeks.slice(0,-1);
+    if(prior.length){
+      const avg = prior.reduce((a,l)=>a+l.touches,0)/prior.length;
+      if(last.touches>=8 && last.touches>=1.6*Math.max(1,avg)) reasons.push({k:'spike', w:2, text:`${last.touches} touches wk ${last.wk} (avg ${avg.toFixed(0)})`});
+    } else if(ctx.usageRank && ctx.projRank){
+      const ur = ctx.usageRank.get(String(row.player_id)), pr = ctx.projRank.get(String(row.player_id));
+      if(ur!=null && pr!=null && pr-ur>=12 && last.touches>=8) reasons.push({k:'spike', w:2, text:`${pos}${ur} in touches wk ${last.wk}, projected ${pos}${pr}`});
+    }
+  }
+  // soft schedule: next three opponents' DvP rank (1 = most generous)
+  const nx = hubNextOpps(team, ctx.wk, ctx.sched, 3);
+  if(ctx.dvp && nx.length===3){
+    const rks = nx.map(o=>(ctx.dvp.ranks[o.opp]||{})[pos]).filter(r=>r!=null);
+    if(rks.length===3){ const mean=rks.reduce((a,b)=>a+b,0)/3; if(mean<=10) reasons.push({k:'schedule', w:1, text:`next 3: ${nx.map(o=>o.opp).join(' · ')} (avg #${mean.toFixed(0)} vs ${pos})`}); }
+  }
+  // efficiency backing the volume: live chart ranks (target chart EPA, rushing fan YPC)
+  const live = (typeof TC_SEASON!=='undefined' && typeof NFLVERSE!=='undefined' && NFLVERSE) ? NFLVERSE[String(TC_SEASON.year)] : null;
+  if(live){
+    const norm = ecrNormName(row.name||'');
+    const tt = live.target_trees && live.target_trees.players && live.target_trees.players[norm];
+    const rk = tt && tt.season && tt.season.rk;
+    if(rk && rk.epa && rk.epa[1]>=4 && rk.epa[0]<=Math.ceil(rk.epa[1]/4)) reasons.push({k:'efficiency', w:1, text:`EPA/target #${rk.epa[0]} of ${rk.epa[1]} ${pos}s`});
+    const rf = live.rb_fan && live.rb_fan[norm];
+    const rrk = rf && rf.totals && rf.totals.rk;
+    if(rrk && rrk.ypc && rrk.ypc[1]>=4 && rrk.ypc[0]<=Math.ceil(rrk.ypc[1]/4)) reasons.push({k:'efficiency', w:1, text:`YPC #${rrk.ypc[0]} of ${rrk.ypc[1]} RBs`});
+  }
+  return reasons;
+}
+
+// ── FAAB: the clock on the waiver wire ───────────────────────────────────────
+// A pickup is worth his rest-of-season points above replacement; the pool of
+// "missed in the draft, obvious now" players drains through the season. So the
+// share of the remaining budget a player deserves is his rest-of-season value
+// over (his value + the value of the top pickups still ahead, split across the
+// league). The curve of "top pickup value by week" comes from the league's own
+// transaction history (hubFaabCurve); with none, a linear decay stands in.
+// Fallback, in the same units as the history curve (rest-of-season points of a top
+// pickup that week): a top pickup is ~9 points a game in week 1 and the "obvious"
+// ones thin out — quality decays to ~5 by the end — times the games left after the claim.
+function hubFaabFallbackCurve(){
+  const c={}; for(let w=1; w<HUB_LAST_WEEK; w++){ const ppg=9-4*((w-1)/16); c[w]=ppg*Math.max(0, 17-w); } return c;
+}
+function hubFaabAdvice(rosValue, wk, curve, teams, budget, left){
+  const cur = curve || hubFaabFallbackCurve();
+  let future = 0; for(let w=wk+1; w<HUB_LAST_WEEK; w++) future += (cur[w]||0);
+  const perTeam = 3/Math.max(1, teams||12);        // ~three real pickups a week, split across the league
+  const expectedFuture = future * perTeam;
+  const share = rosValue>0 ? rosValue/(rosValue + expectedFuture) : 0;
+  const bid = Math.round(Math.min(left||0, share*(left||0)));
+  // pace: how much of the season's pickup value has already come and gone
+  let total=0, past=0; for(let w=1; w<HUB_LAST_WEEK; w++){ total+=(cur[w]||0); if(w<=wk) past+=(cur[w]||0); }
+  const spentShould = total>0 ? past/total : 0;
+  return {bid, share, expectedFuture, spentShould, budget, left};
+}
+// curve from history: for each week, the mean rest-of-season value of that week's top-3
+// waiver pickups (values under THIS league's scoring), averaged over the seasons available.
+function hubFaabCurveFromHistory(adds, sc){
+  // adds: [{season, week, pid, bid}] — completed waiver/free-agent adds from past seasons
+  const byWk = {};
+  const bySeasonWk = {};
+  adds.forEach(a=>{
+    const rec = (typeof HISTORY!=='undefined' && HISTORY[a.pid]) ? HISTORY[a.pid][String(a.season)] : null;
+    if(!rec) return;
+    const act = (typeof _paceSumStints==='function') ? _paceSumStints(rec) : (Array.isArray(rec)?rec[0]:rec);
+    if(!act) return;
+    const gp = Number(act.games_played||0); if(!(gp>0)) return;
+    const pg = calcFptsUnder(Object.assign({pos:act.pos||''}, act.stats||act), sc)/gp;
+    const ros = pg * Math.max(0, 17 - a.week);   // games left after the claim week
+    (bySeasonWk[`${a.season}|${a.week}`] = bySeasonWk[`${a.season}|${a.week}`]||[]).push(ros);
+  });
+  for(const k in bySeasonWk){
+    const w = +k.split('|')[1];
+    const top = bySeasonWk[k].sort((a,b)=>b-a).slice(0,3);
+    (byWk[w] = byWk[w]||[]).push(top.reduce((a,b)=>a+b,0)/top.length);
+  }
+  const curve={}; let n=0;
+  for(const w in byWk){ curve[w]=byWk[w].reduce((a,b)=>a+b,0)/byWk[w].length; n++; }
+  return n>=6 ? curve : null;    // too thin a history is worse than the fallback
+}
+async function hubFaabCurve(lg, sc){
+  const key = `tc_faab_curve_${lg.league_id}`;
+  try{ const raw=localStorage.getItem(key); if(raw){ const c=JSON.parse(raw); if(c && c.season===String(lg.season)) return c.curve; } }catch(e){}
+  const adds=[]; let prev=lg.previous_league_id, hops=0;
+  while(prev && hops<3){
+    let plg=null; try{ plg = await sleeperFetch(LA_LEAGUE_URL(prev)); }catch(e){ break; }
+    if(!plg) break;
+    const season=+plg.season;
+    const rounds=[]; for(let w=1; w<HUB_LAST_WEEK; w++) rounds.push(w);
+    const txs = await Promise.all(rounds.map(w=>sleeperFetch(`${LA_LEAGUE_URL(prev)}/transactions/${w}`).catch(()=>[])));
+    txs.forEach((list,i)=>(list||[]).forEach(t=>{
+      if(t.status!=='complete' || !(t.type==='waiver'||t.type==='free_agent') || !t.adds) return;
+      const bid = t.settings && t.settings.waiver_bid!=null ? +t.settings.waiver_bid : null;
+      Object.keys(t.adds).forEach(pid=>adds.push({season, week:i+1, pid, bid}));
+    }));
+    prev = plg.previous_league_id; hops++;
+  }
+  const curve = hubFaabCurveFromHistory(adds, sc);
+  try{ localStorage.setItem(key, JSON.stringify({season:String(lg.season), curve, n:adds.length, at:Date.now()})); }catch(e){}
+  return curve;
+}
+
+// ── One league, end to end ───────────────────────────────────────────────────
+function hubKickoff(team, wk){
+  const meta=(typeof TC_INSEASON!=='undefined' && TC_INSEASON && TC_INSEASON.schedule_meta && TC_INSEASON.schedule_meta[team] && TC_INSEASON.schedule_meta[team][String(wk)])||null;
+  if(!meta || !meta[4] || !meta[3]) return null;
+  // [opp, home, weekday, "1:00 PM", "2026-09-14"] — kickoffs are Eastern
+  const m=/^(\d{1,2}):(\d{2}) (AM|PM)$/.exec(meta[3]); if(!m) return null;
+  let h=+m[1]%12; if(m[3]==='PM') h+=12;
+  const d=new Date(`${meta[4]}T${String(h).padStart(2,'0')}:${m[2]}:00-04:00`);
+  return isNaN(d) ? null : d;
+}
+function hubAnalyzeLeague(lg, rosters, users, matchups, ctxBase){
+  const sc = ctxBase.sc, wk = ctxBase.wk, now = ctxBase.now || Date.now();
+  const byId = ctxBase.byId;                       // pid → projection row
+  const myId = ctxBase.myUserId;
+  const mine = rosters.find(r=>r.owner_id===myId || (Array.isArray(r.co_owners)&&r.co_owners.includes(myId))) || null;
+  const slots = (lg.roster_positions||[]).filter(s=>s!=='BN'&&s!=='IR'&&s!=='TAXI');
+  const teams = lg.total_rosters || rosters.length;
+  const evalPid = (pid)=>{
+    const row = byId.get(String(pid));
+    const sp = (typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[pid]) || null;
+    const pos = (row&&row.pos) || (sp&&sp.pos) || (/^[A-Z]{2,4}$/.test(pid)?'DEF':'?');
+    const team = String((row&&row.team) || (sp&&sp.team) || (pos==='DEF'?pid:'') || '').toUpperCase();
+    const name = (row&&row.name) || (sp&&sp.name) || (pos==='DEF' ? `${typeof teamDisplayName==='function'?teamDisplayName(pid):pid} D/ST` : String(pid));
+    let wp;
+    if(row) wp = hubWeekProj(row, ctxBase);
+    else {
+      // no projection row (K / DEF / deep bench): the sidecar's own weekly line, else 0
+      const fe = ctxBase.form ? ctxBase.form.get(String(pid)) : null;
+      const av = (typeof laWeekAvailability==='function') ? laWeekAvailability({id:pid, team}, wk) : {bye:false,out:false,status:''};
+      wp = {adj:(fe && !av.bye && !av.out)?fe.f3:0, base:0, seas:fe?fe.fppg:null, rec3:fe?fe.f3:null, gp:fe?fe.gp:0, defMult:1,
+            opp:(ctxBase.sched&&ctxBase.sched[team])?ctxBase.sched[team][String(wk)]||null:null, oppRank:null, bye:av.bye, out:av.out, status:av.status, thin:true, noProj:true};
+    }
+    const ko = hubKickoff(team, wk);
+    const locked = !!(ko && ko.getTime() < now);
+    return {id:String(pid), name, pos, team, value:+(wp.adj||0), wp, locked,
+            unavailable: wp.bye ? 'BYE' : (wp.out ? wp.status : ''), rank: ctxBase.projRank ? ctxBase.projRank.get(String(pid)) : null,
+            noProj: !!wp.noProj, fpts: row ? calcFptsUnder(row, sc) : 0};
+  };
+  let lineup = null;
+  if(mine){
+    const muRow = (matchups||[]).find(m=>m.roster_id===mine.roster_id) || null;
+    const starters = (muRow && muRow.starters) || mine.starters || [];
+    const reserve = new Set(mine.reserve||[]), taxi = new Set(mine.taxi||[]);
+    const evals = {};
+    (mine.players||[]).forEach(pid=>{ evals[pid]=evalPid(pid); });
+    const current = {};
+    starters.slice(0, slots.length).forEach((pid,i)=>{ if(pid && pid!=='0'){ if(!evals[pid]) evals[pid]=evalPid(pid); current[i]=evals[pid]; } });
+    const starterSet = new Set(starters);
+    const bench = (mine.players||[]).filter(p=>!starterSet.has(p) && !reserve.has(p) && !taxi.has(p)).map(p=>evals[p]);
+    bench.forEach(b=>{ b.lockedOut = b.locked; });
+    // K / DEF without a projection: keep whoever is set (no basis to swap)
+    Object.values(current).forEach(p=>{ if(p.noProj && (p.pos==='K'||p.pos==='DEF')) p.locked=true; });
+    const all = Object.values(current).concat(bench).sort((a,b)=>b.value-a.value);
+    const optimal = hubFill(slots, all, current);
+    const callouts = hubCallouts(slots, optimal, current, bench);
+    const curTotal = Object.values(current).reduce((a,p)=>a+p.value,0);
+    const optTotal = optimal.reduce((a,f)=>a+(f.player?f.player.value:0),0);
+    lineup = {slots, current, optimal, bench, callouts, curTotal:+curTotal.toFixed(1), optTotal:+optTotal.toFixed(1),
+              opponent: (()=>{ if(!muRow) return null; const o=(matchups||[]).find(m=>m.matchup_id===muRow.matchup_id && m.roster_id!==muRow.roster_id); if(!o) return null;
+                const r=rosters.find(x=>x.roster_id===o.roster_id); const u=r && (users||[]).find(x=>x.user_id===r.owner_id); return u ? ((u.metadata&&u.metadata.team_name)||u.display_name) : `Roster ${o.roster_id}`; })()};
+  }
+  // waivers: unrostered, skill positions, this week's projection under this scoring
+  const rostered = new Set(); rosters.forEach(r=>(r.players||[]).forEach(p=>rostered.add(String(p))));
+  const teammatesByTeam = {};
+  byId.forEach(row=>{ const t=String(row.team||'').toUpperCase(); (teammatesByTeam[t]=teammatesByTeam[t]||[]).push(row); });
+  const weeksLeft = Math.max(1, 17 - wk + 1);
+  const cands = [];
+  byId.forEach(row=>{
+    if(rostered.has(String(row.player_id)) || !['QB','RB','WR','TE'].includes(row.pos)) return;
+    const wp = hubWeekProj(row, ctxBase);
+    const perGame = wp.bye||wp.out ? (wp.base||0) : (wp.adj/(wp.defMult||1));
+    if(!(perGame>0.5)) return;
+    const reasons = hubWaiverReasons(row, wp, ctxBase, teammatesByTeam[String(row.team||'').toUpperCase()]);
+    const ros = perGame * weeksLeft;
+    const score = ros * (1 + 0.25*reasons.reduce((a,r)=>a+r.w,0));
+    cands.push({id:String(row.player_id), name:row.name, pos:row.pos, team:row.team, wp, perGame, ros, reasons, score});
+  });
+  cands.sort((a,b)=>b.score-a.score);
+  const adds = cands.slice(0, HUB_TOP_ADDS);
+  // starts over: the weakest starter in MY optimal lineup he could replace
+  if(lineup){
+    adds.forEach(c=>{
+      const targets = lineup.optimal.filter(f=>f.player && hubEligible({pos:c.pos}, f.slot));
+      const empty = lineup.optimal.find(f=>!f.player && hubEligible({pos:c.pos}, f.slot));
+      if(empty){ c.startsOver={name:'(empty slot)', slot:empty.slot, delta:+c.wp.adj.toFixed(1)}; return; }
+      if(!targets.length) return;
+      const weak = targets.reduce((m,f)=>(!m || f.player.value<m.player.value) ? f : m, null);
+      if(c.wp.adj > weak.player.value) c.startsOver={name:weak.player.name, slot:weak.slot, delta:+(c.wp.adj-weak.player.value).toFixed(1)};
+    });
+  }
+  // drops: bench outside the optimal lineup, weakest first
+  let drops = [];
+  if(lineup){
+    const optIds = new Set(lineup.optimal.filter(f=>f.player).map(f=>f.player.id));
+    // everyone outside the optimal lineup — a starter the swap benches included
+    const seenD = new Set();
+    const outside = Object.values(lineup.current).concat(lineup.bench).filter(b=>!optIds.has(b.id) && !seenD.has(b.id) && seenD.add(b.id));
+    drops = outside.map(b=>{
+      const reasons=[];
+      if(b.unavailable) reasons.push(b.unavailable);
+      if(b.rank!=null) reasons.push(`${b.pos}${b.rank} projected`);
+      const targets = lineup.optimal.filter(f=>f.player && hubEligible(b, f.slot));
+      if(targets.length){ const weak=targets.reduce((m,f)=>(!m || f.player.value<m.player.value)?f:m,null); reasons.push(`${(weak.player.value-b.value).toFixed(1)} behind ${weak.player.name}`); }
+      return {p:b, reasons};
+    }).sort((a,b)=>a.p.value-b.p.value).slice(0, HUB_TOP_DROPS);
+  }
+  // FAAB
+  const st = lg.settings||{};
+  let faab = null;
+  if(+st.waiver_type===2){
+    const budget = +st.waiver_budget||0;
+    const used = mine && mine.settings ? +(mine.settings.waiver_budget_used||0) : 0;
+    faab = {budget, left:budget-used, curve:ctxBase.faabCurve||null};
+    adds.forEach(c=>{ c.faab = hubFaabAdvice(c.ros, wk, faab.curve, teams, budget, faab.left); });
+  }
+  return {league:lg, teams, mine:!!mine, lineup, adds, drops, faab, wk};
+}
+
+// ── Fetch layer ──────────────────────────────────────────────────────────────
+function hubLeagueList(){
+  const prof = (typeof laLoadSleeperProfile==='function') ? laLoadSleeperProfile() : null;
+  const list = (prof && prof.leagues) ? prof.leagues.filter(l=>!l.stale) : [];
+  return {prof, list};
+}
+async function hubLoadLeague(ref, prof, wk, shared){
+  const lg = await sleeperFetch(LA_LEAGUE_URL(ref.league_id));
+  const [rosters, users, matchups] = await Promise.all([
+    sleeperFetch(LA_ROSTERS_URL(ref.league_id)),
+    sleeperFetch(SLEEPER_LG_USERS_URL(ref.league_id)).catch(()=>[]),
+    sleeperFetch(LA_MATCHUPS_URL(ref.league_id, wk)).catch(()=>[]),
+  ]);
+  const sc = hubScoringFor(lg);
+  const form = hubFormMap(sc);
+  let myUserId = prof && prof.user ? prof.user.user_id : null;
+  if(!myUserId && prof && prof.username){ const u=(users||[]).find(x=>(x.display_name||'').toLowerCase()===String(prof.username).toLowerCase()); if(u) myUserId=u.user_id; }
+  const ctx = Object.assign({}, shared, {sc, form, myUserId, wk});
+  // projection rank within position under this scoring (for CLOSE CALL rank gaps + spike test)
+  const projRank = new Map(); const usageRank = new Map();
+  ['QB','RB','WR','TE'].forEach(pos=>{
+    const rows=[]; ctx.byId.forEach(r=>{ if(r.pos===pos) rows.push(r); });
+    rows.map(r=>({id:String(r.player_id), v:calcFptsUnder(r, sc)})).sort((a,b)=>b.v-a.v).forEach((r,i)=>projRank.set(r.id, i+1));
+    const us=[]; form.forEach((fe,k)=>{ if(/^\d+$/.test(k) && fe.pos===pos && fe.weeks.length) us.push({id:k, t:fe.weeks[fe.weeks.length-1].touches}); });
+    us.sort((a,b)=>b.t-a.t).forEach((r,i)=>usageRank.set(r.id, i+1));
+  });
+  ctx.projRank = projRank; ctx.usageRank = usageRank;
+  if(+((lg.settings||{}).waiver_type)===2){ try{ ctx.faabCurve = await hubFaabCurve(lg, sc); }catch(e){ ctx.faabCurve=null; } }
+  return hubAnalyzeLeague(lg, rosters||[], users||[], matchups||[], ctx);
+}
+async function hubLoadAll(force){
+  if(hubState.busy) return;
+  const {prof, list} = hubLeagueList();
+  hubState.leagues = list;
+  if(!list.length){ hubState.error='Sync a Sleeper league first (League → Sync).'; renderWeekHub(); return; }
+  if(!force && hubState.loadedAt && Date.now()-hubState.loadedAt < 5*60*1000) { renderWeekHub(); return; }
+  hubState.busy=true; hubState.error=null; renderWeekHub();
+  try{
+    if(typeof ensureInseasonSidecar==='function') await ensureInseasonSidecar();
+    if(typeof loadSleeperPlayers==='function') await loadSleeperPlayers(true);
+    const wk = (typeof laCurrentWeek==='function') ? laCurrentWeek() : 1;
+    const byId = new Map(); buildPlayerList().forEach(p=>{ if(p.player_id!=null) byId.set(String(p.player_id), p); });
+    const shared = { byId, wk, now:Date.now(), dvp:(typeof laDvpTable==='function')?laDvpTable():null,
+                     sched:(typeof TC_INSEASON!=='undefined' && TC_INSEASON && TC_INSEASON.schedule)||null };
+    hubState.week = wk;
+    for(const ref of list){
+      try{ hubState.results[ref.league_id] = await hubLoadLeague(ref, prof, wk, shared); }
+      catch(e){ hubState.results[ref.league_id] = {league:ref, error:e.message||'failed'}; }
+      renderWeekHub();
+    }
+    hubState.loadedAt = Date.now();
+  }catch(e){ hubState.error = e.message||'failed'; }
+  hubState.busy=false;
+  renderWeekHub();
+}
+
+// ── View (rendered inside the League Analyzer's chrome, as the "Week" tab) ────
+function openWeekHub(){
+  if(typeof setPhase==='function' && currentPhase!=='League') setPhase('League');
+  laState.laTab='hub';
+  renderLeagueAnalyzer();
+  hubLoadAll(false);
+}
+function renderWeekHub(){ if(typeof laState!=='undefined' && laState.laTab==='hub' && typeof renderLeagueAnalyzer==='function') renderLeagueAnalyzer(); }
+function hubToggleLeague(id){ hubState.openLeague = (hubState.openLeague===id) ? null : id; renderWeekHub(); }
+function _hubPlayer(p, showProj){
+  const opp = p.wp && p.wp.opp ? `${p.wp.opp}${p.wp.oppRank?` <span class="hub-dvp">#${p.wp.oppRank}</span>`:''}` : '';
+  return `<span class="clickable-player hub-p" onclick="${pcardOnclick(p.id, p.pos, p.team||'')}"><b>${escHtml(p.name)}</b> <span class="hub-pos la-pos-${escAttr(p.pos)}">${escHtml(p.pos)}</span>${opp?` <span class="hub-opp">${opp}</span>`:''}${showProj?` <span class="hub-val">${p.value.toFixed(1)}</span>`:''}${p.unavailable?` <span class="la-lh-flag la-lh-sit">${escHtml(String(p.unavailable).toUpperCase())}</span>`:''}</span>`;
+}
+function _hubCallout(c){
+  const kind = {OBVIOUS:['hub-k-obv','START'], CLOSE:['hub-k-close','CLOSE'], EMPTY:['hub-k-obv','EMPTY SLOT'], SIT:['hub-k-sit','SIT'], CALL:['hub-k-call','CLOSE CALL']}[c.kind]||['',c.kind];
+  const body = c.kind==='CALL'
+    ? `${_hubPlayer(c.start,true)} <span class="hub-arrow">holds</span> ${_hubPlayer(c.sit,true)}`
+    : c.kind==='SIT' ? `${_hubPlayer(c.sit,true)}`
+    : `${_hubPlayer(c.start,true)}${c.sit?` <span class="hub-arrow">over</span> ${_hubPlayer(c.sit,true)}`:''}`;
+  return `<div class="hub-row"><span class="hub-kind ${kind[0]}">${kind[1]}</span><span class="hub-slot">${escHtml(c.slot||'')}</span><div class="hub-body">${body}</div><span class="hub-delta ${c.delta>0?'up':''}">${c.kind==='CALL'?`−${Math.abs(c.delta).toFixed(1)}`:(c.delta?`+${c.delta.toFixed(1)}`:'')}</span></div>`;
+}
+function _hubReason(r){ return `<span class="hub-why hub-why-${r.k}" title="${escAttr(r.text)}">${{vacancy:'role opened',spike:'usage spike',schedule:'soft schedule',efficiency:'efficient'}[r.k]||r.k}</span>`; }
+function _hubLeagueCard(res){
+  const lg=res.league;
+  const open = hubState.openLeague===String(lg.league_id);
+  if(res.error) return `<div class="card hub-league"><div class="hub-lg-head"><b>${escHtml(lg.name||'League')}</b><span class="hub-err">${escHtml(res.error)}</span></div></div>`;
+  const L=res.lineup;
+  const acts = L ? L.callouts.filter(c=>c.kind!=='CALL') : [];
+  const calls = L ? L.callouts.filter(c=>c.kind==='CALL') : [];
+  const gain = L ? (L.optTotal-L.curTotal) : 0;
+  const summary = !L ? 'no roster of yours here'
+    : acts.length ? `${acts.length} lineup change${acts.length>1?'s':''} · +${gain.toFixed(1)}`
+    : 'lineup set';
+  const adds = res.adds.slice(0, open?HUB_TOP_ADDS:3).map(c=>`<div class="hub-row">
+      <span class="hub-kind hub-k-add">ADD</span>
+      <div class="hub-body">${_hubPlayer({id:c.id,name:c.name,pos:c.pos,team:c.team,value:c.wp.adj,wp:c.wp,unavailable:c.wp.bye?'BYE':''},true)}
+        <div class="hub-whys">${c.reasons.map(_hubReason).join('')}${c.startsOver?`<span class="hub-why hub-why-starts" title="Beats the weakest starter he could replace in your optimal lineup">starts over ${escHtml(c.startsOver.name)} (${escHtml(c.startsOver.slot)}) +${c.startsOver.delta}</span>`:''}</div></div>
+      ${c.faab?`<span class="hub-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league (${(c.faab.share*100).toFixed(0)}% of your $${c.faab.left} left)">$${c.faab.bid}</span>`:''}
+    </div>`).join('');
+  const drops = open ? res.drops.map(d=>`<div class="hub-row"><span class="hub-kind hub-k-drop">DROP</span><div class="hub-body">${_hubPlayer(d.p,true)}<div class="hub-whys">${d.reasons.map(r=>`<span class="hub-why">${escHtml(r)}</span>`).join('')}</div></div></div>`).join('') : '';
+  const faab = res.faab ? `<div class="hub-faab" title="FAAB left · ${res.faab.curve?'this league\'s past seasons':'no league history yet (linear decay)'} say about ${(hubFaabAdvice(1,res.wk,res.faab.curve,res.teams,res.faab.budget,res.faab.left).spentShould*100).toFixed(0)}% of the season\'s pickup value is behind you by week ${res.wk}">FAAB $${res.faab.left}<span class="hub-faab-of">/ $${res.faab.budget}</span></div>` : '';
+  return `<div class="card hub-league ${open?'open':''}">
+    <div class="hub-lg-head" onclick="hubToggleLeague('${escAttr(String(lg.league_id))}')">
+      <b>${escHtml(lg.name||'League')}</b>
+      <span class="hub-lg-sum">${escHtml(summary)}${L&&L.opponent?` · vs ${escHtml(L.opponent)}`:''}</span>
+      ${faab}
+      <span class="hub-caret">${open?'▴':'▾'}</span>
+    </div>
+    ${acts.length?`<div class="hub-sec">${acts.map(_hubCallout).join('')}</div>`:''}
+    ${open && calls.length?`<div class="hub-sec hub-sec-calls">${calls.map(_hubCallout).join('')}</div>`:''}
+    ${adds?`<div class="hub-sec">${adds}</div>`:''}
+    ${drops?`<div class="hub-sec">${drops}</div>`:''}
+    ${open && L ? `<div class="hub-foot">optimal ${L.optTotal.toFixed(1)} · set ${L.curTotal.toFixed(1)}</div>` : ''}
+  </div>`;
+}
+function hubViewHTML(s){
+  const wk = hubState.week || ((typeof laCurrentWeek==='function')?laCurrentWeek():1);
+  if(!hubState.leagues.length && !hubState.busy && !hubState.loadedAt && !hubState.error) setTimeout(()=>hubLoadAll(false), 0);
+  const cards = hubState.leagues.map(l=>hubState.results[l.league_id] ? _hubLeagueCard(hubState.results[l.league_id]) : `<div class="card hub-league"><div class="hub-lg-head"><b>${escHtml(l.name||'League')}</b><span class="hub-lg-sum">${hubState.busy?'…':''}</span></div></div>`).join('');
+  return `<div class="hub-head"><div class="team-qb-name">week ${wk} · every synced league ${(typeof tcInfoBtn==='function')?tcInfoBtn('weekhub','What this is'):''}</div>
+      <button class="btn btn-ghost btn-sm" onclick="hubLoadAll(true)" ${hubState.busy?'disabled':''}>${hubState.busy?'Loading…':'Refresh'}</button></div>
+    ${hubState.error?`<div class="alert alert-warn">${escHtml(hubState.error)}</div>`:''}
+    ${cards || (hubState.busy?'':'<div class="empty"><div class="empty-title">No leagues yet</div><div class="empty-body">Sync a Sleeper league; every league on that account shows up here.</div></div>')}`;
+}
+TC_INFO_BOOK.weekhub={title:'This Week', body:()=>`
+<p>Every synced league at once, scored under each league's own settings.</p>
+<p><b>Lineup.</b> This week's projection blends the season projection, season points per game and the last three weeks, then adjusts for the opponent's defense against the position (the small #). The optimal lineup is diffed against what you have set: <b>START</b> is a clear swap (${HUB_CLOSE}+ points or the starter can't play), <b>CLOSE</b> is under that, <b>CLOSE CALL</b> means you have the right player in but a bench player is within reach. Players whose game has kicked off stay put.</p>
+<p><b>Adds.</b> Unrostered players ranked by rest-of-season value, with the reason: <b>role opened</b> (a teammate ahead of him is out), <b>usage spike</b> (touches far above his own baseline), <b>soft schedule</b> (next three opponents generous to his position), <b>efficient</b> (his per-target or per-carry rank backs the volume). "Starts over" says he'd beat your weakest starter now.</p>
+<p><b>FAAB.</b> The waiver wire is worth most early: a pickup is his rest-of-season value, and the pool of obvious pickups drains as the season goes. The suggested bid is his value against the top pickups still ahead (split across the league), as a share of what you have left. The curve comes from this league's own past seasons when it has them.</p>`};
 </script>
 </body>
 </html>

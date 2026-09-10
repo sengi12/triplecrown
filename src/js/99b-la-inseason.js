@@ -60,6 +60,7 @@ function laTabViewHTML(key, s){
     case 'lineup':                // no state mutation here (previews call this too)
     case 'dvp':
     case 'trends': return laSeasonView(s, key);
+    case 'hub': return (typeof hubViewHTML==='function') ? hubViewHTML(s) : null;   // This Week: every league
     default: return null;
   }
 }
