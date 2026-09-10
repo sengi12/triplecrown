@@ -43,6 +43,7 @@ const app=new Function(code+`
     '2':{player_id:'2',name:'Mike Onwenu',pos:'OL',team:'NE'},
     '3':{player_id:'3',name:'Drake Maye',pos:'QB',team:'NE'},
     '4':{player_id:'4',name:'Puka Nacua',pos:'WR',team:'LAR'},
+    '99':{player_id:'99',name:'A.J. Brown',pos:'WR',team:'PHI'},
   };
   // Keep the shell/data loaders out of it: the dock only needs openPlayerCard's bookkeeping.
   renderPlayerCardShell=function(pid,pos,team){ pcardState={pid:String(pid),posc:pos||'',team:team||''}; if(!document.getElementById('pcardOverlay')){ const d=document.createElement('div'); d.id='pcardOverlay'; } };
@@ -50,7 +51,8 @@ const app=new Function(code+`
   pcardCaptureNavState=function(){ return pcardState ? {pid:pcardState.pid,pos:pcardState.posc,team:pcardState.team,mode:pcardStatsMode,rbFanSeason:pcardRbFanSeason} : null; };
   return {
     open:openPlayerCard, openFrom:openPlayerCardFromCard, close:closePlayerCard,
-    go:pcardDockGo, closeTab:pcardDockClose,
+    go:pcardDockGo, closeTab:pcardDockClose, openLike:pcardDockOpenLike, addRows:_pcardAddRows, carry:()=>_pcardGameCarry, setGame:(g)=>{ pcardChartGame=g; },
+    setBoard:(rows)=>{ buildPlayerList=function(){ return rows; }; },
     dock:()=>_pcardDock.map(t=>t.pid), active:()=>_pcardDockActive,
     strip:()=>{ const c=document.querySelector('#pcardOverlay .pcard'); return c&&c.dock ? c.dock.innerHTML : ''; },
     isOpen:()=>pcardOpen, restore:()=>pcardRestoreState, nav:()=>pcardNavStack.length,
@@ -102,6 +104,27 @@ app.open('1','RB','NE'); app.openFrom('2','OL','NE'); app.openFrom('4','WR','LAR
 chk(app.dock().length===3, 'three open');
 app.close();
 chk(app.dock().length===0 && app.active()===null, '✕ closes all tabs');
+
+console.log('=== open alongside: same chart, same season, same game ===');
+app.setBoard([{player_id:'1',name:'Rhamondre Stevenson',pos:'RB',team:'NE',fpts:200},{player_id:'12',name:'TreVeyon Henderson',pos:'RB',team:'NE',fpts:150},
+              {player_id:'13',name:'Breece Hall',pos:'RB',team:'NYJ',fpts:190,ecr:20},{player_id:'4',name:'Puka Nacua',pos:'WR',team:'LAR',fpts:260}]);
+sleeperPlayersAdd=null;
+app.open('1','RB','NE');
+let rows=app.addRows('');
+chk(/NE RBs/.test(rows) && /TreVeyon Henderson/.test(rows), 'the popover leads with teammates at the position');
+chk(/Nearby RBs/.test(rows) && /Breece Hall/.test(rows), 'then projection neighbours');
+chk(!/Rhamondre Stevenson/.test(rows), 'never himself');
+rows=app.addRows('ajb');
+chk(/A\. ?J\. Brown|AJ Brown/.test(rows) || /No match/.test(rows)===false, 'typing lazy-matches (space-collapsed "ajb")');
+rows=app.addRows('puka');
+chk(/Puka Nacua/.test(rows), 'and finds anyone on the board');
+app.setMode('college'); app.setRb('2026'); app.setGame({rbfan:1});
+app.openLike('12','RB','NE');
+chk(app.active()==='12' && app.dock().join(',')==='1,12', 'the pick opens as a new tab beside the first');
+const rs=app.restore()||{};
+chk(rs.rbFanSeason==='2026' && rs.mode==='college', 'it inherits the chart season and stats tab');
+chk(app.carry()&&app.carry().rbfan===1 || app.carry()===null, 'and the selected game is carried to the next player');
+app.close();
 
 console.log('=== bounded ===');
 for(let i=1;i<=app.max+3;i++){ sleeperPlayersAdd=null; app.open(String(i),'WR','LAR'); }

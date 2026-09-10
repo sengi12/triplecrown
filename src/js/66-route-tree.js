@@ -403,8 +403,12 @@ function routeTreeList(rt, metric){
 // SAME chart through a shape adapter, so the renderers never learn about weeks.
 let pcardChartGame = {};   // chartKey -> selected wk (null = full season); reset per player
 let _pcardChartGameNorm = null;
+let _pcardGameCarry=null;   // set by the dock's "open alongside": the next player inherits the selected game
 function _pcardGameReset(norm){
-  if(_pcardChartGameNorm!==norm){ pcardChartGame={}; _pcardChartGameNorm=norm; }
+  if(_pcardChartGameNorm!==norm){
+    pcardChartGame = _pcardGameCarry ? Object.assign({}, _pcardGameCarry) : {};
+    _pcardGameCarry=null; _pcardChartGameNorm=norm;
+  }
 }
 function pcardWeeklyGames(section, norm, season){
   if(typeof tcIsLiveSeason!=='function' || !tcIsLiveSeason(season)) return null;

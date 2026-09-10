@@ -11,3 +11,21 @@
 .pcard-dock-x{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:20px;height:20px;border:none;border-radius:50%;
   background:transparent;color:inherit;font-size:11px;cursor:pointer;opacity:.6;display:flex;align-items:center;justify-content:center;padding:0;}
 .pcard-dock-x:hover{opacity:1;background:var(--border);}
+/* ＋ open alongside: the header button (where ⚖ was) and the strip's first tab */
+.pcard-add-btn{left:52px;font-size:20px;}
+.pcard-hero-v2 .pcard-add-btn{left:auto;right:96px;top:10px;bottom:auto;width:34px;height:34px;border-radius:50%;font-size:22px;line-height:1;}
+.pcard-inj-banner ~ .pcard-add-btn{top:40px!important;}
+.pcard-dock-add{flex:0 0 auto;width:30px;border:1px dashed var(--border);border-bottom:none;border-radius:8px 8px 0 0;background:transparent;color:var(--muted);font-size:16px;cursor:pointer;line-height:1;}
+.pcard-dock-add:hover{color:var(--text);border-color:var(--accent);}
+.pcard-addpop{margin:6px 12px 0;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;}
+.pcard-add-head{display:flex;gap:6px;align-items:center;}
+.pcard-add-in{flex:1;min-width:0;padding:7px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font:inherit;font-size:13px;}
+.pcard-add-in:focus{outline:none;border-color:var(--accent);}
+.pcard-add-x{width:28px;height:28px;border:none;border-radius:999px;background:var(--surface3);color:var(--text);cursor:pointer;}
+.pcard-add-list{max-height:min(46vh,300px);overflow:auto;margin-top:6px;display:flex;flex-direction:column;gap:2px;}
+.pcard-add-sec{font-size:9px;font-weight:900;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);padding:6px 4px 2px;}
+.pcard-add-hit{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;padding:7px 9px;border:none;border-radius:8px;background:transparent;color:var(--text);text-align:left;cursor:pointer;}
+.pcard-add-hit:hover{background:var(--surface3);}
+.pcard-add-nm{font-weight:800;font-size:12.5px;}
+.pcard-add-sub{font-size:10px;color:var(--muted);white-space:nowrap;}
+.pcard-add-none{font-size:11px;color:var(--muted);padding:8px 4px;}
