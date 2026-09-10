@@ -109,66 +109,109 @@ const _TT_LOCS=[['left','LEFT'],['middle','MIDDLE'],['right','RIGHT']];
 function _ttView(node, selWk){
   if(selWk!=null){
     const g=(node.games||[]).find(x=>x.wk===selWk);
-    if(g) return { zones:g.zones||{}, tgt:g.tgt, rec:g.rec, yds:g.yds, td:g.td,
+    if(g) return { zones:g.zones||{}, tgt:g.tgt, rec:g.rec, yds:g.yds, td:g.td, yac:g.yac, epa:g.epa, fd:g.fd, rk:g.rk||{},
                    label:`Week ${g.wk}${g.opp?` · ${g.opp}`:''}` };
   }
   const se=node.season||{};
-  return { zones:se.zones||{}, tgt:se.tgt, rec:se.rec, yds:se.yds, td:se.td, label:'Season to date' };
+  return { zones:se.zones||{}, tgt:se.tgt, rec:se.rec, yds:se.yds, td:se.td, yac:se.yac, epa:se.epa, fd:se.fd, rk:se.rk||{}, label:'Season to date' };
 }
-function _renderTargetTree(pid, node, season){
+// Metrics for the target chart — volume, like the route tree (heat by the player's own busiest zone).
+const TT_METRICS = {
+  catch:{short:'Catches', key:null,  unit:''},        // rec / tgt, yards + TD under it
+  yac:  {short:'YAC',     key:'yac', unit:' YAC'},    // yards after the catch
+  epa:  {short:'EPA',     key:'epa', unit:' EPA', dp:1},
+  fd:   {short:'1st Downs',key:'fd', unit:' 1D'},
+};
+let pcardTargetMetric='catch';
+function setPcardTargetMetric(m){
+  if(!TT_METRICS[m]) return;
+  pcardTargetMetric=m;
+  const body=document.getElementById('pcardBody');
+  if(body && pcardState) body.innerHTML=renderPcardRoutes(pcardState.pid);
+}
+function _renderTargetTree(pid, node, season, seasonBtns){
   const norm=_pcardNorm(pid);
-  const games=(node.games||[]).length>1 ? node.games : null;
+  const games=(node.games||[]).length ? node.games : null;
   const selWk=games ? (pcardChartGame.routes!=null?pcardChartGame.routes:null) : null;
   const v=_ttView(node, selWk);
-  const lg=_pcardTargetLg(season);
-  const maxYds=Math.max(1, ..._TT_DEPTHS.flatMap(([d])=>_TT_LOCS.map(([l])=>((v.zones[d]||{})[l]||{}).yds||0)));
-  const W=352, H=308, CW=104, CH=64, X0=28, Y0=10;
-  const cells=[];
-  _TT_DEPTHS.forEach(([d,dl],ri)=>{
-    _TT_LOCS.forEach(([l],ci)=>{
-      const x=X0+ci*(CW+6), y=Y0+ri*(CH+6);
-      const z=(v.zones[d]||{})[l];
-      const heat=z ? 0.14+0.66*((z.yds||0)/maxYds) : 0.05;
-      const cr=z && z.tgt ? (z.rec/z.tgt*100) : null;
-      const lgCr=lg[`${d}-${l}`];
-      const crCls=(cr!=null && lgCr!=null) ? (cr>=lgCr ? 'var(--success)' : 'var(--danger)') : 'var(--muted)';
-      cells.push(`<rect x="${x}" y="${y}" width="${CW}" height="${CH}" rx="7"
-        fill="var(--accent)" fill-opacity="${z?heat.toFixed(2):0.04}" stroke="var(--border)"/>`);
+  const MET=TT_METRICS[pcardTargetMetric]||TT_METRICS.catch;
+  const notePlayer=(typeof noteTargetFromArgs==='function') ? noteTargetFromArgs(pid, pcardState&&pcardState.posc, pcardState&&pcardState.team) : null;
+  const team=(notePlayer&&notePlayer.team)||node.team||'';
+  const ctx=`${season} target chart${selWk!=null?` · week ${selWk}`:''}`;
+  const tag=(meta)=>(typeof noteTagAttrs==='function') ? noteTagAttrs(Object.assign({source:'target_chart', context:ctx, player:notePlayer, team, relevance:'WR,TE,RB,QB'}, meta)) : '';
+  const wrap=(html, meta)=>(typeof noteWrapHtml==='function') ? noteWrapHtml(html, Object.assign({source:'target_chart', context:ctx, player:notePlayer, team}, meta), 'note-tag-hit') : html;
+  // The QB chart's field: trapezoid rows deep / intermediate / short / behind, +20 / +10 / LOS.
+  const W=760, H=600, yTop=60, yBot=560, rowY=[60,176,298,428,560], gap=5;
+  const left=(y)=>170 - 130*(y-yTop)/(yBot-yTop);
+  const right=(y)=>590 + 130*(y-yTop)/(yBot-yTop);
+  const depths=['deep','inter','short','behind'], locs=['left','middle','right'];
+  let MAXV=0;
+  const heatKey=MET.key||'tgt';
+  for(const d of depths) for(const l of locs){ const z=(v.zones[d]||{})[l]; const mv=z?(+z[heatKey]||0):0; if(mv>MAXV) MAXV=mv; }
+  const fmt=(x)=> x==null ? '—' : (MET.dp ? (+x).toFixed(MET.dp) : String(Math.round(+x)));
+  const pname=(typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[pid] && sleeperPlayers[pid].name) || norm || 'Receiver';
+  const parts=[];
+  parts.push(`<svg viewBox="0 0 ${W} ${H}" class="qpc-svg" role="img" aria-label="Target chart">`);
+  parts.push(`<rect width="${W}" height="${H}" fill="#101214"/>`);
+  parts.push(`<text x="24" y="28" fill="#fff" font-size="20" font-weight="800">${escHtml(String(pname).toUpperCase())} TARGETS <tspan fill="#9aa0a6" font-size="13" font-weight="600">/ ${escHtml(String(v.label).toUpperCase())}</tspan></text>`);
+  parts.push(`<text x="24" y="48" fill="#9aa0a6" font-size="12">${MET.key ? MET.short+' by target zone' : 'Catches / targets by zone'} · brighter = more ${MET.key?MET.short.toLowerCase():'targets'}</text>`);
+  for(let r=0;r<4;r++){
+    const depth=depths[r], y0=rowY[r], y1=rowY[r+1];
+    for(let c=0;c<3;c++){
+      const loc=locs[c];
+      const z=(v.zones[depth]||{})[loc]||null;
+      const mv=z ? (+z[heatKey]||0) : null;
+      const l0=left(y0), rt0=right(y0), l1=left(y1), rt1=right(y1);
+      const w0=(rt0-l0)/3, w1=(rt1-l1)/3;
+      const tl=l0+w0*c, tr=l0+w0*(c+1), bl=l1+w1*c, br=l1+w1*(c+1);
+      const cx=(tl+tr+bl+br)/4, cy=(y0+y1)/2;
+      const pts=`${(tl+gap).toFixed(0)},${y0+gap} ${(tr-gap).toFixed(0)},${y0+gap} ${(br-gap).toFixed(0)},${y1-gap} ${(bl+gap).toFixed(0)},${y1-gap}`;
+      const fill=(typeof _qbHeat==='function') ? _qbHeat(mv, MAXV) : '#3a3e44';
+      const zoneName=`${depth} ${loc}`;
+      const big = !z ? '' : (MET.key ? fmt(mv) : `${z.rec||0} / ${z.tgt||0}`);
+      const line2 = !z ? '' : (MET.key ? `${z.rec||0} / ${z.tgt||0}` : `${z.yds||0} yds${z.td?` · ${z.td} TD`:''}`);
+      const attrs = z ? tag({label:`${MET.short} (${zoneName})`, value:`${MET.key?fmt(mv)+MET.unit+' · ':''}${z.rec||0}/${z.tgt||0} · ${z.yds||0} yds${z.td?` · ${z.td} TD`:''}`, statKey:`zone_${MET.key||'catch'}`}) : '';
+      parts.push(`<g ${attrs}><polygon points="${pts}" fill="${fill}" stroke="#0c0d0f" stroke-width="2"/>`);
       if(z){
-        cells.push(`<text x="${x+CW/2}" y="${y+20}" text-anchor="middle" font-size="13" font-weight="800" fill="var(--text)">${z.tgt} TGT${z.td?` · ${z.td} TD`:''}</text>`);
-        cells.push(`<text x="${x+CW/2}" y="${y+37}" text-anchor="middle" font-size="11" fill="var(--muted2)">${z.rec} rec · ${z.yds} yds</text>`);
-        cells.push(`<text x="${x+CW/2}" y="${y+53}" text-anchor="middle" font-size="10.5" font-weight="700" fill="${crCls}">${cr!=null?Math.round(cr)+'% catch':''}${(cr!=null&&lgCr!=null)?` (lg ${Math.round(lgCr)})`:''}</text>`);
+        parts.push(`<text x="${cx.toFixed(0)}" y="${(cy-2).toFixed(0)}" fill="#fff" font-size="${MET.key?26:24}" font-weight="800" text-anchor="middle">${big}</text>`);
+        parts.push(`<text x="${cx.toFixed(0)}" y="${(cy+16).toFixed(0)}" fill="#141517" font-size="10.5" font-weight="800" opacity="0.8" text-anchor="middle">${line2}</text>`);
       } else {
-        cells.push(`<text x="${x+CW/2}" y="${y+CH/2+4}" text-anchor="middle" font-size="10" fill="var(--muted)">—</text>`);
+        parts.push(`<text x="${cx.toFixed(0)}" y="${(cy+5).toFixed(0)}" fill="#6b7178" font-size="14" text-anchor="middle">—</text>`);
       }
-    });
-    cells.push(`<text x="${X0-6}" y="${Y0+ri*(CH+6)+CH/2+3}" text-anchor="end" font-size="8.5" font-weight="800" letter-spacing="1" fill="var(--muted)" transform="rotate(-90 ${X0-14} ${Y0+ri*(CH+6)+CH/2})">${dl.split(' ')[0]}</text>`);
-  });
-  // line of scrimmage between SHORT and BEHIND
-  const losY=Y0+3*(CH+6)-3;
-  cells.push(`<line x1="${X0}" y1="${losY}" x2="${X0+3*CW+12}" y2="${losY}" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="6 4"/>`);
-  cells.push(`<text x="${X0+3*CW+10}" y="${losY-4}" text-anchor="end" font-size="8" font-weight="800" fill="var(--warn)">LOS</text>`);
-  const colHeads=_TT_LOCS.map(([l,ll],ci)=>`<text x="${X0+ci*(CW+6)+CW/2}" y="${H-8}" text-anchor="middle" font-size="9" font-weight="800" letter-spacing="1.2" fill="var(--muted)">${ll}</text>`).join('');
-  const chips=games?_pcardGameChips('routes', games, selWk):'';
-  const cr=v.tgt?Math.round(v.rec/v.tgt*100):null;
+      parts.push('</g>');
+    }
+  }
+  for(const [y,lab] of [[rowY[1],'+20'],[rowY[2],'+10']]){
+    parts.push(`<text x="${(left(y)-12).toFixed(0)}" y="${y+4}" fill="#c8ccd2" font-size="12" text-anchor="end">${lab}</text>`);
+    parts.push(`<text x="${(right(y)+12).toFixed(0)}" y="${y+4}" fill="#c8ccd2" font-size="12">${lab}</text>`);
+  }
+  const yl=rowY[3];
+  parts.push(`<line x1="${(left(yl)-30).toFixed(0)}" y1="${yl}" x2="${(right(yl)+30).toFixed(0)}" y2="${yl}" stroke="#2f6fe4" stroke-width="4"/>`);
+  parts.push(`<text x="${(left(yl)-36).toFixed(0)}" y="${yl+4}" fill="#fff" font-size="12" font-weight="800" text-anchor="end">LOS</text>`);
+  parts.push(`<text x="${(right(yl)+36).toFixed(0)}" y="${yl+4}" fill="#fff" font-size="12" font-weight="800">LOS</text>`);
+  parts.push('</svg>');
+  const metricBtns=Object.entries(TT_METRICS).map(([k,m])=>`<button class="rt-metric-btn ${k===pcardTargetMetric?'active':''}" title="Show ${m.short}" onclick="setPcardTargetMetric('${k}')">${m.short}</button>`).join('');
+  const cr=v.tgt ? Math.round((v.rec||0)/v.tgt*100) : null;
+  const rk=v.rk||{};
+  const tile=(label, val, key, rkKey)=>`<div class="qpc-tile"><label>${label}</label><b>${wrap(escHtml(val), {label, value:String(val), statKey:key})}</b>${(typeof pcardRankTag==='function' && rkKey)?pcardRankTag(rk, rkKey):''}</div>`;
   return `<div class="rt-wrap">
     <div class="rt-head">
-      <span class="tt-badge" title="True route labels are charted by FTN and publish after the season — this is where his targets actually went, live from nightly play-by-play. It can't see routes that weren't targeted.">◉ TARGET CHART · live</span>
-      <span class="tt-sub">${escHtml(v.label)}</span>
+      <div class="rt-seasons">${seasonBtns||''}${games?_pcardGameChips('routes', games, selWk, team):''}</div>
+      <div class="rt-metrics">${metricBtns}</div>
+      <div class="rt-summary">${wrap(`${v.tgt||0} targets`, {label:'Targets', value:String(v.tgt||0), statKey:'targets'})} <span class="tt-badge" title="Where his targets went, from nightly play-by-play. True route trees (every route run, targeted or not) are FTN charting and publish after the season.">◉ live</span></div>
     </div>
-    ${chips}
-    <svg viewBox="0 0 ${W} ${H}" class="qpc-svg" role="img" aria-label="Target chart">${cells.join('')}${colHeads}</svg>
-    ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('rec', norm, season, selWk) : ''}
-    <div class="qpc-legend"><span><i style="background:var(--accent);opacity:.8"></i>heat = yardage from that zone</span>
-      <span style="color:var(--success)">catch% ≥ league</span><span style="color:var(--danger)">below league</span></div>
+    ${parts.join('')}
     <div class="qpc-totals">
-      <div class="qpc-tile"><label>Targets</label><b>${v.tgt!=null?v.tgt:'—'}</b></div>
-      <div class="qpc-tile"><label>Receptions</label><b>${v.rec!=null?v.rec:'—'}</b></div>
-      <div class="qpc-tile"><label>Yards</label><b>${v.yds!=null?v.yds:'—'}</b></div>
-      <div class="qpc-tile"><label>TD</label><b>${v.td!=null?v.td:'—'}</b></div>
-      <div class="qpc-tile"><label>Catch %</label><b>${cr!=null?cr+'%':'—'}</b></div>
+      ${tile('Targets', v.tgt!=null?v.tgt:'—', 'targets', 'tgt')}
+      ${tile('Receptions', v.rec!=null?v.rec:'—', 'receptions', 'rec')}
+      ${tile('Yards', v.yds!=null?v.yds:'—', 'yards', 'yds')}
+      ${tile('TD', v.td!=null?v.td:'—', 'td', 'td')}
+      ${tile('YAC', v.yac!=null?v.yac:'—', 'yac', 'yac')}
+      ${tile('EPA', v.epa!=null?(+v.epa).toFixed(1):'—', 'epa', 'epa')}
+      ${tile('Catch %', cr!=null?`${cr}%`:'—', 'catch_pct')}
     </div>
-    <div class="pcard-src">Targets via nflverse play-by-play, nightly · true route trees arrive with the post-season participation release.</div>
+    ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('rec', norm, season, selWk) : ''}
+    <div class="pcard-src">Targets via nflverse play-by-play, nightly.</div>
   </div>`;
 }
 function _pcardNorm(pid){
@@ -380,11 +423,23 @@ function setPcardChartGame(chartKey, wk){
   else if(chartKey==='qbpass') body.innerHTML=renderPcardQbPassing(pcardState.pid);
   else if(chartKey==='rbfan') body.innerHTML=renderPcardRbFan(pcardState.pid);
 }
-function _pcardGameChips(chartKey, games, selWk){
-  const chips = [`<button class="rt-game-btn ${selWk==null?'active':''}" onclick="setPcardChartGame('${chartKey}','')">Season</button>`]
-    .concat(games.map(g=>`<button class="rt-game-btn ${selWk===g.wk?'active':''}"
-      onclick="setPcardChartGame('${chartKey}',${g.wk})">Wk${g.wk}${g.opp?` ${escHtml(g.opp)}`:''}</button>`));
-  return `<div class="rt-games">${chips.join('')}</div>`;
+// The game picker: "Season" by default, then "WK 1 @ SEA" with the opponent's logo.
+// Home/away comes from the in-season schedule when the chart knows the team.
+function _pcardGameLabel(g, team){
+  const meta=(typeof TC_INSEASON!=='undefined' && TC_INSEASON && TC_INSEASON.schedule_meta && team
+    && TC_INSEASON.schedule_meta[team] && TC_INSEASON.schedule_meta[team][String(g.wk)])||null;
+  const home = meta ? !!meta[1] : null;
+  const opp = g.opp || (meta && meta[0]) || '';
+  const at = home==null ? '' : (home ? 'vs' : '@');
+  return {opp, text:`WK ${g.wk}${opp?` ${at} ${opp}`.replace('  ',' '):''}`};
+}
+function _pcardGameChips(chartKey, games, selWk, team){
+  const logo = o => (o && typeof NFL_LOGO==='function') ? `<img class="rt-gp-logo" src="${NFL_LOGO(o)}" alt="" onerror="this.remove()">` : '';
+  const cur = selWk==null ? {text:'Season', opp:''} : _pcardGameLabel(games.find(g=>g.wk===selWk)||{wk:selWk}, team);
+  const opts = [`<div class="rt-gp-opt ${selWk==null?'active':''}" onclick="setPcardChartGame('${chartKey}','')">Season</div>`]
+    .concat(games.map(g=>{ const L=_pcardGameLabel(g, team);
+      return `<div class="rt-gp-opt ${selWk===g.wk?'active':''}" onclick="setPcardChartGame('${chartKey}',${g.wk})">${escHtml(L.text)}${logo(L.opp)}</div>`; }));
+  return `<div class="rt-gamepick"><button class="rt-gp-btn" onclick="this.parentNode.classList.toggle('open');event.stopPropagation()">${escHtml(cur.text)}${logo(cur.opp)}<span class="rt-gp-caret">▾</span></button><div class="rt-gp-menu">${opts.join('')}</div></div>`;
 }
 // One weekly route game → the season-shaped object the renderer already reads.
 function _routeGameAsSeason(g){
@@ -411,7 +466,7 @@ function renderPcardRoutes(pid){
     const tn=_pcardTargetNode(norm, pcardRouteSeason);
     if(tn){
       const seasonBtns0=seasons.map(s=>`<button class="rt-season-btn ${String(s)===String(pcardRouteSeason)?'active':''}" onclick="setPcardRouteSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('');
-      return `<div class="rt-seasons">${seasonBtns0}</div>`+_renderTargetTree(pid, tn, pcardRouteSeason);
+      return _renderTargetTree(pid, tn, pcardRouteSeason, seasonBtns0);
     }
     return `<div class="pcard-loading">No route data for this season.</div>`;
   }

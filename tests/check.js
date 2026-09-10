@@ -6900,6 +6900,19 @@ function tcRatingsFor(list){
   });
   return out;
 }
+// ── League rank tag ─────────────────────────────────────────────────────────
+// The builders rank every chart total against the league (rk:{stat:[rank, n]},
+// see _attach_ranks in src/nflverse/nflverse.py — season totals against the
+// season, a game against that week). "#3 / 41" beside a number is the context
+// the number lacks; the color is the quartile.
+function pcardRankTag(rk, key){
+  const r=rk && rk[key];
+  if(!r || !(r[1]>1)) return '';
+  const rank=+r[0], n=+r[1];
+  const p=(rank-1)/(n-1);
+  const cls = p<=0.25 ? 'rk-good' : p<=0.5 ? 'rk-okhi' : p<=0.75 ? 'rk-oklo' : 'rk-bad';
+  return `<small class="pc-rank ${cls}" title="Rank ${rank} of ${n} league-wide">#${rank}<span class="pc-rank-n">/${n}</span></small>`;
+}
 // ── Player card modal ───────────────────────────────────────────────────────
 // Clicking any player name opens a card showing per-game stats by season, colored
 // green/yellow/red relative to positional expectations. QB is implemented first; other
@@ -8375,66 +8388,109 @@ const _TT_LOCS=[['left','LEFT'],['middle','MIDDLE'],['right','RIGHT']];
 function _ttView(node, selWk){
   if(selWk!=null){
     const g=(node.games||[]).find(x=>x.wk===selWk);
-    if(g) return { zones:g.zones||{}, tgt:g.tgt, rec:g.rec, yds:g.yds, td:g.td,
+    if(g) return { zones:g.zones||{}, tgt:g.tgt, rec:g.rec, yds:g.yds, td:g.td, yac:g.yac, epa:g.epa, fd:g.fd, rk:g.rk||{},
                    label:`Week ${g.wk}${g.opp?` · ${g.opp}`:''}` };
   }
   const se=node.season||{};
-  return { zones:se.zones||{}, tgt:se.tgt, rec:se.rec, yds:se.yds, td:se.td, label:'Season to date' };
+  return { zones:se.zones||{}, tgt:se.tgt, rec:se.rec, yds:se.yds, td:se.td, yac:se.yac, epa:se.epa, fd:se.fd, rk:se.rk||{}, label:'Season to date' };
 }
-function _renderTargetTree(pid, node, season){
+// Metrics for the target chart — volume, like the route tree (heat by the player's own busiest zone).
+const TT_METRICS = {
+  catch:{short:'Catches', key:null,  unit:''},        // rec / tgt, yards + TD under it
+  yac:  {short:'YAC',     key:'yac', unit:' YAC'},    // yards after the catch
+  epa:  {short:'EPA',     key:'epa', unit:' EPA', dp:1},
+  fd:   {short:'1st Downs',key:'fd', unit:' 1D'},
+};
+let pcardTargetMetric='catch';
+function setPcardTargetMetric(m){
+  if(!TT_METRICS[m]) return;
+  pcardTargetMetric=m;
+  const body=document.getElementById('pcardBody');
+  if(body && pcardState) body.innerHTML=renderPcardRoutes(pcardState.pid);
+}
+function _renderTargetTree(pid, node, season, seasonBtns){
   const norm=_pcardNorm(pid);
-  const games=(node.games||[]).length>1 ? node.games : null;
+  const games=(node.games||[]).length ? node.games : null;
   const selWk=games ? (pcardChartGame.routes!=null?pcardChartGame.routes:null) : null;
   const v=_ttView(node, selWk);
-  const lg=_pcardTargetLg(season);
-  const maxYds=Math.max(1, ..._TT_DEPTHS.flatMap(([d])=>_TT_LOCS.map(([l])=>((v.zones[d]||{})[l]||{}).yds||0)));
-  const W=352, H=308, CW=104, CH=64, X0=28, Y0=10;
-  const cells=[];
-  _TT_DEPTHS.forEach(([d,dl],ri)=>{
-    _TT_LOCS.forEach(([l],ci)=>{
-      const x=X0+ci*(CW+6), y=Y0+ri*(CH+6);
-      const z=(v.zones[d]||{})[l];
-      const heat=z ? 0.14+0.66*((z.yds||0)/maxYds) : 0.05;
-      const cr=z && z.tgt ? (z.rec/z.tgt*100) : null;
-      const lgCr=lg[`${d}-${l}`];
-      const crCls=(cr!=null && lgCr!=null) ? (cr>=lgCr ? 'var(--success)' : 'var(--danger)') : 'var(--muted)';
-      cells.push(`<rect x="${x}" y="${y}" width="${CW}" height="${CH}" rx="7"
-        fill="var(--accent)" fill-opacity="${z?heat.toFixed(2):0.04}" stroke="var(--border)"/>`);
+  const MET=TT_METRICS[pcardTargetMetric]||TT_METRICS.catch;
+  const notePlayer=(typeof noteTargetFromArgs==='function') ? noteTargetFromArgs(pid, pcardState&&pcardState.posc, pcardState&&pcardState.team) : null;
+  const team=(notePlayer&&notePlayer.team)||node.team||'';
+  const ctx=`${season} target chart${selWk!=null?` · week ${selWk}`:''}`;
+  const tag=(meta)=>(typeof noteTagAttrs==='function') ? noteTagAttrs(Object.assign({source:'target_chart', context:ctx, player:notePlayer, team, relevance:'WR,TE,RB,QB'}, meta)) : '';
+  const wrap=(html, meta)=>(typeof noteWrapHtml==='function') ? noteWrapHtml(html, Object.assign({source:'target_chart', context:ctx, player:notePlayer, team}, meta), 'note-tag-hit') : html;
+  // The QB chart's field: trapezoid rows deep / intermediate / short / behind, +20 / +10 / LOS.
+  const W=760, H=600, yTop=60, yBot=560, rowY=[60,176,298,428,560], gap=5;
+  const left=(y)=>170 - 130*(y-yTop)/(yBot-yTop);
+  const right=(y)=>590 + 130*(y-yTop)/(yBot-yTop);
+  const depths=['deep','inter','short','behind'], locs=['left','middle','right'];
+  let MAXV=0;
+  const heatKey=MET.key||'tgt';
+  for(const d of depths) for(const l of locs){ const z=(v.zones[d]||{})[l]; const mv=z?(+z[heatKey]||0):0; if(mv>MAXV) MAXV=mv; }
+  const fmt=(x)=> x==null ? '—' : (MET.dp ? (+x).toFixed(MET.dp) : String(Math.round(+x)));
+  const pname=(typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[pid] && sleeperPlayers[pid].name) || norm || 'Receiver';
+  const parts=[];
+  parts.push(`<svg viewBox="0 0 ${W} ${H}" class="qpc-svg" role="img" aria-label="Target chart">`);
+  parts.push(`<rect width="${W}" height="${H}" fill="#101214"/>`);
+  parts.push(`<text x="24" y="28" fill="#fff" font-size="20" font-weight="800">${escHtml(String(pname).toUpperCase())} TARGETS <tspan fill="#9aa0a6" font-size="13" font-weight="600">/ ${escHtml(String(v.label).toUpperCase())}</tspan></text>`);
+  parts.push(`<text x="24" y="48" fill="#9aa0a6" font-size="12">${MET.key ? MET.short+' by target zone' : 'Catches / targets by zone'} · brighter = more ${MET.key?MET.short.toLowerCase():'targets'}</text>`);
+  for(let r=0;r<4;r++){
+    const depth=depths[r], y0=rowY[r], y1=rowY[r+1];
+    for(let c=0;c<3;c++){
+      const loc=locs[c];
+      const z=(v.zones[depth]||{})[loc]||null;
+      const mv=z ? (+z[heatKey]||0) : null;
+      const l0=left(y0), rt0=right(y0), l1=left(y1), rt1=right(y1);
+      const w0=(rt0-l0)/3, w1=(rt1-l1)/3;
+      const tl=l0+w0*c, tr=l0+w0*(c+1), bl=l1+w1*c, br=l1+w1*(c+1);
+      const cx=(tl+tr+bl+br)/4, cy=(y0+y1)/2;
+      const pts=`${(tl+gap).toFixed(0)},${y0+gap} ${(tr-gap).toFixed(0)},${y0+gap} ${(br-gap).toFixed(0)},${y1-gap} ${(bl+gap).toFixed(0)},${y1-gap}`;
+      const fill=(typeof _qbHeat==='function') ? _qbHeat(mv, MAXV) : '#3a3e44';
+      const zoneName=`${depth} ${loc}`;
+      const big = !z ? '' : (MET.key ? fmt(mv) : `${z.rec||0} / ${z.tgt||0}`);
+      const line2 = !z ? '' : (MET.key ? `${z.rec||0} / ${z.tgt||0}` : `${z.yds||0} yds${z.td?` · ${z.td} TD`:''}`);
+      const attrs = z ? tag({label:`${MET.short} (${zoneName})`, value:`${MET.key?fmt(mv)+MET.unit+' · ':''}${z.rec||0}/${z.tgt||0} · ${z.yds||0} yds${z.td?` · ${z.td} TD`:''}`, statKey:`zone_${MET.key||'catch'}`}) : '';
+      parts.push(`<g ${attrs}><polygon points="${pts}" fill="${fill}" stroke="#0c0d0f" stroke-width="2"/>`);
       if(z){
-        cells.push(`<text x="${x+CW/2}" y="${y+20}" text-anchor="middle" font-size="13" font-weight="800" fill="var(--text)">${z.tgt} TGT${z.td?` · ${z.td} TD`:''}</text>`);
-        cells.push(`<text x="${x+CW/2}" y="${y+37}" text-anchor="middle" font-size="11" fill="var(--muted2)">${z.rec} rec · ${z.yds} yds</text>`);
-        cells.push(`<text x="${x+CW/2}" y="${y+53}" text-anchor="middle" font-size="10.5" font-weight="700" fill="${crCls}">${cr!=null?Math.round(cr)+'% catch':''}${(cr!=null&&lgCr!=null)?` (lg ${Math.round(lgCr)})`:''}</text>`);
+        parts.push(`<text x="${cx.toFixed(0)}" y="${(cy-2).toFixed(0)}" fill="#fff" font-size="${MET.key?26:24}" font-weight="800" text-anchor="middle">${big}</text>`);
+        parts.push(`<text x="${cx.toFixed(0)}" y="${(cy+16).toFixed(0)}" fill="#141517" font-size="10.5" font-weight="800" opacity="0.8" text-anchor="middle">${line2}</text>`);
       } else {
-        cells.push(`<text x="${x+CW/2}" y="${y+CH/2+4}" text-anchor="middle" font-size="10" fill="var(--muted)">—</text>`);
+        parts.push(`<text x="${cx.toFixed(0)}" y="${(cy+5).toFixed(0)}" fill="#6b7178" font-size="14" text-anchor="middle">—</text>`);
       }
-    });
-    cells.push(`<text x="${X0-6}" y="${Y0+ri*(CH+6)+CH/2+3}" text-anchor="end" font-size="8.5" font-weight="800" letter-spacing="1" fill="var(--muted)" transform="rotate(-90 ${X0-14} ${Y0+ri*(CH+6)+CH/2})">${dl.split(' ')[0]}</text>`);
-  });
-  // line of scrimmage between SHORT and BEHIND
-  const losY=Y0+3*(CH+6)-3;
-  cells.push(`<line x1="${X0}" y1="${losY}" x2="${X0+3*CW+12}" y2="${losY}" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="6 4"/>`);
-  cells.push(`<text x="${X0+3*CW+10}" y="${losY-4}" text-anchor="end" font-size="8" font-weight="800" fill="var(--warn)">LOS</text>`);
-  const colHeads=_TT_LOCS.map(([l,ll],ci)=>`<text x="${X0+ci*(CW+6)+CW/2}" y="${H-8}" text-anchor="middle" font-size="9" font-weight="800" letter-spacing="1.2" fill="var(--muted)">${ll}</text>`).join('');
-  const chips=games?_pcardGameChips('routes', games, selWk):'';
-  const cr=v.tgt?Math.round(v.rec/v.tgt*100):null;
+      parts.push('</g>');
+    }
+  }
+  for(const [y,lab] of [[rowY[1],'+20'],[rowY[2],'+10']]){
+    parts.push(`<text x="${(left(y)-12).toFixed(0)}" y="${y+4}" fill="#c8ccd2" font-size="12" text-anchor="end">${lab}</text>`);
+    parts.push(`<text x="${(right(y)+12).toFixed(0)}" y="${y+4}" fill="#c8ccd2" font-size="12">${lab}</text>`);
+  }
+  const yl=rowY[3];
+  parts.push(`<line x1="${(left(yl)-30).toFixed(0)}" y1="${yl}" x2="${(right(yl)+30).toFixed(0)}" y2="${yl}" stroke="#2f6fe4" stroke-width="4"/>`);
+  parts.push(`<text x="${(left(yl)-36).toFixed(0)}" y="${yl+4}" fill="#fff" font-size="12" font-weight="800" text-anchor="end">LOS</text>`);
+  parts.push(`<text x="${(right(yl)+36).toFixed(0)}" y="${yl+4}" fill="#fff" font-size="12" font-weight="800">LOS</text>`);
+  parts.push('</svg>');
+  const metricBtns=Object.entries(TT_METRICS).map(([k,m])=>`<button class="rt-metric-btn ${k===pcardTargetMetric?'active':''}" title="Show ${m.short}" onclick="setPcardTargetMetric('${k}')">${m.short}</button>`).join('');
+  const cr=v.tgt ? Math.round((v.rec||0)/v.tgt*100) : null;
+  const rk=v.rk||{};
+  const tile=(label, val, key, rkKey)=>`<div class="qpc-tile"><label>${label}</label><b>${wrap(escHtml(val), {label, value:String(val), statKey:key})}</b>${(typeof pcardRankTag==='function' && rkKey)?pcardRankTag(rk, rkKey):''}</div>`;
   return `<div class="rt-wrap">
     <div class="rt-head">
-      <span class="tt-badge" title="True route labels are charted by FTN and publish after the season — this is where his targets actually went, live from nightly play-by-play. It can't see routes that weren't targeted.">◉ TARGET CHART · live</span>
-      <span class="tt-sub">${escHtml(v.label)}</span>
+      <div class="rt-seasons">${seasonBtns||''}${games?_pcardGameChips('routes', games, selWk, team):''}</div>
+      <div class="rt-metrics">${metricBtns}</div>
+      <div class="rt-summary">${wrap(`${v.tgt||0} targets`, {label:'Targets', value:String(v.tgt||0), statKey:'targets'})} <span class="tt-badge" title="Where his targets went, from nightly play-by-play. True route trees (every route run, targeted or not) are FTN charting and publish after the season.">◉ live</span></div>
     </div>
-    ${chips}
-    <svg viewBox="0 0 ${W} ${H}" class="qpc-svg" role="img" aria-label="Target chart">${cells.join('')}${colHeads}</svg>
-    ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('rec', norm, season, selWk) : ''}
-    <div class="qpc-legend"><span><i style="background:var(--accent);opacity:.8"></i>heat = yardage from that zone</span>
-      <span style="color:var(--success)">catch% ≥ league</span><span style="color:var(--danger)">below league</span></div>
+    ${parts.join('')}
     <div class="qpc-totals">
-      <div class="qpc-tile"><label>Targets</label><b>${v.tgt!=null?v.tgt:'—'}</b></div>
-      <div class="qpc-tile"><label>Receptions</label><b>${v.rec!=null?v.rec:'—'}</b></div>
-      <div class="qpc-tile"><label>Yards</label><b>${v.yds!=null?v.yds:'—'}</b></div>
-      <div class="qpc-tile"><label>TD</label><b>${v.td!=null?v.td:'—'}</b></div>
-      <div class="qpc-tile"><label>Catch %</label><b>${cr!=null?cr+'%':'—'}</b></div>
+      ${tile('Targets', v.tgt!=null?v.tgt:'—', 'targets', 'tgt')}
+      ${tile('Receptions', v.rec!=null?v.rec:'—', 'receptions', 'rec')}
+      ${tile('Yards', v.yds!=null?v.yds:'—', 'yards', 'yds')}
+      ${tile('TD', v.td!=null?v.td:'—', 'td', 'td')}
+      ${tile('YAC', v.yac!=null?v.yac:'—', 'yac', 'yac')}
+      ${tile('EPA', v.epa!=null?(+v.epa).toFixed(1):'—', 'epa', 'epa')}
+      ${tile('Catch %', cr!=null?`${cr}%`:'—', 'catch_pct')}
     </div>
-    <div class="pcard-src">Targets via nflverse play-by-play, nightly · true route trees arrive with the post-season participation release.</div>
+    ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('rec', norm, season, selWk) : ''}
+    <div class="pcard-src">Targets via nflverse play-by-play, nightly.</div>
   </div>`;
 }
 function _pcardNorm(pid){
@@ -8646,11 +8702,23 @@ function setPcardChartGame(chartKey, wk){
   else if(chartKey==='qbpass') body.innerHTML=renderPcardQbPassing(pcardState.pid);
   else if(chartKey==='rbfan') body.innerHTML=renderPcardRbFan(pcardState.pid);
 }
-function _pcardGameChips(chartKey, games, selWk){
-  const chips = [`<button class="rt-game-btn ${selWk==null?'active':''}" onclick="setPcardChartGame('${chartKey}','')">Season</button>`]
-    .concat(games.map(g=>`<button class="rt-game-btn ${selWk===g.wk?'active':''}"
-      onclick="setPcardChartGame('${chartKey}',${g.wk})">Wk${g.wk}${g.opp?` ${escHtml(g.opp)}`:''}</button>`));
-  return `<div class="rt-games">${chips.join('')}</div>`;
+// The game picker: "Season" by default, then "WK 1 @ SEA" with the opponent's logo.
+// Home/away comes from the in-season schedule when the chart knows the team.
+function _pcardGameLabel(g, team){
+  const meta=(typeof TC_INSEASON!=='undefined' && TC_INSEASON && TC_INSEASON.schedule_meta && team
+    && TC_INSEASON.schedule_meta[team] && TC_INSEASON.schedule_meta[team][String(g.wk)])||null;
+  const home = meta ? !!meta[1] : null;
+  const opp = g.opp || (meta && meta[0]) || '';
+  const at = home==null ? '' : (home ? 'vs' : '@');
+  return {opp, text:`WK ${g.wk}${opp?` ${at} ${opp}`.replace('  ',' '):''}`};
+}
+function _pcardGameChips(chartKey, games, selWk, team){
+  const logo = o => (o && typeof NFL_LOGO==='function') ? `<img class="rt-gp-logo" src="${NFL_LOGO(o)}" alt="" onerror="this.remove()">` : '';
+  const cur = selWk==null ? {text:'Season', opp:''} : _pcardGameLabel(games.find(g=>g.wk===selWk)||{wk:selWk}, team);
+  const opts = [`<div class="rt-gp-opt ${selWk==null?'active':''}" onclick="setPcardChartGame('${chartKey}','')">Season</div>`]
+    .concat(games.map(g=>{ const L=_pcardGameLabel(g, team);
+      return `<div class="rt-gp-opt ${selWk===g.wk?'active':''}" onclick="setPcardChartGame('${chartKey}',${g.wk})">${escHtml(L.text)}${logo(L.opp)}</div>`; }));
+  return `<div class="rt-gamepick"><button class="rt-gp-btn" onclick="this.parentNode.classList.toggle('open');event.stopPropagation()">${escHtml(cur.text)}${logo(cur.opp)}<span class="rt-gp-caret">▾</span></button><div class="rt-gp-menu">${opts.join('')}</div></div>`;
 }
 // One weekly route game → the season-shaped object the renderer already reads.
 function _routeGameAsSeason(g){
@@ -8677,7 +8745,7 @@ function renderPcardRoutes(pid){
     const tn=_pcardTargetNode(norm, pcardRouteSeason);
     if(tn){
       const seasonBtns0=seasons.map(s=>`<button class="rt-season-btn ${String(s)===String(pcardRouteSeason)?'active':''}" onclick="setPcardRouteSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('');
-      return `<div class="rt-seasons">${seasonBtns0}</div>`+_renderTargetTree(pid, tn, pcardRouteSeason);
+      return _renderTargetTree(pid, tn, pcardRouteSeason, seasonBtns0);
     }
     return `<div class="pcard-loading">No route data for this season.</div>`;
   }
@@ -8940,7 +9008,7 @@ function renderPcardQbPassing(pid){
   const notePlayer = noteTargetFromArgs(pid, 'QB', p.team||chart.team||'');
   const t=chart.totals||{};
   const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardQbPassingSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('')
-    + (_games ? _pcardGameChips('qbpass', _games, _selWk) : '');
+    + (_games ? _pcardGameChips('qbpass', _games, _selWk, chart.team) : '');
   if(!QB_ZONE_METRICS[pcardQbMetric]) pcardQbMetric='rating';
   let metric=pcardQbMetric;
   if(!_qbMetricKnown(chart, metric)) metric='rating';   // older seed without yards/TD
@@ -8951,6 +9019,7 @@ function renderPcardQbPassing(pid){
       onclick="setPcardQbMetric('${k}')">${m.short}</button>`;
   }).join('');
   const tdInt = `${t.td!=null?t.td:'—'}/${t.int!=null?t.int:'—'}`;
+  const _rk=(k)=>(typeof pcardRankTag==='function') ? pcardRankTag(t.rk||{}, k) : '';
 
   return `<div class="qpc-wrap">
     <div class="rt-head">
@@ -8965,10 +9034,11 @@ function renderPcardQbPassing(pid){
       <span><i style="background:#d33b2f"></i>Worse than average</span>
     </div>` : `<div class="qpc-legend"><span class="qpc-heat-key"></span>lighter = more ${QB_ZONE_METRICS[metric].short.toLowerCase()} from that zone</div>`}
     <div class="qpc-totals">
-      <div class="qpc-tile"><label>Passer Rating</label><b>${noteWrapHtml(escHtml(_qbNum(t.passer_rating,1)), { label:'Passer Rating', value:_qbNum(t.passer_rating,1), source:'qb_passing_chart', statKey:'passer_rating', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
-      <div class="qpc-tile"><label>Comp %</label><b>${noteWrapHtml(escHtml(_qbNum(t.comp_pct,1)), { label:'Completion Percentage', value:_qbNum(t.comp_pct,1), source:'qb_passing_chart', statKey:'comp_pct', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
-      <div class="qpc-tile"><label>Yards</label><b>${noteWrapHtml(escHtml(t.yards!=null?Number(t.yards).toLocaleString():'—'), { label:'Passing Yards', value:t.yards!=null?Number(t.yards).toLocaleString():'—', source:'qb_passing_chart', statKey:'yards', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
-      <div class="qpc-tile"><label>TD/INT</label><b>${noteWrapHtml(escHtml(tdInt), { label:'TD/INT', value:tdInt, source:'qb_passing_chart', statKey:'td_int', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
+      <div class="qpc-tile"><label>Passer Rating</label><b>${noteWrapHtml(escHtml(_qbNum(t.passer_rating,1)), { label:'Passer Rating', value:_qbNum(t.passer_rating,1), source:'qb_passing_chart', statKey:'passer_rating', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b>${_rk('passer_rating')}</div>
+      <div class="qpc-tile"><label>Comp %</label><b>${noteWrapHtml(escHtml(_qbNum(t.comp_pct,1)), { label:'Completion Percentage', value:_qbNum(t.comp_pct,1), source:'qb_passing_chart', statKey:'comp_pct', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b>${_rk('comp_pct')}</div>
+      <div class="qpc-tile"><label>Yards</label><b>${noteWrapHtml(escHtml(t.yards!=null?Number(t.yards).toLocaleString():'—'), { label:'Passing Yards', value:t.yards!=null?Number(t.yards).toLocaleString():'—', source:'qb_passing_chart', statKey:'yards', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b>${_rk('yards')}</div>
+      <div class="qpc-tile"><label>TD/INT</label><b>${noteWrapHtml(escHtml(tdInt), { label:'TD/INT', value:tdInt, source:'qb_passing_chart', statKey:'td_int', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b>${_rk('td')}</div>
+      ${t.scramble_rate!=null ? `<div class="qpc-tile" title="Scrambles per dropback (${t.scrambles||0} of ${t.dropbacks||0})"><label>Scramble %</label><b>${noteWrapHtml(escHtml(_qbNum(t.scramble_rate,1)+'%'), { label:'Scramble Rate', value:_qbNum(t.scramble_rate,1)+'%', source:'qb_passing_chart', statKey:'scramble_rate', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b>${_rk('scramble_rate')}</div>` : ''}
       <div class="qpc-tile"><label>Attempts*</label><b>${noteWrapHtml(escHtml(t.attempts!=null?t.attempts:'—'), { label:'Located Attempts', value:t.attempts!=null?t.attempts:'—', source:'qb_passing_chart', statKey:'attempts', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
     </div>
     ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('qb', norm, season, _selWk) : ''}
@@ -9193,6 +9263,13 @@ function _rbTeamCode(team){
   return RB_TEAM_FIX[t] || t;
 }
 
+// A lineman's OL-card record from the newest season that graded him.
+function _rbOlCardRec(name){
+  if(typeof NFLVERSE==='undefined' || !NFLVERSE) return null;
+  const key=(typeof ecrNormName==='function') ? ecrNormName(name) : _rbNormName(name);
+  const seasons=Object.keys(NFLVERSE).filter(s=>NFLVERSE[s]&&NFLVERSE[s].ol_players&&NFLVERSE[s].ol_players[key]).sort((a,b)=>b-a);
+  return seasons.length ? NFLVERSE[seasons[0]].ol_players[key] : null;
+}
 function pcardRbFanSeasons(normName){
   if(typeof NFLVERSE==='undefined' || !NFLVERSE) return [];
   return Object.keys(NFLVERSE)
@@ -9495,11 +9572,14 @@ function _rbRosterLine(season, teamCode, fallbackLine){
     const rr=rosterSlots[sl];
     if(!rr || !rr.name){ out[sl]=(fallbackLine&&fallbackLine[sl])||{}; continue; }
     const g=byName[_rbNormName(rr.name)]||{};
+    // The season in progress has no graded line yet: read the lineman's own OL card
+    // (newest graded season) so the fan and his card say the same letter.
+    const card=(!g.run_grade || !g.pass_grade) ? _rbOlCardRec(rr.name) : null;
     out[sl]={
       name:rr.name,
-      run_grade:g.run_grade||null,
-      pass_grade:g.pass_grade||null,
-      pass_snaps:g.pass_snaps!=null?Number(g.pass_snaps):null,
+      run_grade:g.run_grade||(card&&card.run_grade)||null,
+      pass_grade:g.pass_grade||(card&&card.pass_grade)||null,
+      pass_snaps:g.pass_snaps!=null?Number(g.pass_snaps):(card&&card.pass_snaps!=null?Number(card.pass_snaps):null),
     };
   }
   return out;
@@ -9594,6 +9674,7 @@ function _rbFanSVG(chart, playerName, season, metric, notePlayer){
   parts.push(`<text x="30" y="${G.subcopyY}" fill="#9aa0a6" font-size="${G.subcopySize}">Arrow width = lane success rate · arrow color = ${chart.is_projection?'projected lane YPC vs league lane average':'lane YPC vs league lane average'}</text>`);
 
   const MET = RB_LANE_METRICS[metric] || RB_LANE_METRICS.eff;
+  const minLaneAtt = (chart._game!=null || (typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season))) ? 1 : 3;
   let MAXV=0;
   if(MET.key){ for(const k in lanes){ const v=lanes[k]&&lanes[k][MET.key]; if(v!=null && +v>MAXV) MAXV=+v; } }
   const laneOffsetMap = mobileNarrow
@@ -9602,7 +9683,9 @@ function _rbFanSVG(chart, playerName, season, metric, notePlayer){
   for(let li=0; li<RB_FAN_LANES.length; li++){
     const lane = RB_FAN_LANES[li];
     const d=lanes[lane];
-    if(!d || (+d.attempts||0)<3) continue;
+    // A full season hides gaps with a couple of carries (noise); the season in progress
+    // and a single game show every lane he ran through — that IS the game.
+    if(!d || (+d.attempts||0)<minLaneAtt) continue;
     const cx=G.arrowX[lane];
     const laneOffset = laneOffsetMap[lane] || 0;
     const tipY = G.arrowTopY + laneOffset;
@@ -9694,7 +9777,8 @@ function renderPcardRbFan(pid){
   // Offseason: the projection leads. In-season: the live season leads, the projection second.
   if(projChart){
     const liveFirst = seasonOpts.length && typeof tcIsLiveSeason==='function' && tcIsLiveSeason(seasonOpts[0]);
-    seasonOpts.splice(liveFirst?1:0, 0, RB_PROJ_KEY);
+    // Once the season in progress has real carries the projection is offseason context.
+    if(!liveFirst) seasonOpts.splice(0, 0, RB_PROJ_KEY);
   }
   if(!seasonOpts.length) return '<div class="pcard-loading">No rushing-fan data for this RB.</div>';
   if(pcardRbFanSeason==null || !seasonOpts.includes(String(pcardRbFanSeason))) pcardRbFanSeason=seasonOpts[0];
@@ -9712,7 +9796,8 @@ function renderPcardRbFan(pid){
         { league_ypc:((chart.lanes||{})[lane]||{}).league_ypc });
     }
     chart=Object.assign({}, chart, { lanes,
-      attempts:_game.attempts, yards:_game.yards, ypc:_game.ypc, _game:_game.wk });
+      attempts:_game.attempts, yards:_game.yards, ypc:_game.ypc, _game:_game.wk,
+      totals:Object.assign({}, chart.totals||{}, {attempts:_game.attempts, yards:_game.yards, ypc:_game.ypc, success_rate:null, rk:_game.rk||{}}) });
   }
   const pack=NFLVERSE[season]||{};
   const teamCode=_rbTeamCode(chart.team||'');
@@ -9730,7 +9815,7 @@ function renderPcardRbFan(pid){
   const noteCtx = (_rbIsProjSeason(season) && chart.is_projection) ? `${_rbProjYear()} projection rushing fan` : `${season} rushing fan`;
   const t=chart.totals||{};
   const seasonBtns=seasonOpts.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardRbFanSeason('${s}')">${_rbIsProjSeason(s)?_rbProjYear()+' proj':(typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s)}</button>`).join('')
-    + (_games ? _pcardGameChips('rbfan', _games, _selWk) : '');
+    + (_games ? _pcardGameChips('rbfan', _games, _selWk, chart.team) : '');
   if(!RB_LANE_METRICS[pcardRbMetric]) pcardRbMetric='eff';
   let metric=pcardRbMetric;
   if(!_rbMetricKnown(chart, metric)) metric='eff';   // older seed without per-gap yards/TD
@@ -9745,7 +9830,7 @@ function renderPcardRbFan(pid){
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns}</div>
       <div class="rt-metrics">${metricBtns}</div>
-      <div class="rt-summary">${noteWrapHtml(`${t.attempts||0} carries`, { label:'Carries', value:String(t.attempts||0), source:'rb_rushing_fan', statKey:'attempts', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.ypc,2)} YPC`, { label:'Yards Per Carry', value:_rbNum(t.ypc,2), source:'rb_rushing_fan', statKey:'ypc', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.success_rate,1)}% success`, { label:'Success Rate', value:`${_rbNum(t.success_rate,1)}%`, source:'rb_rushing_fan', statKey:'success_rate', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} ${(typeof tcInfoBtn==='function')?tcInfoBtn('rbfan','Reading this chart'):''}</div>
+      <div class="rt-summary">${noteWrapHtml(`${t.attempts||0} carries`, { label:'Carries', value:String(t.attempts||0), source:'rb_rushing_fan', statKey:'attempts', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.ypc,2)} YPC`, { label:'Yards Per Carry', value:_rbNum(t.ypc,2), source:'rb_rushing_fan', statKey:'ypc', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}${(typeof pcardRankTag==='function')?pcardRankTag(t.rk||{},'ypc'):''} · ${noteWrapHtml(`${_rbNum(t.success_rate,1)}% success`, { label:'Success Rate', value:`${_rbNum(t.success_rate,1)}%`, source:'rb_rushing_fan', statKey:'success_rate', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} ${(typeof tcInfoBtn==='function')?tcInfoBtn('rbfan','Reading this chart'):''}</div>
     </div>
     ${runSc.score!=null || runSc.rank!=null ? `<div class="olc-overview">${noteWrapHtml(`<b>Cumulative Run Blocking Score: ${runSc.score!=null?runSc.score.toFixed(1):'—'}</b> ${_rbRankBadge(runSc.rank)}`, { label:'Cumulative Run Blocking Score', value:runSc.score!=null?runSc.score.toFixed(1):'—', source:'rb_offensive_line', statKey:'run_blocking_score', context:`${chart.team||notePlayer.team} offensive line · ${(_rbIsProjSeason(season) && chart.is_projection)?`${_rbProjYear()} projections`:`${season}`}`, team:chart.team||notePlayer.team, relevance:'RB' }, 'note-tag-hit')}</div>` : ''}
     ${chart.is_projection?`<div class="olc-overview"><b>${_rbProjYear()} projection</b> · projected starters drive the line${chart.baseline_run_rank!=null?` (${chart.baselineSeason}: #${chart.baseline_run_rank})`:''}</div>${typeof _olProjCoverageNote==='function'?_olProjCoverageNote():''}`:''}
@@ -9844,6 +9929,11 @@ function pcardNgsStrip(kind, norm, season, selWk){
   const line = (selWk!=null) ? (node.games||[]).find(g=>g.wk===Number(selWk)) : (node.season && Object.keys(node.season).length ? node.season : null);
   if(!line) return '';
   const med=lg[kind]||{};
+  const notePlayer=(typeof noteTargetFromArgs==='function' && typeof pcardState!=='undefined' && pcardState)
+    ? noteTargetFromArgs(pcardState.pid, pcardState.posc, pcardState.team) : null;
+  const ctx=`${season} Next Gen Stats${selWk!=null?` · week ${selWk}`:''}`;
+  const wrap=(html, label, val, k)=>(typeof noteWrapHtml==='function')
+    ? noteWrapHtml(html, {label, value:val, source:'ngs_live', statKey:k, context:ctx, player:notePlayer, team:(notePlayer&&notePlayer.team)||node.team||''}, 'note-tag-hit') : html;
   const tiles=NGS_TILES[kind].map(([k,label,dir,unit,tip])=>{
     const v=line[k];
     if(v==null) return '';
@@ -9854,7 +9944,7 @@ function pcardNgsStrip(kind, norm, season, selWk){
       const good = dir==='hi' ? d>0 : d<0;
       cls = Math.abs(d)<1e-9 ? '' : (good ? 'ngs-good' : 'ngs-bad');
     }
-    return `<div class="qpc-tile ngs-tile ${cls}" title="${escAttr(tip)}"><label>${label}</label><b>${_ngsFmt(v,unit)}</b>${m!=null?`<small>lg ${_ngsFmt(m,unit)}</small>`:''}</div>`;
+    return `<div class="qpc-tile ngs-tile ${cls}" title="${escAttr(tip)}"><label>${label}</label><b>${wrap(_ngsFmt(v,unit), label, _ngsFmt(v,unit), k)}</b>${m!=null?`<small>lg ${_ngsFmt(m,unit)}</small>`:''}${(typeof pcardRankTag==='function')?pcardRankTag(line.rk||{}, k):''}</div>`;
   }).join('');
   if(!tiles) return '';
   const scope = selWk!=null ? `Wk ${selWk}` : 'season';
@@ -10382,6 +10472,15 @@ function _olPlayerMetaByName(season, teamCode){
   return out;
 }
 
+function _olPlayerMetaLatest(){
+  const out={};
+  const seasons=Object.keys(NFLVERSE||{}).filter(s=>NFLVERSE[s]&&NFLVERSE[s].ol_players).sort((a,b)=>b-a);
+  for(const s of seasons){
+    const pl=NFLVERSE[s].ol_players||{};
+    for(const k in pl){ const nm=_olNormName((pl[k]||{}).name); if(nm && !out[nm]) out[nm]=pl[k]; }
+  }
+  return out;
+}
 function _olLineByTeamSeason(season, teamCode){
   const pack=(NFLVERSE&&NFLVERSE[String(season)])||{};
 
@@ -10404,9 +10503,12 @@ function _olLineByTeamSeason(season, teamCode){
         };
       }
       const metaByName=_olPlayerMetaByName(season, teamCode);
+      // The season in progress has no graded OL block yet: each lineman's own card
+      // (newest graded season) supplies the letter, so the tab matches the card.
+      const metaLatest=_olPlayerMetaLatest();
       for(const sl of ['LT','LG','C','RG','RT']){
         const cur=out[sl]; if(!cur || !cur.name) continue;
-        const m=metaByName[_olNormName(cur.name)]||{};
+        const m=metaByName[_olNormName(cur.name)]||metaLatest[_olNormName(cur.name)]||{};
         out[sl]={
           name:cur.name,
           run_grade:cur.run_grade||m.run_grade||null,

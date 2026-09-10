@@ -561,3 +561,16 @@ tr.pcard-future-row td{opacity:.75;}
 .tt-badge{font-size:10px;font-weight:800;letter-spacing:.06em;color:var(--warn);
   border:1px solid var(--warn);border-radius:7px;padding:2px 8px;cursor:help;}
 .tt-sub{font-size:11.5px;font-weight:700;color:var(--muted2);}
+/* Game picker (Season ▾ / WK 1 @ SEA + logo) on the live charts */
+.rt-gamepick{position:relative;display:inline-block;margin-left:4px;}
+.rt-gp-btn{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;font-size:10.5px;font-weight:800;letter-spacing:.03em;cursor:pointer;
+  background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;}
+.rt-gp-btn:hover{border-color:var(--accent);}
+.rt-gp-caret{font-size:9px;color:var(--muted);}
+.rt-gp-logo{width:15px;height:15px;object-fit:contain;vertical-align:middle;}
+.rt-gp-menu{display:none;position:absolute;left:0;top:calc(100% + 4px);z-index:40;min-width:150px;padding:4px;
+  background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.4);}
+.rt-gamepick.open .rt-gp-menu{display:block;}
+.rt-gp-opt{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 9px;border-radius:6px;font-size:11px;font-weight:700;color:var(--text);cursor:pointer;white-space:nowrap;}
+.rt-gp-opt:hover{background:var(--surface2);}
+.rt-gp-opt.active{color:var(--accent);}

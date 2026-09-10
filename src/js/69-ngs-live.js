@@ -52,6 +52,11 @@ function pcardNgsStrip(kind, norm, season, selWk){
   const line = (selWk!=null) ? (node.games||[]).find(g=>g.wk===Number(selWk)) : (node.season && Object.keys(node.season).length ? node.season : null);
   if(!line) return '';
   const med=lg[kind]||{};
+  const notePlayer=(typeof noteTargetFromArgs==='function' && typeof pcardState!=='undefined' && pcardState)
+    ? noteTargetFromArgs(pcardState.pid, pcardState.posc, pcardState.team) : null;
+  const ctx=`${season} Next Gen Stats${selWk!=null?` · week ${selWk}`:''}`;
+  const wrap=(html, label, val, k)=>(typeof noteWrapHtml==='function')
+    ? noteWrapHtml(html, {label, value:val, source:'ngs_live', statKey:k, context:ctx, player:notePlayer, team:(notePlayer&&notePlayer.team)||node.team||''}, 'note-tag-hit') : html;
   const tiles=NGS_TILES[kind].map(([k,label,dir,unit,tip])=>{
     const v=line[k];
     if(v==null) return '';
@@ -62,7 +67,7 @@ function pcardNgsStrip(kind, norm, season, selWk){
       const good = dir==='hi' ? d>0 : d<0;
       cls = Math.abs(d)<1e-9 ? '' : (good ? 'ngs-good' : 'ngs-bad');
     }
-    return `<div class="qpc-tile ngs-tile ${cls}" title="${escAttr(tip)}"><label>${label}</label><b>${_ngsFmt(v,unit)}</b>${m!=null?`<small>lg ${_ngsFmt(m,unit)}</small>`:''}</div>`;
+    return `<div class="qpc-tile ngs-tile ${cls}" title="${escAttr(tip)}"><label>${label}</label><b>${wrap(_ngsFmt(v,unit), label, _ngsFmt(v,unit), k)}</b>${m!=null?`<small>lg ${_ngsFmt(m,unit)}</small>`:''}${(typeof pcardRankTag==='function')?pcardRankTag(line.rk||{}, k):''}</div>`;
   }).join('');
   if(!tiles) return '';
   const scope = selWk!=null ? `Wk ${selWk}` : 'season';
