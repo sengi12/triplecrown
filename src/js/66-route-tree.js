@@ -83,18 +83,99 @@ function _fmtRouteMetricValue(v, metric){
   return `${n}${m.unit}`;
 }
 
-// Seasons (desc) for which this player has a baked route tree.
+// Seasons (desc) for which this player has a baked route tree — plus the live
+// season when the sidecar carries his TARGET tree (route labels are FTN's
+// commercial product and only reach the open data post-season; the target tree
+// is the free in-season view of where his targets actually went).
 function pcardRouteSeasons(normName){
   if(typeof NFLVERSE==='undefined' || !NFLVERSE) return [];
-  return Object.keys(NFLVERSE)
-    .filter(s=>{ const r=NFLVERSE[s]&&NFLVERSE[s].routes; return r && r[normName]; })
-    .sort((a,b)=>b-a);
+  const out=Object.keys(NFLVERSE)
+    .filter(s=>{ const r=NFLVERSE[s]&&NFLVERSE[s].routes; return r && r[normName]; });
+  const live=(typeof TC_SEASON!=='undefined')?String(TC_SEASON.year):null;
+  if(live && !out.includes(live) && _pcardTargetNode(normName, live)) out.push(live);
+  return out.sort((a,b)=>b-a);
+}
+function _pcardTargetNode(normName, season){
+  const blk=(typeof NFLVERSE!=='undefined' && NFLVERSE[String(season)] && NFLVERSE[String(season)].target_trees)||null;
+  return (blk && blk.players && blk.players[normName]) || null;
+}
+function _pcardTargetLg(season){
+  const blk=(typeof NFLVERSE!=='undefined' && NFLVERSE[String(season)] && NFLVERSE[String(season)].target_trees)||null;
+  return (blk && blk.lg) || {};
+}
+// ── The target tree, drawn in the QB chart's visual language ────────────────
+const _TT_DEPTHS=[['deep','DEEP 20+'],['inter','INTERMEDIATE 10–19'],['short','SHORT 0–9'],['behind','BEHIND LOS']];
+const _TT_LOCS=[['left','LEFT'],['middle','MIDDLE'],['right','RIGHT']];
+function _ttView(node, selWk){
+  if(selWk!=null){
+    const g=(node.games||[]).find(x=>x.wk===selWk);
+    if(g) return { zones:g.zones||{}, tgt:g.tgt, rec:g.rec, yds:g.yds, td:g.td,
+                   label:`Week ${g.wk}${g.opp?` · ${g.opp}`:''}` };
+  }
+  const se=node.season||{};
+  return { zones:se.zones||{}, tgt:se.tgt, rec:se.rec, yds:se.yds, td:se.td, label:'Season to date' };
+}
+function _renderTargetTree(pid, node, season){
+  const norm=_pcardNorm(pid);
+  const games=(node.games||[]).length>1 ? node.games : null;
+  const selWk=games ? (pcardChartGame.routes!=null?pcardChartGame.routes:null) : null;
+  const v=_ttView(node, selWk);
+  const lg=_pcardTargetLg(season);
+  const maxYds=Math.max(1, ..._TT_DEPTHS.flatMap(([d])=>_TT_LOCS.map(([l])=>((v.zones[d]||{})[l]||{}).yds||0)));
+  const W=352, H=308, CW=104, CH=64, X0=28, Y0=10;
+  const cells=[];
+  _TT_DEPTHS.forEach(([d,dl],ri)=>{
+    _TT_LOCS.forEach(([l],ci)=>{
+      const x=X0+ci*(CW+6), y=Y0+ri*(CH+6);
+      const z=(v.zones[d]||{})[l];
+      const heat=z ? 0.14+0.66*((z.yds||0)/maxYds) : 0.05;
+      const cr=z && z.tgt ? (z.rec/z.tgt*100) : null;
+      const lgCr=lg[`${d}-${l}`];
+      const crCls=(cr!=null && lgCr!=null) ? (cr>=lgCr ? 'var(--success)' : 'var(--danger)') : 'var(--muted)';
+      cells.push(`<rect x="${x}" y="${y}" width="${CW}" height="${CH}" rx="7"
+        fill="var(--accent)" fill-opacity="${z?heat.toFixed(2):0.04}" stroke="var(--border)"/>`);
+      if(z){
+        cells.push(`<text x="${x+CW/2}" y="${y+20}" text-anchor="middle" font-size="13" font-weight="800" fill="var(--text)">${z.tgt} TGT${z.td?` · ${z.td} TD`:''}</text>`);
+        cells.push(`<text x="${x+CW/2}" y="${y+37}" text-anchor="middle" font-size="11" fill="var(--muted2)">${z.rec} rec · ${z.yds} yds</text>`);
+        cells.push(`<text x="${x+CW/2}" y="${y+53}" text-anchor="middle" font-size="10.5" font-weight="700" fill="${crCls}">${cr!=null?Math.round(cr)+'% catch':''}${(cr!=null&&lgCr!=null)?` (lg ${Math.round(lgCr)})`:''}</text>`);
+      } else {
+        cells.push(`<text x="${x+CW/2}" y="${y+CH/2+4}" text-anchor="middle" font-size="10" fill="var(--muted)">—</text>`);
+      }
+    });
+    cells.push(`<text x="${X0-6}" y="${Y0+ri*(CH+6)+CH/2+3}" text-anchor="end" font-size="8.5" font-weight="800" letter-spacing="1" fill="var(--muted)" transform="rotate(-90 ${X0-14} ${Y0+ri*(CH+6)+CH/2})">${dl.split(' ')[0]}</text>`);
+  });
+  // line of scrimmage between SHORT and BEHIND
+  const losY=Y0+3*(CH+6)-3;
+  cells.push(`<line x1="${X0}" y1="${losY}" x2="${X0+3*CW+12}" y2="${losY}" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="6 4"/>`);
+  cells.push(`<text x="${X0+3*CW+10}" y="${losY-4}" text-anchor="end" font-size="8" font-weight="800" fill="var(--warn)">LOS</text>`);
+  const colHeads=_TT_LOCS.map(([l,ll],ci)=>`<text x="${X0+ci*(CW+6)+CW/2}" y="${H-8}" text-anchor="middle" font-size="9" font-weight="800" letter-spacing="1.2" fill="var(--muted)">${ll}</text>`).join('');
+  const chips=games?_pcardGameChips('routes', games, selWk):'';
+  const cr=v.tgt?Math.round(v.rec/v.tgt*100):null;
+  return `<div class="rt-wrap">
+    <div class="rt-head">
+      <span class="tt-badge" title="True route labels are charted by FTN and publish after the season — this is where his targets actually went, live from nightly play-by-play. It can't see routes that weren't targeted.">◉ TARGET CHART · live</span>
+      <span class="tt-sub">${escHtml(v.label)}</span>
+    </div>
+    ${chips}
+    <svg viewBox="0 0 ${W} ${H}" class="qpc-svg" role="img" aria-label="Target chart">${cells.join('')}${colHeads}</svg>
+    <div class="qpc-legend"><span><i style="background:var(--accent);opacity:.8"></i>heat = yardage from that zone</span>
+      <span style="color:var(--success)">catch% ≥ league</span><span style="color:var(--danger)">below league</span></div>
+    <div class="qpc-totals">
+      <div class="qpc-tile"><label>Targets</label><b>${v.tgt!=null?v.tgt:'—'}</b></div>
+      <div class="qpc-tile"><label>Receptions</label><b>${v.rec!=null?v.rec:'—'}</b></div>
+      <div class="qpc-tile"><label>Yards</label><b>${v.yds!=null?v.yds:'—'}</b></div>
+      <div class="qpc-tile"><label>TD</label><b>${v.td!=null?v.td:'—'}</b></div>
+      <div class="qpc-tile"><label>Catch %</label><b>${cr!=null?cr+'%':'—'}</b></div>
+    </div>
+    <div class="pcard-src">Targets via nflverse play-by-play, nightly · true route trees arrive with the post-season participation release.</div>
+  </div>`;
 }
 function _pcardNorm(pid){
   const p=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[pid])||{};
   return ecrNormName(p.name||'');
 }
-// Does the player have any baked route data? (gates the Routes tab).
+// Does the player have any baked route data — true trees OR the live target
+// tree? (gates the Routes tab; rookies qualify from their first game).
 function pcardRoutesAvailable(pid){
   return pcardRouteSeasons(_pcardNorm(pid)).length>0;
 }
@@ -322,6 +403,17 @@ function renderPcardRoutes(pid){
   if(!seasons.length) return `<div class="pcard-loading">No route data for this player.</div>`;
   if(pcardRouteSeason==null || !seasons.includes(String(pcardRouteSeason))) pcardRouteSeason=seasons[0];
   _pcardGameReset(norm);
+  // Live season without true route labels → the professional stand-in: the
+  // target chart (drawn in the QB zone chart's visual language).
+  const _seasonBlk=NFLVERSE[pcardRouteSeason]||{};
+  if(!( _seasonBlk.routes && _seasonBlk.routes[norm])){
+    const tn=_pcardTargetNode(norm, pcardRouteSeason);
+    if(tn){
+      const seasonBtns0=seasons.map(s=>`<button class="rt-season-btn ${String(s)===String(pcardRouteSeason)?'active':''}" onclick="setPcardRouteSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('');
+      return `<div class="rt-seasons">${seasonBtns0}</div>`+_renderTargetTree(pid, tn, pcardRouteSeason);
+    }
+    return `<div class="pcard-loading">No route data for this season.</div>`;
+  }
   const _games=pcardWeeklyGames('routes_weekly', norm, pcardRouteSeason);
   const _selWk=_games ? pcardChartGame.routes : null;
   const _game=_games && _selWk!=null ? _games.find(g=>g.wk===_selWk) : null;

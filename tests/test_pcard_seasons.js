@@ -27,6 +27,7 @@ const app=new Function(code+`
   pcardToken=1; pcardOpen=true;
   return { pcardEligibleSeasons, loadSleeperCareerStats, pcardSelectSeason, rbReceivingQualifies,
     pcardWeeklyGames, _routeGameAsSeason, _pcardGameChips, setPcardChartGame,
+    pcardRouteSeasons, _renderTargetTree, _ttView, _pcardTargetNode,
     getChartGame:()=>pcardChartGame, setNflverse:(n)=>{NFLVERSE=n;},
     pcardAppendFutureWeeks, pcardSeasonRows, renderPcardSeason,
     _cfbCareerRow, _CFB_SEASON_COLS, renderCfbProspect,
@@ -126,6 +127,26 @@ app.setPcardChartGame('routes', 1);
 chk(app.getChartGame().routes===1, 'selecting a game sticks');
 app.setPcardChartGame('routes', '');
 chk(app.getChartGame().routes===null, 'and Season clears it');
+
+console.log('\n=== the target chart: the free in-season route view ===');
+app.TC_SEASON.year=2026; app.TC_SEASON.phase='regular'; app.TC_SEASON.week=1;
+const jsnNode={pos:'WR',team:'SEA',
+  season:{tgt:11,rec:8,yds:122,td:1,zones:{short:{left:{tgt:3,rec:2,yds:56,td:1}}}},
+  games:[{wk:1,opp:'NE',tgt:11,rec:8,yds:122,td:1,zones:{short:{left:{tgt:3,rec:2,yds:56,td:1}}}},
+         {wk:2,opp:'PIT',tgt:6,rec:4,yds:48,td:0,zones:{inter:{right:{tgt:2,rec:1,yds:22,td:0}}}}]};
+app.setNflverse({'2026':{target_trees:{players:{'jsn':jsnNode},lg:{'short-left':84.6}}},
+                 '2024':{routes:{'jsn':{tree:{GO:5}}}}});
+chk(app.pcardRouteSeasons('jsn').includes('2026'),
+    'the live season joins the Routes strip on target data alone (rookies get the tab)');
+chk(app.pcardRouteSeasons('jsn')[0]==='2026', 'and leads it');
+const tt=app._renderTargetTree('pid1', jsnNode, '2026');
+chk(/TARGET CHART · live/.test(tt), 'the badge says exactly what this is');
+chk(/11 TGT|11<\/b>/.test(tt) && /122/.test(tt), 'season totals ride the tiles');
+chk(/lg 85|lg 84/.test(tt), 'zone catch rates read against the league baseline');
+chk(/Wk2 PIT/.test(tt), 'per-game chips appear with two-plus games');
+const v=app._ttView(jsnNode, 2);
+chk(v.tgt===6 && /PIT/.test(v.label), 'selecting a game narrows the view to that game');
+chk(app._ttView(jsnNode, null).label==='Season to date', 'no selection = season to date');
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);

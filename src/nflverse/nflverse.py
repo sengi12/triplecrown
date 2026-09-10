@@ -2102,6 +2102,145 @@ def routes_weekly(season, min_routes_game=3):
     return out
 
 
+def scheme_weekly(season):
+    """Per-team per-GAME scheme summaries — the LIVE game-plan card. Built from
+    what actually updates during the season: pbp (nightly: pass rate, shotgun,
+    down splits) enriched by FTN charting (48h after each game: qb_location ×
+    backfield-count formation proxy, motion / play-action / RPO / screen, box
+    counts). True personnel groupings (11/12/21) and route names exist only in
+    the POST-season participation drop, so they are deliberately absent here —
+    the full coaching_scheme explorer backfills them in February.
+    {TEAM:{games:[{wk,opp,plays,pass_rate,shotgun_rate,motion_rate,pa_rate,
+    rpo_rate,screen_rate,box_avg,formations:{'shotgun-1':n,...}}]}}."""
+    pbp = _load_pbp(season, [
+        "game_id", "play_id", "posteam", "defteam", "week", "play_type",
+        "pass", "shotgun", "season_type",
+    ])
+    pbp = pbp[(pbp["season_type"] == "REG") & pbp["play_type"].isin(["pass", "run"])
+              & pbp["posteam"].notna()].copy()
+    if pbp.empty:
+        return {}
+    try:
+        ftn = _aux_csv(FTN_URL.format(season=season),
+                       usecols=["nflverse_game_id", "nflverse_play_id", "qb_location",
+                                "n_offense_backfield", "n_defense_box", "is_motion",
+                                "is_play_action", "is_rpo", "is_screen_pass"])
+        d = pbp.merge(ftn, left_on=["game_id", "play_id"],
+                      right_on=["nflverse_game_id", "nflverse_play_id"], how="left")
+    except Exception:
+        d = pbp
+        for c in ("qb_location", "n_offense_backfield", "n_defense_box",
+                  "is_motion", "is_play_action", "is_rpo", "is_screen_pass"):
+            d[c] = None
+    d["posteam"] = d["posteam"].replace(NFLVERSE_TO_SEED)
+    d["defteam"] = d["defteam"].replace(NFLVERSE_TO_SEED)
+    out = {}
+    for (tm, wk), g in d.groupby(["posteam", "week"]):
+        def _rate(col):
+            v = pd.to_numeric(g[col], errors="coerce") if col in g.columns else None
+            return (round(float(v.mean() * 100), 1)
+                    if v is not None and v.notna().any() else None)
+        forms = {}
+        if g["qb_location"].notna().any():
+            fk = (g["qb_location"].fillna("?").astype(str).str.lower() + "-"
+                  + pd.to_numeric(g["n_offense_backfield"], errors="coerce")
+                    .fillna(-1).astype(int).astype(str))
+            for k, v in fk.value_counts().items():
+                if not k.startswith("?") and not k.endswith("--1"):
+                    forms[str(k)] = int(v)
+        box = pd.to_numeric(g["n_defense_box"], errors="coerce")
+        node = out.setdefault(str(tm), {"games": []})
+        node["games"].append({
+            "wk": int(wk),
+            "opp": (g["defteam"].mode().iloc[0] if len(g["defteam"].mode()) else None),
+            "plays": int(len(g)),
+            "pass_rate": round(float(g["pass"].mean() * 100), 1),
+            "shotgun_rate": round(float(g["shotgun"].mean() * 100), 1),
+            "motion_rate": _rate("is_motion"),
+            "pa_rate": _rate("is_play_action"),
+            "rpo_rate": _rate("is_rpo"),
+            "screen_rate": _rate("is_screen_pass"),
+            "box_avg": (round(float(box.mean()), 1) if box.notna().any() else None),
+            "formations": dict(sorted(forms.items(), key=lambda kv: -kv[1])[:8]),
+        })
+    for node in out.values():
+        node["games"].sort(key=lambda x: x["wk"])
+    return out
+
+
+def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
+    """Per-receiver TARGET trees from pbp alone — the free, in-season stand-in
+    for route trees (route LABELS are FTN's commercial product and reach the
+    open participation file only after the post-season). A target tree is the
+    same 12-zone cut the QB chart uses — left/middle/right × behind/short/
+    inter/deep — per GAME and summed for the season, with league catch rates
+    per zone as the baseline. It can't see routes that weren't targeted, and
+    the UI says so; February's participation drop upgrades the season to true
+    route trees retroactively.
+    Returns {"players":{name:{pos,team,season:{zones,tgt,rec,yds,td},
+    games:[{wk,opp,tgt,rec,yds,td,zones}]}}, "lg":{zone:"catch_pct"}}."""
+    pbp = _load_pbp(season, [
+        "season_type", "week", "posteam", "defteam", "receiver_player_id",
+        "pass_attempt", "complete_pass", "air_yards", "pass_location",
+        "receiving_yards", "pass_touchdown", "two_point_attempt",
+    ])
+    t = pbp[(pbp["season_type"] == "REG") & (pbp["pass_attempt"] == 1)
+            & (pbp["two_point_attempt"] == 0) & pbp["receiver_player_id"].notna()
+            & pbp["pass_location"].notna()].copy()
+    if t.empty:
+        return {}
+    t["posteam"] = t["posteam"].replace(NFLVERSE_TO_SEED)
+    t["defteam"] = t["defteam"].replace(NFLVERSE_TO_SEED)
+    t["depth"] = pd.cut(t["air_yards"], bins=[-100, -0.5, 9.5, 19.5, 100],
+                        labels=["behind", "short", "inter", "deep"])
+    names, pos = _name_map(season), _pos_map(season)
+    lg = {}
+    for (depth, loc), z in t.groupby(["depth", "pass_location"], observed=True):
+        if len(z):
+            lg[f"{depth}-{loc}"] = round(float(z["complete_pass"].mean() * 100), 1)
+
+    def _zones(frame):
+        zones = {}
+        for (depth, loc), z in frame.groupby(["depth", "pass_location"], observed=True):
+            if not len(z):
+                continue
+            zones.setdefault(str(depth), {})[str(loc)] = {
+                "tgt": int(len(z)), "rec": int(z["complete_pass"].sum()),
+                "yds": int(z["receiving_yards"].fillna(0).sum()),
+                "td": int(z["pass_touchdown"].sum()),
+            }
+        return zones
+
+    players = {}
+    for rid, g in t.groupby("receiver_player_id"):
+        if len(g) < min_targets_season and len(g) < min_targets_game:
+            continue
+        name = names.get(rid)
+        if not name:
+            continue
+        node = {"pos": pos.get(rid),
+                "team": (g["posteam"].mode().iloc[0] if len(g["posteam"].mode()) else None),
+                "season": dict(_zones(g) and {"zones": _zones(g)} or {},
+                               tgt=int(len(g)), rec=int(g["complete_pass"].sum()),
+                               yds=int(g["receiving_yards"].fillna(0).sum()),
+                               td=int(g["pass_touchdown"].sum())),
+                "games": []}
+        for wk, gg in g.groupby("week"):
+            if len(gg) < min_targets_game:
+                continue
+            node["games"].append({
+                "wk": int(wk),
+                "opp": (gg["defteam"].mode().iloc[0] if len(gg["defteam"].mode()) else None),
+                "tgt": int(len(gg)), "rec": int(gg["complete_pass"].sum()),
+                "yds": int(gg["receiving_yards"].fillna(0).sum()),
+                "td": int(gg["pass_touchdown"].sum()),
+                "zones": _zones(gg),
+            })
+        node["games"].sort(key=lambda x: x["wk"])
+        players[name] = node
+    return {"players": players, "lg": lg}
+
+
 def _ol_grades_by_team(season=None):
     """Team/slot → latest OL grades from the local validated grades CSV.
 
