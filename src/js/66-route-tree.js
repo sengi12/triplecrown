@@ -289,8 +289,14 @@ function pcardWeeklyGames(section, norm, season){
 }
 function setPcardChartGame(chartKey, wk){
   pcardChartGame[chartKey] = (wk==='' || wk==null) ? null : Number(wk);
-  if(typeof renderPcardStatsBody==='function') renderPcardStatsBody();
-  else if(typeof rerenderPlayerCard==='function') rerenderPlayerCard();
+  // Same re-render pattern as the season buttons: paint the owning chart back
+  // into the card body (each chart file defines its renderer; call-time is fine
+  // across the concatenated bundle).
+  const body=document.getElementById('pcardBody');
+  if(!body || typeof pcardState==='undefined' || !pcardState) return;
+  if(chartKey==='routes') body.innerHTML=renderPcardRoutes(pcardState.pid);
+  else if(chartKey==='qbpass') body.innerHTML=renderPcardQbPassing(pcardState.pid);
+  else if(chartKey==='rbfan') body.innerHTML=renderPcardRbFan(pcardState.pid);
 }
 function _pcardGameChips(chartKey, games, selWk){
   const chips = [`<button class="rt-game-btn ${selWk==null?'active':''}" onclick="setPcardChartGame('${chartKey}','')">Season</button>`]
