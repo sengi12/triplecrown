@@ -23,7 +23,12 @@ name: Refresh seed data
 
 on:
   schedule:
-    - cron: '0 9 * * *'      # 09:00 UTC daily
+    # Two slots, odd off-peak minutes: GitHub delays on-the-hour crons by hours
+    # under load (the old 09:00 slot fired ~13:25). In-season the morning slot
+    # chases nflverse's nightly pbp build (~04:30-06:00 UTC), so game data is
+    # baked before US mornings; the midday slot is the retry/backstop.
+    - cron: '37 6 * * *'     # ~06:37 UTC nominal (feeds ET mornings in-season)
+    - cron: '17 13 * * *'    # ~13:17 UTC backstop
   workflow_dispatch:
     inputs:
       force:
