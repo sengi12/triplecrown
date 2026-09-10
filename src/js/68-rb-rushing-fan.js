@@ -696,7 +696,7 @@ function renderPcardRbFan(pid){
     }
     chart=Object.assign({}, chart, { lanes,
       attempts:_game.attempts, yards:_game.yards, ypc:_game.ypc, _game:_game.wk,
-      totals:Object.assign({}, chart.totals||{}, {attempts:_game.attempts, yards:_game.yards, ypc:_game.ypc, success_rate:null, rk:_game.rk||{}}) });
+      totals:Object.assign({}, chart.totals||{}, (()=>{ const t={}; for(const k in _game){ if(k!=='lanes' && k!=='wk' && k!=='opp') t[k]=_game[k]; } if(t.success_rate===undefined) t.success_rate=null; t.rk=_game.rk||{}; return t; })()) });
   }
   const pack=NFLVERSE[season]||{};
   const teamCode=_rbTeamCode(chart.team||'');
@@ -739,11 +739,34 @@ function renderPcardRbFan(pid){
       <span><i style="background:#d8a51d"></i>Lane YPC near league avg</span>
       <span><i style="background:#d33b2f"></i>Lane YPC below league avg</span>
     </div>
+    ${(!_rbIsProjSeason(season)) ? _rbMetricTiles(chart, season, notePlayer, _selWk) : ''}
     ${(typeof pcardNgsStrip==='function' && !_rbIsProjSeason(season)) ? pcardNgsStrip('rb', norm, season, _selWk) : ''}
     <div class="pcard-src">Rushing lanes from nflverse run-location/gap charting (regular season).</div>
   </div>`;
 }
 
+// The fantasy line under the fan — the rushing-fan equivalent of the target chart's
+// totals: touchdowns, red-zone / 10-zone / 5-zone carries, first downs, explosive and
+// stuffed runs, EPA, and PFR's contact splits once its weekly file posts. Season or
+// the selected game; every tile taggable, ranked against the league's RBs.
+const RB_METRIC_TILES=[
+  ['attempts','Carries',0],['yards','Yards',0],['td','TD',0],
+  ['rz','RZ carries',0,'Carries inside the 20'],['z10','10-zone',0,'Carries inside the 10'],['z5','5-zone',0,'Carries inside the 5'],
+  ['fd','1st downs',0],['expl','Explosive',0,'Carries of 10+ yards'],['stuff','Stuffed',0,'Carries for no gain or a loss'],
+  ['epa','EPA',1,'Rushing expected points added'],['ybc','YBC',0,'Yards before contact (PFR, posts Tuesdays)'],['yac','YAC',0,'Yards after contact (PFR)'],['brk','Broken tkl',0,'Broken tackles (PFR)'],
+];
+function _rbMetricTiles(chart, season, notePlayer, selWk){
+  const t=chart.totals||{};
+  if(t.rz==null && t.fd==null && t.epa==null) return '';
+  const rk=t.rk||{};
+  const ctx=`${season} rushing fan${selWk!=null?` · week ${selWk}`:''}`;
+  const tiles=RB_METRIC_TILES.map(([k,label,dp,tip])=>{
+    const v=t[k]; if(v==null) return '';
+    const val=dp?(+v).toFixed(dp):String(Math.round(+v));
+    return `<div class="qpc-tile" ${tip?`title="${escAttr(tip)}"`:''}><label>${label}</label><b>${noteWrapHtml(escHtml(val), {label, value:val, source:'rb_rushing_fan', statKey:k, context:ctx, player:notePlayer, team:notePlayer&&notePlayer.team}, 'note-tag-hit')}</b>${(typeof pcardRankTag==='function')?pcardRankTag(rk, k, 'RB'):''}</div>`;
+  }).join('');
+  return tiles ? `<div class="qpc-totals rbf-metrics">${tiles}</div>` : '';
+}
 function setPcardRbFanSeason(season){
   pcardRbFanSeason=season;
   const body=document.getElementById('pcardBody');

@@ -61,7 +61,7 @@ _QB_ZONE_COLS = [
 _RB_FAN_COLS = [
     "season_type", "posteam", "rush_attempt", "qb_scramble", "two_point_attempt",
     "run_location", "run_gap", "yards_gained", "success", "rusher_player_id",
-    "rush_touchdown",
+    "rush_touchdown", "yardline_100", "first_down", "epa", "game_id", "play_id",
 ]
 # nflverse team codes that differ from the seed's codes.
 NFLVERSE_TO_SEED = {"LA": "LAR", "OAK": "LV", "SD": "LAC", "STL": "LAR"}
@@ -2219,6 +2219,7 @@ def rb_fan_weekly(season, min_attempts_game=5):
     if runs.empty:
         return {}
     names = _name_map(season)
+    pfrw = _rb_pfr_week(season)
     out = {}
     for (rid, wk), g in runs.groupby(["rusher_player_id", "week"]):
         if len(g) < min_attempts_game:
@@ -2237,17 +2238,19 @@ def rb_fan_weekly(season, min_attempts_game=5):
             }
         node = out.setdefault(name, {"team": None, "games": []})
         node["team"] = g["posteam"].mode().iloc[0] if len(g["posteam"].mode()) else node["team"]
-        node["games"].append({
+        succ_g = float(g["success"].mean() * 100) if g["success"].notna().any() else None
+        node["games"].append(dict({
             "wk": int(wk),
             "opp": (g["defteam"].mode().iloc[0] if len(g["defteam"].mode()) else None),
             "attempts": int(len(g)),
             "yards": int(g["yards_gained"].sum()),
             "ypc": round(float(g["yards_gained"].mean()), 2),
+            "success_rate": (None if succ_g is None else round(succ_g, 1)),
             "lanes": lanes,
-        })
+        }, **_rb_metric_line(g), **(pfrw.get((rid, int(wk))) or {})))
     for node in out.values():
         node["games"].sort(key=lambda x: x["wk"])
-    _rank_by_week(out.values(), {"attempts": "hi", "yards": "hi", "ypc": "hi"})
+    _rank_by_week(out.values(), _RB_METRIC_RANKS)
     return out
 
 
@@ -2997,6 +3000,73 @@ def defensive_weekly_players(season):
     return out
 
 
+_RB_METRIC_RANKS = {"attempts": "hi", "yards": "hi", "ypc": "hi", "success_rate": "hi", "td": "hi",
+                    "rz": "hi", "z10": "hi", "z5": "hi", "fd": "hi", "expl": "hi", "stuff": "lo",
+                    "epa": "hi", "ybc": "hi", "yac": "hi", "brk": "hi"}
+
+def _rb_metric_line(g):
+    """Per-carry-set fantasy metrics from pbp: touchdowns, red-zone / 10-zone / 5-zone
+    carries (yardline_100 ≤ 20 / 10 / 5), first downs, explosive (10+) and stuffed
+    (≤ 0) carries, rushing EPA. YBC / YAC / broken tackles join from PFR's weekly
+    file when it has posted (_rb_pfr_week)."""
+    yl = pd.to_numeric(g["yardline_100"], errors="coerce") if "yardline_100" in g.columns else None
+    yg = pd.to_numeric(g["yards_gained"], errors="coerce").fillna(0)
+    d = {
+        "td": int(pd.to_numeric(g["rush_touchdown"], errors="coerce").fillna(0).sum()) if "rush_touchdown" in g.columns else 0,
+        "fd": int(pd.to_numeric(g["first_down"], errors="coerce").fillna(0).sum()) if "first_down" in g.columns else 0,
+        "expl": int((yg >= 10).sum()),
+        "stuff": int((yg <= 0).sum()),
+        "epa": round(float(pd.to_numeric(g["epa"], errors="coerce").fillna(0).sum()), 2) if "epa" in g.columns else 0.0,
+    }
+    if yl is not None and yl.notna().any():
+        d["rz"] = int((yl <= 20).sum()); d["z10"] = int((yl <= 10).sum()); d["z5"] = int((yl <= 5).sum())
+    return d
+
+
+_RB_PFR_WEEK = {}
+def _rb_pfr_week(season):
+    """{(gsis, week): {ybc, yac, brk}} from PFR's weekly rushing file (posts Tuesdays)."""
+    if season in _RB_PFR_WEEK:
+        return _RB_PFR_WEEK[season]
+    out = {}
+    try:
+        rw = _aux_parquet(PFR_RUSH_WEEK_URL.format(season=season),
+                          columns=["game_type", "week", "pfr_player_id", "rushing_yards_before_contact",
+                                   "rushing_yards_after_contact", "rushing_broken_tackles"])
+        rw = rw[rw["game_type"] == "REG"]
+        p2g = _pfr_to_gsis_map()
+        for _, r in rw.iterrows():
+            gid = p2g.get(str(r["pfr_player_id"]))
+            if not gid:
+                continue
+            out[(gid, int(r["week"]))] = {
+                "ybc": (None if pd.isna(r["rushing_yards_before_contact"]) else float(r["rushing_yards_before_contact"])),
+                "yac": (None if pd.isna(r["rushing_yards_after_contact"]) else float(r["rushing_yards_after_contact"])),
+                "brk": (None if pd.isna(r["rushing_broken_tackles"]) else int(r["rushing_broken_tackles"])),
+            }
+    except Exception:
+        pass
+    _RB_PFR_WEEK[season] = out
+    return out
+
+
+def _rb_pfr_sum(pfrw, rid, rb):
+    """PFR contact splits summed over the weeks this back carried (None when PFR hasn't posted)."""
+    if not pfrw or "week" not in rb.columns:
+        return {}
+    wks = sorted(set(int(w) for w in pd.to_numeric(rb["week"], errors="coerce").dropna()))
+    rows = [pfrw.get((rid, w)) for w in wks]
+    rows = [r for r in rows if r]
+    if not rows:
+        return {}
+    out = {}
+    for k in ("ybc", "yac", "brk"):
+        vals = [r[k] for r in rows if r.get(k) is not None]
+        if vals:
+            out[k] = (int(sum(vals)) if k == "brk" else round(float(sum(vals)), 1))
+    return out
+
+
 def _rb_lane(loc, gap):
     if loc == "middle":
         return "MID"
@@ -3010,7 +3080,7 @@ def rb_rushing_fans(season, min_attempts=20, min_lane_attempts=3):
 
     Includes lane-level rushing efficiency vs league lane averages plus OL grade cards.
     """
-    pbp = _load_pbp(season, _RB_FAN_COLS)
+    pbp = _load_pbp(season, _RB_FAN_COLS + ["week"])
     runs = pbp[(pbp["season_type"] == "REG") & (pbp["rush_attempt"] == 1)
                & (pbp["qb_scramble"] == 0) & (pbp["two_point_attempt"] == 0)
                & pbp["run_location"].notna() & pbp["rusher_player_id"].notna()].copy()
@@ -3025,6 +3095,7 @@ def rb_rushing_fans(season, min_attempts=20, min_lane_attempts=3):
     lg_lane_ypc = runs.groupby("lane")["yards_gained"].mean().to_dict()
     names = _name_map(season)
     ol_cards = _ol_grades_by_team(season)
+    pfrw = _rb_pfr_week(season)
     out = {}
     for rid, rb in runs.groupby("rusher_player_id"):
         if len(rb) < min_attempts:
@@ -3060,16 +3131,16 @@ def rb_rushing_fans(season, min_attempts=20, min_lane_attempts=3):
         succ = (None if not rb["success"].notna().any() else round(float(rb["success"].mean() * 100), 1))
         out[name] = {
             "team": team,
-            "totals": {
+            "totals": dict({
                 "attempts": att,
                 "yards": yds,
                 "ypc": ypc,
                 "success_rate": succ,
-            },
+            }, **_rb_metric_line(rb), **_rb_pfr_sum(pfrw, rid, rb)),
             "lanes": lanes,
             "line": ol_cards.get(team, {}),
         }
-    _attach_ranks([o["totals"] for o in out.values()], _RB_TOTAL_RANKS)
+    _attach_ranks([o["totals"] for o in out.values()], _RB_METRIC_RANKS)
     return out
 
 # ── Participation-based coverage + personnel (the newly-unlocked charting) ────

@@ -22,6 +22,8 @@ const app=new Function(code+`
     '8':{name:'The Passer',pos:'QB',team:'KC',injury_status:''},
     '9':{name:'Free Back',pos:'RB',team:'SEA',injury_status:''},
     '10':{name:'Free Wideout',pos:'WR',team:'NE',injury_status:''},
+    '11':{name:'Spare Passer',pos:'QB',team:'NE',injury_status:''},
+    '12':{name:'Third Back',pos:'RB',team:'KC',injury_status:''},
   };
   Object.assign(TC_SEASON,{year:2026,phase:'regular',week:2,source:'test'});
   hasSeasonStarted=function(){return true;};
@@ -48,6 +50,8 @@ const app=new Function(code+`
     {player_id:'8',name:'The Passer',pos:'QB',team:'KC',passing_yards:4300,passing_tds:32,interceptions_thrown:9,passing_attempts:560,rushing_yards:200,rushing_tds:2,proj_games:17},
     {player_id:'9',name:'Free Back',pos:'RB',team:'SEA',rushing_attempts:80,rushing_yards:340,rushing_tds:2,receptions:20,receiving_yards:150,receiving_tds:0,proj_games:17},
     {player_id:'10',name:'Free Wideout',pos:'WR',team:'NE',receptions:35,receiving_yards:450,receiving_tds:2,receiving_targets:55,proj_games:17},
+    {player_id:'11',name:'Spare Passer',pos:'QB',team:'NE',passing_yards:4000,passing_tds:28,interceptions_thrown:10,passing_attempts:540,proj_games:17},
+    {player_id:'12',name:'Third Back',pos:'RB',team:'KC',rushing_attempts:60,rushing_yards:250,rushing_tds:1,receptions:10,receiving_yards:80,proj_games:17},
   ];
   buildPlayerList=function(){ return ROWS.map(r=>Object.assign({},r)); };
   if(typeof HISTORY==='undefined' || !HISTORY) HISTORY={}; Object.assign(HISTORY, { '1':{'2025':[{team:'NE',pos:'RB',games_played:16,stats:{rushing_attempts:240,rushing_yards:1050,rushing_tds:8,receptions:38,receiving_yards:280}}]},
@@ -145,10 +149,14 @@ chk(res.mine && res.lineup && res.lineup.opponent==='Rivals', 'finds my roster a
 chk(res.lineup.callouts.some(c=>c.kind==='OBVIOUS' && c.start.id==='1'), 'says to start Star Back');
 chk(res.lineup.callouts.some(c=>c.start && c.start.id==='4' && c.sit && c.sit.id==='3'), 'says to replace the Out wideout');
 chk(res.adds.every(a=>!['8','1','2','3','5','6','7','4'].includes(a.id)), 'adds are unrostered only');
-chk(res.adds.some(a=>a.id==='10') && res.adds.some(a=>a.id==='9'), 'the two free agents are the adds');
+chk(!res.adds.some(a=>a.id==='11'), 'a 1-QB league with a healthy QB never suggests a QB, however many raw points he scores');
 const fw=res.adds.find(a=>a.id==='10');
+chk(fw && fw.drop && fw.drop.id==='2', 'the wideout pickup names the player he replaces: the backup back');
+chk(fw && fw.net>0 && fw.drop.vor!=null && fw.vor>fw.drop.vor, 'and the add is net-positive over replacement');
+chk(!res.adds.some(a=>a.drop && (a.drop.id==='3' || a.drop.id==='4')), 'the Out wideout and the man covering him are protected — never the drop');
 chk(fw && fw.faab && fw.faab.bid>0 && fw.faab.left===88, 'FAAB advice reads the league budget and what I have spent ($88 left)');
-chk(res.drops.length>0 && res.drops[0].p.id==='2' || res.drops.some(d=>d.p.id==='2'), 'the backup back is a drop candidate once he leaves the lineup');
+chk(res.drops.some(d=>d.p.id==='2') && !res.drops.some(d=>d.p.id==='3'), 'drop candidates: the backup back, never the injured starter');
+chk(!res.adds.some(a=>a.id==='12'), 'a third-string back below replacement is not an add');
 chk(res.lineup.optTotal>res.lineup.curTotal, 'optimal beats the set lineup');
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);

@@ -1353,6 +1353,7 @@ html.scheme-locked, html.scheme-locked body{overflow:hidden;overscroll-behavior:
 .hub-bid{flex:0 0 auto;font-family:var(--mono);font-size:12px;font-weight:900;color:var(--text);background:var(--surface3);border-radius:6px;padding:3px 7px;cursor:help;}
 .hub-foot{border-top:1px solid var(--border);padding:7px 12px;font-size:10px;color:var(--muted);display:flex;align-items:center;gap:6px;}
 .hub-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:2px 0 10px;}
+.hub-why-net{background:rgba(0,207,159,.14);color:var(--rb);font-family:var(--mono);}
 /* ── New Additions (Spotrac) ── */
 .add-wrap{display:flex;flex-direction:column;gap:16px;}
 .add-note{padding:11px 14px;background:rgba(61,155,255,.07);border:1px solid rgba(61,155,255,.22);
@@ -14049,7 +14050,7 @@ function renderPcardRbFan(pid){
     }
     chart=Object.assign({}, chart, { lanes,
       attempts:_game.attempts, yards:_game.yards, ypc:_game.ypc, _game:_game.wk,
-      totals:Object.assign({}, chart.totals||{}, {attempts:_game.attempts, yards:_game.yards, ypc:_game.ypc, success_rate:null, rk:_game.rk||{}}) });
+      totals:Object.assign({}, chart.totals||{}, (()=>{ const t={}; for(const k in _game){ if(k!=='lanes' && k!=='wk' && k!=='opp') t[k]=_game[k]; } if(t.success_rate===undefined) t.success_rate=null; t.rk=_game.rk||{}; return t; })()) });
   }
   const pack=NFLVERSE[season]||{};
   const teamCode=_rbTeamCode(chart.team||'');
@@ -14092,11 +14093,34 @@ function renderPcardRbFan(pid){
       <span><i style="background:#d8a51d"></i>Lane YPC near league avg</span>
       <span><i style="background:#d33b2f"></i>Lane YPC below league avg</span>
     </div>
+    ${(!_rbIsProjSeason(season)) ? _rbMetricTiles(chart, season, notePlayer, _selWk) : ''}
     ${(typeof pcardNgsStrip==='function' && !_rbIsProjSeason(season)) ? pcardNgsStrip('rb', norm, season, _selWk) : ''}
     <div class="pcard-src">Rushing lanes from nflverse run-location/gap charting (regular season).</div>
   </div>`;
 }
 
+// The fantasy line under the fan — the rushing-fan equivalent of the target chart's
+// totals: touchdowns, red-zone / 10-zone / 5-zone carries, first downs, explosive and
+// stuffed runs, EPA, and PFR's contact splits once its weekly file posts. Season or
+// the selected game; every tile taggable, ranked against the league's RBs.
+const RB_METRIC_TILES=[
+  ['attempts','Carries',0],['yards','Yards',0],['td','TD',0],
+  ['rz','RZ carries',0,'Carries inside the 20'],['z10','10-zone',0,'Carries inside the 10'],['z5','5-zone',0,'Carries inside the 5'],
+  ['fd','1st downs',0],['expl','Explosive',0,'Carries of 10+ yards'],['stuff','Stuffed',0,'Carries for no gain or a loss'],
+  ['epa','EPA',1,'Rushing expected points added'],['ybc','YBC',0,'Yards before contact (PFR, posts Tuesdays)'],['yac','YAC',0,'Yards after contact (PFR)'],['brk','Broken tkl',0,'Broken tackles (PFR)'],
+];
+function _rbMetricTiles(chart, season, notePlayer, selWk){
+  const t=chart.totals||{};
+  if(t.rz==null && t.fd==null && t.epa==null) return '';
+  const rk=t.rk||{};
+  const ctx=`${season} rushing fan${selWk!=null?` · week ${selWk}`:''}`;
+  const tiles=RB_METRIC_TILES.map(([k,label,dp,tip])=>{
+    const v=t[k]; if(v==null) return '';
+    const val=dp?(+v).toFixed(dp):String(Math.round(+v));
+    return `<div class="qpc-tile" ${tip?`title="${escAttr(tip)}"`:''}><label>${label}</label><b>${noteWrapHtml(escHtml(val), {label, value:val, source:'rb_rushing_fan', statKey:k, context:ctx, player:notePlayer, team:notePlayer&&notePlayer.team}, 'note-tag-hit')}</b>${(typeof pcardRankTag==='function')?pcardRankTag(rk, k, 'RB'):''}</div>`;
+  }).join('');
+  return tiles ? `<div class="qpc-totals rbf-metrics">${tiles}</div>` : '';
+}
 function setPcardRbFanSeason(season){
   pcardRbFanSeason=season;
   const body=document.getElementById('pcardBody');
@@ -36964,6 +36988,7 @@ const HUB_CLOSE = 3;        // lineup.py --close: a swap under this many points 
 const HUB_RANK_CLOSE = 6;   // lineup.py --rank-close: a bench player this close in rank is a call
 const HUB_TOP_ADDS = 6;
 const HUB_TOP_DROPS = 3;
+const HUB_ADD_MIN = 1.0;    // points per game over replacement a pickup must add, net of the drop
 const HUB_LAST_WEEK = 18;   // Sleeper regular season (17 games, 18 weeks)
 const HUB_OUT = { Out:1, IR:1, PUP:1, Sus:1, NA:1, COV:1, DNR:1, Doubtful:1 };
 
@@ -37292,50 +37317,86 @@ function hubAnalyzeLeague(lg, rosters, users, matchups, ctxBase){
               opponent: (()=>{ if(!muRow) return null; const o=(matchups||[]).find(m=>m.matchup_id===muRow.matchup_id && m.roster_id!==muRow.roster_id); if(!o) return null;
                 const r=rosters.find(x=>x.roster_id===o.roster_id); const u=r && (users||[]).find(x=>x.user_id===r.owner_id); return u ? ((u.metadata&&u.metadata.team_name)||u.display_name) : `Roster ${o.roster_id}`; })()};
   }
-  // waivers: unrostered, skill positions, this week's projection under this scoring
+  // ── Waivers, the VOR way ────────────────────────────────────────────────────
+  // A pickup is only worth making when his rest-of-season value OVER REPLACEMENT
+  // beats the rest-of-season value of the player he would push off the roster —
+  // in this league's scoring, for this roster's shape. Raw points would put a QB3
+  // at the top of every 1-QB league; replacement level (what is freely available
+  // at the position) is what makes the comparison honest, and the protected set
+  // (this week's optimal lineup + the rest-of-season optimal lineup) is what keeps
+  // the helper from dropping the only healthy TE while the TE1 sits on IR.
   const rostered = new Set(); rosters.forEach(r=>(r.players||[]).forEach(p=>rostered.add(String(p))));
+  const superflex = (typeof leagueIsSuperflex==='function') ? leagueIsSuperflex(lg.roster_positions||[]) : (lg.roster_positions||[]).includes('SUPER_FLEX');
+  const weeksLeft = Math.max(1, 17 - wk + 1);
+  const LONG_OUT = {IR:1, PUP:1, Sus:1, NA:1, COV:1, DNR:1};
+  // rest-of-season per-game value: the same blend as this week, without the one-opponent multiplier
+  const rosPg = (row)=>{
+    const w = hubWeekProj(row, ctxBase);
+    let v = (w.bye || w.out) ? (w.seas!=null && w.gp>=2 ? 0.55*w.base+0.45*w.seas : w.base) : w.adj/(w.defMult||1);
+    if(w.out && LONG_OUT[w.status]) v *= 0.5;     // a long-term absence is half a season, roughly
+    return v;
+  };
+  const pool = {QB:[], RB:[], WR:[], TE:[]};
+  byId.forEach(row=>{ if(!rostered.has(String(row.player_id)) && pool[row.pos]) pool[row.pos].push({row, pg:rosPg(row)}); });
+  const baseline = {};
+  Object.keys(pool).forEach(pos=>{
+    pool[pos].sort((a,b)=>b.pg-a.pg);
+    const k = (pos==='RB'||pos==='WR'||(pos==='QB'&&superflex)) ? 2 : 1;   // the replacement you can actually get
+    // fewer than k+1 available → nobody is freely available after him: replacement is 0
+    baseline[pos] = pool[pos][k] ? pool[pos][k].pg : 0;
+  });
+  const vorOf = (pos, pg)=> pg - (baseline[pos]||0);
   const teammatesByTeam = {};
   byId.forEach(row=>{ const t=String(row.team||'').toUpperCase(); (teammatesByTeam[t]=teammatesByTeam[t]||[]).push(row); });
-  const weeksLeft = Math.max(1, 17 - wk + 1);
-  const cands = [];
-  byId.forEach(row=>{
-    if(rostered.has(String(row.player_id)) || !['QB','RB','WR','TE'].includes(row.pos)) return;
-    const wp = hubWeekProj(row, ctxBase);
-    const perGame = wp.bye||wp.out ? (wp.base||0) : (wp.adj/(wp.defMult||1));
-    if(!(perGame>0.5)) return;
-    const reasons = hubWaiverReasons(row, wp, ctxBase, teammatesByTeam[String(row.team||'').toUpperCase()]);
-    const ros = perGame * weeksLeft;
-    const score = ros * (1 + 0.25*reasons.reduce((a,r)=>a+r.w,0));
-    cands.push({id:String(row.player_id), name:row.name, pos:row.pos, team:row.team, wp, perGame, ros, reasons, score});
-  });
-  cands.sort((a,b)=>b.score-a.score);
-  const adds = cands.slice(0, HUB_TOP_ADDS);
-  // starts over: the weakest starter in MY optimal lineup he could replace
+  let adds = [], drops = [], droppable = [];
   if(lineup){
-    adds.forEach(c=>{
-      const targets = lineup.optimal.filter(f=>f.player && hubEligible({pos:c.pos}, f.slot));
-      const empty = lineup.optimal.find(f=>!f.player && hubEligible({pos:c.pos}, f.slot));
-      if(empty){ c.startsOver={name:'(empty slot)', slot:empty.slot, delta:+c.wp.adj.toFixed(1)}; return; }
-      if(!targets.length) return;
-      const weak = targets.reduce((m,f)=>(!m || f.player.value<m.player.value) ? f : m, null);
-      if(c.wp.adj > weak.player.value) c.startsOver={name:weak.player.name, slot:weak.slot, delta:+(c.wp.adj-weak.player.value).toFixed(1)};
-    });
-  }
-  // drops: bench outside the optimal lineup, weakest first
-  let drops = [];
-  if(lineup){
-    const optIds = new Set(lineup.optimal.filter(f=>f.player).map(f=>f.player.id));
-    // everyone outside the optimal lineup — a starter the swap benches included
-    const seenD = new Set();
-    const outside = Object.values(lineup.current).concat(lineup.bench).filter(b=>!optIds.has(b.id) && !seenD.has(b.id) && seenD.add(b.id));
-    drops = outside.map(b=>{
+    // roster players with a rest-of-season value; the protected set is both optimal lineups
+    const rosterEvals = Object.values(lineup.current).concat(lineup.bench);
+    rosterEvals.forEach(p=>{ const row=byId.get(p.id); p.rosPg = row ? rosPg(row) : (p.wp && p.wp.seas!=null ? p.wp.seas : p.value); p.vor = vorOf(p.pos, p.rosPg); });
+    const rosSorted = rosterEvals.map(p=>Object.assign({}, p, {value:p.rosPg, locked:false, lockedOut:false, unavailable:(p.unavailable && LONG_OUT[p.unavailable]) ? p.unavailable : ''}))
+      .sort((a,b)=>b.value-a.value);
+    const rosOptimal = hubFill(slots, rosSorted, {});
+    const protectedIds = new Set(lineup.optimal.filter(f=>f.player).map(f=>f.player.id).concat(rosOptimal.filter(f=>f.player).map(f=>f.player.id)));
+    droppable = rosterEvals.filter(p=>!protectedIds.has(p.id)).sort((a,b)=>a.vor-b.vor);
+    drops = droppable.slice(0, HUB_TOP_DROPS).map(b=>{
       const reasons=[];
       if(b.unavailable) reasons.push(b.unavailable);
+      reasons.push(`${b.vor>=0?'+':''}${b.vor.toFixed(1)}/gm over replacement`);
       if(b.rank!=null) reasons.push(`${b.pos}${b.rank} projected`);
-      const targets = lineup.optimal.filter(f=>f.player && hubEligible(b, f.slot));
-      if(targets.length){ const weak=targets.reduce((m,f)=>(!m || f.player.value<m.player.value)?f:m,null); reasons.push(`${(weak.player.value-b.value).toFixed(1)} behind ${weak.player.name}`); }
       return {p:b, reasons};
-    }).sort((a,b)=>a.p.value-b.p.value).slice(0, HUB_TOP_DROPS);
+    });
+    // candidates: skill positions; QBs only where the roster actually needs one
+    const healthyQB = rosterEvals.filter(p=>p.pos==='QB' && !p.unavailable).length;
+    const qbSlots = slots.filter(x=>x==='QB').length + (superflex ? 1 : 0);
+    Object.keys(pool).forEach(pos=>{
+      if(pos==='QB' && healthyQB>=qbSlots && !superflex) return;
+      pool[pos].forEach(({row, pg})=>{
+        if(!(pg>0.5)) return;
+        const wp = hubWeekProj(row, ctxBase);
+        const reasons = hubWaiverReasons(row, wp, ctxBase, teammatesByTeam[String(row.team||'').toUpperCase()]);
+        // upside: an opened role or a usage spike is a bigger rest-of-season role than the
+        // projection knows about; a soft schedule or efficiency is a nudge
+        const mult = Math.min(1.5, 1 + reasons.reduce((a,r)=>a+({vacancy:0.25, spike:0.15, schedule:0.05, efficiency:0.05}[r.k]||0), 0));
+        const vor = vorOf(pos, pg*mult);
+        // the drop: the weakest roster player — a same-position one when he is about as weak
+        const weakest = droppable[0]||null;
+        const samePos = droppable.find(d=>d.pos===pos);
+        const drop = (samePos && weakest && samePos.vor <= weakest.vor+0.5) ? samePos : weakest;
+        const net = vor - (drop ? drop.vor : 0);
+        // this week: would he beat the weakest starter he could replace?
+        let startsOver = null;
+        const targets = lineup.optimal.filter(f=>f.player && hubEligible({pos}, f.slot));
+        const empty = lineup.optimal.find(f=>!f.player && hubEligible({pos}, f.slot));
+        if(empty) startsOver = {name:'(empty slot)', slot:empty.slot, delta:+wp.adj.toFixed(1)};
+        else if(targets.length){ const weak=targets.reduce((m,f)=>(!m||f.player.value<m.player.value)?f:m,null); if(wp.adj>weak.player.value) startsOver={name:weak.player.name, slot:weak.slot, delta:+(wp.adj-weak.player.value).toFixed(1)}; }
+        const worth = net >= HUB_ADD_MIN || (startsOver && startsOver.delta>=2 && net>=0);
+        if(!worth || !drop) return;
+        adds.push({id:String(row.player_id), name:row.name, pos, team:row.team, wp, perGame:pg, vor, ros:Math.max(0, vor)*weeksLeft, net, mult, reasons, startsOver, drop,
+                   score: net*weeksLeft + (startsOver ? startsOver.delta : 0)});
+      });
+    });
+    adds.sort((a,b)=>b.score-a.score);
+    adds = adds.slice(0, HUB_TOP_ADDS);
   }
   // FAAB
   const st = lg.settings||{};
@@ -37440,8 +37501,8 @@ function _hubLeagueCard(res){
     : 'lineup set';
   const adds = res.adds.slice(0, open?HUB_TOP_ADDS:3).map(c=>`<div class="hub-row">
       <span class="hub-kind hub-k-add">ADD</span>
-      <div class="hub-body">${_hubPlayer({id:c.id,name:c.name,pos:c.pos,team:c.team,value:c.wp.adj,wp:c.wp,unavailable:c.wp.bye?'BYE':''},true)}
-        <div class="hub-whys">${c.reasons.map(_hubReason).join('')}${c.startsOver?`<span class="hub-why hub-why-starts" title="Beats the weakest starter he could replace in your optimal lineup">starts over ${escHtml(c.startsOver.name)} (${escHtml(c.startsOver.slot)}) +${c.startsOver.delta}</span>`:''}</div></div>
+      <div class="hub-body">${_hubPlayer({id:c.id,name:c.name,pos:c.pos,team:c.team,value:c.wp.adj,wp:c.wp,unavailable:c.wp.bye?'BYE':''},true)}${c.drop?` <span class="hub-arrow">for</span> ${_hubPlayer(Object.assign({},c.drop,{value:c.drop.rosPg}),true)}`:''}
+        <div class="hub-whys"><span class="hub-why hub-why-net" title="Rest-of-season value over replacement, net of the player he replaces, per game">+${c.net.toFixed(1)}/gm</span>${c.reasons.map(_hubReason).join('')}${c.startsOver?`<span class="hub-why hub-why-starts" title="Beats the weakest starter he could replace in your optimal lineup this week">starts over ${escHtml(c.startsOver.name)} (${escHtml(c.startsOver.slot)}) +${c.startsOver.delta}</span>`:''}</div></div>
       ${c.faab?`<span class="hub-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league (${(c.faab.share*100).toFixed(0)}% of your $${c.faab.left} left)">$${c.faab.bid}</span>`:''}
     </div>`).join('');
   const drops = open ? res.drops.map(d=>`<div class="hub-row"><span class="hub-kind hub-k-drop">DROP</span><div class="hub-body">${_hubPlayer(d.p,true)}<div class="hub-whys">${d.reasons.map(r=>`<span class="hub-why">${escHtml(r)}</span>`).join('')}</div></div></div>`).join('') : '';
@@ -37472,7 +37533,7 @@ function hubViewHTML(s){
 TC_INFO_BOOK.weekhub={title:'This Week', body:()=>`
 <p>Every synced league at once, scored under each league's own settings.</p>
 <p><b>Lineup.</b> This week's projection blends the season projection, season points per game and the last three weeks, then adjusts for the opponent's defense against the position (the small #). The optimal lineup is diffed against what you have set: <b>START</b> is a clear swap (${HUB_CLOSE}+ points or the starter can't play), <b>CLOSE</b> is under that, <b>CLOSE CALL</b> means you have the right player in but a bench player is within reach. Players whose game has kicked off stay put.</p>
-<p><b>Adds.</b> Unrostered players ranked by rest-of-season value, with the reason: <b>role opened</b> (a teammate ahead of him is out), <b>usage spike</b> (touches far above his own baseline), <b>soft schedule</b> (next three opponents generous to his position), <b>efficient</b> (his per-target or per-carry rank backs the volume). "Starts over" says he'd beat your weakest starter now.</p>
+<p><b>Adds.</b> Only a pickup that beats the roster player he pushes off — his rest-of-season value <i>over replacement</i> (what is freely available at the position in this league) net of the drop's, at least ${HUB_ADD_MIN}/game or a start this week. Starters in this week's optimal lineup and in the rest-of-season optimal lineup are never the drop. The reason: <b>role opened</b> (a teammate ahead of him is out), <b>usage spike</b> (touches far above his own baseline), <b>soft schedule</b> (next three opponents generous to his position), <b>efficient</b> (his per-target or per-carry rank backs the volume). "Starts over" says he'd beat your weakest starter now.</p>
 <p><b>FAAB.</b> The waiver wire is worth most early: a pickup is his rest-of-season value, and the pool of obvious pickups drains as the season goes. The suggested bid is his value against the top pickups still ahead (split across the league), as a share of what you have left. The curve comes from this league's own past seasons when it has them.</p>`};
 </script>
 </body>
