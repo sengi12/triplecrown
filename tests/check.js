@@ -3666,6 +3666,15 @@ function manualEdit(key,raw,min,max){
 // ─────────────────────────────────────────────────────────────────────────────
 // State init
 // ─────────────────────────────────────────────────────────────────────────────
+// Does an RB belong in the receiving view? >5 targets/receptions was a FULL-season
+// bar — after week 1 of a live season it hid every back who caught passes (field
+// report, 2026 opener). Early in a season (≤4 games) any target or catch counts;
+// past that the season-scale bar applies again.
+function rbReceivingQualifies(p){
+  if((p.receiving_targets||0)>5 || (p.receptions||0)>5) return true;
+  const g=Number(p.games_played)||0;
+  return g>0 && g<=4 && ((p.receiving_targets||0)>=1 || (p.receptions||0)>=1);
+}
 function ensureTeam(team,qbsFromData){
   if(userProj[team]) return userProj[team];
   mergeRosterPlayers(team);   // add zero-stat rostered players so they're selectable
@@ -3725,12 +3734,13 @@ function initPassingShares(team){
   // projection-season role — so copying a season where a featured back barely caught passes
   // (or hadn't debuted) can't knock him out of the receiving options. Roster membership is
   // decided by the projected roster; the copied stats only set his baseline (possibly 0).
+  // (rbReceivingQualifies lives at module level so the season-opener rule is testable.)
   const projRbQualifies = p => {
     const r=p._proj_role;   // projected role snapshotted before a reference copy overwrote the row
     return !!(r && ((r.tgt>5)||(r.rec>5)));
   };
   let all=[...getBase(team,'WR'),...getBase(team,'TE'),
-    ...getBase(team,'RB').filter(p=>(p.receiving_targets>5)||(p.receptions>5)||projRbQualifies(p))];
+    ...getBase(team,'RB').filter(p=>rbReceivingQualifies(p)||projRbQualifies(p))];
   // Reference-season week-range filter active? Overlay windowed totals onto the roster
   // before computing shares — everything downstream (pies, edits) just works on it.
   if(isWeekFilterActive(state) && state.weekFilterData) all=applyWeekFilterOverrides(all, state.weekFilterData);
@@ -7487,10 +7497,11 @@ async function loadPlayerCardData(pid, pos, team){
   const isDefense = ['DE','DT','NT','DL','LB','MLB','OLB','ILB','WLB','SLB','DB','CB','S','FS','SS'].includes(posc);
   pcardState = {pid, posc, team, isSkill, isOl, isDefense};
   const restoring = !!(pcardRestoreState && String(pcardRestoreState.pid)===String(pid));
-  // Rookies have no NFL game log yet → default to their college stats; everyone else to the pros.
+  // Rookies default to college only while they have no NFL games — once the season
+  // kicks off they're pros with a live game log, and College stays one tap away.
   pcardStatsMode = (isOl && typeof pcardOlAvailable==='function' && pcardOlAvailable(pid))
     ? 'olgrades'
-    : (isRookiePlayer(pid) ? 'college' : 'pro');
+    : ((isRookiePlayer(pid) && !(typeof hasSeasonStarted==='function' && hasSeasonStarted())) ? 'college' : 'pro');
   if(restoring && pcardRestoreState.mode){
     pcardStatsMode = pcardRestoreState.mode;
   }
@@ -7652,46 +7663,85 @@ function pcardLoadStats(mode){
   }
   return loadSleeperCareerStats(pid, posc, body);
 }
-// NFL career game logs for a skill player, from Sleeper's per-season weekly data.
+// Which NFL seasons deserve a tab. years_exp gives the whole career (the seed's
+// HISTORY_SEASONS only covers what it baked); the current season joins once it has
+// actually started; 2009 is where Sleeper's weekly data thins out (same floor as
+// the BAFL viewer this design is ported from). years_exp is wrong often enough
+// that an empty season self-corrects: its tab greys out on first click.
+function pcardEligibleSeasons(pid){
+  const cur = (typeof TC_SEASON!=='undefined' && TC_SEASON.year) ? Number(TC_SEASON.year) : new Date().getFullYear();
+  const p = (typeof sleeperPlayers!=='undefined' && sleeperPlayers) ? sleeperPlayers[pid] : null;
+  const exp = p && Number.isFinite(Number(p.years_exp)) ? Number(p.years_exp) : null;
+  const started = typeof hasSeasonStarted==='function' && hasSeasonStarted();
+  const newest = started ? cur : cur-1;
+  const hist = (typeof HISTORY_SEASONS!=='undefined' && HISTORY_SEASONS) ? HISTORY_SEASONS.map(Number) : [];
+  let first = exp==null ? (hist.length ? Math.min(...hist) : newest-4) : cur-exp;
+  first = Math.max(2009, Math.min(first, newest));
+  const out=[];
+  for(let y=newest; y>=first; y--) out.push(String(y));
+  return out;
+}
+// NFL career game logs, one SEASON TAB at a time (the BAFL card's design, ported):
+// tabs render instantly from years_exp, the newest season auto-opens, past seasons
+// fetch lazily on first click, and the season in progress also lists what's coming.
+// The old card fetched EVERY season up front — a dozen requests before first paint.
+var _pcardSeasonSel = null;
+var _pcardLiveWeeklyAt = 0;
 async function loadSleeperCareerStats(pid, posc, body){
-  const tok = pcardToken;
-  const seasons = (HISTORY_SEASONS&&HISTORY_SEASONS.length)? HISTORY_SEASONS.slice() : [];
+  const seasons = pcardEligibleSeasons(pid);
   if(!seasons.length){
-    body.innerHTML = `<div class="pcard-loading">No historical seasons loaded. Load a 📦 seed with history to see game logs.</div>`;
+    body.innerHTML = `<div class="pcard-loading">No seasons to show for this player.</div>`;
     return;
   }
   // TC model comparison row (veterans only): rendered before the async fetch so it shows
   // immediately and survives a gamelog failure — same shape as the rookies' prospect panel.
   const tcRow = (typeof renderTcModel==='function') ? renderTcModel(pid) : '';
-  body.innerHTML = tcRow + `<div class="pcard-loading">Loading game logs…</div>`;
+  body.innerHTML = tcRow
+    + `<div class="pcard-season-tabs" id="pcardSeasonTabs">`
+    + seasons.map(s=>`<button class="pcard-season-tab" id="pcst_${s}" onclick="pcardSelectSeason('${String(pid)}','${s}','${posc||''}')">${s}</button>`).join('')
+    + `</div><div id="pcardSeasonBody"></div>`
+    + `<div class="pcard-src">Per-game stats via Sleeper · FPTS uses your current scoring settings.</div>`;
+  pcardSelectSeason(String(pid), seasons[0], posc);
+}
+async function pcardSelectSeason(pid, season, posc){
+  const tok = pcardToken;
+  _pcardSeasonSel = season;
+  const tabs=document.getElementById('pcardSeasonTabs');
+  if(tabs) tabs.querySelectorAll('.pcard-season-tab').forEach(b=>{
+    if(b.classList) b.classList.toggle('active', b.id==='pcst_'+season);
+  });
+  const bodyEl=document.getElementById('pcardSeasonBody');
+  if(!bodyEl) return;
+  bodyEl.innerHTML = `<div class="pcard-loading">Loading ${escHtml(String(season))} game log…</div>`;
   try{
-    const perSeason = await Promise.all(seasons.map(async s=>({season:s, weekly:await fetchPlayerWeekly(pid, s)})));
-    if(!pcardOpen || tok!==pcardToken) return; // closed or switched sources while loading
-    let out='';
+    // The live season's weekly rows keep moving during games: drop the cache entry
+    // when it's older than the live TTL so a re-opened card shows tonight, not kickoff.
+    if(typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season)
+       && typeof weeklySkillCache!=='undefined'
+       && (Date.now()-_pcardLiveWeeklyAt) > 5*60*1000){
+      delete weeklySkillCache[`${season}:${pid}`];
+      _pcardLiveWeeklyAt = Date.now();
+    }
+    const weekly = await fetchPlayerWeekly(pid, season);
+    if(!pcardOpen || tok!==pcardToken || _pcardSeasonSel!==season) return;
+    const rows = pcardSeasonRows(weekly, posc);
     const liveTeam = (sleeperPlayers && sleeperPlayers[pid] && sleeperPlayers[pid].team) || null;
-    for(const {season, weekly} of perSeason){
-      const rows = pcardSeasonRows(weekly, posc);
-      // The season in progress also lists what's COMING — remaining opponents
-      // from the sidecar schedule as empty rows, the same shape a missed week
-      // already renders. Note the gate is implicit and year-agnostic: this
-      // season only reaches the card at all once the live refresher has seen
-      // real stat records (week 1 underway), so nothing crowds draft-season
-      // cards, this year or any other.
-      if(typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season)){
-        pcardAppendFutureWeeks(rows, liveTeam);
-      }
-      if(!rows.length) continue;
-      out += renderPcardSeason(season, rows, posc);
+    if(typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season)){
+      pcardAppendFutureWeeks(rows, liveTeam);
     }
-    if(!out) out = `<div class="pcard-loading">No game data found for this player.</div>`;
-    out += `<div class="pcard-src">Per-game stats via Sleeper · FPTS uses your current scoring settings.</div>`;
-    if(pcardOpen && tok===pcardToken){
-      body.innerHTML = tcRow + out;
-      pcardEnableStickyStatHeaders();
+    if(!rows.length){
+      // years_exp lied, or he truly sat the year out — grey the tab so the card
+      // remembers, and say so instead of rendering an empty table.
+      const tab=document.getElementById('pcst_'+season);
+      if(tab){ if(tab.classList) tab.classList.add('empty'); tab.title='No games this season'; }
+      bodyEl.innerHTML = `<div class="pcard-loading">No games in ${escHtml(String(season))}.</div>`;
+      return;
     }
+    bodyEl.innerHTML = renderPcardSeason(season, rows, posc);
+    pcardEnableStickyStatHeaders();
   }catch(e){
-    if(pcardOpen && tok===pcardToken){
-      body.innerHTML = tcRow + `<div class="pcard-loading pcard-loading-retry"><span>Couldn't load game logs. Check your connection and try again.</span><button class="pcard-retry-btn" onclick="retryPlayerCardData()">Refresh</button></div>`;
+    if(pcardOpen && tok===pcardToken && _pcardSeasonSel===season){
+      bodyEl.innerHTML = `<div class="pcard-loading pcard-loading-retry"><span>Couldn't load the ${escHtml(String(season))} game log. Check your connection and try again.</span><button class="pcard-retry-btn" onclick="pcardSelectSeason('${String(pid)}','${season}','${posc||''}')">Refresh</button></div>`;
     }
   }
 }
@@ -7808,8 +7858,10 @@ function renderPcardSeason(season, rows, pos){
         const v = (r.dnp && c.key==='snp') ? '0' : '–';
         return sep+`<td class="pcard-cell bye">${v}</td>`;
       }).join('');
+      // Missed and upcoming games keep the full opponent treatment, logo included —
+      // a greyed row is still a real matchup on a real schedule.
       const oppCell = ((r.dnp||r.future) && r.opp)
-        ? `<span class="pcard-dnp-opp">${r.isAway?'@':'vs'} ${escHtml(r.opp)}</span>`
+        ? `<span class="pcard-opp-inner pcard-dnp-opp">${r.isAway?'<span class="pcard-at">@</span>':'<span class="pcard-vs">vs</span>'}<img src="${NFL_LOGO(r.opp)}" class="pcard-opp-logo" onerror="this.style.display='none'"><span>${escHtml(r.opp)}</span></span>`
         : (r.dnp ? 'DNP' : 'BYE');
       const rowTitle = r.future ? 'Upcoming game'
         : r.dnp ? 'Did not play (inactive / injured) — not counted in the consistency grade'
@@ -11487,10 +11539,42 @@ function _cfbSeasonTable(prof, pid, base){
     const teamTxt = school ? escHtml(school) : '–';
     return `<tr${scope}><th class="cfb-season-th">${escHtml(y)}<span class="cfb-season-team">${teamTxt}</span></th>${tds}</tr>`;
   }).join('');
+  // CAREER row: counting stats sum; rates recompute from the sums where possible and
+  // games-weight otherwise — a career line an injured season can't erase.
+  const career = _cfbCareerRow(prof, cols);
   return `<div class="pcard-table-scroll"><table class="pcard-table cfb-table">
       <thead><tr><th class="cfb-season-th">SEASON</th>${head}</tr></thead>
-      <tbody>${rows}</tbody>
+      <tbody>${rows}${career}</tbody>
     </table></div>`;
+}
+
+// Career aggregation for the season table. SUM for counting stats; recomputed ratios where
+// the numerator/denominator are both summable; games-weighted mean for the share/efficiency
+// metrics whose denominators (team totals) we don't carry.
+const _CFB_SUM_KEYS = new Set(['games','att','comp','pass_yds','pass_td','int','rushes',
+  'rush_yds','rush_td','tgt','rec','rec_yds','rec_td']);
+function _cfbCareerRow(prof, cols){
+  const years = Object.keys(prof.seasons||{}).sort();
+  if(years.length < 2) return '';   // one season IS the career — no duplicate row
+  const sums={}, wsum={}, wtot={};
+  years.forEach(y=>{
+    const s=prof.seasons[y]||{}; const g=Number(s.games)||0;
+    for(const k in s){
+      const v=s[k]; if(typeof v!=='number') continue;
+      if(_CFB_SUM_KEYS.has(k)) sums[k]=(sums[k]||0)+v;
+      else if(g>0){ wsum[k]=(wsum[k]||0)+v*g; wtot[k]=(wtot[k]||0)+g; }
+    }
+  });
+  const get=(k)=>{
+    if(k in sums) return sums[k];
+    if(k==='ypa')  return sums.att   ? sums.pass_yds/sums.att  : null;
+    if(k==='ypc')  return sums.rushes? sums.rush_yds/sums.rushes: null;
+    if(k==='ypr')  return sums.rec   ? sums.rec_yds/sums.rec   : null;
+    if(wtot[k])    return wsum[k]/wtot[k];
+    return null;
+  };
+  const tds = cols.map(c=>`<td>${_cfbNum(get(c[0]))}</td>`).join('');
+  return `<tr class="cfb-career-row"><th class="cfb-season-th">CAREER<span class="cfb-season-team">${years.length} seasons</span></th>${tds}</tr>`;
 }
 
 // College logo lookup (ESPN NCAA CDN), from the seed-baked name→id map. '' when unmapped —
@@ -11520,10 +11604,18 @@ function renderCfbProspect(pid){
   const refTxt = cls.length===2 ? `${cls[0]}–${cls[1]} draft classes` : 'past draft classes';
   const base = _cfbNoteBase(prof, pid);
   const finalSeason = (prof.seasons && prof.final && prof.seasons[prof.final]) || {};
-  const pctCtx = `${prof.college||''}${prof.college?' · ':''}college percentile vs ${refTxt}`;
+  // The percentiles rank the REPRESENTATIVE season (seed's `rep`: the most recent one that
+  // meets the reference pool's volume floor). An injury-shortened final year — JSN 2022,
+  // 3 games — must not read as an all-zeros prospect, and must SAY which season is shown.
+  const repYr = prof.rep || prof.final;
+  const repSeason = (prof.seasons && repYr && prof.seasons[repYr]) || finalSeason;
+  const repNote = (prof.rep && String(prof.rep)!==String(prof.final))
+    ? `<div class="cfb-repnote">Final season ${escHtml(String(prof.final))} was ${finalSeason.games||0} game${(finalSeason.games||0)===1?'':'s'} — percentiles use his ${escHtml(String(repYr))} season (${repSeason.games||'?'} gm).</div>`
+    : '';
+  const pctCtx = `${prof.college||''}${prof.college?' · ':''}college percentile vs ${refTxt} (${repYr} season)`;
 
   const bars = headline.filter(m=>pct[m]!=null)
-    .map(m=>_cfbBar(labels[m] || m, pct[m], finalSeason[m],
+    .map(m=>_cfbBar(labels[m] || m, pct[m], repSeason[m],
                     Object.assign({}, base, { statKey:`pct_${m}`, context: pctCtx })))
     .join('');
 
@@ -11543,8 +11635,9 @@ function renderCfbProspect(pid){
         }), 'note-tag-hit')
       : inner;
     summary = `<div class="cfb-summary">${escHtml(leadLabel)} ranks ${tagged}
-      among ${escHtml(prof.pos)} prospects.</div>`;
+      among ${escHtml(prof.pos)} prospects${(prof.rep&&String(prof.rep)!==String(prof.final))?` (${escHtml(String(repYr))} season)`:''}.</div>`;
   }
+  summary += repNote;
 
   // School/conference/final season: not a stat, but the thing a note most often needs to say
   // alongside one ("dominant, but in the MAC").

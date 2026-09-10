@@ -187,10 +187,42 @@ function _cfbSeasonTable(prof, pid, base){
     const teamTxt = school ? escHtml(school) : '–';
     return `<tr${scope}><th class="cfb-season-th">${escHtml(y)}<span class="cfb-season-team">${teamTxt}</span></th>${tds}</tr>`;
   }).join('');
+  // CAREER row: counting stats sum; rates recompute from the sums where possible and
+  // games-weight otherwise — a career line an injured season can't erase.
+  const career = _cfbCareerRow(prof, cols);
   return `<div class="pcard-table-scroll"><table class="pcard-table cfb-table">
       <thead><tr><th class="cfb-season-th">SEASON</th>${head}</tr></thead>
-      <tbody>${rows}</tbody>
+      <tbody>${rows}${career}</tbody>
     </table></div>`;
+}
+
+// Career aggregation for the season table. SUM for counting stats; recomputed ratios where
+// the numerator/denominator are both summable; games-weighted mean for the share/efficiency
+// metrics whose denominators (team totals) we don't carry.
+const _CFB_SUM_KEYS = new Set(['games','att','comp','pass_yds','pass_td','int','rushes',
+  'rush_yds','rush_td','tgt','rec','rec_yds','rec_td']);
+function _cfbCareerRow(prof, cols){
+  const years = Object.keys(prof.seasons||{}).sort();
+  if(years.length < 2) return '';   // one season IS the career — no duplicate row
+  const sums={}, wsum={}, wtot={};
+  years.forEach(y=>{
+    const s=prof.seasons[y]||{}; const g=Number(s.games)||0;
+    for(const k in s){
+      const v=s[k]; if(typeof v!=='number') continue;
+      if(_CFB_SUM_KEYS.has(k)) sums[k]=(sums[k]||0)+v;
+      else if(g>0){ wsum[k]=(wsum[k]||0)+v*g; wtot[k]=(wtot[k]||0)+g; }
+    }
+  });
+  const get=(k)=>{
+    if(k in sums) return sums[k];
+    if(k==='ypa')  return sums.att   ? sums.pass_yds/sums.att  : null;
+    if(k==='ypc')  return sums.rushes? sums.rush_yds/sums.rushes: null;
+    if(k==='ypr')  return sums.rec   ? sums.rec_yds/sums.rec   : null;
+    if(wtot[k])    return wsum[k]/wtot[k];
+    return null;
+  };
+  const tds = cols.map(c=>`<td>${_cfbNum(get(c[0]))}</td>`).join('');
+  return `<tr class="cfb-career-row"><th class="cfb-season-th">CAREER<span class="cfb-season-team">${years.length} seasons</span></th>${tds}</tr>`;
 }
 
 // College logo lookup (ESPN NCAA CDN), from the seed-baked name→id map. '' when unmapped —
@@ -220,10 +252,18 @@ function renderCfbProspect(pid){
   const refTxt = cls.length===2 ? `${cls[0]}–${cls[1]} draft classes` : 'past draft classes';
   const base = _cfbNoteBase(prof, pid);
   const finalSeason = (prof.seasons && prof.final && prof.seasons[prof.final]) || {};
-  const pctCtx = `${prof.college||''}${prof.college?' · ':''}college percentile vs ${refTxt}`;
+  // The percentiles rank the REPRESENTATIVE season (seed's `rep`: the most recent one that
+  // meets the reference pool's volume floor). An injury-shortened final year — JSN 2022,
+  // 3 games — must not read as an all-zeros prospect, and must SAY which season is shown.
+  const repYr = prof.rep || prof.final;
+  const repSeason = (prof.seasons && repYr && prof.seasons[repYr]) || finalSeason;
+  const repNote = (prof.rep && String(prof.rep)!==String(prof.final))
+    ? `<div class="cfb-repnote">Final season ${escHtml(String(prof.final))} was ${finalSeason.games||0} game${(finalSeason.games||0)===1?'':'s'} — percentiles use his ${escHtml(String(repYr))} season (${repSeason.games||'?'} gm).</div>`
+    : '';
+  const pctCtx = `${prof.college||''}${prof.college?' · ':''}college percentile vs ${refTxt} (${repYr} season)`;
 
   const bars = headline.filter(m=>pct[m]!=null)
-    .map(m=>_cfbBar(labels[m] || m, pct[m], finalSeason[m],
+    .map(m=>_cfbBar(labels[m] || m, pct[m], repSeason[m],
                     Object.assign({}, base, { statKey:`pct_${m}`, context: pctCtx })))
     .join('');
 
@@ -243,8 +283,9 @@ function renderCfbProspect(pid){
         }), 'note-tag-hit')
       : inner;
     summary = `<div class="cfb-summary">${escHtml(leadLabel)} ranks ${tagged}
-      among ${escHtml(prof.pos)} prospects.</div>`;
+      among ${escHtml(prof.pos)} prospects${(prof.rep&&String(prof.rep)!==String(prof.final))?` (${escHtml(String(repYr))} season)`:''}.</div>`;
   }
+  summary += repNote;
 
   // School/conference/final season: not a stat, but the thing a note most often needs to say
   // alongside one ("dominant, but in the MAC").
