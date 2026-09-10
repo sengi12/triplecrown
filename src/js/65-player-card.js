@@ -337,7 +337,9 @@ function openPlayerCard(nameOrId, pos, team){
   pcardOpen=true;
   pcardSuppressNavPush = false;
   _pcardLockPage(true);
+  if(typeof _pcardDockAdd==='function') _pcardDockAdd(pid, pos, team);   // before the shell replaces pcardState
   renderPlayerCardShell(pid, pos, team);
+  if(typeof _pcardDockRender==='function') _pcardDockRender();
   loadPlayerCardData(pid, pos, team);
 }
 // ── Swipe-down to close (touch) ──────────────────────────────────────────────
@@ -409,6 +411,7 @@ function _pcardLockPage(on){
 function closePlayerCard(){
   pcardOpen=false;
   _pcardLockPage(false);
+  if(typeof _pcardDockReset==='function') _pcardDockReset();
   pcardNavStack = [];
   pcardRestoreState = null;
   pcardSuppressNavPush = false;

@@ -270,19 +270,19 @@ def build_live_nflverse(season, parts=LIVE_NFLVERSE_PARTS):
         # Per-GAME chart splits: the season charts' in-season companions. The
         # route one waits on nflverse publishing the season's participation
         # file and simply omits itself until then.
-        "qb_passing_weekly": lambda: _nfl.qb_passing_weekly(season),
-        "rb_fan_weekly": lambda: _nfl.rb_fan_weekly(season),
+        "qb_passing_weekly": lambda: _nfl.qb_passing_weekly(season, min_attempts_game=1),
+        "rb_fan_weekly": lambda: _nfl.rb_fan_weekly(season, min_attempts_game=1),
         "scheme_weekly": lambda: _nfl.scheme_weekly(season),
-        "target_trees": lambda: _nfl.target_trees_weekly(season),
+        "target_trees": lambda: _nfl.target_trees_weekly(season, min_targets_game=1, min_targets_season=1),
         "routes_weekly": lambda: _nfl.routes_weekly(season),
         "players": lambda: _nfl.build_player_tables(season),
         "routes": lambda: _nfl.route_trees(season),
-        # Season charts for the season in progress use the PER-GAME bars (8 attempts /
-        # 5 carries): after one game nobody clears a full-season minimum, and the
-        # season tab is what the game chips hang off. The seed's frozen seasons keep
-        # their own thresholds.
-        "qb_passing": lambda: _nfl.qb_passing_zones(season, min_attempts=8),
-        "rb_fan": lambda: _nfl.rb_rushing_fans(season, min_attempts=5, min_lane_attempts=1),
+        # The season in progress keeps EVERY player who touched the ball (one attempt,
+        # one carry, one target): the point of the live charts is per-game filtering,
+        # and a two-pass relief appearance is still a game that happened. The seed's
+        # frozen seasons keep their full-season thresholds.
+        "qb_passing": lambda: _nfl.qb_passing_zones(season, min_attempts=1),
+        "rb_fan": lambda: _nfl.rb_rushing_fans(season, min_attempts=1, min_lane_attempts=1),
         "rosters": lambda: _nfl.team_rosters(season),
         "ol_weekly": lambda: _nfl.ol_weekly_team(season),
     }
