@@ -195,6 +195,7 @@ function missingText(r) {
 const RAW_TOOLS = [
   { name: "seed_ls", description: "Browse the ENTIRE TripleCrown seed — every table the app ships (projections, ECR per format, "
     + "5 seasons of nflverse advanced stats, route trees, passing/rushing charts, player history, college profiles and game logs, contracts, "
+    + "and the season in progress live: per-game passing/rushing charts, target charts, Next Gen Stats, league ranks (rk) on every chart total, per-game scheme cards, "
     + "dynasty values, team metrics, coaches, schedules, weekly team/OL/defender data, coaching formations). Lists what is at a path; "
     + "call with no path for the table of contents with a description of each section. Paths are slash-separated keys, e.g. "
     + "nflverse/2025/routes/amonra st brown.",
@@ -205,6 +206,7 @@ const RAW_TOOLS = [
       path: { type: "string" }, keys: { type: "array", items: { type: "string" }, description: "children to read from a large section (max 20)" } } } },
   { name: "player_data", description: "Every raw table row for one player in one read: projection row (with per-format ADP and the TC model), "
     + "ECR in every format, contract, dynasty value, season history, 5 seasons of nflverse advanced stats by situation, route tree, "
+    + "and for the season in progress: qb_passing_weekly / rb_fan_weekly (per game), target_trees (12-zone target chart with yac/epa/first downs), ngs_weekly (Next Gen Stats), each with rk = [league rank, n], "
     + "passing/rushing charts, roster rows, college profile and game logs. Omit section for the list of sections; name one to read it.",
     inputSchema: { type: "object", required: ["name"], properties: {
       name: { type: "string", description: "player name or Sleeper id" }, pos: { type: "string", description: "QB/RB/WR/TE" },

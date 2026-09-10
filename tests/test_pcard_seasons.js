@@ -122,7 +122,7 @@ chk(adapted.tree.GO===3 && adapted.route_yds.GO===60 && adapted.total_td===undef
     'the adapter reshapes a game into the season shape the renderer already reads');
 chk(adapted.total_rec===6 && adapted.total_yds===95, 'and totals recompute from the game');
 const chips=app._pcardGameChips('routes', [{wk:1,opp:'KC'}], null);
-chk(/Season/.test(chips) && /Wk1 KC/.test(chips), 'chips: Season plus one per game');
+chk(/rt-gp-btn[^>]*>Season/.test(chips) && /rt-gp-opt[^>]*>WK 1 KC/.test(chips), 'game picker: Season is the button, WK 1 KC is an option');
 app.setPcardChartGame('routes', 1);
 chk(app.getChartGame().routes===1, 'selecting a game sticks');
 app.setPcardChartGame('routes', '');
@@ -140,10 +140,11 @@ chk(app.pcardRouteSeasons('jsn').includes('2026'),
     'the live season joins the Routes strip on target data alone (rookies get the tab)');
 chk(app.pcardRouteSeasons('jsn')[0]==='2026', 'and leads it');
 const tt=app._renderTargetTree('pid1', jsnNode, '2026');
-chk(/TARGET CHART · live/.test(tt), 'the badge says exactly what this is');
-chk(/11 TGT|11<\/b>/.test(tt) && /122/.test(tt), 'season totals ride the tiles');
-chk(/lg 85|lg 84/.test(tt), 'zone catch rates read against the league baseline');
-chk(/Wk2 PIT/.test(tt), 'per-game chips appear with two-plus games');
+chk(/◉ live/.test(tt) && /TARGETS <tspan/.test(tt), 'the chart is the QB field with a live badge');
+chk(/data-note-source="target_chart"/.test(tt) && /\+20<\/text>/.test(tt) && /LOS<\/text>/.test(tt), 'zones are taggable and the field reads +20 / +10 / LOS');
+chk(!/lg \d/.test(tt), 'no league-average clutter on the target chart');
+chk(/Targets<\/label><b><span[^>]*data-note-source="target_chart"[^>]*>11<\/span>/.test(tt) && />122<\/span>/.test(tt), 'season totals ride the tiles — taggable');
+chk(/rt-gp-opt[^>]*>WK 2 PIT/.test(tt), 'the game picker lists each game');
 const v=app._ttView(jsnNode, 2);
 chk(v.tgt===6 && /PIT/.test(v.label), 'selecting a game narrows the view to that game');
 chk(app._ttView(jsnNode, null).label==='Season to date', 'no selection = season to date');

@@ -25,7 +25,7 @@ export const DOC = {
   seed: "projection rows: seed/{TEAM}/{QB|RB|WR|TE} → players with season projections (passing/rushing/receiving), games, ADP per format (adp_ppr, adp_half_ppr, adp_std, adp_2qb), age, risk/upside 1-5, tc = TC model {fpg, base, in:{yr,g,fpg,xfpg,tdoe,age}}",
   ecr: "expert consensus ranks per format (half_ppr, ppr, std, superflex, superflex_ppr, dynasty, dynasty_superflex) keyed by normalized name → {rank_ecr, tier, age, team, pos}",
   history: "history/{sleeper_id} → {season: [stints {team, games_played, games_started, snap_pct, stats{receptions, receiving_yards, rushing_attempts, passing_yards, off_snaps, team_off_snaps…}}]}, 2021-2025, ~8.7k players",
-  nflverse: "nflverse/{season}/… team (offense/defense/tendencies/pace/personnel/coverage/offensive_line_pass|run: per-team values + ranks), players/{POS}/players/{name} (advanced stats; …/refinements/{1st_down…pressured}/players/{name} by situation), routes (route tree per receiver), qb_passing (passer rating by field zone), qb_charting (on-target/bad-throw/pressure %), rb_fan (rush lanes + line grades), ol_players (line grades), head_coaches, rosters/{TEAM} (season roster with snaps)",
+  nflverse: "nflverse/{season}/… team (offense/defense/tendencies/pace/personnel/coverage/offensive_line_pass|run: per-team values + ranks), players/{POS}/players/{name} (advanced stats; …/refinements/{1st_down…pressured}/players/{name} by situation), routes (route tree per receiver), qb_passing (passer rating by field zone; totals carry scramble_rate and rk = league rank [rank, n]), qb_charting (on-target/bad-throw/pressure %), rb_fan (rush lanes + line grades; totals carry rk), ol_players (line grades), head_coaches, rosters/{TEAM} (season roster with snaps). The season IN PROGRESS adds per-game blocks: qb_passing_weekly/{name} and rb_fan_weekly/{name} (games[{wk, opp, totals|lanes, rk}]), target_trees/players/{name} (12-zone target chart: season + games, each zone {tgt, rec, yds, td, yac, epa, fd}, rk), ngs_weekly/players/{name} (Next Gen Stats: receivers sep/cush/yac_oe/share, passers ttt/cpoe/agg, rushers ryoe/eff/box8; season + games, rk; lg = league medians), scheme_weekly/{TEAM}/games (per-game pass rate, shotgun, motion, play-action, RPO, box)",
   cfb: "college profiles: cfb/players/{sleeper_id} → {name, pos, college, final, seasons:{yr:{dominator, tgt_share, epa_play, ypr…}}}; classes (pool sizes), prospect_meta (hit-rate model), labels",
   cfb_logs: "college game logs: cfb_logs/{sleeper_id}/{season} → [{wk, opp, opp_elo, tgt, n, yds, epa}]",
   contracts: "contracts/{normalized name} → {age, apy ($/yr), fa (free-agent year), total, gtd, pos}",
@@ -41,7 +41,7 @@ export const DOC = {
   team_names: "team code → full name",
   market_model: "the draft-sim market model fit (drafts, eps, tau, Brier, QB round-1 behaviour by format)",
   state: "season, season_type, week, asof of this seed",
-  inseason: "current-season sidecar: schedule/{TEAM} → {week: opponent}; schedule_meta/{TEAM}/{week} → [opp, home(1)/away(0), day, time, date]; weekly blocks once the season runs",
+  inseason: "current-season sidecar: schedule/{TEAM} → {week: opponent}; schedule_meta/{TEAM}/{week} → [opp, home(1)/away(0), day, time, date]; player_weekly/players/{gsis} (per-week usage lines, cols listed at player_weekly/cols); def_vs_pos/teams/{TEAM}/{POS}/{week}; weeks (played so far). Its nflverse/{season} and adv_weekly/{season} blocks are ALSO merged under the top-level nflverse and adv_weekly, so the live season reads like any other",
   adv_weekly: "team advanced box scores by week: adv_weekly/{season}/teams/{TEAM}/{week} → {off_plays, off_epa, …} (95 columns, listed at adv_weekly/{season}/cols)",
   def_weekly: "individual defenders: def_weekly/{season}/{normalized name} → {name, team, pos, group, totals, weeks:[…]} (coverage targets, yards allowed, pressures, tackles)",
   ol_weekly: "offensive line by week: ol_weekly/{season}/teams/{TEAM}/{pass|run}/{week} → {dropbacks, pressures, stuffed…}",
@@ -109,6 +109,20 @@ export function loadAll(seedDir) {
   for (const side of ["inseason", "adv_weekly", "def_weekly", "ol_weekly", "cfb_logs"]) {
     const v = readJson(path.join(seedDir, `triplecrown_seed.${side}.json`));
     if (v) root[side] = decodeAnySeed(v);
+  }
+  // The season in progress: the in-season sidecar carries its nflverse blocks (team +
+  // player tables, charts, per-game charts, target charts, Next Gen Stats, scheme cards)
+  // and its weekly team box scores. Merge them under nflverse/{season} and adv_weekly/
+  // {season} so a live season reads exactly like a frozen one — the app does the same.
+  if (root.inseason && typeof root.inseason === "object") {
+    root.nflverse = root.nflverse || {};
+    for (const yr of Object.keys(root.inseason.nflverse || {})) {
+      root.nflverse[yr] = Object.assign(root.nflverse[yr] || {}, root.inseason.nflverse[yr]);
+    }
+    root.adv_weekly = root.adv_weekly || {};
+    for (const yr of Object.keys(root.inseason.adv_weekly || {})) {
+      if (!root.adv_weekly[yr]) root.adv_weekly[yr] = root.inseason.adv_weekly[yr];
+    }
   }
   const coaching = {};
   for (const f of fs.readdirSync(seedDir)) {
@@ -180,8 +194,9 @@ export function playerData(root, outDir) {
             const refs = {}; for (const ref of Object.keys(blk.refinements || {})) { const t = blk.refinements[ref]; if (t && t.players && t.players[n]) refs[ref] = t.players[n]; }
             if (Object.keys(refs).length) o.by_situation = refs;
           }
-          for (const k of ["routes", "qb_passing", "rb_fan"]) if (y[k] && y[k][n]) o[k] = y[k][n];
-          if (y.qb_charting && y.qb_charting.players && y.qb_charting.players[n]) o.qb_charting = y.qb_charting.players[n];
+          for (const k of ["routes", "qb_passing", "rb_fan", "qb_passing_weekly", "rb_fan_weekly", "routes_weekly"]) if (y[k] && y[k][n]) o[k] = y[k][n];
+          // {players:{name}} shaped blocks: charting, the live target chart, Next Gen Stats
+          for (const k of ["qb_charting", "target_trees", "ngs_weekly"]) if (y[k] && y[k].players && y[k].players[n]) o[k] = y[k].players[n];
           for (const t of Object.keys(y.rosters || {})) { const row = (y.rosters[t] || []).find(x => x && String(x.sleeper_id) === id); if (row) { o.roster = { team: t, ...row }; break; } }
           if (Object.keys(o).length) nv[yr] = o;
         }

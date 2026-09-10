@@ -56,7 +56,7 @@ PBP_COLS = [
 _QB_ZONE_COLS = [
     "season_type", "posteam", "pass_attempt", "sack", "complete_pass", "yards_gained",
     "pass_touchdown", "interception", "air_yards", "pass_location", "two_point_attempt",
-    "passer_player_id",
+    "passer_player_id", "qb_scramble", "qb_dropback", "rusher_player_id",
 ]
 _RB_FAN_COLS = [
     "season_type", "posteam", "rush_attempt", "qb_scramble", "two_point_attempt",
@@ -535,7 +535,7 @@ def _ol_pass_metrics(season):
     # Base play-level denominators (dropbacks/rushes/sacks, plus last-5 sack trend).
     pbp = _load_pbp(season, [
         "game_id", "play_id", "season_type", "week", "posteam", "play_type",
-        "qb_dropback", "sack", "rush_attempt", "qb_scramble", "qb_kneel"
+        "qb_dropback", "sack", "rush_attempt", "qb_scramble", "qb_kneel", "qb_hit"
     ])
     pbp = pbp[pbp["season_type"] == "REG"].copy()
     pbp["posteam"] = pbp["posteam"].replace(NFLVERSE_TO_SEED)
@@ -592,6 +592,23 @@ def _ol_pass_metrics(season):
         out["Pocket Time"] = pr["Pocket Time Allowed"].reindex(out.index)
     except Exception as e:
         print(f"  (skipped _ol_pass_metrics PFR pass block: {type(e).__name__})")
+    # In-season, PFR's charting posts weekly (Tuesdays). Until it does, the two rates
+    # the open data can count exactly stand in: hits (pbp qb_hit) and blitzes (FTN
+    # n_blitzers, 48h after games). Pressure / hurry / pocket time wait for PFR.
+    if "Hit Rate" not in out.columns and "qb_hit" in db.columns:
+        hits = pd.to_numeric(db["qb_hit"], errors="coerce").fillna(0).groupby(db["posteam"]).sum()
+        out["Hit Rate"] = (hits.reindex(out.index).fillna(0) / out["Dropbacks"].replace(0, np.nan) * 100)
+    if "Blitz Rate" not in out.columns:
+        try:
+            ftn_b = _aux_csv(FTN_URL.format(season=season),
+                             usecols=["nflverse_game_id", "nflverse_play_id", "n_blitzers"])
+            dbb = db[["game_id", "play_id", "posteam"]].merge(
+                ftn_b, left_on=["game_id", "play_id"], right_on=["nflverse_game_id", "nflverse_play_id"], how="left")
+            if pd.to_numeric(dbb["n_blitzers"], errors="coerce").notna().any():
+                blitz = (pd.to_numeric(dbb["n_blitzers"], errors="coerce").fillna(0) > 0).groupby(dbb["posteam"]).sum()
+                out["Blitz Rate"] = (blitz.reindex(out.index).fillna(0) / out["Dropbacks"].replace(0, np.nan) * 100)
+        except Exception:
+            pass
 
     # FTN+participation enriches non-QB-fault sacks and no-blitz pressure.
     try:
@@ -1386,6 +1403,17 @@ def team_extended(season):
             out = out.join(fn(season))
         except Exception as e:
             print(f"  (skipped {fn.__name__}: {type(e).__name__})")
+    if "8+ Box Rate" not in out.columns:
+        try:
+            ftn_x = _aux_csv(FTN_URL.format(season=season),
+                             usecols=["nflverse_game_id", "nflverse_play_id", "n_defense_box"])
+            rx = rush[["game_id", "play_id", "posteam"]].merge(
+                ftn_x, left_on=["game_id", "play_id"], right_on=["nflverse_game_id", "nflverse_play_id"], how="left")
+            box = pd.to_numeric(rx["n_defense_box"], errors="coerce")
+            if box.notna().any():
+                out["8+ Box Rate"] = ((box >= 8).groupby(rx["posteam"]).mean() * 100).round(1)
+        except Exception:
+            pass
     # Enriched OL pass-protection metrics and utilization-weighted score stack.
     try:
         out = out.join(_ol_pass_metrics(season))
@@ -1964,6 +1992,77 @@ def qb_charting(season, min_attempts=50):
     return out
 
 
+def _attach_ranks(rows, fields, key="rk"):
+    """League-relative ranks for chart totals. rows: dicts sharing numeric fields;
+    fields: {name: 'hi'|'lo'}. Writes rows[i][key] = {name: [rank, n]} (1 = best,
+    ties share the better rank, n = rows carrying the stat). The client shows
+    "#3 / 41" beside the number — the context a raw figure lacks, without another
+    table."""
+    rows = [r for r in rows if isinstance(r, dict)]
+    for f, direction in fields.items():
+        vals = []
+        for i, r in enumerate(rows):
+            v = r.get(f)
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                continue
+            if v != v:
+                continue
+            vals.append((i, v))
+        if len(vals) < 2:
+            continue
+        n = len(vals)
+        vals.sort(key=lambda t: t[1], reverse=(direction == "hi"))
+        rank, prev = 0, None
+        for pos, (i, v) in enumerate(vals, 1):
+            if v != prev:
+                rank, prev = pos, v
+            rows[i].setdefault(key, {})[f] = [rank, n]
+
+
+def _rank_by_week(nodes, fields, games_key="games"):
+    """Per-game ranks: each week's game rows ranked against the same week league-wide."""
+    by_wk = {}
+    for node in nodes:
+        for g in node.get(games_key) or []:
+            by_wk.setdefault(g.get("wk"), []).append(g)
+    for rows in by_wk.values():
+        _attach_ranks(rows, fields)
+
+
+_QB_TOTAL_RANKS = {"passer_rating": "hi", "comp_pct": "hi", "yards": "hi", "td": "hi",
+                   "int": "lo", "scramble_rate": "hi"}
+_RB_TOTAL_RANKS = {"attempts": "hi", "yards": "hi", "ypc": "hi", "success_rate": "hi"}
+_TT_TOTAL_RANKS = {"tgt": "hi", "rec": "hi", "yds": "hi", "td": "hi", "yac": "hi", "epa": "hi", "fd": "hi"}
+_NGS_RANKS = {"rec": {"sep": "hi", "yac_oe": "hi", "share": "hi", "yds": "hi", "tgt": "hi"},
+              "qb": {"cpoe": "hi", "rating": "hi"},
+              "rb": {"ryoe": "hi", "eff": "lo", "tlos": "lo", "yds": "hi"}}
+
+
+def _scramble_counts(pbp, by_week=False):
+    """Scrambles and dropbacks per QB (scrambles carry the QB as RUSHER, not passer).
+    {qid: (scrambles, dropbacks)} — or keyed (qid, week)."""
+    if not {"qb_scramble", "qb_dropback", "rusher_player_id"} <= set(pbp.columns):
+        return {}
+    keys = ["week"] if by_week else []
+    scr = pbp[(pd.to_numeric(pbp["qb_scramble"], errors="coerce") == 1) & pbp["rusher_player_id"].notna()]
+    scr_ct = scr.groupby(["rusher_player_id"] + keys).size()
+    db = pbp[(pd.to_numeric(pbp["qb_dropback"], errors="coerce") == 1) & pbp["passer_player_id"].notna()]
+    db_ct = db.groupby(["passer_player_id"] + keys).size()
+    out = {}
+    for k in set(scr_ct.index) | set(db_ct.index):
+        s = int(scr_ct.get(k, 0)); d = int(db_ct.get(k, 0)) + s
+        out[k] = (s, d)
+    return out
+
+
+def _scramble_totals(counts, key):
+    s, d = counts.get(key, (0, 0))
+    return {"scrambles": s, "dropbacks": d,
+            "scramble_rate": (round(s / d * 100, 1) if d else None)}
+
+
 def qb_passing_zones(season, min_attempts=25):
     """Per-QB NGS-style passer-rating zone matrix keyed by normalized full name.
 
@@ -1983,6 +2082,7 @@ def qb_passing_zones(season, min_attempts=25):
     row_order = ["deep", "inter", "short", "behind"]
     col_order = ["left", "middle", "right"]
     names = _name_map(season)
+    scr = _scramble_counts(pbp)
     out = {}
     for qid, qb in att.groupby("passer_player_id"):
         if len(qb) < min_attempts:
@@ -2016,9 +2116,11 @@ def qb_passing_zones(season, min_attempts=25):
                 "td": int(qb["pass_touchdown"].sum()),
                 "int": int(qb["interception"].sum()),
                 "attempts": int(len(qb)),
+                **_scramble_totals(scr, qid),
             },
             "zones": zones,
         }
+    _attach_ranks([o["totals"] for o in out.values()], _QB_TOTAL_RANKS)
     return out
 
 
@@ -2039,6 +2141,7 @@ def qb_passing_weekly(season, min_attempts_game=8):
     att["depth"] = pd.cut(att["air_yards"], bins=[-100, -0.5, 9.5, 19.5, 100],
                           labels=["behind", "short", "inter", "deep"])
     names = _name_map(season)
+    scr = _scramble_counts(pbp, by_week=True)
     out = {}
     for (qid, wk), g in att.groupby(["passer_player_id", "week"]):
         if len(g) < min_attempts_game:
@@ -2068,11 +2171,19 @@ def qb_passing_weekly(season, min_attempts_game=8):
                 "td": int(g["pass_touchdown"].sum()),
                 "int": int(g["interception"].sum()),
                 "attempts": int(len(g)),
+                **_scramble_totals(scr, (qid, wk)),
             },
             "zones": zones,
         })
     for node in out.values():
         node["games"].sort(key=lambda x: x["wk"])
+    # ranks live on the game's totals dict
+    by_wk = {}
+    for node in out.values():
+        for g in node["games"]:
+            by_wk.setdefault(g["wk"], []).append(g["totals"])
+    for rows in by_wk.values():
+        _attach_ranks(rows, _QB_TOTAL_RANKS)
     return out
 
 
@@ -2122,6 +2233,7 @@ def rb_fan_weekly(season, min_attempts_game=5):
         })
     for node in out.values():
         node["games"].sort(key=lambda x: x["wk"])
+    _rank_by_week(out.values(), {"attempts": "hi", "yards": "hi", "ypc": "hi"})
     return out
 
 
@@ -2251,6 +2363,7 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
         "season_type", "week", "posteam", "defteam", "receiver_player_id",
         "pass_attempt", "complete_pass", "air_yards", "pass_location",
         "receiving_yards", "pass_touchdown", "two_point_attempt",
+        "yards_after_catch", "epa", "first_down",
     ])
     t = pbp[(pbp["season_type"] == "REG") & (pbp["pass_attempt"] == 1)
             & (pbp["two_point_attempt"] == 0) & pbp["receiver_player_id"].notna()
@@ -2272,12 +2385,19 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
         for (depth, loc), z in frame.groupby(["depth", "pass_location"], observed=True):
             if not len(z):
                 continue
-            zones.setdefault(str(depth), {})[str(loc)] = {
-                "tgt": int(len(z)), "rec": int(z["complete_pass"].sum()),
-                "yds": int(z["receiving_yards"].fillna(0).sum()),
-                "td": int(z["pass_touchdown"].sum()),
-            }
+            zones.setdefault(str(depth), {})[str(loc)] = _tt_line(z)
         return zones
+
+    def _tt_line(z):
+        return {
+            "tgt": int(len(z)), "rec": int(z["complete_pass"].sum()),
+            "yds": int(z["receiving_yards"].fillna(0).sum()),
+            "td": int(z["pass_touchdown"].sum()),
+            # per-catch context: yards after the catch, EPA per target, first downs
+            "yac": int(pd.to_numeric(z["yards_after_catch"], errors="coerce").fillna(0).sum()),
+            "epa": round(float(pd.to_numeric(z["epa"], errors="coerce").fillna(0).sum()), 2),
+            "fd": int(pd.to_numeric(z["first_down"], errors="coerce").fillna(0).sum()),
+        }
 
     players = {}
     for rid, g in t.groupby("receiver_player_id"):
@@ -2288,24 +2408,19 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
             continue
         node = {"pos": pos.get(rid),
                 "team": (g["posteam"].mode().iloc[0] if len(g["posteam"].mode()) else None),
-                "season": dict(_zones(g) and {"zones": _zones(g)} or {},
-                               tgt=int(len(g)), rec=int(g["complete_pass"].sum()),
-                               yds=int(g["receiving_yards"].fillna(0).sum()),
-                               td=int(g["pass_touchdown"].sum())),
+                "season": dict(_zones(g) and {"zones": _zones(g)} or {}, **_tt_line(g)),
                 "games": []}
         for wk, gg in g.groupby("week"):
             if len(gg) < min_targets_game:
                 continue
-            node["games"].append({
-                "wk": int(wk),
-                "opp": (gg["defteam"].mode().iloc[0] if len(gg["defteam"].mode()) else None),
-                "tgt": int(len(gg)), "rec": int(gg["complete_pass"].sum()),
-                "yds": int(gg["receiving_yards"].fillna(0).sum()),
-                "td": int(gg["pass_touchdown"].sum()),
-                "zones": _zones(gg),
-            })
+            node["games"].append(dict(
+                wk=int(wk),
+                opp=(gg["defteam"].mode().iloc[0] if len(gg["defteam"].mode()) else None),
+                zones=_zones(gg), **_tt_line(gg)))
         node["games"].sort(key=lambda x: x["wk"])
         players[name] = node
+    _attach_ranks([p["season"] for p in players.values()], _TT_TOTAL_RANKS)
+    _rank_by_week(players.values(), _TT_TOTAL_RANKS)
     return {"players": players, "lg": lg}
 
 
@@ -2398,6 +2513,10 @@ def ngs_weekly(season):
                 med[short] = round(float(v.median()), 2)
         if med:
             lg[kind] = med
+    for kind, fields in _NGS_RANKS.items():
+        nodes = [n for n in out.values() if n["kind"] == kind]
+        _attach_ranks([n["season"] for n in nodes], fields)
+        _rank_by_week(nodes, fields)
     return {"players": out, "lg": lg} if out else {}
 
 
@@ -2938,6 +3057,7 @@ def rb_rushing_fans(season, min_attempts=20, min_lane_attempts=3):
             "lanes": lanes,
             "line": ol_cards.get(team, {}),
         }
+    _attach_ranks([o["totals"] for o in out.values()], _RB_TOTAL_RANKS)
     return out
 
 # ── Participation-based coverage + personnel (the newly-unlocked charting) ────

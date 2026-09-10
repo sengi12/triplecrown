@@ -36,7 +36,7 @@ console.log('=== receiver strip ===');
 let h=app.strip('rec','jaxon smithnjigba','2026',null);
 chk(/NEXT GEN · live/.test(h), 'the badge names the source');
 chk(/season · 11 tgt/.test(h), 'season scope + volume');
-chk(/Separation<\/label><b>3.09<\/b><small>lg 2.80/.test(h), 'separation reads against the league median');
+chk(/Separation<\/label><b><span class="note-tag-hit"[^>]*data-note-source="ngs_live"[^>]*>3.09<\/span><\/b><small>lg 2.80/.test(h), 'separation reads against the league median — and is taggable');
 chk(/ngs-good"[^>]*title="[^"]*separation/i.test(h) || /ngs-tile ngs-good[^>]*>\s*<label>Separation/.test(h), 'above-median separation is good (hi)');
 chk(/ngs-tile ngs-bad[^>]*>\s*<label>aDOT/.test(h)===false, 'aDOT has no direction → never colored');
 h=app.strip('rec','jaxon smithnjigba','2026',1);
@@ -45,7 +45,7 @@ chk(app.strip('rec','jaxon smithnjigba','2026',2)==='', 'a game NGS has not publ
 
 console.log('=== passer + rusher strips ===');
 h=app.strip('qb','drake maye','2026',1);
-chk(/Time to Throw<\/label><b>2.61s/.test(h) && /CPOE<\/label><b>-3.2%/.test(h), 'QB tiles format seconds and percents');
+chk(/Time to Throw<\/label><b><span[^>]*>2.61s/.test(h) && /CPOE<\/label><b><span[^>]*>-3.2%/.test(h), 'QB tiles format seconds and percents');
 chk(/ngs-tile ngs-bad[^>]*>\s*<label>CPOE/.test(h), 'below-median CPOE is bad (hi)');
 h=app.strip('rb','rhamondre stevenson','2026',null);
 chk(/ngs-tile ngs-good[^>]*>\s*<label>Efficiency/.test(h), 'lower efficiency is good (lo)');

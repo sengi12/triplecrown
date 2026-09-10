@@ -516,6 +516,15 @@ function _olPlayerMetaByName(season, teamCode){
   return out;
 }
 
+function _olPlayerMetaLatest(){
+  const out={};
+  const seasons=Object.keys(NFLVERSE||{}).filter(s=>NFLVERSE[s]&&NFLVERSE[s].ol_players).sort((a,b)=>b-a);
+  for(const s of seasons){
+    const pl=NFLVERSE[s].ol_players||{};
+    for(const k in pl){ const nm=_olNormName((pl[k]||{}).name); if(nm && !out[nm]) out[nm]=pl[k]; }
+  }
+  return out;
+}
 function _olLineByTeamSeason(season, teamCode){
   const pack=(NFLVERSE&&NFLVERSE[String(season)])||{};
 
@@ -538,9 +547,12 @@ function _olLineByTeamSeason(season, teamCode){
         };
       }
       const metaByName=_olPlayerMetaByName(season, teamCode);
+      // The season in progress has no graded OL block yet: each lineman's own card
+      // (newest graded season) supplies the letter, so the tab matches the card.
+      const metaLatest=_olPlayerMetaLatest();
       for(const sl of ['LT','LG','C','RG','RT']){
         const cur=out[sl]; if(!cur || !cur.name) continue;
-        const m=metaByName[_olNormName(cur.name)]||{};
+        const m=metaByName[_olNormName(cur.name)]||metaLatest[_olNormName(cur.name)]||{};
         out[sl]={
           name:cur.name,
           run_grade:cur.run_grade||m.run_grade||null,

@@ -7,3 +7,8 @@
 .ngs-tile.ngs-bad b{color:#d33b2f;}
 /* Advanced rankings header: routes-derived columns that are the in-season estimate */
 .th-est{font-size:9px;font-weight:900;color:var(--warn);margin-left:2px;}
+/* League rank tag beside chart totals */
+.pc-rank{display:inline-block;font-size:9px;font-weight:900;margin-left:5px;padding:1px 5px;border-radius:999px;background:var(--surface3);vertical-align:middle;letter-spacing:.02em;}
+.pc-rank-n{opacity:.6;font-weight:700;}
+.pc-rank.rk-good{color:#2fae4e;} .pc-rank.rk-okhi{color:#84b93f;} .pc-rank.rk-oklo{color:#d8a51d;} .pc-rank.rk-bad{color:#d33b2f;}
+.qpc-tile .pc-rank{display:block;margin:3px auto 0;width:max-content;}
