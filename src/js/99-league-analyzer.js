@@ -2818,8 +2818,7 @@ function laMyTeamView(s){
     + '</div>'
     + '<div class="la-my-sum-adv">' + escHtml(myTraj.advice) + '</div>'
     + '</div></div>';
-  const thisWeek=(isOwn && typeof laThisWeekCardHTML==='function') ? laThisWeekCardHTML(s) : '';
-  return switcher + controls + summary + thisWeek
+  return switcher + controls + summary
     + '<div class="la-my-grid">' + powerTbl + posTbl + slotTbl + radar + lineup + '</div>'
     + '<div class="la-note la-note-min">' + ((typeof tcInfoBtn==='function')?tcInfoBtn(lens==='value'?'lamyvalue':'lamyproj','How the power score works'):'') + '</div>';
 }

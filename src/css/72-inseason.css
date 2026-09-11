@@ -377,3 +377,21 @@
   .la-pool-proj{font-size:14px;white-space:nowrap;}
   .la-pool-idtxt b{font-size:13px;}
 }
+/* Waiver section of the Lineup pane — the lineup rows' language, two kinds of slot */
+.la-slot-ADD{background:rgba(86,165,255,.18);color:var(--wr);}
+.la-slot-DROP{background:rgba(248,81,73,.14);color:#ff9d9d;}
+.la-wv-pair{border-bottom:1px solid var(--border);}
+.la-wv-pair:last-child{border-bottom:none;}
+.la-wv-pair .la-tm-row{border-bottom:none;padding:9px 0 4px;}
+.la-wv-pair .la-wv-drop{padding:0 0 9px;opacity:.78;}
+.la-wv-pair .la-wv-drop .la-tm-hsimg{width:28px;height:28px;}
+.la-wv-net{font-size:10px;font-weight:800;color:var(--success);}
+.la-wv-bid{font-size:11px;font-weight:900;color:var(--text);background:var(--surface3);border-radius:6px;padding:1px 6px;margin-top:2px;}
+.la-wv-faab{font-size:11px;color:var(--muted);cursor:help;} .la-wv-faab b{color:var(--text);}
+.la-wv-none{font-size:11px;color:var(--muted);padding:12px 0;}
+.la-lh-why{background:var(--surface3);color:var(--muted2);cursor:help;}
+.la-lh-why-vacancy{background:rgba(0,207,159,.14);color:var(--rb);}
+.la-lh-why-spike{background:rgba(86,165,255,.14);color:var(--wr);}
+.la-lh-why-schedule{background:rgba(255,201,77,.14);color:var(--te);}
+.la-lh-why-efficiency{background:rgba(168,85,247,.16);color:#c9a3ff;}
+.la-lh-why-starts{background:rgba(0,207,159,.10);color:var(--rb);}

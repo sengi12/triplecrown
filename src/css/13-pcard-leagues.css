@@ -1,0 +1,21 @@
+/* ── In your leagues: a pill in the hero foot, a popover over the card ── */
+.pcard-lg-pill{display:inline-flex;align-items:center;gap:5px;flex:none;margin-right:8px;padding:4px 9px;border-radius:999px;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.24);color:#fff;font-size:10.5px;font-weight:800;cursor:pointer;white-space:nowrap;z-index:2;position:relative;}
+.pcard-lg-pill .tc-ico{width:12px;height:12px;}
+.pcard-lg-pill:hover{border-color:rgba(255,255,255,.4);}
+.pcard-lg-caret{font-size:10px;opacity:.7;}
+.pcard-lg-pop{margin:6px 12px 0;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;}
+.pcard-lg-head{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 4px 6px;font-size:12px;}
+.pcard-lg-body{display:flex;flex-direction:column;gap:2px;max-height:min(40vh,280px);overflow:auto;}
+.pcard-lg-row{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:8px;text-decoration:none;color:var(--text);}
+.pcard-lg-row:hover{background:var(--surface3);}
+.pcard-lg-av{width:24px;height:24px;border-radius:6px;object-fit:cover;background:var(--surface3);flex:none;}
+.pcard-lg-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}
+.pcard-lg-main b{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pcard-lg-main small{font-size:10px;color:var(--muted);font-weight:700;}
+.pcard-lg-st{flex:none;max-width:42%;font-size:9.5px;font-weight:900;letter-spacing:.05em;padding:3px 8px;border-radius:999px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--surface3);color:var(--muted2);}
+.pcard-lg-free{background:rgba(0,207,159,.16);color:var(--rb);}
+.pcard-lg-mine{background:rgba(61,155,255,.16);color:var(--accent);}
+.pcard-lg-owned{text-transform:none;letter-spacing:0;}
+.pcard-lg-err{color:var(--danger);}
+.pcard-lg-muted{font-size:11px;color:var(--muted);}
+@media (max-width:420px){ .pcard-lg-pill{font-size:10px;padding:3px 7px;} }

@@ -170,7 +170,7 @@ const sres=app.snap(snap);
 chk(sres && sres.mine && sres.lineup && sres.lineup.opponent==='Rivals', 'the snapshot becomes a league result with my roster and the opponent');
 chk(sres.lineup.callouts.some(c=>c.kind==='OBVIOUS' && c.start.id==='1'), 'with the same START call');
 const card=app.teamCard(snap);
-chk(/This Week/.test(card) && /Star Back/.test(card) && /Multi-League/.test(card), 'the Team tab card renders the callouts and links to Multi-League');
+chk(/WAIVER WIRE/.test(card) && /la-slot-ADD/.test(card) && /la-slot-DROP/.test(card) && /Free Wideout/.test(card) && /Multi-League/.test(card), 'the Lineup pane section renders ADD → DROP pairs in the pane\'s rows and links to Multi-League');
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);

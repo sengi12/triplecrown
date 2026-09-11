@@ -591,15 +591,49 @@ function hubSnapshotResult(s){
   _hubSnapMemo={sig, res};
   return res;
 }
-function laThisWeekCardHTML(s){
+// ── The Lineup pane's waiver section — in the pane's own row language ────────
+// The pane already says START / SIT in its lineup rows; what it lacked was the
+// wire. Each ADD names the DROP it beats (value over replacement, this league's
+// scoring), with the game line, the reason chips and the bid, in the same row
+// component as the lineup above it — one design, desktop and phone alike.
+const LA_WHY_LABEL={vacancy:'role opened', spike:'usage spike', schedule:'soft schedule', efficiency:'efficient'};
+function laWaiverSectionHTML(s){
   if(typeof hasSeasonStarted!=='function' || !hasSeasonStarted()) return '';
   const wk=(typeof laCurrentWeek==='function')?laCurrentWeek():1;
   if(typeof _laMu!=='undefined' && !(_laMu.byWeek&&_laMu.byWeek[wk]) && typeof laFetchMatchups==='function') laFetchMatchups(wk, true);
   const res=hubSnapshotResult(s);
   if(!res || !res.mine) return '';
-  const L=res.lineup, gain=L?(L.optTotal-L.curTotal):0;
-  return `<div class="la-my-card la-my-week"><div class="la-my-title">This Week <span class="la-my-sub">wk ${wk}${L&&L.opponent?` · vs ${escHtml(L.opponent)}`:''}${L&&gain>0.05?` · <b>+${gain.toFixed(1)}</b> available`:''} <button class="btn btn-ghost btn-sm" onclick="laSetTab('hub')" title="Every league at once">Multi-League →</button></span></div>${_hubActionsHTML(res, true)}</div>`;
+  const dvp=(typeof laDvpTable==='function')?laDvpTable():null;
+  const row=(p, kind, m)=>{
+    const l3=(m.whys||[]).map(w=>`<span class="la-lh-flag la-lh-why la-lh-why-${w.k}" title="${escAttr(w.text||'')}">${escHtml(w.label)}</span>`).join('');
+    const posc=(typeof _laPosOf==='function')?_laPosOf(p):p.pos;
+    return `<div class="la-tm-row la-wv-row la-wv-${kind}">
+      <span class="la-slot la-slot-${kind==='add'?'ADD':'DROP'}">${kind==='add'?'ADD':'DROP'}</span>
+      <span class="clickable-player la-tm-hs" onclick="${pcardOnclick(p.id,p.pos,p.team||'')}">${(typeof laPlayerImg==='function')?laPlayerImg(p,'la-tm-hsimg'):''}</span>
+      <div class="la-tm-main">
+        <div class="la-tm-l1">${(typeof laNameHTML==='function')?laNameHTML(p,'la-tm-nm'):escHtml(p.name)} <span class="la-tm-pos la-pos-${escAttr(posc)}">${escHtml(posc)}</span><span class="la-tm-team">· ${escHtml(p.team||'FA')}</span></div>
+        <div class="la-tm-l2">${(typeof laGameLineHTML==='function' && laGameLineHTML(p, wk, dvp))||'<span class="la-gm la-gm-none">schedule pending</span>'}</div>
+        ${l3?`<div class="la-tm-l3">${l3}</div>`:''}
+      </div>
+      <div class="la-tm-proj"><b title="This week's projection under this league's scoring">${(+m.adj||0).toFixed(1)}</b>${m.net!=null?`<span class="la-wv-net" title="Rest-of-season value over replacement, net of the player he replaces, per game">${m.net>=0?'+':''}${m.net.toFixed(1)}/gm</span>`:''}${m.bid!=null?`<span class="la-wv-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league, as a share of what you have left">$${m.bid}</span>`:''}</div>
+    </div>`;
+  };
+  const pairs=res.adds.map(c=>{
+    const whys=c.reasons.map(r=>({k:r.k, label:LA_WHY_LABEL[r.k]||r.k, text:r.text}));
+    if(c.startsOver) whys.push({k:'starts', label:`starts over ${c.startsOver.name}`, text:`Beats your weakest eligible starter (${c.startsOver.slot}) by ${c.startsOver.delta} this week`});
+    const add=row({id:c.id,name:c.name,pos:c.pos,team:c.team}, 'add', {adj:c.wp.adj, net:c.net, bid:c.faab?c.faab.bid:null, whys});
+    const drop=c.drop ? row({id:c.drop.id,name:c.drop.name,pos:c.drop.pos,team:c.drop.team}, 'drop',
+      {adj:c.drop.value||0, net:null, bid:null, whys:[{k:'drop', label:`${c.drop.vor>=0?'+':''}${(c.drop.vor||0).toFixed(1)}/gm over replacement`, text:'Rest-of-season value over what is freely available at his position — the least you would miss'}]}) : '';
+    return `<div class="la-wv-pair">${add}${drop}</div>`;
+  }).join('');
+  const faab=res.faab ? `<span class="la-wv-faab" title="FAAB left · ${res.faab.curve?'this league\'s past seasons':'no league history yet (linear decay)'} say about ${(hubFaabAdvice(1,res.wk,res.faab.curve,res.teams,res.faab.budget,res.faab.left).spentShould*100).toFixed(0)}% of the season\'s pickup value is behind you by week ${res.wk}">FAAB <b>$${res.faab.left}</b> / $${res.faab.budget}</span>` : '';
+  const body = pairs ? `<div class="card la-tm-card">${pairs}</div>` : `<div class="card la-tm-card"><div class="la-wv-none">Nothing on the wire beats what you have.</div></div>`;
+  return `<div class="la-ins-bar"><span class="la-ins-lbl">WAIVER WIRE · WEEK ${wk}</span>
+      <span class="la-ins-sub">each add names the drop it beats</span>${faab}
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="laSetTab('hub')" title="Every league at once">Multi-League →</button></div>
+    ${body}`;
 }
+function laThisWeekCardHTML(s){ return laWaiverSectionHTML(s); }
 function hubViewHTML(s){
   const wk = hubState.week || ((typeof laCurrentWeek==='function')?laCurrentWeek():1);
   if(!hubState.leagues.length && !hubState.busy && !hubState.loadedAt && !hubState.error) setTimeout(()=>hubLoadAll(false), 0);
