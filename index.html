@@ -3680,6 +3680,24 @@ button.la-cliff:hover{filter:brightness(1.25);}
   .la-mc-wp-pct{min-width:30px;font-size:10px;}
 }
 @media (max-width:380px){ .la-mc-val{min-width:44px;padding:7px 6px;} }
+
+/* ── Per-player stat lines (BAFL roster-modal style) where a points league prints a number ── */
+.la-bafl-sl{display:flex;flex-direction:column;align-items:flex-end;flex:none;font-family:var(--mono);font-size:10.5px;font-weight:700;line-height:1.3;text-align:right;white-space:nowrap;cursor:help;}
+.la-bafl-live{color:var(--text);font-weight:800;}
+.la-bafl-projl{color:var(--accent);opacity:.85;font-size:10px;}
+.la-mu-p-away .la-bafl-sl{align-items:flex-start;text-align:left;}
+.la-mu-ppts.la-bafl-ppts{min-width:0;}
+.la-tm-proj.la-bafl-proj{min-width:0;}
+.la-tm-proj.la-bafl-proj .la-bafl-projl{font-size:11px;opacity:1;}
+
+/* Lineup hero: the five projected category totals for the lineup shown (+ total yards) */
+.la-lcs{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px;margin-top:10px;}
+.la-lcs-chip{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 7px;display:flex;flex-direction:column;gap:2px;min-width:0;}
+.la-lcs-lbl{font-size:8px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.la-lcs-val{font-family:var(--mono);font-size:14px;font-weight:900;color:var(--text);line-height:1;}
+.la-lcs-total{border-color:rgba(61,155,255,.35);background:rgba(61,155,255,.08);}
+.la-lcs-total .la-lcs-val{color:var(--accent);}
+@media (max-width:600px){ .la-lcs{grid-template-columns:repeat(3,minmax(0,1fr));} .la-bafl-sl{font-size:10px;} .la-bafl-projl{font-size:9.5px;} }
 /* ─────────────────────────────────────────────────────────────────────────────
    College prospect panel (rookie player cards) — see src/js/70b-cfb-prospect.js
 
@@ -36852,6 +36870,10 @@ function laMatchupView(s){
   const pm=laProjMap();
   const dvp=laDvpTable();
   if(!dvp) _laSidecarKick();
+  // BAFL: category scoring from the week's Sleeper stat lines, projections blended in for the
+  // current week — the BAFL app's card, fed by the BAFL app's feeds.
+  const bafl=(typeof laBaflActive==='function')&&laBaflActive();
+  const baflWd=bafl?laBaflWeekData(wk):null;
   const projOf=(pid)=>{ const p=_laPidMeta(meta,pid); const a=laAdjWeekProj(p,wk,pm,dvp); return a.adj; };
   const pairs={};
   data.rows.forEach(r=>{ (pairs[r.matchup_id||('solo'+r.roster_id)]=pairs[r.matchup_id||('solo'+r.roster_id)]||[]).push(r); });
@@ -36900,7 +36922,9 @@ function laMatchupView(s){
       <div class="la-mu-pinfo">${laNameHTML(p)}
         <div class="la-mu-pmeta"><span class="la-pos-${_laPosOf(p)}">${_laPosOf(p)}</span> · ${escHtml(p.team||'FA')}${a.out?` <span class="la-lh-flag la-lh-sit">${escHtml(String(a.status).toUpperCase())}</span>`:''}</div>
         <div class="la-mu-pgame">${laGameLineHTML(p, wk, dvp)}</div></div>
-      <div class="la-mu-ppts ${played?'':'la-mu-ppts-pre'}"><b>${played?(pts!=null?pts:0).toFixed(2):'–'}</b><span class="la-mu-pproj">${a.bye?'BYE':a.adj.toFixed(2)}</span></div>
+      ${bafl
+        ? `<div class="la-mu-ppts la-bafl-ppts">${laBaflLinesHTML(p, wk, a)}</div>`
+        : `<div class="la-mu-ppts ${played?'':'la-mu-ppts-pre'}"><b>${played?(pts!=null?pts:0).toFixed(2):'–'}</b><span class="la-mu-pproj">${a.bye?'BYE':a.adj.toFixed(2)}</span></div>`}
     </div>`;
   };
   const slotLabels=laSlotLabels(s.rosterPositions);
@@ -36914,10 +36938,6 @@ function laMatchupView(s){
   const myIdx=my ? pairList.findIndex(pr=>pr.some(r=>r.roster_id===my.rosterId)) : -1;
   if(myIdx>0){ const [mp]=pairList.splice(myIdx,1); pairList.unshift(mp); }
   let focus=Math.min(Math.max(0, laState.muFocus!=null?laState.muFocus:0), Math.max(0,pairList.length-1));
-  // BAFL: category scoring from the week's Sleeper stat lines, projections blended in for the
-  // current week — the BAFL app's card, fed by the BAFL app's feeds.
-  const bafl=(typeof laBaflActive==='function')&&laBaflActive();
-  const baflWd=bafl?laBaflWeekData(wk):null;
   const baflCs=(bafl&&baflWd&&baflWd.stats)?laBaflCatStats(data.rows, baflWd.stats):null;
   const baflPcs=(bafl&&baflCs)?laBaflProjFor(data.rows, baflWd):null;
   const baflName=(rid)=>(teamBy[rid]||{}).teamName||`Roster ${rid}`;
@@ -36950,7 +36970,7 @@ function laMatchupView(s){
       <div class="la-mu-fhead"><span class="la-ins-lbl">${isMine?'MY MATCHUP':'MATCHUP'} · WEEK ${wk}</span>${wk===cur?`<span class="draft-live">LIVE</span>`:''}${pager}</div>
       ${fscore}
       <div class="la-mu-starters">
-        <div class="la-mu-rowhead"><span>Starters</span><span class="la-ins-sub">points · projected</span></div>
+        <div class="la-mu-rowhead"><span>Starters</span><span class="la-ins-sub">${bafl?'stat line · → projected':'points · projected'}</span></div>
         ${rows}
         ${bench}
         <button class="btn btn-ghost btn-sm la-mu-bnbtn" onclick="laToggleMuBench()">${laState.muBench?'Hide bench':'Show bench'}</button>
@@ -37330,6 +37350,9 @@ function _laLineupPaneHTML(s, my){
   const pm=laProjMap();
   const dvp=laDvpTable();
   if(!dvp) _laSidecarKick();   // adjustments improve when it lands; render now regardless
+  // BAFL: every row prints the projected stat line, the hero the projected category totals.
+  const bafl=(typeof laBaflActive==='function')&&laBaflActive();
+  if(bafl && typeof laBaflWeekData==='function') laBaflWeekData(wk);
   const meta=_laRosterMeta(s);
   const pool=(my.players||[]).filter(p=>p&&p.pos&&['QB','RB','WR','TE','K','DEF'].includes(p.pos));
   const scored=pool.map(p=>{ const a=laAdjWeekProj(p,wk,pm,dvp); return Object.assign({},p,{_a:a}); })
@@ -37370,7 +37393,7 @@ function _laLineupPaneHTML(s, my){
         <div class="la-tm-l2">${laGameLineHTML(p, wk, dvp)||'<span class="la-gm la-gm-none">schedule pending</span>'}</div>
         ${flags.length?`<div class="la-tm-l3">${flags.join('')}</div>`:''}
       </div>
-      <div class="la-tm-proj"><b title="${escAttr(`${a.adj.toFixed(1)} = blend of the preseason projection (${(a.baseRate||0).toFixed(1)}/gm)${a.seas!=null?`, season ${a.seas.toFixed(1)} FPPG`:''}${a.rec3!=null?`, last 3 wks ${a.rec3.toFixed(1)} FPPG`:''}${a.defMult!==1?` × ${a.defMult.toFixed(2)} matchup`:''}`)}">${a.bye||a.out?'0.0':a.adj.toFixed(1)}</b>${(a.baseRate>0&&Math.abs(a.adj-a.baseRate)>0.05&&!a.bye&&!a.out)?`<span class="la-lh-base">proj ${a.baseRate.toFixed(1)}</span>`:''}</div>
+      ${bafl ? `<div class="la-tm-proj la-bafl-proj">${laBaflLinesHTML(p, wk, a, {projOnly: !(laGameStarted(p.team,wk)===true)})}</div>` : `<div class="la-tm-proj"><b title="${escAttr(`${a.adj.toFixed(1)} = blend of the preseason projection (${(a.baseRate||0).toFixed(1)}/gm)${a.seas!=null?`, season ${a.seas.toFixed(1)} FPPG`:''}${a.rec3!=null?`, last 3 wks ${a.rec3.toFixed(1)} FPPG`:''}${a.defMult!==1?` × ${a.defMult.toFixed(2)} matchup`:''}`)}">${a.bye||a.out?'0.0':a.adj.toFixed(1)}</b>${(a.baseRate>0&&Math.abs(a.adj-a.baseRate)>0.05&&!a.bye&&!a.out)?`<span class="la-lh-base">proj ${a.baseRate.toFixed(1)}</span>`:''}</div>`}
     </div>`;
   };
   const rows=optimal.map((f,i)=>{
@@ -37383,14 +37406,18 @@ function _laLineupPaneHTML(s, my){
   const benchList=scored.filter(p=>!optimalSet.has(p.id)&&!sits.includes(p));
   const bench=laState.lhShowAll ? benchList.map(p=>playerRow(p,'BN','bench')).join('') : '';
   const notes=[];
-  notes.push('proj: 35% season projection + 30% season FPPG + 35% last-3-weeks FPPG');
+  if(bafl) notes.push('stat lines: Sleeper\'s week projection per player, live once his game is on (board per-game rates until it loads) · lineup picked on the BAFL category lens');
+  else notes.push('proj: 35% season projection + 30% season FPPG + 35% last-3-weeks FPPG');
   notes.push(dvp?'matchup: opponent defense-vs-position (±10%)':'matchup adjustment off — defensive splits not loaded yet');
   if(!haveCurrent) notes.push(s.provider==='espn'?'ESPN league: optimal lineup only (no live starters feed)':'your set starters load with the week’s matchups');
   const g=laGameInfo(null, wk);
   return `
     <div class="card la-tm-hero">
       <div class="la-tm-herorow">${laTeamAvatar(my,'la-mu-av')}<div class="la-mu-id"><b class="la-mu-tname">${escHtml(my.teamName||'My team')}</b><span class="la-mu-sub">${laOwnerHandle(my)} · ${my.wins!=null?my.wins:'–'}-${my.losses!=null?my.losses:'–'}</span></div>
-        <div class="la-tm-herototal"><span class="la-mu-projsm">week ${wk} projected</span><b>${projTotal.toFixed(1)}</b>${curTotal!=null&&gain>0.05?`<span class="la-tm-gain">+${gain.toFixed(1)} with the swaps below</span>`:curTotal!=null?`<span class="la-tm-gain la-tm-gain-ok">lineup is set optimally</span>`:''}</div></div>
+        ${bafl
+          ? `<div class="la-tm-herototal"><span class="la-mu-projsm">week ${wk} · projected categories</span>${curTotal!=null&&gain>0.05?`<span class="la-tm-gain">swaps below improve the lineup</span>`:curTotal!=null?`<span class="la-tm-gain la-tm-gain-ok">lineup is set optimally</span>`:''}</div>`
+          : `<div class="la-tm-herototal"><span class="la-mu-projsm">week ${wk} projected</span><b>${projTotal.toFixed(1)}</b>${curTotal!=null&&gain>0.05?`<span class="la-tm-gain">+${gain.toFixed(1)} with the swaps below</span>`:curTotal!=null?`<span class="la-tm-gain la-tm-gain-ok">lineup is set optimally</span>`:''}</div>`}</div>
+      ${bafl ? laBaflLineupSummaryHTML(optimal.map(f=>f.player), wk) : ''}
     </div>
     <div class="la-ins-bar"><span class="la-ins-lbl">OPTIMAL LINEUP · WEEK ${wk}</span>
       <span class="la-ins-sub">${haveCurrent?'highlighted rows = start over your current lineup':'projection-driven, adjusted for matchup and recent form'}</span>${(typeof tcLiveFreshHTML==='function')?tcLiveFreshHTML():''}
@@ -38494,6 +38521,8 @@ function laWaiverSectionHTML(s){
   const res=hubSnapshotResult(s);
   if(!res || !res.mine) return '';
   const dvp=(typeof laDvpTable==='function')?laDvpTable():null;
+  // BAFL: the wire prints what each pickup is projected for in the categories, not a lens number.
+  const bafl=(typeof laBaflActive==='function')&&laBaflActive()&&typeof laBaflLinesHTML==='function';
   const row=(p, kind, m)=>{
     const l3=(m.whys||[]).map(w=>`<span class="la-lh-flag la-lh-why la-lh-why-${w.k}" title="${escAttr(w.text||'')}">${escHtml(w.label)}</span>`).join('');
     const posc=(typeof _laPosOf==='function')?_laPosOf(p):p.pos;
@@ -38505,7 +38534,7 @@ function laWaiverSectionHTML(s){
         <div class="la-tm-l2">${(typeof laGameLineHTML==='function' && laGameLineHTML(p, wk, dvp))||'<span class="la-gm la-gm-none">schedule pending</span>'}</div>
         ${l3?`<div class="la-tm-l3">${l3}</div>`:''}
       </div>
-      <div class="la-tm-proj"><b title="This week's projection under this league's scoring">${(+m.adj||0).toFixed(1)}</b>${m.net!=null?`<span class="la-wv-net" title="${m.dyn?'Dynasty chart value over replacement, net of the player he replaces':'Rest-of-season value over replacement, net of the player he replaces, per game'}">${m.net>=0?'+':''}${m.net.toFixed(m.dyn?0:1)}${m.dyn?' dyn':'/gm'}</span>`:''}${m.bid!=null?`<span class="la-wv-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league, as a share of what you have left">$${m.bid}</span>`:''}</div>
+      <div class="la-tm-proj${bafl?' la-bafl-proj':''}">${bafl ? laBaflLinesHTML(p, wk, null, {projOnly:true}) : `<b title="This week's projection under this league's scoring">${(+m.adj||0).toFixed(1)}</b>`}${m.net!=null?`<span class="la-wv-net" title="${m.dyn?'Dynasty chart value over replacement, net of the player he replaces':'Rest-of-season value over replacement, net of the player he replaces, per game'}">${m.net>=0?'+':''}${m.net.toFixed(m.dyn?0:1)}${m.dyn?' dyn':'/gm'}</span>`:''}${m.bid!=null?`<span class="la-wv-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league, as a share of what you have left">$${m.bid}</span>`:''}</div>
     </div>`;
   };
   const pairs=res.adds.map(c=>{
@@ -38788,7 +38817,7 @@ function laBaflWeekData(wk){
   const season=s.season||(typeof TC_SEASON!=='undefined'&&TC_SEASON.year);
   const d=_laBafl.byWeek[wk]=_laBafl.byWeek[wk]||{ stats:null, statsAt:0, proj:null, projAt:0, prog:null, progAt:0, busy:{} };
   const now=Date.now(), current=(typeof laCurrentWeek==='function')&&wk===laCurrentWeek();
-  const stillHere=()=>(typeof laSnapshotRef!=='function'||laSnapshotRef()===ref) && (typeof laActivePane!=='function'||laActivePane()==='matchup') && laMuWeek()===wk;
+  const stillHere=()=>(typeof laSnapshotRef!=='function'||laSnapshotRef()===ref) && (typeof laActivePane!=='function'||['matchup','lineup'].includes(laActivePane())) && laMuWeek()===wk;
   const land=(what)=>{ if(stillHere() && typeof _laInsRerender==='function') _laInsRerender(); };
   // Stats: completed weeks are immutable (fetchWeekStats caches them for good); the current
   // week is re-read on the poll's cadence, straight from Sleeper.
@@ -38826,6 +38855,95 @@ function laBaflWeekData(wk){
 function laBaflProjFor(rows, wd){
   if(!wd || !wd.proj || !wd.stats) return null;
   return laBaflBlend(rows, wd.stats, wd.proj, wd.prog);
+}
+
+// ── Per-player lines: what he is projected for, in the categories the matchup is decided on ──
+// A points league prints one number per player; BAFL is decided on yards, touchdowns and
+// kicks, so every per-player slot in the analyzer prints the stat line instead — the BAFL
+// app's roster-modal style ("284yd · 2TD · 1INT", "88rush · 24rec · 1TD", "2/2XP · 1/2FG").
+// The projected line is Sleeper's full-week line per starter, blended exactly as the card
+// blends it (what has happened plus the unplayed share of the rest); before Sleeper's line
+// lands it falls back to the projection board's per-game rates times the Lineup pane's
+// matchup/form multiplier, so the line is never blank for a skill player.
+const LA_BAFL_LINE_FIELDS=['pass_att','pass_yd','pass_td','pass_int','rush_att','rush_yd','rush_td','rec','rec_tgt','rec_yd','rec_td','xpm','xpa','fgm','fga','pass_2pt','rush_2pt','rec_2pt'];
+function laBaflStatLine(ps, pos, projected){
+  if(!ps) return '';
+  const n=v=>String(Math.round(+v||0));
+  const d1=v=>{ v=+v||0; return Math.abs(v-Math.round(v))<0.05?String(Math.round(v)):v.toFixed(1); };
+  const tds=(ps.pass_td||0)+(ps.rush_td||0)+(ps.rec_td||0);
+  const P=String(pos||'').toUpperCase(), parts=[];
+  const passing=(ps.pass_att||0)>0||(ps.pass_yd||0)>0, rushing=(ps.rush_att||0)>0||(ps.rush_yd||0)>0, receiving=(ps.rec_tgt||0)>0||(ps.rec_yd||0)>0||(ps.rec||0)>0, kicking=(ps.xpa||0)>0||(ps.fga||0)>0||(ps.xpm||0)>0||(ps.fgm||0)>0;
+  if(P==='QB' || (passing && P!=='RB' && P!=='WR' && P!=='TE' && P!=='K')){
+    if(!passing && !rushing) return '';
+    parts.push(`${n(ps.pass_yd)}yd`);
+    if(tds) parts.push(`${d1(tds)}TD`);
+    if(ps.pass_int) parts.push(`${d1(ps.pass_int)}INT`);
+    if((ps.rush_yd||0)>0) parts.push(`${n(ps.rush_yd)}rush`);
+  } else if(P==='K'){
+    if(!kicking) return '';
+    parts.push(projected ? `${d1(ps.xpm)}XP` : `${n(ps.xpm)}/${n(ps.xpa)}XP`);
+    parts.push(projected ? `${d1(ps.fgm)}FG` : `${n(ps.fgm)}/${n(ps.fga)}FG`);
+  } else if(P==='RB' || (rushing && !receiving)){
+    if(!rushing && !receiving) return '';
+    parts.push(`${n(ps.rush_yd)}rush`);
+    if(receiving) parts.push(projected ? `${n(ps.rec_yd)}rec` : `${n(ps.rec)}/${n(ps.rec_tgt)} ${n(ps.rec_yd)}rec`);
+    if(tds) parts.push(`${d1(tds)}TD`);
+  } else {
+    if(!receiving && !rushing) return '';
+    parts.push(projected ? `${n(ps.rec_yd)}yd` : `${n(ps.rec)}/${n(ps.rec_tgt)} ${n(ps.rec_yd)}yd`);
+    if(tds) parts.push(`${d1(tds)}TD`);
+    if((ps.rush_yd||0)>0) parts.push(`${n(ps.rush_yd)}rush`);
+  }
+  return parts.join(' · ');
+}
+// The projection board, keyed by Sleeper id and by name|pos, for the pre-Sleeper fallback.
+function _laBaflBoard(){
+  const now=Date.now();
+  if(_laBafl.board && now-_laBafl.boardAt<60000) return _laBafl.board;
+  const byId=new Map(), byName=new Map();
+  try{ (typeof buildProjectionList==='function'?buildProjectionList():[]).forEach(r=>{ if(r.player_id!=null) byId.set(String(r.player_id), r); byName.set((typeof ecrNormName==='function'?ecrNormName(r.name):String(r.name||'').toLowerCase())+'|'+r.pos, r); }); }catch(e){}
+  _laBafl.board={byId, byName}; _laBafl.boardAt=now;
+  return _laBafl.board;
+}
+function _laBaflBoardWeekLine(p, a){
+  if(a && (a.bye || a.out)) return null;
+  const b=_laBaflBoard();
+  const row=b.byId.get(String(p.id||'')) || b.byName.get((typeof ecrNormName==='function'?ecrNormName(p.name||''):String(p.name||'').toLowerCase())+'|'+p.pos);
+  if(!row) return null;
+  const g=Number(row.proj_games)>0?Number(row.proj_games):17;
+  const mult=(a && a.baseRate>0 && a.adj>0) ? a.adj/a.baseRate : 1;
+  const f=v=>((+v||0)/g)*mult;
+  return { pass_att:f(row.passing_attempts), pass_yd:f(row.passing_yards), pass_td:f(row.passing_tds), pass_int:f(row.interceptions_thrown),
+           rush_att:f(row.rushing_attempts), rush_yd:f(row.rushing_yards), rush_td:f(row.rushing_tds),
+           rec:f(row.receptions), rec_tgt:f(row.targets), rec_yd:f(row.receiving_yards), rec_td:f(row.receiving_tds) };
+}
+// {live, proj (blended), rem, src, liveLine, projLine} for one player this week.
+function laBaflPlayerLines(p, wk, a){
+  const d=_laBafl.byWeek[wk]||null, pid=String(p.id||'');
+  const live=(d&&d.stats&&d.stats[pid])||null;
+  let prow=(d&&d.proj&&d.proj.stats[pid])||null, src='sleeper', rem;
+  if(prow){ rem=d.prog ? _laBaflGameRem(d.prog, d.proj.game[pid], d.proj.team[pid]) : ((typeof laGameStarted==='function'&&laGameStarted(p.team,wk)===true)?0:1); }
+  else { prow=_laBaflBoardWeekLine(p, a); src=prow?'board':'none'; rem=prow ? ((typeof laGameStarted==='function'&&laGameStarted(p.team,wk)===true)?0:1) : 0; }
+  const proj={};
+  LA_BAFL_LINE_FIELDS.forEach(k=>{ const v=(live&&+live[k]||0)+rem*((prow&&+prow[k])||0); if(v) proj[k]=v; });
+  return { live, proj, rem, src, liveLine:laBaflStatLine(live,p.pos,false), projLine:laBaflStatLine(proj,p.pos,true) };
+}
+// The two-line block for a matchup starter: live line over the projected finish.
+function laBaflLinesHTML(p, wk, a, opts){
+  opts=opts||{};
+  const L=laBaflPlayerLines(p, wk, a);
+  const tip=L.src==='sleeper'?'Sleeper\'s week projection for him — what has happened plus the unplayed share of the rest':L.src==='board'?'Per-game rates from the projection board, adjusted for matchup and form (Sleeper\'s week line not loaded yet)':'';
+  const liveTxt = L.liveLine || (L.rem<1 && L.live ? '0' : '–');
+  const projTxt = (a && a.bye) ? 'BYE' : (a && a.out) ? 'OUT' : (L.projLine ? `→ ${L.projLine}` : '');
+  return `<div class="la-bafl-sl${opts.cls?' '+opts.cls:''}" title="${escAttr(tip)}">${opts.projOnly?'':`<span class="la-bafl-live">${escHtml(liveTxt)}</span>`}${projTxt?`<span class="la-bafl-projl">${escHtml(projTxt)}</span>`:''}</div>`;
+}
+// The Lineup pane's hero: the five numbers the matchup is decided on, projected for the
+// lineup shown (the BAFL app's lineup-cat-summary), instead of one points total.
+function laBaflLineupSummaryHTML(players, wk){
+  const tot={passing:0,rushing:0,receiving:0,tds:0,kicking:0};
+  players.forEach(p=>{ if(!p) return; const L=laBaflPlayerLines(p, wk, p._a); const c=laBaflCatsOf(L.proj); for(const k in tot) tot[k]+=c[k]; });
+  const chip=(lbl,v,cls)=>`<div class="la-lcs-chip${cls?' '+cls:''}"><span class="la-lcs-lbl">${lbl}</span><span class="la-lcs-val">${Math.round(v)}</span></div>`;
+  return `<div class="la-lcs">${LA_BAFL_MC_CATS.map(c=>chip(c.label, tot[c.key])).join('')}${chip('Total Yds', laBaflTotalYards(tot), 'la-lcs-total')}</div>`;
 }
 
 if(typeof TC_INFO_BOOK!=='undefined'){

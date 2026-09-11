@@ -12,8 +12,10 @@ const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`
   toast=function(){};
   sleeperFetch=async()=>{ throw new Error('no net in tests'); };
+  laProjMap=()=>new Map(); paceForPlayer=()=>null;
+  buildProjectionList=function(){ return [{player_id:'r1',name:'Rhamondre Stevenson',pos:'RB',team:'NE',rushing_attempts:238,rushing_yards:1020,rushing_tds:8.5,receptions:34,targets:44,receiving_yards:340,proj_games:17}]; };
   return { catsOf:laBaflCatsOf, catStats:laBaflCatStats, result:laBaflResult, blend:laBaflBlend, wp:laBaflWinProb, card:laBaflMatchupCard, prog:laBaflGameProgress,
-    view:laMatchupView, mu:()=>_laMu, bafl:()=>_laBafl, setSnapshot:(s)=>{ leagueSnapshot=s; }, setPhase:(p)=>{ currentPhase=p; }, TC_SEASON, laState,
+    view:laMatchupView, lineup:laLineupView, statLine:laBaflStatLine, lines:laBaflPlayerLines, summary:laBaflLineupSummaryHTML, mu:()=>_laMu, bafl:()=>_laBafl, setSnapshot:(s)=>{ leagueSnapshot=s; }, setPhase:(p)=>{ currentPhase=p; }, TC_SEASON, laState,
     on:()=>{ scoringSettings.baflMode=true; }, off:()=>{ scoringSettings.baflMode=false; }, cat:calcBaflCat };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -87,12 +89,47 @@ v=app.view(SNAP);
 chk(/MY MATCHUP · WEEK 2/.test(v) && (v.match(/class="la-mc /g)||v.match(/class="la-mc"/g)||v.match(/la-mc la-mc-mine/g)).length>=1, 'my matchup is featured as the BAFL card');
 chk(!/la-mu-fscore/.test(v) && !/la-mu-pts/.test(v), 'the points score block is gone in BAFL Mode');
 chk(/ALL MATCHUPS/.test(v) && /la-mc-grid/.test(v) && (v.match(/la-mc-pick/g)||[]).length===2, 'every pairing is a BAFL card in the grid, tappable to feature');
-chk(/Drake Maye/.test(v) && /points · projected/.test(v), 'the starters-by-slot detail stays under the card');
+chk(/Drake Maye/.test(v) && /Starters<\/span>/.test(v), 'the starters-by-slot detail stays under the card');
 chk(/labaflwp/.test(v), 'the win % explainer is the BAFL one');
 app.off();
 v=app.view(SNAP);
 chk(/la-mu-fscore/.test(v) && /SCOREBOARD/.test(v) && !/la-mc/.test(v), 'without BAFL Mode the points matchup is untouched');
 chk(Math.round(app.cat({passing_yards:1547})*10)/10===60 && Math.round(app.cat({rushing_yards:833})*10)/10===60, 'the season category lens is unchanged: one category-season of yards = 60');
+
+console.log('=== per-player stat lines — the BAFL roster-modal style ===');
+chk(app.statLine({pass_att:38,pass_yd:284,pass_td:2,pass_int:1,rush_yd:12},'QB',false)==='284yd · 2TD · 1INT · 12rush', 'QB actual: yards · TD · INT · rush');
+chk(app.statLine({pass_yd:251.4,pass_td:1.8,pass_int:0.7,rush_td:0.3},'QB',true)==='251yd · 2.1TD · 0.7INT', 'QB projected: fractional TDs (pass + rush) to one decimal');
+chk(app.statLine({rush_att:18,rush_yd:88,rush_td:1,rec:3,rec_tgt:4,rec_yd:24},'RB',false)==='88rush · 3/4 24rec · 1TD', 'RB actual: rush · rec/tgt yds · TD');
+chk(app.statLine({rush_yd:74,rec_yd:22.5,rec:2.6,rec_tgt:3.4,rush_td:0.7},'RB',true)==='74rush · 23rec · 0.7TD', 'RB projected: no fractional catches, just the yards');
+chk(app.statLine({rec:5,rec_tgt:7,rec_yd:66,rec_td:1},'WR',false)==='5/7 66yd · 1TD' && app.statLine({rec_yd:81,rec_td:0.6},'TE',true)==='81yd · 0.6TD', 'WR/TE lines');
+chk(app.statLine({xpm:2,xpa:2,fgm:1,fga:2},'K',false)==='2/2XP · 1/2FG' && app.statLine({xpm:2.6,fgm:1.7},'K',true)==='2.6XP · 1.7FG', 'K lines: makes/attempts live, expected makes projected');
+chk(app.statLine({pass_att:0,rec_yd:0},'WR',false)==='' && app.statLine(null,'QB',true)==='', 'nothing to say → empty (the row prints a dash)');
+
+console.log('=== a player\'s projected line: live + the unplayed share, or the board until Sleeper lands ===');
+const wkd=app.bafl().byWeek[2];
+wkd.stats={ q1:{pass_att:20,pass_yd:180,pass_td:1}, r1:{rush_att:9,rush_yd:40} };
+wkd.proj={ stats:{ q1:{pass_att:36,pass_yd:270,pass_td:2,pass_int:0.8}, r1:{rush_att:16,rush_yd:80,rush_td:0.6,rec:2.5,rec_tgt:3,rec_yd:20} }, game:{q1:'g2',r1:'g2'}, team:{} };
+wkd.prog={ rem:{g2:0.5}, byTeam:{}, weekDone:false };
+let L=app.lines({id:'q1',name:'Drake Maye',pos:'QB',team:'NE'}, 2, null);
+chk(L.src==='sleeper' && L.rem===0.5 && Math.abs(L.proj.pass_yd-(180+135))<1e-9 && L.liveLine==='180yd · 1TD' && L.projLine==='315yd · 2TD · 0.4INT', `halftime QB: live ${L.liveLine} → ${L.projLine}`);
+L=app.lines({id:'w9',name:'Nobody Yet',pos:'WR',team:'SEA'}, 2, null);
+chk(L.src==='none' && L.projLine==='' && L.liveLine==='', 'no Sleeper line and not on the board → nothing invented');
+delete wkd.proj.stats.r1;
+L=app.lines({id:'r1',name:'Rhamondre Stevenson',pos:'RB',team:'NE'}, 2, {adj:12, baseRate:10});
+chk(L.src==='board' && L.projLine==='112rush · 24rec · 0.6TD', `board fallback: live 40 + per-game rates (60 rush, 20 rec, 0.5 TD) × the pane's 1.2 matchup/form multiplier (${L.projLine})`);
+const sum=app.summary([{id:'q1',name:'Drake Maye',pos:'QB',team:'NE'},{id:'r1',name:'Rhamondre Stevenson',pos:'RB',team:'NE',_a:{adj:12,baseRate:10}}], 2);
+chk(/la-lcs-lbl">Passing<\/span><span class="la-lcs-val">307</.test(sum) && /Total Yds<\/span><span class="la-lcs-val">443</.test(sum), 'the lineup summary chips sum the projected lines into the five categories (passing net of 20 per projected INT) + total yards');
+
+console.log('=== the panes print stat lines, not points, in BAFL Mode ===');
+app.on();
+v=app.view(SNAP);
+chk(/stat line · → projected/.test(v) && /la-bafl-sl/.test(v) && !/la-mu-pproj/.test(v), 'matchup starters carry the two-line stat block instead of points');
+chk(/la-bafl-live">180yd · 1TD<\/span><span class="la-bafl-projl">→ 315yd · 2TD · 0\.4INT/.test(v), 'Maye\'s row: live line over the projected finish');
+const lu=app.lineup(SNAP);
+chk(/la-lcs/.test(lu) && /projected categories/.test(lu) && !/week 2 projected<\/span><b>/.test(lu), 'the Lineup hero shows the category chips instead of a points total');
+chk(/la-bafl-proj/.test(lu) && /→ /.test(lu), 'lineup rows print the projected stat line');
+app.off();
+chk(/week 2 projected<\/span><b>/.test(app.lineup(SNAP)) && /la-mu-pproj/.test(app.view(SNAP)), 'off: points everywhere, as before');
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);
