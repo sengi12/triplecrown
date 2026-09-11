@@ -20,6 +20,7 @@ const TC_ICON = (() => {
             '<path d="M12 13v3M9 20h6M10 20v-1.5a2 2 0 0 1 4 0V20"/>',
     star:   '<path d="m12 3 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.2l5.9-.9L12 3Z" fill="currentColor" stroke="none"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  keyboard: `<svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M17 10h.01M7 14h10"/></svg>`,
     chat:   '<path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4z"/><path d="M8.5 10.5h7M8.5 13.5h4"/>',
     scale:  '<path d="M12 4v15M8 19h8M6 7l12-2"/><path d="m6 7-2.3 5.2a2.6 2.6 0 0 0 4.6 0L6 7ZM18 5l-2.3 5.2a2.6 2.6 0 0 0 4.6 0L18 5Z"/>',
     menu:   '<path d="M4 7h16M4 12h16M4 17h16"/>',
