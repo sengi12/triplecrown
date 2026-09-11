@@ -741,6 +741,8 @@ function laWaiverSectionHTML(s){
   const res=hubSnapshotResult(s);
   if(!res || !res.mine) return '';
   const dvp=(typeof laDvpTable==='function')?laDvpTable():null;
+  // BAFL: the wire prints what each pickup is projected for in the categories, not a lens number.
+  const bafl=(typeof laBaflActive==='function')&&laBaflActive()&&typeof laBaflLinesHTML==='function';
   const row=(p, kind, m)=>{
     const l3=(m.whys||[]).map(w=>`<span class="la-lh-flag la-lh-why la-lh-why-${w.k}" title="${escAttr(w.text||'')}">${escHtml(w.label)}</span>`).join('');
     const posc=(typeof _laPosOf==='function')?_laPosOf(p):p.pos;
@@ -752,7 +754,7 @@ function laWaiverSectionHTML(s){
         <div class="la-tm-l2">${(typeof laGameLineHTML==='function' && laGameLineHTML(p, wk, dvp))||'<span class="la-gm la-gm-none">schedule pending</span>'}</div>
         ${l3?`<div class="la-tm-l3">${l3}</div>`:''}
       </div>
-      <div class="la-tm-proj"><b title="This week's projection under this league's scoring">${(+m.adj||0).toFixed(1)}</b>${m.net!=null?`<span class="la-wv-net" title="${m.dyn?'Dynasty chart value over replacement, net of the player he replaces':'Rest-of-season value over replacement, net of the player he replaces, per game'}">${m.net>=0?'+':''}${m.net.toFixed(m.dyn?0:1)}${m.dyn?' dyn':'/gm'}</span>`:''}${m.bid!=null?`<span class="la-wv-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league, as a share of what you have left">$${m.bid}</span>`:''}</div>
+      <div class="la-tm-proj${bafl?' la-bafl-proj':''}">${bafl ? laBaflLinesHTML(p, wk, null, {projOnly:true}) : `<b title="This week's projection under this league's scoring">${(+m.adj||0).toFixed(1)}</b>`}${m.net!=null?`<span class="la-wv-net" title="${m.dyn?'Dynasty chart value over replacement, net of the player he replaces':'Rest-of-season value over replacement, net of the player he replaces, per game'}">${m.net>=0?'+':''}${m.net.toFixed(m.dyn?0:1)}${m.dyn?' dyn':'/gm'}</span>`:''}${m.bid!=null?`<span class="la-wv-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league, as a share of what you have left">$${m.bid}</span>`:''}</div>
     </div>`;
   };
   const pairs=res.adds.map(c=>{

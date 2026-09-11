@@ -242,7 +242,7 @@ function laBaflWeekData(wk){
   const season=s.season||(typeof TC_SEASON!=='undefined'&&TC_SEASON.year);
   const d=_laBafl.byWeek[wk]=_laBafl.byWeek[wk]||{ stats:null, statsAt:0, proj:null, projAt:0, prog:null, progAt:0, busy:{} };
   const now=Date.now(), current=(typeof laCurrentWeek==='function')&&wk===laCurrentWeek();
-  const stillHere=()=>(typeof laSnapshotRef!=='function'||laSnapshotRef()===ref) && (typeof laActivePane!=='function'||laActivePane()==='matchup') && laMuWeek()===wk;
+  const stillHere=()=>(typeof laSnapshotRef!=='function'||laSnapshotRef()===ref) && (typeof laActivePane!=='function'||['matchup','lineup'].includes(laActivePane())) && laMuWeek()===wk;
   const land=(what)=>{ if(stillHere() && typeof _laInsRerender==='function') _laInsRerender(); };
   // Stats: completed weeks are immutable (fetchWeekStats caches them for good); the current
   // week is re-read on the poll's cadence, straight from Sleeper.
@@ -280,6 +280,95 @@ function laBaflWeekData(wk){
 function laBaflProjFor(rows, wd){
   if(!wd || !wd.proj || !wd.stats) return null;
   return laBaflBlend(rows, wd.stats, wd.proj, wd.prog);
+}
+
+// ── Per-player lines: what he is projected for, in the categories the matchup is decided on ──
+// A points league prints one number per player; BAFL is decided on yards, touchdowns and
+// kicks, so every per-player slot in the analyzer prints the stat line instead — the BAFL
+// app's roster-modal style ("284yd · 2TD · 1INT", "88rush · 24rec · 1TD", "2/2XP · 1/2FG").
+// The projected line is Sleeper's full-week line per starter, blended exactly as the card
+// blends it (what has happened plus the unplayed share of the rest); before Sleeper's line
+// lands it falls back to the projection board's per-game rates times the Lineup pane's
+// matchup/form multiplier, so the line is never blank for a skill player.
+const LA_BAFL_LINE_FIELDS=['pass_att','pass_yd','pass_td','pass_int','rush_att','rush_yd','rush_td','rec','rec_tgt','rec_yd','rec_td','xpm','xpa','fgm','fga','pass_2pt','rush_2pt','rec_2pt'];
+function laBaflStatLine(ps, pos, projected){
+  if(!ps) return '';
+  const n=v=>String(Math.round(+v||0));
+  const d1=v=>{ v=+v||0; return Math.abs(v-Math.round(v))<0.05?String(Math.round(v)):v.toFixed(1); };
+  const tds=(ps.pass_td||0)+(ps.rush_td||0)+(ps.rec_td||0);
+  const P=String(pos||'').toUpperCase(), parts=[];
+  const passing=(ps.pass_att||0)>0||(ps.pass_yd||0)>0, rushing=(ps.rush_att||0)>0||(ps.rush_yd||0)>0, receiving=(ps.rec_tgt||0)>0||(ps.rec_yd||0)>0||(ps.rec||0)>0, kicking=(ps.xpa||0)>0||(ps.fga||0)>0||(ps.xpm||0)>0||(ps.fgm||0)>0;
+  if(P==='QB' || (passing && P!=='RB' && P!=='WR' && P!=='TE' && P!=='K')){
+    if(!passing && !rushing) return '';
+    parts.push(`${n(ps.pass_yd)}yd`);
+    if(tds) parts.push(`${d1(tds)}TD`);
+    if(ps.pass_int) parts.push(`${d1(ps.pass_int)}INT`);
+    if((ps.rush_yd||0)>0) parts.push(`${n(ps.rush_yd)}rush`);
+  } else if(P==='K'){
+    if(!kicking) return '';
+    parts.push(projected ? `${d1(ps.xpm)}XP` : `${n(ps.xpm)}/${n(ps.xpa)}XP`);
+    parts.push(projected ? `${d1(ps.fgm)}FG` : `${n(ps.fgm)}/${n(ps.fga)}FG`);
+  } else if(P==='RB' || (rushing && !receiving)){
+    if(!rushing && !receiving) return '';
+    parts.push(`${n(ps.rush_yd)}rush`);
+    if(receiving) parts.push(projected ? `${n(ps.rec_yd)}rec` : `${n(ps.rec)}/${n(ps.rec_tgt)} ${n(ps.rec_yd)}rec`);
+    if(tds) parts.push(`${d1(tds)}TD`);
+  } else {
+    if(!receiving && !rushing) return '';
+    parts.push(projected ? `${n(ps.rec_yd)}yd` : `${n(ps.rec)}/${n(ps.rec_tgt)} ${n(ps.rec_yd)}yd`);
+    if(tds) parts.push(`${d1(tds)}TD`);
+    if((ps.rush_yd||0)>0) parts.push(`${n(ps.rush_yd)}rush`);
+  }
+  return parts.join(' · ');
+}
+// The projection board, keyed by Sleeper id and by name|pos, for the pre-Sleeper fallback.
+function _laBaflBoard(){
+  const now=Date.now();
+  if(_laBafl.board && now-_laBafl.boardAt<60000) return _laBafl.board;
+  const byId=new Map(), byName=new Map();
+  try{ (typeof buildProjectionList==='function'?buildProjectionList():[]).forEach(r=>{ if(r.player_id!=null) byId.set(String(r.player_id), r); byName.set((typeof ecrNormName==='function'?ecrNormName(r.name):String(r.name||'').toLowerCase())+'|'+r.pos, r); }); }catch(e){}
+  _laBafl.board={byId, byName}; _laBafl.boardAt=now;
+  return _laBafl.board;
+}
+function _laBaflBoardWeekLine(p, a){
+  if(a && (a.bye || a.out)) return null;
+  const b=_laBaflBoard();
+  const row=b.byId.get(String(p.id||'')) || b.byName.get((typeof ecrNormName==='function'?ecrNormName(p.name||''):String(p.name||'').toLowerCase())+'|'+p.pos);
+  if(!row) return null;
+  const g=Number(row.proj_games)>0?Number(row.proj_games):17;
+  const mult=(a && a.baseRate>0 && a.adj>0) ? a.adj/a.baseRate : 1;
+  const f=v=>((+v||0)/g)*mult;
+  return { pass_att:f(row.passing_attempts), pass_yd:f(row.passing_yards), pass_td:f(row.passing_tds), pass_int:f(row.interceptions_thrown),
+           rush_att:f(row.rushing_attempts), rush_yd:f(row.rushing_yards), rush_td:f(row.rushing_tds),
+           rec:f(row.receptions), rec_tgt:f(row.targets), rec_yd:f(row.receiving_yards), rec_td:f(row.receiving_tds) };
+}
+// {live, proj (blended), rem, src, liveLine, projLine} for one player this week.
+function laBaflPlayerLines(p, wk, a){
+  const d=_laBafl.byWeek[wk]||null, pid=String(p.id||'');
+  const live=(d&&d.stats&&d.stats[pid])||null;
+  let prow=(d&&d.proj&&d.proj.stats[pid])||null, src='sleeper', rem;
+  if(prow){ rem=d.prog ? _laBaflGameRem(d.prog, d.proj.game[pid], d.proj.team[pid]) : ((typeof laGameStarted==='function'&&laGameStarted(p.team,wk)===true)?0:1); }
+  else { prow=_laBaflBoardWeekLine(p, a); src=prow?'board':'none'; rem=prow ? ((typeof laGameStarted==='function'&&laGameStarted(p.team,wk)===true)?0:1) : 0; }
+  const proj={};
+  LA_BAFL_LINE_FIELDS.forEach(k=>{ const v=(live&&+live[k]||0)+rem*((prow&&+prow[k])||0); if(v) proj[k]=v; });
+  return { live, proj, rem, src, liveLine:laBaflStatLine(live,p.pos,false), projLine:laBaflStatLine(proj,p.pos,true) };
+}
+// The two-line block for a matchup starter: live line over the projected finish.
+function laBaflLinesHTML(p, wk, a, opts){
+  opts=opts||{};
+  const L=laBaflPlayerLines(p, wk, a);
+  const tip=L.src==='sleeper'?'Sleeper\'s week projection for him — what has happened plus the unplayed share of the rest':L.src==='board'?'Per-game rates from the projection board, adjusted for matchup and form (Sleeper\'s week line not loaded yet)':'';
+  const liveTxt = L.liveLine || (L.rem<1 && L.live ? '0' : '–');
+  const projTxt = (a && a.bye) ? 'BYE' : (a && a.out) ? 'OUT' : (L.projLine ? `→ ${L.projLine}` : '');
+  return `<div class="la-bafl-sl${opts.cls?' '+opts.cls:''}" title="${escAttr(tip)}">${opts.projOnly?'':`<span class="la-bafl-live">${escHtml(liveTxt)}</span>`}${projTxt?`<span class="la-bafl-projl">${escHtml(projTxt)}</span>`:''}</div>`;
+}
+// The Lineup pane's hero: the five numbers the matchup is decided on, projected for the
+// lineup shown (the BAFL app's lineup-cat-summary), instead of one points total.
+function laBaflLineupSummaryHTML(players, wk){
+  const tot={passing:0,rushing:0,receiving:0,tds:0,kicking:0};
+  players.forEach(p=>{ if(!p) return; const L=laBaflPlayerLines(p, wk, p._a); const c=laBaflCatsOf(L.proj); for(const k in tot) tot[k]+=c[k]; });
+  const chip=(lbl,v,cls)=>`<div class="la-lcs-chip${cls?' '+cls:''}"><span class="la-lcs-lbl">${lbl}</span><span class="la-lcs-val">${Math.round(v)}</span></div>`;
+  return `<div class="la-lcs">${LA_BAFL_MC_CATS.map(c=>chip(c.label, tot[c.key])).join('')}${chip('Total Yds', laBaflTotalYards(tot), 'la-lcs-total')}</div>`;
 }
 
 if(typeof TC_INFO_BOOK!=='undefined'){
