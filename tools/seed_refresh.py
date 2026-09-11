@@ -37,6 +37,7 @@ USAGE
     python tools/seed_refresh.py --dry-run          # decide + report, but don't build
 """
 import argparse
+import calendar
 import glob
 import json
 import os
@@ -189,22 +190,32 @@ SOURCES = {
         "upstream": ["rosters", "draft_picks", "trades"],
         "why": "nflverse rosters/draft/trades — rebuilt only when one of those feeds moves",
     },
-    # The current-season sidecar (seeds/triplecrown_seed.inseason.json), DAILY in-season.
-    # It was weekly ("one Pages deploy a week") until the 2026 opener, when the Advanced
-    # tab, DvP and the per-game charts sat on Wednesday data all weekend — and the churn
-    # rationale had quietly died anyway: sleeper/roster_moves already commit most days, so
-    # a daily sidecar adds no extra deploys. nflverse pbp lands nightly (~04:30-06:00 UTC);
-    # the 06:37 UTC cron slot exists to chase it.
+    # The current-season sidecar (seeds/triplecrown_seed.inseason.json), UPSTREAM-DRIVEN
+    # in-season. It was weekly, then a 6-hour clock — and a clock is the wrong instrument:
+    # nflverse posts a game's pbp at an irregular hour the morning after (its workflow
+    # fires at 05:33 UTC after TNF/SNF/MNF, 09:03 daily, 22:03/00:07 UTC on Sunday, each
+    # delayed by GitHub's queue), and a clock either rebuilt for nothing or sat on
+    # Wednesday's data all weekend. So the refresher watches the releases the sidecar is
+    # built from (SIDECAR_UPSTREAM) and rebuilds when one of them has moved since the last
+    # bake — with a daily ceiling in case timestamp.json is ever unreachable or wrong.
+    # The workflow wakes every two hours in season to look; a look costs nothing.
     # Invalidates only the CURRENT season's pbp/roster raw files, so no other season re-fetches.
     "inseason": {
         "paths": [f"nflverse/raw/pbp/pbp_{_CUR_SEASON}.csv.gz",
                   f"nflverse/raw/aux/*_roster_{_CUR_SEASON}.csv",
                   "nflverse/raw/aux/*_games.csv"],
-        "every": 6 * 3600,      # in-season: every scheduled run rebuilds (a forced refresh must not push the next cron past its anchor)
+        "every": 1 * DAY,       # ceiling only — the trigger is an upstream release moving
+        "upstream": ["pbp", "nextgen_stats", "snap_counts", "pfr_advstats", "ftn_charting"],
         "in_season_only": True,     # dormant in the offseason — nothing is moving
-        "why": "current-season nflverse weekly sidecar — weekly during the season",
+        "why": "current-season nflverse sidecar — rebuilt when an nflverse release it reads moves",
     },
 }
+
+# The releases the in-season sidecar is built from (mirrors src/nflverse/inseason.py's
+# SIDECAR_UPSTREAM — kept as a literal here so this script stays stdlib-only and can run
+# as the workflow's pre-install probe). pbp is the game itself; nextgen_stats the morning-after
+# tracking data; snap_counts / pfr_advstats / ftn_charting the per-game companions.
+SIDECAR_UPSTREAM = SOURCES["inseason"]["upstream"]
 
 # nflverse releases whose movement means the HISTORICAL block's inputs changed. Each exposes
 # a timestamp.json, so we compare the published timestamp to what we saw last time rather
@@ -309,6 +320,112 @@ def nflverse_stale(state, tags=None, bucket="nflverse"):
         if seen.get(tag) != ts:
             changed.append(f"{tag} → {ts}")
     return bool(changed), latest, notes + [f"changed: {c}" for c in changed]
+
+
+_TZ_OFFSETS = {"EST": -5, "EDT": -4, "CST": -6, "CDT": -5, "MST": -7, "MDT": -6,
+               "PST": -8, "PDT": -7, "UTC": 0, "GMT": 0}
+
+
+def parse_nflverse_ts(ts):
+    """'2026-09-11 10:01:38 EDT' → epoch seconds (None when unparseable)."""
+    try:
+        date, clock, tz = str(ts).strip().split()
+        wall = calendar.timegm(time.strptime(f"{date} {clock}", "%Y-%m-%d %H:%M:%S"))
+        return wall - _TZ_OFFSETS.get(tz.upper(), -4) * 3600
+    except Exception:
+        return None
+
+
+def _short_ts(ts):
+    """'2026-09-11 10:01:38 EDT' → 'Fri 09-11 10:01 EDT'; a missing stamp is '—'."""
+    if not ts:
+        return "—"
+    e = parse_nflverse_ts(ts)
+    if e is None:
+        return str(ts)
+    tz = str(ts).split()[-1]
+    return time.strftime("%a %m-%d %H:%M", time.gmtime(e + _TZ_OFFSETS.get(tz.upper(), -4) * 3600)) + " " + tz
+
+
+def _age(e, now):
+    if e is None:
+        return ""
+    h = max(0.0, (now - e) / 3600)
+    return f"{h * 60:.0f}m ago" if h < 1 else f"{h:.1f}h ago" if h < 48 else f"{h / 24:.1f}d ago"
+
+
+def sidecar_provenance():
+    """What the committed sidecar says about itself: {asof, weeks, games, upstream}."""
+    try:
+        with open(SIDECAR_INSEASON) as f:
+            side = json.load(f)
+    except Exception:
+        return None
+    return {"asof": side.get("asof"), "weeks": side.get("weeks") or [],
+            "games": side.get("games") or {}, "upstream": side.get("upstream") or {}}
+
+
+def pulse_lines(published, now):
+    """The nflverse pulse: for each release the live sidecar reads, when nflverse last
+    published it vs. the stamp the sidecar was built from; then which games the sidecar's
+    plays actually cover. Plain text lines (also rendered to the Actions step summary)."""
+    side = sidecar_provenance()
+    if not published and not side:
+        return []
+    built = (side or {}).get("upstream") or {}
+    lines = ["nflverse pulse — the live sidecar's inputs (stamps in ET, as nflverse writes them)",
+             f"  {'release'.ljust(15)} {'nflverse published'.ljust(30)} {'sidecar built from'.ljust(22)} status"]
+    for tag in SIDECAR_UPSTREAM:
+        pub, was = published.get(tag), built.get(tag)
+        pe = parse_nflverse_ts(pub) if pub else None
+        if not pub:
+            status = "unreachable"
+        elif not was:
+            status = "no stamp in sidecar (built before provenance)"
+        elif pub == was:
+            status = "current"
+        else:
+            status = "MOVED — rebuild pending"
+        lines.append(f"  {tag.ljust(15)} {(_short_ts(pub) + ('  ' + _age(pe, now) if pe else '')).ljust(30)} "
+                     f"{_short_ts(was).ljust(22)} {status}")
+    if side:
+        games = [(d, wk, a, h) for wk, gl in (side.get("games") or {}).items() for a, h, d in gl]
+        games.sort(reverse=True)
+        baked = side.get("asof") or "?"
+        try:
+            be = calendar.timegm(time.strptime(baked, "%Y-%m-%dT%H:%M:%SZ"))
+            baked_s = f"{time.strftime('%a %m-%d %H:%M UTC', time.gmtime(be))} ({_age(be, now)})"
+        except Exception:
+            baked_s = baked
+        wk = side.get("weeks") or []
+        lines.append(f"  sidecar baked {baked_s} · weeks {wk[0]}–{wk[-1]}" if wk else f"  sidecar baked {baked_s} · no plays yet")
+        if games:
+            by_day = {}
+            for d, wk_, a, h in games:
+                by_day.setdefault(d, []).append(f"{a}@{h}")
+            days = sorted(by_day, reverse=True)[:2]
+            for d in days:
+                try:
+                    lab = time.strftime("%a %m-%d", time.strptime(d, "%Y-%m-%d"))
+                except Exception:
+                    lab = d
+                lines.append(f"    plays through {lab}: {', '.join(by_day[d])}" if d == days[0]
+                             else f"    and {lab}: {', '.join(by_day[d])}")
+            lines.append(f"    {len(games)} game{'s' if len(games) != 1 else ''} in the file")
+    return lines
+
+
+def step_summary(lines):
+    """Mirror the pulse into the GitHub Actions run page, so 'did the game land?' is
+    answered from the workflow list without opening a log."""
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path or not lines:
+        return
+    try:
+        with open(path, "a") as f:
+            f.write("### " + lines[0] + "\n\n```\n" + "\n".join(lines[1:]) + "\n```\n")
+    except Exception:
+        pass
 
 
 def upstream_damped(name, spec, state, now):
@@ -554,6 +671,15 @@ def main():
                     upstream_notes.append(
                         "  ** the nflverse TRADES feed moved — re-derived roster moves may now "
                         "cover deals that were being backfilled from the Spotrac baseline **")
+            elif spec.get("every") is not None:
+                # A ceiling under the upstream trigger: rebuild anyway once it is this old
+                # (timestamp.json unreachable for a day, or a bake that quietly failed).
+                ok, why = due(name, spec, state, now)
+                if ok:
+                    stale.append(name)
+                    reasons[name] = f"no upstream release changed, but {why} — ceiling"
+                else:
+                    reasons[name] = "no upstream release changed"
             else:
                 reasons[name] = "no upstream release changed"
             continue
@@ -568,6 +694,15 @@ def main():
         log(f"  [{mark}] {name.ljust(width)}  {reasons[name]}")
     for n in upstream_notes:
         log(f"            {n}")
+
+    # Which games the live tabs actually hold, and whether nflverse has posted since —
+    # the question behind every "did last night's game land yet?".
+    pulse = pulse_lines(upstream_latest.get("upstream_inseason") or state.get("upstream_inseason") or {}, now)
+    if pulse:
+        log("")
+        for line in pulse:
+            log(f"  {line}")
+        step_summary(pulse)
 
     if not stale:
         log("\nNothing is stale. No build needed.")
@@ -674,6 +809,10 @@ def main():
         for src_p, dst_p in side_backups:
             if os.path.exists(dst_p):
                 shutil.move(dst_p, src_p)
+        # The old sidecar stands, so its inputs were NOT consumed: leave the upstream
+        # stamps and the anchor alone and the next look tries again.
+        upstream_latest.pop("upstream_inseason", None)
+        stale = [n for n in stale if n != "inseason"]
     else:
         for _, dst_p in side_backups:
             if os.path.exists(dst_p):

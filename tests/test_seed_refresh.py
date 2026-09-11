@@ -205,14 +205,23 @@ for name, spec in SR.SOURCES.items():
     chk("why" in spec and spec["why"], f"{name}: explains itself in the report")
 
 print("\n=== TEST 12: the in-season sidecar source + its own guard ===")
-# Fixed weekly cadence on purpose (nflverse pbp timestamps move nightly in-season — timestamp
-# the season actually running, and scoped to the CURRENT season's cache files only. DAILY
-# since the 2026 opener: the Advanced tab / DvP / per-game charts read this sidecar, and a
-# weekly cadence left them on Wednesday data all weekend.
+# Upstream-driven, scoped to the CURRENT season's cache files only. It was weekly, then a
+# 6-hour clock; a clock is the wrong instrument for data that lands at an irregular hour
+# the morning after a game (2026-09-11: a forced refresh moved the anchor, the next cron
+# skipped the sidecar while nflverse already carried the previous night's game; the fix
+# of "rebuild every run" then rebuilt twice a day for nothing). Now the refresher watches
+# the releases the sidecar reads and rebuilds when one has moved — with a daily ceiling.
 ins = SR.SOURCES["inseason"]
-# 6h, not a day: a forced refresh moved the daily anchor and the next cron skipped the sidecar
-# while nflverse already carried the previous night's game (2026-09-11). Both daily slots rebuild.
-chk(ins["every"] == 6 * 3600, "inseason: fixed 6-hour cadence in-season (every scheduled run), not upstream timestamps")
+chk(ins.get("upstream") == ["pbp", "nextgen_stats", "snap_counts", "pfr_advstats", "ftn_charting"],
+    "inseason: watches exactly the releases the sidecar is built from")
+chk(ins["every"] == SR.DAY, "inseason: a daily ceiling under the upstream trigger")
+chk(SR.SIDECAR_UPSTREAM == ins["upstream"], "SIDECAR_UPSTREAM is the same list")
+try:
+    import src.nflverse.inseason as _ins_mod  # needs pandas; parity check only where importable
+    chk(list(_ins_mod.SIDECAR_UPSTREAM) == list(SR.SIDECAR_UPSTREAM),
+        "…and matches the builder's own SIDECAR_UPSTREAM (the stamps it records)")
+except Exception:
+    pass
 chk(ins.get("in_season_only") is True, "inseason: dormant outside the season")
 chk(any(str(SR._CUR_SEASON) in p for p in ins["paths"]), "inseason: invalidates only the current season's files")
 # And the mirror image: the five completed seasons are frozen while games are being played,
@@ -295,6 +304,62 @@ _new3 = _copy.deepcopy(_new)
 _new3["state"]["week"] = 4
 chk(not SR.effectively_unchanged(_old, _new3), "a real STATE change (week rollover) is never masked")
 chk(not SR.effectively_unchanged(None, _new), "no previous seed → not 'unchanged'")
+
+print("\n=== TEST 16: the nflverse pulse — stamps read, ages right, games named ===")
+_e = SR.parse_nflverse_ts("2026-09-11 10:01:38 EDT")
+chk(_e is not None and time.strftime("%Y-%m-%d %H:%M", time.gmtime(_e)) == "2026-09-11 14:01",
+    "an EDT stamp parses to the right UTC instant")
+_e2 = SR.parse_nflverse_ts("2026-02-10 13:54:06 EST")
+chk(_e2 is not None and time.strftime("%H:%M", time.gmtime(_e2)) == "18:54", "…and EST is five hours, not four")
+chk(SR.parse_nflverse_ts("garbage") is None and SR._short_ts(None) == "—", "unparseable / missing stamps degrade to a dash")
+chk(SR._short_ts("2026-09-11 10:01:38 EDT") == "Fri 09-11 10:01 EDT", "the short form keeps nflverse's own zone")
+
+# A sidecar on disk with provenance: which games its plays cover, which stamps it was built from.
+_real_side = SR.SIDECAR_INSEASON
+_tmp = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+_json.dump({"season": 2026, "weeks": [1], "asof": "2026-09-11T15:56:37Z",
+            "games": {"1": [["SEA", "NE", "2026-09-09"], ["LAR", "SF", "2026-09-10"]]},
+            "upstream": {"pbp": "2026-09-11 10:01:38 EDT", "nextgen_stats": "2026-09-11 08:15:55 EDT",
+                         "snap_counts": "2026-09-10 12:10:07 EDT", "pfr_advstats": "2026-09-10 06:47:07 EDT",
+                         "ftn_charting": "2026-08-31 23:30:12 EDT"}}, _tmp)
+_tmp.close()
+SR.SIDECAR_INSEASON = _tmp.name
+try:
+    _now = SR.parse_nflverse_ts("2026-09-11 15:40:00 EDT")
+    _pub = {"pbp": "2026-09-11 10:01:38 EDT", "nextgen_stats": "2026-09-11 08:15:55 EDT",
+            "snap_counts": "2026-09-11 12:10:07 EDT", "pfr_advstats": "2026-09-10 06:47:07 EDT"}
+    lines = SR.pulse_lines(_pub, _now)
+    txt = "\n".join(lines)
+    chk(len(lines) >= 8, f"the pulse has a row per release plus the sidecar's own lines ({len(lines)} lines)")
+    chk("pbp" in txt and "5.6h ago" in txt and "current" in txt, "pbp: published stamp, its age, and 'current' (the sidecar has it)")
+    chk("snap_counts" in txt and "MOVED" in txt, "snap_counts moved since the bake → flagged for rebuild")
+    chk("ftn_charting" in txt and "unreachable" in txt, "a release nflverse did not answer for says so")
+    chk("plays through Thu 09-10: LAR@SF" in txt, "the latest game night is named from the file")
+    chk("and Wed 09-09: SEA@NE" in txt, "…and the night before it")
+    chk("2 games in the file" in txt, "with the game count")
+    chk("sidecar baked Fri 09-11 15:56 UTC" in txt, "and when the sidecar itself was baked")
+    # Step summary: only when the workflow provides the file.
+    _sum = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False); _sum.close()
+    os.environ["GITHUB_STEP_SUMMARY"] = _sum.name
+    SR.step_summary(lines)
+    with open(_sum.name) as f:
+        _md = f.read()
+    chk(_md.startswith("### nflverse pulse") and "```" in _md, "the pulse is mirrored to the Actions step summary as a code block")
+    del os.environ["GITHUB_STEP_SUMMARY"]
+    os.unlink(_sum.name)
+finally:
+    SR.SIDECAR_INSEASON = _real_side
+    os.unlink(_tmp.name)
+chk(SR.pulse_lines({}, time.time()) == [] or SR.sidecar_provenance() is not None,
+    "no published stamps and no sidecar → no pulse at all")
+
+# The decision: an upstream move rebuilds; nothing moved + young → skip; nothing moved + a day old → ceiling.
+_state = {"sources": {"inseason": {"last": time.time() - 3 * 3600}}, "upstream_inseason": {"pbp": "x"}}
+_ok, _why = SR.due("inseason", SR.SOURCES["inseason"], _state, time.time())
+chk(not _ok and "fresh" in _why, "three hours after a bake with no upstream movement the sidecar is left alone")
+_state["sources"]["inseason"]["last"] = time.time() - 26 * 3600
+_ok, _why = SR.due("inseason", SR.SOURCES["inseason"], _state, time.time())
+chk(_ok, "…but a day later the ceiling rebuilds it regardless")
 
 print(f"\nRESULT: {'PASS' if FAILED == 0 else 'MISS'} ({PASS}/{PASS + FAILED} checks)")
 sys.exit(0 if FAILED == 0 else 1)
