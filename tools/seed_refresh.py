@@ -200,7 +200,7 @@ SOURCES = {
         "paths": [f"nflverse/raw/pbp/pbp_{_CUR_SEASON}.csv.gz",
                   f"nflverse/raw/aux/*_roster_{_CUR_SEASON}.csv",
                   "nflverse/raw/aux/*_games.csv"],
-        "every": 1 * DAY,
+        "every": 6 * 3600,      # in-season: every scheduled run rebuilds (a forced refresh must not push the next cron past its anchor)
         "in_season_only": True,     # dormant in the offseason — nothing is moving
         "why": "current-season nflverse weekly sidecar — weekly during the season",
     },

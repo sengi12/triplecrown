@@ -30324,7 +30324,7 @@ function renderLeagueAnalyzer(){
         const onTab = (typeof laActivePane==='function' && laActivePane()) ? 'season' : laState.laTab;
         const tabs=[['myteam','Team','user'],['rosters','Rosters','clipboard'],['compare','Compare','scale'],
                     ['best','Waivers','search'],['trade','Trades','swap']];
-        if(started){ tabs.push(['season','Season','football']); tabs.push(['hub','Week','calendar']); }
+        if(started){ tabs.push(['season','Season','football']); tabs.push(['hub','Multi-League','calendar']); }
         return tabs.map(([k,l,ic])=>`<button class="phase-tab icon-tab ${onTab===k?'active':''}" onclick="laSetTab('${k}')" title="${l}">${TC_ICON(ic)}<span class="tab-lbl">${l}</span></button>`).join('');
       })()}
     </div>
@@ -31808,7 +31808,8 @@ function laMyTeamView(s){
     + '</div>'
     + '<div class="la-my-sum-adv">' + escHtml(myTraj.advice) + '</div>'
     + '</div></div>';
-  return switcher + controls + summary
+  const thisWeek=(isOwn && typeof laThisWeekCardHTML==='function') ? laThisWeekCardHTML(s) : '';
+  return switcher + controls + summary + thisWeek
     + '<div class="la-my-grid">' + powerTbl + posTbl + slotTbl + radar + lineup + '</div>'
     + '<div class="la-note la-note-min">' + ((typeof tcInfoBtn==='function')?tcInfoBtn(lens==='value'?'lamyvalue':'lamyproj','How the power score works'):'') + '</div>';
 }
@@ -33545,6 +33546,23 @@ function _hubLeagueCard(res){
   const summary = !L ? 'no roster of yours here'
     : acts.length ? `${acts.length} lineup change${acts.length>1?'s':''} · +${gain.toFixed(1)}`
     : 'lineup set';
+  return `<div class="card hub-league ${open?'open':''}">
+    <div class="hub-lg-head" onclick="hubToggleLeague('${escAttr(String(lg.league_id))}')">
+      <b>${escHtml(lg.name||'League')}</b>
+      <span class="hub-lg-sum">${escHtml(summary)}${L&&L.opponent?` · vs ${escHtml(L.opponent)}`:''}</span>
+      ${res.faab ? `<div class="hub-faab" title="FAAB left · ${res.faab.curve?'this league\'s past seasons':'no league history yet (linear decay)'} say about ${(hubFaabAdvice(1,res.wk,res.faab.curve,res.teams,res.faab.budget,res.faab.left).spentShould*100).toFixed(0)}% of the season\'s pickup value is behind you by week ${res.wk}">FAAB $${res.faab.left}<span class="hub-faab-of">/ $${res.faab.budget}</span></div>` : ''}
+      <span class="hub-caret">${open?'▴':'▾'}</span>
+    </div>
+    ${_hubActionsHTML(res, open)}
+    ${open && L ? `<div class="hub-foot">optimal ${L.optTotal.toFixed(1)} · set ${L.curTotal.toFixed(1)}</div>` : ''}
+  </div>`;
+}
+// The action sections (lineup callouts, adds, drops) for one league — the hub card's body,
+// and the Team tab's "This week" card for the league on screen.
+function _hubActionsHTML(res, open){
+  const L=res.lineup;
+  const acts = L ? L.callouts.filter(c=>c.kind!=='CALL') : [];
+  const calls = L ? L.callouts.filter(c=>c.kind==='CALL') : [];
   const adds = res.adds.slice(0, open?HUB_TOP_ADDS:3).map(c=>`<div class="hub-row">
       <span class="hub-kind hub-k-add">ADD</span>
       <div class="hub-body">${_hubPlayer({id:c.id,name:c.name,pos:c.pos,team:c.team,value:c.wp.adj,wp:c.wp,unavailable:c.wp.bye?'BYE':''},true)}${c.drop?` <span class="hub-arrow">for</span> ${_hubPlayer(Object.assign({},c.drop,{value:c.drop.rosPg}),true)}`:''}
@@ -33552,20 +33570,52 @@ function _hubLeagueCard(res){
       ${c.faab?`<span class="hub-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league (${(c.faab.share*100).toFixed(0)}% of your $${c.faab.left} left)">$${c.faab.bid}</span>`:''}
     </div>`).join('');
   const drops = open ? res.drops.map(d=>`<div class="hub-row"><span class="hub-kind hub-k-drop">DROP</span><div class="hub-body">${_hubPlayer(d.p,true)}<div class="hub-whys">${d.reasons.map(r=>`<span class="hub-why">${escHtml(r)}</span>`).join('')}</div></div></div>`).join('') : '';
-  const faab = res.faab ? `<div class="hub-faab" title="FAAB left · ${res.faab.curve?'this league\'s past seasons':'no league history yet (linear decay)'} say about ${(hubFaabAdvice(1,res.wk,res.faab.curve,res.teams,res.faab.budget,res.faab.left).spentShould*100).toFixed(0)}% of the season\'s pickup value is behind you by week ${res.wk}">FAAB $${res.faab.left}<span class="hub-faab-of">/ $${res.faab.budget}</span></div>` : '';
-  return `<div class="card hub-league ${open?'open':''}">
-    <div class="hub-lg-head" onclick="hubToggleLeague('${escAttr(String(lg.league_id))}')">
-      <b>${escHtml(lg.name||'League')}</b>
-      <span class="hub-lg-sum">${escHtml(summary)}${L&&L.opponent?` · vs ${escHtml(L.opponent)}`:''}</span>
-      ${faab}
-      <span class="hub-caret">${open?'▴':'▾'}</span>
-    </div>
-    ${acts.length?`<div class="hub-sec">${acts.map(_hubCallout).join('')}</div>`:''}
+  return `${acts.length?`<div class="hub-sec">${acts.map(_hubCallout).join('')}</div>`:''}
     ${open && calls.length?`<div class="hub-sec hub-sec-calls">${calls.map(_hubCallout).join('')}</div>`:''}
     ${adds?`<div class="hub-sec">${adds}</div>`:''}
     ${drops?`<div class="hub-sec">${drops}</div>`:''}
-    ${open && L ? `<div class="hub-foot">optimal ${L.optTotal.toFixed(1)} · set ${L.curTotal.toFixed(1)}</div>` : ''}
-  </div>`;
+    ${!acts.length && !adds && L ? '<div class="hub-sec hub-empty">Lineup set · nothing on the wire beats what you have</div>' : ''}`;
+}
+// ── One league from the analyzer's snapshot (the Team tab) ──────────────────
+// The snapshot's league is already applied globally (scoring, shape), so the
+// context scores under the global settings; rosters/starters come from the
+// snapshot + this week's matchup rows. Memoized per snapshot + week + matchups.
+let _hubSnapMemo={sig:'', res:null};
+function hubSnapshotResult(s){
+  if(!s || !s.teamList || typeof hubAnalyzeLeague!=='function') return null;
+  const wk=(typeof laCurrentWeek==='function')?laCurrentWeek():1;
+  const mu=(typeof _laMu!=='undefined' && _laMu.byWeek && _laMu.byWeek[wk])||null;
+  const ref=(typeof laSnapshotRef==='function')?String(laSnapshotRef(s)):String(s.leagueId);
+  const sig=`${ref}~${wk}~${mu?mu.sig:''}~${(typeof TC_INSEASON!=='undefined'&&TC_INSEASON&&TC_INSEASON.asof)||''}~${(typeof buildPlayerScoringSig==='function')?buildPlayerScoringSig():''}`;
+  if(_hubSnapMemo.sig===sig) return _hubSnapMemo.res;
+  const lg={league_id:s.leagueId, name:s.name, season:s.season, total_rosters:s.teams||s.teamList.length, roster_positions:s.rosterPositions||[], settings:{}};
+  const rows=(mu&&mu.rows)||[];
+  const rosters=s.teamList.map(t=>{ const r=rows.find(x=>x.roster_id===t.rosterId); return {roster_id:t.rosterId, owner_id:t.ownerId, co_owners:t.coOwners||[], players:(t.players||[]).map(p=>String(p.id)), starters:(r&&r.starters)||[], reserve:[], taxi:[], settings:{}}; });
+  const users=s.teamList.map(t=>({user_id:t.ownerId, display_name:t.owner, metadata:{team_name:t.teamName}}));
+  const byId=new Map(); try{ buildPlayerList().forEach(p=>{ if(p.player_id!=null) byId.set(String(p.player_id), p); }); }catch(e){}
+  const form=(typeof hubFormMap==='function')?hubFormMap(null):new Map();
+  const ctx={sc:null, wk, now:Date.now(), byId, form, myUserId:s.myUserId,
+    dvp:(typeof laDvpTable==='function')?laDvpTable():null, sched:(typeof TC_INSEASON!=='undefined'&&TC_INSEASON&&TC_INSEASON.schedule)||null, faabCurve:null};
+  const projRank=new Map(), usageRank=new Map();
+  ['QB','RB','WR','TE'].forEach(pos=>{
+    const rs=[]; byId.forEach(r=>{ if(r.pos===pos) rs.push(r); });
+    rs.map(r=>({id:String(r.player_id), v:calcFptsUnder(r, null)})).sort((a,b)=>b.v-a.v).forEach((r,i)=>projRank.set(r.id, i+1));
+    const us=[]; form.forEach((fe,k)=>{ if(/^\d+$/.test(k) && fe.pos===pos && fe.weeks.length) us.push({id:k, t:fe.weeks[fe.weeks.length-1].touches}); });
+    us.sort((a,b)=>b.t-a.t).forEach((r,i)=>usageRank.set(r.id, i+1));
+  });
+  ctx.projRank=projRank; ctx.usageRank=usageRank;
+  let res=null; try{ res=hubAnalyzeLeague(lg, rosters, users, rows, ctx); }catch(e){ res=null; }
+  _hubSnapMemo={sig, res};
+  return res;
+}
+function laThisWeekCardHTML(s){
+  if(typeof hasSeasonStarted!=='function' || !hasSeasonStarted()) return '';
+  const wk=(typeof laCurrentWeek==='function')?laCurrentWeek():1;
+  if(typeof _laMu!=='undefined' && !(_laMu.byWeek&&_laMu.byWeek[wk]) && typeof laFetchMatchups==='function') laFetchMatchups(wk, true);
+  const res=hubSnapshotResult(s);
+  if(!res || !res.mine) return '';
+  const L=res.lineup, gain=L?(L.optTotal-L.curTotal):0;
+  return `<div class="la-my-card la-my-week"><div class="la-my-title">This Week <span class="la-my-sub">wk ${wk}${L&&L.opponent?` · vs ${escHtml(L.opponent)}`:''}${L&&gain>0.05?` · <b>+${gain.toFixed(1)}</b> available`:''} <button class="btn btn-ghost btn-sm" onclick="laSetTab('hub')" title="Every league at once">Multi-League →</button></span></div>${_hubActionsHTML(res, true)}</div>`;
 }
 function hubViewHTML(s){
   const wk = hubState.week || ((typeof laCurrentWeek==='function')?laCurrentWeek():1);

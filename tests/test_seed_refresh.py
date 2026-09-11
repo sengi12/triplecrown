@@ -210,7 +210,9 @@ print("\n=== TEST 12: the in-season sidecar source + its own guard ===")
 # since the 2026 opener: the Advanced tab / DvP / per-game charts read this sidecar, and a
 # weekly cadence left them on Wednesday data all weekend.
 ins = SR.SOURCES["inseason"]
-chk(ins["every"] == 1 * SR.DAY, "inseason: fixed DAILY cadence in-season, not upstream timestamps")
+# 6h, not a day: a forced refresh moved the daily anchor and the next cron skipped the sidecar
+# while nflverse already carried the previous night's game (2026-09-11). Both daily slots rebuild.
+chk(ins["every"] == 6 * 3600, "inseason: fixed 6-hour cadence in-season (every scheduled run), not upstream timestamps")
 chk(ins.get("in_season_only") is True, "inseason: dormant outside the season")
 chk(any(str(SR._CUR_SEASON) in p for p in ins["paths"]), "inseason: invalidates only the current season's files")
 # And the mirror image: the five completed seasons are frozen while games are being played,
