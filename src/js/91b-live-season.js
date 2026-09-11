@@ -99,6 +99,8 @@ async function refreshLiveSeasonStats(force){
     _liveSeasonWeek = completedWeeks();
     _liveSeasonAt = Date.now();
     if(typeof renderSeasonTabs==='function') renderSeasonTabs();
+    // First fold of the season's actuals this session: land the Projections view on Live.
+    if(typeof liveSeasonDefaultView==='function' && liveSeasonDefaultView()) return true;
     if(activeSeason===yr){
       const built=buildSeedFromHistory(yr);
       if(built){
