@@ -117,9 +117,37 @@ function currentProjViewMode(){
   return activeSeason==='proj' ? 'proj' : null;
 }
 
-function setProjViewMode(mode){
+// In-season, once a game has been played, the Projections view opens on Live — the
+// season to date — not on the editable projection; the projection is offseason work.
+// A tap on either segment is remembered (this browser), so someone who prefers to land
+// on their projection keeps landing there.
+const TC_VIEW_PREF_KEY='tc_proj_view_pref';
+function tcViewPrefGet(){ try{ return localStorage.getItem(TC_VIEW_PREF_KEY)||''; }catch(e){ return ''; } }
+function tcViewPrefSet(mode){ try{ localStorage.setItem(TC_VIEW_PREF_KEY, mode); }catch(e){} }
+let _liveDefaultApplied=false;
+function liveSeasonDefaultView(){
+  if(_liveDefaultApplied) return false;
+  if(typeof hasSeasonStarted!=='function' || !hasSeasonStarted()) return false;
+  const played = (typeof completedWeeks==='function' && completedWeeks()>=1)
+    || !!(typeof TC_INSEASON!=='undefined' && TC_INSEASON && Array.isArray(TC_INSEASON.weeks) && TC_INSEASON.weeks.length)
+    || !!(typeof HISTORY_SEASONS!=='undefined' && HISTORY_SEASONS.indexOf(String(TC_SEASON.year))>=0);
+  if(!played) return false;
+  _liveDefaultApplied=true;
+  if(tcViewPrefGet()==='proj') return false;                 // they asked for the projection
+  if(activeSeason!=='proj') return false;                    // a restored past-season tab stays
+  if(typeof currentPhase!=='undefined' && ['Rankings','League','AdvancedLeague','KTC'].includes(currentPhase)) return false;
+  setProjViewMode('live');
+  return true;
+}
+// The season strip's own taps: the projection tab and the Live segment both record the pick.
+function tcPickSeasonTab(s){
+  if(s==='proj') tcViewPrefSet('proj');
+  return loadSeason(s);
+}
+function setProjViewMode(mode, user){
   if(mode==='pace') mode='live';   // retired mode — its one number now lives inside Live
   if(mode!=='proj' && mode!=='live') return;
+  if(user) tcViewPrefSet(mode);
   const started = (typeof hasSeasonStarted==='function') && hasSeasonStarted();
   if(!started) mode='proj';
   const yr=String(TC_SEASON.year);

@@ -685,7 +685,7 @@ function renderSeasonTabs(){
   const shownHist = started ? hist.filter(s=>s!==yr) : hist;
   const tab = s=>{
     const label = s==='proj' ? `${PROJ_SEASON} Proj` : s;
-    return `<button class="season-tab ${activeSeason===s?'active':''}" onclick="loadSeason('${s}')">${label}</button>`;
+    return `<button class="season-tab ${activeSeason===s?'active':''}" onclick="${s==='proj'?`tcPickSeasonTab('proj')`:`loadSeason('${s}')`}">${label}</button>`;
   };
   // In-season: one Live toggle — the season to date, viewed through the standard read-only
   // reference machinery on the current year. Tapping it again returns to the projections.
@@ -693,7 +693,7 @@ function renderSeasonTabs(){
   if(started){
     const mode = (typeof currentProjViewMode==='function') ? currentProjViewMode() : null;
     seg = `<span class="season-mode">`
-      + `<button class="season-tab mode-tab ${mode==='live'?'active':''}" onclick="setProjViewMode('${mode==='live'?'proj':'live'}')" title="${yr} season to date · live from Sleeper">Live</button>`
+      + `<button class="season-tab mode-tab ${mode==='live'?'active':''}" onclick="setProjViewMode('${mode==='live'?'proj':'live'}', true)" title="${yr} season to date · live from Sleeper">Live</button>`
       + `</span>`;
   }
   host.innerHTML = tab('proj') + seg + shownHist.map(tab).join('');

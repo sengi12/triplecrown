@@ -5896,9 +5896,37 @@ function currentProjViewMode(){
   return activeSeason==='proj' ? 'proj' : null;
 }
 
-function setProjViewMode(mode){
+// In-season, once a game has been played, the Projections view opens on Live — the
+// season to date — not on the editable projection; the projection is offseason work.
+// A tap on either segment is remembered (this browser), so someone who prefers to land
+// on their projection keeps landing there.
+const TC_VIEW_PREF_KEY='tc_proj_view_pref';
+function tcViewPrefGet(){ try{ return localStorage.getItem(TC_VIEW_PREF_KEY)||''; }catch(e){ return ''; } }
+function tcViewPrefSet(mode){ try{ localStorage.setItem(TC_VIEW_PREF_KEY, mode); }catch(e){} }
+let _liveDefaultApplied=false;
+function liveSeasonDefaultView(){
+  if(_liveDefaultApplied) return false;
+  if(typeof hasSeasonStarted!=='function' || !hasSeasonStarted()) return false;
+  const played = (typeof completedWeeks==='function' && completedWeeks()>=1)
+    || !!(typeof TC_INSEASON!=='undefined' && TC_INSEASON && Array.isArray(TC_INSEASON.weeks) && TC_INSEASON.weeks.length)
+    || !!(typeof HISTORY_SEASONS!=='undefined' && HISTORY_SEASONS.indexOf(String(TC_SEASON.year))>=0);
+  if(!played) return false;
+  _liveDefaultApplied=true;
+  if(tcViewPrefGet()==='proj') return false;                 // they asked for the projection
+  if(activeSeason!=='proj') return false;                    // a restored past-season tab stays
+  if(typeof currentPhase!=='undefined' && ['Rankings','League','AdvancedLeague','KTC'].includes(currentPhase)) return false;
+  setProjViewMode('live');
+  return true;
+}
+// The season strip's own taps: the projection tab and the Live segment both record the pick.
+function tcPickSeasonTab(s){
+  if(s==='proj') tcViewPrefSet('proj');
+  return loadSeason(s);
+}
+function setProjViewMode(mode, user){
   if(mode==='pace') mode='live';   // retired mode — its one number now lives inside Live
   if(mode!=='proj' && mode!=='live') return;
+  if(user) tcViewPrefSet(mode);
   const started = (typeof hasSeasonStarted==='function') && hasSeasonStarted();
   if(!started) mode='proj';
   const yr=String(TC_SEASON.year);
@@ -20348,7 +20376,7 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
     // Also refresh projection-season ADP live in the background so VONA/VOR stay current without a rebuild.
     backgroundRefreshADP();
     // In-season: pull current-season actuals + freeze the pace baseline (both no-op pre-season).
-    if(typeof refreshLiveSeasonStats==='function') refreshLiveSeasonStats().catch(()=>{});
+    if(typeof refreshLiveSeasonStats==='function') refreshLiveSeasonStats().then(()=>{ if(typeof liveSeasonDefaultView==='function') liveSeasonDefaultView(); }).catch(()=>{});
     if(typeof maybeFreezePaceBaseline==='function'){ try{ maybeFreezePaceBaseline(); }catch(e){} }
     if(typeof hasSeasonStarted==='function' && hasSeasonStarted() && typeof ensureInseasonSidecar==='function') ensureInseasonSidecar().catch(()=>{});
     // A baked copy opened over http can still learn the real week — self-gated, frozen-safe.
@@ -20379,7 +20407,7 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
       loadSleeperPlayers(true).catch(()=>{});
       backgroundRefreshADP();
       // In-season: pull current-season actuals + freeze the pace baseline (both no-op pre-season).
-      if(typeof refreshLiveSeasonStats==='function') refreshLiveSeasonStats().catch(()=>{});
+      if(typeof refreshLiveSeasonStats==='function') refreshLiveSeasonStats().then(()=>{ if(typeof liveSeasonDefaultView==='function') liveSeasonDefaultView(); }).catch(()=>{});
       if(typeof maybeFreezePaceBaseline==='function'){ try{ maybeFreezePaceBaseline(); }catch(e){} }
       // The live nflverse sidecar feeds the player-card charts and the Advanced tab in-season.
       if(typeof hasSeasonStarted==='function' && hasSeasonStarted() && typeof ensureInseasonSidecar==='function') ensureInseasonSidecar().catch(()=>{});
@@ -22948,7 +22976,7 @@ function renderSeasonTabs(){
   const shownHist = started ? hist.filter(s=>s!==yr) : hist;
   const tab = s=>{
     const label = s==='proj' ? `${PROJ_SEASON} Proj` : s;
-    return `<button class="season-tab ${activeSeason===s?'active':''}" onclick="loadSeason('${s}')">${label}</button>`;
+    return `<button class="season-tab ${activeSeason===s?'active':''}" onclick="${s==='proj'?`tcPickSeasonTab('proj')`:`loadSeason('${s}')`}">${label}</button>`;
   };
   // In-season: one Live toggle — the season to date, viewed through the standard read-only
   // reference machinery on the current year. Tapping it again returns to the projections.
@@ -22956,7 +22984,7 @@ function renderSeasonTabs(){
   if(started){
     const mode = (typeof currentProjViewMode==='function') ? currentProjViewMode() : null;
     seg = `<span class="season-mode">`
-      + `<button class="season-tab mode-tab ${mode==='live'?'active':''}" onclick="setProjViewMode('${mode==='live'?'proj':'live'}')" title="${yr} season to date · live from Sleeper">Live</button>`
+      + `<button class="season-tab mode-tab ${mode==='live'?'active':''}" onclick="setProjViewMode('${mode==='live'?'proj':'live'}', true)" title="${yr} season to date · live from Sleeper">Live</button>`
       + `</span>`;
   }
   host.innerHTML = tab('proj') + seg + shownHist.map(tab).join('');
