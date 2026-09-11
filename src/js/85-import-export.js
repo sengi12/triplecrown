@@ -777,7 +777,7 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
     // Also refresh projection-season ADP live in the background so VONA/VOR stay current without a rebuild.
     backgroundRefreshADP();
     // In-season: pull current-season actuals + freeze the pace baseline (both no-op pre-season).
-    if(typeof refreshLiveSeasonStats==='function') refreshLiveSeasonStats().catch(()=>{});
+    if(typeof refreshLiveSeasonStats==='function') refreshLiveSeasonStats().then(()=>{ if(typeof liveSeasonDefaultView==='function') liveSeasonDefaultView(); }).catch(()=>{});
     if(typeof maybeFreezePaceBaseline==='function'){ try{ maybeFreezePaceBaseline(); }catch(e){} }
     if(typeof hasSeasonStarted==='function' && hasSeasonStarted() && typeof ensureInseasonSidecar==='function') ensureInseasonSidecar().catch(()=>{});
     // A baked copy opened over http can still learn the real week — self-gated, frozen-safe.
@@ -808,7 +808,7 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
       loadSleeperPlayers(true).catch(()=>{});
       backgroundRefreshADP();
       // In-season: pull current-season actuals + freeze the pace baseline (both no-op pre-season).
-      if(typeof refreshLiveSeasonStats==='function') refreshLiveSeasonStats().catch(()=>{});
+      if(typeof refreshLiveSeasonStats==='function') refreshLiveSeasonStats().then(()=>{ if(typeof liveSeasonDefaultView==='function') liveSeasonDefaultView(); }).catch(()=>{});
       if(typeof maybeFreezePaceBaseline==='function'){ try{ maybeFreezePaceBaseline(); }catch(e){} }
       // The live nflverse sidecar feeds the player-card charts and the Advanced tab in-season.
       if(typeof hasSeasonStarted==='function' && hasSeasonStarted() && typeof ensureInseasonSidecar==='function') ensureInseasonSidecar().catch(()=>{});
