@@ -229,9 +229,11 @@ function laValMode(){
   // override it because there is no sensible dynasty answer for a finished year.
   if(laHistoricalSeason()) return 'redraft';
   if(laState.valMode==='dynasty' || laState.valMode==='redraft') return laState.valMode;
-  // Sleeper type: 0 redraft, 1 keeper, 2 dynasty. Keeper and dynasty both carry rosters
-  // forward, so they keep the dynasty chart unless the user pins otherwise.
-  return (leagueSnapshot && leagueSnapshot.leagueType===0) ? 'redraft' : 'dynasty';
+  // Sleeper type: 0 redraft, 1 keeper, 2 dynasty, 3 chopped (elimination). Keeper and
+  // dynasty carry rosters forward, so they keep the dynasty chart unless the user pins
+  // otherwise; a chopped league is this season only — redraft value, like 0.
+  const t=leagueSnapshot ? leagueSnapshot.leagueType : null;
+  return (t===0 || t===3) ? 'redraft' : 'dynasty';
 }
 function laIsRedraft(){ return laValMode()==='redraft'; }
 
@@ -567,7 +569,7 @@ function laSavedLeaguesHTML(){
   (sp && sp.leagues || []).forEach(lg=>{
     rows.push({ ref:String(lg.league_id), platform:'Sleeper',
                 name:lg.name||'League',
-                sub:`${lg.total_rosters||'?'}-team · ${lg.type===2?'dynasty':lg.type===1?'keeper':'redraft'}${lg.sf?' · SF':''}` });
+                sub:`${lg.total_rosters||'?'}-team · ${lg.type===2?'dynasty':lg.type===1?'keeper':lg.type===3?'chopped':'redraft'}${lg.sf?' · SF':''}` });
   });
   const ep = laLoadEspnProfile();
   (ep && ep.leagues || []).forEach(lg=>{
@@ -1303,7 +1305,7 @@ function renderLeagueAnalyzer(){
               : laState.leagues.map((lg,i)=>`
                 <button class="la-league" ${laState.busy?'disabled':''} onclick="laPickLeague(${i})">
                   <b>${escHtml(lg.name)}</b>
-                  <span>${lg.total_rosters}-team · ${(lg.settings&&lg.settings.type)===2?'dynasty':(lg.settings&&lg.settings.type)===1?'keeper':'redraft'}
+                  <span>${lg.total_rosters}-team · ${(lg.settings&&lg.settings.type)===2?'dynasty':(lg.settings&&lg.settings.type)===1?'keeper':(lg.settings&&lg.settings.type)===3?'chopped':'redraft'}
                     ${ (lg.roster_positions||[]).includes('SUPER_FLEX')?' · SF':'' }${lg.stale?` <span class="la-stale-tag">last active ${lg.staleSeason}</span>`:''}</span>
                 </button>`).join('')}
           </div>
@@ -1573,7 +1575,7 @@ function laCompareView(s){
       <button class="format-btn ${lens==='proj'?'active':''}" onclick="laState.lens='proj';renderLeagueAnalyzer()" title="Projected points from YOUR projections: best starting lineup under this league's slots">Projected starters</button>
       ${(lens==='value'&&!laIsRedraft())?`<label class="la-chk" title="Count owned rookie-pick capital (PICKS column + inside TOTAL)">
         <input type="checkbox" ${laState.cmpPicks?'checked':''} onchange="laState.cmpPicks=this.checked;renderLeagueAnalyzer()"> incl. picks</label>`:''}
-      ${(laHistoricalSeason()||(leagueSnapshot&&leagueSnapshot.leagueType===0))?'':`<span class="la-valmode" title="Keeper leagues sit between the two: they carry rosters forward like dynasty but reset like redraft. Pin whichever matches how your league actually trades.">
+      ${(laHistoricalSeason()||(leagueSnapshot&&(leagueSnapshot.leagueType===0||leagueSnapshot.leagueType===3)))?'':`<span class="la-valmode" title="Keeper leagues sit between the two: they carry rosters forward like dynasty but reset like redraft. Pin whichever matches how your league actually trades.">
         <span class="la-lens-lbl">Value:</span>
         ${['auto','redraft','dynasty'].map(mv=>`<button class="format-btn ${((laState.valMode||'auto')===mv)?'active':''}"
           onclick="laState.valMode='${mv}';renderLeagueAnalyzer()">${mv==='auto'?`Auto (${laValMode()})`:mv==='redraft'?'VOR':'Dynasty'}</button>`).join('')}

@@ -488,7 +488,7 @@ function _rbRosterLine(season, teamCode, fallbackLine){
 // that same gap; yards and TDs are production, so those colour by the back's own best lane —
 // a gap can be wildly efficient on four carries, or be the one he actually scores through.
 const RB_LANE_METRICS = {
-  eff:   {short:'Efficiency', label:'YPC vs league average by gap', key:null},
+  eff:   {short:'Success Rate', label:'YPC vs league average by gap', key:null},
   yards: {short:'Yards',      label:'Rushing yards by gap',         key:'yards'},
   td:    {short:'TD',         label:'Rushing touchdowns by gap',    key:'td'},
 };
@@ -570,7 +570,7 @@ function _rbFanSVG(chart, playerName, season, metric, notePlayer){
   parts.push(`<svg viewBox="0 0 ${W} ${H}" class="rbf-svg" role="img" aria-label="RB rushing fan chart">`);
   parts.push(`<rect width="${W}" height="${H}" fill="#101214"/>`);
   parts.push(`<text x="30" y="${G.titleY}" fill="#fff" font-size="${G.titleSize}" font-weight="800">${String(playerName||'RB').toUpperCase()} RUSHING FAN <tspan fill="#9aa0a6" font-size="${G.subtitleSize}" font-weight="600">/ ${chart.is_projection?_rbProjYear()+' PROJECTION':((typeof tcIsLiveSeason==='function'&&tcIsLiveSeason(season))?season+' THRU WEEK '+completedWeeks():season+' REGULAR SEASON')}</tspan></text>`);
-  parts.push(`<text x="30" y="${G.subcopyY}" fill="#9aa0a6" font-size="${G.subcopySize}">Lane % = rush success rate (arrow width) · arrow color = ${chart.is_projection?'projected lane YPC vs league lane average':'lane YPC vs league lane average'}</text>`);
+  parts.push(`<text x="30" y="${G.subcopyY}" fill="#9aa0a6" font-size="${G.subcopySize}">SR = rush success rate (arrow width) · arrow color = ${chart.is_projection?'projected lane YPC vs league lane average':'lane YPC vs league lane average'}</text>`);
 
   const MET = RB_LANE_METRICS[metric] || RB_LANE_METRICS.eff;
   const minLaneAtt = (chart._game!=null || (typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season))) ? 1 : 3;
@@ -616,7 +616,7 @@ function _rbFanSVG(chart, playerName, season, metric, notePlayer){
     const headlineY = tipY - G.tipHeadGap;
     const sublineY = tipY - G.tipSubGap;
     const headline = MET.key==='yards' ? `${mv!=null?Math.round(mv):'—'} YDS`
-      : (MET.key==='td' ? `${mv!=null?Math.round(mv):0} TD` : `${_rbNum(succ,0)}%`);   // the subtitle names it: rush success rate
+      : (MET.key==='td' ? `${mv!=null?Math.round(mv):0} TD` : `${_rbNum(succ,0)}% SR`);   // SR = rush success rate (the subtitle spells it out)
     const subline = `${att} att · ${_rbNum(ypc,1)} YPC`;
 
     const labelX = cx;

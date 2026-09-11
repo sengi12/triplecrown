@@ -18,7 +18,7 @@ function pcardLeagueSub(L){
   const rec=+((L.scoring_settings||{}).rec||0);
   const fmt= rec>=1?'PPR':rec>=0.25?'Half PPR':'Standard';
   const type=+((L.settings||{}).type)||0;
-  return `${L.total_rosters||'?'}-team ${type===2?'Dynasty ':type===1?'Keeper ':''}${sf?'SF ':''}${fmt}`;
+  return `${L.total_rosters||'?'}-team ${type===2?'Dynasty ':type===1?'Keeper ':type===3?'Chopped ':''}${sf?'SF ':''}${fmt}`;
 }
 async function pcardLeaguesLoad(force){
   if(!force && _pcardLg.at && Date.now()-_pcardLg.at<PCARD_LG_TTL) return _pcardLg;
