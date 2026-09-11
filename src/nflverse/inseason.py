@@ -24,9 +24,13 @@ Payload shape (v1):
         "t": team, "w": {"<week>": [...]}}}},
     "def_vs_pos": {"cols": [...], "teams": {CODE: {"QB"|"RB"|"WR"|"TE":
         {"<week>": [...]}}}},
-    "schedule": {CODE: {"<week>": "OPP"}} }
+    "schedule": {CODE: {"<week>": "OPP"}},
+    "games": {"<week>": [[AWAY, HOME, "YYYY-MM-DD"], ...]},   # the games the plays actually cover
+    "upstream": {"pbp": "<nflverse last_updated>", ...} }     # the release stamps it was built from
 """
+import json
 import time
+import urllib.request
 
 try:
     import pandas as pd
@@ -37,6 +41,52 @@ except Exception:  # pragma: no cover — builder degrades to an empty block
 from . import nflverse as _nfl
 
 NFLDATA_GAMES_URL = "https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv"
+
+# The nflverse releases this sidecar is built from. Each publishes a timestamp.json; the
+# stamps are recorded in the payload (`upstream`) so the app and tools/seed_refresh.py can
+# say exactly which nflverse build the live tabs reflect — and the refresher can skip a
+# rebuild when none of them has moved since the last one. Keep in step with
+# seed_refresh.SIDECAR_UPSTREAM (a test pins the two together).
+SIDECAR_UPSTREAM = ("pbp", "nextgen_stats", "snap_counts", "pfr_advstats", "ftn_charting")
+NFLVERSE_TS_URL = "https://github.com/nflverse/nflverse-data/releases/download/{tag}/timestamp.json"
+
+
+def upstream_stamps(tags=SIDECAR_UPSTREAM, timeout=15):
+    """{tag: "YYYY-MM-DD HH:MM:SS TZ"} for every release that answers. Fail-soft: a release
+    we cannot reach is simply absent, never a build failure."""
+    out = {}
+    for tag in tags:
+        try:
+            req = urllib.request.Request(NFLVERSE_TS_URL.format(tag=tag),
+                                         headers={"User-Agent": "TripleCrown-inseason"})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                ts = json.loads(r.read().decode("utf-8", "replace")).get("last_updated")
+            if ts:
+                out[tag] = str(ts)
+        except Exception:
+            pass
+    return out
+
+
+def games_covered(pbp):
+    """{week: [[AWAY, HOME, "YYYY-MM-DD"], ...]} — the games whose plays are IN the pbp, so
+    "data through Thu 9/10 (LAR@SF)" is a fact read off the file, not a guess from the
+    calendar. nflverse game ids are SEASON_WK_AWAY_HOME."""
+    if pbp is None or pbp.empty or "game_id" not in pbp.columns:
+        return {}
+    cols = [c for c in ("week", "game_id", "game_date") if c in pbp.columns]
+    out = {}
+    for _, row in pbp[cols].drop_duplicates("game_id").iterrows():
+        parts = str(row["game_id"]).split("_")
+        if len(parts) < 4:
+            continue
+        away = _nfl.NFLVERSE_TO_SEED.get(parts[2], parts[2])
+        home = _nfl.NFLVERSE_TO_SEED.get(parts[3], parts[3])
+        day = str(row["game_date"])[:10] if "game_date" in cols and str(row["game_date"]) != "nan" else ""
+        out.setdefault(str(int(row["week"])), []).append([away, home, day])
+    for wk in out:
+        out[wk].sort(key=lambda g: (g[2], g[0]))
+    return out
 
 # Per-player weekly columns (raw counts; the app derives shares/rates).
 PLAYER_WEEK_COLS = ["tgt", "rec", "rec_yd", "rec_td", "air_yd",
@@ -108,7 +158,7 @@ def _kickoff_12h(t):
 
 def _weekly_frames(season):
     """The pbp slices player_weekly and def_vs_pos are computed from."""
-    cols = ["week", "season_type", "posteam", "defteam", "play_type",
+    cols = ["week", "season_type", "posteam", "defteam", "play_type", "game_id", "game_date",
             "pass_attempt", "complete_pass", "sack",
             "passing_yards", "receiving_yards", "rushing_yards", "air_yards",
             "pass_touchdown", "rush_touchdown", "interception", "epa",
@@ -234,6 +284,8 @@ def truncate_inseason(blk, max_week):
         return blk
     mw = int(max_week)
     blk["weeks"] = [w for w in (blk.get("weeks") or []) if int(w) <= mw]
+    if blk.get("games"):
+        blk["games"] = {wk: g for wk, g in blk["games"].items() if int(wk) <= mw}
     adv = blk.get("adv_weekly") or {}
     for _season, packed in list(adv.items()):
         wks = packed.get("weeks") or []
@@ -338,6 +390,7 @@ def _schedule_only(season):
     except Exception as e:
         print(f"  [inseason] schedule-only build failed too ({e}) — skipping")
         return {}
+    out["upstream"] = upstream_stamps()
     print(f"  [inseason] no plays for {season} yet — shipping schedule-only sidecar")
     return out
 
@@ -353,7 +406,9 @@ def _build_inseason(season, max_week):
         return _schedule_only(season)
     weeks = sorted(int(w) for w in pbp["week"].unique())
     out = {"v": 1, "season": season, "weeks": weeks,
-           "asof": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+           "asof": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+           "games": games_covered(pbp),
+           "upstream": upstream_stamps()}
     try:
         out["adv_weekly"] = {str(season): _nfl.adv_weekly_team(season)}
     except Exception as e:

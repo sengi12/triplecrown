@@ -13,6 +13,7 @@ blk = {
         "p2": {"n": "B", "p": "WR", "t": "KC", "w": {"11": [7]}}}},
     "def_vs_pos": {"cols": ["tgt"], "teams": {"KC": {"WR": {"1": [1], "10": [2]}}}},
     "schedule": {"KC": {"1": "LAC", "10": "BYE?", "11": "DEN", "17": "LV"}},
+    "games": {"1": [["LAC", "KC", "2025-09-05"]], "10": [["KC", "MIN", "2025-11-09"]]},
 }
 out = truncate_inseason(blk, 9)
 fails = 0
@@ -26,6 +27,19 @@ chk(out["player_weekly"]["players"]["p1"]["w"] == {"1": [5], "9": [6]}, "player 
 chk("p2" not in out["player_weekly"]["players"], "a player with only future weeks is dropped")
 chk(out["def_vs_pos"]["teams"]["KC"]["WR"] == {"1": [1]}, "def_vs_pos trimmed")
 chk(out["schedule"]["KC"]["17"] == "LV", "schedule keeps future weeks")
+chk(out["games"] == {"1": [["LAC", "KC", "2025-09-05"]]}, "the games-covered map is trimmed with the weeks")
+
+# Provenance: games_covered reads the games off the pbp itself (SEASON_WK_AWAY_HOME ids).
+import pandas as pd
+_pbp = pd.DataFrame({"week": [1, 1, 1, 1], "game_id": ["2026_01_LAR_SF", "2026_01_LAR_SF", "2026_01_SEA_NE", "2026_01_LA_SF"],
+                     "game_date": ["2026-09-10", "2026-09-10", "2026-09-09", "2026-09-10"]})
+_g = _ins.games_covered(_pbp)
+chk(_g.get("1") and _g["1"][0] == ["SEA", "NE", "2026-09-09"], "games sorted by date, the earliest first")
+chk(["LAR", "SF", "2026-09-10"] in _g["1"], "LAR@SF read off its game id")
+chk(all(g[0] != "LA" for g in _g["1"]), "nflverse's 'LA' is mapped to the seed's LAR")
+chk(_ins.games_covered(None) == {} and _ins.games_covered(pd.DataFrame({"week": []})) == {}, "no pbp / no game ids → {}")
+chk(_ins.SIDECAR_UPSTREAM[0] == "pbp" and "nextgen_stats" in _ins.SIDECAR_UPSTREAM, "the sidecar names the releases it is built from")
+chk(isinstance(_ins.upstream_stamps(tags=("no_such_release_xyz",), timeout=3), dict), "upstream_stamps is fail-soft")
 chk(truncate_inseason({}, 9) == {} and truncate_inseason(None, 9) is None, "empty/None pass through")
 
 
