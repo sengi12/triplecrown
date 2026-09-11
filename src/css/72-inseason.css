@@ -395,3 +395,18 @@
 .la-lh-why-schedule{background:rgba(255,201,77,.14);color:var(--te);}
 .la-lh-why-efficiency{background:rgba(168,85,247,.16);color:#c9a3ff;}
 .la-lh-why-starts{background:rgba(0,207,159,.10);color:var(--rb);}
+/* BAFL category matchup card */
+.la-bafl{padding:10px 12px;}
+.la-bafl-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;}
+.la-bafl-sum{font-size:11px;color:var(--muted);} .la-bafl-sum b{color:var(--text);}
+.la-bafl-sum.la-bafl-win b{color:var(--success);} .la-bafl-sum.la-bafl-loss b{color:var(--danger);}
+.la-bafl-row{display:grid;grid-template-columns:1.3fr 1fr 64px 1fr;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border);font-size:12px;}
+.la-bafl-row b{text-align:center;font-family:var(--mono);font-weight:800;color:var(--text);}
+.la-bafl-row b small{display:block;font-size:9px;color:var(--muted);font-weight:700;font-family:var(--font);}
+.la-bafl-row b.la-bafl-lead{color:var(--success);}
+.la-bafl-th{border-top:none;padding-top:0;} .la-bafl-th b{font-size:10px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;font-family:var(--font);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.la-bafl-cat{font-weight:800;color:var(--text);} .la-bafl-cat small{display:block;font-size:9px;color:var(--muted);font-weight:700;}
+.la-bafl-edge{text-align:center;font-family:var(--mono);font-size:11px;font-weight:900;color:var(--muted);}
+.la-bafl-up{color:var(--success);} .la-bafl-dn{color:var(--danger);}
+.la-bafl-off{opacity:.5;}
+@media (max-width:480px){ .la-bafl-row{grid-template-columns:1.1fr 1fr 52px 1fr;font-size:11px;gap:5px;} }
