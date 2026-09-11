@@ -1131,6 +1131,12 @@ async function laTakeSnapshotSleeper(leagueId, opts){
     // the rankings page itself) are scored under THIS league's rules — one league, one truth.
     try{
       if(typeof applySleeperScoring==='function') applySleeperScoring(lg.scoring_settings);
+      // BAFL Mode, exactly as the draft follower switches it: a league named BAFL is a
+      // best-3-of-5 category league, so every value the analyzer computes — projections,
+      // VOR, week projections, the hub — reads through the category lens.
+      { const wasBafl=!!scoringSettings.baflMode;
+        scoringSettings.baflMode = /\bBAFL\b/i.test(lg.name||'');
+        if(scoringSettings.baflMode && !wasBafl && typeof toast==='function') toast('BAFL Mode: category scoring \u2713','ok'); }
       if(typeof lineupFromRosterPositions==='function' && Array.isArray(lg.roster_positions) && lg.roster_positions.length){
         const shape=lineupFromRosterPositions(lg.roster_positions);
         leagueShape={ teams: lg.total_rosters||teams.length, lineup: shape.lineup, bench: shape.bench };

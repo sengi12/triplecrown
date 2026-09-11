@@ -203,6 +203,7 @@ run_js_test test_ai_textcalls    "AI text-style tool calls: <invoke>/<function=>
 run_js_test test_live_default    "In-season the Projections view lands on Live once a game is played; taps remembered; past-season/Rankings boot untouched; once per session"
 run_js_test test_pcard_leagues   "Player card · In your leagues: one row per synced Sleeper league (mine / owner / available), format subtitle, cached per session"
 run_js_test test_projection_list "buildProjectionList: the projection board on any season tab (working set swapped in, globals restored, own cache); analyzer maps + hub read through it"
+run_js_test test_la_bafl         "League Analyzer BAFL Mode: the matchup category card (pass/rush/rec/TD, kicking untracked), projected + live, tracked-category tally"
 run_js_test test_draft_lifecycle "Draft follow lifecycle: start/stop generation token, completion detection, keeper-aware clock, stop cleanup, follow persistence"
 run_js_test test_vona_options   "VONA pools/pAvail export, options popover (render/toggle/empty), synced-league picker row + username carry-over"
 run_js_test test_injury_timeline "Reported injury timelines beat the book estimate (popup + absence weeks); injury tag popup toggle-closes"

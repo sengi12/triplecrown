@@ -30364,6 +30364,12 @@ async function laTakeSnapshotSleeper(leagueId, opts){
     // the rankings page itself) are scored under THIS league's rules — one league, one truth.
     try{
       if(typeof applySleeperScoring==='function') applySleeperScoring(lg.scoring_settings);
+      // BAFL Mode, exactly as the draft follower switches it: a league named BAFL is a
+      // best-3-of-5 category league, so every value the analyzer computes — projections,
+      // VOR, week projections, the hub — reads through the category lens.
+      { const wasBafl=!!scoringSettings.baflMode;
+        scoringSettings.baflMode = /\bBAFL\b/i.test(lg.name||'');
+        if(scoringSettings.baflMode && !wasBafl && typeof toast==='function') toast('BAFL Mode: category scoring \u2713','ok'); }
       if(typeof lineupFromRosterPositions==='function' && Array.isArray(lg.roster_positions) && lg.roster_positions.length){
         const shape=lineupFromRosterPositions(lg.roster_positions);
         leagueShape={ teams: lg.total_rosters||teams.length, lineup: shape.lineup, bench: shape.bench };
@@ -32360,6 +32366,62 @@ function _laBindMuHeroSwipe(host){
   hero.addEventListener('touchend',settle,{passive:true});
   hero.addEventListener('touchcancel',settle,{passive:true});
 }
+// ── BAFL: the matchup is best-3-of-5 CATEGORIES ──────────────────────────────
+// Pass yards (−20 per INT) · rush yards · rec yards · touchdowns · kicking. The
+// card sums each side's starters: projected per-game rates from the projection
+// board, and — once games are in — the live lines from the sidecar's weekly usage.
+// Kicking is not tracked by the usage lines, so that row reads "—" and the tally
+// counts the four we can see.
+const LA_BAFL_CATS=[['pass','Pass yds','−20 per INT'],['rush','Rush yds',''],['rec','Rec yds',''],['td','TDs','pass + rush + rec'],['kick','Kicking','not tracked here']];
+function _laBaflLineFromRow(row){
+  const g=Number(row.proj_games)>0?Number(row.proj_games):17;
+  return { pass:((row.passing_yards||0)-20*(row.interceptions_thrown||0))/g, rush:(row.rushing_yards||0)/g, rec:(row.receiving_yards||0)/g,
+           td:((row.passing_tds||0)+(row.rushing_tds||0)+(row.receiving_tds||0))/g };
+}
+function _laBaflLiveLine(pid, wk){
+  const pw=(typeof TC_INSEASON!=='undefined'&&TC_INSEASON&&TC_INSEASON.player_weekly)||null; if(!pw) return null;
+  const ci={}; (pw.cols||[]).forEach((c,i)=>ci[c]=i);
+  for(const g in pw.players){ const pl=pw.players[g]; if(String(laPidFromGsis(g))!==String(pid)) continue;
+    const r=pl.w && pl.w[String(wk)]; if(!r) return null;
+    return { pass:(r[ci.pass_yd]||0)-20*(r[ci.pass_int]||0), rush:r[ci.rush_yd]||0, rec:r[ci.rec_yd]||0, td:(r[ci.pass_td]||0)+(r[ci.rush_td]||0)+(r[ci.rec_td]||0) }; }
+  return null;
+}
+function laBaflSideCats(row, wk, byId){
+  const proj={pass:0,rush:0,rec:0,td:0}, live={pass:0,rush:0,rec:0,td:0}; let played=0;
+  (row.starters||[]).forEach(pid=>{ if(!pid||pid==='0') return;
+    const r=byId.get(String(pid)); if(r){ const l=_laBaflLineFromRow(r); for(const k in proj) proj[k]+=l[k]; }
+    const lv=_laBaflLiveLine(pid, wk); if(lv){ played++; for(const k in live) live[k]+=lv[k]; } });
+  return {proj, live, played};
+}
+function laBaflCatCardHTML(s, pair, wk){
+  if(typeof scoringSettings==='undefined' || !scoringSettings.baflMode || !pair || pair.length!==2) return '';
+  const my=_laMyTeamRow(s); if(!my) return '';
+  const mine=pair.find(r=>r.roster_id===my.rosterId), opp=pair.find(r=>r.roster_id!==my.rosterId); if(!mine||!opp) return '';
+  const byId=new Map(); try{ buildProjectionList().forEach(p=>{ if(p.player_id!=null) byId.set(String(p.player_id), p); }); }catch(e){}
+  const A=laBaflSideCats(mine, wk, byId), B=laBaflSideCats(opp, wk, byId);
+  const teamBy={}; (s.teamList||[]).forEach(t=>{ teamBy[t.rosterId]=t; });
+  const oppName=(teamBy[opp.roster_id]||{}).teamName||`Roster ${opp.roster_id}`;
+  const useLive = A.played>0 || B.played>0;
+  let wins=0, tracked=0;
+  const rows=LA_BAFL_CATS.map(([k,label,sub])=>{
+    if(k==='kick') return `<div class="la-bafl-row la-bafl-off"><span class="la-bafl-cat">${label}<small>${sub}</small></span><b>—</b><span class="la-bafl-edge">—</span><b>—</b></div>`;
+    const a=A.proj[k], b=B.proj[k], la=A.live[k], lb=B.live[k];
+    tracked++; if(a>b) wins++;
+    const fmt=(v)=> k==='td' ? (Math.round(v*10)/10).toFixed(1) : Math.round(v).toString();
+    const edge=a-b, cls=edge>0?'la-bafl-up':edge<0?'la-bafl-dn':'';
+    return `<div class="la-bafl-row"><span class="la-bafl-cat">${label}${sub?`<small>${sub}</small>`:''}</span>
+      <b class="${cls==='la-bafl-up'?'la-bafl-lead':''}">${fmt(a)}${useLive?`<small>live ${fmt(la)}</small>`:''}</b>
+      <span class="la-bafl-edge ${cls}">${edge>0?'+':''}${fmt(edge)}</span>
+      <b class="${cls==='la-bafl-dn'?'la-bafl-lead':''}">${fmt(b)}${useLive?`<small>live ${fmt(lb)}</small>`:''}</b></div>`;
+  }).join('');
+  const verdict = wins>=3 ? 'la-bafl-win' : wins<=1 ? 'la-bafl-loss' : '';
+  return `<div class="card la-bafl">
+    <div class="la-bafl-head"><span class="la-ins-lbl">BAFL · BEST 3 OF 5</span><span class="la-bafl-sum ${verdict}">projected <b>${wins} of ${tracked}</b> tracked categories</span></div>
+    <div class="la-bafl-row la-bafl-th"><span></span><b>${escHtml(my.teamName||'Me')}</b><span></span><b>${escHtml(oppName)}</b></div>
+    ${rows}
+    <div class="la-note la-note-min">starters' projected per-game rates${useLive?' · live = this week so far':''} · kicking is scored in BAFL but not tracked in the weekly lines</div>
+  </div>`;
+}
 function laMatchupView(s){
   if(s.provider==='espn') return _laEspnInseasonNote();
   const wk=laMuWeek(), cur=laCurrentWeek();
@@ -32484,7 +32546,9 @@ function laMatchupView(s){
     return `<div class="la-mu-game ${mine?'la-mu-mine':''} ${k===focus?'la-mu-focus':''}" onclick="laMuFocus(${k})" title="Show this matchup up top">${line(A,lead>0,wp)}${line(B,lead<0,1-wp)}</div>`;
   }).join('');
   const asof = data.fetchedAt ? new Date(data.fetchedAt).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}) : '';
-  return `${head}${featured}
+  // BAFL: the category scoreboard for MY matchup rides above the featured card.
+  const baflCard=(pairList.length && typeof laBaflCatCardHTML==='function') ? laBaflCatCardHTML(s, pairList[focus], wk) : '';
+  return `${head}${baflCard}${featured}
     <div class="la-ins-bar"><span class="la-ins-lbl">SCOREBOARD</span>${asof?`<span class="la-ins-sub">updated ${asof}${wk===cur?' · refreshes every 45s while you watch':''}</span>`:''}</div>
     <div class="la-mu-board">${board}</div>
     <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn('lawinpct','How win % works'):''}</div>`;
