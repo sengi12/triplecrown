@@ -388,6 +388,32 @@ function buildPlayerScoringSig(){
   ].join('|');
 }
 
+// The PROJECTION board regardless of the active season tab. buildPlayerList follows
+// activeSeason — on the Live tab (the in-season default now) its rows are the season
+// to date, and anything that meant "projections" (the League Analyzer's lineup and
+// value maps, the Multi-League hub, Compare, the card's alongside search) silently read
+// one game's points as a full-season projection. Same swap the historical lens uses;
+// its own one-slot cache so it never thrashes buildPlayerList's.
+let _projListCache={sig:'', list:null};
+function buildProjectionList(){
+  if(activeSeason==='proj') return buildPlayerList();
+  const sig=[(typeof _buildPlayerCacheEpoch!=='undefined')?_buildPlayerCacheEpoch:0, String(rankFormat),
+    (typeof buildPlayerScoringSig==='function')?buildPlayerScoringSig():'', (typeof buildPlayerShapeSig==='function')?buildPlayerShapeSig():''].join('|');
+  if(_projListCache.list && _projListCache.sig===sig && _projListCache.ref===workingProj) return _projListCache.list.map(p=>Object.assign({}, p));
+  const savedSeed=SEED, savedProj=userProj, savedActive=activeSeason;
+  let list=[];
+  try{
+    if(projSeed) SEED=projSeed;
+    userProj=workingProj;
+    activeSeason='proj';
+    list=buildPlayerList();
+  }catch(e){ list=[]; }
+  finally{ SEED=savedSeed; userProj=savedProj; activeSeason=savedActive;
+    // drop buildPlayerList's one-slot cache (it now holds proj rows) WITHOUT bumping the epoch
+    _buildPlayerCache.userProjRef=null; _buildPlayerCache.activeSeason=null; }
+  _projListCache={sig, ref:workingProj, list};
+  return list.map(p=>Object.assign({}, p));
+}
 function invalidateBuildPlayerCache(){
   if(typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE)
     try{ console.debug('[buildPlayerList] cache invalidated (epoch→'+(_buildPlayerCacheEpoch+1)+')'); }catch(_e){}

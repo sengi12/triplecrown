@@ -474,7 +474,7 @@ function laDvpModeToggle(){
 function laDvpPoolView(t){
   const wk=laCurrentWeek(), n=t.codes.length;
   const pm=laProjMap();
-  const list=(typeof buildPlayerList==='function')?buildPlayerList():[];
+  const list=(typeof buildProjectionList==='function')?buildProjectionList():[];
   const pos1=(laState.dvpPos&&laState.dvpPos!=='ALL')?laState.dvpPos:null;
   const snap=(typeof leagueSnapshot!=='undefined')&&leagueSnapshot;
   let mine=null, taken=null;
@@ -694,7 +694,7 @@ function laWeekPickupsHTML(s){
   s.teamList.forEach(t=>t.players.forEach(p=>rostered.add(ecrNormName(p.name))));
   const posF=laState.baPos||'ALL';
   let pool=[];
-  try{ pool=buildPlayerList()||[]; }catch(e){}
+  try{ pool=buildProjectionList()||[]; }catch(e){}
   const scored=pool
     .filter(p=>['QB','RB','WR','TE'].includes(p.pos)
       && !rostered.has(ecrNormName(p.name))

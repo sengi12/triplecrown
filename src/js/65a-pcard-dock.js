@@ -83,7 +83,7 @@ function _pcardDockReset(){ _pcardDock=[]; _pcardDockActive=null; _pcardAddOpen=
 // and the strip flips between them.
 let _pcardAddOpen=false;
 function _pcardAddBoard(){
-  try{ return (typeof buildPlayerList==='function') ? buildPlayerList() : []; }catch(e){ return []; }
+  try{ return (typeof buildProjectionList==='function') ? buildProjectionList() : ((typeof buildPlayerList==='function') ? buildPlayerList() : []); }catch(e){ return []; }
 }
 function _pcardAddRow(p){
   return `<button class="pcard-add-hit" onclick="pcardDockOpenLike('${escAttr(String(p.player_id||p.name))}','${escAttr(p.pos||'')}','${escAttr(p.team||'')}')">

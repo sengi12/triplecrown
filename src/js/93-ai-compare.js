@@ -798,7 +798,7 @@ function tcAiRenderText(txt){
 let _aiCmp={ a:null, b:null };
 function openAiCompare(pidA){
   const old=document.getElementById('aiCmpOverlay'); if(old) old.remove();
-  const list=(typeof buildPlayerList==='function')?buildPlayerList():[];
+  const list=(typeof buildProjectionList==='function')?buildProjectionList():((typeof buildPlayerList==='function')?buildPlayerList():[]);
   const byId=new Map(list.map(p=>[String(p.player_id||p.name), p]));
   _aiCmp={ a: byId.get(String(pidA))||null, b:null, byId, list };
   const ov=document.createElement('div');
