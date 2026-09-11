@@ -41,7 +41,7 @@ export const DOC = {
   team_names: "team code → full name",
   market_model: "the draft-sim market model fit (drafts, eps, tau, Brier, QB round-1 behaviour by format)",
   state: "season, season_type, week, asof of this seed",
-  inseason: "current-season sidecar: schedule/{TEAM} → {week: opponent}; schedule_meta/{TEAM}/{week} → [opp, home(1)/away(0), day, time, date]; player_weekly/players/{gsis} (per-week usage lines, cols listed at player_weekly/cols); def_vs_pos/teams/{TEAM}/{POS}/{week}; weeks (played so far). Its nflverse/{season} and adv_weekly/{season} blocks are ALSO merged under the top-level nflverse and adv_weekly, so the live season reads like any other",
+  inseason: "current-season sidecar: schedule/{TEAM} → {week: opponent}; schedule_meta/{TEAM}/{week} → [opp, home(1)/away(0), day, time, date]; player_weekly/players/{gsis} (per-week usage lines, cols listed at player_weekly/cols); def_vs_pos/teams/{TEAM}/{POS}/{week}; weeks (played so far); games/{week} → [[AWAY, HOME, date], …] the games whose plays are in the file; upstream → {release: nflverse last_updated} it was built from; asof = bake time. Its nflverse/{season} and adv_weekly/{season} blocks are ALSO merged under the top-level nflverse and adv_weekly, so the live season reads like any other",
   adv_weekly: "team advanced box scores by week: adv_weekly/{season}/teams/{TEAM}/{week} → {off_plays, off_epa, …} (95 columns, listed at adv_weekly/{season}/cols)",
   def_weekly: "individual defenders: def_weekly/{season}/{normalized name} → {name, team, pos, group, totals, weeks:[…]} (coverage targets, yards allowed, pressures, tackles)",
   ol_weekly: "offensive line by week: ol_weekly/{season}/teams/{TEAM}/{pass|run}/{week} → {dropbacks, pressures, stuffed…}",

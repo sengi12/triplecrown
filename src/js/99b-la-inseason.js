@@ -880,7 +880,7 @@ function _laLineupPaneHTML(s, my){
         <div class="la-tm-herototal"><span class="la-mu-projsm">week ${wk} projected</span><b>${projTotal.toFixed(1)}</b>${curTotal!=null&&gain>0.05?`<span class="la-tm-gain">+${gain.toFixed(1)} with the swaps below</span>`:curTotal!=null?`<span class="la-tm-gain la-tm-gain-ok">lineup is set optimally</span>`:''}</div></div>
     </div>
     <div class="la-ins-bar"><span class="la-ins-lbl">OPTIMAL LINEUP · WEEK ${wk}</span>
-      <span class="la-ins-sub">${haveCurrent?'highlighted rows = start over your current lineup':'projection-driven, adjusted for matchup and recent form'}</span>
+      <span class="la-ins-sub">${haveCurrent?'highlighted rows = start over your current lineup':'projection-driven, adjusted for matchup and recent form'}</span>${(typeof tcLiveFreshHTML==='function')?tcLiveFreshHTML():''}
       <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="laToggleLhShowAll()">${laState.lhShowAll?'Hide bench':`Show bench (${benchList.length})`}</button></div>
     <div class="card la-tm-card">${rows}${sitRows?`<div class="la-tm-sep">currently starting · not in the optimal lineup</div>${sitRows}`:''}${bench?`<div class="la-tm-sep">bench</div>${bench}`:''}</div>
     <div class="la-note">${notes.join(' · ')} · tap a name for the player card</div>`;

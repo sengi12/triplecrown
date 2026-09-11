@@ -693,7 +693,7 @@ function renderSeasonTabs(){
   if(started){
     const mode = (typeof currentProjViewMode==='function') ? currentProjViewMode() : null;
     seg = `<span class="season-mode">`
-      + `<button class="season-tab mode-tab ${mode==='live'?'active':''}" onclick="setProjViewMode('${mode==='live'?'proj':'live'}', true)" title="${yr} season to date · live from Sleeper">Live</button>`
+      + `<button class="season-tab mode-tab ${mode==='live'?'active':''}" onclick="setProjViewMode('${mode==='live'?'proj':'live'}', true)" title="${yr} season to date · live from Sleeper${(typeof tcLiveDataTitle==='function'&&tcLiveDataTitle())?' · '+tcLiveDataTitle().replace(/"/g,'&quot;'):''}">Live</button>`
       + `</span>`;
   }
   host.innerHTML = tab('proj') + seg + shownHist.map(tab).join('');
