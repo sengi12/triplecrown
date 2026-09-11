@@ -8,7 +8,8 @@ let _pcardLgOpen=false;
 const PCARD_LG_TTL=10*60*1000;
 function pcardLeaguesList(){
   const p=(typeof laLoadSleeperProfile==='function')?laLoadSleeperProfile():null;
-  return (p && Array.isArray(p.leagues)) ? {prof:p, list:p.leagues.filter(l=>!l.stale)} : {prof:null, list:[]};
+  const inPlay=(typeof tcLeagueInPlay==='function') ? tcLeagueInPlay : (l=>!l.stale);
+  return (p && Array.isArray(p.leagues)) ? {prof:p, list:p.leagues.filter(inPlay)} : {prof:null, list:[]};
 }
 function pcardLeaguesAvailable(){ return pcardLeaguesList().list.length>0; }
 function pcardLeagueSub(L){
@@ -32,6 +33,7 @@ async function pcardLeaguesLoad(force){
           sleeperFetch(LA_ROSTERS_URL(lg.league_id)),
           sleeperFetch(SLEEPER_LG_USERS_URL(lg.league_id)).catch(()=>[]),
         ]);
+        if(typeof tcLeagueInPlay==='function' && !tcLeagueInPlay({status:L.status, season:L.season})){ _pcardLg.byLeague[lg.league_id]={id:String(lg.league_id), inactive:true, byPid:{}}; return; }
         const uById={}; (users||[]).forEach(u=>uById[u.user_id]=u);
         const byPid={};
         (rosters||[]).forEach(r=>{
@@ -56,7 +58,7 @@ function pcardLeaguesRows(pid){
   if(!_pcardLg.at) return '<div class="pcard-lg-row pcard-lg-muted">Loading your leagues…</div>';
   const {list}=pcardLeaguesList();
   return list.map(lg=>{
-    const L=_pcardLg.byLeague[lg.league_id]; if(!L) return '';
+    const L=_pcardLg.byLeague[lg.league_id]; if(!L || L.inactive) return '';
     const st=L.byPid[String(pid)];
     const status= L.error ? '<span class="pcard-lg-st pcard-lg-err">unavailable</span>'
       : !st ? '<span class="pcard-lg-st pcard-lg-free">AVAILABLE</span>'
@@ -75,7 +77,7 @@ function pcardLeaguesSummary(pid){
   if(!_pcardLg.at) return null;
   const {list}=pcardLeaguesList();
   let n=0, avail=0, mine=0;
-  list.forEach(lg=>{ const L=_pcardLg.byLeague[lg.league_id]; if(!L || L.error) return; n++; const st=L.byPid[String(pid)]; if(!st) avail++; else if(st.mine) mine++; });
+  list.forEach(lg=>{ const L=_pcardLg.byLeague[lg.league_id]; if(!L || L.error || L.inactive) return; n++; const st=L.byPid[String(pid)]; if(!st) avail++; else if(st.mine) mine++; });
   return {n, avail, mine};
 }
 // The pill is the stadium icon and, once the leagues are known, "1 of 4" — leagues

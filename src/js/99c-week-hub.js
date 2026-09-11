@@ -441,13 +441,24 @@ function hubAnalyzeLeague(lg, rosters, users, matchups, ctxBase){
 }
 
 // ── Fetch layer ──────────────────────────────────────────────────────────────
+// In-season only leagues in play: a league carried over from last year, or one that
+// never drafted / already finished, is not a place you set a lineup this week.
+function tcLeagueInPlay(lg){
+  if(!lg || lg.stale) return false;
+  const started=(typeof hasSeasonStarted==='function' && hasSeasonStarted());
+  if(!started) return true;
+  if(lg.season!=null && typeof TC_SEASON!=='undefined' && String(lg.season)!==String(TC_SEASON.year)) return false;
+  if(lg.status) return lg.status==='in_season' || lg.status==='drafting';
+  return true;   // an older saved profile without a status: decided at fetch time
+}
 function hubLeagueList(){
   const prof = (typeof laLoadSleeperProfile==='function') ? laLoadSleeperProfile() : null;
-  const list = (prof && prof.leagues) ? prof.leagues.filter(l=>!l.stale) : [];
+  const list = (prof && prof.leagues) ? prof.leagues.filter(tcLeagueInPlay) : [];
   return {prof, list};
 }
 async function hubLoadLeague(ref, prof, wk, shared){
   const lg = await sleeperFetch(LA_LEAGUE_URL(ref.league_id));
+  if(!tcLeagueInPlay({status:lg.status, season:lg.season})) return {league:lg, inactive:true};
   const [rosters, users, matchups] = await Promise.all([
     sleeperFetch(LA_ROSTERS_URL(ref.league_id)),
     sleeperFetch(SLEEPER_LG_USERS_URL(ref.league_id)).catch(()=>[]),
@@ -481,7 +492,7 @@ async function hubLoadAll(force){
     if(typeof ensureInseasonSidecar==='function') await ensureInseasonSidecar();
     if(typeof loadSleeperPlayers==='function') await loadSleeperPlayers(true);
     const wk = (typeof laCurrentWeek==='function') ? laCurrentWeek() : 1;
-    const byId = new Map(); buildPlayerList().forEach(p=>{ if(p.player_id!=null) byId.set(String(p.player_id), p); });
+    const byId = new Map(); buildProjectionList().forEach(p=>{ if(p.player_id!=null) byId.set(String(p.player_id), p); });
     const shared = { byId, wk, now:Date.now(), dvp:(typeof laDvpTable==='function')?laDvpTable():null,
                      sched:(typeof TC_INSEASON!=='undefined' && TC_INSEASON && TC_INSEASON.schedule)||null };
     hubState.week = wk;
@@ -521,6 +532,7 @@ function _hubReason(r){ return `<span class="hub-why hub-why-${r.k}" title="${es
 function _hubLeagueCard(res){
   const lg=res.league;
   const open = hubState.openLeague===String(lg.league_id);
+  if(res.inactive) return '';
   if(res.error) return `<div class="card hub-league"><div class="hub-lg-head"><b>${escHtml(lg.name||'League')}</b><span class="hub-err">${escHtml(res.error)}</span></div></div>`;
   const L=res.lineup;
   const acts = L ? L.callouts.filter(c=>c.kind!=='CALL') : [];
@@ -575,7 +587,7 @@ function hubSnapshotResult(s){
   const rows=(mu&&mu.rows)||[];
   const rosters=s.teamList.map(t=>{ const r=rows.find(x=>x.roster_id===t.rosterId); return {roster_id:t.rosterId, owner_id:t.ownerId, co_owners:t.coOwners||[], players:(t.players||[]).map(p=>String(p.id)), starters:(r&&r.starters)||[], reserve:[], taxi:[], settings:{}}; });
   const users=s.teamList.map(t=>({user_id:t.ownerId, display_name:t.owner, metadata:{team_name:t.teamName}}));
-  const byId=new Map(); try{ buildPlayerList().forEach(p=>{ if(p.player_id!=null) byId.set(String(p.player_id), p); }); }catch(e){}
+  const byId=new Map(); try{ buildProjectionList().forEach(p=>{ if(p.player_id!=null) byId.set(String(p.player_id), p); }); }catch(e){}
   const form=(typeof hubFormMap==='function')?hubFormMap(null):new Map();
   const ctx={sc:null, wk, now:Date.now(), byId, form, myUserId:s.myUserId,
     dvp:(typeof laDvpTable==='function')?laDvpTable():null, sched:(typeof TC_INSEASON!=='undefined'&&TC_INSEASON&&TC_INSEASON.schedule)||null, faabCurve:null};

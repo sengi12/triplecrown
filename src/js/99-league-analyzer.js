@@ -388,7 +388,7 @@ function laVorMap(){
   const m=new Map();
   try{
     const hist=laHistoricalSeason();
-    const list=hist ? laHistoricalPlayerList(hist) : buildPlayerList();
+    const list=hist ? laHistoricalPlayerList(hist) : buildProjectionList();
     list.forEach(p=>{ if(p.vor!=null) m.set(ecrNormName(p.name)+'|'+p.pos, p.vor); });
   }catch(e){ /* seed not loaded → empty map; views render 0s rather than crashing */ }
   laKdefVorMap().forEach((v,k)=>m.set(k,v));
@@ -500,6 +500,10 @@ function laSaveSleeperProfile(username, user, leagues){
         type: (lg.settings&&lg.settings.type)||0,
         sf: (lg.roster_positions||[]).includes('SUPER_FLEX'),
         avatar: lg.avatar||null,
+        // In-season only leagues that are actually being played belong in the hub and the
+        // card's leagues pill: Sleeper's status (in_season / drafting / pre_draft / complete)
+        // and our own "carried over from last year" flag ride along.
+        status: lg.status||null, season: lg.season||null, stale: !!lg.stale,
       })),
       fetchedAt: Date.now(),
     }));
@@ -1462,7 +1466,7 @@ function laProjMap(){
   if(_laProjCache && _laProjCache.sig===sig) return _laProjCache.m;
   const m=new Map();
   try{
-    buildPlayerList().forEach(p=>{ m.set(ecrNormName(p.name)+'|'+p.pos, p.fpts||0); });
+    buildProjectionList().forEach(p=>{ m.set(ecrNormName(p.name)+'|'+p.pos, p.fpts||0); });
   }catch(e){ /* seed not loaded yet → empty map; views render 0s rather than crashing */ }
   _laProjCache={sig, m};
   return m;
@@ -1658,7 +1662,7 @@ function laBestAvailView(s){
     // by normalized name, which reads badly in a table).
     try{
       const meta=new Map();
-      buildPlayerList().forEach(pl=>meta.set(ecrNormName(pl.name)+'|'+pl.pos,{n:pl.name,t:pl.team}));
+      buildProjectionList().forEach(pl=>meta.set(ecrNormName(pl.name)+'|'+pl.pos,{n:pl.name,t:pl.team}));
       rows.forEach(r=>{ const m=meta.get(ecrNormName(r.name)+'|'+r.pos); if(m){ r.name=m.n; r.team=m.t||''; } });
     }catch(e){}
   } else {
