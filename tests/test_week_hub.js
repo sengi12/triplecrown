@@ -57,7 +57,9 @@ const app=new Function(code+`
   if(typeof HISTORY==='undefined' || !HISTORY) HISTORY={}; Object.assign(HISTORY, { '1':{'2025':[{team:'NE',pos:'RB',games_played:16,stats:{rushing_attempts:240,rushing_yards:1050,rushing_tds:8,receptions:38,receiving_yards:280}}]},
             '9':{'2025':[{team:'SEA',pos:'RB',games_played:15,stats:{rushing_attempts:150,rushing_yards:700,rushing_tds:5,receptions:30,receiving_yards:250}}]},
             '10':{'2025':[{team:'NE',pos:'WR',games_played:17,stats:{receptions:80,receiving_yards:1100,receiving_tds:7}}]} });
-  return { hubScoringFor, calcFptsUnder, hubWeekProj, hubFormMap, hubFill, hubCallouts, hubWaiverReasons, hubFaabAdvice, hubFaabCurveFromHistory, hubFaabFallbackCurve, hubAnalyzeLeague, hubKickoff,
+  _laMu={byWeek:{'2':{rows:[{roster_id:1,matchup_id:1,starters:['8','2','3','5','7','6']},{roster_id:2,matchup_id:1,starters:[]}],sig:'x'}},fetching:{}};
+  laFetchMatchups=function(){};
+  return { snap:hubSnapshotResult, teamCard:laThisWeekCardHTML, hubScoringFor, calcFptsUnder, hubWeekProj, hubFormMap, hubFill, hubCallouts, hubWaiverReasons, hubFaabAdvice, hubFaabCurveFromHistory, hubFaabFallbackCurve, hubAnalyzeLeague, hubKickoff,
            laDvpTable, laCurrentWeek, byId:()=>{ const m=new Map(); buildPlayerList().forEach(p=>m.set(String(p.player_id),p)); return m; },
            gs:()=>scoringSettings, HUB_CLOSE, ins:()=>TC_INSEASON, sp:()=>sleeperPlayers };
 `)();
@@ -158,6 +160,17 @@ chk(fw && fw.faab && fw.faab.bid>0 && fw.faab.left===88, 'FAAB advice reads the 
 chk(res.drops.some(d=>d.p.id==='2') && !res.drops.some(d=>d.p.id==='3'), 'drop candidates: the backup back, never the injured starter');
 chk(!res.adds.some(a=>a.id==='12'), 'a third-string back below replacement is not an add');
 chk(res.lineup.optTotal>res.lineup.curTotal, 'optimal beats the set lineup');
+
+console.log('=== the Team tab: one league from the analyzer snapshot ===');
+const snap={leagueId:'L1', name:'Queen City Kings', season:'2026', teams:2, rosterPositions:['QB','RB','WR','WR','TE','FLEX','BN','BN'], myUserId:'me',
+  teamList:[{rosterId:1, ownerId:'me', owner:'pottluke', teamName:'Mine', players:['8','1','2','3','5','6','7','4'].map(id=>({id,name:sleeperPlayersFix(id).name,pos:sleeperPlayersFix(id).pos,team:sleeperPlayersFix(id).team}))},
+            {rosterId:2, ownerId:'them', owner:'rival', teamName:'Rivals', players:[]}]};
+function sleeperPlayersFix(id){ return app.sp()[id]; }
+const sres=app.snap(snap);
+chk(sres && sres.mine && sres.lineup && sres.lineup.opponent==='Rivals', 'the snapshot becomes a league result with my roster and the opponent');
+chk(sres.lineup.callouts.some(c=>c.kind==='OBVIOUS' && c.start.id==='1'), 'with the same START call');
+const card=app.teamCard(snap);
+chk(/This Week/.test(card) && /Star Back/.test(card) && /Multi-League/.test(card), 'the Team tab card renders the callouts and links to Multi-League');
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);

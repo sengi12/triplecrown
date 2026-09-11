@@ -1334,7 +1334,7 @@ function renderLeagueAnalyzer(){
         const onTab = (typeof laActivePane==='function' && laActivePane()) ? 'season' : laState.laTab;
         const tabs=[['myteam','Team','user'],['rosters','Rosters','clipboard'],['compare','Compare','scale'],
                     ['best','Waivers','search'],['trade','Trades','swap']];
-        if(started){ tabs.push(['season','Season','football']); tabs.push(['hub','Week','calendar']); }
+        if(started){ tabs.push(['season','Season','football']); tabs.push(['hub','Multi-League','calendar']); }
         return tabs.map(([k,l,ic])=>`<button class="phase-tab icon-tab ${onTab===k?'active':''}" onclick="laSetTab('${k}')" title="${l}">${TC_ICON(ic)}<span class="tab-lbl">${l}</span></button>`).join('');
       })()}
     </div>
@@ -2818,7 +2818,8 @@ function laMyTeamView(s){
     + '</div>'
     + '<div class="la-my-sum-adv">' + escHtml(myTraj.advice) + '</div>'
     + '</div></div>';
-  return switcher + controls + summary
+  const thisWeek=(isOwn && typeof laThisWeekCardHTML==='function') ? laThisWeekCardHTML(s) : '';
+  return switcher + controls + summary + thisWeek
     + '<div class="la-my-grid">' + powerTbl + posTbl + slotTbl + radar + lineup + '</div>'
     + '<div class="la-note la-note-min">' + ((typeof tcInfoBtn==='function')?tcInfoBtn(lens==='value'?'lamyvalue':'lamyproj','How the power score works'):'') + '</div>';
 }
