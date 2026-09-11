@@ -8296,7 +8296,7 @@ function pcardLeagueSub(L){
   const rec=+((L.scoring_settings||{}).rec||0);
   const fmt= rec>=1?'PPR':rec>=0.25?'Half PPR':'Standard';
   const type=+((L.settings||{}).type)||0;
-  return `${L.total_rosters||'?'}-team ${type===2?'Dynasty ':type===1?'Keeper ':''}${sf?'SF ':''}${fmt}`;
+  return `${L.total_rosters||'?'}-team ${type===2?'Dynasty ':type===1?'Keeper ':type===3?'Chopped ':''}${sf?'SF ':''}${fmt}`;
 }
 async function pcardLeaguesLoad(force){
   if(!force && _pcardLg.at && Date.now()-_pcardLg.at<PCARD_LG_TTL) return _pcardLg;
@@ -9852,7 +9852,7 @@ function _rbRosterLine(season, teamCode, fallbackLine){
 // that same gap; yards and TDs are production, so those colour by the back's own best lane —
 // a gap can be wildly efficient on four carries, or be the one he actually scores through.
 const RB_LANE_METRICS = {
-  eff:   {short:'Efficiency', label:'YPC vs league average by gap', key:null},
+  eff:   {short:'Success Rate', label:'YPC vs league average by gap', key:null},
   yards: {short:'Yards',      label:'Rushing yards by gap',         key:'yards'},
   td:    {short:'TD',         label:'Rushing touchdowns by gap',    key:'td'},
 };
@@ -9934,7 +9934,7 @@ function _rbFanSVG(chart, playerName, season, metric, notePlayer){
   parts.push(`<svg viewBox="0 0 ${W} ${H}" class="rbf-svg" role="img" aria-label="RB rushing fan chart">`);
   parts.push(`<rect width="${W}" height="${H}" fill="#101214"/>`);
   parts.push(`<text x="30" y="${G.titleY}" fill="#fff" font-size="${G.titleSize}" font-weight="800">${String(playerName||'RB').toUpperCase()} RUSHING FAN <tspan fill="#9aa0a6" font-size="${G.subtitleSize}" font-weight="600">/ ${chart.is_projection?_rbProjYear()+' PROJECTION':((typeof tcIsLiveSeason==='function'&&tcIsLiveSeason(season))?season+' THRU WEEK '+completedWeeks():season+' REGULAR SEASON')}</tspan></text>`);
-  parts.push(`<text x="30" y="${G.subcopyY}" fill="#9aa0a6" font-size="${G.subcopySize}">Lane % = rush success rate (arrow width) · arrow color = ${chart.is_projection?'projected lane YPC vs league lane average':'lane YPC vs league lane average'}</text>`);
+  parts.push(`<text x="30" y="${G.subcopyY}" fill="#9aa0a6" font-size="${G.subcopySize}">SR = rush success rate (arrow width) · arrow color = ${chart.is_projection?'projected lane YPC vs league lane average':'lane YPC vs league lane average'}</text>`);
 
   const MET = RB_LANE_METRICS[metric] || RB_LANE_METRICS.eff;
   const minLaneAtt = (chart._game!=null || (typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season))) ? 1 : 3;
@@ -9980,7 +9980,7 @@ function _rbFanSVG(chart, playerName, season, metric, notePlayer){
     const headlineY = tipY - G.tipHeadGap;
     const sublineY = tipY - G.tipSubGap;
     const headline = MET.key==='yards' ? `${mv!=null?Math.round(mv):'—'} YDS`
-      : (MET.key==='td' ? `${mv!=null?Math.round(mv):0} TD` : `${_rbNum(succ,0)}%`);   // the subtitle names it: rush success rate
+      : (MET.key==='td' ? `${mv!=null?Math.round(mv):0} TD` : `${_rbNum(succ,0)}% SR`);   // SR = rush success rate (the subtitle spells it out)
     const subline = `${att} att · ${_rbNum(ypc,1)} YPC`;
 
     const labelX = cx;
@@ -29462,9 +29462,11 @@ function laValMode(){
   // override it because there is no sensible dynasty answer for a finished year.
   if(laHistoricalSeason()) return 'redraft';
   if(laState.valMode==='dynasty' || laState.valMode==='redraft') return laState.valMode;
-  // Sleeper type: 0 redraft, 1 keeper, 2 dynasty. Keeper and dynasty both carry rosters
-  // forward, so they keep the dynasty chart unless the user pins otherwise.
-  return (leagueSnapshot && leagueSnapshot.leagueType===0) ? 'redraft' : 'dynasty';
+  // Sleeper type: 0 redraft, 1 keeper, 2 dynasty, 3 chopped (elimination). Keeper and
+  // dynasty carry rosters forward, so they keep the dynasty chart unless the user pins
+  // otherwise; a chopped league is this season only — redraft value, like 0.
+  const t=leagueSnapshot ? leagueSnapshot.leagueType : null;
+  return (t===0 || t===3) ? 'redraft' : 'dynasty';
 }
 function laIsRedraft(){ return laValMode()==='redraft'; }
 
@@ -29800,7 +29802,7 @@ function laSavedLeaguesHTML(){
   (sp && sp.leagues || []).forEach(lg=>{
     rows.push({ ref:String(lg.league_id), platform:'Sleeper',
                 name:lg.name||'League',
-                sub:`${lg.total_rosters||'?'}-team · ${lg.type===2?'dynasty':lg.type===1?'keeper':'redraft'}${lg.sf?' · SF':''}` });
+                sub:`${lg.total_rosters||'?'}-team · ${lg.type===2?'dynasty':lg.type===1?'keeper':lg.type===3?'chopped':'redraft'}${lg.sf?' · SF':''}` });
   });
   const ep = laLoadEspnProfile();
   (ep && ep.leagues || []).forEach(lg=>{
@@ -30536,7 +30538,7 @@ function renderLeagueAnalyzer(){
               : laState.leagues.map((lg,i)=>`
                 <button class="la-league" ${laState.busy?'disabled':''} onclick="laPickLeague(${i})">
                   <b>${escHtml(lg.name)}</b>
-                  <span>${lg.total_rosters}-team · ${(lg.settings&&lg.settings.type)===2?'dynasty':(lg.settings&&lg.settings.type)===1?'keeper':'redraft'}
+                  <span>${lg.total_rosters}-team · ${(lg.settings&&lg.settings.type)===2?'dynasty':(lg.settings&&lg.settings.type)===1?'keeper':(lg.settings&&lg.settings.type)===3?'chopped':'redraft'}
                     ${ (lg.roster_positions||[]).includes('SUPER_FLEX')?' · SF':'' }${lg.stale?` <span class="la-stale-tag">last active ${lg.staleSeason}</span>`:''}</span>
                 </button>`).join('')}
           </div>
@@ -30806,7 +30808,7 @@ function laCompareView(s){
       <button class="format-btn ${lens==='proj'?'active':''}" onclick="laState.lens='proj';renderLeagueAnalyzer()" title="Projected points from YOUR projections: best starting lineup under this league's slots">Projected starters</button>
       ${(lens==='value'&&!laIsRedraft())?`<label class="la-chk" title="Count owned rookie-pick capital (PICKS column + inside TOTAL)">
         <input type="checkbox" ${laState.cmpPicks?'checked':''} onchange="laState.cmpPicks=this.checked;renderLeagueAnalyzer()"> incl. picks</label>`:''}
-      ${(laHistoricalSeason()||(leagueSnapshot&&leagueSnapshot.leagueType===0))?'':`<span class="la-valmode" title="Keeper leagues sit between the two: they carry rosters forward like dynasty but reset like redraft. Pin whichever matches how your league actually trades.">
+      ${(laHistoricalSeason()||(leagueSnapshot&&(leagueSnapshot.leagueType===0||leagueSnapshot.leagueType===3)))?'':`<span class="la-valmode" title="Keeper leagues sit between the two: they carry rosters forward like dynasty but reset like redraft. Pin whichever matches how your league actually trades.">
         <span class="la-lens-lbl">Value:</span>
         ${['auto','redraft','dynasty'].map(mv=>`<button class="format-btn ${((laState.valMode||'auto')===mv)?'active':''}"
           onclick="laState.valMode='${mv}';renderLeagueAnalyzer()">${mv==='auto'?`Auto (${laValMode()})`:mv==='redraft'?'VOR':'Dynasty'}</button>`).join('')}
@@ -33423,7 +33425,8 @@ function hubFormMap(sc){
         rushing_yards:r[ci.rush_yd]||0, rushing_tds:r[ci.rush_td]||0, rushing_attempts:r[ci.carry]||0,
         passing_yards:r[ci.pass_yd]||0, passing_tds:r[ci.pass_td]||0, passing_attempts:r[ci.pass_att]||0,
         interceptions_thrown:r[ci.pass_int]||0, fumbles_lost:0}, sc);
-      return {wk:w, pts, tgt:r[ci.tgt]||0, teamTgt:r[ci.team_tgt]||0, carry:r[ci.carry]||0, touches:(r[ci.tgt]||0)+(r[ci.carry]||0)};
+      return {wk:w, pts, tgt:r[ci.tgt]||0, teamTgt:r[ci.team_tgt]||0, carry:r[ci.carry]||0, touches:(r[ci.tgt]||0)+(r[ci.carry]||0),
+              tds:(r[ci.rec_td]||0)+(r[ci.rush_td]||0)+(r[ci.pass_td]||0)};
     });
     const last3 = lines.slice(-3);
     const entry = { gp:lines.length, fppg: lines.reduce((a,l)=>a+l.pts,0)/lines.length,
@@ -33543,6 +33546,98 @@ function hubWaiverReasons(row, wp, ctx, teammates){
     if(rrk && rrk.ypc && rrk.ypc[1]>=4 && rrk.ypc[0]<=Math.ceil(rrk.ypc[1]/4)) reasons.push({k:'efficiency', w:1, text:`YPC #${rrk.ypc[0]} of ${rrk.ypc[1]} RBs`});
   }
   return reasons;
+}
+
+// ── Durability: is a surge sticky or fleeting? ──────────────────────────────
+// The wire is full of one-week wonders. Before a pickup's upside counts, weigh
+// what we already bake: is the USAGE real and sustained (target / carry share
+// over the played weeks), is it backed by EFFICIENCY (target-chart EPA, NGS
+// separation, rushing RYOE / YPC ranks), is the production TD-driven (regresses),
+// is YAC over expectation extreme (luck), did the opportunity come from a long
+// absence (IR/PUP: sticky) or a one-week one (Out/Doubtful: fleeting), is the
+// schedule the reason (soft only for a while). Returns 0..1 (0.5 = no lean) and
+// the chips that explain it. Used both ways: a pickup's rest-of-season upside
+// scales with it; a roster player's drop-ability rises as his falls.
+function hubDurability(row, ctx, teammates){
+  const out={score:0.5, sticky:[], fleeting:[]};
+  const pos=row.pos;
+  const fe=ctx.form ? ctx.form.get(String(row.player_id)) : null;
+  const weeks=(fe&&fe.weeks)||[];
+  let d=0;
+  // usage: share of team targets (receivers) or carries (backs), sustained or one-off
+  if(weeks.length){
+    const last=weeks[weeks.length-1];
+    const shareOf=(w)=> (pos==='RB') ? w.carry : (w.teamTgt ? w.tgt/w.teamTgt : 0);
+    const big=(v)=> (pos==='RB') ? v>=12 : v>=0.18;
+    const lastShare=shareOf(last);
+    if(big(lastShare)){
+      const prior=weeks.slice(0,-1);
+      const sustained = prior.length>=1 && prior.slice(-2).every(w=>big(shareOf(w)*0.85));
+      const label = pos==='RB' ? `${last.carry} carries` : `${Math.round(lastShare*100)}% target share`;
+      if(sustained){ d+=0.25; out.sticky.push(`${label} · ${Math.min(3,weeks.length)} wks running`); }
+      else { d+=0.10; out.sticky.push(`${label} (one week)`); }
+    } else if(weeks.length>=2){
+      const prev=shareOf(weeks[weeks.length-2]);
+      if(big(prev) && lastShare < prev*0.6){ d-=0.15; out.fleeting.push(pos==='RB'?`carries fell ${weeks[weeks.length-2].carry} → ${last.carry}`:`target share fell to ${Math.round(lastShare*100)}%`); }
+    }
+    // TD-driven points: touchdowns carrying most of his fantasy points on modest volume
+    const tdPts=weeks.reduce((a,w)=>a+(w.tds||0)*6,0), allPts=weeks.reduce((a,w)=>a+(w.pts||0),0);
+    const touches=weeks.reduce((a,w)=>a+(w.touches||0),0);
+    if(allPts>0 && tdPts/allPts>=0.5 && touches/weeks.length<=8){ d-=0.2; out.fleeting.push(`TD-driven (${weeks.reduce((a,w)=>a+(w.tds||0),0)} TD on ${touches} touches)`); }
+  }
+  // efficiency behind the volume — the live chart ranks (per position)
+  const live=(typeof TC_SEASON!=='undefined' && typeof NFLVERSE!=='undefined' && NFLVERSE) ? NFLVERSE[String(TC_SEASON.year)] : null;
+  if(live){
+    const norm=ecrNormName(row.name||'');
+    const q=(rk)=> rk && rk[1]>=4 ? (rk[0]-1)/(rk[1]-1) : null;   // 0 = best
+    const tt=live.target_trees && live.target_trees.players && live.target_trees.players[norm];
+    const trk=tt && tt.season && tt.season.rk;
+    if(trk && trk.epa && (tt.season.tgt||0)>=6){ const p=q(trk.epa); if(p!=null){ if(p<=0.25){ d+=0.15; out.sticky.push(`EPA/target #${trk.epa[0]} of ${trk.epa[1]}`); } else if(p>=0.75){ d-=0.10; out.fleeting.push(`EPA/target #${trk.epa[0]} of ${trk.epa[1]} — volume without efficiency`); } } }
+    const ng=live.ngs_weekly && live.ngs_weekly.players && live.ngs_weekly.players[norm];
+    const nrk=ng && ng.season && ng.season.rk;
+    if(nrk && nrk.sep){ const p=q(nrk.sep); if(p!=null && p<=0.25){ d+=0.10; out.sticky.push(`separation #${nrk.sep[0]} of ${nrk.sep[1]}`); } }
+    if(ng && ng.season && ng.season.yac_oe!=null && ng.season.yac_oe>=3){ d-=0.08; out.fleeting.push(`YAC +${ng.season.yac_oe.toFixed(1)} over expected — regresses`); }
+    if(nrk && nrk.ryoe){ const p=q(nrk.ryoe); if(p!=null){ if(p<=0.25){ d+=0.12; out.sticky.push(`RYOE #${nrk.ryoe[0]} of ${nrk.ryoe[1]}`); } else if(p>=0.75){ d-=0.08; out.fleeting.push(`RYOE #${nrk.ryoe[0]} of ${nrk.ryoe[1]}`); } } }
+    const rf=live.rb_fan && live.rb_fan[norm];
+    const rrk=rf && rf.totals && rf.totals.rk;
+    if(rrk && rrk.rz && (rf.totals.attempts||0)>=8){ const p=q(rrk.rz); if(p!=null && p<=0.25){ d+=0.08; out.sticky.push(`RZ carries #${rrk.rz[0]} of ${rrk.rz[1]}`); } }
+  }
+  // where the opportunity came from
+  (teammates||[]).forEach(t=>{
+    if(t.pos!==pos || String(t.player_id)===String(row.player_id)) return;
+    const st=(typeof sleeperPlayers!=='undefined' && sleeperPlayers && sleeperPlayers[t.player_id]) ? sleeperPlayers[t.player_id].injury_status : '';
+    if(!st || !HUB_OUT[st]) return;
+    if(calcFptsUnder(t, ctx.sc) <= calcFptsUnder(row, ctx.sc)) return;
+    if(/^(IR|PUP|Sus|NA|COV|DNR)$/.test(st)){ d+=0.2; out.sticky.push(`${t.name} on ${st} — the role is his for a while`); }
+    else { d-=0.05; out.fleeting.push(`${t.name} ${st} — a short absence`); }
+  });
+  // schedule: soft is a reason for now, not for the season
+  const nx=hubNextOpps(String(row.team||'').toUpperCase(), ctx.wk, ctx.sched, 3);
+  if(ctx.dvp && nx.length===3){
+    const rks=nx.map(o=>(ctx.dvp.ranks[o.opp]||{})[pos]).filter(r=>r!=null);
+    if(rks.length===3){ const mean=rks.reduce((a,b)=>a+b,0)/3;
+      if(mean<=10) out.fleeting.push(`soft schedule only through wk ${nx[2].wk}`);
+      else if(mean>=24){ d-=0.05; out.fleeting.push(`next 3 are stingy (avg #${mean.toFixed(0)} vs ${pos})`); } }
+  }
+  // league trend: everyone is reaching for him — urgency, not durability
+  const tr=ctx.trending && ctx.trending[String(row.player_id)];
+  if(tr && tr.count>=1000) out.trend=`${tr.count>=1000?Math.round(tr.count/1000)+'k':tr.count} adds league-wide (24h)`;
+  out.score=Math.max(0.05, Math.min(0.95, 0.5+d));
+  return out;
+}
+// Sleeper's league-wide trending adds (24h). Cached half an hour; fail-soft.
+let _hubTrend={at:0, map:null, loading:null};
+async function hubTrending(){
+  if(_hubTrend.map && Date.now()-_hubTrend.at<30*60*1000) return _hubTrend.map;
+  if(_hubTrend.loading) return _hubTrend.loading;
+  _hubTrend.loading=(async()=>{
+    const map={};
+    try{ const rows=await sleeperFetch('https://api.sleeper.app/v1/players/nfl/trending/add?lookback_hours=24&limit=100');
+      (rows||[]).forEach(r=>{ if(r && r.player_id!=null) map[String(r.player_id)]={count:+r.count||0}; }); }catch(e){}
+    _hubTrend={at:Date.now(), map, loading:null};
+    return map;
+  })();
+  return _hubTrend.loading;
 }
 
 // ── FAAB: the clock on the waiver wire ───────────────────────────────────────
@@ -33697,8 +33792,18 @@ function hubAnalyzeLeague(lg, rosters, users, matchups, ctxBase){
     if(w.out && LONG_OUT[w.status]) v *= 0.5;     // a long-term absence is half a season, roughly
     return v;
   };
+  // Dynasty (and keeper) leagues price the wire on the dynasty chart — a 22-year-old's
+  // value is years, not this week; every other format (redraft, chopped) on rest-of-season
+  // projection. Same engine, different unit.
+  const dynasty = [1,2].includes(+((lg.settings||{}).type));
+  const dynOf = (row)=>{
+    const dv=(typeof DYNASTY_VALUES!=='undefined' && DYNASTY_VALUES && DYNASTY_VALUES.players)||null; if(!dv) return 0;
+    const e=dv[ecrNormName(row.name||'')]; if(!e || (e.pos && e.pos!==row.pos)) return 0;
+    return +((superflex && e.sf!=null) ? e.sf : e.v)||0;
+  };
+  const valOf = dynasty ? dynOf : rosPg;
   const pool = {QB:[], RB:[], WR:[], TE:[]};
-  byId.forEach(row=>{ if(!rostered.has(String(row.player_id)) && pool[row.pos]) pool[row.pos].push({row, pg:rosPg(row)}); });
+  byId.forEach(row=>{ if(!rostered.has(String(row.player_id)) && pool[row.pos]) pool[row.pos].push({row, pg:valOf(row)}); });
   const baseline = {};
   Object.keys(pool).forEach(pos=>{
     pool[pos].sort((a,b)=>b.pg-a.pg);
@@ -33707,22 +33812,27 @@ function hubAnalyzeLeague(lg, rosters, users, matchups, ctxBase){
     baseline[pos] = pool[pos][k] ? pool[pos][k].pg : 0;
   });
   const vorOf = (pos, pg)=> pg - (baseline[pos]||0);
+  const topAvail = Math.max(0, ...Object.keys(pool).map(pos=>pool[pos][0] ? pool[pos][0].pg : 0));
   const teammatesByTeam = {};
   byId.forEach(row=>{ const t=String(row.team||'').toUpperCase(); (teammatesByTeam[t]=teammatesByTeam[t]||[]).push(row); });
   let adds = [], drops = [], droppable = [];
   if(lineup){
     // roster players with a rest-of-season value; the protected set is both optimal lineups
     const rosterEvals = Object.values(lineup.current).concat(lineup.bench);
-    rosterEvals.forEach(p=>{ const row=byId.get(p.id); p.rosPg = row ? rosPg(row) : (p.wp && p.wp.seas!=null ? p.wp.seas : p.value); p.vor = vorOf(p.pos, p.rosPg); });
-    const rosSorted = rosterEvals.map(p=>Object.assign({}, p, {value:p.rosPg, locked:false, lockedOut:false, unavailable:(p.unavailable && LONG_OUT[p.unavailable]) ? p.unavailable : ''}))
+    rosterEvals.forEach(p=>{ const row=byId.get(p.id); p.rosPg = row ? valOf(row) : (dynasty ? 0 : (p.wp && p.wp.seas!=null ? p.wp.seas : p.value)); p.vor = vorOf(p.pos, p.rosPg);
+      // a roster player whose production looks fleeting is the easier drop
+      p.dur = row ? hubDurability(row, ctxBase, teammatesByTeam[String(row.team||'').toUpperCase()]) : {score:0.5, sticky:[], fleeting:[]};
+      p.dropKey = p.vor * (0.5 + p.dur.score); });
+    const rosSorted = rosterEvals.map(p=>Object.assign({}, p, {value:(dynasty ? (byId.get(p.id)?rosPg(byId.get(p.id)):p.value) : p.rosPg), locked:false, lockedOut:false, unavailable:(p.unavailable && LONG_OUT[p.unavailable]) ? p.unavailable : ''}))
       .sort((a,b)=>b.value-a.value);
     const rosOptimal = hubFill(slots, rosSorted, {});
     const protectedIds = new Set(lineup.optimal.filter(f=>f.player).map(f=>f.player.id).concat(rosOptimal.filter(f=>f.player).map(f=>f.player.id)));
-    droppable = rosterEvals.filter(p=>!protectedIds.has(p.id)).sort((a,b)=>a.vor-b.vor);
+    droppable = rosterEvals.filter(p=>!protectedIds.has(p.id)).sort((a,b)=>a.dropKey-b.dropKey);
     drops = droppable.slice(0, HUB_TOP_DROPS).map(b=>{
       const reasons=[];
       if(b.unavailable) reasons.push(b.unavailable);
-      reasons.push(`${b.vor>=0?'+':''}${b.vor.toFixed(1)}/gm over replacement`);
+      reasons.push(`${b.vor>=0?'+':''}${b.vor.toFixed(dynasty?0:1)}${dynasty?' dynasty':'/gm'} over replacement`);
+      (b.dur&&b.dur.fleeting||[]).slice(0,1).forEach(f=>reasons.push('fleeting: '+f));
       if(b.rank!=null) reasons.push(`${b.pos}${b.rank} projected`);
       return {p:b, reasons};
     });
@@ -33734,10 +33844,16 @@ function hubAnalyzeLeague(lg, rosters, users, matchups, ctxBase){
       pool[pos].forEach(({row, pg})=>{
         if(!(pg>0.5)) return;
         const wp = hubWeekProj(row, ctxBase);
-        const reasons = hubWaiverReasons(row, wp, ctxBase, teammatesByTeam[String(row.team||'').toUpperCase()]);
+        const mates=teammatesByTeam[String(row.team||'').toUpperCase()];
+        const reasons = hubWaiverReasons(row, wp, ctxBase, mates);
         // upside: an opened role or a usage spike is a bigger rest-of-season role than the
-        // projection knows about; a soft schedule or efficiency is a nudge
-        const mult = Math.min(1.5, 1 + reasons.reduce((a,r)=>a+({vacancy:0.25, spike:0.15, schedule:0.05, efficiency:0.05}[r.k]||0), 0));
+        // projection knows about — scaled by how DURABLE the surge looks (sticky role and
+        // efficiency behind it → most of the upside counts; TD-driven, luck, a one-week
+        // absence → little of it does)
+        const dur = hubDurability(row, ctxBase, mates);
+        const raw = reasons.reduce((a,r)=>a+({vacancy:0.25, spike:0.15, schedule:0.05, efficiency:0.05}[r.k]||0), 0);
+        // dynasty already prices the long run: a surge moves the chart, not the season
+        const mult = Math.pow(Math.min(1.5, 1 + raw*(0.4 + 1.2*dur.score)), dynasty ? 0.5 : 1);
         const vor = vorOf(pos, pg*mult);
         // the drop: the weakest roster player — a same-position one when he is about as weak
         const weakest = droppable[0]||null;
@@ -33750,10 +33866,11 @@ function hubAnalyzeLeague(lg, rosters, users, matchups, ctxBase){
         const empty = lineup.optimal.find(f=>!f.player && hubEligible({pos}, f.slot));
         if(empty) startsOver = {name:'(empty slot)', slot:empty.slot, delta:+wp.adj.toFixed(1)};
         else if(targets.length){ const weak=targets.reduce((m,f)=>(!m||f.player.value<m.player.value)?f:m,null); if(wp.adj>weak.player.value) startsOver={name:weak.player.name, slot:weak.slot, delta:+(wp.adj-weak.player.value).toFixed(1)}; }
-        const worth = net >= HUB_ADD_MIN || (startsOver && startsOver.delta>=2 && net>=0);
+        const addMin = dynasty ? 0.03*Math.max(1, topAvail) : HUB_ADD_MIN;
+        const worth = net >= addMin || (startsOver && startsOver.delta>=2 && net>=0);
         if(!worth || !drop) return;
-        adds.push({id:String(row.player_id), name:row.name, pos, team:row.team, wp, perGame:pg, vor, ros:Math.max(0, vor)*weeksLeft, net, mult, reasons, startsOver, drop,
-                   score: net*weeksLeft + (startsOver ? startsOver.delta : 0)});
+        adds.push({id:String(row.player_id), name:row.name, pos, team:row.team, wp, perGame:pg, vor, ros:dynasty ? Math.max(0, vor) : Math.max(0, vor)*weeksLeft, net, mult, reasons, startsOver, drop, dur, dynasty,
+                   score: net*weeksLeft + (startsOver ? startsOver.delta : 0) + (dur.trend ? 2 : 0)});
       });
     });
     adds.sort((a,b)=>b.score-a.score);
@@ -33766,9 +33883,11 @@ function hubAnalyzeLeague(lg, rosters, users, matchups, ctxBase){
     const budget = +st.waiver_budget||0;
     const used = mine && mine.settings ? +(mine.settings.waiver_budget_used||0) : 0;
     faab = {budget, left:budget-used, curve:ctxBase.faabCurve||null};
-    adds.forEach(c=>{ c.faab = hubFaabAdvice(c.ros, wk, faab.curve, teams, budget, faab.left); });
+    let curve=faab.curve;
+    if(dynasty){ const flat={}; const top=Math.max(1, topAvail - (baseline[Object.keys(baseline).sort((a,b)=>(pool[b][0]?pool[b][0].pg:0)-(pool[a][0]?pool[a][0].pg:0))[0]]||0)); for(let w=1; w<HUB_LAST_WEEK; w++) flat[w]=top; curve=flat; }
+    adds.forEach(c=>{ c.faab = hubFaabAdvice(c.ros, wk, curve, teams, budget, faab.left); });
   }
-  return {league:lg, teams, mine:!!mine, lineup, adds, drops, faab, wk};
+  return {league:lg, teams, mine:!!mine, lineup, adds, drops, faab, wk, dynasty};
 }
 
 // ── Fetch layer ──────────────────────────────────────────────────────────────
@@ -33824,8 +33943,9 @@ async function hubLoadAll(force){
     if(typeof loadSleeperPlayers==='function') await loadSleeperPlayers(true);
     const wk = (typeof laCurrentWeek==='function') ? laCurrentWeek() : 1;
     const byId = new Map(); buildProjectionList().forEach(p=>{ if(p.player_id!=null) byId.set(String(p.player_id), p); });
+    let trending=null; try{ trending=await hubTrending(); }catch(e){ trending=null; }
     const shared = { byId, wk, now:Date.now(), dvp:(typeof laDvpTable==='function')?laDvpTable():null,
-                     sched:(typeof TC_INSEASON!=='undefined' && TC_INSEASON && TC_INSEASON.schedule)||null };
+                     sched:(typeof TC_INSEASON!=='undefined' && TC_INSEASON && TC_INSEASON.schedule)||null, trending };
     hubState.week = wk;
     for(const ref of list){
       try{ hubState.results[ref.league_id] = await hubLoadLeague(ref, prof, wk, shared); }
@@ -33859,7 +33979,14 @@ function _hubCallout(c){
     : `${_hubPlayer(c.start,true)}${c.sit?` <span class="hub-arrow">over</span> ${_hubPlayer(c.sit,true)}`:''}`;
   return `<div class="hub-row"><span class="hub-kind ${kind[0]}">${kind[1]}</span><span class="hub-slot">${escHtml(c.slot||'')}</span><div class="hub-body">${body}</div><span class="hub-delta ${c.delta>0?'up':''}">${c.kind==='CALL'?`−${Math.abs(c.delta).toFixed(1)}`:(c.delta?`+${c.delta.toFixed(1)}`:'')}</span></div>`;
 }
-function _hubReason(r){ return `<span class="hub-why hub-why-${r.k}" title="${escAttr(r.text)}">${{vacancy:'role opened',spike:'usage spike',schedule:'soft schedule',efficiency:'efficient'}[r.k]||r.k}</span>`; }
+function _hubReason(r){ return `<span class="hub-why hub-why-${r.k}" title="${escAttr(r.text)}">${{vacancy:'role opened',spike:'usage spike',schedule:'soft schedule',efficiency:'efficient',sticky:'sticky',fleeting:'fleeting',trend:'trending'}[r.k]||r.k}</span>`; }
+function _hubDurChips(c){
+  const out=[]; if(!c.dur) return out;
+  if(c.dur.score>=0.65) out.push({k:'sticky', text:c.dur.sticky.join(' · ')||'usage and efficiency both back it'});
+  else if(c.dur.score<=0.35) out.push({k:'fleeting', text:c.dur.fleeting.join(' · ')||'one-week production'});
+  if(c.dur.trend) out.push({k:'trend', text:c.dur.trend+' — expect competition'});
+  return out;
+}
 function _hubLeagueCard(res){
   const lg=res.league;
   const open = hubState.openLeague===String(lg.league_id);
@@ -33892,7 +34019,7 @@ function _hubActionsHTML(res, open){
   const adds = res.adds.slice(0, open?HUB_TOP_ADDS:3).map(c=>`<div class="hub-row">
       <span class="hub-kind hub-k-add">ADD</span>
       <div class="hub-body">${_hubPlayer({id:c.id,name:c.name,pos:c.pos,team:c.team,value:c.wp.adj,wp:c.wp,unavailable:c.wp.bye?'BYE':''},true)}${c.drop?` <span class="hub-arrow">for</span> ${_hubPlayer(Object.assign({},c.drop,{value:c.drop.rosPg}),true)}`:''}
-        <div class="hub-whys"><span class="hub-why hub-why-net" title="Rest-of-season value over replacement, net of the player he replaces, per game">+${c.net.toFixed(1)}/gm</span>${c.reasons.map(_hubReason).join('')}${c.startsOver?`<span class="hub-why hub-why-starts" title="Beats the weakest starter he could replace in your optimal lineup this week">starts over ${escHtml(c.startsOver.name)} (${escHtml(c.startsOver.slot)}) +${c.startsOver.delta}</span>`:''}</div></div>
+        <div class="hub-whys"><span class="hub-why hub-why-net" title="${c.dynasty?'Dynasty chart value over replacement, net of the player he replaces':'Rest-of-season value over replacement, net of the player he replaces, per game'}">+${c.net.toFixed(c.dynasty?0:1)}${c.dynasty?' dyn':'/gm'}</span>${c.reasons.concat(_hubDurChips(c)).map(_hubReason).join('')}${c.startsOver?`<span class="hub-why hub-why-starts" title="Beats the weakest starter he could replace in your optimal lineup this week">starts over ${escHtml(c.startsOver.name)} (${escHtml(c.startsOver.slot)}) +${c.startsOver.delta}</span>`:''}</div></div>
       ${c.faab?`<span class="hub-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league (${(c.faab.share*100).toFixed(0)}% of your $${c.faab.left} left)">$${c.faab.bid}</span>`:''}
     </div>`).join('');
   const drops = open ? res.drops.map(d=>`<div class="hub-row"><span class="hub-kind hub-k-drop">DROP</span><div class="hub-body">${_hubPlayer(d.p,true)}<div class="hub-whys">${d.reasons.map(r=>`<span class="hub-why">${escHtml(r)}</span>`).join('')}</div></div></div>`).join('') : '';
@@ -33958,15 +34085,20 @@ function laWaiverSectionHTML(s){
         <div class="la-tm-l2">${(typeof laGameLineHTML==='function' && laGameLineHTML(p, wk, dvp))||'<span class="la-gm la-gm-none">schedule pending</span>'}</div>
         ${l3?`<div class="la-tm-l3">${l3}</div>`:''}
       </div>
-      <div class="la-tm-proj"><b title="This week's projection under this league's scoring">${(+m.adj||0).toFixed(1)}</b>${m.net!=null?`<span class="la-wv-net" title="Rest-of-season value over replacement, net of the player he replaces, per game">${m.net>=0?'+':''}${m.net.toFixed(1)}/gm</span>`:''}${m.bid!=null?`<span class="la-wv-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league, as a share of what you have left">$${m.bid}</span>`:''}</div>
+      <div class="la-tm-proj"><b title="This week's projection under this league's scoring">${(+m.adj||0).toFixed(1)}</b>${m.net!=null?`<span class="la-wv-net" title="${m.dyn?'Dynasty chart value over replacement, net of the player he replaces':'Rest-of-season value over replacement, net of the player he replaces, per game'}">${m.net>=0?'+':''}${m.net.toFixed(m.dyn?0:1)}${m.dyn?' dyn':'/gm'}</span>`:''}${m.bid!=null?`<span class="la-wv-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league, as a share of what you have left">$${m.bid}</span>`:''}</div>
     </div>`;
   };
   const pairs=res.adds.map(c=>{
     const whys=c.reasons.map(r=>({k:r.k, label:LA_WHY_LABEL[r.k]||r.k, text:r.text}));
+    if(c.dur){
+      if(c.dur.score>=0.65) whys.push({k:'sticky', label:'sticky', text:c.dur.sticky.join(' · ')||'usage and efficiency both back it'});
+      else if(c.dur.score<=0.35) whys.push({k:'fleeting', label:'fleeting', text:c.dur.fleeting.join(' · ')||'one-week production'});
+      if(c.dur.trend) whys.push({k:'trend', label:'trending', text:c.dur.trend+' — expect competition for him'});
+    }
     if(c.startsOver) whys.push({k:'starts', label:`starts over ${c.startsOver.name}`, text:`Beats your weakest eligible starter (${c.startsOver.slot}) by ${c.startsOver.delta} this week`});
-    const add=row({id:c.id,name:c.name,pos:c.pos,team:c.team}, 'add', {adj:c.wp.adj, net:c.net, bid:c.faab?c.faab.bid:null, whys});
+    const add=row({id:c.id,name:c.name,pos:c.pos,team:c.team}, 'add', {adj:c.wp.adj, net:c.net, dyn:!!c.dynasty, bid:c.faab?c.faab.bid:null, whys});
     const drop=c.drop ? row({id:c.drop.id,name:c.drop.name,pos:c.drop.pos,team:c.drop.team}, 'drop',
-      {adj:c.drop.value||0, net:null, bid:null, whys:[{k:'drop', label:`${c.drop.vor>=0?'+':''}${(c.drop.vor||0).toFixed(1)}/gm over replacement`, text:'Rest-of-season value over what is freely available at his position — the least you would miss'}]}) : '';
+      {adj:c.drop.value||0, net:null, bid:null, whys:[{k:'drop', label:`${c.drop.vor>=0?'+':''}${(c.drop.vor||0).toFixed(c.dynasty?0:1)}${c.dynasty?' dyn':'/gm'} over replacement`, text:c.dynasty?'Dynasty chart value over what is freely available at his position — the least you would miss':'Rest-of-season value over what is freely available at his position — the least you would miss'}]}) : '';
     return `<div class="la-wv-pair">${add}${drop}</div>`;
   }).join('');
   const faab=res.faab ? `<span class="la-wv-faab" title="FAAB left · ${res.faab.curve?'this league\'s past seasons':'no league history yet (linear decay)'} say about ${(hubFaabAdvice(1,res.wk,res.faab.curve,res.teams,res.faab.budget,res.faab.left).spentShould*100).toFixed(0)}% of the season\'s pickup value is behind you by week ${res.wk}">FAAB <b>$${res.faab.left}</b> / $${res.faab.budget}</span>` : '';
@@ -33989,5 +34121,6 @@ function hubViewHTML(s){
 TC_INFO_BOOK.weekhub={title:'This Week', body:()=>`
 <p>Every synced league at once, scored under each league's own settings.</p>
 <p><b>Lineup.</b> This week's projection blends the season projection, season points per game and the last three weeks, then adjusts for the opponent's defense against the position (the small #). The optimal lineup is diffed against what you have set: <b>START</b> is a clear swap (${HUB_CLOSE}+ points or the starter can't play), <b>CLOSE</b> is under that, <b>CLOSE CALL</b> means you have the right player in but a bench player is within reach. Players whose game has kicked off stay put.</p>
-<p><b>Adds.</b> Only a pickup that beats the roster player he pushes off — his rest-of-season value <i>over replacement</i> (what is freely available at the position in this league) net of the drop's, at least ${HUB_ADD_MIN}/game or a start this week. Starters in this week's optimal lineup and in the rest-of-season optimal lineup are never the drop. The reason: <b>role opened</b> (a teammate ahead of him is out), <b>usage spike</b> (touches far above his own baseline), <b>soft schedule</b> (next three opponents generous to his position), <b>efficient</b> (his per-target or per-carry rank backs the volume). "Starts over" says he'd beat your weakest starter now.</p>
+<p><b>Adds.</b> Only a pickup that beats the roster player he pushes off — his rest-of-season value <i>over replacement</i> (in a dynasty or keeper league, his dynasty-chart value over replacement instead; a chopped league is this season only) (what is freely available at the position in this league) net of the drop's, at least ${HUB_ADD_MIN}/game or a start this week. Starters in this week's optimal lineup and in the rest-of-season optimal lineup are never the drop. The reason: <b>role opened</b> (a teammate ahead of him is out), <b>usage spike</b> (touches far above his own baseline), <b>soft schedule</b> (next three opponents generous to his position), <b>efficient</b> (his per-target or per-carry rank backs the volume). "Starts over" says he'd beat your weakest starter now.</p>
+<p><b>Sticky or fleeting.</b> Before a surge's upside counts, it is weighed: a target or carry share sustained across weeks and efficiency behind it (EPA per target, separation, RYOE, red-zone carries) make it <b>sticky</b>; TD-driven points on light volume, extreme YAC over expectation, a one-week absence upstream or a soft stretch of schedule make it <b>fleeting</b>. Sticky surges keep most of their upside; fleeting ones keep little — and a roster player whose production looks fleeting is the easier drop. <b>Trending</b> marks a player the whole league is reaching for this week.</p>
 <p><b>FAAB.</b> The waiver wire is worth most early: a pickup is his rest-of-season value, and the pool of obvious pickups drains as the season goes. The suggested bid is his value against the top pickups still ahead (split across the league), as a share of what you have left. The curve comes from this league's own past seasons when it has them.</p>`};

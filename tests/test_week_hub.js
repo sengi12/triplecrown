@@ -59,9 +59,9 @@ const app=new Function(code+`
             '10':{'2025':[{team:'NE',pos:'WR',games_played:17,stats:{receptions:80,receiving_yards:1100,receiving_tds:7}}]} });
   _laMu={byWeek:{'2':{rows:[{roster_id:1,matchup_id:1,starters:['8','2','3','5','7','6']},{roster_id:2,matchup_id:1,starters:[]}],sig:'x'}},fetching:{}};
   laFetchMatchups=function(){};
-  return { snap:hubSnapshotResult, teamCard:laThisWeekCardHTML, hubScoringFor, calcFptsUnder, hubWeekProj, hubFormMap, hubFill, hubCallouts, hubWaiverReasons, hubFaabAdvice, hubFaabCurveFromHistory, hubFaabFallbackCurve, hubAnalyzeLeague, hubKickoff,
+  return { dur:hubDurability, snap:hubSnapshotResult, teamCard:laThisWeekCardHTML, hubScoringFor, calcFptsUnder, hubWeekProj, hubFormMap, hubFill, hubCallouts, hubWaiverReasons, hubFaabAdvice, hubFaabCurveFromHistory, hubFaabFallbackCurve, hubAnalyzeLeague, hubKickoff,
            laDvpTable, laCurrentWeek, byId:()=>{ const m=new Map(); buildPlayerList().forEach(p=>m.set(String(p.player_id),p)); return m; },
-           gs:()=>scoringSettings, HUB_CLOSE, ins:()=>TC_INSEASON, sp:()=>sleeperPlayers };
+           gs:()=>scoringSettings, HUB_CLOSE, ins:()=>TC_INSEASON, sp:()=>sleeperPlayers, nv:()=>NFLVERSE, setDyn:(d)=>{ DYNASTY_VALUES=d; } };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -160,6 +160,51 @@ chk(fw && fw.faab && fw.faab.bid>0 && fw.faab.left===88, 'FAAB advice reads the 
 chk(res.drops.some(d=>d.p.id==='2') && !res.drops.some(d=>d.p.id==='3'), 'drop candidates: the backup back, never the injured starter');
 chk(!res.adds.some(a=>a.id==='12'), 'a third-string back below replacement is not an add');
 chk(res.lineup.optTotal>res.lineup.curTotal, 'optimal beats the set lineup');
+
+console.log('=== durability: sticky or fleeting ===');
+const mkForm=(entries)=>{ const m=new Map(); for(const id in entries){ const ws=entries[id]; m.set(id,{gp:ws.length, fppg:ws.reduce((a,w)=>a+w.pts,0)/ws.length, f3:ws.slice(-3).reduce((a,w)=>a+w.pts,0)/Math.min(3,ws.length), weeks:ws, pos:app.sp()[id].pos, team:app.sp()[id].team}); } return m; };
+const dctx=(form, extra)=>Object.assign({sc:ppr, wk:3, dvp, sched:app.ins().schedule, form}, extra||{});
+// a sustained 24% target share across three weeks
+let f=mkForm({'10':[{wk:1,pts:12,tgt:7,teamTgt:30,carry:0,touches:7,tds:0},{wk:2,pts:14,tgt:8,teamTgt:32,carry:0,touches:8,tds:1},{wk:3,pts:11,tgt:7,teamTgt:29,carry:0,touches:7,tds:0}]});
+let d=app.dur(app.byId().get('10'), dctx(f), []);
+chk(d.score>0.65 && d.sticky.some(x=>/target share · 3 wks running/.test(x)), `a sustained target share is sticky (${d.score.toFixed(2)}: ${d.sticky[0]})`);
+// two TDs on five touches, one week
+f=mkForm({'10':[{wk:3,pts:22,tgt:5,teamTgt:30,carry:0,touches:5,tds:2}]});
+d=app.dur(app.byId().get('10'), dctx(f), []);
+chk(d.score<0.4 && d.fleeting.some(x=>/TD-driven/.test(x)), `TD-driven points on light volume are fleeting (${d.score.toFixed(2)})`);
+// a share that collapsed
+f=mkForm({'10':[{wk:2,pts:15,tgt:9,teamTgt:30,carry:0,touches:9,tds:0},{wk:3,pts:3,tgt:2,teamTgt:31,carry:0,touches:2,tds:0}]});
+d=app.dur(app.byId().get('10'), dctx(f), []);
+chk(d.fleeting.some(x=>/target share fell/.test(x)), 'a target share that collapsed reads as fleeting');
+// the opportunity's source: a teammate on IR vs one who is Out for a week
+app.sp()['3'].injury_status='IR';
+d=app.dur(app.byId().get('4'), dctx(mkForm({})), [app.byId().get('3'), app.byId().get('4')]);
+chk(d.score>0.6 && d.sticky.some(x=>/on IR/.test(x)), 'a role opened by an IR stint is sticky');
+app.sp()['3'].injury_status='Out';
+d=app.dur(app.byId().get('4'), dctx(mkForm({})), [app.byId().get('3'), app.byId().get('4')]);
+chk(d.fleeting.some(x=>/short absence/.test(x)), 'a role opened by a one-week Out is flagged as short');
+app.sp()['3'].injury_status='Out';
+// trending
+d=app.dur(app.byId().get('10'), dctx(mkForm({}), {trending:{'10':{count:23400}}}), []);
+chk(/23k adds/.test(d.trend||''), 'league-wide trending adds surface as urgency');
+// a 12-carry back, efficiency backing from the live fan ranks
+app.nv()['2026']=Object.assign(app.nv()['2026']||{}, {rb_fan:{'free back':{totals:{attempts:14, rk:{rz:[1,8]}}}}, ngs_weekly:{players:{'free back':{kind:'rb',pos:'RB',season:{rk:{ryoe:[2,8]}}}}}});
+f=mkForm({'9':[{wk:2,pts:13,tgt:2,teamTgt:28,carry:14,touches:16,tds:0},{wk:3,pts:12,tgt:1,teamTgt:30,carry:13,touches:14,tds:0}]});
+d=app.dur(app.byId().get('9'), dctx(f), []);
+chk(d.score>=0.8 && d.sticky.some(x=>/RYOE/.test(x)) && d.sticky.some(x=>/RZ carries/.test(x)), `a back with sustained carries, RYOE and red-zone work is as sticky as it gets (${d.score.toFixed(2)})`);
+delete app.nv()['2026'].rb_fan; delete app.nv()['2026'].ngs_weekly;
+
+console.log('=== dynasty leagues price the wire on the dynasty chart; chopped is this season only ===');
+if(typeof DYNASTY_VALUES==='undefined' || !DYNASTY_VALUES) globalThis.DYNASTY_VALUES=null;
+const dynRes=(type)=>app.hubAnalyzeLeague(Object.assign({}, lg, {settings:{waiver_type:2, waiver_budget:100, type}}), rosters, users, matchups, {sc:ppr, wk:2, dvp, form, sched:app.ins().schedule, now:Date.now(), byId:app.byId(), myUserId:'me', projRank, usageRank, faabCurve:null});
+app.setDyn({players:{'free wideout':{v:70,sf:70,pos:'WR'}, 'free back':{v:8,sf:8,pos:'RB'}, 'backup back':{v:4,sf:4,pos:'RB'}, 'third back':{v:2,sf:2,pos:'RB'}, 'star back':{v:85,sf:85,pos:'RB'}, 'hurt wideout':{v:60,sf:60,pos:'WR'}, 'deep wideout':{v:30,sf:30,pos:'WR'}, 'solid wideout':{v:40,sf:40,pos:'WR'}, 'bench wideout':{v:35,sf:35,pos:'WR'}, 'some tight':{v:25,sf:25,pos:'TE'}, 'the passer':{v:50,sf:90,pos:'QB'}, 'spare passer':{v:20,sf:60,pos:'QB'}}});
+let r2=dynRes(2);
+chk(r2.dynasty===true && r2.adds.length && r2.adds[0].id==='10' && r2.adds[0].dynasty, 'a dynasty league: the wire is priced on the chart — Free Wideout (70) leads');
+chk(r2.adds[0].vor===70 && /dyn/.test(JSON.stringify(r2.drops[0].reasons)), 'values are chart units (70 over a replacement of 0), the drop reasons say "dynasty"');
+chk(r2.adds.findIndex(a=>a.id==='9')>r2.adds.findIndex(a=>a.id==='10') && (r2.adds.find(a=>a.id==='9')||{vor:0}).vor<=8, 'Free Back (chart 8) sits below the wideout and is priced in chart units, not on his projection');
+let r3=dynRes(3);
+chk(r3.dynasty===false && r3.adds.some(a=>a.id==='9') && !r3.adds[0].dynasty, 'a chopped league (Sleeper type 3) prices the wire on rest-of-season projection like redraft');
+app.setDyn(null);
 
 console.log('=== the Team tab: one league from the analyzer snapshot ===');
 const snap={leagueId:'L1', name:'Queen City Kings', season:'2026', teams:2, rosterPositions:['QB','RB','WR','WR','TE','FLEX','BN','BN'], myUserId:'me',

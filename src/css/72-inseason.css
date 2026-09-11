@@ -410,3 +410,6 @@
 .la-bafl-up{color:var(--success);} .la-bafl-dn{color:var(--danger);}
 .la-bafl-off{opacity:.5;}
 @media (max-width:480px){ .la-bafl-row{grid-template-columns:1.1fr 1fr 52px 1fr;font-size:11px;gap:5px;} }
+.la-lh-why-sticky{background:rgba(0,207,159,.16);color:var(--rb);}
+.la-lh-why-fleeting{background:rgba(255,90,90,.14);color:#ff9d9d;}
+.la-lh-why-trend{background:rgba(168,85,247,.16);color:#c9a3ff;}

@@ -40,3 +40,6 @@
 .hub-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:2px 0 10px;}
 .hub-why-net{background:rgba(0,207,159,.14);color:var(--rb);font-family:var(--mono);}
 .hub-empty{font-size:11px;color:var(--muted);padding:9px 8px;}
+.hub-why-sticky{background:rgba(0,207,159,.16);color:var(--rb);}
+.hub-why-fleeting{background:rgba(255,90,90,.14);color:#ff9d9d;}
+.hub-why-trend{background:rgba(168,85,247,.16);color:#c9a3ff;}
