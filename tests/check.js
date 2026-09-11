@@ -4034,7 +4034,7 @@ function teamHeaderHcLine(team, opts){
     const callerMatch = callerName && callerName.toLowerCase() === histName.toLowerCase();
     return `<div class="team-hc scheme-open" role="button" tabindex="0" title="${openTitleEsc}" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">
       <span class="team-hc-label">HC ${activeSeason}</span> <b>${histName}</b>
-      ${callerMatch?`<span class="hc-caller" title="This head coach is listed as the team's primary offensive playcaller.">🎧 Primary playcaller</span>`:''}
+      ${callerMatch?`<span class="hc-caller" title="This head coach is listed as the team's primary offensive playcaller.">🎧<span class="hc-caller-txt"> Primary playcaller</span></span>`:''}
     </div>`;
   }
 
@@ -4044,7 +4044,7 @@ function teamHeaderHcLine(team, opts){
   return hc ? `<div class="team-hc scheme-open" role="button" tabindex="0" title="${openTitleEsc}" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">
       ${hc.headshot?`<img src="${hc.headshot}" class="team-hc-img" onerror="this.style.display='none'">`:''}
       <span class="team-hc-label">HC</span> <b>${hc.name}</b>${hc.experience!=null?` · yr ${hc.experience}`:''}
-      ${hcCaller?`<span class="hc-caller" title="This head coach is the team's primary offensive playcaller — the OC is less pivotal for scheme continuity.">🎧 Primary playcaller</span>${(typeof coachRecChip==='function')?coachRecChip(hc.name):''}`:''}
+      ${hcCaller?`<span class="hc-caller" title="This head coach is the team's primary offensive playcaller — the OC is less pivotal for scheme continuity.">🎧<span class="hc-caller-txt"> Primary playcaller</span></span>${(typeof coachRecChip==='function')?coachRecChip(hc.name):''}`:''}
     </div>` : (headCoaches[t]===null?'':`<div class="team-hc team-hc-loading">Loading head coach…</div>`);
 }
 
@@ -7285,6 +7285,7 @@ function openPlayerCard(nameOrId, pos, team){
   if(typeof _pcardDockAdd==='function') _pcardDockAdd(pid, pos, team);   // before the shell replaces pcardState
   renderPlayerCardShell(pid, pos, team);
   if(typeof _pcardDockRender==='function') _pcardDockRender();
+  if(typeof pcardLeaguesOnOpen==='function') pcardLeaguesOnOpen(pid);
   loadPlayerCardData(pid, pos, team);
 }
 // ── Swipe-down to close (touch) ──────────────────────────────────────────────
@@ -7449,6 +7450,7 @@ function renderPlayerCardShell(pid, pos, team){
         <div class="pcard-hero-foot">
           ${teamPlate}
           <div class="pcard-hero-draft" id="pcardHeroDraft"></div>
+          ${(typeof pcardLeaguesBarHTML==='function')?pcardLeaguesBarHTML(pid):''}
           ${ktcBand}
         </div>
         ${pcardBackButtonHTML()}
@@ -7474,6 +7476,23 @@ function renderPlayerCardShell(pid, pos, team){
   const cardHost = overlay || document.getElementById('pcardOverlay');
   const cardEl = (cardHost && cardHost.querySelector) ? cardHost.querySelector('.pcard') : null;
   if(typeof attachPcardSwipe==='function' && cardEl) attachPcardSwipe(cardEl);
+  pcardFitHeroName(cardEl);
+}
+// On a phone the ＋ / notes / ✕ cluster sits over the top-right of the hero. A long
+// name line would run under it — so, only when measuring says it would, the name
+// block steps down below the cluster and the photo gap tightens; every other card
+// keeps the layout untouched.
+function pcardFitHeroName(cardEl){
+  try{
+    if(!cardEl || !cardEl.querySelector) return;
+    const main=cardEl.querySelector('.pcard-hero-v2 .pcard-hero-main'); if(!main) return;
+    const w=(typeof window!=='undefined' && window.innerWidth) || 0;
+    if(!(w>0 && w<=560)){ main.classList.remove('pcard-name-under'); return; }
+    const lines=[...main.querySelectorAll('.pcard-name-l1,.pcard-name-l2')];
+    const avail=(main.clientWidth||0) - 128;          // the cluster: ✕ 10 · notes 52 · ＋ 96 → ~128px from the right
+    const covered=lines.some(el=>(el.scrollWidth||0) > avail);
+    main.classList.toggle('pcard-name-under', covered);
+  }catch(e){}
 }
 // Player-card stats source: 'pro' (NFL career — Sleeper weekly for skill players, ESPN nfl for
 // defense/other) or 'college' (ESPN college gamelog). Rookies default to college (no NFL games
@@ -8230,6 +8249,121 @@ function _pcardDockRender(){
   }).join('');
   const act=dock.querySelector('.pcard-dock-tab.active');
   if(act && act.scrollIntoView){ try{ act.scrollIntoView({block:'nearest', inline:'nearest'}); }catch(e){} }
+}
+// ── In your leagues: where this player stands across every synced Sleeper league ──
+// The analyzer's saved profile lists every league on the account; each league's
+// rosters are three small reads, fetched once per session on first open and kept
+// for ten minutes. One row per league — avatar, name, format — and a status:
+// ★ MINE, the owner's team, or AVAILABLE. Tapping a row opens the league on Sleeper.
+let _pcardLg={ at:0, byLeague:{}, loading:null };
+let _pcardLgOpen=false;
+const PCARD_LG_TTL=10*60*1000;
+function pcardLeaguesList(){
+  const p=(typeof laLoadSleeperProfile==='function')?laLoadSleeperProfile():null;
+  return (p && Array.isArray(p.leagues)) ? {prof:p, list:p.leagues.filter(l=>!l.stale)} : {prof:null, list:[]};
+}
+function pcardLeaguesAvailable(){ return pcardLeaguesList().list.length>0; }
+function pcardLeagueSub(L){
+  const rp=L.roster_positions||[];
+  const sf=(typeof leagueIsSuperflex==='function')?leagueIsSuperflex(rp):rp.includes('SUPER_FLEX');
+  const rec=+((L.scoring_settings||{}).rec||0);
+  const fmt= rec>=1?'PPR':rec>=0.25?'Half PPR':'Standard';
+  const type=+((L.settings||{}).type)||0;
+  return `${L.total_rosters||'?'}-team ${type===2?'Dynasty ':type===1?'Keeper ':''}${sf?'SF ':''}${fmt}`;
+}
+async function pcardLeaguesLoad(force){
+  if(!force && _pcardLg.at && Date.now()-_pcardLg.at<PCARD_LG_TTL) return _pcardLg;
+  if(_pcardLg.loading) return _pcardLg.loading;
+  const {prof, list}=pcardLeaguesList();
+  const myId=prof && prof.user ? prof.user.user_id : null;
+  _pcardLg.loading=(async()=>{
+    await Promise.all(list.map(async lg=>{
+      try{
+        const [L, rosters, users]=await Promise.all([
+          sleeperFetch(LA_LEAGUE_URL(lg.league_id)),
+          sleeperFetch(LA_ROSTERS_URL(lg.league_id)),
+          sleeperFetch(SLEEPER_LG_USERS_URL(lg.league_id)).catch(()=>[]),
+        ]);
+        const uById={}; (users||[]).forEach(u=>uById[u.user_id]=u);
+        const byPid={};
+        (rosters||[]).forEach(r=>{
+          const u=uById[r.owner_id]||{};
+          const mine=!!myId && (r.owner_id===myId || (Array.isArray(r.co_owners)&&r.co_owners.includes(myId)));
+          const owner=(u.metadata&&u.metadata.team_name)||u.display_name||`Roster ${r.roster_id}`;
+          (r.players||[]).forEach(p=>{ byPid[String(p)]={owner, mine}; });
+        });
+        _pcardLg.byLeague[lg.league_id]={id:String(lg.league_id), name:L.name||lg.name||'League',
+          avatar:(L.avatar && typeof SLEEPER_AVATAR_THUMB==='function')?SLEEPER_AVATAR_THUMB(L.avatar):null,
+          sub:pcardLeagueSub(L), byPid};
+      }catch(e){
+        _pcardLg.byLeague[lg.league_id]={id:String(lg.league_id), name:lg.name||'League', error:true, byPid:{}};
+      }
+    }));
+    _pcardLg.at=Date.now(); _pcardLg.loading=null;
+    return _pcardLg;
+  })();
+  return _pcardLg.loading;
+}
+function pcardLeaguesRows(pid){
+  if(!_pcardLg.at) return '<div class="pcard-lg-row pcard-lg-muted">Loading your leagues…</div>';
+  const {list}=pcardLeaguesList();
+  return list.map(lg=>{
+    const L=_pcardLg.byLeague[lg.league_id]; if(!L) return '';
+    const st=L.byPid[String(pid)];
+    const status= L.error ? '<span class="pcard-lg-st pcard-lg-err">unavailable</span>'
+      : !st ? '<span class="pcard-lg-st pcard-lg-free">AVAILABLE</span>'
+      : st.mine ? '<span class="pcard-lg-st pcard-lg-mine">★ MINE</span>'
+      : `<span class="pcard-lg-st pcard-lg-owned" title="On ${escAttr(st.owner)}">${escHtml(st.owner)}</span>`;
+    return `<a class="pcard-lg-row ${st?(st.mine?'is-mine':'is-owned'):'is-free'}" href="https://sleeper.com/leagues/${escAttr(L.id)}/players" target="_blank" rel="noopener">
+      ${L.avatar?`<img class="pcard-lg-av" src="${escAttr(L.avatar)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:'<span class="pcard-lg-av"></span>'}
+      <span class="pcard-lg-main"><b>${escHtml(L.name)}</b><small>${escHtml(L.sub||'')}</small></span>${status}</a>`;
+  }).join('');
+}
+// The pill: one small control in the hero's bottom row. Before the leagues have
+// loaded this session it reads "Leagues"; after, "4 of 9 avail" — the answer at a
+// glance, the rows one tap away in a popover that overlays the card (nothing in the
+// card's flow moves).
+function pcardLeaguesSummary(pid){
+  if(!_pcardLg.at) return null;
+  const {list}=pcardLeaguesList();
+  let n=0, avail=0, mine=0;
+  list.forEach(lg=>{ const L=_pcardLg.byLeague[lg.league_id]; if(!L || L.error) return; n++; const st=L.byPid[String(pid)]; if(!st) avail++; else if(st.mine) mine++; });
+  return {n, avail, mine};
+}
+// The pill is the stadium icon and, once the leagues are known, "1 of 4" — leagues
+// where he is available, of the leagues you are in. Nothing more; the popover explains.
+function pcardLeaguesPillText(pid){
+  const s=pcardLeaguesSummary(pid);
+  if(!s || !s.n) return '';
+  return `${s.avail} of ${s.n}`;
+}
+function pcardLeaguesBarHTML(pid){
+  if(!pcardLeaguesAvailable()) return '';
+  return `<button class="pcard-lg-pill" id="pcardLgPill" onclick="pcardLeaguesToggle('${escAttr(String(pid))}',event)" title="Leagues where he is available, of the leagues you are in — tap for each league">${(typeof TC_ICON==='function')?TC_ICON('stadium'):''}<span id="pcardLgPillTxt">${escHtml(pcardLeaguesPillText(pid))}</span><span class="pcard-lg-caret">▾</span></button>`;
+}
+function _pcardLgRefresh(pid){
+  if(!pcardState || String(pcardState.pid)!==String(pid)) return;
+  const t=document.getElementById('pcardLgPillTxt'); if(t) t.textContent=pcardLeaguesPillText(pid);
+  const b=document.getElementById('pcardLgBody'); if(b) b.innerHTML=pcardLeaguesRows(pid);
+}
+function pcardLeaguesToggle(pid, ev){
+  if(ev && ev.stopPropagation) ev.stopPropagation();
+  const card=document.querySelector('#pcardOverlay .pcard'); if(!card) return;
+  let pop=card.querySelector('.pcard-lg-pop');
+  if(pop){ pop.remove(); _pcardLgOpen=false; return; }
+  _pcardLgOpen=true;
+  pop=document.createElement('div'); pop.className='pcard-lg-pop';
+  pop.innerHTML=`<div class="pcard-lg-head"><b>In your leagues</b><button class="pcard-add-x" onclick="pcardLeaguesToggle('${escAttr(String(pid))}',event)" aria-label="Close">✕</button></div><div class="pcard-lg-body" id="pcardLgBody">${pcardLeaguesRows(pid)}</div>`;
+  pop.onclick=(e)=>{ if(e && e.stopPropagation) e.stopPropagation(); };
+  const tabs=card.querySelector('#pcardTabs');
+  if(tabs && tabs.parentNode===card) card.insertBefore(pop, tabs); else card.appendChild(pop);
+  pcardLeaguesLoad(false).then(()=>_pcardLgRefresh(pid)).catch(()=>_pcardLgRefresh(pid));
+}
+// A card opening: once the leagues are known this session, the pill says the answer.
+function pcardLeaguesOnOpen(pid){
+  _pcardLgOpen=false;
+  if(!pcardLeaguesAvailable()) return;
+  if(_pcardLg.at) _pcardLgRefresh(pid);
 }
 // ── TC Model row on the player card ──────────────────────────────────────────────
 // The seed's per-player `tc` block (built by src/nflverse/tc_projections.py) carries the
@@ -31889,8 +32023,7 @@ function laMyTeamView(s){
     + '</div>'
     + '<div class="la-my-sum-adv">' + escHtml(myTraj.advice) + '</div>'
     + '</div></div>';
-  const thisWeek=(isOwn && typeof laThisWeekCardHTML==='function') ? laThisWeekCardHTML(s) : '';
-  return switcher + controls + summary + thisWeek
+  return switcher + controls + summary
     + '<div class="la-my-grid">' + powerTbl + posTbl + slotTbl + radar + lineup + '</div>'
     + '<div class="la-note la-note-min">' + ((typeof tcInfoBtn==='function')?tcInfoBtn(lens==='value'?'lamyvalue':'lamyproj','How the power score works'):'') + '</div>';
 }
@@ -32671,6 +32804,10 @@ function laToggleLhShowAll(){ laState.lhShowAll=!laState.lhShowAll; laRerenderKe
 function laLineupView(s){
   const my=_laMyTeamRow(s);
   if(!my) return `<div class="card la-ins-empty"><div class="empty-body">No roster found in this snapshot.</div></div>`;
+  // …then the wire: each ADD names the DROP it beats, in the same rows.
+  return _laLineupPaneHTML(s, my) + ((typeof laWaiverSectionHTML==='function') ? laWaiverSectionHTML(s) : '');
+}
+function _laLineupPaneHTML(s, my){
   const wk=laCurrentWeek();
   const pm=laProjMap();
   const dvp=laDvpTable();
@@ -33689,15 +33826,49 @@ function hubSnapshotResult(s){
   _hubSnapMemo={sig, res};
   return res;
 }
-function laThisWeekCardHTML(s){
+// ── The Lineup pane's waiver section — in the pane's own row language ────────
+// The pane already says START / SIT in its lineup rows; what it lacked was the
+// wire. Each ADD names the DROP it beats (value over replacement, this league's
+// scoring), with the game line, the reason chips and the bid, in the same row
+// component as the lineup above it — one design, desktop and phone alike.
+const LA_WHY_LABEL={vacancy:'role opened', spike:'usage spike', schedule:'soft schedule', efficiency:'efficient'};
+function laWaiverSectionHTML(s){
   if(typeof hasSeasonStarted!=='function' || !hasSeasonStarted()) return '';
   const wk=(typeof laCurrentWeek==='function')?laCurrentWeek():1;
   if(typeof _laMu!=='undefined' && !(_laMu.byWeek&&_laMu.byWeek[wk]) && typeof laFetchMatchups==='function') laFetchMatchups(wk, true);
   const res=hubSnapshotResult(s);
   if(!res || !res.mine) return '';
-  const L=res.lineup, gain=L?(L.optTotal-L.curTotal):0;
-  return `<div class="la-my-card la-my-week"><div class="la-my-title">This Week <span class="la-my-sub">wk ${wk}${L&&L.opponent?` · vs ${escHtml(L.opponent)}`:''}${L&&gain>0.05?` · <b>+${gain.toFixed(1)}</b> available`:''} <button class="btn btn-ghost btn-sm" onclick="laSetTab('hub')" title="Every league at once">Multi-League →</button></span></div>${_hubActionsHTML(res, true)}</div>`;
+  const dvp=(typeof laDvpTable==='function')?laDvpTable():null;
+  const row=(p, kind, m)=>{
+    const l3=(m.whys||[]).map(w=>`<span class="la-lh-flag la-lh-why la-lh-why-${w.k}" title="${escAttr(w.text||'')}">${escHtml(w.label)}</span>`).join('');
+    const posc=(typeof _laPosOf==='function')?_laPosOf(p):p.pos;
+    return `<div class="la-tm-row la-wv-row la-wv-${kind}">
+      <span class="la-slot la-slot-${kind==='add'?'ADD':'DROP'}">${kind==='add'?'ADD':'DROP'}</span>
+      <span class="clickable-player la-tm-hs" onclick="${pcardOnclick(p.id,p.pos,p.team||'')}">${(typeof laPlayerImg==='function')?laPlayerImg(p,'la-tm-hsimg'):''}</span>
+      <div class="la-tm-main">
+        <div class="la-tm-l1">${(typeof laNameHTML==='function')?laNameHTML(p,'la-tm-nm'):escHtml(p.name)} <span class="la-tm-pos la-pos-${escAttr(posc)}">${escHtml(posc)}</span><span class="la-tm-team">· ${escHtml(p.team||'FA')}</span></div>
+        <div class="la-tm-l2">${(typeof laGameLineHTML==='function' && laGameLineHTML(p, wk, dvp))||'<span class="la-gm la-gm-none">schedule pending</span>'}</div>
+        ${l3?`<div class="la-tm-l3">${l3}</div>`:''}
+      </div>
+      <div class="la-tm-proj"><b title="This week's projection under this league's scoring">${(+m.adj||0).toFixed(1)}</b>${m.net!=null?`<span class="la-wv-net" title="Rest-of-season value over replacement, net of the player he replaces, per game">${m.net>=0?'+':''}${m.net.toFixed(1)}/gm</span>`:''}${m.bid!=null?`<span class="la-wv-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league, as a share of what you have left">$${m.bid}</span>`:''}</div>
+    </div>`;
+  };
+  const pairs=res.adds.map(c=>{
+    const whys=c.reasons.map(r=>({k:r.k, label:LA_WHY_LABEL[r.k]||r.k, text:r.text}));
+    if(c.startsOver) whys.push({k:'starts', label:`starts over ${c.startsOver.name}`, text:`Beats your weakest eligible starter (${c.startsOver.slot}) by ${c.startsOver.delta} this week`});
+    const add=row({id:c.id,name:c.name,pos:c.pos,team:c.team}, 'add', {adj:c.wp.adj, net:c.net, bid:c.faab?c.faab.bid:null, whys});
+    const drop=c.drop ? row({id:c.drop.id,name:c.drop.name,pos:c.drop.pos,team:c.drop.team}, 'drop',
+      {adj:c.drop.value||0, net:null, bid:null, whys:[{k:'drop', label:`${c.drop.vor>=0?'+':''}${(c.drop.vor||0).toFixed(1)}/gm over replacement`, text:'Rest-of-season value over what is freely available at his position — the least you would miss'}]}) : '';
+    return `<div class="la-wv-pair">${add}${drop}</div>`;
+  }).join('');
+  const faab=res.faab ? `<span class="la-wv-faab" title="FAAB left · ${res.faab.curve?'this league\'s past seasons':'no league history yet (linear decay)'} say about ${(hubFaabAdvice(1,res.wk,res.faab.curve,res.teams,res.faab.budget,res.faab.left).spentShould*100).toFixed(0)}% of the season\'s pickup value is behind you by week ${res.wk}">FAAB <b>$${res.faab.left}</b> / $${res.faab.budget}</span>` : '';
+  const body = pairs ? `<div class="card la-tm-card">${pairs}</div>` : `<div class="card la-tm-card"><div class="la-wv-none">Nothing on the wire beats what you have.</div></div>`;
+  return `<div class="la-ins-bar"><span class="la-ins-lbl">WAIVER WIRE · WEEK ${wk}</span>
+      <span class="la-ins-sub">each add names the drop it beats</span>${faab}
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="laSetTab('hub')" title="Every league at once">Multi-League →</button></div>
+    ${body}`;
 }
+function laThisWeekCardHTML(s){ return laWaiverSectionHTML(s); }
 function hubViewHTML(s){
   const wk = hubState.week || ((typeof laCurrentWeek==='function')?laCurrentWeek():1);
   if(!hubState.leagues.length && !hubState.busy && !hubState.loadedAt && !hubState.error) setTimeout(()=>hubLoadAll(false), 0);

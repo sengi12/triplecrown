@@ -751,6 +751,10 @@ function laToggleLhShowAll(){ laState.lhShowAll=!laState.lhShowAll; laRerenderKe
 function laLineupView(s){
   const my=_laMyTeamRow(s);
   if(!my) return `<div class="card la-ins-empty"><div class="empty-body">No roster found in this snapshot.</div></div>`;
+  // …then the wire: each ADD names the DROP it beats, in the same rows.
+  return _laLineupPaneHTML(s, my) + ((typeof laWaiverSectionHTML==='function') ? laWaiverSectionHTML(s) : '');
+}
+function _laLineupPaneHTML(s, my){
   const wk=laCurrentWeek();
   const pm=laProjMap();
   const dvp=laDvpTable();

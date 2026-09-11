@@ -340,6 +340,7 @@ function openPlayerCard(nameOrId, pos, team){
   if(typeof _pcardDockAdd==='function') _pcardDockAdd(pid, pos, team);   // before the shell replaces pcardState
   renderPlayerCardShell(pid, pos, team);
   if(typeof _pcardDockRender==='function') _pcardDockRender();
+  if(typeof pcardLeaguesOnOpen==='function') pcardLeaguesOnOpen(pid);
   loadPlayerCardData(pid, pos, team);
 }
 // ── Swipe-down to close (touch) ──────────────────────────────────────────────
@@ -504,6 +505,7 @@ function renderPlayerCardShell(pid, pos, team){
         <div class="pcard-hero-foot">
           ${teamPlate}
           <div class="pcard-hero-draft" id="pcardHeroDraft"></div>
+          ${(typeof pcardLeaguesBarHTML==='function')?pcardLeaguesBarHTML(pid):''}
           ${ktcBand}
         </div>
         ${pcardBackButtonHTML()}
@@ -529,6 +531,23 @@ function renderPlayerCardShell(pid, pos, team){
   const cardHost = overlay || document.getElementById('pcardOverlay');
   const cardEl = (cardHost && cardHost.querySelector) ? cardHost.querySelector('.pcard') : null;
   if(typeof attachPcardSwipe==='function' && cardEl) attachPcardSwipe(cardEl);
+  pcardFitHeroName(cardEl);
+}
+// On a phone the ＋ / notes / ✕ cluster sits over the top-right of the hero. A long
+// name line would run under it — so, only when measuring says it would, the name
+// block steps down below the cluster and the photo gap tightens; every other card
+// keeps the layout untouched.
+function pcardFitHeroName(cardEl){
+  try{
+    if(!cardEl || !cardEl.querySelector) return;
+    const main=cardEl.querySelector('.pcard-hero-v2 .pcard-hero-main'); if(!main) return;
+    const w=(typeof window!=='undefined' && window.innerWidth) || 0;
+    if(!(w>0 && w<=560)){ main.classList.remove('pcard-name-under'); return; }
+    const lines=[...main.querySelectorAll('.pcard-name-l1,.pcard-name-l2')];
+    const avail=(main.clientWidth||0) - 128;          // the cluster: ✕ 10 · notes 52 · ＋ 96 → ~128px from the right
+    const covered=lines.some(el=>(el.scrollWidth||0) > avail);
+    main.classList.toggle('pcard-name-under', covered);
+  }catch(e){}
 }
 // Player-card stats source: 'pro' (NFL career — Sleeper weekly for skill players, ESPN nfl for
 // defense/other) or 'college' (ESPN college gamelog). Rookies default to college (no NFL games

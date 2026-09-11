@@ -574,3 +574,11 @@ tr.pcard-future-row td{opacity:.75;}
 .rt-gp-opt{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 9px;border-radius:6px;font-size:11px;font-weight:700;color:var(--text);cursor:pointer;white-space:nowrap;}
 .rt-gp-opt:hover{background:var(--surface2);}
 .rt-gp-opt.active{color:var(--accent);}
+/* Narrow phones: when the name would run under the top-right buttons (measured, not
+   assumed), the name block steps below them and the photo gap tightens. */
+@media (max-width:560px){
+  .pcard-hero-v2 .pcard-hero-main.pcard-name-under{padding-top:44px;}
+  .pcard-hero-v2 .pcard-hero-main.pcard-name-under .pcard-name-l1,
+  .pcard-hero-v2 .pcard-hero-main.pcard-name-under .pcard-name-l2{font-size:clamp(17px,5vw,21px);}
+  .pcard-hero-v2 .pcard-hero-row{gap:6px;}
+}
