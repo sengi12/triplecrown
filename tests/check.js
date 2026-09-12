@@ -32469,21 +32469,20 @@ function laMatchupView(s){
     return {t, row, name:t.teamName||`Roster ${row.roster_id}`, rec:`${t.wins!=null?t.wins:'–'}-${t.losses!=null?t.losses:'–'}`,
       pts:Number(row.points||0), proj, rem, ytp, n:starters.filter(x=>x&&x!=='0').length};
   };
-  const sideHTML=(S, side, wp)=>{
-    const pct=Math.round(wp*100);
-    const wcls=pct>=55?'la-wp-up':pct<=45?'la-wp-dn':'';
-    // The bar sits under the "X% win" label, so it FILLS to the win probability —
-    // it used to fill by game progress (points banked / projected), which read as a
-    // broken 2% sliver at 0-0 kickoff under a "37% win" caption.
-    const barPct=Math.max(2, Math.min(100, pct));
+  // One hero for every league format: avatars, names, records, the big number with its
+  // projection under it, then ONE win-probability track across both sides (the BAFL app's
+  // bar — team A's share from the left, the rest is team B's, a decided matchup is one colour
+  // end to end). A points league's big number is points; BAFL's is the category score, and
+  // the category rows follow the bar. `S.big/S.sub/S.cls` carry the format's numbers.
+  const sideHTML=(S, side)=>{
     return `<div class="la-mu-side la-mu-${side}">
       <div class="la-mu-idrow">${laTeamAvatar(S.t,'la-mu-av')}<div class="la-mu-id"><b class="la-mu-tname" title="${escAttr(S.name)}">${escHtml(S.name)}</b><span class="la-mu-sub">${laOwnerHandle(S.t)} · ${S.rec}</span></div></div>
-      <div class="la-mu-score"><span class="la-mu-pts">${S.pts.toFixed(2)}</span><span class="la-mu-projsm">proj ${(S.pts+S.rem).toFixed(1)}</span></div>
-      <div class="la-mu-wp ${wcls}"><b>${pct}%</b> win</div>
-      <div class="la-mu-bar"><div class="la-mu-barfill ${wcls}" style="width:${barPct.toFixed(0)}%"></div></div>
-      <div class="la-mu-ytp">${S.ytp?`yet to play (${S.ytp}) · ${S.rem.toFixed(1)} proj left`:'all players done'}</div>
+      <div class="la-mu-score"><span class="la-mu-pts ${S.cls||''}"${S.tip?` title="${escAttr(S.tip)}"`:''}>${S.big}</span>${S.sub?`<span class="la-mu-projsm">${S.sub}</span>`:''}</div>
+      <div class="la-mu-ytp">${S.ytpText}</div>
     </div>`;
   };
+  const heroHTML=(A, B, p1, decided, below)=>`<div class="la-mu-fscore">${sideHTML(A,'home')}<div class="la-mu-vs">vs</div>${sideHTML(B,'away')}</div>
+      ${laBaflWinBarHTML({p1, p2:1-p1}, decided)}${below||''}`;
   const playerCell=(pid, pts, side)=>{
     if(!pid||pid==='0') return `<div class="la-mu-p la-mu-p-${side} la-mu-p-empty">— empty —</div>`;
     const p=_laPidMeta(meta,pid);
@@ -32520,10 +32519,37 @@ function laMatchupView(s){
     const isMine = my && pr.some(r=>r.roster_id===my.rosterId);
     const [a,b] = (isMine && pr[1].roster_id===my.rosterId) ? [pr[1],pr[0]] : [pr[0],pr[1]];
     const A=summarize(a), B=summarize(b);
-    const wpA=laWinProb(A.pts,A.rem,B.pts,B.rem), wpB=1-wpA;
-    const fscore = bafl
-      ? laBaflMatchupCard(a.roster_id, b.roster_id, baflCs, baflPcs, baflName, {mine:!!isMine})
-      : `<div class="la-mu-fscore">${sideHTML(A,'home',wpA)}<div class="la-mu-vs">vs</div>${sideHTML(B,'away',wpB)}</div>`;
+    let fscore;
+    if(bafl){
+      // Category score, projected category score, the bar from the five-draw model, then the
+      // category rows — the BAFL app's card body inside the shared hero.
+      const r1=a.roster_id, r2=b.roster_id;
+      if(!baflCs){
+        A.big='–'; B.big='–'; A.cls='tie'; B.cls='tie'; A.ytpText=B.ytpText='';
+        fscore=heroHTML(A, B, .5, false, `<div class="la-mc-loading">loading the week's stat lines…</div>`);
+      } else {
+        const r=laBaflResult(baflCs, r1, r2);
+        let pcs=baflPcs;
+        const live=!!(pcs && ((pcs.rem[r1]||0)>0 || (pcs.rem[r2]||0)>0));
+        if(!live) pcs=null;
+        const wp=live ? laBaflWinProb(pcs, r1, r2) : laBaflDecidedWP(r);
+        const pr=pcs ? laBaflResult(pcs, r1, r2) : null;
+        const tbTip='Category tie broken on total yards';
+        Object.assign(A, {big:r.tb1?`${r.s1}*`:String(r.s1), cls:r.s1dec>r.s2dec?'win':r.s1dec<r.s2dec?'loss':'tie', tip:r.tb1?tbTip:'', sub:pr?`proj ${pr.s1}`:'', ytpText:A.ytp?`yet to play (${A.ytp})`:'all players done'});
+        Object.assign(B, {big:r.tb2?`${r.s2}*`:String(r.s2), cls:r.s2dec>r.s1dec?'win':r.s2dec<r.s1dec?'loss':'tie', tip:r.tb2?tbTip:'', sub:pr?`proj ${pr.s2}`:'', ytpText:B.ytp?`yet to play (${B.ytp})`:'all players done'});
+        // The category rows, straight from the card (header and bar stripped — the hero has its own).
+        const card=laBaflMatchupCard(r1, r2, baflCs, pcs, baflName, {});
+        const body=card.slice(card.indexOf('<div class="la-proj-bar')>0?card.indexOf('<div class="la-proj-bar'):card.indexOf('<div class="la-mc-table-scroll'));
+        fscore=heroHTML(A, B, wp.p1, !live, body.replace(/<\/div>\s*$/,''));
+      }
+    } else {
+      const wpA=laWinProb(A.pts,A.rem,B.pts,B.rem);
+      const decided = A.ytp===0 && B.ytp===0;
+      const p1 = decided ? (A.pts>B.pts?1:A.pts<B.pts?0:.5) : wpA;
+      Object.assign(A, {big:A.pts.toFixed(2), sub:`proj ${(A.pts+A.rem).toFixed(1)}`, ytpText:A.ytp?`yet to play (${A.ytp}) · ${A.rem.toFixed(1)} proj left`:'all players done'});
+      Object.assign(B, {big:B.pts.toFixed(2), sub:`proj ${(B.pts+B.rem).toFixed(1)}`, ytpText:B.ytp?`yet to play (${B.ytp}) · ${B.rem.toFixed(1)} proj left`:'all players done'});
+      fscore=heroHTML(A, B, p1, decided);
+    }
     const rows=slotLabels.map((lbl,i)=>`<div class="la-mu-row">
         ${playerCell((a.starters||[])[i], (a.starters_points||[])[i], 'home')}
         <div class="la-mu-slot"><span class="la-slot la-slot-${lbl.replace(/[^A-Z]/g,'')||'X'}">${escHtml(lbl)}</span></div>
