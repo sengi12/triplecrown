@@ -161,7 +161,10 @@ function laBaflWinBarHTML(wp, decided){
   let a=Math.round(wp.p1*100); if(!decided) a=Math.min(99, Math.max(1, a));
   const b=100-a;
   const tip=decided?'Final':'Chance to win — live totals plus the unplayed share of every starter\'s projection';
-  return `<div class="la-mc-wp${decided?' decided':''}" title="${escAttr(tip)}" role="img" aria-label="${escAttr(`Win chance ${a}% to ${b}%`)}">
+  // Colour says who leads: green for the side with the better chance, red for the other,
+  // grey when it is dead level.
+  const side=a>b?' lead1':b>a?' lead2':' even';
+  return `<div class="la-mc-wp${decided?' decided':''}${side}" title="${escAttr(tip)}" role="img" aria-label="${escAttr(`Win chance ${a}% to ${b}%`)}">
     <span class="la-mc-wp-pct${a>=b?' lead':''}">${a}%</span>
     <div class="la-mc-wp-track"><div class="la-mc-wp-fill" style="width:${a}%"></div></div>
     <span class="la-mc-wp-pct la-mc-wp-pct-r${b>=a?' lead':''}">${b}%</span>

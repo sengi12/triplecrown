@@ -391,8 +391,8 @@ function laMatchupView(s){
         const wp=live ? laBaflWinProb(pcs, r1, r2) : laBaflDecidedWP(r);
         const pr=pcs ? laBaflResult(pcs, r1, r2) : null;
         const tbTip='Category tie broken on total yards';
-        Object.assign(A, {big:r.tb1?`${r.s1}*`:String(r.s1), cls:r.s1dec>r.s2dec?'win':r.s1dec<r.s2dec?'loss':'tie', tip:r.tb1?tbTip:'', sub:pr?`proj ${pr.s1}`:'', ytpText:A.ytp?`yet to play (${A.ytp})`:'all players done'});
-        Object.assign(B, {big:r.tb2?`${r.s2}*`:String(r.s2), cls:r.s2dec>r.s1dec?'win':r.s2dec<r.s1dec?'loss':'tie', tip:r.tb2?tbTip:'', sub:pr?`proj ${pr.s2}`:'', ytpText:B.ytp?`yet to play (${B.ytp})`:'all players done'});
+        Object.assign(A, {big:r.tb1?`${r.s1}*`:String(r.s1), cls:r.s1dec>r.s2dec?'win':r.s1dec<r.s2dec?'loss':'tie', tip:r.tb1?tbTip:'', sub:pr?`proj ${pr.s1}`:'', ytpText:A.ytp?`${A.ytp} to play`:'all players done'});
+        Object.assign(B, {big:r.tb2?`${r.s2}*`:String(r.s2), cls:r.s2dec>r.s1dec?'win':r.s2dec<r.s1dec?'loss':'tie', tip:r.tb2?tbTip:'', sub:pr?`proj ${pr.s2}`:'', ytpText:B.ytp?`${B.ytp} to play`:'all players done'});
         // The category rows, straight from the card (header and bar stripped — the hero has its own).
         const card=laBaflMatchupCard(r1, r2, baflCs, pcs, baflName, {});
         const body=card.slice(card.indexOf('<div class="la-proj-bar')>0?card.indexOf('<div class="la-proj-bar'):card.indexOf('<div class="la-mc-table-scroll'));
@@ -402,8 +402,8 @@ function laMatchupView(s){
       const wpA=laWinProb(A.pts,A.rem,B.pts,B.rem);
       const decided = A.ytp===0 && B.ytp===0;
       const p1 = decided ? (A.pts>B.pts?1:A.pts<B.pts?0:.5) : wpA;
-      Object.assign(A, {big:A.pts.toFixed(2), sub:`proj ${(A.pts+A.rem).toFixed(1)}`, ytpText:A.ytp?`yet to play (${A.ytp}) · ${A.rem.toFixed(1)} proj left`:'all players done'});
-      Object.assign(B, {big:B.pts.toFixed(2), sub:`proj ${(B.pts+B.rem).toFixed(1)}`, ytpText:B.ytp?`yet to play (${B.ytp}) · ${B.rem.toFixed(1)} proj left`:'all players done'});
+      Object.assign(A, {big:A.pts.toFixed(2), sub:`proj ${(A.pts+A.rem).toFixed(1)}`, ytpText:A.ytp?`${A.ytp} to play · ${A.rem.toFixed(1)} left`:'all players done'});
+      Object.assign(B, {big:B.pts.toFixed(2), sub:`proj ${(B.pts+B.rem).toFixed(1)}`, ytpText:B.ytp?`${B.ytp} to play · ${B.rem.toFixed(1)} left`:'all players done'});
       fscore=heroHTML(A, B, p1, decided);
     }
     const rows=slotLabels.map((lbl,i)=>`<div class="la-mu-row">
