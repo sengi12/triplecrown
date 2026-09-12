@@ -468,8 +468,14 @@ function _embeddedSection(section){
   return null;
 }
 
-function ensureNflverseSection(section){
-  if(nflverseSectionReady(section)) return Promise.resolve(true);
+function ensureNflverseSection(section, season){
+  // With a season given, "ready" means THAT season carries the section: in-season the
+  // sidecar merges the live year's adv_weekly, which used to satisfy the any-season check
+  // and stop the frozen seasons' file from ever loading.
+  const ready = season!=null
+    ? (!!_nflverseLazyLoaded[section] || !!(typeof NFLVERSE==='object' && NFLVERSE && NFLVERSE[String(season)] && NFLVERSE[String(season)][section]))
+    : nflverseSectionReady(section);
+  if(ready) return Promise.resolve(true);
   if(_nflverseLazyPromise[section]) return _nflverseLazyPromise[section];
   // Offline/baked: the payload is already in memory, just still compact. No fetch needed.
   const embedded = _embeddedSection(section);

@@ -334,7 +334,22 @@ function _schemeNode(view, formations){
 
 function _schemeEmptyNode(){ return {total:0, groups:[]}; }
 
+// The formation view of a team-season depends only on its coaching data (filters are
+// applied afterwards by _schemeSafeNode), yet the Red Zone / Regression tabs asked for it
+// ~1,000 times per render — every team, nested per team — and each build walked every
+// formation group, which froze a phone for minutes (field report, 2026-09-12). One build
+// per data object, keyed on identity so a reloaded season rebuilds and nothing else does.
+var _schemeFvMemo = new WeakMap();
 function _schemeBuildFv(p){
+  const data = p && p.data;
+  if(!data || typeof data!=='object') return _schemeBuildFvCalc(p);
+  const hit = _schemeFvMemo.get(data);
+  if(hit) return hit;
+  const fv = _schemeBuildFvCalc(p);
+  _schemeFvMemo.set(data, fv);
+  return fv;
+}
+function _schemeBuildFvCalc(p){
   const views = (p && p.data && p.data.views) ? p.data.views : {};
   const formations = (p && p.data && p.data.formations) ? p.data.formations : {};
   const DOWNS = ['all','1','2','3','4'];
@@ -532,22 +547,38 @@ function _schemeDriveFrictionComposite(season, team, thirdDownReach){
   return { score, rank, leagueSize:teams.length, components:badness };
 }
 
+// The league snapshot is asked by several renderers, some per team; before adv_weekly lands
+// it was recomputed on every ask. Now once per render (the per-render memo), and for good
+// once adv_weekly is in.
+// THE FREEZE (field report 2026-09-12, in season): every snapshot ask re-armed an
+// "adv_weekly loaded → repaint" handler; in season the sidecar has already merged the live
+// year's adv_weekly, so the load resolved at once, the repaint asked for the snapshot
+// again, which armed another handler — ~1,300 renders a second until the tab was killed.
+// The season cache never saved it because it keyed on the lazy-load FLAG, which the merge
+// never sets. Now: the load is kicked once per season and repaints only if that season's
+// adv_weekly actually arrived; the cache keys on the season's data being present.
+var _schemeAdvKick = {};
+function _schemeAdvFor(s){ return !!(NFLVERSE && NFLVERSE[String(s)] && NFLVERSE[String(s)].adv_weekly); }
 function _schemeLeagueInsightSnapshot(season){
   const s = String(season||'');
   if(!s) return null;
   if(_schemeInsightSeasonCache[s]) return _schemeInsightSeasonCache[s];
-
-  // Trigger adv_weekly lazy load so drive-component and RZ-volume stats populate.
-  // The cache key will be cleared by laOnAdvWeeklyLoaded when the fetch completes.
-  if(typeof ensureNflverseSection==='function') ensureNflverseSection('adv_weekly').then(ok=>{
-    if(!ok) return;
-    // Re-render the scheme modal if it's open on the insights tab so RZ data appears.
-    if(typeof schemeOverlayOpen!=='undefined' && schemeOverlayOpen
-       && typeof schemeViewTab!=='undefined' && schemeViewTab!=='playbook'
-       && typeof _renderTeamCoachingScheme==='function'){
-      _renderTeamCoachingScheme();
-    }
-  });
+  if(!_schemeAdvKick[s] && typeof ensureNflverseSection==='function'){
+    _schemeAdvKick[s] = true;
+    const before = _schemeAdvFor(s);
+    ensureNflverseSection('adv_weekly', s).then(ok=>{
+      if(!ok || before || !_schemeAdvFor(s)) return;
+      delete _schemeInsightSeasonCache[s];
+      if(typeof schemeOverlayOpen!=='undefined' && schemeOverlayOpen
+         && typeof schemeViewTab!=='undefined' && schemeViewTab!=='playbook'
+         && typeof _renderTeamCoachingScheme==='function'){
+        _renderTeamCoachingScheme();
+      }
+    }).catch(()=>{});
+  }
+  return _schemeMemo(`snapshot|${s}`, ()=>_schemeLeagueInsightSnapshotCalc(s));
+}
+function _schemeLeagueInsightSnapshotCalc(s){
 
   const block = NFLVERSE && NFLVERSE[s] && NFLVERSE[s].coaching_scheme;
   const teams = block ? Object.keys(block) : [];
@@ -642,8 +673,9 @@ function _schemeLeagueInsightSnapshot(season){
     fpPprPerGame: fpVals,
   };
   // Only cache once adv_weekly is loaded — otherwise a later load would never refresh.
-  const advReady = typeof _nflverseLazyLoaded !== 'undefined' && _nflverseLazyLoaded.adv_weekly;
-  if(advReady) _schemeInsightSeasonCache[s] = snapshot;
+  // Cache for good once this season's adv_weekly is in (the flag alone never covered the
+  // in-season merge); until then the per-render memo bounds the work.
+  if(_schemeAdvFor(s)) _schemeInsightSeasonCache[s] = snapshot;
   return snapshot;
 }
 
@@ -916,7 +948,29 @@ function _schemeNormNameToken(s){
     .trim();
 }
 
+// Roster lookups are asked once per slot per formation group per down — thousands of times
+// in one Red Zone render — and each rebuilt the position's roster rows from scratch. They
+// are memoised for the duration of a render (the generation bumps on every render, so a
+// roster or projection change is seen on the next paint).
+var _schemeLookupGen = 0, _schemeLookupMemo = new Map();
+function _schemeLookupBump(){ _schemeLookupGen++; _schemeLookupMemo = new Map(); }
+function _schemeMemo(key, calc){
+  const hit = _schemeLookupMemo.get(key);
+  if(hit !== undefined) return hit;
+  const v = calc();
+  _schemeLookupMemo.set(key, v);
+  return v;
+}
 function _schemePosPlayers(team, pos, season){
+  return _schemeMemo(`pos|${team}|${pos}|${season}|${activeSeason}`, ()=>_schemePosPlayersCalc(team, pos, season));
+}
+function _schemeBasePosPlayers(team, pos){
+  return _schemeMemo(`base|${team}|${pos}|${activeSeason}`, ()=>_schemeBasePosPlayersCalc(team, pos));
+}
+function _schemeResolveRosterPlayer(team, pos, shortName, slot, season, slotRef){
+  return _schemeMemo(`resolve|${team}|${pos}|${shortName}|${slot}|${season}|${slotRef||''}|${activeSeason}`, ()=>_schemeResolveRosterPlayerCalc(team, pos, shortName, slot, season, slotRef));
+}
+function _schemePosPlayersCalc(team, pos, season){
   const rows = [];
   const seasonRows = NFLVERSE && NFLVERSE[String(season)] && NFLVERSE[String(season)].rosters && NFLVERSE[String(season)].rosters[team];
   if(Array.isArray(seasonRows)){
@@ -957,7 +1011,7 @@ function _schemePosPlayers(team, pos, season){
   }).filter(p=>p.name);
 }
 
-function _schemeBasePosPlayers(team, pos){
+function _schemeBasePosPlayersCalc(team, pos){
   if(typeof getBase!=='function' || !team) return [];
   const rows = [];
   (getBase(team, pos) || []).forEach(p=>{
@@ -981,7 +1035,7 @@ function _schemeBasePosPlayers(team, pos){
   }).filter(p=>p.name);
 }
 
-function _schemeResolveRosterPlayer(team, pos, shortName, slot, season, slotRef){
+function _schemeResolveRosterPlayerCalc(team, pos, shortName, slot, season, slotRef){
   const players = _schemePosPlayers(team, pos, season);
   const basePlayers = _schemeBasePosPlayers(team, pos);
   const slotRefKey = String(slotRef || '').trim();
@@ -2150,6 +2204,7 @@ function _schemeRenderTemplate(template, p){
 }
 
 function _renderTeamCoachingScheme(){
+  if(typeof _schemeLookupBump==="function") _schemeLookupBump();   // per-render lookup memo (see _schemeMemo)
   const host = _schemeOverlayHost(true);
   if(!host || !schemeTeam){ return; }
   const seasons = _schemeAllSeasons();
