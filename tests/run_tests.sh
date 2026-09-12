@@ -181,6 +181,8 @@ run_js_test test_pcard_layout   "Player card layout: fixed hero, single scroll r
 run_js_test test_persist        "Session persistence: save/load/restore working projections + scoring + format, season guard, reset clears"
 run_js_test test_persist_quota  "Session persistence under storage pressure: capped persisted undo depth, degraded save keeps projections, memoized availability probe"
 run_js_test test_sos_arc        "SOS arc: ESPN schedule parse, opponent win-total sum, missing-data skip, arc render"
+run_js_test test_week_board     "Week board: ESPN scoreboard → game state + record per team; sidebar dots and the big header record in the Live view"
+run_js_test test_power_score    "Power Score: six-metric average rank (real points), week-by-week trajectory, team chip, SOS column"
 run_js_test test_sos_schedule   "SOS schedule strip: difficulty buckets, BYE weeks, collapse/expand bars, logo jumps (team projections, DvP defense card)"
 run_js_test test_roster_tracker "Roster tracker: lineup from league settings, pick bucketing, slot-fill w/ FLEX+bench, username resolution, seat claim, bar+panel render, drawer swipe open/max/close"
 run_js_test test_draft_scoring  "Draft scoring sync: mock draft applies its own scoring_type (ppr/half/std/2qb/dynasty), default bench=5"

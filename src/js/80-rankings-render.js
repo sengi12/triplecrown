@@ -290,13 +290,14 @@ function renderRankings(){
     const recKey = `${activeSeason}:${t}`;
     if(isRef && espnRecordCache[recKey]==null) fetchTeamRecord(activeSeason,t);
     const recStr = isRef ? (espnRecordCache[recKey]||'') : '';
+    const recHero = (typeof tcTeamRecordHTML==='function') ? tcTeamRecordHTML(t, recStr) : '';
     const sos = SOS && SOS[t];
     const sosBadge = sos ? `<span class="team-sos">SOS: <b>${ordinal(sos.rank)}</b>${sos.win_total!=null?` · Vegas Win Total: <b>${sos.win_total}</b>`:''}</span>` : '';
     const hcLine = teamHeaderHcLine(t, { openTitle: 'Open playbook visualization' });
     teamHeader = `<div class="team-header">
       <img src="${NFL_LOGO(t)}" class="team-logo-lg scheme-open" alt="${t}" title="Open playbook visualization" onclick="openTeamCoachingScheme('${t}')" onerror="this.style.opacity='.25'">
-      <div><div class="team-abbr team-fullname scheme-open" role="button" tabindex="0" title="Open playbook visualization" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">${teamDisplayName(t)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}</div>
-        <div class="team-qb-name">${teamHeaderQbText(t, state.qbs, recStr)}</div>
+      <div><div class="team-abbr team-fullname scheme-open" role="button" tabindex="0" title="Open playbook visualization" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">${teamDisplayName(t)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}${recHero}</div>
+        <div class="team-qb-name">${teamHeaderQbText(t, state.qbs, recHero?'':recStr)}</div>
         ${hcLine}
         ${sosBadge?`<div class="team-sos-row">${sosBadge}</div>`:''}</div>
       <div class="team-nav">

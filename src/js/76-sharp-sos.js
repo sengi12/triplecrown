@@ -351,6 +351,14 @@ function renderSOSView(){
     <text x="${padL}" y="48" class="sos-sub">${subline}</text>
     ${logos}
   </svg>`;
+  // Power Score, tracked as the season goes: rank over the league-wide week range, with the
+  // week-by-week trajectory (season to date after each week) as a sparkline. It reads
+  // offense AND defense, so it lives here rather than under either category.
+  const pwSeason=String(advTeamSeason());
+  const [pwLo,pwHi]=(typeof _advGetWeekRange==='function')?_advGetWeekRange(ADV_LEAGUE_RANGE_KEY):[1,18];
+  const power=(typeof advPowerTable==='function')?advPowerTable(pwSeason, pwLo, pwHi):null;
+  const traj=(power && typeof advPowerTrajectory==='function')?advPowerTrajectory(pwSeason, pwLo, pwHi):null;
+  if(power) entries.forEach(e=>{ const r=power.rows.find(x=>x.team===e.code); e.power=r||null; e.powerRank=r?r.leagueRank:null; });
   // Table beneath
   let sortDir=sharpSortDir;
   const sortCol=sharpSortCol||'rank';
@@ -358,6 +366,7 @@ function renderSOSView(){
     let av,bv;
     if(sortCol==='win_total'){ av=a.win_total; bv=b.win_total; }
     else if(sortCol==='opp'){ av=a.oppTotal; bv=b.oppTotal; }
+    else if(sortCol==='power'){ av=a.powerRank; bv=b.powerRank; }
     else { av=a.rank; bv=b.rank; }
     if(av==null&&bv==null)return 0; if(av==null)return 1; if(bv==null)return -1;
     return (av-bv)*sortDir;
@@ -366,18 +375,93 @@ function renderSOSView(){
     const active=sortCol===col; const arrow=active?(sortDir>0?' ▲':' ▼'):'';
     return `<th class="sr-th ${active?'active':''}" onclick="sortSOSBy('${col}')">${label}${arrow}</th>`;
   };
-  const body=rows.map(e=>`<tr>
-    <td class="sr-td-team"><span class="sr-td-team-inner sr-team-jump" onclick="tcGotoTeamProjections('${e.code}')" title="Open ${teamDisplayName(e.code)}'s projections"><img src="${NFL_LOGO(e.code)}" class="sr-logo" onerror="this.style.display='none'">${teamDisplayName(e.code)}</span></td>
+  const powerCell=(e)=>{
+    if(!power) return '';
+    if(!e.power) return `<td class="sr-td"><span class="sr-td-val">—</span></td>`;
+    const p=e.power;
+    const tip=`Power Score ${ordinal(p.leagueRank)} of ${power.size} · avg rank ${p.avg.toFixed(2)} over wk ${power.lo}–${Math.min(power.hi, power.weeks[power.weeks.length-1])}\n`
+      + p.parts.map(x=>`${x.label}: ${x.key.startsWith('points')?x.value.toFixed(1):x.value.toFixed(3)} · #${x.rank}`).join('\n')
+      + (power.actualPoints?'':'\n(points from drive expected points — sidecar predates the scoreboard columns)');
+    const tr=(traj && traj[e.code] && traj[e.code].length>1 && typeof advSparkSvg==='function')
+      ? `<span class="sr-td-spark">${advSparkSvg(traj[e.code].map(t=>({y:'wk '+t.week, v:t.avg, r:t.rank})), false, null)}</span>` : '';
+    return `<td class="sr-td ${sharpRankClass(p.leagueRank)}" title="${escAttr(tip)}"><span class="sr-td-val">${ordinal(p.leagueRank)}</span><span class="sr-td-rank">${p.avg.toFixed(1)}</span>${tr}</td>`;
+  };
+  const body=rows.map(e=>`<tr class="${power?'pw-row':''} ${power&&_sosPowerFocus===e.code?'pw-row-focus':''}"${power?` onclick="sosPowerFocus('${e.code}')" title="Follow ${escAttr(teamDisplayName(e.code))} on the Power Score chart"`:''}>
+    <td class="sr-td-team"><span class="sr-td-team-inner sr-team-jump" onclick="event.stopPropagation();tcGotoTeamProjections('${e.code}')" title="Open ${teamDisplayName(e.code)}'s projections"><img src="${NFL_LOGO(e.code)}" class="sr-logo" onerror="this.style.display='none'">${teamDisplayName(e.code)}</span></td>
+    ${powerCell(e)}
     <td class="sr-td ${sharpRankClass(e.rank)}"><span class="sr-td-val">${ordinal(e.rank)}</span></td>
     <td class="sr-td"><span class="sr-td-val">${e.oppTotal!=null?e.oppTotal.toFixed(1):'—'}</span></td>
     <td class="sr-td"><span class="sr-td-val">${e.win_total!=null?e.win_total:'—'}</span></td>
   </tr>`).join('');
-  return `<div class="card sos-card">${chart}</div>
+  const powerTh = power ? th('power', `${pwSeason} POWER SCORE`) : '';
+  const powerNote = power ? `<div class="la-note la-note-min">Power Score: average league rank of offensive pass and run EPA/play, defensive pass and run EPA/play allowed, points scored and points allowed${power.actualPoints?'':' (drive expected points until the sidecar refreshes)'} · weeks ${power.lo}–${Math.min(power.hi, power.weeks[power.weeks.length-1])} · the sparkline is the rank after each week · the small number is the average rank</div>` : '';
+  // Two charts share the page: the SOS arc and the Power Score bump chart, as tabs.
+  const powerChart=(power && traj) ? renderPowerTrendChart(power, traj) : '';
+  const chartTabs = powerChart ? `<div class="sr-league-tabs pw-tabs">
+      <button class="sr-tab ${_sosChartTab!=='power'?'active':''}" onclick="sosChartTab('sos')">Strength of Schedule</button>
+      <button class="sr-tab ${_sosChartTab==='power'?'active':''}" onclick="sosChartTab('power')">Power Score</button></div>` : '';
+  const chartCard = (powerChart && _sosChartTab==='power') ? powerChart : `<div class="card sos-card">${chart}</div>`;
+  return `${chartTabs}${chartCard}
     <div class="card sr-table-wrap" style="padding:0;overflow-x:auto;margin-top:12px">
       <table class="sr-league-table sos-table"><thead><tr>
-        <th class="sr-th-team">TEAM</th>${th('rank',PROJ_SEASON+' SOS RANK')}${th('opp','OPP WIN TOTAL')}${th('win_total','VEGAS WIN TOTAL')}
+        <th class="sr-th-team">TEAM</th>${powerTh}${th('rank',PROJ_SEASON+' SOS RANK')}${th('opp','OPP WIN TOTAL')}${th('win_total','VEGAS WIN TOTAL')}
       </tr></thead><tbody>${body}</tbody></table>
-    </div>`;
+    </div>${powerNote}`;
+}
+// ── Power Score through the season: a bump chart ─────────────────────────────
+// One line per team in the team's colour, a numbered circle at every week (the league rank
+// after that week, season to date), the team's name at the end of its line. Tap a line, a
+// name, or a row of the table below to follow one team — it comes forward, the rest fade.
+// The SVG is drawn at a fixed size (a column per week, a row per rank): on a desktop it
+// scales to the card, on a phone it keeps its size inside a scrolling frame so 32 teams
+// over 18 weeks stay legible.
+var _sosPowerFocus = null, _sosChartTab = 'sos';
+function sosChartTab(t){ _sosChartTab = t==='power' ? 'power' : 'sos'; renderSharpLeague(); }
+function sosPowerFocus(code){
+  _sosPowerFocus = (_sosPowerFocus===code) ? null : code;
+  if(_sosPowerFocus) _sosChartTab='power';
+  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderSharpLeague(), ['.sr-table-wrap','.pw-scroll']);
+  else renderSharpLeague();
+}
+// Line colours: the team's primary, except where that is near-black on this background —
+// those take the team's bright secondary.
+const PW_TEAM_COLORS = { CHI:'#C83803', CLE:'#FF3C00', HOU:'#A71930', LV:'#A5ACAF', NE:'#C60C30', SEA:'#69BE28',
+  TEN:'#4B92DB', GB:'#FFB612', IND:'#3B7DD8', NYG:'#3F6BD4', WAS:'#B0413E', BAL:'#7B5CD6', LAR:'#FFA300', CIN:'#F26522', PHI:'#2E8B8B', DAL:'#3F6BD4' };
+function pwTeamColor(t){ return PW_TEAM_COLORS[t] || (typeof teamColor==='function' ? teamColor(t) : '#888'); }
+function renderPowerTrendChart(power, traj){
+  const weeks=power.weeks.slice(); if(!weeks.length) return '';
+  const teams=Object.keys(traj).filter(t=>traj[t] && traj[t].length);
+  if(!teams.length) return '';
+  const n=Math.max(power.size, 2), r=10;
+  const colW=weeks.length>1 ? 68 : 0, rowH=30, padL=26, padR=124, padT=58, padB=22;
+  const W=padL+padR+2*r+colW*Math.max(0,weeks.length-1), H=padT+padB+rowH*(n-1);
+  const x=(w)=>{ const i=Math.max(0, weeks.indexOf(w)); return padL+r+colW*i; };
+  const y=(rank)=> padT + rowH*(rank-1);
+  const focus=_sosPowerFocus && traj[_sosPowerFocus] ? _sosPowerFocus : null;
+  const label=(t)=>(typeof sidebarTeamLabel==='function' ? sidebarTeamLabel(t) : t);
+  const team=(t)=>{
+    const pts=traj[t], c=pwTeamColor(t), hi=focus===t, dim=focus && !hi;
+    const d=pts.map((p,i)=>`${i?'L':'M'}${x(p.week)},${y(p.rank)}`).join(' ');
+    const tip=`${teamDisplayName(t)} — rank after each week: `+pts.map(p=>`wk ${p.week} #${p.rank}`).join(' · ');
+    const dots=pts.map(p=>`<g><circle cx="${x(p.week)}" cy="${y(p.rank)}" r="${r}" class="pw-node"/><text x="${x(p.week)}" y="${y(p.rank)+3.6}" class="pw-num" text-anchor="middle">${p.rank}</text></g>`).join('');
+    const last=pts[pts.length-1];
+    return `<g class="pw-team${hi?' pw-focus':''}${dim?' pw-dim':''}" style="--pw-c:${c}" onclick="sosPowerFocus('${t}')"><title>${escAttr(tip)}</title>
+      <path d="${d}" class="pw-line"/>${dots}
+      <text x="${x(last.week)+r+8}" y="${y(last.rank)+4}" class="pw-label">${escHtml(label(t))}</text></g>`;
+  };
+  // Focused team drawn last so it sits on top.
+  const order=teams.filter(t=>t!==focus).concat(focus?[focus]:[]);
+  const lines=order.map(team).join('');
+  const xlbl=weeks.map(w=>`<text x="${x(w)}" y="${padT-18}" class="pw-xlbl" text-anchor="middle">${w}</text>`).join('');
+  const caption = focus ? (()=>{ const p=traj[focus]; const a=p[0].rank, b=p[p.length-1].rank, d=a-b;
+      return `${teamDisplayName(focus)}: #${b} now${p.length>1?` · ${d>0?`up ${d}`:d<0?`down ${-d}`:'unchanged'} since week ${p[0].week}`:''} · tap again to release`; })()
+    : 'tap a line, a name, or a row below to follow one team';
+  return `<div class="card sos-card pw-card">
+    <div class="pw-head"><span class="sos-title-h">${power.season} Power Score through the season</span><span class="pw-sub">league rank after each week · 1 = best · ${escHtml(caption)}</span></div>
+    <div class="pw-scroll"><svg viewBox="0 0 ${W} ${H}" class="pw-chart" style="--pw-w:${W}px;--pw-h:${H}px" preserveAspectRatio="xMinYMin meet">
+      <text x="${padL}" y="${padT-34}" class="pw-xhead">week</text>${xlbl}${lines}
+    </svg></div>
+  </div>`;
 }
 function sortSOSBy(col){
   if(sharpSortCol===col){ sharpSortDir*=-1; } else { sharpSortCol=col; sharpSortDir=1; }
@@ -481,7 +565,11 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     <b style="color:#00d4aa">green</b> best through <b style="color:#ff6b6b">red</b> worst.
     Click any column header to sort (best→worst, click again to flip).
     The SOS view ranks schedules by the <b>sum of each team's opponents' Vegas win totals</b> —
-    rank 1 is the easiest slate, 32 the hardest.`};
+    rank 1 is the easiest slate, 32 the hardest. Its <b>Power Score</b> column is the average
+    league rank of six things — offensive pass and run EPA/play, defensive pass and run EPA/play
+    allowed, points scored, points allowed — over the selected weeks, with the rank after each
+    week as a sparkline. It reads both sides of the ball, so it sits here rather than under
+    Offense or Defense.`};
   TC_INFO_BOOK.sos={title:'Schedule & strength of schedule', body:()=>`
     The <b>${PROJ_SEASON}</b> week-by-week slate. Each cell is one opponent, colored by their
     Vegas win total: <b style="color:#00d4aa">green</b> under 7 wins (softer matchup),
