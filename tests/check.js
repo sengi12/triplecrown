@@ -3967,7 +3967,9 @@ function renderSidebar(){
 
   const groupsHtml = conferences.map(conf=>{
     const divisionHtml = conf.divisions.map(div=>{
-      const teamsHtml = div.teams.map(t=>mkTeamItem(t, doneClass(t))).join('');
+      // Desktop, in season: the division lists as the standings (leader first).
+      const ordered = (!isMobileTeamPickerLayout() && typeof tcStandingsOrder==='function') ? tcStandingsOrder(div.teams) : div.teams;
+      const teamsHtml = ordered.map(t=>mkTeamItem(t, doneClass(t))).join('');
       return `<div class="sidebar-division-block">
         <div class="sidebar-section">${div.title}</div>
         <div class="sidebar-team-grid">${teamsHtml}</div>
@@ -24244,6 +24246,43 @@ function tcTeamRecordHTML(team, recStr){
   const g=tcTeamGameState(team);
   const rec=(g&&g.rec)||recStr||'';
   return `<span class="team-rec-hero" data-team="${escAttr(team)}" title="${escAttr(`${TC_SEASON.year} record`)}">${escHtml(rec)}</span>`;
+}
+
+// ── Standings order ───────────────────────────────────────────────────────────
+// In season (either projection tab) the sidebar's divisions sort by record — the leader
+// first — so the picker doubles as the standings. Off-season: the fixed order. Win percentage (ties count half), then wins, then the
+// division's fixed order for anything level or unknown. A division with no records yet
+// keeps its fixed order.
+function tcParseRecord(rec){
+  const m=/^(\d+)-(\d+)(?:-(\d+))?$/.exec(String(rec||'').trim()); if(!m) return null;
+  const w=+m[1], l=+m[2], t=+(m[3]||0), g=w+l+t;
+  return { w, l, t, g, pct: g ? (w+0.5*t)/g : 0 };
+}
+function tcTeamRecord(team){
+  const g=(typeof tcTeamGameState==='function')?tcTeamGameState(team):null;
+  if(g && g.rec) return g.rec;
+  if(typeof espnRecordCache!=='undefined' && espnRecordCache && typeof TC_SEASON!=='undefined') return espnRecordCache[`${TC_SEASON.year}:${team}`]||'';
+  return '';
+}
+// A team off this week's board (its bye) has no record on it: ask ESPN for that team once
+// and repaint the sidebar when it lands, so a bye never drops a leader.
+var _tcRecAsked = {};
+function tcStandingsOrder(teams){
+  if(typeof hasSeasonStarted!=='function' || !hasSeasonStarted()) return teams;
+  const recs=teams.map(t=>tcParseRecord(tcTeamRecord(t)));
+  if(!recs.some(r=>r && r.g>0)) return teams;
+  if(typeof fetchTeamRecord==='function' && typeof TC_SEASON!=='undefined'){
+    teams.forEach((t,i)=>{
+      const key=`${TC_SEASON.year}:${t}`;
+      if(recs[i] || _tcRecAsked[key]) return;
+      _tcRecAsked[key]=true;
+      Promise.resolve().then(()=>fetchTeamRecord(TC_SEASON.year, t)).then(r=>{ if(r && typeof renderSidebar==='function') renderSidebar(); }).catch(()=>{});
+    });
+  }
+  // Known records first (win pct, then wins); unknown ones keep their fixed order below.
+  return teams.map((t,i)=>({t, i, r:recs[i]}))
+    .sort((a,b)=> (a.r?0:1)-(b.r?0:1) || (a.r&&b.r ? (b.r.pct-a.r.pct) || (b.r.w-a.r.w) : 0) || (a.i-b.i))
+    .map(x=>x.t);
 }
 // ── "Stuck between two players" — BYO-model AI compare ──────────────────────
 // The one AI feature that earns its tokens: a grounded, on-demand verdict

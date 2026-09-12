@@ -73,7 +73,9 @@ function renderSidebar(){
 
   const groupsHtml = conferences.map(conf=>{
     const divisionHtml = conf.divisions.map(div=>{
-      const teamsHtml = div.teams.map(t=>mkTeamItem(t, doneClass(t))).join('');
+      // Desktop, in season: the division lists as the standings (leader first).
+      const ordered = (!isMobileTeamPickerLayout() && typeof tcStandingsOrder==='function') ? tcStandingsOrder(div.teams) : div.teams;
+      const teamsHtml = ordered.map(t=>mkTeamItem(t, doneClass(t))).join('');
       return `<div class="sidebar-division-block">
         <div class="sidebar-section">${div.title}</div>
         <div class="sidebar-team-grid">${teamsHtml}</div>
