@@ -17004,32 +17004,34 @@ function renderPowerTrendChart(power, traj){
   const weeks=power.weeks.slice(); if(!weeks.length) return '';
   const teams=Object.keys(traj).filter(t=>traj[t] && traj[t].length);
   if(!teams.length) return '';
-  const n=Math.max(power.size, 2), r=10;
-  const colW=weeks.length>1 ? 68 : 0, rowH=30, padL=26, padR=124, padT=58, padB=22;
-  const W=padL+padR+2*r+colW*Math.max(0,weeks.length-1), H=padT+padB+rowH*(n-1);
-  const x=(w)=>{ const i=Math.max(0, weeks.indexOf(w)); return padL+r+colW*i; };
+  // Nodes are pills wide enough for "32nd"; a column per week, a row per rank.
+  const n=Math.max(power.size, 2), pw=34, ph=20;
+  const colW=weeks.length>1 ? 74 : 0, rowH=30, padL=24, padR=54, padT=58, padB=22, logo=20;
+  const W=padL+padR+pw+colW*Math.max(0,weeks.length-1), H=padT+padB+rowH*(n-1);
+  const x=(w)=>{ const i=Math.max(0, weeks.indexOf(w)); return padL+pw/2+colW*i; };
   const y=(rank)=> padT + rowH*(rank-1);
   const focus=_sosPowerFocus && traj[_sosPowerFocus] ? _sosPowerFocus : null;
-  const label=(t)=>(typeof sidebarTeamLabel==='function' ? sidebarTeamLabel(t) : t);
   const team=(t)=>{
     const pts=traj[t], c=pwTeamColor(t), hi=focus===t, dim=focus && !hi;
     const d=pts.map((p,i)=>`${i?'L':'M'}${x(p.week)},${y(p.rank)}`).join(' ');
-    const tip=`${teamDisplayName(t)} — rank after each week: `+pts.map(p=>`wk ${p.week} #${p.rank}`).join(' · ');
-    const dots=pts.map(p=>`<g><circle cx="${x(p.week)}" cy="${y(p.rank)}" r="${r}" class="pw-node"/><text x="${x(p.week)}" y="${y(p.rank)+3.6}" class="pw-num" text-anchor="middle">${p.rank}</text></g>`).join('');
+    const tip=`${teamDisplayName(t)} — rank after each week: `+pts.map(p=>`wk ${p.week} ${ordinal(p.rank)}`).join(' · ');
+    const dots=pts.map(p=>`<g><rect x="${x(p.week)-pw/2}" y="${y(p.rank)-ph/2}" width="${pw}" height="${ph}" rx="${ph/2}" class="pw-node"/><text x="${x(p.week)}" y="${y(p.rank)+3.6}" class="pw-num" text-anchor="middle">${ordinal(p.rank)}</text></g>`).join('');
     const last=pts[pts.length-1];
     return `<g class="pw-team${hi?' pw-focus':''}${dim?' pw-dim':''}" style="--pw-c:${c}" onclick="sosPowerFocus('${t}')"><title>${escAttr(tip)}</title>
       <path d="${d}" class="pw-line"/>${dots}
-      <text x="${x(last.week)+r+8}" y="${y(last.rank)+4}" class="pw-label">${escHtml(label(t))}</text></g>`;
+      <image href="${NFL_LOGO(t)}" x="${x(last.week)+pw/2+6}" y="${y(last.rank)-logo/2}" width="${logo}" height="${logo}" class="pw-logo"/></g>`;
   };
   // Focused team drawn last so it sits on top.
   const order=teams.filter(t=>t!==focus).concat(focus?[focus]:[]);
   const lines=order.map(team).join('');
   const xlbl=weeks.map(w=>`<text x="${x(w)}" y="${padT-18}" class="pw-xlbl" text-anchor="middle">${w}</text>`).join('');
+  const lo=power.weeks[0], hi=power.weeks[power.weeks.length-1];
+  const windowTxt = (power.lo>1 || power.hi<18) ? `weeks ${lo}–${hi} only (the week range above)` : `weeks ${lo}–${hi}`;
   const caption = focus ? (()=>{ const p=traj[focus]; const a=p[0].rank, b=p[p.length-1].rank, d=a-b;
-      return `${teamDisplayName(focus)}: #${b} now${p.length>1?` · ${d>0?`up ${d}`:d<0?`down ${-d}`:'unchanged'} since week ${p[0].week}`:''} · tap again to release`; })()
-    : 'tap a line, a name, or a row below to follow one team';
+      return `${teamDisplayName(focus)}: ${ordinal(b)} now${p.length>1?` · ${d>0?`up ${d}`:d<0?`down ${-d}`:'unchanged'} since week ${p[0].week}`:''} · tap again to release`; })()
+    : 'tap a line, a logo, or a row below to follow one team';
   return `<div class="card sos-card pw-card">
-    <div class="pw-head"><span class="sos-title-h">${power.season} Power Score through the season</span><span class="pw-sub">league rank after each week · 1 = best · ${escHtml(caption)}</span></div>
+    <div class="pw-head"><span class="sos-title-h">${power.season} Power Score through the season</span><span class="pw-sub">league rank after each week within ${escHtml(windowTxt)} · 1st = best · ${escHtml(caption)}</span></div>
     <div class="pw-scroll"><svg viewBox="0 0 ${W} ${H}" class="pw-chart" style="--pw-w:${W}px;--pw-h:${H}px" preserveAspectRatio="xMinYMin meet">
       <text x="${padL}" y="${padT-34}" class="pw-xhead">week</text>${xlbl}${lines}
     </svg></div>

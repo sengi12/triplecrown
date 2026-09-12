@@ -77,17 +77,22 @@ let g=app.sos();
 chk(/pw-tabs/.test(g) && /sosChartTab\('sos'\)/.test(g) && /sosChartTab\('power'\)/.test(g) && /sos-chart"/.test(g) && !/pw-chart/.test(g), 'two tabs; the SOS arc shows by default');
 app.setTab('power'); g=app.sos();
 chk(/Power Score through the season/.test(g) && /pw-chart/.test(g) && !/class="sos-chart"/.test(g), 'the Power tab swaps in the bump chart and keeps the table');
-chk((g.match(/class="pw-team/g)||[]).length===3 && (g.match(/class="pw-node"/g)||[]).length===6 && (g.match(/class="pw-num"/g)||[]).length===6, 'one coloured line per team, a numbered node at every week');
-chk(/style="--pw-c:#/.test(g) && (g.match(/class="pw-label">/g)||[]).length===3, 'lines carry the team colour; names sit at the end of each line');
+chk((g.match(/class="pw-team/g)||[]).length===3 && (g.match(/class="pw-node"/g)||[]).length===6 && (g.match(/class="pw-num"[^>]*>(1st|2nd|3rd)</g)||[]).length===6, 'one coloured line per team, an ordinal pill (1st, 2nd, 3rd) at every week');
+chk(/style="--pw-c:#/.test(g) && (g.match(/class="pw-logo"/g)||[]).length===3 && !/pw-label/.test(g), 'lines carry the team colour; a logo, not a name, ends each line');
 chk(/--pw-w:\d+px;--pw-h:\d+px/.test(g) && /pw-scroll/.test(g), 'drawn at a fixed size inside a scrolling frame (phones scroll, desktops scale)');
-chk(!/pw-focus/.test(g) && !/pw-dim/.test(g) && /tap a line, a name, or a row below/.test(g), 'nothing followed: every team in full colour');
+chk(!/pw-focus/.test(g) && !/pw-dim/.test(g) && /tap a line, a logo, or a row below/.test(g) && /within weeks 1–2 ·/.test(g), 'nothing followed: every team in full colour; the window is named');
 chk((g.match(/class="pw-row /g)||[]).length===3 && /onclick="sosPowerFocus\('AAA'\)"/.test(g), 'every table row follows its team on tap');
 app.focus('CCC'); g=app.sos();
 chk((g.match(/pw-team pw-focus/g)||[]).length===1 && (g.match(/pw-dim/g)||[]).length===2 && /pw-row-focus/.test(g), 'following CCC: its line comes forward, the other two fade, its row is marked');
-chk(/#3 now · unchanged since week 1 · tap again to release/.test(g), 'the caption says where it is and how far it moved');
+chk(/3rd now · unchanged since week 1 · tap again to release/.test(g), 'the caption says where it is and how far it moved');
 const svg=g.slice(g.indexOf('<svg'), g.indexOf('</svg>'));
 chk(svg.lastIndexOf("sosPowerFocus('CCC')")>svg.lastIndexOf("sosPowerFocus('AAA')"), 'the followed line is drawn last, on top');
-app.focus(null); app.setTab('sos');
+app.focus(null);
+// The league-wide week range narrows the window: ranks are then season-to-date WITHIN it.
+app.setRange(()=>[2,2]); g=app.sos();
+chk(/within weeks 2–2 only \(the week range above\)/.test(g) && (g.match(/class="pw-node"/g)||[]).length===3 && /class="pw-xlbl"[^>]*>2</.test(g) && !/class="pw-xlbl"[^>]*>1</.test(g), 'a narrowed range plots only those weeks, ranked on those weeks alone');
+chk(/sr-td-val">2nd<\/span>/.test(g) && /Power Score: average league rank[^<]*weeks 2–2/.test(g), 'the table column follows the same window');
+app.setRange(()=>[1,18]); app.setTab('sos');
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);
