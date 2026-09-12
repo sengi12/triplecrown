@@ -17,7 +17,7 @@ const app=new Function(code+`
     sidebar:()=>{ renderSidebar(); return document.getElementById('sidebar').innerHTML; },
     header:_thsHeaderPreviewHtml,
     setReply:(r)=>{ reply=r; }, calls, TC_SEASON, setSeason:(s)=>{ activeSeason=s; }, setTeam:(t)=>{ currentTeam=t; },
-    recCache:()=>espnRecordCache, raw:()=>_tcBoard };
+    recCache:()=>espnRecordCache, raw:()=>_tcBoard, order:tcStandingsOrder, parseRec:tcParseRecord, setStarted:(v)=>{ hasSeasonStarted=()=>v; } };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -60,10 +60,23 @@ chk(t!==null && boardCalls()===1 && /week=1&dates=2026/.test(app.calls.find(u=>/
   const hd=app.header('SEA');
   chk(/team-rec-hero/.test(hd) && !/· 1-0/.test(hd), 'the swipe-preview header shows the big record and drops the small one');
 
+  console.log('=== divisions list as the standings ===');
+  const pr=app.parseRec('3-1-1');
+  chk(pr.w===3 && pr.l===1 && pr.t===1 && Math.abs(pr.pct-0.7)<1e-9 && app.parseRec('')===null, 'records parse; a tie counts half');
+  chk(app.order(['LAR','SF','SEA','ARI']).join(',')==='SEA,LAR,SF,ARI', 'NFC West: SEA (1-0) leads; the 0-0s and the bye keep their fixed order behind');
+  chk(app.order(['BUF','NE','MIA','NYJ']).join(',')==='NE,BUF,MIA,NYJ', 'AFC East: the one known record (NE 0-1) lists first; teams whose record is still unknown keep their order below');
+  chk(app.order(['KC','LAC','LV','DEN']).join(',')==='KC,LAC,LV,DEN', 'a division with no records yet keeps its fixed order');
+  const sbo=app.sidebar();
+  chk(sbo.indexOf('alt="SEA"')<sbo.indexOf('alt="LAR"') && sbo.indexOf('alt="NE"')<sbo.indexOf('alt="BUF"'), 'the sidebar renders in that order');
+
   console.log('=== off the Live view ===');
   app.setSeason('proj');
   chk(app.dot('SEA')==='' && app.recHTML('SEA','1-0')==='', 'projections: no dots, no big record');
   chk(!/team-gs/.test(app.sidebar()) && !/team-rec"/.test(app.sidebar()), 'the sidebar is untouched');
+  chk(app.order(['LAR','SF','SEA','ARI']).join(',')==='SEA,LAR,SF,ARI', 'but the standings order holds on the projections tab too — it is an in-season feature, not a Live-tab one');
+  app.setStarted(false);
+  chk(app.order(['LAR','SF','SEA','ARI']).join(',')==='LAR,SF,SEA,ARI', 'off-season: the fixed division order');
+  app.setStarted(true);
   app.setSeason('2025');
   chk(app.recHTML('SEA','14-3')==='', 'a past season keeps its small record line');
 
