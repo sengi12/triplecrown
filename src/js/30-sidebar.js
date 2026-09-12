@@ -54,9 +54,17 @@ function renderSidebar(){
     return st._auto ? '' : 'partial';   // auto-materialised ≠ opened
   };
 
-  const mkTeamItem = (t, cls) => `<div class="team-item ${t===currentTeam?'active':''}" onclick="selectTeam('${t}')">
-    <img src="${NFL_LOGO(t)}" class="team-logo-sm" alt="${t}" loading="lazy" decoding="async" onerror="this.style.display='none'">
-    <div class="team-dot ${cls}"></div><span class="team-name">${sidebarTeamLabel(t)}</span></div>`;
+  // Live view: a dot on the logo says whether the team has played this week (green) or is
+  // playing now (red), and the record rides at the end of the row (desktop).
+  const liveView = (typeof tcLiveViewOn==='function') && tcLiveViewOn();
+  const mkTeamItem = (t, cls) => {
+    const gs = liveView && typeof tcGameDotHTML==='function' ? tcGameDotHTML(t) : '';
+    const g = liveView && typeof tcTeamGameState==='function' ? tcTeamGameState(t) : null;
+    const rec = (g && g.rec) ? `<span class="team-rec">${escHtml(g.rec)}</span>` : '';
+    return `<div class="team-item ${t===currentTeam?'active':''}" onclick="selectTeam('${t}')">
+    <span class="team-logo-wrap"><img src="${NFL_LOGO(t)}" class="team-logo-sm" alt="${t}" loading="lazy" decoding="async" onerror="this.style.display='none'">${gs}</span>
+    <div class="team-dot ${cls}"></div><span class="team-name">${sidebarTeamLabel(t)}</span>${rec}</div>`;
+  };
 
   const conferences = [
     { title:'AFC', divisions:SIDEBAR_DIVISIONS.filter(d=>d.title.startsWith('AFC')) },
@@ -238,6 +246,9 @@ function renderContent(){
   // teams while already viewing a past season — not just entering the season first).
   if(isRef && espnRecordCache[recKey]==null) fetchTeamRecord(activeSeason,t);
   const recStr = isRef ? (espnRecordCache[recKey]||'') : '';
+  // In-season the record is the headline: big and bold beside the name (the week board
+  // fills it for every team from one request; the per-team ESPN record backs it up).
+  const recHero = (typeof tcTeamRecordHTML==='function') ? tcTeamRecordHTML(t, recStr) : '';
   const powerScoreBadge = (isRef && typeof _renderAdvPowerScore==='function' && typeof activeSharp==='function')
     ? _renderAdvPowerScore(t, activeSharp(), { shieldOnly:true })
     : '';
@@ -260,8 +271,8 @@ function renderContent(){
   document.getElementById('content').innerHTML=`
     <div class="team-header">
       <img src="${NFL_LOGO(t)}" class="team-logo-lg scheme-open" alt="${t}" title="Open playbook" onclick="openTeamCoachingScheme('${t}')" onerror="this.style.opacity='.25'">
-      <div><div class="team-abbr team-fullname scheme-open" role="button" tabindex="0" title="Open playbook" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">${teamDisplayName(t)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}</div>
-        <div class="team-qb-name">${teamHeaderQbText(t, state.qbs, recStr)}</div>
+      <div><div class="team-abbr team-fullname scheme-open" role="button" tabindex="0" title="Open playbook" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">${teamDisplayName(t)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}${recHero}</div>
+        <div class="team-qb-name">${teamHeaderQbText(t, state.qbs, recHero?'':recStr)}</div>
         ${hcLine}
         ${sosBadge?`<div class="team-sos-row">${sosBadge}</div>`:''}</div>
       <div class="team-nav">

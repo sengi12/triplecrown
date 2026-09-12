@@ -141,15 +141,16 @@ function _thsHeaderPreviewHtml(team){
   const qbs = (state && Array.isArray(state.qbs)) ? state.qbs : [];
   const recStr = _thsReco(team);
   const isRef = activeSeason !== 'proj';
+  const recHero = (typeof tcTeamRecordHTML==='function') ? tcTeamRecordHTML(team, recStr) : '';
   const qb = (typeof teamHeaderQbText==='function')
-    ? teamHeaderQbText(team, qbs, recStr)
+    ? teamHeaderQbText(team, qbs, recHero?'':recStr)
     : ((qbs&&qbs.length)?qbs.map(q=>q.name).join(' / '):'No projected QB');
   const hcLine = (typeof teamHeaderHcLine==='function') ? teamHeaderHcLine(team, state||{}) : '';
   const sosRow = _thsSosRow(team);
   return `<div class="team-header" aria-hidden="true">
     <img src="${NFL_LOGO(team)}" class="team-logo-lg" alt="${team}" onerror="this.style.opacity='.25'">
     <div style="min-width:0;max-width:100%">
-      <div class="team-abbr team-fullname">${teamDisplayName(team)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}</div>
+      <div class="team-abbr team-fullname">${teamDisplayName(team)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}${recHero}</div>
       <div class="team-qb-name">${qb}</div>
       ${hcLine}
       ${sosRow}

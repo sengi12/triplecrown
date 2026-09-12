@@ -3942,9 +3942,17 @@ function renderSidebar(){
     return st._auto ? '' : 'partial';   // auto-materialised ≠ opened
   };
 
-  const mkTeamItem = (t, cls) => `<div class="team-item ${t===currentTeam?'active':''}" onclick="selectTeam('${t}')">
-    <img src="${NFL_LOGO(t)}" class="team-logo-sm" alt="${t}" loading="lazy" decoding="async" onerror="this.style.display='none'">
-    <div class="team-dot ${cls}"></div><span class="team-name">${sidebarTeamLabel(t)}</span></div>`;
+  // Live view: a dot on the logo says whether the team has played this week (green) or is
+  // playing now (red), and the record rides at the end of the row (desktop).
+  const liveView = (typeof tcLiveViewOn==='function') && tcLiveViewOn();
+  const mkTeamItem = (t, cls) => {
+    const gs = liveView && typeof tcGameDotHTML==='function' ? tcGameDotHTML(t) : '';
+    const g = liveView && typeof tcTeamGameState==='function' ? tcTeamGameState(t) : null;
+    const rec = (g && g.rec) ? `<span class="team-rec">${escHtml(g.rec)}</span>` : '';
+    return `<div class="team-item ${t===currentTeam?'active':''}" onclick="selectTeam('${t}')">
+    <span class="team-logo-wrap"><img src="${NFL_LOGO(t)}" class="team-logo-sm" alt="${t}" loading="lazy" decoding="async" onerror="this.style.display='none'">${gs}</span>
+    <div class="team-dot ${cls}"></div><span class="team-name">${sidebarTeamLabel(t)}</span>${rec}</div>`;
+  };
 
   const conferences = [
     { title:'AFC', divisions:SIDEBAR_DIVISIONS.filter(d=>d.title.startsWith('AFC')) },
@@ -4126,6 +4134,9 @@ function renderContent(){
   // teams while already viewing a past season — not just entering the season first).
   if(isRef && espnRecordCache[recKey]==null) fetchTeamRecord(activeSeason,t);
   const recStr = isRef ? (espnRecordCache[recKey]||'') : '';
+  // In-season the record is the headline: big and bold beside the name (the week board
+  // fills it for every team from one request; the per-team ESPN record backs it up).
+  const recHero = (typeof tcTeamRecordHTML==='function') ? tcTeamRecordHTML(t, recStr) : '';
   const powerScoreBadge = (isRef && typeof _renderAdvPowerScore==='function' && typeof activeSharp==='function')
     ? _renderAdvPowerScore(t, activeSharp(), { shieldOnly:true })
     : '';
@@ -4148,8 +4159,8 @@ function renderContent(){
   document.getElementById('content').innerHTML=`
     <div class="team-header">
       <img src="${NFL_LOGO(t)}" class="team-logo-lg scheme-open" alt="${t}" title="Open playbook" onclick="openTeamCoachingScheme('${t}')" onerror="this.style.opacity='.25'">
-      <div><div class="team-abbr team-fullname scheme-open" role="button" tabindex="0" title="Open playbook" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">${teamDisplayName(t)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}</div>
-        <div class="team-qb-name">${teamHeaderQbText(t, state.qbs, recStr)}</div>
+      <div><div class="team-abbr team-fullname scheme-open" role="button" tabindex="0" title="Open playbook" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">${teamDisplayName(t)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}${recHero}</div>
+        <div class="team-qb-name">${teamHeaderQbText(t, state.qbs, recHero?'':recStr)}</div>
         ${hcLine}
         ${sosBadge?`<div class="team-sos-row">${sosBadge}</div>`:''}</div>
       <div class="team-nav">
@@ -16243,10 +16254,79 @@ function _advProjOlBadge(team, which){
   return ` <span class="sr-proj-badge ${cls}" title="Projected ${projSeason} ${lbl} overall score, from projected depth-chart starters">Proj \u2019${shortSeason} ${Number(p.score).toFixed(1)}${rk!=null?` \u00b7 #${rk}`:''}</span>`;
 }
 
+// ── Power Score ──────────────────────────────────────────────────────────────
+// Six things, ranked across the league over the week range and averaged: offensive pass and
+// run EPA/play, defensive pass and run EPA/play allowed, points scored, points allowed. Rank 1
+// is the best average. Points are the real scoreboard (`off_pts` / `def_pts_allowed`, from
+// each game's final score); a sidecar built before those columns existed falls back to
+// drive expected points. One table serves the team chip, the SOS column and the trajectory.
+const ADV_POWER_SPECS = [
+  { key:'off_pass_epa_pp',         label:'Off EPA/Play (Pass)',         lowerBetter:false },
+  { key:'off_run_epa_pp',          label:'Off EPA/Play (Run)',          lowerBetter:false },
+  { key:'def_pass_epa_allowed_pp', label:'Def EPA/Play Allowed (Pass)', lowerBetter:true  },
+  { key:'def_run_epa_allowed_pp',  label:'Def EPA/Play Allowed (Run)',  lowerBetter:true  },
+  { key:'points_scored_pg',        label:'Points Scored',               lowerBetter:false },
+  { key:'points_allowed_pg',       label:'Points Allowed',              lowerBetter:true  },
+];
+var _advPowerMemo = {};
+function advPowerTable(season, lo, hi){
+  season = String(season);
+  const pack = (NFLVERSE && NFLVERSE[season] && NFLVERSE[season].adv_weekly) || null;
+  if(!pack || !pack.teams || !Array.isArray(pack.weeks) || !Array.isArray(pack.cols)) return null;
+  const key = `${season}:${lo}-${hi}:${pack.weeks.length}:${Object.keys(pack.teams).length}`;
+  if(_advPowerMemo[key]) return _advPowerMemo[key];
+  const need = ['off_pass_epa','off_pass_plays','off_run_epa','off_run_plays',
+                'def_pass_epa_allowed','def_pass_plays','def_run_epa_allowed','def_run_plays','pace_games'];
+  const ci = {}; need.forEach(c=>{ ci[c]=pack.cols.indexOf(c); });
+  if(need.some(c=>ci[c]<0)) return null;
+  // Real points when the sidecar carries them; drive expected points otherwise.
+  const actual = pack.cols.indexOf('off_pts')>=0 && pack.cols.indexOf('def_pts_allowed')>=0;
+  ci.pts = actual ? pack.cols.indexOf('off_pts') : pack.cols.indexOf('off_drive_pts');
+  ci.allowed = actual ? pack.cols.indexOf('def_pts_allowed') : pack.cols.indexOf('def_drive_pts_allowed');
+  if(ci.pts<0 || ci.allowed<0) return null;
+  const weekIdx=[];
+  pack.weeks.forEach((w,i)=>{ w=Number(w); if(Number.isFinite(w) && w>=lo && w<=hi) weekIdx.push(i); });
+  if(!weekIdx.length) return null;
+  const metrics={};
+  Object.keys(pack.teams).forEach(tm=>{
+    const rows=Array.isArray(pack.teams[tm])?pack.teams[tm]:[];
+    const s={ope:0,opp:0,ore:0,orp:0,dpe:0,dpp:0,dre:0,drp:0,pts:0,al:0,g:0};
+    weekIdx.forEach(ix=>{ const r=rows[ix]||[]; const n=c=>Number(r[ci[c]]||0);
+      s.ope+=n('off_pass_epa'); s.opp+=n('off_pass_plays'); s.ore+=n('off_run_epa'); s.orp+=n('off_run_plays');
+      s.dpe+=n('def_pass_epa_allowed'); s.dpp+=n('def_pass_plays'); s.dre+=n('def_run_epa_allowed'); s.drp+=n('def_run_plays');
+      s.pts+=Number(r[ci.pts]||0); s.al+=Number(r[ci.allowed]||0); s.g+=n('pace_games'); });
+    // A team with no plays in the window (bye-only range) has nothing to rank.
+    if(!(s.opp+s.orp>0)) return;
+    const g=s.g>0?s.g:weekIdx.length;
+    metrics[tm]={ off_pass_epa_pp:s.opp>0?s.ope/s.opp:null, off_run_epa_pp:s.orp>0?s.ore/s.orp:null,
+      def_pass_epa_allowed_pp:s.dpp>0?s.dpe/s.dpp:null, def_run_epa_allowed_pp:s.drp>0?s.dre/s.drp:null,
+      points_scored_pg:g>0?s.pts/g:null, points_allowed_pg:g>0?s.al/g:null, games:g };
+  });
+  const rankMaps={};
+  ADV_POWER_SPECS.forEach(sp=>{ const vals={}; Object.keys(metrics).forEach(tm=>{ vals[tm]=metrics[tm][sp.key]; }); rankMaps[sp.key]=_advRankMap(vals, sp.lowerBetter); });
+  const rows=Object.keys(metrics).map(tm=>{
+    const parts=[]; let sum=0, n=0;
+    ADV_POWER_SPECS.forEach(sp=>{ const rk=rankMaps[sp.key][tm]; if(Number.isFinite(rk)){ sum+=rk; n++; parts.push({label:sp.label, rank:rk, key:sp.key, value:metrics[tm][sp.key]}); } });
+    return n===ADV_POWER_SPECS.length ? {team:tm, avg:sum/n, parts, metrics:metrics[tm]} : null;
+  }).filter(Boolean).sort((a,b)=>a.avg-b.avg || String(a.team).localeCompare(String(b.team)));
+  if(!rows.length) return null;
+  const rankMap={}; rows.forEach((r,i)=>{ rankMap[r.team]=i+1; r.leagueRank=i+1; });
+  const out={ season, lo, hi, rows, rankMap, size:rows.length, actualPoints:actual,
+              weeks:weekIdx.map(i=>Number(pack.weeks[i])) };
+  _advPowerMemo[key]=out;
+  return out;
+}
+// Week-by-week trajectory: the league rank after each week in the range (season to date).
+function advPowerTrajectory(season, lo, hi){
+  const full=advPowerTable(season, lo, hi); if(!full) return null;
+  const out={};
+  full.weeks.forEach(w=>{ const t=advPowerTable(season, lo, w); if(!t) return;
+    t.rows.forEach(r=>{ (out[r.team]=out[r.team]||[]).push({week:w, rank:r.leagueRank, avg:r.avg}); }); });
+  return out;
+}
 function _advTeamPowerScore(team, src, opts){
   const o = opts || {};
   const season = String(advTeamSeason());
-  const pack = (NFLVERSE && NFLVERSE[season] && NFLVERSE[season].adv_weekly) || null;
   const fallbackFromSrc = ()=>{
     const SRC = (src && typeof src==='object') ? src : (typeof activeSharp==='function' ? activeSharp() : null);
     if(!SRC || typeof SRC!=='object') return null;
@@ -16270,132 +16350,22 @@ function _advTeamPowerScore(team, src, opts){
     });
     const rows = Object.keys(sums)
       .filter(tm=>sums[tm].count>0)
-      .map(tm=>({
-        team: tm,
-        avg: sums[tm].sum / sums[tm].count,
-        parts: (partsByTeam[tm]||[]).sort((a,b)=>a.rank-b.rank).slice(0,6),
-      }))
+      .map(tm=>({ team: tm, avg: sums[tm].sum / sums[tm].count, parts: (partsByTeam[tm]||[]).sort((a,b)=>a.rank-b.rank).slice(0,6) }))
       .sort((a,b)=>a.avg-b.avg || String(a.team).localeCompare(String(b.team)));
     if(!rows.length) return null;
     const rankMap = {};
     rows.forEach((r,i)=>{ rankMap[r.team] = i + 1; });
     const me = rows.find(r=>String(r.team).toUpperCase()===String(team).toUpperCase());
     if(!me) return null;
-    return {
-      team: String(team).toUpperCase(),
-      avgRank: me.avg,
-      leagueRank: rankMap[me.team],
-      leagueSize: rows.length,
-      parts: me.parts,
-    };
+    return { team: String(team).toUpperCase(), avgRank: me.avg, leagueRank: rankMap[me.team], leagueSize: rows.length, parts: me.parts };
   };
   if(o.stableFromSource) return fallbackFromSrc();
-  if(!pack || !pack.teams || !Array.isArray(pack.weeks) || !Array.isArray(pack.cols)) return fallbackFromSrc();
-
-  const requiredCols = [
-    'off_pass_epa', 'off_pass_plays',
-    'off_run_epa', 'off_run_plays',
-    'def_pass_epa_allowed', 'def_pass_plays',
-    'def_run_epa_allowed', 'def_run_plays',
-    'off_drive_pts', 'def_drive_pts_allowed', 'pace_games',
-  ];
-  const colIdx = {};
-  requiredCols.forEach(c=>{ colIdx[c] = pack.cols.indexOf(c); });
-  if(requiredCols.some(c=>colIdx[c] < 0)) return fallbackFromSrc();
-
   const [lo, hi] = _advGetWeekRange(team);
-  const weekIdx = [];
-  for(let i=0;i<pack.weeks.length;i++){
-    const w = Number(pack.weeks[i]);
-    if(Number.isFinite(w) && w>=lo && w<=hi) weekIdx.push(i);
-  }
-  if(!weekIdx.length) return fallbackFromSrc();
-
-  const specs = [
-    { key:'off_pass_epa_pp', label:'Off EPA/Play (Pass)', lowerBetter:false },
-    { key:'off_run_epa_pp', label:'Off EPA/Play (Run)', lowerBetter:false },
-    { key:'def_pass_epa_allowed_pp', label:'Def EPA/Play Allowed (Pass)', lowerBetter:true },
-    { key:'def_run_epa_allowed_pp', label:'Def EPA/Play Allowed (Run)', lowerBetter:true },
-    { key:'points_scored_pg', label:'Points Scored', lowerBetter:false },
-    { key:'points_allowed_pg', label:'Points Allowed', lowerBetter:true },
-  ];
-
-  const metricsByTeam = {};
-  for(const tm of Object.keys(pack.teams)){
-    const rows = Array.isArray(pack.teams[tm]) ? pack.teams[tm] : [];
-    const sum = {
-      offPassEpa:0, offPassPlays:0,
-      offRunEpa:0, offRunPlays:0,
-      defPassEpa:0, defPassPlays:0,
-      defRunEpa:0, defRunPlays:0,
-      offPts:0, defPts:0, games:0,
-    };
-    weekIdx.forEach(ix=>{
-      const r = rows[ix] || [];
-      sum.offPassEpa += Number(r[colIdx.off_pass_epa] || 0);
-      sum.offPassPlays += Number(r[colIdx.off_pass_plays] || 0);
-      sum.offRunEpa += Number(r[colIdx.off_run_epa] || 0);
-      sum.offRunPlays += Number(r[colIdx.off_run_plays] || 0);
-      sum.defPassEpa += Number(r[colIdx.def_pass_epa_allowed] || 0);
-      sum.defPassPlays += Number(r[colIdx.def_pass_plays] || 0);
-      sum.defRunEpa += Number(r[colIdx.def_run_epa_allowed] || 0);
-      sum.defRunPlays += Number(r[colIdx.def_run_plays] || 0);
-      sum.offPts += Number(r[colIdx.off_drive_pts] || 0);
-      sum.defPts += Number(r[colIdx.def_drive_pts_allowed] || 0);
-      sum.games += Number(r[colIdx.pace_games] || 0);
-    });
-    const games = sum.games > 0 ? sum.games : weekIdx.length;
-    metricsByTeam[tm] = {
-      off_pass_epa_pp: sum.offPassPlays>0 ? (sum.offPassEpa / sum.offPassPlays) : null,
-      off_run_epa_pp: sum.offRunPlays>0 ? (sum.offRunEpa / sum.offRunPlays) : null,
-      def_pass_epa_allowed_pp: sum.defPassPlays>0 ? (sum.defPassEpa / sum.defPassPlays) : null,
-      def_run_epa_allowed_pp: sum.defRunPlays>0 ? (sum.defRunEpa / sum.defRunPlays) : null,
-      points_scored_pg: games>0 ? (sum.offPts / games) : null,
-      points_allowed_pg: games>0 ? (sum.defPts / games) : null,
-    };
-  }
-
-  const rankMaps = {};
-  specs.forEach(s=>{
-    const vals = {};
-    Object.keys(metricsByTeam).forEach(tm=>{ vals[tm] = metricsByTeam[tm][s.key]; });
-    rankMaps[s.key] = _advRankMap(vals, s.lowerBetter);
-  });
-
-  const sums = {};
-  const partsByTeam = {};
-  specs.forEach(s=>{
-    const rkMap = rankMaps[s.key] || {};
-    Object.keys(rkMap).forEach(tm=>{
-      const rk = rkMap[tm];
-      if(!Number.isFinite(rk)) return;
-      if(!sums[tm]) sums[tm] = { sum:0, count:0 };
-      sums[tm].sum += Number(rk);
-      sums[tm].count += 1;
-      (partsByTeam[tm] = partsByTeam[tm] || []).push({ label:s.label, rank:Number(rk) });
-    });
-  });
-
-  const rows = Object.keys(sums)
-    .filter(tm=>sums[tm].count === specs.length)
-    .map(tm=>({
-      team: tm,
-      avg: sums[tm].sum / specs.length,
-      parts: partsByTeam[tm] || [],
-    }))
-    .sort((a,b)=>a.avg - b.avg || String(a.team).localeCompare(String(b.team)));
-  if(!rows.length) return fallbackFromSrc();
-  const rankMap = {};
-  rows.forEach((r, i)=>{ rankMap[r.team] = i + 1; });
-  const me = rows.find(r=>String(r.team).toUpperCase()===String(team).toUpperCase());
+  const tbl = advPowerTable(season, lo, hi);
+  if(!tbl) return fallbackFromSrc();
+  const me = tbl.rows.find(r=>String(r.team).toUpperCase()===String(team).toUpperCase());
   if(!me) return fallbackFromSrc();
-  return {
-    team: String(team).toUpperCase(),
-    avgRank: me.avg,
-    leagueRank: rankMap[me.team],
-    leagueSize: rows.length,
-    parts: me.parts,
-  };
+  return { team: String(team).toUpperCase(), avgRank: me.avg, leagueRank: me.leagueRank, leagueSize: tbl.size, parts: me.parts };
 }
 
 function _renderAdvPowerScore(team, src, opts){
@@ -16953,6 +16923,14 @@ function renderSOSView(){
     <text x="${padL}" y="48" class="sos-sub">${subline}</text>
     ${logos}
   </svg>`;
+  // Power Score, tracked as the season goes: rank over the league-wide week range, with the
+  // week-by-week trajectory (season to date after each week) as a sparkline. It reads
+  // offense AND defense, so it lives here rather than under either category.
+  const pwSeason=String(advTeamSeason());
+  const [pwLo,pwHi]=(typeof _advGetWeekRange==='function')?_advGetWeekRange(ADV_LEAGUE_RANGE_KEY):[1,18];
+  const power=(typeof advPowerTable==='function')?advPowerTable(pwSeason, pwLo, pwHi):null;
+  const traj=(power && typeof advPowerTrajectory==='function')?advPowerTrajectory(pwSeason, pwLo, pwHi):null;
+  if(power) entries.forEach(e=>{ const r=power.rows.find(x=>x.team===e.code); e.power=r||null; e.powerRank=r?r.leagueRank:null; });
   // Table beneath
   let sortDir=sharpSortDir;
   const sortCol=sharpSortCol||'rank';
@@ -16960,6 +16938,7 @@ function renderSOSView(){
     let av,bv;
     if(sortCol==='win_total'){ av=a.win_total; bv=b.win_total; }
     else if(sortCol==='opp'){ av=a.oppTotal; bv=b.oppTotal; }
+    else if(sortCol==='power'){ av=a.powerRank; bv=b.powerRank; }
     else { av=a.rank; bv=b.rank; }
     if(av==null&&bv==null)return 0; if(av==null)return 1; if(bv==null)return -1;
     return (av-bv)*sortDir;
@@ -16968,18 +16947,93 @@ function renderSOSView(){
     const active=sortCol===col; const arrow=active?(sortDir>0?' ▲':' ▼'):'';
     return `<th class="sr-th ${active?'active':''}" onclick="sortSOSBy('${col}')">${label}${arrow}</th>`;
   };
-  const body=rows.map(e=>`<tr>
-    <td class="sr-td-team"><span class="sr-td-team-inner sr-team-jump" onclick="tcGotoTeamProjections('${e.code}')" title="Open ${teamDisplayName(e.code)}'s projections"><img src="${NFL_LOGO(e.code)}" class="sr-logo" onerror="this.style.display='none'">${teamDisplayName(e.code)}</span></td>
+  const powerCell=(e)=>{
+    if(!power) return '';
+    if(!e.power) return `<td class="sr-td"><span class="sr-td-val">—</span></td>`;
+    const p=e.power;
+    const tip=`Power Score ${ordinal(p.leagueRank)} of ${power.size} · avg rank ${p.avg.toFixed(2)} over wk ${power.lo}–${Math.min(power.hi, power.weeks[power.weeks.length-1])}\n`
+      + p.parts.map(x=>`${x.label}: ${x.key.startsWith('points')?x.value.toFixed(1):x.value.toFixed(3)} · #${x.rank}`).join('\n')
+      + (power.actualPoints?'':'\n(points from drive expected points — sidecar predates the scoreboard columns)');
+    const tr=(traj && traj[e.code] && traj[e.code].length>1 && typeof advSparkSvg==='function')
+      ? `<span class="sr-td-spark">${advSparkSvg(traj[e.code].map(t=>({y:'wk '+t.week, v:t.avg, r:t.rank})), false, null)}</span>` : '';
+    return `<td class="sr-td ${sharpRankClass(p.leagueRank)}" title="${escAttr(tip)}"><span class="sr-td-val">${ordinal(p.leagueRank)}</span><span class="sr-td-rank">${p.avg.toFixed(1)}</span>${tr}</td>`;
+  };
+  const body=rows.map(e=>`<tr class="${power?'pw-row':''} ${power&&_sosPowerFocus===e.code?'pw-row-focus':''}"${power?` onclick="sosPowerFocus('${e.code}')" title="Follow ${escAttr(teamDisplayName(e.code))} on the Power Score chart"`:''}>
+    <td class="sr-td-team"><span class="sr-td-team-inner sr-team-jump" onclick="event.stopPropagation();tcGotoTeamProjections('${e.code}')" title="Open ${teamDisplayName(e.code)}'s projections"><img src="${NFL_LOGO(e.code)}" class="sr-logo" onerror="this.style.display='none'">${teamDisplayName(e.code)}</span></td>
+    ${powerCell(e)}
     <td class="sr-td ${sharpRankClass(e.rank)}"><span class="sr-td-val">${ordinal(e.rank)}</span></td>
     <td class="sr-td"><span class="sr-td-val">${e.oppTotal!=null?e.oppTotal.toFixed(1):'—'}</span></td>
     <td class="sr-td"><span class="sr-td-val">${e.win_total!=null?e.win_total:'—'}</span></td>
   </tr>`).join('');
-  return `<div class="card sos-card">${chart}</div>
+  const powerTh = power ? th('power', `${pwSeason} POWER SCORE`) : '';
+  const powerNote = power ? `<div class="la-note la-note-min">Power Score: average league rank of offensive pass and run EPA/play, defensive pass and run EPA/play allowed, points scored and points allowed${power.actualPoints?'':' (drive expected points until the sidecar refreshes)'} · weeks ${power.lo}–${Math.min(power.hi, power.weeks[power.weeks.length-1])} · the sparkline is the rank after each week · the small number is the average rank</div>` : '';
+  // Two charts share the page: the SOS arc and the Power Score bump chart, as tabs.
+  const powerChart=(power && traj) ? renderPowerTrendChart(power, traj) : '';
+  const chartTabs = powerChart ? `<div class="sr-league-tabs pw-tabs">
+      <button class="sr-tab ${_sosChartTab!=='power'?'active':''}" onclick="sosChartTab('sos')">Strength of Schedule</button>
+      <button class="sr-tab ${_sosChartTab==='power'?'active':''}" onclick="sosChartTab('power')">Power Score</button></div>` : '';
+  const chartCard = (powerChart && _sosChartTab==='power') ? powerChart : `<div class="card sos-card">${chart}</div>`;
+  return `${chartTabs}${chartCard}
     <div class="card sr-table-wrap" style="padding:0;overflow-x:auto;margin-top:12px">
       <table class="sr-league-table sos-table"><thead><tr>
-        <th class="sr-th-team">TEAM</th>${th('rank',PROJ_SEASON+' SOS RANK')}${th('opp','OPP WIN TOTAL')}${th('win_total','VEGAS WIN TOTAL')}
+        <th class="sr-th-team">TEAM</th>${powerTh}${th('rank',PROJ_SEASON+' SOS RANK')}${th('opp','OPP WIN TOTAL')}${th('win_total','VEGAS WIN TOTAL')}
       </tr></thead><tbody>${body}</tbody></table>
-    </div>`;
+    </div>${powerNote}`;
+}
+// ── Power Score through the season: a bump chart ─────────────────────────────
+// One line per team in the team's colour, a numbered circle at every week (the league rank
+// after that week, season to date), the team's name at the end of its line. Tap a line, a
+// name, or a row of the table below to follow one team — it comes forward, the rest fade.
+// The SVG is drawn at a fixed size (a column per week, a row per rank): on a desktop it
+// scales to the card, on a phone it keeps its size inside a scrolling frame so 32 teams
+// over 18 weeks stay legible.
+var _sosPowerFocus = null, _sosChartTab = 'sos';
+function sosChartTab(t){ _sosChartTab = t==='power' ? 'power' : 'sos'; renderSharpLeague(); }
+function sosPowerFocus(code){
+  _sosPowerFocus = (_sosPowerFocus===code) ? null : code;
+  if(_sosPowerFocus) _sosChartTab='power';
+  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderSharpLeague(), ['.sr-table-wrap','.pw-scroll']);
+  else renderSharpLeague();
+}
+// Line colours: the team's primary, except where that is near-black on this background —
+// those take the team's bright secondary.
+const PW_TEAM_COLORS = { CHI:'#C83803', CLE:'#FF3C00', HOU:'#A71930', LV:'#A5ACAF', NE:'#C60C30', SEA:'#69BE28',
+  TEN:'#4B92DB', GB:'#FFB612', IND:'#3B7DD8', NYG:'#3F6BD4', WAS:'#B0413E', BAL:'#7B5CD6', LAR:'#FFA300', CIN:'#F26522', PHI:'#2E8B8B', DAL:'#3F6BD4' };
+function pwTeamColor(t){ return PW_TEAM_COLORS[t] || (typeof teamColor==='function' ? teamColor(t) : '#888'); }
+function renderPowerTrendChart(power, traj){
+  const weeks=power.weeks.slice(); if(!weeks.length) return '';
+  const teams=Object.keys(traj).filter(t=>traj[t] && traj[t].length);
+  if(!teams.length) return '';
+  const n=Math.max(power.size, 2), r=10;
+  const colW=weeks.length>1 ? 68 : 0, rowH=30, padL=26, padR=124, padT=58, padB=22;
+  const W=padL+padR+2*r+colW*Math.max(0,weeks.length-1), H=padT+padB+rowH*(n-1);
+  const x=(w)=>{ const i=Math.max(0, weeks.indexOf(w)); return padL+r+colW*i; };
+  const y=(rank)=> padT + rowH*(rank-1);
+  const focus=_sosPowerFocus && traj[_sosPowerFocus] ? _sosPowerFocus : null;
+  const label=(t)=>(typeof sidebarTeamLabel==='function' ? sidebarTeamLabel(t) : t);
+  const team=(t)=>{
+    const pts=traj[t], c=pwTeamColor(t), hi=focus===t, dim=focus && !hi;
+    const d=pts.map((p,i)=>`${i?'L':'M'}${x(p.week)},${y(p.rank)}`).join(' ');
+    const tip=`${teamDisplayName(t)} — rank after each week: `+pts.map(p=>`wk ${p.week} #${p.rank}`).join(' · ');
+    const dots=pts.map(p=>`<g><circle cx="${x(p.week)}" cy="${y(p.rank)}" r="${r}" class="pw-node"/><text x="${x(p.week)}" y="${y(p.rank)+3.6}" class="pw-num" text-anchor="middle">${p.rank}</text></g>`).join('');
+    const last=pts[pts.length-1];
+    return `<g class="pw-team${hi?' pw-focus':''}${dim?' pw-dim':''}" style="--pw-c:${c}" onclick="sosPowerFocus('${t}')"><title>${escAttr(tip)}</title>
+      <path d="${d}" class="pw-line"/>${dots}
+      <text x="${x(last.week)+r+8}" y="${y(last.rank)+4}" class="pw-label">${escHtml(label(t))}</text></g>`;
+  };
+  // Focused team drawn last so it sits on top.
+  const order=teams.filter(t=>t!==focus).concat(focus?[focus]:[]);
+  const lines=order.map(team).join('');
+  const xlbl=weeks.map(w=>`<text x="${x(w)}" y="${padT-18}" class="pw-xlbl" text-anchor="middle">${w}</text>`).join('');
+  const caption = focus ? (()=>{ const p=traj[focus]; const a=p[0].rank, b=p[p.length-1].rank, d=a-b;
+      return `${teamDisplayName(focus)}: #${b} now${p.length>1?` · ${d>0?`up ${d}`:d<0?`down ${-d}`:'unchanged'} since week ${p[0].week}`:''} · tap again to release`; })()
+    : 'tap a line, a name, or a row below to follow one team';
+  return `<div class="card sos-card pw-card">
+    <div class="pw-head"><span class="sos-title-h">${power.season} Power Score through the season</span><span class="pw-sub">league rank after each week · 1 = best · ${escHtml(caption)}</span></div>
+    <div class="pw-scroll"><svg viewBox="0 0 ${W} ${H}" class="pw-chart" style="--pw-w:${W}px;--pw-h:${H}px" preserveAspectRatio="xMinYMin meet">
+      <text x="${padL}" y="${padT-34}" class="pw-xhead">week</text>${xlbl}${lines}
+    </svg></div>
+  </div>`;
 }
 function sortSOSBy(col){
   if(sharpSortCol===col){ sharpSortDir*=-1; } else { sharpSortCol=col; sharpSortDir=1; }
@@ -17083,7 +17137,11 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     <b style="color:#00d4aa">green</b> best through <b style="color:#ff6b6b">red</b> worst.
     Click any column header to sort (best→worst, click again to flip).
     The SOS view ranks schedules by the <b>sum of each team's opponents' Vegas win totals</b> —
-    rank 1 is the easiest slate, 32 the hardest.`};
+    rank 1 is the easiest slate, 32 the hardest. Its <b>Power Score</b> column is the average
+    league rank of six things — offensive pass and run EPA/play, defensive pass and run EPA/play
+    allowed, points scored, points allowed — over the selected weeks, with the rank after each
+    week as a sparkline. It reads both sides of the ball, so it sits here rather than under
+    Offense or Defense.`};
   TC_INFO_BOOK.sos={title:'Schedule & strength of schedule', body:()=>`
     The <b>${PROJ_SEASON}</b> week-by-week slate. Each cell is one opponent, colored by their
     Vegas win total: <b style="color:#00d4aa">green</b> under 7 wins (softer matchup),
@@ -17383,13 +17441,14 @@ function renderRankings(){
     const recKey = `${activeSeason}:${t}`;
     if(isRef && espnRecordCache[recKey]==null) fetchTeamRecord(activeSeason,t);
     const recStr = isRef ? (espnRecordCache[recKey]||'') : '';
+    const recHero = (typeof tcTeamRecordHTML==='function') ? tcTeamRecordHTML(t, recStr) : '';
     const sos = SOS && SOS[t];
     const sosBadge = sos ? `<span class="team-sos">SOS: <b>${ordinal(sos.rank)}</b>${sos.win_total!=null?` · Vegas Win Total: <b>${sos.win_total}</b>`:''}</span>` : '';
     const hcLine = teamHeaderHcLine(t, { openTitle: 'Open playbook visualization' });
     teamHeader = `<div class="team-header">
       <img src="${NFL_LOGO(t)}" class="team-logo-lg scheme-open" alt="${t}" title="Open playbook visualization" onclick="openTeamCoachingScheme('${t}')" onerror="this.style.opacity='.25'">
-      <div><div class="team-abbr team-fullname scheme-open" role="button" tabindex="0" title="Open playbook visualization" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">${teamDisplayName(t)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}</div>
-        <div class="team-qb-name">${teamHeaderQbText(t, state.qbs, recStr)}</div>
+      <div><div class="team-abbr team-fullname scheme-open" role="button" tabindex="0" title="Open playbook visualization" onclick="openTeamCoachingScheme('${t}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTeamCoachingScheme('${t}');}">${teamDisplayName(t)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}${recHero}</div>
+        <div class="team-qb-name">${teamHeaderQbText(t, state.qbs, recHero?'':recStr)}</div>
         ${hcLine}
         ${sosBadge?`<div class="team-sos-row">${sosBadge}</div>`:''}</div>
       <div class="team-nav">
@@ -22333,15 +22392,16 @@ function _thsHeaderPreviewHtml(team){
   const qbs = (state && Array.isArray(state.qbs)) ? state.qbs : [];
   const recStr = _thsReco(team);
   const isRef = activeSeason !== 'proj';
+  const recHero = (typeof tcTeamRecordHTML==='function') ? tcTeamRecordHTML(team, recStr) : '';
   const qb = (typeof teamHeaderQbText==='function')
-    ? teamHeaderQbText(team, qbs, recStr)
+    ? teamHeaderQbText(team, qbs, recHero?'':recStr)
     : ((qbs&&qbs.length)?qbs.map(q=>q.name).join(' / '):'No projected QB');
   const hcLine = (typeof teamHeaderHcLine==='function') ? teamHeaderHcLine(team, state||{}) : '';
   const sosRow = _thsSosRow(team);
   return `<div class="team-header" aria-hidden="true">
     <img src="${NFL_LOGO(team)}" class="team-logo-lg" alt="${team}" onerror="this.style.opacity='.25'">
     <div style="min-width:0;max-width:100%">
-      <div class="team-abbr team-fullname">${teamDisplayName(team)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}</div>
+      <div class="team-abbr team-fullname">${teamDisplayName(team)} ${isRef?`<span class="ref-year">${activeSeason}</span>`:''}${recHero}</div>
       <div class="team-qb-name">${qb}</div>
       ${hcLine}
       ${sosRow}
@@ -24021,6 +24081,104 @@ function hcIsPlaycaller(team){
   return true;
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// This week's board — game state + record for every team, from ONE request
+// ═════════════════════════════════════════════════════════════════════════════
+// ESPN's scoreboard for the current week carries, per game, both sides' overall record and
+// the game's state (pre / in / post) with its clock. In the Live view that feeds two things:
+// a dot on each team's logo in the sidebar (played · playing) and the big record in the team
+// header — without 32 per-team record fetches. Refreshes on its own while a game is on.
+var _tcBoard = { season:null, week:null, at:0, teams:{}, busy:false, live:false };
+const TC_BOARD_URL = (season, week)=>`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=2&week=${week}&dates=${season}`;
+const TC_BOARD_ABBR = { WSH:'WAS' };          // ESPN spells one club differently
+const TC_BOARD_TTL_LIVE = 45*1000, TC_BOARD_TTL_IDLE = 5*60*1000;
+
+function tcBoardWeek(){
+  const w=(typeof TC_SEASON!=='undefined')?Number(TC_SEASON.week||0):0;
+  return Math.min(18, Math.max(1, w||1));
+}
+// Parse one scoreboard payload → {CODE: {state, rec, opp, home, score, oppScore, detail}}.
+function tcParseBoard(board){
+  const out={};
+  const events=(board&&Array.isArray(board.events))?board.events:[];
+  events.forEach(ev=>{
+    const comp=ev.competitions&&ev.competitions[0]; if(!comp) return;
+    const st=(comp.status||ev.status||{}), type=st.type||{};
+    const state=type.state==='post'?'post':type.state==='in'?'in':'pre';
+    const detail=String(type.shortDetail||type.detail||'')
+    const sides=(comp.competitors||[]).map(c=>{
+      const ab=c.team&&c.team.abbreviation; const code=ab?(TC_BOARD_ABBR[ab]||ab):'';
+      const recs=Array.isArray(c.records)?c.records:[];
+      const tot=recs.find(r=>r.type==='total'||r.name==='overall')||recs[0];
+      const sc=c.score!=null?Number(c.score.value!=null?c.score.value:c.score):null;
+      return { code, home:c.homeAway==='home', rec:tot&&tot.summary?String(tot.summary):'', score:Number.isFinite(sc)?sc:null };
+    }).filter(s=>s.code);
+    sides.forEach(s=>{
+      const o=sides.find(x=>x!==s)||{};
+      out[s.code]={ state, rec:s.rec, opp:o.code||'', home:s.home, score:s.score, oppScore:o.score!=null?o.score:null, detail };
+    });
+  });
+  return out;
+}
+// The board for the current week (possibly stale), refreshing in the background when due.
+function tcWeekBoard(){
+  if(typeof TC_SEASON==='undefined' || typeof hasSeasonStarted!=='function' || !hasSeasonStarted()) return null;
+  const season=String(TC_SEASON.year), week=tcBoardWeek();
+  if(_tcBoard.season!==season || _tcBoard.week!==week){ _tcBoard={ season, week, at:0, teams:{}, busy:false, live:false }; }
+  const ttl=_tcBoard.live?TC_BOARD_TTL_LIVE:TC_BOARD_TTL_IDLE;
+  if(!_tcBoard.busy && Date.now()-_tcBoard.at>ttl && typeof sleeperFetch==='function'){
+    _tcBoard.busy=true;
+    sleeperFetch(TC_BOARD_URL(season, week)).then(board=>{
+      const teams=tcParseBoard(board);
+      if(!Object.keys(teams).length) return;
+      _tcBoard.teams=teams; _tcBoard.at=Date.now();
+      _tcBoard.live=Object.values(teams).some(t=>t.state==='in');
+      // Records ride along: every team the board knows fills the header's cache.
+      if(typeof espnRecordCache!=='undefined' && espnRecordCache){
+        Object.keys(teams).forEach(code=>{ if(teams[code].rec) espnRecordCache[`${season}:${code}`]=teams[code].rec; });
+      }
+      tcBoardLanded();
+    }).catch(()=>{}).finally(()=>{ _tcBoard.busy=false; _tcBoard.at=_tcBoard.at||Date.now(); });   // an empty/failed look still waits out the TTL
+  }
+  return _tcBoard.teams;
+}
+function tcTeamGameState(team){
+  const b=tcWeekBoard(); if(!b) return null;
+  return b[String(team||'').toUpperCase()]||null;
+}
+// A landed board repaints what shows it: the sidebar dots, and the record in any header
+// already on screen (patched in place — a full re-render would reset sliders mid-edit).
+function tcBoardLanded(){
+  try{ if(typeof renderSidebar==='function') renderSidebar(); }catch(e){}
+  try{
+    if(typeof document==='undefined' || !document.querySelectorAll) return;
+    document.querySelectorAll('.team-rec-hero[data-team]').forEach(el=>{
+      const t=el.getAttribute('data-team'); const g=_tcBoard.teams[t];
+      if(g && g.rec) el.textContent=g.rec;
+    });
+  }catch(e){}
+}
+// Is the app showing the season in progress (the Live view)?
+function tcLiveViewOn(){
+  return typeof currentProjViewMode==='function' && currentProjViewMode()==='live';
+}
+// The dot beside a logo: green once the game is final, pulsing red while it is on, nothing
+// before kickoff or on a bye. Title carries the score line.
+function tcGameDotHTML(team){
+  if(!tcLiveViewOn()) return '';
+  const g=tcTeamGameState(team); if(!g || g.state==='pre') return '';
+  const score=(g.score!=null && g.oppScore!=null)?` ${g.score}–${g.oppScore}`:'';
+  const tip=`${g.state==='post'?'Final':'Live'}: ${g.home?'vs':'@'} ${g.opp}${score}${g.detail?` · ${g.detail}`:''}`;
+  return `<span class="team-gs team-gs-${g.state}" title="${escAttr(tip)}"></span>`;
+}
+// The record for the header: the board's first (one request for all 32), the per-team
+// ESPN record second. Empty until either lands; the span stays in the DOM to be patched.
+function tcTeamRecordHTML(team, recStr){
+  if(!tcLiveViewOn()) return '';
+  const g=tcTeamGameState(team);
+  const rec=(g&&g.rec)||recStr||'';
+  return `<span class="team-rec-hero" data-team="${escAttr(team)}" title="${escAttr(`${TC_SEASON.year} record`)}">${escHtml(rec)}</span>`;
+}
 // ── "Stuck between two players" — BYO-model AI compare ──────────────────────
 // The one AI feature that earns its tokens: a grounded, on-demand verdict
 // between two players, fed the app's OWN numbers (projections, VOR, market

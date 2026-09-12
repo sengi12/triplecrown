@@ -767,10 +767,79 @@ function _advProjOlBadge(team, which){
   return ` <span class="sr-proj-badge ${cls}" title="Projected ${projSeason} ${lbl} overall score, from projected depth-chart starters">Proj \u2019${shortSeason} ${Number(p.score).toFixed(1)}${rk!=null?` \u00b7 #${rk}`:''}</span>`;
 }
 
+// ── Power Score ──────────────────────────────────────────────────────────────
+// Six things, ranked across the league over the week range and averaged: offensive pass and
+// run EPA/play, defensive pass and run EPA/play allowed, points scored, points allowed. Rank 1
+// is the best average. Points are the real scoreboard (`off_pts` / `def_pts_allowed`, from
+// each game's final score); a sidecar built before those columns existed falls back to
+// drive expected points. One table serves the team chip, the SOS column and the trajectory.
+const ADV_POWER_SPECS = [
+  { key:'off_pass_epa_pp',         label:'Off EPA/Play (Pass)',         lowerBetter:false },
+  { key:'off_run_epa_pp',          label:'Off EPA/Play (Run)',          lowerBetter:false },
+  { key:'def_pass_epa_allowed_pp', label:'Def EPA/Play Allowed (Pass)', lowerBetter:true  },
+  { key:'def_run_epa_allowed_pp',  label:'Def EPA/Play Allowed (Run)',  lowerBetter:true  },
+  { key:'points_scored_pg',        label:'Points Scored',               lowerBetter:false },
+  { key:'points_allowed_pg',       label:'Points Allowed',              lowerBetter:true  },
+];
+var _advPowerMemo = {};
+function advPowerTable(season, lo, hi){
+  season = String(season);
+  const pack = (NFLVERSE && NFLVERSE[season] && NFLVERSE[season].adv_weekly) || null;
+  if(!pack || !pack.teams || !Array.isArray(pack.weeks) || !Array.isArray(pack.cols)) return null;
+  const key = `${season}:${lo}-${hi}:${pack.weeks.length}:${Object.keys(pack.teams).length}`;
+  if(_advPowerMemo[key]) return _advPowerMemo[key];
+  const need = ['off_pass_epa','off_pass_plays','off_run_epa','off_run_plays',
+                'def_pass_epa_allowed','def_pass_plays','def_run_epa_allowed','def_run_plays','pace_games'];
+  const ci = {}; need.forEach(c=>{ ci[c]=pack.cols.indexOf(c); });
+  if(need.some(c=>ci[c]<0)) return null;
+  // Real points when the sidecar carries them; drive expected points otherwise.
+  const actual = pack.cols.indexOf('off_pts')>=0 && pack.cols.indexOf('def_pts_allowed')>=0;
+  ci.pts = actual ? pack.cols.indexOf('off_pts') : pack.cols.indexOf('off_drive_pts');
+  ci.allowed = actual ? pack.cols.indexOf('def_pts_allowed') : pack.cols.indexOf('def_drive_pts_allowed');
+  if(ci.pts<0 || ci.allowed<0) return null;
+  const weekIdx=[];
+  pack.weeks.forEach((w,i)=>{ w=Number(w); if(Number.isFinite(w) && w>=lo && w<=hi) weekIdx.push(i); });
+  if(!weekIdx.length) return null;
+  const metrics={};
+  Object.keys(pack.teams).forEach(tm=>{
+    const rows=Array.isArray(pack.teams[tm])?pack.teams[tm]:[];
+    const s={ope:0,opp:0,ore:0,orp:0,dpe:0,dpp:0,dre:0,drp:0,pts:0,al:0,g:0};
+    weekIdx.forEach(ix=>{ const r=rows[ix]||[]; const n=c=>Number(r[ci[c]]||0);
+      s.ope+=n('off_pass_epa'); s.opp+=n('off_pass_plays'); s.ore+=n('off_run_epa'); s.orp+=n('off_run_plays');
+      s.dpe+=n('def_pass_epa_allowed'); s.dpp+=n('def_pass_plays'); s.dre+=n('def_run_epa_allowed'); s.drp+=n('def_run_plays');
+      s.pts+=Number(r[ci.pts]||0); s.al+=Number(r[ci.allowed]||0); s.g+=n('pace_games'); });
+    // A team with no plays in the window (bye-only range) has nothing to rank.
+    if(!(s.opp+s.orp>0)) return;
+    const g=s.g>0?s.g:weekIdx.length;
+    metrics[tm]={ off_pass_epa_pp:s.opp>0?s.ope/s.opp:null, off_run_epa_pp:s.orp>0?s.ore/s.orp:null,
+      def_pass_epa_allowed_pp:s.dpp>0?s.dpe/s.dpp:null, def_run_epa_allowed_pp:s.drp>0?s.dre/s.drp:null,
+      points_scored_pg:g>0?s.pts/g:null, points_allowed_pg:g>0?s.al/g:null, games:g };
+  });
+  const rankMaps={};
+  ADV_POWER_SPECS.forEach(sp=>{ const vals={}; Object.keys(metrics).forEach(tm=>{ vals[tm]=metrics[tm][sp.key]; }); rankMaps[sp.key]=_advRankMap(vals, sp.lowerBetter); });
+  const rows=Object.keys(metrics).map(tm=>{
+    const parts=[]; let sum=0, n=0;
+    ADV_POWER_SPECS.forEach(sp=>{ const rk=rankMaps[sp.key][tm]; if(Number.isFinite(rk)){ sum+=rk; n++; parts.push({label:sp.label, rank:rk, key:sp.key, value:metrics[tm][sp.key]}); } });
+    return n===ADV_POWER_SPECS.length ? {team:tm, avg:sum/n, parts, metrics:metrics[tm]} : null;
+  }).filter(Boolean).sort((a,b)=>a.avg-b.avg || String(a.team).localeCompare(String(b.team)));
+  if(!rows.length) return null;
+  const rankMap={}; rows.forEach((r,i)=>{ rankMap[r.team]=i+1; r.leagueRank=i+1; });
+  const out={ season, lo, hi, rows, rankMap, size:rows.length, actualPoints:actual,
+              weeks:weekIdx.map(i=>Number(pack.weeks[i])) };
+  _advPowerMemo[key]=out;
+  return out;
+}
+// Week-by-week trajectory: the league rank after each week in the range (season to date).
+function advPowerTrajectory(season, lo, hi){
+  const full=advPowerTable(season, lo, hi); if(!full) return null;
+  const out={};
+  full.weeks.forEach(w=>{ const t=advPowerTable(season, lo, w); if(!t) return;
+    t.rows.forEach(r=>{ (out[r.team]=out[r.team]||[]).push({week:w, rank:r.leagueRank, avg:r.avg}); }); });
+  return out;
+}
 function _advTeamPowerScore(team, src, opts){
   const o = opts || {};
   const season = String(advTeamSeason());
-  const pack = (NFLVERSE && NFLVERSE[season] && NFLVERSE[season].adv_weekly) || null;
   const fallbackFromSrc = ()=>{
     const SRC = (src && typeof src==='object') ? src : (typeof activeSharp==='function' ? activeSharp() : null);
     if(!SRC || typeof SRC!=='object') return null;
@@ -794,132 +863,22 @@ function _advTeamPowerScore(team, src, opts){
     });
     const rows = Object.keys(sums)
       .filter(tm=>sums[tm].count>0)
-      .map(tm=>({
-        team: tm,
-        avg: sums[tm].sum / sums[tm].count,
-        parts: (partsByTeam[tm]||[]).sort((a,b)=>a.rank-b.rank).slice(0,6),
-      }))
+      .map(tm=>({ team: tm, avg: sums[tm].sum / sums[tm].count, parts: (partsByTeam[tm]||[]).sort((a,b)=>a.rank-b.rank).slice(0,6) }))
       .sort((a,b)=>a.avg-b.avg || String(a.team).localeCompare(String(b.team)));
     if(!rows.length) return null;
     const rankMap = {};
     rows.forEach((r,i)=>{ rankMap[r.team] = i + 1; });
     const me = rows.find(r=>String(r.team).toUpperCase()===String(team).toUpperCase());
     if(!me) return null;
-    return {
-      team: String(team).toUpperCase(),
-      avgRank: me.avg,
-      leagueRank: rankMap[me.team],
-      leagueSize: rows.length,
-      parts: me.parts,
-    };
+    return { team: String(team).toUpperCase(), avgRank: me.avg, leagueRank: rankMap[me.team], leagueSize: rows.length, parts: me.parts };
   };
   if(o.stableFromSource) return fallbackFromSrc();
-  if(!pack || !pack.teams || !Array.isArray(pack.weeks) || !Array.isArray(pack.cols)) return fallbackFromSrc();
-
-  const requiredCols = [
-    'off_pass_epa', 'off_pass_plays',
-    'off_run_epa', 'off_run_plays',
-    'def_pass_epa_allowed', 'def_pass_plays',
-    'def_run_epa_allowed', 'def_run_plays',
-    'off_drive_pts', 'def_drive_pts_allowed', 'pace_games',
-  ];
-  const colIdx = {};
-  requiredCols.forEach(c=>{ colIdx[c] = pack.cols.indexOf(c); });
-  if(requiredCols.some(c=>colIdx[c] < 0)) return fallbackFromSrc();
-
   const [lo, hi] = _advGetWeekRange(team);
-  const weekIdx = [];
-  for(let i=0;i<pack.weeks.length;i++){
-    const w = Number(pack.weeks[i]);
-    if(Number.isFinite(w) && w>=lo && w<=hi) weekIdx.push(i);
-  }
-  if(!weekIdx.length) return fallbackFromSrc();
-
-  const specs = [
-    { key:'off_pass_epa_pp', label:'Off EPA/Play (Pass)', lowerBetter:false },
-    { key:'off_run_epa_pp', label:'Off EPA/Play (Run)', lowerBetter:false },
-    { key:'def_pass_epa_allowed_pp', label:'Def EPA/Play Allowed (Pass)', lowerBetter:true },
-    { key:'def_run_epa_allowed_pp', label:'Def EPA/Play Allowed (Run)', lowerBetter:true },
-    { key:'points_scored_pg', label:'Points Scored', lowerBetter:false },
-    { key:'points_allowed_pg', label:'Points Allowed', lowerBetter:true },
-  ];
-
-  const metricsByTeam = {};
-  for(const tm of Object.keys(pack.teams)){
-    const rows = Array.isArray(pack.teams[tm]) ? pack.teams[tm] : [];
-    const sum = {
-      offPassEpa:0, offPassPlays:0,
-      offRunEpa:0, offRunPlays:0,
-      defPassEpa:0, defPassPlays:0,
-      defRunEpa:0, defRunPlays:0,
-      offPts:0, defPts:0, games:0,
-    };
-    weekIdx.forEach(ix=>{
-      const r = rows[ix] || [];
-      sum.offPassEpa += Number(r[colIdx.off_pass_epa] || 0);
-      sum.offPassPlays += Number(r[colIdx.off_pass_plays] || 0);
-      sum.offRunEpa += Number(r[colIdx.off_run_epa] || 0);
-      sum.offRunPlays += Number(r[colIdx.off_run_plays] || 0);
-      sum.defPassEpa += Number(r[colIdx.def_pass_epa_allowed] || 0);
-      sum.defPassPlays += Number(r[colIdx.def_pass_plays] || 0);
-      sum.defRunEpa += Number(r[colIdx.def_run_epa_allowed] || 0);
-      sum.defRunPlays += Number(r[colIdx.def_run_plays] || 0);
-      sum.offPts += Number(r[colIdx.off_drive_pts] || 0);
-      sum.defPts += Number(r[colIdx.def_drive_pts_allowed] || 0);
-      sum.games += Number(r[colIdx.pace_games] || 0);
-    });
-    const games = sum.games > 0 ? sum.games : weekIdx.length;
-    metricsByTeam[tm] = {
-      off_pass_epa_pp: sum.offPassPlays>0 ? (sum.offPassEpa / sum.offPassPlays) : null,
-      off_run_epa_pp: sum.offRunPlays>0 ? (sum.offRunEpa / sum.offRunPlays) : null,
-      def_pass_epa_allowed_pp: sum.defPassPlays>0 ? (sum.defPassEpa / sum.defPassPlays) : null,
-      def_run_epa_allowed_pp: sum.defRunPlays>0 ? (sum.defRunEpa / sum.defRunPlays) : null,
-      points_scored_pg: games>0 ? (sum.offPts / games) : null,
-      points_allowed_pg: games>0 ? (sum.defPts / games) : null,
-    };
-  }
-
-  const rankMaps = {};
-  specs.forEach(s=>{
-    const vals = {};
-    Object.keys(metricsByTeam).forEach(tm=>{ vals[tm] = metricsByTeam[tm][s.key]; });
-    rankMaps[s.key] = _advRankMap(vals, s.lowerBetter);
-  });
-
-  const sums = {};
-  const partsByTeam = {};
-  specs.forEach(s=>{
-    const rkMap = rankMaps[s.key] || {};
-    Object.keys(rkMap).forEach(tm=>{
-      const rk = rkMap[tm];
-      if(!Number.isFinite(rk)) return;
-      if(!sums[tm]) sums[tm] = { sum:0, count:0 };
-      sums[tm].sum += Number(rk);
-      sums[tm].count += 1;
-      (partsByTeam[tm] = partsByTeam[tm] || []).push({ label:s.label, rank:Number(rk) });
-    });
-  });
-
-  const rows = Object.keys(sums)
-    .filter(tm=>sums[tm].count === specs.length)
-    .map(tm=>({
-      team: tm,
-      avg: sums[tm].sum / specs.length,
-      parts: partsByTeam[tm] || [],
-    }))
-    .sort((a,b)=>a.avg - b.avg || String(a.team).localeCompare(String(b.team)));
-  if(!rows.length) return fallbackFromSrc();
-  const rankMap = {};
-  rows.forEach((r, i)=>{ rankMap[r.team] = i + 1; });
-  const me = rows.find(r=>String(r.team).toUpperCase()===String(team).toUpperCase());
+  const tbl = advPowerTable(season, lo, hi);
+  if(!tbl) return fallbackFromSrc();
+  const me = tbl.rows.find(r=>String(r.team).toUpperCase()===String(team).toUpperCase());
   if(!me) return fallbackFromSrc();
-  return {
-    team: String(team).toUpperCase(),
-    avgRank: me.avg,
-    leagueRank: rankMap[me.team],
-    leagueSize: rows.length,
-    parts: me.parts,
-  };
+  return { team: String(team).toUpperCase(), avgRank: me.avg, leagueRank: me.leagueRank, leagueSize: tbl.size, parts: me.parts };
 }
 
 function _renderAdvPowerScore(team, src, opts){

@@ -1,0 +1,41 @@
+/* ── This week's board in the Live view: game-state dot on the sidebar logo, the record big ── */
+.team-logo-wrap{position:relative;display:inline-flex;flex-shrink:0;line-height:0;}
+.team-gs{position:absolute;right:-3px;bottom:-2px;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--bg);box-sizing:border-box;}
+.team-gs-post{background:var(--success);}
+.team-gs-in{background:var(--danger);animation:tcGsPulse 1.2s ease-in-out infinite;}
+@keyframes tcGsPulse{0%,100%{box-shadow:0 0 0 0 rgba(248,81,73,.55);}50%{box-shadow:0 0 0 4px rgba(248,81,73,0);}}
+@media (prefers-reduced-motion:reduce){ .team-gs-in{animation:none;} }
+.team-item .team-rec{margin-left:auto;font-family:var(--mono);font-size:10.5px;font-weight:800;color:var(--muted);flex-shrink:0;}
+.team-item.active .team-rec{color:var(--accent);}
+
+/* The header record: big and bold beside the team name once the season is on */
+.team-rec-hero{display:inline-block;vertical-align:middle;margin-left:10px;padding:1px 9px;border-radius:8px;
+  background:var(--surface2);border:1px solid var(--border);color:var(--text);
+  font-family:var(--mono);font-size:19px;font-weight:900;letter-spacing:0;line-height:1.35;}
+.team-rec-hero:empty{display:none;}
+@media (max-width:600px){ .team-rec-hero{font-size:16px;margin-left:8px;padding:0 7px;} }
+
+/* ── Power Score through the season: the bump chart (SOS view) ── */
+.pw-tabs{margin-bottom:8px;}
+.pw-card{padding:10px 12px 8px;}
+.pw-head{display:flex;flex-direction:column;gap:2px;margin:0 0 6px 2px;}
+.sos-title-h{font-size:17px;font-weight:800;color:var(--text);}
+.pw-sub{font-size:10.5px;color:var(--muted);}
+/* Drawn at a fixed size; scrolls on a phone, scales to the card on a desktop. */
+.pw-scroll{overflow:auto;max-height:78vh;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;border-radius:8px;}
+.pw-chart{display:block;width:var(--pw-w);height:var(--pw-h);}
+@media (min-width:760px){ .pw-scroll{max-height:none;overflow:visible;} .pw-chart{width:100%;height:auto;} }
+.pw-xhead{fill:var(--muted);font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;font-family:var(--font);}
+.pw-xlbl{fill:var(--muted);font-size:11px;font-weight:800;font-family:var(--mono);}
+.pw-team{cursor:pointer;transition:opacity .15s;}
+.pw-team .pw-line{fill:none;stroke:var(--pw-c);stroke-width:4;stroke-linejoin:round;stroke-linecap:round;opacity:.85;}
+.pw-team .pw-node{fill:var(--pw-c);stroke:var(--surface2);stroke-width:2;}
+.pw-team .pw-num{fill:#fff;font-size:10px;font-weight:900;font-family:var(--mono);pointer-events:none;}
+.pw-team .pw-label{fill:var(--pw-c);font-size:12px;font-weight:900;font-family:var(--font);}
+.pw-team.pw-dim{opacity:.13;}
+.pw-team.pw-focus .pw-line{stroke-width:6;opacity:1;}
+.pw-team.pw-focus .pw-node{stroke:#fff;stroke-width:2.5;}
+.pw-team.pw-focus .pw-label{font-size:13px;}
+.pw-team:hover:not(.pw-dim) .pw-line{opacity:1;}
+.pw-row{cursor:pointer;}
+.pw-row-focus td{background:rgba(61,155,255,.10)!important;box-shadow:inset 2px 0 0 var(--accent);}

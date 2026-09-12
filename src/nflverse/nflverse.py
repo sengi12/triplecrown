@@ -991,6 +991,7 @@ def adv_weekly_team(season):
         "yards_gained", "epa", "fixed_drive", "fixed_drive_result", "series_result",
         "shotgun", "no_huddle", "air_yards", "wp", "half_seconds_remaining",
         "game_seconds_remaining",
+        "home_team", "away_team", "total_home_score", "total_away_score",
     ]
     pbp = _load_pbp(season, pbp_cols)
     pbp = pbp[(pbp["season_type"] == "REG") & pbp["posteam"].notna()].copy()
@@ -1054,6 +1055,26 @@ def adv_weekly_team(season):
     out["off_drive_ct"] = d_off.groupby(["posteam", "week"]).size().reindex(idx).fillna(0)
     out["def_drive_pts_allowed"] = d_def.groupby(["defteam", "week"])["dpts"].sum(min_count=1).reindex(idx).fillna(0)
     out["def_drive_ct"] = d_def.groupby(["defteam", "week"]).size().reindex(idx).fillna(0)
+
+    # ACTUAL points scored / allowed, from each game's final score (the running score on the
+    # last play). Drive points above are expected values of drive results (a TD counts 6.97,
+    # the XP rate) and exist for points-per-drive; the Power Score's "points scored" and
+    # "points allowed" must be the real scoreboard, defensive and special-teams scores included.
+    fin = (pbp.groupby("game_id")
+              .agg(home=("home_team", "first"), away=("away_team", "first"), week=("week", "first"),
+                   hs=("total_home_score", "max"), as_=("total_away_score", "max"))
+              .reset_index())
+    fin["home"] = fin["home"].replace(NFLVERSE_TO_SEED)
+    fin["away"] = fin["away"].replace(NFLVERSE_TO_SEED)
+    fin["hs"] = pd.to_numeric(fin["hs"], errors="coerce").fillna(0)
+    fin["as_"] = pd.to_numeric(fin["as_"], errors="coerce").fillna(0)
+    pts_rows = pd.concat([
+        pd.DataFrame({"team": fin["home"], "week": fin["week"], "pts": fin["hs"], "allowed": fin["as_"]}),
+        pd.DataFrame({"team": fin["away"], "week": fin["week"], "pts": fin["as_"], "allowed": fin["hs"]}),
+    ])
+    pts_rows["week"] = pts_rows["week"].astype(int)
+    out["off_pts"] = pts_rows.groupby(["team", "week"])["pts"].sum(min_count=1).reindex(idx).fillna(0)
+    out["def_pts_allowed"] = pts_rows.groupby(["team", "week"])["allowed"].sum(min_count=1).reindex(idx).fillna(0)
 
     drive_core = plays.dropna(subset=["fixed_drive"]).copy()
     drive_core["is_rz"] = pd.to_numeric(drive_core["yardline_100"], errors="coerce") <= 20
@@ -1288,6 +1309,7 @@ def adv_weekly_team(season):
         "off_pers_obs", "off_wr3", "off_mte", "off_11", "off_12", "off_13", "off_21", "off_multirb",
         "def_pers_obs", "def_sub", "def_nickel", "def_dime", "blitz_db_obs", "blitz_db5",
         "dl_dropbacks", "dl_pressures", "dl_no_blitz_obs", "dl_no_blitz_pressures", "dl_rush_att", "dl_rush_stuffed",
+        "off_pts", "def_pts_allowed",
     ]
     for c in cols:
         if c not in out.columns:
