@@ -286,9 +286,12 @@ function _advEnsureWeeklyLoaded(){
   if(_advWeeklySeedReady || _advWeeklySeedLoading) return;
   if(typeof ensureNflverseSection!=='function') return;
   _advWeeklySeedLoading=true;
+  // Ask for the VIEWED season: in season the sidecar has merged the live year's weekly
+  // blocks, which used to satisfy the any-season check and leave the frozen seasons unloaded.
+  const viewed = (typeof advTeamSeason==='function') ? advTeamSeason() : null;
   Promise.all([
-    ensureNflverseSection('ol_weekly').catch(()=>false),
-    ensureNflverseSection('adv_weekly').catch(()=>false),
+    ensureNflverseSection('ol_weekly', viewed).catch(()=>false),
+    ensureNflverseSection('adv_weekly', viewed).catch(()=>false),
   ]).then(([okOl, okAdv])=>{
     _advWeeklySeedReady = !!(okOl || okAdv);
     _advWeeklySeedLoading = false;
