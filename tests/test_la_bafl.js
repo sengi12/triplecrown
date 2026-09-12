@@ -86,14 +86,14 @@ chk(/la-mc-loading/.test(v) && /loading the week's stat lines/.test(v), 'before 
 chk(!!app.bafl().byWeek[2], 'and the feeds were asked for');
 app.bafl().byWeek[2].stats=stats; app.bafl().byWeek[2].statsAt=Date.now();
 v=app.view(SNAP);
-chk(/MY MATCHUP · WEEK 2/.test(v) && (v.match(/class="la-mc /g)||v.match(/class="la-mc"/g)||v.match(/la-mc la-mc-mine/g)).length>=1, 'my matchup is featured as the BAFL card');
-chk(!/la-mu-fscore/.test(v) && !/la-mu-pts/.test(v), 'the points score block is gone in BAFL Mode');
+chk(/MY MATCHUP · WEEK 2/.test(v) && /la-mu-fscore/.test(v) && /la-mu-pts (win|loss|tie)"[^>]*>2\*?</.test(v) && /la-mc-tbl/.test(v), 'my matchup is featured in the shared hero: category score up top, the category rows under the bar');
+chk((v.match(/la-mc-wp\b/g)||[]).length>=1 && !/la-mu-pproj/.test(v) && !/la-mu-wp\b/.test(v), 'one win-probability track across both sides; no per-side points or win% blocks');
 chk(/ALL MATCHUPS/.test(v) && /la-mc-grid/.test(v) && (v.match(/la-mc-pick/g)||[]).length===2, 'every pairing is a BAFL card in the grid, tappable to feature');
 chk(/Drake Maye/.test(v) && /Starters<\/span>/.test(v), 'the starters-by-slot detail stays under the card');
 chk(/labaflwp/.test(v), 'the win % explainer is the BAFL one');
 app.off();
 v=app.view(SNAP);
-chk(/la-mu-fscore/.test(v) && /SCOREBOARD/.test(v) && !/la-mc/.test(v), 'without BAFL Mode the points matchup is untouched');
+chk(/la-mu-fscore/.test(v) && /SCOREBOARD/.test(v) && /la-mc-wp\b/.test(v) && !/la-mc-tbl/.test(v) && /la-mu-pts "[^>]*>\d+\.\d\d</.test(v), 'without BAFL Mode: the same hero with points and the same single bar, no category rows');
 chk(Math.round(app.cat({passing_yards:1547})*10)/10===60 && Math.round(app.cat({rushing_yards:833})*10)/10===60, 'the season category lens is unchanged: one category-season of yards = 60');
 
 console.log('=== per-player stat lines — the BAFL roster-modal style ===');
