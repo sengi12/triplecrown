@@ -692,8 +692,11 @@ function renderSeasonTabs(){
   let seg='';
   if(started){
     const mode = (typeof currentProjViewMode==='function') ? currentProjViewMode() : null;
+    const gamesOn = typeof tcGamesLive==='function' && tcGamesLive();
+    const updated = (typeof tcLiveUpdatedText==='function') ? tcLiveUpdatedText() : '';
+    const liveTip = gamesOn ? `games in progress · stats refresh every minute${updated?` · updated ${updated}`:''}` : `${yr} season to date · live from Sleeper`;
     seg = `<span class="season-mode">`
-      + `<button class="season-tab mode-tab ${mode==='live'?'active':''}" onclick="setProjViewMode('${mode==='live'?'proj':'live'}', true)" title="${yr} season to date · live from Sleeper${(typeof tcLiveDataTitle==='function'&&tcLiveDataTitle())?' · '+tcLiveDataTitle().replace(/"/g,'&quot;'):''}">Live</button>`
+      + `<button class="season-tab mode-tab ${mode==='live'?'active':''}${gamesOn?' live-on':''}" onclick="setProjViewMode('${mode==='live'?'proj':'live'}', true)" title="${liveTip}${(typeof tcLiveDataTitle==='function'&&tcLiveDataTitle())?' · '+tcLiveDataTitle().replace(/"/g,'&quot;'):''}">${gamesOn?'<span class="live-dot"></span>':''}Live</button>`
       + `</span>`;
   }
   host.innerHTML = tab('proj') + seg + shownHist.map(tab).join('');

@@ -40,3 +40,8 @@
 .pw-team:hover:not(.pw-dim) .pw-line{opacity:1;}
 .pw-row{cursor:pointer;}
 .pw-row-focus td{background:rgba(61,155,255,.10)!important;box-shadow:inset 2px 0 0 var(--accent);}
+
+/* Games in progress: a pulsing dot on the Live tab and in the season banner */
+.live-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--danger);margin-right:6px;vertical-align:middle;animation:tcGsPulse 1.2s ease-in-out infinite;}
+.season-tab.live-on{border-color:rgba(248,81,73,.5);}
+@media (prefers-reduced-motion:reduce){ .live-dot{animation:none;} }
