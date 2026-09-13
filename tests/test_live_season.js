@@ -47,9 +47,13 @@ const ROWS=[
   const workingBefore=JSON.stringify(app.getWorking());
   // Count ONLY the season-stats endpoint — the boot IIFE's background chain also goes
   // through sleeperFetch and would otherwise pollute the counter.
+  // The live season is the sum of its weeks (the aggregate endpoint lags the games): week 1
+  // carries the rows, later weeks are empty, and the aggregate URL is the fallback.
   let fetches=0;
   app.setSleeperFetch(async(url)=>{
-    if(String(url).includes('stats/nfl/2026')){ fetches++; return ROWS; }
+    const u=String(url);
+    if(/stats\/nfl\/2026\/\d+\?/.test(u)){ fetches++; return /\/2026\/1\?/.test(u) ? ROWS : []; }
+    if(u.includes('stats/nfl/2026')){ fetches++; return ROWS; }
     throw new Error('unexpected url in test: '+url);
   });
   chk(await app.refreshLiveSeasonStats()===true,'first in-season refresh runs');
@@ -61,14 +65,16 @@ const ROWS=[
   chk(app.liveSeasonEpoch()===2,'epoch = completed weeks fetched');
 
   console.log('=== once-per-completed-week, with a live TTL ===');
-  chk(await app.refreshLiveSeasonStats()===false && fetches===1,'same completed week, fresh fetch → no refetch');
-  chk(await app.refreshLiveSeasonStats(true)===true && fetches===2,'force refetches');
-  // The season-opener bug: completedWeeks() is constant DURING a week, but the aggregate
-  // keeps moving as games play. A fetch older than the TTL must refresh on its own.
-  app.ageLiveFetch(6*60*1000);
-  chk(await app.refreshLiveSeasonStats()===true && fetches===3,'a stale fetch refreshes mid-week (games are live)');
-  app.TC_SEASON.week=4;
-  chk(await app.refreshLiveSeasonStats()===true && fetches===4,'week advance refetches');
+  let last=fetches;
+  chk(await app.refreshLiveSeasonStats()===false && fetches===last,'same completed week, fresh fetch → no refetch');
+  last=fetches;
+  chk(await app.refreshLiveSeasonStats(true)===true && fetches>last,'force refetches (the week in progress is re-read; completed weeks stay cached)');
+  // The season-opener bug: completedWeeks() is constant DURING a week, but the stats keep
+  // moving as games play. A fetch older than the TTL must refresh on its own.
+  app.ageLiveFetch(6*60*1000); last=fetches;
+  chk(await app.refreshLiveSeasonStats()===true && fetches>last,'a stale fetch refreshes mid-week (games are live)');
+  app.TC_SEASON.week=4; last=fetches;
+  chk(await app.refreshLiveSeasonStats()===true && fetches>last,'week advance refetches');
 
   console.log('=== entering Live is refresh-first, never blank ===');
   // A minimal proj base so buildSeedFromHistory has team scaffolding.

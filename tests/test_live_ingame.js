@@ -9,11 +9,16 @@ global.localStorage={getItem:()=>null,setItem(){},removeItem(){}};global.fetch=(
 const fs=require('fs');const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`
   toast=function(){};
-  let fetches=0; sleeperFetch=async(url)=>{ if(/scoreboard/.test(url)) throw new Error('no board here'); if(/stats\\/nfl\\/2026\\?/.test(url)){ fetches++; return [{player_id:'1',team:'SEA',position:'QB',player:{first_name:'Sam',last_name:'Darnold'},stats:{pass_yd:200,gp:1}}]; } throw new Error('x'); };
+  let fetches=0, weekFetches=0, weekRows=[{player_id:'1',team:'SEA',position:'QB',player:{first_name:'Sam',last_name:'Darnold'},stats:{pass_yd:200,gp:1}},{player_id:'2',team:'CIN',position:'QB',player:{first_name:'Joe',last_name:'Burrow'},stats:{pass_yd:310,pass_td:3,gp:1}}];
+  sleeperFetch=async(url)=>{ if(/scoreboard/.test(url)) throw new Error('no board here');
+    if(/stats\\/nfl\\/2026\\/1\\?/.test(url)){ weekFetches++; fetches++; return weekRows; }
+    if(/stats\\/nfl\\/2026\\?/.test(url)){ fetches++; return [{player_id:'1',team:'SEA',position:'QB',player:{first_name:'Sam',last_name:'Darnold'},stats:{pass_yd:200,gp:1}}]; }
+    throw new Error('x'); };
   hasSeasonStarted=()=>true; TC_SEASON.year=2026; TC_SEASON.phase='regular'; TC_SEASON.week=1; activeSeason='2026';
   return { setBoard:(live,age)=>{ _tcBoard={season:'2026',week:1,at:Date.now()-(age||0),teams:{SEA:{state:live?'in':'post',rec:'1-0'}},busy:false,live:!!live}; },
     gamesLive:tcGamesLive, ttl:liveSeasonTtl, refresh:refreshLiveSeasonStats, fetches:()=>fetches, at:()=>_liveSeasonAt, setAt:(v)=>{ _liveSeasonAt=v; _liveSeasonWeek=completedWeeks(); },
-    tabs:()=>{ renderSeasonTabs(); return document.getElementById('seasonTabs').innerHTML; }, updated:tcLiveUpdatedText };
+    tabs:()=>{ renderSeasonTabs(); return document.getElementById('seasonTabs').innerHTML; }, updated:tcLiveUpdatedText,
+    weekFetches:()=>weekFetches, hist:()=>HISTORY, setWeekRows:(r)=>{ weekRows=r; }, weekStats:fetchWeekStats, weekAt:(k,v)=>{ _weekStatsAt[k]=v; } };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 (async()=>{
@@ -35,6 +40,19 @@ let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',
   chk((await app.refresh())===false && app.fetches()===f0+1, 'twenty seconds old → not yet');
   app.setBoard(false); app.setAt(Date.now()-2*60*1000);
   chk((await app.refresh())===false && app.fetches()===f0+1, 'no game on and two minutes old → the five-minute TTL holds');
+
+  console.log('=== the live season is the sum of its weeks, not the lagging aggregate ===');
+  app.setBoard(true); app.setAt(Date.now()-2*60*1000);
+  await app.refresh();
+  chk(app.weekFetches()>=1 && app.hist()['2'] && app.hist()['2']['2026'][0].stats.pass_yd===310, 'Burrow\'s 310 from the week-1 rows is in the Live season (the aggregate endpoint had only Darnold)');
+  chk(app.hist()['1']['2026'][0].stats.gp===1 && app.hist()['2']['2026'][0].games_played===1, 'games played counted from the weeks');
+  app.weekAt('2026|1|', Date.now()-60*1000); app.setWeekRows([]); app.setAt(Date.now()-2*60*1000);
+  const f1=app.fetches(); await app.refresh();
+  chk(app.fetches()>f1 && app.hist()['1']['2026'][0].stats.pass_yd===200, 'an empty week in progress (nothing kicked off) falls back to the aggregate rather than blanking the season');
+  app.setWeekRows([{player_id:'2',team:'CIN',position:'QB',player:{first_name:'Joe',last_name:'Burrow'},stats:{pass_yd:340,pass_td:3,gp:1}}]);
+  app.weekAt('2026|1|', Date.now()-60*1000);
+  const w1=app.weekFetches(); await app.weekStats('2026',1,null); await app.weekStats('2026',1,null);
+  chk(app.weekFetches()===w1+1, 'the week in progress refetches once its copy is older than 45s, then is memoised again');
 
   console.log('=== the Live tab says so ===');
   app.setBoard(true); app.setAt(Date.now());
