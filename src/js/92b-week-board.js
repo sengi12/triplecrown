@@ -133,3 +133,14 @@ function tcStandingsOrder(teams){
     .sort((a,b)=> (a.r?0:1)-(b.r?0:1) || (a.r&&b.r ? (b.r.pct-a.r.pct) || (b.r.w-a.r.w) : 0) || (a.i-b.i))
     .map(x=>x.t);
 }
+
+// Are games being played right now? True while this week's board shows a game in progress
+// and the board is fresh enough to trust (it refreshes every 45s while one is on).
+function tcGamesLive(){
+  const b=tcWeekBoard(); if(!b) return false;
+  return !!_tcBoard.live && (Date.now()-_tcBoard.at) < 10*60*1000;
+}
+function tcLiveUpdatedText(){
+  const at=(typeof _liveSeasonAt!=='undefined')?_liveSeasonAt:0; if(!at) return '';
+  try{ return new Date(at).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}); }catch(e){ return ''; }
+}

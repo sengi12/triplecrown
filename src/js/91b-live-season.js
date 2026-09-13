@@ -41,6 +41,10 @@ var _liveSeasonBusy = false;
 // weeks are immutable, but the aggregate always carries the week IN PROGRESS too — so the
 // latch only holds for a short TTL while the season is live.
 var _LIVE_SEASON_TTL = 5*60*1000;
+// While games are being played the aggregate moves play by play: refresh every minute
+// (Sleeper's season endpoint updates live) instead of every five.
+var _LIVE_SEASON_TTL_INGAME = 50*1000;
+function liveSeasonTtl(){ return (typeof tcGamesLive==='function' && tcGamesLive()) ? _LIVE_SEASON_TTL_INGAME : _LIVE_SEASON_TTL; }
 function liveSeasonEpoch(){ return _liveSeasonWeek < 0 ? 0 : _liveSeasonWeek; }
 // While the user is ON the live season view, keep it breathing: a gentle poll that the
 // TTL makes cheap (one aggregate call at most every 5 minutes), paused when hidden.
@@ -52,7 +56,13 @@ function liveSeasonPollSync(){
   // window.setInterval on purpose: only a real browser polls — the node test
   // harnesses stub window bare, and a live 3-minute timer there hangs the process.
   if(on && !_liveSeasonPollTimer && typeof window!=='undefined' && typeof window.setInterval==='function'){
-    _liveSeasonPollTimer = window.setInterval(()=>{ refreshLiveSeasonStats().catch(()=>{}); }, 3*60*1000);
+    // A one-minute tick; the TTL decides whether it fetches (every minute during games,
+    // every five otherwise). The tick also keeps the week board — the "games on" signal —
+    // current, whichever view is open.
+    _liveSeasonPollTimer = window.setInterval(()=>{
+      if(typeof tcWeekBoard==='function'){ try{ tcWeekBoard(); }catch(e){} }
+      refreshLiveSeasonStats().catch(()=>{});
+    }, 60*1000);
   } else if(!on && _liveSeasonPollTimer){
     clearInterval(_liveSeasonPollTimer); _liveSeasonPollTimer = null;
   }
@@ -73,7 +83,7 @@ async function refreshLiveSeasonStats(force){
   if(typeof hasSeasonStarted!=='function' || !hasSeasonStarted()) return false;
   const yr = String(TC_SEASON.year);
   if(!force && _liveSeasonWeek === completedWeeks()
-     && (Date.now()-_liveSeasonAt) < _LIVE_SEASON_TTL) return false;
+     && (Date.now()-_liveSeasonAt) < liveSeasonTtl()) return false;
   if(_liveSeasonBusy) return false;
   _liveSeasonBusy = true;
   try{
@@ -104,8 +114,9 @@ async function refreshLiveSeasonStats(force){
       if(built){
         seasonStatsCache[yr]=built; SEED=built;
         if(typeof invalidateBuildPlayerCache==='function') invalidateBuildPlayerCache();
-        if(currentPhase==='Rankings') renderRankings();
-        else if(currentTeam) renderContent();
+        // In-game refreshes land every minute: repaint in place, scroll where it was.
+        const repaint=()=>{ if(currentPhase==='Rankings') renderRankings(); else if(currentTeam) renderContent(); };
+        if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(repaint, ['.rankings-table-wrap','.sr-table-wrap']); else repaint();
       }
     }
     return true;
