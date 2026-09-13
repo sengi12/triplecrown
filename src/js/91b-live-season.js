@@ -89,14 +89,20 @@ async function refreshLiveSeasonStats(force){
   try{
     // Time machine: the season-aggregate endpoint would leak the whole (finished) season, so
     // rebuild the aggregate from the weeks that were complete as of the frozen week.
-    const rows = (typeof tcTimeMachine==='function' && tcTimeMachine())
-      ? await liveSeasonRowsThroughWeek(yr, completedWeeks())
-      : await sleeperFetch(SLEEPER_STATS_URL(yr));
-    if(rows===null && typeof tcTimeMachine==='function' && tcTimeMachine()){
+    // Sleeper's season aggregate lags the games (a Sunday final showed nothing for the team
+    // until the next day); the per-week endpoint moves play by play. So the live season is
+    // the sum of its weeks: completed weeks from the cache, the week in progress refetched
+    // (it may be empty before kickoff). Time machine: only the weeks complete as of the
+    // frozen week. The aggregate endpoint stays as the fallback if a week won't load.
+    const tm = typeof tcTimeMachine==='function' && tcTimeMachine();
+    const liveWeek = tm ? completedWeeks() : Math.max(completedWeeks(), Number(TC_SEASON.week||0));
+    let rows = await liveSeasonRowsThroughWeek(yr, liveWeek, tm ? null : {optional:[liveWeek]});
+    if(rows===null && tm){
       // Partial fetch — keep last good data and quietly try again in a bit.
       if(!_liveSeasonRetryTimer) _liveSeasonRetryTimer=setTimeout(()=>{ _liveSeasonRetryTimer=null; refreshLiveSeasonStats(true).catch(()=>{}); }, 45000);
       return false;
     }
+    if(!tm && (rows===null || !rows.length)) rows = await sleeperFetch(SLEEPER_STATS_URL(yr));
     const records = liveSeasonRecordsFromRows(rows);
     if(!records.length) return false;
     const byPid={};
@@ -127,22 +133,32 @@ async function refreshLiveSeasonStats(force){
 // Season-to-date aggregate built from per-week rows (weeks 1..maxWeek). Counting stats sum;
 // games = weeks with gp>0; team/position follow the latest week. Used by the time machine
 // and usable as a fallback whenever the aggregate endpoint is behind the weekly feed.
-async function liveSeasonRowsThroughWeek(season, maxWeek){
+async function liveSeasonRowsThroughWeek(season, maxWeek, opts){
   const weeks=[]; for(let w=1; w<=Math.max(0,maxWeek); w++) weeks.push(w);
   if(!weeks.length) return [];
+  // `optional` weeks (the one in progress) may come back empty — before kickoff there is
+  // nothing to sum — without failing the build; completed weeks must all land.
+  // A week is missing only when its pull FAILED (null): an empty array is Sleeper's honest
+  // "no stats for that week" and retrying it changes nothing. An all-empty season returns
+  // null so the caller falls back to the aggregate endpoint.
+  const optional=new Set((opts && opts.optional) || []);
+  const isMissing=(w,i)=>!Array.isArray(perWeek[i]);
   // These are big responses; on a phone one or two routinely time out or hit a 429. A season
   // aggregate built from 3 of 9 weeks poisons everything downstream (pace said "3 gms played",
   // the Live view showed a third of a season), so: retry the misses with a pause, and if any
   // week STILL failed, return null — the caller keeps last good data and tries again later.
   let perWeek = await fetchWeekRange(season, weeks, null);
+  // A failed pull of the week in progress is "nothing yet" — never a retry with a pause.
+  weeks.forEach((w,i)=>{ if(optional.has(w) && !Array.isArray(perWeek[i])) perWeek[i]=[]; });
   for(let attempt=0; attempt<2; attempt++){
-    const missing = weeks.filter((w,i)=>!Array.isArray(perWeek[i])||!perWeek[i].length);
+    const missing = weeks.filter(isMissing);
     if(!missing.length) break;
     await new Promise(r=>setTimeout(r, 1200*(attempt+1)));
     const retry = await fetchWeekRange(season, missing, null);
-    missing.forEach((w,j)=>{ const i=weeks.indexOf(w); if(Array.isArray(retry[j])&&retry[j].length) perWeek[i]=retry[j]; });
+    missing.forEach((w,j)=>{ const i=weeks.indexOf(w); if(Array.isArray(retry[j])) perWeek[i]=retry[j]; });
   }
-  if(weeks.some((w,i)=>!Array.isArray(perWeek[i])||!perWeek[i].length)) return null;
+  if(weeks.some(isMissing)) return null;
+  if(!perWeek.some(rows=>Array.isArray(rows) && rows.length)) return null;
   const agg = {};
   const SUM_SKIP = /^(pos_rank_|rank_|.*_ypr$|.*_ypt$|.*_ypa$|.*_ypc$|.*_lng$|.*_pct$|.*_rate$)/;
   perWeek.forEach((rows, i)=>{
@@ -175,9 +191,11 @@ function _weekIsCompleted(season, week){
   if(String(season)!==cur) return Number(season)<Number(cur);
   return week <= completedWeeks();
 }
+var _weekStatsAt = {};
+var _WEEK_LIVE_TTL = 45*1000;   // the week in progress moves play by play
 async function fetchWeekStats(season, week, pos){
   const key = `${season}|${week}|${pos||''}`;
-  if(_weekStatsMem[key]) return _weekStatsMem[key];
+  if(_weekStatsMem[key] && (_weekIsCompleted(season, week) || (Date.now()-(_weekStatsAt[key]||0)) < _WEEK_LIVE_TTL)) return _weekStatsMem[key];
   const url = SLEEPER_WEEK_STATS_URL(season, week, pos);
   let cache=null;
   if(_weekIsCompleted(season, week)){
@@ -190,7 +208,7 @@ async function fetchWeekStats(season, week, pos){
   // Only memoize real data: caching a failed/empty pull would freeze the failure for the
   // whole session (every retry would "succeed" with nothing).
   if(!(Array.isArray(rows) && rows.length)) return rows;
-  _weekStatsMem[key]=rows;
+  _weekStatsMem[key]=rows; _weekStatsAt[key]=Date.now();
   if(cache && Array.isArray(rows) && rows.length){
     try{ await cache.put(url, new Response(JSON.stringify(rows), {headers:{'Content-Type':'application/json'}})); }catch(e){}
   }
