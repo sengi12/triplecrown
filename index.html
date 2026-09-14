@@ -29330,10 +29330,155 @@ function tcStandingsOrder(teams){
       Promise.resolve().then(()=>fetchTeamRecord(TC_SEASON.year, t)).then(r=>{ if(r && typeof renderSidebar==='function') renderSidebar(); }).catch(()=>{});
     });
   }
-  // Known records first (win pct, then wins); unknown ones keep their fixed order below.
-  return teams.map((t,i)=>({t, i, r:recs[i]}))
-    .sort((a,b)=> (a.r?0:1)-(b.r?0:1) || (a.r&&b.r ? (b.r.pct-a.r.pct) || (b.r.w-a.r.w) : 0) || (a.i-b.i))
-    .map(x=>x.t);
+  // Known records first, by winning percentage; a tie goes to the NFL's division tiebreakers
+  // (below) over the season's results. Unknown records keep their fixed order at the bottom.
+  // A club yet to play (0-0, its bye in week 1) sits between the winners and the losers, as
+  // every standings page lists it — not level with 0-1 at .000.
+  const sortPct=r=>(r.g>0 ? r.pct : 0.5);
+  const known=teams.map((t,i)=>({t, i, r:recs[i]})).filter(x=>x.r).sort((a,b)=>(sortPct(b.r)-sortPct(a.r)) || (a.i-b.i));
+  const unknown=teams.filter((t,i)=>!recs[i]);
+  const R=(typeof tcSeasonResults==='function') ? tcSeasonResults() : {};
+  const recOf=(tm)=>{ const r=tcParseRecord(tcTeamRecord(tm)); if(r) return r; return tcRecordFrom(R[tm]||[]); };
+  const out=[];
+  for(let i=0; i<known.length;){
+    let j=i+1; while(j<known.length && Math.abs(sortPct(known[j].r)-sortPct(known[i].r))<1e-9) j++;
+    const group=known.slice(i,j).map(x=>x.t);
+    out.push(...(group.length>1 ? tcBreakTie(group, R, recOf) : group));
+    i=j;
+  }
+  return out.concat(unknown);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Standings by the book — the NFL's division tiebreakers
+// ═════════════════════════════════════════════════════════════════════════════
+// Records order a division; a tie goes to the rule book, in order: head-to-head, division
+// record, common games, conference record, strength of victory, strength of schedule, the
+// combined points-scored / points-allowed ranking among conference clubs, the same among all
+// clubs, net points in common games, net points in all games. With three or more tied, a
+// step that separates one club ranks it and the others go back to step one (a separated
+// subset restarts among itself too) — the NFL's own procedure.
+// Results come from the in-season sidecar (real points per week plus the schedule); ESPN's
+// boards fill any completed week nflverse has not posted in full, and the week in play.
+var _tcResults = { season:null, weeks:{}, asked:{} };
+var _tcDivMap = null;
+function tcTeamDivInfo(tm){
+  if(!_tcDivMap){
+    _tcDivMap={};
+    (typeof SIDEBAR_DIVISIONS!=='undefined' && Array.isArray(SIDEBAR_DIVISIONS) ? SIDEBAR_DIVISIONS : []).forEach(d=>{
+      (d.teams||[]).forEach(t=>{ _tcDivMap[t]={div:String(d.title||''), conf:String(d.title||'').split(' ')[0]}; });
+    });
+  }
+  return _tcDivMap[tm]||{div:'',conf:''};
+}
+function tcRecordFrom(games){
+  let w=0,l=0,t=0;
+  (games||[]).forEach(g=>{ if(g.pf>g.pa) w++; else if(g.pf<g.pa) l++; else t++; });
+  const g=w+l+t; return {w,l,t,g,pct:g?(w+0.5*t)/g:0};
+}
+// Every completed game of the season: {TEAM: [{wk, opp, pf, pa, home}]}.
+function tcSeasonResults(){
+  if(typeof TC_SEASON==='undefined' || typeof hasSeasonStarted!=='function' || !hasSeasonStarted()) return {};
+  const season=String(TC_SEASON.year), cur=tcBoardWeek();
+  if(_tcResults.season!==season) _tcResults={season, weeks:{}, asked:{}};
+  const out={}, have={};
+  const push=(tm,g)=>{ (out[tm]=out[tm]||[]).push(g); };
+  const pack=(typeof NFLVERSE!=='undefined' && NFLVERSE && NFLVERSE[season] && NFLVERSE[season].adv_weekly)||null;
+  const ins=(typeof TC_INSEASON!=='undefined' && TC_INSEASON)?TC_INSEASON:null;
+  const sch=ins&&ins.schedule, meta=ins&&ins.schedule_meta;
+  if(pack && Array.isArray(pack.weeks) && Array.isArray(pack.cols) && pack.teams && sch){
+    const ci=pack.cols.indexOf('off_pts'), ca=pack.cols.indexOf('def_pts_allowed');
+    if(ci>=0 && ca>=0) pack.weeks.forEach((w,i)=>{
+      w=Number(w); if(!(w>=1) || w>=cur) return;              // the week in play comes from the live board
+      const rows=[];
+      Object.keys(pack.teams).forEach(tm=>{
+        const r=Array.isArray(pack.teams[tm])?pack.teams[tm][i]:null; if(!r) return;
+        const pf=r[ci], pa=r[ca]; if(pf==null || pa==null) return;
+        const opp=sch[tm]&&sch[tm][String(w)]; if(!opp) return;
+        const m=meta&&meta[tm]&&meta[tm][String(w)];
+        rows.push([tm,{wk:w, opp:String(opp), pf:Number(pf), pa:Number(pa), home:m?!!m[1]:null}]);
+      });
+      // A week counts as posted only when every scheduled club has its row; a half-posted
+      // week (Monday night still to come on nflverse) is left to the board instead.
+      const scheduled=Object.keys(sch).filter(tm=>sch[tm]&&sch[tm][String(w)]).length;
+      if(rows.length && rows.length>=scheduled){ rows.forEach(([tm,g])=>push(tm,g)); have[w]=true; }
+    });
+  }
+  for(let w=1; w<=cur; w++){
+    if(have[w]) continue;
+    let b=null;
+    if(w===cur) b=tcWeekBoard();
+    else {
+      b=_tcResults.weeks[w]||null;
+      if(!b && !_tcResults.asked[w] && typeof sleeperFetch==='function'){
+        _tcResults.asked[w]=true;
+        sleeperFetch(TC_BOARD_URL(season, w)).then(raw=>{
+          const t=tcParseBoard(raw);
+          if(Object.keys(t).length){ _tcResults.weeks[w]=t; if(typeof renderSidebar==='function') renderSidebar(); }
+        }).catch(()=>{});
+      }
+    }
+    if(!b) continue;
+    Object.keys(b).forEach(tm=>{
+      const g=b[tm]; if(!g || g.state!=='post' || g.score==null || g.oppScore==null || !g.opp) return;
+      push(tm,{wk:w, opp:g.opp, pf:g.score, pa:g.oppScore, home:!!g.home});
+    });
+  }
+  return out;
+}
+function _tcPct(w,l,t){ const g=w+l+t; return g ? (w+0.5*t)/g : null; }
+function _tcPctIn(games, filter){
+  let w=0,l=0,t=0;
+  (games||[]).forEach(g=>{ if(filter && !filter(g)) return; if(g.pf>g.pa) w++; else if(g.pf<g.pa) l++; else t++; });
+  return _tcPct(w,l,t);
+}
+// Order a set of clubs tied on percentage. R: the season's results; recOf(tm) → {w,l,t}.
+function tcBreakTie(teams, R, recOf){
+  if(!teams || teams.length<=1) return (teams||[]).slice();
+  const G=tm=>(R&&R[tm])||[];
+  if(!teams.some(tm=>G(tm).length)) return teams.slice();
+  const set=new Set(teams);
+  const conf=tcTeamDivInfo(teams[0]).conf, div=tcTeamDivInfo(teams[0]).div;
+  let common=null;
+  teams.forEach(tm=>{ const s=new Set(G(tm).map(g=>g.opp)); common = common ? new Set([...common].filter(x=>s.has(x))) : s; });
+  common=common||new Set();
+  const oppPct=(tm, onlyWins)=>{
+    let w=0,l=0,t=0,n=0;
+    G(tm).forEach(g=>{ if(onlyWins && !(g.pf>g.pa)) return; const r=recOf(g.opp); if(!r) return; w+=r.w; l+=r.l; t+=r.t; n++; });
+    return n ? _tcPct(w,l,t) : null;
+  };
+  const pointsRank=(scope)=>{
+    const pool=Object.keys(R||{}).filter(tm=>scope==='conf' ? tcTeamDivInfo(tm).conf===conf : true);
+    const pf={}, pa={};
+    pool.forEach(tm=>{ pf[tm]=G(tm).reduce((s,g)=>s+g.pf,0); pa[tm]=G(tm).reduce((s,g)=>s+g.pa,0); });
+    const rank=(vals, desc)=>{ const rk={}; pool.slice().sort((a,b)=>desc?vals[b]-vals[a]:vals[a]-vals[b]).forEach((tm,i)=>{ rk[tm]=i+1; }); return rk; };
+    const rf=rank(pf,true), ra=rank(pa,false);
+    return tm=> pool.length ? -((rf[tm]||pool.length)+(ra[tm]||pool.length)) : null;   // a lower combined rank wins
+  };
+  const net=(tm, filter)=>G(tm).reduce((s,g)=>(!filter||filter(g)) ? s+(g.pf-g.pa) : s, 0);
+  const steps=[
+    tm=>_tcPctIn(G(tm), g=>set.has(g.opp)),                          // 1 head-to-head
+    tm=>_tcPctIn(G(tm), g=>tcTeamDivInfo(g.opp).div===div),          // 2 division record
+    tm=>common.size ? _tcPctIn(G(tm), g=>common.has(g.opp)) : null,   // 3 common games
+    tm=>_tcPctIn(G(tm), g=>tcTeamDivInfo(g.opp).conf===conf),        // 4 conference record
+    tm=>oppPct(tm, true),                                            // 5 strength of victory
+    tm=>oppPct(tm, false),                                           // 6 strength of schedule
+    pointsRank('conf'),                                              // 7 points ranking, conference
+    pointsRank('all'),                                               // 8 points ranking, league
+    tm=>common.size ? net(tm, g=>common.has(g.opp)) : null,          // 9 net points, common games
+    tm=>net(tm),                                                     // 10 net points, all games
+  ];
+  for(const step of steps){
+    const v={}; teams.forEach(tm=>{ v[tm]=step(tm); });
+    // A step some club has no game in says nothing yet — on to the next one.
+    if(teams.some(tm=>v[tm]==null)) continue;
+    const best=Math.max(...teams.map(tm=>v[tm]));
+    const win=teams.filter(tm=>Math.abs(v[tm]-best)<1e-9);
+    if(win.length===teams.length) continue;
+    const rest=teams.filter(tm=>!win.includes(tm));
+    return tcBreakTie(win, R, recOf).concat(tcBreakTie(rest, R, recOf));
+  }
+  return teams.slice();   // still tied after the book: the fixed order
 }
 
 // Are games being played right now? True while this week's board shows a game in progress
