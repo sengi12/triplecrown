@@ -1,0 +1,21 @@
+/* ── Leaders: the right-hand sidebar (desktop) — this week's top fantasy finishes ── */
+.sidebar.leaders{border-right:none;border-left:1px solid var(--border);padding:8px 0;}
+.sidebar.leaders[hidden]{display:none;}
+.ld-head{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 10px 4px;}
+.ld-title{padding:0;margin:0;}
+.ld-sel{font:inherit;font-size:10.5px;font-weight:800;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 6px;max-width:112px;}
+.ld-posrow{display:flex;gap:3px;padding:2px 8px 4px;}
+.ld-pos{flex:1;font:inherit;font-size:9.5px;font-weight:900;letter-spacing:.03em;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 0;cursor:pointer;}
+.ld-pos.active{background:var(--accent);border-color:var(--accent);color:#08121f;}
+.ld-fmt{font-size:9.5px;color:var(--muted);padding:0 10px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ld-list{display:block;}
+.ld-row{display:flex;align-items:center;gap:7px;padding:4px 10px;cursor:pointer;border-left:3px solid transparent;}
+.ld-row:hover{background:var(--surface2);}
+.ld-rank{font-family:var(--mono);font-size:10px;font-weight:800;color:var(--muted);width:16px;text-align:right;flex:none;}
+.ld-hs{width:26px;height:26px;border-radius:50%;object-fit:cover;object-position:top;background:var(--surface3);flex:none;}
+.ld-name{display:flex;flex-direction:column;min-width:0;flex:1;line-height:1.15;}
+.ld-nm{font-size:11.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ld-sub{font-size:9.5px;color:var(--muted);white-space:nowrap;}
+.ld-pts{font-family:var(--mono);font-size:12px;font-weight:900;color:var(--text);flex:none;}
+.ld-empty{font-size:11px;color:var(--muted);padding:10px 12px;}
+@media (max-width:760px){ .sidebar.leaders{display:none;} }
