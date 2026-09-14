@@ -1122,6 +1122,8 @@ async function laTakeSnapshotSleeper(leagueId, opts){
       leagueId, name:lg.name||'League', season:lg.season,
       avatar: lg.avatar ? SLEEPER_AVATAR_THUMB(lg.avatar) : null,
       teams:lg.total_rosters||teams.length, superflex, tep, leagueType, kdef,
+      // Chopped leagues: the week the chopping starts and the last week anyone is chopped.
+      chop: leagueType===3 ? { startWeek:+((lg.settings||{}).start_week)||1, lastLeg:+((lg.settings||{}).last_chopped_leg)||0 } : null,
       championRosterId,
       rosterPositions:rp, takenAt:Date.now(),
       myUserId:_resolvedId,
