@@ -339,13 +339,13 @@ function pcardQbDuressHTML(game, games, season, notePlayer){
     : `<tr class="qpc-dz-none"><th title="${escAttr(tip)}">${label}</th><td colspan="7">none</td></tr>`;
   const pct = pfr && pfr.pressured!=null ? (game && pfr.pressured_pct!=null ? pfr.pressured_pct : (dbAll ? Math.round(pfr.pressured/dbAll*1000)/10 : null)) : null;
   const pfrLine = pfr
-    ? `PFR: pressured <b>${pfr.pressured!=null?pfr.pressured:'—'}</b>${pct!=null?` <span class="qpc-dz-pct">(${pct}% of dropbacks)</span>`:''} · blitzed <b>${pfr.blitzed!=null?pfr.blitzed:'—'}</b> · hurried <b>${pfr.hurried!=null?pfr.hurried:'—'}</b> · hit <b>${pfr.hit!=null?pfr.hit:'—'}</b> · sacked <b>${pfr.sacked!=null?pfr.sacked:'—'}</b> · bad throws <b>${pfr.bad_throws!=null?pfr.bad_throws:'—'}</b> · drops <b>${pfr.drops!=null?pfr.drops:'—'}</b>`
+    ? `PFR pressures <b>${pfr.pressured!=null?pfr.pressured:'—'}</b>${pct!=null?` <span class="qpc-dz-pct">(${pct}% of dropbacks)</span>`:''} · blitzed <b>${pfr.blitzed!=null?pfr.blitzed:'—'}</b> · hurried <b>${pfr.hurried!=null?pfr.hurried:'—'}</b> · hit <b>${pfr.hit!=null?pfr.hit:'—'}</b> · sacked <b>${pfr.sacked!=null?pfr.sacked:'—'}</b> · bad throws <b>${pfr.bad_throws!=null?pfr.bad_throws:'—'}</b> · drops <b>${pfr.drops!=null?pfr.drops:'—'}</b>`
     : `<span class="qpc-dz-muted">PFR's pressure counts (hurries included) post within a day of the game</span>`;
   return `<div class="qpc-duress">
     <div class="qpc-dz-head"><span class="la-ins-lbl">UNDER DURESS${game?` · WK ${game.wk}${game.opp?' vs '+escHtml(game.opp):''}`:' · SEASON TO DATE'}</span><span class="qpc-dz-sub">${dbAll} dropbacks by what the defense did${(typeof tcInfoBtn==='function')?' '+tcInfoBtn('qbduress','About these splits'):''}</span></div>
     <div class="qpc-dz-scroll"><table class="qpc-dz"><thead><tr><th></th><th>Cmp/Att</th><th class="dz-pct">Cmp%</th><th>Yds</th><th>TD</th><th>INT</th><th>Sk</th><th>Rtg</th></tr></thead><tbody>
       ${row('Clean pocket', clean, 'Dropbacks with no hit and no sack')}
-      ${row('Hit or sacked', pressured, 'Public play-by-play sees a pressure only when the passer is hit or sacked — hurries are counted in PFR\'s line below')}
+      ${row('Under pressure', pressured, 'Pressured dropbacks — in public play-by-play a pressure is one that ends in a hit or a sack (a hurry leaves no trace until PFR\'s count below). Cmp/Att counts throws only; a sack is in the Sk column')}
       ${blitzed ? row('vs Blitz (5+)', blitzed, 'Five or more pass rushers, per FTN charting') : `<tr class="qpc-dz-none"><th title="Five or more pass rushers, per FTN charting">vs Blitz (5+)</th><td colspan="7">FTN charting not posted yet</td></tr>`}
     </tbody></table></div>
     <div class="qpc-dz-pfr">${pfrLine}</div>
@@ -354,10 +354,11 @@ function pcardQbDuressHTML(game, games, season, notePlayer){
 if(typeof TC_INFO_BOOK!=='undefined'){
   TC_INFO_BOOK.qbduress={title:'Under duress', body:`
     The quarterback's dropbacks split by what the defense did, with the passer rating for
-    each. <b>Hit or sacked</b> is what public play-by-play can see of pressure; a hurry that
-    never lands leaves no trace there, so it is not in that line's outcomes. <b>PFR</b>'s
-    weekly count includes hurries — pressures, blitzes, hurries, hits, sacks, bad throws,
-    drops — but publishes counts, not what happened on them. <b>vs Blitz</b> is five or more
+    each. <b>Under pressure</b> is what public play-by-play can see of pressure: a dropback
+    that ends in a hit or a sack. A hurry that never lands leaves no trace there, so it is
+    not in that line's outcomes. Cmp/Att counts throws only; sacks are the Sk column.
+    <b>PFR pressures</b> is the count that includes hurries — pressures, blitzes, hurries,
+    hits, sacks, bad throws, drops — published as counts, not what happened on them. <b>vs Blitz</b> is five or more
     rushers per FTN's charting. Broadcast "under pressure" completion lines come from private
     charting (PFF, Next Gen Stats); this is the closest the public data gets.`};
 }
