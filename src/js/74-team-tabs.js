@@ -57,6 +57,11 @@ function renderTeamAdditions(team){
   // Completed season → show that year's actual roster instead of Spotrac's offseason moves
   // (which only describe the upcoming season and would be misleading dated to a past year).
   const histRoster = renderNflverseRoster(team);
+  // The season in progress: the live depth chart (ESPN — the same view the projection season
+  // shows) up top, the nflverse roster with its snap counts beneath.
+  if(histRoster && typeof tcIsLiveSeason==='function' && tcIsLiveSeason(activeSeason) && typeof renderDepthChart==='function'){
+    return `${renderDepthChart(team)}${histRoster}`;
+  }
   if(histRoster) return histRoster;
   const a = (ADDITIONS && ADDITIONS[team]) || {};
   // Highlight fantasy-relevant offensive positions (QB/RB/WR/TE) with the same Sleeper-style

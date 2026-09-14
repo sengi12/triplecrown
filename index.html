@@ -7018,7 +7018,7 @@ const _INSEASON_URL = 'seeds/triplecrown_seed.inseason.json';
 // player-card charts (routes / qb_passing / rb_fan), the Advanced tab + rankings advanced
 // metrics (team / players), the RB fan's line context (rosters) and the OL week-range
 // charts (ol_weekly) then see the season in progress exactly like a completed one.
-const _INSEASON_NV_SECTIONS = ['team','players','routes','qb_passing','qb_charting','rb_fan','rosters','ol_weekly',
+const _INSEASON_NV_SECTIONS = ['team','players','routes','qb_passing','qb_charting','rb_fan','rosters','ol_weekly','def_weekly',
   // Per-GAME chart splits (current season only — they live in the sidecar, never the seed).
   'qb_passing_weekly','rb_fan_weekly','routes_weekly','scheme_weekly','target_trees',
   // Next Gen Stats per game (tracking data — the morning after, no charting lag).
@@ -12756,21 +12756,30 @@ function pcardLoadStats(mode){
     // isDefense, not !isSkill, or kickers/punters get bucketed as defenders.
     return loadEspnCardData(pid, posc, body, {league:'college-football', def:isDefense});
   }
-  if(mode==='pro' && pcardState.isDefense && typeof pcardDefWeeklyAvailable==='function' && pcardDefWeeklyAvailable(pid) && typeof renderPcardDefWeekly==='function'){
-    body.innerHTML = renderPcardDefWeekly(pid);
-    return;
-  }
   // Defensive weekly logs live in a lazy-loaded nflverse sidecar. If it isn't in memory yet
   // (hosted first-open), fetch it, then re-render this tab. Falls through to the ESPN gamelog
   // only if the sidecar genuinely has no data for this player.
-  if(mode==='pro' && pcardState.isDefense && typeof ensureNflverseSection==='function'
-     && !nflverseSectionReady('def_weekly')){
+  // The card shows every season the defender has: the frozen seasons come from the def_weekly
+  // sidecar file, the season in progress rides the in-season sidecar's merge. In season the
+  // merge alone used to satisfy the any-season readiness check (and the "available" early
+  // return) and leave the frozen file unloaded — so readiness is asked of LAST season, which
+  // only the file can answer, before anything renders. One try per card open: a failed fetch
+  // falls through to what is in memory instead of re-arming.
+  const _defPrev = String(Number(TC_SEASON.year)-1);
+  const _defFileHave = !!((typeof _nflverseLazyLoaded!=='undefined' && _nflverseLazyLoaded.def_weekly)
+    || (typeof NFLVERSE!=='undefined' && NFLVERSE && NFLVERSE[_defPrev] && NFLVERSE[_defPrev].def_weekly));
+  if(mode==='pro' && pcardState.isDefense && typeof ensureNflverseSection==='function' && !_defFileHave && !pcardState.defTried){
+    pcardState.defTried = true;
     body.innerHTML = `<div class="pcard-loading">Loading defensive weekly stats…</div>`;
     const tok = pcardToken;
-    ensureNflverseSection('def_weekly').then(()=>{
+    ensureNflverseSection('def_weekly', _defPrev).then(()=>{
       if(tok!==pcardToken || !pcardOpen || !pcardState || pcardState.pid!==pid) return;
       pcardLoadStats(mode);
     });
+    return;
+  }
+  if(mode==='pro' && pcardState.isDefense && typeof pcardDefWeeklyAvailable==='function' && pcardDefWeeklyAvailable(pid) && typeof renderPcardDefWeekly==='function'){
+    body.innerHTML = renderPcardDefWeekly(pid);
     return;
   }
   if(!isSkill){
@@ -20612,6 +20621,11 @@ function renderTeamAdditions(team){
   // Completed season → show that year's actual roster instead of Spotrac's offseason moves
   // (which only describe the upcoming season and would be misleading dated to a past year).
   const histRoster = renderNflverseRoster(team);
+  // The season in progress: the live depth chart (ESPN — the same view the projection season
+  // shows) up top, the nflverse roster with its snap counts beneath.
+  if(histRoster && typeof tcIsLiveSeason==='function' && tcIsLiveSeason(activeSeason) && typeof renderDepthChart==='function'){
+    return `${renderDepthChart(team)}${histRoster}`;
+  }
   if(histRoster) return histRoster;
   const a = (ADDITIONS && ADDITIONS[team]) || {};
   // Highlight fantasy-relevant offensive positions (QB/RB/WR/TE) with the same Sleeper-style

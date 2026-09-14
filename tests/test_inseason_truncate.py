@@ -74,5 +74,9 @@ try:
 finally:
     _ins._weekly_frames, _ins.build_schedule = _orig_frames, _orig_sched
 
-print(f"\nRESULT: {8-fails}/8 {'ALL PASS' if not fails else 'SOME FAILED'}")
+# The live sidecar carries the individual defenders' weekly logs too, so defender cards
+# update as the season goes (PFR's weekly defense file, within a day of the games).
+chk("def_weekly" in _ins.LIVE_NFLVERSE_PARTS, "def_weekly is a live nflverse part")
+
+print(f"\nRESULT: {9-fails}/9 {'ALL PASS' if not fails else 'SOME FAILED'}")
 sys.exit(1 if fails else 0)
