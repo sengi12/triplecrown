@@ -29,15 +29,19 @@ function laSetMuWeek(w){ laState.muWeek = (Number(w)===laCurrentWeek()) ? null :
 function laActivePane(){
   const t=laState.laTab;
   if(t==='season') return laState.seasonPane||'matchup';
-  return (t==='matchup'||t==='lineup'||t==='dvp'||t==='trends') ? t : null;
+  return (t==='matchup'||t==='lineup'||t==='dvp'||t==='trends'||t==='chop') ? t : null;
 }
 function laSetPane(k){
   laState.laTab='season'; laState.seasonPane=k;
   laRerenderKeepScroll();
 }
 function laSeasonView(s, paneOverride){
-  const pane=paneOverride||laActivePane()||'matchup';
-  const panes=[['matchup','Matchup','versus'],['lineup','Lineup','clipboard'],['dvp','Defense','shield'],['trends','Trends','chart']];
+  // A Chopped league has no matchups — the week's lowest total is out — so its first pane
+  // is the Chopping Block (99e-la-chop.js) in place of Matchup.
+  const chopped=(typeof laIsChopped==='function')&&laIsChopped(s);
+  let pane=paneOverride||laActivePane()||(chopped?'chop':'matchup');
+  if(chopped && pane==='matchup') pane='chop'; else if(!chopped && pane==='chop') pane='matchup';
+  const panes=[chopped?['chop','Chop','axe']:['matchup','Matchup','versus'],['lineup','Lineup','clipboard'],['dvp','Defense','shield'],['trends','Trends','chart']];
   // phase-tabs + data-swipe-primary: within the Season tab, left/right swipes slide between
   // these PANES (the outer icon bar stays tappable); swiping back past Matchup continues to
   // the Trades tab (data-swipe-prev). Touches inside the matchup hero are claimed by the
@@ -45,7 +49,7 @@ function laSeasonView(s, paneOverride){
   const bar=`<div class="phase-tabs la-pane-tabs" data-swipe-primary data-swipe-prev="trade">${panes.map(([k,l,ic])=>
     `<button class="phase-tab pane-tab ${pane===k?'active':''}" onclick="laSetPane('${k}')" title="${l}">${TC_ICON(ic)}<span class="tab-lbl">${l}</span></button>`).join('')}</div>`;
   const body = pane==='lineup'?laLineupView(s) : pane==='dvp'?laDvpView(s)
-             : pane==='trends'?laTrendsView(s) : laMatchupView(s);
+             : pane==='trends'?laTrendsView(s) : pane==='chop'?laChopView(s) : laMatchupView(s);
   return bar+body;
 }
 
@@ -59,6 +63,7 @@ function laTabViewHTML(key, s){
     case 'matchup':               // legacy keys render their pane, chrome included —
     case 'lineup':                // no state mutation here (previews call this too)
     case 'dvp':
+    case 'chop':
     case 'trends': return laSeasonView(s, key);
     case 'hub': return (typeof hubViewHTML==='function') ? hubViewHTML(s) : null;   // This Week: every league
     default: return null;
@@ -128,7 +133,7 @@ async function laFetchMatchups(week, silent){
 function laLivePollSync(){
   const want = typeof currentPhase!=='undefined' && currentPhase==='League'
     && leagueSnapshot
-    && laActivePane()==='matchup' && laMuWeek()===laCurrentWeek()
+    && (laActivePane()==='matchup'||laActivePane()==='chop') && laMuWeek()===laCurrentWeek()
     && (typeof TC_SEASON!=='undefined' && (TC_SEASON.phase==='regular'||TC_SEASON.phase==='post'))
     && (typeof document==='undefined' || document.visibilityState==='visible');
   if(want && !_laMu.pollTimer){
