@@ -174,7 +174,10 @@ function gcGameHTML(game, rows){
     return `<div class="gc-group"><div class="gc-gh">${g[1]}</div>${rowsHtml}</div>`;
   }).join('');
   const st=game.state==='post'?'FINAL':game.state==='in'?(game.detail||'LIVE'):(game.detail||'');
-  return `<div class="gc-hero">
+  // The banner wears both clubs: the away colour from the left, the home colour from the
+  // right, meeting in the middle (a translucent wash over the surface so the type holds).
+  const col=(t)=>(typeof pwTeamColor==='function' ? pwTeamColor(t) : '#888');
+  return `<div class="gc-hero" style="--ga:${escAttr(col(game.away))};--gh:${escAttr(col(game.home))}">
       <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${game.away}</span><span class="gc-rec">${escHtml(game.arec)}</span><b class="gc-score">${game.state==='pre'?'':(game.as!=null?game.as:'–')}</b></div>
       <div class="gc-status ${game.state==='in'?'gc-live':''}">${escHtml(st)}</div>
       <div class="gc-side gc-side-home"><b class="gc-score">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}</b><span class="gc-rec">${escHtml(game.hrec)}</span><span class="gc-team">${game.home}</span><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"></div>

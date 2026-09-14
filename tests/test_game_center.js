@@ -56,6 +56,7 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(/gc-game  gc-post[\s\S]*TB[\s\S]*CIN/.test(h) && /gc-won">[^]*?CIN[^]*?<b>33/.test(h), 'the final shows its score with the winner bright');
   app.pick('TB@CIN'); await settle(); h=app.html();
   chk(/gc-hero[\s\S]*gc-team">TB<[\s\S]*gc-score">27<[\s\S]*FINAL[\s\S]*gc-score">33<[\s\S]*gc-team">CIN</.test(h), 'the hero: TB 27 · FINAL · 33 CIN');
+  chk(/gc-hero" style="--ga:#[0-9A-Fa-f]{6};--gh:#[0-9A-Fa-f]{6}"/.test(h), 'the banner carries both clubs\' colours (away left, home right) for its gradient');
   chk(/Quarterback[\s\S]*B\. Mayfield[\s\S]*<b class="gc-pts">15\.64<[\s\S]*J\. Burrow[\s\S]*<b class="gc-pts">13\.16</.test(h), 'quarterbacks by side with the league\'s points (Mayfield 15.64, Burrow 254×0.04+4−1 = 13.16)');
   chk(/gc-owner">@Sengi12<\/span><span class="gc-pname gc-mine">B\. Mayfield/.test(h) && /gc-owner">@RichBigMeechy<\/span><span class="gc-pname">T\. Higgins/.test(h), 'the fantasy owner rides above a rostered player\'s name');
   chk(/Kicker[\s\S]*C\. McLaughlin[\s\S]*2\/2 FG, 3\/3 XP/.test(h), 'kickers with a stat line');
