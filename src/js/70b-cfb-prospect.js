@@ -244,7 +244,9 @@ function cfbCollegeLogo(college){
 // The main entry point: the whole panel for one player, or '' when there's nothing to show.
 function renderCfbProspect(pid){
   const prof = cfbProfile(pid);
-  if(!prof) return '';
+  // A profile with no production seasons (a rookie lineman's, which carries only the unit
+  // context the OL tab renders) has nothing for this panel.
+  if(!prof || !prof.seasons || !Object.keys(prof.seasons).length) return '';
   const headline = (CFB.headline && CFB.headline[prof.pos]) || [];
   const labels = CFB.labels || {};
   const pct = prof.pct || {};

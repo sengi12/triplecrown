@@ -157,6 +157,17 @@ def build_all(season, players, only_pids=None, ref=None, refresh=False, verbose=
     except Exception as e:
         if verbose:
             print(f"    ! prospect model skipped: {type(e).__name__}: {e}")
+    # Rookie linemen: the college play-by-play has no lineman attribution, so their profile is
+    # the UNIT's line — the team's run-blocking and pass-protection rates in the seasons he was
+    # on the roster, as FBS percentiles (src/cfb/ol_unit.py). Context, not a grade; the card
+    # says so. Fail-soft like the model above.
+    try:
+        from . import ol_unit as _ol
+        for pid, prof in _ol.build(players, season, refresh=refresh, verbose=verbose).items():
+            out["players"].setdefault(pid, {}).update(prof)
+    except Exception as e:
+        if verbose:
+            print(f"    ! OL unit context skipped: {type(e).__name__}: {e}")
     return out
 
 

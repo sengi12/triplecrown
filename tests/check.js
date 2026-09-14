@@ -10826,7 +10826,7 @@ function pcardOlSeasons(normName){
 }
 
 function pcardOlAvailable(pid){
-  return pcardOlSeasons(_pcardOlNorm(pid)).length>0;
+  return pcardOlSeasons(_pcardOlNorm(pid)).length>0 || !!(typeof pcardOlCollege==='function' && pcardOlCollege(pid));
 }
 
 function _olGradeClass(g){
@@ -12096,7 +12096,45 @@ function _olProjCoverageNote(){
   return `<div class="olc-overview olc-proj-pending">${OL_PROJ_SEASON} depth charts unavailable for ${cov.total-cov.covered} of ${cov.total} teams (ESPN did not answer) — league ranks show last season. Scores still reflect this line's projected starters.</div>`;
 }
 
+// ── College line context (rookie linemen) ───────────────────────────────────
+// College play-by-play has no lineman attribution — no snaps, no pressures allowed, no run
+// gaps — so nobody outside PFF can grade a college lineman from public data. What CAN be
+// measured is his unit: the team's line yards per carry, stuff and TFL rates allowed,
+// power-down success and sack rate allowed in the seasons he was on the roster, each as an
+// FBS percentile (src/cfb/ol_unit.py). That is what a rookie's card shows instead of nothing,
+// labelled as the unit's, not his; a lineman with NFL grades keeps it beneath them.
+const OL_COLLEGE_COLS=[['ly','Line yds/carry',2],['stuff','Stuff %',1],['tfl','TFL %',1],['power','Power %',1],['sack','Sack %',1]];
+function pcardOlCollege(pid){
+  const p=(typeof cfbProfile==='function')?cfbProfile(pid):null;
+  return (p && p.ol_unit && Array.isArray(p.ol_unit.seasons) && p.ol_unit.seasons.length) ? p : null;
+}
+function renderPcardOlCollege(pid){
+  const p=pcardOlCollege(pid); if(!p) return '';
+  const rows=p.ol_unit.seasons.slice().sort((a,b)=>b.season-a.season);
+  const school=p.college||rows[0].team;
+  const logoSrc=(typeof cfbCollegeLogo==='function')?(cfbCollegeLogo(school)||''):'';
+  const logo=/^(https?:)?\/\//.test(String(logoSrc)) ? `<img src="${escAttr(logoSrc)}" alt="" onerror="this.style.display='none'">` : String(logoSrc||'');
+  const pctCls=(v)=>(typeof _cfbPctClass==='function')?_cfbPctClass(v):'';
+  const cell=(r,c)=>{
+    const v=r[c[0]], pct=(r.pct&&r.pct[c[0]]!=null)?Number(r.pct[c[0]]):null;
+    const txt=(v==null)?'–':Number(v).toFixed(c[2]);
+    return `<td class="pcard-cell olc-cc ${pct!=null?pctCls(pct):''}" title="${escAttr(c[1])}${pct!=null?` · ${pct}th percentile of ${escAttr(r.pool||'FBS')} units that season`:''}">${escHtml(txt)}${pct!=null?`<small class="olc-cc-pct">${pct}</small>`:''}</td>`;
+  };
+  const pools=[...new Set(rows.map(r=>r.pool||'FBS'))].join(' / ');
+  return `<div class="olc-college">
+    <div class="olc-team-head">${logo} College line context <span class="olc-college-sub">${escHtml(school)}</span></div>
+    <div class="olc-college-note">College play-by-play has no lineman attribution, so these are his <b>unit's</b> numbers in the seasons he was on the roster (non-garbage-time snaps), with the ${escHtml(pools)} percentile beside each — higher is better for the line.</div>
+    <div class="pcard-table-wrap"><table class="pcard-table olc-college-table"><thead><tr><th>Season</th><th>Team</th><th>Carries</th>${OL_COLLEGE_COLS.map(c=>`<th>${c[1]}</th>`).join('')}<th>Opp Elo</th></tr></thead>
+    <tbody>${rows.map(r=>`<tr><td class="pcard-wk">${r.season}</td><td class="olc-cc-team">${escHtml(r.team)}${r.conf?` <small>${escHtml(r.conf)}</small>`:''}</td><td class="pcard-cell">${r.rushes!=null?r.rushes:'–'}</td>${OL_COLLEGE_COLS.map(c=>cell(r,c)).join('')}<td class="pcard-cell">${r.opp_elo!=null?r.opp_elo:'–'}</td></tr>`).join('')}</tbody></table></div>
+  </div>`;
+}
 function renderPcardOlGrades(pid){
+  const nfl=_renderPcardOlGradesNfl(pid);
+  const college=renderPcardOlCollege(pid);
+  if(!college) return nfl;
+  return /pcard-loading/.test(nfl) ? college : nfl + college;   // no NFL grades yet → the college line stands alone
+}
+function _renderPcardOlGradesNfl(pid){
   const norm=_pcardOlNorm(pid);
   const seasons=pcardOlSeasons(norm);
   if(!seasons.length) return '<div class="pcard-loading">No OL grades available for this player.</div>';
@@ -12907,7 +12945,9 @@ function cfbCollegeLogo(college){
 // The main entry point: the whole panel for one player, or '' when there's nothing to show.
 function renderCfbProspect(pid){
   const prof = cfbProfile(pid);
-  if(!prof) return '';
+  // A profile with no production seasons (a rookie lineman's, which carries only the unit
+  // context the OL tab renders) has nothing for this panel.
+  if(!prof || !prof.seasons || !Object.keys(prof.seasons).length) return '';
   const headline = (CFB.headline && CFB.headline[prof.pos]) || [];
   const labels = CFB.labels || {};
   const pct = prof.pct || {};
