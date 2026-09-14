@@ -167,6 +167,37 @@ chk(bool(c3.loc["00-0010", "is_active"]) is True, "a current player is active")
 chk(pd.notna(c3.loc["00-0011", "ol_pctile"]),
     "inactive players are still scored (a returning veteran keeps a grade)")
 
+# ── rookies: a grade before a snap ──────────────────────────────────────────────────
+print("\n=== rookie_prior_rows: draft capital at full strength, on the composite's scale ===")
+chk(olp.rookie_prior_pctile(1) > olp.rookie_prior_pctile(32) > olp.rookie_prior_pctile(100) > olp.rookie_prior_pctile(270),
+    "the prior falls with the pick, log-shaped")
+chk(85 <= olp.rookie_prior_pctile(16) <= 99 and 30 <= olp.rookie_prior_pctile(270) <= 45,
+    f"a mid-first-rounder projects in the 90s ({olp.rookie_prior_pctile(16):.0f}), an undrafted lineman near 38th ({olp.rookie_prior_pctile(270):.0f}) — the observed first-season composites")
+chk(olp.rookie_prior_pctile(None) == olp.rookie_prior_pctile(270), "no pick = undrafted = pick 270")
+chk(1 <= olp.rookie_prior_pctile(0) <= 99 and olp.rookie_prior_pctile(5000) >= 1, "clamped to the 1-99 percentile band")
+_draft = pd.DataFrame({"gsis_id": ["R-0001", "R-0002", "R-0003", "00-0005", "R-0004"],
+                       "season": [2026, 2026, 2026, 2024, 2025], "round": [1, 3, 7, 1, 2], "pick": [5.0, 80.0, 240.0, 9.0, 40.0],
+                       "position": ["OT", "OG", "C", "OT", "TE"], "team": ["MIA", "SEA", "KC", "DET", "SEA"],
+                       "pfr_player_name": ["Top Tackle", "Mid Guard", "Late Center", "Player 5", "Not A Lineman"]})
+rk = olp.rookie_prior_rows(c, priors, 2025, draft=_draft)
+chk(list(rk.index) == ["R-0001", "R-0002", "R-0003"], "the incoming class is added; a graded veteran and a tight end are not")
+chk(bool(rk.rookie_prior.all()) and rk.p_snap.isna().all(), "every row is flagged rookie_prior with no snap signal")
+chk(rk.loc["R-0001", "ol_pctile"] > rk.loc["R-0002", "ol_pctile"] > rk.loc["R-0003", "ol_pctile"], "pick order is grade order")
+chk(rk.loc["R-0001", "ol_grade"] in ("A+", "A", "A-") and rk.loc["R-0003", "ol_grade"] in ("D+", "D", "D-", "F", "C-"),
+    "a #5 pick grades A, a 7th-rounder grades near the bottom of the curve")
+chk(rk.loc["R-0001", "ol_score"] >= c.ol_score.quantile(0.85) and pd.notna(rk.loc["R-0001", "p_draft"]),
+    "ol_score is the pool's score at that percentile, so the row compares with veterans; the driver bar has a draft rank")
+chk(rk.loc["R-0002", "pos"] == "G" and rk.loc["R-0003", "pos"] == "C" and rk.loc["R-0001", "team"] == "MIA",
+    "position group from the draft position, team from the drafting club")
+# The college line context: off by default, and a blend when a weight is set.
+rk2 = olp.rookie_prior_rows(c, priors, 2025, draft=_draft, college={"R-0003": 95.0}, college_w=0.0)
+chk(rk2.loc["R-0003", "ol_pctile"] == rk.loc["R-0003", "ol_pctile"] and rk2.loc["R-0003", "p_college"] == 95.0,
+    "with rookie_college_w = 0 the college context is carried for display and moves nothing")
+rk3 = olp.rookie_prior_rows(c, priors, 2025, draft=_draft, college={"R-0003": 95.0}, college_w=0.3)
+chk(rk3.loc["R-0003", "ol_pctile"] > rk.loc["R-0003", "ol_pctile"], "with a weight, a strong college line lifts the prior")
+chk(olp.ROOKIE_COLLEGE_W == 0.0, "the shipped weight is 0 — it did not validate (see tools/ol_rookie_prior_fit.py)")
+chk(len(olp.rookie_prior_rows(c, priors, 2025, draft=_draft.iloc[:0])) == 0, "nobody to add → an empty frame")
+
 # ── phase blending ─────────────────────────────────────────────────────────────────
 print("\n=== blend_phase_grades: team context and the ESPN anchor ===")
 chk(0.0 <= olp.TEAM_BLEND <= 0.5, "team blend stays a minority of a player's phase grade")

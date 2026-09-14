@@ -12132,7 +12132,9 @@ function renderPcardOlGrades(pid){
   const nfl=_renderPcardOlGradesNfl(pid);
   const college=renderPcardOlCollege(pid);
   if(!college) return nfl;
-  return /pcard-loading/.test(nfl) ? college : nfl + college;   // no NFL grades yet → the college line stands alone
+  // No NFL grade at all (the empty state) → the college line stands alone; a grade with a
+  // missing team table still leads, its own notes and all.
+  return /No OL grades available/.test(nfl) ? college : nfl + college;
 }
 function _renderPcardOlGradesNfl(pid){
   const norm=_pcardOlNorm(pid);
@@ -12200,6 +12202,7 @@ function _renderPcardOlGradesNfl(pid){
         <b class="olc-grade ${_olGradeClass(rec.ol_grade)}">${noteWrapHtml(escHtml(rec.ol_grade||'—'), { label:'Overall OL Grade', value:rec.ol_grade||'—', source:'ol_grades', statKey:'ol_grade', context:noteCtx, team:teamCode, relevance:OL_REL_ALL }, 'note-tag-hit')}</b>
         <small>${_olTag(`${_olPctBand(rec.ol_pctile)} at ${rec.pos||'OL'}`,'Overall Percentile',rec.ol_pctile,'ol_pctile',OL_REL_ALL,noteCtx,teamCode)} · ${_olTag(`${rec.ol_conf||'—'} conf`,'Grade Confidence',rec.ol_conf,'ol_conf',OL_REL_ALL,noteCtx,teamCode)}</small>
         ${_olDriverBar(rec, noteCtx, teamCode)}
+        ${rec.rookie_prior ? `<div class="olc-rookie-note">Rookie prior: no NFL snap yet, so this is the grade a lineman of his draft slot has earned in a first season (draft capital at full strength). It gives way to snaps and contract as they arrive.</div>` : ''}
         ${_olTrend(rec, noteCtx, teamCode)}
       </div>
       <div class="olc-grade-tile">
