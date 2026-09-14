@@ -9374,6 +9374,7 @@ function renderPcardQbPassing(pid){
       ${t.scramble_rate!=null ? `<div class="qpc-tile" title="Scrambles per dropback (${t.scrambles||0} of ${t.dropbacks||0})"><label>Scramble %</label><b>${noteWrapHtml(escHtml(_qbNum(t.scramble_rate,1)+'%'), { label:'Scramble Rate', value:_qbNum(t.scramble_rate,1)+'%', source:'qb_passing_chart', statKey:'scramble_rate', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b>${_rk('scramble_rate')}</div>` : ''}
       <div class="qpc-tile"><label>Attempts*</label><b>${noteWrapHtml(escHtml(t.attempts!=null?t.attempts:'—'), { label:'Located Attempts', value:t.attempts!=null?t.attempts:'—', source:'qb_passing_chart', statKey:'attempts', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
     </div>
+    ${pcardQbDuressHTML(_game, _games, season, notePlayer)}
     ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('qb', norm, season, _selWk) : ''}
     ${pcardQbChartingBand(norm, season, notePlayer)}
     <div class="pcard-src">*Located pass attempts (excl. sacks, 2-pt) · depth via air yards, location via nflverse charting.</div>
@@ -9431,6 +9432,66 @@ function setPcardQbPassingSeason(season){
   pcardQbPassingSeason=season;
   const body=document.getElementById('pcardBody');
   if(body && pcardState) body.innerHTML=renderPcardQbPassing(pcardState.pid);
+}
+
+// ── Under duress: the game's dropbacks by what the defense did ───────────────
+// Public play-by-play flags a pressure only when the passer is hit or sacked (the
+// participation file adds hurries after the season); FTN charts the rushers, so "vs blitz"
+// is five or more; PFR's weekly line carries the pressures pbp cannot see (hurries) — as
+// COUNTS, without outcomes. So: outcome lines for the clean pocket, hit-or-sacked and vs
+// blitz, then PFR's pressure line. One game when one is picked; season to date otherwise.
+function _qbRatingOf(att, cmp, yds, td, int_){
+  if(!att) return null;
+  const a=Math.max(0,Math.min(2.375,(cmp/att-0.3)*5)), b=Math.max(0,Math.min(2.375,(yds/att-3)*0.25));
+  const c=Math.min(2.375, td/att*20), d=Math.max(0, 2.375-int_/att*25);
+  return Math.round((a+b+c+d)/6*1000)/10;
+}
+function _qbDuressSum(games, key){
+  const s={db:0,att:0,cmp:0,yds:0,td:0,int:0,sk:0}; let n=0;
+  (games||[]).forEach(g=>{ const x=g.duress&&g.duress[key]; if(!x) return; n++; for(const k in s) s[k]+=x[k]||0; });
+  if(!n) return null;
+  s.rating=_qbRatingOf(s.att,s.cmp,s.yds,s.td,s.int);
+  return s;
+}
+function _qbPfrSum(games){
+  const keys=['pressured','blitzed','hurried','hit','sacked','bad_throws','drops'];
+  const s={}; let n=0;
+  (games||[]).forEach(g=>{ const p=g.duress&&g.duress.pfr; if(!p) return; n++; keys.forEach(k=>{ if(p[k]!=null) s[k]=(s[k]||0)+p[k]; }); });
+  return n?s:null;
+}
+function pcardQbDuressHTML(game, games, season, notePlayer){
+  const src = game ? game.duress : null;
+  if(game ? !src : !(games||[]).some(g=>g.duress)) return '';
+  const pick=(k)=> game ? (src[k]||null) : _qbDuressSum(games, k);
+  const clean=pick('clean'), pressured=pick('pressured'), blitzed=pick('blitzed');
+  const pfr = game ? (src.pfr||null) : _qbPfrSum(games);
+  const dbAll=(clean?clean.db:0)+(pressured?pressured.db:0);
+  const row=(label, x, tip)=> x
+    ? `<tr><th title="${escAttr(tip)}">${label}</th><td>${x.cmp}/${x.att}</td><td class="dz-pct">${x.att?Math.round(x.cmp/x.att*100)+'%':'—'}</td><td>${x.yds}</td><td>${x.td}</td><td>${x.int}</td><td>${x.sk}</td><td><b>${x.rating!=null?Number(x.rating).toFixed(1):'—'}</b></td></tr>`
+    : `<tr class="qpc-dz-none"><th title="${escAttr(tip)}">${label}</th><td colspan="7">none</td></tr>`;
+  const pct = pfr && pfr.pressured!=null ? (game && pfr.pressured_pct!=null ? pfr.pressured_pct : (dbAll ? Math.round(pfr.pressured/dbAll*1000)/10 : null)) : null;
+  const pfrLine = pfr
+    ? `PFR: pressured <b>${pfr.pressured!=null?pfr.pressured:'—'}</b>${pct!=null?` <span class="qpc-dz-pct">(${pct}% of dropbacks)</span>`:''} · blitzed <b>${pfr.blitzed!=null?pfr.blitzed:'—'}</b> · hurried <b>${pfr.hurried!=null?pfr.hurried:'—'}</b> · hit <b>${pfr.hit!=null?pfr.hit:'—'}</b> · sacked <b>${pfr.sacked!=null?pfr.sacked:'—'}</b> · bad throws <b>${pfr.bad_throws!=null?pfr.bad_throws:'—'}</b> · drops <b>${pfr.drops!=null?pfr.drops:'—'}</b>`
+    : `<span class="qpc-dz-muted">PFR's pressure counts (hurries included) post within a day of the game</span>`;
+  return `<div class="qpc-duress">
+    <div class="qpc-dz-head"><span class="la-ins-lbl">UNDER DURESS${game?` · WK ${game.wk}${game.opp?' vs '+escHtml(game.opp):''}`:' · SEASON TO DATE'}</span><span class="qpc-dz-sub">${dbAll} dropbacks by what the defense did${(typeof tcInfoBtn==='function')?' '+tcInfoBtn('qbduress','About these splits'):''}</span></div>
+    <div class="qpc-dz-scroll"><table class="qpc-dz"><thead><tr><th></th><th>Cmp/Att</th><th class="dz-pct">Cmp%</th><th>Yds</th><th>TD</th><th>INT</th><th>Sk</th><th>Rtg</th></tr></thead><tbody>
+      ${row('Clean pocket', clean, 'Dropbacks with no hit and no sack')}
+      ${row('Hit or sacked', pressured, 'Public play-by-play sees a pressure only when the passer is hit or sacked — hurries are counted in PFR\'s line below')}
+      ${row('vs Blitz (5+)', blitzed, 'Five or more pass rushers, per FTN charting')}
+    </tbody></table></div>
+    <div class="qpc-dz-pfr">${pfrLine}</div>
+  </div>`;
+}
+if(typeof TC_INFO_BOOK!=='undefined'){
+  TC_INFO_BOOK.qbduress={title:'Under duress', body:`
+    The quarterback's dropbacks split by what the defense did, with the passer rating for
+    each. <b>Hit or sacked</b> is what public play-by-play can see of pressure; a hurry that
+    never lands leaves no trace there, so it is not in that line's outcomes. <b>PFR</b>'s
+    weekly count includes hurries — pressures, blitzes, hurries, hits, sacks, bad throws,
+    drops — but publishes counts, not what happened on them. <b>vs Blitz</b> is five or more
+    rushers per FTN's charting. Broadcast "under pressure" completion lines come from private
+    charting (PFF, Next Gen Stats); this is the closest the public data gets.`};
 }
 // ── RB rushing fan (player-card "Rushing Fan" tab) ─────────────────────────
 // Seed payload: NFLVERSE[season].rb_fan[normName] = {

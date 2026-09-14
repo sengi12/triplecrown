@@ -582,3 +582,21 @@ tr.pcard-future-row td{opacity:.75;}
   .pcard-hero-v2 .pcard-hero-main.pcard-name-under .pcard-name-l2{font-size:clamp(17px,5vw,21px);}
   .pcard-hero-v2 .pcard-hero-row{gap:6px;}
 }
+
+/* ── Under duress (passing chart): dropbacks by what the defense did ── */
+.qpc-duress{margin-top:10px;border:1px solid var(--border);border-radius:10px;padding:8px 10px;background:var(--surface2);}
+.qpc-dz-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;}
+.qpc-dz-sub{font-size:10.5px;color:var(--muted);}
+.qpc-dz-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.qpc-dz{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px;}
+.qpc-dz th,.qpc-dz td{padding:4px 6px;text-align:right;border-top:1px solid var(--border);white-space:nowrap;}
+.qpc-dz thead th{font-size:9.5px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase;border-top:none;font-weight:800;}
+.qpc-dz tbody th{text-align:left;font-weight:800;color:var(--text);cursor:help;}
+.qpc-dz td{font-family:var(--mono);color:var(--text);}
+.qpc-dz td b{color:var(--accent);}
+.qpc-dz-none td{color:var(--muted);text-align:left;font-family:var(--font);}
+.qpc-dz-pfr{font-size:10.5px;color:var(--muted);margin-top:7px;line-height:1.5;}
+.qpc-dz-pfr b{color:var(--text);font-family:var(--mono);}
+.qpc-dz-pct{color:var(--muted2);}
+.qpc-dz-muted{opacity:.75;}
+@media (max-width:600px){ .qpc-dz .dz-pct{display:none;} .qpc-dz th,.qpc-dz td{padding:4px 4px;font-size:11px;} .qpc-dz tbody th{font-size:11px;} }
