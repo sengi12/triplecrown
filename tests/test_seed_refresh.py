@@ -361,5 +361,25 @@ _state["sources"]["inseason"]["last"] = time.time() - 26 * 3600
 _ok, _why = SR.due("inseason", SR.SOURCES["inseason"], _state, time.time())
 chk(_ok, "…but a day later the ceiling rebuilds it regardless")
 
+print("\n=== TEST 17: a trimmed-but-complete ECR list is not a failed scrape ===")
+# 2026-09-14: FantasyPros cut dynasty superflex from 549 to 427 players after week 1 — ranks
+# 1..427 with nothing missing. Three refreshes in a row were rejected at 78% of previous.
+def ecr_table(n, gaps=()):
+    return {f"p{i}": {"rank_ecr": i, "tier": 1, "pos": "WR"} for i in range(1, n + 1) if i not in gaps}
+old_e = {"ecr": {"dynasty_superflex": ecr_table(549), "dynasty": ecr_table(437)}, "seed": seed(seed=1200)["seed"]}
+trimmed = {"ecr": {"dynasty_superflex": ecr_table(427), "dynasty": ecr_table(476)}, "seed": seed(seed=1200)["seed"]}
+ok, problems, warnings = SR.validate(old_e, trimmed)
+chk(ok and not problems, "dynasty superflex 549 → 427 with contiguous ranks passes (78% of previous)")
+chk(any("dynasty_superflex" in w and "contiguous" in w for w in warnings), "and it is noted as a trimmed list, not silently accepted")
+torn = {"ecr": {"dynasty_superflex": ecr_table(549, gaps=set(range(200, 330))), "dynasty": ecr_table(476)}, "seed": seed(seed=1200)["seed"]}
+ok, problems, _ = SR.validate(old_e, torn)
+chk(not ok and any("dynasty_superflex" in p for p in problems), "a list with a hole in its ranks (a half-loaded page) is still REJECTED")
+tiny = {"ecr": {"dynasty_superflex": ecr_table(120), "dynasty": ecr_table(476)}, "seed": seed(seed=1200)["seed"]}
+ok, problems, _ = SR.validate(old_e, tiny)
+chk(not ok, "a contiguous list far too short to be a consensus (120) is still REJECTED")
+chk(SR.ecr_list_complete(ecr_table(427)) and not SR.ecr_list_complete(ecr_table(427, gaps={5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25})),
+    "ecr_list_complete: 1..N intact → True; 5% of ranks missing → False")
+chk(not SR.ecr_list_complete(seed(ecr=400)["ecr"]), "a table with no ranks at all is not 'complete'")
+
 print(f"\nRESULT: {'PASS' if FAILED == 0 else 'MISS'} ({PASS}/{PASS + FAILED} checks)")
 sys.exit(0 if FAILED == 0 else 1)
