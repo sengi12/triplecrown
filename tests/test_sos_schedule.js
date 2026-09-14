@@ -81,7 +81,8 @@ console.log('=== D/ST card includes the season in progress ===');
   chk(new Set(seas).size===seas.length,'no duplicate season blocks');
   // Only the completed weeks are requested — a frozen/live season must not fetch the future.
   const asked=[];
-  dst.setFetch(async(url)=>{ const m=String(url).match(/nfl\/2025\/(\d+)/); if(m) asked.push(+m[1]); return []; });
+  // Only the D/ST pulls count — the Leaders sidebar loads the current week on its own at boot.
+  dst.setFetch(async(url)=>{ const m=String(url).match(/nfl\/2025\/(\d+)\?[^ ]*position\[\]=DEF/); if(m) asked.push(+m[1]); return []; });
   return dst.pcardFetchDstSeason('2025').then(()=>{
     chk(asked.length>0 && Math.max(...asked)===5,'fetches weeks 1-5 only (completed weeks), not 18');
     dst.TC_SEASON.phase='off'; dst.TC_SEASON.week=0;

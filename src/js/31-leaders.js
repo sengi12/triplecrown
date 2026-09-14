@@ -101,14 +101,15 @@ function renderLeaders(fromLoad){
     <option value="season" ${_ld.week==='season'?'selected':''}>Season</option></select>`;
   const posBtns=LD_POS.map(p=>`<button class="ld-pos ${_ld.pos===p?'active':''}" onclick="ldSetPos('${p}')">${p==='ROOKIE'?'RK':p}</button>`).join('');
   const fmt=(typeof scoringSettings!=='undefined' && scoringSettings.baflMode) ? 'BAFL lens' : ((typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) ? escHtml(leagueSnapshot.name) : 'loaded scoring');
+  const btns=(typeof rsbButtonsHTML==='function')?rsbButtonsHTML():'';
   el.innerHTML=`<div class="ld-head"><div class="sidebar-section ld-title">Leaders</div>${sel}</div>
     <div class="ld-posrow">${posBtns}</div>
-    <div class="ld-fmt" title="Points under the loaded scoring">${fmt}${_ld.week!=='season'&&wk===cur?' · live':''}</div>
+    <div class="ld-fmt"><span title="Points under the loaded scoring">${fmt}${_ld.week!=='season'&&wk===cur?' · live':''}</span>${btns}</div>
     <div class="ld-list">${ldRowsHTML()}</div>`;
   // The week in progress keeps up: a re-render a minute from now re-reads it.
   if(_ld.timer){ clearTimeout(_ld.timer); _ld.timer=null; }
   if(_ld.week!=='season' && wk===cur && typeof window!=='undefined' && typeof window.setTimeout==='function'
      && (typeof document==='undefined' || document.visibilityState!=='hidden')){
-    _ld.timer=window.setTimeout(()=>{ _ld.timer=null; renderLeaders(); }, 61*1000);
+    _ld.timer=window.setTimeout(()=>{ _ld.timer=null; (typeof renderRightSidebar==='function'?renderRightSidebar:renderLeaders)(); }, 61*1000);
   }
 }

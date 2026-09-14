@@ -1124,6 +1124,9 @@ async function laTakeSnapshotSleeper(leagueId, opts){
       teams:lg.total_rosters||teams.length, superflex, tep, leagueType, kdef,
       // Chopped leagues: the week the chopping starts and the last week anyone is chopped.
       chop: leagueType===3 ? { startWeek:+((lg.settings||{}).start_week)||1, lastLeg:+((lg.settings||{}).last_chopped_leg)||0 } : null,
+      // Sleeper's own scoring table, verbatim: Σ stat × setting over matching keys scores any
+      // Sleeper stat row exactly as the league does — offense, kickers, defenders, D/ST.
+      scoringRaw: (lg.scoring_settings && typeof lg.scoring_settings==='object') ? Object.assign({}, lg.scoring_settings) : null,
       championRosterId,
       rosterPositions:rp, takenAt:Date.now(),
       myUserId:_resolvedId,

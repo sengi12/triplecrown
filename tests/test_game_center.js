@@ -1,0 +1,62 @@
+// The right sidebar's Game Center: the week's games from the scoreboard, and for the picked
+// game each side's players by position with the league's exact points (Σ stat × setting over
+// Sleeper's own scoring table), a stat line, and the fantasy owner. Sizes: min / normal / max,
+// remembered.
+const elStore={};
+function mkEl(id){if(!elStore[id])elStore[id]={id,innerHTML:'',hidden:false,style:{},dataset:{},classList:{_s:new Set(),add(c){this._s.add(c);},remove(...c){c.forEach(x=>this._s.delete(x));},toggle(){},contains(c){return this._s.has(c);}},setAttribute(){},getAttribute(){return '';},appendChild(){},querySelectorAll:()=>[],querySelector:()=>null,addEventListener(){}};return elStore[id];}
+const main={appendChild(el){ elStore[el.id]=el; }};
+global.document={getElementById:(id)=>mkEl(id),querySelector:(q)=>q==='.main'?main:null,querySelectorAll:()=>[],createElement:()=>({id:'',className:'',innerHTML:'',hidden:false,style:{},classList:{add(){},remove(){}},appendChild(){}}),body:{appendChild(){},classList:{add(){},remove(){}},style:{}},documentElement:{style:{}},addEventListener(){},visibilityState:'visible'};
+global.window={addEventListener(){},matchMedia:()=>({matches:false,addEventListener(){}}),innerWidth:1200};global.Chart=function(){return{destroy(){}}};global.confirm=()=>1;global.btoa=s=>s;global.FileReader=function(){};global.Range=function(){};global.AbortController=class{constructor(){this.signal={}}abort(){}};
+global.localStorage={_s:{},getItem(k){return this._s[k]||null;},setItem(k,v){this._s[k]=String(v);},removeItem(k){delete this._s[k];}};global.fetch=()=>Promise.reject(new Error('offline'));
+const fs=require('fs');const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
+const app=new Function(code+`
+  toast=function(){};
+  const P=(id,fn,ln,pos,team,st)=>({player_id:id, team, player:{first_name:fn,last_name:ln,position:pos,team}, stats:st});
+  const ROWS=[ P('q1','Baker','Mayfield','QB','TB',{pass_yd:216,pass_td:1,pass_cmp:23,pass_att:28,rush_yd:30,pass_int:0,gp:1}), P('q2','Joe','Burrow','QB','CIN',{pass_yd:254,pass_td:1,pass_int:1,pass_cmp:25,pass_att:35,gp:1}),
+    P('r1','Bucky','Irving','RB','TB',{rush_yd:45,rush_att:8,rush_td:1,rec:7,rec_tgt:7,rec_yd:48,gp:1}), P('r2','Chase','Brown','RB','CIN',{rush_yd:56,rush_att:16,rush_td:1,rec:5,rec_yd:22,gp:1}),
+    P('w1','Emeka','Egbuka','WR','TB',{rec:5,rec_yd:63,gp:1}), P('w2','Tee','Higgins','WR','CIN',{rec:3,rec_yd:59,gp:1}),
+    P('k1','Chase','McLaughlin','K','TB',{fgm:2,fga:2,xpm:3,xpa:3,gp:1}), P('CIN','','','DEF','CIN',{pts_allow:27,sack:2,int:0,gp:1}),
+    P('d1','Logan','Wilson','LB','CIN',{idp_tkl:9,idp_tkl_solo:6,idp_sack:1,gp:1}), P('d2','Lavonte','David','LB','TB',{idp_tkl:7,idp_tkl_solo:4,gp:1}),
+    P('x1','Sam','Darnold','QB','SEA',{pass_yd:200,gp:1}) ];
+  fetchWeekStats=async(season,wk,pos)=>ROWS;
+  const BOARD={events:[{competitions:[{status:{type:{state:'post',shortDetail:'Final'}},competitors:[{homeAway:'home',team:{abbreviation:'CIN'},score:'33',records:[{type:'total',summary:'1-0'}]},{homeAway:'away',team:{abbreviation:'TB'},score:'27',records:[{type:'total',summary:'0-1'}]}]}]},
+    {competitions:[{status:{type:{state:'in',shortDetail:'3rd 8:12'}},competitors:[{homeAway:'home',team:{abbreviation:'SEA'},score:'13',records:[{type:'total',summary:'0-0'}]},{homeAway:'away',team:{abbreviation:'NE'},score:'10',records:[{type:'total',summary:'0-0'}]}]}]}]};
+  sleeperFetch=async(url)=>{ if(/scoreboard/.test(url)) return BOARD; throw new Error('x'); };
+  hasSeasonStarted=()=>true; TC_SEASON.year=2026; TC_SEASON.phase='regular'; TC_SEASON.week=1; isMobileTeamPickerLayout=()=>false;
+  leagueSnapshot={name:'Dirty Mikes', scoringRaw:{pass_yd:0.04,pass_td:4,pass_int:-1,rush_yd:0.1,rush_td:6,rec:0.5,rec_yd:0.1,fgm:3,xpm:1,pts_allow:-0.1,sack:1,idp_tkl:1,idp_sack:2},
+    teamList:[{rosterId:1, owner:'Sengi12', teamName:'Sengi', players:[{id:'q1'},{id:'r2'}]},{rosterId:2, owner:'RichBigMeechy', teamName:'Rich', players:[{id:'w2'}]}]};
+  return { pts:tcSleeperPoints, mode:gcSetMode, render:renderRightSidebar, html:()=>document.getElementById('leaders').innerHTML, cls:()=>[...document.getElementById('leaders').classList._s], pick:gcPick, week:gcSetWeek, load:gcLoadMode, state:()=>_gc };
+`)();
+let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
+const settle=()=>new Promise(r=>setTimeout(r,20));
+(async()=>{
+  console.log('=== the league\'s own scoring, verbatim ===');
+  chk(app.pts({pass_yd:216,pass_td:1,rush_yd:30},{pass_yd:0.04,pass_td:4,rush_yd:0.1})===15.64, 'Σ stat × setting: 216×0.04 + 4 + 3 = 15.64');
+  chk(app.pts({idp_tkl:9,idp_sack:1},{idp_tkl:1,idp_sack:2})===11 && app.pts({pts_allow:27,sack:2},{pts_allow:-0.1,sack:1})===-0.7, 'defenders and D/ST score off the same table');
+  chk(app.pts({pass_yd:100},null)===null, 'no table → no number (the caller falls back)');
+
+  console.log('=== sizes ===');
+  app.mode('min'); chk(app.cls().includes('rsb-min') && /rsb-rail/.test(app.html()) && /gcSetMode\('max'\)/.test(app.html()), 'min: a rail with the two buttons');
+  app.mode('max'); await settle(); await settle();
+  chk(app.cls().includes('rsb-max') && /Game Center/.test(app.html()), 'max: the Game Center');
+  chk(global.localStorage._s.tc_rsb==='max', 'the size is remembered');
+
+  console.log('=== the games and the picked game ===');
+  let h=app.html();
+  chk(/gc-game gc-on gc-in[\s\S]*NE[\s\S]*SEA/.test(h) && /3rd 8:12/.test(h), 'games listed, the live one first and picked by default');
+  chk(/gc-game  gc-post[\s\S]*TB[\s\S]*CIN/.test(h) && /gc-won">[^]*?CIN[^]*?<b>33/.test(h), 'the final shows its score with the winner bright');
+  app.pick('TB@CIN'); await settle(); h=app.html();
+  chk(/gc-hero[\s\S]*gc-team">TB<[\s\S]*gc-score">27<[\s\S]*FINAL[\s\S]*gc-score">33<[\s\S]*gc-team">CIN</.test(h), 'the hero: TB 27 · FINAL · 33 CIN');
+  chk(/Quarterback[\s\S]*B\. Mayfield[\s\S]*<b class="gc-pts">15\.64<[\s\S]*J\. Burrow[\s\S]*<b class="gc-pts">13\.16</.test(h), 'quarterbacks by side with the league\'s points (Mayfield 15.64, Burrow 254×0.04+4−1 = 13.16)');
+  chk(/gc-owner">@Sengi12<\/span><span class="gc-pname">B\. Mayfield/.test(h) && /gc-owner">@RichBigMeechy<\/span><span class="gc-pname">T\. Higgins/.test(h), 'the fantasy owner rides above a rostered player\'s name');
+  chk(/Kicker[\s\S]*C\. McLaughlin[\s\S]*2\/2 FG, 3\/3 XP/.test(h), 'kickers with a stat line');
+  chk(/Defense \/ ST[\s\S]*CIN D\/ST[\s\S]*27 PA, 2 sacks/.test(h), 'the D/ST line');
+  chk(/Defenders[\s\S]*L\. Wilson[\s\S]*9 tkl \(6 solo\), 1 sack[\s\S]*<b class="gc-pts">11\.00</.test(h) && /L\. David[\s\S]*7 tkl \(4 solo\)/.test(h), 'individual defenders with tackles, sacks and the league\'s IDP points');
+  chk(!/S\. Darnold/.test(h), 'a player from another game is not in this one');
+  chk(/216yd · 1TD · 30rush/.test(h) && /45rush · 7\/7 48rec · 1TD/.test(h), 'offensive stat lines in the app\'s own grammar');
+
+  console.log('=== back to the list ===');
+  app.mode('normal'); chk(!app.cls().includes('rsb-max') && /Leaders/.test(app.html()), 'normal: the Leaders list again');
+  console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
+  process.exit(pass===total?0:1);
+})();
