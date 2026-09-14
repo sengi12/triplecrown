@@ -44,6 +44,9 @@ PFR_DEF_WEEK_URL = "https://github.com/nflverse/nflverse-data/releases/download/
 # actually played have no row (Dexter Lawrence: played 16, charted 9). Snap counts are the
 # ground truth for "did he play", so they decide which weeks appear on the card.
 SNAP_COUNTS_URL = "https://github.com/nflverse/nflverse-data/releases/download/snap_counts/snap_counts_{season}.parquet"
+# nflverse's own per-player weekly box stats (pbp-derived, so they post with the pbp within
+# hours of a game): every defender's tackles / sacks / TFL / QB hits / PD / INT / FF / TD.
+PLAYER_WEEK_URL = "https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_{season}.parquet"
 PLAYERS_PARQUET_URL = "https://github.com/nflverse/nflverse-data/releases/download/players/players.parquet"
 NGS_PASS_URL = "https://github.com/nflverse/nflverse-data/releases/download/nextgen_stats/ngs_passing.csv.gz"
 # Columns we actually need (usecols keeps the ~370-col file fast + small in memory).
@@ -1555,7 +1558,9 @@ def sumer_qb(season, min_plays=150, refinement=None):
         dropbacks = len(d)
         if dropbacks < eff_min:
             continue
-        att = d["pass_attempt"].sum()
+        # The same box line the passing chart's tiles read (official attempts: no sacks).
+        box = qb_box_line(d[(d["pass_attempt"] == 1) & (d["sack"] == 0)])
+        att = box["attempts"]
         scr_mask = d["qb_scramble"] == 1
         scr = int(scr_mask.sum())
         sacks = d["sack"].sum()
@@ -1579,16 +1584,16 @@ def sumer_qb(season, min_plays=150, refinement=None):
             "EPA/Play": round((pass_epa + rush_epa) / plays, 3) if plays else None,
             "Pass EPA": round(pass_epa, 1),
             "Rush EPA": round(rush_epa, 1),
-            "Scramble %": round(scr / plays * 100, 2) if plays else None,
+            "Scramble %": round(scr / dropbacks * 100, 2) if dropbacks else None,   # per dropback, as the card
             "Sack %": round(sacks / dropbacks * 100, 2) if dropbacks else None,
             "Success %": round(d["success"].mean() * 100, 2),
             "ADoT": round(d[d["pass_attempt"] == 1]["air_yards"].mean(), 2),
-            "Comp %": round(d["complete_pass"].sum() / att * 100, 2) if att else None,
-            "Pass Yards": int(d["passing_yards"].sum()),
+            "Comp %": round(box["completions"] / att * 100, 2) if att else None,
+            "Pass Yards": box["yards"],
             "Time To Throw": round(ttt[qid], 2) if qid in ttt and pd.notna(ttt[qid]) else None,
-            "Pass TD": int(d["pass_touchdown"].sum()),
-            "INT": int(d["interception"].sum()),
-            "YPA": round(d["passing_yards"].sum() / att, 2) if att else None,
+            "Pass TD": box["td"],
+            "INT": box["int"],
+            "YPA": box["ypa"],
             "Rush Yards": rush_yds,
             "Rush TD": rush_td,
         }
@@ -2099,6 +2104,44 @@ def _scramble_totals(counts, key):
             "scramble_rate": (round(s / d * 100, 1) if d else None)}
 
 
+# ── ONE definition of a quarterback's box line ────────────────────────────────
+# The passing chart's tiles and the Adv Metrics table used to compute "the same" stat two
+# ways (Comp % over located attempts on the card, over dropbacks-including-sacks in the
+# table; Scramble % per dropback on the card, per play in the table) and a reader saw two
+# numbers for one player. Everything now comes from here, on the official definitions:
+#   attempts   = pass attempts excluding sacks (and 2-pt tries)
+#   comp_pct   = completions / attempts
+#   ypa        = passing yards / attempts
+#   rating     = the NFL passer rating over those attempts
+#   dropbacks  = qb_dropback plays (attempts + sacks + scrambles)
+#   scramble % = scrambles / dropbacks ;  sack % = sacks / dropbacks
+QB_RANK_FLOOR = (150, 15)   # dropbacks needed to be ranked: 150 a season, scaled in season, floor 15
+
+def qb_box_line(att):
+    """Box line for a frame of pass ATTEMPTS (sacks / 2-pt already excluded)."""
+    n = int(len(att))
+    cmp_ = int(pd.to_numeric(att["complete_pass"], errors="coerce").fillna(0).sum()) if n else 0
+    yds = int(pd.to_numeric(att["yards_gained"], errors="coerce").fillna(0).sum()) if n else 0
+    return {
+        "attempts": n, "completions": cmp_, "yards": yds,
+        "td": int(pd.to_numeric(att["pass_touchdown"], errors="coerce").fillna(0).sum()) if n else 0,
+        "int": int(pd.to_numeric(att["interception"], errors="coerce").fillna(0).sum()) if n else 0,
+        "comp_pct": round(cmp_ / n * 100, 1) if n else None,
+        "ypa": round(yds / n, 2) if n else None,
+        "passer_rating": _passer_rating_df(att) if n else None,
+    }
+
+
+def qb_attempts(pbp):
+    """The official pass attempts in a pbp frame: no sacks, no two-point tries."""
+    f = pbp[(pd.to_numeric(pbp["pass_attempt"], errors="coerce") == 1)
+            & (pd.to_numeric(pbp["sack"], errors="coerce").fillna(0) == 0)
+            & pbp["passer_player_id"].notna()]
+    if "two_point_attempt" in f.columns:
+        f = f[pd.to_numeric(f["two_point_attempt"], errors="coerce").fillna(0) == 0]
+    return f
+
+
 def qb_passing_zones(season, min_attempts=25):
     """Per-QB NGS-style passer-rating zone matrix keyed by normalized full name.
 
@@ -2119,6 +2162,7 @@ def qb_passing_zones(season, min_attempts=25):
     col_order = ["left", "middle", "right"]
     names = _name_map(season)
     scr = _scramble_counts(pbp)
+    allatt = qb_attempts(pbp)
     out = {}
     for qid, qb in att.groupby("passer_player_id"):
         if len(qb) < min_attempts:
@@ -2142,21 +2186,27 @@ def qb_passing_zones(season, min_attempts=25):
                     "yards": int(me["yards_gained"].sum()) if len(me) else 0,
                     "td": int(me["pass_touchdown"].sum()) if len(me) else 0,
                 }
-        comp_pct = round(float(qb["complete_pass"].mean() * 100), 1) if len(qb) else None
+        # The tiles read the SAME box line as the Adv Metrics table (qb_box_line, over every
+        # official attempt — not only the located ones the zones are drawn from).
+        box = qb_box_line(allatt[allatt["passer_player_id"] == qid])
         out[name] = {
             "team": (qb["posteam"].mode().iloc[0] if len(qb["posteam"].mode()) else None),
             "totals": {
-                "passer_rating": _passer_rating_df(qb),
-                "comp_pct": comp_pct,
-                "yards": int(qb["yards_gained"].sum()),
-                "td": int(qb["pass_touchdown"].sum()),
-                "int": int(qb["interception"].sum()),
-                "attempts": int(len(qb)),
+                "passer_rating": box["passer_rating"],
+                "comp_pct": box["comp_pct"],
+                "yards": box["yards"],
+                "td": box["td"],
+                "int": box["int"],
+                "attempts": int(len(qb)),          # located attempts — what the zones show
+                "all_attempts": box["attempts"],
                 **_scramble_totals(scr, qid),
             },
             "zones": zones,
         }
-    _attach_ranks([o["totals"] for o in out.values()], _QB_TOTAL_RANKS)
+    # Ranked against the same pool as the table: QBs with enough dropbacks (150 a season,
+    # scaled in season, never under 15) — a 1-of-2 scramble rate does not top a list.
+    floor = _scaled_min(*QB_RANK_FLOOR)
+    _attach_ranks([o["totals"] for o in out.values() if (o["totals"].get("dropbacks") or 0) >= floor], _QB_TOTAL_RANKS)
     return out
 
 
@@ -2974,6 +3024,55 @@ def defensive_weekly_players(season):
             v = r.get(c)
             rec[c] = None if pd.isna(v) else float(v)
         rows.append(rec)
+
+    # ── nflverse's own box stats: every defender who played gets his week ─────────
+    # PFR's advanced defense file posts a few players at a time as PFR charts the week (50
+    # of ~575 defenders the Monday after week 1, 2026), so a card built from it alone shows
+    # most veterans nothing for the season in progress. The pbp-derived weekly stats post
+    # with the pbp: tackles, sacks, TFL, QB hits, passes defended, INTs, forced fumbles,
+    # TDs for everyone. PFR's own number stands where it has one; its coverage and pressure
+    # columns join when they post, and read '–' until then.
+    try:
+        box = _aux_parquet(PLAYER_WEEK_URL.format(season=season),
+                           columns=["season_type", "week", "player_id", "player_display_name", "team",
+                                    "opponent_team", "position", "position_group", "def_tackles_solo",
+                                    "def_tackle_assists", "def_tackles_for_loss", "def_sacks", "def_qb_hits",
+                                    "def_interceptions", "def_pass_defended", "def_fumbles_forced", "def_tds"])
+    except Exception:
+        box = None
+    if box is not None and not box.empty:
+        box = box[(box["season_type"] == "REG") & box["position_group"].isin(["DL", "LB", "DB"])]
+        by_key = {(str(r["gsis_id"]), int(r["week"])): r for r in rows}
+        for _, b in box.iterrows():
+            gid, wknum = str(b["player_id"]), int(b["week"])
+            def _n(c):
+                v = b.get(c)
+                return None if v is None or pd.isna(v) else float(v)
+            solo, ast = _n("def_tackles_solo") or 0.0, _n("def_tackle_assists") or 0.0
+            fields = {"def_tackles_combined": solo + ast, "tackles_solo": solo,
+                      "def_sacks": _n("def_sacks"), "def_times_hitqb": _n("def_qb_hits"),
+                      "def_ints": _n("def_interceptions"), "tfl": _n("def_tackles_for_loss"),
+                      "pd": _n("def_pass_defended"), "ff": _n("def_fumbles_forced"), "def_td": _n("def_tds")}
+            rec = by_key.get((gid, wknum))
+            if rec is None:
+                rr = rmap.loc[gid] if gid in rmap.index else None
+                pos = (rr.get("position") if rr is not None else None) or b.get("position")
+                grp = _grp(pos)
+                if grp is None:
+                    continue
+                nm = (rr.get("full_name") if rr is not None and pd.notna(rr.get("full_name")) else None) or b.get("player_display_name")
+                if not nm or pd.isna(nm):
+                    continue
+                team = str(b.get("team") or (rr.get("team") if rr is not None else "") or "").upper()
+                opp = str(b.get("opponent_team") or "").upper()
+                rec = {"gsis_id": gid, "name": str(nm), "team": NFLVERSE_TO_SEED.get(team, team),
+                       "pos": str(pos or "").upper(), "group": grp, "week": wknum,
+                       "opp": NFLVERSE_TO_SEED.get(opp, opp)}
+                rows.append(rec)
+                by_key[(gid, wknum)] = rec
+            for k, v in fields.items():
+                if v is not None and rec.get(k) is None:
+                    rec[k] = v
     if not rows:
         return {}
 
@@ -3011,12 +3110,19 @@ def defensive_weekly_players(season):
             "missed_tackles": rec.get("def_missed_tackles"),
             "missed_tackle_pct": rec.get("def_missed_tackle_pct"),
             "ints": rec.get("def_ints"),
+            # box-score counts (nflverse weekly stats; present for every played week)
+            "tackles_solo": rec.get("tackles_solo"),
+            "tfl": rec.get("tfl"),
+            "pd": rec.get("pd"),
+            "ff": rec.get("ff"),
+            "def_td": rec.get("def_td"),
         })
 
     # Stable per-player order and compact totals for summary cards.
     sum_fields = [
         "targets", "cmp_allowed", "yds_allowed", "td_allowed", "yac_allowed", "blitzes", "hurries",
         "qb_hits", "sacks", "pressures", "tackles", "missed_tackles", "ints",
+        "tackles_solo", "tfl", "pd", "ff", "def_td",
     ]
     mean_fields = ["rating_allowed", "adot", "missed_tackle_pct", "snap_pct"]
     sum_fields = sum_fields + ["snaps"]

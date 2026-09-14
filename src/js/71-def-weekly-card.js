@@ -77,25 +77,25 @@ function _dwCols(group){
   if(group==='DL'){
     return [
       {k:'snap_pct', l:'SNP%', d:0, pct:true},
-      {k:'tackles', l:'TKL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1},
-      {k:'hurries', l:'HUR', d:1}, {k:'qb_hits', l:'HIT', d:1}, {k:'blitzes', l:'BLZ', d:1},
+      {k:'tackles', l:'TKL', d:0}, {k:'tfl', l:'TFL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1},
+      {k:'hurries', l:'HUR', d:1}, {k:'qb_hits', l:'HIT', d:1}, {k:'blitzes', l:'BLZ', d:1}, {k:'ff', l:'FF', d:0},
       {k:'missed_tackles', l:'MISS', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
     ];
   }
   if(group==='LB'){
     return [
       {k:'snap_pct', l:'SNP%', d:0, pct:true},
-      {k:'tackles', l:'TKL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1},
+      {k:'tackles', l:'TKL', d:0}, {k:'tfl', l:'TFL', d:0}, {k:'sacks', l:'SACK', d:1}, {k:'pressures', l:'PRS', d:1},
       {k:'blitzes', l:'BLZ', d:1}, {k:'targets', l:'TGT', d:1}, {k:'cmp_allowed', l:'CMP', d:1},
-      {k:'yds_allowed', l:'YDS', d:1}, {k:'ints', l:'INT', d:1}, {k:'rating_allowed', l:'RTG', d:1},
-      {k:'missed_tackles', l:'MISS', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
+      {k:'yds_allowed', l:'YDS', d:1}, {k:'pd', l:'PD', d:0}, {k:'ints', l:'INT', d:1}, {k:'rating_allowed', l:'RTG', d:1},
+      {k:'ff', l:'FF', d:0}, {k:'missed_tackles', l:'MISS', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
     ];
   }
   return [
     {k:'snap_pct', l:'SNP%', d:0, pct:true},
     {k:'targets', l:'TGT', d:1}, {k:'cmp_allowed', l:'CMP', d:1}, {k:'yds_allowed', l:'YDS', d:1},
-    {k:'td_allowed', l:'TD', d:1}, {k:'ints', l:'INT', d:1}, {k:'rating_allowed', l:'RTG', d:1},
-    {k:'adot', l:'aDOT', d:1}, {k:'yac_allowed', l:'YAC', d:1}, {k:'tackles', l:'TKL', d:0},
+    {k:'td_allowed', l:'TD', d:1}, {k:'pd', l:'PD', d:0}, {k:'ints', l:'INT', d:1}, {k:'rating_allowed', l:'RTG', d:1},
+    {k:'adot', l:'aDOT', d:1}, {k:'yac_allowed', l:'YAC', d:1}, {k:'tackles', l:'TKL', d:0}, {k:'ff', l:'FF', d:0},
     {k:'missed_tackles', l:'MISS', d:1}, {k:'missed_tackle_pct', l:'MISS%', d:1, pct:true},
   ];
 }

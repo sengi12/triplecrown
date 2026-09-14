@@ -98,6 +98,36 @@ def main():
     check("a game with no pressured dropbacks reads None, not zeros",
           q["games"][1]["duress"]["pressured"] is None and q["games"][1]["duress"]["clean"]["db"] == 10)
 
+    print("=== one QB box line: the passing chart's tiles and the Adv Metrics table agree ===")
+    # An unlocated attempt (no pass_location) is still an official attempt: the tiles used to
+    # count only located ones and disagreed with the table by a point or two of Comp %.
+    pbp = _pbp_pass()
+    extra = pbp.iloc[[0]].copy(); extra["pass_location"] = None; extra["complete_pass"] = 0; extra["pass_touchdown"] = 0; extra["yards_gained"] = 0; extra["play_id"] = 99
+    # A third passer with a full workload (q1's plays again) so there is a pool of two to rank.
+    third = pbp[pbp["passer_player_id"] == "q1"].copy(); third["passer_player_id"] = "q3"; third["complete_pass"] = 1
+    pbp2 = pd.concat([pbp, extra, third], ignore_index=True)
+    pbp2["qb_dropback"] = 1; pbp2["qb_scramble"] = 0; pbp2["rusher_player_id"] = None
+    nv._load_pbp = lambda season, cols=None: pbp2
+    prev_scale, prev_names = nv.MIN_SCALE, nv._name_map
+    nv.MIN_SCALE = 1 / 17.0     # week 1 in season: the rank floor scales to its 15-dropback minimum
+    nv._name_map = lambda season: {"q1": "test quarterback", "q2": "backup guy", "q3": "third passer"}
+    try:
+        z = nv.qb_passing_zones(2026, min_attempts=1)
+        t = z["test quarterback"]["totals"]
+        line = nv.qb_box_line(nv.qb_attempts(pbp2[pbp2["passer_player_id"] == "q1"]))
+        check("the tiles read the official attempts (located + the unlocated one)",
+              t["all_attempts"] == line["attempts"] == 20 and t["attempts"] == 19)
+        check("Comp % over ALL attempts, exactly the shared helper's number",
+              t["comp_pct"] == line["comp_pct"] == 50.0)
+        check("yards / TD / INT / rating from the same line",
+              t["yards"] == line["yards"] and t["td"] == line["td"] == 1 and t["passer_rating"] == line["passer_rating"])
+        check("scramble rate is per dropback, the helper's definition",
+              t["dropbacks"] == 22 and t["scramble_rate"] == 0.0)
+        check("ranks attach only to QBs above the table's dropback floor (150 a season, floor 15): the 3-dropback backup is unranked",
+              "rk" in t and t["rk"]["comp_pct"] == [2, 2] and "rk" not in z["backup guy"]["totals"])
+    finally:
+        nv.MIN_SCALE, nv._name_map = prev_scale, prev_names
+
     print("=== rb_fan_weekly ===")
     nv._load_pbp = lambda season, cols=None: _pbp_rush()
     rw = nv.rb_fan_weekly(2026)

@@ -10,8 +10,9 @@
 // so the number is the league's number; without a synced league the app's scoring stands in
 // for offense and Sleeper's half-PPR for the rest. A player's fantasy owner rides under his
 // name when the league rosters him.
-var _gc = { mode:'normal', week:'current', game:null, boards:{}, rows:{}, busy:{} };
+var _gc = { mode:'normal', week:'current', game:null, pos:'ALL', boards:{}, rows:{}, busy:{}, dragW:0 };
 const GC_MODES = ['min','normal','max'];
+const GC_POS = ['ALL','QB','RB','WR','TE','K','DEF','IDP','RK'];   // the Rankings page's filters, plus the defensive groups
 const GC_GROUPS = [['QB','Quarterback',['QB']],['RB','Running back',['RB','FB']],['WR','Wide receiver',['WR']],['TE','Tight end',['TE']],['K','Kicker',['K']],['DEF','Defense / ST',['DEF']],['IDP','Defenders',['DL','DE','DT','NT','LB','OLB','ILB','MLB','DB','CB','S','SS','FS']]];
 
 function gcLoadMode(){ try{ const m=localStorage.getItem('tc_rsb'); if(GC_MODES.includes(m)) _gc.mode=m; }catch(e){} }
@@ -61,12 +62,49 @@ function gcGames(board){
     const home=g.home?code:g.opp, away=g.home?g.opp:code; const id=`${away}@${home}`;
     if(seen.has(id)) return; seen.add(id);
     const h=board[home]||{}, a=board[away]||{};
-    games.push({ id, home, away, state:g.state, detail:g.detail, hs:h.score!=null?h.score:(g.home?g.score:g.oppScore), as:a.score!=null?a.score:(g.home?g.oppScore:g.score), hrec:h.rec||'', arec:a.rec||'' });
+    games.push({ id, home, away, state:g.state, detail:g.detail, date:String(g.date||''), hs:h.score!=null?h.score:(g.home?g.score:g.oppScore), as:a.score!=null?a.score:(g.home?g.oppScore:g.score), hrec:h.rec||'', arec:a.rec||'' });
   });
-  // Live first, then the finals (they carry the stat lines), then what hasn't kicked off.
-  const rank={in:0, post:1, pre:2};
-  return games.sort((x,y)=>(rank[x.state]-rank[y.state]) || x.id.localeCompare(y.id));
+  // In the order they are played: Thursday night, the Sunday early window, the late window,
+  // Sunday night, Monday night (the board's kickoff stamps); same kickoff → by matchup.
+  return games.sort((x,y)=>(x.date||'').localeCompare(y.date||'') || x.id.localeCompare(y.id));
 }
+// The game the panel opens on: the one being played, else the first of the week.
+function gcDefaultGame(games){ return (games.find(g=>g.state==='in')||games[0]).id; }
+// The size buttons: − narrower, + wider (rail → Leaders → Game Center).
+function gcStep(d){ const i=GC_MODES.indexOf(_gc.mode); gcSetMode(GC_MODES[Math.max(0, Math.min(GC_MODES.length-1, i+d))]); }
+function gcSetPos(p){ _gc.pos=p; renderRightSidebar(); }
+// ── Drag the sidebar wider (or narrower) by its left edge; the width is remembered per size ──
+function gcWidthKey(){ return 'tc_rsb_w_'+_gc.mode; }
+function gcStoredWidth(){ try{ const v=Number(localStorage.getItem(gcWidthKey())); return v>0?v:null; }catch(e){ return null; } }
+function gcApplyWidth(el){
+  const w=(_gc.mode==='min')?null:gcStoredWidth();
+  el.style.width=el.style.minWidth=el.style.maxWidth=(w?w+'px':'');
+}
+function gcMaxWidth(){
+  const main=(typeof document!=='undefined' && document.querySelector)?document.querySelector('.main'):null;
+  const left=(typeof document!=='undefined')?document.getElementById('sidebar'):null;
+  const mw=(main&&main.getBoundingClientRect)?main.getBoundingClientRect().width:((typeof window!=='undefined'&&window.innerWidth)||1400);
+  const lw=(left&&left.getBoundingClientRect)?left.getBoundingClientRect().width:0;
+  return Math.max(260, Math.round(mw-lw));   // as wide as the whole content area, at most
+}
+function gcGripDown(ev){
+  const el=(typeof ldHost==='function')?ldHost():null; if(!el || !el.getBoundingClientRect) return;
+  if(ev && ev.preventDefault) ev.preventDefault();
+  const right=el.getBoundingClientRect().right, maxW=gcMaxWidth();
+  const move=(e)=>{ const w=Math.round(Math.max(200, Math.min(maxW, right-e.clientX))); el.style.width=el.style.minWidth=el.style.maxWidth=w+'px'; _gc.dragW=w; };
+  const up=()=>{ window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+    if(_gc.dragW){ try{ localStorage.setItem(gcWidthKey(), String(_gc.dragW)); }catch(e){} _gc.dragW=0; } };
+  window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+}
+function rsbGripHTML(){ return `<div class="rsb-grip" title="Drag to resize" onpointerdown="gcGripDown(event)"></div>`; }
+// Players on the user's own roster in the synced league (their names light up).
+function gcMineSet(){
+  const s=(typeof leagueSnapshot!=='undefined')?leagueSnapshot:null;
+  if(!s || !s.teamList || !s.myUserId) return new Set();
+  const mine=s.teamList.find(t=>t.ownerId===s.myUserId || (t.coOwners||[]).includes(s.myUserId));
+  return new Set(((mine&&mine.players)||[]).map(p=>String(p.id)));
+}
+function gcIsMine(pid){ return gcMineSet().has(String(pid)); }
 // Sleeper's rows for the week, every position (one pull; the week in progress re-reads on
 // the week cache's live TTL).
 function gcRows(wk){
@@ -105,7 +143,8 @@ function gcName(row){
 // One side's players in one group, by points; the top few per group keep the panel short.
 function gcSide(rows, team, group, limit){
   const posSet=new Set(group[2]);
-  return rows.filter(r=>String(r.team||(r.player&&r.player.team)||'').toUpperCase()===team && posSet.has(gcPos(r)) && r.stats && Object.keys(r.stats).length)
+  const rookiesOnly=_gc.pos==='RK' && typeof ldRookie==='function';
+  return rows.filter(r=>String(r.team||(r.player&&r.player.team)||'').toUpperCase()===team && posSet.has(gcPos(r)) && r.stats && Object.keys(r.stats).length && (!rookiesOnly || ldRookie(r.player_id)))
     // A player with a stat line stays even when the loaded scoring has no number for him
     // (defenders under app scoring) — the line is the point; the points column shows "–".
     .map(r=>({r, pts:gcPoints(r), line:gcStatLine(r)})).filter(x=>(x.pts!=null && x.pts!==0) || x.line)
@@ -116,13 +155,16 @@ function gcPlayerHTML(x, side){
   const pid=String(r.player_id||''); const pos=gcPos(r);
   const click = pos==='DEF' ? '' : ` onclick="${pcardOnclick(pid, pos, r.team||'')}"`;
   return `<div class="gc-p gc-p-${side}"${click}>
-    <div class="gc-pinfo">${owner?`<span class="gc-owner">${escHtml(owner)}</span>`:''}<span class="gc-pname">${escHtml(gcName(r))}</span>${x.line?`<span class="gc-line">${escHtml(x.line)}</span>`:''}</div>
+    <div class="gc-pinfo">${owner?`<span class="gc-owner">${escHtml(owner)}</span>`:''}<span class="gc-pname${gcIsMine(pid)?' gc-mine':''}">${escHtml(gcName(r))}</span>${x.line?`<span class="gc-line">${escHtml(x.line)}</span>`:''}</div>
     <b class="gc-pts">${x.pts!=null?x.pts.toFixed(2):'–'}</b>
   </div>`;
 }
 function gcGameHTML(game, rows){
-  const groups=GC_GROUPS.map(g=>{
-    const away=gcSide(rows, game.away, g, g[0]==='IDP'?5:4), home=gcSide(rows, game.home, g, g[0]==='IDP'?5:4);
+  // A position filter shows that group alone, in full; ALL and Rookies show every group.
+  const pick=_gc.pos||'ALL';
+  const groups=GC_GROUPS.filter(g=>pick==='ALL'||pick==='RK'||g[0]===pick).map(g=>{
+    const lim=(pick==='ALL'||pick==='RK') ? (g[0]==='IDP'?5:4) : 20;
+    const away=gcSide(rows, game.away, g, lim), home=gcSide(rows, game.home, g, lim);
     if(!away.length && !home.length) return '';
     const n=Math.max(away.length, home.length);
     const rowsHtml=Array.from({length:n},(_,i)=>`<div class="gc-row">${away[i]?gcPlayerHTML(away[i],'away'):'<div class="gc-p gc-p-empty"></div>'}${home[i]?gcPlayerHTML(home[i],'home'):'<div class="gc-p gc-p-empty"></div>'}</div>`).join('');
@@ -148,21 +190,25 @@ function gcHTML(){
   const cur=Math.max(1, Number(TC_SEASON.week||1)), wk=gcWeek();
   const board=gcBoard(wk);
   const games=board ? gcGames(board) : null;
-  if(games && games.length && !games.some(g=>g.id===_gc.game)) _gc.game=games[0].id;
+  if(games && games.length && !games.some(g=>g.id===_gc.game)) _gc.game=gcDefaultGame(games);
   const game=games ? games.find(g=>g.id===_gc.game) : null;
   const rows=gcRows(wk);
   const sel=`<select class="ld-sel" onchange="gcSetWeek(this.value)">${Array.from({length:cur},(_,i)=>cur-i).map(w=>`<option value="${w===cur?'current':w}" ${wk===w?'selected':''}>Week ${w}${w===cur?' · now':''}</option>`).join('')}</select>`;
   const fmt=gcScoring() ? escHtml((leagueSnapshot&&leagueSnapshot.name)||'league scoring') : 'app scoring · Sleeper for K/DEF/IDP';
+  const pick=_gc.pos||'ALL';
+  const posBtns=GC_POS.map(p=>`<button class="ld-pos ${pick===p?'active':''}" onclick="gcSetPos('${p}')">${p}</button>`).join('');
   return `<div class="gc">
     <div class="gc-head"><div class="sidebar-section ld-title">Game Center</div>${sel}${rsbButtonsHTML()}</div>
+    <div class="ld-posrow gc-posrow">${posBtns}</div>
     <div class="ld-fmt" title="Points under this scoring">${fmt}</div>
     <div class="gc-body"><div class="gc-list">${gcListHTML(games, _gc.game)}</div><div class="gc-detail">${game ? gcGameHTML(game, rows) : (games && !games.length ? '<div class="ld-empty">no games this week</div>' : '')}</div></div>
   </div>`;
 }
 // The size buttons every state carries.
 function rsbButtonsHTML(){
-  const m=_gc.mode;
-  return `<span class="rsb-btns">${m!=='min'?`<button class="rsb-btn" onclick="gcSetMode('min')" title="Collapse">◂</button>`:''}${m!=='normal'?`<button class="rsb-btn" onclick="gcSetMode('normal')" title="Leaders">☰</button>`:''}${m!=='max'?`<button class="rsb-btn" onclick="gcSetMode('max')" title="Game Center">▸</button>`:''}</span>`;
+  const i=GC_MODES.indexOf(_gc.mode);
+  const dis=(on)=>on?'':' disabled';
+  return `<span class="rsb-btns"><button class="rsb-btn" onclick="gcStep(-1)" title="Narrower"${dis(i>0)}>−</button><button class="rsb-btn" onclick="gcStep(1)" title="Wider"${dis(i<GC_MODES.length-1)}>+</button></span>`;
 }
 // The one entry point: the sidebar in its current size.
 function renderRightSidebar(){
@@ -170,8 +216,10 @@ function renderRightSidebar(){
   if(typeof ldOn==='function' && !ldOn()){ el.hidden=true; return; }
   el.hidden=false;
   el.classList.remove('rsb-min','rsb-max');
-  if(_gc.mode==='min'){ el.classList.add('rsb-min'); el.innerHTML=`<div class="rsb-rail"><button class="rsb-btn" onclick="gcSetMode('normal')" title="Leaders">☰</button><button class="rsb-btn" onclick="gcSetMode('max')" title="Game Center">▸</button><span class="rsb-vert">LEADERS · GAMES</span></div>`; return; }
-  if(_gc.mode==='max'){ el.classList.add('rsb-max'); el.innerHTML=gcHTML(); return; }
-  if(typeof renderLeaders==='function') renderLeaders();
+  gcApplyWidth(el);
+  if(_gc.mode==='min'){ el.classList.add('rsb-min'); el.innerHTML=`<div class="rsb-rail"><button class="rsb-btn" onclick="gcStep(1)" title="Wider">+</button><span class="rsb-vert">LEADERS · GAMES</span></div>`; return; }
+  if(_gc.mode==='max'){ el.classList.add('rsb-max'); el.innerHTML=gcHTML(); }
+  else if(typeof renderLeaders==='function') renderLeaders();
+  if(el.insertAdjacentHTML) el.insertAdjacentHTML('afterbegin', rsbGripHTML()); else el.innerHTML=rsbGripHTML()+el.innerHTML;
 }
 gcLoadMode();
