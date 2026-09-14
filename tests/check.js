@@ -33491,7 +33491,7 @@ function _laUsagePlayers(){
 function laTrendsView(s){
   const wk=(typeof completedWeeks==='function')?completedWeeks():0;
   const scope=laState.trndScope||'rostered';
-  const tab=laState.trndTab||(wk>=4?'trending':'pace');
+  const tab=laState.trndTab||'trending';
   const my=_laMyTeamRow(s);
   const mySet=new Set(((my&&my.players)||[]).map(p=>ecrNormName(p.name)+'|'+p.pos));
   const lgSet=_laLeagueNameSet(s);
@@ -33523,16 +33523,17 @@ function laTrendsView(s){
       const seen=new Set(); let rows=[];
       idx.forEach((e,key)=>{
         if(key.indexOf('|')<0 || seen.has(key)) return; seen.add(key);
-        // gp >= 3: one big game extrapolates to a comical 17-game pace.
-        if(!(e.base>=LA_TRND_MIN_BASE) || !(e.gp>=3)) return;
+        // One game extrapolates to a wild 17-game pace, but week 1 IS the story of week 1:
+        // show it from the first game, marked thin under three.
+        if(!(e.base>=LA_TRND_MIN_BASE) || !(e.gp>=1)) return;
         if(!keeps(e.name,e.pos)) return;
         e.delta = e.pace17 - e.base;
         rows.push(e);
       });
       rows.sort((a,b)=>b.delta-a.delta);
-      const half=(list)=>list.map((e,i)=>_laTrendRow(e, `${e.gp} gm${e.gp===1?'':'s'} · pace ${e.pace17.toFixed(0)} vs proj ${e.base.toFixed(0)}`,
+      const half=(list)=>list.map((e,i)=>_laTrendRow(e, `${e.gp} gm${e.gp===1?'':'s'}${e.gp<3?' · thin':''} · pace ${e.pace17.toFixed(0)} vs proj ${e.base.toFixed(0)}`,
         _laVerdict(`${e.pct>=0?'+':'−'}${Math.round(Math.abs(e.pct)*100)}%`, 'vs projection', e.pct>=0?'la-trnd-up':'la-trnd-dn')+mineMark(e.name,e.pos), e.cls, i+1)).join('');
-      body=two('PACE VS PROJECTION',`17-game pace vs the kickoff baseline · thru wk ${wk} · 3+ games`,
+      body=two('PACE VS PROJECTION',`17-game pace vs the kickoff baseline · thru wk ${wk}${wk<3?' · thin under 3 games':''}`,
         '▲ AHEAD',half(rows.filter(e=>e.delta>0).slice(0,15)),
         '▼ BEHIND',half(rows.filter(e=>e.delta<0).reverse().slice(0,15)));
     }
@@ -33544,14 +33545,14 @@ function laTrendsView(s){
       const seen=new Set(); const tgtRows=[], carRows=[];
       idx.forEach((e,key)=>{
         if(key.indexOf('|')<0 || seen.has(key)) return; seen.add(key);
-        if(!(e.gp>=3) || !e.stats) return;
+        if(!(e.gp>=1) || !e.stats) return;
         if(!keeps(e.name,e.pos)) return;
         const tg=e.stats.receiving_targets, ca=e.stats.rushing_attempts;
         if(tg && tg.bRate>=2.5 && e.pos!=='QB') tgtRows.push({e, st:tg});
         if(ca && ca.bRate>=4 && e.pos==='RB') carRows.push({e, st:ca});
       });
       tgtRows.sort((a,b)=>b.st.pct-a.st.pct); carRows.sort((a,b)=>b.st.pct-a.st.pct);
-      const uRow=(x,i,cap)=>_laTrendRow(x.e, `${x.st.aRate.toFixed(1)}/gm vs proj ${x.st.bRate.toFixed(1)} · ${x.e.gp} gm${x.e.gp===1?'':'s'}`,
+      const uRow=(x,i,cap)=>_laTrendRow(x.e, `${x.st.aRate.toFixed(1)}/gm vs proj ${x.st.bRate.toFixed(1)} · ${x.e.gp} gm${x.e.gp===1?'':'s'}${x.e.gp<3?' · thin':''}`,
         _laVerdict(`${x.st.pct>=0?'+':'−'}${Math.round(Math.abs(x.st.pct)*100)}%`, cap, x.st.pct>=0?'la-trnd-up':'la-trnd-dn')+mineMark(x.e.name,x.e.pos),
         x.st.pct>=0.1?'pace-ahead':x.st.pct<=-0.1?'pace-behind':'', i+1);
       body=two('TARGETS VS PROJECTION',`who's seeing more (or less) than the projection called for · thru wk ${wk}`,
@@ -33591,8 +33592,24 @@ function laTrendsView(s){
   } else if(tab==='teams'){
     const T=_laTeamTrends();
     if(!T) body=needSidecar();
-    else if(wk<3) body=`<div class="card la-ins-empty"><div class="empty-body">Team tendencies need at least 3 completed weeks — check back at week 4.</div></div>`;
-    else {
+    else if(wk<3){
+      // Not enough weeks for a swing against the season: show the season so far instead.
+      const avgRate=T.reduce((a,t)=>a+t.rateA,0)/T.length;
+      const byRate=[...T].sort((a,b)=>b.rateA-a.rateA);
+      const rateRow=(t,i)=>_laTeamRow(t.tm, `${t.rateA.toFixed(0)}% pass · league ${avgRate.toFixed(0)}%`,
+        _laVerdict(`${t.rateA-avgRate>=0?'+':'−'}${Math.abs(t.rateA-avgRate).toFixed(1)}%`, t.rateA>=avgRate?'vs league':'vs league', t.rateA>=avgRate?'la-trnd-up':'la-trnd-dn'),
+        t.rateA-avgRate>=3?'pace-ahead':t.rateA-avgRate<=-3?'pace-behind':'', i+1);
+      const byEpa=[...T].sort((a,b)=>b.epaA-a.epaA);
+      const epaRow=(t,i)=>_laTeamRow(t.tm, `${t.epaA>=0?'+':'−'}${Math.abs(t.epaA).toFixed(2)} EPA/play thru wk ${wk}`,
+        _laVerdict(`${t.epaA>=0?'+':'−'}${Math.abs(t.epaA).toFixed(2)}`, 'EPA/play', t.epaA>=0?'la-trnd-up':'la-trnd-dn'),
+        t.epaA>=0.05?'pace-ahead':t.epaA<=-0.05?'pace-behind':'', i+1);
+      body=two(`PASS ↔ RUN LEAN · THRU WK ${wk}`,'who is throwing, who is running — swings against the season identity arrive at week 4',
+          'PASS-HEAVY',byRate.slice(0,10).map(rateRow).join(''),
+          'RUN-HEAVY',byRate.slice().reverse().slice(0,10).map(rateRow).join(''))
+        + two(`OFFENSES · HOT & COLD · THRU WK ${wk}`,'efficiency so far (EPA per play)',
+          '🔥 HOTTEST',byEpa.slice(0,10).map(epaRow).join(''),
+          '🧊 COLDEST',byEpa.slice().reverse().slice(0,10).map(epaRow).join(''));
+    } else {
       const byLean=[...T].sort((a,b)=>b.dRate-a.dRate);
       const leanRow=(t,i)=>_laTeamRow(t.tm, `${t.rateA.toFixed(0)}% pass season → <b>${t.rate3.toFixed(0)}%</b> last 3`,
         _laVerdict(`${t.dRate>=0?'+':'−'}${Math.abs(t.dRate).toFixed(1)}%`, t.dRate>=0?'more passing':'more rushing', t.dRate>=0?'la-trnd-up':'la-trnd-dn'),
@@ -33652,15 +33669,19 @@ function laTrendsView(s){
     }
   } else { // trending — the Sleeper-style headline board
     const U=_laUsagePlayers();
-    if(!U) body=needSidecar();
-    else if(wk<4) body=`<div class="card la-ins-empty"><div class="empty-body">Week-over-week trending needs at least 4 completed weeks — check back at week ${Math.max(5, wk+1)}.</div></div>`;
+    const sleeperBoard=_laSleeperTrendingHTML(keeps, mineMark);
+    if(!U) body=needSidecar()+sleeperBoard;
+    else if(wk<2) body=_laWeekBreakoutsHTML(U, wk, keeps, mineMark)+sleeperBoard;
     else {
+      // Two weeks: the latest against the one before; from four, the last three against the
+      // three before — the window grows with the season.
+      const R=Math.min(3, Math.max(1, Math.floor(wk/2))), P=R;
       const trend=[];
       U.players.forEach(p=>{
         if(!keeps(_laDisplayName(p,p.id),p.pos)) return;
-        const wks=p.weeks; if(wks.length<4) return;
-        const recent=wks.slice(-3), prior=wks.slice(0,-3).slice(-3);
-        if(prior.length<2) return;
+        const wks=p.weeks; if(wks.length<2) return;
+        const recent=wks.slice(-R), prior=wks.slice(0,-R).slice(-P);
+        if(prior.length<1) return;
         const rowOf=(w)=>U.pw.players[p.g].w[String(w)]||[];
         const avg=(set,fn)=>set.reduce((a,w)=>a+fn(rowOf(w)),0)/set.length;
         const tgtShare=(r)=>{ const tt=r[U.ci['team_tgt']]||0; return tt?100*(r[U.ci['tgt']]||0)/tt:0; };
@@ -33674,12 +33695,86 @@ function laTrendsView(s){
       const tRow=(x,i)=>_laTrendRow(x.p, x.p.pos==='RB'?`${((x.p.carry3+x.p.tgt3)/Math.max(1,x.p.gp3)).toFixed(1)} touches/gm last 3`:`${x.p.share3.toFixed(1)}% tgt share last 3`,
         _laVerdict(`${x.score>=0?'+':'−'}${Math.abs(x.p.pos==='RB'?x.dTouch:x.dShare).toFixed(1)}${x.p.pos==='RB'?'':'%'}`, x.p.pos==='RB'?'touches vs prior 3':'share vs prior 3', x.score>=0?'la-trnd-up':'la-trnd-dn')+mineMark(_laDisplayName(x.p,x.p.id),x.p.pos),
         x.score>=0?'pace-ahead':'pace-behind', i+1);
-      body=two('TRENDING · LAST 3 WEEKS VS THE 3 BEFORE','role changes show up here first',
+      body=two(`TRENDING · LAST ${R>1?R+' WEEKS':'WEEK'} VS THE ${P>1?P+' BEFORE':'ONE BEFORE'}`,'role changes show up here first',
         '▲ TRENDING UP',trend.filter(x=>x.score>0).slice(0,12).map(tRow).join(''),
-        '▼ TRENDING DOWN',trend.filter(x=>x.score<0).reverse().slice(0,12).map(tRow).join(''));
+        '▼ TRENDING DOWN',trend.filter(x=>x.score<0).reverse().slice(0,12).map(tRow).join(''))
+        + sleeperBoard;
     }
   }
   return `${bar}${body}<div class="la-note">★ = on your roster · tap a name for the player card</div>`;
+}
+
+// ── Week-1 trends: this week's breakouts, and Sleeper's own trending feed ────────────
+// Week 1 has no "before" to trend against, but it has the games: a starter's usage this
+// week against the projection that kicked off the season IS the first trend. From week 2
+// the week-over-week board takes over; Sleeper's 24-hour adds/drops ride under both, the
+// league-wide read of what everyone else just noticed.
+function _laWeekBreakoutsHTML(U, wk, keeps, mineMark){
+  const idx=(typeof buildPaceIndex==='function')?buildPaceIndex():null;
+  const lastWk=U.players.reduce((m,p)=>Math.max(m, p.weeks[p.weeks.length-1]||0), 0);
+  if(!lastWk) return `<div class="card la-ins-empty"><div class="empty-body">The first week's usage lands with the Tuesday sidecar refresh.</div></div>`;
+  const tgtRows=[], carRows=[];
+  U.players.forEach(p=>{
+    const name=_laDisplayName(p,p.id);
+    if(!keeps(name,p.pos)) return;
+    const r=U.pw.players[p.g].w[String(lastWk)]; if(!r) return;
+    const tgt=r[U.ci['tgt']]||0, car=r[U.ci['carry']]||0, tt=r[U.ci['team_tgt']]||0;
+    const e=idx ? (idx.get(`${ecrNormName(name)}|${p.pos}`) || (p.id!=null ? idx.get(String(p.id)) : null)) : null;
+    const st=e && e.stats;
+    const projT=st && st.receiving_targets ? st.receiving_targets.bRate : null;
+    const projC=st && st.rushing_attempts ? st.rushing_attempts.bRate : null;
+    if(p.pos!=='QB' && (tgt>=3 || (projT!=null && projT>=2.5))) tgtRows.push({p, tgt, share:tt?100*tgt/tt:0, proj:projT, d: projT!=null && projT>0 ? (tgt-projT)/projT : null});
+    if(p.pos==='RB' && (car>=5 || (projC!=null && projC>=4))) carRows.push({p, car, proj:projC, d: projC!=null && projC>0 ? (car-projC)/projC : null});
+  });
+  const key=(x)=> x.d!=null ? x.d : -9;
+  tgtRows.sort((a,b)=>key(b)-key(a)); carRows.sort((a,b)=>key(b)-key(a));
+  const tRow=(x,i)=>_laTrendRow(x.p, `${x.tgt} tgt · ${x.share.toFixed(0)}% of team${x.proj!=null?` · proj ${x.proj.toFixed(1)}/gm`:''}`,
+    x.d!=null ? _laVerdict(`${x.d>=0?'+':'−'}${Math.round(Math.abs(x.d)*100)}%`, 'vs projected', x.d>=0?'la-trnd-up':'la-trnd-dn')+mineMark(_laDisplayName(x.p,x.p.id),x.p.pos)
+              : _laVerdict(`${x.tgt}`, 'targets', 'la-trnd-up')+mineMark(_laDisplayName(x.p,x.p.id),x.p.pos),
+    x.d!=null&&x.d>=0.15?'pace-ahead':x.d!=null&&x.d<=-0.15?'pace-behind':'', i+1);
+  const cRow=(x,i)=>_laTrendRow(x.p, `${x.car} carries${x.proj!=null?` · proj ${x.proj.toFixed(1)}/gm`:''}`,
+    x.d!=null ? _laVerdict(`${x.d>=0?'+':'−'}${Math.round(Math.abs(x.d)*100)}%`, 'vs projected', x.d>=0?'la-trnd-up':'la-trnd-dn')+mineMark(_laDisplayName(x.p,x.p.id),x.p.pos)
+              : _laVerdict(`${x.car}`, 'carries', 'la-trnd-up')+mineMark(_laDisplayName(x.p,x.p.id),x.p.pos),
+    x.d!=null&&x.d>=0.15?'pace-ahead':x.d!=null&&x.d<=-0.15?'pace-behind':'', i+1);
+  const two=(title,sub,upLbl,upRows,dnLbl,dnRows)=>`
+    <div class="la-ins-bar"><span class="la-ins-lbl">${title}</span><span class="la-ins-sub">${sub}</span></div>
+    <div class="card la-trnd-card"><div class="la-trnd-cols">
+      <div><div class="la-trnd-h la-trnd-up">${upLbl}</div>${upRows||'<div class="la-ins-sub">nobody in this scope yet</div>'}</div>
+      <div><div class="la-trnd-h la-trnd-dn">${dnLbl}</div>${dnRows||'<div class="la-ins-sub">nobody in this scope yet</div>'}</div>
+    </div></div>`;
+  const up=(rows)=>rows.filter(x=>x.d==null||x.d>0).slice(0,12), dn=(rows)=>rows.filter(x=>x.d!=null&&x.d<0).reverse().slice(0,12);
+  return two(`WEEK ${lastWk} TARGETS VS THE PROJECTION`,'the first read: who got fed, who did not — week-over-week trending starts at week 2',
+      '▲ FED',up(tgtRows).map(tRow).join(''), '▼ QUIET',dn(tgtRows).map(tRow).join(''))
+    + two(`WEEK ${lastWk} CARRIES VS THE PROJECTION`,'backfield workloads against what was projected (RB)',
+      '▲ WORKHORSE',up(carRows).map(cRow).join(''), '▼ LIGHT',dn(carRows).map(cRow).join(''));
+}
+// Sleeper's trending adds and drops over the last 24 hours — fetched once per half hour,
+// repainted when they land. The count is how many Sleeper leagues moved on the player.
+var _laSleeperTrend={at:0, adds:null, drops:null, busy:false};
+function _laSleeperTrendingFetch(){
+  if(_laSleeperTrend.busy || Date.now()-_laSleeperTrend.at<30*60*1000) return;
+  _laSleeperTrend.busy=true;
+  const one=(kind)=>sleeperFetch(`https://api.sleeper.app/v1/players/nfl/trending/${kind}?lookback_hours=24&limit=40`).catch(()=>null);
+  Promise.all([one('add'), one('drop')]).then(([adds, drops])=>{
+    if(Array.isArray(adds)) _laSleeperTrend.adds=adds;
+    if(Array.isArray(drops)) _laSleeperTrend.drops=drops;
+    _laSleeperTrend.at=Date.now();
+    if(Array.isArray(adds)||Array.isArray(drops)) _laInsRerender();
+  }).finally(()=>{ _laSleeperTrend.busy=false; });
+}
+function _laSleeperTrendingHTML(keeps, mineMark){
+  _laSleeperTrendingFetch();
+  const meta=(pid)=>{ const sp=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers)?sleeperPlayers[String(pid)]:null; return sp ? {id:String(pid), name:sp.name, pos:sp.pos, team:sp.team} : null; };
+  const rows=(list, cap, cls)=>(list||[]).map(r=>({m:meta(r.player_id), n:+r.count||0})).filter(x=>x.m && ['QB','RB','WR','TE','K'].includes(String(x.m.pos||'').toUpperCase()))
+    .filter(x=>keeps(x.m.name,x.m.pos)).slice(0,12)
+    .map((x,i)=>_laTrendRow(x.m, `${x.n.toLocaleString()} leagues in 24h`, _laVerdict(`${x.n>=1000?(x.n/1000).toFixed(1)+'k':x.n}`, cap, cls)+mineMark(x.m.name,x.m.pos), '', i+1)).join('');
+  const have=_laSleeperTrend.adds||_laSleeperTrend.drops;
+  const sub = have ? 'what every Sleeper league moved on in the last 24 hours' : 'loading Sleeper\'s 24-hour adds and drops…';
+  return `<div class="la-ins-bar"><span class="la-ins-lbl">TRENDING ON SLEEPER · 24H</span><span class="la-ins-sub">${sub}</span></div>
+    <div class="card la-trnd-card"><div class="la-trnd-cols">
+      <div><div class="la-trnd-h la-trnd-up">▲ MOST ADDED</div>${rows(_laSleeperTrend.adds,'adds','la-trnd-up')||'<div class="la-ins-sub">nobody in this scope</div>'}</div>
+      <div><div class="la-trnd-h la-trnd-dn">▼ MOST DROPPED</div>${rows(_laSleeperTrend.drops,'drops','la-trnd-dn')||'<div class="la-ins-sub">nobody in this scope</div>'}</div>
+    </div></div>`;
 }
 
 // ── Trends data helpers ──────────────────────────────────────────────────────
