@@ -485,6 +485,22 @@ def measure(seed):
     return {k: block_size(v) for k, v in seed.items()}
 
 
+def ecr_list_complete(table, min_players=150):
+    """Is an ECR table a whole consensus list — ranks 1..N with (nearly) nothing missing?
+    {key: {rank_ecr, ...}}. A trimmed list is complete; a blocked or half-loaded page is not."""
+    if not isinstance(table, dict) or len(table) < min_players:
+        return False
+    ranks = set()
+    for v in table.values():
+        r = (v or {}).get("rank_ecr") if isinstance(v, dict) else None
+        if isinstance(r, (int, float)) and r >= 1:
+            ranks.add(int(r))
+    n = len(table)
+    if not ranks or max(ranks) != n:
+        return False
+    return len(ranks) >= 0.95 * n
+
+
 def validate(old, new):
     """Compare a rebuilt seed against the previous one. → (ok, problems, warnings)"""
     problems, warnings = [], []
@@ -523,7 +539,15 @@ def validate(old, new):
             if now == 0:
                 problems.append(f"{key}.{sub}: {was} → 0 (that source came back empty or vanished)")
             elif now < was * ratio:
-                problems.append(f"{key}.{sub}: {was} → {now} ({100 * now / was:.0f}% of previous, floor {100 * ratio:.0f}%)")
+                # FantasyPros trims a consensus list as the season goes (dynasty superflex went
+                # 549 → 427 after week 1). A list whose ranks run 1..N with nothing missing is a
+                # complete scrape, however much shorter — a blocked or half-loaded page never
+                # comes back contiguous. Note it; don't reject the whole seed over it.
+                if key == "ecr" and ecr_list_complete(nb.get(sub)):
+                    warnings.append(f"{key}.{sub}: {was} → {now} ({100 * now / was:.0f}% of previous) — "
+                                    f"the source trimmed its list; ranks are contiguous, so the scrape is complete")
+                else:
+                    problems.append(f"{key}.{sub}: {was} → {now} ({100 * now / was:.0f}% of previous, floor {100 * ratio:.0f}%)")
 
     # Contracts are fetched one OverTheCap page per position, and a page that gets
     # rate-limited silently drops that whole position. A total count cannot see it (QB+TE+
