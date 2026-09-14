@@ -23,7 +23,8 @@ const app=new Function(code+`
   hasSeasonStarted=()=>true; TC_SEASON.year=2026; TC_SEASON.phase='regular'; TC_SEASON.week=2;
   let mobile=false; isMobileTeamPickerLayout=()=>mobile;
   return { render:renderLeaders, html:()=>document.getElementById('leaders').innerHTML, hidden:()=>document.getElementById('leaders').hidden, setPos:ldSetPos, setWeek:ldSetWeek,
-    fetches:()=>fetches, setMobile:(v)=>{ mobile=v; }, setStarted:(v)=>{ hasSeasonStarted=()=>v; }, TC_SEASON, short:ldShortName, scoring:scoringSettings };
+    fetches:()=>fetches, setMobile:(v)=>{ mobile=v; }, setStarted:(v)=>{ hasSeasonStarted=()=>v; }, TC_SEASON, short:ldShortName, scoring:scoringSettings,
+    setWidth:(px)=>{ document.getElementById('leaders').style.width=px+'px'; }, sort:ldSort, cols:ldColsFor, state:()=>_ld };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,15));
@@ -54,6 +55,30 @@ const settle=()=>new Promise(r=>setTimeout(r,15));
   chk(app.fetches().some(f=>f==='season:2') && /<option value="season" selected>/.test(h) && /D\. Maye/.test(h), 'season-long sums the weeks (the same builder the Live view uses)');
   const sp=[...h.matchAll(/ld-pts">([\d.]+)</g)].map(m=>+m[1]);
   chk(sp[0]>pts[0] || sp[0]>30, `season points exceed a single week (${sp[0]})`);
+
+  console.log('=== the list grows with the sidebar: full names, then stat columns, sortable ===');
+  app.setPos('ALL'); app.setWeek('1'); await settle();
+  app.setWidth(200); app.render(true); h=app.html();
+  chk(/ld-nm">C\. Williams</.test(h) && !/ld-col/.test(h) && !/ld-hdr/.test(h), 'at 200px: short names, no columns, no header');
+  app.setWidth(300); app.render(true); h=app.html();
+  chk(/ld-nm">Caleb Williams</.test(h) && !/ld-col/.test(h), 'at 300px the names fill out (Caleb Williams) — still no columns');
+  chk(app.cols(300).length===0 && app.cols(408).length===2 && app.cols(700).length===6, 'one column per 64px past the full-name width, up to the position\'s set');
+  app.setWidth(408); app.render(true); h=app.html();
+  chk(/ld-hdr/.test(h) && /ldSort\('tot_yd'\)[^>]*>TOT YD</.test(h) && /ldSort\('tot_td'\)[^>]*>TOT TD</.test(h) && !/PASS YD/.test(h), 'at 408px on ALL: a header with TOT YD and TOT TD, sortable, nothing more yet');
+  chk(/ld-colh active"[^>]*>PTS</.test(h), 'points is the sort by default');
+  app.setPos('QB'); h=app.html();
+  chk(/PASS YD/.test(h) && /PASS TD/.test(h) && !/TOT YD/.test(h) && /ld-col[^>]*>300</.test(h), 'QB: the position\'s own columns (PASS YD, PASS TD) with the numbers');
+  app.sort('pass_yd'); h=app.html();
+  let qo=[...h.matchAll(/ld-nm">([^<]+)</g)].map(m=>m[1]);
+  chk(qo[0]==='Caleb Williams' && /ldSort\('pass_yd'\)[^>]*class="ld-col ld-colh active"|ld-col ld-colh active"[^>]*>PASS YD</.test(h), 'clicking PASS YD sorts by it (Williams 300 over Maye 180) and lights the header');
+  app.sort('pass_int'); app.setWidth(600); app.render(true); h=app.html();
+  qo=[...h.matchAll(/ld-nm">([^<]+)</g)].map(m=>m[1]);
+  chk(qo[0]==='Drake Maye' && /CMP\/ATT/.test(h), 'wider still: more columns (CMP/ATT); sorted by INT puts Maye (2) first');
+  app.sort('pass_int'); h=app.html();
+  chk(app.state().sort==='pts' && /ld-colh active"[^>]*>PTS</.test(h), 'clicking the active column again returns to points');
+  app.setPos('WR'); h=app.html();
+  chk(/TGT/.test(h) && /REC YD/.test(h) && !/PASS YD/.test(h), 'WR: targets, receptions, receiving yards');
+  app.setWidth(200); app.setPos('ALL');
 
   console.log('=== where it does not belong ===');
   app.setMobile(true); app.render();

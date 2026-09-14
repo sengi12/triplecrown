@@ -77,7 +77,7 @@ function gcSetPos(p){ _gc.pos=p; renderRightSidebar(); }
 function gcWidthKey(){ return 'tc_rsb_w_'+_gc.mode; }
 function gcStoredWidth(){ try{ const v=Number(localStorage.getItem(gcWidthKey())); return v>0?v:null; }catch(e){ return null; } }
 function gcApplyWidth(el){
-  const w=(_gc.mode==='min')?null:gcStoredWidth();
+  const w=(_gc.mode==='min')?null:(_gc.dragW||gcStoredWidth());
   el.style.width=el.style.minWidth=el.style.maxWidth=(w?w+'px':'');
 }
 function gcMaxWidth(){
@@ -91,9 +91,12 @@ function gcGripDown(ev){
   const el=(typeof ldHost==='function')?ldHost():null; if(!el || !el.getBoundingClientRect) return;
   if(ev && ev.preventDefault) ev.preventDefault();
   const right=el.getBoundingClientRect().right, maxW=gcMaxWidth();
-  const move=(e)=>{ const w=Math.round(Math.max(200, Math.min(maxW, right-e.clientX))); el.style.width=el.style.minWidth=el.style.maxWidth=w+'px'; _gc.dragW=w; };
+  // The Leaders list fills in as it widens (full names, then stat columns): repaint as the
+  // pointer moves, one frame at a time.
+  const move=(e)=>{ const w=Math.round(Math.max(200, Math.min(maxW, right-e.clientX))); el.style.width=el.style.minWidth=el.style.maxWidth=w+'px'; _gc.dragW=w;
+    if(_gc.mode==='normal' && !_gc.raf && typeof requestAnimationFrame==='function'){ _gc.raf=requestAnimationFrame(()=>{ _gc.raf=0; if(_gc.dragW) renderRightSidebar(); }); } };
   const up=()=>{ window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
-    if(_gc.dragW){ try{ localStorage.setItem(gcWidthKey(), String(_gc.dragW)); }catch(e){} _gc.dragW=0; } };
+    if(_gc.dragW){ try{ localStorage.setItem(gcWidthKey(), String(_gc.dragW)); }catch(e){} _gc.dragW=0; renderRightSidebar(); } };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 }
 function rsbGripHTML(){ return `<div class="rsb-grip" title="Drag to resize" onpointerdown="gcGripDown(event)"></div>`; }
