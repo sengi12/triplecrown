@@ -71,6 +71,9 @@ async function ldLoad(){
     } else if(rows && !rows.length){ _ld.rows=[]; _ld.key=key; _ld.at=Date.now(); }
   }catch(e){ /* offline — keep what we have */ }
   finally{ _ld.busy=false; }
+  // The rows landed: paint them — unless the sidebar has since grown into the Game Center
+  // or shrunk to the rail, which this paint must not overwrite.
+  if(typeof _gc!=='undefined' && _gc && _gc.mode && _gc.mode!=='normal') return;
   renderLeaders(true);
 }
 function ldRowsHTML(){
@@ -83,7 +86,7 @@ function ldRowsHTML(){
   return list.map((x,i)=>`<div class="ld-row" onclick="${pcardOnclick(x.r.pid, x.r.pos, x.r.team||'')}" title="${escAttr(`${x.r.name} · ${x.r.pos} · ${x.r.team||'FA'}`)}">
     <span class="ld-rank">${i+1}</span>
     <img class="ld-hs" src="${SLEEPER_HEADSHOT(x.r.pid)}" loading="lazy" decoding="async" onerror="this.style.visibility='hidden'">
-    <span class="ld-name"><span class="ld-nm">${escHtml(ldShortName(x.r.name))}</span><span class="ld-sub"><span class="la-pos-${escAttr(x.r.pos)}">${escHtml(x.r.pos)}</span> ${escHtml(x.r.team||'FA')}</span></span>
+    <span class="ld-name"><span class="ld-nm${(typeof gcIsMine==='function' && gcIsMine(x.r.pid))?' ld-mine':''}">${escHtml(ldShortName(x.r.name))}</span><span class="ld-sub"><span class="la-pos-${escAttr(x.r.pos)}">${escHtml(x.r.pos)}</span> ${escHtml(x.r.team||'FA')}</span></span>
     <b class="ld-pts">${bafl?x.pts.toFixed(1):x.pts.toFixed(2)}</b>
   </div>`).join('');
 }

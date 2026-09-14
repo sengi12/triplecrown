@@ -32,7 +32,7 @@ function tcParseBoard(board){
     }).filter(s=>s.code);
     sides.forEach(s=>{
       const o=sides.find(x=>x!==s)||{};
-      out[s.code]={ state, rec:s.rec, opp:o.code||'', home:s.home, score:s.score, oppScore:o.score!=null?o.score:null, detail };
+      out[s.code]={ state, rec:s.rec, opp:o.code||'', home:s.home, score:s.score, oppScore:o.score!=null?o.score:null, detail, date:String(ev.date||comp.date||'') };
     });
   });
   return out;

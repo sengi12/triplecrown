@@ -19,13 +19,16 @@ const app=new Function(code+`
     P('d1','Logan','Wilson','LB','CIN',{idp_tkl:9,idp_tkl_solo:6,idp_sack:1,gp:1}), P('d2','Lavonte','David','LB','TB',{idp_tkl:7,idp_tkl_solo:4,gp:1}),
     P('x1','Sam','Darnold','QB','SEA',{pass_yd:200,gp:1}) ];
   fetchWeekStats=async(season,wk,pos)=>ROWS;
-  const BOARD={events:[{competitions:[{status:{type:{state:'post',shortDetail:'Final'}},competitors:[{homeAway:'home',team:{abbreviation:'CIN'},score:'33',records:[{type:'total',summary:'1-0'}]},{homeAway:'away',team:{abbreviation:'TB'},score:'27',records:[{type:'total',summary:'0-1'}]}]}]},
-    {competitions:[{status:{type:{state:'in',shortDetail:'3rd 8:12'}},competitors:[{homeAway:'home',team:{abbreviation:'SEA'},score:'13',records:[{type:'total',summary:'0-0'}]},{homeAway:'away',team:{abbreviation:'NE'},score:'10',records:[{type:'total',summary:'0-0'}]}]}]}]};
+  // Three games out of kickoff order on the wire: Sunday late (final), Sunday night (live), Thursday (final).
+  const BOARD={events:[{date:'2026-09-13T20:25Z',competitions:[{status:{type:{state:'post',shortDetail:'Final'}},competitors:[{homeAway:'home',team:{abbreviation:'CIN'},score:'33',records:[{type:'total',summary:'1-0'}]},{homeAway:'away',team:{abbreviation:'TB'},score:'27',records:[{type:'total',summary:'0-1'}]}]}]},
+    {date:'2026-09-14T00:20Z',competitions:[{status:{type:{state:'in',shortDetail:'3rd 8:12'}},competitors:[{homeAway:'home',team:{abbreviation:'SEA'},score:'13',records:[{type:'total',summary:'0-0'}]},{homeAway:'away',team:{abbreviation:'NE'},score:'10',records:[{type:'total',summary:'0-0'}]}]}]},
+    {date:'2026-09-11T00:15Z',competitions:[{status:{type:{state:'post',shortDetail:'Final'}},competitors:[{homeAway:'home',team:{abbreviation:'KC'},score:'21',records:[{type:'total',summary:'1-0'}]},{homeAway:'away',team:{abbreviation:'DEN'},score:'17',records:[{type:'total',summary:'0-1'}]}]}]}]};
   sleeperFetch=async(url)=>{ if(/scoreboard/.test(url)) return BOARD; throw new Error('x'); };
   hasSeasonStarted=()=>true; TC_SEASON.year=2026; TC_SEASON.phase='regular'; TC_SEASON.week=1; isMobileTeamPickerLayout=()=>false;
-  leagueSnapshot={name:'Dirty Mikes', scoringRaw:{pass_yd:0.04,pass_td:4,pass_int:-1,rush_yd:0.1,rush_td:6,rec:0.5,rec_yd:0.1,fgm:3,xpm:1,pts_allow:-0.1,sack:1,idp_tkl:1,idp_sack:2},
-    teamList:[{rosterId:1, owner:'Sengi12', teamName:'Sengi', players:[{id:'q1'},{id:'r2'}]},{rosterId:2, owner:'RichBigMeechy', teamName:'Rich', players:[{id:'w2'}]}]};
-  return { pts:tcSleeperPoints, mode:gcSetMode, render:renderRightSidebar, html:()=>document.getElementById('leaders').innerHTML, cls:()=>[...document.getElementById('leaders').classList._s], pick:gcPick, week:gcSetWeek, load:gcLoadMode, state:()=>_gc };
+  sleeperPlayers={q1:{name:'Baker Mayfield',years_exp:8}, w1:{name:'Emeka Egbuka',years_exp:0}, d2:{name:'Lavonte David',years_exp:14}};
+  leagueSnapshot={name:'Dirty Mikes', myUserId:'u1', scoringRaw:{pass_yd:0.04,pass_td:4,pass_int:-1,rush_yd:0.1,rush_td:6,rec:0.5,rec_yd:0.1,fgm:3,xpm:1,pts_allow:-0.1,sack:1,idp_tkl:1,idp_sack:2},
+    teamList:[{rosterId:1, ownerId:'u1', owner:'Sengi12', teamName:'Sengi', players:[{id:'q1'},{id:'r2'}]},{rosterId:2, ownerId:'u2', owner:'RichBigMeechy', teamName:'Rich', players:[{id:'w2'}]}]};
+  return { pts:tcSleeperPoints, mode:gcSetMode, step:gcStep, setPos:gcSetPos, render:renderRightSidebar, html:()=>document.getElementById('leaders').innerHTML, cls:()=>[...document.getElementById('leaders').classList._s], pick:gcPick, week:gcSetWeek, load:gcLoadMode, state:()=>_gc, games:()=>gcGames(gcBoard(1)), mine:gcIsMine, maxW:gcMaxWidth };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -35,25 +38,44 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(app.pts({idp_tkl:9,idp_sack:1},{idp_tkl:1,idp_sack:2})===11 && app.pts({pts_allow:27,sack:2},{pts_allow:-0.1,sack:1})===-0.7, 'defenders and D/ST score off the same table');
   chk(app.pts({pass_yd:100},null)===null, 'no table → no number (the caller falls back)');
 
-  console.log('=== sizes ===');
-  app.mode('min'); chk(app.cls().includes('rsb-min') && /rsb-rail/.test(app.html()) && /gcSetMode\('max'\)/.test(app.html()), 'min: a rail with the two buttons');
-  app.mode('max'); await settle(); await settle();
-  chk(app.cls().includes('rsb-max') && /Game Center/.test(app.html()), 'max: the Game Center');
+  console.log('=== sizes: − and +, a rail, a drag handle ===');
+  app.mode('min'); chk(app.cls().includes('rsb-min') && /rsb-rail/.test(app.html()) && /gcStep\(1\)[^>]*>\+</.test(app.html()) && !/gcStep\(-1\)/.test(app.html()), 'min: a rail with one + button');
+  app.step(1); chk(app.state().mode==='normal' && /Leaders/.test(app.html()) && /gcStep\(-1\)[^>]*>−</.test(app.html()) && /gcStep\(1\)[^>]*>\+</.test(app.html()), '+ → the Leaders, with − and + in its scoring line');
+  app.step(1); await settle(); await settle();
+  chk(app.state().mode==='max' && app.cls().includes('rsb-max') && /Game Center/.test(app.html()), '+ again → the Game Center');
+  chk(/gcStep\(1\)[^>]*disabled/.test(app.html()) && !/gcStep\(-1\)[^>]*disabled/.test(app.html()), 'at the widest, + is disabled and − is not');
   chk(global.localStorage._s.tc_rsb==='max', 'the size is remembered');
+  chk(/rsb-grip[^>]*onpointerdown="gcGripDown\(event\)"/.test(app.html()), 'the left edge is a drag handle');
+  chk(app.maxW()>=260, 'the drag stops at the width of the content area');
+  app.step(1); chk(app.state().mode==='max', '+ past the widest does nothing');
 
-  console.log('=== the games and the picked game ===');
+  console.log('=== the games, in the order they were played ===');
   let h=app.html();
-  chk(/gc-game gc-on gc-in[\s\S]*NE[\s\S]*SEA/.test(h) && /3rd 8:12/.test(h), 'games listed, the live one first and picked by default');
+  chk(app.games().map(g=>g.id).join(' ')==='DEN@KC TB@CIN NE@SEA', 'Thursday night, then the Sunday late window, then Sunday night — by kickoff, not by state');
+  chk(/gc-game gc-on gc-in[\s\S]*NE[\s\S]*SEA/.test(h) && /3rd 8:12/.test(h), 'the game being played is picked by default');
   chk(/gc-game  gc-post[\s\S]*TB[\s\S]*CIN/.test(h) && /gc-won">[^]*?CIN[^]*?<b>33/.test(h), 'the final shows its score with the winner bright');
   app.pick('TB@CIN'); await settle(); h=app.html();
   chk(/gc-hero[\s\S]*gc-team">TB<[\s\S]*gc-score">27<[\s\S]*FINAL[\s\S]*gc-score">33<[\s\S]*gc-team">CIN</.test(h), 'the hero: TB 27 · FINAL · 33 CIN');
   chk(/Quarterback[\s\S]*B\. Mayfield[\s\S]*<b class="gc-pts">15\.64<[\s\S]*J\. Burrow[\s\S]*<b class="gc-pts">13\.16</.test(h), 'quarterbacks by side with the league\'s points (Mayfield 15.64, Burrow 254×0.04+4−1 = 13.16)');
-  chk(/gc-owner">@Sengi12<\/span><span class="gc-pname">B\. Mayfield/.test(h) && /gc-owner">@RichBigMeechy<\/span><span class="gc-pname">T\. Higgins/.test(h), 'the fantasy owner rides above a rostered player\'s name');
+  chk(/gc-owner">@Sengi12<\/span><span class="gc-pname gc-mine">B\. Mayfield/.test(h) && /gc-owner">@RichBigMeechy<\/span><span class="gc-pname">T\. Higgins/.test(h), 'the fantasy owner rides above a rostered player\'s name');
   chk(/Kicker[\s\S]*C\. McLaughlin[\s\S]*2\/2 FG, 3\/3 XP/.test(h), 'kickers with a stat line');
   chk(/Defense \/ ST[\s\S]*CIN D\/ST[\s\S]*27 PA, 2 sacks/.test(h), 'the D/ST line');
   chk(/Defenders[\s\S]*L\. Wilson[\s\S]*9 tkl \(6 solo\), 1 sack[\s\S]*<b class="gc-pts">11\.00</.test(h) && /L\. David[\s\S]*7 tkl \(4 solo\)/.test(h), 'individual defenders with tackles, sacks and the league\'s IDP points');
   chk(!/S\. Darnold/.test(h), 'a player from another game is not in this one');
   chk(/216yd · 1TD · 30rush/.test(h) && /45rush · 7\/7 48rec · 1TD/.test(h), 'offensive stat lines in the app\'s own grammar');
+
+  console.log('=== my players light up ===');
+  chk(app.mine('q1') && app.mine('r2') && !app.mine('w2'), 'the roster owned by my user id is mine; a leaguemate\'s is not');
+  chk(/gc-pname gc-mine">B\. Mayfield/.test(h) && /gc-pname gc-mine">C\. Brown/.test(h) && /gc-pname">T\. Higgins/.test(h), 'my players\' names carry the highlight; a leaguemate\'s player does not');
+
+  console.log('=== filters: position and rookies, like the Rankings page ===');
+  chk(/gc-posrow[\s\S]*gcSetPos\('QB'\)[\s\S]*gcSetPos\('IDP'\)[\s\S]*gcSetPos\('RK'\)/.test(h), 'a filter row: ALL, QB … IDP, RK');
+  app.setPos('QB'); h=app.html();
+  chk(/Quarterback/.test(h) && !/Running back/.test(h) && !/Defenders/.test(h) && /B\. Mayfield/.test(h), 'QB: only the quarterbacks');
+  app.setPos('RK'); h=app.html();
+  chk(/E\. Egbuka/.test(h) && !/B\. Mayfield/.test(h) && !/L\. David/.test(h), 'RK: only the rookies (Egbuka), across every group');
+  app.setPos('ALL'); h=app.html();
+  chk(/B\. Mayfield/.test(h) && /E\. Egbuka/.test(h) && /L\. David/.test(h), 'ALL: everyone again');
 
   console.log('=== back to the list ===');
   app.mode('normal'); chk(!app.cls().includes('rsb-max') && /Leaders/.test(app.html()), 'normal: the Leaders list again');
