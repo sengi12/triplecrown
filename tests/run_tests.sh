@@ -157,6 +157,7 @@ run_js_test test_pcard_meta     "Player card meta: height format, age decimal, j
 run_js_test test_qb_passing     "QB passing consolidated: ATT|CMP|PCT|YD|LNG|RTG|RZ|TD order, ATT restored, totals"
 run_js_test test_ol_tagging     "OL stat tagging: every stat taggable, whole line offered as targets, relevance by phase"
 run_js_test test_ol_card        "OL grades card: tab wiring, coarse percentile bands (no false-precision rank), penalty split, attribution caveat"
+run_js_test test_ol_college     "A rookie lineman's OL tab: his college unit's line by season with FBS percentiles — alone without NFL grades, beneath them with; the prospect panel stays out of the way"
 run_js_test test_rb_fan         "RB rushing fan: tab wiring, SVG chart, OL slot cards for all five linemen, lane legend"
 run_js_test test_ol_projection  "OL projection: ranks from projected starters, baseline ranks until depth charts load, roster fallback, RB fan rank"
 run_js_test test_owner_surfaces "Owner pills: projection rows, rankings OWNER column, search row layout, nothing when no league is synced"
@@ -265,7 +266,7 @@ echo ""
 PYBUILD="$DIR/../build_seed.py"
 if [ -f "$DIR/test_flacco_split.py" ] && [ -f "$PYBUILD" ]; then
   echo "═══ Python tests ═══"
-  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_roster_moves test_roster_truth test_sumer_pull test_ktc_pull test_seed_refresh test_ol_pipeline test_state_block test_cfb_classes test_combine_prospect test_tc_projections test_market_archive test_inseason_truncate test_draft_sim test_draft_history test_draft_playbook test_draft_corpus test_manager_profile test_weekly_charts test_tc_mcp; do
+  for pyt in test_flacco_split test_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_roster_moves test_roster_truth test_sumer_pull test_ktc_pull test_seed_refresh test_ol_pipeline test_state_block test_cfb_classes test_combine_prospect test_tc_projections test_market_archive test_inseason_truncate test_draft_sim test_draft_history test_draft_playbook test_draft_corpus test_manager_profile test_weekly_charts test_cfb_ol_unit test_tc_mcp; do
     [ -f "$DIR/${pyt}.py" ] || continue
     output=$(python3 "$DIR/${pyt}.py" 2>&1) || true
     # Same token rule as the JS runner: count result markers, not any line containing the word.

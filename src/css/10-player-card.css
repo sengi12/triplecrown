@@ -600,3 +600,14 @@ tr.pcard-future-row td{opacity:.75;}
 .qpc-dz-pct{color:var(--muted2);}
 .qpc-dz-muted{opacity:.75;}
 @media (max-width:600px){ .qpc-dz .dz-pct{display:none;} .qpc-dz th,.qpc-dz td{padding:4px 4px;font-size:11px;} .qpc-dz tbody th{font-size:11px;} }
+
+/* ── College line context on a rookie lineman's OL tab (the unit's numbers, FBS percentiles) ── */
+.olc-college{margin-top:12px;padding:0 2px;}
+.olc-college .olc-team-head{display:flex;align-items:center;gap:8px;}
+.olc-college .olc-team-head img{width:22px;height:22px;object-fit:contain;}
+.olc-college-sub{font-weight:600;color:var(--muted);font-size:11px;}
+.olc-college-note{font-size:10.5px;color:var(--muted);line-height:1.4;margin:4px 0 8px;max-width:70ch;}
+.olc-college-table th{white-space:nowrap;}
+.olc-cc{white-space:nowrap;}
+.olc-cc-pct{display:inline-block;margin-left:5px;font-family:var(--mono);font-size:9px;font-weight:800;color:var(--muted);vertical-align:baseline;}
+.olc-cc-team small{color:var(--muted);font-weight:500;}

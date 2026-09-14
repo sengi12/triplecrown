@@ -90,6 +90,9 @@ SKILL_POSITIONS = ("QB", "RB", "WR", "TE")
 # share a name never is. Keeping the guard at side-of-ball granularity is what still filters the
 # 118 unrelated Bells without discarding real matches.
 _POS_SKILL = {"QB", "RB", "FB", "HB", "TB", "WR", "TE", "ATH", "SB"}
+# The side-of-ball guard in force. The skill set by default; src/cfb/ol_unit.py swaps in the
+# line positions while it links rookie linemen, then puts this back.
+POS_GUARD = _POS_SKILL
 
 _ROSTER_INDEX = {}
 _ESPN_INDEX = {}
@@ -399,7 +402,7 @@ def _guard(cands, player, draft_class):
         # as the string "nan"). Both mean "not stated" — treating them as a real position makes
         # the guard reject every pre-2018 Georgia skill player, Nick Chubb included.
         listed = {p.upper() for p in e["positions"] if p and p.isalpha()}
-        if listed and not (listed & _POS_SKILL):
+        if listed and not (listed & POS_GUARD):
             continue                                    # a same-name lineman, not our receiver
         out[aid] = e
     return out
