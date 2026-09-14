@@ -117,6 +117,8 @@ function renderSidebar(){
   const pw = pt.parentElement || (pt.closest ? pt.closest('.progress-wrap') : null);
   if(pw && pw.classList) pw.classList.toggle('baseline', !!baseline);
   document.getElementById('progressFill').style.width=`${done/32*100}%`;
+  // The other side of the screen: this week's top fantasy finishes (desktop, in season).
+  if(typeof renderLeaders==='function'){ try{ renderLeaders(); }catch(e){} }
 }
 
 function selectTeam(t){
