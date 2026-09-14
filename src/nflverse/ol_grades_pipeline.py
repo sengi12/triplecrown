@@ -1126,6 +1126,106 @@ def build_composite(out, priors, latest_season):
     return df
 
 
+# ── Rookies: a grade before a snap is played ──────────────────────────────────
+# The composite needs a snap on record; the incoming class has none, so a projected line with
+# a first-round tackle in it used to score him as a replacement-level unknown. A rookie is
+# graded on a PRIOR instead: the composite percentile a lineman of his draft slot has earned
+# in his first season, fitted on the pipeline's own grade history (tools/ol_rookie_prior_fit.py):
+#
+#     rookie-year ol_pctile ≈ a + b · ln(1 + pick)      R² 0.61, r -0.78, n 146 (2019-23
+#     classes, residual sd 15); observed by slot: picks 1-32 → 85th, 33-64 → 71st,
+#     65-100 → 61st, 101-150 → 45th, 151-200 → 34th, 201+ / undrafted (pick 270) → 31st
+#
+# Draft capital is therefore the whole of a rookie's grade, at full strength — the same signal
+# the composite fades with experience (draft_decay) for everyone else, so the two meet as a
+# rookie's snaps and contract take over. The college line context (src/cfb/ol_unit.py) was
+# tested as a second predictor and added nothing (partial r -0.01 on the unit mean, +0.21 for
+# the unit's sack rate alone, not robust at n=46): it stays on the card as context and carries
+# rookie_college_w = 0 in ol_model.json until a larger sample says otherwise.
+ROOKIE_PRIOR = {"a": 142.84, "b": -19.95}     # ol_model.json → rookie_prior
+ROOKIE_COLLEGE_W = 0.0                        # ol_model.json → rookie_college_w
+# gsis_id → college line context percentile (0-100), filled by the seed builder when the
+# cfb block is available; empty means the signal is simply absent, never a default.
+ROOKIE_COLLEGE = {}
+_DRAFT_POS_GROUP = {"OT": "T", "T": "T", "OG": "G", "G": "G", "C": "C", "OL": "G"}
+if isinstance(_OLM.get("rookie_prior"), dict):
+    ROOKIE_PRIOR = {k: float(_OLM["rookie_prior"].get(k, ROOKIE_PRIOR[k])) for k in ("a", "b")}
+ROOKIE_COLLEGE_W = float(_OLM.get("rookie_college_w", ROOKIE_COLLEGE_W))
+
+
+def rookie_prior_pctile(pick):
+    """The composite percentile a rookie of this draft slot has earned in his first season."""
+    p = float(pick) if pick is not None and pd.notna(pick) else 270.0
+    v = ROOKIE_PRIOR["a"] + ROOKIE_PRIOR["b"] * np.log1p(max(1.0, p))
+    return float(min(99.0, max(1.0, v)))
+
+
+def rookie_prior_rows(out, priors, latest, draft=None, college=None, college_w=None):
+    """Prior-only grade rows for linemen with no NFL snap on record: the class drafted after
+    `latest`, and any earlier draftee the models never saw. Returns a frame in `out`'s
+    shape (extra columns NaN) flagged rookie_prior=True; empty when there is nobody to add.
+
+    ol_pctile is rookie_prior_pctile(pick) — optionally blended with the college line context
+    at college_w — and ol_score is the active pool's score at that percentile, so the row
+    compares with veterans on either axis. p_draft / p_market are the pool ranks of his pick
+    and rookie contract, for the card's driver bar; p_snap is absent, as it truly is."""
+    if draft is None:
+        try:
+            draft = pq("draft_picks.parquet", "draft_picks/draft_picks.parquet",
+                       ["gsis_id", "season", "round", "pick", "position", "team", "pfr_player_name"])
+        except Exception:
+            return pd.DataFrame(columns=list(out.columns))
+    draft = draft.dropna(subset=["gsis_id"]).drop_duplicates("gsis_id")
+    draft = draft[draft.position.isin(OLP) & (pd.to_numeric(draft.season, errors="coerce") >= latest)]
+    draft = draft[~draft.gsis_id.isin(out.index)]
+    if draft.empty:
+        return pd.DataFrame(columns=list(out.columns))
+    college = ROOKIE_COLLEGE if college is None else college
+    cw = ROOKIE_COLLEGE_W if college_w is None else float(college_w)
+    active = out[out.get("is_active", pd.Series(False, index=out.index)).fillna(False)]
+    if active.empty:
+        active = out
+    rows = []
+    for _, d in draft.iterrows():
+        pos = _DRAFT_POS_GROUP.get(str(d.position).upper())
+        if not pos:
+            continue
+        pool = active[active.pos == pos]
+        if len(pool) < 5:
+            pool = active
+        if pool.empty:
+            continue
+        gid = str(d.gsis_id)
+        pick = float(d.pick) if pd.notna(d.pick) else 270.0
+        draft_cap = -np.log1p(pick)
+        ref_draft = pd.to_numeric(pool.get("draft_cap"), errors="coerce").dropna().values
+        p_draft = 100.0 * (ref_draft <= draft_cap).mean() if len(ref_draft) else np.nan
+        apy = priors.apy_cap_pct.get(gid) if "apy_cap_pct" in priors.columns else np.nan
+        ref_mkt = pd.to_numeric(pool.get("apy_cap_pct"), errors="coerce").dropna().values
+        p_market = (100.0 * (ref_mkt <= float(apy)).mean()
+                    if pd.notna(apy) and len(ref_mkt) else np.nan)
+        p_college = college.get(gid) if college else None
+        p_college = float(p_college) if p_college is not None and pd.notna(p_college) else np.nan
+        pctile = rookie_prior_pctile(pick)
+        if cw > 0 and pd.notna(p_college):
+            pctile = (1.0 - cw) * pctile + cw * p_college
+        ref_score = (np.sort(pd.to_numeric(pool["ol_score"], errors="coerce").dropna().values)
+                     if "ol_score" in pool.columns else np.array([]))
+        score = float(np.quantile(ref_score, pctile / 100.0)) if len(ref_score) else np.nan
+        rows.append({"gsis_id": gid, "name": d.get("pfr_player_name"), "team": d.get("team"), "pos": pos,
+                     "slot": np.nan, "draft_cap": draft_cap, "draft_decay": 1.0, "apy_cap_pct": apy,
+                     "p_market": round(p_market, 1) if pd.notna(p_market) else np.nan,
+                     "p_draft": round(p_draft, 1) if pd.notna(p_draft) else np.nan,
+                     "p_snap": np.nan, "p_college": round(p_college, 1) if pd.notna(p_college) else np.nan,
+                     "snap_pct": np.nan, "ol_score": (round(score, 1) if pd.notna(score) else np.nan), "ol_pctile": round(pctile, 1),
+                     "ol_grade": pct_to_letter(pctile), "is_active": True, "rookie_prior": True,
+                     "draft_year": int(d.season) if pd.notna(d.season) else np.nan})
+    if not rows:
+        return pd.DataFrame(columns=list(out.columns))
+    add = pd.DataFrame(rows).set_index("gsis_id")
+    return add.reindex(columns=list(dict.fromkeys(list(out.columns) + list(add.columns))))
+
+
 def grade_history(seasons, grp_map, verbose=False):
     """Per-season composite percentile and market percentile, for a trend readout.
 
@@ -1375,6 +1475,18 @@ def build_grades_df(seasons=None, min_snaps=150, min_poa=60,
     _log("building individual composite (market + snap share + draft capital)...")
     priors = player_prior_signals(seasons, latest)
     out = build_composite(out, priors, latest)
+    # The incoming class (and last year's unplayed draftees) get a prior-only grade on the
+    # same scale, flagged rookie_prior, so a projected line with a first-round tackle in it
+    # is not scored as if he were a replacement-level unknown.
+    _log("adding rookie prior rows (draft capital at full strength)...")
+    out["rookie_prior"] = False
+    try:
+        rk = rookie_prior_rows(out, priors, latest)
+        if len(rk):
+            out = pd.concat([out, rk])
+            _log(f"  {len(rk)} rookies graded on their prior")
+    except Exception as e:
+        _log(f"  (rookie priors unavailable: {type(e).__name__}: {e})")
     out = blend_phase_grades(out, team_pass, team_run, season=latest, context=context)
 
     _log("building grade history...")
@@ -1443,7 +1555,7 @@ def build_grades_df(seasons=None, min_snaps=150, min_poa=60,
             "team_pass_pctile", "team_run_pctile",
             "team_ctx_pass_pctile", "team_ctx_run_pctile", "team_ctx_exposure",
             # Component percentiles, so a grade can be explained rather than just asserted.
-            "p_market", "p_snap", "p_draft", "snap_pct", "is_active",
+            "p_market", "p_snap", "p_draft", "p_college", "snap_pct", "is_active", "rookie_prior",
             "hist_seasons", "ol_pctile_hist", "market_pctile_hist",
             # Tracking-derived anchor where ESPN publishes it.
             "espn_pbwr", "espn_rbwr",

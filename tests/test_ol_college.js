@@ -34,9 +34,12 @@ chk(/Big Ten/.test(h) && />1610</.test(h), 'conference and opponent Elo ride alo
 chk(app.prospect('9')==='', 'the College tab\'s prospect panel has nothing to add for a lineman-only profile');
 
 console.log('=== a lineman with NFL grades keeps the college line beneath them ===');
-app.setNflverse({'2025':{ol_players:{'test tackle':{team:'SEA',consensus:62}}}});
+app.setNflverse({'2025':{ol_players:{'test tackle':{team:'SEA',pos:'T',ol_grade:'A-',ol_pctile:91.2,ol_conf:'LOW',p_draft:96.1,rookie_prior:true}}}});
 h=app.render('9');
-chk(/College line context/.test(h) && h.indexOf('College line context')>h.indexOf('olc-'), 'NFL grades first, the college block after');
+chk(/Overall OL Grade/.test(h) && /College line context/.test(h) && h.indexOf('Overall OL Grade')<h.indexOf('College line context'), 'NFL grades first, the college block after');
+chk(/olc-rookie-note/.test(h) && /Rookie prior/.test(h) && /draft slot/.test(h), 'a rookie-prior grade says what it is (draft capital at full strength)');
+app.setNflverse({'2025':{ol_players:{'test tackle':{team:'SEA',pos:'T',ol_grade:'B',ol_pctile:70,ol_conf:'HIGH',p_draft:80}}}});
+chk(!/olc-rookie-note/.test(app.render('9')), 'a measured grade carries no such note');
 
 console.log('=== nothing for a veteran without a profile ===');
 app.setNflverse({'2025':{ol_players:{}}});

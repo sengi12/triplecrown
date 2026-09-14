@@ -2900,6 +2900,8 @@ def _ol_grades_by_player(season=None, utilization_by_team=None, team_ol_context=
             "p_market": _v("p_market"),
             "p_snap": _v("p_snap"),
             "p_draft": _v("p_draft"),
+            "p_college": _v("p_college"),
+            "rookie_prior": (True if str(_v("rookie_prior")).lower() == "true" else None),
             "espn_pbwr": _v("espn_pbwr"),
             "espn_rbwr": _v("espn_rbwr"),
             "hist_seasons": _v("hist_seasons"),

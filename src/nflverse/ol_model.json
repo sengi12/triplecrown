@@ -7,8 +7,12 @@
     "team_blend": "How much of a PHASE grade (pass/run) comes from the validated team layer rather than the individual composite. Swept vs the ESPN win-rate benchmark: 0.00->AUC .797/.761 (pass/run), 0.15->.790/.744, 0.25->.777/.729, 0.35->.760/.706, 0.50->.723/.660. Zero is best for pure ranking but makes pass and run grades identical; 0.15 buys real phase differentiation for ~0.01 AUC.",
     "espn_blend": "Weight of ESPN's published win rate where it exists (~60 linemen). The only free signal that is both individual and phase-specific, so it earns a heavy hand there.",
     "recency_decay": "Per-season decay when blending multiple seasons: weight = 1 - decay * seasons_ago.",
-    "aly_weights": "Adjusted Line Yards crediting (Football Outsiders): losses count loss_mult (the line got beaten), 0-4 yards fully, 5-10 at mid_mult, 10+ at long_mult. Measured reliability r=+0.427 vs +0.351 for raw stuff rate."
+    "aly_weights": "Adjusted Line Yards crediting (Football Outsiders): losses count loss_mult (the line got beaten), 0-4 yards fully, 5-10 at mid_mult, 10+ at long_mult. Measured reliability r=+0.427 vs +0.351 for raw stuff rate.",
+    "rookie_prior": "A rookie lineman's grade before his first snap: the composite percentile his draft slot has earned in a first season, rookie_pct = a + b * ln(1 + pick), undrafted = pick 270. Fit by tools/ol_rookie_prior_fit.py on the pipeline's own grade history (2019-2023 classes, n=146): R2 0.61, r -0.78, residual sd ~15. Observed by slot: 1-32 -> 85th, 33-64 -> 71st, 65-100 -> 61st, 101-150 -> 45th, 151-200 -> 34th, 201+ -> 31st. Refit once a class lands (run the tool, paste a/b here).",
+    "rookie_college_w": "Weight of the college line context (src/cfb/ol_unit.py, the unit's percentile in his final college season) in a rookie's grade. 0 because it validated as no better than noise beside draft pick (partial r -0.01 on the unit mean; +0.21 for the unit sack rate alone, not robust at n=46). The card still shows it as context."
   },
+  "rookie_prior": {"a": 142.84, "b": -19.95},
+  "rookie_college_w": 0.0,
   "validation": "Blind APM from play-by-play alone FAILED validation (split-half r=0.07, AUC 0.541 vs ESPN) and is retained as diagnostics only - see the pipeline docstring. The composite above identifies ESPN PBWR top-20 at AUC 0.802 and RBWR top-10 at 0.752."
  },
  "composite_w": {"market": 0.417, "snap": 0.403, "draft": 0.180},
