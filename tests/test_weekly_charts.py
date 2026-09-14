@@ -36,7 +36,16 @@ def _pbp_pass():
                          yards_gained=5, pass_touchdown=0, interception=0, air_yards=3,
                          pass_location="right", passer_player_id="q2",
                          game_id="2026_01_X_CIN", play_id=100 + i))
-    return pd.DataFrame(rows)
+    # Two sacks of q1 in week 1 (dropbacks, not attempts) — under duress.
+    for i in (200, 201):
+        rows.append(dict(season_type="REG", week=1, posteam="CIN", defteam="KC",
+                         pass_attempt=0, sack=1, two_point_attempt=0, complete_pass=0,
+                         yards_gained=-7, pass_touchdown=0, interception=0, air_yards=None,
+                         pass_location=None, passer_player_id="q1",
+                         game_id="2026_01_X_CIN", play_id=i))
+    df = pd.DataFrame(rows)
+    df["qb_dropback"] = 1; df["qb_scramble"] = 0; df["rusher_player_id"] = None
+    return df
 
 
 def _pbp_rush():
@@ -58,6 +67,13 @@ def main():
 
     print("=== qb_passing_weekly ===")
     nv._load_pbp = lambda season, cols=None: _pbp_pass()
+    # Play context for the duress splits: week-1 plays 0-2 pressured, play 0 blitzed (5 rushers).
+    _ctx = pd.DataFrame({"game_id": ["2026_01_X_CIN"] * 3 + ["2026_02_X_CIN"],
+                         "play_id": [0, 1, 2, 0], "was_pressure": [True, True, True, False],
+                         "number_of_pass_rushers": [5, 4, 4, 4]}).set_index(["game_id", "play_id"])
+    nv._play_context = lambda season: _ctx
+    nv._aux_parquet = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no PFR in test"))
+    nv._QB_PFR_WEEK.clear()
     qw = nv.qb_passing_weekly(2026)
     check("per-game floor drops the 3-attempt relief appearance", "backup guy" not in qw)
     q = qw.get("test quarterback")
@@ -70,6 +86,17 @@ def main():
           "deep" in g1["zones"] and "left" in g1["zones"]["deep"]
           and g1["zones"]["deep"]["left"]["td"] == 1
           and "right" not in g1["zones"].get("short", {}))
+    # Under duress: the context says plays 0-2 were pressured (and play 0 blitzed); the two
+    # sacks are pressured by definition. PFR is unavailable in the test → pfr is None.
+    d = g1.get("duress")
+    check("a duress block rides each game", d is not None and d["pfr"] is None)
+    check("pressured = hit-or-sacked dropbacks: 3 attempts + 2 sacks",
+          d["pressured"]["db"] == 5 and d["pressured"]["att"] == 3 and d["pressured"]["sk"] == 2
+          and d["pressured"]["td"] == 1 and d["pressured"]["rating"] is not None)
+    check("clean = the other 6 attempts, no sacks", d["clean"]["db"] == 6 and d["clean"]["sk"] == 0)
+    check("blitzed = the one 5-rusher play", d["blitzed"]["db"] == 1 and d["blitzed"]["td"] == 1)
+    check("a game with no pressured dropbacks reads None, not zeros",
+          q["games"][1]["duress"]["pressured"] is None and q["games"][1]["duress"]["clean"]["db"] == 10)
 
     print("=== rb_fan_weekly ===")
     nv._load_pbp = lambda season, cols=None: _pbp_rush()

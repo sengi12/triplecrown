@@ -37,7 +37,13 @@ on:
     #     when something the sidecar reads has actually moved.
     - cron: '37 6 * * *'             # ~06:37 UTC nominal
     - cron: '17 13 * * *'            # ~13:17 UTC — also the Monday market-model slot
-    - cron: '41 */2 * 1,2,9-12 *'    # in-season: look every two hours
+    # In season the looks follow the games. nflverse posts the early-window games around
+    # 22:03 UTC Sunday, the late window ~00:07 Monday, SNF ~05:33 Monday and a full pass
+    # ~09:03 — each delayed 0-4h by GitHub's queue (2026-09-13: 20:56, 04:48, 10:56 UTC).
+    # Sunday and Monday look every half hour; other days hourly. A look that finds nothing
+    # ends at the probe step in under a minute.
+    - cron: '11,41 * * 1,2,9-12 0,1'   # in-season Sun+Mon: every 30 minutes
+    - cron: '41 * * 1,2,9-12 2-6'      # in-season Tue–Sat: hourly
   workflow_dispatch:
     inputs:
       force:

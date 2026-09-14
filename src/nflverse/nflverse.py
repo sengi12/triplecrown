@@ -2160,18 +2160,105 @@ def qb_passing_zones(season, min_attempts=25):
     return out
 
 
+_QB_PFR_WEEK = {}
+def _qb_pfr_week(season):
+    """{(gsis, week): {...}} from PFR's weekly advanced passing (posts within a day): times
+    pressured / blitzed / hurried / hit / sacked, bad throws, drops — the pressure COUNTS the
+    public play-by-play cannot see (a hurry leaves no trace in pbp)."""
+    if season in _QB_PFR_WEEK:
+        return _QB_PFR_WEEK[season]
+    out = {}
+    try:
+        pw = _aux_parquet(PFR_PASS_WEEK_URL.format(season=season),
+                          columns=["game_type", "week", "pfr_player_id", "times_pressured", "times_pressured_pct",
+                                   "times_blitzed", "times_hurried", "times_hit", "times_sacked",
+                                   "passing_bad_throws", "passing_bad_throw_pct", "passing_drops"])
+        pw = pw[pw["game_type"] == "REG"]
+        p2g = _pfr_to_gsis_map()
+        def _n(v, f=int):
+            return None if pd.isna(v) else f(v)
+        for _, r in pw.iterrows():
+            gid = p2g.get(str(r["pfr_player_id"]))
+            if not gid:
+                continue
+            out[(gid, int(r["week"]))] = {
+                "pressured": _n(r["times_pressured"]), "pressured_pct": _n(r["times_pressured_pct"], lambda v: round(float(v) * 100, 1)),
+                "blitzed": _n(r["times_blitzed"]), "hurried": _n(r["times_hurried"]), "hit": _n(r["times_hit"]),
+                "sacked": _n(r["times_sacked"]), "bad_throws": _n(r["passing_bad_throws"]),
+                "bad_throw_pct": _n(r["passing_bad_throw_pct"], lambda v: round(float(v) * 100, 1)), "drops": _n(r["passing_drops"]),
+            }
+    except Exception:
+        pass
+    _QB_PFR_WEEK[season] = out
+    return out
+
+
+def _qb_duress_split(rows):
+    """One split's line: dropbacks, attempts, completions, yards, TD, INT, sacks, rating.
+    `rows` are this QB's dropbacks in the split (attempts and sacks)."""
+    if rows is None or not len(rows):
+        return None
+    sk = pd.to_numeric(rows["sack"], errors="coerce").fillna(0) == 1
+    att = rows[~sk & (pd.to_numeric(rows["pass_attempt"], errors="coerce").fillna(0) == 1)]
+    return {"db": int(len(rows)), "att": int(len(att)), "cmp": int(att["complete_pass"].sum()) if len(att) else 0,
+            "yds": int(att["yards_gained"].sum()) if len(att) else 0, "td": int(att["pass_touchdown"].sum()) if len(att) else 0,
+            "int": int(att["interception"].sum()) if len(att) else 0, "sk": int(sk.sum()),
+            "rating": _passer_rating_df(att) if len(att) else None}
+
+
+def _qb_duress(season, pbp):
+    """Per (passer, week): the game's dropbacks split by what the defense did — pressured
+    (in season: hit or sacked, the only pressures public pbp can see; the participation file
+    adds hurries after the year), blitzed (5+ rushers, FTN), clean — plus PFR's own pressure
+    counts. {(qid, wk): {"pressured": {...}, "blitzed": {...}, "clean": {...}, "pfr": {...}|None}}."""
+    out = {}
+    try:
+        ctx = _play_context(season)
+    except Exception:
+        ctx = None
+    db = pbp[(pbp["qb_dropback"] == 1) & pbp["passer_player_id"].notna() & (pbp["two_point_attempt"] == 0)].copy()
+    if db.empty:
+        return out
+    if ctx is not None and "game_id" in db.columns and "play_id" in db.columns:
+        key = list(zip(db["game_id"], db["play_id"]))
+        try:
+            c = ctx.reindex(key)
+            sacked = (pd.to_numeric(db["sack"], errors="coerce").fillna(0) == 1).values
+            db["_pressured"] = (c["was_pressure"].values == True) | sacked   # noqa: E712  — a sack is a pressure whatever the context says
+            db["_blitzed"] = pd.to_numeric(c["number_of_pass_rushers"], errors="coerce").fillna(0).values >= 5
+        except Exception:
+            db["_pressured"] = False; db["_blitzed"] = False
+    else:
+        hit = pd.to_numeric(db.get("qb_hit", 0), errors="coerce").fillna(0) if "qb_hit" in db.columns else 0
+        db["_pressured"] = (hit == 1) | (pd.to_numeric(db["sack"], errors="coerce").fillna(0) == 1)
+        db["_blitzed"] = False
+    pfr = _qb_pfr_week(season)
+    for (qid, wk), g in db.groupby(["passer_player_id", "week"]):
+        out[(qid, int(wk))] = {
+            "pressured": _qb_duress_split(g[g["_pressured"]]),
+            "blitzed": _qb_duress_split(g[g["_blitzed"]]),
+            "clean": _qb_duress_split(g[~g["_pressured"]]),
+            "pfr": pfr.get((qid, int(wk))),
+        }
+    return out
+
+
 def qb_passing_weekly(season, min_attempts_game=8):
     """Per-QB per-GAME zone matrices — the in-season companion to
     qb_passing_zones. Games carry only cells with attempts (compact), and no
     per-game league average: the season block the client already holds is the
     stable baseline a single game should be read against."""
-    pbp = _load_pbp(season, _QB_ZONE_COLS + ["week", "defteam"])
+    pbp = _load_pbp(season, _QB_ZONE_COLS + ["week", "defteam", "game_id", "play_id"])
     pbp = pbp[pbp["season_type"] == "REG"]
     att = pbp[(pbp["pass_attempt"] == 1) & (pbp["sack"] == 0)
               & (pbp["two_point_attempt"] == 0) & pbp["pass_location"].notna()
               & pbp["passer_player_id"].notna()].copy()
     if att.empty:
         return {}
+    try:
+        duress = _qb_duress(season, pbp)
+    except Exception:
+        duress = {}
     att["posteam"] = att["posteam"].replace(NFLVERSE_TO_SEED)
     att["defteam"] = att["defteam"].replace(NFLVERSE_TO_SEED)
     att["depth"] = pd.cut(att["air_yards"], bins=[-100, -0.5, 9.5, 19.5, 100],
@@ -2210,6 +2297,7 @@ def qb_passing_weekly(season, min_attempts_game=8):
                 **_scramble_totals(scr, (qid, wk)),
             },
             "zones": zones,
+            **({"duress": duress[(qid, int(wk))]} if (qid, int(wk)) in duress else {}),
         })
     for node in out.values():
         node["games"].sort(key=lambda x: x["wk"])
