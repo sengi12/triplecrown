@@ -172,6 +172,7 @@ run_js_test test_route_tree     "Route tree card: alignment/route distribution r
 run_js_test test_qb_chart       "QB passing chart card rendering"
 run_js_test test_ai_compare     "AI compare: BYO-model grounding, free-first call discipline, output escaping"
 run_js_test test_def_weekly     "Defensive weekly card: per-defender logs and totals"
+run_js_test test_live_defense   "In season: the defender card asks for the frozen file by last season and tries once; the live Roster tab leads with the ESPN depth chart"
 run_js_test test_cfb_prospect   "College prospect panel: percentile bars vs past draft classes, per-position season tables, escaping, degrades to nothing without college data"
 run_js_test test_tc_model       "TC model row on the player card: Sleeper-vs-model comparison, agree/disagree chip thresholds, degrades to nothing without a tc block"
 run_js_test test_qb_extras      "QB extras: ATT/CMP/RZ color coding, vs prefix for home games"

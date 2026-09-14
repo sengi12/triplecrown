@@ -772,21 +772,30 @@ function pcardLoadStats(mode){
     // isDefense, not !isSkill, or kickers/punters get bucketed as defenders.
     return loadEspnCardData(pid, posc, body, {league:'college-football', def:isDefense});
   }
-  if(mode==='pro' && pcardState.isDefense && typeof pcardDefWeeklyAvailable==='function' && pcardDefWeeklyAvailable(pid) && typeof renderPcardDefWeekly==='function'){
-    body.innerHTML = renderPcardDefWeekly(pid);
-    return;
-  }
   // Defensive weekly logs live in a lazy-loaded nflverse sidecar. If it isn't in memory yet
   // (hosted first-open), fetch it, then re-render this tab. Falls through to the ESPN gamelog
   // only if the sidecar genuinely has no data for this player.
-  if(mode==='pro' && pcardState.isDefense && typeof ensureNflverseSection==='function'
-     && !nflverseSectionReady('def_weekly')){
+  // The card shows every season the defender has: the frozen seasons come from the def_weekly
+  // sidecar file, the season in progress rides the in-season sidecar's merge. In season the
+  // merge alone used to satisfy the any-season readiness check (and the "available" early
+  // return) and leave the frozen file unloaded — so readiness is asked of LAST season, which
+  // only the file can answer, before anything renders. One try per card open: a failed fetch
+  // falls through to what is in memory instead of re-arming.
+  const _defPrev = String(Number(TC_SEASON.year)-1);
+  const _defFileHave = !!((typeof _nflverseLazyLoaded!=='undefined' && _nflverseLazyLoaded.def_weekly)
+    || (typeof NFLVERSE!=='undefined' && NFLVERSE && NFLVERSE[_defPrev] && NFLVERSE[_defPrev].def_weekly));
+  if(mode==='pro' && pcardState.isDefense && typeof ensureNflverseSection==='function' && !_defFileHave && !pcardState.defTried){
+    pcardState.defTried = true;
     body.innerHTML = `<div class="pcard-loading">Loading defensive weekly stats…</div>`;
     const tok = pcardToken;
-    ensureNflverseSection('def_weekly').then(()=>{
+    ensureNflverseSection('def_weekly', _defPrev).then(()=>{
       if(tok!==pcardToken || !pcardOpen || !pcardState || pcardState.pid!==pid) return;
       pcardLoadStats(mode);
     });
+    return;
+  }
+  if(mode==='pro' && pcardState.isDefense && typeof pcardDefWeeklyAvailable==='function' && pcardDefWeeklyAvailable(pid) && typeof renderPcardDefWeekly==='function'){
+    body.innerHTML = renderPcardDefWeekly(pid);
     return;
   }
   if(!isSkill){

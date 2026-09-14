@@ -312,7 +312,9 @@ LIVE_NFLVERSE_PARTS = ("team", "players", "routes", "qb_passing", "rb_fan", "ros
                        # per-game companions (current season only): they ride the sidecar, never the seed
                        "qb_passing_weekly", "rb_fan_weekly", "scheme_weekly", "target_trees", "routes_weekly",
                        # Next Gen Stats per game (tracking data — updates the morning after)
-                       "ngs_weekly")
+                       "ngs_weekly",
+                       # individual defenders' weekly logs (PFR's weekly defense file, within a day)
+                       "def_weekly")
 
 
 def build_live_nflverse(season, parts=LIVE_NFLVERSE_PARTS):
@@ -329,6 +331,7 @@ def build_live_nflverse(season, parts=LIVE_NFLVERSE_PARTS):
         "scheme_weekly": lambda: _nfl.scheme_weekly(season),
         "target_trees": lambda: _nfl.target_trees_weekly(season, min_targets_game=1, min_targets_season=1),
         "ngs_weekly": lambda: _nfl.ngs_weekly(season),
+        "def_weekly": lambda: _nfl.defensive_weekly_players(season),
         "routes_weekly": lambda: _nfl.routes_weekly(season),
         "players": lambda: _nfl.build_player_tables(season),
         "routes": lambda: _nfl.route_trees(season),
