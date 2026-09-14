@@ -9478,7 +9478,7 @@ function pcardQbDuressHTML(game, games, season, notePlayer){
     <div class="qpc-dz-scroll"><table class="qpc-dz"><thead><tr><th></th><th>Cmp/Att</th><th class="dz-pct">Cmp%</th><th>Yds</th><th>TD</th><th>INT</th><th>Sk</th><th>Rtg</th></tr></thead><tbody>
       ${row('Clean pocket', clean, 'Dropbacks with no hit and no sack')}
       ${row('Hit or sacked', pressured, 'Public play-by-play sees a pressure only when the passer is hit or sacked — hurries are counted in PFR\'s line below')}
-      ${row('vs Blitz (5+)', blitzed, 'Five or more pass rushers, per FTN charting')}
+      ${blitzed ? row('vs Blitz (5+)', blitzed, 'Five or more pass rushers, per FTN charting') : `<tr class="qpc-dz-none"><th title="Five or more pass rushers, per FTN charting">vs Blitz (5+)</th><td colspan="7">FTN charting not posted yet</td></tr>`}
     </tbody></table></div>
     <div class="qpc-dz-pfr">${pfrLine}</div>
   </div>`;

@@ -37,6 +37,8 @@ h=app.panel(null,[g1,g2],'2026',np);
 chk(/UNDER DURESS · SEASON TO DATE/.test(h) && /62 dropbacks/.test(h) && /Clean pocket<\/th><td>38\/52/.test(h), 'no game picked: season to date');
 chk(/PFR: pressured <b>6<\/b> <span class="qpc-dz-pct">\(9\.7% of dropbacks\)/.test(h), 'PFR counts summed over the games that have them, the rate over our dropbacks');
 chk(app.panel(null,[{wk:1,opp:'X'}],'2026',np)==='' && app.panel({wk:1,opp:'X'},[],'2026',np)==='', 'a sidecar built before the splits → no panel');
+const g3={wk:1, opp:'TB', duress:{ clean:{db:30,att:30,cmp:20,yds:250,td:2,int:0,sk:0,rating:100}, pressured:null, blitzed:null, pfr:null }};
+chk(/vs Blitz \(5\+\)<\/th><td colspan="7">FTN charting not posted yet<\/td>/.test(app.panel(g3,[g3],'2026',np)), 'no blitz charting yet reads as not posted, not as zero blitzes');
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);
