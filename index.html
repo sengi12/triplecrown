@@ -9150,7 +9150,7 @@ function gcGripDown(ev){
   // The Leaders list fills in as it widens (full names, then stat columns): repaint as the
   // pointer moves, one frame at a time.
   const move=(e)=>{ const w=Math.round(Math.max(200, Math.min(maxW, right-e.clientX))); el.style.width=el.style.minWidth=el.style.maxWidth=w+'px'; _gc.dragW=w;
-    if(_gc.mode==='normal' && !_gc.raf && typeof requestAnimationFrame==='function'){ _gc.raf=requestAnimationFrame(()=>{ _gc.raf=0; if(_gc.dragW) renderRightSidebar(); }); } };
+    if(_gc.mode==='normal' && !_gc.raf && typeof window!=='undefined' && window.requestAnimationFrame){ _gc.raf=window.requestAnimationFrame(()=>{ _gc.raf=0; if(_gc.dragW) renderRightSidebar(); }); } };
   const up=()=>{ window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
     if(_gc.dragW){ try{ localStorage.setItem(gcWidthKey(), String(_gc.dragW)); }catch(e){} _gc.dragW=0; renderRightSidebar(); } };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
