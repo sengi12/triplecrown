@@ -97,8 +97,11 @@ function renderSidebar(){
   const curEdited = hasTeam && (typeof teamEdited==='function' ? teamEdited(currentTeam) : false);
   const toggleDot = curEdited ? `<span class="team-picker-dot" title="${currentTeam} has edits"></span>` : '';
   const toggleCount = done>0 ? `<span class="team-picker-count" title="${done} team${done===1?'':'s'} with edits">${done}</span>` : '';
+  // While the selected team's game is on, its score and clock ride in the bar's spare width
+  // (the phone's version of the desktop sidebar's red dot and record); tap → the Games sheet.
+  const liveLine = (mobile && hasTeam && typeof gcPickerLineHTML==='function') ? gcPickerLineHTML(currentTeam) : '';
   const mobileToggle = `<button class="team-picker-toggle" onclick="toggleMobileTeamPicker()" aria-expanded="${mobileTeamPickerExpanded?'true':'false'}" title="Tap to ${mobileTeamPickerExpanded?'collapse':'expand'} team selector">
-    <span class="team-picker-toggle-label">Teams: ${selectedLabel}${toggleDot}</span>
+    <span class="team-picker-toggle-label">Teams: ${selectedLabel}${toggleDot}</span>${liveLine}
     <span class="team-picker-toggle-right">${toggleCount}<span class="team-picker-toggle-icon">${chevron}</span></span>
   </button>`;
 
