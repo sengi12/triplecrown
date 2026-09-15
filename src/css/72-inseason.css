@@ -401,3 +401,7 @@
 .la-lh-why-sticky{background:rgba(0,207,159,.16);color:var(--rb);}
 .la-lh-why-fleeting{background:rgba(255,90,90,.14);color:#ff9d9d;}
 .la-lh-why-trend{background:rgba(168,85,247,.16);color:#c9a3ff;}
+/* Chopped leagues: the chop market board under the wire — every free agent priced. */
+.la-cmkt-bar .la-cmkt-pos{margin-left:auto;}
+.la-cmkt-board .la-trnd-row:last-child{border-bottom:none;}
+.la-cmkt-board .la-wv-bid.hub-bid-chop{font-family:var(--mono);font-size:12px;border:1px solid rgba(210,153,34,.5);white-space:nowrap;}

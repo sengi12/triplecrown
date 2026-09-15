@@ -61,7 +61,7 @@ const app=new Function(code+`
   laFetchMatchups=function(){};
   return { dur:hubDurability, snap:hubSnapshotResult, teamCard:laThisWeekCardHTML, hubScoringFor, calcFptsUnder, hubWeekProj, hubFormMap, hubFill, hubCallouts, hubWaiverReasons, hubFaabAdvice, hubFaabCurveFromHistory, hubFaabFallbackCurve, hubAnalyzeLeague, hubKickoff,
     hubChopBand, hubChopMarket, hubChopFaab, hubChopCaliber, HUB_CHOP_DEFAULTS, leagueHTML:_hubActionsHTML,
-    hubFaabCurve, hubChopScanTx, hubLeagueNameKey, setFetch:(f)=>{ sleeperFetch=f; }, chopHist:(id)=>_hubChopHist[id], LA_LEAGUE_URL, SLEEPER_LEAGUES_URL,
+    hubFaabCurve, hubChopScanTx, hubLeagueNameKey, hubChopBoard, setFetch:(f)=>{ sleeperFetch=f; }, chopHist:(id)=>_hubChopHist[id], LA_LEAGUE_URL, SLEEPER_LEAGUES_URL,
            laDvpTable, laCurrentWeek, byId:()=>{ const m=new Map(); buildPlayerList().forEach(p=>m.set(String(p.player_id),p)); return m; },
            gs:()=>scoringSettings, HUB_CLOSE, ins:()=>TC_INSEASON, sp:()=>sleeperPlayers, nv:()=>NFLVERSE, setDyn:(d)=>{ DYNASTY_VALUES=d; } };
 `)();
@@ -297,6 +297,18 @@ chk(sres && sres.mine && sres.lineup && sres.lineup.opponent==='Rivals', 'the sn
 chk(sres.lineup.callouts.some(c=>c.kind==='OBVIOUS' && c.start.id==='1'), 'with the same START call');
 const card=app.teamCard(snap);
 chk(/WAIVER WIRE/.test(card) && /la-slot-ADD/.test(card) && /la-slot-DROP/.test(card) && /Free Wideout/.test(card) && /Multi-League/.test(card), 'the Lineup pane section renders ADD → DROP pairs in the pane\'s rows and links to Multi-League');
+
+// a Chopped FAAB league: the wire prices on the chop market and every free agent carries a price
+const chopSnap=Object.assign({}, snap, {leagueId:'L2', leagueType:3, waiverType:2, waiverBudget:1000, teamList:[Object.assign({}, snap.teamList[0], {faabUsed:100}), snap.teamList[1]]});
+const cres=app.snap(chopSnap);
+chk(cres && cres.faab && cres.faab.chop && cres.faab.budget===1000 && cres.faab.left===900 && cres.faab.chop.alive===2, 'a Chopped FAAB snapshot prices the wire on the chop market with $900 of $1000 left, 2 of 2 alive');
+const board=app.hubChopBoard(cres, 'ALL');
+chk(board.length===4 && ['Free Back','Free Wideout','Spare Passer','Third Back'].every(n=>board.some(r=>r.name===n)) && !board.some(r=>r.name==='Star Back'), 'every unrostered QB/RB/WR/TE is on the board, nobody rostered is');
+chk(board.every(r=>r.faab && r.faab.chop && r.faab.bid>=0) && board.every((r,i)=>!i || board[i-1].faab.bid>=r.faab.bid), 'each carries a chop-market price, ordered by bid');
+chk(app.hubChopBoard(cres, 'QB').length===1 && app.hubChopBoard(cres, 'QB')[0].name==='Spare Passer', 'the position filter narrows it');
+const ccard=app.teamCard(chopSnap);
+chk(/CHOP MARKET/.test(ccard) && /Spare Passer/.test(ccard) && (ccard.match(/mkt \$/g)||[]).length>=4 && /laSetChopPos\('TE'\)/.test(ccard), 'the Lineup pane shows the chop market board: a price with its market on every free agent, position chips');
+chk(!/CHOP MARKET/.test(card), 'a head-to-head league has no chop board');
 
 _asyncTests.catch(e=>{ total++; console.log('  FAIL: history fetch threw', e && e.message); }).then(()=>{
   console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);

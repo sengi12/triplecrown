@@ -31553,6 +31553,8 @@ async function laTakeSnapshotSleeper(leagueId, opts){
                fpts:_laPts(r.settings, 'fpts'), fptsAgainst:_laPts(r.settings, 'fpts_against'),
                division:(r.settings&&r.settings.division!=null)?Number(r.settings.division):null,
                streak:(r.metadata&&r.metadata.streak)||'',
+               // FAAB spent so far — the Lineup pane's wire prices bids against what is left.
+               faabUsed:(r.settings&&+r.settings.waiver_budget_used)||0,
                players, picks };
     });
     // myUserId identifies YOUR team. laState.user is in-memory only, so after a reload it's
@@ -31586,6 +31588,8 @@ async function laTakeSnapshotSleeper(leagueId, opts){
       teams:lg.total_rosters||teams.length, superflex, tep, leagueType, kdef,
       // Chopped leagues: the week the chopping starts and the last week anyone is chopped.
       chop: leagueType===3 ? { startWeek:+((lg.settings||{}).start_week)||1, lastLeg:+((lg.settings||{}).last_chopped_leg)||0 } : null,
+      // Waivers: Sleeper waiver_type 2 is FAAB; the budget prices the Lineup pane's wire.
+      waiverType:+((lg.settings||{}).waiver_type)||0, waiverBudget:+((lg.settings||{}).waiver_budget)||0,
       // Sleeper's own scoring table, verbatim: Σ stat × setting over matching keys scores any
       // Sleeper stat row exactly as the league does — offense, kickers, defenders, D/ST.
       scoringRaw: (lg.scoring_settings && typeof lg.scoring_settings==='object') ? Object.assign({}, lg.scoring_settings) : null,
@@ -35434,7 +35438,7 @@ function hubAnalyzeLeague(lg, rosters, users, matchups, ctxBase){
       const alive = (matchups && matchups.length) ? new Set(matchups.map(m=>m.roster_id)).size : teams;
       const market = hubChopMarket(ctxBase.faabChop||hubChopHist(lg), sc);
       const f = alive/Math.max(1, teams);
-      faab.chop = { alive, total:teams, f, n:market.length };
+      faab.chop = { alive, total:teams, f, n:market.length, market };
       adds.forEach(c=>{ c.faab = hubChopFaab(c.pos, c.rank, f, market, budget, faab.left) || hubFaabAdvice(c.ros, wk, curve, teams, budget, faab.left); });
       return {league:lg, teams, mine:!!mine, lineup, adds, drops, faab, wk, dynasty};
     }
@@ -35575,7 +35579,7 @@ function _hubActionsHTML(res, open){
       <div class="hub-body">${_hubPlayer({id:c.id,name:c.name,pos:c.pos,team:c.team,value:c.wp.adj,wp:c.wp,unavailable:c.wp.bye?'BYE':''},true)}${c.drop?` <span class="hub-arrow">for</span> ${_hubPlayer(Object.assign({},c.drop,{value:c.drop.rosPg}),true)}`:''}
         <div class="hub-whys"><span class="hub-why hub-why-net" title="${c.dynasty?'Dynasty chart value over replacement, net of the player he replaces':'Rest-of-season value over replacement, net of the player he replaces, per game'}">+${c.net.toFixed(c.dynasty?0:1)}${c.dynasty?' dyn':'/gm'}</span>${c.reasons.concat(_hubDurChips(c)).map(_hubReason).join('')}${c.startsOver?`<span class="hub-why hub-why-starts" title="Beats the weakest starter he could replace in your optimal lineup this week">starts over ${escHtml(c.startsOver.name)} (${escHtml(c.startsOver.slot)}) +${c.startsOver.delta}</span>`:''}</div></div>
       ${c.faab ? (c.faab.chop
-        ? `<span class="hub-bid hub-bid-chop" title="Chop market: a ${escAttr(HUB_CHOP_BAND_LABEL[c.faab.band]||c.faab.band)} ${c.pos} released with ${res.faab.chop?res.faab.chop.alive:'?'} of ${res.teams} teams alive has gone for a median $${c.faab.market} (${c.faab.src==='history'?`${c.faab.n} of this league's own releases, weighted toward the latest season and shrunk toward the three-season study`:c.faab.src==='blend'?`${c.faab.n} of this league's own release${c.faab.n===1?'':'s'} blended with the three-season study`:'the three-season Eliminator study'}); $${c.faab.bid} is the 60th percentile — it has beaten three comparables in five, and never more than 60% over the market">$${c.faab.bid}<small> mkt $${c.faab.market}</small></span>`
+        ? hubChopBidHTML(c.faab, res, c.pos)
         : `<span class="hub-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league (${(c.faab.share*100).toFixed(0)}% of your $${c.faab.left} left)">$${c.faab.bid}</span>`) : ''}
     </div>`).join('');
   const drops = open ? res.drops.map(d=>`<div class="hub-row"><span class="hub-kind hub-k-drop">DROP</span><div class="hub-body">${_hubPlayer(d.p,true)}<div class="hub-whys">${d.reasons.map(r=>`<span class="hub-why">${escHtml(r)}</span>`).join('')}</div></div></div>`).join('') : '';
@@ -35597,14 +35601,24 @@ function hubSnapshotResult(s){
   const ref=(typeof laSnapshotRef==='function')?String(laSnapshotRef(s)):String(s.leagueId);
   const sig=`${ref}~${wk}~${mu?mu.sig:''}~${(typeof TC_INSEASON!=='undefined'&&TC_INSEASON&&TC_INSEASON.asof)||''}~${(typeof buildPlayerScoringSig==='function')?buildPlayerScoringSig():''}`;
   if(_hubSnapMemo.sig===sig) return _hubSnapMemo.res;
-  const lg={league_id:s.leagueId, name:s.name, season:s.season, total_rosters:s.teams||s.teamList.length, roster_positions:s.rosterPositions||[], settings:{}};
+  // The snapshot carries the league's type and FAAB settings, so the wire prices bids here
+  // exactly as the Multi-League hub does — a Chopped league on its chop market.
+  const lg={league_id:s.leagueId, name:s.name, season:s.season, total_rosters:s.teams||s.teamList.length, roster_positions:s.rosterPositions||[],
+    settings:{type:+s.leagueType||0, waiver_type:+s.waiverType||0, waiver_budget:+s.waiverBudget||0}};
   const rows=(mu&&mu.rows)||[];
-  const rosters=s.teamList.map(t=>{ const r=rows.find(x=>x.roster_id===t.rosterId); return {roster_id:t.rosterId, owner_id:t.ownerId, co_owners:t.coOwners||[], players:(t.players||[]).map(p=>String(p.id)), starters:(r&&r.starters)||[], reserve:[], taxi:[], settings:{}}; });
+  const rosters=s.teamList.map(t=>{ const r=rows.find(x=>x.roster_id===t.rosterId); return {roster_id:t.rosterId, owner_id:t.ownerId, co_owners:t.coOwners||[], players:(t.players||[]).map(p=>String(p.id)), starters:(r&&r.starters)||[], reserve:[], taxi:[], settings:{waiver_budget_used:+t.faabUsed||0}}; });
   const users=s.teamList.map(t=>({user_id:t.ownerId, display_name:t.owner, metadata:{team_name:t.teamName}}));
   const byId=new Map(); try{ buildProjectionList().forEach(p=>{ if(p.player_id!=null) byId.set(String(p.player_id), p); }); }catch(e){}
   const form=(typeof hubFormMap==='function')?hubFormMap(null):new Map();
   const ctx={sc:null, wk, now:Date.now(), byId, form, myUserId:s.myUserId,
-    dvp:(typeof laDvpTable==='function')?laDvpTable():null, sched:(typeof TC_INSEASON!=='undefined'&&TC_INSEASON&&TC_INSEASON.schedule)||null, faabCurve:null};
+    dvp:(typeof laDvpTable==='function')?laDvpTable():null, sched:(typeof TC_INSEASON!=='undefined'&&TC_INSEASON&&TC_INSEASON.schedule)||null, faabCurve:null,
+    faabChop:hubChopHist(lg)};
+  // A Chopped FAAB league without its history in the cache fetches it once (the seasons behind
+  // this one, by chain and by name) and re-renders when it lands; until then the study prices.
+  if(lg.settings.type===3 && lg.settings.waiver_type===2 && !ctx.faabChop && !_hubSnapHistBusy[lg.league_id]){
+    _hubSnapHistBusy[lg.league_id]=true;
+    hubFaabCurve(lg, null, s.myUserId).then(()=>{ _hubSnapMemo.sig=''; if(typeof renderLeagueAnalyzer==='function') renderLeagueAnalyzer(); }).catch(()=>{});
+  }
   const projRank=new Map(), usageRank=new Map();
   ['QB','RB','WR','TE'].forEach(pos=>{
     const rs=[]; byId.forEach(r=>{ if(r.pos===pos) rs.push(r); });
@@ -35614,8 +35628,29 @@ function hubSnapshotResult(s){
   });
   ctx.projRank=projRank; ctx.usageRank=usageRank;
   let res=null; try{ res=hubAnalyzeLeague(lg, rosters, users, rows, ctx); }catch(e){ res=null; }
+  if(res){ res.byId=byId; res.projRank=projRank; res.rostered=new Set(rosters.flatMap(r=>r.players)); }
   _hubSnapMemo={sig, res};
   return res;
+}
+var _hubSnapHistBusy={};
+// Every free agent on a Chopped league's wire, priced on the chop market — so a player the
+// ADD rows do not reach (he beats nobody on YOUR roster, or he is the tenth-best add) still
+// carries the value the league has paid for his caliber: projection rank sets the band.
+function hubChopBoard(res, pos){
+  if(!res || !res.faab || !res.faab.chop || !res.byId || !res.projRank) return [];
+  const {f, market}=res.faab.chop; const budget=res.faab.budget, left=res.faab.left;
+  const out=[];
+  res.byId.forEach((r,id)=>{
+    if(res.rostered && res.rostered.has(id)) return;
+    if(!['QB','RB','WR','TE'].includes(r.pos) || (pos && pos!=='ALL' && r.pos!==pos)) return;
+    const rank=res.projRank.get(id); if(!rank) return;
+    const faab=hubChopFaab(r.pos, rank, f, market||[], budget, left); if(!faab) return;
+    out.push({id, name:r.name, pos:r.pos, team:r.team, rank, faab});
+  });
+  return out.sort((a,b)=>(b.faab.bid-a.faab.bid) || (b.faab.market-a.faab.market) || (a.rank-b.rank));
+}
+function hubChopBidHTML(faab, res, pos, cls){
+  return `<span class="${cls||'hub-bid'} hub-bid-chop" title="Chop market: a ${escAttr(HUB_CHOP_BAND_LABEL[faab.band]||faab.band)} ${escAttr(pos||'')} released with ${res.faab.chop?res.faab.chop.alive:'?'} of ${res.teams} teams alive has gone for a median $${faab.market} (${faab.src==='history'?`${faab.n} of this league's own releases, weighted toward the latest season and shrunk toward the three-season study`:faab.src==='blend'?`${faab.n} of this league's own release${faab.n===1?'':'s'} blended with the three-season study`:'the three-season Eliminator study'}); $${faab.bid} is the 60th percentile — it has beaten three comparables in five, and never more than 60% over the market">$${faab.bid}<small> mkt $${faab.market}</small></span>`;
 }
 // ── The Lineup pane's waiver section — in the pane's own row language ────────
 // The pane already says START / SIT in its lineup rows; what it lacked was the
@@ -35643,7 +35678,7 @@ function laWaiverSectionHTML(s){
         <div class="la-tm-l2">${(typeof laGameLineHTML==='function' && laGameLineHTML(p, wk, dvp))||'<span class="la-gm la-gm-none">schedule pending</span>'}</div>
         ${l3?`<div class="la-tm-l3">${l3}</div>`:''}
       </div>
-      <div class="la-tm-proj${bafl?' la-bafl-proj':''}">${bafl ? laBaflLinesHTML(p, wk, null, {projOnly:true}) : `<b title="This week's projection under this league's scoring">${(+m.adj||0).toFixed(1)}</b>`}${m.net!=null?`<span class="la-wv-net" title="${m.dyn?'Dynasty chart value over replacement, net of the player he replaces':'Rest-of-season value over replacement, net of the player he replaces, per game'}">${m.net>=0?'+':''}${m.net.toFixed(m.dyn?0:1)}${m.dyn?' dyn':'/gm'}</span>`:''}${m.bid!=null?`<span class="la-wv-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league, as a share of what you have left">$${m.bid}</span>`:''}</div>
+      <div class="la-tm-proj${bafl?' la-bafl-proj':''}">${bafl ? laBaflLinesHTML(p, wk, null, {projOnly:true}) : `<b title="This week's projection under this league's scoring">${(+m.adj||0).toFixed(1)}</b>`}${m.net!=null?`<span class="la-wv-net" title="${m.dyn?'Dynasty chart value over replacement, net of the player he replaces':'Rest-of-season value over replacement, net of the player he replaces, per game'}">${m.net>=0?'+':''}${m.net.toFixed(m.dyn?0:1)}${m.dyn?' dyn':'/gm'}</span>`:''}${m.bidHTML||''}</div>
     </div>`;
   };
   const pairs=res.adds.map(c=>{
@@ -35654,19 +35689,41 @@ function laWaiverSectionHTML(s){
       if(c.dur.trend) whys.push({k:'trend', label:'trending', text:c.dur.trend+' — expect competition for him'});
     }
     if(c.startsOver) whys.push({k:'starts', label:`starts over ${c.startsOver.name}`, text:`Beats your weakest eligible starter (${c.startsOver.slot}) by ${c.startsOver.delta} this week`});
-    const add=row({id:c.id,name:c.name,pos:c.pos,team:c.team}, 'add', {adj:c.wp.adj, net:c.net, dyn:!!c.dynasty, bid:c.faab?c.faab.bid:null, whys});
+    const bidHTML = !c.faab ? '' : c.faab.chop ? hubChopBidHTML(c.faab, res, c.pos, 'la-wv-bid')
+      : `<span class="la-wv-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league, as a share of what you have left">$${c.faab.bid}</span>`;
+    const add=row({id:c.id,name:c.name,pos:c.pos,team:c.team}, 'add', {adj:c.wp.adj, net:c.net, dyn:!!c.dynasty, bidHTML, whys});
     const drop=c.drop ? row({id:c.drop.id,name:c.drop.name,pos:c.drop.pos,team:c.drop.team}, 'drop',
       {adj:c.drop.value||0, net:null, bid:null, whys:[{k:'drop', label:`${c.drop.vor>=0?'+':''}${(c.drop.vor||0).toFixed(c.dynasty?0:1)}${c.dynasty?' dyn':'/gm'} over replacement`, text:c.dynasty?'Dynasty chart value over what is freely available at his position — the least you would miss':'Rest-of-season value over what is freely available at his position — the least you would miss'}]}) : '';
     return `<div class="la-wv-pair">${add}${drop}</div>`;
   }).join('');
-  const faab=res.faab ? `<span class="la-wv-faab" title="FAAB left · ${res.faab.curve?'this league\'s past seasons':'no league history yet (linear decay)'} say about ${(hubFaabAdvice(1,res.wk,res.faab.curve,res.teams,res.faab.budget,res.faab.left).spentShould*100).toFixed(0)}% of the season\'s pickup value is behind you by week ${res.wk}">FAAB <b>$${res.faab.left}</b> / $${res.faab.budget}</span>` : '';
+  const faab=res.faab ? `<span class="la-wv-faab" title="${res.faab.chop ? `FAAB left · a Chopped league's wire is priced on its chop market: caliber × teams alive, from ${res.faab.chop.n?`${res.faab.chop.n} past releases in this league's seasons`:'the three-season Eliminator study'}` : `FAAB left · ${res.faab.curve?'this league\'s past seasons':'no league history yet (linear decay)'} say about ${(hubFaabAdvice(1,res.wk,res.faab.curve,res.teams,res.faab.budget,res.faab.left).spentShould*100).toFixed(0)}% of the season\'s pickup value is behind you by week ${res.wk}`}">FAAB <b>$${res.faab.left}</b> / $${res.faab.budget}</span>` : '';
   const body = pairs ? `<div class="card la-tm-card">${pairs}</div>` : `<div class="card la-tm-card"><div class="la-wv-none">Nothing on the wire beats what you have.</div></div>`;
   return `<div class="la-ins-bar"><span class="la-ins-lbl">WAIVER WIRE · WEEK ${wk}</span>
       <span class="la-ins-sub">each add names the drop it beats</span>${faab}
       <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="laSetTab('hub')" title="Every league at once">Multi-League →</button></div>
-    ${body}`;
+    ${body}${(res.faab && res.faab.chop) ? laChopBoardHTML(res) : ''}`;
 }
 function laThisWeekCardHTML(s){ return laWaiverSectionHTML(s); }
+// The chop market board under the wire: every free agent at the four positions with the
+// price the league has paid for his caliber and this many teams alive — the value of a
+// player the ADD rows never reach (he beats nobody on your roster) is still on the page.
+const LA_CHOP_BOARD_N = 30;
+function laChopBoardHTML(res){
+  const pos=(typeof laState!=='undefined' && laState.chopPos)||'ALL';
+  const rows=hubChopBoard(res, pos).slice(0, LA_CHOP_BOARD_N);
+  const chips=['ALL','QB','RB','WR','TE'].map(p=>`<button class="pos-filter-btn ${pos===p?'active':''}" onclick="laSetChopPos('${p}')">${p}</button>`).join('');
+  const list=(typeof _laTrendRow==='function') ? rows.map((r,i)=>_laTrendRow({id:r.id,name:r.name,pos:r.pos,team:r.team},
+    `${escHtml(r.pos)}${r.rank} by projection · ${escHtml(HUB_CHOP_BAND_LABEL[r.faab.band]||r.faab.band)}`, hubChopBidHTML(r.faab, res, r.pos, 'la-wv-bid'), '', i+1)).join('') : '';
+  const c=res.faab.chop;
+  return `<div class="la-ins-bar la-cmkt-bar"><span class="la-ins-lbl">CHOP MARKET</span>
+      <span class="la-ins-sub">every free agent priced · ${c.alive} of ${c.total} alive · ${c.n?`${c.n} past releases`:'the three-season study'}</span>
+      <div class="pos-filter la-cmkt-pos">${chips}</div></div>
+    <div class="card la-trnd-card la-cmkt-board">${list||'<div class="la-wv-none">No free agents to price.</div>'}</div>`;
+}
+function laSetChopPos(p){
+  if(typeof laState!=='undefined') laState.chopPos=p;
+  if(typeof laRerenderKeepScroll==='function') laRerenderKeepScroll(); else if(typeof renderLeagueAnalyzer==='function') renderLeagueAnalyzer();
+}
 function hubViewHTML(s){
   const wk = hubState.week || ((typeof laCurrentWeek==='function')?laCurrentWeek():1);
   if(!hubState.leagues.length && !hubState.busy && !hubState.loadedAt && !hubState.error) setTimeout(()=>hubLoadAll(false), 0);
