@@ -468,20 +468,41 @@ function hubChopMarket(hist, sc){
   });
   return rows;
 }
+// A percentile of a small sorted sample, interpolated — with four comparables the "75th
+// percentile" would otherwise simply be the largest one, and one outlier would set the bid.
+function hubChopPct(sorted, q){
+  const n=sorted.length; if(!n) return null;
+  const i=q*(n-1), lo=Math.floor(i), hi=Math.min(n-1, lo+1);
+  return sorted[lo] + (sorted[hi]-sorted[lo])*(i-lo);
+}
+// Few comparables are shrunk toward the study's table (k = 4: four of the league's own
+// releases count as much as the study), so a thin band cannot run away on one price.
+const HUB_CHOP_SHRINK_K = 4;
 function hubChopFaab(pos, rank, f, market, budget, left){
   const band=hubChopBand(pos, rank); if(!band || !(budget>0)) return null;
   const comps=(market||[]).filter(r=>r.pos===pos && r.band===band && Math.abs(r.f-f)<=0.25);
-  let med, p75, n=comps.length, src='history';
-  if(n>=3){
+  const n=comps.length;
+  const cell=((HUB_CHOP_DEFAULTS[pos]||{})[band]||{})[hubChopBucket(f)] || null;
+  if(!n && !cell) return null;
+  // the study's cell carries a median and a 75th; its 60th is read between them
+  const sMed = cell ? cell[0] : null, sP60 = cell ? cell[0] + 0.4*(Math.max(cell[1], cell[0]) - cell[0]) : null;
+  let med, p60;
+  if(n){
     const s=comps.map(r=>r.share).sort((a,b)=>a-b);
-    med=s[Math.floor((n-1)/2)]; p75=s[Math.min(n-1, Math.ceil(0.75*(n-1)))];
-  } else {
-    const cell=((HUB_CHOP_DEFAULTS[pos]||{})[band]||{})[hubChopBucket(f)]; if(!cell) return null;
-    med=cell[0]; p75=cell[1]; src='study'; n=0;
-  }
-  p75=Math.max(p75, med);
-  const bid=Math.max(0, Math.min(left||0, Math.round(p75*budget)));
-  return {bid, market:Math.round(med*budget), share:p75, medShare:med, n, src, band, f, chop:true, budget, left};
+    const hMed=hubChopPct(s, 0.5), hP60=hubChopPct(s, 0.6);
+    const w = cell ? n/(n+HUB_CHOP_SHRINK_K) : 1;
+    med = w*hMed + (1-w)*(sMed!=null ? sMed : hMed);
+    p60 = w*hP60 + (1-w)*(sP60!=null ? sP60 : hP60);
+  } else { med=sMed; p60=sP60; }
+  p60=Math.max(p60, med);
+  // A bid is the 60th percentile of what that caliber has fetched (it has beaten three
+  // comparables in five), never more than 60% over the market — a price that far above the
+  // going rate wins anyway, and paying it is what the second-price gaps in the study were.
+  const cap = med*1.6 + 0.02;
+  const share = Math.min(p60, cap);
+  const bid=Math.max(0, Math.min(left||0, Math.round(share*budget)));
+  const src = n>=3 ? 'history' : n ? 'blend' : 'study';
+  return {bid, market:Math.round(med*budget), share, medShare:med, n, src, band, f, chop:true, budget, left};
 }
 
 // ── One league, end to end ───────────────────────────────────────────────────
@@ -805,7 +826,7 @@ function _hubActionsHTML(res, open){
       <div class="hub-body">${_hubPlayer({id:c.id,name:c.name,pos:c.pos,team:c.team,value:c.wp.adj,wp:c.wp,unavailable:c.wp.bye?'BYE':''},true)}${c.drop?` <span class="hub-arrow">for</span> ${_hubPlayer(Object.assign({},c.drop,{value:c.drop.rosPg}),true)}`:''}
         <div class="hub-whys"><span class="hub-why hub-why-net" title="${c.dynasty?'Dynasty chart value over replacement, net of the player he replaces':'Rest-of-season value over replacement, net of the player he replaces, per game'}">+${c.net.toFixed(c.dynasty?0:1)}${c.dynasty?' dyn':'/gm'}</span>${c.reasons.concat(_hubDurChips(c)).map(_hubReason).join('')}${c.startsOver?`<span class="hub-why hub-why-starts" title="Beats the weakest starter he could replace in your optimal lineup this week">starts over ${escHtml(c.startsOver.name)} (${escHtml(c.startsOver.slot)}) +${c.startsOver.delta}</span>`:''}</div></div>
       ${c.faab ? (c.faab.chop
-        ? `<span class="hub-bid hub-bid-chop" title="Chop market: a ${escAttr(HUB_CHOP_BAND_LABEL[c.faab.band]||c.faab.band)} ${c.pos} released with ${res.faab.chop?res.faab.chop.alive:'?'} of ${res.teams} teams alive has gone for a median $${c.faab.market} (${c.faab.src==='history'?`${c.faab.n} of this league's own releases`:'the 2025 Eliminator study'}); $${c.faab.bid} is the 75th percentile — it has beaten three comparables in four">$${c.faab.bid}<small> mkt $${c.faab.market}</small></span>`
+        ? `<span class="hub-bid hub-bid-chop" title="Chop market: a ${escAttr(HUB_CHOP_BAND_LABEL[c.faab.band]||c.faab.band)} ${c.pos} released with ${res.faab.chop?res.faab.chop.alive:'?'} of ${res.teams} teams alive has gone for a median $${c.faab.market} (${c.faab.src==='history'?`${c.faab.n} of this league's own releases, shrunk toward the 2025 study`:c.faab.src==='blend'?`${c.faab.n} of this league's own release${c.faab.n===1?'':'s'} blended with the 2025 study`:'the 2025 Eliminator study'}); $${c.faab.bid} is the 60th percentile — it has beaten three comparables in five, and never more than 60% over the market">$${c.faab.bid}<small> mkt $${c.faab.market}</small></span>`
         : `<span class="hub-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league (${(c.faab.share*100).toFixed(0)}% of your $${c.faab.left} left)">$${c.faab.bid}</span>`) : ''}
     </div>`).join('');
   const drops = open ? res.drops.map(d=>`<div class="hub-row"><span class="hub-kind hub-k-drop">DROP</span><div class="hub-body">${_hubPlayer(d.p,true)}<div class="hub-whys">${d.reasons.map(r=>`<span class="hub-why">${escHtml(r)}</span>`).join('')}</div></div></div>`).join('') : '';
