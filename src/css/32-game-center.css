@@ -7,8 +7,14 @@
 .sidebar.leaders{position:relative;}
 .sidebar.leaders.rsb-min{width:30px;min-width:30px;padding:8px 0;}
 /* the left edge drags: wider up to the whole content area, remembered per size */
-.rsb-grip{position:absolute;left:-3px;top:0;bottom:0;width:7px;cursor:ew-resize;z-index:3;touch-action:none;}
-.rsb-grip:hover,.rsb-grip:active{background:rgba(88,166,255,.25);}
+/* A real handle, not a hairline: 16px wide (half of it outside the edge, so the rows underneath
+   never claim the press), with a visible pill at mid-height that lights up on hover. */
+.rsb-grip{position:absolute;left:-8px;top:0;bottom:0;width:16px;cursor:col-resize;z-index:3;touch-action:none;}
+.rsb-grip::before{content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:5px;height:48px;border-radius:3px;background:var(--border2);opacity:.9;transition:background .15s,height .15s;}
+.rsb-grip::after{content:'';position:absolute;left:50%;top:0;bottom:0;width:2px;transform:translateX(-50%);background:transparent;transition:background .15s;}
+.rsb-grip:hover::before,.rsb-grip:active::before{background:var(--accent);height:64px;}
+.rsb-grip:hover::after,.rsb-grip:active::after{background:rgba(88,166,255,.45);}
+.sidebar.leaders .ld-row,.sidebar.leaders .ld-head,.sidebar.leaders .ld-posrow,.sidebar.leaders .ld-fmt{padding-left:14px;}
 .rsb-btn[disabled]{opacity:.35;cursor:default;}
 .gc-posrow{padding:0 10px 4px;}
 .gc-posrow .ld-pos{font-size:9px;padding:2px 0;}
