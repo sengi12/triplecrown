@@ -35046,34 +35046,68 @@ function hubFaabCurveFromHistory(adds, sc){
   for(const w in byWk){ curve[w]=byWk[w].reduce((a,b)=>a+b,0)/byWk[w].length; n++; }
   return n>=6 ? curve : null;    // too thin a history is worse than the fallback
 }
-async function hubFaabCurve(lg, sc){
+// One past season's transaction log, read into the FAAB curve's adds and the chop history
+// (who was released when, what the winning bids were — the market hubChopFaab prices a
+// release against). A chop is Sleeper's own `chopped` transaction, or — in the seasons before
+// Sleeper had the feature, when the commissioner cleared each losing roster by hand — one
+// roster shedding HUB_CHOP_MASS_DROP players or more in a week without adding any.
+const HUB_CHOP_MASS_DROP = 10;
+function hubChopScanTx(txs, season, adds, chop){
+  const mass={};
+  (txs||[]).forEach((list,i)=>(list||[]).forEach(t=>{
+    const leg = +t.leg || (i+1);
+    if(t.type==='chopped' && t.drops){ chop.chops.push({season, leg, pids:Object.keys(t.drops)}); return; }
+    if(t.drops && !t.adds && (t.type==='free_agent'||t.type==='commissioner')){
+      const k=`${leg}|${(t.roster_ids||[])[0]}`; const m=(mass[k]=mass[k]||{leg, pids:new Set()});
+      Object.keys(t.drops).forEach(p=>m.pids.add(p));
+    }
+    if(t.status!=='complete' || !(t.type==='waiver'||t.type==='free_agent') || !t.adds) return;
+    const bid = t.settings && t.settings.waiver_bid!=null ? +t.settings.waiver_bid : null;
+    Object.keys(t.adds).forEach(pid=>{ adds.push({season, week:i+1, pid, bid}); if(bid!=null) chop.wins.push({season, week:leg, pid, bid}); });
+  }));
+  for(const k in mass){ const m=mass[k]; if(m.pids.size>=HUB_CHOP_MASS_DROP) chop.chops.push({season, leg:m.leg, pids:Array.from(m.pids)}); }
+}
+// Two league names are the same league when they agree letter for letter — the Eliminator
+// grew an axe emoji and a trailing space between its seasons.
+function hubLeagueNameKey(name){ return String(name||'').toLowerCase().replace(/[^a-z0-9]+/g,''); }
+const HUB_HISTORY_SEASONS = 3;
+async function hubFaabCurve(lg, sc, userId){
   const key = `tc_faab_curve_${lg.league_id}`;
-  try{ const raw=localStorage.getItem(key); if(raw){ const c=JSON.parse(raw); if(c && c.season===String(lg.season) && ('chop' in c)){ _hubChopHist[lg.league_id]=c.chop||null; return c.curve; } } }catch(e){}
-  const adds=[]; let prev=lg.previous_league_id, hops=0;
-  // Chopped leagues also keep their chop history: who was released when, what the winning
-  // bids were, how many teams were alive — the market hubChopFaab prices a release against.
-  const chop={ meta:{}, chops:[], wins:[] };
-  while(prev && hops<3){
-    let plg=null; try{ plg = await sleeperFetch(LA_LEAGUE_URL(prev)); }catch(e){ break; }
-    if(!plg) break;
-    const season=+plg.season;
-    const isChop = +((plg.settings||{}).type)===3;
-    if(isChop) chop.meta[season]={ total:+plg.total_rosters||0, budget:+((plg.settings||{}).waiver_budget)||0 };
+  try{ const raw=localStorage.getItem(key); if(raw){ const c=JSON.parse(raw); if(c && c.season===String(lg.season) && ('chop' in c) && c.v===2){ _hubChopHist[lg.league_id]=c.chop||null; return c.curve; } } }catch(e){}
+  const adds=[]; const chop={ meta:{}, chops:[], wins:[] };
+  const seen=new Set([String(lg.league_id)]), seasons=new Set(); let hops=0;
+  async function scan(plg){
+    const season=+plg.season; seen.add(String(plg.league_id)); seasons.add(season);
+    chop.meta[season]={ total:+plg.total_rosters||0, budget:+((plg.settings||{}).waiver_budget)||0 };
     const rounds=[]; for(let w=1; w<HUB_LAST_WEEK; w++) rounds.push(w);
-    const txs = await Promise.all(rounds.map(w=>sleeperFetch(`${LA_LEAGUE_URL(prev)}/transactions/${w}`).catch(()=>[])));
-    txs.forEach((list,i)=>(list||[]).forEach(t=>{
-      const leg = +t.leg || (i+1);
-      if(isChop && t.type==='chopped' && t.drops){ chop.chops.push({season, leg, pids:Object.keys(t.drops)}); return; }
-      if(t.status!=='complete' || !(t.type==='waiver'||t.type==='free_agent') || !t.adds) return;
-      const bid = t.settings && t.settings.waiver_bid!=null ? +t.settings.waiver_bid : null;
-      Object.keys(t.adds).forEach(pid=>{ adds.push({season, week:i+1, pid, bid}); if(isChop && bid!=null) chop.wins.push({season, week:leg, pid, bid}); });
-    }));
-    prev = plg.previous_league_id; hops++;
+    const txs = await Promise.all(rounds.map(w=>sleeperFetch(`${LA_LEAGUE_URL(plg.league_id)}/transactions/${w}`).catch(()=>[])));
+    hubChopScanTx(txs, season, adds, chop);
+  }
+  // the renewed-league chain first ...
+  async function follow(plg){
+    while(plg && hops<HUB_HISTORY_SEASONS){
+      await scan(plg); hops++;
+      const p=plg.previous_league_id; if(!p || seen.has(String(p))) break;
+      try{ plg = await sleeperFetch(LA_LEAGUE_URL(p)); }catch(e){ break; }
+    }
+  }
+  if(lg.previous_league_id){ try{ await follow(await sleeperFetch(LA_LEAGUE_URL(lg.previous_league_id))); }catch(e){} }
+  // ... then the seasons the chain does not reach. A league re-created rather than renewed
+  // (the Eliminator's manual seasons were a separate league of the same name) is found among
+  // the user's own leagues of that season, by name.
+  const uid = userId || (typeof laState!=='undefined' && laState.user && laState.user.user_id)
+    || ((((typeof laLoadSleeperProfile==='function' && laLoadSleeperProfile())||{}).user)||{}).user_id;
+  const nameKey=hubLeagueNameKey(lg.name);
+  for(let s=+lg.season-1; uid && nameKey && hops<HUB_HISTORY_SEASONS && s>=+lg.season-HUB_HISTORY_SEASONS; s--){
+    if(seasons.has(s)) continue;
+    let list=null; try{ list = await sleeperFetch(SLEEPER_LEAGUES_URL(uid, s)); }catch(e){ break; }
+    const match=(list||[]).find(l=>l && !seen.has(String(l.league_id)) && hubLeagueNameKey(l.name)===nameKey);
+    if(match) await follow(match);
   }
   const curve = hubFaabCurveFromHistory(adds, sc);
-  const chopHist = chop.wins.length ? chop : null;
+  const chopHist = (chop.chops.length && chop.wins.length) ? chop : null;
   _hubChopHist[lg.league_id] = chopHist;
-  try{ localStorage.setItem(key, JSON.stringify({season:String(lg.season), curve, chop:chopHist, n:adds.length, at:Date.now()})); }catch(e){}
+  try{ localStorage.setItem(key, JSON.stringify({v:2, season:String(lg.season), curve, chop:chopHist, n:adds.length, at:Date.now()})); }catch(e){}
   return curve;
 }
 
@@ -35081,22 +35115,27 @@ async function hubFaabCurve(lg, sc){
 // A Chopped league's wire is not a normal wire. The supply is one chopped roster a week,
 // every bidder sees the same names at once, and the buyers thin out as teams go — so the
 // rest-of-season-share formula above (built for a league of steady pickups) runs far hotter
-// than anything the format has ever paid. What prices a release here, measured on the
-// Eliminator's 2025 season (117 chop releases, every bid kept): the player's CALIBER band
-// (his positional rank) and how many teams are STILL ALIVE. Top-12 backs went for a median
-// 29% of budget with half the league or more alive, 13% with a third to a half, and nothing
-// once fewer than a third remained; wideouts about half of that; QBs and TEs a few percent.
+// than anything the format has ever paid. What prices a release here, measured on three
+// Eliminator seasons (2023 at $100 and 2024 at $200 chopped by hand, 2025 at $1,000 by
+// Sleeper's chop; 389 chop releases won, every bid kept, prices as a share of budget): the
+// player's CALIBER band (his positional rank by points per game at the time) and how many
+// teams are STILL ALIVE. Top-12 backs went for a median 23% of budget with half the league or
+// more alive, 4% with a third to a half, and nothing once fewer than a third remained;
+// wideouts about half of that; QBs and TEs a few percent. The table is weighted toward the
+// most recent season (HUB_CHOP_RECENCY per year back) because the level moved with the
+// budget and the process — 2025's bidders spent two to three times the share 2024's did.
 // hubChopFaab reads the league's own chop history first (hubChopMarket, from the seasons
-// hubFaabCurve already fetches) and falls back to those study numbers when the history is
-// thin. It returns the market (the median winning bid for that caliber and field) and a
-// bid at the 75th percentile — the price that has beaten three comparables in four.
+// hubFaabCurve fetches) and falls back to this table when the history is thin. It returns
+// the market (the median winning bid for that caliber and field) and a bid at the 60th
+// percentile — a price that has beaten three comparables in five.
+const HUB_CHOP_RECENCY = 0.6;
 const HUB_CHOP_DEFAULTS = {          // [median, 75th pct] share of budget, by pos › band › teams-alive bucket
-  RB:{ top12:{high:[0.289,0.350], mid:[0.128,0.151], low:[0.001,0.001]}, b24:{high:[0.157,0.255], mid:[0.001,0.017], low:[0,0]},
-       b36:{high:[0.137,0.137], mid:[0.020,0.030], low:[0.002,0.002]}, rest:{high:[0.058,0.066], mid:[0.010,0.020], low:[0,0]} },
-  WR:{ top12:{high:[0.138,0.177], mid:[0.071,0.091], low:[0.001,0.001]}, b24:{high:[0.093,0.180], mid:[0.029,0.040], low:[0,0]},
-       b36:{high:[0.030,0.051], mid:[0.005,0.010], low:[0,0]}, rest:{high:[0.036,0.080], mid:[0.005,0.010], low:[0,0]} },
-  QB:{ top6:{high:[0.040,0.042], mid:[0.005,0.010], low:[0,0]}, b12:{high:[0.028,0.030], mid:[0.005,0.010], low:[0,0]}, rest:{high:[0.017,0.020], mid:[0,0], low:[0,0]} },
-  TE:{ top6:{high:[0.019,0.024], mid:[0.010,0.010], low:[0,0]}, b12:{high:[0.021,0.021], mid:[0.034,0.034], low:[0,0]}, rest:{high:[0,0.005], mid:[0,0], low:[0,0]} },
+  RB:{ top12:{high:[0.234,0.351], mid:[0.043,0.149], low:[0.001,0.008]}, b24:{high:[0.087,0.208], mid:[0,0.009], low:[0,0]},
+       b36:{high:[0.032,0.080], mid:[0.005,0.007], low:[0.002,0.002]}, rest:{high:[0.027,0.066], mid:[0.005,0.010], low:[0,0]} },
+  WR:{ top12:{high:[0.111,0.201], mid:[0.050,0.091], low:[0.001,0.004]}, b24:{high:[0.058,0.143], mid:[0.030,0.035], low:[0.005,0.010]},
+       b36:{high:[0.036,0.071], mid:[0,0], low:[0,0]}, rest:{high:[0.026,0.084], mid:[0,0], low:[0,0]} },
+  QB:{ top6:{high:[0.039,0.079], mid:[0.010,0.012], low:[0,0]}, b12:{high:[0.062,0.084], mid:[0,0], low:[0,0]}, rest:{high:[0.005,0.035], mid:[0,0], low:[0,0]} },
+  TE:{ top6:{high:[0.035,0.083], mid:[0.010,0.020], low:[0,0]}, b12:{high:[0.020,0.026], mid:[0.003,0.016], low:[0,0]}, rest:{high:[0.002,0.014], mid:[0,0], low:[0,0]} },
 };
 const HUB_CHOP_BAND_LABEL = { top12:'top-12', b24:'RB/WR 13-24', b36:'25-36', rest:'outside the top 36', top6:'top-6', b12:'7-12' };
 function hubChopBand(pos, rank){
@@ -35159,30 +35198,51 @@ function hubChopMarket(hist, sc){
 }
 // A percentile of a small sorted sample, interpolated — with four comparables the "75th
 // percentile" would otherwise simply be the largest one, and one outlier would set the bid.
-function hubChopPct(sorted, q){
-  const n=sorted.length; if(!n) return null;
-  const i=q*(n-1), lo=Math.floor(i), hi=Math.min(n-1, lo+1);
-  return sorted[lo] + (sorted[hi]-sorted[lo])*(i-lo);
+// `weights` (aligned with `sorted`) lets an older season's comparable count for less than
+// last year's; with equal weights this is the plain interpolated percentile.
+function hubChopPct(sorted, q, weights){
+  const n=sorted.length; if(!n) return null; if(n===1) return sorted[0];
+  const w = weights || sorted.map(()=>1);
+  const span = w.reduce((a,b)=>a+b,0) - w[n-1];      // the sample spans 0..1, as it would unweighted
+  if(!(span>0)) return sorted[n-1];
+  let c=0; const pos=w.map(x=>{ const p=c/span; c+=x; return p; });
+  if(q<=pos[0]) return sorted[0];
+  for(let i=1; i<n; i++){ if(q<=pos[i]){ const p0=pos[i-1], p1=pos[i]; return sorted[i-1] + (sorted[i]-sorted[i-1])*(p1>p0 ? (q-p0)/(p1-p0) : 0); } }
+  return sorted[n-1];
 }
 // Few comparables are shrunk toward the study's table (k = 4: four of the league's own
-// releases count as much as the study), so a thin band cannot run away on one price.
+// releases count as much as the study), so a thin band cannot run away on one price. A
+// comparable from an older season counts HUB_CHOP_RECENCY per year behind the latest one.
 const HUB_CHOP_SHRINK_K = 4;
-function hubChopFaab(pos, rank, f, market, budget, left){
-  const band=hubChopBand(pos, rank); if(!band || !(budget>0)) return null;
+const HUB_CHOP_BANDS = { RB:['top12','b24','b36','rest'], WR:['top12','b24','b36','rest'], QB:['top6','b12','rest'], TE:['top6','b12','rest'] };
+function _hubChopPrice(pos, band, f, market){
   const comps=(market||[]).filter(r=>r.pos===pos && r.band===band && Math.abs(r.f-f)<=0.25);
   const n=comps.length;
   const cell=((HUB_CHOP_DEFAULTS[pos]||{})[band]||{})[hubChopBucket(f)] || null;
   if(!n && !cell) return null;
   // the study's cell carries a median and a 75th; its 60th is read between them
   const sMed = cell ? cell[0] : null, sP60 = cell ? cell[0] + 0.4*(Math.max(cell[1], cell[0]) - cell[0]) : null;
-  let med, p60;
+  let med, p60, nEff=0;
   if(n){
-    const s=comps.map(r=>r.share).sort((a,b)=>a-b);
-    const hMed=hubChopPct(s, 0.5), hP60=hubChopPct(s, 0.6);
-    const w = cell ? n/(n+HUB_CHOP_SHRINK_K) : 1;
+    const latest = Math.max.apply(null, comps.map(r=>+r.season||0));
+    const srt = comps.map(r=>({s:r.share, w:Math.pow(HUB_CHOP_RECENCY, Math.max(0, latest-(+r.season||latest)))})).sort((a,b)=>a.s-b.s);
+    const s=srt.map(o=>o.s), ws=srt.map(o=>o.w);
+    nEff = ws.reduce((a,b)=>a+b,0);
+    const hMed=hubChopPct(s, 0.5, ws), hP60=hubChopPct(s, 0.6, ws);
+    const w = cell ? nEff/(nEff+HUB_CHOP_SHRINK_K) : 1;
     med = w*hMed + (1-w)*(sMed!=null ? sMed : hMed);
     p60 = w*hP60 + (1-w)*(sP60!=null ? sP60 : hP60);
   } else { med=sMed; p60=sP60; }
+  return {med, p60:Math.max(p60, med), n, nEff};
+}
+function hubChopFaab(pos, rank, f, market, budget, left){
+  const band=hubChopBand(pos, rank); if(!band || !(budget>0)) return null;
+  const own=_hubChopPrice(pos, band, f, market); if(!own) return null;
+  let {med, p60, n, nEff} = own;
+  // A lesser caliber never prices above a better one: with a handful of comparables a band
+  // can land above the band over it (three 13-24 backs at 26-36% in 2025), so each band is
+  // capped at the price of every band above it.
+  (HUB_CHOP_BANDS[pos]||[]).some(b=>{ if(b===band) return true; const up=_hubChopPrice(pos, b, f, market); if(up){ med=Math.min(med, up.med); p60=Math.min(p60, up.p60); } return false; });
   p60=Math.max(p60, med);
   // A bid is the 60th percentile of what that caliber has fetched (it has beaten three
   // comparables in five), never more than 60% over the market — a price that far above the
@@ -35190,8 +35250,8 @@ function hubChopFaab(pos, rank, f, market, budget, left){
   const cap = med*1.6 + 0.02;
   const share = Math.min(p60, cap);
   const bid=Math.max(0, Math.min(left||0, Math.round(share*budget)));
-  const src = n>=3 ? 'history' : n ? 'blend' : 'study';
-  return {bid, market:Math.round(med*budget), share, medShare:med, n, src, band, f, chop:true, budget, left};
+  const src = nEff>=3 ? 'history' : n ? 'blend' : 'study';
+  return {bid, market:Math.round(med*budget), share, medShare:med, n, nEff, src, band, f, chop:true, budget, left};
 }
 
 // ── One league, end to end ───────────────────────────────────────────────────
@@ -35422,7 +35482,7 @@ async function hubLoadLeague(ref, prof, wk, shared){
     us.sort((a,b)=>b.t-a.t).forEach((r,i)=>usageRank.set(r.id, i+1));
   });
   ctx.projRank = projRank; ctx.usageRank = usageRank;
-  if(+((lg.settings||{}).waiver_type)===2){ try{ ctx.faabCurve = await hubFaabCurve(lg, sc); }catch(e){ ctx.faabCurve=null; } ctx.faabChop = hubChopHist(lg); }
+  if(+((lg.settings||{}).waiver_type)===2){ try{ ctx.faabCurve = await hubFaabCurve(lg, sc, myUserId); }catch(e){ ctx.faabCurve=null; } ctx.faabChop = hubChopHist(lg); }
   return hubAnalyzeLeague(lg, rosters||[], users||[], matchups||[], ctx);
 }
 async function hubLoadAll(force){
@@ -35515,7 +35575,7 @@ function _hubActionsHTML(res, open){
       <div class="hub-body">${_hubPlayer({id:c.id,name:c.name,pos:c.pos,team:c.team,value:c.wp.adj,wp:c.wp,unavailable:c.wp.bye?'BYE':''},true)}${c.drop?` <span class="hub-arrow">for</span> ${_hubPlayer(Object.assign({},c.drop,{value:c.drop.rosPg}),true)}`:''}
         <div class="hub-whys"><span class="hub-why hub-why-net" title="${c.dynasty?'Dynasty chart value over replacement, net of the player he replaces':'Rest-of-season value over replacement, net of the player he replaces, per game'}">+${c.net.toFixed(c.dynasty?0:1)}${c.dynasty?' dyn':'/gm'}</span>${c.reasons.concat(_hubDurChips(c)).map(_hubReason).join('')}${c.startsOver?`<span class="hub-why hub-why-starts" title="Beats the weakest starter he could replace in your optimal lineup this week">starts over ${escHtml(c.startsOver.name)} (${escHtml(c.startsOver.slot)}) +${c.startsOver.delta}</span>`:''}</div></div>
       ${c.faab ? (c.faab.chop
-        ? `<span class="hub-bid hub-bid-chop" title="Chop market: a ${escAttr(HUB_CHOP_BAND_LABEL[c.faab.band]||c.faab.band)} ${c.pos} released with ${res.faab.chop?res.faab.chop.alive:'?'} of ${res.teams} teams alive has gone for a median $${c.faab.market} (${c.faab.src==='history'?`${c.faab.n} of this league's own releases, shrunk toward the 2025 study`:c.faab.src==='blend'?`${c.faab.n} of this league's own release${c.faab.n===1?'':'s'} blended with the 2025 study`:'the 2025 Eliminator study'}); $${c.faab.bid} is the 60th percentile — it has beaten three comparables in five, and never more than 60% over the market">$${c.faab.bid}<small> mkt $${c.faab.market}</small></span>`
+        ? `<span class="hub-bid hub-bid-chop" title="Chop market: a ${escAttr(HUB_CHOP_BAND_LABEL[c.faab.band]||c.faab.band)} ${c.pos} released with ${res.faab.chop?res.faab.chop.alive:'?'} of ${res.teams} teams alive has gone for a median $${c.faab.market} (${c.faab.src==='history'?`${c.faab.n} of this league's own releases, weighted toward the latest season and shrunk toward the three-season study`:c.faab.src==='blend'?`${c.faab.n} of this league's own release${c.faab.n===1?'':'s'} blended with the three-season study`:'the three-season Eliminator study'}); $${c.faab.bid} is the 60th percentile — it has beaten three comparables in five, and never more than 60% over the market">$${c.faab.bid}<small> mkt $${c.faab.market}</small></span>`
         : `<span class="hub-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league (${(c.faab.share*100).toFixed(0)}% of your $${c.faab.left} left)">$${c.faab.bid}</span>`) : ''}
     </div>`).join('');
   const drops = open ? res.drops.map(d=>`<div class="hub-row"><span class="hub-kind hub-k-drop">DROP</span><div class="hub-body">${_hubPlayer(d.p,true)}<div class="hub-whys">${d.reasons.map(r=>`<span class="hub-why">${escHtml(r)}</span>`).join('')}</div></div></div>`).join('') : '';
