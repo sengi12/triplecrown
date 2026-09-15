@@ -1091,6 +1091,12 @@ async function laTakeSnapshotSleeper(leagueId, opts){
                avatar:(u.metadata&&u.metadata.avatar)||(u.avatar?SLEEPER_AVATAR_THUMB(u.avatar):null),
                teamName:(u.metadata&&u.metadata.team_name)||u.display_name||`Roster ${r.roster_id}`,
                wins:(r.settings&&r.settings.wins)||0, losses:(r.settings&&r.settings.losses)||0,
+               ties:(r.settings&&r.settings.ties)||0,
+               // Standings: points for / against (Sleeper splits the decimals off), the
+               // division, the streak — what the Standings pane orders and explains.
+               fpts:_laPts(r.settings, 'fpts'), fptsAgainst:_laPts(r.settings, 'fpts_against'),
+               division:(r.settings&&r.settings.division!=null)?Number(r.settings.division):null,
+               streak:(r.metadata&&r.metadata.streak)||'',
                players, picks };
     });
     // myUserId identifies YOUR team. laState.user is in-memory only, so after a reload it's
@@ -1127,6 +1133,9 @@ async function laTakeSnapshotSleeper(leagueId, opts){
       // Sleeper's own scoring table, verbatim: Σ stat × setting over matching keys scores any
       // Sleeper stat row exactly as the league does — offense, kickers, defenders, D/ST.
       scoringRaw: (lg.scoring_settings && typeof lg.scoring_settings==='object') ? Object.assign({}, lg.scoring_settings) : null,
+      // The playoff format, for the Standings pane's picture: how many make it, when they
+      // start (the regular season ends the week before), divisions and how they seed.
+      playoffs: _laPlayoffFormat(lg),
       championRosterId,
       rosterPositions:rp, takenAt:Date.now(),
       myUserId:_resolvedId,
@@ -2862,4 +2871,21 @@ if(typeof TC_INFO_BOOK!=='undefined'){
   TC_INFO_BOOK.lamyproj={title:'Redraft power score', body:`
     This season's projected points from your own projection engine under this league's scoring.
     Picks are excluded \u2014 they don't score.`};
+}
+
+// ── Standings fields for the snapshot ─────────────────────────────────────────
+// Sleeper keeps points as an integer plus a two-digit decimal field; the playoff format
+// lives in league.settings (division names in league.metadata).
+function _laPts(settings, key){
+  if(!settings || settings[key]==null) return null;
+  const whole=Number(settings[key])||0, dec=Number(settings[key+'_decimal'])||0;
+  return Math.round((whole + dec/100)*100)/100;
+}
+function _laPlayoffFormat(lg){
+  const st=(lg&&lg.settings)||{}, md=(lg&&lg.metadata)||{};
+  const divisions=Number(st.divisions)||0;
+  const divNames={};
+  for(let i=1;i<=divisions;i++){ divNames[i]=md['division_'+i]||('Division '+i); }
+  return { teams:Number(st.playoff_teams)||0, weekStart:Number(st.playoff_week_start)||0,
+           divisions, divNames, seedType:Number(st.playoff_seed_type)||0, type:Number(st.playoff_type)||0 };
 }

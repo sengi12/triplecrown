@@ -27,7 +27,7 @@ const app=new Function(code+`
   let started=true, mobile=true;
   hasSeasonStarted=()=>started; TC_SEASON.year=2026; TC_SEASON.phase='regular'; TC_SEASON.week=1; isMobileTeamPickerLayout=()=>mobile;
   sleeperPlayers={}; leagueSnapshot=null;
-  return { render:renderRightSidebar, phone:renderGamesPhone, set:gcmSet, open:gcOpenGame, pick:gcPick, line:gcPickerLineHTML, on:gcPhoneOn,
+  return { render:renderRightSidebar, phone:renderGamesPhone, set:gcmSet, open:gcOpenGame, pick:gcPick, line:gcPickerLineHTML, on:gcPhoneOn, tab:gcmSetTab, ldSort:ldSort, ldPos:ldSetPos, ld:()=>_ld,
     host:()=>document.getElementById('gamesSheet'), html:()=>document.getElementById('gamesSheet').innerHTML, bodyCls:()=>[...document.body.classList._s], state:()=>_gcm, gc:()=>_gc,
     setMobile:v=>{mobile=v;}, setStarted:v=>{started=v;}, setDraft:v=>{rosterBarVisible=v;}, setBoard:b=>{ BOARD=b; _tcBoard.at=0; _gc.boards={}; }, sidebar:()=>document.getElementById('leaders') };
 `)();
@@ -79,6 +79,20 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   app.setBoard({events:[{date:'2026-09-11T00:15Z',competitions:[{status:{type:{state:'post',shortDetail:'Final'}},competitors:[{homeAway:'home',team:{abbreviation:'KC'},score:'21',records:[]},{homeAway:'away',team:{abbreviation:'DEN'},score:'17',records:[]}]}]}]});
   app.phone(); await settle(); await settle(); app.phone(); h=app.html();
   chk(/Games<span class="gcm-idle"> · Week 1 final/.test(h), 'the week over: "Week 1 final"');
+
+  console.log('=== the Leaders page: the week\'s high scores and rankings, in the drawer ===');
+  app.set('full'); await settle(); h=app.html();
+  chk(/gcm-tabs/.test(h) && /gcmSetTab\('games'\)[^>]*class="ld-pos active"|ld-pos active"[^>]*onclick="gcmSetTab\('games'\)"/.test(h.replace(/class="ld-pos active" onclick/g,'onclick="x" class="ld-pos active" onclick')) || /gcm-tabs[\s\S]*Games[\s\S]*Leaders/.test(h), 'the sheet carries Games | Leaders tabs, Games first');
+  app.tab('leaders'); await settle(); await settle(); await settle(); h=app.html();
+  chk(/gcm-leaders/.test(h) && /ld-title">Leaders</.test(h) && /ld-posrow/.test(h) && /ldSetPos\('QB'\)/.test(h), 'Leaders: the same panel as the desktop sidebar — position filters and the week dropdown');
+  chk(/ld-row/.test(h) && /ld-pts">/.test(h) && /Mayfield|Burrow/.test(h), 'ranked rows with points, from the same Sleeper week rows');
+  chk(/gcm-x/.test(h) && !/rsb-btns/.test(h), 'the sheet\'s close button, not the sidebar\'s size buttons');
+  app.ldPos('QB'); await settle(); h=app.html();
+  chk(/gcm-leaders/.test(h) && /ld-pos active"[^>]*>QB</.test(h) && !/Irving/.test(h), 'a position filter repaints the drawer, not the hidden sidebar');
+  chk(!/Overall OL Grade/.test(h) && app.sidebar() && (app.sidebar().hidden===true || !/ld-row/.test(app.sidebar().innerHTML||'')), 'the desktop sidebar stays out of it on a phone');
+  app.ldPos('ALL'); app.tab('games'); await settle(); h=app.html();
+  chk(/gc-list/.test(h) && !/gcm-leaders/.test(h), 'back to Games');
+  app.set('closed'); await settle();
 
   console.log('=== who owns the corner ===');
   app.setDraft(true); app.phone(); chk(app.on()===false && app.host().hidden===true && app.html()==='', 'a draft being followed keeps its drawer — the Games sheet steps aside');

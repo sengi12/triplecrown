@@ -667,9 +667,37 @@ function _tcApplySleeperState(s){
   if(st==='pre'||st==='regular'||st==='post'||st==='off') TC_SEASON.phase = st;
   const wk = Number(s.week!=null ? s.week : (s.display_week!=null ? s.display_week : s.leg));
   if(Number.isFinite(wk) && wk>=0 && wk<=23) TC_SEASON.week = wk;
+  // Sleeper's own "week to show" lags its week counter through Tuesday; the tracker reads it.
+  const dw = Number(s.display_week);
+  TC_SEASON.displayWeek = (Number.isFinite(dw) && dw>=0 && dw<=23) ? dw : null;
   TC_SEASON.source = 'sleeper';
   TC_SEASON.fetchedAt = Date.now();
   return TC_SEASON;
+}
+// ── The tracker's week ────────────────────────────────────────────────────────
+// Sleeper's week counter rolls over on Tuesday morning, hours after Monday night. The game
+// tracker — the Game Center, the Leaders, the sidebar's dots and records — holds the finished
+// week instead, through Tuesday and until Wednesday 06:00 Eastern, so the morning-after look
+// still finds everything that happened. It holds only while Sleeper itself still displays the
+// finished week (display_week behind week), so a season with an odd calendar never shows a
+// week too early; a frozen time machine never holds.
+function tcHoldsFinishedWeek(now){
+  const d = now ? new Date(now) : new Date();
+  let dow, hour;
+  try{
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone:'America/New_York', weekday:'short', hour:'numeric', hour12:false }).formatToParts(d);
+    dow = (parts.find(p=>p.type==='weekday')||{}).value;
+    hour = Number((parts.find(p=>p.type==='hour')||{}).value);
+  }catch(e){ dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()]; hour = d.getHours(); }
+  if(hour===24) hour = 0;
+  return dow==='Tue' || (dow==='Wed' && hour<6);
+}
+function tcTrackerWeek(now){
+  const wk = Math.max(1, Number(TC_SEASON.week||1));
+  if(wk<=1 || TC_SEASON.frozen) return wk;
+  const dw = TC_SEASON.displayWeek;
+  if(dw==null || !(Number(dw) < wk)) return wk;
+  return tcHoldsFinishedWeek(now) ? wk-1 : wk;
 }
 // Adopt the state block a seed carries ({season, season_type, week}); live truth always wins.
 function _tcApplySeedState(st){

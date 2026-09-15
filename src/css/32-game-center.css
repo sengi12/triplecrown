@@ -111,3 +111,12 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .team-picker-live .team-picker-clock{font-family:var(--font);font-size:9px;font-weight:900;letter-spacing:.06em;color:var(--danger);}
 @media (max-width:360px){ .team-picker-live .team-picker-clock{display:none;} }
 .team-picker-toggle:has(.team-picker-live) .team-picker-toggle-label{min-width:0;flex:0 1 auto;}
+/* the sheet's two pages: Games | Leaders */
+.gcm-tabs{padding:0 10px 6px;gap:6px;}
+.gcm-tabs .ld-pos{font-size:10px;padding:4px 0;}
+.gcm-sheet .gcm-leaders{display:block;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;}
+.gcm-sheet .gcm-leaders .ld-fmt{padding-bottom:6px;}
+.gcm-sheet .gcm-leaders .ld-head{padding-top:0;}
+.gcm-sheet .gcm-leaders .ld-row{padding:6px 10px;}
+.gcm-sheet .gcm-leaders .ld-nm{font-size:12.5px;}
+.gcm-sheet .gcm-leaders .ld-pts{font-size:13px;}

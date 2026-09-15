@@ -990,9 +990,37 @@ function _tcApplySleeperState(s){
   if(st==='pre'||st==='regular'||st==='post'||st==='off') TC_SEASON.phase = st;
   const wk = Number(s.week!=null ? s.week : (s.display_week!=null ? s.display_week : s.leg));
   if(Number.isFinite(wk) && wk>=0 && wk<=23) TC_SEASON.week = wk;
+  // Sleeper's own "week to show" lags its week counter through Tuesday; the tracker reads it.
+  const dw = Number(s.display_week);
+  TC_SEASON.displayWeek = (Number.isFinite(dw) && dw>=0 && dw<=23) ? dw : null;
   TC_SEASON.source = 'sleeper';
   TC_SEASON.fetchedAt = Date.now();
   return TC_SEASON;
+}
+// ── The tracker's week ────────────────────────────────────────────────────────
+// Sleeper's week counter rolls over on Tuesday morning, hours after Monday night. The game
+// tracker — the Game Center, the Leaders, the sidebar's dots and records — holds the finished
+// week instead, through Tuesday and until Wednesday 06:00 Eastern, so the morning-after look
+// still finds everything that happened. It holds only while Sleeper itself still displays the
+// finished week (display_week behind week), so a season with an odd calendar never shows a
+// week too early; a frozen time machine never holds.
+function tcHoldsFinishedWeek(now){
+  const d = now ? new Date(now) : new Date();
+  let dow, hour;
+  try{
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone:'America/New_York', weekday:'short', hour:'numeric', hour12:false }).formatToParts(d);
+    dow = (parts.find(p=>p.type==='weekday')||{}).value;
+    hour = Number((parts.find(p=>p.type==='hour')||{}).value);
+  }catch(e){ dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()]; hour = d.getHours(); }
+  if(hour===24) hour = 0;
+  return dow==='Tue' || (dow==='Wed' && hour<6);
+}
+function tcTrackerWeek(now){
+  const wk = Math.max(1, Number(TC_SEASON.week||1));
+  if(wk<=1 || TC_SEASON.frozen) return wk;
+  const dw = TC_SEASON.displayWeek;
+  if(dw==null || !(Number(dw) < wk)) return wk;
+  return tcHoldsFinishedWeek(now) ? wk-1 : wk;
 }
 // Adopt the state block a seed carries ({season, season_type, week}); live truth always wins.
 function _tcApplySeedState(st){
@@ -4281,9 +4309,12 @@ function ldSort(k){ _ld.sort=(k && k!=='pts' && _ld.sort!==k) ? k : 'pts'; rende
 function ldOn(){
   return typeof hasSeasonStarted==='function' && hasSeasonStarted()
     && typeof TC_SEASON!=='undefined' && TC_SEASON.week>=1
-    && !(typeof isMobileTeamPickerLayout==='function' && isMobileTeamPickerLayout());
+    && (!(typeof isMobileTeamPickerLayout==='function' && isMobileTeamPickerLayout()) || (typeof ldPhoneOpen==='function' && ldPhoneOpen()));
 }
-function ldWeek(){ return (_ld.week==='current'||_ld.week==='season') ? Math.max(1, Number(TC_SEASON.week||1)) : _ld.week; }
+// "Now" for the list is the tracker's week: the finished week holds through Tuesday and
+// until Wednesday morning (tcTrackerWeek), so a Tuesday look still ranks the week just played.
+function ldCurWeek(){ return (typeof tcTrackerWeek==='function') ? tcTrackerWeek() : Math.max(1, Number(TC_SEASON.week||1)); }
+function ldWeek(){ return (_ld.week==='current'||_ld.week==='season') ? ldCurWeek() : _ld.week; }
 function ldHost(){
   let el=document.getElementById('leaders');
   if(!el){
@@ -4340,7 +4371,7 @@ async function ldLoad(){
   finally{ _ld.busy=false; }
   // The rows landed: paint them — unless the sidebar has since grown into the Game Center
   // or shrunk to the rail, which this paint must not overwrite.
-  if(typeof _gc!=='undefined' && _gc && _gc.mode && _gc.mode!=='normal') return;
+  if(typeof _gc!=='undefined' && _gc && _gc.mode && _gc.mode!=='normal' && !ldPhoneOpen()) return;
   renderLeaders(true);
 }
 function ldRowsHTML(width){
@@ -4366,11 +4397,10 @@ function ldRowsHTML(width){
     <b class="ld-pts">${bafl?x.pts.toFixed(1):x.pts.toFixed(2)}</b>
   </div>`).join('');
 }
-function renderLeaders(fromLoad){
-  const el=ldHost(); if(!el) return;
-  if(!ldOn()){ el.hidden=true; if(_ld.timer){ clearTimeout(_ld.timer); _ld.timer=null; } return; }
-  el.hidden=false;
-  const season=String(TC_SEASON.year), cur=Math.max(1, Number(TC_SEASON.week||1)), wk=ldWeek();
+// The panel's markup, for either home (the desktop sidebar, the phone's Games sheet).
+// `width` decides the names and the columns; `btns` is the home's own controls.
+function ldPanelHTML(width, btns, fromLoad){
+  const season=String(TC_SEASON.year), cur=ldCurWeek(), wk=ldWeek();
   const key=`${season}|${_ld.week==='season'?'season':wk}`;
   const stale = _ld.key!==key || !_ld.rows || (_ld.week!=='season' && wk===cur && Date.now()-_ld.at>60*1000);
   if(stale && !fromLoad) ldLoad();
@@ -4380,11 +4410,23 @@ function renderLeaders(fromLoad){
     <option value="season" ${_ld.week==='season'?'selected':''}>Season</option></select>`;
   const posBtns=LD_POS.map(p=>`<button class="ld-pos ${_ld.pos===p?'active':''}" onclick="ldSetPos('${p}')">${p==='ROOKIE'?'RK':p}</button>`).join('');
   const fmt=(typeof scoringSettings!=='undefined' && scoringSettings.baflMode) ? 'BAFL lens' : ((typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) ? escHtml(leagueSnapshot.name) : 'loaded scoring');
-  const btns=(typeof rsbButtonsHTML==='function')?rsbButtonsHTML():'';
-  el.innerHTML=`<div class="ld-head"><div class="sidebar-section ld-title">Leaders</div>${sel}</div>
+  return `<div class="ld-head"><div class="sidebar-section ld-title">Leaders</div>${sel}</div>
     <div class="ld-posrow">${posBtns}</div>
-    <div class="ld-fmt"><span title="Points under the loaded scoring">${fmt}${_ld.week!=='season'&&wk===cur?' · live':''}</span>${btns}</div>
-    <div class="ld-list">${ldRowsHTML(ldWidth(el))}</div>`;
+    <div class="ld-fmt"><span title="Points under the loaded scoring">${fmt}${_ld.week!=='season'&&wk===cur?' · live':''}</span>${btns||''}</div>
+    <div class="ld-list">${ldRowsHTML(width)}</div>`;
+}
+// Is the phone's Games sheet showing the Leaders? Then the list lives there, not here.
+function ldPhoneOpen(){
+  return typeof gcPhoneOn==='function' && gcPhoneOn() && typeof _gcm!=='undefined' && _gcm && _gcm.open!=='closed' && _gcm.tab==='leaders';
+}
+function renderLeaders(fromLoad){
+  if(ldPhoneOpen()){ if(typeof renderGamesPhone==='function') renderGamesPhone(fromLoad); return; }
+  const el=ldHost(); if(!el) return;
+  if(!ldOn()){ el.hidden=true; if(_ld.timer){ clearTimeout(_ld.timer); _ld.timer=null; } return; }
+  el.hidden=false;
+  const cur=ldCurWeek(), wk=ldWeek();
+  const btns=(typeof rsbButtonsHTML==='function')?rsbButtonsHTML():'';
+  el.innerHTML=ldPanelHTML(ldWidth(el), btns, fromLoad);
   // The week in progress keeps up: a re-render a minute from now re-reads it.
   if(_ld.timer){ clearTimeout(_ld.timer); _ld.timer=null; }
   if(_ld.week!=='season' && wk===cur && typeof window!=='undefined' && typeof window.setTimeout==='function'
@@ -4415,7 +4457,10 @@ function gcSetWeek(v){ _gc.week = v==='current' ? 'current' : Number(v); _gc.gam
 // Picking a game from the phone's half-open sheet also pulls the sheet up: the game list is
 // the half state's point, the picked game's lines are the full state's.
 function gcPick(id){ _gc.game=id; if(typeof _gcm!=='undefined' && _gcm.open==='half') _gcm.open='full'; renderRightSidebar(); }
-function gcWeek(){ const cur=Math.max(1, Number(TC_SEASON.week||1)); return _gc.week==='current' ? cur : Math.min(cur, _gc.week); }
+// "Now" is the tracker's week: the finished week holds through Tuesday and until Wednesday
+// 06:00 Eastern (tcTrackerWeek), so Tuesday's look still opens on everything that happened.
+function gcCurWeek(){ return (typeof tcTrackerWeek==='function') ? tcTrackerWeek() : Math.max(1, Number(TC_SEASON.week||1)); }
+function gcWeek(){ const cur=gcCurWeek(); return _gc.week==='current' ? cur : Math.min(cur, _gc.week); }
 
 // Exact Sleeper scoring: Σ stat × the league's setting over the keys both carry.
 function tcSleeperPoints(stats, sc){
@@ -4593,7 +4638,7 @@ function gcListHTML(games, picked){
 // The panel. `phone` swaps the sidebar's size buttons for the sheet's close button; the
 // markup is otherwise the same in both homes (the sheet's CSS turns the list into a rail).
 function gcHTML(phone){
-  const cur=Math.max(1, Number(TC_SEASON.week||1)), wk=gcWeek();
+  const cur=gcCurWeek(), wk=gcWeek();
   const board=gcBoard(wk);
   const games=board ? gcGames(board) : null;
   if(games && games.length && !games.some(g=>g.id===_gc.game)) _gc.game=gcDefaultGame(games);
@@ -4666,9 +4711,16 @@ function gcmSet(v){ if(!GCM_OPEN.includes(v)) return; _gcm.open=v; renderGamesPh
 function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; _gcm.open='full'; renderGamesPhone(); }
 // The current week's games, whatever week the sheet is showing — the pill reads the present.
 function gcmCurrentGames(){
-  const cur=Math.max(1, Number(TC_SEASON.week||1));
-  const board=gcBoard(cur);
+  const board=gcBoard(gcCurWeek());
   return board ? gcGames(board) : null;
+}
+// The sheet's two pages: the week's games, and the Leaders — the same ranked list the
+// desktop sidebar shows (weekly high scores by position, sortable), in the phone's drawer.
+const GCM_TABS=[['games','Games'],['leaders','Leaders']];
+function gcmSetTab(t){ if(!GCM_TABS.some(x=>x[0]===t)) return; _gcm.tab=t; if(_gcm.open==='closed') _gcm.open='half'; renderGamesPhone(); }
+function gcmTabsHTML(){
+  const cur=_gcm.tab||'games';
+  return `<div class="ld-posrow gcm-tabs">${GCM_TABS.map(([k,l])=>`<button class="ld-pos ${cur===k?'active':''}" onclick="gcmSetTab('${k}')">${l}</button>`).join('')}</div>`;
 }
 // The pill's words: how many games are on (and how many are done), the next kickoff when
 // none is, or just the week's final tally.
@@ -4716,7 +4768,7 @@ function gcmDragStart(ev){
     gcmSet(to); };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
 }
-function renderGamesPhone(){
+function renderGamesPhone(fromLoad){
   const host=(typeof document!=='undefined' && document.getElementById) ? gcmHost() : null; if(!host) return;
   if(_gcm.timer){ clearTimeout(_gcm.timer); _gcm.timer=null; }
   if(!gcPhoneOn()){ host.innerHTML=''; host.hidden=true; if(document.body&&document.body.classList) document.body.classList.remove('gcm-open'); return; }
@@ -4727,11 +4779,19 @@ function renderGamesPhone(){
   // Keep the reader's place across the minute repaint: the rail's scroll and the body's.
   const body0=host.querySelector?host.querySelector('.gc-body'):null, rail0=host.querySelector?host.querySelector('.gc-list'):null;
   const keep={ body:body0?body0.scrollTop:0, rail:rail0?rail0.scrollLeft:0, game:_gc.game };
+  const tab=_gcm.tab||'games';
+  const width=(typeof window!=='undefined' && window.innerWidth) ? window.innerWidth : 390;
+  const closeBtn=`<button class="rsb-btn gcm-x" onclick="gcmSet('closed')" title="Close" aria-label="Close">×</button>`;
+  const page = open==='closed' ? ''
+    : tab==='leaders' && typeof ldPanelHTML==='function'
+      ? `<div class="gc gcm-leaders">${ldPanelHTML(width, closeBtn, fromLoad)}</div>`
+      : gcHTML(true);
   host.innerHTML=`${gcmPillHTML(games)}
     <div class="gcm-scrim" onclick="gcmSet('closed')"></div>
     <div class="gcm-sheet gcm-${open}" aria-label="Game Center" aria-hidden="${open==='closed'}">
       <div class="gcm-grab" onpointerdown="gcmDragStart(event)"></div>
-      ${open==='closed' ? '' : gcHTML(true)}
+      ${open==='closed' ? '' : gcmTabsHTML()}
+      ${page}
     </div>`;
   if(document.body&&document.body.classList) document.body.classList.toggle('gcm-open', open!=='closed');
   if(open!=='closed' && host.querySelector){
@@ -4744,7 +4804,7 @@ function renderGamesPhone(){
     else if(rail) rail.scrollLeft=keep.rail;
   }
   // The week in progress keeps up: a repaint a minute from now re-reads the board and rows.
-  if(gcWeek()===Math.max(1, Number(TC_SEASON.week||1)) && typeof window!=='undefined' && typeof window.setTimeout==='function'
+  if(gcWeek()===gcCurWeek() && typeof window!=='undefined' && typeof window.setTimeout==='function'
      && (typeof document==='undefined' || document.visibilityState!=='hidden')){
     _gcm.timer=window.setTimeout(()=>{ _gcm.timer=null; renderGamesPhone(); }, 61*1000);
   }
@@ -24853,7 +24913,9 @@ const TC_BOARD_ABBR = { WSH:'WAS' };          // ESPN spells one club differentl
 const TC_BOARD_TTL_LIVE = 45*1000, TC_BOARD_TTL_IDLE = 5*60*1000;
 
 function tcBoardWeek(){
-  const w=(typeof TC_SEASON!=='undefined')?Number(TC_SEASON.week||0):0;
+  // The tracker's week: the finished week holds through Tuesday and until Wednesday morning
+  // (tcTrackerWeek), so the dots and records keep showing the week just played.
+  const w=(typeof tcTrackerWeek==='function') ? tcTrackerWeek() : ((typeof TC_SEASON!=='undefined')?Number(TC_SEASON.week||0):0);
   return Math.min(18, Math.max(1, w||1));
 }
 // Parse one scoreboard payload → {CODE: {state, rec, opp, home, score, oppScore, detail}}.
@@ -31485,6 +31547,12 @@ async function laTakeSnapshotSleeper(leagueId, opts){
                avatar:(u.metadata&&u.metadata.avatar)||(u.avatar?SLEEPER_AVATAR_THUMB(u.avatar):null),
                teamName:(u.metadata&&u.metadata.team_name)||u.display_name||`Roster ${r.roster_id}`,
                wins:(r.settings&&r.settings.wins)||0, losses:(r.settings&&r.settings.losses)||0,
+               ties:(r.settings&&r.settings.ties)||0,
+               // Standings: points for / against (Sleeper splits the decimals off), the
+               // division, the streak — what the Standings pane orders and explains.
+               fpts:_laPts(r.settings, 'fpts'), fptsAgainst:_laPts(r.settings, 'fpts_against'),
+               division:(r.settings&&r.settings.division!=null)?Number(r.settings.division):null,
+               streak:(r.metadata&&r.metadata.streak)||'',
                players, picks };
     });
     // myUserId identifies YOUR team. laState.user is in-memory only, so after a reload it's
@@ -31521,6 +31589,9 @@ async function laTakeSnapshotSleeper(leagueId, opts){
       // Sleeper's own scoring table, verbatim: Σ stat × setting over matching keys scores any
       // Sleeper stat row exactly as the league does — offense, kickers, defenders, D/ST.
       scoringRaw: (lg.scoring_settings && typeof lg.scoring_settings==='object') ? Object.assign({}, lg.scoring_settings) : null,
+      // The playoff format, for the Standings pane's picture: how many make it, when they
+      // start (the regular season ends the week before), divisions and how they seed.
+      playoffs: _laPlayoffFormat(lg),
       championRosterId,
       rosterPositions:rp, takenAt:Date.now(),
       myUserId:_resolvedId,
@@ -33257,6 +33328,23 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     This season's projected points from your own projection engine under this league's scoring.
     Picks are excluded \u2014 they don't score.`};
 }
+
+// ── Standings fields for the snapshot ─────────────────────────────────────────
+// Sleeper keeps points as an integer plus a two-digit decimal field; the playoff format
+// lives in league.settings (division names in league.metadata).
+function _laPts(settings, key){
+  if(!settings || settings[key]==null) return null;
+  const whole=Number(settings[key])||0, dec=Number(settings[key+'_decimal'])||0;
+  return Math.round((whole + dec/100)*100)/100;
+}
+function _laPlayoffFormat(lg){
+  const st=(lg&&lg.settings)||{}, md=(lg&&lg.metadata)||{};
+  const divisions=Number(st.divisions)||0;
+  const divNames={};
+  for(let i=1;i<=divisions;i++){ divNames[i]=md['division_'+i]||('Division '+i); }
+  return { teams:Number(st.playoff_teams)||0, weekStart:Number(st.playoff_week_start)||0,
+           divisions, divNames, seedType:Number(st.playoff_seed_type)||0, type:Number(st.playoff_type)||0 };
+}
 // ═════════════════════════════════════════════════════════════════════════════
 // League Analyzer — in-season tools (Matchup · Lineup · DvP · Trends)
 //
@@ -33288,7 +33376,7 @@ function laSetMuWeek(w){ laState.muWeek = (Number(w)===laCurrentWeek()) ? null :
 function laActivePane(){
   const t=laState.laTab;
   if(t==='season') return laState.seasonPane||'matchup';
-  return (t==='matchup'||t==='lineup'||t==='dvp'||t==='trends'||t==='chop') ? t : null;
+  return (t==='matchup'||t==='lineup'||t==='dvp'||t==='trends'||t==='chop'||t==='standings') ? t : null;
 }
 function laSetPane(k){
   laState.laTab='season'; laState.seasonPane=k;
@@ -33300,7 +33388,12 @@ function laSeasonView(s, paneOverride){
   const chopped=(typeof laIsChopped==='function')&&laIsChopped(s);
   let pane=paneOverride||laActivePane()||(chopped?'chop':'matchup');
   if(chopped && pane==='matchup') pane='chop'; else if(!chopped && pane==='chop') pane='matchup';
-  const panes=[chopped?['chop','Chop','axe']:['matchup','Matchup','versus'],['lineup','Lineup','clipboard'],['dvp','Defense','shield'],['trends','Trends','chart']];
+  // Standings & the playoff picture (99f-la-standings.js): a head-to-head league's second
+  // pane; a Chopped league has no standings to speak of (it has a Chopping Block).
+  const panes=[chopped?['chop','Chop','axe']:['matchup','Matchup','versus']]
+    .concat(chopped?[]:[['standings','Standings','trophy']])
+    .concat([['lineup','Lineup','clipboard'],['dvp','Defense','shield'],['trends','Trends','chart']]);
+  if(chopped && pane==='standings') pane='chop';
   // phase-tabs + data-swipe-primary: within the Season tab, left/right swipes slide between
   // these PANES (the outer icon bar stays tappable); swiping back past Matchup continues to
   // the Trades tab (data-swipe-prev). Touches inside the matchup hero are claimed by the
@@ -33308,7 +33401,8 @@ function laSeasonView(s, paneOverride){
   const bar=`<div class="phase-tabs la-pane-tabs" data-swipe-primary data-swipe-prev="trade">${panes.map(([k,l,ic])=>
     `<button class="phase-tab pane-tab ${pane===k?'active':''}" onclick="laSetPane('${k}')" title="${l}">${TC_ICON(ic)}<span class="tab-lbl">${l}</span></button>`).join('')}</div>`;
   const body = pane==='lineup'?laLineupView(s) : pane==='dvp'?laDvpView(s)
-             : pane==='trends'?laTrendsView(s) : pane==='chop'?laChopView(s) : laMatchupView(s);
+             : pane==='trends'?laTrendsView(s) : pane==='chop'?laChopView(s)
+             : pane==='standings'&&typeof laStandingsView==='function'?laStandingsView(s) : laMatchupView(s);
   return bar+body;
 }
 
@@ -33323,6 +33417,7 @@ function laTabViewHTML(key, s){
     case 'lineup':                // no state mutation here (previews call this too)
     case 'dvp':
     case 'chop':
+    case 'standings':
     case 'trends': return laSeasonView(s, key);
     case 'hub': return (typeof hubViewHTML==='function') ? hubViewHTML(s) : null;   // This Week: every league
     default: return null;
@@ -35911,4 +36006,115 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     finish around its projection, the spread from what it has left to play, so a team whose
     starters are all done has no spread and a locked lower score makes it 100%. Chopped
     teams are read off the finished weeks: the lowest total among those still alive.`};
+}
+// ═════════════════════════════════════════════════════════════════════════════
+// League Analyzer — Standings & the playoff picture (in season)
+// ═════════════════════════════════════════════════════════════════════════════
+// The league table as Sleeper orders it — wins, then points for — with the playoff line
+// drawn where the league's format puts it, and what the standings imply: who has clinched,
+// who is in on the current line, who is on the bubble, who is out. All of it is arithmetic
+// on the snapshot (wins, losses, ties, points, division, the playoff settings); nothing is
+// fetched. The picture is deliberately conservative — a spot is CLINCHED only when no team
+// outside the line can catch that record even by winning out, and a team is OUT only when
+// winning out cannot reach the line's current record — so it never promises what a
+// points tiebreak could still take away.
+//
+//   games played   wins + losses + ties (Sleeper's counts, so a bye week counts nothing)
+//   remaining      regular-season weeks (playoff_week_start − 1) − games played
+//   seeds          division leaders first when the league seeds by division (the Sleeper
+//                  default); by record straight through otherwise
+//   GB             games behind the last playoff seed, in the usual half-game units
+
+function laStdRegularWeeks(s){
+  const p=(s&&s.playoffs)||{};
+  const ws=Number(p.weekStart)||0;
+  return ws>1 ? ws-1 : 14;                 // Sleeper's default: playoffs start week 15
+}
+function laStdRows(s){
+  const teams=(s&&s.teamList)||[];
+  const reg=laStdRegularWeeks(s);
+  return teams.map(t=>{
+    const w=Number(t.wins)||0, l=Number(t.losses)||0, ti=Number(t.ties)||0;
+    const played=w+l+ti;
+    return { t, w, l, ti, played, remaining:Math.max(0, reg-played),
+             pct: played ? (w+0.5*ti)/played : 0,
+             pf:Number(t.fpts)||0, pa:Number(t.fptsAgainst)||0,
+             division:(t.division!=null)?Number(t.division):null };
+  });
+}
+// Sleeper's order: wins, then points for (ties count half toward the percentage).
+function laStdCmp(a,b){ return (b.pct-a.pct) || (b.w-a.w) || (b.pf-a.pf) || String(a.t.teamName||'').localeCompare(String(b.t.teamName||'')); }
+function laStdOrder(s){
+  const rows=laStdRows(s).sort(laStdCmp);
+  const p=(s&&s.playoffs)||{};
+  const byDivision = (Number(p.divisions)||0) > 1 && Number(p.seedType||0)!==1 && rows.some(r=>r.division!=null);
+  if(!byDivision){ rows.forEach((r,i)=>{ r.seed=i+1; r.divLeader=false; }); return rows; }
+  // Division leaders take the top seeds (in record order among themselves), the rest follow.
+  const seen=new Set(), leaders=[], rest=[];
+  rows.forEach(r=>{ if(r.division!=null && !seen.has(r.division)){ seen.add(r.division); r.divLeader=true; leaders.push(r); } else { r.divLeader=false; rest.push(r); } });
+  const out=leaders.concat(rest);
+  out.forEach((r,i)=>{ r.seed=i+1; });
+  return out;
+}
+// Clinched / in / bubble / out, from what winning out could still do.
+function laPlayoffPicture(s){
+  const rows=laStdOrder(s);
+  const n=rows.length;
+  const p=(s&&s.playoffs)||{};
+  let spots=Number(p.teams)||0;
+  if(!(spots>0) || spots>=n) spots=Math.min(n, spots>0?spots:Math.max(1, Math.round(n/2)));
+  const inside=rows.slice(0, spots), outside=rows.slice(spots);
+  const outsideCeiling = outside.length ? Math.max(...outside.map(r=>r.w+r.remaining)) : -1;   // the best any outsider can finish
+  const lineWins = inside.length ? Math.min(...inside.map(r=>r.w)) : 0;                        // the line's current record
+  const lineRow = inside[inside.length-1];
+  rows.forEach((r,i)=>{
+    const isIn = i<spots;
+    let status;
+    if(isIn && r.w > outsideCeiling) status='clinched';
+    else if(isIn) status='in';
+    else if(r.w + r.remaining < lineWins) status='out';
+    else status='bubble';
+    r.status=status;
+    // Games behind the last seed (a half game per unmatched win or loss).
+    r.gb = lineRow ? ((lineRow.w - r.w) + (r.l - lineRow.l))/2 : 0;
+  });
+  return { rows, spots, regularWeeks:laStdRegularWeeks(s), byDivision: rows.some(r=>r.divLeader) };
+}
+const LA_STD_STATUS = { clinched:['Clinched','la-std-clinched'], in:['In','la-std-in'], bubble:['Bubble','la-std-bubble'], out:['Out','la-std-out'] };
+function laStandingsView(s){
+  if(!s || !Array.isArray(s.teamList) || !s.teamList.length) return '<div class="la-empty">No standings yet.</div>';
+  const pic=laPlayoffPicture(s);
+  const p=s.playoffs||{};
+  const played=Math.max(...pic.rows.map(r=>r.played), 0);
+  const divName=(d)=>(p.divNames&&p.divNames[d])||`Div ${d}`;
+  const rec=(r)=>`${r.w}-${r.l}${r.ti?`-${r.ti}`:''}`;
+  const fmtGb=(g)=>g<=0?'–':(Number.isInteger(g)?String(g):g.toFixed(1));
+  const rowHTML=(r)=>{
+    const t=r.t, mine=s.myUserId && (t.ownerId===s.myUserId || (t.coOwners||[]).includes(s.myUserId));
+    const [label, cls]=LA_STD_STATUS[r.status]||['',''];
+    const av=t.avatar?`<img class="la-std-av" src="${escAttr(t.avatar)}" alt="" onerror="this.style.display='none'">`:'<span class="la-std-av la-std-av-empty"></span>';
+    return `<tr class="la-std-row ${mine?'la-std-mine':''} la-std-${r.status}" data-roster="${escAttr(String(t.rosterId))}">
+      <td class="la-std-seed">${r.seed}</td>
+      <td class="la-std-team">${av}<span class="la-std-name">${escHtml(t.teamName||t.owner||'')}</span><span class="la-std-owner">@${escHtml(t.owner||'')}${r.divLeader?` · <b title="Division leader">${escHtml(divName(r.division))} leader</b>`:(r.division!=null&&pic.byDivision?` · ${escHtml(divName(r.division))}`:'')}</span></td>
+      <td class="la-std-rec">${rec(r)}</td>
+      <td class="la-std-num">${r.pf.toFixed(1)}</td>
+      <td class="la-std-num la-std-pa">${r.pa?r.pa.toFixed(1):'–'}</td>
+      <td class="la-std-strk">${escHtml(t.streak||'')}</td>
+      <td class="la-std-num">${fmtGb(r.gb)}</td>
+      <td class="la-std-status"><span class="la-std-pill ${cls}">${label}</span></td>
+    </tr>`;
+  };
+  const rows=pic.rows.map((r,i)=>rowHTML(r) + (i===pic.spots-1 && i<pic.rows.length-1 ? `<tr class="la-std-line"><td colspan="8"><span>playoff line · ${pic.spots} of ${pic.rows.length} make it</span></td></tr>` : '')).join('');
+  const counts={clinched:0,in:0,bubble:0,out:0}; pic.rows.forEach(r=>{ counts[r.status]++; });
+  const weeksLeft=Math.max(0, pic.regularWeeks-played);
+  return `<div class="la-std">
+    <div class="la-std-head">
+      <div class="la-std-title">Standings <span class="la-std-sub">${played} of ${pic.regularWeeks} regular-season weeks played · ${weeksLeft} to go${pic.byDivision?' · division leaders seeded first':''}</span></div>
+      <div class="la-std-sum"><span class="la-std-pill la-std-clinched">${counts.clinched} clinched</span><span class="la-std-pill la-std-in">${counts.in} in</span><span class="la-std-pill la-std-bubble">${counts.bubble} on the bubble</span><span class="la-std-pill la-std-out">${counts.out} out</span></div>
+    </div>
+    <div class="la-std-wrap"><table class="la-std-table">
+      <thead><tr><th>#</th><th>Team</th><th>W-L</th><th>PF</th><th>PA</th><th>STRK</th><th title="Games behind the last playoff seed">GB</th><th>Picture</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <div class="la-std-note">Sleeper's order: wins, then points for. Clinched = no team below the line can catch that record even by winning out; Out = winning out cannot reach the line's record. Points tiebreaks are not assumed either way.</div>
+  </div>`;
 }

@@ -1,0 +1,39 @@
+/* ── League Analyzer · Standings & the playoff picture ── */
+.la-std{padding:8px 0 12px;}
+.la-std-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 14px;padding:0 4px 8px;}
+.la-std-title{font-size:14px;font-weight:900;}
+.la-std-sub{display:block;font-size:10.5px;font-weight:600;color:var(--muted);margin-top:2px;}
+.la-std-sum{display:flex;flex-wrap:wrap;gap:6px;}
+.la-std-wrap{overflow-x:auto;}
+.la-std-table{width:100%;border-collapse:collapse;font-size:12px;}
+.la-std-table th{text-align:left;font-size:9px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap;}
+.la-std-table td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:middle;white-space:nowrap;}
+.la-std-seed{font-family:var(--mono);font-weight:800;color:var(--muted);width:24px;text-align:right;}
+.la-std-team{display:flex;align-items:center;gap:8px;min-width:0;}
+.la-std-av{width:22px;height:22px;border-radius:50%;object-fit:cover;background:var(--surface3);flex:none;}
+.la-std-av-empty{display:inline-block;}
+.la-std-name{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;}
+.la-std-owner{font-size:9.5px;color:var(--muted);white-space:nowrap;}
+.la-std-owner b{color:var(--accent);font-weight:800;}
+.la-std-rec{font-family:var(--mono);font-weight:900;}
+.la-std-num{font-family:var(--mono);text-align:right;}
+.la-std-pa{color:var(--muted);}
+.la-std-strk{font-family:var(--mono);font-size:11px;color:var(--muted);}
+.la-std-mine td{background:rgba(88,166,255,.08);}
+.la-std-mine .la-std-name{color:var(--accent);}
+.la-std-line td{padding:0;border-bottom:none;}
+.la-std-line span{display:block;text-align:center;font-size:9px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:var(--warn);border-top:2px dashed var(--warn);padding:3px 0 2px;}
+.la-std-pill{display:inline-block;font-size:9px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:999px;border:1px solid var(--border);color:var(--muted);}
+.la-std-clinched{color:#3fb950;border-color:rgba(63,185,80,.5);background:rgba(63,185,80,.12);}
+.la-std-in{color:var(--accent);border-color:rgba(88,166,255,.5);background:rgba(88,166,255,.10);}
+.la-std-bubble{color:var(--warn);border-color:rgba(210,153,34,.5);background:rgba(210,153,34,.10);}
+.la-std-out{color:var(--danger);border-color:rgba(248,81,73,.45);background:rgba(248,81,73,.08);}
+.la-std-out .la-std-name{color:var(--muted);}
+.la-std-note{font-size:10px;color:var(--muted);line-height:1.4;padding:8px 4px 0;max-width:80ch;}
+@media (max-width:600px){
+  .la-std-table{font-size:11px;}
+  .la-std-table th,.la-std-table td{padding:6px 5px;}
+  .la-std-name{max-width:120px;}
+  .la-std-strk,.la-std-table th:nth-child(6){display:none;}
+  .la-std-pa,.la-std-table th:nth-child(5){display:none;}
+}

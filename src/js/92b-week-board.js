@@ -11,7 +11,9 @@ const TC_BOARD_ABBR = { WSH:'WAS' };          // ESPN spells one club differentl
 const TC_BOARD_TTL_LIVE = 45*1000, TC_BOARD_TTL_IDLE = 5*60*1000;
 
 function tcBoardWeek(){
-  const w=(typeof TC_SEASON!=='undefined')?Number(TC_SEASON.week||0):0;
+  // The tracker's week: the finished week holds through Tuesday and until Wednesday morning
+  // (tcTrackerWeek), so the dots and records keep showing the week just played.
+  const w=(typeof tcTrackerWeek==='function') ? tcTrackerWeek() : ((typeof TC_SEASON!=='undefined')?Number(TC_SEASON.week||0):0);
   return Math.min(18, Math.max(1, w||1));
 }
 // Parse one scoreboard payload → {CODE: {state, rec, opp, home, score, oppScore, detail}}.
