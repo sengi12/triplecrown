@@ -21,7 +21,10 @@ function gcSetWeek(v){ _gc.week = v==='current' ? 'current' : Number(v); _gc.gam
 // Picking a game from the phone's half-open sheet also pulls the sheet up: the game list is
 // the half state's point, the picked game's lines are the full state's.
 function gcPick(id){ _gc.game=id; if(typeof _gcm!=='undefined' && _gcm.open==='half') _gcm.open='full'; renderRightSidebar(); }
-function gcWeek(){ const cur=Math.max(1, Number(TC_SEASON.week||1)); return _gc.week==='current' ? cur : Math.min(cur, _gc.week); }
+// "Now" is the tracker's week: the finished week holds through Tuesday and until Wednesday
+// 06:00 Eastern (tcTrackerWeek), so Tuesday's look still opens on everything that happened.
+function gcCurWeek(){ return (typeof tcTrackerWeek==='function') ? tcTrackerWeek() : Math.max(1, Number(TC_SEASON.week||1)); }
+function gcWeek(){ const cur=gcCurWeek(); return _gc.week==='current' ? cur : Math.min(cur, _gc.week); }
 
 // Exact Sleeper scoring: Σ stat × the league's setting over the keys both carry.
 function tcSleeperPoints(stats, sc){
@@ -199,7 +202,7 @@ function gcListHTML(games, picked){
 // The panel. `phone` swaps the sidebar's size buttons for the sheet's close button; the
 // markup is otherwise the same in both homes (the sheet's CSS turns the list into a rail).
 function gcHTML(phone){
-  const cur=Math.max(1, Number(TC_SEASON.week||1)), wk=gcWeek();
+  const cur=gcCurWeek(), wk=gcWeek();
   const board=gcBoard(wk);
   const games=board ? gcGames(board) : null;
   if(games && games.length && !games.some(g=>g.id===_gc.game)) _gc.game=gcDefaultGame(games);
@@ -272,9 +275,16 @@ function gcmSet(v){ if(!GCM_OPEN.includes(v)) return; _gcm.open=v; renderGamesPh
 function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; _gcm.open='full'; renderGamesPhone(); }
 // The current week's games, whatever week the sheet is showing — the pill reads the present.
 function gcmCurrentGames(){
-  const cur=Math.max(1, Number(TC_SEASON.week||1));
-  const board=gcBoard(cur);
+  const board=gcBoard(gcCurWeek());
   return board ? gcGames(board) : null;
+}
+// The sheet's two pages: the week's games, and the Leaders — the same ranked list the
+// desktop sidebar shows (weekly high scores by position, sortable), in the phone's drawer.
+const GCM_TABS=[['games','Games'],['leaders','Leaders']];
+function gcmSetTab(t){ if(!GCM_TABS.some(x=>x[0]===t)) return; _gcm.tab=t; if(_gcm.open==='closed') _gcm.open='half'; renderGamesPhone(); }
+function gcmTabsHTML(){
+  const cur=_gcm.tab||'games';
+  return `<div class="ld-posrow gcm-tabs">${GCM_TABS.map(([k,l])=>`<button class="ld-pos ${cur===k?'active':''}" onclick="gcmSetTab('${k}')">${l}</button>`).join('')}</div>`;
 }
 // The pill's words: how many games are on (and how many are done), the next kickoff when
 // none is, or just the week's final tally.
@@ -322,7 +332,7 @@ function gcmDragStart(ev){
     gcmSet(to); };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
 }
-function renderGamesPhone(){
+function renderGamesPhone(fromLoad){
   const host=(typeof document!=='undefined' && document.getElementById) ? gcmHost() : null; if(!host) return;
   if(_gcm.timer){ clearTimeout(_gcm.timer); _gcm.timer=null; }
   if(!gcPhoneOn()){ host.innerHTML=''; host.hidden=true; if(document.body&&document.body.classList) document.body.classList.remove('gcm-open'); return; }
@@ -333,11 +343,19 @@ function renderGamesPhone(){
   // Keep the reader's place across the minute repaint: the rail's scroll and the body's.
   const body0=host.querySelector?host.querySelector('.gc-body'):null, rail0=host.querySelector?host.querySelector('.gc-list'):null;
   const keep={ body:body0?body0.scrollTop:0, rail:rail0?rail0.scrollLeft:0, game:_gc.game };
+  const tab=_gcm.tab||'games';
+  const width=(typeof window!=='undefined' && window.innerWidth) ? window.innerWidth : 390;
+  const closeBtn=`<button class="rsb-btn gcm-x" onclick="gcmSet('closed')" title="Close" aria-label="Close">×</button>`;
+  const page = open==='closed' ? ''
+    : tab==='leaders' && typeof ldPanelHTML==='function'
+      ? `<div class="gc gcm-leaders">${ldPanelHTML(width, closeBtn, fromLoad)}</div>`
+      : gcHTML(true);
   host.innerHTML=`${gcmPillHTML(games)}
     <div class="gcm-scrim" onclick="gcmSet('closed')"></div>
     <div class="gcm-sheet gcm-${open}" aria-label="Game Center" aria-hidden="${open==='closed'}">
       <div class="gcm-grab" onpointerdown="gcmDragStart(event)"></div>
-      ${open==='closed' ? '' : gcHTML(true)}
+      ${open==='closed' ? '' : gcmTabsHTML()}
+      ${page}
     </div>`;
   if(document.body&&document.body.classList) document.body.classList.toggle('gcm-open', open!=='closed');
   if(open!=='closed' && host.querySelector){
@@ -350,7 +368,7 @@ function renderGamesPhone(){
     else if(rail) rail.scrollLeft=keep.rail;
   }
   // The week in progress keeps up: a repaint a minute from now re-reads the board and rows.
-  if(gcWeek()===Math.max(1, Number(TC_SEASON.week||1)) && typeof window!=='undefined' && typeof window.setTimeout==='function'
+  if(gcWeek()===gcCurWeek() && typeof window!=='undefined' && typeof window.setTimeout==='function'
      && (typeof document==='undefined' || document.visibilityState!=='hidden')){
     _gcm.timer=window.setTimeout(()=>{ _gcm.timer=null; renderGamesPhone(); }, 61*1000);
   }

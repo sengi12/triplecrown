@@ -29,7 +29,7 @@ function laSetMuWeek(w){ laState.muWeek = (Number(w)===laCurrentWeek()) ? null :
 function laActivePane(){
   const t=laState.laTab;
   if(t==='season') return laState.seasonPane||'matchup';
-  return (t==='matchup'||t==='lineup'||t==='dvp'||t==='trends'||t==='chop') ? t : null;
+  return (t==='matchup'||t==='lineup'||t==='dvp'||t==='trends'||t==='chop'||t==='standings') ? t : null;
 }
 function laSetPane(k){
   laState.laTab='season'; laState.seasonPane=k;
@@ -41,7 +41,12 @@ function laSeasonView(s, paneOverride){
   const chopped=(typeof laIsChopped==='function')&&laIsChopped(s);
   let pane=paneOverride||laActivePane()||(chopped?'chop':'matchup');
   if(chopped && pane==='matchup') pane='chop'; else if(!chopped && pane==='chop') pane='matchup';
-  const panes=[chopped?['chop','Chop','axe']:['matchup','Matchup','versus'],['lineup','Lineup','clipboard'],['dvp','Defense','shield'],['trends','Trends','chart']];
+  // Standings & the playoff picture (99f-la-standings.js): a head-to-head league's second
+  // pane; a Chopped league has no standings to speak of (it has a Chopping Block).
+  const panes=[chopped?['chop','Chop','axe']:['matchup','Matchup','versus']]
+    .concat(chopped?[]:[['standings','Standings','trophy']])
+    .concat([['lineup','Lineup','clipboard'],['dvp','Defense','shield'],['trends','Trends','chart']]);
+  if(chopped && pane==='standings') pane='chop';
   // phase-tabs + data-swipe-primary: within the Season tab, left/right swipes slide between
   // these PANES (the outer icon bar stays tappable); swiping back past Matchup continues to
   // the Trades tab (data-swipe-prev). Touches inside the matchup hero are claimed by the
@@ -49,7 +54,8 @@ function laSeasonView(s, paneOverride){
   const bar=`<div class="phase-tabs la-pane-tabs" data-swipe-primary data-swipe-prev="trade">${panes.map(([k,l,ic])=>
     `<button class="phase-tab pane-tab ${pane===k?'active':''}" onclick="laSetPane('${k}')" title="${l}">${TC_ICON(ic)}<span class="tab-lbl">${l}</span></button>`).join('')}</div>`;
   const body = pane==='lineup'?laLineupView(s) : pane==='dvp'?laDvpView(s)
-             : pane==='trends'?laTrendsView(s) : pane==='chop'?laChopView(s) : laMatchupView(s);
+             : pane==='trends'?laTrendsView(s) : pane==='chop'?laChopView(s)
+             : pane==='standings'&&typeof laStandingsView==='function'?laStandingsView(s) : laMatchupView(s);
   return bar+body;
 }
 
@@ -64,6 +70,7 @@ function laTabViewHTML(key, s){
     case 'lineup':                // no state mutation here (previews call this too)
     case 'dvp':
     case 'chop':
+    case 'standings':
     case 'trends': return laSeasonView(s, key);
     case 'hub': return (typeof hubViewHTML==='function') ? hubViewHTML(s) : null;   // This Week: every league
     default: return null;

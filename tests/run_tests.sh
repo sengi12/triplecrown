@@ -187,6 +187,8 @@ run_js_test test_qb_duress      "Passing chart: the Under Duress panel — clean
 run_js_test test_live_ingame    "In-game live stats: a one-minute cadence while games are on, five otherwise; the Live tab and banner say so"
 run_js_test test_leaders        "Leaders sidebar: ranked by points under the loaded scoring from Sleeper week rows, position + rookie filters, week/season pick, shortened names, desktop + in-season only"
 run_js_test test_standings_tiebreak "Standings: the NFL's division tiebreakers over the season's results (sidecar points + ESPN boards), the multi-club restart, 0-0 between winners and losers"
+run_js_test test_tracker_week   "The tracker's week: the finished week holds through Tuesday and until Wednesday 06:00 ET, only while Sleeper's display_week is behind; board, Game Center and Leaders agree"
+run_js_test test_la_standings   "League Analyzer · Standings & playoff picture: Sleeper's order, the playoff line, division seeding, conservative clinched / in / bubble / out, games back"
 run_js_test test_game_center    "Game Center: the right sidebar minimised / maximised, the week's games with scores, per-game players by position (QB..K, D/ST, defenders) with the league's exact Sleeper points, stat lines and fantasy owners"
 run_js_test test_games_sheet    "Games sheet: the Game Center on a phone — a pill bottom-right (red while a game is on), a half/full bottom sheet with the week's games as a rail and the picked game's lines, the selected team's score in the picker bar; steps aside for a draft follow, desktop and off-season"
 run_js_test test_week_board     "Week board: ESPN scoreboard → game state + record per team; sidebar dots and the big header record in the Live view"

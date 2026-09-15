@@ -63,9 +63,12 @@ function ldSort(k){ _ld.sort=(k && k!=='pts' && _ld.sort!==k) ? k : 'pts'; rende
 function ldOn(){
   return typeof hasSeasonStarted==='function' && hasSeasonStarted()
     && typeof TC_SEASON!=='undefined' && TC_SEASON.week>=1
-    && !(typeof isMobileTeamPickerLayout==='function' && isMobileTeamPickerLayout());
+    && (!(typeof isMobileTeamPickerLayout==='function' && isMobileTeamPickerLayout()) || (typeof ldPhoneOpen==='function' && ldPhoneOpen()));
 }
-function ldWeek(){ return (_ld.week==='current'||_ld.week==='season') ? Math.max(1, Number(TC_SEASON.week||1)) : _ld.week; }
+// "Now" for the list is the tracker's week: the finished week holds through Tuesday and
+// until Wednesday morning (tcTrackerWeek), so a Tuesday look still ranks the week just played.
+function ldCurWeek(){ return (typeof tcTrackerWeek==='function') ? tcTrackerWeek() : Math.max(1, Number(TC_SEASON.week||1)); }
+function ldWeek(){ return (_ld.week==='current'||_ld.week==='season') ? ldCurWeek() : _ld.week; }
 function ldHost(){
   let el=document.getElementById('leaders');
   if(!el){
@@ -122,7 +125,7 @@ async function ldLoad(){
   finally{ _ld.busy=false; }
   // The rows landed: paint them — unless the sidebar has since grown into the Game Center
   // or shrunk to the rail, which this paint must not overwrite.
-  if(typeof _gc!=='undefined' && _gc && _gc.mode && _gc.mode!=='normal') return;
+  if(typeof _gc!=='undefined' && _gc && _gc.mode && _gc.mode!=='normal' && !ldPhoneOpen()) return;
   renderLeaders(true);
 }
 function ldRowsHTML(width){
@@ -148,11 +151,10 @@ function ldRowsHTML(width){
     <b class="ld-pts">${bafl?x.pts.toFixed(1):x.pts.toFixed(2)}</b>
   </div>`).join('');
 }
-function renderLeaders(fromLoad){
-  const el=ldHost(); if(!el) return;
-  if(!ldOn()){ el.hidden=true; if(_ld.timer){ clearTimeout(_ld.timer); _ld.timer=null; } return; }
-  el.hidden=false;
-  const season=String(TC_SEASON.year), cur=Math.max(1, Number(TC_SEASON.week||1)), wk=ldWeek();
+// The panel's markup, for either home (the desktop sidebar, the phone's Games sheet).
+// `width` decides the names and the columns; `btns` is the home's own controls.
+function ldPanelHTML(width, btns, fromLoad){
+  const season=String(TC_SEASON.year), cur=ldCurWeek(), wk=ldWeek();
   const key=`${season}|${_ld.week==='season'?'season':wk}`;
   const stale = _ld.key!==key || !_ld.rows || (_ld.week!=='season' && wk===cur && Date.now()-_ld.at>60*1000);
   if(stale && !fromLoad) ldLoad();
@@ -162,11 +164,23 @@ function renderLeaders(fromLoad){
     <option value="season" ${_ld.week==='season'?'selected':''}>Season</option></select>`;
   const posBtns=LD_POS.map(p=>`<button class="ld-pos ${_ld.pos===p?'active':''}" onclick="ldSetPos('${p}')">${p==='ROOKIE'?'RK':p}</button>`).join('');
   const fmt=(typeof scoringSettings!=='undefined' && scoringSettings.baflMode) ? 'BAFL lens' : ((typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) ? escHtml(leagueSnapshot.name) : 'loaded scoring');
-  const btns=(typeof rsbButtonsHTML==='function')?rsbButtonsHTML():'';
-  el.innerHTML=`<div class="ld-head"><div class="sidebar-section ld-title">Leaders</div>${sel}</div>
+  return `<div class="ld-head"><div class="sidebar-section ld-title">Leaders</div>${sel}</div>
     <div class="ld-posrow">${posBtns}</div>
-    <div class="ld-fmt"><span title="Points under the loaded scoring">${fmt}${_ld.week!=='season'&&wk===cur?' · live':''}</span>${btns}</div>
-    <div class="ld-list">${ldRowsHTML(ldWidth(el))}</div>`;
+    <div class="ld-fmt"><span title="Points under the loaded scoring">${fmt}${_ld.week!=='season'&&wk===cur?' · live':''}</span>${btns||''}</div>
+    <div class="ld-list">${ldRowsHTML(width)}</div>`;
+}
+// Is the phone's Games sheet showing the Leaders? Then the list lives there, not here.
+function ldPhoneOpen(){
+  return typeof gcPhoneOn==='function' && gcPhoneOn() && typeof _gcm!=='undefined' && _gcm && _gcm.open!=='closed' && _gcm.tab==='leaders';
+}
+function renderLeaders(fromLoad){
+  if(ldPhoneOpen()){ if(typeof renderGamesPhone==='function') renderGamesPhone(fromLoad); return; }
+  const el=ldHost(); if(!el) return;
+  if(!ldOn()){ el.hidden=true; if(_ld.timer){ clearTimeout(_ld.timer); _ld.timer=null; } return; }
+  el.hidden=false;
+  const cur=ldCurWeek(), wk=ldWeek();
+  const btns=(typeof rsbButtonsHTML==='function')?rsbButtonsHTML():'';
+  el.innerHTML=ldPanelHTML(ldWidth(el), btns, fromLoad);
   // The week in progress keeps up: a re-render a minute from now re-reads it.
   if(_ld.timer){ clearTimeout(_ld.timer); _ld.timer=null; }
   if(_ld.week!=='season' && wk===cur && typeof window!=='undefined' && typeof window.setTimeout==='function'
