@@ -3813,6 +3813,8 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .la-cmkt-bar .la-cmkt-pos{margin-left:auto;}
 .la-cmkt-board .la-trnd-row:last-child{border-bottom:none;}
 .la-cmkt-board .la-wv-bid.hub-bid-chop{font-family:var(--mono);font-size:12px;border:1px solid rgba(210,153,34,.5);white-space:nowrap;}
+.la-trnd-bid{font-size:10px;padding:0 5px;margin-left:2px;vertical-align:baseline;}
+.la-trnd-bid.hub-bid-chop{border:1px solid rgba(210,153,34,.5);} .la-trnd-bid.hub-bid-chop small{font-size:8px;}
 /* ── BAFL matchup card — ported from ../bafl (30-matchups.css + 76-projections.css) ──
    Team names live in a flex header above the table so the five narrow data columns fit any
    phone; the win-probability bar sits under the names; the PROJECTED line under that. */
@@ -39076,13 +39078,16 @@ function _laTrendRow(p, detail, verdict, cls, rank){
   // The on-your-roster ★ rides the NAME line, never the verdict column — boards append it
   // to the verdict string for convenience, so lift it out here to keep the numbers aligned.
   verdict=String(verdict||'');
-  let star='';
+  let star='', bid='';
   const sm=verdict.match(/<span class="la-trnd-mine"[^>]*>[^<]*<\/span>/);
   if(sm){ star=sm[0]; verdict=verdict.replace(sm[0],''); }
+  // The wire's bid chip rides the sub-line too (the verdict column keeps its one number).
+  const bm=verdict.match(/<span class="la-wv-bid la-trnd-bid[^>]*>.*?<\/span>/);
+  if(bm){ bid=bm[0]; verdict=verdict.replace(bm[0],''); }
   return `<div class="la-trnd-row ${cls||''}">
     ${rank?`<span class="la-trnd-rank">${rank}</span>`:''}
     <span class="clickable-player la-trnd-hs" onclick="${pcardOnclick(pid||pp.name,p.pos,p.team||'')}">${laPlayerImg(pp,'la-trnd-hsimg')}</span>
-    <div class="la-trnd-main"><span class="la-trnd-nmline">${laNameHTML(pp,'la-trnd-name')}${star}${inj}</span><div class="la-trnd-sub"><span class="la-pos-${_laPosOf(p)}">${_laPosOf(p)}</span> · ${escHtml(p.team||'FA')}${detail?` · ${detail}`:''}</div></div>
+    <div class="la-trnd-main"><span class="la-trnd-nmline">${laNameHTML(pp,'la-trnd-name')}${star}${inj}</span><div class="la-trnd-sub"><span class="la-pos-${_laPosOf(p)}">${_laPosOf(p)}</span> · ${escHtml(p.team||'FA')}${detail?` · ${detail}`:''}${bid?` ${bid}`:''}</div></div>
     <div class="la-trnd-verdict">${verdict}</div></div>`;
 }
 // Team-row variant: logo + full team name, same right-hand verdict.
@@ -39133,7 +39138,13 @@ function laTrendsView(s){
   const mySet=new Set(((my&&my.players)||[]).map(p=>ecrNormName(p.name)+'|'+p.pos));
   const lgSet=_laLeagueNameSet(s);
   const keeps=_laScopeKeeps(scope, mySet, lgSet);
-  const mineMark=(name,pos)=> mySet.has(ecrNormName(name)+'|'+pos) ? '<span class="la-trnd-mine" title="on your roster">★</span>' : '';
+  // A FAAB league tags every unrostered player with the bid the wire would price him at
+  // (the chop market in a Chopped league) — the Waivers scope is the waiver wire, valued.
+  const wres=(typeof hubSnapshotResult==='function') ? hubSnapshotResult(s) : null;
+  const wireMap=new Map();
+  if(wres && wres.faab && Array.isArray(wres.faab.wire)) wres.faab.wire.forEach(r=>wireMap.set(ecrNormName(r.name)+'|'+r.pos, r));
+  const bidTag=(name,pos)=>{ const r=wireMap.get(ecrNormName(name)+'|'+pos); return r ? hubBidChipHTML(r.faab, wres, r.pos, 'la-wv-bid la-trnd-bid') : ''; };
+  const mineMark=(name,pos)=> (mySet.has(ecrNormName(name)+'|'+pos) ? '<span class="la-trnd-mine" title="on your roster">★</span>' : '') + bidTag(name,pos);
   const tabs=[['trending','Trending'],['pace','Pace'],['usage','Usage'],['regression','TDs'],['teams','Teams'],['ros','ROS']]
     .map(([k,l])=>`<button class="pane-tab ${tab===k?'active':''}" onclick="laSetTrndTab('${k}')">${l}</button>`).join('');
   const scopes=(tab==='teams')?'':`<div class="pos-filter la-trnd-scope">${[['rostered','Rostered'],['myteam','My Team'],['waiver','Waivers'],['league','League']]
@@ -40228,16 +40239,29 @@ function hubAnalyzeLeague(lg, rosters, users, matchups, ctxBase){
     // A Chopped league prices a release on its chop market (caliber × teams alive), from the
     // league's own history where it has one and the 2025 study where it does not.
     const chopLg = +st.type===3;
+    let priceOf;
     if(chopLg){
       const alive = (matchups && matchups.length) ? new Set(matchups.map(m=>m.roster_id)).size : teams;
       const market = hubChopMarket(ctxBase.faabChop||hubChopHist(lg), sc);
       const f = alive/Math.max(1, teams);
       faab.chop = { alive, total:teams, f, n:market.length, market };
-      adds.forEach(c=>{ c.faab = hubChopFaab(c.pos, c.rank, f, market, budget, faab.left) || hubFaabAdvice(c.ros, wk, curve, teams, budget, faab.left); });
-      return {league:lg, teams, mine:!!mine, lineup, adds, drops, faab, wk, dynasty};
+      priceOf = (pos, rank, ros)=> hubChopFaab(pos, rank, f, market, budget, faab.left) || hubFaabAdvice(ros, wk, curve, teams, budget, faab.left);
+    } else {
+      if(dynasty){ const flat={}; const top=Math.max(1, topAvail - (baseline[Object.keys(baseline).sort((a,b)=>(pool[b][0]?pool[b][0].pg:0)-(pool[a][0]?pool[a][0].pg:0))[0]]||0)); for(let w=1; w<HUB_LAST_WEEK; w++) flat[w]=top; curve=flat; }
+      priceOf = (pos, rank, ros)=> hubFaabAdvice(ros, wk, curve, teams, budget, faab.left);
     }
-    if(dynasty){ const flat={}; const top=Math.max(1, topAvail - (baseline[Object.keys(baseline).sort((a,b)=>(pool[b][0]?pool[b][0].pg:0)-(pool[a][0]?pool[a][0].pg:0))[0]]||0)); for(let w=1; w<HUB_LAST_WEEK; w++) flat[w]=top; curve=flat; }
-    adds.forEach(c=>{ c.faab = hubFaabAdvice(c.ros, wk, curve, teams, budget, faab.left); });
+    adds.forEach(c=>{ c.faab = priceOf(c.pos, c.rank, c.ros); });
+    // The whole wire priced, not only the adds: a free agent who beats nobody on YOUR roster
+    // (or is the tenth-best add) still has a value in this league — the Lineup pane's board
+    // and the Trends boards tag him with it. Plain rest-of-season value here, no surge.
+    const wire=[];
+    Object.keys(pool).forEach(pos=>pool[pos].forEach(({row, pg})=>{
+      const vor=vorOf(pos, pg); const ros=dynasty ? Math.max(0, vor) : Math.max(0, vor)*weeksLeft;
+      const id=String(row.player_id); const rank=ctxBase.projRank ? ctxBase.projRank.get(id) : null;
+      const fb=priceOf(pos, rank, ros); if(!fb) return;
+      wire.push({id, name:row.name, pos, team:row.team, rank, vor, ros, faab:fb});
+    }));
+    faab.wire = wire.sort((a,b)=>(b.faab.bid-a.faab.bid) || ((b.faab.market||0)-(a.faab.market||0)) || (b.ros-a.ros));
   }
   return {league:lg, teams, mine:!!mine, lineup, adds, drops, faab, wk, dynasty};
 }
@@ -40427,24 +40451,21 @@ function hubSnapshotResult(s){
   return res;
 }
 var _hubSnapHistBusy={};
-// Every free agent on a Chopped league's wire, priced on the chop market — so a player the
-// ADD rows do not reach (he beats nobody on YOUR roster, or he is the tenth-best add) still
-// carries the value the league has paid for his caliber: projection rank sets the band.
-function hubChopBoard(res, pos){
-  if(!res || !res.faab || !res.faab.chop || !res.byId || !res.projRank) return [];
-  const {f, market}=res.faab.chop; const budget=res.faab.budget, left=res.faab.left;
-  const out=[];
-  res.byId.forEach((r,id)=>{
-    if(res.rostered && res.rostered.has(id)) return;
-    if(!['QB','RB','WR','TE'].includes(r.pos) || (pos && pos!=='ALL' && r.pos!==pos)) return;
-    const rank=res.projRank.get(id); if(!rank) return;
-    const faab=hubChopFaab(r.pos, rank, f, market||[], budget, left); if(!faab) return;
-    out.push({id, name:r.name, pos:r.pos, team:r.team, rank, faab});
-  });
-  return out.sort((a,b)=>(b.faab.bid-a.faab.bid) || (b.faab.market-a.faab.market) || (a.rank-b.rank));
+// Every free agent on a FAAB league's wire with his price (hubAnalyzeLeague's faab.wire),
+// one position or all — so a player the ADD rows do not reach still carries the value this
+// league would pay: the chop market in a Chopped league, rest-of-season value elsewhere.
+function hubWireBoard(res, pos){
+  if(!res || !res.faab || !Array.isArray(res.faab.wire)) return [];
+  return res.faab.wire.filter(r=>!pos || pos==='ALL' || r.pos===pos);
 }
 function hubChopBidHTML(faab, res, pos, cls){
   return `<span class="${cls||'hub-bid'} hub-bid-chop" title="Chop market: a ${escAttr(HUB_CHOP_BAND_LABEL[faab.band]||faab.band)} ${escAttr(pos||'')} released with ${res.faab.chop?res.faab.chop.alive:'?'} of ${res.teams} teams alive has gone for a median $${faab.market} (${faab.src==='history'?`${faab.n} of this league's own releases, weighted toward the latest season and shrunk toward the three-season study`:faab.src==='blend'?`${faab.n} of this league's own release${faab.n===1?'':'s'} blended with the three-season study`:'the three-season Eliminator study'}); $${faab.bid} is the 60th percentile — it has beaten three comparables in five, and never more than 60% over the market">$${faab.bid}<small> mkt $${faab.market}</small></span>`;
+}
+// The one bid chip: a Chopped league's market price, or the rest-of-season share elsewhere.
+function hubBidChipHTML(faab, res, pos, cls){
+  if(!faab) return '';
+  if(faab.chop) return hubChopBidHTML(faab, res, pos, cls);
+  return `<span class="${cls||'hub-bid'}" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league (${((faab.share||0)*100).toFixed(0)}% of your $${faab.left} left)">$${faab.bid}</span>`;
 }
 // ── The Lineup pane's waiver section — in the pane's own row language ────────
 // The pane already says START / SIT in its lineup rows; what it lacked was the
@@ -40483,8 +40504,7 @@ function laWaiverSectionHTML(s){
       if(c.dur.trend) whys.push({k:'trend', label:'trending', text:c.dur.trend+' — expect competition for him'});
     }
     if(c.startsOver) whys.push({k:'starts', label:`starts over ${c.startsOver.name}`, text:`Beats your weakest eligible starter (${c.startsOver.slot}) by ${c.startsOver.delta} this week`});
-    const bidHTML = !c.faab ? '' : c.faab.chop ? hubChopBidHTML(c.faab, res, c.pos, 'la-wv-bid')
-      : `<span class="la-wv-bid" title="Suggested bid: his rest-of-season value against the top pickups still ahead, split across the league, as a share of what you have left">$${c.faab.bid}</span>`;
+    const bidHTML = hubBidChipHTML(c.faab, res, c.pos, 'la-wv-bid');
     const add=row({id:c.id,name:c.name,pos:c.pos,team:c.team}, 'add', {adj:c.wp.adj, net:c.net, dyn:!!c.dynasty, bidHTML, whys});
     const drop=c.drop ? row({id:c.drop.id,name:c.drop.name,pos:c.drop.pos,team:c.drop.team}, 'drop',
       {adj:c.drop.value||0, net:null, bid:null, whys:[{k:'drop', label:`${c.drop.vor>=0?'+':''}${(c.drop.vor||0).toFixed(c.dynasty?0:1)}${c.dynasty?' dyn':'/gm'} over replacement`, text:c.dynasty?'Dynasty chart value over what is freely available at his position — the least you would miss':'Rest-of-season value over what is freely available at his position — the least you would miss'}]}) : '';
@@ -40495,22 +40515,24 @@ function laWaiverSectionHTML(s){
   return `<div class="la-ins-bar"><span class="la-ins-lbl">WAIVER WIRE · WEEK ${wk}</span>
       <span class="la-ins-sub">each add names the drop it beats</span>${faab}
       <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="laSetTab('hub')" title="Every league at once">Multi-League →</button></div>
-    ${body}${(res.faab && res.faab.chop) ? laChopBoardHTML(res) : ''}`;
+    ${body}${(res.faab && res.faab.wire) ? laWireBoardHTML(res) : ''}`;
 }
 function laThisWeekCardHTML(s){ return laWaiverSectionHTML(s); }
-// The chop market board under the wire: every free agent at the four positions with the
-// price the league has paid for his caliber and this many teams alive — the value of a
-// player the ADD rows never reach (he beats nobody on your roster) is still on the page.
-const LA_CHOP_BOARD_N = 30;
-function laChopBoardHTML(res){
+// The wire board under the adds, every FAAB league: each free agent at the four positions
+// with the price this league would pay — the chop market (caliber × teams alive) in a Chopped
+// league, rest-of-season value over replacement elsewhere. The value of a player the ADD
+// rows never reach (he beats nobody on your roster) is still on the page.
+const LA_WIRE_BOARD_N = 30;
+function laWireBoardHTML(res){
   const pos=(typeof laState!=='undefined' && laState.chopPos)||'ALL';
-  const rows=hubChopBoard(res, pos).slice(0, LA_CHOP_BOARD_N);
+  const rows=hubWireBoard(res, pos).slice(0, LA_WIRE_BOARD_N);
   const chips=['ALL','QB','RB','WR','TE'].map(p=>`<button class="pos-filter-btn ${pos===p?'active':''}" onclick="laSetChopPos('${p}')">${p}</button>`).join('');
-  const list=(typeof _laTrendRow==='function') ? rows.map((r,i)=>_laTrendRow({id:r.id,name:r.name,pos:r.pos,team:r.team},
-    `${escHtml(r.pos)}${r.rank} by projection · ${escHtml(HUB_CHOP_BAND_LABEL[r.faab.band]||r.faab.band)}`, hubChopBidHTML(r.faab, res, r.pos, 'la-wv-bid'), '', i+1)).join('') : '';
   const c=res.faab.chop;
-  return `<div class="la-ins-bar la-cmkt-bar"><span class="la-ins-lbl">CHOP MARKET</span>
-      <span class="la-ins-sub">every free agent priced · ${c.alive} of ${c.total} alive · ${c.n?`${c.n} past releases`:'the three-season study'}</span>
+  const detail=(r)=> c ? `${escHtml(r.pos)}${r.rank||'?'} by projection · ${escHtml(HUB_CHOP_BAND_LABEL[r.faab.band]||r.faab.band||'')}`
+    : `${escHtml(r.pos)}${r.rank||'?'} by projection · ${r.vor>=0?'+':''}${(r.vor||0).toFixed(res.dynasty?0:1)}${res.dynasty?' dyn':'/gm'} over replacement`;
+  const list=(typeof _laTrendRow==='function') ? rows.map((r,i)=>_laTrendRow({id:r.id,name:r.name,pos:r.pos,team:r.team}, detail(r), hubBidChipHTML(r.faab, res, r.pos, 'la-wv-bid'), '', i+1)).join('') : '';
+  return `<div class="la-ins-bar la-cmkt-bar"><span class="la-ins-lbl">${c?'CHOP MARKET':'WIRE VALUES'}</span>
+      <span class="la-ins-sub">every free agent priced · ${c ? `${c.alive} of ${c.total} alive · ${c.n?`${c.n} past releases`:'the three-season study'}` : `${res.dynasty?'dynasty chart':'rest-of-season'} value over replacement, split across the league`}</span>
       <div class="pos-filter la-cmkt-pos">${chips}</div></div>
     <div class="card la-trnd-card la-cmkt-board">${list||'<div class="la-wv-none">No free agents to price.</div>'}</div>`;
 }

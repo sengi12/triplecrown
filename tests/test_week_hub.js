@@ -61,7 +61,7 @@ const app=new Function(code+`
   laFetchMatchups=function(){};
   return { dur:hubDurability, snap:hubSnapshotResult, teamCard:laThisWeekCardHTML, hubScoringFor, calcFptsUnder, hubWeekProj, hubFormMap, hubFill, hubCallouts, hubWaiverReasons, hubFaabAdvice, hubFaabCurveFromHistory, hubFaabFallbackCurve, hubAnalyzeLeague, hubKickoff,
     hubChopBand, hubChopMarket, hubChopFaab, hubChopCaliber, HUB_CHOP_DEFAULTS, leagueHTML:_hubActionsHTML,
-    hubFaabCurve, hubChopScanTx, hubLeagueNameKey, hubChopBoard, setFetch:(f)=>{ sleeperFetch=f; }, chopHist:(id)=>_hubChopHist[id], LA_LEAGUE_URL, SLEEPER_LEAGUES_URL,
+    hubFaabCurve, hubChopScanTx, hubLeagueNameKey, hubWireBoard, laTrendsView, laState:()=>laState, setFetch:(f)=>{ sleeperFetch=f; }, chopHist:(id)=>_hubChopHist[id], LA_LEAGUE_URL, SLEEPER_LEAGUES_URL,
            laDvpTable, laCurrentWeek, byId:()=>{ const m=new Map(); buildPlayerList().forEach(p=>m.set(String(p.player_id),p)); return m; },
            gs:()=>scoringSettings, HUB_CLOSE, ins:()=>TC_INSEASON, sp:()=>sleeperPlayers, nv:()=>NFLVERSE, setDyn:(d)=>{ DYNASTY_VALUES=d; } };
 `)();
@@ -302,13 +302,30 @@ chk(/WAIVER WIRE/.test(card) && /la-slot-ADD/.test(card) && /la-slot-DROP/.test(
 const chopSnap=Object.assign({}, snap, {leagueId:'L2', leagueType:3, waiverType:2, waiverBudget:1000, teamList:[Object.assign({}, snap.teamList[0], {faabUsed:100}), snap.teamList[1]]});
 const cres=app.snap(chopSnap);
 chk(cres && cres.faab && cres.faab.chop && cres.faab.budget===1000 && cres.faab.left===900 && cres.faab.chop.alive===2, 'a Chopped FAAB snapshot prices the wire on the chop market with $900 of $1000 left, 2 of 2 alive');
-const board=app.hubChopBoard(cres, 'ALL');
+const board=app.hubWireBoard(cres, 'ALL');
 chk(board.length===4 && ['Free Back','Free Wideout','Spare Passer','Third Back'].every(n=>board.some(r=>r.name===n)) && !board.some(r=>r.name==='Star Back'), 'every unrostered QB/RB/WR/TE is on the board, nobody rostered is');
 chk(board.every(r=>r.faab && r.faab.chop && r.faab.bid>=0) && board.every((r,i)=>!i || board[i-1].faab.bid>=r.faab.bid), 'each carries a chop-market price, ordered by bid');
-chk(app.hubChopBoard(cres, 'QB').length===1 && app.hubChopBoard(cres, 'QB')[0].name==='Spare Passer', 'the position filter narrows it');
+chk(app.hubWireBoard(cres, 'QB').length===1 && app.hubWireBoard(cres, 'QB')[0].name==='Spare Passer', 'the position filter narrows it');
 const ccard=app.teamCard(chopSnap);
 chk(/CHOP MARKET/.test(ccard) && /Spare Passer/.test(ccard) && (ccard.match(/mkt \$/g)||[]).length>=4 && /laSetChopPos\('TE'\)/.test(ccard), 'the Lineup pane shows the chop market board: a price with its market on every free agent, position chips');
-chk(!/CHOP MARKET/.test(card), 'a head-to-head league has no chop board');
+chk(!/CHOP MARKET/.test(card) && !/WIRE VALUES/.test(card), 'a league without FAAB has no wire board');
+// an ordinary FAAB league: every free agent priced on rest-of-season value, the same chips
+const faabSnap=Object.assign({}, snap, {leagueId:'L3', leagueType:0, waiverType:2, waiverBudget:100, teamList:[Object.assign({}, snap.teamList[0], {faabUsed:30}), snap.teamList[1]]});
+const fres=app.snap(faabSnap);
+chk(fres && fres.faab && !fres.faab.chop && fres.faab.left===70 && Array.isArray(fres.faab.wire) && fres.faab.wire.length===4, 'a redraft FAAB snapshot prices the whole wire with $70 of $100 left');
+const fwire=fres.faab.wire.find(r=>r.name==="Free Wideout");
+chk(fwire && fwire.faab && !fwire.faab.chop && fwire.faab.bid>0 && fwire.faab.bid<=70 && fres.faab.wire.every((r,i)=>!i || fres.faab.wire[i-1].faab.bid>=r.faab.bid), `Free Wideout is worth $${fwire&&fwire.faab.bid} on rest-of-season value; the wire is ordered by bid`);
+const fcard=app.teamCard(faabSnap);
+chk(/WIRE VALUES/.test(fcard) && /over replacement, split across the league/.test(fcard) && /Spare Passer/.test(fcard) && !/mkt \$/.test(fcard), 'the Lineup pane shows the wire board without chop-market chips');
+// the Trends boards tag every unrostered player with his bid in a FAAB league
+app.laState().trndScope='waiver'; app.laState().trndTab='trending';
+const tv=app.laTrendsView(faabSnap);
+chk(/la-trnd-bid/.test(tv) && !/mkt \$/.test(tv), 'the Waivers scope of Trends carries a bid chip on the wire\'s players');
+const tvc=app.laTrendsView(chopSnap);
+chk(/la-trnd-bid hub-bid-chop/.test(tvc) && /mkt \$/.test(tvc), 'in a Chopped league the chip is the chop-market price');
+app.laState().trndScope='myteam';
+chk(!/la-trnd-bid/.test(app.laTrendsView(chopSnap)), 'rostered players carry no bid');
+app.laState().trndScope='rostered'; app.laState().trndTab='trending';
 
 _asyncTests.catch(e=>{ total++; console.log('  FAIL: history fetch threw', e && e.message); }).then(()=>{
   console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
