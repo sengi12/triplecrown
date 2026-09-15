@@ -931,13 +931,16 @@ function _laTrendRow(p, detail, verdict, cls, rank){
   // The on-your-roster ★ rides the NAME line, never the verdict column — boards append it
   // to the verdict string for convenience, so lift it out here to keep the numbers aligned.
   verdict=String(verdict||'');
-  let star='';
+  let star='', bid='';
   const sm=verdict.match(/<span class="la-trnd-mine"[^>]*>[^<]*<\/span>/);
   if(sm){ star=sm[0]; verdict=verdict.replace(sm[0],''); }
+  // The wire's bid chip rides the sub-line too (the verdict column keeps its one number).
+  const bm=verdict.match(/<span class="la-wv-bid la-trnd-bid[^>]*>.*?<\/span>/);
+  if(bm){ bid=bm[0]; verdict=verdict.replace(bm[0],''); }
   return `<div class="la-trnd-row ${cls||''}">
     ${rank?`<span class="la-trnd-rank">${rank}</span>`:''}
     <span class="clickable-player la-trnd-hs" onclick="${pcardOnclick(pid||pp.name,p.pos,p.team||'')}">${laPlayerImg(pp,'la-trnd-hsimg')}</span>
-    <div class="la-trnd-main"><span class="la-trnd-nmline">${laNameHTML(pp,'la-trnd-name')}${star}${inj}</span><div class="la-trnd-sub"><span class="la-pos-${_laPosOf(p)}">${_laPosOf(p)}</span> · ${escHtml(p.team||'FA')}${detail?` · ${detail}`:''}</div></div>
+    <div class="la-trnd-main"><span class="la-trnd-nmline">${laNameHTML(pp,'la-trnd-name')}${star}${inj}</span><div class="la-trnd-sub"><span class="la-pos-${_laPosOf(p)}">${_laPosOf(p)}</span> · ${escHtml(p.team||'FA')}${detail?` · ${detail}`:''}${bid?` ${bid}`:''}</div></div>
     <div class="la-trnd-verdict">${verdict}</div></div>`;
 }
 // Team-row variant: logo + full team name, same right-hand verdict.
@@ -988,7 +991,13 @@ function laTrendsView(s){
   const mySet=new Set(((my&&my.players)||[]).map(p=>ecrNormName(p.name)+'|'+p.pos));
   const lgSet=_laLeagueNameSet(s);
   const keeps=_laScopeKeeps(scope, mySet, lgSet);
-  const mineMark=(name,pos)=> mySet.has(ecrNormName(name)+'|'+pos) ? '<span class="la-trnd-mine" title="on your roster">★</span>' : '';
+  // A FAAB league tags every unrostered player with the bid the wire would price him at
+  // (the chop market in a Chopped league) — the Waivers scope is the waiver wire, valued.
+  const wres=(typeof hubSnapshotResult==='function') ? hubSnapshotResult(s) : null;
+  const wireMap=new Map();
+  if(wres && wres.faab && Array.isArray(wres.faab.wire)) wres.faab.wire.forEach(r=>wireMap.set(ecrNormName(r.name)+'|'+r.pos, r));
+  const bidTag=(name,pos)=>{ const r=wireMap.get(ecrNormName(name)+'|'+pos); return r ? hubBidChipHTML(r.faab, wres, r.pos, 'la-wv-bid la-trnd-bid') : ''; };
+  const mineMark=(name,pos)=> (mySet.has(ecrNormName(name)+'|'+pos) ? '<span class="la-trnd-mine" title="on your roster">★</span>' : '') + bidTag(name,pos);
   const tabs=[['trending','Trending'],['pace','Pace'],['usage','Usage'],['regression','TDs'],['teams','Teams'],['ros','ROS']]
     .map(([k,l])=>`<button class="pane-tab ${tab===k?'active':''}" onclick="laSetTrndTab('${k}')">${l}</button>`).join('');
   const scopes=(tab==='teams')?'':`<div class="pos-filter la-trnd-scope">${[['rostered','Rostered'],['myteam','My Team'],['waiver','Waivers'],['league','League']]
