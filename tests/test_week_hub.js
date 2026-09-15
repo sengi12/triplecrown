@@ -61,6 +61,7 @@ const app=new Function(code+`
   laFetchMatchups=function(){};
   return { dur:hubDurability, snap:hubSnapshotResult, teamCard:laThisWeekCardHTML, hubScoringFor, calcFptsUnder, hubWeekProj, hubFormMap, hubFill, hubCallouts, hubWaiverReasons, hubFaabAdvice, hubFaabCurveFromHistory, hubFaabFallbackCurve, hubAnalyzeLeague, hubKickoff,
     hubChopBand, hubChopMarket, hubChopFaab, hubChopCaliber, HUB_CHOP_DEFAULTS, leagueHTML:_hubActionsHTML,
+    hubFaabCurve, hubChopScanTx, hubLeagueNameKey, setFetch:(f)=>{ sleeperFetch=f; }, chopHist:(id)=>_hubChopHist[id], LA_LEAGUE_URL, SLEEPER_LEAGUES_URL,
            laDvpTable, laCurrentWeek, byId:()=>{ const m=new Map(); buildPlayerList().forEach(p=>m.set(String(p.player_id),p)); return m; },
            gs:()=>scoringSettings, HUB_CLOSE, ins:()=>TC_INSEASON, sp:()=>sleeperPlayers, nv:()=>NFLVERSE, setDyn:(d)=>{ DYNASTY_VALUES=d; } };
 `)();
@@ -209,10 +210,10 @@ app.setDyn(null);
 
 console.log('=== a Chopped league prices a release on its chop market: caliber × teams alive ===');
 chk(app.hubChopBand('RB',9)==='top12' && app.hubChopBand('WR',20)==='b24' && app.hubChopBand('QB',5)==='top6' && app.hubChopBand('TE',9)==='b12' && app.hubChopBand('RB',null)===null, 'caliber bands: RB/WR by 12s, QB/TE by 6s, unranked → none');
-// the study's defaults: a top-12 back with most of the league alive goes for ~29% (median), ~35% wins three in four
+// the study's defaults (three seasons, weighted toward 2025): a top-12 back with most of the league alive goes for ~23% (median), ~35% wins three in four
 let f0=app.hubChopFaab('RB', 8, 17/18, [], 1000, 1000);
-chk(f0 && f0.src==='study' && f0.market===289 && f0.bid===313 && f0.chop===true, `no history: the study's numbers — market $${f0&&f0.market}, bid $${f0&&f0.bid} for a top-12 RB with 17 of 18 alive`);
-chk(app.hubChopFaab('RB', 8, 5/18, [], 1000, 1000).bid<=1, 'the same back with five teams left is worth a dollar');
+chk(f0 && f0.src==='study' && f0.market===234 && f0.bid===281 && f0.chop===true, `no history: the study's numbers — market $${f0&&f0.market}, bid $${f0&&f0.bid} for a top-12 RB with 17 of 18 alive`);
+chk(app.hubChopFaab('RB', 8, 5/18, [], 1000, 1000).bid<=5, 'the same back with five teams left is worth a few dollars');
 chk(app.hubChopFaab('WR', 8, 17/18, [], 1000, 1000).bid<f0.bid && app.hubChopFaab('QB', 3, 17/18, [], 1000, 1000).bid<100, 'wideouts price below backs, quarterbacks far below');
 chk(app.hubChopFaab('RB', 8, 17/18, [], 1000, 120).bid===120, 'capped at what is left');
 // the league's own history outranks the defaults once it has three comparables
@@ -224,8 +225,58 @@ const mkt=app.hubChopMarket(hist, {});
 chk(mkt.length===5 && mkt.every(r=>r.pid!=='z'), 'the market keeps chop releases only (a week-9 add nobody chopped is not one)');
 chk(mkt.find(r=>r.pid==='d').alive===15 && mkt.find(r=>r.pid==='a').alive===18, 'teams alive counts the chops before that week');
 let f1=app.hubChopFaab('RB', 6, 17/18, mkt, 1000, 1000);
-chk(f1.src==='history' && f1.n===4 && f1.market===330 && f1.bid===345, `four comparables from the league's own history: market $${f1.market} (median), bid $${f1.bid} (60th pct, shrunk toward the study)`);
+chk(f1.src==='history' && f1.n===4 && f1.market===302 && f1.bid===328, `four comparables from the league's own history: market $${f1.market} (median), bid $${f1.bid} (60th pct, shrunk toward the study)`);
 chk(app.hubChopFaab('WR', 8, 17/18, mkt, 1000, 1000).src==='study', 'a band with fewer than three comparables falls back to the study');
+// older seasons count for less: four $10-of-$100 releases from 2023 barely move a market set by 2025
+const hist3=JSON.parse(JSON.stringify(hist)); hist3.meta[2023]={total:18, budget:100};
+['e','f','g','h'].forEach((p,i)=>{ hist3.chops.push({season:2023, leg:i+2, pids:[p]}); hist3.wins.push({season:2023, week:i+2, pid:p, bid:10}); });
+hist3.caliber[2023]={e:{pos:'RB',rank:2}, f:{pos:'RB',rank:4}, g:{pos:'RB',rank:9}, h:{pos:'RB',rank:11}};
+const mkt3=app.hubChopMarket(hist3, {});
+let f3=app.hubChopFaab('RB', 6, 17/18, mkt3, 1000, 1000);
+chk(mkt3.length===9 && f3.n===8 && Math.abs(f3.nEff-5.44)<0.01, `eight comparables across two seasons weigh ${f3.nEff.toFixed(2)} (2023 at 0.6² each)`);
+chk(f3.market>=290 && f3.market<=310, `market $${f3.market}: near the 2025 level, not the unweighted $225`);
+const old4=app.hubChopMarket(Object.assign({}, hist3, {chops:hist3.chops.filter(c=>c.season===2023), wins:hist3.wins.filter(w=>w.season===2023)}), {});
+chk(app.hubChopFaab('RB', 6, 17/18, old4, 1000, 1000).market===app.hubChopFaab('RB', 6, 17/18, old4.map(r=>Object.assign({}, r, {season:2025})), 1000, 1000).market, 'recency is relative to the latest comparable, so a history that is all one season is not discounted');
+// a lesser caliber never prices above a better one, however its few comparables landed
+const hot=mkt.filter(r=>r.pos==='RB').map(r=>Object.assign({}, r, {band:'b24', share:0.8}));
+const f4=app.hubChopFaab('RB', 20, 17/18, mkt.concat(hot), 1000, 1000);
+chk(f4.n===4 && f4.market===f1.market && f4.bid===f1.bid, `four 13-24 comparables at 80% are capped at the top-12 price: market $${f4.market}, bid $${f4.bid}`);
+// the manual era: a roster shedding ten or more in a week, without adding, was chopped by hand
+const scan={meta:{}, chops:[], wins:[]}, sAdds=[];
+const drops12={}; for(let i=1;i<=12;i++) drops12['p'+i]=4;
+app.hubChopScanTx([[], [], [
+  {type:'commissioner', status:'complete', leg:3, roster_ids:[4], drops:{p1:4, p2:4, p3:4, p4:4, p5:4, p6:4}},
+  {type:'free_agent', status:'complete', leg:3, roster_ids:[4], drops:{p7:4, p8:4, p9:4, p10:4, p11:4, p12:4}},
+  {type:'free_agent', status:'complete', leg:3, roster_ids:[5], drops:{q1:5, q2:5, q3:5}},
+  {type:'free_agent', status:'complete', leg:3, roster_ids:[6], adds:{p1:6}, drops:{q9:6}},
+  {type:'waiver', status:'complete', leg:3, roster_ids:[7], adds:{p2:7}, settings:{waiver_bid:30}},
+  {type:'waiver', status:'failed', leg:3, roster_ids:[8], adds:{p2:8}, settings:{waiver_bid:20}},
+], [ {type:'chopped', leg:4, roster_ids:[9], drops:drops12} ]], 2024, sAdds, scan);
+chk(scan.chops.length===2 && scan.chops[0].leg===4 && scan.chops[1].leg===3 && scan.chops[1].pids.length===12 && !scan.chops.some(c=>c.pids.includes('q1')), 'twelve drops by one roster in a week is a chop; three is a roster move; Sleeper\'s own chop still counts');
+chk(scan.wins.length===1 && scan.wins[0].bid===30 && scan.wins[0].week===3 && sAdds.length===2, 'the winning bid is kept (the failed one is not); adds feed the FAAB curve');
+chk(app.hubLeagueNameKey('🪓 Last Man Standing Eliminator ')===app.hubLeagueNameKey('Last Man Standing Eliminator') && app.hubLeagueNameKey('Last Man Standing')!==app.hubLeagueNameKey('Last Man Standing Eliminator'), 'the axe emoji and a trailing space do not make it a different league');
+// the seasons behind the chain: a re-created league of the same name on the user's account
+const hits=[]; const L={
+  [app.LA_LEAGUE_URL('L25')]: {league_id:'L25', season:'2025', name:'🪓 Last Man Standing Eliminator ', previous_league_id:null, total_rosters:18, settings:{type:3, waiver_budget:1000}},
+  [app.LA_LEAGUE_URL('L23')]: {league_id:'L23', season:'2023', name:'Last Man Standing Eliminator ', previous_league_id:null, total_rosters:18, settings:{type:0, waiver_budget:100}},
+  [app.SLEEPER_LEAGUES_URL('u1', 2024)]: [{league_id:'X1', season:'2024', name:'Dynasty Pals'}, {league_id:'L24', season:'2024', name:'Last Man Standing Eliminator ', previous_league_id:'L23', total_rosters:18, settings:{type:0, waiver_budget:200}}],
+  [app.LA_LEAGUE_URL('L25')+'/transactions/2']: [{type:'chopped', leg:2, drops:{a:1}}, {type:'waiver', status:'complete', leg:2, roster_ids:[1], adds:{a:1}, settings:{waiver_bid:400}}],
+  [app.LA_LEAGUE_URL('L24')+'/transactions/3']: [{type:'commissioner', status:'complete', leg:3, roster_ids:[4], drops:drops12}, {type:'waiver', status:'complete', leg:3, roster_ids:[2], adds:{p1:2}, settings:{waiver_bid:30}}],
+  [app.LA_LEAGUE_URL('L23')+'/transactions/2']: [{type:'free_agent', status:'complete', leg:2, roster_ids:[3], drops:drops12}, {type:'waiver', status:'complete', leg:2, roster_ids:[5], adds:{p3:5}, settings:{waiver_bid:25}}],
+};
+app.setFetch(async url=>{ hits.push(url); if(url in L) return L[url]; if(/transactions/.test(url)) return []; throw new Error('404 '+url); });
+localStorage._s={};
+const _asyncTests=(async()=>{
+  await app.hubFaabCurve({league_id:'L26', season:'2026', name:'🪓 Last Man Standing Eliminator ', previous_league_id:'L25', settings:{type:3, waiver_budget:1000}}, ppr, 'u1');
+  const h=app.chopHist('L26');
+  chk(h && Object.keys(h.meta).sort().join()==='2023,2024,2025' && h.meta[2024].budget===200 && h.meta[2023].budget===100, 'three seasons of history: 2025 by the chain, 2024 by name from the user\'s leagues, 2023 by the 2024 league\'s chain');
+  chk(h.chops.some(c=>c.season===2024 && c.leg===3 && c.pids.length===12) && h.chops.some(c=>c.season===2023 && c.leg===2) && h.chops.some(c=>c.season===2025 && c.leg===2), 'the manual chops are found in both hand-run seasons');
+  chk(h.wins.filter(w=>w.season===2024).length===1 && h.wins.filter(w=>w.season===2023).length===1 && h.wins.filter(w=>w.season===2025).length===1, 'each season\'s winning bids are kept');
+  chk(hits.includes(app.SLEEPER_LEAGUES_URL('u1', 2024)) && !hits.includes(app.SLEEPER_LEAGUES_URL('u1', 2025)) && !hits.includes(app.SLEEPER_LEAGUES_URL('u1', 2023)), 'only the seasons the chain did not reach are looked up by name');
+  const cached=JSON.parse(localStorage.getItem('tc_faab_curve_L26'));
+  chk(cached && cached.v===2 && cached.chop && Object.keys(cached.chop.meta).length===3, 'the history is cached for the season');
+  app.setFetch(()=>Promise.reject(new Error('offline')));
+})();
 // caliber from the seed's history: positional rank by PPG under this scoring
 const cal=app.hubChopCaliber(2025, ppr);
 chk(cal['1'] && cal['1'].pos==='RB' && cal['1'].rank===1 && cal['9'].rank===2 && cal['10'].pos==='WR' && cal['10'].rank===1, 'Star Back ranks RB1 and Free Back RB2 by 2025 PPG; Free Wideout WR1');
@@ -233,8 +284,8 @@ chk(cal['1'] && cal['1'].pos==='RB' && cal['1'].rank===1 && cal['9'].rank===2 &&
 const chopRes=app.hubAnalyzeLeague(Object.assign({}, lg, {settings:{waiver_type:2, waiver_budget:1000, type:3}}), rosters, users, matchups, {sc:ppr, wk:2, dvp, form, sched:app.ins().schedule, now:Date.now(), byId:app.byId(), myUserId:'me', projRank:new Map([['9',4],['10',30]]), usageRank, faabCurve:null, faabChop:hist});
 chk(chopRes.faab && chopRes.faab.chop && chopRes.faab.chop.alive===2 && chopRes.faab.chop.total===2, 'the result carries the field: 2 of 2 alive');
 const fbc=chopRes.adds.find(a=>a.id==="9");
-chk(fbc && fbc.faab && fbc.faab.chop && fbc.faab.src==="history" && fbc.faab.bid===345, 'Free Back (RB4 projected, every team alive) is priced off the four history comparables at $345');
-chk(/hub-bid-chop/.test(app.leagueHTML(chopRes, true)) && /mkt \$330/.test(app.leagueHTML(chopRes, true)) && /Chop market/.test(app.leagueHTML(chopRes, true)), 'the card shows the bid with the market beside it and says where it came from');
+chk(fbc && fbc.faab && fbc.faab.chop && fbc.faab.src==="history" && fbc.faab.bid===328, 'Free Back (RB4 projected, every team alive) is priced off the four history comparables at $328');
+chk(/hub-bid-chop/.test(app.leagueHTML(chopRes, true)) && /mkt \$302/.test(app.leagueHTML(chopRes, true)) && /Chop market/.test(app.leagueHTML(chopRes, true)), 'the card shows the bid with the market beside it and says where it came from');
 
 console.log('=== the Team tab: one league from the analyzer snapshot ===');
 const snap={leagueId:'L1', name:'Queen City Kings', season:'2026', teams:2, rosterPositions:['QB','RB','WR','WR','TE','FLEX','BN','BN'], myUserId:'me',
@@ -247,5 +298,7 @@ chk(sres.lineup.callouts.some(c=>c.kind==='OBVIOUS' && c.start.id==='1'), 'with 
 const card=app.teamCard(snap);
 chk(/WAIVER WIRE/.test(card) && /la-slot-ADD/.test(card) && /la-slot-DROP/.test(card) && /Free Wideout/.test(card) && /Multi-League/.test(card), 'the Lineup pane section renders ADD → DROP pairs in the pane\'s rows and links to Multi-League');
 
-console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
-process.exit(pass===total?0:1);
+_asyncTests.catch(e=>{ total++; console.log('  FAIL: history fetch threw', e && e.message); }).then(()=>{
+  console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
+  process.exit(pass===total?0:1);
+});
