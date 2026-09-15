@@ -60,6 +60,7 @@ const app=new Function(code+`
   _laMu={byWeek:{'2':{rows:[{roster_id:1,matchup_id:1,starters:['8','2','3','5','7','6']},{roster_id:2,matchup_id:1,starters:[]}],sig:'x'}},fetching:{}};
   laFetchMatchups=function(){};
   return { dur:hubDurability, snap:hubSnapshotResult, teamCard:laThisWeekCardHTML, hubScoringFor, calcFptsUnder, hubWeekProj, hubFormMap, hubFill, hubCallouts, hubWaiverReasons, hubFaabAdvice, hubFaabCurveFromHistory, hubFaabFallbackCurve, hubAnalyzeLeague, hubKickoff,
+    hubChopBand, hubChopMarket, hubChopFaab, hubChopCaliber, HUB_CHOP_DEFAULTS, leagueHTML:_hubActionsHTML,
            laDvpTable, laCurrentWeek, byId:()=>{ const m=new Map(); buildPlayerList().forEach(p=>m.set(String(p.player_id),p)); return m; },
            gs:()=>scoringSettings, HUB_CLOSE, ins:()=>TC_INSEASON, sp:()=>sleeperPlayers, nv:()=>NFLVERSE, setDyn:(d)=>{ DYNASTY_VALUES=d; } };
 `)();
@@ -205,6 +206,35 @@ chk(r2.adds.findIndex(a=>a.id==='9')>r2.adds.findIndex(a=>a.id==='10') && (r2.ad
 let r3=dynRes(3);
 chk(r3.dynasty===false && r3.adds.some(a=>a.id==='9') && !r3.adds[0].dynasty, 'a chopped league (Sleeper type 3) prices the wire on rest-of-season projection like redraft');
 app.setDyn(null);
+
+console.log('=== a Chopped league prices a release on its chop market: caliber × teams alive ===');
+chk(app.hubChopBand('RB',9)==='top12' && app.hubChopBand('WR',20)==='b24' && app.hubChopBand('QB',5)==='top6' && app.hubChopBand('TE',9)==='b12' && app.hubChopBand('RB',null)===null, 'caliber bands: RB/WR by 12s, QB/TE by 6s, unranked → none');
+// the study's defaults: a top-12 back with most of the league alive goes for ~29% (median), ~35% wins three in four
+let f0=app.hubChopFaab('RB', 8, 17/18, [], 1000, 1000);
+chk(f0 && f0.src==='study' && f0.market===289 && f0.bid===350 && f0.chop===true, `no history: the study's numbers — market $${f0&&f0.market}, bid $${f0&&f0.bid} for a top-12 RB with 17 of 18 alive`);
+chk(app.hubChopFaab('RB', 8, 5/18, [], 1000, 1000).bid<=1, 'the same back with five teams left is worth a dollar');
+chk(app.hubChopFaab('WR', 8, 17/18, [], 1000, 1000).bid<f0.bid && app.hubChopFaab('QB', 3, 17/18, [], 1000, 1000).bid<100, 'wideouts price below backs, quarterbacks far below');
+chk(app.hubChopFaab('RB', 8, 17/18, [], 1000, 120).bid===120, 'capped at what is left');
+// the league's own history outranks the defaults once it has three comparables
+const hist={ meta:{2025:{total:18, budget:1000}},
+  chops:[{season:2025, leg:2, pids:['a']},{season:2025, leg:3, pids:['b']},{season:2025, leg:4, pids:['c','x']},{season:2025, leg:5, pids:['d']}],
+  wins:[{season:2025, week:2, pid:'a', bid:400},{season:2025, week:3, pid:'b', bid:380},{season:2025, week:4, pid:'c', bid:360},{season:2025, week:4, pid:'x', bid:12},{season:2025, week:5, pid:'d', bid:340},{season:2025, week:9, pid:'z', bid:250}],
+  caliber:{2025:{a:{pos:'RB',rank:3}, b:{pos:'RB',rank:7}, c:{pos:'RB',rank:10}, x:{pos:'WR',rank:40}, d:{pos:'RB',rank:5}, z:{pos:'RB',rank:2}}} };
+const mkt=app.hubChopMarket(hist, {});
+chk(mkt.length===5 && mkt.every(r=>r.pid!=='z'), 'the market keeps chop releases only (a week-9 add nobody chopped is not one)');
+chk(mkt.find(r=>r.pid==='d').alive===15 && mkt.find(r=>r.pid==='a').alive===18, 'teams alive counts the chops before that week');
+let f1=app.hubChopFaab('RB', 6, 17/18, mkt, 1000, 1000);
+chk(f1.src==='history' && f1.n===4 && f1.market===360 && f1.bid===400, `four comparables from the league's own history: market $${f1.market} (median), bid $${f1.bid} (75th pct)`);
+chk(app.hubChopFaab('WR', 8, 17/18, mkt, 1000, 1000).src==='study', 'a band with fewer than three comparables falls back to the study');
+// caliber from the seed's history: positional rank by PPG under this scoring
+const cal=app.hubChopCaliber(2025, ppr);
+chk(cal['1'] && cal['1'].pos==='RB' && cal['1'].rank===1 && cal['9'].rank===2 && cal['10'].pos==='WR' && cal['10'].rank===1, 'Star Back ranks RB1 and Free Back RB2 by 2025 PPG; Free Wideout WR1');
+// end to end: the chopped league's adds carry chop-market bids, and the card explains them
+const chopRes=app.hubAnalyzeLeague(Object.assign({}, lg, {settings:{waiver_type:2, waiver_budget:1000, type:3}}), rosters, users, matchups, {sc:ppr, wk:2, dvp, form, sched:app.ins().schedule, now:Date.now(), byId:app.byId(), myUserId:'me', projRank:new Map([['9',4],['10',30]]), usageRank, faabCurve:null, faabChop:hist});
+chk(chopRes.faab && chopRes.faab.chop && chopRes.faab.chop.alive===2 && chopRes.faab.chop.total===2, 'the result carries the field: 2 of 2 alive');
+const fbc=chopRes.adds.find(a=>a.id==="9");
+chk(fbc && fbc.faab && fbc.faab.chop && fbc.faab.src==="history" && fbc.faab.bid===400, 'Free Back (RB4 projected, every team alive) is priced off the four history comparables at $400');
+chk(/hub-bid-chop/.test(app.leagueHTML(chopRes, true)) && /mkt \$360/.test(app.leagueHTML(chopRes, true)) && /Chop market/.test(app.leagueHTML(chopRes, true)), 'the card shows the bid with the market beside it and says where it came from');
 
 console.log('=== the Team tab: one league from the analyzer snapshot ===');
 const snap={leagueId:'L1', name:'Queen City Kings', season:'2026', teams:2, rosterPositions:['QB','RB','WR','WR','TE','FLEX','BN','BN'], myUserId:'me',
