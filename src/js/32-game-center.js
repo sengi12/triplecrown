@@ -10,7 +10,7 @@
 // so the number is the league's number; without a synced league the app's scoring stands in
 // for offense and Sleeper's half-PPR for the rest. A player's fantasy owner rides under his
 // name when the league rosters him.
-var _gc = { mode:'normal', week:'current', game:null, pos:'ALL', boards:{}, rows:{}, busy:{}, dragW:0 };
+var _gc = { mode:'normal', week:'current', game:null, pos:'ALL', boards:{}, rows:{}, busy:{}, dragW:0, league:null };
 const GC_MODES = ['min','normal','max'];
 const GC_POS = ['ALL','QB','RB','WR','TE','K','DEF','IDP','RK'];   // the Rankings page's filters, plus the defensive groups
 const GC_GROUPS = [['QB','Quarterback',['QB']],['RB','Running back',['RB','FB']],['WR','Wide receiver',['WR']],['TE','Tight end',['TE']],['K','Kicker',['K']],['DEF','Defense / ST',['DEF']],['IDP','Defenders',['DL','DE','DT','NT','LB','OLB','ILB','MLB','DB','CB','S','SS','FS']]];
@@ -41,7 +41,15 @@ function tcSleeperPoints(stats, sc){
   for(const k in sc){ const v=stats[k]; if(typeof v==='number' && typeof sc[k]==='number' && v){ f+=v*sc[k]; n++; } }
   return Math.round(f*100)/100;
 }
-function gcScoring(){ return (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.scoringRaw) || null; }
+// The scoring the pane runs under: the Analyzer's league, any synced league picked in the
+// fantasy pane (32b-game-detail.js), or the app's own.
+function gcScoring(){
+  const id=(typeof gcLeague==='function') ? gcLeague() : 'snap';
+  if(id==='app') return null;
+  if(id==='snap') return (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.scoringRaw) || null;
+  const L=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
+  return (L && L.scoring) || null;
+}
 function gcPoints(row){
   const sc=gcScoring(), st=row.stats||{};
   if(sc) return tcSleeperPoints(st, sc);
@@ -51,6 +59,9 @@ function gcPoints(row){
 }
 // Who rosters him in the synced league.
 function gcOwnerOf(pid){
+  const L=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
+  if(L){ const st=L.byPid && L.byPid[String(pid)]; return st ? '@'+st.owner : ''; }
+  if(typeof gcLeague==='function' && gcLeague()==='app') return '';
   const s=(typeof leagueSnapshot!=='undefined')?leagueSnapshot:null; if(!s || !s.teamList) return '';
   for(const t of s.teamList){ if((t.players||[]).some(p=>String(p.id)===String(pid))) return t.owner ? '@'+t.owner : (t.teamName||''); }
   return '';
@@ -75,7 +86,8 @@ function gcGames(board){
     const home=g.home?code:g.opp, away=g.home?g.opp:code; const id=`${away}@${home}`;
     if(seen.has(id)) return; seen.add(id);
     const h=board[home]||{}, a=board[away]||{};
-    games.push({ id, home, away, state:g.state, detail:g.detail, date:String(g.date||''), hs:h.score!=null?h.score:(g.home?g.score:g.oppScore), as:a.score!=null?a.score:(g.home?g.oppScore:g.score), hrec:h.rec||'', arec:a.rec||'' });
+    games.push({ id, home, away, state:g.state, detail:g.detail, date:String(g.date||''), hs:h.score!=null?h.score:(g.home?g.score:g.oppScore), as:a.score!=null?a.score:(g.home?g.oppScore:g.score), hrec:h.rec||'', arec:a.rec||'',
+      eid:String(g.eid||h.eid||a.eid||''), hls:h.ls||[], als:a.ls||[] });   // ESPN's event id opens the game summary (plays, box score)
   });
   // In the order they are played: Thursday night, the Sunday early window, the late window,
   // Sunday night, Monday night (the board's kickoff stamps); same kickoff → by matchup.
@@ -120,7 +132,12 @@ function gcMineSet(){
   const mine=s.teamList.find(t=>t.ownerId===s.myUserId || (t.coOwners||[]).includes(s.myUserId));
   return new Set(((mine&&mine.players)||[]).map(p=>String(p.id)));
 }
-function gcIsMine(pid){ return gcMineSet().has(String(pid)); }
+function gcIsMine(pid){
+  const L=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
+  if(L){ const st=L.byPid && L.byPid[String(pid)]; return !!(st && st.mine); }
+  if(typeof gcLeague==='function' && gcLeague()==='app') return false;
+  return gcMineSet().has(String(pid));
+}
 // Sleeper's rows for the week, every position (one pull; the week in progress re-reads on
 // the week cache's live TTL).
 function gcRows(wk){
@@ -164,7 +181,8 @@ function gcSide(rows, team, group, limit){
   return rows.filter(r=>String(r.team||(r.player&&r.player.team)||'').toUpperCase()===team && posSet.has(gcPos(r)) && r.stats && Object.keys(r.stats).length && (!rookiesOnly || ldRookie(r.player_id)))
     // A player with a stat line stays even when the loaded scoring has no number for him
     // (defenders under app scoring) — the line is the point; the points column shows "–".
-    .map(r=>({r, pts:gcPoints(r), line:gcStatLine(r)})).filter(x=>(x.pts!=null && x.pts!==0) || x.line)
+    // the projection rides under the actual points (a game ahead IS the projection: none twice)
+    .map(r=>({r, pts:gcPoints(r), line:gcStatLine(r), proj:(r.proj || typeof gcProjPts!=='function') ? null : gcProjPts(r.player_id, gcWeek())})).filter(x=>(x.pts!=null && x.pts!==0) || x.line)
     .sort((a,b)=>(b.pts||0)-(a.pts||0) || ((b.r.stats||{}).idp_tkl||0)-((a.r.stats||{}).idp_tkl||0)).slice(0, limit);
 }
 function gcPlayerHTML(x, side){
@@ -173,7 +191,7 @@ function gcPlayerHTML(x, side){
   const click = pos==='DEF' ? '' : ` onclick="${pcardOnclick(pid, pos, r.team||'')}"`;
   return `<div class="gc-p gc-p-${side}${r.proj?' gc-p-proj':''}"${click}>
     <div class="gc-pinfo">${owner?`<span class="gc-owner">${escHtml(owner)}</span>`:''}<span class="gc-pname${gcIsMine(pid)?' gc-mine':''}">${escHtml(gcName(r))}</span>${x.line?`<span class="gc-line">${escHtml(x.line)}</span>`:''}</div>
-    <b class="gc-pts">${x.pts!=null?x.pts.toFixed(2):'–'}</b>
+    <span class="gc-ptsbox"><b class="gc-pts">${x.pts!=null?x.pts.toFixed(2):'–'}</b>${x.proj!=null?`<small class="gc-proj" title="projected">${x.proj.toFixed(2)}</small>`:''}</span>
   </div>`;
 }
 // A game not yet played shows each side's players with the week's PROJECTED line — Sleeper's
@@ -214,13 +232,24 @@ function gcGameHTML(game, rows, wk){
   // The banner wears both clubs: the away colour from the left, the home colour from the
   // right, meeting in the middle (a translucent wash over the surface so the type holds).
   const col=(t)=>(typeof pwTeamColor==='function' ? pwTeamColor(t) : '#888');
-  return `<div class="gc-hero" style="--ga:${escAttr(col(game.away))};--gh:${escAttr(col(game.home))}">
+  const hero=`<div class="gc-hero" style="--ga:${escAttr(col(game.away))};--gh:${escAttr(col(game.home))}">
       <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${game.away}</span><span class="gc-rec">${escHtml(game.arec)}</span><b class="gc-score">${game.state==='pre'?'':(game.as!=null?game.as:'–')}</b></div>
       <div class="gc-status ${game.state==='in'?'gc-live':''}">${escHtml(st)}</div>
       <div class="gc-side gc-side-home"><b class="gc-score">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}</b><span class="gc-rec">${escHtml(game.hrec)}</span><span class="gc-team">${game.home}</span><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"></div>
-    </div>
+    </div>`;
+  // The fantasy pane: the league switcher, then the week's rows by position.
+  const fantasy=`${typeof gcLeagueSelectHTML==='function' ? gcLeagueSelectHTML() : ''}
     ${proj ? `<div class="gc-projnote">projected · Sleeper's week ${wk||gcWeek()} line under this scoring</div>` : ''}
     ${rows ? (groups || `<div class="ld-empty">${proj?'no projections yet for this game':'no stat lines yet'}</div>`) : `<div class="ld-empty">${proj?'loading the week\'s projections…':'loading the week\'s stat lines…'}</div>`}`;
+  if(typeof gcdTab!=='function') return hero+fantasy;
+  // Feed | Stats (32b-game-detail.js): the play feed, or the quarter line with Away | Fantasy | Home.
+  const sum=(typeof gcSummary==='function') ? gcSummary(game) : null;
+  const tab=gcdTab(game), side=_gcd.side||'fantasy';
+  const tabs=`<div class="gc-tabs"><button class="gc-tab ${tab==='feed'?'active':''}" onclick="gcdSetTab('feed')">Feed</button><button class="gc-tab ${tab==='stats'?'active':''}" onclick="gcdSetTab('stats')">Stats</button></div>`;
+  if(tab==='feed') return hero+tabs+gcFeedHTML(game, sum);
+  const seg=`<div class="gc-seg"><button class="${side==='away'?'active':''}" onclick="gcdSetSide('away')"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${game.away}</button><button class="${side==='fantasy'?'active':''}" onclick="gcdSetSide('fantasy')">Fantasy</button><button class="${side==='home'?'active':''}" onclick="gcdSetSide('home')"><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'">${game.home}</button></div>`;
+  const pane = side==='fantasy' ? fantasy : gcBoxHTML(game, sum, side==='home'?game.home:game.away);
+  return hero+tabs+(game.state==='pre'?'':gcLinescoreHTML(game, sum))+seg+pane;
 }
 function gcListHTML(games, picked){
   if(!games) return '<div class="ld-empty">loading games…</div>';
@@ -240,7 +269,8 @@ function gcHTML(phone){
   const game=games ? games.find(g=>g.id===_gc.game) : null;
   const rows=gcRows(wk);
   const sel=`<select class="ld-sel" onchange="gcSetWeek(this.value)">${gcWeekOptions(cur).map(w=>`<option value="${w===cur?'current':w}" ${wk===w?'selected':''}>Week ${w}${w===cur?' · now':w===cur+1?' · next':w>cur?' · upcoming':''}</option>`).join('')}</select>`;
-  const fmt=gcScoring() ? escHtml((leagueSnapshot&&leagueSnapshot.name)||'league scoring') : 'app scoring · Sleeper for K/DEF/IDP';
+  const lgE=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
+  const fmt=gcScoring() ? escHtml((lgE && lgE.name) || (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) || 'league scoring') : 'app scoring · Sleeper for K/DEF/IDP';
   const pick=_gc.pos||'ALL';
   const posBtns=GC_POS.map(p=>`<button class="ld-pos ${pick===p?'active':''}" onclick="gcSetPos('${p}')">${p}</button>`).join('');
   const btns=phone ? `<button class="rsb-btn gcm-x" onclick="gcmSet('closed')" title="Close" aria-label="Close">×</button>` : rsbButtonsHTML();

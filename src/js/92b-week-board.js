@@ -30,11 +30,14 @@ function tcParseBoard(board){
       const recs=Array.isArray(c.records)?c.records:[];
       const tot=recs.find(r=>r.type==='total'||r.name==='overall')||recs[0];
       const sc=c.score!=null?Number(c.score.value!=null?c.score.value:c.score):null;
-      return { code, home:c.homeAway==='home', rec:tot&&tot.summary?String(tot.summary):'', score:Number.isFinite(sc)?sc:null };
+      // the quarter line rides along for the Game Center's stats view
+      const ls=Array.isArray(c.linescores)?c.linescores.map(l=>(l&&l.value!=null)?Number(l.value):null):[];
+      return { code, home:c.homeAway==='home', rec:tot&&tot.summary?String(tot.summary):'', score:Number.isFinite(sc)?sc:null, ls };
     }).filter(s=>s.code);
     sides.forEach(s=>{
       const o=sides.find(x=>x!==s)||{};
-      out[s.code]={ state, rec:s.rec, opp:o.code||'', home:s.home, score:s.score, oppScore:o.score!=null?o.score:null, detail, date:String(ev.date||comp.date||'') };
+      // eid: ESPN's event id — the key to the game summary (plays, box score)
+      out[s.code]={ state, rec:s.rec, opp:o.code||'', home:s.home, score:s.score, oppScore:o.score!=null?o.score:null, detail, date:String(ev.date||comp.date||''), eid:String(ev.id||''), ls:s.ls };
     });
   });
   return out;

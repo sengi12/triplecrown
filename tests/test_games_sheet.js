@@ -27,6 +27,7 @@ const app=new Function(code+`
   let started=true, mobile=true;
   hasSeasonStarted=()=>started; TC_SEASON.year=2026; TC_SEASON.phase='regular'; TC_SEASON.week=1; isMobileTeamPickerLayout=()=>mobile;
   sleeperPlayers={}; leagueSnapshot=null;
+  _gcd.tab='stats'; _gcd.side='fantasy';   // the fantasy pane, as before the Feed | Stats tabs
   return { render:renderRightSidebar, phone:renderGamesPhone, set:gcmSet, open:gcOpenGame, pick:gcPick, line:gcPickerLineHTML, on:gcPhoneOn, tab:gcmSetTab, ldSort:ldSort, ldPos:ldSetPos, ld:()=>_ld,
     host:()=>document.getElementById('gamesSheet'), html:()=>document.getElementById('gamesSheet').innerHTML, bodyCls:()=>[...document.body.classList._s], state:()=>_gcm, gc:()=>_gc,
     swipe:gcmSwipeAction, games:gcmCurrentGames, preview:gcmSwipePreviewHTML, setMobile:v=>{mobile=v;}, setStarted:v=>{started=v;}, setDraft:v=>{rosterBarVisible=v;}, setBoard:b=>{ BOARD=b; _tcBoard.at=0; _gc.boards={}; }, sidebar:()=>document.getElementById('leaders') };
