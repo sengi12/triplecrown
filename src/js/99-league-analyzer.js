@@ -385,19 +385,69 @@ function _laDerivedSig(){
 // projections still show up immediately (they bump the epoch) while plain re-renders reuse it.
 let _laVorCache=null;
 function laVorMap(){
-  const sig=_laDerivedSig();
+  const sig=_laDerivedSig()+'|'+((typeof TC_INSEASON!=='undefined'&&TC_INSEASON&&TC_INSEASON.asof)||'')+'|'+((typeof laCurrentWeek==='function')?laCurrentWeek():'');
   if(_laVorCache && _laVorCache.sig===sig && _laVorCache.snap===leagueSnapshot) return _laVorCache.m;
   const m=new Map();
   try{
     const hist=laHistoricalSeason();
     const list=hist ? laHistoricalPlayerList(hist) : buildProjectionList();
     list.forEach(p=>{ if(p.vor!=null) m.set(ecrNormName(p.name)+'|'+p.pos, p.vor); });
+    // In season the preseason VOR gives way to rest-of-season worth (laRosValueMap).
+    if(!hist) laRosValueMap().forEach((v,k)=>m.set(k,v));
   }catch(e){ /* seed not loaded → empty map; views render 0s rather than crashing */ }
   laKdefVorMap().forEach((v,k)=>m.set(k,v));
   _laVorCache={sig, snap:leagueSnapshot, m};
   return m;
 }
 const LA_VOR_SCALE = 100;   // lift VOR into the same working range as (chart pts x LA_VAL_SCALE)
+// In season a redraft asset is worth what he will score FROM HERE, not what August thought:
+// the per-game rate the weekly model trusts (35% preseason rate, 30% season-to-date, 35%
+// last three; a long-term absence halves it) over the replacement level, times the weeks
+// left. Replacement is half a bench body per team past the last starter — what the wire
+// hands you for free — so a useful bench player carries worth and a hot waiver back who
+// has outrun that level is not a zero. Same units as the preseason VOR (season points over
+// replacement), so the trade calculator and the Waivers tab read it unchanged.
+const LA_ROS_LONG_OUT = { IR:1, PUP:1, Sus:1, Suspended:1, NA:1, DNR:1 };
+function laRosValueMap(){
+  const m=new Map();
+  if(typeof hasSeasonStarted!=='function' || !hasSeasonStarted()) return m;
+  let list=[]; try{ list=buildProjectionList()||[]; }catch(e){ return m; }
+  const wk=(typeof laCurrentWeek==='function')?laCurrentWeek():1;
+  const weeksLeft=Math.max(1, 18-wk);
+  const form=(typeof laWeeklyFormMap==='function')?laWeeklyFormMap():null;
+  const byPos={QB:[],RB:[],WR:[],TE:[]};
+  list.forEach(p=>{
+    if(!byPos[p.pos]) return;
+    const pace=(typeof paceForPlayer==='function')?paceForPlayer(p.name,p.pos,p.player_id):null;
+    const projG=(pace&&pace.projGames>0)?pace.projGames:17;
+    const fp=(p.fpts!=null)?+p.fpts:((typeof calcFpts==='function')?(+calcFpts(p)||0):0);
+    const base=fp/projG, gp=pace?pace.gp:0, seas=(pace&&gp>0)?pace.act/gp:null;
+    const fe=form?(form.get(String(p.player_id||''))||form.get(ecrNormName(p.name)+'|'+p.pos)):null;
+    const rec3=fe?fe.f3:null;
+    let r; if(seas!=null&&rec3!=null&&gp>=2) r=0.35*base+0.30*seas+0.35*rec3; else if(seas!=null) r=0.55*base+0.45*seas; else r=base;
+    const sp=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers)?sleeperPlayers[String(p.player_id||'')]:null;
+    const st=sp&&sp.injury_status?String(sp.injury_status):'';
+    if(st && LA_ROS_LONG_OUT[st]) r*=0.5;
+    byPos[p.pos].push({key:ecrNormName(p.name)+'|'+p.pos, r});
+  });
+  const shape=(typeof leagueStarterCounts==='function')?leagueStarterCounts():null;
+  const teams=(shape&&shape.teams)||12, base=(shape&&shape.base)||{QB:1,RB:2,WR:2,TE:1};
+  const flexTypes=(shape&&shape.flexTypes)||{FLEX:1,WRRB_FLEX:0,REC_FLEX:0}, superflex=(shape&&shape.superflex)||0;
+  Object.keys(byPos).forEach(k=>byPos[k].sort((a,b)=>b.r-a.r));
+  const used={QB:base.QB*teams, RB:base.RB*teams, WR:base.WR*teams, TE:base.TE*teams};
+  const idx={QB:used.QB, RB:used.RB, WR:used.WR, TE:used.TE};
+  [['WRRB_FLEX',['RB','WR']],['REC_FLEX',['WR','TE']],['FLEX',['RB','WR','TE']],['SF',['QB','RB','WR','TE']]].forEach(([ft,elig])=>{
+    let left=(ft==='SF'?superflex:((flexTypes&&flexTypes[ft])||0))*teams;
+    while(left>0){ let bp=null,bv=-Infinity; elig.forEach(pos=>{ const nx=byPos[pos][idx[pos]]; if(nx&&nx.r>bv){bv=nx.r;bp=pos;} }); if(!bp) break; idx[bp]++; used[bp]++; left--; }
+  });
+  Object.keys(byPos).forEach(pos=>{
+    const pool=byPos[pos]; if(!pool.length) return;
+    const at=Math.max(0, Math.min(pool.length-1, used[pos]+Math.round(teams*0.5)-1));
+    const repl=pool[at].r;
+    pool.forEach(x=>m.set(x.key, +(Math.max(0, x.r-repl)*weeksLeft).toFixed(1)));
+  });
+  return m;
+}
 function laRedraftVal(name,pos,team){
   const map=laVorMap();
   let v=map.get(ecrNormName(name)+'|'+pos);

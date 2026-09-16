@@ -215,6 +215,9 @@ function pcardCaptureNavState(){
 
 function pcardBackButtonHTML(){
   if(!pcardNavStack.length) return '';
+  // A lineman's card has its own tabs now; it opens as a card in its own right, not a
+  // drill-down to step back out of.
+  if(pcardState && pcardState.isOl) return '';
   return `<button class="pcard-back" onclick="pcardGoBack()" aria-label="Back">${typeof TC_ICON==='function'?TC_ICON('undo'):'←'}</button>`;
 }
 

@@ -145,7 +145,7 @@ function ldRowsHTML(width, phone){
   if(!list.length) return `<div class="ld-empty">${_ld.rows?'nothing yet this week':'loading…'}</div>`;
   const bafl=(typeof scoringSettings!=='undefined' && scoringSettings.baflMode);
   const head = cols.length ? `<div class="ld-row ld-hdr"><span class="ld-rank"></span><span class="ld-hs-sp"></span><span class="ld-name">Player</span>
-    ${cols.map(c=>`<button class="ld-col ld-colh ${sortKey===c[0]?'active':''}" onclick="event.stopPropagation();ldSort('${c[0]}')" title="Sort by ${escAttr(c[1])}">${escHtml(c[1])}</button>`).join('')}
+    ${cols.map(c=>`<button class="ld-col ld-colh ${sortKey===c[0]?'active':''}" onclick="event.stopPropagation();ldSort('${c[0]}')" title="Sort by ${escAttr(c[1])}">${c[1].split(' ').map(w=>`<span>${escHtml(w)}</span>`).join('')}</button>`).join('')}
     <button class="ld-pts ld-colh ${sortKey==='pts'?'active':''}" onclick="event.stopPropagation();ldSort('pts')" title="Sort by points">PTS</button></div>` : '';
   return head + list.map((x,i)=>`<div class="ld-row" onclick="${pcardOnclick(x.r.pid, x.r.pos, x.r.team||'')}" title="${escAttr(`${x.r.name} · ${x.r.pos} · ${x.r.team||'FA'}`)}">
     <span class="ld-rank">${i+1}</span>

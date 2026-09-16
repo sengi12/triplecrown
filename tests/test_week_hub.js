@@ -61,7 +61,7 @@ const app=new Function(code+`
   laFetchMatchups=function(){};
   return { dur:hubDurability, snap:hubSnapshotResult, teamCard:laThisWeekCardHTML, hubScoringFor, calcFptsUnder, hubWeekProj, hubFormMap, hubFill, hubCallouts, hubWaiverReasons, hubFaabAdvice, hubFaabCurveFromHistory, hubFaabFallbackCurve, hubAnalyzeLeague, hubKickoff,
     hubChopBand, hubChopMarket, hubChopFaab, hubChopCaliber, HUB_CHOP_DEFAULTS, leagueHTML:_hubActionsHTML,
-    hubFaabCurve, hubChopScanTx, hubLeagueNameKey, hubWireBoard, laTrendsView, laState:()=>laState, tcLocalToolCall, tcLocalToolDefs, tcChatLeagueContext, setHub:(r)=>{ hubState.results=r; hubState.loadedAt=Date.now(); }, setProfile:(p)=>{ laLoadSleeperProfile=function(){ return p; }; }, setFetch:(f)=>{ sleeperFetch=f; }, chopHist:(id)=>_hubChopHist[id], LA_LEAGUE_URL, SLEEPER_LEAGUES_URL,
+    hubFaabCurve, hubChopScanTx, hubLeagueNameKey, hubWireBoard, laRosValueMap, rankDefaultSortKey, laTrendsView, laState:()=>laState, tcLocalToolCall, tcLocalToolDefs, tcChatLeagueContext, setHub:(r)=>{ hubState.results=r; hubState.loadedAt=Date.now(); }, setProfile:(p)=>{ laLoadSleeperProfile=function(){ return p; }; }, setFetch:(f)=>{ sleeperFetch=f; }, chopHist:(id)=>_hubChopHist[id], LA_LEAGUE_URL, SLEEPER_LEAGUES_URL,
            laDvpTable, laCurrentWeek, byId:()=>{ const m=new Map(); buildPlayerList().forEach(p=>m.set(String(p.player_id),p)); return m; },
            gs:()=>scoringSettings, HUB_CLOSE, ins:()=>TC_INSEASON, sp:()=>sleeperPlayers, nv:()=>NFLVERSE, setDyn:(d)=>{ DYNASTY_VALUES=d; } };
 `)();
@@ -359,6 +359,23 @@ const _asyncTools=(async()=>{
   const ctx2=app.tcChatLeagueContext('who is the best dynasty QB');
   chk(/IN SEASON/.test(ctx2) && /MY LEAGUES/.test(ctx2) && !/AVAILABLE —/.test(ctx2), 'a non-waiver question gets the season and the leagues, not the wire');
 })();
+
+
+console.log('=== the hub reads Sleeper\'s weekly line too; in season the redraft value is rest-of-season worth ===');
+{
+  const row=app.byId().get('10');
+  const base={sc:ppr, wk:2, form, sched:app.ins().schedule, dvp, now:Date.now()};
+  const plain=app.hubWeekProj(row, base);
+  const withS=app.hubWeekProj(row, Object.assign({}, base, {weekProj:{'10':{stats:{rec:5, rec_yd:60}, opp:'MIA'}}, scRaw:{rec:1, rec_yd:0.1}}));
+  chk(withS.slp===11 && Math.abs(withS.adj-(0.4*plain.adj+0.6*11))<1e-6 && withS.src==='blend', `Free Wideout: ours ${plain.adj.toFixed(1)} blended 40/60 with Sleeper's 11 under the league's raw table → ${withS.adj.toFixed(1)}`);
+  const gated=app.hubWeekProj(row, Object.assign({}, base, {weekProj:{'10':{stats:{rec:0}}}, scRaw:{rec:1}}));
+  chk(gated.adj===0 && gated.src==='sleeper-gate', 'Sleeper at zero → not playing, our number gives way');
+  const dst=app.hubWeekProj({player_id:'NE', name:'New England Patriots D/ST', pos:'DEF', team:'NE', proj_games:17}, Object.assign({}, base, {weekProj:{NE:{stats:{sack:2, int:1}, opp:'MIA'}}, scRaw:{sack:1, int:2}}));
+  chk(dst.adj===4 && dst.src==='sleeper' && dst.opp==='MIA', 'a defense takes Sleeper\'s line under the league table: 2 sacks + 1 INT = 4');
+  const ros=app.laRosValueMap();
+  chk(ros.size>=8 && [...ros.values()].every(v=>v>=0) && ros.get('star back|RB')>ros.get('backup back|RB') && ros.get('third back|RB')===0, 'rest-of-season values: non-negative, the star above his backup, the last back at replacement is 0');
+  chk(app.rankDefaultSortKey()==='fpts', 'in season the rankings board opens sorted by FPTS');
+}
 
 Promise.all([_asyncTests, _asyncTools]).catch(e=>{ total++; console.log('  FAIL: async test threw', e && e.stack||e); }).then(()=>{
   console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);

@@ -90,8 +90,8 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gcm-sheet.gcm-half{transform:none;height:46vh;height:46dvh;}
 .gcm-sheet.gcm-full{transform:none;height:calc(100vh - 96px);height:calc(100dvh - 96px);}
 .gcm-sheet.gcm-dragging{transition:none;}
-.gcm-grab{height:22px;flex:none;display:grid;place-items:center;cursor:grab;touch-action:none;}
-.gcm-grab::before{content:'';width:36px;height:4px;border-radius:2px;background:var(--border2);}
+.gcm-grab{height:36px;flex:none;display:grid;place-items:center;cursor:grab;touch-action:none;}
+.gcm-grab::before{content:'';width:56px;height:5px;border-radius:3px;background:var(--border2);}
 .gcm-x{margin-left:auto;}
 /* the same gcHTML() as the sidebar, re-laid: the games become a rail of chips across the top
    of one scroller, the picked game's lines follow underneath */
