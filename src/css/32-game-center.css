@@ -133,3 +133,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 /* A game still ahead: projected lines, marked as such. */
 .gc-projnote{font-size:10px;color:var(--muted);text-align:center;padding:6px 10px 2px;letter-spacing:.03em;}
 .gc-p-proj .gc-pts{color:var(--muted);font-style:italic;}
+/* The sheet's swipe: the panel is a layer the finger drags, the next page underneath. */
+.gcm-sheet .gc-detail,.gcm-sheet .gcm-leaders{position:relative;}
+.gcm-sheet .gc-detail.ts-swipe-dragging,.gcm-sheet .gcm-leaders.ts-swipe-dragging{overflow:hidden;}
+.gcm-sheet .ts-swipe-under{background:var(--bg);}

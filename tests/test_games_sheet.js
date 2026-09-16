@@ -29,7 +29,7 @@ const app=new Function(code+`
   sleeperPlayers={}; leagueSnapshot=null;
   return { render:renderRightSidebar, phone:renderGamesPhone, set:gcmSet, open:gcOpenGame, pick:gcPick, line:gcPickerLineHTML, on:gcPhoneOn, tab:gcmSetTab, ldSort:ldSort, ldPos:ldSetPos, ld:()=>_ld,
     host:()=>document.getElementById('gamesSheet'), html:()=>document.getElementById('gamesSheet').innerHTML, bodyCls:()=>[...document.body.classList._s], state:()=>_gcm, gc:()=>_gc,
-    swipe:gcmSwipeAction, games:gcmCurrentGames, setMobile:v=>{mobile=v;}, setStarted:v=>{started=v;}, setDraft:v=>{rosterBarVisible=v;}, setBoard:b=>{ BOARD=b; _tcBoard.at=0; _gc.boards={}; }, sidebar:()=>document.getElementById('leaders') };
+    swipe:gcmSwipeAction, games:gcmCurrentGames, preview:gcmSwipePreviewHTML, setMobile:v=>{mobile=v;}, setStarted:v=>{started=v;}, setDraft:v=>{rosterBarVisible=v;}, setBoard:b=>{ BOARD=b; _tcBoard.at=0; _gc.boards={}; }, sidebar:()=>document.getElementById('leaders') };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -106,6 +106,23 @@ console.log('=== swipes turn the sheet\'s pages ===');
     chk(app.swipe(-80,'games').tab==='leaders' && app.swipe(80,'games').game===games[games.length-2].id, 'past the last game a swipe left opens the Leaders; a swipe right turns back');
   } else chk(app.swipe(-80,'games').tab==='leaders', 'with no games loaded a swipe left opens the Leaders');
 }
+
+
+console.log('=== the swipe underlay is the neighbouring game; the Leaders open on the season until the week kicks off ===');
+await (async()=>{
+  const games=app.games()||[];
+  const pv=games.length ? app.preview({game:games[0].id}) : '';
+  chk(games.length ? (/gc-hero/.test(pv) && pv.includes(games[0].home) && pv.includes(games[0].away)) : app.preview({tab:'leaders'})==='', 'the preview for a game is that game\'s panel, hero and all');
+  chk(app.preview({tab:'leaders'})==='' && app.preview(null)==='', 'a page hop has no underlay (it slides the panel out)');
+  app.setBoard({events:[{date:'2026-09-20T17:00Z',competitions:[{status:{type:{state:'pre',shortDetail:'9/20 - 1:00 PM'}},competitors:[{homeAway:'home',team:{abbreviation:'KC'},score:'0',records:[]},{homeAway:'away',team:{abbreviation:'DEN'},score:'0',records:[]}]}]}]});
+  app.tab('leaders'); app.set('full'); await settle(); await settle();
+  let h=app.html();
+  chk(/value="season" selected/.test(h) && /season to date, until week/.test(h), 'before the first kickoff the Leaders show the season to date, and say so');
+  app.setBoard({events:[{date:'2026-09-20T17:00Z',competitions:[{status:{type:{state:'in',shortDetail:'2nd 4:11'}},competitors:[{homeAway:'home',team:{abbreviation:'KC'},score:'7',records:[]},{homeAway:'away',team:{abbreviation:'DEN'},score:'3',records:[]}]}]}]});
+  app.phone(); await settle(); await settle();
+  h=app.html();
+  chk(!/value="season" selected/.test(h) && /· now" selected|value="current" selected/.test(h.replace(/(value="current")\s+(selected)/,'$1 $2')), 'the first kickoff turns it into the week in progress');
+})();
 
   console.log('=== who owns the corner ===');
   app.setDraft(true); app.phone(); chk(app.on()===false && app.host().hidden===true && app.html()==='', 'a draft being followed keeps its drawer — the Games sheet steps aside');

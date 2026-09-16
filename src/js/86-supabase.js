@@ -65,6 +65,7 @@ function tcEnsureSupabase(){
         _tcUser = session ? session.user : null;
         syncAuthChrome();
       });
+      tcBindNativeAuthReturn();   // the phone app: the sign-in's return trip lands here
       return true;
     }catch(e){
       console.warn('[TC] Supabase init error:', e);
@@ -251,12 +252,70 @@ function tcAuthSubmit(){
   });
 }
 
+// ── Sign-in inside the phone app (the Capacitor shell) ──────────────────────
+// In a browser the OAuth round trip is a page navigation: off to Google, back to this URL
+// with the code, the SDK exchanges it. Inside the native shell that same navigation would
+// leave the app for the phone's browser and never come back — and Google refuses to sign
+// in inside an embedded WebView at all. So the shell opens Google in the system browser
+// (a Chrome Custom Tab, via the Browser plugin), Supabase sends the code to the app's own
+// URL scheme (TC_NATIVE_AUTH_REDIRECT — an intent filter in the Android manifest, a URL
+// type in the iOS project; the same URL must be on Supabase's redirect allow list), the
+// App plugin hands the URL to the page, and the SDK exchanges the code for a session in
+// the shell's own storage. Same account, same data, no browser tab left behind.
+const TC_NATIVE_AUTH_REDIRECT = 'com.sengi.triplecrown://auth/callback';
+function tcIsNativeApp(){
+  try{ return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform==='function' && window.Capacitor.isNativePlatform()); }
+  catch(e){ return false; }
+}
+function _tcNativePlugin(name){
+  try{ return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins[name]) || null; }catch(e){ return null; }
+}
+let _tcNativeAuthBound = false;
+function tcBindNativeAuthReturn(){
+  if(_tcNativeAuthBound || !tcIsNativeApp()) return;
+  const App=_tcNativePlugin('App'); if(!App || typeof App.addListener!=='function') return;
+  _tcNativeAuthBound = true;
+  App.addListener('appUrlOpen', (ev)=>{ try{ tcHandleNativeAuthUrl(ev && ev.url); }catch(e){ console.warn('[TC] native auth return:', e); } });
+}
+async function tcHandleNativeAuthUrl(url){
+  if(!url || String(url).indexOf(TC_NATIVE_AUTH_REDIRECT)!==0 || !_tcClient) return false;
+  const Browser=_tcNativePlugin('Browser'); if(Browser && typeof Browser.close==='function'){ try{ Browser.close(); }catch(e){} }
+  let u=null; try{ u=new URL(url); }catch(e){ return false; }
+  const code=u.searchParams.get('code');
+  const err=u.searchParams.get('error_description')||u.searchParams.get('error');
+  if(err){ toast('Google sign-in failed: '+err,'err'); return false; }
+  if(code){
+    const {error}=await _tcClient.auth.exchangeCodeForSession(code);
+    if(error){ toast('Google sign-in failed: '+error.message,'err'); return false; }
+  } else if(u.hash && /access_token=/.test(u.hash)){
+    const p=new URLSearchParams(u.hash.replace(/^#/,''));
+    const {error}=await _tcClient.auth.setSession({access_token:p.get('access_token'), refresh_token:p.get('refresh_token')});
+    if(error){ toast('Google sign-in failed: '+error.message,'err'); return false; }
+  } else return false;
+  toast('Signed in','ok');
+  if(typeof tcCloseAuthModal==='function') tcCloseAuthModal();
+  return true;
+}
 function tcSignInGoogle(){
   if(!_tcClient){
     tcEnsureSupabase().then(ok=>{
       if(ok) tcSignInGoogle();
       else toast('Could not reach the sign-in service — check your connection','err');
     });
+    return;
+  }
+  if(tcIsNativeApp()){
+    tcBindNativeAuthReturn();
+    const Browser=_tcNativePlugin('Browser');
+    _tcClient.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: TC_NATIVE_AUTH_REDIRECT, skipBrowserRedirect: true },
+    }).then(({data, error})=>{
+      if(error) throw error;
+      if(!data || !data.url) throw new Error('no sign-in URL');
+      if(Browser && typeof Browser.open==='function') return Browser.open({url:data.url, presentationStyle:'popover'});
+      window.open(data.url, '_blank');
+    }).catch(e=>toast('Google sign-in failed: '+e.message,'err'));
     return;
   }
   _tcClient.auth.signInWithOAuth({

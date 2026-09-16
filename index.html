@@ -1382,6 +1382,10 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 /* A game still ahead: projected lines, marked as such. */
 .gc-projnote{font-size:10px;color:var(--muted);text-align:center;padding:6px 10px 2px;letter-spacing:.03em;}
 .gc-p-proj .gc-pts{color:var(--muted);font-style:italic;}
+/* The sheet's swipe: the panel is a layer the finger drags, the next page underneath. */
+.gcm-sheet .gc-detail,.gcm-sheet .gcm-leaders{position:relative;}
+.gcm-sheet .gc-detail.ts-swipe-dragging,.gcm-sheet .gcm-leaders.ts-swipe-dragging{overflow:hidden;}
+.gcm-sheet .ts-swipe-under{background:var(--bg);}
 /* ── Coaching Playbook Modal + Insights ───────────────────────────────────── */
 
 /* Click affordances for coaching-scheme entry points */
@@ -9190,6 +9194,19 @@ function ldOn(){
 // until Wednesday morning (tcTrackerWeek), so a Tuesday look still ranks the week just played.
 function ldCurWeek(){ return (typeof tcTrackerWeek==='function') ? tcTrackerWeek() : Math.max(1, Number(TC_SEASON.week||1)); }
 function ldWeek(){ return (_ld.week==='current'||_ld.week==='season') ? ldCurWeek() : _ld.week; }
+// Has any game of the week kicked off? null until the week's board is known.
+function ldWeekStarted(wk){
+  const b=(typeof gcBoard==='function')?gcBoard(wk):null; if(!b) return null;
+  const games=(typeof gcGames==='function')?gcGames(b):[]; if(!games.length) return null;
+  return games.some(g=>g.state && g.state!=='pre');
+}
+// What the list shows: 'season' or a week. "Current" before the week's first kickoff is
+// the season to date — a Wednesday has no week-2 scores to rank, and "nothing yet this
+// week" is not a ranking. The first game turns it into the week in progress.
+function ldSeasonMode(){
+  if(_ld.week==='season') return true;
+  return _ld.week==='current' && ldWeekStarted(ldCurWeek())===false;
+}
 function ldHost(){
   let el=document.getElementById('leaders');
   if(!el){
@@ -9226,13 +9243,13 @@ function ldRookie(pid){
 // Pull the rows for the picked window (cached per window; the current week re-reads via the
 // week cache's own live TTL), then re-render when they land.
 async function ldLoad(){
-  const season=String(TC_SEASON.year), wk=ldWeek();
-  const key=`${season}|${_ld.week==='season'?'season':wk}`;
+  const season=String(TC_SEASON.year), wk=ldWeek(), seasonMode=ldSeasonMode();
+  const key=`${season}|${seasonMode?'season':wk}`;
   if(_ld.busy) return;
   _ld.busy=true;
   try{
     let rows=null;
-    if(_ld.week==='season'){
+    if(seasonMode){
       rows = (typeof liveSeasonRowsThroughWeek==='function') ? await liveSeasonRowsThroughWeek(season, wk, {optional:[wk]}) : null;
     } else if(typeof fetchWeekStats==='function'){
       const parts = await Promise.all(['QB','RB','WR','TE'].map(pos=>fetchWeekStats(season, wk, pos).catch(()=>null)));
@@ -9275,19 +9292,19 @@ function ldRowsHTML(width, phone){
 // The panel's markup, for either home (the desktop sidebar, the phone's Games sheet).
 // `width` decides the names and the columns; `btns` is the home's own controls.
 function ldPanelHTML(width, btns, fromLoad, phone){
-  const season=String(TC_SEASON.year), cur=ldCurWeek(), wk=ldWeek();
-  const key=`${season}|${_ld.week==='season'?'season':wk}`;
-  const stale = _ld.key!==key || !_ld.rows || (_ld.week!=='season' && wk===cur && Date.now()-_ld.at>60*1000);
+  const season=String(TC_SEASON.year), cur=ldCurWeek(), wk=ldWeek(), seasonMode=ldSeasonMode();
+  const key=`${season}|${seasonMode?'season':wk}`;
+  const stale = _ld.key!==key || !_ld.rows || (!seasonMode && wk===cur && Date.now()-_ld.at>60*1000);
   if(stale && !fromLoad) ldLoad();
   const weeks=Array.from({length:cur},(_,i)=>cur-i);
   const sel=`<select class="ld-sel" onchange="ldSetWeek(this.value)" title="Which week">
-    ${weeks.map(w=>`<option value="${w===cur?'current':w}" ${(_ld.week==='current'&&w===cur)||_ld.week===w?'selected':''}>Week ${w}${w===cur?' · now':''}</option>`).join('')}
-    <option value="season" ${_ld.week==='season'?'selected':''}>Season</option></select>`;
+    ${weeks.map(w=>`<option value="${w===cur?'current':w}" ${!seasonMode&&((_ld.week==='current'&&w===cur)||_ld.week===w)?'selected':''}>Week ${w}${w===cur?' · now':''}</option>`).join('')}
+    <option value="season" ${seasonMode?'selected':''}>Season</option></select>`;
   const posBtns=LD_POS.map(p=>`<button class="ld-pos ${_ld.pos===p?'active':''}" onclick="ldSetPos('${p}')">${p==='ROOKIE'?'RK':p}</button>`).join('');
   const fmt=(typeof scoringSettings!=='undefined' && scoringSettings.baflMode) ? 'BAFL lens' : ((typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) ? escHtml(leagueSnapshot.name) : 'loaded scoring');
   return `<div class="ld-head"><div class="sidebar-section ld-title">Leaders</div>${sel}</div>
     <div class="ld-posrow">${posBtns}</div>
-    <div class="ld-fmt"><span title="Points under the loaded scoring">${fmt}${_ld.week!=='season'&&wk===cur?' · live':''}</span>${btns||''}</div>
+    <div class="ld-fmt"><span title="Points under the loaded scoring">${fmt}${!seasonMode&&wk===cur?' · live':(seasonMode&&_ld.week==='current'?` · season to date, until week ${cur} kicks off`:'')}</span>${btns||''}</div>
     <div class="ld-list">${ldRowsHTML(width, phone)}</div>`;
 }
 // Is the phone's Games sheet showing the Leaders? Then the list lives there, not here.
@@ -9627,14 +9644,69 @@ function gcmSwipeAction(dx, tab){
   return i>0 ? {game:games[i-1].id} : null;
 }
 function gcmApplySwipe(act){ if(!act) return; if(act.tab) gcmSetTab(act.tab); else if(act.game) gcPick(act.game); }
+// The page a swipe is heading for, rendered for the underlay: the neighbouring game's
+// panel (its own hero and lines) so it slides in under the finger like the app's tabs do.
+function gcmSwipePreviewHTML(act){
+  if(!act || !act.game) return '';
+  const wk=gcWeek(); const games=gcmCurrentGames()||[]; const g=games.find(x=>x.id===act.game);
+  return g ? gcGameHTML(g, gcRows(wk), wk) : '';
+}
+// The panel's children move as one layer: wrap them once per gesture (a repaint replaces
+// the panel's markup, so the wrapper never outlives the gesture).
+function gcmSwipeLayer(host){
+  if(!host || !host.querySelector) return null;
+  let top=host.querySelector(':scope > .ts-swipe-top');
+  if(top) return top;
+  top=document.createElement('div'); top.className='ts-swipe-top';
+  while(host.firstChild) top.appendChild(host.firstChild);
+  host.appendChild(top);
+  return top;
+}
 function gcmBindSwipe(sheet){
   if(!sheet || !sheet.addEventListener || sheet._gcmSwipe) return; sheet._gcmSwipe=true;
-  let x0=null, y0=null, claimed=false;
-  sheet.addEventListener('touchstart', e=>{ const t=e.touches&&e.touches[0]; if(!t) return; x0=t.clientX; y0=t.clientY;
-    claimed=!!(e.target && e.target.closest && e.target.closest('.gc-list,.gcm-grab,select,.ld-sel')); }, {passive:true});
-  sheet.addEventListener('touchend', e=>{ if(x0==null){ return; } const t=e.changedTouches&&e.changedTouches[0]; const sx=x0, sy=y0; x0=null; if(!t || claimed) return;
-    const dx=t.clientX-sx, dy=t.clientY-sy; if(Math.abs(dx)<60 || Math.abs(dy)>Math.abs(dx)*0.7) return;
-    gcmApplySwipe(gcmSwipeAction(dx, _gcm.tab||'games')); }, {passive:true});
+  let x0=null, y0=null, axis=null, claimed=false, host=null, act=null, dx=0;
+  const start=e=>{ const t=e.touches&&e.touches[0]; if(!t) return; x0=t.clientX; y0=t.clientY; axis=null; dx=0; act=null;
+    claimed=!!(e.target && e.target.closest && e.target.closest('.gc-list,.gcm-grab,select,.ld-sel'));
+    host=(_gcm.tab==='leaders') ? sheet.querySelector('.gcm-leaders') : sheet.querySelector('.gc-detail'); };
+  const move=e=>{ if(x0==null || claimed || !host) return; const t=e.touches&&e.touches[0]; if(!t) return;
+    const ddx=t.clientX-x0, ddy=t.clientY-y0;
+    if(!axis){
+      if(Math.abs(ddx)<10 && Math.abs(ddy)<10) return;
+      axis = Math.abs(ddx)>Math.abs(ddy) ? 'x' : 'y';
+      if(axis==='x'){
+        act=gcmSwipeAction(Math.sign(ddx)*100, _gcm.tab||'games');
+        if(act){ _gcm.swiping=true; gcmSwipeLayer(host); host.classList.add('ts-swipe-dragging');   // no repaint under the finger
+          if(act.game && typeof tsSwipeUnder==='function'){ const under=tsSwipeUnder(host); under.style.transition=''; under.innerHTML=gcmSwipePreviewHTML(act); } }
+      }
+    }
+    if(axis!=='x') return;
+    e.stopPropagation(); if(e.cancelable) e.preventDefault();          // the sheet owns this swipe, not the page's tabs
+    dx=ddx; if(!act) return;
+    const w=(typeof tsHostWidth==='function')?tsHostWidth(host):320;
+    const shift=Math.sign(dx)*Math.min(w, Math.abs(dx)*0.9);
+    const top=gcmSwipeLayer(host); top.style.transition='';
+    if(act.game && typeof tsPlacePair==='function') tsPlacePair(host, shift, dx<0?-1:1);
+    else top.style.transform=`translateX(${shift.toFixed(1)}px)`;
+  };
+  const end=e=>{ if(x0==null) return; const wasX=axis==='x', fdx=dx, a=act, h=host; x0=null; axis=null;
+    if(!wasX || claimed || !h){ if(_gcm.swiping){ _gcm.swiping=false; } return; }
+    e.stopPropagation();
+    const w=(typeof tsHostWidth==='function')?tsHostWidth(h):320;
+    const top=gcmSwipeLayer(h), under=h.querySelector(':scope > .ts-swipe-under');
+    if(a && Math.abs(fdx)>=60){
+      top.style.transition='transform .18s ease-out'; top.style.transform=`translateX(${fdx<0?-w:w}px)`;
+      if(under){ under.style.transition='transform .18s ease-out'; under.style.transform='translateX(0px)'; }
+      setTimeout(()=>{ h.classList.remove('ts-swipe-dragging'); _gcm.swiping=false; gcmApplySwipe(a); }, 170);
+    } else {
+      top.style.transition='transform .16s ease-out'; top.style.transform='translateX(0px)';
+      if(under){ under.style.transition='transform .16s ease-out'; under.style.transform=`translateX(${fdx<0?w:-w}px)`; }
+      setTimeout(()=>{ h.classList.remove('ts-swipe-dragging'); if(under) under.innerHTML=''; top.style.transition=''; _gcm.swiping=false; renderGamesPhone(); }, 170);
+    }
+  };
+  sheet.addEventListener('touchstart', start, {passive:true});
+  sheet.addEventListener('touchmove', move, {passive:false});
+  sheet.addEventListener('touchend', end, {passive:true});
+  sheet.addEventListener('touchcancel', end, {passive:true});
 }
 // The picker bar's live line and the pill both open straight to a game.
 function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; _gcm.open='full'; renderGamesPhone(); }
@@ -9701,7 +9773,7 @@ function renderGamesPhone(fromLoad){
   const host=(typeof document!=='undefined' && document.getElementById) ? gcmHost() : null; if(!host) return;
   if(_gcm.timer){ clearTimeout(_gcm.timer); _gcm.timer=null; }
   if(!gcPhoneOn()){ host.innerHTML=''; host.hidden=true; if(document.body&&document.body.classList) document.body.classList.remove('gcm-open'); return; }
-  if(_gcm.drag) return;                       // mid-gesture: the markup is already there
+  if(_gcm.drag || _gcm.swiping) return;       // mid-gesture (a height drag or a page swipe): the markup is already there
   host.hidden=false;
   const games=gcmCurrentGames();
   const open=_gcm.open;
@@ -26669,6 +26741,7 @@ function tcEnsureSupabase(){
         _tcUser = session ? session.user : null;
         syncAuthChrome();
       });
+      tcBindNativeAuthReturn();   // the phone app: the sign-in's return trip lands here
       return true;
     }catch(e){
       console.warn('[TC] Supabase init error:', e);
@@ -26855,12 +26928,70 @@ function tcAuthSubmit(){
   });
 }
 
+// ── Sign-in inside the phone app (the Capacitor shell) ──────────────────────
+// In a browser the OAuth round trip is a page navigation: off to Google, back to this URL
+// with the code, the SDK exchanges it. Inside the native shell that same navigation would
+// leave the app for the phone's browser and never come back — and Google refuses to sign
+// in inside an embedded WebView at all. So the shell opens Google in the system browser
+// (a Chrome Custom Tab, via the Browser plugin), Supabase sends the code to the app's own
+// URL scheme (TC_NATIVE_AUTH_REDIRECT — an intent filter in the Android manifest, a URL
+// type in the iOS project; the same URL must be on Supabase's redirect allow list), the
+// App plugin hands the URL to the page, and the SDK exchanges the code for a session in
+// the shell's own storage. Same account, same data, no browser tab left behind.
+const TC_NATIVE_AUTH_REDIRECT = 'com.sengi.triplecrown://auth/callback';
+function tcIsNativeApp(){
+  try{ return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform==='function' && window.Capacitor.isNativePlatform()); }
+  catch(e){ return false; }
+}
+function _tcNativePlugin(name){
+  try{ return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins[name]) || null; }catch(e){ return null; }
+}
+let _tcNativeAuthBound = false;
+function tcBindNativeAuthReturn(){
+  if(_tcNativeAuthBound || !tcIsNativeApp()) return;
+  const App=_tcNativePlugin('App'); if(!App || typeof App.addListener!=='function') return;
+  _tcNativeAuthBound = true;
+  App.addListener('appUrlOpen', (ev)=>{ try{ tcHandleNativeAuthUrl(ev && ev.url); }catch(e){ console.warn('[TC] native auth return:', e); } });
+}
+async function tcHandleNativeAuthUrl(url){
+  if(!url || String(url).indexOf(TC_NATIVE_AUTH_REDIRECT)!==0 || !_tcClient) return false;
+  const Browser=_tcNativePlugin('Browser'); if(Browser && typeof Browser.close==='function'){ try{ Browser.close(); }catch(e){} }
+  let u=null; try{ u=new URL(url); }catch(e){ return false; }
+  const code=u.searchParams.get('code');
+  const err=u.searchParams.get('error_description')||u.searchParams.get('error');
+  if(err){ toast('Google sign-in failed: '+err,'err'); return false; }
+  if(code){
+    const {error}=await _tcClient.auth.exchangeCodeForSession(code);
+    if(error){ toast('Google sign-in failed: '+error.message,'err'); return false; }
+  } else if(u.hash && /access_token=/.test(u.hash)){
+    const p=new URLSearchParams(u.hash.replace(/^#/,''));
+    const {error}=await _tcClient.auth.setSession({access_token:p.get('access_token'), refresh_token:p.get('refresh_token')});
+    if(error){ toast('Google sign-in failed: '+error.message,'err'); return false; }
+  } else return false;
+  toast('Signed in','ok');
+  if(typeof tcCloseAuthModal==='function') tcCloseAuthModal();
+  return true;
+}
 function tcSignInGoogle(){
   if(!_tcClient){
     tcEnsureSupabase().then(ok=>{
       if(ok) tcSignInGoogle();
       else toast('Could not reach the sign-in service — check your connection','err');
     });
+    return;
+  }
+  if(tcIsNativeApp()){
+    tcBindNativeAuthReturn();
+    const Browser=_tcNativePlugin('Browser');
+    _tcClient.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: TC_NATIVE_AUTH_REDIRECT, skipBrowserRedirect: true },
+    }).then(({data, error})=>{
+      if(error) throw error;
+      if(!data || !data.url) throw new Error('no sign-in URL');
+      if(Browser && typeof Browser.open==='function') return Browser.open({url:data.url, presentationStyle:'popover'});
+      window.open(data.url, '_blank');
+    }).catch(e=>toast('Google sign-in failed: '+e.message,'err'));
     return;
   }
   _tcClient.auth.signInWithOAuth({
