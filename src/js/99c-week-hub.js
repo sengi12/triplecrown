@@ -634,9 +634,18 @@ function hubAnalyzeLeague(lg, rosters, users, matchups, ctxBase){
     const callouts = hubCallouts(slots, optimal, current, bench);
     const curTotal = Object.values(current).reduce((a,p)=>a+p.value,0);
     const optTotal = optimal.reduce((a,f)=>a+(f.player?f.player.value:0),0);
+    // The other side of this week's matchup: the name, and the pids of both starting
+    // line-ups — the live feed's "my matchup" filter is exactly these two sets.
+    const oppRow = muRow ? ((matchups||[]).find(m=>m.matchup_id===muRow.matchup_id && m.roster_id!==muRow.roster_id) || null) : null;
+    const oppName = (()=>{ if(!oppRow) return null;
+      const r=rosters.find(x=>x.roster_id===oppRow.roster_id); const u=r && (users||[]).find(x=>x.user_id===r.owner_id);
+      return u ? ((u.metadata&&u.metadata.team_name)||u.display_name) : `Roster ${oppRow.roster_id}`; })();
+    const pidList=(arr)=>(Array.isArray(arr)?arr:[]).filter(p=>p && p!=='0').map(String);
     lineup = {slots, current, optimal, bench, callouts, curTotal:+curTotal.toFixed(1), optTotal:+optTotal.toFixed(1),
-              opponent: (()=>{ if(!muRow) return null; const o=(matchups||[]).find(m=>m.matchup_id===muRow.matchup_id && m.roster_id!==muRow.roster_id); if(!o) return null;
-                const r=rosters.find(x=>x.roster_id===o.roster_id); const u=r && (users||[]).find(x=>x.user_id===r.owner_id); return u ? ((u.metadata&&u.metadata.team_name)||u.display_name) : `Roster ${o.roster_id}`; })()};
+              starters: pidList(starters),
+              oppStarters: pidList(oppRow && oppRow.starters),
+              oppRosterId: oppRow ? oppRow.roster_id : null,
+              opponent: oppName};
   }
   // ── Waivers, the VOR way ────────────────────────────────────────────────────
   // A pickup is only worth making when his rest-of-season value OVER REPLACEMENT

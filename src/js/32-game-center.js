@@ -10,7 +10,7 @@
 // so the number is the league's number; without a synced league the app's scoring stands in
 // for offense and Sleeper's half-PPR for the rest. A player's fantasy owner rides under his
 // name when the league rosters him.
-var _gc = { mode:'normal', week:'current', game:null, pos:'ALL', boards:{}, rows:{}, busy:{}, dragW:0, league:null };
+var _gc = { mode:'normal', week:'current', game:null, pos:'ALL', boards:{}, rows:{}, busy:{}, dragW:0, league:null, view:'games' };
 const GC_MODES = ['min','normal','max'];
 const GC_POS = ['ALL','QB','RB','WR','TE','K','DEF','IDP','RK'];   // the Rankings page's filters, plus the defensive groups
 const GC_GROUPS = [['QB','Quarterback',['QB']],['RB','Running back',['RB','FB']],['WR','Wide receiver',['WR']],['TE','Tight end',['TE']],['K','Kicker',['K']],['DEF','Defense / ST',['DEF']],['IDP','Defenders',['DL','DE','DT','NT','LB','OLB','ILB','MLB','DB','CB','S','SS','FS']]];
@@ -100,6 +100,15 @@ function gcDefaultGame(games){ return (games.find(g=>g.state==='in')||games[0]).
 // The size buttons: − narrower, + wider (rail → Leaders → Game Center).
 function gcStep(d){ const i=GC_MODES.indexOf(_gc.mode); gcSetMode(GC_MODES[Math.max(0, Math.min(GC_MODES.length-1, i+d))]); }
 function gcSetPos(p){ _gc.pos=p; renderRightSidebar(); }
+// Games (one game at a time) or the Live feed (every game at once, filtered to your
+// leagues — 33-live-feed.js). One switch, both homes.
+function gcSetView(v){ _gc.view = v==='feed' ? 'feed' : 'games'; renderRightSidebar(); }
+function gcViewRowHTML(){
+  if(typeof lfBodyHTML!=='function') return '';
+  const on=_gc.view==='feed';
+  const live=(typeof lfLiveCount==='function') ? lfLiveCount() : 0;
+  return `<div class="gc-viewrow"><button class="gc-vt ${on?'':'active'}" onclick="gcSetView('games')">Games</button><button class="gc-vt ${on?'active':''}" onclick="gcSetView('feed')">Live feed${live?`<span class="gc-vt-live">${live}</span>`:''}</button></div>`;
+}
 // ── Drag the sidebar wider (or narrower) by its left edge; the width is remembered per size ──
 function gcWidthKey(){ return 'tc_rsb_w_'+_gc.mode; }
 function gcStoredWidth(){ try{ const v=Number(localStorage.getItem(gcWidthKey())); return v>0?v:null; }catch(e){ return null; } }
@@ -277,8 +286,17 @@ function gcHTML(phone){
   const pick=_gc.pos||'ALL';
   const posBtns=GC_POS.map(p=>`<button class="ld-pos ${pick===p?'active':''}" onclick="gcSetPos('${p}')">${p}</button>`).join('');
   const btns=phone ? `<button class="rsb-btn gcm-x" onclick="gcmSet('closed')" title="Close" aria-label="Close">×</button>` : rsbButtonsHTML();
+  // The live feed takes the whole panel: its own filters, no week or position rows.
+  if(_gc.view==='feed' && typeof lfBodyHTML==='function'){
+    return `<div class="gc lf">
+      <div class="gc-head"><div class="sidebar-section ld-title">Game Center</div>${btns}</div>
+      ${gcViewRowHTML()}
+      ${lfBodyHTML()}
+    </div>`;
+  }
   return `<div class="gc">
     <div class="gc-head"><div class="sidebar-section ld-title">Game Center</div>${sel}${btns}</div>
+    ${gcViewRowHTML()}
     <div class="ld-posrow gc-posrow">${posBtns}</div>
     <div class="ld-fmt" title="Points under this scoring">${fmt}</div>
     <div class="gc-body"><div class="gc-list">${gcListHTML(games, _gc.game)}</div><div class="gc-detail">${game ? gcGameHTML(game, rows, wk) : (games && !games.length ? '<div class="ld-empty">no games this week</div>' : '')}</div></div>
