@@ -2,21 +2,31 @@
 <style>body{margin:0;background:#0d1117;color:#e6edf3;font:16px/1.5 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;display:grid;place-items:center;min-height:100vh;padding:24px;box-sizing:border-box}
 main{max-width:360px;text-align:center}h1{font-size:20px;margin:0 0 8px}p{color:#8b949e;margin:0 0 18px}
 a.btn{display:inline-block;background:#1599E6;color:#fff;font-weight:700;padding:14px 22px;border-radius:12px;text-decoration:none;font-size:17px}
-small{display:block;margin-top:18px;color:#5d6773;font-size:12px}</style></head>
+small{display:block;margin-top:18px;color:#5d6773;font-size:12px}[hidden]{display:none!important}</style></head>
 <body><main><h1>Finishing sign-in…</h1><p id="msg">Handing you back to the TripleCrown app.</p><a class="btn" id="open" href="#">Open TripleCrown</a><small id="note">If the app does not open by itself, tap the button.</small></main>
 <script>
 // Supabase sends the browser here after Google, with the session in the URL (tokens in the
 // hash, or a code in the query). Browsers block a redirect straight to an app's own scheme
-// (Vivaldi, Firefox, Samsung: nothing loads), so this https page does the hop instead — and
-// a tap on the button is a user gesture every browser honours.
+// (Vivaldi, Firefox, Samsung: nothing loads), so this https page does the hop instead.
+// On Android the hop is an intent URL — the one form every Chromium browser hands to the
+// app that owns the scheme, with a fallback back here when no app answers; elsewhere the
+// plain scheme. Everything rides in the query: an intent URL keeps its own fragment, so
+// the tokens Supabase puts in the hash move up, and the app reads them from either place.
 (function(){
   var scheme='com.sengi.triplecrown://auth/callback';
-  var q=location.search||'', h=location.hash||'';
-  var has=/access_token=|refresh_token=|code=|error=/.test(q+h);
-  var app=scheme+q+h;
-  var a=document.getElementById('open'); a.href=app;
-  if(!has){ document.getElementById('msg').textContent='Nothing to finish here — open the app and sign in from its menu.'; a.textContent='Open TripleCrown'; return; }
-  setTimeout(function(){ try{ location.href=app; }catch(e){} }, 350);
-  setTimeout(function(){ document.getElementById('note').textContent='Still here? Tap the button to open the app and finish signing in.'; }, 2500);
+  var q=(location.search||'').replace(/^\?/,''), h=(location.hash||'').replace(/^#/,'');
+  var params=[q,h].filter(Boolean).join('&');
+  var back=/(^|&)fallback=1(&|$)/.test(params);
+  var has=/(^|&)(access_token|refresh_token|code|error)=/.test(params);
+  var app=scheme+(params?'?'+params:'');
+  var here=location.href.split('#')[0].split('?')[0];
+  var intent='intent://auth/callback'+(params?'?'+params:'')+'#Intent;scheme=com.sengi.triplecrown;package=com.sengi.triplecrown;S.browser_fallback_url='+encodeURIComponent(here+'?fallback=1')+';end';
+  var android=/Android/i.test(navigator.userAgent||'');
+  var a=document.getElementById('open'), msg=document.getElementById('msg'), note=document.getElementById('note');
+  a.href=android?intent:app;
+  if(back){ msg.textContent='The TripleCrown app did not answer. Check it is installed, then sign in again from its menu.'; a.hidden=true; note.textContent=''; return; }
+  if(!has){ msg.textContent='Nothing to finish here — open the app and sign in from its menu.'; return; }
+  setTimeout(function(){ try{ location.href=a.href; }catch(e){} }, 350);
+  setTimeout(function(){ note.textContent='Still here? Tap the button to open the app and finish signing in.'; }, 2500);
 })();
 </script></body></html>

@@ -44,48 +44,9 @@
   .foot{padding:8px 16px;font-size:9px;color:#6a6455;border-top:2px solid #000;line-height:1.5;}
   .hint{text-align:center;font-size:10px;color:#8a8470;padding:6px;background:#ece5d3;border-bottom:1px solid #000;}
   .hl-p{background:var(--hl-pnk);} .hl-g{background:var(--hl-grn);}
-  /* The sheet's pages: formations (the grid and its controls) and tendencies. */
-  .pages{display:flex;gap:0;background:#e8e1d0;border-bottom:2px solid #000;}
-  .pgtab{font-family:"Courier New",monospace;font-size:12px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;padding:8px 16px;border:none;border-right:2px solid #000;background:transparent;color:#5a5545;cursor:pointer;}
-  .pgtab.active{background:var(--paper);color:var(--ink);box-shadow:inset 0 -3px 0 var(--red);}
-  .page{display:none;} .page.show{display:block;}
-  .tn{padding:0 0 4px;}
-  .tn-seasons{display:flex;gap:6px;justify-content:flex-end;padding:8px 16px;background:#ece5d3;border-bottom:1px solid #000;font-size:11px;align-items:center;flex-wrap:wrap;}
-  .tn-seasons span{color:#5a5545;font-size:9px;text-transform:uppercase;letter-spacing:1px;margin-right:auto;}
-  .tn-seasons button{font-family:"Courier New",monospace;font-size:11px;font-weight:bold;background:var(--paper);border:1.5px solid #000;padding:3px 9px;cursor:pointer;}
-  .tn-seasons button.active{background:var(--hl-yel);}
-  .tn-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));}
-  .tn-card{border:1px solid #000;border-top:none;border-left:none;padding:8px 12px 12px;}
-  .tn-h{font-size:12px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;border-bottom:1.5px solid #000;padding-bottom:3px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;}
-  .tn-h small{font-size:9px;font-weight:normal;letter-spacing:0;text-transform:none;color:#5a5545;}
-  .tn-stamp{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
-  .tn-stamp b{font-size:30px;line-height:1;}
-  .tn-stamp .lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#5a5545;}
-  .tn-rank{background:var(--hl-yel);padding:1px 6px;font-size:10px;font-weight:bold;white-space:nowrap;}
-  .tn-rank.lo{background:var(--hl-pnk);} .tn-rank.hi{background:var(--hl-grn);}
-  .tn-line{font-size:10.5px;color:#5a5545;margin-top:6px;line-height:1.5;}
-  .tn-line b{color:var(--ink);}
-  .tn-row{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(90px,1.2fr) 44px;gap:8px;align-items:center;padding:3px 0;border-bottom:1px dotted var(--rule);font-size:11px;}
-  .tn-row .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .tn-row .lbl small{color:#8a8470;font-size:9px;margin-left:4px;}
-  .tn-row .epa{text-align:right;font-weight:bold;font-size:10.5px;}
-  .tn-bar{height:16px;background:#ddd6c4;border:1px solid #000;position:relative;overflow:hidden;font-size:9px;display:flex;}
-  .tn-bar .run{background:var(--hl-grn);height:100%;display:flex;align-items:center;padding-left:4px;}
-  .tn-bar .pass{background:#4f83cc;color:#fff;height:100%;display:flex;align-items:center;justify-content:flex-end;padding-right:4px;}
-  .tn-bar .lg{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);}
-  .tn-bar .fill{background:var(--red);color:#fff;height:100%;display:flex;align-items:center;padding-left:4px;}
-  .tn-kv{display:grid;grid-template-columns:1fr;gap:2px 12px;font-size:11.5px;}
-  .tn-kv .stat{display:flex;justify-content:space-between;gap:6px;border-bottom:1px dotted var(--rule);align-items:baseline;flex-wrap:wrap;}
-  .tn-kv .stat b{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px 5px;min-width:0;text-align:right;align-items:baseline;}
-  .tn-kv .stat span{color:#5a5545;font-size:10.5px;}
-  .tn-kv .stat b small{color:#8a8470;font-weight:normal;margin-left:4px;font-size:9px;}
-  .tn-note{padding:8px 16px;font-size:9px;color:#6a6455;border-top:2px solid #000;line-height:1.5;}
-  @media (max-width:560px){ .tn-grid{grid-template-columns:1fr;} .tn-kv{grid-template-columns:1fr;} .pgtab{padding:8px 10px;letter-spacing:1px;} .tn-card{padding:8px 8px 10px;} .tn-row{grid-template-columns:minmax(0,1fr) minmax(76px,1.1fr) 40px;gap:6px;font-size:10.5px;} .tn-stamp b{font-size:26px;} .tn-seasons{padding:6px 8px;} .banner{font-size:11px;letter-spacing:1px;} .tn-note{padding:8px;} }
 </style></head>
 <body><div class="sheet">
   <div class="hdr"><h1>Detroit Lions &mdash; Playbook</h1><span class="wk">2025 · Routes mapped to players</span></div>
-  <div class="pages"><button class="pgtab active" data-page="form" type="button">Formations</button><button class="pgtab" data-page="tend" type="button">Tendencies</button></div>
-  <div class="page show" id="page-form">
   <div class="controls">
     <div class="ctrl"><label>Down</label><select id="down"><option value="all">All downs</option><option value="1">1st</option><option value="2">2nd</option><option value="3">3rd</option><option value="4">4th</option></select></div>
     <div class="ctrl"><label>Distance to sticks</label><select id="dist"><option value="all">Any</option><option value="short">Short (1-3)</option><option value="med">Medium (4-7)</option><option value="long">Long (8+)</option></select></div>
@@ -95,17 +56,9 @@
   <div class="hint hint-min"><details class="scheme-help"><summary class="scheme-help-btn" aria-label="How to read the formations">i</summary><div class="scheme-help-pop"><b>Reading the formations</b><span>Click the GREEN part of a formation's bar to see its top-3 run lanes; click the BLUE part to see each player's most-common route. Tap any label on the diagram for detail.</span></div></details> tap a bar's colors to explore</div>
   <div class="banner" id="banner">All Situations</div>
   <div class="grid" id="grid"></div>
-  </div>
-  <div class="page" id="page-tend">__TC_TENDENCIES__</div>
   <div class="foot">Play diagrams: routes are each skill player's single most-common route WHEN TARGETED out of this formation (season pool, all situations, for stable sample), mapped to players by target rank (WR1=St. Brown, WR2=Williams, etc.); the outermost WR is treated as WR1. Run mode shows the 3 most-used gaps, arrow width = frequency, color = EPA. Alignment is authentic; exact pre-snap WR splits are schematic. Data: nflverse pbp + FTN participation, 2025 REG. Not affiliated with the NFL.</div>
 </div>
-<script>__TC_FV_SCRIPT__
-(function(){
-  const tabs=document.querySelectorAll('.pgtab');
-  function show(k){ tabs.forEach(t=>t.classList.toggle('active', t.dataset.page===k)); document.querySelectorAll('.page').forEach(p=>p.classList.toggle('show', p.id==='page-'+k)); }
-  tabs.forEach(t=>t.addEventListener('click', ()=>show(t.dataset.page)));
-  if(typeof OPEN_PAGE!=='undefined' && OPEN_PAGE==='tend') show('tend');
-})();</script>
+<script>__TC_FV_SCRIPT__</script>
 <script>
 function nEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 const NOTE_NAV=nEsc(JSON.stringify({type:'coaching',team:TEAM_CODE,season:String(SEASON),tab:'playbook'}));

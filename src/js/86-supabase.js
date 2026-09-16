@@ -331,8 +331,10 @@ async function tcHandleNativeAuthUrl(url){
   if(code){
     const {error}=await _tcClient.auth.exchangeCodeForSession(code);
     if(error){ toast('Google sign-in failed: '+error.message,'err'); return false; }
-  } else if(u.hash && /access_token=/.test(u.hash)){
-    const p=new URLSearchParams(u.hash.replace(/^#/,''));
+  } else if((u.hash && /access_token=/.test(u.hash)) || u.searchParams.get('access_token')){
+    // the implicit flow's tokens: in the hash from Supabase, in the query when the return
+    // page moved them there for the Android intent URL (which keeps its own fragment)
+    const p=(u.hash && /access_token=/.test(u.hash)) ? new URLSearchParams(u.hash.replace(/^#/,'')) : u.searchParams;
     const {error}=await _tcClient.auth.setSession({access_token:p.get('access_token'), refresh_token:p.get('refresh_token')});
     if(error){ toast('Google sign-in failed: '+error.message,'err'); return false; }
   } else { toast('Sign-in returned without a session — try again','err'); return false; }

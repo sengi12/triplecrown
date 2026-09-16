@@ -100,8 +100,18 @@ Supabase sends the code back on the app's own scheme, `com.sengi.triplecrown://a
 — an intent filter in `android/app/src/main/AndroidManifest.xml`, and the `@capacitor/app`
 plugin hands the URL to the page (src/js/86-supabase.js exchanges the code).
 
+The return trip goes through an https page first: Supabase is told to send the browser to
+`https://sengi12.github.io/triplecrown/native-auth.html` (browsers other than Chrome refuse
+a redirect straight to a custom scheme — Vivaldi sat on a blank Supabase page), and that
+page hops into the app: on Android an `intent://…#Intent;scheme=com.sengi.triplecrown;
+package=com.sengi.triplecrown;…;end` URL, the one form every Chromium browser hands to the
+app that owns the scheme (a plain custom-scheme link is dropped by some), with a fallback
+back to the page when no app answers; elsewhere the plain scheme. The page moves the
+implicit flow's hash tokens into the query, since an intent URL keeps its own fragment, and
+the app reads them from either place.
+
 One thing lives outside the repo: in the Supabase dashboard, **Authentication → URL
-Configuration → Redirect URLs**, add `com.sengi.triplecrown://auth/callback`. Without it
-Supabase refuses the redirect and the sign-in ends on an error page. Keep the site URL
-there too for the browser. When iOS arrives, add the same scheme as a URL type in Xcode
-(Info → URL Types), nothing else changes.
+Configuration → Redirect URLs**, add both `https://sengi12.github.io/triplecrown/native-auth.html`
+and `com.sengi.triplecrown://auth/callback`. Without the first Supabase refuses the redirect
+and the sign-in ends on an error page. Keep the site URL there too for the browser. When iOS
+arrives, add the same scheme as a URL type in Xcode (Info → URL Types), nothing else changes.

@@ -390,7 +390,9 @@ const _INSEASON_NV_SECTIONS = ['team','players','routes','qb_passing','qb_charti
   // Per-GAME chart splits (current season only — they live in the sidecar, never the seed).
   'qb_passing_weekly','rb_fan_weekly','routes_weekly','scheme_weekly','target_trees',
   // Next Gen Stats per game (tracking data — the morning after, no charting lag).
-  'ngs_weekly'];
+  'ngs_weekly',
+  // Play-calling tendencies (the Playbook's Tendencies tab) for the season in progress.
+  'tendencies'];
 function _adoptInseason(payload){
   if(!payload || !payload.season) return false;
   TC_INSEASON = payload;
