@@ -90,3 +90,18 @@ the binary instead (fully offline, but every data refresh then needs a store rel
 remove the `server` block, copy `../index.html`, `../sw.js`, `../manifest.webmanifest`,
 `../images/` and `../seeds/*.gz` into `www/`, and `npx cap sync`. The live-site shell is
 the right default while the seeds refresh several times a day.
+
+## Sign-in with Google inside the app
+
+Inside the shell a plain OAuth navigation would leave the app for the phone's browser and
+never return, and Google refuses to sign in inside an embedded WebView. So the app opens
+Google in the system browser (the `@capacitor/browser` plugin, a Chrome Custom Tab) and
+Supabase sends the code back on the app's own scheme, `com.sengi.triplecrown://auth/callback`
+— an intent filter in `android/app/src/main/AndroidManifest.xml`, and the `@capacitor/app`
+plugin hands the URL to the page (src/js/86-supabase.js exchanges the code).
+
+One thing lives outside the repo: in the Supabase dashboard, **Authentication → URL
+Configuration → Redirect URLs**, add `com.sengi.triplecrown://auth/callback`. Without it
+Supabase refuses the redirect and the sign-in ends on an error page. Keep the site URL
+there too for the browser. When iOS arrives, add the same scheme as a URL type in Xcode
+(Info → URL Types), nothing else changes.

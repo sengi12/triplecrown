@@ -73,6 +73,19 @@ function ldOn(){
 // until Wednesday morning (tcTrackerWeek), so a Tuesday look still ranks the week just played.
 function ldCurWeek(){ return (typeof tcTrackerWeek==='function') ? tcTrackerWeek() : Math.max(1, Number(TC_SEASON.week||1)); }
 function ldWeek(){ return (_ld.week==='current'||_ld.week==='season') ? ldCurWeek() : _ld.week; }
+// Has any game of the week kicked off? null until the week's board is known.
+function ldWeekStarted(wk){
+  const b=(typeof gcBoard==='function')?gcBoard(wk):null; if(!b) return null;
+  const games=(typeof gcGames==='function')?gcGames(b):[]; if(!games.length) return null;
+  return games.some(g=>g.state && g.state!=='pre');
+}
+// What the list shows: 'season' or a week. "Current" before the week's first kickoff is
+// the season to date — a Wednesday has no week-2 scores to rank, and "nothing yet this
+// week" is not a ranking. The first game turns it into the week in progress.
+function ldSeasonMode(){
+  if(_ld.week==='season') return true;
+  return _ld.week==='current' && ldWeekStarted(ldCurWeek())===false;
+}
 function ldHost(){
   let el=document.getElementById('leaders');
   if(!el){
@@ -109,13 +122,13 @@ function ldRookie(pid){
 // Pull the rows for the picked window (cached per window; the current week re-reads via the
 // week cache's own live TTL), then re-render when they land.
 async function ldLoad(){
-  const season=String(TC_SEASON.year), wk=ldWeek();
-  const key=`${season}|${_ld.week==='season'?'season':wk}`;
+  const season=String(TC_SEASON.year), wk=ldWeek(), seasonMode=ldSeasonMode();
+  const key=`${season}|${seasonMode?'season':wk}`;
   if(_ld.busy) return;
   _ld.busy=true;
   try{
     let rows=null;
-    if(_ld.week==='season'){
+    if(seasonMode){
       rows = (typeof liveSeasonRowsThroughWeek==='function') ? await liveSeasonRowsThroughWeek(season, wk, {optional:[wk]}) : null;
     } else if(typeof fetchWeekStats==='function'){
       const parts = await Promise.all(['QB','RB','WR','TE'].map(pos=>fetchWeekStats(season, wk, pos).catch(()=>null)));
@@ -158,19 +171,19 @@ function ldRowsHTML(width, phone){
 // The panel's markup, for either home (the desktop sidebar, the phone's Games sheet).
 // `width` decides the names and the columns; `btns` is the home's own controls.
 function ldPanelHTML(width, btns, fromLoad, phone){
-  const season=String(TC_SEASON.year), cur=ldCurWeek(), wk=ldWeek();
-  const key=`${season}|${_ld.week==='season'?'season':wk}`;
-  const stale = _ld.key!==key || !_ld.rows || (_ld.week!=='season' && wk===cur && Date.now()-_ld.at>60*1000);
+  const season=String(TC_SEASON.year), cur=ldCurWeek(), wk=ldWeek(), seasonMode=ldSeasonMode();
+  const key=`${season}|${seasonMode?'season':wk}`;
+  const stale = _ld.key!==key || !_ld.rows || (!seasonMode && wk===cur && Date.now()-_ld.at>60*1000);
   if(stale && !fromLoad) ldLoad();
   const weeks=Array.from({length:cur},(_,i)=>cur-i);
   const sel=`<select class="ld-sel" onchange="ldSetWeek(this.value)" title="Which week">
-    ${weeks.map(w=>`<option value="${w===cur?'current':w}" ${(_ld.week==='current'&&w===cur)||_ld.week===w?'selected':''}>Week ${w}${w===cur?' · now':''}</option>`).join('')}
-    <option value="season" ${_ld.week==='season'?'selected':''}>Season</option></select>`;
+    ${weeks.map(w=>`<option value="${w===cur?'current':w}" ${!seasonMode&&((_ld.week==='current'&&w===cur)||_ld.week===w)?'selected':''}>Week ${w}${w===cur?' · now':''}</option>`).join('')}
+    <option value="season" ${seasonMode?'selected':''}>Season</option></select>`;
   const posBtns=LD_POS.map(p=>`<button class="ld-pos ${_ld.pos===p?'active':''}" onclick="ldSetPos('${p}')">${p==='ROOKIE'?'RK':p}</button>`).join('');
   const fmt=(typeof scoringSettings!=='undefined' && scoringSettings.baflMode) ? 'BAFL lens' : ((typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) ? escHtml(leagueSnapshot.name) : 'loaded scoring');
   return `<div class="ld-head"><div class="sidebar-section ld-title">Leaders</div>${sel}</div>
     <div class="ld-posrow">${posBtns}</div>
-    <div class="ld-fmt"><span title="Points under the loaded scoring">${fmt}${_ld.week!=='season'&&wk===cur?' · live':''}</span>${btns||''}</div>
+    <div class="ld-fmt"><span title="Points under the loaded scoring">${fmt}${!seasonMode&&wk===cur?' · live':(seasonMode&&_ld.week==='current'?` · season to date, until week ${cur} kicks off`:'')}</span>${btns||''}</div>
     <div class="ld-list">${ldRowsHTML(width, phone)}</div>`;
 }
 // Is the phone's Games sheet showing the Leaders? Then the list lives there, not here.

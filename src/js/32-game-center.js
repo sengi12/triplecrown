@@ -316,14 +316,69 @@ function gcmSwipeAction(dx, tab){
   return i>0 ? {game:games[i-1].id} : null;
 }
 function gcmApplySwipe(act){ if(!act) return; if(act.tab) gcmSetTab(act.tab); else if(act.game) gcPick(act.game); }
+// The page a swipe is heading for, rendered for the underlay: the neighbouring game's
+// panel (its own hero and lines) so it slides in under the finger like the app's tabs do.
+function gcmSwipePreviewHTML(act){
+  if(!act || !act.game) return '';
+  const wk=gcWeek(); const games=gcmCurrentGames()||[]; const g=games.find(x=>x.id===act.game);
+  return g ? gcGameHTML(g, gcRows(wk), wk) : '';
+}
+// The panel's children move as one layer: wrap them once per gesture (a repaint replaces
+// the panel's markup, so the wrapper never outlives the gesture).
+function gcmSwipeLayer(host){
+  if(!host || !host.querySelector) return null;
+  let top=host.querySelector(':scope > .ts-swipe-top');
+  if(top) return top;
+  top=document.createElement('div'); top.className='ts-swipe-top';
+  while(host.firstChild) top.appendChild(host.firstChild);
+  host.appendChild(top);
+  return top;
+}
 function gcmBindSwipe(sheet){
   if(!sheet || !sheet.addEventListener || sheet._gcmSwipe) return; sheet._gcmSwipe=true;
-  let x0=null, y0=null, claimed=false;
-  sheet.addEventListener('touchstart', e=>{ const t=e.touches&&e.touches[0]; if(!t) return; x0=t.clientX; y0=t.clientY;
-    claimed=!!(e.target && e.target.closest && e.target.closest('.gc-list,.gcm-grab,select,.ld-sel')); }, {passive:true});
-  sheet.addEventListener('touchend', e=>{ if(x0==null){ return; } const t=e.changedTouches&&e.changedTouches[0]; const sx=x0, sy=y0; x0=null; if(!t || claimed) return;
-    const dx=t.clientX-sx, dy=t.clientY-sy; if(Math.abs(dx)<60 || Math.abs(dy)>Math.abs(dx)*0.7) return;
-    gcmApplySwipe(gcmSwipeAction(dx, _gcm.tab||'games')); }, {passive:true});
+  let x0=null, y0=null, axis=null, claimed=false, host=null, act=null, dx=0;
+  const start=e=>{ const t=e.touches&&e.touches[0]; if(!t) return; x0=t.clientX; y0=t.clientY; axis=null; dx=0; act=null;
+    claimed=!!(e.target && e.target.closest && e.target.closest('.gc-list,.gcm-grab,select,.ld-sel'));
+    host=(_gcm.tab==='leaders') ? sheet.querySelector('.gcm-leaders') : sheet.querySelector('.gc-detail'); };
+  const move=e=>{ if(x0==null || claimed || !host) return; const t=e.touches&&e.touches[0]; if(!t) return;
+    const ddx=t.clientX-x0, ddy=t.clientY-y0;
+    if(!axis){
+      if(Math.abs(ddx)<10 && Math.abs(ddy)<10) return;
+      axis = Math.abs(ddx)>Math.abs(ddy) ? 'x' : 'y';
+      if(axis==='x'){
+        act=gcmSwipeAction(Math.sign(ddx)*100, _gcm.tab||'games');
+        if(act){ _gcm.swiping=true; gcmSwipeLayer(host); host.classList.add('ts-swipe-dragging');   // no repaint under the finger
+          if(act.game && typeof tsSwipeUnder==='function'){ const under=tsSwipeUnder(host); under.style.transition=''; under.innerHTML=gcmSwipePreviewHTML(act); } }
+      }
+    }
+    if(axis!=='x') return;
+    e.stopPropagation(); if(e.cancelable) e.preventDefault();          // the sheet owns this swipe, not the page's tabs
+    dx=ddx; if(!act) return;
+    const w=(typeof tsHostWidth==='function')?tsHostWidth(host):320;
+    const shift=Math.sign(dx)*Math.min(w, Math.abs(dx)*0.9);
+    const top=gcmSwipeLayer(host); top.style.transition='';
+    if(act.game && typeof tsPlacePair==='function') tsPlacePair(host, shift, dx<0?-1:1);
+    else top.style.transform=`translateX(${shift.toFixed(1)}px)`;
+  };
+  const end=e=>{ if(x0==null) return; const wasX=axis==='x', fdx=dx, a=act, h=host; x0=null; axis=null;
+    if(!wasX || claimed || !h){ if(_gcm.swiping){ _gcm.swiping=false; } return; }
+    e.stopPropagation();
+    const w=(typeof tsHostWidth==='function')?tsHostWidth(h):320;
+    const top=gcmSwipeLayer(h), under=h.querySelector(':scope > .ts-swipe-under');
+    if(a && Math.abs(fdx)>=60){
+      top.style.transition='transform .18s ease-out'; top.style.transform=`translateX(${fdx<0?-w:w}px)`;
+      if(under){ under.style.transition='transform .18s ease-out'; under.style.transform='translateX(0px)'; }
+      setTimeout(()=>{ h.classList.remove('ts-swipe-dragging'); _gcm.swiping=false; gcmApplySwipe(a); }, 170);
+    } else {
+      top.style.transition='transform .16s ease-out'; top.style.transform='translateX(0px)';
+      if(under){ under.style.transition='transform .16s ease-out'; under.style.transform=`translateX(${fdx<0?w:-w}px)`; }
+      setTimeout(()=>{ h.classList.remove('ts-swipe-dragging'); if(under) under.innerHTML=''; top.style.transition=''; _gcm.swiping=false; renderGamesPhone(); }, 170);
+    }
+  };
+  sheet.addEventListener('touchstart', start, {passive:true});
+  sheet.addEventListener('touchmove', move, {passive:false});
+  sheet.addEventListener('touchend', end, {passive:true});
+  sheet.addEventListener('touchcancel', end, {passive:true});
 }
 // The picker bar's live line and the pill both open straight to a game.
 function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; _gcm.open='full'; renderGamesPhone(); }
@@ -390,7 +445,7 @@ function renderGamesPhone(fromLoad){
   const host=(typeof document!=='undefined' && document.getElementById) ? gcmHost() : null; if(!host) return;
   if(_gcm.timer){ clearTimeout(_gcm.timer); _gcm.timer=null; }
   if(!gcPhoneOn()){ host.innerHTML=''; host.hidden=true; if(document.body&&document.body.classList) document.body.classList.remove('gcm-open'); return; }
-  if(_gcm.drag) return;                       // mid-gesture: the markup is already there
+  if(_gcm.drag || _gcm.swiping) return;       // mid-gesture (a height drag or a page swipe): the markup is already there
   host.hidden=false;
   const games=gcmCurrentGames();
   const open=_gcm.open;
