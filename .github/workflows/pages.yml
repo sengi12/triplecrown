@@ -48,6 +48,7 @@ jobs:
           node tools/mcp_worker/bake_seed.js _site/mcp
           du -sh _site/mcp
           cp manifest.webmanifest _site/manifest.webmanifest
+          cp native-auth.html _site/native-auth.html      # the phone sign-in's return page
           # Stamp the service worker's cache name with this commit so a deploy retires the old
           # cache instead of serving yesterday's index.html forever.
           sed "s/__BUILD_ID__/${GITHUB_SHA::12}/" sw.js > _site/sw.js

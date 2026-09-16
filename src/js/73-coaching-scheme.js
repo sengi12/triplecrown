@@ -1499,7 +1499,6 @@ function _schemeNormTab(t){
   if(s==='insights' || s==='redzone' || s==='red_zone') return 'redzone';
   if(s==='regression') return 'regression';
   if(s==='scheme') return 'scheme';
-  if(s==='tendencies' || s==='tend') return 'tendencies';
   return 'playbook';
 }
 
@@ -2189,8 +2188,13 @@ function _schemeRenderTemplate(template, p){
   const full = teamDisplayName(team);
   const wr1 = fv.names[(fv.slots||{}).WR1] || 'WR1';
   const wr2 = fv.names[(fv.slots||{}).WR2] || 'WR2';
-  const script = `const FV=${JSON.stringify(fv)};\nconst FORM=FV.data;\nconst SEASON=FV.season;\nconst NAMES=FV.names;\nconst TEAM_CODE=${JSON.stringify(team)};`;
+  const openPage = (typeof _schemeOpenPage!=='undefined' && _schemeOpenPage) ? String(_schemeOpenPage) : 'form';
+  if(typeof _schemeOpenPage!=='undefined') _schemeOpenPage = null;
+  const script = `const FV=${JSON.stringify(fv)};\nconst FORM=FV.data;\nconst SEASON=FV.season;\nconst NAMES=FV.names;\nconst TEAM_CODE=${JSON.stringify(team)};\nconst OPEN_PAGE=${JSON.stringify(openPage)};`;
+  // The sheet's second page (73b-scheme-tendencies.js), in the sheet's own idiom.
+  const tendencies = (typeof _schemeTendSheetHTML==='function') ? (_schemeTendSheetHTML(Object.assign({team}, p||{}))||'') : '';
   return template
+    .replace('__TC_TENDENCIES__', tendencies)
     .replace('svg{display:block;margin:0 auto;}', 'svg{display:block;margin:0 auto;max-width:100%;height:auto;}')
     .replace('grid-template-columns:repeat(auto-fill,minmax(330px,1fr));', 'grid-template-columns:repeat(auto-fill,minmax(280px,1fr));')
     .replace('</style>', '@media (max-width:560px){ body{padding:8px;} .sheet{max-width:100%;} .controls{padding:8px 10px;} .grid{grid-template-columns:1fr;} .card{padding:8px 8px 10px;} }</style>')
@@ -2272,7 +2276,6 @@ function _renderTeamCoachingScheme(){
         <button class="scheme-view-tab ${schemeViewTab==='redzone'?'active':''}" onclick="setTeamCoachingSchemeTab('redzone')">Red Zone</button>
         <button class="scheme-view-tab ${schemeViewTab==='regression'?'active':''}" onclick="setTeamCoachingSchemeTab('regression')">Regression</button>
         <button class="scheme-view-tab ${schemeViewTab==='scheme'?'active':''}" onclick="setTeamCoachingSchemeTab('scheme')">Scheme</button>
-        <button class="scheme-view-tab ${schemeViewTab==='tendencies'?'active':''}" onclick="setTeamCoachingSchemeTab('tendencies')">Tendencies</button>
       </div>
       <div class="scheme-loading">Loading playsheet template…</div>
       ${seasons.length>1?`<div class="scheme-tabs">${seasons.map(s=>`<button class="scheme-tab ${String(s)===String(schemeSeason)?'active':''} ${_schemeHasPlaybook(s)?'':'scheme-tab-off'}" onclick="setTeamCoachingSchemeSeason('${s}')"><span>${s}</span></button>`).join('')}</div>`:''}
@@ -2287,7 +2290,6 @@ function _renderTeamCoachingScheme(){
     let insightHtml;
     if(schemeViewTab==='regression') insightHtml = _schemeRenderRegression(p);
     else if(schemeViewTab==='scheme') insightHtml = _schemeRenderScheme(p);
-    else if(schemeViewTab==='tendencies' && typeof _schemeRenderTendencies==='function') insightHtml = _schemeRenderTendencies(p);
     else insightHtml = _schemeRenderRedZone(p);
     if(modal) modal.insertAdjacentHTML('beforeend', insightHtml);
     return;

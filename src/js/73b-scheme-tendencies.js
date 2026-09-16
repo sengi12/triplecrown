@@ -1,15 +1,17 @@
 // ═════════════════════════════════════════════════════════════════════════════
-// Tendencies — the Playbook's fourth tab: when a team calls what, and how much of it
-// an opponent could guess
+// Tendencies — the call sheet's second page: when a team calls what, and how much of
+// it an opponent could guess
 // ═════════════════════════════════════════════════════════════════════════════
-// The Playbook shows what a team runs; this shows WHEN it calls it. The methods follow
-// The Side Quest's coaching work (Michael MacKelvie and Nick Gurol, thesidequest.com,
-// "The Coaching Report Card"), re-derived in src/nflverse/tendencies.py from the nflverse
-// play-by-play and FTN charting the app already ingests: the pass rate in each situation
-// beside the league's; guessability beyond the situation (their finding: the best callers
-// are MORE guessable once the situation is held, and it costs them nothing); the streak
-// lift and formation hold; play action after a run vs cold (cold works fine); motion's real
-// effect; and the defence's blitz habits, its streak (callers run hot) and what a blitz buys.
+// The Playbook's Formations page shows what a team runs; this page shows WHEN it calls
+// it. The methods follow The Side Quest's coaching work (Michael MacKelvie and Nick Gurol,
+// thesidequest.com, "The Coaching Report Card"), re-derived in src/nflverse/tendencies.py
+// from the nflverse play-by-play and FTN charting the app already ingests: the pass rate
+// in each situation beside the league's; guessability beyond the situation (their finding:
+// the best callers are MORE guessable once the situation is held, and it costs nothing);
+// the streak lift and formation hold; play action after a run vs cold (cold works fine);
+// motion's real effect; and the defence's blitz habits, its streak (callers run hot) and
+// what a blitz buys. Rendered in the sheet's own idiom — paper, Courier, black rules, the
+// green/blue run-pass bar — and injected into the template at __TC_TENDENCIES__.
 // Data: NFLVERSE[season].tendencies = {teams:{TEAM:{offense, defense}}, league, n_teams}
 // — the frozen seasons in the seed, the season in progress in the in-season sidecar.
 let schemeTendSeason = null;
@@ -22,119 +24,111 @@ function _schemeTendPick(p){
   if(schemeTendSeason && seasons.includes(String(schemeTendSeason))) return String(schemeTendSeason);
   const want=String((p && p.season)||''); return seasons.includes(want) ? want : seasons[0];
 }
-function setTeamCoachingSchemeTendSeason(s){ schemeTendSeason=String(s); if(typeof _renderTeamCoachingScheme==='function') _renderTeamCoachingScheme(); }
+// The sheet's season chips call up to the app (srcdoc shares the page's origin), which
+// re-renders the sheet with that season's tendencies and opens it on the Tendencies page.
+let _schemeOpenPage = null;
+function setTeamCoachingSchemeTendSeason(s){ schemeTendSeason=String(s); _schemeOpenPage='tend'; if(typeof _renderTeamCoachingScheme==='function') _renderTeamCoachingScheme(); }
 // rank among the teams that have the number (1 = most, or least when dir is 'asc')
 function _schemeTendRank(teams, getter, dir){
   const vals=Object.entries(teams||{}).map(([k,t])=>{ let v=null; try{ v=getter(t); }catch(e){} return [k, (v==null||Number.isNaN(+v))?null:+v]; }).filter(x=>x[1]!=null)
     .sort((a,b)=>dir==='asc' ? a[1]-b[1] : b[1]-a[1]);
   return { n:vals.length, of:(k)=>{ const i=vals.findIndex(x=>x[0]===k); return i<0?null:i+1; } };
 }
-const _tPct=(v,dp)=> (v==null||Number.isNaN(+v)) ? '—' : `${(+v).toFixed(dp==null?0:dp)}%`;
-const _tEpa=(v)=> (v==null||Number.isNaN(+v)) ? '—' : `${(+v)>=0?'+':''}${(+v).toFixed(2)}`;
-const _tPp=(v)=> (v==null||Number.isNaN(+v)) ? '—' : `${(+v)>=0?'+':''}${(+v).toFixed(1)} pp`;
-function _tRankBadge(rank, n){
+const _tnPct=(v,dp)=> (v==null||Number.isNaN(+v)) ? '—' : `${(+v).toFixed(dp==null?0:dp)}%`;
+const _tnEpa=(v)=> (v==null||Number.isNaN(+v)) ? '—' : `${(+v)>=0?'+':''}${(+v).toFixed(2)}`;
+const _tnPp=(v)=> (v==null||Number.isNaN(+v)) ? '—' : `${(+v)>=0?'+':''}${(+v).toFixed(1)} pp`;
+function _tnOrd(n){ return (typeof _schemeOrdinal==='function') ? _schemeOrdinal(n) : String(n); }
+// a rank stamp: yellow, green for the top third, pink for the bottom third
+function _tnStamp(rank, n, label){
   if(!rank || !n) return '';
-  const cls=(typeof _schemeRankClass==='function')?_schemeRankClass(rank, n):'';
-  const ord=(typeof _schemeOrdinal==='function')?_schemeOrdinal(rank):String(rank);
-  return `<span class="scheme-tend-rank ${cls}">${ord} of ${n}</span>`;
+  const cls = n>=3 ? (rank<=Math.ceil(n/3) ? 'hi' : (rank>n-Math.ceil(n/3) ? 'lo' : '')) : '';
+  return `<span class="tn-rank ${cls}">${_tnOrd(rank)} of ${n}${label?` ${escHtml(label)}`:''}</span>`;
 }
-function _tTip(label, text){ return (typeof _schemeInfoTip==='function') ? _schemeInfoTip(label, text) : ''; }
-// a team-vs-league row: label, the team's number, the league's, a bar of the gap
-function _tRow(label, team, lg, fmt, opts){
-  const o=opts||{};
-  const d=(team!=null && lg!=null) ? (+team - +lg) : null;
-  const w=d==null ? 0 : Math.min(100, Math.abs(d)*(o.scale||2));
-  const cls=d==null ? '' : (d>0 ? 'up' : 'dn');
-  return `<div class="scheme-tend-row">
-    <span class="scheme-tend-lbl">${escHtml(label)}${o.n!=null?`<small>${o.n}</small>`:''}</span>
-    <b class="scheme-tend-val">${fmt(team)}</b>
-    <span class="scheme-tend-lg" title="league">${fmt(lg)}</span>
-    <span class="scheme-tend-barwrap"><span class="scheme-tend-bar ${cls}" style="width:${w.toFixed(0)}%"></span></span>
-    <span class="scheme-tend-diff ${cls}">${d==null?'':(o.diff||_tPp)(d)}</span>${o.rank||''}
-  </div>`;
+// a run/pass bar with the league's pass rate as a black tick
+function _tnPassBar(pass, lg){
+  if(pass==null) return '<div class="tn-bar"></div>';
+  const p=Math.max(0, Math.min(100, +pass)), r=100-p;
+  const tick=(lg!=null) ? `<span class="lg" style="left:${(100-Math.max(0,Math.min(100,+lg))).toFixed(1)}%" title="league ${_tnPct(lg,0)} pass"></span>` : '';
+  return `<div class="tn-bar"><div class="run" style="width:${r.toFixed(1)}%">${r>=22?`RUN ${r.toFixed(0)}%`:''}</div><div class="pass" style="width:${p.toFixed(1)}%">${p>=22?`PASS ${p.toFixed(0)}%`:''}</div>${tick}</div>`;
 }
-function _schemeRenderTendencies(p){
+// a one-value bar (a blitz rate) with the league's as a tick
+function _tnFillBar(v, lg, scale){
+  if(v==null) return '<div class="tn-bar"></div>';
+  const w=Math.max(0, Math.min(100, (+v)*(scale||1)));
+  const tick=(lg!=null) ? `<span class="lg" style="left:${Math.max(0,Math.min(100,(+lg)*(scale||1))).toFixed(1)}%" title="league ${_tnPct(lg,0)}"></span>` : '';
+  return `<div class="tn-bar"><div class="fill" style="width:${w.toFixed(1)}%">${w>=18?_tnPct(v,0):''}</div>${tick}</div>`;
+}
+const _tnKv=(label, val, lgVal, extra)=>`<div class="stat"><span>${escHtml(label)}</span><b>${val}${lgVal!=null?`<small>lg ${lgVal}</small>`:''}${extra||''}</b></div>`;
+// The Tendencies page of the sheet for the team, or '' when the season has none.
+function _schemeTendSheetHTML(p){
   const team=String((p && p.team) || (typeof schemeTeam!=='undefined' && schemeTeam) || '').toUpperCase();
   const season=_schemeTendPick(p);
+  const seasons=_schemeTendSeasons();
+  const live=(typeof TC_SEASON!=='undefined' && TC_SEASON) ? String(TC_SEASON.year) : '';
+  const chips=`<div class="tn-seasons"><span>Season</span>${seasons.map(s=>`<button type="button" class="${s===season?'active':''}" onclick="parent.setTeamCoachingSchemeTendSeason('${s}')">${s}${s===live?' · LIVE':''}</button>`).join('')}</div>`;
   const blk=season ? NFLVERSE[season].tendencies : null;
   const t=blk && blk.teams && blk.teams[team];
-  const seasons=_schemeTendSeasons();
-  const chips=seasons.length>1 ? `<div class="scheme-tend-seasons">${seasons.map(s=>`<button class="scheme-tend-season ${s===season?'active':''}" onclick="setTeamCoachingSchemeTendSeason('${s}')">${s}${(typeof TC_SEASON!=='undefined'&&String(TC_SEASON.year)===s)?' · live':''}</button>`).join('')}</div>` : '';
-  const credit=_tTip('Where these come from', 'The methods follow The Side Quest\'s coaching work (Michael MacKelvie and Nick Gurol, thesidequest.com — The Coaching Report Card), re-derived from the nflverse play-by-play and FTN charting this app already carries. Their headline findings: the best play-callers are MORE guessable once the situation is held, and it costs them nothing; play action works cold, not only after runs; defensive callers run hot on the blitz. Rates are over the plays named; EPA is per play.');
+  const note=`<div class="tn-note">Tendencies: the methods follow The Side Quest's coaching work (Michael MacKelvie and Nick Gurol, thesidequest.com — The Coaching Report Card), re-derived from nflverse pbp + FTN charting${season?`, ${season} REG`:''}. Guessability: how often a defence knowing only the situation (down, distance, field, score, quarter) and the league's habits would guess run or pass; the team's own situation rates, shrunk toward the league's where thin, give its number; "beyond the situation" is what the caller adds — their finding: the best callers score HIGH here, and it costs them nothing. Bars: green run / blue pass, the black tick is the league. EPA is per play; n in grey.</div>`;
   if(!t){
-    return `<div class="scheme-tend"><div class="scheme-tend-head"><span class="scheme-tend-title">Tendencies${season?` · ${season}`:''}</span>${credit}${chips}</div>
-      <div class="scheme-empty">${season ? `No tendencies for ${escHtml(team)} in ${season} yet.` : 'Tendencies build from the season\'s play-by-play once games are in the books.'}</div></div>`;
+    return `<div class="tn">${seasons.length?chips:''}<div class="empty">${season ? `No tendencies for ${escHtml(team)} in ${season} yet.` : 'Tendencies build from the season\'s play-by-play once games are in the books.'}</div>${note}</div>`;
   }
-  const lg=(blk.league||{});
-  const O=t.offense||{}, LO=lg.offense||{}, D=t.defense||{}, LD=lg.defense||{};
-  const teams=blk.teams;
-  const N=Object.keys(teams).length;
-  // guessability
-  const g=O.guess||{}, lgG=LO.guess||{};
+  const lg=blk.league||{}; const O=t.offense||{}, LO=lg.offense||{}, D=t.defense||{}, LD=lg.defense||{}; const teams=blk.teams; const N=Object.keys(teams).length;
+  const g=O.guess||{};
   const rBeyond=_schemeTendRank(teams, x=>x.offense&&x.offense.guess&&x.offense.guess.beyond, 'desc');
-  const guess=`<div class="scheme-tend-tile">
-      <div class="scheme-tend-tile-h">How guessable is the call? ${_tTip('Guessability', 'A defence that knew only the situation (down, distance, field, score, quarter) and the league\'s habits would guess run or pass right this often: the baseline. This team\'s own situation rates, shrunk toward the league\'s where the sample is thin, give its number. "Beyond the situation" is what the caller adds on top — positive means more predictable than the situation alone, negative means the caller mixes it up. The Side Quest\'s finding: the best callers score HIGH here, and it costs them nothing.')}</div>
-      <div class="scheme-tend-big"><b>${_tPct(g.team,1)}</b><span>guessed right</span>${_tRankBadge(rBeyond.of(team), rBeyond.n)}</div>
-      <div class="scheme-tend-sub">${_tPct(g.situation,1)} from the situation alone · <b class="${(g.beyond||0)>=0?'up':'dn'}">${_tPp(g.beyond)}</b> beyond it · naive ${_tPct(g.naive,0)} (pass or run, whichever is commoner)</div>
-    </div>`;
-  // situations
+  const guess=`<div class="tn-card"><div class="tn-h">How guessable is the call? <small>situation known</small></div>
+    <div class="tn-stamp"><b>${_tnPct(g.team,1)}</b><span class="lbl">guessed right</span>${_tnStamp(rBeyond.of(team), rBeyond.n, 'most guessable')}</div>
+    <div class="tn-line">${_tnPct(g.situation,1)} from the situation alone · <b>${_tnPp(g.beyond)}</b> beyond it · naive ${_tnPct(g.naive,0)} (pass or run, whichever is commoner)</div></div>`;
   const sits=O.situations||{};
-  const sitRows=Object.keys(sits).filter(k=>sits[k] && sits[k].pass!=null).map(k=>{ const s=sits[k]; return _tRow(k, s.pass, s.lg, v=>_tPct(v,0), {n:s.n, scale:2, rank:`<span class="scheme-tend-epa" title="EPA per play in the situation">${_tEpa(s.epa)}</span>`}); }).join('');
-  const situations=`<div class="scheme-tend-sec"><div class="scheme-tend-sec-h">Pass rate by situation <small>team · league · gap · EPA/play</small></div>${sitRows||'<div class="scheme-empty">Not enough plays yet.</div>'}</div>`;
-  // sequencing
+  const sitRows=Object.keys(sits).filter(k=>sits[k] && sits[k].pass!=null).map(k=>{ const s=sits[k]; return `<div class="tn-row"><span class="lbl">${escHtml(k)}<small>${s.n}</small></span>${_tnPassBar(s.pass, s.lg)}<span class="epa">${_tnEpa(s.epa)}</span></div>`; }).join('');
+  const situations=`<div class="tn-card"><div class="tn-h">When we throw <small>run / pass by situation · tick = league · EPA/play</small></div>${sitRows||'<div class="empty">Not enough plays yet.</div>'}</div>`;
   const sq=O.sequencing||{}, lsq=LO.sequencing||{};
   const rStreak=_schemeTendRank(teams, x=>x.offense&&x.offense.sequencing&&x.offense.sequencing.streak_lift, 'desc');
   const rHold=_schemeTendRank(teams, x=>x.offense&&x.offense.sequencing&&x.offense.sequencing.formation_hold, 'desc');
-  const sequencing=`<div class="scheme-tend-sec"><div class="scheme-tend-sec-h">Sequencing ${_tTip('Sequencing', 'Pass after a pass vs pass after a run, within a drive: the streak lift says how much the last call predicts the next. Formation hold: how often the quarterback lines up where he did on the previous snap (FTN\'s under centre / shotgun / pistol). No-huddle: the share of snaps without a huddle.')}</div>
-      ${_tRow('Pass after a pass', sq.pass_after_pass, lsq.pass_after_pass, v=>_tPct(v,0), {n:sq.n_after_pass})}
-      ${_tRow('Pass after a run', sq.pass_after_run, lsq.pass_after_run, v=>_tPct(v,0), {n:sq.n_after_run})}
-      ${_tRow('Streak lift', sq.streak_lift, lsq.streak_lift, v=>_tPp(v), {scale:3, rank:_tRankBadge(rStreak.of(team), rStreak.n)})}
-      ${_tRow('Formation hold', sq.formation_hold, lsq.formation_hold, v=>_tPct(v,0), {rank:_tRankBadge(rHold.of(team), rHold.n)})}
-      ${_tRow('No-huddle', sq.no_huddle, lsq.no_huddle, v=>_tPct(v,0), {scale:3})}
-    </div>`;
-  // play action
+  const sequencing=`<div class="tn-card"><div class="tn-h">Sequencing <small>within a drive</small></div><div class="tn-kv">
+    ${_tnKv('Pass after a pass', _tnPct(sq.pass_after_pass,0), _tnPct(lsq.pass_after_pass,0))}
+    ${_tnKv('Pass after a run', _tnPct(sq.pass_after_run,0), _tnPct(lsq.pass_after_run,0))}
+    ${_tnKv('Streak lift', _tnPp(sq.streak_lift), _tnPp(lsq.streak_lift), _tnStamp(rStreak.of(team), rStreak.n))}
+    ${_tnKv('Formation hold', _tnPct(sq.formation_hold,0), _tnPct(lsq.formation_hold,0), _tnStamp(rHold.of(team), rHold.n))}
+    ${_tnKv('No-huddle', _tnPct(sq.no_huddle,0), _tnPct(lsq.no_huddle,0))}
+  </div></div>`;
   const pa=O.play_action||{}, lpa=LO.play_action||{};
   const rPa=_schemeTendRank(teams, x=>x.offense&&x.offense.play_action&&x.offense.play_action.rate_early, 'desc');
-  const playAction=`<div class="scheme-tend-sec"><div class="scheme-tend-sec-h">Play action ${_tTip('Play action', 'The rate on early downs before the fourth quarter, EPA per dropback with and without it, and the setup test: play action after a run in the same drive vs cold (the drive\'s first play, or after a pass). The Side Quest found cold play action works as well as the set-up kind, league-wide.')}</div>
-      ${_tRow('Rate, early downs', pa.rate_early, lpa.rate_early, v=>_tPct(v,0), {n:pa.n_early, rank:_tRankBadge(rPa.of(team), rPa.n)})}
-      ${_tRow('EPA with', pa.epa, lpa.epa, _tEpa, {n:pa.n, scale:150, diff:_tEpa})}
-      ${_tRow('EPA without', pa.epa_without, lpa.epa_without, _tEpa, {n:pa.n_without, scale:150, diff:_tEpa})}
-      ${_tRow('After a run', pa.epa_after_run, lpa.epa_after_run, _tEpa, {n:pa.n_after_run, scale:150, diff:_tEpa})}
-      ${_tRow('Cold', pa.epa_cold, lpa.epa_cold, _tEpa, {n:pa.n_cold, scale:150, diff:_tEpa})}
-    </div>`;
-  // motion
+  const playAction=`<div class="tn-card"><div class="tn-h">Play action <small>the setup test: after a run vs cold</small></div><div class="tn-kv">
+    ${_tnKv('Rate, early downs', _tnPct(pa.rate_early,0), _tnPct(lpa.rate_early,0), _tnStamp(rPa.of(team), rPa.n))}
+    ${_tnKv('EPA with', _tnEpa(pa.epa)+`<small>${pa.n||0}</small>`, _tnEpa(lpa.epa))}
+    ${_tnKv('EPA without', _tnEpa(pa.epa_without), _tnEpa(lpa.epa_without))}
+    ${_tnKv('After a run', _tnEpa(pa.epa_after_run)+`<small>${pa.n_after_run||0}</small>`, _tnEpa(lpa.epa_after_run))}
+    ${_tnKv('Cold', _tnEpa(pa.epa_cold)+`<small>${pa.n_cold||0}</small>`, _tnEpa(lpa.epa_cold))}
+  </div></div>`;
   const mo=O.motion||{}, lmo=LO.motion||{};
   const rMo=_schemeTendRank(teams, x=>x.offense&&x.offense.motion&&x.offense.motion.rate, 'desc');
-  const motion=`<div class="scheme-tend-sec"><div class="scheme-tend-sec-h">Motion ${_tTip('Motion', 'Pre-snap motion (FTN) on the share of snaps, and EPA per play with and without it, all plays and passes alone. A gap near zero is the league-wide finding: motion helps at the margin, not by itself.')}</div>
-      ${_tRow('Motion rate', mo.rate, lmo.rate, v=>_tPct(v,0), {n:mo.n, rank:_tRankBadge(rMo.of(team), rMo.n)})}
-      ${_tRow('EPA with', mo.epa, lmo.epa, _tEpa, {n:mo.n_with, scale:150, diff:_tEpa})}
-      ${_tRow('EPA without', mo.epa_without, lmo.epa_without, _tEpa, {n:mo.n_without, scale:150, diff:_tEpa})}
-      ${_tRow('Passes with', mo.epa_pass, lmo.epa_pass, _tEpa, {scale:150, diff:_tEpa})}
-      ${_tRow('Passes without', mo.epa_pass_without, lmo.epa_pass_without, _tEpa, {scale:150, diff:_tEpa})}
-    </div>`;
-  // defence
+  const motion=`<div class="tn-card"><div class="tn-h">Motion <small>pre-snap, FTN</small></div><div class="tn-kv">
+    ${_tnKv('Motion rate', _tnPct(mo.rate,0), _tnPct(lmo.rate,0), _tnStamp(rMo.of(team), rMo.n))}
+    ${_tnKv('EPA with', _tnEpa(mo.epa), _tnEpa(lmo.epa))}
+    ${_tnKv('EPA without', _tnEpa(mo.epa_without), _tnEpa(lmo.epa_without))}
+    ${_tnKv('Passes with', _tnEpa(mo.epa_pass), _tnEpa(lmo.epa_pass))}
+    ${_tnKv('Passes without', _tnEpa(mo.epa_pass_without), _tnEpa(lmo.epa_pass_without))}
+  </div></div>`;
   const bz=D.blitz||{}, lbz=LD.blitz||{}, bx=D.box||{}, lbx=LD.box||{};
   const rBlitz=_schemeTendRank(teams, x=>x.defense&&x.defense.blitz&&x.defense.blitz.rate, 'desc');
   const rStreakD=_schemeTendRank(teams, x=>x.defense&&x.defense.blitz&&x.defense.blitz.streak_lift, 'desc');
   const bySit=['1st down','3rd & long','Red zone','Trailing 9+','Leading 9+'].filter(k=>bz[k] && bz[k].rate!=null)
-    .map(k=>_tRow(k, bz[k].rate, lbz[k]&&lbz[k].rate, v=>_tPct(v,0), {n:bz[k].n})).join('');
-  const defense=`<div class="scheme-tend-sec"><div class="scheme-tend-sec-h">The defence: blitz habits ${_tTip('Blitz habits', 'Blitz = five or more rushers (FTN), on the dropbacks this defence faced. The streak: how often it blitzes right after a blitz vs right after a non-blitz — The Side Quest found every defensive caller runs hot, none mixes. What a blitz buys: the pressure rate (hit or sack) and EPA allowed with and without one. Box counts: light (six or fewer) and stacked (eight or more) against the run.')}</div>
-      ${_tRow('Blitz rate', bz.rate, lbz.rate, v=>_tPct(v,0), {n:bz.n, rank:_tRankBadge(rBlitz.of(team), rBlitz.n)})}
-      ${bySit}
-      ${_tRow('After a blitz', bz.after_blitz, lbz.after_blitz, v=>_tPct(v,0), {n:bz.n_after_blitz})}
-      ${_tRow('After none', bz.after_none, lbz.after_none, v=>_tPct(v,0), {n:bz.n_after_none})}
-      ${_tRow('Streak lift', bz.streak_lift, lbz.streak_lift, v=>_tPp(v), {scale:3, rank:_tRankBadge(rStreakD.of(team), rStreakD.n)})}
-      ${_tRow('Pressure with a blitz', bz.pressure_with, lbz.pressure_with, v=>_tPct(v,0), {})}
-      ${_tRow('Pressure without', bz.pressure_without, lbz.pressure_without, v=>_tPct(v,0), {})}
-      ${_tRow('EPA allowed, blitz', bz.epa_with, lbz.epa_with, _tEpa, {scale:150, diff:_tEpa})}
-      ${_tRow('EPA allowed, none', bz.epa_without, lbz.epa_without, _tEpa, {scale:150, diff:_tEpa})}
-      ${_tRow('Light box vs run', bx.light, lbx.light, v=>_tPct(v,0), {n:bx.n})}
-      ${_tRow('Stacked box vs run', bx.heavy, lbx.heavy, v=>_tPct(v,0), {})}
-    </div>`;
-  return `<div class="scheme-tend">
-    <div class="scheme-tend-head"><span class="scheme-tend-title">Tendencies · ${season}</span>${credit}${chips}</div>
-    ${blk.has_ftn===false ? '<div class="scheme-tend-note">FTN charting has not posted for this season yet: play action, motion, formation hold and the blitz figures wait for it; the situations and guessability are from the play-by-play.</div>' : ''}
-    ${guess}${situations}${sequencing}${playAction}${motion}${defense}
-    <div class="scheme-tend-foot">${O.plays||0} offensive plays · ${D.plays||0} faced on defence · ${N} teams ranked</div>
-  </div>`;
+    .map(k=>`<div class="tn-row"><span class="lbl">${escHtml(k)}<small>${bz[k].n}</small></span>${_tnFillBar(bz[k].rate, lbz[k]&&lbz[k].rate, 1.6)}<span class="epa"></span></div>`).join('');
+  const defense=`<div class="tn-card"><div class="tn-h">The defense: blitz habits <small>5+ rushers, FTN</small></div>
+    <div class="tn-stamp"><b>${_tnPct(bz.rate,0)}</b><span class="lbl">blitz rate</span>${_tnStamp(rBlitz.of(team), rBlitz.n)}</div>
+    ${bySit}
+    <div class="tn-kv" style="margin-top:6px">
+      ${_tnKv('After a blitz', _tnPct(bz.after_blitz,0)+`<small>${bz.n_after_blitz||0}</small>`, _tnPct(lbz.after_blitz,0))}
+      ${_tnKv('After none', _tnPct(bz.after_none,0)+`<small>${bz.n_after_none||0}</small>`, _tnPct(lbz.after_none,0))}
+      ${_tnKv('Streak lift', _tnPp(bz.streak_lift), _tnPp(lbz.streak_lift), _tnStamp(rStreakD.of(team), rStreakD.n, 'hottest'))}
+      ${_tnKv('Pressure with a blitz', _tnPct(bz.pressure_with,0), _tnPct(lbz.pressure_with,0))}
+      ${_tnKv('Pressure without', _tnPct(bz.pressure_without,0), _tnPct(lbz.pressure_without,0))}
+      ${_tnKv('EPA allowed, blitz', _tnEpa(bz.epa_with), _tnEpa(lbz.epa_with))}
+      ${_tnKv('EPA allowed, none', _tnEpa(bz.epa_without), _tnEpa(lbz.epa_without))}
+      ${_tnKv('Light box vs run', _tnPct(bx.light,0), _tnPct(lbx.light,0))}
+      ${_tnKv('Stacked box vs run', _tnPct(bx.heavy,0), _tnPct(lbx.heavy,0))}
+    </div></div>`;
+  const ftn=blk.has_ftn===false ? '<div class="hint">FTN charting has not posted for this season yet: play action, motion, formation hold and the blitz figures wait for it; the situations and guessability are from the play-by-play.</div>' : '';
+  return `<div class="tn">${chips}<div class="banner">Tendencies · ${season} · ${O.plays||0} plays · ${N} teams ranked</div>${ftn}
+    <div class="tn-grid">${guess}${situations}${sequencing}${playAction}${motion}${defense}</div>${note}</div>`;
 }

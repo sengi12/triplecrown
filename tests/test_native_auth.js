@@ -12,7 +12,7 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`
   toast=function(m,t){ toasts.push(t+':'+m); };
-  return { signIn:tcSignInGoogle, handle:tcHandleNativeAuthUrl, bind:tcBindNativeAuthReturn, isNative:tcIsNativeApp, redirect:TC_NATIVE_AUTH_REDIRECT,
+  return { signIn:tcSignInGoogle, handle:tcHandleNativeAuthUrl, bind:tcBindNativeAuthReturn, isNative:tcIsNativeApp, redirect:TC_NATIVE_AUTH_REDIRECT, buildLine:tcBuildLine,
     setClient:(c)=>{ _tcClient=c; }, closeModal:()=>{ tcCloseAuthModal=function(){ closed.push(1); }; } };
 `)();
 global.toasts=[]; global.closed=[];
@@ -42,7 +42,7 @@ app.setClient(client); app.closeModal();
   chk(app.isNative()===true, 'the bridge says native');
   app.signIn(); await new Promise(r=>setTimeout(r,5));
   const o=calls.oauth[1];
-  chk(o && o.options.redirectTo===app.redirect && o.options.skipBrowserRedirect===true && app.redirect==='com.sengi.triplecrown://auth/callback', 'asks Supabase for the URL only, with the app\'s own callback');
+  chk(o && o.options.redirectTo==='https://sengi12.github.io/triplecrown/native-auth.html' && o.options.skipBrowserRedirect===true && app.redirect==='com.sengi.triplecrown://auth/callback', 'asks Supabase for the URL only, sending the browser to the site\'s return page (which hops to the app\'s scheme)');
   chk(calls.browser.some(c=>c[0]==='open' && /accounts\.google\.com/.test(c[1])) && opened.length===0, 'opens Google in the system browser (a Custom Tab), not a window');
   chk(calls.listeners.includes('appUrlOpen'), 'listens for the app being opened by a URL');
   chk((calls.registered||[]).includes('Browser') && (calls.registered||[]).includes('App'), 'the plugins are reached through registerPlugin, since the page bundles no plugin JavaScript');
@@ -80,6 +80,11 @@ app.setClient(client); app.closeModal();
   chk(calls.exchanged.filter(c=>c==='launched').length===1, 'the same callback arriving twice (event + launch URL) is exchanged once');
   await global._appUrl({url:'com.sengi.triplecrown://auth/callback'});
   chk(toasts.some(t=>/without a session/.test(t)), 'a callback with neither a code nor tokens says so');
+  console.log('=== the return page and the build line ===');
+  const page=fs.readFileSync(require('path').join(__dirname,'..','native-auth.html'),'utf8');
+  chk(/com\.sengi\.triplecrown:\/\/auth\/callback/.test(page) && /location\.search/.test(page) && /location\.hash/.test(page) && /id="open"/.test(page) && /location\.href=app/.test(page), 'native-auth.html forwards the query and hash to the app\'s scheme, by itself and by a button');
+  chk(/native-auth\.html/.test(fs.readFileSync(require('path').join(__dirname,'..','.github/workflows/pages.yml'),'utf8')), 'the Pages deploy copies the return page');
+  chk(typeof app.buildLine==='function' && app.buildLine()==='' , 'an unstamped build prints no build line');
   const src=fs.readFileSync(require('path').join(__dirname,'..','mobile/android/app/src/main/AndroidManifest.xml'),'utf8');
   chk(/android:scheme="com\.sengi\.triplecrown" android:host="auth"/.test(src) && /android\.intent\.category\.BROWSABLE/.test(src), 'the Android manifest routes the callback scheme to the app');
   const pk=JSON.parse(fs.readFileSync(require('path').join(__dirname,'..','mobile/package.json'),'utf8'));
