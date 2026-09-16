@@ -314,7 +314,9 @@ LIVE_NFLVERSE_PARTS = ("team", "players", "routes", "qb_passing", "rb_fan", "ros
                        # Next Gen Stats per game (tracking data — updates the morning after)
                        "ngs_weekly",
                        # individual defenders' weekly logs (PFR's weekly defense file, within a day)
-                       "def_weekly")
+                       "def_weekly",
+                       # play-calling tendencies to date (pbp + FTN): the Playbook's Tendencies tab
+                       "tendencies")
 
 
 def build_live_nflverse(season, parts=LIVE_NFLVERSE_PARTS):
@@ -343,6 +345,7 @@ def build_live_nflverse(season, parts=LIVE_NFLVERSE_PARTS):
         "rb_fan": lambda: _nfl.rb_rushing_fans(season, min_attempts=1, min_lane_attempts=1),
         "rosters": lambda: _nfl.team_rosters(season),
         "ol_weekly": lambda: _nfl.ol_weekly_team(season),
+        "tendencies": lambda: _nfl._tendencies_block(season),
     }
     for part in parts:
         fn = builders.get(part)

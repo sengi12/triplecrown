@@ -1499,6 +1499,7 @@ function _schemeNormTab(t){
   if(s==='insights' || s==='redzone' || s==='red_zone') return 'redzone';
   if(s==='regression') return 'regression';
   if(s==='scheme') return 'scheme';
+  if(s==='tendencies' || s==='tend') return 'tendencies';
   return 'playbook';
 }
 
@@ -2271,6 +2272,7 @@ function _renderTeamCoachingScheme(){
         <button class="scheme-view-tab ${schemeViewTab==='redzone'?'active':''}" onclick="setTeamCoachingSchemeTab('redzone')">Red Zone</button>
         <button class="scheme-view-tab ${schemeViewTab==='regression'?'active':''}" onclick="setTeamCoachingSchemeTab('regression')">Regression</button>
         <button class="scheme-view-tab ${schemeViewTab==='scheme'?'active':''}" onclick="setTeamCoachingSchemeTab('scheme')">Scheme</button>
+        <button class="scheme-view-tab ${schemeViewTab==='tendencies'?'active':''}" onclick="setTeamCoachingSchemeTab('tendencies')">Tendencies</button>
       </div>
       <div class="scheme-loading">Loading playsheet template…</div>
       ${seasons.length>1?`<div class="scheme-tabs">${seasons.map(s=>`<button class="scheme-tab ${String(s)===String(schemeSeason)?'active':''} ${_schemeHasPlaybook(s)?'':'scheme-tab-off'}" onclick="setTeamCoachingSchemeSeason('${s}')"><span>${s}</span></button>`).join('')}</div>`:''}
@@ -2285,6 +2287,7 @@ function _renderTeamCoachingScheme(){
     let insightHtml;
     if(schemeViewTab==='regression') insightHtml = _schemeRenderRegression(p);
     else if(schemeViewTab==='scheme') insightHtml = _schemeRenderScheme(p);
+    else if(schemeViewTab==='tendencies' && typeof _schemeRenderTendencies==='function') insightHtml = _schemeRenderTendencies(p);
     else insightHtml = _schemeRenderRedZone(p);
     if(modal) modal.insertAdjacentHTML('beforeend', insightHtml);
     return;

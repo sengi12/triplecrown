@@ -68,6 +68,18 @@ app.setClient(client); app.closeModal();
   chk(calls.browser.some(c=>c[0]==='Browser.open' && /accounts\.google\.com/.test(c[1])) && calls.listeners.includes('App:appUrlOpen') && opened.length===0, 'the sign-in opens the system browser through the bridge and listens for the return through it');
   await global._appUrl({url:'com.sengi.triplecrown://auth/callback?code=fromshim'});
   chk(calls.exchanged.includes('fromshim') && calls.browser.some(c=>c[0]==='Browser.close'), 'the return trip closes the browser and exchanges the code');
+  console.log('=== a cold relaunch delivers the callback as the launch URL ===');
+  calls.exchanged.length=0;
+  global.window.Capacitor={ isNativePlatform:()=>true, Plugins:{}, PluginHeaders:[{name:'Browser'},{name:'App'}],
+    nativePromise:async(plugin,method,opts)=>{ calls.browser.push([plugin+'.'+method]); if(plugin==='App'&&method==='getLaunchUrl') return {url:'com.sengi.triplecrown://auth/callback?code=launched'}; },
+    addListener:(plugin,ev,fn)=>{ calls.listeners.push(plugin+':'+ev); global._appUrl=fn; } };
+  const cold=(new Function(code+"toast=function(m,t){ toasts.push(t+':'+m); }; return {bind:tcBindNativeAuthReturn, setClient:(c)=>{ _tcClient=c; }, closeModal:()=>{ tcCloseAuthModal=function(){ closed.push(1); }; }};"))();
+  cold.setClient(client); cold.closeModal(); cold.bind(); await new Promise(r=>setTimeout(r,10));
+  chk(calls.exchanged.includes('launched') && toasts.includes('info:Finishing sign-in…'), 'the launch URL is read at bind time and the code exchanged, with a visible "finishing" note');
+  await global._appUrl({url:'com.sengi.triplecrown://auth/callback?code=launched'});
+  chk(calls.exchanged.filter(c=>c==='launched').length===1, 'the same callback arriving twice (event + launch URL) is exchanged once');
+  await global._appUrl({url:'com.sengi.triplecrown://auth/callback'});
+  chk(toasts.some(t=>/without a session/.test(t)), 'a callback with neither a code nor tokens says so');
   const src=fs.readFileSync(require('path').join(__dirname,'..','mobile/android/app/src/main/AndroidManifest.xml'),'utf8');
   chk(/android:scheme="com\.sengi\.triplecrown" android:host="auth"/.test(src) && /android\.intent\.category\.BROWSABLE/.test(src), 'the Android manifest routes the callback scheme to the app');
   const pk=JSON.parse(fs.readFileSync(require('path').join(__dirname,'..','mobile/package.json'),'utf8'));
