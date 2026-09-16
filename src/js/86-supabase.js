@@ -267,8 +267,20 @@ function tcIsNativeApp(){
   try{ return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform==='function' && window.Capacitor.isNativePlatform()); }
   catch(e){ return false; }
 }
+// A native plugin, from a page the shell loads off the live site: Capacitor lists a plugin
+// on window.Capacitor.Plugins only once that plugin's own JavaScript has registered it, and
+// this page bundles none — so register the proxy ourselves (the documented path for a page
+// without a bundler; the native side answers as long as the plugin is installed in the shell).
 function _tcNativePlugin(name){
-  try{ return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins[name]) || null; }catch(e){ return null; }
+  try{
+    const cap=window.Capacitor; if(!cap) return null;
+    if(cap.Plugins && cap.Plugins[name]) return cap.Plugins[name];
+    if(typeof cap.registerPlugin==='function'){
+      const has=!Array.isArray(cap.PluginHeaders) || cap.PluginHeaders.some(h=>h && h.name===name);
+      return has ? cap.registerPlugin(name) : null;
+    }
+    return null;
+  }catch(e){ return null; }
 }
 let _tcNativeAuthBound = false;
 function tcBindNativeAuthReturn(){
