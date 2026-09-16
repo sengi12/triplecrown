@@ -139,3 +139,5 @@
 .tc-mgr-dragging{opacity:.45;}
 .tc-mgr-drop-over{
   border-color:var(--accent);background:rgba(var(--accent-rgb,21,153,230),.08);}
+
+.tc-auth-build{font-family:var(--mono);font-size:10px;color:var(--muted2);text-align:center;padding:8px 0 2px;letter-spacing:.04em;}

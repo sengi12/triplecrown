@@ -189,6 +189,7 @@ function tcOpenAuthModal(reason){
         <button class="tc-btn tc-btn-ghost tc-btn-sm" onclick="tcSignOut()">
           Sign out of ${escHtml((_tcUser.email||'').split('@')[0])}
         </button></div>` : ''}
+      ${tcBuildLine()}
     </div>`;
   document.body.appendChild(ov);
   ov.addEventListener('mousedown', e=>{ if(e.target===ov) tcCloseAuthModal(); });
@@ -263,6 +264,19 @@ function tcAuthSubmit(){
 // App plugin hands the URL to the page, and the SDK exchanges the code for a session in
 // the shell's own storage. Same account, same data, no browser tab left behind.
 const TC_NATIVE_AUTH_REDIRECT = 'com.sengi.triplecrown://auth/callback';
+// Where Supabase sends the browser after Google inside the phone app: an https page on the
+// site (native-auth.html) that hops to the scheme above. A redirect straight to the scheme
+// is blocked by browsers other than Chrome (Vivaldi sat on a blank Supabase page); an https
+// page loads everywhere, and its button is a user gesture every browser honours. Must be on
+// Supabase's redirect allow list, like the scheme.
+const TC_NATIVE_AUTH_RETURN = 'https://sengi12.github.io/triplecrown/native-auth.html';
+// The build the app is running, for the sign-in modal — the phone shell loads the live site,
+// so this is how to see that a push has reached it.
+function tcBuildLine(){
+  const id=(typeof TC_BUILD_ID!=='undefined' && TC_BUILD_ID && TC_BUILD_ID.indexOf('__')!==0) ? TC_BUILD_ID : '';
+  if(!id) return '';
+  return `<div class="tc-auth-build">build ${escHtml(id)}${tcIsNativeApp()?' · in the app':''}</div>`;
+}
 function tcIsNativeApp(){
   try{ return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform==='function' && window.Capacitor.isNativePlatform()); }
   catch(e){ return false; }
@@ -339,7 +353,7 @@ function tcSignInGoogle(){
     const Browser=_tcNativePlugin('Browser');
     _tcClient.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: TC_NATIVE_AUTH_REDIRECT, skipBrowserRedirect: true },
+      options: { redirectTo: TC_NATIVE_AUTH_RETURN, skipBrowserRedirect: true },
     }).then(({data, error})=>{
       if(error) throw error;
       if(!data || !data.url) throw new Error('no sign-in URL');

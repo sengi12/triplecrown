@@ -1,0 +1,22 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TripleCrown — finishing sign-in</title>
+<style>body{margin:0;background:#0d1117;color:#e6edf3;font:16px/1.5 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;display:grid;place-items:center;min-height:100vh;padding:24px;box-sizing:border-box}
+main{max-width:360px;text-align:center}h1{font-size:20px;margin:0 0 8px}p{color:#8b949e;margin:0 0 18px}
+a.btn{display:inline-block;background:#1599E6;color:#fff;font-weight:700;padding:14px 22px;border-radius:12px;text-decoration:none;font-size:17px}
+small{display:block;margin-top:18px;color:#5d6773;font-size:12px}</style></head>
+<body><main><h1>Finishing sign-in…</h1><p id="msg">Handing you back to the TripleCrown app.</p><a class="btn" id="open" href="#">Open TripleCrown</a><small id="note">If the app does not open by itself, tap the button.</small></main>
+<script>
+// Supabase sends the browser here after Google, with the session in the URL (tokens in the
+// hash, or a code in the query). Browsers block a redirect straight to an app's own scheme
+// (Vivaldi, Firefox, Samsung: nothing loads), so this https page does the hop instead — and
+// a tap on the button is a user gesture every browser honours.
+(function(){
+  var scheme='com.sengi.triplecrown://auth/callback';
+  var q=location.search||'', h=location.hash||'';
+  var has=/access_token=|refresh_token=|code=|error=/.test(q+h);
+  var app=scheme+q+h;
+  var a=document.getElementById('open'); a.href=app;
+  if(!has){ document.getElementById('msg').textContent='Nothing to finish here — open the app and sign in from its menu.'; a.textContent='Open TripleCrown'; return; }
+  setTimeout(function(){ try{ location.href=app; }catch(e){} }, 350);
+  setTimeout(function(){ document.getElementById('note').textContent='Still here? Tap the button to open the app and finish signing in.'; }, 2500);
+})();
+</script></body></html>
