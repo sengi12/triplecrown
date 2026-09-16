@@ -271,6 +271,29 @@ function gcmHost(){
   return el;
 }
 function gcmSet(v){ if(!GCM_OPEN.includes(v)) return; _gcm.open=v; renderGamesPhone(); }
+// A horizontal swipe across the sheet: on the Games page it turns to the next or previous
+// game in kickoff order (past the last game → the Leaders page); on the Leaders page a
+// swipe right returns to the games. The rail (a scroller) and the grab handle keep their
+// own gestures. Pure: what the swipe does, so it can be tested without a touch.
+function gcmSwipeAction(dx, tab){
+  if(Math.abs(dx)<60) return null;
+  if(tab==='leaders') return dx>0 ? {tab:'games'} : null;
+  const games=gcmCurrentGames()||[];
+  if(!games.length) return dx<0 ? {tab:'leaders'} : null;
+  const i=Math.max(0, games.findIndex(g=>g.id===_gc.game));
+  if(dx<0) return i<games.length-1 ? {game:games[i+1].id} : {tab:'leaders'};
+  return i>0 ? {game:games[i-1].id} : null;
+}
+function gcmApplySwipe(act){ if(!act) return; if(act.tab) gcmSetTab(act.tab); else if(act.game) gcPick(act.game); }
+function gcmBindSwipe(sheet){
+  if(!sheet || !sheet.addEventListener || sheet._gcmSwipe) return; sheet._gcmSwipe=true;
+  let x0=null, y0=null, claimed=false;
+  sheet.addEventListener('touchstart', e=>{ const t=e.touches&&e.touches[0]; if(!t) return; x0=t.clientX; y0=t.clientY;
+    claimed=!!(e.target && e.target.closest && e.target.closest('.gc-list,.gcm-grab,select,.ld-sel')); }, {passive:true});
+  sheet.addEventListener('touchend', e=>{ if(x0==null){ return; } const t=e.changedTouches&&e.changedTouches[0]; const sx=x0, sy=y0; x0=null; if(!t || claimed) return;
+    const dx=t.clientX-sx, dy=t.clientY-sy; if(Math.abs(dx)<60 || Math.abs(dy)>Math.abs(dx)*0.7) return;
+    gcmApplySwipe(gcmSwipeAction(dx, _gcm.tab||'games')); }, {passive:true});
+}
 // The picker bar's live line and the pill both open straight to a game.
 function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; _gcm.open='full'; renderGamesPhone(); }
 // The current week's games, whatever week the sheet is showing — the pill reads the present.
@@ -358,6 +381,7 @@ function renderGamesPhone(fromLoad){
       ${page}
     </div>`;
   if(document.body&&document.body.classList) document.body.classList.toggle('gcm-open', open!=='closed');
+  if(open!=='closed' && host.querySelector) gcmBindSwipe(host.querySelector('.gcm-sheet'));
   if(open!=='closed' && host.querySelector){
     const body=host.querySelector('.gc-body'), rail=host.querySelector('.gc-list');
     if(body) body.scrollTop=keep.body;

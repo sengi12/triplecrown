@@ -29,7 +29,7 @@ const app=new Function(code+`
   sleeperPlayers={}; leagueSnapshot=null;
   return { render:renderRightSidebar, phone:renderGamesPhone, set:gcmSet, open:gcOpenGame, pick:gcPick, line:gcPickerLineHTML, on:gcPhoneOn, tab:gcmSetTab, ldSort:ldSort, ldPos:ldSetPos, ld:()=>_ld,
     host:()=>document.getElementById('gamesSheet'), html:()=>document.getElementById('gamesSheet').innerHTML, bodyCls:()=>[...document.body.classList._s], state:()=>_gcm, gc:()=>_gc,
-    setMobile:v=>{mobile=v;}, setStarted:v=>{started=v;}, setDraft:v=>{rosterBarVisible=v;}, setBoard:b=>{ BOARD=b; _tcBoard.at=0; _gc.boards={}; }, sidebar:()=>document.getElementById('leaders') };
+    swipe:gcmSwipeAction, games:gcmCurrentGames, setMobile:v=>{mobile=v;}, setStarted:v=>{started=v;}, setDraft:v=>{rosterBarVisible=v;}, setBoard:b=>{ BOARD=b; _tcBoard.at=0; _gc.boards={}; }, sidebar:()=>document.getElementById('leaders') };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -93,6 +93,19 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   app.ldPos('ALL'); app.tab('games'); await settle(); h=app.html();
   chk(/gc-list/.test(h) && !/gcm-leaders/.test(h), 'back to Games');
   app.set('closed'); await settle();
+
+
+console.log('=== swipes turn the sheet\'s pages ===');
+{
+  const games=app.games()||[];
+  chk(app.swipe(-30,'games')===null && app.swipe(80,'leaders').tab==='games' && app.swipe(-80,'leaders')===null, 'a short swipe does nothing; on Leaders a swipe right returns to the games');
+  if(games.length>=2){
+    app.gc().game=games[0].id;
+    chk(app.swipe(-80,'games').game===games[1].id && app.swipe(80,'games')===null, 'on the first game a swipe left turns to the next game; a swipe right has nowhere to go');
+    app.gc().game=games[games.length-1].id;
+    chk(app.swipe(-80,'games').tab==='leaders' && app.swipe(80,'games').game===games[games.length-2].id, 'past the last game a swipe left opens the Leaders; a swipe right turns back');
+  } else chk(app.swipe(-80,'games').tab==='leaders', 'with no games loaded a swipe left opens the Leaders');
+}
 
   console.log('=== who owns the corner ===');
   app.setDraft(true); app.phone(); chk(app.on()===false && app.host().hidden===true && app.html()==='', 'a draft being followed keeps its drawer — the Games sheet steps aside');

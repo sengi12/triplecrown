@@ -64,13 +64,13 @@ const settle=()=>new Promise(r=>setTimeout(r,15));
   chk(/ld-nm">Caleb Williams</.test(h) && !/ld-col/.test(h), 'at 300px the names fill out (Caleb Williams) — still no columns');
   chk(app.cols(300).length===0 && app.cols(408).length===2 && app.cols(700).length===6, 'one column per 64px past the full-name width, up to the position\'s set');
   app.setWidth(408); app.render(true); h=app.html();
-  chk(/ld-hdr/.test(h) && /ldSort\('tot_yd'\)[^>]*>TOT YD</.test(h) && /ldSort\('tot_td'\)[^>]*>TOT TD</.test(h) && !/PASS YD/.test(h), 'at 408px on ALL: a header with TOT YD and TOT TD, sortable, nothing more yet');
+  chk(/ld-hdr/.test(h) && /ldSort\('tot_yd'\)[^>]*><span>TOT<\/span><span>YD<\/span></.test(h) && /ldSort\('tot_td'\)[^>]*><span>TOT<\/span><span>TD<\/span></.test(h) && !/PASS YD/.test(h), 'at 408px on ALL: a header with TOT YD and TOT TD, sortable, nothing more yet');
   chk(/ld-colh active"[^>]*>PTS</.test(h), 'points is the sort by default');
   app.setPos('QB'); h=app.html();
   chk(/PASS YD/.test(h) && /PASS TD/.test(h) && !/TOT YD/.test(h) && /ld-col[^>]*>300</.test(h), 'QB: the position\'s own columns (PASS YD, PASS TD) with the numbers');
   app.sort('pass_yd'); h=app.html();
   let qo=[...h.matchAll(/ld-nm">([^<]+)</g)].map(m=>m[1]);
-  chk(qo[0]==='Caleb Williams' && /ldSort\('pass_yd'\)[^>]*class="ld-col ld-colh active"|ld-col ld-colh active"[^>]*>PASS YD</.test(h), 'clicking PASS YD sorts by it (Williams 300 over Maye 180) and lights the header');
+  chk(qo[0]==='Caleb Williams' && /ldSort\('pass_yd'\)[^>]*class="ld-col ld-colh active"|ld-col ld-colh active"[^>]*><span>PASS<\/span><span>YD<\/span></.test(h), 'clicking PASS YD sorts by it (Williams 300 over Maye 180) and lights the header');
   app.sort('pass_int'); app.setWidth(600); app.render(true); h=app.html();
   qo=[...h.matchAll(/ld-nm">([^<]+)</g)].map(m=>m[1]);
   chk(qo[0]==='Drake Maye' && /CMP\/ATT/.test(h), 'wider still: more columns (CMP/ATT); sorted by INT puts Maye (2) first');
@@ -84,6 +84,16 @@ const settle=()=>new Promise(r=>setTimeout(r,15));
 console.log('=== the phone sheet takes the compact column budget ===');
 chk(app.cols(390).length===1 && app.cols(390,true).length===3, 'a 390px phone: one column under the desktop budget, three under the phone budget');
 chk(app.cols(320,true).length===2 && app.cols(200,true).length===0, 'narrower phones drop columns one at a time');
+
+
+console.log('=== long stat labels stack their words ===');
+{
+  const st=app.state(); st.rows=[{pid:'1',name:'Alpha Back',pos:'RB',team:'NE',stats:{rush_att:12,rush_yd:80,rush_td:1,rec:2,rec_yd:15}}]; st.pos='RB';
+  app.setWidth(600); app.render(true);
+  const h=app.html();
+  chk(/<span>RUSH<\/span><span>YD<\/span>/.test(h) && /<span>ATT<\/span>/.test(h), 'RUSH YD renders as two stacked words; ATT stays one');
+  st.pos='ALL';
+}
 
   console.log('=== where it does not belong ===');
   app.setMobile(true); app.render();

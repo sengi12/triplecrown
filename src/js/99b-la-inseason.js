@@ -553,8 +553,9 @@ function laDvpPoolView(t){
   }
   const availOnly=!!(taken && laState.dvpAvail);
   const rows=[];
-  for(const p of list){
-    if(!['QB','RB','WR','TE'].includes(p.pos)) continue;
+  const kdef=(typeof laWeekProjKdefRows==='function')?laWeekProjKdefRows(wk):[];
+  for(const p of list.concat(kdef)){
+    if(!['QB','RB','WR','TE','K','DEF'].includes(p.pos)) continue;
     if(pos1 && p.pos!==pos1) continue;
     if(availOnly && taken.has(ecrNormName(p.name))) continue;   // the waiver cut: unrostered only
     const a=laAdjWeekProj({id:p.player_id||p.id, name:p.name, pos:p.pos, team:p.team}, wk, pm, t);
@@ -564,9 +565,9 @@ function laDvpPoolView(t){
     rows.push({p, a});
   }
   // bar scale: the most generous defense per position pins 100%, like the Defenses table
-  const mxA={}; ['QB','RB','WR','TE'].forEach(pp=>{ mxA[pp]=Math.max(...t.codes.map(c=>t.teams[c][pp].fppg))||1; });
+  const mxA={}; ['QB','RB','WR','TE'].forEach(pp=>{ mxA[pp]=Math.max(...t.codes.map(c=>(t.teams[c][pp]||{}).fppg||0))||1; });
   const ps=laState.dvpPoolSort||{col:'proj',dir:-1};
-  const allowedOf=(r)=>(r.a.opp&&t.teams[r.a.opp]&&!r.a.bye&&!r.a.out)?t.teams[r.a.opp][r.p.pos].fppg:null;
+  const allowedOf=(r)=>(r.a.opp&&t.teams[r.a.opp]&&t.teams[r.a.opp][r.p.pos]&&!r.a.bye&&!r.a.out)?t.teams[r.a.opp][r.p.pos].fppg:null;
   const keyOf=(r)=> ps.col==='matchup' ? allowedOf(r) : ps.col==='adj' ? ((r.a.bye||r.a.out)?null:r.a.defMult) : r.a.adj;
   rows.sort((x,y)=>{
     const kx=keyOf(x), ky=keyOf(y);
@@ -578,8 +579,8 @@ function laDvpPoolView(t){
   const body=top.map(({p,a},i)=>{
     const key=ecrNormName(p.name);
     const isMine=mine&&mine.has(key), isTaken=taken&&taken.has(key)&&!isMine;
-    const rk=(a.opp&&t.ranks[a.opp])?t.ranks[a.opp][p.pos]:null;
-    const allowed=(a.opp&&t.teams[a.opp])?t.teams[a.opp][p.pos].fppg:null;
+    const rk=(a.opp&&t.ranks[a.opp])?(t.ranks[a.opp][p.pos]||null):null;
+    const allowed=(a.opp&&t.teams[a.opp]&&t.teams[a.opp][p.pos])?t.teams[a.opp][p.pos].fppg:null;
     const g=laGameInfo(p.team, wk);
     const oppTxt=a.bye?'BYE':(a.opp?`${g&&g.home===false?'@':'vs'} ${a.opp}`:'—');
     const qcls=rk?laQuartile(rk,n):'';
@@ -590,11 +591,12 @@ function laDvpPoolView(t){
       : `<td class="la-pool-opp ${qcls}"><span class="la-pool-oppline">${escHtml(oppTxt)}${rk?` <span class="la-rk">#${rk}</span>`:''}</span>
           ${allowed!=null?`<div class="la-pool-barwrap"><div class="la-pool-bar ${qcls}" style="width:${Math.max(4,100*allowed/mxA[p.pos]).toFixed(0)}%"></div></div>
           <div class="la-pool-allowed">${allowed.toFixed(1)} allowed</div>`:''}</td>`;
-    const multTxt=(a.bye||a.out)?'—':`×${a.defMult.toFixed(2)}`;
+    const multTxt=(a.bye||a.out)?'—':(a.src==='sleeper'?'Slpr':`×${a.defMult.toFixed(2)}`);
     const projTxt=(a.bye||a.out)?'0.0':a.adj.toFixed(1);
     const parts=[`season rate ${a.baseRate!=null?a.baseRate.toFixed(1):'—'}`,
                  a.seas!=null?`to-date ${a.seas.toFixed(1)}`:null,
-                 a.rec3!=null?`last 3 ${a.rec3.toFixed(1)}`:null].filter(Boolean).join(' · ');
+                 a.rec3!=null?`last 3 ${a.rec3.toFixed(1)}`:null,
+                 a.slp!=null?`Sleeper ${a.slp.toFixed(1)}${a.src==='sleeper-gate'?' (not starting — their call stands)':a.src==='sleeper'?' (their line, your scoring)':' (60%)'}`:null].filter(Boolean).join(' · ');
     return `<tr class="${isTaken?'la-pool-taken':''}${(a.bye||a.out)?' la-pool-down':''}">
       <td class="la-pool-num">${i+1}</td>
       <td class="la-pool-player"><span class="clickable-player la-pool-idrow" onclick="${pcardOnclick(p.player_id||p.id||p.name,p.pos,p.team||'')}">
@@ -606,7 +608,7 @@ function laDvpPoolView(t){
       <td class="la-pool-proj" title="${escAttr(parts)} × matchup"><b>${projTxt}</b></td></tr>`;
   }).join('');
   const wkDone=(typeof completedWeeks==='function')?completedWeeks():0;
-  const chips=['ALL','QB','RB','WR','TE'].map(pp=>`<button class="pos-filter-btn ${((laState.dvpPos||'ALL')===pp)?'active':''}" onclick="laSetDvpPos('${pp}')">${pp}</button>`).join('');
+  const chips=['ALL','QB','RB','WR','TE','K','DEF'].map(pp=>`<button class="pos-filter-btn ${((laState.dvpPos||'ALL')===pp)?'active':''}" onclick="laSetDvpPos('${pp}')">${pp}</button>`).join('');
   return `
     <div class="la-ins-bar"><span class="la-ins-lbl">THIS WEEK'S MATCHUPS — WEEK ${wk}</span>
       ${laDvpModeToggle()}
@@ -714,11 +716,96 @@ function laWeeklyFormMap(){
   _laFormMemo=m; _laFormSig=sig;
   return m;
 }
+// ── Sleeper's weekly projections: the informant ──────────────────────────────
+// Our blend knows production; it does not know who is starting Sunday. Sleeper's weekly
+// line does — an injured or benched player projects at zero there — and it carries a full
+// stat line for every position, kickers and defenses included, with the opponent. Measured
+// on week 2 of 2026 against the Fantasy Footballers' rankings (Spearman, top of each
+// position): ours alone QB .76 / RB .92 / WR .72 / TE .55, Sleeper alone .83 / .93 / .90 /
+// .87, and a 60/40 blend toward Sleeper .87 / .98 / .88 / .86 — the best RB figure and
+// within a few hundredths of the best everywhere else. So: LA_WEEK_SLEEPER_W of the number
+// is Sleeper's, and when Sleeper says "not playing" (under LA_WEEK_SLEEPER_GATE) while we
+// still project a starter's day — a backup quarterback, a player who has not won the job —
+// its call stands. K and D/ST take Sleeper's line outright, scored under the league's own
+// table (tcSleeperPoints), since the weekly model has no matchup table for them.
+const LA_WEEK_PROJ_POS = ['QB','RB','WR','TE','K','DEF'];
+const LA_WEEK_PROJ_URL = (season, wk)=>`https://api.sleeper.com/projections/nfl/${season}/${wk}?season_type=regular`+LA_WEEK_PROJ_POS.map(p=>`&position[]=${p}`).join('');
+const LA_WEEK_PROJ_TTL = 30*60*1000;
+const LA_WEEK_SLEEPER_W = 0.6;
+const LA_WEEK_SLEEPER_GATE = 1.5;
+var _laWp = { byWeek:{} };
+function _laWpEntry(wk){
+  const season=(typeof TC_SEASON!=='undefined' && TC_SEASON) ? TC_SEASON.year : null;
+  if(!season || !wk) return null;
+  const key=`${season}|${wk}`;
+  return _laWp.byWeek[key] = _laWp.byWeek[key] || { rows:null, at:0, busy:false, fails:0, promise:null, season, wk };
+}
+// The week's rows ({pid → {stats, opp, team, pos}}) from the cache — and, unless told not
+// to, a fetch kicked off when they are missing or (the current week) stale.
+function laWeekProjFeed(wk, kick){
+  const d=_laWpEntry(wk); if(!d) return null;
+  const cur = (typeof laCurrentWeek==='function') && wk===laCurrentWeek();
+  if(kick!==false && !d.busy && d.fails<3 && typeof sleeperFetch==='function'
+     && (!d.rows || (cur && Date.now()-d.at>LA_WEEK_PROJ_TTL))){
+    d.busy=true;
+    d.promise = sleeperFetch(LA_WEEK_PROJ_URL(d.season, wk)).then(list=>{
+      const rows={};
+      (list||[]).forEach(r=>{ const pid=r.player_id||(r.player&&r.player.player_id); if(!pid || !r.stats) return;
+        rows[String(pid)]={ stats:r.stats, opp:r.opponent||null, team:r.team||null, pos:(r.player&&r.player.position)||null }; });
+      if(Object.keys(rows).length){ d.rows=rows; d.at=Date.now(); laWeekProjLanded(); }
+      else d.fails++;
+      return d.rows;
+    }).catch(()=>{ d.fails++; return d.rows; }).finally(()=>{ d.busy=false; });
+  }
+  return d.rows;
+}
+// The same, as a promise (the Multi-League hub waits for it before pricing a league).
+function laWeekProjLoad(wk){
+  const rows=laWeekProjFeed(wk); const d=_laWpEntry(wk);
+  return (d && d.promise) ? d.promise : Promise.resolve(rows);
+}
+function laWeekProjAt(wk){ const d=_laWpEntry(wk); return d ? d.at : 0; }
+function laWeekProjLanded(){
+  if(typeof _laInsRerender==='function') _laInsRerender();
+  if(typeof _hubSnapMemo!=='undefined' && _hubSnapMemo) _hubSnapMemo.sig='';
+  if(typeof renderWeekHub==='function') renderWeekHub();
+}
+// One player's projected row: by Sleeper id, or for a defense by its team code (Sleeper's
+// id for a D/ST is the team abbreviation).
+function laWeekProjRow(rows, p){
+  if(!rows || !p) return null;
+  const id = p.id!=null ? String(p.id) : '';
+  return (id && rows[id]) || (p.pos==='DEF' ? rows[String(p.team||'').toUpperCase()] : null) || null;
+}
+// Points for a projected line: the league's own scoring table when one is synced, else the
+// app's format (Sleeper's own half-PPR / PPR / standard totals).
+function laWeekProjPts(row, scRaw){
+  if(!row || !row.stats) return null;
+  if(scRaw && typeof tcSleeperPoints==='function'){ const v=tcSleeperPoints(row.stats, scRaw); if(v!=null) return v; }
+  const st=row.stats;
+  const rec=(typeof scoringSettings!=='undefined' && scoringSettings) ? Number(scoringSettings.receptions||0) : 0.5;
+  const k = rec>=1 ? 'pts_ppr' : rec>0 ? 'pts_half_ppr' : 'pts_std';
+  return st[k]!=null ? +st[k] : (st.pts_half_ppr!=null ? +st.pts_half_ppr : null);
+}
+// Kickers and defenses as projection rows for the week's boards, from the feed (the
+// projection list carries neither): {player_id, name, pos, team}.
+function laWeekProjKdefRows(wk){
+  const rows=laWeekProjFeed(wk, false); const out=[];
+  if(!rows) return out;
+  for(const pid in rows){
+    const r=rows[pid]; if(r.pos!=='K' && r.pos!=='DEF') continue;
+    if(r.pos==='DEF'){ const code=String(pid).toUpperCase(); out.push({player_id:code, name:`${(typeof teamDisplayName==='function')?teamDisplayName(code):code} D/ST`, pos:'DEF', team:code}); }
+    else { const sp=(typeof sleeperPlayers!=='undefined' && sleeperPlayers) ? sleeperPlayers[pid] : null; if(!sp || !sp.name) continue; out.push({player_id:String(pid), name:sp.name, pos:'K', team:sp.team||r.team||''}); }
+  }
+  return out;
+}
 // Weekly projection = OUR blend, not a flat season-projection ÷ 17:
 //   35% season projection rate + 30% season-to-date FPPG + 35% last-3-weeks FPPG,
 // then the opponent's defense-vs-position multiplier (±10%). A back who took over the
 // backfield two weeks ago projects like the starter he now is (the old formula gave
 // Kimani Vidal 0.15 the week he scored 17), and a faded role fades the number.
+// Then Sleeper's weekly line (above): 60% of the answer, and the whole answer when it says
+// he is not playing; kickers and defenses take it outright.
 function laAdjWeekProj(p, wk, pm, dvp){
   const paceE=(typeof paceForPlayer==='function')?paceForPlayer(p.name,p.pos,p.id):null;
   const projG=(paceE && paceE.projGames>0)?paceE.projGames:17;
@@ -727,6 +814,11 @@ function laAdjWeekProj(p, wk, pm, dvp){
   const zero={adj:0, base, baseRate:base, seas:null, rec3:null, defMult:1, opp:null, bye:avail.bye, out:avail.out, status:avail.status};
   // Bye week / ruled out: zero, so the optimizer never "starts" a player who cannot score.
   if(avail.bye || avail.out) return zero;
+  const wp=laWeekProjRow(laWeekProjFeed(wk), p);
+  const scRaw=(typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.scoringRaw) || null;
+  const slp=wp ? laWeekProjPts(wp, scRaw) : null;
+  if((p.pos==='K' || p.pos==='DEF') && slp!=null)
+    return {adj:slp, base:slp, baseRate:slp, seas:null, rec3:null, defMult:1, opp:wp.opp||null, slp, src:'sleeper', bye:false, out:false, status:avail.status};
   const pace=(typeof paceForPlayer==='function')?paceForPlayer(p.name,p.pos,p.id):null;
   const gp=pace?pace.gp:0;
   const seas=(pace && gp>0)?pace.act/gp:null;
@@ -746,7 +838,12 @@ function laAdjWeekProj(p, wk, pm, dvp){
     const r=dvp.ranks[opp][p.pos], n=dvp.codes.length||32;
     defMult=1.10 - 0.20*((r-1)/Math.max(1,n-1));
   }
-  return {adj: exp*defMult, base, baseRate:base, seas, rec3, defMult, opp,
+  let adj=exp*defMult, src='blend';
+  if(slp!=null){
+    if(slp<LA_WEEK_SLEEPER_GATE && adj>3){ adj=slp; src='sleeper-gate'; }   // not playing / not starting: their call
+    else adj=(1-LA_WEEK_SLEEPER_W)*adj + LA_WEEK_SLEEPER_W*slp;
+  }
+  return {adj, base, baseRate:base, seas, rec3, defMult, opp: opp||(wp&&wp.opp)||null, slp, src,
     thin: gp>0 && gp<3};
 }
 // ── Waivers, ranked for THIS WEEK ───────────────────────────────────────────
@@ -768,9 +865,10 @@ function laWeekPickupsHTML(s){
   const posF=laState.baPos||'ALL';
   let pool=[];
   try{ pool=buildProjectionList()||[]; }catch(e){}
-  const scored=pool
-    .filter(p=>['QB','RB','WR','TE'].includes(p.pos)
-      && !rostered.has(ecrNormName(p.name))
+  const kdef=(typeof laWeekProjKdefRows==='function')?laWeekProjKdefRows(wk):[];
+  const scored=pool.concat(kdef)
+    .filter(p=>['QB','RB','WR','TE','K','DEF'].includes(p.pos)
+      && !rostered.has(ecrNormName(p.name)) && !(p.pos==='DEF' && rostered.has(ecrNormName(p.team||'')))
       && (posF==='ALL'||p.pos===posF))
     .map(p=>({ p, a: laAdjWeekProj({id:p.player_id, name:p.name, pos:p.pos, team:p.team}, wk, pm, dvp) }))
     .filter(x=>x.a.adj>0 && !x.a.bye && !x.a.out)
@@ -790,7 +888,7 @@ function laWeekPickupsHTML(s){
       return elig.length ? Math.min(...elig.map(f=>f.player._a.adj)) : null;
     };
   }
-  const chips=['ALL','QB','RB','WR','TE'].map(x=>
+  const chips=['ALL','QB','RB','WR','TE','K','DEF'].map(x=>
     `<button class="format-btn ${posF===x?'active':''}" onclick="laState.baPos='${x}';renderLeagueAnalyzer()">${x}</button>`).join('');
   if(!scored.length)
     return `<div class="la-lens"><span class="la-lens-lbl">Position:</span>${chips}</div>
@@ -819,10 +917,10 @@ function laWeekPickupsHTML(s){
       <div class="la-ba-row la-ba-head"><span class="la-ba-rk">#</span><span class="rt-slot" style="visibility:hidden">POS</span>
         <span class="la-ba-name">PLAYER</span><span class="la-ba-game">WEEK ${wk}</span>
         ${hasBids?`<span class="la-ba-bid" title="The wire's price: the bid the Lineup pane would put on him">BID</span>`:''}
-        <span class="la-ba-fpts" title="Week-adjusted projection: 35% preseason + 30% season FPPG + 35% last-3, × defense-vs-position">WK PROJ</span></div>
+        <span class="la-ba-fpts" title="Week-adjusted projection: our blend (35% preseason + 30% season FPPG + 35% last-3, × defense-vs-position) at 40% and Sleeper's weekly line at 60%; Sleeper's call stands when it has him not playing">WK PROJ</span></div>
       ${rows}
     </div>
-    <div class="la-note la-note-min">${dvp?'':'matchup adjustment pending — defensive splits still loading · '}rostered players in this league are excluded · K/DEF live on the Season value lens</div>`;
+    <div class="la-note la-note-min">${dvp?'':'matchup adjustment pending — defensive splits still loading · '}rostered players in this league are excluded · K and D/ST are Sleeper's weekly line under this league's scoring</div>`;
 }
 
 function laToggleLhShowAll(){ laState.lhShowAll=!laState.lhShowAll; laRerenderKeepScroll(); }

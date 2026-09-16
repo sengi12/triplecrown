@@ -240,7 +240,11 @@ function rankingsRenderCacheKey(teamScoped){
   ].join('|');
 }
 
+// The board's default sort: ECR for a draft board, FPTS once the season is under way — the
+// projection the app maintains week to week is the ranking then, not August's consensus.
+function rankDefaultSortKey(){ return (typeof hasSeasonStarted==='function' && hasSeasonStarted()) ? 'fpts' : 'ecr'; }
 function renderRankings(){
+  if(typeof rankSortAuto!=='undefined' && rankSortAuto && rankSortKey==='ecr' && rankDefaultSortKey()==='fpts'){ rankSortKey='fpts'; rankSortDir=-1; }
   const _rkNow = ()=>((typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now());
   const _rkDebug = (typeof tcLatencyDebugEnabled==='function' && tcLatencyDebugEnabled());
   const _rkT0 = _rkNow();
@@ -915,6 +919,7 @@ function renderRankings(){
 function rankSort(k){
   // In column-edit mode headers are drag handles, not sort buttons.
   if(typeof rankColEditActive!=='undefined' && rankColEditActive) return;
+  rankSortAuto=false;
   if(rankSortKey===k) rankSortDir*=-1;
   else { rankSortKey=k; rankSortDir=k==='ecr'?-1:-1; }
   // renderRankings() replaces #content wholesale, so BOTH scroll positions are lost: the page's
@@ -962,7 +967,7 @@ function setRankFormat(f){
   rankFormat=f;
   const preset=FORMAT_PRESETS[f];
   if(preset){ Object.assign(scoringSettings,preset); }
-  rankSortKey='ecr'; rankSortDir=-1;
+  rankSortKey=rankDefaultSortKey(); rankSortDir=-1;
   saveSession();
   rankingsRenderWithViewPreserved();
   toast(`${formatLabel(f)} — ECR + scoring applied`,'ok');
@@ -1010,7 +1015,7 @@ function applyTwoAxisFormat(type, scoring){
   rankFormat = combineFormat(type, scoring);
   const preset = FORMAT_PRESETS[scoring];   // scoring axis — not rankFormat — drives reception points
   if(preset){ Object.assign(scoringSettings, preset); }
-  rankSortKey='ecr'; rankSortDir=-1;
+  rankSortKey=rankDefaultSortKey(); rankSortDir=-1;
   saveSession();
   rankingsRenderWithViewPreserved();
   toast(`${formatLabel(rankFormat)} — ECR + scoring applied`,'ok');
@@ -1291,7 +1296,7 @@ function setRankAdvanced(v){
     rankSortKey = sv ? ('sumer:'+sv.cols[0]) : 'ecr';
     rankSortDir = -1;
   } else if(rankSortKey.startsWith('sumer:')){
-    rankSortKey='ecr'; rankSortDir=-1;
+    rankSortKey=rankDefaultSortKey(); rankSortDir=-1;
   }
   rankingsRenderWithViewPreserved();
 }

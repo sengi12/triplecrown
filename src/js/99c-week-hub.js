@@ -57,6 +57,13 @@ function hubWeekProj(row, ctx){
   const opp = (sched && sched[team]) ? (sched[team][String(wk)]||null) : null;
   const zero = {adj:0, base, seas:null, rec3:null, gp:0, defMult:1, opp, oppRank:null, bye:avail.bye, out:avail.out, status:avail.status, thin:false};
   if(avail.bye || avail.out) return zero;
+  // Sleeper's weekly line (99b laWeekProjFeed): 60% of a skill player's number, the whole
+  // number when it has him not playing, and the number outright for K and D/ST — scored
+  // under THIS league's raw table (ctx.scRaw).
+  const wp = ctx.weekProj ? (ctx.weekProj[String(row.player_id)] || (row.pos==='DEF' ? ctx.weekProj[String(team)] : null)) : null;
+  const slp = (wp && typeof laWeekProjPts==='function') ? laWeekProjPts(wp, ctx.scRaw||null) : null;
+  if((row.pos==='K' || row.pos==='DEF') && slp!=null)
+    return {adj:slp, base:slp, seas:null, rec3:null, gp:0, defMult:1, opp:wp.opp||opp, oppRank:null, bye:false, out:false, status:avail.status, thin:false, slp, src:'sleeper'};
   const fe = ctx.form ? ctx.form.get(String(row.player_id)) : null;
   const gp = fe ? fe.gp : 0;
   const seas = (fe && gp>0) ? fe.fppg : null;
@@ -72,7 +79,13 @@ function hubWeekProj(row, ctx){
     oppRank = r;
     defMult = 1.10 - 0.20*((r-1)/Math.max(1, n-1));   // rank 1 = most generous → +10%
   }
-  return {adj: exp*defMult, base, seas, rec3, gp, defMult, opp, oppRank, bye:false, out:false, status:avail.status, thin: gp>0 && gp<3};
+  let adj = exp*defMult, src = 'blend';
+  if(slp!=null){
+    const W = (typeof LA_WEEK_SLEEPER_W!=='undefined') ? LA_WEEK_SLEEPER_W : 0.6;
+    const G = (typeof LA_WEEK_SLEEPER_GATE!=='undefined') ? LA_WEEK_SLEEPER_GATE : 1.5;
+    if(slp<G && adj>3){ adj=slp; src='sleeper-gate'; } else adj=(1-W)*adj + W*slp;
+  }
+  return {adj, base, seas, rec3, gp, defMult, opp: opp||(wp&&wp.opp)||null, oppRank, bye:false, out:false, status:avail.status, thin: gp>0 && gp<3, slp, src};
 }
 
 // Per-player weekly lines under a league's scoring, from the sidecar's usage lines.
@@ -796,7 +809,7 @@ async function hubLoadLeague(ref, prof, wk, shared){
   const form = hubFormMap(sc);
   let myUserId = prof && prof.user ? prof.user.user_id : null;
   if(!myUserId && prof && prof.username){ const u=(users||[]).find(x=>(x.display_name||'').toLowerCase()===String(prof.username).toLowerCase()); if(u) myUserId=u.user_id; }
-  const ctx = Object.assign({}, shared, {sc, form, myUserId, wk});
+  const ctx = Object.assign({}, shared, {sc, form, myUserId, wk, scRaw:(lg.scoring_settings&&typeof lg.scoring_settings==='object')?lg.scoring_settings:null});
   // projection rank within position under this scoring (for CLOSE CALL rank gaps + spike test)
   const projRank = new Map(); const usageRank = new Map();
   ['QB','RB','WR','TE'].forEach(pos=>{
@@ -822,8 +835,9 @@ async function hubLoadAll(force){
     const wk = (typeof laCurrentWeek==='function') ? laCurrentWeek() : 1;
     const byId = new Map(); buildProjectionList().forEach(p=>{ if(p.player_id!=null) byId.set(String(p.player_id), p); });
     let trending=null; try{ trending=await hubTrending(); }catch(e){ trending=null; }
+    let weekProj=null; try{ weekProj = (typeof laWeekProjLoad==='function') ? await laWeekProjLoad(wk) : null; }catch(e){ weekProj=null; }
     const shared = { byId, wk, now:Date.now(), dvp:(typeof laDvpTable==='function')?laDvpTable():null,
-                     sched:(typeof TC_INSEASON!=='undefined' && TC_INSEASON && TC_INSEASON.schedule)||null, trending };
+                     sched:(typeof TC_INSEASON!=='undefined' && TC_INSEASON && TC_INSEASON.schedule)||null, trending, weekProj };
     hubState.week = wk;
     for(const ref of list){
       try{ hubState.results[ref.league_id] = await hubLoadLeague(ref, prof, wk, shared); }
@@ -919,7 +933,7 @@ function hubSnapshotResult(s){
   const wk=(typeof laCurrentWeek==='function')?laCurrentWeek():1;
   const mu=(typeof _laMu!=='undefined' && _laMu.byWeek && _laMu.byWeek[wk])||null;
   const ref=(typeof laSnapshotRef==='function')?String(laSnapshotRef(s)):String(s.leagueId);
-  const sig=`${ref}~${wk}~${mu?mu.sig:''}~${(typeof TC_INSEASON!=='undefined'&&TC_INSEASON&&TC_INSEASON.asof)||''}~${(typeof buildPlayerScoringSig==='function')?buildPlayerScoringSig():''}`;
+  const sig=`${ref}~${wk}~${mu?mu.sig:''}~${(typeof TC_INSEASON!=='undefined'&&TC_INSEASON&&TC_INSEASON.asof)||''}~${(typeof buildPlayerScoringSig==='function')?buildPlayerScoringSig():''}~${(typeof laWeekProjAt==='function')?laWeekProjAt(wk):0}`;
   if(_hubSnapMemo.sig===sig) return _hubSnapMemo.res;
   // The snapshot carries the league's type and FAAB settings, so the wire prices bids here
   // exactly as the Multi-League hub does — a Chopped league on its chop market.
@@ -932,7 +946,7 @@ function hubSnapshotResult(s){
   const form=(typeof hubFormMap==='function')?hubFormMap(null):new Map();
   const ctx={sc:null, wk, now:Date.now(), byId, form, myUserId:s.myUserId,
     dvp:(typeof laDvpTable==='function')?laDvpTable():null, sched:(typeof TC_INSEASON!=='undefined'&&TC_INSEASON&&TC_INSEASON.schedule)||null, faabCurve:null,
-    faabChop:hubChopHist(lg)};
+    faabChop:hubChopHist(lg), weekProj:(typeof laWeekProjFeed==='function')?laWeekProjFeed(wk):null, scRaw:s.scoringRaw||null};
   // A Chopped FAAB league without its history in the cache fetches it once (the seasons behind
   // this one, by chain and by name) and re-renders when it lands; until then the study prices.
   if(lg.settings.type===3 && lg.settings.waiver_type===2 && !ctx.faabChop && !_hubSnapHistBusy[lg.league_id]){

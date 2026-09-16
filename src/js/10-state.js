@@ -21,6 +21,7 @@ let passingSubTab = 'targets';
 let rushingSubTab = 'carries';
 let pieChart = null;
 let rankSortKey = 'ecr';
+let rankSortAuto = true;      // the board's sort is still the default (in season: FPTS), not a user's pick
 let VOR_BASELINE = {};   // {QB,RB,WR,TE} replacement-level fpts from the last VOR computation
 let rankSortDir = -1;
 let rankFormat = 'half_ppr';   // std | ppr | half_ppr | superflex | dynasty (matches default 0.5 PPR scoring)

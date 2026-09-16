@@ -16,6 +16,8 @@ const app=new Function(code+`return {
   setInseason:(x)=>{TC_INSEASON=x;}, setSnapshot:(s)=>{leagueSnapshot=s;}, setPhaseVar:(p)=>{currentPhase=p;},
   setSleeperFetch:(f)=>{sleeperFetch=f;},
   setPaceForPlayer:(f)=>{paceForPlayer=f;},
+  setWeekProj:(wk,rows)=>{ const d=_laWpEntry(wk); d.rows=rows; d.at=Date.now(); d.fails=9; }, laWeekProjKdefRows, laWeekProjPts, laProjMap,
+  setPlayers:(p)=>{ sleeperPlayers=Object.assign({}, (typeof sleeperPlayers!=='undefined'&&sleeperPlayers)||{}, p); },
   scoring:scoringSettings };`)();
 
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -110,6 +112,32 @@ app.laState.dvpPoolSort={col:'matchup',dir:1};
 const byMatchUp=allowedSeq(app.laDvpView({}));
 chk(byMatchUp.length>=2 && byMatchUp.every((v,i)=>!i || byMatchUp[i-1]<=v), 'flipped: the stingiest first');
 app.laState.dvpPoolSort=null;
+console.log('=== Sleeper\'s weekly line: 60% of the number, the whole number when he is not playing, K and D/ST outright ===');
+app.TC_SEASON.week=3;
+app.setBPL(()=>[{player_id:'w1',name:'Easy Street',pos:'WR',team:'BUF',fpts:180},{player_id:'w2',name:'Hard Knocks',pos:'WR',team:'MIA',fpts:180}]);
+app.setProjMap(()=>new Map([['easy street|WR',180],['hard knocks|WR',180]]));
+app.setSnapshot(null); app.laState.dvpMode='pool'; app.laState.dvpPos='ALL'; app.laState.dvpPoolSort=null; app.laState.dvpAvail=false;
+const t3=app.laDvpTable(), pm3=app.laProjMap?app.laProjMap():new Map([['easy street|WR',180],['hard knocks|WR',180]]);
+const ours=app.laAdjWeekProj({id:'w1',name:'Easy Street',pos:'WR',team:'BUF'}, 3, pm3, t3);
+app.setWeekProj(3, { w1:{stats:{pts_half_ppr:20, pts_ppr:24, pts_std:16}, opp:'BBB', pos:'WR'}, w2:{stats:{pts_half_ppr:0.5}, opp:'AAA', pos:'WR'},
+  BUF:{stats:{sack:3, int:1, pts_allow_7_13:1, pts_half_ppr:9}, opp:'MIA', pos:'DEF'}, '7777':{stats:{fgm:2, xpm:3, pts_half_ppr:9}, opp:'NYJ', pos:'K'} });
+const blend=app.laAdjWeekProj({id:'w1',name:'Easy Street',pos:'WR',team:'BUF'}, 3, pm3, t3);
+chk(Math.abs(blend.adj-(0.4*ours.adj+0.6*20))<1e-6 && blend.slp===20 && blend.src==='blend', `Easy Street: 40% ours (${ours.adj.toFixed(1)}) + 60% Sleeper (20) = ${blend.adj.toFixed(1)}`);
+const gated=app.laAdjWeekProj({id:'w2',name:'Hard Knocks',pos:'WR',team:'MIA'}, 3, pm3, t3);
+chk(gated.adj===0.5 && gated.src==='sleeper-gate', 'Hard Knocks: Sleeper has him at 0.5 while we projected a starter\'s day — their call stands');
+app.setSnapshot({provider:'sleeper', leagueId:'L7', season:'2026', myUserId:'u1', teamList:[{rosterId:1, ownerId:'u1', players:[]}], scoringRaw:{sack:1, int:2, pts_allow_7_13:4, fgm:3, xpm:1}});
+const dst=app.laAdjWeekProj({id:'BUF',name:'Buffalo Bills D/ST',pos:'DEF',team:'BUF'}, 3, pm3, t3);
+chk(dst.adj===9 && dst.src==='sleeper' && dst.opp==='MIA', 'a defense takes Sleeper\'s line under the league\'s own table: 3 sacks + 1 INT + 7-13 allowed = 9, opponent from the feed');
+app.setPlayers({'7777':{name:'Leg Kicker',pos:'K',team:'LAC'}});
+const kd=app.laWeekProjKdefRows(3);
+chk(kd.some(r=>r.pos==='DEF' && r.player_id==='BUF' && /D\/ST/.test(r.name)) && kd.some(r=>r.pos==='K' && r.name==='Leg Kicker'), 'kickers and defenses become projection rows from the feed');
+app.laState.dvpPos='DEF';
+const poolDef=app.laDvpView({});
+chk(/Buffalo Bills D\/ST|BUF D\/ST/.test(poolDef) && /Slpr/.test(poolDef) && /laSetDvpPos\('DEF'\)/.test(poolDef) && /laSetDvpPos\('K'\)/.test(poolDef), 'the Players lens lists defenses with Sleeper\'s number and offers K and DEF chips');
+app.setSnapshot(null);
+const noLg=app.laAdjWeekProj({id:'BUF',name:'Buffalo Bills D/ST',pos:'DEF',team:'BUF'}, 3, pm3, t3);
+chk(noLg.adj===9 && noLg.src==='sleeper', 'without a synced league a defense reads Sleeper\'s half-PPR total');
+app.laState.dvpPos='ALL'; app.laState.dvpPoolSort=null;
   app.laState.dvpMode='def'; app.laState.dvpPos='ALL';
   chk(app.laDvpView({}).includes('la-dvp-table'), 'toggling back restores the Defenses lens');
 }
@@ -233,6 +261,7 @@ console.log('=== player card: the live season lists what is coming ===');
   app.setInseason(null);
   chk(app.pcardAppendFutureWeeks(played.slice(), 'MIA').length===2, 'preseason (no sidecar) appends nothing');
 }
+
 
 
 console.log(`\n${pass}/${total}`);

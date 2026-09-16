@@ -29,3 +29,6 @@
 .ld-colh.active{color:var(--accent);}
 .ld-empty{font-size:11px;color:var(--muted);padding:10px 12px;}
 @media (max-width:760px){ .sidebar.leaders{display:none;} }
+/* A long stat label stacks its words, like the main rankings table's headers. */
+.ld-colh{display:inline-flex;flex-direction:column;align-items:flex-end;justify-content:flex-end;line-height:1.05;}
+.ld-hdr{align-items:flex-end;}
