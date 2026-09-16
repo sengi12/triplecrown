@@ -32,15 +32,23 @@ app.setClient(client); app.closeModal();
   chk(calls.oauth.length===1 && calls.oauth[0].options.redirectTo==='https://sengi12.github.io/triplecrown/' && !calls.oauth[0].options.skipBrowserRedirect, 'redirects back to the page URL and lets the SDK navigate');
 
   console.log('=== in the phone app: the system browser, and the code on the app\'s own scheme ===');
-  global.window.Capacitor={ isNativePlatform:()=>true, Plugins:{
+  // The bridge as the live-site page sees it: no plugin JavaScript bundled, so Plugins is
+  // empty; the native headers list what is installed and registerPlugin returns the proxy.
+  const natives={
     Browser:{ open:async(o)=>{ calls.browser.push(['open',o.url]); }, close:async()=>{ calls.browser.push(['close']); } },
-    App:{ addListener:(ev,fn)=>{ calls.listeners.push(ev); global._appUrl=fn; } } } };
+    App:{ addListener:(ev,fn)=>{ calls.listeners.push(ev); global._appUrl=fn; } } };
+  global.window.Capacitor={ isNativePlatform:()=>true, Plugins:{}, PluginHeaders:[{name:'Browser'},{name:'App'},{name:'WebView'}],
+    registerPlugin:(name)=>{ calls.registered=(calls.registered||[]).concat(name); return natives[name]; } };
   chk(app.isNative()===true, 'the bridge says native');
   app.signIn(); await new Promise(r=>setTimeout(r,5));
   const o=calls.oauth[1];
   chk(o && o.options.redirectTo===app.redirect && o.options.skipBrowserRedirect===true && app.redirect==='com.sengi.triplecrown://auth/callback', 'asks Supabase for the URL only, with the app\'s own callback');
   chk(calls.browser.some(c=>c[0]==='open' && /accounts\.google\.com/.test(c[1])) && opened.length===0, 'opens Google in the system browser (a Custom Tab), not a window');
   chk(calls.listeners.includes('appUrlOpen'), 'listens for the app being opened by a URL');
+  chk((calls.registered||[]).includes('Browser') && (calls.registered||[]).includes('App'), 'the plugins are reached through registerPlugin, since the page bundles no plugin JavaScript');
+  global.window.Capacitor.PluginHeaders=[{name:'WebView'}];
+  chk(app.isNative()===true && (()=>{ let t=null; try{ t=(new Function(code+'return _tcNativePlugin;'))()('Browser'); }catch(e){} return t===null; })(), 'a plugin the shell does not carry is null, not a proxy that would throw later');
+  global.window.Capacitor.PluginHeaders=[{name:'Browser'},{name:'App'}];
   await global._appUrl({url:'com.sengi.triplecrown://auth/callback?code=abc123'});
   chk(calls.exchanged[0]==='abc123' && calls.browser.some(c=>c[0]==='close') && closed.length===1 && toasts.includes('ok:Signed in'), 'the code comes back, the browser closes, the session is exchanged, the modal closes');
   chk(await app.handle('https://sengi12.github.io/triplecrown/?code=zzz')===false && calls.exchanged.length===1, 'a URL that is not the callback is ignored');
