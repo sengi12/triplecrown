@@ -75,6 +75,33 @@ html.scheme-locked, html.scheme-locked body{overflow:hidden;overscroll-behavior:
 .scheme-insight-sub{font-size:10px;color:#5a5545;margin-top:5px;line-height:1.4;}
 .scheme-insight-note{margin-top:10px;padding:8px 9px;border-radius:2px;border:1.5px dashed #000;background:#ece5d3;font-size:11px;color:#5a5545;line-height:1.55;}
 .scheme-insight-note b{color:#1a1a17;}
+/* Tendencies tab (73b-scheme-tendencies.js): the paper cards, the run/pass bar with the
+   league's tick, the yellow/green/pink rank stamps. */
+.scheme-tend .tn-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:8px;}
+.scheme-tend .tn-card{background:#ece5d3;border:1.5px solid #000;border-radius:2px;padding:9px;min-width:0;}
+.scheme-tend .tn-h{font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;border-bottom:1.5px solid #000;padding-bottom:3px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;color:#1a1a17;}
+.scheme-tend .tn-h small{font-size:9px;font-weight:700;letter-spacing:0;text-transform:none;color:#5a5545;}
+.scheme-tend .tn-stamp{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+.scheme-tend .tn-stamp b{font-size:28px;line-height:1;font-weight:900;color:#1a1a17;}
+.scheme-tend .tn-stamp .lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:#5a5545;font-weight:800;}
+.scheme-tend .tn-rank{background:#f5e04b;border:1px solid #000;padding:1px 6px;font-size:9.5px;font-weight:900;white-space:nowrap;color:#1a1a17;}
+.scheme-tend .tn-rank.lo{background:#f7a8c4;} .scheme-tend .tn-rank.hi{background:#8fd06a;}
+.scheme-tend .tn-line{font-size:10px;color:#5a5545;margin-top:6px;line-height:1.5;}
+.scheme-tend .tn-line b{color:#1a1a17;}
+.scheme-tend .tn-row{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(90px,1.2fr) 44px;gap:8px;align-items:center;padding:3px 0;border-bottom:1px dotted #c9c1ab;font-size:10.5px;color:#1a1a17;}
+.scheme-tend .tn-row .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.scheme-tend .tn-row .lbl small{color:#8a8470;font-size:9px;margin-left:4px;}
+.scheme-tend .tn-row .epa{text-align:right;font-weight:900;font-size:10.5px;}
+.scheme-tend .tn-bar{height:16px;background:#ddd6c4;border:1px solid #000;position:relative;overflow:hidden;font-size:9px;display:flex;font-weight:700;}
+.scheme-tend .tn-bar .run{background:#8fd06a;color:#1a1a17;height:100%;display:flex;align-items:center;padding-left:4px;white-space:nowrap;overflow:hidden;}
+.scheme-tend .tn-bar .pass{background:#4f83cc;color:#fff;height:100%;display:flex;align-items:center;justify-content:flex-end;padding-right:4px;white-space:nowrap;overflow:hidden;}
+.scheme-tend .tn-bar .lg{position:absolute;top:-2px;bottom:-2px;width:2px;background:#1a1a17;}
+.scheme-tend .tn-bar .fill{background:#a8321f;color:#fff;height:100%;display:flex;align-items:center;padding-left:4px;white-space:nowrap;overflow:hidden;}
+.scheme-tend .tn-kv{display:grid;grid-template-columns:1fr;gap:2px 12px;font-size:11px;}
+.scheme-tend .tn-kv .stat{display:flex;justify-content:space-between;gap:6px;border-bottom:1px dotted #c9c1ab;align-items:baseline;flex-wrap:wrap;padding:1px 0;}
+.scheme-tend .tn-kv .stat span{color:#5a5545;font-size:10px;}
+.scheme-tend .tn-kv .stat b{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px 5px;min-width:0;text-align:right;align-items:baseline;color:#1a1a17;font-weight:900;}
+.scheme-tend .tn-kv .stat b small{color:#8a8470;font-weight:700;margin-left:4px;font-size:9px;}
 .scheme-help{display:inline-block;position:relative;vertical-align:middle;}
 .scheme-help-btn{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-left:4px;border:1px solid #000;border-radius:50%;background:#f5e04b;color:#1a1a17;font-size:9px;font-weight:900;line-height:1;cursor:pointer;list-style:none;}
 .scheme-help-btn::-webkit-details-marker{display:none;}
@@ -163,4 +190,8 @@ html.scheme-locked, html.scheme-locked body{overflow:hidden;overscroll-behavior:
   .scheme-benefit-why{grid-column:1 / -1;font-size:9px;}
   .scheme-grid{grid-template-columns:1fr;}
   .scheme-split{grid-template-columns:1fr;}
+  .scheme-tend .tn-grid{grid-template-columns:1fr;}
+  .scheme-tend .tn-card{padding:8px;}
+  .scheme-tend .tn-row{grid-template-columns:minmax(0,1fr) minmax(76px,1.1fr) 40px;gap:6px;font-size:10px;}
+  .scheme-tend .tn-stamp b{font-size:24px;}
 }

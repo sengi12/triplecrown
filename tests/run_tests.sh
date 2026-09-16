@@ -208,7 +208,7 @@ run_js_test test_chat_guard      "Chat guard: stats vocabulary, player initialis
 run_js_test test_playbook_live   "Playbook on the live season: a missing coaching sidecar is remembered, the modal falls to the newest playsheet, render path bounded (no microtask spin)"
 run_js_test test_pcard_dock      "Player tabs (dock): drill-downs add tabs, switching restores the view, closing lands on the neighbour, ✕ clears all, bounded"
 run_js_test test_ngs_live        "Next Gen Stats live strip: per-game/season tiles under the charts, colored vs league median with per-stat direction, honest absences"
-run_js_test test_tendencies_sheet  "The call sheet's Tendencies page: team vs league in the sheet's idiom, ranks, season chips, the template"
+run_js_test test_tendencies_tab  "The Playbook's Tendencies tab: team vs league on paper, ranks, the live season in the season row, the sheet left as one page whose scripts parse"
 run_js_test test_native_auth      "Google sign-in inside the phone app: system browser + the app's own callback scheme"
 run_js_test test_manifest         "Installable app: the web manifest, its icons and the Pages deploy, the Capacitor shell config"
 run_js_test test_week_hub        "This Week hub: per-league scoring contexts, week projection, lineup fill + lineup.py callout grades, waiver reasons, FAAB pacing, end-to-end league"
