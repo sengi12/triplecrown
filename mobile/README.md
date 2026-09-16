@@ -19,6 +19,30 @@ Copy `app-debug.apk` to the phone (AirDrop, Drive, `adb install app-debug.apk`) 
 Android asks once to allow installs from that source. The debug build is signed with a
 throwaway debug key, which is fine for your own phone.
 
+## Updating the app on your phone
+
+The shell loads the live site, so the APP updates itself: push to `main`, and the next
+open (or the service worker's background refresh) has it. You rebuild and reinstall the
+APK only when the SHELL changes — the icon, the name, the version, a native plugin:
+
+```sh
+cd mobile
+npx cap sync
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+npm run apk
+```
+
+Installing the new APK over the old one keeps your data (the site's storage lives with the
+app) as long as both are signed with the same key — debug over debug, release over
+release. A release build cannot install over a debug build: uninstall first, once.
+
+## The icon and splash
+
+`assets/` holds the sources (`icon-only.png`, `icon-foreground.png`, `icon-background.png`
+at 1024, `splash.png` at 2732); `npx capacitor-assets generate --android` writes every
+launcher size and the adaptive icon into `android/app/src/main/res/`. Re-run it after
+changing a source, then rebuild.
+
 ## Release builds for Google Play
 
 1. Create an upload key once, OUTSIDE the repo (it is git-ignored anyway):
