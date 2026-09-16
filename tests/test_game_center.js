@@ -28,7 +28,7 @@ const app=new Function(code+`
   sleeperPlayers={q1:{name:'Baker Mayfield',years_exp:8}, w1:{name:'Emeka Egbuka',years_exp:0}, d2:{name:'Lavonte David',years_exp:14}};
   leagueSnapshot={name:'Dirty Mikes', myUserId:'u1', scoringRaw:{pass_yd:0.04,pass_td:4,pass_int:-1,rush_yd:0.1,rush_td:6,rec:0.5,rec_yd:0.1,fgm:3,xpm:1,pts_allow:-0.1,sack:1,idp_tkl:1,idp_sack:2},
     teamList:[{rosterId:1, ownerId:'u1', owner:'Sengi12', teamName:'Sengi', players:[{id:'q1'},{id:'r2'}]},{rosterId:2, ownerId:'u2', owner:'RichBigMeechy', teamName:'Rich', players:[{id:'w2'}]}]};
-  return { pts:tcSleeperPoints, mode:gcSetMode, step:gcStep, setPos:gcSetPos, render:renderRightSidebar, html:()=>document.getElementById('leaders').innerHTML, cls:()=>[...document.getElementById('leaders').classList._s], pick:gcPick, week:gcSetWeek, load:gcLoadMode, state:()=>_gc, games:()=>gcGames(gcBoard(1)), mine:gcIsMine, maxW:gcMaxWidth };
+  return { pts:tcSleeperPoints, mode:gcSetMode, step:gcStep, setPos:gcSetPos, render:renderRightSidebar, html:()=>document.getElementById('leaders').innerHTML, cls:()=>[...document.getElementById('leaders').classList._s], pick:gcPick, week:gcSetWeek, load:gcLoadMode, state:()=>_gc, games:()=>gcGames(gcBoard(1)), mine:gcIsMine, maxW:gcMaxWidth, gameHTML:gcGameHTML, weekOpts:gcWeekOptions, gcWeek, setWeekProj:(wk,rows)=>{ const d=_laWpEntry(wk); d.rows=rows; d.at=Date.now(); d.fails=9; } };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -77,6 +77,22 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(/E\. Egbuka/.test(h) && !/B\. Mayfield/.test(h) && !/L\. David/.test(h), 'RK: only the rookies (Egbuka), across every group');
   app.setPos('ALL'); h=app.html();
   chk(/B\. Mayfield/.test(h) && /E\. Egbuka/.test(h) && /L\. David/.test(h), 'ALL: everyone again');
+
+
+console.log('=== a game still ahead shows each side with the week\'s projected line ===');
+{
+  app.setWeekProj(1, { q1:{stats:{pass_yd:250, pass_td:2}, opp:'CIN', team:'TB', pos:'QB'}, w1:{stats:{rec:6, rec_yd:80}, opp:'CIN', team:'TB', pos:'WR'}, CIN:{stats:{sack:3, pts_allow:20}, opp:'TB', team:'CIN', pos:'DEF'} });
+  const h=app.gameHTML({id:'TB@CIN', home:'CIN', away:'TB', state:'pre', detail:'9/20 - 1:00 PM', hrec:'1-0', arec:'0-1'}, null, 1);
+  chk(/gc-projnote/.test(h) && /projected · Sleeper's week 1 line/.test(h), 'the panel says the lines are projected');
+  chk(/B\. Mayfield/.test(h) && /gc-p-proj/.test(h) && />18\.00</.test(h), 'Mayfield projects 18.00 under the league table (250 yds, 2 TD)');
+  chk(/E\. Egbuka/.test(h) && />11\.00</.test(h), 'Egbuka 6 catches for 80 → 11.00');
+  chk(/CIN D\/ST/.test(h) && />1\.00</.test(h), 'the Bengals defense: 3 sacks, 20 allowed → 1.00');
+  chk(!/no stat lines yet/.test(h) && !/loading the week/.test(h), 'no stat-line placeholder on an unplayed game');
+  const played=app.gameHTML({id:'TB@CIN', home:'CIN', away:'TB', state:'post', detail:'Final', hs:33, as:27, hrec:'1-0', arec:'0-1'}, null, 1);
+  chk(/loading the week's stat lines/.test(played) && !/gc-projnote/.test(played), 'a played game still waits for its stat lines');
+  chk(JSON.stringify(app.weekOpts(1))==='[1,2,3,4]' && JSON.stringify(app.weekOpts(17))==='[17,18,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1]', 'the picker lists now, three weeks ahead, then the weeks played');
+  app.state().week=3; chk(app.gcWeek()===3, 'a week ahead can be picked'); app.state().week='current';
+}
 
   console.log('=== back to the list ===');
   app.mode('normal'); chk(!app.cls().includes('rsb-max') && /Leaders/.test(app.html()), 'normal: the Leaders list again');

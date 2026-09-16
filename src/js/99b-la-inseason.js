@@ -767,6 +767,7 @@ function laWeekProjLoad(wk){
 function laWeekProjAt(wk){ const d=_laWpEntry(wk); return d ? d.at : 0; }
 function laWeekProjLanded(){
   if(typeof _laInsRerender==='function') _laInsRerender();
+  if(typeof renderRightSidebar==='function'){ try{ renderRightSidebar(); }catch(e){} }   // the Game Center's projected lines
   if(typeof _hubSnapMemo!=='undefined' && _hubSnapMemo) _hubSnapMemo.sig='';
   if(typeof renderWeekHub==='function') renderWeekHub();
 }
