@@ -157,14 +157,22 @@ def build_all(season, players, only_pids=None, ref=None, refresh=False, verbose=
     except Exception as e:
         if verbose:
             print(f"    ! prospect model skipped: {type(e).__name__}: {e}")
-    # Rookie linemen: the college play-by-play has no lineman attribution, so their profile is
+    # Linemen: the college play-by-play has no lineman attribution, so a lineman's profile is
     # the UNIT's line — the team's run-blocking and pass-protection rates in the seasons he was
-    # on the roster, as FBS percentiles (src/cfb/ol_unit.py). Context, not a grade; the card
-    # says so. Fail-soft like the model above.
+    # on the roster, as FBS percentiles (src/cfb/ol_unit.py). Every class back to the first
+    # with readable college play-by-play, not only the rookies: a veteran's card carries the
+    # same college context beneath his NFL grades. Context, not a grade (the rookie prior
+    # blends it in, and says so); fail-soft per class like the model above.
     try:
         from . import ol_unit as _ol
-        for pid, prof in _ol.build(players, season, refresh=refresh, verbose=verbose).items():
-            out["players"].setdefault(pid, {}).update(prof)
+        first = max(link.EARLIEST_LINKABLE_CLASS, season - 11)
+        for cls in range(season, first - 1, -1):
+            try:
+                for pid, prof in _ol.build(players, cls, refresh=refresh, verbose=verbose).items():
+                    out["players"].setdefault(pid, {}).update(prof)
+            except Exception as e:
+                if verbose:
+                    print(f"    ! OL unit context skipped for {cls}: {type(e).__name__}: {e}")
     except Exception as e:
         if verbose:
             print(f"    ! OL unit context skipped: {type(e).__name__}: {e}")

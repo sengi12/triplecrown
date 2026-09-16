@@ -2818,6 +2818,22 @@ def main():
             if not _nfl.HAVE_PANDAS:
                 print("    ⚠ pandas not installed — skipping nflverse metrics (the rest of the seed is unaffected)")
             else:
+                # The rookie linemen's college line prior, read by the OL grades pipeline when it
+                # grades a draftee before his first snap (ol_grades_pipeline.ROOKIE_COLLEGE): the
+                # classes it grades on a prior are the season's draft and the one before. Built
+                # from the same college unit tables the cfb block ships; fail-soft.
+                if getattr(args, "cfb", True):
+                    try:
+                        import src.nflverse.ol_grades_pipeline as _olp
+                        from src.cfb import ol_unit as _olu, link as _olk
+                        _raw_ol = cached("players.json", PLAYERS_URL, "Sleeper player DB", False)
+                        if AS_OF:
+                            _olk.DB_SEASON = _sleeper_state()["season"]
+                        _olp.ROOKIE_COLLEGE = _olu.prior_map(_raw_ol, [int(args.season) - 1, int(args.season)],
+                                                             refresh="cfb" in refresh)
+                        print(f"    → college line prior for {len(_olp.ROOKIE_COLLEGE)} rookie-lineman keys")
+                    except Exception as e:
+                        print(f"    ⚠ college line prior skipped: {type(e).__name__}: {e}")
                 # Cover the same seasons we normally fetch history for (automated for future use).
                 nflverse = _nfl.build_nflverse(nonempty_seasons, refresh="nflverse" in refresh)
         except Exception as e:

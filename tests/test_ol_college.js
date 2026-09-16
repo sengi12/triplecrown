@@ -38,6 +38,15 @@ app.setNflverse({'2025':{ol_players:{'test tackle':{team:'SEA',pos:'T',ol_grade:
 h=app.render('9');
 chk(/Overall OL Grade/.test(h) && /College line context/.test(h) && h.indexOf('Overall OL Grade')<h.indexOf('College line context'), 'NFL grades first, the college block after');
 chk(/olc-rookie-note/.test(h) && /Rookie prior/.test(h) && /draft slot/.test(h), 'a rookie-prior grade says what it is (draft capital at full strength)');
+chk(/A-<sup class="olc-ast"/.test(h) && /no college line context linked/.test(h), 'the pre-snap letter wears an asterisk; without a linked college line the note says the pick stands alone');
+app.setNflverse({'2025':{ol_players:{'test tackle':{team:'SEA',pos:'T',ol_grade:'A-',pass_grade:'B+',run_grade:'A',ol_pctile:91.2,ol_conf:'LOW',p_draft:96.1,p_college:72.4,rookie_prior:true}}}});
+h=app.render('9');
+chk((h.match(/<sup class="olc-ast"/g)||[]).length>=3 && /level of competition/.test(h) && /72nd percentile/.test(h) && /35%/.test(h), 'every letter on a pre-snap card is asterisked and the note names the college share and its percentile');
+app.setNflverse({'2025':{ol_players:{'vet guard':{team:'SEA',pos:'G',ol_grade:'B',pass_grade:'B',run_grade:'B-',ol_pctile:70.0,ol_conf:'HIGH'}}}});
+app.setPcardState({pid:'10',posc:'G',team:'SEA',isOl:true});
+h=app.render('10');
+chk(/Overall OL Grade/.test(h) && !/olc-ast/.test(h) && !/olc-rookie-note/.test(h), 'a graded veteran carries plain letters and no rookie note');
+app.setPcardState({pid:'9',posc:'OT',team:'SEA',isOl:true});
 app.setNflverse({'2025':{ol_players:{'test tackle':{team:'SEA',pos:'T',ol_grade:'B',ol_pctile:70,ol_conf:'HIGH',p_draft:80}}}});
 chk(!/olc-rookie-note/.test(app.render('9')), 'a measured grade carries no such note');
 

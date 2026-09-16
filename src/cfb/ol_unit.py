@@ -28,6 +28,7 @@ line was 95th percentile in pass protection and 20th in short yardage knows more
 system he comes from than a blank card tells them.
 """
 import os
+import re
 
 try:
     import pandas as pd
@@ -62,6 +63,87 @@ FBS_CONFERENCES = {
 
 def _pool(conf):
     return "FBS" if str(conf or "") in FBS_CONFERENCES else "FCS"
+
+
+# ── The college prior: one number from the unit's percentiles, its level and its slate ──
+# A rookie lineman's grade before a snap blends his draft slot with this: the unit's mean
+# percentile in his last two college seasons (the final season weighing 70%), scaled for
+# the LEVEL he played at — a Power-conference line's 80th percentile is the 80th; a Group of
+# Five line's counts 85% of that, an FCS line's 60% — and tilted a little for the SLATE (the
+# mean pregame Elo of the defenses faced: ±3 points per 100 Elo from the FBS mean, capped
+# at ±6). It is explicitly a team-context number: college play-by-play has no lineman
+# attribution, so this is the line he played on, not him — the card says so with an asterisk.
+POWER_CONFERENCES = {"SEC", "Big Ten", "Big 12", "ACC", "Pac-12", "Pac-10", "Big East"}
+POWER_INDEPENDENTS = {"Notre Dame"}
+LEVEL_FACTOR = {"power": 1.0, "fbs": 0.85, "fcs": 0.60}
+ELO_MID, ELO_TILT_PER_100, ELO_TILT_CAP = 1500.0, 3.0, 6.0
+SEASON_WEIGHTS = (0.7, 0.3)      # final college season, the one before
+
+
+def level_of(row):
+    """'power' | 'fbs' | 'fcs' for one unit-table row (conference + team + pool)."""
+    conf, team, pool = str(row.get("conf") or ""), str(row.get("team") or ""), str(row.get("pool") or "FBS")
+    if pool == "FCS":
+        return "fcs"
+    if conf in POWER_CONFERENCES or team in POWER_INDEPENDENTS:
+        return "power"
+    return "fbs"
+
+
+def college_prior(profile):
+    """0-100 (1-99 clamped) college line prior for one ol_unit profile, or None without seasons."""
+    seasons = ((profile or {}).get("ol_unit") or {}).get("seasons") or []
+    rows = sorted([r for r in seasons if isinstance(r, dict) and r.get("pct")], key=lambda r: int(r.get("season") or 0), reverse=True)
+    if not rows:
+        return None
+    num = den = 0.0
+    for w, r in zip(SEASON_WEIGHTS, rows[:len(SEASON_WEIGHTS)]):
+        vals = [float(v) for v in (r.get("pct") or {}).values() if v is not None]
+        if not vals:
+            continue
+        u = sum(vals) / len(vals)
+        score = u * LEVEL_FACTOR[level_of(r)]
+        elo = r.get("opp_elo")
+        if elo is not None:
+            score += max(-ELO_TILT_CAP, min(ELO_TILT_CAP, (float(elo) - ELO_MID) / 100.0 * ELO_TILT_PER_100))
+        num += w * score
+        den += w
+    if den <= 0:
+        return None
+    return round(min(99.0, max(1.0, num / den)), 1)
+
+
+def _nn(name):
+    s = str(name or "").lower()
+    s = re.sub(r"\b(jr|sr|ii|iii|iv|v)\b\.?", "", s)
+    return re.sub(r"[^a-z]", "", s)
+
+
+def prior_map(players, classes, refresh=False, verbose=False):
+    """{'gsis:<id>': prior, 'nm:<normalized name>': prior} for the linemen of these draft
+    classes — what the OL grades pipeline reads (ol_grades_pipeline.ROOKIE_COLLEGE) when it
+    grades a rookie before his first snap. Keyed both ways because Sleeper's gsis_id is
+    missing on many young players; the name key is the fallback."""
+    out = {}
+    for cls in sorted(set(int(c) for c in classes)):
+        try:
+            profs = build(players, cls, refresh=refresh, verbose=verbose)
+        except Exception as e:
+            if verbose:
+                print(f"    ! OL college prior skipped for {cls}: {type(e).__name__}: {e}", flush=True)
+            continue
+        for pid, prof in profs.items():
+            p = college_prior(prof)
+            if p is None:
+                continue
+            raw = (players or {}).get(str(pid)) or {}
+            gid = raw.get("gsis_id")
+            if gid:
+                out[f"gsis:{str(gid).strip()}"] = p
+            nm = _nn(prof.get("name") or raw.get("full_name"))
+            if nm:
+                out[f"nm:{nm}"] = p
+    return out
 
 _UNITS = {}
 
