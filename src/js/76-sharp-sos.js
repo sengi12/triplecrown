@@ -58,7 +58,7 @@ function nflverseSharpTables(){
     def_tendencies:{title:'Defensive Tendencies',category:'defense'},
     defensive_line:{title:'Pass Rush & Run D',category:'defense'},
   };
-  const PCT=['Explosive Play Rate','Down Conversion Rate','Shotgun Rate','NoHuddle Rate','3WR Rate','Multi TE Rate','Man Rate','Zone Rate',
+  const PCT=['Explosive Play Rate','Down Conversion Rate','Rush Success Rate','Pass Success Rate','Shotgun Rate','NoHuddle Rate','3WR Rate','Multi TE Rate','Man Rate','Zone Rate',
     'Motion Rate','Play Action Rate','RPO Rate','Screen Rate','Trick Play Rate','Drop Rate','Blitz Rate',
     'Pressure Rate Allowed','Rush Stuff Rate','Pressure Rate','No Blitz Pressure Rate',
     'Hit Rate','Hurry Rate','Sack Rate','Non-QB Sack Rate','Last 5 Sack Rate',

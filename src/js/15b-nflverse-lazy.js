@@ -28,6 +28,8 @@ function decodeSeed(c){
           return {slot, name:(pid&&names[pid])||"\u2014", routes:decRoutes(routesC)};
         });
         formations[sig]={p:parts[0], align:parts[1], name, backs, te, wr, ol, assigns};
+        // v3 tail (the season in progress): the TE/WR split is assumed, not charted.
+        if(f[7]) formations[sig].pers_assumed=true;
       }
       const decLanes = lc => lc.map(([i,n,epa])=>[ln[i],n,epa]);
       const decGroup = g => {
@@ -48,6 +50,7 @@ function decodeSeed(c){
         }
       }
       out[code]={team:t.team, slots, names, jerseys:t.jerseys||{}, formations, views};
+      if(t.co) out[code].charting_only=true;   // charted sets, no participation file yet
     }
     return out;
   }

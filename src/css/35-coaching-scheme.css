@@ -170,9 +170,10 @@ html.scheme-locked, html.scheme-locked body{overflow:hidden;overscroll-behavior:
   .scheme-modal{width:100%;max-height:calc(100vh - 20px);max-height:calc(100dvh - 20px);padding:12px 10px 12px;}
   .scheme-oc-note{display:block;margin:3px 0 0 0;}
   .scheme-back{font-size:9px;padding:4px 7px;}
-  .scheme-view-tabs{margin:6px 0 5px;gap:4px;}
-  .scheme-view-tab{font-size:9px;padding:6px 7px 5px;}
-  .scheme-view-tab::before{left:6px;right:6px;top:-5px;height:5px;}
+  /* One row of view tabs on a phone: equal shares, never a second line. */
+  .scheme-view-tabs{margin:6px 0 5px;gap:4px;flex-wrap:nowrap;}
+  .scheme-view-tab{flex:1 1 0;min-width:0;font-size:8.5px;letter-spacing:.02em;padding:6px 2px 5px;text-align:center;white-space:nowrap;overflow:hidden;}
+  .scheme-view-tab::before{left:5px;right:5px;top:-5px;height:5px;}
   .scheme-tabs{grid-template-columns:repeat(auto-fit,minmax(54px,1fr));gap:3px;}
   .scheme-tab{font-size:10px;padding:7px 4px 6px;}
   .scheme-tab::before{left:6px;right:6px;top:-6px;height:6px;}
