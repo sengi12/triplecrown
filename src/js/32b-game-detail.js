@@ -16,7 +16,27 @@
 // are joined by first initial + last name within the team, then to Sleeper ids by espn_id.
 var _gcd = { sum:{}, busy:{}, tab:null, side:'fantasy', feedAll:false };
 const GC_SUMMARY_URL = (eid)=>`https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${eid}`;
-const GC_SUM_TTL_LIVE = 30*1000, GC_SUM_TTL_FINAL = 6*60*60*1000, GC_SUM_TTL_PRE = 10*60*1000;
+const GC_SUM_TTL_LIVE = 12*1000, GC_SUM_TTL_FINAL = 6*60*60*1000, GC_SUM_TTL_PRE = 10*60*1000;
+// While a picked game is on and the panel is in view, the summary (and the scoreboard) are
+// re-read every GC_LIVE_POLL ms — ESPN posts a play within seconds; the sheet's own 61 s
+// repaint was the ceiling before. One timer, restarted by every repaint.
+const GC_LIVE_POLL = 15*1000;
+var _gcLiveTimer = null;
+function gcPanelVisible(){
+  if(typeof _gc!=='undefined' && _gc && _gc.mode==='max') return true;
+  return !!(typeof _gcm!=='undefined' && _gcm && _gcm.open && _gcm.open!=='closed');
+}
+function gcLiveTick(game){
+  if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; }
+  if(!game || game.state!=='in' || !gcPanelVisible()) return;
+  _gcLiveTimer=setTimeout(()=>{
+    _gcLiveTimer=null;
+    if(typeof _gc==='undefined' || _gc.game!==game.id || !gcPanelVisible()) return;
+    try{ if(typeof tcWeekBoard==='function') tcWeekBoard(); }catch(e){}   // the score and clock
+    try{ gcSummary(game); }catch(e){}                                        // the plays (repaints when they land)
+    gcLiveTick(game);
+  }, GC_LIVE_POLL);
+}
 const GC_SKIP_TYPES = new Set(['Timeout','Official Timeout','End Period','End of Half','End of Game','Two-minute warning']);
 const GC_BOX_GROUPS = [['passing','Passing'],['rushing','Rushing'],['receiving','Receiving'],['fumbles','Fumbles'],['defensive','Defense'],['interceptions','Interceptions'],['kickReturns','Kick returns'],['puntReturns','Punt returns'],['kicking','Kicking'],['punting','Punting']];
 
@@ -307,10 +327,14 @@ function gcLeagueEntry(){
 }
 function gcLeagueSelectHTML(){
   const opts=gcLeagueOptions(), cur=gcLeague();
-  if(typeof pcardLeaguesLoad==='function' && typeof _pcardLg!=='undefined' && _pcardLg && !_pcardLg.at && !_pcardLg.loading){
-    try{ pcardLeaguesLoad().then(()=>gcDetailRepaint()).catch(()=>{}); }catch(e){}
+  // The synced leagues load on the first paint that needs them (three small reads each,
+  // kept ten minutes); the list says so until they land, then repaints with every league.
+  let loading=false;
+  if(typeof pcardLeaguesLoad==='function' && typeof _pcardLg!=='undefined' && _pcardLg && typeof pcardLeaguesAvailable==='function' && pcardLeaguesAvailable()){
+    if(!_pcardLg.at && !_pcardLg.loading){ try{ const pr=pcardLeaguesLoad(); if(pr && pr.then) pr.then(()=>gcDetailRepaint()).catch(()=>{}); }catch(e){} }
+    loading = !_pcardLg.at && !!_pcardLg.loading;
   }
-  return `<div class="gc-lgrow"><span class="gc-lglbl">Fantasy</span><select class="ld-sel gc-lgsel" onchange="gcSetLeague(this.value)">${opts.map(o=>`<option value="${escAttr(o.id)}" ${o.id===cur?'selected':''}>${escHtml(o.name)}</option>`).join('')}</select></div>`;
+  return `<div class="gc-lgrow"><span class="gc-lglbl">Fantasy</span><select class="ld-sel gc-lgsel" onchange="gcSetLeague(this.value)">${opts.map(o=>`<option value="${escAttr(o.id)}" ${o.id===cur?'selected':''}>${escHtml(o.name)}</option>`).join('')}${loading?'<option disabled>loading your leagues…</option>':''}</select></div>`;
 }
 // The projected points for a player under the pane's scoring, from the week's projection feed.
 function gcProjPts(pid, wk){

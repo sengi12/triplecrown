@@ -38,7 +38,14 @@ const app=new Function('IDS','SUM', code+`
     gameHTML:(g,rows)=>gcGameHTML(g||GAME(), rows===undefined?ROWS:rows, 1), GAME, summary:gcSummary, setSum:(eid,d)=>{ _gcd.sum[eid]={data:d, at:Date.now()}; }, fetches:()=>fetches,
     setTab:(t)=>{ _gcd.tab=t; }, setSide:(s)=>{ _gcd.side=s; }, setAll:(v)=>{ _gcd.feedAll=v; }, tab:gcdTab,
     lgOpts:gcLeagueOptions, setLeague:(id)=>{ _gc.league=id; }, league:gcLeague, owner:gcOwnerOf, mine:gcIsMine, pts:gcPoints, proj:gcProjPts,
-    setPcard:(o)=>{ _pcardLg.byLeague=o; _pcardLg.at=Date.now(); }, BOARD, ath:gcAthletes, short:gcShort };
+    setPcard:(o)=>{ _pcardLg.byLeague=o; _pcardLg.at=Date.now(); }, BOARD, ath:gcAthletes, short:gcShort,
+    resetPcard:()=>{ _pcardLg={at:0, byLeague:{}, loading:null}; }, lgSelect:gcLeagueSelectHTML, setProfile:(p)=>{ laLoadSleeperProfile=()=>p; },
+    stubLeagueReads:()=>{ const prev=sleeperFetch; sleeperFetch=async(url)=>{ fetches.push(url);
+        if(/\\/league\\/L9\\/rosters/.test(url)) return [{roster_id:1, owner_id:'u1', players:['q2']},{roster_id:2, owner_id:'u7', players:['t1']}];
+        if(/\\/league\\/L9\\/users/.test(url)) return [{user_id:'u1', display_name:'Sengi12'},{user_id:'u7', display_name:'kade', metadata:{team_name:'kademiller'}}];
+        if(/\\/league\\/L9$/.test(url)) return {name:'Queen City Keepers', status:'in_season', season:'2026', scoring_settings:{pass_yd:0.05, pass_td:6}, roster_positions:['QB','RB','SUPER_FLEX'], settings:{type:0}, total_rosters:12};
+        return prev(url); }; },
+    liveTimer:()=>_gcLiveTimer, clearLive:()=>{ if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; } }, setMode:(m)=>{ _gc.mode=m; }, setGame:(id)=>{ _gc.game=id; } };
 `)(IDS, SUM);
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -125,6 +132,27 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   app.setLeague('app');
   chk(app.owner('q2')==='' && app.mine('q2')===false && app.pts({player_id:'q2', position:'QB', stats:{pass_yd:254, pass_td:1}})!==18.7, 'App scoring: no owners, the app\'s own number');
   app.setLeague('snap');
+
+  console.log('=== the synced leagues load on the first paint that needs them ===');
+  app.resetPcard(); app.setProfile({user:{user_id:'u1'}, leagues:[{league_id:'L9', name:'Queen City Keepers', status:'in_season', season:'2026'}]}); app.stubLeagueReads();
+  let sel=app.lgSelect();
+  chk(/loading your leagues…/.test(sel) && /Dirty Mikes/.test(sel) && !/Queen City/.test(sel), 'the first paint kicks the load and says so');
+  await settle(); await settle();
+  sel=app.lgSelect();
+  chk(/<option value="L9"[^>]*>Queen City Keepers/.test(sel) && !/loading your leagues/.test(sel), 'the leagues land and the list has them');
+  app.setLeague('L9');
+  chk(app.owner('q2')==='@Sengi12' && app.mine('q2')===true && app.owner('t1')==='@kademiller' && app.pts({player_id:'q2', position:'QB', stats:{pass_yd:254, pass_td:1}})===18.7, 'owners, mine and the league\'s scoring come from the loaded reads');
+  app.setLeague('snap');
+
+  console.log('=== a game on: the feed polls on its own clock ===');
+  app.setMode('max'); app.setGame('TB@CIN'); app.setSum('401872925', SUM);
+  app.gameHTML(app.GAME('in'));
+  chk(!!app.liveTimer(), 'rendering a live game arms the poll');
+  app.clearLive(); app.gameHTML(app.GAME('post'));
+  chk(!app.liveTimer(), 'a final does not');
+  app.setMode('min'); app.gameHTML(app.GAME('in'));
+  chk(!app.liveTimer(), 'nor a live game while the panel is out of view');
+  app.setMode('max');
 
   console.log('=== the summary fetch ===');
   const fresh=app.GAME(); fresh.eid='401872925'; delete require('fs');   // (no-op; keeps the linter quiet)

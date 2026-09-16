@@ -24,9 +24,9 @@ function gcPick(id){ _gc.game=id; if(typeof _gcm!=='undefined' && _gcm.open==='h
 // "Now" is the tracker's week: the finished week holds through Tuesday and until Wednesday
 // 06:00 Eastern (tcTrackerWeek), so Tuesday's look still opens on everything that happened.
 function gcCurWeek(){ return (typeof tcTrackerWeek==='function') ? tcTrackerWeek() : Math.max(1, Number(TC_SEASON.week||1)); }
-// Any week of the season: the ones played, the one in progress, and the ones ahead (their
-// games with projected lines). GC_LOOKAHEAD weeks show in the picker after "now".
-const GC_LOOKAHEAD = 3;
+// Any week of the season: the ones played, the one in progress, and every one ahead (the
+// scoreboard knows the whole schedule; the next few weeks carry projected lines).
+const GC_LOOKAHEAD = 18;
 function gcWeek(){ const cur=gcCurWeek(); return _gc.week==='current' ? cur : Math.max(1, Math.min(18, _gc.week)); }
 function gcWeekOptions(cur){
   const out=[]; for(let w=cur; w<=Math.min(18, cur+GC_LOOKAHEAD); w++) out.push(w);
@@ -244,6 +244,7 @@ function gcGameHTML(game, rows, wk){
   if(typeof gcdTab!=='function') return hero+fantasy;
   // Feed | Stats (32b-game-detail.js): the play feed, or the quarter line with Away | Fantasy | Home.
   const sum=(typeof gcSummary==='function') ? gcSummary(game) : null;
+  if(game.state==='in' && typeof gcLiveTick==='function') gcLiveTick(game);   // a game on: the feed polls on its own clock
   const tab=gcdTab(game), side=_gcd.side||'fantasy';
   const tabs=`<div class="gc-tabs"><button class="gc-tab ${tab==='feed'?'active':''}" onclick="gcdSetTab('feed')">Feed</button><button class="gc-tab ${tab==='stats'?'active':''}" onclick="gcdSetTab('stats')">Stats</button></div>`;
   if(tab==='feed') return hero+tabs+gcFeedHTML(game, sum);
