@@ -98,6 +98,18 @@ console.log('=== Players lens: the pool ranked for THIS week ===');
   chk(/Bye Guy/.test(html3), 'the unrostered pool remains');
   app.laState.dvpAvail=false;
   app.setSnapshot(null);
+console.log('=== the Players lens sorts by matchup, adjustment or projection ===');
+app.laState.dvpMode='pool'; app.laState.dvpPos='ALL'; app.laState.dvpPoolSort=null;
+const poolDefault=app.laDvpView({});
+chk(/laSetDvpPoolSort\('matchup'\)/.test(poolDefault) && /laSetDvpPoolSort\('proj'\)/.test(poolDefault) && /la-pool-th active[^>]*>PROJ WK ▼/.test(poolDefault), 'three sortable headers, projection active by default');
+const allowedSeq=(html)=>[...html.matchAll(/(\d+\.\d) allowed/g)].map(m=>+m[1]);
+app.laState.dvpPoolSort={col:'matchup',dir:-1};
+const byMatch=allowedSeq(app.laDvpView({}));
+chk(byMatch.length>=2 && byMatch.every((v,i)=>!i || byMatch[i-1]>=v), 'sorted by matchup: the most generous defence first');
+app.laState.dvpPoolSort={col:'matchup',dir:1};
+const byMatchUp=allowedSeq(app.laDvpView({}));
+chk(byMatchUp.length>=2 && byMatchUp.every((v,i)=>!i || byMatchUp[i-1]<=v), 'flipped: the stingiest first');
+app.laState.dvpPoolSort=null;
   app.laState.dvpMode='def'; app.laState.dvpPos='ALL';
   chk(app.laDvpView({}).includes('la-dvp-table'), 'toggling back restores the Defenses lens');
 }
@@ -221,6 +233,7 @@ console.log('=== player card: the live season lists what is coming ===');
   app.setInseason(null);
   chk(app.pcardAppendFutureWeeks(played.slice(), 'MIA').length===2, 'preseason (no sidecar) appends nothing');
 }
+
 
 console.log(`\n${pass}/${total}`);
 if(pass!==total) process.exit(1);

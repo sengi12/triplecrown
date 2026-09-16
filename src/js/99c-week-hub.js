@@ -1038,6 +1038,19 @@ function laWireBoardHTML(res){
       <div class="pos-filter la-cmkt-pos">${chips}</div></div>
     <div class="card la-trnd-card la-cmkt-board">${list||'<div class="la-wv-none">No free agents to price.</div>'}</div>`;
 }
+// The wire's prices for any other view that lists free agents by name (the Waivers tab's
+// two lenses, the Trends boards): name|pos → the wire row, from the same result.
+function laWireBidMap(s){
+  const res=(typeof hubSnapshotResult==='function')?hubSnapshotResult(s):null;
+  const m=new Map();
+  if(res && res.faab && Array.isArray(res.faab.wire)) res.faab.wire.forEach(r=>m.set(ecrNormName(r.name)+'|'+r.pos, r));
+  m.res=res;
+  return m;
+}
+function laWireBidChip(map, name, pos, cls){
+  const r=map && map.get(ecrNormName(name)+'|'+pos);
+  return r ? hubBidChipHTML(r.faab, map.res, r.pos, cls||'la-wv-bid') : '';
+}
 function laSetChopPos(p){
   if(typeof laState!=='undefined') laState.chopPos=p;
   if(typeof laRerenderKeepScroll==='function') laRerenderKeepScroll(); else if(typeof renderLeagueAnalyzer==='function') renderLeagueAnalyzer();

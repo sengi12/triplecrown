@@ -92,3 +92,54 @@ function tcPreserveViewScroll(run, selectors){
 	run();
 	tcRestoreViewScroll(snap);
 }
+// The same promise for ANY in-place re-render, with no selector list to maintain: every
+// scrolled element under `root` (the page, the content pane, a table wrapper scrolled
+// sideways, a sheet, a sidebar) is remembered by class and position, and put back after
+// the render — at once, on the next frame, and once more after images settle, each time
+// clamped to the new content. A sort or a filter must never move the reader.
+function tcCaptureScrollers(root){
+	const out = { winY: (typeof window!=='undefined' && (window.scrollY || (document.documentElement&&document.documentElement.scrollTop))) || 0, els: [] };
+	try{
+		const scope = root || document;
+		const all = scope.querySelectorAll ? scope.querySelectorAll('*') : [];
+		const seen = {};
+		for(const el of all){
+			if(!(el.scrollTop>0 || el.scrollLeft>0)) continue;
+			const cls = el.className && typeof el.className==='string' ? el.className.trim().split(/\s+/)[0] : '';
+			if(!cls) continue;
+			const key = cls; const idx = (seen[key]=(seen[key]||0));
+			// index among elements of the same first class, in document order
+			const same = scope.getElementsByClassName ? scope.getElementsByClassName(cls) : [];
+			let at = -1; for(let i=0;i<same.length;i++){ if(same[i]===el){ at=i; break; } }
+			seen[key]=idx+1;
+			out.els.push({ cls, at, x: el.scrollLeft, y: el.scrollTop });
+		}
+	}catch(e){}
+	return out;
+}
+function tcRestoreScrollers(snap, root){
+	if(!snap) return;
+	const apply = ()=>{
+		try{
+			const scope = root || document;
+			if(typeof window!=='undefined' && window.scrollTo){
+				const maxY = Math.max(0, (document.documentElement?document.documentElement.scrollHeight:0) - (window.innerHeight||0));
+				window.scrollTo(0, Math.min(Math.max(0, snap.winY||0), maxY));
+			}
+			(snap.els||[]).forEach(b=>{
+				const same = scope.getElementsByClassName ? scope.getElementsByClassName(b.cls) : [];
+				const el = same[b.at]; if(!el) return;
+				el.scrollLeft = Math.min(Math.max(0, b.x||0), Math.max(0, el.scrollWidth-el.clientWidth));
+				el.scrollTop  = Math.min(Math.max(0, b.y||0), Math.max(0, el.scrollHeight-el.clientHeight));
+			});
+		}catch(e){}
+	};
+	apply();
+	if(typeof window!=='undefined' && window.requestAnimationFrame) window.requestAnimationFrame(apply);
+	setTimeout(apply, 160);
+}
+function tcRerenderInPlace(run, root){
+	const snap = tcCaptureScrollers(root);
+	run();
+	tcRestoreScrollers(snap, root);
+}

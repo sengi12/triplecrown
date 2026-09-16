@@ -33,7 +33,7 @@ function tsCanPreviewPhase(phase){
   // League Analyzer tabs (checked BEFORE the currentTeam guard — the analyzer needs no team).
   if(typeof currentPhase!=='undefined' && currentPhase==='League'){
     return !!(typeof leagueSnapshot!=='undefined' && leagueSnapshot) &&
-      ['myteam','rosters','compare','best','trade','season','matchup','lineup','dvp','trends'].includes(p);
+      ['myteam','rosters','compare','best','trade','season','matchup','lineup','dvp','trends','chop','standings','hub'].includes(p);
   }
   if(!currentTeam) return false;
   if(['Passing','Receiving','Rushing','Advanced','Additions'].includes(p)) return true;
@@ -102,17 +102,20 @@ function tsRenderPhasePreview(phase){
       if(phase==='compare') return laCompareView(s);
       if(phase==='best') return laBestAvailView(s);
       if(phase==='trade') return laTradeView(s);
-      if(['season','matchup','lineup','dvp','trends'].includes(phase)){
+      // The Multi-League hub renders from its own loaded results (no fetch from a gesture).
+      if(phase==='hub') return (typeof hubViewHTML==='function') ? (hubViewHTML(s)||'') : '';
+      if(['season','matchup','lineup','dvp','trends','chop','standings'].includes(phase)){
         // Cache-only: preview only when the pane's data is already loaded.
         const pane = phase==='season'
           ? ((typeof laActivePane==='function' && laActivePane()) || (laState&&laState.seasonPane) || 'matchup')
           : phase;
-        if(pane==='matchup' && !(_laMu.byWeek[laMuWeek()])) return '';
+        if((pane==='matchup'||pane==='chop') && !(_laMu.byWeek[laMuWeek()])) return '';
         if(pane==='lineup' && !(_laMu.byWeek[laCurrentWeek()])) return '';
         if((pane==='dvp'||pane==='trends') && !(typeof TC_INSEASON!=='undefined' && TC_INSEASON)) return '';
         if(phase==='season') return (typeof laTabViewHTML==='function' && laTabViewHTML('season', s)) || '';
         return (pane==='lineup'?laLineupView(s) : pane==='dvp'?laDvpView(s)
-              : pane==='trends'?laTrendsView(s) : laMatchupView(s)) || '';
+              : pane==='trends'?laTrendsView(s) : pane==='chop'&&typeof laChopView==='function'?laChopView(s)
+              : pane==='standings'&&typeof laStandingsView==='function'?laStandingsView(s) : laMatchupView(s)) || '';
       }
     }catch(e){ return ''; }
     return '';
@@ -419,12 +422,13 @@ function tsScrollerClaims(el, dir){
     // Swipe left → next tab (content moves left, like turning a page).
     const next = moved<0 ? cur+1 : cur-1;
     if(next<0 || next>=tabs.length){
-      // A bar can name where a swipe past its first tab continues (Season panes → Trades).
-      if(next<0 && bar.dataset && bar.dataset.swipePrev && typeof laSetTab==='function'){
-        const prevTab=bar.dataset.swipePrev;
+      // A bar can name where a swipe past its first or last tab continues (the Season
+      // panes: back past the first → Trades; on past the last → Multi-League).
+      const hop = next<0 ? (bar.dataset && bar.dataset.swipePrev) : (bar.dataset && bar.dataset.swipeNext);
+      if(hop && typeof laSetTab==='function'){
         const top=tsSwipeTop(host)||host, w=tsHostWidth(host);
-        if(top){ top.style.transition='transform .18s ease-out'; top.style.transform=`translateX(${w}px)`; }
-        setTimeout(()=>{ laSetTab(prevTab); }, 145);
+        if(top){ top.style.transition='transform .18s ease-out'; top.style.transform=`translateX(${next<0 ? w : -w}px)`; }
+        setTimeout(()=>{ laSetTab(hop); }, 145);
         return;
       }
       clearShift(true); return;

@@ -511,6 +511,29 @@ def _ngs_pass_team(season):
     return pd.DataFrame({"Time to Throw": ttt.round(2)})
 
 
+def _weighted_pct_score(df, spec):
+    """Weighted mean of percentile ranks over the components that exist.
+
+    spec: [(column, lower_better, weight), ...]. A column with fewer than two numbers is
+    left out and the weights renormalize over the rest; within a row, a missing value
+    drops that component for that row alone. All-missing rows come back NaN.
+    """
+    ranks, wts = [], []
+    for col, lower, w in spec:
+        s = pd.to_numeric(df.get(col), errors="coerce") if col in df.columns else None
+        if s is None or s.notna().sum() < 2:
+            continue
+        ranks.append(_pct_rank(s, lower_better=lower).rename(col))
+        wts.append(float(w))
+    if not ranks:
+        return pd.Series(np.nan, index=df.index)
+    R = pd.concat(ranks, axis=1).reindex(df.index)
+    W = np.asarray(wts, dtype=float)
+    num = (R * W).sum(axis=1, min_count=1)
+    den = (R.notna() * W).sum(axis=1)
+    return num / den.replace(0, np.nan)
+
+
 def _pct_rank(series, lower_better=False):
     """0-100 percentile-like score where higher is always better."""
     s = pd.to_numeric(series, errors="coerce")
@@ -595,13 +618,16 @@ def _ol_pass_metrics(season):
         out["Pocket Time"] = pr["Pocket Time Allowed"].reindex(out.index)
     except Exception as e:
         print(f"  (skipped _ol_pass_metrics PFR pass block: {type(e).__name__})")
-    # In-season, PFR's charting posts weekly (Tuesdays). Until it does, the two rates
-    # the open data can count exactly stand in: hits (pbp qb_hit) and blitzes (FTN
-    # n_blitzers, 48h after games). Pressure / hurry / pocket time wait for PFR.
-    if "Hit Rate" not in out.columns and "qb_hit" in db.columns:
+    # In-season, PFR's charting posts weekly (Tuesdays or later). Until it does — the season
+    # file may carry the column and no 2026 rows, so "present but empty" counts as missing —
+    # the two rates the open data can count exactly stand in: hits (pbp qb_hit) and blitzes
+    # (FTN n_blitzers, 48h after games). Pressure / hurry / pocket time wait for PFR.
+    def _empty(col):
+        return col not in out.columns or pd.to_numeric(out[col], errors="coerce").isna().all()
+    if _empty("Hit Rate") and "qb_hit" in db.columns:
         hits = pd.to_numeric(db["qb_hit"], errors="coerce").fillna(0).groupby(db["posteam"]).sum()
         out["Hit Rate"] = (hits.reindex(out.index).fillna(0) / out["Dropbacks"].replace(0, np.nan) * 100)
-    if "Blitz Rate" not in out.columns:
+    if _empty("Blitz Rate"):
         try:
             ftn_b = _aux_csv(FTN_URL.format(season=season),
                              usecols=["nflverse_game_id", "nflverse_play_id", "n_blitzers"])
@@ -613,45 +639,56 @@ def _ol_pass_metrics(season):
         except Exception:
             pass
 
-    # FTN+participation enriches non-QB-fault sacks and no-blitz pressure.
+    # FTN charts every sack's fault (non-QB-fault sacks) and the blitzers on every dropback.
+    # No-blitz pressure needs a pressure flag: participation's was_pressure where it exists
+    # (2016-2023), otherwise the proxy the defensive-line table already uses — the QB hit or
+    # sacked on a non-blitz dropback (pbp qb_hit / sack). Participation stopped after 2023,
+    # so without the proxy every later season lost both columns.
     try:
         ftn = _aux_csv(
             FTN_URL.format(season=season),
             usecols=["nflverse_game_id", "nflverse_play_id", "n_blitzers", "is_qb_fault_sack"],
         )
-        part = _aux_csv(
-            PART_URL.format(season=season),
-            usecols=["nflverse_game_id", "play_id", "was_pressure"],
-        )
-        d = db[["game_id", "play_id", "posteam", "sack"]].copy()
-        d = d.merge(
+        base_cols = ["game_id", "play_id", "posteam", "sack"] + (["qb_hit"] if "qb_hit" in db.columns else [])
+        d = db[base_cols].copy().merge(
             ftn,
             left_on=["game_id", "play_id"],
             right_on=["nflverse_game_id", "nflverse_play_id"],
             how="left",
-        ).merge(
-            part,
-            left_on=["game_id", "play_id"],
-            right_on=["nflverse_game_id", "play_id"],
-            how="left",
-            suffixes=("", "_part"),
         )
-
-        sack_rows = d[d["sack"] == 1]
-        qb_fault = (sack_rows["is_qb_fault_sack"] == True).groupby(sack_rows["posteam"]).sum()  # noqa: E712
-        non_qb_fault = (sack_rows.groupby("posteam").size() - qb_fault).clip(lower=0)
-        out["Non-QB Sack Rate"] = (
-            non_qb_fault.reindex(out.index).fillna(0) / out["Dropbacks"].replace(0, np.nan) * 100
-        ).fillna(0)
-
-        nbp = d[(d["n_blitzers"] == 0) & (d["was_pressure"] == True)].groupby("posteam").size()  # noqa: E712
-        out["No Blitz Pressure Rate"] = (
-            nbp.reindex(out.index).fillna(0) / out["Dropbacks"].replace(0, np.nan) * 100
-        ).fillna(0)
+        if d["is_qb_fault_sack"].notna().any():
+            sack_rows = d[d["sack"] == 1]
+            qb_fault = (sack_rows["is_qb_fault_sack"] == True).groupby(sack_rows["posteam"]).sum()  # noqa: E712
+            non_qb_fault = (sack_rows.groupby("posteam").size() - qb_fault).clip(lower=0)
+            out["Non-QB Sack Rate"] = (
+                non_qb_fault.reindex(out.index).fillna(0) / out["Dropbacks"].replace(0, np.nan) * 100
+            ).fillna(0)
+        if pd.to_numeric(d["n_blitzers"], errors="coerce").notna().any():
+            pressed = None
+            try:
+                part = _aux_csv(
+                    PART_URL.format(season=season),
+                    usecols=["nflverse_game_id", "play_id", "was_pressure"],
+                )
+                dd = d.merge(part, left_on=["game_id", "play_id"], right_on=["nflverse_game_id", "play_id"],
+                             how="left", suffixes=("", "_part"))
+                if dd["was_pressure"].notna().any():
+                    d, pressed = dd, (dd["was_pressure"] == True)  # noqa: E712
+            except Exception as e:
+                if not _is_http_not_found(e):
+                    print(f"  (skipped _ol_pass_metrics participation block: {type(e).__name__})")
+            if pressed is None:
+                hit = pd.to_numeric(d["qb_hit"], errors="coerce").fillna(0) > 0 if "qb_hit" in d.columns else False
+                pressed = hit | (d["sack"] == 1)
+            nb = pd.to_numeric(d["n_blitzers"], errors="coerce")
+            nbp = d[(nb == 0) & pressed].groupby("posteam").size()
+            out["No Blitz Pressure Rate"] = (
+                nbp.reindex(out.index).fillna(0) / out["Dropbacks"].replace(0, np.nan) * 100
+            ).fillna(0)
     except Exception as e:
-        # FTN/participation lags can legitimately 404 for newer seasons; skip quietly.
+        # FTN can legitimately 404 for a season it has not started charting; skip quietly.
         if not _is_http_not_found(e):
-            print(f"  (skipped _ol_pass_metrics FTN/participation block: {type(e).__name__})")
+            print(f"  (skipped _ol_pass_metrics FTN block: {type(e).__name__})")
 
     # Composite pass-protection + utilization weighting (pass-heavy teams weight pass-pro more).
     low_cols = [
@@ -664,15 +701,15 @@ def _ol_pass_metrics(season):
     if "Pocket Time" not in out.columns:
         out["Pocket Time"] = np.nan
 
-    pass_score = (
-        _pct_rank(out["Pressure Rate"], lower_better=True) * 0.30
-        + _pct_rank(out["Hit Rate"], lower_better=True) * 0.10
-        + _pct_rank(out["Hurry Rate"], lower_better=True) * 0.10
-        + _pct_rank(out["Sack Rate"], lower_better=True) * 0.20
-        + _pct_rank(out["Non-QB Sack Rate"], lower_better=True) * 0.15
-        + _pct_rank(out["No Blitz Pressure Rate"], lower_better=True) * 0.10
-        + _pct_rank(out["Pocket Time"], lower_better=False) * 0.05
-    )
+    # The score is the weighted mean of the percentile ranks that EXIST: a component nobody
+    # has yet (PFR's pressure, hurry and pocket time before its weekly post) drops out and the
+    # remaining weights renormalize, so an early-season score stands on the counted rates
+    # rather than vanishing with the first missing column.
+    pass_score = _weighted_pct_score(out, [
+        ("Pressure Rate", True, 0.30), ("Hit Rate", True, 0.10), ("Hurry Rate", True, 0.10),
+        ("Sack Rate", True, 0.20), ("Non-QB Sack Rate", True, 0.15),
+        ("No Blitz Pressure Rate", True, 0.10), ("Pocket Time", False, 0.05),
+    ])
     run_proxy = _pct_rank(out.get("Stuff Rate"), lower_better=True) if "Stuff Rate" in out.columns else 50
     util = out["Pass Rate"].fillna(50) / 100
     out["Pass Score"] = pass_score
@@ -1428,6 +1465,17 @@ def team_extended(season):
             out = out.join(fn(season))
         except Exception as e:
             print(f"  (skipped {fn.__name__}: {type(e).__name__})")
+    # PFR's rushing charting (yards before/after contact, broken tackles) posts weekly, and
+    # the season file can carry the columns with no rows for a season in progress. The two
+    # of its columns the play-by-play counts exactly stand in until it lands: yards per
+    # designed rush and the share of rushes that moved the chains.
+    def _empty(col):
+        return col not in out.columns or pd.to_numeric(out[col], errors="coerce").isna().all()
+    if _empty("Yards/Rush"):
+        out["Yards/Rush"] = pd.to_numeric(rush["yards_gained"], errors="coerce").groupby(rush["posteam"]).mean().round(2)
+    if _empty("Rush 1D Rate") and "first_down_rush" in rush.columns:
+        out["Rush 1D Rate"] = (pd.to_numeric(rush["first_down_rush"], errors="coerce").fillna(0)
+                               .groupby(rush["posteam"]).mean() * 100).round(1)
     if "8+ Box Rate" not in out.columns:
         try:
             ftn_x = _aux_csv(FTN_URL.format(season=season),

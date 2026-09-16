@@ -49,5 +49,10 @@ chk(app.tsRenderPhasePreview('dvp')==='','cold dvp preview → blank underlay');
 chk(app.tsRenderPhasePreview('trends')==='','cold trends preview → blank underlay');
 chk(fetchCount===before,'no network calls issued from the preview path');
 
+
+console.log('=== every in-season pane and the Multi-League hub swipe with a preview ===');
+app.setSnapshot({teamList:[]});
+chk(['chop','standings','hub'].every(k=>app.tsCanPreviewPhase(k)===true), 'Chop, Standings and Multi-League are previewable panes');
+
 console.log(`\n${pass}/${total}`);
 if(pass!==total) process.exit(1);

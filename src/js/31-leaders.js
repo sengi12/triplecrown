@@ -53,12 +53,16 @@ function ldWidth(el){
   if(cw>0) return cw;
   const sw=parseFloat(el.style&&el.style.width); return sw>0?sw:200;
 }
-function ldColsFor(width){
+// The phone's Games sheet has no drag: the list is as wide as the phone, so it takes the
+// compact budget — full names past LD_PHONE_FULL_W, a stat column every LD_PHONE_COL_W
+// (three columns on a 390px phone; the columns themselves are narrower there, see CSS).
+const LD_PHONE_FULL_W = 200, LD_PHONE_COL_W = 56;
+function ldColsFor(width, phone){
   const spec=LD_COLS[_ld.pos==='ROOKIE'?'ALL':_ld.pos]||LD_COLS.ALL;
-  const n=Math.max(0, Math.floor((width-LD_FULL_W)/LD_COL_W));
+  const n=Math.max(0, Math.floor((width-(phone?LD_PHONE_FULL_W:LD_FULL_W))/(phone?LD_PHONE_COL_W:LD_COL_W)));
   return spec.slice(0, Math.min(spec.length, n));
 }
-function ldSort(k){ _ld.sort=(k && k!=='pts' && _ld.sort!==k) ? k : 'pts'; renderLeaders(true); }
+function ldSort(k){ _ld.sort=(k && k!=='pts' && _ld.sort!==k) ? k : 'pts'; if(typeof tcRerenderInPlace==='function') tcRerenderInPlace(()=>renderLeaders(true)); else renderLeaders(true); }
 
 function ldOn(){
   return typeof hasSeasonStarted==='function' && hasSeasonStarted()
@@ -128,11 +132,11 @@ async function ldLoad(){
   if(typeof _gc!=='undefined' && _gc && _gc.mode && _gc.mode!=='normal' && !ldPhoneOpen()) return;
   renderLeaders(true);
 }
-function ldRowsHTML(width){
+function ldRowsHTML(width, phone){
   const recs=_ld.rows||[];
   const pos=_ld.pos;
   width=width||200;
-  const cols=ldColsFor(width), full=width>=LD_FULL_W;
+  const cols=ldColsFor(width, phone), full=width>=(phone?LD_PHONE_FULL_W:LD_FULL_W);
   const sortKey=(_ld.sort!=='pts' && cols.some(c=>c[0]===_ld.sort)) ? _ld.sort : 'pts';
   const list=recs.filter(r=> pos==='ALL' ? true : pos==='ROOKIE' ? ldRookie(r.pid) : r.pos===pos)
     .map(r=>({r, pts:ldPoints(r)})).filter(x=>x.pts>0)
@@ -153,7 +157,7 @@ function ldRowsHTML(width){
 }
 // The panel's markup, for either home (the desktop sidebar, the phone's Games sheet).
 // `width` decides the names and the columns; `btns` is the home's own controls.
-function ldPanelHTML(width, btns, fromLoad){
+function ldPanelHTML(width, btns, fromLoad, phone){
   const season=String(TC_SEASON.year), cur=ldCurWeek(), wk=ldWeek();
   const key=`${season}|${_ld.week==='season'?'season':wk}`;
   const stale = _ld.key!==key || !_ld.rows || (_ld.week!=='season' && wk===cur && Date.now()-_ld.at>60*1000);
@@ -167,7 +171,7 @@ function ldPanelHTML(width, btns, fromLoad){
   return `<div class="ld-head"><div class="sidebar-section ld-title">Leaders</div>${sel}</div>
     <div class="ld-posrow">${posBtns}</div>
     <div class="ld-fmt"><span title="Points under the loaded scoring">${fmt}${_ld.week!=='season'&&wk===cur?' · live':''}</span>${btns||''}</div>
-    <div class="ld-list">${ldRowsHTML(width)}</div>`;
+    <div class="ld-list">${ldRowsHTML(width, phone)}</div>`;
 }
 // Is the phone's Games sheet showing the Leaders? Then the list lives there, not here.
 function ldPhoneOpen(){

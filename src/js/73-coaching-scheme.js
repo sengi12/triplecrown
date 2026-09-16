@@ -1196,7 +1196,7 @@ function setTeamCoachingSchemeBenefactorSort(mode){
   const m = String(mode||'').toLowerCase();
   schemeBenefactorSort = (m==='opp') ? 'opp' : 'tgt';
   if(schemeOverlayOpen && schemeTeam && schemeViewTab!=='playbook'){
-    if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>_renderTeamCoachingScheme(), ['.scheme-modal']);
+    if(typeof tcRerenderInPlace==='function') tcRerenderInPlace(()=>_renderTeamCoachingScheme());
     else _renderTeamCoachingScheme();
   }
 }

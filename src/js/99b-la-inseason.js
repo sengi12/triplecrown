@@ -51,7 +51,7 @@ function laSeasonView(s, paneOverride){
   // these PANES (the outer icon bar stays tappable); swiping back past Matchup continues to
   // the Trades tab (data-swipe-prev). Touches inside the matchup hero are claimed by the
   // hero's own matchup pager first.
-  const bar=`<div class="phase-tabs la-pane-tabs" data-swipe-primary data-swipe-prev="trade">${panes.map(([k,l,ic])=>
+  const bar=`<div class="phase-tabs la-pane-tabs" data-swipe-primary data-swipe-prev="trade" data-swipe-next="hub">${panes.map(([k,l,ic])=>
     `<button class="phase-tab pane-tab ${pane===k?'active':''}" onclick="laSetPane('${k}')" title="${l}">${TC_ICON(ic)}<span class="tab-lbl">${l}</span></button>`).join('')}</div>`;
   const body = pane==='lineup'?laLineupView(s) : pane==='dvp'?laDvpView(s)
              : pane==='trends'?laTrendsView(s) : pane==='chop'?laChopView(s)
@@ -514,6 +514,13 @@ function laSetDvpSort(col){
   laRerenderKeepScroll();
 }
 function laSetDvpPos(p){ laState.dvpPos=p; laRerenderKeepScroll(); }
+// The Players lens sorts by any of its three numbers: the matchup (points the opponent
+// allows to the position), the adjustment, the week's projection. A second tap flips it.
+function laSetDvpPoolSort(col){
+  const s=laState.dvpPoolSort||{col:'proj',dir:-1};
+  laState.dvpPoolSort = (s.col===col) ? {col, dir:-s.dir} : {col, dir:-1};
+  laRerenderKeepScroll();
+}
 function laSetDvpMode(m){ laState.dvpMode=m; laRerenderKeepScroll(); }
 function laToggleDvpAvail(){ laState.dvpAvail=!laState.dvpAvail; laRerenderKeepScroll(); }
 // The two lenses over one table: who gives up points (Defenses), and who's positioned
@@ -558,7 +565,15 @@ function laDvpPoolView(t){
   }
   // bar scale: the most generous defense per position pins 100%, like the Defenses table
   const mxA={}; ['QB','RB','WR','TE'].forEach(pp=>{ mxA[pp]=Math.max(...t.codes.map(c=>t.teams[c][pp].fppg))||1; });
-  rows.sort((x,y)=>(y.a.adj-x.a.adj)||(y.a.baseRate-x.a.baseRate));
+  const ps=laState.dvpPoolSort||{col:'proj',dir:-1};
+  const allowedOf=(r)=>(r.a.opp&&t.teams[r.a.opp]&&!r.a.bye&&!r.a.out)?t.teams[r.a.opp][r.p.pos].fppg:null;
+  const keyOf=(r)=> ps.col==='matchup' ? allowedOf(r) : ps.col==='adj' ? ((r.a.bye||r.a.out)?null:r.a.defMult) : r.a.adj;
+  rows.sort((x,y)=>{
+    const kx=keyOf(x), ky=keyOf(y);
+    if(kx==null && ky==null) return (y.a.adj-x.a.adj);
+    if(kx==null) return 1; if(ky==null) return -1;             // byes and outs sit last either way
+    return (ps.dir<0 ? ky-kx : kx-ky) || (y.a.adj-x.a.adj) || (y.a.baseRate-x.a.baseRate);
+  });
   const top=rows.slice(0, pos1?45:60);
   const body=top.map(({p,a},i)=>{
     const key=ecrNormName(p.name);
@@ -598,7 +613,7 @@ function laDvpPoolView(t){
       <div class="pos-filter">${chips}${taken?`<button class="pos-filter-btn ${laState.dvpAvail?'active':''}" onclick="laToggleDvpAvail()" title="Only players NOT on any roster in your league — the waiver wire, ranked for this week">Available</button>`:''}</div>
       <span class="la-ins-sub">week-adjusted projection · same math as the Lineup pane${mine?' · ★ yours, grey = rostered':''}</span></div>
     <div class="card card-flush"><div class="la-dvp-wrap">
-      <table class="la-pool-table"><thead><tr><th></th><th>PLAYER</th><th>MATCHUP</th><th>ADJ</th><th>PROJ WK</th></tr></thead>
+      <table class="la-pool-table"><thead><tr><th></th><th>PLAYER</th>${[['matchup','MATCHUP','Sort by the matchup: points the opponent allows to the position'],['adj','ADJ','Sort by the matchup adjustment'],['proj','PROJ WK','Sort by this week\'s projection']].map(([k,l,tip])=>`<th class="la-pool-th ${ps.col===k?'active':''}" onclick="laSetDvpPoolSort('${k}')" title="${tip}">${l}${ps.col===k?(ps.dir<0?' ▼':' ▲'):''}</th>`).join('')}</tr></thead>
       <tbody>${body}</tbody></table></div></div>
     <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn('ladvp','Reading this table'):''}</div>`;
 }
@@ -780,6 +795,9 @@ function laWeekPickupsHTML(s){
   if(!scored.length)
     return `<div class="la-lens"><span class="la-lens-lbl">Position:</span>${chips}</div>
       <div class="la-note">Nobody unrostered projects for week ${wk}${posF!=='ALL'?` at ${posF}`:''}.</div>`;
+  // A FAAB league prices every row with the wire's bid (the chop market in a Chopped league).
+  const bids=(typeof laWireBidMap==='function')?laWireBidMap(s):null;
+  const hasBids=!!(bids && bids.size);
   const rows=scored.map((x,i)=>{
     const {p,a}=x;
     const fl=floorOf(p.pos);
@@ -792,6 +810,7 @@ function laWeekPickupsHTML(s){
       <span class="la-ba-name clickable-player" onclick="${pcardOnclick(p.player_id||p.name,p.pos,p.team||'')}">${escHtml(p.name)}
         ${startable?`<span class="la-lh-flag la-lh-start" title="Projects ${(a.adj-fl).toFixed(1)} above the weakest starter he could displace in your optimal lineup">STARTS +${(a.adj-fl).toFixed(1)}</span>`:''}</span>
       <span class="la-ba-game">${laGameLineHTML(pr, wk, dvp)||'<span class="la-gm la-gm-none">—</span>'}</span>
+      ${hasBids?`<span class="la-ba-bid">${laWireBidChip(bids, p.name, p.pos)||'<span class="la-ba-nobid">–</span>'}</span>`:''}
       <span class="la-ba-fpts"><b title="${escAttr(`${a.adj.toFixed(1)} = projection blend${a.defMult!==1?` × ${a.defMult.toFixed(2)} matchup`:''}`)}">${a.adj.toFixed(1)}</b></span>
     </div>`;
   }).join('');
@@ -799,6 +818,7 @@ function laWeekPickupsHTML(s){
     <div class="la-ba la-ba-week">
       <div class="la-ba-row la-ba-head"><span class="la-ba-rk">#</span><span class="rt-slot" style="visibility:hidden">POS</span>
         <span class="la-ba-name">PLAYER</span><span class="la-ba-game">WEEK ${wk}</span>
+        ${hasBids?`<span class="la-ba-bid" title="The wire's price: the bid the Lineup pane would put on him">BID</span>`:''}
         <span class="la-ba-fpts" title="Week-adjusted projection: 35% preseason + 30% season FPPG + 35% last-3, × defense-vs-position">WK PROJ</span></div>
       ${rows}
     </div>
