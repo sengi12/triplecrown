@@ -37,13 +37,13 @@ chk(/1 if f\.get\("pers_assumed"\) else 0\]/.test(enc) && /out_teams\[code\]\["c
 console.log('=== the sheet ===');
 const tpl=app.template();
 chk(/if\(FV\.charting_only\) return \{name:\(a\?a\.name:''\),list:\[\],src:'none'\}/.test(tpl), 'routesFor draws no route (and no generic tree) on a charted-sets season');
-chk(/split est\. from \$\{Number\(SEASON\)-1\}/.test(tpl) && /runs \/ routes \(est\.\)/.test(tpl) && /Season in progress — charted sets/.test(tpl) && /routes are ESTIMATED/.test(tpl) && /rf\.src=='inf'\?' \(est\)'/.test(tpl), 'the card subtitle, hint, footnote and route tag say what a charted set is and that routes are estimated');
+chk(/split est\. from \$\{Number\(SEASON\)-1\}/.test(tpl) && /runs \/ routes \(est\.\)/.test(tpl) && /<details class="foot"><summary>about this sheet<\/summary>/.test(tpl) && /Season in progress — charted sets/.test(tpl) && /routes are ESTIMATED/.test(tpl) && /querySelector\('\.foot > div'\)/.test(tpl) && /rf\.src=='inf'\?' \(est\)'/.test(tpl), 'the card subtitle, hint, footnote and route tag say what a charted set is and that routes are estimated');
 const out=app.tpl(tpl, p);
 chk(/"charting_only":true/.test(out) && /2026 · Charted sets · routes estimated/.test(out) && !/Routes mapped to players/.test(out), 'the rendered sheet ships the flag in its data script and says charted sets in its header');
 chk(/rf\.name!='\\u2014' && rf\.list && rf\.list\.length\)\{/.test(tpl), 'pass mode prints the name and skips the route text when the list is empty (no crash on a charted set)');
 const blocks=[...out.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]);
 chk(blocks.length>=2 && blocks.every(b=>{ try{ new Function(b); return true; }catch(e){ console.log('    parse error:', e.message); return false; } }), 'every script block of the rendered sheet still parses');
 const src=fs.readFileSync(path.join(__dirname,'..','src/js/73-coaching-scheme.js'),'utf8');
-chk(/charted sets — personnel from last season/.test(src) && /\$\{missingNote\}\$\{chartNote\}/.test(src), 'the modal subtitle carries the charted-sets note');
+chk(/charted sets \$\{_schemeInfoTip\('Charted sets'/.test(src) && /\$\{missingNote\}\$\{chartNote\}/.test(src), 'the modal subtitle says charted sets with the explanation behind an info button');
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);
