@@ -45,6 +45,10 @@ chk('if _empty("Hit Rate") and "qb_hit" in db.columns' in src and 'if _empty("Bl
 chk('if _empty("Yards/Rush")' in src and 'if _empty("Rush 1D Rate")' in src,
     "yards per rush and rush first-down rate fall back to the play-by-play")
 chk("pressed = hit | (d[\"sack\"] == 1)" in src, "no-blitz pressure uses the hit-or-sack proxy when participation is gone")
+chk("first_down_rush" in nv.PBP_COLS, "the play-by-play load carries first_down_rush, so the Rush 1D fallback has its column")
+i = src.index("def _ol_grades_by_player"); body = src[i:i + 4000]
+chk(all(f'"{c}"' in body for c in ("rookie_prior", "p_college", "draft_year")), "the OL payload reads the pre-snap flag, the college prior and the class from the grades CSV")
+chk("(valid_slot | rookie)" in src and 'g.loc[rookie & ~valid_slot, "slot"] = ""' in src, "a pre-snap row with no slot rides through the payload's slot filter on its flag")
 
 print(f"\nRESULT: {P}/{P + F} {'ALL PASS' if F == 0 else 'SOME FAILED'}")
 sys.exit(0 if F == 0 else 1)

@@ -54,7 +54,7 @@ PBP_COLS = [
     "game_id", "season", "season_type", "week", "posteam", "defteam", "play_type",
     "pass", "rush", "epa", "success", "yards_gained", "rusher_player_id",
     "fixed_drive", "fixed_drive_result", "series_result", "down",
-    "shotgun", "no_huddle", "air_yards", "vegas_wp",
+    "shotgun", "no_huddle", "air_yards", "vegas_wp", "first_down_rush",
 ]
 _QB_ZONE_COLS = [
     "season_type", "posteam", "pass_attempt", "sack", "complete_pass", "yards_gained",
@@ -2837,6 +2837,9 @@ def _ol_grades_by_player(season=None, utilization_by_team=None, team_ol_context=
         # Contextual fields may already exist when a future pipeline writes them directly.
         "pass_rate", "run_rate", "ol_weighted_pctile", "ol_weighted_grade",
         "entanglement_factor", "is_projected_starter", "last5_sacks_allowed_est",
+        # The pre-snap rows: the flag the card's asterisk reads, the college line prior the
+        # rookie note names, and the class (a 2026 draftee belongs to 2026's payload alone).
+        "rookie_prior", "p_college", "draft_year", "gsis_id",
     ]
     try:
         # market_pctile only exists when the pipeline ran with the market lens; read whatever
@@ -2897,7 +2900,14 @@ def _ol_grades_by_player(season=None, utilization_by_team=None, team_ol_context=
                  .replace(NFLVERSE_TO_SEED))
     g["slot"] = g["slot"].astype(str).str.strip().str.upper()
     g["pass_snaps"] = pd.to_numeric(g["pass_snaps"], errors="coerce").fillna(0)
-    g = g[(g["name"] != "") & g["team"].isin(TEAMS) & g["slot"].isin(["LT", "LG", "C", "RG", "RT"])]
+    # A pre-snap (rookie prior) row has no slot yet — it rides through on its flag with an
+    # empty slot (the card falls back to his position), so the incoming class is on the
+    # latest payload the card reads instead of vanishing with the slot filter.
+    valid_slot = g["slot"].isin(["LT", "LG", "C", "RG", "RT"])
+    rookie = (g["rookie_prior"].astype(str).str.lower().eq("true")
+              if "rookie_prior" in g.columns else pd.Series(False, index=g.index))
+    g.loc[rookie & ~valid_slot, "slot"] = ""
+    g = g[(g["name"] != "") & g["team"].isin(TEAMS) & (valid_slot | rookie)]
     if g.empty:
         _OL_GRADES_BY_PLAYER[skey] = out
         return out
