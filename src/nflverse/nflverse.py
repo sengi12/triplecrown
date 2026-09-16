@@ -4020,6 +4020,9 @@ def build_nflverse_season(season):
         ),
         "def_weekly": defensive_weekly_players(season),
         "coaching_scheme": coaching_scheme(season),
+        # Play-calling tendencies under the situation (src/nflverse/tendencies.py): the
+        # Playbook's Tendencies tab. Small (32 teams of rates), fail-soft.
+        "tendencies": _tendencies_block(season),
         # Season-level team head coaches derived from nflverse pbp (REG games).
         # This is historical truth for that season and powers season-aware HC context in UI.
         "head_coaches": season_head_coaches(season),
@@ -4027,6 +4030,15 @@ def build_nflverse_season(season):
         # to ride inline rather than needing a lazy sidecar like the two blocks above.
         "rosters": team_rosters(season),
     }
+
+def _tendencies_block(season):
+    try:
+        from . import tendencies as _t
+        return _t.build_tendencies(season)
+    except Exception as e:
+        print(f"  (skipped tendencies: {type(e).__name__}: {str(e)[:80]})")
+        return {}
+
 
 def _nflverse_built_cache_path(seasons):
     """Path for cached built nflverse output, keyed by requested seasons AND this

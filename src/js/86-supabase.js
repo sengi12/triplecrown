@@ -283,7 +283,7 @@ function _tcNativePlugin(name){
     if(typeof cap.nativePromise!=='function') return null;
     const call=(method)=>(options)=>cap.nativePromise(name, method, options||{});
     return {
-      open: call('open'), close: call('close'),
+      open: call('open'), close: call('close'), getLaunchUrl: call('getLaunchUrl'),
       addListener: (ev, fn)=> (typeof cap.addListener==='function') ? cap.addListener(name, ev, fn) : null,
     };
   }catch(e){ return null; }
@@ -294,11 +294,23 @@ function tcBindNativeAuthReturn(){
   const App=_tcNativePlugin('App'); if(!App || typeof App.addListener!=='function') return;
   _tcNativeAuthBound = true;
   App.addListener('appUrlOpen', (ev)=>{ try{ tcHandleNativeAuthUrl(ev && ev.url); }catch(e){ console.warn('[TC] native auth return:', e); } });
+  // Android may have started the app fresh to deliver the callback (the shell was not
+  // resumed but relaunched): then the URL is the launch URL, not an event.
+  try{
+    if(typeof App.getLaunchUrl==='function'){
+      Promise.resolve(App.getLaunchUrl()).then(r=>{ const u=r && r.url; if(u && String(u).indexOf(TC_NATIVE_AUTH_REDIRECT)===0) tcHandleNativeAuthUrl(u); }).catch(()=>{});
+    }
+  }catch(e){}
 }
+let _tcNativeAuthSeen = '';
 async function tcHandleNativeAuthUrl(url){
-  if(!url || String(url).indexOf(TC_NATIVE_AUTH_REDIRECT)!==0 || !_tcClient) return false;
+  if(!url || String(url).indexOf(TC_NATIVE_AUTH_REDIRECT)!==0) return false;
+  if(String(url)===_tcNativeAuthSeen) return false;      // the event and the launch URL can both carry it
+  _tcNativeAuthSeen = String(url);
+  if(!_tcClient){ const ok=await tcEnsureSupabase(); if(!ok){ toast('Sign-in returned before the sign-in service was ready','err'); return false; } }
   const Browser=_tcNativePlugin('Browser'); if(Browser && typeof Browser.close==='function'){ try{ Browser.close(); }catch(e){} }
-  let u=null; try{ u=new URL(url); }catch(e){ return false; }
+  toast('Finishing sign-in…','info');
+  let u=null; try{ u=new URL(url); }catch(e){ toast('Sign-in returned an address the app could not read','err'); return false; }
   const code=u.searchParams.get('code');
   const err=u.searchParams.get('error_description')||u.searchParams.get('error');
   if(err){ toast('Google sign-in failed: '+err,'err'); return false; }
@@ -309,7 +321,7 @@ async function tcHandleNativeAuthUrl(url){
     const p=new URLSearchParams(u.hash.replace(/^#/,''));
     const {error}=await _tcClient.auth.setSession({access_token:p.get('access_token'), refresh_token:p.get('refresh_token')});
     if(error){ toast('Google sign-in failed: '+error.message,'err'); return false; }
-  } else return false;
+  } else { toast('Sign-in returned without a session — try again','err'); return false; }
   toast('Signed in','ok');
   if(typeof tcCloseAuthModal==='function') tcCloseAuthModal();
   return true;
