@@ -1445,6 +1445,17 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-ptsbox{display:flex;flex-direction:column;align-items:flex-end;line-height:1.05;}
 .gc-proj{font-size:9.5px;color:var(--muted);font-weight:600;}
 .gc-p-home .gc-ptsbox{align-items:flex-start;}
+
+/* the live situation line and a fresh play */
+.gcf-now{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:2px 0 6px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);font-size:11px;color:var(--muted);}
+.gcf-now b{color:var(--text);font-weight:800;}
+.gcf-now-dd{color:var(--text);}
+.gcf-now-clock{margin-left:auto;font-weight:800;color:var(--text);}
+.gcf-dot{width:8px;height:8px;border-radius:50%;background:#ff4d4d;box-shadow:0 0 0 0 rgba(255,77,77,.6);animation:gcfPulse 1.4s ease-out infinite;}
+@keyframes gcfPulse{0%{box-shadow:0 0 0 0 rgba(255,77,77,.6);}100%{box-shadow:0 0 0 8px rgba(255,77,77,0);}}
+.gcf-new{animation:gcfIn .9s ease-out;}
+@keyframes gcfIn{0%{background:rgba(0,212,170,.28);transform:translateY(-4px);}100%{background:var(--surface2);transform:none;}}
+@media (prefers-reduced-motion:reduce){ .gcf-dot,.gcf-new{animation:none;} }
 /* ── Coaching Playbook Modal + Insights ───────────────────────────────────── */
 
 /* Click affordances for coaching-scheme entry points */
@@ -5021,7 +5032,9 @@ const SLEEPER_STATS_URL = (season)=>`https://api.sleeper.com/stats/nfl/${season}
 const SLEEPER_WEEKLY_URL = (pid,season)=>`https://api.sleeper.com/stats/nfl/player/${pid}?season_type=regular&season=${season}&grouping=week`;
 // League-wide stats for ONE week. (The season endpoint's grouping=week quirk returns an
 // aggregate row, so real weekly data is fetched week by week — see 71b-team-def-card.js.)
-const SLEEPER_WEEK_STATS_URL = (season,week,pos)=>`https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular${pos?`&position[]=${pos}`:''}`;
+// The playoff rounds (the tracker's weeks 19-22) are Sleeper's post-season weeks 1-4.
+const SLEEPER_WEEK_PATH = (week)=>{ const w=Number(week); return w>18 ? `${Math.min(4, w-18)}?season_type=post` : `${w}?season_type=regular`; };
+const SLEEPER_WEEK_STATS_URL = (season,week,pos)=>`https://api.sleeper.com/stats/nfl/${season}/${SLEEPER_WEEK_PATH(week)}${pos?`&position[]=${pos}`:''}`;
 const SLEEPER_PICKS_URL = (draftId)=>`https://api.sleeper.app/v1/draft/${draftId}/picks`;
 const SLEEPER_DRAFT_URL = (draftId)=>`https://api.sleeper.app/v1/draft/${draftId}`;
 const SLEEPER_HEADSHOT = (pid)=>`https://sleepercdn.com/content/nfl/players/${pid}.jpg`;
@@ -9455,11 +9468,13 @@ function gcPick(id){ _gc.game=id; if(typeof _gcm!=='undefined' && _gcm.open==='h
 // 06:00 Eastern (tcTrackerWeek), so Tuesday's look still opens on everything that happened.
 function gcCurWeek(){ return (typeof tcTrackerWeek==='function') ? tcTrackerWeek() : Math.max(1, Number(TC_SEASON.week||1)); }
 // Any week of the season: the ones played, the one in progress, and every one ahead (the
-// scoreboard knows the whole schedule; the next few weeks carry projected lines).
-const GC_LOOKAHEAD = 18;
-function gcWeek(){ const cur=gcCurWeek(); return _gc.week==='current' ? cur : Math.max(1, Math.min(18, _gc.week)); }
+// scoreboard knows the whole schedule; the next few weeks carry projected lines). The
+// playoff rounds ride on as weeks 19-22 (92b's TC_PLAYOFF_WEEKS).
+function gcLastWeek(){ return (typeof TC_LAST_WEEK!=='undefined') ? TC_LAST_WEEK : 18; }
+function gcWeek(){ const cur=gcCurWeek(); return _gc.week==='current' ? cur : Math.max(1, Math.min(gcLastWeek(), _gc.week)); }
+function gcWeekLabel(w){ return (typeof tcWeekLabel==='function') ? tcWeekLabel(w) : `Week ${w}`; }
 function gcWeekOptions(cur){
-  const out=[]; for(let w=cur; w<=Math.min(18, cur+GC_LOOKAHEAD); w++) out.push(w);
+  const out=[]; for(let w=cur; w<=gcLastWeek(); w++) out.push(w);
   for(let w=cur-1; w>=1; w--) out.push(w);
   return out;
 }
@@ -9517,7 +9532,7 @@ function gcGames(board){
     if(seen.has(id)) return; seen.add(id);
     const h=board[home]||{}, a=board[away]||{};
     games.push({ id, home, away, state:g.state, detail:g.detail, date:String(g.date||''), hs:h.score!=null?h.score:(g.home?g.score:g.oppScore), as:a.score!=null?a.score:(g.home?g.oppScore:g.score), hrec:h.rec||'', arec:a.rec||'',
-      eid:String(g.eid||h.eid||a.eid||''), hls:h.ls||[], als:a.ls||[] });   // ESPN's event id opens the game summary (plays, box score)
+      eid:String(g.eid||h.eid||a.eid||''), hls:h.ls||[], als:a.ls||[], sit:g.sit||h.sit||a.sit||null });   // ESPN's event id opens the game summary (plays, box score); sit = the live situation
   });
   // In the order they are played: Thursday night, the Sunday early window, the late window,
   // Sunday night, Monday night (the board's kickoff stamps); same kickoff → by matchup.
@@ -9699,7 +9714,7 @@ function gcHTML(phone){
   if(games && games.length && !games.some(g=>g.id===_gc.game)) _gc.game=gcDefaultGame(games);
   const game=games ? games.find(g=>g.id===_gc.game) : null;
   const rows=gcRows(wk);
-  const sel=`<select class="ld-sel" onchange="gcSetWeek(this.value)">${gcWeekOptions(cur).map(w=>`<option value="${w===cur?'current':w}" ${wk===w?'selected':''}>Week ${w}${w===cur?' · now':w===cur+1?' · next':w>cur?' · upcoming':''}</option>`).join('')}</select>`;
+  const sel=`<select class="ld-sel" onchange="gcSetWeek(this.value)">${gcWeekOptions(cur).map(w=>`<option value="${w===cur?'current':w}" ${wk===w?'selected':''}>${gcWeekLabel(w)}${w===cur?' · now':w===cur+1?' · next':w>cur?' · upcoming':''}</option>`).join('')}</select>`;
   const lgE=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
   const fmt=gcScoring() ? escHtml((lgE && lgE.name) || (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) || 'league scoring') : 'app scoring · Sleeper for K/DEF/IDP';
   const pick=_gc.pos||'ALL';
@@ -9966,8 +9981,25 @@ const GC_SUM_TTL_LIVE = 12*1000, GC_SUM_TTL_FINAL = 6*60*60*1000, GC_SUM_TTL_PRE
 // While a picked game is on and the panel is in view, the summary (and the scoreboard) are
 // re-read every GC_LIVE_POLL ms — ESPN posts a play within seconds; the sheet's own 61 s
 // repaint was the ceiling before. One timer, restarted by every repaint.
-const GC_LIVE_POLL = 15*1000;
+const GC_LIVE_POLL = 8*1000;
 var _gcLiveTimer = null;
+// Change-driven: the scoreboard's situation carries the last play's id. When the picked
+// game's changes, its summary is re-read at once (the plays land within seconds of ESPN
+// posting them); between plays the situation line alone repaints. No last play on the
+// board (an older payload) → the summary's own live TTL stands in.
+function gcStreamOnBoard(teams){
+  if(typeof _gc==='undefined' || !_gc.game || !teams) return;
+  const [away, home]=String(_gc.game).split('@'); const g=teams[home]||teams[away]; if(!g || g.state!=='in') return;
+  const eid=String(g.eid||''); const sit=g.sit||null; if(!eid) return;
+  const key=sit ? `${sit.lastPlayId}|${sit.ddt}|${sit.spot}|${sit.clock}` : '';
+  if(!_gcd.seen) _gcd.seen={};
+  if(!sit || key===_gcd.seen[eid]) return;
+  const playChanged = !sit.lastPlayId || !_gcd.seen[eid] || String(_gcd.seen[eid]).split('|')[0]!==sit.lastPlayId;
+  _gcd.seen[eid]=key;
+  if(playChanged && _gcd.sum[eid]) _gcd.sum[eid].at=0;            // stale the instant a play posts
+  if(playChanged) gcSummary({eid, state:'in'});                      // fetch now; repaints when it lands
+  else gcDetailRepaint();                                            // the down moved: the situation line
+}
 function gcPanelVisible(){
   if(typeof _gc!=='undefined' && _gc && _gc.mode==='max') return true;
   return !!(typeof _gcm!=='undefined' && _gcm && _gcm.open && _gcm.open!=='closed');
@@ -9978,8 +10010,8 @@ function gcLiveTick(game){
   _gcLiveTimer=setTimeout(()=>{
     _gcLiveTimer=null;
     if(typeof _gc==='undefined' || _gc.game!==game.id || !gcPanelVisible()) return;
-    try{ if(typeof tcWeekBoard==='function') tcWeekBoard(); }catch(e){}   // the score and clock
-    try{ gcSummary(game); }catch(e){}                                        // the plays (repaints when they land)
+    try{ if(typeof tcWeekBoard==='function') tcWeekBoard(); }catch(e){}   // the score, the clock, the last play's id (→ gcStreamOnBoard)
+    if(!game.sit){ try{ gcSummary(game); }catch(e){} }                      // no situation on the board: the summary's own TTL
     gcLiveTick(game);
   }, GC_LIVE_POLL);
 }
@@ -10193,18 +10225,31 @@ function gcFeedPlayerHTML(w, game){
   const click = (pid && pos && pos!=='DEF' && typeof pcardOnclick==='function') ? ` onclick="event.stopPropagation();${pcardOnclick(pid, pos, a.team||'')}"` : '';
   return `<div class="gcf-who"${click}><span class="gcf-name${pid&&gcIsMine(pid)?' gc-mine':''}">${escHtml(gcShort(a.name))}</span>${pos?`<span class="gcf-pos gcf-pos-${escAttr(pos.toLowerCase())}">${escHtml(pos)}</span>`:''}${owner?`<span class="gcf-owner">${escHtml(owner)}</span>`:''}<span class="gcf-stat">${escHtml(w.line)}${w.delta?` <em>(${escHtml(w.delta)})</em>`:''}</span></div>`;
 }
+// The ball right now (a game on): possession, the down, the spot, the clock — the line
+// above the feed that moves between plays, the way the next play is "coming".
+function gcSituationHTML(game){
+  const sit=game && game.sit; if(!sit || game.state!=='in') return '';
+  const poss=sit.poss||'';
+  return `<div class="gcf-now"><span class="gcf-dot"></span>${poss?`<img src="${NFL_LOGO(poss)}" class="gc-glogo" onerror="this.style.display='none'"><b>${escHtml(poss)} ball</b>`:'<b>Live</b>'}${sit.ddt?`<span class="gcf-now-dd">${escHtml(sit.ddt)}${sit.spot?` @ ${escHtml(sit.spot)}`:''}</span>`:''}${sit.rz?'<span class="gcf-rz">RZ</span>':''}<span class="gcf-now-clock">${sit.period?`Q${sit.period}`:''} ${escHtml(sit.clock||'')}</span></div>`;
+}
 function gcFeedHTML(game, sum){
   if(game.state==='pre') return `<div class="ld-empty">no plays yet · ${escHtml(game.detail||'kickoff ahead')}</div>`;
-  if(!sum) return `<div class="ld-empty">${game.eid?'loading the plays…':'plays unavailable for this game'}</div>`;
+  const now=gcSituationHTML(game);
+  if(!sum) return now+`<div class="ld-empty">${game.eid?'loading the plays…':'plays unavailable for this game'}</div>`;
   const rows=gcFeedRows(sum, _gcd.feedAll);
+  // plays newer than the top of the last paint flash in (a live game's fresh play)
+  if(!_gcd.topSeq) _gcd.topSeq={};
+  const eid=String(game.eid||''); const prevTop=_gcd.topSeq[eid];
+  const isNew=(p)=>game.state==='in' && prevTop!=null && p.seq>prevTop;
+  if(rows.length) _gcd.topSeq[eid]=rows[0].seq;
   const toggle=`<div class="gcf-bar"><span>${_gcd.feedAll?'every play':'key plays'}</span><button class="ld-pos ${_gcd.feedAll?'':'active'}" onclick="gcdSetFeedAll(false)">Key</button><button class="ld-pos ${_gcd.feedAll?'active':''}" onclick="gcdSetFeedAll(true)">All</button></div>`;
-  if(!rows.length) return toggle+`<div class="ld-empty">no plays yet</div>`;
+  if(!rows.length) return now+toggle+`<div class="ld-empty">no plays yet</div>`;
   const badge=(p)=>p.kind==='td'?'TD':p.kind==='fg'?'FG':p.kind==='xp'?'XP':p.kind==='to'?'TO':p.kind==='sack'?'SACK':p.kind==='big'?'BIG':p.kind==='fourth'?'4TH':p.kind==='miss'?'MISS':'';
   const html=rows.map(p=>{
     const rz = p.yte!=null && p.yte<=20 && p.type!=='Kickoff' && p.type!=='Punt';
     const sit = p.down>0 ? `${p.ddt}${p.spot?` @ ${p.spot}`:''}` : (p.kind==='xp'||p.kind==='miss'&&/Extra/.test(p.type)?'End zone':(p.type==='Kickoff'?'Kickoff':''));
     const score = (p.as!=null && p.hs!=null) ? `<span class="${p.scoredBy==='away'?'gcf-sc-hit':''}">${game.away} ${p.as}</span><span class="gcf-dash">–</span><span class="${p.scoredBy==='home'?'gcf-sc-hit':''}">${p.hs} ${game.home}</span>` : '';
-    return `<div class="gcf-row gcf-${p.kind}">
+    return `<div class="gcf-row gcf-${p.kind}${isNew(p)?' gcf-new':''}">
       <img src="${NFL_LOGO(p.team||game.home)}" class="gcf-logo" onerror="this.style.display='none'">
       <div class="gcf-main">
         <div class="gcf-sit">${escHtml(sit)}${rz?' <span class="gcf-rz">RZ</span>':''}</div>
@@ -10214,7 +10259,7 @@ function gcFeedHTML(game, sum){
       <div class="gcf-right"><div class="gcf-clock">${p.q?`Q${p.q}`:''} ${escHtml(p.clock)}</div><div class="gcf-score">${score}</div>${badge(p)?`<span class="gcf-badge gcf-b-${p.kind}">${badge(p)}</span>`:''}</div>
     </div>`;
   }).join('');
-  return toggle+`<div class="gcf">${html}</div>`;
+  return now+toggle+`<div class="gcf">${html}</div>`;
 }
 
 // ── The quarter line and the box score ───────────────────────────────────────
@@ -30669,15 +30714,22 @@ function hcIsPlaycaller(team){
 // a dot on each team's logo in the sidebar (played · playing) and the big record in the team
 // header — without 32 per-team record fetches. Refreshes on its own while a game is on.
 var _tcBoard = { season:null, week:null, at:0, teams:{}, busy:false, live:false };
-const TC_BOARD_URL = (season, week)=>`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=2&week=${week}&dates=${season}`;
+// Weeks 1-18 are the regular season (ESPN season type 2); 19-22 are the playoff rounds
+// (type 3: Wild Card 1, Divisional 2, Conference Championship 3, Super Bowl 5 — 4 is the
+// Pro Bowl), the same 19-22 the tracker and its week picker use everywhere.
+const TC_PLAYOFF_WEEKS = { 19:['Wild Card',1], 20:['Divisional',2], 21:['Conf. Championship',3], 22:['Super Bowl',5] };
+function tcEspnWeek(week){ const w=Number(week); return TC_PLAYOFF_WEEKS[w] ? {type:3, week:TC_PLAYOFF_WEEKS[w][1]} : {type:2, week:w}; }
+function tcWeekLabel(week){ const w=Number(week); return TC_PLAYOFF_WEEKS[w] ? TC_PLAYOFF_WEEKS[w][0] : `Week ${w}`; }
+const TC_LAST_WEEK = 22;
+const TC_BOARD_URL = (season, week)=>{ const e=tcEspnWeek(week); return `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=${e.type}&week=${e.week}&dates=${season}`; };
 const TC_BOARD_ABBR = { WSH:'WAS' };          // ESPN spells one club differently
-const TC_BOARD_TTL_LIVE = 20*1000, TC_BOARD_TTL_IDLE = 5*60*1000;   // live: the Game Center's poll re-reads it every 15 s
+const TC_BOARD_TTL_LIVE = 7*1000, TC_BOARD_TTL_IDLE = 5*60*1000;   // live: the Game Center's poll re-reads it every 8 s (one small request)
 
 function tcBoardWeek(){
   // The tracker's week: the finished week holds through Tuesday and until Wednesday morning
   // (tcTrackerWeek), so the dots and records keep showing the week just played.
   const w=(typeof tcTrackerWeek==='function') ? tcTrackerWeek() : ((typeof TC_SEASON!=='undefined')?Number(TC_SEASON.week||0):0);
-  return Math.min(18, Math.max(1, w||1));
+  return Math.min(TC_LAST_WEEK, Math.max(1, w||1));
 }
 // Parse one scoreboard payload → {CODE: {state, rec, opp, home, score, oppScore, detail}}.
 function tcParseBoard(board){
@@ -30688,6 +30740,20 @@ function tcParseBoard(board){
     const st=(comp.status||ev.status||{}), type=st.type||{};
     const state=type.state==='post'?'post':type.state==='in'?'in':'pre';
     const detail=String(type.shortDetail||type.detail||'')
+    // The situation while a game is on: the ball's spot, the down, the last play (its id is
+    // the change signal the Game Center's live poll watches), the clock.
+    const teamById={}; (comp.competitors||[]).forEach(c=>{ const ab=c.team&&c.team.abbreviation; if(c.team&&ab) teamById[String(c.team.id)]=TC_BOARD_ABBR[ab]||ab; });
+    const sit=comp.situation||null; const lp=sit&&sit.lastPlay;
+    const situation = sit ? {
+      down:Number(sit.down||0), distance:Number(sit.distance||0), ddt:String(sit.shortDownDistanceText||sit.downDistanceText||''), spot:String(sit.possessionText||''),
+      rz:!!sit.isRedZone, poss:sit.possession?(teamById[String(sit.possession)]||''):'',
+      period:Number(st.period||0), clock:String(st.displayClock||''),
+      lastPlayId: lp ? String(lp.id||'') : '',
+      lastPlay: lp ? { id:String(lp.id||''), text:String(lp.text||''), type:String((lp.type&&lp.type.text)||''), scoreValue:Number(lp.scoreValue||0), yds:Number(lp.statYardage||0),
+        team: lp.team ? (teamById[String(lp.team.id)]||'') : '',
+        athletes:(Array.isArray(lp.athletesInvolved)?lp.athletesInvolved:[]).map(a=>({id:String(a.id||''), name:String(a.displayName||a.fullName||''), pos:String(a.position||''), team:a.team?(teamById[String(a.team.id)]||''):''})),
+        down:Number((lp.start&&lp.start.down)||0), ddt:String((lp.start&&lp.start.shortDownDistanceText)||''), spot:String((lp.start&&lp.start.possessionText)||''), yte:(lp.start&&lp.start.yardsToEndzone!=null)?Number(lp.start.yardsToEndzone):null } : null,
+    } : null;
     const sides=(comp.competitors||[]).map(c=>{
       const ab=c.team&&c.team.abbreviation; const code=ab?(TC_BOARD_ABBR[ab]||ab):'';
       const recs=Array.isArray(c.records)?c.records:[];
@@ -30700,7 +30766,7 @@ function tcParseBoard(board){
     sides.forEach(s=>{
       const o=sides.find(x=>x!==s)||{};
       // eid: ESPN's event id — the key to the game summary (plays, box score)
-      out[s.code]={ state, rec:s.rec, opp:o.code||'', home:s.home, score:s.score, oppScore:o.score!=null?o.score:null, detail, date:String(ev.date||comp.date||''), eid:String(ev.id||''), ls:s.ls };
+      out[s.code]={ state, rec:s.rec, opp:o.code||'', home:s.home, score:s.score, oppScore:o.score!=null?o.score:null, detail, date:String(ev.date||comp.date||''), eid:String(ev.id||''), ls:s.ls, sit:situation };
     });
   });
   return out;
@@ -30734,6 +30800,7 @@ function tcTeamGameState(team){
 // A landed board repaints what shows it: the sidebar dots, and the record in any header
 // already on screen (patched in place — a full re-render would reset sliders mid-edit).
 function tcBoardLanded(){
+  try{ if(typeof gcStreamOnBoard==='function') gcStreamOnBoard(_tcBoard.teams); }catch(e){}   // the Game Center's live poll: a new play?
   try{ if(typeof renderSidebar==='function') renderSidebar(); }catch(e){}
   try{
     if(typeof document==='undefined' || !document.querySelectorAll) return;
@@ -40176,7 +40243,7 @@ function laWeeklyFormMap(){
 // its call stands. K and D/ST take Sleeper's line outright, scored under the league's own
 // table (tcSleeperPoints), since the weekly model has no matchup table for them.
 const LA_WEEK_PROJ_POS = ['QB','RB','WR','TE','K','DEF'];
-const LA_WEEK_PROJ_URL = (season, wk)=>`https://api.sleeper.com/projections/nfl/${season}/${wk}?season_type=regular`+LA_WEEK_PROJ_POS.map(p=>`&position[]=${p}`).join('');
+const LA_WEEK_PROJ_URL = (season, wk)=>`https://api.sleeper.com/projections/nfl/${season}/${(typeof SLEEPER_WEEK_PATH==='function')?SLEEPER_WEEK_PATH(wk):`${wk}?season_type=regular`}`+LA_WEEK_PROJ_POS.map(p=>`&position[]=${p}`).join('');
 const LA_WEEK_PROJ_TTL = 30*60*1000;
 const LA_WEEK_SLEEPER_W = 0.6;
 const LA_WEEK_SLEEPER_GATE = 1.5;

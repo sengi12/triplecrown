@@ -7,7 +7,8 @@ const elStore={};
 function mkEl(id){if(!elStore[id])elStore[id]={id,innerHTML:'',hidden:false,style:{},dataset:{},classList:{_s:new Set(),add(c){this._s.add(c);},remove(...c){c.forEach(x=>this._s.delete(x));},toggle(){},contains(c){return this._s.has(c);}},querySelectorAll:()=>[],querySelector:()=>null,addEventListener(){},appendChild(){},remove(){},getBoundingClientRect:()=>({width:300,height:300,left:0,top:0})};return elStore[id];}
 const main={appendChild(el){ elStore[el.id]=el; }};
 global.document={getElementById:(id)=>mkEl(id),querySelector:(q)=>q==='.main'?main:null,querySelectorAll:()=>[],createElement:()=>({id:'',className:'',innerHTML:'',hidden:false,style:{},classList:{add(){},remove(){}},appendChild(){},remove(){},addEventListener(){}}),body:{appendChild(){},classList:{add(){},remove(){}},style:{}},documentElement:{style:{}},addEventListener(){}};
-global.window={addEventListener(){},matchMedia:()=>({matches:false,addEventListener(){}}),innerWidth:1200};global.Chart=function(){return{destroy(){}}};global.confirm=()=>1;global.btoa=s=>s;global.FileReader=function(){};
+global.window={addEventListener(){},matchMedia:()=>({matches:false,addEventListener(){}}),innerWidth:1200,scrollTo(){},scrollX:0,scrollY:0,pageYOffset:0};global.Chart=function(){return{destroy(){}}};global.confirm=()=>1;global.btoa=s=>s;global.FileReader=function(){};
+global.requestAnimationFrame=(fn)=>setTimeout(fn,0);global.cancelAnimationFrame=(id)=>clearTimeout(id);
 global.localStorage={_s:{},getItem(k){return this._s[k]||null;},setItem(k,v){this._s[k]=String(v);},removeItem(k){delete this._s[k];}};global.fetch=()=>Promise.reject(new Error('offline'));
 const fs=require('fs'), path=require('path');
 const code=fs.readFileSync(path.join(__dirname,'check.js'),'utf8');
@@ -40,12 +41,13 @@ const app=new Function('IDS','SUM', code+`
     lgOpts:gcLeagueOptions, setLeague:(id)=>{ _gc.league=id; }, league:gcLeague, owner:gcOwnerOf, mine:gcIsMine, pts:gcPoints, proj:gcProjPts,
     setPcard:(o)=>{ _pcardLg.byLeague=o; _pcardLg.at=Date.now(); }, BOARD, ath:gcAthletes, short:gcShort,
     resetPcard:()=>{ _pcardLg={at:0, byLeague:{}, loading:null}; }, lgSelect:gcLeagueSelectHTML, setProfile:(p)=>{ laLoadSleeperProfile=()=>p; },
-    stubLeagueReads:()=>{ const prev=sleeperFetch; sleeperFetch=async(url)=>{ fetches.push(url);
+    stubLeagueReads:()=>{ const prev=sleeperFetch; sleeperFetch=async(url)=>{   // no log here: prev() already logs what it handles
         if(/\\/league\\/L9\\/rosters/.test(url)) return [{roster_id:1, owner_id:'u1', players:['q2']},{roster_id:2, owner_id:'u7', players:['t1']}];
         if(/\\/league\\/L9\\/users/.test(url)) return [{user_id:'u1', display_name:'Sengi12'},{user_id:'u7', display_name:'kade', metadata:{team_name:'kademiller'}}];
         if(/\\/league\\/L9$/.test(url)) return {name:'Queen City Keepers', status:'in_season', season:'2026', scoring_settings:{pass_yd:0.05, pass_td:6}, roster_positions:['QB','RB','SUPER_FLEX'], settings:{type:0}, total_rosters:12};
         return prev(url); }; },
-    liveTimer:()=>_gcLiveTimer, clearLive:()=>{ if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; } }, setMode:(m)=>{ _gc.mode=m; }, setGame:(id)=>{ _gc.game=id; } };
+    liveTimer:()=>_gcLiveTimer, clearLive:()=>{ if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; } }, setMode:(m)=>{ _gc.mode=m; }, setGame:(id)=>{ _gc.game=id; },
+    onBoard:gcStreamOnBoard, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
 `)(IDS, SUM);
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -153,6 +155,38 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   app.setMode('min'); app.gameHTML(app.GAME('in'));
   chk(!app.liveTimer(), 'nor a live game while the panel is out of view');
   app.setMode('max');
+
+  console.log('=== the playoff rounds are weeks 19-22 everywhere ===');
+  chk(/seasontype=2&week=18&/.test(app.boardUrl(2026,18)) && /seasontype=3&week=1&/.test(app.boardUrl(2026,19)) && /seasontype=3&week=2&/.test(app.boardUrl(2026,20)) && /seasontype=3&week=3&/.test(app.boardUrl(2026,21)) && /seasontype=3&week=5&/.test(app.boardUrl(2026,22)), 'ESPN: season type 3, rounds 1/2/3/5 (4 is the Pro Bowl)');
+  chk(app.weekLabel(19)==='Wild Card' && app.weekLabel(22)==='Super Bowl' && app.weekLabel(7)==='Week 7', 'the rounds have names');
+  chk(/2026\/18\?season_type=regular/.test(app.statsUrl(2026,18)) && /2026\/1\?season_type=post/.test(app.statsUrl(2026,19)) && /2026\/4\?season_type=post/.test(app.statsUrl(2026,22)) && /2026\/2\?season_type=post/.test(app.projUrl(2026,20)), 'Sleeper: the post-season weeks 1-4 for stats and projections');
+  const selHtml=app.gameHTML();   // (any tab) — the week select lives in gcHTML; check the label helper through the option text instead
+  chk(typeof app.weekLabel==='function', 'labels ready for the picker');
+
+  console.log('=== a play posts: the board changes, the summary is re-read at once ===');
+  const LIVE={state:'in', eid:'401872925', sit:{down:2, distance:7, ddt:'2nd & 7', spot:'TB 34', rz:false, poss:'CIN', period:3, clock:'4:12', lastPlayId:'p1', lastPlay:{id:'p1', text:'x', type:'Rush'}}};
+  const nSum=()=>app.fetches().filter(u=>/summary\?event=401872925/.test(u)).length;
+  app.setGame('TB@CIN'); app.setSum('401872925', SUM); const s0=nSum();
+  app.onBoard({CIN:LIVE, TB:LIVE});
+  chk(app.sumAt('401872925')===0 && nSum()>s0, 'a first sighting of a last play stales the cached summary and fetches it');
+  await settle();
+  const s1=nSum();
+  app.onBoard({CIN:LIVE, TB:LIVE});
+  chk(nSum()===s1, 'the same play again: nothing');
+  const LIVE2=JSON.parse(JSON.stringify(LIVE)); LIVE2.sit.ddt='3rd & 2'; LIVE2.sit.spot='TB 29';
+  app.onBoard({CIN:LIVE2, TB:LIVE2});
+  chk(nSum()===s1, 'the down moving without a new play repaints, no fetch');
+  const LIVE3=JSON.parse(JSON.stringify(LIVE2)); LIVE3.sit.lastPlayId='p2';
+  app.onBoard({CIN:LIVE3, TB:LIVE3}); await settle();
+  chk(nSum()===s1+1, 'a new play id: one fetch');
+  const g3=Object.assign(app.GAME('in'), {sit:LIVE3.sit});
+  const sh=app.sitHTML(g3);
+  chk(/gcf-dot/.test(sh) && /CIN ball/.test(sh) && /3rd &amp; 2 @ TB 29/.test(sh) && /Q3 4:12/.test(sh) && !app.sitHTML(app.GAME('post')), 'the situation line: possession, the down and spot, the clock — live games only');
+  const fh1=app.feedHTML(g3, SUM); const fewer=JSON.parse(JSON.stringify(SUM)); fewer.drives.previous=fewer.drives.previous.slice(0,-2);
+  app.feedHTML(g3, fewer); const fh2=app.feedHTML(g3, SUM);
+  chk(!/gcf-new/.test(fh1) && (fh2.match(/gcf-new/g)||[]).length>=1 && /gcf-now/.test(fh2), 'plays newer than the last paint flash in');
+  app.setBoardTeams({CIN:LIVE3, TB:LIVE3}); const s2=nSum(); app.landed();
+  chk(nSum()===s2, 'the board landing hook runs the stream check (same play: no fetch)');
 
   console.log('=== the summary fetch ===');
   const fresh=app.GAME(); fresh.eid='401872925'; delete require('fs');   // (no-op; keeps the linter quiet)

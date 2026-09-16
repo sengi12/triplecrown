@@ -6,15 +6,22 @@
 // a dot on each team's logo in the sidebar (played · playing) and the big record in the team
 // header — without 32 per-team record fetches. Refreshes on its own while a game is on.
 var _tcBoard = { season:null, week:null, at:0, teams:{}, busy:false, live:false };
-const TC_BOARD_URL = (season, week)=>`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=2&week=${week}&dates=${season}`;
+// Weeks 1-18 are the regular season (ESPN season type 2); 19-22 are the playoff rounds
+// (type 3: Wild Card 1, Divisional 2, Conference Championship 3, Super Bowl 5 — 4 is the
+// Pro Bowl), the same 19-22 the tracker and its week picker use everywhere.
+const TC_PLAYOFF_WEEKS = { 19:['Wild Card',1], 20:['Divisional',2], 21:['Conf. Championship',3], 22:['Super Bowl',5] };
+function tcEspnWeek(week){ const w=Number(week); return TC_PLAYOFF_WEEKS[w] ? {type:3, week:TC_PLAYOFF_WEEKS[w][1]} : {type:2, week:w}; }
+function tcWeekLabel(week){ const w=Number(week); return TC_PLAYOFF_WEEKS[w] ? TC_PLAYOFF_WEEKS[w][0] : `Week ${w}`; }
+const TC_LAST_WEEK = 22;
+const TC_BOARD_URL = (season, week)=>{ const e=tcEspnWeek(week); return `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=${e.type}&week=${e.week}&dates=${season}`; };
 const TC_BOARD_ABBR = { WSH:'WAS' };          // ESPN spells one club differently
-const TC_BOARD_TTL_LIVE = 20*1000, TC_BOARD_TTL_IDLE = 5*60*1000;   // live: the Game Center's poll re-reads it every 15 s
+const TC_BOARD_TTL_LIVE = 7*1000, TC_BOARD_TTL_IDLE = 5*60*1000;   // live: the Game Center's poll re-reads it every 8 s (one small request)
 
 function tcBoardWeek(){
   // The tracker's week: the finished week holds through Tuesday and until Wednesday morning
   // (tcTrackerWeek), so the dots and records keep showing the week just played.
   const w=(typeof tcTrackerWeek==='function') ? tcTrackerWeek() : ((typeof TC_SEASON!=='undefined')?Number(TC_SEASON.week||0):0);
-  return Math.min(18, Math.max(1, w||1));
+  return Math.min(TC_LAST_WEEK, Math.max(1, w||1));
 }
 // Parse one scoreboard payload → {CODE: {state, rec, opp, home, score, oppScore, detail}}.
 function tcParseBoard(board){
@@ -25,6 +32,20 @@ function tcParseBoard(board){
     const st=(comp.status||ev.status||{}), type=st.type||{};
     const state=type.state==='post'?'post':type.state==='in'?'in':'pre';
     const detail=String(type.shortDetail||type.detail||'')
+    // The situation while a game is on: the ball's spot, the down, the last play (its id is
+    // the change signal the Game Center's live poll watches), the clock.
+    const teamById={}; (comp.competitors||[]).forEach(c=>{ const ab=c.team&&c.team.abbreviation; if(c.team&&ab) teamById[String(c.team.id)]=TC_BOARD_ABBR[ab]||ab; });
+    const sit=comp.situation||null; const lp=sit&&sit.lastPlay;
+    const situation = sit ? {
+      down:Number(sit.down||0), distance:Number(sit.distance||0), ddt:String(sit.shortDownDistanceText||sit.downDistanceText||''), spot:String(sit.possessionText||''),
+      rz:!!sit.isRedZone, poss:sit.possession?(teamById[String(sit.possession)]||''):'',
+      period:Number(st.period||0), clock:String(st.displayClock||''),
+      lastPlayId: lp ? String(lp.id||'') : '',
+      lastPlay: lp ? { id:String(lp.id||''), text:String(lp.text||''), type:String((lp.type&&lp.type.text)||''), scoreValue:Number(lp.scoreValue||0), yds:Number(lp.statYardage||0),
+        team: lp.team ? (teamById[String(lp.team.id)]||'') : '',
+        athletes:(Array.isArray(lp.athletesInvolved)?lp.athletesInvolved:[]).map(a=>({id:String(a.id||''), name:String(a.displayName||a.fullName||''), pos:String(a.position||''), team:a.team?(teamById[String(a.team.id)]||''):''})),
+        down:Number((lp.start&&lp.start.down)||0), ddt:String((lp.start&&lp.start.shortDownDistanceText)||''), spot:String((lp.start&&lp.start.possessionText)||''), yte:(lp.start&&lp.start.yardsToEndzone!=null)?Number(lp.start.yardsToEndzone):null } : null,
+    } : null;
     const sides=(comp.competitors||[]).map(c=>{
       const ab=c.team&&c.team.abbreviation; const code=ab?(TC_BOARD_ABBR[ab]||ab):'';
       const recs=Array.isArray(c.records)?c.records:[];
@@ -37,7 +58,7 @@ function tcParseBoard(board){
     sides.forEach(s=>{
       const o=sides.find(x=>x!==s)||{};
       // eid: ESPN's event id — the key to the game summary (plays, box score)
-      out[s.code]={ state, rec:s.rec, opp:o.code||'', home:s.home, score:s.score, oppScore:o.score!=null?o.score:null, detail, date:String(ev.date||comp.date||''), eid:String(ev.id||''), ls:s.ls };
+      out[s.code]={ state, rec:s.rec, opp:o.code||'', home:s.home, score:s.score, oppScore:o.score!=null?o.score:null, detail, date:String(ev.date||comp.date||''), eid:String(ev.id||''), ls:s.ls, sit:situation };
     });
   });
   return out;
@@ -71,6 +92,7 @@ function tcTeamGameState(team){
 // A landed board repaints what shows it: the sidebar dots, and the record in any header
 // already on screen (patched in place — a full re-render would reset sliders mid-edit).
 function tcBoardLanded(){
+  try{ if(typeof gcStreamOnBoard==='function') gcStreamOnBoard(_tcBoard.teams); }catch(e){}   // the Game Center's live poll: a new play?
   try{ if(typeof renderSidebar==='function') renderSidebar(); }catch(e){}
   try{
     if(typeof document==='undefined' || !document.querySelectorAll) return;

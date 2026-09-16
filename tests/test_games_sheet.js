@@ -10,6 +10,7 @@ const main={appendChild(el){ elStore[el.id]=el; }};
 const body={appendChild(el){ elStore[el.id]=el; },classList:mkCls(),style:{}};
 global.document={getElementById:(id)=>mkEl(id),querySelector:(q)=>q==='.main'?main:null,querySelectorAll:()=>[],createElement:()=>({id:'',className:'',innerHTML:'',hidden:false,style:{},classList:mkCls(),appendChild(){},querySelector:()=>null,querySelectorAll:()=>[]}),body,documentElement:{style:{}},addEventListener(){},visibilityState:'visible'};
 global.window={addEventListener(){},removeEventListener(){},matchMedia:()=>({matches:false,addEventListener(){}}),innerWidth:390,innerHeight:780,setTimeout:(fn,ms)=>setTimeout(fn,ms)};global.Chart=function(){return{destroy(){}}};global.confirm=()=>1;global.btoa=s=>s;global.FileReader=function(){};global.Range=function(){};global.AbortController=class{constructor(){this.signal={}}abort(){}};
+global.requestAnimationFrame=(fn)=>setTimeout(fn,0);global.cancelAnimationFrame=(id)=>clearTimeout(id);
 global.localStorage={_s:{},getItem(k){return this._s[k]||null;},setItem(k,v){this._s[k]=String(v);},removeItem(k){delete this._s[k];}};global.fetch=()=>Promise.reject(new Error('offline'));
 const fs=require('fs');const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`

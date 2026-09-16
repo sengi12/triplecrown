@@ -196,3 +196,14 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-ptsbox{display:flex;flex-direction:column;align-items:flex-end;line-height:1.05;}
 .gc-proj{font-size:9.5px;color:var(--muted);font-weight:600;}
 .gc-p-home .gc-ptsbox{align-items:flex-start;}
+
+/* the live situation line and a fresh play */
+.gcf-now{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:2px 0 6px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);font-size:11px;color:var(--muted);}
+.gcf-now b{color:var(--text);font-weight:800;}
+.gcf-now-dd{color:var(--text);}
+.gcf-now-clock{margin-left:auto;font-weight:800;color:var(--text);}
+.gcf-dot{width:8px;height:8px;border-radius:50%;background:#ff4d4d;box-shadow:0 0 0 0 rgba(255,77,77,.6);animation:gcfPulse 1.4s ease-out infinite;}
+@keyframes gcfPulse{0%{box-shadow:0 0 0 0 rgba(255,77,77,.6);}100%{box-shadow:0 0 0 8px rgba(255,77,77,0);}}
+.gcf-new{animation:gcfIn .9s ease-out;}
+@keyframes gcfIn{0%{background:rgba(0,212,170,.28);transform:translateY(-4px);}100%{background:var(--surface2);transform:none;}}
+@media (prefers-reduced-motion:reduce){ .gcf-dot,.gcf-new{animation:none;} }
