@@ -800,6 +800,21 @@ function laWeekProjKdefRows(wk){
   }
   return out;
 }
+// ── The in-season blend, one rule for the week, the hub and the trade value ──────
+// August's projection gives way to the season's evidence AS THE EVIDENCE GROWS: the
+// in-season share (season-to-date + last three) ramps from nothing to LA_BLEND_RECENT_MAX
+// over LA_BLEND_FULL_GP games. One bad week moves a WR1 a little, not off the top — three
+// in a row move him a lot. At five games and beyond this is exactly the old 35/30/35 split.
+// A player with no preseason projection at all (a role that did not exist in August) reads
+// the season's evidence alone.
+const LA_BLEND_FULL_GP = 5, LA_BLEND_RECENT_MAX = 0.65;
+function laInSeasonBlend(base, seas, rec3, gp){
+  if(seas==null || !(gp>0)) return base||0;
+  const recent = (rec3!=null && gp>=2) ? (0.30/0.65)*seas + (0.35/0.65)*rec3 : seas;
+  if(!(base>0)) return recent;
+  const w = LA_BLEND_RECENT_MAX*Math.min(1, gp/LA_BLEND_FULL_GP);
+  return (1-w)*base + w*recent;
+}
 // Weekly projection = OUR blend, not a flat season-projection ÷ 17:
 //   35% season projection rate + 30% season-to-date FPPG + 35% last-3-weeks FPPG,
 // then the opponent's defense-vs-position multiplier (±10%). A back who took over the
@@ -826,11 +841,8 @@ function laAdjWeekProj(p, wk, pm, dvp){
   const form=laWeeklyFormMap();
   const fe=form ? (form.get(String(p.id||''))||form.get(ecrNormName(p.name)+'|'+p.pos)) : null;
   const rec3=fe?fe.f3:null;
-  let exp;
   if(!(base>0) && seas==null && rec3==null) return zero;
-  if(seas!=null && rec3!=null && gp>=2)      exp=0.35*base+0.30*seas+0.35*rec3;
-  else if(seas!=null)                        exp=0.55*base+0.45*seas;
-  else                                       exp=base;
+  let exp=laInSeasonBlend(base, seas, rec3, gp);
   let defMult=1, opp=null;
   const sched=(typeof TC_INSEASON!=='undefined' && TC_INSEASON && TC_INSEASON.schedule)||null;
   if(dvp && sched && p.team && sched[p.team]) opp=sched[p.team][String(wk)]||null;

@@ -401,8 +401,9 @@ function laVorMap(){
 }
 const LA_VOR_SCALE = 100;   // lift VOR into the same working range as (chart pts x LA_VAL_SCALE)
 // In season a redraft asset is worth what he will score FROM HERE, not what August thought:
-// the per-game rate the weekly model trusts (35% preseason rate, 30% season-to-date, 35%
-// last three; a long-term absence halves it) over the replacement level, times the weeks
+// the per-game rate the weekly model trusts (laInSeasonBlend — the season's share ramps
+// with games played, so one bad week moves a WR1 a little and three in a row move him a
+// lot; a long-term absence halves it) over the replacement level, times the weeks
 // left. Replacement is half a bench body per team past the last starter — what the wire
 // hands you for free — so a useful bench player carries worth and a hot waiver back who
 // has outrun that level is not a zero. Same units as the preseason VOR (season points over
@@ -424,7 +425,8 @@ function laRosValueMap(){
     const base=fp/projG, gp=pace?pace.gp:0, seas=(pace&&gp>0)?pace.act/gp:null;
     const fe=form?(form.get(String(p.player_id||''))||form.get(ecrNormName(p.name)+'|'+p.pos)):null;
     const rec3=fe?fe.f3:null;
-    let r; if(seas!=null&&rec3!=null&&gp>=2) r=0.35*base+0.30*seas+0.35*rec3; else if(seas!=null) r=0.55*base+0.45*seas; else r=base;
+    let r=(typeof laInSeasonBlend==='function') ? laInSeasonBlend(base, seas, rec3, gp)
+          : ((seas!=null&&rec3!=null&&gp>=2) ? 0.35*base+0.30*seas+0.35*rec3 : (seas!=null ? 0.55*base+0.45*seas : base));
     const sp=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers)?sleeperPlayers[String(p.player_id||'')]:null;
     const st=sp&&sp.injury_status?String(sp.injury_status):'';
     if(st && LA_ROS_LONG_OUT[st]) r*=0.5;

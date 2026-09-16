@@ -36074,8 +36074,9 @@ function laVorMap(){
 }
 const LA_VOR_SCALE = 100;   // lift VOR into the same working range as (chart pts x LA_VAL_SCALE)
 // In season a redraft asset is worth what he will score FROM HERE, not what August thought:
-// the per-game rate the weekly model trusts (35% preseason rate, 30% season-to-date, 35%
-// last three; a long-term absence halves it) over the replacement level, times the weeks
+// the per-game rate the weekly model trusts (laInSeasonBlend — the season's share ramps
+// with games played, so one bad week moves a WR1 a little and three in a row move him a
+// lot; a long-term absence halves it) over the replacement level, times the weeks
 // left. Replacement is half a bench body per team past the last starter — what the wire
 // hands you for free — so a useful bench player carries worth and a hot waiver back who
 // has outrun that level is not a zero. Same units as the preseason VOR (season points over
@@ -36097,7 +36098,8 @@ function laRosValueMap(){
     const base=fp/projG, gp=pace?pace.gp:0, seas=(pace&&gp>0)?pace.act/gp:null;
     const fe=form?(form.get(String(p.player_id||''))||form.get(ecrNormName(p.name)+'|'+p.pos)):null;
     const rec3=fe?fe.f3:null;
-    let r; if(seas!=null&&rec3!=null&&gp>=2) r=0.35*base+0.30*seas+0.35*rec3; else if(seas!=null) r=0.55*base+0.45*seas; else r=base;
+    let r=(typeof laInSeasonBlend==='function') ? laInSeasonBlend(base, seas, rec3, gp)
+          : ((seas!=null&&rec3!=null&&gp>=2) ? 0.35*base+0.30*seas+0.35*rec3 : (seas!=null ? 0.55*base+0.45*seas : base));
     const sp=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers)?sleeperPlayers[String(p.player_id||'')]:null;
     const st=sp&&sp.injury_status?String(sp.injury_status):'';
     if(st && LA_ROS_LONG_OUT[st]) r*=0.5;
@@ -39426,6 +39428,21 @@ function laWeekProjKdefRows(wk){
   }
   return out;
 }
+// ── The in-season blend, one rule for the week, the hub and the trade value ──────
+// August's projection gives way to the season's evidence AS THE EVIDENCE GROWS: the
+// in-season share (season-to-date + last three) ramps from nothing to LA_BLEND_RECENT_MAX
+// over LA_BLEND_FULL_GP games. One bad week moves a WR1 a little, not off the top — three
+// in a row move him a lot. At five games and beyond this is exactly the old 35/30/35 split.
+// A player with no preseason projection at all (a role that did not exist in August) reads
+// the season's evidence alone.
+const LA_BLEND_FULL_GP = 5, LA_BLEND_RECENT_MAX = 0.65;
+function laInSeasonBlend(base, seas, rec3, gp){
+  if(seas==null || !(gp>0)) return base||0;
+  const recent = (rec3!=null && gp>=2) ? (0.30/0.65)*seas + (0.35/0.65)*rec3 : seas;
+  if(!(base>0)) return recent;
+  const w = LA_BLEND_RECENT_MAX*Math.min(1, gp/LA_BLEND_FULL_GP);
+  return (1-w)*base + w*recent;
+}
 // Weekly projection = OUR blend, not a flat season-projection ÷ 17:
 //   35% season projection rate + 30% season-to-date FPPG + 35% last-3-weeks FPPG,
 // then the opponent's defense-vs-position multiplier (±10%). A back who took over the
@@ -39452,11 +39469,8 @@ function laAdjWeekProj(p, wk, pm, dvp){
   const form=laWeeklyFormMap();
   const fe=form ? (form.get(String(p.id||''))||form.get(ecrNormName(p.name)+'|'+p.pos)) : null;
   const rec3=fe?fe.f3:null;
-  let exp;
   if(!(base>0) && seas==null && rec3==null) return zero;
-  if(seas!=null && rec3!=null && gp>=2)      exp=0.35*base+0.30*seas+0.35*rec3;
-  else if(seas!=null)                        exp=0.55*base+0.45*seas;
-  else                                       exp=base;
+  let exp=laInSeasonBlend(base, seas, rec3, gp);
   let defMult=1, opp=null;
   const sched=(typeof TC_INSEASON!=='undefined' && TC_INSEASON && TC_INSEASON.schedule)||null;
   if(dvp && sched && p.team && sched[p.team]) opp=sched[p.team][String(wk)]||null;
@@ -40164,11 +40178,10 @@ function hubWeekProj(row, ctx){
   const gp = fe ? fe.gp : 0;
   const seas = (fe && gp>0) ? fe.fppg : null;
   const rec3 = fe ? fe.f3 : null;
-  let exp;
   if(!(base>0) && seas==null && rec3==null) return zero;
-  if(seas!=null && rec3!=null && gp>=2)      exp = 0.35*base + 0.30*seas + 0.35*rec3;
-  else if(seas!=null)                        exp = 0.55*base + 0.45*seas;
-  else                                       exp = base;
+  // the shared in-season blend (99b laInSeasonBlend): the season's share ramps with games played
+  let exp = (typeof laInSeasonBlend==='function') ? laInSeasonBlend(base, seas, rec3, gp)
+          : (seas!=null && rec3!=null && gp>=2) ? 0.35*base + 0.30*seas + 0.35*rec3 : (seas!=null ? 0.55*base + 0.45*seas : base);
   let defMult = 1, oppRank = null;
   if(ctx.dvp && opp && ctx.dvp.ranks[opp] && ctx.dvp.ranks[opp][row.pos]){
     const r = ctx.dvp.ranks[opp][row.pos], n = ctx.dvp.codes.length||32;

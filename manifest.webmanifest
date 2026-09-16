@@ -1,14 +1,19 @@
 {
-  "name": "TripleCrown — Projection Builder",
+  "id": "triplecrown",
+  "name": "TripleCrown",
   "short_name": "TripleCrown",
-  "description": "Build your own NFL season projections, then draft from them.",
+  "description": "Fantasy football projections, rankings, live drafts and in-season league tools — free, and all yours.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
   "background_color": "#0d1117",
-  "theme_color": "#1599E6",
+  "theme_color": "#0d1117",
+  "categories": ["sports"],
   "icons": [
+    { "src": "images/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "images/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "images/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
     { "src": "images/app-icon.png", "sizes": "614x406", "type": "image/png", "purpose": "any" }
   ]
 }
