@@ -405,6 +405,12 @@ def _side_table(plays, team_col, last5_weeks, defense=False):
     sc["conv"] = sc["series_result"].isin(["First down", "Touchdown"])
     # one row per series would need series ids; approximate at play level (close enough for ranks)
     dconv = sc.groupby(team_col)["conv"].mean() * 100
+    # Success rate (nflverse `success`: EPA > 0), split by play type — the whole team's
+    # rushes and dropbacks, unlike the RB-only rush success on the O-line run table.
+    # For the defense these are rates ALLOWED (lower = better; ranked so via _DEF_LOWER_BETTER).
+    succ = pd.to_numeric(plays["success"], errors="coerce") if "success" in plays.columns else pd.Series(np.nan, index=plays.index)
+    rsr = succ[plays["play_type"] == "run"].groupby(plays[team_col]).mean() * 100
+    psr = succ[plays["play_type"] == "pass"].groupby(plays[team_col]).mean() * 100
     out = pd.DataFrame({
         "EPA/Play": epa.round(3),
         "Yards Per Play": ypl.round(2),
@@ -412,6 +418,8 @@ def _side_table(plays, team_col, last5_weeks, defense=False):
         "Points Per Drive": ppd.round(2),
         "Explosive Play Rate": expl.round(1),
         "Down Conversion Rate": dconv.round(1),
+        "Rush Success Rate": rsr.round(1),
+        "Pass Success Rate": psr.round(1),
     })
     return out
 
@@ -3558,13 +3566,29 @@ def _scheme_name_from_group(b, t, align, ol):
     return "SHOTGUN" + jumbo
 
 
-def coaching_scheme(season, min_group_plays=1, max_groups=40):
+# The season in progress has no participation file (personnel groupings and routes chart
+# after the post-season), but FTN charts the QB's alignment and the backfield count within
+# two days of every game. A charted set is that pair — SHOTGUN / SINGLE BACK / I-FORM /
+# PISTOL / EMPTY with its backs — and the TE/WR split it is drawn with is the common one for
+# that backfield count, flagged `pers_assumed` so the sheet says so. Routes stay empty.
+_CHARTED_SKILL_SPLIT = {0: (1, 4), 1: (1, 3), 2: (1, 2), 3: (1, 1)}
+# FTN writes the alignment as a letter (S / U / P; "0" = no set, e.g. a kneel) — the words
+# are accepted too. Anything else is uncharted and left out.
+_CHARTED_ALIGN = {"shotgun": "gun", "s": "gun", "under center": "uc", "u": "uc", "pistol": "pistol", "p": "pistol"}
+
+
+def coaching_scheme(season, min_group_plays=1, max_groups=40, allow_charting_only=False):
     """Team coaching-scheme visualization payload keyed by team code.
 
     Produces compact per-team view buckets (down × distance-to-sticks × play-type) with top
     personnel groups, pass-run tendencies, route leaders by slot, and top run lanes. Every
     personnel grouping with at least one play is included (no plays-per-group threshold), so a
     filter combination only reads “no plays” when the situation truly never occurred.
+
+    `allow_charting_only`: with no participation file (the season in progress), build the
+    same payload from pbp + FTN charting — sets by alignment × backfield count, an assumed
+    TE/WR split, real run lanes, no routes — and mark it `charting_only`. Off by default so a
+    frozen season whose participation fetch merely failed never bakes an approximation.
     """
     pbp_cols = [
         "game_id", "play_id", "posteam", "play_type", "pass", "rush_attempt", "qb_scramble",
@@ -3579,15 +3603,28 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40):
     pbp = pbp[(pbp["season_type"] == "REG") & pbp["play_type"].isin(["pass", "run"])].copy()
     if pbp.empty:
         return {}
-    part = _aux_csv(PART_URL.format(season=season),
-                    usecols=["nflverse_game_id", "play_id", "offense_personnel", "offense_formation", "route"])
+    part = None
     try:
-        ftn = _aux_csv(FTN_URL.format(season=season),
-                       usecols=["nflverse_game_id", "nflverse_play_id", "is_motion", "is_play_action", "is_no_huddle"])
+        part = _aux_csv(PART_URL.format(season=season),
+                        usecols=["nflverse_game_id", "play_id", "offense_personnel", "offense_formation", "route"])
     except Exception:
-        ftn = pd.DataFrame(columns=["nflverse_game_id", "nflverse_play_id", "is_motion", "is_play_action", "is_no_huddle"])
+        part = None
+    charting_only = part is None or not len(part) or "offense_personnel" not in part.columns
+    if charting_only and not allow_charting_only:
+        return {}
+    ftn_cols = ["nflverse_game_id", "nflverse_play_id", "is_motion", "is_play_action", "is_no_huddle"]
+    if charting_only:
+        ftn_cols += ["qb_location", "n_offense_backfield"]
+    try:
+        ftn = _aux_csv(FTN_URL.format(season=season), usecols=ftn_cols)
+    except Exception:
+        ftn = pd.DataFrame(columns=ftn_cols)
 
-    d = pbp.merge(part, left_on=["game_id", "play_id"], right_on=["nflverse_game_id", "play_id"], how="inner")
+    if charting_only:
+        d = pbp.copy()
+        d["route"] = None          # routes chart with the participation file, post-season
+    else:
+        d = pbp.merge(part, left_on=["game_id", "play_id"], right_on=["nflverse_game_id", "play_id"], how="inner")
     if len(ftn):
         d = d.merge(ftn, left_on=["game_id", "play_id"], right_on=["nflverse_game_id", "nflverse_play_id"], how="left")
     else:
@@ -3596,17 +3633,34 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40):
         d["is_no_huddle"] = False
     d["posteam"] = d["posteam"].replace(NFLVERSE_TO_SEED)
 
-    pr = d["offense_personnel"].apply(_scheme_parse_personnel)
-    d = d[pr.notna()].copy()
-    if d.empty:
-        return {}
-    pr = pr[pr.notna()]
-    d["backs"] = [x[0] for x in pr]
-    d["te"] = [x[1] for x in pr]
-    d["wr"] = [x[2] for x in pr]
-    d["ol"] = [x[3] for x in pr]
-    d["p"] = d["backs"].astype(str) + d["te"].astype(str)
-    d["align"] = d.apply(_scheme_align, axis=1)
+    if charting_only:
+        # A charted set: the QB's alignment × the backfield count, from FTN. Plays FTN has
+        # not charted yet (the newest game, for a day or two) carry no set and are left out.
+        if "qb_location" not in d.columns or not d["qb_location"].notna().any():
+            return {}
+        loc = d["qb_location"].astype(str).str.strip().str.lower()
+        backs = pd.to_numeric(d["n_offense_backfield"], errors="coerce")
+        d = d[loc.isin(_CHARTED_ALIGN.keys()) & backs.notna()].copy()
+        if d.empty:
+            return {}
+        d["backs"] = backs.loc[d.index].clip(0, 3).astype(int)
+        d["align"] = loc.loc[d.index].map(_CHARTED_ALIGN)
+        d["te"] = d["backs"].map(lambda b: _CHARTED_SKILL_SPLIT[int(b)][0])
+        d["wr"] = d["backs"].map(lambda b: _CHARTED_SKILL_SPLIT[int(b)][1])
+        d["ol"] = 5
+        d["p"] = d["backs"].astype(str) + "B"
+    else:
+        pr = d["offense_personnel"].apply(_scheme_parse_personnel)
+        d = d[pr.notna()].copy()
+        if d.empty:
+            return {}
+        pr = pr[pr.notna()]
+        d["backs"] = [x[0] for x in pr]
+        d["te"] = [x[1] for x in pr]
+        d["wr"] = [x[2] for x in pr]
+        d["ol"] = [x[3] for x in pr]
+        d["p"] = d["backs"].astype(str) + d["te"].astype(str)
+        d["align"] = d.apply(_scheme_align, axis=1)
     d["lane"] = d.apply(_scheme_lane, axis=1)
     d["is_red_zone"] = d["yardline_100"].notna() & (d["yardline_100"] <= 20)
 
@@ -3740,6 +3794,8 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40):
                         "backs": int(b), "te": int(t), "wr": int(w), "ol": int(ol),
                         "assigns": assigns,
                     }
+                    if charting_only:
+                        formation_table[sig]["pers_assumed"] = True
                 groups.append({
                     "sig": sig,
                     "n": n,
@@ -3814,6 +3870,8 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40):
             "formations": formation_table,
             "views": views,
         }
+        if charting_only:
+            out[team]["charting_only"] = True
     return out
 
 # ── Seed block builder (opt-in `--nflverse` addition, non-destructive) ────────
@@ -3821,7 +3879,8 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40):
 # Sumer (player values-list) tables, so the app can A/B them against the scraped originals.
 # Only the high-fidelity columns validated against Sharp/Sumer are included.
 _DEF_LOWER_BETTER = ["Yards Per Play", "Y/PL Last 5", "Points Per Drive",
-                     "Explosive Play Rate", "Down Conversion Rate"]
+                     "Explosive Play Rate", "Down Conversion Rate",
+                     "Rush Success Rate", "Pass Success Rate"]
 
 def _shape_team(df, lower_better=()):
     cols = list(df.columns)

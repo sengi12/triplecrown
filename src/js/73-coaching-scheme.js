@@ -285,6 +285,7 @@ function _schemeToGroup(g){
     te: _schemeNumber(g.te, 0),
     wr: _schemeNumber(g.wr, 0),
     ol: _schemeNumber(g.ol, 5),
+    pers_assumed: !!g.pers_assumed,
     n: _schemeNumber(g.n, 0),
     share: _schemeNumber(g.share, 0),
     pass_rate: _schemeNumber(g.pass_rate, 0),
@@ -398,6 +399,9 @@ function _schemeBuildFvCalc(p){
     names: (p && p.data && p.data.names) ? p.data.names : {},
     jerseys: (p && p.data && p.data.jerseys) ? p.data.jerseys : {},
     slots: (p && p.data && p.data.slots) ? p.data.slots : {},
+    // The season in progress: sets charted by alignment × backfield (no personnel file
+    // yet), the TE/WR split assumed, no routes — the sheet says so and draws no routes.
+    charting_only: !!(p && p.data && p.data.charting_only),
   };
 }
 
@@ -1531,12 +1535,15 @@ function _schemeRzTrigger(teamCode, season){
 // when the personnel string is missing/odd.
 function _schemePersonnelName(g){
   const p = String((g && g.p) || '').trim();
+  // A charted set (season in progress): the backfield count is charted, the TE/WR split is not.
+  if((g && g.pers_assumed) || /^\dB$/.test(p)) return `${_schemeNumber(g && g.backs, 0)}-back sets`;
   if(/^\d{2}$/.test(p)) return `${p} personnel`;
   const b = _schemeNumber(g && g.backs, 0);
   const t = _schemeNumber(g && g.te, 0);
   return `${b}${t} personnel`;
 }
 function _schemePersonnelDetail(g){
+  if(g && g.pers_assumed) return `${_schemeNumber(g && g.backs,0)}RB · charted set`;
   return `${_schemeNumber(g && g.backs,0)}RB ${_schemeNumber(g && g.te,0)}TE ${_schemeNumber(g && g.wr,0)}WR`;
 }
 
@@ -2204,7 +2211,7 @@ function _schemeRenderTemplate(template, p){
     .replace(/__TC_SCRIPT_CLOSE__/g, _SCHEME_SCRIPT_CLOSE)
     .replace('__TC_FV_SCRIPT__', script)
     .replace('Detroit Lions &mdash; Playbook', `${full} &mdash; Playbook`)
-    .replace(/\b20\d{2}\s+·\s+Routes mapped to players/, `${season} · Routes mapped to players`)
+    .replace(/\b20\d{2}\s+·\s+Routes mapped to players/, (p && p.data && p.data.charting_only) ? `${season} · Charted sets · routes after the season` : `${season} · Routes mapped to players`)
     .replace(/FTN participation, 20\d{2} REG/, `FTN participation, ${season} REG`)
     .replace('WR1=St. Brown, WR2=Williams', `WR1=${wr1}, WR2=${wr2}`)
     .replace(/const FV=.*?const FORM=FV\.data;\s*const SEASON=FV\.season;\s*const NAMES=FV\.names;\s*const TEAM_CODE=.*?;/s, script);
@@ -2250,6 +2257,9 @@ function _renderTeamCoachingScheme(){
   schemeSeason = p ? p.season : pick;
   const missingNote = _schemeMissingSeason
     ? ` · ${_schemeEscHtml(_schemeMissingSeason)} playsheet publishes after the season` : '';
+  // The season in progress runs on charted sets until its participation file publishes.
+  const chartNote = (p && p.data && p.data.charting_only && schemeViewTab!=='tendencies')
+    ? ' · charted sets — personnel and routes publish after the season' : '';
   if(!p){
     host.innerHTML = `<div class="scheme-overlay" onclick="closeTeamCoachingScheme()">
       <div class="scheme-modal" onclick="event.stopPropagation()">
@@ -2273,7 +2283,7 @@ function _renderTeamCoachingScheme(){
         <img src="${NFL_LOGO(schemeTeam)}" class="scheme-team-logo" onerror="this.style.display='none'">
         <div>
           <div class="scheme-title">${teamDisplayName(schemeTeam)} Playbook</div>
-          <div class="scheme-subtitle">${p.season} ${schemeViewTab==='tendencies'?'tendencies':'playsheet'}${missingNote}</div>
+          <div class="scheme-subtitle">${p.season} ${schemeViewTab==='tendencies'?'tendencies':'playsheet'}${missingNote}${chartNote}</div>
           ${_schemeOcCallout(schemeTeam)}
         </div>
       </div>

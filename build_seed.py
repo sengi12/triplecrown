@@ -133,7 +133,10 @@ def _encode_coaching(seed, round_epa=3):
             f = t["formations"][sig]
             al_i(f["align"])
             assigns_c = [[a["slot"], enc_routes(a.get("routes"))] for a in f["assigns"]]
-            forms.append([sig, f["name"], f["backs"], f["te"], f["wr"], f["ol"], assigns_c])
+            # v3 tail (appended, read defensively on decode): 1 when the TE/WR split is
+            # assumed — the season in progress on charted sets, no participation file yet.
+            forms.append([sig, f["name"], f["backs"], f["te"], f["wr"], f["ol"], assigns_c,
+                          1 if f.get("pers_assumed") else 0])
 
         def enc_lanes(lanes):
             return [[ln_i(l[0]), l[1], R(l[2])] for l in (lanes or [])]
@@ -163,6 +166,8 @@ def _encode_coaching(seed, round_epa=3):
 
         out_teams[code] = {"team": t["team"], "slots": t["slots"], "names": t["names"],
                            "jerseys": t.get("jerseys", {}), "forms": forms, "views": vout}
+        if t.get("charting_only"):
+            out_teams[code]["co"] = 1      # charted sets: the app labels the sheet accordingly
 
     return {"v": 3, "leg": {"rt": rt, "ln": ln, "al": al}, "teams": out_teams}
 
@@ -2948,13 +2953,13 @@ def main():
             inseason = _ins.build_inseason(args.season, max_week=_max_week)
         except Exception as e:
             print(f"    ⚠ in-season sidecar failed: {type(e).__name__}: {e}")
-        # Live-season Playbook sidecar. Its formations/personnel/routes come from the
-        # participation file, which FTN hands nflverse only AFTER the post-season — so
-        # in-season this stays empty and the season's full Playbook backfills in February.
-        # (The live per-game scheme summaries ride the inseason sidecar instead —
-        # scheme_weekly builds from pbp + FTN charting, which DO update in-season.)
+        # Live-season Playbook sidecar. Personnel groupings and routes come from the
+        # participation file, which FTN hands nflverse only AFTER the post-season — so in
+        # season the builder falls back to charted sets (FTN's QB alignment × backfield
+        # count, pbp run lanes, no routes; marked charting_only) and the season's full
+        # Playbook backfills in February.
         try:
-            _lc = _nfl.coaching_scheme(int(args.season))
+            _lc = _nfl.coaching_scheme(int(args.season), allow_charting_only=True)
             if _lc:
                 _live_coaching[str(args.season)] = _lc
                 print(f"    → live coaching_scheme: {len(_lc)} teams (Playbook gets a {args.season} tab)")
