@@ -8,7 +8,7 @@
 var _tcBoard = { season:null, week:null, at:0, teams:{}, busy:false, live:false };
 const TC_BOARD_URL = (season, week)=>`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=2&week=${week}&dates=${season}`;
 const TC_BOARD_ABBR = { WSH:'WAS' };          // ESPN spells one club differently
-const TC_BOARD_TTL_LIVE = 45*1000, TC_BOARD_TTL_IDLE = 5*60*1000;
+const TC_BOARD_TTL_LIVE = 20*1000, TC_BOARD_TTL_IDLE = 5*60*1000;   // live: the Game Center's poll re-reads it every 15 s
 
 function tcBoardWeek(){
   // The tracker's week: the finished week holds through Tuesday and until Wednesday morning

@@ -91,7 +91,7 @@ console.log('=== a game still ahead shows each side with the week\'s projected l
   chk(!/no stat lines yet/.test(h) && !/loading the week/.test(h), 'no stat-line placeholder on an unplayed game');
   const played=app.gameHTML({id:'TB@CIN', home:'CIN', away:'TB', state:'post', detail:'Final', hs:33, as:27, hrec:'1-0', arec:'0-1'}, null, 1);
   chk(/loading the week's stat lines/.test(played) && !/gc-projnote/.test(played), 'a played game still waits for its stat lines');
-  chk(JSON.stringify(app.weekOpts(1))==='[1,2,3,4]' && JSON.stringify(app.weekOpts(17))==='[17,18,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1]', 'the picker lists now, three weeks ahead, then the weeks played');
+  chk(JSON.stringify(app.weekOpts(1))===JSON.stringify(Array.from({length:18},(_,i)=>i+1)) && JSON.stringify(app.weekOpts(17))==='[17,18,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1]' && app.weekOpts(2)[0]===2 && app.weekOpts(2)[16]===18 && app.weekOpts(2)[17]===1, 'the picker lists now, every week ahead to 18, then the weeks played');
   app.state().week=3; chk(app.gcWeek()===3, 'a week ahead can be picked'); app.state().week='current';
 }
 

@@ -4538,9 +4538,9 @@ function gcPick(id){ _gc.game=id; if(typeof _gcm!=='undefined' && _gcm.open==='h
 // "Now" is the tracker's week: the finished week holds through Tuesday and until Wednesday
 // 06:00 Eastern (tcTrackerWeek), so Tuesday's look still opens on everything that happened.
 function gcCurWeek(){ return (typeof tcTrackerWeek==='function') ? tcTrackerWeek() : Math.max(1, Number(TC_SEASON.week||1)); }
-// Any week of the season: the ones played, the one in progress, and the ones ahead (their
-// games with projected lines). GC_LOOKAHEAD weeks show in the picker after "now".
-const GC_LOOKAHEAD = 3;
+// Any week of the season: the ones played, the one in progress, and every one ahead (the
+// scoreboard knows the whole schedule; the next few weeks carry projected lines).
+const GC_LOOKAHEAD = 18;
 function gcWeek(){ const cur=gcCurWeek(); return _gc.week==='current' ? cur : Math.max(1, Math.min(18, _gc.week)); }
 function gcWeekOptions(cur){
   const out=[]; for(let w=cur; w<=Math.min(18, cur+GC_LOOKAHEAD); w++) out.push(w);
@@ -4758,6 +4758,7 @@ function gcGameHTML(game, rows, wk){
   if(typeof gcdTab!=='function') return hero+fantasy;
   // Feed | Stats (32b-game-detail.js): the play feed, or the quarter line with Away | Fantasy | Home.
   const sum=(typeof gcSummary==='function') ? gcSummary(game) : null;
+  if(game.state==='in' && typeof gcLiveTick==='function') gcLiveTick(game);   // a game on: the feed polls on its own clock
   const tab=gcdTab(game), side=_gcd.side||'fantasy';
   const tabs=`<div class="gc-tabs"><button class="gc-tab ${tab==='feed'?'active':''}" onclick="gcdSetTab('feed')">Feed</button><button class="gc-tab ${tab==='stats'?'active':''}" onclick="gcdSetTab('stats')">Stats</button></div>`;
   if(tab==='feed') return hero+tabs+gcFeedHTML(game, sum);
@@ -5045,7 +5046,27 @@ function renderGamesPhone(fromLoad){
 // are joined by first initial + last name within the team, then to Sleeper ids by espn_id.
 var _gcd = { sum:{}, busy:{}, tab:null, side:'fantasy', feedAll:false };
 const GC_SUMMARY_URL = (eid)=>`https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${eid}`;
-const GC_SUM_TTL_LIVE = 30*1000, GC_SUM_TTL_FINAL = 6*60*60*1000, GC_SUM_TTL_PRE = 10*60*1000;
+const GC_SUM_TTL_LIVE = 12*1000, GC_SUM_TTL_FINAL = 6*60*60*1000, GC_SUM_TTL_PRE = 10*60*1000;
+// While a picked game is on and the panel is in view, the summary (and the scoreboard) are
+// re-read every GC_LIVE_POLL ms — ESPN posts a play within seconds; the sheet's own 61 s
+// repaint was the ceiling before. One timer, restarted by every repaint.
+const GC_LIVE_POLL = 15*1000;
+var _gcLiveTimer = null;
+function gcPanelVisible(){
+  if(typeof _gc!=='undefined' && _gc && _gc.mode==='max') return true;
+  return !!(typeof _gcm!=='undefined' && _gcm && _gcm.open && _gcm.open!=='closed');
+}
+function gcLiveTick(game){
+  if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; }
+  if(!game || game.state!=='in' || !gcPanelVisible()) return;
+  _gcLiveTimer=setTimeout(()=>{
+    _gcLiveTimer=null;
+    if(typeof _gc==='undefined' || _gc.game!==game.id || !gcPanelVisible()) return;
+    try{ if(typeof tcWeekBoard==='function') tcWeekBoard(); }catch(e){}   // the score and clock
+    try{ gcSummary(game); }catch(e){}                                        // the plays (repaints when they land)
+    gcLiveTick(game);
+  }, GC_LIVE_POLL);
+}
 const GC_SKIP_TYPES = new Set(['Timeout','Official Timeout','End Period','End of Half','End of Game','Two-minute warning']);
 const GC_BOX_GROUPS = [['passing','Passing'],['rushing','Rushing'],['receiving','Receiving'],['fumbles','Fumbles'],['defensive','Defense'],['interceptions','Interceptions'],['kickReturns','Kick returns'],['puntReturns','Punt returns'],['kicking','Kicking'],['punting','Punting']];
 
@@ -5336,10 +5357,14 @@ function gcLeagueEntry(){
 }
 function gcLeagueSelectHTML(){
   const opts=gcLeagueOptions(), cur=gcLeague();
-  if(typeof pcardLeaguesLoad==='function' && typeof _pcardLg!=='undefined' && _pcardLg && !_pcardLg.at && !_pcardLg.loading){
-    try{ pcardLeaguesLoad().then(()=>gcDetailRepaint()).catch(()=>{}); }catch(e){}
+  // The synced leagues load on the first paint that needs them (three small reads each,
+  // kept ten minutes); the list says so until they land, then repaints with every league.
+  let loading=false;
+  if(typeof pcardLeaguesLoad==='function' && typeof _pcardLg!=='undefined' && _pcardLg && typeof pcardLeaguesAvailable==='function' && pcardLeaguesAvailable()){
+    if(!_pcardLg.at && !_pcardLg.loading){ try{ const pr=pcardLeaguesLoad(); if(pr && pr.then) pr.then(()=>gcDetailRepaint()).catch(()=>{}); }catch(e){} }
+    loading = !_pcardLg.at && !!_pcardLg.loading;
   }
-  return `<div class="gc-lgrow"><span class="gc-lglbl">Fantasy</span><select class="ld-sel gc-lgsel" onchange="gcSetLeague(this.value)">${opts.map(o=>`<option value="${escAttr(o.id)}" ${o.id===cur?'selected':''}>${escHtml(o.name)}</option>`).join('')}</select></div>`;
+  return `<div class="gc-lgrow"><span class="gc-lglbl">Fantasy</span><select class="ld-sel gc-lgsel" onchange="gcSetLeague(this.value)">${opts.map(o=>`<option value="${escAttr(o.id)}" ${o.id===cur?'selected':''}>${escHtml(o.name)}</option>`).join('')}${loading?'<option disabled>loading your leagues…</option>':''}</select></div>`;
 }
 // The projected points for a player under the pane's scoring, from the week's projection feed.
 function gcProjPts(pid, wk){
@@ -25730,7 +25755,7 @@ function hcIsPlaycaller(team){
 var _tcBoard = { season:null, week:null, at:0, teams:{}, busy:false, live:false };
 const TC_BOARD_URL = (season, week)=>`https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=2&week=${week}&dates=${season}`;
 const TC_BOARD_ABBR = { WSH:'WAS' };          // ESPN spells one club differently
-const TC_BOARD_TTL_LIVE = 45*1000, TC_BOARD_TTL_IDLE = 5*60*1000;
+const TC_BOARD_TTL_LIVE = 20*1000, TC_BOARD_TTL_IDLE = 5*60*1000;   // live: the Game Center's poll re-reads it every 15 s
 
 function tcBoardWeek(){
   // The tracker's week: the finished week holds through Tuesday and until Wednesday morning
