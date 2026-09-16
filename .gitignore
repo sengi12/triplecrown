@@ -22,3 +22,16 @@ index_tm.html
 
 # wrangler (tools/mcp_worker) local state
 .wrangler/
+
+# The native shells (mobile/): Capacitor's installed packages and Gradle/Xcode build output.
+# The generated android/ and ios/ projects ARE committed (they carry app-level config).
+mobile/node_modules/
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/app/build/
+mobile/android/local.properties
+mobile/android/.idea/
+mobile/ios/App/Pods/
+mobile/ios/App/build/
+mobile/*.keystore
+mobile/*.jks

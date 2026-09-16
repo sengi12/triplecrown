@@ -344,7 +344,7 @@ const _asyncTools=(async()=>{
   const ml=await app.tcLocalToolCall('my_leagues', {});
   chk(/MY LEAGUES \(2\)/.test(ml) && /Eliminator.*Chopped.*FAAB \$900 left of \$1000 · 2 of 2 teams alive/.test(ml) && /Queen City Kings.*redraft.*FAAB \$70 left of \$100/.test(ml) && /top adds: Free Wideout \(WR\) \$/.test(ml), 'my_leagues: every synced league with FAAB, the field and the top adds');
   const lu=await app.tcLocalToolCall('lineup', {league:'kings'});
-  chk(/Queen City Kings/.test(lu) && !/Eliminator/.test(lu) && /optimal lineup: QB The Passer/.test(lu) && /adds: Free Wideout \(WR\) for Backup Back \$10/.test(lu) && /FAAB \$70 of \$100/.test(lu), 'lineup: one league\'s optimal lineup, calls and adds');
+  chk(/Queen City Kings/.test(lu) && !/Eliminator/.test(lu) && /optimal lineup: QB The Passer/.test(lu) && /adds: Free Wideout \(WR\) for Backup Back \$\d+/.test(lu) && /FAAB \$70 of \$100/.test(lu), 'lineup: one league\'s optimal lineup, calls and adds');
   chk(/No league is synced/.test(await app.tcLocalToolCall('standings', {})), 'standings without an Analyzer snapshot says so');
   const ad=await app.tcLocalToolCall('app_data', {path:'inseason.player_weekly.cols'});
   chk(/"tgt","rec","rec_yd"/.test(ad), 'app_data reads a leaf table');

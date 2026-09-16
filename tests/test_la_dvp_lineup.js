@@ -16,7 +16,7 @@ const app=new Function(code+`return {
   setInseason:(x)=>{TC_INSEASON=x;}, setSnapshot:(s)=>{leagueSnapshot=s;}, setPhaseVar:(p)=>{currentPhase=p;},
   setSleeperFetch:(f)=>{sleeperFetch=f;},
   setPaceForPlayer:(f)=>{paceForPlayer=f;},
-  setWeekProj:(wk,rows)=>{ const d=_laWpEntry(wk); d.rows=rows; d.at=Date.now(); d.fails=9; }, laWeekProjKdefRows, laWeekProjPts, laProjMap,
+  laInSeasonBlend, setWeekProj:(wk,rows)=>{ const d=_laWpEntry(wk); d.rows=rows; d.at=Date.now(); d.fails=9; }, laWeekProjKdefRows, laWeekProjPts, laProjMap,
   setPlayers:(p)=>{ sleeperPlayers=Object.assign({}, (typeof sleeperPlayers!=='undefined'&&sleeperPlayers)||{}, p); },
   scoring:scoringSettings };`)();
 
@@ -159,7 +159,7 @@ chk(noDvp.defMult===1,'no sidecar → matchup multiplier degrades to 1');
 // recent-form data is loaded (the sidecar here carries no player_weekly).
 app.setPaceForPlayer(()=>({gp:5, base:100, act:100, pace17:300}));   // 20 FPPG to date
 const blended=app.laAdjWeekProj({name:'Gamma Wideout',pos:'WR',team:'MIA',id:'p3'}, 3, pm, dvp);
-chk(Math.abs(blended.adj-(0.55*10+0.45*20)*0.90)<1e-6,'weekly proj = 55% yours + 45% season FPPG, × matchup');
+chk(Math.abs(blended.adj-(0.35*10+0.65*20)*0.90)<1e-6,'weekly proj at five games = 35% yours + 65% season FPPG, × matchup');
 app.setPaceForPlayer(()=>null);
 const noPace=app.laAdjWeekProj({name:'Gamma Wideout',pos:'WR',team:'MIA',id:'p3'}, 3, pm, dvp);
 chk(Math.abs(noPace.adj-10*0.90)<1e-6,'no live data → your projection rate alone, × matchup');
@@ -263,6 +263,17 @@ console.log('=== player card: the live season lists what is coming ===');
 }
 
 
+
+
+console.log('=== the in-season blend ramps with games played ===');
+{
+  const b=app.laInSeasonBlend;
+  chk(Math.abs(b(20, 5, null, 1)-(0.87*20+0.13*5))<1e-9, 'one game: 87% the projection, 13% the week — a WR1 with a bad opener is still a WR1');
+  chk(Math.abs(b(20, 5, 5, 3)-((1-0.39)*20+0.39*5))<1e-9, 'three games: 39% the season');
+  chk(Math.abs(b(20, 5, 8, 5)-(0.35*20+0.30*5+0.35*8))<1e-9 && Math.abs(b(20, 5, 8, 12)-(0.35*20+0.30*5+0.35*8))<1e-9, 'five games and beyond: the full 35/30/35 split');
+  chk(b(0, 12, 14, 1)===12 && Math.abs(b(0, 12, 14, 2)-((0.30/0.65)*12+(0.35/0.65)*14))<1e-9, 'no preseason projection → the season\'s evidence alone');
+  chk(b(20, null, null, 3)===20 && b(20, 9, null, 0)===20, 'no games yet → the projection');
+}
 
 console.log(`\n${pass}/${total}`);
 if(pass!==total) process.exit(1);

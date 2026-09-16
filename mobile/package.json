@@ -1,0 +1,20 @@
+{
+  "name": "triplecrown-mobile",
+  "private": true,
+  "version": "1.0.0",
+  "description": "The TripleCrown app as a native shell for Android and iOS (Capacitor).",
+  "scripts": {
+    "sync": "cap sync",
+    "android": "cap open android",
+    "ios": "cap open ios",
+    "apk": "cd android && ./gradlew assembleDebug && ls -la app/build/outputs/apk/debug/",
+    "aab": "cd android && ./gradlew bundleRelease && ls -la app/build/outputs/bundle/release/"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.0.0"
+  }
+}

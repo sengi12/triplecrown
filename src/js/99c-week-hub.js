@@ -68,11 +68,10 @@ function hubWeekProj(row, ctx){
   const gp = fe ? fe.gp : 0;
   const seas = (fe && gp>0) ? fe.fppg : null;
   const rec3 = fe ? fe.f3 : null;
-  let exp;
   if(!(base>0) && seas==null && rec3==null) return zero;
-  if(seas!=null && rec3!=null && gp>=2)      exp = 0.35*base + 0.30*seas + 0.35*rec3;
-  else if(seas!=null)                        exp = 0.55*base + 0.45*seas;
-  else                                       exp = base;
+  // the shared in-season blend (99b laInSeasonBlend): the season's share ramps with games played
+  let exp = (typeof laInSeasonBlend==='function') ? laInSeasonBlend(base, seas, rec3, gp)
+          : (seas!=null && rec3!=null && gp>=2) ? 0.35*base + 0.30*seas + 0.35*rec3 : (seas!=null ? 0.55*base + 0.45*seas : base);
   let defMult = 1, oppRank = null;
   if(ctx.dvp && opp && ctx.dvp.ranks[opp] && ctx.dvp.ranks[opp][row.pos]){
     const r = ctx.dvp.ranks[opp][row.pos], n = ctx.dvp.codes.length||32;

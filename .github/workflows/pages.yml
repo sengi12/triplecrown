@@ -37,7 +37,7 @@ jobs:
           cp index.html _site/index.html
           # Only the images the APP actually references. The rest of images/ is README
           # screenshots (~2MB), which GitHub renders from the repo, not from Pages.
-          cp images/app-icon.png images/ktc.png images/sleeper.png _site/images/
+          cp images/app-icon.png images/icon-192.png images/icon-512.png images/icon-512-maskable.png images/ktc.png images/sleeper.png _site/images/
           cp seeds/*.json.gz _site/seeds/
           # The MCP shards: small JSON files the Cloudflare Worker (tools/mcp_worker) reads per
           # tool call, so it never has to parse the seed. Rebaked on every deploy; the worker
