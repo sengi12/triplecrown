@@ -1379,6 +1379,9 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gcm-sheet .gcm-leaders .ld-col{width:44px;font-size:10px;}
 .gcm-sheet .gcm-leaders .ld-pts{min-width:40px;}
 .gcm-sheet .gcm-leaders .ld-row{gap:6px;}
+/* A game still ahead: projected lines, marked as such. */
+.gc-projnote{font-size:10px;color:var(--muted);text-align:center;padding:6px 10px 2px;letter-spacing:.03em;}
+.gc-p-proj .gc-pts{color:var(--muted);font-style:italic;}
 /* ── Coaching Playbook Modal + Insights ───────────────────────────────────── */
 
 /* Click affordances for coaching-scheme entry points */
@@ -9332,7 +9335,15 @@ function gcPick(id){ _gc.game=id; if(typeof _gcm!=='undefined' && _gcm.open==='h
 // "Now" is the tracker's week: the finished week holds through Tuesday and until Wednesday
 // 06:00 Eastern (tcTrackerWeek), so Tuesday's look still opens on everything that happened.
 function gcCurWeek(){ return (typeof tcTrackerWeek==='function') ? tcTrackerWeek() : Math.max(1, Number(TC_SEASON.week||1)); }
-function gcWeek(){ const cur=gcCurWeek(); return _gc.week==='current' ? cur : Math.min(cur, _gc.week); }
+// Any week of the season: the ones played, the one in progress, and the ones ahead (their
+// games with projected lines). GC_LOOKAHEAD weeks show in the picker after "now".
+const GC_LOOKAHEAD = 3;
+function gcWeek(){ const cur=gcCurWeek(); return _gc.week==='current' ? cur : Math.max(1, Math.min(18, _gc.week)); }
+function gcWeekOptions(cur){
+  const out=[]; for(let w=cur; w<=Math.min(18, cur+GC_LOOKAHEAD); w++) out.push(w);
+  for(let w=cur-1; w>=1; w--) out.push(w);
+  return out;
+}
 
 // Exact Sleeper scoring: Σ stat × the league's setting over the keys both carry.
 function tcSleeperPoints(stats, sc){
@@ -9426,6 +9437,7 @@ function gcIsMine(pid){ return gcMineSet().has(String(pid)); }
 function gcRows(wk){
   const key=`${TC_SEASON.year}|${wk}`;
   if(_gc.rows[key] && (Date.now()-_gc.rows[key].at<60*1000 || wk<Math.max(1,Number(TC_SEASON.week||1)))) return _gc.rows[key].rows;
+  if(wk>Math.max(1,Number(TC_SEASON.week||1))) return null;      // a week ahead has no stat lines yet
   if(!_gc.busy['rows'+key] && typeof fetchWeekStats==='function'){
     _gc.busy['rows'+key]=true;
     fetchWeekStats(String(TC_SEASON.year), wk, null).then(rows=>{ if(Array.isArray(rows) && rows.length){ _gc.rows[key]={rows, at:Date.now()}; renderRightSidebar(); } }).catch(()=>{}).finally(()=>{ _gc.busy['rows'+key]=false; });
@@ -9470,12 +9482,33 @@ function gcPlayerHTML(x, side){
   const r=x.r; const owner=gcOwnerOf(r.player_id);
   const pid=String(r.player_id||''); const pos=gcPos(r);
   const click = pos==='DEF' ? '' : ` onclick="${pcardOnclick(pid, pos, r.team||'')}"`;
-  return `<div class="gc-p gc-p-${side}"${click}>
+  return `<div class="gc-p gc-p-${side}${r.proj?' gc-p-proj':''}"${click}>
     <div class="gc-pinfo">${owner?`<span class="gc-owner">${escHtml(owner)}</span>`:''}<span class="gc-pname${gcIsMine(pid)?' gc-mine':''}">${escHtml(gcName(r))}</span>${x.line?`<span class="gc-line">${escHtml(x.line)}</span>`:''}</div>
     <b class="gc-pts">${x.pts!=null?x.pts.toFixed(2):'–'}</b>
   </div>`;
 }
-function gcGameHTML(game, rows){
+// A game not yet played shows each side's players with the week's PROJECTED line — Sleeper's
+// weekly projection (99b laWeekProjFeed) shaped like a stat row, scored the same way the
+// week's actual rows are (the league's table, or the app's scoring and Sleeper's K/DEF points).
+function gcProjRows(wk){
+  const feed=(typeof laWeekProjFeed==='function') ? laWeekProjFeed(wk) : null;
+  if(!feed) return null;
+  const sp=(typeof sleeperPlayers!=='undefined' && sleeperPlayers) ? sleeperPlayers : {};
+  const out=[];
+  for(const pid in feed){
+    const r=feed[pid]; if(!r || !r.stats) continue;
+    const pos=String(r.pos||'').toUpperCase();
+    if(pos==='DEF'){ out.push({player_id:pid, team:pid, position:'DEF', player:{first_name:'', last_name:'', position:'DEF', team:pid}, stats:r.stats, proj:true}); continue; }
+    const p=sp[pid]; const name=(p&&p.name)||''; if(!name) continue;
+    const i=name.lastIndexOf(' ');
+    out.push({player_id:pid, team:String(r.team||p.team||'').toUpperCase(), position:pos||p.pos, player:{first_name:i>0?name.slice(0,i):'', last_name:i>0?name.slice(i+1):name, position:pos||p.pos, team:r.team||p.team}, stats:r.stats, proj:true});
+  }
+  return out;
+}
+function gcGameHTML(game, rows, wk){
+  // A game still ahead: the projected lines stand in for the stat lines.
+  const proj = game.state==='pre';
+  if(proj) rows = gcProjRows(wk||gcWeek());
   // A position filter shows that group alone, in full; ALL and Rookies show every group.
   const pick=_gc.pos||'ALL';
   // Before the week's rows land there is nothing to group (the first paint of a fresh load;
@@ -9497,7 +9530,8 @@ function gcGameHTML(game, rows){
       <div class="gc-status ${game.state==='in'?'gc-live':''}">${escHtml(st)}</div>
       <div class="gc-side gc-side-home"><b class="gc-score">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}</b><span class="gc-rec">${escHtml(game.hrec)}</span><span class="gc-team">${game.home}</span><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"></div>
     </div>
-    ${rows ? (groups || '<div class="ld-empty">no stat lines yet</div>') : '<div class="ld-empty">loading the week\'s stat lines…</div>'}`;
+    ${proj ? `<div class="gc-projnote">projected · Sleeper's week ${wk||gcWeek()} line under this scoring</div>` : ''}
+    ${rows ? (groups || `<div class="ld-empty">${proj?'no projections yet for this game':'no stat lines yet'}</div>`) : `<div class="ld-empty">${proj?'loading the week\'s projections…':'loading the week\'s stat lines…'}</div>`}`;
 }
 function gcListHTML(games, picked){
   if(!games) return '<div class="ld-empty">loading games…</div>';
@@ -9516,7 +9550,7 @@ function gcHTML(phone){
   if(games && games.length && !games.some(g=>g.id===_gc.game)) _gc.game=gcDefaultGame(games);
   const game=games ? games.find(g=>g.id===_gc.game) : null;
   const rows=gcRows(wk);
-  const sel=`<select class="ld-sel" onchange="gcSetWeek(this.value)">${Array.from({length:cur},(_,i)=>cur-i).map(w=>`<option value="${w===cur?'current':w}" ${wk===w?'selected':''}>Week ${w}${w===cur?' · now':''}</option>`).join('')}</select>`;
+  const sel=`<select class="ld-sel" onchange="gcSetWeek(this.value)">${gcWeekOptions(cur).map(w=>`<option value="${w===cur?'current':w}" ${wk===w?'selected':''}>Week ${w}${w===cur?' · now':w===cur+1?' · next':w>cur?' · upcoming':''}</option>`).join('')}</select>`;
   const fmt=gcScoring() ? escHtml((leagueSnapshot&&leagueSnapshot.name)||'league scoring') : 'app scoring · Sleeper for K/DEF/IDP';
   const pick=_gc.pos||'ALL';
   const posBtns=GC_POS.map(p=>`<button class="ld-pos ${pick===p?'active':''}" onclick="gcSetPos('${p}')">${p}</button>`).join('');
@@ -9525,7 +9559,7 @@ function gcHTML(phone){
     <div class="gc-head"><div class="sidebar-section ld-title">Game Center</div>${sel}${btns}</div>
     <div class="ld-posrow gc-posrow">${posBtns}</div>
     <div class="ld-fmt" title="Points under this scoring">${fmt}</div>
-    <div class="gc-body"><div class="gc-list">${gcListHTML(games, _gc.game)}</div><div class="gc-detail">${game ? gcGameHTML(game, rows) : (games && !games.length ? '<div class="ld-empty">no games this week</div>' : '')}</div></div>
+    <div class="gc-body"><div class="gc-list">${gcListHTML(games, _gc.game)}</div><div class="gc-detail">${game ? gcGameHTML(game, rows, wk) : (games && !games.length ? '<div class="ld-empty">no games this week</div>' : '')}</div></div>
   </div>`;
 }
 // The size buttons every state carries.
@@ -39359,6 +39393,7 @@ function laWeekProjLoad(wk){
 function laWeekProjAt(wk){ const d=_laWpEntry(wk); return d ? d.at : 0; }
 function laWeekProjLanded(){
   if(typeof _laInsRerender==='function') _laInsRerender();
+  if(typeof renderRightSidebar==='function'){ try{ renderRightSidebar(); }catch(e){} }   // the Game Center's projected lines
   if(typeof _hubSnapMemo!=='undefined' && _hubSnapMemo) _hubSnapMemo.sig='';
   if(typeof renderWeekHub==='function') renderWeekHub();
 }

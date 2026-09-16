@@ -130,3 +130,6 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gcm-sheet .gcm-leaders .ld-col{width:44px;font-size:10px;}
 .gcm-sheet .gcm-leaders .ld-pts{min-width:40px;}
 .gcm-sheet .gcm-leaders .ld-row{gap:6px;}
+/* A game still ahead: projected lines, marked as such. */
+.gc-projnote{font-size:10px;color:var(--muted);text-align:center;padding:6px 10px 2px;letter-spacing:.03em;}
+.gc-p-proj .gc-pts{color:var(--muted);font-style:italic;}
