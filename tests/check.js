@@ -11073,6 +11073,9 @@ function pcardOlAvailable(pid){
   return pcardOlSeasons(_pcardOlNorm(pid)).length>0 || !!(typeof pcardOlCollege==='function' && pcardOlCollege(pid));
 }
 
+// A pre-snap (rookie prior) grade wears an asterisk everywhere it prints: it is draft
+// capital, his college line's performance and the level he played at — not NFL snaps.
+function _olLetter(g, rookie){ return `${escHtml(g||'—')}${(g && rookie)?'<sup class="olc-ast" title="Pre-snap grade: draft capital, college line performance, level of competition">*</sup>':''}`; }
 function _olGradeClass(g){
   const c=String(g||'').trim().charAt(0).toUpperCase();
   if(c==='A') return 'a';
@@ -11582,6 +11585,7 @@ function _olLineByTeamSeason(season, teamCode){
           run_grade:r.run_grade||null,
           pass_grade:r.pass_grade||null,
           pass_snaps:r.pass_snaps!=null?Number(r.pass_snaps):null,
+          rookie_prior:(r.rookie_prior===true),
         };
       }
       const metaByName=_olPlayerMetaByName(season, teamCode);
@@ -11595,6 +11599,7 @@ function _olLineByTeamSeason(season, teamCode){
           name:cur.name,
           run_grade:cur.run_grade||m.run_grade||null,
           pass_grade:cur.pass_grade||m.pass_grade||null,
+          rookie_prior:(cur.rookie_prior===true||m.rookie_prior===true),
           pass_snaps:cur.pass_snaps!=null?Number(cur.pass_snaps):(m.pass_snaps!=null?Number(m.pass_snaps):null),
           pass_pctile:m.pass_pctile!=null?Number(m.pass_pctile):null,
           is_projected_starter:(m.is_projected_starter===true),
@@ -11622,6 +11627,7 @@ function _olLineByTeamSeason(season, teamCode){
           name:rr.name,
           run_grade:g.run_grade||null,
           pass_grade:g.pass_grade||null,
+          rookie_prior:(g.rookie_prior===true),
           pass_snaps:g.pass_snaps!=null?Number(g.pass_snaps):null,
           pass_pctile:g.pass_pctile!=null?Number(g.pass_pctile):null,
           is_projected_starter:(g.is_projected_starter===true),
@@ -11667,6 +11673,7 @@ function _olLineByTeamSeason(season, teamCode){
       name:rr.name,
       run_grade:g.run_grade||null,
       pass_grade:g.pass_grade||null,
+      rookie_prior:(g.rookie_prior===true),
       pass_snaps:g.pass_snaps!=null?Number(g.pass_snaps):null,
       pass_pctile:g.pass_pctile!=null?Number(g.pass_pctile):null,
       is_projected_starter:(g.is_projected_starter===true),
@@ -12220,7 +12227,7 @@ function renderPcardQbOl(pid){
   const line=(proj&&proj.line) ? proj.line : _olLineByTeamSeason(season, teamCode);
   const slotCards=['LT','LG','C','RG','RT'].map(sl=>{
     const r=line[sl]||{};
-    const g=r.pass_grade||'—';
+    const g=_olLetter(r.pass_grade, r.rookie_prior);
     const pct=(r.pass_pctile==null||Number.isNaN(r.pass_pctile))?'—':`${Number(r.pass_pctile).toFixed(1)}%`;
     const pctRank=_olRankFromPct(r.pass_pctile);
     const pctBadge=pctRank!=null ? `<span class="sr-badge ${_olRankClass(pctRank)} olc-rank-badge">${pct}</span>` : `<span class="olc-rank-muted">${pct}</span>`;
@@ -12443,25 +12450,25 @@ function _renderPcardOlGradesNfl(pid){
     <div class="olc-grades">
       <div class="olc-grade-tile olc-grade-lead">
         <label>Overall OL Grade</label>
-        <b class="olc-grade ${_olGradeClass(rec.ol_grade)}">${noteWrapHtml(escHtml(rec.ol_grade||'—'), { label:'Overall OL Grade', value:rec.ol_grade||'—', source:'ol_grades', statKey:'ol_grade', context:noteCtx, team:teamCode, relevance:OL_REL_ALL }, 'note-tag-hit')}</b>
+        <b class="olc-grade ${_olGradeClass(rec.ol_grade)}">${noteWrapHtml(_olLetter(rec.ol_grade, rec.rookie_prior), { label:'Overall OL Grade', value:rec.ol_grade||'—', source:'ol_grades', statKey:'ol_grade', context:noteCtx, team:teamCode, relevance:OL_REL_ALL }, 'note-tag-hit')}</b>
         <small>${_olTag(`${_olPctBand(rec.ol_pctile)} at ${rec.pos||'OL'}`,'Overall Percentile',rec.ol_pctile,'ol_pctile',OL_REL_ALL,noteCtx,teamCode)} · ${_olTag(`${rec.ol_conf||'—'} conf`,'Grade Confidence',rec.ol_conf,'ol_conf',OL_REL_ALL,noteCtx,teamCode)}</small>
         ${_olDriverBar(rec, noteCtx, teamCode)}
-        ${rec.rookie_prior ? `<div class="olc-rookie-note">Rookie prior: no NFL snap yet, so this is the grade a lineman of his draft slot has earned in a first season (draft capital at full strength). It gives way to snaps and contract as they arrive.</div>` : ''}
+        ${rec.rookie_prior ? `<div class="olc-rookie-note">Rookie prior<b>*</b>: no NFL snap yet. This grade is his draft slot${rec.p_college!=null?` (65%) and his college line — its performance against the level of competition it faced, conference tier and schedule included (35%, ${(typeof ordinal==='function')?ordinal(Math.round(rec.p_college)):Math.round(rec.p_college)+'th'} percentile)`:` alone (draft capital at full strength; no college line context linked)`}. It gives way to snaps and contract as they arrive.</div>` : ''}
         ${_olTrend(rec, noteCtx, teamCode)}
       </div>
       <div class="olc-grade-tile">
         <label>Pass Grade</label>
-        <b class="olc-grade ${_olGradeClass(rec.pass_grade)}">${noteWrapHtml(escHtml(rec.pass_grade||'—'), { label:'Pass Grade', value:rec.pass_grade||'—', source:'ol_grades', statKey:'pass_grade', context:noteCtx, team:teamCode, relevance:OL_REL_PASS }, 'note-tag-hit')}</b>
+        <b class="olc-grade ${_olGradeClass(rec.pass_grade)}">${noteWrapHtml(_olLetter(rec.pass_grade, rec.rookie_prior), { label:'Pass Grade', value:rec.pass_grade||'—', source:'ol_grades', statKey:'pass_grade', context:noteCtx, team:teamCode, relevance:OL_REL_PASS }, 'note-tag-hit')}</b>
         <small>${_olTag(_olPctBand(rec.pass_pctile),'Pass Grade Percentile',rec.pass_pctile,'pass_pctile',OL_REL_PASS,noteCtx,teamCode)}${rec.espn_pbwr!=null?` · ${_olTag(`<b class="olc-espn">ESPN ${Math.round(Number(rec.espn_pbwr))}% PBWR</b>`,'ESPN Pass Block Win Rate',`${Math.round(Number(rec.espn_pbwr))}%`,'espn_pbwr',OL_REL_PASS,noteCtx,teamCode)}`:''} · ${_olTag(`line ${_olPctBand(rec.team_pass_pctile)}`,'Team Pass Protection',_olPctBand(rec.team_pass_pctile),'team_pass_pctile',OL_REL_PASS,noteCtx,teamCode)}</small>
       </div>
       <div class="olc-grade-tile">
         <label>Run Grade</label>
-        <b class="olc-grade ${_olGradeClass(rec.run_grade)}">${noteWrapHtml(escHtml(rec.run_grade||'—'), { label:'Run Grade', value:rec.run_grade||'—', source:'ol_grades', statKey:'run_grade', context:noteCtx, team:teamCode, relevance:OL_REL_RUN }, 'note-tag-hit')}</b>
+        <b class="olc-grade ${_olGradeClass(rec.run_grade)}">${noteWrapHtml(_olLetter(rec.run_grade, rec.rookie_prior), { label:'Run Grade', value:rec.run_grade||'—', source:'ol_grades', statKey:'run_grade', context:noteCtx, team:teamCode, relevance:OL_REL_RUN }, 'note-tag-hit')}</b>
         <small>${_olTag(_olPctBand(rec.run_pctile),'Run Grade Percentile',rec.run_pctile,'run_pctile',OL_REL_RUN,noteCtx,teamCode)}${rec.espn_rbwr!=null?` · ${_olTag(`<b class="olc-espn">ESPN ${Math.round(Number(rec.espn_rbwr))}% RBWR</b>`,'ESPN Run Block Win Rate',`${Math.round(Number(rec.espn_rbwr))}%`,'espn_rbwr',OL_REL_RUN,noteCtx,teamCode)}`:''} · ${_olTag(`line ${_olPctBand(rec.team_run_pctile)}`,'Team Run Blocking (Adj. Line Yards)',_olPctBand(rec.team_run_pctile),'team_run_pctile',OL_REL_RUN,noteCtx,teamCode)}</small>
       </div>
       <div class="olc-grade-tile">
         <label>Utilization-Weighted</label>
-        <b class="olc-grade ${_olGradeClass(rec.ol_weighted_grade)}">${_olTag(escHtml(rec.ol_weighted_grade||'—'),'Utilization-Weighted Grade',rec.ol_weighted_grade,'ol_weighted_grade',OL_REL_ALL,noteCtx,teamCode)}</b>
+        <b class="olc-grade ${_olGradeClass(rec.ol_weighted_grade)}">${_olTag(_olLetter(rec.ol_weighted_grade, rec.rookie_prior),'Utilization-Weighted Grade',rec.ol_weighted_grade,'ol_weighted_grade',OL_REL_ALL,noteCtx,teamCode)}</b>
         <small>${_olTag(_olPctBand(rec.ol_weighted_pctile),'Utilization-Weighted Percentile',rec.ol_weighted_pctile,'ol_weighted_pctile',OL_REL_ALL,noteCtx,teamCode)} · ${_olTag(`pass weight ${rec.pass_rate!=null?`${Number(rec.pass_rate).toFixed(0)}%`:'—'}`,'Team Pass Rate',rec.pass_rate,'pass_rate',OL_REL_PASS,noteCtx,teamCode)} · ${_olTag(`run weight ${rec.run_rate!=null?`${Number(rec.run_rate).toFixed(0)}%`:'—'}`,'Team Run Rate',rec.run_rate,'run_rate',OL_REL_RUN,noteCtx,teamCode)}</small>
       </div>
       <div class="olc-mini-grid">

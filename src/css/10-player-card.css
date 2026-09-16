@@ -612,3 +612,6 @@ tr.pcard-future-row td{opacity:.75;}
 .olc-cc-pct{display:inline-block;margin-left:5px;font-family:var(--mono);font-size:9px;font-weight:800;color:var(--muted);vertical-align:baseline;}
 .olc-cc-team small{color:var(--muted);font-weight:500;}
 .olc-rookie-note{font-size:10.5px;color:var(--muted);line-height:1.35;margin-top:6px;padding:6px 8px;border-left:2px solid var(--accent);background:var(--surface2);border-radius:0 6px 6px 0;max-width:60ch;}
+/* The pre-snap grade's asterisk: draft capital + college line + level, not NFL snaps. */
+.olc-ast{font-size:.55em;line-height:0;color:var(--muted);margin-left:1px;cursor:help;vertical-align:super;}
+.olc-rookie-note b{color:var(--text);}

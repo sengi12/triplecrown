@@ -195,7 +195,12 @@ chk(rk2.loc["R-0003", "ol_pctile"] == rk.loc["R-0003", "ol_pctile"] and rk2.loc[
     "with rookie_college_w = 0 the college context is carried for display and moves nothing")
 rk3 = olp.rookie_prior_rows(c, priors, 2025, draft=_draft, college={"R-0003": 95.0}, college_w=0.3)
 chk(rk3.loc["R-0003", "ol_pctile"] > rk.loc["R-0003", "ol_pctile"], "with a weight, a strong college line lifts the prior")
-chk(olp.ROOKIE_COLLEGE_W == 0.0, "the shipped weight is 0 — it did not validate (see tools/ol_rookie_prior_fit.py)")
+chk(olp.ROOKIE_COLLEGE_W == 0.35, "the shipped weight is 0.35 — a product choice (ol_model.json): the pre-snap grade reads draft capital + college line + level of competition")
+rk4 = olp.rookie_prior_rows(c, priors, 2025, draft=_draft, college={"nm:latecenter": 95.0, "gsis:R-0002": 5.0}, college_w=0.3)
+chk(rk4.loc["R-0003", "p_college"] == 95.0 and rk4.loc["R-0002", "p_college"] == 5.0 and pd.isna(rk4.loc["R-0001", "p_college"]),
+    "the college prior is found by gsis key or by normalized name (prior_map's two keys); nobody gets a default")
+chk(rk4.loc["R-0002", "ol_pctile"] < rk.loc["R-0002", "ol_pctile"], "a weak college line lowers the prior")
+chk(olp.college_prior_for({"nm:midguard": 40.0}, "R-0002", "Mid Guard Jr.") == 40.0, "suffixes and punctuation do not break the name key")
 chk(len(olp.rookie_prior_rows(c, priors, 2025, draft=_draft.iloc[:0])) == 0, "nobody to add → an empty frame")
 
 # ── phase blending ─────────────────────────────────────────────────────────────────

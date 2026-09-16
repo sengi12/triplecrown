@@ -93,5 +93,24 @@ chk([r["season"] for r in rows] == [2023, 2024, 2025] and rows[0]["team"] == "Mi
 chk(rows[2]["pct"]["ly"] == 100 and rows[0]["pct"]["ly"] < 100, "each row carries that season's unit metrics and percentiles")
 link._link_pool = _orig_link_pool
 
+print("\n=== college_prior: the unit's percentiles, scaled for level and tilted for the slate ===")
+def _prof(*rows):
+    return {"ol_unit": {"schema": OU.SCHEMA, "seasons": list(rows)}}
+def _row(season, conf, pool="FBS", team="X", elo=1500, **pct):
+    return {"season": season, "team": team, "conf": conf, "pool": pool, "opp_elo": elo, "pct": pct}
+P80 = dict(ly=80, stuff=80, tfl=80, power=80, sack=80)
+chk(OU.college_prior(_prof(_row(2025, "SEC", **P80))) == 80.0, "a Power-conference line at the 80th stays the 80th (Elo at the FBS mean)")
+chk(OU.college_prior(_prof(_row(2025, "Mid-American", **P80))) == 68.0, "a Group of Five line counts 85% of it")
+chk(OU.college_prior(_prof(_row(2025, "Big Sky", pool="FCS", **P80))) == 48.0, "an FCS line counts 60%")
+chk(OU.college_prior(_prof(_row(2025, "FBS Independents", team="Notre Dame", **P80))) == 80.0, "Notre Dame is Power-level despite the independent label")
+chk(OU.college_prior(_prof(_row(2025, "SEC", elo=1600, **P80))) == 83.0 and OU.college_prior(_prof(_row(2025, "SEC", elo=1900, **P80))) == 86.0,
+    "a tougher slate adds 3 points per 100 Elo, capped at 6")
+two = OU.college_prior(_prof(_row(2025, "SEC", **P80), _row(2024, "SEC", ly=40, stuff=40, tfl=40, power=40, sack=40)))
+chk(two == 68.0, "two seasons weigh 70/30 toward the last one (80·.7 + 40·.3)")
+chk(OU.college_prior(_prof(_row(2025, "SEC", ly=99, stuff=99, tfl=99, power=99, sack=99, elo=1900))) == 99.0 and OU.college_prior(None) is None,
+    "clamped to 1-99; no seasons → None")
+chk(OU.level_of({"conf": "Big 12", "pool": "FBS"}) == "power" and OU.level_of({"conf": "Sun Belt", "pool": "FBS"}) == "fbs" and OU.level_of({"conf": "SEC", "pool": "FCS"}) == "fcs", "level_of reads pool first, then conference")
+chk(OU._nn("Mid Guard Jr.") == "midguard" and OU._nn("D'Andre Lee III") == "dandrelee", "the name key drops suffixes and punctuation")
+
 print(f"\nRESULT: {'PASS' if FAILED == 0 else 'MISS'} ({PASS}/{PASS + FAILED} checks)")
 sys.exit(0 if FAILED == 0 else 1)

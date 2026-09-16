@@ -67,7 +67,7 @@ Data: nflverse releases. FTN charting data CC-BY-SA 4.0 — attribute "FTN Data 
 ESPN win rates are hand-maintained in data/espn_win_rates_2025.csv from ESPN's public
 leaderboards. Not affiliated with the NFL.
 """
-import argparse, os, sys
+import argparse, os, re, sys
 import numpy as np
 import pandas as pd
 from scipy import sparse
@@ -1138,15 +1138,36 @@ def build_composite(out, priors, latest_season):
 #
 # Draft capital is therefore the whole of a rookie's grade, at full strength — the same signal
 # the composite fades with experience (draft_decay) for everyone else, so the two meet as a
-# rookie's snaps and contract take over. The college line context (src/cfb/ol_unit.py) was
-# tested as a second predictor and added nothing (partial r -0.01 on the unit mean, +0.21 for
-# the unit's sack rate alone, not robust at n=46): it stays on the card as context and carries
-# rookie_college_w = 0 in ol_model.json until a larger sample says otherwise.
+# rookie's snaps and contract take over. The college line prior (src/cfb/ol_unit.py
+# college_prior: the unit's percentiles in his last two college seasons, scaled for the level
+# he played at and tilted for the slate) blends in at rookie_college_w. As a predictor of
+# the first-season composite it validated as no better than draft pick alone (partial r
+# -0.01 at n=46), so this is a product choice, not a fitted one: the pre-snap grade is meant
+# to READ as draft capital + college team performance + level of competition, and the card
+# marks it with an asterisk for exactly that reason.
 ROOKIE_PRIOR = {"a": 142.84, "b": -19.95}     # ol_model.json → rookie_prior
-ROOKIE_COLLEGE_W = 0.0                        # ol_model.json → rookie_college_w
-# gsis_id → college line context percentile (0-100), filled by the seed builder when the
-# cfb block is available; empty means the signal is simply absent, never a default.
+ROOKIE_COLLEGE_W = 0.35                       # ol_model.json → rookie_college_w
+# College line prior (0-100) keyed 'gsis:<id>' and 'nm:<normalized name>' (ol_unit.prior_map),
+# filled by the seed builder when the cfb block is available; a bare gsis key still works.
+# Empty means the signal is simply absent, never a default.
 ROOKIE_COLLEGE = {}
+
+
+def _nn(name):
+    s = str(name or "").lower()
+    s = re.sub(r"\b(jr|sr|ii|iii|iv|v)\b\.?", "", s)
+    return re.sub(r"[^a-z]", "", s)
+
+
+def college_prior_for(college, gid, name):
+    """The college prior for one draftee from a prior map, by gsis id first, then by name."""
+    if not college:
+        return None
+    for k in (str(gid), f"gsis:{gid}", f"nm:{_nn(name)}"):
+        v = college.get(k)
+        if v is not None and pd.notna(v):
+            return float(v)
+    return None
 _DRAFT_POS_GROUP = {"OT": "T", "T": "T", "OG": "G", "G": "G", "C": "C", "OL": "G"}
 if isinstance(_OLM.get("rookie_prior"), dict):
     ROOKIE_PRIOR = {k: float(_OLM["rookie_prior"].get(k, ROOKIE_PRIOR[k])) for k in ("a", "b")}
@@ -1204,8 +1225,8 @@ def rookie_prior_rows(out, priors, latest, draft=None, college=None, college_w=N
         ref_mkt = pd.to_numeric(pool.get("apy_cap_pct"), errors="coerce").dropna().values
         p_market = (100.0 * (ref_mkt <= float(apy)).mean()
                     if pd.notna(apy) and len(ref_mkt) else np.nan)
-        p_college = college.get(gid) if college else None
-        p_college = float(p_college) if p_college is not None and pd.notna(p_college) else np.nan
+        p_college = college_prior_for(college, gid, d.get("pfr_player_name"))
+        p_college = float(p_college) if p_college is not None else np.nan
         pctile = rookie_prior_pctile(pick)
         if cw > 0 and pd.notna(p_college):
             pctile = (1.0 - cw) * pctile + cw * p_college
