@@ -1,0 +1,138 @@
+// Game detail (32b-game-detail.js): one ESPN game summary → the play feed (key plays newest
+// first, headlines, the players' game lines as of the play with the delta, the situation with
+// its red-zone badge, the clock and the score after), the quarter line, a side's box score,
+// and the fantasy pane's league switcher (any synced league's scoring, its owners, the
+// projection under the points). The fixture is a trimmed real summary (TB @ CIN, 2026 week 1).
+const elStore={};
+function mkEl(id){if(!elStore[id])elStore[id]={id,innerHTML:'',hidden:false,style:{},dataset:{},classList:{_s:new Set(),add(c){this._s.add(c);},remove(...c){c.forEach(x=>this._s.delete(x));},toggle(){},contains(c){return this._s.has(c);}},querySelectorAll:()=>[],querySelector:()=>null,addEventListener(){},appendChild(){},remove(){},getBoundingClientRect:()=>({width:300,height:300,left:0,top:0})};return elStore[id];}
+const main={appendChild(el){ elStore[el.id]=el; }};
+global.document={getElementById:(id)=>mkEl(id),querySelector:(q)=>q==='.main'?main:null,querySelectorAll:()=>[],createElement:()=>({id:'',className:'',innerHTML:'',hidden:false,style:{},classList:{add(){},remove(){}},appendChild(){},remove(){},addEventListener(){}}),body:{appendChild(){},classList:{add(){},remove(){}},style:{}},documentElement:{style:{}},addEventListener(){}};
+global.window={addEventListener(){},matchMedia:()=>({matches:false,addEventListener(){}}),innerWidth:1200};global.Chart=function(){return{destroy(){}}};global.confirm=()=>1;global.btoa=s=>s;global.FileReader=function(){};
+global.localStorage={_s:{},getItem(k){return this._s[k]||null;},setItem(k,v){this._s[k]=String(v);},removeItem(k){delete this._s[k];}};global.fetch=()=>Promise.reject(new Error('offline'));
+const fs=require('fs'), path=require('path');
+const code=fs.readFileSync(path.join(__dirname,'check.js'),'utf8');
+const SUM=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures','espn_summary_2026_w1_tb_cin.json'),'utf8'));
+const athId=(name)=>{ for(const tp of SUM.boxscore.players) for(const g of tp.statistics) for(const a of g.athletes) if(a.athlete.displayName===name) return String(a.athlete.id); return null; };
+const IDS={ q1:athId('Baker Mayfield'), q2:athId('Joe Burrow'), r2:athId('Chase Brown'), t1:athId('Mike Gesicki'), k1:athId('Chase McLaughlin'), k2:athId('Evan McPherson') };
+const app=new Function('IDS','SUM', code+`
+  toast=function(){};
+  const P=(id,fn,ln,pos,team,st)=>({player_id:id, team, player:{first_name:fn,last_name:ln,position:pos,team}, stats:st});
+  const ROWS=[ P('q1','Baker','Mayfield','QB','TB',{pass_yd:216,pass_td:1,pass_cmp:23,pass_att:28,rush_yd:30,rush_td:1,gp:1}), P('q2','Joe','Burrow','QB','CIN',{pass_yd:254,pass_td:1,pass_int:1,pass_cmp:25,pass_att:35,gp:1}),
+    P('r2','Chase','Brown','RB','CIN',{rush_yd:56,rush_att:16,rush_td:1,rec:5,rec_yd:22,gp:1}), P('t1','Mike','Gesicki','TE','CIN',{rec:5,rec_yd:78,rec_td:1,gp:1}) ];
+  fetchWeekStats=async(season,wk,pos)=>ROWS;
+  const BOARD={events:[{id:'401872925',date:'2026-09-13T17:00Z',competitions:[{status:{type:{state:'post',shortDetail:'Final'}},competitors:[
+    {homeAway:'home',team:{abbreviation:'CIN'},score:'33',records:[{type:'total',summary:'1-0'}],linescores:[{value:14},{value:10},{value:3},{value:6}]},
+    {homeAway:'away',team:{abbreviation:'TB'},score:'27',records:[{type:'total',summary:'0-1'}],linescores:[{value:3},{value:7},{value:10},{value:7}]}]}]},
+    {id:'401872999',date:'2026-09-14T00:20Z',competitions:[{status:{type:{state:'pre',shortDetail:'Sun 8:20 PM'}},competitors:[{homeAway:'home',team:{abbreviation:'SEA'},score:'0'},{homeAway:'away',team:{abbreviation:'NE'},score:'0'}]}]}]};
+  let fetches=[];
+  sleeperFetch=async(url)=>{ fetches.push(url); if(/scoreboard/.test(url)) return BOARD; if(/summary\\?event=401872925/.test(url)) return JSON.parse(JSON.stringify(SUM)); throw new Error('x'); };
+  hasSeasonStarted=()=>true; TC_SEASON.year=2026; TC_SEASON.phase='regular'; TC_SEASON.week=1; isMobileTeamPickerLayout=()=>false;
+  sleeperPlayers={q1:{name:'Baker Mayfield',pos:'QB',team:'TB',espn_id:IDS.q1}, q2:{name:'Joe Burrow',pos:'QB',team:'CIN',espn_id:IDS.q2}, r2:{name:'Chase Brown',pos:'RB',team:'CIN',espn_id:IDS.r2}, t1:{name:'Mike Gesicki',pos:'TE',team:'CIN',espn_id:IDS.t1}, k1:{name:'Chase McLaughlin',pos:'K',team:'TB',espn_id:IDS.k1}, k2:{name:'Evan McPherson',pos:'K',team:'CIN',espn_id:IDS.k2}};
+  leagueSnapshot={name:'Dirty Mikes', leagueId:'L1', myUserId:'u1', scoringRaw:{pass_yd:0.04,pass_td:4,pass_int:-1,rush_yd:0.1,rush_td:6,rec:0.5,rec_yd:0.1,rec_td:6,fgm:3,xpm:1},
+    teamList:[{rosterId:1, ownerId:'u1', owner:'Sengi12', teamName:'Sengi', players:[{id:'q1'}]},{rosterId:2, ownerId:'u2', owner:'RichBigMeechy', teamName:'Rich', players:[{id:'t1'}]}]};
+  let PROJ={ q2:{pos:'QB', stats:{pass_yd:300, pass_td:2}}, t1:{pos:'TE', stats:{rec:4, rec_yd:50}} };
+  laWeekProjFeed=(wk)=>PROJ;
+  _pcardLg={byLeague:{}, at:Date.now(), loading:null};
+  const GAME=(st)=>({id:'TB@CIN', home:'CIN', away:'TB', state:st||'post', detail:'Final', date:'2026-09-13T17:00Z', hs:33, as:27, hrec:'1-0', arec:'0-1', eid:'401872925', hls:[14,10,3,6], als:[3,7,10,7]});
+  return { parse:tcParseBoard, games:gcGames, plays:gcPlays, names:gcPlayNames, kinds:(s)=>gcPlays(s).map(p=>p.kind), feed:gcFeedRows, build:gcFeedBuild, feedHTML:gcFeedHTML, ls:gcLinescoreHTML, box:gcBoxHTML,
+    gameHTML:(g,rows)=>gcGameHTML(g||GAME(), rows===undefined?ROWS:rows, 1), GAME, summary:gcSummary, setSum:(eid,d)=>{ _gcd.sum[eid]={data:d, at:Date.now()}; }, fetches:()=>fetches,
+    setTab:(t)=>{ _gcd.tab=t; }, setSide:(s)=>{ _gcd.side=s; }, setAll:(v)=>{ _gcd.feedAll=v; }, tab:gcdTab,
+    lgOpts:gcLeagueOptions, setLeague:(id)=>{ _gc.league=id; }, league:gcLeague, owner:gcOwnerOf, mine:gcIsMine, pts:gcPoints, proj:gcProjPts,
+    setPcard:(o)=>{ _pcardLg.byLeague=o; _pcardLg.at=Date.now(); }, BOARD, ath:gcAthletes, short:gcShort };
+`)(IDS, SUM);
+let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
+const settle=()=>new Promise(r=>setTimeout(r,20));
+(async()=>{
+  console.log('=== the board keeps the event id and the quarter line ===');
+  const b=app.parse(app.BOARD);
+  chk(b.CIN.eid==='401872925' && b.TB.eid==='401872925' && JSON.stringify(b.CIN.ls)==='[14,10,3,6]' && JSON.stringify(b.TB.ls)==='[3,7,10,7]', 'each side carries ESPN\'s event id and its linescores');
+  const games=app.games(b); const g=games.find(x=>x.id==='TB@CIN');
+  chk(g && g.eid==='401872925' && JSON.stringify(g.hls)==='[14,10,3,6]' && JSON.stringify(g.als)==='[3,7,10,7]', 'the game object carries them too');
+
+  console.log('=== the plays, typed ===');
+  const plays=app.plays(SUM);
+  chk(plays.length>60 && plays.every((p,i)=>i===0 || p.seq>=plays[i-1].seq), `every drive's plays flattened in order (${plays.length})`);
+  const kinds=app.kinds(SUM);
+  chk(kinds.includes('fg') && kinds.includes('td') && kinds.includes('sack') && kinds.includes('to') && kinds.includes('xp')===false && kinds.includes('play'), 'field goals, touchdowns, sacks and turnovers are typed; ordinary snaps are plays');
+  const n=app.names('(Shotgun) J.Burrow pass short left to M.Gesicki for 2 yards, TOUCHDOWN. E.McPherson extra point is GOOD, Center-W.Wagner.');
+  chk(n.primary==='J.Burrow' && n.receiver==='M.Gesicki' && !n.picker, 'the passer and the receiver come out of the text');
+  const n2=app.names('(No Huddle, Shotgun) J.Burrow pass short right intended for A.Iosivas INTERCEPTED by J.Trotter [V.Vea] at CIN 38. J.Trotter for 38 yards, TOUCHDOWN.');
+  chk(n2.primary==='J.Burrow' && n2.intended==='A.Iosivas' && n2.picker==='J.Trotter', 'the intended target and the interceptor too');
+  const A=app.ath(SUM);
+  chk(A.byId[IDS.q2] && A.byId[IDS.q2].pid==='q2' && A.byId[IDS.q2].pos==='QB' && A.byId[IDS.t1].pid==='t1' && A.byId[IDS.t1].pos==='TE', 'box-score athletes join to Sleeper ids and positions by espn_id');
+
+  console.log('=== the feed ===');
+  const feed=app.feed(SUM, false);
+  chk(feed.length>=12 && feed[0].q===4 && feed[feed.length-1].q===1 && feed.every(p=>['td','fg','xp','miss','to','sack','big','fourth'].includes(p.kind)), `key plays newest first (${feed.length}); every one a score, miss, turnover, sack, 20+ or fourth down`);
+  chk(app.feed(SUM, true).length>feed.length && app.feed(SUM, true).some(p=>p.kind==='play'), 'all plays adds the ordinary snaps');
+  const titles=feed.map(p=>p.title);
+  chk(titles.includes('M. Gesicki 2 yd TD catch 🎉') && titles.includes('C. Brown 5 yd rush TD 🎉') && titles.includes('C. McLaughlin 34 yd FG 🙌'), `headlines name the scorer, the yards and the play (${titles.slice(-3).join(' | ')})`);
+  chk(titles.some(t=>/^INT! J\. Burrow picked off by J\. Trotter — pick six 🎉$/.test(t)) && titles.some(t=>/^B\. Mayfield sacked, -\d+ yds$/.test(t)) && titles.some(t=>/^Fumble! B\. Mayfield/.test(t)), 'interceptions, sacks and fumbles read as such');
+  const td=feed.find(p=>p.title==='M. Gesicki 2 yd TD catch 🎉');
+  const ges=td.who.find(w=>w.ath.name==='Mike Gesicki'), bur=td.who.find(w=>w.ath.name==='Joe Burrow');
+  chk(ges && /^\d+ REC, \d+ YD, 1 TD$/.test(ges.line) && ges.delta==='+2 YD' && bur && /^\d+\/\d+ CMP, \d+ YD, 1 TD$/.test(bur.line), `the receiver's and the passer's game lines as of the play, with the delta (${ges&&ges.line} · ${bur&&bur.line})`);
+  chk(td.yte<=20 && td.scoredBy==='home' && td.hs>td.as-100 && td.ddt && /CIN|TB/.test(td.spot), 'the touchdown is a red-zone play whose score moved the home side');
+  const fg=feed.find(p=>p.title==='C. McLaughlin 34 yd FG 🙌');
+  chk(fg.who[0] && fg.who[0].line==='1/1 FG, 0/0 XP' && fg.scoredBy==='away' && fg.as===3, 'the kicker\'s line counts the kick; the away score moved');
+  const mcp=app.build(SUM).filter(p=>p.who.some(w=>w.ath.name==='Evan McPherson')).pop();
+  const mk=mcp.who.find(w=>w.ath.name==='Evan McPherson');
+  chk(mk && /^4\/4 FG, 2\/2 XP$/.test(mk.line) && mk.ath.pos==='K', `the kicker's line counts the tries inside the touchdown texts, and he is a K not a DEF (${mk&&mk.line})`);
+  const tdx=app.build(SUM).find(p=>p.title==='M. Gesicki 2 yd TD catch 🎉');
+  chk(tdx.who.some(w=>w.ath.name==='Evan McPherson' && /XP$/.test(w.line)), 'the touchdown row shows the kicker under the scorer');
+  chk(app.build(SUM).every(p=>p.type!=='Penalty' || p.kind==='pen') && app.build(SUM).some(p=>/^Flag: .+ on (TB|CIN)/.test(p.title)), 'a penalty is a penalty on any down, with the foul in its headline');
+  const rb=app.build(SUM).find(p=>p.title==='C. Brown 5 yd rush TD 🎉');
+  chk(rb.who[0] && /CAR, \d+ YD, 1 TD$/.test(rb.who[0].line) && rb.who[0].delta==='+5 YD', 'a rushing touchdown carries the back\'s line');
+
+  console.log('=== the feed on the page ===');
+  const h=app.feedHTML(app.GAME(), SUM);
+  chk(/gcf-row gcf-td/.test(h) && /gcf-rz">RZ/.test(h) && /gcf-clock">Q4 /.test(h) && /gcf-badge gcf-b-td">TD/.test(h) && /gcf-sc-hit/.test(h), 'rows carry the kind, the RZ badge, the clock, the badge and the moved score');
+  chk(/gcf-name">M\. Gesicki<\/span><span class="gcf-pos gcf-pos-te">TE<\/span><span class="gcf-owner">@RichBigMeechy/.test(h) && /gcf-name gc-mine">B\. Mayfield/.test(h), 'players show position, the fantasy owner in the pane\'s league, and my players light up');
+  chk(/\(<em>\+2 YD<\/em>\)|<em>\(\+2 YD\)<\/em>/.test(h), 'the delta is marked');
+  chk(/onclick="gcdSetFeedAll\(true\)"/.test(h) && !/gcf-play/.test(h), 'key plays by default with the All toggle');
+  chk(/no plays yet · Sun 8:20 PM/.test(app.feedHTML({state:'pre', detail:'Sun 8:20 PM', home:'SEA', away:'NE'}, null)), 'a game ahead says so');
+  chk(/loading the plays/.test(app.feedHTML(app.GAME(), null)), 'no summary yet → loading');
+
+  console.log('=== the quarter line and the box score ===');
+  const ls=app.ls(app.GAME(), SUM);
+  chk(/<th>Q1<\/th><th>Q2<\/th><th>Q3<\/th><th>Q4<\/th><th>TOT<\/th>/.test(ls) && /TB<\/td><td>3<\/td><td>7<\/td><td>10<\/td><td>7<\/td><td class="gcls-tot">27/.test(ls) && /CIN<\/td><td>14<\/td><td>10<\/td><td>3<\/td><td>6<\/td><td class="gcls-tot">33/.test(ls), 'the quarter line, away then home, with totals');
+  const box=app.box(app.GAME(), SUM, 'CIN');
+  chk(/Passing[\s\S]*<th>C\/ATT<\/th><th>YDS<\/th>[\s\S]*J\. Burrow[\s\S]*<td>25\/35<\/td><td>254<\/td>/.test(box) && /Receiving[\s\S]*M\. Gesicki[\s\S]*<td>5<\/td><td>78<\/td>/.test(box), 'the box score by stat group with ESPN\'s labels and lines');
+  chk(/M\. Gesicki<\/span><small class="gcf-owner">@RichBigMeechy/.test(box) && /gcb-click/.test(box), 'a rostered player shows his owner; a known player opens his card');
+  chk(/no box score yet for SEA/.test(app.box(app.GAME(), SUM, 'SEA')), 'a side the summary lacks says so');
+
+  console.log('=== the game panel: Feed | Stats, Away | Fantasy | Home ===');
+  app.setSum('401872925', SUM);
+  chk(app.tab(app.GAME())==='feed' && app.tab(app.GAME('pre'))==='stats', 'a played game opens on the feed, a game ahead on stats');
+  let gh=app.gameHTML();
+  chk(/gc-hero/.test(gh) && /gc-tab active" onclick="gcdSetTab\('feed'\)"/.test(gh) && /gcf-row/.test(gh) && !/gc-group/.test(gh), 'the feed tab: hero, tabs, plays');
+  app.setTab('stats'); gh=app.gameHTML();
+  chk(/gcls-tot">33/.test(gh) && /gc-seg/.test(gh) && /Quarterback[\s\S]*J\. Burrow/.test(gh) && /gc-lgsel/.test(gh), 'the stats tab: the quarter line, the segmented control, the fantasy pane with its league switcher');
+  app.setSide('home'); gh=app.gameHTML();
+  chk(/Passing[\s\S]*J\. Burrow[\s\S]*25\/35/.test(gh) && !/gc-group/.test(gh), 'Home shows the Bengals\' box score');
+  app.setSide('fantasy');
+
+  console.log('=== the league switcher ===');
+  chk(app.lgOpts().map(o=>o.id).join(',')==='snap,app' && app.league()==='snap', 'the Analyzer\'s league and the app\'s scoring before any synced league loads');
+  app.setPcard({L9:{id:'L9', name:'Queen City Keepers', byPid:{q2:{owner:'Sengi12', mine:true}, t1:{owner:'kademiller', mine:false}}, scoring:{pass_yd:0.05, pass_td:6, rec:1, rec_yd:0.1, rec_td:6}}, L1:{id:'L1', name:'Dirty Mikes', byPid:{}, scoring:{}}});
+  chk(app.lgOpts().map(o=>o.name).join(',')==='Dirty Mikes,Queen City Keepers,App scoring', 'every synced league joins the list once (the Analyzer\'s not twice)');
+  app.setLeague('L9');
+  chk(app.league()==='L9' && app.owner('q2')==='@Sengi12' && app.mine('q2')===true && app.owner('t1')==='@kademiller' && app.mine('t1')===false && app.owner('q1')==='', 'owners and "mine" follow the picked league');
+  chk(app.pts({player_id:'q2', position:'QB', stats:{pass_yd:254, pass_td:1}})===18.7, 'points under the picked league\'s own scoring (254×0.05 + 6 = 18.70)');
+  chk(app.proj('q2', 1)===27 && app.proj('t1', 1)===9, 'the projection scored the same way (300×0.05 + 12 = 27; 4 + 5 = 9)');
+  gh=app.gameHTML();
+  chk(/gc-owner">@Sengi12<\/span><span class="gc-pname gc-mine">J\. Burrow/.test(gh) && /<b class="gc-pts">18\.70<\/b><small class="gc-proj" title="projected">27\.00<\/small>/.test(gh), 'the fantasy pane: the owner above the name, the projection under the points');
+  chk(/<option value="L9" selected>Queen City Keepers/.test(gh), 'the switcher shows the picked league');
+  app.setLeague('app');
+  chk(app.owner('q2')==='' && app.mine('q2')===false && app.pts({player_id:'q2', position:'QB', stats:{pass_yd:254, pass_td:1}})!==18.7, 'App scoring: no owners, the app\'s own number');
+  app.setLeague('snap');
+
+  console.log('=== the summary fetch ===');
+  const fresh=app.GAME(); fresh.eid='401872925'; delete require('fs');   // (no-op; keeps the linter quiet)
+  const before=app.fetches().length;
+  app.setSum('x','y'); // unrelated
+  const g2={...app.GAME(), eid:'401872925'};
+  chk(app.summary(g2)===SUM || (app.summary(g2)&&app.summary(g2).drives), 'a cached final summary is served without a fetch');
+  chk(app.fetches().length===before, 'and no request went out');
+  console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
+  process.exit(pass===total?0:1);
+})();

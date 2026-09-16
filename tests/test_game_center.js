@@ -28,6 +28,7 @@ const app=new Function(code+`
   sleeperPlayers={q1:{name:'Baker Mayfield',years_exp:8}, w1:{name:'Emeka Egbuka',years_exp:0}, d2:{name:'Lavonte David',years_exp:14}};
   leagueSnapshot={name:'Dirty Mikes', myUserId:'u1', scoringRaw:{pass_yd:0.04,pass_td:4,pass_int:-1,rush_yd:0.1,rush_td:6,rec:0.5,rec_yd:0.1,fgm:3,xpm:1,pts_allow:-0.1,sack:1,idp_tkl:1,idp_sack:2},
     teamList:[{rosterId:1, ownerId:'u1', owner:'Sengi12', teamName:'Sengi', players:[{id:'q1'},{id:'r2'}]},{rosterId:2, ownerId:'u2', owner:'RichBigMeechy', teamName:'Rich', players:[{id:'w2'}]}]};
+  _gcd.tab='stats'; _gcd.side='fantasy';   // the fantasy pane, as before the Feed | Stats tabs
   return { pts:tcSleeperPoints, mode:gcSetMode, step:gcStep, setPos:gcSetPos, render:renderRightSidebar, html:()=>document.getElementById('leaders').innerHTML, cls:()=>[...document.getElementById('leaders').classList._s], pick:gcPick, week:gcSetWeek, load:gcLoadMode, state:()=>_gc, games:()=>gcGames(gcBoard(1)), mine:gcIsMine, maxW:gcMaxWidth, gameHTML:gcGameHTML, weekOpts:gcWeekOptions, gcWeek, setWeekProj:(wk,rows)=>{ const d=_laWpEntry(wk); d.rows=rows; d.at=Date.now(); d.fails=9; } };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
