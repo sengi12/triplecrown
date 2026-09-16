@@ -237,7 +237,7 @@ function drawPlayDiagram(g, mode, sel, wrRot, av){
       const idx=(sel[p.slot]||0)%rf.list.length; const rt=rf.list[idx];
       const ny=p.y+20;
       const pctTxt = rt[1]!=null?` ${rt[1]}%`:'';
-      const srcTxt = rf.src=='tree'?' (tree)':(rf.src=='season'?' (szn)':'');
+      const srcTxt = rf.src=='tree'?' (tree)':(rf.src=='season'?' (szn)':(rf.src=='inf'?' (est)':''));
       s+=`<text x="${p.x}" y="${ny+9}" font-size="6" fill="#a8321f" text-anchor="middle" data-noteable="1" data-note-label="Route tendency" data-note-value="${nEsc(rt[0].split('/')[0]+pctTxt+srcTxt)}" data-note-context="${nEsc(SEASON+' playbook · '+g.p+' personnel · '+g.name+' · '+rf.name)}" data-note-source="coaching_playbook" data-note-stat-key="route_tendency" data-note-team="${nEsc(TEAM_CODE)}" data-note-relevance="QB,RB,WR,TE" data-note-nav="${NOTE_NAV}">${rt[0].split('/')[0]}${pctTxt}${srcTxt}</text>`;
       if(rf.list.length>1) s+=`<text x="${p.x}" y="${ny+17}" font-size="5.5" fill="#8a8470" text-anchor="middle">${idx+1}/${rf.list.length} tap</text>`;
     }
@@ -262,14 +262,14 @@ function draw(){
   let html="";
   node.groups.forEach((g,i)=>{const noise=g.n<8?' <span class="hl-p" style="font-size:9px;padding:0 3px;">SMALL</span>':'';
     html+=`<div class="card"><div class="rank">#${i+1}</div>
-      <div class="plabel"><span class="pers alt" data-i="${i}" title="tap to change alignment" style="cursor:pointer">${g.pers_assumed?`${g.backs}-BACK SET`:`${g.p} PERSONNEL`} ⇄</span> <span class="fname">${g.name}</span></div>
-      <div class="subttl">${g.pers_assumed?`${g.backs} BACK · ${g.align=='uc'?'UNDER CENTER':(g.align=='pistol'?'PISTOL':'SHOTGUN')} · TE/WR split assumed`:`${g.backs} BACK · ${g.te} TE · ${g.wr} WR`} — ${g.share}% of snaps${noise}</div>
+      <div class="plabel"><span class="pers alt" data-i="${i}" title="tap to change alignment" style="cursor:pointer">${g.p} PERSONNEL ⇄</span> <span class="fname">${g.name}</span></div>
+      <div class="subttl">${g.backs} BACK · ${g.te} TE · ${g.wr} WR${g.pers_assumed?` (split est. from ${Number(SEASON)-1})`:''} — ${g.share}% of snaps${noise}</div>
       <div class="prod" id="prd${i}">${prodLine(g)}</div>
       <div class="fieldbox">${fieldSvg(g,'none',{},0,0)}</div>
       <div class="stats"><div class="stat"><span id="snl${i}">Snaps</span><b id="snv${i}">${noteWrap('Snaps', String(g.n), `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,RB,WR,TE', String(g.n))}</b></div><div class="stat"><span>Success</span><b id="scv${i}">${noteWrap('Success Rate', `${g.succ}%`, `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,RB,WR,TE', `${g.succ}%`)}</b></div>
       <div class="stat"><span>EPA/play</span><b id="epv${i}" class="${g.epa>=.05?'hl-g':(g.epa<=-.05?'hl-p':'')}">${noteWrap('EPA/play', `${g.epa>=0?'+':''}${g.epa.toFixed(2)}`, `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,RB,WR,TE', `${g.epa>=0?'+':''}${g.epa.toFixed(2)}`)}</b></div><div class="stat"><span>Share</span><b>${noteWrap('Formation Share', `${g.share}%`, `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,RB,WR,TE', `${g.share}%`)}</b></div></div>
       <div class="rp" data-i="${i}"><div class="run seg" data-mode="run" style="width:${(100-Number(g.pass_rate||0)).toFixed(2)}%"><b>RUN ${(100-Number(g.pass_rate||0)).toFixed(2)}%</b></div><div class="pass seg" data-mode="pass" style="width:${Number(g.pass_rate||0).toFixed(2)}%"><b>PASS ${Number(g.pass_rate||0).toFixed(2)}%</b></div></div>
-      <div class="hintbar" id="hint${i}">${FV.charting_only?'tap label ⇄ change look · click bar ▸ runs (routes chart after the season)':'tap label ⇄ change look · click bar ▸ runs / routes'}</div></div>`;});
+      <div class="hintbar" id="hint${i}">${FV.charting_only?'tap label ⇄ change look · click bar ▸ runs / routes (est.)':'tap label ⇄ change look · click bar ▸ runs / routes'}</div></div>`;});
   grid.innerHTML=html;
   function setStats(i,mode,g){
     const snl=document.getElementById('snl'+i),snv=document.getElementById('snv'+i),scv=document.getElementById('scv'+i),epv=document.getElementById('epv'+i);
@@ -379,5 +379,5 @@ function wireTaps(box,g){
 })();
 
 ['down','dist','field'].forEach(id=>document.getElementById(id).onchange=draw); draw();
-if(FV.charting_only){ const f=document.querySelector('.foot'); if(f) f.insertAdjacentHTML('afterbegin', '<b>Season in progress — charted sets.</b> The participation file that names personnel groupings and routes publishes after the post-season; until then each set is the QB\'s charted alignment and backfield count (FTN), the TE/WR split is the common one for that backfield, skill players are placed by target rank, run lanes are real, and no routes are drawn. '); }
+if(FV.charting_only){ const f=document.querySelector('.foot'); if(f) f.insertAdjacentHTML('afterbegin', '<b>Season in progress — charted sets.</b> The participation file that names personnel groupings and routes publishes after the post-season. Until then each set is the QB\'s charted alignment and backfield count (FTN); the TE/WR split is the one this team used most from that set last season; skill players are placed by target rank; run lanes are real; and routes are ESTIMATED (est): where this season\'s targets went (direction × depth), read through last season\'s route-by-zone habits for the receiver, shrunk toward the league\'s for his position where thin — a receiver with no targets yet keeps last season\'s tree (szn). '); }
 </script></body></html>

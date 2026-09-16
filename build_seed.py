@@ -132,7 +132,9 @@ def _encode_coaching(seed, round_epa=3):
         for sig in sig_order:
             f = t["formations"][sig]
             al_i(f["align"])
-            assigns_c = [[a["slot"], enc_routes(a.get("routes"))] for a in f["assigns"]]
+            # third element (appended): where the routes came from on a charted-sets season —
+            # 1 estimated from target zones + last season's habits, 2 last season's tree.
+            assigns_c = [[a["slot"], enc_routes(a.get("routes")), {"inf": 1, "szn": 2}.get(a.get("src"), 0)] for a in f["assigns"]]
             # v3 tail (appended, read defensively on decode): 1 when the TE/WR split is
             # assumed — the season in progress on charted sets, no participation file yet.
             forms.append([sig, f["name"], f["backs"], f["te"], f["wr"], f["ol"], assigns_c,
