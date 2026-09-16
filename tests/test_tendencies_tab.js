@@ -10,7 +10,7 @@ const fs=require('fs'), path=require('path');
 const code=fs.readFileSync(path.join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return { render:_schemeRenderTendencies, has:_schemeHasTendencies, norm:_schemeNormTab, tabHas:_schemeTabHasSeason, tpl:(t,p)=>_schemeRenderTemplate(t,p),
   setNflverse:(n)=>{NFLVERSE=n;}, setTeam:(t)=>{schemeTeam=t;}, setTab:(t)=>{schemeViewTab=t;}, setYear:(y)=>{TC_SEASON.year=y;}, template:()=>SCHEME_TEMPLATE_INLINE,
-  noPlaysheet:(s)=>{ _coachingSeasonFailed[String(s)]=true; }, adopt:_adoptInseason, nv:()=>NFLVERSE };`)();
+  noPlaysheet:(s)=>{ _coachingSeasonFailed[String(s)]=true; }, adopt:_adoptInseason, nv:()=>NFLVERSE, appData:(a)=>_ltAppData(a), roots:()=>_ltRoots() };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
 const off=(o)=>Object.assign({plays:1000, pass_rate:58,
@@ -39,6 +39,12 @@ app.noPlaysheet('2026');   // the season in progress: its participation file pub
 app.setTab('playbook'); const pbOff=!app.tabHas('2026');
 app.setTab('tendencies'); const tendOn=app.tabHas('2026');
 chk(pbOff && tendOn, 'the season row: 2026 is off for the Playbook (no playsheet yet) and on for Tendencies (the sidecar has it)');
+
+console.log('=== the chat reaches it ===');
+let ad=''; try{ ad=String(app.appData({path:'nflverse.2025.tendencies.teams.DET.offense.guess'})); }catch(e){ ad='THREW '+e.message; }
+chk(/72/.test(ad) && /beyond/.test(ad), `app_data walks nflverse.<season>.tendencies (${ad.slice(0,60)})`);
+let rl=''; try{ rl=String(app.appData({path:''})); }catch(e){ rl='THREW '+e.message; }
+chk(/Roots: .*nflverse/.test(rl), 'nflverse is a root the model is told about');
 
 console.log('=== the render ===');
 let h=app.render({team:'DET', season:'2025'});
