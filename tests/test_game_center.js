@@ -7,6 +7,7 @@ function mkEl(id){if(!elStore[id])elStore[id]={id,innerHTML:'',hidden:false,styl
 const main={appendChild(el){ elStore[el.id]=el; }};
 global.document={getElementById:(id)=>mkEl(id),querySelector:(q)=>q==='.main'?main:null,querySelectorAll:()=>[],createElement:()=>({id:'',className:'',innerHTML:'',hidden:false,style:{},classList:{add(){},remove(){}},appendChild(){}}),body:{appendChild(){},classList:{add(){},remove(){}},style:{}},documentElement:{style:{}},addEventListener(){},visibilityState:'visible'};
 global.window={addEventListener(){},matchMedia:()=>({matches:false,addEventListener(){}}),innerWidth:1200};global.Chart=function(){return{destroy(){}}};global.confirm=()=>1;global.btoa=s=>s;global.FileReader=function(){};global.Range=function(){};global.AbortController=class{constructor(){this.signal={}}abort(){}};
+global.requestAnimationFrame=(fn)=>setTimeout(fn,0);global.cancelAnimationFrame=(id)=>clearTimeout(id);
 global.localStorage={_s:{},getItem(k){return this._s[k]||null;},setItem(k,v){this._s[k]=String(v);},removeItem(k){delete this._s[k];}};global.fetch=()=>Promise.reject(new Error('offline'));
 const fs=require('fs');const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`
@@ -91,7 +92,7 @@ console.log('=== a game still ahead shows each side with the week\'s projected l
   chk(!/no stat lines yet/.test(h) && !/loading the week/.test(h), 'no stat-line placeholder on an unplayed game');
   const played=app.gameHTML({id:'TB@CIN', home:'CIN', away:'TB', state:'post', detail:'Final', hs:33, as:27, hrec:'1-0', arec:'0-1'}, null, 1);
   chk(/loading the week's stat lines/.test(played) && !/gc-projnote/.test(played), 'a played game still waits for its stat lines');
-  chk(JSON.stringify(app.weekOpts(1))===JSON.stringify(Array.from({length:18},(_,i)=>i+1)) && JSON.stringify(app.weekOpts(17))==='[17,18,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1]' && app.weekOpts(2)[0]===2 && app.weekOpts(2)[16]===18 && app.weekOpts(2)[17]===1, 'the picker lists now, every week ahead to 18, then the weeks played');
+  chk(JSON.stringify(app.weekOpts(1))===JSON.stringify(Array.from({length:22},(_,i)=>i+1)) && JSON.stringify(app.weekOpts(17))==='[17,18,19,20,21,22,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1]' && app.weekOpts(2)[0]===2 && app.weekOpts(2)[20]===22 && app.weekOpts(2)[21]===1, 'the picker lists now, every week ahead through the Super Bowl (19-22 = the playoff rounds), then the weeks played');
   app.state().week=3; chk(app.gcWeek()===3, 'a week ahead can be picked'); app.state().week='current';
 }
 

@@ -729,7 +729,7 @@ function laWeeklyFormMap(){
 // its call stands. K and D/ST take Sleeper's line outright, scored under the league's own
 // table (tcSleeperPoints), since the weekly model has no matchup table for them.
 const LA_WEEK_PROJ_POS = ['QB','RB','WR','TE','K','DEF'];
-const LA_WEEK_PROJ_URL = (season, wk)=>`https://api.sleeper.com/projections/nfl/${season}/${wk}?season_type=regular`+LA_WEEK_PROJ_POS.map(p=>`&position[]=${p}`).join('');
+const LA_WEEK_PROJ_URL = (season, wk)=>`https://api.sleeper.com/projections/nfl/${season}/${(typeof SLEEPER_WEEK_PATH==='function')?SLEEPER_WEEK_PATH(wk):`${wk}?season_type=regular`}`+LA_WEEK_PROJ_POS.map(p=>`&position[]=${p}`).join('');
 const LA_WEEK_PROJ_TTL = 30*60*1000;
 const LA_WEEK_SLEEPER_W = 0.6;
 const LA_WEEK_SLEEPER_GATE = 1.5;

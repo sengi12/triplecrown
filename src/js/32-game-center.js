@@ -25,11 +25,13 @@ function gcPick(id){ _gc.game=id; if(typeof _gcm!=='undefined' && _gcm.open==='h
 // 06:00 Eastern (tcTrackerWeek), so Tuesday's look still opens on everything that happened.
 function gcCurWeek(){ return (typeof tcTrackerWeek==='function') ? tcTrackerWeek() : Math.max(1, Number(TC_SEASON.week||1)); }
 // Any week of the season: the ones played, the one in progress, and every one ahead (the
-// scoreboard knows the whole schedule; the next few weeks carry projected lines).
-const GC_LOOKAHEAD = 18;
-function gcWeek(){ const cur=gcCurWeek(); return _gc.week==='current' ? cur : Math.max(1, Math.min(18, _gc.week)); }
+// scoreboard knows the whole schedule; the next few weeks carry projected lines). The
+// playoff rounds ride on as weeks 19-22 (92b's TC_PLAYOFF_WEEKS).
+function gcLastWeek(){ return (typeof TC_LAST_WEEK!=='undefined') ? TC_LAST_WEEK : 18; }
+function gcWeek(){ const cur=gcCurWeek(); return _gc.week==='current' ? cur : Math.max(1, Math.min(gcLastWeek(), _gc.week)); }
+function gcWeekLabel(w){ return (typeof tcWeekLabel==='function') ? tcWeekLabel(w) : `Week ${w}`; }
 function gcWeekOptions(cur){
-  const out=[]; for(let w=cur; w<=Math.min(18, cur+GC_LOOKAHEAD); w++) out.push(w);
+  const out=[]; for(let w=cur; w<=gcLastWeek(); w++) out.push(w);
   for(let w=cur-1; w>=1; w--) out.push(w);
   return out;
 }
@@ -87,7 +89,7 @@ function gcGames(board){
     if(seen.has(id)) return; seen.add(id);
     const h=board[home]||{}, a=board[away]||{};
     games.push({ id, home, away, state:g.state, detail:g.detail, date:String(g.date||''), hs:h.score!=null?h.score:(g.home?g.score:g.oppScore), as:a.score!=null?a.score:(g.home?g.oppScore:g.score), hrec:h.rec||'', arec:a.rec||'',
-      eid:String(g.eid||h.eid||a.eid||''), hls:h.ls||[], als:a.ls||[] });   // ESPN's event id opens the game summary (plays, box score)
+      eid:String(g.eid||h.eid||a.eid||''), hls:h.ls||[], als:a.ls||[], sit:g.sit||h.sit||a.sit||null });   // ESPN's event id opens the game summary (plays, box score); sit = the live situation
   });
   // In the order they are played: Thursday night, the Sunday early window, the late window,
   // Sunday night, Monday night (the board's kickoff stamps); same kickoff → by matchup.
@@ -269,7 +271,7 @@ function gcHTML(phone){
   if(games && games.length && !games.some(g=>g.id===_gc.game)) _gc.game=gcDefaultGame(games);
   const game=games ? games.find(g=>g.id===_gc.game) : null;
   const rows=gcRows(wk);
-  const sel=`<select class="ld-sel" onchange="gcSetWeek(this.value)">${gcWeekOptions(cur).map(w=>`<option value="${w===cur?'current':w}" ${wk===w?'selected':''}>Week ${w}${w===cur?' · now':w===cur+1?' · next':w>cur?' · upcoming':''}</option>`).join('')}</select>`;
+  const sel=`<select class="ld-sel" onchange="gcSetWeek(this.value)">${gcWeekOptions(cur).map(w=>`<option value="${w===cur?'current':w}" ${wk===w?'selected':''}>${gcWeekLabel(w)}${w===cur?' · now':w===cur+1?' · next':w>cur?' · upcoming':''}</option>`).join('')}</select>`;
   const lgE=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
   const fmt=gcScoring() ? escHtml((lgE && lgE.name) || (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) || 'league scoring') : 'app scoring · Sleeper for K/DEF/IDP';
   const pick=_gc.pos||'ALL';

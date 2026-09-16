@@ -45,7 +45,9 @@ const SLEEPER_STATS_URL = (season)=>`https://api.sleeper.com/stats/nfl/${season}
 const SLEEPER_WEEKLY_URL = (pid,season)=>`https://api.sleeper.com/stats/nfl/player/${pid}?season_type=regular&season=${season}&grouping=week`;
 // League-wide stats for ONE week. (The season endpoint's grouping=week quirk returns an
 // aggregate row, so real weekly data is fetched week by week — see 71b-team-def-card.js.)
-const SLEEPER_WEEK_STATS_URL = (season,week,pos)=>`https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular${pos?`&position[]=${pos}`:''}`;
+// The playoff rounds (the tracker's weeks 19-22) are Sleeper's post-season weeks 1-4.
+const SLEEPER_WEEK_PATH = (week)=>{ const w=Number(week); return w>18 ? `${Math.min(4, w-18)}?season_type=post` : `${w}?season_type=regular`; };
+const SLEEPER_WEEK_STATS_URL = (season,week,pos)=>`https://api.sleeper.com/stats/nfl/${season}/${SLEEPER_WEEK_PATH(week)}${pos?`&position[]=${pos}`:''}`;
 const SLEEPER_PICKS_URL = (draftId)=>`https://api.sleeper.app/v1/draft/${draftId}/picks`;
 const SLEEPER_DRAFT_URL = (draftId)=>`https://api.sleeper.app/v1/draft/${draftId}`;
 const SLEEPER_HEADSHOT = (pid)=>`https://sleepercdn.com/content/nfl/players/${pid}.jpg`;

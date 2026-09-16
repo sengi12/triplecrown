@@ -20,8 +20,25 @@ const GC_SUM_TTL_LIVE = 12*1000, GC_SUM_TTL_FINAL = 6*60*60*1000, GC_SUM_TTL_PRE
 // While a picked game is on and the panel is in view, the summary (and the scoreboard) are
 // re-read every GC_LIVE_POLL ms — ESPN posts a play within seconds; the sheet's own 61 s
 // repaint was the ceiling before. One timer, restarted by every repaint.
-const GC_LIVE_POLL = 15*1000;
+const GC_LIVE_POLL = 8*1000;
 var _gcLiveTimer = null;
+// Change-driven: the scoreboard's situation carries the last play's id. When the picked
+// game's changes, its summary is re-read at once (the plays land within seconds of ESPN
+// posting them); between plays the situation line alone repaints. No last play on the
+// board (an older payload) → the summary's own live TTL stands in.
+function gcStreamOnBoard(teams){
+  if(typeof _gc==='undefined' || !_gc.game || !teams) return;
+  const [away, home]=String(_gc.game).split('@'); const g=teams[home]||teams[away]; if(!g || g.state!=='in') return;
+  const eid=String(g.eid||''); const sit=g.sit||null; if(!eid) return;
+  const key=sit ? `${sit.lastPlayId}|${sit.ddt}|${sit.spot}|${sit.clock}` : '';
+  if(!_gcd.seen) _gcd.seen={};
+  if(!sit || key===_gcd.seen[eid]) return;
+  const playChanged = !sit.lastPlayId || !_gcd.seen[eid] || String(_gcd.seen[eid]).split('|')[0]!==sit.lastPlayId;
+  _gcd.seen[eid]=key;
+  if(playChanged && _gcd.sum[eid]) _gcd.sum[eid].at=0;            // stale the instant a play posts
+  if(playChanged) gcSummary({eid, state:'in'});                      // fetch now; repaints when it lands
+  else gcDetailRepaint();                                            // the down moved: the situation line
+}
 function gcPanelVisible(){
   if(typeof _gc!=='undefined' && _gc && _gc.mode==='max') return true;
   return !!(typeof _gcm!=='undefined' && _gcm && _gcm.open && _gcm.open!=='closed');
@@ -32,8 +49,8 @@ function gcLiveTick(game){
   _gcLiveTimer=setTimeout(()=>{
     _gcLiveTimer=null;
     if(typeof _gc==='undefined' || _gc.game!==game.id || !gcPanelVisible()) return;
-    try{ if(typeof tcWeekBoard==='function') tcWeekBoard(); }catch(e){}   // the score and clock
-    try{ gcSummary(game); }catch(e){}                                        // the plays (repaints when they land)
+    try{ if(typeof tcWeekBoard==='function') tcWeekBoard(); }catch(e){}   // the score, the clock, the last play's id (→ gcStreamOnBoard)
+    if(!game.sit){ try{ gcSummary(game); }catch(e){} }                      // no situation on the board: the summary's own TTL
     gcLiveTick(game);
   }, GC_LIVE_POLL);
 }
@@ -247,18 +264,31 @@ function gcFeedPlayerHTML(w, game){
   const click = (pid && pos && pos!=='DEF' && typeof pcardOnclick==='function') ? ` onclick="event.stopPropagation();${pcardOnclick(pid, pos, a.team||'')}"` : '';
   return `<div class="gcf-who"${click}><span class="gcf-name${pid&&gcIsMine(pid)?' gc-mine':''}">${escHtml(gcShort(a.name))}</span>${pos?`<span class="gcf-pos gcf-pos-${escAttr(pos.toLowerCase())}">${escHtml(pos)}</span>`:''}${owner?`<span class="gcf-owner">${escHtml(owner)}</span>`:''}<span class="gcf-stat">${escHtml(w.line)}${w.delta?` <em>(${escHtml(w.delta)})</em>`:''}</span></div>`;
 }
+// The ball right now (a game on): possession, the down, the spot, the clock — the line
+// above the feed that moves between plays, the way the next play is "coming".
+function gcSituationHTML(game){
+  const sit=game && game.sit; if(!sit || game.state!=='in') return '';
+  const poss=sit.poss||'';
+  return `<div class="gcf-now"><span class="gcf-dot"></span>${poss?`<img src="${NFL_LOGO(poss)}" class="gc-glogo" onerror="this.style.display='none'"><b>${escHtml(poss)} ball</b>`:'<b>Live</b>'}${sit.ddt?`<span class="gcf-now-dd">${escHtml(sit.ddt)}${sit.spot?` @ ${escHtml(sit.spot)}`:''}</span>`:''}${sit.rz?'<span class="gcf-rz">RZ</span>':''}<span class="gcf-now-clock">${sit.period?`Q${sit.period}`:''} ${escHtml(sit.clock||'')}</span></div>`;
+}
 function gcFeedHTML(game, sum){
   if(game.state==='pre') return `<div class="ld-empty">no plays yet · ${escHtml(game.detail||'kickoff ahead')}</div>`;
-  if(!sum) return `<div class="ld-empty">${game.eid?'loading the plays…':'plays unavailable for this game'}</div>`;
+  const now=gcSituationHTML(game);
+  if(!sum) return now+`<div class="ld-empty">${game.eid?'loading the plays…':'plays unavailable for this game'}</div>`;
   const rows=gcFeedRows(sum, _gcd.feedAll);
+  // plays newer than the top of the last paint flash in (a live game's fresh play)
+  if(!_gcd.topSeq) _gcd.topSeq={};
+  const eid=String(game.eid||''); const prevTop=_gcd.topSeq[eid];
+  const isNew=(p)=>game.state==='in' && prevTop!=null && p.seq>prevTop;
+  if(rows.length) _gcd.topSeq[eid]=rows[0].seq;
   const toggle=`<div class="gcf-bar"><span>${_gcd.feedAll?'every play':'key plays'}</span><button class="ld-pos ${_gcd.feedAll?'':'active'}" onclick="gcdSetFeedAll(false)">Key</button><button class="ld-pos ${_gcd.feedAll?'active':''}" onclick="gcdSetFeedAll(true)">All</button></div>`;
-  if(!rows.length) return toggle+`<div class="ld-empty">no plays yet</div>`;
+  if(!rows.length) return now+toggle+`<div class="ld-empty">no plays yet</div>`;
   const badge=(p)=>p.kind==='td'?'TD':p.kind==='fg'?'FG':p.kind==='xp'?'XP':p.kind==='to'?'TO':p.kind==='sack'?'SACK':p.kind==='big'?'BIG':p.kind==='fourth'?'4TH':p.kind==='miss'?'MISS':'';
   const html=rows.map(p=>{
     const rz = p.yte!=null && p.yte<=20 && p.type!=='Kickoff' && p.type!=='Punt';
     const sit = p.down>0 ? `${p.ddt}${p.spot?` @ ${p.spot}`:''}` : (p.kind==='xp'||p.kind==='miss'&&/Extra/.test(p.type)?'End zone':(p.type==='Kickoff'?'Kickoff':''));
     const score = (p.as!=null && p.hs!=null) ? `<span class="${p.scoredBy==='away'?'gcf-sc-hit':''}">${game.away} ${p.as}</span><span class="gcf-dash">–</span><span class="${p.scoredBy==='home'?'gcf-sc-hit':''}">${p.hs} ${game.home}</span>` : '';
-    return `<div class="gcf-row gcf-${p.kind}">
+    return `<div class="gcf-row gcf-${p.kind}${isNew(p)?' gcf-new':''}">
       <img src="${NFL_LOGO(p.team||game.home)}" class="gcf-logo" onerror="this.style.display='none'">
       <div class="gcf-main">
         <div class="gcf-sit">${escHtml(sit)}${rz?' <span class="gcf-rz">RZ</span>':''}</div>
@@ -268,7 +298,7 @@ function gcFeedHTML(game, sum){
       <div class="gcf-right"><div class="gcf-clock">${p.q?`Q${p.q}`:''} ${escHtml(p.clock)}</div><div class="gcf-score">${score}</div>${badge(p)?`<span class="gcf-badge gcf-b-${p.kind}">${badge(p)}</span>`:''}</div>
     </div>`;
   }).join('');
-  return toggle+`<div class="gcf">${html}</div>`;
+  return now+toggle+`<div class="gcf">${html}</div>`;
 }
 
 // ── The quarter line and the box score ───────────────────────────────────────
