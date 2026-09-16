@@ -93,6 +93,7 @@ function tcTeamGameState(team){
 // already on screen (patched in place — a full re-render would reset sliders mid-edit).
 function tcBoardLanded(){
   try{ if(typeof gcStreamOnBoard==='function') gcStreamOnBoard(_tcBoard.teams); }catch(e){}   // the Game Center's live poll: a new play?
+  try{ if(typeof lfOnBoard==='function') lfOnBoard(_tcBoard.teams); }catch(e){}                 // the live feed: every game's last play
   try{ if(typeof renderSidebar==='function') renderSidebar(); }catch(e){}
   try{
     if(typeof document==='undefined' || !document.querySelectorAll) return;

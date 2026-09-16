@@ -1456,6 +1456,32 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gcf-new{animation:gcfIn .9s ease-out;}
 @keyframes gcfIn{0%{background:rgba(0,212,170,.28);transform:translateY(-4px);}100%{background:var(--surface2);transform:none;}}
 @media (prefers-reduced-motion:reduce){ .gcf-dot,.gcf-new{animation:none;} }
+
+/* ── The live feed: Games | Live feed, the league chips, the per-league tags ── */
+.gc-viewrow{display:flex;gap:4px;margin:6px 0 4px;}
+.gc-vt{flex:1 1 0;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:8px;padding:6px 8px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;}
+.gc-vt.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.gc-vt-live{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#ff4d4d;color:#fff;font-size:9px;font-weight:900;}
+.lf{display:flex;flex-direction:column;min-height:0;}
+.lf-body{display:flex;flex-direction:column;min-height:0;overflow:auto;gap:2px;}
+.lf-live{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-left:auto;margin-right:6px;}
+.lf-live.on{color:#ff6b6b;}
+.lf-chips{flex-wrap:wrap;}
+.lf-mine{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted);margin:2px 0 6px;cursor:pointer;}
+.lf-list{padding-bottom:6px;}
+.lf-row .gcf-main{gap:3px;}
+.lf-whos{display:flex;flex-wrap:wrap;gap:4px 10px;}
+.lf-who{display:inline-flex;align-items:baseline;gap:4px;font-size:11px;}
+.lf-who[onclick]{cursor:pointer;}
+.lf-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px;}
+.lf-tag{display:inline-flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;color:var(--muted);background:var(--surface3);border:1px solid var(--border);border-radius:999px;padding:2px 8px;}
+.lf-tag b{color:var(--muted);font-weight:900;}
+.lf-tag-mine{border-color:rgba(0,212,170,.5);color:var(--text);}
+.lf-tag-mine b{color:#00d4aa;}
+.lf-tag-opp{border-color:rgba(255,145,80,.45);}
+.lf-tag em{font-style:normal;font-weight:900;font-variant-numeric:tabular-nums;}
+.lf-up{color:#00d4aa;}
+.lf-down{color:#ff7b7b;}
 /* ── Coaching Playbook Modal + Insights ───────────────────────────────────── */
 
 /* Click affordances for coaching-scheme entry points */
@@ -9453,7 +9479,7 @@ function renderLeaders(fromLoad){
 // so the number is the league's number; without a synced league the app's scoring stands in
 // for offense and Sleeper's half-PPR for the rest. A player's fantasy owner rides under his
 // name when the league rosters him.
-var _gc = { mode:'normal', week:'current', game:null, pos:'ALL', boards:{}, rows:{}, busy:{}, dragW:0, league:null };
+var _gc = { mode:'normal', week:'current', game:null, pos:'ALL', boards:{}, rows:{}, busy:{}, dragW:0, league:null, view:'games' };
 const GC_MODES = ['min','normal','max'];
 const GC_POS = ['ALL','QB','RB','WR','TE','K','DEF','IDP','RK'];   // the Rankings page's filters, plus the defensive groups
 const GC_GROUPS = [['QB','Quarterback',['QB']],['RB','Running back',['RB','FB']],['WR','Wide receiver',['WR']],['TE','Tight end',['TE']],['K','Kicker',['K']],['DEF','Defense / ST',['DEF']],['IDP','Defenders',['DL','DE','DT','NT','LB','OLB','ILB','MLB','DB','CB','S','SS','FS']]];
@@ -9543,6 +9569,15 @@ function gcDefaultGame(games){ return (games.find(g=>g.state==='in')||games[0]).
 // The size buttons: − narrower, + wider (rail → Leaders → Game Center).
 function gcStep(d){ const i=GC_MODES.indexOf(_gc.mode); gcSetMode(GC_MODES[Math.max(0, Math.min(GC_MODES.length-1, i+d))]); }
 function gcSetPos(p){ _gc.pos=p; renderRightSidebar(); }
+// Games (one game at a time) or the Live feed (every game at once, filtered to your
+// leagues — 33-live-feed.js). One switch, both homes.
+function gcSetView(v){ _gc.view = v==='feed' ? 'feed' : 'games'; renderRightSidebar(); }
+function gcViewRowHTML(){
+  if(typeof lfBodyHTML!=='function') return '';
+  const on=_gc.view==='feed';
+  const live=(typeof lfLiveCount==='function') ? lfLiveCount() : 0;
+  return `<div class="gc-viewrow"><button class="gc-vt ${on?'':'active'}" onclick="gcSetView('games')">Games</button><button class="gc-vt ${on?'active':''}" onclick="gcSetView('feed')">Live feed${live?`<span class="gc-vt-live">${live}</span>`:''}</button></div>`;
+}
 // ── Drag the sidebar wider (or narrower) by its left edge; the width is remembered per size ──
 function gcWidthKey(){ return 'tc_rsb_w_'+_gc.mode; }
 function gcStoredWidth(){ try{ const v=Number(localStorage.getItem(gcWidthKey())); return v>0?v:null; }catch(e){ return null; } }
@@ -9720,8 +9755,17 @@ function gcHTML(phone){
   const pick=_gc.pos||'ALL';
   const posBtns=GC_POS.map(p=>`<button class="ld-pos ${pick===p?'active':''}" onclick="gcSetPos('${p}')">${p}</button>`).join('');
   const btns=phone ? `<button class="rsb-btn gcm-x" onclick="gcmSet('closed')" title="Close" aria-label="Close">×</button>` : rsbButtonsHTML();
+  // The live feed takes the whole panel: its own filters, no week or position rows.
+  if(_gc.view==='feed' && typeof lfBodyHTML==='function'){
+    return `<div class="gc lf">
+      <div class="gc-head"><div class="sidebar-section ld-title">Game Center</div>${btns}</div>
+      ${gcViewRowHTML()}
+      ${lfBodyHTML()}
+    </div>`;
+  }
   return `<div class="gc">
     <div class="gc-head"><div class="sidebar-section ld-title">Game Center</div>${sel}${btns}</div>
+    ${gcViewRowHTML()}
     <div class="ld-posrow gc-posrow">${posBtns}</div>
     <div class="ld-fmt" title="Points under this scoring">${fmt}</div>
     <div class="gc-body"><div class="gc-list">${gcListHTML(games, _gc.game)}</div><div class="gc-detail">${game ? gcGameHTML(game, rows, wk) : (games && !games.length ? '<div class="ld-empty">no games this week</div>' : '')}</div></div>
@@ -10332,6 +10376,286 @@ function gcProjPts(pid, wk){
   const feed=(typeof laWeekProjFeed==='function') ? laWeekProjFeed(wk) : null;
   const r=feed && feed[String(pid)]; if(!r || !r.stats) return null;
   return gcPoints({player_id:pid, position:String(r.pos||'').toUpperCase(), stats:r.stats});
+}
+// ═════════════════════════════════════════════════════════════════════════════
+// The live feed — every game at once, filtered to the leagues you play in
+// ═════════════════════════════════════════════════════════════════════════════
+// The Sunday-slate view: one place for the plays that matter to your teams while eight
+// games run at once. It costs ONE request. The week scoreboard carries, per live game,
+// the situation and the LAST PLAY — its text, its type, its yardage, the athletes in it —
+// so every board poll (8 s, change-driven; see gcStreamOnBoard) appends whatever is new to
+// a rolling feed. No per-game summary is fetched: opening a single game still does that.
+//
+// Filters: All games, or any of your synced leagues (multi-select). With leagues picked a
+// play shows only when someone rostered there is in it, tagged with the owner, and carrying
+// the points it just moved under THAT league's scoring — exact for the stats a play
+// produces (yards, catches, touchdowns, interceptions). "My matchup" narrows again to the
+// two starting line-ups of your own game that week.
+var _lf = { rows:[], seen:{}, leagues:[], mineOnly:false, max:150, nameIdx:null, nameIdxAt:0 };
+const LF_MAX_ROWS = 150;
+
+// ── Names → the app's player ids ─────────────────────────────────────────────
+// A play names people as "A.Rodgers" with a team; the athletes ESPN lists carry their own
+// ids. Both roads lead to a Sleeper id: the espn_id map first, then TEAM|A.rodgers.
+function lfNameIndex(){
+  const sp=(typeof sleeperPlayers!=='undefined' && sleeperPlayers) ? sleeperPlayers : null;
+  const n=sp?Object.keys(sp).length:0;
+  if(_lf.nameIdx && _lf.nameIdxAt===n) return _lf.nameIdx;
+  const idx={};
+  if(sp) for(const pid in sp){
+    const p=sp[pid]; const nm=String((p&&p.name)||'').trim(); const tm=String((p&&p.team)||'').toUpperCase();
+    if(!nm || !tm) continue;
+    const i=nm.indexOf(' '); if(i<0) continue;
+    const key=`${tm}|${nm[0]}.${(typeof gcNameNorm==='function')?gcNameNorm(nm.slice(i+1)):nm.slice(i+1).toLowerCase()}`;
+    if(!idx[key]) idx[key]=pid;
+  }
+  _lf.nameIdx=idx; _lf.nameIdxAt=n;
+  return idx;
+}
+function lfPidFor(token, team, espnId){
+  if(espnId && typeof gcEspnIndex==='function'){ const p=gcEspnIndex()[String(espnId)]; if(p) return p; }
+  if(!token) return null;
+  const m=/^([A-Za-z])\.(.+)$/.exec(String(token)); if(!m) return null;
+  const norm=(typeof gcNameNorm==='function') ? gcNameNorm(m[2]) : String(m[2]).toLowerCase();
+  const idx=lfNameIndex();
+  return idx[`${String(team||'').toUpperCase()}|${m[1]}.${norm}`] || null;
+}
+
+// ── What a play did, in fantasy stats ────────────────────────────────────────
+// The board's last play gives the type, the yardage and who was in it. That is enough to
+// say exactly which counting stats the play produced — and so, under any league's table,
+// exactly how many points it just moved.
+function lfPlayStats(kind, yds, roles){
+  const out={};
+  const add=(who, k, v)=>{ if(!who) return; (out[who]=out[who]||{})[k]=(out[who][k]||0)+v; };
+  switch(kind){
+    case 'rush': case 'rushTd':
+      add('primary','rush_yd',yds); add('primary','rush_att',1);
+      if(kind==='rushTd') add('primary','rush_td',1); break;
+    case 'rec': case 'recTd':
+      add('receiver','rec',1); add('receiver','rec_yd',yds); add('primary','pass_yd',yds); add('primary','pass_cmp',1); add('primary','pass_att',1);
+      if(kind==='recTd'){ add('receiver','rec_td',1); add('primary','pass_td',1); } break;
+    case 'inc': add('primary','pass_att',1); break;
+    case 'int': add('primary','pass_att',1); add('primary','pass_int',1); break;
+    case 'fg': add('primary','fgm',1); add('primary','fga',1); break;
+    case 'fgMiss': add('primary','fga',1); break;
+    case 'xp': add('primary','xpm',1); add('primary','xpa',1); break;
+    case 'xpMiss': add('primary','xpa',1); break;
+    default: break;
+  }
+  const byPid={};
+  for(const role in out){ const pid=roles[role]; if(pid) byPid[pid]=Object.assign(byPid[pid]||{}, out[role]); }
+  return byPid;
+}
+// The play, typed for the feed: what it was, who did it, what it produced.
+function lfReadPlay(lp){
+  const type=String(lp.type||''), text=String(lp.text||''), yds=Number(lp.yds||0);
+  const names=(typeof gcPlayNames==='function') ? gcPlayNames(text) : {primary:'', receiver:'', picker:''};
+  let kind='other', title='';
+  const ath=Array.isArray(lp.athletes)?lp.athletes:[];
+  const roleTok={ primary:names.primary, receiver:names.receiver, picker:names.picker };
+  const roles={};
+  ['primary','receiver','picker'].forEach(r=>{
+    const tok=roleTok[r]; if(!tok) return;
+    const m=/^([A-Za-z])\.(.+)$/.exec(tok); const last=m?m[2]:'';
+    const hit=ath.find(a=>{
+      const nm=String(a.name||''); const i=nm.indexOf(' '); const ln=i>0?nm.slice(i+1):nm;
+      return (typeof gcNameNorm==='function') ? gcNameNorm(ln)===gcNameNorm(last) : ln.toLowerCase()===last.toLowerCase();
+    });
+    roles[r]=lfPidFor(tok, (hit&&hit.team)||lp.team, hit&&hit.id);
+  });
+  const nm=(role, tok)=>{
+    const pid=roles[role];
+    const sp=(typeof sleeperPlayers!=='undefined' && sleeperPlayers) ? sleeperPlayers : {};
+    const full=(pid && sp[pid] && sp[pid].name) || '';
+    return full ? ((typeof gcShort==='function')?gcShort(full):full) : String(tok||'').replace('.', '. ');
+  };
+  if(/Rushing Touchdown/.test(type)){ kind='rushTd'; title=`${nm('primary',names.primary)} ${yds} yd rush TD 🎉`; }
+  else if(/Passing Touchdown/.test(type)){ kind='recTd'; title=`${nm('receiver',names.receiver)} ${yds} yd TD catch 🎉`; }
+  else if(type==='Rush'){ kind='rush'; title=`${nm('primary',names.primary)} ${yds} yd rush`; }
+  else if(type==='Pass Reception'){ kind='rec'; title=`${nm('primary',names.primary)} ${yds} yd pass to ${nm('receiver',names.receiver)}`; }
+  else if(type==='Pass Incompletion'){ kind='inc'; title=`${nm('primary',names.primary)} incomplete`; }
+  else if(/Interception/.test(type)){ kind='int'; title=`INT! ${nm('primary',names.primary)} picked off${/Touchdown/.test(type)?' — pick six 🎉':''}`; }
+  else if(type==='Field Goal Good'){ kind='fg'; title=`${nm('primary',names.primary)} ${yds} yd FG 🙌`; }
+  else if(/Field Goal Missed|Blocked Field Goal/.test(type)){ kind='fgMiss'; title=`${nm('primary',names.primary)} ${yds} yd FG, no good`; }
+  else if(type==='Extra Point Good'){ kind='xp'; title=`${nm('primary',names.primary)} XP, good`; }
+  else if(/Extra Point Missed|Blocked Extra Point/.test(type)){ kind='xpMiss'; title=`${nm('primary',names.primary)} XP, missed`; }
+  else if(/^Sack/.test(type)){ kind='sack'; title=`${nm('primary',names.primary)} sacked, ${yds} yds`; }
+  else if(/Fumble/.test(type)){ kind='fum'; title=`Fumble! ${nm('primary',names.primary)}`; }
+  else if(type==='Punt'){ kind='punt'; title=`${nm('primary',names.primary)} punts`; }
+  else if(type==='Kickoff'){ kind='ko'; title=`${nm('primary',names.primary)} kicks off`; }
+  else if(type==='Penalty'){ kind='pen'; const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)/i.exec(text); title=m?`Flag: ${m[3]} on ${m[1]}`:'Penalty'; }
+  else { title=text.replace(/^\s*(\([^)]*\)\s*)+/,'').slice(0,90); }
+  return {kind, title, roles, stats:lfPlayStats(kind, yds, roles)};
+}
+// The kinds the feed keeps when it is not showing everything.
+const LF_KEY_KINDS = new Set(['rushTd','recTd','fg','fgMiss','int','fum','sack','xp','xpMiss']);
+function lfIsKey(r){ return LF_KEY_KINDS.has(r.kind) || r.yds>=20 || r.scoreValue>0; }
+
+// ── The rolling feed, fed by every board poll ────────────────────────────────
+function lfOnBoard(teams){
+  if(!teams) return 0;
+  const games={};
+  Object.keys(teams).forEach(code=>{
+    const t=teams[code]; if(!t || t.state!=='in' || !t.eid || !t.sit || !t.sit.lastPlay) return;
+    const eid=String(t.eid);
+    if(!games[eid]) games[eid]={ eid, sit:t.sit, home:t.home?code:t.opp, away:t.home?t.opp:code,
+      hs:t.home?t.score:t.oppScore, as:t.home?t.oppScore:t.score };
+  });
+  let added=0;
+  Object.keys(games).forEach(eid=>{
+    const g=games[eid], lp=g.sit.lastPlay, id=String(lp.id||'');
+    if(!id || _lf.seen[eid]===id) return;
+    _lf.seen[eid]=id;
+    const read=lfReadPlay(lp);
+    if(read.kind==='other' && !lp.text) return;
+    _lf.rows.unshift({
+      key:`${eid}:${id}`, eid, id, at:Date.now(),
+      home:g.home, away:g.away, hs:g.hs, as:g.as, team:lp.team||'',
+      q:Number(g.sit.period||0), clock:String(g.sit.clock||''),
+      down:Number(lp.down||0), ddt:String(lp.ddt||''), spot:String(lp.spot||''),
+      rz: lp.yte!=null && lp.yte<=20, yds:Number(lp.yds||0), scoreValue:Number(lp.scoreValue||0),
+      kind:read.kind, title:read.title, roles:read.roles, stats:read.stats, text:String(lp.text||''),
+    });
+    added++;
+  });
+  if(_lf.rows.length>LF_MAX_ROWS) _lf.rows.length=LF_MAX_ROWS;
+  if(added && typeof lfRepaint==='function') lfRepaint();
+  return added;
+}
+function lfClear(){ _lf.rows=[]; _lf.seen={}; }
+
+// ── Leagues: who is rostered where, and what a play was worth there ──────────
+function lfLeagueList(){
+  const res=(typeof hubState!=='undefined' && hubState && hubState.results) ? hubState.results : {};
+  const out=[];
+  Object.keys(res).forEach(id=>{
+    const r=res[id]; if(!r || r.inactive || !r.league) return;
+    out.push({ id:String(id), name:String(r.league.name||'League'),
+      scoring:(r.league.scoring_settings && typeof r.league.scoring_settings==='object')?r.league.scoring_settings:null,
+      rostered:r.rostered || new Set(),
+      mine:new Set(((r.lineup&&r.lineup.starters)||[]).map(String)),
+      opp:new Set(((r.lineup&&r.lineup.oppStarters)||[]).map(String)),
+      oppName:(r.lineup&&r.lineup.opponent)||'' });
+  });
+  return out;
+}
+function lfSelected(){
+  const all=lfLeagueList();
+  if(!_lf.leagues.length) return [];
+  return all.filter(l=>_lf.leagues.includes(l.id));
+}
+function lfToggleLeague(id){
+  id=String(id);
+  const i=_lf.leagues.indexOf(id);
+  if(i<0) _lf.leagues.push(id); else _lf.leagues.splice(i,1);
+  if(!_lf.leagues.length) _lf.mineOnly=false;
+  if(typeof lfRepaint==='function') lfRepaint();
+}
+function lfSetAll(){ _lf.leagues=[]; _lf.mineOnly=false; if(typeof lfRepaint==='function') lfRepaint(); }
+function lfSetMineOnly(v){ _lf.mineOnly=!!v; if(typeof lfRepaint==='function') lfRepaint(); }
+// What this play moved in one league: Σ stat × setting over the players it involved.
+function lfDelta(row, lg){
+  if(!lg || !lg.scoring) return null;
+  let sum=0, hit=false;
+  for(const pid in row.stats){
+    if(!lg.rostered.has(String(pid))) continue;
+    const v=(typeof tcSleeperPoints==='function') ? tcSleeperPoints(row.stats[pid], lg.scoring) : null;
+    if(v!=null){ sum+=v; hit=true; }
+  }
+  return hit ? Math.round(sum*100)/100 : null;
+}
+// Which selected leagues care about this play, and how.
+function lfRelevance(row){
+  const sel=lfSelected(); if(!sel.length) return {show:true, tags:[]};
+  const tags=[];
+  sel.forEach(lg=>{
+    const pids=Object.keys(row.roles).map(k=>row.roles[k]).filter(Boolean);
+    const inLg=pids.filter(p=>lg.rostered.has(String(p)));
+    if(!inLg.length) return;
+    const mine=inLg.some(p=>lg.mine.has(String(p)));
+    const opp=inLg.some(p=>lg.opp.has(String(p)));
+    if(_lf.mineOnly && !mine && !opp) return;
+    tags.push({ id:lg.id, name:lg.name, mine, opp, delta:lfDelta(row, lg) });
+  });
+  return {show:tags.length>0, tags};
+}
+function lfRows(){
+  const out=[];
+  for(const r of _lf.rows){
+    const rel=lfRelevance(r);
+    if(!rel.show) continue;
+    out.push(Object.assign({}, r, {tags:rel.tags}));
+  }
+  return out;
+}
+
+// ── The panel ────────────────────────────────────────────────────────────────
+function lfRepaint(){
+  if(typeof renderRightSidebar!=='function') return;
+  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.lf-body','.gcm-sheet','.gc-body']);
+  else renderRightSidebar();
+}
+function lfLiveCount(){
+  const b=(typeof tcWeekBoard==='function') ? tcWeekBoard() : null;
+  if(!b) return 0;
+  const eids=new Set();
+  Object.keys(b).forEach(c=>{ const t=b[c]; if(t && t.state==='in' && t.eid) eids.add(String(t.eid)); });
+  return eids.size;
+}
+function lfChipsHTML(){
+  const list=lfLeagueList(), sel=_lf.leagues;
+  const chips=[`<button class="ld-pos ${sel.length?'':'active'}" onclick="lfSetAll()">All games</button>`]
+    .concat(list.map(l=>`<button class="ld-pos ${sel.includes(l.id)?'active':''}" onclick="lfToggleLeague('${escAttr(l.id)}')" title="${escAttr(l.name)}">${escHtml(l.name.length>16?l.name.slice(0,15)+'…':l.name)}</button>`));
+  const mine=sel.length ? `<label class="lf-mine"><input type="checkbox" ${_lf.mineOnly?'checked':''} onchange="lfSetMineOnly(this.checked)"> My matchup only</label>` : '';
+  return `<div class="ld-posrow lf-chips">${chips.join('')}</div>${mine}`;
+}
+function lfTagHTML(t){
+  const d=t.delta;
+  const cls = t.mine ? 'lf-tag-mine' : (t.opp ? 'lf-tag-opp' : '');
+  const who = t.mine ? '★' : (t.opp ? 'vs' : '');
+  return `<span class="lf-tag ${cls}">${who?`<b>${who}</b>`:''}${escHtml(t.name.length>18?t.name.slice(0,17)+'…':t.name)}${d!=null&&d!==0?`<em class="${d>0?'lf-up':'lf-down'}">${d>0?'+':''}${d.toFixed(2)}</em>`:''}</span>`;
+}
+function lfRowHTML(r){
+  const pids=Object.keys(r.roles).map(k=>r.roles[k]).filter(Boolean);
+  const sp=(typeof sleeperPlayers!=='undefined' && sleeperPlayers) ? sleeperPlayers : {};
+  const who=pids.map(pid=>{
+    const p=sp[pid]||{}; const nm=p.name?((typeof gcShort==='function')?gcShort(p.name):p.name):pid;
+    const pos=String(p.pos||'').toUpperCase();
+    const click=(pos && pos!=='DEF' && typeof pcardOnclick==='function') ? ` onclick="${pcardOnclick(pid, pos, p.team||'')}"` : '';
+    return `<span class="lf-who"${click}><span class="gcf-name">${escHtml(nm)}</span>${pos?`<span class="gcf-pos gcf-pos-${escAttr(pos.toLowerCase())}">${escHtml(pos)}</span>`:''}</span>`;
+  }).join('');
+  const sit=r.down>0 ? `${r.ddt}${r.spot?` @ ${r.spot}`:''}` : '';
+  const score=`<span>${r.away} ${r.as!=null?r.as:'–'}</span><span class="gcf-dash">–</span><span>${r.hs!=null?r.hs:'–'} ${r.home}</span>`;
+  const tags=(r.tags||[]).map(lfTagHTML).join('');
+  return `<div class="gcf-row lf-row gcf-${r.kind==='rushTd'||r.kind==='recTd'?'td':(r.kind==='int'||r.kind==='fum'?'to':r.kind)}">
+    <img src="${NFL_LOGO(r.team||r.home)}" class="gcf-logo" onerror="this.style.display='none'">
+    <div class="gcf-main">
+      <div class="gcf-sit">${escHtml(sit)}${r.rz?' <span class="gcf-rz">RZ</span>':''}</div>
+      <div class="gcf-title">${escHtml(r.title)}</div>
+      ${who?`<div class="lf-whos">${who}</div>`:''}
+      ${tags?`<div class="lf-tags">${tags}</div>`:''}
+    </div>
+    <div class="gcf-right"><div class="gcf-clock">${r.q?`Q${r.q}`:''} ${escHtml(r.clock)}</div><div class="gcf-score">${score}</div></div>
+  </div>`;
+}
+// The feed itself — the filters and the plays. The Game Center hosts this under its own
+// header (one home for both the sidebar and the phone sheet).
+function lfBodyHTML(){
+  const live=lfLiveCount();
+  const rows=lfRows();
+  const list = rows.length
+    ? `<div class="gcf lf-list">${rows.map(lfRowHTML).join('')}</div>`
+    : `<div class="ld-empty">${live
+        ? (_lf.leagues.length ? 'no plays yet for the leagues you picked' : 'waiting for the next play…')
+        : (_lf.rows.length ? 'nothing on right now — the last plays are above' : 'the feed fills as games kick off')}</div>`;
+  return `<div class="lf-body">${lfChipsHTML()}${list}</div>`;
+}
+function lfPanelHTML(phone){
+  const live=lfLiveCount();
+  const btns=phone ? `<button class="rsb-btn gcm-x" onclick="gcmSet('closed')" title="Close" aria-label="Close">×</button>` : (typeof rsbButtonsHTML==='function'?rsbButtonsHTML():'');
+  const head=`<div class="gc-head"><div class="sidebar-section ld-title">Live feed</div><span class="lf-live ${live?'on':''}">${live?`${live} live`:'no games on'}</span>${btns}</div>`;
+  return `<div class="gc lf">${head}${lfBodyHTML()}</div>`;
 }
 // ─────────────────────────────────────────────────────────────────────────────
 // Passing Phase
@@ -30801,6 +31125,7 @@ function tcTeamGameState(team){
 // already on screen (patched in place — a full re-render would reset sliders mid-edit).
 function tcBoardLanded(){
   try{ if(typeof gcStreamOnBoard==='function') gcStreamOnBoard(_tcBoard.teams); }catch(e){}   // the Game Center's live poll: a new play?
+  try{ if(typeof lfOnBoard==='function') lfOnBoard(_tcBoard.teams); }catch(e){}                 // the live feed: every game's last play
   try{ if(typeof renderSidebar==='function') renderSidebar(); }catch(e){}
   try{
     if(typeof document==='undefined' || !document.querySelectorAll) return;
@@ -41630,9 +41955,18 @@ function hubAnalyzeLeague(lg, rosters, users, matchups, ctxBase){
     const callouts = hubCallouts(slots, optimal, current, bench);
     const curTotal = Object.values(current).reduce((a,p)=>a+p.value,0);
     const optTotal = optimal.reduce((a,f)=>a+(f.player?f.player.value:0),0);
+    // The other side of this week's matchup: the name, and the pids of both starting
+    // line-ups — the live feed's "my matchup" filter is exactly these two sets.
+    const oppRow = muRow ? ((matchups||[]).find(m=>m.matchup_id===muRow.matchup_id && m.roster_id!==muRow.roster_id) || null) : null;
+    const oppName = (()=>{ if(!oppRow) return null;
+      const r=rosters.find(x=>x.roster_id===oppRow.roster_id); const u=r && (users||[]).find(x=>x.user_id===r.owner_id);
+      return u ? ((u.metadata&&u.metadata.team_name)||u.display_name) : `Roster ${oppRow.roster_id}`; })();
+    const pidList=(arr)=>(Array.isArray(arr)?arr:[]).filter(p=>p && p!=='0').map(String);
     lineup = {slots, current, optimal, bench, callouts, curTotal:+curTotal.toFixed(1), optTotal:+optTotal.toFixed(1),
-              opponent: (()=>{ if(!muRow) return null; const o=(matchups||[]).find(m=>m.matchup_id===muRow.matchup_id && m.roster_id!==muRow.roster_id); if(!o) return null;
-                const r=rosters.find(x=>x.roster_id===o.roster_id); const u=r && (users||[]).find(x=>x.user_id===r.owner_id); return u ? ((u.metadata&&u.metadata.team_name)||u.display_name) : `Roster ${o.roster_id}`; })()};
+              starters: pidList(starters),
+              oppStarters: pidList(oppRow && oppRow.starters),
+              oppRosterId: oppRow ? oppRow.roster_id : null,
+              opponent: oppName};
   }
   // ── Waivers, the VOR way ────────────────────────────────────────────────────
   // A pickup is only worth making when his rest-of-season value OVER REPLACEMENT

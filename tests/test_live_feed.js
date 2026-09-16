@@ -1,0 +1,112 @@
+// The live feed (33-live-feed.js): every game at once from ONE request — the week
+// scoreboard's last play per live game, accumulated across polls into a rolling feed,
+// filtered to the leagues you play in, each play carrying the points it just moved under
+// that league's own scoring, and narrowable to the two line-ups in your own matchup.
+const elStore={};
+function mkEl(id){if(!elStore[id])elStore[id]={id,innerHTML:'',hidden:false,style:{},dataset:{},classList:{_s:new Set(),add(c){this._s.add(c);},remove(...c){c.forEach(x=>this._s.delete(x));},toggle(){},contains(c){return this._s.has(c);}},querySelectorAll:()=>[],querySelector:()=>null,addEventListener(){},appendChild(){},remove(){},getBoundingClientRect:()=>({width:300,height:300,left:0,top:0})};return elStore[id];}
+const main={appendChild(el){ elStore[el.id]=el; }};
+global.document={getElementById:(id)=>mkEl(id),querySelector:(q)=>q==='.main'?main:null,querySelectorAll:()=>[],createElement:()=>({id:'',className:'',innerHTML:'',hidden:false,style:{},classList:{add(){},remove(){}},appendChild(){},remove(){},addEventListener(){}}),body:{appendChild(){},classList:{add(){},remove(){}},style:{}},documentElement:{style:{}},addEventListener(){}};
+global.window={addEventListener(){},matchMedia:()=>({matches:false,addEventListener(){}}),innerWidth:1200,scrollTo(){},scrollX:0,scrollY:0,pageYOffset:0};
+global.requestAnimationFrame=(fn)=>setTimeout(fn,0);global.cancelAnimationFrame=(id)=>clearTimeout(id);
+global.Chart=function(){return{destroy(){}}};global.confirm=()=>1;global.btoa=s=>s;global.FileReader=function(){};
+global.localStorage={_s:{},getItem(k){return this._s[k]||null;},setItem(k,v){this._s[k]=String(v);},removeItem(k){delete this._s[k];}};global.fetch=()=>Promise.reject(new Error('offline'));
+const fs=require('fs');
+const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
+const app=new Function(code+`
+  toast=function(){};
+  hasSeasonStarted=()=>true; TC_SEASON.year=2026; TC_SEASON.phase='regular'; TC_SEASON.week=2; isMobileTeamPickerLayout=()=>false;
+  sleeperPlayers={
+    q1:{name:'Aaron Rodgers', pos:'QB', team:'NYJ', espn_id:'8439'},
+    r1:{name:'Breece Hall', pos:'RB', team:'NYJ', espn_id:'4429795'},
+    w1:{name:'Garrett Wilson', pos:'WR', team:'NYJ', espn_id:'4569618'},
+    q2:{name:'Joe Burrow', pos:'QB', team:'CIN'},
+    t1:{name:'Mike Gesicki', pos:'TE', team:'CIN'},
+    k1:{name:'Evan McPherson', pos:'K', team:'CIN'},
+  };
+  // Two leagues: one where Rodgers is my starter and Wilson is my opponent's; one where
+  // only Burrow is rostered (by a leaguemate).
+  hubState.results={
+    L1:{ league:{name:'Queen City Keepers', scoring_settings:{pass_yd:0.04, pass_td:4, pass_int:-1, rush_yd:0.1, rush_td:6, rec:1, rec_yd:0.1, rec_td:6, fgm:3, xpm:1}},
+         rostered:new Set(['q1','w1','r1']), lineup:{starters:['q1'], oppStarters:['w1'], opponent:'kademiller'} },
+    L2:{ league:{name:'Dirty Mikes', scoring_settings:{pass_yd:0.05, pass_td:6, rec:0.5, rec_yd:0.1, rec_td:6, fgm:3}},
+         rostered:new Set(['q2','t1','k1']), lineup:{starters:[], oppStarters:[], opponent:null} },
+    L3:{ inactive:true },
+  };
+  const LP=(o)=>Object.assign({id:'p1', text:'', type:'Rush', scoreValue:0, yds:0, team:'NYJ', athletes:[], down:2, ddt:'2nd & 4', spot:'GB 5', yte:5}, o);
+  const G=(o)=>Object.assign({state:'in', eid:'E1', score:6, oppScore:14, home:true, opp:'MIN', sit:{period:3, clock:'10:07', lastPlayId:'p1', lastPlay:LP({})}}, o);
+  return { onBoard:lfOnBoard, rows:()=>_lf.rows, view:lfRows, clear:lfClear, read:lfReadPlay, stats:lfPlayStats, pid:lfPidFor,
+    delta:lfDelta, rel:lfRelevance, leagues:lfLeagueList, toggle:lfToggleLeague, all:lfSetAll, mineOnly:lfSetMineOnly, sel:()=>_lf.leagues,
+    panel:lfPanelHTML, rowHTML:lfRowHTML, LP, G, board:(t)=>{ _tcBoard={season:String(TC_SEASON.year), week:tcBoardWeek(), at:Date.now(), teams:t, busy:false, live:true}; }, MAX:LF_MAX_ROWS };
+`)();
+let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
+const LP=app.LP, G=app.G;
+(async()=>{
+  console.log('=== the board\'s last play becomes a feed row ===');
+  app.clear();
+  const rush=G({sit:{period:3, clock:'10:07', lastPlayId:'p1', lastPlay:LP({id:'p1', type:'Rush', yds:6, text:'A.Rodgers right end to GB 5 for 6 yards (X.McKinney).', team:'NYJ', athletes:[{id:'8439', name:'Aaron Rodgers', pos:'QB', team:'NYJ'}]})}});
+  chk(app.onBoard({NYJ:rush, MIN:Object.assign({}, rush, {home:false, opp:'NYJ', score:14, oppScore:6})})===1 && app.rows().length===1, 'one row per game, not one per team');
+  let r=app.rows()[0];
+  chk(r.title==='A. Rodgers 6 yd rush' && r.q===3 && r.clock==='10:07' && r.ddt==='2nd & 4' && r.spot==='GB 5' && r.rz===true && r.away==='MIN' && r.home==='NYJ' && r.as===14 && r.hs===6, `the row carries the headline, the situation, the clock and the score (${r.title})`);
+  chk(r.roles.primary==='q1' && r.stats.q1.rush_yd===6 && r.stats.q1.rush_att===1, 'the runner resolves to his Sleeper id and the play\'s stats are his');
+  chk(app.onBoard({NYJ:rush})===0 && app.rows().length===1, 'the same last play again adds nothing');
+  const inactive=G({state:'post'});
+  chk(app.onBoard({BUF:inactive})===0, 'a game that is not on is ignored');
+
+  console.log('=== the plays it can read ===');
+  const td=app.read(LP({type:'Rushing Touchdown', yds:9, text:'B.Hall left end for 9 yards, TOUCHDOWN.', team:'NYJ'}));
+  chk(td.kind==='rushTd' && td.title==='B. Hall 9 yd rush TD 🎉' && td.roles.primary==='r1' && td.stats.r1.rush_td===1 && td.stats.r1.rush_yd===9, 'a rushing touchdown: the back, his yards and the six');
+  const cat=app.read(LP({type:'Passing Touchdown', yds:12, text:'(Shotgun) A.Rodgers pass short right to G.Wilson for 12 yards, TOUCHDOWN.', team:'NYJ'}));
+  chk(cat.kind==='recTd' && cat.title==='G. Wilson 12 yd TD catch 🎉' && cat.stats.w1.rec===1 && cat.stats.w1.rec_yd===12 && cat.stats.w1.rec_td===1 && cat.stats.q1.pass_yd===12 && cat.stats.q1.pass_td===1, 'a touchdown catch pays the receiver AND the passer');
+  const pick=app.read(LP({type:'Interception Return', yds:0, text:'A.Rodgers pass short left intended for G.Wilson INTERCEPTED by J.Trotter at NYJ 40.', team:'NYJ'}));
+  chk(pick.kind==='int' && /^INT! A\. Rodgers picked off/.test(pick.title) && pick.stats.q1.pass_int===1, 'an interception is charged to the passer');
+  const fg=app.read(LP({type:'Field Goal Good', yds:32, text:'E.McPherson 32 yard field goal is GOOD.', team:'CIN'}));
+  chk(fg.kind==='fg' && fg.title==='E. McPherson 32 yd FG 🙌' && fg.stats.k1.fgm===1 && fg.stats.k1.fga===1, 'a made field goal, by a kicker with no espn_id — matched on name and team');
+  const sack=app.read(LP({type:'Sack', yds:-7, text:'(Shotgun) A.Rodgers sacked at NYJ 20 for -7 yards (M.Murphy).', team:'NYJ'}));
+  chk(sack.kind==='sack' && /sacked, -7 yds/.test(sack.title) && !Object.keys(sack.stats).length, 'a sack has a headline and moves no fantasy stat by itself');
+
+  console.log('=== the ids ===');
+  chk(app.pid('A.Rodgers','NYJ',null)==='q1' && app.pid('A.Rodgers','MIN','8439')==='q1' && app.pid('Z.Nobody','NYJ',null)===null, 'a play\'s name resolves by team, an ESPN id resolves outright, an unknown stays null');
+
+  console.log('=== what a play moved, per league ===');
+  const lgs=app.leagues();
+  chk(lgs.length===2 && lgs.map(l=>l.id).join(',')==='L1,L2' && lgs[0].mine.has('q1') && lgs[0].opp.has('w1'), 'the synced leagues, with my starters and my opponent\'s (the inactive one is out)');
+  chk(app.delta(cat, lgs[0])===12.68 && app.delta(cat, lgs[1])===null, 'the TD catch is 8.20 to the receiver (1 + 1.2 + 6) and 4.48 to the passer (0.48 + 4) = 12.68 in my league; the other league rosters neither man');
+  chk(app.delta(fg, lgs[0])===null, 'a kicker nobody rosters moves nothing');
+
+  console.log('=== the filters ===');
+  app.clear(); app.all();
+  app.onBoard({NYJ:G({sit:{period:3, clock:'10:07', lastPlayId:'a', lastPlay:LP({id:'a', type:'Passing Touchdown', yds:12, text:'(Shotgun) A.Rodgers pass short right to G.Wilson for 12 yards, TOUCHDOWN.', team:'NYJ'})}})});
+  app.onBoard({CIN:G({eid:'E2', sit:{period:1, clock:'2:00', lastPlayId:'b', lastPlay:LP({id:'b', type:'Field Goal Good', yds:32, text:'E.McPherson 32 yard field goal is GOOD.', team:'CIN'})}})});
+  app.onBoard({BUF:G({eid:'E3', sit:{period:2, clock:'5:00', lastPlayId:'c', lastPlay:LP({id:'c', type:'Rush', yds:3, text:'J.Cook up the middle for 3 yards.', team:'BUF'})}})});
+  chk(app.rows().length===3 && app.view().length===3 && app.view()[0].tags.length===0, 'All games: every play, no league tags');
+  app.toggle('L1');
+  let v=app.view();
+  chk(app.sel().join(',')==='L1' && v.length===1 && /TD catch/.test(v[0].title) && v[0].tags.length===1 && v[0].tags[0].name==='Queen City Keepers', 'one league: only the plays its rosters are in');
+  chk(v[0].tags[0].mine===true && v[0].tags[0].opp===true && v[0].tags[0].delta===12.68, 'the tag says it touched both line-ups of my matchup, and what it moved');
+  app.toggle('L2'); v=app.view();
+  chk(app.sel().length===2 && v.length===2 && v.some(x=>/FG/.test(x.title)), 'a second league adds its own plays');
+  app.mineOnly(true); v=app.view();
+  chk(v.length===1 && /TD catch/.test(v[0].title), 'my matchup only: the kicker nobody in my game starts drops out');
+  app.mineOnly(false); app.all();
+  chk(app.sel().length===0 && app.view().length===3, 'back to all games');
+
+  console.log('=== the panel ===');
+  app.board({NYJ:G({}), CIN:G({eid:'E2'})});
+  let h=app.panel(false);
+  chk(/Live feed/.test(h) && /lf-live on">2 live/.test(h) && /All games<\/button>/.test(h) && /title="Queen City Keepers"/.test(h) && /Queen City Keep…<\/button>/.test(h) && /Dirty Mikes<\/button>/.test(h), 'the panel heads with the live count and a chip per league (a long name is clipped, the full one in its tooltip)');
+  chk(/gcf-row lf-row gcf-td/.test(h) && /G\. Wilson 12 yd TD catch/.test(h) && /gcf-pos-wr">WR/.test(h) && /Q3 10:07/.test(h), 'rows wear the per-game feed\'s clothes: kind, headline, positions, clock');
+  chk(!/lf-mine/.test(h), 'the my-matchup toggle only appears once a league is picked');
+  app.toggle('L1'); h=app.panel(false);
+  chk(/lf-mine/.test(h) && /lf-tag lf-tag-mine/.test(h) && /lf-up">\+12\.68/.test(h), 'with a league picked: the toggle, the starred tag and the points it moved');
+  app.all(); app.clear(); h=app.panel(false);
+  chk(/waiting for the next play/.test(h), 'games on but nothing seen yet');
+  app.board({}); h=app.panel(false);
+  chk(/the feed fills as games kick off/.test(h) && /no games on/.test(h), 'nothing on at all');
+
+  console.log('=== it stays small ===');
+  app.clear();
+  for(let i=0;i<app.MAX+20;i++) app.onBoard({NYJ:G({sit:{period:1, clock:'1:00', lastPlayId:'x'+i, lastPlay:LP({id:'x'+i, type:'Rush', yds:1, text:'A.Rodgers right end for 1 yard.', team:'NYJ'})}})});
+  chk(app.rows().length===app.MAX && app.rows()[0].id==='x'+(app.MAX+19), `the feed is capped at ${app.MAX} rows, newest first`);
+  console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
+  process.exit(pass===total?0:1);
+})();
