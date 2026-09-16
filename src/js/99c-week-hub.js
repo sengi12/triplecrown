@@ -765,7 +765,7 @@ function hubAnalyzeLeague(lg, rosters, users, matchups, ctxBase){
     }));
     faab.wire = wire.sort((a,b)=>(b.faab.bid-a.faab.bid) || ((b.faab.market||0)-(a.faab.market||0)) || (b.ros-a.ros));
   }
-  return {league:lg, teams, mine:!!mine, lineup, adds, drops, faab, wk, dynasty};
+  return {league:lg, teams, mine:!!mine, lineup, adds, drops, faab, wk, dynasty, rostered};
 }
 
 // ── Fetch layer ──────────────────────────────────────────────────────────────
@@ -948,7 +948,7 @@ function hubSnapshotResult(s){
   });
   ctx.projRank=projRank; ctx.usageRank=usageRank;
   let res=null; try{ res=hubAnalyzeLeague(lg, rosters, users, rows, ctx); }catch(e){ res=null; }
-  if(res){ res.byId=byId; res.projRank=projRank; res.rostered=new Set(rosters.flatMap(r=>r.players)); }
+  if(res){ res.byId=byId; res.projRank=projRank; }
   _hubSnapMemo={sig, res};
   return res;
 }

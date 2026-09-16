@@ -101,7 +101,7 @@ chk(app._vonaBaflCatAdj(nightStat, pools, ded, 10)===null, 'off outside BAFL Mod
 
 console.log('\n=== local app-data tools: on-device, quarantined, never throwing ===');
 const defs=app.tcLocalToolDefs();
-chk(defs.length===5 && defs.every(d=>d.name && d.inputSchema), 'five tools, each with a schema');
+chk(defs.length>=11 && defs.every(d=>d.name && d.inputSchema), 'eleven tools, each with a schema');
 chk(await app.tcLocalToolCall('rankings',{})===null, 'non-local names fall through to the worker');
 const noLeague=await app.tcLocalToolCall('league_team',{name:'Bob'});
 chk(/sync/i.test(noLeague), 'no synced league answers with guidance, not a throw');

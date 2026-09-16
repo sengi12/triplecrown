@@ -61,7 +61,7 @@ const app=new Function(code+`
   laFetchMatchups=function(){};
   return { dur:hubDurability, snap:hubSnapshotResult, teamCard:laThisWeekCardHTML, hubScoringFor, calcFptsUnder, hubWeekProj, hubFormMap, hubFill, hubCallouts, hubWaiverReasons, hubFaabAdvice, hubFaabCurveFromHistory, hubFaabFallbackCurve, hubAnalyzeLeague, hubKickoff,
     hubChopBand, hubChopMarket, hubChopFaab, hubChopCaliber, HUB_CHOP_DEFAULTS, leagueHTML:_hubActionsHTML,
-    hubFaabCurve, hubChopScanTx, hubLeagueNameKey, hubWireBoard, laTrendsView, laState:()=>laState, setFetch:(f)=>{ sleeperFetch=f; }, chopHist:(id)=>_hubChopHist[id], LA_LEAGUE_URL, SLEEPER_LEAGUES_URL,
+    hubFaabCurve, hubChopScanTx, hubLeagueNameKey, hubWireBoard, laTrendsView, laState:()=>laState, tcLocalToolCall, tcLocalToolDefs, tcChatLeagueContext, setHub:(r)=>{ hubState.results=r; hubState.loadedAt=Date.now(); }, setProfile:(p)=>{ laLoadSleeperProfile=function(){ return p; }; }, setFetch:(f)=>{ sleeperFetch=f; }, chopHist:(id)=>_hubChopHist[id], LA_LEAGUE_URL, SLEEPER_LEAGUES_URL,
            laDvpTable, laCurrentWeek, byId:()=>{ const m=new Map(); buildPlayerList().forEach(p=>m.set(String(p.player_id),p)); return m; },
            gs:()=>scoringSettings, HUB_CLOSE, ins:()=>TC_INSEASON, sp:()=>sleeperPlayers, nv:()=>NFLVERSE, setDyn:(d)=>{ DYNASTY_VALUES=d; } };
 `)();
@@ -327,7 +327,40 @@ app.laState().trndScope='myteam';
 chk(!/la-trnd-bid/.test(app.laTrendsView(chopSnap)), 'rostered players carry no bid');
 app.laState().trndScope='rostered'; app.laState().trndTab='trending';
 
-_asyncTests.catch(e=>{ total++; console.log('  FAIL: history fetch threw', e && e.message); }).then(()=>{
+console.log('=== Ask TripleCrown sees every league and the season in progress ===');
+const _asyncTools=(async()=>{
+  app.setProfile({username:'Sengi12', user:{user_id:'me'}, leagues:[{league_id:'L2', name:'🪓 Last Man Standing Eliminator', season:'2026', status:'in_season', total_rosters:2, type:3}, {league_id:'L3', name:'Queen City Kings', season:'2026', status:'in_season', total_rosters:2}]});
+  app.setHub({L2:cres, L3:fres});
+  const av=await app.tcLocalToolCall('available', {});
+  chk(/AVAILABLE — week 1/.test(av) && av.indexOf('Free Wideout')<av.indexOf('Free Back') && /37% of team targets \(11 tgt/.test(av) && /available in: .*Eliminator.*\$147.*mkt/.test(av) && /Queen City Kings \$\d+/.test(av), 'available: free agents across both leagues by target share, with each league\'s bid');
+  chk(!/Star Back/.test(av), 'a rostered player is not available anywhere');
+  const avRb=await app.tcLocalToolCall('available', {pos:'RB', sort:'carries'});
+  chk(/Free Back/.test(avRb) && !/Free Wideout/.test(avRb) && /14 car/.test(avRb), 'available narrows by position and sorts by carries');
+  chk(/No synced league matching/.test(await app.tcLocalToolCall('available', {league:'nope'})), 'an unknown league name lists the real ones');
+  const wu=await app.tcLocalToolCall('week_usage', {name:'free wideout'});
+  chk(/Free Wideout \(WR NE\)/.test(wu) && /week 1: 37% of team targets \(11 tgt of 30, 8 rec, 122 yds, 1 TD\)/.test(wu), 'week_usage: one player week by week');
+  const wl=await app.tcLocalToolCall('week_usage', {pos:'WR'});
+  chk(/WR usage leaders, week 1/.test(wl) && /1\. Free Wideout/.test(wl), 'week_usage: a position\'s target-share leaders');
+  const ml=await app.tcLocalToolCall('my_leagues', {});
+  chk(/MY LEAGUES \(2\)/.test(ml) && /Eliminator.*Chopped.*FAAB \$900 left of \$1000 · 2 of 2 teams alive/.test(ml) && /Queen City Kings.*redraft.*FAAB \$70 left of \$100/.test(ml) && /top adds: Free Wideout \(WR\) \$/.test(ml), 'my_leagues: every synced league with FAAB, the field and the top adds');
+  const lu=await app.tcLocalToolCall('lineup', {league:'kings'});
+  chk(/Queen City Kings/.test(lu) && !/Eliminator/.test(lu) && /optimal lineup: QB The Passer/.test(lu) && /adds: Free Wideout \(WR\) for Backup Back \$10/.test(lu) && /FAAB \$70 of \$100/.test(lu), 'lineup: one league\'s optimal lineup, calls and adds');
+  chk(/No league is synced/.test(await app.tcLocalToolCall('standings', {})), 'standings without an Analyzer snapshot says so');
+  const ad=await app.tcLocalToolCall('app_data', {path:'inseason.player_weekly.cols'});
+  chk(/"tgt","rec","rec_yd"/.test(ad), 'app_data reads a leaf table');
+  const ad2=await app.tcLocalToolCall('app_data', {path:'leagues'});
+  chk(/leagues: 2 keys/.test(ad2) && /L2/.test(ad2) && /L3/.test(ad2), 'app_data lists the keys of an object');
+  const ad3=await app.tcLocalToolCall('app_data', {path:'leagues.L2.faab.wire', find:'spare passer'});
+  chk(/1 item matching/.test(ad3) && /Spare Passer/.test(ad3), 'app_data filters an array by text');
+  chk(/No "nothing" under "inseason"/.test(await app.tcLocalToolCall('app_data', {path:'inseason.nothing'})), 'a wrong path names the keys that exist');
+  chk(/Roots: inseason, leagues/.test(await app.tcLocalToolCall('app_data', {})), 'no path lists the roots');
+  const ctx=app.tcChatLeagueContext('of all my leagues, what players that are available in my leagues have the largest target share on their teams from week 1?');
+  chk(/IN SEASON — NFL week 2, 1 week complete/.test(ctx) && /MY LEAGUES \(2\)/.test(ctx) && /AVAILABLE — week 1 usage, sorted by share/.test(ctx) && /Free Wideout/.test(ctx), 'the chat attaches the season, every league and the cross-league wire to a waiver question — no tools needed');
+  const ctx2=app.tcChatLeagueContext('who is the best dynasty QB');
+  chk(/IN SEASON/.test(ctx2) && /MY LEAGUES/.test(ctx2) && !/AVAILABLE —/.test(ctx2), 'a non-waiver question gets the season and the leagues, not the wire');
+})();
+
+Promise.all([_asyncTests, _asyncTools]).catch(e=>{ total++; console.log('  FAIL: async test threw', e && e.stack||e); }).then(()=>{
   console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
   process.exit(pass===total?0:1);
 });
