@@ -126,3 +126,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gcm-sheet .gcm-leaders .ld-row{padding:6px 10px;}
 .gcm-sheet .gcm-leaders .ld-nm{font-size:12.5px;}
 .gcm-sheet .gcm-leaders .ld-pts{font-size:13px;}
+/* Phone Leaders: three stat columns fit a 390px sheet when the columns are compact. */
+.gcm-sheet .gcm-leaders .ld-col{width:44px;font-size:10px;}
+.gcm-sheet .gcm-leaders .ld-pts{min-width:40px;}
+.gcm-sheet .gcm-leaders .ld-row{gap:6px;}

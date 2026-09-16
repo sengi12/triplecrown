@@ -1339,3 +1339,9 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .vsg-qbpick{font-size:10.5px;font-weight:800;color:var(--muted2);min-width:34px;}
 .vsg-qb{font-size:11.5px;white-space:nowrap;}
 .vsg-qb b.vsg-wait{color:var(--success);} .vsg-qb b.vsg-close{color:var(--warn);} .vsg-qb b.vsg-now{color:var(--danger);}
+/* The Waivers tab's BID column: the wire's price beside every free agent in a FAAB league. */
+.la-ba-bid{flex:none;min-width:48px;text-align:right;font-family:var(--mono);font-size:10px;}
+.la-ba-bid .la-wv-bid{display:inline-block;margin:0;}
+.la-ba-bid .hub-bid-chop small{font-size:8px;}
+.la-ba-nobid{color:var(--muted2);}
+.la-ba-head .la-ba-bid{font-family:inherit;}

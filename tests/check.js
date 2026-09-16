@@ -1273,6 +1273,57 @@ function tcPreserveViewScroll(run, selectors){
 	run();
 	tcRestoreViewScroll(snap);
 }
+// The same promise for ANY in-place re-render, with no selector list to maintain: every
+// scrolled element under `root` (the page, the content pane, a table wrapper scrolled
+// sideways, a sheet, a sidebar) is remembered by class and position, and put back after
+// the render — at once, on the next frame, and once more after images settle, each time
+// clamped to the new content. A sort or a filter must never move the reader.
+function tcCaptureScrollers(root){
+	const out = { winY: (typeof window!=='undefined' && (window.scrollY || (document.documentElement&&document.documentElement.scrollTop))) || 0, els: [] };
+	try{
+		const scope = root || document;
+		const all = scope.querySelectorAll ? scope.querySelectorAll('*') : [];
+		const seen = {};
+		for(const el of all){
+			if(!(el.scrollTop>0 || el.scrollLeft>0)) continue;
+			const cls = el.className && typeof el.className==='string' ? el.className.trim().split(/\s+/)[0] : '';
+			if(!cls) continue;
+			const key = cls; const idx = (seen[key]=(seen[key]||0));
+			// index among elements of the same first class, in document order
+			const same = scope.getElementsByClassName ? scope.getElementsByClassName(cls) : [];
+			let at = -1; for(let i=0;i<same.length;i++){ if(same[i]===el){ at=i; break; } }
+			seen[key]=idx+1;
+			out.els.push({ cls, at, x: el.scrollLeft, y: el.scrollTop });
+		}
+	}catch(e){}
+	return out;
+}
+function tcRestoreScrollers(snap, root){
+	if(!snap) return;
+	const apply = ()=>{
+		try{
+			const scope = root || document;
+			if(typeof window!=='undefined' && window.scrollTo){
+				const maxY = Math.max(0, (document.documentElement?document.documentElement.scrollHeight:0) - (window.innerHeight||0));
+				window.scrollTo(0, Math.min(Math.max(0, snap.winY||0), maxY));
+			}
+			(snap.els||[]).forEach(b=>{
+				const same = scope.getElementsByClassName ? scope.getElementsByClassName(b.cls) : [];
+				const el = same[b.at]; if(!el) return;
+				el.scrollLeft = Math.min(Math.max(0, b.x||0), Math.max(0, el.scrollWidth-el.clientWidth));
+				el.scrollTop  = Math.min(Math.max(0, b.y||0), Math.max(0, el.scrollHeight-el.clientHeight));
+			});
+		}catch(e){}
+	};
+	apply();
+	if(typeof window!=='undefined' && window.requestAnimationFrame) window.requestAnimationFrame(apply);
+	setTimeout(apply, 160);
+}
+function tcRerenderInPlace(run, root){
+	const snap = tcCaptureScrollers(root);
+	run();
+	tcRestoreScrollers(snap, root);
+}
 // ═════════════════════════════════════════════════════════════════════════════
 // Session persistence (localStorage) — auto-saves your working projections so they
 // survive a refresh/close. Only the EDITABLE state is stored (working projections,
@@ -4299,12 +4350,16 @@ function ldWidth(el){
   if(cw>0) return cw;
   const sw=parseFloat(el.style&&el.style.width); return sw>0?sw:200;
 }
-function ldColsFor(width){
+// The phone's Games sheet has no drag: the list is as wide as the phone, so it takes the
+// compact budget — full names past LD_PHONE_FULL_W, a stat column every LD_PHONE_COL_W
+// (three columns on a 390px phone; the columns themselves are narrower there, see CSS).
+const LD_PHONE_FULL_W = 200, LD_PHONE_COL_W = 56;
+function ldColsFor(width, phone){
   const spec=LD_COLS[_ld.pos==='ROOKIE'?'ALL':_ld.pos]||LD_COLS.ALL;
-  const n=Math.max(0, Math.floor((width-LD_FULL_W)/LD_COL_W));
+  const n=Math.max(0, Math.floor((width-(phone?LD_PHONE_FULL_W:LD_FULL_W))/(phone?LD_PHONE_COL_W:LD_COL_W)));
   return spec.slice(0, Math.min(spec.length, n));
 }
-function ldSort(k){ _ld.sort=(k && k!=='pts' && _ld.sort!==k) ? k : 'pts'; renderLeaders(true); }
+function ldSort(k){ _ld.sort=(k && k!=='pts' && _ld.sort!==k) ? k : 'pts'; if(typeof tcRerenderInPlace==='function') tcRerenderInPlace(()=>renderLeaders(true)); else renderLeaders(true); }
 
 function ldOn(){
   return typeof hasSeasonStarted==='function' && hasSeasonStarted()
@@ -4374,11 +4429,11 @@ async function ldLoad(){
   if(typeof _gc!=='undefined' && _gc && _gc.mode && _gc.mode!=='normal' && !ldPhoneOpen()) return;
   renderLeaders(true);
 }
-function ldRowsHTML(width){
+function ldRowsHTML(width, phone){
   const recs=_ld.rows||[];
   const pos=_ld.pos;
   width=width||200;
-  const cols=ldColsFor(width), full=width>=LD_FULL_W;
+  const cols=ldColsFor(width, phone), full=width>=(phone?LD_PHONE_FULL_W:LD_FULL_W);
   const sortKey=(_ld.sort!=='pts' && cols.some(c=>c[0]===_ld.sort)) ? _ld.sort : 'pts';
   const list=recs.filter(r=> pos==='ALL' ? true : pos==='ROOKIE' ? ldRookie(r.pid) : r.pos===pos)
     .map(r=>({r, pts:ldPoints(r)})).filter(x=>x.pts>0)
@@ -4399,7 +4454,7 @@ function ldRowsHTML(width){
 }
 // The panel's markup, for either home (the desktop sidebar, the phone's Games sheet).
 // `width` decides the names and the columns; `btns` is the home's own controls.
-function ldPanelHTML(width, btns, fromLoad){
+function ldPanelHTML(width, btns, fromLoad, phone){
   const season=String(TC_SEASON.year), cur=ldCurWeek(), wk=ldWeek();
   const key=`${season}|${_ld.week==='season'?'season':wk}`;
   const stale = _ld.key!==key || !_ld.rows || (_ld.week!=='season' && wk===cur && Date.now()-_ld.at>60*1000);
@@ -4413,7 +4468,7 @@ function ldPanelHTML(width, btns, fromLoad){
   return `<div class="ld-head"><div class="sidebar-section ld-title">Leaders</div>${sel}</div>
     <div class="ld-posrow">${posBtns}</div>
     <div class="ld-fmt"><span title="Points under the loaded scoring">${fmt}${_ld.week!=='season'&&wk===cur?' · live':''}</span>${btns||''}</div>
-    <div class="ld-list">${ldRowsHTML(width)}</div>`;
+    <div class="ld-list">${ldRowsHTML(width, phone)}</div>`;
 }
 // Is the phone's Games sheet showing the Leaders? Then the list lives there, not here.
 function ldPhoneOpen(){
@@ -4784,7 +4839,7 @@ function renderGamesPhone(fromLoad){
   const closeBtn=`<button class="rsb-btn gcm-x" onclick="gcmSet('closed')" title="Close" aria-label="Close">×</button>`;
   const page = open==='closed' ? ''
     : tab==='leaders' && typeof ldPanelHTML==='function'
-      ? `<div class="gc gcm-leaders">${ldPanelHTML(width, closeBtn, fromLoad)}</div>`
+      ? `<div class="gc gcm-leaders">${ldPanelHTML(width, closeBtn, fromLoad, true)}</div>`
       : gcHTML(true);
   host.innerHTML=`${gcmPillHTML(games)}
     <div class="gcm-scrim" onclick="gcmSet('closed')"></div>
@@ -15004,7 +15059,7 @@ function setTeamCoachingSchemeBenefactorSort(mode){
   const m = String(mode||'').toLowerCase();
   schemeBenefactorSort = (m==='opp') ? 'opp' : 'tgt';
   if(schemeOverlayOpen && schemeTeam && schemeViewTab!=='playbook'){
-    if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>_renderTeamCoachingScheme(), ['.scheme-modal']);
+    if(typeof tcRerenderInPlace==='function') tcRerenderInPlace(()=>_renderTeamCoachingScheme());
     else _renderTeamCoachingScheme();
   }
 }
@@ -22635,7 +22690,7 @@ function tsCanPreviewPhase(phase){
   // League Analyzer tabs (checked BEFORE the currentTeam guard — the analyzer needs no team).
   if(typeof currentPhase!=='undefined' && currentPhase==='League'){
     return !!(typeof leagueSnapshot!=='undefined' && leagueSnapshot) &&
-      ['myteam','rosters','compare','best','trade','season','matchup','lineup','dvp','trends'].includes(p);
+      ['myteam','rosters','compare','best','trade','season','matchup','lineup','dvp','trends','chop','standings','hub'].includes(p);
   }
   if(!currentTeam) return false;
   if(['Passing','Receiving','Rushing','Advanced','Additions'].includes(p)) return true;
@@ -22704,17 +22759,20 @@ function tsRenderPhasePreview(phase){
       if(phase==='compare') return laCompareView(s);
       if(phase==='best') return laBestAvailView(s);
       if(phase==='trade') return laTradeView(s);
-      if(['season','matchup','lineup','dvp','trends'].includes(phase)){
+      // The Multi-League hub renders from its own loaded results (no fetch from a gesture).
+      if(phase==='hub') return (typeof hubViewHTML==='function') ? (hubViewHTML(s)||'') : '';
+      if(['season','matchup','lineup','dvp','trends','chop','standings'].includes(phase)){
         // Cache-only: preview only when the pane's data is already loaded.
         const pane = phase==='season'
           ? ((typeof laActivePane==='function' && laActivePane()) || (laState&&laState.seasonPane) || 'matchup')
           : phase;
-        if(pane==='matchup' && !(_laMu.byWeek[laMuWeek()])) return '';
+        if((pane==='matchup'||pane==='chop') && !(_laMu.byWeek[laMuWeek()])) return '';
         if(pane==='lineup' && !(_laMu.byWeek[laCurrentWeek()])) return '';
         if((pane==='dvp'||pane==='trends') && !(typeof TC_INSEASON!=='undefined' && TC_INSEASON)) return '';
         if(phase==='season') return (typeof laTabViewHTML==='function' && laTabViewHTML('season', s)) || '';
         return (pane==='lineup'?laLineupView(s) : pane==='dvp'?laDvpView(s)
-              : pane==='trends'?laTrendsView(s) : laMatchupView(s)) || '';
+              : pane==='trends'?laTrendsView(s) : pane==='chop'&&typeof laChopView==='function'?laChopView(s)
+              : pane==='standings'&&typeof laStandingsView==='function'?laStandingsView(s) : laMatchupView(s)) || '';
       }
     }catch(e){ return ''; }
     return '';
@@ -23021,12 +23079,13 @@ function tsScrollerClaims(el, dir){
     // Swipe left → next tab (content moves left, like turning a page).
     const next = moved<0 ? cur+1 : cur-1;
     if(next<0 || next>=tabs.length){
-      // A bar can name where a swipe past its first tab continues (Season panes → Trades).
-      if(next<0 && bar.dataset && bar.dataset.swipePrev && typeof laSetTab==='function'){
-        const prevTab=bar.dataset.swipePrev;
+      // A bar can name where a swipe past its first or last tab continues (the Season
+      // panes: back past the first → Trades; on past the last → Multi-League).
+      const hop = next<0 ? (bar.dataset && bar.dataset.swipePrev) : (bar.dataset && bar.dataset.swipeNext);
+      if(hop && typeof laSetTab==='function'){
         const top=tsSwipeTop(host)||host, w=tsHostWidth(host);
-        if(top){ top.style.transition='transform .18s ease-out'; top.style.transform=`translateX(${w}px)`; }
-        setTimeout(()=>{ laSetTab(prevTab); }, 145);
+        if(top){ top.style.transition='transform .18s ease-out'; top.style.transform=`translateX(${next<0 ? w : -w}px)`; }
+        setTimeout(()=>{ laSetTab(hop); }, 145);
         return;
       }
       clearShift(true); return;
@@ -32116,7 +32175,11 @@ function renderLeagueAnalyzer(){
 }
 // In-view controls (scope chips, sort taps, week picks) re-render in place — the page must
 // not jump to the top. Tab CHANGES scroll to the top on purpose (a new page).
-function laRerenderKeepScroll(){ laState._keepScroll=true; renderLeagueAnalyzer(); }
+function laRerenderKeepScroll(){
+  laState._keepScroll=true;
+  if(typeof tcRerenderInPlace==='function') tcRerenderInPlace(()=>renderLeagueAnalyzer());
+  else renderLeagueAnalyzer();
+}
 
 // One card per team: players sorted by dynasty value, unvalued depth collapsed to a count,
 // future picks listed with their tier values. "My" team (the syncing user) sorts first.
@@ -32347,8 +32410,7 @@ function laCmpSort(col){
   const sc=laState.cmpSort||(laState.cmpSort={col:'total',dir:-1});
   if(sc.col===col) sc.dir=-sc.dir;
   else { sc.col=col; sc.dir = col==='team'?1:-1; }
-  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderLeagueAnalyzer(), ['.la-cmp-wrap']);
-  else renderLeagueAnalyzer();
+  laRerenderKeepScroll();
 }
 
 // ── Best Available: the valued free agents ───────────────────────────────────
@@ -32434,11 +32496,15 @@ function laBestAvailView(s){
   const chips=['ALL','QB','RB','WR','TE'].concat(extraPos).map(p=>
     `<button class="format-btn ${posF===p?'active':''}" onclick="laState.baPos='${p}';renderLeagueAnalyzer()">${p}</button>`).join('');
   if(!top.length) return `${lensBar}<div class="la-lens">${chips}</div><div class="la-note">No unrostered players on the value chart${posF!=='ALL'?` at ${posF}`:''} — deep league!</div>`;
+  // A FAAB league prices every row with the wire's bid (the chop market in a Chopped league).
+  const bids=(typeof laWireBidMap==='function')?laWireBidMap(s):null;
+  const hasBids=!!(bids && bids.size);
   return `${lensBar}
     <div class="la-lens"><span class="la-lens-lbl">Position:</span>${chips}</div>
     <div class="la-ba">
       <div class="la-ba-row la-ba-head"><span class="la-ba-rk">#</span><span class="rt-slot" style="visibility:hidden">POS</span>
         <span class="la-ba-name">PLAYER</span><span class="la-ba-team">TM</span>
+        ${hasBids?`<span class="la-ba-bid" title="The wire's price: the bid the Lineup pane would put on him${bids.res&&bids.res.faab&&bids.res.faab.chop?' — the chop market for his caliber and the teams alive':' — his rest-of-season value over replacement, split across the league'}">BID</span>`:''}
         <span class="la-ba-val" title="FantasyPros dynasty value (format-aware)">VALUE</span>
         <span class="la-ba-fpts" title="Projected fantasy points from your projections">PROJ</span></div>
       ${top.map((r,i)=>`<div class="la-ba-row">
@@ -32447,6 +32513,7 @@ function laBestAvailView(s){
         <span class="clickable-player" onclick="${pcardOnclick(r.pos==='DEF'?(r.team||r.name):r.name,r.pos,r.team||'')}">${laPlayerImg(r)}</span>
         <span class="la-ba-name clickable-player" onclick="${pcardOnclick(r.pos==='DEF'?(r.team||r.name):r.name,r.pos,r.team||'')}">${escHtml(r.name)}</span>
         <span class="la-ba-team">${escHtml(r.team)}</span>
+        ${hasBids?`<span class="la-ba-bid">${laWireBidChip(bids, r.name, r.pos)||'<span class="la-ba-nobid">–</span>'}</span>`:''}
         <span class="la-ba-val">${noteWrapHtml(String(r.v), { label:'Value', value:String(r.v), source:'league_analyzer_best_avail', statKey:'value', context:`League Analyzer best available · ${posF}`, player:noteTargetFromArgs(r.name,r.pos,r.team||''), team:r.team||'' }, 'note-tag-hit')}</span>
         <span class="la-ba-fpts">${noteWrapHtml(escHtml(r.fpts?r.fpts.toFixed(0):'–'), { label:'Projected Points', value:r.fpts?r.fpts.toFixed(0):'–', source:'league_analyzer_best_avail', statKey:'proj', context:`League Analyzer best available · ${posF}`, player:noteTargetFromArgs(r.name,r.pos,r.team||''), team:r.team||'' }, 'note-tag-hit')}</span></div>`).join('')}
     </div>
@@ -33670,7 +33737,7 @@ function laSeasonView(s, paneOverride){
   // these PANES (the outer icon bar stays tappable); swiping back past Matchup continues to
   // the Trades tab (data-swipe-prev). Touches inside the matchup hero are claimed by the
   // hero's own matchup pager first.
-  const bar=`<div class="phase-tabs la-pane-tabs" data-swipe-primary data-swipe-prev="trade">${panes.map(([k,l,ic])=>
+  const bar=`<div class="phase-tabs la-pane-tabs" data-swipe-primary data-swipe-prev="trade" data-swipe-next="hub">${panes.map(([k,l,ic])=>
     `<button class="phase-tab pane-tab ${pane===k?'active':''}" onclick="laSetPane('${k}')" title="${l}">${TC_ICON(ic)}<span class="tab-lbl">${l}</span></button>`).join('')}</div>`;
   const body = pane==='lineup'?laLineupView(s) : pane==='dvp'?laDvpView(s)
              : pane==='trends'?laTrendsView(s) : pane==='chop'?laChopView(s)
@@ -34133,6 +34200,13 @@ function laSetDvpSort(col){
   laRerenderKeepScroll();
 }
 function laSetDvpPos(p){ laState.dvpPos=p; laRerenderKeepScroll(); }
+// The Players lens sorts by any of its three numbers: the matchup (points the opponent
+// allows to the position), the adjustment, the week's projection. A second tap flips it.
+function laSetDvpPoolSort(col){
+  const s=laState.dvpPoolSort||{col:'proj',dir:-1};
+  laState.dvpPoolSort = (s.col===col) ? {col, dir:-s.dir} : {col, dir:-1};
+  laRerenderKeepScroll();
+}
 function laSetDvpMode(m){ laState.dvpMode=m; laRerenderKeepScroll(); }
 function laToggleDvpAvail(){ laState.dvpAvail=!laState.dvpAvail; laRerenderKeepScroll(); }
 // The two lenses over one table: who gives up points (Defenses), and who's positioned
@@ -34177,7 +34251,15 @@ function laDvpPoolView(t){
   }
   // bar scale: the most generous defense per position pins 100%, like the Defenses table
   const mxA={}; ['QB','RB','WR','TE'].forEach(pp=>{ mxA[pp]=Math.max(...t.codes.map(c=>t.teams[c][pp].fppg))||1; });
-  rows.sort((x,y)=>(y.a.adj-x.a.adj)||(y.a.baseRate-x.a.baseRate));
+  const ps=laState.dvpPoolSort||{col:'proj',dir:-1};
+  const allowedOf=(r)=>(r.a.opp&&t.teams[r.a.opp]&&!r.a.bye&&!r.a.out)?t.teams[r.a.opp][r.p.pos].fppg:null;
+  const keyOf=(r)=> ps.col==='matchup' ? allowedOf(r) : ps.col==='adj' ? ((r.a.bye||r.a.out)?null:r.a.defMult) : r.a.adj;
+  rows.sort((x,y)=>{
+    const kx=keyOf(x), ky=keyOf(y);
+    if(kx==null && ky==null) return (y.a.adj-x.a.adj);
+    if(kx==null) return 1; if(ky==null) return -1;             // byes and outs sit last either way
+    return (ps.dir<0 ? ky-kx : kx-ky) || (y.a.adj-x.a.adj) || (y.a.baseRate-x.a.baseRate);
+  });
   const top=rows.slice(0, pos1?45:60);
   const body=top.map(({p,a},i)=>{
     const key=ecrNormName(p.name);
@@ -34217,7 +34299,7 @@ function laDvpPoolView(t){
       <div class="pos-filter">${chips}${taken?`<button class="pos-filter-btn ${laState.dvpAvail?'active':''}" onclick="laToggleDvpAvail()" title="Only players NOT on any roster in your league — the waiver wire, ranked for this week">Available</button>`:''}</div>
       <span class="la-ins-sub">week-adjusted projection · same math as the Lineup pane${mine?' · ★ yours, grey = rostered':''}</span></div>
     <div class="card card-flush"><div class="la-dvp-wrap">
-      <table class="la-pool-table"><thead><tr><th></th><th>PLAYER</th><th>MATCHUP</th><th>ADJ</th><th>PROJ WK</th></tr></thead>
+      <table class="la-pool-table"><thead><tr><th></th><th>PLAYER</th>${[['matchup','MATCHUP','Sort by the matchup: points the opponent allows to the position'],['adj','ADJ','Sort by the matchup adjustment'],['proj','PROJ WK','Sort by this week\'s projection']].map(([k,l,tip])=>`<th class="la-pool-th ${ps.col===k?'active':''}" onclick="laSetDvpPoolSort('${k}')" title="${tip}">${l}${ps.col===k?(ps.dir<0?' ▼':' ▲'):''}</th>`).join('')}</tr></thead>
       <tbody>${body}</tbody></table></div></div>
     <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn('ladvp','Reading this table'):''}</div>`;
 }
@@ -34399,6 +34481,9 @@ function laWeekPickupsHTML(s){
   if(!scored.length)
     return `<div class="la-lens"><span class="la-lens-lbl">Position:</span>${chips}</div>
       <div class="la-note">Nobody unrostered projects for week ${wk}${posF!=='ALL'?` at ${posF}`:''}.</div>`;
+  // A FAAB league prices every row with the wire's bid (the chop market in a Chopped league).
+  const bids=(typeof laWireBidMap==='function')?laWireBidMap(s):null;
+  const hasBids=!!(bids && bids.size);
   const rows=scored.map((x,i)=>{
     const {p,a}=x;
     const fl=floorOf(p.pos);
@@ -34411,6 +34496,7 @@ function laWeekPickupsHTML(s){
       <span class="la-ba-name clickable-player" onclick="${pcardOnclick(p.player_id||p.name,p.pos,p.team||'')}">${escHtml(p.name)}
         ${startable?`<span class="la-lh-flag la-lh-start" title="Projects ${(a.adj-fl).toFixed(1)} above the weakest starter he could displace in your optimal lineup">STARTS +${(a.adj-fl).toFixed(1)}</span>`:''}</span>
       <span class="la-ba-game">${laGameLineHTML(pr, wk, dvp)||'<span class="la-gm la-gm-none">—</span>'}</span>
+      ${hasBids?`<span class="la-ba-bid">${laWireBidChip(bids, p.name, p.pos)||'<span class="la-ba-nobid">–</span>'}</span>`:''}
       <span class="la-ba-fpts"><b title="${escAttr(`${a.adj.toFixed(1)} = projection blend${a.defMult!==1?` × ${a.defMult.toFixed(2)} matchup`:''}`)}">${a.adj.toFixed(1)}</b></span>
     </div>`;
   }).join('');
@@ -34418,6 +34504,7 @@ function laWeekPickupsHTML(s){
     <div class="la-ba la-ba-week">
       <div class="la-ba-row la-ba-head"><span class="la-ba-rk">#</span><span class="rt-slot" style="visibility:hidden">POS</span>
         <span class="la-ba-name">PLAYER</span><span class="la-ba-game">WEEK ${wk}</span>
+        ${hasBids?`<span class="la-ba-bid" title="The wire's price: the bid the Lineup pane would put on him">BID</span>`:''}
         <span class="la-ba-fpts" title="Week-adjusted projection: 35% preseason + 30% season FPPG + 35% last-3, × defense-vs-position">WK PROJ</span></div>
       ${rows}
     </div>
@@ -36007,6 +36094,19 @@ function laWireBoardHTML(res){
       <span class="la-ins-sub">every free agent priced · ${c ? `${c.alive} of ${c.total} alive · ${c.n?`${c.n} past releases`:'the three-season study'}` : `${res.dynasty?'dynasty chart':'rest-of-season'} value over replacement, split across the league`}</span>
       <div class="pos-filter la-cmkt-pos">${chips}</div></div>
     <div class="card la-trnd-card la-cmkt-board">${list||'<div class="la-wv-none">No free agents to price.</div>'}</div>`;
+}
+// The wire's prices for any other view that lists free agents by name (the Waivers tab's
+// two lenses, the Trends boards): name|pos → the wire row, from the same result.
+function laWireBidMap(s){
+  const res=(typeof hubSnapshotResult==='function')?hubSnapshotResult(s):null;
+  const m=new Map();
+  if(res && res.faab && Array.isArray(res.faab.wire)) res.faab.wire.forEach(r=>m.set(ecrNormName(r.name)+'|'+r.pos, r));
+  m.res=res;
+  return m;
+}
+function laWireBidChip(map, name, pos, cls){
+  const r=map && map.get(ecrNormName(name)+'|'+pos);
+  return r ? hubBidChipHTML(r.faab, map.res, r.pos, cls||'la-wv-bid') : '';
 }
 function laSetChopPos(p){
   if(typeof laState!=='undefined') laState.chopPos=p;

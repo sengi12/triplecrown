@@ -80,6 +80,11 @@ const settle=()=>new Promise(r=>setTimeout(r,15));
   chk(/TGT/.test(h) && /REC YD/.test(h) && !/PASS YD/.test(h), 'WR: targets, receptions, receiving yards');
   app.setWidth(200); app.setPos('ALL');
 
+
+console.log('=== the phone sheet takes the compact column budget ===');
+chk(app.cols(390).length===1 && app.cols(390,true).length===3, 'a 390px phone: one column under the desktop budget, three under the phone budget');
+chk(app.cols(320,true).length===2 && app.cols(200,true).length===0, 'narrower phones drop columns one at a time');
+
   console.log('=== where it does not belong ===');
   app.setMobile(true); app.render();
   chk(app.hidden()===true, 'phones: hidden (the picker owns that space)');

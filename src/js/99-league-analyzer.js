@@ -1392,7 +1392,11 @@ function renderLeagueAnalyzer(){
 }
 // In-view controls (scope chips, sort taps, week picks) re-render in place — the page must
 // not jump to the top. Tab CHANGES scroll to the top on purpose (a new page).
-function laRerenderKeepScroll(){ laState._keepScroll=true; renderLeagueAnalyzer(); }
+function laRerenderKeepScroll(){
+  laState._keepScroll=true;
+  if(typeof tcRerenderInPlace==='function') tcRerenderInPlace(()=>renderLeagueAnalyzer());
+  else renderLeagueAnalyzer();
+}
 
 // One card per team: players sorted by dynasty value, unvalued depth collapsed to a count,
 // future picks listed with their tier values. "My" team (the syncing user) sorts first.
@@ -1623,8 +1627,7 @@ function laCmpSort(col){
   const sc=laState.cmpSort||(laState.cmpSort={col:'total',dir:-1});
   if(sc.col===col) sc.dir=-sc.dir;
   else { sc.col=col; sc.dir = col==='team'?1:-1; }
-  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderLeagueAnalyzer(), ['.la-cmp-wrap']);
-  else renderLeagueAnalyzer();
+  laRerenderKeepScroll();
 }
 
 // ── Best Available: the valued free agents ───────────────────────────────────
@@ -1710,11 +1713,15 @@ function laBestAvailView(s){
   const chips=['ALL','QB','RB','WR','TE'].concat(extraPos).map(p=>
     `<button class="format-btn ${posF===p?'active':''}" onclick="laState.baPos='${p}';renderLeagueAnalyzer()">${p}</button>`).join('');
   if(!top.length) return `${lensBar}<div class="la-lens">${chips}</div><div class="la-note">No unrostered players on the value chart${posF!=='ALL'?` at ${posF}`:''} — deep league!</div>`;
+  // A FAAB league prices every row with the wire's bid (the chop market in a Chopped league).
+  const bids=(typeof laWireBidMap==='function')?laWireBidMap(s):null;
+  const hasBids=!!(bids && bids.size);
   return `${lensBar}
     <div class="la-lens"><span class="la-lens-lbl">Position:</span>${chips}</div>
     <div class="la-ba">
       <div class="la-ba-row la-ba-head"><span class="la-ba-rk">#</span><span class="rt-slot" style="visibility:hidden">POS</span>
         <span class="la-ba-name">PLAYER</span><span class="la-ba-team">TM</span>
+        ${hasBids?`<span class="la-ba-bid" title="The wire's price: the bid the Lineup pane would put on him${bids.res&&bids.res.faab&&bids.res.faab.chop?' — the chop market for his caliber and the teams alive':' — his rest-of-season value over replacement, split across the league'}">BID</span>`:''}
         <span class="la-ba-val" title="FantasyPros dynasty value (format-aware)">VALUE</span>
         <span class="la-ba-fpts" title="Projected fantasy points from your projections">PROJ</span></div>
       ${top.map((r,i)=>`<div class="la-ba-row">
@@ -1723,6 +1730,7 @@ function laBestAvailView(s){
         <span class="clickable-player" onclick="${pcardOnclick(r.pos==='DEF'?(r.team||r.name):r.name,r.pos,r.team||'')}">${laPlayerImg(r)}</span>
         <span class="la-ba-name clickable-player" onclick="${pcardOnclick(r.pos==='DEF'?(r.team||r.name):r.name,r.pos,r.team||'')}">${escHtml(r.name)}</span>
         <span class="la-ba-team">${escHtml(r.team)}</span>
+        ${hasBids?`<span class="la-ba-bid">${laWireBidChip(bids, r.name, r.pos)||'<span class="la-ba-nobid">–</span>'}</span>`:''}
         <span class="la-ba-val">${noteWrapHtml(String(r.v), { label:'Value', value:String(r.v), source:'league_analyzer_best_avail', statKey:'value', context:`League Analyzer best available · ${posF}`, player:noteTargetFromArgs(r.name,r.pos,r.team||''), team:r.team||'' }, 'note-tag-hit')}</span>
         <span class="la-ba-fpts">${noteWrapHtml(escHtml(r.fpts?r.fpts.toFixed(0):'–'), { label:'Projected Points', value:r.fpts?r.fpts.toFixed(0):'–', source:'league_analyzer_best_avail', statKey:'proj', context:`League Analyzer best available · ${posF}`, player:noteTargetFromArgs(r.name,r.pos,r.team||''), team:r.team||'' }, 'note-tag-hit')}</span></div>`).join('')}
     </div>

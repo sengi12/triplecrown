@@ -348,7 +348,7 @@ function renderGamesPhone(fromLoad){
   const closeBtn=`<button class="rsb-btn gcm-x" onclick="gcmSet('closed')" title="Close" aria-label="Close">×</button>`;
   const page = open==='closed' ? ''
     : tab==='leaders' && typeof ldPanelHTML==='function'
-      ? `<div class="gc gcm-leaders">${ldPanelHTML(width, closeBtn, fromLoad)}</div>`
+      ? `<div class="gc gcm-leaders">${ldPanelHTML(width, closeBtn, fromLoad, true)}</div>`
       : gcHTML(true);
   host.innerHTML=`${gcmPillHTML(games)}
     <div class="gcm-scrim" onclick="gcmSet('closed')"></div>
