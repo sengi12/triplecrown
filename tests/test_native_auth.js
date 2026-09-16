@@ -56,6 +56,18 @@ app.setClient(client); app.closeModal();
   chk(calls.sessions[0] && calls.sessions[0].access_token==='at' && calls.sessions[0].refresh_token==='rt', 'an implicit-flow return (tokens in the hash) sets the session');
   await app.handle('com.sengi.triplecrown://auth/callback?error=access_denied&error_description=Denied');
   chk(toasts.some(t=>/err:Google sign-in failed: Denied/.test(t)), 'a refusal is reported, not swallowed');
+  console.log('=== the bridge a remote page really gets: no registerPlugin, nativePromise + addListener ===');
+  calls.oauth.length=0; calls.browser.length=0; calls.listeners.length=0;
+  global.window.Capacitor={ isNativePlatform:()=>true, Plugins:{}, PluginHeaders:[{name:'Browser',methods:[{name:'open'},{name:'close'}]},{name:'App',methods:[{name:'addListener'}]},{name:'WebView'}],
+    nativePromise:async(plugin,method,opts)=>{ calls.browser.push([plugin+'.'+method, opts&&opts.url]); },
+    addListener:(plugin,ev,fn)=>{ calls.listeners.push(plugin+':'+ev); global._appUrl=fn; } };
+  const fresh=(new Function(code+"toast=function(m,t){ toasts.push(t+':'+m); }; return {signIn:tcSignInGoogle, setClient:(c)=>{ _tcClient=c; }, plugin:_tcNativePlugin, closeModal:()=>{ tcCloseAuthModal=function(){ closed.push(1); }; }};"))();
+  fresh.setClient(client); fresh.closeModal();
+  chk(fresh.plugin('Browser') && typeof fresh.plugin('Browser').open==='function' && fresh.plugin('Camera')===null, 'a plugin the shell carries becomes a shim over nativePromise; one it does not is null');
+  fresh.signIn(); await new Promise(r=>setTimeout(r,5));
+  chk(calls.browser.some(c=>c[0]==='Browser.open' && /accounts\.google\.com/.test(c[1])) && calls.listeners.includes('App:appUrlOpen') && opened.length===0, 'the sign-in opens the system browser through the bridge and listens for the return through it');
+  await global._appUrl({url:'com.sengi.triplecrown://auth/callback?code=fromshim'});
+  chk(calls.exchanged.includes('fromshim') && calls.browser.some(c=>c[0]==='Browser.close'), 'the return trip closes the browser and exchanges the code');
   const src=fs.readFileSync(require('path').join(__dirname,'..','mobile/android/app/src/main/AndroidManifest.xml'),'utf8');
   chk(/android:scheme="com\.sengi\.triplecrown" android:host="auth"/.test(src) && /android\.intent\.category\.BROWSABLE/.test(src), 'the Android manifest routes the callback scheme to the app');
   const pk=JSON.parse(fs.readFileSync(require('path').join(__dirname,'..','mobile/package.json'),'utf8'));

@@ -267,19 +267,25 @@ function tcIsNativeApp(){
   try{ return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform==='function' && window.Capacitor.isNativePlatform()); }
   catch(e){ return false; }
 }
-// A native plugin, from a page the shell loads off the live site: Capacitor lists a plugin
-// on window.Capacitor.Plugins only once that plugin's own JavaScript has registered it, and
-// this page bundles none — so register the proxy ourselves (the documented path for a page
-// without a bundler; the native side answers as long as the plugin is installed in the shell).
+// A native plugin, from a page the shell loads off the live site. The bridge Capacitor
+// injects into a remote page is the small native-bridge.js, not the runtime a bundled app
+// ships: it has no registerPlugin and an empty Plugins map, but it does carry the native
+// plugin headers and the two calls everything else is built on — nativePromise(plugin,
+// method, options) and addListener(plugin, event, callback). So a plugin here is a thin
+// shim over those, made only when the shell's headers say the plugin is installed.
 function _tcNativePlugin(name){
   try{
     const cap=window.Capacitor; if(!cap) return null;
     if(cap.Plugins && cap.Plugins[name]) return cap.Plugins[name];
-    if(typeof cap.registerPlugin==='function'){
-      const has=!Array.isArray(cap.PluginHeaders) || cap.PluginHeaders.some(h=>h && h.name===name);
-      return has ? cap.registerPlugin(name) : null;
-    }
-    return null;
+    const headers=Array.isArray(cap.PluginHeaders) ? cap.PluginHeaders : null;
+    if(headers && !headers.some(h=>h && h.name===name)) return null;
+    if(typeof cap.registerPlugin==='function') return cap.registerPlugin(name);
+    if(typeof cap.nativePromise!=='function') return null;
+    const call=(method)=>(options)=>cap.nativePromise(name, method, options||{});
+    return {
+      open: call('open'), close: call('close'),
+      addListener: (ev, fn)=> (typeof cap.addListener==='function') ? cap.addListener(name, ev, fn) : null,
+    };
   }catch(e){ return null; }
 }
 let _tcNativeAuthBound = false;
