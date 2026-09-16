@@ -217,6 +217,17 @@ function drawPlayDiagram(g, mode, sel, wrRot, av){
     });
   }
   // ---- skill circles + labels ----
+  // Label lanes: a label is ~54px wide, so players whose labels would collide (same depth,
+  // closer than that) take the next lane down (three lanes at most); the outermost labels
+  // hug the frame's edge instead of running off it.
+  const LW=54, LANE=20;
+  const labeled=skill.filter(p=>p.slot && p.role!='QB').map(p=>({p, rf:routesFor(p)})).filter(x=>x.rf && x.rf.name && x.rf.name!='—');
+  labeled.sort((a,b)=>(a.p.y-b.p.y)||(a.p.x-b.p.x));
+  const laneLast=[[],[],[]];   // per lane: the [x,y] of the last label placed
+  labeled.forEach(x=>{ let lane=0;
+    for(lane=0; lane<3; lane++){ const last=laneLast[lane]; if(!last.length || Math.abs(x.p.y-last[1])>=30 || Math.abs(x.p.x-last[0])>=LW) break; }
+    if(lane>2) lane=2; laneLast[lane]=[x.p.x,x.p.y]; x.p._lane=lane; });
+  const lx=(p)=> p.x<LW/2+4 ? {x:6, a:'start'} : (p.x>W-LW/2-4 ? {x:W-6, a:'end'} : {x:p.x, a:'middle'});
   wrN=0;
   skill.forEach(p=>{
     let fill=p.role=='WR'?'#cdd2e0':(p.role=='TE'?'#3f6db5':'#1f3a6d'), tc=p.role=='WR'?'#1a1a17':'#fff';
@@ -227,20 +238,19 @@ function drawPlayDiagram(g, mode, sel, wrRot, av){
     if(qbTap) s+=`<circle cx="${p.x}" cy="${p.y}" r="12.5" fill="none" stroke="#4f83cc" stroke-width="1" stroke-dasharray="2 2" opacity="0.6"/>`;
     const cls = tappable?`<g class="tap" data-slot="${p.slot}" style="cursor:pointer">`:(qbTap?`<g class="qbtap" style="cursor:pointer">`:'<g>');
     s+=`${cls}<circle cx="${p.x}" cy="${p.y}" r="9" fill="${fill}" stroke="#000"/><text x="${p.x}" y="${p.y+3}" fill="${tc}" font-size="7" text-anchor="middle" font-family="Arial" font-weight="bold">${p.label}</text></g>`;
-    if(qbTap) s+=`<text x="${p.x}" y="${p.y+20}" font-size="5.5" fill="#4f83cc" text-anchor="middle">tap: rotate WRs</text>`;
-    if(mode=='pass' && rf && rf.name && rf.name!='\u2014'){
-      const belowLOS = p.y>losY;
-      let ny=belowLOS?p.y+20:p.y+20;
-      s+=`<text x="${p.x}" y="${ny}" font-size="7.5" fill="#1a1a17" text-anchor="middle" font-weight="bold" data-noteable="1" data-note-label="Player role" data-note-value="${nEsc(rf.name)}" data-note-context="${nEsc(SEASON+' playbook · '+g.p+' personnel · '+g.name)}" data-note-source="coaching_playbook" data-note-stat-key="player_role" data-note-team="${nEsc(TEAM_CODE)}" data-note-relevance="QB,RB,WR,TE" data-note-nav="${NOTE_NAV}">${rf.name}</text>`;
-    }
-    // the route under the name — none on a charted-sets season (routes publish post-season)
-    if(mode=='pass' && rf && rf.name && rf.name!='\u2014' && rf.list && rf.list.length){
-      const idx=(sel[p.slot]||0)%rf.list.length; const rt=rf.list[idx];
-      const ny=p.y+20;
-      const pctTxt = rt[1]!=null?` ${rt[1]}%`:'';
-      const srcTxt = rf.src=='tree'?' (tree)':(rf.src=='season'?' (szn)':(rf.src=='inf'?' (est)':''));
-      s+=`<text x="${p.x}" y="${ny+9}" font-size="6" fill="#a8321f" text-anchor="middle" data-noteable="1" data-note-label="Route tendency" data-note-value="${nEsc(rt[0].split('/')[0]+pctTxt+srcTxt)}" data-note-context="${nEsc(SEASON+' playbook · '+g.p+' personnel · '+g.name+' · '+rf.name)}" data-note-source="coaching_playbook" data-note-stat-key="route_tendency" data-note-team="${nEsc(TEAM_CODE)}" data-note-relevance="QB,RB,WR,TE" data-note-nav="${NOTE_NAV}">${rt[0].split('/')[0]}${pctTxt}${srcTxt}</text>`;
-      if(rf.list.length>1) s+=`<text x="${p.x}" y="${ny+17}" font-size="5.5" fill="#8a8470" text-anchor="middle">${idx+1}/${rf.list.length} tap</text>`;
+    // the QB's hint sits above the QB, clear of the backs' labels below
+    if(qbTap) s+=`<text x="${p.x}" y="${p.y-14}" font-size="5.5" fill="#4f83cc" text-anchor="middle">tap: rotate WRs</text>`;
+    if(mode=='pass' && rf && rf.name && rf.name!='—'){
+      const ny=p.y+20+(p._lane||0)*LANE; const A=lx(p);
+      s+=`<text x="${A.x}" y="${ny}" font-size="7.5" fill="#1a1a17" text-anchor="${A.a}" font-weight="bold" data-noteable="1" data-note-label="Player role" data-note-value="${nEsc(rf.name)}" data-note-context="${nEsc(SEASON+' playbook · '+g.p+' personnel · '+g.name)}" data-note-source="coaching_playbook" data-note-stat-key="player_role" data-note-team="${nEsc(TEAM_CODE)}" data-note-relevance="QB,RB,WR,TE" data-note-nav="${NOTE_NAV}">${rf.name}</text>`;
+      // the route under the name — the sheet's header says when they are estimated
+      if(rf.list && rf.list.length){
+        const idx=(sel[p.slot]||0)%rf.list.length; const rt=rf.list[idx];
+        const pctTxt = rt[1]!=null?` ${rt[1]}%`:'';
+        const srcTxt = rf.src=='tree'?' (tree)':(rf.src=='season'?' (szn)':'');
+        s+=`<text x="${A.x}" y="${ny+9}" font-size="6" fill="#a8321f" text-anchor="${A.a}" data-noteable="1" data-note-label="Route tendency" data-note-value="${nEsc(rt[0].split('/')[0]+pctTxt+srcTxt)}" data-note-context="${nEsc(SEASON+' playbook · '+g.p+' personnel · '+g.name+' · '+rf.name)}" data-note-source="coaching_playbook" data-note-stat-key="route_tendency" data-note-team="${nEsc(TEAM_CODE)}" data-note-relevance="QB,RB,WR,TE" data-note-nav="${NOTE_NAV}">${rt[0].split('/')[0]}${pctTxt}${srcTxt}</text>`;
+        if(rf.list.length>1) s+=`<text x="${A.x}" y="${ny+17}" font-size="5.5" fill="#8a8470" text-anchor="${A.a}">${idx+1}/${rf.list.length} tap</text>`;
+      }
     }
   });
   return s.replace('<svg ',`<svg `).replace(`viewBox="0 0 ${W} ${H}">`,`viewBox="0 0 ${W} ${H}"><defs>${defs}</defs>`)+`</svg>`;

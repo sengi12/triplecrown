@@ -6,8 +6,8 @@
 // follow The Side Quest's coaching work (Michael MacKelvie and Nick Gurol, thesidequest.com,
 // "The Coaching Report Card"), re-derived in src/nflverse/tendencies.py from the nflverse
 // play-by-play and FTN charting the app already ingests: the pass rate in each situation
-// beside the league's; guessability beyond the situation (their finding: the best callers
-// are MORE guessable once the situation is held, and it costs nothing); the streak lift and
+// beside the league's; predictability beyond the situation (their finding: the best callers
+// are MORE predictable once the situation is held, and it costs nothing); the streak lift and
 // formation hold; play action after a run vs cold (cold works fine); motion's real effect;
 // and the defence's blitz habits, its streak (callers run hot) and what a blitz buys.
 // Rendered in the modal's paper idiom (the same wrap the Red Zone, Regression and Scheme
@@ -32,10 +32,14 @@ const _tnEpa=(v)=> (v==null||Number.isNaN(+v)) ? '—' : `${(+v)>=0?'+':''}${(+v
 const _tnPp=(v)=> (v==null||Number.isNaN(+v)) ? '—' : `${(+v)>=0?'+':''}${(+v).toFixed(1)} pp`;
 function _tnOrd(n){ return (typeof _schemeOrdinal==='function') ? _schemeOrdinal(n) : String(n); }
 // a rank stamp: yellow, green for the top third, pink for the bottom third
+// A label of the form 'most X|least X' flips for the bottom half: the 32nd most predictable
+// offense reads 1st of 32 least predictable — the rank counted from the other end.
 function _tnStamp(rank, n, label){
   if(!rank || !n) return '';
   const cls = n>=2 ? (rank<=Math.ceil(n/3) ? 'hi' : (rank>n-Math.ceil(n/3) ? 'lo' : '')) : '';
-  return `<span class="tn-rank ${cls}">${_tnOrd(rank)} of ${n}${label?` ${escHtml(label)}`:''}</span>`;
+  let lbl = label || '', shown = rank;
+  if(lbl.indexOf('|')>=0){ const [hi, lo] = lbl.split('|'); if(rank > n/2){ lbl = lo; shown = n - rank + 1; } else lbl = hi; }
+  return `<span class="tn-rank ${cls}">${_tnOrd(shown)} of ${n}${lbl?` ${escHtml(lbl)}`:''}</span>`;
 }
 // a run/pass bar with the league's pass rate as a black tick
 function _tnPassBar(pass, lg){
@@ -60,7 +64,7 @@ function _schemeRenderTendencies(p){
   const blk=(season && typeof NFLVERSE!=='undefined' && NFLVERSE && NFLVERSE[season] && NFLVERSE[season].tendencies) || null;
   const t=blk && blk.teams && blk.teams[team];
   // The method, behind the info button (the page itself stays numbers).
-  const about = (typeof _schemeInfoTip==='function') ? _schemeInfoTip('Tendencies', `The methods follow The Side Quest's coaching work (Michael MacKelvie and Nick Gurol, thesidequest.com — The Coaching Report Card), re-derived from nflverse pbp + FTN charting${season?`, ${season} REG`:''}. Guessability: how often a defence knowing only the situation (down, distance, field, score, quarter) and the league's habits would guess run or pass; the team's own situation rates, shrunk toward the league's where thin, give its number; "beyond the situation" is what the caller adds — their finding: the best callers score HIGH here, and it costs them nothing. Bars: green run / blue pass, the black tick is the league. EPA is per play; n in grey.`) : '';
+  const about = (typeof _schemeInfoTip==='function') ? _schemeInfoTip('Tendencies', `The methods follow The Side Quest's coaching work (Michael MacKelvie and Nick Gurol, thesidequest.com — The Coaching Report Card), re-derived from nflverse pbp + FTN charting${season?`, ${season} REG`:''}. Predictability: how often a defence knowing only the situation (down, distance, field, score, quarter) and the league's habits would call run or pass right; the team's own situation rates, shrunk toward the league's where thin, give its number. The stamp ranks the teams by that rate from whichever end is nearer (1st of 32 most predictable … 1st of 32 least predictable); "beyond the situation" is the same number less the league's situation-only rate — the same baseline for every team — so it is what this caller adds, and the ranking is identical. Their finding: the best callers score HIGH here, and it costs them nothing. Bars: green run / blue pass, the black tick is the league. EPA is per play; n in grey.`) : '';
   if(!t){
     const why = season ? `No tendencies for ${escHtml(team)} in ${season} yet.` : 'Tendencies build from the season\'s play-by-play once games are in the books.';
     return `<div class="scheme-insights-wrap scheme-tend"><div class="scheme-insights-head"><span class="scheme-insights-pill">Tendencies${season?` · ${season}`:''}</span>${about}</div><div class="scheme-empty">${why}</div></div>`;
@@ -68,8 +72,8 @@ function _schemeRenderTendencies(p){
   const lg=blk.league||{}; const O=t.offense||{}, LO=lg.offense||{}, D=t.defense||{}, LD=lg.defense||{}; const teams=blk.teams; const N=Object.keys(teams).length;
   const g=O.guess||{};
   const rBeyond=_schemeTendRank(teams, x=>x.offense&&x.offense.guess&&x.offense.guess.beyond, 'desc');
-  const guess=`<div class="tn-card"><div class="tn-h">How guessable is the call? <small>situation known</small></div>
-    <div class="tn-stamp"><b>${_tnPct(g.team,1)}</b><span class="lbl">guessed right</span>${_tnStamp(rBeyond.of(team), rBeyond.n, 'most guessable')}</div>
+  const guess=`<div class="tn-card"><div class="tn-h">How predictable is the call? <small>situation known</small></div>
+    <div class="tn-stamp"><b>${_tnPct(g.team,1)}</b><span class="lbl">predicted right</span>${_tnStamp(rBeyond.of(team), rBeyond.n, 'most predictable|least predictable')}</div>
     <div class="tn-line">${_tnPct(g.situation,1)} from the situation alone · <b>${_tnPp(g.beyond)}</b> beyond it · naive ${_tnPct(g.naive,0)} (pass or run, whichever is commoner)</div></div>`;
   const sits=O.situations||{};
   const sitRows=Object.keys(sits).filter(k=>sits[k] && sits[k].pass!=null).map(k=>{ const s=sits[k]; return `<div class="tn-row"><span class="lbl">${escHtml(k)}<small>${s.n}</small></span>${_tnPassBar(s.pass, s.lg)}<span class="epa">${_tnEpa(s.epa)}</span></div>`; }).join('');
@@ -113,7 +117,7 @@ function _schemeRenderTendencies(p){
     <div class="tn-kv" style="margin-top:6px">
       ${_tnKv('After a blitz', _tnPct(bz.after_blitz,0)+`<small>${bz.n_after_blitz||0}</small>`, _tnPct(lbz.after_blitz,0))}
       ${_tnKv('After none', _tnPct(bz.after_none,0)+`<small>${bz.n_after_none||0}</small>`, _tnPct(lbz.after_none,0))}
-      ${_tnKv('Streak lift', _tnPp(bz.streak_lift), _tnPp(lbz.streak_lift), _tnStamp(rStreakD.of(team), rStreakD.n, 'hottest'))}
+      ${_tnKv('Streak lift', _tnPp(bz.streak_lift), _tnPp(lbz.streak_lift), _tnStamp(rStreakD.of(team), rStreakD.n, 'hottest|coldest'))}
       ${_tnKv('Pressure with a blitz', _tnPct(bz.pressure_with,0), _tnPct(lbz.pressure_with,0))}
       ${_tnKv('Pressure without', _tnPct(bz.pressure_without,0), _tnPct(lbz.pressure_without,0))}
       ${_tnKv('EPA allowed, blitz', _tnEpa(bz.epa_with), _tnEpa(lbz.epa_with))}
@@ -121,7 +125,7 @@ function _schemeRenderTendencies(p){
       ${_tnKv('Light box vs run', _tnPct(bx.light,0), _tnPct(lbx.light,0))}
       ${_tnKv('Stacked box vs run', _tnPct(bx.heavy,0), _tnPct(lbx.heavy,0))}
     </div></div>`;
-  const ftn=blk.has_ftn===false ? `<span class="scheme-insights-pill warn">FTN pending${(typeof _schemeInfoTip==='function') ? _schemeInfoTip('FTN charting pending', 'FTN charting has not posted for this season yet: play action, motion, formation hold and the blitz figures wait for it; the situations and guessability are from the play-by-play.') : ''}</span>` : '';
+  const ftn=blk.has_ftn===false ? `<span class="scheme-insights-pill warn">FTN pending${(typeof _schemeInfoTip==='function') ? _schemeInfoTip('FTN charting pending', 'FTN charting has not posted for this season yet: play action, motion, formation hold and the blitz figures wait for it; the situations and predictability are from the play-by-play.') : ''}</span>` : '';
   const head=`<div class="scheme-insights-head"><span><span class="scheme-insights-pill${live?' neutral':''}">Tendencies · ${season}${live?' · live':''}</span>${about}${ftn}</span><span class="scheme-insights-sample">${Number(O.plays||0).toLocaleString()} plays · ${N} teams ranked</span></div>`;
   return `<div class="scheme-insights-wrap scheme-tend">${head}<div class="tn-grid">${guess}${situations}${sequencing}${playAction}${motion}${defense}</div></div>`;
 }
