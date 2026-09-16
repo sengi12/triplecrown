@@ -3577,6 +3577,88 @@ _CHARTED_SKILL_SPLIT = {0: (1, 4), 1: (1, 3), 2: (1, 2), 3: (1, 1)}
 _CHARTED_ALIGN = {"shotgun": "gun", "s": "gun", "under center": "uc", "u": "uc", "pistol": "pistol", "p": "pistol"}
 
 
+def _tgt_zone(air, loc):
+    """A target's zone: depth (behind the line / short / mid / deep by air yards) × direction."""
+    side = {"left": "L", "middle": "M", "right": "R"}.get(str(loc) if loc is not None and not (isinstance(loc, float) and pd.isna(loc)) else "")
+    if not side:
+        return None
+    a = 0.0 if air is None or pd.isna(air) else float(air)
+    dep = "b" if a < 0 else ("s" if a < 10 else ("m" if a < 20 else "d"))
+    return dep + side
+
+
+def _charted_priors(prev):
+    """Last season's answers to what this season's charting cannot say — from its
+    participation file: per team, the TE/WR split it used most from each alignment ×
+    backfield (so a one-back shotgun set reads 11 or 12 personnel, whichever that team
+    ran); per receiver, which route drew a target in each zone, with a league prior by
+    position for thin samples; and each receiver's season route tree as the last fallback."""
+    try:
+        pbp = _load_pbp(prev, ["game_id", "play_id", "posteam", "play_type", "pass", "season_type", "shotgun",
+                               "air_yards", "pass_location", "receiver_player_id"])
+        part = _aux_csv(PART_URL.format(season=prev),
+                        usecols=["nflverse_game_id", "play_id", "offense_personnel", "offense_formation", "route"])
+        roster = _aux_csv(ROSTER_URL.format(season=prev), usecols=["gsis_id", "position"]).drop_duplicates("gsis_id")
+    except Exception:
+        return None
+    pbp = pbp[(pbp["season_type"] == "REG") & pbp["play_type"].isin(["pass", "run"])]
+    d = pbp.merge(part, left_on=["game_id", "play_id"], right_on=["nflverse_game_id", "play_id"], how="inner")
+    if d.empty:
+        return None
+    d["posteam"] = d["posteam"].replace(NFLVERSE_TO_SEED)
+    pr = d["offense_personnel"].apply(_scheme_parse_personnel)
+    d = d[pr.notna()].copy()
+    pr = pr[pr.notna()]
+    d["backs"] = [x[0] for x in pr]
+    d["te"] = [x[1] for x in pr]
+    d["wr"] = [x[2] for x in pr]
+    d["align"] = d.apply(_scheme_align, axis=1)
+    split = {}
+    for (tm, al, b), g in d.groupby(["posteam", "align", "backs"]):
+        vc = g.groupby(["te", "wr"]).size().sort_values(ascending=False)
+        te, wr = vc.index[0]
+        split[(tm, al, int(b))] = (int(te), int(wr))
+    t = d[(d["pass"] == 1) & d["route"].notna() & (d["route"] != "") & d["receiver_player_id"].notna()].copy()
+    t["zone"] = [_tgt_zone(a, l) for a, l in zip(t["air_yards"], t["pass_location"])]
+    t = t[t["zone"].notna()]
+    pos = roster.set_index("gsis_id")["position"].to_dict() if len(roster) else {}
+    t["pos"] = t["receiver_player_id"].map(pos).fillna("WR").astype(str).str.upper()
+    by_player, league, season_tree = {}, {}, {}
+    for (pid, z, r), n in t.groupby(["receiver_player_id", "zone", "route"]).size().items():
+        by_player.setdefault(pid, {}).setdefault(z, {})[r] = int(n)
+    for (p, z, r), n in t.groupby(["pos", "zone", "route"]).size().items():
+        league.setdefault(p, {}).setdefault(z, {})[r] = int(n)
+    for pid, g in t.groupby("receiver_player_id"):
+        vc = g["route"].value_counts()
+        season_tree[pid] = [[str(k), round(100 * float(v) / len(g), 1)] for k, v in vc.head(9).items()]
+    return {"season": prev, "split": split, "by_player": by_player, "league": league, "season_tree": season_tree}
+
+
+def _infer_routes(pid, zones, prior, pos, k=6):
+    """Estimated route tree: this season's target zones, each read through last season's
+    P(route | zone) for the receiver — shrunk toward the league's for that position where
+    the receiver's sample is thin (k targets' worth), the league's alone for a newcomer."""
+    if not zones or not prior:
+        return []
+    pp = prior["by_player"].get(pid, {})
+    lg = prior["league"].get(str(pos or "WR").upper()) or prior["league"].get("WR") or {}
+    acc = {}
+    for z in zones:
+        pz, lz = pp.get(z, {}), lg.get(z, {})
+        n_p, n_l = sum(pz.values()), sum(lz.values())
+        if not n_p and not n_l:
+            continue
+        for r in set(pz) | set(lz):
+            p_player = (pz.get(r, 0) / n_p) if n_p else 0.0
+            p_lg = (lz.get(r, 0) / n_l) if n_l else 0.0
+            p = ((n_p * p_player + k * p_lg) / (n_p + k)) if n_l else p_player
+            acc[r] = acc.get(r, 0.0) + p
+    tot = sum(acc.values())
+    if tot <= 0:
+        return []
+    return [[r, round(100 * v / tot, 1)] for r, v in sorted(acc.items(), key=lambda kv: -kv[1])[:9]]
+
+
 def coaching_scheme(season, min_group_plays=1, max_groups=40, allow_charting_only=False):
     """Team coaching-scheme visualization payload keyed by team code.
 
@@ -3598,6 +3680,8 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40, allow_charting_onl
         "receiver_player_id", "rusher_player_id",
         # production per formation (yards/TDs), split pass vs run
         "yards_gained", "pass_touchdown", "rush_touchdown",
+        # a target's zone (charted sets: routes are estimated from where the targets went)
+        "air_yards", "pass_location",
     ]
     pbp = _load_pbp(season, pbp_cols)
     pbp = pbp[(pbp["season_type"] == "REG") & pbp["play_type"].isin(["pass", "run"])].copy()
@@ -3645,10 +3729,18 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40, allow_charting_onl
             return {}
         d["backs"] = backs.loc[d.index].clip(0, 3).astype(int)
         d["align"] = loc.loc[d.index].map(_CHARTED_ALIGN)
-        d["te"] = d["backs"].map(lambda b: _CHARTED_SKILL_SPLIT[int(b)][0])
-        d["wr"] = d["backs"].map(lambda b: _CHARTED_SKILL_SPLIT[int(b)][1])
+        # The TE/WR split: the one this team used most from that alignment × backfield last
+        # season (so the set carries a real personnel code — 11, 12, 21 …), else the common one.
+        prior = _charted_priors(int(season) - 1)
+        splits = prior["split"] if prior else {}
+        sp = [splits.get((tm, al, int(b))) or _CHARTED_SKILL_SPLIT[int(b)]
+              for tm, al, b in zip(d["posteam"], d["align"], d["backs"])]
+        d["te"] = [x[0] for x in sp]
+        d["wr"] = [x[1] for x in sp]
         d["ol"] = 5
-        d["p"] = d["backs"].astype(str) + "B"
+        d["p"] = d["backs"].astype(str) + d["te"].astype(str)
+        d["zone"] = [_tgt_zone(a, l) if ps == 1 else None
+                     for a, l, ps in zip(d["air_yards"], d["pass_location"], d["pass"])]
     else:
         pr = d["offense_personnel"].apply(_scheme_parse_personnel)
         d = d[pr.notna()].copy()
@@ -3746,6 +3838,25 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40, allow_charting_onl
             if pid is None:
                 return {"slot": slot, "name": "—", "routes": []}
             gg = pool.get((pcode, align))
+            if charting_only:
+                # Estimated routes: where this season's targets went (out of this set when
+                # there are enough, else the season's), read through last season's route-by-
+                # zone habits; a receiver with no targets yet keeps last season's tree.
+                pos = str(rmap.at[pid, "position"] or "WR").upper() if len(rmap) and pid in rmap.index else "WR"
+                zs = []
+                if gg is not None and len(gg):
+                    zs = [z for z in gg[(gg["pass"] == 1) & (gg["receiver_player_id"] == pid)]["zone"] if z]
+                if len(zs) < 2:
+                    zs = [z for z in dt[(dt["pass"] == 1) & (dt["receiver_player_id"] == pid)]["zone"] if z]
+                est = _infer_routes(pid, zs, prior, pos) if zs else []
+                src = "inf" if est else None
+                if not est and prior:
+                    est = prior["season_tree"].get(pid, [])
+                    src = "szn" if est else None
+                out = {"slot": slot, "name": names.get(str(pid), _lname(pid)), "routes": est}
+                if src:
+                    out["src"] = src
+                return out
             fr = []
             if gg is not None and len(gg):
                 pg = gg[(gg["pass"] == 1) & (gg["receiver_player_id"] == pid) & gg["route"].notna() & (gg["route"] != "")]

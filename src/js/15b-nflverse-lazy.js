@@ -23,9 +23,13 @@ function decodeSeed(c){
         const [sig,name,backs,te,wr,ol,assignsC]=f;
         sigOrder.push(sig);
         const parts=sig.split("|");
-        const assigns=assignsC.map(([slot,routesC])=>{
+        const assigns=assignsC.map(([slot,routesC,srcC])=>{
           const pid=slots[slot];
-          return {slot, name:(pid&&names[pid])||"\u2014", routes:decRoutes(routesC)};
+          const a={slot, name:(pid&&names[pid])||"\u2014", routes:decRoutes(routesC)};
+          // v3 tail (charted-sets season): 1 = estimated from target zones + last season's
+          // habits, 2 = last season's tree. Absent on every frozen season.
+          if(srcC===1) a.src='inf'; else if(srcC===2) a.src='season';
+          return a;
         });
         formations[sig]={p:parts[0], align:parts[1], name, backs, te, wr, ol, assigns};
         // v3 tail (the season in progress): the TE/WR split is assumed, not charted.
