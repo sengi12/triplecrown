@@ -43,8 +43,8 @@ chk(pbOff && tendOn, 'the season row: 2026 is off for the Playbook (no playsheet
 console.log('=== the render ===');
 let h=app.render({team:'DET', season:'2025'});
 chk(/scheme-insights-wrap scheme-tend/.test(h) && /scheme-insights-pill">Tendencies · 2025</.test(h) && /1,000 plays · 2 teams ranked/.test(h), 'the paper wrap with the season pill and the samples');
-chk(/How predictable is the call/.test(h) && /predicted right/.test(h) && /<b>72\.0%<\/b>/.test(h) && /\+6\.0 pp/.test(h) && /1st of 2 most predictable/.test(h) && /tn-rank hi/.test(h) && !/guessab/i.test(h), 'predictability stamp: the rate, beyond the situation, ranked first and stamped green — no guessable left');
-chk(/Predictability: how often/.test(h) && /1st of 32 least predictable/.test(h) && /the ranking is identical/.test(h), 'the info button explains the rate and that its rank is the beyond-the-situation rank');
+chk(/How predictable is the call/.test(h) && /predicted right/.test(h) && /<b>72\.0%<\/b>/.test(h) && /\+6\.0 pp/.test(h) && /1st of 2 most predictable/.test(h) && !/tn-rank hi">1st of 2 most predictable/.test(h) && /tn-rank ">1st of 2 most predictable/.test(h) && /tn-rank hi/.test(h) && !/guessab/i.test(h), 'predictability stamp: the rate, beyond the situation, ranked first and stamped neutral yellow (not a grade); the other stamps keep their colours');
+chk(/Predictability: how often/.test(h) && /1st of 32 least predictable/.test(h) && /NOT a grade/.test(h) && /pp = percentage points/.test(h), 'the info button explains the rate and that its rank is the beyond-the-situation rank');
 chk(/3rd &amp; long<small>80<\/small>/.test(h) && /PASS 90%/.test(h) && /class="lg" style="left:15\.0%"/.test(h) && !/Red zone<small>0/.test(h), 'situations: run/pass bars with the league tick; an empty situation is left out');
 chk(/Streak lift/.test(h) && /Formation hold/.test(h) && /Cold/.test(h) && /After a run/.test(h) && /Motion rate/.test(h) && /lg 55%/.test(h), 'sequencing, play action (after a run vs cold) and motion, each with the league beside');
 chk(/blitz habits/.test(h) && /<b>30%<\/b>/.test(h) && /2nd of 2/.test(h) && /Stacked box vs run/.test(h), 'the defense: the blitz stamp ranked second of two, situations, box counts');
@@ -53,7 +53,7 @@ chk(/The Side Quest/.test(h) && /scheme-help-pop/.test(h) && !/scheme-insight-no
 h=app.render({team:'DET', season:'2026'});
 chk(/Tendencies · 2026 · live/.test(h) && /scheme-insights-pill neutral/.test(h) && /1 teams ranked/.test(h), 'the season in progress is marked live on its pill');
 h=app.render({team:'SEA', season:'2025'});
-chk(/1st of 2 least predictable/.test(h) && /tn-rank lo/.test(h) && !/2nd of 2 most predictable/.test(h), 'the bottom half reads from the other end: the 2nd of 2 most predictable is the 1st of 2 least predictable, stamped pink');
+chk(/1st of 2 least predictable/.test(h) && /tn-rank ">1st of 2 least predictable/.test(h) && !/2nd of 2 most predictable/.test(h), 'the bottom half reads from the other end: the 2nd of 2 most predictable is the 1st of 2 least predictable, still neutral');
 chk(/1st of 2 hottest/.test(h), 'SEA\'s blitz streak (20 pp) is the 1st of 2 hottest');
 h=app.render({team:'KC', season:'2026'});
 chk(/No tendencies for KC in 2026 yet/.test(h) && /scheme-empty/.test(h), 'a team without a block in the season says so');
