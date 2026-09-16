@@ -353,7 +353,7 @@ const _asyncTools=(async()=>{
   const ad3=await app.tcLocalToolCall('app_data', {path:'leagues.L2.faab.wire', find:'spare passer'});
   chk(/1 item matching/.test(ad3) && /Spare Passer/.test(ad3), 'app_data filters an array by text');
   chk(/No "nothing" under "inseason"/.test(await app.tcLocalToolCall('app_data', {path:'inseason.nothing'})), 'a wrong path names the keys that exist');
-  chk(/Roots: inseason, leagues/.test(await app.tcLocalToolCall('app_data', {})), 'no path lists the roots');
+  chk(/Roots: inseason, nflverse, leagues/.test(await app.tcLocalToolCall('app_data', {})), 'no path lists the roots (nflverse among them)');
   const ctx=app.tcChatLeagueContext('of all my leagues, what players that are available in my leagues have the largest target share on their teams from week 1?');
   chk(/IN SEASON — NFL week 2, 1 week complete/.test(ctx) && /MY LEAGUES \(2\)/.test(ctx) && /AVAILABLE — week 1 usage, sorted by share/.test(ctx) && /Free Wideout/.test(ctx), 'the chat attaches the season, every league and the cross-league wire to a waiver question — no tools needed');
   const ctx2=app.tcChatLeagueContext('who is the best dynasty QB');

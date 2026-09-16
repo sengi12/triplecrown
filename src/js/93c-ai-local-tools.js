@@ -33,7 +33,7 @@ function tcLocalToolDefs(){
       inputSchema:{ type:'object', properties:{ league:{type:'string'} } } },
     { name:'standings', description:'The synced league’s standings and playoff picture (seed, record, points for, games back, clinched/alive/out) — or, in a Chopped league, who is still alive.',
       inputSchema:{ type:'object', properties:{} } },
-    { name:'app_data', description:'Browse ANY data the app holds, on-device. Roots: inseason (the season sidecar: player_weekly, def_vs_pos, adv_weekly, schedule, games, nflverse.<season>.{team, players, qb_passing_weekly, rb_fan_weekly, ol_weekly, scheme_weekly, target_trees, ngs_weekly, def_weekly}), leagues (every synced league’s hub result: lineup, adds, drops, faab.wire, rostered), snapshot (the Analyzer’s league: teamList with rosters and records), leaders (the weekly scoring leaders), games (this week’s scoreboard), season (week/phase). args: {path} dotted, e.g. "inseason.nflverse.2026.def_weekly.ernest jones" or "leagues"; {find?} keeps only keys containing this text. An object answers with its keys; a leaf with its value.',
+    { name:'app_data', description:'Browse ANY data the app holds, on-device. Roots: nflverse (every season: <season>.team.{offense, defense, tendencies, pace, …} with values + league ranks incl. Rush/Pass Success Rate; <season>.tendencies.teams.<TEAM>.{offense, defense} — play-calling tendencies: situations, predictability, sequencing, play action, motion, blitz habits, with .league beside; <season>.coaching_scheme.<TEAM> once its Playbook opened — formations and views, charted sets with estimated routes in the live season), inseason (the season sidecar: player_weekly, def_vs_pos, adv_weekly, schedule, games, nflverse.<season>.{team, players, qb_passing_weekly, rb_fan_weekly, ol_weekly, scheme_weekly, target_trees, ngs_weekly, def_weekly, tendencies}), leagues (every synced league’s hub result: lineup, adds, drops, faab.wire, rostered), snapshot (the Analyzer’s league: teamList with rosters and records), leaders (the weekly scoring leaders), games (this week’s scoreboard), season (week/phase). args: {path} dotted, e.g. "inseason.nflverse.2026.def_weekly.ernest jones" or "leagues"; {find?} keeps only keys containing this text. An object answers with its keys; a leaf with its value.',
       inputSchema:{ type:'object', properties:{ path:{type:'string'}, find:{type:'string'} }, required:['path'] } },
   ];
 }
@@ -46,8 +46,9 @@ const TC_LOCAL_TOOL_HINT = ' Local app tools (instant): league_team{name} — an
   +'leagues with weekly usage (target share, targets, carries, EPA/touch) and the wire’s bid; '
   +'week_usage{name} or {pos,week?} — weekly usage for a player or a position’s target-share leaders; '
   +'lineup{league?} — my optimal lineup, START/SIT calls and adds per league; standings{} — the synced league’s '
-  +'standings and playoff picture; app_data{path,find?} — browse ANY table the app holds (roots: inseason, '
-  +'leagues, snapshot, leaders, games, season). The app is in season: use these before saying data is not at hand.';
+  +'standings and playoff picture; app_data{path,find?} — browse ANY table the app holds (roots: nflverse — '
+  +'every season’s team tables, tendencies and coaching payloads; inseason, leagues, snapshot, leaders, games, '
+  +'season). The app is in season: use these before saying data is not at hand.';
 
 function _ltNorm(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
 function _ltSnap(){
@@ -331,6 +332,9 @@ function _ltRoots(){
   const wk=(typeof laCurrentWeek==='function')?laCurrentWeek():null;
   return {
     inseason:(typeof TC_INSEASON!=='undefined')?TC_INSEASON:null,
+    // every nflverse season the app holds (the frozen ones plus the live one merged in):
+    // team tables, tendencies, players, routes, and coaching_scheme once a Playbook opened
+    nflverse:(typeof NFLVERSE!=='undefined')?NFLVERSE:null,
     leagues:(typeof hubState!=='undefined')?hubState.results:null,
     snapshot:_ltSnap(),
     leaders:(typeof _ld!=='undefined')?_ld.rows:null,
