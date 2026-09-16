@@ -2261,7 +2261,7 @@ function _renderTeamCoachingScheme(){
     ? ` · ${_schemeEscHtml(_schemeMissingSeason)} playsheet publishes after the season` : '';
   // The season in progress runs on charted sets until its participation file publishes.
   const chartNote = (p && p.data && p.data.charting_only && schemeViewTab!=='tendencies')
-    ? ' · charted sets — personnel from last season\'s sets, routes estimated from target zones; both publish after the season' : '';
+    ? ` · charted sets ${_schemeInfoTip('Charted sets', 'The participation file that names personnel groupings and routes publishes after the post-season. Until then each set is the QB\'s charted alignment and backfield count (FTN); the TE/WR split is the one this team used most from that set last season; routes are estimated from where this season\'s targets went, read through last season\'s route-by-zone habits for the receiver.')}` : '';
   if(!p){
     host.innerHTML = `<div class="scheme-overlay" onclick="closeTeamCoachingScheme()">
       <div class="scheme-modal" onclick="event.stopPropagation()">

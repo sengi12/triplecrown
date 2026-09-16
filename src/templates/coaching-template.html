@@ -42,6 +42,7 @@
   .diahead{font-size:10px;font-weight:bold;text-transform:uppercase;text-align:center;margin-bottom:3px;}
   .empty{padding:30px;text-align:center;color:#8a8470;font-size:13px;grid-column:1/-1;}
   .foot{padding:8px 16px;font-size:9px;color:#6a6455;border-top:2px solid #000;line-height:1.5;}
+  .foot summary{cursor:pointer;list-style:none;font-weight:bold;letter-spacing:1px;text-transform:uppercase;color:#8a8470;} .foot summary::-webkit-details-marker{display:none;} .foot summary::before{content:'i';display:inline-block;width:13px;height:13px;line-height:12px;text-align:center;border:1px solid #000;border-radius:50%;background:var(--hl-yel);color:var(--ink);font-size:8px;margin-right:6px;} .foot[open] summary{margin-bottom:6px;}
   .hint{text-align:center;font-size:10px;color:#8a8470;padding:6px;background:#ece5d3;border-bottom:1px solid #000;}
   .hl-p{background:var(--hl-pnk);} .hl-g{background:var(--hl-grn);}
 </style></head>
@@ -56,7 +57,7 @@
   <div class="hint hint-min"><details class="scheme-help"><summary class="scheme-help-btn" aria-label="How to read the formations">i</summary><div class="scheme-help-pop"><b>Reading the formations</b><span>Click the GREEN part of a formation's bar to see its top-3 run lanes; click the BLUE part to see each player's most-common route. Tap any label on the diagram for detail.</span></div></details> tap a bar's colors to explore</div>
   <div class="banner" id="banner">All Situations</div>
   <div class="grid" id="grid"></div>
-  <div class="foot">Play diagrams: routes are each skill player's single most-common route WHEN TARGETED out of this formation (season pool, all situations, for stable sample), mapped to players by target rank (WR1=St. Brown, WR2=Williams, etc.); the outermost WR is treated as WR1. Run mode shows the 3 most-used gaps, arrow width = frequency, color = EPA. Alignment is authentic; exact pre-snap WR splits are schematic. Data: nflverse pbp + FTN participation, 2025 REG. Not affiliated with the NFL.</div>
+  <details class="foot"><summary>about this sheet</summary><div>Play diagrams: routes are each skill player's single most-common route WHEN TARGETED out of this formation (season pool, all situations, for stable sample), mapped to players by target rank (WR1=St. Brown, WR2=Williams, etc.); the outermost WR is treated as WR1. Run mode shows the 3 most-used gaps, arrow width = frequency, color = EPA. Alignment is authentic; exact pre-snap WR splits are schematic. Data: nflverse pbp + FTN participation, 2025 REG. Not affiliated with the NFL.</div></details>
 </div>
 <script>__TC_FV_SCRIPT__</script>
 <script>
@@ -379,5 +380,5 @@ function wireTaps(box,g){
 })();
 
 ['down','dist','field'].forEach(id=>document.getElementById(id).onchange=draw); draw();
-if(FV.charting_only){ const f=document.querySelector('.foot'); if(f) f.insertAdjacentHTML('afterbegin', '<b>Season in progress — charted sets.</b> The participation file that names personnel groupings and routes publishes after the post-season. Until then each set is the QB\'s charted alignment and backfield count (FTN); the TE/WR split is the one this team used most from that set last season; skill players are placed by target rank; run lanes are real; and routes are ESTIMATED (est): where this season\'s targets went (direction × depth), read through last season\'s route-by-zone habits for the receiver, shrunk toward the league\'s for his position where thin — a receiver with no targets yet keeps last season\'s tree (szn). '); }
+if(FV.charting_only){ const f=document.querySelector('.foot > div'); if(f) f.insertAdjacentHTML('afterbegin', '<b>Season in progress — charted sets.</b> The participation file that names personnel groupings and routes publishes after the post-season. Until then each set is the QB\'s charted alignment and backfield count (FTN); the TE/WR split is the one this team used most from that set last season; skill players are placed by target rank; run lanes are real; and routes are ESTIMATED (est): where this season\'s targets went (direction × depth), read through last season\'s route-by-zone habits for the receiver, shrunk toward the league\'s for his position where thin — a receiver with no targets yet keeps last season\'s tree (szn). '); }
 </script></body></html>

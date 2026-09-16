@@ -48,7 +48,7 @@ chk(/3rd &amp; long<small>80<\/small>/.test(h) && /PASS 90%/.test(h) && /class="
 chk(/Streak lift/.test(h) && /Formation hold/.test(h) && /Cold/.test(h) && /After a run/.test(h) && /Motion rate/.test(h) && /lg 55%/.test(h), 'sequencing, play action (after a run vs cold) and motion, each with the league beside');
 chk(/blitz habits/.test(h) && /<b>30%<\/b>/.test(h) && /2nd of 2/.test(h) && /Stacked box vs run/.test(h), 'the defense: the blitz stamp ranked second of two, situations, box counts');
 chk(/tn-card/.test(h) && /tn-kv/.test(h) && !/pgtab|tn-seasons|parent\./.test(h), 'rendered in the modal\'s classes: no in-sheet page tabs, no season chips of its own');
-chk(/The Side Quest/.test(h) && /scheme-insight-note/.test(h), 'credits the methods in the paper footnote');
+chk(/The Side Quest/.test(h) && /scheme-help-pop/.test(h) && !/scheme-insight-note/.test(h), 'the method and credit sit behind the info button, not on the page');
 h=app.render({team:'DET', season:'2026'});
 chk(/Tendencies · 2026 · live/.test(h) && /scheme-insights-pill neutral/.test(h) && /1 teams ranked/.test(h), 'the season in progress is marked live on its pill');
 h=app.render({team:'KC', season:'2026'});

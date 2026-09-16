@@ -59,10 +59,11 @@ function _schemeRenderTendencies(p){
   const live=(typeof TC_SEASON!=='undefined' && TC_SEASON && String(TC_SEASON.year)===season);
   const blk=(season && typeof NFLVERSE!=='undefined' && NFLVERSE && NFLVERSE[season] && NFLVERSE[season].tendencies) || null;
   const t=blk && blk.teams && blk.teams[team];
-  const note=`<div class="scheme-insight-note">Tendencies: the methods follow The Side Quest's coaching work (Michael MacKelvie and Nick Gurol, thesidequest.com — The Coaching Report Card), re-derived from nflverse pbp + FTN charting${season?`, ${season} REG`:''}. <b>Guessability</b>: how often a defence knowing only the situation (down, distance, field, score, quarter) and the league's habits would guess run or pass; the team's own situation rates, shrunk toward the league's where thin, give its number; "beyond the situation" is what the caller adds — their finding: the best callers score HIGH here, and it costs them nothing. Bars: green run / blue pass, the black tick is the league. EPA is per play; n in grey.</div>`;
+  // The method, behind the info button (the page itself stays numbers).
+  const about = (typeof _schemeInfoTip==='function') ? _schemeInfoTip('Tendencies', `The methods follow The Side Quest's coaching work (Michael MacKelvie and Nick Gurol, thesidequest.com — The Coaching Report Card), re-derived from nflverse pbp + FTN charting${season?`, ${season} REG`:''}. Guessability: how often a defence knowing only the situation (down, distance, field, score, quarter) and the league's habits would guess run or pass; the team's own situation rates, shrunk toward the league's where thin, give its number; "beyond the situation" is what the caller adds — their finding: the best callers score HIGH here, and it costs them nothing. Bars: green run / blue pass, the black tick is the league. EPA is per play; n in grey.`) : '';
   if(!t){
     const why = season ? `No tendencies for ${escHtml(team)} in ${season} yet.` : 'Tendencies build from the season\'s play-by-play once games are in the books.';
-    return `<div class="scheme-insights-wrap scheme-tend"><div class="scheme-empty">${why}</div>${note}</div>`;
+    return `<div class="scheme-insights-wrap scheme-tend"><div class="scheme-insights-head"><span class="scheme-insights-pill">Tendencies${season?` · ${season}`:''}</span>${about}</div><div class="scheme-empty">${why}</div></div>`;
   }
   const lg=blk.league||{}; const O=t.offense||{}, LO=lg.offense||{}, D=t.defense||{}, LD=lg.defense||{}; const teams=blk.teams; const N=Object.keys(teams).length;
   const g=O.guess||{};
@@ -120,7 +121,7 @@ function _schemeRenderTendencies(p){
       ${_tnKv('Light box vs run', _tnPct(bx.light,0), _tnPct(lbx.light,0))}
       ${_tnKv('Stacked box vs run', _tnPct(bx.heavy,0), _tnPct(lbx.heavy,0))}
     </div></div>`;
-  const ftn=blk.has_ftn===false ? '<div class="scheme-insight-note">FTN charting has not posted for this season yet: play action, motion, formation hold and the blitz figures wait for it; the situations and guessability are from the play-by-play.</div>' : '';
-  const head=`<div class="scheme-insights-head"><span class="scheme-insights-pill${live?' neutral':''}">Tendencies · ${season}${live?' · live':''}</span><span class="scheme-insights-sample">${Number(O.plays||0).toLocaleString()} plays · ${N} teams ranked</span></div>`;
-  return `<div class="scheme-insights-wrap scheme-tend">${head}${ftn}<div class="tn-grid">${guess}${situations}${sequencing}${playAction}${motion}${defense}</div>${note}</div>`;
+  const ftn=blk.has_ftn===false ? `<span class="scheme-insights-pill warn">FTN pending${(typeof _schemeInfoTip==='function') ? _schemeInfoTip('FTN charting pending', 'FTN charting has not posted for this season yet: play action, motion, formation hold and the blitz figures wait for it; the situations and guessability are from the play-by-play.') : ''}</span>` : '';
+  const head=`<div class="scheme-insights-head"><span><span class="scheme-insights-pill${live?' neutral':''}">Tendencies · ${season}${live?' · live':''}</span>${about}${ftn}</span><span class="scheme-insights-sample">${Number(O.plays||0).toLocaleString()} plays · ${N} teams ranked</span></div>`;
+  return `<div class="scheme-insights-wrap scheme-tend">${head}<div class="tn-grid">${guess}${situations}${sequencing}${playAction}${motion}${defense}</div></div>`;
 }
