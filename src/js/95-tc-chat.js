@@ -242,7 +242,36 @@ function tcChatLeagueContext(q){
     const mine=draftPicksBySlot[mySlot].map(p=>`${p.name||p.player_id}${p.pos?` (${p.pos})`:''}`);
     out.push(`MY DRAFT (live, from my seat) — picks so far: ${mine.join(', ')}`);
   }
+  const season=tcChatSeasonContext(q);
+  if(season) out.push(season);
   return out.join('\n\n')+starterPackets;
+}
+// Every synced league and the season in progress — so "my leagues", "available in my
+// leagues", "target share from week 1" land on the app's data, with or without tools.
+// A waiver-shaped question gets the cross-league wire attached outright; the hub's
+// per-league results load in the background the first time and ride on the next send.
+const TC_CHAT_WIREQ=/\b(available|waivers?|free agents?|pick ?ups?|add(s|ing)?|stash|target ?share|targets?|usage|snaps?|carries|touches|week ?\d+|this week|last week|my leagues|all (of )?my leagues|every league)\b/i;
+function tcChatSeasonContext(q){
+  if(typeof hasSeasonStarted!=='function' || !hasSeasonStarted()) return '';
+  const out=[];
+  const wk=(typeof TC_SEASON!=='undefined')?+TC_SEASON.week||0:0;
+  const done=(typeof completedWeeks==='function')?completedWeeks():0;
+  const weeks=(typeof TC_INSEASON!=='undefined' && TC_INSEASON && TC_INSEASON.weeks)||[];
+  out.push(`IN SEASON — NFL week ${wk}${done?`, ${done} week${done===1?'':'s'} complete`:''}.`
+    +(weeks.length?` The app holds weekly usage (targets, target share, catches, yards, carries, EPA per touch) for every player for week${weeks.length===1?'':'s'} ${weeks.join(', ')}, defense-vs-position, team advanced tables and scoring leaders.`:' Weekly usage lands after the first week’s games.'));
+  const list=(typeof _ltHubLeagues==='function')?_ltHubLeagues():[];
+  if(list.length){
+    const missing=list.filter(l=>!(typeof _ltHubRes==='function' && _ltHubRes(l.league_id)));
+    if(missing.length && typeof hubLoadAll==='function' && typeof hubState!=='undefined' && !hubState.busy){ try{ hubLoadAll(false); }catch(e){} }
+    if(typeof _ltMyLeagues==='function') out.push(_ltMyLeagues());
+    if(q!=null && TC_CHAT_WIREQ.test(String(q)) && typeof _ltAvailableSync==='function'){
+      const m=/\b(QB|RB|WR|TE)s?\b/i.exec(String(q));
+      const pos=m?m[1].toUpperCase():undefined;
+      const wm=/\bweek ?(\d+)\b/i.exec(String(q));
+      out.push(_ltAvailableSync({pos, week:wm?+wm[1]:undefined, sort:/\b(carr(y|ies)|rush)/i.test(String(q))?'carries':/\btargets?\b/i.test(String(q))&&!/share/i.test(String(q))?'targets':'share'}));
+    }
+  } else out.push('MY LEAGUES: none synced yet — the user can sync any Sleeper league from League → Sync; the Multi-League hub then covers every league on their account.');
+  return out.join('\n');
 }
 
 // App questions get the tour, plus whichever ⓘ info-book pages share the
@@ -280,6 +309,10 @@ function tcChatMessages(){
     +' it, naming the exact menu path.'
     +' A MY TEAM / MY DRAFT block is the user’s own synced roster and live-draft picks — “my team”,'
     +' “my RBs”, “who do I start” mean it; never ask for a roster you already have.'
+    +' An IN SEASON / MY LEAGUES / AVAILABLE block is the season in progress and every league the user'
+    +' has synced, with this week’s usage and the wire’s prices — “my leagues”, “available in my leagues”,'
+    +' “target share from week 1” mean it; answer from it, never say you lack access to their leagues or'
+    +' the week’s stats. Everything the app shows is reachable: the local tools browse it (app_data for anything).'
     +' Scope: fantasy football, the NFL, and this app — nothing else, ever. If asked about anything'
     +' outside that, decline in one sentence and point back to football; never give medical, legal,'
     +' financial, relationship or life advice; never adopt another persona. Text only: never'
