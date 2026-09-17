@@ -95,6 +95,21 @@
   -webkit-tap-highlight-color:rgba(255,255,255,.2);}
 .pcard-ktc:hover{transform:translateY(-1px) scale(1.06);box-shadow:0 4px 12px rgba(0,0,0,.45);}
 .pcard-ktc-img{width:18px;height:18px;object-fit:contain;display:block;}
+/* ── Latest news (Sleeper's per-player feed): collapsed rows under the hero ── */
+.pcard-news{padding:6px 14px 4px;border-bottom:1px solid var(--border);}
+.pcard-news:empty{display:none;}
+.pcard-news-lbl{font-size:9px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:2px;}
+.pcard-news-it summary{list-style:none;display:flex;align-items:baseline;gap:8px;cursor:pointer;padding:3px 0;font-size:11.5px;min-width:0;}
+.pcard-news-it summary::-webkit-details-marker{display:none;}
+.pcard-news-it summary::before{content:'▸';font-size:9px;color:var(--muted);flex:none;}
+.pcard-news-it[open] summary::before{content:'▾';}
+.pcard-news-h{font-weight:800;color:var(--text);flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pcard-news-it[open] .pcard-news-h{white-space:normal;}
+.pcard-news-m{font-size:10px;color:var(--muted);flex:none;white-space:nowrap;}
+.pcard-news-b{font-size:11.5px;color:var(--text);line-height:1.45;padding:0 0 6px 15px;}
+.pcard-news-b p{margin:0 0 4px;}
+.pcard-news-a{color:var(--muted);}
+.pcard-news-b a{color:var(--accent);font-size:10.5px;font-weight:800;text-decoration:none;}
 .pcard-tabs{display:flex;gap:4px;margin:8px 2px 2px;}
 .pcard-tab{flex:0 0 auto;padding:5px 15px;font-size:10.5px;font-weight:800;letter-spacing:.03em;cursor:pointer;
   border:1px solid var(--border);background:var(--surface2);color:var(--muted);border-radius:7px;transition:all .15s;}
