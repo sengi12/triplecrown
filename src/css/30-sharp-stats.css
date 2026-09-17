@@ -49,6 +49,10 @@
 .sr-oklo{background:rgba(240,180,80,.13);color:#e0b060;}
 .sr-bad{background:rgba(255,90,90,.14);color:#ff6a6a;}
 .sr-empty{font-size:11px;color:var(--muted);font-style:italic;}
+/* an inferred value / table (the season in progress before its charting publishes) */
+.sr-est{display:inline-block;margin-left:4px;color:var(--muted);font-weight:800;font-size:10px;cursor:help;}
+.sr-est-title{font-size:9px;letter-spacing:.06em;text-transform:uppercase;padding:1px 5px;border:1px dashed var(--border);border-radius:5px;margin-left:8px;vertical-align:middle;}
+.sr-card-pending{opacity:.75;border-style:dashed;}
 .sr-source{font-size:10px;color:var(--muted);margin-top:12px;opacity:.7;}
 .sr-league-header{align-items:center;}
 .sr-league-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 6px;}

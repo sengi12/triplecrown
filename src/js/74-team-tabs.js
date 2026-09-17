@@ -561,6 +561,7 @@ function _advComputeGeneralRangeTables(season, lo, hi){
     const dlDropbacks=sum.dl_dropbacks||0;
     const dlNoBlitzObs=sum.dl_no_blitz_obs||0;
     const dlRushAtt=sum.dl_rush_att||0;
+    const dlPfr=(sum.dl_pfr_obs||0)>0;
 
     teams[tm]={
       offense:{
@@ -619,9 +620,12 @@ function _advComputeGeneralRangeTables(season, lo, hi){
         'Dime+ Rate': _advNum(defPersObs>0 ? (sum.def_dime/defPersObs)*100 : null, 1),
       },
       defensive_line:{
-        'Pressure Rate': _advNum(dlDropbacks>0 ? (sum.dl_pressures/dlDropbacks)*100 : null, 1),
+        // PFR's charted pressures when the window has them (the season table's own source);
+        // the hit-or-sack proxy otherwise. Missed tackles exist only where PFR charted.
+        'Pressure Rate': _advNum(dlDropbacks>0 ? ((dlPfr ? sum.dl_pfr_pressures : sum.dl_pressures)/dlDropbacks)*100 : null, 1),
         'No Blitz Pressure Rate': _advNum(dlNoBlitzObs>0 ? (sum.dl_no_blitz_pressures/dlNoBlitzObs)*100 : null, 1),
         'Rush Stuff Rate': _advNum(dlRushAtt>0 ? (sum.dl_rush_stuffed/dlRushAtt)*100 : null, 1),
+        'Missed Tackles': _advNum(dlPfr ? sum.dl_missed_tackles : null, 0),
       },
     };
   }
@@ -973,9 +977,15 @@ function renderTeamAdvanced(team){
   const SRC=activeSharp();
   const cardFor=(key, srcTeam)=>{
     const baseTbl=SRC[key]; if(!baseTbl) return '';
+    if(baseTbl.pending) return `<div class="sr-card sr-card-pending"><div class="sr-card-title">${baseTbl.title||key}</div>
+      <div class="sr-empty">${escHtml(baseTbl.pending)}</div></div>`;
     const tbl=_advTableForRange(key, baseTbl, team);
     const useTeam = srcTeam||team;
     const row=tbl.teams&&tbl.teams[useTeam];
+    // An estimated table (or columns): a ≈ beside the title / the value, the method on hover.
+    const est=baseTbl.estimated||null;
+    const estCols=est && Array.isArray(est.cols) ? new Set(est.cols) : null;
+    const estMark=(col)=> (est && (!estCols || estCols.has(col))) ? `<span class="sr-est" title="${escAttr(est.note||'Estimated')}">≈</span>` : '';
     if(!row) return `<div class="sr-card"><div class="sr-card-title">${tbl.title||key}</div>
       <div class="sr-empty">No data for ${teamDisplayName(useTeam)}</div></div>`;
     const displayCols = (key==='offensive_line_pass')
@@ -987,7 +997,7 @@ function renderTeamAdvanced(team){
       const txt = fmtSharpVal(v, sharpColIsPct(tbl,col));
       const tagValue = r!=null ? `${txt} · league rank #${r}` : txt;
       return `<div class="sr-stat">
-        <div class="sr-stat-label">${col}</div>
+        <div class="sr-stat-label">${col}${estMark(col)}</div>
         <div class="sr-stat-val">${txt?noteWrapHtml(escHtml(txt), {
           label: col,
           value: tagValue,
@@ -1004,8 +1014,9 @@ function renderTeamAdvanced(team){
     }).join('');
     const projBadge = (key==='offensive_line_pass' || key==='offensive_line_run')
       ? _advProjOlBadge(useTeam, key==='offensive_line_pass'?'pass':'run') : '';
+    const estBadge=(est && !estCols) ? `<span class="sr-est sr-est-title" title="${escAttr(est.note||'Estimated')}">≈ est.</span>` : '';
     return `<div class="sr-card">
-      <div class="sr-card-title">${tbl.title||key}${projBadge}</div>
+      <div class="sr-card-title">${tbl.title||key}${estBadge}${projBadge}</div>
       <div class="sr-stat-grid">${lines}</div>
     </div>`;
   };

@@ -632,6 +632,22 @@ def _ol_pass_metrics(season):
     # (FTN n_blitzers, 48h after games). Pressure / hurry / pocket time wait for PFR.
     def _empty(col):
         return col not in out.columns or pd.to_numeric(out[col], errors="coerce").isna().all()
+    # PFR's weekly passing file summed to date carries the same pressures, hurries, hits and
+    # blitzes as the season file (pocket time is season-file only and waits).
+    if _empty("Pressure Rate") or _empty("Hurry Rate"):
+        try:
+            pw = _pfr_week_frame(PFR_PASS_WEEK_URL, season,
+                                 columns=["game_type", "week", "team", "times_pressured", "times_hurried",
+                                          "times_hit", "times_blitzed"])
+            if len(pw):
+                den = out["Dropbacks"].replace(0, np.nan)
+                for col, src in (("Pressure Rate", "times_pressured"), ("Hurry Rate", "times_hurried"),
+                                 ("Hit Rate", "times_hit"), ("Blitz Rate", "times_blitzed")):
+                    if _empty(col):
+                        tot = pd.to_numeric(pw[src], errors="coerce").groupby(pw["team"]).sum(min_count=1)
+                        out[col] = (tot.reindex(out.index) / den * 100)
+        except Exception as e:
+            print(f"  (skipped _ol_pass_metrics weekly PFR block: {type(e).__name__})")
     if _empty("Hit Rate") and "qb_hit" in db.columns:
         hits = pd.to_numeric(db["qb_hit"], errors="coerce").fillna(0).groupby(db["posteam"]).sum()
         out["Hit Rate"] = (hits.reindex(out.index).fillna(0) / out["Dropbacks"].replace(0, np.nan) * 100)
@@ -844,7 +860,7 @@ def ol_weekly_team(season):
     """
     pbp_cols = [
         "game_id", "play_id", "season_type", "week", "posteam", "play_type",
-        "qb_dropback", "rush_attempt", "qb_scramble", "qb_kneel", "sack", "yards_gained",
+        "qb_dropback", "rush_attempt", "qb_scramble", "qb_kneel", "sack", "qb_hit", "yards_gained",
         "ydstogo", "first_down", "success", "rusher_player_id",
     ]
     pbp = _load_pbp(season, pbp_cols)
@@ -964,27 +980,23 @@ def ol_weekly_team(season):
     except Exception:
         pass
 
+    # FTN (weekly) charts every sack's fault and the blitzers on every dropback; participation
+    # (after the season, and gone since 2023) had the pressure flag. The two used to share one
+    # try, so a missing participation file zeroed the FTN-only sack count for every season in
+    # progress. Now FTN stands alone, and the no-blitz pressure falls back to the hit-or-sack
+    # proxy the season table uses when participation is not there.
     try:
         ftn = _aux_csv(
             FTN_URL.format(season=season),
             usecols=["nflverse_game_id", "nflverse_play_id", "n_blitzers", "is_qb_fault_sack"],
         )
-        part = _aux_csv(
-            PART_URL.format(season=season),
-            usecols=["nflverse_game_id", "play_id", "was_pressure"],
-        )
-        d = db[["game_id", "play_id", "week", "posteam", "sack"]].copy()
+        base_cols = ["game_id", "play_id", "week", "posteam", "sack"] + (["qb_hit"] if "qb_hit" in db.columns else [])
+        d = db[base_cols].copy()
         d = d.merge(
             ftn,
             left_on=["game_id", "play_id"],
             right_on=["nflverse_game_id", "nflverse_play_id"],
             how="left",
-        ).merge(
-            part,
-            left_on=["game_id", "play_id"],
-            right_on=["nflverse_game_id", "play_id"],
-            how="left",
-            suffixes=("", "_part"),
         )
         sack_rows = d[d["sack"] == 1].copy()
         qb_fault = (sack_rows["is_qb_fault_sack"] == True).groupby([sack_rows["posteam"], sack_rows["week"]]).sum()  # noqa: E712
@@ -992,7 +1004,22 @@ def ol_weekly_team(season):
         non_qb = (sack_tot - qb_fault).clip(lower=0)
         out["non_qb_sacks"] = non_qb.reindex(idx)
 
-        nbp = d[(d["n_blitzers"] == 0) & (d["was_pressure"] == True)].groupby(["posteam", "week"]).size()  # noqa: E712
+        pressed = None
+        try:
+            part = _aux_csv(
+                PART_URL.format(season=season),
+                usecols=["nflverse_game_id", "play_id", "was_pressure"],
+            )
+            dd = d.merge(part, left_on=["game_id", "play_id"], right_on=["nflverse_game_id", "play_id"],
+                         how="left", suffixes=("", "_part"))
+            if dd["was_pressure"].notna().any():
+                d, pressed = dd, (dd["was_pressure"] == True)  # noqa: E712
+        except Exception:
+            pass
+        if pressed is None:
+            hit = pd.to_numeric(d["qb_hit"], errors="coerce").fillna(0) > 0 if "qb_hit" in d.columns else False
+            pressed = hit | (d["sack"] == 1)
+        nbp = d[(pd.to_numeric(d["n_blitzers"], errors="coerce") == 0) & pressed].groupby(["posteam", "week"]).size()
         out["no_blitz_pressures"] = nbp.reindex(idx)
     except Exception:
         pass
@@ -1241,6 +1268,48 @@ def adv_weekly_team(season):
         "dl_rush_att", "dl_rush_stuffed",
     ]:
         out[c] = 0.0
+    # The FTN + pbp counters (blitzes, the pass-rush and run-stuff proxies) stand on their
+    # own: they used to sit inside the participation try below and vanished with it for
+    # every season in progress, which left the live "Pass Rush & Run D" card empty.
+    chart = None
+    try:
+        chart = plays.merge(
+            ftn,
+            left_on=["game_id", "play_id"],
+            right_on=["nflverse_game_id", "nflverse_play_id"],
+            how="left",
+        )
+        dbm = chart[chart["qb_dropback"] == 1].copy()
+        # Defensive tendencies (FTN): blitz = 5+ pass rushers on a dropback.
+        out["blitz_db_obs"] = dbm["n_pass_rushers"].notna().groupby([dbm["defteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["blitz_db5"] = (dbm["n_pass_rushers"] >= 5).groupby([dbm["defteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        # Defensive-line weekly proxies.
+        dbm["hit_or_sack"] = ((pd.to_numeric(dbm["qb_hit"], errors="coerce").fillna(0) > 0) |
+                               (pd.to_numeric(dbm["sack"], errors="coerce").fillna(0) > 0))
+        out["dl_dropbacks"] = dbm.groupby(["defteam", "week"]).size().reindex(idx).fillna(0)
+        out["dl_pressures"] = dbm.groupby(["defteam", "week"])["hit_or_sack"].sum(min_count=1).reindex(idx).fillna(0)
+        out["dl_no_blitz_obs"] = (dbm["n_pass_rushers"] == 0).groupby([dbm["defteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["dl_no_blitz_pressures"] = ((dbm["n_pass_rushers"] == 0) & (dbm["hit_or_sack"] == True)).groupby([dbm["defteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)  # noqa: E712
+        rd = chart[(chart["rush_attempt"] == 1) & (chart["qb_scramble"] == 0) & (chart["qb_kneel"] == 0)].copy()
+        out["dl_rush_att"] = rd.groupby(["defteam", "week"]).size().reindex(idx).fillna(0)
+        out["dl_rush_stuffed"] = (pd.to_numeric(rd["yards_gained"], errors="coerce") <= 0).groupby([rd["defteam"], rd["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    except Exception:
+        chart = None
+    # PFR's weekly defense file: charted pressures and missed tackles per team-week — the
+    # season table's own source once PFR posts, so a week window shows the same numbers.
+    # dl_pfr_obs marks the weeks PFR has charted (the client falls back to the proxy otherwise).
+    for c in ["dl_pfr_obs", "dl_pfr_pressures", "dl_missed_tackles"]:
+        out[c] = 0.0
+    try:
+        dw = _pfr_week_frame(PFR_DEF_WEEK_URL, season,
+                             columns=["game_type", "week", "team", "def_pressures", "def_missed_tackles"])
+        if len(dw):
+            g = dw.groupby(["team", "week"])
+            out["dl_pfr_pressures"] = pd.to_numeric(dw["def_pressures"], errors="coerce").groupby([dw["team"], dw["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+            out["dl_missed_tackles"] = pd.to_numeric(dw["def_missed_tackles"], errors="coerce").groupby([dw["team"], dw["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+            out["dl_pfr_obs"] = (g.size() > 0).astype(float).reindex(idx).fillna(0)
+    except Exception:
+        pass
     try:
         part = _aux_csv(
             PART_URL.format(season=season),
@@ -1249,23 +1318,14 @@ def adv_weekly_team(season):
                 "offense_personnel", "defense_personnel",
             ],
         )
-        chart = plays.merge(
-            ftn,
-            left_on=["game_id", "play_id"],
-            right_on=["nflverse_game_id", "nflverse_play_id"],
-            how="left",
-        ).merge(
+        chart = (chart if chart is not None else plays).merge(
             part,
             left_on=["game_id", "play_id"],
             right_on=["nflverse_game_id", "play_id"],
             how="left",
             suffixes=("", "_part"),
         )
-
         dbm = chart[chart["qb_dropback"] == 1].copy()
-        # Defensive tendencies (FTN): blitz = 5+ pass rushers on a dropback.
-        out["blitz_db_obs"] = dbm["n_pass_rushers"].notna().groupby([dbm["defteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)
-        out["blitz_db5"] = (dbm["n_pass_rushers"] >= 5).groupby([dbm["defteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)
 
         # Coverage (participation): man/zone + MOFC/MOFO + Cover 1/2/3.
         mz = dbm.dropna(subset=["defense_man_zone_type"]).copy()
@@ -1308,19 +1368,37 @@ def adv_weekly_team(season):
         out["def_sub"] = (dp["dbs"] >= 5).groupby([dp["defteam"], dp["week"]]).sum(min_count=1).reindex(idx).fillna(0)
         out["def_nickel"] = (dp["dbs"] == 5).groupby([dp["defteam"], dp["week"]]).sum(min_count=1).reindex(idx).fillna(0)
         out["def_dime"] = (dp["dbs"] >= 6).groupby([dp["defteam"], dp["week"]]).sum(min_count=1).reindex(idx).fillna(0)
-
-        # Defensive-line weekly proxies.
-        dbm["hit_or_sack"] = ((pd.to_numeric(dbm["qb_hit"], errors="coerce").fillna(0) > 0) |
-                               (pd.to_numeric(dbm["sack"], errors="coerce").fillna(0) > 0))
-        out["dl_dropbacks"] = dbm.groupby(["defteam", "week"]).size().reindex(idx).fillna(0)
-        out["dl_pressures"] = dbm.groupby(["defteam", "week"])["hit_or_sack"].sum(min_count=1).reindex(idx).fillna(0)
-        out["dl_no_blitz_obs"] = (dbm["n_pass_rushers"] == 0).groupby([dbm["defteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)
-        out["dl_no_blitz_pressures"] = ((dbm["n_pass_rushers"] == 0) & (dbm["hit_or_sack"] == True)).groupby([dbm["defteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)  # noqa: E712
-        rd = chart[(chart["rush_attempt"] == 1) & (chart["qb_scramble"] == 0) & (chart["qb_kneel"] == 0)].copy()
-        out["dl_rush_att"] = rd.groupby(["defteam", "week"]).size().reindex(idx).fillna(0)
-        out["dl_rush_stuffed"] = (pd.to_numeric(rd["yards_gained"], errors="coerce") <= 0).groupby([rd["defteam"], rd["week"]]).sum(min_count=1).reindex(idx).fillna(0)
     except Exception:
         pass
+    # A season in progress has no participation file: the personnel groupings are inferred
+    # (FTN's backs per play × last season's tight-end split, tilted to this season's snap
+    # counts — see _personnel_inferred), stored as expected counts so a week window still
+    # recomputes, and flagged per row so the client can mark the card estimated.
+    out["off_pers_est"] = 0.0
+    out["def_pers_est"] = 0.0
+    if float(out["off_pers_obs"].sum()) == 0 or float(out["def_pers_obs"].sum()) == 0:
+        try:
+            inf = _personnel_inferred(season)
+        except Exception as e:
+            print(f"  (skipped inferred personnel: {type(e).__name__})")
+            inf = None
+        if inf:
+            wk = inf.get("weekly") or {}
+            off_keys = ["off_pers_obs", "off_wr3", "off_mte", "off_11", "off_12", "off_13", "off_21", "off_multirb"]
+            def_keys = ["def_pers_obs", "def_sub", "def_nickel", "def_dime"]
+            fill_off = float(out["off_pers_obs"].sum()) == 0
+            fill_def = float(out["def_pers_obs"].sum()) == 0
+            for (tm, w), row in wk.items():
+                if (tm, w) not in out.index:
+                    continue
+                if fill_off and row.get("off_pers_obs"):
+                    for k in off_keys:
+                        out.loc[(tm, w), k] = float(row.get(k, 0.0))
+                    out.loc[(tm, w), "off_pers_est"] = 1.0
+                if fill_def and row.get("def_pers_obs"):
+                    for k in def_keys:
+                        out.loc[(tm, w), k] = float(row.get(k, 0.0))
+                    out.loc[(tm, w), "def_pers_est"] = 1.0
 
     # Pace components.
     snaps = pbp[(((pbp["qb_dropback"] == 1) | ((pbp["rush_attempt"] == 1) & (pbp["qb_scramble"] == 0)))
@@ -1358,6 +1436,8 @@ def adv_weekly_team(season):
         "def_pers_obs", "def_sub", "def_nickel", "def_dime", "blitz_db_obs", "blitz_db5",
         "dl_dropbacks", "dl_pressures", "dl_no_blitz_obs", "dl_no_blitz_pressures", "dl_rush_att", "dl_rush_stuffed",
         "off_pts", "def_pts_allowed",
+        # PFR's charted pressures / missed tackles per week, and the inferred-personnel flags
+        "dl_pfr_obs", "dl_pfr_pressures", "dl_missed_tackles", "off_pers_est", "def_pers_est",
     ]
     for c in cols:
         if c not in out.columns:
@@ -1372,6 +1452,52 @@ def adv_weekly_team(season):
             rows.append([round(float(row[c]), 6) for c in cols])
         packed["teams"][tm] = rows
     return packed
+
+# ── PFR's weekly charting: the in-season stand-in for its season files ──────────
+# PFR's season aggregates (advstats_season_*.csv) can carry the columns and no rows for a
+# season in progress, and post whole only after it; its weekly files
+# (advstats_week_*_{season}.parquet) post within a day of the games. Every season-shaped
+# table that reads a season file falls back to the weekly file summed to date, so the
+# Advanced tab tracks pressures, hurries, missed tackles and contact yards as the games
+# come rather than waiting for February.
+def _pfr_week_frame(url_tmpl, season, columns=None):
+    """REG rows of one PFR weekly file: teams in the seed's codes, week as int, capped at the
+    time machine's MAX_WEEK; an empty frame when the file is not there yet."""
+    try:
+        w = _aux_parquet(url_tmpl.format(season=season), columns=columns)
+    except Exception:
+        return pd.DataFrame()
+    if w is None or w.empty or "game_type" not in w.columns:
+        return pd.DataFrame()
+    w = w[w["game_type"] == "REG"].copy()
+    if "team" in w.columns:
+        w["team"] = w["team"].replace(NFLVERSE_TO_SEED)
+    w["week"] = pd.to_numeric(w["week"], errors="coerce")
+    w = w[w["week"].notna()].copy()
+    w["week"] = w["week"].astype(int)
+    if MAX_WEEK is not None:
+        w = w[w["week"] <= int(MAX_WEEK)]
+    return w
+
+
+def _pfr_week_positions(season, frame):
+    """Roster position per row of a PFR weekly frame (PFR id → GSIS id → roster); '' unknown."""
+    try:
+        p2g = _pfr_to_gsis_map()
+        pos = _pos_map(season)
+    except Exception:
+        return pd.Series("", index=frame.index)
+    return frame["pfr_player_id"].astype(str).map(lambda i: pos.get(p2g.get(i, ""), "") or "").fillna("")
+
+
+def _team_defense_line_weekly(dw, opp_db):
+    """Team pressure rate and missed tackles from PFR's weekly defense file summed to date —
+    the same two numbers the season file gives, per opponent dropback (pure; tested)."""
+    prs = pd.to_numeric(dw["def_pressures"], errors="coerce").groupby(dw["team"]).sum(min_count=1)
+    mt = pd.to_numeric(dw["def_missed_tackles"], errors="coerce").groupby(dw["team"]).sum(min_count=1)
+    den = pd.to_numeric(opp_db, errors="coerce").replace(0, np.nan)
+    return {"Pressure Rate": (prs / den * 100).round(1), "Missed Tackles": mt.round(0)}
+
 
 # Defensive pass-rush + run-defense table (PFR def charting + pbp + FTN proxy). Mirrors Sharp's
 # defensive_line: Pressure Rate, No-Blitz Pressure Rate, Rush Stuff Rate, plus Missed Tackles.
@@ -1396,6 +1522,21 @@ def team_defense_line(season):
         out["Missed Tackles"] = g["m_tkl"].sum().round(0)
     except Exception as e:
         print(f"  (skipped PFR def charting: {type(e).__name__})")
+    # A season in progress: the season file has no rows yet (or none for this season), so the
+    # weekly defense file summed to date gives the same pressures and missed tackles.
+    def _empty(col):
+        return col not in out.columns or pd.to_numeric(out[col], errors="coerce").isna().all()
+    if _empty("Pressure Rate") or _empty("Missed Tackles"):
+        try:
+            dw = _pfr_week_frame(PFR_DEF_WEEK_URL, season,
+                                 columns=["game_type", "week", "team", "def_pressures", "def_missed_tackles"])
+            if len(dw):
+                wk = _team_defense_line_weekly(dw, opp_db)
+                for col, s in wk.items():
+                    if _empty(col):
+                        out[col] = s.reindex(out.index)
+        except Exception as e:
+            print(f"  (skipped weekly PFR def charting: {type(e).__name__})")
     # No-Blitz Pressure Rate: (QB hit or sack) on non-blitz dropbacks (FTN n_blitzers == 0).
     try:
         ftn = _aux_csv(FTN_URL.format(season=season),
@@ -1479,6 +1620,29 @@ def team_extended(season):
     # designed rush and the share of rushes that moved the chains.
     def _empty(col):
         return col not in out.columns or pd.to_numeric(out[col], errors="coerce").isna().all()
+    # Its weekly file summed to date gives the contact split and broken tackles the same way
+    # (running backs only, like the season table; an id the roster can't place stays in).
+    if _empty("YBC/Rush") or _empty("YAC/Rush") or _empty("Broken Tackle Rate"):
+        try:
+            rw = _pfr_week_frame(PFR_RUSH_WEEK_URL, season,
+                                 columns=["game_type", "week", "team", "pfr_player_id", "carries",
+                                          "rushing_yards_before_contact", "rushing_yards_after_contact",
+                                          "rushing_broken_tackles"])
+            if len(rw):
+                pos = _pfr_week_positions(season, rw)
+                rb = rw[(pos == "RB") | (pos == "")]
+                for c in ("carries", "rushing_yards_before_contact", "rushing_yards_after_contact", "rushing_broken_tackles"):
+                    rb[c] = pd.to_numeric(rb[c], errors="coerce")
+                g = rb.groupby("team")
+                att = g["carries"].sum(min_count=1).replace(0, np.nan)
+                if _empty("YBC/Rush"):
+                    out["YBC/Rush"] = (g["rushing_yards_before_contact"].sum(min_count=1) / att).round(2).reindex(out.index)
+                if _empty("YAC/Rush"):
+                    out["YAC/Rush"] = (g["rushing_yards_after_contact"].sum(min_count=1) / att).round(2).reindex(out.index)
+                if _empty("Broken Tackle Rate"):
+                    out["Broken Tackle Rate"] = (g["rushing_broken_tackles"].sum(min_count=1) / att * 100).round(1).reindex(out.index)
+        except Exception as e:
+            print(f"  (skipped weekly PFR rushing block: {type(e).__name__})")
     if _empty("Yards/Rush"):
         out["Yards/Rush"] = pd.to_numeric(rush["yards_gained"], errors="coerce").groupby(rush["posteam"]).mean().round(2)
     if _empty("Rush 1D Rate") and "first_down_rush" in rush.columns:
@@ -1682,6 +1846,16 @@ def sumer_rb(season, min_rush=40, refinement=None):
         yac_contact = {_norm(n): v for n, v in zip(pfr["player"], pfr["yac"])}
     except Exception:
         yac_contact = {}
+    if not yac_contact:
+        # a season in progress: the weekly rushing file summed to date
+        try:
+            rw = _pfr_week_frame(PFR_RUSH_WEEK_URL, season,
+                                 columns=["game_type", "week", "pfr_player_name", "rushing_yards_after_contact"])
+            if len(rw):
+                tot = pd.to_numeric(rw["rushing_yards_after_contact"], errors="coerce").groupby(rw["pfr_player_name"]).sum(min_count=1)
+                yac_contact = {_norm(n): float(v) for n, v in tot.items() if pd.notna(v)}
+        except Exception:
+            pass
     # Target share: player targets / team targets (pass attempts with a receiver).
     tgt = pbp[pbp["receiver_player_id"].notna()]
     team_tgts = tgt.groupby("posteam").size().to_dict()
@@ -2008,6 +2182,7 @@ def qb_charting(season, min_attempts=50):
     against a hardcoded notion of good."""
     out = {"players": {}, "lg": {}}
     # ── PFR ──────────────────────────────────────────────────────────────────
+    pfr = pd.DataFrame()
     try:
         df = _aux_csv(PFR_PASS_URL)
         df = df[(df["season"] == season)].copy()
@@ -2024,6 +2199,14 @@ def qb_charting(season, min_attempts=50):
         }).loc[keep]
     except Exception as e:
         print(f"  (qb_charting: PFR pass failed: {e})")
+    if pfr.empty:
+        # a season in progress: the weekly passing file summed to date (no on-target / batted)
+        try:
+            pfr = _qb_charting_weekly(season, min_attempts)
+        except Exception as e:
+            print(f"  (qb_charting: weekly PFR pass failed: {e})")
+            pfr = pd.DataFrame()
+    if pfr.empty:
         return {}
     # ── FTN (joined to pbp for passer identity) ──────────────────────────────
     ftn_by_name = {}
@@ -2054,25 +2237,62 @@ def qb_charting(season, min_attempts=50):
                                     "charted": int(n[key])}
     except Exception as e:
         print(f"  (qb_charting: FTN join failed: {e})")
+    def _num(v, f=float):
+        return None if v is None or pd.isna(v) else f(v)
     for full, r in pfr.iterrows():
         key = _norm(full)
         f = ftn_by_name.get(key, {})
         out["players"][key] = {
             "name": full, "att": int(r["att"]),
-            "on_tgt_pct": float(r["on_tgt_pct"]),
-            "bad_throw_pct": float(r["bad_throw_pct"]),
-            "batted": int(r["batted"]),
-            "pressure_pct": float(r["pressure_pct"]),
+            "on_tgt_pct": _num(r["on_tgt_pct"]),
+            "bad_throw_pct": _num(r["bad_throw_pct"]),
+            "batted": _num(r["batted"], int),
+            "pressure_pct": _num(r["pressure_pct"]),
             **f,
         }
     if out["players"]:
         import statistics as _st
         for k in ("on_tgt_pct", "bad_throw_pct", "pressure_pct", "intw_pct",
                   "catchable_pct"):
-            vs = [p[k] for p in out["players"].values() if k in p]
+            vs = [p[k] for p in out["players"].values() if p.get(k) is not None]
             if vs:
                 out["lg"][k] = round(_st.median(vs), 1)
     return out
+
+
+def _qb_charting_weekly(season, min_attempts=1):
+    """The PFR half of qb_charting from the weekly passing file (a season in progress), keyed
+    by the passer's full name like the season path: pressure % over dropbacks (attempts plus
+    sacks), bad-throw % over attempts. On-target throws and batted balls are season-file only
+    and stay empty until it posts."""
+    pw = _pfr_week_frame(PFR_PASS_WEEK_URL, season,
+                         columns=["game_type", "week", "pfr_player_id", "pfr_player_name",
+                                  "times_pressured", "times_sacked", "passing_bad_throws"])
+    if not len(pw):
+        return pd.DataFrame()
+    p2g = _pfr_to_gsis_map()
+    pw["gsis"] = pw["pfr_player_id"].astype(str).map(p2g)
+    pw = pw[pw["gsis"].notna()].copy()
+    if pw.empty:
+        return pd.DataFrame()
+    pbp = _load_pbp(season, ["season_type", "pass_attempt", "passer_player_id"])
+    pbp = pbp[(pbp["season_type"] == "REG") & (pbp["pass_attempt"] == 1) & pbp["passer_player_id"].notna()]
+    att_by = pbp.groupby("passer_player_id").size()
+    for c in ("times_pressured", "times_sacked", "passing_bad_throws"):
+        pw[c] = pd.to_numeric(pw[c], errors="coerce")
+    g = pw.groupby("gsis")
+    att = att_by.reindex(g.size().index).fillna(0).astype(float)
+    sacked = g["times_sacked"].sum(min_count=1).fillna(0)
+    df = pd.DataFrame({
+        "att": att,
+        "on_tgt_pct": np.nan,
+        "bad_throw_pct": (g["passing_bad_throws"].sum(min_count=1) / att.replace(0, np.nan) * 100).round(1),
+        "batted": np.nan,
+        "pressure_pct": (g["times_pressured"].sum(min_count=1) / (att + sacked).replace(0, np.nan) * 100).round(1),
+    })
+    df.index = g["pfr_player_name"].first().reindex(df.index)
+    df = df[df.index.notna()]
+    return df[df["att"] >= min_attempts]
 
 
 def _attach_ranks(rows, fields, key="rk"):
@@ -3518,6 +3738,264 @@ def personnel_groups(season):
     return off, dfn
 
 
+# ── Personnel for a season in progress: inferred the way the Playbook infers its sets ──
+# The participation file that names every play's personnel publishes after the season. Until
+# then the groupings are estimated from what IS weekly: FTN charts the backs in the backfield
+# on every play (measured), last season's participation says how each team split its tight
+# ends given that many backs (the prior, shrunk toward the league where thin), and this
+# season's snap counts say how many tight ends the team actually has on the field per snap —
+# the prior's shape is tilted (exponentially, one parameter) until its mean matches that
+# measured number, so a team that added a second tight end reads as such immediately.
+# Receivers follow from five skill players less backs less tight ends. The defense's DB count
+# is the same construction (last season's distribution tilted to this season's DB snap share).
+_PERS_INFER = {}
+_PERS_SHRINK = 40.0     # plays' worth of the league prior a team's own split is shrunk toward
+_PERS_DB_POS = ("CB", "S", "SS", "FS", "DB")
+
+
+def _tilt_to_mean(dist, target, lo=-6.0, hi=6.0, iters=60):
+    """Exponentially tilt a {value: prob} distribution so its mean hits `target` (bisection on
+    the one tilt parameter). Returns the tilted, normalized distribution; unchanged when the
+    target is missing or unreachable (outside the support)."""
+    if not dist or target is None or not np.isfinite(target):
+        return dict(dist or {})
+    vals = sorted(dist)
+    tot = float(sum(dist.values())) or 1.0
+    p0 = {v: dist[v] / tot for v in vals}
+    if target <= vals[0] or target >= vals[-1]:
+        return p0
+
+    def _mean(lam):
+        w = {v: p0[v] * np.exp(lam * v) for v in vals}
+        z = sum(w.values()) or 1.0
+        return sum(v * w[v] for v in vals) / z, {v: w[v] / z for v in vals}
+    a, b = lo, hi
+    for _ in range(iters):
+        m = 0.5 * (a + b)
+        mu, _ = _mean(m)
+        if mu < target:
+            a = m
+        else:
+            b = m
+    return _mean(0.5 * (a + b))[1]
+
+
+def _tilt_conditionals(cond, weights, target):
+    """Tilt a family of conditionals {key: {value: prob}} mixed with `weights` {key: w} by ONE
+    parameter so the mixture's mean hits `target`. Returns the tilted family."""
+    keys = [k for k in cond if k in weights and weights[k] > 0 and cond[k]]
+    if not keys or target is None or not np.isfinite(target):
+        return {k: dict(v) for k, v in cond.items()}
+    wsum = float(sum(weights[k] for k in keys)) or 1.0
+
+    def _apply(lam):
+        out, mu = {}, 0.0
+        for k in keys:
+            d = cond[k]
+            w = {v: d[v] * np.exp(lam * v) for v in d}
+            z = sum(w.values()) or 1.0
+            out[k] = {v: w[v] / z for v in d}
+            mu += weights[k] / wsum * sum(v * out[k][v] for v in d)
+        return mu, out
+    lo_m, _ = _apply(-6.0)
+    hi_m, _ = _apply(6.0)
+    if not (lo_m < target < hi_m):
+        return {k: dict(v) for k, v in cond.items()}
+    a, b = -6.0, 6.0
+    for _ in range(60):
+        m = 0.5 * (a + b)
+        mu, _ = _apply(m)
+        if mu < target:
+            a = m
+        else:
+            b = m
+    out = _apply(0.5 * (a + b))[1]
+    for k in cond:
+        out.setdefault(k, dict(cond[k]))
+    return out
+
+
+def _shrink(team_counts, league_counts, k=_PERS_SHRINK):
+    """{value: n} for the team, shrunk toward the league's {value: n}: (n·p_team + k·p_lg)/(n+k)."""
+    n_t = float(sum(team_counts.values())) if team_counts else 0.0
+    n_l = float(sum(league_counts.values())) if league_counts else 0.0
+    vals = set(team_counts or {}) | set(league_counts or {})
+    if not vals:
+        return {}
+    out = {}
+    for v in vals:
+        p_t = (team_counts.get(v, 0) / n_t) if n_t else 0.0
+        p_l = (league_counts.get(v, 0) / n_l) if n_l else 0.0
+        out[v] = ((n_t * p_t + k * p_l) / (n_t + k)) if n_l else p_t
+    z = sum(out.values()) or 1.0
+    return {v: p / z for v, p in out.items()}
+
+
+def _personnel_rates(p_backs, te_given_backs):
+    """The offense's grouping rates from P(backs) and P(te | backs): 11/12/13/21 personnel,
+    3WR, multi-TE and multi-RB shares, as fractions of plays (pure; tested)."""
+    r = {"p11": 0.0, "p12": 0.0, "p13": 0.0, "p21": 0.0, "wr3": 0.0, "mte": 0.0, "mrb": 0.0}
+    for b, pb in p_backs.items():
+        cond = te_given_backs.get(b) or te_given_backs.get(1) or {}
+        for te, pt in cond.items():
+            w = pb * pt
+            wr = 5 - b - te
+            if b == 1 and te == 1:
+                r["p11"] += w
+            if b == 1 and te == 2:
+                r["p12"] += w
+            if b == 1 and te == 3:
+                r["p13"] += w
+            if b == 2 and te == 1:
+                r["p21"] += w
+            if wr >= 3:
+                r["wr3"] += w
+            if te >= 2:
+                r["mte"] += w
+        if b >= 2:
+            r["mrb"] += pb
+    return r
+
+
+def _snap_share(season, positions, side):
+    """Per team: players at `positions` on the field per snap this season — Σ their snaps over
+    Σ team snaps (each game's team snaps recovered from any full-time player's snaps ÷ share).
+    side: 'offense' | 'defense'. {} when the snap counts are not there yet."""
+    try:
+        sc = _aux_parquet(SNAP_COUNTS_URL.format(season=season),
+                          columns=["game_id", "game_type", "week", "position", "team",
+                                   f"{side}_snaps", f"{side}_pct"])
+    except Exception:
+        return {}
+    if sc is None or sc.empty:
+        return {}
+    sc = sc[sc["game_type"] == "REG"].copy()
+    sc["week"] = pd.to_numeric(sc["week"], errors="coerce")
+    if MAX_WEEK is not None:
+        sc = sc[sc["week"] <= int(MAX_WEEK)]
+    sc["team"] = sc["team"].replace(NFLVERSE_TO_SEED)
+    snaps = pd.to_numeric(sc[f"{side}_snaps"], errors="coerce").fillna(0)
+    pct = pd.to_numeric(sc[f"{side}_pct"], errors="coerce")
+    est = (snaps / pct.where(pct >= 0.5)).dropna()
+    team_snaps = est.groupby([sc.loc[est.index, "game_id"], sc.loc[est.index, "team"]]).median()
+    if team_snaps.empty:
+        return {}
+    pos_rows = sc[sc["position"].astype(str).str.upper().isin([p.upper() for p in positions])]
+    pos_snaps = pd.to_numeric(pos_rows[f"{side}_snaps"], errors="coerce").fillna(0).groupby(
+        [pos_rows["game_id"], pos_rows["team"]]).sum()
+    both = pd.concat([team_snaps.rename("team"), pos_snaps.rename("pos")], axis=1).dropna(subset=["team"]).fillna(0)
+    both = both[both["team"] > 0]
+    tot = both.groupby(level=1).sum()
+    return {tm: float(r["pos"] / r["team"]) for tm, r in tot.iterrows() if r["team"] > 0}
+
+
+def _personnel_priors(prev):
+    """Last season's participation as priors: per team and league, the tight-end split given
+    the backs {team: {backs: {te: n}}} and the defense's DB count {team: {dbs: n}}."""
+    part = _aux_csv(PART_URL.format(season=prev),
+                    usecols=["nflverse_game_id", "play_id", "offense_personnel", "defense_personnel"])
+    pbp = _load_pbp(prev, ["game_id", "play_id", "posteam", "defteam", "season_type", "play_type"])
+    pbp = pbp[(pbp["season_type"] == "REG") & pbp["play_type"].isin(["pass", "run"])]
+    m = part.merge(pbp, left_on=["nflverse_game_id", "play_id"], right_on=["game_id", "play_id"])
+    m["posteam"] = m["posteam"].replace(NFLVERSE_TO_SEED)
+    m["defteam"] = m["defteam"].replace(NFLVERSE_TO_SEED)
+    o = m.dropna(subset=["offense_personnel"]).copy()
+    cache = {s: _parse_personnel(s) for s in o["offense_personnel"].unique()}
+    o["backs"] = o["offense_personnel"].map(lambda s: min(3, cache[s].get("RB", 0) + cache[s].get("FB", 0)))
+    o["te"] = o["offense_personnel"].map(lambda s: min(3, cache[s].get("TE", 0)))
+    te_team, te_lg = {}, {}
+    for (tm, b, te), n in o.groupby(["posteam", "backs", "te"]).size().items():
+        te_team.setdefault(str(tm), {}).setdefault(int(b), {})[int(te)] = int(n)
+        te_lg.setdefault(int(b), {})[int(te)] = te_lg.get(int(b), {}).get(int(te), 0) + int(n)
+    d = m.dropna(subset=["defense_personnel"]).copy()
+    dcache = {s: _parse_personnel(s) for s in d["defense_personnel"].unique()}
+    d["dbs"] = d["defense_personnel"].map(lambda s: min(8, sum(dcache[s].get(k, 0) for k in _PERS_DB_POS)))
+    db_team, db_lg = {}, {}
+    for (tm, k), n in d.groupby(["defteam", "dbs"]).size().items():
+        db_team.setdefault(str(tm), {})[int(k)] = int(n)
+        db_lg[int(k)] = db_lg.get(int(k), 0) + int(n)
+    return {"season": prev, "te_team": te_team, "te_lg": te_lg, "db_team": db_team, "db_lg": db_lg}
+
+
+def _personnel_inferred(season):
+    """Estimated personnel tables for a season in progress (cached per season):
+    {"off": DataFrame[11/12/13/21 Personnel, 3WR Rate, Multi TE Rate, Multi RB Rate],
+     "def": DataFrame[Sub Package Rate, Nickel Rate, Dime+ Rate],
+     "weekly": {(team, week): expected counts in adv_weekly's column names},
+     "prior": last season, "te_mean"/"db_mean": the snap-count anchors per team}.
+    None when FTN has not charted the season yet or last season's participation is missing."""
+    season = int(season)
+    if season in _PERS_INFER:
+        return _PERS_INFER[season]
+    result = None
+    try:
+        ftn = _aux_csv(FTN_URL.format(season=season),
+                       usecols=["nflverse_game_id", "nflverse_play_id", "n_offense_backfield"])
+        pbp = _load_pbp(season, ["game_id", "play_id", "season_type", "week", "posteam", "defteam", "play_type"])
+        pbp = pbp[(pbp["season_type"] == "REG") & pbp["play_type"].isin(["pass", "run"]) & pbp["posteam"].notna()].copy()
+        pbp["posteam"] = pbp["posteam"].replace(NFLVERSE_TO_SEED)
+        pbp["defteam"] = pbp["defteam"].replace(NFLVERSE_TO_SEED)
+        pbp["week"] = pd.to_numeric(pbp["week"], errors="coerce")
+        pbp = pbp[pbp["week"].notna()].copy()
+        pbp["week"] = pbp["week"].astype(int)
+        d = pbp.merge(ftn, left_on=["game_id", "play_id"], right_on=["nflverse_game_id", "nflverse_play_id"], how="inner")
+        d["backs"] = pd.to_numeric(d["n_offense_backfield"], errors="coerce")
+        d = d[d["backs"].notna()].copy()
+        d["backs"] = d["backs"].clip(0, 3).astype(int)
+        if d.empty:
+            raise ValueError("no charted plays")
+        prior = _personnel_priors(season - 1)
+        te_mean = _snap_share(season, ("TE",), "offense")
+        db_mean = _snap_share(season, _PERS_DB_POS, "defense")
+        off_rows, weekly = {}, {}
+        for tm, g in d.groupby("posteam"):
+            tm = str(tm)
+            pb = (g["backs"].value_counts(normalize=True)).to_dict()
+            pb = {int(k): float(v) for k, v in pb.items()}
+            cond = {}
+            team_prior = prior["te_team"].get(tm, {})
+            for b in set(pb) | set(prior["te_lg"]):
+                cond[b] = _shrink(team_prior.get(b, {}), prior["te_lg"].get(b, {}))
+            cond = _tilt_conditionals(cond, pb, te_mean.get(tm))
+            r = _personnel_rates(pb, cond)
+            off_rows[tm] = {"11 Personnel": round(100 * r["p11"], 1), "12 Personnel": round(100 * r["p12"], 1),
+                            "13 Personnel": round(100 * r["p13"], 1), "21 Personnel": round(100 * r["p21"], 1),
+                            "3WR Rate": round(100 * r["wr3"], 1), "Multi TE Rate": round(100 * r["mte"], 1),
+                            "Multi RB Rate": round(100 * r["mrb"], 1)}
+            for w, gw in g.groupby("week"):
+                pbw = {int(k): float(v) for k, v in gw["backs"].value_counts(normalize=True).items()}
+                rw = _personnel_rates(pbw, cond)
+                n = float(len(gw))
+                weekly.setdefault((tm, int(w)), {}).update({
+                    "off_pers_obs": n, "off_wr3": n * rw["wr3"], "off_mte": n * rw["mte"], "off_11": n * rw["p11"],
+                    "off_12": n * rw["p12"], "off_13": n * rw["p13"], "off_21": n * rw["p21"], "off_multirb": n * rw["mrb"]})
+        def_rows = {}
+        for tm, g in pbp.groupby("defteam"):
+            tm = str(tm)
+            dist = _shrink(prior["db_team"].get(tm, {}), prior["db_lg"])
+            dist = _tilt_to_mean(dist, db_mean.get(tm))
+            sub = sum(p for k, p in dist.items() if k >= 5)
+            nickel = dist.get(5, 0.0)
+            dime = sum(p for k, p in dist.items() if k >= 6)
+            def_rows[tm] = {"Sub Package Rate": round(100 * sub, 1), "Nickel Rate": round(100 * nickel, 1),
+                            "Dime+ Rate": round(100 * dime, 1)}
+            for w, gw in g.groupby("week"):
+                n = float(len(gw))
+                weekly.setdefault((tm, int(w)), {}).update({
+                    "def_pers_obs": n, "def_sub": n * sub, "def_nickel": n * nickel, "def_dime": n * dime})
+        result = {"off": pd.DataFrame.from_dict(off_rows, orient="index"),
+                  "def": pd.DataFrame.from_dict(def_rows, orient="index"),
+                  "weekly": weekly, "prior": prior["season"], "te_mean": te_mean, "db_mean": db_mean}
+        print(f"  (personnel inferred for {season}: FTN backs × {prior['season']} split, "
+              f"{len(te_mean)} teams anchored to snap counts)")
+    except Exception as e:
+        if not _is_http_not_found(e):
+            print(f"  (skipped inferred personnel: {type(e).__name__}: {str(e)[:80]})")
+        result = None
+    _PERS_INFER[season] = result
+    return result
+
+
 def _scheme_parse_personnel(s):
     """'1 RB, 1 TE, 3 WR' -> (backs, te, wr, ol)."""
     if not isinstance(s, str):
@@ -4058,6 +4536,16 @@ def build_team_block(season):
         off_pers, def_pers = personnel_groups(season)
     except Exception:
         off_pers, def_pers = None, None
+    # A season in progress: the groupings are inferred from FTN's backs, last season's split
+    # and this season's snap counts (see _personnel_inferred) and the cards say so.
+    est_off = est_def = None
+    if off_pers is None or def_pers is None:
+        inf = _personnel_inferred(season)
+        if inf:
+            if off_pers is None and inf.get("off") is not None and len(inf["off"]):
+                off_pers, est_off = inf["off"], inf["prior"]
+            if def_pers is None and inf.get("def") is not None and len(inf["def"]):
+                def_pers, est_def = inf["def"], inf["prior"]
     # Offensive tendencies: pbp (shotgun/no-huddle/air yards) + FTN (motion/PA/RPO/screen/trick/drop).
     tend_cols = ["Shotgun Rate", "NoHuddle Rate", "AirYards/Att", "Motion Rate", "Play Action Rate",
                  "RPO Rate", "Screen Rate", "Trick Play Rate", "Drop Rate"]
@@ -4097,6 +4585,12 @@ def build_team_block(season):
     }
     if pers_cols:
         team["personnel"] = _shape_team(pers[pers_cols])
+        if est_off:
+            team["personnel"]["estimated"] = {
+                "from": int(est_off),
+                "note": (f"Estimated: FTN's backs per play × the {est_off} tight-end split, tilted to this "
+                         f"season's TE snap share. The charted groupings replace it after the season."),
+            }
     if cover is not None:
         team["coverage"] = _shape_team(cover)   # man/zone solid; MOFC/MOFO validated ρ≈0.8 vs Sharp
     if ol_pass_cols:
@@ -4116,6 +4610,13 @@ def build_team_block(season):
     if dtend is not None and len(dtend.columns):
         dt_cols = [c for c in ["Blitz Rate", "Sub Package Rate", "Nickel Rate", "Dime+ Rate"] if c in dtend.columns]
         team["def_tendencies"] = _shape_team(dtend[dt_cols])
+        if est_def:
+            team["def_tendencies"]["estimated"] = {
+                "from": int(est_def),
+                "cols": [c for c in ["Sub Package Rate", "Nickel Rate", "Dime+ Rate"] if c in dt_cols],
+                "note": (f"Estimated: the {est_def} defensive-back split, tilted to this season's DB snap "
+                         f"share. Blitz Rate is charted (FTN). The charted packages replace it after the season."),
+            }
     # Defensive pass-rush / run-defense line (PFR def + pbp + FTN proxy). Higher pressure/stuff =
     # better defense (default rank); fewer missed tackles is better (lower_better).
     try:

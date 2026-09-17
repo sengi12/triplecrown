@@ -399,7 +399,9 @@ const _INSEASON_NV_SECTIONS = ['team','players','routes','qb_passing','qb_charti
   // Next Gen Stats per game (tracking data — the morning after, no charting lag).
   'ngs_weekly',
   // Play-calling tendencies (the Playbook's Tendencies tab) for the season in progress.
-  'tendencies'];
+  'tendencies',
+  // The head coach line (pbp), so a mid-season change shows in the sidebar and the Playbook.
+  'head_coaches'];
 function _adoptInseason(payload){
   if(!payload || !payload.season) return false;
   TC_INSEASON = payload;
