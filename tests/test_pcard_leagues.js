@@ -24,13 +24,15 @@ const app=new Function(code+`
     if(/users/.test(url)) return [{user_id:'me',display_name:'pottluke'},{user_id:'them',display_name:'rival',metadata:{team_name:'The Rivals'}},{user_id:'x',display_name:'partner'}];
     return [];
   };
-  return { avail:pcardLeaguesAvailable, bar:pcardLeaguesBarHTML, rows:pcardLeaguesRows, load:pcardLeaguesLoad, toggle:pcardLeaguesToggle, fetches, sub:pcardLeagueSub, lg:()=>_pcardLg.byLeague,
-    setOpen:(v)=>{ _pcardLgOpen=v; }, setState:(pid)=>{ pcardState={pid:String(pid),posc:'RB',team:'NE'}; } };
+  return { avail:pcardLeaguesAvailable, band:pcardLeaguesBandHTML, rows:pcardLeaguesRows, load:pcardLeaguesLoad, toggle:pcardLeaguesToggle, fetches, sub:pcardLeagueSub, lg:()=>_pcardLg.byLeague,
+    isOpen:()=>_pcardLgOpen, setOpen:(v)=>{ _pcardLgOpen=v; }, setState:(pid)=>{ pcardState={pid:String(pid),posc:'RB',team:'NE'}; } };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 (async()=>{
   chk(app.avail(), 'the band exists when a Sleeper profile with leagues is saved');
-  chk(/pcard-lg-pill/.test(app.bar('1')) && /id="pcardLgPillTxt"><\/span>/.test(app.bar('1')) && !/pcard-lg-row/.test(app.bar('1')), 'before loading: the icon alone, no rows in the card');
+  const b0=app.band('1');
+  chk(/class="pcard-leagues"/.test(b0) && /pcard-lg-lbl">LEAGUES<\/span><span class="pcard-lg-txt">Availability<\/span><span class="pcard-lg-n" id="pcardLgPillTxt"><\/span>/.test(b0) && /id="pcardLgBody" hidden/.test(b0) && !/pcard-lg-row/.test(b0), 'before loading: one folded line — LEAGUES · Availability, no count yet, no rows in the card');
+  chk(!/pcard-lg-pill|pcardLeaguesBarHTML/.test(code) && /\$\{contractBand\}\s*\$\{\(typeof pcardLeaguesBandHTML/.test(code) && !/pcard-hero-foot">[\s\S]{0,400}pcardLeagues/.test(code), 'the line sits under the contract band in the card\'s flow — nothing of it in the hero foot');
   await app.load(false);
   chk(app.fetches.filter(u=>/league\/L[1256]$/.test(u)).length===4 && !app.fetches.some(u=>/L3/.test(u)), 'loads each saved league once; the stale one is skipped');
   chk(app.lg().L6 && app.lg().L6.noRoster===true && app.lg().L6.myRosterId==null && app.lg().L1.noRoster===false && app.lg().L2.noRoster===false, 'a league I run without a roster of my own is marked noRoster (a co-owned roster counts as mine)');
@@ -44,7 +46,15 @@ let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',
   rows=app.rows('9');
   chk((rows.match(/AVAILABLE/g)||[]).length===3, 'an unrostered player reads AVAILABLE in every league (the card keeps the league I only run)');
   chk(/href="https:\/\/sleeper.com\/leagues\/L1\/players"/.test(rows), 'a row opens the league on Sleeper');
-  chk(/>1 of 3</.test(app.bar('2')) && />3 of 3</.test(app.bar('9')) && />1 of 3</.test(app.bar('3')), 'after loading the pill says "1 of 3" / "3 of 3" / "1 of 3" — available, of your leagues');
+  const line=(pid)=>(app.band(pid).match(/id="pcardLgPillTxt">([\s\S]*?)<\/span><span class="pcard-lg-caret"/)||[])[1]||'';
+  chk(line('2')==='<b>1</b> <span class="muted">of 3</span>' && line('9')==='<b>3</b> <span class="muted">of 3</span>' && line('3')==='<b>1</b> <span class="muted">of 3</span>', 'after loading the count at the right says "1 of 3" / "3 of 3" — available, of your leagues');
+  // the drop-down: tap opens the rows in place under the line, tap again folds them
+  app.setOpen(false); app.setState('9');
+  const body=mkEl('pcardLgBody'); body.innerHTML=''; body.hidden=true;
+  app.toggle('9', {stopPropagation(){}});
+  chk(app.isOpen()===true && body.hidden===false && (body.innerHTML.match(/AVAILABLE/g)||[]).length===3, 'tapping the line drops the league rows down in place beneath it');
+  app.toggle('9', {stopPropagation(){}});
+  chk(app.isOpen()===false && body.hidden===true, 'tapping again folds them');
   // count league reads only — the in-season stats poll also goes through sleeperFetch
   const lgReads=()=>app.fetches.filter(u=>/\/league\//.test(u)).length;
   const n=lgReads(); await app.load(false);

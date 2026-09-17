@@ -299,7 +299,18 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .pcard-contract-lbl{font-size:8.5px;font-weight:800;letter-spacing:.06em;color:var(--accent);
   background:rgba(61,155,255,.13);padding:2px 6px;border-radius:4px;}
 .pcard-contract .muted{color:var(--muted);font-weight:600;}
-.pcard-ct-fa{margin-left:auto;}
+.pcard-ct-fa{margin-left:auto;white-space:nowrap;}
+.pcard-contract .ct-s{display:none;}
+/* Narrow phones: one line. The short forms swap in (5y · $275M, FA ’30), the gaps tighten,
+   and if a deal still runs long the length/total part trims with an ellipsis — $/yr, gtd
+   and the FA year always show. */
+@media (max-width:500px){
+  .pcard-contract{flex-wrap:nowrap;gap:7px;font-size:11px;}
+  .pcard-contract .ct-l{display:none;}
+  .pcard-contract .ct-s{display:inline;}
+  .pcard-contract > span{white-space:nowrap;}
+  .pcard-contract .pcard-ct-len{min-width:0;overflow:hidden;text-overflow:ellipsis;}
+}
 /* KTC dynasty link — small icon badge tucked into the hero's bottom-right corner. */
 .pcard-ktc{position:absolute;right:10px;bottom:10px;z-index:5;width:26px;height:26px;border-radius:7px;
   display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.9);
@@ -715,19 +726,10 @@ html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:no
 .pcard-hero-v2 .pcard-meta-item:last-child .pcard-meta-val{overflow:hidden;text-overflow:ellipsis;max-width:clamp(54px,16vw,110px);}
 /* Foot: pedestal + draft band + KTC on one line at the hero's bottom. */
 .pcard-hero-foot{display:flex;align-items:center;gap:8px;margin-top:0;position:relative;z-index:2;}
-/* Narrow phones: the DRAFT label pill yields so the year/round/pick line never clips. With a
-   league pill in the row (leagues synced) the draft line no longer fits beside the pedestal:
-   the row wraps, the pill and the KTC icon stay on the pedestal's line, and the draft line
-   drops to its own line below, right-aligned — nothing overlaps, and a card without the pill
-   keeps the one-line foot. */
-@media (max-width:500px){
-  .pcard-hero-foot .pcard-draft-lbl{display:none;}
-  .pcard-hero-v2 .pcard-hero-foot{flex-wrap:wrap;row-gap:4px;}
-  .pcard-hero-v2 .pcard-lg-pill{order:1;margin-left:auto;}
-  .pcard-hero-v2 .pcard-ktc{order:2;}
-  .pcard-hero-v2 .pcard-hero-draft{order:3;flex:0 0 auto;min-width:0;max-width:100%;margin:0 10px 6px auto;}
-  .pcard-hero-v2 .pcard-lg-pill ~ .pcard-hero-draft, .pcard-hero-v2 .pcard-hero-draft:has(~ .pcard-lg-pill){margin-left:auto;}
-}
+/* Narrow phones: the DRAFT label pill yields so the year/round/pick line never clips. The foot
+   is one line — pedestal, draft line, KTC — and nothing else lives in it: the leagues line
+   sits under the contract band in the card's flow (13-pcard-leagues.css). */
+@media (max-width:500px){ .pcard-hero-foot .pcard-draft-lbl{display:none;} }
 .pcard-team-plate{width:var(--plateW);flex-shrink:0;box-sizing:border-box;position:relative;
   padding:clamp(6px,1.6vw,8px) 12px;text-align:center;}
 .pcard-team-plate::before{content:'';position:absolute;inset:0 0 0 -12px;background:var(--surface);
@@ -879,14 +881,23 @@ tr.pcard-future-row td{opacity:.75;}
 .pcard-add-nm{font-weight:800;font-size:12.5px;}
 .pcard-add-sub{font-size:10px;color:var(--muted);white-space:nowrap;}
 .pcard-add-none{font-size:11px;color:var(--muted);padding:8px 4px;}
-/* ── In your leagues: a pill in the hero foot, a popover over the card ── */
-.pcard-lg-pill{display:inline-flex;align-items:center;gap:5px;flex:none;margin-right:8px;padding:4px 9px;border-radius:999px;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.24);color:#fff;font-size:10.5px;font-weight:800;cursor:pointer;white-space:nowrap;z-index:2;position:relative;}
-.pcard-lg-pill .tc-ico{width:12px;height:12px;}
-.pcard-lg-pill:hover{border-color:rgba(255,255,255,.4);}
-.pcard-lg-caret{font-size:10px;opacity:.7;}
-.pcard-lg-pop{margin:6px 12px 0;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;}
-.pcard-lg-head{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 4px 6px;font-size:12px;}
-.pcard-lg-body{display:flex;flex-direction:column;gap:2px;max-height:min(40vh,280px);overflow:auto;}
+/* ── In your leagues: a line under the contract band (the same band shape), the league rows
+   drop down in place beneath it when tapped — the hero carries none of it. ── */
+.pcard-leagues{background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin:4px 2px 2px;}
+.pcard-lg-line{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:7px 11px;
+  background:none;border:none;color:var(--text);font:inherit;font-size:11.5px;font-weight:700;text-align:left;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;}
+.pcard-lg-line:hover .pcard-lg-txt{color:var(--text);}
+.pcard-lg-lbl{font-size:8.5px;font-weight:800;letter-spacing:.06em;color:var(--accent);
+  background:rgba(61,155,255,.13);padding:2px 6px;border-radius:4px;flex:none;}
+.pcard-lg-txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pcard-lg-n{flex:none;white-space:nowrap;}
+.pcard-lg-n b{font-weight:800;}
+.pcard-lg-n .muted{color:var(--muted);font-weight:600;}
+.pcard-lg-caret{flex:none;font-size:10px;color:var(--muted);transition:transform .15s;}
+.pcard-leagues.open .pcard-lg-caret{transform:rotate(180deg);}
+.pcard-lg-body{display:flex;flex-direction:column;gap:2px;max-height:min(40vh,280px);overflow:auto;margin:0 6px;padding:0 0 6px;}
+.pcard-lg-body[hidden]{display:none;}   /* folded: the box is the one line, nothing under it */
 .pcard-lg-row{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:8px;text-decoration:none;color:var(--text);}
 .pcard-lg-row:hover{background:var(--surface3);}
 .pcard-lg-av{width:24px;height:24px;border-radius:6px;object-fit:cover;background:var(--surface3);flex:none;}
@@ -899,7 +910,6 @@ tr.pcard-future-row td{opacity:.75;}
 .pcard-lg-owned{text-transform:none;letter-spacing:0;}
 .pcard-lg-err{color:var(--danger);}
 .pcard-lg-muted{font-size:11px;color:var(--muted);}
-@media (max-width:420px){ .pcard-lg-pill{font-size:10px;padding:3px 7px;} }
 /* ── Grouped rankings table (ECR / Tier / FPTS / stat groups) ── */
 .rankings-table.grouped{font-size:11.5px;}
 .rankings-table.grouped th,.rankings-table.grouped td{padding:5px 7px;text-align:center;}
@@ -13502,15 +13512,18 @@ function contractSummaryHTML(name){
   if(!hasContracts() || !name) return '';
   const c = CONTRACTS[ecrNormName(name)];
   if(!c || (c.apy==null && c.total==null && c.fa==null)) return '';
+  // Every part carries a long and a short form; a narrow phone shows the short ones
+  // (5 yrs · $275M total → 5y · $275M, FA 2030 → FA '30) so the band stays one line.
+  const two=(l,s)=> l===s ? l : `<span class="ct-l">${l}</span><span class="ct-s">${s}</span>`;
   const parts=[];
   if(c.apy!=null) parts.push(`<span><b>${fmtAPY(c.apy)}</b><span class="muted">/yr</span></span>`);
-  const sub=[];
+  const sub=[], subS=[];
   const yrs = (c.total!=null && c.apy>0) ? Math.round(c.total/c.apy) : null;
-  if(yrs) sub.push(`${yrs} yr${yrs===1?'':'s'}`);
-  if(c.total!=null) sub.push(`${fmtAPY(c.total)} total`);
-  if(sub.length) parts.push(`<span class="muted">${sub.join(' · ')}</span>`);
+  if(yrs){ sub.push(`${yrs} yr${yrs===1?'':'s'}`); subS.push(`${yrs}y`); }
+  if(c.total!=null){ sub.push(`${fmtAPY(c.total)} total`); subS.push(fmtAPY(c.total)); }
+  if(sub.length) parts.push(`<span class="muted pcard-ct-len">${two(sub.join(' · '), subS.join(' · '))}</span>`);
   if(c.gtd!=null) parts.push(`<span class="muted">${fmtAPY(c.gtd)} gtd</span>`);
-  if(c.fa!=null) parts.push(`<span class="pcard-ct-fa">FA <b>${c.fa}</b></span>`);
+  if(c.fa!=null) parts.push(`<span class="pcard-ct-fa">FA <b>${two(String(c.fa), "’"+String(c.fa).slice(-2))}</b></span>`);
   return `<div class="pcard-contract"><span class="pcard-contract-lbl">CONTRACT</span>${parts.join('')}</div>`;
 }
 
@@ -14472,7 +14485,6 @@ function renderPlayerCardShell(pid, pos, team){
         <div class="pcard-hero-foot">
           ${teamPlate}
           <div class="pcard-hero-draft" id="pcardHeroDraft"></div>
-          ${(typeof pcardLeaguesBarHTML==='function')?pcardLeaguesBarHTML(pid):''}
           ${ktcBand}
         </div>
         ${pcardBackButtonHTML()}
@@ -14481,6 +14493,7 @@ function renderPlayerCardShell(pid, pos, team){
         <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">✕</button>
       </div>
       ${contractBand}
+      ${(typeof pcardLeaguesBandHTML==='function')?pcardLeaguesBandHTML(pid):''}
       <div class="pcard-tabs" id="pcardTabs"></div>
       <div class="pcard-body" id="pcardBody">
         <div class="pcard-loading">Loading game logs…</div>
@@ -15376,10 +15389,10 @@ function pcardLeaguesRows(pid){
       <span class="pcard-lg-main"><b>${escHtml(L.name)}</b><small>${escHtml(L.sub||'')}</small></span>${status}</a>`;
   }).join('');
 }
-// The pill: one small control in the hero's bottom row. Before the leagues have
-// loaded this session it reads "Leagues"; after, "4 of 9 avail" — the answer at a
-// glance, the rows one tap away in a popover that overlays the card (nothing in the
-// card's flow moves).
+// The band: one line under the contract band, in the card's flow (Sleeper's row) —
+// the hero carries nothing of it. Before the leagues have loaded this session it
+// reads "Your leagues"; after, "Available in 4 of 9" — the answer at a glance. Tapping
+// the line drops the league rows down in place beneath it; tapping again folds them.
 function pcardLeaguesSummary(pid){
   if(!_pcardLg.at) return null;
   const {list}=pcardLeaguesList();
@@ -15387,36 +15400,38 @@ function pcardLeaguesSummary(pid){
   list.forEach(lg=>{ const L=_pcardLg.byLeague[lg.league_id]; if(!L || L.error || L.inactive) return; n++; const st=L.byPid[String(pid)]; if(!st) avail++; else if(st.mine) mine++; });
   return {n, avail, mine};
 }
-// The pill is the stadium icon and, once the leagues are known, "1 of 4" — leagues
-// where he is available, of the leagues you are in. Nothing more; the popover explains.
-function pcardLeaguesPillText(pid){
+// The line reads "Availability" (Sleeper's word); once the leagues are known, the count
+// sits at the right — "1 of 4", leagues where he is available, of the leagues you are
+// in. Nothing more on the line; the rows explain.
+function pcardLeaguesCountHTML(pid){
   const s=pcardLeaguesSummary(pid);
   if(!s || !s.n) return '';
-  return `${s.avail} of ${s.n}`;
+  return `<b>${s.avail}</b> <span class="muted">of ${s.n}</span>`;
 }
-function pcardLeaguesBarHTML(pid){
+function pcardLeaguesBandHTML(pid){
   if(!pcardLeaguesAvailable()) return '';
-  return `<button class="pcard-lg-pill" id="pcardLgPill" onclick="pcardLeaguesToggle('${escAttr(String(pid))}',event)" title="Leagues where he is available, of the leagues you are in — tap for each league">${(typeof TC_ICON==='function')?TC_ICON('stadium'):''}<span id="pcardLgPillTxt">${escHtml(pcardLeaguesPillText(pid))}</span><span class="pcard-lg-caret">▾</span></button>`;
+  const p=escAttr(String(pid));
+  return `<div class="pcard-leagues" id="pcardLgBand"><button class="pcard-lg-line" onclick="pcardLeaguesToggle('${p}',event)" aria-expanded="false" title="Leagues where he is available, of the leagues you are in — tap for each league"><span class="pcard-lg-lbl">LEAGUES</span><span class="pcard-lg-txt">Availability</span><span class="pcard-lg-n" id="pcardLgPillTxt">${pcardLeaguesCountHTML(pid)}</span><span class="pcard-lg-caret">▾</span></button><div class="pcard-lg-body" id="pcardLgBody" hidden></div></div>`;
 }
 function _pcardLgRefresh(pid){
   if(!pcardState || String(pcardState.pid)!==String(pid)) return;
-  const t=document.getElementById('pcardLgPillTxt'); if(t) t.textContent=pcardLeaguesPillText(pid);
-  const b=document.getElementById('pcardLgBody'); if(b) b.innerHTML=pcardLeaguesRows(pid);
+  const t=document.getElementById('pcardLgPillTxt'); if(t) t.innerHTML=pcardLeaguesCountHTML(pid);
+  const b=document.getElementById('pcardLgBody'); if(b && _pcardLgOpen) b.innerHTML=pcardLeaguesRows(pid);
 }
 function pcardLeaguesToggle(pid, ev){
   if(ev && ev.stopPropagation) ev.stopPropagation();
-  const card=document.querySelector('#pcardOverlay .pcard'); if(!card) return;
-  let pop=card.querySelector('.pcard-lg-pop');
-  if(pop){ pop.remove(); _pcardLgOpen=false; return; }
-  _pcardLgOpen=true;
-  pop=document.createElement('div'); pop.className='pcard-lg-pop';
-  pop.innerHTML=`<div class="pcard-lg-head"><b>In your leagues</b><button class="pcard-add-x" onclick="pcardLeaguesToggle('${escAttr(String(pid))}',event)" aria-label="Close">✕</button></div><div class="pcard-lg-body" id="pcardLgBody">${pcardLeaguesRows(pid)}</div>`;
-  pop.onclick=(e)=>{ if(e && e.stopPropagation) e.stopPropagation(); };
-  const tabs=card.querySelector('#pcardTabs');
-  if(tabs && tabs.parentNode===card) card.insertBefore(pop, tabs); else card.appendChild(pop);
+  const band=document.getElementById('pcardLgBand'), body=document.getElementById('pcardLgBody');
+  if(!band || !body) return;
+  _pcardLgOpen=!_pcardLgOpen;
+  band.classList.toggle('open', _pcardLgOpen);
+  body.hidden=!_pcardLgOpen;
+  const line=band.querySelector && band.querySelector('.pcard-lg-line'); if(line) line.setAttribute('aria-expanded', String(_pcardLgOpen));
+  if(!_pcardLgOpen) return;
+  body.innerHTML=pcardLeaguesRows(pid);
   pcardLeaguesLoad(false).then(()=>_pcardLgRefresh(pid)).catch(()=>_pcardLgRefresh(pid));
 }
-// A card opening: once the leagues are known this session, the pill says the answer.
+// A card opening: the band renders folded; once the leagues are known this session,
+// the line says the answer straight away.
 function pcardLeaguesOnOpen(pid){
   _pcardLgOpen=false;
   if(!pcardLeaguesAvailable()) return;

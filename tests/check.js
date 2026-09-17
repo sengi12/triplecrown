@@ -8276,15 +8276,18 @@ function contractSummaryHTML(name){
   if(!hasContracts() || !name) return '';
   const c = CONTRACTS[ecrNormName(name)];
   if(!c || (c.apy==null && c.total==null && c.fa==null)) return '';
+  // Every part carries a long and a short form; a narrow phone shows the short ones
+  // (5 yrs · $275M total → 5y · $275M, FA 2030 → FA '30) so the band stays one line.
+  const two=(l,s)=> l===s ? l : `<span class="ct-l">${l}</span><span class="ct-s">${s}</span>`;
   const parts=[];
   if(c.apy!=null) parts.push(`<span><b>${fmtAPY(c.apy)}</b><span class="muted">/yr</span></span>`);
-  const sub=[];
+  const sub=[], subS=[];
   const yrs = (c.total!=null && c.apy>0) ? Math.round(c.total/c.apy) : null;
-  if(yrs) sub.push(`${yrs} yr${yrs===1?'':'s'}`);
-  if(c.total!=null) sub.push(`${fmtAPY(c.total)} total`);
-  if(sub.length) parts.push(`<span class="muted">${sub.join(' · ')}</span>`);
+  if(yrs){ sub.push(`${yrs} yr${yrs===1?'':'s'}`); subS.push(`${yrs}y`); }
+  if(c.total!=null){ sub.push(`${fmtAPY(c.total)} total`); subS.push(fmtAPY(c.total)); }
+  if(sub.length) parts.push(`<span class="muted pcard-ct-len">${two(sub.join(' · '), subS.join(' · '))}</span>`);
   if(c.gtd!=null) parts.push(`<span class="muted">${fmtAPY(c.gtd)} gtd</span>`);
-  if(c.fa!=null) parts.push(`<span class="pcard-ct-fa">FA <b>${c.fa}</b></span>`);
+  if(c.fa!=null) parts.push(`<span class="pcard-ct-fa">FA <b>${two(String(c.fa), "’"+String(c.fa).slice(-2))}</b></span>`);
   return `<div class="pcard-contract"><span class="pcard-contract-lbl">CONTRACT</span>${parts.join('')}</div>`;
 }
 
@@ -9246,7 +9249,6 @@ function renderPlayerCardShell(pid, pos, team){
         <div class="pcard-hero-foot">
           ${teamPlate}
           <div class="pcard-hero-draft" id="pcardHeroDraft"></div>
-          ${(typeof pcardLeaguesBarHTML==='function')?pcardLeaguesBarHTML(pid):''}
           ${ktcBand}
         </div>
         ${pcardBackButtonHTML()}
@@ -9255,6 +9257,7 @@ function renderPlayerCardShell(pid, pos, team){
         <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">✕</button>
       </div>
       ${contractBand}
+      ${(typeof pcardLeaguesBandHTML==='function')?pcardLeaguesBandHTML(pid):''}
       <div class="pcard-tabs" id="pcardTabs"></div>
       <div class="pcard-body" id="pcardBody">
         <div class="pcard-loading">Loading game logs…</div>
@@ -10150,10 +10153,10 @@ function pcardLeaguesRows(pid){
       <span class="pcard-lg-main"><b>${escHtml(L.name)}</b><small>${escHtml(L.sub||'')}</small></span>${status}</a>`;
   }).join('');
 }
-// The pill: one small control in the hero's bottom row. Before the leagues have
-// loaded this session it reads "Leagues"; after, "4 of 9 avail" — the answer at a
-// glance, the rows one tap away in a popover that overlays the card (nothing in the
-// card's flow moves).
+// The band: one line under the contract band, in the card's flow (Sleeper's row) —
+// the hero carries nothing of it. Before the leagues have loaded this session it
+// reads "Your leagues"; after, "Available in 4 of 9" — the answer at a glance. Tapping
+// the line drops the league rows down in place beneath it; tapping again folds them.
 function pcardLeaguesSummary(pid){
   if(!_pcardLg.at) return null;
   const {list}=pcardLeaguesList();
@@ -10161,36 +10164,38 @@ function pcardLeaguesSummary(pid){
   list.forEach(lg=>{ const L=_pcardLg.byLeague[lg.league_id]; if(!L || L.error || L.inactive) return; n++; const st=L.byPid[String(pid)]; if(!st) avail++; else if(st.mine) mine++; });
   return {n, avail, mine};
 }
-// The pill is the stadium icon and, once the leagues are known, "1 of 4" — leagues
-// where he is available, of the leagues you are in. Nothing more; the popover explains.
-function pcardLeaguesPillText(pid){
+// The line reads "Availability" (Sleeper's word); once the leagues are known, the count
+// sits at the right — "1 of 4", leagues where he is available, of the leagues you are
+// in. Nothing more on the line; the rows explain.
+function pcardLeaguesCountHTML(pid){
   const s=pcardLeaguesSummary(pid);
   if(!s || !s.n) return '';
-  return `${s.avail} of ${s.n}`;
+  return `<b>${s.avail}</b> <span class="muted">of ${s.n}</span>`;
 }
-function pcardLeaguesBarHTML(pid){
+function pcardLeaguesBandHTML(pid){
   if(!pcardLeaguesAvailable()) return '';
-  return `<button class="pcard-lg-pill" id="pcardLgPill" onclick="pcardLeaguesToggle('${escAttr(String(pid))}',event)" title="Leagues where he is available, of the leagues you are in — tap for each league">${(typeof TC_ICON==='function')?TC_ICON('stadium'):''}<span id="pcardLgPillTxt">${escHtml(pcardLeaguesPillText(pid))}</span><span class="pcard-lg-caret">▾</span></button>`;
+  const p=escAttr(String(pid));
+  return `<div class="pcard-leagues" id="pcardLgBand"><button class="pcard-lg-line" onclick="pcardLeaguesToggle('${p}',event)" aria-expanded="false" title="Leagues where he is available, of the leagues you are in — tap for each league"><span class="pcard-lg-lbl">LEAGUES</span><span class="pcard-lg-txt">Availability</span><span class="pcard-lg-n" id="pcardLgPillTxt">${pcardLeaguesCountHTML(pid)}</span><span class="pcard-lg-caret">▾</span></button><div class="pcard-lg-body" id="pcardLgBody" hidden></div></div>`;
 }
 function _pcardLgRefresh(pid){
   if(!pcardState || String(pcardState.pid)!==String(pid)) return;
-  const t=document.getElementById('pcardLgPillTxt'); if(t) t.textContent=pcardLeaguesPillText(pid);
-  const b=document.getElementById('pcardLgBody'); if(b) b.innerHTML=pcardLeaguesRows(pid);
+  const t=document.getElementById('pcardLgPillTxt'); if(t) t.innerHTML=pcardLeaguesCountHTML(pid);
+  const b=document.getElementById('pcardLgBody'); if(b && _pcardLgOpen) b.innerHTML=pcardLeaguesRows(pid);
 }
 function pcardLeaguesToggle(pid, ev){
   if(ev && ev.stopPropagation) ev.stopPropagation();
-  const card=document.querySelector('#pcardOverlay .pcard'); if(!card) return;
-  let pop=card.querySelector('.pcard-lg-pop');
-  if(pop){ pop.remove(); _pcardLgOpen=false; return; }
-  _pcardLgOpen=true;
-  pop=document.createElement('div'); pop.className='pcard-lg-pop';
-  pop.innerHTML=`<div class="pcard-lg-head"><b>In your leagues</b><button class="pcard-add-x" onclick="pcardLeaguesToggle('${escAttr(String(pid))}',event)" aria-label="Close">✕</button></div><div class="pcard-lg-body" id="pcardLgBody">${pcardLeaguesRows(pid)}</div>`;
-  pop.onclick=(e)=>{ if(e && e.stopPropagation) e.stopPropagation(); };
-  const tabs=card.querySelector('#pcardTabs');
-  if(tabs && tabs.parentNode===card) card.insertBefore(pop, tabs); else card.appendChild(pop);
+  const band=document.getElementById('pcardLgBand'), body=document.getElementById('pcardLgBody');
+  if(!band || !body) return;
+  _pcardLgOpen=!_pcardLgOpen;
+  band.classList.toggle('open', _pcardLgOpen);
+  body.hidden=!_pcardLgOpen;
+  const line=band.querySelector && band.querySelector('.pcard-lg-line'); if(line) line.setAttribute('aria-expanded', String(_pcardLgOpen));
+  if(!_pcardLgOpen) return;
+  body.innerHTML=pcardLeaguesRows(pid);
   pcardLeaguesLoad(false).then(()=>_pcardLgRefresh(pid)).catch(()=>_pcardLgRefresh(pid));
 }
-// A card opening: once the leagues are known this session, the pill says the answer.
+// A card opening: the band renders folded; once the leagues are known this session,
+// the line says the answer straight away.
 function pcardLeaguesOnOpen(pid){
   _pcardLgOpen=false;
   if(!pcardLeaguesAvailable()) return;
