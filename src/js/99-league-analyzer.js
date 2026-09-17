@@ -1475,6 +1475,7 @@ function renderLeagueAnalyzer(){
     }
     laState._keepScroll=false;
     if(typeof _laBindMuHeroSwipe==='function') _laBindMuHeroSwipe(host);
+    if(typeof laPackMyGrid==='function') laPackMyGrid(host);
   }catch(e){}
 }
 // In-view controls (scope chips, sort taps, week picks) re-render in place — the page must
@@ -2940,8 +2941,23 @@ function laMyTeamView(s){
     + '</div>'
     + '<div class="la-my-sum-adv">' + escHtml(myTraj.advice) + '</div>'
     + '</div></div>';
-  return switcher + controls + summary
-    + '<div class="la-my-grid">' + powerTbl + posTbl + slotTbl + radar + lineup + '</div>'
+  // The overview cards (99g-la-myteam-cards.js) share one rank table, computed here once.
+  // Positional + Starter Rankings stack in one column cell so they match Power Rankings'
+  // height; the rest pack as a masonry (CSS columns), and the wide lineup chart follows.
+  const pr=(typeof laPosRankTable==='function')?laPosRankTable(eng):null;
+  const card=(fn,...args)=>(pr && typeof fn==='function')?(fn(...args)||''):'';
+  const thisWeek=card(typeof laThisWeekStripHTML==='function'?laThisWeekStripHTML:null, s, mineEng);
+  const cards = '<div class="la-my-stack">' + posTbl + slotTbl + '</div>'
+    + card(typeof laUpgradePathHTML==='function'?laUpgradePathHTML:null, s, eng, mineEng, slotLabels, slotVals, lens, pr)
+    + card(typeof laTradeFitHTML==='function'?laTradeFitHTML:null, s, eng, mineEng, pr)
+    + card(typeof laHeatGridHTML==='function'?laHeatGridHTML:null, s, eng, mineEng, pr)
+    + radar
+    + card(typeof laByeExposureHTML==='function'?laByeExposureHTML:null, s, mineEng, slotLabels)
+    + card(typeof laAgeTimelineHTML==='function'?laAgeTimelineHTML:null, s, mineEng)
+    + card(typeof laRosterConstructionHTML==='function'?laRosterConstructionHTML:null, s, eng, mineEng);
+  return switcher + controls + summary + thisWeek
+    + '<div class="la-my-grid">' + powerTbl + cards + '</div>'
+    + lineup
     + '<div class="la-note la-note-min">' + ((typeof tcInfoBtn==='function')?tcInfoBtn(lens==='value'?'lamyvalue':'lamyproj','How the power score works'):'') + '</div>';
 }
 
