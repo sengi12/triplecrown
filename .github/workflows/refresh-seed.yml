@@ -64,6 +64,7 @@ concurrency:
 permissions:
   contents: write
   actions: write        # to dispatch pages.yml after a seed commit
+  issues: write         # to open the "needs a hand" issue when an input goes stale
 
 jobs:
   refresh:
@@ -189,6 +190,23 @@ jobs:
             ARGS="$ARGS --dry-run"
           fi
           python3 tools/seed_refresh.py $ARGS 2>&1 | tee refresh.log
+
+      # The build warns to stderr when a hand-maintained input has gone stale (the All-Pro
+      # line, the ESPN win-rate anchor, the head-coach tables) or when a block had to fall
+      # back to the previous seed. Nobody reads a cron's log, so those lines become ONE open
+      # issue: created when there is none, left alone while one is open (no half-hourly spam).
+      - name: Flag inputs that need a hand
+        if: always() && steps.refresh.outcome != 'skipped' && github.event.inputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          lines=$(grep -E "⚠ .* is stale|kept the previous [a-z_]+ block|HC_(PRIOR_JOBS|PLAYCALLERS) is stale" refresh.log || true)
+          [ -z "$lines" ] && { echo "nothing stale"; exit 0; }
+          title="Refresh needs a hand: stale season inputs"
+          open=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty' || true)
+          if [ -n "$open" ]; then echo "issue #$open already open"; exit 0; fi
+          body=$(printf 'The seed refresh on %s reported:\n\n```\n%s\n```\n\nThe hand-maintained inputs and where they live are listed under "Each February" in TODO.md. Close this once they are updated; the next refresh reopens it if anything is still stale.' "$(date -u +%F)" "$lines")
+          gh issue create --title "$title" --body "$body" --label maintenance 2>/dev/null || gh issue create --title "$title" --body "$body"
 
       # Rebuild the .gz files the app actually downloads. build_seed.py writes the plain JSON;
       # pages.yml publishes seeds/*.json.gz, so a refreshed seed that skipped this step would

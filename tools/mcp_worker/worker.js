@@ -198,7 +198,7 @@ const RAW_TOOLS = [
     + "and the season in progress live: per-game passing/rushing charts, target charts, Next Gen Stats, league ranks (rk) on every chart total, per-game scheme cards, "
     + "dynasty values, team metrics, coaches, schedules, weekly team/OL/defender data, coaching formations). Lists what is at a path; "
     + "call with no path for the table of contents with a description of each section. Paths are slash-separated keys, e.g. "
-    + "nflverse/2025/routes/amonra st brown.",
+    + "nflverse/<season>/routes/<normalized name> (the seasons on hand are listed at nflverse/).",
     inputSchema: { type: "object", properties: { path: { type: "string", description: "slash-separated keys; empty for the root" } } } },
   { name: "seed_get", description: "Read the raw JSON at a seed path (see seed_ls for the map). Large sections are directories: "
     + "read one key, or pass keys=[…] to read several children at once. Output is cut at 12k characters — narrow the path instead of paging.",

@@ -381,5 +381,38 @@ chk(SR.ecr_list_complete(ecr_table(427)) and not SR.ecr_list_complete(ecr_table(
     "ecr_list_complete: 1..N intact → True; 5% of ranks missing → False")
 chk(not SR.ecr_list_complete(seed(ecr=400)["ecr"]), "a table with no ranks at all is not 'complete'")
 
+print("=== per-block fallback: one source's bad day no longer takes the run down ===")
+old = seed(ecr=400, seed=1200, history=900, contracts=1600, dynasty_values=300)
+new = seed(ecr=0, seed=1200, history=900, contracts=1600, dynasty_values=300)
+ok, problems, _ = SR.validate(old, new)
+chk(SR.problem_block(problems[0]) == "ecr" and SR.problem_block("ecr.dynasty: 300 → 0 (x)") == "ecr"
+    and SR.problem_block("tc model: 900 → 100 players carry a projection") == "seed"
+    and SR.problem_block("projections: 900 → 100 players carry a projected line") == "seed"
+    and SR.problem_block("something odd") is None,
+    "a problem names its block (sub-tables and the two in-seed guards resolve to their block)")
+kept, left = SR.fallback_blocks(old, new, problems)
+chk(list(kept) == ["ecr"] and not left and new["ecr"] is old["ecr"], "the emptied ECR block is replaced by the previous seed's copy, nothing left unresolved")
+ok2, problems2, _ = SR.validate(old, new)
+chk(ok2 and not problems2, "and the merged seed then passes every guard")
+new = seed(ecr=400, seed=1200, history=900, contracts=1600)   # dynasty chart vanished entirely
+_, problems, _ = SR.validate(old, new)
+kept, left = SR.fallback_blocks(old, new, problems)
+chk("dynasty_values" in kept and new.get("dynasty_values") is old["dynasty_values"] and not left, "a block that vanished (the chart not published yet) comes back from the previous seed too")
+brand_new = seed(ecr=0, seed=1200, history=900, contracts=1600)
+kept, left = SR.fallback_blocks({}, brand_new, ["ecr: 400 → 0 (block emptied)"])
+chk(not kept and left == ["ecr: 400 → 0 (block emptied)"], "with no previous copy to stand in, the problem stays unresolved (the run rejects as before)")
+chk(SR.BLOCK_SOURCE["dynasty_values"] == "dynasty" and SR.BLOCK_SOURCE["ecr"] == "ecr" and SR.BLOCK_SOURCE["seed"] == "sleeper"
+    and all(v in SR.SOURCES for v in SR.BLOCK_SOURCE.values()), "every fallen-back block maps to a real source, whose cadence anchor is then held")
+src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tools", "seed_refresh.py")).read()
+chk("kept_blocks, problems = fallback_blocks(old_seed, new_seed, problems)" in src and "stale = [n for n in stale if n not in held]" in src
+    and "json.dump(new_seed, f)" in src, "main(): falls back, writes the merged seed, and does not advance the held sources")
+
+print("=== the stale inputs reach a human ===")
+bs = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "build_seed.py")).read()
+chk("⚠ HC_PRIOR_JOBS is stale" in bs and "⚠ HC_PLAYCALLERS is stale" in bs, "the build warns when a new head coach has no former-role line, or a playcaller entry names a departed coach")
+wf = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".github", "workflows", "refresh-seed.yml")).read()
+chk("issues: write" in wf and "Flag inputs that need a hand" in wf and "is stale|kept the previous" in wf
+    and "gh issue list --state open" in wf and "gh issue create" in wf, "the refresh workflow turns those lines into one open issue, and never a second while one is open")
+
 print(f"\nRESULT: {'PASS' if FAILED == 0 else 'MISS'} ({PASS}/{PASS + FAILED} checks)")
 sys.exit(0 if FAILED == 0 else 1)
