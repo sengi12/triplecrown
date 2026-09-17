@@ -228,6 +228,55 @@ def main():
     check("ngs_weekly: with one qualified 2026 receiver the median is LAST season's (not his own number)",
           abs(med - 3.15) < 0.06 and med != 3.4)
 
+    # ── target_trees_weekly: the target MAP rows (every throw), ESB ids, charted routes ──
+    def _pbp_targets():
+        rows = []
+        # w1: wk1 — a caught 6-yard slant with 10 YAC, a 4-yard catch that scores from the 45,
+        # an incomplete deep ball, a pick; wk2 — one catch.
+        spec = [(1, 6, "right", 1, 0, 10, 0, 63, 1), (1, 4, "left", 1, 1, 41, 0, 45, 4),
+                (1, 26, "middle", 0, 0, None, 0, 97, 2), (1, 12, "left", 0, 0, None, 1, 12, 3),
+                (2, 9, "middle", 1, 0, 3, 0, 50, 1)]
+        for i, (wk, ay, loc, comp, td, yac, intc, yl, q) in enumerate(spec):
+            rows.append(dict(season_type="REG", week=wk, posteam="SEA", defteam="NE" if wk == 1 else "PIT",
+                             receiver_player_id="w1", pass_attempt=1, complete_pass=comp, air_yards=ay,
+                             pass_location=loc, receiving_yards=(ay + (yac or 0)) if comp else 0,
+                             pass_touchdown=td, two_point_attempt=0, yards_after_catch=yac,
+                             epa=0.5, first_down=comp, interception=intc, yardline_100=yl, qtr=q,
+                             game_id=f"2025_{wk:02d}_SEA_X", play_id=10 + i))
+        return pd.DataFrame(rows)
+    nv._load_pbp = lambda season, cols=None: _pbp_targets()
+    nv._name_map = lambda season: {"w1": "test receiver"}
+    nv._pos_map = lambda season: {"w1": "WR"}
+    nv._esb_map = lambda season: {"w1": "TES123456"}
+    nv._aux_csv = lambda url, **kw: (_ for _ in ()).throw(Exception("404"))   # no charting in season
+    nv.MAX_WEEK = None
+    tt = nv.target_trees_weekly(2026, min_targets_game=1, min_targets_season=1)
+    w = (tt.get("players") or {}).get("test receiver")
+    g1 = w["games"][0] if w else {}
+    check("target_trees: every target is a row [air, side, result, yac, yardline, qtr] in play order",
+          w is not None and g1.get("wk") == 1 and g1.get("plays") == [[6, 2, 1, 10, 63, 1], [4, 0, 2, 41, 45, 4],
+                                                                        [26, 1, 0, 0, 97, 2], [12, 0, 3, 0, 12, 3]])
+    check("target_trees: the TD is result 2 (with its YAC), the pick is 3, an incompletion carries no YAC",
+          g1.get("plays", [[]])[1][2] == 2 and g1.get("plays", [[]])[3][2] == 3 and g1.get("plays", [[]])[2][3] == 0)
+    check("target_trees: the receiver carries his ESB id and no routes legend ships without charting",
+          w and w.get("esb") == "TES123456" and "routes" not in tt and len(w["games"]) == 2 and len(w["games"][1]["plays"]) == 1)
+
+    def _part(url, **kw):
+        if "participation" not in url:
+            raise Exception("404")
+        return pd.DataFrame([dict(nflverse_game_id="2025_01_SEA_X", play_id=10, route="SLANT"),
+                             dict(nflverse_game_id="2025_01_SEA_X", play_id=11, route="SHALLOW CROSS/DRAG"),
+                             dict(nflverse_game_id="2025_01_SEA_X", play_id=12, route="GO"),
+                             dict(nflverse_game_id="2025_02_SEA_X", play_id=14, route="SLANT")])
+    nv._aux_csv = _part
+    tt2 = nv.target_trees_weekly(2025, min_targets_game=1, min_targets_season=1)
+    w2 = tt2["players"]["test receiver"]; p2 = w2["games"][0]["plays"]
+    check("target_trees: once the charting lands every row gains a 7th slot — an index into the routes legend",
+          tt2.get("routes") == ["GO", "SHALLOW CROSS/DRAG", "SLANT"] and [r[6] for r in p2] == [2, 1, 0, None]
+          and w2["games"][1]["plays"][0][6] == 2)
+    check("target_trees: the unlabelled play keeps its row (route null), nothing else moves",
+          p2[3][:6] == [12, 0, 3, 0, 12, 3] and len(p2) == 4)
+
     total, passed = len(RESULTS), sum(RESULTS)
     print(f"\nRESULT: {passed}/{total} {'ALL PASS' if passed == total else 'SOME FAILED'}")
     sys.exit(0 if passed == total else 1)

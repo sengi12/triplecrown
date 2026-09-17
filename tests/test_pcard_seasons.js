@@ -27,7 +27,7 @@ const app=new Function(code+`
   pcardToken=1; pcardOpen=true;
   return { pcardEligibleSeasons, loadSleeperCareerStats, pcardSelectSeason, rbReceivingQualifies,
     pcardWeeklyGames, _routeGameAsSeason, _pcardGameChips, setPcardChartGame,
-    pcardRouteSeasons, _renderTargetTree, _ttView, _pcardTargetNode,
+    pcardRouteSeasons, _renderTargetTree, _ttView, _pcardTargetNode, setPcardTargetView,
     getChartGame:()=>pcardChartGame, setNflverse:(n)=>{NFLVERSE=n;},
     pcardAppendFutureWeeks, pcardSeasonRows, renderPcardSeason,
     _cfbCareerRow, _CFB_SEASON_COLS, renderCfbProspect,
@@ -139,8 +139,12 @@ app.setNflverse({'2026':{target_trees:{players:{'jsn':jsnNode},lg:{'short-left':
 chk(app.pcardRouteSeasons('jsn').includes('2026'),
     'the live season joins the Routes strip on target data alone (rookies get the tab)');
 chk(app.pcardRouteSeasons('jsn')[0]==='2026', 'and leads it');
+const ttMap=app._renderTargetTree('pid1', jsnNode, '2026');
+chk(/◉ live/.test(ttMap) && /tm-view/.test(ttMap) && /next weekly bake/.test(ttMap) && !/TARGETS <tspan/.test(ttMap),
+    'Map is the first view — a node without per-target rows (an older sidecar) says so instead of drawing a field');
+app.setPcardTargetView('zones');
 const tt=app._renderTargetTree('pid1', jsnNode, '2026');
-chk(/◉ live/.test(tt) && /TARGETS <tspan/.test(tt), 'the chart is the QB field with a live badge');
+chk(/◉ live/.test(tt) && /TARGETS <tspan/.test(tt), 'Zones: the chart is the QB field with a live badge');
 chk(/data-note-source="target_chart"/.test(tt) && /\+20<\/text>/.test(tt) && /LOS<\/text>/.test(tt), 'zones are taggable and the field reads +20 / +10 / LOS');
 chk(!/lg \d/.test(tt), 'no league-average clutter on the target chart');
 chk(/Targets<\/label><b><span[^>]*data-note-source="target_chart"[^>]*>11<\/span>/.test(tt) && />122<\/span>/.test(tt), 'season totals ride the tiles — taggable');

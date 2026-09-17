@@ -89,11 +89,11 @@ function _fmtRouteMetricValue(v, metric){
 // is the free in-season view of where his targets actually went).
 function pcardRouteSeasons(normName){
   if(typeof NFLVERSE==='undefined' || !NFLVERSE) return [];
-  const out=Object.keys(NFLVERSE)
-    .filter(s=>{ const r=NFLVERSE[s]&&NFLVERSE[s].routes; return r && r[normName]; });
-  const live=(typeof TC_SEASON!=='undefined')?String(TC_SEASON.year):null;
-  if(live && !out.includes(live) && _pcardTargetNode(normName, live)) out.push(live);
-  return out.sort((a,b)=>b-a);
+  // A season with his charted route tree, or with his target map (the live season's
+  // sidecar; the offseason bakes the season just played the same way).
+  return Object.keys(NFLVERSE)
+    .filter(s=>{ const b=NFLVERSE[s]||{}; return (b.routes && b.routes[normName]) || !!_pcardTargetNode(normName, s); })
+    .sort((a,b)=>b-a);
 }
 function _pcardTargetNode(normName, season){
   const blk=(typeof NFLVERSE!=='undefined' && NFLVERSE[String(season)] && NFLVERSE[String(season)].target_trees)||null;
@@ -129,12 +129,23 @@ function setPcardTargetMetric(m){
   const body=document.getElementById('pcardBody');
   if(body && pcardState) body.innerHTML=renderPcardRoutes(pcardState.pid);
 }
-function _renderTargetTree(pid, node, season, seasonBtns){
+function _pcardRouteViewBtns(active, hasTree){
+  if(typeof targetMapBlock!=='function') return '';
+  const b=(k,label,tip)=>`<button class="rt-metric-btn ${active===k?'active':''}" title="${tip}" onclick="setPcardTargetView('${k}')">${label}</button>`;
+  return `<span class="tm-view">${b('map','Map','Every target drawn at its depth and side')}${b('zones','Zones','Targets binned by zone')}${hasTree?b('tree','Tree','His route tree — every route he ran when targeted'):''}</span>`;
+}
+function _renderTargetTree(pid, node, season, seasonBtns, hasTree){
   const norm=_pcardNorm(pid);
   const games=(node.games||[]).length ? node.games : null;
   const selWk=games ? (pcardChartGame.routes!=null?pcardChartGame.routes:null) : null;
   const v=_ttView(node, selWk);
+  const live=(typeof tcIsLiveSeason==='function') && tcIsLiveSeason(season);
+  if(selWk==null && !live) v.label='Season';
   const MET=TT_METRICS[pcardTargetMetric]||TT_METRICS.catch;
+  // Map (every target drawn — the default, in 66b), Zones (the binned chart), and Tree
+  // when the season has his charted route tree (the classic route tree in this file).
+  const mapOn=(pcardTargetView!=='zones' && typeof targetMapBlock==='function');
+  const viewBtns=_pcardRouteViewBtns(mapOn?'map':'zones', hasTree);
   const notePlayer=(typeof noteTargetFromArgs==='function') ? noteTargetFromArgs(pid, pcardState&&pcardState.posc, pcardState&&pcardState.team) : null;
   const team=(notePlayer&&notePlayer.team)||node.team||'';
   const ctx=`${season} target chart${selWk!=null?` · week ${selWk}`:''}`;
@@ -197,10 +208,10 @@ function _renderTargetTree(pid, node, season, seasonBtns){
   return `<div class="rt-wrap">
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns||''}${games?_pcardGameChips('routes', games, selWk, team):''}</div>
-      <div class="rt-metrics">${metricBtns}</div>
-      <div class="rt-summary">${wrap(`${v.tgt||0} targets`, {label:'Targets', value:String(v.tgt||0), statKey:'targets'})} <span class="tt-badge" title="Where his targets went, from nightly play-by-play. True route trees (every route run, targeted or not) are FTN charting and publish after the season.">◉ live</span></div>
+      <div class="rt-metrics">${viewBtns}${mapOn?'':metricBtns}</div>
+      <div class="rt-summary">${wrap(`${v.tgt||0} targets`, {label:'Targets', value:String(v.tgt||0), statKey:'targets'})}${live?` <span class="tt-badge" title="Where his targets went, from nightly play-by-play. The routes he ran are FTN charting and publish after the season — the map draws them in then.">◉ live</span>`:''}</div>
     </div>
-    ${parts.join('')}
+    ${mapOn ? targetMapBlock(pname, node, season, selWk, v, tag) : parts.join('')}
     <div class="qpc-totals">
       ${tile('Targets', v.tgt!=null?v.tgt:'—', 'targets', 'tgt')}
       ${tile('Receptions', v.rec!=null?v.rec:'—', 'receptions', 'rec')}
@@ -211,7 +222,7 @@ function _renderTargetTree(pid, node, season, seasonBtns){
       ${tile('Catch %', cr!=null?`${cr}%`:'—', 'catch_pct')}
     </div>
     ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('rec', norm, season, selWk) : ''}
-    <div class="pcard-src">Targets via nflverse play-by-play, nightly.</div>
+    <div class="pcard-src">Targets via nflverse play-by-play${live?', nightly':''}${(typeof _tmRouteLegend==='function' && _tmRouteLegend(season))?'; routes via nflverse participation charting':''}.${(typeof ngsChartLink==='function') ? ngsChartLink(node, pname, season, selWk) : ''}</div>
   </div>`;
 }
 function _pcardNorm(pid){
@@ -463,17 +474,17 @@ function renderPcardRoutes(pid){
   if(!seasons.length) return `<div class="pcard-loading">No route data for this player.</div>`;
   if(pcardRouteSeason==null || !seasons.includes(String(pcardRouteSeason))) pcardRouteSeason=seasons[0];
   _pcardGameReset(norm);
-  // Live season without true route labels → the professional stand-in: the
-  // target chart (drawn in the QB zone chart's visual language).
+  // The target map is the Routes tab's first view wherever a season has one (the live
+  // season's sidecar; the offseason bakes the season just played). The charted route
+  // tree stays a view beside it — and the only view for older seasons.
   const _seasonBlk=NFLVERSE[pcardRouteSeason]||{};
-  if(!( _seasonBlk.routes && _seasonBlk.routes[norm])){
-    const tn=_pcardTargetNode(norm, pcardRouteSeason);
-    if(tn){
-      const seasonBtns0=seasons.map(s=>`<button class="rt-season-btn ${String(s)===String(pcardRouteSeason)?'active':''}" onclick="setPcardRouteSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('');
-      return _renderTargetTree(pid, tn, pcardRouteSeason, seasonBtns0);
-    }
-    return `<div class="pcard-loading">No route data for this season.</div>`;
+  const _hasTree=!!(_seasonBlk.routes && _seasonBlk.routes[norm]);
+  const _tn=_pcardTargetNode(norm, pcardRouteSeason);
+  if(_tn && !(_hasTree && pcardTargetView==='tree')){
+    const seasonBtns0=seasons.map(s=>`<button class="rt-season-btn ${String(s)===String(pcardRouteSeason)?'active':''}" onclick="setPcardRouteSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('');
+    return _renderTargetTree(pid, _tn, pcardRouteSeason, seasonBtns0, _hasTree);
   }
+  if(!_hasTree) return `<div class="pcard-loading">No route data for this season.</div>`;
   const _games=pcardWeeklyGames('routes_weekly', norm, pcardRouteSeason);
   const _selWk=_games ? pcardChartGame.routes : null;
   const _game=_games && _selWk!=null ? _games.find(g=>g.wk===_selWk) : null;
@@ -501,7 +512,7 @@ function renderPcardRoutes(pid){
     <div class="rt-wrap">
       <div class="rt-head">
         <div class="rt-seasons">${seasonBtns}</div>
-        <div class="rt-metrics">${metricBtns}</div>
+        <div class="rt-metrics">${_tn?_pcardRouteViewBtns('tree', true):''}${metricBtns}</div>
         <div class="rt-summary">${noteWrapHtml(`${rt.total} routes charted`, { label:'Routes Charted', value:String(rt.total), source:'route_tree', statKey:'routes', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')} · ${metricKnown?noteWrapHtml(metricSummary, { label:metricCfg.label, value:_fmtRouteMetricValue(metricTotal, pcardRouteMetric), source:'route_tree', statKey:pcardRouteMetric, context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit'):metricSummary} · most-run <b>${noteWrapHtml(escHtml(topLabel), { label:'Most-run route', value:topLabel, source:'route_tree', statKey:'top_route', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')}</b></div>
       </div>
       ${routeTreeSVG(rt, pcardRouteMetric, notePlayer)}

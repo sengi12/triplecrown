@@ -225,6 +225,21 @@ def _legacy_pickle_cache_path(kind, payload):
     digest = hashlib.md5(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
     return os.path.join(_nflverse_cache_dir(), f"{kind}_{digest}.pkl")
 
+_ESB_MAP = {}
+
+
+def _esb_map(season):
+    """gsis player id → NFL ESB id (the id nextgenstats.nfl.com keys its chart pages by)."""
+    if season not in _ESB_MAP:
+        try:
+            r = _aux_csv(ROSTER_URL.format(season=season), usecols=["gsis_id", "esb_id"])
+            _ESB_MAP[season] = {gid: e for gid, e in zip(r["gsis_id"], r["esb_id"])
+                                if isinstance(gid, str) and isinstance(e, str)}
+        except Exception:
+            _ESB_MAP[season] = {}
+    return _ESB_MAP[season]
+
+
 def _name_map(season):
     """gsis player id → normalized full name (pbp only carries abbreviated names like 'A.Rodgers')."""
     if season not in _NAME_MAP:
@@ -2810,24 +2825,50 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
     per zone as the baseline. It can't see routes that weren't targeted, and
     the UI says so; February's participation drop upgrades the season to true
     route trees retroactively.
-    Returns {"players":{name:{pos,team,season:{zones,tgt,rec,yds,td},
-    games:[{wk,opp,tgt,rec,yds,td,zones}]}}, "lg":{zone:"catch_pct"}}."""
+    Each game also carries `plays`: every target as a short row
+    [air_yards, side(0 L/1 M/2 R), result(0 inc/1 catch/2 TD/3 INT), yac,
+    yardline_100, qtr, route?] in play order — the target MAP (each throw as a
+    dot at its depth and side, with its after-catch tail), the in-season cousin
+    of NGS's route chart. The 7th element is an index into the block's `routes`
+    legend — the route the receiver ran, from the participation charting that
+    reaches open data after the post-season — and exists only when that file
+    carries the season (in season the rows stop at qtr and the map draws the
+    throw alone). `esb` is the player's NFL ESB id, which deep-links the real
+    NGS chart page.
+    Returns {"players":{name:{pos,team,esb,season:{zones,tgt,rec,yds,td},
+    games:[{wk,opp,tgt,rec,yds,td,zones,plays}]}}, "lg":{zone:"catch_pct"},
+    "routes":[label,…] (only when charted)}."""
     pbp = _load_pbp(season, [
+        "game_id", "play_id",
         "season_type", "week", "posteam", "defteam", "receiver_player_id",
         "pass_attempt", "complete_pass", "air_yards", "pass_location",
         "receiving_yards", "pass_touchdown", "two_point_attempt",
-        "yards_after_catch", "epa", "first_down",
+        "yards_after_catch", "epa", "first_down", "interception",
+        "yardline_100", "qtr",
     ])
     t = pbp[(pbp["season_type"] == "REG") & (pbp["pass_attempt"] == 1)
             & (pbp["two_point_attempt"] == 0) & pbp["receiver_player_id"].notna()
             & pbp["pass_location"].notna()].copy()
     if t.empty:
         return {}
+    # Route labels: the post-season participation drop, joined play by play. Absent (in
+    # season, or a season the file does not carry) the rows simply carry no route.
+    route_labels, route_ix = [], {}
+    try:
+        part = _aux_csv(PART_URL.format(season=season),
+                        usecols=["nflverse_game_id", "play_id", "route"])
+        part = part[part["route"].notna()].drop_duplicates(["nflverse_game_id", "play_id"])
+        t = t.merge(part, left_on=["game_id", "play_id"],
+                    right_on=["nflverse_game_id", "play_id"], how="left")
+        route_labels = sorted(set(t["route"].dropna().astype(str)))
+        route_ix = {r: i for i, r in enumerate(route_labels)}
+    except Exception:
+        t["route"] = None
     t["posteam"] = t["posteam"].replace(NFLVERSE_TO_SEED)
     t["defteam"] = t["defteam"].replace(NFLVERSE_TO_SEED)
     t["depth"] = pd.cut(t["air_yards"], bins=[-100, -0.5, 9.5, 19.5, 100],
                         labels=["behind", "short", "inter", "deep"])
-    names, pos = _name_map(season), _pos_map(season)
+    names, pos, esb = _name_map(season), _pos_map(season), _esb_map(season)
     lg = {}
     for (depth, loc), z in t.groupby(["depth", "pass_location"], observed=True):
         if len(z):
@@ -2840,6 +2881,28 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
                 continue
             zones.setdefault(str(depth), {})[str(loc)] = _tt_line(z)
         return zones
+
+    _TM_SIDE = {"left": 0, "middle": 1, "right": 2}
+
+    def _plays(frame):
+        rows = []
+        for r in frame.itertuples(index=False):
+            ay = pd.to_numeric(r.air_yards, errors="coerce")
+            if pd.isna(ay):
+                continue
+            comp = float(r.complete_pass or 0) == 1
+            res = 3 if float(r.interception or 0) == 1 else (2 if comp and float(r.pass_touchdown or 0) == 1 else (1 if comp else 0))
+            yac = pd.to_numeric(r.yards_after_catch, errors="coerce")
+            yl = pd.to_numeric(r.yardline_100, errors="coerce")
+            q = pd.to_numeric(r.qtr, errors="coerce")
+            row = [int(ay), _TM_SIDE.get(r.pass_location, 1), res,
+                   int(yac) if comp and not pd.isna(yac) else 0,
+                   int(yl) if not pd.isna(yl) else None,
+                   int(q) if not pd.isna(q) else None]
+            if route_labels:
+                row.append(route_ix.get(r.route) if isinstance(r.route, str) else None)
+            rows.append(row)
+        return rows
 
     def _tt_line(z):
         return {
@@ -2861,6 +2924,7 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
             continue
         node = {"pos": pos.get(rid),
                 "team": (g["posteam"].mode().iloc[0] if len(g["posteam"].mode()) else None),
+                "esb": esb.get(rid),
                 "season": dict(_zones(g) and {"zones": _zones(g)} or {}, **_tt_line(g)),
                 "games": []}
         for wk, gg in g.groupby("week"):
@@ -2869,11 +2933,14 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
             node["games"].append(dict(
                 wk=int(wk),
                 opp=(gg["defteam"].mode().iloc[0] if len(gg["defteam"].mode()) else None),
-                zones=_zones(gg), **_tt_line(gg)))
+                zones=_zones(gg), plays=_plays(gg), **_tt_line(gg)))
         node["games"].sort(key=lambda x: x["wk"])
         players[name] = node
     _rank_within_pos(list(players.values()), _TT_TOTAL_RANKS)
-    return {"players": players, "lg": lg}
+    out = {"players": players, "lg": lg}
+    if route_labels:
+        out["routes"] = route_labels
+    return out
 
 
 NGS_REC_URL = "https://github.com/nflverse/nflverse-data/releases/download/nextgen_stats/ngs_receiving.csv.gz"

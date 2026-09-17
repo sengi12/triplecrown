@@ -10510,11 +10510,11 @@ function _fmtRouteMetricValue(v, metric){
 // is the free in-season view of where his targets actually went).
 function pcardRouteSeasons(normName){
   if(typeof NFLVERSE==='undefined' || !NFLVERSE) return [];
-  const out=Object.keys(NFLVERSE)
-    .filter(s=>{ const r=NFLVERSE[s]&&NFLVERSE[s].routes; return r && r[normName]; });
-  const live=(typeof TC_SEASON!=='undefined')?String(TC_SEASON.year):null;
-  if(live && !out.includes(live) && _pcardTargetNode(normName, live)) out.push(live);
-  return out.sort((a,b)=>b-a);
+  // A season with his charted route tree, or with his target map (the live season's
+  // sidecar; the offseason bakes the season just played the same way).
+  return Object.keys(NFLVERSE)
+    .filter(s=>{ const b=NFLVERSE[s]||{}; return (b.routes && b.routes[normName]) || !!_pcardTargetNode(normName, s); })
+    .sort((a,b)=>b-a);
 }
 function _pcardTargetNode(normName, season){
   const blk=(typeof NFLVERSE!=='undefined' && NFLVERSE[String(season)] && NFLVERSE[String(season)].target_trees)||null;
@@ -10550,12 +10550,23 @@ function setPcardTargetMetric(m){
   const body=document.getElementById('pcardBody');
   if(body && pcardState) body.innerHTML=renderPcardRoutes(pcardState.pid);
 }
-function _renderTargetTree(pid, node, season, seasonBtns){
+function _pcardRouteViewBtns(active, hasTree){
+  if(typeof targetMapBlock!=='function') return '';
+  const b=(k,label,tip)=>`<button class="rt-metric-btn ${active===k?'active':''}" title="${tip}" onclick="setPcardTargetView('${k}')">${label}</button>`;
+  return `<span class="tm-view">${b('map','Map','Every target drawn at its depth and side')}${b('zones','Zones','Targets binned by zone')}${hasTree?b('tree','Tree','His route tree — every route he ran when targeted'):''}</span>`;
+}
+function _renderTargetTree(pid, node, season, seasonBtns, hasTree){
   const norm=_pcardNorm(pid);
   const games=(node.games||[]).length ? node.games : null;
   const selWk=games ? (pcardChartGame.routes!=null?pcardChartGame.routes:null) : null;
   const v=_ttView(node, selWk);
+  const live=(typeof tcIsLiveSeason==='function') && tcIsLiveSeason(season);
+  if(selWk==null && !live) v.label='Season';
   const MET=TT_METRICS[pcardTargetMetric]||TT_METRICS.catch;
+  // Map (every target drawn — the default, in 66b), Zones (the binned chart), and Tree
+  // when the season has his charted route tree (the classic route tree in this file).
+  const mapOn=(pcardTargetView!=='zones' && typeof targetMapBlock==='function');
+  const viewBtns=_pcardRouteViewBtns(mapOn?'map':'zones', hasTree);
   const notePlayer=(typeof noteTargetFromArgs==='function') ? noteTargetFromArgs(pid, pcardState&&pcardState.posc, pcardState&&pcardState.team) : null;
   const team=(notePlayer&&notePlayer.team)||node.team||'';
   const ctx=`${season} target chart${selWk!=null?` · week ${selWk}`:''}`;
@@ -10618,10 +10629,10 @@ function _renderTargetTree(pid, node, season, seasonBtns){
   return `<div class="rt-wrap">
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns||''}${games?_pcardGameChips('routes', games, selWk, team):''}</div>
-      <div class="rt-metrics">${metricBtns}</div>
-      <div class="rt-summary">${wrap(`${v.tgt||0} targets`, {label:'Targets', value:String(v.tgt||0), statKey:'targets'})} <span class="tt-badge" title="Where his targets went, from nightly play-by-play. True route trees (every route run, targeted or not) are FTN charting and publish after the season.">◉ live</span></div>
+      <div class="rt-metrics">${viewBtns}${mapOn?'':metricBtns}</div>
+      <div class="rt-summary">${wrap(`${v.tgt||0} targets`, {label:'Targets', value:String(v.tgt||0), statKey:'targets'})}${live?` <span class="tt-badge" title="Where his targets went, from nightly play-by-play. The routes he ran are FTN charting and publish after the season — the map draws them in then.">◉ live</span>`:''}</div>
     </div>
-    ${parts.join('')}
+    ${mapOn ? targetMapBlock(pname, node, season, selWk, v, tag) : parts.join('')}
     <div class="qpc-totals">
       ${tile('Targets', v.tgt!=null?v.tgt:'—', 'targets', 'tgt')}
       ${tile('Receptions', v.rec!=null?v.rec:'—', 'receptions', 'rec')}
@@ -10632,7 +10643,7 @@ function _renderTargetTree(pid, node, season, seasonBtns){
       ${tile('Catch %', cr!=null?`${cr}%`:'—', 'catch_pct')}
     </div>
     ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('rec', norm, season, selWk) : ''}
-    <div class="pcard-src">Targets via nflverse play-by-play, nightly.</div>
+    <div class="pcard-src">Targets via nflverse play-by-play${live?', nightly':''}${(typeof _tmRouteLegend==='function' && _tmRouteLegend(season))?'; routes via nflverse participation charting':''}.${(typeof ngsChartLink==='function') ? ngsChartLink(node, pname, season, selWk) : ''}</div>
   </div>`;
 }
 function _pcardNorm(pid){
@@ -10884,17 +10895,17 @@ function renderPcardRoutes(pid){
   if(!seasons.length) return `<div class="pcard-loading">No route data for this player.</div>`;
   if(pcardRouteSeason==null || !seasons.includes(String(pcardRouteSeason))) pcardRouteSeason=seasons[0];
   _pcardGameReset(norm);
-  // Live season without true route labels → the professional stand-in: the
-  // target chart (drawn in the QB zone chart's visual language).
+  // The target map is the Routes tab's first view wherever a season has one (the live
+  // season's sidecar; the offseason bakes the season just played). The charted route
+  // tree stays a view beside it — and the only view for older seasons.
   const _seasonBlk=NFLVERSE[pcardRouteSeason]||{};
-  if(!( _seasonBlk.routes && _seasonBlk.routes[norm])){
-    const tn=_pcardTargetNode(norm, pcardRouteSeason);
-    if(tn){
-      const seasonBtns0=seasons.map(s=>`<button class="rt-season-btn ${String(s)===String(pcardRouteSeason)?'active':''}" onclick="setPcardRouteSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('');
-      return _renderTargetTree(pid, tn, pcardRouteSeason, seasonBtns0);
-    }
-    return `<div class="pcard-loading">No route data for this season.</div>`;
+  const _hasTree=!!(_seasonBlk.routes && _seasonBlk.routes[norm]);
+  const _tn=_pcardTargetNode(norm, pcardRouteSeason);
+  if(_tn && !(_hasTree && pcardTargetView==='tree')){
+    const seasonBtns0=seasons.map(s=>`<button class="rt-season-btn ${String(s)===String(pcardRouteSeason)?'active':''}" onclick="setPcardRouteSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('');
+    return _renderTargetTree(pid, _tn, pcardRouteSeason, seasonBtns0, _hasTree);
   }
+  if(!_hasTree) return `<div class="pcard-loading">No route data for this season.</div>`;
   const _games=pcardWeeklyGames('routes_weekly', norm, pcardRouteSeason);
   const _selWk=_games ? pcardChartGame.routes : null;
   const _game=_games && _selWk!=null ? _games.find(g=>g.wk===_selWk) : null;
@@ -10922,7 +10933,7 @@ function renderPcardRoutes(pid){
     <div class="rt-wrap">
       <div class="rt-head">
         <div class="rt-seasons">${seasonBtns}</div>
-        <div class="rt-metrics">${metricBtns}</div>
+        <div class="rt-metrics">${_tn?_pcardRouteViewBtns('tree', true):''}${metricBtns}</div>
         <div class="rt-summary">${noteWrapHtml(`${rt.total} routes charted`, { label:'Routes Charted', value:String(rt.total), source:'route_tree', statKey:'routes', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')} · ${metricKnown?noteWrapHtml(metricSummary, { label:metricCfg.label, value:_fmtRouteMetricValue(metricTotal, pcardRouteMetric), source:'route_tree', statKey:pcardRouteMetric, context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit'):metricSummary} · most-run <b>${noteWrapHtml(escHtml(topLabel), { label:'Most-run route', value:topLabel, source:'route_tree', statKey:'top_route', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')}</b></div>
       </div>
       ${routeTreeSVG(rt, pcardRouteMetric, notePlayer)}
@@ -10942,6 +10953,188 @@ function setPcardRouteMetric(metric){
   pcardRouteMetric=metric;
   const body=document.getElementById('pcardBody');
   if(body && pcardState) body.innerHTML=renderPcardRoutes(pcardState.pid);
+}
+// ── Target map (Routes tab · the default view of a receiver's targets) ──────
+// Every target is a dot at its depth (air yards) and side of the field (pass
+// location); a caught ball grows a green tail as long as its yards after the
+// catch; a touchdown gets the ring and the TD tag, a pick the red cross. It is
+// the in-season cousin of Next Gen Stats' route chart: NGS draws the route from
+// player tracking (not public); nightly play-by-play knows where every ball went,
+// so that is what we draw. Once a season's charting labels arrive (the post-season
+// participation drop) each target also gets its route, drawn as the route tree's
+// schematic shape scaled from the line of scrimmage to the catch point — so a
+// finished season shows the route leading up to every catch.
+// Rows: NFLVERSE[season].target_trees.players[norm].games[i].plays
+//   = [[air_yards, side 0 L/1 M/2 R, result 0 inc/1 catch/2 TD/3 INT, yac, yardline_100, qtr, route?], …]
+//   route = index into NFLVERSE[season].target_trees.routes (present only when charted).
+let pcardTargetView = 'map';   // 'map' (default) | 'zones' | 'tree' (seasons with a charted route tree)
+function setPcardTargetView(v){
+  if(v!=='map' && v!=='zones' && v!=='tree') return;
+  pcardTargetView=v;
+  const body=document.getElementById('pcardBody');
+  if(body && typeof pcardState!=='undefined' && pcardState) body.innerHTML=renderPcardRoutes(pcardState.pid);
+}
+function _tmRouteLegend(season){
+  const blk=(typeof NFLVERSE!=='undefined' && NFLVERSE && NFLVERSE[String(season)] && NFLVERSE[String(season)].target_trees)||null;
+  return (blk && Array.isArray(blk.routes) && blk.routes.length) ? blk.routes : null;
+}
+// The targets for the chart's selected game, or every game to date (in play order).
+function _tmPlays(node, selWk, legend){
+  const out=[];
+  for(const g of (node.games||[])){
+    if(selWk!=null && g.wk!==Number(selWk)) continue;
+    for(const p of (g.plays||[])){
+      const ri=(p.length>6 && p[6]!=null) ? +p[6] : null;
+      out.push({wk:g.wk, opp:g.opp||'', ay:Math.round(+p[0]||0), side:(p[1]==null?1:+p[1]), res:+p[2]||0,
+                yac:Math.round(+p[3]||0), yl:(p[4]==null?null:+p[4]), q:(p[5]==null?null:+p[5]),
+                route:(legend && ri!=null && legend[ri]) ? String(legend[ri]) : null});
+    }
+  }
+  return out;
+}
+// Does the sidecar carry per-target rows for this player at all? (older bakes don't)
+function _tmHasPlays(node){ return (node.games||[]).some(g=>Array.isArray(g.plays) && g.plays.length); }
+const _TM_SIDES=['Left','Middle','Right'];
+const _TM_RES=['Incomplete','Catch','Touchdown','Intercepted'];
+function _tmRouteLabel(route){
+  const key=(typeof ROUTE_TREE_ALIASES!=='undefined' && ROUTE_TREE_ALIASES[route])||route;
+  const shp=(typeof ROUTE_TREE_SHAPES!=='undefined') ? ROUTE_TREE_SHAPES[key] : null;
+  return shp ? shp.label : String(route).toLowerCase().replace(/\b\w/g, c=>c.toUpperCase());
+}
+// The charted route as a path from the receiver's release to the catch point: the route
+// tree's schematic waypoints, mapped so the shape's start sits on the line of scrimmage
+// (a backfield release starts behind it) and its end lands on the target. Lateral breaks
+// keep their yardage; a left-side target mirrors the shape (the tree draws inward as left).
+function _tmRoutePath(route, side, x0, losY, x1, y1, pxPerYd){
+  const key=(typeof ROUTE_TREE_ALIASES!=='undefined' && ROUTE_TREE_ALIASES[route])||route;
+  const shp=(typeof ROUTE_TREE_SHAPES!=='undefined') ? ROUTE_TREE_SHAPES[key] : null;
+  if(!shp || !Array.isArray(shp.p) || shp.p.length<2) return null;
+  const pts=shp.p, S=pts[0], E=pts[pts.length-1];
+  const mirror = side===0 ? -1 : 1;
+  const ey=E[1]-S[1], ex=E[0]-S[0];
+  const sx=x0, sy=losY - S[1]*pxPerYd;
+  const out=[];
+  for(const [px,py] of pts){
+    const u = Math.abs(ey)>0.05 ? (py-S[1])/ey : 0;
+    const bx=sx+(x1-sx)*u, by=sy+(y1-sy)*u;
+    const lat=(px-S[0]) - ex*u;
+    out.push([bx+mirror*lat*pxPerYd, by]);
+  }
+  out[out.length-1]=[x1,y1];
+  return 'M'+out.map(p=>`${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' L');
+}
+function targetMapSVG(plays, title, sub, tag){
+  // Same canvas and perspective as the zone chart, so the two views swap in place.
+  const W=760, H=600, yTop=60, yBot=560, YMAX=40, YMIN=-10;
+  const yOf = yd => yBot - (Math.max(YMIN, Math.min(YMAX, yd)) - YMIN) * (yBot-yTop)/(YMAX-YMIN);
+  const left = y => 170 - 130*(y-yTop)/(yBot-yTop);
+  const right= y => 590 + 130*(y-yTop)/(yBot-yTop);
+  const laneX=(y, side, frac)=>{ const lw=(right(y)-left(y))/3; return left(y)+lw*(side+0.5)+frac*lw*0.72; };
+  const losY=yOf(0);
+  const pxPerYd=(right(losY)-left(losY))/53.3;
+  const f1=x=>(+x).toFixed(1);
+  const parts=[];
+  parts.push(`<svg viewBox="0 0 ${W} ${H}" class="qpc-svg" role="img" aria-label="Target map">`);
+  parts.push(`<rect width="${W}" height="${H}" fill="#101214"/>`);
+  parts.push(`<text x="24" y="28" fill="#fff" font-size="20" font-weight="800">${title}</text>`);
+  parts.push(`<text x="24" y="48" fill="#9aa0a6" font-size="12">${sub}</text>`);
+  parts.push(`<polygon points="${f1(left(yTop))},${yTop} ${f1(right(yTop))},${yTop} ${f1(right(yBot))},${yBot} ${f1(left(yBot))},${yBot}" fill="#18261c" stroke="#0c0d0f" stroke-width="2"/>`);
+  for(let yd=YMIN+5; yd<=YMAX-5; yd+=5){
+    if(yd===0) continue;
+    const y=yOf(yd), major=(yd%10===0);
+    parts.push(`<line x1="${f1(left(y))}" y1="${f1(y)}" x2="${f1(right(y))}" y2="${f1(y)}" stroke="${major?'#3f5d47':'#2a3f31'}" stroke-width="${major?1.5:1}"/>`);
+    if(major){
+      const lab=(yd>0?'+':'')+yd;
+      parts.push(`<text x="${f1(left(y)-12)}" y="${f1(y+4)}" fill="#c8ccd2" font-size="12" text-anchor="end">${lab}</text>`);
+      parts.push(`<text x="${f1(right(y)+12)}" y="${f1(y+4)}" fill="#c8ccd2" font-size="12">${lab}</text>`);
+    }
+  }
+  // Hash marks: the field's own texture, and the three throw lanes read against them.
+  for(const fr of [1/3, 2/3]){
+    parts.push(`<line x1="${f1(left(yTop)+(right(yTop)-left(yTop))*fr)}" y1="${yTop}" x2="${f1(left(yBot)+(right(yBot)-left(yBot))*fr)}" y2="${yBot}" stroke="#2a3f31" stroke-width="1" stroke-dasharray="2 6"/>`);
+  }
+  parts.push(`<line x1="${f1(left(losY)-30)}" y1="${f1(losY)}" x2="${f1(right(losY)+30)}" y2="${f1(losY)}" stroke="#2f6fe4" stroke-width="4"/>`);
+  parts.push(`<text x="${f1(left(losY)-36)}" y="${f1(losY+4)}" fill="#fff" font-size="12" font-weight="800" text-anchor="end">LOS</text>`);
+  parts.push(`<text x="${f1(right(losY)+36)}" y="${f1(losY+4)}" fill="#fff" font-size="12" font-weight="800">LOS</text>`);
+  if(!plays.length){
+    parts.push(`<text x="${W/2}" y="${(yTop+yBot)/2}" fill="#9aa0a6" font-size="16" text-anchor="middle">No targets</text></svg>`);
+    return parts.join('');
+  }
+  // Marks: least eventful underneath (incompletions), catches, then scores on top.
+  const order=plays.map((p,i)=>i).sort((a,b)=>{ const w=r=>(r===2?3:(r===1?2:(r===3?1:0))); return w(plays[a].res)-w(plays[b].res); });
+  // A season's worth of targets is a hairball if every route is drawn at game weight:
+  // thinner and fainter lines let the dots and scores stay readable over them.
+  const many=plays.length>30, r0=many?6:7, tailW=many?4:5, routeW=many?1.8:3.2, routeOp=many?0.5:0.92;
+  const laneN=[0,0,0], PHI=0.618033988749895, fracOf={};
+  for(let i=0;i<plays.length;i++){ const s=plays[i].side; fracOf[i]=((laneN[s]++)*PHI+0.5)%1-0.5; }   // first in a lane sits on its centre
+  for(const i of order){
+    const p=plays[i], frac=fracOf[i];
+    const caught=(p.res===1||p.res===2);
+    const y1=yOf(p.ay), x1=laneX(y1, p.side, frac);
+    const x0=laneX(losY, p.side, frac);
+    const endYd = caught ? p.ay+p.yac : p.ay;
+    const endCap = (p.yl!=null) ? Math.min(endYd, p.yl) : endYd;     // the goal line ends every tail
+    const y2=yOf(endCap), x2=laneX(y2, p.side, frac);
+    const col = caught ? '#ffffff' : (p.res===3 ? '#d33b2f' : '#9aa0a6');
+    const tip=`WK ${p.wk}${p.opp?' · '+p.opp:''}${p.q?` · Q${p.q}`:''} · ${_TM_SIDES[p.side]||'Middle'}, ${p.ay>=0?'+':''}${p.ay} air${p.route?` · ${_tmRouteLabel(p.route)}`:''} · ${_TM_RES[p.res]||'Target'}${caught?` · ${p.yac} YAC (${p.ay+p.yac} yds)`:''}`;
+    const attrs=tag?tag({label:`Target · WK ${p.wk}`, value:tip, statKey:'target'}):'';
+    parts.push(`<g ${attrs}><title>${escHtml(tip)}</title>`);
+    const routeD = p.route ? _tmRoutePath(p.route, p.side, x0, losY, x1, y1, pxPerYd) : null;
+    if(routeD) parts.push(`<path d="${routeD}" fill="none" stroke="${col}" stroke-width="${routeW}" stroke-linejoin="round" stroke-linecap="round" opacity="${caught?routeOp:routeOp*0.75}"/>`);
+    else parts.push(`<line x1="${f1(x0)}" y1="${f1(losY)}" x2="${f1(x1)}" y2="${f1(y1)}" stroke="${col}" stroke-width="1.5" stroke-dasharray="3 4" opacity="0.32"/>`);
+    if(caught && p.yac>0){
+      parts.push(`<line x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(x2)}" y2="${f1(y2)}" stroke="#39c15a" stroke-width="${tailW}" stroke-linecap="round"/>`);
+      parts.push(`<circle cx="${f1(x2)}" cy="${f1(y2)}" r="${r0-3}" fill="#39c15a"/>`);
+      if(endYd>YMAX && p.res!==2) parts.push(`<text x="${f1(x2+16)}" y="${f1(y2+4)}" fill="#39c15a" font-size="11" font-weight="800">+${endYd}</text>`);
+    }
+    if(p.res===2){
+      // The score, said twice: the ring at the end of the play and the tag beside it (a
+      // play that runs off the top of the drawing carries its total in the same tag).
+      parts.push(`<circle cx="${f1(x2)}" cy="${f1(y2)}" r="${r0+5}" fill="none" stroke="#2f6fe4" stroke-width="3.5"/>`);
+      parts.push(`<text class="tm-td" x="${f1(x2+r0+9)}" y="${f1(y2+4.5)}" fill="#ffffff" stroke="#101214" stroke-width="3.5" paint-order="stroke" font-size="12" font-weight="900" letter-spacing=".04em">TD${endYd>YMAX?` +${endYd}`:''}</text>`);
+    }
+    if(caught) parts.push(`<circle cx="${f1(x1)}" cy="${f1(y1)}" r="${r0}" fill="#ffffff" stroke="#101214" stroke-width="1.5"/>`);
+    else if(p.res===3){
+      parts.push(`<circle cx="${f1(x1)}" cy="${f1(y1)}" r="${r0}" fill="#101214" stroke="#d33b2f" stroke-width="2.5"/>`);
+      parts.push(`<path d="M${f1(x1-3)},${f1(y1-3)} L${f1(x1+3)},${f1(y1+3)} M${f1(x1+3)},${f1(y1-3)} L${f1(x1-3)},${f1(y1+3)}" stroke="#d33b2f" stroke-width="2"/>`);
+    } else parts.push(`<circle cx="${f1(x1)}" cy="${f1(y1)}" r="${r0}" fill="#101214" stroke="#9aa0a6" stroke-width="2.5"/>`);
+    if(!caught && p.ay>YMAX) parts.push(`<text x="${f1(x1+12)}" y="${f1(y1+4)}" fill="#9aa0a6" font-size="11" font-weight="800">+${p.ay}</text>`);
+    parts.push('</g>');
+  }
+  parts.push('</svg>');
+  return parts.join('');
+}
+function targetMapLegend(charted){
+  return `<div class="tm-legend">
+    ${charted?`<span><i class="tm-l-route"></i>Charted route</span>`:''}
+    <span><i class="tm-l-inc"></i>Incomplete</span><span><i class="tm-l-catch"></i>Catch</span>
+    <span><i class="tm-l-yac"></i>After catch</span><span><i class="tm-l-td"></i>Touchdown</span>
+    <span><i class="tm-l-int"></i>Interception</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
+  </div>`;
+}
+// The whole map block for the Routes tab: SVG + legend. `v` is the view the zone
+// chart already computed (label, totals) so the header reads the same in both.
+function targetMapBlock(pname, node, season, selWk, v, tag){
+  if(!_tmHasPlays(node)) return `<div class="pcard-loading">Per-target rows arrive with the next weekly bake.</div>`;
+  const legend=_tmRouteLegend(season);
+  const plays=_tmPlays(node, selWk, legend);
+  const charted=plays.some(p=>p.route);
+  const title=`${escHtml(String(pname).toUpperCase())} TARGETS <tspan fill="#9aa0a6" font-size="13" font-weight="600">/ ${escHtml(String(v.label).toUpperCase())}</tspan>`;
+  const sub= charted
+    ? `Every target with the route he ran · green = after the catch · ring + TD = touchdown`
+    : `Every target by depth and side · green = after the catch · ring + TD = touchdown · routes come with the season's charting`;
+  return targetMapSVG(plays, title, sub, tag) + targetMapLegend(charted);
+}
+// The real thing, one tap away: NGS keys its chart pages by the player's ESB id
+// (nflverse rosters carry it). Season → every chart that season; a game → that week.
+function ngsChartUrl(node, name, season, selWk){
+  if(!node || !node.esb) return '';
+  const slug=String(name||'').toLowerCase().replace(/['’.]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'player';
+  return `https://nextgenstats.nfl.com/charts/single/all/team/${season}/${selWk!=null?selWk:'week'}/${slug}/${encodeURIComponent(node.esb)}`;
+}
+function ngsChartLink(node, name, season, selWk){
+  const u=ngsChartUrl(node, name, season, selWk);
+  return u ? `<a class="tm-ngs-link" href="${u}" target="_blank" rel="noopener" title="Open this player's Next Gen Stats charts (route charts from player tracking) in a new tab">Next Gen Stats charts ↗</a>` : '';
 }
 // ── QB passing chart (player-card "Passing Chart" tab) ─────────────────────
 // Seed payload: NFLVERSE[season].qb_passing[normName] = {
@@ -22827,6 +23020,13 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
   // A baked/offline copy carries the NFL state it was built under — adopt it before anything
   // renders so phase/week gating works with zero network (the live probe still overrides).
   if(typeof SEED_STATE!=='undefined' && SEED_STATE && SEED_STATE.season && typeof _tcApplySeedState==='function') _tcApplySeedState(SEED_STATE);
+  // A baked copy in season also carries the weekly sidecar as a const: adopt it now, so the
+  // player-card charts and the Advanced tab show the live season with zero network (the
+  // fetch path below is a no-op once it is in memory).
+  if(typeof hasSeasonStarted==='function' && hasSeasonStarted() && typeof SEED_NFLVERSE_INSEASON!=='undefined'
+     && SEED_NFLVERSE_INSEASON && SEED_NFLVERSE_INSEASON.season && typeof ensureInseasonSidecar==='function'){
+    try{ ensureInseasonSidecar().catch(()=>{}); }catch(e){}
+  }
   const hasEmbeddedProj = SEED && Object.keys(SEED).some(t=>SEED[t] && (SEED[t].QB.length||SEED[t].RB.length||SEED[t].WR.length||SEED[t].TE.length));
   const hasEmbeddedECR  = ECR && Object.keys(ECR).some(f=>ECR[f] && Object.keys(ECR[f]).length);
   // Paint an honest loading state BEFORE the first await. The template ships the "Select a

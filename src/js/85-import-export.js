@@ -741,6 +741,13 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
   // A baked/offline copy carries the NFL state it was built under — adopt it before anything
   // renders so phase/week gating works with zero network (the live probe still overrides).
   if(typeof SEED_STATE!=='undefined' && SEED_STATE && SEED_STATE.season && typeof _tcApplySeedState==='function') _tcApplySeedState(SEED_STATE);
+  // A baked copy in season also carries the weekly sidecar as a const: adopt it now, so the
+  // player-card charts and the Advanced tab show the live season with zero network (the
+  // fetch path below is a no-op once it is in memory).
+  if(typeof hasSeasonStarted==='function' && hasSeasonStarted() && typeof SEED_NFLVERSE_INSEASON!=='undefined'
+     && SEED_NFLVERSE_INSEASON && SEED_NFLVERSE_INSEASON.season && typeof ensureInseasonSidecar==='function'){
+    try{ ensureInseasonSidecar().catch(()=>{}); }catch(e){}
+  }
   const hasEmbeddedProj = SEED && Object.keys(SEED).some(t=>SEED[t] && (SEED[t].QB.length||SEED[t].RB.length||SEED[t].WR.length||SEED[t].TE.length));
   const hasEmbeddedECR  = ECR && Object.keys(ECR).some(f=>ECR[f] && Object.keys(ECR[f]).length);
   // Paint an honest loading state BEFORE the first await. The template ships the "Select a
