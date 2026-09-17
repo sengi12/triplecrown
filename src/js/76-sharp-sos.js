@@ -38,6 +38,12 @@ function advTeamSeason(){
     const yr=String(TC_SEASON.year);
     if(tcIsLiveSeason(yr) && NFLVERSE && NFLVERSE[yr] && NFLVERSE[yr].team) return yr;
   }
+  // The reference season moves with Sleeper's year at the rollover, days before the seed
+  // carries the season just played: show the newest season that HAS team tables until then.
+  if(NFLVERSE && !(NFLVERSE[String(SHARP_SEASON)] && NFLVERSE[String(SHARP_SEASON)].team)){
+    const have=Object.keys(NFLVERSE).filter(y=>/^\d{4}$/.test(y) && NFLVERSE[y] && NFLVERSE[y].team).sort();
+    if(have.length) return have[have.length-1];
+  }
   return String(SHARP_SEASON);
 }
 // Adapt the nflverse team tables for the ACTIVE season into the dict the league view renders
@@ -60,17 +66,27 @@ function nflverseSharpTables(){
   };
   const PCT=['Explosive Play Rate','Down Conversion Rate','Rush Success Rate','Pass Success Rate','Shotgun Rate','NoHuddle Rate','3WR Rate','Multi TE Rate','Man Rate','Zone Rate',
     'Motion Rate','Play Action Rate','RPO Rate','Screen Rate','Trick Play Rate','Drop Rate','Blitz Rate',
-    'Pressure Rate Allowed','Rush Stuff Rate','Pressure Rate','No Blitz Pressure Rate',
+    'Rush Stuff Rate','Pressure Rate','No Blitz Pressure Rate',
     'Hit Rate','Hurry Rate','Sack Rate','Non-QB Sack Rate','Last 5 Sack Rate',
     'Stuff Rate','Explosive Run Rate','Success Rate','Rush 1D Rate','Broken Tackle Rate','8+ Box Rate',
     '11 Personnel','12 Personnel','13 Personnel','21 Personnel','Multi RB Rate','Sub Package Rate','Nickel Rate','Dime+ Rate',
     'Neutral DB Rate','Neutral DB Rate Last 5','Middle Closed Rate','Middle Open Rate','Cover 1','Cover 2','Cover 3'];
   const out={};
   for(const k in t){
+    if(!t[k] || !Array.isArray(t[k].columns)) continue;
     const m=META[k]||{title:k,category:'offense'};
     const cols=(t[k].columns||[]).filter(c=>!HIDE_LAST5.has(c));
     out[k]={columns:cols, title:m.title, category:m.category,
             pct_cols:cols.filter(c=>PCT.includes(c)), teams:t[k].teams};
+    // An inferred table (the season in progress, before its participation file): the card
+    // says so — {from, note} and, for a partly inferred card, the columns it covers.
+    if(t[k].estimated) out[k].estimated=t[k].estimated;
+  }
+  // The season in progress: a table that only the post-season participation file can fill
+  // shows as a pending card rather than vanishing, so nobody wonders where it went.
+  if(typeof tcIsLiveSeason==='function' && tcIsLiveSeason(advTeamSeason())){
+    if(!out.coverage) out.coverage=Object.assign({columns:[], teams:{}, pct_cols:[], pending:'Coverage charting (man / zone, the shells) publishes after the season.'}, META.coverage);
+    if(!out.personnel) out.personnel=Object.assign({columns:[], teams:{}, pct_cols:[], pending:'Personnel groupings arrive with the first charted week (FTN) and are estimated until the participation file publishes.'}, META.personnel);
   }
   return out;
 }
@@ -167,6 +183,12 @@ function renderSharpLeague(){
     return;
   }
   const baseTbl=SRC[sharpTable];
+  // a table that only the post-season charting can fill: the tabs stay, the note says when
+  const tabsHtml=(cur)=>keys.map(k=>`<button class="sr-tab ${k===cur?'active':''}" onclick="setSharpTable('${k}')">${SRC[k].title||k}${SRC[k].estimated?'<span class="sr-est" title="'+escAttr((SRC[k].estimated.note)||'Estimated')+'">≈</span>':''}</button>`).join('');
+  if(baseTbl.pending){
+    host.innerHTML = headerBar + leagueWeekRange + renderCategoryTabs() + `<div class="sr-league-tabs">${tabsHtml(sharpTable)}</div><div class="sr-desc">${escHtml(baseTbl.pending)}</div>`;
+    return;
+  }
   const tbl=(typeof _advTableForRange==='function') ? _advTableForRange(sharpTable, baseTbl, '__LEAGUE__') : baseTbl;
   const isProjTable = (sharpTable==='offensive_line_pass' || sharpTable==='offensive_line_run');
   const projWhich = sharpTable==='offensive_line_pass' ? 'pass' : (sharpTable==='offensive_line_run' ? 'run' : null);
@@ -211,7 +233,7 @@ function renderSharpLeague(){
     return (ra-rb)*sharpSortDir;
   });
 
-  const tableTabs = keys.map(k=>`<button class="sr-tab ${k===sharpTable?'active':''}" onclick="setSharpTable('${k}')">${SRC[k].title||k}</button>`).join('');
+  const tableTabs = tabsHtml(sharpTable);
   const head = `<th class="sr-th-team">TEAM</th>`+cols.map(c=>{
     const active = c===sortCol;
     const arrow = active ? (sharpSortDir>0?' ▲':' ▼') : '';

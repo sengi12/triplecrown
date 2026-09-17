@@ -665,10 +665,14 @@ function _tcApplySleeperState(s){
   if(Number.isFinite(y) && y>=2000 && y<=2100){ TC_SEASON.year = y; _tcApplyProjSeason(y); }
   const st = String(s.season_type||'').toLowerCase();
   if(st==='pre'||st==='regular'||st==='post'||st==='off') TC_SEASON.phase = st;
-  const wk = Number(s.week!=null ? s.week : (s.display_week!=null ? s.display_week : s.leg));
+  let wk = Number(s.week!=null ? s.week : (s.display_week!=null ? s.display_week : s.leg));
+  // The app counts the playoffs as weeks 19-22 (Wild Card … Super Bowl). Should Sleeper ever
+  // report them as 1-4 of the post-season instead, they land on the same numbers.
+  const postRound = (w)=> (st==='post' && Number.isFinite(w) && w>=1 && w<=4) ? w+18 : w;
+  wk = postRound(wk);
   if(Number.isFinite(wk) && wk>=0 && wk<=23) TC_SEASON.week = wk;
   // Sleeper's own "week to show" lags its week counter through Tuesday; the tracker reads it.
-  const dw = Number(s.display_week);
+  const dw = postRound(Number(s.display_week));
   TC_SEASON.displayWeek = (Number.isFinite(dw) && dw>=0 && dw<=23) ? dw : null;
   TC_SEASON.source = 'sleeper';
   TC_SEASON.fetchedAt = Date.now();

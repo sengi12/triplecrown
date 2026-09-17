@@ -576,6 +576,22 @@ def validate(old, new):
     except Exception:
         pass
 
+    # Sleeper opens a new season's projection rows weeks before it fills them (every row
+    # present, no stats): the row counts above grow while every number goes to zero. Require
+    # the projected volume itself to hold up, the way the tc guard requires the model.
+    try:
+        def _proj_count(s):
+            return sum(1 for t in ((s or {}).get("seed") or {}).values()
+                       for rows in t.values() for p in rows
+                       if isinstance(p, dict) and any((p.get(k) or 0) > 0
+                                                      for k in ("passing_yards", "rushing_yards", "receiving_yards")))
+        pj_was, pj_now = _proj_count(old), _proj_count(new)
+        if pj_was >= 50 and pj_now < pj_was * 0.70:
+            problems.append(f"projections: {pj_was} → {pj_now} players carry a projected line "
+                            f"({100 * pj_now / pj_was:.0f}% of previous, floor 70%) — an unfilled season?")
+    except Exception:
+        pass
+
     # Any block that had content and is now present-but-empty is a failed fetch, guarded or not.
     for key, was in before.items():
         if was > 0 and key in after and after[key] == 0 and key not in GUARDS:

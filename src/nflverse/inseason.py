@@ -316,7 +316,11 @@ LIVE_NFLVERSE_PARTS = ("team", "players", "routes", "qb_passing", "rb_fan", "ros
                        # individual defenders' weekly logs (PFR's weekly defense file, within a day)
                        "def_weekly",
                        # play-calling tendencies to date (pbp + FTN): the Playbook's Tendencies tab
-                       "tendencies")
+                       "tendencies",
+                       # the QB card's accuracy & decisions band (PFR's weekly passing file + FTN)
+                       "qb_charting",
+                       # the sidebar's head coach line (pbp), so a mid-season change shows up
+                       "head_coaches")
 
 
 def build_live_nflverse(season, parts=LIVE_NFLVERSE_PARTS):
@@ -346,6 +350,8 @@ def build_live_nflverse(season, parts=LIVE_NFLVERSE_PARTS):
         "rosters": lambda: _nfl.team_rosters(season),
         "ol_weekly": lambda: _nfl.ol_weekly_team(season),
         "tendencies": lambda: _nfl._tendencies_block(season),
+        "qb_charting": lambda: _nfl.qb_charting(season, min_attempts=1),
+        "head_coaches": lambda: _nfl.season_head_coaches(season),
     }
     for part in parts:
         fn = builders.get(part)

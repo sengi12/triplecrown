@@ -24,7 +24,7 @@ fetching only what is missing.
 Mirrors the caching approach in draft.py's update_players(): the big players
 payload is fetched once and saved to players.json, then reused.
 """
-import argparse, json, os, re, sys, time
+import argparse, gzip, json, os, re, sys, time
 from urllib import request, error
 
 SLEEPER_STATE_URL = "https://api.sleeper.app/v1/state/nfl"
@@ -92,6 +92,9 @@ def _parse_as_of(argv):
 AS_OF = _parse_as_of(sys.argv[1:])
 TC_STATE = AS_OF or _sleeper_state()
 DEFAULT_PROJ_SEASON = TC_STATE["season"]
+# A season's projection feed counts as published once this many rows carry stats (Sleeper
+# lists ~7,600 players; a filled season carries thousands, an opened-but-unfilled one none).
+PROJ_MIN_LIVE_ROWS = 200
 if AS_OF:
     print(f"TIME MACHINE: building as of {AS_OF['season']} regular season, week {AS_OF['week']}")
 
@@ -2347,6 +2350,19 @@ def get_players(refresh):
     print(f"  → kept {len(slim)} skill players (QB/RB/WR/TE with a team)")
     return slim
 
+def _sidecar_season(path):
+    """The season an in-season sidecar on disk describes (its own `season` field), or None."""
+    for p, opener in ((path, open), (path + ".gz", gzip.open)):
+        if not os.path.exists(p):
+            continue
+        try:
+            with opener(p, "rt", encoding="utf-8") as f:
+                return (json.load(f) or {}).get("season")
+        except Exception:
+            return None
+    return None
+
+
 def normalize_row(row):
     """Sleeper projection/stat row → {stats, team, pos, name, adp}. The row's team is the
     team the player was on THAT season, which is what we key the seed on."""
@@ -2760,10 +2776,29 @@ def main():
 
     print("\nStep 2/6: projections")
     proj_idx = build_projection_index(args.season, "sleeper" in refresh)
+    # At the rollover Sleeper opens the new season's projection rows weeks before it fills
+    # them: every row exists, none carries stats, and every count-based guard passes an
+    # all-zero pool. Count substance, and build on the last season that has numbers until
+    # the new one does (the seed's state block says which season the numbers are).
+    proj_season = args.season
+    _live = sum(1 for r in proj_idx.values() if (r or {}).get("stats"))
+    if _live < PROJ_MIN_LIVE_ROWS:
+        _prev_idx = build_projection_index(args.season - 1, "sleeper" in refresh)
+        _prev_live = sum(1 for r in _prev_idx.values() if (r or {}).get("stats"))
+        if _prev_live >= PROJ_MIN_LIVE_ROWS:
+            print(f"  ⚠ {args.season} projections carry no stats yet ({_live} of {len(proj_idx)} rows) "
+                  f"— building on {args.season - 1}'s ({_prev_live} rows) until Sleeper fills them")
+            proj_idx, proj_season = _prev_idx, args.season - 1
+        else:
+            print(f"  ⚠ {args.season} projections carry no stats yet ({_live} rows) and neither do "
+                  f"{args.season - 1}'s — the pool will be empty")
 
-    print(f"\nStep 3/6: historical stats ({args.season-args.history}–{args.season-1})")
+    # The season just played belongs in the history window: after the Super Bowl Sleeper may
+    # still report it as the season (or already the next year) — cover it either way.
+    last_played = args.season if TC_STATE.get("season_type") in ("post", "off") else args.season - 1
+    print(f"\nStep 3/6: historical stats ({last_played-args.history+1}–{last_played})")
     stats_by_season = {}
-    for yr in range(args.season-1, args.season-1-args.history, -1):
+    for yr in range(last_played, last_played-args.history, -1):
         stats_by_season[str(yr)] = build_stats_index(yr, "sleeper" in refresh)
 
     print("\nStep 4/8: per-team history (QB weekly splits for traded players)")
@@ -3015,6 +3050,9 @@ def main():
                     # a live probe (baked/offline copies especially). Live state still wins.
                     "state": {"season": TC_STATE["season"], "season_type": TC_STATE["season_type"],
                               "week": TC_STATE["week"],
+                              # the season the projection numbers are (the previous one while
+                              # Sleeper's new-season rows are still unfilled at the rollover)
+                              "projections_season": proj_season,
                               "asof": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                               # Time machine: the app must not let the live probe overwrite this,
                               # and years_exp in the (live) player DB is relative to db_season.
@@ -3065,12 +3103,19 @@ def main():
     if inseason:
         _write_seed(_inseason_path, inseason)
     elif TC_STATE["season_type"] in ("off", "pre"):
-        for _p in (_inseason_path, _inseason_path + ".gz"):
-            if os.path.exists(_p):
-                try:
-                    os.remove(_p)
-                except OSError:
-                    pass
+        # Retire it only once the frozen nflverse block carries its season: nflverse publishes
+        # the post-season files weeks after the Super Bowl, and until the offseason rebuild
+        # folds that season in, the sidecar is the only copy of its charts and tables.
+        _side_season = _sidecar_season(_inseason_path)
+        if _side_season and str(_side_season) not in (nflverse or {}):
+            print(f"  (keeping the {_side_season} in-season sidecar: the frozen block does not carry that season yet)")
+        else:
+            for _p in (_inseason_path, _inseason_path + ".gz"):
+                if os.path.exists(_p):
+                    try:
+                        os.remove(_p)
+                    except OSError:
+                        pass
     # Playbook is the largest lazy block and is viewed one season at a time, so split it
     # into per-season sidecars the app fetches on demand (a typical user only downloads the
     # current season). Remove any stale combined file from older builds.
