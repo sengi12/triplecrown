@@ -35,6 +35,18 @@ import sys
 import urllib.request
 from collections import Counter, defaultdict
 
+
+def _current_season():
+    """The season to crawl up to — Sleeper's own state, never a year typed into this file
+    (the crawl would quietly stop at the year it was written)."""
+    try:
+        from draft_corpus import current_season
+        return current_season()
+    except Exception:
+        import datetime
+        now = datetime.date.today()
+        return str(now.year if now.month >= 3 else now.year - 1)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_DIR = os.path.join(ROOT, "cache", "drafthistory")
 API = "https://api.sleeper.app/v1"
@@ -406,7 +418,7 @@ def main():
 
     league_ids = list(args.league)
     if args.user:
-        for szn in range(2018, 2027):
+        for szn in range(2018, int(_current_season()) + 1):
             for lg in fetch(f"{API}/user/{args.user}/leagues/nfl/{szn}",
                             f"user_{args.user}_{szn}.json") or []:
                 league_ids.append(lg["league_id"])

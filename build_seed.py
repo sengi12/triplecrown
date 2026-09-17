@@ -1946,6 +1946,22 @@ def build_head_coach_history(proj_season, refresh, coordinators=None):
         "Mike McCarthy": ("DAL", "head coach", "2020\u20132024"),
     }
     hc = _parse_head_coach_page(hc_html, proj_season)
+    # The two hand-maintained tables go stale every February. Say so in the build log, where
+    # the refresh workflow reads it and opens an issue (a ⚠ … is stale line, like the OL
+    # grades' anchors): new head coaches with no former-role line, and playcaller entries
+    # naming a coach who no longer heads that team.
+    try:
+        missing = sorted({str(d.get("name") or "").strip() for d in hc.values()
+                          if d.get("is_new") and str(d.get("name") or "").strip() not in HC_PRIOR_JOBS})
+        if missing:
+            print(f"  ⚠ HC_PRIOR_JOBS is stale: no former-role line for new head coach(es) {', '.join(missing)} — add them in build_seed.py", file=sys.stderr)
+        gone = sorted(f"{code} ({HC_PLAYCALLERS[code]} → {str((hc.get(code) or {}).get('name') or '?')})"
+                      for code in HC_PLAYCALLERS if code in hc and str((hc[code] or {}).get("name") or "").strip()
+                      and str(hc[code].get("name")).strip() != HC_PLAYCALLERS[code])
+        if gone:
+            print(f"  ⚠ HC_PLAYCALLERS is stale: {', '.join(gone)} — the listed playcaller no longer heads the team; verify in build_seed.py", file=sys.stderr)
+    except Exception:
+        pass
 
     # NOTE: Wikipedia's HC table no longer provides a stable previous-position column.
     # We keep previous-team fields nullable and fill best-effort fallbacks for new

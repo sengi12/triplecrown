@@ -41,6 +41,7 @@ import calendar
 import glob
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -605,6 +606,46 @@ def validate(old, new):
     return not problems, problems, warnings
 
 
+# ── Per-block fallback ──────────────────────────────────────────────────────
+# A rejected guard used to restore the WHOLE previous seed and fail the run — so at a
+# season rollover, when one source legitimately has nothing yet (no schedule for the new
+# year, no dynasty chart), every other source stalled with it and CI went red every half
+# hour. Now a block that fails its guard is dropped back to the previous seed's copy of
+# that block alone; the rest of the rebuild ships. The fallen-back block's source keeps
+# its cadence anchor, so the next run retries it. The run still fails when the previous
+# seed cannot supply the block, or when the new seed will not parse at all.
+BLOCK_SOURCE = {   # seed block → the SOURCES entry that produces it (for the anchor)
+    "seed": "sleeper", "history": "sleeper", "ecr": "ecr", "dynasty_values": "dynasty", "ktc": "ktc",
+    "contracts": "contracts", "sharp": "sharp", "nflverse": "nflverse", "coordinators": "coordinators",
+    "hc_history": "coordinators", "additions": "roster_moves", "cfb": "cfb",
+}
+
+
+def problem_block(problem):
+    """The seed block a validate() problem is about, or None ('tc model' and 'projections'
+    ride inside the seed block; 'ecr.dynasty' is the ecr block)."""
+    p = str(problem)
+    if p.startswith("tc model") or p.startswith("projections"):
+        return "seed"
+    m = re.match(r"^([a-z_]+)(?:\.[a-z_]+)?:", p)
+    return m.group(1) if m else None
+
+
+def fallback_blocks(old, new, problems):
+    """Replace every block a problem names with the previous seed's copy (when it has one).
+    → (kept: {block: [problems]}, unresolved: [problems])."""
+    kept, unresolved = {}, []
+    for p in problems:
+        key = problem_block(p)
+        if key and isinstance(old, dict) and key in old and old[key]:
+            if key not in kept:
+                new[key] = old[key]
+            kept.setdefault(key, []).append(p)
+        else:
+            unresolved.append(p)
+    return kept, unresolved
+
+
 def check_inseason_sidecar(old_side):
     """Sidecar-only guard. The additions-style policy (near-empty at week 1 is fine) is
     implicit — growth and first appearance always pass. Two hard rules: for the SAME season
@@ -821,20 +862,38 @@ def main():
     ok, problems, warnings = validate(old_seed, new_seed)
     for w in warnings:
         log(f"  note: {w}")
+    kept_blocks = {}
     if not ok:
-        for p in problems:
-            log(f"  REJECTED: {p}")
-        log("\nThe rebuilt seed looks like it lost data — this is what a blocked or failed")
-        log("scrape looks like. Restoring the previous seed and leaving the cache cleared so")
-        log("the next run retries. Nothing has been committed.")
-        if os.path.exists(backup):
-            shutil.move(backup, SEED_MAIN)
-        for src_p, dst_p in side_backups:
-            if os.path.exists(dst_p):
-                shutil.move(dst_p, src_p)
-        return 1
+        # One source's bad day must not take the rest of the rebuild down with it: drop the
+        # failing block(s) back to the previous seed's copy and validate again.
+        kept_blocks, problems = fallback_blocks(old_seed, new_seed, problems)
+        for key, ps in kept_blocks.items():
+            for p in ps:
+                log(f"  FELL BACK: {p}")
+            log(f"  kept the previous {key} block (its source will be retried on the next run)")
+        if kept_blocks and not problems:
+            ok, problems, _ = validate(old_seed, new_seed)
+        if not ok or problems:
+            for p in problems:
+                log(f"  REJECTED: {p}")
+            log("\nThe rebuilt seed looks like it lost data the previous seed cannot stand in for.")
+            log("Restoring the previous seed and leaving the cache cleared so the next run")
+            log("retries. Nothing has been committed.")
+            if os.path.exists(backup):
+                shutil.move(backup, SEED_MAIN)
+            for src_p, dst_p in side_backups:
+                if os.path.exists(dst_p):
+                    shutil.move(dst_p, src_p)
+            return 1
+        with open(SEED_MAIN, "w") as f:
+            json.dump(new_seed, f)
+        # the fallen-back blocks' sources were NOT consumed: their anchors stay put
+        held = {BLOCK_SOURCE[k] for k in kept_blocks if k in BLOCK_SOURCE}
+        if held:
+            log(f"  not advancing the cadence of: {', '.join(sorted(held))}")
+            stale = [n for n in stale if n not in held]
 
-    log("  all guards passed")
+    log("  all guards passed" if not kept_blocks else f"  guards passed with {len(kept_blocks)} block(s) kept from the previous seed")
     if effectively_unchanged(old_seed, new_seed) and os.path.exists(backup):
         log("  content identical to the previous seed (only the state.asof build stamp moved)")
         log("  — keeping the previous bytes so nothing is committed or deployed for a timestamp.")

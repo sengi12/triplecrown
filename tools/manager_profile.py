@@ -57,7 +57,7 @@ picks is under 0.15 rounds (~2 picks in a 12-team room) reads as the clock
 picking from the default queue, and is dropped from their profile.
 
 Usage:
-  python3 tools/manager_profile.py crawl --league <id> [--seasons 2021-2026] \
+  python3 tools/manager_profile.py crawl --league <id> [--seasons 2021-<current season>] \
       [--out cache/managers_<league>.json]
   python3 tools/manager_profile.py study --data cache/managers_<league>.json
   python3 tools/manager_profile.py report --data cache/managers_<league>.json
@@ -74,6 +74,16 @@ from collections import Counter, defaultdict
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import draft_corpus as dc      # noqa: E402  (fetch cache + fmt_of live there)
+
+
+def _current_season():
+    """The newest season to crawl — Sleeper's state via draft_corpus, never a typed year."""
+    try:
+        return str(dc.current_season())
+    except Exception:
+        import datetime
+        now = datetime.date.today()
+        return str(now.year if now.month >= 3 else now.year - 1)
 
 API = "https://api.sleeper.app/v1"
 MIN_TEAMS, MAX_TEAMS = 8, 14
@@ -523,7 +533,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("crawl"); c.add_argument("--league", action="append", required=True)
-    c.add_argument("--seasons", default="2021-2026")
+    c.add_argument("--seasons", default=f"2021-{_current_season()}")
     c.add_argument("--out", default=os.path.join(HERE, "..", "cache", "managers.json"))
     c.set_defaults(fn=crawl)
     s = sub.add_parser("study"); s.add_argument("--data", required=True); s.set_defaults(fn=study)

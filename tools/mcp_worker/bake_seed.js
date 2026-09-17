@@ -21,10 +21,22 @@ const ROOT = path.resolve(HERE, "..", "..");
 const { decodeAnySeed } = createRequire(import.meta.url)(path.join(ROOT, "src", "js", "15b-nflverse-lazy.js"));
 
 // What each top-level section is — shown by seed_ls at the root so a model knows where to look.
+// The table of contents is filled from the seed at bake time — {HIST} is the span of
+// seasons the seed carries, {NHIST} the player count — so no year is ever typed here to go
+// stale at the rollover.
+export function docFor(root) {
+  const seasons = Array.isArray(root && root.history_seasons) ? root.history_seasons.map(Number).filter(Number.isFinite) : [];
+  const hist = seasons.length ? `${Math.min(...seasons)}-${Math.max(...seasons)}` : "the seasons at history_seasons";
+  const n = root && root.history && typeof root.history === "object" ? Object.keys(root.history).length : 0;
+  const nhist = n ? `~${(n / 1000).toFixed(1)}k` : "all";
+  const out = {};
+  for (const k in DOC) out[k] = String(DOC[k]).replace(/\{HIST\}/g, hist).replace(/\{NHIST\}/g, nhist);
+  return out;
+}
 export const DOC = {
   seed: "projection rows: seed/{TEAM}/{QB|RB|WR|TE} → players with season projections (passing/rushing/receiving), games, ADP per format (adp_ppr, adp_half_ppr, adp_std, adp_2qb), age, risk/upside 1-5, tc = TC model {fpg, base, in:{yr,g,fpg,xfpg,tdoe,age}}",
   ecr: "expert consensus ranks per format (half_ppr, ppr, std, superflex, superflex_ppr, dynasty, dynasty_superflex) keyed by normalized name → {rank_ecr, tier, age, team, pos}",
-  history: "history/{sleeper_id} → {season: [stints {team, games_played, games_started, snap_pct, stats{receptions, receiving_yards, rushing_attempts, passing_yards, off_snaps, team_off_snaps…}}]}, 2021-2025, ~8.7k players",
+  history: "history/{sleeper_id} → {season: [stints {team, games_played, games_started, snap_pct, stats{receptions, receiving_yards, rushing_attempts, passing_yards, off_snaps, team_off_snaps…}}]}, {HIST}, {NHIST} players",
   nflverse: "nflverse/{season}/… team (offense/defense/tendencies/pace/personnel/coverage/offensive_line_pass|run: per-team values + ranks), players/{POS}/players/{name} (advanced stats; …/refinements/{1st_down…pressured}/players/{name} by situation), routes (route tree per receiver), qb_passing (passer rating by field zone; totals carry scramble_rate and rk = league rank [rank, n]), qb_charting (on-target/bad-throw/pressure %), rb_fan (rush lanes + line grades; totals carry rk), ol_players (line grades), head_coaches, rosters/{TEAM} (season roster with snaps). The season IN PROGRESS adds per-game blocks: qb_passing_weekly/{name} and rb_fan_weekly/{name} (games[{wk, opp, totals|lanes, rk}]), target_trees/players/{name} (12-zone target chart: season + games, each zone {tgt, rec, yds, td, yac, epa, fd}, rk), ngs_weekly/players/{name} (Next Gen Stats: receivers sep/cush/yac_oe/share, passers ttt/cpoe/agg, rushers ryoe/eff/box8; season + games, rk; lg = league medians), scheme_weekly/{TEAM}/games (per-game pass rate, shotgun, motion, play-action, RPO, box); tendencies (play-calling tendencies per team: teams/{TEAM}/{offense,defense} — situations with run/pass rate beside the league, predictability (guess.team, .situation, .beyond), sequencing, play_action, motion, blitz habits and box counts; league alongside; the season in progress too)",
   cfb: "college profiles: cfb/players/{sleeper_id} → {name, pos, college, final, seasons:{yr:{dominator, tgt_share, epa_play, ypr…}}}; classes (pool sizes), prospect_meta (hit-rate model), labels",
   cfb_logs: "college game logs: cfb_logs/{sleeper_id}/{season} → [{wk, opp, opp_elo, tgt, n, yds, epa}]",
@@ -35,7 +47,7 @@ export const DOC = {
   sharp: "team metrics for sharp_season: offense, tendencies, pace, defensive, defensive_line, defensive_tendencies, coverage_schemes, coverage_by_position, offensive_line → teams/{TEAM} {values, ranks}",
   coordinators: "coordinators/{TEAM} → offense/defense {name, since, prev_role, prev_team_name, is_new}",
   hc_history: "head coach per team {name, since, prev_role, prev_team_name, is_new}",
-  coach_records: "playcaller career records {name → {z: offense z while calling plays, n: seasons, dz/dn: defense record, side}} — side-aware, 2002-2026 staff history",
+  coach_records: "playcaller career records {name → {z: offense z while calling plays, n: seasons, dz/dn: defense record, side}} — side-aware, staff history back to 2002 through the current season",
   hc_playcallers: "teams whose head coach calls the offensive plays",
   sos: "strength of schedule per team {rank (1 = easiest), win_total (Vegas), opp_win_total, opp_games}",
   team_names: "team code → full name",
@@ -157,7 +169,7 @@ export function shard(root, outDir) {
       else chunks[chunkIndex(rec, k)][k] = v;
     }
     const dir = path.join(outDir, dirOf(parts));
-    dump(path.join(dir, "_ls.json"), { t: rec.t, n: rec.n, split, ...(isList ? {} : { keys }), ...(parts.length ? {} : { doc: DOC }) });
+    dump(path.join(dir, "_ls.json"), { t: rec.t, n: rec.n, split, ...(isList ? {} : { keys }), ...(parts.length ? {} : { doc: docFor(typeof root !== "undefined" ? root : null) }) });
     chunks.forEach((ch, i) => dump(path.join(dir, `c${i}.json`), ch));
     files += 1 + rec.c;
   };
