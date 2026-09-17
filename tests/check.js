@@ -9932,8 +9932,14 @@ function _pcardDockReset(){ _pcardDock=[]; _pcardDockActive=null; _pcardAddOpen=
 // chart, season and game, so JSN's target chart → Kupp's target chart is one tap
 // and the strip flips between them.
 let _pcardAddOpen=false;
+// Everyone the app knows — the board's rows first, then every other player Sleeper lists
+// on a team (defenders, linemen, punters), so a linebacker's card can open his teammate
+// at the position alongside. _aiCmpPool (93-ai-compare.js) builds exactly that.
 function _pcardAddBoard(){
-  try{ return (typeof buildProjectionList==='function') ? buildProjectionList() : ((typeof buildPlayerList==='function') ? buildPlayerList() : []); }catch(e){ return []; }
+  try{
+    if(typeof _aiCmpPool==='function') return _aiCmpPool();
+    return (typeof buildProjectionList==='function') ? buildProjectionList() : ((typeof buildPlayerList==='function') ? buildPlayerList() : []);
+  }catch(e){ return []; }
 }
 function _pcardAddRow(p){
   return `<button class="pcard-add-hit" onclick="pcardDockOpenLike('${escAttr(String(p.player_id||p.name))}','${escAttr(p.pos||'')}','${escAttr(p.team||'')}')">
@@ -9947,11 +9953,12 @@ function _pcardAddRows(q){
   if(q.length>=2 && typeof _aiCmpMatches==='function'){
     const seen=new Set([String(cur.pid)]);
     const hits=_aiCmpMatches(q, list).filter(p=>!seen.has(String(p.player_id)) && seen.add(String(p.player_id))).slice(0,10);
-    // beyond the projection board: the whole Sleeper DB, same lazy match, so any player opens
+    // beyond that: the whole Sleeper DB — free agents and all, any position — same lazy
+    // match, so any player opens
     if(hits.length<10 && typeof sleeperPlayers!=='undefined' && sleeperPlayers){
       const rest=[];
       for(const id in sleeperPlayers){ if(seen.has(String(id))) continue; const sp=sleeperPlayers[id];
-        if(!sp || !sp.name || !sp.pos || !['QB','RB','WR','TE','K','DEF'].includes(sp.pos)) continue;
+        if(!sp || !sp.name || !sp.pos) continue;
         rest.push({player_id:id, name:sp.name, pos:sp.pos, team:sp.team||'FA', fpts:null}); }
       _aiCmpMatches(q, rest).slice(0, 10-hits.length).forEach(p=>hits.push(p));
     }

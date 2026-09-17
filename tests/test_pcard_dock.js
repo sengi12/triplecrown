@@ -44,6 +44,10 @@ const app=new Function(code+`
     '3':{player_id:'3',name:'Drake Maye',pos:'QB',team:'NE'},
     '4':{player_id:'4',name:'Puka Nacua',pos:'WR',team:'LAR'},
     '99':{player_id:'99',name:'A.J. Brown',pos:'WR',team:'PHI'},
+    '5':{player_id:'5',name:'Barrett Carter',pos:'LB',team:'CIN',active:true},
+    '6':{player_id:'6',name:'Demetrius Knight',pos:'LB',team:'CIN',active:true},
+    '7':{player_id:'7',name:'Zonovan Knight',pos:'RB',team:'ARI',active:true},
+    '8':{player_id:'8',name:'Logan Wilson',pos:'LB',team:'CIN',active:true},
   };
   // Keep the shell/data loaders out of it: the dock only needs openPlayerCard's bookkeeping.
   renderPlayerCardShell=function(pid,pos,team){ pcardState={pid:String(pid),posc:pos||'',team:team||''}; if(!document.getElementById('pcardOverlay')){ const d=document.createElement('div'); d.id='pcardOverlay'; } };
@@ -131,6 +135,16 @@ for(let i=1;i<=app.max+3;i++){ sleeperPlayersAdd=null; app.open(String(i),'WR','
 chk(app.dock().length===app.max, `never more than ${app.max} tabs`);
 chk(app.active()===String(app.max+3) && app.dock().includes(String(app.max+3)), 'the newest tab always survives');
 app.close();
+
+
+console.log('=== a defender\'s card opens his teammates at the position alongside ===');
+{
+  app.open('5','LB','CIN');
+  let r=app.addRows('knight');
+  chk(/Demetrius Knight/.test(r) && /LB · CIN/.test(r) && /Zonovan Knight/.test(r), 'typing Knight on a linebacker\'s card finds the linebacker AND the back');
+  r=app.addRows('');
+  chk(/CIN LBs/.test(r) && /Demetrius Knight/.test(r) && /Logan Wilson/.test(r) && !/Drake Maye/.test(r), 'an empty box: the Bengals\' other linebackers, not the board\'s quarterbacks');
+}
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);
