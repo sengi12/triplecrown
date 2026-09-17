@@ -67,21 +67,58 @@ changing a source, then rebuild.
 
 Bump `versionCode` / `versionName` in `android/app/build.gradle` per store release.
 
-## iOS, when you're ready
+## iOS
 
-Install full Xcode from the App Store (the command-line tools alone cannot build an app),
-then:
+The iOS project is committed under `ios/` (Pods, DerivedData and the copied web assets
+are git-ignored; `pod install` recreates Pods). Same shell, same live site. Built and run
+on the iOS 27 Simulator with Xcode 27 on 2026-09-17.
+
+Toolchain, once per Mac: full Xcode from the App Store (the command-line tools alone cannot
+build an app), then
+
+```sh
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -license accept
+xcodebuild -downloadPlatform iOS        # the iOS SDK + Simulator runtime (Xcode 27 does not bundle it)
+brew install cocoapods                  # Capacitor's iOS plugins are CocoaPods
+```
+
+Then:
 
 ```sh
 cd mobile
-npm install @capacitor/ios
-npx cap add ios
-npx cap open ios            # Xcode: set your team, then Product → Archive for TestFlight / the App Store
+npm install
+cd ios/App && pod install && cd ../..
+npm run ios:sim                         # builds for the Simulator, installs, launches (no account needed)
+npx cap open ios                        # Xcode, for your own iPhone or a store build
 ```
 
-Same shell, same live site. App Store review wants an app that does more than frame a
-web page; TripleCrown does (projections, drafts, league tools, local data), but describe
-it that way in the listing. Apple needs a $99/year developer account and a privacy policy.
+Two things Capacitor 7's template does not have, both kept in the project:
+
+- **Deployment target 15.0.** Xcode 27 builds for iOS 15.0 and up; the template and its
+  pods declare 14.0. `ios/App/Podfile` sets 15.0 and pins every pod target to it in
+  `post_install`; the app target is 15.0 in `App.xcodeproj`.
+- **The scene lifecycle.** iOS 27 traps at launch (`SIGTRAP` in UIKit's
+  "no scene lifecycle adoption" check; the app never appears) for an app on the old
+  app-delegate window lifecycle, which the template is. `Info.plist` carries
+  `UIApplicationSceneManifest` pointing the scene at the storyboard (whose root is
+  `CAPBridgeViewController`) and at `SceneDelegate` in `AppDelegate.swift`, which forwards
+  URL opens to Capacitor's `ApplicationDelegateProxy` so the App plugin still raises
+  `appUrlOpen` for the sign-in return.
+
+The sign-in return scheme (`com.sengi.triplecrown://auth/callback`, see below) is declared
+as a URL type in `Info.plist`; iOS offers "Open in TripleCrown?" for such a link.
+
+**Your own iPhone, free.** Sign in to Xcode with an Apple ID (Xcode → Settings → Accounts):
+a free account gives a "Personal Team". In Xcode select the App target → Signing &
+Capabilities → your team, plug the phone in, pick it as the run destination, Run. The first
+time, the phone asks you to trust the developer (Settings → General → VPN & Device
+Management). Free signing lasts 7 days and covers three apps; re-run from Xcode to renew.
+
+**TestFlight / the App Store** need the $99/year Apple Developer Program and a privacy
+policy. App Store review wants an app that does more than frame a web page; TripleCrown
+does (projections, drafts, league tools, local data), but describe it that way in the
+listing. Product → Archive in Xcode with your team selected; nothing in the project changes.
 
 ## Bundled instead of live
 
