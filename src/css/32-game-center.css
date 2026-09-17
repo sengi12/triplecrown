@@ -81,6 +81,9 @@
 .gcm-idle{color:var(--muted2);font-weight:700;}
 .gcm-dot{width:6px;height:6px;border-radius:50%;background:var(--danger);flex:none;animation:tcGsPulse 1.2s ease-in-out infinite;}
 body.gcm-open .gcm-pill{opacity:0;transform:translateY(8px);pointer-events:none;}
+/* the page behind an open sheet does not scroll (the touch guard cancels the swipe on iOS,
+   this is the belt to its braces — the same pair the player card uses) */
+html.gcm-locked, html.gcm-locked body{overflow:hidden;overscroll-behavior:none;}
 .gcm-scrim{position:fixed;inset:0;background:rgba(0,0,0,0);pointer-events:none;transition:background .3s;}
 body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gcm-sheet{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--border);border-radius:14px 14px 0 0;
