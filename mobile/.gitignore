@@ -1,0 +1,2 @@
+# npm run ios:sim builds here (Xcode derived data); Pods and DerivedData under ios/ are ignored by ios/.gitignore
+build/
