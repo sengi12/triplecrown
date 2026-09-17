@@ -36,6 +36,14 @@ const QB_ZONE_METRICS = {
   td:     {short:'TD',     label:'Touchdowns by zone',              key:'td',     digits:0, sub:'none'},
 };
 let pcardQbMetric='rating';
+// Map (every attempt drawn — the default) or Zones (the rating / volume matrix).
+let pcardQbView='map';
+function setPcardQbView(v){
+  if(v!=='map' && v!=='zones') return;
+  pcardQbView=v;
+  const body=document.getElementById('pcardBody');
+  if(body && typeof pcardState!=='undefined' && pcardState) body.innerHTML=renderPcardQbPassing(pcardState.pid);
+}
 function setPcardQbMetric(m){
   if(!QB_ZONE_METRICS[m]) return;
   pcardQbMetric=m;
@@ -221,19 +229,31 @@ function renderPcardQbPassing(pid){
   }).join('');
   const tdInt = `${t.td!=null?t.td:'—'}/${t.int!=null?t.int:'—'}`;
   const _rk=(k)=>(typeof pcardRankTag==='function') ? pcardRankTag(t.rk||{}, k, 'QB') : '';
+  // The pass map (66b): every attempt of the game or season, when the weekly block
+  // carries per-attempt rows. Map first; the zone matrix a tap away. The view toggle
+  // owns a row so switching never moves it; the zone metrics take the row beneath.
+  const _wnode=(NFLVERSE[season].qb_passing_weekly||{})[norm]||null;
+  const hasMap=!!(_wnode && typeof qbPassMapBlock==='function' && typeof _tmHasPlays==='function' && _tmHasPlays(_wnode));
+  const mapOn=hasMap && pcardQbView==='map';
+  const live=(typeof tcIsLiveSeason==='function') && tcIsLiveSeason(season);
+  const mapLabel=_game ? `Week ${_game.wk}${_game.opp?` · ${_game.opp}`:''}` : (live?'Season to date':'Season');
+  const mapTag=(typeof noteTagAttrs==='function') ? (meta)=>noteTagAttrs(Object.assign({source:'qb_passing_chart', context:`${season} passing chart${_selWk!=null?` · week ${_selWk}`:''}`, player:notePlayer, team:notePlayer.team, relevance:'QB'}, meta)) : null;
+  const viewBtns=hasMap ? `<span class="tm-view"><button class="rt-metric-btn ${mapOn?'active':''}" title="Every attempt drawn at its depth and side" onclick="setPcardQbView('map')">Map</button><button class="rt-metric-btn ${mapOn?'':'active'}" title="Attempts binned by zone, rated against the league" onclick="setPcardQbView('zones')">Zones</button></span>` : '';
+  const summary=`<div class="rt-summary">${noteWrapHtml(`${t.attempts||0} located attempts`, { label:'Located Attempts', value:String(t.attempts||0), source:'qb_passing_chart', statKey:'attempts', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}${mapOn?'':` · threshold ±${QB_PASS_THRESH.toFixed(0)} vs league avg`}</div>`;
 
   return `<div class="qpc-wrap">
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns}</div>
-      <div class="rt-metrics">${metricBtns}</div>
-      <div class="rt-summary">${noteWrapHtml(`${t.attempts||0} located attempts`, { label:'Located Attempts', value:String(t.attempts||0), source:'qb_passing_chart', statKey:'attempts', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · threshold ±${QB_PASS_THRESH.toFixed(0)} vs league avg</div>
+      ${hasMap?'':`<div class="rt-metrics">${metricBtns}</div>${summary}`}
     </div>
-    ${_qbPassingSVG(chart, name, season, metric, notePlayer)}
-    ${metric==='rating' ? `<div class="qpc-legend">
+    ${hasMap?`<div class="rt-head rt-viewrow"><div class="rt-metrics">${viewBtns}</div>${summary}</div>`:''}
+    ${(hasMap && !mapOn)?`<div class="rt-head rt-metricrow"><div class="rt-metrics">${metricBtns}</div></div>`:''}
+    ${mapOn ? qbPassMapBlock(name, _wnode, season, _selWk, mapLabel, mapTag) : _qbPassingSVG(chart, name, season, metric, notePlayer)}
+    ${mapOn ? '' : (metric==='rating' ? `<div class="qpc-legend">
       <span><i style="background:#2fae4e"></i>Better than average</span>
       <span><i style="background:#d8a51d"></i>Within average</span>
       <span><i style="background:#d33b2f"></i>Worse than average</span>
-    </div>` : `<div class="qpc-legend"><span class="qpc-heat-key"></span>lighter = more ${QB_ZONE_METRICS[metric].short.toLowerCase()} from that zone</div>`}
+    </div>` : `<div class="qpc-legend"><span class="qpc-heat-key"></span>lighter = more ${QB_ZONE_METRICS[metric].short.toLowerCase()} from that zone</div>`)}
     <div class="qpc-totals">
       <div class="qpc-tile"><label>Passer Rating</label><b>${noteWrapHtml(escHtml(_qbNum(t.passer_rating,1)), { label:'Passer Rating', value:_qbNum(t.passer_rating,1), source:'qb_passing_chart', statKey:'passer_rating', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b>${_rk('passer_rating')}</div>
       <div class="qpc-tile"><label>Comp %</label><b>${noteWrapHtml(escHtml(_qbNum(t.comp_pct,1)), { label:'Completion Percentage', value:_qbNum(t.comp_pct,1), source:'qb_passing_chart', statKey:'comp_pct', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b>${_rk('comp_pct')}</div>
@@ -245,7 +265,7 @@ function renderPcardQbPassing(pid){
     ${pcardQbDuressHTML(_game, _games, season, notePlayer)}
     ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('qb', norm, season, _selWk) : ''}
     ${pcardQbChartingBand(norm, season, notePlayer)}
-    <div class="pcard-src">*Located pass attempts (excl. sacks, 2-pt) · depth via air yards, location via nflverse charting.</div>
+    <div class="pcard-src">*Located pass attempts (excl. sacks, 2-pt) · depth via air yards, location via nflverse charting.${(typeof ngsChartLink==='function' && _wnode) ? ngsChartLink(_wnode, name, season, _selWk) : ''}</div>
   </div>`;
 }
 

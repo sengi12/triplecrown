@@ -109,14 +109,14 @@ chk(!app.rbReceivingQualifies({receiving_targets:3, games_played:12}),
     'past the early-season window the season-scale bar applies again');
 chk(app.rbReceivingQualifies({receiving_targets:40, games_played:12}), 'a real receiving back always qualifies');
 
-console.log('\n=== per-game chart chips (current season only) ===');
+console.log('\n=== per-game chart chips (any season whose block carries games) ===');
 app.TC_SEASON.year=2026; app.TC_SEASON.phase='regular'; app.TC_SEASON.week=2;
 app.setNflverse({'2026':{routes_weekly:{'test wr':{pos:'WR',games:[
   {wk:1,opp:'KC',total:8,tree:{'GO':{tgt:3,rec:2,yds:60,td:1},'SLANT':{tgt:5,rec:4,yds:35,td:0}}}]}}},
   '2025':{routes_weekly:{'test wr':{games:[{wk:1,opp:'X',total:1,tree:{}}]}}}});
 chk(!!app.pcardWeeklyGames('routes_weekly','test wr','2026'), 'the live season offers per-game views');
-chk(app.pcardWeeklyGames('routes_weekly','test wr','2025')===null,
-    'a PAST season never does — per-game data is current-season only by design');
+chk(!!app.pcardWeeklyGames('routes_weekly','test wr','2025') && app.pcardWeeklyGames('routes_weekly','test wr','2024')===null,
+    'a past season offers them only when its block carries games (the offseason bakes the season just played); a season without the block never does');
 const adapted=app._routeGameAsSeason({total:8,tree:{'GO':{tgt:3,rec:2,yds:60,td:1},'SLANT':{tgt:5,rec:4,yds:35,td:0}}});
 chk(adapted.tree.GO===3 && adapted.route_yds.GO===60 && adapted.total_td===undefined && adapted.total_tds===1,
     'the adapter reshapes a game into the season shape the renderer already reads');
