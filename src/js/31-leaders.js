@@ -163,7 +163,7 @@ function ldRowsHTML(width, phone){
   return head + list.map((x,i)=>`<div class="ld-row" onclick="${pcardOnclick(x.r.pid, x.r.pos, x.r.team||'')}" title="${escAttr(`${x.r.name} · ${x.r.pos} · ${x.r.team||'FA'}`)}">
     <span class="ld-rank">${i+1}</span>
     <img class="ld-hs" src="${SLEEPER_HEADSHOT(x.r.pid)}" loading="lazy" decoding="async" onerror="this.style.visibility='hidden'">
-    <span class="ld-name"><span class="ld-nm${(typeof gcIsMine==='function' && gcIsMine(x.r.pid))?' ld-mine':''}">${escHtml(full?x.r.name:ldShortName(x.r.name))}</span><span class="ld-sub"><span class="la-pos-${escAttr(x.r.pos)}">${escHtml(x.r.pos)}</span> ${escHtml(x.r.team||'FA')}</span></span>
+    <span class="ld-name"><span class="ld-nm${(typeof gcSideClass==='function')?gcSideClass(x.r.pid).replace('gc-','ld-'):((typeof gcIsMine==='function' && gcIsMine(x.r.pid))?' ld-mine':'')}">${escHtml(full?x.r.name:ldShortName(x.r.name))}</span><span class="ld-sub"><span class="la-pos-${escAttr(x.r.pos)}">${escHtml(x.r.pos)}</span> ${escHtml(x.r.team||'FA')}</span></span>
     ${cols.map(c=>`<span class="ld-col ${sortKey===c[0]?'active':''}">${escHtml(ldStatText(x.r, c[0]))}</span>`).join('')}
     <b class="ld-pts">${bafl?x.pts.toFixed(1):x.pts.toFixed(2)}</b>
   </div>`).join('');

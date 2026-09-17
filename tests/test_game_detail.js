@@ -42,11 +42,13 @@ const app=new Function('IDS','SUM', code+`
     setPcard:(o)=>{ _pcardLg.byLeague=o; _pcardLg.at=Date.now(); }, BOARD, ath:gcAthletes, short:gcShort,
     resetPcard:()=>{ _pcardLg={at:0, byLeague:{}, loading:null}; }, lgSelect:gcLeagueSelectHTML, setProfile:(p)=>{ laLoadSleeperProfile=()=>p; },
     stubLeagueReads:()=>{ const prev=sleeperFetch; sleeperFetch=async(url)=>{   // no log here: prev() already logs what it handles
-        if(/\\/league\\/L9\\/rosters/.test(url)) return [{roster_id:1, owner_id:'u1', players:['q2']},{roster_id:2, owner_id:'u7', players:['t1']}];
-        if(/\\/league\\/L9\\/users/.test(url)) return [{user_id:'u1', display_name:'Sengi12'},{user_id:'u7', display_name:'kade', metadata:{team_name:'kademiller'}}];
+        if(/\\/league\\/L9\\/matchups\\/1$/.test(url)) return [{roster_id:1, matchup_id:5, starters:['q2']},{roster_id:2, matchup_id:5, starters:['t1']}];
+        if(/\\/league\\/L9\\/matchups\\/2$/.test(url)) return [{roster_id:1, matchup_id:9, starters:['q2']},{roster_id:3, matchup_id:9, starters:['k1']}];
+        if(/\\/league\\/L9\\/rosters/.test(url)) return [{roster_id:1, owner_id:'u1', players:['q2'], starters:['q2']},{roster_id:2, owner_id:'u7', players:['t1'], starters:['t1']},{roster_id:3, owner_id:'u8', players:['k1'], starters:['k1']}];
+        if(/\\/league\\/L9\\/users/.test(url)) return [{user_id:'u1', display_name:'Sengi12'},{user_id:'u7', display_name:'kade', metadata:{team_name:'kademiller'}},{user_id:'u8', display_name:'zkirk97'}];
         if(/\\/league\\/L9$/.test(url)) return {name:'Queen City Keepers', status:'in_season', season:'2026', scoring_settings:{pass_yd:0.05, pass_td:6}, roster_positions:['QB','RB','SUPER_FLEX'], settings:{type:0}, total_rosters:12};
         return prev(url); }; },
-    liveTimer:()=>_gcLiveTimer, clearLive:()=>{ if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; } }, setMode:(m)=>{ _gc.mode=m; }, setGame:(id)=>{ _gc.game=id; },
+    sideClass:gcSideClass, setWeekNum:(w)=>{ _gc.week=w; _gc._mu=null; }, liveTimer:()=>_gcLiveTimer, clearLive:()=>{ if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; } }, setMode:(m)=>{ _gc.mode=m; }, setGame:(id)=>{ _gc.game=id; },
     onBoard:gcStreamOnBoard, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
 `)(IDS, SUM);
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -164,6 +166,15 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(/<option value="L9"[^>]*>Queen City Keepers/.test(sel) && !/loading your leagues/.test(sel), 'the leagues land and the list has them');
   app.setLeague('L9');
   chk(app.owner('q2')==='@Sengi12' && app.mine('q2')===true && app.owner('t1')==='@kademiller' && app.pts({player_id:'q2', position:'QB', stats:{pass_yd:254, pass_td:1}})===18.7, 'owners, mine and the league\'s scoring come from the loaded reads');
+  chk(app.sideClass('q2')===' gc-mine' && app.sideClass('t1')==='', 'mine is blue from the roster at once; the opponent waits for the week\'s matchup read, kicked by that first paint');
+  await settle(); await settle();
+  chk(app.sideClass('q2')===' gc-mine' && app.sideClass('t1')===' gc-opp' && app.sideClass('k1')==='', 'week 1: my starter blue, the man I play red, a third roster plain');
+  app.setWeekNum(2); app.sideClass('k1'); await settle(); await settle();
+  chk(app.sideClass('k1')===' gc-opp' && app.sideClass('t1')==='', 'week 2 is a different opponent: red follows the week on screen');
+  app.setWeekNum('current');
+  app.resetPcard(); app.setProfile({username:'sengi12', leagues:[{league_id:'L9', name:'Queen City Keepers', status:'in_season', season:'2026'}]});
+  app.lgSelect(); await settle(); await settle();
+  chk(app.mine('q2')===true && app.owner('q2')==='@Sengi12', 'a profile saved by username alone still knows which roster is mine');
   app.setLeague('snap');
 
   console.log('=== a game on: the feed polls on its own clock ===');

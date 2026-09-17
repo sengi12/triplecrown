@@ -4472,7 +4472,7 @@ function ldRowsHTML(width, phone){
   return head + list.map((x,i)=>`<div class="ld-row" onclick="${pcardOnclick(x.r.pid, x.r.pos, x.r.team||'')}" title="${escAttr(`${x.r.name} · ${x.r.pos} · ${x.r.team||'FA'}`)}">
     <span class="ld-rank">${i+1}</span>
     <img class="ld-hs" src="${SLEEPER_HEADSHOT(x.r.pid)}" loading="lazy" decoding="async" onerror="this.style.visibility='hidden'">
-    <span class="ld-name"><span class="ld-nm${(typeof gcIsMine==='function' && gcIsMine(x.r.pid))?' ld-mine':''}">${escHtml(full?x.r.name:ldShortName(x.r.name))}</span><span class="ld-sub"><span class="la-pos-${escAttr(x.r.pos)}">${escHtml(x.r.pos)}</span> ${escHtml(x.r.team||'FA')}</span></span>
+    <span class="ld-name"><span class="ld-nm${(typeof gcSideClass==='function')?gcSideClass(x.r.pid).replace('gc-','ld-'):((typeof gcIsMine==='function' && gcIsMine(x.r.pid))?' ld-mine':'')}">${escHtml(full?x.r.name:ldShortName(x.r.name))}</span><span class="ld-sub"><span class="la-pos-${escAttr(x.r.pos)}">${escHtml(x.r.pos)}</span> ${escHtml(x.r.team||'FA')}</span></span>
     ${cols.map(c=>`<span class="ld-col ${sortKey===c[0]?'active':''}">${escHtml(ldStatText(x.r, c[0]))}</span>`).join('')}
     <b class="ld-pts">${bafl?x.pts.toFixed(1):x.pts.toFixed(2)}</b>
   </div>`).join('');
@@ -4659,18 +4659,53 @@ function gcMineSet(){
   const mine=s.teamList.find(t=>t.ownerId===s.myUserId || (t.coOwners||[]).includes(s.myUserId));
   return new Set(((mine&&mine.players)||[]).map(p=>String(p.id)));
 }
-// Your matchup in the pane's league: your starters and your opponent's (the hub keeps
-// both). Cached per league + hub load — this is asked once per player row.
+// Your matchup in a league for a WEEK: your starters and your opponent's, from that
+// week's matchups (one small read per league × week, kept for the session). Before it
+// lands the sets are empty and the paint follows when it does.
+var _gcMu = { cache:{}, busy:{} };
+const GC_EMPTY_MU = { mine:new Set(), opp:new Set(), oppName:'', pending:true };
+function gcMatchupFor(lid, wk){
+  lid=String(lid||''); wk=Number(wk||0); if(!lid || !wk) return null;
+  const key=`${lid}|${wk}`;
+  if(_gcMu.cache[key]) return _gcMu.cache[key];
+  const L=(typeof _pcardLg!=='undefined' && _pcardLg && _pcardLg.byLeague) ? _pcardLg.byLeague[lid] : null;
+  if(!L || L.myRosterId==null || !L.rosters) return null;          // the league's rosters have not loaded (or I am not in it)
+  if(!_gcMu.busy[key] && typeof sleeperFetch==='function' && typeof LA_MATCHUPS_URL==='function'){
+    _gcMu.busy[key]=true;
+    sleeperFetch(LA_MATCHUPS_URL(lid, wk)).then(rows=>{
+      const list=Array.isArray(rows)?rows:[];
+      const me=list.find(m=>String(m.roster_id)===String(L.myRosterId));
+      const opp=me ? list.find(m=>m.matchup_id!=null && m.matchup_id===me.matchup_id && String(m.roster_id)!==String(me.roster_id)) : null;
+      const pids=(arr)=>(Array.isArray(arr)?arr:[]).filter(x=>x&&x!=='0').map(String);
+      const oppR=opp ? L.rosters[String(opp.roster_id)] : null;
+      _gcMu.cache[key]={ mine:new Set(pids(me&&me.starters).length?pids(me.starters):(L.rosters[String(L.myRosterId)]||{}).starters||[]),
+        opp:new Set(pids(opp&&opp.starters)), oppName:oppR?oppR.owner:'', pending:false };
+      _gc._mu=null;
+      if(typeof gcDetailRepaint==='function') gcDetailRepaint(); else if(typeof renderRightSidebar==='function') renderRightSidebar();
+    }).catch(()=>{ _gcMu.cache[key]={ mine:new Set(), opp:new Set(), oppName:'', pending:false, failed:true }; }).finally(()=>{ _gcMu.busy[key]=false; });
+  }
+  return null;
+}
+// The pane's league and week → the two line-ups. Falls back to the hub's current-week
+// matchup while the read is out (or when the league is the hub's alone).
 function gcMatchupSets(){
   const id=(typeof gcLeague==='function') ? gcLeague() : 'snap';
+  const wk=(typeof gcWeek==='function') ? gcWeek() : 0;
   const hub=(typeof hubState!=='undefined' && hubState) ? hubState : null;
-  const stamp=`${id}|${hub?hub.loadedAt:0}`;
+  const stamp=`${id}|${wk}|${hub?hub.loadedAt:0}|${Object.keys(_gcMu.cache).length}`;
   if(_gc._muAt===stamp && _gc._mu) return _gc._mu;
   let lid=id;
   if(id==='snap') lid=(typeof leagueSnapshot!=='undefined' && leagueSnapshot) ? String(leagueSnapshot.leagueId||'') : '';
-  const r=(id!=='app' && hub && hub.results) ? hub.results[lid] : null;
-  const lu=r && r.lineup;
-  _gc._mu={ mine:new Set(((lu&&lu.starters)||[]).map(String)), opp:new Set(((lu&&lu.oppStarters)||[]).map(String)) };
+  let out=null;
+  if(id!=='app' && lid){
+    const m=gcMatchupFor(lid, wk);
+    if(m && !m.pending) out={ mine:m.mine, opp:m.opp };
+    else if(hub && hub.results && hub.results[lid] && (typeof gcCurWeek!=='function' || wk===gcCurWeek())){
+      const lu=hub.results[lid].lineup;
+      out={ mine:new Set(((lu&&lu.starters)||[]).map(String)), opp:new Set(((lu&&lu.oppStarters)||[]).map(String)) };
+    }
+  }
+  _gc._mu=out||{ mine:new Set(), opp:new Set() };
   _gc._muAt=stamp;
   return _gc._mu;
 }
@@ -5571,7 +5606,10 @@ function lfPlayStats(kind, yds, roles){
 }
 // The play, typed for the feed: what it was, who did it, what it produced.
 function lfReadPlay(lp){
-  const type=String(lp.type||''), text=String(lp.text||''), yds=Number(lp.yds||0);
+  const type=String(lp.type||''), text=String(lp.text||'');
+  // the yardage: the board's number, else the words ("for 60 yards", "32 yard field goal")
+  let yds=Number(lp.yds||0);
+  if(!yds){ const m=/for (-?\d+) yards?/.exec(text) || /(\d+) yard field goal/.exec(text); if(m) yds=Number(m[1]); }
   const names=(typeof gcPlayNames==='function') ? gcPlayNames(text) : {primary:'', receiver:'', picker:''};
   let kind='other', title='';
   const ath=Array.isArray(lp.athletes)?lp.athletes:[];
@@ -5653,9 +5691,23 @@ function lfOnBoard(teams){
 function lfClear(){ _lf.rows=[]; _lf.seen={}; }
 
 // ── Leagues: who is rostered where, and what a play was worth there ──────────
+// The leagues: the player card's map (every synced league — rosters, owners, scoring —
+// loaded on the Game Center's first paint) with this week's matchup per league from
+// gcMatchupFor; the Week Hub's results stand in when that map has not loaded.
 function lfLeagueList(){
-  const res=(typeof hubState!=='undefined' && hubState && hubState.results) ? hubState.results : {};
   const out=[];
+  const pc=(typeof _pcardLg!=='undefined' && _pcardLg && _pcardLg.byLeague) ? _pcardLg.byLeague : {};
+  const wk=(typeof gcCurWeek==='function') ? gcCurWeek() : ((typeof TC_SEASON!=='undefined')?Number(TC_SEASON.week||0):0);
+  Object.keys(pc).forEach(id=>{
+    const L=pc[id]; if(!L || L.inactive || L.error) return;
+    const m=(typeof gcMatchupFor==='function') ? gcMatchupFor(id, wk) : null;
+    const rostered=new Set(Object.keys(L.byPid||{}));
+    const mineRoster=new Set(Object.keys(L.byPid||{}).filter(p=>L.byPid[p]&&L.byPid[p].mine));
+    out.push({ id:String(id), name:String(L.name||'League'), scoring:L.scoring||null, rostered,
+      mine:(m&&!m.pending)?m.mine:mineRoster, opp:(m&&!m.pending)?m.opp:new Set(), oppName:(m&&m.oppName)||'' });
+  });
+  if(out.length) return out;
+  const res=(typeof hubState!=='undefined' && hubState && hubState.results) ? hubState.results : {};
   Object.keys(res).forEach(id=>{
     const r=res[id]; if(!r || r.inactive || !r.league) return;
     out.push({ id:String(id), name:String(r.league.name||'League'),
@@ -9998,16 +10050,22 @@ async function pcardLeaguesLoad(force){
         ]);
         if(typeof tcLeagueInPlay==='function' && !tcLeagueInPlay({status:L.status, season:L.season})){ _pcardLg.byLeague[lg.league_id]={id:String(lg.league_id), inactive:true, byPid:{}}; return; }
         const uById={}; (users||[]).forEach(u=>uById[u.user_id]=u);
-        const byPid={};
+        // Who I am: the saved profile's id, else my username against the league's users
+        // (a profile saved by username alone made every roster "not mine").
+        let me=myId;
+        if(!me && prof && prof.username){ const u=(users||[]).find(x=>String(x.display_name||'').toLowerCase()===String(prof.username).toLowerCase()); if(u) me=u.user_id; }
+        const byPid={}, rosterMap={}; let myRosterId=null;
         (rosters||[]).forEach(r=>{
           const u=uById[r.owner_id]||{};
-          const mine=!!myId && (r.owner_id===myId || (Array.isArray(r.co_owners)&&r.co_owners.includes(myId)));
+          const mine=!!me && (r.owner_id===me || (Array.isArray(r.co_owners)&&r.co_owners.includes(me)));
+          if(mine && myRosterId==null) myRosterId=r.roster_id;
           const owner=(u.metadata&&u.metadata.team_name)||u.display_name||`Roster ${r.roster_id}`;
           (r.players||[]).forEach(p=>{ byPid[String(p)]={owner, mine}; });
+          rosterMap[String(r.roster_id)]={owner, mine, players:(r.players||[]).map(String), starters:(r.starters||[]).filter(x=>x&&x!=='0').map(String)};
         });
         _pcardLg.byLeague[lg.league_id]={id:String(lg.league_id), name:L.name||lg.name||'League',
           avatar:(L.avatar && typeof SLEEPER_AVATAR_THUMB==='function')?SLEEPER_AVATAR_THUMB(L.avatar):null,
-          sub:pcardLeagueSub(L), byPid,
+          sub:pcardLeagueSub(L), byPid, rosters:rosterMap, myRosterId,
           scoring:(L.scoring_settings && typeof L.scoring_settings==='object') ? L.scoring_settings : null};   // the Game Center scores a game under any league
       }catch(e){
         _pcardLg.byLeague[lg.league_id]={id:String(lg.league_id), name:lg.name||'League', error:true, byPid:{}};
