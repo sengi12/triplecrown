@@ -16450,16 +16450,21 @@ function targetMapSVG(plays, title, sub, tag){
       const fw=right(losY)-left(losY);
       const qx=(left(losY)+right(losY))/2 + (p.oop===1 ? (p.side===0?-1:(p.side===2?1:0))*fw*0.22 : 0);
       const qy=yOf(p.sg===1 ? -6.5 : (p.sg===2 ? -6 : -5.5));
-      // The ball climbs out of the passer's hand and settles onto the catch point — it never
-      // carries past the dot (the tail after the catch is the receiver's, not the ball's).
-      // Launch height grows with the throw, capped inside the drawing; the arrival control
-      // sits a quarter of the way back toward the passer, so the curve lands ON the dot.
-      const dist=Math.hypot(x1-qx, y1-qy);
-      const h=Math.min(Math.max(28, dist*0.45), Math.max(28, (0.5*(qy+y1)-(yTop+10))/0.75));
-      // a throw straight downfield would be a straight line seen from above — a slight bow
-      // toward the nearer sideline keeps it reading as a lob, and it still lands on the dot
-      const bow=Math.min(22, dist*0.08)*(x1>=qx?1:-1);
-      parts.push(`<path d="M${f1(qx)},${f1(qy)} C${f1(qx+bow)},${f1(qy-h)} ${f1(x1+(qx-x1)*0.25+bow)},${f1(y1+(qy-y1)*0.25)} ${f1(x1)},${f1(y1)}" fill="none" stroke="#2f6fe4" stroke-width="${many?3:4}" stroke-linecap="round" opacity="0.9"/>`);
+      // One clean arc from the passer's spot to the catch dot, NGS-style: a quadratic whose
+      // control sits at the chord's midpoint pushed out PERPENDICULAR to the throw — so the
+      // curve bows to one side and lands on the dot, never hooking past it (a control lifted
+      // straight up hooks a deep, near-vertical throw). The bow grows with the distance; it
+      // bows upfield where the throw has a sideways component, toward the nearer sideline
+      // on a straight-downfield throw, and the control is kept inside the field so the
+      // crown (¼·start + ½·control + ¼·end) stays in the drawing.
+      const vx=x1-qx, vy=y1-qy, dist=Math.hypot(vx,vy)||1;
+      const bulge=Math.min(130, Math.max(34, dist*0.38));
+      let nx=-vy/dist, ny=vx/dist;                       // one unit normal…
+      if(ny>0.02 || (Math.abs(ny)<=0.02 && (x1>=W/2 ? nx<0 : nx>0))){ nx=-nx; ny=-ny; }   // …flipped so it points upfield (or out to the near sideline)
+      let cx=(qx+x1)/2+nx*bulge, cy=(qy+y1)/2+ny*bulge;
+      cy=Math.max(cy, 2*(yTop+10)-0.5*(qy+y1));
+      cx=Math.min(Math.max(cx, left(cy)+4), right(cy)-4);
+      parts.push(`<path d="M${f1(qx)},${f1(qy)} Q${f1(cx)},${f1(cy)} ${f1(x1)},${f1(y1)}" fill="none" stroke="#2f6fe4" stroke-width="${many?3:4}" stroke-linecap="round" opacity="0.9"/>`);
     }
     if(caught && p.yac>0){
       parts.push(`<line x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(x2)}" y2="${f1(y2)}" stroke="#39c15a" stroke-width="${tailW}" stroke-linecap="round"/>`);
