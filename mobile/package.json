@@ -7,7 +7,7 @@
     "sync": "cap sync",
     "android": "cap open android",
     "ios": "cap open ios",
-    "ios:sim": "cap sync ios && xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath build/ios build | grep -E 'error:|BUILD (SUCCEEDED|FAILED)' ; xcrun simctl boot 'iPhone 18 Pro' 2>/dev/null; xcrun simctl install booted build/ios/Build/Products/Debug-iphonesimulator/App.app && xcrun simctl launch booted com.sengi.triplecrown && open -a Simulator",
+    "ios:sim": "cap sync ios && xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath build/ios build | grep -E 'error:|BUILD (SUCCEEDED|FAILED)' ; xcrun simctl boot 'iPhone 18 Pro' 2>/dev/null; xcrun simctl install booted build/ios/Build/Products/Debug-iphonesimulator/App.app && xcrun simctl launch booted com.sengi.triplecrown && (open \"$(xcode-select -p)/Applications/Simulator.app\" 2>/dev/null || open -a DeviceHub 2>/dev/null || open -a Simulator)",
     "apk": "cd android && ./gradlew assembleDebug && ls -la app/build/outputs/apk/debug/",
     "aab": "cd android && ./gradlew bundleRelease && ls -la app/build/outputs/bundle/release/"
   },
