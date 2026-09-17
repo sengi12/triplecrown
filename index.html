@@ -297,6 +297,21 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
   -webkit-tap-highlight-color:rgba(255,255,255,.2);}
 .pcard-ktc:hover{transform:translateY(-1px) scale(1.06);box-shadow:0 4px 12px rgba(0,0,0,.45);}
 .pcard-ktc-img{width:18px;height:18px;object-fit:contain;display:block;}
+/* ── Latest news (Sleeper's per-player feed): collapsed rows under the hero ── */
+.pcard-news{padding:6px 14px 4px;border-bottom:1px solid var(--border);}
+.pcard-news:empty{display:none;}
+.pcard-news-lbl{font-size:9px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:2px;}
+.pcard-news-it summary{list-style:none;display:flex;align-items:baseline;gap:8px;cursor:pointer;padding:3px 0;font-size:11.5px;min-width:0;}
+.pcard-news-it summary::-webkit-details-marker{display:none;}
+.pcard-news-it summary::before{content:'▸';font-size:9px;color:var(--muted);flex:none;}
+.pcard-news-it[open] summary::before{content:'▾';}
+.pcard-news-h{font-weight:800;color:var(--text);flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pcard-news-it[open] .pcard-news-h{white-space:normal;}
+.pcard-news-m{font-size:10px;color:var(--muted);flex:none;white-space:nowrap;}
+.pcard-news-b{font-size:11.5px;color:var(--text);line-height:1.45;padding:0 0 6px 15px;}
+.pcard-news-b p{margin:0 0 4px;}
+.pcard-news-a{color:var(--muted);}
+.pcard-news-b a{color:var(--accent);font-size:10.5px;font-weight:800;text-decoration:none;}
 .pcard-tabs{display:flex;gap:4px;margin:8px 2px 2px;}
 .pcard-tab{flex:0 0 auto;padding:5px 15px;font-size:10.5px;font-weight:800;letter-spacing:.03em;cursor:pointer;
   border:1px solid var(--border);background:var(--surface2);color:var(--muted);border-radius:7px;transition:all .15s;}
@@ -5102,6 +5117,9 @@ const SLEEPER_STATE_URL  = 'https://api.sleeper.app/v1/state/nfl';
 const SLEEPER_LEAGUES_URL= (userId,season)=>`https://api.sleeper.app/v1/user/${userId}/leagues/nfl/${season}`;
 const SLEEPER_LG_DRAFTS_URL=(leagueId)=>`https://api.sleeper.app/v1/league/${leagueId}/drafts`;
 const SLEEPER_AVATAR_THUMB=(id)=>`https://sleepercdn.com/avatars/thumbs/${id}`;
+// A player's newest news notes as the Sleeper app shows them (Rotowire / FantasyPros blurbs;
+// public, CORS-open; not in Sleeper's documented v1 surface).
+const SLEEPER_PLAYER_NEWS_URL=(pid,n)=>`https://api.sleeper.app/players/nfl/${pid}/news?limit=${n||3}`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Embedded image assets (base64 data URIs → self-contained, render offline / from file://)
@@ -10478,7 +10496,7 @@ function gcLeagueOptions(){
   const opts=[];
   if(typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.scoringRaw) opts.push({id:'snap', name:leagueSnapshot.name||'League'});
   const lg=(typeof _pcardLg!=='undefined' && _pcardLg && _pcardLg.byLeague) ? _pcardLg.byLeague : {};
-  Object.keys(lg).forEach(id=>{ const L=lg[id]; if(!L || L.inactive || L.error) return; if(typeof leagueSnapshot!=='undefined' && leagueSnapshot && String(leagueSnapshot.leagueId)===String(id)) return; opts.push({id:String(id), name:L.name||'League'}); });
+  Object.keys(lg).forEach(id=>{ const L=lg[id]; if(!L || L.inactive || L.error || L.noRoster) return; if(typeof leagueSnapshot!=='undefined' && leagueSnapshot && String(leagueSnapshot.leagueId)===String(id)) return; opts.push({id:String(id), name:L.name||'League'}); });
   opts.push({id:'app', name:'App scoring'});
   return opts;
 }
@@ -10704,7 +10722,7 @@ function lfLeagueList(){
   const pc=(typeof _pcardLg!=='undefined' && _pcardLg && _pcardLg.byLeague) ? _pcardLg.byLeague : {};
   const wk=(typeof gcCurWeek==='function') ? gcCurWeek() : ((typeof TC_SEASON!=='undefined')?Number(TC_SEASON.week||0):0);
   Object.keys(pc).forEach(id=>{
-    const L=pc[id]; if(!L || L.inactive || L.error) return;
+    const L=pc[id]; if(!L || L.inactive || L.error || L.noRoster) return;   // a league I only run: no team to follow
     const m=(typeof gcMatchupFor==='function') ? gcMatchupFor(id, wk) : null;
     const rostered=new Set(Object.keys(L.byPid||{}));
     const mineRoster=new Set(Object.keys(L.byPid||{}).filter(p=>L.byPid[p]&&L.byPid[p].mine));
@@ -14230,6 +14248,7 @@ function renderPlayerCardShell(pid, pos, team){
         <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">✕</button>
       </div>
       ${contractBand}
+      ${(typeof pcardNewsHTML==='function')?pcardNewsHTML(pid):''}
       <div class="pcard-tabs" id="pcardTabs"></div>
       <div class="pcard-body" id="pcardBody">
         <div class="pcard-loading">Loading game logs…</div>
@@ -15090,6 +15109,9 @@ async function pcardLeaguesLoad(force){
         _pcardLg.byLeague[lg.league_id]={id:String(lg.league_id), name:L.name||lg.name||'League',
           avatar:(L.avatar && typeof SLEEPER_AVATAR_THUMB==='function')?SLEEPER_AVATAR_THUMB(L.avatar):null,
           sub:pcardLeagueSub(L), byPid, rosters:rosterMap, myRosterId,
+          // a league I run but don't play in (no roster of mine): the game tracker has no
+          // team to follow there, so its league lists leave it out; the card's rows keep it
+          noRoster: myRosterId==null,
           scoring:(L.scoring_settings && typeof L.scoring_settings==='object') ? L.scoring_settings : null};   // the Game Center scores a game under any league
       }catch(e){
         _pcardLg.byLeague[lg.league_id]={id:String(lg.league_id), name:lg.name||'League', error:true, byPid:{}};
@@ -15303,6 +15325,73 @@ if(typeof TC_INFO_BOOK !== 'undefined'){
         a verdict. Rookies have no row — their read is the PROSPECT grade.</p>`;
     },
   };
+}
+// ── Latest news: the player's newest notes, as the Sleeper app shows them ─────
+// Sleeper serves each player's news feed (Rotowire and FantasyPros blurbs: a headline, a
+// one-line description, an analysis paragraph, the source article) from a public, CORS-open
+// endpoint. The card shows the newest three as collapsed rows — headline, how long ago, the
+// source — and opens one on tap. Fetched once per card open, kept ten minutes; a team's
+// D/ST card (a non-numeric id) has none.
+let _pcardNews={};   // pid → {at, items, pending}
+const PCARD_NEWS_TTL=10*60*1000;
+const PCARD_NEWS_N=3;
+const PCARD_NEWS_SOURCES={rotowire:'Rotowire', fantasy_pros:'FantasyPros', fantasypros:'FantasyPros', sleeper:'Sleeper'};
+
+function pcardNewsAgo(ms, now){
+  const t=Number(ms||0); if(!t) return '';
+  const s=((now!=null?now:Date.now())-t)/1000;
+  if(!(s>=0)) return 'now';
+  if(s<3600) return `${Math.max(1,Math.round(s/60))}m`;
+  if(s<86400) return `${Math.round(s/3600)}h`;
+  if(s<86400*14) return `${Math.round(s/86400)}d`;
+  try{ return new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric'}); }catch(e){ return ''; }
+}
+function pcardNewsSource(s){
+  const k=String(s||'').toLowerCase().trim();
+  return PCARD_NEWS_SOURCES[k] || (k ? k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()) : '');
+}
+function pcardNewsNorm(r){
+  const m=(r && r.metadata) || {};
+  const title=String(m.title||'').trim(); if(!title) return null;
+  return { title, desc:String(m.description||'').trim(), analysis:String(m.analysis||'').trim(),
+           url:/^https?:\/\//.test(String(m.url||'')) ? String(m.url) : '', source:pcardNewsSource(r.source), at:Number(r.published||0) };
+}
+function pcardNewsItems(pid){ const c=_pcardNews[String(pid)]; return (c && Array.isArray(c.items)) ? c.items : null; }
+function pcardNewsLoad(pid){
+  const id=String(pid||''); if(!/^\d+$/.test(id)) return Promise.resolve([]);
+  const c=_pcardNews[id];
+  if(c && c.pending) return c.pending;
+  if(c && Array.isArray(c.items) && (Date.now()-c.at)<PCARD_NEWS_TTL) return Promise.resolve(c.items);
+  const p=(async()=>{
+    let items=[];
+    try{
+      const raw=await sleeperFetch(SLEEPER_PLAYER_NEWS_URL(id, PCARD_NEWS_N));
+      items=(Array.isArray(raw)?raw:[]).map(pcardNewsNorm).filter(Boolean).sort((a,b)=>b.at-a.at).slice(0, PCARD_NEWS_N);
+    }catch(e){ items=[]; }
+    _pcardNews[id]={at:Date.now(), items, pending:null};
+    _pcardNewsRepaint(id);
+    return items;
+  })();
+  _pcardNews[id]={at:c?c.at:0, items:c?c.items:null, pending:p};
+  return p;
+}
+function pcardNewsBodyHTML(items){
+  if(!items || !items.length) return '';
+  const row=(it)=>`<details class="pcard-news-it"><summary><span class="pcard-news-h">${escHtml(it.title)}</span><span class="pcard-news-m">${escHtml(pcardNewsAgo(it.at))}${it.source?` · ${escHtml(it.source)}`:''}</span></summary>
+    <div class="pcard-news-b">${it.desc?`<p>${escHtml(it.desc)}</p>`:''}${it.analysis?`<p class="pcard-news-a">${escHtml(it.analysis)}</p>`:''}${it.url?`<a href="${escAttr(it.url)}" target="_blank" rel="noopener">source ↗</a>`:''}</div></details>`;
+  return `<div class="pcard-news-lbl">News</div>${items.map(row).join('')}`;
+}
+// The band: empty (and hidden) until the feed lands, then the rows; nothing for a D/ST.
+function pcardNewsHTML(pid){
+  const id=String(pid||''); if(!/^\d+$/.test(id)) return '';
+  const items=pcardNewsItems(id);
+  if(items===null || (_pcardNews[id] && (Date.now()-_pcardNews[id].at)>=PCARD_NEWS_TTL)) pcardNewsLoad(id);
+  return `<div class="pcard-news" id="pcardNews">${pcardNewsBodyHTML(items||[])}</div>`;
+}
+function _pcardNewsRepaint(pid){
+  if(typeof pcardState==='undefined' || !pcardState || String(pcardState.pid)!==String(pid)) return;
+  const el=(typeof document!=='undefined') ? document.getElementById('pcardNews') : null; if(!el) return;
+  el.innerHTML=pcardNewsBodyHTML(pcardNewsItems(pid)||[]);
 }
 // ── Route tree (player-card "Routes" tab) ────────────────────────────────────
 // nflverse participation tags each pass play with the route the TARGETED receiver ran, so

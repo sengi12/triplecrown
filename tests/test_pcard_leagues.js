@@ -10,19 +10,21 @@ const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`
   toast=function(){};
   Object.assign(TC_SEASON,{year:2026,phase:'regular',week:2}); hasSeasonStarted=function(){return true;};
-  laLoadSleeperProfile=function(){ return {username:'pottluke', user:{user_id:'me'}, leagues:[{league_id:'L1',name:'Queen City Kings'},{league_id:'L2',name:'BAFL'},{league_id:'L3',name:'Old one',stale:true},{league_id:'L5',name:'Dirty Mikes'}]}; };
+  laLoadSleeperProfile=function(){ return {username:'pottluke', user:{user_id:'me'}, leagues:[{league_id:'L1',name:'Queen City Kings'},{league_id:'L2',name:'BAFL'},{league_id:'L3',name:'Old one',stale:true},{league_id:'L5',name:'Dirty Mikes'},{league_id:'L6',name:'Business of Innovation'}]}; };
   const fetches=[];
   sleeperFetch=async(url)=>{ fetches.push(url);
     if(/league\\/L1$/.test(url)) return {name:'Queen City Kings', total_rosters:12, roster_positions:['QB','RB','WR','WR','TE','FLEX','SUPER_FLEX','BN'], scoring_settings:{rec:1}, settings:{type:0}, avatar:'abc'};
     if(/league\\/L2$/.test(url)) return {name:'BAFL', total_rosters:10, roster_positions:['QB','RB','WR','TE','FLEX','BN'], scoring_settings:{rec:0}, settings:{type:0}};
     if(/league\\/L5$/.test(url)) return {name:'Dirty Mikes', status:'pre_draft', season:'2026', total_rosters:12, roster_positions:['QB','BN'], scoring_settings:{rec:1}, settings:{type:0}};
     if(/L5\\/rosters/.test(url)) return [{roster_id:1, owner_id:'me', players:['9']}];
+    if(/league\\/L6$/.test(url)) return {name:'Business of Innovation', total_rosters:8, roster_positions:['QB','RB','WR','TE','FLEX','BN'], scoring_settings:{rec:0.5}, settings:{type:0}};
+    if(/L6\\/rosters/.test(url)) return [{roster_id:1, owner_id:'them', players:['1']},{roster_id:2, owner_id:'x', players:['2']}];   // I run it, I don't play in it
     if(/L1\\/rosters/.test(url)) return [{roster_id:1, owner_id:'me', players:['1','2']},{roster_id:2, owner_id:'them', players:['3']}];
     if(/L2\\/rosters/.test(url)) return [{roster_id:1, owner_id:'x', co_owners:['me'], players:['3']},{roster_id:2, owner_id:'them', players:['1']}];
     if(/users/.test(url)) return [{user_id:'me',display_name:'pottluke'},{user_id:'them',display_name:'rival',metadata:{team_name:'The Rivals'}},{user_id:'x',display_name:'partner'}];
     return [];
   };
-  return { avail:pcardLeaguesAvailable, bar:pcardLeaguesBarHTML, rows:pcardLeaguesRows, load:pcardLeaguesLoad, toggle:pcardLeaguesToggle, fetches, sub:pcardLeagueSub,
+  return { avail:pcardLeaguesAvailable, bar:pcardLeaguesBarHTML, rows:pcardLeaguesRows, load:pcardLeaguesLoad, toggle:pcardLeaguesToggle, fetches, sub:pcardLeagueSub, lg:()=>_pcardLg.byLeague,
     setOpen:(v)=>{ _pcardLgOpen=v; }, setState:(pid)=>{ pcardState={pid:String(pid),posc:'RB',team:'NE'}; } };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -30,7 +32,8 @@ let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',
   chk(app.avail(), 'the band exists when a Sleeper profile with leagues is saved');
   chk(/pcard-lg-pill/.test(app.bar('1')) && /id="pcardLgPillTxt"><\/span>/.test(app.bar('1')) && !/pcard-lg-row/.test(app.bar('1')), 'before loading: the icon alone, no rows in the card');
   await app.load(false);
-  chk(app.fetches.filter(u=>/league\/L[125]$/.test(u)).length===3 && !app.fetches.some(u=>/L3/.test(u)), 'loads each saved league once; the stale one is skipped');
+  chk(app.fetches.filter(u=>/league\/L[1256]$/.test(u)).length===4 && !app.fetches.some(u=>/L3/.test(u)), 'loads each saved league once; the stale one is skipped');
+  chk(app.lg().L6 && app.lg().L6.noRoster===true && app.lg().L6.myRosterId==null && app.lg().L1.noRoster===false && app.lg().L2.noRoster===false, 'a league I run without a roster of my own is marked noRoster (a co-owned roster counts as mine)');
   chk(!/Dirty Mikes/.test(app.rows('9')), 'a league that is not in play this season (never drafted) is left out');
   app.setOpen(true);
   let rows=app.rows('1');
@@ -39,9 +42,9 @@ let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',
   rows=app.rows('3');
   chk(/pcard-lg-mine/.test(rows.split('BAFL')[1]||''), 'a co-owned roster counts as mine');
   rows=app.rows('9');
-  chk((rows.match(/AVAILABLE/g)||[]).length===2, 'an unrostered player reads AVAILABLE in every league');
+  chk((rows.match(/AVAILABLE/g)||[]).length===3, 'an unrostered player reads AVAILABLE in every league (the card keeps the league I only run)');
   chk(/href="https:\/\/sleeper.com\/leagues\/L1\/players"/.test(rows), 'a row opens the league on Sleeper');
-  chk(/>1 of 2</.test(app.bar('2')) && />2 of 2</.test(app.bar('9')) && />0 of 2</.test(app.bar('3')), 'after loading the pill says "1 of 2" / "2 of 2" / "0 of 2" — available, of your leagues');
+  chk(/>1 of 3</.test(app.bar('2')) && />3 of 3</.test(app.bar('9')) && />1 of 3</.test(app.bar('3')), 'after loading the pill says "1 of 3" / "3 of 3" / "1 of 3" — available, of your leagues');
   // count league reads only — the in-season stats poll also goes through sleeperFetch
   const lgReads=()=>app.fetches.filter(u=>/\/league\//.test(u)).length;
   const n=lgReads(); await app.load(false);

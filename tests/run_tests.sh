@@ -219,6 +219,7 @@ run_js_test test_ai_compare_week "Compare in-season: this-week line (projection,
 run_js_test test_keys            "Keyboard shortcuts: one table drives handler + sheet; Mod is ⌘/Ctrl; never while typing (Esc excepted); Game Center / Rankings / Leagues groups; your own keys persist, a collision frees the old owner; Esc closes the top layer"
 run_js_test test_ai_textcalls    "AI text-style tool calls: <invoke>/<function=>/fenced calls parse and run; the last request of a send is always an answer (no tools); leaked call blocks never render"
 run_js_test test_live_default    "In-season the Projections view lands on Live once a game is played; taps remembered; past-season/Rankings boot untouched; once per session"
+run_js_test test_pcard_news      "Player card · Latest news: Sleeper's per-player feed as collapsed rows (headline, age, source; description/analysis/link on tap), 10-min cache, none for a D/ST, empty on failure"
 run_js_test test_pcard_leagues   "Player card · In your leagues: one row per synced Sleeper league (mine / owner / available), format subtitle, cached per session"
 run_js_test test_projection_list "buildProjectionList: the projection board on any season tab (working set swapped in, globals restored, own cache); analyzer maps + hub read through it"
 run_js_test test_la_trends_wk1   "Trends after week 1: breakouts vs the projection, Sleeper 24h adds/drops, thin pace/usage, season-so-far teams, the week-2 switch"

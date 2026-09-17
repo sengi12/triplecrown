@@ -57,4 +57,7 @@ const SLEEPER_STATE_URL  = 'https://api.sleeper.app/v1/state/nfl';
 const SLEEPER_LEAGUES_URL= (userId,season)=>`https://api.sleeper.app/v1/user/${userId}/leagues/nfl/${season}`;
 const SLEEPER_LG_DRAFTS_URL=(leagueId)=>`https://api.sleeper.app/v1/league/${leagueId}/drafts`;
 const SLEEPER_AVATAR_THUMB=(id)=>`https://sleepercdn.com/avatars/thumbs/${id}`;
+// A player's newest news notes as the Sleeper app shows them (Rotowire / FantasyPros blurbs;
+// public, CORS-open; not in Sleeper's documented v1 surface).
+const SLEEPER_PLAYER_NEWS_URL=(pid,n)=>`https://api.sleeper.app/players/nfl/${pid}/news?limit=${n||3}`;
 

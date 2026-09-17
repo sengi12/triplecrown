@@ -51,6 +51,9 @@ async function pcardLeaguesLoad(force){
         _pcardLg.byLeague[lg.league_id]={id:String(lg.league_id), name:L.name||lg.name||'League',
           avatar:(L.avatar && typeof SLEEPER_AVATAR_THUMB==='function')?SLEEPER_AVATAR_THUMB(L.avatar):null,
           sub:pcardLeagueSub(L), byPid, rosters:rosterMap, myRosterId,
+          // a league I run but don't play in (no roster of mine): the game tracker has no
+          // team to follow there, so its league lists leave it out; the card's rows keep it
+          noRoster: myRosterId==null,
           scoring:(L.scoring_settings && typeof L.scoring_settings==='object') ? L.scoring_settings : null};   // the Game Center scores a game under any league
       }catch(e){
         _pcardLg.byLeague[lg.league_id]={id:String(lg.league_id), name:lg.name||'League', error:true, byPid:{}};

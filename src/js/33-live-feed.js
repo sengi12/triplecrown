@@ -192,7 +192,7 @@ function lfLeagueList(){
   const pc=(typeof _pcardLg!=='undefined' && _pcardLg && _pcardLg.byLeague) ? _pcardLg.byLeague : {};
   const wk=(typeof gcCurWeek==='function') ? gcCurWeek() : ((typeof TC_SEASON!=='undefined')?Number(TC_SEASON.week||0):0);
   Object.keys(pc).forEach(id=>{
-    const L=pc[id]; if(!L || L.inactive || L.error) return;
+    const L=pc[id]; if(!L || L.inactive || L.error || L.noRoster) return;   // a league I only run: no team to follow
     const m=(typeof gcMatchupFor==='function') ? gcMatchupFor(id, wk) : null;
     const rostered=new Set(Object.keys(L.byPid||{}));
     const mineRoster=new Set(Object.keys(L.byPid||{}).filter(p=>L.byPid[p]&&L.byPid[p].mine));

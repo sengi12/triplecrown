@@ -42,7 +42,7 @@ const app=new Function(code+`
   const G=(o)=>Object.assign({state:'in', eid:'E1', score:6, oppScore:14, home:true, opp:'MIN', sit:{period:3, clock:'10:07', lastPlayId:'p1', lastPlay:LP({})}}, o);
   return { onBoard:lfOnBoard, rows:()=>_lf.rows, view:lfRows, clear:lfClear, read:lfReadPlay, stats:lfPlayStats, pid:lfPidFor,
     delta:lfDelta, rel:lfRelevance, leagues:lfLeagueList, toggle:lfToggleLeague, all:lfSetAll, mineOnly:lfSetMineOnly, sel:()=>_lf.leagues,
-    initials:lfLeagueInitials, chipInner:lfLeagueChipInner,
+    initials:lfLeagueInitials, chipInner:lfLeagueChipInner, lg:()=>_pcardLg.byLeague,
     setPcard:(o)=>{ _pcardLg={byLeague:o, at:Date.now(), loading:null}; }, setMu:(lid,wk,v)=>{ _gcMu.cache[lid+'|'+wk]=v; }, panel:lfPanelHTML, rowHTML:lfRowHTML, allLeagues:lfSetAllLeagues, sides:lfSideSets, stat:()=>_lf.stat, titleHTML:lfTitleHTML, LP, G, board:(t)=>{ _tcBoard={season:String(TC_SEASON.year), week:tcBoardWeek(), at:Date.now(), teams:t, busy:false, live:true}; }, MAX:LF_MAX_ROWS };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -137,6 +137,8 @@ const LP=app.LP, G=app.G;
   chk(/gcf-row lf-row gcf-td/.test(h) && /G\. Wilson(?:<\/span>)? 12 yd TD catch/.test(h) && /gcf-pos-wr">WR/.test(h) && /Q3 10:07/.test(h), 'rows wear the per-game feed\'s clothes: kind, headline, positions, clock');
   chk(!/lf-mine/.test(h), 'the my-matchup toggle only appears once a league is picked');
   chk(/All leagues<\/button>/.test(h), 'with more than one league synced, an All leagues chip sits beside All games');
+  { const cur=app.lg(); app.setPcard(Object.assign({}, cur, {L8:{id:'L8', name:'Business of Innovation', noRoster:true, byPid:{}, scoring:{}}})); const h8=app.panel(false);
+    chk(!/Business of Innovation/.test(h8) && /title="Queen City Keepers"/.test(h8), 'a league I only run (no roster of mine) gets no chip — nothing to follow there'); app.setPcard(cur); }
   const S=app.sides();
   chk(S.mine.has('q1') && S.opp.has('w1'), 'showing all games still knows my starters and my opponents across every league');
   app.toggle('L1'); h=app.panel(false);
