@@ -174,6 +174,9 @@ function lfToggleLeague(id){
   if(typeof lfRepaint==='function') lfRepaint();
 }
 function lfSetAll(){ _lf.leagues=[]; _lf.mineOnly=false; if(typeof lfRepaint==='function') lfRepaint(); }
+// Every league you are in: the plays that touch anyone you or a leaguemate rosters.
+function lfSetAllLeagues(){ _lf.leagues=lfLeagueList().map(l=>l.id); if(typeof lfRepaint==='function') lfRepaint(); }
+function lfAllLeaguesOn(){ const all=lfLeagueList(); return all.length>0 && _lf.leagues.length===all.length; }
 function lfSetMineOnly(v){ _lf.mineOnly=!!v; if(typeof lfRepaint==='function') lfRepaint(); }
 // What this play moved in one league: Σ stat × setting over the players it involved.
 function lfDelta(row, lg){
@@ -227,6 +230,7 @@ function lfLiveCount(){
 function lfChipsHTML(){
   const list=lfLeagueList(), sel=_lf.leagues;
   const chips=[`<button class="ld-pos ${sel.length?'':'active'}" onclick="lfSetAll()">All games</button>`]
+    .concat(list.length>1 ? [`<button class="ld-pos ${lfAllLeaguesOn()?'active':''}" onclick="lfSetAllLeagues()">All leagues</button>`] : [])
     .concat(list.map(l=>`<button class="ld-pos ${sel.includes(l.id)?'active':''}" onclick="lfToggleLeague('${escAttr(l.id)}')" title="${escAttr(l.name)}">${escHtml(l.name.length>16?l.name.slice(0,15)+'…':l.name)}</button>`));
   const mine=sel.length ? `<label class="lf-mine"><input type="checkbox" ${_lf.mineOnly?'checked':''} onchange="lfSetMineOnly(this.checked)"> My matchup only</label>` : '';
   return `<div class="ld-posrow lf-chips">${chips.join('')}</div>${mine}`;
@@ -237,14 +241,24 @@ function lfTagHTML(t){
   const who = t.mine ? '★' : (t.opp ? 'vs' : '');
   return `<span class="lf-tag ${cls}">${who?`<b>${who}</b>`:''}${escHtml(t.name.length>18?t.name.slice(0,17)+'…':t.name)}${d!=null&&d!==0?`<em class="${d>0?'lf-up':'lf-down'}">${d>0?'+':''}${d.toFixed(2)}</em>`:''}</span>`;
 }
-function lfRowHTML(r){
+// Blue for your starters, red for the ones you are playing — across the leagues in view
+// (every league you are in when the feed is showing all games).
+function lfSideSets(){
+  const sel=lfSelected(); const use=sel.length?sel:lfLeagueList();
+  const mine=new Set(), opp=new Set();
+  use.forEach(l=>{ l.mine.forEach(p=>mine.add(String(p))); l.opp.forEach(p=>opp.add(String(p))); });
+  return {mine, opp};
+}
+function lfRowHTML(r, sides){
+  const S=sides||lfSideSets();
   const pids=Object.keys(r.roles).map(k=>r.roles[k]).filter(Boolean);
   const sp=(typeof sleeperPlayers!=='undefined' && sleeperPlayers) ? sleeperPlayers : {};
   const who=pids.map(pid=>{
     const p=sp[pid]||{}; const nm=p.name?((typeof gcShort==='function')?gcShort(p.name):p.name):pid;
     const pos=String(p.pos||'').toUpperCase();
     const click=(pos && pos!=='DEF' && typeof pcardOnclick==='function') ? ` onclick="${pcardOnclick(pid, pos, p.team||'')}"` : '';
-    return `<span class="lf-who"${click}><span class="gcf-name">${escHtml(nm)}</span>${pos?`<span class="gcf-pos gcf-pos-${escAttr(pos.toLowerCase())}">${escHtml(pos)}</span>`:''}</span>`;
+    const side=S.mine.has(String(pid)) ? ' gc-mine' : (S.opp.has(String(pid)) ? ' gc-opp' : '');
+    return `<span class="lf-who"${click}><span class="gcf-name${side}">${escHtml(nm)}</span>${pos?`<span class="gcf-pos gcf-pos-${escAttr(pos.toLowerCase())}">${escHtml(pos)}</span>`:''}</span>`;
   }).join('');
   const sit=r.down>0 ? `${r.ddt}${r.spot?` @ ${r.spot}`:''}` : '';
   const score=`<span>${r.away} ${r.as!=null?r.as:'–'}</span><span class="gcf-dash">–</span><span>${r.hs!=null?r.hs:'–'} ${r.home}</span>`;
@@ -266,7 +280,7 @@ function lfBodyHTML(){
   const live=lfLiveCount();
   const rows=lfRows();
   const list = rows.length
-    ? `<div class="gcf lf-list">${rows.map(lfRowHTML).join('')}</div>`
+    ? (()=>{ const S=lfSideSets(); return `<div class="gcf lf-list">${rows.map(r=>lfRowHTML(r, S)).join('')}</div>`; })()
     : `<div class="ld-empty">${live
         ? (_lf.leagues.length ? 'no plays yet for the leagues you picked' : 'waiting for the next play…')
         : (_lf.rows.length ? 'nothing on right now — the last plays are above' : 'the feed fills as games kick off')}</div>`;

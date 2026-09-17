@@ -30,7 +30,7 @@ const app=new Function(code+`
   leagueSnapshot={name:'Dirty Mikes', myUserId:'u1', scoringRaw:{pass_yd:0.04,pass_td:4,pass_int:-1,rush_yd:0.1,rush_td:6,rec:0.5,rec_yd:0.1,fgm:3,xpm:1,pts_allow:-0.1,sack:1,idp_tkl:1,idp_sack:2},
     teamList:[{rosterId:1, ownerId:'u1', owner:'Sengi12', teamName:'Sengi', players:[{id:'q1'},{id:'r2'}]},{rosterId:2, ownerId:'u2', owner:'RichBigMeechy', teamName:'Rich', players:[{id:'w2'}]}]};
   _gcd.tab='stats'; _gcd.side='fantasy';   // the fantasy pane, as before the Feed | Stats tabs
-  return { pts:tcSleeperPoints, mode:gcSetMode, step:gcStep, setPos:gcSetPos, render:renderRightSidebar, html:()=>document.getElementById('leaders').innerHTML, cls:()=>[...document.getElementById('leaders').classList._s], pick:gcPick, week:gcSetWeek, load:gcLoadMode, state:()=>_gc, games:()=>gcGames(gcBoard(1)), mine:gcIsMine, maxW:gcMaxWidth, gameHTML:gcGameHTML, weekOpts:gcWeekOptions, gcWeek, setWeekProj:(wk,rows)=>{ const d=_laWpEntry(wk); d.rows=rows; d.at=Date.now(); d.fails=9; } };
+  return { pts:tcSleeperPoints, mode:gcSetMode, step:gcStep, setPos:gcSetPos, sideClass:gcSideClass, setHub:(r)=>{ hubState.results=r; hubState.loadedAt=Date.now(); leagueSnapshot.leagueId='L1'; }, render:renderRightSidebar, html:()=>document.getElementById('leaders').innerHTML, cls:()=>[...document.getElementById('leaders').classList._s], pick:gcPick, week:gcSetWeek, load:gcLoadMode, state:()=>_gc, games:()=>gcGames(gcBoard(1)), mine:gcIsMine, maxW:gcMaxWidth, gameHTML:gcGameHTML, weekOpts:gcWeekOptions, gcWeek, setWeekProj:(wk,rows)=>{ const d=_laWpEntry(wk); d.rows=rows; d.at=Date.now(); d.fails=9; } };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -67,6 +67,13 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(!/S\. Darnold/.test(h), 'a player from another game is not in this one');
   chk(/216yd · 1TD · 30rush/.test(h) && /45rush · 7\/7 48rec · 1TD/.test(h), 'offensive stat lines in the app\'s own grammar');
 
+  console.log('=== my team is blue, the team I am playing is red ===');
+  app.setHub({L1:{league:{name:'Dirty Mikes'}, lineup:{starters:['q1','r2'], oppStarters:['w2']}}});
+  chk(app.sideClass('q1')===' gc-mine' && app.sideClass('w2')===' gc-opp' && app.sideClass('k1')==='', 'my starter, my opponent\'s starter, and a man in neither line-up');
+  app.render(); const hc=app.html();
+  chk(/gc-pname gc-mine">B\. Mayfield/.test(hc) && /gc-pname gc-opp">T\. Higgins/.test(hc), 'the names carry it into the panel');
+  app.setHub({});
+
   console.log('=== my players light up ===');
   chk(app.mine('q1') && app.mine('r2') && !app.mine('w2'), 'the roster owned by my user id is mine; a leaguemate\'s is not');
   chk(/gc-pname gc-mine">B\. Mayfield/.test(h) && /gc-pname gc-mine">C\. Brown/.test(h) && /gc-pname">T\. Higgins/.test(h), 'my players\' names carry the highlight; a leaguemate\'s player does not');
@@ -92,7 +99,8 @@ console.log('=== a game still ahead shows each side with the week\'s projected l
   chk(!/no stat lines yet/.test(h) && !/loading the week/.test(h), 'no stat-line placeholder on an unplayed game');
   const played=app.gameHTML({id:'TB@CIN', home:'CIN', away:'TB', state:'post', detail:'Final', hs:33, as:27, hrec:'1-0', arec:'0-1'}, null, 1);
   chk(/loading the week's stat lines/.test(played) && !/gc-projnote/.test(played), 'a played game still waits for its stat lines');
-  chk(JSON.stringify(app.weekOpts(1))===JSON.stringify(Array.from({length:22},(_,i)=>i+1)) && JSON.stringify(app.weekOpts(17))==='[17,18,19,20,21,22,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1]' && app.weekOpts(2)[0]===2 && app.weekOpts(2)[20]===22 && app.weekOpts(2)[21]===1, 'the picker lists now, every week ahead through the Super Bowl (19-22 = the playoff rounds), then the weeks played');
+  const inOrder=JSON.stringify(Array.from({length:22},(_,i)=>i+1));
+  chk(JSON.stringify(app.weekOpts(1))===inOrder && JSON.stringify(app.weekOpts(9))===inOrder && JSON.stringify(app.weekOpts(22))===inOrder, 'the picker reads like a calendar: week 1 first, the Super Bowl last, whatever week it is');
   app.state().week=3; chk(app.gcWeek()===3, 'a week ahead can be picked'); app.state().week='current';
 }
 

@@ -31,8 +31,8 @@ function gcLastWeek(){ return (typeof TC_LAST_WEEK!=='undefined') ? TC_LAST_WEEK
 function gcWeek(){ const cur=gcCurWeek(); return _gc.week==='current' ? cur : Math.max(1, Math.min(gcLastWeek(), _gc.week)); }
 function gcWeekLabel(w){ return (typeof tcWeekLabel==='function') ? tcWeekLabel(w) : `Week ${w}`; }
 function gcWeekOptions(cur){
-  const out=[]; for(let w=cur; w<=gcLastWeek(); w++) out.push(w);
-  for(let w=cur-1; w>=1; w--) out.push(w);
+  // In order, week 1 through the Super Bowl — the current week is marked, not moved.
+  const out=[]; for(let w=1; w<=gcLastWeek(); w++) out.push(w);
   return out;
 }
 
@@ -143,6 +143,24 @@ function gcMineSet(){
   const mine=s.teamList.find(t=>t.ownerId===s.myUserId || (t.coOwners||[]).includes(s.myUserId));
   return new Set(((mine&&mine.players)||[]).map(p=>String(p.id)));
 }
+// Your matchup in the pane's league: your starters and your opponent's (the hub keeps
+// both). Cached per league + hub load — this is asked once per player row.
+function gcMatchupSets(){
+  const id=(typeof gcLeague==='function') ? gcLeague() : 'snap';
+  const hub=(typeof hubState!=='undefined' && hubState) ? hubState : null;
+  const stamp=`${id}|${hub?hub.loadedAt:0}`;
+  if(_gc._muAt===stamp && _gc._mu) return _gc._mu;
+  let lid=id;
+  if(id==='snap') lid=(typeof leagueSnapshot!=='undefined' && leagueSnapshot) ? String(leagueSnapshot.leagueId||'') : '';
+  const r=(id!=='app' && hub && hub.results) ? hub.results[lid] : null;
+  const lu=r && r.lineup;
+  _gc._mu={ mine:new Set(((lu&&lu.starters)||[]).map(String)), opp:new Set(((lu&&lu.oppStarters)||[]).map(String)) };
+  _gc._muAt=stamp;
+  return _gc._mu;
+}
+function gcIsOpp(pid){ return gcMatchupSets().opp.has(String(pid)); }
+// The class a name wears: blue for your team, red for the one you are playing this week.
+function gcSideClass(pid){ return gcIsMine(pid) ? ' gc-mine' : (gcIsOpp(pid) ? ' gc-opp' : ''); }
 function gcIsMine(pid){
   const L=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
   if(L){ const st=L.byPid && L.byPid[String(pid)]; return !!(st && st.mine); }
@@ -201,7 +219,7 @@ function gcPlayerHTML(x, side){
   const pid=String(r.player_id||''); const pos=gcPos(r);
   const click = pos==='DEF' ? '' : ` onclick="${pcardOnclick(pid, pos, r.team||'')}"`;
   return `<div class="gc-p gc-p-${side}${r.proj?' gc-p-proj':''}"${click}>
-    <div class="gc-pinfo">${owner?`<span class="gc-owner">${escHtml(owner)}</span>`:''}<span class="gc-pname${gcIsMine(pid)?' gc-mine':''}">${escHtml(gcName(r))}</span>${x.line?`<span class="gc-line">${escHtml(x.line)}</span>`:''}</div>
+    <div class="gc-pinfo">${owner?`<span class="gc-owner">${escHtml(owner)}</span>`:''}<span class="gc-pname${gcSideClass(pid)}">${escHtml(gcName(r))}</span>${x.line?`<span class="gc-line">${escHtml(x.line)}</span>`:''}</div>
     <span class="gc-ptsbox"><b class="gc-pts">${x.pts!=null?x.pts.toFixed(2):'–'}</b>${x.proj!=null?`<small class="gc-proj" title="projected">${x.proj.toFixed(2)}</small>`:''}</span>
   </div>`;
 }
@@ -285,7 +303,7 @@ function gcHTML(phone){
   const fmt=gcScoring() ? escHtml((lgE && lgE.name) || (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) || 'league scoring') : 'app scoring · Sleeper for K/DEF/IDP';
   const pick=_gc.pos||'ALL';
   const posBtns=GC_POS.map(p=>`<button class="ld-pos ${pick===p?'active':''}" onclick="gcSetPos('${p}')">${p}</button>`).join('');
-  const btns=phone ? `<button class="rsb-btn gcm-x" onclick="gcmSet('closed')" title="Close" aria-label="Close">×</button>` : rsbButtonsHTML();
+  const btns=phone ? '' : rsbButtonsHTML();   // the sheet closes by its handle or the scrim
   // The live feed takes the whole panel: its own filters, no week or position rows.
   if(_gc.view==='feed' && typeof lfBodyHTML==='function'){
     return `<div class="gc lf">
@@ -362,7 +380,8 @@ function gcmSwipeAction(dx, tab){
   if(tab==='leaders') return dx>0 ? {tab:'games'} : null;
   const games=gcmCurrentGames()||[];
   if(!games.length) return dx<0 ? {tab:'leaders'} : null;
-  const i=Math.max(0, games.findIndex(g=>g.id===_gc.game));
+  const i=games.findIndex(g=>g.id===_gc.game);
+  if(i<0) return null;                                   // the board has not caught up: stay put
   if(dx<0) return i<games.length-1 ? {game:games[i+1].id} : {tab:'leaders'};
   return i>0 ? {game:games[i-1].id} : null;
 }
@@ -435,7 +454,9 @@ function gcmBindSwipe(sheet){
 function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; _gcm.open='full'; renderGamesPhone(); }
 // The current week's games, whatever week the sheet is showing — the pill reads the present.
 function gcmCurrentGames(){
-  const board=gcBoard(gcCurWeek());
+  // The week the sheet is SHOWING — reading the current week here sent every swipe on a
+  // past week to that week's first game, since the picked game was never in the list.
+  const board=gcBoard(gcWeek());
   return board ? gcGames(board) : null;
 }
 // The sheet's two pages: the week's games, and the Leaders — the same ranked list the
@@ -505,7 +526,7 @@ function renderGamesPhone(fromLoad){
   const keep={ body:body0?body0.scrollTop:0, rail:rail0?rail0.scrollLeft:0, game:_gc.game };
   const tab=_gcm.tab||'games';
   const width=(typeof window!=='undefined' && window.innerWidth) ? window.innerWidth : 390;
-  const closeBtn=`<button class="rsb-btn gcm-x" onclick="gcmSet('closed')" title="Close" aria-label="Close">×</button>`;
+  const closeBtn='';   // the sheet closes by its handle or the scrim, not a button
   const page = open==='closed' ? ''
     : tab==='leaders' && typeof ldPanelHTML==='function'
       ? `<div class="gc gcm-leaders">${ldPanelHTML(width, closeBtn, fromLoad, true)}</div>`

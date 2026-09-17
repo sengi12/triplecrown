@@ -1482,6 +1482,8 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .lf-tag em{font-style:normal;font-weight:900;font-variant-numeric:tabular-nums;}
 .lf-up{color:#00d4aa;}
 .lf-down{color:#ff7b7b;}
+/* your team blue, the team you are playing red */
+.gc-opp,.lf-who .gc-opp{color:#ff7a85;}
 /* ── Coaching Playbook Modal + Insights ───────────────────────────────────── */
 
 /* Click affordances for coaching-scheme entry points */
@@ -9500,8 +9502,8 @@ function gcLastWeek(){ return (typeof TC_LAST_WEEK!=='undefined') ? TC_LAST_WEEK
 function gcWeek(){ const cur=gcCurWeek(); return _gc.week==='current' ? cur : Math.max(1, Math.min(gcLastWeek(), _gc.week)); }
 function gcWeekLabel(w){ return (typeof tcWeekLabel==='function') ? tcWeekLabel(w) : `Week ${w}`; }
 function gcWeekOptions(cur){
-  const out=[]; for(let w=cur; w<=gcLastWeek(); w++) out.push(w);
-  for(let w=cur-1; w>=1; w--) out.push(w);
+  // In order, week 1 through the Super Bowl — the current week is marked, not moved.
+  const out=[]; for(let w=1; w<=gcLastWeek(); w++) out.push(w);
   return out;
 }
 
@@ -9612,6 +9614,24 @@ function gcMineSet(){
   const mine=s.teamList.find(t=>t.ownerId===s.myUserId || (t.coOwners||[]).includes(s.myUserId));
   return new Set(((mine&&mine.players)||[]).map(p=>String(p.id)));
 }
+// Your matchup in the pane's league: your starters and your opponent's (the hub keeps
+// both). Cached per league + hub load — this is asked once per player row.
+function gcMatchupSets(){
+  const id=(typeof gcLeague==='function') ? gcLeague() : 'snap';
+  const hub=(typeof hubState!=='undefined' && hubState) ? hubState : null;
+  const stamp=`${id}|${hub?hub.loadedAt:0}`;
+  if(_gc._muAt===stamp && _gc._mu) return _gc._mu;
+  let lid=id;
+  if(id==='snap') lid=(typeof leagueSnapshot!=='undefined' && leagueSnapshot) ? String(leagueSnapshot.leagueId||'') : '';
+  const r=(id!=='app' && hub && hub.results) ? hub.results[lid] : null;
+  const lu=r && r.lineup;
+  _gc._mu={ mine:new Set(((lu&&lu.starters)||[]).map(String)), opp:new Set(((lu&&lu.oppStarters)||[]).map(String)) };
+  _gc._muAt=stamp;
+  return _gc._mu;
+}
+function gcIsOpp(pid){ return gcMatchupSets().opp.has(String(pid)); }
+// The class a name wears: blue for your team, red for the one you are playing this week.
+function gcSideClass(pid){ return gcIsMine(pid) ? ' gc-mine' : (gcIsOpp(pid) ? ' gc-opp' : ''); }
 function gcIsMine(pid){
   const L=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
   if(L){ const st=L.byPid && L.byPid[String(pid)]; return !!(st && st.mine); }
@@ -9670,7 +9690,7 @@ function gcPlayerHTML(x, side){
   const pid=String(r.player_id||''); const pos=gcPos(r);
   const click = pos==='DEF' ? '' : ` onclick="${pcardOnclick(pid, pos, r.team||'')}"`;
   return `<div class="gc-p gc-p-${side}${r.proj?' gc-p-proj':''}"${click}>
-    <div class="gc-pinfo">${owner?`<span class="gc-owner">${escHtml(owner)}</span>`:''}<span class="gc-pname${gcIsMine(pid)?' gc-mine':''}">${escHtml(gcName(r))}</span>${x.line?`<span class="gc-line">${escHtml(x.line)}</span>`:''}</div>
+    <div class="gc-pinfo">${owner?`<span class="gc-owner">${escHtml(owner)}</span>`:''}<span class="gc-pname${gcSideClass(pid)}">${escHtml(gcName(r))}</span>${x.line?`<span class="gc-line">${escHtml(x.line)}</span>`:''}</div>
     <span class="gc-ptsbox"><b class="gc-pts">${x.pts!=null?x.pts.toFixed(2):'–'}</b>${x.proj!=null?`<small class="gc-proj" title="projected">${x.proj.toFixed(2)}</small>`:''}</span>
   </div>`;
 }
@@ -9754,7 +9774,7 @@ function gcHTML(phone){
   const fmt=gcScoring() ? escHtml((lgE && lgE.name) || (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) || 'league scoring') : 'app scoring · Sleeper for K/DEF/IDP';
   const pick=_gc.pos||'ALL';
   const posBtns=GC_POS.map(p=>`<button class="ld-pos ${pick===p?'active':''}" onclick="gcSetPos('${p}')">${p}</button>`).join('');
-  const btns=phone ? `<button class="rsb-btn gcm-x" onclick="gcmSet('closed')" title="Close" aria-label="Close">×</button>` : rsbButtonsHTML();
+  const btns=phone ? '' : rsbButtonsHTML();   // the sheet closes by its handle or the scrim
   // The live feed takes the whole panel: its own filters, no week or position rows.
   if(_gc.view==='feed' && typeof lfBodyHTML==='function'){
     return `<div class="gc lf">
@@ -9831,7 +9851,8 @@ function gcmSwipeAction(dx, tab){
   if(tab==='leaders') return dx>0 ? {tab:'games'} : null;
   const games=gcmCurrentGames()||[];
   if(!games.length) return dx<0 ? {tab:'leaders'} : null;
-  const i=Math.max(0, games.findIndex(g=>g.id===_gc.game));
+  const i=games.findIndex(g=>g.id===_gc.game);
+  if(i<0) return null;                                   // the board has not caught up: stay put
   if(dx<0) return i<games.length-1 ? {game:games[i+1].id} : {tab:'leaders'};
   return i>0 ? {game:games[i-1].id} : null;
 }
@@ -9904,7 +9925,9 @@ function gcmBindSwipe(sheet){
 function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; _gcm.open='full'; renderGamesPhone(); }
 // The current week's games, whatever week the sheet is showing — the pill reads the present.
 function gcmCurrentGames(){
-  const board=gcBoard(gcCurWeek());
+  // The week the sheet is SHOWING — reading the current week here sent every swipe on a
+  // past week to that week's first game, since the picked game was never in the list.
+  const board=gcBoard(gcWeek());
   return board ? gcGames(board) : null;
 }
 // The sheet's two pages: the week's games, and the Leaders — the same ranked list the
@@ -9974,7 +9997,7 @@ function renderGamesPhone(fromLoad){
   const keep={ body:body0?body0.scrollTop:0, rail:rail0?rail0.scrollLeft:0, game:_gc.game };
   const tab=_gcm.tab||'games';
   const width=(typeof window!=='undefined' && window.innerWidth) ? window.innerWidth : 390;
-  const closeBtn=`<button class="rsb-btn gcm-x" onclick="gcmSet('closed')" title="Close" aria-label="Close">×</button>`;
+  const closeBtn='';   // the sheet closes by its handle or the scrim, not a button
   const page = open==='closed' ? ''
     : tab==='leaders' && typeof ldPanelHTML==='function'
       ? `<div class="gc gcm-leaders">${ldPanelHTML(width, closeBtn, fromLoad, true)}</div>`
@@ -10115,7 +10138,12 @@ function gcAthletes(sum){
         let rec=out.byId[id];
         if(!rec){
           const name=String(ath.displayName||ath.shortName||'').trim();
-          const pid=idx[id]||null; const spp=pid?sp[pid]:null;
+          let pid=idx[id]||null;
+          if(!pid && typeof lfPidFor==='function'){
+            const sp1=name.indexOf(' ');
+            if(sp1>0) pid=lfPidFor(`${name[0]}.${name.slice(sp1+1)}`, team, null);
+          }
+          const spp=pid?sp[pid]:null;
           rec={ id, name, team, groups:new Set(), pid, pos:spp?String(spp.pos||'').toUpperCase():'' };
           out.byId[id]=rec;
           const sp1=name.indexOf(' '); const last=sp1>0?name.slice(sp1+1):name;
@@ -10145,10 +10173,24 @@ function gcFindAth(ath, team, token){
 }
 const GC_TOKEN = '([A-Z])\\.((?:St\\. )?[A-Z][A-Za-z\'\\-]+(?:-[A-Z][a-z]+)?)';
 function gcTok(re, text){ const m=new RegExp(re).exec(text||''); return m ? `${m[1]}.${m[2]}` : ''; }
+// The play, with its lead-ins removed: the formation note ("(Shotgun)", "(No Huddle,
+// Shotgun)") and the linemen who report eligible — "C.Vinson reported in as eligible.
+// D.Henry right end to IND 25 …" is a Derrick Henry run, and reading the first name in
+// the text made it a Caleb Vinson run.
+function gcPlayBody(text){
+  let t=String(text||'');
+  for(let i=0;i<4;i++){
+    const before=t;
+    t=t.replace(/^\s*\([^)]*\)\s*/,'');
+    t=t.replace(/^\s*[A-Z]\.[A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]*)*\s+reported in as eligible\.\s*/,'');
+    if(t===before) break;
+  }
+  return t;
+}
 // The people in a play, from its text: the primary actor (rusher, passer, kicker), the
 // receiver, the intended target, the interceptor.
 function gcPlayNames(text){
-  const t=String(text||'');
+  const t=gcPlayBody(text);
   return {
     primary: gcTok('^\\s*(?:\\([^)]*\\)\\s*)*'+GC_TOKEN, t),
     receiver: gcTok(' to '+GC_TOKEN, t),
@@ -10267,7 +10309,7 @@ function gcFeedPlayerHTML(w, game){
   const a=w.ath; const pid=a.pid||''; const pos=a.pos||'';
   const owner = pid ? gcOwnerOf(pid) : '';
   const click = (pid && pos && pos!=='DEF' && typeof pcardOnclick==='function') ? ` onclick="event.stopPropagation();${pcardOnclick(pid, pos, a.team||'')}"` : '';
-  return `<div class="gcf-who"${click}><span class="gcf-name${pid&&gcIsMine(pid)?' gc-mine':''}">${escHtml(gcShort(a.name))}</span>${pos?`<span class="gcf-pos gcf-pos-${escAttr(pos.toLowerCase())}">${escHtml(pos)}</span>`:''}${owner?`<span class="gcf-owner">${escHtml(owner)}</span>`:''}<span class="gcf-stat">${escHtml(w.line)}${w.delta?` <em>(${escHtml(w.delta)})</em>`:''}</span></div>`;
+  return `<div class="gcf-who"${click}><span class="gcf-name${pid&&typeof gcSideClass==='function'?gcSideClass(pid):''}">${escHtml(gcShort(a.name))}</span>${pos?`<span class="gcf-pos gcf-pos-${escAttr(pos.toLowerCase())}">${escHtml(pos)}</span>`:''}${owner?`<span class="gcf-owner">${escHtml(owner)}</span>`:''}<span class="gcf-stat">${escHtml(w.line)}${w.delta?` <em>(${escHtml(w.delta)})</em>`:''}</span></div>`;
 }
 // The ball right now (a game on): possession, the down, the spot, the clock — the line
 // above the feed that moves between plays, the way the next play is "coming".
@@ -10330,7 +10372,7 @@ function gcBoxHTML(game, sum, team){
     const rows=g.athletes.map(a=>{
       const A=a.athlete||{}; const rec=ath.byId[String(A.id||'')]; const pid=rec&&rec.pid; const pos=rec&&rec.pos;
       const click=(pid && pos && pos!=='DEF' && typeof pcardOnclick==='function') ? ` onclick="${pcardOnclick(pid, pos, team)}"` : '';
-      return `<tr${click?' class="gcb-click"':''}${click}><td class="gcb-n"><span class="${pid&&gcIsMine(pid)?'gc-mine':''}">${escHtml(gcShort(A.displayName||A.shortName||''))}</span>${pid&&gcOwnerOf(pid)?`<small class="gcf-owner">${escHtml(gcOwnerOf(pid))}</small>`:''}</td>${(a.stats||[]).slice(0,nCols).map(v=>`<td>${escHtml(String(v))}</td>`).join('')}</tr>`;
+      return `<tr${click?' class="gcb-click"':''}${click}><td class="gcb-n"><span class="${pid&&typeof gcSideClass==='function'?gcSideClass(pid).trim():''}">${escHtml(gcShort(A.displayName||A.shortName||''))}</span>${pid&&gcOwnerOf(pid)?`<small class="gcf-owner">${escHtml(gcOwnerOf(pid))}</small>`:''}</td>${(a.stats||[]).slice(0,nCols).map(v=>`<td>${escHtml(String(v))}</td>`).join('')}</tr>`;
     }).join('');
     return `<div class="gcb-group"><div class="gc-gh">${label}</div><div class="gcb-wrap"><table class="gcb"><thead><tr><th></th>${labels.slice(0,nCols).map(l=>`<th>${escHtml(l)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
   }).join('');
@@ -10553,6 +10595,9 @@ function lfToggleLeague(id){
   if(typeof lfRepaint==='function') lfRepaint();
 }
 function lfSetAll(){ _lf.leagues=[]; _lf.mineOnly=false; if(typeof lfRepaint==='function') lfRepaint(); }
+// Every league you are in: the plays that touch anyone you or a leaguemate rosters.
+function lfSetAllLeagues(){ _lf.leagues=lfLeagueList().map(l=>l.id); if(typeof lfRepaint==='function') lfRepaint(); }
+function lfAllLeaguesOn(){ const all=lfLeagueList(); return all.length>0 && _lf.leagues.length===all.length; }
 function lfSetMineOnly(v){ _lf.mineOnly=!!v; if(typeof lfRepaint==='function') lfRepaint(); }
 // What this play moved in one league: Σ stat × setting over the players it involved.
 function lfDelta(row, lg){
@@ -10606,6 +10651,7 @@ function lfLiveCount(){
 function lfChipsHTML(){
   const list=lfLeagueList(), sel=_lf.leagues;
   const chips=[`<button class="ld-pos ${sel.length?'':'active'}" onclick="lfSetAll()">All games</button>`]
+    .concat(list.length>1 ? [`<button class="ld-pos ${lfAllLeaguesOn()?'active':''}" onclick="lfSetAllLeagues()">All leagues</button>`] : [])
     .concat(list.map(l=>`<button class="ld-pos ${sel.includes(l.id)?'active':''}" onclick="lfToggleLeague('${escAttr(l.id)}')" title="${escAttr(l.name)}">${escHtml(l.name.length>16?l.name.slice(0,15)+'…':l.name)}</button>`));
   const mine=sel.length ? `<label class="lf-mine"><input type="checkbox" ${_lf.mineOnly?'checked':''} onchange="lfSetMineOnly(this.checked)"> My matchup only</label>` : '';
   return `<div class="ld-posrow lf-chips">${chips.join('')}</div>${mine}`;
@@ -10616,14 +10662,24 @@ function lfTagHTML(t){
   const who = t.mine ? '★' : (t.opp ? 'vs' : '');
   return `<span class="lf-tag ${cls}">${who?`<b>${who}</b>`:''}${escHtml(t.name.length>18?t.name.slice(0,17)+'…':t.name)}${d!=null&&d!==0?`<em class="${d>0?'lf-up':'lf-down'}">${d>0?'+':''}${d.toFixed(2)}</em>`:''}</span>`;
 }
-function lfRowHTML(r){
+// Blue for your starters, red for the ones you are playing — across the leagues in view
+// (every league you are in when the feed is showing all games).
+function lfSideSets(){
+  const sel=lfSelected(); const use=sel.length?sel:lfLeagueList();
+  const mine=new Set(), opp=new Set();
+  use.forEach(l=>{ l.mine.forEach(p=>mine.add(String(p))); l.opp.forEach(p=>opp.add(String(p))); });
+  return {mine, opp};
+}
+function lfRowHTML(r, sides){
+  const S=sides||lfSideSets();
   const pids=Object.keys(r.roles).map(k=>r.roles[k]).filter(Boolean);
   const sp=(typeof sleeperPlayers!=='undefined' && sleeperPlayers) ? sleeperPlayers : {};
   const who=pids.map(pid=>{
     const p=sp[pid]||{}; const nm=p.name?((typeof gcShort==='function')?gcShort(p.name):p.name):pid;
     const pos=String(p.pos||'').toUpperCase();
     const click=(pos && pos!=='DEF' && typeof pcardOnclick==='function') ? ` onclick="${pcardOnclick(pid, pos, p.team||'')}"` : '';
-    return `<span class="lf-who"${click}><span class="gcf-name">${escHtml(nm)}</span>${pos?`<span class="gcf-pos gcf-pos-${escAttr(pos.toLowerCase())}">${escHtml(pos)}</span>`:''}</span>`;
+    const side=S.mine.has(String(pid)) ? ' gc-mine' : (S.opp.has(String(pid)) ? ' gc-opp' : '');
+    return `<span class="lf-who"${click}><span class="gcf-name${side}">${escHtml(nm)}</span>${pos?`<span class="gcf-pos gcf-pos-${escAttr(pos.toLowerCase())}">${escHtml(pos)}</span>`:''}</span>`;
   }).join('');
   const sit=r.down>0 ? `${r.ddt}${r.spot?` @ ${r.spot}`:''}` : '';
   const score=`<span>${r.away} ${r.as!=null?r.as:'–'}</span><span class="gcf-dash">–</span><span>${r.hs!=null?r.hs:'–'} ${r.home}</span>`;
@@ -10645,7 +10701,7 @@ function lfBodyHTML(){
   const live=lfLiveCount();
   const rows=lfRows();
   const list = rows.length
-    ? `<div class="gcf lf-list">${rows.map(lfRowHTML).join('')}</div>`
+    ? (()=>{ const S=lfSideSets(); return `<div class="gcf lf-list">${rows.map(r=>lfRowHTML(r, S)).join('')}</div>`; })()
     : `<div class="ld-empty">${live
         ? (_lf.leagues.length ? 'no plays yet for the leagues you picked' : 'waiting for the next play…')
         : (_lf.rows.length ? 'nothing on right now — the last plays are above' : 'the feed fills as games kick off')}</div>`;

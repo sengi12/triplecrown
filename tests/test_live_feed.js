@@ -36,7 +36,7 @@ const app=new Function(code+`
   const G=(o)=>Object.assign({state:'in', eid:'E1', score:6, oppScore:14, home:true, opp:'MIN', sit:{period:3, clock:'10:07', lastPlayId:'p1', lastPlay:LP({})}}, o);
   return { onBoard:lfOnBoard, rows:()=>_lf.rows, view:lfRows, clear:lfClear, read:lfReadPlay, stats:lfPlayStats, pid:lfPidFor,
     delta:lfDelta, rel:lfRelevance, leagues:lfLeagueList, toggle:lfToggleLeague, all:lfSetAll, mineOnly:lfSetMineOnly, sel:()=>_lf.leagues,
-    panel:lfPanelHTML, rowHTML:lfRowHTML, LP, G, board:(t)=>{ _tcBoard={season:String(TC_SEASON.year), week:tcBoardWeek(), at:Date.now(), teams:t, busy:false, live:true}; }, MAX:LF_MAX_ROWS };
+    panel:lfPanelHTML, rowHTML:lfRowHTML, allLeagues:lfSetAllLeagues, sides:lfSideSets, LP, G, board:(t)=>{ _tcBoard={season:String(TC_SEASON.year), week:tcBoardWeek(), at:Date.now(), teams:t, busy:false, live:true}; }, MAX:LF_MAX_ROWS };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const LP=app.LP, G=app.G;
@@ -87,7 +87,10 @@ const LP=app.LP, G=app.G;
   chk(app.sel().length===2 && v.length===2 && v.some(x=>/FG/.test(x.title)), 'a second league adds its own plays');
   app.mineOnly(true); v=app.view();
   chk(v.length===1 && /TD catch/.test(v[0].title), 'my matchup only: the kicker nobody in my game starts drops out');
-  app.mineOnly(false); app.all();
+  app.mineOnly(false);
+  app.allLeagues();
+  chk(app.sel().length===2 && app.view().length===2, 'All leagues: every league I am in at once');
+  app.all();
   chk(app.sel().length===0 && app.view().length===3, 'back to all games');
 
   console.log('=== the panel ===');
@@ -96,8 +99,12 @@ const LP=app.LP, G=app.G;
   chk(/Live feed/.test(h) && /lf-live on">2 live/.test(h) && /All games<\/button>/.test(h) && /title="Queen City Keepers"/.test(h) && /Queen City Keep…<\/button>/.test(h) && /Dirty Mikes<\/button>/.test(h), 'the panel heads with the live count and a chip per league (a long name is clipped, the full one in its tooltip)');
   chk(/gcf-row lf-row gcf-td/.test(h) && /G\. Wilson 12 yd TD catch/.test(h) && /gcf-pos-wr">WR/.test(h) && /Q3 10:07/.test(h), 'rows wear the per-game feed\'s clothes: kind, headline, positions, clock');
   chk(!/lf-mine/.test(h), 'the my-matchup toggle only appears once a league is picked');
+  chk(/All leagues<\/button>/.test(h), 'with more than one league synced, an All leagues chip sits beside All games');
+  const S=app.sides();
+  chk(S.mine.has('q1') && S.opp.has('w1'), 'showing all games still knows my starters and my opponents across every league');
   app.toggle('L1'); h=app.panel(false);
   chk(/lf-mine/.test(h) && /lf-tag lf-tag-mine/.test(h) && /lf-up">\+12\.68/.test(h), 'with a league picked: the toggle, the starred tag and the points it moved');
+  chk(/gcf-name gc-mine">A\. Rodgers/.test(h) && /gcf-name gc-opp">G\. Wilson/.test(h), 'my starter is blue in the feed, the man I am playing is red');
   app.all(); app.clear(); h=app.panel(false);
   chk(/waiting for the next play/.test(h), 'games on but nothing seen yet');
   app.board({}); h=app.panel(false);

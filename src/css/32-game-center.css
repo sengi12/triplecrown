@@ -233,3 +233,5 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .lf-tag em{font-style:normal;font-weight:900;font-variant-numeric:tabular-nums;}
 .lf-up{color:#00d4aa;}
 .lf-down{color:#ff7b7b;}
+/* your team blue, the team you are playing red */
+.gc-opp,.lf-who .gc-opp{color:#ff7a85;}
