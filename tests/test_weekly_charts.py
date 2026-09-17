@@ -141,10 +141,23 @@ def main():
 
     print("=== rb_fan_weekly ===")
     nv._load_pbp = lambda season, cols=None: _pbp_rush()
+    nv._esb_map = lambda season: {"r1": "RBX000001"}
     rw = nv.rb_fan_weekly(2026)
     r = rw.get("test back")
     check("games in order with opponents",
           r is not None and [(g["wk"], g["opp"]) for g in r["games"]] == [(1, "KC"), (2, "BAL")])
+    _g1 = r["games"][0]
+    check("carry map: every carry is a row [lane, yards, flags, yardline, qtr] in play order — a frame without the flag columns still builds",
+          len(_g1.get("plays", [])) == 6 and _g1["plays"][0] == [0, 4, 0, None, None] and _g1["plays"][1] == [3, 5, 0, None, None])
+    check("carry map: the rusher carries his ESB id", r.get("esb") == "RBX000001")
+    _rich = _pbp_rush().assign(rush_touchdown=lambda d: (d.play_id == 2).astype(int), fumble_lost=lambda d: (d.play_id == 3).astype(int),
+                               first_down=lambda d: (d.play_id <= 2).astype(int), tackled_for_loss=0, yardline_100=50, qtr=2)
+    _rich.loc[_rich.play_id == 4, "yards_gained"] = -3; _rich.loc[_rich.play_id == 4, "tackled_for_loss"] = 1
+    nv._load_pbp = lambda season, cols=None: _rich
+    _g1 = nv.rb_fan_weekly(2026)["test back"]["games"][0]
+    check("carry map: flags are bits — TD 1, fumble lost 2, first down 4, tackled for loss 8 — with field position and quarter",
+          _g1["plays"][2] == [0, 6, 5, 50, 2] and _g1["plays"][3] == [3, 4, 2, 50, 2] and _g1["plays"][4] == [0, -3, 8, 50, 2] and _g1["plays"][0][2] == 4)
+    nv._load_pbp = lambda season, cols=None: _pbp_rush()
     g = r["games"][0]
     check("game totals + per-lane splits",
           g["attempts"] == 6 and set(g["lanes"]) and

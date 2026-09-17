@@ -82,11 +82,11 @@ function targetMapSVG(plays, title, sub, tag){
   parts.push(`<rect width="${W}" height="${H}" fill="#101214"/>`);
   parts.push(`<text x="24" y="28" fill="#fff" font-size="20" font-weight="800">${title}</text>`);
   parts.push(`<text x="24" y="48" fill="#9aa0a6" font-size="12">${sub}</text>`);
-  parts.push(`<polygon points="${f1(left(yTop))},${yTop} ${f1(right(yTop))},${yTop} ${f1(right(yBot))},${yBot} ${f1(left(yBot))},${yBot}" fill="#18261c" stroke="#0c0d0f" stroke-width="2"/>`);
+  parts.push(`<polygon points="${f1(left(yTop))},${yTop} ${f1(right(yTop))},${yTop} ${f1(right(yBot))},${yBot} ${f1(left(yBot))},${yBot}" fill="#22262c" stroke="#0c0d0f" stroke-width="2"/>`);
   for(let yd=YMIN+5; yd<=YMAX-5; yd+=5){
     if(yd===0) continue;
     const y=yOf(yd), major=(yd%10===0);
-    parts.push(`<line x1="${f1(left(y))}" y1="${f1(y)}" x2="${f1(right(y))}" y2="${f1(y)}" stroke="${major?'#3f5d47':'#2a3f31'}" stroke-width="${major?1.5:1}"/>`);
+    parts.push(`<line x1="${f1(left(y))}" y1="${f1(y)}" x2="${f1(right(y))}" y2="${f1(y)}" stroke="${major?'#4c525b':'#353a42'}" stroke-width="${major?1.5:1}"/>`);
     if(major){
       const lab=(yd>0?'+':'')+yd;
       parts.push(`<text x="${f1(left(y)-12)}" y="${f1(y+4)}" fill="#c8ccd2" font-size="12" text-anchor="end">${lab}</text>`);
@@ -95,7 +95,7 @@ function targetMapSVG(plays, title, sub, tag){
   }
   // Hash marks: the field's own texture, and the three throw lanes read against them.
   for(const fr of [1/3, 2/3]){
-    parts.push(`<line x1="${f1(left(yTop)+(right(yTop)-left(yTop))*fr)}" y1="${yTop}" x2="${f1(left(yBot)+(right(yBot)-left(yBot))*fr)}" y2="${yBot}" stroke="#2a3f31" stroke-width="1" stroke-dasharray="2 6"/>`);
+    parts.push(`<line x1="${f1(left(yTop)+(right(yTop)-left(yTop))*fr)}" y1="${yTop}" x2="${f1(left(yBot)+(right(yBot)-left(yBot))*fr)}" y2="${yBot}" stroke="#353a42" stroke-width="1" stroke-dasharray="2 6"/>`);
   }
   parts.push(`<line x1="${f1(left(losY)-30)}" y1="${f1(losY)}" x2="${f1(right(losY)+30)}" y2="${f1(losY)}" stroke="#2f6fe4" stroke-width="4"/>`);
   parts.push(`<text x="${f1(left(losY)-36)}" y="${f1(losY+4)}" fill="#fff" font-size="12" font-weight="800" text-anchor="end">LOS</text>`);
@@ -125,7 +125,14 @@ function targetMapSVG(plays, title, sub, tag){
     parts.push(`<g ${attrs}><title>${escHtml(tip)}</title>`);
     const routeD = p.route ? _tmRoutePath(p.route, p.side, x0, losY, x1, y1, pxPerYd) : null;
     if(routeD) parts.push(`<path d="${routeD}" fill="none" stroke="${col}" stroke-width="${routeW}" stroke-linejoin="round" stroke-linecap="round" opacity="${caught?routeOp:routeOp*0.75}"/>`);
-    else parts.push(`<line x1="${f1(x0)}" y1="${f1(losY)}" x2="${f1(x1)}" y2="${f1(y1)}" stroke="${col}" stroke-width="1.5" stroke-dasharray="3 4" opacity="0.32"/>`);
+    else if(p.res!==2) parts.push(`<line x1="${f1(x0)}" y1="${f1(losY)}" x2="${f1(x1)}" y2="${f1(y1)}" stroke="${col}" stroke-width="1.5" stroke-dasharray="3 4" opacity="0.32"/>`);
+    if(p.res===2){
+      // The scoring throw: an arc from where the passer stands (centred, six yards deep)
+      // to the recorded catch point — the ball's flight, drawn NGS-style, not tracked.
+      const qx=(left(losY)+right(losY))/2, qy=yOf(-6);
+      const h=Math.max(40, Math.abs(qy-y1)*0.45);
+      parts.push(`<path d="M${f1(qx)},${f1(qy)} Q${f1((qx+x1)/2)},${f1(Math.min(qy,y1)-h)} ${f1(x1)},${f1(y1)}" fill="none" stroke="#2f6fe4" stroke-width="${many?3:4}" stroke-linecap="round" opacity="0.9"/>`);
+    }
     if(caught && p.yac>0){
       parts.push(`<line x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(x2)}" y2="${f1(y2)}" stroke="#39c15a" stroke-width="${tailW}" stroke-linecap="round"/>`);
       parts.push(`<circle cx="${f1(x2)}" cy="${f1(y2)}" r="${r0-3}" fill="#39c15a"/>`);
@@ -152,7 +159,7 @@ function targetMapLegend(charted, kind){
   return `<div class="tm-legend">
     ${charted?`<span><i class="tm-l-route"></i>Charted route</span>`:''}
     <span><i class="tm-l-inc"></i>Incomplete</span><span><i class="tm-l-catch"></i>${kind==='qb'?'Complete':'Catch'}</span>
-    <span><i class="tm-l-yac"></i>After catch</span><span><i class="tm-l-td"></i>Touchdown</span>
+    <span><i class="tm-l-yac"></i>After catch</span><span><i class="tm-l-arc"></i>Scoring throw</span><span><i class="tm-l-td"></i>Touchdown</span>
     <span><i class="tm-l-int"></i>Interception</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
   </div>`;
 }

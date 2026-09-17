@@ -18,3 +18,10 @@
 .rt-viewrow{margin-top:-2px;}
 .rt-viewrow .tm-view{border-right:0;margin-right:0;padding-right:0;}
 .rt-metricrow{margin-top:-2px;}
+/* carry map swatches */
+.tm-l-loss{width:22px!important;height:4px!important;border-radius:2px!important;background:#d33b2f;}
+.tm-l-short{width:22px!important;height:4px!important;border-radius:2px!important;background:#d8a51d;}
+.tm-l-gain{width:22px!important;height:4px!important;border-radius:2px!important;background:#39c15a;}
+.tm-l-fd{background:#fff;width:8px!important;height:8px!important;margin:0 2px;}
+.tm-l-fum{border:3px solid #d33b2f;background:transparent;}
+.tm-l-arc{width:22px!important;height:4px!important;border-radius:2px!important;background:#2f6fe4;}

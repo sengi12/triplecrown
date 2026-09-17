@@ -2691,13 +2691,43 @@ def rb_fan_weekly(season, min_attempts_game=5):
     """Per-RB per-GAME lane fans — the in-season companion to rb_rushing_fans.
     Every lane with a carry ships (a game is small enough that a 2-carry lane
     is still the story of that game); season league lane averages stay in the
-    season block."""
-    pbp = _load_pbp(season, _RB_FAN_COLS + ["week", "defteam"])
+    season block.
+    Each game also carries `plays`: every carry as a short row [lane 0-6
+    (LE LT LG MID RG RT RE), yards, flags (1 TD, 2 fumble lost, 4 first down,
+    8 tackled for loss), yardline_100, qtr] in play order — the CARRY MAP (each
+    run drawn up its lane from the line of scrimmage), the cousin of NGS's carry
+    chart. `esb` is the rusher's NFL ESB id for the NGS deep link."""
+    _map_cols = ["fumble_lost", "tackled_for_loss", "qtr"]
+    pbp = _load_pbp(season, _RB_FAN_COLS + ["week", "defteam"] + _map_cols)
     runs = pbp[(pbp["season_type"] == "REG") & (pbp["rush_attempt"] == 1)
                & (pbp["qb_scramble"] == 0) & (pbp["two_point_attempt"] == 0)
                & pbp["run_location"].notna() & pbp["rusher_player_id"].notna()].copy()
     if runs.empty:
         return {}
+    for c in _map_cols + ["first_down", "yardline_100", "rush_touchdown"]:   # an older frame still builds
+        if c not in runs.columns:
+            runs[c] = None
+    esb = _esb_map(season)
+    _CM_LANES = {"LE": 0, "LT": 1, "LG": 2, "MID": 3, "RG": 4, "RT": 5, "RE": 6}
+
+    def _cm_plays(frame):
+        rows = []
+        for r in frame.itertuples(index=False):
+            yds = pd.to_numeric(r.yards_gained, errors="coerce")
+            lane = _CM_LANES.get(r.lane)
+            if pd.isna(yds) or lane is None:
+                continue
+            flags = 0
+            if float(r.rush_touchdown or 0) == 1: flags |= 1
+            if float(r.fumble_lost or 0) == 1: flags |= 2
+            if float(r.first_down or 0) == 1: flags |= 4
+            if float(r.tackled_for_loss or 0) == 1: flags |= 8
+            yl = pd.to_numeric(r.yardline_100, errors="coerce")
+            q = pd.to_numeric(r.qtr, errors="coerce")
+            rows.append([lane, int(yds), flags,
+                         int(yl) if not pd.isna(yl) else None,
+                         int(q) if not pd.isna(q) else None])
+        return rows
     runs["posteam"] = runs["posteam"].replace(NFLVERSE_TO_SEED)
     runs["defteam"] = runs["defteam"].replace(NFLVERSE_TO_SEED)
     runs["lane"] = runs.apply(lambda r: _rb_lane(r["run_location"], r.get("run_gap")), axis=1)
@@ -2722,12 +2752,13 @@ def rb_fan_weekly(season, min_attempts_game=5):
                 "ypc": round(float(lg_["yards_gained"].mean()), 2),
                 "success_rate": (None if succ is None else round(succ, 1)),
             }
-        node = out.setdefault(name, {"team": None, "games": []})
+        node = out.setdefault(name, {"team": None, "esb": esb.get(rid), "games": []})
         node["team"] = g["posteam"].mode().iloc[0] if len(g["posteam"].mode()) else node["team"]
         succ_g = float(g["success"].mean() * 100) if g["success"].notna().any() else None
         node["games"].append(dict({
             "wk": int(wk),
             "opp": (g["defteam"].mode().iloc[0] if len(g["defteam"].mode()) else None),
+            "plays": _cm_plays(g),
             "attempts": int(len(g)),
             "yards": int(g["yards_gained"].sum()),
             "ypc": round(float(g["yards_gained"].mean()), 2),

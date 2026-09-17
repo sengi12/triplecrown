@@ -2915,6 +2915,10 @@ def main():
                 if _qm:
                     nflverse[str(last_played)]["qb_passing_weekly"] = _qm
                     print(f"    → {last_played} pass maps: {len(_qm)} passers")
+                _rm = _nfl_tm.rb_fan_weekly(int(last_played), min_attempts_game=1)
+                if _rm:
+                    nflverse[str(last_played)]["rb_fan_weekly"] = _rm
+                    print(f"    → {last_played} carry maps: {len(_rm)} rushers")
             except Exception as e:
                 print(f"    ⚠ {last_played} target maps skipped: {type(e).__name__}: {e}")
     else:
