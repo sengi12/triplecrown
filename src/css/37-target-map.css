@@ -1,0 +1,15 @@
+/* ── Target map (Routes tab · per-target view) ── */
+.tm-view{display:inline-flex;gap:4px;margin-right:8px;padding-right:8px;border-right:1px solid var(--border);}
+.tm-view .rt-metric-btn.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+.tm-legend{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center;margin:8px 2px 0;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);}
+.tm-legend span{display:inline-flex;align-items:center;gap:6px;}
+.tm-legend i{display:inline-block;width:12px;height:12px;border-radius:50%;box-sizing:border-box;}
+.tm-l-inc{border:2.5px solid #9aa0a6;background:#101214;}
+.tm-l-catch{background:#fff;border:1px solid #101214;}
+.tm-l-yac{width:22px!important;height:5px!important;border-radius:3px!important;background:#39c15a;}
+.tm-l-td{border:3px solid #2f6fe4;background:#39c15a;}
+.tm-l-int{border:2.5px solid #d33b2f;background:#101214;}
+.tm-l-los{width:22px!important;height:4px!important;border-radius:2px!important;background:#2f6fe4;}
+.tm-ngs-link{display:inline-block;margin-left:8px;font-weight:800;color:var(--accent);text-decoration:none;white-space:nowrap;}
+.tm-ngs-link:hover{text-decoration:underline;}
+.tm-l-route{width:22px!important;height:3px!important;border-radius:2px!important;background:#fff;}

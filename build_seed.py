@@ -2897,6 +2897,21 @@ def main():
                 nflverse = _nfl.build_nflverse(nonempty_seasons, refresh="nflverse" in refresh)
         except Exception as e:
             print(f"    ⚠ nflverse metrics failed: {type(e).__name__}: {e}")
+        # Offseason: the season just played gets its target maps — every target of every
+        # game, with the charted route once the participation file lands (until then the
+        # map draws the throw alone and the next weekly rebuild fills the routes in). Only
+        # that one season rides the frozen block so the seed stays lean; in season the
+        # weekly sidecar carries the live one and nothing is added here.
+        if nflverse and TC_STATE["season_type"] in ("off", "pre") and str(last_played) in nflverse:
+            try:
+                import src.nflverse.nflverse as _nfl_tm
+                _tm = _nfl_tm.target_trees_weekly(int(last_played), min_targets_game=1, min_targets_season=1)
+                if _tm and _tm.get("players"):
+                    nflverse[str(last_played)]["target_trees"] = _tm
+                    print(f"    → {last_played} target maps: {len(_tm['players'])} receivers"
+                          f"{', routes charted' if _tm.get('routes') else ', routes not published yet'}")
+            except Exception as e:
+                print(f"    ⚠ {last_played} target maps skipped: {type(e).__name__}: {e}")
     else:
         print("\n  nflverse advanced metrics disabled (--no-nflverse)")
 

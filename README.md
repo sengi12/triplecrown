@@ -94,7 +94,7 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
   <img src="./images/pass_chart.png" alt="Centered Image" width="600">
 </div>
 
-- **Route Trees.** Every Player that was targeted on routes in the past five seasons has a dedicated tab on their player cards that showcases their route trees. This feature shows what routes receivers tend to run more as they progress in their careers and adds more context to routes run as well as target totals to really showcase what type of receiver this player is.
+- **Target Maps + Route Trees.** Every receiver's Routes tab opens on his **target map**: every target of every game drawn on the field at its depth and side, a green tail for the yards after each catch, a ring and a TD tag on every score, a red cross on a pick — hover any mark for the play, pick a game or the season, and one tap opens the same player's real Next Gen Stats charts. Once a season's route charting lands (after the post-season) each catch also gets the route he ran, drawn from the line of scrimmage to the catch point, so the season just played shows the route leading up to every catch. Beside it sit the zone view (targets binned by depth × side) and the route tree. Every Player that was targeted on routes in the past five seasons has a dedicated tab on their player cards that showcases their route trees. This feature shows what routes receivers tend to run more as they progress in their careers and adds more context to routes run as well as target totals to really showcase what type of receiver this player is.
 
 <!-- Center align -->
 <div align="center">
