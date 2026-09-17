@@ -216,7 +216,7 @@ run_js_test test_native_auth      "Google sign-in inside the phone app: system b
 run_js_test test_manifest         "Installable app: the web manifest, its icons and the Pages deploy, the Capacitor shell config"
 run_js_test test_week_hub        "This Week hub: per-league scoring contexts, week projection, lineup fill + lineup.py callout grades, waiver reasons, FAAB pacing, end-to-end league"
 run_js_test test_ai_compare_week "Compare in-season: this-week line (projection, opponent DvP rank, last-3, live ranks) in the packet, start/sit prompt; off-season untouched"
-run_js_test test_keys            "Keyboard shortcuts: one table drives handler + sheet; Mod is ⌘/Ctrl; never while typing (Esc excepted); card arrows step dock tabs; Esc closes the top layer"
+run_js_test test_keys            "Keyboard shortcuts: one table drives handler + sheet; Mod is ⌘/Ctrl; never while typing (Esc excepted); Game Center / Rankings / Leagues groups; your own keys persist, a collision frees the old owner; Esc closes the top layer"
 run_js_test test_ai_textcalls    "AI text-style tool calls: <invoke>/<function=>/fenced calls parse and run; the last request of a send is always an answer (no tools); leaked call blocks never render"
 run_js_test test_live_default    "In-season the Projections view lands on Live once a game is played; taps remembered; past-season/Rankings boot untouched; once per session"
 run_js_test test_pcard_leagues   "Player card · In your leagues: one row per synced Sleeper league (mine / owner / available), format subtitle, cached per session"

@@ -196,11 +196,12 @@ function noteOlPlayersForTeam(team){
   return [];
 }
 
+const NOTE_IDP_POS = new Set(['LB','DB','DL','DE','DT','NT','CB','S','SS','FS','OLB','ILB','MLB','EDGE','IDP']);
 function noteRelevantPlayers(team, relevance){
   const tm = String(team||'').toUpperCase();
   if(!tm) return [];
   const want = String(relevance||'QB,RB,WR,TE').split(/[^A-Z]+/i).map(x=>x.toUpperCase()).filter(Boolean);
-  const order = {OL:0,QB:1,RB:2,WR:3,TE:4};
+  const order = {OL:0,QB:1,RB:2,WR:3,TE:4,DEF:5};
   const wantSet = new Set(want);
   const seen = new Set();
   const out = [];
@@ -220,6 +221,16 @@ function noteRelevantPlayers(team, relevance){
   // Only enumerate the line when the stat is actually about it — a WR's target share has no
   // business offering five guards as tag targets.
   if(wantSet.has('OL')) noteOlPlayersForTeam(tm).forEach(p=>push(p,'OL',{slot:p.slot}));
+  // A defensive stat (a blitz rate, a box count): the D/ST as one target — keyed the way its
+  // card keys notes, so the tag shows up there — then the team's active defenders when the
+  // stat asks for IDP. The offense still follows below the line, unmarked.
+  if(wantSet.has('DEF')) push({player_id:'', name:`${tm} D/ST`, adp:0}, 'DEF');
+  if(wantSet.has('IDP') && typeof sleeperPlayers!=='undefined' && sleeperPlayers){
+    Object.values(sleeperPlayers)
+      .filter(p=>p && String(p.team||'').toUpperCase()===tm && p.active!==false && NOTE_IDP_POS.has(String(p.pos||'').toUpperCase()))
+      .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||'')))
+      .forEach(p=>push(p, String(p.pos).toUpperCase(), {relevant:true}));
+  }
   ['QB','RB','WR','TE'].forEach(pos=>{
     (getBase(tm, pos) || []).forEach(p=>push(p, pos));
   });

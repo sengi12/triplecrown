@@ -10,7 +10,8 @@ const fs=require('fs'), path=require('path');
 const code=fs.readFileSync(path.join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return { render:_schemeRenderTendencies, has:_schemeHasTendencies, norm:_schemeNormTab, tabHas:_schemeTabHasSeason, tpl:(t,p)=>_schemeRenderTemplate(t,p),
   setNflverse:(n)=>{NFLVERSE=n;}, setTeam:(t)=>{schemeTeam=t;}, setTab:(t)=>{schemeViewTab=t;}, setYear:(y)=>{TC_SEASON.year=y;}, template:()=>SCHEME_TEMPLATE_INLINE,
-  noPlaysheet:(s)=>{ _coachingSeasonFailed[String(s)]=true; }, adopt:_adoptInseason, nv:()=>NFLVERSE, appData:(a)=>_ltAppData(a), roots:()=>_ltRoots() };`)();
+  noPlaysheet:(s)=>{ _coachingSeasonFailed[String(s)]=true; }, adopt:_adoptInseason, nv:()=>NFLVERSE, appData:(a)=>_ltAppData(a), roots:()=>_ltRoots(),
+  relevant:noteRelevantPlayers, key:playerNoteKey, setSeed:(s)=>{SEED=s;}, setPlayers:(p)=>{sleeperPlayers=p;} };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
 const off=(o)=>Object.assign({plays:1000, pass_rate:58,
@@ -49,11 +50,11 @@ chk(/Roots: .*nflverse/.test(rl), 'nflverse is a root the model is told about');
 console.log('=== the render ===');
 let h=app.render({team:'DET', season:'2025'});
 chk(/scheme-insights-wrap scheme-tend/.test(h) && /scheme-insights-pill">Tendencies · 2025</.test(h) && /1,000 plays · 2 teams ranked/.test(h), 'the paper wrap with the season pill and the samples');
-chk(/How predictable is the call/.test(h) && /predicted right/.test(h) && /<b>72\.0%<\/b>/.test(h) && /\+6\.0 pp/.test(h) && /1st of 2 most predictable/.test(h) && !/tn-rank hi">1st of 2 most predictable/.test(h) && /tn-rank ">1st of 2 most predictable/.test(h) && /tn-rank hi/.test(h) && !/guessab/i.test(h), 'predictability stamp: the rate, beyond the situation, ranked first and stamped neutral yellow (not a grade); the other stamps keep their colours');
+chk(/How predictable is the call/.test(h) && /predicted right/.test(h) && /72\.0%<\/span><\/b>/.test(h) && /\+6\.0 pp/.test(h) && /1st of 2 most predictable/.test(h) && !/tn-rank hi">1st of 2 most predictable/.test(h) && /tn-rank ">1st of 2 most predictable/.test(h) && /tn-rank hi/.test(h) && !/guessab/i.test(h), 'predictability stamp: the rate, beyond the situation, ranked first and stamped neutral yellow (not a grade); the other stamps keep their colours');
 chk(/Predictability: how often/.test(h) && /1st of 32 least predictable/.test(h) && /NOT a grade/.test(h) && /pp = percentage points/.test(h), 'the info button explains the rate and that its rank is the beyond-the-situation rank');
 chk(/3rd &amp; long<small>80<\/small>/.test(h) && /PASS 90%/.test(h) && /class="lg" style="left:15\.0%"/.test(h) && !/Red zone<small>0/.test(h), 'situations: run/pass bars with the league tick; an empty situation is left out');
 chk(/Streak lift/.test(h) && /Formation hold/.test(h) && /Cold/.test(h) && /After a run/.test(h) && /Motion rate/.test(h) && /lg 55%/.test(h), 'sequencing, play action (after a run vs cold) and motion, each with the league beside');
-chk(/blitz habits/.test(h) && /<b>30%<\/b>/.test(h) && /2nd of 2/.test(h) && /Stacked box vs run/.test(h), 'the defense: the blitz stamp ranked second of two, situations, box counts');
+chk(/blitz habits/.test(h) && /30%<\/span><\/b>/.test(h) && /2nd of 2/.test(h) && /Stacked box vs run/.test(h), 'the defense: the blitz stamp ranked second of two, situations, box counts');
 chk(/tn-card/.test(h) && /tn-kv/.test(h) && !/pgtab|tn-seasons|parent\./.test(h), 'rendered in the modal\'s classes: no in-sheet page tabs, no season chips of its own');
 chk(/The Side Quest/.test(h) && /scheme-help-pop/.test(h) && !/scheme-insight-note/.test(h), 'the method and credit sit behind the info button, not on the page');
 h=app.render({team:'DET', season:'2026'});
@@ -67,6 +68,31 @@ app.setNflverse({'2025':{tendencies:{teams:{}, league:{}, n_teams:0}}});
 chk(/build from the season/.test(app.render({team:'DET', season:''})) && /No tendencies for DET in 2025/.test(app.render({team:'DET', season:'2025'})), 'no tendencies anywhere → the honest empties');
 app.adopt({season:2026, nflverse:{'2026':{tendencies:block({CIN:{offense:off({}), defense:de({})}}), team:{}}}});
 chk(app.has('2026','CIN') && app.nv()['2026'] && app.nv()['2026'].tendencies && app.nv()['2026'].tendencies.teams.CIN && /Tendencies · 2026 · live/.test(app.render({team:'CIN', season:'2026'})), 'the in-season sidecar\'s tendencies block merges into the live season like its other sections, and renders');
+
+console.log('=== every number is taggable ===');
+app.setNflverse({'2025':{tendencies:block({DET:{offense:off({guess:{situation:66.0,team:72.0,beyond:6.0,naive:60}}), defense:de({})}, SEA:{offense:off({}), defense:de({})}})}});
+h=app.render({team:'DET', season:'2025'});
+const tags=(h.match(/data-noteable="1"/g)||[]).length;
+chk(tags>=40, `the tab carries ${tags} taggable values`);
+chk(/data-note-label="Predicted right"[^>]*data-note-value="72\.0%"/.test(h) && /data-note-label="Predictable beyond the situation"[^>]*data-note-value="\+6\.0 pp"/.test(h) && /data-note-label="Predictability rank"[^>]*data-note-value="1st of 2 most predictable"/.test(h), 'the predictability rate, its pp beyond the situation and its rank are tagged with the text shown');
+chk(/class="tn-bar" data-noteable="1" data-note-label="Pass rate · 3rd &amp; long"[^>]*data-note-value="90% pass"/.test(h) && /data-note-label="EPA\/play · 3rd &amp; long"[^>]*data-note-value="-0\.10"/.test(h), 'each situation row: the run/pass bar itself and its EPA');
+chk(/data-note-label="Streak lift"[^>]*data-note-value="\+8\.0 pp"/.test(h) && /data-note-label="Streak lift rank"/.test(h) && /data-note-label="Motion rate"[^>]*data-note-value="55%"/.test(h) && /data-note-label="Rate, early downs"[^>]*data-note-value="28%"/.test(h) && /data-note-label="EPA with"[^>]*data-note-value="\+0\.15 120"/.test(h), 'sequencing, play action and motion values (a sample count rides along as text)');
+chk(/data-note-label="Blitz rate"[^>]*data-note-value="30%"[^>]*data-note-relevance="DEF,IDP"/.test(h) && /class="tn-bar" data-noteable="1" data-note-label="Blitz rate · 3rd &amp; long"[^>]*data-note-value="45%"[^>]*data-note-relevance="DEF,IDP"/.test(h) && /data-note-label="Stacked box vs run"[^>]*data-note-relevance="DEF,IDP"/.test(h), 'defense values target the D/ST and the defenders, not the offense');
+chk(!/data-note-label="Motion rate"[^>]*data-note-relevance="DEF/.test(h) && /data-note-label="Motion rate"[^>]*data-note-relevance="QB,RB,WR,TE"/.test(h), 'offense values target the skill players');
+chk(/data-note-source="coaching_tendencies"/.test(h) && /data-note-context="(DET|Detroit Lions) tendencies · 2025"/.test(h) && /data-note-nav="[^"]*tendencies/.test(h), 'source, context and a nav back to this tab');
+
+console.log('=== the picker offers the defense ===');
+app.setSeed({DET:{QB:[{name:'Jared Goff',player_id:'1',adp:80}],RB:[],WR:[{name:'Amon-Ra St. Brown',player_id:'3',adp:8}],TE:[]}});
+app.setPlayers({'10':{player_id:'10',name:'Aidan Hutchinson',pos:'DL',team:'DET',active:true},'11':{player_id:'11',name:'Jack Campbell',pos:'LB',team:'DET',active:true},
+  '12':{player_id:'12',name:'Retired Guy',pos:'LB',team:'DET',active:false},'13':{player_id:'13',name:'Other Team',pos:'LB',team:'GB',active:true},'14':{player_id:'14',name:'Jared Goff',pos:'QB',team:'DET',active:true}});
+const d=app.relevant('DET','DEF,IDP');
+chk(d.length && d[0].pos==='DEF' && d[0].name==='DET D/ST' && d[0].team==='DET', 'the D/ST leads the list');
+chk(d.filter(p=>p.relevant).map(p=>p.name).join('|')==='DET D/ST|Aidan Hutchinson|Jack Campbell', 'then the active defenders, alphabetical — no retired or other-team players');
+chk(d.some(p=>p.name==='Jared Goff' && !p.relevant), 'the offense stays reachable below the line');
+chk(app.key(d[0].player_id||d[0].name, d[0].pos, d[0].team)==='def:DET', 'the D/ST target keys the same way its card does, so the tag shows up there');
+const o=app.relevant('DET','QB,RB,WR,TE');
+chk(o.length && !o.some(p=>p.pos==='DEF'||p.pos==='LB'||p.pos==='DL'), 'an offense stat offers no defenders');
+app.setNflverse({'2025':{tendencies:{teams:{}, league:{}, n_teams:0}}});
 
 console.log('=== the call sheet is one page again, and its scripts parse ===');
 const tpl=app.template();
