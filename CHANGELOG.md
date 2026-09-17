@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-09-17
 
+- feat(cards): the rushing fan's run-blocking banner follows the selected game; unpublished PFR weekly fields stay missing in the week-window recompute (#127)
 - feat(cards): the carry map — every carry of every game drawn from the backfield through its gap, NGS-style, Map first on the rushing fan; scoring-throw arcs on the pass and target maps; the maps' field goes grey (#126)
 - feat(cards): the pass map — every attempt of every game on the QB's field with the receiver on the mark, Map first on the passing chart; the offseason bakes the season just played (#125)
 - fix(cards): the Map / Zones / Tree toggle keeps its place — the view row is its own row, the metric buttons take the row beneath (#124)

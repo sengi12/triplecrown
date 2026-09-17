@@ -1050,10 +1050,21 @@ def ol_weekly_team(season):
         "rush_successes", "rush_rb_att",
     ]
 
+    # PFR's weekly passing/rushing files land days after the games: a week they have not
+    # published stays MISSING (null) in the pack rather than 0 — a zero would rank every
+    # line 32nd on yards before contact and 1st on pressure rate, and drag every windowed
+    # score with it. Everything derived from pbp/FTN/NGS keeps its real zero.
+    _PFR_WEEKLY = {"times_pressured", "times_hit", "times_hurried", "times_blitzed",
+                   "ybc", "yac", "broken_tackles"}
     for c in pass_cols + run_cols:
         if c not in out.columns:
-            out[c] = 0
-        out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0.0)
+            out[c] = (None if c in _PFR_WEEKLY else 0)
+        out[c] = pd.to_numeric(out[c], errors="coerce")
+        if c not in _PFR_WEEKLY:
+            out[c] = out[c].fillna(0.0)
+
+    def _cell(v):
+        return None if pd.isna(v) else round(float(v), 4)
 
     packed = {"weeks": weeks, "pass_cols": pass_cols, "run_cols": run_cols, "teams": {}}
     for tm in teams:
@@ -1061,8 +1072,8 @@ def ol_weekly_team(season):
         run_rows = []
         for wk in weeks:
             row = out.loc[(tm, wk)]
-            pass_rows.append([round(float(row[c]), 4) for c in pass_cols])
-            run_rows.append([round(float(row[c]), 4) for c in run_cols])
+            pass_rows.append([_cell(row[c]) for c in pass_cols])
+            run_rows.append([_cell(row[c]) for c in run_cols])
         packed["teams"][tm] = {"pass": pass_rows, "run": run_rows}
     return packed
 

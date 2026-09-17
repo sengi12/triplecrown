@@ -386,18 +386,23 @@ function _advComputeOlRangeTables(season, lo, hi){
     const runRows=Array.isArray(node.run)?node.run:[];
     const ps=new Array(pcols.length).fill(0);
     const rs=new Array(rcols.length).fill(0);
+    // A column the source has not published for any selected week (PFR's weekly rushing
+    // file lands days after the games) stays MISSING — summing it as 0 would rank the
+    // whole league 32nd on it and drag every windowed score down.
+    const pseen=new Array(pcols.length).fill(false);
+    const rseen=new Array(rcols.length).fill(false);
     weekIdx.forEach(ix=>{
       const pr=passRows[ix]||[]; const rr=runRows[ix]||[];
-      for(let i=0;i<pcols.length;i++) ps[i]+=Number(pr[i]||0);
-      for(let i=0;i<rcols.length;i++) rs[i]+=Number(rr[i]||0);
+      for(let i=0;i<pcols.length;i++){ if(pr[i]!=null){ ps[i]+=Number(pr[i]||0); pseen[i]=true; } }
+      for(let i=0;i<rcols.length;i++){ if(rr[i]!=null){ rs[i]+=Number(rr[i]||0); rseen[i]=true; } }
     });
     const db=ps[pidx.dropbacks]||0;
     const dr=ps[pidx.designed_rushes]||0;
     const sacks=ps[pidx.sacks]||0;
-    const pressure=ps[pidx.times_pressured]||0;
-    const hits=ps[pidx.times_hit]||0;
-    const hurries=ps[pidx.times_hurried]||0;
-    const blitzes=ps[pidx.times_blitzed]||0;
+    const pressure=pseen[pidx.times_pressured]?(ps[pidx.times_pressured]||0):null;
+    const hits=pseen[pidx.times_hit]?(ps[pidx.times_hit]||0):null;
+    const hurries=pseen[pidx.times_hurried]?(ps[pidx.times_hurried]||0):null;
+    const blitzes=pseen[pidx.times_blitzed]?(ps[pidx.times_blitzed]||0):null;
     const nonQb=ps[pidx.non_qb_sacks]||0;
     const nbp=ps[pidx.no_blitz_pressures]||0;
     const ptW=ps[pidx.pocket_time_w]||0;
@@ -412,9 +417,9 @@ function _advComputeOlRangeTables(season, lo, hi){
     const stuffed=rs[ridx.stuffed]||0;
     const expl=rs[ridx.explosive]||0;
     const ry=rs[ridx.rush_yards]||0;
-    const ybc=rs[ridx.ybc]||0;
-    const yac=rs[ridx.yac]||0;
-    const bt=rs[ridx.broken_tackles]||0;
+    const ybc=rseen[ridx.ybc]?(rs[ridx.ybc]||0):null;
+    const yac=rseen[ridx.yac]?(rs[ridx.yac]||0):null;
+    const bt=rseen[ridx.broken_tackles]?(rs[ridx.broken_tackles]||0):null;
     const r1d=rs[ridx.rush_first_downs]||0;
     const ngsAtt=rs[ridx.ngs_att]||0;
     const roeW=rs[ridx.roe_w]||0;
@@ -425,10 +430,10 @@ function _advComputeOlRangeTables(season, lo, hi){
       pass:{
         Dropbacks: _advNum(db,0),
         'Pass Rate': _advNum((db+dr)>0 ? (db/(db+dr))*100 : null,1),
-        'Pressure Rate': _advNum(db>0 ? (pressure/db)*100 : null,1),
-        'Hit Rate': _advNum(db>0 ? (hits/db)*100 : null,1),
-        'Hurry Rate': _advNum(db>0 ? (hurries/db)*100 : null,1),
-        'Blitz Rate': _advNum(db>0 ? (blitzes/db)*100 : null,1),
+        'Pressure Rate': _advNum(db>0 && pressure!=null ? (pressure/db)*100 : null,1),
+        'Hit Rate': _advNum(db>0 && hits!=null ? (hits/db)*100 : null,1),
+        'Hurry Rate': _advNum(db>0 && hurries!=null ? (hurries/db)*100 : null,1),
+        'Blitz Rate': _advNum(db>0 && blitzes!=null ? (blitzes/db)*100 : null,1),
         'Pocket Time': _advNum(ptAtt>0 ? (ptW/ptAtt) : null,2),
         'Sack Rate': _advNum(db>0 ? (sacks/db)*100 : null,1),
         'Non-QB Sack Rate': _advNum(db>0 ? (nonQb/db)*100 : null,1),
@@ -439,10 +444,10 @@ function _advComputeOlRangeTables(season, lo, hi){
         'Explosive Run Rate': _advNum(ra>0 ? (expl/ra)*100 : null,1),
         'Success Rate': _advNum(hasSucc && rbAtt>0 ? (succ/rbAtt)*100 : null,1),
         'Yards/Rush': _advNum(ra>0 ? (ry/ra) : null,2),
-        'YBC/Rush': _advNum(ra>0 ? (ybc/ra) : null,2),
-        'YAC/Rush': _advNum(ra>0 ? (yac/ra) : null,2),
+        'YBC/Rush': _advNum(ra>0 && ybc!=null ? (ybc/ra) : null,2),
+        'YAC/Rush': _advNum(ra>0 && yac!=null ? (yac/ra) : null,2),
         'Rush 1D Rate': _advNum(ra>0 ? (r1d/ra)*100 : null,1),
-        'Broken Tackle Rate': _advNum(ra>0 ? (bt/ra)*100 : null,1),
+        'Broken Tackle Rate': _advNum(ra>0 && bt!=null ? (bt/ra)*100 : null,1),
         'ROE/Att': _advNum(ngsAtt>0 ? (roeW/ngsAtt) : null,2),
         '8+ Box Rate': _advNum(ngsAtt>0 ? (b8W/ngsAtt) : null,1),
         'Time to LOS': _advNum(ngsAtt>0 ? (tlosW/ngsAtt) : null,2),
