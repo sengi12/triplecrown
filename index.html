@@ -1485,6 +1485,10 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 /* your team blue, the team you are playing red */
 .gc-opp,.lf-who .gc-opp{color:#ff7a85;}
 .ld-opp{color:#ff7a85;}
+/* blue must win the cascade over the names' own colour — the rule at the top of this file
+   lost to .gc-pname / .gcf-name (same specificity, later wins), which left my players white
+   while the red rule below them won for the opponent's */
+.gc-mine,.gc-pname.gc-mine,.gcf-name.gc-mine,.lf-who .gc-mine,.gcb-n .gc-mine,.ld-nm.ld-mine{color:var(--accent);}
 /* ── Coaching Playbook Modal + Insights ───────────────────────────────────── */
 
 /* Click affordances for coaching-scheme entry points */
