@@ -36,12 +36,15 @@ chk(titles.some(t=>t==='WK 1 · NE · Q4 · Left, +4 air · Touchdown · 41 YAC 
 chk((html.match(/stroke="#39c15a" stroke-width="5"/g)||[]).length===2, 'two catches with YAC → two green tails');
 chk((html.match(/stroke="#2f6fe4" stroke-width="3.5"/g)||[]).length===1 && (html.match(/>TD \+45<\/text>/g)||[]).length===1 && !/fill="#39c15a" font-size="11"[^>]*>\+45</.test(html),
     'the touchdown gets its ring AND one TD tag — a score that runs off the top carries its total in the tag, not a second label');
-chk((html.match(/stroke-dasharray="3 4"/g)||[]).length===3 && (html.match(/<path d="M[^"]* C[^"]*" fill="none" stroke="#2f6fe4" stroke-width="4" stroke-linecap="round"/g)||[]).length===1,
-    'without charting every mark hangs on the dotted depth stem (no invented routes) — except the score, which gets the blue lob (a cubic, up and down) from the passer');
+chk((html.match(/stroke-dasharray="3 4"/g)||[]).length===3 && (html.match(/<path d="M[^"]* Q[^"]*" fill="none" stroke="#2f6fe4" stroke-width="4" stroke-linecap="round"/g)||[]).length===1,
+    'without charting every mark hangs on the dotted depth stem (no invented routes) — except the score, which gets the blue arc (one quadratic) from the passer');
 const arcNode={games:[{wk:1,opp:'NE',plays:[[4,0,2,41,45,4,null,1,1],[30,2,2,0,40,2,null,0,0],[45,1,0,0,50,1,null,1,null],[44,1,1,3,60,2,null,1,null]]}]};
 const arcs=app.block('Arc Test', arcNode, 2026, 1, {label:'Week 1 · NE'}, null);
-const ds=[...arcs.matchAll(/<path d="M(-?[\d.]+),(-?[\d.]+) C(-?[\d.]+),(-?[\d.]+) -?[\d.]+,-?[\d.]+ (-?[\d.]+),(-?[\d.]+)" fill="none" stroke="#2f6fe4"/g)].map(m=>m.slice(1).map(Number));
-chk(ds.length===2 && ds.every(d=>Math.abs(d[2]-d[0])<=22.01 && d[3]<d[1]), 'each scoring throw climbs out of the passer\'s hand (control above the start, a slight bow at most) before settling onto the catch');
+const ds=[...arcs.matchAll(/<path d="M(-?[\d.]+),(-?[\d.]+) Q(-?[\d.]+),(-?[\d.]+) (-?[\d.]+),(-?[\d.]+)" fill="none" stroke="#2f6fe4"/g)].map(m=>m.slice(1).map(Number));
+chk(ds.length===2 && ds.every(d=>{ const vx=d[4]-d[0], vy=d[5]-d[1], ox=d[2]-(d[0]+d[4])/2, oy=d[3]-(d[1]+d[5])/2, dist=Math.hypot(vx,vy);
+      return Math.abs(ox*vx+oy*vy) < 0.2*dist+1 && Math.hypot(ox,oy) >= 29 && oy < 0; }),
+    'each scoring throw is one arc: the control pushed out perpendicular to the throw (a bow of at least 30px, upfield), so the curve bows to one side and lands on the dot instead of hooking past it');
+chk(ds.every(d=> 0.25*d[1]+0.5*d[3]+0.25*d[5] >= 69.4), 'the crown of every arc (¼·start + ½·control + ¼·end) stays inside the drawing — a score off the top is capped, not clipped');
 chk(ds[0][0]<ds[1][0] && Math.abs(ds[1][0]-380)<0.6, 'an out-of-pocket throw to the left starts left of centre; a pocket throw starts centred');
 chk(ds[0][1]>ds[1][1], 'a shotgun throw starts deeper than an under-centre one');
 chk(arcs.includes('out of the pocket') && (arcs.match(/out of the pocket/g)||[]).length===1, 'the tooltip says when he was out of the pocket');

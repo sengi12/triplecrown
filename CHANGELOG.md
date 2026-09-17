@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-09-17
 
+- fix(cards): the scoring throw is one arc again on the pass map and the target map — bowed perpendicular to the throw, landing on the catch dot (#133)
 - feat(cards): the top bar fits a phone — wordmark + icon tabs, the vs-projection chips behind a tap on the PROJECTIONS row, a season menu, one shared edge for every band (#132)
 - fix(cards): availability leaves the hero — a LEAGUES · Availability line under the contract band, Sleeper style; the contract line abbreviates to one line on phones (#131)
 - fix(cards): the scoring throw lands on the catch dot; runs bend early and finish straight; the phone hero foot never overlaps (#130)
