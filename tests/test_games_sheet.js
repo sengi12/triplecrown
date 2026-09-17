@@ -31,7 +31,7 @@ const app=new Function(code+`
   _gcd.tab='stats'; _gcd.side='fantasy';   // the fantasy pane, as before the Feed | Stats tabs
   return { render:renderRightSidebar, phone:renderGamesPhone, set:gcmSet, open:gcOpenGame, pick:gcPick, line:gcPickerLineHTML, on:gcPhoneOn, tab:gcmSetTab, ldSort:ldSort, ldPos:ldSetPos, ld:()=>_ld,
     host:()=>document.getElementById('gamesSheet'), html:()=>document.getElementById('gamesSheet').innerHTML, bodyCls:()=>[...document.body.classList._s], state:()=>_gcm, gc:()=>_gc,
-    swipe:gcmSwipeAction, games:gcmCurrentGames, preview:gcmSwipePreviewHTML, setMobile:v=>{mobile=v;}, setStarted:v=>{started=v;}, setDraft:v=>{rosterBarVisible=v;}, setBoard:b=>{ BOARD=b; _tcBoard.at=0; _gc.boards={}; }, sidebar:()=>document.getElementById('leaders') };
+    swipe:gcmSwipeAction, games:gcmCurrentGames, setWeek:(w)=>{ _gc.week=w; }, preview:gcmSwipePreviewHTML, setMobile:v=>{mobile=v;}, setStarted:v=>{started=v;}, setDraft:v=>{rosterBarVisible=v;}, setBoard:b=>{ BOARD=b; _tcBoard.at=0; _gc.boards={}; }, sidebar:()=>document.getElementById('leaders') };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -48,7 +48,7 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   app.set('half'); await settle(); h=app.html();
   chk(/gcm-sheet gcm-half/.test(h) && app.bodyCls().includes('gcm-open') && /gcm-scrim[^>]*onclick="gcmSet\('closed'\)"/.test(h), 'half: the sheet is up, the page is flagged open, the scrim closes it');
   chk(/gcm-grab[^>]*onpointerdown="gcmDragStart\(event\)"/.test(h), 'a drag handle');
-  chk(/Game Center/.test(h) && /gcm-x[^>]*onclick="gcmSet\('closed'\)"/.test(h) && !/gcStep\(/.test(h) && !/rsb-grip/.test(h), 'the same Game Center head, with a close button instead of the sidebar\'s size buttons and grip');
+  chk(/Game Center/.test(h) && !/gcm-x/.test(h) && !/gcStep\(/.test(h) && !/rsb-grip/.test(h), 'the same Game Center head, with a close button instead of the sidebar\'s size buttons and grip');
   const ids=[...h.matchAll(/gcPick\('([^']+)'\)/g)].map(m=>m[1]);
   chk(ids.join(' ')==='DEN@KC TB@CIN NE@SEA ATL@MIN', 'the games in kickoff order: Thursday, Sunday late, Sunday night, Monday night');
   chk(/gc-game gc-on gc-in[\s\S]*NE[\s\S]*SEA/.test(h) && /gc-hero[\s\S]*gc-team">NE<[\s\S]*gc-score">10<[\s\S]*3rd 8:12[\s\S]*gc-score">13<[\s\S]*gc-team">SEA</.test(h), 'the game being played is picked and its banner reads NE 10 · 3rd 8:12 · 13 SEA');
@@ -88,7 +88,7 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   app.tab('leaders'); await settle(); await settle(); await settle(); h=app.html();
   chk(/gcm-leaders/.test(h) && /ld-title">Leaders</.test(h) && /ld-posrow/.test(h) && /ldSetPos\('QB'\)/.test(h), 'Leaders: the same panel as the desktop sidebar — position filters and the week dropdown');
   chk(/ld-row/.test(h) && /ld-pts">/.test(h) && /Mayfield|Burrow/.test(h), 'ranked rows with points, from the same Sleeper week rows');
-  chk(/gcm-x/.test(h) && !/rsb-btns/.test(h), 'the sheet\'s close button, not the sidebar\'s size buttons');
+  chk(!/gcm-x/.test(h) && !/rsb-btns/.test(h), 'no close button and no size buttons: the handle and the scrim close the sheet');
   app.ldPos('QB'); await settle(); h=app.html();
   chk(/gcm-leaders/.test(h) && /ld-pos active"[^>]*>QB</.test(h) && !/Irving/.test(h), 'a position filter repaints the drawer, not the hidden sidebar');
   chk(!/Overall OL Grade/.test(h) && app.sidebar() && (app.sidebar().hidden===true || !/ld-row/.test(app.sidebar().innerHTML||'')), 'the desktop sidebar stays out of it on a phone');
@@ -109,6 +109,19 @@ console.log('=== swipes turn the sheet\'s pages ===');
   } else chk(app.swipe(-80,'games').tab==='leaders', 'with no games loaded a swipe left opens the Leaders');
 }
 
+
+console.log('=== the swipe turns pages of the week ON SCREEN ===');
+{
+  const games=app.games()||[];
+  if(games.length>1){
+    app.pick(games[1].id);
+    const back=app.swipe(80,'games');
+    chk(back && back.game===games[0].id, 'on the second game a swipe right turns back to the first');
+    app.setWeek(1); app.pick('NOPE@NOPE');
+    chk(app.swipe(-80,'games')===null && app.swipe(80,'games')===null, 'a game the loaded board does not carry: the swipe stays put instead of jumping to the first game');
+    app.setWeek('current'); app.pick(games[0].id);
+  }
+}
 
 console.log('=== the swipe underlay is the neighbouring game; the Leaders open on the season until the week kicks off ===');
 await (async()=>{

@@ -92,6 +92,15 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const rb=app.build(SUM).find(p=>p.title==='C. Brown 5 yd rush TD 🎉');
   chk(rb.who[0] && /CAR, \d+ YD, 1 TD$/.test(rb.who[0].line) && rb.who[0].delta==='+5 YD', 'a rushing touchdown carries the back\'s line');
 
+  console.log('=== a lineman reporting eligible is not the man with the ball ===');
+  const el1=app.names('C.Vinson reported in as eligible.  D.Henry right end to IND 25 for 4 yards (B.Boettcher).');
+  chk(el1.primary==='D.Henry', `the runner, not the tackle who reported (${el1.primary})`);
+  const el2=app.names('(Shotgun) C.Vinson reported in as eligible.  L.Jackson pass short right to M.Andrews to IND 45 for 13 yards.');
+  chk(el2.primary==='L.Jackson' && el2.receiver==='M.Andrews', 'the formation note and the report together still leave the passer and his target');
+  const el3=app.names('G.Van Roten reported in as eligible.  D.Maye pass short left to E.Raridon for 2 yards, TOUCHDOWN.');
+  chk(el3.primary==='D.Maye' && el3.receiver==='E.Raridon', 'a two-word surname in the report does not confuse it');
+  chk(app.names('(No Huddle, Shotgun) B.Mayfield pass incomplete deep left to E.Egbuka (J.Davis).').primary==='B.Mayfield', 'an ordinary play is untouched');
+
   console.log('=== the feed on the page ===');
   const h=app.feedHTML(app.GAME(), SUM);
   chk(/gcf-row gcf-td/.test(h) && /gcf-rz">RZ/.test(h) && /gcf-clock">Q4 /.test(h) && /gcf-badge gcf-b-td">TD/.test(h) && /gcf-sc-hit/.test(h), 'rows carry the kind, the RZ badge, the clock, the badge and the moved score');

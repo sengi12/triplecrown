@@ -110,7 +110,12 @@ function gcAthletes(sum){
         let rec=out.byId[id];
         if(!rec){
           const name=String(ath.displayName||ath.shortName||'').trim();
-          const pid=idx[id]||null; const spp=pid?sp[pid]:null;
+          let pid=idx[id]||null;
+          if(!pid && typeof lfPidFor==='function'){
+            const sp1=name.indexOf(' ');
+            if(sp1>0) pid=lfPidFor(`${name[0]}.${name.slice(sp1+1)}`, team, null);
+          }
+          const spp=pid?sp[pid]:null;
           rec={ id, name, team, groups:new Set(), pid, pos:spp?String(spp.pos||'').toUpperCase():'' };
           out.byId[id]=rec;
           const sp1=name.indexOf(' '); const last=sp1>0?name.slice(sp1+1):name;
@@ -140,10 +145,24 @@ function gcFindAth(ath, team, token){
 }
 const GC_TOKEN = '([A-Z])\\.((?:St\\. )?[A-Z][A-Za-z\'\\-]+(?:-[A-Z][a-z]+)?)';
 function gcTok(re, text){ const m=new RegExp(re).exec(text||''); return m ? `${m[1]}.${m[2]}` : ''; }
+// The play, with its lead-ins removed: the formation note ("(Shotgun)", "(No Huddle,
+// Shotgun)") and the linemen who report eligible — "C.Vinson reported in as eligible.
+// D.Henry right end to IND 25 …" is a Derrick Henry run, and reading the first name in
+// the text made it a Caleb Vinson run.
+function gcPlayBody(text){
+  let t=String(text||'');
+  for(let i=0;i<4;i++){
+    const before=t;
+    t=t.replace(/^\s*\([^)]*\)\s*/,'');
+    t=t.replace(/^\s*[A-Z]\.[A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]*)*\s+reported in as eligible\.\s*/,'');
+    if(t===before) break;
+  }
+  return t;
+}
 // The people in a play, from its text: the primary actor (rusher, passer, kicker), the
 // receiver, the intended target, the interceptor.
 function gcPlayNames(text){
-  const t=String(text||'');
+  const t=gcPlayBody(text);
   return {
     primary: gcTok('^\\s*(?:\\([^)]*\\)\\s*)*'+GC_TOKEN, t),
     receiver: gcTok(' to '+GC_TOKEN, t),
@@ -262,7 +281,7 @@ function gcFeedPlayerHTML(w, game){
   const a=w.ath; const pid=a.pid||''; const pos=a.pos||'';
   const owner = pid ? gcOwnerOf(pid) : '';
   const click = (pid && pos && pos!=='DEF' && typeof pcardOnclick==='function') ? ` onclick="event.stopPropagation();${pcardOnclick(pid, pos, a.team||'')}"` : '';
-  return `<div class="gcf-who"${click}><span class="gcf-name${pid&&gcIsMine(pid)?' gc-mine':''}">${escHtml(gcShort(a.name))}</span>${pos?`<span class="gcf-pos gcf-pos-${escAttr(pos.toLowerCase())}">${escHtml(pos)}</span>`:''}${owner?`<span class="gcf-owner">${escHtml(owner)}</span>`:''}<span class="gcf-stat">${escHtml(w.line)}${w.delta?` <em>(${escHtml(w.delta)})</em>`:''}</span></div>`;
+  return `<div class="gcf-who"${click}><span class="gcf-name${pid&&typeof gcSideClass==='function'?gcSideClass(pid):''}">${escHtml(gcShort(a.name))}</span>${pos?`<span class="gcf-pos gcf-pos-${escAttr(pos.toLowerCase())}">${escHtml(pos)}</span>`:''}${owner?`<span class="gcf-owner">${escHtml(owner)}</span>`:''}<span class="gcf-stat">${escHtml(w.line)}${w.delta?` <em>(${escHtml(w.delta)})</em>`:''}</span></div>`;
 }
 // The ball right now (a game on): possession, the down, the spot, the clock — the line
 // above the feed that moves between plays, the way the next play is "coming".
@@ -325,7 +344,7 @@ function gcBoxHTML(game, sum, team){
     const rows=g.athletes.map(a=>{
       const A=a.athlete||{}; const rec=ath.byId[String(A.id||'')]; const pid=rec&&rec.pid; const pos=rec&&rec.pos;
       const click=(pid && pos && pos!=='DEF' && typeof pcardOnclick==='function') ? ` onclick="${pcardOnclick(pid, pos, team)}"` : '';
-      return `<tr${click?' class="gcb-click"':''}${click}><td class="gcb-n"><span class="${pid&&gcIsMine(pid)?'gc-mine':''}">${escHtml(gcShort(A.displayName||A.shortName||''))}</span>${pid&&gcOwnerOf(pid)?`<small class="gcf-owner">${escHtml(gcOwnerOf(pid))}</small>`:''}</td>${(a.stats||[]).slice(0,nCols).map(v=>`<td>${escHtml(String(v))}</td>`).join('')}</tr>`;
+      return `<tr${click?' class="gcb-click"':''}${click}><td class="gcb-n"><span class="${pid&&typeof gcSideClass==='function'?gcSideClass(pid).trim():''}">${escHtml(gcShort(A.displayName||A.shortName||''))}</span>${pid&&gcOwnerOf(pid)?`<small class="gcf-owner">${escHtml(gcOwnerOf(pid))}</small>`:''}</td>${(a.stats||[]).slice(0,nCols).map(v=>`<td>${escHtml(String(v))}</td>`).join('')}</tr>`;
     }).join('');
     return `<div class="gcb-group"><div class="gc-gh">${label}</div><div class="gcb-wrap"><table class="gcb"><thead><tr><th></th>${labels.slice(0,nCols).map(l=>`<th>${escHtml(l)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
   }).join('');
