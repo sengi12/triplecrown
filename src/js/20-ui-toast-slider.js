@@ -7,7 +7,10 @@
 // gesture that doesn't land in a genuinely scrollable region of a floating surface is
 // cancelled. (Each region's own overscroll-behavior:contain keeps edge-scrolls from
 // chaining once the region runs out of room.)
-const TC_FLOAT_SEL='.pcard-overlay,.scheme-overlay,.ps-overlay,.note-picker-overlay,.note-info-overlay,.tc-modal-overlay,#vonaOptPop,#tcInjPop,#tcInfoPop';
+// The phone's Games sheet counts while it is open (half or full): a swipe on its handle or
+// head must never scroll the page behind it — on iOS that swipe used to reach the page,
+// so the sheet could only be pulled up once the page behind had nothing left to scroll.
+const TC_FLOAT_SEL='.pcard-overlay,.scheme-overlay,.ps-overlay,.note-picker-overlay,.note-info-overlay,.tc-modal-overlay,#vonaOptPop,#tcInjPop,#tcInfoPop,.gcm-sheet.gcm-half,.gcm-sheet.gcm-full';
 var _tcLastTouchY=null, _tcLastTouchX=null, _tcGestureFloaters=null;
 var _tcGestureInner=null, _tcGestureInnerFor=null, _tcGestureFloatOk=null;
 // Tiny bound for the plain-object fetch caches sprinkled through the app (weekly stats, ESPN

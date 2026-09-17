@@ -3546,7 +3546,10 @@ function resetPaceBaseline(){
 // gesture that doesn't land in a genuinely scrollable region of a floating surface is
 // cancelled. (Each region's own overscroll-behavior:contain keeps edge-scrolls from
 // chaining once the region runs out of room.)
-const TC_FLOAT_SEL='.pcard-overlay,.scheme-overlay,.ps-overlay,.note-picker-overlay,.note-info-overlay,.tc-modal-overlay,#vonaOptPop,#tcInjPop,#tcInfoPop';
+// The phone's Games sheet counts while it is open (half or full): a swipe on its handle or
+// head must never scroll the page behind it — on iOS that swipe used to reach the page,
+// so the sheet could only be pulled up once the page behind had nothing left to scroll.
+const TC_FLOAT_SEL='.pcard-overlay,.scheme-overlay,.ps-overlay,.note-picker-overlay,.note-info-overlay,.tc-modal-overlay,#vonaOptPop,#tcInjPop,#tcInfoPop,.gcm-sheet.gcm-half,.gcm-sheet.gcm-full';
 var _tcLastTouchY=null, _tcLastTouchX=null, _tcGestureFloaters=null;
 var _tcGestureInner=null, _tcGestureInnerFor=null, _tcGestureFloatOk=null;
 // Tiny bound for the plain-object fetch caches sprinkled through the app (weekly stats, ESPN
@@ -5090,7 +5093,7 @@ function gcmDragStart(ev){
 function renderGamesPhone(fromLoad){
   const host=(typeof document!=='undefined' && document.getElementById) ? gcmHost() : null; if(!host) return;
   if(_gcm.timer){ clearTimeout(_gcm.timer); _gcm.timer=null; }
-  if(!gcPhoneOn()){ host.innerHTML=''; host.hidden=true; if(document.body&&document.body.classList) document.body.classList.remove('gcm-open'); return; }
+  if(!gcPhoneOn()){ host.innerHTML=''; host.hidden=true; if(document.body&&document.body.classList) document.body.classList.remove('gcm-open'); try{ document.documentElement.classList.remove('gcm-locked'); }catch(e){} return; }
   if(_gcm.drag || _gcm.swiping) return;       // mid-gesture (a height drag or a page swipe): the markup is already there
   host.hidden=false;
   const games=gcmCurrentGames();
@@ -5113,6 +5116,9 @@ function renderGamesPhone(fromLoad){
       ${page}
     </div>`;
   if(document.body&&document.body.classList) document.body.classList.toggle('gcm-open', open!=='closed');
+  // An open sheet locks the page behind it, like the player card does (html.pcard-locked):
+  // nothing under an overlay scrolls, on any platform.
+  try{ document.documentElement.classList.toggle('gcm-locked', open!=='closed'); }catch(e){}
   if(open!=='closed' && host.querySelector) gcmBindSwipe(host.querySelector('.gcm-sheet'));
   if(open!=='closed' && host.querySelector){
     const body=host.querySelector('.gc-body'), rail=host.querySelector('.gc-list');

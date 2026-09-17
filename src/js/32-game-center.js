@@ -552,7 +552,7 @@ function gcmDragStart(ev){
 function renderGamesPhone(fromLoad){
   const host=(typeof document!=='undefined' && document.getElementById) ? gcmHost() : null; if(!host) return;
   if(_gcm.timer){ clearTimeout(_gcm.timer); _gcm.timer=null; }
-  if(!gcPhoneOn()){ host.innerHTML=''; host.hidden=true; if(document.body&&document.body.classList) document.body.classList.remove('gcm-open'); return; }
+  if(!gcPhoneOn()){ host.innerHTML=''; host.hidden=true; if(document.body&&document.body.classList) document.body.classList.remove('gcm-open'); try{ document.documentElement.classList.remove('gcm-locked'); }catch(e){} return; }
   if(_gcm.drag || _gcm.swiping) return;       // mid-gesture (a height drag or a page swipe): the markup is already there
   host.hidden=false;
   const games=gcmCurrentGames();
@@ -575,6 +575,9 @@ function renderGamesPhone(fromLoad){
       ${page}
     </div>`;
   if(document.body&&document.body.classList) document.body.classList.toggle('gcm-open', open!=='closed');
+  // An open sheet locks the page behind it, like the player card does (html.pcard-locked):
+  // nothing under an overlay scrolls, on any platform.
+  try{ document.documentElement.classList.toggle('gcm-locked', open!=='closed'); }catch(e){}
   if(open!=='closed' && host.querySelector) gcmBindSwipe(host.querySelector('.gcm-sheet'));
   if(open!=='closed' && host.querySelector){
     const body=host.querySelector('.gc-body'), rail=host.querySelector('.gc-list');

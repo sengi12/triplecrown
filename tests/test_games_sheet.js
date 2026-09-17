@@ -8,7 +8,7 @@ const mkCls=()=>({_s:new Set(),add(...c){c.forEach(x=>this._s.add(x));},remove(.
 function mkEl(id){if(!elStore[id])elStore[id]={id,innerHTML:'',hidden:false,style:{},dataset:{},classList:mkCls(),setAttribute(){},getAttribute(){return '';},appendChild(){},querySelectorAll:()=>[],querySelector:()=>null,addEventListener(){},getBoundingClientRect(){return {height:300,width:390,right:390};}};return elStore[id];}
 const main={appendChild(el){ elStore[el.id]=el; }};
 const body={appendChild(el){ elStore[el.id]=el; },classList:mkCls(),style:{}};
-global.document={getElementById:(id)=>mkEl(id),querySelector:(q)=>q==='.main'?main:null,querySelectorAll:()=>[],createElement:()=>({id:'',className:'',innerHTML:'',hidden:false,style:{},classList:mkCls(),appendChild(){},querySelector:()=>null,querySelectorAll:()=>[]}),body,documentElement:{style:{}},addEventListener(){},visibilityState:'visible'};
+global.document={getElementById:(id)=>mkEl(id),querySelector:(q)=>q==='.main'?main:null,querySelectorAll:()=>[],createElement:()=>({id:'',className:'',innerHTML:'',hidden:false,style:{},classList:mkCls(),appendChild(){},querySelector:()=>null,querySelectorAll:()=>[]}),body,documentElement:{style:{},classList:mkCls()},addEventListener(){},visibilityState:'visible'};
 global.window={addEventListener(){},removeEventListener(){},matchMedia:()=>({matches:false,addEventListener(){}}),innerWidth:390,innerHeight:780,setTimeout:(fn,ms)=>setTimeout(fn,ms)};global.Chart=function(){return{destroy(){}}};global.confirm=()=>1;global.btoa=s=>s;global.FileReader=function(){};global.Range=function(){};global.AbortController=class{constructor(){this.signal={}}abort(){}};
 global.requestAnimationFrame=(fn)=>setTimeout(fn,0);global.cancelAnimationFrame=(id)=>clearTimeout(id);
 global.localStorage={_s:{},getItem(k){return this._s[k]||null;},setItem(k,v){this._s[k]=String(v);},removeItem(k){delete this._s[k];}};global.fetch=()=>Promise.reject(new Error('offline'));
@@ -30,7 +30,7 @@ const app=new Function(code+`
   sleeperPlayers={}; leagueSnapshot=null;
   _gcd.tab='stats'; _gcd.side='fantasy';   // the fantasy pane, as before the Feed | Stats tabs
   return { render:renderRightSidebar, phone:renderGamesPhone, set:gcmSet, open:gcOpenGame, pick:gcPick, line:gcPickerLineHTML, on:gcPhoneOn, tab:gcmSetTab, ldSort:ldSort, ldPos:ldSetPos, ld:()=>_ld,
-    host:()=>document.getElementById('gamesSheet'), html:()=>document.getElementById('gamesSheet').innerHTML, bodyCls:()=>[...document.body.classList._s], state:()=>_gcm, gc:()=>_gc,
+    host:()=>document.getElementById('gamesSheet'), html:()=>document.getElementById('gamesSheet').innerHTML, bodyCls:()=>[...document.body.classList._s], htmlCls:()=>[...document.documentElement.classList._s], state:()=>_gcm, gc:()=>_gc,
     swipe:gcmSwipeAction, games:gcmCurrentGames, setWeek:(w)=>{ _gc.week=w; }, preview:gcmSwipePreviewHTML, setMobile:v=>{mobile=v;}, setStarted:v=>{started=v;}, setDraft:v=>{rosterBarVisible=v;}, setBoard:b=>{ BOARD=b; _tcBoard.at=0; _gc.boards={}; }, sidebar:()=>document.getElementById('leaders') };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -46,7 +46,8 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
 
   console.log('=== half: the week\'s games as a rail, the picked game\'s banner ===');
   app.set('half'); await settle(); h=app.html();
-  chk(/gcm-sheet gcm-half/.test(h) && app.bodyCls().includes('gcm-open') && /gcm-scrim[^>]*onclick="gcmSet\('closed'\)"/.test(h), 'half: the sheet is up, the page is flagged open, the scrim closes it');
+  chk(app.htmlCls().includes('gcm-locked'), 'half: the page behind is locked (html.gcm-locked), like under the player card');
+  chk(/gcm-sheet gcm-half/.test(h) && app.bodyCls().includes('gcm-open') && /gcm-scrim[^>]*onclick="gcmSet\('closed'\)"/.test(h), 'half: the sheet is up, the page is flagged open, the scrim closesit');
   chk(/gcm-grab[^>]*onpointerdown="gcmDragStart\(event\)"/.test(h), 'a drag handle');
   chk(/Game Center/.test(h) && !/gcm-x/.test(h) && !/gcStep\(/.test(h) && !/rsb-grip/.test(h), 'the same Game Center head, with a close button instead of the sidebar\'s size buttons and grip');
   const ids=[...h.matchAll(/gcPick\('([^']+)'\)/g)].map(m=>m[1]);
@@ -61,6 +62,7 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   app.pick('DEN@KC'); await settle(); chk(app.state().open==='full' && app.gc().game==='DEN@KC', 'picking from full stays full');
   app.set('closed'); h=app.html();
   chk(/gcm-sheet gcm-closed/.test(h) && !app.bodyCls().includes('gcm-open') && /gcm-pill/.test(h), 'closed again: the pill is back');
+  chk(!app.htmlCls().includes('gcm-locked'), 'closed again: the page unlocks');
 
   console.log('=== the selected team\'s score in the team picker\'s bar ===');
   let l=app.line('SEA');

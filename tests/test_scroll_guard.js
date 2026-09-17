@@ -26,7 +26,7 @@ global.localStorage={getItem:()=>null,setItem(){},removeItem(){}};
 
 const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
-const app=new Function(code+`return { _tcScrollGuard, _tcEdgeCancel };`)();
+const app=new Function(code+`return { _tcScrollGuard, _tcEdgeCancel, SEL:TC_FLOAT_SEL };`)();
 
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const fire=(target)=>{ const e={target,cancelable:true,prevented:false,preventDefault(){this.prevented=true;}}; app._tcScrollGuard(e); return e.prevented; };
@@ -71,6 +71,17 @@ chk(app._tcEdgeCancel(wrap({scrollTop:300}),0,-40)===false,'mid-scroll → never
 chk(app._tcEdgeCancel(wrap({scrollLeft:1200}),-40,4)===true,'right edge, pulling further right → cancelled (horizontal fling)');
 chk(app._tcEdgeCancel(wrap({scrollLeft:500}),-40,4)===false,'horizontal in range → scrolls');
 chk(app._tcEdgeCancel(wrap({scrollHeight:400,clientHeight:400}),0,40)==='page','scroller cannot handle the axis → defer to the page edges');
+
+console.log('=== the phone\'s Games sheet is a floating surface while it is open ===');
+chk(app.SEL.includes('.gcm-sheet.gcm-half') && app.SEL.includes('.gcm-sheet.gcm-full') && !app.SEL.includes('gcm-closed'), 'the guard lists the sheet at half and full, never closed (the pill alone must not freeze the page)');
+{
+  const head=mkEl('gcmHead'), page=mkEl('pageText');
+  const sheet={contains:(t)=>t===head, offsetWidth:390, offsetHeight:300, getClientRects:()=>[1]};
+  floaters=[sheet];
+  chk(fire(page)===true, 'a swipe on the page behind an open sheet is cancelled — nothing under an overlay scrolls');
+  chk(fire(head)===true, 'a swipe on the sheet\'s own head (not a scroller) is cancelled too, so the handle drag gets the gesture, not the page');
+  floaters=[];
+}
 
 console.log(`\n${pass}/${total}`);
 process.exit(pass===total?0:1);
