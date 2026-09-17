@@ -3780,39 +3780,56 @@ def _tilt_to_mean(dist, target, lo=-6.0, hi=6.0, iters=60):
     return _mean(0.5 * (a + b))[1]
 
 
-def _tilt_conditionals(cond, weights, target):
-    """Tilt a family of conditionals {key: {value: prob}} mixed with `weights` {key: w} by ONE
-    parameter so the mixture's mean hits `target`. Returns the tilted family."""
+# A conditional's states are either a tight-end count (int) or a (backs, tight ends) pair —
+# the pair when last season's charting lets the prior be keyed on what FTN measures (the
+# players in the backfield, which is NOT the personnel back count: a tight end offset in the
+# backfield reads as a second back on 12% of plays). The tilt always acts on the tight ends.
+def _te_of(state):
+    return state[1] if isinstance(state, tuple) else state
+
+
+def _rb_of(state, backfield):
+    return state[0] if isinstance(state, tuple) else backfield
+
+
+def _apply_tilt(cond, lam):
+    """The family {key: {state: prob}} reweighted by exp(lam · tight ends), renormalized."""
+    out = {}
+    for k, d in cond.items():
+        w = {s: p * np.exp(lam * _te_of(s)) for s, p in d.items()}
+        z = sum(w.values()) or 1.0
+        out[k] = {s: v / z for s, v in w.items()}
+    return out
+
+
+def _tilt_lambda(cond, weights, target, lo=-6.0, hi=6.0, iters=60):
+    """The ONE tilt parameter that makes the mixture (conditionals mixed by `weights`) hit a
+    tight-end mean of `target`; 0.0 when there is no target or it is out of reach."""
     keys = [k for k in cond if k in weights and weights[k] > 0 and cond[k]]
     if not keys or target is None or not np.isfinite(target):
-        return {k: dict(v) for k, v in cond.items()}
+        return 0.0
     wsum = float(sum(weights[k] for k in keys)) or 1.0
 
-    def _apply(lam):
-        out, mu = {}, 0.0
-        for k in keys:
-            d = cond[k]
-            w = {v: d[v] * np.exp(lam * v) for v in d}
-            z = sum(w.values()) or 1.0
-            out[k] = {v: w[v] / z for v in d}
-            mu += weights[k] / wsum * sum(v * out[k][v] for v in d)
-        return mu, out
-    lo_m, _ = _apply(-6.0)
-    hi_m, _ = _apply(6.0)
-    if not (lo_m < target < hi_m):
-        return {k: dict(v) for k, v in cond.items()}
-    a, b = -6.0, 6.0
-    for _ in range(60):
+    def _mean(lam):
+        t = _apply_tilt({k: cond[k] for k in keys}, lam)
+        return sum(weights[k] / wsum * sum(_te_of(s) * p for s, p in t[k].items()) for k in keys)
+    if not (_mean(lo) < target < _mean(hi)):
+        return 0.0
+    a, b = lo, hi
+    for _ in range(iters):
         m = 0.5 * (a + b)
-        mu, _ = _apply(m)
-        if mu < target:
+        if _mean(m) < target:
             a = m
         else:
             b = m
-    out = _apply(0.5 * (a + b))[1]
-    for k in cond:
-        out.setdefault(k, dict(cond[k]))
-    return out
+    return 0.5 * (a + b)
+
+
+def _tilt_conditionals(cond, weights, target):
+    """Tilt a family of conditionals {key: {state: prob}} mixed with `weights` {key: w} by ONE
+    parameter so the mixture's tight-end mean hits `target`. Returns the tilted family."""
+    lam = _tilt_lambda(cond, weights, target)
+    return _apply_tilt(cond, lam) if lam else {k: dict(v) for k, v in cond.items()}
 
 
 def _shrink(team_counts, league_counts, k=_PERS_SHRINK):
@@ -3831,29 +3848,31 @@ def _shrink(team_counts, league_counts, k=_PERS_SHRINK):
     return {v: p / z for v, p in out.items()}
 
 
-def _personnel_rates(p_backs, te_given_backs):
-    """The offense's grouping rates from P(backs) and P(te | backs): 11/12/13/21 personnel,
-    3WR, multi-TE and multi-RB shares, as fractions of plays (pure; tested)."""
+def _personnel_rates(p_backs, cond_given_backs):
+    """The offense's grouping rates from P(backfield) and the conditional per backfield count
+    — {te: p} (the backs ARE the backfield) or {(rb, te): p} (keyed on FTN's count): 11/12/13/21
+    personnel, 3WR, multi-TE and multi-RB shares, as fractions of plays (pure; tested)."""
     r = {"p11": 0.0, "p12": 0.0, "p13": 0.0, "p21": 0.0, "wr3": 0.0, "mte": 0.0, "mrb": 0.0}
-    for b, pb in p_backs.items():
-        cond = te_given_backs.get(b) or te_given_backs.get(1) or {}
-        for te, pt in cond.items():
+    for fb, pb in p_backs.items():
+        cond = cond_given_backs.get(fb) or cond_given_backs.get(1) or {}
+        for s, pt in cond.items():
+            rb, te = _rb_of(s, fb), _te_of(s)
             w = pb * pt
-            wr = 5 - b - te
-            if b == 1 and te == 1:
+            wr = 5 - rb - te
+            if rb == 1 and te == 1:
                 r["p11"] += w
-            if b == 1 and te == 2:
+            if rb == 1 and te == 2:
                 r["p12"] += w
-            if b == 1 and te == 3:
+            if rb == 1 and te == 3:
                 r["p13"] += w
-            if b == 2 and te == 1:
+            if rb == 2 and te == 1:
                 r["p21"] += w
             if wr >= 3:
                 r["wr3"] += w
             if te >= 2:
                 r["mte"] += w
-        if b >= 2:
-            r["mrb"] += pb
+            if rb >= 2:
+                r["mrb"] += w
     return r
 
 
@@ -3914,7 +3933,32 @@ def _personnel_priors(prev):
     for (tm, k), n in d.groupby(["defteam", "dbs"]).size().items():
         db_team.setdefault(str(tm), {})[int(k)] = int(n)
         db_lg[int(k)] = db_lg.get(int(k), 0) + int(n)
-    return {"season": prev, "te_team": te_team, "te_lg": te_lg, "db_team": db_team, "db_lg": db_lg}
+    # The prior keyed on what FTN measures: last season's charting says how many players were
+    # in the backfield on each play, participation says the real (backs, tight ends). The joint
+    # per backfield count absorbs the H-back (calibrated on 2025: 11-personnel error 11.4 → 5.6
+    # points, 21-personnel 6.9 → 3.0). Also per alignment × backfield for the Playbook's sets.
+    joint_team, joint_lg, al_team, al_lg = {}, {}, {}, {}
+    try:
+        ftn = _aux_csv(FTN_URL.format(season=prev),
+                       usecols=["nflverse_game_id", "nflverse_play_id", "qb_location", "n_offense_backfield"])
+        j = o.merge(ftn, left_on=["game_id", "play_id"], right_on=["nflverse_game_id", "nflverse_play_id"], how="inner")
+        fb = pd.to_numeric(j["n_offense_backfield"], errors="coerce")
+        j = j[fb.notna()].copy()
+        j["fb"] = fb.loc[j.index].clip(0, 3).astype(int)
+        j["al"] = j["qb_location"].astype(str).str.strip().str.lower().map(_CHARTED_ALIGN)
+        for (tm, f, rb, te), n in j.groupby(["posteam", "fb", "backs", "te"]).size().items():
+            joint_team.setdefault(str(tm), {}).setdefault(int(f), {})[(int(rb), int(te))] = int(n)
+            joint_lg.setdefault(int(f), {})
+            joint_lg[int(f)][(int(rb), int(te))] = joint_lg[int(f)].get((int(rb), int(te)), 0) + int(n)
+        ja = j[j["al"].notna()]
+        for (tm, al, f, rb, te), n in ja.groupby(["posteam", "al", "fb", "backs", "te"]).size().items():
+            al_team.setdefault((str(tm), str(al), int(f)), {})[(int(rb), int(te))] = int(n)
+            al_lg.setdefault((str(al), int(f)), {})
+            al_lg[(str(al), int(f))][(int(rb), int(te))] = al_lg[(str(al), int(f))].get((int(rb), int(te)), 0) + int(n)
+    except Exception:
+        pass
+    return {"season": prev, "te_team": te_team, "te_lg": te_lg, "db_team": db_team, "db_lg": db_lg,
+            "joint_team": joint_team, "joint_lg": joint_lg, "al_team": al_team, "al_lg": al_lg}
 
 
 def _personnel_inferred(season):
@@ -3947,16 +3991,22 @@ def _personnel_inferred(season):
         prior = _personnel_priors(season - 1)
         te_mean = _snap_share(season, ("TE",), "offense")
         db_mean = _snap_share(season, _PERS_DB_POS, "defense")
-        off_rows, weekly = {}, {}
+        # the joint (backs, TE | backfield) prior when last season was charted; else TE | backs
+        joint = bool(prior.get("joint_lg"))
+        team_priors = prior["joint_team"] if joint else prior["te_team"]
+        lg_priors = prior["joint_lg"] if joint else prior["te_lg"]
+        off_rows, weekly, lam_by = {}, {}, {}
         for tm, g in d.groupby("posteam"):
             tm = str(tm)
             pb = (g["backs"].value_counts(normalize=True)).to_dict()
             pb = {int(k): float(v) for k, v in pb.items()}
             cond = {}
-            team_prior = prior["te_team"].get(tm, {})
-            for b in set(pb) | set(prior["te_lg"]):
-                cond[b] = _shrink(team_prior.get(b, {}), prior["te_lg"].get(b, {}))
-            cond = _tilt_conditionals(cond, pb, te_mean.get(tm))
+            team_prior = team_priors.get(tm, {})
+            for b in set(pb) | set(lg_priors):
+                cond[b] = _shrink(team_prior.get(b, {}), lg_priors.get(b, {}))
+            lam = _tilt_lambda(cond, pb, te_mean.get(tm))
+            lam_by[tm] = lam
+            cond = _apply_tilt(cond, lam) if lam else cond
             r = _personnel_rates(pb, cond)
             off_rows[tm] = {"11 Personnel": round(100 * r["p11"], 1), "12 Personnel": round(100 * r["p12"], 1),
                             "13 Personnel": round(100 * r["p13"], 1), "21 Personnel": round(100 * r["p21"], 1),
@@ -3985,15 +4035,33 @@ def _personnel_inferred(season):
                     "def_pers_obs": n, "def_sub": n * sub, "def_nickel": n * nickel, "def_dime": n * dime})
         result = {"off": pd.DataFrame.from_dict(off_rows, orient="index"),
                   "def": pd.DataFrame.from_dict(def_rows, orient="index"),
-                  "weekly": weekly, "prior": prior["season"], "te_mean": te_mean, "db_mean": db_mean}
-        print(f"  (personnel inferred for {season}: FTN backs × {prior['season']} split, "
-              f"{len(te_mean)} teams anchored to snap counts)")
+                  "weekly": weekly, "prior": prior["season"], "te_mean": te_mean, "db_mean": db_mean,
+                  "lam": lam_by, "priors": prior, "joint": joint}
+        print(f"  (personnel inferred for {season}: FTN backs × {prior['season']} "
+              f"{'joint' if joint else 'TE'} split, {len(te_mean)} teams anchored to snap counts)")
     except Exception as e:
         if not _is_http_not_found(e):
             print(f"  (skipped inferred personnel: {type(e).__name__}: {str(e)[:80]})")
         result = None
     _PERS_INFER[season] = result
     return result
+
+
+def _group_mix(g, floor=5.0, top=3):
+    """A charted set's estimated personnel mix, averaged over its plays: [["12", 62], ["11", 31]]
+    — codes with at least `floor` percent, biggest first (pure; tested)."""
+    acc, n = {}, 0
+    for m in g["pmix"]:
+        if not m:
+            continue
+        n += 1
+        for rb, te, pct in m:
+            code = f"{rb}{te}"
+            acc[code] = acc.get(code, 0.0) + float(pct)
+    if not n:
+        return None
+    mix = sorted(((code, v / n) for code, v in acc.items()), key=lambda kv: -kv[1])
+    return [[code, int(round(p))] for code, p in mix if p >= floor][:top] or None
 
 
 def _scheme_parse_personnel(s):
@@ -4207,14 +4275,47 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40, allow_charting_onl
             return {}
         d["backs"] = backs.loc[d.index].clip(0, 3).astype(int)
         d["align"] = loc.loc[d.index].map(_CHARTED_ALIGN)
-        # The TE/WR split: the one this team used most from that alignment × backfield last
-        # season (so the set carries a real personnel code — 11, 12, 21 …), else the common one.
+        # The personnel behind a charted set: last season's charting joined to its participation
+        # says what (backs, tight ends) this team really had on the field from that alignment
+        # × backfield count (an H-back set is 12 personnel, not 21), shrunk toward the league
+        # and tilted by this season's tight-end snap share (the same tilt the Advanced tab's
+        # personnel card uses). The set is labeled by the likeliest grouping and carries the
+        # mix; a prior season without charting falls back to the split the team used most.
         prior = _charted_priors(int(season) - 1)
         splits = prior["split"] if prior else {}
-        sp = [splits.get((tm, al, int(b))) or _CHARTED_SKILL_SPLIT[int(b)]
-              for tm, al, b in zip(d["posteam"], d["align"], d["backs"])]
-        d["te"] = [x[0] for x in sp]
-        d["wr"] = [x[1] for x in sp]
+        inf = _personnel_inferred(int(season))
+        mix_cache = {}
+
+        def _set_mix(tm, al, fb):
+            key = (tm, al, fb)
+            if key in mix_cache:
+                return mix_cache[key]
+            res = None
+            pr = inf.get("priors") if inf else None
+            if pr and pr.get("al_lg"):
+                cond = _shrink(pr["al_team"].get(key, {}), pr["al_lg"].get((al, fb)) or pr["joint_lg"].get(fb, {}))
+                if cond:
+                    lam = (inf.get("lam") or {}).get(tm, 0.0)
+                    w = {s: p * np.exp(lam * _te_of(s)) for s, p in cond.items()}
+                    z = sum(w.values()) or 1.0
+                    res = [(int(s[0]), int(s[1]), 100.0 * v / z) for s, v in sorted(w.items(), key=lambda kv: -kv[1])
+                           if 0 <= 5 - s[0] - s[1]]
+            mix_cache[key] = res or None
+            return mix_cache[key]
+        sp, mixes = [], []
+        for tm, al, b in zip(d["posteam"], d["align"], d["backs"]):
+            m = _set_mix(tm, al, int(b))
+            if m:
+                rb, te, _ = m[0]
+                sp.append((rb, te, 5 - rb - te))
+            else:
+                te, wr = splits.get((tm, al, int(b))) or _CHARTED_SKILL_SPLIT[int(b)]
+                sp.append((int(b), te, wr))
+            mixes.append(m)
+        d["backs"] = [x[0] for x in sp]
+        d["te"] = [x[1] for x in sp]
+        d["wr"] = [x[2] for x in sp]
+        d["pmix"] = mixes
         d["ol"] = 5
         d["p"] = d["backs"].astype(str) + d["te"].astype(str)
         d["zone"] = [_tgt_zone(a, l) if ps == 1 else None
@@ -4385,6 +4486,9 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40, allow_charting_onl
                     }
                     if charting_only:
                         formation_table[sig]["pers_assumed"] = True
+                        pm = _group_mix(g) if "pmix" in g.columns else None
+                        if pm:
+                            formation_table[sig]["pers_mix"] = pm
                 groups.append({
                     "sig": sig,
                     "n": n,

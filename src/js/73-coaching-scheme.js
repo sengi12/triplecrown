@@ -286,6 +286,7 @@ function _schemeToGroup(g){
     wr: _schemeNumber(g.wr, 0),
     ol: _schemeNumber(g.ol, 5),
     pers_assumed: !!g.pers_assumed,
+    pers_mix: (Array.isArray(g.pers_mix) && g.pers_mix.length) ? g.pers_mix.map(([c,p])=>[String(c),_schemeNumber(p,0)]) : null,
     n: _schemeNumber(g.n, 0),
     share: _schemeNumber(g.share, 0),
     pass_rate: _schemeNumber(g.pass_rate, 0),

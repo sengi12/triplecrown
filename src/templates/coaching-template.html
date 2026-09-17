@@ -274,7 +274,7 @@ function draw(){
   node.groups.forEach((g,i)=>{const noise=g.n<8?' <span class="hl-p" style="font-size:9px;padding:0 3px;">SMALL</span>':'';
     html+=`<div class="card"><div class="rank">#${i+1}</div>
       <div class="plabel"><span class="pers alt" data-i="${i}" title="tap to change alignment" style="cursor:pointer">${g.p} PERSONNEL ⇄</span> <span class="fname">${g.name}</span></div>
-      <div class="subttl">${g.backs} BACK · ${g.te} TE · ${g.wr} WR${g.pers_assumed?` (split est. from ${Number(SEASON)-1})`:''} — ${g.share}% of snaps${noise}</div>
+      <div class="subttl">${g.backs} BACK · ${(Array.isArray(g.pers_mix)&&g.pers_mix.length)?`${g.pers_mix.map(([c,p])=>`${c} ${p}%`).join(' · ')} (est.)`:`${g.te} TE · ${g.wr} WR${g.pers_assumed?` (split est. from ${Number(SEASON)-1})`:''}`} — ${g.share}% of snaps${noise}</div>
       <div class="prod" id="prd${i}">${prodLine(g)}</div>
       <div class="fieldbox">${fieldSvg(g,'none',{},0,0)}</div>
       <div class="stats"><div class="stat"><span id="snl${i}">Snaps</span><b id="snv${i}">${noteWrap('Snaps', String(g.n), `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,RB,WR,TE', String(g.n))}</b></div><div class="stat"><span>Success</span><b id="scv${i}">${noteWrap('Success Rate', `${g.succ}%`, `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,RB,WR,TE', `${g.succ}%`)}</b></div>

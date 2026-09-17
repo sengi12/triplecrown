@@ -140,8 +140,9 @@ def _encode_coaching(seed, round_epa=3):
             assigns_c = [[a["slot"], enc_routes(a.get("routes")), {"inf": 1, "szn": 2}.get(a.get("src"), 0)] for a in f["assigns"]]
             # v3 tail (appended, read defensively on decode): 1 when the TE/WR split is
             # assumed — the season in progress on charted sets, no participation file yet.
+            # v4 tail: the estimated personnel mix inside a charted set ([["12", 62], ["11", 31]]).
             forms.append([sig, f["name"], f["backs"], f["te"], f["wr"], f["ol"], assigns_c,
-                          1 if f.get("pers_assumed") else 0])
+                          1 if f.get("pers_assumed") else 0, f.get("pers_mix") or []])
 
         def enc_lanes(lanes):
             return [[ln_i(l[0]), l[1], R(l[2])] for l in (lanes or [])]

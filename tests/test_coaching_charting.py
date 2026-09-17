@@ -27,7 +27,8 @@ pbp_rows, ftn_rows = [], []
 
 
 def play(pid, team, is_pass, loc, backs, down=1, ytg=10, y100=50, pa=False, motion=False, lane=None, rec=None, rusher=None, td=0, air=None, side=None):
-    pbp_rows.append({"game_id": "G1", "play_id": pid, "posteam": team, "play_type": "pass" if is_pass else "run",
+    pbp_rows.append({"game_id": "G1", "play_id": pid, "posteam": team, "defteam": ("SEA" if team == "DET" else "DET"), "week": 1,
+                     "play_type": "pass" if is_pass else "run",
                      "pass": int(is_pass), "rush_attempt": int(not is_pass), "qb_scramble": 0, "epa": 0.1 if is_pass else -0.05,
                      "success": 1 if is_pass else 0, "down": down, "ydstogo": ytg, "yardline_100": y100, "season_type": "REG",
                      "shotgun": 1 if loc == "shotgun" else 0, "run_location": (lane or ["middle"])[0] if not is_pass else None,
@@ -73,10 +74,12 @@ prev_rows, prev_part = [], []
 
 def prev(pid, team, personnel, formation, rec=None, route=None, air=None, side=None):
     is_pass = rec is not None
-    prev_rows.append({"game_id": "P1", "play_id": pid, "posteam": team, "play_type": "pass" if is_pass else "run", "pass": int(is_pass),
+    prev_rows.append({"game_id": "P1", "play_id": pid, "posteam": team, "defteam": ("SEA" if team == "DET" else "DET"), "week": 1,
+                      "play_type": "pass" if is_pass else "run", "pass": int(is_pass),
                       "season_type": "REG", "shotgun": 1 if formation == "SHOTGUN" else 0, "air_yards": air, "pass_location": side,
                       "receiver_player_id": rec})
-    prev_part.append({"nflverse_game_id": "P1", "play_id": pid, "offense_personnel": personnel, "offense_formation": formation, "route": route})
+    prev_part.append({"nflverse_game_id": "P1", "play_id": pid, "offense_personnel": personnel, "offense_formation": formation, "route": route,
+                      "defense_personnel": "4 DL, 2 LB, 5 DB"})
 
 
 q = 0
@@ -96,7 +99,8 @@ prev_pbp = pd.DataFrame(prev_rows)
 prev_part = pd.DataFrame(prev_part)
 prev_roster = pd.DataFrame([{"gsis_id": "W1", "position": "WR"}, {"gsis_id": "T1", "position": "TE"}, {"gsis_id": "X9", "position": "WR"}, {"gsis_id": "R1", "position": "RB"}])
 
-state = {"part": None}
+state = {"part": None, "prev_ftn": None}
+N._snap_share = lambda season, positions, side: {}   # no snap-count anchor in this scenario (no tilt)
 
 
 def fake_aux(url, **kw):
@@ -107,6 +111,10 @@ def fake_aux(url, **kw):
             raise RuntimeError("404: participation publishes after the season")
         return state["part"]
     if "ftn_charting" in url:
+        if "2025" in url:
+            if state["prev_ftn"] is None:
+                raise RuntimeError("404: no 2025 charting in this scenario")
+            return state["prev_ftn"]
         return ftn
     if "roster" in url:
         return prev_roster if "2025" in url else roster
@@ -156,6 +164,33 @@ chk(N._tgt_zone(25, "right") == "dR" and N._tgt_zone(4, "left") == "sL" and N._t
 est = N._infer_routes("W1", ["dR", "dR", "sL"], pr, "WR")
 chk(est[0][0] == "GO" and any(r == "SLANT" for r, _ in est) and abs(sum(p for _, p in est) - 100) < 0.6, f"two deep-right targets and a short-left one → GO first, SLANT present, shares sum to 100 ({est})")
 chk(N._infer_routes("W1", [], pr, "WR") == [] and N._infer_routes("W1", ["dR"], None, "WR") == [], "no targets or no prior → nothing invented")
+
+print("=== last season charted too: the set's personnel comes from what FTN's count really meant ===")
+# 2025 FTN: DET's under-center plays had two in the backfield — and participation says those were
+# 2 RB, 1 TE (a real 21); its shotgun one-back plays were 12 twelve times and 11 three times.
+# SEA's pistol one-back plays were 11.
+def _loc(r):
+    return {"SHOTGUN": "S", "UNDER CENTER": "U"}.get(r["formation"], "P")
+prev_ftn_rows = []
+for r, pr in zip(prev_rows, prev_part.to_dict("records")):
+    prev_ftn_rows.append({"nflverse_game_id": "P1", "nflverse_play_id": r["play_id"],
+                          "qb_location": ("S" if r["shotgun"] else ("U" if r["posteam"] == "DET" else "P")),
+                          "n_offense_backfield": 2 if pr["offense_personnel"].startswith("2 RB") else 1})
+state["prev_ftn"] = pd.DataFrame(prev_ftn_rows)
+N._PERS_INFER.pop(2026, None)
+out2 = N.coaching_scheme(2026, allow_charting_only=True)
+f3 = out2["DET"]["formations"]
+gun2 = next(f for f in f3.values() if f["name"] == "SHOTGUN")
+iform2 = next(f for f in f3.values() if f["name"] == "I-FORM")
+chk(gun2["p"] == "12" and gun2["backs"] == 1 and gun2["te"] == 2, "DET's one-back shotgun still reads 12 — now from the charted joint prior")
+mix = gun2.get("pers_mix") or []
+chk(len(mix) == 2 and mix[0][0] == "12" and mix[1][0] == "11" and 50 < mix[0][1] < 70 and abs(mix[0][1] + mix[1][1] - 100) <= 1,
+    f"and carries its estimated mix, 12 first (shrunk toward the league's one-back split): {mix}")
+chk(iform2["p"] == "21" and iform2.get("pers_mix") == [["21", 100]], "the two-back under-center set reads 21 with a 100% mix")
+sea2 = next(iter(out2["SEA"]["formations"].values()))
+chk(sea2["p"] == "11" and sea2["name"] == "PISTOL" and (sea2.get("pers_mix") or [["11", 100]])[0][0] == "11", "SEA's pistol reads 11 from the league's pistol one-back prior")
+state["prev_ftn"] = None
+N._PERS_INFER.pop(2026, None)
 
 print("=== the participation file arrives: the real payload, unflagged ===")
 state["part"] = part

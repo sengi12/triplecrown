@@ -32,11 +32,18 @@ chk(dec.CIN.charting_only===true && df.pers_assumed===true && df.assigns[0].name
 const legacy=app.decode(compact([form([])]));
 chk(!legacy.CIN.charting_only && !legacy.CIN.formations['11|gun|3|1|1|5'].pers_assumed && !legacy.CIN.formations['11|gun|3|1|1|5'].assigns[0].src, 'a file without the tails (every frozen season) decodes unflagged');
 const enc=fs.readFileSync(path.join(__dirname,'..','build_seed.py'),'utf8');
-chk(/1 if f\.get\("pers_assumed"\) else 0\]/.test(enc) && /out_teams\[code\]\["co"\] = 1/.test(enc) && /\{"inf": 1, "szn": 2\}\.get\(a\.get\("src"\), 0\)/.test(enc), 'the encoder writes all three');
+chk(/1 if f\.get\("pers_assumed"\) else 0, f\.get\("pers_mix"\) or \[\]\]/.test(enc) && /out_teams\[code\]\["co"\] = 1/.test(enc) && /\{"inf": 1, "szn": 2\}\.get\(a\.get\("src"\), 0\)/.test(enc), 'the encoder writes all three, and the v4 personnel mix');
+const mixed=app.decode(compact([form([1, [['12',62],['11',31]]], [['WR1',[[0,55]],1]])], {co:1}));
+const mf=mixed.CIN.formations['11|gun|3|1|1|5'];
+chk(Array.isArray(mf.pers_mix) && mf.pers_mix.length===2 && mf.pers_mix[0][0]==='12' && mf.pers_mix[0][1]===62 && mf.pers_assumed===true, 'the v4 tail decodes into the set\'s estimated personnel mix');
+chk(!legacy.CIN.formations['11|gun|3|1|1|5'].pers_mix && !df.pers_mix, 'a v3 file (no mix) decodes without one');
+const gm=app.group(Object.assign({}, mf, {sig:'11|gun|3|1|1|5', n:10}));
+chk(gm.pers_mix && gm.pers_mix[1][0]==='11' && gm.pers_mix[1][1]===31, 'the group carries the mix to the sheet');
 
 console.log('=== the sheet ===');
 const tpl=app.template();
 chk(/if\(FV\.charting_only\) return \{name:\(a\?a\.name:''\),list:\[\],src:'none'\}/.test(tpl), 'routesFor draws no route (and no generic tree) on a charted-sets season');
+chk(/g\.pers_mix\.map\(\(\[c,p\]\)=>`\$\{c\} \$\{p\}%`\)\.join\(' · '\)\} \(est\.\)/.test(tpl), 'the set subtitle shows the estimated mix ("12 62% · 11 31% (est.)") when the file carries one');
 chk(/split est\. from \$\{Number\(SEASON\)-1\}/.test(tpl) && /runs \/ routes \(est\.\)/.test(tpl) && /<details class="foot"><summary>about this sheet<\/summary>/.test(tpl) && /Season in progress — charted sets/.test(tpl) && /routes are ESTIMATED/.test(tpl) && /querySelector\('\.foot > div'\)/.test(tpl) && !/\(est\)'/.test(tpl) && /const LW=54, LANE=20/.test(tpl) && /laneLast/.test(tpl), 'the card subtitle, hint and footnote say what a charted set is; routes carry no per-route tag, and labels take lanes so they do not collide');
 const out=app.tpl(tpl, p);
 chk(/"charting_only":true/.test(out) && /2026 · Charted sets · routes estimated/.test(out) && !/Routes mapped to players/.test(out), 'the rendered sheet ships the flag in its data script and says charted sets in its header');
