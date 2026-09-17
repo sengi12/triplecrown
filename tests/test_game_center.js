@@ -63,6 +63,7 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(/gc-owner">@Sengi12<\/span><span class="gc-pname gc-mine">B\. Mayfield/.test(h) && /gc-owner">@RichBigMeechy<\/span><span class="gc-pname">T\. Higgins/.test(h), 'the fantasy owner rides above a rostered player\'s name');
   chk(/Kicker[\s\S]*C\. McLaughlin[\s\S]*2\/2 FG, 3\/3 XP/.test(h), 'kickers with a stat line');
   chk(/Defense \/ ST[\s\S]*CIN D\/ST[\s\S]*27 PA, 2 sacks/.test(h), 'the D/ST line');
+  chk(/gc-p gc-p-home" onclick="openPlayerCard\('CIN','DEF','CIN'\)"[\s\S]{0,400}CIN D\/ST/.test(h), 'the D/ST row opens the team defense\'s card');
   chk(/Defenders[\s\S]*L\. Wilson[\s\S]*9 tkl \(6 solo\), 1 sack[\s\S]*<b class="gc-pts">11\.00</.test(h) && /L\. David[\s\S]*7 tkl \(4 solo\)/.test(h), 'individual defenders with tackles, sacks and the league\'s IDP points');
   chk(!/S\. Darnold/.test(h), 'a player from another game is not in this one');
   chk(/216yd · 1TD · 30rush/.test(h) && /45rush · 7\/7 48rec · 1TD/.test(h), 'offensive stat lines in the app\'s own grammar');
