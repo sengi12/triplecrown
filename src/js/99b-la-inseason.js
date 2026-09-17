@@ -807,12 +807,20 @@ function laWeekProjKdefRows(wk){
 // in a row move him a lot. At five games and beyond this is exactly the old 35/30/35 split.
 // A player with no preseason projection at all (a role that did not exist in August) reads
 // the season's evidence alone.
-const LA_BLEND_FULL_GP = 5, LA_BLEND_RECENT_MAX = 0.65;
-function laInSeasonBlend(base, seas, rec3, gp){
+//
+// Two ramps, one rule. THIS WEEK's projection and the waiver wire ramp linearly (one game
+// gives 13%): a role change — the back who just took the backfield — is visible in one
+// game's usage and belongs on the wire now. A player's rest-of-season VALUE (the trade
+// calculator, the redraft lens) ramps on the square (one game 2.6%, two 10%, three 23%):
+// one opener is noise against seventeen weeks, and a linear ramp was enough to price
+// Jonathan Taylor over Ja'Marr Chase after week 1. Dynasty and keeper leagues never read
+// this at all — they price on the market chart (see laValMode).
+const LA_BLEND_FULL_GP = 5, LA_BLEND_RECENT_MAX = 0.65, LA_BLEND_VALUE_POW = 2;
+function laInSeasonBlend(base, seas, rec3, gp, pow){
   if(seas==null || !(gp>0)) return base||0;
   const recent = (rec3!=null && gp>=2) ? (0.30/0.65)*seas + (0.35/0.65)*rec3 : seas;
   if(!(base>0)) return recent;
-  const w = LA_BLEND_RECENT_MAX*Math.min(1, gp/LA_BLEND_FULL_GP);
+  const w = LA_BLEND_RECENT_MAX*Math.pow(Math.min(1, gp/LA_BLEND_FULL_GP), pow||1);
   return (1-w)*base + w*recent;
 }
 // Weekly projection = OUR blend, not a flat season-projection ÷ 17:

@@ -268,8 +268,9 @@ console.log('=== player card: the live season lists what is coming ===');
 console.log('=== the in-season blend ramps with games played ===');
 {
   const b=app.laInSeasonBlend;
-  chk(Math.abs(b(20, 5, null, 1)-(0.87*20+0.13*5))<1e-9, 'one game: 87% the projection, 13% the week — a WR1 with a bad opener is still a WR1');
+  chk(Math.abs(b(20, 5, null, 1)-(0.87*20+0.13*5))<1e-9, 'one game: 87% the projection, 13% the week — a WR1 with a bad opener is still a WR1 (this week / the wire: the linear ramp)');
   chk(Math.abs(b(20, 5, 5, 3)-((1-0.39)*20+0.39*5))<1e-9, 'three games: 39% the season');
+  chk(Math.abs(b(20, 5, null, 1, 2)-(0.974*20+0.026*5))<1e-9 && Math.abs(b(20, 5, 5, 3, 2)-((1-0.234)*20+0.234*5))<1e-9, 'rest-of-season VALUE takes the squared ramp: one game 2.6%, three games 23.4%');
   chk(Math.abs(b(20, 5, 8, 5)-(0.35*20+0.30*5+0.35*8))<1e-9 && Math.abs(b(20, 5, 8, 12)-(0.35*20+0.30*5+0.35*8))<1e-9, 'five games and beyond: the full 35/30/35 split');
   chk(b(0, 12, 14, 1)===12 && Math.abs(b(0, 12, 14, 2)-((0.30/0.65)*12+(0.35/0.65)*14))<1e-9, 'no preseason projection → the season\'s evidence alone');
   chk(b(20, null, null, 3)===20 && b(20, 9, null, 0)===20, 'no games yet → the projection');

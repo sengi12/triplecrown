@@ -32731,7 +32731,8 @@ function laValMode(){
   // Past seasons are therefore always VOR, in dynasty leagues too; the manual pin doesn't
   // override it because there is no sensible dynasty answer for a finished year.
   if(laHistoricalSeason()) return 'redraft';
-  if(laState.valMode==='dynasty' || laState.valMode==='redraft') return laState.valMode;
+  const pin=laValPin();
+  if(pin!=='auto') return pin;
   // Sleeper type: 0 redraft, 1 keeper, 2 dynasty, 3 chopped (elimination). Keeper and
   // dynasty carry rosters forward, so they keep the dynasty chart unless the user pins
   // otherwise; a chopped league is this season only — redraft value, like 0.
@@ -32739,6 +32740,40 @@ function laValMode(){
   return (t===0 || t===3) ? 'redraft' : 'dynasty';
 }
 function laIsRedraft(){ return laValMode()==='redraft'; }
+// The lens pin is PER LEAGUE. It used to be one flag for the whole analyzer, so a VOR pin
+// made while looking at a keeper league followed you into a dynasty league — where it priced
+// Jonathan Taylor above Ja'Marr Chase off one big opener. Each league keeps its own pin;
+// a league you have not pinned follows its type.
+function laValPinKey(){ return (leagueSnapshot && leagueSnapshot.leagueId!=null) ? String(leagueSnapshot.leagueId) : '_'; }
+function laValPin(){
+  const by=(laState && laState.valModeBy) || {};
+  const v=by[laValPinKey()];
+  return (v==='dynasty' || v==='redraft') ? v : 'auto';
+}
+function laSetValMode(mv){
+  laState.valModeBy = laState.valModeBy || {};
+  if(mv==='dynasty' || mv==='redraft') laState.valModeBy[laValPinKey()]=mv; else delete laState.valModeBy[laValPinKey()];
+  renderLeagueAnalyzer();
+}
+// What the numbers on this page ARE — the chart, or rest-of-season worth — said in one tag,
+// with the pin beside it where the league type leaves a choice (keeper / dynasty).
+function laValueBasisHTML(){
+  const hist=laHistoricalSeason(), red=laIsRedraft();
+  const dvAsof=(typeof DYNASTY_VALUES!=='undefined' && DYNASTY_VALUES && DYNASTY_VALUES.asof) ? ` · ${DYNASTY_VALUES.asof}` : '';
+  const txt = hist ? `${hist} · value over replacement` : (red ? 'rest-of-season value' : `dynasty chart${dvAsof}`);
+  const tip = hist ? 'A finished season is valued on what actually happened.'
+    : red ? 'Value over replacement from your projections, blended with this season’s games as they come (one week barely moves it; five weeks move it a lot). Week-to-week form counts here — redraft and chopped leagues, or a league you pinned to VOR.'
+          : 'FantasyPros dynasty trade values with the tier boost. The season’s games do not move these — a market chart does.';
+  const pinned = laValPin()!=='auto' ? '<span class="la-basis-pin">pinned</span>' : '';
+  return `<span class="la-basis" title="${escAttr(tip)}">${escHtml(txt)}${pinned}</span>`;
+}
+function laValPinBarHTML(){
+  if(laHistoricalSeason() || (leagueSnapshot && (leagueSnapshot.leagueType===0 || leagueSnapshot.leagueType===3))) return '';
+  return `<span class="la-valmode" title="Keeper leagues sit between the two: they carry rosters forward like dynasty but reset like redraft. Pin whichever lens fits this league; the pin is remembered for this league only.">
+    <span class="la-lens-lbl">Value:</span>
+    ${['auto','redraft','dynasty'].map(mv=>`<button class="format-btn ${laValPin()===mv?'active':''}" onclick="laSetValMode('${mv}')">${mv==='auto'?`Auto (${laValMode()})`:mv==='redraft'?'VOR':'Dynasty'}</button>`).join('')}
+  </span>`;
+}
 
 // K and DEF live outside the projection builder's universe (POS_KEEP is QB/RB/WR/TE), so the
 // analyzer carries its own small map for them, captured at snapshot time. Sleeper publishes
@@ -32928,8 +32963,8 @@ function laRosValueMap(){
     const base=fp/projG, gp=pace?pace.gp:0, seas=(pace&&gp>0)?pace.act/gp:null;
     const fe=form?(form.get(String(p.player_id||''))||form.get(ecrNormName(p.name)+'|'+p.pos)):null;
     const rec3=fe?fe.f3:null;
-    let r=(typeof laInSeasonBlend==='function') ? laInSeasonBlend(base, seas, rec3, gp)
-          : ((seas!=null&&rec3!=null&&gp>=2) ? 0.35*base+0.30*seas+0.35*rec3 : (seas!=null ? 0.55*base+0.45*seas : base));
+    // rest-of-season WORTH: the squared ramp — one game is noise against the season
+    let r=laInSeasonBlend(base, seas, rec3, gp, (typeof LA_BLEND_VALUE_POW!=='undefined')?LA_BLEND_VALUE_POW:2);
     const sp=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers)?sleeperPlayers[String(p.player_id||'')]:null;
     const st=sp&&sp.injury_status?String(sp.injury_status):'';
     if(st && LA_ROS_LONG_OUT[st]) r*=0.5;
@@ -34152,11 +34187,7 @@ function laCompareView(s){
       <button class="format-btn ${lens==='proj'?'active':''}" onclick="laState.lens='proj';renderLeagueAnalyzer()" title="Projected points from YOUR projections: best starting lineup under this league's slots">Projected starters</button>
       ${(lens==='value'&&!laIsRedraft())?`<label class="la-chk" title="Count owned rookie-pick capital (PICKS column + inside TOTAL)">
         <input type="checkbox" ${laState.cmpPicks?'checked':''} onchange="laState.cmpPicks=this.checked;renderLeagueAnalyzer()"> incl. picks</label>`:''}
-      ${(laHistoricalSeason()||(leagueSnapshot&&(leagueSnapshot.leagueType===0||leagueSnapshot.leagueType===3)))?'':`<span class="la-valmode" title="Keeper leagues sit between the two: they carry rosters forward like dynasty but reset like redraft. Pin whichever matches how your league actually trades.">
-        <span class="la-lens-lbl">Value:</span>
-        ${['auto','redraft','dynasty'].map(mv=>`<button class="format-btn ${((laState.valMode||'auto')===mv)?'active':''}"
-          onclick="laState.valMode='${mv}';renderLeagueAnalyzer()">${mv==='auto'?`Auto (${laValMode()})`:mv==='redraft'?'VOR':'Dynasty'}</button>`).join('')}
-      </span>`}
+      ${laValPinBarHTML()}
       <label class="la-chk" title="Rank on starting lineups only — same filter as the My Team page">
         <input type="checkbox" ${laState.cmpStarters?'checked':''} onchange="laState.cmpStarters=this.checked;renderLeagueAnalyzer()"> starters only</label>
     </div>
@@ -34827,6 +34858,7 @@ function laTradeView(s){
     </div>`).join('')
     : `<div class="la-note">No viable upgrades found for ${escHtml(LA_SHAPE_LABEL[fnd.shapeTarget]||'this shape')} at ${escHtml(fnd.weak.pos)} right now. Try another shape or press refresh.</div>`;
   return `
+    <div class="la-basis-row">${laValueBasisHTML()}${laValPinBarHTML()}</div>
     <div class="la-tc-grid">
       <div class="la-tc-side">
         <div class="la-tc-head">${sel('a',tr.a)} <span class="la-tc-gives">gives</span></div>
@@ -36265,12 +36297,20 @@ function laWeekProjKdefRows(wk){
 // in a row move him a lot. At five games and beyond this is exactly the old 35/30/35 split.
 // A player with no preseason projection at all (a role that did not exist in August) reads
 // the season's evidence alone.
-const LA_BLEND_FULL_GP = 5, LA_BLEND_RECENT_MAX = 0.65;
-function laInSeasonBlend(base, seas, rec3, gp){
+//
+// Two ramps, one rule. THIS WEEK's projection and the waiver wire ramp linearly (one game
+// gives 13%): a role change — the back who just took the backfield — is visible in one
+// game's usage and belongs on the wire now. A player's rest-of-season VALUE (the trade
+// calculator, the redraft lens) ramps on the square (one game 2.6%, two 10%, three 23%):
+// one opener is noise against seventeen weeks, and a linear ramp was enough to price
+// Jonathan Taylor over Ja'Marr Chase after week 1. Dynasty and keeper leagues never read
+// this at all — they price on the market chart (see laValMode).
+const LA_BLEND_FULL_GP = 5, LA_BLEND_RECENT_MAX = 0.65, LA_BLEND_VALUE_POW = 2;
+function laInSeasonBlend(base, seas, rec3, gp, pow){
   if(seas==null || !(gp>0)) return base||0;
   const recent = (rec3!=null && gp>=2) ? (0.30/0.65)*seas + (0.35/0.65)*rec3 : seas;
   if(!(base>0)) return recent;
-  const w = LA_BLEND_RECENT_MAX*Math.min(1, gp/LA_BLEND_FULL_GP);
+  const w = LA_BLEND_RECENT_MAX*Math.pow(Math.min(1, gp/LA_BLEND_FULL_GP), pow||1);
   return (1-w)*base + w*recent;
 }
 // Weekly projection = OUR blend, not a flat season-projection ÷ 17:
