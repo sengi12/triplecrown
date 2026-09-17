@@ -56,18 +56,24 @@ function _cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, reachedLine){
     const side=Math.sign(x0-sx)||sgn();
     pts.push([sx+(x0-sx)*(0.6+j(0.1))+side*laneW*0.12, sy-(sy-losY)*(0.18+j(0.06))]);
     pts.push([x0+j(laneW*0.12), losY]);
-    // Upfield the bends are widest just past the line and fade as the run ends — that is
-    // where he gets tackled, so the last stretch settles onto the end point.
-    const run=losY-y1, steps=Math.max(0, Math.round(run/120));   // ~12 yards per bend
-    let x=x0, drift=sgn()*laneW*(0.35+rnd()*0.35);
-    for(let k=1;k<=steps;k++){
-      const t=k/(steps+1);
-      x+=drift*(1-t)*(1-t);                                       // a lean that shrinks with progress
-      drift=-drift*(0.4+rnd()*0.5);                               // then a counter-lean
-      x=x+(x1-x)*Math.min(1, t*1.4);                              // pulled onto where it ends
-      pts.push([x, losY-run*t]);
+    // Upfield, what tracking shows: the cut comes early — a lean in the first third of the
+    // run, a counter-lean on a long one — and the last stretch is straight, because that
+    // is where he is running away or getting tackled. Not every run bends: a good share
+    // go straight once they are through the gap.
+    const run=losY-y1;
+    const bends = run>60 && rnd()<0.6;
+    let x=x0;
+    if(bends){
+      const lean=sgn()*laneW*(0.3+rnd()*0.4);
+      x=x0+lean;                     pts.push([x, losY-run*(0.25+j(0.06))]);
+      if(run>230 && rnd()<0.6){ x=x-lean*(0.5+rnd()*0.4); pts.push([x, losY-run*(0.5+j(0.06))]); }
     }
-    if(run<130 && run>15) pts.push([x1+sgn()*laneW*(0.08+rnd()*0.08), y1+Math.min(12, run*0.3)]);   // a small last lean
+    // the finish is a straight run: smooth up to the last bend, then a straight line home
+    if(run>40){
+      const tail=[x1+(x-x1)*0.15, losY-run*0.78];
+      pts.push(tail);
+      return _cmSmooth(pts.concat([[x1, y1]])).replace(/ C[^C]*$/, '') + ` L${(+x1).toFixed(1)},${(+y1).toFixed(1)}`;
+    }
   } else {
     pts.push([sx+(x1-sx)*(0.5+j(0.15))+j(6), sy+(y1-sy)*(0.35+j(0.1))]);
   }

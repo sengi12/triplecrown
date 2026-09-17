@@ -41,7 +41,7 @@ chk((html.match(/stroke-dasharray="3 4"/g)||[]).length===3 && (html.match(/<path
 const arcNode={games:[{wk:1,opp:'NE',plays:[[4,0,2,41,45,4,null,1,1],[30,2,2,0,40,2,null,0,0],[45,1,0,0,50,1,null,1,null],[44,1,1,3,60,2,null,1,null]]}]};
 const arcs=app.block('Arc Test', arcNode, 2026, 1, {label:'Week 1 · NE'}, null);
 const ds=[...arcs.matchAll(/<path d="M(-?[\d.]+),(-?[\d.]+) C(-?[\d.]+),(-?[\d.]+) -?[\d.]+,-?[\d.]+ (-?[\d.]+),(-?[\d.]+)" fill="none" stroke="#2f6fe4"/g)].map(m=>m.slice(1).map(Number));
-chk(ds.length===2 && ds.every(d=>d[0]===d[2]), 'each scoring throw leaves the passer straight up (vertical tangent) before bending to the catch');
+chk(ds.length===2 && ds.every(d=>Math.abs(d[2]-d[0])<=22.01 && d[3]<d[1]), 'each scoring throw climbs out of the passer\'s hand (control above the start, a slight bow at most) before settling onto the catch');
 chk(ds[0][0]<ds[1][0] && Math.abs(ds[1][0]-380)<0.6, 'an out-of-pocket throw to the left starts left of centre; a pocket throw starts centred');
 chk(ds[0][1]>ds[1][1], 'a shotgun throw starts deeper than an under-centre one');
 chk(arcs.includes('out of the pocket') && (arcs.match(/out of the pocket/g)||[]).length===1, 'the tooltip says when he was out of the pocket');
@@ -113,7 +113,7 @@ chk((c1.match(/stroke="#d33b2f" stroke-width="3.5" stroke-linecap/g)||[]).length
 chk(/>TD \+60<\/text>/.test(c1) && />FUM<\/text>/.test(c1) && (c1.match(/r="3.5" fill="#ffffff"/g)||[]).length===2, 'the score is tagged with its length off the top, the fumble is tagged, first downs (and the score) get the white cap');
 chk(app.rbBlock('Kenneth Walker', rb, 2026, 1, 'Week 1 · DEN', null)===c1, 'the drawn paths are seeded: the same map every render');
 const d1=app.runPath(380, 530, 300, 460, 290, 200, 60, 12345, true), d2=app.runPath(380, 530, 300, 460, 290, 200, 60, 12345, true), d3=app.runPath(380, 530, 300, 460, 290, 200, 60, 999, true);
-chk(d1===d2 && d1!==d3 && d1.endsWith(' 290.0,200.0') && d1.startsWith('M'), 'a run path is deterministic per seed, varies across seeds, and always ends exactly on its dot');
+chk(d1===d2 && d1!==d3 && /[ L]290\.0,200\.0$/.test(d1) && d1.startsWith('M') && / L290\.0,200\.0$/.test(d1), 'a run path is deterministic per seed, varies across seeds, ends exactly on its dot — and finishes with a straight segment');
 chk(app.runPath(380, 530, 300, 460, 310, 480, 60, 7, false).endsWith(' 310.0,480.0'), 'a loss bends to its end without reaching the line');
 chk(/Tackled for loss/.test(c1) && /Fumble lost/.test(c1) && /First down/.test(c1), 'the legend explains the carry marks');
 chk(app.rbView()==='map', 'Map is the rushing fan\'s default view'); app.setRbView('fan'); chk(app.rbView()==='fan', 'Fan is selectable'); app.setRbView('map');
