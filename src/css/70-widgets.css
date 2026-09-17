@@ -380,7 +380,7 @@
 .la-linked-note{font-size:10px;}
 
 /* ── League Analyzer: My Team view + trade-calc middle column ───────────────*/
-.la-my-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(600px,1fr));gap:12px;align-items:start;}
+/* .la-my-grid: the masonry columns live in 78-la-myteam.css (this used to be a 600px auto-fit grid). */
 .la-my-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
 .la-my-wide{grid-column:1/-1;}
 .la-my-title{font-size:12px;font-weight:900;margin-bottom:10px;}
@@ -502,7 +502,6 @@
   .la-my-sum{padding:9px 10px;gap:9px;}
   .la-my-sum-head{font-size:13px;}
   .la-grid{grid-template-columns:1fr;gap:10px;}
-  .la-my-grid{grid-template-columns:1fr;gap:10px;}
   /* Grid/flex children default to min-width:auto, so a wide table inside refuses to shrink and
      pushes the whole page past the viewport. Let these blocks shrink to their column, and cap
      names/rows so nothing spills right on a phone. */
