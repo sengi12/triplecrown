@@ -4768,7 +4768,8 @@ function gcSide(rows, team, group, limit){
 function gcPlayerHTML(x, side){
   const r=x.r; const owner=gcOwnerOf(r.player_id);
   const pid=String(r.player_id||''); const pos=gcPos(r);
-  const click = pos==='DEF' ? '' : ` onclick="${pcardOnclick(pid, pos, r.team||'')}"`;
+  // a D/ST row opens the team defense's card (its id is the team code)
+  const click = pos==='DEF' ? ` onclick="${pcardOnclick(String(r.team||pid).toUpperCase(), 'DEF', String(r.team||pid).toUpperCase())}"` : ` onclick="${pcardOnclick(pid, pos, r.team||'')}"`;
   return `<div class="gc-p gc-p-${side}${r.proj?' gc-p-proj':''}"${click}>
     <div class="gc-pinfo">${owner?`<span class="gc-owner">${escHtml(owner)}</span>`:''}<span class="gc-pname${gcSideClass(pid)}">${escHtml(gcName(r))}</span>${x.line?`<span class="gc-line">${escHtml(x.line)}</span>`:''}</div>
     <span class="gc-ptsbox"><b class="gc-pts">${x.pts!=null?x.pts.toFixed(2):'–'}</b>${x.proj!=null?`<small class="gc-proj" title="projected">${x.proj.toFixed(2)}</small>`:''}</span>
@@ -27053,6 +27054,22 @@ function tcAiPlayerContext(p){
   }
   if(st.length) L.push(`  projection (${g} gm): `+st.join(', ')
     +(p.fpts!=null&&g?` → ${(p.fpts/g).toFixed(1)} FP/gm`:''));
+  // a defender: his weekly log's season totals (the def_weekly sidecar, once loaded)
+  try{
+    const IDP=new Set(['DL','DE','DT','NT','LB','OLB','ILB','MLB','DB','CB','S','SS','FS']);
+    if(IDP.has(String(p.pos||'').toUpperCase()) && typeof NFLVERSE!=='undefined' && NFLVERSE && typeof normName==='function'){
+      const seasons=Object.keys(NFLVERSE).sort((a,b)=>b-a);
+      for(const s of seasons){
+        const dw=NFLVERSE[s] && NFLVERSE[s].def_weekly && NFLVERSE[s].def_weekly[normName(p.name)];
+        const tot=dw && dw.totals;
+        if(tot && typeof tot==='object'){
+          const bits=Object.keys(tot).filter(k=>typeof tot[k]==='number' && tot[k]>0).slice(0,10).map(k=>`${tot[k]} ${k.replace(/_/g,' ')}`);
+          if(bits.length) L.push(`  ${s} defense${dw.group?` (${dw.group})`:''}: `+bits.join(', '));
+          break;
+        }
+      }
+    }
+  }catch(e){}
   // QB accuracy charting (last completed season)
   try{
     if(p.pos==='QB' && typeof NFLVERSE!=='undefined' && NFLVERSE){
@@ -27360,9 +27377,27 @@ function tcAiRenderText(txt){
 
 // ── The modal ────────────────────────────────────────────────────────────────
 let _aiCmp={ a:null, b:null };
+// Everyone the app knows, not just the projection board: the board's rows first (they
+// carry projections, ECR, ADP), then every other player Sleeper lists on a team —
+// defenders, linemen, punters — as bare rows, so a card's compare can reach a teammate
+// on defense (Boye Mafe against Cashius Howell), not only the skill positions.
+function _aiCmpPool(){
+  const list=(typeof buildProjectionList==='function')?buildProjectionList():((typeof buildPlayerList==='function')?buildPlayerList():[]);
+  const out=list.slice();
+  const have=new Set(list.map(p=>String(p.player_id||p.name)));
+  const sp=(typeof sleeperPlayers!=='undefined' && sleeperPlayers) ? sleeperPlayers : null;
+  if(sp) for(const pid in sp){
+    const q=sp[pid]; if(!q || have.has(String(pid))) continue;
+    const team=String(q.team||'').toUpperCase(); const pos=String(q.pos||'').toUpperCase();
+    if(!team || !pos || q.active===false) continue;
+    if(!q.name) continue;
+    out.push({ player_id:String(pid), name:String(q.name), pos, team, fpts:null, ecr:null, offBoard:true });
+  }
+  return out;
+}
 function openAiCompare(pidA){
   const old=document.getElementById('aiCmpOverlay'); if(old) old.remove();
-  const list=(typeof buildProjectionList==='function')?buildProjectionList():((typeof buildPlayerList==='function')?buildPlayerList():[]);
+  const list=_aiCmpPool();
   const byId=new Map(list.map(p=>[String(p.player_id||p.name), p]));
   _aiCmp={ a: byId.get(String(pidA))||null, b:null, byId, list };
   const ov=document.createElement('div');
@@ -27397,6 +27432,11 @@ function _aiSimilarToA(a, list, n){
   const pool=(list||[]).filter(p=>p && p.pos===a.pos
     && String(p.player_id||p.name)!==String(a.player_id||a.name)
     && !(typeof draftedIds!=='undefined' && draftedIds && draftedIds[p.player_id]));
+  // A player off the board (a defender, a lineman) has no rank to be near: his teammates
+  // at the position first, then the rest by name.
+  if(a.offBoard || aRank>=999){
+    return pool.sort((x,y)=>((x.team===a.team)?0:1)-((y.team===a.team)?0:1) || String(x.name).localeCompare(String(y.name))).slice(0, n||6);
+  }
   const score=(p)=>{
     let d=Math.abs(rankOf(p)-aRank);                    // picks apart on the board
     if(aF!=null && p.fpts!=null) d += Math.abs(p.fpts-aF)*0.25;   // and projected-points apart
@@ -27415,7 +27455,7 @@ function _aiCompareCandidates(a, list){
   const rankOf=(p)=> (typeof adpFor==='function' && adpFor(p)<999) ? adpFor(p)
                     : (p.ecr!=null ? p.ecr*1.2 : 999);
   const aRank=rankOf(a);
-  const other=(list||[]).filter(p=>p && p.pos!==a.pos && p.pos!=='K' && p.pos!=='DEF'
+  const other=(list||[]).filter(p=>p && p.pos!==a.pos && p.pos!=='K' && p.pos!=='DEF' && !p.offBoard
       && !(typeof draftedIds!=='undefined' && draftedIds && draftedIds[p.player_id]))
     .sort((x,y)=>Math.abs(rankOf(x)-aRank)-Math.abs(rankOf(y)-aRank)).slice(0,12);
   return { same, other };

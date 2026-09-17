@@ -60,7 +60,7 @@ const app=new Function(code+`return { tcAiSettings, tcAiSaveSettings, tcAiUsage,
   tcAiToolModels, lastLookups:()=>_aiLastLookups, TC_INFO_BOOK,
   openTcChat, tcChatRender, _chatSend, _chatGuide, tcChatMessages, TC_CHAT_GUIDES, TC_CHAT_KEEP,
   chatState:()=>_chat, resetChat:()=>{_chat={msgs:[],guide:null,draft:'',busy:false};},
-  openAiCompare, _aiPick, cmpState:()=>_aiCmp,
+  openAiCompare, _aiPick, cmpState:()=>_aiCmp, _aiCmpMatches, _aiCmpPool, setSleeper:(m)=>{ sleeperPlayers=m; }, getSleeper:()=>sleeperPlayers,
   tcChatGroundPlayers, tcChatAppContext, TC_CHAT_APP_MAP,
   tcChatLeagueContext, tcChatMyTeam,
   setLeague:(x)=>{leagueSnapshot=x;}, setDraftSeat:(slot,by)=>{mySlot=slot;draftPicksBySlot=by||{};},
@@ -1015,6 +1015,37 @@ chk(html.split('<p>').length===3, 'paragraphs survive');
   chk(h==='<p><b>&lt;img src=x onerror=alert(1)&gt;</b></p>', 'markup smuggled inside markdown stays visible text');
   chk(!app.tcAiRenderText('5 * 3 * 2 = 30').includes('<i>'), 'stray asterisks in math never italicize');
   chk(!/[<]a\s/i.test(app.tcAiRenderText('[click](https://evil.example)')), 'markdown links never become links');
+}
+
+
+console.log('=== the compare reaches every player in the app, not only the board ===');
+{
+  const prevSp=app.getSleeper();
+  app.setSleeper(Object.assign({}, prevSp||{}, {
+    mafe:{player_id:'mafe', name:'Boye Mafe', pos:'DE', team:'SEA', active:true},
+    howell:{player_id:'howell', name:'Cashius Howell', pos:'DE', team:'SEA', active:true},
+    bosa:{player_id:'bosa', name:'Nick Bosa', pos:'DE', team:'SF', active:true},
+    retired:{player_id:'retired', name:'Old Timer', pos:'DE', team:null, active:false},
+    kw:{player_id:'kw', name:'Kenneth Walker', pos:'RB', team:'SEA', active:true},
+  }));
+  const pool=app._aiCmpPool();
+  const names=new Set(pool.map(p=>p.name));
+  chk(names.has('Boye Mafe') && names.has('Cashius Howell') && names.has('Nick Bosa') && !names.has('Old Timer'), 'defenders Sleeper lists on a team join the pool; a man without a team does not');
+  app.openAiCompare('mafe');
+  const st=app.cmpState();
+  chk(st.a && st.a.name==='Boye Mafe' && st.a.offBoard===true && st.a.pos==='DE', 'opening the compare from a defender\'s card seats him as A');
+  const hits=app._aiCmpMatches('howell', st.list);
+  chk(hits.length>=1 && hits[0].name==='Cashius Howell', 'typing a teammate on defense finds him');
+  const sim=app._aiSimilarToA(st.a, st.list, 6);
+  chk(sim.length>=2 && sim[0].name==='Cashius Howell' && sim.some(p=>p.name==='Nick Bosa') && !sim.some(p=>p.name==='Kenneth Walker'), 'similar to a DE: the teammate at the position first, then the rest — never another position');
+  const cand=app._aiCompareCandidates(st.a, st.list);
+  chk(!cand.other.some(p=>p.offBoard), 'the other-positions shortlist stays on the board (ranks mean something there)');
+  app._aiPick('howell');
+  chk(app.cmpState().b && app.cmpState().b.name==='Cashius Howell', 'and he can be picked as B');
+  const ctx=app.tcAiPlayerContext(st.a);
+  chk(/Boye Mafe \(DE, SEA/.test(ctx), 'a defender\'s context still opens with who he is');
+  app.setSleeper(prevSp);
+  const ov=document.getElementById('aiCmpOverlay'); if(ov && ov.remove) ov.remove();
 }
 
 console.log(`\n${pass}/${total} checks passed`);
