@@ -217,7 +217,14 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .lf-body{display:flex;flex-direction:column;min-height:0;overflow:auto;gap:2px;}
 .lf-live{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-left:auto;margin-right:6px;}
 .lf-live.on{color:#ff6b6b;}
-.lf-chips{flex-wrap:wrap;}
+.lf-chips{flex-wrap:wrap;align-items:center;}
+.lf-chips .ld-pos{flex:0 0 auto;padding:3px 9px;}
+/* league chips: the league's icon, a ring when selected; initials when it has none */
+.lf-chips .lf-lg{width:34px;height:34px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;overflow:hidden;}
+.lf-chips .lf-lg.active{box-shadow:0 0 0 2px var(--accent);border-color:var(--accent);}
+.lf-lg-av{width:100%;height:100%;object-fit:cover;display:block;}
+.lf-lg-ini{font-size:10px;font-weight:900;letter-spacing:.02em;line-height:1;}
+.lf-chips .lf-lg.active .lf-lg-ini{color:#08121f;}
 .lf-mine{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted);margin:2px 0 6px;cursor:pointer;}
 .lf-list{padding-bottom:6px;}
 .lf-row .gcf-main{gap:3px;}
