@@ -75,6 +75,13 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(/gc-pname gc-mine">B\. Mayfield/.test(hc) && /gc-pname gc-opp">T\. Higgins/.test(hc), 'the names carry it into the panel');
   app.setHub({});
 
+  console.log('=== and the stylesheet lets the blue through ===');
+  {
+    const css=require('fs').readFileSync(require('path').join(__dirname,'..','src/css/32-game-center.css'),'utf8');
+    const last=(re)=>{ let m, i=-1; const r=new RegExp(re.source, 'g'); while((m=r.exec(css))) i=m.index; return i; };
+    chk(last(/\.gc-pname\.gc-mine[^{]*\{[^}]*color/)>last(/\.gc-pname\{/) && last(/\.gcf-name\.gc-mine[^{]*\{[^}]*color/)>last(/\.gcf-name\{/) && last(/\.gc-opp[^{]*\{[^}]*color/)>last(/\.gc-pname\{/), 'the mine and opp colour rules come AFTER the names\' own colour rules, so they win the cascade');
+  }
+
   console.log('=== my players light up ===');
   chk(app.mine('q1') && app.mine('r2') && !app.mine('w2'), 'the roster owned by my user id is mine; a leaguemate\'s is not');
   chk(/gc-pname gc-mine">B\. Mayfield/.test(h) && /gc-pname gc-mine">C\. Brown/.test(h) && /gc-pname">T\. Higgins/.test(h), 'my players\' names carry the highlight; a leaguemate\'s player does not');
