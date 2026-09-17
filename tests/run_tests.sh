@@ -212,7 +212,7 @@ run_js_test test_playbook_live   "Playbook on the live season: a missing coachin
 run_js_test test_pcard_dock      "Player tabs (dock): drill-downs add tabs, switching restores the view, closing lands on the neighbour, ✕ clears all, bounded"
 run_js_test test_ngs_live        "Next Gen Stats live strip: per-game/season tiles under the charts, colored vs league median with per-stat direction, honest absences"
 run_js_test test_target_map      "Target map: every target drawn at its depth and side, after-catch tails, TD ring + tag, charted routes as paths to the catch, Map default / Zones / Tree views, NGS deep link"
-run_js_test test_ol_window       "Offensive line by week window: unpublished PFR fields stay missing (never 0 / 32nd), pbp fields keep real zeros, the per-game run-blocking score averages what exists"
+run_js_test test_ol_window       "Offensive line by week window + the O-Line pane: unpublished PFR fields stay missing (never 0 / 32nd), pbp fields keep real zeros, the per-game run-blocking score averages what exists, the form boards and the Season pane"
 run_js_test test_tendencies_tab  "The Playbook's Tendencies tab: team vs league on paper, ranks, the live season in the season row, the sheet left as one page whose scripts parse"
 run_js_test test_playbook_charting  "The Playbook on charted sets for the season in progress: the flag, the assumed split, no routes, the subtitle"
 run_js_test test_native_auth      "Google sign-in inside the phone app: system browser + the app's own callback scheme"

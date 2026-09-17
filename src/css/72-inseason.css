@@ -411,3 +411,6 @@
 .la-pool-th{cursor:pointer;white-space:nowrap;user-select:none;}
 .la-pool-th:hover{color:var(--text);}
 .la-pool-th.active{color:var(--accent);}
+/* O-line form boards (Trends · Teams): the stretch selector rides the board's subtitle */
+.la-ol-win{display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle;}
+.la-ol-win .pos-filter-btn{padding:1px 8px;font-size:10px;}
