@@ -60,7 +60,12 @@
 .pcard-note-badge{position:absolute;right:-4px;top:-4px;min-width:15px;height:15px;padding:0 4px;
   border-radius:999px;background:var(--accent);color:#fff;font-size:9px;font-weight:900;
   display:flex;align-items:center;justify-content:center;box-shadow:0 1px 6px rgba(0,0,0,.35);}
-.pcard-body{padding:8px 12px 16px;flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:none;}
+/* One inset for everything under the hero — the contract and leagues bands, the tab row,
+   the projections row and the body itself share the same left and right edges. Phones
+   pull it in so the bands keep their one-line content. */
+.pcard{--pcard-x:12px;}
+@media (max-width:560px){ .pcard{--pcard-x:5px;} }
+.pcard-body{padding:8px var(--pcard-x) 16px;flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:none;}
 .pcard-season{margin-top:12px;}
 .pcard-season-title{font-size:13px;font-weight:800;color:var(--text);margin:6px 2px 6px;
   padding:4px 0;}
@@ -78,12 +83,12 @@
 .pcard-college-tag{font-size:9px;font-weight:800;letter-spacing:.06em;color:var(--accent);
   background:rgba(61,155,255,.13);padding:1px 6px;border-radius:4px;vertical-align:middle;}
 .pcard-draft{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:var(--text);
-  background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 11px;margin:4px 2px 2px;}
+  background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 11px;margin:6px var(--pcard-x) 0;}
 .pcard-draft-lbl{font-size:8.5px;font-weight:800;letter-spacing:.06em;color:var(--accent);
   background:rgba(61,155,255,.13);padding:2px 6px;border-radius:4px;}
 .pcard-draft .muted{color:var(--muted);font-weight:600;}
 .pcard-contract{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:11.5px;font-weight:700;color:var(--text);
-  background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 11px;margin:4px 2px 2px;}
+  background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 11px;margin:6px var(--pcard-x) 0;}
 .pcard-contract-lbl{font-size:8.5px;font-weight:800;letter-spacing:.06em;color:var(--accent);
   background:rgba(61,155,255,.13);padding:2px 6px;border-radius:4px;}
 .pcard-contract .muted{color:var(--muted);font-weight:600;}
@@ -93,7 +98,7 @@
    and if a deal still runs long the length/total part trims with an ellipsis — $/yr, gtd
    and the FA year always show. */
 @media (max-width:500px){
-  .pcard-contract{flex-wrap:nowrap;gap:7px;font-size:11px;}
+  .pcard-contract{flex-wrap:nowrap;gap:6px;font-size:11px;padding:7px 9px;}
   .pcard-contract .ct-l{display:none;}
   .pcard-contract .ct-s{display:inline;}
   .pcard-contract > span{white-space:nowrap;}
@@ -116,11 +121,37 @@
 .pcard-news-a{color:var(--muted);}
 .pcard-news-src{color:var(--accent);font-size:10.5px;font-weight:800;text-decoration:none;}
 .pcard-news-empty{padding:18px 6px;font-size:12px;color:var(--muted);font-style:italic;}
-.pcard-tabs{display:flex;gap:4px;margin:8px 2px 2px;}
+.pcard-tabs{display:flex;gap:4px;margin:6px var(--pcard-x) 0;}
 .pcard-tab{flex:0 0 auto;padding:5px 15px;font-size:10.5px;font-weight:800;letter-spacing:.03em;cursor:pointer;
   border:1px solid var(--border);background:var(--surface2);color:var(--muted);border-radius:7px;transition:all .15s;}
 .pcard-tab:hover{color:var(--text);}
 .pcard-tab.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+/* Icon + label per tab (the in-season tabs' grammar). On a phone the inactive tabs collapse
+   to their icons so NFL · College · Passing Chart · Offensive Line · News fit one line. */
+.pcard-tab .tc-ico{width:14px;height:14px;flex-shrink:0;}
+.pcard-tab.active .tc-ico{color:#fff;}
+.pcard-tab .tab-lbl{white-space:nowrap;}
+@media (max-width:560px){
+  .pcard-tab:not(.active) .tab-lbl{display:none;}
+  .pcard-tab{padding-left:11px;padding-right:11px;}
+  .pcard-tab.active{padding-left:12px;padding-right:12px;}
+}
+/* The wordmark icons are wide: the NFL lettering and the NCAA mark take their own boxes. */
+.pcard-tab .tc-ico-nfl{width:20px;height:14px;}
+.pcard-tab .tc-ico-ncaa{width:36px;height:11px;}
+/* The PROJECTIONS row is the tap target for the "vs projection" chips: a caret at its right
+   edge once the live season has a strip to show; the strip drops in directly beneath. */
+.pcard-proj-tap{position:relative;}
+.pcard-proj-tap.has-pace{cursor:pointer;}
+.pcard-proj-tap.has-pace .tc-model-row{padding-right:24px;}
+.pcard-proj-tap.has-pace::after{content:'▾';position:absolute;right:20px;top:50%;margin-top:-13px;
+  font-size:11px;color:var(--muted);transition:transform .15s;pointer-events:none;}
+.pcard-proj-tap.has-pace.open::after{transform:rotate(180deg);}
+.pcard-vsproj{margin:0 0 6px;}
+.pcard-vsproj .pace-strip{margin:0;}
+.pcard-vsproj[hidden]{display:none;}
+.pcard-vsproj .pcard-pace{margin:0;}
+.pcard-vsproj .pcard-pace-lbl{display:none;}
 .pcard-hero-draft{margin-top:8px;}
 .pcard-hero-draft-line{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:700;color:#fff;
   background:rgba(0,0,0,.24);border:1px solid rgba(255,255,255,.16);border-radius:7px;padding:4px 9px;}
@@ -572,6 +603,20 @@ tr.pcard-future-row td{opacity:.75;}
   background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:7px;}
 .pcard-season-tab.active{background:var(--accent);color:#000;border-color:var(--accent);}
 .pcard-season-tab.empty{opacity:.38;text-decoration:line-through;}
+/* The season picker: the strip on a wide screen; on a phone a "2026 ▾" button whose menu
+   is the same strip, stacked — one row of the log instead of two rows of year chips. */
+.pcard-season-pick{position:relative;margin:10px 0 8px;}
+.pcard-season-pick .pcard-season-tabs{margin:0;}
+.pcard-season-btn{display:none;}
+@media (max-width:560px){
+  .pcard-season-btn{display:inline-flex;font-size:11.5px;padding:5px 10px;}
+  .pcard-season-pick .pcard-season-tabs{display:none;position:absolute;left:0;top:calc(100% + 4px);z-index:40;
+    flex-direction:column;gap:2px;min-width:110px;padding:4px;
+    background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.4);}
+  .pcard-season-pick.open .pcard-season-tabs{display:flex;}
+  .pcard-season-pick .pcard-season-tab{text-align:left;border-color:transparent;background:none;padding:7px 10px;}
+  .pcard-season-pick .pcard-season-tab.active{background:var(--surface2);color:var(--accent);border-color:transparent;}
+}
 
 /* Per-game chips under the chart season strips (current season only). */
 .rt-games{display:flex;gap:4px;flex-wrap:wrap;margin:4px 0 2px;}

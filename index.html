@@ -210,6 +210,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .tc-time-machine{position:fixed;left:50%;bottom:10px;transform:translateX(-50%);z-index:9000;
   padding:4px 10px;border-radius:999px;background:var(--warn);color:#111;font-size:10px;font-weight:800;
   letter-spacing:.3px;box-shadow:0 2px 8px rgba(0,0,0,.35);pointer-events:none;white-space:nowrap;}
+/* ── Wordmark icons: the NFL shield lettering and the NCAA mark as alpha masks, painted
+   with currentColor so they sit in the theme like every other tc-ico (grey idle, white on
+   the active tab). Tiny PNGs, inlined. ── */
+.tc-ico-mask{display:inline-block;flex-shrink:0;background:currentColor;
+  -webkit-mask:var(--tc-m) center/contain no-repeat;mask:var(--tc-m) center/contain no-repeat;}
+.tc-ico-nfl{--tc-m:url("data:image/png;base64,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");width:1.4em;height:1em;}
+.tc-ico-ncaa{--tc-m:url("data:image/png;base64,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");width:3.58em;height:1em;}
 /* ── Player card modal ── */
 /* Overlay scrolls (not hidden) and the card centers via margin:auto, so when the mobile browser
    toolbar shrinks the viewport the card's top + close button stay reachable instead of being
@@ -272,7 +279,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .pcard-note-badge{position:absolute;right:-4px;top:-4px;min-width:15px;height:15px;padding:0 4px;
   border-radius:999px;background:var(--accent);color:#fff;font-size:9px;font-weight:900;
   display:flex;align-items:center;justify-content:center;box-shadow:0 1px 6px rgba(0,0,0,.35);}
-.pcard-body{padding:8px 12px 16px;flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:none;}
+/* One inset for everything under the hero — the contract and leagues bands, the tab row,
+   the projections row and the body itself share the same left and right edges. Phones
+   pull it in so the bands keep their one-line content. */
+.pcard{--pcard-x:12px;}
+@media (max-width:560px){ .pcard{--pcard-x:5px;} }
+.pcard-body{padding:8px var(--pcard-x) 16px;flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:none;}
 .pcard-season{margin-top:12px;}
 .pcard-season-title{font-size:13px;font-weight:800;color:var(--text);margin:6px 2px 6px;
   padding:4px 0;}
@@ -290,12 +302,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .pcard-college-tag{font-size:9px;font-weight:800;letter-spacing:.06em;color:var(--accent);
   background:rgba(61,155,255,.13);padding:1px 6px;border-radius:4px;vertical-align:middle;}
 .pcard-draft{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:var(--text);
-  background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 11px;margin:4px 2px 2px;}
+  background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 11px;margin:6px var(--pcard-x) 0;}
 .pcard-draft-lbl{font-size:8.5px;font-weight:800;letter-spacing:.06em;color:var(--accent);
   background:rgba(61,155,255,.13);padding:2px 6px;border-radius:4px;}
 .pcard-draft .muted{color:var(--muted);font-weight:600;}
 .pcard-contract{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:11.5px;font-weight:700;color:var(--text);
-  background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 11px;margin:4px 2px 2px;}
+  background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 11px;margin:6px var(--pcard-x) 0;}
 .pcard-contract-lbl{font-size:8.5px;font-weight:800;letter-spacing:.06em;color:var(--accent);
   background:rgba(61,155,255,.13);padding:2px 6px;border-radius:4px;}
 .pcard-contract .muted{color:var(--muted);font-weight:600;}
@@ -305,7 +317,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
    and if a deal still runs long the length/total part trims with an ellipsis — $/yr, gtd
    and the FA year always show. */
 @media (max-width:500px){
-  .pcard-contract{flex-wrap:nowrap;gap:7px;font-size:11px;}
+  .pcard-contract{flex-wrap:nowrap;gap:6px;font-size:11px;padding:7px 9px;}
   .pcard-contract .ct-l{display:none;}
   .pcard-contract .ct-s{display:inline;}
   .pcard-contract > span{white-space:nowrap;}
@@ -328,11 +340,37 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .pcard-news-a{color:var(--muted);}
 .pcard-news-src{color:var(--accent);font-size:10.5px;font-weight:800;text-decoration:none;}
 .pcard-news-empty{padding:18px 6px;font-size:12px;color:var(--muted);font-style:italic;}
-.pcard-tabs{display:flex;gap:4px;margin:8px 2px 2px;}
+.pcard-tabs{display:flex;gap:4px;margin:6px var(--pcard-x) 0;}
 .pcard-tab{flex:0 0 auto;padding:5px 15px;font-size:10.5px;font-weight:800;letter-spacing:.03em;cursor:pointer;
   border:1px solid var(--border);background:var(--surface2);color:var(--muted);border-radius:7px;transition:all .15s;}
 .pcard-tab:hover{color:var(--text);}
 .pcard-tab.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+/* Icon + label per tab (the in-season tabs' grammar). On a phone the inactive tabs collapse
+   to their icons so NFL · College · Passing Chart · Offensive Line · News fit one line. */
+.pcard-tab .tc-ico{width:14px;height:14px;flex-shrink:0;}
+.pcard-tab.active .tc-ico{color:#fff;}
+.pcard-tab .tab-lbl{white-space:nowrap;}
+@media (max-width:560px){
+  .pcard-tab:not(.active) .tab-lbl{display:none;}
+  .pcard-tab{padding-left:11px;padding-right:11px;}
+  .pcard-tab.active{padding-left:12px;padding-right:12px;}
+}
+/* The wordmark icons are wide: the NFL lettering and the NCAA mark take their own boxes. */
+.pcard-tab .tc-ico-nfl{width:20px;height:14px;}
+.pcard-tab .tc-ico-ncaa{width:36px;height:11px;}
+/* The PROJECTIONS row is the tap target for the "vs projection" chips: a caret at its right
+   edge once the live season has a strip to show; the strip drops in directly beneath. */
+.pcard-proj-tap{position:relative;}
+.pcard-proj-tap.has-pace{cursor:pointer;}
+.pcard-proj-tap.has-pace .tc-model-row{padding-right:24px;}
+.pcard-proj-tap.has-pace::after{content:'▾';position:absolute;right:20px;top:50%;margin-top:-13px;
+  font-size:11px;color:var(--muted);transition:transform .15s;pointer-events:none;}
+.pcard-proj-tap.has-pace.open::after{transform:rotate(180deg);}
+.pcard-vsproj{margin:0 0 6px;}
+.pcard-vsproj .pace-strip{margin:0;}
+.pcard-vsproj[hidden]{display:none;}
+.pcard-vsproj .pcard-pace{margin:0;}
+.pcard-vsproj .pcard-pace-lbl{display:none;}
 .pcard-hero-draft{margin-top:8px;}
 .pcard-hero-draft-line{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:700;color:#fff;
   background:rgba(0,0,0,.24);border:1px solid rgba(255,255,255,.16);border-radius:7px;padding:4px 9px;}
@@ -784,6 +822,20 @@ tr.pcard-future-row td{opacity:.75;}
   background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:7px;}
 .pcard-season-tab.active{background:var(--accent);color:#000;border-color:var(--accent);}
 .pcard-season-tab.empty{opacity:.38;text-decoration:line-through;}
+/* The season picker: the strip on a wide screen; on a phone a "2026 ▾" button whose menu
+   is the same strip, stacked — one row of the log instead of two rows of year chips. */
+.pcard-season-pick{position:relative;margin:10px 0 8px;}
+.pcard-season-pick .pcard-season-tabs{margin:0;}
+.pcard-season-btn{display:none;}
+@media (max-width:560px){
+  .pcard-season-btn{display:inline-flex;font-size:11.5px;padding:5px 10px;}
+  .pcard-season-pick .pcard-season-tabs{display:none;position:absolute;left:0;top:calc(100% + 4px);z-index:40;
+    flex-direction:column;gap:2px;min-width:110px;padding:4px;
+    background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.4);}
+  .pcard-season-pick.open .pcard-season-tabs{display:flex;}
+  .pcard-season-pick .pcard-season-tab{text-align:left;border-color:transparent;background:none;padding:7px 10px;}
+  .pcard-season-pick .pcard-season-tab.active{background:var(--surface2);color:var(--accent);border-color:transparent;}
+}
 
 /* Per-game chips under the chart season strips (current season only). */
 .rt-games{display:flex;gap:4px;flex-wrap:wrap;margin:4px 0 2px;}
@@ -883,7 +935,7 @@ tr.pcard-future-row td{opacity:.75;}
 .pcard-add-none{font-size:11px;color:var(--muted);padding:8px 4px;}
 /* ── In your leagues: a line under the contract band (the same band shape), the league rows
    drop down in place beneath it when tapped — the hero carries none of it. ── */
-.pcard-leagues{background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin:4px 2px 2px;}
+.pcard-leagues{background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin:6px var(--pcard-x) 0;}
 .pcard-lg-line{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:7px 11px;
   background:none;border:none;color:var(--text);font:inherit;font-size:11.5px;font-weight:700;text-align:left;cursor:pointer;
   -webkit-tap-highlight-color:transparent;}
@@ -5130,7 +5182,7 @@ input.sl::-moz-range-thumb{width:18px;height:18px;border:2.5px solid var(--surfa
 .tc-model-row{display:flex;align-items:center;gap:10px;padding:9px 10px;
   /* Same box as the PROSPECT row below it: the prospect row lives inside .cfb-panel's 12px
      padding, so this one takes 12px side margins — the two read as one aligned family. */
-  margin:0 12px 10px;min-height:40px;
+  margin:0 0 6px;min-height:40px;   /* the card body's own inset (--pcard-x) lines it up with the bands and the tab row */
   background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md);}
 .tc-md-ico{width:18px;height:18px;border-radius:5px;display:inline-block;vertical-align:-4px;}
 .tc-md-colon{font-weight:900;color:var(--muted);margin-right:2px;}
@@ -5474,9 +5526,16 @@ const TC_ICON = (() => {
     user:   '<circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>',
     folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>',
     save:   '<path d="M5 4h10l4 4v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M15 4v5H7V4M12 11v7M9 15l3 3 3-3"/>',
+    // Folded paper with a headline block and two lines — the News tab.
+    news:   '<path d="M4 5h13v13a2 2 0 0 0 2 2H6a2 2 0 0 1-2-2V5Z"/><path d="M17 9h3v9a2 2 0 0 1-2 2"/><rect x="7" y="8" width="4" height="4"/><path d="M13 9h2M13 12h2M7 15h8"/>',
   };
-  const fn = (name, cls) => wrap(paths[name] || '', cls);
-  fn.has = name => Object.prototype.hasOwnProperty.call(paths, name);
+  // Wordmarks (the NFL shield lettering, the NCAA mark) are alpha masks painted with
+  // currentColor — see 03-icon-masks.css — so they sit in the theme like the strokes above.
+  const masks = { nfl: 'tc-ico-nfl', ncaa: 'tc-ico-ncaa' };
+  const fn = (name, cls) => masks[name]
+    ? `<span class="tc-ico tc-ico-mask ${masks[name]}${cls?' '+cls:''}" aria-hidden="true"></span>`
+    : wrap(paths[name] || '', cls);
+  fn.has = name => Object.prototype.hasOwnProperty.call(paths, name) || Object.prototype.hasOwnProperty.call(masks, name);
   return fn;
 })();
 // ═════════════════════════════════════════════════════════════════════════════
@@ -14323,6 +14382,14 @@ function openPlayerCard(nameOrId, pos, team){
   if(typeof pcardLeaguesOnOpen==='function') pcardLeaguesOnOpen(pid);
   loadPlayerCardData(pid, pos, team);
 }
+// The phone's season menu folds on a tap anywhere else (capture phase: the card itself
+// stops click propagation, so a bubbling listener on the document would never hear it).
+if(typeof document!=='undefined' && document && typeof document.addEventListener==='function'){
+  document.addEventListener('click', (e)=>{
+    const open = document.querySelector && document.querySelector('.pcard-season-pick.open');
+    if(open && !(e && e.target && e.target.closest && e.target.closest('.pcard-season-pick'))) open.classList.remove('open');
+  }, true);
+}
 // ── Swipe-down to close (touch) ──────────────────────────────────────────────
 // Standard mobile sheet behaviour: drag the card down and it closes. The drag must begin on
 // the HERO — that area doesn't scroll, so the gesture can never compete with the gamelog
@@ -14653,25 +14720,52 @@ async function loadPcardDraft(pid){
   }catch(e){ /* leave the banner blank on failure */ }
 }
 // Render (or refresh) the NFL / College source toggle above the card body.
+// Each tab is an icon + a label (the in-season tabs' grammar); on a phone the inactive
+// tabs collapse to their icons so the whole row fits on one line. NFL and College carry
+// the league wordmarks (NFL shield lettering, NCAA) drawn in the theme's color.
 function renderPcardStatTabs(){
   const el = document.getElementById('pcardTabs');
   if(!el || !pcardState) return;
-  const tab=(mode,label)=>`<button class="pcard-tab ${pcardStatsMode===mode?'active':''}" onclick="setPcardStatsMode('${mode}')">${label}</button>`;
+  const ico=(n)=> (typeof TC_ICON==='function') ? TC_ICON(n) : '';
+  // The two wordmark tabs (NFL, NCAA) say it all — they carry no label, only the title.
+  const tab=(mode,label,icon,bare)=>`<button class="pcard-tab ${pcardStatsMode===mode?'active':''}" onclick="setPcardStatsMode('${mode}')" title="${label}">${ico(icon)}${bare?'':`<span class="tab-lbl">${label}</span>`}</button>`;
   // The Routes tab only appears for skill players with baked nflverse route data.
   const routesTab = (pcardState.isSkill && typeof pcardRoutesAvailable==='function' && pcardRoutesAvailable(pcardState.pid))
-    ? tab('routes','Routes') : '';
+    ? tab('routes','Routes','catch') : '';
   const passingTab = (pcardState.posc==='QB' && typeof pcardQbPassingAvailable==='function' && pcardQbPassingAvailable(pcardState.pid))
-    ? tab('passing','Passing Chart') : '';
+    ? tab('passing','Passing Chart','pass') : '';
   const qbOlTab = (pcardState.posc==='QB' && typeof pcardQbOlAvailable==='function' && pcardQbOlAvailable(pcardState.pid))
-    ? tab('qbol','Offensive Line') : '';
+    ? tab('qbol','Offensive Line','wall') : '';
   const rbFanTab = (pcardState.posc==='RB' && typeof pcardRbFanAvailable==='function' && pcardRbFanAvailable(pcardState.pid))
-    ? tab('rbfan','Rushing Fan') : '';
+    ? tab('rbfan','Rushing Fan','run') : '';
   const olTab = (pcardState.isOl && typeof pcardOlAvailable==='function' && pcardOlAvailable(pcardState.pid))
-    ? tab('olgrades','OL Grades') : '';
+    ? tab('olgrades','OL Grades','wall') : '';
   // News: only once Sleeper's feed has notes for him (the fetch starts here; the tab row
   // repaints itself when the feed lands), so the card still opens on the stats.
-  const newsTab = (typeof pcardNewsAvailable==='function' && pcardNewsAvailable(pcardState.pid)) ? tab('news','News') : '';
-  el.innerHTML = tab('pro','NFL') + tab('college','College') + passingTab + qbOlTab + rbFanTab + olTab + routesTab + newsTab;
+  const newsTab = (typeof pcardNewsAvailable==='function' && pcardNewsAvailable(pcardState.pid)) ? tab('news','News','news') : '';
+  el.innerHTML = tab('pro','NFL','nfl',true) + tab('college','College','ncaa',true) + passingTab + qbOlTab + rbFanTab + olTab + routesTab + newsTab;
+}
+// ── "vs projection" drop-down: the live season's pace chips (the busy strip of
+// Att / Yds / TD … vs the frozen projection) no longer sit in the log. They drop down
+// directly under the PROJECTIONS row when it is tapped, and fold on the next tap. The
+// season render hands the strip over here; open stays open from card to card.
+let _pcardVsOpen = false;
+let _pcardLastPace = '';
+function pcardVsProjRender(){
+  const slot = document.getElementById('pcardVsProj'); if(!slot) return;
+  const has = !!_pcardLastPace;
+  const show = has && _pcardVsOpen;
+  slot.innerHTML = show ? _pcardLastPace : '';
+  slot.hidden = !show;
+  const tap = document.getElementById('pcardProjTap');
+  if(tap){
+    if(tap.classList && typeof tap.classList.toggle==='function'){ tap.classList.toggle('has-pace', has); tap.classList.toggle('open', show); }
+    if(typeof tap.setAttribute==='function') tap.setAttribute('aria-expanded', show?'true':'false');
+  }
+}
+function pcardVsProjToggle(){
+  _pcardVsOpen = !_pcardVsOpen;
+  pcardVsProjRender();
 }
 // Switch the card's stat source and reload the body from the matching feed.
 function setPcardStatsMode(mode){
@@ -14829,11 +14923,18 @@ async function loadSleeperCareerStats(pid, posc, body){
   }
   // TC model comparison row (veterans only): rendered before the async fetch so it shows
   // immediately and survives a gamelog failure — same shape as the rookies' prospect panel.
+  // Tapping it drops the live season's "vs projection" chips down directly beneath it.
   const tcRow = (typeof renderTcModel==='function') ? renderTcModel(pid) : '';
-  body.innerHTML = tcRow
+  const projBlock = tcRow
+    ? `<div class="pcard-proj-tap ${_pcardVsOpen?'open':''}" id="pcardProjTap" role="button" aria-expanded="false" onclick="pcardVsProjToggle()">${tcRow}</div><div class="pcard-vsproj" id="pcardVsProj" hidden></div>`
+    : '';
+  // The season picker is one strip of season tabs on a wide screen and, on a phone, a
+  // "2026 ▾" button whose menu IS that strip — same buttons, same ids, one code path.
+  body.innerHTML = projBlock + `<div class="pcard-season-pick" id="pcardSeasonPick">`
+    + `<button class="rt-gp-btn pcard-season-btn" onclick="this.parentNode.classList.toggle('open');event.stopPropagation()" title="Season"><span id="pcardSeasonBtnTxt">${seasons[0]}</span><span class="rt-gp-caret">▾</span></button>`
     + `<div class="pcard-season-tabs" id="pcardSeasonTabs">`
     + seasons.map(s=>`<button class="pcard-season-tab" id="pcst_${s}" onclick="pcardSelectSeason('${String(pid)}','${s}','${posc||''}')">${s}</button>`).join('')
-    + `</div><div id="pcardSeasonBody"></div>`
+    + `</div></div><div id="pcardSeasonBody"></div>`
     + `<div class="pcard-src">Per-game stats via Sleeper · FPTS uses your current scoring settings.</div>`;
   pcardSelectSeason(String(pid), seasons[0], posc);
 }
@@ -14844,9 +14945,12 @@ async function pcardSelectSeason(pid, season, posc){
   if(tabs) tabs.querySelectorAll('.pcard-season-tab').forEach(b=>{
     if(b.classList) b.classList.toggle('active', b.id==='pcst_'+season);
   });
+  const pickTxt=document.getElementById('pcardSeasonBtnTxt'); if(pickTxt) pickTxt.textContent=String(season);
+  const pick=document.getElementById('pcardSeasonPick'); if(pick && pick.classList) pick.classList.remove('open');
   const bodyEl=document.getElementById('pcardSeasonBody');
   if(!bodyEl) return;
   bodyEl.innerHTML = `<div class="pcard-loading">Loading ${escHtml(String(season))} game log…</div>`;
+  _pcardLastPace=''; pcardVsProjRender();   // a past season has no pace strip — the drop-down empties
   try{
     // The live season's weekly rows keep moving during games: drop the cache entry
     // when it's older than the live TTL so a re-opened card shows tonight, not kickoff.
@@ -14872,6 +14976,7 @@ async function pcardSelectSeason(pid, season, posc){
       return;
     }
     bodyEl.innerHTML = renderPcardSeason(season, rows, posc);
+    pcardVsProjRender();
     pcardEnableStickyStatHeaders();
   }catch(e){
     if(pcardOpen && tok===pcardToken && _pcardSeasonSel===season){
@@ -15060,6 +15165,10 @@ function renderPcardSeason(season, rows, pos){
     const strip=paceStatChipsHTML(p.name||'', pos, pcardState.pid, view);
     if(strip) paceLine=`<div class="pcard-pace"><span class="pcard-pace-lbl">vs projection</span>${strip}</div>`;
   }
+  // With a PROJECTIONS row above the log, the strip is that row's drop-down (pcardVsProjRender
+  // fills the slot); without one — a rookie, a defense — it stays in the log as before.
+  _pcardLastPace = paceLine;
+  if(paceLine && document.getElementById('pcardVsProj')) paceLine='';
   return `<div class="pcard-season">
     <div class="pcard-season-title">${season}${liveTag}${pcardSeasonTeamTag(rows)}${pcardFptsPerGameBadge(rows, pos)}${pcardSeasonConsistencyBadge(rows, pos)}</div>${paceLine}
     <div class="pcard-table-scroll"><table class="pcard-table">

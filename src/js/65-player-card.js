@@ -346,6 +346,14 @@ function openPlayerCard(nameOrId, pos, team){
   if(typeof pcardLeaguesOnOpen==='function') pcardLeaguesOnOpen(pid);
   loadPlayerCardData(pid, pos, team);
 }
+// The phone's season menu folds on a tap anywhere else (capture phase: the card itself
+// stops click propagation, so a bubbling listener on the document would never hear it).
+if(typeof document!=='undefined' && document && typeof document.addEventListener==='function'){
+  document.addEventListener('click', (e)=>{
+    const open = document.querySelector && document.querySelector('.pcard-season-pick.open');
+    if(open && !(e && e.target && e.target.closest && e.target.closest('.pcard-season-pick'))) open.classList.remove('open');
+  }, true);
+}
 // ── Swipe-down to close (touch) ──────────────────────────────────────────────
 // Standard mobile sheet behaviour: drag the card down and it closes. The drag must begin on
 // the HERO — that area doesn't scroll, so the gesture can never compete with the gamelog
@@ -676,25 +684,52 @@ async function loadPcardDraft(pid){
   }catch(e){ /* leave the banner blank on failure */ }
 }
 // Render (or refresh) the NFL / College source toggle above the card body.
+// Each tab is an icon + a label (the in-season tabs' grammar); on a phone the inactive
+// tabs collapse to their icons so the whole row fits on one line. NFL and College carry
+// the league wordmarks (NFL shield lettering, NCAA) drawn in the theme's color.
 function renderPcardStatTabs(){
   const el = document.getElementById('pcardTabs');
   if(!el || !pcardState) return;
-  const tab=(mode,label)=>`<button class="pcard-tab ${pcardStatsMode===mode?'active':''}" onclick="setPcardStatsMode('${mode}')">${label}</button>`;
+  const ico=(n)=> (typeof TC_ICON==='function') ? TC_ICON(n) : '';
+  // The two wordmark tabs (NFL, NCAA) say it all — they carry no label, only the title.
+  const tab=(mode,label,icon,bare)=>`<button class="pcard-tab ${pcardStatsMode===mode?'active':''}" onclick="setPcardStatsMode('${mode}')" title="${label}">${ico(icon)}${bare?'':`<span class="tab-lbl">${label}</span>`}</button>`;
   // The Routes tab only appears for skill players with baked nflverse route data.
   const routesTab = (pcardState.isSkill && typeof pcardRoutesAvailable==='function' && pcardRoutesAvailable(pcardState.pid))
-    ? tab('routes','Routes') : '';
+    ? tab('routes','Routes','catch') : '';
   const passingTab = (pcardState.posc==='QB' && typeof pcardQbPassingAvailable==='function' && pcardQbPassingAvailable(pcardState.pid))
-    ? tab('passing','Passing Chart') : '';
+    ? tab('passing','Passing Chart','pass') : '';
   const qbOlTab = (pcardState.posc==='QB' && typeof pcardQbOlAvailable==='function' && pcardQbOlAvailable(pcardState.pid))
-    ? tab('qbol','Offensive Line') : '';
+    ? tab('qbol','Offensive Line','wall') : '';
   const rbFanTab = (pcardState.posc==='RB' && typeof pcardRbFanAvailable==='function' && pcardRbFanAvailable(pcardState.pid))
-    ? tab('rbfan','Rushing Fan') : '';
+    ? tab('rbfan','Rushing Fan','run') : '';
   const olTab = (pcardState.isOl && typeof pcardOlAvailable==='function' && pcardOlAvailable(pcardState.pid))
-    ? tab('olgrades','OL Grades') : '';
+    ? tab('olgrades','OL Grades','wall') : '';
   // News: only once Sleeper's feed has notes for him (the fetch starts here; the tab row
   // repaints itself when the feed lands), so the card still opens on the stats.
-  const newsTab = (typeof pcardNewsAvailable==='function' && pcardNewsAvailable(pcardState.pid)) ? tab('news','News') : '';
-  el.innerHTML = tab('pro','NFL') + tab('college','College') + passingTab + qbOlTab + rbFanTab + olTab + routesTab + newsTab;
+  const newsTab = (typeof pcardNewsAvailable==='function' && pcardNewsAvailable(pcardState.pid)) ? tab('news','News','news') : '';
+  el.innerHTML = tab('pro','NFL','nfl',true) + tab('college','College','ncaa',true) + passingTab + qbOlTab + rbFanTab + olTab + routesTab + newsTab;
+}
+// ── "vs projection" drop-down: the live season's pace chips (the busy strip of
+// Att / Yds / TD … vs the frozen projection) no longer sit in the log. They drop down
+// directly under the PROJECTIONS row when it is tapped, and fold on the next tap. The
+// season render hands the strip over here; open stays open from card to card.
+let _pcardVsOpen = false;
+let _pcardLastPace = '';
+function pcardVsProjRender(){
+  const slot = document.getElementById('pcardVsProj'); if(!slot) return;
+  const has = !!_pcardLastPace;
+  const show = has && _pcardVsOpen;
+  slot.innerHTML = show ? _pcardLastPace : '';
+  slot.hidden = !show;
+  const tap = document.getElementById('pcardProjTap');
+  if(tap){
+    if(tap.classList && typeof tap.classList.toggle==='function'){ tap.classList.toggle('has-pace', has); tap.classList.toggle('open', show); }
+    if(typeof tap.setAttribute==='function') tap.setAttribute('aria-expanded', show?'true':'false');
+  }
+}
+function pcardVsProjToggle(){
+  _pcardVsOpen = !_pcardVsOpen;
+  pcardVsProjRender();
 }
 // Switch the card's stat source and reload the body from the matching feed.
 function setPcardStatsMode(mode){
@@ -852,11 +887,18 @@ async function loadSleeperCareerStats(pid, posc, body){
   }
   // TC model comparison row (veterans only): rendered before the async fetch so it shows
   // immediately and survives a gamelog failure — same shape as the rookies' prospect panel.
+  // Tapping it drops the live season's "vs projection" chips down directly beneath it.
   const tcRow = (typeof renderTcModel==='function') ? renderTcModel(pid) : '';
-  body.innerHTML = tcRow
+  const projBlock = tcRow
+    ? `<div class="pcard-proj-tap ${_pcardVsOpen?'open':''}" id="pcardProjTap" role="button" aria-expanded="false" onclick="pcardVsProjToggle()">${tcRow}</div><div class="pcard-vsproj" id="pcardVsProj" hidden></div>`
+    : '';
+  // The season picker is one strip of season tabs on a wide screen and, on a phone, a
+  // "2026 ▾" button whose menu IS that strip — same buttons, same ids, one code path.
+  body.innerHTML = projBlock + `<div class="pcard-season-pick" id="pcardSeasonPick">`
+    + `<button class="rt-gp-btn pcard-season-btn" onclick="this.parentNode.classList.toggle('open');event.stopPropagation()" title="Season"><span id="pcardSeasonBtnTxt">${seasons[0]}</span><span class="rt-gp-caret">▾</span></button>`
     + `<div class="pcard-season-tabs" id="pcardSeasonTabs">`
     + seasons.map(s=>`<button class="pcard-season-tab" id="pcst_${s}" onclick="pcardSelectSeason('${String(pid)}','${s}','${posc||''}')">${s}</button>`).join('')
-    + `</div><div id="pcardSeasonBody"></div>`
+    + `</div></div><div id="pcardSeasonBody"></div>`
     + `<div class="pcard-src">Per-game stats via Sleeper · FPTS uses your current scoring settings.</div>`;
   pcardSelectSeason(String(pid), seasons[0], posc);
 }
@@ -867,9 +909,12 @@ async function pcardSelectSeason(pid, season, posc){
   if(tabs) tabs.querySelectorAll('.pcard-season-tab').forEach(b=>{
     if(b.classList) b.classList.toggle('active', b.id==='pcst_'+season);
   });
+  const pickTxt=document.getElementById('pcardSeasonBtnTxt'); if(pickTxt) pickTxt.textContent=String(season);
+  const pick=document.getElementById('pcardSeasonPick'); if(pick && pick.classList) pick.classList.remove('open');
   const bodyEl=document.getElementById('pcardSeasonBody');
   if(!bodyEl) return;
   bodyEl.innerHTML = `<div class="pcard-loading">Loading ${escHtml(String(season))} game log…</div>`;
+  _pcardLastPace=''; pcardVsProjRender();   // a past season has no pace strip — the drop-down empties
   try{
     // The live season's weekly rows keep moving during games: drop the cache entry
     // when it's older than the live TTL so a re-opened card shows tonight, not kickoff.
@@ -895,6 +940,7 @@ async function pcardSelectSeason(pid, season, posc){
       return;
     }
     bodyEl.innerHTML = renderPcardSeason(season, rows, posc);
+    pcardVsProjRender();
     pcardEnableStickyStatHeaders();
   }catch(e){
     if(pcardOpen && tok===pcardToken && _pcardSeasonSel===season){
@@ -1083,6 +1129,10 @@ function renderPcardSeason(season, rows, pos){
     const strip=paceStatChipsHTML(p.name||'', pos, pcardState.pid, view);
     if(strip) paceLine=`<div class="pcard-pace"><span class="pcard-pace-lbl">vs projection</span>${strip}</div>`;
   }
+  // With a PROJECTIONS row above the log, the strip is that row's drop-down (pcardVsProjRender
+  // fills the slot); without one — a rookie, a defense — it stays in the log as before.
+  _pcardLastPace = paceLine;
+  if(paceLine && document.getElementById('pcardVsProj')) paceLine='';
   return `<div class="pcard-season">
     <div class="pcard-season-title">${season}${liveTag}${pcardSeasonTeamTag(rows)}${pcardFptsPerGameBadge(rows, pos)}${pcardSeasonConsistencyBadge(rows, pos)}</div>${paceLine}
     <div class="pcard-table-scroll"><table class="pcard-table">

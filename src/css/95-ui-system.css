@@ -363,7 +363,7 @@ input.sl::-moz-range-thumb{width:18px;height:18px;border:2.5px solid var(--surfa
 .tc-model-row{display:flex;align-items:center;gap:10px;padding:9px 10px;
   /* Same box as the PROSPECT row below it: the prospect row lives inside .cfb-panel's 12px
      padding, so this one takes 12px side margins — the two read as one aligned family. */
-  margin:0 12px 10px;min-height:40px;
+  margin:0 0 6px;min-height:40px;   /* the card body's own inset (--pcard-x) lines it up with the bands and the tab row */
   background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md);}
 .tc-md-ico{width:18px;height:18px;border-radius:5px;display:inline-block;vertical-align:-4px;}
 .tc-md-colon{font-weight:900;color:var(--muted);margin-right:2px;}
