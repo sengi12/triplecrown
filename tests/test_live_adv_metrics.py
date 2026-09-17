@@ -47,6 +47,15 @@ r = nv._personnel_rates({1: .8, 2: .2}, {1: {1: .6, 2: .3, 3: .1}, 2: {1: .9, 2:
 chk(abs(r["p11"] - .48) < 1e-9 and abs(r["p12"] - .24) < 1e-9 and abs(r["p13"] - .08) < 1e-9 and abs(r["p21"] - .18) < 1e-9, "11 = P(1 back)·P(1 TE | 1 back) and so on: 48 / 24 / 8 / 18")
 chk(abs(r["mrb"] - .2) < 1e-9 and abs(r["mte"] - (.8 * .4 + .2 * .1)) < 1e-9, "multi-RB is the measured two-back share; multi-TE sums the 2+ TE mass")
 chk(abs(r["wr3"] - .48) < 1e-9, "3WR = five skill players less backs less tight ends ≥ 3 → only 11 personnel here")
+r = nv._personnel_rates({1: .8, 2: .2}, {1: {(1, 1): .6, (1, 2): .4}, 2: {(2, 1): .5, (1, 2): .5}})
+chk(abs(r["p11"] - .48) < 1e-9 and abs(r["p12"] - .42) < 1e-9 and abs(r["p21"] - .10) < 1e-9 and abs(r["mrb"] - .10) < 1e-9,
+    "keyed on FTN's backfield count: a two-in-the-backfield play that was 12 personnel (H-back) counts as 12, not 21")
+lam = nv._tilt_lambda({1: {(1, 1): .7, (1, 2): .3}}, {1: 1.0}, 1.6)
+t2 = nv._apply_tilt({1: {(1, 1): .7, (1, 2): .3}}, lam)
+chk(lam > 0 and abs(t2[1][(1, 2)] - .6) < 1e-6, "the tilt acts on the tight ends of a (backs, TE) state and hits the target mean")
+chk(nv._tilt_lambda({1: {1: .7, 2: .3}}, {1: 1.0}, None) == 0.0 and nv._tilt_lambda({1: {1: .7, 2: .3}}, {1: 1.0}, 9.0) == 0.0, "no target, or one out of reach → no tilt")
+gm = nv._group_mix(pd.DataFrame({"pmix": [[(1, 2, 60.0), (1, 1, 40.0)], None, [(1, 2, 70.0), (1, 1, 26.0), (1, 3, 4.0)]]}))
+chk(gm == [["12", 65], ["11", 33]], "a set's mix averages its plays' estimates, drops the sub-5% tail, biggest first")
 s = nv._shrink({1: 10, 2: 0}, {1: 50, 2: 40, 3: 10}, k=40)
 chk(abs(s[1] - .6) < 1e-9 and abs(s[2] - .32) < 1e-9 and abs(s[3] - .08) < 1e-9, "a thin team split is shrunk toward the league's (10 plays vs k=40)")
 chk(nv._shrink({}, {}) == {}, "nothing known → nothing")
@@ -154,6 +163,36 @@ snap["SEA"] = 1.6
 nv._PERS_INFER.pop(2026, None)
 inf2 = nv._personnel_inferred(2026)
 chk(inf2["off"].loc["SEA"]["12 Personnel"] > sea["12 Personnel"] and inf2["off"].loc["SEA"]["Multi TE Rate"] > sea["Multi TE Rate"], "a team that started using a second tight end shows it the week the snap counts do")
+chk(inf2["joint"] is False, "without last season's charting the prior is TE | backs")
+
+print("\n=== the joint prior when last season was charted (H-backs) ===")
+# 2025 charting: DET's two-in-the-backfield plays were 12 personnel (an H-back), SEA's were 21.
+ftn25 = pd.DataFrame({"nflverse_game_id": pbp25["game_id"], "nflverse_play_id": pbp25["play_id"],
+                      "qb_location": ["S"] * len(pbp25), "n_offense_backfield": [2 if i % 5 == 0 else 1 for i in range(len(pbp25))]})
+prev2 = pbp25.copy()
+prev2["off"] = ["1 RB, 2 TE, 2 WR" if (i % 5 == 0 and tm == "DET") else ("2 RB, 1 TE, 2 WR" if (i % 5 == 0) else "1 RB, 1 TE, 3 WR")
+                for i, tm in zip(range(len(prev2)), prev2["posteam"])]
+part25b = pd.DataFrame({"nflverse_game_id": prev2["game_id"], "play_id": prev2["play_id"], "offense_personnel": prev2["off"], "defense_personnel": prev2["dfn"]})
+
+
+def _csv2(url, **kw):
+    if "ftn_charting" in url and "2026" in url:
+        return ftn26.copy()
+    if "ftn_charting" in url and "2025" in url:
+        return ftn25.copy()
+    if "participation" in url and "2025" in url:
+        return part25b.copy()
+    raise RuntimeError("no such file: " + url)
+
+
+nv._aux_csv = _csv2
+nv._snap_share = lambda season, positions, side: {}
+nv._PERS_INFER.pop(2026, None)
+inf3 = nv._personnel_inferred(2026)
+chk(inf3 is not None and inf3["joint"] is True and inf3["priors"]["joint_lg"].get(2), "with charted 2025 the prior is (backs, TE) keyed on FTN's backfield count")
+d3, s3 = inf3["off"].loc["DET"], inf3["off"].loc["SEA"]
+chk(d3["12 Personnel"] > d3["21 Personnel"] and s3["21 Personnel"] > s3["12 Personnel"], "DET's two-in-the-backfield plays read 12 (its H-back), SEA's read 21 — same FTN count, different truth")
+chk(inf3["priors"]["al_lg"].get(("gun", 2)) and ("DET", "gun", 2) in inf3["priors"]["al_team"], "and the alignment × backfield prior the Playbook's sets read is there")
 nv._aux_csv, nv._load_pbp, nv._snap_share = _orig
 nv._PERS_INFER.pop(2026, None)
 

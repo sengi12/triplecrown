@@ -34,6 +34,8 @@ function decodeSeed(c){
         formations[sig]={p:parts[0], align:parts[1], name, backs, te, wr, ol, assigns};
         // v3 tail (the season in progress): the TE/WR split is assumed, not charted.
         if(f[7]) formations[sig].pers_assumed=true;
+        // v4 tail: the estimated personnel mix inside the set, [["12",62],["11",31]].
+        if(Array.isArray(f[8]) && f[8].length) formations[sig].pers_mix=f[8].map(([c,p])=>[String(c),Number(p)]);
       }
       const decLanes = lc => lc.map(([i,n,epa])=>[ln[i],n,epa]);
       const decGroup = g => {
