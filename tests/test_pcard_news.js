@@ -36,11 +36,11 @@ let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',
   console.log('=== the tab ===');
   app.setState('8155'); app.setMode('pro');
   let tabs=app.tabs();
-  chk(/>NFL</.test(tabs) && /College/.test(tabs) && !/>News</.test(tabs) && app.fetches.length===1 && /players\/nfl\/8155\/news\?limit=5/.test(app.fetches[0]), 'first render: NFL and College, no News tab yet — and the feed is fetched (newest five)');
+  chk(/title="NFL"/.test(tabs) && /title="College"/.test(tabs) && !/>News</.test(tabs) && app.fetches.length===1 && /players\/nfl\/8155\/news\?limit=5/.test(app.fetches[0]), 'first render: NFL and College, no News tab yet — and the feed is fetched (newest five)');
   const items=await app.load('8155');
   chk(items.length===2 && items[0].title.startsWith('Breece Hall finds') && items[1].source==='Rotowire', 'the feed lands: two notes (the one without a headline dropped), newest first');
   tabs=document.getElementById('pcardTabs').innerHTML;
-  chk(/setPcardStatsMode\('news'\)">News<\/button>$/.test(tabs) && /class="pcard-tab active" onclick="setPcardStatsMode\('pro'\)"/.test(tabs), 'the tab row repainted itself with a News tab at the end; NFL stays selected');
+  chk(/setPcardStatsMode\('news'\)"[^>]*>[\s\S]*?<span class="tab-lbl">News<\/span><\/button>$/.test(tabs) && /class="pcard-tab active" onclick="setPcardStatsMode\('pro'\)"/.test(tabs), 'the tab row repainted itself with a News tab at the end; NFL stays selected');
   app.setMode('news'); app.loadStats('news');
   const h=app.body();
   chk((h.match(/<article class="pcard-news-it">/g)||[]).length===2, 'the News tab: one article per note');

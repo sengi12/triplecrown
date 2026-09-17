@@ -1,6 +1,6 @@
 /* ── In your leagues: a line under the contract band (the same band shape), the league rows
    drop down in place beneath it when tapped — the hero carries none of it. ── */
-.pcard-leagues{background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin:4px 2px 2px;}
+.pcard-leagues{background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin:6px var(--pcard-x) 0;}
 .pcard-lg-line{display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:7px 11px;
   background:none;border:none;color:var(--text);font:inherit;font-size:11.5px;font-weight:700;text-align:left;cursor:pointer;
   -webkit-tap-highlight-color:transparent;}

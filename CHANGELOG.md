@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-09-17
 
+- feat(cards): the top bar fits a phone — wordmark + icon tabs, the vs-projection chips behind a tap on the PROJECTIONS row, a season menu, one shared edge for every band (#132)
 - fix(cards): availability leaves the hero — a LEAGUES · Availability line under the contract band, Sleeper style; the contract line abbreviates to one line on phones (#131)
 - fix(cards): the scoring throw lands on the catch dot; runs bend early and finish straight; the phone hero foot never overlaps (#130)
 - feat(cards): the scoring throw is a real lob from where the passer stood (FTN formation + out of pocket); the tags off the top of a map never overlap (#129)

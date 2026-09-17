@@ -72,8 +72,15 @@ const TC_ICON = (() => {
     user:   '<circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>',
     folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>',
     save:   '<path d="M5 4h10l4 4v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M15 4v5H7V4M12 11v7M9 15l3 3 3-3"/>',
+    // Folded paper with a headline block and two lines — the News tab.
+    news:   '<path d="M4 5h13v13a2 2 0 0 0 2 2H6a2 2 0 0 1-2-2V5Z"/><path d="M17 9h3v9a2 2 0 0 1-2 2"/><rect x="7" y="8" width="4" height="4"/><path d="M13 9h2M13 12h2M7 15h8"/>',
   };
-  const fn = (name, cls) => wrap(paths[name] || '', cls);
-  fn.has = name => Object.prototype.hasOwnProperty.call(paths, name);
+  // Wordmarks (the NFL shield lettering, the NCAA mark) are alpha masks painted with
+  // currentColor — see 03-icon-masks.css — so they sit in the theme like the strokes above.
+  const masks = { nfl: 'tc-ico-nfl', ncaa: 'tc-ico-ncaa' };
+  const fn = (name, cls) => masks[name]
+    ? `<span class="tc-ico tc-ico-mask ${masks[name]}${cls?' '+cls:''}" aria-hidden="true"></span>`
+    : wrap(paths[name] || '', cls);
+  fn.has = name => Object.prototype.hasOwnProperty.call(paths, name) || Object.prototype.hasOwnProperty.call(masks, name);
   return fn;
 })();
