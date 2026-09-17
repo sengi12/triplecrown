@@ -4055,6 +4055,9 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .la-pool-th{cursor:pointer;white-space:nowrap;user-select:none;}
 .la-pool-th:hover{color:var(--text);}
 .la-pool-th.active{color:var(--accent);}
+/* O-line form boards (Trends · Teams): the stretch selector rides the board's subtitle */
+.la-ol-win{display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle;}
+.la-ol-win .pos-filter-btn{padding:1px 8px;font-size:10px;}
 /* ── BAFL matchup card — ported from ../bafl (30-matchups.css + 76-projections.css) ──
    Team names live in a flex header above the table so the five narrow data columns fit any
    phone; the win-probability bar sits under the names; the PROJECTED line under that. */
@@ -5411,6 +5414,7 @@ const TC_ICON = (() => {
     calendar:'<rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 9h16M8 3v4M16 3v4"/>',
     link:   '<path d="M9 15l6-6M10.5 6.5 12 5a4 4 0 0 1 6 6l-1.5 1.5M13.5 17.5 12 19a4 4 0 0 1-6-6l1.5-1.5"/>',
     shield: '<path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3Z"/>',
+    wall:   '<path d="M3 6h18v12H3zM3 10h18M3 14h18M9 6v4M15 10v4M9 14v4"/>',
     // Balance scale — side-by-side comparison.
     scale:  '<path d="M12 4v16M8 20h8M12 6H6M12 6h6"/><path d="M6 6l-2.5 5a2.8 2.8 0 0 0 5 0L6 6ZM18 6l-2.5 5a2.8 2.8 0 0 0 5 0L18 6Z"/>',
     // Two facing chevrons — a head-to-head matchup.
@@ -41204,7 +41208,7 @@ function laSetMuWeek(w){ laState.muWeek = (Number(w)===laCurrentWeek()) ? null :
 function laActivePane(){
   const t=laState.laTab;
   if(t==='season') return laState.seasonPane||'matchup';
-  return (t==='matchup'||t==='lineup'||t==='dvp'||t==='trends'||t==='chop'||t==='standings') ? t : null;
+  return (t==='matchup'||t==='lineup'||t==='dvp'||t==='oline'||t==='trends'||t==='chop'||t==='standings') ? t : null;
 }
 function laSetPane(k){
   laState.laTab='season'; laState.seasonPane=k;
@@ -41220,7 +41224,7 @@ function laSeasonView(s, paneOverride){
   // pane; a Chopped league has no standings to speak of (it has a Chopping Block).
   const panes=[chopped?['chop','Chop','axe']:['matchup','Matchup','versus']]
     .concat(chopped?[]:[['standings','Standings','trophy']])
-    .concat([['lineup','Lineup','clipboard'],['dvp','Defense','shield'],['trends','Trends','chart']]);
+    .concat([['lineup','Lineup','clipboard'],['dvp','Defense','shield'],['oline','O-Line','wall'],['trends','Trends','chart']]);
   if(chopped && pane==='standings') pane='chop';
   // phase-tabs + data-swipe-primary: within the Season tab, left/right swipes slide between
   // these PANES (the outer icon bar stays tappable); swiping back past Matchup continues to
@@ -41229,6 +41233,7 @@ function laSeasonView(s, paneOverride){
   const bar=`<div class="phase-tabs la-pane-tabs" data-swipe-primary data-swipe-prev="trade" data-swipe-next="hub">${panes.map(([k,l,ic])=>
     `<button class="phase-tab pane-tab ${pane===k?'active':''}" onclick="laSetPane('${k}')" title="${l}">${TC_ICON(ic)}<span class="tab-lbl">${l}</span></button>`).join('')}</div>`;
   const body = pane==='lineup'?laLineupView(s) : pane==='dvp'?laDvpView(s)
+             : pane==='oline'?laOlineView(s)
              : pane==='trends'?laTrendsView(s) : pane==='chop'?laChopView(s)
              : pane==='standings'&&typeof laStandingsView==='function'?laStandingsView(s) : laMatchupView(s);
   return bar+body;
@@ -41244,6 +41249,7 @@ function laTabViewHTML(key, s){
     case 'matchup':               // legacy keys render their pane, chrome included —
     case 'lineup':                // no state mutation here (previews call this too)
     case 'dvp':
+    case 'oline':
     case 'chop':
     case 'standings':
     case 'trends': return laSeasonView(s, key);
@@ -42600,6 +42606,90 @@ function _laTeamPack(){
   const pack=(typeof NFLVERSE!=='undefined'&&NFLVERSE&&NFLVERSE[yr]&&NFLVERSE[yr].adv_weekly)||null;
   return (pack && pack.teams && Array.isArray(pack.weeks) && Array.isArray(pack.cols)) ? pack : null;
 }
+// ── O-line form: run blocking and pass protection, a recent stretch vs the season ──
+// Both windows come from the same recompute the team card's week slider uses
+// (_advComputeOlRangeTables in 74-team-tabs, over the in-season ol_weekly block), so
+// "last 3" and "season" are the same method on different weeks. Run = the rushing fan's
+// rank-average run-blocking score; pass = the windowed Pass Score. Ranked among the lines
+// that played in the window.
+function laSetOlWin(n){ laState.olWin=Math.max(1, Math.min(8, Number(n)||3)); laRerenderKeepScroll(); }
+function _laOlForm(win){
+  if(typeof _advComputeOlRangeTables!=='function' || typeof _rbRunScoreAndRankFromTable!=='function') return null;
+  const season=String(TC_SEASON.year);
+  const wk=(typeof completedWeeks==='function')?completedWeeks():0;
+  if(!wk) return null;
+  const all=_advComputeOlRangeTables(season, 1, wk);
+  if(!all || !all.runTbl || !all.passTbl) return null;
+  const lo=Math.max(1, wk-win+1);
+  const rec=(lo>1) ? _advComputeOlRangeTables(season, lo, wk) : all;
+  if(!rec || !rec.runTbl) return null;
+  const passOf=(tbl,tm)=>{ const r=tbl.passTbl.teams[tm]||{}; const v=r.values&&r.values['Pass Score'], k=r.ranks&&r.ranks['Pass Score'];
+    return (v!=null && Number.isFinite(Number(v))) ? {score:Number(v), rank:(k!=null?Number(k):null)} : {score:null, rank:null}; };
+  const out=[];
+  for(const tm in all.runTbl.teams){
+    const runA=_rbRunScoreAndRankFromTable(all.runTbl, tm), runR=_rbRunScoreAndRankFromTable(rec.runTbl, tm);
+    const passA=passOf(all, tm), passR=passOf(rec, tm);
+    if(runA.score==null && passA.score==null) continue;
+    out.push({tm, lo, hi:wk, runA, runR, passA, passR,
+      dRunRk:(runA.rank!=null && runR.rank!=null) ? runA.rank-runR.rank : null,     // + = climbed
+      dPassRk:(passA.rank!=null && passR.rank!=null) ? passA.rank-passR.rank : null});
+  }
+  return out.length ? out : null;
+}
+// The Trends pane's two-column board, as a shared helper (the O-Line pane draws the same card).
+function _laTwoCols(title,sub,upLbl,upRows,dnLbl,dnRows){
+  return `
+    <div class="la-ins-bar"><span class="la-ins-lbl">${title}</span><span class="la-ins-sub">${sub}</span></div>
+    <div class="card la-trnd-card"><div class="la-trnd-cols">
+      <div><div class="la-trnd-h la-trnd-up">${upLbl}</div>${upRows||'<div class="la-ins-sub">nobody in this scope yet</div>'}</div>
+      <div><div class="la-trnd-h la-trnd-dn">${dnLbl}</div>${dnRows||'<div class="la-ins-sub">nobody in this scope yet</div>'}</div>
+    </div></div>`;
+}
+// ── The O-Line pane: every line's run blocking and pass protection, a stretch vs the season ──
+function laOlineView(s){
+  const wk=(typeof completedWeeks==='function')?completedWeeks():0;
+  const boards=_laOlFormBoards(wk);
+  if(!boards){
+    const st=(typeof _laSidecarKick==='function')?_laSidecarKick():null;
+    if(st==='loading') return `<div class="card la-ins-empty"><div class="empty-body">Loading the weekly offensive-line block…</div></div>`;
+    return `<div class="card la-ins-empty"><div class="empty-title">No offensive-line weeks yet</div>
+      <div class="empty-body">Every line's run blocking and pass protection by week builds from played games (nflverse play-by-play, FTN and PFR's weekly files) — it lights up once week 1 is in the books and the hosted seed refreshes.</div></div>`;
+  }
+  return boards + `<div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn('laoline','Reading these boards'):''}</div>`;
+}
+function _laOlFormBoards(wk){
+  const two=_laTwoCols;
+  const win=laState.olWin||3;
+  const F=_laOlForm(win);
+  if(!F) return '';
+  const sel=`<span class="la-ol-win">${[2,3,4,6].map(n=>`<button class="pos-filter-btn ${win===n?'active':''}" onclick="laSetOlWin(${n})">Last ${n}</button>`).join('')}</span>`;
+  const fmt=(x)=> x==null?'—':x.toFixed(1);
+  const rk=(r)=> r==null?'':`#${r}`;
+  const thin = wk<win;
+  if(wk<2 || thin && wk<2){
+    // One week: nothing to compare against yet — the season so far, best to worst.
+    const byRun=[...F].filter(t=>t.runA.score!=null).sort((a,b)=>b.runA.score-a.runA.score);
+    const byPass=[...F].filter(t=>t.passA.score!=null).sort((a,b)=>b.passA.score-a.passA.score);
+    const runRow=(t,i)=>_laTeamRow(t.tm, `run blocking ${fmt(t.runA.score)} thru wk ${wk}`, _laVerdict(rk(t.runA.rank), 'of 32', t.runA.rank<=10?'la-trnd-up':(t.runA.rank>=23?'la-trnd-dn':'')), t.runA.rank<=10?'pace-ahead':(t.runA.rank>=23?'pace-behind':''), i+1);
+    const passRow=(t,i)=>_laTeamRow(t.tm, `pass protection ${fmt(t.passA.score)} thru wk ${wk}`, _laVerdict(rk(t.passA.rank), 'of 32', t.passA.rank<=10?'la-trnd-up':(t.passA.rank>=23?'la-trnd-dn':'')), t.passA.rank<=10?'pace-ahead':(t.passA.rank>=23?'pace-behind':''), i+1);
+    return two(`O-LINE · RUN BLOCKING · THRU WK ${wk}`, `the season so far — form against the season arrives at week 2 ${sel}`,
+        'BEST', byRun.slice(0,10).map(runRow).join(''), 'WORST', byRun.slice().reverse().slice(0,10).map(runRow).join(''))
+      + two(`O-LINE · PASS PROTECTION · THRU WK ${wk}`, 'the season so far (pass score: pressure, hits, hurries, sacks, pocket time)',
+        'BEST', byPass.slice(0,10).map(passRow).join(''), 'WORST', byPass.slice().reverse().slice(0,10).map(passRow).join(''));
+  }
+  const byRun=[...F].filter(t=>t.dRunRk!=null).sort((a,b)=>b.dRunRk-a.dRunRk || (b.runR.score-a.runR.score));
+  const byPass=[...F].filter(t=>t.dPassRk!=null).sort((a,b)=>b.dPassRk-a.dPassRk || (b.passR.score-a.passR.score));
+  const move=(d)=> d>0?`▲ ${d}`:(d<0?`▼ ${Math.abs(d)}`:'—');
+  const runRow=(t,i)=>_laTeamRow(t.tm, `${fmt(t.runA.score)} (${rk(t.runA.rank)}) season → <b>${fmt(t.runR.score)} (${rk(t.runR.rank)})</b>`,
+    _laVerdict(move(t.dRunRk), t.dRunRk>0?'spots up':(t.dRunRk<0?'spots down':'no move'), t.dRunRk>0?'la-trnd-up':(t.dRunRk<0?'la-trnd-dn':'')), t.dRunRk>=4?'pace-ahead':(t.dRunRk<=-4?'pace-behind':''), i+1);
+  const passRow=(t,i)=>_laTeamRow(t.tm, `${fmt(t.passA.score)} (${rk(t.passA.rank)}) season → <b>${fmt(t.passR.score)} (${rk(t.passR.rank)})</b>`,
+    _laVerdict(move(t.dPassRk), t.dPassRk>0?'spots up':(t.dPassRk<0?'spots down':'no move'), t.dPassRk>0?'la-trnd-up':(t.dPassRk<0?'la-trnd-dn':'')), t.dPassRk>=4?'pace-ahead':(t.dPassRk<=-4?'pace-behind':''), i+1);
+  const span=F[0] ? `wks ${F[0].lo}–${F[0].hi}` : '';
+  return two(`O-LINE · RUN BLOCKING · LAST ${win}${thin?` (only ${wk} played)`:''}`, `${span} vs the season: who is opening holes right now ${sel}`,
+      '▲ SURGING', byRun.filter(t=>t.dRunRk>0).slice(0,10).map(runRow).join(''), '▼ SLIPPING', byRun.filter(t=>t.dRunRk<0).reverse().slice(0,10).map(runRow).join(''))
+    + two(`O-LINE · PASS PROTECTION · LAST ${win}${thin?` (only ${wk} played)`:''}`, `${span} vs the season: pass score (pressure, hits, hurries, sacks, pocket time)`,
+      '▲ SURGING', byPass.filter(t=>t.dPassRk>0).slice(0,10).map(passRow).join(''), '▼ SLIPPING', byPass.filter(t=>t.dPassRk<0).reverse().slice(0,10).map(passRow).join(''));
+}
 function _laTeamTrends(){
   const pack=_laTeamPack(); if(!pack) return null;
   const ci={}; pack.cols.forEach((c,i)=>ci[c]=i);
@@ -42653,6 +42743,17 @@ if(typeof TC_INFO_BOOK!=='undefined'){
   TC_INFO_BOOK.lawinpct={title:'Live win %', body:`
     Current points plus what's still projected to come, weighed against the spread of what's
     left on both rosters. Projections are TripleCrown's \u2014 matchup- and form-adjusted.`};
+  TC_INFO_BOOK.laoline={title:'O-line form', body:`
+    Every offensive line over a recent stretch (the Last 2 / 3 / 4 / 6 chips) against its
+    season, both from the same week-window recompute the team card's Advanced slider uses.
+    <b>Run blocking</b> is the rushing fan's score: the line's league rank on stuff rate,
+    explosive rate, yards per rush, yards before and after contact, first-down rate, broken
+    tackles, rush yards over expected, box counts and time to the line, averaged.
+    <b>Pass protection</b> is the windowed pass score: pressure, hit, hurry and sack rates,
+    non-QB sacks, no-blitz pressure and pocket time. Rows read season score (rank) → stretch
+    score (rank); the move on the right is rank spots gained or lost. Fields PFR has not
+    published yet are left out, never counted as zero. Under two played weeks the boards
+    show the season so far, best to worst.`};
   TC_INFO_BOOK.ladvp={title:'Defense vs position', body:`
     Fantasy points allowed per game to each position, under your league's scoring.
     <b style="color:#00d4aa">Green</b> = easy matchup (allows the most points),

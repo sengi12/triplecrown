@@ -12,7 +12,8 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`
   toast=function(){};
-  return { range:_advComputeOlRangeTables, score:_rbRunScoreAndRankFromTable, setNV:(n)=>{NFLVERSE=n;}, clear:()=>{_advOlRangeCache={};} };
+  return { range:_advComputeOlRangeTables, score:_rbRunScoreAndRankFromTable, setNV:(n)=>{NFLVERSE=n;}, clear:()=>{_advOlRangeCache={};},
+           form:_laOlForm, boards:_laOlFormBoards, pane:laOlineView, season:laSeasonView, TC_SEASON, laState, setWin:laSetOlWin };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -43,6 +44,28 @@ chk(w2.runTbl.teams.KC.values['YBC/Rush']===2 && w2.runTbl.teams.KC.ranks['YBC/R
 console.log('=== weeks 1-2: the window sums only what was published ===');
 const w12=app.range('2026',1,2);
 chk(w12.runTbl.teams.KC.values['YBC/Rush']===1 && w12.runTbl.teams.KC.values['Yards/Rush']===6, 'over both weeks YBC divides week-2 yards by BOTH weeks\' carries (the honest denominator) and pbp fields sum across both');
+
+console.log('=== the O-Line pane (Season tools) ===');
+app.TC_SEASON.year=2026; app.TC_SEASON.phase='regular'; app.TC_SEASON.week=3;   // two weeks played
+app.clear();
+const F=app.form(3);
+chk(Array.isArray(F) && F.length===3 && F.every(t=>t.lo===1 && t.hi===2), 'one row per line; a 3-week stretch with two played weeks spans weeks 1-2');
+const kc=F.find(t=>t.tm==='KC');
+chk(kc && kc.runA.rank===1 && kc.runR.rank===1 && kc.dRunRk===0 && kc.passA.score!=null, 'season and stretch scores with ranks; the rank move is season rank minus stretch rank');
+const html=app.boards(2);
+chk(/O-LINE · RUN BLOCKING · LAST 3/.test(html) && /O-LINE · PASS PROTECTION/.test(html) && /SURGING/.test(html) && /SLIPPING/.test(html), 'two boards: run blocking and pass protection, surging vs slipping');
+chk(/Last 2/.test(html) && /Last 6/.test(html) && /onclick="laSetOlWin\(4\)"/.test(html), 'the stretch chips ride the board subtitle');
+app.TC_SEASON.week=2; app.clear();
+const h1=app.boards(1);
+chk(/THRU WK 1/.test(h1) && /BEST/.test(h1) && /WORST/.test(h1) && !/SURGING/.test(h1), 'with one played week the boards show the season so far, best to worst');
+app.setWin(6); chk(app.laState.olWin===6, 'the stretch selector sticks'); app.setWin(3);
+const pv=app.pane({});
+chk(/O-LINE · RUN BLOCKING/.test(pv) && /laoline/.test(pv), 'the pane renders the boards with its info button');
+app.setNV({'2026':{}}); app.clear();
+chk(/No offensive-line weeks yet|Loading the weekly offensive-line block/.test(app.pane({})), 'without the weekly block the pane says so (or kicks the sidecar load)');
+app.laState.laTab='season'; app.laState.seasonPane='oline';
+const sv=app.season({});
+chk(/pane-tab active[^>]*title="O-Line"/.test(sv) && (sv.match(/pane-tab /g)||[]).length>=5, 'O-Line is a Season pane beside Defense, and the active one when selected');
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);
