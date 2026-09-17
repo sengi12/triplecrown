@@ -87,7 +87,7 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
   <img src="./images/player_cards.png" alt="Centered Image" width="600">
 </div>
 
-- **Passing Charts.** Every QB has strengths and weakness and it can difficult to determine what those are when just looking at raw fantasy totals at the end of each week. Introducing Passing Charts attached to every QB's player card where you can visually see how a QB performs doing what matters most for fantasy and see beyond the fantasy point totals.
+- **Passing Charts.** Every QB has strengths and weakness and it can difficult to determine what those are when just looking at raw fantasy totals at the end of each week. Introducing Passing Charts attached to every QB's player card where you can visually see how a QB performs doing what matters most for fantasy and see beyond the fantasy point totals. The chart opens on the **pass map**: every located attempt of the game or the season drawn at its depth and side, the receiver on hover, a green tail for the yards after the catch and a ring + TD tag on every score — with the zone matrix (passer rating, yards and TDs by zone against the league) a tap away, and the same one-tap link to the passer's Next Gen Stats charts.
 
 <!-- Center align -->
 <div align="center">

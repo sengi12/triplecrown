@@ -2910,6 +2910,11 @@ def main():
                     nflverse[str(last_played)]["target_trees"] = _tm
                     print(f"    → {last_played} target maps: {len(_tm['players'])} receivers"
                           f"{', routes charted' if _tm.get('routes') else ', routes not published yet'}")
+                # …and the passers' pass maps, every game, the same way.
+                _qm = _nfl_tm.qb_passing_weekly(int(last_played), min_attempts_game=1)
+                if _qm:
+                    nflverse[str(last_played)]["qb_passing_weekly"] = _qm
+                    print(f"    → {last_played} pass maps: {len(_qm)} passers")
             except Exception as e:
                 print(f"    ⚠ {last_played} target maps skipped: {type(e).__name__}: {e}")
     else:

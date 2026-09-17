@@ -424,8 +424,9 @@ function _pcardGameReset(norm){
     _pcardGameCarry=null; _pcardChartGameNorm=norm;
   }
 }
+// Per-game chart data: the live season's sidecar, and — for the season just played — the
+// frozen block the offseason bakes (target and pass maps ride it game by game).
 function pcardWeeklyGames(section, norm, season){
-  if(typeof tcIsLiveSeason!=='function' || !tcIsLiveSeason(season)) return null;
   const blk=(typeof NFLVERSE!=='undefined' && NFLVERSE[String(season)] && NFLVERSE[String(season)][section])||null;
   const node=blk && blk[norm];
   return (node && Array.isArray(node.games) && node.games.length) ? node.games : null;

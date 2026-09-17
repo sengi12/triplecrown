@@ -14,7 +14,7 @@ const app=new Function(code+`
   toast=function(){};
   return { block:targetMapBlock, plays:_tmPlays, url:ngsChartUrl, link:ngsChartLink, btns:_pcardRouteViewBtns,
            view:()=>pcardTargetView, setView:setPcardTargetView, seasons:pcardRouteSeasons, setNV:(n)=>{NFLVERSE=n;},
-           routePath:_tmRoutePath };
+           routePath:_tmRoutePath, qbBlock:qbPassMapBlock, qbView:()=>pcardQbView, setQbView:setPcardQbView, weekly:pcardWeeklyGames };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -66,6 +66,23 @@ chk(app.url(node,'Jaxon Smith-Njigba',2026,1)==='https://nextgenstats.nfl.com/ch
 chk(app.url(node,"Ja'Marr Chase",2026,null).endsWith('/2026/week/jamarr-chase/SMI829636'), 'season deep link drops the apostrophe and uses the week=all route');
 chk(app.url({esb:null},'X',2026,1)==='' && app.link({esb:null},'X',2026,1)==='', 'no ESB id → no link at all');
 chk(app.block('X', {games:[{wk:1,plays:[]}]}, 2026, 1, v, null).includes('next weekly bake'), 'a node without per-target rows says so instead of drawing an empty field');
+
+console.log('=== the QB pass map ===');
+const qb={team:'JAX',esb:'LAW123456',rcv:['B.Thomas','E.Engram'],
+  games:[{wk:1,opp:'CLE',totals:{attempts:3},plays:[[12,2,1,4,60,1,0],[30,1,2,10,40,2,1],[8,0,0,0,70,3,null]]}]};
+const q1=app.qbBlock('Trevor Lawrence', qb, 2026, 1, 'Week 1 · CLE', null);
+chk(/TREVOR LAWRENCE PASSES/.test(q1) && /WEEK 1 · CLE/.test(q1), 'the QB map is titled as passes for the game');
+const qt=[...q1.matchAll(/<title>(.*?)<\/title>/g)].map(m=>m[1]);
+chk(qt.length===3 && qt.some(t=>t==='WK 1 · CLE · Q1 · Right, +12 air · Catch → B.Thomas · 4 YAC (16 yds)'), 'each mark names its receiver');
+chk(qt.some(t=>t.includes('Touchdown → E.Engram · 10 YAC (40 yds)')) && qt.some(t=>t==='WK 1 · CLE · Q3 · Left, +8 air · Incomplete'), 'the score names its receiver; an incompletion without one stays plain');
+chk(/>Complete</.test(q1) && !/>Catch</.test(q1), 'the legend reads Complete, not Catch, for a passer');
+chk((q1.match(/>TD<\/text>/g)||[]).length===1, 'the touchdown gets its TD tag');
+chk(app.qbView()==='map', 'Map is the passing chart\'s default view');
+app.setQbView('zones'); chk(app.qbView()==='zones', 'Zones is selectable'); app.setQbView('map');
+chk(app.qbBlock('X', {games:[{wk:1,plays:[]}]}, 2026, 1, 'Week 1', null).includes('next weekly bake'), 'a node without per-attempt rows says so');
+app.setNV({'2025':{qb_passing_weekly:{'trevor lawrence':qb}}});
+chk(Array.isArray(app.weekly('qb_passing_weekly','trevor lawrence','2025')) && app.weekly('qb_passing_weekly','nobody','2025')===null,
+    'per-game chips come from any season that carries the weekly block (the offseason bakes the season just played)');
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);

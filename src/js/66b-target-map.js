@@ -120,7 +120,7 @@ function targetMapSVG(plays, title, sub, tag){
     const endCap = (p.yl!=null) ? Math.min(endYd, p.yl) : endYd;     // the goal line ends every tail
     const y2=yOf(endCap), x2=laneX(y2, p.side, frac);
     const col = caught ? '#ffffff' : (p.res===3 ? '#d33b2f' : '#9aa0a6');
-    const tip=`WK ${p.wk}${p.opp?' · '+p.opp:''}${p.q?` · Q${p.q}`:''} · ${_TM_SIDES[p.side]||'Middle'}, ${p.ay>=0?'+':''}${p.ay} air${p.route?` · ${_tmRouteLabel(p.route)}`:''} · ${_TM_RES[p.res]||'Target'}${caught?` · ${p.yac} YAC (${p.ay+p.yac} yds)`:''}`;
+    const tip=`WK ${p.wk}${p.opp?' · '+p.opp:''}${p.q?` · Q${p.q}`:''} · ${_TM_SIDES[p.side]||'Middle'}, ${p.ay>=0?'+':''}${p.ay} air${p.route?` · ${_tmRouteLabel(p.route)}`:''} · ${_TM_RES[p.res]||'Target'}${p.to?` → ${p.to}`:''}${caught?` · ${p.yac} YAC (${p.ay+p.yac} yds)`:''}`;
     const attrs=tag?tag({label:`Target · WK ${p.wk}`, value:tip, statKey:'target'}):'';
     parts.push(`<g ${attrs}><title>${escHtml(tip)}</title>`);
     const routeD = p.route ? _tmRoutePath(p.route, p.side, x0, losY, x1, y1, pxPerYd) : null;
@@ -148,10 +148,10 @@ function targetMapSVG(plays, title, sub, tag){
   parts.push('</svg>');
   return parts.join('');
 }
-function targetMapLegend(charted){
+function targetMapLegend(charted, kind){
   return `<div class="tm-legend">
     ${charted?`<span><i class="tm-l-route"></i>Charted route</span>`:''}
-    <span><i class="tm-l-inc"></i>Incomplete</span><span><i class="tm-l-catch"></i>Catch</span>
+    <span><i class="tm-l-inc"></i>Incomplete</span><span><i class="tm-l-catch"></i>${kind==='qb'?'Complete':'Catch'}</span>
     <span><i class="tm-l-yac"></i>After catch</span><span><i class="tm-l-td"></i>Touchdown</span>
     <span><i class="tm-l-int"></i>Interception</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
   </div>`;
@@ -168,6 +168,30 @@ function targetMapBlock(pname, node, season, selWk, v, tag){
     ? `Every target with the route he ran · green = after the catch · ring + TD = touchdown`
     : `Every target by depth and side · green = after the catch · ring + TD = touchdown · routes come with the season's charting`;
   return targetMapSVG(plays, title, sub, tag) + targetMapLegend(charted);
+}
+// ── The QB's pass map: the same field, every located attempt, the receiver on the mark ──
+// Rows: NFLVERSE[season].qb_passing_weekly[norm].games[i].plays
+//   = [[air_yards, side, result 0 inc/1 comp/2 TD/3 INT, yac, yardline_100, qtr, receiver], …]
+//   receiver = index into the node's `rcv` legend (pbp's short names).
+function _qbMapPlays(node, selWk){
+  const out=[], rcv=Array.isArray(node.rcv)?node.rcv:[];
+  for(const g of (node.games||[])){
+    if(selWk!=null && g.wk!==Number(selWk)) continue;
+    for(const p of (g.plays||[])){
+      const ri=(p.length>6 && p[6]!=null) ? +p[6] : null;
+      out.push({wk:g.wk, opp:g.opp||'', ay:Math.round(+p[0]||0), side:(p[1]==null?1:+p[1]), res:+p[2]||0,
+                yac:Math.round(+p[3]||0), yl:(p[4]==null?null:+p[4]), q:(p[5]==null?null:+p[5]),
+                route:null, to:(ri!=null && rcv[ri]) ? String(rcv[ri]) : null});
+    }
+  }
+  return out;
+}
+function qbPassMapBlock(pname, node, season, selWk, label, tag){
+  if(!_tmHasPlays(node)) return `<div class="pcard-loading">Per-attempt rows arrive with the next weekly bake.</div>`;
+  const plays=_qbMapPlays(node, selWk);
+  const title=`${escHtml(String(pname).toUpperCase())} PASSES <tspan fill="#9aa0a6" font-size="13" font-weight="600">/ ${escHtml(String(label).toUpperCase())}</tspan>`;
+  const sub=`Every located attempt at its depth and side · hover for the receiver · green = after the catch · ring + TD = touchdown`;
+  return targetMapSVG(plays, title, sub, tag) + targetMapLegend(false, 'qb');
 }
 // The real thing, one tap away: NGS keys its chart pages by the player's ESB id
 // (nflverse rosters carry it). Season → every chart that season; a game → that week.

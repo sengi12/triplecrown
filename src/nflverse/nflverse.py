@@ -2588,14 +2588,47 @@ def qb_passing_weekly(season, min_attempts_game=8):
     """Per-QB per-GAME zone matrices — the in-season companion to
     qb_passing_zones. Games carry only cells with attempts (compact), and no
     per-game league average: the season block the client already holds is the
-    stable baseline a single game should be read against."""
-    pbp = _load_pbp(season, _QB_ZONE_COLS + ["week", "defteam", "game_id", "play_id"])
+    stable baseline a single game should be read against.
+    Each game also carries `plays`: every located attempt as a short row
+    [air_yards, side(0 L/1 M/2 R), result(0 inc/1 comp/2 TD/3 INT), yac,
+    yardline_100, qtr, receiver] in play order — the PASS MAP (each throw a dot
+    at its depth and side, with its after-catch tail), the cousin of NGS's pass
+    chart. `receiver` indexes the node's `rcv` legend (pbp's short names, e.g.
+    "J.Smith-Njigba"). `esb` is the passer's NFL ESB id for the NGS deep link."""
+    _map_cols = ["yards_after_catch", "yardline_100", "qtr", "receiver_player_name"]
+    pbp = _load_pbp(season, _QB_ZONE_COLS + ["week", "defteam", "game_id", "play_id"] + _map_cols)
     pbp = pbp[pbp["season_type"] == "REG"]
     att = pbp[(pbp["pass_attempt"] == 1) & (pbp["sack"] == 0)
               & (pbp["two_point_attempt"] == 0) & pbp["pass_location"].notna()
               & pbp["passer_player_id"].notna()].copy()
     if att.empty:
         return {}
+    for c in _map_cols:                      # an older frame without them still builds
+        if c not in att.columns:
+            att[c] = None
+    esb = _esb_map(season)
+    _PM_SIDE = {"left": 0, "middle": 1, "right": 2}
+
+    def _pm_plays(frame, rcv_ix):
+        rows = []
+        for r in frame.itertuples(index=False):
+            ay = pd.to_numeric(r.air_yards, errors="coerce")
+            if pd.isna(ay):
+                continue
+            comp = float(r.complete_pass or 0) == 1
+            res = 3 if float(r.interception or 0) == 1 else (2 if comp and float(r.pass_touchdown or 0) == 1 else (1 if comp else 0))
+            yac = pd.to_numeric(r.yards_after_catch, errors="coerce")
+            yl = pd.to_numeric(r.yardline_100, errors="coerce")
+            q = pd.to_numeric(r.qtr, errors="coerce")
+            rc = r.receiver_player_name if isinstance(r.receiver_player_name, str) else None
+            if rc is not None and rc not in rcv_ix:
+                rcv_ix[rc] = len(rcv_ix)
+            rows.append([int(ay), _PM_SIDE.get(r.pass_location, 1), res,
+                         int(yac) if comp and not pd.isna(yac) else 0,
+                         int(yl) if not pd.isna(yl) else None,
+                         int(q) if not pd.isna(q) else None,
+                         rcv_ix.get(rc) if rc is not None else None])
+        return rows
     try:
         duress = _qb_duress(season, pbp)
     except Exception:
@@ -2623,11 +2656,12 @@ def qb_passing_weekly(season, min_attempts_game=8):
                 "yards": int(cell["yards_gained"].sum()),
                 "td": int(cell["pass_touchdown"].sum()),
             }
-        node = out.setdefault(name, {"team": None, "games": []})
+        node = out.setdefault(name, {"team": None, "esb": esb.get(qid), "rcv": {}, "games": []})
         node["team"] = g["posteam"].mode().iloc[0] if len(g["posteam"].mode()) else node["team"]
         node["games"].append({
             "wk": int(wk),
             "opp": (g["defteam"].mode().iloc[0] if len(g["defteam"].mode()) else None),
+            "plays": _pm_plays(g, node["rcv"]),
             "totals": {
                 "passer_rating": _passer_rating_df(g),
                 "comp_pct": round(float(g["complete_pass"].mean() * 100), 1),
@@ -2642,6 +2676,7 @@ def qb_passing_weekly(season, min_attempts_game=8):
         })
     for node in out.values():
         node["games"].sort(key=lambda x: x["wk"])
+        node["rcv"] = [rc for rc, _ in sorted(node["rcv"].items(), key=lambda kv: kv[1])]
     # ranks live on the game's totals dict
     by_wk = {}
     for node in out.values():

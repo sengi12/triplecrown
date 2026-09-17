@@ -45,6 +45,10 @@ def _pbp_pass():
                          game_id="2026_01_X_CIN", play_id=i))
     df = pd.DataFrame(rows)
     df["qb_dropback"] = 1; df["qb_scramble"] = 0; df["rusher_player_id"] = None
+    # the pass map's columns: after-catch yards on completions, field position, quarter, receiver
+    df["yards_after_catch"] = df["complete_pass"].map(lambda c: 3.0 if c == 1 else None)
+    df["yardline_100"] = 50; df["qtr"] = 1
+    df["receiver_player_name"] = ["J.Chase" if i % 3 == 0 else "T.Higgins" for i in range(len(df))]
     return df
 
 
@@ -74,7 +78,14 @@ def main():
     nv._play_context = lambda season: _ctx
     nv._aux_parquet = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no PFR in test"))
     nv._QB_PFR_WEEK.clear()
+    nv._esb_map = lambda season: {"q1": "QBX000001"}
     qw = nv.qb_passing_weekly(2026)
+    _q1 = qw.get("test quarterback") or {}
+    _g1 = (_q1.get("games") or [{}])[0]
+    check("pass map: every located attempt is a row [air, side, result, yac, yardline, qtr, receiver] in play order",
+          len(_g1.get("plays", [])) == 9 and _g1["plays"][0] == [25, 0, 2, 3, 50, 1, 0] and _g1["plays"][1] == [5, 1, 0, 0, 50, 1, 1])
+    check("pass map: the receiver legend is per passer, in first-seen order, and the ESB id rides the node",
+          _q1.get("rcv") == ["J.Chase", "T.Higgins"] and _q1.get("esb") == "QBX000001")
     check("per-game floor drops the 3-attempt relief appearance", "backup guy" not in qw)
     q = qw.get("test quarterback")
     check("both real games present, in week order",
