@@ -20,6 +20,16 @@
    builds, so it must never be set on html/body. */
 html{background:var(--bg);}
 body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;font-size:14px;}
+/* No rubber-banding on a touch screen: every inner scroller (the rankings table, the
+   Advanced tables, the tab strips, the Game Center's rails and sheet body) stops dead at
+   its ends instead of flying past them and snapping back — the Android feel, on iOS too.
+   Scroll containers only (this rule does nothing on html/body, see above); the shell's
+   native scroll view has its own bounce switched off in AppDelegate.swift. */
+@media (pointer:coarse){
+  .rank-table-wrap,.sr-table-wrap,.la-cmp-wrap,.la-pw-wrap,.la-lu,.rt-chips,.rt-claim,.pos-filter,
+  .phase-tabs,.sub-tabs,.qb-tab-bar,.pcard-tabs,.sr-league-tabs,.sr-cat-row,.vsg-tabs,
+  .gc-list,.gcm-sheet .gc-body,.gc-detail,.sidebar.leaders,.ktc-modal,.note-picker,.note-info-modal{overscroll-behavior:none;}
+}
 .header{background:var(--surface);border-bottom:1px solid var(--border);
   padding:9px 16px;display:flex;align-items:center;gap:10px;
   /* Installed-PWA mode (black-translucent) draws under the iPhone status bar/notch —

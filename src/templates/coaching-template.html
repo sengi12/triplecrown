@@ -376,7 +376,12 @@ function wireTaps(box,g){
     if(same&&soon&&close){ clear(); open(el); return; }
     st={el,x,y,t:now};
   }
+  // WebKit on iOS follows every tap with a synthesized mousedown a few ms later; counting
+  // it as a second tap made ONE tap on the run/pass bar (or any label) open the note picker
+  // instead of switching the look. A mousedown right after a touch is that echo, not a click.
+  let lastTouch=0;
   document.addEventListener('touchstart', e=>{
+    lastTouch=Date.now();
     if(e.touches.length!==1) return clear();
     const el=e.target&&e.target.closest?e.target.closest('[data-noteable="1"]'):null;
     if(!el) return;
@@ -385,6 +390,7 @@ function wireTaps(box,g){
   }, {passive:true});
   document.addEventListener('touchcancel', clear, {passive:true});
   document.addEventListener('mousedown', e=>{
+    if(Date.now()-lastTouch<800) return;
     const el=e.target&&e.target.closest?e.target.closest('[data-noteable="1"]'):null;
     if(!el||e.button!==0) return;
     tap(el,e.clientX,e.clientY);

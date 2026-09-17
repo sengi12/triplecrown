@@ -44,6 +44,7 @@ console.log('=== the sheet ===');
 const tpl=app.template();
 chk(/if\(FV\.charting_only\) return \{name:\(a\?a\.name:''\),list:\[\],src:'none'\}/.test(tpl), 'routesFor draws no route (and no generic tree) on a charted-sets season');
 chk(/g\.pers_mix\.map\(\(\[c,p\]\)=>`\$\{c\} \$\{p\}%`\)\.join\(' · '\)\} \(est\.\)/.test(tpl), 'the set subtitle shows the estimated mix ("12 62% · 11 31% (est.)") when the file carries one');
+chk(/lastTouch=Date\.now\(\);/.test(tpl) && /if\(Date\.now\(\)-lastTouch<800\) return;/.test(tpl), 'the sheet ignores the mousedown WebKit synthesizes after a tap — one tap on the run/pass bar switches the look, it does not open a note tag (iOS)');
 chk(/split est\. from \$\{Number\(SEASON\)-1\}/.test(tpl) && /runs \/ routes \(est\.\)/.test(tpl) && /<details class="foot"><summary>about this sheet<\/summary>/.test(tpl) && /Season in progress — charted sets/.test(tpl) && /routes are ESTIMATED/.test(tpl) && /querySelector\('\.foot > div'\)/.test(tpl) && !/\(est\)'/.test(tpl) && /const LW=54, LANE=20/.test(tpl) && /laneLast/.test(tpl), 'the card subtitle, hint and footnote say what a charted set is; routes carry no per-route tag, and labels take lanes so they do not collide');
 const out=app.tpl(tpl, p);
 chk(/"charting_only":true/.test(out) && /2026 · Charted sets · routes estimated/.test(out) && !/Routes mapped to players/.test(out), 'the rendered sheet ships the flag in its data script and says charted sets in its header');
