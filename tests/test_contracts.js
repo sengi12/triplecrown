@@ -76,6 +76,10 @@ const ok5main = band.includes('$64M') && band.includes('7 yrs') && band.includes
 const ok5none = app.contractSummaryHTML('Unknown Player')==='';   // no contract on file → no band
 const ok5null = app.contractSummaryHTML('No Deal Guy')==='';       // all-null contract → no band
 const ok5derive = app.contractSummaryHTML('Patrick Mahomes').includes('7 yrs'); // 448M/64M → 7
+// narrow phones swap in the short forms (CSS shows .ct-s under 500px): 7y · $448M, FA ’34
+const ok5short = band.includes('<span class="ct-l">7 yrs · $448M total</span><span class="ct-s">7y · $448M</span>')
+  && band.includes('FA <b><span class="ct-l">2034</span><span class="ct-s">’34</span></b>');
 console.log('band renders APY/len/total/gtd/FA:', ok5main);
 console.log('missing & all-null → empty:', ok5none && ok5null);
-console.log('RESULT:', ok5main && ok5none && ok5null && ok5derive?'PASS (contract band)':'FAIL');
+console.log('short forms for narrow phones (7y · $448M, FA ’34):', ok5short);
+console.log('RESULT:', ok5main && ok5none && ok5null && ok5derive && ok5short?'PASS (contract band)':'FAIL');

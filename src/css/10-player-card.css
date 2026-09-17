@@ -87,7 +87,18 @@
 .pcard-contract-lbl{font-size:8.5px;font-weight:800;letter-spacing:.06em;color:var(--accent);
   background:rgba(61,155,255,.13);padding:2px 6px;border-radius:4px;}
 .pcard-contract .muted{color:var(--muted);font-weight:600;}
-.pcard-ct-fa{margin-left:auto;}
+.pcard-ct-fa{margin-left:auto;white-space:nowrap;}
+.pcard-contract .ct-s{display:none;}
+/* Narrow phones: one line. The short forms swap in (5y · $275M, FA ’30), the gaps tighten,
+   and if a deal still runs long the length/total part trims with an ellipsis — $/yr, gtd
+   and the FA year always show. */
+@media (max-width:500px){
+  .pcard-contract{flex-wrap:nowrap;gap:7px;font-size:11px;}
+  .pcard-contract .ct-l{display:none;}
+  .pcard-contract .ct-s{display:inline;}
+  .pcard-contract > span{white-space:nowrap;}
+  .pcard-contract .pcard-ct-len{min-width:0;overflow:hidden;text-overflow:ellipsis;}
+}
 /* KTC dynasty link — small icon badge tucked into the hero's bottom-right corner. */
 .pcard-ktc{position:absolute;right:10px;bottom:10px;z-index:5;width:26px;height:26px;border-radius:7px;
   display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.9);
@@ -503,19 +514,10 @@ html.pcard-locked, html.pcard-locked body{overflow:hidden;overscroll-behavior:no
 .pcard-hero-v2 .pcard-meta-item:last-child .pcard-meta-val{overflow:hidden;text-overflow:ellipsis;max-width:clamp(54px,16vw,110px);}
 /* Foot: pedestal + draft band + KTC on one line at the hero's bottom. */
 .pcard-hero-foot{display:flex;align-items:center;gap:8px;margin-top:0;position:relative;z-index:2;}
-/* Narrow phones: the DRAFT label pill yields so the year/round/pick line never clips. With a
-   league pill in the row (leagues synced) the draft line no longer fits beside the pedestal:
-   the row wraps, the pill and the KTC icon stay on the pedestal's line, and the draft line
-   drops to its own line below, right-aligned — nothing overlaps, and a card without the pill
-   keeps the one-line foot. */
-@media (max-width:500px){
-  .pcard-hero-foot .pcard-draft-lbl{display:none;}
-  .pcard-hero-v2 .pcard-hero-foot{flex-wrap:wrap;row-gap:4px;}
-  .pcard-hero-v2 .pcard-lg-pill{order:1;margin-left:auto;}
-  .pcard-hero-v2 .pcard-ktc{order:2;}
-  .pcard-hero-v2 .pcard-hero-draft{order:3;flex:0 0 auto;min-width:0;max-width:100%;margin:0 10px 6px auto;}
-  .pcard-hero-v2 .pcard-lg-pill ~ .pcard-hero-draft, .pcard-hero-v2 .pcard-hero-draft:has(~ .pcard-lg-pill){margin-left:auto;}
-}
+/* Narrow phones: the DRAFT label pill yields so the year/round/pick line never clips. The foot
+   is one line — pedestal, draft line, KTC — and nothing else lives in it: the leagues line
+   sits under the contract band in the card's flow (13-pcard-leagues.css). */
+@media (max-width:500px){ .pcard-hero-foot .pcard-draft-lbl{display:none;} }
 .pcard-team-plate{width:var(--plateW);flex-shrink:0;box-sizing:border-box;position:relative;
   padding:clamp(6px,1.6vw,8px) 12px;text-align:center;}
 .pcard-team-plate::before{content:'';position:absolute;inset:0 0 0 -12px;background:var(--surface);

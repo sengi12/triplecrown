@@ -333,15 +333,18 @@ function contractSummaryHTML(name){
   if(!hasContracts() || !name) return '';
   const c = CONTRACTS[ecrNormName(name)];
   if(!c || (c.apy==null && c.total==null && c.fa==null)) return '';
+  // Every part carries a long and a short form; a narrow phone shows the short ones
+  // (5 yrs · $275M total → 5y · $275M, FA 2030 → FA '30) so the band stays one line.
+  const two=(l,s)=> l===s ? l : `<span class="ct-l">${l}</span><span class="ct-s">${s}</span>`;
   const parts=[];
   if(c.apy!=null) parts.push(`<span><b>${fmtAPY(c.apy)}</b><span class="muted">/yr</span></span>`);
-  const sub=[];
+  const sub=[], subS=[];
   const yrs = (c.total!=null && c.apy>0) ? Math.round(c.total/c.apy) : null;
-  if(yrs) sub.push(`${yrs} yr${yrs===1?'':'s'}`);
-  if(c.total!=null) sub.push(`${fmtAPY(c.total)} total`);
-  if(sub.length) parts.push(`<span class="muted">${sub.join(' · ')}</span>`);
+  if(yrs){ sub.push(`${yrs} yr${yrs===1?'':'s'}`); subS.push(`${yrs}y`); }
+  if(c.total!=null){ sub.push(`${fmtAPY(c.total)} total`); subS.push(fmtAPY(c.total)); }
+  if(sub.length) parts.push(`<span class="muted pcard-ct-len">${two(sub.join(' · '), subS.join(' · '))}</span>`);
   if(c.gtd!=null) parts.push(`<span class="muted">${fmtAPY(c.gtd)} gtd</span>`);
-  if(c.fa!=null) parts.push(`<span class="pcard-ct-fa">FA <b>${c.fa}</b></span>`);
+  if(c.fa!=null) parts.push(`<span class="pcard-ct-fa">FA <b>${two(String(c.fa), "’"+String(c.fa).slice(-2))}</b></span>`);
   return `<div class="pcard-contract"><span class="pcard-contract-lbl">CONTRACT</span>${parts.join('')}</div>`;
 }
 

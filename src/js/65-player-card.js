@@ -508,7 +508,6 @@ function renderPlayerCardShell(pid, pos, team){
         <div class="pcard-hero-foot">
           ${teamPlate}
           <div class="pcard-hero-draft" id="pcardHeroDraft"></div>
-          ${(typeof pcardLeaguesBarHTML==='function')?pcardLeaguesBarHTML(pid):''}
           ${ktcBand}
         </div>
         ${pcardBackButtonHTML()}
@@ -517,6 +516,7 @@ function renderPlayerCardShell(pid, pos, team){
         <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">✕</button>
       </div>
       ${contractBand}
+      ${(typeof pcardLeaguesBandHTML==='function')?pcardLeaguesBandHTML(pid):''}
       <div class="pcard-tabs" id="pcardTabs"></div>
       <div class="pcard-body" id="pcardBody">
         <div class="pcard-loading">Loading game logs…</div>
