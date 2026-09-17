@@ -99,7 +99,10 @@ function lfPlayStats(kind, yds, roles){
 }
 // The play, typed for the feed: what it was, who did it, what it produced.
 function lfReadPlay(lp){
-  const type=String(lp.type||''), text=String(lp.text||''), yds=Number(lp.yds||0);
+  const type=String(lp.type||''), text=String(lp.text||'');
+  // the yardage: the board's number, else the words ("for 60 yards", "32 yard field goal")
+  let yds=Number(lp.yds||0);
+  if(!yds){ const m=/for (-?\d+) yards?/.exec(text) || /(\d+) yard field goal/.exec(text); if(m) yds=Number(m[1]); }
   const names=(typeof gcPlayNames==='function') ? gcPlayNames(text) : {primary:'', receiver:'', picker:''};
   let kind='other', title='';
   const ath=Array.isArray(lp.athletes)?lp.athletes:[];
@@ -181,9 +184,23 @@ function lfOnBoard(teams){
 function lfClear(){ _lf.rows=[]; _lf.seen={}; }
 
 // ── Leagues: who is rostered where, and what a play was worth there ──────────
+// The leagues: the player card's map (every synced league — rosters, owners, scoring —
+// loaded on the Game Center's first paint) with this week's matchup per league from
+// gcMatchupFor; the Week Hub's results stand in when that map has not loaded.
 function lfLeagueList(){
-  const res=(typeof hubState!=='undefined' && hubState && hubState.results) ? hubState.results : {};
   const out=[];
+  const pc=(typeof _pcardLg!=='undefined' && _pcardLg && _pcardLg.byLeague) ? _pcardLg.byLeague : {};
+  const wk=(typeof gcCurWeek==='function') ? gcCurWeek() : ((typeof TC_SEASON!=='undefined')?Number(TC_SEASON.week||0):0);
+  Object.keys(pc).forEach(id=>{
+    const L=pc[id]; if(!L || L.inactive || L.error) return;
+    const m=(typeof gcMatchupFor==='function') ? gcMatchupFor(id, wk) : null;
+    const rostered=new Set(Object.keys(L.byPid||{}));
+    const mineRoster=new Set(Object.keys(L.byPid||{}).filter(p=>L.byPid[p]&&L.byPid[p].mine));
+    out.push({ id:String(id), name:String(L.name||'League'), scoring:L.scoring||null, rostered,
+      mine:(m&&!m.pending)?m.mine:mineRoster, opp:(m&&!m.pending)?m.opp:new Set(), oppName:(m&&m.oppName)||'' });
+  });
+  if(out.length) return out;
+  const res=(typeof hubState!=='undefined' && hubState && hubState.results) ? hubState.results : {};
   Object.keys(res).forEach(id=>{
     const r=res[id]; if(!r || r.inactive || !r.league) return;
     out.push({ id:String(id), name:String(r.league.name||'League'),

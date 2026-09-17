@@ -35,16 +35,22 @@ async function pcardLeaguesLoad(force){
         ]);
         if(typeof tcLeagueInPlay==='function' && !tcLeagueInPlay({status:L.status, season:L.season})){ _pcardLg.byLeague[lg.league_id]={id:String(lg.league_id), inactive:true, byPid:{}}; return; }
         const uById={}; (users||[]).forEach(u=>uById[u.user_id]=u);
-        const byPid={};
+        // Who I am: the saved profile's id, else my username against the league's users
+        // (a profile saved by username alone made every roster "not mine").
+        let me=myId;
+        if(!me && prof && prof.username){ const u=(users||[]).find(x=>String(x.display_name||'').toLowerCase()===String(prof.username).toLowerCase()); if(u) me=u.user_id; }
+        const byPid={}, rosterMap={}; let myRosterId=null;
         (rosters||[]).forEach(r=>{
           const u=uById[r.owner_id]||{};
-          const mine=!!myId && (r.owner_id===myId || (Array.isArray(r.co_owners)&&r.co_owners.includes(myId)));
+          const mine=!!me && (r.owner_id===me || (Array.isArray(r.co_owners)&&r.co_owners.includes(me)));
+          if(mine && myRosterId==null) myRosterId=r.roster_id;
           const owner=(u.metadata&&u.metadata.team_name)||u.display_name||`Roster ${r.roster_id}`;
           (r.players||[]).forEach(p=>{ byPid[String(p)]={owner, mine}; });
+          rosterMap[String(r.roster_id)]={owner, mine, players:(r.players||[]).map(String), starters:(r.starters||[]).filter(x=>x&&x!=='0').map(String)};
         });
         _pcardLg.byLeague[lg.league_id]={id:String(lg.league_id), name:L.name||lg.name||'League',
           avatar:(L.avatar && typeof SLEEPER_AVATAR_THUMB==='function')?SLEEPER_AVATAR_THUMB(L.avatar):null,
-          sub:pcardLeagueSub(L), byPid,
+          sub:pcardLeagueSub(L), byPid, rosters:rosterMap, myRosterId,
           scoring:(L.scoring_settings && typeof L.scoring_settings==='object') ? L.scoring_settings : null};   // the Game Center scores a game under any league
       }catch(e){
         _pcardLg.byLeague[lg.league_id]={id:String(lg.league_id), name:lg.name||'League', error:true, byPid:{}};

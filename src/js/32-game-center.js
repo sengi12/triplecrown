@@ -143,18 +143,53 @@ function gcMineSet(){
   const mine=s.teamList.find(t=>t.ownerId===s.myUserId || (t.coOwners||[]).includes(s.myUserId));
   return new Set(((mine&&mine.players)||[]).map(p=>String(p.id)));
 }
-// Your matchup in the pane's league: your starters and your opponent's (the hub keeps
-// both). Cached per league + hub load — this is asked once per player row.
+// Your matchup in a league for a WEEK: your starters and your opponent's, from that
+// week's matchups (one small read per league × week, kept for the session). Before it
+// lands the sets are empty and the paint follows when it does.
+var _gcMu = { cache:{}, busy:{} };
+const GC_EMPTY_MU = { mine:new Set(), opp:new Set(), oppName:'', pending:true };
+function gcMatchupFor(lid, wk){
+  lid=String(lid||''); wk=Number(wk||0); if(!lid || !wk) return null;
+  const key=`${lid}|${wk}`;
+  if(_gcMu.cache[key]) return _gcMu.cache[key];
+  const L=(typeof _pcardLg!=='undefined' && _pcardLg && _pcardLg.byLeague) ? _pcardLg.byLeague[lid] : null;
+  if(!L || L.myRosterId==null || !L.rosters) return null;          // the league's rosters have not loaded (or I am not in it)
+  if(!_gcMu.busy[key] && typeof sleeperFetch==='function' && typeof LA_MATCHUPS_URL==='function'){
+    _gcMu.busy[key]=true;
+    sleeperFetch(LA_MATCHUPS_URL(lid, wk)).then(rows=>{
+      const list=Array.isArray(rows)?rows:[];
+      const me=list.find(m=>String(m.roster_id)===String(L.myRosterId));
+      const opp=me ? list.find(m=>m.matchup_id!=null && m.matchup_id===me.matchup_id && String(m.roster_id)!==String(me.roster_id)) : null;
+      const pids=(arr)=>(Array.isArray(arr)?arr:[]).filter(x=>x&&x!=='0').map(String);
+      const oppR=opp ? L.rosters[String(opp.roster_id)] : null;
+      _gcMu.cache[key]={ mine:new Set(pids(me&&me.starters).length?pids(me.starters):(L.rosters[String(L.myRosterId)]||{}).starters||[]),
+        opp:new Set(pids(opp&&opp.starters)), oppName:oppR?oppR.owner:'', pending:false };
+      _gc._mu=null;
+      if(typeof gcDetailRepaint==='function') gcDetailRepaint(); else if(typeof renderRightSidebar==='function') renderRightSidebar();
+    }).catch(()=>{ _gcMu.cache[key]={ mine:new Set(), opp:new Set(), oppName:'', pending:false, failed:true }; }).finally(()=>{ _gcMu.busy[key]=false; });
+  }
+  return null;
+}
+// The pane's league and week → the two line-ups. Falls back to the hub's current-week
+// matchup while the read is out (or when the league is the hub's alone).
 function gcMatchupSets(){
   const id=(typeof gcLeague==='function') ? gcLeague() : 'snap';
+  const wk=(typeof gcWeek==='function') ? gcWeek() : 0;
   const hub=(typeof hubState!=='undefined' && hubState) ? hubState : null;
-  const stamp=`${id}|${hub?hub.loadedAt:0}`;
+  const stamp=`${id}|${wk}|${hub?hub.loadedAt:0}|${Object.keys(_gcMu.cache).length}`;
   if(_gc._muAt===stamp && _gc._mu) return _gc._mu;
   let lid=id;
   if(id==='snap') lid=(typeof leagueSnapshot!=='undefined' && leagueSnapshot) ? String(leagueSnapshot.leagueId||'') : '';
-  const r=(id!=='app' && hub && hub.results) ? hub.results[lid] : null;
-  const lu=r && r.lineup;
-  _gc._mu={ mine:new Set(((lu&&lu.starters)||[]).map(String)), opp:new Set(((lu&&lu.oppStarters)||[]).map(String)) };
+  let out=null;
+  if(id!=='app' && lid){
+    const m=gcMatchupFor(lid, wk);
+    if(m && !m.pending) out={ mine:m.mine, opp:m.opp };
+    else if(hub && hub.results && hub.results[lid] && (typeof gcCurWeek!=='function' || wk===gcCurWeek())){
+      const lu=hub.results[lid].lineup;
+      out={ mine:new Set(((lu&&lu.starters)||[]).map(String)), opp:new Set(((lu&&lu.oppStarters)||[]).map(String)) };
+    }
+  }
+  _gc._mu=out||{ mine:new Set(), opp:new Set() };
   _gc._muAt=stamp;
   return _gc._mu;
 }

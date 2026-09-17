@@ -42,7 +42,7 @@ const app=new Function(code+`
   const G=(o)=>Object.assign({state:'in', eid:'E1', score:6, oppScore:14, home:true, opp:'MIN', sit:{period:3, clock:'10:07', lastPlayId:'p1', lastPlay:LP({})}}, o);
   return { onBoard:lfOnBoard, rows:()=>_lf.rows, view:lfRows, clear:lfClear, read:lfReadPlay, stats:lfPlayStats, pid:lfPidFor,
     delta:lfDelta, rel:lfRelevance, leagues:lfLeagueList, toggle:lfToggleLeague, all:lfSetAll, mineOnly:lfSetMineOnly, sel:()=>_lf.leagues,
-    panel:lfPanelHTML, rowHTML:lfRowHTML, allLeagues:lfSetAllLeagues, sides:lfSideSets, stat:()=>_lf.stat, titleHTML:lfTitleHTML, LP, G, board:(t)=>{ _tcBoard={season:String(TC_SEASON.year), week:tcBoardWeek(), at:Date.now(), teams:t, busy:false, live:true}; }, MAX:LF_MAX_ROWS };
+    setPcard:(o)=>{ _pcardLg={byLeague:o, at:Date.now(), loading:null}; }, setMu:(lid,wk,v)=>{ _gcMu.cache[lid+'|'+wk]=v; }, panel:lfPanelHTML, rowHTML:lfRowHTML, allLeagues:lfSetAllLeagues, sides:lfSideSets, stat:()=>_lf.stat, titleHTML:lfTitleHTML, LP, G, board:(t)=>{ _tcBoard={season:String(TC_SEASON.year), week:tcBoardWeek(), at:Date.now(), teams:t, busy:false, live:true}; }, MAX:LF_MAX_ROWS };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const LP=app.LP, G=app.G;
@@ -108,6 +108,22 @@ const LP=app.LP, G=app.G;
   chk(app.sel().length===2 && app.view().length===2, 'All leagues: every league I am in at once');
   app.all();
   chk(app.sel().length===0 && app.view().length===3, 'back to all games');
+
+  console.log('=== the leagues come from the player-card map once it has loaded ===');
+  app.setPcard({P1:{id:'P1', name:'Pcard League', byPid:{q1:{owner:'me', mine:true}, w1:{owner:'them', mine:false}}, rosters:{'1':{owner:'me',mine:true,players:['q1'],starters:['q1']},'2':{owner:'them',mine:false,players:['w1'],starters:['w1']}}, myRosterId:1, scoring:{rec_td:6}}});
+  let L=app.leagues();
+  chk(L.length===1 && L[0].id==='P1' && L[0].rostered.has('w1') && L[0].mine.has('q1') && L[0].opp.size===0, 'the map\'s league: rostered from its rosters, mine from my roster, no opponent until the matchup read lands');
+  app.setMu('P1', 2, {mine:new Set(['q1']), opp:new Set(['w1']), oppName:'them', pending:false});
+  L=app.leagues();
+  chk(L[0].opp.has('w1') && L[0].oppName==='them', 'the week\'s matchup makes the opponent red');
+  app.setPcard({});
+  chk(app.leagues().length===2, 'with no map the hub\'s leagues stand in');
+
+  console.log('=== yards from the words ===');
+  const noy=app.read(LP({type:'Rushing Touchdown', yds:0, text:'B.Hall left end for 9 yards, TOUCHDOWN.', team:'NYJ'}));
+  chk(noy.stats.r1.rush_yd===9 && /9 yd rush TD/.test(noy.title), 'no yardage on the board: the words say 9');
+  const fgy=app.read(LP({type:'Field Goal Good', yds:0, text:'E.McPherson 47 yard field goal is GOOD.', team:'CIN'}));
+  chk(/47 yd FG/.test(fgy.title), 'a field goal reads its distance from the words too');
 
   console.log('=== the panel ===');
   app.board({NYJ:G({}), CIN:G({eid:'E2'})});
