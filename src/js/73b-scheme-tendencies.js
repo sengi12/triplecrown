@@ -42,21 +42,35 @@ function _tnStamp(rank, n, label, neutral){
   if(lbl.indexOf('|')>=0){ const [hi, lo] = lbl.split('|'); if(rank > n/2){ lbl = lo; shown = n - rank + 1; } else lbl = hi; }
   return `<span class="tn-rank ${cls}">${_tnOrd(shown)} of ${n}${lbl?` ${escHtml(lbl)}`:''}</span>`;
 }
+// Every number on the tab is taggable into a player's notes (tap it → the picker), the
+// way the Red Zone / Regression / Scheme tabs' are. `meta` carries the tab's source,
+// context, team, relevance and the nav back here; the value stored is the text shown.
+function _tnTag(html, label, meta, value){
+  if(!meta || typeof noteWrapHtml!=='function') return html;
+  const v = value!=null ? String(value) : String(html).replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim();
+  return noteWrapHtml(html, Object.assign({label, value:v, statKey:label}, meta), 'note-tag-hit');
+}
+// the same, as attributes on a block (a bar) rather than a wrapping span
+function _tnTagAttrs(label, value, meta){
+  if(!meta || typeof noteTagAttrs!=='function') return '';
+  return noteTagAttrs(Object.assign({label, value:String(value), statKey:label}, meta));
+}
 // a run/pass bar with the league's pass rate as a black tick
-function _tnPassBar(pass, lg){
+function _tnPassBar(pass, lg, attrs){
   if(pass==null) return '<div class="tn-bar"></div>';
   const p=Math.max(0, Math.min(100, +pass)), r=100-p;
   const tick=(lg!=null) ? `<span class="lg" style="left:${(100-Math.max(0,Math.min(100,+lg))).toFixed(1)}%" title="league ${_tnPct(lg,0)} pass"></span>` : '';
-  return `<div class="tn-bar"><div class="run" style="width:${r.toFixed(1)}%">${r>=22?`RUN ${r.toFixed(0)}%`:''}</div><div class="pass" style="width:${p.toFixed(1)}%">${p>=22?`PASS ${p.toFixed(0)}%`:''}</div>${tick}</div>`;
+  return `<div class="tn-bar"${attrs||''}><div class="run" style="width:${r.toFixed(1)}%">${r>=22?`RUN ${r.toFixed(0)}%`:''}</div><div class="pass" style="width:${p.toFixed(1)}%">${p>=22?`PASS ${p.toFixed(0)}%`:''}</div>${tick}</div>`;
 }
 // a one-value bar (a blitz rate) with the league's as a tick
-function _tnFillBar(v, lg, scale){
+function _tnFillBar(v, lg, scale, attrs){
   if(v==null) return '<div class="tn-bar"></div>';
   const w=Math.max(0, Math.min(100, (+v)*(scale||1)));
   const tick=(lg!=null) ? `<span class="lg" style="left:${Math.max(0,Math.min(100,(+lg)*(scale||1))).toFixed(1)}%" title="league ${_tnPct(lg,0)}"></span>` : '';
-  return `<div class="tn-bar"><div class="fill" style="width:${w.toFixed(1)}%">${w>=18?_tnPct(v,0):''}</div>${tick}</div>`;
+  return `<div class="tn-bar"${attrs||''}><div class="fill" style="width:${w.toFixed(1)}%">${w>=18?_tnPct(v,0):''}</div>${tick}</div>`;
 }
-const _tnKv=(label, val, lgVal, extra)=>`<div class="stat"><span>${escHtml(label)}</span><b>${val}${lgVal!=null?`<small>lg ${lgVal}</small>`:''}${extra||''}</b></div>`;
+// a label/value line; with `meta` the value (and its rank, when there is one) are taggable
+const _tnKv=(label, val, lgVal, extra, meta)=>`<div class="stat"><span>${escHtml(label)}</span><b>${meta?_tnTag(val, label, meta):val}${lgVal!=null?`<small>lg ${lgVal}</small>`:''}${(extra&&meta)?_tnTag(extra, `${label} rank`, meta):(extra||'')}</b></div>`;
 // The Tendencies tab for the team in the modal's season (p.season).
 function _schemeRenderTendencies(p){
   const team=String((p && p.team) || (typeof schemeTeam!=='undefined' && schemeTeam) || '').toUpperCase();
@@ -71,60 +85,67 @@ function _schemeRenderTendencies(p){
     return `<div class="scheme-insights-wrap scheme-tend"><div class="scheme-insights-head"><span class="scheme-insights-pill">Tendencies${season?` · ${season}`:''}</span>${about}</div><div class="scheme-empty">${why}</div></div>`;
   }
   const lg=blk.league||{}; const O=t.offense||{}, LO=lg.offense||{}, D=t.defense||{}, LD=lg.defense||{}; const teams=blk.teams; const N=Object.keys(teams).length;
+  // Tag metadata: offense values reach the team's skill players; the defense's reach its
+  // D/ST and its defenders (IDP). Both navigate back to this tab from a note.
+  const tmName=(typeof teamDisplayName==='function') ? teamDisplayName(team) : team;
+  const ctx=`${tmName} tendencies · ${season}`;
+  const nav={type:'coaching', team, season, tab:'tendencies'};
+  const OM={source:'coaching_tendencies', context:ctx, team, relevance:'QB,RB,WR,TE', nav};
+  const DM={source:'coaching_tendencies', context:ctx, team, relevance:'DEF,IDP', nav};
   const g=O.guess||{};
   const rBeyond=_schemeTendRank(teams, x=>x.offense&&x.offense.guess&&x.offense.guess.beyond, 'desc');
   const guess=`<div class="tn-card"><div class="tn-h">How predictable is the call? <small>situation known</small></div>
-    <div class="tn-stamp"><b>${_tnPct(g.team,1)}</b><span class="lbl">predicted right</span>${_tnStamp(rBeyond.of(team), rBeyond.n, 'most predictable|least predictable', true)}</div>
-    <div class="tn-line">${_tnPct(g.situation,1)} from the situation alone · <b>${_tnPp(g.beyond)}</b> beyond it · naive ${_tnPct(g.naive,0)} (pass or run, whichever is commoner)</div></div>`;
+    <div class="tn-stamp"><b>${_tnTag(_tnPct(g.team,1), 'Predicted right', OM)}</b><span class="lbl">predicted right</span>${_tnTag(_tnStamp(rBeyond.of(team), rBeyond.n, 'most predictable|least predictable', true), 'Predictability rank', OM)}</div>
+    <div class="tn-line">${_tnTag(_tnPct(g.situation,1), 'Predicted from the situation alone', OM)} from the situation alone · <b>${_tnTag(_tnPp(g.beyond), 'Predictable beyond the situation', OM)}</b> beyond it · naive ${_tnTag(_tnPct(g.naive,0), 'Naive guess rate', OM)} (pass or run, whichever is commoner)</div></div>`;
   const sits=O.situations||{};
-  const sitRows=Object.keys(sits).filter(k=>sits[k] && sits[k].pass!=null).map(k=>{ const s=sits[k]; return `<div class="tn-row"><span class="lbl">${escHtml(k)}<small>${s.n}</small></span>${_tnPassBar(s.pass, s.lg)}<span class="epa">${_tnEpa(s.epa)}</span></div>`; }).join('');
+  const sitRows=Object.keys(sits).filter(k=>sits[k] && sits[k].pass!=null).map(k=>{ const s=sits[k]; return `<div class="tn-row"><span class="lbl">${escHtml(k)}<small>${s.n}</small></span>${_tnPassBar(s.pass, s.lg, _tnTagAttrs(`Pass rate · ${k}`, `${_tnPct(s.pass,0)} pass`, OM))}<span class="epa">${_tnTag(_tnEpa(s.epa), `EPA/play · ${k}`, OM)}</span></div>`; }).join('');
   const situations=`<div class="tn-card"><div class="tn-h">When we throw <small>run / pass by situation · tick = league · EPA/play</small></div>${sitRows||'<div class="scheme-empty">Not enough plays yet.</div>'}</div>`;
   const sq=O.sequencing||{}, lsq=LO.sequencing||{};
   const rStreak=_schemeTendRank(teams, x=>x.offense&&x.offense.sequencing&&x.offense.sequencing.streak_lift, 'desc');
   const rHold=_schemeTendRank(teams, x=>x.offense&&x.offense.sequencing&&x.offense.sequencing.formation_hold, 'desc');
   const sequencing=`<div class="tn-card"><div class="tn-h">Sequencing <small>within a drive</small></div><div class="tn-kv">
-    ${_tnKv('Pass after a pass', _tnPct(sq.pass_after_pass,0), _tnPct(lsq.pass_after_pass,0))}
-    ${_tnKv('Pass after a run', _tnPct(sq.pass_after_run,0), _tnPct(lsq.pass_after_run,0))}
-    ${_tnKv('Streak lift', _tnPp(sq.streak_lift), _tnPp(lsq.streak_lift), _tnStamp(rStreak.of(team), rStreak.n))}
-    ${_tnKv('Formation hold', _tnPct(sq.formation_hold,0), _tnPct(lsq.formation_hold,0), _tnStamp(rHold.of(team), rHold.n))}
-    ${_tnKv('No-huddle', _tnPct(sq.no_huddle,0), _tnPct(lsq.no_huddle,0))}
+    ${_tnKv('Pass after a pass', _tnPct(sq.pass_after_pass,0), _tnPct(lsq.pass_after_pass,0), '', OM)}
+    ${_tnKv('Pass after a run', _tnPct(sq.pass_after_run,0), _tnPct(lsq.pass_after_run,0), '', OM)}
+    ${_tnKv('Streak lift', _tnPp(sq.streak_lift), _tnPp(lsq.streak_lift), _tnStamp(rStreak.of(team), rStreak.n), OM)}
+    ${_tnKv('Formation hold', _tnPct(sq.formation_hold,0), _tnPct(lsq.formation_hold,0), _tnStamp(rHold.of(team), rHold.n), OM)}
+    ${_tnKv('No-huddle', _tnPct(sq.no_huddle,0), _tnPct(lsq.no_huddle,0), '', OM)}
   </div></div>`;
   const pa=O.play_action||{}, lpa=LO.play_action||{};
   const rPa=_schemeTendRank(teams, x=>x.offense&&x.offense.play_action&&x.offense.play_action.rate_early, 'desc');
   const playAction=`<div class="tn-card"><div class="tn-h">Play action <small>the setup test: after a run vs cold</small></div><div class="tn-kv">
-    ${_tnKv('Rate, early downs', _tnPct(pa.rate_early,0), _tnPct(lpa.rate_early,0), _tnStamp(rPa.of(team), rPa.n))}
-    ${_tnKv('EPA with', _tnEpa(pa.epa)+`<small>${pa.n||0}</small>`, _tnEpa(lpa.epa))}
-    ${_tnKv('EPA without', _tnEpa(pa.epa_without), _tnEpa(lpa.epa_without))}
-    ${_tnKv('After a run', _tnEpa(pa.epa_after_run)+`<small>${pa.n_after_run||0}</small>`, _tnEpa(lpa.epa_after_run))}
-    ${_tnKv('Cold', _tnEpa(pa.epa_cold)+`<small>${pa.n_cold||0}</small>`, _tnEpa(lpa.epa_cold))}
+    ${_tnKv('Rate, early downs', _tnPct(pa.rate_early,0), _tnPct(lpa.rate_early,0), _tnStamp(rPa.of(team), rPa.n), OM)}
+    ${_tnKv('EPA with', _tnEpa(pa.epa)+`<small>${pa.n||0}</small>`, _tnEpa(lpa.epa), '', OM)}
+    ${_tnKv('EPA without', _tnEpa(pa.epa_without), _tnEpa(lpa.epa_without), '', OM)}
+    ${_tnKv('After a run', _tnEpa(pa.epa_after_run)+`<small>${pa.n_after_run||0}</small>`, _tnEpa(lpa.epa_after_run), '', OM)}
+    ${_tnKv('Cold', _tnEpa(pa.epa_cold)+`<small>${pa.n_cold||0}</small>`, _tnEpa(lpa.epa_cold), '', OM)}
   </div></div>`;
   const mo=O.motion||{}, lmo=LO.motion||{};
   const rMo=_schemeTendRank(teams, x=>x.offense&&x.offense.motion&&x.offense.motion.rate, 'desc');
   const motion=`<div class="tn-card"><div class="tn-h">Motion <small>pre-snap, FTN</small></div><div class="tn-kv">
-    ${_tnKv('Motion rate', _tnPct(mo.rate,0), _tnPct(lmo.rate,0), _tnStamp(rMo.of(team), rMo.n))}
-    ${_tnKv('EPA with', _tnEpa(mo.epa), _tnEpa(lmo.epa))}
-    ${_tnKv('EPA without', _tnEpa(mo.epa_without), _tnEpa(lmo.epa_without))}
-    ${_tnKv('Passes with', _tnEpa(mo.epa_pass), _tnEpa(lmo.epa_pass))}
-    ${_tnKv('Passes without', _tnEpa(mo.epa_pass_without), _tnEpa(lmo.epa_pass_without))}
+    ${_tnKv('Motion rate', _tnPct(mo.rate,0), _tnPct(lmo.rate,0), _tnStamp(rMo.of(team), rMo.n), OM)}
+    ${_tnKv('EPA with', _tnEpa(mo.epa), _tnEpa(lmo.epa), '', OM)}
+    ${_tnKv('EPA without', _tnEpa(mo.epa_without), _tnEpa(lmo.epa_without), '', OM)}
+    ${_tnKv('Passes with', _tnEpa(mo.epa_pass), _tnEpa(lmo.epa_pass), '', OM)}
+    ${_tnKv('Passes without', _tnEpa(mo.epa_pass_without), _tnEpa(lmo.epa_pass_without), '', OM)}
   </div></div>`;
   const bz=D.blitz||{}, lbz=LD.blitz||{}, bx=D.box||{}, lbx=LD.box||{};
   const rBlitz=_schemeTendRank(teams, x=>x.defense&&x.defense.blitz&&x.defense.blitz.rate, 'desc');
   const rStreakD=_schemeTendRank(teams, x=>x.defense&&x.defense.blitz&&x.defense.blitz.streak_lift, 'desc');
   const bySit=['1st down','3rd & long','Red zone','Trailing 9+','Leading 9+'].filter(k=>bz[k] && bz[k].rate!=null)
-    .map(k=>`<div class="tn-row"><span class="lbl">${escHtml(k)}<small>${bz[k].n}</small></span>${_tnFillBar(bz[k].rate, lbz[k]&&lbz[k].rate, 1.6)}<span class="epa"></span></div>`).join('');
+    .map(k=>`<div class="tn-row"><span class="lbl">${escHtml(k)}<small>${bz[k].n}</small></span>${_tnFillBar(bz[k].rate, lbz[k]&&lbz[k].rate, 1.6, _tnTagAttrs(`Blitz rate · ${k}`, _tnPct(bz[k].rate,0), DM))}<span class="epa"></span></div>`).join('');
   const defense=`<div class="tn-card"><div class="tn-h">The defense: blitz habits <small>5+ rushers, FTN</small></div>
-    <div class="tn-stamp"><b>${_tnPct(bz.rate,0)}</b><span class="lbl">blitz rate</span>${_tnStamp(rBlitz.of(team), rBlitz.n)}</div>
+    <div class="tn-stamp"><b>${_tnTag(_tnPct(bz.rate,0), 'Blitz rate', DM)}</b><span class="lbl">blitz rate</span>${_tnTag(_tnStamp(rBlitz.of(team), rBlitz.n), 'Blitz rate rank', DM)}</div>
     ${bySit}
     <div class="tn-kv" style="margin-top:6px">
-      ${_tnKv('After a blitz', _tnPct(bz.after_blitz,0)+`<small>${bz.n_after_blitz||0}</small>`, _tnPct(lbz.after_blitz,0))}
-      ${_tnKv('After none', _tnPct(bz.after_none,0)+`<small>${bz.n_after_none||0}</small>`, _tnPct(lbz.after_none,0))}
-      ${_tnKv('Streak lift', _tnPp(bz.streak_lift), _tnPp(lbz.streak_lift), _tnStamp(rStreakD.of(team), rStreakD.n, 'hottest|coldest'))}
-      ${_tnKv('Pressure with a blitz', _tnPct(bz.pressure_with,0), _tnPct(lbz.pressure_with,0))}
-      ${_tnKv('Pressure without', _tnPct(bz.pressure_without,0), _tnPct(lbz.pressure_without,0))}
-      ${_tnKv('EPA allowed, blitz', _tnEpa(bz.epa_with), _tnEpa(lbz.epa_with))}
-      ${_tnKv('EPA allowed, none', _tnEpa(bz.epa_without), _tnEpa(lbz.epa_without))}
-      ${_tnKv('Light box vs run', _tnPct(bx.light,0), _tnPct(lbx.light,0))}
-      ${_tnKv('Stacked box vs run', _tnPct(bx.heavy,0), _tnPct(lbx.heavy,0))}
+      ${_tnKv('After a blitz', _tnPct(bz.after_blitz,0)+`<small>${bz.n_after_blitz||0}</small>`, _tnPct(lbz.after_blitz,0), '', DM)}
+      ${_tnKv('After none', _tnPct(bz.after_none,0)+`<small>${bz.n_after_none||0}</small>`, _tnPct(lbz.after_none,0), '', DM)}
+      ${_tnKv('Streak lift', _tnPp(bz.streak_lift), _tnPp(lbz.streak_lift), _tnStamp(rStreakD.of(team), rStreakD.n, 'hottest|coldest'), DM)}
+      ${_tnKv('Pressure with a blitz', _tnPct(bz.pressure_with,0), _tnPct(lbz.pressure_with,0), '', DM)}
+      ${_tnKv('Pressure without', _tnPct(bz.pressure_without,0), _tnPct(lbz.pressure_without,0), '', DM)}
+      ${_tnKv('EPA allowed, blitz', _tnEpa(bz.epa_with), _tnEpa(lbz.epa_with), '', DM)}
+      ${_tnKv('EPA allowed, none', _tnEpa(bz.epa_without), _tnEpa(lbz.epa_without), '', DM)}
+      ${_tnKv('Light box vs run', _tnPct(bx.light,0), _tnPct(lbx.light,0), '', DM)}
+      ${_tnKv('Stacked box vs run', _tnPct(bx.heavy,0), _tnPct(lbx.heavy,0), '', DM)}
     </div></div>`;
   const ftn=blk.has_ftn===false ? `<span class="scheme-insights-pill warn">FTN pending${(typeof _schemeInfoTip==='function') ? _schemeInfoTip('FTN charting pending', 'FTN charting has not posted for this season yet: play action, motion, formation hold and the blitz figures wait for it; the situations and predictability are from the play-by-play.') : ''}</span>` : '';
   const head=`<div class="scheme-insights-head"><span><span class="scheme-insights-pill${live?' neutral':''}">Tendencies · ${season}${live?' · live':''}</span>${about}${ftn}</span><span class="scheme-insights-sample">${Number(O.plays||0).toLocaleString()} plays · ${N} teams ranked</span></div>`;

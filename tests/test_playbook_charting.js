@@ -43,6 +43,11 @@ chk(/"charting_only":true/.test(out) && /2026 · Charted sets · routes estimate
 chk(/if\(rf\.list && rf\.list\.length\)\{/.test(tpl) && /p\.y-14/.test(tpl), 'pass mode prints the name and skips the route text when the list is empty; the QB hint sits above the QB');
 const blocks=[...out.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]);
 chk(blocks.length>=2 && blocks.every(b=>{ try{ new Function(b); return true; }catch(e){ console.log('    parse error:', e.message); return false; } }), 'every script block of the rendered sheet still parses');
+// Every number on a set card is a tag: the run/pass bar's two rates, and the Snaps /
+// Success / EPA cells stay tags after the bar changes the look (they used to be rewritten as
+// plain text, which silently dropped their tags).
+chk(/noteWrap\('Run rate'/.test(tpl) && /noteWrap\('Pass rate'/.test(tpl) && !/<b>RUN \$\{/.test(tpl), 'the run/pass bar labels are taggable');
+chk(/snv\.innerHTML=noteWrap\(lbl/.test(tpl) && /scv\.innerHTML=noteWrap\(scLbl/.test(tpl) && /epv\.innerHTML=noteWrap\(epLbl/.test(tpl) && !/snv\.textContent=/.test(tpl) && !/scv\.textContent=/.test(tpl), 'switching the bar to runs or passes rebuilds Snaps / Success / EPA as tags, with the mode in the label');
 const src=fs.readFileSync(path.join(__dirname,'..','src/js/73-coaching-scheme.js'),'utf8');
 chk(/charted sets \$\{_schemeInfoTip\('Charted sets'/.test(src) && /\$\{missingNote\}\$\{chartNote\}/.test(src), 'the modal subtitle says charted sets with the explanation behind an info button');
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);

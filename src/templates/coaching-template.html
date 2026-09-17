@@ -279,7 +279,7 @@ function draw(){
       <div class="fieldbox">${fieldSvg(g,'none',{},0,0)}</div>
       <div class="stats"><div class="stat"><span id="snl${i}">Snaps</span><b id="snv${i}">${noteWrap('Snaps', String(g.n), `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,RB,WR,TE', String(g.n))}</b></div><div class="stat"><span>Success</span><b id="scv${i}">${noteWrap('Success Rate', `${g.succ}%`, `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,RB,WR,TE', `${g.succ}%`)}</b></div>
       <div class="stat"><span>EPA/play</span><b id="epv${i}" class="${g.epa>=.05?'hl-g':(g.epa<=-.05?'hl-p':'')}">${noteWrap('EPA/play', `${g.epa>=0?'+':''}${g.epa.toFixed(2)}`, `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,RB,WR,TE', `${g.epa>=0?'+':''}${g.epa.toFixed(2)}`)}</b></div><div class="stat"><span>Share</span><b>${noteWrap('Formation Share', `${g.share}%`, `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,RB,WR,TE', `${g.share}%`)}</b></div></div>
-      <div class="rp" data-i="${i}"><div class="run seg" data-mode="run" style="width:${(100-Number(g.pass_rate||0)).toFixed(2)}%"><b>RUN ${(100-Number(g.pass_rate||0)).toFixed(2)}%</b></div><div class="pass seg" data-mode="pass" style="width:${Number(g.pass_rate||0).toFixed(2)}%"><b>PASS ${Number(g.pass_rate||0).toFixed(2)}%</b></div></div>
+      <div class="rp" data-i="${i}"><div class="run seg" data-mode="run" style="width:${(100-Number(g.pass_rate||0)).toFixed(2)}%"><b>${noteWrap('Run rate', (100-Number(g.pass_rate||0)).toFixed(2)+'%', `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'RB,QB', 'RUN '+(100-Number(g.pass_rate||0)).toFixed(2)+'%')}</b></div><div class="pass seg" data-mode="pass" style="width:${Number(g.pass_rate||0).toFixed(2)}%"><b>${noteWrap('Pass rate', Number(g.pass_rate||0).toFixed(2)+'%', `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,WR,TE,RB', 'PASS '+Number(g.pass_rate||0).toFixed(2)+'%')}</b></div></div>
       <div class="hintbar" id="hint${i}">${FV.charting_only?'tap label ⇄ change look · click bar ▸ runs / routes (est.)':'tap label ⇄ change look · click bar ▸ runs / routes'}</div></div>`;});
   grid.innerHTML=html;
   function setStats(i,mode,g){
@@ -289,8 +289,11 @@ function draw(){
     else if(mode=='pass'){ n=g.np;sc=g.sp;ep=g.ep;lbl='Pass snaps'; }
     const prd=document.getElementById('prd'+i);
     if(prd) prd.innerHTML=prodLine(g, mode==='none'?null:mode);
-    snl.textContent=lbl; snv.textContent=n; scv.textContent=sc+'%';
-    epv.textContent=(ep>=0?'+':'')+ep.toFixed(2);
+    // rebuilt as tags, not plain text: the numbers stay taggable after the bar changes the look
+    const ctx=`${SEASON} playbook · ${g.p} personnel · ${g.name}`, epTxt=(ep>=0?'+':'')+ep.toFixed(2);
+    const scLbl=mode=='run'?'Run success rate':(mode=='pass'?'Pass success rate':'Success Rate'), epLbl=mode=='run'?'Run EPA/play':(mode=='pass'?'Pass EPA/play':'EPA/play');
+    snl.textContent=lbl; snv.innerHTML=noteWrap(lbl, String(n), ctx, 'QB,RB,WR,TE', String(n)); scv.innerHTML=noteWrap(scLbl, sc+'%', ctx, 'QB,RB,WR,TE', sc+'%');
+    epv.innerHTML=noteWrap(epLbl, epTxt, ctx, 'QB,RB,WR,TE', epTxt);
     epv.className = ep>=.05?'hl-g':(ep<=-.05?'hl-p':'');
   }
   document.querySelectorAll('.seg').forEach(seg=>{
