@@ -31,7 +31,8 @@ function _tmPlays(node, selWk, legend){
       const ri=(p.length>6 && p[6]!=null) ? +p[6] : null;
       out.push({wk:g.wk, opp:g.opp||'', ay:Math.round(+p[0]||0), side:(p[1]==null?1:+p[1]), res:+p[2]||0,
                 yac:Math.round(+p[3]||0), yl:(p[4]==null?null:+p[4]), q:(p[5]==null?null:+p[5]),
-                route:(legend && ri!=null && legend[ri]) ? String(legend[ri]) : null});
+                route:(legend && ri!=null && legend[ri]) ? String(legend[ri]) : null,
+                sg:(p.length>7 && p[7]!=null)?+p[7]:null, oop:(p.length>8 && p[8]!=null)?+p[8]:null});
     }
   }
   return out;
@@ -104,6 +105,7 @@ function targetMapSVG(plays, title, sub, tag){
     parts.push(`<text x="${W/2}" y="${(yTop+yBot)/2}" fill="#9aa0a6" font-size="16" text-anchor="middle">No targets</text></svg>`);
     return parts.join('');
   }
+  const labels=[];   // the tags beside marks (TD, +N off the top): laid out last so none overlap
   // Marks: least eventful underneath (incompletions), catches, then scores on top.
   const order=plays.map((p,i)=>i).sort((a,b)=>{ const w=r=>(r===2?3:(r===1?2:(r===3?1:0))); return w(plays[a].res)-w(plays[b].res); });
   // A season's worth of targets is a hairball if every route is drawn at game weight:
@@ -120,40 +122,68 @@ function targetMapSVG(plays, title, sub, tag){
     const endCap = (p.yl!=null) ? Math.min(endYd, p.yl) : endYd;     // the goal line ends every tail
     const y2=yOf(endCap), x2=laneX(y2, p.side, frac);
     const col = caught ? '#ffffff' : (p.res===3 ? '#d33b2f' : '#9aa0a6');
-    const tip=`WK ${p.wk}${p.opp?' · '+p.opp:''}${p.q?` · Q${p.q}`:''} · ${_TM_SIDES[p.side]||'Middle'}, ${p.ay>=0?'+':''}${p.ay} air${p.route?` · ${_tmRouteLabel(p.route)}`:''} · ${_TM_RES[p.res]||'Target'}${p.to?` → ${p.to}`:''}${caught?` · ${p.yac} YAC (${p.ay+p.yac} yds)`:''}`;
+    const tip=`WK ${p.wk}${p.opp?' · '+p.opp:''}${p.q?` · Q${p.q}`:''} · ${_TM_SIDES[p.side]||'Middle'}, ${p.ay>=0?'+':''}${p.ay} air${p.route?` · ${_tmRouteLabel(p.route)}`:''} · ${_TM_RES[p.res]||'Target'}${p.to?` → ${p.to}`:''}${caught?` · ${p.yac} YAC (${p.ay+p.yac} yds)`:''}${p.oop===1?' · out of the pocket':''}`;
     const attrs=tag?tag({label:`Target · WK ${p.wk}`, value:tip, statKey:'target'}):'';
     parts.push(`<g ${attrs}><title>${escHtml(tip)}</title>`);
     const routeD = p.route ? _tmRoutePath(p.route, p.side, x0, losY, x1, y1, pxPerYd) : null;
     if(routeD) parts.push(`<path d="${routeD}" fill="none" stroke="${col}" stroke-width="${routeW}" stroke-linejoin="round" stroke-linecap="round" opacity="${caught?routeOp:routeOp*0.75}"/>`);
     else if(p.res!==2) parts.push(`<line x1="${f1(x0)}" y1="${f1(losY)}" x2="${f1(x1)}" y2="${f1(y1)}" stroke="${col}" stroke-width="1.5" stroke-dasharray="3 4" opacity="0.32"/>`);
     if(p.res===2){
-      // The scoring throw: an arc from where the passer stands (centred, six yards deep)
-      // to the recorded catch point — the ball's flight, drawn NGS-style, not tracked.
-      const qx=(left(losY)+right(losY))/2, qy=yOf(-6);
-      const h=Math.max(40, Math.abs(qy-y1)*0.45);
-      parts.push(`<path d="M${f1(qx)},${f1(qy)} Q${f1((qx+x1)/2)},${f1(Math.min(qy,y1)-h)} ${f1(x1)},${f1(y1)}" fill="none" stroke="#2f6fe4" stroke-width="${many?3:4}" stroke-linecap="round" opacity="0.9"/>`);
+      // The scoring throw, drawn NGS-style: the ball leaves the passer's spot and comes
+      // down onto the recorded catch point — a lob whose height grows with the distance.
+      // The spot is what the data knows: centred behind the line, a touch deeper from
+      // shotgun (FTN's formation, pbp's flag before FTN lands), and pulled toward the
+      // side he threw to when FTN charted him out of the pocket. Not tracked.
+      const fw=right(losY)-left(losY);
+      const qx=(left(losY)+right(losY))/2 + (p.oop===1 ? (p.side===0?-1:(p.side===2?1:0))*fw*0.22 : 0);
+      const qy=yOf(p.sg===1 ? -6.5 : (p.sg===2 ? -6 : -5.5));
+      // height grows with the throw, capped so the crown of the lob stays inside the drawing
+      const h=Math.min(Math.max(28, Math.hypot(x1-qx, y1-qy)*0.45), Math.max(28, (0.5*(qy+y1)-(yTop+10))/0.75));
+      parts.push(`<path d="M${f1(qx)},${f1(qy)} C${f1(qx)},${f1(qy-h)} ${f1(x1)},${f1(y1-h)} ${f1(x1)},${f1(y1)}" fill="none" stroke="#2f6fe4" stroke-width="${many?3:4}" stroke-linecap="round" opacity="0.9"/>`);
     }
     if(caught && p.yac>0){
       parts.push(`<line x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(x2)}" y2="${f1(y2)}" stroke="#39c15a" stroke-width="${tailW}" stroke-linecap="round"/>`);
       parts.push(`<circle cx="${f1(x2)}" cy="${f1(y2)}" r="${r0-3}" fill="#39c15a"/>`);
-      if(endYd>YMAX && p.res!==2) parts.push(`<text x="${f1(x2+16)}" y="${f1(y2+4)}" fill="#39c15a" font-size="11" font-weight="800">+${endYd}</text>`);
+      if(endYd>YMAX && p.res!==2) labels.push({x:x2+16, y:y2+4, mx:x2, my:y2, text:`+${endYd}`, fill:'#39c15a', td:false});
     }
     if(p.res===2){
       // The score, said twice: the ring at the end of the play and the tag beside it (a
       // play that runs off the top of the drawing carries its total in the same tag).
       parts.push(`<circle cx="${f1(x2)}" cy="${f1(y2)}" r="${r0+5}" fill="none" stroke="#2f6fe4" stroke-width="3.5"/>`);
-      parts.push(`<text class="tm-td" x="${f1(x2+r0+9)}" y="${f1(y2+4.5)}" fill="#ffffff" stroke="#101214" stroke-width="3.5" paint-order="stroke" font-size="12" font-weight="900" letter-spacing=".04em">TD${endYd>YMAX?` +${endYd}`:''}</text>`);
+      labels.push({x:x2+r0+9, y:y2+4.5, mx:x2, my:y2, text:`TD${endYd>YMAX?` +${endYd}`:''}`, fill:'#ffffff', td:true});
     }
     if(caught) parts.push(`<circle cx="${f1(x1)}" cy="${f1(y1)}" r="${r0}" fill="#ffffff" stroke="#101214" stroke-width="1.5"/>`);
     else if(p.res===3){
       parts.push(`<circle cx="${f1(x1)}" cy="${f1(y1)}" r="${r0}" fill="#101214" stroke="#d33b2f" stroke-width="2.5"/>`);
       parts.push(`<path d="M${f1(x1-3)},${f1(y1-3)} L${f1(x1+3)},${f1(y1+3)} M${f1(x1+3)},${f1(y1-3)} L${f1(x1-3)},${f1(y1+3)}" stroke="#d33b2f" stroke-width="2"/>`);
     } else parts.push(`<circle cx="${f1(x1)}" cy="${f1(y1)}" r="${r0}" fill="#101214" stroke="#9aa0a6" stroke-width="2.5"/>`);
-    if(!caught && p.ay>YMAX) parts.push(`<text x="${f1(x1+12)}" y="${f1(y1+4)}" fill="#9aa0a6" font-size="11" font-weight="800">+${p.ay}</text>`);
+    // a ball that runs off the top with nothing after the catch (or no catch) is tagged at its dot
+    if(p.res!==2 && p.ay>YMAX && !(caught && p.yac>0)) labels.push({x:x1+12, y:y1+4, mx:x1, my:y1, text:`+${p.ay}`, fill:caught?'#ffffff':'#9aa0a6', td:false});
     parts.push('</g>');
   }
+  parts.push(_tmLayoutLabels(labels));
   parts.push('</svg>');
   return parts.join('');
+}
+// Tags beside marks, placed so they never sit on each other: left to right, a tag that
+// would overlap one already placed steps down a line (the deep balls that all run off the
+// top of the drawing land in a tidy column instead of a pile).
+function _tmLayoutLabels(labels){
+  const f1=x=>(+x).toFixed(1);
+  // every tagged mark is an obstacle too, so a tag never rides a neighbour's ring
+  const placed=labels.map(L=>({x:L.mx-13, w:26, y:L.my+13, h:26, own:L})), out=[];
+  labels.sort((a,b)=>a.x-b.x || a.y-b.y);
+  for(const L of labels){
+    const w=L.text.length*(L.td?7.6:6.6)+4, h=13;
+    let y=L.y, guard=0;
+    const hits=()=>placed.some(b=>b.own!==L && !(L.x+w<b.x || L.x>b.x+b.w || y-h>b.y || y<b.y-b.h));
+    while(hits() && guard++<12) y+=14;
+    placed.push({x:L.x, w, y, h});
+    out.push(L.td
+      ? `<text class="tm-td" x="${f1(L.x)}" y="${f1(y)}" fill="${L.fill}" stroke="#101214" stroke-width="3.5" paint-order="stroke" font-size="12" font-weight="900" letter-spacing=".04em">${L.text}</text>`
+      : `<text x="${f1(L.x)}" y="${f1(y)}" fill="${L.fill}" stroke="#101214" stroke-width="3" paint-order="stroke" font-size="11" font-weight="800">${L.text}</text>`);
+  }
+  return out.join('');
 }
 function targetMapLegend(charted, kind){
   return `<div class="tm-legend">
@@ -188,7 +218,8 @@ function _qbMapPlays(node, selWk){
       const ri=(p.length>6 && p[6]!=null) ? +p[6] : null;
       out.push({wk:g.wk, opp:g.opp||'', ay:Math.round(+p[0]||0), side:(p[1]==null?1:+p[1]), res:+p[2]||0,
                 yac:Math.round(+p[3]||0), yl:(p[4]==null?null:+p[4]), q:(p[5]==null?null:+p[5]),
-                route:null, to:(ri!=null && rcv[ri]) ? String(rcv[ri]) : null});
+                route:null, to:(ri!=null && rcv[ri]) ? String(rcv[ri]) : null,
+                sg:(p.length>7 && p[7]!=null)?+p[7]:null, oop:(p.length>8 && p[8]!=null)?+p[8]:null});
     }
   }
   return out;
