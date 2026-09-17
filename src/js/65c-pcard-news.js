@@ -1,21 +1,22 @@
 // ── Latest news: the player's newest notes, as the Sleeper app shows them ─────
 // Sleeper serves each player's news feed (Rotowire and FantasyPros blurbs: a headline, a
 // one-line description, an analysis paragraph, the source article) from a public, CORS-open
-// endpoint. The card shows the newest three as collapsed rows — headline, how long ago, the
-// source — and opens one on tap. Fetched once per card open, kept ten minutes; a team's
-// D/ST card (a non-numeric id) has none.
+// endpoint. It is the card's News tab — its own tab, so the card still opens on the stats
+// and the notes never crowd the hero — shown only once the feed has notes for him: the
+// fetch starts when the tab row first renders, the row repaints when the feed lands.
+// Fetched once per card open, kept ten minutes; a team's D/ST card (a non-numeric id) has none.
 let _pcardNews={};   // pid → {at, items, pending}
 const PCARD_NEWS_TTL=10*60*1000;
-const PCARD_NEWS_N=3;
+const PCARD_NEWS_N=5;
 const PCARD_NEWS_SOURCES={rotowire:'Rotowire', fantasy_pros:'FantasyPros', fantasypros:'FantasyPros', sleeper:'Sleeper'};
 
 function pcardNewsAgo(ms, now){
   const t=Number(ms||0); if(!t) return '';
   const s=((now!=null?now:Date.now())-t)/1000;
   if(!(s>=0)) return 'now';
-  if(s<3600) return `${Math.max(1,Math.round(s/60))}m`;
-  if(s<86400) return `${Math.round(s/3600)}h`;
-  if(s<86400*14) return `${Math.round(s/86400)}d`;
+  if(s<3600) return `${Math.max(1,Math.round(s/60))}m ago`;
+  if(s<86400) return `${Math.round(s/3600)}h ago`;
+  if(s<86400*14) return `${Math.round(s/86400)}d ago`;
   try{ return new Date(t).toLocaleDateString(undefined,{month:'short',day:'numeric'}); }catch(e){ return ''; }
 }
 function pcardNewsSource(s){
@@ -47,21 +48,34 @@ function pcardNewsLoad(pid){
   _pcardNews[id]={at:c?c.at:0, items:c?c.items:null, pending:p};
   return p;
 }
-function pcardNewsBodyHTML(items){
-  if(!items || !items.length) return '';
-  const row=(it)=>`<details class="pcard-news-it"><summary><span class="pcard-news-h">${escHtml(it.title)}</span><span class="pcard-news-m">${escHtml(pcardNewsAgo(it.at))}${it.source?` · ${escHtml(it.source)}`:''}</span></summary>
-    <div class="pcard-news-b">${it.desc?`<p>${escHtml(it.desc)}</p>`:''}${it.analysis?`<p class="pcard-news-a">${escHtml(it.analysis)}</p>`:''}${it.url?`<a href="${escAttr(it.url)}" target="_blank" rel="noopener">source ↗</a>`:''}</div></details>`;
-  return `<div class="pcard-news-lbl">News</div>${items.map(row).join('')}`;
-}
-// The band: empty (and hidden) until the feed lands, then the rows; nothing for a D/ST.
-function pcardNewsHTML(pid){
-  const id=String(pid||''); if(!/^\d+$/.test(id)) return '';
+// Does the card get a News tab? Yes once the feed has notes; asking starts the fetch.
+function pcardNewsAvailable(pid){
+  const id=String(pid||''); if(!/^\d+$/.test(id)) return false;
+  const c=_pcardNews[id];
+  if(!c || c.items===null || (Date.now()-c.at)>=PCARD_NEWS_TTL) pcardNewsLoad(id);
   const items=pcardNewsItems(id);
-  if(items===null || (_pcardNews[id] && (Date.now()-_pcardNews[id].at)>=PCARD_NEWS_TTL)) pcardNewsLoad(id);
-  return `<div class="pcard-news" id="pcardNews">${pcardNewsBodyHTML(items||[])}</div>`;
+  return !!(items && items.length);
 }
+// The tab: every note in full — headline, when and where from, the description, the
+// analysis, a link to the source article.
+function renderPcardNews(pid){
+  const items=pcardNewsItems(pid)||[];
+  if(!items.length) return `<div class="pcard-news-empty">No news for him yet.</div>`;
+  const row=(it)=>`<article class="pcard-news-it">
+    <div class="pcard-news-h">${escHtml(it.title)}</div>
+    <div class="pcard-news-m">${escHtml(pcardNewsAgo(it.at))}${it.source?`${it.at?' · ':''}via ${escHtml(it.source)}`:''}</div>
+    ${it.desc?`<p class="pcard-news-d">${escHtml(it.desc)}</p>`:''}
+    ${it.analysis?`<p class="pcard-news-a">${escHtml(it.analysis)}</p>`:''}
+    ${it.url?`<a class="pcard-news-src" href="${escAttr(it.url)}" target="_blank" rel="noopener">source ↗</a>`:''}
+  </article>`;
+  return `<div class="pcard-news">${items.map(row).join('')}</div>`;
+}
+// The feed landed: the tab row gains (or keeps) its News tab; an open News tab refills.
 function _pcardNewsRepaint(pid){
   if(typeof pcardState==='undefined' || !pcardState || String(pcardState.pid)!==String(pid)) return;
-  const el=(typeof document!=='undefined') ? document.getElementById('pcardNews') : null; if(!el) return;
-  el.innerHTML=pcardNewsBodyHTML(pcardNewsItems(pid)||[]);
+  if(typeof renderPcardStatTabs==='function') renderPcardStatTabs();
+  if(typeof pcardStatsMode!=='undefined' && pcardStatsMode==='news'){
+    const body=(typeof document!=='undefined') ? document.getElementById('pcardBody') : null;
+    if(body) body.innerHTML=renderPcardNews(pid);
+  }
 }

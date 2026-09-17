@@ -517,7 +517,6 @@ function renderPlayerCardShell(pid, pos, team){
         <button class="pcard-close" onclick="closePlayerCard()" aria-label="Close">✕</button>
       </div>
       ${contractBand}
-      ${(typeof pcardNewsHTML==='function')?pcardNewsHTML(pid):''}
       <div class="pcard-tabs" id="pcardTabs"></div>
       <div class="pcard-body" id="pcardBody">
         <div class="pcard-loading">Loading game logs…</div>
@@ -692,7 +691,10 @@ function renderPcardStatTabs(){
     ? tab('rbfan','Rushing Fan') : '';
   const olTab = (pcardState.isOl && typeof pcardOlAvailable==='function' && pcardOlAvailable(pcardState.pid))
     ? tab('olgrades','OL Grades') : '';
-  el.innerHTML = tab('pro','NFL') + tab('college','College') + passingTab + qbOlTab + rbFanTab + olTab + routesTab;
+  // News: only once Sleeper's feed has notes for him (the fetch starts here; the tab row
+  // repaints itself when the feed lands), so the card still opens on the stats.
+  const newsTab = (typeof pcardNewsAvailable==='function' && pcardNewsAvailable(pcardState.pid)) ? tab('news','News') : '';
+  el.innerHTML = tab('pro','NFL') + tab('college','College') + passingTab + qbOlTab + rbFanTab + olTab + routesTab + newsTab;
 }
 // Switch the card's stat source and reload the body from the matching feed.
 function setPcardStatsMode(mode){
@@ -725,6 +727,10 @@ function pcardLoadStats(mode){
   }
   if(mode==='routes'){
     body.innerHTML = renderPcardRoutes(pid);
+    return;
+  }
+  if(mode==='news'){
+    body.innerHTML = (typeof renderPcardNews==='function') ? renderPcardNews(pid) : '';
     return;
   }
   if(mode==='notes'){
