@@ -137,9 +137,16 @@ function targetMapSVG(plays, title, sub, tag){
       const fw=right(losY)-left(losY);
       const qx=(left(losY)+right(losY))/2 + (p.oop===1 ? (p.side===0?-1:(p.side===2?1:0))*fw*0.22 : 0);
       const qy=yOf(p.sg===1 ? -6.5 : (p.sg===2 ? -6 : -5.5));
-      // height grows with the throw, capped so the crown of the lob stays inside the drawing
-      const h=Math.min(Math.max(28, Math.hypot(x1-qx, y1-qy)*0.45), Math.max(28, (0.5*(qy+y1)-(yTop+10))/0.75));
-      parts.push(`<path d="M${f1(qx)},${f1(qy)} C${f1(qx)},${f1(qy-h)} ${f1(x1)},${f1(y1-h)} ${f1(x1)},${f1(y1)}" fill="none" stroke="#2f6fe4" stroke-width="${many?3:4}" stroke-linecap="round" opacity="0.9"/>`);
+      // The ball climbs out of the passer's hand and settles onto the catch point — it never
+      // carries past the dot (the tail after the catch is the receiver's, not the ball's).
+      // Launch height grows with the throw, capped inside the drawing; the arrival control
+      // sits a quarter of the way back toward the passer, so the curve lands ON the dot.
+      const dist=Math.hypot(x1-qx, y1-qy);
+      const h=Math.min(Math.max(28, dist*0.45), Math.max(28, (0.5*(qy+y1)-(yTop+10))/0.75));
+      // a throw straight downfield would be a straight line seen from above — a slight bow
+      // toward the nearer sideline keeps it reading as a lob, and it still lands on the dot
+      const bow=Math.min(22, dist*0.08)*(x1>=qx?1:-1);
+      parts.push(`<path d="M${f1(qx)},${f1(qy)} C${f1(qx+bow)},${f1(qy-h)} ${f1(x1+(qx-x1)*0.25+bow)},${f1(y1+(qy-y1)*0.25)} ${f1(x1)},${f1(y1)}" fill="none" stroke="#2f6fe4" stroke-width="${many?3:4}" stroke-linecap="round" opacity="0.9"/>`);
     }
     if(caught && p.yac>0){
       parts.push(`<line x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(x2)}" y2="${f1(y2)}" stroke="#39c15a" stroke-width="${tailW}" stroke-linecap="round"/>`);

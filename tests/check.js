@@ -11100,9 +11100,16 @@ function targetMapSVG(plays, title, sub, tag){
       const fw=right(losY)-left(losY);
       const qx=(left(losY)+right(losY))/2 + (p.oop===1 ? (p.side===0?-1:(p.side===2?1:0))*fw*0.22 : 0);
       const qy=yOf(p.sg===1 ? -6.5 : (p.sg===2 ? -6 : -5.5));
-      // height grows with the throw, capped so the crown of the lob stays inside the drawing
-      const h=Math.min(Math.max(28, Math.hypot(x1-qx, y1-qy)*0.45), Math.max(28, (0.5*(qy+y1)-(yTop+10))/0.75));
-      parts.push(`<path d="M${f1(qx)},${f1(qy)} C${f1(qx)},${f1(qy-h)} ${f1(x1)},${f1(y1-h)} ${f1(x1)},${f1(y1)}" fill="none" stroke="#2f6fe4" stroke-width="${many?3:4}" stroke-linecap="round" opacity="0.9"/>`);
+      // The ball climbs out of the passer's hand and settles onto the catch point — it never
+      // carries past the dot (the tail after the catch is the receiver's, not the ball's).
+      // Launch height grows with the throw, capped inside the drawing; the arrival control
+      // sits a quarter of the way back toward the passer, so the curve lands ON the dot.
+      const dist=Math.hypot(x1-qx, y1-qy);
+      const h=Math.min(Math.max(28, dist*0.45), Math.max(28, (0.5*(qy+y1)-(yTop+10))/0.75));
+      // a throw straight downfield would be a straight line seen from above — a slight bow
+      // toward the nearer sideline keeps it reading as a lob, and it still lands on the dot
+      const bow=Math.min(22, dist*0.08)*(x1>=qx?1:-1);
+      parts.push(`<path d="M${f1(qx)},${f1(qy)} C${f1(qx+bow)},${f1(qy-h)} ${f1(x1+(qx-x1)*0.25+bow)},${f1(y1+(qy-y1)*0.25)} ${f1(x1)},${f1(y1)}" fill="none" stroke="#2f6fe4" stroke-width="${many?3:4}" stroke-linecap="round" opacity="0.9"/>`);
     }
     if(caught && p.yac>0){
       parts.push(`<line x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(x2)}" y2="${f1(y2)}" stroke="#39c15a" stroke-width="${tailW}" stroke-linecap="round"/>`);
@@ -12472,18 +12479,24 @@ function _cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, reachedLine){
     const side=Math.sign(x0-sx)||sgn();
     pts.push([sx+(x0-sx)*(0.6+j(0.1))+side*laneW*0.12, sy-(sy-losY)*(0.18+j(0.06))]);
     pts.push([x0+j(laneW*0.12), losY]);
-    // Upfield the bends are widest just past the line and fade as the run ends — that is
-    // where he gets tackled, so the last stretch settles onto the end point.
-    const run=losY-y1, steps=Math.max(0, Math.round(run/120));   // ~12 yards per bend
-    let x=x0, drift=sgn()*laneW*(0.35+rnd()*0.35);
-    for(let k=1;k<=steps;k++){
-      const t=k/(steps+1);
-      x+=drift*(1-t)*(1-t);                                       // a lean that shrinks with progress
-      drift=-drift*(0.4+rnd()*0.5);                               // then a counter-lean
-      x=x+(x1-x)*Math.min(1, t*1.4);                              // pulled onto where it ends
-      pts.push([x, losY-run*t]);
+    // Upfield, what tracking shows: the cut comes early — a lean in the first third of the
+    // run, a counter-lean on a long one — and the last stretch is straight, because that
+    // is where he is running away or getting tackled. Not every run bends: a good share
+    // go straight once they are through the gap.
+    const run=losY-y1;
+    const bends = run>60 && rnd()<0.6;
+    let x=x0;
+    if(bends){
+      const lean=sgn()*laneW*(0.3+rnd()*0.4);
+      x=x0+lean;                     pts.push([x, losY-run*(0.25+j(0.06))]);
+      if(run>230 && rnd()<0.6){ x=x-lean*(0.5+rnd()*0.4); pts.push([x, losY-run*(0.5+j(0.06))]); }
     }
-    if(run<130 && run>15) pts.push([x1+sgn()*laneW*(0.08+rnd()*0.08), y1+Math.min(12, run*0.3)]);   // a small last lean
+    // the finish is a straight run: smooth up to the last bend, then a straight line home
+    if(run>40){
+      const tail=[x1+(x-x1)*0.15, losY-run*0.78];
+      pts.push(tail);
+      return _cmSmooth(pts.concat([[x1, y1]])).replace(/ C[^C]*$/, '') + ` L${(+x1).toFixed(1)},${(+y1).toFixed(1)}`;
+    }
   } else {
     pts.push([sx+(x1-sx)*(0.5+j(0.15))+j(6), sy+(y1-sy)*(0.35+j(0.1))]);
   }
