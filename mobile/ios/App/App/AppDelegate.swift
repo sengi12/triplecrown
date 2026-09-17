@@ -68,6 +68,22 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
+    // No rubber-banding. The web view's scroll view bounces the whole page past its ends on
+    // iOS (the "flying" feel on a table swipe or a pull on the Games sheet); Android has
+    // none, and the app's own overscroll-behavior rules stop the inner scrollers. The
+    // bridge creates the web view in viewDidLoad, so this runs once the scene is active.
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        guard let bridge = window?.rootViewController as? CAPBridgeViewController,
+              let scrollView = bridge.webView?.scrollView else { return }
+        scrollView.bounces = false
+        scrollView.alwaysBounceVertical = false
+        scrollView.alwaysBounceHorizontal = false
+        // Capacitor's "automatic" inset only applies on a scrollable axis; with bouncing off,
+        // a page shorter than the screen is not scrollable and the header slid under the
+        // status bar. Always inset for the safe area instead.
+        scrollView.contentInsetAdjustmentBehavior = .always
+    }
+
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         for context in URLContexts {
             _ = ApplicationDelegateProxy.shared.application(UIApplication.shared, open: context.url, options: [:])
