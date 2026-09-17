@@ -120,7 +120,9 @@ function gcAthletes(sum){
           out.byId[id]=rec;
           const sp1=name.indexOf(' '); const last=sp1>0?name.slice(sp1+1):name;
           const key=`${team}|${name[0]||''}.${gcNameNorm(last)}`.toLowerCase();
-          if(!out.byKey[key]) out.byKey[key]=rec;
+          const line=new Set(['C','G','T','OL','OT','OG','LS']);
+          const had=out.byKey[key];
+          if(!had || (line.has(String(had.pos||'')) && !line.has(String(rec.pos||'')))) out.byKey[key]=rec;
         }
         rec.groups.add(g.name);
       });
@@ -149,12 +151,16 @@ function gcTok(re, text){ const m=new RegExp(re).exec(text||''); return m ? `${m
 // Shotgun)") and the linemen who report eligible — "C.Vinson reported in as eligible.
 // D.Henry right end to IND 25 …" is a Derrick Henry run, and reading the first name in
 // the text made it a Caleb Vinson run.
+// One name: "J.Ezeudu", "G.Van Roten", "K.Walker III". A list of them: "J.Ezeudu, J.Moore and
+// K.Tonga reported in as eligible." — every one of them a lineman, none of them the play.
+const GC_ELIG_NAME = "[A-Z]\\.[A-Za-z'\\-]+(?:\\s+[A-Z][A-Za-z'\\-]+)*";
+const GC_ELIG_RE = new RegExp('^\\s*(?:'+GC_ELIG_NAME+'(?:,\\s*|\\s+and\\s+|\\s*&\\s*))*'+GC_ELIG_NAME+'\\s+reported in as eligible\\.\\s*');
 function gcPlayBody(text){
   let t=String(text||'');
   for(let i=0;i<4;i++){
     const before=t;
     t=t.replace(/^\s*\([^)]*\)\s*/,'');
-    t=t.replace(/^\s*[A-Z]\.[A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]*)*\s+reported in as eligible\.\s*/,'');
+    t=t.replace(GC_ELIG_RE,'');
     if(t===before) break;
   }
   return t;
@@ -311,7 +317,7 @@ function gcFeedHTML(game, sum){
       <img src="${NFL_LOGO(p.team||game.home)}" class="gcf-logo" onerror="this.style.display='none'">
       <div class="gcf-main">
         <div class="gcf-sit">${escHtml(sit)}${rz?' <span class="gcf-rz">RZ</span>':''}</div>
-        <div class="gcf-title">${escHtml(p.title)}</div>
+        <div class="gcf-title">${(()=>{ let t=escHtml(p.title); (p.who||[]).forEach(w=>{ const pid=w.ath&&w.ath.pid; if(!pid||typeof gcSideClass!=='function') return; const c=gcSideClass(pid).trim(); if(!c) return; const esc=escHtml(gcShort(w.ath.name)); if(t.indexOf(esc)>=0) t=t.replace(esc, `<span class="${c}">${esc}</span>`); }); return t; })()}</div>
         ${p.who.map(w=>gcFeedPlayerHTML(w, game)).join('')}
       </div>
       <div class="gcf-right"><div class="gcf-clock">${p.q?`Q${p.q}`:''} ${escHtml(p.clock)}</div><div class="gcf-score">${score}</div>${badge(p)?`<span class="gcf-badge gcf-b-${p.kind}">${badge(p)}</span>`:''}</div>

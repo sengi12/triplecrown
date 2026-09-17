@@ -22,6 +22,12 @@ const app=new Function(code+`
     q2:{name:'Joe Burrow', pos:'QB', team:'CIN'},
     t1:{name:'Mike Gesicki', pos:'TE', team:'CIN'},
     k1:{name:'Evan McPherson', pos:'K', team:'CIN'},
+    // namesakes on one team: a tackle listed before the back; and a receiver whose first name
+    // is not the one ESPN abbreviates (Marquise "Hollywood" Brown → "H.Brown")
+    o1:{name:'Kenneth Walker', pos:'T', team:'SEA'},
+    r9:{name:'Kenneth Walker', pos:'RB', team:'SEA'},
+    hb:{name:'Marquise Brown', pos:'WR', team:'KC'},
+    pm:{name:'Patrick Mahomes', pos:'QB', team:'KC'},
   };
   // Two leagues: one where Rodgers is my starter and Wilson is my opponent's; one where
   // only Burrow is rostered (by a leaguemate).
@@ -36,7 +42,7 @@ const app=new Function(code+`
   const G=(o)=>Object.assign({state:'in', eid:'E1', score:6, oppScore:14, home:true, opp:'MIN', sit:{period:3, clock:'10:07', lastPlayId:'p1', lastPlay:LP({})}}, o);
   return { onBoard:lfOnBoard, rows:()=>_lf.rows, view:lfRows, clear:lfClear, read:lfReadPlay, stats:lfPlayStats, pid:lfPidFor,
     delta:lfDelta, rel:lfRelevance, leagues:lfLeagueList, toggle:lfToggleLeague, all:lfSetAll, mineOnly:lfSetMineOnly, sel:()=>_lf.leagues,
-    panel:lfPanelHTML, rowHTML:lfRowHTML, allLeagues:lfSetAllLeagues, sides:lfSideSets, LP, G, board:(t)=>{ _tcBoard={season:String(TC_SEASON.year), week:tcBoardWeek(), at:Date.now(), teams:t, busy:false, live:true}; }, MAX:LF_MAX_ROWS };
+    panel:lfPanelHTML, rowHTML:lfRowHTML, allLeagues:lfSetAllLeagues, sides:lfSideSets, stat:()=>_lf.stat, titleHTML:lfTitleHTML, LP, G, board:(t)=>{ _tcBoard={season:String(TC_SEASON.year), week:tcBoardWeek(), at:Date.now(), teams:t, busy:false, live:true}; }, MAX:LF_MAX_ROWS };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const LP=app.LP, G=app.G;
@@ -49,6 +55,8 @@ const LP=app.LP, G=app.G;
   chk(r.title==='A. Rodgers 6 yd rush' && r.q===3 && r.clock==='10:07' && r.ddt==='2nd & 4' && r.spot==='GB 5' && r.rz===true && r.away==='MIN' && r.home==='NYJ' && r.as===14 && r.hs===6, `the row carries the headline, the situation, the clock and the score (${r.title})`);
   chk(r.roles.primary==='q1' && r.stats.q1.rush_yd===6 && r.stats.q1.rush_att===1, 'the runner resolves to his Sleeper id and the play\'s stats are his');
   chk(app.onBoard({NYJ:rush})===0 && app.rows().length===1, 'the same last play again adds nothing');
+  const fixed=JSON.parse(JSON.stringify(rush)); fixed.sit.lastPlay.text='A.Rodgers right end to GB 3 for 8 yards (X.McKinney).'; fixed.sit.lastPlay.yds=8;
+  chk(app.onBoard({NYJ:fixed})===1 && app.rows().length===1 && app.rows()[0].yds===8 && app.rows()[0].corrected===true && /8 yd rush/.test(app.rows()[0].title), 'the same play id with new words is a correction: the row is replaced where it stands, not appended');
   const inactive=G({state:'post'});
   chk(app.onBoard({BUF:inactive})===0, 'a game that is not on is ignored');
 
@@ -63,6 +71,14 @@ const LP=app.LP, G=app.G;
   chk(fg.kind==='fg' && fg.title==='E. McPherson 32 yd FG 🙌' && fg.stats.k1.fgm===1 && fg.stats.k1.fga===1, 'a made field goal, by a kicker with no espn_id — matched on name and team');
   const sack=app.read(LP({type:'Sack', yds:-7, text:'(Shotgun) A.Rodgers sacked at NYJ 20 for -7 yards (M.Murphy).', team:'NYJ'}));
   chk(sack.kind==='sack' && /sacked, -7 yds/.test(sack.title) && !Object.keys(sack.stats).length, 'a sack has a headline and moves no fantasy stat by itself');
+
+  console.log('=== namesakes and nicknames ===');
+  const kw=app.read(LP({type:'Rushing Touchdown', yds:60, text:'K.Walker right end for 60 yards, TOUCHDOWN.', team:'SEA'}));
+  chk(kw.roles.primary==='r9' && kw.title==='K. Walker 60 yd rush TD 🎉', 'two Kenneth Walkers on the team: the ball goes to the back, not the tackle');
+  chk(app.pid('K.Walker','SEA',null,'primary')==='r9' && app.pid('K.Walker','SEA',null,'picker')==='r9', 'the tackle is never picked over the back for any role');
+  const hb=app.read(LP({type:'Passing Touchdown', yds:30, text:'P.Mahomes pass deep left to H.Brown for 30 yards, TOUCHDOWN.', team:'KC'}));
+  chk(hb.roles.receiver==='hb' && hb.roles.primary==='pm' && hb.title==='M. Brown 30 yd TD catch 🎉', 'an initial ESPN abbreviates differently still finds the only Brown on the team');
+  chk(app.pid('Z.Nobody','SEA',null,'primary')===null && app.stat().unresolved>=1, 'an unknown name stays unresolved and is counted');
 
   console.log('=== the ids ===');
   chk(app.pid('A.Rodgers','NYJ',null)==='q1' && app.pid('A.Rodgers','MIN','8439')==='q1' && app.pid('Z.Nobody','NYJ',null)===null, 'a play\'s name resolves by team, an ESPN id resolves outright, an unknown stays null');
@@ -97,7 +113,7 @@ const LP=app.LP, G=app.G;
   app.board({NYJ:G({}), CIN:G({eid:'E2'})});
   let h=app.panel(false);
   chk(/Live feed/.test(h) && /lf-live on">2 live/.test(h) && /All games<\/button>/.test(h) && /title="Queen City Keepers"/.test(h) && /Queen City Keep…<\/button>/.test(h) && /Dirty Mikes<\/button>/.test(h), 'the panel heads with the live count and a chip per league (a long name is clipped, the full one in its tooltip)');
-  chk(/gcf-row lf-row gcf-td/.test(h) && /G\. Wilson 12 yd TD catch/.test(h) && /gcf-pos-wr">WR/.test(h) && /Q3 10:07/.test(h), 'rows wear the per-game feed\'s clothes: kind, headline, positions, clock');
+  chk(/gcf-row lf-row gcf-td/.test(h) && /G\. Wilson(?:<\/span>)? 12 yd TD catch/.test(h) && /gcf-pos-wr">WR/.test(h) && /Q3 10:07/.test(h), 'rows wear the per-game feed\'s clothes: kind, headline, positions, clock');
   chk(!/lf-mine/.test(h), 'the my-matchup toggle only appears once a league is picked');
   chk(/All leagues<\/button>/.test(h), 'with more than one league synced, an All leagues chip sits beside All games');
   const S=app.sides();
@@ -105,6 +121,7 @@ const LP=app.LP, G=app.G;
   app.toggle('L1'); h=app.panel(false);
   chk(/lf-mine/.test(h) && /lf-tag lf-tag-mine/.test(h) && /lf-up">\+12\.68/.test(h), 'with a league picked: the toggle, the starred tag and the points it moved');
   chk(/gcf-name gc-mine">A\. Rodgers/.test(h) && /gcf-name gc-opp">G\. Wilson/.test(h), 'my starter is blue in the feed, the man I am playing is red');
+  chk(/gcf-title"><span class="gc-opp">G\. Wilson<\/span> 12 yd TD catch/.test(h), 'and the headline wears the same colour');
   app.all(); app.clear(); h=app.panel(false);
   chk(/waiting for the next play/.test(h), 'games on but nothing seen yet');
   app.board({}); h=app.panel(false);
