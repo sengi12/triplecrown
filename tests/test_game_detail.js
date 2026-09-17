@@ -100,6 +100,17 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const el3=app.names('G.Van Roten reported in as eligible.  D.Maye pass short left to E.Raridon for 2 yards, TOUCHDOWN.');
   chk(el3.primary==='D.Maye' && el3.receiver==='E.Raridon', 'a two-word surname in the report does not confuse it');
   chk(app.names('(No Huddle, Shotgun) B.Mayfield pass incomplete deep left to E.Egbuka (J.Davis).').primary==='B.Mayfield', 'an ordinary play is untouched');
+  const el4=app.names('J.Ezeudu, J.Moore and K.Tonga reported in as eligible.  K.Walker left end for 60 yards, TOUCHDOWN. H.Butker extra point is GOOD, Center-J.Winchester, Holder-M.Araiza.');
+  chk(el4.primary==='K.Walker', `three linemen reported: the 60-yard touchdown is Walker\'s, not Ezeudu\'s (${el4.primary})`);
+  chk(app.names('A.Jones & B.Smith reported in as eligible. C.Brown up the middle for 3 yards.').primary==='C.Brown' && app.names('(Shotgun) G.Van Roten, K.Walker III reported in as eligible.  D.Maye scrambles right end for 4 yards.').primary==='D.Maye', 'an ampersand, a two-word surname and a suffix inside the list');
+
+  console.log('=== a namesake lineman in the box score does not take the back\'s key ===');
+  const twin=JSON.parse(JSON.stringify(SUM));
+  const cinP=twin.boxscore.players.find(t=>t.team.abbreviation==='CIN');
+  cinP.statistics.find(g=>g.name==='fumbles').athletes.unshift({athlete:{id:'999001', displayName:'Chase Brown', shortName:'C. Brown'}, stats:['1','0','0']});
+  global.__twinPos='T';
+  const A2=app.ath(twin);
+  chk(A2.byKey['cin|c.brown'] && A2.byKey['cin|c.brown'].id!=='999001', 'the key stays with the running back');
 
   console.log('=== the feed on the page ===');
   const h=app.feedHTML(app.GAME(), SUM);

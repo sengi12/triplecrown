@@ -12,7 +12,9 @@
 // the points it just moved under THAT league's scoring — exact for the stats a play
 // produces (yards, catches, touchdowns, interceptions). "My matchup" narrows again to the
 // two starting line-ups of your own game that week.
-var _lf = { rows:[], seen:{}, leagues:[], mineOnly:false, max:150, nameIdx:null, nameIdxAt:0 };
+var _lf = { rows:[], seen:{}, leagues:[], mineOnly:false, max:150, nameIdx:null, nameIdxAt:0,
+  // how the players in the plays were found — read this when a name looks wrong
+  stat:{ byId:0, byName:0, bySurname:0, unresolved:0 } };
 const LF_MAX_ROWS = 150;
 
 // ── Names → the app's player ids ─────────────────────────────────────────────
@@ -27,19 +29,46 @@ function lfNameIndex(){
     const p=sp[pid]; const nm=String((p&&p.name)||'').trim(); const tm=String((p&&p.team)||'').toUpperCase();
     if(!nm || !tm) continue;
     const i=nm.indexOf(' '); if(i<0) continue;
-    const key=`${tm}|${nm[0]}.${(typeof gcNameNorm==='function')?gcNameNorm(nm.slice(i+1)):nm.slice(i+1).toLowerCase()}`;
-    if(!idx[key]) idx[key]=pid;
+    const last=(typeof gcNameNorm==='function')?gcNameNorm(nm.slice(i+1)):nm.slice(i+1).toLowerCase();
+    const cand={pid, pos:String((p&&p.pos)||'').toUpperCase()};
+    (idx[`${tm}|${nm[0].toLowerCase()}.${last}`]=idx[`${tm}|${nm[0].toLowerCase()}.${last}`]||[]).push(cand);   // initial + surname
+    (idx[`${tm}|*.${last}`]=idx[`${tm}|*.${last}`]||[]).push(cand);                                              // surname alone
   }
   _lf.nameIdx=idx; _lf.nameIdxAt=n;
   return idx;
 }
-function lfPidFor(token, team, espnId){
-  if(espnId && typeof gcEspnIndex==='function'){ const p=gcEspnIndex()[String(espnId)]; if(p) return p; }
+// Who a role can plausibly be. Among namesakes on one team the ball goes to the skill
+// player, not the tackle; a single candidate is taken as named (a tackle-eligible catch
+// is real). Never a different surname.
+const LF_ROLE_POS = {
+  primary:  ['QB','RB','FB','WR','TE','K','P'],
+  receiver: ['WR','TE','RB','FB','QB'],
+  picker:   ['CB','S','SS','FS','DB','LB','OLB','ILB','MLB','DE','DT','DL','NT'],
+};
+const LF_LINE = new Set(['C','G','T','OL','OT','OG','LS']);
+function lfPickByRole(cands, role){
+  if(!cands || !cands.length) return null;
+  if(cands.length===1) return cands[0].pid;
+  const pref=LF_ROLE_POS[role]||[];
+  for(const pos of pref){ const c=cands.find(x=>x.pos===pos); if(c) return c.pid; }
+  const skill=cands.find(x=>!LF_LINE.has(x.pos)); if(skill) return skill.pid;
+  return cands[0].pid;
+}
+// The ESPN athlete id when the board carries one; else the team's man with that initial
+// and surname (the skill player among namesakes); else, when the surname is unique on the
+// team, that man whatever his initial — "H.Brown" is Marquise (Hollywood) Brown.
+function lfPidFor(token, team, espnId, role){
+  if(espnId && typeof gcEspnIndex==='function'){ const p=gcEspnIndex()[String(espnId)]; if(p){ _lf.stat.byId++; return p; } }
   if(!token) return null;
   const m=/^([A-Za-z])\.(.+)$/.exec(String(token)); if(!m) return null;
   const norm=(typeof gcNameNorm==='function') ? gcNameNorm(m[2]) : String(m[2]).toLowerCase();
-  const idx=lfNameIndex();
-  return idx[`${String(team||'').toUpperCase()}|${m[1]}.${norm}`] || null;
+  const idx=lfNameIndex(); const tm=String(team||'').toUpperCase();
+  const exact=lfPickByRole(idx[`${tm}|${m[1].toLowerCase()}.${norm}`], role);
+  if(exact){ _lf.stat.byName++; return exact; }
+  const bySur=idx[`${tm}|*.${norm}`];
+  if(bySur && bySur.length===1){ _lf.stat.bySurname++; return bySur[0].pid; }
+  _lf.stat.unresolved++;
+  return null;
 }
 
 // ── What a play did, in fantasy stats ────────────────────────────────────────
@@ -83,7 +112,7 @@ function lfReadPlay(lp){
       const nm=String(a.name||''); const i=nm.indexOf(' '); const ln=i>0?nm.slice(i+1):nm;
       return (typeof gcNameNorm==='function') ? gcNameNorm(ln)===gcNameNorm(last) : ln.toLowerCase()===last.toLowerCase();
     });
-    roles[r]=lfPidFor(tok, (hit&&hit.team)||lp.team, hit&&hit.id);
+    roles[r]=lfPidFor(tok, (hit&&hit.team)||lp.team, hit&&hit.id, r);
   });
   const nm=(role, tok)=>{
     const pid=roles[role];
@@ -107,7 +136,7 @@ function lfReadPlay(lp){
   else if(type==='Kickoff'){ kind='ko'; title=`${nm('primary',names.primary)} kicks off`; }
   else if(type==='Penalty'){ kind='pen'; const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)/i.exec(text); title=m?`Flag: ${m[3]} on ${m[1]}`:'Penalty'; }
   else { title=text.replace(/^\s*(\([^)]*\)\s*)+/,'').slice(0,90); }
-  return {kind, title, roles, stats:lfPlayStats(kind, yds, roles)};
+  return {kind, title, roles, stats:lfPlayStats(kind, yds, roles), tokens:roleTok};
 }
 // The kinds the feed keeps when it is not showing everything.
 const LF_KEY_KINDS = new Set(['rushTd','recTd','fg','fgMiss','int','fum','sack','xp','xpMiss']);
@@ -126,18 +155,23 @@ function lfOnBoard(teams){
   let added=0;
   Object.keys(games).forEach(eid=>{
     const g=games[eid], lp=g.sit.lastPlay, id=String(lp.id||'');
-    if(!id || _lf.seen[eid]===id) return;
+    if(!id) return;
+    const key=`${eid}:${id}`;
+    const prev=_lf.rows.find(r=>r.key===key);
+    if(prev && prev.text===String(lp.text||'') && prev.scoreValue===Number(lp.scoreValue||0)) return;   // the same play again
     _lf.seen[eid]=id;
     const read=lfReadPlay(lp);
     if(read.kind==='other' && !lp.text) return;
-    _lf.rows.unshift({
-      key:`${eid}:${id}`, eid, id, at:Date.now(),
+    const row={
+      key, eid, id, at:Date.now(),
       home:g.home, away:g.away, hs:g.hs, as:g.as, team:lp.team||'',
       q:Number(g.sit.period||0), clock:String(g.sit.clock||''),
       down:Number(lp.down||0), ddt:String(lp.ddt||''), spot:String(lp.spot||''),
       rz: lp.yte!=null && lp.yte<=20, yds:Number(lp.yds||0), scoreValue:Number(lp.scoreValue||0),
-      kind:read.kind, title:read.title, roles:read.roles, stats:read.stats, text:String(lp.text||''),
-    });
+      kind:read.kind, title:read.title, roles:read.roles, stats:read.stats, tokens:read.tokens, text:String(lp.text||''),
+    };
+    if(prev){ Object.assign(prev, row, {at:prev.at, corrected:true}); }   // a correction: same place, new words
+    else _lf.rows.unshift(row);
     added++;
   });
   if(_lf.rows.length>LF_MAX_ROWS) _lf.rows.length=LF_MAX_ROWS;
@@ -249,6 +283,20 @@ function lfSideSets(){
   use.forEach(l=>{ l.mine.forEach(p=>mine.add(String(p))); l.opp.forEach(p=>opp.add(String(p))); });
   return {mine, opp};
 }
+// The headline with its names coloured like the line under it (blue mine, red theirs).
+function lfTitleHTML(r, S){
+  let t=escHtml(r.title);
+  const sp=(typeof sleeperPlayers!=='undefined' && sleeperPlayers) ? sleeperPlayers : {};
+  Object.keys(r.roles||{}).forEach(role=>{
+    const pid=r.roles[role]; if(!pid) return;
+    const side=S.mine.has(String(pid)) ? 'gc-mine' : (S.opp.has(String(pid)) ? 'gc-opp' : '');
+    if(!side) return;
+    const p=sp[pid]||{}; const nm=p.name?((typeof gcShort==='function')?gcShort(p.name):p.name):''; if(!nm) return;
+    const esc=escHtml(nm); if(t.indexOf(esc)<0) return;
+    t=t.replace(esc, `<span class="${side}">${esc}</span>`);
+  });
+  return t;
+}
 function lfRowHTML(r, sides){
   const S=sides||lfSideSets();
   const pids=Object.keys(r.roles).map(k=>r.roles[k]).filter(Boolean);
@@ -267,7 +315,7 @@ function lfRowHTML(r, sides){
     <img src="${NFL_LOGO(r.team||r.home)}" class="gcf-logo" onerror="this.style.display='none'">
     <div class="gcf-main">
       <div class="gcf-sit">${escHtml(sit)}${r.rz?' <span class="gcf-rz">RZ</span>':''}</div>
-      <div class="gcf-title">${escHtml(r.title)}</div>
+      <div class="gcf-title">${lfTitleHTML(r, S)}</div>
       ${who?`<div class="lf-whos">${who}</div>`:''}
       ${tags?`<div class="lf-tags">${tags}</div>`:''}
     </div>
