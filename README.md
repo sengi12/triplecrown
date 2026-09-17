@@ -101,7 +101,7 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
   <img src="./images/route_tree.png" alt="Centered Image" width="600">
 </div>
 
-- **Rushing Fans.** A Major aspect of fantasy football, and the sport itself, that is often overlooked is the offensive line. Although available data for individual OL performance is poor, I created an ever evolving +/- algorithm that hands out rush and pass block grades to every qualifying offensive linemen so that you can see clearly how offensive line talent, performance, entanglement, and health directly affects key areas of the run and pass game with every rusher's rushing fan chart!
+- **Rushing Fans + Carry Maps.** The Rushing Fan tab opens on the **carry map**: every carry of the game or the season drawn from the backfield through the gap he hit and up the field as far as the run went, NGS-style — red for lost yards, gold for 0–4, green for 5+, a white cap on a first down, a ring + TD tag on a score, a red ring + FUM on a fumble lost — with the fan a tap away and the same one-tap link to the rusher's Next Gen Stats charts. The paths are drawn, not tracked: the gap and the end of the run are play-by-play, the bends are a seeded look. A Major aspect of fantasy football, and the sport itself, that is often overlooked is the offensive line. Although available data for individual OL performance is poor, I created an ever evolving +/- algorithm that hands out rush and pass block grades to every qualifying offensive linemen so that you can see clearly how offensive line talent, performance, entanglement, and health directly affects key areas of the run and pass game with every rusher's rushing fan chart!
 
 <!-- Center align -->
 <div align="center">

@@ -14,7 +14,8 @@ const app=new Function(code+`
   toast=function(){};
   return { block:targetMapBlock, plays:_tmPlays, url:ngsChartUrl, link:ngsChartLink, btns:_pcardRouteViewBtns,
            view:()=>pcardTargetView, setView:setPcardTargetView, seasons:pcardRouteSeasons, setNV:(n)=>{NFLVERSE=n;},
-           routePath:_tmRoutePath, qbBlock:qbPassMapBlock, qbView:()=>pcardQbView, setQbView:setPcardQbView, weekly:pcardWeeklyGames };
+           routePath:_tmRoutePath, qbBlock:qbPassMapBlock, qbView:()=>pcardQbView, setQbView:setPcardQbView, weekly:pcardWeeklyGames,
+           rbBlock:rbCarryMapBlock, runPath:_cmRunPath, rbView:()=>pcardRbView, setRbView:setPcardRbView };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -35,7 +36,8 @@ chk(titles.some(t=>t==='WK 1 · NE · Q4 · Left, +4 air · Touchdown · 41 YAC 
 chk((html.match(/stroke="#39c15a" stroke-width="5"/g)||[]).length===2, 'two catches with YAC → two green tails');
 chk((html.match(/stroke="#2f6fe4" stroke-width="3.5"/g)||[]).length===1 && (html.match(/>TD \+45<\/text>/g)||[]).length===1 && !/fill="#39c15a" font-size="11"[^>]*>\+45</.test(html),
     'the touchdown gets its ring AND one TD tag — a score that runs off the top carries its total in the tag, not a second label');
-chk((html.match(/stroke-dasharray="3 4"/g)||[]).length===4, 'without charting every mark hangs on the dotted depth stem (no invented routes)');
+chk((html.match(/stroke-dasharray="3 4"/g)||[]).length===3 && (html.match(/stroke="#2f6fe4" stroke-width="4" stroke-linecap="round"/g)||[]).length===1,
+    'without charting every mark hangs on the dotted depth stem (no invented routes) — except the score, which gets the blue throw arc from the passer');
 chk(/stroke="#d33b2f" stroke-width="2\.5"/.test(html) && /M\d/.test(html), 'the interception is the red hollow with its cross');
 chk(/Charted route/.test(html)===false && /routes come with the season/.test(html), 'the legend and subtitle say routes are not charted yet');
 
@@ -44,7 +46,7 @@ app.setNV({'2026':{target_trees:{players:{'test receiver':node}, routes:['GO','S
 const all=app.plays(node, null, ['GO','SHALLOW CROSS/DRAG','SLANT']);
 chk(all.length===5 && all[4].route==='SLANT' && all[0].route===null, 'season = every game; the 7th slot resolves through the legend, missing → null');
 const html2=app.block('Test Receiver', node, 2026, null, {label:'Season to date',tgt:5}, null);
-chk((html2.match(/<path d="M[^"]*" fill="none" stroke="#ffffff"/g)||[]).length===1 && (html2.match(/stroke-dasharray="3 4"/g)||[]).length===4,
+chk((html2.match(/<path d="M[^"]*" fill="none" stroke="#ffffff"/g)||[]).length===1 && (html2.match(/stroke-dasharray="3 4"/g)||[]).length===3,
     'the charted target is drawn as a route path to the catch point; the uncharted four keep the stem');
 chk(/Charted route/.test(html2) && /with the route he ran/.test(html2), 'legend + subtitle switch once any route is charted');
 chk(html2.includes('Middle, +9 air · Slant · Catch · 3 YAC (12 yds)'), 'the tooltip names the route');
@@ -83,6 +85,24 @@ chk(app.qbBlock('X', {games:[{wk:1,plays:[]}]}, 2026, 1, 'Week 1', null).include
 app.setNV({'2025':{qb_passing_weekly:{'trevor lawrence':qb}}});
 chk(Array.isArray(app.weekly('qb_passing_weekly','trevor lawrence','2025')) && app.weekly('qb_passing_weekly','nobody','2025')===null,
     'per-game chips come from any season that carries the weekly block (the offseason bakes the season just played)');
+
+console.log('=== the RB carry map ===');
+const rb={team:'KC',esb:'WAL391813',games:[{wk:1,opp:'DEN',attempts:5,plays:[[3,7,4,50,1],[1,60,1,60,2],[0,-2,8,40,3],[5,2,2,30,4],[3,4,0,25,4]]}]};
+const c1=app.rbBlock('Kenneth Walker', rb, 2026, 1, 'Week 1 · DEN', null);
+chk(/KENNETH WALKER CARRIES/.test(c1) && (c1.match(/<title>/g)||[]).length===5, 'five carries → five runs, titled as carries for the game');
+const ct=[...c1.matchAll(/<title>(.*?)<\/title>/g)].map(m=>m[1]);
+chk(ct.includes('WK 1 · DEN · Q1 · Middle · +7 yds · First down') && ct.includes('WK 1 · DEN · Q3 · Left end · -2 yds · Tackled for loss') && ct.includes('WK 1 · DEN · Q2 · Left tackle · +60 yds · Touchdown'),
+    'each run names its gap, yards and what happened');
+chk((c1.match(/stroke="#d33b2f" stroke-width="3.5" stroke-linecap/g)||[]).length===1 && (c1.match(/stroke="#d8a51d" stroke-width="3.5"/g)||[]).length===2 && (c1.match(/stroke="#39c15a" stroke-width="3.5"/g)||[]).length===2,
+    'red for the loss, gold for 0–4, green for 5+');
+chk(/>TD \+60<\/text>/.test(c1) && />FUM<\/text>/.test(c1) && (c1.match(/r="3.5" fill="#ffffff"/g)||[]).length===2, 'the score is tagged with its length off the top, the fumble is tagged, first downs (and the score) get the white cap');
+chk(app.rbBlock('Kenneth Walker', rb, 2026, 1, 'Week 1 · DEN', null)===c1, 'the drawn paths are seeded: the same map every render');
+const d1=app.runPath(380, 530, 300, 460, 290, 200, 60, 12345, true), d2=app.runPath(380, 530, 300, 460, 290, 200, 60, 12345, true), d3=app.runPath(380, 530, 300, 460, 290, 200, 60, 999, true);
+chk(d1===d2 && d1!==d3 && d1.endsWith(' 290.0,200.0') && d1.startsWith('M'), 'a run path is deterministic per seed, varies across seeds, and always ends exactly on its dot');
+chk(app.runPath(380, 530, 300, 460, 310, 480, 60, 7, false).endsWith(' 310.0,480.0'), 'a loss bends to its end without reaching the line');
+chk(/Tackled for loss/.test(c1) && /Fumble lost/.test(c1) && /First down/.test(c1), 'the legend explains the carry marks');
+chk(app.rbView()==='map', 'Map is the rushing fan\'s default view'); app.setRbView('fan'); chk(app.rbView()==='fan', 'Fan is selectable'); app.setRbView('map');
+chk(app.rbBlock('X', {games:[{wk:1,plays:[]}]}, 2026, 1, 'Week 1', null).includes('next weekly bake'), 'a node without per-carry rows says so');
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);
