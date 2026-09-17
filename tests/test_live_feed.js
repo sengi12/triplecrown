@@ -42,6 +42,7 @@ const app=new Function(code+`
   const G=(o)=>Object.assign({state:'in', eid:'E1', score:6, oppScore:14, home:true, opp:'MIN', sit:{period:3, clock:'10:07', lastPlayId:'p1', lastPlay:LP({})}}, o);
   return { onBoard:lfOnBoard, rows:()=>_lf.rows, view:lfRows, clear:lfClear, read:lfReadPlay, stats:lfPlayStats, pid:lfPidFor,
     delta:lfDelta, rel:lfRelevance, leagues:lfLeagueList, toggle:lfToggleLeague, all:lfSetAll, mineOnly:lfSetMineOnly, sel:()=>_lf.leagues,
+    initials:lfLeagueInitials, chipInner:lfLeagueChipInner,
     setPcard:(o)=>{ _pcardLg={byLeague:o, at:Date.now(), loading:null}; }, setMu:(lid,wk,v)=>{ _gcMu.cache[lid+'|'+wk]=v; }, panel:lfPanelHTML, rowHTML:lfRowHTML, allLeagues:lfSetAllLeagues, sides:lfSideSets, stat:()=>_lf.stat, titleHTML:lfTitleHTML, LP, G, board:(t)=>{ _tcBoard={season:String(TC_SEASON.year), week:tcBoardWeek(), at:Date.now(), teams:t, busy:false, live:true}; }, MAX:LF_MAX_ROWS };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -128,7 +129,11 @@ const LP=app.LP, G=app.G;
   console.log('=== the panel ===');
   app.board({NYJ:G({}), CIN:G({eid:'E2'})});
   let h=app.panel(false);
-  chk(/Live feed/.test(h) && /lf-live on">2 live/.test(h) && /All games<\/button>/.test(h) && /title="Queen City Keepers"/.test(h) && /Queen City Keep…<\/button>/.test(h) && /Dirty Mikes<\/button>/.test(h), 'the panel heads with the live count and a chip per league (a long name is clipped, the full one in its tooltip)');
+  chk(/Live feed/.test(h) && /lf-live on">2 live/.test(h) && /All games<\/button>/.test(h) && /title="Queen City Keepers"[^>]*><span class="lf-lg-ini">QCK<\/span><\/button>/.test(h) && /title="Dirty Mikes"[^>]*><span class="lf-lg-ini">DM<\/span>/.test(h), 'the panel heads with the live count and a chip per league — initials when the league has no icon, the full name in its tooltip');
+  chk(app.initials('Show Me The Money')==='SMT' && app.initials('BAFL')==='BAF' && app.initials("🔑 Last Man Standing")==='LMS' && app.initials('')==='L', 'initials: first letters of up to three words, the first three letters of a one-word name, emoji ignored');
+  chk(/<img class="lf-lg-av" src="https:\/\/sleepercdn\.com\/avatars\/thumbs\/abc123" alt="" onerror="[^"]+"><span class="lf-lg-ini" hidden>QCK<\/span>/.test(app.chipInner({name:'Queen City Keepers', avatar:'https://sleepercdn.com/avatars/thumbs/abc123'})), 'a league with an icon shows the icon, its initials waiting behind it should the image fail');
+  chk(/lf-lg-ini">QCK<\/span>$/.test(app.chipInner({name:'Queen City Keepers', avatar:null})) && !/<img/.test(app.chipInner({name:'Queen City Keepers'})), 'no icon → initials only');
+  chk(true, 'the panel heads with the live count and a chip per league (a long name is clipped, the full one in its tooltip)');
   chk(/gcf-row lf-row gcf-td/.test(h) && /G\. Wilson(?:<\/span>)? 12 yd TD catch/.test(h) && /gcf-pos-wr">WR/.test(h) && /Q3 10:07/.test(h), 'rows wear the per-game feed\'s clothes: kind, headline, positions, clock');
   chk(!/lf-mine/.test(h), 'the my-matchup toggle only appears once a league is picked');
   chk(/All leagues<\/button>/.test(h), 'with more than one league synced, an All leagues chip sits beside All games');

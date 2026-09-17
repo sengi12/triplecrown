@@ -5723,7 +5723,7 @@ function lfLeagueList(){
     const m=(typeof gcMatchupFor==='function') ? gcMatchupFor(id, wk) : null;
     const rostered=new Set(Object.keys(L.byPid||{}));
     const mineRoster=new Set(Object.keys(L.byPid||{}).filter(p=>L.byPid[p]&&L.byPid[p].mine));
-    out.push({ id:String(id), name:String(L.name||'League'), scoring:L.scoring||null, rostered,
+    out.push({ id:String(id), name:String(L.name||'League'), avatar:L.avatar||null, scoring:L.scoring||null, rostered,
       mine:(m&&!m.pending)?m.mine:mineRoster, opp:(m&&!m.pending)?m.opp:new Set(), oppName:(m&&m.oppName)||'' });
   });
   if(out.length) return out;
@@ -5805,11 +5805,23 @@ function lfLiveCount(){
   Object.keys(b).forEach(c=>{ const t=b[c]; if(t && t.state==='in' && t.eid) eids.add(String(t.eid)); });
   return eids.size;
 }
+// A league chip is its Sleeper icon (the name on hover); a league without one, or whose icon
+// fails to load, shows its initials — so a row of nine leagues stays one row of icons.
+function lfLeagueInitials(name){
+  const words=String(name||'').replace(/[^\p{L}\p{N}\s]/gu,' ').trim().split(/\s+/).filter(Boolean);
+  const ini=words.length>1 ? words.slice(0,3).map(w=>w[0]).join('') : String(name||'L').slice(0,3);
+  return ini.toUpperCase();
+}
+function lfLeagueChipInner(l){
+  const ini=escHtml(lfLeagueInitials(l.name));
+  if(!l.avatar) return `<span class="lf-lg-ini">${ini}</span>`;
+  return `<img class="lf-lg-av" src="${escAttr(l.avatar)}" alt="" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="lf-lg-ini" hidden>${ini}</span>`;
+}
 function lfChipsHTML(){
   const list=lfLeagueList(), sel=_lf.leagues;
   const chips=[`<button class="ld-pos ${sel.length?'':'active'}" onclick="lfSetAll()">All games</button>`]
     .concat(list.length>1 ? [`<button class="ld-pos ${lfAllLeaguesOn()?'active':''}" onclick="lfSetAllLeagues()">All leagues</button>`] : [])
-    .concat(list.map(l=>`<button class="ld-pos ${sel.includes(l.id)?'active':''}" onclick="lfToggleLeague('${escAttr(l.id)}')" title="${escAttr(l.name)}">${escHtml(l.name.length>16?l.name.slice(0,15)+'…':l.name)}</button>`));
+    .concat(list.map(l=>`<button class="ld-pos lf-lg ${sel.includes(l.id)?'active':''}" onclick="lfToggleLeague('${escAttr(l.id)}')" title="${escAttr(l.name)}" aria-label="${escAttr(l.name)}">${lfLeagueChipInner(l)}</button>`));
   const mine=sel.length ? `<label class="lf-mine"><input type="checkbox" ${_lf.mineOnly?'checked':''} onchange="lfSetMineOnly(this.checked)"> My matchup only</label>` : '';
   return `<div class="ld-posrow lf-chips">${chips.join('')}</div>${mine}`;
 }
