@@ -208,9 +208,12 @@ function _renderTargetTree(pid, node, season, seasonBtns, hasTree){
   return `<div class="rt-wrap">
     <div class="rt-head">
       <div class="rt-seasons">${seasonBtns||''}${games?_pcardGameChips('routes', games, selWk, team):''}</div>
-      <div class="rt-metrics">${viewBtns}${mapOn?'':metricBtns}</div>
+    </div>
+    <div class="rt-head rt-viewrow">
+      <div class="rt-metrics">${viewBtns}</div>
       <div class="rt-summary">${wrap(`${v.tgt||0} targets`, {label:'Targets', value:String(v.tgt||0), statKey:'targets'})}${live?` <span class="tt-badge" title="Where his targets went, from nightly play-by-play. The routes he ran are FTN charting and publish after the season — the map draws them in then.">◉ live</span>`:''}</div>
     </div>
+    ${mapOn?'':`<div class="rt-head rt-metricrow"><div class="rt-metrics">${metricBtns}</div></div>`}
     ${mapOn ? targetMapBlock(pname, node, season, selWk, v, tag) : parts.join('')}
     <div class="qpc-totals">
       ${tile('Targets', v.tgt!=null?v.tgt:'—', 'targets', 'tgt')}
@@ -508,13 +511,15 @@ function renderPcardRoutes(pid){
     ? `${_fmtRouteMetricValue(metricTotal, pcardRouteMetric)} ${metricCfg.summary}`
     : `${metricCfg.short} route data unavailable in this seed`;
   const notePlayer = noteTargetFromArgs(pid, pcardState&&pcardState.posc, pcardState&&pcardState.team);
+  const _treeSummary=`<div class="rt-summary">${noteWrapHtml(`${rt.total} routes charted`, { label:'Routes Charted', value:String(rt.total), source:'route_tree', statKey:'routes', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')} · ${metricKnown?noteWrapHtml(metricSummary, { label:metricCfg.label, value:_fmtRouteMetricValue(metricTotal, pcardRouteMetric), source:'route_tree', statKey:pcardRouteMetric, context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit'):metricSummary} · most-run <b>${noteWrapHtml(escHtml(topLabel), { label:'Most-run route', value:topLabel, source:'route_tree', statKey:'top_route', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')}</b></div>`;
   return `
     <div class="rt-wrap">
       <div class="rt-head">
         <div class="rt-seasons">${seasonBtns}</div>
-        <div class="rt-metrics">${_tn?_pcardRouteViewBtns('tree', true):''}${metricBtns}</div>
-        <div class="rt-summary">${noteWrapHtml(`${rt.total} routes charted`, { label:'Routes Charted', value:String(rt.total), source:'route_tree', statKey:'routes', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')} · ${metricKnown?noteWrapHtml(metricSummary, { label:metricCfg.label, value:_fmtRouteMetricValue(metricTotal, pcardRouteMetric), source:'route_tree', statKey:pcardRouteMetric, context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit'):metricSummary} · most-run <b>${noteWrapHtml(escHtml(topLabel), { label:'Most-run route', value:topLabel, source:'route_tree', statKey:'top_route', context:`${pcardRouteSeason} route tree`, player:notePlayer, team:notePlayer&&notePlayer.team }, 'note-tag-hit')}</b></div>
+        ${_tn?'':`<div class="rt-metrics">${metricBtns}</div>`}
+        ${_tn?'':_treeSummary}
       </div>
+      ${_tn?`<div class="rt-head rt-viewrow"><div class="rt-metrics">${_pcardRouteViewBtns('tree', true)}</div>${_treeSummary}</div><div class="rt-head rt-metricrow"><div class="rt-metrics">${metricBtns}</div></div>`:''}
       ${routeTreeSVG(rt, pcardRouteMetric, notePlayer)}
       ${routeTreeList(rt, pcardRouteMetric)}
       <div class="pcard-src">Route types via nflverse participation charting (route run when targeted, ${typeof tcSeasonLabel==='function'?tcSeasonLabel(pcardRouteSeason):pcardRouteSeason} ${(typeof tcIsLiveSeason==='function'&&tcIsLiveSeason(pcardRouteSeason))?'season to date, rebuilt weekly':'regular season'}).</div>
