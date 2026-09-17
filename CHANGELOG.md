@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-09-17
 
+- fix(cards): the Map / Zones / Tree toggle keeps its place — the view row is its own row, the metric buttons take the row beneath (#124)
 - feat(cards): the target map — every target of every game on the field, the charted route to each catch once a season's charting lands, Map first on the Routes tab; baked copies adopt the in-season sidecar offline (#122)
 - fix(analyzer): the value lens pin is per league, the trade page says what its numbers are, and one week is noise in rest-of-season worth (#115)
 - feat(cards): the news is its own tab — the card still opens on the stats (#114)
