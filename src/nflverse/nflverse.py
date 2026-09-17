@@ -2602,11 +2602,12 @@ def qb_passing_weekly(season, min_attempts_game=8):
     stable baseline a single game should be read against.
     Each game also carries `plays`: every located attempt as a short row
     [air_yards, side(0 L/1 M/2 R), result(0 inc/1 comp/2 TD/3 INT), yac,
-    yardline_100, qtr, receiver] in play order — the PASS MAP (each throw a dot
+    yardline_100, qtr, receiver, formation (0 under center/1 shotgun/2 pistol),
+    out_of_pocket (0/1, null until FTN publishes the week)] in play order — the PASS MAP (each throw a dot
     at its depth and side, with its after-catch tail), the cousin of NGS's pass
     chart. `receiver` indexes the node's `rcv` legend (pbp's short names, e.g.
     "J.Smith-Njigba"). `esb` is the passer's NFL ESB id for the NGS deep link."""
-    _map_cols = ["yards_after_catch", "yardline_100", "qtr", "receiver_player_name"]
+    _map_cols = ["yards_after_catch", "yardline_100", "qtr", "receiver_player_name", "shotgun"]
     pbp = _load_pbp(season, _QB_ZONE_COLS + ["week", "defteam", "game_id", "play_id"] + _map_cols)
     pbp = pbp[pbp["season_type"] == "REG"]
     att = pbp[(pbp["pass_attempt"] == 1) & (pbp["sack"] == 0)
@@ -2619,6 +2620,7 @@ def qb_passing_weekly(season, min_attempts_game=8):
             att[c] = None
     esb = _esb_map(season)
     _PM_SIDE = {"left": 0, "middle": 1, "right": 2}
+    att["tsg"], att["toop"] = _throw_context(season, att)
 
     def _pm_plays(frame, rcv_ix):
         rows = []
@@ -2638,7 +2640,9 @@ def qb_passing_weekly(season, min_attempts_game=8):
                          int(yac) if comp and not pd.isna(yac) else 0,
                          int(yl) if not pd.isna(yl) else None,
                          int(q) if not pd.isna(q) else None,
-                         rcv_ix.get(rc) if rc is not None else None])
+                         rcv_ix.get(rc) if rc is not None else None,
+                         int(r.tsg) if r.tsg is not None and not pd.isna(r.tsg) else 0,
+                         (None if r.toop is None or (not isinstance(r.toop, int) and pd.isna(r.toop)) else int(r.toop))])
         return rows
     try:
         duress = _qb_duress(season, pbp)
@@ -2893,6 +2897,30 @@ def scheme_weekly(season):
     return out
 
 
+def _throw_context(season, frame):
+    """Where the passer threw from, per play, for the maps' scoring-throw arc: FTN's
+    qb_location (U under center / S shotgun / P pistol) and is_qb_out_of_pocket, joined
+    on game+play; pbp's own `shotgun` flag stands in for the formation when FTN has not
+    published the week (out-of-pocket is then unknown). Returns (sg Series, oop Series)
+    aligned to `frame`: sg 0 under center / 1 shotgun / 2 pistol, oop 0/1 or None."""
+    sg = pd.to_numeric(frame["shotgun"], errors="coerce").fillna(0).astype(int) if "shotgun" in frame.columns else pd.Series(0, index=frame.index)
+    oop = pd.Series([None] * len(frame), index=frame.index, dtype=object)
+    try:
+        ftn = _aux_csv(FTN_URL.format(season=season),
+                       usecols=["nflverse_game_id", "nflverse_play_id", "qb_location", "is_qb_out_of_pocket"])
+        ftn = ftn.drop_duplicates(["nflverse_game_id", "nflverse_play_id"])
+        key = pd.MultiIndex.from_arrays([frame["game_id"], frame["play_id"]])
+        ftn = ftn.set_index(["nflverse_game_id", "nflverse_play_id"])
+        loc = ftn["qb_location"].reindex(key)
+        out = ftn["is_qb_out_of_pocket"].reindex(key)
+        fmap = {"U": 0, "S": 1, "P": 2}
+        sg = pd.Series([fmap[v] if isinstance(v, str) and v in fmap else int(d) for v, d in zip(loc.values, sg.values)], index=frame.index)
+        oop = pd.Series([None if pd.isna(v) else int(bool(v)) for v in out.values], index=frame.index, dtype=object)
+    except Exception:
+        pass
+    return sg, oop
+
+
 def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
     """Per-receiver TARGET trees from pbp alone — the free, in-season stand-in
     for route trees (route LABELS are FTN's commercial product and reach the
@@ -2904,7 +2932,8 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
     route trees retroactively.
     Each game also carries `plays`: every target as a short row
     [air_yards, side(0 L/1 M/2 R), result(0 inc/1 catch/2 TD/3 INT), yac,
-    yardline_100, qtr, route?] in play order — the target MAP (each throw as a
+    yardline_100, qtr, route|null, formation (0 under center/1 shotgun/2 pistol),
+    out_of_pocket (0/1, null until FTN publishes the week)] in play order — the target MAP (each throw as a
     dot at its depth and side, with its after-catch tail), the in-season cousin
     of NGS's route chart. The 7th element is an index into the block's `routes`
     legend — the route the receiver ran, from the participation charting that
@@ -2921,13 +2950,14 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
         "pass_attempt", "complete_pass", "air_yards", "pass_location",
         "receiving_yards", "pass_touchdown", "two_point_attempt",
         "yards_after_catch", "epa", "first_down", "interception",
-        "yardline_100", "qtr",
+        "yardline_100", "qtr", "shotgun",
     ])
     t = pbp[(pbp["season_type"] == "REG") & (pbp["pass_attempt"] == 1)
             & (pbp["two_point_attempt"] == 0) & pbp["receiver_player_id"].notna()
             & pbp["pass_location"].notna()].copy()
     if t.empty:
         return {}
+    t["tsg"], t["toop"] = _throw_context(season, t)
     # Route labels: the post-season participation drop, joined play by play. Absent (in
     # season, or a season the file does not carry) the rows simply carry no route.
     route_labels, route_ix = [], {}
@@ -2972,12 +3002,14 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
             yac = pd.to_numeric(r.yards_after_catch, errors="coerce")
             yl = pd.to_numeric(r.yardline_100, errors="coerce")
             q = pd.to_numeric(r.qtr, errors="coerce")
+            # [air, side, result, yac, yardline, qtr, route|null, formation, out-of-pocket]
             row = [int(ay), _TM_SIDE.get(r.pass_location, 1), res,
                    int(yac) if comp and not pd.isna(yac) else 0,
                    int(yl) if not pd.isna(yl) else None,
-                   int(q) if not pd.isna(q) else None]
-            if route_labels:
-                row.append(route_ix.get(r.route) if isinstance(r.route, str) else None)
+                   int(q) if not pd.isna(q) else None,
+                   (route_ix.get(r.route) if (route_labels and isinstance(r.route, str)) else None),
+                   int(r.tsg) if r.tsg is not None and not pd.isna(r.tsg) else 0,
+                   (None if r.toop is None or (not isinstance(r.toop, int) and pd.isna(r.toop)) else int(r.toop))]
             rows.append(row)
         return rows
 

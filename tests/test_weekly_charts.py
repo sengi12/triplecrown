@@ -83,7 +83,7 @@ def main():
     _q1 = qw.get("test quarterback") or {}
     _g1 = (_q1.get("games") or [{}])[0]
     check("pass map: every located attempt is a row [air, side, result, yac, yardline, qtr, receiver] in play order",
-          len(_g1.get("plays", [])) == 9 and _g1["plays"][0] == [25, 0, 2, 3, 50, 1, 0] and _g1["plays"][1] == [5, 1, 0, 0, 50, 1, 1])
+          len(_g1.get("plays", [])) == 9 and _g1["plays"][0] == [25, 0, 2, 3, 50, 1, 0, 0, None] and _g1["plays"][1] == [5, 1, 0, 0, 50, 1, 1, 0, None])
     check("pass map: the receiver legend is per passer, in first-seen order, and the ESB id rides the node",
           _q1.get("rcv") == ["J.Chase", "T.Higgins"] and _q1.get("esb") == "QBX000001")
     check("per-game floor drops the 3-attempt relief appearance", "backup guy" not in qw)
@@ -277,13 +277,26 @@ def main():
     tt = nv.target_trees_weekly(2026, min_targets_game=1, min_targets_season=1)
     w = (tt.get("players") or {}).get("test receiver")
     g1 = w["games"][0] if w else {}
-    check("target_trees: every target is a row [air, side, result, yac, yardline, qtr] in play order",
-          w is not None and g1.get("wk") == 1 and g1.get("plays") == [[6, 2, 1, 10, 63, 1], [4, 0, 2, 41, 45, 4],
-                                                                        [26, 1, 0, 0, 97, 2], [12, 0, 3, 0, 12, 3]])
+    check("target_trees: every target is a row [air, side, result, yac, yardline, qtr, route, formation, out-of-pocket] in play order — no charting: route null, pbp formation, pocket unknown",
+          w is not None and g1.get("wk") == 1 and g1.get("plays") == [[6, 2, 1, 10, 63, 1, None, 0, None], [4, 0, 2, 41, 45, 4, None, 0, None],
+                                                                        [26, 1, 0, 0, 97, 2, None, 0, None], [12, 0, 3, 0, 12, 3, None, 0, None]])
     check("target_trees: the TD is result 2 (with its YAC), the pick is 3, an incompletion carries no YAC",
           g1.get("plays", [[]])[1][2] == 2 and g1.get("plays", [[]])[3][2] == 3 and g1.get("plays", [[]])[2][3] == 0)
     check("target_trees: the receiver carries his ESB id and no routes legend ships without charting",
           w and w.get("esb") == "TES123456" and "routes" not in tt and len(w["games"]) == 2 and len(w["games"][1]["plays"]) == 1)
+    _tp = _pbp_targets().assign(shotgun=[1, 0, 1, 1, 0])
+    nv._load_pbp = lambda season, cols=None: _tp
+    def _ftn(url, **kw):
+        if "ftn_charting" not in url:
+            raise Exception("404")
+        return pd.DataFrame([dict(nflverse_game_id="2025_01_SEA_X", nflverse_play_id=10, qb_location="U", is_qb_out_of_pocket=True),
+                             dict(nflverse_game_id="2025_01_SEA_X", nflverse_play_id=11, qb_location="P", is_qb_out_of_pocket=False)])
+    nv._aux_csv = _ftn
+    _g = nv.target_trees_weekly(2026, min_targets_game=1, min_targets_season=1)["players"]["test receiver"]["games"][0]["plays"]
+    check("target_trees: FTN's formation and out-of-pocket ride the row when charted (U/S/P → 0/1/2); pbp's shotgun stands in for uncharted plays, pocket unknown",
+          _g[0][7:] == [0, 1] and _g[1][7:] == [2, 0] and _g[2][7:] == [1, None] and _g[3][7:] == [1, None])
+    nv._aux_csv = lambda url, **kw: (_ for _ in ()).throw(Exception("404"))
+    nv._load_pbp = lambda season, cols=None: _pbp_targets()
 
     def _part(url, **kw):
         if "participation" not in url:
@@ -297,9 +310,9 @@ def main():
     w2 = tt2["players"]["test receiver"]; p2 = w2["games"][0]["plays"]
     check("target_trees: once the charting lands every row gains a 7th slot — an index into the routes legend",
           tt2.get("routes") == ["GO", "SHALLOW CROSS/DRAG", "SLANT"] and [r[6] for r in p2] == [2, 1, 0, None]
-          and w2["games"][1]["plays"][0][6] == 2)
+          and w2["games"][1]["plays"][0][6] == 2 and len(p2[0]) == 9)
     check("target_trees: the unlabelled play keeps its row (route null), nothing else moves",
-          p2[3][:6] == [12, 0, 3, 0, 12, 3] and len(p2) == 4)
+          p2[3][:6] == [12, 0, 3, 0, 12, 3] and p2[3][6] is None and len(p2) == 4)
 
     total, passed = len(RESULTS), sum(RESULTS)
     print(f"\nRESULT: {passed}/{total} {'ALL PASS' if passed == total else 'SOME FAILED'}")

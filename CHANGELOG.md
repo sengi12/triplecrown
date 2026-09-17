@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-09-17
 
+- feat(cards): the scoring throw is a real lob from where the passer stood (FTN formation + out of pocket); the tags off the top of a map never overlap (#129)
 - feat(analyzer): the O-Line pane — every line's run blocking and pass protection over a recent stretch vs the season, surging and slipping, beside Defense in the Season tools (#128)
 - feat(cards): the rushing fan's run-blocking banner follows the selected game; unpublished PFR weekly fields stay missing in the week-window recompute (#127)
 - feat(cards): the carry map — every carry of every game drawn from the backfield through its gap, NGS-style, Map first on the rushing fan; scoring-throw arcs on the pass and target maps; the maps' field goes grey (#126)
