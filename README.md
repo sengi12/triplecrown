@@ -108,7 +108,7 @@ TripleCrown is a self-contained fantasy football projection tool. Instead of tru
   <img src="./images/rushing_fan.png" alt="Centered Image" width="600">
 </div>
 
-- **Playbooks.** Every team has been had their personnel groupings, formations, run success rates vs gaps and route concepts mapped into trends in this new visualization tool which allows you to see all the different passing and rushing concepts that these teams rely on in different situations in game!
+- **Playbooks.** Every team has been had their personnel groupings, formations, run success rates vs gaps and route concepts mapped into trends in this new visualization tool which allows you to see all the different passing and rushing concepts that these teams rely on in different situations in game! The sheet filters by down, distance to the sticks, play type **and by game**: pick a week and every formation card re-reads that game alone, so you can see what a team did in the one that matters rather than only what they do on average. The payload behind it ships one row per play rather than a precomputed bucket for every filter combination, which made it ~40% smaller and is what lets any filter combine with any game.
 
 <!-- Center align -->
 <div align="center">

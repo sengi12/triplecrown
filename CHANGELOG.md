@@ -8,6 +8,8 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-09-18
 
+- feat(playbook): the playsheet filters by game — pick a week and every formation card reads that game alone, combining with down, distance and play type; the coaching payload ships a row per play instead of a bucket per filter combination, ~40% smaller (#153)
+
 - feat(cards): the run after a catch is drawn, not ruled — it leans and settles the way a runner does, and carries on to the sideline when the play ended out of bounds; the uncharted stem from the line of scrimmage bends too (#151)
 - fix(mobile): tapping a text box no longer zooms the page and stays zoomed; the rankings position strip is reachable; a baked copy stops 404ing its own icons (#150)
 - fix(live): a game kicking off or going final redraws the Live view on its own — the week sliders, the "thru wk" chip and the games-played counts follow the games as they happen (#148)

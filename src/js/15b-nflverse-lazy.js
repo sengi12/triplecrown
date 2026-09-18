@@ -12,7 +12,9 @@
 
 // ── coaching seed (triplecrown_seed.coaching.<season>.json) ────────────────
 function decodeSeed(c){
-    if(!c || (c.v!==2 && c.v!==3)) return c;   // v2 = pre-production seeds, v3 = current
+    // v2 pre-production · v3 buckets · v5 a row per play (the playsheet's game filter).
+    // An unknown version passes through untouched rather than being half-decoded.
+    if(!c || !(c.v===2 || c.v===3 || c.v===5)) return c;
     const rt=c.leg.rt, ln=c.leg.ln;
     const decRoutes = rc => rc.map(([i,pct])=>[rt[i],pct]);
     const out={};
@@ -47,7 +49,7 @@ function decodeSeed(c){
                 np, ep, sp, nr:n-np, er, sr, py, ptd, ry, rtd, lanes:decLanes(lanesC)};
       };
       const views={};
-      for(const dk in t.views){ views[dk]={};
+      for(const dk in (t.views||{})){ views[dk]={};
         for(const dsk in t.views[dk]){ views[dk][dsk]={};
           for(const pk in t.views[dk][dsk]){
             const node=t.views[dk][dsk][pk];
@@ -56,6 +58,14 @@ function decodeSeed(c){
         }
       }
       out[code]={team:t.team, slots, names, jerseys:t.jerseys||{}, formations, views};
+      // v5: a row per play in place of the buckets. They already index `forms`, so `sigs` is
+      // just that order; the app adds the rows up per filter (and per game).
+      if(Array.isArray(t.plays)){
+        out[code].plays=t.plays;
+        out[code].sigs=sigOrder;
+        out[code].lanes=t.lanes||[];
+        out[code].games=t.games||[];
+      }
       if(t.co) out[code].charting_only=true;   // charted sets, no participation file yet
     }
     return out;
