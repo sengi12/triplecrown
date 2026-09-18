@@ -9,6 +9,8 @@ Open work lives in [TODO.md](TODO.md).
 ## 2026-09-18
 
 - feat(cards): the run after a catch is drawn, not ruled — it leans and settles the way a runner does, and carries on to the sideline when the play ended out of bounds; the uncharted stem from the line of scrimmage bends too (#151)
+- fix(mobile): tapping a text box no longer zooms the page and stays zoomed; the rankings position strip is reachable; a baked copy stops 404ing its own icons (#150)
+- fix(live): a game kicking off or going final redraws the Live view on its own — the week sliders, the "thru wk" chip and the games-played counts follow the games as they happen (#148)
 
 - fix(live): the week sliders show the whole season and follow the games a team has played — a Thursday-night team's week is in on Friday, not on Tuesday (#147)
 - fix(tracker+cards): the drive line and uprights on the field's centre, the win probability filled for the winner with the clubs on the right, no sideline bar on out-of-bounds runs, and no two runs alike (#146)
