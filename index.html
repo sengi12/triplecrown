@@ -21199,9 +21199,11 @@ const _dstWeekCache = {};
 let _dstInFlight = {};
 const _DST_CONCURRENCY = 4;
 async function pcardFetchDstSeason(season){
-  // An in-progress season only has weeks up to the last completed one; asking for the rest
+  // An in-progress season only has weeks up to the one being played; asking for the rest
   // wastes 12 round trips and (in a frozen build) would leak weeks that "haven't happened".
-  const maxWk = (typeof tcSeasonMaxWeek==='function') ? tcSeasonMaxWeek(season) : 18;
+  // (tcSeasonMaxWeek is the whole season — the slider's track — not the weeks with games.)
+  const maxWk = (typeof tcSeasonPlayedWeek==='function') ? tcSeasonPlayedWeek(season)
+              : (typeof tcSeasonMaxWeek==='function') ? tcSeasonMaxWeek(season) : 18;
   const ck = `${season}:${maxWk}`;
   if(_dstWeekCache[ck]) return _dstWeekCache[ck];
   if(_dstInFlight[ck]) return _dstInFlight[ck];
