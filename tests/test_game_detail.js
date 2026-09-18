@@ -49,7 +49,7 @@ const app=new Function('IDS','SUM', code+`
         if(/\\/league\\/L9$/.test(url)) return {name:'Queen City Keepers', status:'in_season', season:'2026', scoring_settings:{pass_yd:0.05, pass_td:6}, roster_positions:['QB','RB','SUPER_FLEX'], settings:{type:0}, total_rosters:12};
         return prev(url); }; },
     sideClass:gcSideClass, setWeekNum:(w)=>{ _gc.week=w; _gc._mu=null; }, liveTimer:()=>_gcLiveTimer, clearLive:()=>{ if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; } }, setMode:(m)=>{ _gc.mode=m; }, setGame:(id)=>{ _gc.game=id; },
-    onBoard:gcStreamOnBoard, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
+    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
 `)(IDS, SUM);
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -229,6 +229,25 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const g2={...app.GAME(), eid:'401872925'};
   chk(app.summary(g2)===SUM || (app.summary(g2)&&app.summary(g2).drives), 'a cached final summary is served without a fetch');
   chk(app.fetches().length===before, 'and no request went out');
+
+  console.log('=== live: the drive in progress is listed twice by ESPN (previous AND current) ===');
+  const dup=JSON.parse(JSON.stringify(SUM)); dup.drives.current=JSON.parse(JSON.stringify(dup.drives.previous[dup.drives.previous.length-1]));
+  chk(app.plays(dup).length===app.plays(SUM).length && app.plays(dup).every((p,i)=>p.id===app.plays(SUM)[i].id), 'each play once — the live drive\'s plays are not doubled');
+  const lastSum=app.build(SUM).pop(), lastDup=app.build(dup).pop();
+  chk(lastDup.title===lastSum.title && JSON.stringify(lastDup.who.map(w=>w.line))===JSON.stringify(lastSum.who.map(w=>w.line)), 'so the running lines (N CAR, N YD …) are not inflated by the duplicate');
+
+  console.log('=== live: the summary lags the scoreboard — keep reading until it has the last play ===');
+  const lastId=SUM.drives.previous[SUM.drives.previous.length-1].plays.slice(-1)[0].id;
+  const gIn=Object.assign(app.GAME('in'), {sit:{lastPlayId:String(lastId)}});
+  app.setSum('401872925', SUM);
+  const c0=nSum();
+  chk(app.behind(gIn)===false && app.catchUp(gIn)===false && nSum()===c0, 'the summary carries the board\'s last play: nothing to do');
+  const gLag=Object.assign(app.GAME('in'), {sit:{lastPlayId:'p_not_yet'}});
+  chk(app.behind(gLag)===true, 'the board names a play the summary does not have yet → behind');
+  chk(app.catchUp(gLag)===true && app.sumAt('401872925')===0 && nSum()===c0+1, 'the tick stales the cache and reads the summary again');
+  await settle();
+  chk(app.behind(gLag)===true && app.catchUp(gLag)===true && nSum()===c0+2, 'still behind after it lands → the next tick reads again (until the play is there)');
+  chk(app.behind(Object.assign(app.GAME('in'), {sit:{lastPlayId:''}}))===false && app.behind(app.GAME('post'))===false, 'no last play on the board, or no situation: never behind');
   console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
   process.exit(pass===total?0:1);
 })();
