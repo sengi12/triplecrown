@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-09-17
 
+- fix(tracker): a live read never repaints under your finger, an open picker or a focused field; the left sidebar repaints only on a state change; no position filter row in the Game Center (#141)
 - feat(live-feed): the tab's badge counts the plays that matter since you last looked, not the games on (#140)
 - fix(live-feed): timeouts, the two-minute warning and the end of a quarter are pauses, not plays — the live feed skips them like the game feed does (#139)
 - feat(tracker): the scoreboard's last play leads the game feed while the summary is behind, and the ticking "Ns ago" is back on the refresh mark (#138)

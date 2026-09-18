@@ -326,8 +326,8 @@ function lfRows(){
 // ── The panel ────────────────────────────────────────────────────────────────
 function lfRepaint(){
   if(typeof renderRightSidebar!=='function') return;
-  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.lf-body','.gcm-sheet','.gc-body']);
-  else renderRightSidebar();
+  const paint=()=>{ if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.lf-body','.gcm-sheet','.gc-body']); else renderRightSidebar(); };
+  if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', paint); else paint();   // never under a finger or an open picker
 }
 function lfLiveCount(){
   const b=(typeof tcWeekBoard==='function') ? tcWeekBoard() : null;

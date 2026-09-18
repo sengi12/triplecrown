@@ -211,7 +211,7 @@ function gcRows(wk){
   if(wk>Math.max(1,Number(TC_SEASON.week||1))) return null;      // a week ahead has no stat lines yet
   if(!_gc.busy['rows'+key] && typeof fetchWeekStats==='function'){
     _gc.busy['rows'+key]=true;
-    fetchWeekStats(String(TC_SEASON.year), wk, null).then(rows=>{ if(Array.isArray(rows) && rows.length){ _gc.rows[key]={rows, at:Date.now()}; renderRightSidebar(); } }).catch(()=>{}).finally(()=>{ _gc.busy['rows'+key]=false; });
+    fetchWeekStats(String(TC_SEASON.year), wk, null).then(rows=>{ if(Array.isArray(rows) && rows.length){ _gc.rows[key]={rows, at:Date.now()}; (typeof tcRepaintWhenIdle==='function'?tcRepaintWhenIdle('rsb', renderRightSidebar):renderRightSidebar()); } }).catch(()=>{}).finally(()=>{ _gc.busy['rows'+key]=false; });
   }
   return _gc.rows[key] ? _gc.rows[key].rows : null;
 }
@@ -340,8 +340,8 @@ function gcHTML(phone){
   const sel=`<select class="ld-sel" onchange="gcSetWeek(this.value)">${gcWeekOptions(cur).map(w=>`<option value="${w===cur?'current':w}" ${wk===w?'selected':''}>${gcWeekLabel(w)}${w===cur?' · now':w===cur+1?' · next':w>cur?' · upcoming':''}</option>`).join('')}</select>`;
   const lgE=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
   const fmt=gcScoring() ? escHtml((lgE && lgE.name) || (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) || 'league scoring') : 'app scoring · Sleeper for K/DEF/IDP';
-  const pick=_gc.pos||'ALL';
-  const posBtns=GC_POS.map(p=>`<button class="ld-pos ${pick===p?'active':''}" onclick="gcSetPos('${p}')">${p}</button>`).join('');
+  // No position filter row here: the fantasy pane already groups every position, and a
+  // game's two rosters are short enough to read whole (the Rankings page keeps its filters).
   const btns=phone ? '' : rsbButtonsHTML();   // the sheet closes by its handle or the scrim
   // The live feed takes the whole panel: its own filters, no week or position rows.
   if(_gc.view==='feed' && typeof lfBodyHTML==='function'){
@@ -354,7 +354,6 @@ function gcHTML(phone){
   return `<div class="gc">
     <div class="gc-head"><div class="sidebar-section ld-title">Game Center</div>${sel}${btns}</div>
     ${gcViewRowHTML()}
-    <div class="ld-posrow gc-posrow">${posBtns}</div>
     <div class="ld-fmt" title="Points under this scoring">${fmt}</div>
     <div class="gc-body"><div class="gc-list">${gcListHTML(games, _gc.game)}</div><div class="gc-detail">${game ? gcGameHTML(game, rows, wk) : (games && !games.length ? '<div class="ld-empty">no games this week</div>' : '')}</div></div>
   </div>`;
@@ -594,6 +593,6 @@ function renderGamesPhone(fromLoad){
   // The week in progress keeps up: a repaint a minute from now re-reads the board and rows.
   if(gcWeek()===gcCurWeek() && typeof window!=='undefined' && typeof window.setTimeout==='function'
      && (typeof document==='undefined' || document.visibilityState!=='hidden')){
-    _gcm.timer=window.setTimeout(()=>{ _gcm.timer=null; renderGamesPhone(); }, 61*1000);
+    _gcm.timer=window.setTimeout(()=>{ _gcm.timer=null; if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', renderGamesPhone); else renderGamesPhone(); }, 61*1000);
   }
 }

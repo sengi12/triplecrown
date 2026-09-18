@@ -49,7 +49,7 @@ const app=new Function('IDS','SUM', code+`
         if(/\\/league\\/L9$/.test(url)) return {name:'Queen City Keepers', status:'in_season', season:'2026', scoring_settings:{pass_yd:0.05, pass_td:6}, roster_positions:['QB','RB','SUPER_FLEX'], settings:{type:0}, total_rosters:12};
         return prev(url); }; },
     sideClass:gcSideClass, setWeekNum:(w)=>{ _gc.week=w; _gc._mu=null; }, liveTimer:()=>_gcLiveTimer, clearLive:()=>{ if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; } }, setMode:(m)=>{ _gc.mode=m; }, setGame:(id)=>{ _gc.game=id; },
-    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
+    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, idle:tcRepaintWhenIdle, busy:tcUiBusy, setDown:(v)=>{ _tcIdle.down=v; }, flush:tcIdleFlush, setActive:(el)=>{ document.activeElement=el; }, sidebarSig:()=>_tcBoard.sig, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
 `)(IDS, SUM);
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -295,6 +295,20 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(app.refresh({stopPropagation(){}})===true && app.boardAt()===0 && app.sumAt('401872925')===0 && app.freshBusy()===true && nB()===b0+1, 'a tap stales the board and every summary, reads the board at once, and spins until it lands');
   await settle();
   chk(app.freshBusy()===false && app.boardAt()>0, 'the landing stops the spin');
+
+  console.log('=== repaints wait for the hand to lift ===');
+  let painted=0; const paint=()=>{ painted++; };
+  chk(app.busy()===false && app.idle('t', paint)===true && painted===1, 'idle: a repaint runs at once');
+  app.setDown(true);
+  chk(app.busy()===true && app.idle('t', paint)===false && app.idle('t', paint)===false && painted===1, 'a finger down: the repaint is queued, one per key (the newest wins)');
+  app.setDown(false); app.flush(); await new Promise(r=>setTimeout(r,220));
+  chk(painted===2, 'the finger lifts: the queued repaint runs once');
+  app.setActive({tagName:'SELECT'});
+  chk(app.busy()===true && app.idle('t', paint)===false && painted===2, 'an open week picker (a focused select) holds repaints too');
+  app.setActive(null); app.flush(); await new Promise(r=>setTimeout(r,220));
+  chk(painted===3 && app.busy()===false, 'the pick closes: the repaint lands');
+  app.setBoardTeams({CIN:LIVE3, TB:LIVE3}); app.landed(); const sig1=app.sidebarSig(); app.landed();
+  chk(sig1 && app.sidebarSig()===sig1, 'the left sidebar repaints on a state change, not on every read');
   console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
   process.exit(pass===total?0:1);
 })();
