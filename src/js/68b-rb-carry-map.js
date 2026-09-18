@@ -52,6 +52,13 @@ function _cmSmooth(pts){
 // `ob`: the run ended out of bounds, so (x1, y1) is the sideline at its yardage — the
 // run goes through its gap and then angles out to the boundary, the way a back
 // bounces a run outside and gets pushed out.
+// One carry, one seed: everything decided by chance about how a run is drawn comes from
+// the carry's own numbers, so the same run looks the same whether the chart is showing one
+// week or the whole season (see _tmPlaySeed, the target map's twin).
+function _cmPlaySeed(p){
+  return ((p.wk||0)*7919 + (p.yds+50)*104729 + p.lane*1301
+        + ((p.yl==null?99:p.yl)+1)*31 + (p.q||0)*17) >>> 0;
+}
 function _cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, reachedLine, ob){
   const rnd=_cmRand(seed), j=(a)=>(rnd()-0.5)*2*a, sgn=()=>(rnd()<0.5?-1:1);
   const pts=[[sx+j(8), sy+j(4)]];
@@ -145,11 +152,12 @@ function carryMapSVG(plays, title, sub, tag){
   for(const i of order){
     const p=plays[i], frac=fracOf[i];
     const endYd=(p.yl!=null) ? Math.min(p.yds, p.yl) : p.yds;      // the goal line ends every run
-    const seed=(p.wk*7919 + i*104729 + p.lane*1301 + (p.yds+50)*31 + (p.q||0)*17)>>>0;
+    const seed=_cmPlaySeed(p);
     const x0=laneX(losY, p.lane, frac), y1=yOf(endYd);
     // Out of bounds: the run ends ON the sideline at its yardage. The play says which
-    // side when the run went left or right; a middle run that got out picks the side
-    // its lane leans to (the seed decides for a dead-centre run).
+    // side when the run went left or right; a middle run that got out is the one case the
+    // charting cannot answer, so its own seed calls it — the same call every time, whatever
+    // else the week picker has put on the chart beside it.
     const ob=(p.ob!=null && endYd>=0) ? (p.ob || (p.lane<3?-1:(p.lane>3?1:((seed&1)?-1:1)))) : 0;
     const x1=ob ? (ob<0 ? left(y1)+3 : right(y1)-3) : laneX(y1, p.lane, frac);
     const col=_cmColor(p.yds);
