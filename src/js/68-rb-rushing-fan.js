@@ -153,6 +153,7 @@ function _rbProjectedChart(pid, normName){
 }
 
 function _pcardRbNorm(pid){
+  if(typeof tcSeedNameFor==='function') return tcSeedNameFor(pid);
   const p=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[pid])||{};
   return ecrNormName(p.name||'');
 }

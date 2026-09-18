@@ -231,10 +231,70 @@ function _renderTargetTree(pid, node, season, seasonBtns, hasTree){
     <div class="pcard-src">Targets via nflverse play-by-play${live?', nightly':''}${(typeof _tmRouteLegend==='function' && _tmRouteLegend(season))?'; routes via nflverse participation charting':''}.${(typeof ngsChartLink==='function') ? ngsChartLink(node, pname, season, selWk) : ''}</div>
   </div>`;
 }
-function _pcardNorm(pid){
-  const p=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[pid])||{};
-  return ecrNormName(p.name||'');
+// The nflverse blocks are keyed by nflverse's display name, Sleeper by its own — and the two
+// disagree on first names ("Joshua Palmer" vs "josh palmer", "Matthew Stafford" vs "matt").
+// Resolve a Sleeper player to the name the seed actually uses: the exact normalised name,
+// then the same surname under a nickname/full-name alias, then the one player on his team
+// with that surname (and position) in the target trees. Falls back to the plain name.
+const TC_FIRST_ALIASES=[['joshua','josh'],['matthew','matt'],['michael','mike'],['christopher','chris'],
+  ['nathaniel','nate'],['jonathan','jon'],['benjamin','ben'],['william','will'],['joseph','joe'],
+  ['zachary','zach'],['samuel','sam'],['daniel','dan'],['alexander','alex'],['anthony','tony'],
+  ['kenneth','ken'],['robert','rob'],['cameron','cam'],['nicholas','nick'],['timothy','tim'],
+  ['patrick','pat'],['maxwell','max'],['mitchell','mitch'],['gabriel','gabe'],['jacob','jake'],
+  ['thomas','tom'],['edward','ed'],['jeffrey','jeff'],['gregory','greg'],['andrew','drew'],
+  ['steven','steve'],['stephen','steve'],['james','jimmy'],['charles','charlie'],['richard','rich'],
+  ['raymond','ray'],['theodore','theo'],['lawrence','larry'],['ronald','ron'],['donald','don'],
+  ['douglas','doug'],['bradley','brad'],['tyler','ty'],['dominic','dom'],['vincent','vince'],
+  ['frederick','fred'],['calvin','cal'],['isaiah','zay'],['demario','mario']];
+function _tcFirstAliases(first){
+  const out=new Set();
+  TC_FIRST_ALIASES.forEach(([a,b])=>{ if(first===a) out.add(b); if(first===b) out.add(a); });
+  return [...out];
 }
+// Every name-keyed block a card reads, per season.
+function _tcSeedNameBlocks(season){
+  const b=(typeof NFLVERSE!=='undefined'&&NFLVERSE&&NFLVERSE[String(season)])||null;
+  if(!b) return [];
+  return [b.target_trees&&b.target_trees.players, b.routes, b.qb_passing, b.rb_fan].filter(Boolean);
+}
+function _tcSeedHasName(norm){
+  if(typeof NFLVERSE==='undefined'||!NFLVERSE) return false;
+  return Object.keys(NFLVERSE).some(s=>_tcSeedNameBlocks(s).some(blk=>!!blk[norm]));
+}
+const _tcSeedNameMemo={};
+function tcSeedNameFor(pid){
+  const p=(typeof sleeperPlayers!=='undefined'&&sleeperPlayers&&sleeperPlayers[pid])||{};
+  const norm=ecrNormName(p.name||'');
+  if(!norm) return norm;
+  const ck=`${pid}|${norm}|${p.team||''}`;
+  if(_tcSeedNameMemo[ck]&&_tcSeedHasName(_tcSeedNameMemo[ck])) return _tcSeedNameMemo[ck];
+  if(_tcSeedHasName(norm)) return norm;
+  const sp=norm.indexOf(' ');
+  if(sp<0) return norm;
+  const first=norm.slice(0,sp), rest=norm.slice(sp+1);
+  // 1) Same surname, first name under an alias.
+  const alias=_tcFirstAliases(first).map(a=>`${a} ${rest}`).find(_tcSeedHasName);
+  if(alias){ _tcSeedNameMemo[ck]=alias; return alias; }
+  // 2) One player on his team with that surname (and position) in the target trees.
+  const team=String(p.team||'').toUpperCase(), pos=String(p.position||p.pos||'').toUpperCase();
+  if(team && typeof NFLVERSE!=='undefined' && NFLVERSE){
+    const hits=new Set();
+    Object.keys(NFLVERSE).forEach(s=>{
+      const blk=NFLVERSE[s]&&NFLVERSE[s].target_trees&&NFLVERSE[s].target_trees.players;
+      if(!blk) return;
+      Object.keys(blk).forEach(k=>{
+        const n=blk[k]||{};
+        if(!k.endsWith(' '+rest)) return;
+        if(String(n.team||'').toUpperCase()!==team) return;
+        if(pos && n.pos && String(n.pos).toUpperCase()!==pos) return;
+        hits.add(k);
+      });
+    });
+    if(hits.size===1){ const k=[...hits][0]; _tcSeedNameMemo[ck]=k; return k; }
+  }
+  return norm;
+}
+function _pcardNorm(pid){ return tcSeedNameFor(pid); }
 // Does the player have any baked route data — true trees OR the live target
 // tree? (gates the Routes tab; rookies qualify from their first game).
 function pcardRoutesAvailable(pid){
