@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-09-18
 
+- fix(pace): the 17-game pace popup says the week the stats run through, not the last week Sleeper closed (#144)
 - feat(analyzer): the snap tracker — Trends · Snaps, snap share week over week from Sleeper's weekly rows, nflverse filling the blanks via the sidecar, last season as the week-1 baseline, role tiers (#142)
 
 ## 2026-09-17
