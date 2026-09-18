@@ -401,7 +401,11 @@ function gcFeedHTML(game, sum){
   const isNew=(p)=>game.state==='in' && prevTop!=null && p.seq>prevTop;
   if(rows.length) _gcd.topSeq[eid]=rows[0].seq;
   const toggle=`<div class="gcf-bar"><span>${_gcd.feedAll?'every play':'key plays'}</span><button class="ld-pos ${_gcd.feedAll?'':'active'}" onclick="gcdSetFeedAll(false)">Key</button><button class="ld-pos ${_gcd.feedAll?'active':''}" onclick="gcdSetFeedAll(true)">All</button></div>`;
-  if(!rows.length) return now+toggle+`<div class="ld-empty">no plays yet</div>`;
+  // The scoreboard names a play 10-20 s before the summary carries it: while the summary is
+  // behind, the board's last play leads the feed as a provisional row — the headline now,
+  // the running lines when the summary lands (the row then becomes the real one).
+  const soon=gcProvisionalRow(game, sum);
+  if(!rows.length && !soon) return now+toggle+`<div class="ld-empty">no plays yet</div>`;
   const badge=(p)=>p.kind==='td'?'TD':p.kind==='fg'?'FG':p.kind==='xp'?'XP':p.kind==='to'?'TO':p.kind==='sack'?'SACK':p.kind==='big'?'BIG':p.kind==='fourth'?'4TH':p.kind==='miss'?'MISS':'';
   const html=rows.map(p=>{
     const rz = p.yte!=null && p.yte<=20 && p.type!=='Kickoff' && p.type!=='Punt';
@@ -417,7 +421,32 @@ function gcFeedHTML(game, sum){
       <div class="gcf-right"><div class="gcf-clock">${p.q?`Q${p.q}`:''} ${escHtml(p.clock)}</div><div class="gcf-score">${score}</div>${badge(p)?`<span class="gcf-badge gcf-b-${p.kind}">${badge(p)}</span>`:''}</div>
     </div>`;
   }).join('');
-  return now+toggle+`<div class="gcf">${html}</div>`;
+  return now+toggle+`<div class="gcf">${soon||''}${html}</div>`;
+}
+// The board's last play as a feed row while the summary does not have it yet.
+function gcProvisionalRow(game, sum){
+  if(!game || game.state!=='in' || !game.sit || !game.sit.lastPlay || !game.sit.lastPlayId) return '';
+  if(typeof gcSummaryBehind!=='function' || !gcSummaryBehind(game)) return '';
+  const lp=game.sit.lastPlay;
+  if(!lp.text || GC_SKIP_TYPES.has(String(lp.type||''))) return '';
+  const read=(typeof lfReadPlay==='function') ? lfReadPlay(lp) : null;
+  const title=(read && read.title) || String(lp.text||'').replace(/^\s*(\([^)]*\)\s*)+/,'').slice(0,90);
+  const k=read?read.kind:'other';
+  const kind = (k==='rushTd'||k==='recTd') ? 'td' : k==='fg' ? 'fg' : k==='xp' ? 'xp' : (k==='int'||k==='fum') ? 'to' : k==='sack' ? 'sack' : (k==='fgMiss'||k==='xpMiss') ? 'miss' : (Number(lp.yds||0)>=20 ? 'big' : 'play');
+  if(!_gcd.feedAll && !GC_KEY_KINDS.has(kind)) return '';
+  const sit = lp.down>0 ? `${lp.ddt||''}${lp.spot?` @ ${lp.spot}`:''}` : '';
+  const rz = lp.yte!=null && lp.yte<=20;
+  const score=`<span>${game.away} ${game.as!=null?game.as:'–'}</span><span class="gcf-dash">–</span><span>${game.hs!=null?game.hs:'–'} ${game.home}</span>`;
+  const badge = kind==='td'?'TD':kind==='fg'?'FG':kind==='xp'?'XP':kind==='to'?'TO':kind==='sack'?'SACK':kind==='big'?'BIG':kind==='miss'?'MISS':'';
+  return `<div class="gcf-row gcf-${kind} gcf-new gcf-soon" title="Just posted — the full line lands in a moment">
+      <img src="${NFL_LOGO(lp.team||game.home)}" class="gcf-logo" onerror="this.style.display='none'">
+      <div class="gcf-main">
+        <div class="gcf-sit">${escHtml(sit)}${rz?' <span class="gcf-rz">RZ</span>':''}</div>
+        <div class="gcf-title">${escHtml(title)}</div>
+        <div class="gcf-soon-tag">just in</div>
+      </div>
+      <div class="gcf-right"><div class="gcf-clock">${game.sit.period?`Q${game.sit.period}`:''} ${escHtml(game.sit.clock||'')}</div><div class="gcf-score">${score}</div>${badge?`<span class="gcf-badge gcf-b-${kind}">${badge}</span>`:''}</div>
+    </div>`;
 }
 
 // ── The quarter line and the box score ───────────────────────────────────────

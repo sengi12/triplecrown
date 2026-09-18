@@ -231,6 +231,9 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 @keyframes tcFreshSpin{to{transform:rotate(360deg);}}
 .gcf-now .tc-fresh{margin-left:auto;}
 .gc-head .tc-fresh{margin-left:0;margin-right:6px;}
+/* the board's last play, ahead of the summary: dashed edge and a small tag until its line lands */
+.gcf-row.gcf-soon{border-style:dashed;}
+.gcf-soon-tag{font-size:8.5px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-top:2px;}
 .lf-live.on{color:#ff6b6b;}
 .lf-chips{flex-wrap:wrap;align-items:center;}
 .lf-chips .ld-pos{flex:0 0 auto;padding:3px 9px;}
