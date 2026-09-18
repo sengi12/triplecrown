@@ -16,6 +16,26 @@ Each item says what it needs so it can be picked up cold.
   Simulator, and on your own iPhone with a free Apple ID (Personal Team, re-signed weekly).
   TestFlight / App Store need the $99 program — see `mobile/README.md`.
 
+- **Formation names that draw a shape they share (99 of 191).** The playsheet's catalogue
+  gives several names one shape token and no distinguishing keyword, so they render the same
+  picture: `Gun Heavy` / `Panther` / `Raven` / `Saint` are one token and three team nicknames
+  `_mods()` has no rule for, and `Singleback Ace` / `Big` / `Deuce` likewise. Some pairs are
+  legitimately identical (`Far Pro` and `Weak Pro` are the same alignment; a Power I offsets
+  strong by default) — those need no work. The rest need a source for what each name actually
+  looks like, then either a new shape token or a keyword in `_mods()`; do not guess an
+  alignment from the nickname. `tools/formation_check.py --sheet` reports the distinct-shape
+  count, and the groups are listed by comparing card signatures in the contact sheet.
+- **`Singleback Bunch Ace` draws a tight-end pair, not a bunch.** 12 personnel has only two
+  receivers, so its three bunch men must be the two receivers plus a tight end. `place()`
+  lays attached ends outward from the tackle and receivers inward from the sideline, so the
+  two ladders never cluster; putting the Y in the bunch means giving him a place in the
+  receivers' ladder when that side is `bunched`. Also fixes `Gun Bunch Quads` in an empty set,
+  where the back who split out widens the bunch to 7.7 yd.
+- **`Gun Tackle Over Trips` runs out of field.** The sixth lineman slides the formation 22
+  units out, leaving no room for three receivers and a flexed end, so the separation sweep
+  moves someone 12 units. It is the card's geometry, not a placement bug — it needs a wider
+  card (`W` in the playsheet's draw function) rather than different offsets.
+
 ## Live-season gaps that wait on post-season files
 
 - **Coverage (man / zone, the shells) and the vs-man / vs-zone player splits.** The only

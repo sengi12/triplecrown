@@ -116,6 +116,16 @@ data does not enforce for you:
 - **Nobody may be drawn in front of the line of scrimmage.** A back split into the slot is off
   the ball and *behind* the line, which is legal; a yard in front of it is not.
 
+The card is a **schematic with two scales**, which is the thing that will mislead you. Across
+the field 330 units span 53⅓ yards (6.19 units/yard), so the NFL numbers — 12 to 15 yards off
+the sideline — fall at x 237–256. Down the field the shotgun and pistol quarterbacks fix
+9.2 units/yard, and `D(yd)` converts, so every backfield depth in `positions()` is written in
+real yards. The offensive line is deliberately drawn far wider than either scale, because a
+badge is 18 units across and five linemen at a true 2-foot split would overlap. That badge size
+is a floor on everything: two men closer than about 2 yards cannot be drawn apart, which is why
+an under-centre quarterback only *touches* the centre rather than standing on him, and why a
+"nasty" split cannot come all the way inside the numbers.
+
 `tools/formation_check.py` renders every formation in a real browser and checks all of that:
 
 ```bash
@@ -127,3 +137,9 @@ It sweeps the backfield count as well as the personnel, so it exercises the disa
 It can only tell you a picture is **illegal**, never that it is **wrong** — a formation can pass
 every check and still not look like the formation it is named after. Open the contact sheet and
 compare against real diagrams. That is not optional; it is how the last round of bugs was found.
+
+A last trick worth knowing: the checks pass partly because a separation sweep at the end of
+`positions()` pushes apart anything that overlaps. To see what the placement code *meant*,
+render with that sweep disabled — change its loop bound to zero — and diff the positions. On a
+healthy tree only one card overlaps on its own; a jump in that number means new offsets are
+fighting each other and the sweep is hiding it.
