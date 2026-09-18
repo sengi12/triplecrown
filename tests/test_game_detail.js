@@ -49,7 +49,7 @@ const app=new Function('IDS','SUM', code+`
         if(/\\/league\\/L9$/.test(url)) return {name:'Queen City Keepers', status:'in_season', season:'2026', scoring_settings:{pass_yd:0.05, pass_td:6}, roster_positions:['QB','RB','SUPER_FLEX'], settings:{type:0}, total_rosters:12};
         return prev(url); }; },
     sideClass:gcSideClass, setWeekNum:(w)=>{ _gc.week=w; _gc._mu=null; }, liveTimer:()=>_gcLiveTimer, clearLive:()=>{ if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; } }, setMode:(m)=>{ _gc.mode=m; }, setGame:(id)=>{ _gc.game=id; },
-    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, drives:gcDrives, sentence:gcDriveSentence, turnover:gcTurnoverRead, drive:gcDriveChartHTML, wp:gcWinProbHTML, wpOpen:(v)=>{ _gcd.wpOpen=v; }, top:gcTopHTML, lastPlay:gcLastPlayHTML, idle:tcRepaintWhenIdle, busy:tcUiBusy, setDown:(v)=>{ _tcIdle.down=v; }, flush:tcIdleFlush, setActive:(el)=>{ document.activeElement=el; }, sidebarSig:()=>_tcBoard.sig, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
+    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, stubContent:(fn)=>{ renderContent=fn; }, setLiveView:(v)=>{ currentProjViewMode=()=>v?'live':'proj'; }, drives:gcDrives, sentence:gcDriveSentence, turnover:gcTurnoverRead, drive:gcDriveChartHTML, wp:gcWinProbHTML, wpOpen:(v)=>{ _gcd.wpOpen=v; }, top:gcTopHTML, lastPlay:gcLastPlayHTML, idle:tcRepaintWhenIdle, busy:tcUiBusy, setDown:(v)=>{ _tcIdle.down=v; }, flush:tcIdleFlush, setActive:(el)=>{ document.activeElement=el; }, sidebarSig:()=>_tcBoard.sig, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
 `)(IDS, SUM);
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -365,6 +365,14 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(painted===3 && app.busy()===false, 'the pick closes: the repaint lands');
   app.setBoardTeams({CIN:LIVE3, TB:LIVE3}); app.landed(); const sig1=app.sidebarSig(); app.landed();
   chk(sig1 && app.sidebarSig()===sig1, 'the left sidebar repaints on a state change, not on every read');
+  // a game changing state redraws the Live view (the week sliders and the chip follow the games)
+  let contentPaints=0; app.stubContent(()=>{ contentPaints++; }); app.setLiveView(true);
+  app.landed();
+  chk(contentPaints===0, 'the same states again: the page is left alone');
+  app.setBoardTeams({CIN:Object.assign({}, LIVE3, {state:'post'}), TB:Object.assign({}, LIVE3, {state:'post'})}); app.landed();
+  chk(contentPaints===1, 'a game going final redraws the Live view once');
+  app.setLiveView(false); app.setBoardTeams({CIN:LIVE3, TB:LIVE3}); app.landed();
+  chk(contentPaints===1, 'not on the Live view: no redraw');
   console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
   process.exit(pass===total?0:1);
 })();

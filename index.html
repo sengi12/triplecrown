@@ -33058,7 +33058,13 @@ function tcBoardLanded(){
   // the left sidebar's dots change only when a game's STATE changes — not every 5-second read
   try{
     const sig=Object.keys(_tcBoard.teams).sort().map(c=>c+':'+_tcBoard.teams[c].state).join(',');
-    if(sig!==_tcBoard.sig){ _tcBoard.sig=sig; if(typeof renderSidebar==='function') tcRepaintWhenIdle('sidebar', renderSidebar); }
+    if(sig!==_tcBoard.sig){
+      const first=!_tcBoard.sig; _tcBoard.sig=sig;
+      if(typeof renderSidebar==='function') tcRepaintWhenIdle('sidebar', renderSidebar);
+      // a game kicked off or went final: the Live view's week sliders, "thru wk" chip and
+      // games-played counts follow the games as they happen — redraw the page (idle-guarded)
+      if(!first && typeof tcLiveViewOn==='function' && tcLiveViewOn() && typeof renderContent==='function') tcRepaintWhenIdle('content', renderContent);
+    }
   }catch(e){}
   try{
     if(typeof document==='undefined' || !document.querySelectorAll) return;
