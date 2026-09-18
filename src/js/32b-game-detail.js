@@ -86,7 +86,7 @@ function gcSummary(game){
   if(c && Date.now()-c.at<ttl) return c.data;
   if(!_gcd.busy[eid] && typeof sleeperFetch==='function'){
     _gcd.busy[eid]=true;
-    sleeperFetch(GC_SUMMARY_URL(eid)).then(d=>{ if(d && (d.drives||d.boxscore||d.header)){ _gcd.sum[eid]={data:d, at:Date.now()}; gcDetailRepaint(); } }).catch(()=>{}).finally(()=>{ _gcd.busy[eid]=false; });
+    sleeperFetch(GC_SUMMARY_URL(eid), {fresh: game.state==='in'}).then(d=>{ if(d && (d.drives||d.boxscore||d.header)){ _gcd.sum[eid]={data:d, at:Date.now()}; gcDetailRepaint(); } }).catch(()=>{}).finally(()=>{ _gcd.busy[eid]=false; });
   }
   return c?c.data:null;
 }
@@ -380,9 +380,15 @@ function gcFeedPlayerHTML(w, game){
 // The ball right now (a game on): possession, the down, the spot, the clock — the line
 // above the feed that moves between plays, the way the next play is "coming".
 function gcSituationHTML(game){
-  const sit=game && game.sit; if(!sit || game.state!=='in') return '';
+  if(!game || game.state!=='in') return '';
+  const stamp=(typeof tcFreshHTML==='function')?tcFreshHTML(game.eid):'';
+  const sit=game.sit;
+  // no situation block at all (ESPN drops it between halves at times): the status says where we are
+  if(!sit) return game.detail ? `<div class="gcf-now"><span class="gcf-dot"></span><b>${escHtml(game.detail)}</b>${stamp}</div>` : '';
+  // halftime / the end of a quarter: say so, no down and no clock to read
+  if(sit.phase) return `<div class="gcf-now"><span class="gcf-dot"></span><b>${escHtml(sit.phase)}</b>${stamp}</div>`;
   const poss=sit.poss||'';
-  return `<div class="gcf-now"><span class="gcf-dot"></span>${poss?`<img src="${NFL_LOGO(poss)}" class="gc-glogo" onerror="this.style.display='none'"><b>${escHtml(poss)} ball</b>`:'<b>Live</b>'}${sit.ddt?`<span class="gcf-now-dd">${escHtml(sit.ddt)}${sit.spot?` @ ${escHtml(sit.spot)}`:''}</span>`:''}${sit.rz?'<span class="gcf-rz">RZ</span>':''}<span class="gcf-now-clock">${sit.period?`Q${sit.period}`:''} ${escHtml(sit.clock||'')}</span>${(typeof tcFreshHTML==='function')?tcFreshHTML(game.eid):''}</div>`;
+  return `<div class="gcf-now"><span class="gcf-dot"></span>${poss?`<img src="${NFL_LOGO(poss)}" class="gc-glogo" onerror="this.style.display='none'"><b>${escHtml(poss)} ball</b>`:'<b>Live</b>'}${sit.ddt?`<span class="gcf-now-dd">${escHtml(sit.ddt)}${sit.spot?` @ ${escHtml(sit.spot)}`:''}</span>`:''}${sit.rz?'<span class="gcf-rz">RZ</span>':''}<span class="gcf-now-clock">${sit.period?`Q${sit.period}`:''} ${escHtml(sit.clock||'')}</span>${stamp}</div>`;
 }
 function gcFeedHTML(game, sum){
   if(game.state==='pre') return `<div class="ld-empty">no plays yet · ${escHtml(game.detail||'kickoff ahead')}</div>`;
