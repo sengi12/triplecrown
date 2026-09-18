@@ -4304,6 +4304,15 @@ def _scheme_lane(row):
     return (side + gmap.get(gap, "")) if side and gap in gmap else None
 
 
+def _pers_backs(pcode, fallback):
+    """Backs on the field, read off the personnel code ("11" → 1). The set's own `backs` is
+    how many of them stood in the backfield, which is the smaller number on an empty set."""
+    try:
+        return int(str(pcode)[0])
+    except Exception:
+        return int(fallback)
+
+
 def _scheme_name_from_group(b, t, align, ol):
     jumbo = " JUMBO" if ol >= 6 else ""
     if b == 0:
@@ -4457,9 +4466,14 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40, allow_charting_onl
     charting_only = part is None or not len(part) or "offense_personnel" not in part.columns
     if charting_only and not allow_charting_only:
         return {}
-    ftn_cols = ["nflverse_game_id", "nflverse_play_id", "is_motion", "is_play_action", "is_no_huddle"]
+    # n_offense_backfield is what the formation actually was: the personnel string says a team
+    # had one back on the field, not whether he stood in the backfield. In 2025 those two
+    # disagree on 31% of plays — 16% of one-back personnel is really EMPTY, the back split out
+    # — so the sheet used to file all of it under SHOTGUN. Charted seasons now split on it too.
+    ftn_cols = ["nflverse_game_id", "nflverse_play_id", "is_motion", "is_play_action", "is_no_huddle",
+                "n_offense_backfield"]
     if charting_only:
-        ftn_cols += ["qb_location", "n_offense_backfield"]
+        ftn_cols += ["qb_location"]
     try:
         ftn = _aux_csv(FTN_URL.format(season=season), usecols=ftn_cols)
     except Exception:
@@ -4541,12 +4555,19 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40, allow_charting_onl
         if d.empty:
             return {}
         pr = pr[pr.notna()]
-        d["backs"] = [x[0] for x in pr]
+        d["pbacks"] = [x[0] for x in pr]          # backs ON THE FIELD, from the personnel string
         d["te"] = [x[1] for x in pr]
         d["wr"] = [x[2] for x in pr]
         d["ol"] = [x[3] for x in pr]
-        d["p"] = d["backs"].astype(str) + d["te"].astype(str)
+        d["p"] = d["pbacks"].astype(str) + d["te"].astype(str)   # the grouping keeps its usual name (11, 12, 21)
         d["align"] = d.apply(_scheme_align, axis=1)
+        # …and the SET splits on how many of them actually lined up back there, where FTN
+        # charted it. Uncharted plays fall back to the personnel count, as before.
+        if "n_offense_backfield" in d.columns:
+            _bf = pd.to_numeric(d["n_offense_backfield"], errors="coerce")
+            d["backs"] = _bf.fillna(d["pbacks"]).clip(0, 3).astype(int)
+        else:
+            d["backs"] = d["pbacks"]
     d["lane"] = d.apply(_scheme_lane, axis=1)
     d["is_red_zone"] = d["yardline_100"].notna() & (d["yardline_100"] <= 20)
 
@@ -4690,13 +4711,20 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40, allow_charting_onl
                         assigns.append(assign_for(f"WR{i+1}", slots.get(f"WR{i+1}"), pcode, align))
                     for i in range(int(t)):
                         assigns.append(assign_for(f"TE{i+1}", slots.get(f"TE{i+1}"), pcode, align))
-                    for i in range(int(b)):
+                    # A back who split out wide is still on the field and still runs a route,
+                    # so the card lists him: the slots come from the PERSONNEL back count, while
+                    # `backs` above says how many of them stood in the backfield. The diagram
+                    # puts the difference out as receivers.
+                    for i in range(max(int(b), _pers_backs(pcode, b))):
                         assigns.append(assign_for(f"RB{i+1}", slots.get(f"RB{i+1}"), pcode, align))
                     formation_table[sig] = {
                         "p": str(pcode),
                         "align": str(align),
                         "name": _scheme_name_from_group(int(b), int(t), str(align), int(ol)),
                         "backs": int(b), "te": int(t), "wr": int(w), "ol": int(ol),
+                        # how many backs were ON THE FIELD; `backs` is how many lined up back
+                        # there. They differ whenever a back split out (a real EMPTY set).
+                        "pbacks": _pers_backs(pcode, b),
                         "assigns": assigns,
                     }
                     if charting_only:

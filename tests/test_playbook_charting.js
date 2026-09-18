@@ -32,7 +32,10 @@ chk(dec.CIN.charting_only===true && df.pers_assumed===true && df.assigns[0].name
 const legacy=app.decode(compact([form([])]));
 chk(!legacy.CIN.charting_only && !legacy.CIN.formations['11|gun|3|1|1|5'].pers_assumed && !legacy.CIN.formations['11|gun|3|1|1|5'].assigns[0].src, 'a file without the tails (every frozen season) decodes unflagged');
 const enc=fs.readFileSync(path.join(__dirname,'..','build_seed.py'),'utf8');
-chk(/1 if f\.get\("pers_assumed"\) else 0, f\.get\("pers_mix"\) or \[\]\]/.test(enc) && /out_teams\[code\]\["co"\] = 1/.test(enc) && /\{"inf": 1, "szn": 2\}\.get\(a\.get\("src"\), 0\)/.test(enc), 'the encoder writes all three, and the v4 personnel mix');
+chk(/1 if f\.get\("pers_assumed"\) else 0, f\.get\("pers_mix"\) or \[\]/.test(enc) && /out_teams\[code\]\["co"\] = 1/.test(enc) && /\{"inf": 1, "szn": 2\}\.get\(a\.get\("src"\), 0\)/.test(enc), 'the encoder writes all three, and the v4 personnel mix');
+// v5 tail: the backs the personnel had ON the field, which is what tells an empty set apart
+// from a one-back set once the backfield count (not the personnel string) shapes the set.
+chk(/int\(f\.get\("pbacks", f\["backs"\]\)\)/.test(enc), 'the encoder appends the on-field back count');
 const mixed=app.decode(compact([form([1, [['12',62],['11',31]]], [['WR1',[[0,55]],1]])], {co:1}));
 const mf=mixed.CIN.formations['11|gun|3|1|1|5'];
 chk(Array.isArray(mf.pers_mix) && mf.pers_mix.length===2 && mf.pers_mix[0][0]==='12' && mf.pers_mix[0][1]===62 && mf.pers_assumed===true, 'the v4 tail decodes into the set\'s estimated personnel mix');

@@ -282,6 +282,9 @@ function _schemeToGroup(g){
     align: String(g.align||'gun'),
     name: String(g.name||g.p||'FORMATION'),
     backs: _schemeNumber(g.backs, 0),
+    // backs the personnel had ON the field; larger than `backs` when one split out wide,
+    // which is what turns a one-back grouping into a real empty set
+    pbacks: _schemeNumber(g.pbacks, _schemeNumber(g.backs, 0)),
     te: _schemeNumber(g.te, 0),
     wr: _schemeNumber(g.wr, 0),
     ol: _schemeNumber(g.ol, 5),

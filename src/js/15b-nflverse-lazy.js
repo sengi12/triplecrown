@@ -33,7 +33,9 @@ function decodeSeed(c){
           if(srcC===1) a.src='inf'; else if(srcC===2) a.src='season';
           return a;
         });
-        formations[sig]={p:parts[0], align:parts[1], name, backs, te, wr, ol, assigns};
+        // v5 tail: backs the personnel had on the field (>= `backs` when one split out).
+        formations[sig]={p:parts[0], align:parts[1], name, backs, te, wr, ol, assigns,
+                         pbacks:(typeof f[9]==='number' ? f[9] : backs)};
         // v3 tail (the season in progress): the TE/WR split is assumed, not charted.
         if(f[7]) formations[sig].pers_assumed=true;
         // v4 tail: the estimated personnel mix inside the set, [["12",62],["11",31]].
