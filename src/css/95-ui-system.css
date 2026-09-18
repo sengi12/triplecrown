@@ -393,3 +393,21 @@ input.sl::-moz-range-thumb{width:18px;height:18px;border:2.5px solid var(--surfa
   .tc-md-src b{font-size:15px;}
   .tc-md-chip{font-size:10px;padding:2px 7px;}
 }
+
+/* Touch text-entry sizing lives HERE, in the last stylesheet, not in 60-responsive.css:
+   several per-feature files (70-widgets, 12-pcard-dock, …) come after 60 and would win the
+   cascade at equal specificity, which is exactly how the compare and chat boxes kept their
+   13px and kept zooming the page.
+   iOS zooms the whole page when a focused control's computed font-size is under 16px — and
+   never zooms back out, leaving the layout cropped. Bump every text-entry control to 16px on
+   touch devices only; desktop keeps the compact sizes. */
+@media (pointer:coarse){
+  .scenario-name,.rank-search-input,.lp-input,.la-row input,.tc-input,
+  .scoring-field input,.sumer-situational,.la-season-sel,.la-tc-sel{font-size:16px;}
+  input[data-rank-min-bucket]{font-size:16px !important;}  /* inline 12px style needs the override */
+  /* The rest of the text-entry controls, found by walking every view on a phone: the compare
+     and chat boxes (.ai-cmp-in covers the chat input and the MCP url), the analyzer's league
+     inputs, the player-card dock's add box, and the draft week/position selects. */
+  .ai-cmp-in,#laUsername,#laEspnLeague,.pcard-add-in,.ld-sel,
+  input[type=text],input[type=search],input[type=email],input[type=password],input[type=number],textarea,select{font-size:16px;}
+}

@@ -2433,13 +2433,16 @@ html,body{max-width:100%;overflow-x:hidden;}
 .sr-team-wrap,.add-wrap,.coord-carry-wrap,.sr-card-grid,.stats-grid,.scoring-grid{max-width:100%;}
 .rank-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
 
-/* iOS zooms the whole page when a focused control's computed font-size is under 16px — and
-   never zooms back out, leaving the layout cropped. Bump every text-entry control to 16px on
-   touch devices only; desktop keeps the compact sizes. */
-@media (pointer:coarse){
-  .scenario-name,.rank-search-input,.lp-input,.la-row input,.tc-input,
-  .scoring-field input,.sumer-situational,.la-season-sel,.la-tc-sel{font-size:16px;}
-  input[data-rank-min-bucket]{font-size:16px !important;}  /* inline 12px style needs the override */
+/* The rankings position strip used to be capped at 60vw on phones: at 390px that cut the
+   FLEX button in half and hid ROOKIES entirely, with nothing to say the strip scrolled.
+   Let it take whatever the toolbar row has left instead, and fade the right edge when there
+   IS more to reach, so the strip reads as scrollable rather than broken. */
+@media (max-width:760px){
+  .rank-toolbar-row > .pos-filter{max-width:none;flex:1 1 auto;min-width:0;
+    -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 18px),transparent 100%);
+            mask-image:linear-gradient(to right,#000 calc(100% - 18px),transparent 100%);}
+  .rank-toolbar-row > .pos-filter.pf-end{-webkit-mask-image:none;mask-image:none;}
+
 }
 /* ── Week-range dual slider (reference seasons) ── */
 .week-range-card{background:var(--surface2);border:1px solid var(--border);border-radius:9px;
@@ -5309,6 +5312,24 @@ input.sl::-moz-range-thumb{width:18px;height:18px;border:2.5px solid var(--surfa
   .tc-md-src{font-size:11.5px;}
   .tc-md-src b{font-size:15px;}
   .tc-md-chip{font-size:10px;padding:2px 7px;}
+}
+
+/* Touch text-entry sizing lives HERE, in the last stylesheet, not in 60-responsive.css:
+   several per-feature files (70-widgets, 12-pcard-dock, …) come after 60 and would win the
+   cascade at equal specificity, which is exactly how the compare and chat boxes kept their
+   13px and kept zooming the page.
+   iOS zooms the whole page when a focused control's computed font-size is under 16px — and
+   never zooms back out, leaving the layout cropped. Bump every text-entry control to 16px on
+   touch devices only; desktop keeps the compact sizes. */
+@media (pointer:coarse){
+  .scenario-name,.rank-search-input,.lp-input,.la-row input,.tc-input,
+  .scoring-field input,.sumer-situational,.la-season-sel,.la-tc-sel{font-size:16px;}
+  input[data-rank-min-bucket]{font-size:16px !important;}  /* inline 12px style needs the override */
+  /* The rest of the text-entry controls, found by walking every view on a phone: the compare
+     and chat boxes (.ai-cmp-in covers the chat input and the MCP url), the analyzer's league
+     inputs, the player-card dock's add box, and the draft week/position selects. */
+  .ai-cmp-in,#laUsername,#laEspnLeague,.pcard-add-in,.ld-sel,
+  input[type=text],input[type=search],input[type=email],input[type=password],input[type=number],textarea,select{font-size:16px;}
 }
 </style>
 </head>
@@ -26116,6 +26137,15 @@ function rankingsRenderCacheKey(teamScoped){
 // The board's default sort: ECR for a draft board, FPTS once the season is under way — the
 // projection the app maintains week to week is the ranking then, not August's consensus.
 function rankDefaultSortKey(){ return (typeof hasSeasonStarted==='function' && hasSeasonStarted()) ? 'fpts' : 'ecr'; }
+// The position strip scrolls on phones (ALL … ROOKIES does not fit 390px). Its right edge
+// fades while there is more to reach; this drops the fade once you are at the end, so the
+// last button never sits dimmed for no reason. Called from the strip's own onscroll and
+// once after each render — no document-level listener, nothing to clean up.
+function _rankPosFilterEdge(el){
+  if(!el) return;
+  const atEnd = el.scrollLeft >= el.scrollWidth - el.clientWidth - 1;
+  el.classList.toggle('pf-end', atEnd);
+}
 function renderRankings(){
   if(typeof rankSortAuto!=='undefined' && rankSortAuto && rankSortKey==='ecr' && rankDefaultSortKey()==='fpts'){ rankSortKey='fpts'; rankSortDir=-1; }
   const _rkNow = ()=>((typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now());
@@ -26694,7 +26724,7 @@ function renderRankings(){
       ${(!following && leaguePickerState.open) ? renderLeaguePicker() : ''}
       <div class="rank-toolbar">
         <div class="rank-toolbar-row">
-          <div class="pos-filter">${posBtns}</div>
+          <div class="pos-filter" onscroll="_rankPosFilterEdge(this)">${posBtns}</div>
           <button class="btn btn-ghost btn-sm rank-search-toggle ${searchOpen?'active':''}" onclick="toggleRankingsSearch()" title="Search rankings players">${TC_ICON("search")}</button>
           <div class="rank-search-wrap ${searchOpen?'':'rank-search-hidden'}">
             <input id="rankSearchInput" class="rank-search-input" type="text" value="${escAttr(rankingsSearchQuery||'')}" placeholder="${searchPlaceholder}" oninput="setRankingsSearchQuery(this.value, this.selectionStart, this.selectionEnd)">
@@ -26813,6 +26843,7 @@ function rankSort(k){
   // Restore after layout settles. All axes are clamped to the NEW content size, since a
   // different sort can change the table's height (and column widths).
   requestAnimationFrame(()=>{
+    _rankPosFilterEdge(document.querySelector('.rank-toolbar-row > .pos-filter'));
     const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
     window.scrollTo(0, Math.min(y, max));
     const wrap = document.querySelector('.rank-table-wrap');

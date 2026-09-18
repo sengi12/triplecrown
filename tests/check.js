@@ -20730,6 +20730,15 @@ function rankingsRenderCacheKey(teamScoped){
 // The board's default sort: ECR for a draft board, FPTS once the season is under way — the
 // projection the app maintains week to week is the ranking then, not August's consensus.
 function rankDefaultSortKey(){ return (typeof hasSeasonStarted==='function' && hasSeasonStarted()) ? 'fpts' : 'ecr'; }
+// The position strip scrolls on phones (ALL … ROOKIES does not fit 390px). Its right edge
+// fades while there is more to reach; this drops the fade once you are at the end, so the
+// last button never sits dimmed for no reason. Called from the strip's own onscroll and
+// once after each render — no document-level listener, nothing to clean up.
+function _rankPosFilterEdge(el){
+  if(!el) return;
+  const atEnd = el.scrollLeft >= el.scrollWidth - el.clientWidth - 1;
+  el.classList.toggle('pf-end', atEnd);
+}
 function renderRankings(){
   if(typeof rankSortAuto!=='undefined' && rankSortAuto && rankSortKey==='ecr' && rankDefaultSortKey()==='fpts'){ rankSortKey='fpts'; rankSortDir=-1; }
   const _rkNow = ()=>((typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now());
@@ -21308,7 +21317,7 @@ function renderRankings(){
       ${(!following && leaguePickerState.open) ? renderLeaguePicker() : ''}
       <div class="rank-toolbar">
         <div class="rank-toolbar-row">
-          <div class="pos-filter">${posBtns}</div>
+          <div class="pos-filter" onscroll="_rankPosFilterEdge(this)">${posBtns}</div>
           <button class="btn btn-ghost btn-sm rank-search-toggle ${searchOpen?'active':''}" onclick="toggleRankingsSearch()" title="Search rankings players">${TC_ICON("search")}</button>
           <div class="rank-search-wrap ${searchOpen?'':'rank-search-hidden'}">
             <input id="rankSearchInput" class="rank-search-input" type="text" value="${escAttr(rankingsSearchQuery||'')}" placeholder="${searchPlaceholder}" oninput="setRankingsSearchQuery(this.value, this.selectionStart, this.selectionEnd)">
@@ -21427,6 +21436,7 @@ function rankSort(k){
   // Restore after layout settles. All axes are clamped to the NEW content size, since a
   // different sort can change the table's height (and column widths).
   requestAnimationFrame(()=>{
+    _rankPosFilterEdge(document.querySelector('.rank-toolbar-row > .pos-filter'));
     const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
     window.scrollTo(0, Math.min(y, max));
     const wrap = document.querySelector('.rank-table-wrap');
