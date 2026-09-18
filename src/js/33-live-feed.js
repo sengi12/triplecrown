@@ -7,12 +7,14 @@
 // so every board poll (8 s, change-driven; see gcStreamOnBoard) appends whatever is new to
 // a rolling feed. No per-game summary is fetched: opening a single game still does that.
 //
-// Filters: All games, or any of your synced leagues (multi-select). With leagues picked a
-// play shows only when someone rostered there is in it, tagged with the owner, and carrying
-// the points it just moved under THAT league's scoring — exact for the stats a play
-// produces (yards, catches, touchdowns, interceptions). "My matchup" narrows again to the
-// two starting line-ups of your own game that week.
-var _lf = { rows:[], seen:{}, leagues:[], mineOnly:false, max:150, nameIdx:null, nameIdxAt:0,
+// Filters: All games, or any of your synced leagues (multi-select). A league picked means
+// MY MATCHUP there: a play shows only when one of my starters, or one of the ones I am
+// playing that week, is in it — tagged with the league and carrying the points it just
+// moved under THAT league's scoring, exact for the stats a play produces (yards, catches,
+// touchdowns, interceptions). On a Sunday slate that is the whole point of the view.
+// History: each live game's summary (read once, then every ten minutes) fills the feed
+// back to kickoff with every play's own clock; the board's last play keeps it current.
+var _lf = { rows:[], seen:{}, leagues:[], max:150, nameIdx:null, nameIdxAt:0,
   // how the players in the plays were found — read this when a name looks wrong
   stat:{ byId:0, byName:0, bySurname:0, unresolved:0 } };
 const LF_MAX_ROWS = 150;
@@ -161,12 +163,13 @@ function lfOnBoard(teams){
     if(!id) return;
     const key=`${eid}:${id}`;
     const prev=_lf.rows.find(r=>r.key===key);
-    if(prev && prev.text===String(lp.text||'') && prev.scoreValue===Number(lp.scoreValue||0)) return;   // the same play again
+    if(prev && prev.text.trim()===String(lp.text||'').trim() && prev.scoreValue===Number(lp.scoreValue||0)) return;   // the same play again
+    if(prev && prev.src==='sum') return;   // the summary already has this play, with its own clock — the board adds nothing
     _lf.seen[eid]=id;
     const read=lfReadPlay(lp);
     if(read.kind==='other' && !lp.text) return;
     const row={
-      key, eid, id, at:Date.now(),
+      key, eid, id, at:Date.now(), src:'board',
       home:g.home, away:g.away, hs:g.hs, as:g.as, team:lp.team||'',
       q:Number(g.sit.period||0), clock:String(g.sit.clock||''),
       down:Number(lp.down||0), ddt:String(lp.ddt||''), spot:String(lp.spot||''),
@@ -177,11 +180,53 @@ function lfOnBoard(teams){
     else _lf.rows.unshift(row);
     added++;
   });
+  // History: each live game's summary carries every play so far — not only the one a poll
+  // happened to catch — so the feed reads back to kickoff, with each play's own clock.
+  Object.keys(games).forEach(eid=>{ try{ added+=lfSeedGame(games[eid]); }catch(e){} });
   if(_lf.rows.length>LF_MAX_ROWS) _lf.rows.length=LF_MAX_ROWS;
   if(added && typeof lfRepaint==='function') lfRepaint();
   return added;
 }
-function lfClear(){ _lf.rows=[]; _lf.seen={}; }
+function lfClear(){ _lf.rows=[]; _lf.seen={}; _lf.seedAt={}; }
+// A live game's summary is read once when it first shows in the feed and again every ten
+// minutes (the Game Center's own polling keeps the picked game's fresher than that); every
+// board landing folds whatever summary is cached into the rows.
+const LF_SEED_TTL = 10*60*1000;
+function lfSeedGame(g){
+  if(typeof gcSummary!=='function' || typeof _gcd==='undefined' || !g || !g.eid) return 0;
+  const eid=String(g.eid); _lf.seedAt=_lf.seedAt||{};
+  if(!_lf.seedAt[eid] || Date.now()-_lf.seedAt[eid]>LF_SEED_TTL){ _lf.seedAt[eid]=Date.now(); try{ gcSummary({eid, state:'in'}); }catch(e){} }
+  const c=_gcd.sum[eid]; if(!c || !c.data) return 0;
+  return lfIngestSummary(g, c.data);
+}
+// The summary's plays into the feed: one row per play id the feed does not have yet, in the
+// game's order; a row the board caught first takes the play's own clock and score.
+function lfIngestSummary(g, sum){
+  const plays=(typeof gcPlays==='function') ? gcPlays(sum) : []; if(!plays.length) return 0;
+  const eid=String(g.eid); let added=0; const now=Date.now();
+  plays.forEach((p,i)=>{
+    const id=String(p.id||''); if(!id) return;
+    const key=`${eid}:${id}`;
+    const scoreValue = p.scoring ? (/Touchdown/.test(p.type)?6:(/Field Goal/.test(p.type)?3:1)) : 0;
+    const prev=_lf.rows.find(r=>r.key===key);
+    if(prev){
+      if(prev.src!=='sum') Object.assign(prev, { q:p.q||prev.q, clock:p.clock||prev.clock, hs:p.hs!=null?p.hs:prev.hs, as:p.as!=null?p.as:prev.as, src:'sum' });
+      return;
+    }
+    const lp={ id, type:p.type, text:p.text, yds:p.yds, team:p.team, down:p.down, ddt:p.ddt, spot:p.spot, yte:p.yte, scoreValue, athletes:[] };
+    const read=lfReadPlay(lp);
+    if(read.kind==='other' && !lp.text) return;
+    // its place in time: just under the game's next play if the feed already has one, else its order in the game
+    const later=_lf.rows.filter(r=>r.eid===eid && Number(r.id)>Number(id));
+    const at = later.length ? Math.min.apply(null, later.map(r=>r.at))-(plays.length-i) : now-(plays.length-1-i);
+    _lf.rows.push({ key, eid, id, at, src:'sum', home:g.home, away:g.away, hs:p.hs!=null?p.hs:g.hs, as:p.as!=null?p.as:g.as, team:p.team||'',
+      q:Number(p.q||0), clock:String(p.clock||''), down:Number(p.down||0), ddt:String(p.ddt||''), spot:String(p.spot||''),
+      rz:p.yte!=null && p.yte<=20, yds:Number(p.yds||0), scoreValue, kind:read.kind, title:read.title, roles:read.roles, stats:read.stats, tokens:read.tokens, text:String(p.text||'') });
+    added++;
+  });
+  if(added) _lf.rows.sort((a,b)=>b.at-a.at);
+  return added;
+}
 
 // ── Leagues: who is rostered where, and what a play was worth there ──────────
 // The leagues: the player card's map (every synced league — rosters, owners, scoring —
@@ -221,14 +266,13 @@ function lfToggleLeague(id){
   id=String(id);
   const i=_lf.leagues.indexOf(id);
   if(i<0) _lf.leagues.push(id); else _lf.leagues.splice(i,1);
-  if(!_lf.leagues.length) _lf.mineOnly=false;
   if(typeof lfRepaint==='function') lfRepaint();
 }
-function lfSetAll(){ _lf.leagues=[]; _lf.mineOnly=false; if(typeof lfRepaint==='function') lfRepaint(); }
+function lfSetAll(){ _lf.leagues=[]; if(typeof lfRepaint==='function') lfRepaint(); }
 // Every league you are in: the plays that touch anyone you or a leaguemate rosters.
 function lfSetAllLeagues(){ _lf.leagues=lfLeagueList().map(l=>l.id); if(typeof lfRepaint==='function') lfRepaint(); }
 function lfAllLeaguesOn(){ const all=lfLeagueList(); return all.length>0 && _lf.leagues.length===all.length; }
-function lfSetMineOnly(v){ _lf.mineOnly=!!v; if(typeof lfRepaint==='function') lfRepaint(); }
+// A league chip means my matchup in that league — my starters and the ones I am playing.
 // What this play moved in one league: Σ stat × setting over the players it involved.
 function lfDelta(row, lg){
   if(!lg || !lg.scoring) return null;
@@ -250,7 +294,7 @@ function lfRelevance(row){
     if(!inLg.length) return;
     const mine=inLg.some(p=>lg.mine.has(String(p)));
     const opp=inLg.some(p=>lg.opp.has(String(p)));
-    if(_lf.mineOnly && !mine && !opp) return;
+    if(!mine && !opp) return;   // a league picked means MY matchup there: my starters and the ones I am playing
     tags.push({ id:lg.id, name:lg.name, mine, opp, delta:lfDelta(row, lg) });
   });
   return {show:tags.length>0, tags};
@@ -295,8 +339,7 @@ function lfChipsHTML(){
   const chips=[`<button class="ld-pos ${sel.length?'':'active'}" onclick="lfSetAll()">All games</button>`]
     .concat(list.length>1 ? [`<button class="ld-pos ${lfAllLeaguesOn()?'active':''}" onclick="lfSetAllLeagues()">All leagues</button>`] : [])
     .concat(list.map(l=>`<button class="ld-pos lf-lg ${sel.includes(l.id)?'active':''}" onclick="lfToggleLeague('${escAttr(l.id)}')" title="${escAttr(l.name)}" aria-label="${escAttr(l.name)}">${lfLeagueChipInner(l)}</button>`));
-  const mine=sel.length ? `<label class="lf-mine"><input type="checkbox" ${_lf.mineOnly?'checked':''} onchange="lfSetMineOnly(this.checked)"> My matchup only</label>` : '';
-  return `<div class="ld-posrow lf-chips">${chips.join('')}</div>${mine}`;
+  return `<div class="ld-posrow lf-chips">${chips.join('')}</div>`;
 }
 function lfTagHTML(t){
   const d=t.delta;
@@ -359,7 +402,7 @@ function lfBodyHTML(){
   const list = rows.length
     ? (()=>{ const S=lfSideSets(); return `<div class="gcf lf-list">${rows.map(r=>lfRowHTML(r, S)).join('')}</div>`; })()
     : `<div class="ld-empty">${live
-        ? (_lf.leagues.length ? 'no plays yet for the leagues you picked' : 'waiting for the next play…')
+        ? (_lf.leagues.length ? 'no plays yet in your matchups' : 'waiting for the next play…')
         : (_lf.rows.length ? 'nothing on right now — the last plays are above' : 'the feed fills as games kick off')}</div>`;
   return `<div class="lf-body">${lfChipsHTML()}${list}</div>`;
 }

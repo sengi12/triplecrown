@@ -49,7 +49,7 @@ const app=new Function('IDS','SUM', code+`
         if(/\\/league\\/L9$/.test(url)) return {name:'Queen City Keepers', status:'in_season', season:'2026', scoring_settings:{pass_yd:0.05, pass_td:6}, roster_positions:['QB','RB','SUPER_FLEX'], settings:{type:0}, total_rosters:12};
         return prev(url); }; },
     sideClass:gcSideClass, setWeekNum:(w)=>{ _gc.week=w; _gc._mu=null; }, liveTimer:()=>_gcLiveTimer, clearLive:()=>{ if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; } }, setMode:(m)=>{ _gc.mode=m; }, setGame:(id)=>{ _gc.game=id; },
-    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
+    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
 `)(IDS, SUM);
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -248,6 +248,21 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   await settle();
   chk(app.behind(gLag)===true && app.catchUp(gLag)===true && nSum()===c0+2, 'still behind after it lands → the next tick reads again (until the play is there)');
   chk(app.behind(Object.assign(app.GAME('in'), {sit:{lastPlayId:''}}))===false && app.behind(app.GAME('post'))===false, 'no last play on the board, or no situation: never behind');
+  chk(app.POLL===5000, 'the live poll ticks every 5 seconds');
+
+  console.log('=== live: the fantasy pane scores the box score, not Sleeper\'s trailing rows ===');
+  app.setSum('401872925', SUM);
+  const boxR=app.boxRows(SUM);
+  const bq1=boxR.find(r=>r.player_id==='q1'), br2=boxR.find(r=>r.player_id==='r2'), bk2=boxR.find(r=>r.player_id==='k2');
+  chk(bq1 && bq1.stats.pass_cmp===23 && bq1.stats.pass_att===28 && bq1.stats.pass_yd===216 && bq1.stats.pass_td===0 && bq1.stats.pass_int===0 && bq1.stats.pass_sack===4 && bq1.stats.fum_lost===3 && bq1.position==='QB', 'a passer\'s box line → Sleeper keys (C/ATT split, sacks from "4-23", fumbles lost)');
+  chk(br2 && br2.stats.rush_att>0 && br2.stats.rush_yd>0 && br2.stats.rec>=0 && br2.stats.rec_yd>=0 && br2.player.first_name==='Chase' && br2.team==='CIN', 'a back carries rushing AND receiving from his two groups');
+  chk(bk2 && bk2.stats.fgm!=null && bk2.stats.fga!=null && bk2.stats.xpm!=null && bk2.stats.xpa!=null, 'a kicker\'s FG and XP splits');
+  chk(!boxR.some(r=>!r.player_id) && boxR.every(r=>r.stats.gp===1), 'only athletes the app can name become rows (an ESPN-only name is left out), each with a game played');
+  const gLive=Object.assign(app.GAME('in'), {eid:'401872925'});
+  const live=app.liveRows(app.ROWS, gLive);
+  const lq1=live.find(r=>r.player_id==='q1'), sq1=app.ROWS.find(r=>r.player_id==='q1');
+  chk(sq1.stats.pass_td===1 && lq1.stats.pass_td===0 && lq1.stats.pass_yd===216 && lq1.stats.rush_td===1 && lq1.live===true, 'the box score lays over Sleeper\'s row (Sleeper still says a passing TD; the box says none) — keys the box does not carry stay');
+  chk(live.length>=app.ROWS.length && app.liveRows(app.ROWS, app.GAME('post'))===app.ROWS && app.liveRows(app.ROWS, Object.assign(app.GAME('in'), {eid:'nope'}))===app.ROWS, 'players the box names but Sleeper has not sent yet join; a final, or a game with no summary, keeps Sleeper\'s rows');
   console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
   process.exit(pass===total?0:1);
 })();
