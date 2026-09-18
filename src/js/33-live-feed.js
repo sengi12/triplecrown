@@ -161,6 +161,9 @@ function lfOnBoard(teams){
   Object.keys(games).forEach(eid=>{
     const g=games[eid], lp=g.sit.lastPlay, id=String(lp.id||'');
     if(!id) return;
+    // a pause is not a play: timeouts, the two-minute warning, the end of a quarter (the
+    // game feed's own skip list)
+    if(typeof GC_SKIP_TYPES!=='undefined' && GC_SKIP_TYPES.has(String(lp.type||''))) return;
     const key=`${eid}:${id}`;
     const prev=_lf.rows.find(r=>r.key===key);
     if(prev && prev.text.trim()===String(lp.text||'').trim() && prev.scoreValue===Number(lp.scoreValue||0)) return;   // the same play again
