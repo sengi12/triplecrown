@@ -2603,13 +2603,14 @@ def qb_passing_weekly(season, min_attempts_game=8):
     Each game also carries `plays`: every located attempt as a short row
     [air_yards, side(0 L/1 M/2 R), result(0 inc/1 comp/2 TD/3 INT), yac,
     yardline_100, qtr, receiver, formation (0 under center/1 shotgun/2 pistol),
-    out_of_pocket (0/1, null until FTN publishes the week)] in play order — the PASS MAP (each throw a dot
-    at its depth and side, with its after-catch tail), the cousin of NGS's pass
-    chart. `receiver` indexes the node's `rcv` legend (pbp's short names, e.g.
+    out_of_pocket (0/1, null until FTN publishes the week),
+    out_of_bounds (1 when the play ended out of bounds)] in play order — the PASS MAP (each throw a dot
+    at its depth and side, with its after-catch tail, which runs out to the sideline
+    when the catch ended there), the cousin of NGS's pass chart. `receiver` indexes the node's `rcv` legend (pbp's short names, e.g.
     "J.Smith-Njigba"). `esb` is the passer's NFL ESB id for the NGS deep link.
     Playoff games ride along after week 18 (`post: 1`); the season block the
     client reads them against stays regular season."""
-    _map_cols = ["yards_after_catch", "yardline_100", "qtr", "receiver_player_name", "shotgun"]
+    _map_cols = ["yards_after_catch", "yardline_100", "qtr", "receiver_player_name", "shotgun", "out_of_bounds"]
     pbp = _load_pbp(season, _QB_ZONE_COLS + ["week", "defteam", "game_id", "play_id"] + _map_cols)
     pbp = pbp[pbp["season_type"].isin(["REG", "POST"])]
     att = pbp[(pbp["pass_attempt"] == 1) & (pbp["sack"] == 0)
@@ -2644,7 +2645,8 @@ def qb_passing_weekly(season, min_attempts_game=8):
                          int(q) if not pd.isna(q) else None,
                          rcv_ix.get(rc) if rc is not None else None,
                          int(r.tsg) if r.tsg is not None and not pd.isna(r.tsg) else 0,
-                         (None if r.toop is None or (not isinstance(r.toop, int) and pd.isna(r.toop)) else int(r.toop))])
+                         (None if r.toop is None or (not isinstance(r.toop, int) and pd.isna(r.toop)) else int(r.toop)),
+                         1 if (comp and float(getattr(r, "out_of_bounds", 0) or 0) == 1) else 0])
         return rows
     try:
         duress = _qb_duress(season, pbp)
@@ -2943,8 +2945,10 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
     Each game also carries `plays`: every target as a short row
     [air_yards, side(0 L/1 M/2 R), result(0 inc/1 catch/2 TD/3 INT), yac,
     yardline_100, qtr, route|null, formation (0 under center/1 shotgun/2 pistol),
-    out_of_pocket (0/1, null until FTN publishes the week)] in play order — the target MAP (each throw as a
-    dot at its depth and side, with its after-catch tail), the in-season cousin
+    out_of_pocket (0/1, null until FTN publishes the week),
+    out_of_bounds (1 when the play ended out of bounds)] in play order — the target MAP (each throw as a
+    dot at its depth and side, with its after-catch tail, which angles out to the
+    sideline when he was pushed out), the in-season cousin
     of NGS's route chart. The 7th element is an index into the block's `routes`
     legend — the route the receiver ran, from the participation charting that
     reaches open data after the post-season — and exists only when that file
@@ -2961,7 +2965,7 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
         "pass_attempt", "complete_pass", "air_yards", "pass_location",
         "receiving_yards", "pass_touchdown", "two_point_attempt",
         "yards_after_catch", "epa", "first_down", "interception",
-        "yardline_100", "qtr", "shotgun",
+        "yardline_100", "qtr", "shotgun", "out_of_bounds",
     ])
     t = pbp[pbp["season_type"].isin(["REG", "POST"]) & (pbp["pass_attempt"] == 1)
             & (pbp["two_point_attempt"] == 0) & pbp["receiver_player_id"].notna()
@@ -3014,14 +3018,18 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
             yac = pd.to_numeric(r.yards_after_catch, errors="coerce")
             yl = pd.to_numeric(r.yardline_100, errors="coerce")
             q = pd.to_numeric(r.qtr, errors="coerce")
-            # [air, side, result, yac, yardline, qtr, route|null, formation, out-of-pocket]
+            # [air, side, result, yac, yardline, qtr, route|null, formation, out-of-pocket, out-of-bounds]
             row = [int(ay), _TM_SIDE.get(r.pass_location, 1), res,
                    int(yac) if comp and not pd.isna(yac) else 0,
                    int(yl) if not pd.isna(yl) else None,
                    int(q) if not pd.isna(q) else None,
                    (route_ix.get(r.route) if (route_labels and isinstance(r.route, str)) else None),
                    int(r.tsg) if r.tsg is not None and not pd.isna(r.tsg) else 0,
-                   (None if r.toop is None or (not isinstance(r.toop, int) and pd.isna(r.toop)) else int(r.toop))]
+                   (None if r.toop is None or (not isinstance(r.toop, int) and pd.isna(r.toop)) else int(r.toop)),
+                   # the catch that ended at the sideline: the map runs its tail out to the
+                   # boundary instead of straight up the lane (which side comes from
+                   # pass_location, the same way the carry map reads the run's gap)
+                   1 if (comp and float(getattr(r, "out_of_bounds", 0) or 0) == 1) else 0]
             rows.append(row)
         return rows
 
