@@ -41,7 +41,7 @@ const app=new Function(code+`
   const LP=(o)=>Object.assign({id:'p1', text:'', type:'Rush', scoreValue:0, yds:0, team:'NYJ', athletes:[], down:2, ddt:'2nd & 4', spot:'GB 5', yte:5}, o);
   const G=(o)=>Object.assign({state:'in', eid:'E1', score:6, oppScore:14, home:true, opp:'MIN', sit:{period:3, clock:'10:07', lastPlayId:'p1', lastPlay:LP({})}}, o);
   return { onBoard:lfOnBoard, rows:()=>_lf.rows, view:lfRows, clear:lfClear, read:lfReadPlay, stats:lfPlayStats, pid:lfPidFor,
-    seed:(eid,sum)=>{ _gcd.sum[eid]={data:sum, at:Date.now()}; }, seededAt:()=>_lf.seedAt,
+    seed:(eid,sum)=>{ _gcd.sum[eid]={data:sum, at:Date.now()}; }, seededAt:()=>_lf.seedAt, unseen:lfUnseen, markSeen:lfMarkSeen, viewRow:gcViewRowHTML, setView:(v)=>{ _gc.view=v; },
     delta:lfDelta, rel:lfRelevance, leagues:lfLeagueList, toggle:lfToggleLeague, all:lfSetAll, sel:()=>_lf.leagues,
     initials:lfLeagueInitials, chipInner:lfLeagueChipInner, lg:()=>_pcardLg.byLeague,
     setPcard:(o)=>{ _pcardLg={byLeague:o, at:Date.now(), loading:null}; }, setMu:(lid,wk,v)=>{ _gcMu.cache[lid+'|'+wk]=v; }, panel:lfPanelHTML, rowHTML:lfRowHTML, allLeagues:lfSetAllLeagues, sides:lfSideSets, stat:()=>_lf.stat, titleHTML:lfTitleHTML, LP, G, board:(t)=>{ _tcBoard={season:String(TC_SEASON.year), week:tcBoardWeek(), at:Date.now(), teams:t, busy:false, live:true}; }, MAX:LF_MAX_ROWS };
@@ -179,6 +179,28 @@ const LP=app.LP, G=app.G;
   chk(/lf-live on">1 live/.test(hf) && /class="tc-fresh"/.test(hf) && /tc-fresh-t">(just now|\d+s ago)</.test(hf), 'with a game on, the feed\'s head carries the stamp beside the live count');
   app.board({}); hf=app.panel(false);
   chk(!/tc-fresh/.test(hf), 'no game on: no stamp');
+
+  console.log('=== the badge on the Live feed tab: plays that matter since you looked ===');
+  app.clear(); app.all(); app.setView('games');
+  const T0=Date.now()-1; app.markSeen();
+  await new Promise(r=>setTimeout(r,3));
+  app.onBoard({NYJ:G({sit:{period:3, clock:'10:07', lastPlayId:'u1', lastPlay:LP({id:'u1', type:'Passing Touchdown', yds:12, text:'(Shotgun) A.Rodgers pass short right to G.Wilson for 12 yards, TOUCHDOWN.', team:'NYJ'})}})});
+  app.onBoard({CIN:G({eid:'E2', sit:{period:1, clock:'2:00', lastPlayId:'u2', lastPlay:LP({id:'u2', type:'Field Goal Good', yds:32, text:'E.McPherson 32 yard field goal is GOOD.', team:'CIN'})}})});
+  chk(app.unseen()===2 && /gc-vt-live">2</.test(app.viewRow()) && !/gc-vt-live">1</.test(app.viewRow()), 'two plays since the feed was last on screen → the tab says 2 (not the number of games on)');
+  app.toggle('L1');
+  chk(app.unseen()===1 && /gc-vt-live">1</.test(app.viewRow()), 'with a league picked, only the plays in my matchup count');
+  app.all();
+  app.panel(false);
+  chk(app.unseen()===0 && !/gc-vt-live/.test(app.viewRow()), 'painting the feed marks everything seen — the badge goes');
+  await new Promise(r=>setTimeout(r,3));
+  app.onBoard({BUF:G({eid:'E3', sit:{period:2, clock:'5:00', lastPlayId:'u3', lastPlay:LP({id:'u3', type:'Rush', yds:3, text:'J.Cook up the middle for 3 yards.', team:'BUF'})}})});
+  chk(app.unseen()===1, 'the next play counts again');
+  app.setView('feed');
+  chk(!/gc-vt-live/.test(app.viewRow()), 'no badge while the feed is the view');
+  app.setView('games');
+  app.seed('E9', SUM9); app.clear(); app.markSeen(); await new Promise(r=>setTimeout(r,3));
+  app.onBoard({NYJ:G({eid:'E9', score:7, oppScore:0, sit:{period:1, clock:'12:11', lastPlayId:'904', lastPlay:LP({id:'904', type:'Passing Touchdown', yds:30, scoreValue:6, text:'A.Rodgers pass deep right to G.Wilson for 30 yards, TOUCHDOWN.', team:'NYJ'})}})});
+  chk(app.unseen()===1 && app.rows().filter(r=>r.eid==='E9').length===3, 'a game\'s first fill is history: only the play the board caught counts, not the two seeded behind it');
   console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
   process.exit(pass===total?0:1);
 })();
