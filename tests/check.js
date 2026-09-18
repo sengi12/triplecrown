@@ -4868,12 +4868,23 @@ function gcGameHTML(game, rows, wk){
   }).join('');
   const st=game.state==='post'?'FINAL':game.state==='in'?(game.detail||'LIVE'):(game.detail||'');
   // The banner wears both clubs: the away colour from the left, the home colour from the
-  // right, meeting in the middle (a translucent wash over the surface so the type holds).
+  // right, meeting in the middle (a translucent wash over the surface so the type holds),
+  // the codes as faded wordmarks behind. Live, it carries the situation: the quarter and
+  // clock in the middle with the down and spot beneath, a ball beside the score of the side
+  // in possession, and each side's timeouts as three dots under its record.
   const col=(t)=>(typeof pwTeamColor==='function' ? pwTeamColor(t) : '#888');
+  const sit=game.state==='in' ? (game.sit||null) : null;
+  const dots=(n)=> (sit && sit.to && n!=null) ? `<span class="gc-to" title="${n} timeout${n===1?'':'s'} left">${[0,1,2].map(i=>`<i class="${i<n?'on':''}"></i>`).join('')}</span>` : '';
+  const ball=(team)=> (sit && sit.poss===team) ? `<i class="gc-ball" title="${team} ball">${typeof TC_ICON==='function'?TC_ICON('football'):'●'}</i>` : '';
+  const spot = sit ? (sit.phase ? '' : `${sit.ddt||''}${sit.spot?` @ ${sit.spot}`:''}${sit.rz?' <span class="gcf-rz">RZ</span>':''}`) : '';
+  const mid = sit && sit.phase ? escHtml(sit.phase) : escHtml(st);
   const hero=`<div class="gc-hero" style="--ga:${escAttr(col(game.away))};--gh:${escAttr(col(game.home))}">
-      <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${game.away}</span><span class="gc-rec">${escHtml(game.arec)}</span><b class="gc-score">${game.state==='pre'?'':(game.as!=null?game.as:'–')}</b></div>
-      <div class="gc-status ${game.state==='in'?'gc-live':''}">${escHtml(st)}</div>
-      <div class="gc-side gc-side-home"><b class="gc-score">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}</b><span class="gc-rec">${escHtml(game.hrec)}</span><span class="gc-team">${game.home}</span><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"></div>
+      <span class="gc-hero-wm gc-hero-wm-a" aria-hidden="true">${game.away}</span><span class="gc-hero-wm gc-hero-wm-h" aria-hidden="true">${game.home}</span>
+      <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${game.away}</span><span class="gc-rec">${escHtml(game.arec)}</span>${dots(sit&&sit.to?sit.to.away:null)}</div>
+      <b class="gc-score">${game.state==='pre'?'':(game.as!=null?game.as:'–')}${ball(game.away)}</b>
+      <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}">${mid}</div>${spot?`<div class="gc-spot">${spot}</div>`:''}</div>
+      <b class="gc-score">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}${ball(game.home)}</b>
+      <div class="gc-side gc-side-home"><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${game.home}</span><span class="gc-rec">${escHtml(game.hrec)}</span>${dots(sit&&sit.to?sit.to.home:null)}</div>
     </div>`;
   // The fantasy pane: the league switcher, then the week's rows by position.
   const fantasy=`${typeof gcLeagueSelectHTML==='function' ? gcLeagueSelectHTML() : ''}
@@ -4885,17 +4896,25 @@ function gcGameHTML(game, rows, wk){
   if(game.state==='in' && typeof gcLiveTick==='function') gcLiveTick(game);   // a game on: the feed polls on its own clock
   const tab=gcdTab(game), side=_gcd.side||'fantasy';
   const tabs=`<div class="gc-tabs"><button class="gc-tab ${tab==='feed'?'active':''}" onclick="gcdSetTab('feed')">Feed</button><button class="gc-tab ${tab==='stats'?'active':''}" onclick="gcdSetTab('stats')">Stats</button></div>`;
-  if(tab==='feed') return hero+tabs+gcFeedHTML(game, sum);
+  // Under the hero: the last play, the drive on the field, the win probability (32b).
+  const top=(typeof gcTopHTML==='function') ? gcTopHTML(game, sum) : '';
+  if(tab==='feed') return hero+top+tabs+gcFeedHTML(game, sum);
   const seg=`<div class="gc-seg"><button class="${side==='away'?'active':''}" onclick="gcdSetSide('away')"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${game.away}</button><button class="${side==='fantasy'?'active':''}" onclick="gcdSetSide('fantasy')">Fantasy</button><button class="${side==='home'?'active':''}" onclick="gcdSetSide('home')"><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'">${game.home}</button></div>`;
   const pane = side==='fantasy' ? fantasy : gcBoxHTML(game, sum, side==='home'?game.home:game.away);
-  return hero+tabs+(game.state==='pre'?'':gcLinescoreHTML(game, sum))+seg+pane;
+  return hero+top+tabs+(game.state==='pre'?'':gcLinescoreHTML(game, sum))+seg+pane;
 }
 function gcListHTML(games, picked){
   if(!games) return '<div class="ld-empty">loading games…</div>';
-  return games.map(g=>`<div class="gc-game ${g.id===picked?'gc-on':''} gc-${g.state}" onclick="gcPick('${g.id}')">
-    <div class="gc-gstate">${g.state==='post'?'FINAL':g.state==='in'?(g.detail||'LIVE'):escHtml(g.detail||'')}</div>
-    <div class="gc-gline ${g.state==='post'&&g.as>g.hs?'gc-won':''}"><img src="${NFL_LOGO(g.away)}" class="gc-glogo" onerror="this.style.display='none'"><span>${g.away}</span><b>${g.state==='pre'?'':(g.as!=null?g.as:'–')}</b></div>
-    <div class="gc-gline ${g.state==='post'&&g.hs>g.as?'gc-won':''}"><img src="${NFL_LOGO(g.home)}" class="gc-glogo" onerror="this.style.display='none'"><span>${g.home}</span><b>${g.state==='pre'?'':(g.hs!=null?g.hs:'–')}</b></div>
+  // Pills: logo, score, the state in the middle (a red dot and the quarter while it is on,
+  // FINAL, or the kickoff), score, logo — twice as many games in view as the old cards.
+  const when=(g)=>{ const d=g.date?new Date(g.date):null; if(!d || isNaN(d)) return escHtml(g.detail||''); const day=d.toLocaleDateString('en-US',{month:'short',day:'numeric'}).toUpperCase(); const t=d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(' ',''); return `<span class="gc-pday">${day}</span><span class="gc-ptime">${t}</span>`; };
+  const midOf=(g)=> g.state==='post' ? '<span class="gc-pfin">FINAL</span>'
+    : g.state==='in' ? `<span class="gc-plive"><i class="gc-pdot"></i>${escHtml(String(g.detail||'LIVE').replace(/^(\d+:\d+) - (\d)(st|nd|rd|th)$/i,'Q$2'))}</span>`
+    : when(g);
+  return games.map(g=>`<div class="gc-game gc-pill ${g.id===picked?'gc-on':''} gc-${g.state}" onclick="gcPick('${g.id}')" title="${g.away} @ ${g.home}${g.state==='in'?' · '+escAttr(g.detail||'live'):''}">
+    <span class="gc-pl"><img src="${NFL_LOGO(g.away)}" class="gc-glogo" onerror="this.style.display='none'">${g.state==='pre'?'':`<b class="${g.state==='post'&&g.as>g.hs?'gc-won':''}">${g.as!=null?g.as:'–'}</b>`}</span>
+    <span class="gc-pmid">${midOf(g)}</span>
+    <span class="gc-pr">${g.state==='pre'?'':`<b class="${g.state==='post'&&g.hs>g.as?'gc-won':''}">${g.hs!=null?g.hs:'–'}</b>`}<img src="${NFL_LOGO(g.home)}" class="gc-glogo" onerror="this.style.display='none'"></span>
   </div>`).join('');
 }
 // The panel. `phone` swaps the sidebar's size buttons for the sheet's close button; the
@@ -4909,7 +4928,7 @@ function gcHTML(phone){
   const rows=gcRows(wk);
   const sel=`<select class="ld-sel" onchange="gcSetWeek(this.value)">${gcWeekOptions(cur).map(w=>`<option value="${w===cur?'current':w}" ${wk===w?'selected':''}>${gcWeekLabel(w)}${w===cur?' · now':w===cur+1?' · next':w>cur?' · upcoming':''}</option>`).join('')}</select>`;
   const lgE=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
-  const fmt=gcScoring() ? escHtml((lgE && lgE.name) || (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) || 'league scoring') : 'app scoring · Sleeper for K/DEF/IDP';
+  const fmt=gcScoring() ? escHtml((lgE && lgE.name) || (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) || 'league scoring') : 'TripleCrown · Sleeper for K/DEF/IDP';
   // No position filter row here: the fantasy pane already groups every position, and a
   // game's two rosters are short enough to read whole (the Rankings page keeps its filters).
   const btns=phone ? '' : rsbButtonsHTML();   // the sheet closes by its handle or the scrim
@@ -5560,7 +5579,7 @@ function gcSituationHTML(game){
 }
 function gcFeedHTML(game, sum){
   if(game.state==='pre') return `<div class="ld-empty">no plays yet · ${escHtml(game.detail||'kickoff ahead')}</div>`;
-  const now=gcSituationHTML(game);
+  const now='';   // the situation lives in the hero now (gcSituationHTML stays for the phone's compact paths)
   if(!sum) return now+`<div class="ld-empty">${game.eid?'loading the plays…':'plays unavailable for this game'}</div>`;
   const rows=gcFeedRows(sum, _gcd.feedAll);
   // plays newer than the top of the last paint flash in (a live game's fresh play)
@@ -5657,7 +5676,7 @@ function gcLeagueOptions(){
   if(typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.scoringRaw) opts.push({id:'snap', name:leagueSnapshot.name||'League'});
   const lg=(typeof _pcardLg!=='undefined' && _pcardLg && _pcardLg.byLeague) ? _pcardLg.byLeague : {};
   Object.keys(lg).forEach(id=>{ const L=lg[id]; if(!L || L.inactive || L.error || L.noRoster) return; if(typeof leagueSnapshot!=='undefined' && leagueSnapshot && String(leagueSnapshot.leagueId)===String(id)) return; opts.push({id:String(id), name:L.name||'League'}); });
-  opts.push({id:'app', name:'App scoring'});
+  opts.push({id:'app', name:'TripleCrown'});
   return opts;
 }
 function gcLeague(){
@@ -5687,6 +5706,267 @@ function gcProjPts(pid, wk){
   const feed=(typeof laWeekProjFeed==='function') ? laWeekProjFeed(wk) : null;
   const r=feed && feed[String(pid)]; if(!r || !r.stats) return null;
   return gcPoints({player_id:pid, position:String(r.pos||'').toUpperCase(), stats:r.stats});
+}
+
+// ── Under the hero: the last play, the drive on the field, the win probability ─
+// The Sleeper tracker's grammar: one line for the play that just happened; the drive in
+// progress drawn on a field strip with a sentence under it; ESPN's win probability as a
+// thin area with the two live numbers. All of it from what the tracker already reads.
+function gcTopHTML(game, sum){
+  if(!game || game.state==='pre') return '';
+  return gcLastPlayHTML(game, sum)+gcDriveChartHTML(game, sum)+gcWinProbHTML(game, sum);
+}
+// The drives, each play once (the drive in progress is listed under previous AND current).
+function gcDrives(sum){
+  const dr=(sum && sum.drives)||{}; const seen=new Set(); const out=[];
+  const add=(d, live)=>{
+    if(!d) return; const id=String(d.id||''); if(id && seen.has(id)) return; if(id) seen.add(id);
+    const team=gcAbbr(d.team && d.team.abbreviation); const plays=[]; const pseen=new Set();
+    (d.plays||[]).forEach(p=>{
+      const pid=String(p.id||''); if(pid && pseen.has(pid)) return; if(pid) pseen.add(pid);
+      const kind=gcPlayKind(p); if(kind==='skip') return;
+      plays.push({ id:pid, kind, type:String((p.type&&p.type.text)||''), text:String(p.text||''), yds:Number(p.statYardage||0),
+        yte:(p.start && p.start.yardsToEndzone!=null)?Number(p.start.yardsToEndzone):null, scoring:!!p.scoringPlay, turnover:!!p.isTurnover,
+        q:Number((p.period&&p.period.number)||0), clock:String((p.clock&&p.clock.displayValue)||'') });
+    });
+    out.push({ id, team, plays, result:String(d.result||d.shortDisplayResult||''), desc:String(d.description||''), score:!!d.isScore, live:!!live });
+  };
+  (dr.previous||[]).forEach(d=>add(d, false));
+  if(dr.current){ const cid=String(dr.current.id||''); const i=out.findIndex(x=>x.id===cid); if(i>=0) out[i].live=true; else add(dr.current, true); }
+  return out;
+}
+// The drive to draw: the one in progress while the game is on, else the last one.
+function gcDriveInView(game, sum){
+  const ds=gcDrives(sum).filter(d=>d.plays.length); if(!ds.length) return null;
+  return (game && game.state==='in' && ds.find(d=>d.live)) || ds[ds.length-1];
+}
+// "BUF from own 39: 8 plays, 5 rush 24 yds, 3/3 pass 37 yds · TD"
+function gcDriveSentence(d){
+  if(!d || !d.plays.length) return '';
+  const first=d.plays.find(p=>p.yte!=null); const yte=first?first.yte:null;
+  const from = yte==null ? '' : (yte>50 ? `from own ${100-yte}` : (yte===50 ? 'from the 50' : `from the ${yte}`));
+  let rush=0, rushY=0, cmp=0, att=0, passY=0, sacks=0;
+  d.plays.forEach(p=>{
+    if(p.type==='Rush' || p.type==='Rushing Touchdown'){ rush++; rushY+=p.yds; }
+    else if(p.type==='Pass Reception' || p.type==='Passing Touchdown'){ cmp++; att++; passY+=p.yds; }
+    else if(p.type==='Pass Incompletion' || /Interception/.test(p.type)){ att++; }
+    else if(/^Sack/.test(p.type)) sacks++;
+  });
+  const parts=[`${d.plays.length}-play${d.plays.length===1?'':'s'}`];
+  if(rush) parts.push(`${rush} rush, ${rushY} yds`);
+  if(att) parts.push(`${cmp}/${att} pass, ${passY} yds`);
+  if(sacks) parts.push(`${sacks} sack${sacks===1?'':'s'}`);
+  const res = d.result ? ` ${escHtml(d.result)}${/TD/.test(d.result)?' 🎉':''}` : (d.live ? ' in progress' : '');
+  return `${d.team}${from?' '+from:''}: ${parts.join('. ')}.${res}`;
+}
+// The drive on the field, Sleeper's way: the field in perspective (the near sideline wide
+// at the bottom, the far one narrow at the top), ten-yard bands alternating, each end zone
+// solid in its club's colour, yellow uprights standing on both back lines. The offense
+// drives left → right from its own goal line: ONE continuous path through the successive
+// snap spots — a run a straight line, a pass an arc spanning the throw, a flag a yellow
+// marker with a dotted hop — then the last play's own move to where the ball sits now, with
+// a pin above it wearing the face of the man who made it. A kick flies from the spot
+// through the uprights (or wide, in red). A turnover hands the ball over: the pass or run
+// to the spot it was taken, then the defender's return the other way in his club's colour —
+// to the left end zone on a pick six — with HIS face on the pin. The newest play animates
+// in: the segment draws, the ball travels it, the pin lands; a big play takes longer and pulses.
+function _gcFieldGeom(){
+  const W=360, top=34, bot=100, xTopL=92, xTopR=268, xBotL=46, xBotR=314;
+  const xAt=(yd, y)=>{ const t=(y-top)/(bot-top); const xt=xTopL+(xTopR-xTopL)*yd/100, xb=xBotL+(xBotR-xBotL)*yd/100; return xt+(xb-xt)*t; };
+  return {W, top, bot, xAt, lane:top+(bot-top)*0.6};
+}
+// "BUF 30" / "50" → yards from the offense's own goal line
+function _gcSpotYd(spot, offense){
+  const t=String(spot||'').trim(); if(t==='50') return 50;
+  const m=/^([A-Z]{2,3}) (\d{1,2})$/.exec(t); if(!m) return null;
+  const n=Number(m[2]); return gcAbbr(m[1])===offense ? n : 100-n;
+}
+// A turnover in the play's words: who took it, where, where he carried it, and whether he scored.
+function gcTurnoverRead(p, offense){
+  const t=String(p.text||''); let m, kind=null, who='';
+  m=/INTERCEPTED by ([A-Z]\.[A-Za-z'\-]+(?: [A-Z][A-Za-z'\-]+)?)(?: \[[^\]]*\])? at ([A-Z]{2,3} \d{1,2}|50)/.exec(t);
+  if(m){ kind='int'; who=m[1]; }
+  else { m=/RECOVERED by ([A-Z]{2,3})-([A-Z]\.[A-Za-z'\-]+(?: [A-Z][A-Za-z'\-]+)?) at ([A-Z]{2,3} \d{1,2}|50)/.exec(t); if(m){ kind='fum'; who=m[2]; } }
+  if(!kind) return null;
+  const at=_gcSpotYd(kind==='int'?m[2]:m[3], offense); if(at==null) return null;
+  const rest=t.slice(m.index+m[0].length);
+  const td=/TOUCHDOWN/.test(rest);
+  let end=at; const r=/ to ([A-Z]{2,3} \d{1,2}|50) for /.exec(rest); if(r){ const e=_gcSpotYd(r[1], offense); if(e!=null) end=e; }
+  if(td) end=0;
+  const ret=Math.max(0, Math.round(at-end));
+  return {kind, who, at, end, td, ret};
+}
+function gcDriveChartHTML(game, sum){
+  const d=gcDriveInView(game, sum); if(!d) return '';
+  const G=_gcFieldGeom(); const {W, top, bot, xAt, lane}=G; const H=138;
+  const f1=(v)=>(+v).toFixed(1);
+  const opp = d.team===game.home ? game.away : game.home;
+  const col=(t)=>(typeof pwTeamColor==='function' ? pwTeamColor(t) : '#556');
+  const quad=(x0,x1,c)=>({x0,x1,d:`M${f1(x0)},${f1(lane)} Q${f1((x0+x1)/2)},${f1(lane-c)} ${f1(x1)},${f1(lane)}`, len:Math.abs(x1-x0)*1.15+c*0.6});
+  const line=(x0,x1)=>({x0,x1,d:`M${f1(x0)},${f1(lane)} L${f1(x1)},${f1(lane)}`, len:Math.abs(x1-x0)});
+  const parts=[];
+  parts.push(`<svg viewBox="0 0 ${W} ${H}" class="gc-drive-svg" role="img" aria-label="${escAttr(d.team)} drive">`);
+  parts.push(`<defs><linearGradient id="gcFieldG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2330"/><stop offset="1" stop-color="#253040"/></linearGradient><linearGradient id="gcEzA" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${escAttr(col(d.team))}"/><stop offset="1" stop-color="${escAttr(col(d.team))}" stop-opacity="0.75"/></linearGradient><linearGradient id="gcEzH" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${escAttr(col(opp))}" stop-opacity="0.75"/><stop offset="1" stop-color="${escAttr(col(opp))}"/></linearGradient></defs>`);
+  const poly=(y0,y1)=>`${f1(xAt(y0,top))},${top} ${f1(xAt(y1,top))},${top} ${f1(xAt(y1,bot))},${bot} ${f1(xAt(y0,bot))},${bot}`;
+  parts.push(`<polygon points="${poly(0,100)}" fill="url(#gcFieldG)"/>`);
+  for(let yd=0; yd<100; yd+=10){ if((yd/10)%2) parts.push(`<polygon points="${poly(yd,yd+10)}" fill="#fff" opacity="0.04"/>`); }
+  for(let yd=10; yd<100; yd+=10) parts.push(`<line x1="${f1(xAt(yd,top))}" y1="${top}" x2="${f1(xAt(yd,bot))}" y2="${bot}" stroke="${yd===50?'#5a6270':'#39414c'}" stroke-width="${yd===50?1.4:1}"/>`);
+  // the end zones: solid, the clubs' colours, nothing in them
+  parts.push(`<polygon points="${poly(-10,0)}" fill="url(#gcEzA)"/><polygon points="${poly(100,110)}" fill="url(#gcEzH)"/>`);
+  // the uprights standing on the back lines, rising above the field
+  // the uprights, Sleeper's exactly: a tall vertical stem from the ground at the back line
+  // (about two fifths of the field's height), the crossbar tilted with the field — it runs
+  // parallel to the back line, so it climbs toward mid-field on both sides — and two short
+  // vertical uprights from its ends, rising a little past the field's top edge
+  const post=(yd)=>{
+    const x=xAt(yd,lane), stem=Math.round((bot-top)*0.24), up=Math.round((bot-top)*0.34), half=6;   // a short stem, tall uprights
+    const k0=(bot-top)/(xAt(yd,top)-xAt(yd,bot));   // the back line's slope: positive on the left (leans left going down), negative on the right
+    const k=Math.sign(k0)*Math.min(Math.abs(k0), 0.5);   // the crossbar takes its direction, at a gentler pitch (Sleeper's ~25°)
+    const cy=lane-stem, y1=cy+k*half, y2=cy-k*half;   // the crossbar's ends
+    parts.push(`<g class="gc-posts"><path d="M${f1(x)},${f1(lane+2)} V${f1(cy)} M${f1(x-half)},${f1(y1)} L${f1(x+half)},${f1(y2)} M${f1(x-half)},${f1(y1)} V${f1(y1-up)} M${f1(x+half)},${f1(y2)} V${f1(y2-up)}" fill="none" stroke="#e6b23c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g>`);
+  };
+  const xPostL=xAt(-10,lane), xPostR=xAt(110,lane); post(-10); post(110);
+  [[20,'20'],[50,'50'],[80,'20']].forEach(([yd,lab])=>{ parts.push(`<text x="${f1(xAt(yd,top))}" y="${top-7}" fill="#8b94a3" font-size="9" font-weight="800" text-anchor="middle">${lab}</text>`); });
+  // the drive: the snap spots in order, then the last play's own move
+  const spots=d.plays.filter(p=>p.yte!=null).map(p=>({p, yd:100-p.yte}));
+  const eid=String(game.eid||'');
+  if(!_gcd.driveSeen) _gcd.driveSeen={};
+  const flag=(x)=>`<path class="gc-flag" d="M${f1(x)},${f1(lane+2)} v-11 l7,2.5 l-7,2.5" fill="#f5c542" stroke="#f5c542" stroke-width="1.4" stroke-linejoin="round"/>`;
+  if(spots.length){
+    const shape=(p, x0, x1)=>{
+      const t=p.type;
+      if(/Pass|Sack/.test(t)) return Object.assign(quad(x0,x1,Math.min(24, Math.max(8, Math.abs(x1-x0)*0.4))), {cls:''});
+      if(t==='Penalty') return Object.assign(line(x0,x1), {cls:' gc-seg-flag'});
+      if(/Punt|Kickoff/.test(t)) return Object.assign(quad(x0,x1,26), {cls:' gc-seg-kick'});
+      return Object.assign(line(x0,x1), {cls:''});
+    };
+    // the drive so far is one quiet line from the first snap to the newest — the older plays'
+    // shapes, dots and flags are noise once the next snap comes
+    const segs=[];
+    if(spots.length>1 && Math.abs(spots[spots.length-1].yd-spots[0].yd)>=0.01) segs.push(Object.assign(line(xAt(spots[0].yd,lane), xAt(spots[spots.length-1].yd,lane)), {cls:' gc-seg-prog'}));
+    const last=spots[spots.length-1], lp=last.p, x0=xAt(last.yd,lane);
+    const kick=/Field Goal|Extra Point/.test(lp.type), kickGood=/Good/.test(lp.type);
+    const to=(lp.turnover || /Interception|Fumble/.test(lp.type)) ? gcTurnoverRead(lp, d.team) : null;
+    const big = kick || !!to || lp.scoring || Math.abs(lp.yds)>=20;
+    let fin=null, pre=null, endX=null, endY=lane, retCol='#39c15a';
+    if(kick){
+      const ex = kickGood ? xPostR : xPostR+11, ey = kickGood ? top+2 : lane+14, c = kickGood ? 40 : 30;
+      fin={x0, x1:ex, d:`M${f1(x0)},${f1(lane)} Q${f1((x0+ex)/2)},${f1(lane-c)} ${f1(ex)},${f1(ey)}`, len:Math.abs(ex-x0)*1.3, cls: kickGood ? ' gc-seg-fg' : ' gc-seg-fg gc-seg-miss', ey};
+      endX=ex; endY=ey;
+    } else if(to){
+      // the offense's part to where it was taken, then the return the other way
+      const xa=xAt(to.at,lane), xe=xAt(to.end,lane);
+      pre = to.kind==='int' ? Object.assign(quad(x0,xa,Math.min(24, Math.max(8, Math.abs(xa-x0)*0.4))), {cls:''}) : Object.assign(line(x0,xa), {cls:''});
+      retCol='#e5484d';   // a turnover runs back in red
+      fin = Math.abs(xe-xa)>=0.5 ? Object.assign(line(xa,xe), {cls:' gc-seg-ret'}) : null;
+      endX=xe;
+    } else {
+      const endYd = lp.type==='Penalty' ? last.yd : Math.max(0, Math.min(100, last.yd+lp.yds));
+      endX=xAt(endYd,lane);
+      fin = Math.abs(endYd-last.yd)>=0.01 ? shape(lp, x0, endX) : null;
+    }
+    const animate = _gcd.driveSeen[eid]!==lp.id; _gcd.driveSeen[eid]=lp.id;
+    const dur = big ? 1.4 : 0.7;
+    segs.forEach(sg=>parts.push(`<path class="gc-seg${sg.cls}" d="${sg.d}" fill="none" stroke="#39c15a" stroke-width="2" stroke-linecap="round" opacity="0.55"/>`));
+    if(pre) parts.push(`<path class="gc-seg gc-seg-pre" d="${pre.d}" fill="none" stroke="#39c15a" stroke-width="2.2" stroke-linecap="round"/>`);
+    // the drive's start, and the newest play's snap; a flag only when the newest play is one
+    parts.push(`<circle cx="${f1(xAt(spots[0].yd,lane))}" cy="${f1(lane)}" r="3.4" fill="#39c15a" stroke="#39c15a" stroke-width="1.5"/>`);
+    if(spots.length>1) parts.push(`<circle cx="${f1(x0)}" cy="${f1(lane)}" r="2.6" fill="#0f1318" stroke="#39c15a" stroke-width="1.5"/>`);
+    if(lp.type==='Penalty') parts.push(flag(x0+3));
+    if(to) parts.push(`<circle cx="${f1(xAt(to.at,lane))}" cy="${f1(lane)}" r="3.6" fill="${escAttr(retCol)}" stroke="#fff" stroke-width="1.4"/>`);
+    const strokeOf = to ? retCol : (/miss/.test((fin&&fin.cls)||'') ? '#e5484d' : '#39c15a');
+    if(fin){
+      const anim = animate ? `<animate attributeName="stroke-dashoffset" from="${f1(fin.len)}" to="0" dur="${dur}s" fill="freeze"/>` : '';
+      parts.push(`<path class="gc-seg gc-seg-last${fin.cls}" d="${fin.d}" fill="none" stroke="${escAttr(strokeOf)}" stroke-width="2.6" stroke-linecap="round"${animate?` stroke-dasharray="${f1(fin.len)}" stroke-dashoffset="${f1(fin.len)}"`:''}>${anim}</path>`);
+      if(animate) parts.push(`<circle class="gc-ball-dot" cx="0" cy="0" r="4.6" fill="#fff" stroke="#101214" stroke-width="1.5"><animateMotion dur="${dur}s" fill="freeze" path="${fin.d}"/></circle>`);
+      else parts.push(`<circle class="gc-ball-dot" cx="${f1(endX)}" cy="${f1(endY)}" r="4.6" fill="#fff" stroke="#101214" stroke-width="1.5"/>`);
+      if(animate && big) parts.push(`<circle cx="${f1(endX)}" cy="${f1(endY)}" r="5" fill="none" stroke="${escAttr(strokeOf)}" stroke-width="2" opacity="0"><animate attributeName="r" from="5" to="22" begin="${dur}s" dur="0.9s" fill="freeze"/><animate attributeName="opacity" values="0;0.9;0" begin="${dur}s" dur="0.9s" fill="freeze"/></circle>`);
+    } else {
+      parts.push(`<circle class="gc-ball-dot" cx="${f1(endX)}" cy="${f1(endY)}" r="4.6" fill="#fff" stroke="#101214" stroke-width="1.5"/>`);
+    }
+    // the pin: the man who made the play — the defender who took it on a turnover, the
+    // receiver on a completion, the kicker on a kick, the runner on a run
+    let src='', label='';
+    const n=(typeof gcPlayNames==='function') ? gcPlayNames(lp.text) : {primary:'',receiver:'',picker:''};
+    if(typeof hsPack==='function'){
+      const ath=gcAthletes(sum);
+      const who = to ? (gcFindAth(ath, opp, to.who) || gcFindAth(ath, opp, n.picker||n.recoverer)) : (((/Pass Reception|Passing Touchdown/.test(lp.type)) ? gcFindAth(ath, d.team, n.receiver) : null) || gcFindAth(ath, d.team, n.primary));
+      // his Sleeper id: the box score's man, else the name against the club's roster (a
+      // defender without a stat line yet); Sleeper's headshot, else ESPN's by his box-score id
+      let pid=who && who.pid;
+      if(!pid && typeof lfPidFor==='function'){ const tok = to ? to.who : (/Pass Reception|Passing Touchdown/.test(lp.type) ? n.receiver : n.primary); pid=lfPidFor(tok, to?opp:d.team, null, to?'picker':'primary')||null; }
+      const sp=(typeof sleeperPlayers!=='undefined' && sleeperPlayers && pid) ? sleeperPlayers[pid] : null;
+      src=(pid && sp) ? ((hsPack({player_id:pid, name:sp.name, pos:sp.pos, team:sp.team})||{}).src||'') : '';
+      if(!src && who && who.id && typeof ESPN_HEADSHOT==='function') src=ESPN_HEADSHOT('nfl', who.id)||'';
+    }
+    // a flag's pin wears the flagged club
+    const flagTeam = lp.type==='Penalty' ? gcAbbr((/PENALTY on ([A-Z]{2,3})-/.exec(lp.text||'')||[])[1]||'') : '';
+    const pinX=Math.max(20, Math.min(W-20, endX)); const py=lane-34;
+    const pinIn = animate ? `<animate attributeName="opacity" from="0" to="1" begin="${(dur*0.7).toFixed(2)}s" dur="0.3s" fill="freeze"/>` : '';
+    parts.push(`<g class="gc-pin" opacity="${animate?'0':'1'}">${pinIn}<line x1="${f1(endX)}" y1="${f1(endY-5)}" x2="${f1(pinX)}" y2="${f1(py+15)}" stroke="#fff" stroke-width="1.4" opacity="0.8"/><circle cx="${f1(pinX)}" cy="${f1(py)}" r="15" fill="#101214" stroke="${to?escAttr(retCol):'#fff'}" stroke-width="2"/>${src?`<image href="${escAttr(src)}" x="${f1(pinX-13)}" y="${f1(py-13)}" width="26" height="26" style="clip-path:circle(50%)" preserveAspectRatio="xMidYMid slice"/>`:`<image href="${escAttr(NFL_LOGO(to?opp:(flagTeam||d.team)))}" x="${f1(pinX-9)}" y="${f1(py-9)}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>`}</g>`);
+    if(to){
+      const nm=String(to.who||'').replace('.', '. ');
+      label = to.td ? (to.kind==='int' ? `${nm} pick six!` : `${nm} fumble return TD!`) : `${nm} ${to.kind==='int'?'INT':'recovers'}${to.ret?` · ${to.ret} yd return`:''}`;
+    } else {
+      const t=(typeof lfReadPlay==='function') ? lfReadPlay({id:lp.id, type:lp.type, text:lp.text, yds:lp.yds, team:d.team, athletes:[]}).title : lp.text.slice(0,40);
+      label=String(t||'').replace(/ 🎉| 🙌/g,'');
+    }
+    label=label.slice(0,42);
+    const anchor = endX>W*0.66 ? 'end' : (endX<W*0.34 ? 'start' : 'middle');
+    parts.push(`<text x="${f1(endX)}" y="${bot+18}" fill="#fff" font-size="10.5" font-weight="800" text-anchor="${anchor}" stroke="#101214" stroke-width="3" paint-order="stroke">${escHtml(label)}</text>`);
+  }
+  parts.push('</svg>');
+  return `<div class="gc-drive${d.live?' gc-drive-live':''}">${parts.join('')}<div class="gc-drive-sum">${gcDriveSentence(d)}</div></div>`;
+}
+// ESPN's win probability, play by play. Folded to one line — the two numbers as they stand
+// — and a tap opens the chart: the away club at the top, the home club at the bottom (their
+// marks on the axis), the line running toward whoever is winning with the winner's side
+// filled in the winner's colour.
+function gcWinProbToggle(){ _gcd.wpOpen=!_gcd.wpOpen; gcDetailRepaint(); }
+function gcWinProbHTML(game, sum){
+  const wp=(sum && Array.isArray(sum.winprobability)) ? sum.winprobability.filter(w=>w && w.homeWinPercentage!=null) : [];
+  if(wp.length<3) return '';
+  const n=wp.length; const last=wp[n-1].homeWinPercentage, home=Math.round(last*100), away=100-home;
+  const open=!!_gcd.wpOpen;
+  const nums=`<span class="gc-wp-n"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'"><b>${away}%</b></span><span class="gc-wp-n"><b>${home}%</b><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'"></span>`;
+  const head=`<button class="gc-wp-head" onclick="gcWinProbToggle()" aria-expanded="${open?'true':'false'}" title="Win probability, play by play — ESPN's model"><span class="gc-wp-lbl">Win probability</span>${nums}<span class="rt-gp-caret">${open?'▴':'▾'}</span></button>`;
+  if(!open) return `<div class="gc-wp">${head}</div>`;
+  const W=360, H=72, L=26, R=360, top=8, bot=64, f1=(v)=>(+v).toFixed(1);
+  const x=(i)=>L+(R-L)*(n===1?0:i/(n-1)); const y=(h)=>top+(bot-top)*Math.max(0, Math.min(1, h));   // home at the bottom
+  const pts=wp.map((w,i)=>`${f1(x(i))},${f1(y(w.homeWinPercentage))}`);
+  const col=(t)=>(typeof pwTeamColor==='function' ? pwTeamColor(t) : '#3d9bff');
+  const homeWinning = last>=0.5;
+  const fill = homeWinning
+    ? `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${bot} L${f1(x(0))},${bot} Z" fill="${escAttr(col(game.home))}" opacity="0.38"/>`
+    : `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${top} L${f1(x(0))},${top} Z" fill="${escAttr(col(game.away))}" opacity="0.38"/>`;
+  return `<div class="gc-wp gc-wp-open">${head}
+    <svg viewBox="0 0 ${W} ${H}" class="gc-wp-svg" role="img" aria-label="Win probability">
+      <image href="${escAttr(NFL_LOGO(game.away))}" x="2" y="${top-2}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
+      <image href="${escAttr(NFL_LOGO(game.home))}" x="2" y="${bot-16}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
+      ${fill}
+      <line x1="${L}" y1="${f1(y(0.5))}" x2="${R}" y2="${f1(y(0.5))}" stroke="#5a6270" stroke-width="1" stroke-dasharray="3 4"/>
+      <polyline points="${pts.join(' ')}" fill="none" stroke="#f2f5f8" stroke-width="1.6" stroke-linejoin="round"/>
+      <circle cx="${f1(x(n-1))}" cy="${f1(y(last))}" r="3.2" fill="#fff"/>
+    </svg><div class="gc-wp-src">ESPN's model · ${escHtml(game.away)} at the top, ${escHtml(game.home)} at the bottom</div></div>`;
+}
+// One line: the play that just happened — the board's last play while the game is on (the
+// scoreboard names it first), else the summary's newest — with the freshness stamp.
+function gcLastPlayHTML(game, sum){
+  if(!game || game.state==='pre') return '';
+  const live=game.state==='in';
+  const sit=game.sit||null; const lp=(live && sit && sit.lastPlay && sit.lastPlay.text) ? sit.lastPlay : null;
+  let title='', spot='', team='';
+  if(lp && !GC_SKIP_TYPES.has(String(lp.type||''))){
+    const read=(typeof lfReadPlay==='function') ? lfReadPlay(lp) : null; title=(read && read.title) || String(lp.text||'').slice(0,90);
+    spot = lp.down>0 ? `${lp.ddt||''}${lp.spot?` @ ${lp.spot}`:''}` : (/Extra Point|Field Goal/.test(String(lp.type||'')) ? 'End zone' : (lp.type==='Kickoff'?'Kickoff':'')); team=lp.team||'';
+  } else if(sum){
+    const rows=gcFeedRows(sum, true); const p=rows[0];
+    if(p){ title=p.title; spot=p.down>0 ? `${p.ddt}${p.spot?` @ ${p.spot}`:''}` : ''; team=p.team||''; }
+  }
+  if(!title && !(live && sit && sit.phase)) return '';
+  const stamp=(live && typeof tcFreshHTML==='function') ? tcFreshHTML(game.eid) : '';
+  const head=`<span class="gc-last-lbl">${live?'<i class="gcf-dot"></i>':''}${live?'LAST PLAY':'FINAL PLAY'}</span>${team?`<img src="${NFL_LOGO(team)}" class="gc-glogo" onerror="this.style.display='none'">`:''}${spot?`<span class="gc-last-spot">${escHtml(spot)}</span>`:''}${stamp}`;
+  return `<div class="gc-last"><div class="gc-last-head">${head}</div><div class="gc-last-text">${escHtml(title || (sit && sit.phase) || '')}</div></div>`;
 }
 // ═════════════════════════════════════════════════════════════════════════════
 // The live feed — every game at once, filtered to the leagues you play in
@@ -27301,6 +27581,7 @@ function tcParseBoard(board){
       period:Number(st.period||0), clock:String(st.displayClock||''),
       // the pause between plays that is not a play: halftime, the end of a quarter
       phase: type.name==='STATUS_HALFTIME' ? 'Halftime' : (type.name==='STATUS_END_PERIOD' ? `End of Q${Number(st.period||0)||''}` : ''),
+      to:{ home:(sit.homeTimeouts!=null?Number(sit.homeTimeouts):null), away:(sit.awayTimeouts!=null?Number(sit.awayTimeouts):null) },   // timeouts left
       lastPlayId: lp ? String(lp.id||'') : '',
       lastPlay: lp ? { id:String(lp.id||''), text:String(lp.text||''), type:String((lp.type&&lp.type.text)||''), scoreValue:Number(lp.scoreValue||0), yds:Number(lp.statYardage||0),
         team: lp.team ? (teamById[String(lp.team.id)]||'') : '',

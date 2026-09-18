@@ -42,6 +42,7 @@ function tcParseBoard(board){
       period:Number(st.period||0), clock:String(st.displayClock||''),
       // the pause between plays that is not a play: halftime, the end of a quarter
       phase: type.name==='STATUS_HALFTIME' ? 'Halftime' : (type.name==='STATUS_END_PERIOD' ? `End of Q${Number(st.period||0)||''}` : ''),
+      to:{ home:(sit.homeTimeouts!=null?Number(sit.homeTimeouts):null), away:(sit.awayTimeouts!=null?Number(sit.awayTimeouts):null) },   // timeouts left
       lastPlayId: lp ? String(lp.id||'') : '',
       lastPlay: lp ? { id:String(lp.id||''), text:String(lp.text||''), type:String((lp.type&&lp.type.text)||''), scoreValue:Number(lp.scoreValue||0), yds:Number(lp.statYardage||0),
         team: lp.team ? (teamById[String(lp.team.id)]||'') : '',
