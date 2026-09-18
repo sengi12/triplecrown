@@ -131,14 +131,15 @@ function renderWeekOpponentRail(team, season, className=''){
     return `<div class="wr-opp-rail ${className}"><div class="wr-opp-loading">Loading weekly opponents…</div></div>`;
   }
   const cells=[];
-  // Live season: the rail stops at the completed weeks, matching the slider's range.
+  // The whole season on the rail; the weeks this team has not played yet are dimmed.
   const maxWk=(typeof tcSeasonMaxWeek==='function')?tcSeasonMaxWeek(s):18;
+  const played=(typeof tcSeasonPlayedWeek==='function')?tcSeasonPlayedWeek(s, tm):maxWk;
   const span=Math.max(1,maxWk-1);
   for(let wk=1; wk<=maxWk; wk++){
     const m=byWeek[wk];
     const ratio=((wk-1)/span).toFixed(6);
     const pos=`calc(var(--wr-pad, 0px) + (100% - (2 * var(--wr-pad, 0px))) * ${ratio})`;
-    const laneCls = (wk%2===0) ? ' wr-opp-top' : ' wr-opp-bottom';
+    const laneCls = ((wk%2===0) ? ' wr-opp-top' : ' wr-opp-bottom') + (wk>played ? ' wr-unplayed' : '');
     if(!m || !m.opp){
       cells.push(`<div class="wr-opp-cell wr-opp-bye${laneCls}" style="left:${pos}" title="Week ${wk}: bye"><span class="wr-opp-stem"></span>—</div>`);
       continue;
@@ -157,11 +158,12 @@ function renderWeekOpponentRail(team, season, className=''){
 function renderWeekNumberRail(className=''){
   const cells=[];
   const maxWk=(typeof tcSeasonMaxWeek==='function' && typeof activeSeason!=='undefined')?tcSeasonMaxWeek(activeSeason):18;
+  const played=(typeof tcSeasonPlayedWeek==='function' && typeof activeSeason!=='undefined')?tcSeasonPlayedWeek(activeSeason):maxWk;
   const span=Math.max(1,maxWk-1);
   for(let wk=1; wk<=maxWk; wk++){
     const ratio=((wk-1)/span).toFixed(6);
     const pos=`calc(var(--wr-pad, 0px) + (100% - (2 * var(--wr-pad, 0px))) * ${ratio})`;
-    const laneCls = (wk%2===0) ? ' wr-week-top' : ' wr-week-bottom';
+    const laneCls = ((wk%2===0) ? ' wr-week-top' : ' wr-week-bottom') + (wk>played ? ' wr-unplayed' : '');
     cells.push(`<div class="wr-week-cell${laneCls}" style="left:${pos}" title="Week ${wk}">
       <span class="wr-week-stem"></span>
       <span class="wr-week-num">${wk}</span>
@@ -625,8 +627,9 @@ function weekRangeDrag(team, which, val){
   const state=userProj[team]; if(!state) return;
   const cur = getSharedWeekRange(team, activeSeason);
   const maxWk=(typeof tcSeasonMaxWeek==='function')?tcSeasonMaxWeek(activeSeason):18;
-  let [lo,hi]=cur; hi=Math.min(hi,maxWk); lo=Math.min(lo,maxWk);
-  val=parseInt(val);
+  const played=(typeof tcSeasonPlayedWeek==='function')?tcSeasonPlayedWeek(activeSeason, team):maxWk;
+  let [lo,hi]=cur; hi=Math.min(hi,played); lo=Math.min(lo,played);
+  val=Math.min(parseInt(val)||1, played);   // a thumb never reaches a week not yet played
   if(which==='lo'){ lo=Math.min(val,hi); } else { hi=Math.max(val,lo); }
   const loEl=document.getElementById(`wr-lo-${team}`); if(loEl) loEl.textContent=lo;
   const hiEl=document.getElementById(`wr-hi-${team}`); if(hiEl) hiEl.textContent=hi;
@@ -742,11 +745,27 @@ function _tcApplySeedState(st){
   return TC_SEASON;
 }
 function tcTimeMachine(){ return !!TC_SEASON.frozen; }
-// Last week a week slider may reach for a season: 18 for a finished season, the completed
-// weeks for the season in progress (a slider that runs to 18 in week 9 is just noise).
-function tcSeasonMaxWeek(season){
-  if(typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season)) return Math.max(1, completedWeeks());
-  return 18;
+// A week slider shows the whole season (1-18) for any season — the season in progress too,
+// with the weeks not yet played dimmed and the thumbs held to the games played.
+function tcSeasonMaxWeek(season){ return 18; }
+// The last week a team has PLAYED this season: the completed weeks, plus the week in
+// progress once that team's game has kicked off (any team's, when no team is given) — a
+// Thursday-night team's week 2 is in on Friday morning while the week is still being played.
+function tcSeasonPlayedWeek(season, team){
+  if(!(typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season))) return 18;
+  const done=completedWeeks();
+  const cur=(TC_SEASON.phase==='regular') ? Number(TC_SEASON.week||0) : 0;
+  let played=done;
+  if(cur>done && typeof tcBoardWeek==='function' && typeof tcWeekBoard==='function'){
+    try{
+      if(tcBoardWeek()===cur){
+        const b=tcWeekBoard()||{};
+        const on=(g)=>!!g && (g.state==='in' || g.state==='post');
+        if(team ? on(b[String(team).toUpperCase()]) : Object.keys(b).some(c=>on(b[c]))) played=cur;
+      }
+    }catch(e){}
+  }
+  return Math.max(1, played);
 }
 // A small banner chip so a frozen build is never mistaken for the live app.
 function renderTimeMachineBadge(){

@@ -306,9 +306,10 @@ function _advEnsureWeeklyLoaded(){
 function advWeekRangeDrag(team, which, val){
   team=String(team||'').toUpperCase();
   const maxWk=(typeof tcSeasonMaxWeek==='function')?tcSeasonMaxWeek(advTeamSeason()):18;
+  const played=(typeof tcSeasonPlayedWeek==='function')?tcSeasonPlayedWeek(advTeamSeason(), team===ADV_LEAGUE_RANGE_KEY?null:team):maxWk;
   const [curLo,curHi]=_advGetWeekRange(team);
-  let lo=Math.min(curLo,maxWk), hi=Math.min(curHi,maxWk);
-  const n=Math.max(1, Math.min(maxWk, parseInt(val,10)||1));
+  let lo=Math.min(curLo,played), hi=Math.min(curHi,played);
+  const n=Math.max(1, Math.min(played, parseInt(val,10)||1));   // a thumb never reaches a week not yet played
   if(which==='lo') lo=Math.min(n, hi); else hi=Math.max(n, lo);
   _advWeekDragByTeam[_advRangeKey(team)] = [lo,hi];
   const loEl=document.getElementById(`adv-wr-lo-${team}`); if(loEl) loEl.textContent=lo;
@@ -739,8 +740,10 @@ function renderAdvWeekRange(team, opts){
   const extraRail = opts.extraRailHTML || '';
   const [lo0,hi0]=_advGetWeekRange(team);
   const maxWk=(typeof tcSeasonMaxWeek==='function')?tcSeasonMaxWeek(advTeamSeason()):18;
-  const lo=Math.min(lo0,maxWk), hi=Math.min(hi0,maxWk), span=Math.max(1,maxWk-1);
+  const played=(typeof tcSeasonPlayedWeek==='function')?tcSeasonPlayedWeek(advTeamSeason(), team===ADV_LEAGUE_RANGE_KEY?null:team):maxWk;
+  const lo=Math.min(lo0,played), hi=Math.min(hi0,played), span=Math.max(1,maxWk-1);
   const left=((lo-1)/span*100), right=((maxWk-hi)/span*100);
+  const dead = played<maxWk ? `<div class="dual-slider-dead" style="left:${((played-1)/span*100).toFixed(2)}%" title="Weeks ${played+1}–${maxWk}: not played yet"></div>` : '';
   const loading=_advWeeklySeedLoading ? '<span class="week-range-loading">loading…</span>' : '';
   const active = _advWeekRangeActive(team);
   const oppRail = (showOppRail && typeof renderWeekOpponentRail==='function')
@@ -748,12 +751,12 @@ function renderAdvWeekRange(team, opts){
     : '';
   return `<div class="week-range-card adv-week-range-card">
     <div class="week-range-label">
-      <span>${TC_ICON("calendar")} Filter weeks: <b id="adv-wr-lo-${team}">${lo}</b> – <b id="adv-wr-hi-${team}">${hi}</b>${maxWk<18?` <span class="week-range-hint">of ${maxWk} played</span>`:''}${loading ? ' ' + loading : ''}</span>
+      <span>${TC_ICON("calendar")} Filter weeks: <b id="adv-wr-lo-${team}">${lo}</b> – <b id="adv-wr-hi-${team}">${hi}</b>${played<maxWk?` <span class="week-range-hint">of ${played} played</span>`:''}${loading ? ' ' + loading : ''}</span>
       ${active ? `<span class="week-range-reset" onclick="advWeekRangeReset('${escJsSingle(team)}')">↺ Reset to full season</span>` : '<span class="week-range-hint">drag either end to zoom into a stretch of games</span>'}
     </div>
     <div class="dual-slider">
       <div class="dual-slider-track"></div>
-      <div class="dual-slider-fill" id="adv-wr-fill-${team}" style="left:${left}%;right:${right}%;"></div>
+      ${dead}<div class="dual-slider-fill" id="adv-wr-fill-${team}" style="left:${left}%;right:${right}%;"></div>
       <input class="dual-range" type="range" min="1" max="${maxWk}" step="1" value="${lo}" oninput="advWeekRangeDrag('${team}','lo',this.value)" onchange="advWeekRangeCommit('${team}')">
       <input class="dual-range" type="range" min="1" max="${maxWk}" step="1" value="${hi}" oninput="advWeekRangeDrag('${team}','hi',this.value)" onchange="advWeekRangeCommit('${team}')">
       ${extraRail}

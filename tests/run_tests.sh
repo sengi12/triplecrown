@@ -184,6 +184,7 @@ run_js_test test_persist        "Session persistence: save/load/restore working 
 run_js_test test_persist_quota  "Session persistence under storage pressure: capped persisted undo depth, degraded save keeps projections, memoized availability probe"
 run_js_test test_sos_arc        "SOS arc: ESPN schedule parse, opponent win-total sum, missing-data skip, arc render"
 run_js_test test_qb_duress      "Passing chart: the Under Duress panel — clean / hit-or-sacked / vs blitz lines with ratings, PFR pressure counts, one game or season to date"
+run_js_test test_played_weeks   "Week sliders on the season in progress: the whole season on the track, the thumbs held to the weeks a team has played (the week in progress once its game kicked off), the rest dimmed; the banner chip reads the played week"
 run_js_test test_live_ingame    "In-game live stats: a one-minute cadence while games are on, five otherwise; the Live tab and banner say so"
 run_js_test test_leaders        "Leaders sidebar: ranked by points under the loaded scoring from Sleeper week rows, position + rookie filters, week/season pick, shortened names, desktop + in-season only"
 run_js_test test_standings_tiebreak "Standings: the NFL's division tiebreakers over the season's results (sidecar points + ESPN boards), the multi-club restart, 0-0 between winners and losers"

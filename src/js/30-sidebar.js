@@ -265,7 +265,7 @@ function renderContent(){
     : '';
   const seasonBanner = isRef
     ? `<div class="season-readonly">
-       <div class="season-readonly-main">${TC_ICON("calendar")} <b>${activeSeason} actual stats</b>${(typeof tcIsLiveSeason==='function'&&tcIsLiveSeason(activeSeason))?` <span class="pcard-live-tag">${(typeof tcGamesLive==='function'&&tcGamesLive())?`<span class="live-dot"></span>games in progress${(typeof tcLiveUpdatedText==='function'&&tcLiveUpdatedText())?` · updated ${tcLiveUpdatedText()}`:''}`:`live · thru wk ${completedWeeks()}`}</span>`:''}${recStr?` · <b>${recStr}</b> Record`:''}</div>
+       <div class="season-readonly-main">${TC_ICON("calendar")} <b>${activeSeason} actual stats</b>${(typeof tcIsLiveSeason==='function'&&tcIsLiveSeason(activeSeason))?` <span class="pcard-live-tag">${(typeof tcGamesLive==='function'&&tcGamesLive())?`<span class="live-dot"></span>games in progress${(typeof tcLiveUpdatedText==='function'&&tcLiveUpdatedText())?` · updated ${tcLiveUpdatedText()}`:''}`:`live · thru wk ${(typeof tcSeasonPlayedWeek==='function')?tcSeasonPlayedWeek(activeSeason):completedWeeks()}`}</span>`:''}${recStr?` · <b>${recStr}</b> Record`:''}</div>
        ${powerScoreInline}
        <div class="season-readonly-actions">
          ${canUndo(t)?`<button class="btn btn-ghost btn-sm" onclick="undoTeam('${t}')" title="Undo the last working-set change for ${t}">↶ Undo last copy</button>`:''}
