@@ -1382,6 +1382,9 @@ function tcRerenderInPlace(run, root){
 	run();
 	tcRestoreScrollers(snap, root);
 }
+// The last week the season can reach (the Super Bowl); read by the week board and the Game
+// Center. Declared here, early in the bundle, because boot needs it before 92b has run.
+const TC_LAST_WEEK = 22;
 // ═════════════════════════════════════════════════════════════════════════════
 // Session persistence (localStorage) — auto-saves your working projections so they
 // survive a refresh/close. Only the EDITABLE state is stored (working projections,
@@ -23982,6 +23985,15 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
   }
   // If a seed was baked into this file (bake_seed.py), everything is already in memory —
   // no fetch, so it works when opened directly from a phone (file://) with no CORS issue.
+  // Yield ONCE before the embedded path renders anything. This file sits mid-bundle, and a
+  // baked copy (the phone file) used to run this branch synchronously — before the files after
+  // this one had executed, so every `const`/`let` they declare (the week board's state, the
+  // Game Center's constants, 90-sleeper's flags) was still in its temporal dead zone and the
+  // Live tabs died inside boot on every load. The hosted build hid it: fetching the seed
+  // awaits, and by then the whole bundle has run. One microtask makes both paths the same.
+  // (The seed prefetch and the season probe above stay synchronous — they go out in the
+  // same tick as before, see test_boot_parallel.)
+  await null;
   if(hasEmbeddedProj){
     const restored = restoreSession();
     _persistReady = true;
@@ -27583,7 +27595,9 @@ var _tcBoard = { season:null, week:null, at:0, teams:{}, busy:false, live:false 
 const TC_PLAYOFF_WEEKS = { 19:['Wild Card',1], 20:['Divisional',2], 21:['Conf. Championship',3], 22:['Super Bowl',5] };
 function tcEspnWeek(week){ const w=Number(week); return TC_PLAYOFF_WEEKS[w] ? {type:3, week:TC_PLAYOFF_WEEKS[w][1]} : {type:2, week:w}; }
 function tcWeekLabel(week){ const w=Number(week); return TC_PLAYOFF_WEEKS[w] ? TC_PLAYOFF_WEEKS[w][0] : `Week ${w}`; }
-const TC_LAST_WEEK = 22;
+// TC_LAST_WEEK (22, the Super Bowl) is declared in 15-session-globals.js: boot renders the
+// season tabs from 85-import-export.js, before this file has run, and a `const` read before
+// its line throws — every page load used to die inside boot right there.
 const TC_BOARD_URL = (season, week)=>{ const e=tcEspnWeek(week); return `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=${e.type}&week=${e.week}&dates=${season}`; };
 const TC_BOARD_ABBR = { WSH:'WAS' };          // ESPN spells one club differently
 const TC_BOARD_TTL_LIVE = 4*1000, TC_BOARD_TTL_IDLE = 5*60*1000;   // live: the Game Center's poll re-reads it every 5 s (one small request)

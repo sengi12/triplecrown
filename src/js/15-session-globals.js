@@ -1,3 +1,6 @@
+// The last week the season can reach (the Super Bowl); read by the week board and the Game
+// Center. Declared here, early in the bundle, because boot needs it before 92b has run.
+const TC_LAST_WEEK = 22;
 // ═════════════════════════════════════════════════════════════════════════════
 // Session persistence (localStorage) — auto-saves your working projections so they
 // survive a refresh/close. Only the EDITABLE state is stored (working projections,
