@@ -76,11 +76,166 @@ function ec(e){ if(e==null)return"#999"; let t=Math.max(-0.4,Math.min(0.4,e))/0.
 const FULL_TREE=[['FLAT',null],['SLANT',null],['COMEBACK',null],['HITCH/CURL',null],['OUT',null],['IN/DIG',null],['CORNER',null],['POST',null],['GO',null]];
 const FULL_TREE_RB=[['FLAT',null],['SWING',null],['SCREEN',null],['TEXAS/ANGLE',null],['WHEEL',null],['SLANT',null],['HITCH/CURL',null]];
 
-// alignment variations for a personnel grouping (schematic — nflverse gives personnel, not splits)
+// ── What this formation is actually called ─────────────────────────────────
+// Keyed by the four things the data DOES know: the alignment family, how many backs stood
+// in the backfield, and the tight end and receiver counts. The names are the real ones a
+// playbook uses (Gun Bunch, Singleback Ace, I-Form Pro), researched from Madden playbook
+// listings and football glossaries — not invented here. The first name is the base look
+// for that grouping and is what the card shows until you tap it.
+//   key: "<align>|<backs>|<TE>|<WR>" → ["Family", name, name, …]
+const FORMATION_NAMES={"f":{"gun|1|1|3":["Gun",["Gun Doubles","base"],["Gun Trips TE","trips"],["Gun Bunch","bunch"],["Gun Trey Open","trips"],["Gun Tight","tight"],["Gun Y-Trips","trips"],["Gun Spread Y-Flex","spread"],["Gun Doubles Flex","base"],["Gun Tight Doubles","tight"],["Gun Bunch TE","bunch"],["Gun Doubles Wing TE","wing"],["Gun Wing Trips","wing"]],"gun|1|2|2":["Gun",["Gun Ace","base"],["Gun Deuce","base"],["Gun Wing","wing"],["Gun Wing Slot","wing"],["Gun Ace Slot","base"],["Gun U Off Stack","wing"],["Gun Wing Stack","wing"],["Gun Deuce Close","tight"],["Gun Deuce Trips","trips"]],"gun|1|3|1":["Gun",["Gun Wing Tight","wing"],["Gun Wing Pair","wing"],["Gun Wing Tight Z","wing"],["Gun Wing Tight Nasty","wing"]],"gun|1|0|4":["Gun",["Gun Spread","spread"],["Gun Trips","trips"],["Gun Flanker Close","tight"],["Gun Snugs","tight"],["Gun Bunch Open","bunch"],["Gun Wide Trips","trips"],["Gun 4WR Trips Strong","trips"],["Gun Trey 4WR","trips"]],"gun|2|1|2":["Gun",["Gun Split Twins","base"],["Gun Split Pro","base"],["Gun Split Y-Flex","wing"],["Gun Split Y Off","wing"],["Gun Tight Base Flex","tight"],["Gun Duo Twins Flex","base"],["Gun Go Go Twins Flex","base"],["Gun Split Close Pro","tight"],["Gun Split Twins Stack","base"],["Gun Split Pro Near","base"]],"gun|2|2|1":["Gun",["Gun Split U Off Close","wing"],["Gun Split Wing Nasty","wing"]],"gun|2|0|3":["Gun",["Gun Split Close","tight"],["Gun Split Flanker Close","tight"],["Gun Split Offset","base"],["Gun Split Slot Open","base"],["Gun Split Slot Offset","base"],["Gun Duo Slot Open","base"]],"gun|0|1|4":["Gun Empty",["Gun 5WR Flex Trey","spread"],["Gun Empty Quads","quads"]],"gun|0|0|5":["Gun Empty",["Gun 5WR Trips","spread"],["Gun 5WR Tight","spread"],["Gun Empty Spread","spread"],["Gun Empty Trio","spread"],["Gun Empty Trips","spread"],["Gun Flex Trey","trips"],["Gun 5WR Patriot","bunch"]],"gun|1|1|2":["Gun Heavy",["Gun Heavy","teheavy"],["Gun Heavy Panther","teheavy"],["Gun Heavy Raven","teheavy"],["Gun Heavy Saint","teheavy"],["Gun Tackle Over","base"],["Gun Tackle Over Trips","trips"]],"gun|2|2|0":["Gun Heavy",["Gun Double Wing","teheavy"],["Gun Heavy Panther","teheavy"]],"uc|1|1|3":["Singleback",["Singleback Doubles","base"],["Singleback Trips","trips"],["Singleback Bunch","bunch"],["Singleback Flex","base"],["Singleback Tight Doubles","tight"],["Singleback Y-Trips","trips"],["Singleback Trey Open","trips"],["Singleback Wing Trips","trips"],["Singleback Dice","tight"],["Singleback Trips Bunch","bunch"],["Singleback Ace Overload","quads"],["Singleback Tight Y Off","wing"]],"uc|1|2|2":["Singleback",["Singleback Ace","base"],["Singleback Ace Pair","base"],["Singleback Deuce","base"],["Singleback Big","base"],["Singleback Twin TE","base"],["Singleback Ace Twins","base"],["Singleback F Wing","wing"],["Singleback Deuce Wing","wing"],["Singleback Ace Pair Slot","base"],["Singleback Twin TE Slot","base"],["Singleback Bunch Ace","bunch"],["Singleback U Off Trips","trips"]],"uc|1|3|1":["Singleback",["Singleback Wing Tight","wing"],["Singleback Wing Pair","wing"],["Singleback Jumbo","teheavy"],["Singleback East Tight","tight"],["Singleback Wing Tight Z","wing"],["Singleback Jumbo Z","teheavy"],["Singleback Wing Tight U","wing"]],"uc|1|0|4":["Singleback",["Singleback Spread","spread"],["Singleback Trips Open","trips"],["Singleback Snugs","tight"],["Singleback Tight Slots","tight"],["Singleback Doubles Close","tight"],["Singleback Dice Open","spread"],["Singleback Spread Flex","spread"],["Singleback Snugs Flip","tight"]],"uc|2|1|2":["I-Form",["I-Form Pro","base"],["Strong Pro","base"],["Weak Pro","base"],["I-Form Close","tight"],["Split Backs Pro","base"],["I-Form Twins","base"],["I-Form Normal","base"],["Far Pro","base"],["Near Pro","base"],["Split Backs Slot","base"],["I-Form H Pro","wing"],["Strong I Twins Over","trips"],["Split Backs Offset Wing Close","split"]],"uc|2|2|1":["I-Form",["I-Form Tight","tight"],["I-Form H Tight","wing"],["I-Form Wing","wing"],["I-Form Hulk","teheavy"],["I-Form H Wing","wing"],["I-Form Wing Over","wing"],["Strong Wing","wing"],["Strong H Tight Close","tight"],["Weak Wing","wing"],["Full House Tight","teheavy"]],"uc|2|0|3":["I-Form",["I-Form Slot Open","base"],["Split Backs 3WR","base"],["Split Backs Pro Slot","base"],["Weak I 3WR Flex","base"],["Weak I Slot Open","base"],["Full House Wide","teheavy"]],"uc|3|1|1":["Full House / Wishbone",["Wishbone","teheavy"],["Full House","teheavy"],["Power I","teheavy"],["Maryland I","teheavy"],["I-Bone","teheavy"],["Power I Strong","power"]],"uc|3|0|2":["Flexbone",["Flexbone Normal","wing"],["Flexbone Close","wing"]],"uc|2|3|0":["Goal Line / Jumbo",["Goal Line Normal","teheavy"],["Near Jumbo","teheavy"],["Strong I Jumbo","teheavy"],["Jumbo","teheavy"],["Big I","teheavy"]],"pistol|1|1|3":["Pistol",["Pistol Doubles","base"],["Pistol Trips","trips"],["Pistol Bunch","bunch"],["Pistol Y Trips","trips"],["Pistol Bunch TE","bunch"],["Pistol Tight Slots","tight"],["Pistol Spread Y Slot","spread"],["Pistol Open Flex","spread"],["Pistol Philly","trips"],["Pistol Doubles Hip","base"],["Pistol Doubles Y Off","wing"],["Pistol Doubles Y Off Stack","stack"]],"pistol|1|2|2":["Pistol",["Pistol Ace","base"],["Pistol Deuce","base"],["Pistol Wing","wing"],["Pistol Ace Slot","base"],["Pistol U Off","wing"],["Pistol Wing Flex","wing"],["Pistol Wing Close","wing"],["Pistol Wing Slot","wing"],["Pistol Deuce Close","tight"],["Pistol U Off Stack","wing"],["Pistol U Off Trips","trips"]],"pistol|1|3|1":["Pistol",["Pistol East Tight","tight"],["Pistol Wing Tight Z","wing"]],"pistol|2|1|2":["Pistol",["Pistol Strong","base"],["Pistol Weak","base"],["Pistol Full House Pro","teheavy"],["Pistol Full House Base","teheavy"],["Pistol Strong Slot","base"],["Pistol Weak Slot","base"],["Pistol Full House Over Close","teheavy"],["Pistol Strong Slot Close","tight"],["Pistol Strong Y Off Close","wing"]],"pistol|2|2|1":["Pistol",["Pistol Full House TE","teheavy"],["Pistol Weak I Wing","wing"]],"pistol|1|0|4":["Pistol",["Pistol Spread","spread"],["Pistol Trips Open","trips"]],"pistol|2|0|3":["Pistol",["Pistol Strong Slot Open","base"],["Pistol Weak Slot Open","base"]]},"e":{"gun|0|1|3":["Gun Empty",["Gun Empty Trey","spread"],["Gun Empty Bunch","bunch"],["Gun Empty Base","spread"],["Gun Empty Chips","bunch"],["Gun Empty Steeler","spread"],["Gun Empty Y Slot","spread"],["Gun Empty Bunch Wide","bunch"],["Gun Empty Base Flex","spread"],["Gun Bunch Quads","quads"]],"gun|0|2|2":["Gun Empty",["Gun Empty Ace","spread"]],"gun|0|0|4":["Gun Empty",["Gun Empty Y-Flex","spread"],["Gun Empty Bunch Quads","bunch"]],"uc|0|1|3":["Under Center Empty",["Empty","spread"]]}};
+// A formation's name carries more than its receiver distribution: Close tightens the splits,
+// Wing puts the tight end off the line, Flex detaches him, Strong/Weak offset the back toward
+// or away from him, Stack puts one receiver behind another.
+function _mods(name){
+  const n=' '+String(name).toLowerCase()+' ', m={};
+  if(/\b(close|tight|nasty|snug)\b/.test(n)) m.tight=1;
+  if(/\b(spread|open|wide)\b/.test(n))       m.tight=-1;
+  if(/\b(flex|y-off|u-off|y off|u off|slot te|over)\b/.test(n)) m.teMode='flex';
+  // Wing wins over Flex when a name carries both ("Wing Over"): the wing is the stronger
+  // instruction — the tight end is off the line, not detached into the slot.
+  if(/\b(wing|y-wing)\b/.test(n))            m.teMode='wing';
+  // Near and Far say the same thing as Strong and Weak: which side of the quarterback the
+  // back sets, measured from the tight end.
+  if(/\b(strong|near)\b/.test(n)) m.backOff='S';
+  if(/\b(weak|far)\b/.test(n))    m.backOff='W';
+  // How the backfield itself is arranged, for the sets that are named for it.
+  if(/\bsplit backs?\b/.test(n))  m.bf='split';    // side by side, not stacked
+  if(/\bwishbone|i-bone\b/.test(n)) m.bf='bone';   // fullback tight, halfbacks wide behind
+  if(/\bfull house\b/.test(n))   m.bf='house';     // three across
+  if(/\bpower i\b/.test(n))      m.bf='power';     // three stacked
+  if(/\bmaryland\b/.test(n))     m.bf='maryland';  // two stacked, one offset
+  if(/\bstack\b/.test(n))  m.stack=1;
+  if(/\b(slot|slots|dice)\b/.test(n)) m.slot=1;
+  // Twins puts two receivers on the SAME side. Doubles is the balanced 2x2 — two eligibles
+  // each side, the tight end counting as one of them. "Deuce" and "Ace" describe the TIGHT
+  // ENDS (a Deuce is a two-tight-end set), so neither is a receiver instruction at all.
+  if(/\btwins\b/.test(n))   m.twins=1;
+  if(/\bdoubles\b/.test(n)) m.balanced=1;
+  // "Pair" and "Twin TE" put the two tight ends on the SAME side; everything else keeps one
+  // on each, which is what a Deuce or an Ace with two tight ends actually looks like.
+  if(/\b(pair|twin te|twins te)\b/.test(n)) m.tePair=1;
+  // A Double Wing has a wing on EACH side — it is the opposite of pairing them.
+  if(/\bdouble wing\b/.test(n)){ m.tePair=0; m.teMode='wing'; m.teSplit=1; }
+  // The distribution words are absolute: whatever shape token the catalogue carries, a name
+  // that says Quads puts FOUR eligibles to one side (and one to the other — never all five),
+  // Trips puts three, and Bunch clusters three. The name wins.
+  if(/\bquads\b/.test(n)) m.toSide=4;
+  else if(/\b(trips|trey|trio)\b/.test(n)) m.toSide=3;
+  if(/\b(pro|normal|base|ace)\b/.test(n)) m.pro=1;
+  return m;
+}
+function _shapeToken(tok, name, wr, te, half){
+  switch(tok){
+    case 'bunch':   return wr>=3 ? {wrR:wr, wrBunch:'R', triangle:true, teR:0, rbSide:'L'}
+                                 : (te>=2 ? {teR:te, teBunch:true, wrR:half} : {wrR:half, teR:Math.ceil(te/2)});
+    case 'trips':   return wr>=3 ? {wrR:Math.min(3,wr), teR:0}
+                                 : {wrR:wr, teR:Math.min(te, 3-wr)};   // a tight end completes the trio
+    case 'quads':   return wr>=4 ? {wrR:Math.min(4,wr), wrBunch:'R', teR:0} : {wrR:wr, teR:0};
+    case 'spread':  return {wrR:half, teR:Math.ceil(te/2)};
+    // Close/Tight narrows the SPLITS. It does not move a tight end across the formation —
+    // a Deuce is a tight end on each side whether it is closed up or not.
+    case 'tight':   return {wrR:half, teR:Math.ceil(te/2)};
+    // A wing is a tight end off the line, still on his own side.
+    case 'wing':    return {wrR:half, teR:Math.ceil(te/2)};
+    // Only the heavy looks actually stack the tight ends to one side.
+    // Heavy and Jumbo bring extra tight ends, but they block on BOTH edges — three of them
+    // never all line up on the same side of the centre.
+    case 'teheavy': return te>=3 ? {teR:te-1, teBunch:true, wrR:half}
+                  : (te===2 ? {teR:2, teBunch:true, wrR:half} : {wrR:half, teR:te});
+    case 'base':    return {wrR:half, teR:Math.ceil(te/2)};
+  }
+  return _shapeFor(name, wr, te, half);
+}
+function _shapeFor(name, wr, te, half){
+  const n=String(name).toLowerCase();
+  if(/bunch|chips|snugs/.test(n) && wr>=3) return {wrR:wr, wrBunch:'R', triangle:true, teR:0, rbSide:'L'};
+  if(/bunch/.test(n) && te>=2)             return {teR:te, teBunch:true, wrR:half};
+  if(/quads/.test(n) && wr>=4)             return {wrR:Math.min(4,wr), wrBunch:'R', teR:0};
+  if(/trips|trey|trio|3wr|y-trips/.test(n) && wr>=3) return {wrR:Math.min(3,wr), teR:0};
+  if(/trips te|wing trips/.test(n) && te>=2) return {teR:Math.min(3,te), teBunch:true, wrR:0};
+  if(/trips|trey/.test(n) && wr===2)       return {wrR:2, teR:0};
+  if(/twins|doubles|deuce|pair|slots?|spread|flex|open/.test(n)) return {wrR:half, teR:Math.ceil(te/2)};
+  if(/wing|u off|y off|y-off/.test(n) && te>=1) return {teR:te, wrR:half};
+  if(/tight|close|jumbo|heavy|goal/.test(n)) return {wrR:half, teR:te, teBunch:te>=2};
+  return {};
+}
+// The catalogue is keyed on the exact grouping, but the backfield count moves independently
+// of the personnel (a tight end motions back, a back splits out), so live data throws
+// combinations no playbook bothers to name. Fall back to the nearest catalogued grouping —
+// same alignment and backfield first, then the same alignment — before giving up on a name.
+// An empty backfield has its own catalogue (a back split out changes what the formation is
+// called, not just where he stands); everything else is keyed by the personnel grouping.
+// Where a grouping has no catalogued name — 13 personnel, the odd heavy set — fall back to
+// the nearest one in the SAME alignment family, never across families.
+function _namesFor(align, backs, te, wr){
+  const book = backs===0 ? FORMATION_NAMES.e : FORMATION_NAMES.f;
+  const exact = book[[align,backs,te,wr].join('|')];
+  if(exact) return exact;
+  const score=(k)=>(k[0]===align?0:100)+(Number(k[1])===backs?0:10)+Math.abs(Number(k[2])-te)+Math.abs(Number(k[3])-wr);
+  let best=null, bs=1e9;
+  for(const src of [book, FORMATION_NAMES.f]){
+    for(const key of Object.keys(src)){
+      const sc=score(key.split('|'));
+      if(sc<bs){ bs=sc; best=src[key]; }
+    }
+    if(best && bs<10) break;
+  }
+  return (best && bs<100) ? best : null;
+}
+// A formation's name follows the PERSONNEL — "Gun Split" is a two-back grouping, whatever
+// happens after the snap — with one exception: nobody in the backfield makes it an Empty set.
+function _nameKey(g){
+  const rbOn = Math.max(0, g.pbacks==null ? g.backs : +g.pbacks);
+  return [g.align, (g.backs===0 ? 0 : rbOn), g.te, g.wr];
+}
 function variantsFor(g){
   const wr=g.wr, te=g.te; const out=[];
   const half=Math.ceil(wr/2);
   const add=(name,o)=>out.push(Object.assign({name:name,wrR:half,wrBunch:null,teR:Math.ceil(te/2),teBunch:false,rbSide:null},o));
+  const real=_namesFor.apply(null, _nameKey(g));
+  if(real && real.length>1){
+    for(let i=1;i<real.length;i++){
+      const [nm, tok]=real[i];
+      const shape=_shapeToken(tok, nm, wr, te, half), mod=_mods(nm);
+      // "Twins" and "Doubles" put the pair on one side; with three receivers the base split
+      // already does that, so it only bites on the two-receiver groupings.
+      // Twins puts BOTH receivers to one side, which means the tight end goes to the other —
+      // otherwise every eligible ends up on the same side of the ball and nobody is backside.
+      if(mod.twins && wr>=2){ shape.wrR=wr; if(te>0) shape.teR=0; }
+      if(mod.pro && wr===2 && !mod.twins) shape.wrR=1;
+      if(mod.teSplit && te>=2) shape.teR=Math.floor(te/2);  // a wing on each side
+      else if(mod.tePair && te>=2) shape.teR=te;           // both tight ends to one side
+      else if(te>=2 && shape.teR===undefined) shape.teR=Math.ceil(te/2);
+      // A balanced look means balanced ELIGIBLES, not balanced receivers. Splitting the
+      // receivers on their own and then adding the tight end on top made 11 personnel line
+      // up 1x3 when Doubles, Base and Flex all mean 2x2.
+      if(!mod.toSide && !mod.twins && !mod.tePair && (mod.balanced || ['base','spread','tight','wing'].indexOf(tok)>=0)){
+        const total=wr+te, want=Math.round(total/2);          // eligibles on the right
+        shape.teR=Math.min(te, shape.teR===undefined ? Math.ceil(te/2) : shape.teR);
+        shape.wrR=Math.max(0, Math.min(wr, want-shape.teR));
+      }
+      // Quads/Trips: put exactly that many eligibles on the strong side, receivers first and
+      // a tight end completing the count, and never leave the other side empty.
+      if(mod.toSide){
+        const want=Math.min(mod.toSide, wr+te);
+        shape.wrR=Math.min(wr, want);
+        shape.teR=Math.max(0, Math.min(te, want-shape.wrR));
+        if(shape.wrR===wr && shape.teR===te && wr+te>want) shape.wrR=want-shape.teR;
+      }
+      // Nobody puts all five eligibles on one side of the ball. If a look would, send the
+      // innermost man — the tight end if there is one — back to the empty side.
+      const onR=(shape.wrR===undefined?half:shape.wrR)+(shape.teR===undefined?Math.ceil(te/2):shape.teR);
+      if(!mod.toSide && wr+te>=3 && (onR===wr+te || onR===0)){
+        if(te>0) shape.teR = (onR===0) ? te : 0;
+        else shape.wrR = (onR===0) ? 1 : wr-1;
+      }
+      add(nm, Object.assign(shape, mod));
+    }
+    return out;
+  }
+  // No catalogued name for this grouping (13 personnel and the odd heavy set): fall back to
+  // describing the split, which is still true, just not a proper noun.
   add('Base '+half+'x'+(wr-half));
   if(wr>=2){ add('Trips Rt',{wrR:wr,teR:0}); add('Trips Lt',{wrR:0,teR:te}); }
   if(wr>=3){ add('Bunch Rt',{wrR:wr,wrBunch:'R',triangle:true,teR:0,rbSide:'L'}); add('Bunch Lt',{wrR:0,wrBunch:'L',triangle:true,teR:te,rbSide:'R'}); }
@@ -90,58 +245,261 @@ function variantsFor(g){
   if(te>=3){ add('TE Trips Rt',{teR:3,teBunch:true,wrR:0}); add('TE Trips Lt',{teR:0,teBunch:true,wrR:wr}); }
   return out;
 }
+// The family name for the card's header — "Gun", "Singleback", "I-Form" — where we have one.
+function familyFor(g){
+  const r=_namesFor.apply(null, _nameKey(g));
+  if(r) return r[0];
+  // Even with nothing catalogued, the alignment and the backfield name the family.
+  const b=g.backs;
+  if(g.align==='pistol') return 'Pistol';
+  if(g.align==='uc') return b===0?'Under Center Empty':(b===1?'Singleback':(b>=3?'Full House':'I-Form'));
+  return b===0?'Gun Empty':'Gun';
+}
 function positions(g, av){
   const cx=165, olY=200, gap=22, sq=15;
   const olX=[cx-2*gap,cx-gap,cx,cx+gap,cx+2*gap];
-  const skill=[]; const al=g.align, backs=g.backs, te=g.te, wr=g.wr;
+  const al=g.align;
+  // Personnel decides WHO is on the field; the backfield count only decides WHERE they stand.
+  // 11 personnel is one back and one tight end — always — so a second body in the backfield is
+  // that tight end (or a receiver), never a second back. Getting this backwards drew two RBs
+  // on an 11-personnel card, which is not a thing.
+  const rbOn = Math.max(0, g.pbacks==null ? g.backs : +g.pbacks);   // backs on the field (the "1" in 11)
+  const bfN  = Math.max(0, g.backs);                 // bodies standing in the backfield
+  const rbInBack = Math.min(rbOn, bfN);
+  let spare = bfN - rbInBack;                        // the rest of the backfield is TE/WR
+  const teInBack = Math.min(g.te, spare); spare -= teInBack;
+  const wrInBack = Math.min(g.wr, spare);
+  const splitBacks = rbOn - rbInBack;                // backs who split out instead (an empty set)
+  const te = g.te - teInBack, wr = g.wr - wrInBack;  // what is left to align on and off the line
+  // who occupies each backfield slot, in order: backs first, then the tight end pulled in
+  const bfLabel = [].concat(Array(rbInBack).fill('RB'), Array(teInBack).fill('TE'), Array(wrInBack).fill('WR'));
+  const backs = bfLabel.length;
+  let _bfi = 0;
+  const putBack = (x,y,side,fallback) => {
+    const lab = bfLabel[_bfi++] || fallback || 'RB';
+    skill.push({role: lab==='RB'?'RB':(lab==='TE'?'TE':'WR'), x, y, side, label: lab});
+  };
+  const skill=[];
   const vars=variantsFor(g); const v=vars[(av||0)%vars.length]||vars[0];
-  let qbY = al=='uc'?olY+16:(al=='pistol'?olY+34:olY+42);
+  // Far enough off the centre that the quarterback never collides with him: that collision
+  // used to ripple down the backfield and bend the I out of its straight line.
+  let qbY = al=='uc'?olY+22:(al=='pistol'?olY+34:olY+42);
   skill.push({role:'QB',x:cx,y:qbY,side:'M',label:'QB'});
   // RB placement (shotgun/pistol can flip to weak side of a bunch)
   const rbSide = v.rbSide;
   if(al=='uc'){
-    if(backs>=3){ // full house: FB/lead back tight, two halfbacks split behind
-      skill.push({role:'RB',x:cx,y:qbY+22,side:'M',label:'FB'});
-      skill.push({role:'RB',x:cx-20,y:qbY+40,side:'L',label:'RB'});
-      skill.push({role:'RB',x:cx+20,y:qbY+40,side:'R',label:'RB'}); }
-    else if(backs>=2){skill.push({role:'RB',x:cx,y:qbY+22,side:'M',label:'FB'});skill.push({role:'RB',x:cx,y:qbY+40,side:'M',label:'RB'});}
-    else if(backs==1)skill.push({role:'RB',x:cx,y:qbY+38,side:'M',label:'RB'}); }
+    if(backs>=3){
+      // The three-back sets are named for how the backfield is arranged, so draw each one.
+      const ts3=(Math.min(v.teR,te) >= te-Math.min(v.teR,te)) ? 1 : -1;
+      const lead3 = v.backOff==='S' ? ts3*18 : (v.backOff==='W' ? -ts3*18 : 0);
+      if(v.bf==='house'){ putBack(cx-28,qbY+24,'L','FB'); putBack(cx,qbY+24,'M'); putBack(cx+28,qbY+24,'R'); }
+      // Power I stacks all three behind the quarterback — one straight line, no offset.
+      else if(v.bf==='power'){ putBack(cx+lead3,qbY+22,lead3?(lead3>0?'R':'L'):'M','FB'); putBack(cx,qbY+44,'M'); putBack(cx,qbY+66,'M'); }
+      else if(v.bf==='maryland'){ putBack(cx+lead3,qbY+22,lead3?(lead3>0?'R':'L'):'M','FB'); putBack(cx,qbY+44,'M'); putBack(cx+28,qbY+44,'R'); }
+      else { putBack(cx,qbY+22,'M','FB'); putBack(cx-28,qbY+46,'L'); putBack(cx+28,qbY+46,'R'); }  // wishbone
+    }
+    else if(backs>=2){
+      // Split backs sit side by side; the I stacks them. Strong / Weak (and Near / Far) offset
+      // the lead back toward or away from the tight end.
+      // With a tight end on each side there is no strong side by count, so the right is
+      // strong by convention — otherwise Strong and Weak came out the wrong way round.
+      const teSide=(Math.min(v.teR,te) >= te-Math.min(v.teR,te)) ? 1 : -1;
+      if(v.bf==='split'){ putBack(cx-27,qbY+28,'L','FB'); putBack(cx+27,qbY+28,'R'); }
+      else {
+        // The I is a straight line; Strong / Weak offsets the lead back off it, nothing else.
+        const lead = v.backOff==='S' ? teSide*18 : (v.backOff==='W' ? -teSide*18 : 0);
+        putBack(cx+lead,qbY+22,lead?(lead>0?'R':'L'):'M','FB'); putBack(cx,qbY+44,'M'); } }
+    else if(backs==1) putBack(cx,qbY+34,'M'); }
   else if(al=='pistol'){
-    skill.push({role:'RB',x:cx,y:qbY+20,side:'M',label:'RB'});
-    if(backs>=2)skill.push({role:'RB',x:cx-24,y:qbY+14,side:'L',label:'RB'});
-    if(backs>=3)skill.push({role:'RB',x:cx+24,y:qbY+14,side:'R',label:'RB'}); }
-  else { const rx=rbSide=='L'?cx-22:(rbSide=='R'?cx+22:cx+22);
-    if(backs>=1)skill.push({role:'RB',x:rx,y:qbY,side:rx<cx?'L':'R',label:'RB'});
-    if(backs>=2)skill.push({role:'RB',x:cx-22,y:qbY,side:'L',label:'RB'});
-    if(backs>=3)skill.push({role:'RB',x:cx,y:qbY+20,side:'M',label:'RB'}); }  // 3rd back offset behind QB
-  // TEs: teR on right (attached beyond RT), rest left; bunch = tighter cluster to one side
+    // In the pistol the back is stacked behind the quarterback; a second one sets to the
+    // strong or weak side rather than always to the left.
+    const tsP=(Math.min(v.teR,te) >= te-Math.min(v.teR,te)) ? 1 : -1;
+    const sideP = v.backOff==='S' ? tsP : (v.backOff==='W' ? -tsP : -1);
+    if(backs>=1) putBack(cx,qbY+22,'M');
+    if(backs>=2) putBack(cx+sideP*27,qbY+12,sideP>0?'R':'L');
+    if(backs>=3) putBack(cx-sideP*27,qbY+12,sideP>0?'L':'R'); }
+  else { const teSide = (Math.min(v.teR,te) >= te-Math.min(v.teR,te)) ? 'R' : 'L';
+    const off = v.backOff==='S' ? teSide : (v.backOff==='W' ? (teSide==='R'?'L':'R') : null);
+    const rx=(off||rbSide)=='L'?cx-27:(cx+27);
+    if(backs>=1) putBack(rx,qbY,rx<cx?'L':'R');
+    if(backs>=2) putBack(2*cx-rx,qbY,rx<cx?'R':'L');   // the second back sets opposite the first
+    if(backs>=3) putBack(cx,qbY+24,'M'); }             // third body offset behind the QB
+  // ── Everyone outside the tackles, laid out along each side ────────────────
+  // Absolute pixel positions per look used to pile players on top of each other (and on the
+  // line), and the separation pass then flung them off the card. Instead: build each side's
+  // roster inside-to-outside, then step them out with a guaranteed pitch. A look changes the
+  // ORDER and the SPACING, never the arithmetic, so nothing can collide and nothing can be
+  // pushed out of the drawing.
   const jumboOff = g.ol >= 6 ? 22 : 0;
-  const teRightN=Math.min(v.teR,te), teLeftN=te-teRightN;
-  const rTE=v.teBunch?[olX[4]+20+jumboOff,olX[4]+38+jumboOff,olX[4]+56+jumboOff]:[olX[4]+22+jumboOff,olX[4]+44+jumboOff];
-  const lTE=v.teBunch?[olX[0]-20,olX[0]-38,olX[0]-56]:[olX[0]-22,olX[0]-44];
-  for(let i=0;i<teRightN;i++){ let x=rTE[i]; skill.push({role:'TE',x:x,y:olY,side:'R',label:'TE'}); }
-  for(let i=0;i<teLeftN;i++){ let x=lTE[i]; skill.push({role:'TE',x:x,y:olY,side:'L',label:'TE'}); }
-  // WRs: wrR on right, rest left; bunch clusters them tight. Triangle bunch staggers depth so they don't overlap.
-  const wrRightN=Math.min(v.wrR,wr), wrLeftN=wr-wrRightN;
-  const losWR=olY-4;
-  if(v.triangle && (wrRightN>=3 || wrLeftN>=3)){
-    // two receivers on the LOS, third backed off behind the middle of them (triangle apex at the back)
-    const onR = wrRightN>=3;
-    const losX1 = onR?306:24, losX2 = onR?262:68;   // two on the line (outside + inside)
-    const backX = onR?284:46;                        // point man off the ball, centered behind the two
-    skill.push({role:'WR',x:losX1,y:losWR,side:onR?'R':'L',label:'WR'});      // #1 on line, outside
-    skill.push({role:'WR',x:losX2,y:losWR,side:onR?'R':'L',label:'WR'});      // #2 on line, inside
-    skill.push({role:'WR',x:backX,y:losWR+16,side:onR?'R':'L',label:'WR'});   // #3 off ball, behind the middle
-    // any extra WRs (4+) split to the opposite side
-    const rest = wr-3;
-    const oppWide = onR?[30,58,84]:[300,272,246];
-    for(let i=0;i<rest;i++){ skill.push({role:'WR',x:oppWide[i],y:losWR,side:onR?'L':'R',label:'WR'}); }
-  } else {
-    const rWide=v.wrBunch=='R'?[300,286,272,258]:[300,272,246,224];
-    const lWide=v.wrBunch=='L'?[30,44,58,72]:[30,58,84,106];
-    for(let i=0;i<wrRightN;i++){ let x=rWide[i]; skill.push({role:'WR',x:x,y:losWR,side:'R',label:'WR'}); }
-    for(let i=0;i<wrLeftN;i++){ let x=lWide[i]; skill.push({role:'WR',x:x,y:losWR,side:'L',label:'WR'}); }
+  let teRightN = Math.min(v.teR, te), teLeftN = te - teRightN;
+  const wrRightN = Math.min(v.wrR, wr), wrLeftN = wr - wrRightN;
+  const losWR = olY - 4;
+  const attached = v.teMode !== 'flex';          // a flexed tight end lines up as a receiver
+  // Three tight ends never stack on one hip — the third would end up out by the numbers,
+  // which is a receiver's spot. The surplus crosses the formation instead.
+  if(attached && teRightN > 2 && teLeftN < teRightN){ teLeftN += teRightN - 2; teRightN = 2; }
+  else if(attached && teLeftN > 2 && teRightN < teLeftN){ teRightN += teLeftN - 2; teLeftN = 2; }
+  const teY = v.teMode === 'wing' ? olY + 13 : olY;
+  const side = (isRight) => {
+    const tes = [], wrs = [];
+    for(let i = 0; i < (isRight ? teRightN : teLeftN); i++) tes.push({role:'TE', label:'TE', te:true});
+    for(let i = 0; i < (isRight ? wrRightN : wrLeftN); i++) wrs.push({role:'WR', label:'WR', te:false});
+    // The ladder below counts in from the sideline, so the last man listed is the innermost:
+    // a flexed tight end belongs there, in the slot, not split out wide like a receiver.
+    return attached ? tes.concat(wrs) : wrs.concat(tes);
+  };
+  // Receivers split WIDE. Stepping outward from the tackle left every set bunched inside the
+  // hashes — a real formation puts the outside man out by the numbers and works back in from
+  // there, so that is the direction this lays them: outermost first, then inward.
+  const PITCH  = 26;                                          // between neighbouring receivers
+  const BUNCHP = 20;                                          // a bunch is tight, but still legible
+  const TEGAP  = 22;                                          // an attached tight end off the tackle
+  const WIDE   = v.tight === 1 ? 280 : (v.tight === -1 ? 308 : 300);   // the outside man, right side
+  const place = (list, isRight) => {
+    const dir = isRight ? 1 : -1;
+    const edge = (isRight ? olX[4] + sq/2 + jumboOff : olX[0] - sq/2);
+    const bunched = (isRight ? v.wrBunch === 'R' : v.wrBunch === 'L');
+    const nAtt  = list.filter(p => p.te && attached).length;   // on the tackle's hip
+    const nFlex = list.filter(p => p.te && !attached).length;  // detached, but still the Y
+    const nWR   = list.length - nAtt - nFlex;
+    // Two ladders meeting in the middle. Tight ends are anchored to the formation and step
+    // outward from it; receivers are anchored near the sideline and step back inward. That is
+    // the way a formation is actually built, and it keeps the Y in the slot where he belongs
+    // instead of letting him take the outside receiver's place at the numbers.
+    const inner = edge + dir * (TEGAP * nAtt + 22);
+    const flexEnd = inner + dir * Math.max(0, nFlex - 1) * 24;
+    const wide  = isRight ? WIDE : 330 - WIDE;
+    const stop  = nFlex ? flexEnd + dir * 24 : inner;
+    // Receivers fill the whole space out to the sideline rather than sitting in a clump at the
+    // end of it: the outside man at the numbers, the last one in tight to the formation, the
+    // rest spread evenly between. A bunch is the exception — it is meant to be a clump.
+    const span  = Math.max(0, (wide - stop) * dir);
+    const pitch = bunched ? BUNCHP : (nWR > 1 ? Math.max(20, span / (nWR - 1)) : 0);
+    let t = 0, f = 0, k = 0;
+    list.forEach(p => {
+      let x, y = losWR, snug = false;
+      if(p.te && attached){ x = edge + dir * (TEGAP + t * TEGAP); y = teY; t++; }
+      else if(p.te){ x = inner + dir * f * 24; y = losWR + 12; f++; }   // flexed into the slot
+      else {
+        x = wide - dir * k * pitch;
+        // the point man of a bunch tucks in behind the two on the ball
+        if(bunched && k === nWR - 1 && nWR >= 3){ x = wide - dir * (k - 0.5) * pitch; y = losWR + 19; snug = true; }
+        else if(v.slot && k === nWR - 1 && nWR > 1) y = losWR + 12;
+        k++;
+      }
+      skill.push({role:p.role, x:Math.max(18, Math.min(312, x)), y, side:isRight?'R':'L', label:p.label, snug});
+    });
+  };
+  place(side(true), true);
+  place(side(false), false);
+  // Stack: one receiver directly behind another. Done after both sides exist so it lands on
+  // whichever side actually has two men off the line, whoever they are.
+  if(v.stack){
+    // prefer two men on the ball; failing that (a wing set puts the tight ends off it) any
+    // two eligibles on the same side will do
+    let done = false;
+    for(const onBall of [true, false]){
+      if(done) break;
+      for(const isRight of [true, false]){
+        const onSide = skill.filter(p => (p.x > cx) === isRight && p.role !== 'QB' && p.role !== 'RB'
+                                      && (onBall ? p.y <= losWR + 1 : true));
+        if(onSide.length < 2) continue;
+        onSide.sort((a,b) => Math.abs(b.x - cx) - Math.abs(a.x - cx));
+        onSide[0].x = onSide[1].x;          // the outside man drops in behind the next one
+        onSide[0].y = onSide[1].y + 19;
+        onSide[0].snug = onSide[1].snug = true;   // a stack is meant to be tight; leave it alone
+        done = true; break;
+      }
+    }
   }
+  // A back the personnel put on the field who did NOT line up in the backfield split out —
+  // that is what makes a one-back grouping a real empty set. He is drawn where he went: in
+  // the slot, a step off the ball, on the weaker side and in whatever gap the receivers and
+  // the tight end have left, so he never lands on top of someone.
+  for(let i=0;i<splitBacks;i++){
+    // off the ball and BEHIND the line of scrimmage (olY-4) — a back split into the slot is
+    // still an eligible receiver lined up legally, never in front of the ball
+    const y=olY+12;
+    const onR = skill.filter(s=>s.side==='R').length <= skill.filter(s=>s.side==='L').length;
+    // Drop him into the widest gap on that side rather than marching him outward until he
+    // runs out of field — stepping out always ended with the back stacked on the outside
+    // receiver at the sideline, when the space he actually uses is the slot between them.
+    const lo = onR ? olX[4] + sq/2 + jumboOff + 16 : 18;
+    const hi = onR ? 312 : olX[0] - sq/2 - 16;
+    const occ = [lo, hi].concat(
+      skill.filter(s => Math.abs(s.y - y) < 26 && s.x > lo - 12 && s.x < hi + 12).map(s => s.x)
+    ).sort((a, b) => a - b);
+    let widest = -1, x = (lo + hi) / 2;
+    for(let j = 1; j < occ.length; j++){
+      const gap = occ[j] - occ[j-1];
+      if(gap > widest){ widest = gap; x = (occ[j] + occ[j-1]) / 2; }
+    }
+    skill.push({role:'RB', x:Math.max(18, Math.min(312, x)), y, side:onR?'R':'L', label:'RB'});
+  }
+  // ── Nobody stands on top of anyone ────────────────────────────────────────
+  // The named looks move people about — a slot pulls a receiver inside, Close tightens the
+  // splits, a flexed tight end slides out, a split back finds a gap — and two of those can
+  // land on the same spot. Rather than hand-tune every offset, separate whatever ended up
+  // too close: sideways first (a formation's width is the forgiving dimension), then off the
+  // ball, never in front of it, never outside the numbers, and never moving the quarterback
+  // or anyone on the line of scrimmage off their spot.
+  (function(){
+    // A visible gap, not merely "not intersecting": two badges exactly 2R apart touch, which
+    // reads as one blob at card size. Side to side needs that breathing room; one directly
+    // behind another needs less, because a stacked backfield (the I, Power I, a stacked
+    // receiver) is MEANT to be tight and pushing those apart turns a stack into a staircase.
+    const R = 9, PAD = 5.5, NEEDX = 2*R + PAD, NEEDY = 2*R - 1;
+    // Hard bounds. A runaway push used to fling players off the card entirely — badges
+    // floating in the corners with nothing to do with the formation.
+    const XMIN = 18, XMAX = 312, YMIN = losWR, YMAX = olY + 96;
+    const onLine = p => Math.abs(p.y - losWR) < 0.5 || Math.abs(p.y - olY) < 0.5;   // receivers/TEs on the ball
+    for(let pass = 0; pass < 80; pass++){
+      let moved = false;
+      for(let i = 0; i < skill.length; i++){
+        for(let j = i + 1; j < skill.length; j++){
+          const a = skill[i], b = skill[j];
+          let dx = b.x - a.x, dy = b.y - a.y;
+          // an ellipse, not a circle: wide across, forgiving in depth
+          // A stack or a bunch point man is SUPPOSED to sit close; ask only that the badges
+          // stay legible rather than spacing them like everyone else.
+          const snugPair = (a.snug && b.snug);
+          const nx0 = snugPair ? NEEDX*0.58 : NEEDX, ny0 = snugPair ? NEEDY*0.78 : NEEDY;
+          const t = (dx/nx0)*(dx/nx0) + (dy/ny0)*(dy/ny0);
+          if(t >= 1) continue;
+          let d = Math.hypot(dx, dy);
+          if(d < 0.01){ dx = (a.x <= cx ? -1 : 1); dy = 0; d = 1; }   // exactly stacked: break the tie outward
+          const push = (NEEDX - Math.min(d, NEEDX)) / 2 + 0.25;
+          // share the correction, but hold the QB and anyone on the ball still
+          const aFixed = a.role === 'QB' || onLine(a), bFixed = b.role === 'QB' || onLine(b);
+          const aShare = aFixed && !bFixed ? 0 : (bFixed && !aFixed ? 1 : 0.5);
+          const bShare = 1 - aShare;
+          // mostly sideways: a formation has room across, not much of it downfield
+          const ux = (dx / d) || 1, uy = (dy / d) * 0.35;
+          a.x = Math.max(XMIN, Math.min(XMAX, a.x - ux * push * 2 * aShare));
+          b.x = Math.max(XMIN, Math.min(XMAX, b.x + ux * push * 2 * bShare));
+          if(!aFixed) a.y = Math.max(YMIN, Math.min(YMAX, a.y - uy * push * 2 * aShare));
+          if(!bFixed) b.y = Math.max(YMIN, Math.min(YMAX, b.y + uy * push * 2 * bShare));
+          moved = true;
+        }
+      }
+      // the five linemen hold the middle: a tightened split must not end up standing on one
+      for(const p of skill){
+        for(const lx of olX){
+          const dx = p.x - lx, dy = p.y - olY;
+          const needX = R + sq/2 + PAD, needY = R + sq/2 + 3;
+          if(Math.abs(dx) >= needX || Math.abs(dy) >= needY) continue;
+          if(p.role === 'QB'){
+            // the quarterback belongs behind the centre, so he drops deeper rather than sliding
+            p.y = Math.min(YMAX, olY + needY); moved = true;
+          } else {
+            p.x = Math.max(XMIN, Math.min(XMAX, lx + (dx < 0 ? -needX : needX)));
+            moved = true;
+          }
+        }
+      }
+      if(!moved) break;
+    }
+  })();
   return {olX, olY, sq, cx, skill, variantName:v.name, nVariants:vars.length};
 }
 // arrowhead marker id counter to keep unique
@@ -282,8 +640,12 @@ function draw(){
   let html="";
   node.groups.forEach((g,i)=>{const noise=g.n<8?' <span class="hl-p" style="font-size:9px;padding:0 3px;">SMALL</span>':'';
     html+=`<div class="card"><div class="rank">#${i+1}</div>
-      <div class="plabel"><span class="pers alt" data-i="${i}" title="tap to change alignment" style="cursor:pointer">${g.p} PERSONNEL ⇄</span> <span class="fname">${g.name}</span></div>
-      <div class="subttl">${g.backs} BACK · ${(Array.isArray(g.pers_mix)&&g.pers_mix.length)?`${g.pers_mix.map(([c,p])=>`${c} ${p}%`).join(' · ')} (est.)`:`${g.te} TE · ${g.wr} WR${g.pers_assumed?` (split est. from ${Number(SEASON)-1})`:''}`} — ${g.share}% of snaps${noise}</div>
+      <div class="plabel"><span class="pers alt" data-i="${i}" title="tap to change alignment" style="cursor:pointer">${g.p} PERSONNEL ⇄</span> <span class="fname">${((familyFor(g)||g.name)+(/JUMBO/.test(g.name)?' JUMBO':'')).toUpperCase()}</span></div>
+      <div class="subttl">${(()=>{const rb=(g.pbacks==null?g.backs:+g.pbacks), bf=g.backs;
+        // The grouping is the personnel — 11 is one back and one tight end, always. How many
+        // bodies stood in the backfield is a separate fact, and it is said separately so the
+        // two are never confused for each other.
+        return `${rb} RB` + (bf===0 ? ` (empty backfield)` : (bf>rb ? ` (${bf} in the backfield)` : (bf<rb ? ` (${rb-bf} split out)` : ``)));})()} · ${(Array.isArray(g.pers_mix)&&g.pers_mix.length)?`${g.pers_mix.map(([c,p])=>`${c} ${p}%`).join(' · ')} (est.)`:`${g.te} TE · ${g.wr} WR${g.pers_assumed?` (split est. from ${Number(SEASON)-1})`:''}`} — ${g.share}% of snaps${noise}</div>
       <div class="prod" id="prd${i}">${prodLine(g)}</div>
       <div class="fieldbox">${fieldSvg(g,'none',{},0,0)}</div>
       <div class="stats"><div class="stat"><span id="snl${i}">Snaps</span><b id="snv${i}">${noteWrap('Snaps', String(g.n), `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,RB,WR,TE', String(g.n))}</b></div><div class="stat"><span>Success</span><b id="scv${i}">${noteWrap('Success Rate', `${g.succ}%`, `${SEASON} playbook · ${g.p} personnel · ${g.name}`, 'QB,RB,WR,TE', `${g.succ}%`)}</b></div>

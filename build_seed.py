@@ -141,8 +141,12 @@ def _encode_coaching(seed, round_epa=3):
             # v3 tail (appended, read defensively on decode): 1 when the TE/WR split is
             # assumed — the season in progress on charted sets, no participation file yet.
             # v4 tail: the estimated personnel mix inside a charted set ([["12", 62], ["11", 31]]).
+            # v5 tail: how many backs the personnel had ON THE FIELD. It differs from `backs`
+            # (how many stood in the backfield) exactly when one split out — which is what
+            # makes a one-back grouping an EMPTY set.
             forms.append([sig, f["name"], f["backs"], f["te"], f["wr"], f["ol"], assigns_c,
-                          1 if f.get("pers_assumed") else 0, f.get("pers_mix") or []])
+                          1 if f.get("pers_assumed") else 0, f.get("pers_mix") or [],
+                          int(f.get("pbacks", f["backs"]))])
 
         def enc_lanes(lanes):
             return [[ln_i(l[0]), l[1], R(l[2])] for l in (lanes or [])]
