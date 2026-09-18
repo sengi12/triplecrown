@@ -51,6 +51,7 @@
   <div class="controls">
     <div class="ctrl"><label>Down</label><select id="down"><option value="all">All downs</option><option value="1">1st</option><option value="2">2nd</option><option value="3">3rd</option><option value="4">4th</option></select></div>
     <div class="ctrl"><label>Distance to sticks</label><select id="dist"><option value="all">Any</option><option value="short">Short (1-3)</option><option value="med">Medium (4-7)</option><option value="long">Long (8+)</option></select></div>
+    <div class="ctrl" id="gamectrl" style="display:none"><label>Game</label><select id="game"><option value="0">Full season</option></select></div>
     <div class="ctrl"><label>Play type</label><select id="field"><option value="all">All plays</option><option value="pa">Play-action</option><option value="motion">Pre-snap motion</option><option value="nohuddle">No-huddle</option><option value="redzone">Red zone</option></select></div>
     <div class="ctrl"><label>&nbsp;</label><span id="ctx" style="font-size:12px;font-weight:bold;padding:5px;"></span></div>
   </div>
@@ -257,10 +258,18 @@ function drawPlayDiagram(g, mode, sel, wrRot, av){
 }
 function draw(){
   const dn=document.getElementById('down').value,ds=document.getElementById('dist').value,fl=document.getElementById('field').value;
-  const node=FORM[dn][ds][fl],grid=document.getElementById('grid');
+  const gsel=document.getElementById('game'), wk=gsel?(+gsel.value||0):0;
+  // The full season is already laid out for every filter combination; a single game is added
+  // up here from the same rows, with the same function the app uses, so the two can't drift.
+  const node = wk
+    ? expandNode(_schemeAggregate(FV.plays, FV.sigs, FV.lanes, {down:dn, dist:ds, type:fl, wk:wk}))
+    : FORM[dn][ds][fl];
+  const grid=document.getElementById('grid');
   document.getElementById('banner').textContent=({all:'All Downs','1':'1st Down','2':'2nd Down','3':'3rd Down','4':'4th Down'}[dn])+({all:'',short:' & Short',med:' & Medium',long:' & Long'}[ds])+({all:'',pa:' · Play-Action',motion:' · Motion',nohuddle:' · No-Huddle',redzone:' · Red Zone'}[fl]);
   if(!node||!node.groups.length){grid.innerHTML='<div class="empty">No plays match this situation.</div>';document.getElementById('ctx').textContent='';return;}
   document.getElementById('ctx').textContent=node.total+' plays';
+  if(wk){ const g=(FV.games||[]).find(x=>x[0]===wk);
+    document.getElementById('banner').textContent += ' · ' + (g ? ('Week '+g[0]+(g[1]?' vs '+g[1]:'')) : ('Week '+wk)); }
   window._G=node.groups;
   // Production out of this formation: yards + TDs, split pass vs run. Moves with the filters.
   function prodLine(g, mode){
@@ -398,6 +407,14 @@ function wireTaps(box,g){
   document.addEventListener('mouseleave', clear);
 })();
 
-['down','dist','field'].forEach(id=>document.getElementById(id).onchange=draw); draw();
+// A game picker appears only where the payload carries the per-play rows (it does from the
+// 2026 bake on; older seasons keep the season view alone).
+(function(){
+  const sel=document.getElementById('game');
+  if(!sel || !FV.plays || !FV.plays.length || !(FV.games||[]).length) return;
+  sel.insertAdjacentHTML('beforeend', FV.games.map(g=>`<option value="${g[0]}">Week ${g[0]}${g[1]?' vs '+g[1]:''}</option>`).join(''));
+  document.getElementById('gamectrl').style.display='';
+})();
+['down','dist','field','game'].forEach(id=>{ const e=document.getElementById(id); if(e) e.onchange=draw; }); draw();
 if(FV.charting_only){ const f=document.querySelector('.foot > div'); if(f) f.insertAdjacentHTML('afterbegin', '<b>Season in progress — charted sets.</b> The participation file that names personnel groupings and routes publishes after the post-season. Until then each set is the QB\'s charted alignment and backfield count (FTN); the TE/WR split is the one this team used most from that set last season; skill players are placed by target rank; run lanes are real; and routes are ESTIMATED (est): where this season\'s targets went (direction × depth), read through last season\'s route-by-zone habits for the receiver, shrunk toward the league\'s for his position where thin — a receiver with no targets yet keeps last season\'s tree (szn). '); }
 </script></body></html>
