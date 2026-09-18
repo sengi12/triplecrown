@@ -14,6 +14,10 @@
   background:var(--border);border-radius:2px;}
 .dual-slider-fill{position:absolute;top:50%;height:4px;transform:translateY(-50%);
   background:var(--accent);border-radius:2px;}
+/* the season not yet played: the track past the last game, hatched and dim; the rails' cells there dim too */
+.dual-slider-dead{position:absolute;top:50%;right:0;height:4px;transform:translateY(-50%);border-radius:0 2px 2px 0;
+  background:repeating-linear-gradient(90deg,var(--border) 0 4px,transparent 4px 8px);opacity:.7;}
+.wr-unplayed{opacity:.28;}
 .dual-range{position:absolute;top:50%;left:0;width:100%;height:22px;transform:translateY(-50%);margin:0;
   -webkit-appearance:none;appearance:none;background:transparent;pointer-events:none;touch-action:pan-y;}
 .dual-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;pointer-events:auto;

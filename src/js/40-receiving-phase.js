@@ -56,21 +56,25 @@ function weekRangeSliderHTML(team,state){
     state.weekFilterLoading=true;   // mark before the async kick so this render shows "loading…"
     setTimeout(()=>{ try{ applyWeekRange(team, lo, hi); }catch(e){} }, 0);
   }
+  // The whole season on the slider; the thumbs hold to the weeks this team has played
+  // and the rest of the track reads as not yet played.
   const maxWk=(typeof tcSeasonMaxWeek==='function')?tcSeasonMaxWeek(activeSeason):18;
-  const hiShown=Math.min(hi,maxWk), span=Math.max(1,maxWk-1);
-  const loPct=(Math.min(lo,maxWk)-1)/span*100, hiPct=(maxWk-hiShown)/span*100;
+  const played=(typeof tcSeasonPlayedWeek==='function')?tcSeasonPlayedWeek(activeSeason, team):maxWk;
+  const hiShown=Math.min(hi,played), span=Math.max(1,maxWk-1);
+  const loPct=(Math.min(lo,played)-1)/span*100, hiPct=(maxWk-hiShown)/span*100;
+  const dead = played<maxWk ? `<div class="dual-slider-dead" style="left:${((played-1)/span*100).toFixed(2)}%" title="Weeks ${played+1}–${maxWk}: not played yet"></div>` : '';
   const oppRail = (typeof renderWeekOpponentRail==='function')
     ? renderWeekOpponentRail(team, activeSeason, 'wr-opp-main')
     : '';
   return `<div class="week-range-card">
     <div class="week-range-label">
-      <span>${TC_ICON("calendar")} Filter weeks: <b id="wr-lo-${team}">${Math.min(lo,maxWk)}</b> – <b id="wr-hi-${team}">${hiShown}</b>${maxWk<18?` <span class="week-range-hint">of ${maxWk} played</span>`:''}${state.weekFilterLoading?' <span class="week-range-loading">loading…</span>':''}</span>
+      <span>${TC_ICON("calendar")} Filter weeks: <b id="wr-lo-${team}">${Math.min(lo,played)}</b> – <b id="wr-hi-${team}">${hiShown}</b>${played<maxWk?` <span class="week-range-hint">of ${played} played</span>`:''}${state.weekFilterLoading?' <span class="week-range-loading">loading…</span>':''}</span>
       ${active?`<span class="week-range-reset" onclick="resetWeekRange('${team}')">↺ Reset to full season</span>`:'<span class="week-range-hint">drag either end to zoom into a stretch of games</span>'}
     </div>
     <div class="dual-slider">
       <div class="dual-slider-track"></div>
-      <div class="dual-slider-fill" id="wr-fill-${team}" style="left:${loPct}%;right:${hiPct}%"></div>
-      <input type="range" min="1" max="${maxWk}" step="1" value="${Math.min(lo,maxWk)}" class="dual-range dual-range-lo"
+      ${dead}<div class="dual-slider-fill" id="wr-fill-${team}" style="left:${loPct}%;right:${hiPct}%"></div>
+      <input type="range" min="1" max="${maxWk}" step="1" value="${Math.min(lo,played)}" class="dual-range dual-range-lo"
         oninput="weekRangeDrag('${team}','lo',this.value)" onchange="weekRangeCommit('${team}')">
       <input type="range" min="1" max="${maxWk}" step="1" value="${hiShown}" class="dual-range dual-range-hi"
         oninput="weekRangeDrag('${team}','hi',this.value)" onchange="weekRangeCommit('${team}')">
