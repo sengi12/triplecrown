@@ -2606,10 +2606,12 @@ def qb_passing_weekly(season, min_attempts_game=8):
     out_of_pocket (0/1, null until FTN publishes the week)] in play order — the PASS MAP (each throw a dot
     at its depth and side, with its after-catch tail), the cousin of NGS's pass
     chart. `receiver` indexes the node's `rcv` legend (pbp's short names, e.g.
-    "J.Smith-Njigba"). `esb` is the passer's NFL ESB id for the NGS deep link."""
+    "J.Smith-Njigba"). `esb` is the passer's NFL ESB id for the NGS deep link.
+    Playoff games ride along after week 18 (`post: 1`); the season block the
+    client reads them against stays regular season."""
     _map_cols = ["yards_after_catch", "yardline_100", "qtr", "receiver_player_name", "shotgun"]
     pbp = _load_pbp(season, _QB_ZONE_COLS + ["week", "defteam", "game_id", "play_id"] + _map_cols)
-    pbp = pbp[pbp["season_type"] == "REG"]
+    pbp = pbp[pbp["season_type"].isin(["REG", "POST"])]
     att = pbp[(pbp["pass_attempt"] == 1) & (pbp["sack"] == 0)
               & (pbp["two_point_attempt"] == 0) & pbp["pass_location"].notna()
               & pbp["passer_player_id"].notna()].copy()
@@ -2676,6 +2678,7 @@ def qb_passing_weekly(season, min_attempts_game=8):
         node["games"].append({
             "wk": int(wk),
             "opp": (g["defteam"].mode().iloc[0] if len(g["defteam"].mode()) else None),
+            **({"post": 1} if (g["season_type"] == "POST").any() else {}),
             "plays": _pm_plays(g, node["rcv"]),
             "totals": {
                 "passer_rating": _passer_rating_df(g),
@@ -2709,12 +2712,16 @@ def rb_fan_weekly(season, min_attempts_game=5):
     season block.
     Each game also carries `plays`: every carry as a short row [lane 0-6
     (LE LT LG MID RG RT RE), yards, flags (1 TD, 2 fumble lost, 4 first down,
-    8 tackled for loss), yardline_100, qtr] in play order — the CARRY MAP (each
-    run drawn up its lane from the line of scrimmage), the cousin of NGS's carry
-    chart. `esb` is the rusher's NFL ESB id for the NGS deep link."""
-    _map_cols = ["fumble_lost", "tackled_for_loss", "qtr"]
+    8 tackled for loss, 16 out of bounds, +32 on the right sideline / +64 on the
+    left — neither when the play only says he stepped out), yardline_100, qtr] in
+    play order — the CARRY MAP (each run drawn up its lane from the line of
+    scrimmage, out to the sideline when he went out of bounds), the cousin of
+    NGS's carry chart. Playoff games ride along after week 18 (`post: 1`) so a
+    game picker can show them; season lines stay regular season. `esb` is the
+    rusher's NFL ESB id for the NGS deep link."""
+    _map_cols = ["fumble_lost", "tackled_for_loss", "qtr", "out_of_bounds"]
     pbp = _load_pbp(season, _RB_FAN_COLS + ["week", "defteam"] + _map_cols)
-    runs = pbp[(pbp["season_type"] == "REG") & (pbp["rush_attempt"] == 1)
+    runs = pbp[pbp["season_type"].isin(["REG", "POST"]) & (pbp["rush_attempt"] == 1)
                & (pbp["qb_scramble"] == 0) & (pbp["two_point_attempt"] == 0)
                & pbp["run_location"].notna() & pbp["rusher_player_id"].notna()].copy()
     if runs.empty:
@@ -2737,6 +2744,8 @@ def rb_fan_weekly(season, min_attempts_game=5):
             if float(r.fumble_lost or 0) == 1: flags |= 2
             if float(r.first_down or 0) == 1: flags |= 4
             if float(r.tackled_for_loss or 0) == 1: flags |= 8
+            if float(r.out_of_bounds or 0) == 1:
+                flags |= 16 | (32 if r.run_location == "right" else (64 if r.run_location == "left" else 0))
             yl = pd.to_numeric(r.yardline_100, errors="coerce")
             q = pd.to_numeric(r.qtr, errors="coerce")
             rows.append([lane, int(yds), flags,
@@ -2773,6 +2782,7 @@ def rb_fan_weekly(season, min_attempts_game=5):
         node["games"].append(dict({
             "wk": int(wk),
             "opp": (g["defteam"].mode().iloc[0] if len(g["defteam"].mode()) else None),
+            **({"post": 1} if (g["season_type"] == "POST").any() else {}),
             "plays": _cm_plays(g),
             "attempts": int(len(g)),
             "yards": int(g["yards_gained"].sum()),
@@ -2940,7 +2950,8 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
     reaches open data after the post-season — and exists only when that file
     carries the season (in season the rows stop at qtr and the map draws the
     throw alone). `esb` is the player's NFL ESB id, which deep-links the real
-    NGS chart page.
+    NGS chart page. Playoff games ride along after week 18 (`post: 1`); the
+    season line, the league baseline and the ranks stay regular season.
     Returns {"players":{name:{pos,team,esb,season:{zones,tgt,rec,yds,td},
     games:[{wk,opp,tgt,rec,yds,td,zones,plays}]}}, "lg":{zone:"catch_pct"},
     "routes":[label,…] (only when charted)}."""
@@ -2952,10 +2963,10 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
         "yards_after_catch", "epa", "first_down", "interception",
         "yardline_100", "qtr", "shotgun",
     ])
-    t = pbp[(pbp["season_type"] == "REG") & (pbp["pass_attempt"] == 1)
+    t = pbp[pbp["season_type"].isin(["REG", "POST"]) & (pbp["pass_attempt"] == 1)
             & (pbp["two_point_attempt"] == 0) & pbp["receiver_player_id"].notna()
             & pbp["pass_location"].notna()].copy()
-    if t.empty:
+    if t.empty or not (t["season_type"] == "REG").any():
         return {}
     t["tsg"], t["toop"] = _throw_context(season, t)
     # Route labels: the post-season participation drop, joined play by play. Absent (in
@@ -2976,8 +2987,9 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
     t["depth"] = pd.cut(t["air_yards"], bins=[-100, -0.5, 9.5, 19.5, 100],
                         labels=["behind", "short", "inter", "deep"])
     names, pos, esb = _name_map(season), _pos_map(season), _esb_map(season)
+    reg = t[t["season_type"] == "REG"]
     lg = {}
-    for (depth, loc), z in t.groupby(["depth", "pass_location"], observed=True):
+    for (depth, loc), z in reg.groupby(["depth", "pass_location"], observed=True):
         if len(z):
             lg[f"{depth}-{loc}"] = round(float(z["complete_pass"].mean() * 100), 1)
 
@@ -3025,8 +3037,9 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
         }
 
     players = {}
-    for rid, g in t.groupby("receiver_player_id"):
-        if len(g) < min_targets_season and len(g) < min_targets_game:
+    for rid, g_all in t.groupby("receiver_player_id"):
+        g = g_all[g_all["season_type"] == "REG"]
+        if g.empty or (len(g) < min_targets_season and len(g) < min_targets_game):
             continue
         name = names.get(rid)
         if not name:
@@ -3036,12 +3049,13 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
                 "esb": esb.get(rid),
                 "season": dict(_zones(g) and {"zones": _zones(g)} or {}, **_tt_line(g)),
                 "games": []}
-        for wk, gg in g.groupby("week"):
+        for wk, gg in g_all.groupby("week"):
             if len(gg) < min_targets_game:
                 continue
             node["games"].append(dict(
                 wk=int(wk),
                 opp=(gg["defteam"].mode().iloc[0] if len(gg["defteam"].mode()) else None),
+                **({"post": 1} if (gg["season_type"] == "POST").any() else {}),
                 zones=_zones(gg), plays=_plays(gg), **_tt_line(gg)))
         node["games"].sort(key=lambda x: x["wk"])
         players[name] = node

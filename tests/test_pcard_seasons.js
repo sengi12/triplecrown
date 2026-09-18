@@ -139,9 +139,14 @@ app.setNflverse({'2026':{target_trees:{players:{'jsn':jsnNode},lg:{'short-left':
 chk(app.pcardRouteSeasons('jsn').includes('2026'),
     'the live season joins the Routes strip on target data alone (rookies get the tab)');
 chk(app.pcardRouteSeasons('jsn')[0]==='2026', 'and leads it');
+const ttSeason=app._renderTargetTree('pid1', jsnNode, '2026');
+chk(/tm-view/.test(ttSeason) && /disabled onclick="setPcardTargetView\('map'\)"/.test(ttSeason) && !/next weekly bake/.test(ttSeason),
+    'Season is the zone view: the Map button is there but disabled (the map is per game)');
+app.setPcardChartGame('routes', 1);
 const ttMap=app._renderTargetTree('pid1', jsnNode, '2026');
 chk(/◉ live/.test(ttMap) && /tm-view/.test(ttMap) && /next weekly bake/.test(ttMap) && !/TARGETS <tspan/.test(ttMap),
-    'Map is the first view — a node without per-target rows (an older sidecar) says so instead of drawing a field');
+    'Map is the first view of a game — a node without per-target rows (an older sidecar) says so instead of drawing a field');
+app.setPcardChartGame('routes', '');
 app.setPcardTargetView('zones');
 const tt=app._renderTargetTree('pid1', jsnNode, '2026');
 chk(/◉ live/.test(tt) && /TARGETS <tspan/.test(tt), 'Zones: the chart is the QB field with a live badge');

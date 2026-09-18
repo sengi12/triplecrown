@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-09-18
 
+- feat(cards): the maps are per-game views that open on the latest game (Season is the zone view / the fan); out-of-bounds runs angle out to the sideline they left by; playoff games join the game picker; the picker owns a row on phones and the season chip is the bare year; manager pills are a star or a dot in narrow rows (#143)
 - feat(tracker): the game page, Sleeper's way — a hero that carries the situation, the last play as one line, the drive drawn on the field, win probability, a pill rail (#145)
 - fix(pace): the 17-game pace popup says the week the stats run through, not the last week Sleeper closed (#144)
 - feat(analyzer): the snap tracker — Trends · Snaps, snap share week over week from Sleeper's weekly rows, nflverse filling the blanks via the sidecar, last season as the week-1 baseline, role tiers (#142)

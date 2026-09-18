@@ -333,8 +333,12 @@
 
 /* Injury chip hugs the name: .share-name is flex:1, so anything after it lands at the far
    right of the row. The wrapper absorbs that space instead, keeping name + chip together. */
-.tc-nm-wrap{display:flex;align-items:center;gap:5px;flex:1;min-width:0;}
-.tc-nm-wrap .share-name{flex:0 1 auto;}
+.tc-nm-wrap{display:flex;align-items:center;gap:5px;flex:1;min-width:0;overflow:hidden;}
+.tc-nm-wrap .share-name{flex:0 1 auto;min-width:2.5em;}
+/* Narrow rows: everything that follows the name is a fixed-size control, so the name is
+   the one thing that gives — it never paints over the buttons beside it. */
+.share-row > *{min-width:0;}
+.share-row > .share-dot, .share-row > .share-hs, .share-row > .pos-badge, .share-row > .pace-info-wrap{flex:0 0 auto;}
 .rankings-table.grouped td.c-player .inj-tag{margin-left:5px;}
 
 /* DvP: the team logo/code opens that defense's player card */

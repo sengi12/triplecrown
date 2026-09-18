@@ -26,7 +26,7 @@ function _tmRouteLegend(season){
 function _tmPlays(node, selWk, legend){
   const out=[];
   for(const g of (node.games||[])){
-    if(selWk!=null && g.wk!==Number(selWk)) continue;
+    if(selWk!=null ? g.wk!==Number(selWk) : _tmIsPost(g)) continue;
     for(const p of (g.plays||[])){
       const ri=(p.length>6 && p[6]!=null) ? +p[6] : null;
       out.push({wk:g.wk, opp:g.opp||'', ay:Math.round(+p[0]||0), side:(p[1]==null?1:+p[1]), res:+p[2]||0,
@@ -37,6 +37,8 @@ function _tmPlays(node, selWk, legend){
   }
   return out;
 }
+// A playoff game (the builder flags it; older sidecars only have the week number).
+function _tmIsPost(g){ return !!(g && (g.post || g.wk>18)); }
 // Does the sidecar carry per-target rows for this player at all? (older bakes don't)
 function _tmHasPlays(node){ return (node.games||[]).some(g=>Array.isArray(g.plays) && g.plays.length); }
 const _TM_SIDES=['Left','Middle','Right'];
@@ -225,7 +227,7 @@ function targetMapBlock(pname, node, season, selWk, v, tag){
 function _qbMapPlays(node, selWk){
   const out=[], rcv=Array.isArray(node.rcv)?node.rcv:[];
   for(const g of (node.games||[])){
-    if(selWk!=null && g.wk!==Number(selWk)) continue;
+    if(selWk!=null ? g.wk!==Number(selWk) : _tmIsPost(g)) continue;
     for(const p of (g.plays||[])){
       const ri=(p.length>6 && p[6]!=null) ? +p[6] : null;
       out.push({wk:g.wk, opp:g.opp||'', ay:Math.round(+p[0]||0), side:(p[1]==null?1:+p[1]), res:+p[2]||0,
@@ -254,3 +256,4 @@ function ngsChartLink(node, name, season, selWk){
   const u=ngsChartUrl(node, name, season, selWk);
   return u ? `<a class="tm-ngs-link" href="${u}" target="_blank" rel="noopener" title="Open this player's Next Gen Stats charts (route charts from player tracking) in a new tab">Next Gen Stats charts ↗</a>` : '';
 }
+

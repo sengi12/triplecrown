@@ -25,3 +25,5 @@
 .tm-l-fd{background:#fff;width:8px!important;height:8px!important;margin:0 2px;}
 .tm-l-fum{border:3px solid #d33b2f;background:transparent;}
 .tm-l-arc{width:22px!important;height:4px!important;border-radius:2px!important;background:#2f6fe4;}
+/* out of bounds: the sideline bar at the end of a run */
+.tm-l-ob{width:14px!important;height:4px!important;border-radius:2px!important;background:#39c15a;border-right:3px solid #fff;box-sizing:content-box!important;}

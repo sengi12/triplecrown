@@ -103,7 +103,7 @@ function tcOwnerChip(pid, name, variant){
   return `<span class="tc-own-chip${rec.mine?' tc-own-mine':''}${compact?' tc-own-sm':''}${pill?' tc-own-pill':''}" role="button" tabindex="0"
             onclick="event.stopPropagation();tcOwnerJump(${rid})"
             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();tcOwnerJump(${rid});}"
-            title="${escAttr(title)}">${rec.mine?'★ ':''}${escHtml(label)}${who}</span>`;
+            title="${escAttr(title)}">${rec.mine?'★ ':''}<span class="tc-own-lbl">${escHtml(label)}</span>${who}</span>`;
 }
 
 // Jump to this roster in the League Analyzer. Closes the player card first when one is open,

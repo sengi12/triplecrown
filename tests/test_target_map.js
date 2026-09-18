@@ -15,7 +15,8 @@ const app=new Function(code+`
   return { block:targetMapBlock, plays:_tmPlays, url:ngsChartUrl, link:ngsChartLink, btns:_pcardRouteViewBtns,
            view:()=>pcardTargetView, setView:setPcardTargetView, seasons:pcardRouteSeasons, setNV:(n)=>{NFLVERSE=n;},
            routePath:_tmRoutePath, qbBlock:qbPassMapBlock, qbView:()=>pcardQbView, setQbView:setPcardQbView, weekly:pcardWeeklyGames,
-           rbBlock:rbCarryMapBlock, runPath:_cmRunPath, rbView:()=>pcardRbView, setRbView:setPcardRbView };
+           rbBlock:rbCarryMapBlock, runPath:_cmRunPath, rbView:()=>pcardRbView, setRbView:setPcardRbView,
+           gameLabel:(g)=>_pcardGameLabel(g, null), chips:_pcardGameChips, rbPlays:_rbMapPlays };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -63,11 +64,20 @@ console.log('=== season view + charted routes ===');
 app.setNV({'2026':{target_trees:{players:{'test receiver':node}, routes:['GO','SHALLOW CROSS/DRAG','SLANT']}}});
 const all=app.plays(node, null, ['GO','SHALLOW CROSS/DRAG','SLANT']);
 chk(all.length===5 && all[4].route==='SLANT' && all[0].route===null, 'season = every game; the 7th slot resolves through the legend, missing → null');
-const html2=app.block('Test Receiver', node, 2026, null, {label:'Season to date',tgt:5}, null);
-chk((html2.match(/<path d="M[^"]*" fill="none" stroke="#ffffff"/g)||[]).length===1 && (html2.match(/stroke-dasharray="3 4"/g)||[]).length===3,
-    'the charted target is drawn as a route path to the catch point; the uncharted four keep the stem');
+const html2=app.block('Test Receiver', node, 2026, 2, {label:'Week 2 · PIT',tgt:1}, null);
+chk((html2.match(/<path d="M[^"]*" fill="none" stroke="#ffffff"/g)||[]).length===1 && (html2.match(/stroke-dasharray="3 4"/g)||[]).length===0,
+    'the charted target is drawn as a route path to the catch point (a game view keeps every play)');
 chk(/Charted route/.test(html2) && /with the route he ran/.test(html2), 'legend + subtitle switch once any route is charted');
 chk(html2.includes('Middle, +9 air · Slant · Catch · 3 YAC (12 yds)'), 'the tooltip names the route');
+
+console.log('=== Season is the zone view: Map is a per-game view ===');
+chk(/<button class="rt-metric-btn active" title="[^"]*"  onclick="setPcardTargetView\('map'\)">Map</.test(app.btns('map', false, true)), 'with a game picked, Map is live');
+chk(/title="Pick a game[^"]*" disabled onclick="setPcardTargetView\('map'\)">Map</.test(app.btns('zones', false, false)) && /active" title="Targets binned by zone"/.test(app.btns('zones', false, false)), 'on Season the Map button is disabled with the reason, Zones carries the view');
+const postNode={games:[{wk:1,opp:'NE',plays:[[6,2,1,10,63,1]]},{wk:19,opp:'BAL',post:1,plays:[[8,1,1,0,50,1],[3,0,1,0,50,2]]}]};
+chk(app.plays(postNode, null, null).length===1 && app.plays(postNode, 19, null).length===2, 'the season skips playoff games; picking the playoff game shows it');
+chk(app.gameLabel({wk:19,opp:'BAL',post:1}).text==='WC BAL' && app.gameLabel({wk:22,opp:'PHI'}).text==='SB PHI' && app.gameLabel({wk:2,opp:'DET'}).text==='WK 2 DET',
+    'playoff rounds are named after week 18: WC, DIV, CONF, SB');
+chk(/rt-gp-hdr">Playoffs</.test(app.chips('routes', postNode.games, null)) && /WC BAL/.test(app.chips('routes', postNode.games, null)), 'the game picker groups the playoffs under their own header');
 const d=app.routePath('GO', 1, 380, 460, 380, 300, 10);
 chk(d && d.startsWith('M380.0,460.0') && d.endsWith('L380.0,300.0'), 'a go route runs straight from the line of scrimmage to the dot');
 const dig=app.routePath('IN/DIG', 2, 500, 460, 470, 380, 10);
@@ -121,6 +131,19 @@ chk(app.runPath(380, 530, 300, 460, 310, 480, 60, 7, false).endsWith(' 310.0,480
 chk(/Tackled for loss/.test(c1) && /Fumble lost/.test(c1) && /First down/.test(c1), 'the legend explains the carry marks');
 chk(app.rbView()==='map', 'Map is the rushing fan\'s default view'); app.setRbView('fan'); chk(app.rbView()==='fan', 'Fan is selectable'); app.setRbView('map');
 chk(app.rbBlock('X', {games:[{wk:1,plays:[]}]}, 2026, 1, 'Week 1', null).includes('next weekly bake'), 'a node without per-carry rows says so');
+console.log('=== out of bounds + the carry summary ===');
+const ob={team:'BUF',games:[{wk:2,opp:'DET',plays:[[2,35,4|16|64,60,3],[5,22,4|16|32,23,4],[3,20,4|16,50,3],[3,12,4,50,1],[3,1,0,50,1]]}]};
+const co=app.rbBlock('James Cook', ob, 2026, 2, 'Week 2 · DET', null);
+const obTips=[...co.matchAll(/<title>(.*?)<\/title>/g)].map(m=>m[1]).filter(t=>/out of bounds/.test(t));
+chk(obTips.length===3 && (co.match(/class="cm-ob"/g)||[]).length===3, 'three runs went out of bounds: each says so and gets the sideline bar');
+const obPlays=app.rbPlays(ob, 2);
+chk(obPlays[0].ob===-1 && obPlays[1].ob===1 && obPlays[2].ob===0 && obPlays[3].ob===null, 'flags decode: 16 = out, +64 left sideline, +32 right, neither = side unknown, none = in bounds');
+const ends=[...co.matchAll(/<path d="M[^"]* L(-?[\d.]+),(-?[\d.]+)"/g)].map(m=>[+m[1],+m[2]]);
+const leftEdge=y=>170-130*(y-60)/500, rightEdge=y=>590+130*(y-60)/500;
+chk(ends.length>=3 && ends.some(e=>Math.abs(e[0]-(leftEdge(e[1])+3))<0.2) && ends.some(e=>Math.abs(e[0]-(rightEdge(e[1])-3))<0.2),
+    'a left-side run out of bounds ends on the left sideline at its yardage, a right-side one on the right');
+const dOb=app.runPath(380, 530, 300, 460, 66, 200, 60, 5, true, true);
+chk(/ L66\.0,200\.0$/.test(dOb) && dOb.split(' C').length>=3, 'an out-of-bounds path goes through the gap and angles straight out to the sideline spot');
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);
