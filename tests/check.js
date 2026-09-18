@@ -5196,8 +5196,29 @@ function gcLiveTick(game){
     if(typeof _gc==='undefined' || _gc.game!==game.id || !gcPanelVisible()) return;
     try{ if(typeof tcWeekBoard==='function') tcWeekBoard(); }catch(e){}   // the score, the clock, the last play's id (→ gcStreamOnBoard)
     if(!game.sit){ try{ gcSummary(game); }catch(e){} }                      // no situation on the board: the summary's own TTL
+    else { try{ gcSummaryCatchUp(game); }catch(e){} }                       // the summary posts a play later than the scoreboard: keep reading until it has it
     gcLiveTick(game);
   }, GC_LIVE_POLL);
+}
+// The scoreboard names the last play seconds before the summary carries it (verified live:
+// the summary was still on the timeout when the board had the kickoff). A summary read on
+// the play's first sighting can miss it, and it would then surface only with the NEXT play
+// — one play behind all night. So every tick, while the summary's plays do not yet include
+// the board's last play, the summary is read again (its cache staled first).
+function gcSummaryBehind(game){
+  const eid=game && game.eid, id=game && game.sit && String(game.sit.lastPlayId||'');
+  if(!eid || !id) return false;
+  const c=_gcd.sum[eid]; if(!c || !c.data) return false;
+  const dr=c.data.drives||{};
+  const drives=[].concat(dr.previous||[], dr.current?[dr.current]:[]);
+  return !drives.some(d=>(d.plays||[]).some(p=>String(p.id||'')===id));
+}
+function gcSummaryCatchUp(game){
+  const eid=game && game.eid; if(!eid || _gcd.busy[eid]) return false;
+  if(!gcSummaryBehind(game)) return false;
+  if(_gcd.sum[eid]) _gcd.sum[eid].at=0;
+  gcSummary(game);
+  return true;
 }
 const GC_SKIP_TYPES = new Set(['Timeout','Official Timeout','End Period','End of Half','End of Game','Two-minute warning']);
 const GC_BOX_GROUPS = [['passing','Passing'],['rushing','Rushing'],['receiving','Receiving'],['fumbles','Fumbles'],['defensive','Defense'],['interceptions','Interceptions'],['kickReturns','Kick returns'],['puntReturns','Punt returns'],['kicking','Kicking'],['punting','Punting']];
@@ -5340,13 +5361,18 @@ function gcPlayKind(p){
 }
 function gcPlays(sum){
   const dr=(sum && sum.drives)||{};
+  // While a drive is in progress ESPN lists it under BOTH `previous` and `current` (verified
+  // live, DET@BUF 2026-09-17: the same twelve plays in each) — every play of the live drive
+  // came through twice, doubling the rows and the running lines. One pass per play id.
   const drives=[].concat(dr.previous||[], dr.current?[dr.current]:[]);
-  const out=[];
+  const out=[], seen=new Set();
   drives.forEach(d=>{
     const team=gcAbbr(d.team && d.team.abbreviation);
     (d.plays||[]).forEach(p=>{
+      const pid=String(p.id||'');
+      if(pid){ if(seen.has(pid)) return; seen.add(pid); }
       const kind=gcPlayKind(p); if(kind==='skip') return;
-      out.push({ id:String(p.id||''), seq:Number(p.sequenceNumber||0), kind, type:String((p.type&&p.type.text)||''), text:String(p.text||''),
+      out.push({ id:pid, seq:Number(p.sequenceNumber||0), kind, type:String((p.type&&p.type.text)||''), text:String(p.text||''),
         q:Number((p.period&&p.period.number)||0), clock:String((p.clock&&p.clock.displayValue)||''),
         as:p.awayScore!=null?Number(p.awayScore):null, hs:p.homeScore!=null?Number(p.homeScore):null,
         yds:Number(p.statYardage||0), scoring:!!p.scoringPlay, turnover:!!p.isTurnover, team,
