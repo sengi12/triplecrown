@@ -371,7 +371,7 @@ function positions(g, av){
   bfLabel.slice(_bfi).concat(hbLabel).forEach((lab, i) => {
     const sd = i % 2 ? -1 : 1;
     skill.push({role: lab==='RB'?'RB':(lab==='TE'?'TE':'WR'), label: lab,
-                x: cx + sd * 34, y: olY + 22 + Math.floor(i / 2) * 20, side: sd > 0 ? 'R' : 'L'});
+                x: cx + sd * 46, y: olY + 22 + Math.floor(i / 2) * 20, side: sd > 0 ? 'R' : 'L'});
   });
   // ── Everyone outside the tackles, laid out along each side ────────────────
   // Absolute pixel positions per look used to pile players on top of each other (and on the
@@ -425,8 +425,11 @@ function positions(g, av){
     // instead of letting him take the outside receiver's place at the numbers.
     const inner = edge + dir * (TEGAP + Math.max(0, nAtt - 1) * 24 + 24);
     const flexEnd = edge + dir * (FLEXGAP + Math.max(0, nFlex - 1) * 24);
-    const wide  = isRight ? WIDE : 330 - WIDE;
     const stop  = nFlex ? flexEnd + dir * 24 : inner;   // the innermost a receiver may come
+    // With a sixth lineman the whole formation slides out, and the outside man can end up
+    // level with the flexed tight end. Hold him a badge and a gap clear of the innermost slot.
+    const wideRaw = isRight ? WIDE : 330 - WIDE;
+    const wide  = ((wideRaw - stop) * dir < 24) ? stop + dir * 24 : wideRaw;
     // Receivers fill the whole space out to the sideline rather than sitting in a clump at the
     // end of it: the outside man at the numbers, the last one in tight to the formation, the
     // rest spread evenly between. A bunch is the exception — it is meant to be a clump.
