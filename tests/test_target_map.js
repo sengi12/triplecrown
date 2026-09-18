@@ -162,6 +162,29 @@ const obq={rcv:['A.Brown'],games:[{wk:1,opp:'ARI',plays:[[4,0,1,22,60,1,0,1,0,1]
 const obqh=app.qbBlock('Test QB', obq, 2026, 1, 'Week 1', null);
 const qtOb=[...obqh.matchAll(/<path d="(M[^"]*)" fill="none" stroke="#39c15a"/g)].map(m=>m[1]);
 chk(qtOb.length===1 && qtOb[0].includes(' C') && /out of bounds/.test(obqh), 'the pass map draws it the same way — both maps share the drawing');
+console.log('=== a catch charted down the middle picks ONE sideline, the same on every chart ===');
+// The real WK1 2026 play: 12 air yards down the middle, 17 after the catch, pushed out. pbp
+// buckets location into left/middle/right and carries no coordinate, so WHICH boundary is a
+// guess — but it has to be the same guess wherever the play is drawn. It is drawn twice, in
+// the receiver's target map and in the passer's pass map, where it sits in lists of very
+// different lengths; deciding from its place in the list sent Higgins out the left sideline
+// and Burrow's copy of the same throw out the right.
+const midOb=[12,1,1,17,73,3,null,1,0,1];
+const inc=(n)=>Array.from({length:n},(_,k)=>[6+k,1,0,0,50,1,null,1,0,0]);   // middle incompletions: lane-mates, no tails
+const obEdge=(html)=>{
+  const m=[...html.matchAll(/<path d="(M[^"]*)" fill="none" stroke="#39c15a"/g)]
+    .map(x=>{const n=x[1].match(/(-?[\d.]+),(-?[\d.]+)\s*$/); return [Number(n[1]), Number(n[2])];});
+  if(m.length!==1) return 'multiple tails';
+  const [x,y]=m[0];
+  return Math.abs(x-(edgeL(y)+3))<0.2 ? 'L' : (Math.abs(x-(edgeR(y)-3))<0.2 ? 'R' : 'neither');
+};
+const rcvEdge=obEdge(app.block('Tee Higgins', {games:[{wk:1,opp:'TB',plays:[...inc(1), midOb]}]}, 2026, 1, {label:'Week 1'}, null));
+const qbEdge =obEdge(app.qbBlock('Joe Burrow', {rcv:['T.Higgins'],games:[{wk:1,opp:'TB',
+  plays:[...inc(2), [12,1,1,17,73,3,0,1,0,1]]}]}, 2026, 1, 'Week 1', null));
+chk(rcvEdge==='L'||rcvEdge==='R', 'a middle throw that ended out of bounds still runs out to a boundary');
+chk(rcvEdge===qbEdge, 'and it is the SAME boundary on the receiver\'s map and the passer\'s — one play, one answer');
+const crowded=obEdge(app.block('Tee Higgins', {games:[{wk:1,opp:'TB',plays:[...inc(5), midOb]}]}, 2026, 1, {label:'Week 1'}, null));
+chk(crowded===rcvEdge, 'and it does not flip when the week picker puts different plays on the chart beside it');
 
 console.log('=== out of bounds + the carry summary ===');
 const ob={team:'BUF',games:[{wk:2,opp:'DET',plays:[[2,35,4|16|64,60,3],[5,22,4|16|32,23,4],[3,20,4|16,50,3],[3,12,4,50,1],[3,1,0,50,1]]}]};

@@ -11649,6 +11649,18 @@ function _tmRoutePath(route, side, x0, losY, x1, y1, pxPerYd){
 // the first two thirds and the last stretch straight-ish, because that is where he is running
 // away or being brought down. A run that ended out of bounds leans toward that sideline the
 // whole way instead of turning for it at the end.
+// One play, one seed. The same throw is drawn twice — once in the receiver's target map,
+// once in the passer's pass map — and the two lists it sits in are different lengths, so
+// anything decided by chance has to come from the play's own numbers (identical in both
+// sidecars) and never from where it happens to fall in a list: the after-catch wobble, the
+// stem's lean, and which boundary an out-of-bounds catch runs out to. Seeding from the
+// list index made one catch leave by the left sideline on the receiver's chart and the
+// right one on the passer's. It also keeps a play drawn the same when the week picker
+// changes what else is on the chart.
+function _tmPlaySeed(p){
+  return ((p.wk||0)*7919 + (p.ay+60)*104729 + (p.yac+60)*1301
+        + ((p.yl==null?99:p.yl)+1)*31 + (p.q||0)*17 + (p.side+1)*5 + (p.res+1)*3) >>> 0;
+}
 // The stem from the line of scrimmage to an uncharted target: we do not know the route, so it
 // stays dotted and faint — but it is still a person running, so it leans the way a stem does
 // instead of being ruled with a straight edge. Seeded like everything else here.
@@ -11724,7 +11736,7 @@ function targetMapSVG(plays, title, sub, tag){
   const laneN=[0,0,0], PHI=0.618033988749895, fracOf={};
   for(let i=0;i<plays.length;i++){ const s=plays[i].side; fracOf[i]=((laneN[s]++)*PHI+0.5)%1-0.5; }   // first in a lane sits on its centre
   for(const i of order){
-    const p=plays[i], frac=fracOf[i];
+    const p=plays[i], frac=fracOf[i], seed=_tmPlaySeed(p);
     const caught=(p.res===1||p.res===2);
     const y1=yOf(p.ay), x1=laneX(y1, p.side, frac);
     const x0=laneX(losY, p.side, frac);
@@ -11733,8 +11745,10 @@ function targetMapSVG(plays, title, sub, tag){
     const y2=yOf(endCap);
     // A catch that ended out of bounds finishes ON the sideline, the way the carry map draws
     // a run that was pushed out: play-by-play flags the play, and the side it was thrown to
-    // says which boundary (a ball charted down the middle takes the side its mark leans to).
-    const obSide = (caught && p.ob) ? (p.side===0 ? -1 : (p.side===2 ? 1 : (frac<0 ? -1 : 1))) : 0;
+    // says which boundary. A ball charted down the middle is the one case the data cannot
+    // answer — pbp buckets location into left/middle/right and carries no coordinate — so
+    // the play's own seed calls it, which is a guess but the same guess on every chart.
+    const obSide = (caught && p.ob) ? (p.side===0 ? -1 : (p.side===2 ? 1 : ((seed&1) ? -1 : 1))) : 0;
     const x2 = obSide ? (obSide<0 ? left(y2)+3 : right(y2)-3) : laneX(y2, p.side, frac);
     const col = caught ? '#ffffff' : (p.res===3 ? '#d33b2f' : '#9aa0a6');
     const tip=`WK ${p.wk}${p.opp?' · '+p.opp:''}${p.q?` · Q${p.q}`:''} · ${_TM_SIDES[p.side]||'Middle'}, ${p.ay>=0?'+':''}${p.ay} air${p.route?` · ${_tmRouteLabel(p.route)}`:''} · ${_TM_RES[p.res]||'Target'}${p.to?` → ${p.to}`:''}${caught?` · ${p.yac} YAC (${p.ay+p.yac} yds)`:''}${(caught&&p.ob)?' · out of bounds':''}${p.oop===1?' · out of the pocket':''}`;
@@ -11743,7 +11757,7 @@ function targetMapSVG(plays, title, sub, tag){
     const routeD = p.route ? _tmRoutePath(p.route, p.side, x0, losY, x1, y1, pxPerYd) : null;
     if(routeD) parts.push(`<path d="${routeD}" fill="none" stroke="${col}" stroke-width="${routeW}" stroke-linejoin="round" stroke-linecap="round" opacity="${caught?routeOp:routeOp*0.75}"/>`);
     else if(p.res!==2){
-      const stemSeed=((p.wk||0)*104729 + i*7919 + (p.ay+60)*31 + (p.q||0)*13 + p.side*5)>>>0;
+      const stemSeed=(seed^0x5bf03635)>>>0;
       parts.push(`<path d="${_tmStemPath(x0, losY, x1, y1, stemSeed)}" fill="none" stroke="${col}" stroke-width="1.5" stroke-dasharray="3 4" opacity="0.32"/>`);
     }
     if(p.res===2){
@@ -11772,7 +11786,7 @@ function targetMapSVG(plays, title, sub, tag){
       parts.push(`<path d="M${f1(qx)},${f1(qy)} Q${f1(cx)},${f1(cy)} ${f1(x1)},${f1(y1)}" fill="none" stroke="#2f6fe4" stroke-width="${many?3:4}" stroke-linecap="round" opacity="0.9"/>`);
     }
     if(caught && p.yac>0){
-      const yacSeed=((p.wk||0)*7919 + i*104729 + (p.ay+60)*1301 + (p.yac+60)*31 + (p.q||0)*17 + p.side*7)>>>0;
+      const yacSeed=(seed^0x9e3779b9)>>>0;
       parts.push(`<path d="${_tmYacPath(x1, y1, x2, y2, yacSeed, obSide)}" fill="none" stroke="#39c15a" stroke-width="${tailW}" stroke-linecap="round" stroke-linejoin="round"/>`);
       parts.push(`<circle cx="${f1(x2)}" cy="${f1(y2)}" r="${r0-3}" fill="#39c15a"/>`);
       if(endYd>YMAX && p.res!==2) labels.push({x:x2+16, y:y2+4, mx:x2, my:y2, text:`+${endYd}`, fill:'#39c15a', td:false});
@@ -13140,6 +13154,13 @@ function _cmSmooth(pts){
 // `ob`: the run ended out of bounds, so (x1, y1) is the sideline at its yardage — the
 // run goes through its gap and then angles out to the boundary, the way a back
 // bounces a run outside and gets pushed out.
+// One carry, one seed: everything decided by chance about how a run is drawn comes from
+// the carry's own numbers, so the same run looks the same whether the chart is showing one
+// week or the whole season (see _tmPlaySeed, the target map's twin).
+function _cmPlaySeed(p){
+  return ((p.wk||0)*7919 + (p.yds+50)*104729 + p.lane*1301
+        + ((p.yl==null?99:p.yl)+1)*31 + (p.q||0)*17) >>> 0;
+}
 function _cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, reachedLine, ob){
   const rnd=_cmRand(seed), j=(a)=>(rnd()-0.5)*2*a, sgn=()=>(rnd()<0.5?-1:1);
   const pts=[[sx+j(8), sy+j(4)]];
@@ -13233,11 +13254,12 @@ function carryMapSVG(plays, title, sub, tag){
   for(const i of order){
     const p=plays[i], frac=fracOf[i];
     const endYd=(p.yl!=null) ? Math.min(p.yds, p.yl) : p.yds;      // the goal line ends every run
-    const seed=(p.wk*7919 + i*104729 + p.lane*1301 + (p.yds+50)*31 + (p.q||0)*17)>>>0;
+    const seed=_cmPlaySeed(p);
     const x0=laneX(losY, p.lane, frac), y1=yOf(endYd);
     // Out of bounds: the run ends ON the sideline at its yardage. The play says which
-    // side when the run went left or right; a middle run that got out picks the side
-    // its lane leans to (the seed decides for a dead-centre run).
+    // side when the run went left or right; a middle run that got out is the one case the
+    // charting cannot answer, so its own seed calls it — the same call every time, whatever
+    // else the week picker has put on the chart beside it.
     const ob=(p.ob!=null && endYd>=0) ? (p.ob || (p.lane<3?-1:(p.lane>3?1:((seed&1)?-1:1)))) : 0;
     const x1=ob ? (ob<0 ? left(y1)+3 : right(y1)-3) : laneX(y1, p.lane, frac);
     const col=_cmColor(p.yds);
