@@ -841,8 +841,29 @@ function liveSeasonPaceText(pid, mode){
   } else {
     parts=[`${scale(sum.receiving_targets)} tgt`, `${scale(sum.receptions)} rec`, `${scale(sum.receiving_yards).toLocaleString()} rec yds`, `${scale(sum.receiving_tds)} rec TD`];
   }
-  const wk=(typeof completedWeeks==='function' && completedWeeks()>0) ? completedWeeks() : gp;
+  const last=Array.isArray(rec) ? rec[rec.length-1] : rec;   // the current stint carries the team
+  const wk=liveSeasonPaceWeek(gp, last && last.team);
   return `17-game pace thru week ${wk} (${gp} game${gp===1?'':'s'}): ${parts.join(' · ')}`;
+}
+// The week the season-to-date aggregate runs through. completedWeeks() alone lags: Sleeper's
+// aggregate carries the week IN PROGRESS play by play, so on a Friday after Thursday night
+// the games count already includes this week while the counter still says last week. The
+// player's own games count (more games than completed weeks → this week is in) and their
+// team's game state on this week's board (kicked off → this week is in, played or not) move
+// the label as the week goes; before either, it is the last completed week.
+function liveSeasonPaceWeek(gp, team){
+  const done=(typeof completedWeeks==='function') ? completedWeeks() : 0;
+  const cur=(typeof TC_SEASON!=='undefined' && TC_SEASON.phase==='regular') ? Number(TC_SEASON.week||0) : 0;
+  if(cur>done){
+    if(gp>done) return cur;
+    try{
+      if(team && typeof tcTeamGameState==='function' && typeof tcBoardWeek==='function' && tcBoardWeek()===cur){
+        const g=tcTeamGameState(team);
+        if(g && (g.state==='in' || g.state==='post')) return cur;
+      }
+    }catch(e){}
+  }
+  return done>0 ? done : gp;
 }
 function weekFilterPaceButton(state, pid, mode){
   let text = weekFilterPaceText(state, pid, mode);
