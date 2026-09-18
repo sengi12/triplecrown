@@ -255,6 +255,8 @@ run_js_test test_rankings_stream "Rankings mobile: rows stream into the tbody (n
 run_js_test test_mobile_hardening "iOS/Android hardening: safe-area+dvh in the build, keyboard-aware popups, bounded caches, undo budget, per-body sticky headers"
 run_js_test test_vor_vona "VOR/VONA structure: restricted flexes, optimal lineup gain, keeper windows, K/DEF profiles, replacement line, DEF icons"
 run_js_test test_boot_embedded_tdz "Baked/embedded boot path touches no not-yet-initialised binding (concat-order TDZ)"
+run_js_test test_touch_inputs     "Phone text entry: every text-entry control is 16px under (pointer:coarse) so iOS never zooms the page, and the rule sits in the last stylesheet where no later file can undo it"
+run_js_test test_playbook_games  "Playbook: the coaching payload ships a row per play instead of ~80 precomputed buckets (44% smaller), the app adds up whichever the filters select, and the playsheet can filter to one game"
 run_js_test test_baked_boot    "Baked-in seed boots self-contained with no fetch (phone/file:// safe)"
 run_js_test test_ecr_load      "Seed load populates ECR (incl. ECR-only seeds, the empty-seed bug fix)"
 run_js_test test_copy_undo     "Undo for copy-to-working actions (cross-team Pittman case, seed+working revert)"

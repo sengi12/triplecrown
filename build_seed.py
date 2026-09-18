@@ -161,21 +161,29 @@ def _encode_coaching(seed, round_epa=3):
                     int(g.get("py") or 0), int(g.get("ptd") or 0),
                     int(g.get("ry") or 0), int(g.get("rtd") or 0)]
 
-        vout = {}
-        for dk, dnode in t["views"].items():
-            vout[dk] = {}
-            for dsk, dsnode in dnode.items():
-                vout[dk][dsk] = {}
-                for pk, node in dsnode.items():
-                    vout[dk][dsk][pk] = None if not node else \
-                        [node["total"], [enc_group(g) for g in node["groups"]]]
-
         out_teams[code] = {"team": t["team"], "slots": t["slots"], "names": t["names"],
-                           "jerseys": t.get("jerseys", {}), "forms": forms, "views": vout}
+                           "jerseys": t.get("jerseys", {}), "forms": forms}
+        # v5: one row per play instead of a bucket per down × distance × play-type. The rows
+        # already index `forms`, so they encode as-is; the app adds up whichever ones the
+        # filters select, which is what lets the playsheet filter by game.
+        if t.get("plays") is not None:
+            out_teams[code]["plays"] = t["plays"]
+            out_teams[code]["lanes"] = t.get("lanes") or []
+            out_teams[code]["games"] = t.get("games") or []
+        else:
+            vout = {}
+            for dk, dnode in (t.get("views") or {}).items():
+                vout[dk] = {}
+                for dsk, dsnode in dnode.items():
+                    vout[dk][dsk] = {}
+                    for pk, node in dsnode.items():
+                        vout[dk][dsk][pk] = None if not node else \
+                            [node["total"], [enc_group(g) for g in node["groups"]]]
+            out_teams[code]["views"] = vout
         if t.get("charting_only"):
             out_teams[code]["co"] = 1      # charted sets: the app labels the sheet accordingly
 
-    return {"v": 3, "leg": {"rt": rt, "ln": ln, "al": al}, "teams": out_teams}
+    return {"v": 5, "leg": {"rt": rt, "ln": ln, "al": al}, "teams": out_teams}
 
 def _idx():
     order, pos = [], {}

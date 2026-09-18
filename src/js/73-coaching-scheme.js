@@ -351,6 +351,56 @@ function _schemeBuildFv(p){
   _schemeFvMemo.set(data, fv);
   return fv;
 }
+// ── The playsheet's arithmetic, in one place ────────────────────────────────
+// The payload ships one row per play, not a bucket per down × distance × play-type, so this
+// is what turns a filter selection into the formation cards. It is deliberately SELF
+// CONTAINED: the same function source is injected into the playsheet's iframe (see
+// _schemeRenderTemplate), so the sheet's game filter and the app's own tabs can never drift
+// apart in how they add a season up.
+//   rows  [[set, week, down, ydstogo, flags, epa×1000, success, yards, td, lane], …]
+//   flags  1 pass · 2 play-action · 4 motion · 8 no-huddle · 16 red zone
+//   sel   {down:'all'|'1'..'4', dist:'all'|'short'|'med'|'long', type:'all'|'pa'|'motion'|'nohuddle'|'redzone', wk:0|week}
+// Returns the same {total, groups:[…]} node the builder used to precompute.
+function _schemeAggregate(rows, sigs, lanes, sel){
+  const DIST={short:[1,3], med:[4,7], long:[8,99]};
+  const TYPE={pa:2, motion:4, nohuddle:8, redzone:16};
+  const dn = (sel.down && sel.down!=='all') ? +sel.down : 0;
+  const dr = DIST[sel.dist] || null;
+  const tb = TYPE[sel.type] || 0;
+  const wk = +sel.wk || 0;
+  const by = new Map();
+  let total = 0;
+  for(let i=0;i<rows.length;i++){
+    const r = rows[i];
+    if(wk && r[1]!==wk) continue;
+    if(dn && r[2]!==dn) continue;
+    if(dr && (r[3]<dr[0] || r[3]>dr[1])) continue;
+    if(tb && !(r[4]&tb)) continue;
+    total++;
+    let g = by.get(r[0]);
+    if(!g){ g={n:0, pass:0, epa:0, succ:0, np:0, ep:0, sp:0, nr:0, er:0, sr:0, py:0, ptd:0, ry:0, rtd:0, lanes:new Map()}; by.set(r[0], g); }
+    const isPass = !!(r[4]&1), epa = r[5]/1000, ok = r[6];
+    g.n++; g.epa+=epa; g.succ+=ok;
+    if(isPass){ g.pass++; g.np++; g.ep+=epa; g.sp+=ok; g.py+=r[7]; if(r[8]===1) g.ptd++; }
+    else { g.nr++; g.er+=epa; g.sr+=ok; g.ry+=r[7]; if(r[8]===2) g.rtd++; }
+    if(r[9]>=0){ const L=g.lanes.get(r[9]) || {n:0, epa:0}; L.n++; L.epa+=epa; g.lanes.set(r[9], L); }
+  }
+  const r1=v=>Math.round(v*10)/10, r2=v=>Math.round(v*100)/100, r3=v=>Math.round(v*1000)/1000;
+  const groups=[];
+  for(const [si,g] of by){
+    // ties broken by name, so which lanes survive the top-3 cut never depends on the order
+    // the rows happened to arrive in
+    const ln=[...g.lanes.entries()].map(([ix,L])=>[lanes[ix]||String(ix), L.n, r2(L.epa/L.n)])
+      .sort((a,b)=>b[1]-a[1] || (a[0]<b[0]?-1:1)).slice(0,3);
+    groups.push({sig:sigs[si], n:g.n, share:r1(100*g.n/total), pass_rate:r1(100*g.pass/g.n),
+      epa:r3(g.epa/g.n), succ:r1(100*g.succ/g.n),
+      np:g.np, ep:(g.np?r3(g.ep/g.np):null), sp:(g.np?r1(100*g.sp/g.np):null),
+      nr:g.nr, er:(g.nr?r3(g.er/g.nr):null), sr:(g.nr?r1(100*g.sr/g.nr):null),
+      py:g.py, ptd:g.ptd, ry:g.ry, rtd:g.rtd, lanes:ln});
+  }
+  groups.sort((a,b)=>b.n-a.n || (a.sig<b.sig?-1:1));
+  return {total, groups:groups.slice(0,40)};
+}
 function _schemeBuildFvCalc(p){
   const views = (p && p.data && p.data.views) ? p.data.views : {};
   const formations = (p && p.data && p.data.formations) ? p.data.formations : {};
@@ -378,9 +428,24 @@ function _schemeBuildFvCalc(p){
     data['2'] = dblk(node('down2'), e, e, e, e);
     data['3'] = dblk(node('down3'), e, e, e, e);
     data['4'] = dblk(node('down4'), e, e, e, e);
+  } else if(Array.isArray(p && p.data && p.data.plays) && p.data.plays.length){
+    // Rows schema: the payload ships a row per play, so every filter combination is added up
+    // here instead of having been precomputed into ~80 buckets by the builder. Same numbers
+    // (test_playbook_games pins them against the buckets the builder used to ship), a smaller
+    // payload, and the same rows answer the playsheet's game filter.
+    const rows = p.data.plays, sigs = p.data.sigs || [], lanes = p.data.lanes || [];
+    for(const dn of DOWNS){
+      data[dn] = {};
+      for(const ds of DISTS){
+        data[dn][ds] = {};
+        for(const fl of TYPES){
+          data[dn][ds][fl] = _schemeNode(_schemeAggregate(rows, sigs, lanes, {down:dn, dist:ds, type:fl, wk:0}), formations);
+        }
+      }
+    }
   } else {
-    // New schema: fill the full down × distance × type grid, defaulting any pruned
-    // (empty) combination to an empty node so every filter selection resolves cleanly.
+    // Bucket schema (payloads baked before the rows): fill the full down × distance × type
+    // grid, defaulting any pruned (empty) combination to an empty node.
     for(const dn of DOWNS){
       const dv = views[dn] || {};
       data[dn] = {};
@@ -396,6 +461,12 @@ function _schemeBuildFvCalc(p){
 
   return {
     data: data,
+    // the playsheet re-aggregates these when you pick a game (see _schemeRenderTemplate)
+    plays: (p && p.data && p.data.plays) || null,
+    ftab: (p && p.data && p.data.formations) || null,
+    sigs: (p && p.data && p.data.sigs) || null,
+    lanes: (p && p.data && p.data.lanes) || null,
+    games: (p && p.data && p.data.games) || null,
     season: p ? p.season : {},
     names: (p && p.data && p.data.names) ? p.data.names : {},
     jerseys: (p && p.data && p.data.jerseys) ? p.data.jerseys : {},
@@ -2205,7 +2276,12 @@ function _schemeRenderTemplate(template, p){
   const full = teamDisplayName(team);
   const wr1 = fv.names[(fv.slots||{}).WR1] || 'WR1';
   const wr2 = fv.names[(fv.slots||{}).WR2] || 'WR2';
-  const script = `const FV=${JSON.stringify(fv)};\nconst FORM=FV.data;\nconst SEASON=FV.season;\nconst NAMES=FV.names;\nconst TEAM_CODE=${JSON.stringify(team)};`;
+  // The sheet runs in an iframe, so it gets its own copy of the app's aggregation function —
+  // the source of the very function this file just used to build FV.data. One implementation,
+  // so a game's numbers and the season's are added up the same way by construction.
+  const script = `const FV=${JSON.stringify(fv)};\nconst FORM=FV.data;\nconst SEASON=FV.season;\nconst NAMES=FV.names;\nconst TEAM_CODE=${JSON.stringify(team)};\n`
+    + String(_schemeAggregate) + `\n`
+    + `function expandNode(node){ const t=(FV.ftab)||{}; return {total:node.total, groups:node.groups.map(g=>Object.assign({}, t[g.sig]||{}, g))}; }\n`;
   return template
     .replace('svg{display:block;margin:0 auto;}', 'svg{display:block;margin:0 auto;max-width:100%;height:auto;}')
     .replace('grid-template-columns:repeat(auto-fill,minmax(330px,1fr));', 'grid-template-columns:repeat(auto-fill,minmax(280px,1fr));')

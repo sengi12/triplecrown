@@ -17,7 +17,7 @@ Usage:
 
 Then just open the *_baked.html file on your phone — no server, no CORS.
 """
-import argparse, json, os, re, sys, time
+import argparse, base64, json, os, re, sys, time
 
 # ── Seed compaction codecs ───────────────────────────────────────────────────
 # build_seed.py writes the hosted files in compact form. For the self-contained
@@ -277,6 +277,19 @@ def main():
     # A baked file opens over file://, where the PWA manifest can never load — the link only
     # produces CORS noise in the console. Strip it from the offline copy.
     html = re.sub(r'\s*<link rel="manifest"[^>]*>', "", html)
+    # The app's own icons (the TC crown in the rankings header, the Sleeper and KTC marks)
+    # are referenced as images/NAME.png. A baked file has no images/ directory beside it, so
+    # every one of them 404s and the header shows a broken image. Inline the few that are
+    # actually referenced as data URIs — they are small, and it makes the offline copy whole.
+    _img_dir = os.path.join(os.path.dirname(os.path.abspath(args.html)), "images")
+    for _name in sorted(set(re.findall(r'images/([A-Za-z0-9._-]+\.png)', html))):
+        _path = os.path.join(_img_dir, _name)
+        if not os.path.exists(_path):
+            continue
+        with open(_path, "rb") as _f:
+            _uri = "data:image/png;base64," + base64.b64encode(_f.read()).decode("ascii")
+        html = html.replace(f"images/{_name}", _uri)
+        print(f"  • inlined images/{_name} ({os.path.getsize(_path)//1024} KB)")
 
     # Fallback is month-aware (Jan/Feb belong to the prior league year), not a frozen literal.
     _now = time.gmtime()

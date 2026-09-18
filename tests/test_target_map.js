@@ -58,7 +58,7 @@ const pt=[...ph.matchAll(/<text[^>]*x="([\d.]+)" y="([\d.]+)"[^>]*paint-order="s
 chk(pt.length===4 && !pt.some((a,i)=>pt.some((b,j)=>j>i && Math.abs(a.y-b.y)<12 && Math.abs(a.x-b.x)<a.t.length*6.6+4)) && new Set(pt.map(t=>Math.round(t.y))).size>=2,
     'four deep balls in one lane: the tags stack down instead of piling on the top edge');
 chk(/stroke="#d33b2f" stroke-width="2\.5"/.test(html) && /M\d/.test(html), 'the interception is the red hollow with its cross');
-chk(/Charted route/.test(html)===false && /routes come with the season/.test(html), 'the legend and subtitle say routes are not charted yet');
+chk(/Charted route/.test(html)===false && /routes come with the charting/.test(html), 'the legend and subtitle say routes are not charted yet');
 
 console.log('=== season view + charted routes ===');
 app.setNV({'2026':{target_trees:{players:{'test receiver':node}, routes:['GO','SHALLOW CROSS/DRAG','SLANT']}}});
@@ -131,6 +131,38 @@ chk(app.runPath(380, 530, 300, 460, 310, 480, 60, 7, false).endsWith(' 310.0,480
 chk(/Tackled for loss/.test(c1) && /Fumble lost/.test(c1) && /First down/.test(c1), 'the legend explains the carry marks');
 chk(app.rbView()==='map', 'Map is the rushing fan\'s default view'); app.setRbView('fan'); chk(app.rbView()==='fan', 'Fan is selectable'); app.setRbView('map');
 chk(app.rbBlock('X', {games:[{wk:1,plays:[]}]}, 2026, 1, 'Week 1', null).includes('next weekly bake'), 'a node without per-carry rows says so');
+console.log('=== a catch that ended out of bounds runs to the sideline ===');
+// rows: [air, side, res, yac, yl, qtr, route, formation, oop, out-of-bounds]
+const obn={games:[{wk:1,opp:'ARI',plays:[
+  [4,0,1,22,60,1,null,1,0,1],   // caught left, 22 after the catch, pushed out
+  [1,2,1,11,45,2,null,1,0,1],   // caught right, 11 after the catch, pushed out
+  [9,1,1,6,40,3,null,1,0,0],    // caught in the middle, stayed in bounds
+  [5,2,1,0,30,4,null,1,0,1]]}]};// caught right at the boundary, nothing after it
+const obh=app.block('Test Receiver', obn, 2026, 1, {label:'Week 1'}, null);
+chk([...obh.matchAll(/<title>(.*?)<\/title>/g)].map(m=>m[1]).filter(t=>/out of bounds/.test(t)).length===3, 'each play that ended out of bounds says so on hover');
+// the run after the catch is a drawn path, so read where each one ENDS
+const obTails=[...obh.matchAll(/<path d="(M[^"]*)" fill="none" stroke="#39c15a"/g)].map(m=>{
+  const n=m[1].match(/(-?[\d.]+),(-?[\d.]+)\s*$/); return [Number(n[1]), Number(n[2])];});
+const edgeL=y=>170-130*(y-60)/500, edgeR=y=>590+130*(y-60)/500;
+chk(obTails.length===3 && Math.abs(obTails[0][0]-(edgeL(obTails[0][1])+3))<0.2, 'a ball caught on the left ends its run on the left sideline at the yardage it reached');
+chk(Math.abs(obTails[1][0]-(edgeR(obTails[1][1])-3))<0.2, 'a ball caught on the right ends on the right sideline');
+chk(Math.abs(obTails[2][0]-380)<40 && Math.abs(obTails[2][0]-edgeR(obTails[2][1]))>60, 'a catch that stayed in bounds ends in its own lane');
+chk(!/tm-ob/.test(obh), 'no bar is drawn where he stepped out — the path running to the boundary says it');
+console.log('=== the run after the catch is drawn, not ruled ===');
+const curv=[...obh.matchAll(/<path d="(M[^"]*)" fill="none" stroke="#39c15a"/g)].map(m=>m[1]);
+chk(curv.length===3 && curv.every(d=>d.includes(' C')), 'every run after a catch is a curve, never a straight line');
+const again=app.block('Test Receiver', obn, 2026, 1, {label:'Week 1'}, null);
+chk(again===obh, 'the drift is seeded: the same map on every render, nothing moves under the pointer');
+const shifted=app.block('Test Receiver', {games:[{wk:3,opp:'ARI',plays:obn.games[0].plays}]}, 2026, 3, {label:'Week 3'}, null);
+chk([...shifted.matchAll(/<path d="(M[^"]*)" fill="none" stroke="#39c15a"/g)].map(m=>m[1])[0]!==curv[0], 'and no two plays are drawn alike');
+chk(app.plays(obn,1,null).map(p=>p.ob).join()==='true,true,false,true', 'the 10th slot decodes, and an older row without it reads as in bounds');
+chk(app.plays({games:[{wk:1,plays:[[4,0,1,9,60,1,null,1,0]]}]},1,null)[0].ob===false, 'a nine-field row from an older sidecar still draws');
+chk(!/Out of bounds/.test(obh), 'the legend carries no extra mark for it — the tail is the story');
+const obq={rcv:['A.Brown'],games:[{wk:1,opp:'ARI',plays:[[4,0,1,22,60,1,0,1,0,1]]}]};
+const obqh=app.qbBlock('Test QB', obq, 2026, 1, 'Week 1', null);
+const qtOb=[...obqh.matchAll(/<path d="(M[^"]*)" fill="none" stroke="#39c15a"/g)].map(m=>m[1]);
+chk(qtOb.length===1 && qtOb[0].includes(' C') && /out of bounds/.test(obqh), 'the pass map draws it the same way — both maps share the drawing');
+
 console.log('=== out of bounds + the carry summary ===');
 const ob={team:'BUF',games:[{wk:2,opp:'DET',plays:[[2,35,4|16|64,60,3],[5,22,4|16|32,23,4],[3,20,4|16,50,3],[3,12,4,50,1],[3,1,0,50,1]]}]};
 const co=app.rbBlock('James Cook', ob, 2026, 2, 'Week 2 · DET', null);

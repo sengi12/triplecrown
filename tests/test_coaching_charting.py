@@ -150,12 +150,22 @@ chk(w2["routes"] and w2["routes"][0][0] == "POST" and w2.get("src") == "inf", f"
 rb = next((a for a in iform_f["assigns"] if a["name"] == "Gibbs"), None)
 chk(rb is not None and rb["routes"] and rb["routes"][0][0] == "SWING" and rb.get("src") == "szn", "a back with carries but no targets yet keeps last season's tree, marked szn")
 chk(all("src" not in a or a["src"] in ("inf", "szn") for f in forms.values() for a in f["assigns"]), "every assign's source is one of the two, or absent")
-node = det["views"]["all"]["all"]["all"]
-chk(node["total"] == 19 and sum(g["n"] for g in node["groups"]) == 19, "the uncharted play is left out; the rest are counted")
-iform = next(g for g in node["groups"] if forms[g["sig"]]["name"] == "I-FORM")
-chk(iform["lanes"] and iform["lanes"][0][0] == "RG" and iform["lanes"][0][1] == 6, "run lanes are the real pbp gaps")
-chk("redzone" in det["views"]["3"]["short"] and det["views"]["3"]["short"]["redzone"]["groups"][0]["ptd"] == 1, "the red-zone view (3rd & short) holds the touchdown")
-chk("pa" in det["views"]["all"]["all"] and det["views"]["all"]["all"]["pa"]["total"] == 3, "the play-action view comes from FTN")
+# The payload ships a row per play now, not a precomputed bucket per filter combination:
+# [set, week, down, ydstogo, flags, epa×1000, success, yards, td, lane], flags
+# 1 pass · 2 play-action · 4 motion · 8 no-huddle · 16 red zone. The app adds up whichever
+# rows a filter selects (tests/test_playbook_games.js pins that arithmetic); here we check
+# the rows themselves carry what those filters need.
+rows = det["plays"]
+sigs, lanes = det["sigs"], det["lanes"]
+chk(len(rows) == 19, "the uncharted play is left out; the rest each ship a row")
+chk(all(0 <= r[0] < len(sigs) for r in rows), "every row points at a set in the table")
+iform_ix = next(i for i, sg in enumerate(sigs) if forms[sg]["name"] == "I-FORM")
+iform_lanes = [lanes[r[9]] for r in rows if r[0] == iform_ix and r[9] >= 0]
+chk(iform_lanes.count("RG") == 6, f"run lanes are the real pbp gaps ({iform_lanes.count('RG')} through right guard)")
+chk(sum(1 for r in rows if r[4] & 16 and r[2] == 3 and 1 <= r[3] <= 3 and r[8] == 1) == 1,
+    "the red-zone touchdown on 3rd & short is on its row, for the filters to find")
+chk(sum(1 for r in rows if r[4] & 2) == 3, "play-action rides the row's flag, from FTN")
+chk(det["games"] and all(isinstance(w, int) for w, _ in det["games"]), "the games list names every week in the rows")
 
 print("=== the priors themselves ===")
 pr = N._charted_priors(2025)

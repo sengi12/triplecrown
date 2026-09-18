@@ -12,7 +12,9 @@ var _tcBoard = { season:null, week:null, at:0, teams:{}, busy:false, live:false 
 const TC_PLAYOFF_WEEKS = { 19:['Wild Card',1], 20:['Divisional',2], 21:['Conf. Championship',3], 22:['Super Bowl',5] };
 function tcEspnWeek(week){ const w=Number(week); return TC_PLAYOFF_WEEKS[w] ? {type:3, week:TC_PLAYOFF_WEEKS[w][1]} : {type:2, week:w}; }
 function tcWeekLabel(week){ const w=Number(week); return TC_PLAYOFF_WEEKS[w] ? TC_PLAYOFF_WEEKS[w][0] : `Week ${w}`; }
-const TC_LAST_WEEK = 22;
+// TC_LAST_WEEK (22, the Super Bowl) is declared in 15-session-globals.js: boot renders the
+// season tabs from 85-import-export.js, before this file has run, and a `const` read before
+// its line throws — every page load used to die inside boot right there.
 const TC_BOARD_URL = (season, week)=>{ const e=tcEspnWeek(week); return `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=${e.type}&week=${e.week}&dates=${season}`; };
 const TC_BOARD_ABBR = { WSH:'WAS' };          // ESPN spells one club differently
 const TC_BOARD_TTL_LIVE = 4*1000, TC_BOARD_TTL_IDLE = 5*60*1000;   // live: the Game Center's poll re-reads it every 5 s (one small request)

@@ -2603,13 +2603,14 @@ def qb_passing_weekly(season, min_attempts_game=8):
     Each game also carries `plays`: every located attempt as a short row
     [air_yards, side(0 L/1 M/2 R), result(0 inc/1 comp/2 TD/3 INT), yac,
     yardline_100, qtr, receiver, formation (0 under center/1 shotgun/2 pistol),
-    out_of_pocket (0/1, null until FTN publishes the week)] in play order — the PASS MAP (each throw a dot
-    at its depth and side, with its after-catch tail), the cousin of NGS's pass
-    chart. `receiver` indexes the node's `rcv` legend (pbp's short names, e.g.
+    out_of_pocket (0/1, null until FTN publishes the week),
+    out_of_bounds (1 when the play ended out of bounds)] in play order — the PASS MAP (each throw a dot
+    at its depth and side, with its after-catch tail, which runs out to the sideline
+    when the catch ended there), the cousin of NGS's pass chart. `receiver` indexes the node's `rcv` legend (pbp's short names, e.g.
     "J.Smith-Njigba"). `esb` is the passer's NFL ESB id for the NGS deep link.
     Playoff games ride along after week 18 (`post: 1`); the season block the
     client reads them against stays regular season."""
-    _map_cols = ["yards_after_catch", "yardline_100", "qtr", "receiver_player_name", "shotgun"]
+    _map_cols = ["yards_after_catch", "yardline_100", "qtr", "receiver_player_name", "shotgun", "out_of_bounds"]
     pbp = _load_pbp(season, _QB_ZONE_COLS + ["week", "defteam", "game_id", "play_id"] + _map_cols)
     pbp = pbp[pbp["season_type"].isin(["REG", "POST"])]
     att = pbp[(pbp["pass_attempt"] == 1) & (pbp["sack"] == 0)
@@ -2644,7 +2645,8 @@ def qb_passing_weekly(season, min_attempts_game=8):
                          int(q) if not pd.isna(q) else None,
                          rcv_ix.get(rc) if rc is not None else None,
                          int(r.tsg) if r.tsg is not None and not pd.isna(r.tsg) else 0,
-                         (None if r.toop is None or (not isinstance(r.toop, int) and pd.isna(r.toop)) else int(r.toop))])
+                         (None if r.toop is None or (not isinstance(r.toop, int) and pd.isna(r.toop)) else int(r.toop)),
+                         1 if (comp and float(getattr(r, "out_of_bounds", 0) or 0) == 1) else 0])
         return rows
     try:
         duress = _qb_duress(season, pbp)
@@ -2943,8 +2945,10 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
     Each game also carries `plays`: every target as a short row
     [air_yards, side(0 L/1 M/2 R), result(0 inc/1 catch/2 TD/3 INT), yac,
     yardline_100, qtr, route|null, formation (0 under center/1 shotgun/2 pistol),
-    out_of_pocket (0/1, null until FTN publishes the week)] in play order — the target MAP (each throw as a
-    dot at its depth and side, with its after-catch tail), the in-season cousin
+    out_of_pocket (0/1, null until FTN publishes the week),
+    out_of_bounds (1 when the play ended out of bounds)] in play order — the target MAP (each throw as a
+    dot at its depth and side, with its after-catch tail, which angles out to the
+    sideline when he was pushed out), the in-season cousin
     of NGS's route chart. The 7th element is an index into the block's `routes`
     legend — the route the receiver ran, from the participation charting that
     reaches open data after the post-season — and exists only when that file
@@ -2961,7 +2965,7 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
         "pass_attempt", "complete_pass", "air_yards", "pass_location",
         "receiving_yards", "pass_touchdown", "two_point_attempt",
         "yards_after_catch", "epa", "first_down", "interception",
-        "yardline_100", "qtr", "shotgun",
+        "yardline_100", "qtr", "shotgun", "out_of_bounds",
     ])
     t = pbp[pbp["season_type"].isin(["REG", "POST"]) & (pbp["pass_attempt"] == 1)
             & (pbp["two_point_attempt"] == 0) & pbp["receiver_player_id"].notna()
@@ -3014,14 +3018,18 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
             yac = pd.to_numeric(r.yards_after_catch, errors="coerce")
             yl = pd.to_numeric(r.yardline_100, errors="coerce")
             q = pd.to_numeric(r.qtr, errors="coerce")
-            # [air, side, result, yac, yardline, qtr, route|null, formation, out-of-pocket]
+            # [air, side, result, yac, yardline, qtr, route|null, formation, out-of-pocket, out-of-bounds]
             row = [int(ay), _TM_SIDE.get(r.pass_location, 1), res,
                    int(yac) if comp and not pd.isna(yac) else 0,
                    int(yl) if not pd.isna(yl) else None,
                    int(q) if not pd.isna(q) else None,
                    (route_ix.get(r.route) if (route_labels and isinstance(r.route, str)) else None),
                    int(r.tsg) if r.tsg is not None and not pd.isna(r.tsg) else 0,
-                   (None if r.toop is None or (not isinstance(r.toop, int) and pd.isna(r.toop)) else int(r.toop))]
+                   (None if r.toop is None or (not isinstance(r.toop, int) and pd.isna(r.toop)) else int(r.toop)),
+                   # the catch that ended at the sideline: the map runs its tail out to the
+                   # boundary instead of straight up the lane (which side comes from
+                   # pass_location, the same way the carry map reads the run's gap)
+                   1 if (comp and float(getattr(r, "out_of_bounds", 0) or 0) == 1) else 0]
             rows.append(row)
         return rows
 
@@ -4279,6 +4287,11 @@ def _scheme_align(row):
     return "gun" if row.get("shotgun") == 1 else "uc"
 
 
+# The run lanes a row's `lane` indexes into, left end to right end. Fixed here so the rows
+# and the app agree without shipping a legend per team.
+_SCHEME_LANES = ["LE", "LT", "LG", "MID", "RG", "RT", "RE"]
+
+
 def _scheme_lane(row):
     loc = row.get("run_location")
     gap = row.get("run_gap")
@@ -4398,10 +4411,20 @@ def _infer_routes(pid, zones, prior, pos, k=6):
 def coaching_scheme(season, min_group_plays=1, max_groups=40, allow_charting_only=False):
     """Team coaching-scheme visualization payload keyed by team code.
 
-    Produces compact per-team view buckets (down × distance-to-sticks × play-type) with top
-    personnel groups, pass-run tendencies, route leaders by slot, and top run lanes. Every
-    personnel grouping with at least one play is included (no plays-per-group threshold), so a
-    filter combination only reads “no plays” when the situation truly never occurred.
+    Ships ONE COMPACT ROW PER PLAY rather than a pre-computed bucket for every
+    down × distance × play-type combination, and the app adds up whichever rows the current
+    filters select. That is both smaller (the cross product repeated each formation's totals
+    ~80 times) and open-ended: the same rows answer "3rd and long out of shotgun" and
+    "week 2 at Buffalo", which pre-computed buckets never could without multiplying the
+    payload by every week in the season.
+      plays: [[set, week, down, ydstogo, flags, epa×1000, success, yards, td, lane], …]
+        set    index into `sigs` (the formation signature, whose diagram lives in `formations`)
+        flags  1 pass · 2 play-action · 4 motion · 8 no-huddle · 16 red zone
+        td     0 none · 1 pass · 2 rush     lane  index into `lanes`, -1 when not a charted run
+      games: [[week, opponent], …] in play order, so the app can name each game.
+    Every personnel grouping with at least one play is included (no plays-per-group
+    threshold), so a filter combination only reads "no plays" when the situation truly
+    never occurred.
 
     `allow_charting_only`: with no participation file (the season in progress), build the
     same payload from pbp + FTN charting — sets by alignment × backfield count, an assumed
@@ -4411,6 +4434,8 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40, allow_charting_onl
     pbp_cols = [
         "game_id", "play_id", "posteam", "play_type", "pass", "rush_attempt", "qb_scramble",
         "epa", "success", "down", "ydstogo", "yardline_100", "season_type", "shotgun", "run_location", "run_gap",
+        # the week + opponent make the playsheet filterable game by game
+        "week", "defteam",
         # rusher_player_id is REQUIRED to identify RBs: on a run play receiver_player_id is
         # always null, so ranking backs off it silently produced zero RB slots.
         "receiver_player_id", "rusher_player_id",
@@ -4704,54 +4729,68 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40, allow_charting_onl
             groups.sort(key=lambda x: -x["n"])
             return {"total": total, "groups": groups[:max_groups]}
 
-        # Full down × distance-to-sticks × play-type cross product so every filter combination
-        # in the modal resolves to real plays (down, distance, and play-type all co-exist in the
-        # pbp). Empty leaf/branch nodes are pruned so the lazy sidecar stays lean; the app fills
-        # any missing combination with an empty node at render time.
-        down_specs = [("all", None), ("1", 1), ("2", 2), ("3", 3), ("4", 4)]
-        dist_specs = [("all", None), ("short", (1, 3)), ("med", (4, 7)), ("long", (8, 99))]
-        type_specs = [("all", None), ("pa", "is_play_action"),
-                  ("motion", "is_motion"), ("nohuddle", "is_no_huddle"),
-                  ("redzone", "is_red_zone")]
-
-        def _nonempty(node):
-            return node.get("total", 0) > 0 and len(node.get("groups", [])) > 0
-
-        views = {}
-        any_node = False
-        for dkey, dval in down_specs:
-            dsub = dt if dval is None else dt[dt["down"] == dval]
-            if not len(dsub):
-                continue
-            dist_map = {}
-            for diskey, drange in dist_specs:
-                if drange is None:
-                    ds2 = dsub
-                else:
-                    lo, hi = drange
-                    ds2 = dsub[(dsub["ydstogo"] >= lo) & (dsub["ydstogo"] <= hi)]
-                if not len(ds2):
-                    continue
-                type_map = {}
-                for tkey, tcol in type_specs:
-                    tsub = ds2 if tcol is None else ds2[ds2[tcol] == True]  # noqa: E712
-                    node = summarize(tsub)
-                    if _nonempty(node):
-                        type_map[tkey] = node
-                        any_node = True
-                if type_map:
-                    dist_map[diskey] = type_map
-            if dist_map:
-                views[dkey] = dist_map
-        if not any_node:
+        # ONE pass over the team's plays: it fills `formation_table` (every set's diagram and
+        # route tree, which do not move with the filters) and tells us whether this team has
+        # anything to show. The filters are answered from the rows below instead of from a
+        # pre-computed bucket per down × distance × play-type — see the docstring.
+        base = summarize(dt)
+        if not (base.get("total", 0) > 0 and len(base.get("groups", []))):
             continue
+        # Indexed by the formation table's own order, which is the order the seed codec
+        # writes `forms` in — so a row's set index survives encoding untouched.
+        sig_list = list(formation_table.keys())
+        sig_ix = {sg: i for i, sg in enumerate(sig_list)}
+
+        rows = []
+        games = {}
+        # `pass` is a Python keyword, so itertuples renames that column out from under us and
+        # every row silently read as a run. Rename it before the walk instead.
+        for r in dt.rename(columns={"pass": "is_pass"}).itertuples(index=False):
+            sg = f"{r.p}|{r.align}|{int(r.wr)}|{int(r.te)}|{int(r.backs)}|{int(r.ol)}"
+            si = sig_ix.get(sg)
+            if si is None:        # a set summarize dropped (below min_group_plays)
+                continue
+            wk = pd.to_numeric(getattr(r, "week", None), errors="coerce")
+            wk = int(wk) if not pd.isna(wk) else 0
+            if wk and wk not in games:
+                opp = getattr(r, "defteam", None)
+                games[wk] = str(opp) if isinstance(opp, str) else ""
+            dn = pd.to_numeric(r.down, errors="coerce")
+            yg = pd.to_numeric(r.ydstogo, errors="coerce")
+            ep = pd.to_numeric(r.epa, errors="coerce")
+            yd = pd.to_numeric(r.yards_gained, errors="coerce")
+            is_pass = float(getattr(r, "is_pass", 0) or 0) == 1
+            flags = (1 if is_pass else 0)
+            if bool(getattr(r, "is_play_action", False)): flags |= 2
+            if bool(getattr(r, "is_motion", False)):      flags |= 4
+            if bool(getattr(r, "is_no_huddle", False)):   flags |= 8
+            if bool(getattr(r, "is_red_zone", False)):    flags |= 16
+            td = 0
+            if float(getattr(r, "pass_touchdown", 0) or 0) == 1: td = 1
+            elif float(getattr(r, "rush_touchdown", 0) or 0) == 1: td = 2
+            lane = -1
+            if (float(getattr(r, "rush_attempt", 0) or 0) == 1 and float(getattr(r, "qb_scramble", 0) or 0) == 0
+                    and isinstance(r.lane, str) and r.lane in _SCHEME_LANES):
+                lane = _SCHEME_LANES.index(r.lane)
+            rows.append([si, wk,
+                         int(dn) if not pd.isna(dn) else 0,
+                         int(yg) if not pd.isna(yg) else 0,
+                         flags,
+                         int(round(float(ep) * 1000)) if not pd.isna(ep) else 0,
+                         1 if float(getattr(r, "success", 0) or 0) == 1 else 0,
+                         int(yd) if not pd.isna(yd) else 0,
+                         td, lane])
+
         out[team] = {
             "team": team,
             "slots": {k: str(v) for k, v in slots.items()},
             "names": names,
             "jerseys": jerseys,
             "formations": formation_table,
-            "views": views,
+            "sigs": sig_list,
+            "lanes": list(_SCHEME_LANES),
+            "games": sorted([[w, o] for w, o in games.items()]),
+            "plays": rows,
         }
         if charting_only:
             out[team]["charting_only"] = True
