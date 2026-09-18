@@ -409,6 +409,6 @@ function lfBodyHTML(){
 function lfPanelHTML(phone){
   const live=lfLiveCount();
   const btns=phone ? `<button class="rsb-btn gcm-x" onclick="gcmSet('closed')" title="Close" aria-label="Close">×</button>` : (typeof rsbButtonsHTML==='function'?rsbButtonsHTML():'');
-  const head=`<div class="gc-head"><div class="sidebar-section ld-title">Live feed</div><span class="lf-live ${live?'on':''}">${live?`${live} live`:'no games on'}</span>${btns}</div>`;
+  const head=`<div class="gc-head"><div class="sidebar-section ld-title">Live feed</div><span class="lf-live ${live?'on':''}">${live?`${live} live`:'no games on'}</span>${(live && typeof tcFreshHTML==='function')?tcFreshHTML(''):''}${btns}</div>`;
   return `<div class="gc lf">${head}${lfBodyHTML()}</div>`;
 }

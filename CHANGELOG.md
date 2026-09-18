@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-09-17
 
+- feat(tracker): a freshness stamp — when ESPN was last read, ticking, and a tap that reads again now (#136)
 - feat(tracker): a 5-second live poll, the fantasy pane scored off the box score as the plays land, the live feed back to kickoff, and a league chip that means my matchup (#135)
 - fix(tracker): a live game's plays came through twice and one play late — ESPN lists the drive in progress under both previous and current, and its summary lags the scoreboard (#134)
 - fix(cards): the scoring throw is one arc again on the pass map and the target map — bowed perpendicular to the throw, landing on the catch dot (#133)
