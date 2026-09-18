@@ -11570,7 +11570,8 @@ function setPcardRouteMetric(metric){
 // schematic shape scaled from the line of scrimmage to the catch point — so a
 // finished season shows the route leading up to every catch.
 // Rows: NFLVERSE[season].target_trees.players[norm].games[i].plays
-//   = [[air_yards, side 0 L/1 M/2 R, result 0 inc/1 catch/2 TD/3 INT, yac, yardline_100, qtr, route?], …]
+//   = [[air_yards, side 0 L/1 M/2 R, result 0 inc/1 catch/2 TD/3 INT, yac, yardline_100, qtr, route?,
+//       formation, out_of_pocket, out_of_bounds], …]
 //   route = index into NFLVERSE[season].target_trees.routes (present only when charted).
 let pcardTargetView = 'map';   // 'map' (default) | 'zones' | 'tree' (seasons with a charted route tree)
 function setPcardTargetView(v){
@@ -11593,7 +11594,8 @@ function _tmPlays(node, selWk, legend){
       out.push({wk:g.wk, opp:g.opp||'', ay:Math.round(+p[0]||0), side:(p[1]==null?1:+p[1]), res:+p[2]||0,
                 yac:Math.round(+p[3]||0), yl:(p[4]==null?null:+p[4]), q:(p[5]==null?null:+p[5]),
                 route:(legend && ri!=null && legend[ri]) ? String(legend[ri]) : null,
-                sg:(p.length>7 && p[7]!=null)?+p[7]:null, oop:(p.length>8 && p[8]!=null)?+p[8]:null});
+                sg:(p.length>7 && p[7]!=null)?+p[7]:null, oop:(p.length>8 && p[8]!=null)?+p[8]:null,
+                ob:(p.length>9 && p[9]!=null)?!!+p[9]:false});
     }
   }
   return out;
@@ -11630,6 +11632,41 @@ function _tmRoutePath(route, side, x0, losY, x1, y1, pxPerYd){
   }
   out[out.length-1]=[x1,y1];
   return 'M'+out.map(p=>`${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' L');
+}
+// The run after the catch, the way NGS draws it: nobody runs a straight line. From the catch
+// the path leans, settles and finishes on the spot the play ended — a seeded drift (the same
+// generator the carry map uses, so a map never moves under the pointer), with the wobble in
+// the first two thirds and the last stretch straight-ish, because that is where he is running
+// away or being brought down. A run that ended out of bounds leans toward that sideline the
+// whole way instead of turning for it at the end.
+// The stem from the line of scrimmage to an uncharted target: we do not know the route, so it
+// stays dotted and faint — but it is still a person running, so it leans the way a stem does
+// instead of being ruled with a straight edge. Seeded like everything else here.
+function _tmStemPath(x0, losY, x1, y1, seed){
+  const dx=x1-x0, dy=y1-losY, len=Math.hypot(dx,dy), f=v=>(+v).toFixed(1);
+  if(len<18) return `M${f(x0)},${f(losY)} L${f(x1)},${f(y1)}`;
+  const rnd=_cmRand(seed), j=a=>(rnd()-0.5)*2*a;
+  const nx=-dy/len, ny=dx/len;                     // across the stem
+  const lean=j(Math.min(16, len*0.12));
+  const at=(t,off)=>[x0+dx*t+nx*off, losY+dy*t+ny*off];
+  return _cmSmooth([[x0,losY], at(0.42+j(0.06), lean), at(0.78, lean*0.3), [x1,y1]]);
+}
+function _tmYacPath(x1, y1, x2, y2, seed, obSide){
+  const dx=x2-x1, dy=y2-y1, len=Math.hypot(dx,dy);
+  const f=v=>(+v).toFixed(1);
+  if(len<14) return `M${f(x1)},${f(y1)} L${f(x2)},${f(y2)}`;   // a yard or two: nothing to draw
+  const rnd=_cmRand(seed), j=a=>(rnd()-0.5)*2*a;
+  // unit vectors along the run and across it
+  const ux=dx/len, uy=dy/len, nx=-uy, ny=ux;
+  const lean=(obSide ? obSide*Math.min(18, len*0.16) : 0) + j(Math.min(14, len*0.13));
+  const pts=[[x1,y1]];
+  // one bend a third of the way, a softer counter-bend two thirds along on a long run
+  const at=(t,off)=>[x1+dx*t+nx*off, y1+dy*t+ny*off];
+  pts.push(at(0.34+j(0.05), lean));
+  if(len>90) pts.push(at(0.66+j(0.04), lean*(obSide?0.72:-0.42)+j(5)));
+  pts.push(at(0.86, lean*0.22));
+  pts.push([x2,y2]);
+  return _cmSmooth(pts);
 }
 function targetMapSVG(plays, title, sub, tag){
   // Same canvas and perspective as the zone chart, so the two views swap in place.
@@ -11683,14 +11720,22 @@ function targetMapSVG(plays, title, sub, tag){
     const x0=laneX(losY, p.side, frac);
     const endYd = caught ? p.ay+p.yac : p.ay;
     const endCap = (p.yl!=null) ? Math.min(endYd, p.yl) : endYd;     // the goal line ends every tail
-    const y2=yOf(endCap), x2=laneX(y2, p.side, frac);
+    const y2=yOf(endCap);
+    // A catch that ended out of bounds finishes ON the sideline, the way the carry map draws
+    // a run that was pushed out: play-by-play flags the play, and the side it was thrown to
+    // says which boundary (a ball charted down the middle takes the side its mark leans to).
+    const obSide = (caught && p.ob) ? (p.side===0 ? -1 : (p.side===2 ? 1 : (frac<0 ? -1 : 1))) : 0;
+    const x2 = obSide ? (obSide<0 ? left(y2)+3 : right(y2)-3) : laneX(y2, p.side, frac);
     const col = caught ? '#ffffff' : (p.res===3 ? '#d33b2f' : '#9aa0a6');
-    const tip=`WK ${p.wk}${p.opp?' · '+p.opp:''}${p.q?` · Q${p.q}`:''} · ${_TM_SIDES[p.side]||'Middle'}, ${p.ay>=0?'+':''}${p.ay} air${p.route?` · ${_tmRouteLabel(p.route)}`:''} · ${_TM_RES[p.res]||'Target'}${p.to?` → ${p.to}`:''}${caught?` · ${p.yac} YAC (${p.ay+p.yac} yds)`:''}${p.oop===1?' · out of the pocket':''}`;
+    const tip=`WK ${p.wk}${p.opp?' · '+p.opp:''}${p.q?` · Q${p.q}`:''} · ${_TM_SIDES[p.side]||'Middle'}, ${p.ay>=0?'+':''}${p.ay} air${p.route?` · ${_tmRouteLabel(p.route)}`:''} · ${_TM_RES[p.res]||'Target'}${p.to?` → ${p.to}`:''}${caught?` · ${p.yac} YAC (${p.ay+p.yac} yds)`:''}${(caught&&p.ob)?' · out of bounds':''}${p.oop===1?' · out of the pocket':''}`;
     const attrs=tag?tag({label:`Target · WK ${p.wk}`, value:tip, statKey:'target'}):'';
     parts.push(`<g ${attrs}><title>${escHtml(tip)}</title>`);
     const routeD = p.route ? _tmRoutePath(p.route, p.side, x0, losY, x1, y1, pxPerYd) : null;
     if(routeD) parts.push(`<path d="${routeD}" fill="none" stroke="${col}" stroke-width="${routeW}" stroke-linejoin="round" stroke-linecap="round" opacity="${caught?routeOp:routeOp*0.75}"/>`);
-    else if(p.res!==2) parts.push(`<line x1="${f1(x0)}" y1="${f1(losY)}" x2="${f1(x1)}" y2="${f1(y1)}" stroke="${col}" stroke-width="1.5" stroke-dasharray="3 4" opacity="0.32"/>`);
+    else if(p.res!==2){
+      const stemSeed=((p.wk||0)*104729 + i*7919 + (p.ay+60)*31 + (p.q||0)*13 + p.side*5)>>>0;
+      parts.push(`<path d="${_tmStemPath(x0, losY, x1, y1, stemSeed)}" fill="none" stroke="${col}" stroke-width="1.5" stroke-dasharray="3 4" opacity="0.32"/>`);
+    }
     if(p.res===2){
       // The scoring throw, drawn NGS-style: the ball leaves the passer's spot and comes
       // down onto the recorded catch point — a lob whose height grows with the distance.
@@ -11717,7 +11762,8 @@ function targetMapSVG(plays, title, sub, tag){
       parts.push(`<path d="M${f1(qx)},${f1(qy)} Q${f1(cx)},${f1(cy)} ${f1(x1)},${f1(y1)}" fill="none" stroke="#2f6fe4" stroke-width="${many?3:4}" stroke-linecap="round" opacity="0.9"/>`);
     }
     if(caught && p.yac>0){
-      parts.push(`<line x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(x2)}" y2="${f1(y2)}" stroke="#39c15a" stroke-width="${tailW}" stroke-linecap="round"/>`);
+      const yacSeed=((p.wk||0)*7919 + i*104729 + (p.ay+60)*1301 + (p.yac+60)*31 + (p.q||0)*17 + p.side*7)>>>0;
+      parts.push(`<path d="${_tmYacPath(x1, y1, x2, y2, yacSeed, obSide)}" fill="none" stroke="#39c15a" stroke-width="${tailW}" stroke-linecap="round" stroke-linejoin="round"/>`);
       parts.push(`<circle cx="${f1(x2)}" cy="${f1(y2)}" r="${r0-3}" fill="#39c15a"/>`);
       if(endYd>YMAX && p.res!==2) labels.push({x:x2+16, y:y2+4, mx:x2, my:y2, text:`+${endYd}`, fill:'#39c15a', td:false});
     }
@@ -11778,7 +11824,7 @@ function targetMapBlock(pname, node, season, selWk, v, tag){
   const title=`${escHtml(String(pname).toUpperCase())} TARGETS <tspan fill="#9aa0a6" font-size="13" font-weight="600">/ ${escHtml(String(v.label).toUpperCase())}</tspan>`;
   const sub= charted
     ? `Every target with the route he ran · green = after the catch · ring + TD = touchdown`
-    : `Every target by depth and side · green = after the catch · ring + TD = touchdown · routes come with the season's charting`;
+    : `Every target by depth and side · green = after the catch · ring + TD = touchdown · routes come with the charting`;
   return targetMapSVG(plays, title, sub, tag) + targetMapLegend(charted);
 }
 // ── The QB's pass map: the same field, every located attempt, the receiver on the mark ──
@@ -11794,7 +11840,8 @@ function _qbMapPlays(node, selWk){
       out.push({wk:g.wk, opp:g.opp||'', ay:Math.round(+p[0]||0), side:(p[1]==null?1:+p[1]), res:+p[2]||0,
                 yac:Math.round(+p[3]||0), yl:(p[4]==null?null:+p[4]), q:(p[5]==null?null:+p[5]),
                 route:null, to:(ri!=null && rcv[ri]) ? String(rcv[ri]) : null,
-                sg:(p.length>7 && p[7]!=null)?+p[7]:null, oop:(p.length>8 && p[8]!=null)?+p[8]:null});
+                sg:(p.length>7 && p[7]!=null)?+p[7]:null, oop:(p.length>8 && p[8]!=null)?+p[8]:null,
+                ob:(p.length>9 && p[9]!=null)?!!+p[9]:false});
     }
   }
   return out;
