@@ -15,7 +15,7 @@ function tcWeekLabel(week){ const w=Number(week); return TC_PLAYOFF_WEEKS[w] ? T
 const TC_LAST_WEEK = 22;
 const TC_BOARD_URL = (season, week)=>{ const e=tcEspnWeek(week); return `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=${e.type}&week=${e.week}&dates=${season}`; };
 const TC_BOARD_ABBR = { WSH:'WAS' };          // ESPN spells one club differently
-const TC_BOARD_TTL_LIVE = 7*1000, TC_BOARD_TTL_IDLE = 5*60*1000;   // live: the Game Center's poll re-reads it every 8 s (one small request)
+const TC_BOARD_TTL_LIVE = 4*1000, TC_BOARD_TTL_IDLE = 5*60*1000;   // live: the Game Center's poll re-reads it every 5 s (one small request)
 
 function tcBoardWeek(){
   // The tracker's week: the finished week holds through Tuesday and until Wednesday morning

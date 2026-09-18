@@ -20,7 +20,7 @@ const GC_SUM_TTL_LIVE = 12*1000, GC_SUM_TTL_FINAL = 6*60*60*1000, GC_SUM_TTL_PRE
 // While a picked game is on and the panel is in view, the summary (and the scoreboard) are
 // re-read every GC_LIVE_POLL ms — ESPN posts a play within seconds; the sheet's own 61 s
 // repaint was the ceiling before. One timer, restarted by every repaint.
-const GC_LIVE_POLL = 8*1000;
+const GC_LIVE_POLL = 5*1000;
 var _gcLiveTimer = null;
 // Change-driven: the scoreboard's situation carries the last play's id. When the picked
 // game's changes, its summary is re-read at once (the plays land within seconds of ESPN
@@ -154,6 +154,68 @@ function gcAthletes(sum){
   for(const id in out.byId){ const r=out.byId[id]; if(r.pos) continue; const G=r.groups;
     r.pos = G.has('passing')?'QB':G.has('kicking')?'K':G.has('punting')?'P':G.has('rushing')?'RB':G.has('receiving')?'WR':(G.has('defensive')||G.has('interceptions'))?'DEF':''; }
   if(sum) sum._gcAth=out;
+  return out;
+}
+// ── Live lines from the box score ────────────────────────────────────────────
+// ESPN's box score moves with every play the summary carries; Sleeper's week rows trail it
+// by a minute or more. While a game is on, the fantasy pane scores the box score: each
+// athlete's groups mapped onto Sleeper's stat keys, laid over his Sleeper row (or standing
+// in for it before Sleeper has one). Finals go back to Sleeper's rows.
+const GC_BOX_STAT = {
+  passing:      { 'completions/passingAttempts':['pass_cmp','pass_att'], passingYards:'pass_yd', passingTouchdowns:'pass_td', interceptions:'pass_int', 'sacks-sackYardsLost':['pass_sack'] },
+  rushing:      { rushingAttempts:'rush_att', rushingYards:'rush_yd', rushingTouchdowns:'rush_td' },
+  receiving:    { receptions:'rec', receivingYards:'rec_yd', receivingTouchdowns:'rec_td', receivingTargets:'rec_tgt' },
+  fumbles:      { fumbles:'fum', fumblesLost:'fum_lost' },
+  kicking:      { 'fieldGoalsMade/fieldGoalAttempts':['fgm','fga'], 'extraPointsMade/extraPointAttempts':['xpm','xpa'] },
+  defensive:    { totalTackles:'idp_tkl', soloTackles:'idp_tkl_solo', sacks:'idp_sack', tacklesForLoss:'idp_tkl_loss', passesDefended:'idp_pass_def', QBHits:'idp_qb_hit', defensiveTouchdowns:'idp_def_td' },
+  interceptions:{ interceptions:'idp_int' },
+  kickReturns:  { kickReturnYards:'kr_yd', kickReturnTouchdowns:'kr_td' },
+  puntReturns:  { puntReturnYards:'pr_yd', puntReturnTouchdowns:'pr_td' },
+};
+function gcBoxRows(sum){
+  if(!sum || !sum.boxscore) return [];
+  if(sum._gcBoxRows) return sum._gcBoxRows;
+  const ath=gcAthletes(sum);
+  const sp=(typeof sleeperPlayers!=='undefined' && sleeperPlayers) ? sleeperPlayers : {};
+  const out={};
+  (sum.boxscore.players||[]).forEach(tp=>{
+    const team=gcAbbr(tp.team && tp.team.abbreviation);
+    (tp.statistics||[]).forEach(g=>{
+      const map=GC_BOX_STAT[g.name]; if(!map) return;
+      const keys=g.keys||[];
+      (g.athletes||[]).forEach(a=>{
+        const id=String((a.athlete||{}).id||''); const rec=ath.byId[id]; if(!rec || !rec.pid) return;
+        if(!out[rec.pid]){
+          const p=sp[rec.pid]||{}; const nm=String(p.name||rec.name||''); const i=nm.indexOf(' ');
+          out[rec.pid]={ player_id:rec.pid, team, position:String(p.pos||rec.pos||'').toUpperCase(), live:true,
+            player:{ first_name:i>0?nm.slice(0,i):nm, last_name:i>0?nm.slice(i+1):'', position:String(p.pos||rec.pos||'').toUpperCase(), team }, stats:{gp:1} };
+        }
+        const st=out[rec.pid].stats;
+        (a.stats||[]).forEach((v,i)=>{
+          const k=map[keys[i]]; if(!k) return;
+          if(Array.isArray(k)){ const parts=String(v).split(/[\/-]/).map(Number); k.forEach((kk,j)=>{ if(Number.isFinite(parts[j])) st[kk]=parts[j]; }); }
+          else { const n=Number(v); if(Number.isFinite(n)) st[k]=n; }
+        });
+      });
+    });
+  });
+  const rows=Object.values(out);
+  sum._gcBoxRows=rows;
+  return rows;
+}
+// The week's rows with the box score laid over them for a game in progress.
+function gcLiveRows(rows, game){
+  if(!game || game.state!=='in' || !game.eid) return rows;
+  const c=_gcd.sum[String(game.eid)]; const sum=c && c.data; if(!sum) return rows;
+  const box=gcBoxRows(sum); if(!box.length) return rows;
+  const base=Array.isArray(rows)?rows:[];
+  const byPid={}; base.forEach((r,i)=>{ byPid[String(r.player_id)]=i; });
+  const out=base.slice();
+  box.forEach(b=>{
+    const i=byPid[String(b.player_id)];
+    if(i==null) out.push(b);
+    else out[i]=Object.assign({}, out[i], { stats:Object.assign({}, out[i].stats||{}, b.stats), live:true });
+  });
   return out;
 }
 // "J.Burrow" / "A.St. Brown" → the box-score athlete on that team (null when unknown).

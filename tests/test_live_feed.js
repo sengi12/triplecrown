@@ -41,7 +41,8 @@ const app=new Function(code+`
   const LP=(o)=>Object.assign({id:'p1', text:'', type:'Rush', scoreValue:0, yds:0, team:'NYJ', athletes:[], down:2, ddt:'2nd & 4', spot:'GB 5', yte:5}, o);
   const G=(o)=>Object.assign({state:'in', eid:'E1', score:6, oppScore:14, home:true, opp:'MIN', sit:{period:3, clock:'10:07', lastPlayId:'p1', lastPlay:LP({})}}, o);
   return { onBoard:lfOnBoard, rows:()=>_lf.rows, view:lfRows, clear:lfClear, read:lfReadPlay, stats:lfPlayStats, pid:lfPidFor,
-    delta:lfDelta, rel:lfRelevance, leagues:lfLeagueList, toggle:lfToggleLeague, all:lfSetAll, mineOnly:lfSetMineOnly, sel:()=>_lf.leagues,
+    seed:(eid,sum)=>{ _gcd.sum[eid]={data:sum, at:Date.now()}; }, seededAt:()=>_lf.seedAt,
+    delta:lfDelta, rel:lfRelevance, leagues:lfLeagueList, toggle:lfToggleLeague, all:lfSetAll, sel:()=>_lf.leagues,
     initials:lfLeagueInitials, chipInner:lfLeagueChipInner, lg:()=>_pcardLg.byLeague,
     setPcard:(o)=>{ _pcardLg={byLeague:o, at:Date.now(), loading:null}; }, setMu:(lid,wk,v)=>{ _gcMu.cache[lid+'|'+wk]=v; }, panel:lfPanelHTML, rowHTML:lfRowHTML, allLeagues:lfSetAllLeagues, sides:lfSideSets, stat:()=>_lf.stat, titleHTML:lfTitleHTML, LP, G, board:(t)=>{ _tcBoard={season:String(TC_SEASON.year), week:tcBoardWeek(), at:Date.now(), teams:t, busy:false, live:true}; }, MAX:LF_MAX_ROWS };
 `)();
@@ -101,12 +102,9 @@ const LP=app.LP, G=app.G;
   chk(app.sel().join(',')==='L1' && v.length===1 && /TD catch/.test(v[0].title) && v[0].tags.length===1 && v[0].tags[0].name==='Queen City Keepers', 'one league: only the plays its rosters are in');
   chk(v[0].tags[0].mine===true && v[0].tags[0].opp===true && v[0].tags[0].delta===12.68, 'the tag says it touched both line-ups of my matchup, and what it moved');
   app.toggle('L2'); v=app.view();
-  chk(app.sel().length===2 && v.length===2 && v.some(x=>/FG/.test(x.title)), 'a second league adds its own plays');
-  app.mineOnly(true); v=app.view();
-  chk(v.length===1 && /TD catch/.test(v[0].title), 'my matchup only: the kicker nobody in my game starts drops out');
-  app.mineOnly(false);
+  chk(app.sel().length===2 && v.length===1 && !v.some(x=>/FG/.test(x.title)), 'a second league brings its own MATCHUP only: the kicker a leaguemate rosters there is not in my game, so his field goal stays out');
   app.allLeagues();
-  chk(app.sel().length===2 && app.view().length===2, 'All leagues: every league I am in at once');
+  chk(app.sel().length===2 && app.view().length===1, 'All leagues: every matchup I have at once');
   app.all();
   chk(app.sel().length===0 && app.view().length===3, 'back to all games');
 
@@ -142,7 +140,7 @@ const LP=app.LP, G=app.G;
   const S=app.sides();
   chk(S.mine.has('q1') && S.opp.has('w1'), 'showing all games still knows my starters and my opponents across every league');
   app.toggle('L1'); h=app.panel(false);
-  chk(/lf-mine/.test(h) && /lf-tag lf-tag-mine/.test(h) && /lf-up">\+12\.68/.test(h), 'with a league picked: the toggle, the starred tag and the points it moved');
+  chk(!/lf-mine/.test(h) && /lf-tag lf-tag-mine/.test(h) && /lf-up">\+12\.68/.test(h), 'with a league picked: no matchup toggle (the league IS my matchup), the starred tag and the points it moved');
   chk(/gcf-name gc-mine">A\. Rodgers/.test(h) && /gcf-name gc-opp">G\. Wilson/.test(h), 'my starter is blue in the feed, the man I am playing is red');
   chk(/gcf-title"><span class="gc-opp">G\. Wilson<\/span> 12 yd TD catch/.test(h), 'and the headline wears the same colour');
   app.all(); app.clear(); h=app.panel(false);
@@ -154,6 +152,25 @@ const LP=app.LP, G=app.G;
   app.clear();
   for(let i=0;i<app.MAX+20;i++) app.onBoard({NYJ:G({sit:{period:1, clock:'1:00', lastPlayId:'x'+i, lastPlay:LP({id:'x'+i, type:'Rush', yds:1, text:'A.Rodgers right end for 1 yard.', team:'NYJ'})}})});
   chk(app.rows().length===app.MAX && app.rows()[0].id==='x'+(app.MAX+19), `the feed is capped at ${app.MAX} rows, newest first`);
+
+  console.log('=== history: a live game\'s summary fills the feed back to kickoff ===');
+  app.clear();
+  const PL=(id,seq,type,text,clock,extra)=>Object.assign({id, sequenceNumber:seq, type:{text:type}, text, period:{number:1}, clock:{displayValue:clock}, statYardage:0, awayScore:0, homeScore:0,
+    start:{down:1, shortDownDistanceText:'1st & 10', possessionText:'NYJ 25', yardsToEndzone:75}}, extra||{});
+  const SUM9={drives:{previous:[{team:{abbreviation:'NYJ'}, plays:[
+      PL('901',1,'Rush','B.Hall left end for 5 yards.','14:00',{statYardage:5}),
+      PL('902',2,'Pass Reception','(Shotgun) A.Rodgers pass short left to G.Wilson for 20 yards.','13:20',{statYardage:20}),
+      PL('903',3,'Official Timeout','Official Timeout at 13:00.','13:00'),
+      PL('904',4,'Passing Touchdown','A.Rodgers pass deep right to G.Wilson for 30 yards, TOUCHDOWN.','12:40',{statYardage:30, scoringPlay:true, awayScore:0, homeScore:7})]}]}};
+  app.seed('E9', SUM9);
+  // the board caught only the touchdown (its clock is the poll's, not the play's)
+  const n9=app.onBoard({NYJ:G({eid:'E9', score:7, oppScore:0, sit:{period:1, clock:'12:11', lastPlayId:'904', lastPlay:LP({id:'904', type:'Passing Touchdown', yds:30, scoreValue:6, text:'A.Rodgers pass deep right to G.Wilson for 30 yards, TOUCHDOWN.', team:'NYJ'})}})});
+  const r9=app.rows().filter(r=>r.eid==='E9');
+  chk(n9===3 && r9.length===3 && r9.map(r=>r.id).join(',')==='904,902,901', 'one board landing: the play the poll caught plus the two before it from the summary (the timeout skipped), newest first');
+  chk(r9[0].src==='sum' && r9[0].clock==='12:40' && r9[0].hs===7 && r9[0].scoreValue===6 && /TD catch/.test(r9[0].title), 'the board\'s row takes the play\'s own clock and the score after it');
+  chk(r9[2].title==='B. Hall 5 yd rush' && r9[2].clock==='14:00' && r9[1].kind==='rec' && r9[1].yds===20 && r9[1].roles.receiver==='w1', 'history rows read like live ones — typed, named, with the yards');
+  chk(app.onBoard({NYJ:G({eid:'E9', score:7, oppScore:0, sit:{period:1, clock:'12:11', lastPlayId:'904', lastPlay:LP({id:'904', type:'Passing Touchdown', yds:30, scoreValue:6, text:'A.Rodgers pass deep right to G.Wilson for 30 yards, TOUCHDOWN.', team:'NYJ'})}})})===0 && app.rows().filter(r=>r.eid==='E9').length===3, 'the next landing adds nothing — no doubles from the summary');
+  chk(app.seededAt() && app.seededAt().E9>0, 'the game\'s summary is read once on first sight (then every ten minutes)');
   console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
   process.exit(pass===total?0:1);
 })();

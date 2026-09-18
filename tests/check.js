@@ -4830,6 +4830,8 @@ function gcGameHTML(game, rows, wk){
   // A game still ahead: the projected lines stand in for the stat lines.
   const proj = game.state==='pre';
   if(proj) rows = gcProjRows(wk||gcWeek());
+  // A game on now: the box score's lines (moving with the plays) over Sleeper's rows.
+  if(!proj && game.state==='in' && typeof gcLiveRows==='function') rows = gcLiveRows(rows, game);
   // A position filter shows that group alone, in full; ALL and Rookies show every group.
   const pick=_gc.pos||'ALL';
   // Before the week's rows land there is nothing to group (the first paint of a fresh load;
@@ -5165,7 +5167,7 @@ const GC_SUM_TTL_LIVE = 12*1000, GC_SUM_TTL_FINAL = 6*60*60*1000, GC_SUM_TTL_PRE
 // While a picked game is on and the panel is in view, the summary (and the scoreboard) are
 // re-read every GC_LIVE_POLL ms — ESPN posts a play within seconds; the sheet's own 61 s
 // repaint was the ceiling before. One timer, restarted by every repaint.
-const GC_LIVE_POLL = 8*1000;
+const GC_LIVE_POLL = 5*1000;
 var _gcLiveTimer = null;
 // Change-driven: the scoreboard's situation carries the last play's id. When the picked
 // game's changes, its summary is re-read at once (the plays land within seconds of ESPN
@@ -5299,6 +5301,68 @@ function gcAthletes(sum){
   for(const id in out.byId){ const r=out.byId[id]; if(r.pos) continue; const G=r.groups;
     r.pos = G.has('passing')?'QB':G.has('kicking')?'K':G.has('punting')?'P':G.has('rushing')?'RB':G.has('receiving')?'WR':(G.has('defensive')||G.has('interceptions'))?'DEF':''; }
   if(sum) sum._gcAth=out;
+  return out;
+}
+// ── Live lines from the box score ────────────────────────────────────────────
+// ESPN's box score moves with every play the summary carries; Sleeper's week rows trail it
+// by a minute or more. While a game is on, the fantasy pane scores the box score: each
+// athlete's groups mapped onto Sleeper's stat keys, laid over his Sleeper row (or standing
+// in for it before Sleeper has one). Finals go back to Sleeper's rows.
+const GC_BOX_STAT = {
+  passing:      { 'completions/passingAttempts':['pass_cmp','pass_att'], passingYards:'pass_yd', passingTouchdowns:'pass_td', interceptions:'pass_int', 'sacks-sackYardsLost':['pass_sack'] },
+  rushing:      { rushingAttempts:'rush_att', rushingYards:'rush_yd', rushingTouchdowns:'rush_td' },
+  receiving:    { receptions:'rec', receivingYards:'rec_yd', receivingTouchdowns:'rec_td', receivingTargets:'rec_tgt' },
+  fumbles:      { fumbles:'fum', fumblesLost:'fum_lost' },
+  kicking:      { 'fieldGoalsMade/fieldGoalAttempts':['fgm','fga'], 'extraPointsMade/extraPointAttempts':['xpm','xpa'] },
+  defensive:    { totalTackles:'idp_tkl', soloTackles:'idp_tkl_solo', sacks:'idp_sack', tacklesForLoss:'idp_tkl_loss', passesDefended:'idp_pass_def', QBHits:'idp_qb_hit', defensiveTouchdowns:'idp_def_td' },
+  interceptions:{ interceptions:'idp_int' },
+  kickReturns:  { kickReturnYards:'kr_yd', kickReturnTouchdowns:'kr_td' },
+  puntReturns:  { puntReturnYards:'pr_yd', puntReturnTouchdowns:'pr_td' },
+};
+function gcBoxRows(sum){
+  if(!sum || !sum.boxscore) return [];
+  if(sum._gcBoxRows) return sum._gcBoxRows;
+  const ath=gcAthletes(sum);
+  const sp=(typeof sleeperPlayers!=='undefined' && sleeperPlayers) ? sleeperPlayers : {};
+  const out={};
+  (sum.boxscore.players||[]).forEach(tp=>{
+    const team=gcAbbr(tp.team && tp.team.abbreviation);
+    (tp.statistics||[]).forEach(g=>{
+      const map=GC_BOX_STAT[g.name]; if(!map) return;
+      const keys=g.keys||[];
+      (g.athletes||[]).forEach(a=>{
+        const id=String((a.athlete||{}).id||''); const rec=ath.byId[id]; if(!rec || !rec.pid) return;
+        if(!out[rec.pid]){
+          const p=sp[rec.pid]||{}; const nm=String(p.name||rec.name||''); const i=nm.indexOf(' ');
+          out[rec.pid]={ player_id:rec.pid, team, position:String(p.pos||rec.pos||'').toUpperCase(), live:true,
+            player:{ first_name:i>0?nm.slice(0,i):nm, last_name:i>0?nm.slice(i+1):'', position:String(p.pos||rec.pos||'').toUpperCase(), team }, stats:{gp:1} };
+        }
+        const st=out[rec.pid].stats;
+        (a.stats||[]).forEach((v,i)=>{
+          const k=map[keys[i]]; if(!k) return;
+          if(Array.isArray(k)){ const parts=String(v).split(/[\/-]/).map(Number); k.forEach((kk,j)=>{ if(Number.isFinite(parts[j])) st[kk]=parts[j]; }); }
+          else { const n=Number(v); if(Number.isFinite(n)) st[k]=n; }
+        });
+      });
+    });
+  });
+  const rows=Object.values(out);
+  sum._gcBoxRows=rows;
+  return rows;
+}
+// The week's rows with the box score laid over them for a game in progress.
+function gcLiveRows(rows, game){
+  if(!game || game.state!=='in' || !game.eid) return rows;
+  const c=_gcd.sum[String(game.eid)]; const sum=c && c.data; if(!sum) return rows;
+  const box=gcBoxRows(sum); if(!box.length) return rows;
+  const base=Array.isArray(rows)?rows:[];
+  const byPid={}; base.forEach((r,i)=>{ byPid[String(r.player_id)]=i; });
+  const out=base.slice();
+  box.forEach(b=>{
+    const i=byPid[String(b.player_id)];
+    if(i==null) out.push(b);
+    else out[i]=Object.assign({}, out[i], { stats:Object.assign({}, out[i].stats||{}, b.stats), live:true });
+  });
   return out;
 }
 // "J.Burrow" / "A.St. Brown" → the box-score athlete on that team (null when unknown).
@@ -5577,12 +5641,14 @@ function gcProjPts(pid, wk){
 // so every board poll (8 s, change-driven; see gcStreamOnBoard) appends whatever is new to
 // a rolling feed. No per-game summary is fetched: opening a single game still does that.
 //
-// Filters: All games, or any of your synced leagues (multi-select). With leagues picked a
-// play shows only when someone rostered there is in it, tagged with the owner, and carrying
-// the points it just moved under THAT league's scoring — exact for the stats a play
-// produces (yards, catches, touchdowns, interceptions). "My matchup" narrows again to the
-// two starting line-ups of your own game that week.
-var _lf = { rows:[], seen:{}, leagues:[], mineOnly:false, max:150, nameIdx:null, nameIdxAt:0,
+// Filters: All games, or any of your synced leagues (multi-select). A league picked means
+// MY MATCHUP there: a play shows only when one of my starters, or one of the ones I am
+// playing that week, is in it — tagged with the league and carrying the points it just
+// moved under THAT league's scoring, exact for the stats a play produces (yards, catches,
+// touchdowns, interceptions). On a Sunday slate that is the whole point of the view.
+// History: each live game's summary (read once, then every ten minutes) fills the feed
+// back to kickoff with every play's own clock; the board's last play keeps it current.
+var _lf = { rows:[], seen:{}, leagues:[], max:150, nameIdx:null, nameIdxAt:0,
   // how the players in the plays were found — read this when a name looks wrong
   stat:{ byId:0, byName:0, bySurname:0, unresolved:0 } };
 const LF_MAX_ROWS = 150;
@@ -5731,12 +5797,13 @@ function lfOnBoard(teams){
     if(!id) return;
     const key=`${eid}:${id}`;
     const prev=_lf.rows.find(r=>r.key===key);
-    if(prev && prev.text===String(lp.text||'') && prev.scoreValue===Number(lp.scoreValue||0)) return;   // the same play again
+    if(prev && prev.text.trim()===String(lp.text||'').trim() && prev.scoreValue===Number(lp.scoreValue||0)) return;   // the same play again
+    if(prev && prev.src==='sum') return;   // the summary already has this play, with its own clock — the board adds nothing
     _lf.seen[eid]=id;
     const read=lfReadPlay(lp);
     if(read.kind==='other' && !lp.text) return;
     const row={
-      key, eid, id, at:Date.now(),
+      key, eid, id, at:Date.now(), src:'board',
       home:g.home, away:g.away, hs:g.hs, as:g.as, team:lp.team||'',
       q:Number(g.sit.period||0), clock:String(g.sit.clock||''),
       down:Number(lp.down||0), ddt:String(lp.ddt||''), spot:String(lp.spot||''),
@@ -5747,11 +5814,53 @@ function lfOnBoard(teams){
     else _lf.rows.unshift(row);
     added++;
   });
+  // History: each live game's summary carries every play so far — not only the one a poll
+  // happened to catch — so the feed reads back to kickoff, with each play's own clock.
+  Object.keys(games).forEach(eid=>{ try{ added+=lfSeedGame(games[eid]); }catch(e){} });
   if(_lf.rows.length>LF_MAX_ROWS) _lf.rows.length=LF_MAX_ROWS;
   if(added && typeof lfRepaint==='function') lfRepaint();
   return added;
 }
-function lfClear(){ _lf.rows=[]; _lf.seen={}; }
+function lfClear(){ _lf.rows=[]; _lf.seen={}; _lf.seedAt={}; }
+// A live game's summary is read once when it first shows in the feed and again every ten
+// minutes (the Game Center's own polling keeps the picked game's fresher than that); every
+// board landing folds whatever summary is cached into the rows.
+const LF_SEED_TTL = 10*60*1000;
+function lfSeedGame(g){
+  if(typeof gcSummary!=='function' || typeof _gcd==='undefined' || !g || !g.eid) return 0;
+  const eid=String(g.eid); _lf.seedAt=_lf.seedAt||{};
+  if(!_lf.seedAt[eid] || Date.now()-_lf.seedAt[eid]>LF_SEED_TTL){ _lf.seedAt[eid]=Date.now(); try{ gcSummary({eid, state:'in'}); }catch(e){} }
+  const c=_gcd.sum[eid]; if(!c || !c.data) return 0;
+  return lfIngestSummary(g, c.data);
+}
+// The summary's plays into the feed: one row per play id the feed does not have yet, in the
+// game's order; a row the board caught first takes the play's own clock and score.
+function lfIngestSummary(g, sum){
+  const plays=(typeof gcPlays==='function') ? gcPlays(sum) : []; if(!plays.length) return 0;
+  const eid=String(g.eid); let added=0; const now=Date.now();
+  plays.forEach((p,i)=>{
+    const id=String(p.id||''); if(!id) return;
+    const key=`${eid}:${id}`;
+    const scoreValue = p.scoring ? (/Touchdown/.test(p.type)?6:(/Field Goal/.test(p.type)?3:1)) : 0;
+    const prev=_lf.rows.find(r=>r.key===key);
+    if(prev){
+      if(prev.src!=='sum') Object.assign(prev, { q:p.q||prev.q, clock:p.clock||prev.clock, hs:p.hs!=null?p.hs:prev.hs, as:p.as!=null?p.as:prev.as, src:'sum' });
+      return;
+    }
+    const lp={ id, type:p.type, text:p.text, yds:p.yds, team:p.team, down:p.down, ddt:p.ddt, spot:p.spot, yte:p.yte, scoreValue, athletes:[] };
+    const read=lfReadPlay(lp);
+    if(read.kind==='other' && !lp.text) return;
+    // its place in time: just under the game's next play if the feed already has one, else its order in the game
+    const later=_lf.rows.filter(r=>r.eid===eid && Number(r.id)>Number(id));
+    const at = later.length ? Math.min.apply(null, later.map(r=>r.at))-(plays.length-i) : now-(plays.length-1-i);
+    _lf.rows.push({ key, eid, id, at, src:'sum', home:g.home, away:g.away, hs:p.hs!=null?p.hs:g.hs, as:p.as!=null?p.as:g.as, team:p.team||'',
+      q:Number(p.q||0), clock:String(p.clock||''), down:Number(p.down||0), ddt:String(p.ddt||''), spot:String(p.spot||''),
+      rz:p.yte!=null && p.yte<=20, yds:Number(p.yds||0), scoreValue, kind:read.kind, title:read.title, roles:read.roles, stats:read.stats, tokens:read.tokens, text:String(p.text||'') });
+    added++;
+  });
+  if(added) _lf.rows.sort((a,b)=>b.at-a.at);
+  return added;
+}
 
 // ── Leagues: who is rostered where, and what a play was worth there ──────────
 // The leagues: the player card's map (every synced league — rosters, owners, scoring —
@@ -5791,14 +5900,13 @@ function lfToggleLeague(id){
   id=String(id);
   const i=_lf.leagues.indexOf(id);
   if(i<0) _lf.leagues.push(id); else _lf.leagues.splice(i,1);
-  if(!_lf.leagues.length) _lf.mineOnly=false;
   if(typeof lfRepaint==='function') lfRepaint();
 }
-function lfSetAll(){ _lf.leagues=[]; _lf.mineOnly=false; if(typeof lfRepaint==='function') lfRepaint(); }
+function lfSetAll(){ _lf.leagues=[]; if(typeof lfRepaint==='function') lfRepaint(); }
 // Every league you are in: the plays that touch anyone you or a leaguemate rosters.
 function lfSetAllLeagues(){ _lf.leagues=lfLeagueList().map(l=>l.id); if(typeof lfRepaint==='function') lfRepaint(); }
 function lfAllLeaguesOn(){ const all=lfLeagueList(); return all.length>0 && _lf.leagues.length===all.length; }
-function lfSetMineOnly(v){ _lf.mineOnly=!!v; if(typeof lfRepaint==='function') lfRepaint(); }
+// A league chip means my matchup in that league — my starters and the ones I am playing.
 // What this play moved in one league: Σ stat × setting over the players it involved.
 function lfDelta(row, lg){
   if(!lg || !lg.scoring) return null;
@@ -5820,7 +5928,7 @@ function lfRelevance(row){
     if(!inLg.length) return;
     const mine=inLg.some(p=>lg.mine.has(String(p)));
     const opp=inLg.some(p=>lg.opp.has(String(p)));
-    if(_lf.mineOnly && !mine && !opp) return;
+    if(!mine && !opp) return;   // a league picked means MY matchup there: my starters and the ones I am playing
     tags.push({ id:lg.id, name:lg.name, mine, opp, delta:lfDelta(row, lg) });
   });
   return {show:tags.length>0, tags};
@@ -5865,8 +5973,7 @@ function lfChipsHTML(){
   const chips=[`<button class="ld-pos ${sel.length?'':'active'}" onclick="lfSetAll()">All games</button>`]
     .concat(list.length>1 ? [`<button class="ld-pos ${lfAllLeaguesOn()?'active':''}" onclick="lfSetAllLeagues()">All leagues</button>`] : [])
     .concat(list.map(l=>`<button class="ld-pos lf-lg ${sel.includes(l.id)?'active':''}" onclick="lfToggleLeague('${escAttr(l.id)}')" title="${escAttr(l.name)}" aria-label="${escAttr(l.name)}">${lfLeagueChipInner(l)}</button>`));
-  const mine=sel.length ? `<label class="lf-mine"><input type="checkbox" ${_lf.mineOnly?'checked':''} onchange="lfSetMineOnly(this.checked)"> My matchup only</label>` : '';
-  return `<div class="ld-posrow lf-chips">${chips.join('')}</div>${mine}`;
+  return `<div class="ld-posrow lf-chips">${chips.join('')}</div>`;
 }
 function lfTagHTML(t){
   const d=t.delta;
@@ -5929,7 +6036,7 @@ function lfBodyHTML(){
   const list = rows.length
     ? (()=>{ const S=lfSideSets(); return `<div class="gcf lf-list">${rows.map(r=>lfRowHTML(r, S)).join('')}</div>`; })()
     : `<div class="ld-empty">${live
-        ? (_lf.leagues.length ? 'no plays yet for the leagues you picked' : 'waiting for the next play…')
+        ? (_lf.leagues.length ? 'no plays yet in your matchups' : 'waiting for the next play…')
         : (_lf.rows.length ? 'nothing on right now — the last plays are above' : 'the feed fills as games kick off')}</div>`;
   return `<div class="lf-body">${lfChipsHTML()}${list}</div>`;
 }
@@ -27043,7 +27150,7 @@ function tcWeekLabel(week){ const w=Number(week); return TC_PLAYOFF_WEEKS[w] ? T
 const TC_LAST_WEEK = 22;
 const TC_BOARD_URL = (season, week)=>{ const e=tcEspnWeek(week); return `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=${e.type}&week=${e.week}&dates=${season}`; };
 const TC_BOARD_ABBR = { WSH:'WAS' };          // ESPN spells one club differently
-const TC_BOARD_TTL_LIVE = 7*1000, TC_BOARD_TTL_IDLE = 5*60*1000;   // live: the Game Center's poll re-reads it every 8 s (one small request)
+const TC_BOARD_TTL_LIVE = 4*1000, TC_BOARD_TTL_IDLE = 5*60*1000;   // live: the Game Center's poll re-reads it every 5 s (one small request)
 
 function tcBoardWeek(){
   // The tracker's week: the finished week holds through Tuesday and until Wednesday morning

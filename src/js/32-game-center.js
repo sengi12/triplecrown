@@ -281,6 +281,8 @@ function gcGameHTML(game, rows, wk){
   // A game still ahead: the projected lines stand in for the stat lines.
   const proj = game.state==='pre';
   if(proj) rows = gcProjRows(wk||gcWeek());
+  // A game on now: the box score's lines (moving with the plays) over Sleeper's rows.
+  if(!proj && game.state==='in' && typeof gcLiveRows==='function') rows = gcLiveRows(rows, game);
   // A position filter shows that group alone, in full; ALL and Rookies show every group.
   const pick=_gc.pos||'ALL';
   // Before the week's rows land there is nothing to group (the first paint of a fresh load;
