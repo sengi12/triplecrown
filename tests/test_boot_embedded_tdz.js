@@ -54,10 +54,17 @@ try{ app=new Function(code+'return { getSEED:()=>SEED, bgFlag:()=>_bgAdpRefreshe
 catch(e){ bootErr=e; }
 chk(!bootErr, 'the bundle evaluates without throwing'+(bootErr?(' ('+bootErr.message+')'):''));
 chk(!!(app && app.getSEED().CIN), 'the embedded seed is in memory');
+// The embedded branch must not paint while the bundle is still executing: 85-import-export.js
+// sits mid-bundle, and the week board / Game Center state it renders (92b-week-board.js,
+// 32-game-center.js) has not run yet at that moment — 2026-09-18 every baked copy died in
+// boot on "Cannot read properties of undefined (reading 'season')". boot yields one microtask
+// before that branch, so the first paint lands only after the whole script has run.
+chk(((elStore.content||{}).innerHTML||'')==='', 'boot has not painted the content pane synchronously (it yields until the whole bundle has executed)');
 
 setTimeout(()=>{
   console.log('=== no error escaped as an unhandled rejection ===');
-  const tdz = rejections.filter(m=>/before initialization|is not defined/i.test(m));
+  chk(!!(elStore.content && /empty/.test(elStore.content.innerHTML)), 'boot painted the content pane once the bundle had finished (the embedded-seed branch ran)');
+  const tdz = rejections.filter(m=>/before initialization|is not defined|Cannot read properties of undefined/i.test(m));
   chk(tdz.length===0, tdz.length ? 'temporal-dead-zone error during boot: '+tdz[0]
                                  : 'no TDZ / undefined-binding error reached the promise handlers');
   // Anything else rejecting is expected here (the fake fetch always rejects), so only TDZ counts.

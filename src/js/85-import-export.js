@@ -773,6 +773,15 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
   }
   // If a seed was baked into this file (bake_seed.py), everything is already in memory —
   // no fetch, so it works when opened directly from a phone (file://) with no CORS issue.
+  // Yield ONCE before the embedded path renders anything. This file sits mid-bundle, and a
+  // baked copy (the phone file) used to run this branch synchronously — before the files after
+  // this one had executed, so every `const`/`let` they declare (the week board's state, the
+  // Game Center's constants, 90-sleeper's flags) was still in its temporal dead zone and the
+  // Live tabs died inside boot on every load. The hosted build hid it: fetching the seed
+  // awaits, and by then the whole bundle has run. One microtask makes both paths the same.
+  // (The seed prefetch and the season probe above stay synchronous — they go out in the
+  // same tick as before, see test_boot_parallel.)
+  await null;
   if(hasEmbeddedProj){
     const restored = restoreSession();
     _persistReady = true;

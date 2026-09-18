@@ -1382,6 +1382,9 @@ function tcRerenderInPlace(run, root){
 	run();
 	tcRestoreScrollers(snap, root);
 }
+// The last week the season can reach (the Super Bowl); read by the week board and the Game
+// Center. Declared here, early in the bundle, because boot needs it before 92b has run.
+const TC_LAST_WEEK = 22;
 // ═════════════════════════════════════════════════════════════════════════════
 // Session persistence (localStorage) — auto-saves your working projections so they
 // survive a refresh/close. Only the EDITABLE state is stored (working projections,
@@ -20727,6 +20730,15 @@ function rankingsRenderCacheKey(teamScoped){
 // The board's default sort: ECR for a draft board, FPTS once the season is under way — the
 // projection the app maintains week to week is the ranking then, not August's consensus.
 function rankDefaultSortKey(){ return (typeof hasSeasonStarted==='function' && hasSeasonStarted()) ? 'fpts' : 'ecr'; }
+// The position strip scrolls on phones (ALL … ROOKIES does not fit 390px). Its right edge
+// fades while there is more to reach; this drops the fade once you are at the end, so the
+// last button never sits dimmed for no reason. Called from the strip's own onscroll and
+// once after each render — no document-level listener, nothing to clean up.
+function _rankPosFilterEdge(el){
+  if(!el) return;
+  const atEnd = el.scrollLeft >= el.scrollWidth - el.clientWidth - 1;
+  el.classList.toggle('pf-end', atEnd);
+}
 function renderRankings(){
   if(typeof rankSortAuto!=='undefined' && rankSortAuto && rankSortKey==='ecr' && rankDefaultSortKey()==='fpts'){ rankSortKey='fpts'; rankSortDir=-1; }
   const _rkNow = ()=>((typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now());
@@ -21305,7 +21317,7 @@ function renderRankings(){
       ${(!following && leaguePickerState.open) ? renderLeaguePicker() : ''}
       <div class="rank-toolbar">
         <div class="rank-toolbar-row">
-          <div class="pos-filter">${posBtns}</div>
+          <div class="pos-filter" onscroll="_rankPosFilterEdge(this)">${posBtns}</div>
           <button class="btn btn-ghost btn-sm rank-search-toggle ${searchOpen?'active':''}" onclick="toggleRankingsSearch()" title="Search rankings players">${TC_ICON("search")}</button>
           <div class="rank-search-wrap ${searchOpen?'':'rank-search-hidden'}">
             <input id="rankSearchInput" class="rank-search-input" type="text" value="${escAttr(rankingsSearchQuery||'')}" placeholder="${searchPlaceholder}" oninput="setRankingsSearchQuery(this.value, this.selectionStart, this.selectionEnd)">
@@ -21424,6 +21436,7 @@ function rankSort(k){
   // Restore after layout settles. All axes are clamped to the NEW content size, since a
   // different sort can change the table's height (and column widths).
   requestAnimationFrame(()=>{
+    _rankPosFilterEdge(document.querySelector('.rank-toolbar-row > .pos-filter'));
     const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
     window.scrollTo(0, Math.min(y, max));
     const wrap = document.querySelector('.rank-table-wrap');
@@ -23982,6 +23995,15 @@ if(document&&document.addEventListener) document.addEventListener('keydown', e=>
   }
   // If a seed was baked into this file (bake_seed.py), everything is already in memory —
   // no fetch, so it works when opened directly from a phone (file://) with no CORS issue.
+  // Yield ONCE before the embedded path renders anything. This file sits mid-bundle, and a
+  // baked copy (the phone file) used to run this branch synchronously — before the files after
+  // this one had executed, so every `const`/`let` they declare (the week board's state, the
+  // Game Center's constants, 90-sleeper's flags) was still in its temporal dead zone and the
+  // Live tabs died inside boot on every load. The hosted build hid it: fetching the seed
+  // awaits, and by then the whole bundle has run. One microtask makes both paths the same.
+  // (The seed prefetch and the season probe above stay synchronous — they go out in the
+  // same tick as before, see test_boot_parallel.)
+  await null;
   if(hasEmbeddedProj){
     const restored = restoreSession();
     _persistReady = true;
@@ -27583,7 +27605,9 @@ var _tcBoard = { season:null, week:null, at:0, teams:{}, busy:false, live:false 
 const TC_PLAYOFF_WEEKS = { 19:['Wild Card',1], 20:['Divisional',2], 21:['Conf. Championship',3], 22:['Super Bowl',5] };
 function tcEspnWeek(week){ const w=Number(week); return TC_PLAYOFF_WEEKS[w] ? {type:3, week:TC_PLAYOFF_WEEKS[w][1]} : {type:2, week:w}; }
 function tcWeekLabel(week){ const w=Number(week); return TC_PLAYOFF_WEEKS[w] ? TC_PLAYOFF_WEEKS[w][0] : `Week ${w}`; }
-const TC_LAST_WEEK = 22;
+// TC_LAST_WEEK (22, the Super Bowl) is declared in 15-session-globals.js: boot renders the
+// season tabs from 85-import-export.js, before this file has run, and a `const` read before
+// its line throws — every page load used to die inside boot right there.
 const TC_BOARD_URL = (season, week)=>{ const e=tcEspnWeek(week); return `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=${e.type}&week=${e.week}&dates=${season}`; };
 const TC_BOARD_ABBR = { WSH:'WAS' };          // ESPN spells one club differently
 const TC_BOARD_TTL_LIVE = 4*1000, TC_BOARD_TTL_IDLE = 5*60*1000;   // live: the Game Center's poll re-reads it every 5 s (one small request)
