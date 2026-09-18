@@ -40,6 +40,8 @@ function tcParseBoard(board){
       down:Number(sit.down||0), distance:Number(sit.distance||0), ddt:String(sit.shortDownDistanceText||sit.downDistanceText||''), spot:String(sit.possessionText||''),
       rz:!!sit.isRedZone, poss:sit.possession?(teamById[String(sit.possession)]||''):'',
       period:Number(st.period||0), clock:String(st.displayClock||''),
+      // the pause between plays that is not a play: halftime, the end of a quarter
+      phase: type.name==='STATUS_HALFTIME' ? 'Halftime' : (type.name==='STATUS_END_PERIOD' ? `End of Q${Number(st.period||0)||''}` : ''),
       lastPlayId: lp ? String(lp.id||'') : '',
       lastPlay: lp ? { id:String(lp.id||''), text:String(lp.text||''), type:String((lp.type&&lp.type.text)||''), scoreValue:Number(lp.scoreValue||0), yds:Number(lp.statYardage||0),
         team: lp.team ? (teamById[String(lp.team.id)]||'') : '',
@@ -71,7 +73,7 @@ function tcWeekBoard(){
   const ttl=_tcBoard.live?TC_BOARD_TTL_LIVE:TC_BOARD_TTL_IDLE;
   if(!_tcBoard.busy && Date.now()-_tcBoard.at>ttl && typeof sleeperFetch==='function'){
     _tcBoard.busy=true;
-    sleeperFetch(TC_BOARD_URL(season, week)).then(board=>{
+    sleeperFetch(TC_BOARD_URL(season, week), {fresh:true}).then(board=>{
       const teams=tcParseBoard(board);
       if(!Object.keys(teams).length) return;
       _tcBoard.teams=teams; _tcBoard.at=Date.now();
@@ -92,7 +94,7 @@ function tcTeamGameState(team){
 // A landed board repaints what shows it: the sidebar dots, and the record in any header
 // already on screen (patched in place — a full re-render would reset sliders mid-edit).
 function tcBoardLanded(){
-  _tcFresh.busy=false;
+  _tcFresh.busy=false; tcFreshPaint();
   try{ if(typeof gcStreamOnBoard==='function') gcStreamOnBoard(_tcBoard.teams); }catch(e){}   // the Game Center's live poll: a new play?
   try{ if(typeof lfOnBoard==='function') lfOnBoard(_tcBoard.teams); }catch(e){}                 // the live feed: every game's last play
   try{ if(typeof renderSidebar==='function') renderSidebar(); }catch(e){}
@@ -104,47 +106,23 @@ function tcBoardLanded(){
     });
   }catch(e){}
 }
-// ── Freshness: when ESPN was last read, ticking; tap to read again now ───────
-// One stamp, at the right of a live game's situation line and beside the feed's live
-// count: "4s ago" for the newest read of the board or the picked game's summary. A tap
-// stales the board, every cached summary and the feed's seeding, and reads the board (and
-// the picked game) at once — the busy flags mean ten taps cost one request. The stamp
-// cannot beat ESPN's own delay (a play posts 10-20 s after it happens); it says whether
-// the app is current, which is the question a late play raises.
-var _tcFresh = { timer:null, busy:false };
-function tcFreshAt(eid){
-  let at=_tcBoard.at||0;
-  const s=(eid && typeof _gcd!=='undefined' && _gcd && _gcd.sum) ? _gcd.sum[String(eid)] : null;
-  if(s && s.at>at) at=s.at;
-  return at;
-}
-function tcFreshLabel(at){
-  if(!at) return 'reading…';
-  const s=Math.max(0, Math.round((Date.now()-at)/1000));
-  return s<1 ? 'just now' : `${s}s ago`;
-}
+// ── Freshness: a refresh mark that reads ESPN again now ──────────────────────
+// One small mark at the right of a live game's situation line and beside the feed's live
+// count. A tap stales the board, every cached summary and the feed's seeding, reads the
+// board (and the picked game's summary) at once, and spins until the read lands — the busy
+// flags mean ten taps cost one request. It cannot beat ESPN's own delay (a play posts 10-20 s
+// after it happens). No ticking count: the polls are seconds apart, the mark is the answer.
+var _tcFresh = { busy:false };
 function tcFreshHTML(eid){
-  const at=tcFreshAt(eid);
-  tcFreshTick();
-  return `<button class="tc-fresh${_tcFresh.busy?' busy':''}" data-eid="${escAttr(String(eid||''))}" onclick="tcRefreshNow(event)" title="When ESPN was last read — tap to read again now">${(typeof TC_ICON==='function')?TC_ICON('refresh'):''}<span class="tc-fresh-t">${tcFreshLabel(at)}</span></button>`;
+  return `<button class="tc-fresh${_tcFresh.busy?' busy':''}" data-eid="${escAttr(String(eid||''))}" onclick="tcRefreshNow(event)" title="Read ESPN again now" aria-label="Read ESPN again now">${(typeof TC_ICON==='function')?TC_ICON('refresh'):'↻'}</button>`;
 }
-// The stamps on screen tick once a second (one timer, gone when no stamp is left).
-function tcFreshTick(){
-  if(_tcFresh.timer || typeof window==='undefined' || typeof window.setInterval!=='function' || typeof document==='undefined' || !document.querySelectorAll) return;
-  _tcFresh.timer=window.setInterval(()=>{
-    const els=document.querySelectorAll('.tc-fresh');
-    if(!els.length){ clearInterval(_tcFresh.timer); _tcFresh.timer=null; return; }
-    if(_tcFresh.busy && !_tcBoard.busy && _tcBoard.at) _tcFresh.busy=false;   // the read came back (or failed and waited out)
-    els.forEach(el=>{
-      const at=tcFreshAt(el.getAttribute('data-eid'));
-      const t=el.querySelector('.tc-fresh-t'); if(t) t.textContent=tcFreshLabel(at);
-      if(el.classList) el.classList.toggle('busy', !!_tcFresh.busy);
-    });
-  }, 1000);
+function tcFreshPaint(){
+  if(typeof document==='undefined' || !document.querySelectorAll) return;
+  try{ document.querySelectorAll('.tc-fresh').forEach(el=>{ if(el.classList) el.classList.toggle('busy', !!_tcFresh.busy); }); }catch(e){}
 }
 function tcRefreshNow(ev){
   if(ev && ev.stopPropagation) ev.stopPropagation();
-  _tcFresh.busy=true;
+  _tcFresh.busy=true; tcFreshPaint();
   _tcBoard.at=0;
   if(typeof _gcd!=='undefined' && _gcd && _gcd.sum) Object.keys(_gcd.sum).forEach(eid=>{ if(_gcd.sum[eid]) _gcd.sum[eid].at=0; });
   if(typeof _lf!=='undefined' && _lf) _lf.seedAt={};
@@ -155,7 +133,6 @@ function tcRefreshNow(ev){
     }
   }catch(e){}
   try{ tcWeekBoard(); }catch(e){}
-  if(typeof document!=='undefined' && document.querySelectorAll){ try{ document.querySelectorAll('.tc-fresh').forEach(el=>{ if(el.classList) el.classList.add('busy'); const t=el.querySelector('.tc-fresh-t'); if(t) t.textContent='reading…'; }); }catch(e){} }
   return true;
 }
 // Is the app showing the season in progress (the Live view)?

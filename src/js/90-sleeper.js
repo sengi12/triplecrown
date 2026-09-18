@@ -11,7 +11,7 @@ const SLEEPER_STAT_MAP = {
 };
 const POS_KEEP = {QB:1,RB:1,WR:1,TE:1};
 
-async function sleeperFetch(url){
+async function sleeperFetch(url, opts){
   // Guard against a stalled connection hanging a load forever (which would strand the
   // seasonLoading flag and block further season clicks). AbortController enforces a cap.
   const ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
@@ -19,7 +19,9 @@ async function sleeperFetch(url){
   const _dev = (typeof TC_DEV_MODE!=='undefined' && TC_DEV_MODE);
   const t0 = _dev ? performance.now() : 0;
   try{
-    const res = await fetch(url, {headers:{'Accept':'application/json'}, signal: ctrl?ctrl.signal:undefined});
+    // fresh: a live read (the scoreboard, a live game's summary) must not come back from the
+    // browser's cache — ESPN sends max-age=9, longer than the tracker's poll
+    const res = await fetch(url, {headers:{'Accept':'application/json'}, signal: ctrl?ctrl.signal:undefined, cache:(opts&&opts.fresh)?'no-store':undefined});
     if(!res.ok) throw new Error(`Sleeper ${res.status}`);
     const data = await res.json();
     if(_dev) try{ console.info(`[fetch] ${(performance.now()-t0).toFixed(0)}ms  ${url}`); }catch(_e){}
