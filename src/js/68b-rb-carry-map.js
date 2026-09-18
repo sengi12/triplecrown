@@ -183,38 +183,10 @@ function carryMapLegend(){
     <span><i class="tm-l-fd"></i>First down</span><span><i class="tm-l-td"></i>Touchdown</span><span><i class="tm-l-fum"></i>Fumble lost</span><span><i class="tm-l-ob"></i>Out of bounds</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
   </div>`;
 }
-// The season summary (66b's binned field): seven lanes × five-yard bands of where the
-// runs ended, a bubble per spot sized by carries and coloured like the runs themselves
-// (red lost yards, gold 0–4, green 5+), scores ringed and tagged.
-function carrySummarySVG(plays, title, sub, tag){
-  const parts=[];
-  const F=_tmFieldParts(parts, 7, ['LE','LT','LG','MID','RG','RT','RE'], 'Carry map, season summary', title, sub);
-  if(!plays.length){ parts.push(`<text x="${_TM_GRID.W/2}" y="${(_TM_GRID.yTop+_TM_GRID.yBot)/2}" fill="#9aa0a6" font-size="16" text-anchor="middle">No carries</text></svg>`); return parts.join(''); }
-  const bins={};
-  for(const p of plays){
-    const b=_tmBand(p.yds), k=`${p.lane}:${b}`;
-    const c=bins[k]||(bins[k]={lane:p.lane, band:b, n:0, yds:0, td:0, fd:0, fum:0});
-    c.n++; c.yds+=p.yds; if(p.td) c.td++; if(p.fd) c.fd++; if(p.fum) c.fum++;
-  }
-  const bandColor=b=>{ const lo=_TM_GRID.YMIN+b*_TM_GRID.BAND; return lo<0 ? '#d33b2f' : (lo<5 ? '#d8a51d' : '#39c15a'); };
-  const cells=Object.values(bins).map(c=>({lane:c.lane, band:c.band, n:c.n, td:c.td, color:bandColor(c.band),
-    tip:`${_CM_LANE_NAMES[c.lane]} · ${_tmBandLabel(c.band)}: ${c.n} ${c.n===1?'carry':'carries'} (${Math.round(c.n/plays.length*100)}%) · ${c.yds} yds${c.fd?` · ${c.fd} first down${c.fd>1?'s':''}`:''}${c.td?` · ${c.td} TD`:''}${c.fum?` · ${c.fum} fumble${c.fum>1?'s':''} lost`:''}`}));
-  _tmBubbleParts(parts, F, 7, cells, tag, 'Carry map · season');
-  parts.push('</svg>');
-  return parts.join('');
-}
-function carrySummaryLegend(){
-  return `<div class="tm-legend">
-    <span><i class="tm-l-bub-sm"></i><i class="tm-l-bub"></i>Carries ending there</span>
-    <span><i class="tm-l-loss"></i>Lost yards</span><span><i class="tm-l-short"></i>0–4 yds</span><span><i class="tm-l-gain"></i>5+ yds</span>
-    <span><i class="tm-l-td"></i>Touchdowns</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
-  </div>`;
-}
 function rbCarryMapBlock(pname, node, season, selWk, label, tag){
   if(!(node.games||[]).some(g=>Array.isArray(g.plays) && g.plays.length)) return `<div class="pcard-loading">Per-carry rows arrive with the next weekly bake.</div>`;
   const plays=_rbMapPlays(node, selWk);
   const title=`${escHtml(String(pname).toUpperCase())} CARRIES <tspan fill="#9aa0a6" font-size="13" font-weight="600">/ ${escHtml(String(label).toUpperCase())}</tspan>`;
-  if(selWk==null) return carrySummarySVG(plays, title, `Where his runs end · bubble = carries through that gap to that distance · ring = touchdowns · pick a game for every run`, tag) + carrySummaryLegend();
   const sub=`Every carry up the gap he hit, as long as the run · red lost yards · gold 0–4 · green 5+ · ring + TD = score`;
   return carryMapSVG(plays, title, sub, tag) + carryMapLegend();
 }

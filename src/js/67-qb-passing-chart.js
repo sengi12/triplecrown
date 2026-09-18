@@ -235,11 +235,11 @@ function renderPcardQbPassing(pid){
   // owns a row so switching never moves it; the zone metrics take the row beneath.
   const _wnode=(NFLVERSE[season].qb_passing_weekly||{})[norm]||null;
   const hasMap=!!(_wnode && typeof qbPassMapBlock==='function' && typeof _tmHasPlays==='function' && _tmHasPlays(_wnode));
-  const mapOn=hasMap && pcardQbView==='map';
+  const mapOn=hasMap && _selWk!=null && pcardQbView==='map';   // the map is per game; Season is the zone chart
   const live=(typeof tcIsLiveSeason==='function') && tcIsLiveSeason(season);
   const mapLabel=_game ? `Week ${_game.wk}${_game.opp?` · ${_game.opp}`:''}` : (live?'Season to date':'Season');
   const mapTag=(typeof noteTagAttrs==='function') ? (meta)=>noteTagAttrs(Object.assign({source:'qb_passing_chart', context:`${season} passing chart${_selWk!=null?` · week ${_selWk}`:''}`, player:notePlayer, team:notePlayer.team, relevance:'QB'}, meta)) : null;
-  const viewBtns=hasMap ? `<span class="tm-view"><button class="rt-metric-btn ${mapOn?'active':''}" title="Every attempt drawn at its depth and side" onclick="setPcardQbView('map')">Map</button><button class="rt-metric-btn ${mapOn?'':'active'}" title="Attempts binned by zone, rated against the league" onclick="setPcardQbView('zones')">Zones</button></span>` : '';
+  const viewBtns=hasMap ? `<span class="tm-view"><button class="rt-metric-btn ${mapOn?'active':''}" title="${_selWk==null?'Pick a game — the map is drawn one game at a time; Season is the zone view':'Every attempt drawn at its depth and side'}" ${_selWk==null?'disabled':''} onclick="setPcardQbView('map')">Map</button><button class="rt-metric-btn ${mapOn?'':'active'}" title="Attempts binned by zone, rated against the league" onclick="setPcardQbView('zones')">Zones</button></span>` : '';
   const summary=`<div class="rt-summary">${noteWrapHtml(`${t.attempts||0} located attempts`, { label:'Located Attempts', value:String(t.attempts||0), source:'qb_passing_chart', statKey:'attempts', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}${mapOn?'':` · threshold ±${QB_PASS_THRESH.toFixed(0)} vs league avg`}</div>`;
 
   return `<div class="qpc-wrap">

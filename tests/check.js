@@ -10796,10 +10796,12 @@ function setPcardTargetMetric(m){
   const body=document.getElementById('pcardBody');
   if(body && pcardState) body.innerHTML=renderPcardRoutes(pcardState.pid);
 }
-function _pcardRouteViewBtns(active, hasTree){
+// The map is a per-game view — a season of targets drawn one by one is a hairball, and
+// the zone chart is the season's summary — so Map is offered only with a game picked.
+function _pcardRouteViewBtns(active, hasTree, mapOk){
   if(typeof targetMapBlock!=='function') return '';
-  const b=(k,label,tip)=>`<button class="rt-metric-btn ${active===k?'active':''}" title="${tip}" onclick="setPcardTargetView('${k}')">${label}</button>`;
-  return `<span class="tm-view">${b('map','Map','Every target drawn at its depth and side')}${b('zones','Zones','Targets binned by zone')}${hasTree?b('tree','Tree','His route tree — every route he ran when targeted'):''}</span>`;
+  const b=(k,label,tip,off)=>`<button class="rt-metric-btn ${active===k?'active':''}" title="${off?'Pick a game — the map is drawn one game at a time; Season is the zone view':tip}" ${off?'disabled':''} onclick="setPcardTargetView('${k}')">${label}</button>`;
+  return `<span class="tm-view">${b('map','Map','Every target drawn at its depth and side', mapOk===false)}${b('zones','Zones','Targets binned by zone')}${hasTree?b('tree','Tree','His route tree — every route he ran when targeted'):''}</span>`;
 }
 function _renderTargetTree(pid, node, season, seasonBtns, hasTree){
   const norm=_pcardNorm(pid);
@@ -10812,8 +10814,8 @@ function _renderTargetTree(pid, node, season, seasonBtns, hasTree){
   const MET=TT_METRICS[pcardTargetMetric]||TT_METRICS.catch;
   // Map (every target drawn — the default, in 66b), Zones (the binned chart), and Tree
   // when the season has his charted route tree (the classic route tree in this file).
-  const mapOn=(pcardTargetView!=='zones' && typeof targetMapBlock==='function');
-  const viewBtns=_pcardRouteViewBtns(mapOn?'map':'zones', hasTree);
+  const mapOn=(selWk!=null && pcardTargetView!=='zones' && typeof targetMapBlock==='function');
+  const viewBtns=_pcardRouteViewBtns(mapOn?'map':'zones', hasTree, selWk!=null);
   const notePlayer=(typeof noteTargetFromArgs==='function') ? noteTargetFromArgs(pid, pcardState&&pcardState.posc, pcardState&&pcardState.team) : null;
   const team=(notePlayer&&notePlayer.team)||node.team||'';
   const ctx=`${season} target chart${selWk!=null?` · week ${selWk}`:''}`;
@@ -11208,7 +11210,7 @@ function renderPcardRoutes(pid){
         ${_tn?'':`<div class="rt-metrics">${metricBtns}</div>`}
         ${_tn?'':_treeSummary}
       </div>
-      ${_tn?`<div class="rt-head rt-viewrow"><div class="rt-metrics">${_pcardRouteViewBtns('tree', true)}</div>${_treeSummary}</div><div class="rt-head rt-metricrow"><div class="rt-metrics">${metricBtns}</div></div>`:''}
+      ${_tn?`<div class="rt-head rt-viewrow"><div class="rt-metrics">${_pcardRouteViewBtns('tree', true, !!(_games && _selWk!=null))}</div>${_treeSummary}</div><div class="rt-head rt-metricrow"><div class="rt-metrics">${metricBtns}</div></div>`:''}
       ${routeTreeSVG(rt, pcardRouteMetric, notePlayer)}
       ${routeTreeList(rt, pcardRouteMetric)}
       <div class="pcard-src">Route types via nflverse participation charting (route run when targeted, ${typeof tcSeasonLabel==='function'?tcSeasonLabel(pcardRouteSeason):pcardRouteSeason} ${(typeof tcIsLiveSeason==='function'&&tcIsLiveSeason(pcardRouteSeason))?'season to date, rebuilt weekly':'regular season'}).</div>
@@ -11444,7 +11446,6 @@ function targetMapBlock(pname, node, season, selWk, v, tag){
   const plays=_tmPlays(node, selWk, legend);
   const charted=plays.some(p=>p.route);
   const title=`${escHtml(String(pname).toUpperCase())} TARGETS <tspan fill="#9aa0a6" font-size="13" font-weight="600">/ ${escHtml(String(v.label).toUpperCase())}</tspan>`;
-  if(selWk==null) return targetSummarySVG(plays, title, `Where his targets go · bubble = targets in that spot · colour = catch rate · ring = touchdowns · pick a game for every throw`, tag, 'rec') + targetSummaryLegend('rec');
   const sub= charted
     ? `Every target with the route he ran · green = after the catch · ring + TD = touchdown`
     : `Every target by depth and side · green = after the catch · ring + TD = touchdown · routes come with the season's charting`;
@@ -11472,7 +11473,6 @@ function qbPassMapBlock(pname, node, season, selWk, label, tag){
   if(!_tmHasPlays(node)) return `<div class="pcard-loading">Per-attempt rows arrive with the next weekly bake.</div>`;
   const plays=_qbMapPlays(node, selWk);
   const title=`${escHtml(String(pname).toUpperCase())} PASSES <tspan fill="#9aa0a6" font-size="13" font-weight="600">/ ${escHtml(String(label).toUpperCase())}</tspan>`;
-  if(selWk==null) return targetSummarySVG(plays, title, `Where his throws go · bubble = attempts to that spot · colour = completion rate · ring = touchdowns · pick a game for every throw`, tag, 'qb') + targetSummaryLegend('qb');
   const sub=`Every located attempt at its depth and side · hover for the receiver · green = after the catch · ring + TD = touchdown`;
   return targetMapSVG(plays, title, sub, tag) + targetMapLegend(false, 'qb');
 }
@@ -11488,106 +11488,6 @@ function ngsChartLink(node, name, season, selWk){
   return u ? `<a class="tm-ngs-link" href="${u}" target="_blank" rel="noopener" title="Open this player's Next Gen Stats charts (route charts from player tracking) in a new tab">Next Gen Stats charts ↗</a>` : '';
 }
 
-// ── The season summary: the same field, binned ─────────────────────────────
-// A season of throws drawn one by one is a hairball, so "Season" bins them: three
-// lanes (the sides pbp charts) × five-yard depth bands, one bubble per spot sized by
-// how many balls went there and coloured by how many were caught, the ring and tag
-// counting scores. NGS-style reading (where does he get the ball, where does he win)
-// without pretending to know what tracking would.
-const _TM_GRID={W:760, H:600, yTop:60, yBot:560, YMAX:40, YMIN:-10, BAND:5};
-function _tmBand(yd){ const g=_TM_GRID; return Math.max(0, Math.min((g.YMAX-g.YMIN)/g.BAND-1, Math.floor((yd-g.YMIN)/g.BAND))); }
-function _tmBandLabel(b){
-  const g=_TM_GRID, lo=g.YMIN+b*g.BAND, hi=lo+g.BAND-1, last=(g.YMAX-g.YMIN)/g.BAND-1, s=v=>(v>0?'+':'')+v;
-  return b===0 ? `${s(hi)} yds and behind` : (b===last ? `${s(lo)} yds and deeper` : `${s(lo)} to ${s(hi)} yds`);
-}
-// red (none caught) → gold (half) → green (all), the carry map's three colours as a scale
-function _tmRateColor(rate){
-  const mix=(a,b,t)=>a.map((v,i)=>Math.round(v+(b[i]-v)*t));
-  const R=[211,59,47], G=[216,165,29], N=[57,193,90];
-  const c = rate<=0.5 ? mix(R,G,rate/0.5) : mix(G,N,(rate-0.5)/0.5);
-  return `rgb(${c[0]},${c[1]},${c[2]})`;
-}
-// The field the maps share (66b / 68b), as SVG parts, for the summaries; `lanes` is the
-// number of columns with `tags` at the top. Returns the helpers the caller draws with.
-function _tmFieldParts(parts, lanes, tags, aria, title, sub){
-  const {W,H,yTop,yBot,YMAX,YMIN}=_TM_GRID;
-  const yOf = yd => yBot - (Math.max(YMIN, Math.min(YMAX, yd)) - YMIN) * (yBot-yTop)/(YMAX-YMIN);
-  const left = y => 170 - 130*(y-yTop)/(yBot-yTop);
-  const right= y => 590 + 130*(y-yTop)/(yBot-yTop);
-  const laneX=(y, lane)=>{ const lw=(right(y)-left(y))/lanes; return left(y)+lw*(lane+0.5); };
-  const losY=yOf(0), f1=x=>(+x).toFixed(1);
-  parts.push(`<svg viewBox="0 0 ${W} ${H}" class="qpc-svg" role="img" aria-label="${aria}">`);
-  parts.push(`<rect width="${W}" height="${H}" fill="#101214"/>`);
-  parts.push(`<text x="24" y="28" fill="#fff" font-size="20" font-weight="800">${title}</text>`);
-  parts.push(`<text x="24" y="48" fill="#9aa0a6" font-size="12">${sub}</text>`);
-  parts.push(`<polygon points="${f1(left(yTop))},${yTop} ${f1(right(yTop))},${yTop} ${f1(right(yBot))},${yBot} ${f1(left(yBot))},${yBot}" fill="#22262c" stroke="#0c0d0f" stroke-width="2"/>`);
-  for(let yd=YMIN+5; yd<=YMAX-5; yd+=5){
-    if(yd===0) continue;
-    const y=yOf(yd), major=(yd%10===0);
-    parts.push(`<line x1="${f1(left(y))}" y1="${f1(y)}" x2="${f1(right(y))}" y2="${f1(y)}" stroke="${major?'#4c525b':'#353a42'}" stroke-width="${major?1.5:1}"/>`);
-    if(major){
-      const lab=(yd>0?'+':'')+yd;
-      parts.push(`<text x="${f1(left(y)-12)}" y="${f1(y+4)}" fill="#c8ccd2" font-size="12" text-anchor="end">${lab}</text>`);
-      parts.push(`<text x="${f1(right(y)+12)}" y="${f1(y+4)}" fill="#c8ccd2" font-size="12">${lab}</text>`);
-    }
-  }
-  for(let i=1;i<lanes;i++) parts.push(`<line x1="${f1(left(yTop)+(right(yTop)-left(yTop))*i/lanes)}" y1="${yTop}" x2="${f1(left(yBot)+(right(yBot)-left(yBot))*i/lanes)}" y2="${yBot}" stroke="#353a42" stroke-width="1" stroke-dasharray="2 6"/>`);
-  // lane tags ride just above the field's top edge, so the deepest band's bubbles never sit under them
-  if(tags) for(let i=0;i<lanes;i++) parts.push(`<text x="${f1(laneX(yTop, i))}" y="${f1(yTop-5)}" fill="#8a9096" font-size="10" font-weight="800" text-anchor="middle">${tags[i]}</text>`);
-  parts.push(`<line x1="${f1(left(losY)-30)}" y1="${f1(losY)}" x2="${f1(right(losY)+30)}" y2="${f1(losY)}" stroke="#2f6fe4" stroke-width="4"/>`);
-  parts.push(`<text x="${f1(left(losY)+8)}" y="${f1(losY-9)}" fill="#fff" font-size="12" font-weight="800">LOS</text>`);
-  parts.push(`<text x="${f1(right(losY)-8)}" y="${f1(losY-9)}" fill="#fff" font-size="12" font-weight="800" text-anchor="end">LOS</text>`);
-  return {yOf, left, right, laneX, losY, f1};
-}
-// The bubbles for a binned grid: `cells` = [{lane, band, n, color, tip, td, text}], drawn
-// small to large so a big spot never hides a small neighbour; the count sits inside once
-// the bubble has room; scores ring it and are tagged beside it (laid out so tags never overlap).
-function _tmBubbleParts(parts, F, lanes, cells, tag, tagLabel){
-  const {yOf, left, right, laneX, f1}=F, g=_TM_GRID;
-  const nmax=Math.max(1, ...cells.map(c=>c.n));
-  const bandH=(g.yBot-g.yTop)/((g.YMAX-g.YMIN)/g.BAND);
-  const labels=[];
-  for(const c of cells.slice().sort((a,b)=>b.n-a.n)){
-    const yd=g.YMIN+c.band*g.BAND+g.BAND/2, cy=yOf(yd), cx=laneX(cy, c.lane);
-    const rMax=Math.min(bandH/2-3, (right(cy)-left(cy))/lanes/2-4);
-    const r=Math.max(5, 5+(rMax-5)*Math.sqrt(c.n/nmax));
-    const attrs=tag?tag({label:tagLabel, value:c.tip, statKey:'summary'}):'';
-    parts.push(`<g class="tm-bub" ${attrs}><title>${escHtml(c.tip)}</title>`);
-    if(c.td) parts.push(`<circle cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(r+4)}" fill="none" stroke="#2f6fe4" stroke-width="3"/>`);
-    parts.push(`<circle cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(r)}" fill="${c.color}" fill-opacity="0.88" stroke="#101214" stroke-width="1.5"/>`);
-    if(r>=9) parts.push(`<text x="${f1(cx)}" y="${f1(cy+4)}" fill="#101214" font-size="${r>=14?12:10}" font-weight="900" text-anchor="middle">${c.n}</text>`);
-    parts.push('</g>');
-    if(c.td) labels.push({x:cx+r+9, y:cy+4.5, mx:cx, my:cy, text:`${c.td} TD`, fill:'#ffffff', td:true});
-  }
-  parts.push(_tmLayoutLabels(labels));
-}
-function targetSummarySVG(plays, title, sub, tag, kind){
-  const parts=[];
-  const F=_tmFieldParts(parts, 3, null, kind==='qb'?'Pass map, season summary':'Target map, season summary', title, sub);
-  if(!plays.length){ parts.push(`<text x="${_TM_GRID.W/2}" y="${(_TM_GRID.yTop+_TM_GRID.yBot)/2}" fill="#9aa0a6" font-size="16" text-anchor="middle">No ${kind==='qb'?'attempts':'targets'}</text></svg>`); return parts.join(''); }
-  const bins={};
-  for(const p of plays){
-    const k=`${p.side}:${_tmBand(p.ay)}`;
-    const b=bins[k]||(bins[k]={lane:p.side, band:_tmBand(p.ay), n:0, rec:0, yds:0, td:0, int:0});
-    b.n++; if(p.res===1||p.res===2){ b.rec++; b.yds+=p.ay+p.yac; } if(p.res===2) b.td++; if(p.res===3) b.int++;
-  }
-  const what=kind==='qb'?[['attempt','attempts'],['completion','completions']]:[['target','targets'],['catch','catches']];
-  const cells=Object.values(bins).map(b=>{
-    const rate=b.rec/b.n;
-    const tip=`${_TM_SIDES[b.lane]||'Middle'} · ${_tmBandLabel(b.band)}: ${b.n} ${what[0][b.n===1?0:1]} · ${b.rec} ${what[1][b.rec===1?0:1]} (${Math.round(rate*100)}%) · ${b.yds} yds${b.td?` · ${b.td} TD`:''}${b.int?` · ${b.int} INT`:''}`;
-    return {lane:b.lane, band:b.band, n:b.n, td:b.td, color:_tmRateColor(rate), tip};
-  });
-  _tmBubbleParts(parts, F, 3, cells, tag, kind==='qb'?'Pass map · season':'Target map · season');
-  parts.push('</svg>');
-  return parts.join('');
-}
-function targetSummaryLegend(kind){
-  return `<div class="tm-legend">
-    <span><i class="tm-l-bub-sm"></i><i class="tm-l-bub"></i>${kind==='qb'?'Attempts':'Targets'} to that spot</span>
-    <span><i class="tm-l-r0"></i><i class="tm-l-r1"></i><i class="tm-l-r2"></i>${kind==='qb'?'Completion':'Catch'} rate low → high</span>
-    <span><i class="tm-l-td"></i>Touchdowns</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
-  </div>`;
-}
 // ── QB passing chart (player-card "Passing Chart" tab) ─────────────────────
 // Seed payload: NFLVERSE[season].qb_passing[normName] = {
 //   team, totals:{passer_rating,comp_pct,yards,td,int,attempts},
@@ -11825,11 +11725,11 @@ function renderPcardQbPassing(pid){
   // owns a row so switching never moves it; the zone metrics take the row beneath.
   const _wnode=(NFLVERSE[season].qb_passing_weekly||{})[norm]||null;
   const hasMap=!!(_wnode && typeof qbPassMapBlock==='function' && typeof _tmHasPlays==='function' && _tmHasPlays(_wnode));
-  const mapOn=hasMap && pcardQbView==='map';
+  const mapOn=hasMap && _selWk!=null && pcardQbView==='map';   // the map is per game; Season is the zone chart
   const live=(typeof tcIsLiveSeason==='function') && tcIsLiveSeason(season);
   const mapLabel=_game ? `Week ${_game.wk}${_game.opp?` · ${_game.opp}`:''}` : (live?'Season to date':'Season');
   const mapTag=(typeof noteTagAttrs==='function') ? (meta)=>noteTagAttrs(Object.assign({source:'qb_passing_chart', context:`${season} passing chart${_selWk!=null?` · week ${_selWk}`:''}`, player:notePlayer, team:notePlayer.team, relevance:'QB'}, meta)) : null;
-  const viewBtns=hasMap ? `<span class="tm-view"><button class="rt-metric-btn ${mapOn?'active':''}" title="Every attempt drawn at its depth and side" onclick="setPcardQbView('map')">Map</button><button class="rt-metric-btn ${mapOn?'':'active'}" title="Attempts binned by zone, rated against the league" onclick="setPcardQbView('zones')">Zones</button></span>` : '';
+  const viewBtns=hasMap ? `<span class="tm-view"><button class="rt-metric-btn ${mapOn?'active':''}" title="${_selWk==null?'Pick a game — the map is drawn one game at a time; Season is the zone view':'Every attempt drawn at its depth and side'}" ${_selWk==null?'disabled':''} onclick="setPcardQbView('map')">Map</button><button class="rt-metric-btn ${mapOn?'':'active'}" title="Attempts binned by zone, rated against the league" onclick="setPcardQbView('zones')">Zones</button></span>` : '';
   const summary=`<div class="rt-summary">${noteWrapHtml(`${t.attempts||0} located attempts`, { label:'Located Attempts', value:String(t.attempts||0), source:'qb_passing_chart', statKey:'attempts', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}${mapOn?'':` · threshold ±${QB_PASS_THRESH.toFixed(0)} vs league avg`}</div>`;
 
   return `<div class="qpc-wrap">
@@ -12719,11 +12619,11 @@ function renderPcardRbFan(pid){
   // owns a row so switching never moves it, and the fan's metrics take the row beneath.
   const _wnode=(!_rbIsProjSeason(season) && NFLVERSE[season] && NFLVERSE[season].rb_fan_weekly && NFLVERSE[season].rb_fan_weekly[norm])||null;
   const hasMap=!!(_wnode && typeof rbCarryMapBlock==='function' && (_wnode.games||[]).some(g=>Array.isArray(g.plays)&&g.plays.length));
-  const mapOn=hasMap && pcardRbView==='map';
+  const mapOn=hasMap && _selWk!=null && pcardRbView==='map';   // the map is per game; Season is the fan
   const _live=(typeof tcIsLiveSeason==='function') && tcIsLiveSeason(season);
   const mapLabel=_game ? `Week ${_game.wk}${_game.opp?` · ${_game.opp}`:''}` : (_live?'Season to date':'Season');
   const mapTag=(typeof noteTagAttrs==='function') ? (meta)=>noteTagAttrs(Object.assign({source:'rb_rushing_fan', context:`${noteCtx}${_selWk!=null?` · week ${_selWk}`:''}`, player:notePlayer, team:notePlayer.team, relevance:'RB'}, meta)) : null;
-  const viewBtns=hasMap ? `<span class="tm-view"><button class="rt-metric-btn ${mapOn?'active':''}" title="Every carry drawn up its lane, as long as the run" onclick="setPcardRbView('map')">Map</button><button class="rt-metric-btn ${mapOn?'':'active'}" title="Lane efficiency against the league, with the line in front of him" onclick="setPcardRbView('fan')">Fan</button></span>` : '';
+  const viewBtns=hasMap ? `<span class="tm-view"><button class="rt-metric-btn ${mapOn?'active':''}" title="${_selWk==null?'Pick a game — the map is drawn one game at a time; Season is the fan':'Every carry drawn up its lane, as long as the run'}" ${_selWk==null?'disabled':''} onclick="setPcardRbView('map')">Map</button><button class="rt-metric-btn ${mapOn?'':'active'}" title="Lane efficiency against the league, with the line in front of him" onclick="setPcardRbView('fan')">Fan</button></span>` : '';
   const _summary=`<div class="rt-summary">${noteWrapHtml(`${t.attempts||0} carries`, { label:'Carries', value:String(t.attempts||0), source:'rb_rushing_fan', statKey:'attempts', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} · ${noteWrapHtml(`${_rbNum(t.ypc,2)} YPC`, { label:'Yards Per Carry', value:_rbNum(t.ypc,2), source:'rb_rushing_fan', statKey:'ypc', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}${(typeof pcardRankTag==='function')?pcardRankTag(t.rk||{},'ypc','RB'):''} · ${noteWrapHtml(`${_rbNum(t.success_rate,1)}% success`, { label:'Success Rate', value:`${_rbNum(t.success_rate,1)}%`, source:'rb_rushing_fan', statKey:'success_rate', context:noteCtx, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')} ${(typeof tcInfoBtn==='function')?tcInfoBtn('rbfan','Reading this chart'):''}</div>`;
   return `<div class="rbf-wrap">
     <div class="rt-head">
@@ -12984,38 +12884,10 @@ function carryMapLegend(){
     <span><i class="tm-l-fd"></i>First down</span><span><i class="tm-l-td"></i>Touchdown</span><span><i class="tm-l-fum"></i>Fumble lost</span><span><i class="tm-l-ob"></i>Out of bounds</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
   </div>`;
 }
-// The season summary (66b's binned field): seven lanes × five-yard bands of where the
-// runs ended, a bubble per spot sized by carries and coloured like the runs themselves
-// (red lost yards, gold 0–4, green 5+), scores ringed and tagged.
-function carrySummarySVG(plays, title, sub, tag){
-  const parts=[];
-  const F=_tmFieldParts(parts, 7, ['LE','LT','LG','MID','RG','RT','RE'], 'Carry map, season summary', title, sub);
-  if(!plays.length){ parts.push(`<text x="${_TM_GRID.W/2}" y="${(_TM_GRID.yTop+_TM_GRID.yBot)/2}" fill="#9aa0a6" font-size="16" text-anchor="middle">No carries</text></svg>`); return parts.join(''); }
-  const bins={};
-  for(const p of plays){
-    const b=_tmBand(p.yds), k=`${p.lane}:${b}`;
-    const c=bins[k]||(bins[k]={lane:p.lane, band:b, n:0, yds:0, td:0, fd:0, fum:0});
-    c.n++; c.yds+=p.yds; if(p.td) c.td++; if(p.fd) c.fd++; if(p.fum) c.fum++;
-  }
-  const bandColor=b=>{ const lo=_TM_GRID.YMIN+b*_TM_GRID.BAND; return lo<0 ? '#d33b2f' : (lo<5 ? '#d8a51d' : '#39c15a'); };
-  const cells=Object.values(bins).map(c=>({lane:c.lane, band:c.band, n:c.n, td:c.td, color:bandColor(c.band),
-    tip:`${_CM_LANE_NAMES[c.lane]} · ${_tmBandLabel(c.band)}: ${c.n} ${c.n===1?'carry':'carries'} (${Math.round(c.n/plays.length*100)}%) · ${c.yds} yds${c.fd?` · ${c.fd} first down${c.fd>1?'s':''}`:''}${c.td?` · ${c.td} TD`:''}${c.fum?` · ${c.fum} fumble${c.fum>1?'s':''} lost`:''}`}));
-  _tmBubbleParts(parts, F, 7, cells, tag, 'Carry map · season');
-  parts.push('</svg>');
-  return parts.join('');
-}
-function carrySummaryLegend(){
-  return `<div class="tm-legend">
-    <span><i class="tm-l-bub-sm"></i><i class="tm-l-bub"></i>Carries ending there</span>
-    <span><i class="tm-l-loss"></i>Lost yards</span><span><i class="tm-l-short"></i>0–4 yds</span><span><i class="tm-l-gain"></i>5+ yds</span>
-    <span><i class="tm-l-td"></i>Touchdowns</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
-  </div>`;
-}
 function rbCarryMapBlock(pname, node, season, selWk, label, tag){
   if(!(node.games||[]).some(g=>Array.isArray(g.plays) && g.plays.length)) return `<div class="pcard-loading">Per-carry rows arrive with the next weekly bake.</div>`;
   const plays=_rbMapPlays(node, selWk);
   const title=`${escHtml(String(pname).toUpperCase())} CARRIES <tspan fill="#9aa0a6" font-size="13" font-weight="600">/ ${escHtml(String(label).toUpperCase())}</tspan>`;
-  if(selWk==null) return carrySummarySVG(plays, title, `Where his runs end · bubble = carries through that gap to that distance · ring = touchdowns · pick a game for every run`, tag) + carrySummaryLegend();
   const sub=`Every carry up the gap he hit, as long as the run · red lost yards · gold 0–4 · green 5+ · ring + TD = score`;
   return carryMapSVG(plays, title, sub, tag) + carryMapLegend();
 }

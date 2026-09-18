@@ -8,7 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-09-18
 
-- feat(cards): a chart opens on the latest game and "Season" is a binned summary map (bubbles by side × depth, or gap × distance) instead of a hairball; out-of-bounds runs angle out to the sideline they left by; playoff games join the game picker; the picker owns a row on phones; manager pills are a star or a dot in narrow rows (#143)
+- feat(cards): the maps are per-game views that open on the latest game (Season is the zone view / the fan); out-of-bounds runs angle out to the sideline they left by; playoff games join the game picker; the picker owns a row on phones and the season chip is the bare year; manager pills are a star or a dot in narrow rows (#143)
 
 ## 2026-09-17
 

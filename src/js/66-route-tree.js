@@ -129,10 +129,12 @@ function setPcardTargetMetric(m){
   const body=document.getElementById('pcardBody');
   if(body && pcardState) body.innerHTML=renderPcardRoutes(pcardState.pid);
 }
-function _pcardRouteViewBtns(active, hasTree){
+// The map is a per-game view — a season of targets drawn one by one is a hairball, and
+// the zone chart is the season's summary — so Map is offered only with a game picked.
+function _pcardRouteViewBtns(active, hasTree, mapOk){
   if(typeof targetMapBlock!=='function') return '';
-  const b=(k,label,tip)=>`<button class="rt-metric-btn ${active===k?'active':''}" title="${tip}" onclick="setPcardTargetView('${k}')">${label}</button>`;
-  return `<span class="tm-view">${b('map','Map','Every target drawn at its depth and side')}${b('zones','Zones','Targets binned by zone')}${hasTree?b('tree','Tree','His route tree — every route he ran when targeted'):''}</span>`;
+  const b=(k,label,tip,off)=>`<button class="rt-metric-btn ${active===k?'active':''}" title="${off?'Pick a game — the map is drawn one game at a time; Season is the zone view':tip}" ${off?'disabled':''} onclick="setPcardTargetView('${k}')">${label}</button>`;
+  return `<span class="tm-view">${b('map','Map','Every target drawn at its depth and side', mapOk===false)}${b('zones','Zones','Targets binned by zone')}${hasTree?b('tree','Tree','His route tree — every route he ran when targeted'):''}</span>`;
 }
 function _renderTargetTree(pid, node, season, seasonBtns, hasTree){
   const norm=_pcardNorm(pid);
@@ -145,8 +147,8 @@ function _renderTargetTree(pid, node, season, seasonBtns, hasTree){
   const MET=TT_METRICS[pcardTargetMetric]||TT_METRICS.catch;
   // Map (every target drawn — the default, in 66b), Zones (the binned chart), and Tree
   // when the season has his charted route tree (the classic route tree in this file).
-  const mapOn=(pcardTargetView!=='zones' && typeof targetMapBlock==='function');
-  const viewBtns=_pcardRouteViewBtns(mapOn?'map':'zones', hasTree);
+  const mapOn=(selWk!=null && pcardTargetView!=='zones' && typeof targetMapBlock==='function');
+  const viewBtns=_pcardRouteViewBtns(mapOn?'map':'zones', hasTree, selWk!=null);
   const notePlayer=(typeof noteTargetFromArgs==='function') ? noteTargetFromArgs(pid, pcardState&&pcardState.posc, pcardState&&pcardState.team) : null;
   const team=(notePlayer&&notePlayer.team)||node.team||'';
   const ctx=`${season} target chart${selWk!=null?` · week ${selWk}`:''}`;
@@ -541,7 +543,7 @@ function renderPcardRoutes(pid){
         ${_tn?'':`<div class="rt-metrics">${metricBtns}</div>`}
         ${_tn?'':_treeSummary}
       </div>
-      ${_tn?`<div class="rt-head rt-viewrow"><div class="rt-metrics">${_pcardRouteViewBtns('tree', true)}</div>${_treeSummary}</div><div class="rt-head rt-metricrow"><div class="rt-metrics">${metricBtns}</div></div>`:''}
+      ${_tn?`<div class="rt-head rt-viewrow"><div class="rt-metrics">${_pcardRouteViewBtns('tree', true, !!(_games && _selWk!=null))}</div>${_treeSummary}</div><div class="rt-head rt-metricrow"><div class="rt-metrics">${metricBtns}</div></div>`:''}
       ${routeTreeSVG(rt, pcardRouteMetric, notePlayer)}
       ${routeTreeList(rt, pcardRouteMetric)}
       <div class="pcard-src">Route types via nflverse participation charting (route run when targeted, ${typeof tcSeasonLabel==='function'?tcSeasonLabel(pcardRouteSeason):pcardRouteSeason} ${(typeof tcIsLiveSeason==='function'&&tcIsLiveSeason(pcardRouteSeason))?'season to date, rebuilt weekly':'regular season'}).</div>

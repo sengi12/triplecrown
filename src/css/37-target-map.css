@@ -27,9 +27,3 @@
 .tm-l-arc{width:22px!important;height:4px!important;border-radius:2px!important;background:#2f6fe4;}
 /* out of bounds: the sideline bar at the end of a run */
 .tm-l-ob{width:14px!important;height:4px!important;border-radius:2px!important;background:#39c15a;border-right:3px solid #fff;box-sizing:content-box!important;}
-/* season summary swatches: the bubble pair and the catch-rate scale */
-.tm-l-bub-sm{width:8px!important;height:8px!important;background:#d8a51d;margin-right:-2px;}
-.tm-l-bub{width:14px!important;height:14px!important;background:#d8a51d;}
-.tm-l-r0{background:#d33b2f;margin-right:-4px;}
-.tm-l-r1{background:#d8a51d;margin-right:-4px;}
-.tm-l-r2{background:#39c15a;}

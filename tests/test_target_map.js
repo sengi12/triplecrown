@@ -70,15 +70,9 @@ chk((html2.match(/<path d="M[^"]*" fill="none" stroke="#ffffff"/g)||[]).length==
 chk(/Charted route/.test(html2) && /with the route he ran/.test(html2), 'legend + subtitle switch once any route is charted');
 chk(html2.includes('Middle, +9 air · Slant · Catch · 3 YAC (12 yds)'), 'the tooltip names the route');
 
-console.log('=== the season view is the binned summary ===');
-const sum=app.block('Test Receiver', node, 2026, null, {label:'Season to date',tgt:5}, null);
-chk(/Target map, season summary/.test(sum) && (sum.match(/class="tm-bub"/g)||[]).length===5 && !/stroke-dasharray="3 4"/.test(sum) && !/Charted route/.test(sum),
-    'Season draws one bubble per side × five-yard band (five distinct spots here), no per-play marks or routes');
-chk(sum.includes('Left · 0 to +4 yds: 1 target · 1 catch (100%) · 45 yds · 1 TD') && sum.includes('Middle · +25 to +29 yds: 1 target · 0 catches (0%) · 0 yds')
-    && sum.includes('Left · +10 to +14 yds: 1 target · 0 catches (0%) · 0 yds · 1 INT'),
-    'each bubble\'s tooltip reads side, depth band, targets, catches, yards, scores and picks');
-chk((sum.match(/>1 TD<\/text>/g)||[]).length===1 && /stroke="#2f6fe4" stroke-width="3"\/>/.test(sum), 'the scoring spot is ringed and tagged');
-chk(/fill="rgb\(57,193,90\)"/.test(sum) && /fill="rgb\(211,59,47\)"/.test(sum), 'colour is the catch rate: green when everything was caught, red when nothing was');
+console.log('=== Season is the zone view: Map is a per-game view ===');
+chk(/<button class="rt-metric-btn active" title="[^"]*"  onclick="setPcardTargetView\('map'\)">Map</.test(app.btns('map', false, true)), 'with a game picked, Map is live');
+chk(/title="Pick a game[^"]*" disabled onclick="setPcardTargetView\('map'\)">Map</.test(app.btns('zones', false, false)) && /active" title="Targets binned by zone"/.test(app.btns('zones', false, false)), 'on Season the Map button is disabled with the reason, Zones carries the view');
 const postNode={games:[{wk:1,opp:'NE',plays:[[6,2,1,10,63,1]]},{wk:19,opp:'BAL',post:1,plays:[[8,1,1,0,50,1],[3,0,1,0,50,2]]}]};
 chk(app.plays(postNode, null, null).length===1 && app.plays(postNode, 19, null).length===2, 'the season skips playoff games; picking the playoff game shows it');
 chk(app.gameLabel({wk:19,opp:'BAL',post:1}).text==='WC BAL' && app.gameLabel({wk:22,opp:'PHI'}).text==='SB PHI' && app.gameLabel({wk:2,opp:'DET'}).text==='WK 2 DET',
@@ -148,11 +142,6 @@ const ends=[...co.matchAll(/<path d="M[^"]* L(-?[\d.]+),(-?[\d.]+)"/g)].map(m=>[
 const leftEdge=y=>170-130*(y-60)/500, rightEdge=y=>590+130*(y-60)/500;
 chk(ends.length>=3 && ends.some(e=>Math.abs(e[0]-(leftEdge(e[1])+3))<0.2) && ends.some(e=>Math.abs(e[0]-(rightEdge(e[1])-3))<0.2),
     'a left-side run out of bounds ends on the left sideline at its yardage, a right-side one on the right');
-const cs=app.rbBlock('James Cook', ob, 2026, null, 'Season', null);
-chk(/Carry map, season summary/.test(cs) && (cs.match(/class="tm-bub"/g)||[]).length===5 && !/class="cm-ob"/.test(cs),
-    'Season bins the carries by gap and distance (five spots here), no per-run paths');
-chk(cs.includes('Middle · +10 to +14 yds: 1 carry (20%) · 12 yds · 1 first down') && cs.includes('Left guard · +35 yds and deeper: 1 carry (20%) · 35 yds · 1 first down'),
-    'each bubble reads gap, distance band, share of carries and what came of them');
 const dOb=app.runPath(380, 530, 300, 460, 66, 200, 60, 5, true, true);
 chk(/ L66\.0,200\.0$/.test(dOb) && dOb.split(' C').length>=3, 'an out-of-bounds path goes through the gap and angles straight out to the sideline spot');
 
