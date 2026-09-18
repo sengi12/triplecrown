@@ -268,6 +268,7 @@ run_js_test test_pace_view      "Pace view: stint summing, badge thresholds, ind
 run_js_test test_la_inseason    "LA in-season tabs: season gating, matchup pairing + featured card, ESPN empty state, poll gating"
 run_js_test test_la_dvp_lineup  "DvP fppg under league scoring + rank direction; lineup adjustment clamps and degradation"
 run_js_test test_la_trends      "Trends overhaul: Season panes, team tendencies, real RZ regression input, ROS schedule multiplier, injury tags"
+run_js_test test_la_snaps       "Trends · Snaps: snap share week over week from Sleeper's cached weekly rows, the sidecar's nflverse snaps where Sleeper is blank, last season as the week-1 baseline, role tiers, season highs, scope; a missing week is unknown, never a benching"
 run_js_test test_qb_room       "QB room: SPLIT SQUAD only with 2+ projected starters; one starter collapses to a minimized block; room toggle reveals the bench"
 run_js_test test_qb_games_only  "Games-only mode: games shift without rescaling totals (rates re-derive), floor of 1, per-team toggle"
 run_js_test test_swipe_la_preview "Tab swipe: laSetTab parsing, LA preview whitelist, cache-only previews (no fetch from a gesture)"
@@ -282,7 +283,7 @@ echo ""
 PYBUILD="$DIR/../build_seed.py"
 if [ -f "$DIR/test_flacco_split.py" ] && [ -f "$PYBUILD" ]; then
   echo "═══ Python tests ═══"
-  for pyt in test_live_adv_metrics test_flacco_splittest_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_roster_moves test_roster_truth test_sumer_pull test_ktc_pull test_seed_refresh test_ol_pipeline test_state_block test_cfb_classes test_combine_prospect test_tc_projections test_market_archive test_inseason_truncate test_draft_sim test_draft_history test_draft_playbook test_draft_corpus test_manager_profile test_weekly_charts test_cfb_ol_unit test_tc_mcp test_ol_team_fallbacks test_tendencies test_team_success_rate test_coaching_charting; do
+  for pyt in test_live_adv_metrics test_flacco_splittest_bake test_coord test_afc_nfc test_hc_hist test_role_parse test_wiki_table test_ecr_py test_ecr_extract test_otc_extract test_sharp_pull test_sos_pull test_roster_moves test_roster_truth test_sumer_pull test_ktc_pull test_seed_refresh test_ol_pipeline test_state_block test_cfb_classes test_combine_prospect test_tc_projections test_market_archive test_inseason_truncate test_inseason_snaps test_draft_sim test_draft_history test_draft_playbook test_draft_corpus test_manager_profile test_weekly_charts test_cfb_ol_unit test_tc_mcp test_ol_team_fallbacks test_tendencies test_team_success_rate test_coaching_charting; do
     [ -f "$DIR/${pyt}.py" ] || continue
     output=$(python3 "$DIR/${pyt}.py" 2>&1) || true
     # Same token rule as the JS runner: count result markers, not any line containing the word.
