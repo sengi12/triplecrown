@@ -106,19 +106,47 @@ function tcBoardLanded(){
     });
   }catch(e){}
 }
-// ── Freshness: a refresh mark that reads ESPN again now ──────────────────────
-// One small mark at the right of a live game's situation line and beside the feed's live
-// count. A tap stales the board, every cached summary and the feed's seeding, reads the
-// board (and the picked game's summary) at once, and spins until the read lands — the busy
-// flags mean ten taps cost one request. It cannot beat ESPN's own delay (a play posts 10-20 s
-// after it happens). No ticking count: the polls are seconds apart, the mark is the answer.
-var _tcFresh = { busy:false };
+// ── Freshness: when ESPN was last read, ticking; tap to read again now ───────
+// One stamp at the right of a live game's situation line and beside the feed's live count:
+// the refresh mark and "4s ago" for the newest read of the board or the picked game's
+// summary, ticking once a second (one timer, gone when no stamp is on screen) — the
+// heartbeat that says the polls are running. A tap stales the board, every cached summary
+// and the feed's seeding, reads the board (and the picked game's summary) at once, and
+// spins until the read lands; the busy flags mean ten taps cost one request. It cannot beat
+// ESPN's own delay (a play posts 10-20 s after it happens, the summary 10-20 s after that).
+var _tcFresh = { timer:null, busy:false };
+function tcFreshAt(eid){
+  let at=_tcBoard.at||0;
+  const s=(eid && typeof _gcd!=='undefined' && _gcd && _gcd.sum) ? _gcd.sum[String(eid)] : null;
+  if(s && s.at>at) at=s.at;
+  return at;
+}
+function tcFreshLabel(at){
+  if(!at) return 'reading…';
+  const s=Math.max(0, Math.round((Date.now()-at)/1000));
+  return s<1 ? 'just now' : `${s}s ago`;
+}
 function tcFreshHTML(eid){
-  return `<button class="tc-fresh${_tcFresh.busy?' busy':''}" data-eid="${escAttr(String(eid||''))}" onclick="tcRefreshNow(event)" title="Read ESPN again now" aria-label="Read ESPN again now">${(typeof TC_ICON==='function')?TC_ICON('refresh'):'↻'}</button>`;
+  const at=tcFreshAt(eid);
+  tcFreshTick();
+  return `<button class="tc-fresh${_tcFresh.busy?' busy':''}" data-eid="${escAttr(String(eid||''))}" onclick="tcRefreshNow(event)" title="When ESPN was last read — tap to read again now">${(typeof TC_ICON==='function')?TC_ICON('refresh'):'↻'}<span class="tc-fresh-t">${tcFreshLabel(at)}</span></button>`;
+}
+// The stamps on screen tick once a second — the text only, nothing else repaints.
+function tcFreshTick(){
+  if(_tcFresh.timer || typeof window==='undefined' || typeof window.setInterval!=='function' || typeof document==='undefined' || !document.querySelectorAll) return;
+  _tcFresh.timer=window.setInterval(()=>{
+    const els=document.querySelectorAll('.tc-fresh');
+    if(!els.length){ clearInterval(_tcFresh.timer); _tcFresh.timer=null; return; }
+    if(_tcFresh.busy && !_tcBoard.busy && _tcBoard.at) _tcFresh.busy=false;   // the read came back (or failed and waited out)
+    els.forEach(el=>{
+      const t=el.querySelector('.tc-fresh-t'); if(t) t.textContent=tcFreshLabel(tcFreshAt(el.getAttribute('data-eid')));
+      if(el.classList) el.classList.toggle('busy', !!_tcFresh.busy);
+    });
+  }, 1000);
 }
 function tcFreshPaint(){
   if(typeof document==='undefined' || !document.querySelectorAll) return;
-  try{ document.querySelectorAll('.tc-fresh').forEach(el=>{ if(el.classList) el.classList.toggle('busy', !!_tcFresh.busy); }); }catch(e){}
+  try{ document.querySelectorAll('.tc-fresh').forEach(el=>{ if(el.classList) el.classList.toggle('busy', !!_tcFresh.busy); const t=el.querySelector('.tc-fresh-t'); if(t && _tcFresh.busy) t.textContent='reading…'; }); }catch(e){}
 }
 function tcRefreshNow(ev){
   if(ev && ev.stopPropagation) ev.stopPropagation();

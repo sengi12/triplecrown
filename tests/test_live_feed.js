@@ -172,7 +172,7 @@ const LP=app.LP, G=app.G;
   chk(app.onBoard({NYJ:G({eid:'E9', score:7, oppScore:0, sit:{period:1, clock:'12:11', lastPlayId:'904', lastPlay:LP({id:'904', type:'Passing Touchdown', yds:30, scoreValue:6, text:'A.Rodgers pass deep right to G.Wilson for 30 yards, TOUCHDOWN.', team:'NYJ'})}})})===0 && app.rows().filter(r=>r.eid==='E9').length===3, 'the next landing adds nothing — no doubles from the summary');
   chk(app.seededAt() && app.seededAt().E9>0, 'the game\'s summary is read once on first sight (then every ten minutes)');
   app.board({NYJ:G({eid:'E9'})}); let hf=app.panel(false);
-  chk(/lf-live on">1 live/.test(hf) && /class="tc-fresh"/.test(hf) && !/ago/.test(hf), 'with a game on, the feed\'s head carries the refresh mark beside the live count — no count');
+  chk(/lf-live on">1 live/.test(hf) && /class="tc-fresh"/.test(hf) && /tc-fresh-t">(just now|\d+s ago)</.test(hf), 'with a game on, the feed\'s head carries the stamp beside the live count');
   app.board({}); hf=app.panel(false);
   chk(!/tc-fresh/.test(hf), 'no game on: no stamp');
   console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);

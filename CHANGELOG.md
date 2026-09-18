@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-09-17
 
+- feat(tracker): the scoreboard's last play leads the game feed while the summary is behind, and the ticking "Ns ago" is back on the refresh mark (#138)
 - fix(tracker): halftime says Halftime, live reads skip the browser cache, and the refresh mark is the icon alone (#137)
 - feat(tracker): a freshness stamp — when ESPN was last read, ticking, and a tap that reads again now (#136)
 - feat(tracker): a 5-second live poll, the fantasy pane scored off the box score as the plays land, the live feed back to kickoff, and a league chip that means my matchup (#135)
