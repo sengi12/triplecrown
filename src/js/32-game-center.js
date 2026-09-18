@@ -298,12 +298,23 @@ function gcGameHTML(game, rows, wk){
   }).join('');
   const st=game.state==='post'?'FINAL':game.state==='in'?(game.detail||'LIVE'):(game.detail||'');
   // The banner wears both clubs: the away colour from the left, the home colour from the
-  // right, meeting in the middle (a translucent wash over the surface so the type holds).
+  // right, meeting in the middle (a translucent wash over the surface so the type holds),
+  // the codes as faded wordmarks behind. Live, it carries the situation: the quarter and
+  // clock in the middle with the down and spot beneath, a ball beside the score of the side
+  // in possession, and each side's timeouts as three dots under its record.
   const col=(t)=>(typeof pwTeamColor==='function' ? pwTeamColor(t) : '#888');
+  const sit=game.state==='in' ? (game.sit||null) : null;
+  const dots=(n)=> (sit && sit.to && n!=null) ? `<span class="gc-to" title="${n} timeout${n===1?'':'s'} left">${[0,1,2].map(i=>`<i class="${i<n?'on':''}"></i>`).join('')}</span>` : '';
+  const ball=(team)=> (sit && sit.poss===team) ? `<i class="gc-ball" title="${team} ball">${typeof TC_ICON==='function'?TC_ICON('football'):'●'}</i>` : '';
+  const spot = sit ? (sit.phase ? '' : `${sit.ddt||''}${sit.spot?` @ ${sit.spot}`:''}${sit.rz?' <span class="gcf-rz">RZ</span>':''}`) : '';
+  const mid = sit && sit.phase ? escHtml(sit.phase) : escHtml(st);
   const hero=`<div class="gc-hero" style="--ga:${escAttr(col(game.away))};--gh:${escAttr(col(game.home))}">
-      <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${game.away}</span><span class="gc-rec">${escHtml(game.arec)}</span><b class="gc-score">${game.state==='pre'?'':(game.as!=null?game.as:'–')}</b></div>
-      <div class="gc-status ${game.state==='in'?'gc-live':''}">${escHtml(st)}</div>
-      <div class="gc-side gc-side-home"><b class="gc-score">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}</b><span class="gc-rec">${escHtml(game.hrec)}</span><span class="gc-team">${game.home}</span><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"></div>
+      <span class="gc-hero-wm gc-hero-wm-a" aria-hidden="true">${game.away}</span><span class="gc-hero-wm gc-hero-wm-h" aria-hidden="true">${game.home}</span>
+      <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${game.away}</span><span class="gc-rec">${escHtml(game.arec)}</span>${dots(sit&&sit.to?sit.to.away:null)}</div>
+      <b class="gc-score">${game.state==='pre'?'':(game.as!=null?game.as:'–')}${ball(game.away)}</b>
+      <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}">${mid}</div>${spot?`<div class="gc-spot">${spot}</div>`:''}</div>
+      <b class="gc-score">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}${ball(game.home)}</b>
+      <div class="gc-side gc-side-home"><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${game.home}</span><span class="gc-rec">${escHtml(game.hrec)}</span>${dots(sit&&sit.to?sit.to.home:null)}</div>
     </div>`;
   // The fantasy pane: the league switcher, then the week's rows by position.
   const fantasy=`${typeof gcLeagueSelectHTML==='function' ? gcLeagueSelectHTML() : ''}
@@ -315,17 +326,25 @@ function gcGameHTML(game, rows, wk){
   if(game.state==='in' && typeof gcLiveTick==='function') gcLiveTick(game);   // a game on: the feed polls on its own clock
   const tab=gcdTab(game), side=_gcd.side||'fantasy';
   const tabs=`<div class="gc-tabs"><button class="gc-tab ${tab==='feed'?'active':''}" onclick="gcdSetTab('feed')">Feed</button><button class="gc-tab ${tab==='stats'?'active':''}" onclick="gcdSetTab('stats')">Stats</button></div>`;
-  if(tab==='feed') return hero+tabs+gcFeedHTML(game, sum);
+  // Under the hero: the last play, the drive on the field, the win probability (32b).
+  const top=(typeof gcTopHTML==='function') ? gcTopHTML(game, sum) : '';
+  if(tab==='feed') return hero+top+tabs+gcFeedHTML(game, sum);
   const seg=`<div class="gc-seg"><button class="${side==='away'?'active':''}" onclick="gcdSetSide('away')"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${game.away}</button><button class="${side==='fantasy'?'active':''}" onclick="gcdSetSide('fantasy')">Fantasy</button><button class="${side==='home'?'active':''}" onclick="gcdSetSide('home')"><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'">${game.home}</button></div>`;
   const pane = side==='fantasy' ? fantasy : gcBoxHTML(game, sum, side==='home'?game.home:game.away);
-  return hero+tabs+(game.state==='pre'?'':gcLinescoreHTML(game, sum))+seg+pane;
+  return hero+top+tabs+(game.state==='pre'?'':gcLinescoreHTML(game, sum))+seg+pane;
 }
 function gcListHTML(games, picked){
   if(!games) return '<div class="ld-empty">loading games…</div>';
-  return games.map(g=>`<div class="gc-game ${g.id===picked?'gc-on':''} gc-${g.state}" onclick="gcPick('${g.id}')">
-    <div class="gc-gstate">${g.state==='post'?'FINAL':g.state==='in'?(g.detail||'LIVE'):escHtml(g.detail||'')}</div>
-    <div class="gc-gline ${g.state==='post'&&g.as>g.hs?'gc-won':''}"><img src="${NFL_LOGO(g.away)}" class="gc-glogo" onerror="this.style.display='none'"><span>${g.away}</span><b>${g.state==='pre'?'':(g.as!=null?g.as:'–')}</b></div>
-    <div class="gc-gline ${g.state==='post'&&g.hs>g.as?'gc-won':''}"><img src="${NFL_LOGO(g.home)}" class="gc-glogo" onerror="this.style.display='none'"><span>${g.home}</span><b>${g.state==='pre'?'':(g.hs!=null?g.hs:'–')}</b></div>
+  // Pills: logo, score, the state in the middle (a red dot and the quarter while it is on,
+  // FINAL, or the kickoff), score, logo — twice as many games in view as the old cards.
+  const when=(g)=>{ const d=g.date?new Date(g.date):null; if(!d || isNaN(d)) return escHtml(g.detail||''); const day=d.toLocaleDateString('en-US',{month:'short',day:'numeric'}).toUpperCase(); const t=d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(' ',''); return `<span class="gc-pday">${day}</span><span class="gc-ptime">${t}</span>`; };
+  const midOf=(g)=> g.state==='post' ? '<span class="gc-pfin">FINAL</span>'
+    : g.state==='in' ? `<span class="gc-plive"><i class="gc-pdot"></i>${escHtml(String(g.detail||'LIVE').replace(/^(\d+:\d+) - (\d)(st|nd|rd|th)$/i,'Q$2'))}</span>`
+    : when(g);
+  return games.map(g=>`<div class="gc-game gc-pill ${g.id===picked?'gc-on':''} gc-${g.state}" onclick="gcPick('${g.id}')" title="${g.away} @ ${g.home}${g.state==='in'?' · '+escAttr(g.detail||'live'):''}">
+    <span class="gc-pl"><img src="${NFL_LOGO(g.away)}" class="gc-glogo" onerror="this.style.display='none'">${g.state==='pre'?'':`<b class="${g.state==='post'&&g.as>g.hs?'gc-won':''}">${g.as!=null?g.as:'–'}</b>`}</span>
+    <span class="gc-pmid">${midOf(g)}</span>
+    <span class="gc-pr">${g.state==='pre'?'':`<b class="${g.state==='post'&&g.hs>g.as?'gc-won':''}">${g.hs!=null?g.hs:'–'}</b>`}<img src="${NFL_LOGO(g.home)}" class="gc-glogo" onerror="this.style.display='none'"></span>
   </div>`).join('');
 }
 // The panel. `phone` swaps the sidebar's size buttons for the sheet's close button; the
@@ -339,7 +358,7 @@ function gcHTML(phone){
   const rows=gcRows(wk);
   const sel=`<select class="ld-sel" onchange="gcSetWeek(this.value)">${gcWeekOptions(cur).map(w=>`<option value="${w===cur?'current':w}" ${wk===w?'selected':''}>${gcWeekLabel(w)}${w===cur?' · now':w===cur+1?' · next':w>cur?' · upcoming':''}</option>`).join('')}</select>`;
   const lgE=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
-  const fmt=gcScoring() ? escHtml((lgE && lgE.name) || (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) || 'league scoring') : 'app scoring · Sleeper for K/DEF/IDP';
+  const fmt=gcScoring() ? escHtml((lgE && lgE.name) || (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) || 'league scoring') : 'TripleCrown · Sleeper for K/DEF/IDP';
   // No position filter row here: the fantasy pane already groups every position, and a
   // game's two rosters are short enough to read whole (the Rankings page keeps its filters).
   const btns=phone ? '' : rsbButtonsHTML();   // the sheet closes by its handle or the scrim

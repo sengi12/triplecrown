@@ -49,7 +49,7 @@ const app=new Function('IDS','SUM', code+`
         if(/\\/league\\/L9$/.test(url)) return {name:'Queen City Keepers', status:'in_season', season:'2026', scoring_settings:{pass_yd:0.05, pass_td:6}, roster_positions:['QB','RB','SUPER_FLEX'], settings:{type:0}, total_rosters:12};
         return prev(url); }; },
     sideClass:gcSideClass, setWeekNum:(w)=>{ _gc.week=w; _gc._mu=null; }, liveTimer:()=>_gcLiveTimer, clearLive:()=>{ if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; } }, setMode:(m)=>{ _gc.mode=m; }, setGame:(id)=>{ _gc.game=id; },
-    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, idle:tcRepaintWhenIdle, busy:tcUiBusy, setDown:(v)=>{ _tcIdle.down=v; }, flush:tcIdleFlush, setActive:(el)=>{ document.activeElement=el; }, sidebarSig:()=>_tcBoard.sig, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
+    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, drives:gcDrives, sentence:gcDriveSentence, turnover:gcTurnoverRead, drive:gcDriveChartHTML, wp:gcWinProbHTML, wpOpen:(v)=>{ _gcd.wpOpen=v; }, top:gcTopHTML, lastPlay:gcLastPlayHTML, idle:tcRepaintWhenIdle, busy:tcUiBusy, setDown:(v)=>{ _tcIdle.down=v; }, flush:tcIdleFlush, setActive:(el)=>{ document.activeElement=el; }, sidebarSig:()=>_tcBoard.sig, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
 `)(IDS, SUM);
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -145,9 +145,9 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   console.log('=== the league switcher ===');
   chk(app.lgOpts().map(o=>o.id).join(',')==='snap,app' && app.league()==='snap', 'the Analyzer\'s league and the app\'s scoring before any synced league loads');
   app.setPcard({L9:{id:'L9', name:'Queen City Keepers', byPid:{q2:{owner:'Sengi12', mine:true}, t1:{owner:'kademiller', mine:false}}, scoring:{pass_yd:0.05, pass_td:6, rec:1, rec_yd:0.1, rec_td:6}}, L1:{id:'L1', name:'Dirty Mikes', byPid:{}, scoring:{}}});
-  chk(app.lgOpts().map(o=>o.name).join(',')==='Dirty Mikes,Queen City Keepers,App scoring', 'every synced league joins the list once (the Analyzer\'s not twice)');
+  chk(app.lgOpts().map(o=>o.name).join(',')==='Dirty Mikes,Queen City Keepers,TripleCrown', 'every synced league joins the list once (the Analyzer\'s not twice)');
   app.setPcard({L9:{id:'L9', name:'Queen City Keepers', byPid:{q2:{owner:'Sengi12', mine:true}}, scoring:{}}, L7:{id:'L7', name:'Business of Innovation', noRoster:true, byPid:{}, scoring:{}}, L1:{id:'L1', name:'Dirty Mikes', byPid:{}, scoring:{}}});
-  chk(app.lgOpts().map(o=>o.name).join(',')==='Dirty Mikes,Queen City Keepers,App scoring', 'a league I run but have no roster in (commissioner only) stays out of the switcher — no team to follow');
+  chk(app.lgOpts().map(o=>o.name).join(',')==='Dirty Mikes,Queen City Keepers,TripleCrown', 'a league I run but have no roster in (commissioner only) stays out of the switcher — no team to follow');
   app.setPcard({L9:{id:'L9', name:'Queen City Keepers', byPid:{q2:{owner:'Sengi12', mine:true}, t1:{owner:'kademiller', mine:false}}, scoring:{pass_yd:0.05, pass_td:6, rec:1, rec_yd:0.1, rec_td:6}}, L1:{id:'L1', name:'Dirty Mikes', byPid:{}, scoring:{}}});
   app.setLeague('L9');
   chk(app.league()==='L9' && app.owner('q2')==='@Sengi12' && app.mine('q2')===true && app.owner('t1')==='@kademiller' && app.mine('t1')===false && app.owner('q1')==='', 'owners and "mine" follow the picked league');
@@ -218,7 +218,7 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(/gcf-dot/.test(sh) && /CIN ball/.test(sh) && /3rd &amp; 2 @ TB 29/.test(sh) && /Q3 4:12/.test(sh) && !app.sitHTML(app.GAME('post')), 'the situation line: possession, the down and spot, the clock — live games only');
   const fh1=app.feedHTML(g3, SUM); const fewer=JSON.parse(JSON.stringify(SUM)); fewer.drives.previous=fewer.drives.previous.slice(0,-2);
   app.feedHTML(g3, fewer); const fh2=app.feedHTML(g3, SUM);
-  chk(!/gcf-new/.test(fh1) && (fh2.match(/gcf-new/g)||[]).length>=1 && /gcf-now/.test(fh2), 'plays newer than the last paint flash in');
+  chk(!/gcf-new/.test(fh1) && (fh2.match(/gcf-new/g)||[]).length>=1 && !/gcf-now/.test(fh2), 'plays newer than the last paint flash in (the situation line is the hero\'s now, not the feed\'s)');
   app.setBoardTeams({CIN:LIVE3, TB:LIVE3}); const s2=nSum(); app.landed();
   chk(nSum()===s2, 'the board landing hook runs the stream check (same play: no fetch)');
 
@@ -295,6 +295,62 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(app.refresh({stopPropagation(){}})===true && app.boardAt()===0 && app.sumAt('401872925')===0 && app.freshBusy()===true && nB()===b0+1, 'a tap stales the board and every summary, reads the board at once, and spins until it lands');
   await settle();
   chk(app.freshBusy()===false && app.boardAt()>0, 'the landing stops the spin');
+
+  console.log('=== under the hero: the drive on the field, the win probability, the last play ===');
+  const ds=app.drives(SUM);
+  chk(ds.length===SUM.drives.previous.length && new Set(ds.map(d=>d.id)).size===ds.length && ds.every(d=>d.team && Array.isArray(d.plays)), 'one entry per drive, its team and its plays');
+  const dupD=JSON.parse(JSON.stringify(SUM)); dupD.drives.current=JSON.parse(JSON.stringify(dupD.drives.previous[dupD.drives.previous.length-1]));
+  chk(app.drives(dupD).length===ds.length && app.drives(dupD)[ds.length-1].live===true && !ds[ds.length-1].live, 'the drive in progress (listed twice by ESPN) is one drive, marked live');
+  const lastD=ds[ds.length-1]; const sent=app.sentence(lastD);
+  chk(new RegExp('^'+lastD.team+' from ').test(sent) && /\d+-plays?\./.test(sent) && /(rush|pass)/.test(sent), `the drive sentence: "${sent}"`);
+  const dc=app.drive(app.GAME('post'), SUM);
+  chk(/<svg[^>]*gc-drive-svg/.test(dc) && (dc.match(/stroke="#e6b23c"/g)||[]).length===2 && (dc.match(/<polygon/g)||[]).length>=6 && /url\(#gcEzA\)/.test(dc) && /url\(#gcEzH\)/.test(dc) && !/<image [^>]*teamlogos[^>]*opacity="0.9"/.test(dc) && /gc-drive-sum/.test(dc), 'the field in perspective: the bands, solid club-coloured end zones with nothing in them, uprights on both back lines, the sentence under it');
+  chk((dc.match(/<circle/g)||[]).length>=3 && /<image /.test(dc) && /paint-order="stroke"/.test(dc), 'the drive\'s start, the newest snap, the ball, a pin with a face (or the club) above it, the last play\'s label');
+  const mini={drives:{previous:[{id:'m1', team:{abbreviation:'CIN'}, description:'2 plays, 32 yards, 0:40', result:'TD', plays:[
+    {id:'p1', sequenceNumber:1, type:{text:'Rush'}, text:'C.Brown left end for 12 yards.', statYardage:12, period:{number:1}, clock:{displayValue:'10:00'}, start:{down:1, yardsToEndzone:60, shortDownDistanceText:'1st & 10', possessionText:'CIN 40'}},
+    {id:'p2', sequenceNumber:2, type:{text:'Passing Touchdown'}, text:'J.Burrow pass deep left to M.Gesicki for 48 yards, TOUCHDOWN.', statYardage:48, scoringPlay:true, period:{number:1}, clock:{displayValue:'9:20'}, start:{down:1, yardsToEndzone:48, shortDownDistanceText:'1st & 10', possessionText:'TB 48'}}]}]}};
+  const mc=app.drive(app.GAME('post'), mini);
+  chk((mc.match(/class="gc-seg gc-seg-prog" d="M[^"]*L[^"]*" fill="none" stroke="#39c15a"/g)||[]).length===1 && (mc.match(/gc-seg-last" d="M[^"]*Q[^"]*" fill="none" stroke="#39c15a"/g)||[]).length===1 && /M\. Gesicki 48 yd TD catch/.test(mc) && /<animateMotion/.test(mc) && /<animate attributeName="stroke-dashoffset"/.test(mc), 'one continuous drive: the run a straight line to the next snap, the pass an arc to the end zone — and the newest play animates in (the segment draws, the ball travels it)');
+  chk(!/<animateMotion/.test(app.drive(app.GAME('post'), mini)), 'the same play again does not animate twice');
+  const fgD=(type)=>({drives:{previous:[{id:'k'+type, team:{abbreviation:'CIN'}, description:'2 plays, 9 yards, 0:50', result:type==='Field Goal Good'?'FG':'MISSED FG', plays:[
+    {id:'k1', sequenceNumber:1, type:{text:'Rush'}, text:'C.Brown up the middle for 9 yards.', statYardage:9, period:{number:2}, clock:{displayValue:'1:00'}, start:{down:1, yardsToEndzone:34, shortDownDistanceText:'1st & 10', possessionText:'TB 34'}},
+    {id:'k2', sequenceNumber:2, type:{text:type}, text:'E.McPherson 43 yard field goal is '+(type==='Field Goal Good'?'GOOD':'No Good')+', Center-C.Adomitis, Holder-R.Rehkow.', statYardage:43, scoringPlay:type==='Field Goal Good', period:{number:2}, clock:{displayValue:'0:10'}, start:{down:4, yardsToEndzone:25, shortDownDistanceText:'4th & 1', possessionText:'TB 25'}}]}]}});
+  const good=app.drive(app.GAME('post'), fgD('Field Goal Good')), miss=app.drive(app.GAME('post'), fgD('Field Goal Missed'));
+  chk(/gc-seg-fg" d="M[^"]*Q/.test(good) && !/gc-seg-miss/.test(good) && /E\. McPherson 43 yd FG/.test(good) && (good.match(/stroke="#e6b23c"/g)||[]).length===2, 'a made field goal flies from the spot through the uprights');
+  chk(/gc-seg-fg gc-seg-miss/.test(miss) && /stroke="#e5484d"/.test(miss) && /no good/.test(miss), 'a miss flies wide, in red');
+  const toD=(plays, result)=>({drives:{previous:[{id:'t'+result, team:{abbreviation:'CIN'}, description:'x', result, plays}]}});
+  const P=(id,seq,type,text,yds,yte,extra)=>Object.assign({id, sequenceNumber:seq, type:{text:type}, text, statYardage:yds, period:{number:3}, clock:{displayValue:'5:00'}, start:{down:1, yardsToEndzone:yte, shortDownDistanceText:'1st & 10', possessionText:'CIN '+(100-yte)}}, extra||{});
+  const intD=toD([P('i1',1,'Rush','C.Brown left end for 5 yards.',5,70), P('i2',2,'Interception Return','(Shotgun) J.Burrow pass deep left intended for M.Gesicki INTERCEPTED by J.Trotter [L.David] at TB 30. J.Trotter to TB 45 for 15 yards (M.Gesicki).',15,65,{isTurnover:true})], 'INT');
+  const ih=app.drive(app.GAME('post'), intD);
+  const ir=app.turnover({text:intD.drives.previous[0].plays[1].text, type:'Interception Return'}, 'CIN');
+  chk(ir && ir.kind==='int' && ir.who==='J.Trotter' && ir.at===70 && ir.end===55 && ir.td===false && ir.ret===15, 'an interception read from the words: who, where (the offense\'s 70), carried back 15 to the 55');
+  chk(/gc-seg-pre" d="M[^"]*Q/.test(ih) && /gc-seg-last gc-seg-ret" d="M[^"]*" fill="none" stroke="#e5484d"/.test(ih) && /J\. Trotter INT · 15 yd return/.test(ih), 'the pass arcs to where it was picked, the return runs the other way in red, the label says who and how far');
+  const six=toD([P('s1',1,'Rush','C.Brown left end for 5 yards.',5,70), P('s2',2,'Interception Return Touchdown','J.Burrow pass short right INTERCEPTED by J.Trotter at TB 40. J.Trotter for 60 yards, TOUCHDOWN.',60,65,{isTurnover:true, scoringPlay:true})], 'INT TD');
+  const sr=app.turnover({text:six.drives.previous[0].plays[1].text}, 'CIN');
+  chk(sr.td===true && sr.end===0 && /J\. Trotter pick six!/.test(app.drive(app.GAME('post'), six)), 'a pick six runs to the left end zone — the offense\'s own — and says so');
+  const fumD=toD([P('f1',1,'Rush','C.Brown up the middle for 3 yards.',3,60), P('f2',2,'Fumble Recovery (Opponent)','C.Brown left tackle to TB 35 for 8 yards (L.David). FUMBLES (L.David), RECOVERED by TB-J.Trotter at TB 34. J.Trotter to TB 44 for 10 yards (C.Brown).',8,57,{isTurnover:true})], 'FUMBLE');
+  const fr=app.turnover({text:fumD.drives.previous[0].plays[1].text}, 'CIN');
+  chk(fr && fr.kind==='fum' && fr.who==='J.Trotter' && fr.at===66 && fr.end===56 && fr.ret===10 && /gc-seg-pre" d="M[^"]*L/.test(app.drive(app.GAME('post'), fumD)) && /J\. Trotter recovers · 10 yd return/.test(app.drive(app.GAME('post'), fumD)), 'a fumble: the run to where it was lost (a line), the recovery carried back 10');
+  const flagD=toD([P('g1',1,'Rush','C.Brown left end for 4 yards.',4,60), P('g2',2,'Penalty','PENALTY on TB-L.David, Defensive Offside, 5 yards, enforced at CIN 44 - No Play.',5,56), P('g3',3,'Rush','C.Brown up the middle for 2 yards.',2,51)], '');
+  const fh=app.drive(app.GAME('post'), flagD);
+  chk((fh.match(/class="gc-flag"/g)||[]).length===0 && /gc-seg gc-seg-prog/.test(fh) && (fh.match(/<circle /g)||[]).length===4, 'an older flag is gone once the next snap comes: the drive so far is one quiet line, the start dot, the newest snap, the ball and the pin');
+  const flagLast=toD([P('h1',1,'Rush','C.Brown left end for 4 yards.',4,60), P('h2',2,'Penalty','PENALTY on TB-L.David, Defensive Offside, 5 yards, enforced at CIN 44 - No Play.',5,56)], '');
+  chk((app.drive(app.GAME('post'), flagLast).match(/class="gc-flag"/g)||[]).length===1 && /Flag: Defensive Offside on TB/.test(app.drive(app.GAME('post'), flagLast)), 'a flag that just happened: the yellow marker at the spot, the ball waiting there');
+  const posts=[...dc.matchAll(/<g class="gc-posts"><path d="M([\d.]+),([\d.]+) V([\d.]+) M([\d.]+),([\d.]+) L([\d.]+),([\d.]+) M[\d.]+,[\d.]+ V[\d.]+ M[\d.]+,[\d.]+ V[\d.]+"/g)].map(m=>m.slice(1).map(Number));
+  chk(posts.length===2 && posts[0][6]<posts[0][4] && posts[1][6]>posts[1][4] && posts.every(q=>q[3]<q[5]) && !/skewX/.test(dc), 'uprights on both back lines, Sleeper\'s: a vertical stem, the crossbar tilted with the field (climbing toward mid-field on both sides), two short vertical uprights');
+  chk(app.sentence(app.drives(mini)[0])==='CIN from own 40: 2-plays. 1 rush, 12 yds. 1/1 pass, 48 yds. TD 🎉', `the sentence, Sleeper's wording: "${app.sentence(app.drives(mini)[0])}"`);
+  app.wpOpen(false); app.setSum('401872925', SUM);
+  const w0=app.wp(app.GAME('post'), SUM);
+  chk(/gc-wp-head/.test(w0) && /<b>6%<\/b>/.test(w0) && /<b>94%<\/b>/.test(w0) && !/<svg/.test(w0) && /aria-expanded="false"/.test(w0), 'win probability folded by default: the two numbers, no chart (TB 6%, CIN 94% at the end)');
+  app.wpOpen(true); const w1=app.wp(app.GAME('post'), SUM);
+  const cy=Number((w1.match(/<circle cx="[\d.]+" cy="([\d.]+)"/)||[])[1]);
+  chk(/<svg/.test(w1) && cy>40 && /aria-expanded="true"/.test(w1) && (w1.match(/<image /g)||[]).length===2, 'open: the chart with both clubs\' marks on the axis, and the line ends near the bottom — the home side, who is winning');
+  const hc=(typeof pwTeamColor==='function')?'':'';
+  chk(new RegExp('L[\\d.]+,64 L[\\d.]+,64 Z" fill="#').test(w1) && !/,8 L[\d.]+,8 Z" fill="#/.test(w1), 'the fill sits on the winner\'s side (the home side here), in the winner\'s colour');
+  app.wpOpen(false);
+  const lp1=app.lastPlay(Object.assign(app.GAME('in'), {sit:{period:4, clock:'2:50', lastPlayId:'z', lastPlay:{id:'z', type:'Extra Point Good', text:'E.McPherson extra point is GOOD.', yds:0, team:'CIN', athletes:[], down:0, ddt:'', spot:'', yte:null}}}), SUM);
+  chk(/LAST PLAY/.test(lp1) && /End zone/.test(lp1) && /E\. McPherson XP, good/.test(lp1) && /tc-fresh/.test(lp1), 'the last-play line: LIVE, the spot, the play, the stamp');
+  chk(/FINAL PLAY/.test(app.lastPlay(app.GAME('post'), SUM)) && app.lastPlay(app.GAME('pre'), SUM)==='' && app.top(app.GAME('pre'), SUM)==='', 'after the game it is the final play; before it, nothing');
 
   console.log('=== repaints wait for the hand to lift ===');
   let painted=0; const paint=()=>{ painted++; };
