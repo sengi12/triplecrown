@@ -219,6 +219,18 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .lf{display:flex;flex-direction:column;min-height:0;}
 .lf-body{display:flex;flex-direction:column;min-height:0;overflow:auto;gap:2px;}
 .lf-live{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-left:auto;margin-right:6px;}
+/* The freshness stamp: when ESPN was last read, ticking; tap to read again now. Lives at the
+   right of the situation line and beside the feed's live count. */
+.tc-fresh{display:inline-flex;align-items:center;gap:4px;margin-left:auto;padding:2px 7px;border-radius:999px;border:1px solid var(--border);
+  background:var(--surface3);color:var(--muted);font-size:9.5px;font-weight:800;letter-spacing:.03em;cursor:pointer;white-space:nowrap;
+  font-family:inherit;line-height:1.3;-webkit-tap-highlight-color:transparent;}
+.tc-fresh:hover{color:var(--text);border-color:var(--accent);}
+.tc-fresh .tc-ico{width:10px;height:10px;}
+.tc-fresh.busy .tc-ico{animation:tcFreshSpin .8s linear infinite;}
+.tc-fresh.busy{color:var(--accent);}
+@keyframes tcFreshSpin{to{transform:rotate(360deg);}}
+.gcf-now .tc-fresh{margin-left:auto;}
+.gc-head .tc-fresh{margin-left:0;margin-right:6px;}
 .lf-live.on{color:#ff6b6b;}
 .lf-chips{flex-wrap:wrap;align-items:center;}
 .lf-chips .ld-pos{flex:0 0 auto;padding:3px 9px;}

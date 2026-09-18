@@ -49,7 +49,7 @@ const app=new Function('IDS','SUM', code+`
         if(/\\/league\\/L9$/.test(url)) return {name:'Queen City Keepers', status:'in_season', season:'2026', scoring_settings:{pass_yd:0.05, pass_td:6}, roster_positions:['QB','RB','SUPER_FLEX'], settings:{type:0}, total_rosters:12};
         return prev(url); }; },
     sideClass:gcSideClass, setWeekNum:(w)=>{ _gc.week=w; _gc._mu=null; }, liveTimer:()=>_gcLiveTimer, clearLive:()=>{ if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; } }, setMode:(m)=>{ _gc.mode=m; }, setGame:(id)=>{ _gc.game=id; },
-    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
+    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
 `)(IDS, SUM);
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -263,6 +263,19 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const lq1=live.find(r=>r.player_id==='q1'), sq1=app.ROWS.find(r=>r.player_id==='q1');
   chk(sq1.stats.pass_td===1 && lq1.stats.pass_td===0 && lq1.stats.pass_yd===216 && lq1.stats.rush_td===1 && lq1.live===true, 'the box score lays over Sleeper\'s row (Sleeper still says a passing TD; the box says none) — keys the box does not carry stay');
   chk(live.length>=app.ROWS.length && app.liveRows(app.ROWS, app.GAME('post'))===app.ROWS && app.liveRows(app.ROWS, Object.assign(app.GAME('in'), {eid:'nope'}))===app.ROWS, 'players the box names but Sleeper has not sent yet join; a final, or a game with no summary, keeps Sleeper\'s rows');
+
+  console.log('=== the freshness stamp: when ESPN was last read, and a tap that reads again ===');
+  app.setBoardAt(Date.now()-4000); app.setSum('401872925', SUM);
+  const st=app.fresh('401872925');
+  chk(/class="tc-fresh"/.test(st) && /just now/.test(st) && /onclick="tcRefreshNow\(event\)"/.test(st) && /tc-ico/.test(st), 'the stamp reads the newest of the board and the picked game\'s summary (the summary, cached just now)');
+  chk(/(3|4|5)s ago/.test(app.fresh('')), 'without a picked game it is the board\'s age');
+  const sitLive=app.sitHTML(Object.assign(app.GAME('in'), {sit:LIVE3.sit}));
+  chk(/gcf-now-clock/.test(sitLive) && /tc-fresh/.test(sitLive) && !/tc-fresh/.test(app.sitHTML(app.GAME('post'))), 'the situation line carries the stamp, live games only');
+  const nB=()=>app.fetches().filter(u=>/scoreboard/.test(u)).length, b0=nB(), su0=nSum();
+  app.setGame('TB@CIN'); app.setBoardTeams({CIN:LIVE3, TB:LIVE3});
+  chk(app.refresh({stopPropagation(){}})===true && app.boardAt()===0 && app.sumAt('401872925')===0 && app.freshBusy()===true && nB()===b0+1, 'a tap stales the board and every summary, reads the board at once, and shows busy until it lands');
+  await settle();
+  chk(app.freshBusy()===false && app.boardAt()>0, 'the landing clears busy and stamps the read');
   console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
   process.exit(pass===total?0:1);
 })();

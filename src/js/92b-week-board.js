@@ -92,6 +92,7 @@ function tcTeamGameState(team){
 // A landed board repaints what shows it: the sidebar dots, and the record in any header
 // already on screen (patched in place — a full re-render would reset sliders mid-edit).
 function tcBoardLanded(){
+  _tcFresh.busy=false;
   try{ if(typeof gcStreamOnBoard==='function') gcStreamOnBoard(_tcBoard.teams); }catch(e){}   // the Game Center's live poll: a new play?
   try{ if(typeof lfOnBoard==='function') lfOnBoard(_tcBoard.teams); }catch(e){}                 // the live feed: every game's last play
   try{ if(typeof renderSidebar==='function') renderSidebar(); }catch(e){}
@@ -102,6 +103,60 @@ function tcBoardLanded(){
       if(g && g.rec) el.textContent=g.rec;
     });
   }catch(e){}
+}
+// ── Freshness: when ESPN was last read, ticking; tap to read again now ───────
+// One stamp, at the right of a live game's situation line and beside the feed's live
+// count: "4s ago" for the newest read of the board or the picked game's summary. A tap
+// stales the board, every cached summary and the feed's seeding, and reads the board (and
+// the picked game) at once — the busy flags mean ten taps cost one request. The stamp
+// cannot beat ESPN's own delay (a play posts 10-20 s after it happens); it says whether
+// the app is current, which is the question a late play raises.
+var _tcFresh = { timer:null, busy:false };
+function tcFreshAt(eid){
+  let at=_tcBoard.at||0;
+  const s=(eid && typeof _gcd!=='undefined' && _gcd && _gcd.sum) ? _gcd.sum[String(eid)] : null;
+  if(s && s.at>at) at=s.at;
+  return at;
+}
+function tcFreshLabel(at){
+  if(!at) return 'reading…';
+  const s=Math.max(0, Math.round((Date.now()-at)/1000));
+  return s<1 ? 'just now' : `${s}s ago`;
+}
+function tcFreshHTML(eid){
+  const at=tcFreshAt(eid);
+  tcFreshTick();
+  return `<button class="tc-fresh${_tcFresh.busy?' busy':''}" data-eid="${escAttr(String(eid||''))}" onclick="tcRefreshNow(event)" title="When ESPN was last read — tap to read again now">${(typeof TC_ICON==='function')?TC_ICON('refresh'):''}<span class="tc-fresh-t">${tcFreshLabel(at)}</span></button>`;
+}
+// The stamps on screen tick once a second (one timer, gone when no stamp is left).
+function tcFreshTick(){
+  if(_tcFresh.timer || typeof window==='undefined' || typeof window.setInterval!=='function' || typeof document==='undefined' || !document.querySelectorAll) return;
+  _tcFresh.timer=window.setInterval(()=>{
+    const els=document.querySelectorAll('.tc-fresh');
+    if(!els.length){ clearInterval(_tcFresh.timer); _tcFresh.timer=null; return; }
+    if(_tcFresh.busy && !_tcBoard.busy && _tcBoard.at) _tcFresh.busy=false;   // the read came back (or failed and waited out)
+    els.forEach(el=>{
+      const at=tcFreshAt(el.getAttribute('data-eid'));
+      const t=el.querySelector('.tc-fresh-t'); if(t) t.textContent=tcFreshLabel(at);
+      if(el.classList) el.classList.toggle('busy', !!_tcFresh.busy);
+    });
+  }, 1000);
+}
+function tcRefreshNow(ev){
+  if(ev && ev.stopPropagation) ev.stopPropagation();
+  _tcFresh.busy=true;
+  _tcBoard.at=0;
+  if(typeof _gcd!=='undefined' && _gcd && _gcd.sum) Object.keys(_gcd.sum).forEach(eid=>{ if(_gcd.sum[eid]) _gcd.sum[eid].at=0; });
+  if(typeof _lf!=='undefined' && _lf) _lf.seedAt={};
+  try{
+    if(typeof _gc!=='undefined' && _gc && _gc.game && typeof gcBoard==='function' && typeof gcGames==='function' && typeof gcWeek==='function' && typeof gcSummary==='function'){
+      const g=(gcGames(gcBoard(gcWeek())||{})||[]).find(x=>x.id===_gc.game);
+      if(g && g.state==='in') gcSummary(g);
+    }
+  }catch(e){}
+  try{ tcWeekBoard(); }catch(e){}
+  if(typeof document!=='undefined' && document.querySelectorAll){ try{ document.querySelectorAll('.tc-fresh').forEach(el=>{ if(el.classList) el.classList.add('busy'); const t=el.querySelector('.tc-fresh-t'); if(t) t.textContent='reading…'; }); }catch(e){} }
+  return true;
 }
 // Is the app showing the season in progress (the Live view)?
 function tcLiveViewOn(){
