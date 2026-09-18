@@ -92,7 +92,12 @@ def games_covered(pbp):
 PLAYER_WEEK_COLS = ["tgt", "rec", "rec_yd", "rec_td", "air_yd",
                     "carry", "rush_yd", "rush_td",
                     "pass_att", "pass_yd", "pass_td", "pass_int",
-                    "epa_touch", "team_tgt"]
+                    "epa_touch", "team_tgt",
+                    # nflverse snap counts (PFR): offensive snaps and the share of the team's,
+                    # as an integer percent. The app's snap tracker reads Sleeper's own snap
+                    # fields first and falls back to these where Sleeper left a player-week
+                    # blank; a player with snaps but no touches gets a row of zeros here.
+                    "snaps", "snap_pct"]
 # Defense-vs-position weekly columns — enough to score fantasy points allowed
 # under any league's settings client-side.
 DVP_COLS = ["tgt", "rec", "rec_yd", "rec_td",
@@ -228,9 +233,78 @@ def build_player_weekly(season, pbp):
         row[ci["pass_td"]] += int(grp["pass_touchdown"].sum())
         row[ci["pass_int"]] += int(grp["interception"].sum())
 
+    try:
+        merge_snaps(players, snap_counts_by_gsis(season), pos_map, name_map)
+    except Exception as e:  # snap counts lag pbp by a day or two; never sink the block
+        print(f"  [inseason] snap counts skipped ({e})")
+
     # Keep only fantasy positions with something to say.
     players = {g: p for g, p in players.items() if p["p"] and p["w"]}
     return {"cols": PLAYER_WEEK_COLS, "players": players}
+
+
+def snap_counts_by_gsis(season):
+    """{gsis: {week: (offense_snaps, offense_pct 0-100, team)}} from nflverse's weekly snap
+    counts (PFR's, keyed by PFR id and joined through the players parquet). Regular season
+    only. Missing upstream → {} — the rows simply carry no snap columns yet."""
+    try:
+        snaps = _nfl._aux_parquet(_nfl.SNAP_COUNTS_URL.format(season=season),
+                                  columns=["game_type", "week", "team", "pfr_player_id",
+                                           "offense_snaps", "offense_pct"])
+    except Exception:
+        return {}
+    snaps = snaps[snaps["game_type"] == "REG"]
+    if snaps.empty:
+        return {}
+    p2g = _nfl._pfr_to_gsis_map()
+    return _snaps_frame_to_map(snaps, p2g)
+
+
+def _snaps_frame_to_map(snaps, p2g):
+    out = {}
+    for _, r in snaps.iterrows():
+        gid = p2g.get(str(r["pfr_player_id"]))
+        if not gid:
+            continue
+        n = pd.to_numeric(r["offense_snaps"], errors="coerce")
+        pct = pd.to_numeric(r["offense_pct"], errors="coerce")
+        if n != n:  # NaN
+            continue
+        if pct == pct:
+            pct = float(pct) * 100.0 if float(pct) <= 1.0 else float(pct)   # fraction or percent upstream
+        else:
+            pct = None
+        out.setdefault(gid, {})[int(r["week"])] = (int(n), pct, str(r["team"]).upper())
+    return out
+
+
+def merge_snaps(players, snaps, pos_map, name_map):
+    """Write snaps/snap_pct into each player-week row; add rows of zeros for player-weeks
+    the pbp never saw (dressed, played, no touch). A week with no snap entry keeps the
+    column at 0 with snap_pct None, which the app reads as unknown, not zero."""
+    if not snaps:
+        return players
+    ci = {c: i for i, c in enumerate(PLAYER_WEEK_COLS)}
+    for gid, weeks in snaps.items():
+        pos = _fold_pos(pos_map.get(gid)) if pos_map else None
+        p = players.get(gid)
+        if p is None:
+            if not pos:
+                continue
+            p = players[gid] = {"n": (name_map or {}).get(gid, ""), "p": pos, "t": "", "w": {}}
+        for wk, (n, pct, team) in weeks.items():
+            row = p["w"].get(str(wk))
+            if row is None:
+                if n <= 0:
+                    continue
+                row = p["w"][str(wk)] = [0] * len(PLAYER_WEEK_COLS)
+                if not p.get("t"):
+                    p["t"] = team
+            while len(row) < len(PLAYER_WEEK_COLS):
+                row.append(0)
+            row[ci["snaps"]] = int(n)
+            row[ci["snap_pct"]] = (int(round(pct)) if pct is not None else None)
+    return players
 
 
 def build_def_vs_pos(season, pbp):

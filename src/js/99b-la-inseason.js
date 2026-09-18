@@ -1139,7 +1139,7 @@ function laTrendsView(s){
   if(wres && wres.faab && Array.isArray(wres.faab.wire)) wres.faab.wire.forEach(r=>wireMap.set(ecrNormName(r.name)+'|'+r.pos, r));
   const bidTag=(name,pos)=>{ const r=wireMap.get(ecrNormName(name)+'|'+pos); return r ? hubBidChipHTML(r.faab, wres, r.pos, 'la-wv-bid la-trnd-bid') : ''; };
   const mineMark=(name,pos)=> (mySet.has(ecrNormName(name)+'|'+pos) ? '<span class="la-trnd-mine" title="on your roster">★</span>' : '') + bidTag(name,pos);
-  const tabs=[['trending','Trending'],['pace','Pace'],['usage','Usage'],['regression','TDs'],['teams','Teams'],['ros','ROS']]
+  const tabs=[['trending','Trending'],['pace','Pace'],['usage','Usage'],['snaps','Snaps'],['regression','TDs'],['teams','Teams'],['ros','ROS']]
     .map(([k,l])=>`<button class="pane-tab ${tab===k?'active':''}" onclick="laSetTrndTab('${k}')">${l}</button>`).join('');
   const scopes=(tab==='teams')?'':`<div class="pos-filter la-trnd-scope">${[['rostered','Rostered'],['myteam','My Team'],['waiver','Waivers'],['league','League']]
     .map(([k,l])=>`<button class="pos-filter-btn ${scope===k?'active':''}" onclick="laSetTrndScope('${k}')">${l}</button>`).join('')}</div>`;
@@ -1204,6 +1204,10 @@ function laTrendsView(s){
           '▲ MORE THAN PROJECTED',carRows.filter(x=>x.st.pct>0).slice(0,12).map((x,i)=>uRow(x,i,'carry volume')).join(''),
           '▼ LESS THAN PROJECTED',carRows.filter(x=>x.st.pct<0).reverse().slice(0,12).map((x,i)=>uRow(x,i,'carry volume')).join(''));
     }
+  } else if(tab==='snaps'){
+    // The snap tracker (99h-la-snaps.js): Sleeper's weekly snap counts, the sidecar's
+    // nflverse numbers where Sleeper is blank, last season as the week-1 baseline.
+    body=(typeof laSnapsBoardHTML==='function') ? laSnapsBoardHTML(s, keeps, mineMark, two) : '';
   } else if(tab==='regression'){
     const U=_laUsagePlayers();
     if(!U) body=needSidecar();
