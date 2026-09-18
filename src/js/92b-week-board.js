@@ -97,7 +97,11 @@ function tcBoardLanded(){
   _tcFresh.busy=false; tcFreshPaint();
   try{ if(typeof gcStreamOnBoard==='function') gcStreamOnBoard(_tcBoard.teams); }catch(e){}   // the Game Center's live poll: a new play?
   try{ if(typeof lfOnBoard==='function') lfOnBoard(_tcBoard.teams); }catch(e){}                 // the live feed: every game's last play
-  try{ if(typeof renderSidebar==='function') renderSidebar(); }catch(e){}
+  // the left sidebar's dots change only when a game's STATE changes — not every 5-second read
+  try{
+    const sig=Object.keys(_tcBoard.teams).sort().map(c=>c+':'+_tcBoard.teams[c].state).join(',');
+    if(sig!==_tcBoard.sig){ _tcBoard.sig=sig; if(typeof renderSidebar==='function') tcRepaintWhenIdle('sidebar', renderSidebar); }
+  }catch(e){}
   try{
     if(typeof document==='undefined' || !document.querySelectorAll) return;
     document.querySelectorAll('.team-rec-hero[data-team]').forEach(el=>{
@@ -162,6 +166,49 @@ function tcRefreshNow(ev){
   }catch(e){}
   try{ tcWeekBoard(); }catch(e){}
   return true;
+}
+// ── Repaints wait for the hand to lift ───────────────────────────────────────
+// A live read lands every few seconds. Re-rendering the sidebar under an open week picker
+// closes it; under a finger it kills the swipe; under a focused field it drops the edit.
+// So a repaint asked for while the user is mid-gesture, mid-pick or away is queued (one
+// per key, the newest wins) and runs once the pointer lifts, the field blurs, the pick
+// changes or the tab comes back — never on the poll's clock.
+var _tcIdle = { down:false, queue:{}, timer:null };
+function tcUiBusy(){
+  if(_tcIdle.down) return true;
+  if(typeof _gcm!=='undefined' && _gcm && _gcm.swiping) return true;
+  if(typeof document!=='undefined' && document){
+    if(document.visibilityState==='hidden') return true;
+    const a=document.activeElement; const tag=a && a.tagName;
+    if(tag==='SELECT' || tag==='INPUT' || tag==='TEXTAREA') return true;
+  }
+  return false;
+}
+function tcRepaintWhenIdle(key, fn){
+  if(!tcUiBusy()){ fn(); return true; }
+  _tcIdle.queue[key]=fn;
+  return false;
+}
+function tcIdleFlush(){
+  if(_tcIdle.timer) clearTimeout(_tcIdle.timer);
+  _tcIdle.timer=setTimeout(()=>{
+    _tcIdle.timer=null;
+    if(tcUiBusy()) return;
+    const q=_tcIdle.queue; _tcIdle.queue={};
+    Object.keys(q).forEach(k=>{ try{ q[k](); }catch(e){} });
+  }, 180);
+}
+if(typeof document!=='undefined' && document && typeof document.addEventListener==='function'){
+  const dn=()=>{ _tcIdle.down=true; }, up=()=>{ _tcIdle.down=false; tcIdleFlush(); };
+  document.addEventListener('pointerdown', dn, true);
+  document.addEventListener('pointerup', up, true);
+  document.addEventListener('pointercancel', up, true);
+  document.addEventListener('touchstart', dn, {capture:true, passive:true});
+  document.addEventListener('touchend', up, {capture:true, passive:true});
+  document.addEventListener('touchcancel', up, {capture:true, passive:true});
+  document.addEventListener('focusout', ()=>tcIdleFlush(), true);
+  document.addEventListener('change', ()=>tcIdleFlush(), true);
+  document.addEventListener('visibilitychange', ()=>tcIdleFlush());
 }
 // Is the app showing the season in progress (the Live view)?
 function tcLiveViewOn(){

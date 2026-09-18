@@ -86,8 +86,8 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(app.mine('q1') && app.mine('r2') && !app.mine('w2'), 'the roster owned by my user id is mine; a leaguemate\'s is not');
   chk(/gc-pname gc-mine">B\. Mayfield/.test(h) && /gc-pname gc-mine">C\. Brown/.test(h) && /gc-pname">T\. Higgins/.test(h), 'my players\' names carry the highlight; a leaguemate\'s player does not');
 
-  console.log('=== filters: position and rookies, like the Rankings page ===');
-  chk(/gc-posrow[\s\S]*gcSetPos\('QB'\)[\s\S]*gcSetPos\('IDP'\)[\s\S]*gcSetPos\('RK'\)/.test(h), 'a filter row: ALL, QB … IDP, RK');
+  console.log('=== no position filter row (the pane groups every position); the grouping still honours a pick ===');
+  chk(!/gc-posrow/.test(h) && !/gcSetPos\(/.test(h) && /Quarterback/.test(h) && /Running back/.test(h), 'no filter row in the Game Center — every group shows');
   app.setPos('QB'); h=app.html();
   chk(/Quarterback/.test(h) && !/Running back/.test(h) && !/Defenders/.test(h) && /B\. Mayfield/.test(h), 'QB: only the quarterbacks');
   app.setPos('RK'); h=app.html();

@@ -92,8 +92,8 @@ function gcSummary(game){
 }
 function gcDetailRepaint(){
   if(typeof renderRightSidebar!=='function') return;
-  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.gc-detail','.gcm-sheet','.gc-body']);
-  else renderRightSidebar();
+  const paint=()=>{ if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.gc-detail','.gcm-sheet','.gc-body']); else renderRightSidebar(); };
+  if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', paint); else paint();   // never under a finger or an open picker
 }
 function gcdSetTab(t){ _gcd.tab=t; gcDetailRepaint(); }
 function gcdSetSide(s){ _gcd.side=s; gcDetailRepaint(); }

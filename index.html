@@ -10063,7 +10063,7 @@ function gcRows(wk){
   if(wk>Math.max(1,Number(TC_SEASON.week||1))) return null;      // a week ahead has no stat lines yet
   if(!_gc.busy['rows'+key] && typeof fetchWeekStats==='function'){
     _gc.busy['rows'+key]=true;
-    fetchWeekStats(String(TC_SEASON.year), wk, null).then(rows=>{ if(Array.isArray(rows) && rows.length){ _gc.rows[key]={rows, at:Date.now()}; renderRightSidebar(); } }).catch(()=>{}).finally(()=>{ _gc.busy['rows'+key]=false; });
+    fetchWeekStats(String(TC_SEASON.year), wk, null).then(rows=>{ if(Array.isArray(rows) && rows.length){ _gc.rows[key]={rows, at:Date.now()}; (typeof tcRepaintWhenIdle==='function'?tcRepaintWhenIdle('rsb', renderRightSidebar):renderRightSidebar()); } }).catch(()=>{}).finally(()=>{ _gc.busy['rows'+key]=false; });
   }
   return _gc.rows[key] ? _gc.rows[key].rows : null;
 }
@@ -10192,8 +10192,8 @@ function gcHTML(phone){
   const sel=`<select class="ld-sel" onchange="gcSetWeek(this.value)">${gcWeekOptions(cur).map(w=>`<option value="${w===cur?'current':w}" ${wk===w?'selected':''}>${gcWeekLabel(w)}${w===cur?' · now':w===cur+1?' · next':w>cur?' · upcoming':''}</option>`).join('')}</select>`;
   const lgE=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
   const fmt=gcScoring() ? escHtml((lgE && lgE.name) || (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) || 'league scoring') : 'app scoring · Sleeper for K/DEF/IDP';
-  const pick=_gc.pos||'ALL';
-  const posBtns=GC_POS.map(p=>`<button class="ld-pos ${pick===p?'active':''}" onclick="gcSetPos('${p}')">${p}</button>`).join('');
+  // No position filter row here: the fantasy pane already groups every position, and a
+  // game's two rosters are short enough to read whole (the Rankings page keeps its filters).
   const btns=phone ? '' : rsbButtonsHTML();   // the sheet closes by its handle or the scrim
   // The live feed takes the whole panel: its own filters, no week or position rows.
   if(_gc.view==='feed' && typeof lfBodyHTML==='function'){
@@ -10206,7 +10206,6 @@ function gcHTML(phone){
   return `<div class="gc">
     <div class="gc-head"><div class="sidebar-section ld-title">Game Center</div>${sel}${btns}</div>
     ${gcViewRowHTML()}
-    <div class="ld-posrow gc-posrow">${posBtns}</div>
     <div class="ld-fmt" title="Points under this scoring">${fmt}</div>
     <div class="gc-body"><div class="gc-list">${gcListHTML(games, _gc.game)}</div><div class="gc-detail">${game ? gcGameHTML(game, rows, wk) : (games && !games.length ? '<div class="ld-empty">no games this week</div>' : '')}</div></div>
   </div>`;
@@ -10446,7 +10445,7 @@ function renderGamesPhone(fromLoad){
   // The week in progress keeps up: a repaint a minute from now re-reads the board and rows.
   if(gcWeek()===gcCurWeek() && typeof window!=='undefined' && typeof window.setTimeout==='function'
      && (typeof document==='undefined' || document.visibilityState!=='hidden')){
-    _gcm.timer=window.setTimeout(()=>{ _gcm.timer=null; renderGamesPhone(); }, 61*1000);
+    _gcm.timer=window.setTimeout(()=>{ _gcm.timer=null; if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', renderGamesPhone); else renderGamesPhone(); }, 61*1000);
   }
 }
 // ═════════════════════════════════════════════════════════════════════════════
@@ -10543,8 +10542,8 @@ function gcSummary(game){
 }
 function gcDetailRepaint(){
   if(typeof renderRightSidebar!=='function') return;
-  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.gc-detail','.gcm-sheet','.gc-body']);
-  else renderRightSidebar();
+  const paint=()=>{ if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.gc-detail','.gcm-sheet','.gc-body']); else renderRightSidebar(); };
+  if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', paint); else paint();   // never under a finger or an open picker
 }
 function gcdSetTab(t){ _gcd.tab=t; gcDetailRepaint(); }
 function gcdSetSide(s){ _gcd.side=s; gcDetailRepaint(); }
@@ -11299,8 +11298,8 @@ function lfRows(){
 // ── The panel ────────────────────────────────────────────────────────────────
 function lfRepaint(){
   if(typeof renderRightSidebar!=='function') return;
-  if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.lf-body','.gcm-sheet','.gc-body']);
-  else renderRightSidebar();
+  const paint=()=>{ if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.lf-body','.gcm-sheet','.gc-body']); else renderRightSidebar(); };
+  if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', paint); else paint();   // never under a finger or an open picker
 }
 function lfLiveCount(){
   const b=(typeof tcWeekBoard==='function') ? tcWeekBoard() : null;
@@ -32588,7 +32587,11 @@ function tcBoardLanded(){
   _tcFresh.busy=false; tcFreshPaint();
   try{ if(typeof gcStreamOnBoard==='function') gcStreamOnBoard(_tcBoard.teams); }catch(e){}   // the Game Center's live poll: a new play?
   try{ if(typeof lfOnBoard==='function') lfOnBoard(_tcBoard.teams); }catch(e){}                 // the live feed: every game's last play
-  try{ if(typeof renderSidebar==='function') renderSidebar(); }catch(e){}
+  // the left sidebar's dots change only when a game's STATE changes — not every 5-second read
+  try{
+    const sig=Object.keys(_tcBoard.teams).sort().map(c=>c+':'+_tcBoard.teams[c].state).join(',');
+    if(sig!==_tcBoard.sig){ _tcBoard.sig=sig; if(typeof renderSidebar==='function') tcRepaintWhenIdle('sidebar', renderSidebar); }
+  }catch(e){}
   try{
     if(typeof document==='undefined' || !document.querySelectorAll) return;
     document.querySelectorAll('.team-rec-hero[data-team]').forEach(el=>{
@@ -32653,6 +32656,49 @@ function tcRefreshNow(ev){
   }catch(e){}
   try{ tcWeekBoard(); }catch(e){}
   return true;
+}
+// ── Repaints wait for the hand to lift ───────────────────────────────────────
+// A live read lands every few seconds. Re-rendering the sidebar under an open week picker
+// closes it; under a finger it kills the swipe; under a focused field it drops the edit.
+// So a repaint asked for while the user is mid-gesture, mid-pick or away is queued (one
+// per key, the newest wins) and runs once the pointer lifts, the field blurs, the pick
+// changes or the tab comes back — never on the poll's clock.
+var _tcIdle = { down:false, queue:{}, timer:null };
+function tcUiBusy(){
+  if(_tcIdle.down) return true;
+  if(typeof _gcm!=='undefined' && _gcm && _gcm.swiping) return true;
+  if(typeof document!=='undefined' && document){
+    if(document.visibilityState==='hidden') return true;
+    const a=document.activeElement; const tag=a && a.tagName;
+    if(tag==='SELECT' || tag==='INPUT' || tag==='TEXTAREA') return true;
+  }
+  return false;
+}
+function tcRepaintWhenIdle(key, fn){
+  if(!tcUiBusy()){ fn(); return true; }
+  _tcIdle.queue[key]=fn;
+  return false;
+}
+function tcIdleFlush(){
+  if(_tcIdle.timer) clearTimeout(_tcIdle.timer);
+  _tcIdle.timer=setTimeout(()=>{
+    _tcIdle.timer=null;
+    if(tcUiBusy()) return;
+    const q=_tcIdle.queue; _tcIdle.queue={};
+    Object.keys(q).forEach(k=>{ try{ q[k](); }catch(e){} });
+  }, 180);
+}
+if(typeof document!=='undefined' && document && typeof document.addEventListener==='function'){
+  const dn=()=>{ _tcIdle.down=true; }, up=()=>{ _tcIdle.down=false; tcIdleFlush(); };
+  document.addEventListener('pointerdown', dn, true);
+  document.addEventListener('pointerup', up, true);
+  document.addEventListener('pointercancel', up, true);
+  document.addEventListener('touchstart', dn, {capture:true, passive:true});
+  document.addEventListener('touchend', up, {capture:true, passive:true});
+  document.addEventListener('touchcancel', up, {capture:true, passive:true});
+  document.addEventListener('focusout', ()=>tcIdleFlush(), true);
+  document.addEventListener('change', ()=>tcIdleFlush(), true);
+  document.addEventListener('visibilitychange', ()=>tcIdleFlush());
 }
 // Is the app showing the season in progress (the Live view)?
 function tcLiveViewOn(){
