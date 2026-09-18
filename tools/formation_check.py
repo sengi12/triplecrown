@@ -41,10 +41,20 @@ FIELD_W, LOS_Y, BADGE_R = 330, 196, 9
 
 
 def _chrome():
-    for p in CHROME_CANDIDATES:
+    """The browser to drive: $CHROME_BIN, a system Chrome, or a Playwright-managed one.
+
+    Linux CI images generally have no system Chrome but do ship Playwright's, whose path
+    carries a build number that changes under you — so glob for it rather than pin one.
+    """
+    import glob
+    cands = [os.environ["CHROME_BIN"]] if os.environ.get("CHROME_BIN") else []
+    cands += CHROME_CANDIDATES
+    pw = os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or "/opt/pw-browsers"
+    cands += sorted(glob.glob(os.path.join(pw, "chromium-*", "chrome-linux", "chrome")), reverse=True)
+    for p in cands:
         if os.path.exists(p):
             return p
-    raise SystemExit("Google Chrome not found — edit CHROME_CANDIDATES at the top of this file.")
+    raise SystemExit("No Chrome found — set $CHROME_BIN, or add a path to CHROME_CANDIDATES.")
 
 
 def _free_port():
@@ -70,7 +80,11 @@ class Page:
         self.proc = subprocess.Popen(
             [_chrome(), "--headless=new", "--disable-gpu", "--hide-scrollbars",
              "--remote-allow-origins=*", f"--remote-debugging-port={self.port}",
-             f"--user-data-dir=/tmp/tc-formcheck-{os.getpid()}", "--no-first-run", "about:blank"],
+             f"--user-data-dir=/tmp/tc-formcheck-{os.getpid()}", "--no-first-run"]
+            # Chrome's sandbox cannot start as root, which is how it runs in a container.
+            + (["--no-sandbox", "--disable-dev-shm-usage"]
+               if hasattr(os, "geteuid") and os.geteuid() == 0 else [])
+            + ["about:blank"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         import websocket  # imported here so --help works without it installed
         tabs = None
