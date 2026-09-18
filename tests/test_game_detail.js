@@ -346,7 +346,7 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const cy=Number((w1.match(/<circle cx="[\d.]+" cy="([\d.]+)"/)||[])[1]);
   chk(/<svg/.test(w1) && cy>40 && /aria-expanded="true"/.test(w1) && (w1.match(/<image /g)||[]).length===2, 'open: the chart with both clubs\' marks on the axis, and the line ends near the bottom — the home side, who is winning');
   const hc=(typeof pwTeamColor==='function')?'':'';
-  chk(new RegExp('L[\\d.]+,64 L[\\d.]+,64 Z" fill="#').test(w1) && !/,8 L[\d.]+,8 Z" fill="#/.test(w1), 'the fill sits on the winner\'s side (the home side here), in the winner\'s colour');
+  chk(/,8 L[\d.]+,8 Z" fill="#/.test(w1) && !/,64 L[\d.]+,64 Z" fill="#/.test(w1) && /x="338"/.test(w1), 'the winner\'s share is filled in the winner\'s colour (the home side wins here: from the line up to the top), the clubs\' marks on the right');
   app.wpOpen(false);
   const lp1=app.lastPlay(Object.assign(app.GAME('in'), {sit:{period:4, clock:'2:50', lastPlayId:'z', lastPlay:{id:'z', type:'Extra Point Good', text:'E.McPherson extra point is GOOD.', yds:0, team:'CIN', athletes:[], down:0, ddt:'', spot:'', yte:null}}}), SUM);
   chk(/LAST PLAY/.test(lp1) && /End zone/.test(lp1) && /E\. McPherson XP, good/.test(lp1) && /tc-fresh/.test(lp1), 'the last-play line: LIVE, the spot, the play, the stamp');

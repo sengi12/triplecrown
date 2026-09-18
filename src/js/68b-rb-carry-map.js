@@ -76,17 +76,20 @@ function _cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, reachedLine, ob){
     // run, a counter-lean on a long one — and the last stretch is straight, because that
     // is where he is running away or getting tackled. Not every run bends: a good share
     // go straight once they are through the gap.
+    // No two runs alike: every run through the gap leans somewhere (a big cut on some,
+    // a drift on the rest), the lean lands at a different depth, a long one may cut back,
+    // and the straight finish starts at a different point of the run.
     const run=losY-y1;
-    const bends = run>60 && rnd()<0.6;
     let x=x0;
-    if(bends){
-      const lean=sgn()*laneW*(0.3+rnd()*0.4);
-      x=x0+lean;                     pts.push([x, losY-run*(0.25+j(0.06))]);
-      if(run>230 && rnd()<0.6){ x=x-lean*(0.5+rnd()*0.4); pts.push([x, losY-run*(0.5+j(0.06))]); }
+    if(run>60){
+      const cut = rnd()<0.6;
+      const lean=sgn()*laneW*(cut ? (0.3+rnd()*0.45) : (0.08+rnd()*0.16));
+      x=x0+lean;                     pts.push([x, losY-run*(0.18+rnd()*0.22)]);
+      if(run>230 && rnd()<0.6){ x=x-lean*(0.4+rnd()*0.5); pts.push([x, losY-run*(0.45+rnd()*0.15)]); }
     }
     // the finish is a straight run: smooth up to the last bend, then a straight line home
     if(run>40){
-      const tail=[x1+(x-x1)*0.15, losY-run*0.78];
+      const tail=[x1+(x-x1)*(0.1+rnd()*0.15), losY-run*(0.6+rnd()*0.25)];
       pts.push(tail);
       return _cmSmooth(pts.concat([[x1, y1]])).replace(/ C[^C]*$/, '') + ` L${(+x1).toFixed(1)},${(+y1).toFixed(1)}`;
     }
@@ -161,8 +164,6 @@ function carryMapSVG(plays, title, sub, tag){
     const laneW=(right(losY)-left(losY))/7;
     const d=_cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, endYd>=0, !!ob);
     parts.push(`<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" opacity="${op}"/>`);
-    // the step out of bounds: a short bar on the sideline where the run ended
-    if(ob) parts.push(`<line class="cm-ob" x1="${f1(x1+(ob<0?-4:4))}" y1="${f1(y1-7)}" x2="${f1(x1+(ob<0?-4:4))}" y2="${f1(y1+7)}" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>`);
     if(p.fd && !p.td) parts.push(`<circle cx="${f1(x1)}" cy="${f1(y1)}" r="${many?3:3.5}" fill="#ffffff"/>`);
     if(p.td){
       parts.push(`<circle cx="${f1(x1)}" cy="${f1(y1)}" r="${many?9:11}" fill="none" stroke="#2f6fe4" stroke-width="3.5"/>`);
@@ -180,7 +181,7 @@ function carryMapSVG(plays, title, sub, tag){
 function carryMapLegend(){
   return `<div class="tm-legend">
     <span><i class="tm-l-loss"></i>Tackled for loss</span><span><i class="tm-l-short"></i>0–4 yds</span><span><i class="tm-l-gain"></i>5+ yds</span>
-    <span><i class="tm-l-fd"></i>First down</span><span><i class="tm-l-td"></i>Touchdown</span><span><i class="tm-l-fum"></i>Fumble lost</span><span><i class="tm-l-ob"></i>Out of bounds</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
+    <span><i class="tm-l-fd"></i>First down</span><span><i class="tm-l-td"></i>Touchdown</span><span><i class="tm-l-fum"></i>Fumble lost</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
   </div>`;
 }
 function rbCarryMapBlock(pname, node, season, selWk, label, tag){
