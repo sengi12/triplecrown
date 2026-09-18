@@ -324,6 +324,14 @@ function positions(g, av){
     if(backs>=1) putBack(rx,qbY,rx<cx?'L':'R');
     if(backs>=2) putBack(2*cx-rx,qbY,rx<cx?'R':'L');   // the second back sets opposite the first
     if(backs>=3) putBack(cx,qbY+24,'M'); }             // third body offset behind the QB
+  // Every arrangement above draws at most three. A backfield can hold more than that — a tight
+  // end motions in behind a three-back set and the charting counts four — and whoever the named
+  // arrangement did not place still has to be on the field. They fill in as upbacks, offset to
+  // alternating sides, rather than silently vanishing and leaving ten men in the picture.
+  for(let extra = 0; _bfi < bfLabel.length && extra < 4; extra++){
+    const sd = extra % 2 ? -1 : 1;
+    putBack(cx + sd * 30, qbY + 20 + Math.floor(extra / 2) * 20, sd > 0 ? 'R' : 'L');
+  }
   // ── Everyone outside the tackles, laid out along each side ────────────────
   // Absolute pixel positions per look used to pile players on top of each other (and on the
   // line), and the separation pass then flung them off the card. Instead: build each side's
@@ -596,7 +604,7 @@ function drawPlayDiagram(g, mode, sel, wrRot, av){
     if(tappable) s+=`<circle cx="${p.x}" cy="${p.y}" r="12.5" fill="none" stroke="#a8321f" stroke-width="1" stroke-dasharray="2 2" opacity="0.5"/>`;
     if(qbTap) s+=`<circle cx="${p.x}" cy="${p.y}" r="12.5" fill="none" stroke="#4f83cc" stroke-width="1" stroke-dasharray="2 2" opacity="0.6"/>`;
     const cls = tappable?`<g class="tap" data-slot="${p.slot}" style="cursor:pointer">`:(qbTap?`<g class="qbtap" style="cursor:pointer">`:'<g>');
-    s+=`${cls}<circle cx="${p.x}" cy="${p.y}" r="9" fill="${fill}" stroke="#000"/><text x="${p.x}" y="${p.y+3}" fill="${tc}" font-size="7" text-anchor="middle" font-family="Arial" font-weight="bold">${p.label}</text></g>`;
+    s+=`${cls}<circle cx="${p.x}" cy="${p.y}" r="9"${p.snug?' data-snug="1"':''} fill="${fill}" stroke="#000"/><text x="${p.x}" y="${p.y+3}" fill="${tc}" font-size="7" text-anchor="middle" font-family="Arial" font-weight="bold">${p.label}</text></g>`;
     // the QB's hint sits above the QB, clear of the backs' labels below
     if(qbTap) s+=`<text x="${p.x}" y="${p.y-14}" font-size="5.5" fill="#4f83cc" text-anchor="middle">tap: rotate WRs</text>`;
     if(mode=='pass' && rf && rf.name && rf.name!='—'){
