@@ -74,19 +74,19 @@ console.log('=== TEST: league synced → manager handle next to every name ===')
 app.setSnapshot(snap);
 chk(app.tcOwnerActive()===true,'owner lookup active');
 const tg=app.renderTargets('KC',st);
-chk(/Rashee Rice<\/span><span class="tc-own-chip tc-own-mine tc-own-sm tc-own-pill"[^>]*>★ Sengi12</.test(tg),'targets row: my player → ★ my handle right after the name');
-chk(/Travis Kelce<\/span><span class="tc-own-chip tc-own-sm tc-own-pill"[^>]*>mstums1</.test(tg),'targets row: rival player → rival handle');
+chk(/Rashee Rice<\/span><span class="tc-own-chip tc-own-mine tc-own-sm tc-own-pill"[^>]*>★ <span class="tc-own-lbl">Sengi12</.test(tg),'targets row: my player → ★ my handle right after the name');
+chk(/Travis Kelce<\/span><span class="tc-own-chip tc-own-sm tc-own-pill"[^>]*><span class="tc-own-lbl">mstums1</.test(tg),'targets row: rival player → rival handle');
 chk(/Xavier Worthy<\/span>(?!<button class="tc-own)/.test(tg),'targets row: free agent → nothing');
-chk(/Rashee Rice<\/span><span class="tc-own-chip[^>]*>★ Sengi12</.test(app.renderDerived('KC',st)),'receptions/yards rows carry the pill');
-chk(/Isiah Pacheco<\/span><span class="tc-own-chip[^>]*>mstums1</.test(app.renderCarries('KC',st)),'rushing rows carry the pill');
+chk(/Rashee Rice<\/span><span class="tc-own-chip[^>]*>★ <span class="tc-own-lbl">Sengi12</.test(app.renderDerived('KC',st)),'receptions/yards rows carry the pill');
+chk(/Isiah Pacheco<\/span><span class="tc-own-chip[^>]*><span class="tc-own-lbl">mstums1</.test(app.renderCarries('KC',st)),'rushing rows carry the pill');
 const ps=app.renderPassing('KC',st);
-chk(/Patrick Mahomes<span class="tc-own-chip[^>]*>★ Sengi12</.test(ps) || /Patrick Mahomes<\/span><span class="tc-own-chip[^>]*>★ Sengi12</.test(ps),'passing view: QB row carries the pill');
+chk(/Patrick Mahomes<span class="tc-own-chip[^>]*>★ <span class="tc-own-lbl">Sengi12</.test(ps) || /Patrick Mahomes<\/span><span class="tc-own-chip[^>]*>★ <span class="tc-own-lbl">Sengi12</.test(ps),'passing view: QB row carries the pill');
 chk(/Bengal Mauler/.test(tg) && /title="[^"]*mstums1 \(Bengal Mauler\)/.test(tg),'team name is kept in the tooltip');
 
 rk=app.renderRankingsHtml();
 chk(/<th class="c-own"/.test(rk),'rankings gains an OWNER column');
-chk(/<td class="c-own"><span class="tc-own-chip tc-own-mine[^>]*>★ Sengi12</.test(rk),'rankings row shows my handle');
-chk(/<td class="c-own"><span class="tc-own-chip tc-own-sm tc-own-pill"[^>]*>mstums1</.test(rk),'rankings row shows the rival handle');
+chk(/<td class="c-own"><span class="tc-own-chip tc-own-mine[^>]*>★ <span class="tc-own-lbl">Sengi12</.test(rk),'rankings row shows my handle');
+chk(/<td class="c-own"><span class="tc-own-chip tc-own-sm tc-own-pill"[^>]*><span class="tc-own-lbl">mstums1</.test(rk),'rankings row shows the rival handle');
 chk(/<td class="c-own"><\/td>/.test(rk),'un-owned player leaves the cell empty');
 const colspan=(rk.match(/colspan="(\d+)"/)||[])[1];
 const ths=(rk.match(/<th[\s>]/g)||[]).length;
@@ -95,7 +95,7 @@ chk(!colspan || Number(colspan)===ths, `pick-line colspan matches header count (
 const sr=app.search('rice');
 chk(/<span class="ps-pos ps-pos-WR">WR<\/span>\s*<span class="ps-nm">/.test(sr),'search row: position badge before the name block');
 chk(/<span class="ps-nm-main">Rashee Rice<\/span><span class="ps-nm-sub">.*KC<\/span>/.test(sr),'search row: team under the name');
-chk(/<\/span>\s*<span class="tc-own-chip tc-own-mine tc-own-sm tc-own-pill"[^>]*>★ Sengi12<\/span>\s*<\/button>/.test(sr),'search row: owner pill last (right edge)');
+chk(/<\/span>\s*<span class="tc-own-chip tc-own-mine tc-own-sm tc-own-pill"[^>]*>★ <span class="tc-own-lbl">Sengi12<\/span><\/span>\s*<\/button>/.test(sr),'search row: owner pill last (right edge)');
 
 console.log('=== TEST: switching leagues re-renders rankings (cache key) ===');
 app.setSnapshot(Object.assign({},snap,{takenAt:2000,teamList:[{rosterId:3,ownerId:'x',owner:'newguy',teamName:'T',players:[{id:'wr2',name:'Xavier Worthy',pos:'WR'}]}]}));

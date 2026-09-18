@@ -872,6 +872,14 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .rankings-table td.c-own{white-space:nowrap;}
 .rankings-table td.c-own .tc-own-pill{margin-left:0;}
 @media (max-width:640px){ .tc-own-pill{max-width:6rem;} .share-row .tc-own-pill{max-width:5rem;} }
+/* Phones: in the dense rows (share lists, snap tables) the pill is just the star for your
+   own players and a dot for anyone else's — the handle rode over the row's buttons at
+   phone widths. The full handle is one tap away on the player card, and in the tooltip. */
+@media (max-width:640px){
+  .share-row .tc-own-pill .tc-own-lbl, .snap-info .tc-own-pill .tc-own-lbl{display:none;}
+  .share-row .tc-own-pill, .snap-info .tc-own-pill{padding:1px 6px;max-width:none;gap:0;}
+  .share-row .tc-own-pill:not(.tc-own-mine)::before, .snap-info .tc-own-pill:not(.tc-own-mine)::before{display:inline-block;background:#8fc6ff;}
+}
 @media (max-width:640px){
   .tc-own-chip{max-width:8rem;}
   .tc-own-mgr{display:none;}

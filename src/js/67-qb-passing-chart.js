@@ -195,7 +195,8 @@ function renderPcardQbPassing(pid){
   if(!chart) return `<div class="pcard-loading">No passing-chart data for this season.</div>`;
   _pcardGameReset(norm);
   const _games=pcardWeeklyGames('qb_passing_weekly', norm, season);
-  const _selWk=_games ? pcardChartGame.qbpass : null;
+  _pcardDefaultGame('qbpass', _games, season);
+  const _selWk=_games ? (pcardChartGame.qbpass!=null?pcardChartGame.qbpass:null) : null;
   const _game=_games && _selWk!=null ? _games.find(g=>g.wk===_selWk) : null;
   if(_game){
     // One game, season-shaped: each cell borrows the SEASON league average —
@@ -216,7 +217,7 @@ function renderPcardQbPassing(pid){
   const name=p.name||'QB';
   const notePlayer = noteTargetFromArgs(pid, 'QB', p.team||chart.team||'');
   const t=chart.totals||{};
-  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardQbPassingSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('')
+  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardQbPassingSeason('${s}')">${_pcardSeasonChipText(s, !!_games)}</button>`).join('')
     + (_games ? _pcardGameChips('qbpass', _games, _selWk, chart.team) : '');
   if(!QB_ZONE_METRICS[pcardQbMetric]) pcardQbMetric='rating';
   let metric=pcardQbMetric;

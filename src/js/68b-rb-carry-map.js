@@ -6,7 +6,7 @@
 // (not public); play-by-play knows the gap he hit and where the run ended, so
 // that is what we draw. Same field as the target and pass maps (66b).
 // Rows: NFLVERSE[season].rb_fan_weekly[norm].games[i].plays
-//   = [[lane 0-6 (LE LT LG MID RG RT RE), yards, flags 1 TD / 2 fumble lost / 4 first down / 8 TFL, yardline_100, qtr], …]
+//   = [[lane 0-6 (LE LT LG MID RG RT RE), yards, flags 1 TD / 2 fumble lost / 4 first down / 8 TFL / 16 out of bounds (+32 right sideline, +64 left), yardline_100, qtr], …]
 let pcardRbView = 'map';   // 'map' (default) | 'fan'
 function setPcardRbView(v){
   if(v!=='map' && v!=='fan') return;
@@ -18,11 +18,12 @@ const _CM_LANE_NAMES=['Left end','Left tackle','Left guard','Middle','Right guar
 function _rbMapPlays(node, selWk){
   const out=[];
   for(const g of (node.games||[])){
-    if(selWk!=null && g.wk!==Number(selWk)) continue;
+    if(selWk!=null ? g.wk!==Number(selWk) : !!(g.post || g.wk>18)) continue;   // the season is the regular season
     for(const p of (g.plays||[])){
       const f=+p[2]||0;
       out.push({wk:g.wk, opp:g.opp||'', lane:Math.max(0,Math.min(6,+p[0]||0)), yds:Math.round(+p[1]||0),
-                td:!!(f&1), fum:!!(f&2), fd:!!(f&4), tfl:!!(f&8), yl:(p[3]==null?null:+p[3]), q:(p[4]==null?null:+p[4])});
+                td:!!(f&1), fum:!!(f&2), fd:!!(f&4), tfl:!!(f&8), yl:(p[3]==null?null:+p[3]), q:(p[4]==null?null:+p[4]),
+                ob:(f&16) ? ((f&32)?1:((f&64)?-1:0)) : null});   // out of bounds: +1 right sideline, -1 left, 0 the play didn't say
     }
   }
   return out;
@@ -48,7 +49,10 @@ function _cmSmooth(pts){
 // Shaped on NGS's carry charts: one wide, smooth sweep out of the backfield, a long
 // gentle drift once he is through the gap (one bend every ~12 yards, not a wiggle), and
 // a small hook at the end of a short run where the tackle turned him.
-function _cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, reachedLine){
+// `ob`: the run ended out of bounds, so (x1, y1) is the sideline at its yardage — the
+// run goes through its gap and then angles out to the boundary, the way a back
+// bounces a run outside and gets pushed out.
+function _cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, reachedLine, ob){
   const rnd=_cmRand(seed), j=(a)=>(rnd()-0.5)*2*a, sgn=()=>(rnd()<0.5?-1:1);
   const pts=[[sx+j(8), sy+j(4)]];
   if(reachedLine){
@@ -56,6 +60,18 @@ function _cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, reachedLine){
     const side=Math.sign(x0-sx)||sgn();
     pts.push([sx+(x0-sx)*(0.6+j(0.1))+side*laneW*0.12, sy-(sy-losY)*(0.18+j(0.06))]);
     pts.push([x0+j(laneW*0.12), losY]);
+    if(ob){
+      // through the gap, then out: a couple of yards upfield first, a lean toward the
+      // sideline, and a straight angle to the spot he stepped out
+      const run=losY-y1;
+      if(run>40){
+        pts.push([x0+(x1-x0)*(0.08+j(0.04)), losY-run*(0.22+j(0.05))]);
+        pts.push([x0+(x1-x0)*(0.55+j(0.08)), losY-run*(0.62+j(0.05))]);
+        return _cmSmooth(pts.concat([[x1, y1]])).replace(/ C[^C]*$/, '') + ` L${(+x1).toFixed(1)},${(+y1).toFixed(1)}`;
+      }
+      pts.push([x1, y1]);
+      return _cmSmooth(pts);
+    }
     // Upfield, what tracking shows: the cut comes early — a lean in the first third of the
     // run, a counter-lean on a long one — and the last stretch is straight, because that
     // is where he is running away or getting tackled. Not every run bends: a good share
@@ -126,10 +142,16 @@ function carryMapSVG(plays, title, sub, tag){
   for(const i of order){
     const p=plays[i], frac=fracOf[i];
     const endYd=(p.yl!=null) ? Math.min(p.yds, p.yl) : p.yds;      // the goal line ends every run
-    const x0=laneX(losY, p.lane, frac), y1=yOf(endYd), x1=laneX(y1, p.lane, frac);
+    const seed=(p.wk*7919 + i*104729 + p.lane*1301 + (p.yds+50)*31 + (p.q||0)*17)>>>0;
+    const x0=laneX(losY, p.lane, frac), y1=yOf(endYd);
+    // Out of bounds: the run ends ON the sideline at its yardage. The play says which
+    // side when the run went left or right; a middle run that got out picks the side
+    // its lane leans to (the seed decides for a dead-centre run).
+    const ob=(p.ob!=null && endYd>=0) ? (p.ob || (p.lane<3?-1:(p.lane>3?1:((seed&1)?-1:1)))) : 0;
+    const x1=ob ? (ob<0 ? left(y1)+3 : right(y1)-3) : laneX(y1, p.lane, frac);
     const col=_cmColor(p.yds);
     const what=p.td?'Touchdown':(p.fum?'Fumble lost':(p.fd?'First down':(p.tfl||p.yds<0?'Tackled for loss':'')));
-    const tip=`WK ${p.wk}${p.opp?' · '+p.opp:''}${p.q?` · Q${p.q}`:''} · ${_CM_LANE_NAMES[p.lane]} · ${p.yds>=0?'+':''}${p.yds} yds${what?` · ${what}`:''}`;
+    const tip=`WK ${p.wk}${p.opp?' · '+p.opp:''}${p.q?` · Q${p.q}`:''} · ${_CM_LANE_NAMES[p.lane]} · ${p.yds>=0?'+':''}${p.yds} yds${what?` · ${what}`:''}${ob?' · out of bounds':''}`;
     const attrs=tag?tag({label:`Carry · WK ${p.wk}`, value:tip, statKey:'carry'}):'';
     parts.push(`<g ${attrs}><title>${escHtml(tip)}</title>`);
     // The run, NGS-style: from where a back lines up (centred, seven yards deep) it sweeps
@@ -137,9 +159,10 @@ function carryMapSVG(plays, title, sub, tag){
     // exactly where the run ended (_cmRunPath). A loss never reaches the line.
     const sx=(left(losY)+right(losY))/2, sy=yOf(-7);
     const laneW=(right(losY)-left(losY))/7;
-    const seed=(p.wk*7919 + i*104729 + p.lane*1301 + (p.yds+50)*31 + (p.q||0)*17)>>>0;
-    const d=_cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, endYd>=0);
+    const d=_cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, endYd>=0, !!ob);
     parts.push(`<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" opacity="${op}"/>`);
+    // the step out of bounds: a short bar on the sideline where the run ended
+    if(ob) parts.push(`<line class="cm-ob" x1="${f1(x1+(ob<0?-4:4))}" y1="${f1(y1-7)}" x2="${f1(x1+(ob<0?-4:4))}" y2="${f1(y1+7)}" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>`);
     if(p.fd && !p.td) parts.push(`<circle cx="${f1(x1)}" cy="${f1(y1)}" r="${many?3:3.5}" fill="#ffffff"/>`);
     if(p.td){
       parts.push(`<circle cx="${f1(x1)}" cy="${f1(y1)}" r="${many?9:11}" fill="none" stroke="#2f6fe4" stroke-width="3.5"/>`);
@@ -157,13 +180,41 @@ function carryMapSVG(plays, title, sub, tag){
 function carryMapLegend(){
   return `<div class="tm-legend">
     <span><i class="tm-l-loss"></i>Tackled for loss</span><span><i class="tm-l-short"></i>0–4 yds</span><span><i class="tm-l-gain"></i>5+ yds</span>
-    <span><i class="tm-l-fd"></i>First down</span><span><i class="tm-l-td"></i>Touchdown</span><span><i class="tm-l-fum"></i>Fumble lost</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
+    <span><i class="tm-l-fd"></i>First down</span><span><i class="tm-l-td"></i>Touchdown</span><span><i class="tm-l-fum"></i>Fumble lost</span><span><i class="tm-l-ob"></i>Out of bounds</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
+  </div>`;
+}
+// The season summary (66b's binned field): seven lanes × five-yard bands of where the
+// runs ended, a bubble per spot sized by carries and coloured like the runs themselves
+// (red lost yards, gold 0–4, green 5+), scores ringed and tagged.
+function carrySummarySVG(plays, title, sub, tag){
+  const parts=[];
+  const F=_tmFieldParts(parts, 7, ['LE','LT','LG','MID','RG','RT','RE'], 'Carry map, season summary', title, sub);
+  if(!plays.length){ parts.push(`<text x="${_TM_GRID.W/2}" y="${(_TM_GRID.yTop+_TM_GRID.yBot)/2}" fill="#9aa0a6" font-size="16" text-anchor="middle">No carries</text></svg>`); return parts.join(''); }
+  const bins={};
+  for(const p of plays){
+    const b=_tmBand(p.yds), k=`${p.lane}:${b}`;
+    const c=bins[k]||(bins[k]={lane:p.lane, band:b, n:0, yds:0, td:0, fd:0, fum:0});
+    c.n++; c.yds+=p.yds; if(p.td) c.td++; if(p.fd) c.fd++; if(p.fum) c.fum++;
+  }
+  const bandColor=b=>{ const lo=_TM_GRID.YMIN+b*_TM_GRID.BAND; return lo<0 ? '#d33b2f' : (lo<5 ? '#d8a51d' : '#39c15a'); };
+  const cells=Object.values(bins).map(c=>({lane:c.lane, band:c.band, n:c.n, td:c.td, color:bandColor(c.band),
+    tip:`${_CM_LANE_NAMES[c.lane]} · ${_tmBandLabel(c.band)}: ${c.n} ${c.n===1?'carry':'carries'} (${Math.round(c.n/plays.length*100)}%) · ${c.yds} yds${c.fd?` · ${c.fd} first down${c.fd>1?'s':''}`:''}${c.td?` · ${c.td} TD`:''}${c.fum?` · ${c.fum} fumble${c.fum>1?'s':''} lost`:''}`}));
+  _tmBubbleParts(parts, F, 7, cells, tag, 'Carry map · season');
+  parts.push('</svg>');
+  return parts.join('');
+}
+function carrySummaryLegend(){
+  return `<div class="tm-legend">
+    <span><i class="tm-l-bub-sm"></i><i class="tm-l-bub"></i>Carries ending there</span>
+    <span><i class="tm-l-loss"></i>Lost yards</span><span><i class="tm-l-short"></i>0–4 yds</span><span><i class="tm-l-gain"></i>5+ yds</span>
+    <span><i class="tm-l-td"></i>Touchdowns</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
   </div>`;
 }
 function rbCarryMapBlock(pname, node, season, selWk, label, tag){
   if(!(node.games||[]).some(g=>Array.isArray(g.plays) && g.plays.length)) return `<div class="pcard-loading">Per-carry rows arrive with the next weekly bake.</div>`;
   const plays=_rbMapPlays(node, selWk);
   const title=`${escHtml(String(pname).toUpperCase())} CARRIES <tspan fill="#9aa0a6" font-size="13" font-weight="600">/ ${escHtml(String(label).toUpperCase())}</tspan>`;
+  if(selWk==null) return carrySummarySVG(plays, title, `Where his runs end · bubble = carries through that gap to that distance · ring = touchdowns · pick a game for every run`, tag) + carrySummaryLegend();
   const sub=`Every carry up the gap he hit, as long as the run · red lost yards · gold 0–4 · green 5+ · ring + TD = score`;
   return carryMapSVG(plays, title, sub, tag) + carryMapLegend();
 }

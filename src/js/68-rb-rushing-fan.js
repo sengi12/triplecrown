@@ -686,7 +686,8 @@ function renderPcardRbFan(pid){
   if(!chart) return '<div class="pcard-loading">No rushing-fan data for this season.</div>';
   _pcardGameReset(norm);
   const _games=(!_rbIsProjSeason(season)) ? pcardWeeklyGames('rb_fan_weekly', norm, season) : null;
-  const _selWk=_games ? pcardChartGame.rbfan : null;
+  _pcardDefaultGame('rbfan', _games, season);
+  const _selWk=_games ? (pcardChartGame.rbfan!=null?pcardChartGame.rbfan:null) : null;
   const _game=_games && _selWk!=null ? _games.find(g=>g.wk===_selWk) : null;
   if(_game){
     const lanes={};
@@ -726,7 +727,7 @@ function renderPcardRbFan(pid){
   const notePlayer = noteTargetFromArgs(pid, 'RB', p.team||chart.team||'');
   const noteCtx = (_rbIsProjSeason(season) && chart.is_projection) ? `${_rbProjYear()} projection rushing fan` : `${season} rushing fan`;
   const t=chart.totals||{};
-  const seasonBtns=seasonOpts.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardRbFanSeason('${s}')">${_rbIsProjSeason(s)?_rbProjYear()+' proj':(typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s)}</button>`).join('')
+  const seasonBtns=seasonOpts.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardRbFanSeason('${s}')">${_rbIsProjSeason(s)?_rbProjYear()+' proj':_pcardSeasonChipText(s, !!_games)}</button>`).join('')
     + (_games ? _pcardGameChips('rbfan', _games, _selWk, chart.team) : '');
   if(!RB_LANE_METRICS[pcardRbMetric]) pcardRbMetric='eff';
   let metric=pcardRbMetric;

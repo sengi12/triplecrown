@@ -256,7 +256,7 @@
 /* ── Route tree (Routes tab) ──────────────────────────────────────────────── */
 .rt-wrap{padding:4px 2px 2px;}
 .rt-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:2px 2px 6px;}
-.rt-seasons{display:flex;gap:4px;}
+.rt-seasons{display:flex;gap:4px;flex-wrap:wrap;min-width:0;}
 .rt-metrics{display:flex;gap:4px;}
 .rt-season-btn{padding:3px 11px;font-size:10.5px;font-weight:800;letter-spacing:.03em;cursor:pointer;
   background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:6px;}
@@ -642,6 +642,16 @@ tr.pcard-future-row td{opacity:.75;}
 .rt-gp-opt{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 9px;border-radius:6px;font-size:11px;font-weight:700;color:var(--text);cursor:pointer;white-space:nowrap;}
 .rt-gp-opt:hover{background:var(--surface2);}
 .rt-gp-opt.active{color:var(--accent);}
+.rt-gp-hdr{padding:6px 9px 2px;font-size:9.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--border);margin-top:3px;}
+/* Phones: the season chips wrap, and the game picker takes a full row of its own under
+   them (it used to ride the end of the chip row and run off the card's edge); its menu
+   opens the width of that row and scrolls when a season's worth of games won't fit. */
+@media (max-width:500px){
+  .rt-seasons .rt-gamepick{flex:0 0 100%;margin-left:0;margin-top:2px;}
+  .rt-seasons .rt-gp-btn{width:100%;justify-content:space-between;padding:6px 10px;font-size:11px;}
+  .rt-seasons .rt-gp-btn .rt-gp-caret{margin-left:auto;}
+  .rt-seasons .rt-gp-menu{left:0;right:0;min-width:0;max-height:min(50vh,320px);overflow-y:auto;}
+}
 /* Narrow phones: when the name would run under the top-right buttons (measured, not
    assumed), the name block steps below them and the photo gap tightens. */
 @media (max-width:560px){

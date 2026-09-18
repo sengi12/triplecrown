@@ -6,6 +6,10 @@ this file is the merge history, newest first, one line per PR. Add a line when a
 
 Open work lives in [TODO.md](TODO.md).
 
+## 2026-09-18
+
+- feat(cards): a chart opens on the latest game and "Season" is a binned summary map (bubbles by side × depth, or gap × distance) instead of a hairball; out-of-bounds runs angle out to the sideline they left by; playoff games join the game picker; the picker owns a row on phones; manager pills are a star or a dot in narrow rows (#142)
+
 ## 2026-09-17
 
 - fix(tracker): a live read never repaints under your finger, an open picker or a focused field; the left sidebar repaints only on a state change; no position filter row in the Game Center (#141)

@@ -475,7 +475,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 /* ── Route tree (Routes tab) ──────────────────────────────────────────────── */
 .rt-wrap{padding:4px 2px 2px;}
 .rt-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:2px 2px 6px;}
-.rt-seasons{display:flex;gap:4px;}
+.rt-seasons{display:flex;gap:4px;flex-wrap:wrap;min-width:0;}
 .rt-metrics{display:flex;gap:4px;}
 .rt-season-btn{padding:3px 11px;font-size:10.5px;font-weight:800;letter-spacing:.03em;cursor:pointer;
   background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:6px;}
@@ -861,6 +861,16 @@ tr.pcard-future-row td{opacity:.75;}
 .rt-gp-opt{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 9px;border-radius:6px;font-size:11px;font-weight:700;color:var(--text);cursor:pointer;white-space:nowrap;}
 .rt-gp-opt:hover{background:var(--surface2);}
 .rt-gp-opt.active{color:var(--accent);}
+.rt-gp-hdr{padding:6px 9px 2px;font-size:9.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border-top:1px solid var(--border);margin-top:3px;}
+/* Phones: the season chips wrap, and the game picker takes a full row of its own under
+   them (it used to ride the end of the chip row and run off the card's edge); its menu
+   opens the width of that row and scrolls when a season's worth of games won't fit. */
+@media (max-width:500px){
+  .rt-seasons .rt-gamepick{flex:0 0 100%;margin-left:0;margin-top:2px;}
+  .rt-seasons .rt-gp-btn{width:100%;justify-content:space-between;padding:6px 10px;font-size:11px;}
+  .rt-seasons .rt-gp-btn .rt-gp-caret{margin-left:auto;}
+  .rt-seasons .rt-gp-menu{left:0;right:0;min-width:0;max-height:min(50vh,320px);overflow-y:auto;}
+}
 /* Narrow phones: when the name would run under the top-right buttons (measured, not
    assumed), the name block steps below them and the photo gap tightens. */
 @media (max-width:560px){
@@ -1850,6 +1860,14 @@ html.scheme-locked, html.scheme-locked body{overflow:hidden;overscroll-behavior:
 .tm-l-fd{background:#fff;width:8px!important;height:8px!important;margin:0 2px;}
 .tm-l-fum{border:3px solid #d33b2f;background:transparent;}
 .tm-l-arc{width:22px!important;height:4px!important;border-radius:2px!important;background:#2f6fe4;}
+/* out of bounds: the sideline bar at the end of a run */
+.tm-l-ob{width:14px!important;height:4px!important;border-radius:2px!important;background:#39c15a;border-right:3px solid #fff;box-sizing:content-box!important;}
+/* season summary swatches: the bubble pair and the catch-rate scale */
+.tm-l-bub-sm{width:8px!important;height:8px!important;background:#d8a51d;margin-right:-2px;}
+.tm-l-bub{width:14px!important;height:14px!important;background:#d8a51d;}
+.tm-l-r0{background:#d33b2f;margin-right:-4px;}
+.tm-l-r1{background:#d8a51d;margin-right:-4px;}
+.tm-l-r2{background:#39c15a;}
 /* ── This Week hub: every league, one action list ── */
 .hub-league{padding:0;overflow:hidden;}
 .hub-lg-head{display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer;user-select:none;}
@@ -3254,6 +3272,14 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .rankings-table td.c-own{white-space:nowrap;}
 .rankings-table td.c-own .tc-own-pill{margin-left:0;}
 @media (max-width:640px){ .tc-own-pill{max-width:6rem;} .share-row .tc-own-pill{max-width:5rem;} }
+/* Phones: in the dense rows (share lists, snap tables) the pill is just the star for your
+   own players and a dot for anyone else's — the handle rode over the row's buttons at
+   phone widths. The full handle is one tap away on the player card, and in the tooltip. */
+@media (max-width:640px){
+  .share-row .tc-own-pill .tc-own-lbl, .snap-info .tc-own-pill .tc-own-lbl{display:none;}
+  .share-row .tc-own-pill, .snap-info .tc-own-pill{padding:1px 6px;max-width:none;gap:0;}
+  .share-row .tc-own-pill:not(.tc-own-mine)::before, .snap-info .tc-own-pill:not(.tc-own-mine)::before{display:inline-block;background:#8fc6ff;}
+}
 @media (max-width:640px){
   .tc-own-chip{max-width:8rem;}
   .tc-own-mgr{display:none;}
@@ -4065,8 +4091,12 @@ button.la-cliff:hover{filter:brightness(1.25);}
 
 /* Injury chip hugs the name: .share-name is flex:1, so anything after it lands at the far
    right of the row. The wrapper absorbs that space instead, keeping name + chip together. */
-.tc-nm-wrap{display:flex;align-items:center;gap:5px;flex:1;min-width:0;}
-.tc-nm-wrap .share-name{flex:0 1 auto;}
+.tc-nm-wrap{display:flex;align-items:center;gap:5px;flex:1;min-width:0;overflow:hidden;}
+.tc-nm-wrap .share-name{flex:0 1 auto;min-width:2.5em;}
+/* Narrow rows: everything that follows the name is a fixed-size control, so the name is
+   the one thing that gives — it never paints over the buttons beside it. */
+.share-row > *{min-width:0;}
+.share-row > .share-dot, .share-row > .share-hs, .share-row > .pos-badge, .share-row > .pace-info-wrap{flex:0 0 auto;}
 .rankings-table.grouped td.c-player .inj-tag{margin-left:5px;}
 
 /* DvP: the team logo/code opens that defense's player card */
@@ -16107,6 +16137,7 @@ function _pcardRouteViewBtns(active, hasTree){
 function _renderTargetTree(pid, node, season, seasonBtns, hasTree){
   const norm=_pcardNorm(pid);
   const games=(node.games||[]).length ? node.games : null;
+  _pcardDefaultGame('routes', games, season);
   const selWk=games ? (pcardChartGame.routes!=null?pcardChartGame.routes:null) : null;
   const v=_ttView(node, selWk);
   const live=(typeof tcIsLiveSeason==='function') && tcIsLiveSeason(season);
@@ -16401,6 +16432,22 @@ function pcardWeeklyGames(section, norm, season){
   const node=blk && blk[norm];
   return (node && Array.isArray(node.games) && node.games.length) ? node.games : null;
 }
+// In season a chart opens on the latest game — the map is readable one game at a time
+// (a season of dots and lines is a hairball) — and "Season" is a tap away, where the map
+// becomes the binned summary. A finished season opens on its summary. `undefined` is
+// "not chosen yet"; null is an explicit Season.
+// The season chip beside a game picker is the bare year: the picker names the week (the
+// "2026 · wk N" form counts completed weeks and lags a Thursday game).
+function _pcardSeasonChipText(s, hasPicker){
+  return hasPicker ? String(s) : ((typeof tcSeasonLabel==='function') ? tcSeasonLabel(s) : String(s));
+}
+function _pcardDefaultGame(chartKey, games, season){
+  if(pcardChartGame[chartKey]!==undefined || !games || !games.length) return;
+  if(typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season)) pcardChartGame[chartKey]=games[games.length-1].wk;
+}
+// The playoff rounds after week 18, the way nflverse numbers them.
+const _PCARD_POST_ROUNDS={19:'WC', 20:'DIV', 21:'CONF', 22:'SB'};
+function _pcardGameIsPost(g){ return !!(g && (g.post || g.wk>18)); }
 function setPcardChartGame(chartKey, wk){
   pcardChartGame[chartKey] = (wk==='' || wk==null) ? null : Number(wk);
   // Same re-render pattern as the season buttons: paint the owning chart back
@@ -16420,14 +16467,17 @@ function _pcardGameLabel(g, team){
   const home = meta ? !!meta[1] : null;
   const opp = g.opp || (meta && meta[0]) || '';
   const at = home==null ? '' : (home ? 'vs' : '@');
-  return {opp, text:`WK ${g.wk}${opp?` ${at} ${opp}`.replace('  ',' '):''}`};
+  const wk = _pcardGameIsPost(g) ? (_PCARD_POST_ROUNDS[g.wk]||`WK ${g.wk}`) : `WK ${g.wk}`;
+  return {opp, text:`${wk}${opp?` ${at} ${opp}`.replace('  ',' '):''}`};
 }
 function _pcardGameChips(chartKey, games, selWk, team){
   const logo = o => (o && typeof NFL_LOGO==='function') ? `<img class="rt-gp-logo" src="${NFL_LOGO(o)}" alt="" onerror="this.remove()">` : '';
   const cur = selWk==null ? {text:'Season', opp:''} : _pcardGameLabel(games.find(g=>g.wk===selWk)||{wk:selWk}, team);
+  let postHdr=false;
   const opts = [`<div class="rt-gp-opt ${selWk==null?'active':''}" onclick="setPcardChartGame('${chartKey}','')">Season</div>`]
     .concat(games.map(g=>{ const L=_pcardGameLabel(g, team);
-      return `<div class="rt-gp-opt ${selWk===g.wk?'active':''}" onclick="setPcardChartGame('${chartKey}',${g.wk})">${escHtml(L.text)}${logo(L.opp)}</div>`; }));
+      const hdr=(!postHdr && _pcardGameIsPost(g)) ? (postHdr=true, `<div class="rt-gp-hdr">Playoffs</div>`) : '';
+      return `${hdr}<div class="rt-gp-opt ${selWk===g.wk?'active':''}" onclick="setPcardChartGame('${chartKey}',${g.wk})">${escHtml(L.text)}${logo(L.opp)}</div>`; }));
   return `<div class="rt-gamepick"><button class="rt-gp-btn" onclick="this.parentNode.classList.toggle('open');event.stopPropagation()">${escHtml(cur.text)}${logo(cur.opp)}<span class="rt-gp-caret">▾</span></button><div class="rt-gp-menu">${opts.join('')}</div></div>`;
 }
 // One weekly route game → the season-shaped object the renderer already reads.
@@ -16455,16 +16505,17 @@ function renderPcardRoutes(pid){
   const _hasTree=!!(_seasonBlk.routes && _seasonBlk.routes[norm]);
   const _tn=_pcardTargetNode(norm, pcardRouteSeason);
   if(_tn && !(_hasTree && pcardTargetView==='tree')){
-    const seasonBtns0=seasons.map(s=>`<button class="rt-season-btn ${String(s)===String(pcardRouteSeason)?'active':''}" onclick="setPcardRouteSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('');
+    const seasonBtns0=seasons.map(s=>`<button class="rt-season-btn ${String(s)===String(pcardRouteSeason)?'active':''}" onclick="setPcardRouteSeason('${s}')">${_pcardSeasonChipText(s, !!(_tn.games||[]).length)}</button>`).join('');
     return _renderTargetTree(pid, _tn, pcardRouteSeason, seasonBtns0, _hasTree);
   }
   if(!_hasTree) return `<div class="pcard-loading">No route data for this season.</div>`;
   const _games=pcardWeeklyGames('routes_weekly', norm, pcardRouteSeason);
-  const _selWk=_games ? pcardChartGame.routes : null;
+  _pcardDefaultGame('routes', _games, pcardRouteSeason);
+  const _selWk=_games ? (pcardChartGame.routes!=null?pcardChartGame.routes:null) : null;
   const _game=_games && _selWk!=null ? _games.find(g=>g.wk===_selWk) : null;
   const rt=_game ? _routeGameAsSeason(_game) : NFLVERSE[pcardRouteSeason].routes[norm];
   if(!ROUTE_TREE_METRICS[pcardRouteMetric]) pcardRouteMetric='td';
-  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===String(pcardRouteSeason)?'active':''}" onclick="setPcardRouteSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('')
+  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===String(pcardRouteSeason)?'active':''}" onclick="setPcardRouteSeason('${s}')">${_pcardSeasonChipText(s, !!_games)}</button>`).join('')
     + (_games ? _pcardGameChips('routes', _games, _selWk) : '');
   const metricBtns=Object.entries(ROUTE_TREE_METRICS).map(([k,m])=>{
     const known=_routeMetricKnown(rt,k);
@@ -16537,7 +16588,7 @@ function _tmRouteLegend(season){
 function _tmPlays(node, selWk, legend){
   const out=[];
   for(const g of (node.games||[])){
-    if(selWk!=null && g.wk!==Number(selWk)) continue;
+    if(selWk!=null ? g.wk!==Number(selWk) : _tmIsPost(g)) continue;
     for(const p of (g.plays||[])){
       const ri=(p.length>6 && p[6]!=null) ? +p[6] : null;
       out.push({wk:g.wk, opp:g.opp||'', ay:Math.round(+p[0]||0), side:(p[1]==null?1:+p[1]), res:+p[2]||0,
@@ -16548,6 +16599,8 @@ function _tmPlays(node, selWk, legend){
   }
   return out;
 }
+// A playoff game (the builder flags it; older sidecars only have the week number).
+function _tmIsPost(g){ return !!(g && (g.post || g.wk>18)); }
 // Does the sidecar carry per-target rows for this player at all? (older bakes don't)
 function _tmHasPlays(node){ return (node.games||[]).some(g=>Array.isArray(g.plays) && g.plays.length); }
 const _TM_SIDES=['Left','Middle','Right'];
@@ -16724,6 +16777,7 @@ function targetMapBlock(pname, node, season, selWk, v, tag){
   const plays=_tmPlays(node, selWk, legend);
   const charted=plays.some(p=>p.route);
   const title=`${escHtml(String(pname).toUpperCase())} TARGETS <tspan fill="#9aa0a6" font-size="13" font-weight="600">/ ${escHtml(String(v.label).toUpperCase())}</tspan>`;
+  if(selWk==null) return targetSummarySVG(plays, title, `Where his targets go · bubble = targets in that spot · colour = catch rate · ring = touchdowns · pick a game for every throw`, tag, 'rec') + targetSummaryLegend('rec');
   const sub= charted
     ? `Every target with the route he ran · green = after the catch · ring + TD = touchdown`
     : `Every target by depth and side · green = after the catch · ring + TD = touchdown · routes come with the season's charting`;
@@ -16736,7 +16790,7 @@ function targetMapBlock(pname, node, season, selWk, v, tag){
 function _qbMapPlays(node, selWk){
   const out=[], rcv=Array.isArray(node.rcv)?node.rcv:[];
   for(const g of (node.games||[])){
-    if(selWk!=null && g.wk!==Number(selWk)) continue;
+    if(selWk!=null ? g.wk!==Number(selWk) : _tmIsPost(g)) continue;
     for(const p of (g.plays||[])){
       const ri=(p.length>6 && p[6]!=null) ? +p[6] : null;
       out.push({wk:g.wk, opp:g.opp||'', ay:Math.round(+p[0]||0), side:(p[1]==null?1:+p[1]), res:+p[2]||0,
@@ -16751,6 +16805,7 @@ function qbPassMapBlock(pname, node, season, selWk, label, tag){
   if(!_tmHasPlays(node)) return `<div class="pcard-loading">Per-attempt rows arrive with the next weekly bake.</div>`;
   const plays=_qbMapPlays(node, selWk);
   const title=`${escHtml(String(pname).toUpperCase())} PASSES <tspan fill="#9aa0a6" font-size="13" font-weight="600">/ ${escHtml(String(label).toUpperCase())}</tspan>`;
+  if(selWk==null) return targetSummarySVG(plays, title, `Where his throws go · bubble = attempts to that spot · colour = completion rate · ring = touchdowns · pick a game for every throw`, tag, 'qb') + targetSummaryLegend('qb');
   const sub=`Every located attempt at its depth and side · hover for the receiver · green = after the catch · ring + TD = touchdown`;
   return targetMapSVG(plays, title, sub, tag) + targetMapLegend(false, 'qb');
 }
@@ -16764,6 +16819,107 @@ function ngsChartUrl(node, name, season, selWk){
 function ngsChartLink(node, name, season, selWk){
   const u=ngsChartUrl(node, name, season, selWk);
   return u ? `<a class="tm-ngs-link" href="${u}" target="_blank" rel="noopener" title="Open this player's Next Gen Stats charts (route charts from player tracking) in a new tab">Next Gen Stats charts ↗</a>` : '';
+}
+
+// ── The season summary: the same field, binned ─────────────────────────────
+// A season of throws drawn one by one is a hairball, so "Season" bins them: three
+// lanes (the sides pbp charts) × five-yard depth bands, one bubble per spot sized by
+// how many balls went there and coloured by how many were caught, the ring and tag
+// counting scores. NGS-style reading (where does he get the ball, where does he win)
+// without pretending to know what tracking would.
+const _TM_GRID={W:760, H:600, yTop:60, yBot:560, YMAX:40, YMIN:-10, BAND:5};
+function _tmBand(yd){ const g=_TM_GRID; return Math.max(0, Math.min((g.YMAX-g.YMIN)/g.BAND-1, Math.floor((yd-g.YMIN)/g.BAND))); }
+function _tmBandLabel(b){
+  const g=_TM_GRID, lo=g.YMIN+b*g.BAND, hi=lo+g.BAND-1, last=(g.YMAX-g.YMIN)/g.BAND-1, s=v=>(v>0?'+':'')+v;
+  return b===0 ? `${s(hi)} yds and behind` : (b===last ? `${s(lo)} yds and deeper` : `${s(lo)} to ${s(hi)} yds`);
+}
+// red (none caught) → gold (half) → green (all), the carry map's three colours as a scale
+function _tmRateColor(rate){
+  const mix=(a,b,t)=>a.map((v,i)=>Math.round(v+(b[i]-v)*t));
+  const R=[211,59,47], G=[216,165,29], N=[57,193,90];
+  const c = rate<=0.5 ? mix(R,G,rate/0.5) : mix(G,N,(rate-0.5)/0.5);
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+// The field the maps share (66b / 68b), as SVG parts, for the summaries; `lanes` is the
+// number of columns with `tags` at the top. Returns the helpers the caller draws with.
+function _tmFieldParts(parts, lanes, tags, aria, title, sub){
+  const {W,H,yTop,yBot,YMAX,YMIN}=_TM_GRID;
+  const yOf = yd => yBot - (Math.max(YMIN, Math.min(YMAX, yd)) - YMIN) * (yBot-yTop)/(YMAX-YMIN);
+  const left = y => 170 - 130*(y-yTop)/(yBot-yTop);
+  const right= y => 590 + 130*(y-yTop)/(yBot-yTop);
+  const laneX=(y, lane)=>{ const lw=(right(y)-left(y))/lanes; return left(y)+lw*(lane+0.5); };
+  const losY=yOf(0), f1=x=>(+x).toFixed(1);
+  parts.push(`<svg viewBox="0 0 ${W} ${H}" class="qpc-svg" role="img" aria-label="${aria}">`);
+  parts.push(`<rect width="${W}" height="${H}" fill="#101214"/>`);
+  parts.push(`<text x="24" y="28" fill="#fff" font-size="20" font-weight="800">${title}</text>`);
+  parts.push(`<text x="24" y="48" fill="#9aa0a6" font-size="12">${sub}</text>`);
+  parts.push(`<polygon points="${f1(left(yTop))},${yTop} ${f1(right(yTop))},${yTop} ${f1(right(yBot))},${yBot} ${f1(left(yBot))},${yBot}" fill="#22262c" stroke="#0c0d0f" stroke-width="2"/>`);
+  for(let yd=YMIN+5; yd<=YMAX-5; yd+=5){
+    if(yd===0) continue;
+    const y=yOf(yd), major=(yd%10===0);
+    parts.push(`<line x1="${f1(left(y))}" y1="${f1(y)}" x2="${f1(right(y))}" y2="${f1(y)}" stroke="${major?'#4c525b':'#353a42'}" stroke-width="${major?1.5:1}"/>`);
+    if(major){
+      const lab=(yd>0?'+':'')+yd;
+      parts.push(`<text x="${f1(left(y)-12)}" y="${f1(y+4)}" fill="#c8ccd2" font-size="12" text-anchor="end">${lab}</text>`);
+      parts.push(`<text x="${f1(right(y)+12)}" y="${f1(y+4)}" fill="#c8ccd2" font-size="12">${lab}</text>`);
+    }
+  }
+  for(let i=1;i<lanes;i++) parts.push(`<line x1="${f1(left(yTop)+(right(yTop)-left(yTop))*i/lanes)}" y1="${yTop}" x2="${f1(left(yBot)+(right(yBot)-left(yBot))*i/lanes)}" y2="${yBot}" stroke="#353a42" stroke-width="1" stroke-dasharray="2 6"/>`);
+  // lane tags ride just above the field's top edge, so the deepest band's bubbles never sit under them
+  if(tags) for(let i=0;i<lanes;i++) parts.push(`<text x="${f1(laneX(yTop, i))}" y="${f1(yTop-5)}" fill="#8a9096" font-size="10" font-weight="800" text-anchor="middle">${tags[i]}</text>`);
+  parts.push(`<line x1="${f1(left(losY)-30)}" y1="${f1(losY)}" x2="${f1(right(losY)+30)}" y2="${f1(losY)}" stroke="#2f6fe4" stroke-width="4"/>`);
+  parts.push(`<text x="${f1(left(losY)+8)}" y="${f1(losY-9)}" fill="#fff" font-size="12" font-weight="800">LOS</text>`);
+  parts.push(`<text x="${f1(right(losY)-8)}" y="${f1(losY-9)}" fill="#fff" font-size="12" font-weight="800" text-anchor="end">LOS</text>`);
+  return {yOf, left, right, laneX, losY, f1};
+}
+// The bubbles for a binned grid: `cells` = [{lane, band, n, color, tip, td, text}], drawn
+// small to large so a big spot never hides a small neighbour; the count sits inside once
+// the bubble has room; scores ring it and are tagged beside it (laid out so tags never overlap).
+function _tmBubbleParts(parts, F, lanes, cells, tag, tagLabel){
+  const {yOf, left, right, laneX, f1}=F, g=_TM_GRID;
+  const nmax=Math.max(1, ...cells.map(c=>c.n));
+  const bandH=(g.yBot-g.yTop)/((g.YMAX-g.YMIN)/g.BAND);
+  const labels=[];
+  for(const c of cells.slice().sort((a,b)=>b.n-a.n)){
+    const yd=g.YMIN+c.band*g.BAND+g.BAND/2, cy=yOf(yd), cx=laneX(cy, c.lane);
+    const rMax=Math.min(bandH/2-3, (right(cy)-left(cy))/lanes/2-4);
+    const r=Math.max(5, 5+(rMax-5)*Math.sqrt(c.n/nmax));
+    const attrs=tag?tag({label:tagLabel, value:c.tip, statKey:'summary'}):'';
+    parts.push(`<g class="tm-bub" ${attrs}><title>${escHtml(c.tip)}</title>`);
+    if(c.td) parts.push(`<circle cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(r+4)}" fill="none" stroke="#2f6fe4" stroke-width="3"/>`);
+    parts.push(`<circle cx="${f1(cx)}" cy="${f1(cy)}" r="${f1(r)}" fill="${c.color}" fill-opacity="0.88" stroke="#101214" stroke-width="1.5"/>`);
+    if(r>=9) parts.push(`<text x="${f1(cx)}" y="${f1(cy+4)}" fill="#101214" font-size="${r>=14?12:10}" font-weight="900" text-anchor="middle">${c.n}</text>`);
+    parts.push('</g>');
+    if(c.td) labels.push({x:cx+r+9, y:cy+4.5, mx:cx, my:cy, text:`${c.td} TD`, fill:'#ffffff', td:true});
+  }
+  parts.push(_tmLayoutLabels(labels));
+}
+function targetSummarySVG(plays, title, sub, tag, kind){
+  const parts=[];
+  const F=_tmFieldParts(parts, 3, null, kind==='qb'?'Pass map, season summary':'Target map, season summary', title, sub);
+  if(!plays.length){ parts.push(`<text x="${_TM_GRID.W/2}" y="${(_TM_GRID.yTop+_TM_GRID.yBot)/2}" fill="#9aa0a6" font-size="16" text-anchor="middle">No ${kind==='qb'?'attempts':'targets'}</text></svg>`); return parts.join(''); }
+  const bins={};
+  for(const p of plays){
+    const k=`${p.side}:${_tmBand(p.ay)}`;
+    const b=bins[k]||(bins[k]={lane:p.side, band:_tmBand(p.ay), n:0, rec:0, yds:0, td:0, int:0});
+    b.n++; if(p.res===1||p.res===2){ b.rec++; b.yds+=p.ay+p.yac; } if(p.res===2) b.td++; if(p.res===3) b.int++;
+  }
+  const what=kind==='qb'?[['attempt','attempts'],['completion','completions']]:[['target','targets'],['catch','catches']];
+  const cells=Object.values(bins).map(b=>{
+    const rate=b.rec/b.n;
+    const tip=`${_TM_SIDES[b.lane]||'Middle'} · ${_tmBandLabel(b.band)}: ${b.n} ${what[0][b.n===1?0:1]} · ${b.rec} ${what[1][b.rec===1?0:1]} (${Math.round(rate*100)}%) · ${b.yds} yds${b.td?` · ${b.td} TD`:''}${b.int?` · ${b.int} INT`:''}`;
+    return {lane:b.lane, band:b.band, n:b.n, td:b.td, color:_tmRateColor(rate), tip};
+  });
+  _tmBubbleParts(parts, F, 3, cells, tag, kind==='qb'?'Pass map · season':'Target map · season');
+  parts.push('</svg>');
+  return parts.join('');
+}
+function targetSummaryLegend(kind){
+  return `<div class="tm-legend">
+    <span><i class="tm-l-bub-sm"></i><i class="tm-l-bub"></i>${kind==='qb'?'Attempts':'Targets'} to that spot</span>
+    <span><i class="tm-l-r0"></i><i class="tm-l-r1"></i><i class="tm-l-r2"></i>${kind==='qb'?'Completion':'Catch'} rate low → high</span>
+    <span><i class="tm-l-td"></i>Touchdowns</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
+  </div>`;
 }
 // ── QB passing chart (player-card "Passing Chart" tab) ─────────────────────
 // Seed payload: NFLVERSE[season].qb_passing[normName] = {
@@ -16962,7 +17118,8 @@ function renderPcardQbPassing(pid){
   if(!chart) return `<div class="pcard-loading">No passing-chart data for this season.</div>`;
   _pcardGameReset(norm);
   const _games=pcardWeeklyGames('qb_passing_weekly', norm, season);
-  const _selWk=_games ? pcardChartGame.qbpass : null;
+  _pcardDefaultGame('qbpass', _games, season);
+  const _selWk=_games ? (pcardChartGame.qbpass!=null?pcardChartGame.qbpass:null) : null;
   const _game=_games && _selWk!=null ? _games.find(g=>g.wk===_selWk) : null;
   if(_game){
     // One game, season-shaped: each cell borrows the SEASON league average —
@@ -16983,7 +17140,7 @@ function renderPcardQbPassing(pid){
   const name=p.name||'QB';
   const notePlayer = noteTargetFromArgs(pid, 'QB', p.team||chart.team||'');
   const t=chart.totals||{};
-  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardQbPassingSeason('${s}')">${typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s}</button>`).join('')
+  const seasonBtns=seasons.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardQbPassingSeason('${s}')">${_pcardSeasonChipText(s, !!_games)}</button>`).join('')
     + (_games ? _pcardGameChips('qbpass', _games, _selWk, chart.team) : '');
   if(!QB_ZONE_METRICS[pcardQbMetric]) pcardQbMetric='rating';
   let metric=pcardQbMetric;
@@ -17837,7 +17994,8 @@ function renderPcardRbFan(pid){
   if(!chart) return '<div class="pcard-loading">No rushing-fan data for this season.</div>';
   _pcardGameReset(norm);
   const _games=(!_rbIsProjSeason(season)) ? pcardWeeklyGames('rb_fan_weekly', norm, season) : null;
-  const _selWk=_games ? pcardChartGame.rbfan : null;
+  _pcardDefaultGame('rbfan', _games, season);
+  const _selWk=_games ? (pcardChartGame.rbfan!=null?pcardChartGame.rbfan:null) : null;
   const _game=_games && _selWk!=null ? _games.find(g=>g.wk===_selWk) : null;
   if(_game){
     const lanes={};
@@ -17877,7 +18035,7 @@ function renderPcardRbFan(pid){
   const notePlayer = noteTargetFromArgs(pid, 'RB', p.team||chart.team||'');
   const noteCtx = (_rbIsProjSeason(season) && chart.is_projection) ? `${_rbProjYear()} projection rushing fan` : `${season} rushing fan`;
   const t=chart.totals||{};
-  const seasonBtns=seasonOpts.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardRbFanSeason('${s}')">${_rbIsProjSeason(s)?_rbProjYear()+' proj':(typeof tcSeasonLabel==='function'?tcSeasonLabel(s):s)}</button>`).join('')
+  const seasonBtns=seasonOpts.map(s=>`<button class="rt-season-btn ${String(s)===season?'active':''}" onclick="setPcardRbFanSeason('${s}')">${_rbIsProjSeason(s)?_rbProjYear()+' proj':_pcardSeasonChipText(s, !!_games)}</button>`).join('')
     + (_games ? _pcardGameChips('rbfan', _games, _selWk, chart.team) : '');
   if(!RB_LANE_METRICS[pcardRbMetric]) pcardRbMetric='eff';
   let metric=pcardRbMetric;
@@ -17982,7 +18140,7 @@ if(typeof TC_INFO_BOOK!=='undefined'){
 // (not public); play-by-play knows the gap he hit and where the run ended, so
 // that is what we draw. Same field as the target and pass maps (66b).
 // Rows: NFLVERSE[season].rb_fan_weekly[norm].games[i].plays
-//   = [[lane 0-6 (LE LT LG MID RG RT RE), yards, flags 1 TD / 2 fumble lost / 4 first down / 8 TFL, yardline_100, qtr], …]
+//   = [[lane 0-6 (LE LT LG MID RG RT RE), yards, flags 1 TD / 2 fumble lost / 4 first down / 8 TFL / 16 out of bounds (+32 right sideline, +64 left), yardline_100, qtr], …]
 let pcardRbView = 'map';   // 'map' (default) | 'fan'
 function setPcardRbView(v){
   if(v!=='map' && v!=='fan') return;
@@ -17994,11 +18152,12 @@ const _CM_LANE_NAMES=['Left end','Left tackle','Left guard','Middle','Right guar
 function _rbMapPlays(node, selWk){
   const out=[];
   for(const g of (node.games||[])){
-    if(selWk!=null && g.wk!==Number(selWk)) continue;
+    if(selWk!=null ? g.wk!==Number(selWk) : !!(g.post || g.wk>18)) continue;   // the season is the regular season
     for(const p of (g.plays||[])){
       const f=+p[2]||0;
       out.push({wk:g.wk, opp:g.opp||'', lane:Math.max(0,Math.min(6,+p[0]||0)), yds:Math.round(+p[1]||0),
-                td:!!(f&1), fum:!!(f&2), fd:!!(f&4), tfl:!!(f&8), yl:(p[3]==null?null:+p[3]), q:(p[4]==null?null:+p[4])});
+                td:!!(f&1), fum:!!(f&2), fd:!!(f&4), tfl:!!(f&8), yl:(p[3]==null?null:+p[3]), q:(p[4]==null?null:+p[4]),
+                ob:(f&16) ? ((f&32)?1:((f&64)?-1:0)) : null});   // out of bounds: +1 right sideline, -1 left, 0 the play didn't say
     }
   }
   return out;
@@ -18024,7 +18183,10 @@ function _cmSmooth(pts){
 // Shaped on NGS's carry charts: one wide, smooth sweep out of the backfield, a long
 // gentle drift once he is through the gap (one bend every ~12 yards, not a wiggle), and
 // a small hook at the end of a short run where the tackle turned him.
-function _cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, reachedLine){
+// `ob`: the run ended out of bounds, so (x1, y1) is the sideline at its yardage — the
+// run goes through its gap and then angles out to the boundary, the way a back
+// bounces a run outside and gets pushed out.
+function _cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, reachedLine, ob){
   const rnd=_cmRand(seed), j=(a)=>(rnd()-0.5)*2*a, sgn=()=>(rnd()<0.5?-1:1);
   const pts=[[sx+j(8), sy+j(4)]];
   if(reachedLine){
@@ -18032,6 +18194,18 @@ function _cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, reachedLine){
     const side=Math.sign(x0-sx)||sgn();
     pts.push([sx+(x0-sx)*(0.6+j(0.1))+side*laneW*0.12, sy-(sy-losY)*(0.18+j(0.06))]);
     pts.push([x0+j(laneW*0.12), losY]);
+    if(ob){
+      // through the gap, then out: a couple of yards upfield first, a lean toward the
+      // sideline, and a straight angle to the spot he stepped out
+      const run=losY-y1;
+      if(run>40){
+        pts.push([x0+(x1-x0)*(0.08+j(0.04)), losY-run*(0.22+j(0.05))]);
+        pts.push([x0+(x1-x0)*(0.55+j(0.08)), losY-run*(0.62+j(0.05))]);
+        return _cmSmooth(pts.concat([[x1, y1]])).replace(/ C[^C]*$/, '') + ` L${(+x1).toFixed(1)},${(+y1).toFixed(1)}`;
+      }
+      pts.push([x1, y1]);
+      return _cmSmooth(pts);
+    }
     // Upfield, what tracking shows: the cut comes early — a lean in the first third of the
     // run, a counter-lean on a long one — and the last stretch is straight, because that
     // is where he is running away or getting tackled. Not every run bends: a good share
@@ -18102,10 +18276,16 @@ function carryMapSVG(plays, title, sub, tag){
   for(const i of order){
     const p=plays[i], frac=fracOf[i];
     const endYd=(p.yl!=null) ? Math.min(p.yds, p.yl) : p.yds;      // the goal line ends every run
-    const x0=laneX(losY, p.lane, frac), y1=yOf(endYd), x1=laneX(y1, p.lane, frac);
+    const seed=(p.wk*7919 + i*104729 + p.lane*1301 + (p.yds+50)*31 + (p.q||0)*17)>>>0;
+    const x0=laneX(losY, p.lane, frac), y1=yOf(endYd);
+    // Out of bounds: the run ends ON the sideline at its yardage. The play says which
+    // side when the run went left or right; a middle run that got out picks the side
+    // its lane leans to (the seed decides for a dead-centre run).
+    const ob=(p.ob!=null && endYd>=0) ? (p.ob || (p.lane<3?-1:(p.lane>3?1:((seed&1)?-1:1)))) : 0;
+    const x1=ob ? (ob<0 ? left(y1)+3 : right(y1)-3) : laneX(y1, p.lane, frac);
     const col=_cmColor(p.yds);
     const what=p.td?'Touchdown':(p.fum?'Fumble lost':(p.fd?'First down':(p.tfl||p.yds<0?'Tackled for loss':'')));
-    const tip=`WK ${p.wk}${p.opp?' · '+p.opp:''}${p.q?` · Q${p.q}`:''} · ${_CM_LANE_NAMES[p.lane]} · ${p.yds>=0?'+':''}${p.yds} yds${what?` · ${what}`:''}`;
+    const tip=`WK ${p.wk}${p.opp?' · '+p.opp:''}${p.q?` · Q${p.q}`:''} · ${_CM_LANE_NAMES[p.lane]} · ${p.yds>=0?'+':''}${p.yds} yds${what?` · ${what}`:''}${ob?' · out of bounds':''}`;
     const attrs=tag?tag({label:`Carry · WK ${p.wk}`, value:tip, statKey:'carry'}):'';
     parts.push(`<g ${attrs}><title>${escHtml(tip)}</title>`);
     // The run, NGS-style: from where a back lines up (centred, seven yards deep) it sweeps
@@ -18113,9 +18293,10 @@ function carryMapSVG(plays, title, sub, tag){
     // exactly where the run ended (_cmRunPath). A loss never reaches the line.
     const sx=(left(losY)+right(losY))/2, sy=yOf(-7);
     const laneW=(right(losY)-left(losY))/7;
-    const seed=(p.wk*7919 + i*104729 + p.lane*1301 + (p.yds+50)*31 + (p.q||0)*17)>>>0;
-    const d=_cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, endYd>=0);
+    const d=_cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, endYd>=0, !!ob);
     parts.push(`<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" opacity="${op}"/>`);
+    // the step out of bounds: a short bar on the sideline where the run ended
+    if(ob) parts.push(`<line class="cm-ob" x1="${f1(x1+(ob<0?-4:4))}" y1="${f1(y1-7)}" x2="${f1(x1+(ob<0?-4:4))}" y2="${f1(y1+7)}" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>`);
     if(p.fd && !p.td) parts.push(`<circle cx="${f1(x1)}" cy="${f1(y1)}" r="${many?3:3.5}" fill="#ffffff"/>`);
     if(p.td){
       parts.push(`<circle cx="${f1(x1)}" cy="${f1(y1)}" r="${many?9:11}" fill="none" stroke="#2f6fe4" stroke-width="3.5"/>`);
@@ -18133,13 +18314,41 @@ function carryMapSVG(plays, title, sub, tag){
 function carryMapLegend(){
   return `<div class="tm-legend">
     <span><i class="tm-l-loss"></i>Tackled for loss</span><span><i class="tm-l-short"></i>0–4 yds</span><span><i class="tm-l-gain"></i>5+ yds</span>
-    <span><i class="tm-l-fd"></i>First down</span><span><i class="tm-l-td"></i>Touchdown</span><span><i class="tm-l-fum"></i>Fumble lost</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
+    <span><i class="tm-l-fd"></i>First down</span><span><i class="tm-l-td"></i>Touchdown</span><span><i class="tm-l-fum"></i>Fumble lost</span><span><i class="tm-l-ob"></i>Out of bounds</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
+  </div>`;
+}
+// The season summary (66b's binned field): seven lanes × five-yard bands of where the
+// runs ended, a bubble per spot sized by carries and coloured like the runs themselves
+// (red lost yards, gold 0–4, green 5+), scores ringed and tagged.
+function carrySummarySVG(plays, title, sub, tag){
+  const parts=[];
+  const F=_tmFieldParts(parts, 7, ['LE','LT','LG','MID','RG','RT','RE'], 'Carry map, season summary', title, sub);
+  if(!plays.length){ parts.push(`<text x="${_TM_GRID.W/2}" y="${(_TM_GRID.yTop+_TM_GRID.yBot)/2}" fill="#9aa0a6" font-size="16" text-anchor="middle">No carries</text></svg>`); return parts.join(''); }
+  const bins={};
+  for(const p of plays){
+    const b=_tmBand(p.yds), k=`${p.lane}:${b}`;
+    const c=bins[k]||(bins[k]={lane:p.lane, band:b, n:0, yds:0, td:0, fd:0, fum:0});
+    c.n++; c.yds+=p.yds; if(p.td) c.td++; if(p.fd) c.fd++; if(p.fum) c.fum++;
+  }
+  const bandColor=b=>{ const lo=_TM_GRID.YMIN+b*_TM_GRID.BAND; return lo<0 ? '#d33b2f' : (lo<5 ? '#d8a51d' : '#39c15a'); };
+  const cells=Object.values(bins).map(c=>({lane:c.lane, band:c.band, n:c.n, td:c.td, color:bandColor(c.band),
+    tip:`${_CM_LANE_NAMES[c.lane]} · ${_tmBandLabel(c.band)}: ${c.n} ${c.n===1?'carry':'carries'} (${Math.round(c.n/plays.length*100)}%) · ${c.yds} yds${c.fd?` · ${c.fd} first down${c.fd>1?'s':''}`:''}${c.td?` · ${c.td} TD`:''}${c.fum?` · ${c.fum} fumble${c.fum>1?'s':''} lost`:''}`}));
+  _tmBubbleParts(parts, F, 7, cells, tag, 'Carry map · season');
+  parts.push('</svg>');
+  return parts.join('');
+}
+function carrySummaryLegend(){
+  return `<div class="tm-legend">
+    <span><i class="tm-l-bub-sm"></i><i class="tm-l-bub"></i>Carries ending there</span>
+    <span><i class="tm-l-loss"></i>Lost yards</span><span><i class="tm-l-short"></i>0–4 yds</span><span><i class="tm-l-gain"></i>5+ yds</span>
+    <span><i class="tm-l-td"></i>Touchdowns</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
   </div>`;
 }
 function rbCarryMapBlock(pname, node, season, selWk, label, tag){
   if(!(node.games||[]).some(g=>Array.isArray(g.plays) && g.plays.length)) return `<div class="pcard-loading">Per-carry rows arrive with the next weekly bake.</div>`;
   const plays=_rbMapPlays(node, selWk);
   const title=`${escHtml(String(pname).toUpperCase())} CARRIES <tspan fill="#9aa0a6" font-size="13" font-weight="600">/ ${escHtml(String(label).toUpperCase())}</tspan>`;
+  if(selWk==null) return carrySummarySVG(plays, title, `Where his runs end · bubble = carries through that gap to that distance · ring = touchdowns · pick a game for every run`, tag) + carrySummaryLegend();
   const sub=`Every carry up the gap he hit, as long as the run · red lost yards · gold 0–4 · green 5+ · ring + TD = score`;
   return carryMapSVG(plays, title, sub, tag) + carryMapLegend();
 }
@@ -34792,7 +35001,7 @@ function tcOwnerChip(pid, name, variant){
   return `<span class="tc-own-chip${rec.mine?' tc-own-mine':''}${compact?' tc-own-sm':''}${pill?' tc-own-pill':''}" role="button" tabindex="0"
             onclick="event.stopPropagation();tcOwnerJump(${rid})"
             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();tcOwnerJump(${rid});}"
-            title="${escAttr(title)}">${rec.mine?'★ ':''}${escHtml(label)}${who}</span>`;
+            title="${escAttr(title)}">${rec.mine?'★ ':''}<span class="tc-own-lbl">${escHtml(label)}</span>${who}</span>`;
 }
 
 // Jump to this roster in the League Analyzer. Closes the player card first when one is open,

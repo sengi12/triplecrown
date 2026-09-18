@@ -157,6 +157,17 @@ def main():
     _g1 = nv.rb_fan_weekly(2026)["test back"]["games"][0]
     check("carry map: flags are bits — TD 1, fumble lost 2, first down 4, tackled for loss 8 — with field position and quarter",
           _g1["plays"][2] == [0, 6, 5, 50, 2] and _g1["plays"][3] == [3, 4, 2, 50, 2] and _g1["plays"][4] == [0, -3, 8, 50, 2] and _g1["plays"][0][2] == 4)
+    _ob = _pbp_rush().assign(out_of_bounds=lambda d: (d.play_id <= 3).astype(int), first_down=0, yardline_100=50, qtr=1)
+    _ob.loc[_ob.play_id == 1, "run_location"] = "right"
+    nv._load_pbp = lambda season, cols=None: _ob
+    _g1 = nv.rb_fan_weekly(2026)["test back"]["games"][0]
+    check("carry map: out of bounds is bit 16, with the sideline from the run direction (+64 left, +32 right, neither up the middle)",
+          [p[2] for p in _g1["plays"]] == [16 | 64, 16 | 32, 16 | 64, 16, 0, 0])
+    _post = pd.concat([_pbp_rush(), _pbp_rush().query("week == 1").assign(week=19, season_type="POST", defteam="BAL")], ignore_index=True)
+    nv._load_pbp = lambda season, cols=None: _post
+    _pg = nv.rb_fan_weekly(2026)["test back"]["games"]
+    check("carry map: a playoff game rides after week 18, flagged post",
+          [(g["wk"], g.get("post")) for g in _pg] == [(1, None), (2, None), (19, 1)] and len(_pg[2]["plays"]) == 6)
     nv._load_pbp = lambda season, cols=None: _pbp_rush()
     g = r["games"][0]
     check("game totals + per-lane splits",
@@ -284,6 +295,11 @@ def main():
           g1.get("plays", [[]])[1][2] == 2 and g1.get("plays", [[]])[3][2] == 3 and g1.get("plays", [[]])[2][3] == 0)
     check("target_trees: the receiver carries his ESB id and no routes legend ships without charting",
           w and w.get("esb") == "TES123456" and "routes" not in tt and len(w["games"]) == 2 and len(w["games"][1]["plays"]) == 1)
+    _tpost = pd.concat([_pbp_targets(), _pbp_targets().query("week == 2").assign(week=20, season_type="POST", defteam="SF", play_id=99)], ignore_index=True)
+    nv._load_pbp = lambda season, cols=None: _tpost
+    _wp = nv.target_trees_weekly(2026, min_targets_game=1, min_targets_season=1)["players"]["test receiver"]
+    check("target_trees: a playoff game rides after week 18 flagged post; the season line stays regular season",
+          [(g["wk"], g.get("post"), g["opp"]) for g in _wp["games"]] == [(1, None, "NE"), (2, None, "PIT"), (20, 1, "SF")] and _wp["season"]["tgt"] == 5)
     _tp = _pbp_targets().assign(shotgun=[1, 0, 1, 1, 0])
     nv._load_pbp = lambda season, cols=None: _tp
     def _ftn(url, **kw):

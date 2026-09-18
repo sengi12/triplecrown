@@ -97,7 +97,7 @@ function snap(provider, extra){
   const small=app.tcOwnerChip('4046','Patrick Mahomes','compact');
   chk(/tc-own-chip/.test(full), 'full variant carries the chip class');
   chk(/tc-own-mine/.test(full), 'my own player is styled differently');
-  chk(/>★ sengi12</.test(full), 'full variant shows the manager handle (team names run long)');
+  chk(/>★ <span class="tc-own-lbl">sengi12</.test(full), 'full variant shows the manager handle (team names run long)');
   chk(/Who Dey/.test(full), 'the team name survives in the tooltip');
   chk(/tc-own-sm/.test(small), 'compact variant is marked compact');
   chk(/sengi12/.test(small) && !/Who Dey<\/span>/.test(small), 'compact variant shows the handle too');
