@@ -15,7 +15,8 @@ const app=new Function(code+`return {
   currentProjViewMode, rankingsRenderCacheKey,
   setBaseline:(b)=>{PACE_BASELINE=b;}, setHistory:(h)=>{HISTORY=h;},
   setLiveWeek:(w)=>{_liveSeasonWeek=w;},
-  setLiveDelta:(v)=>{rankLiveDelta=v;}, setActiveSeason:(s)=>{activeSeason=s;} };`)();
+  setLiveDelta:(v)=>{rankLiveDelta=v;}, setActiveSeason:(s)=>{activeSeason=s;},
+  setBoard:(week,teams)=>{ _tcBoard={ season:String(TC_SEASON.year), week, at:Date.now(), teams, busy:false, live:false }; } };`)();
 
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -60,6 +61,19 @@ const liveTxt=app.liveSeasonPaceText('1','rec');
 chk(/17-game pace thru week 4 \(4 games\)/.test(liveTxt),'pace text from season-to-date aggregates');
 chk(/170 tgt/.test(liveTxt),'volume scaled to 17 games (40 tgt over 4 → 170)');
 chk(app.liveSeasonPaceText('nobody','rec')==='','unknown player → no button');
+// The label follows the data through the week in progress, not Sleeper's completed-weeks
+// counter: week 5 is on, completedWeeks() says 4, and the aggregate already has a 5th game.
+app.setHistory({'1':{'2026':[{team:'CIN',pos:'WR',games_played:5,
+  stats:{receiving_yards:500,receiving_touchdowns:4,receptions:38,receiving_targets:50}}]}});
+chk(/thru week 5 \(5 games\)/.test(app.liveSeasonPaceText('1','rec')),'a game beyond the completed weeks → the label says the week in progress');
+app.setHistory({'1':{'2026':[{team:'CIN',pos:'WR',games_played:4,
+  stats:{receiving_yards:400,receiving_touchdowns:3,receptions:30,receiving_targets:40}}]}});
+app.setBoard(5, {CIN:{state:'post'}});
+chk(/thru week 5 \(4 games\)/.test(app.liveSeasonPaceText('1','rec')),'team already played this week (player sat) → thru the week in progress');
+app.setBoard(5, {CIN:{state:'pre'}});
+chk(/thru week 4 \(4 games\)/.test(app.liveSeasonPaceText('1','rec')),'team yet to kick off → thru the last completed week');
+app.setBoard(4, {CIN:{state:'post'}});
+chk(/thru week 4 \(4 games\)/.test(app.liveSeasonPaceText('1','rec')),'a board still on last week says nothing about this one');
 app.setActiveSeason('2024');
 chk(app.liveSeasonPaceText('1','rec')==='','past seasons keep the week-range gate');
 app.setActiveSeason('proj');
