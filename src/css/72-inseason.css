@@ -418,3 +418,9 @@
 /* O-line form boards (Trends · Teams): the stretch selector rides the board's subtitle */
 .la-ol-win{display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle;}
 .la-ol-win .pos-filter-btn{padding:1px 8px;font-size:10px;}
+
+/* Trends · Snaps: the role tier and the nflverse fill-in tag ride the detail line */
+.la-snp-pos{margin:0 0 8px;}
+.la-snp-tier{font-weight:700;color:var(--text);}
+.la-snp-tier b{color:var(--accent);}
+.la-snp-src{font-size:9.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:0 4px;cursor:help;}

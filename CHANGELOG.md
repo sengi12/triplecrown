@@ -9,6 +9,7 @@ Open work lives in [TODO.md](TODO.md).
 ## 2026-09-18
 
 - feat(cards): the maps are per-game views that open on the latest game (Season is the zone view / the fan); out-of-bounds runs angle out to the sideline they left by; playoff games join the game picker; the picker owns a row on phones and the season chip is the bare year; manager pills are a star or a dot in narrow rows (#143)
+- feat(analyzer): the snap tracker — Trends · Snaps, snap share week over week from Sleeper's weekly rows, nflverse filling the blanks via the sidecar, last season as the week-1 baseline, role tiers (#142)
 
 ## 2026-09-17
 
@@ -30,6 +31,7 @@ Open work lives in [TODO.md](TODO.md).
 - feat(cards): the carry map — every carry of every game drawn from the backfield through its gap, NGS-style, Map first on the rushing fan; scoring-throw arcs on the pass and target maps; the maps' field goes grey (#126)
 - feat(cards): the pass map — every attempt of every game on the QB's field with the receiver on the mark, Map first on the passing chart; the offseason bakes the season just played (#125)
 - fix(cards): the Map / Zones / Tree toggle keeps its place — the view row is its own row, the metric buttons take the row beneath (#124)
+- feat(league): My Team overview cards and a height-packed layout — this week, upgrade path, trade fit, heat map, bye exposure, age timeline, roster construction (#123)
 - feat(cards): the target map — every target of every game on the field, the charted route to each catch once a season's charting lands, Map first on the Routes tab; baked copies adopt the in-season sidecar offline (#122)
 - fix(analyzer): the value lens pin is per league, the trade page says what its numbers are, and one week is noise in rest-of-season worth (#115)
 - feat(cards): the news is its own tab — the card still opens on the stats (#114)
