@@ -586,7 +586,7 @@ function gcDriveSentence(d){
 function _gcFieldGeom(){
   const W=360, top=34, bot=100, xTopL=92, xTopR=268, xBotL=46, xBotR=314;
   const xAt=(yd, y)=>{ const t=(y-top)/(bot-top); const xt=xTopL+(xTopR-xTopL)*yd/100, xb=xBotL+(xBotR-xBotL)*yd/100; return xt+(xb-xt)*t; };
-  return {W, top, bot, xAt, lane:top+(bot-top)*0.6};
+  return {W, top, bot, xAt, lane:top+(bot-top)*0.5};   // the drive and the uprights on the field's centre line
 }
 // "BUF 30" / "50" → yards from the offense's own goal line
 function _gcSpotYd(spot, offense){
@@ -744,18 +744,21 @@ function gcWinProbHTML(game, sum){
   const nums=`<span class="gc-wp-n"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'"><b>${away}%</b></span><span class="gc-wp-n"><b>${home}%</b><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'"></span>`;
   const head=`<button class="gc-wp-head" onclick="gcWinProbToggle()" aria-expanded="${open?'true':'false'}" title="Win probability, play by play — ESPN's model"><span class="gc-wp-lbl">Win probability</span>${nums}<span class="rt-gp-caret">${open?'▴':'▾'}</span></button>`;
   if(!open) return `<div class="gc-wp">${head}</div>`;
-  const W=360, H=72, L=26, R=360, top=8, bot=64, f1=(v)=>(+v).toFixed(1);
+  const W=360, H=72, L=0, R=330, top=8, bot=64, f1=(v)=>(+v).toFixed(1);
   const x=(i)=>L+(R-L)*(n===1?0:i/(n-1)); const y=(h)=>top+(bot-top)*Math.max(0, Math.min(1, h));   // home at the bottom
   const pts=wp.map((w,i)=>`${f1(x(i))},${f1(y(w.homeWinPercentage))}`);
   const col=(t)=>(typeof pwTeamColor==='function' ? pwTeamColor(t) : '#3d9bff');
+  // the line's height from the top IS the home side's share: the region above it is the
+  // home share, below it the away share — the winner's share is filled in the winner's
+  // colour, so a 100% finish fills the whole chart
   const homeWinning = last>=0.5;
   const fill = homeWinning
-    ? `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${bot} L${f1(x(0))},${bot} Z" fill="${escAttr(col(game.home))}" opacity="0.38"/>`
-    : `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${top} L${f1(x(0))},${top} Z" fill="${escAttr(col(game.away))}" opacity="0.38"/>`;
+    ? `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${top} L${f1(x(0))},${top} Z" fill="${escAttr(col(game.home))}" opacity="0.45"/>`
+    : `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${bot} L${f1(x(0))},${bot} Z" fill="${escAttr(col(game.away))}" opacity="0.45"/>`;
   return `<div class="gc-wp gc-wp-open">${head}
     <svg viewBox="0 0 ${W} ${H}" class="gc-wp-svg" role="img" aria-label="Win probability">
-      <image href="${escAttr(NFL_LOGO(game.away))}" x="2" y="${top-2}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
-      <image href="${escAttr(NFL_LOGO(game.home))}" x="2" y="${bot-16}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
+      <image href="${escAttr(NFL_LOGO(game.away))}" x="${R+8}" y="${top-2}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
+      <image href="${escAttr(NFL_LOGO(game.home))}" x="${R+8}" y="${bot-16}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
       ${fill}
       <line x1="${L}" y1="${f1(y(0.5))}" x2="${R}" y2="${f1(y(0.5))}" stroke="#5a6270" stroke-width="1" stroke-dasharray="3 4"/>
       <polyline points="${pts.join(' ')}" fill="none" stroke="#f2f5f8" stroke-width="1.6" stroke-linejoin="round"/>

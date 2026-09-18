@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-09-18
 
+- fix(tracker+cards): the drive line and uprights on the field's centre, the win probability filled for the winner with the clubs on the right, no sideline bar on out-of-bounds runs, and no two runs alike (#146)
 - feat(cards): the maps are per-game views that open on the latest game (Season is the zone view / the fan); out-of-bounds runs angle out to the sideline they left by; playoff games join the game picker; the picker owns a row on phones and the season chip is the bare year; manager pills are a star or a dot in narrow rows (#143)
 - feat(tracker): the game page, Sleeper's way — a hero that carries the situation, the last play as one line, the drive drawn on the field, win probability, a pill rail (#145)
 - fix(pace): the 17-game pace popup says the week the stats run through, not the last week Sleeper closed (#144)

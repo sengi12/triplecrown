@@ -135,7 +135,11 @@ console.log('=== out of bounds + the carry summary ===');
 const ob={team:'BUF',games:[{wk:2,opp:'DET',plays:[[2,35,4|16|64,60,3],[5,22,4|16|32,23,4],[3,20,4|16,50,3],[3,12,4,50,1],[3,1,0,50,1]]}]};
 const co=app.rbBlock('James Cook', ob, 2026, 2, 'Week 2 · DET', null);
 const obTips=[...co.matchAll(/<title>(.*?)<\/title>/g)].map(m=>m[1]).filter(t=>/out of bounds/.test(t));
-chk(obTips.length===3 && (co.match(/class="cm-ob"/g)||[]).length===3, 'three runs went out of bounds: each says so and gets the sideline bar');
+chk(obTips.length===3 && !/class="cm-ob"/.test(co) && !/Out of bounds<\/span>/.test(co), 'three runs went out of bounds: each says so — the run to the sideline is the mark, no bar and no legend swatch');
+{ // no two runs alike: three straight-length runs from one gap take three different lines
+  const a=app.runPath(380, 530, 300, 460, 300, 300, 60, 11, true), b=app.runPath(380, 530, 300, 460, 300, 300, 60, 12, true), c=app.runPath(380, 530, 300, 460, 300, 300, 60, 13, true);
+  chk(a!==b && b!==c && a!==c, 'three runs of one length through one gap draw three different lines');
+}
 const obPlays=app.rbPlays(ob, 2);
 chk(obPlays[0].ob===-1 && obPlays[1].ob===1 && obPlays[2].ob===0 && obPlays[3].ob===null, 'flags decode: 16 = out, +64 left sideline, +32 right, neither = side unknown, none = in bounds');
 const ends=[...co.matchAll(/<path d="M[^"]* L(-?[\d.]+),(-?[\d.]+)"/g)].map(m=>[+m[1],+m[2]]);

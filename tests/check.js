@@ -5773,7 +5773,7 @@ function gcDriveSentence(d){
 function _gcFieldGeom(){
   const W=360, top=34, bot=100, xTopL=92, xTopR=268, xBotL=46, xBotR=314;
   const xAt=(yd, y)=>{ const t=(y-top)/(bot-top); const xt=xTopL+(xTopR-xTopL)*yd/100, xb=xBotL+(xBotR-xBotL)*yd/100; return xt+(xb-xt)*t; };
-  return {W, top, bot, xAt, lane:top+(bot-top)*0.6};
+  return {W, top, bot, xAt, lane:top+(bot-top)*0.5};   // the drive and the uprights on the field's centre line
 }
 // "BUF 30" / "50" → yards from the offense's own goal line
 function _gcSpotYd(spot, offense){
@@ -5931,18 +5931,21 @@ function gcWinProbHTML(game, sum){
   const nums=`<span class="gc-wp-n"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'"><b>${away}%</b></span><span class="gc-wp-n"><b>${home}%</b><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'"></span>`;
   const head=`<button class="gc-wp-head" onclick="gcWinProbToggle()" aria-expanded="${open?'true':'false'}" title="Win probability, play by play — ESPN's model"><span class="gc-wp-lbl">Win probability</span>${nums}<span class="rt-gp-caret">${open?'▴':'▾'}</span></button>`;
   if(!open) return `<div class="gc-wp">${head}</div>`;
-  const W=360, H=72, L=26, R=360, top=8, bot=64, f1=(v)=>(+v).toFixed(1);
+  const W=360, H=72, L=0, R=330, top=8, bot=64, f1=(v)=>(+v).toFixed(1);
   const x=(i)=>L+(R-L)*(n===1?0:i/(n-1)); const y=(h)=>top+(bot-top)*Math.max(0, Math.min(1, h));   // home at the bottom
   const pts=wp.map((w,i)=>`${f1(x(i))},${f1(y(w.homeWinPercentage))}`);
   const col=(t)=>(typeof pwTeamColor==='function' ? pwTeamColor(t) : '#3d9bff');
+  // the line's height from the top IS the home side's share: the region above it is the
+  // home share, below it the away share — the winner's share is filled in the winner's
+  // colour, so a 100% finish fills the whole chart
   const homeWinning = last>=0.5;
   const fill = homeWinning
-    ? `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${bot} L${f1(x(0))},${bot} Z" fill="${escAttr(col(game.home))}" opacity="0.38"/>`
-    : `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${top} L${f1(x(0))},${top} Z" fill="${escAttr(col(game.away))}" opacity="0.38"/>`;
+    ? `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${top} L${f1(x(0))},${top} Z" fill="${escAttr(col(game.home))}" opacity="0.45"/>`
+    : `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${bot} L${f1(x(0))},${bot} Z" fill="${escAttr(col(game.away))}" opacity="0.45"/>`;
   return `<div class="gc-wp gc-wp-open">${head}
     <svg viewBox="0 0 ${W} ${H}" class="gc-wp-svg" role="img" aria-label="Win probability">
-      <image href="${escAttr(NFL_LOGO(game.away))}" x="2" y="${top-2}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
-      <image href="${escAttr(NFL_LOGO(game.home))}" x="2" y="${bot-16}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
+      <image href="${escAttr(NFL_LOGO(game.away))}" x="${R+8}" y="${top-2}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
+      <image href="${escAttr(NFL_LOGO(game.home))}" x="${R+8}" y="${bot-16}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
       ${fill}
       <line x1="${L}" y1="${f1(y(0.5))}" x2="${R}" y2="${f1(y(0.5))}" stroke="#5a6270" stroke-width="1" stroke-dasharray="3 4"/>
       <polyline points="${pts.join(' ')}" fill="none" stroke="#f2f5f8" stroke-width="1.6" stroke-linejoin="round"/>
@@ -13078,17 +13081,20 @@ function _cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, reachedLine, ob){
     // run, a counter-lean on a long one — and the last stretch is straight, because that
     // is where he is running away or getting tackled. Not every run bends: a good share
     // go straight once they are through the gap.
+    // No two runs alike: every run through the gap leans somewhere (a big cut on some,
+    // a drift on the rest), the lean lands at a different depth, a long one may cut back,
+    // and the straight finish starts at a different point of the run.
     const run=losY-y1;
-    const bends = run>60 && rnd()<0.6;
     let x=x0;
-    if(bends){
-      const lean=sgn()*laneW*(0.3+rnd()*0.4);
-      x=x0+lean;                     pts.push([x, losY-run*(0.25+j(0.06))]);
-      if(run>230 && rnd()<0.6){ x=x-lean*(0.5+rnd()*0.4); pts.push([x, losY-run*(0.5+j(0.06))]); }
+    if(run>60){
+      const cut = rnd()<0.6;
+      const lean=sgn()*laneW*(cut ? (0.3+rnd()*0.45) : (0.08+rnd()*0.16));
+      x=x0+lean;                     pts.push([x, losY-run*(0.18+rnd()*0.22)]);
+      if(run>230 && rnd()<0.6){ x=x-lean*(0.4+rnd()*0.5); pts.push([x, losY-run*(0.45+rnd()*0.15)]); }
     }
     // the finish is a straight run: smooth up to the last bend, then a straight line home
     if(run>40){
-      const tail=[x1+(x-x1)*0.15, losY-run*0.78];
+      const tail=[x1+(x-x1)*(0.1+rnd()*0.15), losY-run*(0.6+rnd()*0.25)];
       pts.push(tail);
       return _cmSmooth(pts.concat([[x1, y1]])).replace(/ C[^C]*$/, '') + ` L${(+x1).toFixed(1)},${(+y1).toFixed(1)}`;
     }
@@ -13163,8 +13169,6 @@ function carryMapSVG(plays, title, sub, tag){
     const laneW=(right(losY)-left(losY))/7;
     const d=_cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, endYd>=0, !!ob);
     parts.push(`<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" opacity="${op}"/>`);
-    // the step out of bounds: a short bar on the sideline where the run ended
-    if(ob) parts.push(`<line class="cm-ob" x1="${f1(x1+(ob<0?-4:4))}" y1="${f1(y1-7)}" x2="${f1(x1+(ob<0?-4:4))}" y2="${f1(y1+7)}" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>`);
     if(p.fd && !p.td) parts.push(`<circle cx="${f1(x1)}" cy="${f1(y1)}" r="${many?3:3.5}" fill="#ffffff"/>`);
     if(p.td){
       parts.push(`<circle cx="${f1(x1)}" cy="${f1(y1)}" r="${many?9:11}" fill="none" stroke="#2f6fe4" stroke-width="3.5"/>`);
@@ -13182,7 +13186,7 @@ function carryMapSVG(plays, title, sub, tag){
 function carryMapLegend(){
   return `<div class="tm-legend">
     <span><i class="tm-l-loss"></i>Tackled for loss</span><span><i class="tm-l-short"></i>0–4 yds</span><span><i class="tm-l-gain"></i>5+ yds</span>
-    <span><i class="tm-l-fd"></i>First down</span><span><i class="tm-l-td"></i>Touchdown</span><span><i class="tm-l-fum"></i>Fumble lost</span><span><i class="tm-l-ob"></i>Out of bounds</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
+    <span><i class="tm-l-fd"></i>First down</span><span><i class="tm-l-td"></i>Touchdown</span><span><i class="tm-l-fum"></i>Fumble lost</span><span><i class="tm-l-los"></i>Line of scrimmage</span>
   </div>`;
 }
 function rbCarryMapBlock(pname, node, season, selWk, label, tag){
