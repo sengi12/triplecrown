@@ -36,6 +36,39 @@ Each item says what it needs so it can be picked up cold.
   moves someone 12 units. It is the card's geometry, not a placement bug — it needs a wider
   card (`W` in the playsheet's draw function) rather than different offsets.
 
+- **FAAB as a tradeable asset in the trade analyzer.** The analyzer prices players and rookie
+  picks; FAAB is the third asset a Sleeper league actually trades and it is missing. What a
+  dollar is worth depends entirely on format, which is the whole point: in redraft the wire is
+  replacement level and FAAB is a sweetener, but in a **Chopped** league the best players in the
+  sport hit waivers every week and it is the hardest currency on the board.
+  The exchange rate already exists. `hubChopFaab` / `hubChopMarket` (`src/js/99c-week-hub.js`)
+  price every wire player as `{bid, market, band, alive, total}` — the median dollars a caliber
+  band has gone for with N teams alive, from the league's own chop history blended with the
+  three-season Eliminator study. So if a band whose players carry `laVal` V goes for a median
+  $M, then $1 ≈ V/M of the units `laTcVerdict` already sums. Outside a chopped league price the
+  dollar off the same wire at replacement level, which is what demotes it to a sweetener.
+  Plumbing: add a FAAB asset to `laAssetPools` (`src/js/99-league-analyzer.js`), gated on
+  `s.waiverType===2` the way `picks` are gated on `laIsRedraft()`; a team's budget left is
+  `s.waiverBudget - team.faabUsed`. Then `laAssetRow` to draw it, `laTcSuggestions` to offer
+  "$17 evens it", and `laTradeFinder` to use it as the balancing scrap.
+  Four things to get right:
+  - **Price the parcel, not the dollar.** The marginal dollar is concave — a team with $3 left
+    should value an incoming $20 far above a team sitting on $180. Price a parcel as the
+    difference in expected wire haul between budget-before and budget-after on the chop market's
+    own curve, never a flat rate × dollars.
+  - **Cap it at what the team has**, and show the remaining budget in the pool.
+  - **Decay it.** FAAB is worth most before the big releases and nothing after `s.chop.lastLeg`;
+    value has to fall toward zero as the remaining legs run out.
+  - **Never sum raw dollars into the verdict.** Read the warning in `laAssetPools`' `picks`
+    block first: mixing a raw pick value into the same total made every pick ~1% of a player's
+    worth, and the calculator called "your whole pick chest for my WR3" fair. $200 of FAAB has
+    the same failure mode, in both directions.
+  One decision needed before coding: give lists are toggled keys (`laTradeToggle`) and FAAB is a
+  continuous amount — either preset parcels ($5/$10/$25/$50) as their own keys, or a stepper
+  that stores an amount beside the key list.
+  `tests/test_week_hub.js` already covers the chop FAAB curve; a trade-side test needs
+  hand-registering in `tests/run_tests.sh` (there is no discovery).
+
 ## Live-season gaps that wait on post-season files
 
 - **Coverage (man / zone, the shells) and the vs-man / vs-zone player splits.** The only
