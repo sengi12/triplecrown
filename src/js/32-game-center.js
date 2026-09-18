@@ -106,8 +106,9 @@ function gcSetView(v){ _gc.view = v==='feed' ? 'feed' : 'games'; renderRightSide
 function gcViewRowHTML(){
   if(typeof lfBodyHTML!=='function') return '';
   const on=_gc.view==='feed';
-  const live=(typeof lfLiveCount==='function') ? lfLiveCount() : 0;
-  return `<div class="gc-viewrow"><button class="gc-vt ${on?'':'active'}" onclick="gcSetView('games')">Games</button><button class="gc-vt ${on?'active':''}" onclick="gcSetView('feed')">Live feed${live?`<span class="gc-vt-live">${live}</span>`:''}</button></div>`;
+  // the badge: plays that matter since the feed was last on screen (none while it is showing)
+  const unseen=(!on && typeof lfUnseen==='function') ? lfUnseen() : 0;
+  return `<div class="gc-viewrow"><button class="gc-vt ${on?'':'active'}" onclick="gcSetView('games')">Games</button><button class="gc-vt ${on?'active':''}" onclick="gcSetView('feed')" title="${unseen?`${unseen} new play${unseen===1?'':'s'} since you looked`:'Every game at once'}">Live feed${unseen?`<span class="gc-vt-live">${unseen>99?'99+':unseen}</span>`:''}</button></div>`;
 }
 // ── Drag the sidebar wider (or narrower) by its left edge; the width is remembered per size ──
 function gcWidthKey(){ return 'tc_rsb_w_'+_gc.mode; }

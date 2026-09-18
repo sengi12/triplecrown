@@ -14,7 +14,7 @@
 // touchdowns, interceptions). On a Sunday slate that is the whole point of the view.
 // History: each live game's summary (read once, then every ten minutes) fills the feed
 // back to kickoff with every play's own clock; the board's last play keeps it current.
-var _lf = { rows:[], seen:{}, leagues:[], max:150, nameIdx:null, nameIdxAt:0,
+var _lf = { rows:[], seen:{}, leagues:[], max:150, nameIdx:null, nameIdxAt:0, seenAt:0,
   // how the players in the plays were found — read this when a name looks wrong
   stat:{ byId:0, byName:0, bySurname:0, unresolved:0 } };
 const LF_MAX_ROWS = 150;
@@ -158,6 +158,7 @@ function lfOnBoard(teams){
       hs:t.home?t.score:t.oppScore, as:t.home?t.oppScore:t.score };
   });
   let added=0;
+  const hadRows={}; _lf.rows.forEach(r=>{ hadRows[r.eid]=true; });   // games the feed already followed before this landing
   Object.keys(games).forEach(eid=>{
     const g=games[eid], lp=g.sit.lastPlay, id=String(lp.id||'');
     if(!id) return;
@@ -185,28 +186,30 @@ function lfOnBoard(teams){
   });
   // History: each live game's summary carries every play so far — not only the one a poll
   // happened to catch — so the feed reads back to kickoff, with each play's own clock.
-  Object.keys(games).forEach(eid=>{ try{ added+=lfSeedGame(games[eid]); }catch(e){} });
+  Object.keys(games).forEach(eid=>{ try{ added+=lfSeedGame(games[eid], !hadRows[eid]); }catch(e){} });
   if(_lf.rows.length>LF_MAX_ROWS) _lf.rows.length=LF_MAX_ROWS;
   if(added && typeof lfRepaint==='function') lfRepaint();
   return added;
 }
-function lfClear(){ _lf.rows=[]; _lf.seen={}; _lf.seedAt={}; }
+function lfClear(){ _lf.rows=[]; _lf.seen={}; _lf.seedAt={}; _lf.seenAt=0; }
 // A live game's summary is read once when it first shows in the feed and again every ten
 // minutes (the Game Center's own polling keeps the picked game's fresher than that); every
 // board landing folds whatever summary is cached into the rows.
 const LF_SEED_TTL = 10*60*1000;
-function lfSeedGame(g){
+function lfSeedGame(g, hist){
   if(typeof gcSummary!=='function' || typeof _gcd==='undefined' || !g || !g.eid) return 0;
   const eid=String(g.eid); _lf.seedAt=_lf.seedAt||{};
   if(!_lf.seedAt[eid] || Date.now()-_lf.seedAt[eid]>LF_SEED_TTL){ _lf.seedAt[eid]=Date.now(); try{ gcSummary({eid, state:'in'}); }catch(e){} }
   const c=_gcd.sum[eid]; if(!c || !c.data) return 0;
-  return lfIngestSummary(g, c.data);
+  return lfIngestSummary(g, c.data, hist);
 }
 // The summary's plays into the feed: one row per play id the feed does not have yet, in the
 // game's order; a row the board caught first takes the play's own clock and score.
-function lfIngestSummary(g, sum){
+// hist: the game's first fill (the feed had nothing of it before this landing) is history, not news.
+function lfIngestSummary(g, sum, hist){
   const plays=(typeof gcPlays==='function') ? gcPlays(sum) : []; if(!plays.length) return 0;
   const eid=String(g.eid); let added=0; const now=Date.now();
+  hist=!!hist;
   plays.forEach((p,i)=>{
     const id=String(p.id||''); if(!id) return;
     const key=`${eid}:${id}`;
@@ -222,7 +225,7 @@ function lfIngestSummary(g, sum){
     // its place in time: just under the game's next play if the feed already has one, else its order in the game
     const later=_lf.rows.filter(r=>r.eid===eid && Number(r.id)>Number(id));
     const at = later.length ? Math.min.apply(null, later.map(r=>r.at))-(plays.length-i) : now-(plays.length-1-i);
-    _lf.rows.push({ key, eid, id, at, src:'sum', home:g.home, away:g.away, hs:p.hs!=null?p.hs:g.hs, as:p.as!=null?p.as:g.as, team:p.team||'',
+    _lf.rows.push({ key, eid, id, at, src:'sum', hist, home:g.home, away:g.away, hs:p.hs!=null?p.hs:g.hs, as:p.as!=null?p.as:g.as, team:p.team||'',
       q:Number(p.q||0), clock:String(p.clock||''), down:Number(p.down||0), ddt:String(p.ddt||''), spot:String(p.spot||''),
       rz:p.yte!=null && p.yte<=20, yds:Number(p.yds||0), scoreValue, kind:read.kind, title:read.title, roles:read.roles, stats:read.stats, tokens:read.tokens, text:String(p.text||'') });
     added++;
@@ -302,6 +305,14 @@ function lfRelevance(row){
   });
   return {show:tags.length>0, tags};
 }
+// The badge on the Live feed tab: how many plays that matter (under the filters in force)
+// have arrived since the feed was last on screen. A game's first fill is history, not news.
+function lfUnseen(){
+  let n=0;
+  for(const r of _lf.rows){ if(r.hist || !(r.at>_lf.seenAt)) continue; if(lfRelevance(r).show) n++; }
+  return n;
+}
+function lfMarkSeen(){ _lf.seenAt=Date.now(); }
 function lfRows(){
   const out=[];
   for(const r of _lf.rows){
@@ -407,6 +418,7 @@ function lfBodyHTML(){
     : `<div class="ld-empty">${live
         ? (_lf.leagues.length ? 'no plays yet in your matchups' : 'waiting for the next play…')
         : (_lf.rows.length ? 'nothing on right now — the last plays are above' : 'the feed fills as games kick off')}</div>`;
+  lfMarkSeen();   // painted = seen
   return `<div class="lf-body">${lfChipsHTML()}${list}</div>`;
 }
 function lfPanelHTML(phone){
