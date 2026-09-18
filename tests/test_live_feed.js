@@ -61,6 +61,10 @@ const LP=app.LP, G=app.G;
   chk(app.onBoard({NYJ:fixed})===1 && app.rows().length===1 && app.rows()[0].yds===8 && app.rows()[0].corrected===true && /8 yd rush/.test(app.rows()[0].title), 'the same play id with new words is a correction: the row is replaced where it stands, not appended');
   const inactive=G({state:'post'});
   chk(app.onBoard({BUF:inactive})===0, 'a game that is not on is ignored');
+  const to=G({sit:{period:3, clock:'9:09', lastPlayId:'t1', lastPlay:LP({id:'t1', type:'Official Timeout', text:'Official Timeout at 09:09.', team:''})}});
+  const tmw=G({sit:{period:2, clock:'2:00', lastPlayId:'t2', lastPlay:LP({id:'t2', type:'Two-minute warning', text:'Two-Minute Warning', team:''})}});
+  const eop=G({sit:{period:1, clock:'0:00', lastPlayId:'t3', lastPlay:LP({id:'t3', type:'End Period', text:'END QUARTER 1', team:''})}});
+  chk(app.onBoard({NYJ:to})===0 && app.onBoard({NYJ:tmw})===0 && app.onBoard({NYJ:eop})===0 && app.rows().length===1, 'a timeout, the two-minute warning and the end of a quarter are pauses, not plays — the game feed skips them and so does this one');
 
   console.log('=== the plays it can read ===');
   const td=app.read(LP({type:'Rushing Touchdown', yds:9, text:'B.Hall left end for 9 yards, TOUCHDOWN.', team:'NYJ'}));
