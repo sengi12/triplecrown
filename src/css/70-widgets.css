@@ -1378,3 +1378,57 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .la-ba-bid .hub-bid-chop small{font-size:8px;}
 .la-ba-nobid{color:var(--muted2);}
 .la-ba-head .la-ba-bid{font-family:inherit;}
+
+/* ── Trade history: the league's own ledger, under the calculator ────────────
+   A row is a date, then one block per side reading "<team> got <assets>". The chips carry
+   their own colour by kind — a player badge borrows the roster slot colours, a pick is the
+   pick colour used everywhere else, money is the accent — so a deal's SHAPE is readable
+   before a single name is. */
+.la-th{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-top:12px;}
+.la-th-title{font-size:12.5px;font-weight:900;margin-bottom:8px;display:flex;align-items:center;flex-wrap:wrap;gap:6px;}
+.la-th-sub{font-size:10px;color:var(--muted);font-weight:600;margin-left:4px;}
+.la-th-err{color:#ff6b6b;}
+.la-th-refresh{margin-left:auto;}
+.la-th-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+.la-th-q{flex:1;min-width:150px;max-width:260px;background:var(--surface2);border:1px solid var(--border);
+  color:var(--text);border-radius:8px;padding:5px 9px;font-size:12px;}
+.la-th-q:focus{outline:2px solid var(--accent);outline-offset:1px;}
+.la-th-chips{display:flex;gap:3px;flex-wrap:wrap;}
+.la-th-sel{padding:5px 8px;font-size:11px;max-width:190px;}
+.la-th-more{background:none;border:1px dashed var(--border);color:var(--muted);border-radius:999px;
+  padding:2px 10px;font-size:10px;font-weight:700;cursor:pointer;}
+.la-th-more:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
+.la-th-more:disabled{opacity:.5;cursor:default;}
+.la-th-more-inline{margin-left:6px;}
+.la-th-list{display:flex;flex-direction:column;}
+.la-th-row{display:flex;align-items:flex-start;gap:10px;padding:6px 0;border-top:1px dashed var(--border);}
+.la-th-when{flex:none;width:74px;display:flex;flex-direction:column;line-height:1.25;
+  font-family:var(--mono);font-size:9.5px;color:var(--muted);}
+.la-th-when b{font-size:11px;color:var(--text);}
+.la-th-sides{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;}
+.la-th-side{display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;font-size:12px;}
+/* Your own team, so a long ledger is scannable for the deals you were actually in. */
+.la-th-side.me .la-th-team{color:var(--accent);}
+.la-th-team{flex:none;font-weight:800;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.la-th-team::after{content:' got';font-weight:600;color:var(--muted);font-size:10px;}
+.la-th-got{flex:1;min-width:0;display:flex;gap:4px;flex-wrap:wrap;}
+.la-th-a{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--border);border-radius:999px;
+  padding:1px 8px 1px 3px;font-size:11px;font-weight:700;background:var(--surface2);max-width:100%;}
+.la-th-a-p{cursor:pointer;}
+.la-th-a-p:hover{border-color:var(--accent);}
+.la-th-a-k,.la-th-a-f,.la-th-a-none{padding-left:8px;font-family:var(--mono);font-size:10px;}
+.la-th-a-k{color:#c4b5fd;}
+.la-th-a-f{color:var(--accent);}
+.la-th-a-none{color:var(--muted);font-style:italic;font-weight:600;}
+/* On a phone the "<team> got <chips>" row cannot stay side by side: the team column eats
+   150px and every chip then wraps onto its own line. Stack instead — the team name on its
+   own line, the haul full-width under it — and the same deal reads in half the height. */
+@media (max-width:760px){
+  .la-th-row{gap:8px;}
+  .la-th-when{width:52px;}
+  .la-th-q{max-width:none;}
+  .la-th-side{flex-direction:column;gap:3px;}
+  .la-th-team{max-width:none;}
+  .la-th-got{width:100%;}
+  .la-th-refresh{margin-left:0;}
+}
