@@ -1,7 +1,8 @@
 // Target map: the Routes tab's default view. Pinned: every target row becomes a mark
 // at its depth and side; a catch grows its after-catch tail; a touchdown gets the ring
 // AND the TD tag; a pick the red cross; a charted route (7th slot → legend) is drawn
-// as a path from the line of scrimmage to the catch point instead of the dotted stem;
+// as a path from the line of scrimmage to the catch point, and an UNCHARTED one is the
+// mark alone — the dotted depth stem it used to hang on drew a route we do not have;
 // the view buttons default to Map, offer Zones, and Tree only when the season has a
 // charted route tree; the NGS deep link needs the ESB id.
 const elStore={};
@@ -37,8 +38,8 @@ chk(titles.some(t=>t==='WK 1 · NE · Q4 · Left, +4 air · Touchdown · 41 YAC 
 chk((html.match(/stroke="#39c15a" stroke-width="5"/g)||[]).length===2, 'two catches with YAC → two green tails');
 chk((html.match(/stroke="#2f6fe4" stroke-width="3.5"/g)||[]).length===1 && (html.match(/>TD \+45<\/text>/g)||[]).length===1 && !/fill="#39c15a" font-size="11"[^>]*>\+45</.test(html),
     'the touchdown gets its ring AND one TD tag — a score that runs off the top carries its total in the tag, not a second label');
-chk((html.match(/stroke-dasharray="3 4"/g)||[]).length===3 && (html.match(/<path d="M[^"]* Q[^"]*" fill="none" stroke="#2f6fe4" stroke-width="4" stroke-linecap="round"/g)||[]).length===1,
-    'without charting every mark hangs on the dotted depth stem (no invented routes) — except the score, which gets the blue arc (one quadratic) from the passer');
+chk((html.match(/stroke-dasharray="3 4"/g)||[]).length===0 && (html.match(/<path d="M[^"]* Q[^"]*" fill="none" stroke="#2f6fe4" stroke-width="4" stroke-linecap="round"/g)||[]).length===1,
+    'without charting a mark stands on its own — no stem, no invented route — while the score still gets the blue arc (one quadratic) from the passer');
 const arcNode={games:[{wk:1,opp:'NE',plays:[[4,0,2,41,45,4,null,1,1],[30,2,2,0,40,2,null,0,0],[45,1,0,0,50,1,null,1,null],[44,1,1,3,60,2,null,1,null]]}]};
 const arcs=app.block('Arc Test', arcNode, 2026, 1, {label:'Week 1 · NE'}, null);
 const ds=[...arcs.matchAll(/<path d="M(-?[\d.]+),(-?[\d.]+) Q(-?[\d.]+),(-?[\d.]+) (-?[\d.]+),(-?[\d.]+)" fill="none" stroke="#2f6fe4"/g)].map(m=>m.slice(1).map(Number));
