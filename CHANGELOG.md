@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-09-19
 
+- fix(seed): the lazy sidecars are regressed against their previous copies like the main seed already was — a coaching season that loses its play-action, motion or no-huddle charting is rolled back to the copy that had it, and the bucket-to-per-play migration that got 44% smaller without losing anything still passes (#163)
 - fix(playbook): a rebuilt season keeps its play-action, motion and no-huddle rates — the Scheme tab asked for a bucket key the per-play payload does not have, so every season the builder refreshed reported itself uncharted and showed '—' for all 32 teams (#162)
 - fix(seed): the nine head coaches hired in 2026 have their former team and role, so the scheme carryover works for them — and Miami leaves the playcaller table, because its new head coach is a defensive coach who does not call the offense (#161)
 - fix(seed): a download that dies half-way no longer poisons the nflverse cache for good — the daily refresh went red four runs running because a truncated FTN csv sat in the restored cache, every reader swallowed the parse error, and the 2025 coaching sidecar shipped shaped like a season that was never charted (#160)
