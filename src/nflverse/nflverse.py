@@ -190,25 +190,48 @@ def _legacy_md5_cache_path(url):
     base = os.path.basename(url.split("?", 1)[0]) or "asset.csv"
     return os.path.join(_nflverse_cache_dir(), f"{digest}_{base}")
 
-def _cache_remote(url, label=None):
-    """Download a remote nflverse asset once, then always reuse the cached file."""
+def _cache_remote(url, label=None, force=False):
+    """Download a remote nflverse asset once, then always reuse the cached file.
+
+    The download lands on a .part file and is renamed into place only once it completes.
+    urlretrieve writes straight to its destination, so an interrupted transfer used to leave
+    a TRUNCATED csv at the cache path — and because the cache is keyed on existence alone,
+    and CI restores it by prefix (`restore-keys: seed-cache-`), that half-file was then reused
+    on every later run forever. One dropped connection poisoned the cache permanently.
+
+    `force` discards whatever is cached and fetches again; see _aux_csv, which uses it to
+    recover from a cached file that will not parse.
+    """
     path = _md5_cache_path(url)
     legacy = _legacy_md5_cache_path(url)
     if os.path.exists(legacy) and not os.path.exists(path):
         os.replace(legacy, path)
+    if force and os.path.exists(path):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
     if not os.path.exists(path):
-        if url in _FAILED_REMOTE:
+        if url in _FAILED_REMOTE and not force:
             # Already failed this run (e.g. FTN before 2022) — don't hammer the 404 repeatedly.
             raise _FAILED_REMOTE[url]
         import urllib.request
         tag = label or os.path.basename(url)
         print(f"  → downloading {tag} …", end="", flush=True)
+        part = path + ".part"
         try:
-            urllib.request.urlretrieve(url, path)
+            urllib.request.urlretrieve(url, part)
+            os.replace(part, path)
         except Exception as e:
             print(" unavailable")
+            try:
+                if os.path.exists(part):
+                    os.remove(part)
+            except OSError:
+                pass
             _FAILED_REMOTE[url] = e
             raise
+        _FAILED_REMOTE.pop(url, None)
         print(" ok")
     return path
 
@@ -354,7 +377,17 @@ def _aux_csv(url, **kw):
             # low_memory=False loads the whole file before inferring dtypes, avoiding the C
             # parser's chunked mixed-dtype path (which can crash on FTN's sparse boolean columns).
             kw.setdefault("low_memory", False)
-            df = pd.read_csv(csv_path, **kw)
+            try:
+                df = pd.read_csv(csv_path, **kw)
+            except Exception:
+                # A cached file that will not parse is a bad cache entry, not a bad source.
+                # Every caller of this is wrapped in `except Exception` and degrades quietly —
+                # the coaching builder answers "this season was never charted" — so a truncated
+                # csv does not surface as an error, it surfaces as missing DATA, and it survives
+                # every future run because the cache is keyed on existence. Throw it away and
+                # fetch once more; only a second failure is the source's fault.
+                csv_path = _cache_remote(url, force=True)
+                df = pd.read_csv(csv_path, **kw)
             df.to_pickle(pkl_path)
             _AUX_CACHE[key] = df
     return _AUX_CACHE[key]
@@ -2868,7 +2901,15 @@ def scheme_weekly(season):
                                 "is_play_action", "is_rpo", "is_screen_pass"])
         d = pbp.merge(ftn, left_on=["game_id", "play_id"],
                       right_on=["nflverse_game_id", "nflverse_play_id"], how="left")
-    except Exception:
+    except Exception as e:
+        # Without FTN this season gets no motion / play-action / formation columns, and the
+        # sidecar comes out shaped exactly like a pre-FTN season — the Scheme tab then reads
+        # "Not charted for this season" for a season that WAS charted. That is a silent data
+        # loss, so say it out loud: FTN covers 2022 onward, and a failure at or after that is
+        # a broken fetch, not an absent source.
+        if int(season) >= 2022:
+            print(f"  ⚠ FTN charting for {season} could not be read ({e}) — the coaching "
+                  f"sidecar will have no motion or play-action", file=sys.stderr)
         d = pbp
         for c in ("qb_location", "n_offense_backfield", "n_defense_box",
                   "is_motion", "is_play_action", "is_rpo", "is_screen_pass"):
