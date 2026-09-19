@@ -1650,12 +1650,35 @@ WIKI_DC_TITLE = "List_of_current_NFL_defensive_coordinators"
 WIKI_API = ("https://en.wikipedia.org/w/api.php?action=parse&page={title}"
             "&prop=text&format=json&formatversion=2&redirects=1")
 
+# Curated prior jobs for NEW head coaches. Wikipedia's HC table no longer carries a
+# previous-position column and no free feed does, so this is the ONE sanctioned source for
+# where a new head coach came from — a guess here stamps a job the coach never held onto the
+# scheme carryover (that is how Mike McCarthy once shipped as a former Vikings HC).
+# Module level, beside HC_PLAYCALLERS, so tests can see it: these two tables go stale every
+# February and the refresh opens an issue when they do.
+HC_PRIOR_JOBS = {
+    "Mike McCarthy": ("DAL", "head coach", "2020–2024"),
+    # The 2026 cycle — ten head-coach changes, tied for the most in an offseason. Each
+    # prior job is the role held IMMEDIATELY before, sourced by hand (see the note above:
+    # no feed carries this, and a guess here stamps a job the coach never held onto the
+    # scheme carryover).
+    "Jeff Hafley":     ("GB",  "defensive coordinator", "2024–2025"),
+    "Jesse Minter":    ("LAC", "defensive coordinator", "2024–2025"),
+    "Joe Brady":       ("BUF", "offensive coordinator", "2023–2025"),
+    "John Harbaugh":   ("BAL", "head coach",            "2008–2025"),
+    "Kevin Stefanski": ("CLE", "head coach",            "2020–2025"),
+    "Klint Kubiak":    ("SEA", "offensive coordinator", "2025"),
+    "Mike LaFleur":    ("LAR", "offensive coordinator", "2023–2025"),
+    "Robert Saleh":    ("SF",  "defensive coordinator", "2025"),
+    "Todd Monken":     ("BAL", "offensive coordinator", "2023–2025"),
+}
+
 # Head coaches who are their team's primary offensive playcaller. When true, the app notes
 # that the OC is less pivotal (the HC drives the scheme). Maintained by hand each season.
 # (Requested design: a short, clearly-labeled, editable list — accurate over heuristics.)
 HC_PLAYCALLERS = {
     "CIN": "Zac Taylor", "LAR": "Sean McVay", "SF": "Kyle Shanahan", "BUF": "Joe Brady",
-    "MIA": "Mike McDaniel", "GB": "Matt LaFleur",
+    "GB": "Matt LaFleur",
     "LV": "Klint Kubiak", "NO": "Kellen Moore", "DEN": "Sean Payton",
     "ARI": "Mike LaFleur", "MIN": "Kevin O'Connell", "KC": "Andy Reid", 
     "PIT": "Mike McCarthy", 
@@ -1954,9 +1977,88 @@ def build_head_coach_history(proj_season, refresh, coordinators=None):
     # Curated prior jobs for NEW head coaches — Wikipedia's HC table no longer carries a
     # previous-position column and no free feed does. Verified by hand; names must match
     # the wiki table exactly. A coach absent here simply shows no former-team line.
-    HC_PRIOR_JOBS = {
-        "Mike McCarthy": ("DAL", "head coach", "2020\u20132024"),
-    }
+    return out
+
+
+def _parse_head_coach_page(html, proj_season):
+    """Parse Wikipedia's current-head-coaches table into {CODE:{name,since,is_new}}.
+
+    The HC table layout changed and no longer exposes a reliable "previous coaching
+    position" column. We therefore parse only stable fields (team, coach, hired/since)
+    here, and let `build_head_coach_history` enrich previous-team metadata via fallback
+    sources when possible.
+    """
+    if not html:
+        return {}
+    headers, rows = _parse_wikitable(html)
+
+    def col_idx(*names):
+        for i, h in enumerate(headers):
+            hl = (h or "").lower()
+            if any(n in hl for n in names):
+                return i
+        return None
+
+    i_team = col_idx("team")
+    i_name = col_idx("coach", "head coach", "name")
+    i_since = col_idx("hired", "since", "tenure")
+
+    out = {}
+    for cells in rows:
+        if len(cells) < 3:
+            continue
+        team_cell = cells[i_team] if i_team is not None and i_team < len(cells) else cells[0]
+        name_cell = cells[i_name] if i_name is not None and i_name < len(cells) else (cells[1] if len(cells) > 1 else "")
+        since_cell = cells[i_since] if i_since is not None and i_since < len(cells) else (cells[2] if len(cells) > 2 else "")
+
+        code, _m = _norm_team_name_to_code(team_cell)
+        if not code:
+            continue
+        nm = (name_cell or "").strip() or None
+        ym = _re.search(r"(20\d{2})", since_cell or "")
+        since = int(ym.group(1)) if ym else None
+        out[code] = {
+            "name": nm,
+            "since": since,
+            "is_new": (since == proj_season),
+        }
+    return out
+
+def build_coordinators(proj_season, refresh):
+    """Build {CODE: {offense:{...}, defense:{...}}} from Wikipedia's OC/DC lists."""
+    oc_html = _fetch_wiki_html(WIKI_OC_TITLE, refresh, "offensive coordinators (Wikipedia)")
+    dc_html = _fetch_wiki_html(WIKI_DC_TITLE, refresh, "defensive coordinators (Wikipedia)")
+    oc = _parse_coordinator_page(oc_html, "offense", proj_season)
+    dc = _parse_coordinator_page(dc_html, "defense", proj_season)
+    coords = {}
+    for code in set(list(oc.keys()) + list(dc.keys())):
+        coords[code] = {}
+        if code in oc: coords[code]["offense"] = oc[code]
+        if code in dc: coords[code]["defense"] = dc[code]
+    if not coords:
+        print("\n  ⚠ WARNING: no coordinator data parsed from Wikipedia — the Coordinators")
+        print("    tab will be hidden. (No internet, page layout changed, or parse miss.)")
+    else:
+        n_new = sum(1 for c in coords.values()
+                    for s in ("offense","defense") if c.get(s,{}).get("is_new") and not c.get(s,{}).get("internal"))
+        print(f"\n  Coordinators loaded: {len(coords)} teams "
+              f"({n_new} brand-new from another team → get a carryover Coordinators tab)")
+    return coords
+
+
+WIKI_HC_TITLE = "List_of_current_NFL_head_coaches"
+
+def build_head_coach_history(proj_season, refresh, coordinators=None):
+    """Pull Wikipedia's current-head-coaches table → {CODE: {name, since, prev_code,
+    prev_team_name, prev_role, prev_years, is_new}}. This reuses the same table/row parser
+    as the coordinator pages (Team | Coach | Since | Previous position). It exists so that
+    when a team's HEAD COACH is the primary playcaller (per HC_PLAYCALLERS) AND is new for
+    the projection season, the app can carry over the HC's FORMER team's offensive scheme —
+    because with a playcalling HC the scheme travels with the coach, not the coordinator."""
+    hc_html = _fetch_wiki_html(WIKI_HC_TITLE, refresh, "head coaches (Wikipedia)")
+    # Curated prior jobs for NEW head coaches — Wikipedia's HC table no longer carries a
+    # previous-position column and no free feed does. Verified by hand; names must match
+    # the wiki table exactly. A coach absent here simply shows no former-team line.
     hc = _parse_head_coach_page(hc_html, proj_season)
     # The two hand-maintained tables go stale every February. Say so in the build log, where
     # the refresh workflow reads it and opens an issue (a ⚠ … is stale line, like the OL
@@ -1988,8 +2090,8 @@ def build_head_coach_history(proj_season, refresh, coordinators=None):
         # No scraping fallback, ever. The old "borrow the new OC's former team" guess
         # stamped the OC's résumé onto the HC as 'head coach' — inventing jobs coaches
         # never held (Mike McCarthy shipped as a former Vikings HC). Unknown stays null.
-        # HC_PRIOR_JOBS below is the one sanctioned source: a hand-maintained table of
-        # REAL prior jobs for new head coaches (a handful per season, updated at refresh).
+        # HC_PRIOR_JOBS (module level, beside HC_PLAYCALLERS) is the one sanctioned source:
+        # a hand-maintained table of REAL prior jobs for new head coaches.
         prior = HC_PRIOR_JOBS.get(str(d.get("name") or "").strip()) if d.get("is_new") else None
         if prior:
             prev_code, prev_role, prev_years = prior

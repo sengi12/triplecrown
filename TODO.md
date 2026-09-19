@@ -54,6 +54,13 @@ Each item says what it needs so it can be picked up cold.
   sidecars: a season that had motion / play-action and now has none is exactly the "lost data
   the previous seed can stand in for" case the guard already exists to handle.
 
+- **The February coaching-table update now has a test.** `HC_PRIOR_JOBS` and `HC_PLAYCALLERS`
+  moved to module scope in `build_seed.py` so `tests/test_hc_tables.py` can read them; it pins
+  each new head coach's former team and role against the hiring cycle and checks that a
+  playcalling head coach who is new has a former team to carry a scheme over from. When the
+  next cycle lands, update `HIRES_2026` in that test alongside the two tables — the refresh's
+  "⚠ … is stale" warning still fires first, but the test now says exactly what is missing.
+
 ## Live-season gaps that wait on post-season files
 
 - **Coverage (man / zone, the shells) and the vs-man / vs-zone player splits.** The only
