@@ -2451,8 +2451,8 @@ function laTradeView(s){
         <button class="btn btn-sm btn-ghost la-fnd-refresh" onclick="laState.fndSeed++;renderLeagueAnalyzer()" title="Deal me different variations">${TC_ICON("refresh")} refresh</button></div>
       ${fndHtml}
     </div>
-    ${(typeof laTradeHistoryHTML==='function')?laTradeHistoryHTML(s):''}
-    <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn('latrade','How verdicts are judged'):''}</div>`;
+    <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn('latrade','How verdicts are judged'):''}</div>
+    ${(typeof laTradeHistoryHTML==='function')?laTradeHistoryHTML(s):''}`;
 }
 
 // Switch analyzer tabs. Also scrolls back to the tab bar: these views differ wildly in

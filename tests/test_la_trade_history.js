@@ -217,6 +217,19 @@ console.log('=== the sweep ===');
   app.laThClear();
   ok(app.filter.pos==='ALL', 'clear resets the filters');
 
+  console.log('=== and it sits at the BOTTOM of the Trade Center ===');
+  // The section is appended by laTradeView. Pin the order at the source: the ledger is the
+  // last thing that view emits, below the calculator grid, the trade finder and the
+  // "how verdicts are judged" footnote.
+  const view=code.slice(code.indexOf('function laTradeView('));
+  const body=view.slice(0, view.indexOf('\nfunction laSetTab('));
+  const at=(needle)=>body.indexOf(needle);
+  ok(at('la-tc-grid')>=0 && at('laTradeHistoryHTML')>at('la-tc-grid'), 'below the trade calculator');
+  ok(at('la-fnd-title')>=0 && at('laTradeHistoryHTML')>at('la-fnd-title'), 'below the trade finder');
+  ok(at('la-note-min')>=0 && at('laTradeHistoryHTML')>at('la-note-min'), 'below the verdicts footnote');
+  ok(!/\$\{[^}]*\}/.test(body.slice(body.indexOf('laTradeHistoryHTML(s)')+'laTradeHistoryHTML(s)'.length)),
+     'and nothing at all is emitted after it — it is the last thing on the page');
+
   ok(app.laTradeHistoryHTML({provider:'espn', leagueId:'E1', season:'2026', teamList:[]})==='',
      'an ESPN league has no Sleeper transaction log, so the section stays off entirely');
 
