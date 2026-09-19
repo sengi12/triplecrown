@@ -35848,8 +35848,11 @@ function laTcAdjusted(vals){
   return s.reduce((a,v,i)=>a+v*(LA_TC_W[i]!=null?LA_TC_W[i]:LA_TC_TAIL),0);
 }
 // Verdict for two sides of raw values. diff>0 → side A gives more (B is winning the trade).
-function laTcVerdict(valsA, valsB){
-  const adjA=laTcAdjusted(valsA), adjB=laTcAdjusted(valsB);
+function laTcVerdict(valsA, valsB, faabA, faabB){
+  // FAAB is added AFTER the diminishing-returns curve and never counts toward the stud
+  // premium: a pile of money is not a best player, and the premium exists to say that one
+  // great player beats the same value spread across three good ones.
+  const adjA=laTcAdjusted(valsA)+(+faabA||0), adjB=laTcAdjusted(valsB)+(+faabB||0);
   const bestA=valsA.length?Math.max(...valsA):0, bestB=valsB.length?Math.max(...valsB):0;
   const effA=adjA + (bestA>bestB ? (bestA-bestB)*LA_TC_STUD : 0);
   const effB=adjB + (bestB>bestA ? (bestB-bestA)*LA_TC_STUD : 0);
@@ -35887,11 +35890,21 @@ function laTradeInit(s){
                    && s.teamList.some(t=>t.rosterId===laState.trade.b)) return;
   const mine=(s.myUserId && s.teamList.find(t=>t.ownerId===s.myUserId)) || s.teamList[0];
   const other=[...s.teamList].filter(t=>t!==mine).sort((a,b)=>laTeamValue(b)-laTeamValue(a))[0];
-  laState.trade={ a:mine.rosterId, b:other?other.rosterId:mine.rosterId, giveA:[], giveB:[] };
+  laState.trade={ a:mine.rosterId, b:other?other.rosterId:mine.rosterId, giveA:[], giveB:[], faabA:0, faabB:0 };
 }
 function laTradeSetTeam(side, rosterId){
   laState.trade[side]=+rosterId;
   laState.trade[side==='a'?'giveA':'giveB']=[];   // new team → its give list resets
+  laState.trade[side==='a'?'faabA':'faabB']=0;    // and so does its money
+  renderLeagueAnalyzer();
+}
+// FAAB is a continuous amount, not a toggled key, so it gets its own setter. A team can only
+// send what it still has: the budget it has already bid away is gone.
+function laTradeSetFaab(side, amount){
+  const s=leagueSnapshot;
+  const rid=laState.trade[side];
+  const left=(typeof laFaabLeft==='function' && s) ? laFaabLeft(s, rid) : 0;
+  laState.trade[side==='a'?'faabA':'faabB']=Math.max(0, Math.min(left, Math.round(+amount||0)));
   renderLeagueAnalyzer();
 }
 function laTradeToggle(side, key){
@@ -35900,7 +35913,7 @@ function laTradeToggle(side, key){
   if(i>=0) arr.splice(i,1); else arr.push(key);
   renderLeagueAnalyzer();
 }
-function laTradeClear(){ laState.trade.giveA=[]; laState.trade.giveB=[]; renderLeagueAnalyzer(); }
+function laTradeClear(){ laState.trade.giveA=[]; laState.trade.giveB=[]; laState.trade.faabA=0; laState.trade.faabB=0; renderLeagueAnalyzer(); }
 function laLoadProposal(aId,bId,giveA,giveB){
   laState.trade={a:aId,b:bId,giveA:giveA.slice(),giveB:giveB.slice()};
   renderLeagueAnalyzer();
@@ -36316,8 +36329,14 @@ function laTradeView(s){
   const all=(p)=>[...p.players,...p.picks];
   const givenA=all(poolA).filter(x=>tr.giveA.includes(x.key));
   const givenB=all(poolB).filter(x=>tr.giveB.includes(x.key));
-  const v=laTcVerdict(givenA.map(x=>x.v), givenB.map(x=>x.v));
-  const started=givenA.length||givenB.length;
+  // FAAB is the third asset a Sleeper league trades. What it is worth is read off this
+  // league's own wire (laFaabValueOf), so the same control is hard currency in a Chopped
+  // league and small change in a redraft one without either being a special case.
+  const faabOn=(typeof laFaabOn==='function') && laFaabOn(s);
+  const fA=faabOn?Math.max(0,+tr.faabA||0):0, fB=faabOn?Math.max(0,+tr.faabB||0):0;
+  const fvA=faabOn?laFaabValueOf(s,fA):0, fvB=faabOn?laFaabValueOf(s,fB):0;
+  const v=laTcVerdict(givenA.map(x=>x.v), givenB.map(x=>x.v), fvA, fvB);
+  const started=givenA.length||givenB.length||fA||fB;
   const sel=(side,cur)=>`<select class="la-tc-sel" onchange="laTradeSetTeam('${side}',this.value)">
     ${s.teamList.map(t=>`<option value="${t.rosterId}" ${t.rosterId===cur?'selected':''}>${s.myUserId&&t.ownerId===s.myUserId?'\u2605 ':''}${escHtml(t.teamName)}</option>`).join('')}</select>`;
   // verdict bar: 50/50 = dead even; the fill leans toward whichever side gives MORE.
@@ -36336,14 +36355,56 @@ function laTradeView(s){
     const sugs=laTcSuggestions(s, shortSide==='a'?poolA:poolB, shortSide==='a'?tr.giveA:tr.giveB,
                                (shortSide==='a'?givenA:givenB).map(x=>x.v),
                                (shortSide==='a'?givenB:givenA).map(x=>x.v), shortSide);
+    // Money evens a deal as readily as a player does, and in a Chopped league more cheaply.
+    // The figure is the inverse of the same curve, so the line is always true of this wire.
+    let faabSug='';
+    if(faabOn){
+      const shortIsA=shortSide==='a';
+      const gap=Math.abs(v.diff);
+      const already=shortIsA?fA:fB;
+      const cap=laFaabLeft(s, shortIsA?tr.a:tr.b) - already;   // what is still unspent AND unoffered
+      const need=laFaabCostOf(s, gap, cap);
+      const who=escHtml((shortIsA?poolA:poolB).team.teamName);
+      if(need>0){
+        // A figure on its own says nothing about whether it hurts. $7 of $140 is a rounding
+        // error; $120 of $140 is the season. Price it against the budget it comes out of.
+        const pct=Math.round(need/Math.max(1,cap)*100);
+        faabSug=`<div class="la-sug la-sug-faab"><span class="la-sug-lbl">${who} evens it with money:</span>
+          <button class="la-sug-chip" onclick="laTradeSetFaab('${shortSide}',${already+need})"
+            title="${escAttr(laFaabBuys(s,need))}">+ $${need} FAAB <b>${laFaabValueOf(s,need)}</b></button>
+          <span class="la-sug-budget">${pct}% of the $${cap} left \u00b7 $${cap-need} after</span></div>`;
+      } else if(cap>0){
+        // The budget cannot reach the gap. Say so, and say how far it does get, rather than
+        // showing nothing and letting it look as though money was never an option.
+        faabSug=`<div class="la-sug la-sug-faab"><span class="la-sug-lbl">${who} cannot cover it with money:</span>
+          <span class="la-sug-budget">the whole $${cap} is worth <b>${laFaabValueOf(s,cap)}</b> against a gap of ${Math.round(gap)}</span></div>`;
+      }
+    }
     if(sugs.length){
-      sugHtml=`<div class="la-sug"><span class="la-sug-lbl">${escHtml((shortSide==='a'?poolA:poolB).team.teamName)} evens it with:</span>
+      sugHtml=faabSug+`<div class="la-sug"><span class="la-sug-lbl">${escHtml((shortSide==='a'?poolA:poolB).team.teamName)} evens it with:</span>
         ${sugs.map(x=>`<button class="la-sug-chip" onclick="${x.adds.map(a=>`laTradeToggle('${shortSide}','${escJsSingle(a.key)}')`).join(';')}">
           + ${escHtml(x.adds.map(a=>a.type==='k'?a.label:a.name).join(' + '))} <b>${x.adds.reduce((t,a)=>t+a.v,0)}</b></button>`).join('')}</div>`;
     } else {
-      sugHtml=`<div class="la-sug la-sug-none">No single addition gets this fair \u2014 the gap needs a real piece, not scraps.</div>`;
+      // Money alone can close it, so don't also say the gap needs a real piece — it doesn't.
+      sugHtml=faabSug || `<div class="la-sug la-sug-none">No single addition gets this fair \u2014 the gap needs a real piece, not scraps.</div>`;
     }
   }
+  // The money row. A stepper and a box rather than preset chips, because the evener answers
+  // in exact dollars and a $25-only control could never take its suggestion.
+  const faabRow=(side)=>{
+    if(!faabOn) return '';
+    const rid=side==='a'?tr.a:tr.b, cur=side==='a'?fA:fB, val=side==='a'?fvA:fvB;
+    const left=laFaabLeft(s, rid);
+    return `<div class="la-tc-faab${cur?' on':''}">
+      <span class="la-tc-faab-lbl">FAAB</span>
+      <button class="la-tc-faab-step" onclick="laTradeSetFaab('${side}',${Math.max(0,cur-5)})" title="\u2212$5" ${cur<=0?'disabled':''}>\u2212</button>
+      <span class="la-tc-faab-amt">$<input type="number" min="0" max="${left}" step="1" value="${cur}" id="la-faab-${side}"
+        oninput="laTradeSetFaab('${side}',this.value)" aria-label="FAAB from ${escAttr(side==='a'?poolA.team.teamName:poolB.team.teamName)}"></span>
+      <button class="la-tc-faab-step" onclick="laTradeSetFaab('${side}',${cur+5})" title="+$5" ${cur>=left?'disabled':''}>+</button>
+      <span class="la-tc-faab-of">of $${left}</span>
+      ${cur?`<span class="la-tc-faab-v" title="${escAttr(laFaabBuys(s,cur))}">worth <b>${val}</b></span>`:''}
+    </div>`;
+  };
   // trade finder
   const fnd=laTradeFinder(s);
   const fndHtml = fnd.proposals.length ? fnd.proposals.map(p=>`
@@ -36362,6 +36423,7 @@ function laTradeView(s){
       <div class="la-tc-side">
         <div class="la-tc-head">${sel('a',tr.a)} <span class="la-tc-gives">gives</span></div>
         <div class="la-tc-box">${givenA.length?givenA.map(x=>laAssetRow(x,'a',true)).join(''):'<div class="la-tc-empty">click + below to add</div>'}
+          ${faabRow('a')}
           <div class="la-tc-tot">adjusted <b>${started?v.adjA:0}</b>${v.effA!==v.adjA&&started?` \u00b7 with stud premium <b>${v.effA}</b>`:''}</div></div>
         <div class="la-tc-pool">${all(poolA).map(x=>tr.giveA.includes(x.key)?'':laAssetRow(x,'a',false)).join('')}</div>
       </div>
@@ -36375,6 +36437,7 @@ function laTradeView(s){
       <div class="la-tc-side">
         <div class="la-tc-head">${sel('b',tr.b)} <span class="la-tc-gives">gives</span></div>
         <div class="la-tc-box">${givenB.length?givenB.map(x=>laAssetRow(x,'b',true)).join(''):'<div class="la-tc-empty">click + below to add</div>'}
+          ${faabRow('b')}
           <div class="la-tc-tot">adjusted <b>${started?v.adjB:0}</b>${v.effB!==v.adjB&&started?` \u00b7 with stud premium <b>${v.effB}</b>`:''}</div></div>
         <div class="la-tc-pool">${all(poolB).map(x=>tr.giveB.includes(x.key)?'':laAssetRow(x,'b',false)).join('')}</div>
       </div>
@@ -40891,4 +40954,132 @@ function laSnapsBoardHTML(s, keeps, mineMark, two){
   const up=rows.filter(t=>t.delta>=LA_SNAP_MIN_DELTA).slice(0,15), dn=rows.filter(t=>t.delta<=-LA_SNAP_MIN_DELTA).slice(0,15);
   const sub=`week ${idx.cw} against the prior three weeks (last season when there are none) · Sleeper’s snap counts, nflverse where Sleeper is blank`;
   return pills + two('SNAP SHARE', sub, '▲ RISING', up.map(row).join(''), '▼ FALLING', dn.map(row).join(''));
+}
+// ── FAAB as a tradeable asset ────────────────────────────────────────────────
+// A dollar is worth whatever the wire sells. In a Chopped league the best players in the sport
+// are released every week, so a dollar buys a real starter and FAAB is the hardest currency on
+// the board; in any other FAAB league the wire is replacement level and the same dollar is a
+// sweetener. Both answers come out of ONE source — the chop market that already prices the
+// Lineup pane's bids (hubChopFaab) — read as a PRICE LIST rather than as a bid.
+//
+// The trade calculator sums laVal units, so everything here converts dollars into those. Never
+// add raw dollars to a verdict: the pick-value warning in laAssetPools is the same mistake, and
+// it once made "your whole pick chest for my WR3" look fair.
+
+// The bands hubChopBand sorts a release into, best first, each with a rank that stands for it.
+const LA_FAAB_BANDS = [
+  {pos:'RB', band:'top12', rank:6,  label:'a top-12 RB'},
+  {pos:'WR', band:'top12', rank:6,  label:'a top-12 WR'},
+  {pos:'QB', band:'top6',  rank:3,  label:'a top-6 QB'},
+  {pos:'TE', band:'top6',  rank:3,  label:'a top-6 TE'},
+  {pos:'RB', band:'b24',   rank:18, label:'an RB2'},
+  {pos:'WR', band:'b24',   rank:18, label:'a WR2'},
+  {pos:'QB', band:'b12',   rank:9,  label:'a QB2'},
+  {pos:'TE', band:'b12',   rank:9,  label:'a TE2'},
+  {pos:'RB', band:'b36',   rank:30, label:'an RB3'},
+  {pos:'WR', band:'b36',   rank:30, label:'a WR3'},
+];
+
+// Is this a league where FAAB is a thing at all? Sleeper waiver_type 2 is FAAB.
+function laFaabOn(s){ return !!(s && +s.waiverType===2 && +s.waiverBudget>0); }
+function laFaabIsChop(s){ return !!(s && +s.leagueType===3); }
+// What a team still has to spend. You cannot trade away money you have already bid.
+function laFaabLeft(s, rosterId){
+  if(!laFaabOn(s)) return 0;
+  const t=(s.teamList||[]).find(x=>x.rosterId===rosterId);
+  return Math.max(0, (+s.waiverBudget||0) - ((t&&+t.faabUsed)||0));
+}
+
+// What a player of each caliber is WORTH, in the calculator's own units. Read off the league's
+// own rosters: the players sitting at those positional ranks are the ones who get chopped.
+function laFaabBandValues(s){
+  const buckets={};
+  (s.teamList||[]).forEach(t=>(t.players||[]).forEach(p=>{
+    const rank=laPosRankOf(s, p.name, p.pos); const band=hubChopBand(p.pos, rank);
+    if(!band) return;
+    const v=laVal(p.name, p.pos, p.team)||0; if(!(v>0)) return;
+    (buckets[p.pos+'|'+band]=buckets[p.pos+'|'+band]||[]).push(v);
+  }));
+  const out={};
+  Object.keys(buckets).forEach(k=>{ const a=buckets[k].sort((x,y)=>x-y); out[k]=a[Math.floor(a.length/2)]; });
+  return out;
+}
+
+// The price list: what each caliber costs and what it is worth, as a monotone frontier sorted
+// by price. "Best thing $X can buy" is a lookup on this, and it is concave by construction —
+// the next band up always costs more than it adds.
+var _laFaabCurveMemo={sig:'', curve:null};
+function laFaabCurve(s){
+  if(!laFaabOn(s)) return null;
+  const res=(typeof hubSnapshotResult==='function') ? hubSnapshotResult(s) : null;
+  if(!res || !res.faab) return null;
+  const budget=+res.faab.budget||0; if(!(budget>0)) return null;
+  const chop=res.faab.chop||null;
+  const sig=`${s.leagueId}~${budget}~${chop?chop.f+'|'+chop.n:'wire'}~${(res.faab.wire||[]).length}~${typeof laValMode==='function'?laValMode():''}`;
+  if(_laFaabCurveMemo.sig===sig) return _laFaabCurveMemo.curve;
+  let pts=[];
+  if(chop && Array.isArray(chop.market)){
+    // A Chopped league: price the caliber bands off the chop market. This is forward-looking on
+    // purpose — the elite players are not on the wire yet, they are on rosters waiting to be
+    // released, and the market says what they have gone for when they were.
+    const bv=laFaabBandValues(s);
+    LA_FAAB_BANDS.forEach(b=>{
+      const fb=(typeof hubChopFaab==='function') ? hubChopFaab(b.pos, b.rank, chop.f, chop.market, budget, budget) : null;
+      const v=bv[b.pos+'|'+b.band];
+      if(fb && fb.market>0 && v>0) pts.push({price:fb.market, v, label:b.label});
+    });
+  } else if(Array.isArray(res.faab.wire)){
+    // Every other FAAB league: what is actually on the wire today, which is why a dollar comes
+    // out worth so little — nothing on it is worth a roster spot.
+    res.faab.wire.forEach(r=>{
+      const v=laVal(r.name, r.pos, r.team)||0; const price=+(r.faab&&r.faab.market)||0;
+      if(v>0 && price>0) pts.push({price, v, label:r.name});
+    });
+  }
+  // Monotone frontier: sorted by price, keeping only a point that buys more than everything
+  // cheaper than it.
+  pts.sort((a,b)=>a.price-b.price || b.v-a.v);
+  const curve=[]; let best=0;
+  pts.forEach(p=>{ if(p.v>best){ best=p.v; curve.push(p); } });
+  _laFaabCurveMemo={sig, curve:curve.length?curve:null};
+  return _laFaabCurveMemo.curve;
+}
+
+// What $X is worth in trade units. Interpolated between the rungs so that adding ten dollars
+// always shows up somewhere, and damped above the dearest rung — there is nothing better than
+// the best player on the board to spend the rest on.
+function laFaabValueOf(s, dollars){
+  const d=Math.max(0, +dollars||0); if(!d) return 0;
+  const c=laFaabCurve(s); if(!c || !c.length) return 0;
+  if(d<=c[0].price) return +( (c[0].v*(d/c[0].price)).toFixed(1) );
+  for(let i=1;i<c.length;i++){
+    if(d<=c[i].price){
+      const a=c[i-1], b=c[i];
+      return +( (a.v + (b.v-a.v)*((d-a.price)/Math.max(1,(b.price-a.price)))).toFixed(1) );
+    }
+  }
+  const top=c[c.length-1];
+  return +( (top.v + (d-top.price)*(top.v/Math.max(1,top.price))*0.35).toFixed(1) );
+}
+
+// The inverse, and the one the evener asks for: the dollars that cover a gap of `gap` value.
+// Answered on the same curve, so the line it produces is always true of this league's wire —
+// "$34, what a top-12 RB has gone for with nine teams alive".
+function laFaabCostOf(s, gap, cap){
+  const g=+gap||0; if(g<=0) return null;
+  const c=laFaabCurve(s); if(!c || !c.length) return null;
+  const ceiling=(cap==null?Infinity:Math.max(0,+cap||0));
+  let lo=0, hi=Math.min(ceiling, c[c.length-1].price*2.5);
+  if(laFaabValueOf(s, hi) < g) return null;             // the whole budget cannot cover it
+  for(let i=0;i<40;i++){ const mid=(lo+hi)/2; if(laFaabValueOf(s, mid) < g) lo=mid; else hi=mid; }
+  const d=Math.ceil(hi);
+  return d>ceiling ? null : d;
+}
+
+// What the dollars buy, in words, for the chip's tooltip.
+function laFaabBuys(s, dollars){
+  const d=Math.max(0,+dollars||0); const c=laFaabCurve(s); if(!d || !c || !c.length) return '';
+  let best=null; c.forEach(p=>{ if(p.price<=d) best=p; });
+  if(!best) return `not enough for anything on the wire — the cheapest rung is $${c[0].price}`;
+  return `enough for ${best.label} at $${best.price}`;
 }
