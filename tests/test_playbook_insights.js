@@ -119,5 +119,32 @@ if(fs.existsSync(sidecar)){
   console.log('  SKIP: coaching sidecar not present');
 }
 
+// ── 5. the charted-types question, asked of the payload shape the BUILDER ships now ─────────
+// The assertions above read whichever sidecar happens to be committed. That is not enough on
+// its own: the builder switched from precomputed buckets to a row per play, and the profile
+// still asked for `views.all.all.pa` — a key a rows payload does not have. Every REBUILT
+// season therefore reported itself uncharted, and play-action / motion / no-huddle went to
+// '—' across all 32 teams the moment a refresh landed. The committed sidecar was still the
+// old shape, so nothing here noticed until the nightly refresh rebuilt it and went red.
+// Synthetic rows, so this holds whichever shape the seed is in on any given day.
+console.log('=== charted types are read from the payload the builder actually ships ===');
+const SIGS=[{p:'11', g:[{n:'X',s:'WR'}]}];
+// [set, week, down, ydstogo, flags, epa*1000, success, yards, td, lane]
+// flags: 1 pass · 2 play-action · 4 motion · 8 no-huddle · 16 red zone
+const row=(flags)=>[0,1,1,10,flags,0,0,0,0,-1];
+const rowsPayload=(flagList)=>({ season:'2025', team:'DET',
+  data:{ sigs:SIGS, formations:{}, lanes:[], games:[[1,'SEA']], plays:flagList.map(row) } });
+
+const charted=app.profile(rowsPayload([1|2, 1|4, 1, 1|8, 1, 1|2|4, 1, 1]));
+chk(Number.isFinite(charted.paRate), 'a rows payload with play-action flags reports a play-action rate');
+chk(Number.isFinite(charted.motionRate), 'and a motion rate');
+chk(Number.isFinite(charted.nohuddleRate), 'and a no-huddle rate');
+chk(Math.abs(charted.paRate - 25) < 0.01, `two of eight plays are play-action → 25% (got ${charted.paRate})`);
+chk(Math.abs(charted.motionRate - 25) < 0.01, `two of eight are in motion → 25% (got ${charted.motionRate})`);
+
+const bare=app.profile(rowsPayload([1, 1, 0, 1, 0, 1, 1, 0]));
+chk(bare.paRate===null && bare.motionRate===null && bare.nohuddleRate===null,
+    'a rows payload with those bits clear on every play is UNCHARTED (null), not 0.0%');
+
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);
