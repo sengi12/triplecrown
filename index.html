@@ -17146,18 +17146,6 @@ function _tmPlaySeed(p){
   return ((p.wk||0)*7919 + (p.ay+60)*104729 + (p.yac+60)*1301
         + ((p.yl==null?99:p.yl)+1)*31 + (p.q||0)*17 + (p.side+1)*5 + (p.res+1)*3) >>> 0;
 }
-// The stem from the line of scrimmage to an uncharted target: we do not know the route, so it
-// stays dotted and faint — but it is still a person running, so it leans the way a stem does
-// instead of being ruled with a straight edge. Seeded like everything else here.
-function _tmStemPath(x0, losY, x1, y1, seed){
-  const dx=x1-x0, dy=y1-losY, len=Math.hypot(dx,dy), f=v=>(+v).toFixed(1);
-  if(len<18) return `M${f(x0)},${f(losY)} L${f(x1)},${f(y1)}`;
-  const rnd=_cmRand(seed), j=a=>(rnd()-0.5)*2*a;
-  const nx=-dy/len, ny=dx/len;                     // across the stem
-  const lean=j(Math.min(16, len*0.12));
-  const at=(t,off)=>[x0+dx*t+nx*off, losY+dy*t+ny*off];
-  return _cmSmooth([[x0,losY], at(0.42+j(0.06), lean), at(0.78, lean*0.3), [x1,y1]]);
-}
 function _tmYacPath(x1, y1, x2, y2, seed, obSide){
   const dx=x2-x1, dy=y2-y1, len=Math.hypot(dx,dy);
   const f=v=>(+v).toFixed(1);
@@ -17240,11 +17228,11 @@ function targetMapSVG(plays, title, sub, tag){
     const attrs=tag?tag({label:`Target · WK ${p.wk}`, value:tip, statKey:'target'}):'';
     parts.push(`<g ${attrs}><title>${escHtml(tip)}</title>`);
     const routeD = p.route ? _tmRoutePath(p.route, p.side, x0, losY, x1, y1, pxPerYd) : null;
+    // Only a CHARTED route is drawn. An uncharted target used to get a faint dotted stem from
+    // the line of scrimmage to the mark, which drew a line we do not have: the route is unknown,
+    // and the stem said nothing the mark had not already said while adding clutter to a chart
+    // that is a hairball at a season's worth of targets. The mark alone now.
     if(routeD) parts.push(`<path d="${routeD}" fill="none" stroke="${col}" stroke-width="${routeW}" stroke-linejoin="round" stroke-linecap="round" opacity="${caught?routeOp:routeOp*0.75}"/>`);
-    else if(p.res!==2){
-      const stemSeed=(seed^0x5bf03635)>>>0;
-      parts.push(`<path d="${_tmStemPath(x0, losY, x1, y1, stemSeed)}" fill="none" stroke="${col}" stroke-width="1.5" stroke-dasharray="3 4" opacity="0.32"/>`);
-    }
     if(p.res===2){
       // The scoring throw, drawn NGS-style: the ball leaves the passer's spot and comes
       // down onto the recorded catch point — a lob whose height grows with the distance.
