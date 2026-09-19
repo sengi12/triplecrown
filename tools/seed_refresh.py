@@ -646,6 +646,109 @@ def fallback_blocks(old, new, problems):
     return kept, unresolved
 
 
+# ── The per-season lazy sidecars ─────────────────────────────────────────────
+# validate() above compares the MAIN seed block by block. The lazy sidecars written beside it
+# (coaching.<season>, def_weekly, ol_weekly, adv_weekly, cfb_logs) were never looked at, and
+# that is how a coaching sidecar rebuilt with no play-action and no motion shipped without the
+# refresh noticing: the Scheme tab read "Not charted for this season" for all 32 teams of a
+# season that WAS charted, and only a test caught it, days later, naming an assertion rather
+# than the loss.
+#
+# Two questions per file. How much is in it (a sidecar that came back empty is a failed
+# fetch), and — for coaching — does it still carry the charted tendencies it carried before.
+# Size alone cannot answer the second: the payload moved from a bucket per down x distance x
+# play-type to one row per play and got ~44% SMALLER doing it, so a tight size floor would
+# have rejected a real improvement while the actual loss hid inside rows that were still there.
+SIDECAR_MIN_RATIO = 0.4    # generous on purpose: this catches a collapse, not a diet
+
+# The same bits the app filters on, so this guard and the Scheme tab can never disagree about
+# whether a season was charted: 1 pass, 2 play-action, 4 motion, 8 no-huddle, 16 red zone.
+COACHING_CHARTED_MASK = 2 | 4 | 8
+COACHING_TYPE_BIT = {"pa": 2, "motion": 4, "nohuddle": 8}
+
+
+def season_sidecars():
+    """{name: path} for every lazy sidecar except the in-season one, which has its own guard."""
+    out = {}
+    for path in sorted(glob.glob(os.path.join(SEEDS, "triplecrown_seed.*.json"))):
+        name = os.path.basename(path)[len("triplecrown_seed."):-len(".json")]
+        if name != "inseason":
+            out[name] = path
+    return out
+
+
+def coaching_charted_bits(team):
+    """Which charted types one team's payload carries — the Python of the app's hasType()."""
+    if not isinstance(team, dict):
+        return 0
+    rows = team.get("plays")
+    if isinstance(rows, list) and rows:
+        bits = 0
+        for r in rows:
+            if isinstance(r, list) and len(r) > 4:
+                try:
+                    bits |= int(r[4] or 0)
+                except (TypeError, ValueError):
+                    pass
+        return bits
+    views = team.get("views")
+    if not isinstance(views, dict):
+        return 0
+    inner = views.get("all") if isinstance(views.get("all"), dict) else None
+    src = inner.get("all") if isinstance(inner, dict) and isinstance(inner.get("all"), dict) else views
+    bits = 0
+    for key, bit in COACHING_TYPE_BIT.items():
+        if isinstance(src, dict) and src.get(key):
+            bits |= bit
+    return bits
+
+
+def coaching_census(doc):
+    """{team: charted-bit-mask} for a coaching sidecar, encoded (v3+) or raw."""
+    teams = doc.get("teams") if isinstance(doc, dict) else None
+    if not isinstance(teams, dict):
+        teams = doc if isinstance(doc, dict) else {}
+    return {code: coaching_charted_bits(t) for code, t in teams.items()
+            if code not in ("v", "leg") and isinstance(t, dict)}
+
+
+def check_season_sidecars(old_docs):
+    """Regress each lazy sidecar against its previous copy.
+    → [(name, path, note)] for every one that should be rolled back."""
+    bad = []
+    for name, path in season_sidecars().items():
+        old = old_docs.get(name)
+        if old is None:
+            continue                       # new file, or none before — nothing to regress against
+        try:
+            with open(path) as f:
+                new = json.load(f)
+        except FileNotFoundError:
+            bad.append((name, path, "the rebuild did not write it"))
+            continue
+        except Exception as e:
+            bad.append((name, path, f"will not parse ({e})"))
+            continue
+        was, now = block_size(old), block_size(new)
+        if was > 0 and now == 0:
+            bad.append((name, path, f"{was} → 0 (came back empty)"))
+            continue
+        if was > 0 and now < was * SIDECAR_MIN_RATIO:
+            bad.append((name, path, f"{was} → {now} ({100 * now / was:.0f}% of previous, "
+                                    f"floor {100 * SIDECAR_MIN_RATIO:.0f}%)"))
+            continue
+        if name.startswith("coaching."):
+            ob, nb = coaching_census(old), coaching_census(new)
+            lost = sorted(t for t, bits in ob.items()
+                          if (bits & COACHING_CHARTED_MASK) & ~nb.get(t, 0))
+            if lost:
+                shown = ", ".join(lost[:4]) + (f" and {len(lost) - 4} more" if len(lost) > 4 else "")
+                bad.append((name, path, f"charted tendencies vanished for {len(lost)} team(s) "
+                                        f"({shown}) — play-action / motion / no-huddle would read "
+                                        f"'—' for a season that was charted"))
+    return bad
+
+
 def check_inseason_sidecar(old_side):
     """Sidecar-only guard. The additions-style policy (near-empty at week 1 is fine) is
     implicit — growth and first appearance always pass. Two hard rules: for the SAME season
@@ -824,6 +927,20 @@ def main():
     for src_p, dst_p in side_backups:
         if os.path.exists(src_p):
             shutil.copy2(src_p, dst_p)
+    # The per-season lazy sidecars get the same treatment, so one that comes back gutted can
+    # be rolled back on its own rather than taking the whole rebuild down (or, as it did
+    # before this guard existed, shipping).
+    season_side_docs, season_side_backups = {}, []
+    for _name, _path in season_sidecars().items():
+        try:
+            with open(_path) as f:
+                season_side_docs[_name] = json.load(f)
+        except Exception:
+            pass
+        for _p in (_path, _path + ".gz"):
+            if os.path.exists(_p):
+                shutil.copy2(_p, _p + ".prev")
+                season_side_backups.append((_p, _p + ".prev"))
 
     # ── Invalidate exactly what is stale ──────────────────────────────────────
     log("\nInvalidating cache entries:")
@@ -840,7 +957,7 @@ def main():
         log("\nBUILD ITSELF FAILED — restoring the previous seed.")
         if os.path.exists(backup):
             shutil.move(backup, SEED_MAIN)
-        for src_p, dst_p in side_backups:
+        for src_p, dst_p in side_backups + season_side_backups:
             if os.path.exists(dst_p):
                 shutil.move(dst_p, src_p)
         return 1
@@ -854,7 +971,7 @@ def main():
         log(f"  new seed will not parse ({e}) — restoring previous.")
         if os.path.exists(backup):
             shutil.move(backup, SEED_MAIN)
-        for src_p, dst_p in side_backups:
+        for src_p, dst_p in side_backups + season_side_backups:
             if os.path.exists(dst_p):
                 shutil.move(dst_p, src_p)
         return 1
@@ -881,7 +998,7 @@ def main():
             log("retries. Nothing has been committed.")
             if os.path.exists(backup):
                 shutil.move(backup, SEED_MAIN)
-            for src_p, dst_p in side_backups:
+            for src_p, dst_p in side_backups + season_side_backups:
                 if os.path.exists(dst_p):
                     shutil.move(dst_p, src_p)
             return 1
@@ -916,6 +1033,28 @@ def main():
         for _, dst_p in side_backups:
             if os.path.exists(dst_p):
                 os.remove(dst_p)
+
+    # ── Per-season sidecar guard (rolls back only the files that regressed) ────
+    bad_sides = check_season_sidecars(season_side_docs)
+    rolled = {name for name, _p, _n in bad_sides}
+    for name, path, note in bad_sides:
+        log(f"  SIDECAR REJECTED: {name}: {note} — keeping the previous copy")
+    bad_paths = {p for _n, p, _x in bad_sides}
+    for src_p, dst_p in season_side_backups:
+        if not os.path.exists(dst_p):
+            continue
+        # a sidecar and its .gz stand or fall together
+        base = src_p[:-3] if src_p.endswith(".gz") else src_p
+        if base in bad_paths:
+            shutil.move(dst_p, src_p)
+        else:
+            os.remove(dst_p)
+    if rolled:
+        # Those sidecars come out of the nflverse build, and the old copies stand — so its
+        # inputs were NOT consumed and the next run must try again rather than treating the
+        # cadence as satisfied.
+        log(f"  not advancing the cadence of: nflverse ({len(rolled)} sidecar(s) held back)")
+        stale = [n for n in stale if n != "nflverse"]
 
     # ── Record ────────────────────────────────────────────────────────────────
     stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

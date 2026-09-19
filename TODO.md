@@ -44,16 +44,6 @@ Each item says what it needs so it can be picked up cold.
   "+ earlier seasons" press — today the default read is the current season only, because the
   chain costs a full 18-leg sweep plus rosters and users per season.
 
-- **The seed validator does not cover the lazy sidecars.** `validate()` / `fallback_blocks()`
-  in `tools/seed_refresh.py` compare the rebuilt MAIN seed against the previous one and can
-  drop a bad block back to its old copy. The per-season sidecars written beside it
-  (`triplecrown_seed.coaching.<season>.json`, `def_weekly`, `ol_weekly`, `adv_weekly`) get no
-  such check, which is how a 2025 coaching sidecar rebuilt with no FTN columns shipped without
-  the refresh noticing — `test_playbook_insights` was the only thing that caught it, and it
-  could only say the assertion failed, not why. Worth extending `measure()`/`GUARDS` to the
-  sidecars: a season that had motion / play-action and now has none is exactly the "lost data
-  the previous seed can stand in for" case the guard already exists to handle.
-
 - **The February coaching-table update now has a test.** `HC_PRIOR_JOBS` and `HC_PLAYCALLERS`
   moved to module scope in `build_seed.py` so `tests/test_hc_tables.py` can read them; it pins
   each new head coach's former team and role against the hiring cycle and checks that a
