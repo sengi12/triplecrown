@@ -346,6 +346,22 @@
 .la-basis-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 2px 8px;}
 .la-basis{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:3px 9px;cursor:help;}
 .la-basis-pin{margin-left:6px;color:var(--accent);}
+/* FAAB in a trade: a stepper and a box, because the evener answers in exact dollars and a
+   preset-chip control could never take its suggestion. */
+.la-tc-faab{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:6px;padding-top:6px;
+  border-top:1px dashed var(--border);font-size:10px;font-family:var(--mono);color:var(--muted);}
+.la-tc-faab.on{color:var(--text);}
+.la-tc-faab-lbl{font-weight:700;letter-spacing:.06em;}
+.la-tc-faab-step{width:18px;height:18px;line-height:1;padding:0;border:1px solid var(--border);
+  background:var(--surface);color:var(--text);border-radius:3px;cursor:pointer;font-size:12px;}
+.la-tc-faab-step:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
+.la-tc-faab-step:disabled{opacity:.35;cursor:default;}
+.la-tc-faab-amt input{width:46px;background:var(--surface);border:1px solid var(--border);
+  color:var(--text);border-radius:3px;padding:1px 3px;font:inherit;text-align:right;}
+.la-tc-faab-amt input:focus{outline:2px solid var(--accent);outline-offset:1px;}
+.la-tc-faab-of{opacity:.7;}
+.la-tc-faab-v b{color:var(--accent);}
+.la-sug-faab{margin-bottom:4px;}
 .la-tc-tot{font-size:10px;color:var(--muted);padding-top:4px;border-top:1px dashed var(--border);margin-top:4px;font-family:var(--mono);}
 .la-tc-tot b{color:var(--accent);}
 .la-tc-pool{max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:1px;}

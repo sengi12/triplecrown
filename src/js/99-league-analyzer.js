@@ -1847,8 +1847,11 @@ function laTcAdjusted(vals){
   return s.reduce((a,v,i)=>a+v*(LA_TC_W[i]!=null?LA_TC_W[i]:LA_TC_TAIL),0);
 }
 // Verdict for two sides of raw values. diff>0 → side A gives more (B is winning the trade).
-function laTcVerdict(valsA, valsB){
-  const adjA=laTcAdjusted(valsA), adjB=laTcAdjusted(valsB);
+function laTcVerdict(valsA, valsB, faabA, faabB){
+  // FAAB is added AFTER the diminishing-returns curve and never counts toward the stud
+  // premium: a pile of money is not a best player, and the premium exists to say that one
+  // great player beats the same value spread across three good ones.
+  const adjA=laTcAdjusted(valsA)+(+faabA||0), adjB=laTcAdjusted(valsB)+(+faabB||0);
   const bestA=valsA.length?Math.max(...valsA):0, bestB=valsB.length?Math.max(...valsB):0;
   const effA=adjA + (bestA>bestB ? (bestA-bestB)*LA_TC_STUD : 0);
   const effB=adjB + (bestB>bestA ? (bestB-bestA)*LA_TC_STUD : 0);
@@ -1886,11 +1889,21 @@ function laTradeInit(s){
                    && s.teamList.some(t=>t.rosterId===laState.trade.b)) return;
   const mine=(s.myUserId && s.teamList.find(t=>t.ownerId===s.myUserId)) || s.teamList[0];
   const other=[...s.teamList].filter(t=>t!==mine).sort((a,b)=>laTeamValue(b)-laTeamValue(a))[0];
-  laState.trade={ a:mine.rosterId, b:other?other.rosterId:mine.rosterId, giveA:[], giveB:[] };
+  laState.trade={ a:mine.rosterId, b:other?other.rosterId:mine.rosterId, giveA:[], giveB:[], faabA:0, faabB:0 };
 }
 function laTradeSetTeam(side, rosterId){
   laState.trade[side]=+rosterId;
   laState.trade[side==='a'?'giveA':'giveB']=[];   // new team → its give list resets
+  laState.trade[side==='a'?'faabA':'faabB']=0;    // and so does its money
+  renderLeagueAnalyzer();
+}
+// FAAB is a continuous amount, not a toggled key, so it gets its own setter. A team can only
+// send what it still has: the budget it has already bid away is gone.
+function laTradeSetFaab(side, amount){
+  const s=leagueSnapshot;
+  const rid=laState.trade[side];
+  const left=(typeof laFaabLeft==='function' && s) ? laFaabLeft(s, rid) : 0;
+  laState.trade[side==='a'?'faabA':'faabB']=Math.max(0, Math.min(left, Math.round(+amount||0)));
   renderLeagueAnalyzer();
 }
 function laTradeToggle(side, key){
@@ -1899,7 +1912,7 @@ function laTradeToggle(side, key){
   if(i>=0) arr.splice(i,1); else arr.push(key);
   renderLeagueAnalyzer();
 }
-function laTradeClear(){ laState.trade.giveA=[]; laState.trade.giveB=[]; renderLeagueAnalyzer(); }
+function laTradeClear(){ laState.trade.giveA=[]; laState.trade.giveB=[]; laState.trade.faabA=0; laState.trade.faabB=0; renderLeagueAnalyzer(); }
 function laLoadProposal(aId,bId,giveA,giveB){
   laState.trade={a:aId,b:bId,giveA:giveA.slice(),giveB:giveB.slice()};
   renderLeagueAnalyzer();
@@ -2315,8 +2328,14 @@ function laTradeView(s){
   const all=(p)=>[...p.players,...p.picks];
   const givenA=all(poolA).filter(x=>tr.giveA.includes(x.key));
   const givenB=all(poolB).filter(x=>tr.giveB.includes(x.key));
-  const v=laTcVerdict(givenA.map(x=>x.v), givenB.map(x=>x.v));
-  const started=givenA.length||givenB.length;
+  // FAAB is the third asset a Sleeper league trades. What it is worth is read off this
+  // league's own wire (laFaabValueOf), so the same control is hard currency in a Chopped
+  // league and small change in a redraft one without either being a special case.
+  const faabOn=(typeof laFaabOn==='function') && laFaabOn(s);
+  const fA=faabOn?Math.max(0,+tr.faabA||0):0, fB=faabOn?Math.max(0,+tr.faabB||0):0;
+  const fvA=faabOn?laFaabValueOf(s,fA):0, fvB=faabOn?laFaabValueOf(s,fB):0;
+  const v=laTcVerdict(givenA.map(x=>x.v), givenB.map(x=>x.v), fvA, fvB);
+  const started=givenA.length||givenB.length||fA||fB;
   const sel=(side,cur)=>`<select class="la-tc-sel" onchange="laTradeSetTeam('${side}',this.value)">
     ${s.teamList.map(t=>`<option value="${t.rosterId}" ${t.rosterId===cur?'selected':''}>${s.myUserId&&t.ownerId===s.myUserId?'\u2605 ':''}${escHtml(t.teamName)}</option>`).join('')}</select>`;
   // verdict bar: 50/50 = dead even; the fill leans toward whichever side gives MORE.
@@ -2335,14 +2354,46 @@ function laTradeView(s){
     const sugs=laTcSuggestions(s, shortSide==='a'?poolA:poolB, shortSide==='a'?tr.giveA:tr.giveB,
                                (shortSide==='a'?givenA:givenB).map(x=>x.v),
                                (shortSide==='a'?givenB:givenA).map(x=>x.v), shortSide);
+    // Money evens a deal as readily as a player does, and in a Chopped league more cheaply.
+    // The figure is the inverse of the same curve, so the line is always true of this wire.
+    let faabSug='';
+    if(faabOn){
+      const shortIsA=shortSide==='a';
+      const gap=Math.abs(v.diff);
+      const cap=laFaabLeft(s, shortIsA?tr.a:tr.b) - (shortIsA?fA:fB);
+      const need=laFaabCostOf(s, gap, cap);
+      if(need>0){
+        const who=escHtml((shortIsA?poolA:poolB).team.teamName);
+        faabSug=`<div class="la-sug la-sug-faab"><span class="la-sug-lbl">${who} evens it with money:</span>
+          <button class="la-sug-chip" onclick="laTradeSetFaab('${shortSide}',${(shortIsA?fA:fB)+need})"
+            title="${escAttr(laFaabBuys(s,need))}">+ $${need} FAAB <b>${laFaabValueOf(s,need)}</b></button></div>`;
+      }
+    }
     if(sugs.length){
-      sugHtml=`<div class="la-sug"><span class="la-sug-lbl">${escHtml((shortSide==='a'?poolA:poolB).team.teamName)} evens it with:</span>
+      sugHtml=faabSug+`<div class="la-sug"><span class="la-sug-lbl">${escHtml((shortSide==='a'?poolA:poolB).team.teamName)} evens it with:</span>
         ${sugs.map(x=>`<button class="la-sug-chip" onclick="${x.adds.map(a=>`laTradeToggle('${shortSide}','${escJsSingle(a.key)}')`).join(';')}">
           + ${escHtml(x.adds.map(a=>a.type==='k'?a.label:a.name).join(' + '))} <b>${x.adds.reduce((t,a)=>t+a.v,0)}</b></button>`).join('')}</div>`;
     } else {
-      sugHtml=`<div class="la-sug la-sug-none">No single addition gets this fair \u2014 the gap needs a real piece, not scraps.</div>`;
+      // Money alone can close it, so don't also say the gap needs a real piece — it doesn't.
+      sugHtml=faabSug || `<div class="la-sug la-sug-none">No single addition gets this fair \u2014 the gap needs a real piece, not scraps.</div>`;
     }
   }
+  // The money row. A stepper and a box rather than preset chips, because the evener answers
+  // in exact dollars and a $25-only control could never take its suggestion.
+  const faabRow=(side)=>{
+    if(!faabOn) return '';
+    const rid=side==='a'?tr.a:tr.b, cur=side==='a'?fA:fB, val=side==='a'?fvA:fvB;
+    const left=laFaabLeft(s, rid);
+    return `<div class="la-tc-faab${cur?' on':''}">
+      <span class="la-tc-faab-lbl">FAAB</span>
+      <button class="la-tc-faab-step" onclick="laTradeSetFaab('${side}',${Math.max(0,cur-5)})" title="\u2212$5" ${cur<=0?'disabled':''}>\u2212</button>
+      <span class="la-tc-faab-amt">$<input type="number" min="0" max="${left}" step="1" value="${cur}" id="la-faab-${side}"
+        oninput="laTradeSetFaab('${side}',this.value)" aria-label="FAAB from ${escAttr(side==='a'?poolA.team.teamName:poolB.team.teamName)}"></span>
+      <button class="la-tc-faab-step" onclick="laTradeSetFaab('${side}',${cur+5})" title="+$5" ${cur>=left?'disabled':''}>+</button>
+      <span class="la-tc-faab-of">of $${left}</span>
+      ${cur?`<span class="la-tc-faab-v" title="${escAttr(laFaabBuys(s,cur))}">worth <b>${val}</b></span>`:''}
+    </div>`;
+  };
   // trade finder
   const fnd=laTradeFinder(s);
   const fndHtml = fnd.proposals.length ? fnd.proposals.map(p=>`
@@ -2361,6 +2412,7 @@ function laTradeView(s){
       <div class="la-tc-side">
         <div class="la-tc-head">${sel('a',tr.a)} <span class="la-tc-gives">gives</span></div>
         <div class="la-tc-box">${givenA.length?givenA.map(x=>laAssetRow(x,'a',true)).join(''):'<div class="la-tc-empty">click + below to add</div>'}
+          ${faabRow('a')}
           <div class="la-tc-tot">adjusted <b>${started?v.adjA:0}</b>${v.effA!==v.adjA&&started?` \u00b7 with stud premium <b>${v.effA}</b>`:''}</div></div>
         <div class="la-tc-pool">${all(poolA).map(x=>tr.giveA.includes(x.key)?'':laAssetRow(x,'a',false)).join('')}</div>
       </div>
@@ -2374,6 +2426,7 @@ function laTradeView(s){
       <div class="la-tc-side">
         <div class="la-tc-head">${sel('b',tr.b)} <span class="la-tc-gives">gives</span></div>
         <div class="la-tc-box">${givenB.length?givenB.map(x=>laAssetRow(x,'b',true)).join(''):'<div class="la-tc-empty">click + below to add</div>'}
+          ${faabRow('b')}
           <div class="la-tc-tot">adjusted <b>${started?v.adjB:0}</b>${v.effB!==v.adjB&&started?` \u00b7 with stud premium <b>${v.effB}</b>`:''}</div></div>
         <div class="la-tc-pool">${all(poolB).map(x=>tr.giveB.includes(x.key)?'':laAssetRow(x,'b',false)).join('')}</div>
       </div>
