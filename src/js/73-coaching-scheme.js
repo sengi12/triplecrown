@@ -345,6 +345,22 @@ function _schemeEmptyNode(){ return {total:0, groups:[]}; }
 // formation group, which froze a phone for minutes (field report, 2026-09-12). One build
 // per data object, keyed on identity so a reloaded season rebuilds and nothing else does.
 var _schemeFvMemo = new WeakMap();
+// Which charted types a per-play payload actually carries, as the same flag bits
+// _schemeAggregate filters on. Folded in ONE pass and memoized per payload: this answers
+// "was this season charted at all", which is not the same question as "did the current
+// filter select any" — a season with the columns but no play-action does not exist, while a
+// pre-FTN season has the bits clear on every row and correctly reads as uncharted.
+const _SCHEME_TYPE_BIT = {pa:2, motion:4, nohuddle:8, redzone:16};
+const _schemeBitsMemo = new WeakMap();
+function _schemeChartedBits(d){
+  if(!d || typeof d!=='object') return 0;
+  const hit = _schemeBitsMemo.get(d); if(hit!=null) return hit;
+  let bits = 0;
+  const rows = Array.isArray(d.plays) ? d.plays : null;
+  if(rows) for(let i=0;i<rows.length;i++) bits |= (rows[i][4]|0);
+  _schemeBitsMemo.set(d, bits);
+  return bits;
+}
 function _schemeBuildFv(p){
   const data = p && p.data;
   if(!data || typeof data!=='object') return _schemeBuildFvCalc(p);
@@ -1736,7 +1752,20 @@ function _schemeSchemeProfile(p){
   // Pre-FTN seasons (2021) have NO pa/motion/nohuddle nodes at all — the builder prunes
   // them — and _schemeSafeNode returns an empty node for a missing one. That must read as
   // "not charted" (null → '—'), not as 0.0% play-action for all 32 teams.
-  const hasType = key=>{ const v=(p && p.data && p.data.views && p.data.views.all && p.data.views.all.all) || null; return !!(v && v[key]); };
+  //
+  // Ask whichever shape the payload actually is. This used to read views.all.all[key] alone,
+  // which is only the nested bucket schema — so once the builder switched to a row per play
+  // (payloads have `plays` and no `views` at all) every rebuilt season reported ITSELF
+  // uncharted, and play-action, motion and no-huddle went to '—' across all 32 teams even
+  // though every row carries the flags.
+  const hasType = key=>{
+    const d = (p && p.data) || null; if(!d) return false;
+    const v = d.views || null;
+    if(v && v.all && v.all.all) return !!v.all.all[key];      // nested buckets
+    if(v && v[key]) return true;                              // old flat marginals
+    const bit = _SCHEME_TYPE_BIT[key] || 0;
+    return !!(bit && (_schemeChartedBits(d) & bit));           // one row per play
+  };
   const paNode = _schemeSafeNode(fv,'all','all','pa');
   const pa = sumNode(paNode);
   const paRate = (totalPlays && hasType('pa'))? 100*(_schemeNumber(paNode.total,0)||pa.n)/totalPlays:null;
