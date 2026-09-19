@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-09-19
 
+- fix(seed): the nine head coaches hired in 2026 have their former team and role, so the scheme carryover works for them — and Miami leaves the playcaller table, because its new head coach is a defensive coach who does not call the offense (#161)
 - fix(seed): a download that dies half-way no longer poisons the nflverse cache for good — the daily refresh went red four runs running because a truncated FTN csv sat in the restored cache, every reader swallowed the parse error, and the 2025 coaching sidecar shipped shaped like a season that was never charted (#160)
 - feat(analyzer): every trade the league has made, at the bottom of the Trade Center — Sleeper's per-week transaction log read into a ledger you can filter by player, position, draft pick, manager and season, with picks naming whose they originally are, FAAB shown as money, and earlier seasons behind a button because the renewal chain costs a full sweep per season (#159)
 - fix(cards): an uncharted target is the mark alone, without the dotted stem it used to hang on — the receiving and passing maps drew a line from the line of scrimmage that no charting supports (#158)
