@@ -36361,13 +36361,23 @@ function laTradeView(s){
     if(faabOn){
       const shortIsA=shortSide==='a';
       const gap=Math.abs(v.diff);
-      const cap=laFaabLeft(s, shortIsA?tr.a:tr.b) - (shortIsA?fA:fB);
+      const already=shortIsA?fA:fB;
+      const cap=laFaabLeft(s, shortIsA?tr.a:tr.b) - already;   // what is still unspent AND unoffered
       const need=laFaabCostOf(s, gap, cap);
+      const who=escHtml((shortIsA?poolA:poolB).team.teamName);
       if(need>0){
-        const who=escHtml((shortIsA?poolA:poolB).team.teamName);
+        // A figure on its own says nothing about whether it hurts. $7 of $140 is a rounding
+        // error; $120 of $140 is the season. Price it against the budget it comes out of.
+        const pct=Math.round(need/Math.max(1,cap)*100);
         faabSug=`<div class="la-sug la-sug-faab"><span class="la-sug-lbl">${who} evens it with money:</span>
-          <button class="la-sug-chip" onclick="laTradeSetFaab('${shortSide}',${(shortIsA?fA:fB)+need})"
-            title="${escAttr(laFaabBuys(s,need))}">+ $${need} FAAB <b>${laFaabValueOf(s,need)}</b></button></div>`;
+          <button class="la-sug-chip" onclick="laTradeSetFaab('${shortSide}',${already+need})"
+            title="${escAttr(laFaabBuys(s,need))}">+ $${need} FAAB <b>${laFaabValueOf(s,need)}</b></button>
+          <span class="la-sug-budget">${pct}% of the $${cap} left \u00b7 $${cap-need} after</span></div>`;
+      } else if(cap>0){
+        // The budget cannot reach the gap. Say so, and say how far it does get, rather than
+        // showing nothing and letting it look as though money was never an option.
+        faabSug=`<div class="la-sug la-sug-faab"><span class="la-sug-lbl">${who} cannot cover it with money:</span>
+          <span class="la-sug-budget">the whole $${cap} is worth <b>${laFaabValueOf(s,cap)}</b> against a gap of ${Math.round(gap)}</span></div>`;
       }
     }
     if(sugs.length){

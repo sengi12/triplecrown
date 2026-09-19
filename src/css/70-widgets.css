@@ -362,6 +362,8 @@
 .la-tc-faab-of{opacity:.7;}
 .la-tc-faab-v b{color:var(--accent);}
 .la-sug-faab{margin-bottom:4px;}
+.la-sug-budget{display:block;margin-top:3px;font-size:9.5px;font-family:var(--mono);color:var(--muted);}
+.la-sug-budget b{color:var(--accent);}
 .la-tc-tot{font-size:10px;color:var(--muted);padding-top:4px;border-top:1px dashed var(--border);margin-top:4px;font-family:var(--mono);}
 .la-tc-tot b{color:var(--accent);}
 .la-tc-pool{max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:1px;}
