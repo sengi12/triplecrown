@@ -6,6 +6,13 @@ this file is the merge history, newest first, one line per PR. Add a line when a
 
 Open work lives in [TODO.md](TODO.md).
 
+## 2026-09-19
+
+- feat(analyzer): every trade the league has made, at the bottom of the Trade Center — Sleeper's per-week transaction log read into a ledger you can filter by player, position, draft pick, manager and season, with picks naming whose they originally are, FAAB shown as money, and earlier seasons behind a button because the renewal chain costs a full sweep per season (#159)
+- fix(cards): an uncharted target is the mark alone, without the dotted stem it used to hang on — the receiving and passing maps drew a line from the line of scrimmage that no charting supports (#158)
+- feat(analyzer): FAAB is a tradeable asset, priced by what this league's wire actually sells — the same chop market that prices the Lineup pane's bids, read as a price list, so a dollar is hard currency in a Chopped league and a sweetener in redraft without either being a special case; the evener answers in exact dollars and against the budget they come out of (#157)
+- docs(todo): FAAB as a tradeable asset, because a dollar is worth what the wire sells (#156)
+
 ## 2026-09-18
 
 - fix(playbook): the formation diagrams line up the way the formations they are named after do — Power I and Maryland I were each other's definitions, Flexbone and I-Bone both drew a wishbone, six “Full House” names sat in groupings with only two backs, the under-centre quarterback stood off the ball, a tight end who motioned into the backfield was drawn as the tailback, and attached, wing and flexed ends all landed on one spot (#155)
