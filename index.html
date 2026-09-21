@@ -18664,13 +18664,22 @@ function _cmColor(yds){ return yds<0 ? '#d33b2f' : (yds<5 ? '#d8a51d' : '#39c15a
 // nothing flickers or moves under the pointer — it is drawn, not tracked, and says so.
 function _cmRand(seed){ let t=(seed>>>0)||1; return ()=>{ t+=0x6D2B79F5; let r=Math.imul(t^(t>>>15), 1|t); r^=r+Math.imul(r^(r>>>7), 61|r); return ((r^(r>>>14))>>>0)/4294967296; }; }
 // A smooth path through the points (Catmull-Rom → cubic Béziers).
-function _cmSmooth(pts){
+function _cmSmooth(pts, xBounds){
   const f=v=>(+v).toFixed(1);
+  const bounded=(x,y)=>{
+    if(!xBounds) return [x,y];
+    const [minX,maxX]=xBounds(y);
+    return [Math.max(minX,Math.min(maxX,x)),y];
+  };
   if(pts.length<2) return '';
-  let d=`M${f(pts[0][0])},${f(pts[0][1])}`;
+  const start=bounded(pts[0][0],pts[0][1]);
+  let d=`M${f(start[0])},${f(start[1])}`;
   for(let i=0;i<pts.length-1;i++){
     const p0=pts[Math.max(0,i-1)], p1=pts[i], p2=pts[i+1], p3=pts[Math.min(pts.length-1,i+2)];
-    d+=` C${f(p1[0]+(p2[0]-p0[0])/6)},${f(p1[1]+(p2[1]-p0[1])/6)} ${f(p2[0]-(p3[0]-p1[0])/6)},${f(p2[1]-(p3[1]-p1[1])/6)} ${f(p2[0])},${f(p2[1])}`;
+    const c1=bounded(p1[0]+(p2[0]-p0[0])/6, p1[1]+(p2[1]-p0[1])/6);
+    const c2=bounded(p2[0]-(p3[0]-p1[0])/6, p2[1]-(p3[1]-p1[1])/6);
+    const end=bounded(p2[0],p2[1]);
+    d+=` C${f(c1[0])},${f(c1[1])} ${f(c2[0])},${f(c2[1])} ${f(end[0])},${f(end[1])}`;
   }
   return d;
 }
@@ -18690,7 +18699,7 @@ function _cmPlaySeed(p){
   return ((p.wk||0)*7919 + (p.yds+50)*104729 + p.lane*1301
         + ((p.yl==null?99:p.yl)+1)*31 + (p.q||0)*17) >>> 0;
 }
-function _cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, reachedLine, ob){
+function _cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, reachedLine, ob, xBounds){
   const rnd=_cmRand(seed), j=(a)=>(rnd()-0.5)*2*a, sgn=()=>(rnd()<0.5?-1:1);
   const pts=[[sx+j(8), sy+j(4)]];
   if(reachedLine){
@@ -18705,37 +18714,44 @@ function _cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, reachedLine, ob){
       if(run>40){
         pts.push([x0+(x1-x0)*(0.08+j(0.04)), losY-run*(0.22+j(0.05))]);
         pts.push([x0+(x1-x0)*(0.55+j(0.08)), losY-run*(0.62+j(0.05))]);
-        return _cmSmooth(pts.concat([[x1, y1]])).replace(/ C[^C]*$/, '') + ` L${(+x1).toFixed(1)},${(+y1).toFixed(1)}`;
+        return _cmSmooth(pts.concat([[x1, y1]]), xBounds).replace(/ C[^C]*$/, '') + ` L${(+x1).toFixed(1)},${(+y1).toFixed(1)}`;
       }
       pts.push([x1, y1]);
-      return _cmSmooth(pts);
+      return _cmSmooth(pts, xBounds);
     }
-    // Upfield, what tracking shows: the cut comes early — a lean in the first third of the
-    // run, a counter-lean on a long one — and the last stretch is straight, because that
-    // is where he is running away or getting tackled. Not every run bends: a good share
-    // go straight once they are through the gap.
-    // No two runs alike: every run through the gap leans somewhere (a big cut on some,
-    // a drift on the rest), the lean lands at a different depth, a long one may cut back,
-    // and the straight finish starts at a different point of the run.
+    // Upfield paths use three seeded shapes: direct, one cut, or a second cut/counter.
+    // Short gains stay simple; longer runs earn more room to change direction. The last
+    // stretch is always straight to the recorded result, where he got away or was tackled.
     const run=losY-y1;
-    let x=x0;
-    if(run>60){
-      const cut = rnd()<0.6;
-      const lean=sgn()*laneW*(cut ? (0.3+rnd()*0.45) : (0.08+rnd()*0.16));
-      x=x0+lean;                     pts.push([x, losY-run*(0.18+rnd()*0.22)]);
-      if(run>230 && rnd()<0.6){ x=x-lean*(0.4+rnd()*0.5); pts.push([x, losY-run*(0.45+rnd()*0.15)]); }
+    let x=x0, lastCut=0;
+    if(run>45){
+      const shape=rnd();
+      if(shape>=0.2){
+        const firstCut=0.14+rnd()*0.25;
+        const wide=shape>=0.62;
+        const lean=sgn()*laneW*(wide ? (0.38+rnd()*0.58) : (0.1+rnd()*0.28));
+        x+=lean;
+        lastCut=firstCut;
+        pts.push([x,losY-run*firstCut]);
+        if(run>110 && (wide || rnd()<0.24)){
+          lastCut=Math.min(0.72,firstCut+0.18+rnd()*0.2);
+          x+=rnd()<0.72 ? -lean*(0.45+rnd()*0.75) : lean*(0.18+rnd()*0.38);
+          pts.push([x,losY-run*lastCut]);
+        }
+      }
     }
     // the finish is a straight run: smooth up to the last bend, then a straight line home
     if(run>40){
-      const tail=[x1+(x-x1)*(0.1+rnd()*0.15), losY-run*(0.6+rnd()*0.25)];
+      const tailAt=lastCut+(1-lastCut)*(0.55+rnd()*0.3);
+      const tail=[x1+(x-x1)*(0.08+rnd()*0.22),losY-run*tailAt];
       pts.push(tail);
-      return _cmSmooth(pts.concat([[x1, y1]])).replace(/ C[^C]*$/, '') + ` L${(+x1).toFixed(1)},${(+y1).toFixed(1)}`;
+      return _cmSmooth(pts.concat([[x1, y1]]), xBounds).replace(/ C[^C]*$/, '') + ` L${(+x1).toFixed(1)},${(+y1).toFixed(1)}`;
     }
   } else {
     pts.push([sx+(x1-sx)*(0.5+j(0.15))+j(6), sy+(y1-sy)*(0.35+j(0.1))]);
   }
   pts.push([x1, y1]);
-  return _cmSmooth(pts);
+  return _cmSmooth(pts, xBounds);
 }
 function carryMapSVG(plays, title, sub, tag){
   const W=760, H=600, yTop=60, yBot=560, YMAX=40, YMIN=-10;
@@ -18801,7 +18817,7 @@ function carryMapSVG(plays, title, sub, tag){
     // exactly where the run ended (_cmRunPath). A loss never reaches the line.
     const sx=(left(losY)+right(losY))/2, sy=yOf(-7);
     const laneW=(right(losY)-left(losY))/7;
-    const d=_cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, endYd>=0, !!ob);
+    const d=_cmRunPath(sx, sy, x0, losY, x1, y1, laneW, seed, endYd>=0, !!ob, y=>[left(y)+3,right(y)-3]);
     parts.push(`<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" opacity="${op}"/>`);
     if(p.fd && !p.td) parts.push(`<circle cx="${f1(x1)}" cy="${f1(y1)}" r="${many?3:3.5}" fill="#ffffff"/>`);
     if(p.td){

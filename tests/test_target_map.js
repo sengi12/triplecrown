@@ -129,6 +129,19 @@ chk(app.rbBlock('Kenneth Walker', rb, 2026, 1, 'Week 1 · DEN', null)===c1, 'the
 const d1=app.runPath(380, 530, 300, 460, 290, 200, 60, 12345, true), d2=app.runPath(380, 530, 300, 460, 290, 200, 60, 12345, true), d3=app.runPath(380, 530, 300, 460, 290, 200, 60, 999, true);
 chk(d1===d2 && d1!==d3 && /[ L]290\.0,200\.0$/.test(d1) && d1.startsWith('M') && / L290\.0,200\.0$/.test(d1), 'a run path is deterministic per seed, varies across seeds, ends exactly on its dot — and finishes with a straight segment');
 chk(app.runPath(380, 530, 300, 460, 310, 480, 60, 7, false).endsWith(' 310.0,480.0'), 'a loss bends to its end without reaching the line');
+const samplePaths=Array.from({length:30},(_,seed)=>app.runPath(380,530,300,460,310,260,60,seed+1,true));
+const sampleStructures=new Set(samplePaths.map(d=>(d.match(/ C/g)||[]).length));
+chk(new Set(samplePaths).size===30 && sampleStructures.size>=3,
+  'thirty similar carries still produce distinct paths with at least three route structures');
+const edgeRuns={games:[{wk:3,opp:'KC',plays:Array.from({length:80},(_,i)=>[i%2?0:6, 5+(i%31), 0, 50+(i%4), 1+(i%4)])}]};
+const edgeMap=app.rbBlock('Edge Runner', edgeRuns, 2026, 3, 'Week 3 · KC', null);
+const carryPaths=[...edgeMap.matchAll(/<path d="(M[^"]*)" fill="none" stroke="(?:#d33b2f|#d8a51d|#39c15a)"/g)].map(m=>m[1]);
+const pathsStayInBounds=carryPaths.every(d=>[...d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].every(m=>{
+  const x=Number(m[1]), y=Number(m[2]);
+  const pathLeft=170-130*(y-60)/500, pathRight=590+130*(y-60)/500;
+  return x>=pathLeft+1.2 && x<=pathRight-1.2;
+}));
+chk(carryPaths.length===80 && pathsStayInBounds, 'every carry curve stays inside the sidelines, including its Bezier controls');
 chk(/Tackled for loss/.test(c1) && /Fumble lost/.test(c1) && /First down/.test(c1), 'the legend explains the carry marks');
 chk(app.rbView()==='map', 'Map is the rushing fan\'s default view'); app.setRbView('fan'); chk(app.rbView()==='fan', 'Fan is selectable'); app.setRbView('map');
 chk(app.rbBlock('X', {games:[{wk:1,plays:[]}]}, 2026, 1, 'Week 1', null).includes('next weekly bake'), 'a node without per-carry rows says so');
