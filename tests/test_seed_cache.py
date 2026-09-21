@@ -11,6 +11,7 @@ motion are charted", with nothing in the log saying why.
 import os
 import sys
 import tempfile
+from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
@@ -55,6 +56,7 @@ def install(tmp):
     import urllib.request
     urllib.request.urlretrieve = fake_urlretrieve
     N._FAILED_REMOTE.clear()
+    N._REFRESHED_LIVE_REMOTE.clear()
     N._AUX_CACHE.clear()
     N.CACHE_DIR = tmp        # module-level; everything resolves under it
 
@@ -93,6 +95,27 @@ with tempfile.TemporaryDirectory() as tmp:
         "_aux_csv returns real data instead of raising into a silent degrade")
     chk(calls["n"] == before + 1, "it re-downloaded exactly once to get there")
     chk(open(bad).read() == GOOD, "and the bad entry is replaced, so later runs are clean")
+
+    print("=== current-season FTN charting refreshes once per build ===")
+    N._AUX_CACHE.clear()
+    N._REFRESHED_LIVE_REMOTE.clear()
+    live = f"https://example.invalid/ftn_charting_{date.today().year}.csv"
+    live_path = N._md5_cache_path(live)
+    with open(live_path, "w") as fh:
+        fh.write("a,b\n0,0\n")
+    before = calls["n"]
+    first = N._aux_csv(live)
+    second = N._aux_csv(live)
+    chk(len(first) == 2 and len(second) == 2,
+        "the live FTN frame replaces an earlier partial-season cache")
+    chk(calls["n"] == before + 1, "the evolving file downloads once, not once per reader")
+    historical = "https://example.invalid/ftn_charting_2024.csv"
+    historical_path = N._md5_cache_path(historical)
+    with open(historical_path, "w") as fh:
+        fh.write("a,b\n9,9\n")
+    before = calls["n"]
+    chk(len(N._aux_csv(historical)) == 1 and calls["n"] == before,
+        "a finished season remains download-once")
 
     print("=== a source that is genuinely gone still fails, loudly ===")
     N._AUX_CACHE.clear()

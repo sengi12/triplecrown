@@ -184,7 +184,7 @@ function targetMapSVG(plays, title, sub, tag){
       // shotgun (FTN's formation, pbp's flag before FTN lands), and pulled toward the
       // side he threw to when FTN charted him out of the pocket. Not tracked.
       const fw=right(losY)-left(losY);
-      const qx=(left(losY)+right(losY))/2 + (p.oop===1 ? (p.side===0?-1:(p.side===2?1:0))*fw*0.22 : 0);
+      const qx=(left(losY)+right(losY))/2 + (p.oop===1 ? (x1<W/2?-1:1)*fw*0.22 : 0);
       const qy=yOf(p.sg===1 ? -6.5 : (p.sg===2 ? -6 : -5.5));
       // One clean arc from the passer's spot to the catch dot, NGS-style: a quadratic whose
       // control sits at the chord's midpoint pushed out PERPENDICULAR to the throw — so the

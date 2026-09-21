@@ -17,6 +17,7 @@ Usage:
     python nflverse_stats.py 2024       # a different season
 """
 import os, sys, json, hashlib
+from datetime import date
 from urllib.error import HTTPError
 
 try:
@@ -86,6 +87,7 @@ _OL_GRADES_CACHE_CSV = None
 # URLs that failed to download this run (e.g. FTN charting before 2022). Cached so we don't
 # retry the same 404 dozens of times across refinement/receiver loops.
 _FAILED_REMOTE = {}
+_REFRESHED_LIVE_REMOTE = set()
 
 
 def _is_http_not_found(err):
@@ -190,7 +192,7 @@ def _legacy_md5_cache_path(url):
     base = os.path.basename(url.split("?", 1)[0]) or "asset.csv"
     return os.path.join(_nflverse_cache_dir(), f"{digest}_{base}")
 
-def _cache_remote(url, label=None, force=False):
+def _cache_remote(url, label=None, force=False, stale_ok=False):
     """Download a remote nflverse asset once, then always reuse the cached file.
 
     The download lands on a .part file and is renamed into place only once it completes.
@@ -206,12 +208,12 @@ def _cache_remote(url, label=None, force=False):
     legacy = _legacy_md5_cache_path(url)
     if os.path.exists(legacy) and not os.path.exists(path):
         os.replace(legacy, path)
-    if force and os.path.exists(path):
+    if force and not stale_ok and os.path.exists(path):
         try:
             os.remove(path)
         except OSError:
             pass
-    if not os.path.exists(path):
+    if force or not os.path.exists(path):
         if url in _FAILED_REMOTE and not force:
             # Already failed this run (e.g. FTN before 2022) — don't hammer the 404 repeatedly.
             raise _FAILED_REMOTE[url]
@@ -223,12 +225,15 @@ def _cache_remote(url, label=None, force=False):
             urllib.request.urlretrieve(url, part)
             os.replace(part, path)
         except Exception as e:
-            print(" unavailable")
             try:
                 if os.path.exists(part):
                     os.remove(part)
             except OSError:
                 pass
+            if stale_ok and os.path.exists(path):
+                print(" unavailable (using cached)")
+                return path
+            print(" unavailable")
             _FAILED_REMOTE[url] = e
             raise
         _FAILED_REMOTE.pop(url, None)
@@ -352,7 +357,11 @@ def _aux_csv(url, **kw):
     """
     key = (url, tuple(kw.get("usecols") or ()), kw.get("compression"))
     if key not in _AUX_CACHE:
-        csv_path = _cache_remote(url)
+        live_ftn = os.path.basename(url.split("?", 1)[0]) == f"ftn_charting_{date.today().year}.csv"
+        refresh = live_ftn and url not in _REFRESHED_LIVE_REMOTE
+        csv_path = _cache_remote(url, force=refresh, stale_ok=refresh)
+        if refresh:
+            _REFRESHED_LIVE_REMOTE.add(url)
         payload = {
             "url": url,
             "usecols": list(kw.get("usecols") or []),

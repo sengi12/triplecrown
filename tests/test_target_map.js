@@ -50,6 +50,10 @@ chk(ds.every(d=> 0.25*d[1]+0.5*d[3]+0.25*d[5] >= 69.4), 'the crown of every arc 
 chk(ds[0][0]<ds[1][0] && Math.abs(ds[1][0]-380)<0.6, 'an out-of-pocket throw to the left starts left of centre; a pocket throw starts centred');
 chk(ds[0][1]>ds[1][1], 'a shotgun throw starts deeper than an under-centre one');
 chk(arcs.includes('out of the pocket') && (arcs.match(/out of the pocket/g)||[]).length===1, 'the tooltip says when he was out of the pocket');
+const midOop=app.block('Middle Rollout', {games:[{wk:1,opp:'NE',plays:[[18,1,2,0,50,1,null,1,1]]}]}, 2026, 1, {label:'Week 1'}, null);
+const midArc=[...midOop.matchAll(/<path d="M(-?[\d.]+),(-?[\d.]+) Q[^>]+stroke="#2f6fe4"/g)].map(m=>m.slice(1).map(Number));
+chk(midArc.length===1 && Math.abs(midArc[0][0]-380)>100,
+  'an out-of-pocket score down the middle still starts outside the pocket on its plotted catch side');
 const tags=[...arcs.matchAll(/<text[^>]*x="([\d.]+)" y="([\d.]+)"[^>]*paint-order="stroke"[^>]*>(TD \+\d+|\+\d+)<\/text>/g)].map(m=>({x:Number(m[1]), y:Number(m[2]), t:m[3]}));
 const clash=tags.some((a,i)=>tags.some((b,j)=>j>i && Math.abs(a.y-b.y)<12 && Math.abs(a.x-b.x)<a.t.length*6.6+4));
 chk(tags.length===3 && !clash, 'three deep balls off the top get three tags and no two sit on each other (a tag that would, steps down a line)');
