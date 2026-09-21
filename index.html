@@ -10725,7 +10725,7 @@ var _gcLiveTimer = null;
 // posting them); between plays the situation line alone repaints. No last play on the
 // board (an older payload) → the summary's own live TTL stands in.
 function gcStreamOnBoard(teams){
-  if(typeof _gc==='undefined' || !_gc.game || !teams) return;
+  if(typeof _gc==='undefined' || _gc.view==='feed' || !_gc.game || !teams) return;
   const [away, home]=String(_gc.game).split('@'); const g=teams[home]||teams[away]; if(!g || g.state!=='in') return;
   const eid=String(g.eid||''); const sit=g.sit||null; if(!eid) return;
   const key=sit ? `${sit.lastPlayId}|${sit.ddt}|${sit.spot}|${sit.clock}` : '';
@@ -10784,9 +10784,16 @@ function gcSummary(game){
   if(c && Date.now()-c.at<ttl) return c.data;
   if(!_gcd.busy[eid] && typeof sleeperFetch==='function'){
     _gcd.busy[eid]=true;
-    sleeperFetch(GC_SUMMARY_URL(eid), {fresh: game.state==='in'}).then(d=>{ if(d && (d.drives||d.boxscore||d.header)){ _gcd.sum[eid]={data:d, at:Date.now()}; gcDetailRepaint(); } }).catch(()=>{}).finally(()=>{ _gcd.busy[eid]=false; });
+    sleeperFetch(GC_SUMMARY_URL(eid), {fresh: game.state==='in'}).then(d=>{ if(d && (d.drives||d.boxscore||d.header)){ _gcd.sum[eid]={data:d, at:Date.now()}; const added=typeof lfSummaryLanded==='function'?lfSummaryLanded(eid,d):0; gcSummaryRepaint(added); } }).catch(()=>{}).finally(()=>{ _gcd.busy[eid]=false; });
   }
   return c?c.data:null;
+}
+function gcSummaryRepaint(added){
+  if(typeof _gc!=='undefined' && _gc.view==='feed'){
+    if(added>0 && typeof lfRepaint==='function') lfRepaint();
+    return;
+  }
+  gcDetailRepaint();
 }
 function gcDetailRepaint(){
   if(typeof renderRightSidebar!=='function') return;
@@ -10988,6 +10995,7 @@ function gcPlays(sum){
       if(pid){ if(seen.has(pid)) return; seen.add(pid); }
       const kind=gcPlayKind(p); if(kind==='skip') return;
       out.push({ id:pid, seq:Number(p.sequenceNumber||0), kind, type:String((p.type&&p.type.text)||''), text:String(p.text||''),
+        at:p.wallclock ? Date.parse(p.wallclock)||0 : 0,
         q:Number((p.period&&p.period.number)||0), clock:String((p.clock&&p.clock.displayValue)||''),
         as:p.awayScore!=null?Number(p.awayScore):null, hs:p.homeScore!=null?Number(p.homeScore):null,
         yds:Number(p.statYardage||0), scoring:!!p.scoringPlay, turnover:!!p.isTurnover, team,
@@ -11486,10 +11494,9 @@ function gcLastPlayHTML(game, sum){
 // The live feed — every game at once, filtered to the leagues you play in
 // ═════════════════════════════════════════════════════════════════════════════
 // The Sunday-slate view: one place for the plays that matter to your teams while eight
-// games run at once. It costs ONE request. The week scoreboard carries, per live game,
-// the situation and the LAST PLAY — its text, its type, its yardage, the athletes in it —
-// so every board poll (8 s, change-driven; see gcStreamOnBoard) appends whatever is new to
-// a rolling feed. No per-game summary is fetched: opening a single game still does that.
+// games run at once. One scoreboard poll carries, per live game, the situation and LAST
+// PLAY, which keeps the feed current cheaply. A summary read when each game first appears
+// fills plays missed before the app opened; later summary reads merge by ESPN wallclock.
 //
 // Filters: All games, or any of your synced leagues (multi-select). A league picked means
 // MY MATCHUP there: a play shows only when one of my starters, or one of the ones I am
@@ -11498,7 +11505,7 @@ function gcLastPlayHTML(game, sum){
 // touchdowns, interceptions). On a Sunday slate that is the whole point of the view.
 // History: each live game's summary (read once, then every ten minutes) fills the feed
 // back to kickoff with every play's own clock; the board's last play keeps it current.
-var _lf = { rows:[], seen:{}, leagues:[], max:150, nameIdx:null, nameIdxAt:0, seenAt:0,
+var _lf = { rows:[], seen:{}, leagues:[], games:{}, seedHist:{}, nameIdx:null, nameIdxAt:0, seenAt:0,
   // how the players in the plays were found — read this when a name looks wrong
   stat:{ byId:0, byName:0, bySurname:0, unresolved:0 } };
 const LF_MAX_ROWS = 150;
@@ -11632,6 +11639,10 @@ const LF_KEY_KINDS = new Set(['rushTd','recTd','fg','fgMiss','int','fum','sack',
 function lfIsKey(r){ return LF_KEY_KINDS.has(r.kind) || r.yds>=20 || r.scoreValue>0; }
 
 // ── The rolling feed, fed by every board poll ────────────────────────────────
+function lfSortTrim(){
+  _lf.rows.sort((a,b)=>b.at-a.at || String(b.key).localeCompare(String(a.key)));
+  if(_lf.rows.length>LF_MAX_ROWS) _lf.rows.length=LF_MAX_ROWS;
+}
 function lfOnBoard(teams){
   if(!teams) return 0;
   const games={};
@@ -11641,10 +11652,11 @@ function lfOnBoard(teams){
     if(!games[eid]) games[eid]={ eid, sit:t.sit, home:t.home?code:t.opp, away:t.home?t.opp:code,
       hs:t.home?t.score:t.oppScore, as:t.home?t.oppScore:t.score };
   });
-  let added=0;
+  let changed=0, added=0;
   const hadRows={}; _lf.rows.forEach(r=>{ hadRows[r.eid]=true; });   // games the feed already followed before this landing
   Object.keys(games).forEach(eid=>{
     const g=games[eid], lp=g.sit.lastPlay, id=String(lp.id||'');
+    _lf.games[eid]=g;
     if(!id) return;
     // a pause is not a play: timeouts, the two-minute warning, the end of a quarter (the
     // game feed's own skip list)
@@ -11657,7 +11669,7 @@ function lfOnBoard(teams){
     const read=lfReadPlay(lp);
     if(read.kind==='other' && !lp.text) return;
     const row={
-      key, eid, id, at:Date.now(), src:'board',
+      key, eid, id, at:Number(lp.at)||Date.now(), src:'board',
       home:g.home, away:g.away, hs:g.hs, as:g.as, team:lp.team||'',
       q:Number(g.sit.period||0), clock:String(g.sit.clock||''),
       down:Number(lp.down||0), ddt:String(lp.ddt||''), spot:String(lp.spot||''),
@@ -11665,17 +11677,17 @@ function lfOnBoard(teams){
       kind:read.kind, title:read.title, roles:read.roles, stats:read.stats, tokens:read.tokens, text:String(lp.text||''),
     };
     if(prev){ Object.assign(prev, row, {at:prev.at, corrected:true}); }   // a correction: same place, new words
-    else _lf.rows.unshift(row);
-    added++;
+    else { _lf.rows.unshift(row); added++; }
+    changed++;
   });
   // History: each live game's summary carries every play so far — not only the one a poll
   // happened to catch — so the feed reads back to kickoff, with each play's own clock.
-  Object.keys(games).forEach(eid=>{ try{ added+=lfSeedGame(games[eid], !hadRows[eid]); }catch(e){} });
-  if(_lf.rows.length>LF_MAX_ROWS) _lf.rows.length=LF_MAX_ROWS;
+  Object.keys(games).forEach(eid=>{ try{ const n=lfSeedGame(games[eid], !hadRows[eid]); added+=n; changed+=n; }catch(e){} });
+  lfSortTrim();
   if(added && typeof lfRepaint==='function') lfRepaint();
-  return added;
+  return changed;
 }
-function lfClear(){ _lf.rows=[]; _lf.seen={}; _lf.seedAt={}; _lf.seenAt=0; }
+function lfClear(){ _lf.rows=[]; _lf.seen={}; _lf.games={}; _lf.seedHist={}; _lf.seedAt={}; _lf.seenAt=0; }
 // A live game's summary is read once when it first shows in the feed and again every ten
 // minutes (the Game Center's own polling keeps the picked game's fresher than that); every
 // board landing folds whatever summary is cached into the rows.
@@ -11683,9 +11695,17 @@ const LF_SEED_TTL = 10*60*1000;
 function lfSeedGame(g, hist){
   if(typeof gcSummary!=='function' || typeof _gcd==='undefined' || !g || !g.eid) return 0;
   const eid=String(g.eid); _lf.seedAt=_lf.seedAt||{};
-  if(!_lf.seedAt[eid] || Date.now()-_lf.seedAt[eid]>LF_SEED_TTL){ _lf.seedAt[eid]=Date.now(); try{ gcSummary({eid, state:'in'}); }catch(e){} }
+  if(!_lf.seedAt[eid] || Date.now()-_lf.seedAt[eid]>LF_SEED_TTL){ _lf.seedAt[eid]=Date.now(); _lf.seedHist[eid]=!!hist; try{ gcSummary({eid, state:'in'}); }catch(e){} }
   const c=_gcd.sum[eid]; if(!c || !c.data) return 0;
   return lfIngestSummary(g, c.data, hist);
+}
+function lfSummaryLanded(eid, sum){
+  eid=String(eid||''); const g=_lf.games[eid];
+  if(!g || !sum) return 0;
+  const added=lfIngestSummary(g,sum,!!_lf.seedHist[eid]);
+  delete _lf.seedHist[eid];
+  lfSortTrim();
+  return added;
 }
 // The summary's plays into the feed: one row per play id the feed does not have yet, in the
 // game's order; a row the board caught first takes the play's own clock and score.
@@ -11700,7 +11720,7 @@ function lfIngestSummary(g, sum, hist){
     const scoreValue = p.scoring ? (/Touchdown/.test(p.type)?6:(/Field Goal/.test(p.type)?3:1)) : 0;
     const prev=_lf.rows.find(r=>r.key===key);
     if(prev){
-      if(prev.src!=='sum') Object.assign(prev, { q:p.q||prev.q, clock:p.clock||prev.clock, hs:p.hs!=null?p.hs:prev.hs, as:p.as!=null?p.as:prev.as, src:'sum' });
+      if(prev.src!=='sum') Object.assign(prev, { at:p.at||prev.at, q:p.q||prev.q, clock:p.clock||prev.clock, hs:p.hs!=null?p.hs:prev.hs, as:p.as!=null?p.as:prev.as, src:'sum' });
       return;
     }
     const lp={ id, type:p.type, text:p.text, yds:p.yds, team:p.team, down:p.down, ddt:p.ddt, spot:p.spot, yte:p.yte, scoreValue, athletes:[] };
@@ -11708,13 +11728,13 @@ function lfIngestSummary(g, sum, hist){
     if(read.kind==='other' && !lp.text) return;
     // its place in time: just under the game's next play if the feed already has one, else its order in the game
     const later=_lf.rows.filter(r=>r.eid===eid && Number(r.id)>Number(id));
-    const at = later.length ? Math.min.apply(null, later.map(r=>r.at))-(plays.length-i) : now-(plays.length-1-i);
+    const at = p.at || (later.length ? Math.min.apply(null, later.map(r=>r.at))-(plays.length-i) : now-(plays.length-1-i));
     _lf.rows.push({ key, eid, id, at, src:'sum', hist, home:g.home, away:g.away, hs:p.hs!=null?p.hs:g.hs, as:p.as!=null?p.as:g.as, team:p.team||'',
       q:Number(p.q||0), clock:String(p.clock||''), down:Number(p.down||0), ddt:String(p.ddt||''), spot:String(p.spot||''),
       rz:p.yte!=null && p.yte<=20, yds:Number(p.yds||0), scoreValue, kind:read.kind, title:read.title, roles:read.roles, stats:read.stats, tokens:read.tokens, text:String(p.text||'') });
     added++;
   });
-  if(added) _lf.rows.sort((a,b)=>b.at-a.at);
+  if(added) lfSortTrim();
   return added;
 }
 
@@ -33372,6 +33392,7 @@ function tcParseBoard(board){
       to:{ home:(sit.homeTimeouts!=null?Number(sit.homeTimeouts):null), away:(sit.awayTimeouts!=null?Number(sit.awayTimeouts):null) },   // timeouts left
       lastPlayId: lp ? String(lp.id||'') : '',
       lastPlay: lp ? { id:String(lp.id||''), text:String(lp.text||''), type:String((lp.type&&lp.type.text)||''), scoreValue:Number(lp.scoreValue||0), yds:Number(lp.statYardage||0),
+        at:lp.wallclock ? Date.parse(lp.wallclock)||0 : 0,
         team: lp.team ? (teamById[String(lp.team.id)]||'') : '',
         athletes:(Array.isArray(lp.athletesInvolved)?lp.athletesInvolved:[]).map(a=>({id:String(a.id||''), name:String(a.displayName||a.fullName||''), pos:String(a.position||''), team:a.team?(teamById[String(a.team.id)]||''):''})),
         down:Number((lp.start&&lp.start.down)||0), ddt:String((lp.start&&lp.start.shortDownDistanceText)||''), spot:String((lp.start&&lp.start.possessionText)||''), yte:(lp.start&&lp.start.yardsToEndzone!=null)?Number(lp.start.yardsToEndzone):null } : null,

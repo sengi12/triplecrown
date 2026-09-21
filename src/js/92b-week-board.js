@@ -47,6 +47,7 @@ function tcParseBoard(board){
       to:{ home:(sit.homeTimeouts!=null?Number(sit.homeTimeouts):null), away:(sit.awayTimeouts!=null?Number(sit.awayTimeouts):null) },   // timeouts left
       lastPlayId: lp ? String(lp.id||'') : '',
       lastPlay: lp ? { id:String(lp.id||''), text:String(lp.text||''), type:String((lp.type&&lp.type.text)||''), scoreValue:Number(lp.scoreValue||0), yds:Number(lp.statYardage||0),
+        at:lp.wallclock ? Date.parse(lp.wallclock)||0 : 0,
         team: lp.team ? (teamById[String(lp.team.id)]||'') : '',
         athletes:(Array.isArray(lp.athletesInvolved)?lp.athletesInvolved:[]).map(a=>({id:String(a.id||''), name:String(a.displayName||a.fullName||''), pos:String(a.position||''), team:a.team?(teamById[String(a.team.id)]||''):''})),
         down:Number((lp.start&&lp.start.down)||0), ddt:String((lp.start&&lp.start.shortDownDistanceText)||''), spot:String((lp.start&&lp.start.possessionText)||''), yte:(lp.start&&lp.start.yardsToEndzone!=null)?Number(lp.start.yardsToEndzone):null } : null,

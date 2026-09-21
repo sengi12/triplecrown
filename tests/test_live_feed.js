@@ -40,8 +40,12 @@ const app=new Function(code+`
   };
   const LP=(o)=>Object.assign({id:'p1', text:'', type:'Rush', scoreValue:0, yds:0, team:'NYJ', athletes:[], down:2, ddt:'2nd & 4', spot:'GB 5', yte:5}, o);
   const G=(o)=>Object.assign({state:'in', eid:'E1', score:6, oppScore:14, home:true, opp:'MIN', sit:{period:3, clock:'10:07', lastPlayId:'p1', lastPlay:LP({})}}, o);
+  let feedPaints=0, detailPaints=0;
+  lfRepaint=()=>{ feedPaints++; };
+  gcDetailRepaint=()=>{ detailPaints++; };
   return { onBoard:lfOnBoard, rows:()=>_lf.rows, view:lfRows, clear:lfClear, read:lfReadPlay, stats:lfPlayStats, pid:lfPidFor,
-    seed:(eid,sum)=>{ _gcd.sum[eid]={data:sum, at:Date.now()}; }, seededAt:()=>_lf.seedAt, unseen:lfUnseen, markSeen:lfMarkSeen, viewRow:gcViewRowHTML, setView:(v)=>{ _gc.view=v; },
+    seed:(eid,sum)=>{ _gcd.sum[eid]={data:sum, at:Date.now()}; }, landed:lfSummaryLanded, seededAt:()=>_lf.seedAt, unseen:lfUnseen, markSeen:lfMarkSeen, viewRow:gcViewRowHTML, setView:(v)=>{ _gc.view=v; },
+    summaryPaint:gcSummaryRepaint, stream:gcStreamOnBoard, setGame:(id)=>{ _gc.game=id; }, paints:()=>({feed:feedPaints,detail:detailPaints}), resetPaints:()=>{ feedPaints=detailPaints=0; },
     delta:lfDelta, rel:lfRelevance, leagues:lfLeagueList, toggle:lfToggleLeague, all:lfSetAll, sel:()=>_lf.leagues,
     initials:lfLeagueInitials, chipInner:lfLeagueChipInner, lg:()=>_pcardLg.byLeague,
     setPcard:(o)=>{ _pcardLg={byLeague:o, at:Date.now(), loading:null}; }, setMu:(lid,wk,v)=>{ _gcMu.cache[lid+'|'+wk]=v; }, panel:lfPanelHTML, rowHTML:lfRowHTML, allLeagues:lfSetAllLeagues, sides:lfSideSets, stat:()=>_lf.stat, titleHTML:lfTitleHTML, LP, G, board:(t)=>{ _tcBoard={season:String(TC_SEASON.year), week:tcBoardWeek(), at:Date.now(), teams:t, busy:false, live:true}; }, MAX:LF_MAX_ROWS };
@@ -50,7 +54,7 @@ let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',
 const LP=app.LP, G=app.G;
 (async()=>{
   console.log('=== the board\'s last play becomes a feed row ===');
-  app.clear();
+  app.clear(); app.resetPaints();
   const rush=G({sit:{period:3, clock:'10:07', lastPlayId:'p1', lastPlay:LP({id:'p1', type:'Rush', yds:6, text:'A.Rodgers right end to GB 5 for 6 yards (X.McKinney).', team:'NYJ', athletes:[{id:'8439', name:'Aaron Rodgers', pos:'QB', team:'NYJ'}]})}});
   chk(app.onBoard({NYJ:rush, MIN:Object.assign({}, rush, {home:false, opp:'NYJ', score:14, oppScore:6})})===1 && app.rows().length===1, 'one row per game, not one per team');
   let r=app.rows()[0];
@@ -59,6 +63,7 @@ const LP=app.LP, G=app.G;
   chk(app.onBoard({NYJ:rush})===0 && app.rows().length===1, 'the same last play again adds nothing');
   const fixed=JSON.parse(JSON.stringify(rush)); fixed.sit.lastPlay.text='A.Rodgers right end to GB 3 for 8 yards (X.McKinney).'; fixed.sit.lastPlay.yds=8;
   chk(app.onBoard({NYJ:fixed})===1 && app.rows().length===1 && app.rows()[0].yds===8 && app.rows()[0].corrected===true && /8 yd rush/.test(app.rows()[0].title), 'the same play id with new words is a correction: the row is replaced where it stands, not appended');
+  chk(app.paints().feed===1, 'only the new row repaints the Live Feed; a repeated poll and a correction stay quiet');
   const inactive=G({state:'post'});
   chk(app.onBoard({BUF:inactive})===0, 'a game that is not on is ignored');
   const to=G({sit:{period:3, clock:'9:09', lastPlayId:'t1', lastPlay:LP({id:'t1', type:'Official Timeout', text:'Official Timeout at 09:09.', team:''})}});
@@ -156,6 +161,7 @@ const LP=app.LP, G=app.G;
   app.clear();
   for(let i=0;i<app.MAX+20;i++) app.onBoard({NYJ:G({sit:{period:1, clock:'1:00', lastPlayId:'x'+i, lastPlay:LP({id:'x'+i, type:'Rush', yds:1, text:'A.Rodgers right end for 1 yard.', team:'NYJ'})}})});
   chk(app.rows().length===app.MAX && app.rows()[0].id==='x'+(app.MAX+19), `the feed is capped at ${app.MAX} rows, newest first`);
+  chk(app.MAX===150, 'the bounded cache retains 150 recent plays across games');
 
   console.log('=== history: a live game\'s summary fills the feed back to kickoff ===');
   app.clear();
@@ -175,6 +181,26 @@ const LP=app.LP, G=app.G;
   chk(r9[2].title==='B. Hall 5 yd rush' && r9[2].clock==='14:00' && r9[1].kind==='rec' && r9[1].yds===20 && r9[1].roles.receiver==='w1', 'history rows read like live ones — typed, named, with the yards');
   chk(app.onBoard({NYJ:G({eid:'E9', score:7, oppScore:0, sit:{period:1, clock:'12:11', lastPlayId:'904', lastPlay:LP({id:'904', type:'Passing Touchdown', yds:30, scoreValue:6, text:'A.Rodgers pass deep right to G.Wilson for 30 yards, TOUCHDOWN.', team:'NYJ'})}})})===0 && app.rows().filter(r=>r.eid==='E9').length===3, 'the next landing adds nothing — no doubles from the summary');
   chk(app.seededAt() && app.seededAt().E9>0, 'the game\'s summary is read once on first sight (then every ten minutes)');
+  console.log('=== concurrent summaries merge by the time each play happened ===');
+  app.clear();
+  const timed=(eid,team,opp,id,text,wallclock)=>({drives:{previous:[{team:{abbreviation:team},plays:[
+    PL(id+'1',1,'Rush',text+' first','14:00',{statYardage:3,wallclock}),
+    PL(id+'2',2,'Rush',text+' second','13:20',{statYardage:4,wallclock:new Date(Date.parse(wallclock)+30000).toISOString()})
+  ]}]}});
+  app.onBoard({NYJ:G({eid:'EA',opp:'MIN',sit:{period:1,clock:'13:20',lastPlayId:'A2',lastPlay:LP({id:'A2',type:'Rush',yds:4,text:'A.Rodgers right end for 4 yards.',team:'NYJ'})}}),
+    CIN:G({eid:'EB',opp:'BAL',sit:{period:1,clock:'13:20',lastPlayId:'B2',lastPlay:LP({id:'B2',type:'Rush',yds:4,text:'J.Burrow right end for 4 yards.',team:'CIN'})}})});
+  const sumA=timed('EA','NYJ','MIN','A','A.Rodgers right end for', '2026-09-20T17:05:00.000Z');
+  const sumB=timed('EB','CIN','BAL','B','J.Burrow right end for', '2026-09-20T17:05:15.000Z');
+  app.landed('EB',sumB); app.landed('EA',sumA);   // the newer game's response finishes first
+  const merged=app.rows().filter(r=>r.eid==='EA'||r.eid==='EB');
+  chk(merged.slice(0,4).map(r=>r.id).join(',')==='B2,A2,B1,A1',
+    'plays from concurrent games form one newest-first timeline even when summaries arrive out of order');
+  app.resetPaints(); app.setView('feed'); app.summaryPaint(0); app.summaryPaint(2);
+  chk(app.paints().feed===1 && app.paints().detail===0, 'an open Live Feed repaints only when a summary contributed a new play');
+  app.resetPaints(); app.setGame('MIN@NYJ'); app.stream({NYJ:rush});
+  chk(app.paints().feed===0 && app.paints().detail===0, 'a selected game\'s clock and situation stream cannot repaint the open Live Feed');
+  app.resetPaints(); app.setView('games'); app.summaryPaint(0);
+  chk(app.paints().feed===0 && app.paints().detail===1, 'the single-game view still repaints summary updates for its score and stats');
   app.board({NYJ:G({eid:'E9'})}); let hf=app.panel(false);
   chk(/lf-live on">1 live/.test(hf) && /class="tc-fresh"/.test(hf) && /tc-fresh-t">(just now|\d+s ago)</.test(hf), 'with a game on, the feed\'s head carries the stamp beside the live count');
   app.board({}); hf=app.panel(false);

@@ -27,7 +27,7 @@ var _gcLiveTimer = null;
 // posting them); between plays the situation line alone repaints. No last play on the
 // board (an older payload) → the summary's own live TTL stands in.
 function gcStreamOnBoard(teams){
-  if(typeof _gc==='undefined' || !_gc.game || !teams) return;
+  if(typeof _gc==='undefined' || _gc.view==='feed' || !_gc.game || !teams) return;
   const [away, home]=String(_gc.game).split('@'); const g=teams[home]||teams[away]; if(!g || g.state!=='in') return;
   const eid=String(g.eid||''); const sit=g.sit||null; if(!eid) return;
   const key=sit ? `${sit.lastPlayId}|${sit.ddt}|${sit.spot}|${sit.clock}` : '';
@@ -86,9 +86,16 @@ function gcSummary(game){
   if(c && Date.now()-c.at<ttl) return c.data;
   if(!_gcd.busy[eid] && typeof sleeperFetch==='function'){
     _gcd.busy[eid]=true;
-    sleeperFetch(GC_SUMMARY_URL(eid), {fresh: game.state==='in'}).then(d=>{ if(d && (d.drives||d.boxscore||d.header)){ _gcd.sum[eid]={data:d, at:Date.now()}; gcDetailRepaint(); } }).catch(()=>{}).finally(()=>{ _gcd.busy[eid]=false; });
+    sleeperFetch(GC_SUMMARY_URL(eid), {fresh: game.state==='in'}).then(d=>{ if(d && (d.drives||d.boxscore||d.header)){ _gcd.sum[eid]={data:d, at:Date.now()}; const added=typeof lfSummaryLanded==='function'?lfSummaryLanded(eid,d):0; gcSummaryRepaint(added); } }).catch(()=>{}).finally(()=>{ _gcd.busy[eid]=false; });
   }
   return c?c.data:null;
+}
+function gcSummaryRepaint(added){
+  if(typeof _gc!=='undefined' && _gc.view==='feed'){
+    if(added>0 && typeof lfRepaint==='function') lfRepaint();
+    return;
+  }
+  gcDetailRepaint();
 }
 function gcDetailRepaint(){
   if(typeof renderRightSidebar!=='function') return;
@@ -290,6 +297,7 @@ function gcPlays(sum){
       if(pid){ if(seen.has(pid)) return; seen.add(pid); }
       const kind=gcPlayKind(p); if(kind==='skip') return;
       out.push({ id:pid, seq:Number(p.sequenceNumber||0), kind, type:String((p.type&&p.type.text)||''), text:String(p.text||''),
+        at:p.wallclock ? Date.parse(p.wallclock)||0 : 0,
         q:Number((p.period&&p.period.number)||0), clock:String((p.clock&&p.clock.displayValue)||''),
         as:p.awayScore!=null?Number(p.awayScore):null, hs:p.homeScore!=null?Number(p.homeScore):null,
         yds:Number(p.statYardage||0), scoring:!!p.scoringPlay, turnover:!!p.isTurnover, team,
