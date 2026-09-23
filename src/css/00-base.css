@@ -29,11 +29,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
   .rank-table-wrap,.la-cmp-wrap,.la-pw-wrap,.la-lu,.rt-chips,.rt-claim,.pos-filter,
   .phase-tabs,.sub-tabs,.qb-tab-bar,.pcard-tabs,.sr-league-tabs,.sr-cat-row,.vsg-tabs,
   .gc-list,.gcm-sheet .gc-body,.gc-detail,.sidebar.leaders,.ktc-modal,.note-picker,.note-info-modal{overscroll-behavior:none;}
-  /* Horizontal-only (no internal vertical scroll of its own, unlike .rank-table-wrap above) —
-     without an explicit touch-action, iOS Safari has swallowed a vertical drag that starts
-     over this element instead of chaining it to the page, same failure mode .rank-table-wrap
-     already guards against below. */
-  .sr-table-wrap{overscroll-behavior:none;touch-action:pan-x pan-y;}
+  /* Horizontal-only, but `overflow-x:auto` with no overflow-y set forces the computed
+     overflow-y to 'auto' too (CSS spec: non-visible on one axis forces the other off
+     'visible') — overflow-y:visible cannot undo it. That makes this element an accidental,
+     empty vertical scroll container; overscroll-behavior:none (the shorthand, both axes)
+     then stops it chaining a vertical drag up to the real page scroller, the touch just
+     dies here. Axis-specific overscroll-behavior-x leaves vertical chaining alone. */
+  .sr-table-wrap{overscroll-behavior-x:none;touch-action:pan-x pan-y;}
 }
 .header{background:var(--surface);border-bottom:1px solid var(--border);
   padding:9px 16px;display:flex;align-items:center;gap:10px;
