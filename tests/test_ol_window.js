@@ -16,7 +16,8 @@ const app=new Function(code+`
            form:_laOlForm, boards:_laOlFormBoards, pane:laOlineView, season:laSeasonView, TC_SEASON, laState, setWin:laSetOlWin,
            setEnsure:(f)=>{ensureNflverseSection=f;}, resetWeeklySeed:()=>{_advWeeklySeedReady=false;_advWeeklySeedLoading=false;},
            badge:_advCurrentOlBadge, setActive:(s)=>{activeSeason=s;}, setLive:(b)=>{tcIsLiveSeason=()=>b;},
-           setTable:setSharpTable, league:()=>document.getElementById('content').innerHTML, setProjSeason:(y)=>{PROJ_SEASON=y;} };
+           setTable:setSharpTable, league:()=>document.getElementById('content').innerHTML, setProjSeason:(y)=>{PROJ_SEASON=y;},
+           olLag:_advOlPfrLagInfo, dlLag:_advDlPfrLagInfo, lagBtn:_advPfrLagInfoBtn, popBody:(key)=>TC_INFO_BOOK[key].body() };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -149,6 +150,44 @@ app.setLive(false); app.clear();
 app.setTable('offensive_line_pass');
 const projHtml=app.league();
 chk(/Proj 2026/.test(projHtml) && !/title="2026 pass-protection overall score/.test(projHtml), 'off the live season (or no weeks played) it falls back to the offseason projection column');
+
+console.log('=== the PFR-charting-lag note: a played week not charted yet shouldn\'t read as a clean week ===');
+// Mirrors a real case: week 1 fully charted, week 2's PFR pass file hasn't landed — sacks/
+// non-QB-sacks/no-blitz-pressures (pbp) are still real for week 2, only the PFR fields are null.
+const mkLag=(db,ra)=>({
+  pass:[[db,ra,2,5,3,0,11,2,3,76.5,29], [db,ra,2,null,null,null,null,1,3,0,0]],
+  run: [[ra,3,3,150,60,90,4,6,ra,10,300,60,10,ra], [ra,3,3,140,null,null,null,6,ra,10,300,60,10,ra]],
+});
+const packLag={weeks:[1,2], pass_cols, run_cols, teams:{ NYG:mkLag(33,32), WAS:mkLag(34,25) }};
+app.setNV({'2026':{ol_weekly:packLag, team:teamOl}});
+const passLag=app.olLag('2026','pass');
+chk(passLag && passLag.week===2 && ['Pressure Rate','Hit Rate','Hurry Rate','Blitz Rate'].every(c=>passLag.cols.includes(c)), 'week 2 not yet charted: all four PFR-sourced pass columns flagged');
+const runLag=app.olLag('2026','run');
+chk(runLag && runLag.week===2 && ['YBC/Rush','YAC/Rush','Broken Tackle Rate'].every(c=>runLag.cols.includes(c)), 'and the run-blocking PFR columns too');
+app.setNV({'2026':{ol_weekly:pack, team:teamOl}});   // the original pack: week 2 IS charted
+chk(app.olLag('2026','pass')===null && app.olLag('2026','run')===null, 'once the latest week is charted for any team, no note');
+
+console.log('=== the defensive-line pressure/missed-tackles note shares the same lag ===');
+const dlCols=['dl_dropbacks','dl_pressures','dl_no_blitz_obs','dl_no_blitz_pressures','dl_rush_att','dl_rush_stuffed','dl_pfr_obs','dl_pfr_pressures','dl_missed_tackles'];
+const dlRow=(charted)=>[40,6,20,2,25,5, charted?1:0, charted?14:0, charted?7:0];
+app.setNV({'2026':{ol_weekly:pack, team:teamOl, adv_weekly:{cols:dlCols, weeks:[1,2], teams:{
+  DET:[dlRow(true), dlRow(false)], SEA:[dlRow(true), dlRow(false)],
+}}}});
+const dlLagOn=app.dlLag('2026');
+chk(dlLagOn && dlLagOn.week===2 && dlLagOn.cols.includes('Pressure Rate') && dlLagOn.cols.includes('Missed Tackles'), 'week 2 uncharted defensively: Pressure Rate and Missed Tackles flagged');
+app.setNV({'2026':{ol_weekly:pack, team:teamOl, adv_weekly:{cols:dlCols, weeks:[1,2], teams:{
+  DET:[dlRow(true), dlRow(true)], SEA:[dlRow(true), dlRow(false)],
+}}}});
+chk(app.dlLag('2026')===null, 'one team charted for the week is enough: the file has landed');
+
+console.log('=== the info button surfaces the specific affected columns, not just a generic warning ===');
+app.setNV({'2026':{ol_weekly:packLag, team:teamOl}});
+const btn=app.lagBtn('offensive_line_pass','2026');
+chk(/tc-info-btn tc-info-warn/.test(btn) && /onclick="tcInfoPop\(event,'advpfrlag_offensive_line_pass'\)"/.test(btn), 'the card gets a warn-styled ⓘ wired to its own popup key');
+const body=app.popBody('advpfrlag_offensive_line_pass');
+chk(/Week 2/.test(body) && /Pressure Rate/.test(body) && /Hit Rate/.test(body) && /Hurry Rate/.test(body) && /Blitz Rate/.test(body), 'the popup names the week and every affected column');
+app.setNV({'2026':{ol_weekly:pack, team:teamOl}});
+chk(app.lagBtn('offensive_line_pass','2026')==='', 'no button once the week is actually charted');
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);

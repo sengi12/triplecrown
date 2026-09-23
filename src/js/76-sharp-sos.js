@@ -247,6 +247,7 @@ function renderSharpLeague(){
   });
 
   const tableTabs = tabsHtml(sharpTable);
+  const lagBtn = (typeof _advPfrLagInfoBtn==='function') ? _advPfrLagInfoBtn(sharpTable, baseSeason) : '';
   const head = `<th class="sr-th-team">TEAM</th>`+cols.map(c=>{
     const active = c===sortCol;
     const arrow = active ? (sharpSortDir>0?' ▲':' ▼') : '';
@@ -297,7 +298,7 @@ function renderSharpLeague(){
     return `<tr${rowScope}><td class="sr-td-team"><span class="sr-td-team-inner"><img src="${NFL_LOGO(r.code)}" class="sr-logo" loading="lazy" decoding="async" onerror="this.style.display='none'">${r.code}</span></td>${cells}</tr>`;
   }).join('');
   host.innerHTML = headerBar + leagueWeekRange + renderCategoryTabs() + `
-    <div class="sr-league-tabs">${tableTabs}</div>
+    <div class="sr-league-tabs">${tableTabs}${lagBtn}</div>
     <div class="card sr-table-wrap" style="padding:0;overflow-x:auto">
       <table class="sr-league-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
     </div>`;

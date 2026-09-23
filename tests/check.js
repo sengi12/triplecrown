@@ -19912,6 +19912,66 @@ function _advCurrentOlBadge(team, which){
   return ` <span class="sr-proj-badge ${cls}" title="${season} ${lbl} overall score, weeks 1\u2013${wk}">${season} ${Number(score).toFixed(1)}${rk!=null?` \u00b7 #${rk}`:''}</span>`;
 }
 
+// ── PFR charting lag: a played week's PFR-sourced column stays MISSING until their weekly
+// file lands (a few days after the games — see nflverse.py's _PFR_WEEKLY), but the play
+// count it divides by (dropbacks/carries/opponent dropbacks) comes from pbp and is already
+// current. Dividing a partial numerator by the full denominator quietly makes the rate look
+// better than it may really be for that week. These detect it league-wide (any team charted
+// = the file landed) so the same note fires whether a team's card is on the season default
+// or a windowed recompute — both read from the same lagged upstream file.
+function _advOlPfrLagInfo(season, which){
+  const pack=(NFLVERSE && NFLVERSE[String(season)] && NFLVERSE[String(season)].ol_weekly) || null;
+  if(!pack || !pack.teams || !Array.isArray(pack.weeks) || !pack.weeks.length) return null;
+  const cols=(which==='pass' ? pack.pass_cols : pack.run_cols)||[];
+  const idx={}; cols.forEach((c,i)=>{ idx[c]=i; });
+  const lagMap = which==='pass'
+    ? {times_pressured:'Pressure Rate', times_hit:'Hit Rate', times_hurried:'Hurry Rate', times_blitzed:'Blitz Rate'}
+    : {ybc:'YBC/Rush', yac:'YAC/Rush', broken_tackles:'Broken Tackle Rate'};
+  const latestI=pack.weeks.length-1;
+  const latestWk=Number(pack.weeks[latestI]);
+  const missing=[];
+  for(const field in lagMap){
+    const ci=idx[field]; if(ci==null) continue;
+    let anyNonNull=false;
+    for(const tm in pack.teams){
+      const rows=(which==='pass') ? (pack.teams[tm]&&pack.teams[tm].pass) : (pack.teams[tm]&&pack.teams[tm].run);
+      const row=(rows||[])[latestI];
+      if(row && row[ci]!=null){ anyNonNull=true; break; }
+    }
+    if(!anyNonNull) missing.push(lagMap[field]);
+  }
+  return missing.length ? {week:latestWk, cols:missing} : null;
+}
+function _advDlPfrLagInfo(season){
+  const pack=(NFLVERSE && NFLVERSE[String(season)] && NFLVERSE[String(season)].adv_weekly) || null;
+  if(!pack || !pack.teams || !Array.isArray(pack.weeks) || !Array.isArray(pack.cols) || !pack.weeks.length) return null;
+  const ci=pack.cols.indexOf('dl_pfr_obs'); if(ci<0) return null;
+  const latestI=pack.weeks.length-1;
+  const latestWk=Number(pack.weeks[latestI]);
+  for(const tm in pack.teams){
+    const row=(pack.teams[tm]||[])[latestI];
+    if(row && Number(row[ci]||0)>0) return null;   // some team already charted: the file's in
+  }
+  return {week:latestWk, cols:['Pressure Rate','Missed Tackles']};
+}
+function _advPfrLagBody(info, lbl){
+  const cols=info.cols.join(', ');
+  return `<p>Week ${info.week} hasn't been charted by Pro Football Reference yet \u2014 their weekly ${lbl} file usually lands a few days after the games, not right away.</p>
+    <p>Until it does, <b>${cols}</b> ${info.cols.length>1?"don't":"doesn't"} include week ${info.week} at all \u2014 but the play count they divide by (dropbacks / carries) already does, straight from the play-by-play. So these numbers can read better than they should until PFR's file lands; they're not wrong, just short a week.</p>`;
+}
+// Shared ⓘ for any card built from a PFR-charted weekly file — team card and league-wide
+// table both call this, keyed by table so the two never stomp each other's popup content.
+function _advPfrLagInfoBtn(tableKey, season){
+  let info=null, lbl=null;
+  if(tableKey==='offensive_line_pass'){ info=_advOlPfrLagInfo(season,'pass'); lbl='pass-blocking'; }
+  else if(tableKey==='offensive_line_run'){ info=_advOlPfrLagInfo(season,'run'); lbl='run-blocking'; }
+  else if(tableKey==='defensive_line'){ info=_advDlPfrLagInfo(season); lbl='defensive'; }
+  if(!info) return '';
+  const key=`advpfrlag_${tableKey}`;
+  TC_INFO_BOOK[key]={ title:`Week ${info.week} isn't fully charted yet`, body:()=>_advPfrLagBody(info, lbl) };
+  return `<button class="tc-info-btn tc-info-warn" onclick="tcInfoPop(event,'${key}')" title="Why do these look off?" aria-label="Why do these look off?">!</button>`;
+}
+
 // ── Power Score ──────────────────────────────────────────────────────────────
 // Six things, ranked across the league over the week range and averaged: offensive pass and
 // run EPA/play, defensive pass and run EPA/play allowed, points scored, points allowed. Rank 1
@@ -20151,8 +20211,9 @@ function renderTeamAdvanced(team){
       ? (liveOlSeason ? _advCurrentOlBadge(useTeam, key==='offensive_line_pass'?'pass':'run') : _advProjOlBadge(useTeam, key==='offensive_line_pass'?'pass':'run'))
       : '';
     const estBadge=(est && !estCols) ? `<span class="sr-est sr-est-title" title="${escAttr(est.note||'Estimated')}">≈ est.</span>` : '';
+    const lagBtn = _advPfrLagInfoBtn(key, advTeamSeason());
     return `<div class="sr-card">
-      <div class="sr-card-title">${tbl.title||key}${estBadge}${projBadge}</div>
+      <div class="sr-card-title">${tbl.title||key}${estBadge}${projBadge}${lagBtn}</div>
       <div class="sr-stat-grid">${lines}</div>
     </div>`;
   };
@@ -20487,6 +20548,7 @@ function renderSharpLeague(){
   });
 
   const tableTabs = tabsHtml(sharpTable);
+  const lagBtn = (typeof _advPfrLagInfoBtn==='function') ? _advPfrLagInfoBtn(sharpTable, baseSeason) : '';
   const head = `<th class="sr-th-team">TEAM</th>`+cols.map(c=>{
     const active = c===sortCol;
     const arrow = active ? (sharpSortDir>0?' ▲':' ▼') : '';
@@ -20537,7 +20599,7 @@ function renderSharpLeague(){
     return `<tr${rowScope}><td class="sr-td-team"><span class="sr-td-team-inner"><img src="${NFL_LOGO(r.code)}" class="sr-logo" loading="lazy" decoding="async" onerror="this.style.display='none'">${r.code}</span></td>${cells}</tr>`;
   }).join('');
   host.innerHTML = headerBar + leagueWeekRange + renderCategoryTabs() + `
-    <div class="sr-league-tabs">${tableTabs}</div>
+    <div class="sr-league-tabs">${tableTabs}${lagBtn}</div>
     <div class="card sr-table-wrap" style="padding:0;overflow-x:auto">
       <table class="sr-league-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
     </div>`;
