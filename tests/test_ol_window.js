@@ -53,9 +53,43 @@ const F=app.form(3);
 chk(Array.isArray(F) && F.length===3 && F.every(t=>t.lo===1 && t.hi===2), 'one row per line; a 3-week stretch with two played weeks spans weeks 1-2');
 const kc=F.find(t=>t.tm==='KC');
 chk(kc && kc.runA.rank===1 && kc.runR.rank===1 && kc.dRunRk===0 && kc.passA.score!=null, 'season and stretch scores with ranks; the rank move is season rank minus stretch rank');
+console.log('=== a "recent" window that reaches back to week 1 IS the season — no manufactured surging/slipping ===');
+// Reported bug: with 2 weeks played, every selectable "Last N" window (2/3/4/6) clamps its
+// low end to week 1, so the recent table is literally the season table and every team's
+// rank move is 0 — SURGING/SLIPPING then rendered two headers over "nobody in this scope
+// yet" forever. The boards must fall back to a plain best-to-worst ranking instead.
 const html=app.boards(2);
-chk(/O-LINE · RUN BLOCKING · LAST 3/.test(html) && /O-LINE · PASS PROTECTION/.test(html) && /SURGING/.test(html) && /SLIPPING/.test(html), 'two boards: run blocking and pass protection, surging vs slipping');
-chk(/Last 2/.test(html) && /Last 6/.test(html) && /onclick="laSetOlWin\(4\)"/.test(html), 'the stretch chips ride the board subtitle');
+chk(/O-LINE · RUN BLOCKING · THRU WK 2/.test(html) && /O-LINE · PASS PROTECTION/.test(html) && /BEST/.test(html) && /WORST/.test(html), 'two weeks played, "Last 3" selected: the season-so-far ranking, not an always-empty surging/slipping split');
+chk(!/SURGING/.test(html) && !/SLIPPING/.test(html), 'no surging/slipping headers when the recent window cannot differ from the season');
+chk(/Last 2/.test(html) && /Last 6/.test(html) && /onclick="laSetOlWin\(4\)"/.test(html), 'the stretch chips still ride the board subtitle');
+
+console.log('=== a genuine recent stretch (window shorter than weeks played) does split surging vs slipping ===');
+// A separate 4-week pack: KC's run blocking falls off a cliff in weeks 3-4 (slipping), SEA's
+// picks up (surging), DEN holds the league-average line all four weeks (flat) — the season
+// (wks 1-2) vs. the "Last 2" recent window (wks 3-4) must be genuinely different tables for
+// the split to mean anything, unlike the always-lo-1 case above.
+const goodRun=[30, 2, 8, 220, 80, 110, 1, 12, 30, 18, 200, 40, 20, 30];
+const midRun =[30, 6, 4, 150, 50, 70,  4, 6,  30, 10, 300, 60, 11, 30];
+const badRun =[30, 10,1, 90,  25, 30,  8, 2,  30, 3,  400, 90, 4,  30];
+const flatPass=[30,30,2,8,3,4,8,1,2,60,25];
+const mkTeam4=(rows)=>({ pass: rows.map(()=>flatPass), run: rows });
+const pack4={weeks:[1,2,3,4], pass_cols, run_cols, teams:{
+  KC:  mkTeam4([goodRun,goodRun,badRun,badRun]),
+  SEA: mkTeam4([badRun,badRun,goodRun,goodRun]),
+  DEN: mkTeam4([midRun,midRun,midRun,midRun]),
+}};
+app.setNV({'2026':{ol_weekly:pack4, team:{}}});
+app.clear();
+app.TC_SEASON.week=5; app.clear();   // four weeks played, "Last 2" is a real sub-window
+app.setWin(2);
+const F4=app.form(2);
+chk(F4 && F4[0].lo===3 && F4[0].hi===4, 'a 2-week stretch with four played weeks is weeks 3-4, not clamped to week 1');
+const kc4=F4.find(t=>t.tm==='KC'), sea4=F4.find(t=>t.tm==='SEA');
+chk(kc4.dRunRk<0 && sea4.dRunRk>0, 'the team that got worse recently drops rank, the one that improved climbs it');
+const htmlSplit=app.boards(4);
+chk(/O-LINE · RUN BLOCKING · LAST 2/.test(htmlSplit) && /SURGING/.test(htmlSplit) && /SLIPPING/.test(htmlSplit), 'once the window is genuinely shorter than the season, the surging/slipping board returns');
+app.setWin(3);
+app.setNV({'2026':{ol_weekly:pack, team:{}}});
 app.TC_SEASON.week=2; app.clear();
 const h1=app.boards(1);
 chk(/THRU WK 1/.test(h1) && /BEST/.test(h1) && /WORST/.test(h1) && !/SURGING/.test(h1), 'with one played week the boards show the season so far, best to worst');

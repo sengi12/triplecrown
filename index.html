@@ -44157,13 +44157,20 @@ function _laOlFormBoards(wk){
   const fmt=(x)=> x==null?'—':x.toFixed(1);
   const rk=(r)=> r==null?'':`#${r}`;
   const thin = wk<win;
-  if(wk<2 || thin && wk<2){
+  // _laOlForm clamps its "recent" window to start at week 1 once the stretch reaches back
+  // that far — at that point "recent" IS "season" (same table twice), every dRunRk/dPassRk
+  // is 0, and the surging/slipping filters below come up empty no matter how many weeks are
+  // in: show the plain best-to-worst ranking instead, same as the true week-1 case.
+  const lo0 = F[0] ? F[0].lo : 1;
+  if(wk<2 || lo0<=1){
     // One week: nothing to compare against yet — the season so far, best to worst.
     const byRun=[...F].filter(t=>t.runA.score!=null).sort((a,b)=>b.runA.score-a.runA.score);
     const byPass=[...F].filter(t=>t.passA.score!=null).sort((a,b)=>b.passA.score-a.passA.score);
     const runRow=(t,i)=>_laTeamRow(t.tm, `run blocking ${fmt(t.runA.score)} thru wk ${wk}`, _laVerdict(rk(t.runA.rank), 'of 32', t.runA.rank<=10?'la-trnd-up':(t.runA.rank>=23?'la-trnd-dn':'')), t.runA.rank<=10?'pace-ahead':(t.runA.rank>=23?'pace-behind':''), i+1);
     const passRow=(t,i)=>_laTeamRow(t.tm, `pass protection ${fmt(t.passA.score)} thru wk ${wk}`, _laVerdict(rk(t.passA.rank), 'of 32', t.passA.rank<=10?'la-trnd-up':(t.passA.rank>=23?'la-trnd-dn':'')), t.passA.rank<=10?'pace-ahead':(t.passA.rank>=23?'pace-behind':''), i+1);
-    return two(`O-LINE · RUN BLOCKING · THRU WK ${wk}`, `the season so far — form against the season arrives at week 2 ${sel}`,
+    const sub = wk<2 ? `the season so far — form against the season arrives at week 2 ${sel}`
+      : `the season so far — pick a shorter stretch than ${win} to see form against the season ${sel}`;
+    return two(`O-LINE · RUN BLOCKING · THRU WK ${wk}`, sub,
         'BEST', byRun.slice(0,10).map(runRow).join(''), 'WORST', byRun.slice().reverse().slice(0,10).map(runRow).join(''))
       + two(`O-LINE · PASS PROTECTION · THRU WK ${wk}`, 'the season so far (pass score: pressure, hits, hurries, sacks, pocket time)',
         'BEST', byPass.slice(0,10).map(passRow).join(''), 'WORST', byPass.slice().reverse().slice(0,10).map(passRow).join(''));
