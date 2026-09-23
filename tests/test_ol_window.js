@@ -14,7 +14,8 @@ const app=new Function(code+`
   toast=function(){};
   return { range:_advComputeOlRangeTables, score:_rbRunScoreAndRankFromTable, setNV:(n)=>{NFLVERSE=n;}, clear:()=>{_advOlRangeCache={};},
            form:_laOlForm, boards:_laOlFormBoards, pane:laOlineView, season:laSeasonView, TC_SEASON, laState, setWin:laSetOlWin,
-           setEnsure:(f)=>{ensureNflverseSection=f;}, resetWeeklySeed:()=>{_advWeeklySeedReady=false;_advWeeklySeedLoading=false;} };
+           setEnsure:(f)=>{ensureNflverseSection=f;}, resetWeeklySeed:()=>{_advWeeklySeedReady=false;_advWeeklySeedLoading=false;},
+           badge:_advCurrentOlBadge, setActive:(s)=>{activeSeason=s;}, setLive:(b)=>{tcIsLiveSeason=()=>b;} };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -111,6 +112,16 @@ chk(/Loading the weekly offensive-line block/.test(emptyHtml), 'while that fetch
 app.laState.laTab='season'; app.laState.seasonPane='oline';
 const sv=app.season({});
 chk(/pane-tab active[^>]*title="O-Line"/.test(sv) && (sv.match(/pane-tab /g)||[]).length>=5, 'O-Line is a Season pane beside Defense, and the active one when selected');
+
+console.log('=== the team card\'s O-Line badge: current-season grade, not the offseason projection ===');
+app.setNV({'2026':{ol_weekly:pack, team:{}}});
+app.setActive('proj'); app.setLive(true);
+app.TC_SEASON.week=3; app.clear();   // two weeks played
+const runBadge=app.badge('KC','run'), passBadge=app.badge('KC','pass');
+chk(/^ <span class="sr-proj-badge/.test(runBadge) && /2026 [\d.]+/.test(runBadge) && !/Proj/.test(runBadge), 'the run badge reads the season number, not "Proj"');
+chk(/2026 [\d.]+ · #1/.test(passBadge), 'the pass badge carries the same Pass Score/rank the O-Line pane uses');
+app.TC_SEASON.week=1; app.clear();
+chk(app.badge('KC','run')==='', 'no completed weeks yet: no current-season badge to show');
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);

@@ -25368,6 +25368,30 @@ function _advProjOlBadge(team, which){
   return ` <span class="sr-proj-badge ${cls}" title="Projected ${projSeason} ${lbl} overall score, from projected depth-chart starters">Proj \u2019${shortSeason} ${Number(p.score).toFixed(1)}${rk!=null?` \u00b7 #${rk}`:''}</span>`;
 }
 
+// Live-season OL overall-score chip: the same windowed recompute the O-Line trends board
+// uses (ol_weekly, season to date), not the offseason depth-chart projection.
+function _advCurrentOlBadge(team, which){
+  const season=String(advTeamSeason());
+  const wk=(typeof completedWeeks==='function')?completedWeeks():0;
+  if(!wk || typeof _advComputeOlRangeTables!=='function') return '';
+  const agg=_advComputeOlRangeTables(season, 1, wk);
+  if(!agg) return '';
+  let score=null, rank=null;
+  if(which==='run'){
+    if(typeof _rbRunScoreAndRankFromTable!=='function') return '';
+    const r=_rbRunScoreAndRankFromTable(agg.runTbl, team);
+    score=r.score; rank=r.rank;
+  } else {
+    const row=(agg.passTbl.teams||{})[team]||{};
+    score=row.values&&row.values['Pass Score']; rank=row.ranks&&row.ranks['Pass Score'];
+  }
+  if(score==null || Number.isNaN(Number(score))) return '';
+  const rk = (rank!=null && !Number.isNaN(Number(rank))) ? Number(rank) : null;
+  const cls = (typeof sharpRankClass==='function' && rk!=null) ? sharpRankClass(rk) : '';
+  const lbl = which==='pass' ? 'pass-protection' : 'run-blocking';
+  return ` <span class="sr-proj-badge ${cls}" title="${season} ${lbl} overall score, weeks 1\u2013${wk}">${season} ${Number(score).toFixed(1)}${rk!=null?` \u00b7 #${rk}`:''}</span>`;
+}
+
 // ── Power Score ──────────────────────────────────────────────────────────────
 // Six things, ranked across the league over the week range and averaged: offensive pass and
 // run EPA/play, defensive pass and run EPA/play allowed, points scored, points allowed. Rank 1
@@ -25601,8 +25625,11 @@ function renderTeamAdvanced(team){
         <div class="sr-stat-rank">${sharpRankBadge(r)}</div>
       </div>`;
     }).join('');
+    const liveOlSeason = (typeof tcIsLiveSeason==='function') && tcIsLiveSeason(advTeamSeason())
+      && (typeof completedWeeks==='function') && completedWeeks()>0;
     const projBadge = (key==='offensive_line_pass' || key==='offensive_line_run')
-      ? _advProjOlBadge(useTeam, key==='offensive_line_pass'?'pass':'run') : '';
+      ? (liveOlSeason ? _advCurrentOlBadge(useTeam, key==='offensive_line_pass'?'pass':'run') : _advProjOlBadge(useTeam, key==='offensive_line_pass'?'pass':'run'))
+      : '';
     const estBadge=(est && !estCols) ? `<span class="sr-est sr-est-title" title="${escAttr(est.note||'Estimated')}">≈ est.</span>` : '';
     return `<div class="sr-card">
       <div class="sr-card-title">${tbl.title||key}${estBadge}${projBadge}</div>
