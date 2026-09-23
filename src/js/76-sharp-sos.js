@@ -194,7 +194,13 @@ function renderSharpLeague(){
   const projWhich = sharpTable==='offensive_line_pass' ? 'pass' : (sharpTable==='offensive_line_run' ? 'run' : null);
   const projSeason = String((typeof PROJ_SEASON!=='undefined' && PROJ_SEASON) ? PROJ_SEASON : new Date().getFullYear());
   const baseSeason = String(advTeamSeason());
-  const projCol = `Proj ${projSeason}`;
+  // Mid-season, the offseason depth-chart projection is stale next to real games played —
+  // swap it for the same windowed recompute (ol_weekly) the O-Line trends board ranks.
+  const liveOlSeason = isProjTable && (typeof tcIsLiveSeason==='function') && tcIsLiveSeason(baseSeason)
+    && (typeof completedWeeks==='function') && completedWeeks()>0;
+  const liveWk = liveOlSeason ? completedWeeks() : 0;
+  const liveAgg = (liveOlSeason && typeof _advComputeOlRangeTables==='function') ? _advComputeOlRangeTables(baseSeason, 1, liveWk) : null;
+  const projCol = liveOlSeason ? baseSeason : `Proj ${projSeason}`;
   const overallLabel = `Overall (${baseSeason})`;
   const showProjCol = isProjTable;
   const baseCols = (tbl.columns||[]).slice();
@@ -209,7 +215,14 @@ function renderSharpLeague(){
   }
   let rows=Object.keys(tbl.teams).map(code=>{
     const base={code, ...tbl.teams[code]};
-    if(!showProjCol || !projWhich || typeof projectedOlScore!=='function') return base;
+    if(!showProjCol || !projWhich) return base;
+    if(liveOlSeason){
+      const r=_advLiveOlScore(liveAgg, code, projWhich);
+      base._projScore=(r.score!=null && !Number.isNaN(Number(r.score))) ? Number(r.score) : null;
+      base._projRank=(r.rank!=null && !Number.isNaN(Number(r.rank))) ? Number(r.rank) : null;
+      return base;
+    }
+    if(typeof projectedOlScore!=='function') return base;
     const p=projectedOlScore(code, projWhich);
     base._projScore=(p && p.score!=null && !Number.isNaN(Number(p.score))) ? Number(p.score) : null;
     base._projRank=(p && p.rank!=null && !Number.isNaN(Number(p.rank))) ? Number(p.rank) : null;
@@ -237,7 +250,11 @@ function renderSharpLeague(){
   const head = `<th class="sr-th-team">TEAM</th>`+cols.map(c=>{
     const active = c===sortCol;
     const arrow = active ? (sharpSortDir>0?' ▲':' ▼') : '';
-    const title = c===projCol ? `Projected ${projSeason} OL ${projWhich==='pass'?'pass-protection':'run-blocking'} overall score` : `Sort by ${c}`;
+    const title = c===projCol
+      ? (liveOlSeason
+          ? `${baseSeason} OL ${projWhich==='pass'?'pass-protection':'run-blocking'} overall score, weeks 1\u2013${liveWk}`
+          : `Projected ${projSeason} OL ${projWhich==='pass'?'pass-protection':'run-blocking'} overall score`)
+      : `Sort by ${c}`;
     return `<th class="sr-th ${active?'active':''}" onclick="sortSharpBy('${c.replace(/'/g,"\\'")}')" title="${title}">${c}${arrow}</th>`;
   }).join('');
 

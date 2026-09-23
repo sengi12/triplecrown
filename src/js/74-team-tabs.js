@@ -787,6 +787,18 @@ function _advProjOlBadge(team, which){
   return ` <span class="sr-proj-badge ${cls}" title="Projected ${projSeason} ${lbl} overall score, from projected depth-chart starters">Proj \u2019${shortSeason} ${Number(p.score).toFixed(1)}${rk!=null?` \u00b7 #${rk}`:''}</span>`;
 }
 
+// Live-season OL overall score + rank for one team from an already-computed windowed
+// aggregate (see _advComputeOlRangeTables) — the same numbers the O-Line trends board ranks.
+function _advLiveOlScore(agg, team, which){
+  if(!agg) return {score:null, rank:null};
+  if(which==='run'){
+    if(typeof _rbRunScoreAndRankFromTable!=='function') return {score:null, rank:null};
+    return _rbRunScoreAndRankFromTable(agg.runTbl, team);
+  }
+  const row=(agg.passTbl.teams||{})[team]||{};
+  return {score: row.values&&row.values['Pass Score'], rank: row.ranks&&row.ranks['Pass Score']};
+}
+
 // Live-season OL overall-score chip: the same windowed recompute the O-Line trends board
 // uses (ol_weekly, season to date), not the offseason depth-chart projection.
 function _advCurrentOlBadge(team, which){
@@ -795,15 +807,7 @@ function _advCurrentOlBadge(team, which){
   if(!wk || typeof _advComputeOlRangeTables!=='function') return '';
   const agg=_advComputeOlRangeTables(season, 1, wk);
   if(!agg) return '';
-  let score=null, rank=null;
-  if(which==='run'){
-    if(typeof _rbRunScoreAndRankFromTable!=='function') return '';
-    const r=_rbRunScoreAndRankFromTable(agg.runTbl, team);
-    score=r.score; rank=r.rank;
-  } else {
-    const row=(agg.passTbl.teams||{})[team]||{};
-    score=row.values&&row.values['Pass Score']; rank=row.ranks&&row.ranks['Pass Score'];
-  }
+  const {score, rank} = _advLiveOlScore(agg, team, which);
   if(score==null || Number.isNaN(Number(score))) return '';
   const rk = (rank!=null && !Number.isNaN(Number(rank))) ? Number(rank) : null;
   const cls = (typeof sharpRankClass==='function' && rk!=null) ? sharpRankClass(rk) : '';

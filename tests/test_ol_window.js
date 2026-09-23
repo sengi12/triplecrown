@@ -15,7 +15,8 @@ const app=new Function(code+`
   return { range:_advComputeOlRangeTables, score:_rbRunScoreAndRankFromTable, setNV:(n)=>{NFLVERSE=n;}, clear:()=>{_advOlRangeCache={};},
            form:_laOlForm, boards:_laOlFormBoards, pane:laOlineView, season:laSeasonView, TC_SEASON, laState, setWin:laSetOlWin,
            setEnsure:(f)=>{ensureNflverseSection=f;}, resetWeeklySeed:()=>{_advWeeklySeedReady=false;_advWeeklySeedLoading=false;},
-           badge:_advCurrentOlBadge, setActive:(s)=>{activeSeason=s;}, setLive:(b)=>{tcIsLiveSeason=()=>b;} };
+           badge:_advCurrentOlBadge, setActive:(s)=>{activeSeason=s;}, setLive:(b)=>{tcIsLiveSeason=()=>b;},
+           setTable:setSharpTable, league:()=>document.getElementById('content').innerHTML, setProjSeason:(y)=>{PROJ_SEASON=y;} };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -122,6 +123,32 @@ chk(/^ <span class="sr-proj-badge/.test(runBadge) && /2026 [\d.]+/.test(runBadge
 chk(/2026 [\d.]+ · #1/.test(passBadge), 'the pass badge carries the same Pass Score/rank the O-Line pane uses');
 app.TC_SEASON.week=1; app.clear();
 chk(app.badge('KC','run')==='', 'no completed weeks yet: no current-season badge to show');
+
+console.log('=== the league-wide O-Line table: live season swaps the projection column for the real one ===');
+const teamOl={
+  offensive_line_pass:{columns:['Overall Score','Pressure Rate'], teams:{
+    KC:{values:{'Overall Score':70,'Pressure Rate':30}, ranks:{'Overall Score':2,'Pressure Rate':10}},
+    SEA:{values:{'Overall Score':50,'Pressure Rate':40}, ranks:{'Overall Score':10,'Pressure Rate':20}},
+    DEN:{values:{'Overall Score':60,'Pressure Rate':35}, ranks:{'Overall Score':6,'Pressure Rate':15}},
+  }},
+  offensive_line_run:{columns:['Overall Score','Stuff Rate'], teams:{
+    KC:{values:{'Overall Score':65,'Stuff Rate':15}, ranks:{'Overall Score':4,'Stuff Rate':8}},
+    SEA:{values:{'Overall Score':55,'Stuff Rate':20}, ranks:{'Overall Score':8,'Stuff Rate':18}},
+    DEN:{values:{'Overall Score':58,'Stuff Rate':18}, ranks:{'Overall Score':7,'Stuff Rate':14}},
+  }},
+};
+app.setNV({'2026':{ol_weekly:pack, team:teamOl}});
+app.setProjSeason(2026);
+app.TC_SEASON.week=3; app.clear();   // two weeks played, live
+app.setTable('offensive_line_pass');
+const liveHtml=app.league();
+chk(/<th class="sr-th active" onclick="sortSharpBy\('2026'\)"/.test(liveHtml), 'the live column header reads the season, not "Proj 2026"');
+chk(!/Proj 2026/.test(liveHtml), 'no offseason projection column while the season is live and weeks are in the books');
+chk(/title="2026 OL pass-protection overall score, weeks 1–2"/.test(liveHtml), 'the header explains it\'s the real weeks-1-2 recompute');
+app.setLive(false); app.clear();
+app.setTable('offensive_line_pass');
+const projHtml=app.league();
+chk(/Proj 2026/.test(projHtml) && !/title="2026 pass-protection overall score/.test(projHtml), 'off the live season (or no weeks played) it falls back to the offseason projection column');
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);
