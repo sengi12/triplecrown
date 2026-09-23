@@ -178,9 +178,22 @@ chk(dlLagOn && dlLagOn.week===2 && dlLagOn.cols.includes('Pressure Rate') && dlL
 app.setNV({'2026':{ol_weekly:pack, team:teamOl, adv_weekly:{cols:dlCols, weeks:[1,2], teams:{
   DET:[dlRow(true), dlRow(true)], SEA:[dlRow(true), dlRow(false)],
 }}}});
-chk(app.dlLag('2026')===null, 'one team charted for the week is enough: the file has landed');
+chk(app.dlLag('2026')!==null, 'PFR charts per team, not the whole league at once: SEA still uncharted keeps the league-wide note up');
+chk(app.dlLag('2026','DET')===null && app.dlLag('2026','SEA')!==null, 'and a team-specific check only warns for the team that\'s actually missing it');
 
-console.log('=== the info button surfaces the specific affected columns, not just a generic warning ===');
+console.log('=== the real bug: PFR charts some teams before others, not the whole league at once ===');
+// BUF/DET already have week 2 pass charting; NYG/WAS don't yet — a league-wide "any team has
+// it" check used to wrongly conclude the file had landed for everyone.
+const mkCharted=(db,ra)=>({
+  pass:[[db,ra,2,5,3,0,11,2,3,76.5,29], [db,ra,2,3,2,1,5,1,2,80,28]],
+  run: [[ra,3,3,150,60,90,4,6,ra,10,300,60,10,ra], [ra,3,3,140,55,85,3,6,ra,10,300,60,10,ra]],
+});
+const packMixed={weeks:[1,2], pass_cols, run_cols, teams:{ NYG:mkLag(33,32), WAS:mkLag(34,25), BUF:mkCharted(38,28), DET:mkCharted(44,18) }};
+app.setNV({'2026':{ol_weekly:packMixed, team:teamOl}});
+chk(app.olLag('2026','pass','NYG')!==null, 'NYG\'s own card still warns: its week 2 is still null');
+chk(app.olLag('2026','pass','BUF')===null, 'BUF\'s card does not: its week 2 is already charted');
+chk(app.olLag('2026','pass')!==null, 'the league-wide table still warns too, since NYG/WAS drag the column');
+
 app.setNV({'2026':{ol_weekly:packLag, team:teamOl}});
 const btn=app.lagBtn('offensive_line_pass','2026');
 chk(/tc-info-btn tc-info-warn/.test(btn) && /onclick="tcInfoPop\(event,'advpfrlag_offensive_line_pass'\)"/.test(btn), 'the card gets a warn-styled ⓘ wired to its own popup key');
