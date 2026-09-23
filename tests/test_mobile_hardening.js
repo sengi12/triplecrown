@@ -55,6 +55,7 @@ chk(/\.tc-mgr-list\{[^}]*overscroll-behavior:contain/.test(html), 'projections-m
 chk(html.includes('@media (pointer:coarse)') && /pointer:coarse\)\{[^@]*font-size:16px/.test(html), 'text controls hit 16px on touch devices (kills the iOS focus auto-zoom)');
 chk(!code.includes("style=\"max-height:calc(100vh - 320px)\""), 'rankings scroller max-height moved out of the inline style (dvh fallback possible)');
 chk(/\.rank-table-wrap\{[^}]*100dvh/.test(html), '…and the CSS class carries the dvh fallback');
+chk(/\.sr-table-wrap\{[^}]*overscroll-behavior:none;touch-action:pan-x pan-y/.test(html), 'league-wide Advanced table: touch-action pairs with overscroll containment (a horizontal-only scroller with only overscroll-behavior swallowed vertical page scrolls on iOS)');
 
 console.log('=== tcViewportSize: keyboard-aware popup positioning ===');
 let vp=app.tcViewportSize();
