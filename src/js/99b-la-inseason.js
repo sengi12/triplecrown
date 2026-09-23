@@ -1475,8 +1475,14 @@ function laOlineView(s){
   const wk=(typeof completedWeeks==='function')?completedWeeks():0;
   const boards=_laOlFormBoards(wk);
   if(!boards){
+    // The boards recompute from the nflverse `ol_weekly` sidecar (74-team-tabs), the same
+    // fetch a team card's Advanced tab kicks off when its week-range slider first renders.
+    // Nothing else asks for it — so a league that never had a team card opened first sat
+    // here forever with a stale "no weeks yet" message even with real weeks already played.
+    if(typeof _advEnsureWeeklyLoaded==='function') _advEnsureWeeklyLoaded();
+    const olLoading = typeof _advWeeklySeedLoading!=='undefined' && _advWeeklySeedLoading;
     const st=(typeof _laSidecarKick==='function')?_laSidecarKick():null;
-    if(st==='loading') return `<div class="card la-ins-empty"><div class="empty-body">Loading the weekly offensive-line block…</div></div>`;
+    if(olLoading || st==='loading') return `<div class="card la-ins-empty"><div class="empty-body">Loading the weekly offensive-line block…</div></div>`;
     return `<div class="card la-ins-empty"><div class="empty-title">No offensive-line weeks yet</div>
       <div class="empty-body">Every line's run blocking and pass protection by week builds from played games (nflverse play-by-play, FTN and PFR's weekly files) — it lights up once week 1 is in the books and the hosted seed refreshes.</div></div>`;
   }

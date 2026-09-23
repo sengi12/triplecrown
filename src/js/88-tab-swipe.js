@@ -17,6 +17,11 @@
 
 const TS_COMMIT = 60;      // px of horizontal travel before a tab change commits
 const TS_DECIDE = 10;      // px before we decide the gesture's axis
+const TS_AXIS_RATIO = 2.2; // how much more horizontal than vertical a gesture must be to claim
+                            // the swipe — a fast one-handed flick down a long page (Advanced's
+                            // stat cards run tallest) drifts sideways a little at 10px of travel;
+                            // 1.4 read that drift as a tab swipe often enough to eat the scroll
+                            // and snap back under TS_COMMIT, which looked like scrolling was broken
 const TS_EDGE   = 24;      // ignore starts this close to the left edge (iOS back-swipe zone)
 const TS_MAXSHIFT = 420;   // cap on the content's follow-the-finger travel
 
@@ -374,7 +379,7 @@ function tsScrollerClaims(el, dir){
     if(axis===null){
       if(Math.abs(dx) < TS_DECIDE && Math.abs(dy) < TS_DECIDE) return;
       // Require a clearly horizontal intent — otherwise this is a scroll and we stay out of it.
-      axis = (Math.abs(dx) > Math.abs(dy)*1.4) ? 'x' : 'y';
+      axis = (Math.abs(dx) > Math.abs(dy)*TS_AXIS_RATIO) ? 'x' : 'y';
       if(axis==='x' && tsScrollerClaims(e.target, dx)) axis='y';   // a scroller owns it
       if(axis==='y'){ x0=null; return; }
       // Horizontal intent confirmed — NOW pre-render the immediate left/right neighbours.

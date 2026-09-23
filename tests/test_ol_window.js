@@ -13,7 +13,8 @@ const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`
   toast=function(){};
   return { range:_advComputeOlRangeTables, score:_rbRunScoreAndRankFromTable, setNV:(n)=>{NFLVERSE=n;}, clear:()=>{_advOlRangeCache={};},
-           form:_laOlForm, boards:_laOlFormBoards, pane:laOlineView, season:laSeasonView, TC_SEASON, laState, setWin:laSetOlWin };
+           form:_laOlForm, boards:_laOlFormBoards, pane:laOlineView, season:laSeasonView, TC_SEASON, laState, setWin:laSetOlWin,
+           setEnsure:(f)=>{ensureNflverseSection=f;}, resetWeeklySeed:()=>{_advWeeklySeedReady=false;_advWeeklySeedLoading=false;} };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -63,6 +64,16 @@ const pv=app.pane({});
 chk(/O-LINE · RUN BLOCKING/.test(pv) && /laoline/.test(pv), 'the pane renders the boards with its info button');
 app.setNV({'2026':{}}); app.clear();
 chk(/No offensive-line weeks yet|Loading the weekly offensive-line block/.test(app.pane({})), 'without the weekly block the pane says so (or kicks the sidecar load)');
+
+console.log('=== the pane self-heals: it kicks the ol_weekly fetch instead of just saying "not yet" forever ===');
+// A league that never opened a team card's Advanced tab never triggered the fetch that
+// backs this pane. Visiting the pane itself must ask for it — not depend on some other view.
+app.resetWeeklySeed();
+let askedFor=[];
+app.setEnsure((section)=>{ askedFor.push(section); return Promise.resolve(false); });
+const emptyHtml=app.pane({});
+chk(askedFor.includes('ol_weekly'), 'rendering the empty pane kicks a fetch of the ol_weekly sidecar itself');
+chk(/Loading the weekly offensive-line block/.test(emptyHtml), 'while that fetch is in flight the pane shows a real loading state, not "no weeks yet"');
 app.laState.laTab='season'; app.laState.seasonPane='oline';
 const sv=app.season({});
 chk(/pane-tab active[^>]*title="O-Line"/.test(sv) && (sv.match(/pane-tab /g)||[]).length>=5, 'O-Line is a Season pane beside Defense, and the active one when selected');

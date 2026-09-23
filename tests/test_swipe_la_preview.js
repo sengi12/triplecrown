@@ -13,7 +13,7 @@ global.AbortController=class{constructor(){this.signal={}}abort(){}};
 const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
-  TC_SEASON, tsTabPhase, tsCanPreviewPhase, tsRenderPhasePreview, laState,
+  TC_SEASON, tsTabPhase, tsCanPreviewPhase, tsRenderPhasePreview, laState, TS_AXIS_RATIO,
   setSnapshot:(s)=>{leagueSnapshot=s;}, setPhaseVar:(p)=>{currentPhase=p;},
   setTeam:(t)=>{currentTeam=t;},
   setSleeperFetch:(f)=>{sleeperFetch=f;} };`)();
@@ -53,6 +53,13 @@ chk(fetchCount===before,'no network calls issued from the preview path');
 console.log('=== every in-season pane and the Multi-League hub swipe with a preview ===');
 app.setSnapshot({teamList:[]});
 chk(['chop','standings','hub'].every(k=>app.tsCanPreviewPhase(k)===true), 'Chop, Standings and Multi-League are previewable panes');
+
+console.log('=== the axis lock is forgiving of a scroll that drifts sideways a little ===');
+// A long flick down a tall page (Advanced's stat cards run tallest) drifts a few px
+// sideways; the swipe must not claim it as a tab change and eat the scroll.
+const isHorizontal=(dx,dy)=>Math.abs(dx) > Math.abs(dy)*app.TS_AXIS_RATIO;
+chk(!isHorizontal(11,10),'11px sideways against 10px down still reads as a scroll, not a swipe');
+chk(isHorizontal(30,10),'a genuinely horizontal drag still claims the gesture');
 
 console.log(`\n${pass}/${total}`);
 if(pass!==total) process.exit(1);

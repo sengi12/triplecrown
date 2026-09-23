@@ -49,7 +49,7 @@ const app=new Function('IDS','SUM', code+`
         if(/\\/league\\/L9$/.test(url)) return {name:'Queen City Keepers', status:'in_season', season:'2026', scoring_settings:{pass_yd:0.05, pass_td:6}, roster_positions:['QB','RB','SUPER_FLEX'], settings:{type:0}, total_rosters:12};
         return prev(url); }; },
     sideClass:gcSideClass, setWeekNum:(w)=>{ _gc.week=w; _gc._mu=null; }, liveTimer:()=>_gcLiveTimer, clearLive:()=>{ if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; } }, setMode:(m)=>{ _gc.mode=m; }, setGame:(id)=>{ _gc.game=id; },
-    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, stubContent:(fn)=>{ renderContent=fn; }, setLiveView:(v)=>{ currentProjViewMode=()=>v?'live':'proj'; }, drives:gcDrives, sentence:gcDriveSentence, turnover:gcTurnoverRead, drive:gcDriveChartHTML, wp:gcWinProbHTML, wpOpen:(v)=>{ _gcd.wpOpen=v; }, top:gcTopHTML, lastPlay:gcLastPlayHTML, idle:tcRepaintWhenIdle, busy:tcUiBusy, setDown:(v)=>{ _tcIdle.down=v; }, flush:tcIdleFlush, setActive:(el)=>{ document.activeElement=el; }, sidebarSig:()=>_tcBoard.sig, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
+    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, stubContent:(fn)=>{ renderContent=fn; }, setLiveView:(v)=>{ currentProjViewMode=()=>v?'live':'proj'; }, drives:gcDrives, sentence:gcDriveSentence, turnover:gcTurnoverRead, punt:gcPuntRead, logo:NFL_LOGO, esc:escAttr, drive:gcDriveChartHTML, wp:gcWinProbHTML, wpOpen:(v)=>{ _gcd.wpOpen=v; }, top:gcTopHTML, lastPlay:gcLastPlayHTML, idle:tcRepaintWhenIdle, busy:tcUiBusy, setDown:(v)=>{ _tcIdle.down=v; }, flush:tcIdleFlush, setActive:(el)=>{ document.activeElement=el; }, sidebarSig:()=>_tcBoard.sig, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
 `)(IDS, SUM);
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -336,6 +336,27 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk((fh.match(/class="gc-flag"/g)||[]).length===0 && /gc-seg gc-seg-prog/.test(fh) && (fh.match(/<circle /g)||[]).length===4, 'an older flag is gone once the next snap comes: the drive so far is one quiet line, the start dot, the newest snap, the ball and the pin');
   const flagLast=toD([P('h1',1,'Rush','C.Brown left end for 4 yards.',4,60), P('h2',2,'Penalty','PENALTY on TB-L.David, Defensive Offside, 5 yards, enforced at CIN 44 - No Play.',5,56)], '');
   chk((app.drive(app.GAME('post'), flagLast).match(/class="gc-flag"/g)||[]).length===1 && /Flag: Defensive Offside on TB/.test(app.drive(app.GAME('post'), flagLast)), 'a flag that just happened: the yellow marker at the spot, the ball waiting there');
+
+  console.log('=== a punt: the kick to where it was fielded, then the return the other way ===');
+  const punR=app.punt('M.Araiza punts 41 yards to TB 28, Center-J.Winchester. A.Bachman to TB 42 for 14 yards (E.Downs; C.McDonald).', 'CIN');
+  chk(punR && punR.catchYd===72 && punR.returner==='A.Bachman', 'a punt read from the words: where it was fielded, and by whom');
+  const retD=toD([P('r1',1,'Rush','C.Brown left end for 5 yards.',5,55),
+    P('r2',2,'Punt','M.Araiza punts 41 yards to TB 28, Center-J.Winchester. A.Bachman to TB 42 for 14 yards (E.Downs; C.McDonald).',3,45)], 'PUNT');
+  const rh=app.drive(app.GAME('post'), retD);
+  chk(/gc-seg-kick" d="M[^"]*Q/.test(rh) && /gc-seg-last gc-seg-ret" d="M[^"]*L[^"]*" fill="none" stroke="#39c15a"/.test(rh) && /A\. Bachman 14 yd return/.test(rh), 'the punt arcs to where it was fielded (static), the return runs on in green (animated), the label names the returner and the yards');
+  chk(rh.includes(`<image href="${app.esc(app.logo('TB'))}"`) && !rh.includes(`<image href="${app.esc(app.logo('CIN'))}"`), 'the pin wears the receiving club\'s own logo, not the punting team\'s');
+
+  console.log('=== a punt fair caught: no return, just the credit ===');
+  const fcD=toD([P('c1',1,'Rush','C.Brown left end for 5 yards.',5,55),
+    P('c2',2,'Punt','M.Araiza punts 58 yards to TB 13, Center-J.Winchester, fair catch by A.Bachman.',32,45)], 'PUNT');
+  const fch=app.drive(app.GAME('post'), fcD);
+  chk(/gc-seg-kick" d="M[^"]*Q/.test(fch) && !/gc-seg-ret/.test(fch) && /A\. Bachman fair catch/.test(fch), 'a fair catch draws one kick arc and credits the catch, no return segment');
+
+  console.log('=== a punt with no returner named: the old single arc still draws ===');
+  const oobD=toD([P('o1',1,'Rush','C.Brown left end for 5 yards.',5,55),
+    P('o2',2,'Punt','A.Cole punts 53 yards to TB 27, Center-J.Bobenmoyer, out of bounds.',18,45)], 'PUNT');
+  const oobh=app.drive(app.GAME('post'), oobD);
+  chk(!/gc-seg-ret/.test(oobh) && (oobh.match(/gc-seg-kick/g)||[]).length===1 && /A\. Cole punts/.test(oobh), 'out of bounds names no returner: one arc from snap to the dead spot, the punter still gets the label');
   const posts=[...dc.matchAll(/<g class="gc-posts"><path d="M([\d.]+),([\d.]+) V([\d.]+) M([\d.]+),([\d.]+) L([\d.]+),([\d.]+) M[\d.]+,[\d.]+ V[\d.]+ M[\d.]+,[\d.]+ V[\d.]+"/g)].map(m=>m.slice(1).map(Number));
   chk(posts.length===2 && posts[0][6]<posts[0][4] && posts[1][6]>posts[1][4] && posts.every(q=>q[3]<q[5]) && !/skewX/.test(dc), 'uprights on both back lines, Sleeper\'s: a vertical stem, the crossbar tilted with the field (climbing toward mid-field on both sides), two short vertical uprights');
   chk(app.sentence(app.drives(mini)[0])==='CIN from own 40: 2-plays. 1 rush, 12 yds. 1/1 pass, 48 yds. TD 🎉', `the sentence, Sleeper's wording: "${app.sentence(app.drives(mini)[0])}"`);

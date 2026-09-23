@@ -617,6 +617,23 @@ function gcTurnoverRead(p, offense){
   const ret=Math.max(0, Math.round(at-end));
   return {kind, who, at, end, td, ret};
 }
+// A punt in the play's words: where it was fielded, and by whom (fair catch, a real return,
+// or a muffed catch the receiving team still comes up with) — a kick with no name after it
+// (out of bounds, a touchback, an unrecognized sentence) reads as no returner, and the caller
+// falls back to the single arc it always drew.
+function gcPuntRead(text, offense){
+  const t=String(text||'');
+  const km=/punts? \d+ yards? to (?:the )?([A-Z]{2,3} \d{1,2}|50|end zone)/i.exec(t);
+  if(!km) return null;
+  const catchYd = km[1].toLowerCase()==='end zone' ? 100 : _gcSpotYd(km[1], offense);
+  if(catchYd==null) return null;
+  const rest=t.slice(km.index+km[0].length);
+  const tok="([A-Z]\\.[A-Za-z'\\-]+(?:\\s+[A-Z][A-Za-z'\\-]+)*)";
+  let m=new RegExp('fair catch by '+tok,'i').exec(rest);
+  if(!m) m=new RegExp(tok+'\\s+MUFFS catch','i').exec(rest);
+  if(!m) m=new RegExp(tok+'\\s+(?:ran ob|pushed ob|to|at)','i').exec(rest);
+  return {catchYd, returner: m ? m[1] : ''};
+}
 function gcDriveChartHTML(game, sum){
   const d=gcDriveInView(game, sum); if(!d) return '';
   const G=_gcFieldGeom(); const {W, top, bot, xAt, lane}=G; const H=138;
@@ -668,6 +685,7 @@ function gcDriveChartHTML(game, sum){
     const last=spots[spots.length-1], lp=last.p, x0=xAt(last.yd,lane);
     const kick=/Field Goal|Extra Point/.test(lp.type), kickGood=/Good/.test(lp.type);
     const to=(lp.turnover || /Interception|Fumble/.test(lp.type)) ? gcTurnoverRead(lp, d.team) : null;
+    let punt=null;
     const big = kick || !!to || lp.scoring || Math.abs(lp.yds)>=20;
     let fin=null, pre=null, endX=null, endY=lane, retCol='#39c15a';
     if(kick){
@@ -681,6 +699,18 @@ function gcDriveChartHTML(game, sum){
       retCol='#e5484d';   // a turnover runs back in red
       fin = Math.abs(xe-xa)>=0.5 ? Object.assign(line(xa,xe), {cls:' gc-seg-ret'}) : null;
       endX=xe;
+    } else if(lp.type==='Punt' && (punt=gcPuntRead(lp.text, d.team)) && punt.returner){
+      // the kick to where it was fielded, then — a real return, or just the credit for
+      // catching it clean. Not a turnover: the receiving team's own drive, so it draws and
+      // animates the way any other gain does (green), the returner's face on the pin.
+      const endYd=Math.max(0, Math.min(100, last.yd+lp.yds)), xCatch=xAt(punt.catchYd,lane);
+      endX=xAt(endYd,lane);
+      if(Math.abs(punt.catchYd-endYd)>=1){
+        pre=Object.assign(quad(x0,xCatch,26), {cls:' gc-seg-kick'});
+        fin=Object.assign(line(xCatch,endX), {cls:' gc-seg-ret'});
+      } else {
+        fin=Object.assign(quad(x0,endX,26), {cls:' gc-seg-kick'});
+      }
     } else {
       const endYd = lp.type==='Penalty' ? last.yd : Math.max(0, Math.min(100, last.yd+lp.yds));
       endX=xAt(endYd,lane);
@@ -688,8 +718,19 @@ function gcDriveChartHTML(game, sum){
     }
     const animate = _gcd.driveSeen[eid]!==lp.id; _gcd.driveSeen[eid]=lp.id;
     const dur = big ? 1.4 : 0.7;
+    const puntReturner = (punt && punt.returner) || '';
+    // a punt's flight is its own stage: the kick draws and the ball travels it first, then
+    // the return (if there was one) picks up right where the kick left off
+    const preDur = (puntReturner && pre) ? 0.8 : 0;
     segs.forEach(sg=>parts.push(`<path class="gc-seg${sg.cls}" d="${sg.d}" fill="none" stroke="#39c15a" stroke-width="2" stroke-linecap="round" opacity="0.55"/>`));
-    if(pre) parts.push(`<path class="gc-seg gc-seg-pre" d="${pre.d}" fill="none" stroke="#39c15a" stroke-width="2.2" stroke-linecap="round"/>`);
+    if(pre){
+      if(preDur && animate){
+        parts.push(`<path class="gc-seg gc-seg-pre${pre.cls}" d="${pre.d}" fill="none" stroke="#39c15a" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="${f1(pre.len)}" stroke-dashoffset="${f1(pre.len)}"><animate attributeName="stroke-dashoffset" from="${f1(pre.len)}" to="0" dur="${preDur}s" fill="freeze"/></path>`);
+        parts.push(`<circle class="gc-ball-dot" cx="0" cy="0" r="4.6" fill="#fff" stroke="#101214" stroke-width="1.5"><animateMotion dur="${preDur}s" fill="freeze" path="${pre.d}"/></circle>`);
+      } else {
+        parts.push(`<path class="gc-seg gc-seg-pre${pre.cls||''}" d="${pre.d}" fill="none" stroke="#39c15a" stroke-width="2.2" stroke-linecap="round"/>`);
+      }
+    }
     // the drive's start, and the newest play's snap; a flag only when the newest play is one
     parts.push(`<circle cx="${f1(xAt(spots[0].yd,lane))}" cy="${f1(lane)}" r="3.4" fill="#39c15a" stroke="#39c15a" stroke-width="1.5"/>`);
     if(spots.length>1) parts.push(`<circle cx="${f1(x0)}" cy="${f1(lane)}" r="2.6" fill="#0f1318" stroke="#39c15a" stroke-width="1.5"/>`);
@@ -697,25 +738,31 @@ function gcDriveChartHTML(game, sum){
     if(to) parts.push(`<circle cx="${f1(xAt(to.at,lane))}" cy="${f1(lane)}" r="3.6" fill="${escAttr(retCol)}" stroke="#fff" stroke-width="1.4"/>`);
     const strokeOf = to ? retCol : (/miss/.test((fin&&fin.cls)||'') ? '#e5484d' : '#39c15a');
     if(fin){
-      const anim = animate ? `<animate attributeName="stroke-dashoffset" from="${f1(fin.len)}" to="0" dur="${dur}s" fill="freeze"/>` : '';
+      const anim = animate ? `<animate attributeName="stroke-dashoffset" from="${f1(fin.len)}" to="0" begin="${preDur}s" dur="${dur}s" fill="freeze"/>` : '';
       parts.push(`<path class="gc-seg gc-seg-last${fin.cls}" d="${fin.d}" fill="none" stroke="${escAttr(strokeOf)}" stroke-width="2.6" stroke-linecap="round"${animate?` stroke-dasharray="${f1(fin.len)}" stroke-dashoffset="${f1(fin.len)}"`:''}>${anim}</path>`);
-      if(animate) parts.push(`<circle class="gc-ball-dot" cx="0" cy="0" r="4.6" fill="#fff" stroke="#101214" stroke-width="1.5"><animateMotion dur="${dur}s" fill="freeze" path="${fin.d}"/></circle>`);
+      if(animate) parts.push(`<circle class="gc-ball-dot" cx="0" cy="0" r="4.6" fill="#fff" stroke="#101214" stroke-width="1.5"><animateMotion begin="${preDur}s" dur="${dur}s" fill="freeze" path="${fin.d}"/></circle>`);
       else parts.push(`<circle class="gc-ball-dot" cx="${f1(endX)}" cy="${f1(endY)}" r="4.6" fill="#fff" stroke="#101214" stroke-width="1.5"/>`);
-      if(animate && big) parts.push(`<circle cx="${f1(endX)}" cy="${f1(endY)}" r="5" fill="none" stroke="${escAttr(strokeOf)}" stroke-width="2" opacity="0"><animate attributeName="r" from="5" to="22" begin="${dur}s" dur="0.9s" fill="freeze"/><animate attributeName="opacity" values="0;0.9;0" begin="${dur}s" dur="0.9s" fill="freeze"/></circle>`);
+      if(animate && big) parts.push(`<circle cx="${f1(endX)}" cy="${f1(endY)}" r="5" fill="none" stroke="${escAttr(strokeOf)}" stroke-width="2" opacity="0"><animate attributeName="r" from="5" to="22" begin="${(preDur+dur).toFixed(2)}s" dur="0.9s" fill="freeze"/><animate attributeName="opacity" values="0;0.9;0" begin="${(preDur+dur).toFixed(2)}s" dur="0.9s" fill="freeze"/></circle>`);
     } else {
       parts.push(`<circle class="gc-ball-dot" cx="${f1(endX)}" cy="${f1(endY)}" r="4.6" fill="#fff" stroke="#101214" stroke-width="1.5"/>`);
     }
     // the pin: the man who made the play — the defender who took it on a turnover, the
-    // receiver on a completion, the kicker on a kick, the runner on a run
+    // returner on a punt, the receiver on a completion, the kicker on a kick, the runner
+    // on a run
     let src='', label='';
     const n=(typeof gcPlayNames==='function') ? gcPlayNames(lp.text) : {primary:'',receiver:'',picker:''};
     if(typeof hsPack==='function'){
       const ath=gcAthletes(sum);
-      const who = to ? (gcFindAth(ath, opp, to.who) || gcFindAth(ath, opp, n.picker||n.recoverer)) : (((/Pass Reception|Passing Touchdown/.test(lp.type)) ? gcFindAth(ath, d.team, n.receiver) : null) || gcFindAth(ath, d.team, n.primary));
+      const who = to ? (gcFindAth(ath, opp, to.who) || gcFindAth(ath, opp, n.picker||n.recoverer))
+        : puntReturner ? gcFindAth(ath, opp, puntReturner)
+        : (((/Pass Reception|Passing Touchdown/.test(lp.type)) ? gcFindAth(ath, d.team, n.receiver) : null) || gcFindAth(ath, d.team, n.primary));
       // his Sleeper id: the box score's man, else the name against the club's roster (a
       // defender without a stat line yet); Sleeper's headshot, else ESPN's by his box-score id
       let pid=who && who.pid;
-      if(!pid && typeof lfPidFor==='function'){ const tok = to ? to.who : (/Pass Reception|Passing Touchdown/.test(lp.type) ? n.receiver : n.primary); pid=lfPidFor(tok, to?opp:d.team, null, to?'picker':'primary')||null; }
+      if(!pid && typeof lfPidFor==='function'){
+        const tok = to ? to.who : puntReturner ? puntReturner : (/Pass Reception|Passing Touchdown/.test(lp.type) ? n.receiver : n.primary);
+        pid=lfPidFor(tok, (to||puntReturner)?opp:d.team, null, to?'picker':'primary')||null;
+      }
       const sp=(typeof sleeperPlayers!=='undefined' && sleeperPlayers && pid) ? sleeperPlayers[pid] : null;
       src=(pid && sp) ? ((hsPack({player_id:pid, name:sp.name, pos:sp.pos, team:sp.team})||{}).src||'') : '';
       if(!src && who && who.id && typeof ESPN_HEADSHOT==='function') src=ESPN_HEADSHOT('nfl', who.id)||'';
@@ -723,11 +770,14 @@ function gcDriveChartHTML(game, sum){
     // a flag's pin wears the flagged club
     const flagTeam = lp.type==='Penalty' ? gcAbbr((/PENALTY on ([A-Z]{2,3})-/.exec(lp.text||'')||[])[1]||'') : '';
     const pinX=Math.max(20, Math.min(W-20, endX)); const py=lane-34;
-    const pinIn = animate ? `<animate attributeName="opacity" from="0" to="1" begin="${(dur*0.7).toFixed(2)}s" dur="0.3s" fill="freeze"/>` : '';
-    parts.push(`<g class="gc-pin" opacity="${animate?'0':'1'}">${pinIn}<line x1="${f1(endX)}" y1="${f1(endY-5)}" x2="${f1(pinX)}" y2="${f1(py+15)}" stroke="#fff" stroke-width="1.4" opacity="0.8"/><circle cx="${f1(pinX)}" cy="${f1(py)}" r="15" fill="#101214" stroke="${to?escAttr(retCol):'#fff'}" stroke-width="2"/>${src?`<image href="${escAttr(src)}" x="${f1(pinX-13)}" y="${f1(py-13)}" width="26" height="26" style="clip-path:circle(50%)" preserveAspectRatio="xMidYMid slice"/>`:`<image href="${escAttr(NFL_LOGO(to?opp:(flagTeam||d.team)))}" x="${f1(pinX-9)}" y="${f1(py-9)}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>`}</g>`);
+    const pinIn = animate ? `<animate attributeName="opacity" from="0" to="1" begin="${(preDur+dur*0.7).toFixed(2)}s" dur="0.3s" fill="freeze"/>` : '';
+    parts.push(`<g class="gc-pin" opacity="${animate?'0':'1'}">${pinIn}<line x1="${f1(endX)}" y1="${f1(endY-5)}" x2="${f1(pinX)}" y2="${f1(py+15)}" stroke="#fff" stroke-width="1.4" opacity="0.8"/><circle cx="${f1(pinX)}" cy="${f1(py)}" r="15" fill="#101214" stroke="${to?escAttr(retCol):'#fff'}" stroke-width="2"/>${src?`<image href="${escAttr(src)}" x="${f1(pinX-13)}" y="${f1(py-13)}" width="26" height="26" style="clip-path:circle(50%)" preserveAspectRatio="xMidYMid slice"/>`:`<image href="${escAttr(NFL_LOGO(to?opp:(puntReturner?opp:(flagTeam||d.team))))}" x="${f1(pinX-9)}" y="${f1(py-9)}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>`}</g>`);
     if(to){
       const nm=String(to.who||'').replace('.', '. ');
       label = to.td ? (to.kind==='int' ? `${nm} pick six!` : `${nm} fumble return TD!`) : `${nm} ${to.kind==='int'?'INT':'recovers'}${to.ret?` · ${to.ret} yd return`:''}`;
+    } else if(puntReturner){
+      const nm=String(puntReturner).replace('.', '. ');
+      label = pre ? `${nm} ${Math.abs(Math.round((last.yd+lp.yds)-punt.catchYd))} yd return` : `${nm} fair catch`;
     } else {
       const t=(typeof lfReadPlay==='function') ? lfReadPlay({id:lp.id, type:lp.type, text:lp.text, yds:lp.yds, team:d.team, athletes:[]}).title : lp.text.slice(0,40);
       label=String(t||'').replace(/ 🎉| 🙌/g,'');
