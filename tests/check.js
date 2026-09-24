@@ -20395,14 +20395,18 @@ function nflverseSharpTables(){
     '11 Personnel','12 Personnel','13 Personnel','21 Personnel','Multi RB Rate','Sub Package Rate','Nickel Rate','Dime+ Rate',
     'Neutral DB Rate','Neutral DB Rate Last 5','Middle Closed Rate','Middle Open Rate','Cover 1','Cover 2','Cover 3'];
   const out={};
-  const metricName=(c)=>({
-    'EPA/DB':'EPA/Pass', 'EPA/PASS':'EPA/Pass', 'EPA/RUSH':'EPA/Rush',
+  const metricName=(c,isDefense)=>({
+    'EPA/DB':isDefense?'EPA/Pass Allowed':'EPA/Pass',
+    'EPA/PASS':isDefense?'EPA/Pass Allowed':'EPA/Pass',
+    'EPA/Rush':isDefense?'EPA/Rush Allowed':'EPA/Rush',
+    'EPA/RUSH':isDefense?'EPA/Rush Allowed':'EPA/Rush',
     'EPA/PASS Allowed':'EPA/Pass Allowed', 'EPA/RUSH Allowed':'EPA/Rush Allowed',
   }[c]||c);
   for(const k in t){
     if(!t[k] || !Array.isArray(t[k].columns)) continue;
     const m=META[k]||{title:k,category:'offense'};
-    const cols=(t[k].columns||[]).filter(c=>!HIDE_LAST5.has(c)).map(metricName);
+    const isDefense=k==='defense';
+    const cols=(t[k].columns||[]).filter(c=>!HIDE_LAST5.has(c)).map(c=>metricName(c,isDefense));
     const teams=t[k].teams;
     if(teams && typeof teams==='object'){
       for(const tm in teams){
@@ -20411,11 +20415,20 @@ function nflverseSharpTables(){
           ['values','ranks'].forEach(part=>{
             if(!row[part]) return;
             for(const old of Object.keys(row[part])){
-              const next=metricName(old);
+              const next=metricName(old,isDefense);
               if(next!==old && row[part][next]==null) row[part][next]=row[part][old];
             }
           });
         }
+      }
+      const firstTeam=teams && teams[Object.keys(teams)[0]];
+      if(isDefense && firstTeam && !Array.isArray(firstTeam) && firstTeam.values && firstTeam.ranks){
+        ['EPA/Pass Allowed','EPA/Rush Allowed'].forEach(col=>{
+          const entries=Object.keys(teams).map(tm=>({tm,v:teams[tm]&&teams[tm].values&&Number(teams[tm].values[col])}))
+            .filter(x=>Number.isFinite(x.v)).sort((a,b)=>a.v-b.v);
+          entries.forEach((x,i)=>{ let rank=i+1; if(i>0 && x.v===entries[i-1].v) rank=entries[i-1].rank; x.rank=rank; });
+          entries.forEach(x=>{ teams[x.tm].ranks[col]=x.rank; });
+        });
       }
     }
     out[k]={columns:cols, title:m.title, category:m.category,
