@@ -1031,7 +1031,9 @@ function advTrendFor(team, tableKey, col, excludeYear){
   for(const y of yrs){
     const tbl=NFLVERSE[y].team[tableKey];
     const rawCol=(tbl.columns||[]).includes(col) ? col
-      : ({'EPA/Pass':'EPA/DB','EPA/Rush':'EPA/Rush','EPA/Pass Allowed':'EPA/PASS Allowed','EPA/Rush Allowed':'EPA/RUSH Allowed'}[col]||col);
+      : (tableKey==='defense'
+          ? ({'EPA/Pass Allowed':'EPA/DB','EPA/Rush Allowed':'EPA/Rush'}[col]||col)
+          : ({'EPA/Pass':'EPA/DB','EPA/Rush':'EPA/Rush'}[col]||col));
     const row=tbl.teams && tbl.teams[team];
     if(!row) continue;
     let v=null, r=null;
@@ -1049,7 +1051,9 @@ function advTrendFor(team, tableKey, col, excludeYear){
     const live=String(excludeYear), agg=_advComputeGeneralRangeTables(live,1,completedWeeks());
     const tbl=agg&&agg[tableKey], row=tbl&&tbl.teams&&tbl.teams[team];
     const liveCol=(tbl&&tbl.columns||[]).includes(col) ? col
-      : ({'EPA/Pass':'EPA/DB','EPA/Rush':'EPA/Rush','EPA/Pass Allowed':'EPA/PASS Allowed','EPA/Rush Allowed':'EPA/RUSH Allowed'}[col]||col);
+      : (tableKey==='defense'
+          ? ({'EPA/Pass Allowed':'EPA/DB','EPA/Rush Allowed':'EPA/Rush'}[col]||col)
+          : ({'EPA/Pass':'EPA/DB','EPA/Rush':'EPA/Rush'}[col]||col));
     if(row && row.values && typeof row.values[liveCol]==='number'){
       pts.push({y:+live, v:row.values[liveCol], r:row.ranks&&row.ranks[liveCol]});
     }
