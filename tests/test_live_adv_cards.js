@@ -24,9 +24,9 @@ app.setNV({'2026':{team:{}, adv_weekly:{cols:EPA_COLS, weeks:[1,2], teams:{
   SEA:[[60,0,30,3,30,-3],[50,5,20,2,30,3]],
 }}}});
 let epa=app.range('2026',1,2);
-chk(epa.offense.teams.DET.values['EPA/DB']===Number((6/65).toFixed(3)), 'EPA/DB is pass EPA divided by pass plays across the selected weeks');
-chk(epa.offense.teams.DET.values['EPA/Rush']===Number((-5/45).toFixed(3)), 'EPA/Rush is rush EPA divided by rush attempts across the selected weeks');
-chk(epa.offense.columns.includes('EPA/DB') && epa.offense.columns.includes('EPA/Rush'), 'live offense table exposes both abbreviated EPA rates');
+chk(epa.offense.teams.DET.values['EPA/PASS']===Number((6/65).toFixed(3)), 'EPA/PASS is pass EPA divided by pass plays across the selected weeks');
+chk(epa.offense.teams.DET.values['EPA/RUSH']===Number((-5/45).toFixed(3)), 'EPA/RUSH is rush EPA divided by rush attempts across the selected weeks');
+chk(epa.offense.columns.includes('EPA/PASS') && epa.offense.columns.includes('EPA/RUSH'), 'live offense table exposes both abbreviated EPA rates');
 
 console.log('=== the week window: PFR pressures and missed tackles when charted ===');
 const COLS=['dl_dropbacks','dl_pressures','dl_no_blitz_obs','dl_no_blitz_pressures','dl_rush_att','dl_rush_stuffed','dl_pfr_obs','dl_pfr_pressures','dl_missed_tackles'];

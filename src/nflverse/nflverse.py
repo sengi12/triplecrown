@@ -56,6 +56,7 @@ PBP_COLS = [
     "pass", "rush", "epa", "success", "yards_gained", "rusher_player_id",
     "fixed_drive", "fixed_drive_result", "series_result", "down",
     "shotgun", "no_huddle", "air_yards", "vegas_wp", "first_down_rush",
+    "home_team", "away_team", "total_home_score", "total_away_score",
 ]
 _QB_ZONE_COLS = [
     "season_type", "posteam", "pass_attempt", "sack", "complete_pass", "yards_gained",
@@ -472,10 +473,12 @@ def _side_table(plays, team_col, last5_weeks, defense=False):
     run_plays = plays[plays["play_type"] == "run"]
     pass_epa = pass_plays.groupby(team_col)["epa"].mean()
     rush_epa = run_plays.groupby(team_col)["epa"].mean()
+    pass_label = "EPA/PASS Allowed" if defense else "EPA/PASS"
+    rush_label = "EPA/RUSH Allowed" if defense else "EPA/RUSH"
     out = pd.DataFrame({
         "EPA/Play": epa.round(3),
-        "EPA/DB": pass_epa.round(3),
-        "EPA/Rush": rush_epa.round(3),
+        pass_label: pass_epa.round(3),
+        rush_label: rush_epa.round(3),
         "Yards Per Play": ypl.round(2),
         "Y/PL Last 5": l5.round(2),
         "Points Per Drive": ppd.round(2),
@@ -502,6 +505,20 @@ def team_metrics(season):
     last5 = weeks[-5:]
     off = _side_table(plays, "posteam", last5)
     dfn = _side_table(plays, "defteam", last5, defense=True)
+    fin = (pbp.groupby("game_id")
+           .agg(home=("home_team", "first"), away=("away_team", "first"),
+                hs=("total_home_score", "max"), as_=("total_away_score", "max"))
+           .reset_index())
+    fin["home"] = fin["home"].replace(NFLVERSE_TO_SEED)
+    fin["away"] = fin["away"].replace(NFLVERSE_TO_SEED)
+    fin["hs"] = pd.to_numeric(fin["hs"], errors="coerce")
+    fin["as_"] = pd.to_numeric(fin["as_"], errors="coerce")
+    points = pd.concat([
+        pd.DataFrame({"team": fin["home"], "scored": fin["hs"], "allowed": fin["as_"]}),
+        pd.DataFrame({"team": fin["away"], "scored": fin["as_"], "allowed": fin["hs"]}),
+    ])
+    off["Points Scored"] = points.groupby("team")["scored"].mean()
+    dfn["Points Allowed"] = points.groupby("team")["allowed"].mean()
     return off, dfn
 
 # ── O-Line / Tendencies / Pace (pbp + PFR + NGS) ─────────────────────────────

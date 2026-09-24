@@ -18,10 +18,10 @@ const app=new Function(code+`return {
 `)();
 
 const NFLV={'2024':{team:{
-  offense:{title:'Offensive Metrics',category:'offense',columns:['EPA/Play','EPA/DB','EPA/Rush','Yards Per Play','Points Per Drive'],teams:{
-    LAR:{values:{'EPA/Play':0.13,'EPA/DB':0.18,'EPA/Rush':-0.05,'Yards Per Play':6.2,'Points Per Drive':2.8},ranks:{'EPA/Play':1,'EPA/DB':1,'EPA/Rush':1,'Yards Per Play':1,'Points Per Drive':1}},
-    CIN:{values:{'EPA/Play':0.0,'EPA/DB':0.02,'EPA/Rush':-0.1,'Yards Per Play':5.3,'Points Per Drive':2.2},ranks:{'EPA/Play':16,'EPA/DB':12,'EPA/Rush':22,'Yards Per Play':14,'Points Per Drive':18}},
-    CLE:{values:{'EPA/Play':-0.19,'EPA/DB':-0.12,'EPA/Rush':-0.2,'Yards Per Play':4.3,'Points Per Drive':1.3},ranks:{'EPA/Play':32,'EPA/DB':32,'EPA/Rush':32,'Yards Per Play':31,'Points Per Drive':30}},
+  offense:{title:'Offensive Metrics',category:'offense',columns:['EPA/Play','EPA/PASS','EPA/RUSH','Points Scored','Yards Per Play','Points Per Drive'],teams:{
+    LAR:{values:{'EPA/Play':0.13,'EPA/PASS':0.18,'EPA/RUSH':-0.05,'Points Scored':28,'Yards Per Play':6.2,'Points Per Drive':2.8},ranks:{'EPA/Play':1,'EPA/PASS':1,'EPA/RUSH':1,'Points Scored':1,'Yards Per Play':1,'Points Per Drive':1}},
+    CIN:{values:{'EPA/Play':0.0,'EPA/PASS':0.02,'EPA/RUSH':-0.1,'Points Scored':22,'Yards Per Play':5.3,'Points Per Drive':2.2},ranks:{'EPA/Play':16,'EPA/PASS':12,'EPA/RUSH':22,'Points Scored':16,'Yards Per Play':14,'Points Per Drive':18}},
+    CLE:{values:{'EPA/Play':-0.19,'EPA/PASS':-0.12,'EPA/RUSH':-0.2,'Points Scored':13,'Yards Per Play':4.3,'Points Per Drive':1.3},ranks:{'EPA/Play':32,'EPA/PASS':32,'EPA/RUSH':32,'Points Scored':32,'Yards Per Play':31,'Points Per Drive':30}},
   }},
   pace:{title:'Pace',category:'offense',columns:['Sec/Play','Off Plays/G'],teams:{
     LAR:{values:{'Sec/Play':28.1,'Off Plays/G':64},ranks:{'Sec/Play':20,'Off Plays/G':10}},
@@ -51,7 +51,7 @@ const teamHtml=app.renderTeamAdvanced('CIN');
 chk(teamHtml.includes('Offensive Metrics'),'shows Offensive Metrics card');
 chk(teamHtml.includes('Pace'),'shows Pace card');
 chk(teamHtml.includes('EPA/Play'),'shows stat labels');
-chk(teamHtml.includes('EPA/DB') && teamHtml.includes('EPA/Rush'),'shows EPA per dropback and rush labels');
+chk(teamHtml.includes('EPA/PASS') && teamHtml.includes('EPA/RUSH') && teamHtml.includes('Points Scored'),'shows offensive Power Score metrics');
 chk(teamHtml.includes('16th')||teamHtml.includes('16'),'shows CIN EPA rank (16)');
 chk(teamHtml.includes("tcInfoPop(event,'advteam')"),'source/methodology prose lives behind the ⓘ button now');
 chk(!teamHtml.includes('Curated'),'does not show curated toggle text');
@@ -68,7 +68,7 @@ app.setPhaseVar('AdvancedLeague');
 app.renderSharpLeague();
 let html=app.getContent();
 chk(html.includes('League-Wide'),'league-wide header');
-chk(html.includes('EPA/DB') && html.includes('EPA/Rush'),'league-wide offense table carries both EPA rate columns');
+chk(html.includes('EPA/PASS') && html.includes('EPA/RUSH') && html.includes('Points Scored'),'league-wide offense table carries Power Score metrics');
 chk(app.getSharpTable()==='offense','defaults to first table');
 chk(html.includes('sr-league-table'),'renders the table');
 const iLAR=html.indexOf('>LAR<'), iCIN=html.indexOf('>CIN<'), iCLE=html.indexOf('>CLE<');
