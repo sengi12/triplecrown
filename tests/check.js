@@ -19749,7 +19749,7 @@ function _advComputeGeneralRangeTables(season, lo, hi){
   const dtendLower=new Set();
   const dlineLower=new Set(['Missed Tackles']);
   const spec={
-    offense:{lower:new Set(['EPA/PASS','EPA/RUSH','Points Scored']), cols:['EPA/Play','EPA/PASS','EPA/RUSH','Points Scored','Yards Per Play','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
+    offense:{lower:new Set(), cols:['EPA/Play','EPA/PASS','EPA/RUSH','Points Scored','Yards Per Play','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
     defense:{lower:defLower, cols:['EPA/Play','EPA/PASS Allowed','EPA/RUSH Allowed','Points Allowed','Yards Per Play','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
     tendencies:{lower:tendLower, cols:['Shotgun Rate','NoHuddle Rate','AirYards/Att','Motion Rate','Play Action Rate','RPO Rate','Screen Rate','Trick Play Rate','Drop Rate']},
     pace:{lower:paceLower, cols:['Neutral DB Rate','Sec/Play','Off Plays/G','Total Plays/G']},
@@ -20116,6 +20116,25 @@ function _renderAdvPowerScore(team, src, opts){
     }, 'note-tag-hit');
 }
 
+// Live current-season trend points use the same cumulative weekly recompute as the card;
+// frozen seasons continue to use the multi-year team tables below.
+function advLiveTrendFor(team, tableKey, col){
+  if(typeof advTeamSeason!=='function' || typeof completedWeeks!=='function' || typeof _advComputeGeneralRangeTables!=='function') return null;
+  const season=String(advTeamSeason()), wk=completedWeeks();
+  if(!(typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season)) || !wk) return null;
+  const pack=NFLVERSE&&NFLVERSE[season]&&NFLVERSE[season].adv_weekly;
+  if(!pack || !Array.isArray(pack.weeks)) return null;
+  const pts=[];
+  pack.weeks.forEach(w=>{
+    w=Number(w); if(!Number.isFinite(w) || w>wk) return;
+    const agg=_advComputeGeneralRangeTables(season,1,w);
+    const tbl=agg&&agg[tableKey], row=tbl&&tbl.teams&&tbl.teams[team];
+    if(!row || row.values[col]==null) return;
+    pts.push({y:w,v:Number(row.values[col]),r:row.ranks[col]});
+  });
+  return pts.length>=2 ? pts : null;
+}
+
 // ── 5-year trends (roadmap: "team progress over the last 5 years") ──────────
 // Every Advanced stat row carries a tiny sparkline: the raw values across the
 // seed's nflverse seasons, endpoint dotted in the CURRENT rank's color. The line
@@ -20210,7 +20229,7 @@ function renderTeamAdvanced(team){
           relevance: noteRelevanceForTableKey(key),
           nav: { type:'advanced', team: useTeam, season: String(advTeamSeason()) },
         }, 'note-tag-hit'):txt}</div>
-        <div class="sr-stat-spark">${(()=>{const tr=advTrendFor(useTeam,key,col); return tr?advSparkSvg(tr, sharpColIsPct(tbl,col), advTeamSeason()):'';})()}</div>
+        <div class="sr-stat-spark">${(()=>{const tr=advLiveTrendFor(useTeam,key,col)||advTrendFor(useTeam,key,col); return tr?advSparkSvg(tr, sharpColIsPct(tbl,col), advTeamSeason()):'';})()}</div>
         <div class="sr-stat-rank">${sharpRankBadge(r)}</div>
       </div>`;
     }).join('');
