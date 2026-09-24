@@ -681,10 +681,12 @@ function _advComputeGeneralRangeTables(season, lo, hi){
 }
 function _advTableForRange(key, baseTable, team){
   if(!baseTable) return baseTable;
-  if(!_advWeekRangeActive(team)) return baseTable;
   if(!_advSeasonCanRange()) return baseTable;
   const [lo,hi]=_advGetWeekRange(team);
   const season=String(advTeamSeason());
+  const liveCurrent = typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season)
+    && typeof completedWeeks==='function' && completedWeeks()>0;
+  if(!_advWeekRangeActive(team) && !liveCurrent) return baseTable;
   if(key==='offensive_line_pass' || key==='offensive_line_run'){
     const agg=_advComputeOlRangeTables(season, lo, hi);
     if(!agg) return baseTable;
@@ -698,7 +700,9 @@ function _advTableForRange(key, baseTable, team){
     const aggTeams=(aggTbl&&aggTbl.teams)||{};
     const outTeams={};
     const allTeams=new Set([...Object.keys(baseTeams), ...Object.keys(aggTeams)]);
-    const cols=(Array.isArray(baseTable.columns) && baseTable.columns.length) ? baseTable.columns : (aggTbl.columns||[]);
+    const cols=(liveCurrent && Array.isArray(aggTbl.columns) && aggTbl.columns.length)
+      ? aggTbl.columns
+      : ((Array.isArray(baseTable.columns) && baseTable.columns.length) ? baseTable.columns : (aggTbl.columns||[]));
     allTeams.forEach(tm=>{
       const b=baseTeams[tm]||{values:{},ranks:{}};
       const a=aggTeams[tm]||{values:{},ranks:{}};
