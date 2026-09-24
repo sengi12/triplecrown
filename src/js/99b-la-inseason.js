@@ -1207,17 +1207,20 @@ function laTrendsView(s){
           '▼ LESS THAN PROJECTED',carRows.filter(x=>x.st.pct<0).reverse().slice(0,12).map((x,i)=>uRow(x,i,'carry volume')).join(''));
       const form=_laUsagePlayers();
       if(form){
-        const stateRows=form.players.filter(p=>keeps(p.name,p.pos)).map(p=>{
+        const allStateRows=form.players.map(p=>{
           const touches=p.tgt+p.carry, comp=p.compTgt+p.compCarry, garbage=p.garbageTgt+p.garbageCarry;
           return {p,touches,comp,garbage,classified:comp+garbage};
         }).filter(x=>x.touches>=4 && x.classified>0);
+        const scopedStateRows=allStateRows.filter(x=>keeps(x.p.name,x.p.pos));
+        const stateRows=scopedStateRows.length ? scopedStateRows : allStateRows;
+        const stateScopeNote=scopedStateRows.length ? '' : ' · showing league-wide data because this scope has no matched player identities';
         const stateRow=(x,i)=>_laTrendRow({id:x.p.id,name:x.p.name,pos:x.p.pos,team:x.p.team}, `${x.comp}/${x.touches} competitive · ${x.garbage} garbage${x.classified<x.touches?` · ${x.touches-x.classified} unclassified`:''}`, _laVerdict(`${Math.round(x.comp/x.touches*100)}%`, 'competitive volume', x.comp/x.touches>=0.8?'la-trnd-up':(x.comp/x.touches<0.5?'la-trnd-dn':'')), '', i+1);
         const stateTarget=stateRows.filter(x=>x.p.tgt>0).sort((a,b)=>b.comp-a.comp || b.touches-a.touches);
         const stateCarry=stateRows.filter(x=>x.p.carry>0).sort((a,b)=>b.comp-a.comp || b.touches-a.touches);
-        body += two('GAMEPLAN VOLUME · TARGETS',`pre-play win probability: competitive 5–95% · garbage outside that range · thru wk ${wk}`,
+        body += two('GAMEPLAN VOLUME · TARGETS',`pre-play win probability: competitive 5–95% · garbage outside that range · thru wk ${wk}${stateScopeNote}`,
           'MOST COMPETITIVE',stateTarget.slice(0,12).map(stateRow).join(''),
           'MOST GARBAGE-TIME DEPENDENT',stateTarget.slice().sort((a,b)=>b.garbage/b.touches-a.garbage/a.touches).slice(0,12).map(stateRow).join(''))
-          + two('GAMEPLAN VOLUME · CARRIES',`the same game-state split for rushing volume · unclassified plays lacked win probability`,
+          + two('GAMEPLAN VOLUME · CARRIES',`the same game-state split for rushing volume · unclassified plays lacked win probability${stateScopeNote}`,
           'MOST COMPETITIVE',stateCarry.slice(0,12).map(stateRow).join(''),
           'MOST GARBAGE-TIME DEPENDENT',stateCarry.slice().sort((a,b)=>b.garbage/b.touches-a.garbage/a.touches).slice(0,12).map(stateRow).join(''));
       }

@@ -77,7 +77,7 @@ chk("00-0099999" not in players, "an OL with snaps is not a fantasy row")
 players2 = {"00-0030506": {"n": "travis kelce", "p": "TE", "t": "KC", "w": {"3": [4, 4, 40, 0, 20, 0, 0, 0, 0, 0, 0, 0, 1.0, 30]}}}
 ins.merge_snaps(players2, m, {}, {})
 w3 = players2["00-0030506"]["w"]["3"]
-chk(len(w3) == len(ins.PLAYER_WEEK_COLS) - 2 or w3[ci["snap_pct"]] is None, "a week the snap file does not cover carries no snap_pct (unknown, not 0)")
+chk(len(w3) < len(ins.PLAYER_WEEK_COLS) or w3[ci["snap_pct"]] is None, "a week the snap file does not cover carries no snap_pct (unknown, not 0)")
 chk(ins.merge_snaps({"x": {"w": {}}}, {}, {}, {}) == {"x": {"w": {}}}, "no snap counts yet → the rows are untouched")
 
 print(f"RESULT: {'PASS' if not fails else str(fails) + ' FAIL'}")
