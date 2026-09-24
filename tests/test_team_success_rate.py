@@ -1,7 +1,7 @@
-"""Team rush / pass success rate on the Advanced tab's offense and defense tables: the whole
-team's rushes and dropbacks (nflverse `success`), ranked with the league — higher is better on
-offense, lower (allowed) on defense — from the one builder the frozen seasons and the in-season
-sidecar share."""
+"""Team rush / pass success rate and EPA split rates on the Advanced tab's offense and defense
+tables: the whole team's rushes and dropbacks (nflverse `success`), ranked with the league —
+higher is better on offense, lower (allowed) on defense — from the one builder the frozen
+seasons and the in-season sidecar share."""
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -44,7 +44,7 @@ chk("Rush Success Rate" in off.columns and "Pass Success Rate" in off.columns, "
 chk(off.loc["HOT", "Rush Success Rate"] == 75.0 and off.loc["HOT", "Pass Success Rate"] == 25.0
     and off.loc["COLD", "Rush Success Rate"] == 25.0 and off.loc["COLD", "Pass Success Rate"] == 75.0, "the rates are the team's own: HOT 75% rush / 25% pass, COLD the reverse")
 chk(dfn.loc["COLD", "Rush Success Rate"] == 75.0 and dfn.loc["HOT", "Pass Success Rate"] == 75.0, "the defense table holds the rates ALLOWED (COLD allowed HOT's 75% rush)")
-chk(len(off.columns) == 8, "the six Sharp-shaped columns plus the two success rates")
+chk(len(off.columns) == 10, "the six Sharp-shaped columns, two success rates, and two EPA split rates")
 
 print("=== the ranks ===")
 so = N._shape_team(off)
