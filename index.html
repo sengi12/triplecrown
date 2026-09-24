@@ -25625,6 +25625,16 @@ function advTrendFor(team, tableKey, col, excludeYear){
     }
     if(typeof v==='number') pts.push({y:+y, v, r});
   }
+  if(excludeYear!=null && typeof _advComputeGeneralRangeTables==='function'
+     && typeof completedWeeks==='function' && completedWeeks()>0){
+    const live=String(excludeYear), agg=_advComputeGeneralRangeTables(live,1,completedWeeks());
+    const tbl=agg&&agg[tableKey], row=tbl&&tbl.teams&&tbl.teams[team];
+    const liveCol=(tbl&&tbl.columns||[]).includes(col) ? col
+      : ({'EPA/Pass':'EPA/DB','EPA/Rush':'EPA/Rush','EPA/Pass Allowed':'EPA/PASS Allowed','EPA/Rush Allowed':'EPA/RUSH Allowed'}[col]||col);
+    if(row && row.values && typeof row.values[liveCol]==='number'){
+      pts.push({y:+live, v:row.values[liveCol], r:row.ranks&&row.ranks[liveCol]});
+    }
+  }
   // Two seasons is already a direction (a stat FTN only charts from 2022, a metric added
   // mid-history) — only a single point renders nothing. Missing years simply aren't points.
   return pts.length>=2 ? pts : null;

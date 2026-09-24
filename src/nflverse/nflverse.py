@@ -4901,7 +4901,8 @@ def coaching_scheme(season, min_group_plays=1, max_groups=40, allow_charting_onl
 # Emits a parallel `nflverse` block shaped like the existing Sharp (team values/ranks) and
 # Sumer (player values-list) tables, so the app can A/B them against the scraped originals.
 # Only the high-fidelity columns validated against Sharp/Sumer are included.
-_DEF_LOWER_BETTER = ["Yards Per Play", "Y/PL Last 5", "Points Per Drive",
+_DEF_LOWER_BETTER = ["EPA/Pass Allowed", "EPA/Rush Allowed",
+                     "Yards Per Play", "Y/PL Last 5", "Points Per Drive",
                      "Explosive Play Rate", "Down Conversion Rate",
                      "Rush Success Rate", "Pass Success Rate"]
 

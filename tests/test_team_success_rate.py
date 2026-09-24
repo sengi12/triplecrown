@@ -51,6 +51,9 @@ so = N._shape_team(off)
 sd = N._shape_team(dfn, lower_better=N._DEF_LOWER_BETTER)
 chk(so["teams"]["HOT"]["ranks"]["Rush Success Rate"] == 1 and so["teams"]["COLD"]["ranks"]["Pass Success Rate"] == 1, "offense: the higher rate ranks first")
 chk(sd["teams"]["HOT"]["ranks"]["Rush Success Rate"] == 1 and sd["teams"]["COLD"]["ranks"]["Rush Success Rate"] == 2, "defense: the lower rate allowed ranks first")
+chk("EPA/Pass Allowed" in dfn.columns and "EPA/Rush Allowed" in dfn.columns
+    and "EPA/Pass Allowed" in N._DEF_LOWER_BETTER and "EPA/Rush Allowed" in N._DEF_LOWER_BETTER,
+    "defensive EPA allowed columns are explicitly lower-is-better")
 
 print("=== no success column ===")
 bare = N._side_table(d.drop(columns=["success"]), "posteam", [1])
