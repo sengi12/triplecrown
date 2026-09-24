@@ -104,7 +104,13 @@ function hubFormMap(sc){
         rushing_yards:r[ci.rush_yd]||0, rushing_tds:r[ci.rush_td]||0, rushing_attempts:r[ci.carry]||0,
         passing_yards:r[ci.pass_yd]||0, passing_tds:r[ci.pass_td]||0, passing_attempts:r[ci.pass_att]||0,
         interceptions_thrown:r[ci.pass_int]||0, fumbles_lost:0}, sc);
-      return {wk:w, pts, tgt:r[ci.tgt]||0, teamTgt:r[ci.team_tgt]||0, carry:r[ci.carry]||0, touches:(r[ci.tgt]||0)+(r[ci.carry]||0),
+            const compTgt=r[ci.comp_tgt]||0, garbageTgt=r[ci.garbage_tgt]||0;
+            const compCarry=r[ci.comp_carry]||0, garbageCarry=r[ci.garbage_carry]||0;
+            const compTouches=compTgt+compCarry, garbageTouches=garbageTgt+garbageCarry;
+            const touches=(r[ci.tgt]||0)+(r[ci.carry]||0);
+            return {wk:w, pts, tgt:r[ci.tgt]||0, teamTgt:r[ci.team_tgt]||0, carry:r[ci.carry]||0, touches,
+              compTgt, garbageTgt, compCarry, garbageCarry, compTouches, garbageTouches,
+              compShare: touches ? compTouches/touches : null, garbageShare: touches ? garbageTouches/touches : null,
               tds:(r[ci.rec_td]||0)+(r[ci.rush_td]||0)+(r[ci.pass_td]||0)};
     });
     const last3 = lines.slice(-3);
@@ -249,6 +255,13 @@ function hubDurability(row, ctx, teammates){
     const shareOf=(w)=> (pos==='RB') ? w.carry : (w.teamTgt ? w.tgt/w.teamTgt : 0);
     const big=(v)=> (pos==='RB') ? v>=12 : v>=0.18;
     const lastShare=shareOf(last);
+    if(last.compShare!=null && last.compTouches>=4 && last.compShare>=0.8){
+      out.sticky.push(`meaningful-game volume ${last.compTouches}/${last.touches} touches`);
+      d+=0.10;
+    } else if(last.garbageShare!=null && last.touches>=6 && last.garbageShare>=0.4){
+      out.fleeting.push(`garbage-time volume ${last.garbageTouches}/${last.touches} touches`);
+      d-=0.10;
+    }
     if(big(lastShare)){
       const prior=weeks.slice(0,-1);
       const sustained = prior.length>=1 && prior.slice(-2).every(w=>big(shareOf(w)*0.85));

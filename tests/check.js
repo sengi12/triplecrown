@@ -29906,9 +29906,16 @@ function _ltUsage(week){
     const p=pw.players[g]; const r=p.w&&p.w[String(wk)]; if(!r) continue;
     const v=(c)=>+(r[ci[c]]||0);
     const tgt=v('tgt'), tt=v('team_tgt'), carry=v('carry');
+    const compTgt=v('comp_tgt'), garbageTgt=v('garbage_tgt');
+    const compCarry=v('comp_carry'), garbageCarry=v('garbage_carry');
+    const compTouches=compTgt+compCarry, garbageTouches=garbageTgt+garbageCarry;
     rows.push({ gsis:g, id:(typeof laPidFromGsis==='function')?laPidFromGsis(g):null, name:p.n, pos:p.p, team:p.t, wk,
       tgt, teamTgt:tt, share:tt?tgt/tt:0, rec:v('rec'), recYd:v('rec_yd'), recTd:v('rec_td'), airYd:v('air_yd'),
-      carry, rushYd:v('rush_yd'), rushTd:v('rush_td'), touches:tgt+carry, epa:v('epa_touch'), passAtt:v('pass_att'), passYd:v('pass_yd'), passTd:v('pass_td') });
+      carry, rushYd:v('rush_yd'), rushTd:v('rush_td'), touches:tgt+carry,
+      compTgt, garbageTgt, compCarry, garbageCarry, compTouches, garbageTouches,
+      compShare:(tgt+carry)?compTouches/(tgt+carry):null,
+      garbageShare:(tgt+carry)?garbageTouches/(tgt+carry):null,
+      epa:v('epa_touch'), passAtt:v('pass_att'), passYd:v('pass_yd'), passTd:v('pass_td') });
   }
   return {wk, weeks, rows};
 }
@@ -29917,6 +29924,7 @@ function _ltUsageLine(u){
   if(u.pos==='QB' && u.passAtt) bits.push(`${u.passAtt} att · ${u.passYd} yds · ${u.passTd} TD`);
   if(u.tgt || u.pos!=='QB') bits.push(`${Math.round(u.share*100)}% of team targets (${u.tgt} tgt${u.teamTgt?` of ${u.teamTgt}`:''}, ${u.rec} rec, ${u.recYd} yds${u.recTd?`, ${u.recTd} TD`:''})`);
   if(u.carry) bits.push(`${u.carry} car · ${u.rushYd} yds${u.rushTd?` · ${u.rushTd} TD`:''}`);
+  if(u.compTouches || u.garbageTouches) bits.push(`gameplan: ${u.compTouches} competitive · ${u.garbageTouches} garbage (${Math.round((u.compShare||0)*100)}% / ${Math.round((u.garbageShare||0)*100)}% of touches)`);
   if(u.touches) bits.push(`EPA/touch ${u.epa>=0?'+':''}${(+u.epa).toFixed(2)}`);
   return bits.join(' · ');
 }
@@ -38408,6 +38416,8 @@ function _laUsagePlayers(){
     const shareOf=(set)=>{ let tg=0,tt=0; (set||weeks).forEach(w=>{ const r=p.w[String(w)]||[]; tg+=r[ci['tgt']]||0; tt+=r[ci['team_tgt']]||0; }); return tt?100*tg/tt:0; };
     return {g, id:laPidFromGsis(g), name:p.n, pos:p.p, team:p.t, weeks, last3,
       tgt:sum('tgt'), rec_td:sum('rec_td'), carry:sum('carry'), rush_td:sum('rush_td'),
+      compTgt:sum('comp_tgt'), garbageTgt:sum('garbage_tgt'),
+      compCarry:sum('comp_carry'), garbageCarry:sum('garbage_carry'),
       tgt3:sum('tgt',last3), carry3:sum('carry',last3),
       share:shareOf(), share3:shareOf(last3), gp:weeks.length, gp3:last3.length};
   });
@@ -38492,6 +38502,22 @@ function laTrendsView(s){
         + two('CARRIES VS PROJECTION','rushing workload against the projected share (RB)',
           '▲ MORE THAN PROJECTED',carRows.filter(x=>x.st.pct>0).slice(0,12).map((x,i)=>uRow(x,i,'carry volume')).join(''),
           '▼ LESS THAN PROJECTED',carRows.filter(x=>x.st.pct<0).reverse().slice(0,12).map((x,i)=>uRow(x,i,'carry volume')).join(''));
+      const form=_laUsagePlayers();
+      if(form){
+        const stateRows=form.players.filter(p=>keeps(p.name,p.pos)).map(p=>{
+          const touches=p.tgt+p.carry, comp=p.compTgt+p.compCarry, garbage=p.garbageTgt+p.garbageCarry;
+          return {p,touches,comp,garbage,classified:comp+garbage};
+        }).filter(x=>x.touches>=4 && x.classified>0);
+        const stateRow=(x,i)=>_laTrendRow({id:x.p.id,name:x.p.name,pos:x.p.pos,team:x.p.team}, `${x.comp}/${x.touches} competitive · ${x.garbage} garbage${x.classified<x.touches?` · ${x.touches-x.classified} unclassified`:''}`, _laVerdict(`${Math.round(x.comp/x.touches*100)}%`, 'competitive volume', x.comp/x.touches>=0.8?'la-trnd-up':(x.comp/x.touches<0.5?'la-trnd-dn':'')), '', i+1);
+        const stateTarget=stateRows.filter(x=>x.p.tgt>0).sort((a,b)=>b.comp-a.comp || b.touches-a.touches);
+        const stateCarry=stateRows.filter(x=>x.p.carry>0).sort((a,b)=>b.comp-a.comp || b.touches-a.touches);
+        body += two('GAMEPLAN VOLUME · TARGETS',`pre-play win probability: competitive 5–95% · garbage outside that range · thru wk ${wk}`,
+          'MOST COMPETITIVE',stateTarget.slice(0,12).map(stateRow).join(''),
+          'MOST GARBAGE-TIME DEPENDENT',stateTarget.slice().sort((a,b)=>b.garbage/b.touches-a.garbage/a.touches).slice(0,12).map(stateRow).join(''))
+          + two('GAMEPLAN VOLUME · CARRIES',`the same game-state split for rushing volume · unclassified plays lacked win probability`,
+          'MOST COMPETITIVE',stateCarry.slice(0,12).map(stateRow).join(''),
+          'MOST GARBAGE-TIME DEPENDENT',stateCarry.slice().sort((a,b)=>b.garbage/b.touches-a.garbage/a.touches).slice(0,12).map(stateRow).join(''));
+      }
     }
   } else if(tab==='snaps'){
     // The snap tracker (99h-la-snaps.js): Sleeper's weekly snap counts, the sidecar's
@@ -38997,7 +39023,13 @@ function hubFormMap(sc){
         rushing_yards:r[ci.rush_yd]||0, rushing_tds:r[ci.rush_td]||0, rushing_attempts:r[ci.carry]||0,
         passing_yards:r[ci.pass_yd]||0, passing_tds:r[ci.pass_td]||0, passing_attempts:r[ci.pass_att]||0,
         interceptions_thrown:r[ci.pass_int]||0, fumbles_lost:0}, sc);
-      return {wk:w, pts, tgt:r[ci.tgt]||0, teamTgt:r[ci.team_tgt]||0, carry:r[ci.carry]||0, touches:(r[ci.tgt]||0)+(r[ci.carry]||0),
+            const compTgt=r[ci.comp_tgt]||0, garbageTgt=r[ci.garbage_tgt]||0;
+            const compCarry=r[ci.comp_carry]||0, garbageCarry=r[ci.garbage_carry]||0;
+            const compTouches=compTgt+compCarry, garbageTouches=garbageTgt+garbageCarry;
+            const touches=(r[ci.tgt]||0)+(r[ci.carry]||0);
+            return {wk:w, pts, tgt:r[ci.tgt]||0, teamTgt:r[ci.team_tgt]||0, carry:r[ci.carry]||0, touches,
+              compTgt, garbageTgt, compCarry, garbageCarry, compTouches, garbageTouches,
+              compShare: touches ? compTouches/touches : null, garbageShare: touches ? garbageTouches/touches : null,
               tds:(r[ci.rec_td]||0)+(r[ci.rush_td]||0)+(r[ci.pass_td]||0)};
     });
     const last3 = lines.slice(-3);
@@ -39142,6 +39174,13 @@ function hubDurability(row, ctx, teammates){
     const shareOf=(w)=> (pos==='RB') ? w.carry : (w.teamTgt ? w.tgt/w.teamTgt : 0);
     const big=(v)=> (pos==='RB') ? v>=12 : v>=0.18;
     const lastShare=shareOf(last);
+    if(last.compShare!=null && last.compTouches>=4 && last.compShare>=0.8){
+      out.sticky.push(`meaningful-game volume ${last.compTouches}/${last.touches} touches`);
+      d+=0.10;
+    } else if(last.garbageShare!=null && last.touches>=6 && last.garbageShare>=0.4){
+      out.fleeting.push(`garbage-time volume ${last.garbageTouches}/${last.touches} touches`);
+      d-=0.10;
+    }
     if(big(lastShare)){
       const prior=weeks.slice(0,-1);
       const sustained = prior.length>=1 && prior.slice(-2).every(w=>big(shareOf(w)*0.85));

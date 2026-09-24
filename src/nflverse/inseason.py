@@ -93,6 +93,9 @@ PLAYER_WEEK_COLS = ["tgt", "rec", "rec_yd", "rec_td", "air_yd",
                     "carry", "rush_yd", "rush_td",
                     "pass_att", "pass_yd", "pass_td", "pass_int",
                     "epa_touch", "team_tgt",
+                    "comp_tgt", "close_tgt", "garbage_tgt", "over_tgt",
+                    "comp_carry", "close_carry", "garbage_carry", "over_carry",
+                    "team_comp_tgt", "team_garbage_tgt", "team_comp_carry", "team_garbage_carry",
                     # nflverse snap counts (PFR): offensive snaps and the share of the team's,
                     # as an integer percent. The app's snap tracker reads Sleeper's own snap
                     # fields first and falls back to these where Sleeper left a player-week
@@ -167,6 +170,7 @@ def _weekly_frames(season):
             "pass_attempt", "complete_pass", "sack",
             "passing_yards", "receiving_yards", "rushing_yards", "air_yards",
             "pass_touchdown", "rush_touchdown", "interception", "epa",
+            "vegas_wp",
             "passer_player_id", "receiver_player_id", "rusher_player_id"]
     pbp = _nfl._load_pbp(season, cols)
     pbp = pbp[(pbp["season_type"] == "REG") & pbp["posteam"].notna()].copy()
@@ -182,6 +186,11 @@ def _weekly_frames(season):
     for c in ("pass_attempt", "complete_pass", "sack", "pass_touchdown",
               "rush_touchdown", "interception"):
         pbp[c] = pd.to_numeric(pbp[c], errors="coerce").fillna(0).astype(int)
+    pbp["vegas_wp"] = pd.to_numeric(pbp["vegas_wp"], errors="coerce")
+    pbp["_comp"] = pbp["vegas_wp"].between(0.05, 0.95, inclusive="both")
+    pbp["_close"] = pbp["vegas_wp"].between(0.20, 0.80, inclusive="both")
+    pbp["_garbage"] = pbp["vegas_wp"].notna() & ~pbp["_comp"]
+    pbp["_over"] = pbp["vegas_wp"].notna() & ((pbp["vegas_wp"] <= 0.02) | (pbp["vegas_wp"] >= 0.98))
     return pbp
 
 
@@ -207,6 +216,7 @@ def build_player_weekly(season, pbp):
     # A target = a pass attempt (sacks excluded) with a charted receiver.
     tgt = pbp[(pbp["pass_attempt"] == 1) & (pbp["sack"] == 0) & pbp["receiver_player_id"].notna()]
     team_tgts = tgt.groupby(["posteam", "week"]).size()
+    team_state_tgts = tgt.groupby(["posteam", "week"])[["_comp", "_garbage"]].sum()
     for (gid, team, wk), grp in tgt.groupby(["receiver_player_id", "posteam", "week"]):
         row = line(node(gid, team), wk)
         row[ci["tgt"]] += len(grp)
@@ -216,14 +226,29 @@ def build_player_weekly(season, pbp):
         row[ci["air_yd"]] = _r1(row[ci["air_yd"]] + grp["air_yards"].sum())
         row[ci["epa_touch"]] = _r1(row[ci["epa_touch"]] + grp["epa"].sum())
         row[ci["team_tgt"]] = int(team_tgts.get((team, wk), 0))
+        row[ci["comp_tgt"]] += int(grp["_comp"].sum())
+        row[ci["close_tgt"]] += int((grp["_close"] & grp["vegas_wp"].notna()).sum())
+        row[ci["garbage_tgt"]] += int(grp["_garbage"].sum())
+        row[ci["over_tgt"]] += int(grp["_over"].sum())
+        if (team, wk) in team_state_tgts.index:
+            row[ci["team_comp_tgt"]] = int(team_state_tgts.loc[(team, wk), "_comp"])
+            row[ci["team_garbage_tgt"]] = int(team_state_tgts.loc[(team, wk), "_garbage"])
 
     rush = pbp[(pbp["play_type"] == "run") & pbp["rusher_player_id"].notna()]
+    team_state_carries = rush.groupby(["posteam", "week"])[["_comp", "_garbage"]].sum()
     for (gid, team, wk), grp in rush.groupby(["rusher_player_id", "posteam", "week"]):
         row = line(node(gid, team), wk)
         row[ci["carry"]] += len(grp)
         row[ci["rush_yd"]] = _r1(row[ci["rush_yd"]] + grp["rushing_yards"].sum())
         row[ci["rush_td"]] += int(grp["rush_touchdown"].sum())
         row[ci["epa_touch"]] = _r1(row[ci["epa_touch"]] + grp["epa"].sum())
+        row[ci["comp_carry"]] += int(grp["_comp"].sum())
+        row[ci["close_carry"]] += int((grp["_close"] & grp["vegas_wp"].notna()).sum())
+        row[ci["garbage_carry"]] += int(grp["_garbage"].sum())
+        row[ci["over_carry"]] += int(grp["_over"].sum())
+        if (team, wk) in team_state_carries.index:
+            row[ci["team_comp_carry"]] = int(team_state_carries.loc[(team, wk), "_comp"])
+            row[ci["team_garbage_carry"]] = int(team_state_carries.loc[(team, wk), "_garbage"])
 
     qb = pbp[(pbp["pass_attempt"] == 1) & pbp["passer_player_id"].notna()]
     for (gid, team, wk), grp in qb.groupby(["passer_player_id", "posteam", "week"]):

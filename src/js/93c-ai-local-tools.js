@@ -199,9 +199,16 @@ function _ltUsage(week){
     const p=pw.players[g]; const r=p.w&&p.w[String(wk)]; if(!r) continue;
     const v=(c)=>+(r[ci[c]]||0);
     const tgt=v('tgt'), tt=v('team_tgt'), carry=v('carry');
+    const compTgt=v('comp_tgt'), garbageTgt=v('garbage_tgt');
+    const compCarry=v('comp_carry'), garbageCarry=v('garbage_carry');
+    const compTouches=compTgt+compCarry, garbageTouches=garbageTgt+garbageCarry;
     rows.push({ gsis:g, id:(typeof laPidFromGsis==='function')?laPidFromGsis(g):null, name:p.n, pos:p.p, team:p.t, wk,
       tgt, teamTgt:tt, share:tt?tgt/tt:0, rec:v('rec'), recYd:v('rec_yd'), recTd:v('rec_td'), airYd:v('air_yd'),
-      carry, rushYd:v('rush_yd'), rushTd:v('rush_td'), touches:tgt+carry, epa:v('epa_touch'), passAtt:v('pass_att'), passYd:v('pass_yd'), passTd:v('pass_td') });
+      carry, rushYd:v('rush_yd'), rushTd:v('rush_td'), touches:tgt+carry,
+      compTgt, garbageTgt, compCarry, garbageCarry, compTouches, garbageTouches,
+      compShare:(tgt+carry)?compTouches/(tgt+carry):null,
+      garbageShare:(tgt+carry)?garbageTouches/(tgt+carry):null,
+      epa:v('epa_touch'), passAtt:v('pass_att'), passYd:v('pass_yd'), passTd:v('pass_td') });
   }
   return {wk, weeks, rows};
 }
@@ -210,6 +217,7 @@ function _ltUsageLine(u){
   if(u.pos==='QB' && u.passAtt) bits.push(`${u.passAtt} att · ${u.passYd} yds · ${u.passTd} TD`);
   if(u.tgt || u.pos!=='QB') bits.push(`${Math.round(u.share*100)}% of team targets (${u.tgt} tgt${u.teamTgt?` of ${u.teamTgt}`:''}, ${u.rec} rec, ${u.recYd} yds${u.recTd?`, ${u.recTd} TD`:''})`);
   if(u.carry) bits.push(`${u.carry} car · ${u.rushYd} yds${u.rushTd?` · ${u.rushTd} TD`:''}`);
+  if(u.compTouches || u.garbageTouches) bits.push(`gameplan: ${u.compTouches} competitive · ${u.garbageTouches} garbage (${Math.round((u.compShare||0)*100)}% / ${Math.round((u.garbageShare||0)*100)}% of touches)`);
   if(u.touches) bits.push(`EPA/touch ${u.epa>=0?'+':''}${(+u.epa).toFixed(2)}`);
   return bits.join(' · ');
 }

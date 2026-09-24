@@ -1119,6 +1119,8 @@ function _laUsagePlayers(){
     const shareOf=(set)=>{ let tg=0,tt=0; (set||weeks).forEach(w=>{ const r=p.w[String(w)]||[]; tg+=r[ci['tgt']]||0; tt+=r[ci['team_tgt']]||0; }); return tt?100*tg/tt:0; };
     return {g, id:laPidFromGsis(g), name:p.n, pos:p.p, team:p.t, weeks, last3,
       tgt:sum('tgt'), rec_td:sum('rec_td'), carry:sum('carry'), rush_td:sum('rush_td'),
+      compTgt:sum('comp_tgt'), garbageTgt:sum('garbage_tgt'),
+      compCarry:sum('comp_carry'), garbageCarry:sum('garbage_carry'),
       tgt3:sum('tgt',last3), carry3:sum('carry',last3),
       share:shareOf(), share3:shareOf(last3), gp:weeks.length, gp3:last3.length};
   });
@@ -1203,6 +1205,22 @@ function laTrendsView(s){
         + two('CARRIES VS PROJECTION','rushing workload against the projected share (RB)',
           '▲ MORE THAN PROJECTED',carRows.filter(x=>x.st.pct>0).slice(0,12).map((x,i)=>uRow(x,i,'carry volume')).join(''),
           '▼ LESS THAN PROJECTED',carRows.filter(x=>x.st.pct<0).reverse().slice(0,12).map((x,i)=>uRow(x,i,'carry volume')).join(''));
+      const form=_laUsagePlayers();
+      if(form){
+        const stateRows=form.players.filter(p=>keeps(p.name,p.pos)).map(p=>{
+          const touches=p.tgt+p.carry, comp=p.compTgt+p.compCarry, garbage=p.garbageTgt+p.garbageCarry;
+          return {p,touches,comp,garbage,classified:comp+garbage};
+        }).filter(x=>x.touches>=4 && x.classified>0);
+        const stateRow=(x,i)=>_laTrendRow({id:x.p.id,name:x.p.name,pos:x.p.pos,team:x.p.team}, `${x.comp}/${x.touches} competitive · ${x.garbage} garbage${x.classified<x.touches?` · ${x.touches-x.classified} unclassified`:''}`, _laVerdict(`${Math.round(x.comp/x.touches*100)}%`, 'competitive volume', x.comp/x.touches>=0.8?'la-trnd-up':(x.comp/x.touches<0.5?'la-trnd-dn':'')), '', i+1);
+        const stateTarget=stateRows.filter(x=>x.p.tgt>0).sort((a,b)=>b.comp-a.comp || b.touches-a.touches);
+        const stateCarry=stateRows.filter(x=>x.p.carry>0).sort((a,b)=>b.comp-a.comp || b.touches-a.touches);
+        body += two('GAMEPLAN VOLUME · TARGETS',`pre-play win probability: competitive 5–95% · garbage outside that range · thru wk ${wk}`,
+          'MOST COMPETITIVE',stateTarget.slice(0,12).map(stateRow).join(''),
+          'MOST GARBAGE-TIME DEPENDENT',stateTarget.slice().sort((a,b)=>b.garbage/b.touches-a.garbage/a.touches).slice(0,12).map(stateRow).join(''))
+          + two('GAMEPLAN VOLUME · CARRIES',`the same game-state split for rushing volume · unclassified plays lacked win probability`,
+          'MOST COMPETITIVE',stateCarry.slice(0,12).map(stateRow).join(''),
+          'MOST GARBAGE-TIME DEPENDENT',stateCarry.slice().sort((a,b)=>b.garbage/b.touches-a.garbage/a.touches).slice(0,12).map(stateRow).join(''));
+      }
     }
   } else if(tab==='snaps'){
     // The snap tracker (99h-la-snaps.js): Sleeper's weekly snap counts, the sidecar's
