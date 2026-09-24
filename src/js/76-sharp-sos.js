@@ -72,10 +72,29 @@ function nflverseSharpTables(){
     '11 Personnel','12 Personnel','13 Personnel','21 Personnel','Multi RB Rate','Sub Package Rate','Nickel Rate','Dime+ Rate',
     'Neutral DB Rate','Neutral DB Rate Last 5','Middle Closed Rate','Middle Open Rate','Cover 1','Cover 2','Cover 3'];
   const out={};
+  const metricName=(c)=>({
+    'EPA/DB':'EPA/Pass', 'EPA/PASS':'EPA/Pass', 'EPA/RUSH':'EPA/Rush',
+    'EPA/PASS Allowed':'EPA/Pass Allowed', 'EPA/RUSH Allowed':'EPA/Rush Allowed',
+  }[c]||c);
   for(const k in t){
     if(!t[k] || !Array.isArray(t[k].columns)) continue;
     const m=META[k]||{title:k,category:'offense'};
-    const cols=(t[k].columns||[]).filter(c=>!HIDE_LAST5.has(c));
+    const cols=(t[k].columns||[]).filter(c=>!HIDE_LAST5.has(c)).map(metricName);
+    const teams=t[k].teams;
+    if(teams && typeof teams==='object'){
+      for(const tm in teams){
+        const row=teams[tm];
+        if(row && !Array.isArray(row) && row.values){
+          ['values','ranks'].forEach(part=>{
+            if(!row[part]) return;
+            for(const old of Object.keys(row[part])){
+              const next=metricName(old);
+              if(next!==old && row[part][next]==null) row[part][next]=row[part][old];
+            }
+          });
+        }
+      }
+    }
     out[k]={columns:cols, title:m.title, category:m.category,
             pct_cols:cols.filter(c=>PCT.includes(c)), teams:t[k].teams};
     // An inferred table (the season in progress, before its participation file): the card

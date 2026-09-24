@@ -473,8 +473,8 @@ def _side_table(plays, team_col, last5_weeks, defense=False):
     run_plays = plays[plays["play_type"] == "run"]
     pass_epa = pass_plays.groupby(team_col)["epa"].mean()
     rush_epa = run_plays.groupby(team_col)["epa"].mean()
-    pass_label = "EPA/PASS Allowed" if defense else "EPA/PASS"
-    rush_label = "EPA/RUSH Allowed" if defense else "EPA/RUSH"
+    pass_label = "EPA/Pass Allowed" if defense else "EPA/Pass"
+    rush_label = "EPA/Rush Allowed" if defense else "EPA/Rush"
     out = pd.DataFrame({
         "EPA/Play": epa.round(3),
         pass_label: pass_epa.round(3),

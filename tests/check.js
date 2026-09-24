@@ -19669,8 +19669,8 @@ function _advComputeGeneralRangeTables(season, lo, hi){
     teams[tm]={
       offense:{
         'EPA/Play': _advNum(offPlays>0 ? (sum.off_epa/offPlays) : null, 3),
-        'EPA/PASS': _advNum((sum.off_pass_plays||0)>0 ? (sum.off_pass_epa/sum.off_pass_plays) : null, 3),
-        'EPA/RUSH': _advNum((sum.off_run_plays||0)>0 ? (sum.off_run_epa/sum.off_run_plays) : null, 3),
+        'EPA/Pass': _advNum((sum.off_pass_plays||0)>0 ? (sum.off_pass_epa/sum.off_pass_plays) : null, 3),
+        'EPA/Rush': _advNum((sum.off_run_plays||0)>0 ? (sum.off_run_epa/sum.off_run_plays) : null, 3),
         'Points Scored': _advNum((sum.pace_games||0)>0 ? (sum.off_pts/sum.pace_games) : null, 1),
         'Yards Per Play': _advNum(offPlays>0 ? (sum.off_yards/offPlays) : null, 2),
         'Points Per Drive': _advNum(offDriveCt>0 ? (sum.off_drive_pts/offDriveCt) : null, 2),
@@ -19679,8 +19679,8 @@ function _advComputeGeneralRangeTables(season, lo, hi){
       },
       defense:{
         'EPA/Play': _advNum(defPlays>0 ? (-(sum.def_epa_allowed/defPlays)) : null, 3),
-        'EPA/PASS Allowed': _advNum((sum.def_pass_plays||0)>0 ? (sum.def_pass_epa_allowed/sum.def_pass_plays) : null, 3),
-        'EPA/RUSH Allowed': _advNum((sum.def_run_plays||0)>0 ? (sum.def_run_epa_allowed/sum.def_run_plays) : null, 3),
+        'EPA/Pass Allowed': _advNum((sum.def_pass_plays||0)>0 ? (sum.def_pass_epa_allowed/sum.def_pass_plays) : null, 3),
+        'EPA/Rush Allowed': _advNum((sum.def_run_plays||0)>0 ? (sum.def_run_epa_allowed/sum.def_run_plays) : null, 3),
         'Points Allowed': _advNum((sum.pace_games||0)>0 ? (sum.def_pts_allowed/sum.pace_games) : null, 1),
         'Yards Per Play': _advNum(defPlays>0 ? (sum.def_yards/defPlays) : null, 2),
         'Points Per Drive': _advNum(defDriveCt>0 ? (sum.def_drive_pts_allowed/defDriveCt) : null, 2),
@@ -19741,7 +19741,7 @@ function _advComputeGeneralRangeTables(season, lo, hi){
 
   const mk=(vals, lower)=>_advRankMap(vals, lower);
   const out={};
-  const defLower=new Set(['EPA/PASS Allowed','EPA/RUSH Allowed','Yards Per Play','Points Per Drive','Points Allowed','Explosive Play Rate','Down Conversion Rate']);
+  const defLower=new Set(['EPA/Pass Allowed','EPA/Rush Allowed','Yards Per Play','Points Per Drive','Points Allowed','Explosive Play Rate','Down Conversion Rate']);
   const tendLower=new Set(['Drop Rate']);
   const paceLower=new Set(['Sec/Play']);
   const covLower=new Set();
@@ -19749,8 +19749,8 @@ function _advComputeGeneralRangeTables(season, lo, hi){
   const dtendLower=new Set();
   const dlineLower=new Set(['Missed Tackles']);
   const spec={
-    offense:{lower:new Set(), cols:['EPA/Play','EPA/PASS','EPA/RUSH','Points Scored','Yards Per Play','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
-    defense:{lower:defLower, cols:['EPA/Play','EPA/PASS Allowed','EPA/RUSH Allowed','Points Allowed','Yards Per Play','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
+    offense:{lower:new Set(), cols:['EPA/Play','EPA/Pass','EPA/Rush','Points Scored','Yards Per Play','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
+    defense:{lower:defLower, cols:['EPA/Play','EPA/Pass Allowed','EPA/Rush Allowed','Points Allowed','Yards Per Play','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
     tendencies:{lower:tendLower, cols:['Shotgun Rate','NoHuddle Rate','AirYards/Att','Motion Rate','Play Action Rate','RPO Rate','Screen Rate','Trick Play Rate','Drop Rate']},
     pace:{lower:paceLower, cols:['Neutral DB Rate','Sec/Play','Off Plays/G','Total Plays/G']},
     personnel:{lower:persLower, cols:['11 Personnel','12 Personnel','13 Personnel','21 Personnel','3WR Rate','Multi TE Rate','Multi RB Rate']},
@@ -20116,44 +20116,28 @@ function _renderAdvPowerScore(team, src, opts){
     }, 'note-tag-hit');
 }
 
-// Live current-season trend points use the same cumulative weekly recompute as the card;
-// frozen seasons continue to use the multi-year team tables below.
-function advLiveTrendFor(team, tableKey, col){
-  if(typeof advTeamSeason!=='function' || typeof completedWeeks!=='function' || typeof _advComputeGeneralRangeTables!=='function') return null;
-  const season=String(advTeamSeason()), wk=completedWeeks();
-  if(!(typeof tcIsLiveSeason==='function' && tcIsLiveSeason(season)) || !wk) return null;
-  const pack=NFLVERSE&&NFLVERSE[season]&&NFLVERSE[season].adv_weekly;
-  if(!pack || !Array.isArray(pack.weeks)) return null;
-  const pts=[];
-  pack.weeks.forEach(w=>{
-    w=Number(w); if(!Number.isFinite(w) || w>wk) return;
-    const agg=_advComputeGeneralRangeTables(season,1,w);
-    const tbl=agg&&agg[tableKey], row=tbl&&tbl.teams&&tbl.teams[team];
-    if(!row || row.values[col]==null) return;
-    pts.push({y:w,v:Number(row.values[col]),r:row.ranks[col]});
-  });
-  return pts.length>=2 ? pts : null;
-}
-
 // ── 5-year trends (roadmap: "team progress over the last 5 years") ──────────
 // Every Advanced stat row carries a tiny sparkline: the raw values across the
 // seed's nflverse seasons, endpoint dotted in the CURRENT rank's color. The line
 // shows direction, the rank colors good/bad, and hover tells the whole story
 // (year: value · #rank, season by season). Values only — no second axis, ever.
-function advTrendFor(team, tableKey, col){
+function advTrendFor(team, tableKey, col, excludeYear){
   if(typeof NFLVERSE==='undefined' || !NFLVERSE) return null;
-  const yrs=Object.keys(NFLVERSE).filter(y=>/^\d{4}$/.test(y) && NFLVERSE[y] && NFLVERSE[y].team && NFLVERSE[y].team[tableKey]).sort();
+  const yrs=Object.keys(NFLVERSE).filter(y=>/^\d{4}$/.test(y) && String(y)!==String(excludeYear) && NFLVERSE[y] && NFLVERSE[y].team && NFLVERSE[y].team[tableKey]).sort();
   const pts=[];
   for(const y of yrs){
     const tbl=NFLVERSE[y].team[tableKey];
+    const rawCol=(tbl.columns||[]).includes(col) ? col
+      : ({'EPA/Pass':'EPA/DB','EPA/Rush':'EPA/Rush','EPA/Pass Allowed':'EPA/PASS Allowed','EPA/Rush Allowed':'EPA/RUSH Allowed'}[col]||col);
     const row=tbl.teams && tbl.teams[team];
     if(!row) continue;
     let v=null, r=null;
     if(Array.isArray(row)){                    // packed seed rows: [[values...],[ranks...]]
-      const ci=(tbl.columns||[]).indexOf(col);
+      const ci=(tbl.columns||[]).indexOf(rawCol);
       if(ci>=0){ v=row[0]?row[0][ci]:null; r=row[1]?row[1][ci]:null; }
     } else {                                   // decoded rows: {values:{col}, ranks:{col}}
-      v=row.values?row.values[col]:null; r=row.ranks?row.ranks[col]:null;
+      v=row.values?(row.values[col]!=null?row.values[col]:row.values[rawCol]):null;
+      r=row.ranks?(row.ranks[col]!=null?row.ranks[col]:row.ranks[rawCol]):null;
     }
     if(typeof v==='number') pts.push({y:+y, v, r});
   }
@@ -20229,7 +20213,7 @@ function renderTeamAdvanced(team){
           relevance: noteRelevanceForTableKey(key),
           nav: { type:'advanced', team: useTeam, season: String(advTeamSeason()) },
         }, 'note-tag-hit'):txt}</div>
-        <div class="sr-stat-spark">${(()=>{const tr=advLiveTrendFor(useTeam,key,col)||advTrendFor(useTeam,key,col); return tr?advSparkSvg(tr, sharpColIsPct(tbl,col), advTeamSeason()):'';})()}</div>
+        <div class="sr-stat-spark">${(()=>{const liveNow=typeof tcIsLiveSeason==='function'&&tcIsLiveSeason(advTeamSeason()); const tr=advTrendFor(useTeam,key,col,liveNow?advTeamSeason():null); return tr?advSparkSvg(tr, sharpColIsPct(tbl,col), liveNow?null:advTeamSeason()):'';})()}</div>
         <div class="sr-stat-rank">${sharpRankBadge(r)}</div>
       </div>`;
     }).join('');
@@ -20401,10 +20385,29 @@ function nflverseSharpTables(){
     '11 Personnel','12 Personnel','13 Personnel','21 Personnel','Multi RB Rate','Sub Package Rate','Nickel Rate','Dime+ Rate',
     'Neutral DB Rate','Neutral DB Rate Last 5','Middle Closed Rate','Middle Open Rate','Cover 1','Cover 2','Cover 3'];
   const out={};
+  const metricName=(c)=>({
+    'EPA/DB':'EPA/Pass', 'EPA/PASS':'EPA/Pass', 'EPA/RUSH':'EPA/Rush',
+    'EPA/PASS Allowed':'EPA/Pass Allowed', 'EPA/RUSH Allowed':'EPA/Rush Allowed',
+  }[c]||c);
   for(const k in t){
     if(!t[k] || !Array.isArray(t[k].columns)) continue;
     const m=META[k]||{title:k,category:'offense'};
-    const cols=(t[k].columns||[]).filter(c=>!HIDE_LAST5.has(c));
+    const cols=(t[k].columns||[]).filter(c=>!HIDE_LAST5.has(c)).map(metricName);
+    const teams=t[k].teams;
+    if(teams && typeof teams==='object'){
+      for(const tm in teams){
+        const row=teams[tm];
+        if(row && !Array.isArray(row) && row.values){
+          ['values','ranks'].forEach(part=>{
+            if(!row[part]) return;
+            for(const old of Object.keys(row[part])){
+              const next=metricName(old);
+              if(next!==old && row[part][next]==null) row[part][next]=row[part][old];
+            }
+          });
+        }
+      }
+    }
     out[k]={columns:cols, title:m.title, category:m.category,
             pct_cols:cols.filter(c=>PCT.includes(c)), teams:t[k].teams};
     // An inferred table (the season in progress, before its participation file): the card
