@@ -25153,6 +25153,8 @@ function _advComputeGeneralRangeTables(season, lo, hi){
     teams[tm]={
       offense:{
         'EPA/Play': _advNum(offPlays>0 ? (sum.off_epa/offPlays) : null, 3),
+        'EPA/DB': _advNum((sum.off_pass_plays||0)>0 ? (sum.off_pass_epa/sum.off_pass_plays) : null, 3),
+        'EPA/Rush': _advNum((sum.off_run_plays||0)>0 ? (sum.off_run_epa/sum.off_run_plays) : null, 3),
         'Yards Per Play': _advNum(offPlays>0 ? (sum.off_yards/offPlays) : null, 2),
         'Points Per Drive': _advNum(offDriveCt>0 ? (sum.off_drive_pts/offDriveCt) : null, 2),
         'Explosive Play Rate': _advNum(offPlays>0 ? (sum.off_explosive/offPlays)*100 : null, 1),
@@ -25227,7 +25229,7 @@ function _advComputeGeneralRangeTables(season, lo, hi){
   const dtendLower=new Set();
   const dlineLower=new Set(['Missed Tackles']);
   const spec={
-    offense:{lower:new Set(), cols:['EPA/Play','Yards Per Play','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
+    offense:{lower:new Set(), cols:['EPA/Play','EPA/DB','EPA/Rush','Yards Per Play','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
     defense:{lower:defLower, cols:['EPA/Play','Yards Per Play','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
     tendencies:{lower:tendLower, cols:['Shotgun Rate','NoHuddle Rate','AirYards/Att','Motion Rate','Play Action Rate','RPO Rate','Screen Rate','Trick Play Rate','Drop Rate']},
     pace:{lower:paceLower, cols:['Neutral DB Rate','Sec/Play','Off Plays/G','Total Plays/G']},

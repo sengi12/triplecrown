@@ -468,8 +468,14 @@ def _side_table(plays, team_col, last5_weeks, defense=False):
     succ = pd.to_numeric(plays["success"], errors="coerce") if "success" in plays.columns else pd.Series(np.nan, index=plays.index)
     rsr = succ[plays["play_type"] == "run"].groupby(plays[team_col]).mean() * 100
     psr = succ[plays["play_type"] == "pass"].groupby(plays[team_col]).mean() * 100
+    pass_plays = plays[plays["play_type"] == "pass"]
+    run_plays = plays[plays["play_type"] == "run"]
+    pass_epa = pass_plays.groupby(team_col)["epa"].mean()
+    rush_epa = run_plays.groupby(team_col)["epa"].mean()
     out = pd.DataFrame({
         "EPA/Play": epa.round(3),
+        "EPA/DB": pass_epa.round(3),
+        "EPA/Rush": rush_epa.round(3),
         "Yards Per Play": ypl.round(2),
         "Y/PL Last 5": l5.round(2),
         "Points Per Drive": ppd.round(2),
