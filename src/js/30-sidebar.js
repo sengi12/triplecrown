@@ -57,10 +57,12 @@ function renderSidebar(){
   // Live view: a dot on the logo says whether the team has played this week (green) or is
   // playing now (red), and the record rides at the end of the row (desktop).
   const liveView = (typeof tcLiveViewOn==='function') && tcLiveViewOn();
+  const seasonRecords = liveView || (typeof activeSeason!=='undefined' && /^\d{4}$/.test(String(activeSeason)));
   const mkTeamItem = (t, cls) => {
     const gs = liveView && typeof tcGameDotHTML==='function' ? tcGameDotHTML(t) : '';
     const g = liveView && typeof tcTeamGameState==='function' ? tcTeamGameState(t) : null;
-    const rec = (g && g.rec) ? `<span class="team-rec">${escHtml(g.rec)}</span>` : '';
+    const recValue = seasonRecords ? ((g && g.rec) || (typeof tcTeamRecord==='function' ? tcTeamRecord(t) : '')) : '';
+    const rec = recValue ? `<span class="team-rec">${escHtml(recValue)}</span>` : '';
     return `<div class="team-item ${t===currentTeam?'active':''}" onclick="selectTeam('${t}')">
     <span class="team-logo-wrap"><img src="${NFL_LOGO(t)}" class="team-logo-sm" alt="${t}" loading="lazy" decoding="async" onerror="this.style.display='none'">${gs}</span>
     <div class="team-dot ${cls}"></div><span class="team-name">${sidebarTeamLabel(t)}</span>${rec}</div>`;

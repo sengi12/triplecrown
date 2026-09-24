@@ -4131,10 +4131,12 @@ function renderSidebar(){
   // Live view: a dot on the logo says whether the team has played this week (green) or is
   // playing now (red), and the record rides at the end of the row (desktop).
   const liveView = (typeof tcLiveViewOn==='function') && tcLiveViewOn();
+  const seasonRecords = liveView || (typeof activeSeason!=='undefined' && /^\d{4}$/.test(String(activeSeason)));
   const mkTeamItem = (t, cls) => {
     const gs = liveView && typeof tcGameDotHTML==='function' ? tcGameDotHTML(t) : '';
     const g = liveView && typeof tcTeamGameState==='function' ? tcTeamGameState(t) : null;
-    const rec = (g && g.rec) ? `<span class="team-rec">${escHtml(g.rec)}</span>` : '';
+    const recValue = seasonRecords ? ((g && g.rec) || (typeof tcTeamRecord==='function' ? tcTeamRecord(t) : '')) : '';
+    const rec = recValue ? `<span class="team-rec">${escHtml(recValue)}</span>` : '';
     return `<div class="team-item ${t===currentTeam?'active':''}" onclick="selectTeam('${t}')">
     <span class="team-logo-wrap"><img src="${NFL_LOGO(t)}" class="team-logo-sm" alt="${t}" loading="lazy" decoding="async" onerror="this.style.display='none'">${gs}</span>
     <div class="team-dot ${cls}"></div><span class="team-name">${sidebarTeamLabel(t)}</span>${rec}</div>`;
@@ -28333,6 +28335,11 @@ function tcTeamRecordHTML(team, recStr){
   return `<span class="team-rec-hero" data-team="${escAttr(team)}" title="${escAttr(`${TC_SEASON.year} record`)}">${escHtml(rec)}</span>`;
 }
 
+function tcSidebarSeason(){
+  if(typeof activeSeason!=='undefined' && /^\d{4}$/.test(String(activeSeason))) return String(activeSeason);
+  return typeof TC_SEASON!=='undefined' ? String(TC_SEASON.year) : '';
+}
+
 // ── Standings order ───────────────────────────────────────────────────────────
 // In season (either projection tab) the sidebar's divisions sort by record — the leader
 // first — so the picker doubles as the standings. Off-season: the fixed order. Win percentage (ties count half), then wins, then the
@@ -28345,23 +28352,54 @@ function tcParseRecord(rec){
 }
 function tcTeamRecord(team){
   const g=(typeof tcTeamGameState==='function')?tcTeamGameState(team):null;
-  if(g && g.rec) return g.rec;
-  if(typeof espnRecordCache!=='undefined' && espnRecordCache && typeof TC_SEASON!=='undefined') return espnRecordCache[`${TC_SEASON.year}:${team}`]||'';
+  if(tcLiveViewOn() && g && g.rec) return g.rec;
+  const season=tcSidebarSeason();
+  if(typeof espnRecordCache!=='undefined' && espnRecordCache) return espnRecordCache[`${season}:${team}`]||'';
   return '';
 }
 // A team off this week's board (its bye) has no record on it: ask ESPN for that team once
 // and repaint the sidebar when it lands, so a bye never drops a leader.
 var _tcRecAsked = {};
+var _tcHistoricalResults = {};
+var _tcHistoricalAsked = {};
+function tcHistoricalResults(season, teams){
+  const cached=_tcHistoricalResults[season];
+  if(cached) return cached;
+  if(!_tcHistoricalAsked[season] && typeof sleeperFetch==='function' && typeof ESPN_SCHEDULE_URL==='function'){
+    _tcHistoricalAsked[season]=true;
+    Promise.all((teams||[]).map(async tm=>{
+      const tid=typeof ESPN_TEAM_ID!=='undefined'&&ESPN_TEAM_ID[tm]; if(!tid) return [tm,[]];
+      try{
+        const data=await sleeperFetch(ESPN_SCHEDULE_URL(tid,season)); const games=[];
+        for(const ev of ((data&&data.events)||[])){
+          const st=ev.seasonType&&ev.seasonType.type; if(st!=null&&st!==2) continue;
+          const comp=ev.competitions&&ev.competitions[0], cs=comp&&comp.competitors||[];
+          const me=cs.find(c=>c.team&&String(c.team.abbreviation||'').toUpperCase()===tm);
+          const opp=cs.find(c=>c!==me); if(!me||!opp) continue;
+          const state=ev.status&&ev.status.type&&ev.status.type.state; if(state!=='post') continue;
+          const pf=Number(me.score&&((me.score.value!=null)?me.score.value:me.score));
+          const pa=Number(opp.score&&((opp.score.value!=null)?opp.score.value:opp.score));
+          if(!Number.isFinite(pf)||!Number.isFinite(pa)) continue;
+          games.push({wk:Number(ev.week&&ev.week.number)||games.length+1,opp:String(opp.team.abbreviation||'').toUpperCase(),pf,pa,home:me.homeAway==='home'});
+        }
+        return [tm,games];
+      }catch(e){ return [tm,[]]; }
+    })).then(rows=>{ const out={}; rows.forEach(([tm,g])=>{out[tm]=g;}); _tcHistoricalResults[season]=out; if(typeof renderSidebar==='function') renderSidebar(); });
+  }
+  return cached||{};
+}
 function tcStandingsOrder(teams){
-  if(typeof hasSeasonStarted!=='function' || !hasSeasonStarted()) return teams;
+  const season=tcSidebarSeason();
+  const historical=typeof activeSeason!=='undefined' && /^\d{4}$/.test(String(activeSeason)) && String(activeSeason)!==String(TC_SEASON&&TC_SEASON.year);
+  if(!historical && (typeof hasSeasonStarted!=='function' || !hasSeasonStarted())) return teams;
   const recs=teams.map(t=>tcParseRecord(tcTeamRecord(t)));
   if(!recs.some(r=>r && r.g>0)) return teams;
   if(typeof fetchTeamRecord==='function' && typeof TC_SEASON!=='undefined'){
     teams.forEach((t,i)=>{
-      const key=`${TC_SEASON.year}:${t}`;
+      const key=`${season}:${t}`;
       if(recs[i] || _tcRecAsked[key]) return;
       _tcRecAsked[key]=true;
-      Promise.resolve().then(()=>fetchTeamRecord(TC_SEASON.year, t)).then(r=>{ if(r && typeof renderSidebar==='function') renderSidebar(); }).catch(()=>{});
+      Promise.resolve().then(()=>fetchTeamRecord(season, t)).then(r=>{ if(r && typeof renderSidebar==='function') renderSidebar(); }).catch(()=>{});
     });
   }
   // Known records first, by winning percentage; a tie goes to the NFL's division tiebreakers
@@ -28371,7 +28409,7 @@ function tcStandingsOrder(teams){
   const sortPct=r=>(r.g>0 ? r.pct : 0.5);
   const known=teams.map((t,i)=>({t, i, r:recs[i]})).filter(x=>x.r).sort((a,b)=>(sortPct(b.r)-sortPct(a.r)) || (a.i-b.i));
   const unknown=teams.filter((t,i)=>!recs[i]);
-  const R=(typeof tcSeasonResults==='function') ? tcSeasonResults() : {};
+  const R=historical ? tcHistoricalResults(season, teams) : ((typeof tcSeasonResults==='function') ? tcSeasonResults() : {});
   const recOf=(tm)=>{ const r=tcParseRecord(tcTeamRecord(tm)); if(r) return r; return tcRecordFrom(R[tm]||[]); };
   const out=[];
   for(let i=0; i<known.length;){
