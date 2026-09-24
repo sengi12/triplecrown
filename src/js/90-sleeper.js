@@ -615,6 +615,7 @@ function enterReference(season){
   afterSeasonSwitch();
   // fetch the team's record for that season (ESPN) in the background
   if(currentTeam) fetchTeamRecord(season,currentTeam);
+  if(typeof tcPrimeHistoricalStandings==='function') tcPrimeHistoricalStandings(season);
 }
 
 // Build a seed from embedded HISTORY. New shape: player_id → { season: [ {team, pos,

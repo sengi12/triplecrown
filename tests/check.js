@@ -27155,6 +27155,7 @@ function enterReference(season){
   afterSeasonSwitch();
   // fetch the team's record for that season (ESPN) in the background
   if(currentTeam) fetchTeamRecord(season,currentTeam);
+  if(typeof tcPrimeHistoricalStandings==='function') tcPrimeHistoricalStandings(season);
 }
 
 // Build a seed from embedded HISTORY. New shape: player_id → { season: [ {team, pos,
@@ -28387,6 +28388,18 @@ function tcHistoricalResults(season, teams){
     })).then(rows=>{ const out={}; rows.forEach(([tm,g])=>{out[tm]=g;}); _tcHistoricalResults[season]=out; if(typeof renderSidebar==='function') renderSidebar(); });
   }
   return cached||{};
+}
+var _tcHistoricalPrime = {};
+function tcPrimeHistoricalStandings(season){
+  season=String(season||'');
+  if(!/^\d{4}$/.test(season) || _tcHistoricalPrime[season]) return;
+  _tcHistoricalPrime[season]=true;
+  const teams=(typeof SIDEBAR_DIVISIONS!=='undefined' ? SIDEBAR_DIVISIONS.flatMap(d=>d.teams||[]) : []);
+  const records=teams.map(tm=>typeof fetchTeamRecord==='function' ? fetchTeamRecord(season,tm).catch(()=>null) : Promise.resolve(null));
+  tcHistoricalResults(season,teams);
+  Promise.all(records).then(()=>{
+    if(typeof renderSidebar==='function' && typeof activeSeason!=='undefined' && String(activeSeason)===season) renderSidebar();
+  });
 }
 function tcStandingsOrder(teams){
   const season=tcSidebarSeason();

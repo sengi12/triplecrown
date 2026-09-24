@@ -295,6 +295,18 @@ function tcHistoricalResults(season, teams){
   }
   return cached||{};
 }
+var _tcHistoricalPrime = {};
+function tcPrimeHistoricalStandings(season){
+  season=String(season||'');
+  if(!/^\d{4}$/.test(season) || _tcHistoricalPrime[season]) return;
+  _tcHistoricalPrime[season]=true;
+  const teams=(typeof SIDEBAR_DIVISIONS!=='undefined' ? SIDEBAR_DIVISIONS.flatMap(d=>d.teams||[]) : []);
+  const records=teams.map(tm=>typeof fetchTeamRecord==='function' ? fetchTeamRecord(season,tm).catch(()=>null) : Promise.resolve(null));
+  tcHistoricalResults(season,teams);
+  Promise.all(records).then(()=>{
+    if(typeof renderSidebar==='function' && typeof activeSeason!=='undefined' && String(activeSeason)===season) renderSidebar();
+  });
+}
 function tcStandingsOrder(teams){
   const season=tcSidebarSeason();
   const historical=typeof activeSeason!=='undefined' && /^\d{4}$/.test(String(activeSeason)) && String(activeSeason)!==String(TC_SEASON&&TC_SEASON.year);
