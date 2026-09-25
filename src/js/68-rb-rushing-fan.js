@@ -799,7 +799,7 @@ function _rbMetricTiles(chart, season, notePlayer, selWk){
 // Carry share by quarter (Q1–Q4): the slice of the team's designed rushes that went to this
 // back each quarter — the shared splits helper (66b) over the carry map's per-game qc/qt.
 function _rbQuarterSplits(wnode, selWk){
-  return (typeof _qtrShareSplits==='function') ? _qtrShareSplits(wnode, selWk, 'Carry share by quarter', "· his cut of the team's designed runs", 'designed rushes') : '';
+  return (typeof _qtrShareSplits==='function') ? _qtrShareSplits(wnode, selWk, 'Carry share by quarter', "· his cut of the team's designed runs", 'designed rushes', 'CAR') : '';
 }
 function setPcardRbFanSeason(season){
   pcardRbFanSeason=season;

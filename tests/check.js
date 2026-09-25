@@ -11511,7 +11511,7 @@ function _renderTargetTree(pid, node, season, seasonBtns, hasTree){
       ${tile('EPA', v.epa!=null?(+v.epa).toFixed(1):'—', 'epa', 'epa')}
       ${tile('Catch %', cr!=null?`${cr}%`:'—', 'catch_pct')}
     </div>
-    ${(typeof _qtrShareSplits==='function') ? _qtrShareSplits(node, selWk, 'Target share by quarter', "· his cut of the team's throws", 'targeted throws') : ''}
+    ${(typeof _qtrShareSplits==='function') ? _qtrShareSplits(node, selWk, 'Target share by quarter', "· his cut of the team's throws", 'targeted throws', 'TAR') : ''}
     ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('rec', norm, season, selWk) : ''}
     <div class="pcard-src">Targets via nflverse play-by-play${live?', nightly':''}${(typeof _tmRouteLegend==='function' && _tmRouteLegend(season))?'; routes via nflverse participation charting':''}.${(typeof ngsChartLink==='function') ? ngsChartLink(node, pname, season, selWk) : ''}</div>
   </div>`;
@@ -11956,7 +11956,7 @@ function _tmHasPlays(node){ return (node.games||[]).some(g=>Array.isArray(g.play
 // quarter, from per-game qc (his carries/targets) and qt (the team's), summed across the
 // scope in view — the picked game, else the regular season. Blank until the quarter data
 // ships with the map. Shared by the carry map (68) and the target map (66).
-function _qtrShareSplits(node, selWk, heading, sub, noun){
+function _qtrShareSplits(node, selWk, heading, sub, noun, unit){
   if(!node || !Array.isArray(node.games)) return '';
   const pl=[0,0,0,0], tm=[0,0,0,0]; let any=false;
   for(const g of node.games){
@@ -11968,7 +11968,7 @@ function _qtrShareSplits(node, selWk, heading, sub, noun){
   if(!any) return '';
   const tiles=[0,1,2,3].map(q=>{
     const share = tm[q] ? Math.round(pl[q]/tm[q]*100) : null;
-    return `<div class="qpc-tile" title="${pl[q]} of the team's ${tm[q]} ${noun} in Q${q+1}"><label>Q${q+1}</label><b>${share==null?'—':share+'%'}</b></div>`;
+    return `<div class="qpc-tile" title="${pl[q]} of the team's ${tm[q]} ${noun} in Q${q+1}"><label>Q${q+1}</label><b>${share==null?'—':share+'%'}<span class="qpc-ct">${pl[q]} ${escHtml(unit||'')}</span></b></div>`;
   }).join('');
   return `<div class="qpc-sub">${heading} <span>${sub}</span></div><div class="qpc-totals rbf-splits">${tiles}</div>`;
 }
@@ -13422,7 +13422,7 @@ function _rbMetricTiles(chart, season, notePlayer, selWk){
 // Carry share by quarter (Q1–Q4): the slice of the team's designed rushes that went to this
 // back each quarter — the shared splits helper (66b) over the carry map's per-game qc/qt.
 function _rbQuarterSplits(wnode, selWk){
-  return (typeof _qtrShareSplits==='function') ? _qtrShareSplits(wnode, selWk, 'Carry share by quarter', "· his cut of the team's designed runs", 'designed rushes') : '';
+  return (typeof _qtrShareSplits==='function') ? _qtrShareSplits(wnode, selWk, 'Carry share by quarter', "· his cut of the team's designed runs", 'designed rushes', 'CAR') : '';
 }
 function setPcardRbFanSeason(season){
   pcardRbFanSeason=season;

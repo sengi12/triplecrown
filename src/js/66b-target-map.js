@@ -47,7 +47,7 @@ function _tmHasPlays(node){ return (node.games||[]).some(g=>Array.isArray(g.play
 // quarter, from per-game qc (his carries/targets) and qt (the team's), summed across the
 // scope in view — the picked game, else the regular season. Blank until the quarter data
 // ships with the map. Shared by the carry map (68) and the target map (66).
-function _qtrShareSplits(node, selWk, heading, sub, noun){
+function _qtrShareSplits(node, selWk, heading, sub, noun, unit){
   if(!node || !Array.isArray(node.games)) return '';
   const pl=[0,0,0,0], tm=[0,0,0,0]; let any=false;
   for(const g of node.games){
@@ -59,7 +59,7 @@ function _qtrShareSplits(node, selWk, heading, sub, noun){
   if(!any) return '';
   const tiles=[0,1,2,3].map(q=>{
     const share = tm[q] ? Math.round(pl[q]/tm[q]*100) : null;
-    return `<div class="qpc-tile" title="${pl[q]} of the team's ${tm[q]} ${noun} in Q${q+1}"><label>Q${q+1}</label><b>${share==null?'—':share+'%'}</b></div>`;
+    return `<div class="qpc-tile" title="${pl[q]} of the team's ${tm[q]} ${noun} in Q${q+1}"><label>Q${q+1}</label><b>${share==null?'—':share+'%'}<span class="qpc-ct">${pl[q]} ${escHtml(unit||'')}</span></b></div>`;
   }).join('');
   return `<div class="qpc-sub">${heading} <span>${sub}</span></div><div class="qpc-totals rbf-splits">${tiles}</div>`;
 }

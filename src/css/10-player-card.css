@@ -305,6 +305,7 @@
 .qpc-sub{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:12px 2px 0;}
 .qpc-sub span{font-weight:600;text-transform:none;letter-spacing:0;opacity:.85;}
 .qpc-totals.rbf-splits{margin-top:5px;grid-template-columns:repeat(4,1fr);}
+.qpc-ct{font-family:var(--font);font-size:11px;font-weight:700;color:var(--muted);margin-left:4px;vertical-align:1px;}
 .rbf-wrap{padding:4px 2px 2px;}
 .rbf-svg{display:block;width:100%;max-width:760px;height:auto;margin:0 auto;border:1px solid #1d2329;border-radius:8px;}
 .rbf-legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:center;margin:10px 2px 6px;color:var(--text);font-size:10.5px;font-weight:700;}
