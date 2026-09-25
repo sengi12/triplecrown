@@ -14,7 +14,7 @@
 //           owner in that league beside the name, the projection under the points).
 // Plays name players as "J.Burrow"; the box score names them in full with ids, so the two
 // are joined by first initial + last name within the team, then to Sleeper ids by espn_id.
-var _gcd = { sum:{}, busy:{}, tab:null, side:'fantasy', feedAll:false };
+var _gcd = { sum:{}, busy:{}, tab:null, side:'fantasy', feedAll:false, replay:null };
 const GC_SUMMARY_URL = (eid)=>`https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${eid}`;
 const GC_SUM_TTL_LIVE = 12*1000, GC_SUM_TTL_FINAL = 6*60*60*1000, GC_SUM_TTL_PRE = 10*60*1000;
 // While a picked game is on and the panel is in view, the summary (and the scoreboard) are
@@ -106,6 +106,16 @@ function gcdSetTab(t){ _gcd.tab=t; gcDetailRepaint(); }
 function gcdSetSide(s){ _gcd.side=s; gcDetailRepaint(); }
 function gcdSetFeedAll(v){ _gcd.feedAll=!!v; gcDetailRepaint(); }
 function gcdTab(game){ return _gcd.tab || (game && game.state==='pre' ? 'stats' : 'feed'); }
+// Tapping a play in the feed pins the field to that play: the drive up to it, the play itself
+// animating. Clearing the pin (the red LIVE button) hands the field back to the live drive.
+// Re-tapping the same play replays it — driveSeen is cleared so the segment draws again.
+function gcReplayPlay(eid, playId){
+  if(!eid || !playId) return;
+  _gcd.replay={ eid:String(eid), playId:String(playId) };
+  if(_gcd.driveSeen) delete _gcd.driveSeen[String(eid)];
+  gcDetailRepaint();
+}
+function gcReplayClear(){ _gcd.replay=null; gcDetailRepaint(); }
 
 // ── ESPN ↔ app identities ────────────────────────────────────────────────────
 function gcAbbr(ab){ ab=String(ab||'').toUpperCase(); return (typeof TC_BOARD_ABBR!=='undefined' && TC_BOARD_ABBR[ab]) || ab; }
@@ -432,7 +442,9 @@ function gcFeedHTML(game, sum){
     const rz = p.yte!=null && p.yte<=20 && p.type!=='Kickoff' && p.type!=='Punt';
     const sit = p.down>0 ? `${p.ddt}${p.spot?` @ ${p.spot}`:''}` : (p.kind==='xp'||p.kind==='miss'&&/Extra/.test(p.type)?'End zone':(p.type==='Kickoff'?'Kickoff':''));
     const score = (p.as!=null && p.hs!=null) ? `<span class="${p.scoredBy==='away'?'gcf-sc-hit':''}">${game.away} ${p.as}</span><span class="gcf-dash">–</span><span class="${p.scoredBy==='home'?'gcf-sc-hit':''}">${p.hs} ${game.home}</span>` : '';
-    return `<div class="gcf-row gcf-${p.kind}${isNew(p)?' gcf-new':''}">
+    const active = _gcd.replay && String(_gcd.replay.eid)===eid && String(_gcd.replay.playId)===String(p.id);
+    const rowClick = p.id ? ` onclick="gcReplayPlay('${escAttr(eid)}','${escAttr(String(p.id))}')" title="Replay this play on the field"` : '';
+    return `<div class="gcf-row gcf-${p.kind}${isNew(p)?' gcf-new':''}${p.id?' gcf-click':''}${active?' gcf-active':''}"${rowClick}>
       <img src="${NFL_LOGO(p.team||game.home)}" class="gcf-logo" onerror="this.style.display='none'">
       <div class="gcf-main">
         <div class="gcf-sit">${escHtml(sit)}${rz?' <span class="gcf-rz">RZ</span>':''}</div>
@@ -569,8 +581,27 @@ function gcDrives(sum){
   if(dr.current){ const cid=String(dr.current.id||''); const i=out.findIndex(x=>x.id===cid); if(i>=0) out[i].live=true; else add(dr.current, true); }
   return out;
 }
-// The drive to draw: the one in progress while the game is on, else the last one.
+// The drive holding a given play, its plays cut off at that play, so the chart draws the
+// play as its newest move — the drive so far behind it, that play animating in.
+function gcReplayDrive(sum, playId){
+  const ds=gcDrives(sum);
+  for(const d of ds){
+    const i=d.plays.findIndex(p=>String(p.id)===String(playId));
+    if(i>=0){
+      const plays=d.plays.slice(0, i+1), fp=plays[plays.length-1];
+      return Object.assign({}, d, { plays, live:false, replay:true, focusId:String(playId), focusQ:fp.q, focusClock:fp.clock });
+    }
+  }
+  return null;
+}
+// The drive to draw: a play pinned from the feed, else the one in progress while the game is
+// on, else the last one.
 function gcDriveInView(game, sum){
+  const rp=_gcd.replay;
+  if(rp && game && String(rp.eid)===String(game.eid||'')){
+    const d=gcReplayDrive(sum, rp.playId);
+    if(d && d.plays.length) return d;
+  }
   const ds=gcDrives(sum).filter(d=>d.plays.length); if(!ds.length) return null;
   return (game && game.state==='in' && ds.find(d=>d.live)) || ds[ds.length-1];
 }
@@ -879,7 +910,9 @@ function gcDriveChartHTML(game, sum){
     parts.push(`<text x="${f1(endX)}" y="${bot+18}" fill="#fff" font-size="10.5" font-weight="800" text-anchor="${anchor}" stroke="#101214" stroke-width="3" paint-order="stroke">${escHtml(label)}</text>`);
   }
   parts.push('</svg>');
-  return `<div class="gc-drive${d.live?' gc-drive-live':''}">${parts.join('')}<div class="gc-drive-sum">${gcDriveSentence(d)}</div></div>`;
+  const replay=!!d.replay;
+  const head = replay ? `<div class="gc-drive-head"><span class="gc-replay-tag">▶ Replay${d.focusClock?` · ${escHtml((d.focusQ?('Q'+d.focusQ+' '):'')+d.focusClock)}`:''}</span><button class="gc-live-btn" onclick="gcReplayClear()">● ${game.state==='in'?'LIVE':'LATEST'}</button></div>` : '';
+  return `<div class="gc-drive${d.live?' gc-drive-live':''}${replay?' gc-drive-replay':''}">${head}${parts.join('')}<div class="gc-drive-sum">${gcDriveSentence(d)}</div></div>`;
 }
 // ESPN's win probability, play by play. Folded to one line — the two numbers as they stand
 // — and a tap opens the chart: the away club at the top, the home club at the bottom (their

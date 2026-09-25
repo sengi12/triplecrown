@@ -37,7 +37,7 @@ const app=new Function('IDS','SUM', code+`
   const GAME=(st)=>({id:'TB@CIN', home:'CIN', away:'TB', state:st||'post', detail:'Final', date:'2026-09-13T17:00Z', hs:33, as:27, hrec:'1-0', arec:'0-1', eid:'401872925', hls:[14,10,3,6], als:[3,7,10,7]});
   return { parse:tcParseBoard, games:gcGames, plays:gcPlays, names:gcPlayNames, kinds:(s)=>gcPlays(s).map(p=>p.kind), feed:gcFeedRows, build:gcFeedBuild, feedHTML:gcFeedHTML, ls:gcLinescoreHTML, box:gcBoxHTML,
     gameHTML:(g,rows)=>gcGameHTML(g||GAME(), rows===undefined?ROWS:rows, 1), GAME, summary:gcSummary, setSum:(eid,d)=>{ _gcd.sum[eid]={data:d, at:Date.now()}; }, fetches:()=>fetches,
-    setTab:(t)=>{ _gcd.tab=t; }, setSide:(s)=>{ _gcd.side=s; }, setAll:(v)=>{ _gcd.feedAll=v; }, tab:gcdTab,
+    setTab:(t)=>{ _gcd.tab=t; }, setSide:(s)=>{ _gcd.side=s; }, setAll:(v)=>{ _gcd.feedAll=v; }, tab:gcdTab, setReplay:(eid,pid)=>{ _gcd.replay=pid?{eid:String(eid),playId:String(pid)}:null; },
     lgOpts:gcLeagueOptions, setLeague:(id)=>{ _gc.league=id; }, league:gcLeague, owner:gcOwnerOf, mine:gcIsMine, pts:gcPoints, proj:gcProjPts,
     setPcard:(o)=>{ _pcardLg.byLeague=o; _pcardLg.at=Date.now(); }, BOARD, ath:gcAthletes, short:gcShort,
     resetPcard:()=>{ _pcardLg={at:0, byLeague:{}, loading:null}; }, lgSelect:gcLeagueSelectHTML, setProfile:(p)=>{ laLoadSleeperProfile=()=>p; },
@@ -410,6 +410,17 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(pfl.outcome==='fumbleLost' && pfl.returnYds===10 && pfl.keepPoss===true && pfl.recoverer==='J.Trotter', 'a fumble on the return the kicking team scoops up: the return, then the loss');
   const ppn=app.punt('M.Araiza punts 41 yards to TB 28. A.Bachman to TB 42 for 14 yards. PENALTY on TB-K.Walker, Holding, 10 yards, enforced at TB 42.', 'CIN');
   chk(ppn.outcome==='return' && ppn.penalty===true, 'a flag during the return is noted on the outcome');
+
+  console.log('=== a play tapped in the feed pins the field to it, with a LIVE button back ===');
+  app.setReplay('401872925','p1');
+  const rp1=app.drive(app.GAME('post'), mini);
+  chk(/gc-drive-replay/.test(rp1) && /gc-live-btn/.test(rp1) && /▶ Replay/.test(rp1) && />● LATEST</.test(rp1) && /C\. Brown 12 yd rush/.test(rp1) && !/gc-seg-prog/.test(rp1), 'tapping the first play draws that play alone, framed as a replay with a LATEST button (a finished game)');
+  app.setReplay('401872925','p2');
+  const rp2=app.drive(app.GAME('post'), mini);
+  chk(/gc-drive-replay/.test(rp2) && /M\. Gesicki 48 yd TD catch/.test(rp2) && /class="gc-seg gc-seg-prog"/.test(rp2), 'tapping the touchdown draws the drive up to it, the progress line behind the score');
+  chk(/>● LIVE</.test(app.drive(Object.assign(app.GAME('post'),{state:'in'}), mini)), 'the button reads LIVE while the game is on');
+  app.setReplay('401872925', null);
+  chk(!/gc-drive-replay/.test(app.drive(app.GAME('post'), mini)) && !/gc-live-btn/.test(app.drive(app.GAME('post'), mini)), 'clearing the pin hands the field back to the live drive — no replay frame, no button');
 
   const posts=[...dc.matchAll(/<g class="gc-posts"><path d="M([\d.]+),([\d.]+) V([\d.]+) M([\d.]+),([\d.]+) L([\d.]+),([\d.]+) M[\d.]+,[\d.]+ V[\d.]+ M[\d.]+,[\d.]+ V[\d.]+"/g)].map(m=>m.slice(1).map(Number));
   chk(posts.length===2 && posts[0][6]<posts[0][4] && posts[1][6]>posts[1][4] && posts.every(q=>q[3]<q[5]) && !/skewX/.test(dc), 'uprights on both back lines, Sleeper\'s: a vertical stem, the crossbar tilted with the field (climbing toward mid-field on both sides), two short vertical uprights');
