@@ -325,6 +325,7 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const ir=app.turnover({text:intD.drives.previous[0].plays[1].text, type:'Interception Return'}, 'CIN');
   chk(ir && ir.kind==='int' && ir.who==='J.Trotter' && ir.at===70 && ir.end===55 && ir.td===false && ir.ret===15, 'an interception read from the words: who, where (the offense\'s 70), carried back 15 to the 55');
   chk(/gc-seg-pre" d="M[^"]*Q/.test(ih) && /gc-seg-last gc-seg-ret" d="M[^"]*" fill="none" stroke="#e5484d"/.test(ih) && /J\. Trotter INT · 15 yd return/.test(ih), 'the pass arcs to where it was picked, the return runs the other way in red, the label says who and how far');
+  chk(/gc-seg-pre[^>]*stroke-dashoffset="[^"]*"><animate attributeName="stroke-dashoffset"/.test(ih) && /gc-seg-last gc-seg-ret[^>]*><animate attributeName="stroke-dashoffset" from="[^"]*" to="0" begin="0.8s"/.test(ih), 'the throw animates in first, then the return picks up where it was caught (a two-stage interception)');
   const six=toD([P('s1',1,'Rush','C.Brown left end for 5 yards.',5,70), P('s2',2,'Interception Return Touchdown','J.Burrow pass short right INTERCEPTED by J.Trotter at TB 40. J.Trotter for 60 yards, TOUCHDOWN.',60,65,{isTurnover:true, scoringPlay:true})], 'INT TD');
   const sr=app.turnover({text:six.drives.previous[0].plays[1].text}, 'CIN');
   chk(sr.td===true && sr.end===0 && /J\. Trotter pick six!/.test(app.drive(app.GAME('post'), six)), 'a pick six runs to the left end zone — the offense\'s own — and says so');
