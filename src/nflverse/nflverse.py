@@ -1222,6 +1222,8 @@ def adv_weekly_team(season):
     # Extra defensive dials for the advanced cards: success allowed (a play the offense won),
     # takeaways (the picks and fumbles the defence came up with), and sacks.
     succ = pd.to_numeric(plays["success"], errors="coerce").fillna(0) if "success" in plays.columns else pd.Series(0.0, index=plays.index)
+    out["off_pass_success"] = succ.where(is_pass, 0).groupby([plays["posteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["off_run_success"] = succ.where(is_run, 0).groupby([plays["posteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
     out["def_pass_success_allowed"] = succ.where(is_pass, 0).groupby([plays["defteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
     out["def_run_success_allowed"] = succ.where(is_run, 0).groupby([plays["defteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
     out["def_takeaways"] = (pd.to_numeric(plays["interception"], errors="coerce").fillna(0) + pd.to_numeric(plays["fumble_lost"], errors="coerce").fillna(0)).groupby([plays["defteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
@@ -1341,7 +1343,7 @@ def adv_weekly_team(season):
             FTN_URL.format(season=season),
             usecols=[
                 "nflverse_game_id", "nflverse_play_id", "is_motion", "is_play_action", "is_rpo",
-                "is_screen_pass", "is_trick_play", "is_drop", "is_catchable_ball", "n_pass_rushers",
+                "is_screen_pass", "is_trick_play", "is_drop", "is_catchable_ball", "n_pass_rushers", "n_blitzers",
             ],
         )
         m = plays.merge(
@@ -1393,8 +1395,12 @@ def adv_weekly_team(season):
                                (pd.to_numeric(dbm["sack"], errors="coerce").fillna(0) > 0))
         out["dl_dropbacks"] = dbm.groupby(["defteam", "week"]).size().reindex(idx).fillna(0)
         out["dl_pressures"] = dbm.groupby(["defteam", "week"])["hit_or_sack"].sum(min_count=1).reindex(idx).fillna(0)
-        out["dl_no_blitz_obs"] = (dbm["n_pass_rushers"] == 0).groupby([dbm["defteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)
-        out["dl_no_blitz_pressures"] = ((dbm["n_pass_rushers"] == 0) & (dbm["hit_or_sack"] == True)).groupby([dbm["defteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)  # noqa: E712
+        # No blitz = a standard rush (FTN n_blitzers == 0), the same cut the season def-line and
+        # the O-line cards use — not n_pass_rushers == 0, which is near-never and left the rate
+        # swinging on a one- or two-play sample.
+        _nblz = pd.to_numeric(dbm["n_blitzers"], errors="coerce") if "n_blitzers" in dbm.columns else pd.Series(float("nan"), index=dbm.index)
+        out["dl_no_blitz_obs"] = (_nblz == 0).groupby([dbm["defteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+        out["dl_no_blitz_pressures"] = ((_nblz == 0) & (dbm["hit_or_sack"] == True)).groupby([dbm["defteam"], dbm["week"]]).sum(min_count=1).reindex(idx).fillna(0)  # noqa: E712
         rd = chart[(chart["rush_attempt"] == 1) & (chart["qb_scramble"] == 0) & (chart["qb_kneel"] == 0)].copy()
         out["dl_rush_att"] = rd.groupby(["defteam", "week"]).size().reindex(idx).fillna(0)
         out["dl_rush_stuffed"] = (pd.to_numeric(rd["yards_gained"], errors="coerce") <= 0).groupby([rd["defteam"], rd["week"]]).sum(min_count=1).reindex(idx).fillna(0)
@@ -1530,6 +1536,7 @@ def adv_weekly_team(season):
 
     cols = [
         "off_plays", "off_yards", "off_epa", "off_pass_plays", "off_pass_epa", "off_run_plays", "off_run_epa", "off_explosive", "off_conv", "off_conv_obs", "off_drive_pts", "off_drive_ct",
+        "off_pass_success", "off_run_success",
         "off_drive_td_ct", "off_drive_fg_ct", "off_drive_punt_ct", "off_drive_turnover_ct", "off_drive_tod_ct", "off_drive_safety_ct", "off_drive_end_half_ct",
         "off_drive_three_out_ct", "off_drive_kill_ct", "off_drive_rz_ct", "off_drive_rz_td_ct", "off_drive_g10_ct", "off_drive_g10_td_ct",
         "off_drive_pass_td_ct", "off_drive_rush_td_ct", "off_fp_std", "off_fp_half", "off_fp_ppr", "off_targets", "off_receptions", "off_pass_td", "off_rush_td",

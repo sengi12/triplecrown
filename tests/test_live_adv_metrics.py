@@ -205,6 +205,8 @@ chk("if not yac_contact:" in src and "rushing_yards_after_contact" in src, "RB y
 i = src.index("def adv_weekly_team"); body = src[i:src.index("def team_defense_line")]
 chk(body.index('out["dl_dropbacks"]') < body.index("part = _aux_csv(") and '"dl_pfr_obs", "dl_pfr_pressures", "dl_missed_tackles", "off_pers_est", "def_pers_est"' in body,
     "adv_weekly: the FTN/pbp pass-rush counters come before (outside) the participation try; PFR's weekly pressures/missed tackles and the estimate flags ship as columns")
+chk('dbm["n_pass_rushers"] == 0' not in body and '(_nblz == 0)' in body and '"n_blitzers"' in body,
+    "adv_weekly: No Blitz Pressure Rate counts standard rushes (FTN n_blitzers == 0, as the season def-line and OL cards do), not the near-never n_pass_rushers == 0 that left it swinging on a one- or two-play sample")
 chk('inf = _personnel_inferred(season)' in body and 'out.loc[(tm, w), "off_pers_est"] = 1.0' in body, "adv_weekly fills inferred personnel counts per week when participation is missing")
 j = src.index("def ol_weekly_team"); obody = src[j:j + 9000]
 chk('"sack", "qb_hit", "yards_gained"' in obody and 'pressed = hit | (d["sack"] == 1)' in obody and obody.index('out["non_qb_sacks"]') < obody.index("PART_URL"),

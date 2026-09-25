@@ -60,7 +60,13 @@ chk(d.defensive_line.columns.includes('Sacks') && d.defensive_line.columns.inclu
 const dBare=app.range('2026',1,1);
 chk(dBare.defense.teams.DET.values['Turnovers']===null && dBare.defense.teams.DET.values['Pass Success Rate']===null && dBare.defensive_line.teams.DET.values['Sacks']===null, 'a pack from before these fields shipped leaves the new cells blank, not zero');
 
-console.log('=== the cards: ≈ for an inferred table, pending for a post-season one ===');
+  console.log('=== the live offense card carries success rate too (parity with the season table it trends against) ===');
+  app.setNV({'2026':{team:{}, adv_weekly:{cols:['off_pass_plays','off_pass_success','off_run_plays','off_run_success'], weeks:[1], teams:{DET:[[30,18,20,12]], SEA:[[30,9,20,6]]}}}});
+  const od=app.range('2026',1,1);
+  chk(od.offense.teams.DET.values['Pass Success Rate']===Number((18/30*100).toFixed(1)) && od.offense.teams.DET.values['Rush Success Rate']===Number((12/20*100).toFixed(1)), 'the live offense reads rush and pass success rate off the same success counts');
+  chk(od.offense.columns.includes('Rush Success Rate') && od.offense.columns.includes('Pass Success Rate') && od.offense.teams.DET.ranks['Pass Success Rate']===1, 'they ride the offense columns and rank higher-better (DET 60% over SEA 30%)');
+
+console.log('=== an inferred table is marked ≈ and a post-season-only table shows pending ===');
 const team={
   offense:{columns:['EPA/Play'], teams:{DET:{values:{'EPA/Play':0.1},ranks:{'EPA/Play':3}}}},
   personnel:{columns:['11 Personnel','12 Personnel'], teams:{DET:{values:{'11 Personnel':61.2,'12 Personnel':22.0},ranks:{'11 Personnel':10,'12 Personnel':9}}},
