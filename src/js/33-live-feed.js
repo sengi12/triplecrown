@@ -31,7 +31,7 @@ function lfNameIndex(){
     if(!nm || !tm) continue;
     const i=nm.indexOf(' '); if(i<0) continue;
     const last=(typeof gcNameNorm==='function')?gcNameNorm(nm.slice(i+1)):nm.slice(i+1).toLowerCase();
-    const cand={pid, pos:String((p&&p.pos)||'').toUpperCase()};
+    const cand={pid, pos:String((p&&p.pos)||'').toUpperCase(), first:nm.slice(0,i).toLowerCase()};
     (idx[`${tm}|${nm[0].toLowerCase()}.${last}`]=idx[`${tm}|${nm[0].toLowerCase()}.${last}`]||[]).push(cand);   // initial + surname
     (idx[`${tm}|*.${last}`]=idx[`${tm}|*.${last}`]||[]).push(cand);                                              // surname alone
   }
@@ -61,10 +61,13 @@ function lfPickByRole(cands, role){
 function lfPidFor(token, team, espnId, role){
   if(espnId && typeof gcEspnIndex==='function'){ const p=gcEspnIndex()[String(espnId)]; if(p){ _lf.stat.byId++; return p; } }
   if(!token) return null;
-  const m=/^([A-Za-z])\.(.+)$/.exec(String(token)); if(!m) return null;
+  const m=/^([A-Za-z][a-z]?)\.(.+)$/.exec(String(token)); if(!m) return null;
+  const prefix=m[1].toLowerCase(), init=prefix[0];
   const norm=(typeof gcNameNorm==='function') ? gcNameNorm(m[2]) : String(m[2]).toLowerCase();
   const idx=lfNameIndex(); const tm=String(team||'').toUpperCase();
-  const exact=lfPickByRole(idx[`${tm}|${m[1].toLowerCase()}.${norm}`], role);
+  let cands=idx[`${tm}|${init}.${norm}`];
+  if(cands && cands.length>1 && prefix.length>1){ const nn=cands.filter(c=>String(c.first||'').startsWith(prefix)); if(nn.length) cands=nn; }   // two-letter lead tells namesakes apart
+  const exact=lfPickByRole(cands, role);
   if(exact){ _lf.stat.byName++; return exact; }
   const bySur=idx[`${tm}|*.${norm}`];
   if(bySur && bySur.length===1){ _lf.stat.bySurname++; return bySur[0].pid; }
@@ -111,7 +114,7 @@ function lfReadPlay(lp){
   const roles={};
   ['primary','receiver','picker'].forEach(r=>{
     const tok=roleTok[r]; if(!tok) return;
-    const m=/^([A-Za-z])\.(.+)$/.exec(tok); const last=m?m[2]:'';
+    const m=/^([A-Za-z][a-z]?)\.(.+)$/.exec(tok); const last=m?m[2]:'';
     const hit=ath.find(a=>{
       const nm=String(a.name||''); const i=nm.indexOf(' '); const ln=i>0?nm.slice(i+1):nm;
       return (typeof gcNameNorm==='function') ? gcNameNorm(ln)===gcNameNorm(last) : ln.toLowerCase()===last.toLowerCase();

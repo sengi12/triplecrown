@@ -5349,7 +5349,7 @@ function gcShort(name){
 // Every athlete the box score names, by team: {id, name, team, groups, pid, pos}.
 function gcAthletes(sum){
   if(sum && sum._gcAth) return sum._gcAth;
-  const out={ byId:{}, byKey:{}, teams:{} };
+  const out={ byId:{}, byKey:{}, bySur:{}, teams:{} };
   const idx=gcEspnIndex();
   const sp=(typeof sleeperPlayers!=='undefined' && sleeperPlayers) ? sleeperPlayers : {};
   ((sum && sum.boxscore && sum.boxscore.teams)||[]).forEach(t=>{ if(t.team) out.teams[String(t.team.id)]=gcAbbr(t.team.abbreviation); });
@@ -5367,9 +5367,11 @@ function gcAthletes(sum){
             if(sp1>0) pid=lfPidFor(`${name[0]}.${name.slice(sp1+1)}`, team, null);
           }
           const spp=pid?sp[pid]:null;
-          rec={ id, name, team, groups:new Set(), pid, pos:spp?String(spp.pos||'').toUpperCase():'' };
+          rec={ id, name, team, groups:new Set(), pid, pos:spp?String(spp.pos||'').toUpperCase():'', first:(name.split(' ')[0]||'').toLowerCase() };
           out.byId[id]=rec;
           const sp1=name.indexOf(' '); const last=sp1>0?name.slice(sp1+1):name;
+          const surKey=`${team}|${gcNameNorm(last)}`.toLowerCase();
+          (out.bySur[surKey]=out.bySur[surKey]||[]).push(rec);   // all namesakes on a team, to be told apart by first name
           const key=`${team}|${name[0]||''}.${gcNameNorm(last)}`.toLowerCase();
           const line=new Set(['C','G','T','OL','OT','OG','LS']);
           const had=out.byKey[key];
@@ -5448,17 +5450,28 @@ function gcLiveRows(rows, game){
   });
   return out;
 }
-// "J.Burrow" / "A.St. Brown" → the box-score athlete on that team (null when unknown).
+// "J.Burrow" / "A.St. Brown" → the box-score athlete on that team (null when unknown). ESPN
+// widens a shared initial to two letters when a club has namesakes — "Bi.Robinson" (Bijan)
+// against "Br.Robinson" (Brian) — so a two-letter lead picks the man whose first name it fits.
 function gcFindAth(ath, team, token){
   if(!token) return null;
-  const m=/^([A-Za-z])\.(.+)$/.exec(token); if(!m) return null;
-  const key=`${team}|${m[1]}.${gcNameNorm(m[2])}`.toLowerCase();
-  if(ath.byKey[key]) return ath.byKey[key];
+  const m=/^([A-Za-z][a-z]?)\.(.+)$/.exec(token); if(!m) return null;
+  const prefix=m[1].toLowerCase(), init=prefix[0], sur=gcNameNorm(m[2]);
+  const line=new Set(['C','G','T','OL','OT','OG','LS']);
+  const pick=(list)=>{
+    if(!list || !list.length) return null;
+    let pool=list;
+    if(prefix.length>1){ const nn=list.filter(c=>String(c.first||'').startsWith(prefix)); if(nn.length) pool=nn; }   // "Bi" → Bijan, not Brian
+    const byInit=pool.filter(c=>String(c.first||'')[0]===init); if(byInit.length) pool=byInit;
+    return pool.find(c=>!line.has(String(c.pos||''))) || pool[0];   // the skill man among namesakes, not the tackle
+  };
+  const bs=ath.bySur||{};
+  const hit=pick(bs[`${team}|${sur}`.toLowerCase()]); if(hit) return hit;
   // the other team (a defender in an offensive play's text), then any team by last name
-  for(const k in ath.byKey){ if(k.endsWith(`|${m[1]}.${gcNameNorm(m[2])}`.toLowerCase())) return ath.byKey[k]; }
+  for(const k in bs){ if(k.endsWith(`|${sur}`.toLowerCase())){ const h=pick(bs[k]); if(h) return h; } }
   return null;
 }
-const GC_TOKEN = '([A-Z])\\.((?:St\\. )?[A-Z][A-Za-z\'\\-]+(?:-[A-Z][a-z]+)?)';
+const GC_TOKEN = '([A-Z][a-z]?)\\.((?:St\\. )?[A-Z][A-Za-z\'\\-]+(?:-[A-Z][a-z]+)?)';
 function gcTok(re, text){ const m=new RegExp(re).exec(text||''); return m ? `${m[1]}.${m[2]}` : ''; }
 // The play, with its lead-ins removed: the formation note ("(Shotgun)", "(No Huddle,
 // Shotgun)") and the linemen who report eligible — "C.Vinson reported in as eligible.
@@ -5840,112 +5853,188 @@ function gcTurnoverRead(p, offense){
   const ret=Math.max(0, Math.round(at-end));
   return {kind, who, at, end, td, ret};
 }
-// A punt in the play's words: where it was fielded, and by whom (fair catch, a real return,
-// or a muffed catch the receiving team still comes up with) — a kick with no name after it
-// (out of bounds, a touchback, an unrecognized sentence) reads as no returner, and the caller
-// falls back to the single arc it always drew.
+// A penalty in the play's words: the flagged club, the foul, the yards, and whether it moved
+// the ball (a declined or offsetting flag does not). Offense-relative: a foul on the offense
+// costs it ground (the spot goes back), a foul on the defense gains it.
+function gcPenaltyRead(text, offense){
+  const t=String(text||'');
+  const m=/PENALTY on ([A-Z]{2,3})-[^,]+,\s*([^,]+?),\s*(\d+) yards?/i.exec(t) || /PENALTY on ([A-Z]{2,3}),\s*([^,]+?),\s*(\d+) yards?/i.exec(t) || /PENALTY on ([A-Z]{2,3})-[^,]+,\s*([^,.]+)/i.exec(t);
+  if(!m) return null;
+  const team=gcAbbr(m[1]); const foul=String(m[2]||'').trim(); const yards=m[3]?Number(m[3]):0;
+  const declined=/declined/i.test(t); const offset=/offsetting/i.test(t);
+  return { team, foul, yards, declined, offset, onOffense: team===offense };
+}
+// A punt in the play's words, as a whole outcome. Offense-relative to the punting team (0 its
+// own goal, 100 the other): the gross distance and where it was fielded (landYd), then what
+// happened — a clean fair catch or downed kick (no return), a real return (returnYds back
+// toward the punter's goal, endYd where it ended), a return that scored (endYd 0, the punter's
+// own end zone), a touchback (spotted at the receiving 20), a muff the kicking team pounces on
+// (keepPoss — possession stays with the punting side), a muff the receiving team keeps, or a
+// fumble on the return the kicking team recovers. `penalty` flags a foul on the play.
 function gcPuntRead(text, offense){
   const t=String(text||'');
-  const km=/punts? \d+ yards? to (?:the )?([A-Z]{2,3} \d{1,2}|50|end zone)/i.exec(t);
+  const km=/punts? (\d+) yards? to (?:the )?([A-Z]{2,3} \d{1,2}|50|(?:[A-Z]{2,3} )?end zone)/i.exec(t);
   if(!km) return null;
-  const catchYd = km[1].toLowerCase()==='end zone' ? 100 : _gcSpotYd(km[1], offense);
-  if(catchYd==null) return null;
+  const puntYds=Number(km[1]);
+  const landYd = /end zone/i.test(km[2]) ? 100 : _gcSpotYd(km[2], offense);
+  if(landYd==null) return null;
   const rest=t.slice(km.index+km[0].length);
-  const tok="([A-Z]\\.[A-Za-z'\\-]+(?:\\s+[A-Z][A-Za-z'\\-]+)*)";
-  let m=new RegExp('fair catch by '+tok,'i').exec(rest);
-  if(!m) m=new RegExp(tok+'\\s+MUFFS catch','i').exec(rest);
-  if(!m) m=new RegExp(tok+'\\s+(?:ran ob|pushed ob|to|at)','i').exec(rest);
-  return {catchYd, returner: m ? m[1] : ''};
+  const NM="([A-Z][a-z]?\\.[A-Za-z'\\-]+(?:\\s+[A-Z][a-z][A-Za-z'\\-]*)*)";
+  const spotAfter=(str)=>{ const s=/(?:to|at) (?:the )?([A-Z]{2,3} \d{1,2}|50|end zone)/i.exec(str); return s ? (/end zone/i.test(s[1])?0:_gcSpotYd(s[1], offense)) : null; };
+  const penalty=/PENALTY/i.test(rest);
+  const out={ puntYds, landYd, catchYd:landYd, outcome:'downed', returner:'', recoverer:'', returnYds:0, endYd:landYd, keepPoss:false, td:false, penalty };
+  // the ball out the back: a touchback, spotted at the receiving 20
+  if(/touchback/i.test(rest)){ out.outcome='touchback'; out.endYd=80; return out; }
+  // caught clean, no return
+  let m=new RegExp('fair catch by '+NM).exec(rest);
+  if(m){ out.outcome='fair'; out.returner=m[1]; out.endYd=landYd; return out; }
+  // a muff, then a recovery — the recovering club decides who keeps it
+  m=new RegExp(NM+'\\s+MUFFS').exec(rest);
+  if(m){
+    out.returner=m[1];
+    const rec=new RegExp('RECOVERED by ([A-Z]{2,3})-'+NM).exec(rest);
+    if(rec){
+      out.recoverer=rec[2];
+      const rs=spotAfter(rest.slice(rest.indexOf(rec[0])+rec[0].length)); if(rs!=null) out.endYd=rs;
+      if(gcAbbr(rec[1])===offense){ out.outcome='muffKeep'; out.keepPoss=true; } else out.outcome='muffLost';
+    } else out.outcome='muffLost';
+    if(/TOUCHDOWN/i.test(rest)) out.td=true;
+    return out;
+  }
+  // out of bounds / downed: no return
+  if(/out of bounds/i.test(rest)){ out.outcome='oob'; return out; }
+  if(/downed/i.test(rest)){ out.outcome='downed'; const s=spotAfter(rest); if(s!=null) out.endYd=s; return out; }
+  // a returner named and carrying: a real return
+  m=new RegExp(NM+'\\s+(?:for |to |ran ob|pushed ob|at )').exec(rest);
+  if(m){
+    out.returner=m[1];
+    if(/TOUCHDOWN/i.test(rest)){ out.outcome='returnTd'; out.td=true; out.endYd=0; out.returnYds=Math.max(0, Math.round(landYd)); return out; }
+    const forY=/for (-?\d+) yards?/i.exec(rest); const toSpot=spotAfter(rest);
+    out.returnYds=Math.max(0, forY ? Number(forY[1]) : (toSpot!=null ? Math.round(landYd-toSpot) : 0));
+    let endYd=Math.max(0, Math.min(100, landYd-out.returnYds));
+    const fumM=new RegExp('FUMBLES(?:\\s*\\([^)]*\\))?,?\\s*RECOVERED by ([A-Z]{2,3})-'+NM).exec(rest);
+    if(fumM){
+      out.outcome='fumbleLost'; out.recoverer=fumM[2];
+      const fs=spotAfter(rest.slice(rest.indexOf(fumM[0]))); if(fs!=null) endYd=fs;
+      if(gcAbbr(fumM[1])===offense) out.keepPoss=true;
+    } else out.outcome='return';
+    out.endYd=endYd;
+    return out;
+  }
+  return out;
 }
 function gcDriveChartHTML(game, sum){
   const d=gcDriveInView(game, sum); if(!d) return '';
   const G=_gcFieldGeom(); const {W, top, bot, xAt, lane}=G; const H=138;
   const f1=(v)=>(+v).toFixed(1);
-  const opp = d.team===game.home ? game.away : game.home;
+  const away=game.away, home=game.home;
+  const opp = d.team===home ? away : home;
+  // Fixed orientation, all game long: the away club's end zone always on the left, the home
+  // club's always on the right; the away offense drives left → right, the home offense right →
+  // left, and neither side ever flips. All the math stays in the offense's own yards (0 its
+  // goal line, 100 the other, forward always up); X() lays those on the field the right way
+  // round for whichever club has the ball, so a turnover or a punt return that runs back toward
+  // the offense's own goal lands in the correct — fixed — end zone.
+  const dir = (d.team===away) ? 1 : -1;
+  const X = (yd)=> dir>0 ? xAt(yd, lane) : xAt(100-yd, lane);
   const col=(t)=>(typeof pwTeamColor==='function' ? pwTeamColor(t) : '#556');
   const quad=(x0,x1,c)=>({x0,x1,d:`M${f1(x0)},${f1(lane)} Q${f1((x0+x1)/2)},${f1(lane-c)} ${f1(x1)},${f1(lane)}`, len:Math.abs(x1-x0)*1.15+c*0.6});
   const line=(x0,x1)=>({x0,x1,d:`M${f1(x0)},${f1(lane)} L${f1(x1)},${f1(lane)}`, len:Math.abs(x1-x0)});
   const parts=[];
   parts.push(`<svg viewBox="0 0 ${W} ${H}" class="gc-drive-svg" role="img" aria-label="${escAttr(d.team)} drive">`);
-  parts.push(`<defs><linearGradient id="gcFieldG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2330"/><stop offset="1" stop-color="#253040"/></linearGradient><linearGradient id="gcEzA" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${escAttr(col(d.team))}"/><stop offset="1" stop-color="${escAttr(col(d.team))}" stop-opacity="0.75"/></linearGradient><linearGradient id="gcEzH" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${escAttr(col(opp))}" stop-opacity="0.75"/><stop offset="1" stop-color="${escAttr(col(opp))}"/></linearGradient></defs>`);
+  parts.push(`<defs><linearGradient id="gcFieldG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2330"/><stop offset="1" stop-color="#253040"/></linearGradient><linearGradient id="gcEzA" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${escAttr(col(away))}"/><stop offset="1" stop-color="${escAttr(col(away))}" stop-opacity="0.75"/></linearGradient><linearGradient id="gcEzH" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${escAttr(col(home))}" stop-opacity="0.75"/><stop offset="1" stop-color="${escAttr(col(home))}"/></linearGradient></defs>`);
   const poly=(y0,y1)=>`${f1(xAt(y0,top))},${top} ${f1(xAt(y1,top))},${top} ${f1(xAt(y1,bot))},${bot} ${f1(xAt(y0,bot))},${bot}`;
   parts.push(`<polygon points="${poly(0,100)}" fill="url(#gcFieldG)"/>`);
   for(let yd=0; yd<100; yd+=10){ if((yd/10)%2) parts.push(`<polygon points="${poly(yd,yd+10)}" fill="#fff" opacity="0.04"/>`); }
   for(let yd=10; yd<100; yd+=10) parts.push(`<line x1="${f1(xAt(yd,top))}" y1="${top}" x2="${f1(xAt(yd,bot))}" y2="${bot}" stroke="${yd===50?'#5a6270':'#39414c'}" stroke-width="${yd===50?1.4:1}"/>`);
-  // the end zones: solid, the clubs' colours, nothing in them
+  // the end zones: solid club colours — away on the left, home on the right, fixed all game
   parts.push(`<polygon points="${poly(-10,0)}" fill="url(#gcEzA)"/><polygon points="${poly(100,110)}" fill="url(#gcEzH)"/>`);
-  // the uprights standing on the back lines, rising above the field
   // the uprights, Sleeper's exactly: a tall vertical stem from the ground at the back line
-  // (about two fifths of the field's height), the crossbar tilted with the field — it runs
-  // parallel to the back line, so it climbs toward mid-field on both sides — and two short
-  // vertical uprights from its ends, rising a little past the field's top edge
+  // (about two fifths of the field's height), the crossbar tilted with the field, and two
+  // short uprights from its ends, rising a little past the field's top edge
   const post=(yd)=>{
-    const x=xAt(yd,lane), stem=Math.round((bot-top)*0.24), up=Math.round((bot-top)*0.34), half=6;   // a short stem, tall uprights
-    const k0=(bot-top)/(xAt(yd,top)-xAt(yd,bot));   // the back line's slope: positive on the left (leans left going down), negative on the right
-    const k=Math.sign(k0)*Math.min(Math.abs(k0), 0.5);   // the crossbar takes its direction, at a gentler pitch (Sleeper's ~25°)
-    const cy=lane-stem, y1=cy+k*half, y2=cy-k*half;   // the crossbar's ends
+    const x=xAt(yd,lane), stem=Math.round((bot-top)*0.24), up=Math.round((bot-top)*0.34), half=6;
+    const k0=(bot-top)/(xAt(yd,top)-xAt(yd,bot));
+    const k=Math.sign(k0)*Math.min(Math.abs(k0), 0.5);
+    const cy=lane-stem, y1=cy+k*half, y2=cy-k*half;
     parts.push(`<g class="gc-posts"><path d="M${f1(x)},${f1(lane+2)} V${f1(cy)} M${f1(x-half)},${f1(y1)} L${f1(x+half)},${f1(y2)} M${f1(x-half)},${f1(y1)} V${f1(y1-up)} M${f1(x+half)},${f1(y2)} V${f1(y2-up)}" fill="none" stroke="#e6b23c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></g>`);
   };
-  const xPostL=xAt(-10,lane), xPostR=xAt(110,lane); post(-10); post(110);
+  post(-10); post(110);
   [[20,'20'],[50,'50'],[80,'20']].forEach(([yd,lab])=>{ parts.push(`<text x="${f1(xAt(yd,top))}" y="${top-7}" fill="#8b94a3" font-size="9" font-weight="800" text-anchor="middle">${lab}</text>`); });
-  // the drive: the snap spots in order, then the last play's own move
-  const spots=d.plays.filter(p=>p.yte!=null).map(p=>({p, yd:100-p.yte}));
+  // the drive: the snap spots in order (kickoffs are not offensive snaps and never join them),
+  // then the last play's own move
+  const spots=d.plays.filter(p=>p.yte!=null && p.type!=='Kickoff').map(p=>({p, yd:100-p.yte}));
   const eid=String(game.eid||'');
   if(!_gcd.driveSeen) _gcd.driveSeen={};
   const flag=(x)=>`<path class="gc-flag" d="M${f1(x)},${f1(lane+2)} v-11 l7,2.5 l-7,2.5" fill="#f5c542" stroke="#f5c542" stroke-width="1.4" stroke-linejoin="round"/>`;
+  const xmark=(x,y)=>`<g class="gc-inc"><line x1="${f1(x-5)}" y1="${f1(y-5)}" x2="${f1(x+5)}" y2="${f1(y+5)}" stroke="#e5484d" stroke-width="2.6" stroke-linecap="round"/><line x1="${f1(x+5)}" y1="${f1(y-5)}" x2="${f1(x-5)}" y2="${f1(y+5)}" stroke="#e5484d" stroke-width="2.6" stroke-linecap="round"/></g>`;
   if(spots.length){
-    const shape=(p, x0, x1)=>{
-      const t=p.type;
-      if(/Pass|Sack/.test(t)) return Object.assign(quad(x0,x1,Math.min(24, Math.max(8, Math.abs(x1-x0)*0.4))), {cls:''});
-      if(t==='Penalty') return Object.assign(line(x0,x1), {cls:' gc-seg-flag'});
-      if(/Punt|Kickoff/.test(t)) return Object.assign(quad(x0,x1,26), {cls:' gc-seg-kick'});
-      return Object.assign(line(x0,x1), {cls:''});
-    };
     // the drive so far is one quiet line from the first snap to the newest — the older plays'
     // shapes, dots and flags are noise once the next snap comes
     const segs=[];
-    if(spots.length>1 && Math.abs(spots[spots.length-1].yd-spots[0].yd)>=0.01) segs.push(Object.assign(line(xAt(spots[0].yd,lane), xAt(spots[spots.length-1].yd,lane)), {cls:' gc-seg-prog'}));
-    const last=spots[spots.length-1], lp=last.p, x0=xAt(last.yd,lane);
+    if(spots.length>1 && Math.abs(spots[spots.length-1].yd-spots[0].yd)>=0.01) segs.push(Object.assign(line(X(spots[0].yd), X(spots[spots.length-1].yd)), {cls:' gc-seg-prog'}));
+    const last=spots[spots.length-1], lp=last.p, x0=X(last.yd);
     const kick=/Field Goal|Extra Point/.test(lp.type), kickGood=/Good/.test(lp.type);
     const to=(lp.turnover || /Interception|Fumble/.test(lp.type)) ? gcTurnoverRead(lp, d.team) : null;
-    let punt=null;
-    const big = kick || !!to || lp.scoring || Math.abs(lp.yds)>=20;
-    let fin=null, pre=null, endX=null, endY=lane, retCol='#39c15a';
+    const inc=lp.type==='Pass Incompletion';
+    let punt=null, pen=null;
+    let fin=null, pre=null, connector=null, endX=null, endY=lane, retCol='#39c15a';
+    let marker=null, showFlag=false, flagX=0, incAt=false;
+    let pinTeam=d.team, pinToken='', pinRing='#fff';
+    let big = kick || !!to || lp.scoring || Math.abs(lp.yds)>=20;
+    const nn=(typeof gcPlayNames==='function') ? gcPlayNames(lp.text) : {primary:'',receiver:'',picker:'',recoverer:''};
     if(kick){
-      const ex = kickGood ? xPostR : xPostR+11, ey = kickGood ? top+2 : lane+14, c = kickGood ? 40 : 30;
+      const wide=11*dir, ex = X(110) + (kickGood?0:wide), ey = kickGood ? top+2 : lane+14, c = kickGood ? 40 : 30;
       fin={x0, x1:ex, d:`M${f1(x0)},${f1(lane)} Q${f1((x0+ex)/2)},${f1(lane-c)} ${f1(ex)},${f1(ey)}`, len:Math.abs(ex-x0)*1.3, cls: kickGood ? ' gc-seg-fg' : ' gc-seg-fg gc-seg-miss', ey};
-      endX=ex; endY=ey;
+      endX=ex; endY=ey; pinToken=nn.primary;
     } else if(to){
-      // the offense's part to where it was taken, then the return the other way
-      const xa=xAt(to.at,lane), xe=xAt(to.end,lane);
+      // the offense's part to where it was taken, then the defender's return the other way, red
+      const xa=X(to.at), xe=X(to.end);
       pre = to.kind==='int' ? Object.assign(quad(x0,xa,Math.min(24, Math.max(8, Math.abs(xa-x0)*0.4))), {cls:''}) : Object.assign(line(x0,xa), {cls:''});
-      retCol='#e5484d';   // a turnover runs back in red
+      retCol='#e5484d'; pinRing=retCol;
       fin = Math.abs(xe-xa)>=0.5 ? Object.assign(line(xa,xe), {cls:' gc-seg-ret'}) : null;
-      endX=xe;
-    } else if(lp.type==='Punt' && (punt=gcPuntRead(lp.text, d.team)) && punt.returner){
-      // the kick to where it was fielded, then — a real return, or just the credit for
-      // catching it clean. Not a turnover: the receiving team's own drive, so it draws and
-      // animates the way any other gain does (green), the returner's face on the pin.
-      const endYd=Math.max(0, Math.min(100, last.yd+lp.yds)), xCatch=xAt(punt.catchYd,lane);
-      endX=xAt(endYd,lane);
-      if(Math.abs(punt.catchYd-endYd)>=1){
-        pre=Object.assign(quad(x0,xCatch,26), {cls:' gc-seg-kick'});
-        fin=Object.assign(line(xCatch,endX), {cls:' gc-seg-ret'});
-      } else {
-        fin=Object.assign(quad(x0,endX,26), {cls:' gc-seg-kick'});
-      }
+      endX=xe; marker={x:xa, col:retCol}; pinTeam=opp; pinToken=to.who;
+    } else if(lp.type==='Punt' && (punt=gcPuntRead(lp.text, d.team))){
+      // the kick flies from the snap to where it was fielded (always), then a return runs back
+      // the other way only when the returner actually gained ground
+      big=true;
+      const xLand=X(punt.landYd), kickSeg=Object.assign(quad(x0,xLand,26), {cls:' gc-seg-kick'});
+      const returned=(punt.outcome==='return'||punt.outcome==='returnTd'||punt.outcome==='fumbleLost') && punt.returnYds>0;
+      endX=X(punt.endYd);
+      if(returned){ pre=kickSeg; fin=Object.assign(line(xLand,endX), {cls:' gc-seg-ret'}); retCol='#39c15a'; }
+      else { fin=kickSeg; if(Math.abs(punt.endYd-punt.landYd)>=1) connector=line(xLand,endX); }
+      if(punt.penalty){ showFlag=true; flagX=endX; }
+      if(/muff|fumble/i.test(punt.outcome)) marker={x:xLand, col:'#e5484d'};
+      if(punt.keepPoss){ pinTeam=d.team; pinToken=punt.recoverer; pinRing=col(d.team); }   // the kicking club came up with it
+      else { pinTeam=opp; pinToken=punt.returner || punt.recoverer; }
+    } else if(lp.type==='Penalty'){
+      // the flag moves the spot: a foul on the offense costs ground, on the defense gains it
+      pen=gcPenaltyRead(lp.text, d.team);
+      let endYd=last.yd;
+      if(pen && !pen.declined && !pen.offset && pen.yards) endYd=Math.max(0, Math.min(100, last.yd + (pen.onOffense?-pen.yards:pen.yards)));
+      endX=X(endYd);
+      fin = Math.abs(endYd-last.yd)>=0.01 ? Object.assign(line(x0,endX), {cls:' gc-seg-pen'}) : null;
+      showFlag=true; flagX=endX; pinTeam=pen?pen.team:d.team;
+    } else if(inc){
+      // an incompletion: the throw arcs downfield (its depth from the words, air yards being
+      // all we have) and ends in a red X — the pass fell incomplete
+      const depth=/deep/i.test(lp.text)?20:/short/i.test(lp.text)?7:13;
+      const airYd=Math.max(3, Math.min(depth, 100-last.yd)), endYd=last.yd+airYd;
+      endX=X(endYd); fin=Object.assign(quad(x0,endX,Math.min(24,Math.max(8,Math.abs(endX-x0)*0.4))), {cls:' gc-seg-inc'});
+      incAt=true; pinToken=nn.primary;
     } else {
-      const endYd = lp.type==='Penalty' ? last.yd : Math.max(0, Math.min(100, last.yd+lp.yds));
-      endX=xAt(endYd,lane);
-      fin = Math.abs(endYd-last.yd)>=0.01 ? shape(lp, x0, endX) : null;
+      const endYd = Math.max(0, Math.min(100, last.yd+lp.yds));
+      endX=X(endYd);
+      if(Math.abs(endYd-last.yd)>=0.01) fin = /Pass|Sack/.test(lp.type) ? Object.assign(quad(x0,endX,Math.min(24, Math.max(8, Math.abs(endX-x0)*0.4))), {cls:''}) : Object.assign(line(x0,endX), {cls:''});
+      pinToken=(/Pass Reception|Passing Touchdown/.test(lp.type) && nn.receiver) ? nn.receiver : nn.primary;
     }
     const animate = _gcd.driveSeen[eid]!==lp.id; _gcd.driveSeen[eid]=lp.id;
     const dur = big ? 1.4 : 0.7;
-    const puntReturner = (punt && punt.returner) || '';
-    // a punt's flight is its own stage: the kick draws and the ball travels it first, then
-    // the return (if there was one) picks up right where the kick left off
-    const preDur = (puntReturner && pre) ? 0.8 : 0;
+    // a two-stage play (the kick then the return, the offense then the defender) draws its
+    // first leg, the ball travels it, and only then does the second leg pick up
+    const preDur = (punt && pre && fin) ? 0.8 : 0;
     segs.forEach(sg=>parts.push(`<path class="gc-seg${sg.cls}" d="${sg.d}" fill="none" stroke="#39c15a" stroke-width="2" stroke-linecap="round" opacity="0.55"/>`));
+    if(connector) parts.push(`<path class="gc-seg gc-seg-tb" d="${connector.d}" fill="none" stroke="#9aa5b1" stroke-width="1.6" stroke-dasharray="2 3" opacity="0.7"/>`);
     if(pre){
       if(preDur && animate){
         parts.push(`<path class="gc-seg gc-seg-pre${pre.cls}" d="${pre.d}" fill="none" stroke="#39c15a" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="${f1(pre.len)}" stroke-dashoffset="${f1(pre.len)}"><animate attributeName="stroke-dashoffset" from="${f1(pre.len)}" to="0" dur="${preDur}s" fill="freeze"/></path>`);
@@ -5955,52 +6044,55 @@ function gcDriveChartHTML(game, sum){
       }
     }
     // the drive's start, and the newest play's snap; a flag only when the newest play is one
-    parts.push(`<circle cx="${f1(xAt(spots[0].yd,lane))}" cy="${f1(lane)}" r="3.4" fill="#39c15a" stroke="#39c15a" stroke-width="1.5"/>`);
+    parts.push(`<circle cx="${f1(X(spots[0].yd))}" cy="${f1(lane)}" r="3.4" fill="#39c15a" stroke="#39c15a" stroke-width="1.5"/>`);
     if(spots.length>1) parts.push(`<circle cx="${f1(x0)}" cy="${f1(lane)}" r="2.6" fill="#0f1318" stroke="#39c15a" stroke-width="1.5"/>`);
-    if(lp.type==='Penalty') parts.push(flag(x0+3));
-    if(to) parts.push(`<circle cx="${f1(xAt(to.at,lane))}" cy="${f1(lane)}" r="3.6" fill="${escAttr(retCol)}" stroke="#fff" stroke-width="1.4"/>`);
-    const strokeOf = to ? retCol : (/miss/.test((fin&&fin.cls)||'') ? '#e5484d' : '#39c15a');
+    if(showFlag) parts.push(flag(flagX+3));
+    if(marker) parts.push(`<circle cx="${f1(marker.x)}" cy="${f1(lane)}" r="3.6" fill="${escAttr(marker.col)}" stroke="#fff" stroke-width="1.4"/>`);
+    const strokeOf = to ? retCol : incAt ? '#9aa5b1' : (/miss/.test((fin&&fin.cls)||'') ? '#e5484d' : '#39c15a');
+    const endMark = incAt ? xmark(endX,endY) : `<circle class="gc-ball-dot" cx="${f1(endX)}" cy="${f1(endY)}" r="4.6" fill="#fff" stroke="#101214" stroke-width="1.5"/>`;
     if(fin){
       const anim = animate ? `<animate attributeName="stroke-dashoffset" from="${f1(fin.len)}" to="0" begin="${preDur}s" dur="${dur}s" fill="freeze"/>` : '';
       parts.push(`<path class="gc-seg gc-seg-last${fin.cls}" d="${fin.d}" fill="none" stroke="${escAttr(strokeOf)}" stroke-width="2.6" stroke-linecap="round"${animate?` stroke-dasharray="${f1(fin.len)}" stroke-dashoffset="${f1(fin.len)}"`:''}>${anim}</path>`);
-      if(animate) parts.push(`<circle class="gc-ball-dot" cx="0" cy="0" r="4.6" fill="#fff" stroke="#101214" stroke-width="1.5"><animateMotion begin="${preDur}s" dur="${dur}s" fill="freeze" path="${fin.d}"/></circle>`);
-      else parts.push(`<circle class="gc-ball-dot" cx="${f1(endX)}" cy="${f1(endY)}" r="4.6" fill="#fff" stroke="#101214" stroke-width="1.5"/>`);
-      if(animate && big) parts.push(`<circle cx="${f1(endX)}" cy="${f1(endY)}" r="5" fill="none" stroke="${escAttr(strokeOf)}" stroke-width="2" opacity="0"><animate attributeName="r" from="5" to="22" begin="${(preDur+dur).toFixed(2)}s" dur="0.9s" fill="freeze"/><animate attributeName="opacity" values="0;0.9;0" begin="${(preDur+dur).toFixed(2)}s" dur="0.9s" fill="freeze"/></circle>`);
+      if(animate && !incAt) parts.push(`<circle class="gc-ball-dot" cx="0" cy="0" r="4.6" fill="#fff" stroke="#101214" stroke-width="1.5"><animateMotion begin="${preDur}s" dur="${dur}s" fill="freeze" path="${fin.d}"/></circle>`);
+      if(!animate || incAt) parts.push(endMark);
+      if(animate && big && !incAt) parts.push(`<circle cx="${f1(endX)}" cy="${f1(endY)}" r="5" fill="none" stroke="${escAttr(strokeOf)}" stroke-width="2" opacity="0"><animate attributeName="r" from="5" to="22" begin="${(preDur+dur).toFixed(2)}s" dur="0.9s" fill="freeze"/><animate attributeName="opacity" values="0;0.9;0" begin="${(preDur+dur).toFixed(2)}s" dur="0.9s" fill="freeze"/></circle>`);
     } else {
-      parts.push(`<circle class="gc-ball-dot" cx="${f1(endX)}" cy="${f1(endY)}" r="4.6" fill="#fff" stroke="#101214" stroke-width="1.5"/>`);
+      parts.push(endMark);
     }
-    // the pin: the man who made the play — the defender who took it on a turnover, the
-    // returner on a punt, the receiver on a completion, the kicker on a kick, the runner
-    // on a run
-    let src='', label='';
-    const n=(typeof gcPlayNames==='function') ? gcPlayNames(lp.text) : {primary:'',receiver:'',picker:''};
-    if(typeof hsPack==='function'){
+    // the pin: the man who made the play — the defender who took it on a turnover, the club
+    // that recovered a muff, the returner on a punt, the receiver on a completion, the kicker
+    // on a kick, the runner on a run
+    let src='';
+    if(typeof hsPack==='function' && pinToken){
       const ath=gcAthletes(sum);
-      const who = to ? (gcFindAth(ath, opp, to.who) || gcFindAth(ath, opp, n.picker||n.recoverer))
-        : puntReturner ? gcFindAth(ath, opp, puntReturner)
-        : (((/Pass Reception|Passing Touchdown/.test(lp.type)) ? gcFindAth(ath, d.team, n.receiver) : null) || gcFindAth(ath, d.team, n.primary));
-      // his Sleeper id: the box score's man, else the name against the club's roster (a
-      // defender without a stat line yet); Sleeper's headshot, else ESPN's by his box-score id
+      const who=gcFindAth(ath, pinTeam, pinToken);
       let pid=who && who.pid;
-      if(!pid && typeof lfPidFor==='function'){
-        const tok = to ? to.who : puntReturner ? puntReturner : (/Pass Reception|Passing Touchdown/.test(lp.type) ? n.receiver : n.primary);
-        pid=lfPidFor(tok, (to||puntReturner)?opp:d.team, null, to?'picker':'primary')||null;
-      }
+      if(!pid && typeof lfPidFor==='function') pid=lfPidFor(pinToken, pinTeam, null, (pinTeam===d.team)?'primary':'picker')||null;
       const sp=(typeof sleeperPlayers!=='undefined' && sleeperPlayers && pid) ? sleeperPlayers[pid] : null;
       src=(pid && sp) ? ((hsPack({player_id:pid, name:sp.name, pos:sp.pos, team:sp.team})||{}).src||'') : '';
       if(!src && who && who.id && typeof ESPN_HEADSHOT==='function') src=ESPN_HEADSHOT('nfl', who.id)||'';
     }
-    // a flag's pin wears the flagged club
-    const flagTeam = lp.type==='Penalty' ? gcAbbr((/PENALTY on ([A-Z]{2,3})-/.exec(lp.text||'')||[])[1]||'') : '';
+    const pinLogoTeam = pinTeam || d.team;
     const pinX=Math.max(20, Math.min(W-20, endX)); const py=lane-34;
     const pinIn = animate ? `<animate attributeName="opacity" from="0" to="1" begin="${(preDur+dur*0.7).toFixed(2)}s" dur="0.3s" fill="freeze"/>` : '';
-    parts.push(`<g class="gc-pin" opacity="${animate?'0':'1'}">${pinIn}<line x1="${f1(endX)}" y1="${f1(endY-5)}" x2="${f1(pinX)}" y2="${f1(py+15)}" stroke="#fff" stroke-width="1.4" opacity="0.8"/><circle cx="${f1(pinX)}" cy="${f1(py)}" r="15" fill="#101214" stroke="${to?escAttr(retCol):'#fff'}" stroke-width="2"/>${src?`<image href="${escAttr(src)}" x="${f1(pinX-13)}" y="${f1(py-13)}" width="26" height="26" style="clip-path:circle(50%)" preserveAspectRatio="xMidYMid slice"/>`:`<image href="${escAttr(NFL_LOGO(to?opp:(puntReturner?opp:(flagTeam||d.team))))}" x="${f1(pinX-9)}" y="${f1(py-9)}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>`}</g>`);
+    parts.push(`<g class="gc-pin" opacity="${animate?'0':'1'}">${pinIn}<line x1="${f1(endX)}" y1="${f1(endY-5)}" x2="${f1(pinX)}" y2="${f1(py+15)}" stroke="#fff" stroke-width="1.4" opacity="0.8"/><circle cx="${f1(pinX)}" cy="${f1(py)}" r="15" fill="#101214" stroke="${escAttr(pinRing)}" stroke-width="2"/>${src?`<image href="${escAttr(src)}" x="${f1(pinX-13)}" y="${f1(py-13)}" width="26" height="26" style="clip-path:circle(50%)" preserveAspectRatio="xMidYMid slice"/>`:`<image href="${escAttr(NFL_LOGO(pinLogoTeam))}" x="${f1(pinX-9)}" y="${f1(py-9)}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>`}</g>`);
+    let label='';
     if(to){
       const nm=String(to.who||'').replace('.', '. ');
       label = to.td ? (to.kind==='int' ? `${nm} pick six!` : `${nm} fumble return TD!`) : `${nm} ${to.kind==='int'?'INT':'recovers'}${to.ret?` · ${to.ret} yd return`:''}`;
-    } else if(puntReturner){
-      const nm=String(puntReturner).replace('.', '. ');
-      label = pre ? `${nm} ${Math.abs(Math.round((last.yd+lp.yds)-punt.catchYd))} yd return` : `${nm} fair catch`;
+    } else if(punt){
+      const rnm=String(punt.returner||'').replace('.', '. '), cnm=String(punt.recoverer||'').replace('.', '. '), pnm=String(nn.primary||'').replace('.', '. ');
+      if(punt.outcome==='returnTd') label=`${rnm} punt return TD!`;
+      else if(punt.outcome==='return') label=`${rnm} ${punt.returnYds} yd return`;
+      else if(punt.outcome==='fair') label=`${rnm} fair catch`;
+      else if(punt.outcome==='touchback') label=`Touchback`;
+      else if(punt.outcome==='muffKeep') label=`Muff! ${cnm} recovers`;
+      else if(punt.outcome==='muffLost') label=`Muffed · ${cnm||rnm} recovers`;
+      else if(punt.outcome==='fumbleLost') label=`${rnm} fumbles · ${cnm} ball`;
+      else label=`${pnm} punts`;
+      if(punt.penalty) label=(label+' · flag').slice(0,40);
+    } else if(pen){
+      label=`Flag: ${pen.foul} on ${pen.team}${pen.declined?' (declined)':(pen.yards&&!pen.offset?` (${pen.onOffense?'-':'+'}${pen.yards})`:'')}`;
     } else {
       const t=(typeof lfReadPlay==='function') ? lfReadPlay({id:lp.id, type:lp.type, text:lp.text, yds:lp.yds, team:d.team, athletes:[]}).title : lp.text.slice(0,40);
       label=String(t||'').replace(/ 🎉| 🙌/g,'');
@@ -6098,7 +6190,7 @@ function lfNameIndex(){
     if(!nm || !tm) continue;
     const i=nm.indexOf(' '); if(i<0) continue;
     const last=(typeof gcNameNorm==='function')?gcNameNorm(nm.slice(i+1)):nm.slice(i+1).toLowerCase();
-    const cand={pid, pos:String((p&&p.pos)||'').toUpperCase()};
+    const cand={pid, pos:String((p&&p.pos)||'').toUpperCase(), first:nm.slice(0,i).toLowerCase()};
     (idx[`${tm}|${nm[0].toLowerCase()}.${last}`]=idx[`${tm}|${nm[0].toLowerCase()}.${last}`]||[]).push(cand);   // initial + surname
     (idx[`${tm}|*.${last}`]=idx[`${tm}|*.${last}`]||[]).push(cand);                                              // surname alone
   }
@@ -6128,10 +6220,13 @@ function lfPickByRole(cands, role){
 function lfPidFor(token, team, espnId, role){
   if(espnId && typeof gcEspnIndex==='function'){ const p=gcEspnIndex()[String(espnId)]; if(p){ _lf.stat.byId++; return p; } }
   if(!token) return null;
-  const m=/^([A-Za-z])\.(.+)$/.exec(String(token)); if(!m) return null;
+  const m=/^([A-Za-z][a-z]?)\.(.+)$/.exec(String(token)); if(!m) return null;
+  const prefix=m[1].toLowerCase(), init=prefix[0];
   const norm=(typeof gcNameNorm==='function') ? gcNameNorm(m[2]) : String(m[2]).toLowerCase();
   const idx=lfNameIndex(); const tm=String(team||'').toUpperCase();
-  const exact=lfPickByRole(idx[`${tm}|${m[1].toLowerCase()}.${norm}`], role);
+  let cands=idx[`${tm}|${init}.${norm}`];
+  if(cands && cands.length>1 && prefix.length>1){ const nn=cands.filter(c=>String(c.first||'').startsWith(prefix)); if(nn.length) cands=nn; }   // two-letter lead tells namesakes apart
+  const exact=lfPickByRole(cands, role);
   if(exact){ _lf.stat.byName++; return exact; }
   const bySur=idx[`${tm}|*.${norm}`];
   if(bySur && bySur.length===1){ _lf.stat.bySurname++; return bySur[0].pid; }
@@ -6178,7 +6273,7 @@ function lfReadPlay(lp){
   const roles={};
   ['primary','receiver','picker'].forEach(r=>{
     const tok=roleTok[r]; if(!tok) return;
-    const m=/^([A-Za-z])\.(.+)$/.exec(tok); const last=m?m[2]:'';
+    const m=/^([A-Za-z][a-z]?)\.(.+)$/.exec(tok); const last=m?m[2]:'';
     const hit=ath.find(a=>{
       const nm=String(a.name||''); const i=nm.indexOf(' '); const ln=i>0?nm.slice(i+1):nm;
       return (typeof gcNameNorm==='function') ? gcNameNorm(ln)===gcNameNorm(last) : ln.toLowerCase()===last.toLowerCase();

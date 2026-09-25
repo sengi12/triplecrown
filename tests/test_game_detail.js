@@ -49,7 +49,7 @@ const app=new Function('IDS','SUM', code+`
         if(/\\/league\\/L9$/.test(url)) return {name:'Queen City Keepers', status:'in_season', season:'2026', scoring_settings:{pass_yd:0.05, pass_td:6}, roster_positions:['QB','RB','SUPER_FLEX'], settings:{type:0}, total_rosters:12};
         return prev(url); }; },
     sideClass:gcSideClass, setWeekNum:(w)=>{ _gc.week=w; _gc._mu=null; }, liveTimer:()=>_gcLiveTimer, clearLive:()=>{ if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; } }, setMode:(m)=>{ _gc.mode=m; }, setGame:(id)=>{ _gc.game=id; },
-    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, stubContent:(fn)=>{ renderContent=fn; }, setLiveView:(v)=>{ currentProjViewMode=()=>v?'live':'proj'; }, drives:gcDrives, sentence:gcDriveSentence, turnover:gcTurnoverRead, punt:gcPuntRead, logo:NFL_LOGO, esc:escAttr, drive:gcDriveChartHTML, wp:gcWinProbHTML, wpOpen:(v)=>{ _gcd.wpOpen=v; }, top:gcTopHTML, lastPlay:gcLastPlayHTML, idle:tcRepaintWhenIdle, busy:tcUiBusy, setDown:(v)=>{ _tcIdle.down=v; }, flush:tcIdleFlush, setActive:(el)=>{ document.activeElement=el; }, sidebarSig:()=>_tcBoard.sig, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
+    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, stubContent:(fn)=>{ renderContent=fn; }, setLiveView:(v)=>{ currentProjViewMode=()=>v?'live':'proj'; }, drives:gcDrives, sentence:gcDriveSentence, turnover:gcTurnoverRead, punt:gcPuntRead, pen:gcPenaltyRead, logo:NFL_LOGO, esc:escAttr, drive:gcDriveChartHTML, wp:gcWinProbHTML, wpOpen:(v)=>{ _gcd.wpOpen=v; }, top:gcTopHTML, lastPlay:gcLastPlayHTML, idle:tcRepaintWhenIdle, busy:tcUiBusy, setDown:(v)=>{ _tcIdle.down=v; }, flush:tcIdleFlush, setActive:(el)=>{ document.activeElement=el; }, sidebarSig:()=>_tcBoard.sig, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
 `)(IDS, SUM);
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -357,6 +357,60 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
     P('o2',2,'Punt','A.Cole punts 53 yards to TB 27, Center-J.Bobenmoyer, out of bounds.',18,45)], 'PUNT');
   const oobh=app.drive(app.GAME('post'), oobD);
   chk(!/gc-seg-ret/.test(oobh) && (oobh.match(/gc-seg-kick/g)||[]).length===1 && /A\. Cole punts/.test(oobh), 'out of bounds names no returner: one arc from snap to the dead spot, the punter still gets the label');
+
+  console.log('=== namesakes: ESPN widens the shared initial, and it must be read ===');
+  chk(app.names('Bi.Robinson right end to ATL 25 for 6 yards (D.Wonnum).').primary==='Bi.Robinson' && app.names('Br.Robinson up the middle for 3 yards.').primary==='Br.Robinson', 'a two-letter lead (Bijan vs Brian Robinson) is read, not dropped to a blank rush');
+  chk(app.names('(Shotgun) J.Burrow pass short right to Ja.Williams for 8 yards.').receiver==='Ja.Williams', 'the widened initial is read on the receiver too');
+
+  console.log('=== an incompletion arcs downfield and ends in a red X ===');
+  const incD=toD([P('n1',1,'Rush','C.Brown left end for 5 yards.',5,60),
+    P('n2',2,'Pass Incompletion','(Shotgun) J.Burrow pass incomplete deep left to J.Chase [T.Smith].',0,55)], '');
+  const inch=app.drive(app.GAME('post'), incD);
+  chk(/class="gc-inc"/.test(inch) && /gc-seg-inc/.test(inch) && /incomplete/.test(inch) && !/gc-ball-dot/.test(inch.slice(inch.indexOf('gc-seg-inc'))), 'the throw arcs (dashed) and ends in a red X, no resting ball');
+
+  console.log('=== a flag moves the spot, and says how far ===');
+  const penOff=toD([P('po1',1,'Rush','C.Brown left end for 4 yards.',4,60),
+    P('po2',2,'Penalty','PENALTY on CIN-F.Moreau, False Start, 5 yards, enforced at CIN 45 - No Play.',5,55)], '');
+  const poh=app.drive(app.GAME('post'), penOff);
+  chk(/Flag: False Start on CIN \(-5\)/.test(poh) && (poh.match(/class="gc-flag"/g)||[]).length===1 && /gc-seg-pen/.test(poh), 'a penalty on the offense sends the ball back five and labels the loss');
+  const penDef=toD([P('pd1',1,'Rush','C.Brown left end for 4 yards.',4,60),
+    P('pd2',2,'Penalty','PENALTY on TB-L.David, Defensive Holding, 5 yards, enforced at CIN 45 - No Play.',5,56)], '');
+  chk(/Flag: Defensive Holding on TB \(\+5\)/.test(app.drive(app.GAME('post'), penDef)), 'a penalty on the defense moves the ball forward');
+  chk(app.pen && app.pen('PENALTY on CIN-F.Moreau, False Start, 5 yards - No Play.', 'CIN').onOffense===true, 'the flag is read as being on the offense');
+
+  console.log('=== fixed orientation: away on the left, home on the right, never flipped ===');
+  const teamD=(team,plays,result)=>({drives:{previous:[{id:'o'+team, team:{abbreviation:team}, description:'x', result:result||'', plays}]}});
+  const one=[P('s1',1,'Rush','C.Brown left end for 5 yards.',5,55)];
+  const awayDrive=app.drive(app.GAME('post'), teamD('TB', JSON.parse(JSON.stringify(one))));
+  const homeDrive=app.drive(app.GAME('post'), teamD('CIN', JSON.parse(JSON.stringify(one))));
+  const startX=(svg)=>Number((/<circle cx="([\d.]+)" cy="[\d.]+" r="3.4" fill="#39c15a"/.exec(svg)||[])[1]);
+  chk(startX(awayDrive) < startX(homeDrive), `the away offense sits left of where the home offense would from the same yard line (${startX(awayDrive)} < ${startX(homeDrive)})`);
+  const ezStop=(id,svg)=>(new RegExp('id="'+id+'"[^>]*><stop offset="0" stop-color="([^"]+)"').exec(svg)||[])[1];
+  chk(ezStop('gcEzA',awayDrive)===ezStop('gcEzA',homeDrive) && ezStop('gcEzH',awayDrive)===ezStop('gcEzH',homeDrive) && ezStop('gcEzA',awayDrive)!==ezStop('gcEzH',awayDrive), 'the end-zone colours are fixed to the clubs, not to who has the ball');
+
+  console.log('=== a kickoff is not an offensive snap ===');
+  const koD=toD([P('kk',1,'Kickoff','C.McLaughlin kicks 65 yards from TB 35 to end zone, Touchback.',0,100),
+    P('kp',2,'Rush','C.Brown left end for 5 yards.',5,75)], '');
+  const koh=app.drive(app.GAME('post'), koD);
+  chk(!/gc-seg-prog/.test(koh) && /C\. Brown 5 yd rush/.test(koh), 'the kickoff never joins the drive line: one clean snap and its move, no line back to the kickoff spot');
+
+  console.log('=== the punt, whole: return TD, touchback, muffs, a return fumble, a flag ===');
+  const ptd=app.punt('M.Araiza punts 50 yards to TB 5, Center-J.Winchester. A.Bachman for 95 yards, TOUCHDOWN.', 'CIN');
+  chk(ptd && ptd.outcome==='returnTd' && ptd.td===true && ptd.endYd===0 && ptd.returnYds===95, 'a return TD ends in the punting team\'s own end zone (offense yard 0)');
+  chk(/punt return TD/.test(app.drive(app.GAME('post'), toD([P('t1',1,'Rush','C.Brown left end for 5 yards.',5,55), P('t2',2,'Punt','M.Araiza punts 50 yards to TB 5. A.Bachman for 95 yards, TOUCHDOWN.',3,45)], 'TD'))), 'the return-TD label reads as such');
+  const ptb=app.punt('M.Araiza punts 60 yards to TB end zone, Center-J.Winchester, Touchback.', 'CIN');
+  chk(ptb.outcome==='touchback' && ptb.landYd===100 && ptb.endYd===80, 'a touchback: to the end zone, then spotted at the receiving 20');
+  const tbh=app.drive(app.GAME('post'), toD([P('b1',1,'Rush','C.Brown left end for 5 yards.',5,55), P('b2',2,'Punt','M.Araiza punts 60 yards to TB end zone, Touchback.',33,45)], 'PUNT'));
+  chk(/Touchback/.test(tbh) && /gc-seg-tb/.test(tbh) && !/gc-seg-ret/.test(tbh), 'the touchback draws the kick to the end zone and a dotted hop back to the 20, no return');
+  const pmk=app.punt('M.Araiza punts 45 yards to TB 20. A.Bachman MUFFS catch, RECOVERED by CIN-J.Trotter at TB 22.', 'CIN');
+  chk(pmk.outcome==='muffKeep' && pmk.keepPoss===true && pmk.recoverer==='J.Trotter' && pmk.endYd===78, 'a muff the kicking team recovers keeps possession for the kicking team');
+  const pml=app.punt('M.Araiza punts 45 yards to TB 20. A.Bachman MUFFS catch, RECOVERED by TB-K.Walker at TB 18.', 'CIN');
+  chk(pml.outcome==='muffLost' && pml.keepPoss===false, 'a muff the receiving team recovers stays the receiving team\'s ball');
+  const pfl=app.punt('M.Araiza punts 40 yards to TB 30. A.Bachman to TB 40 for 10 yards. FUMBLES (E.Downs), RECOVERED by CIN-J.Trotter at TB 40.', 'CIN');
+  chk(pfl.outcome==='fumbleLost' && pfl.returnYds===10 && pfl.keepPoss===true && pfl.recoverer==='J.Trotter', 'a fumble on the return the kicking team scoops up: the return, then the loss');
+  const ppn=app.punt('M.Araiza punts 41 yards to TB 28. A.Bachman to TB 42 for 14 yards. PENALTY on TB-K.Walker, Holding, 10 yards, enforced at TB 42.', 'CIN');
+  chk(ppn.outcome==='return' && ppn.penalty===true, 'a flag during the return is noted on the outcome');
+
   const posts=[...dc.matchAll(/<g class="gc-posts"><path d="M([\d.]+),([\d.]+) V([\d.]+) M([\d.]+),([\d.]+) L([\d.]+),([\d.]+) M[\d.]+,[\d.]+ V[\d.]+ M[\d.]+,[\d.]+ V[\d.]+"/g)].map(m=>m.slice(1).map(Number));
   chk(posts.length===2 && posts[0][6]<posts[0][4] && posts[1][6]>posts[1][4] && posts.every(q=>q[3]<q[5]) && !/skewX/.test(dc), 'uprights on both back lines, Sleeper\'s: a vertical stem, the crossbar tilted with the field (climbing toward mid-field on both sides), two short vertical uprights');
   chk(app.sentence(app.drives(mini)[0])==='CIN from own 40: 2-plays. 1 rush, 12 yds. 1/1 pass, 48 yds. TD 🎉', `the sentence, Sleeper's wording: "${app.sentence(app.drives(mini)[0])}"`);
