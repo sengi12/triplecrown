@@ -18059,12 +18059,12 @@ function renderPcardQbPassing(pid){
       <div class="qpc-tile"><label>Yards</label><b>${noteWrapHtml(escHtml(t.yards!=null?Number(t.yards).toLocaleString():'—'), { label:'Passing Yards', value:t.yards!=null?Number(t.yards).toLocaleString():'—', source:'qb_passing_chart', statKey:'yards', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b>${_rk('yards')}</div>
       <div class="qpc-tile"><label>TD/INT</label><b>${noteWrapHtml(escHtml(tdInt), { label:'TD/INT', value:tdInt, source:'qb_passing_chart', statKey:'td_int', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b>${_rk('td')}</div>
       ${t.scramble_rate!=null ? `<div class="qpc-tile" title="Scrambles per dropback (${t.scrambles||0} of ${t.dropbacks||0})"><label>Scramble %</label><b>${noteWrapHtml(escHtml(_qbNum(t.scramble_rate,1)+'%'), { label:'Scramble Rate', value:_qbNum(t.scramble_rate,1)+'%', source:'qb_passing_chart', statKey:'scramble_rate', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b>${_rk('scramble_rate')}</div>` : ''}
-      <div class="qpc-tile"><label>Attempts*</label><b>${noteWrapHtml(escHtml(t.attempts!=null?t.attempts:'—'), { label:'Located Attempts', value:t.attempts!=null?t.attempts:'—', source:'qb_passing_chart', statKey:'attempts', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
+      <div class="qpc-tile" title="Located pass attempts (excludes sacks &amp; 2-pt)"><label>Attempts</label><b>${noteWrapHtml(escHtml(t.attempts!=null?t.attempts:'—'), { label:'Located Attempts', value:t.attempts!=null?t.attempts:'—', source:'qb_passing_chart', statKey:'attempts', context:`${season} passing chart`, player:notePlayer, team:notePlayer.team }, 'note-tag-hit')}</b></div>
     </div>
     ${pcardQbDuressHTML(_game, _games, season, notePlayer)}
     ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('qb', norm, season, _selWk) : ''}
     ${pcardQbChartingBand(norm, season, notePlayer)}
-    <div class="pcard-src">*Located pass attempts (excl. sacks, 2-pt). All data provided by nflverse.${(typeof ngsChartLink==='function' && _wnode) ? ngsChartLink(_wnode, name, season, _selWk) : ''}</div>
+    <div class="pcard-src">All data provided by nflverse.${(typeof ngsChartLink==='function' && _wnode) ? ngsChartLink(_wnode, name, season, _selWk) : ''}</div>
   </div>`;
 }
 
