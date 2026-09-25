@@ -74,7 +74,7 @@ function nflverseSharpTables(){
   const out={};
   const ORDER={
     offense:['EPA/Play','EPA/Pass','EPA/Rush','Points Scored','Yards Per Play','Points Per Drive','Explosive Play Rate','Down Conversion Rate','Rush Success Rate','Pass Success Rate'],
-    defense:['EPA/Play','EPA/Pass Allowed','EPA/Rush Allowed','Points Allowed','Yards Per Play','Y/PL Last 5','Points Per Drive','Explosive Play Rate','Down Conversion Rate','Rush Success Rate','Pass Success Rate'],
+    defense:['EPA/Play','EPA/Pass Allowed','EPA/Rush Allowed','Points Allowed','Yards Per Play','Y/PL Last 5','Points Per Drive','Explosive Play Rate','Down Conversion Rate','Rush Success Rate','Pass Success Rate','Turnovers'],
   };
   const metricName=(c,isDefense)=>({
     'EPA/DB':isDefense?'EPA/Pass Allowed':'EPA/Pass',

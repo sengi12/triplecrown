@@ -589,6 +589,9 @@ function _advComputeGeneralRangeTables(season, lo, hi){
         'Points Per Drive': _advNum(defDriveCt>0 ? (sum.def_drive_pts_allowed/defDriveCt) : null, 2),
         'Explosive Play Rate': _advNum(defPlays>0 ? (sum.def_explosive_allowed/defPlays)*100 : null, 1),
         'Down Conversion Rate': _advNum(defConvObs>0 ? (sum.def_conv_allowed/defConvObs)*100 : null, 1),
+        'Turnovers': _advNum(sum.def_takeaways!=null ? sum.def_takeaways : null, 0),
+        'Rush Success Rate': _advNum((sum.def_run_success_allowed!=null && (sum.def_run_plays||0)>0) ? (sum.def_run_success_allowed/sum.def_run_plays)*100 : null, 1),
+        'Pass Success Rate': _advNum((sum.def_pass_success_allowed!=null && (sum.def_pass_plays||0)>0) ? (sum.def_pass_success_allowed/sum.def_pass_plays)*100 : null, 1),
       },
       tendencies:{
         'Shotgun Rate': _advNum(tendPlays>0 ? (sum.tend_shotgun/tendPlays)*100 : null, 1),
@@ -638,13 +641,15 @@ function _advComputeGeneralRangeTables(season, lo, hi){
         'No Blitz Pressure Rate': _advNum(dlNoBlitzObs>0 ? (sum.dl_no_blitz_pressures/dlNoBlitzObs)*100 : null, 1),
         'Rush Stuff Rate': _advNum(dlRushAtt>0 ? (sum.dl_rush_stuffed/dlRushAtt)*100 : null, 1),
         'Missed Tackles': _advNum(dlPfr ? sum.dl_missed_tackles : null, 0),
+        'Pressures/Game': _advNum(paceGames>0 ? ((dlPfr ? sum.dl_pfr_pressures : sum.dl_pressures)/paceGames) : null, 1),
+        'Sacks': _advNum(sum.dl_sacks!=null ? sum.dl_sacks : null, 0),
       },
     };
   }
 
   const mk=(vals, lower)=>_advRankMap(vals, lower);
   const out={};
-  const defLower=new Set(['EPA/Pass Allowed','EPA/Rush Allowed','Yards Per Play','Points Per Drive','Points Allowed','Explosive Play Rate','Down Conversion Rate']);
+  const defLower=new Set(['EPA/Pass Allowed','EPA/Rush Allowed','Yards Per Play','Points Per Drive','Points Allowed','Explosive Play Rate','Down Conversion Rate','Rush Success Rate','Pass Success Rate']);
   const tendLower=new Set(['Drop Rate']);
   const paceLower=new Set(['Sec/Play']);
   const covLower=new Set();
@@ -653,13 +658,13 @@ function _advComputeGeneralRangeTables(season, lo, hi){
   const dlineLower=new Set(['Missed Tackles']);
   const spec={
     offense:{lower:new Set(), cols:['EPA/Play','EPA/Pass','EPA/Rush','Points Scored','Yards Per Play','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
-    defense:{lower:defLower, cols:['EPA/Play','EPA/Pass Allowed','EPA/Rush Allowed','Points Allowed','Yards Per Play','Points Per Drive','Explosive Play Rate','Down Conversion Rate']},
+    defense:{lower:defLower, cols:['EPA/Play','EPA/Pass Allowed','EPA/Rush Allowed','Points Allowed','Yards Per Play','Points Per Drive','Explosive Play Rate','Down Conversion Rate','Rush Success Rate','Pass Success Rate','Turnovers']},
     tendencies:{lower:tendLower, cols:['Shotgun Rate','NoHuddle Rate','AirYards/Att','Motion Rate','Play Action Rate','RPO Rate','Screen Rate','Trick Play Rate','Drop Rate']},
     pace:{lower:paceLower, cols:['Neutral DB Rate','Sec/Play','Off Plays/G','Total Plays/G']},
     personnel:{lower:persLower, cols:['11 Personnel','12 Personnel','13 Personnel','21 Personnel','3WR Rate','Multi TE Rate','Multi RB Rate']},
     coverage:{lower:covLower, cols:['Man Rate','Zone Rate','Middle Closed Rate','Middle Open Rate','Cover 1','Cover 2','Cover 3']},
     def_tendencies:{lower:dtendLower, cols:['Blitz Rate','Sub Package Rate','Nickel Rate','Dime+ Rate']},
-    defensive_line:{lower:dlineLower, cols:['Pressure Rate','No Blitz Pressure Rate','Rush Stuff Rate','Missed Tackles']},
+    defensive_line:{lower:dlineLower, cols:['Pressure Rate','No Blitz Pressure Rate','Pressures/Game','Sacks','Rush Stuff Rate','Missed Tackles']},
   };
   for(const key of Object.keys(spec)){
     const colsList=spec[key].cols;

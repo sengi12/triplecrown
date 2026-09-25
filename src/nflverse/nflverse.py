@@ -487,6 +487,12 @@ def _side_table(plays, team_col, last5_weeks, defense=False):
         "Rush Success Rate": rsr.round(1),
         "Pass Success Rate": psr.round(1),
     })
+    # Takeaways the defence came up with (its picks and the fumbles it recovered). Offence-side
+    # this would be giveaways, so it rides the defence table only.
+    if defense and ("interception" in plays.columns or "fumble_lost" in plays.columns):
+        ta = (pd.to_numeric(plays.get("interception"), errors="coerce").fillna(0)
+              + pd.to_numeric(plays.get("fumble_lost"), errors="coerce").fillna(0))
+        out["Turnovers"] = ta.groupby(plays[team_col]).sum().round(0)
     return out
 
 def team_metrics(season):
@@ -1154,7 +1160,7 @@ def adv_weekly_team(season):
         "qb_dropback", "rush_attempt", "qb_scramble", "qb_kneel", "qb_spike",
         "sack", "qb_hit", "complete_pass", "pass_touchdown", "interception", "fumble_lost",
         "passing_yards", "rushing_yards", "receiving_yards", "rush_touchdown", "pass_attempt", "yardline_100",
-        "yards_gained", "epa", "fixed_drive", "fixed_drive_result", "series_result",
+        "yards_gained", "epa", "success", "fixed_drive", "fixed_drive_result", "series_result",
         "shotgun", "no_huddle", "air_yards", "wp", "half_seconds_remaining",
         "game_seconds_remaining",
         "home_team", "away_team", "total_home_score", "total_away_score",
@@ -1212,6 +1218,14 @@ def adv_weekly_team(season):
     out["def_pass_epa_allowed"] = epa_vals.where(is_pass, 0).groupby([plays["defteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
     out["def_run_plays"] = is_run.groupby([plays["defteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
     out["def_run_epa_allowed"] = epa_vals.where(is_run, 0).groupby([plays["defteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+
+    # Extra defensive dials for the advanced cards: success allowed (a play the offense won),
+    # takeaways (the picks and fumbles the defence came up with), and sacks.
+    succ = pd.to_numeric(plays["success"], errors="coerce").fillna(0) if "success" in plays.columns else pd.Series(0.0, index=plays.index)
+    out["def_pass_success_allowed"] = succ.where(is_pass, 0).groupby([plays["defteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["def_run_success_allowed"] = succ.where(is_run, 0).groupby([plays["defteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["def_takeaways"] = (pd.to_numeric(plays["interception"], errors="coerce").fillna(0) + pd.to_numeric(plays["fumble_lost"], errors="coerce").fillna(0)).groupby([plays["defteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
+    out["dl_sacks"] = pd.to_numeric(plays["sack"], errors="coerce").fillna(0).groupby([plays["defteam"], plays["week"]]).sum(min_count=1).reindex(idx).fillna(0)
 
     dr = pbp.dropna(subset=["fixed_drive"]).copy()
     dr["dpts"] = dr["fixed_drive_result"].map(_drive_points)
@@ -1520,12 +1534,14 @@ def adv_weekly_team(season):
         "off_drive_three_out_ct", "off_drive_kill_ct", "off_drive_rz_ct", "off_drive_rz_td_ct", "off_drive_g10_ct", "off_drive_g10_td_ct",
         "off_drive_pass_td_ct", "off_drive_rush_td_ct", "off_fp_std", "off_fp_half", "off_fp_ppr", "off_targets", "off_receptions", "off_pass_td", "off_rush_td",
         "def_plays", "def_yards", "def_epa_allowed", "def_pass_plays", "def_pass_epa_allowed", "def_run_plays", "def_run_epa_allowed", "def_explosive_allowed", "def_conv_allowed", "def_conv_obs", "def_drive_pts_allowed", "def_drive_ct",
+        "def_pass_success_allowed", "def_run_success_allowed", "def_takeaways",
         "tend_plays", "tend_shotgun", "tend_nohuddle", "db", "air_sum", "air_att", "tend_motion", "tend_play_action", "tend_rpo", "tend_screen", "tend_trick", "tend_drop", "tend_catchable",
         "pace_snaps", "pace_neutral_db", "pace_neutral_snaps", "pace_sec_sum", "pace_sec_n", "pace_games", "pace_total_game_plays",
         "cov_obs", "cov_man", "cov_zone", "cov_shell_obs", "cov_mofc", "cov_mofo", "cov_c1", "cov_c2", "cov_c3",
         "off_pers_obs", "off_wr3", "off_mte", "off_11", "off_12", "off_13", "off_21", "off_multirb",
         "def_pers_obs", "def_sub", "def_nickel", "def_dime", "blitz_db_obs", "blitz_db5",
         "dl_dropbacks", "dl_pressures", "dl_no_blitz_obs", "dl_no_blitz_pressures", "dl_rush_att", "dl_rush_stuffed",
+        "dl_sacks",
         "off_pts", "def_pts_allowed",
         # PFR's charted pressures / missed tackles per week, and the inferred-personnel flags
         "dl_pfr_obs", "dl_pfr_pressures", "dl_missed_tackles", "off_pers_est", "def_pers_est",
@@ -1644,8 +1660,16 @@ def team_defense_line(season):
     # Rush Stuff Rate forced: designed rushes (no scrambles/kneels) held to <= 0 yards.
     rd = pbp[(pbp["rush_attempt"] == 1) & (pbp["qb_scramble"] == 0) & (pbp["qb_kneel"] == 0)]
     out["Rush Stuff Rate"] = (rd.groupby("defteam").apply(lambda x: (x["yards_gained"] <= 0).mean() * 100)).round(1)
+    # Sacks, and pressures per game (the raw pressures reconstructed from the rate × dropbacks).
+    out["Sacks"] = pd.to_numeric(pbp["sack"], errors="coerce").fillna(0).groupby(pbp["defteam"]).sum().round(0)
+    games = pbp.groupby("defteam")["game_id"].nunique()
+    if "Pressure Rate" in out.columns:
+        pr = pd.to_numeric(out["Pressure Rate"], errors="coerce")
+        db_al = pd.to_numeric(opp_db, errors="coerce").reindex(out.index)
+        gm = pd.to_numeric(games, errors="coerce").reindex(out.index).replace(0, np.nan)
+        out["Pressures/Game"] = ((pr / 100.0) * db_al / gm).round(1)
     # Order columns to mirror Sharp's defensive_line layout.
-    cols = [c for c in ["Pressure Rate", "No Blitz Pressure Rate", "Rush Stuff Rate", "Missed Tackles"] if c in out.columns]
+    cols = [c for c in ["Pressure Rate", "No Blitz Pressure Rate", "Pressures/Game", "Sacks", "Rush Stuff Rate", "Missed Tackles"] if c in out.columns]
     return out[cols]
 
 def team_extended(season):

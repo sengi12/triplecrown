@@ -627,6 +627,44 @@ function gcDriveSentence(d){
   const res = d.result ? ` ${escHtml(d.result)}${/TD/.test(d.result)?' 🎉':''}` : (d.live ? ' in progress' : '');
   return `${d.team}${from?' '+from:''}: ${parts.join('. ')}.${res}`;
 }
+// A kickoff in the play's words, the receiving team's side of it (offense = the club that gets
+// the ball): where it was kicked from (the kicking team's 35 unless a flag moved it), where it
+// was fielded, and what happened — a return (returnYds toward the kicking team's goal, endYd
+// where it ended), a return that scored (endYd 100, the kicking team's end zone), a touchback
+// (spotted where the text says, else the 35), out of bounds, or a muff/onside the kicking team
+// recovered (keepPoss — the ball flips to them). `penalty` flags a foul; `muff` a bobbled catch.
+function gcKickoffRead(text, offense){
+  const t=String(text||'');
+  const km=/kicks? (\d+) yards? from ([A-Z]{2,3} \d{1,2}|50) to (?:the )?([A-Z]{2,3} \d{1,2}|50|(?:[A-Z]{2,3} )?end zone)/i.exec(t);
+  if(!km) return null;
+  const origin=_gcSpotYd(km[2], offense);
+  const landYd = /end zone/i.test(km[3]) ? 0 : _gcSpotYd(km[3], offense);
+  if(origin==null || landYd==null) return null;
+  const rest=t.slice(km.index+km[0].length);
+  const NM="([A-Z][a-z]?\\.[A-Za-z'\\-]+(?:\\s+[A-Z][a-z][A-Za-z'\\-]*)*)";
+  const spotAfter=(str)=>{ const s=/(?:to|at) (?:the )?([A-Z]{2,3} \d{1,2}|50|end zone)/i.exec(str); return s ? (/end zone/i.test(s[1])?0:_gcSpotYd(s[1], offense)) : null; };
+  const penalty=/PENALTY/i.test(rest), muff=/MUFFS/i.test(rest);
+  const out={ origin, landYd, outcome:'downed', returner:'', recoverer:'', returnYds:0, endYd:landYd, td:false, penalty, muff, keepPoss:false };
+  if(/touchback/i.test(rest)){ out.outcome='touchback'; const s=spotAfter(rest); out.endYd=(s!=null?s:35); return out; }
+  if(/out of bounds/i.test(rest)){ out.outcome='oob'; const s=spotAfter(rest); if(s!=null) out.endYd=s; return out; }
+  // a real return: the returner named, carrying the ball on
+  let m=new RegExp(NM+'\\s+(?:for |to |ran ob|pushed ob|at )').exec(rest);
+  if(m){
+    out.returner=m[1];
+    if(/TOUCHDOWN/i.test(rest)){ out.outcome='returnTd'; out.td=true; out.endYd=100; out.returnYds=Math.max(0, Math.round(100-landYd)); return out; }
+    const forY=/for (-?\d+) yards?/i.exec(rest), toSpot=spotAfter(rest);
+    out.endYd = toSpot!=null ? toSpot : landYd;
+    out.returnYds = forY ? Math.max(0, Number(forY[1])) : Math.max(0, Math.round(out.endYd-landYd));
+    const fumM=new RegExp('FUMBLES(?:\\s*\\([^)]*\\))?,?\\s*RECOVERED by ([A-Z]{2,3})-'+NM,'i').exec(rest);
+    if(fumM){ out.outcome='fumbleLost'; out.recoverer=fumM[2]; const fs=spotAfter(rest.slice(rest.indexOf(fumM[0]))); if(fs!=null) out.endYd=fs; if(gcAbbr(fumM[1])!==offense) out.keepPoss=true; }
+    else out.outcome='return';
+    return out;
+  }
+  // no return named — a muff or onside the kicking team recovered flips the ball to them
+  const rec=new RegExp('RECOVERED by ([A-Z]{2,3})-'+NM,'i').exec(rest);
+  if(rec){ out.outcome='muffLost'; out.recoverer=rec[2]; const s=spotAfter(rest.slice(rest.indexOf(rec[0])+rec[0].length)); if(s!=null) out.endYd=s; if(gcAbbr(rec[1])!==offense) out.keepPoss=true; return out; }
+  return out;
+}
 // The drive on the field, Sleeper's way: the field in perspective (the near sideline wide
 // at the bottom, the far one narrow at the top), ten-yard bands alternating, each end zone
 // solid in its club's colour, yellow uprights standing on both back lines. The offense
@@ -775,6 +813,11 @@ function gcDriveChartHTML(game, sum){
   // the drive: the snap spots in order (kickoffs are not offensive snaps and never join them),
   // then the last play's own move
   const spots=d.plays.filter(p=>p.yte!=null && p.type!=='Kickoff').map(p=>({p, yd:100-p.yte}));
+  // the newest play is a kickoff: it stands on its own (kickoffs never join the snap line),
+  // drawn like a punt from where it was kicked — a spot at the kicking spot carries it in
+  const rawLast=d.plays.length?d.plays[d.plays.length-1]:null;
+  const koData=(rawLast && rawLast.type==='Kickoff' && typeof gcKickoffRead==='function') ? gcKickoffRead(rawLast.text, d.team) : null;
+  if(koData) spots.push({p:rawLast, yd:koData.origin});
   const eid=String(game.eid||'');
   if(!_gcd.driveSeen) _gcd.driveSeen={};
   const flag=(x)=>`<path class="gc-flag" d="M${f1(x)},${f1(lane+2)} v-11 l7,2.5 l-7,2.5" fill="#f5c542" stroke="#f5c542" stroke-width="1.4" stroke-linejoin="round"/>`;
@@ -818,6 +861,19 @@ function gcDriveChartHTML(game, sum){
       if(/muff|fumble/i.test(punt.outcome)) marker={x:xLand, col:'#e5484d'};
       if(punt.keepPoss){ pinTeam=d.team; pinToken=punt.recoverer; pinRing=col(d.team); }   // the kicking club came up with it
       else { pinTeam=opp; pinToken=punt.returner || punt.recoverer; }
+    } else if(lp.type==='Kickoff' && koData){
+      // the kick flies from the kicking spot down to where it was fielded, then the return the
+      // other way — the receiving team's own advance (green), only drawn when it gained ground
+      big=true;
+      const xLand=X(koData.landYd), kickSeg=Object.assign(quad(x0,xLand,26), {cls:' gc-seg-kick'});
+      const returned=(koData.outcome==='return'||koData.outcome==='returnTd'||koData.outcome==='fumbleLost') && koData.returnYds>0;
+      endX=X(koData.endYd);
+      if(returned){ pre=kickSeg; fin=Object.assign(line(xLand,endX), {cls:' gc-seg-ret'}); retCol='#39c15a'; }
+      else { fin=kickSeg; if(Math.abs(koData.endYd-koData.landYd)>=1) connector=line(xLand,endX); }
+      if(koData.penalty){ showFlag=true; flagX=endX; }
+      if(koData.muff || /fumble/i.test(koData.outcome)) marker={x:xLand, col:'#e5484d'};
+      if(koData.keepPoss){ pinTeam=opp; pinToken=koData.recoverer; pinRing=col(opp); }   // the kicking team recovered it
+      else { pinTeam=d.team; pinToken=koData.returner || koData.recoverer; }
     } else if(lp.type==='Penalty'){
       // the flag moves the spot: a foul on the offense costs ground, on the defense gains it
       pen=gcPenaltyRead(lp.text, d.team);
@@ -834,16 +890,19 @@ function gcDriveChartHTML(game, sum){
       endX=X(endYd); fin=Object.assign(quad(x0,endX,Math.min(24,Math.max(8,Math.abs(endX-x0)*0.4))), {cls:' gc-seg-inc'});
       incAt=true; pinToken=nn.primary;
     } else {
+      // a sack loses ground: a straight red line back to the new spot, no arc; everything else
+      // is a run (a line) or a completion (an arc spanning the throw)
+      const sack=/^Sack/.test(lp.type);
       const endYd = Math.max(0, Math.min(100, last.yd+lp.yds));
       endX=X(endYd);
-      if(Math.abs(endYd-last.yd)>=0.01) fin = /Pass|Sack/.test(lp.type) ? Object.assign(quad(x0,endX,Math.min(24, Math.max(8, Math.abs(endX-x0)*0.4))), {cls:''}) : Object.assign(line(x0,endX), {cls:''});
+      if(Math.abs(endYd-last.yd)>=0.01) fin = sack ? Object.assign(line(x0,endX), {cls:' gc-seg-sack'}) : (/Pass/.test(lp.type) ? Object.assign(quad(x0,endX,Math.min(24, Math.max(8, Math.abs(endX-x0)*0.4))), {cls:''}) : Object.assign(line(x0,endX), {cls:''}));
       pinToken=(/Pass Reception|Passing Touchdown/.test(lp.type) && nn.receiver) ? nn.receiver : nn.primary;
     }
     const animate = _gcd.driveSeen[eid]!==lp.id; _gcd.driveSeen[eid]=lp.id;
     const dur = big ? 1.4 : 0.7;
     // a two-stage play (the kick then the return, the offense then the defender) draws its
     // first leg, the ball travels it, and only then does the second leg pick up
-    const preDur = (punt && pre && fin) ? 0.8 : 0;
+    const preDur = ((punt||koData) && pre && fin) ? 0.8 : 0;
     segs.forEach(sg=>parts.push(`<path class="gc-seg${sg.cls}" d="${sg.d}" fill="none" stroke="#39c15a" stroke-width="2" stroke-linecap="round" opacity="0.55"/>`));
     if(connector) parts.push(`<path class="gc-seg gc-seg-tb" d="${connector.d}" fill="none" stroke="#9aa5b1" stroke-width="1.6" stroke-dasharray="2 3" opacity="0.7"/>`);
     if(pre){
@@ -859,7 +918,7 @@ function gcDriveChartHTML(game, sum){
     if(spots.length>1) parts.push(`<circle cx="${f1(x0)}" cy="${f1(lane)}" r="2.6" fill="#0f1318" stroke="#39c15a" stroke-width="1.5"/>`);
     if(showFlag) parts.push(flag(flagX+3));
     if(marker) parts.push(`<circle cx="${f1(marker.x)}" cy="${f1(lane)}" r="3.6" fill="${escAttr(marker.col)}" stroke="#fff" stroke-width="1.4"/>`);
-    const strokeOf = to ? retCol : incAt ? '#9aa5b1' : (/miss/.test((fin&&fin.cls)||'') ? '#e5484d' : '#39c15a');
+    const strokeOf = to ? retCol : incAt ? '#9aa5b1' : (/miss|gc-seg-sack/.test((fin&&fin.cls)||'') ? '#e5484d' : '#39c15a');
     const endMark = incAt ? xmark(endX,endY) : `<circle class="gc-ball-dot" cx="${f1(endX)}" cy="${f1(endY)}" r="4.6" fill="#fff" stroke="#101214" stroke-width="1.5"/>`;
     if(fin){
       const anim = animate ? `<animate attributeName="stroke-dashoffset" from="${f1(fin.len)}" to="0" begin="${preDur}s" dur="${dur}s" fill="freeze"/>` : '';
@@ -902,6 +961,16 @@ function gcDriveChartHTML(game, sum){
       else if(punt.outcome==='fumbleLost') label=`${rnm} fumbles · ${cnm} ball`;
       else label=`${pnm} punts`;
       if(punt.penalty) label=(label+' · flag').slice(0,40);
+    } else if(koData){
+      const rnm=String(koData.returner||'').replace('.', '. '), cnm=String(koData.recoverer||'').replace('.', '. ');
+      if(koData.outcome==='returnTd') label=`${rnm} kick return TD!`;
+      else if(koData.outcome==='return') label=`${rnm} ${koData.returnYds} yd return`;
+      else if(koData.outcome==='touchback') label='Touchback';
+      else if(koData.outcome==='oob') label='Kickoff out of bounds';
+      else if(koData.outcome==='muffLost') label=`Muffed · ${cnm||rnm} recovers`;
+      else if(koData.outcome==='fumbleLost') label=`${rnm} fumbles · ${cnm} ball`;
+      else label='Kickoff';
+      if(koData.penalty) label=(label+' · flag').slice(0,40);
     } else if(pen){
       label=`Flag: ${pen.foul} on ${pen.team}${pen.declined?' (declined)':(pen.yards&&!pen.offset?` (${pen.onOffense?'-':'+'}${pen.yards})`:'')}`;
     } else {

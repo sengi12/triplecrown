@@ -59,5 +59,20 @@ print("=== no success column ===")
 bare = N._side_table(d.drop(columns=["success"]), "posteam", [1])
 chk("Rush Success Rate" in bare.columns and bare["Rush Success Rate"].isna().all(), "a frame without `success` gives empty rates, not a crash")
 
+print("=== takeaways ride the defense table only ===")
+trows = []
+def tplay(off, de, pt, intc=0, fum=0):
+    trows.append({"posteam": off, "defteam": de, "play_type": pt, "success": 0, "week": 1, "yards_gained": 5,
+                  "epa": 0.1, "game_id": f"t{off}", "fixed_drive": 1, "fixed_drive_result": "Punt", "series_result": "First down",
+                  "interception": intc, "fumble_lost": fum})
+tplay("HOT", "COLD", "pass", intc=1)   # COLD's defense picks HOT
+tplay("HOT", "COLD", "run", fum=1)     # COLD recovers HOT's fumble
+tplay("COLD", "HOT", "pass", intc=1)   # HOT picks COLD
+td = pd.DataFrame(trows)
+tdfn = N._side_table(td, "defteam", [1], defense=True)
+toff = N._side_table(td, "posteam", [1])
+chk("Turnovers" in tdfn.columns and tdfn.loc["COLD", "Turnovers"] == 2 and tdfn.loc["HOT", "Turnovers"] == 1, "the defense table counts takeaways (COLD 2, HOT 1)")
+chk("Turnovers" not in toff.columns, "the offense table carries no takeaways column")
+
 print(f"\nRESULT: {P}/{P + F} {'ALL PASS' if F == 0 else 'SOME FAILED'}")
 sys.exit(0 if F == 0 else 1)

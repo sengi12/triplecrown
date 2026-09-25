@@ -49,7 +49,7 @@ const app=new Function('IDS','SUM', code+`
         if(/\\/league\\/L9$/.test(url)) return {name:'Queen City Keepers', status:'in_season', season:'2026', scoring_settings:{pass_yd:0.05, pass_td:6}, roster_positions:['QB','RB','SUPER_FLEX'], settings:{type:0}, total_rosters:12};
         return prev(url); }; },
     sideClass:gcSideClass, setWeekNum:(w)=>{ _gc.week=w; _gc._mu=null; }, liveTimer:()=>_gcLiveTimer, clearLive:()=>{ if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; } }, setMode:(m)=>{ _gc.mode=m; }, setGame:(id)=>{ _gc.game=id; },
-    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, stubContent:(fn)=>{ renderContent=fn; }, setLiveView:(v)=>{ currentProjViewMode=()=>v?'live':'proj'; }, drives:gcDrives, sentence:gcDriveSentence, turnover:gcTurnoverRead, punt:gcPuntRead, pen:gcPenaltyRead, logo:NFL_LOGO, esc:escAttr, drive:gcDriveChartHTML, wp:gcWinProbHTML, wpOpen:(v)=>{ _gcd.wpOpen=v; }, top:gcTopHTML, lastPlay:gcLastPlayHTML, idle:tcRepaintWhenIdle, busy:tcUiBusy, setDown:(v)=>{ _tcIdle.down=v; }, flush:tcIdleFlush, setActive:(el)=>{ document.activeElement=el; }, sidebarSig:()=>_tcBoard.sig, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
+    onBoard:gcStreamOnBoard, behind:gcSummaryBehind, catchUp:gcSummaryCatchUp, sumAt:(eid)=>_gcd.sum[eid]&&_gcd.sum[eid].at, ROWS, liveRows:gcLiveRows, boxRows:gcBoxRows, POLL:GC_LIVE_POLL, fresh:tcFreshHTML, refresh:tcRefreshNow, stubContent:(fn)=>{ renderContent=fn; }, setLiveView:(v)=>{ currentProjViewMode=()=>v?'live':'proj'; }, drives:gcDrives, sentence:gcDriveSentence, turnover:gcTurnoverRead, punt:gcPuntRead, pen:gcPenaltyRead, kickoff:gcKickoffRead, logo:NFL_LOGO, esc:escAttr, drive:gcDriveChartHTML, wp:gcWinProbHTML, wpOpen:(v)=>{ _gcd.wpOpen=v; }, top:gcTopHTML, lastPlay:gcLastPlayHTML, idle:tcRepaintWhenIdle, busy:tcUiBusy, setDown:(v)=>{ _tcIdle.down=v; }, flush:tcIdleFlush, setActive:(el)=>{ document.activeElement=el; }, sidebarSig:()=>_tcBoard.sig, boardAt:()=>_tcBoard.at, setBoardAt:(t)=>{ _tcBoard.at=t; _tcBoard.live=true; }, freshBusy:()=>_tcFresh.busy, sitHTML:gcSituationHTML, boardUrl:TC_BOARD_URL, weekLabel:tcWeekLabel, statsUrl:SLEEPER_WEEK_STATS_URL, projUrl:LA_WEEK_PROJ_URL, landed:tcBoardLanded, setBoardTeams:(t)=>{ _tcBoard.teams=t; } };
 `)(IDS, SUM);
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -410,6 +410,28 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(pfl.outcome==='fumbleLost' && pfl.returnYds===10 && pfl.keepPoss===true && pfl.recoverer==='J.Trotter', 'a fumble on the return the kicking team scoops up: the return, then the loss');
   const ppn=app.punt('M.Araiza punts 41 yards to TB 28. A.Bachman to TB 42 for 14 yards. PENALTY on TB-K.Walker, Holding, 10 yards, enforced at TB 42.', 'CIN');
   chk(ppn.outcome==='return' && ppn.penalty===true, 'a flag during the return is noted on the outcome');
+
+  console.log('=== a kickoff drawn like a punt: the kick in from the 35, then the return ===');
+  const koR=app.kickoff('E.McPherson kicks 60 yards from CIN 35 to TB 5, Center-C.Adomitis. K.Johnson pushed ob at TB 28 for 23 yards (J.Battle).', 'TB');
+  chk(koR && koR.origin===65 && koR.landYd===5 && koR.outcome==='return' && koR.returner==='K.Johnson' && koR.returnYds===23 && koR.endYd===28, 'a kickoff read: kicked from the opponent 35 (yd 65), fielded at the 5, returned 23 to the 28');
+  const koTB=app.kickoff('E.McPherson kicks 65 yards from CIN 35 to end zone, Touchback to the TB 35.', 'TB');
+  chk(koTB.outcome==='touchback' && koTB.landYd===0 && koTB.endYd===35, 'a kickoff touchback: to the end zone, spotted at the receiving 35');
+  const koSix=app.kickoff('C.McLaughlin kicks 60 yards from TB 35 to CIN 2. D.Meyers for 98 yards, TOUCHDOWN.', 'CIN');
+  chk(koSix.outcome==='returnTd' && koSix.td===true && koSix.endYd===100 && koSix.returnYds===98, 'a kickoff returned for a score runs to the kicking team\'s end zone (yd 100)');
+  const koFlag=app.kickoff('C.McLaughlin kicks 61 yards from TB 35 to CIN 4. D.Meyers to CIN 34 for 30 yards (B.Sharp).PENALTY on CIN-K.Dugger, Illegal Block Above the Waist, 10 yards, enforced at CIN 27.', 'CIN');
+  chk(koFlag.outcome==='return' && koFlag.penalty===true, 'a flag on the return is noted');
+  const koDrv={drives:{previous:[{id:'kd', team:{abbreviation:'TB'}, result:'', plays:[
+    P('kk',1,'Kickoff','E.McPherson kicks 60 yards from CIN 35 to TB 5. K.Johnson to TB 28 for 23 yards (J.Battle).',23,65) ]}]}};
+  const koRen=app.drive(app.GAME('post'), koDrv);
+  chk(/gc-seg-kick" d="M[^"]*Q/.test(koRen) && /gc-seg-last gc-seg-ret" d="M[^"]*L[^"]*" fill="none" stroke="#39c15a"/.test(koRen) && /K\. Johnson 23 yd return/.test(koRen), 'the kickoff arcs in (grey), the return runs on in green, the label names the returner and the yards');
+  const koTbRen=app.drive(app.GAME('post'), {drives:{previous:[{id:'kt', team:{abbreviation:'TB'}, result:'', plays:[
+    P('kt',1,'Kickoff','E.McPherson kicks 65 yards from CIN 35 to end zone, Touchback to the TB 35.',0,65) ]}]}});
+  chk(/gc-seg-kick/.test(koTbRen) && !/gc-seg-ret/.test(koTbRen) && /Touchback/.test(koTbRen), 'a touchback kickoff draws the kick, no return, and says Touchback');
+
+  console.log('=== a sack is a straight red line back, not an arc ===');
+  const sackD=toD([P('sa1',1,'Rush','C.Brown for 5 yards.',5,55), P('sa2',2,'Sack','(Shotgun) J.Burrow sacked at CIN 42 for -8 yards (T.Hendrickson).',-8,53)], '');
+  const sackh=app.drive(app.GAME('post'), sackD);
+  chk(/class="gc-seg gc-seg-last gc-seg-sack" d="M[^"]*L[^"]*" fill="none" stroke="#e5484d"/.test(sackh) && !/gc-seg-last[^>]*d="M[^"]*Q/.test(sackh) && /J\. Burrow sacked/.test(sackh), 'the sack is a straight red line to the new spot (no arc), labelled the sack');
 
   console.log('=== a play tapped in the feed pins the field to it, with a LIVE button back ===');
   app.setReplay('401872925','p1');

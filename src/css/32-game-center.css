@@ -337,3 +337,4 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-seg-inc{stroke:#9aa5b1!important;stroke-dasharray:5 4;opacity:.75;}
 .gc-seg-pen{stroke:#f5c542!important;stroke-dasharray:4 4;opacity:.85;}
 .gc-seg-tb{opacity:.7;}
+.gc-seg-sack{stroke:#e5484d!important;stroke-dasharray:none;}

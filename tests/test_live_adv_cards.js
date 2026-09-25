@@ -43,6 +43,23 @@ chk(t.defensive_line.columns.includes('Missed Tackles'), 'the window table carri
 t=app.range('2026',3,3);
 chk(t.defensive_line.teams.DET.values['Pressure Rate']===Number((7/38*100).toFixed(1)) && t.defensive_line.teams.DET.values['Missed Tackles']===null, 'week 3 (not charted yet): the hit-or-sack proxy, and no missed tackles rather than zero');
 
+console.log('=== the week window: turnovers, success allowed, sacks, pressures/game ===');
+const DCOLS=['def_pass_plays','def_pass_success_allowed','def_run_plays','def_run_success_allowed','def_takeaways','dl_sacks','dl_dropbacks','dl_pressures','dl_pfr_obs','dl_pfr_pressures','pace_games'];
+app.setNV({'2026':{team:{}, adv_weekly:{cols:DCOLS, weeks:[1,2], teams:{
+  DET:[[35,15,25,10,2,4,40,6,1,14,1],[30,12,22,8,1,3,35,5,1,12,1]],
+  SEA:[[35,20,25,14,0,1,40,4,1,8,1],[30,18,22,12,1,2,35,3,1,7,1]],
+}}}});
+let d=app.range('2026',1,2);
+chk(d.defense.teams.DET.values['Pass Success Rate']===Number((27/65*100).toFixed(1)) && d.defense.teams.DET.values['Rush Success Rate']===Number((18/47*100).toFixed(1)), 'success rate allowed = successful plays allowed over plays, split pass and run');
+chk(d.defense.teams.DET.ranks['Pass Success Rate']===1 && d.defense.teams.SEA.ranks['Pass Success Rate']===2, 'allowing fewer successful plays ranks better');
+chk(d.defense.teams.DET.values['Turnovers']===3 && d.defense.teams.SEA.values['Turnovers']===1 && d.defense.teams.DET.ranks['Turnovers']===1, 'turnovers sum the picks and fumbles across the window; more ranks better');
+chk(d.defensive_line.teams.DET.values['Sacks']===7 && d.defensive_line.teams.SEA.values['Sacks']===3 && d.defensive_line.teams.DET.ranks['Sacks']===1, 'sacks sum the window; more sacks ranks better');
+chk(d.defensive_line.teams.DET.values['Pressures/Game']===Number((26/2).toFixed(1)), 'pressures per game = charted pressures over games (26/2)');
+chk(d.defensive_line.columns.includes('Sacks') && d.defensive_line.columns.includes('Pressures/Game') && d.defense.columns.includes('Turnovers') && d.defense.columns.includes('Rush Success Rate') && d.defense.columns.includes('Pass Success Rate'), 'the new columns ride the window tables');
+  app.setNV({'2026':{team:{}, adv_weekly:{cols:['def_pass_plays','def_run_plays','dl_dropbacks','dl_pressures'], weeks:[1], teams:{DET:[[35,25,40,6]]}}}});
+const dBare=app.range('2026',1,1);
+chk(dBare.defense.teams.DET.values['Turnovers']===null && dBare.defense.teams.DET.values['Pass Success Rate']===null && dBare.defensive_line.teams.DET.values['Sacks']===null, 'a pack from before these fields shipped leaves the new cells blank, not zero');
+
 console.log('=== the cards: ≈ for an inferred table, pending for a post-season one ===');
 const team={
   offense:{columns:['EPA/Play'], teams:{DET:{values:{'EPA/Play':0.1},ranks:{'EPA/Play':3}}}},

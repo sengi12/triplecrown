@@ -132,6 +132,31 @@ const card=(group, title, note, svg)=>cards.push({group, title, note, svg});
     render(g, mk('M.Araiza punts 41 yards to TB 28, Center-J.Winchester. A.Bachman to TB 42 for 14 yards. PENALTY on TB-K.Walker, Offensive Holding, 10 yards, enforced at TB 42.')));
 }
 
+// 7 · kickoffs, drawn with the same logic as a punt
+{
+  const g=GAME('TB','CIN');
+  card('7 · Kickoffs — same logic as a punt', 'Returned',
+    'the kick arcs in from the kicking team\u2019s 35 (grey), the return runs on (green), returner on the pin',
+    render(g, drive('TB',[P('k1',1,'Kickoff','E.McPherson kicks 60 yards from CIN 35 to TB 5. K.Johnson to TB 28 for 23 yards (J.Battle).',23,65)])));
+  card('7 · Kickoffs — same logic as a punt', 'Touchback',
+    'the kick reaches the end zone, a dotted hop spots the ball at the receiving 35, no return',
+    render(g, drive('TB',[P('k2',1,'Kickoff','E.McPherson kicks 65 yards from CIN 35 to end zone, Touchback to the TB 35.',0,65)])));
+  card('7 · Kickoffs — same logic as a punt', 'Returned for a TD',
+    'the return runs all the way to the kicking team\u2019s end zone',
+    render(g, drive('CIN',[P('k3',1,'Kickoff','C.McLaughlin kicks 60 yards from TB 35 to CIN 2. D.Meyers for 98 yards, TOUCHDOWN.',98,65)], 'TD')));
+  card('7 · Kickoffs — same logic as a punt', 'A flag on the return',
+    'the kick and return draw as normal, the flag noted at the spot',
+    render(g, drive('CIN',[P('k4',1,'Kickoff','C.McLaughlin kicks 61 yards from TB 35 to CIN 4. D.Meyers to CIN 34 for 30 yards (B.Sharp).PENALTY on CIN-K.Dugger, Illegal Block Above the Waist, 10 yards, enforced at CIN 27.',30,65)])));
+}
+
+// 8 · a sack is a straight red line, not an arc
+{
+  const g=GAME('TB','CIN');
+  card('8 · Sack — a straight red line, no arc', 'Sacked for a loss',
+    'the ball slides straight back to the new spot in red — no throwing arc',
+    render(g, drive('CIN',[P('z1',1,'Rush','C.Brown for 5 yards.',5,55), P('z2',2,'Sack','(Shotgun) J.Burrow sacked at CIN 42 for -8 yards (T.Hendrickson).',-8,53)])));
+}
+
 // ── the sheet ────────────────────────────────────────────────────────────────
 const groups=[];
 cards.forEach(c=>{ let g=groups.find(x=>x.name===c.group); if(!g){ g={name:c.group, items:[]}; groups.push(g); } g.items.push(c); });
