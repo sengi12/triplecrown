@@ -306,6 +306,9 @@
 .qpc-sub span{font-weight:600;text-transform:none;letter-spacing:0;opacity:.85;}
 .qpc-totals.rbf-splits{margin-top:5px;grid-template-columns:repeat(4,1fr);}
 .qpc-ct{font-family:var(--font);font-size:11px;font-weight:700;color:var(--muted);margin-left:4px;vertical-align:1px;}
+.qpc-tile label.qk-hi{color:#2fae4e;} .qpc-tile label.qk-md{color:#7fb84e;} .qpc-tile label.qk-lo{color:#d8a51d;} .qpc-tile label.qk-gt{color:#e5484d;}
+.qpc-legend-c{white-space:nowrap;} .qpc-legend-c i{display:inline-block;width:8px;height:8px;border-radius:2px;vertical-align:0;margin:0 2px 0 5px;}
+.qpc-legend-c i.qk-hi{background:#2fae4e;} .qpc-legend-c i.qk-gt{background:#e5484d;}
 .rbf-wrap{padding:4px 2px 2px;}
 .rbf-svg{display:block;width:100%;max-width:760px;height:auto;margin:0 auto;border:1px solid #1d2329;border-radius:8px;}
 .rbf-legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:center;margin:10px 2px 6px;color:var(--text);font-size:10.5px;font-weight:700;}

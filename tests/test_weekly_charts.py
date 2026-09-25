@@ -159,6 +159,13 @@ def main():
           _g1["plays"][2] == [0, 6, 5, 50, 2] and _g1["plays"][3] == [3, 4, 2, 50, 2] and _g1["plays"][4] == [0, -3, 8, 50, 2] and _g1["plays"][0][2] == 4)
     check("carry share: with quarters in the pbp each game carries qc (his carries) and qt (the team's designed rushes) by quarter — all six here are Q2",
           _g1.get("qc") == [0, 6, 0, 0] and _g1.get("qt") == [0, 6, 0, 0])
+    _wp = _pbp_rush().assign(qtr=2, first_down=0, yardline_100=50, tackled_for_loss=0, out_of_bounds=0)
+    _wp.loc[_wp.play_id < 4, "wp"] = 0.5    # the first four rushes came with the game in reach
+    _wp.loc[_wp.play_id >= 4, "wp"] = 0.97  # the rest in garbage time
+    nv._load_pbp = lambda season, cols=None: _wp
+    _g1 = nv.rb_fan_weekly(2026)["test back"]["games"][0]
+    check("carry share: qk counts the team rushes that came with the game in reach (win prob 15\u201385%) \u2014 4 of the 6 Q2 rushes here, the marker's competitiveness tint",
+          _g1.get("qk") == [0, 4, 0, 0] and _g1.get("qt") == [0, 6, 0, 0])
     _ob = _pbp_rush().assign(out_of_bounds=lambda d: (d.play_id <= 3).astype(int), first_down=0, yardline_100=50, qtr=1)
     _ob.loc[_ob.play_id == 1, "run_location"] = "right"
     nv._load_pbp = lambda season, cols=None: _ob

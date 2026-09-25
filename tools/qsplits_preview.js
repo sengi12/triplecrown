@@ -12,8 +12,8 @@ global.AbortController=class{constructor(){this.signal={};}abort(){}};
 const code=fs.readFileSync(path.join(root,'tests','check.js'),'utf8');
 const app=new Function(code+'return {q:_qtrShareSplits};')();
 
-const rb={games:[{wk:1,qc:[6,2,4,0],qt:[8,4,8,0]},{wk:2,qc:[3,3,1,2],qt:[6,6,4,4]}]};
-const wr={games:[{wk:1,qc:[3,5,4,2],qt:[9,11,10,8]},{wk:2,qc:[2,4,6,3],qt:[8,9,12,9]}]};
+const rb={games:[{wk:1,qc:[6,2,4,0],qt:[8,4,8,0],qk:[8,4,4,0]},{wk:2,qc:[3,3,1,2],qt:[6,6,4,4],qk:[6,3,1,0]}]};
+const wr={games:[{wk:1,qc:[3,5,4,2],qt:[9,11,10,8],qk:[9,8,5,1]},{wk:2,qc:[2,4,6,3],qt:[8,9,12,9],qk:[6,6,3,1]}]};
 const carry=app.q(rb,null,'Carry share by quarter','\u00b7 his cut of the team\u2019s designed runs','designed rushes','CAR');
 const tgt=app.q(wr,null,'Target share by quarter','\u00b7 his cut of the team\u2019s throws','targeted throws','TAR');
 const css=fs.readFileSync(path.join(root,'src','css','10-player-card.css'),'utf8');

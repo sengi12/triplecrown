@@ -77,5 +77,9 @@ chk(/Q1<\/label><b>64%<span class="qpc-ct">9 CAR<\/span>/.test(_sAll) && /Q4<\/l
 const _sWk=app.qtrSplits(_qnode, 1, 'Carry share by quarter', '· cut', 'designed rushes');
 chk(/Q1<\/label><b>75%/.test(_sWk) && /Q4<\/label><b>—/.test(_sWk), 'a picked week uses just that game; a quarter the team never ran reads —');
 chk(app.qtrSplits({games:[{wk:1, plays:[]}]}, null, 'x','y','z')==='' && app.qtrSplits(null, null, 'x','y','z')==='', 'no quarter data on the node → nothing renders');
+const _cnode={games:[ {wk:1, qc:[6,2,4,0], qt:[8,4,8,0], qk:[8,4,8,0]}, {wk:2, qc:[3,3,1,2], qt:[6,6,4,4], qk:[6,6,0,0]} ]};
+const _sc=app.qtrSplits(_cnode, null, 'Carry share by quarter', '· cut', 'designed rushes', 'CAR');
+chk(/<label class="qk-hi">Q1<\/label>/.test(_sc) && /<label class="qk-gt">Q4<\/label>/.test(_sc) && /qpc-legend-c/.test(_sc), 'the quarter marker is tinted by competitiveness — Q1 all in reach → green, Q4 garbage time → red — with a small legend');
+chk(!/qk-hi|qk-gt|qpc-legend-c/.test(_sAll), 'a node without competitiveness data → plain markers, no legend');
 
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

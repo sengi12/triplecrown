@@ -2814,7 +2814,7 @@ def rb_fan_weekly(season, min_attempts_game=5):
     game picker can show them; season lines stay regular season. `esb` is the
     rusher's NFL ESB id for the NGS deep link."""
     _map_cols = ["fumble_lost", "tackled_for_loss", "qtr", "out_of_bounds"]
-    pbp = _load_pbp(season, _RB_FAN_COLS + ["week", "defteam"] + _map_cols)
+    pbp = _load_pbp(season, _RB_FAN_COLS + ["week", "defteam", "wp"] + _map_cols)
     runs = pbp[pbp["season_type"].isin(["REG", "POST"]) & (pbp["rush_attempt"] == 1)
                & (pbp["qb_scramble"] == 0) & (pbp["two_point_attempt"] == 0)
                & pbp["run_location"].notna() & pbp["rusher_player_id"].notna()].copy()
@@ -2870,6 +2870,16 @@ def rb_fan_weekly(season, min_attempts_game=5):
         return [int((gq == q).sum()) for q in (1, 2, 3, 4)]
     def _q_team(team, wk):
         return [int(_tqr.get((team, int(wk), q), 0)) for q in (1, 2, 3, 4)]
+    # of those team rushes, the ones that came with the game still in reach (win prob 15–85%) —
+    # the competitiveness of each quarter's opportunities (garbage-time carries read low)
+    _tqk = {}
+    if not _rq.empty and "wp" in _rq.columns:
+        _wp = pd.to_numeric(_rq["wp"], errors="coerce")
+        _comp = _rq[(_wp >= 0.15) & (_wp <= 0.85)]
+        for (tm, wkk, qq), cnt in _comp.groupby(["posteam", "week", "_qi"]).size().items():
+            _tqk[(tm, int(wkk), int(qq))] = int(cnt)
+    def _q_comp(team, wk):
+        return [int(_tqk.get((team, int(wk), q), 0)) for q in (1, 2, 3, 4)]
     names = _name_map(season)
     pfrw = _rb_pfr_week(season)
     out = {}
@@ -2903,7 +2913,7 @@ def rb_fan_weekly(season, min_attempts_game=5):
             "ypc": round(float(g["yards_gained"].mean()), 2),
             "success_rate": (None if succ_g is None else round(succ_g, 1)),
             "lanes": lanes,
-            **({"qc": _qc, "qt": _qt} if any(_qt) else {}),
+            **({"qc": _qc, "qt": _qt, "qk": _q_comp(_gteam, wk)} if any(_qt) else {}),
         }, **_rb_metric_line(g), **(pfrw.get((rid, int(wk))) or {})))
     for node in out.values():
         node["games"].sort(key=lambda x: x["wk"])
@@ -3089,7 +3099,7 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
         "pass_attempt", "complete_pass", "air_yards", "pass_location",
         "receiving_yards", "pass_touchdown", "two_point_attempt",
         "yards_after_catch", "epa", "first_down", "interception",
-        "yardline_100", "qtr", "shotgun", "out_of_bounds",
+        "yardline_100", "qtr", "shotgun", "out_of_bounds", "wp",
     ])
     t = pbp[pbp["season_type"].isin(["REG", "POST"]) & (pbp["pass_attempt"] == 1)
             & (pbp["two_point_attempt"] == 0) & pbp["receiver_player_id"].notna()
@@ -3187,6 +3197,16 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
         return [int((gq == q).sum()) for q in (1, 2, 3, 4)]
     def _tq_team(team, wk):
         return [int(_tpq.get((team, int(wk), q), 0)) for q in (1, 2, 3, 4)]
+    # of those team throws, the ones with the game still in reach (win prob 15–85%) — the
+    # competitiveness of each quarter's targets (garbage-time volume reads low)
+    _tpk = {}
+    if not _tq.empty and "wp" in _tq.columns:
+        _wp = pd.to_numeric(_tq["wp"], errors="coerce")
+        _comp = _tq[(_wp >= 0.15) & (_wp <= 0.85)]
+        for (tm, wkk, qq), cnt in _comp.groupby(["posteam", "week", "_qi"]).size().items():
+            _tpk[(tm, int(wkk), int(qq))] = int(cnt)
+    def _tq_comp(team, wk):
+        return [int(_tpk.get((team, int(wk), q), 0)) for q in (1, 2, 3, 4)]
     for rid, g_all in t.groupby("receiver_player_id"):
         g = g_all[g_all["season_type"] == "REG"]
         if g.empty or (len(g) < min_targets_season and len(g) < min_targets_game):
@@ -3209,7 +3229,7 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
                 opp=(gg["defteam"].mode().iloc[0] if len(gg["defteam"].mode()) else None),
                 **({"post": 1} if (gg["season_type"] == "POST").any() else {}),
                 zones=_zones(gg), plays=_plays(gg),
-                **({"qc": _qc, "qt": _qt} if any(_qt) else {}), **_tt_line(gg)))
+                **({"qc": _qc, "qt": _qt, "qk": _tq_comp(_gt, wk)} if any(_qt) else {}), **_tt_line(gg)))
         node["games"].sort(key=lambda x: x["wk"])
         players[name] = node
     _rank_within_pos(list(players.values()), _TT_TOTAL_RANKS)

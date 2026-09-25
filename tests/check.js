@@ -11959,19 +11959,26 @@ function _tmHasPlays(node){ return (node.games||[]).some(g=>Array.isArray(g.play
 // ships with the map. Shared by the carry map (68) and the target map (66).
 function _qtrShareSplits(node, selWk, heading, sub, noun, unit){
   if(!node || !Array.isArray(node.games)) return '';
-  const pl=[0,0,0,0], tm=[0,0,0,0]; let any=false;
+  const pl=[0,0,0,0], tm=[0,0,0,0], cp=[0,0,0,0]; let any=false, hasComp=false;
   for(const g of node.games){
     if(selWk!=null ? g.wk!==Number(selWk) : !!(g.post || g.wk>18)) continue;
     if(!Array.isArray(g.qc) || !Array.isArray(g.qt)) continue;
     any=true;
     for(let q=0;q<4;q++){ pl[q]+=(+g.qc[q]||0); tm[q]+=(+g.qt[q]||0); }
+    if(Array.isArray(g.qk)){ hasComp=true; for(let q=0;q<4;q++) cp[q]+=(+g.qk[q]||0); }
   }
   if(!any) return '';
+  // the marker's tint = the share of that quarter's team opportunities that came with the game
+  // still in reach (garbage time reads red, a live game green — weight the greener quarters)
+  const compCls=(q)=>{ if(!hasComp || !tm[q]) return ''; const f=cp[q]/tm[q];
+    return f>=0.75?'qk-hi':f>=0.5?'qk-md':f>=0.25?'qk-lo':'qk-gt'; };
+  const compTip=(q)=>(hasComp && tm[q]) ? ` \u00b7 ${Math.round(cp[q]/tm[q]*100)}% with the game within reach` : '';
   const tiles=[0,1,2,3].map(q=>{
-    const share = tm[q] ? Math.round(pl[q]/tm[q]*100) : null;
-    return `<div class="qpc-tile" title="${pl[q]} of the team's ${tm[q]} ${noun} in Q${q+1}"><label>Q${q+1}</label><b>${share==null?'—':share+'%'}<span class="qpc-ct">${pl[q]} ${escHtml(unit||'')}</span></b></div>`;
+    const share = tm[q] ? Math.round(pl[q]/tm[q]*100) : null, cc=compCls(q);
+    return `<div class="qpc-tile" title="${pl[q]} of the team's ${tm[q]} ${noun} in Q${q+1}${compTip(q)}"><label${cc?` class="${cc}"`:''}>Q${q+1}</label><b>${share==null?'—':share+'%'}<span class="qpc-ct">${pl[q]} ${escHtml(unit||'')}</span></b></div>`;
   }).join('');
-  return `<div class="qpc-sub">${heading} <span>${sub}</span></div><div class="qpc-totals rbf-splits">${tiles}</div>`;
+  const legend = hasComp ? `<span class="qpc-legend-c" title="The quarter label is tinted by how competitive the game was while those chances came — green in a game still in reach, red in garbage time. Lean on the greener quarters when you read a player's role going forward."> \u00b7 <i class="qk-hi"></i>competitive <i class="qk-gt"></i>garbage</span>` : '';
+  return `<div class="qpc-sub">${heading} <span>${sub}${legend}</span></div><div class="qpc-totals rbf-splits">${tiles}</div>`;
 }
 const _TM_SIDES=['Left','Middle','Right'];
 const _TM_RES=['Incomplete','Catch','Touchdown','Intercepted'];
