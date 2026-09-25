@@ -16,6 +16,7 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
   pcardRbFanAvailable, renderPcardRbFan, renderPcardStatTabs, setPcardStatsMode,
+  qtrSplits:_qtrShareSplits,
   setPlayers:(p)=>{sleeperPlayers=p;},
   setNflverse:(n)=>{NFLVERSE=n;},
   setPcardState:(s)=>{pcardState=s;},
@@ -66,5 +67,14 @@ chk(body.includes('rbf-svg'),'rb fan tab renders SVG chart');
 chk(['Tunsil','Green','Patterson','Mason','Howard'].every(n=>body.includes(n)),
     'rb fan tab renders an OL card for all five line slots');
 chk(body.includes('Lane YPC'),'rb fan tab renders lane legend text');
+
+console.log('=== quarter volume splits (shared by the carry map and the target map) ===');
+const _qnode={games:[ {wk:1, qc:[6,2,4,0], qt:[8,4,8,0]}, {wk:2, qc:[3,3,1,2], qt:[6,6,4,4]} ]};
+const _sAll=app.qtrSplits(_qnode, null, 'Carry share by quarter', '· cut', 'designed rushes');
+chk(/Q1<\/label><b>64%/.test(_sAll) && /Q2<\/label><b>50%/.test(_sAll) && /Q3<\/label><b>42%/.test(_sAll) && /Q4<\/label><b>50%/.test(_sAll) && /Carry share by quarter/.test(_sAll),
+    'the season splits sum his carries over the team\'s per quarter (9/14, 5/10, 5/12, 2/4)');
+const _sWk=app.qtrSplits(_qnode, 1, 'Carry share by quarter', '· cut', 'designed rushes');
+chk(/Q1<\/label><b>75%/.test(_sWk) && /Q4<\/label><b>—/.test(_sWk), 'a picked week uses just that game; a quarter the team never ran reads —');
+chk(app.qtrSplits({games:[{wk:1, plays:[]}]}, null, 'x','y','z')==='' && app.qtrSplits(null, null, 'x','y','z')==='', 'no quarter data on the node → nothing renders');
 
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

@@ -4934,7 +4934,10 @@ function gcGameHTML(game, rows, wk){
   const tabs=`<div class="gc-tabs"><button class="gc-tab ${tab==='feed'?'active':''}" onclick="gcdSetTab('feed')">Feed</button><button class="gc-tab ${tab==='stats'?'active':''}" onclick="gcdSetTab('stats')">Stats</button></div>`;
   // Under the hero: the last play, the drive on the field, the win probability (32b).
   const top=(typeof gcTopHTML==='function') ? gcTopHTML(game, sum) : '';
-  if(tab==='feed') return hero+top+tabs+gcFeedHTML(game, sum);
+  // Feed: on the desktop sidebar the hero, the field and the tabs stay put while the plays
+  // scroll in their own window — so a play tapped for replay keeps animating in view (CSS
+  // turns this off inside the phone's bottom sheet, where the whole sheet scrolls).
+  if(tab==='feed') return `<div class="gc-feedview"><div class="gc-feedview-head">${hero}${top}${tabs}</div><div class="gc-feedview-feed">${gcFeedHTML(game, sum)}</div></div>`;
   const seg=`<div class="gc-seg"><button class="${side==='away'?'active':''}" onclick="gcdSetSide('away')"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${game.away}</button><button class="${side==='fantasy'?'active':''}" onclick="gcdSetSide('fantasy')">Fantasy</button><button class="${side==='home'?'active':''}" onclick="gcdSetSide('home')"><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'">${game.home}</button></div>`;
   const pane = side==='fantasy' ? fantasy : gcBoxHTML(game, sum, side==='home'?game.home:game.away);
   return hero+top+tabs+(game.state==='pre'?'':gcLinescoreHTML(game, sum))+seg+pane;
@@ -5322,7 +5325,7 @@ function gcSummaryRepaint(added){
 }
 function gcDetailRepaint(){
   if(typeof renderRightSidebar!=='function') return;
-  const paint=()=>{ if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.gc-detail','.gcm-sheet','.gc-body']); else renderRightSidebar(); };
+  const paint=()=>{ if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.gc-feedview-feed','.gc-detail','.gcm-sheet','.gc-body']); else renderRightSidebar(); };
   if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', paint); else paint();   // never under a finger or an open picker
 }
 function gcdSetTab(t){ _gcd.tab=t; gcDetailRepaint(); }
@@ -5373,8 +5376,11 @@ function gcAthletes(sum){
           const name=String(ath.displayName||ath.shortName||'').trim();
           let pid=idx[id]||null;
           if(!pid && typeof lfPidFor==='function'){
+            // no ESPN id to join on: match by name, but lead with a two-letter first name so
+            // namesakes don't collapse — "Bijan Robinson" must not resolve to Brian Robinson Jr.
             const sp1=name.indexOf(' ');
-            if(sp1>0) pid=lfPidFor(`${name[0]}.${name.slice(sp1+1)}`, team, null);
+            if(sp1>0){ const first=name.slice(0,sp1), last=name.slice(sp1+1);
+              pid=lfPidFor(`${first.slice(0,2)}.${last}`, team, null) || lfPidFor(`${first[0]}.${last}`, team, null); }
           }
           const spp=pid?sp[pid]:null;
           rec={ id, name, team, groups:new Set(), pid, pos:spp?String(spp.pos||'').toUpperCase():'', first:(name.split(' ')[0]||'').toLowerCase() };
@@ -11436,6 +11442,7 @@ function _renderTargetTree(pid, node, season, seasonBtns, hasTree){
       ${tile('EPA', v.epa!=null?(+v.epa).toFixed(1):'—', 'epa', 'epa')}
       ${tile('Catch %', cr!=null?`${cr}%`:'—', 'catch_pct')}
     </div>
+    ${(typeof _qtrShareSplits==='function') ? _qtrShareSplits(node, selWk, 'Target share by quarter', "· his cut of the team's throws", 'targeted throws') : ''}
     ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('rec', norm, season, selWk) : ''}
     <div class="pcard-src">Targets via nflverse play-by-play${live?', nightly':''}${(typeof _tmRouteLegend==='function' && _tmRouteLegend(season))?'; routes via nflverse participation charting':''}.${(typeof ngsChartLink==='function') ? ngsChartLink(node, pname, season, selWk) : ''}</div>
   </div>`;
@@ -11876,6 +11883,26 @@ function _tmPlays(node, selWk, legend){
 function _tmIsPost(g){ return !!(g && (g.post || g.wk>18)); }
 // Does the sidecar carry per-target rows for this player at all? (older bakes don't)
 function _tmHasPlays(node){ return (node.games||[]).some(g=>Array.isArray(g.plays) && g.plays.length); }
+// Volume share by quarter (Q1–Q4): a player's slice of his team's opportunities in each
+// quarter, from per-game qc (his carries/targets) and qt (the team's), summed across the
+// scope in view — the picked game, else the regular season. Blank until the quarter data
+// ships with the map. Shared by the carry map (68) and the target map (66).
+function _qtrShareSplits(node, selWk, heading, sub, noun){
+  if(!node || !Array.isArray(node.games)) return '';
+  const pl=[0,0,0,0], tm=[0,0,0,0]; let any=false;
+  for(const g of node.games){
+    if(selWk!=null ? g.wk!==Number(selWk) : !!(g.post || g.wk>18)) continue;
+    if(!Array.isArray(g.qc) || !Array.isArray(g.qt)) continue;
+    any=true;
+    for(let q=0;q<4;q++){ pl[q]+=(+g.qc[q]||0); tm[q]+=(+g.qt[q]||0); }
+  }
+  if(!any) return '';
+  const tiles=[0,1,2,3].map(q=>{
+    const share = tm[q] ? Math.round(pl[q]/tm[q]*100) : null;
+    return `<div class="qpc-tile" title="${pl[q]} of the team's ${tm[q]} ${noun} in Q${q+1}"><label>Q${q+1}</label><b>${share==null?'—':share+'%'}</b></div>`;
+  }).join('');
+  return `<div class="qpc-sub">${heading} <span>${sub}</span></div><div class="qpc-totals rbf-splits">${tiles}</div>`;
+}
 const _TM_SIDES=['Left','Middle','Right'];
 const _TM_RES=['Incomplete','Catch','Touchdown','Intercepted'];
 function _tmRouteLabel(route){
@@ -13295,6 +13322,7 @@ function renderPcardRbFan(pid){
       <span><i style="background:#d33b2f"></i>Lane YPC below league avg</span>
     </div>`}
     ${(!_rbIsProjSeason(season)) ? _rbMetricTiles(chart, season, notePlayer, _selWk) : ''}
+    ${(!_rbIsProjSeason(season)) ? _rbQuarterSplits(_wnode, _selWk) : ''}
     ${(typeof pcardNgsStrip==='function' && !_rbIsProjSeason(season)) ? pcardNgsStrip('rb', norm, season, _selWk) : ''}
     <div class="pcard-src">Rushing lanes from nflverse run-location/gap charting (regular season).${(typeof ngsChartLink==='function' && _wnode) ? ngsChartLink(_wnode, name, season, _selWk) : ''}</div>
   </div>`;
@@ -13321,6 +13349,11 @@ function _rbMetricTiles(chart, season, notePlayer, selWk){
     return `<div class="qpc-tile" ${tip?`title="${escAttr(tip)}"`:''}><label>${label}</label><b>${noteWrapHtml(escHtml(val), {label, value:val, source:'rb_rushing_fan', statKey:k, context:ctx, player:notePlayer, team:notePlayer&&notePlayer.team}, 'note-tag-hit')}</b>${(typeof pcardRankTag==='function')?pcardRankTag(rk, k, 'RB'):''}</div>`;
   }).join('');
   return tiles ? `<div class="qpc-totals rbf-metrics">${tiles}</div>` : '';
+}
+// Carry share by quarter (Q1–Q4): the slice of the team's designed rushes that went to this
+// back each quarter — the shared splits helper (66b) over the carry map's per-game qc/qt.
+function _rbQuarterSplits(wnode, selWk){
+  return (typeof _qtrShareSplits==='function') ? _qtrShareSplits(wnode, selWk, 'Carry share by quarter', "· his cut of the team's designed runs", 'designed rushes') : '';
 }
 function setPcardRbFanSeason(season){
   pcardRbFanSeason=season;

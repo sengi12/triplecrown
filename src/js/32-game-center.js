@@ -328,7 +328,10 @@ function gcGameHTML(game, rows, wk){
   const tabs=`<div class="gc-tabs"><button class="gc-tab ${tab==='feed'?'active':''}" onclick="gcdSetTab('feed')">Feed</button><button class="gc-tab ${tab==='stats'?'active':''}" onclick="gcdSetTab('stats')">Stats</button></div>`;
   // Under the hero: the last play, the drive on the field, the win probability (32b).
   const top=(typeof gcTopHTML==='function') ? gcTopHTML(game, sum) : '';
-  if(tab==='feed') return hero+top+tabs+gcFeedHTML(game, sum);
+  // Feed: on the desktop sidebar the hero, the field and the tabs stay put while the plays
+  // scroll in their own window — so a play tapped for replay keeps animating in view (CSS
+  // turns this off inside the phone's bottom sheet, where the whole sheet scrolls).
+  if(tab==='feed') return `<div class="gc-feedview"><div class="gc-feedview-head">${hero}${top}${tabs}</div><div class="gc-feedview-feed">${gcFeedHTML(game, sum)}</div></div>`;
   const seg=`<div class="gc-seg"><button class="${side==='away'?'active':''}" onclick="gcdSetSide('away')"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${game.away}</button><button class="${side==='fantasy'?'active':''}" onclick="gcdSetSide('fantasy')">Fantasy</button><button class="${side==='home'?'active':''}" onclick="gcdSetSide('home')"><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'">${game.home}</button></div>`;
   const pane = side==='fantasy' ? fantasy : gcBoxHTML(game, sum, side==='home'?game.home:game.away);
   return hero+top+tabs+(game.state==='pre'?'':gcLinescoreHTML(game, sum))+seg+pane;

@@ -37,7 +37,7 @@ const app=new Function('IDS','SUM', code+`
   const GAME=(st)=>({id:'TB@CIN', home:'CIN', away:'TB', state:st||'post', detail:'Final', date:'2026-09-13T17:00Z', hs:33, as:27, hrec:'1-0', arec:'0-1', eid:'401872925', hls:[14,10,3,6], als:[3,7,10,7]});
   return { parse:tcParseBoard, games:gcGames, plays:gcPlays, names:gcPlayNames, kinds:(s)=>gcPlays(s).map(p=>p.kind), feed:gcFeedRows, build:gcFeedBuild, feedHTML:gcFeedHTML, ls:gcLinescoreHTML, box:gcBoxHTML,
     gameHTML:(g,rows)=>gcGameHTML(g||GAME(), rows===undefined?ROWS:rows, 1), GAME, summary:gcSummary, setSum:(eid,d)=>{ _gcd.sum[eid]={data:d, at:Date.now()}; }, fetches:()=>fetches,
-    setTab:(t)=>{ _gcd.tab=t; }, setSide:(s)=>{ _gcd.side=s; }, setAll:(v)=>{ _gcd.feedAll=v; }, tab:gcdTab, setReplay:(eid,pid)=>{ _gcd.replay=pid?{eid:String(eid),playId:String(pid)}:null; },
+    setTab:(t)=>{ _gcd.tab=t; }, setSide:(s)=>{ _gcd.side=s; }, setAll:(v)=>{ _gcd.feedAll=v; }, tab:gcdTab, setReplay:(eid,pid)=>{ _gcd.replay=pid?{eid:String(eid),playId:String(pid)}:null; }, addSP:(m)=>{ Object.assign(sleeperPlayers, m); },
     lgOpts:gcLeagueOptions, setLeague:(id)=>{ _gc.league=id; }, league:gcLeague, owner:gcOwnerOf, mine:gcIsMine, pts:gcPoints, proj:gcProjPts,
     setPcard:(o)=>{ _pcardLg.byLeague=o; _pcardLg.at=Date.now(); }, BOARD, ath:gcAthletes, short:gcShort,
     resetPcard:()=>{ _pcardLg={at:0, byLeague:{}, loading:null}; }, lgSelect:gcLeagueSelectHTML, setProfile:(p)=>{ laLoadSleeperProfile=()=>p; },
@@ -421,6 +421,20 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(/>● LIVE</.test(app.drive(Object.assign(app.GAME('post'),{state:'in'}), mini)), 'the button reads LIVE while the game is on');
   app.setReplay('401872925', null);
   chk(!/gc-drive-replay/.test(app.drive(app.GAME('post'), mini)) && !/gc-live-btn/.test(app.drive(app.GAME('post'), mini)), 'clearing the pin hands the field back to the live drive — no replay frame, no button');
+
+  console.log('=== namesakes in the box score keep their own player id (no ESPN id to join on) ===');
+  app.addSP({ __bij:{name:'Bijan Robinson', pos:'RB', team:'ATL', espn_id:'espn_bij'}, __bri:{name:'Brian Robinson Jr.', pos:'RB', team:'ATL', espn_id:'espn_bri'} });
+  const twinSum={ boxscore:{ players:[{ team:{abbreviation:'ATL', id:'99'}, statistics:[{ name:'rushing', keys:[], labels:[], athletes:[
+    {athlete:{id:'boxbij', displayName:'Bijan Robinson'}, stats:['12','60','1']},
+    {athlete:{id:'boxbri', displayName:'Brian Robinson Jr.'}, stats:['8','40','0']} ]}] }] } };
+  const tA=app.ath(twinSum);
+  chk(tA.byId['boxbij'] && tA.byId['boxbij'].pid==='__bij' && tA.byId['boxbri'] && tA.byId['boxbri'].pid==='__bri', 'Bijan and Brian Robinson each resolve to their own id — the Jr. no longer collapses both to one B. Robinson');
+
+  console.log('=== desktop feed: the field is pinned up top, the plays scroll on their own ===');
+  app.setSum('401872925', SUM); app.setTab('feed');
+  const ghFeed=app.gameHTML(app.GAME('post'));
+  chk(/class="gc-feedview"/.test(ghFeed) && /gc-feedview-head/.test(ghFeed) && /gc-feedview-feed/.test(ghFeed) && ghFeed.indexOf('gc-drive-svg')<ghFeed.indexOf('gc-feedview-feed') && ghFeed.indexOf('gc-feedview-head')<ghFeed.indexOf('gcf'), 'the feed tab pins the hero + field + tabs in a head, and the plays scroll in their own window below');
+  app.setTab(null);
 
   const posts=[...dc.matchAll(/<g class="gc-posts"><path d="M([\d.]+),([\d.]+) V([\d.]+) M([\d.]+),([\d.]+) L([\d.]+),([\d.]+) M[\d.]+,[\d.]+ V[\d.]+ M[\d.]+,[\d.]+ V[\d.]+"/g)].map(m=>m.slice(1).map(Number));
   chk(posts.length===2 && posts[0][6]<posts[0][4] && posts[1][6]>posts[1][4] && posts.every(q=>q[3]<q[5]) && !/skewX/.test(dc), 'uprights on both back lines, Sleeper\'s: a vertical stem, the crossbar tilted with the field (climbing toward mid-field on both sides), two short vertical uprights');

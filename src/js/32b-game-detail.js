@@ -99,7 +99,7 @@ function gcSummaryRepaint(added){
 }
 function gcDetailRepaint(){
   if(typeof renderRightSidebar!=='function') return;
-  const paint=()=>{ if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.gc-detail','.gcm-sheet','.gc-body']); else renderRightSidebar(); };
+  const paint=()=>{ if(typeof tcPreserveViewScroll==='function') tcPreserveViewScroll(()=>renderRightSidebar(), ['.gc-feedview-feed','.gc-detail','.gcm-sheet','.gc-body']); else renderRightSidebar(); };
   if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', paint); else paint();   // never under a finger or an open picker
 }
 function gcdSetTab(t){ _gcd.tab=t; gcDetailRepaint(); }
@@ -150,8 +150,11 @@ function gcAthletes(sum){
           const name=String(ath.displayName||ath.shortName||'').trim();
           let pid=idx[id]||null;
           if(!pid && typeof lfPidFor==='function'){
+            // no ESPN id to join on: match by name, but lead with a two-letter first name so
+            // namesakes don't collapse — "Bijan Robinson" must not resolve to Brian Robinson Jr.
             const sp1=name.indexOf(' ');
-            if(sp1>0) pid=lfPidFor(`${name[0]}.${name.slice(sp1+1)}`, team, null);
+            if(sp1>0){ const first=name.slice(0,sp1), last=name.slice(sp1+1);
+              pid=lfPidFor(`${first.slice(0,2)}.${last}`, team, null) || lfPidFor(`${first[0]}.${last}`, team, null); }
           }
           const spp=pid?sp[pid]:null;
           rec={ id, name, team, groups:new Set(), pid, pos:spp?String(spp.pos||'').toUpperCase():'', first:(name.split(' ')[0]||'').toLowerCase() };

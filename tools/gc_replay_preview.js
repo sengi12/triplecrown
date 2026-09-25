@@ -13,11 +13,12 @@ const embed=(s)=>JSON.stringify(s).replace(/<\//g,'<\\/');
 const wiring=[
   "pcardOnclick=function(pid,pos,team){ return \"event.stopPropagation();window.__nameTap&&window.__nameTap('\"+pos+\"','\"+team+\"')\"; };",
   "sleeperPlayers={};",
-  "_gcd.feedAll=true;",
+  "_gcd.feedAll=true; _gcd.side='fantasy';",
   "var SUM=JSON.parse(__SUMTEXT);",
   "var GAME={ id:'TB@CIN', away:'TB', home:'CIN', eid:'401872925', state:'post', detail:'Final', hs:33, as:27, arec:'0-1', hrec:'1-0' };",
-  "renderRightSidebar=function(){ var f=document.getElementById('gcp-feed'); if(f) f.innerHTML=gcFeedHTML(GAME,SUM); var d=document.getElementById('gcp-field'); if(d) d.innerHTML=gcDriveChartHTML(GAME,SUM); };",
-  "['gcReplayPlay','gcReplayClear','gcdSetFeedAll','gcdSetTab','gcWinProbToggle'].forEach(function(k){ try{ window[k]=eval(k); }catch(e){} });",
+  "_gcd.sum[GAME.eid]={data:SUM, at:Date.now()};",
+  "renderRightSidebar=function(){ var d=document.getElementById('gcp-detail'); if(d) d.innerHTML=gcGameHTML(GAME, [], 1); };",
+  "['gcReplayPlay','gcReplayClear','gcdSetFeedAll','gcdSetTab','gcdSetSide','gcWinProbToggle','gcPick'].forEach(function(k){ try{ window[k]=eval(k); }catch(e){} });",
   "renderRightSidebar();"
 ].join("\n");
 // the built app auto-inits at load and writes into elements this bare page does not have;
@@ -32,8 +33,22 @@ const page=`<!doctype html><meta charset="utf-8"><title>Game Center — click-to
   h1{font-size:19px;margin:0 0 2px;} .sub{color:#8b949e;margin:0 0 18px;font-size:13px;max-width:820px;}
   .wrap{display:grid;grid-template-columns:360px minmax(0,1fr);gap:22px;align-items:start;max-width:900px;}
   .col h2{font-size:13px;color:#f5c542;margin:0 0 8px;text-transform:uppercase;letter-spacing:.4px;}
-  #gcp-field{position:sticky;top:22px;}
-  .gcf{display:flex;flex-direction:column;gap:7px;} .gcf-bar{display:flex;align-items:center;gap:8px;margin-bottom:8px;color:#8b949e;font-size:12px;}
+  .side{width:412px;max-width:100%;}
+  .gc{display:flex;flex-direction:column;height:680px;border:1px solid var(--border);border-radius:14px;overflow:hidden;background:var(--surface);}
+  .gc-body{display:grid;grid-template-columns:1fr;flex:1;min-height:0;}
+  .gc-detail{overflow-y:auto;}
+  .gc-detail:has(.gc-feedview){display:flex;flex-direction:column;overflow:hidden;}
+  .gc-feedview{display:flex;flex-direction:column;flex:1;min-height:0;}
+  .gc-feedview-head{flex:none;}
+  .gc-feedview-feed{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 0 12px;}
+  .gc-feedview-head .gc-tabs{margin:8px 10px 6px;}
+  .gc-hero{display:grid;grid-template-columns:1fr auto auto auto 1fr;align-items:center;gap:8px;padding:12px;background:var(--surface2);border-bottom:1px solid var(--border);}
+  .gc-side{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;} .gc-side-home{align-items:flex-end;}
+  .gc-score{font-size:26px;font-weight:900;} .gc-mid{display:flex;flex-direction:column;align-items:center;} .gc-status{font-size:11px;font-weight:800;color:var(--muted);}
+  .gc-logo{width:30px;height:30px;} .gc-team{font-weight:800;} .gc-rec{font-size:11px;color:var(--muted);} .gc-hero-wm{display:none;}
+  .gc-tabs{display:flex;gap:4px;} .gc-tab{flex:1;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border-radius:8px;padding:6px;cursor:pointer;} .gc-tab.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .gc-drive{margin:6px 10px 0;} .gc-lgrow{display:none;}
+  .gcf{display:flex;flex-direction:column;gap:7px;padding:0 10px;} .gcf-bar{display:flex;align-items:center;gap:8px;margin-bottom:8px;color:#8b949e;font-size:12px;padding:0 10px;}
   .gcf-bar button{background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-weight:700;cursor:pointer;}
   .gcf-bar button.active{background:var(--accent);border-color:var(--accent);color:#fff;}
   .gcf-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:start;padding:8px 8px 8px 6px;border:1px solid var(--border);border-radius:10px;background:var(--surface2);}
@@ -57,12 +72,9 @@ const page=`<!doctype html><meta charset="utf-8"><title>Game Center — click-to
   .gc-seg-ret{stroke-dasharray:none;} .gc-glogo{width:14px;height:14px;vertical-align:-2px;}
   .gc-last-wrap,.gc-wp{display:none;}
 </style>
-<h1>Game Center — tap a play to replay it</h1>
-<p class="sub">The real feed and the real field, driven by the built app (TB @ CIN, a finished game). Tap any play row → the field pins to it and the segment animates. Tap the <b style="color:#e5484d">● LATEST</b> button (it reads <b style="color:#e5484d">● LIVE</b> during a live game) to hand the field back. Tapping a player's name opens their card instead — the name tap stops the row tap.</p>
-<div class="wrap">
-  <div class="col"><h2>Play feed</h2><div id="gcp-feed"></div></div>
-  <div class="col"><h2>The field</h2><div id="gcp-field"></div></div>
-</div>
+<h1>Game Center — desktop layout: the field stays, the plays scroll</h1>
+<p class="sub">The real <code>gcGameHTML</code> in a sidebar-height column (TB @ CIN, final). The hero, the drawn field and the Feed/Stats tabs stay pinned in a head; the plays scroll in their own window below — so tapping a play to replay keeps the field animating in view. Tap the red <b style="color:#e5484d">● LATEST</b> button (it reads <b style="color:#e5484d">● LIVE</b> during a live game) to hand the field back. Player-name taps open the card instead.</p>
+<div class="side"><div class="gc"><div class="gc-body"><div class="gc-detail" id="gcp-detail"></div></div></div></div>
 <script>
 var __CODE=${embed(code)};
 var __SUM=${embed(sum)};
@@ -71,7 +83,7 @@ var __SHIM=${embed(shim)};
 (function(){
   window.__nameTap=function(pos,team){ alert('Player card → '+pos+' · '+team+'   (name taps open the card, not the replay)'); };
   try{ new Function('__SUMTEXT', __SHIM+__CODE+"\\n"+__WIRING)(__SUM); }
-  catch(e){ document.getElementById('gcp-field').innerHTML='<pre style="color:#e5484d;white-space:pre-wrap">'+String(e&&e.stack||e)+'</pre>'; }
+  catch(e){ document.getElementById('gcp-detail').innerHTML='<pre style="color:#e5484d;white-space:pre-wrap">'+String(e&&e.stack||e)+'</pre>'; }
 })();
 </script>`;
 const out=process.argv[2]||'/tmp/gc_replay_preview.html';

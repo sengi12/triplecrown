@@ -43,6 +43,26 @@ function _tmPlays(node, selWk, legend){
 function _tmIsPost(g){ return !!(g && (g.post || g.wk>18)); }
 // Does the sidecar carry per-target rows for this player at all? (older bakes don't)
 function _tmHasPlays(node){ return (node.games||[]).some(g=>Array.isArray(g.plays) && g.plays.length); }
+// Volume share by quarter (Q1–Q4): a player's slice of his team's opportunities in each
+// quarter, from per-game qc (his carries/targets) and qt (the team's), summed across the
+// scope in view — the picked game, else the regular season. Blank until the quarter data
+// ships with the map. Shared by the carry map (68) and the target map (66).
+function _qtrShareSplits(node, selWk, heading, sub, noun){
+  if(!node || !Array.isArray(node.games)) return '';
+  const pl=[0,0,0,0], tm=[0,0,0,0]; let any=false;
+  for(const g of node.games){
+    if(selWk!=null ? g.wk!==Number(selWk) : !!(g.post || g.wk>18)) continue;
+    if(!Array.isArray(g.qc) || !Array.isArray(g.qt)) continue;
+    any=true;
+    for(let q=0;q<4;q++){ pl[q]+=(+g.qc[q]||0); tm[q]+=(+g.qt[q]||0); }
+  }
+  if(!any) return '';
+  const tiles=[0,1,2,3].map(q=>{
+    const share = tm[q] ? Math.round(pl[q]/tm[q]*100) : null;
+    return `<div class="qpc-tile" title="${pl[q]} of the team's ${tm[q]} ${noun} in Q${q+1}"><label>Q${q+1}</label><b>${share==null?'—':share+'%'}</b></div>`;
+  }).join('');
+  return `<div class="qpc-sub">${heading} <span>${sub}</span></div><div class="qpc-totals rbf-splits">${tiles}</div>`;
+}
 const _TM_SIDES=['Left','Middle','Right'];
 const _TM_RES=['Incomplete','Catch','Touchdown','Intercepted'];
 function _tmRouteLabel(route){

@@ -2783,7 +2783,10 @@ def rb_fan_weekly(season, min_attempts_game=5):
     left — neither when the play only says he stepped out), yardline_100, qtr] in
     play order — the CARRY MAP (each run drawn up its lane from the line of
     scrimmage, out to the sideline when he went out of bounds), the cousin of
-    NGS's carry chart. Playoff games ride along after week 18 (`post: 1`) so a
+    NGS's carry chart. Each game also carries `qc`/`qt` when the quarter data is
+    there — the back's carries by quarter [Q1,Q2,Q3,Q4] (overtime folded into Q4)
+    and the team's designed rushes by quarter — the carry-share splits divide the
+    two. Playoff games ride along after week 18 (`post: 1`) so a
     game picker can show them; season lines stay regular season. `esb` is the
     rusher's NFL ESB id for the NGS deep link."""
     _map_cols = ["fumble_lost", "tackled_for_loss", "qtr", "out_of_bounds"]
@@ -2825,6 +2828,24 @@ def rb_fan_weekly(season, min_attempts_game=5):
     runs = runs[runs["lane"].notna()]
     if runs.empty:
         return {}
+    # team designed-rush counts by (team, week, quarter) — the denominator for a back's
+    # carry share by quarter (overtime folds into Q4)
+    _tqr = {}
+    _rq = runs.copy()
+    _rq["_qi"] = pd.to_numeric(_rq["qtr"], errors="coerce")
+    _rq = _rq[_rq["_qi"].notna()]
+    if not _rq.empty:
+        _rq["_qi"] = _rq["_qi"].astype(int).clip(1, 4)
+        for (tm, wkk, qq), cnt in _rq.groupby(["posteam", "week", "_qi"]).size().items():
+            _tqr[(tm, int(wkk), int(qq))] = int(cnt)
+    def _q_player(frame):
+        gq = pd.to_numeric(frame["qtr"], errors="coerce").dropna()
+        if gq.empty:
+            return [0, 0, 0, 0]
+        gq = gq.astype(int).clip(1, 4)
+        return [int((gq == q).sum()) for q in (1, 2, 3, 4)]
+    def _q_team(team, wk):
+        return [int(_tqr.get((team, int(wk), q), 0)) for q in (1, 2, 3, 4)]
     names = _name_map(season)
     pfrw = _rb_pfr_week(season)
     out = {}
@@ -2846,6 +2867,8 @@ def rb_fan_weekly(season, min_attempts_game=5):
         node = out.setdefault(name, {"team": None, "esb": esb.get(rid), "games": []})
         node["team"] = g["posteam"].mode().iloc[0] if len(g["posteam"].mode()) else node["team"]
         succ_g = float(g["success"].mean() * 100) if g["success"].notna().any() else None
+        _gteam = g["posteam"].mode().iloc[0] if len(g["posteam"].mode()) else node["team"]
+        _qc, _qt = _q_player(g), _q_team(_gteam, wk)
         node["games"].append(dict({
             "wk": int(wk),
             "opp": (g["defteam"].mode().iloc[0] if len(g["defteam"].mode()) else None),
@@ -2856,6 +2879,7 @@ def rb_fan_weekly(season, min_attempts_game=5):
             "ypc": round(float(g["yards_gained"].mean()), 2),
             "success_rate": (None if succ_g is None else round(succ_g, 1)),
             "lanes": lanes,
+            **({"qc": _qc, "qt": _qt} if any(_qt) else {}),
         }, **_rb_metric_line(g), **(pfrw.get((rid, int(wk))) or {})))
     for node in out.values():
         node["games"].sort(key=lambda x: x["wk"])
@@ -3027,7 +3051,10 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
     reaches open data after the post-season — and exists only when that file
     carries the season (in season the rows stop at qtr and the map draws the
     throw alone). `esb` is the player's NFL ESB id, which deep-links the real
-    NGS chart page. Playoff games ride along after week 18 (`post: 1`); the
+    NGS chart page. Each game also carries `qc`/`qt` when the quarter data is
+    there — the receiver's targets by quarter [Q1,Q2,Q3,Q4] (overtime folded into
+    Q4) and the team's targeted passes by quarter — the target-share splits divide
+    the two. Playoff games ride along after week 18 (`post: 1`); the
     season line, the league baseline and the ranks stay regular season.
     Returns {"players":{name:{pos,team,esb,season:{zones,tgt,rec,yds,td},
     games:[{wk,opp,tgt,rec,yds,td,zones,plays}]}}, "lg":{zone:"catch_pct"},
@@ -3118,6 +3145,24 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
         }
 
     players = {}
+    # team targeted-pass counts by (team, week, quarter) — the denominator for a
+    # receiver's target share by quarter (overtime folds into Q4)
+    _tpq = {}
+    _tq = t.copy()
+    _tq["_qi"] = pd.to_numeric(_tq["qtr"], errors="coerce")
+    _tq = _tq[_tq["_qi"].notna()]
+    if not _tq.empty:
+        _tq["_qi"] = _tq["_qi"].astype(int).clip(1, 4)
+        for (tm, wkk, qq), cnt in _tq.groupby(["posteam", "week", "_qi"]).size().items():
+            _tpq[(tm, int(wkk), int(qq))] = int(cnt)
+    def _tq_player(frame):
+        gq = pd.to_numeric(frame["qtr"], errors="coerce").dropna()
+        if gq.empty:
+            return [0, 0, 0, 0]
+        gq = gq.astype(int).clip(1, 4)
+        return [int((gq == q).sum()) for q in (1, 2, 3, 4)]
+    def _tq_team(team, wk):
+        return [int(_tpq.get((team, int(wk), q), 0)) for q in (1, 2, 3, 4)]
     for rid, g_all in t.groupby("receiver_player_id"):
         g = g_all[g_all["season_type"] == "REG"]
         if g.empty or (len(g) < min_targets_season and len(g) < min_targets_game):
@@ -3133,11 +3178,14 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
         for wk, gg in g_all.groupby("week"):
             if len(gg) < min_targets_game:
                 continue
+            _gt = gg["posteam"].mode().iloc[0] if len(gg["posteam"].mode()) else node["team"]
+            _qc, _qt = _tq_player(gg), _tq_team(_gt, wk)
             node["games"].append(dict(
                 wk=int(wk),
                 opp=(gg["defteam"].mode().iloc[0] if len(gg["defteam"].mode()) else None),
                 **({"post": 1} if (gg["season_type"] == "POST").any() else {}),
-                zones=_zones(gg), plays=_plays(gg), **_tt_line(gg)))
+                zones=_zones(gg), plays=_plays(gg),
+                **({"qc": _qc, "qt": _qt} if any(_qt) else {}), **_tt_line(gg)))
         node["games"].sort(key=lambda x: x["wk"])
         players[name] = node
     _rank_within_pos(list(players.values()), _TT_TOTAL_RANKS)

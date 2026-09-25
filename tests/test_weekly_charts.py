@@ -157,6 +157,8 @@ def main():
     _g1 = nv.rb_fan_weekly(2026)["test back"]["games"][0]
     check("carry map: flags are bits — TD 1, fumble lost 2, first down 4, tackled for loss 8 — with field position and quarter",
           _g1["plays"][2] == [0, 6, 5, 50, 2] and _g1["plays"][3] == [3, 4, 2, 50, 2] and _g1["plays"][4] == [0, -3, 8, 50, 2] and _g1["plays"][0][2] == 4)
+    check("carry share: with quarters in the pbp each game carries qc (his carries) and qt (the team's designed rushes) by quarter — all six here are Q2",
+          _g1.get("qc") == [0, 6, 0, 0] and _g1.get("qt") == [0, 6, 0, 0])
     _ob = _pbp_rush().assign(out_of_bounds=lambda d: (d.play_id <= 3).astype(int), first_down=0, yardline_100=50, qtr=1)
     _ob.loc[_ob.play_id == 1, "run_location"] = "right"
     nv._load_pbp = lambda season, cols=None: _ob
@@ -293,6 +295,8 @@ def main():
                                                                         [26, 1, 0, 0, 97, 2, None, 0, None, 0], [12, 0, 3, 0, 12, 3, None, 0, None, 0]])
     check("target_trees: the TD is result 2 (with its YAC), the pick is 3, an incompletion carries no YAC",
           g1.get("plays", [[]])[1][2] == 2 and g1.get("plays", [[]])[3][2] == 3 and g1.get("plays", [[]])[2][3] == 0)
+    check("target share: each game carries qc (his targets) and qt (the team's targeted passes) by quarter — one target each quarter here",
+          g1.get("qc") == [1, 1, 1, 1] and g1.get("qt") == [1, 1, 1, 1])
     check("target_trees: the receiver carries his ESB id and no routes legend ships without charting",
           w and w.get("esb") == "TES123456" and "routes" not in tt and len(w["games"]) == 2 and len(w["games"][1]["plays"]) == 1)
     _tob = _pbp_targets().assign(out_of_bounds=[1, 0, 1, 0, 0])

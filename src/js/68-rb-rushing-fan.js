@@ -768,6 +768,7 @@ function renderPcardRbFan(pid){
       <span><i style="background:#d33b2f"></i>Lane YPC below league avg</span>
     </div>`}
     ${(!_rbIsProjSeason(season)) ? _rbMetricTiles(chart, season, notePlayer, _selWk) : ''}
+    ${(!_rbIsProjSeason(season)) ? _rbQuarterSplits(_wnode, _selWk) : ''}
     ${(typeof pcardNgsStrip==='function' && !_rbIsProjSeason(season)) ? pcardNgsStrip('rb', norm, season, _selWk) : ''}
     <div class="pcard-src">Rushing lanes from nflverse run-location/gap charting (regular season).${(typeof ngsChartLink==='function' && _wnode) ? ngsChartLink(_wnode, name, season, _selWk) : ''}</div>
   </div>`;
@@ -794,6 +795,11 @@ function _rbMetricTiles(chart, season, notePlayer, selWk){
     return `<div class="qpc-tile" ${tip?`title="${escAttr(tip)}"`:''}><label>${label}</label><b>${noteWrapHtml(escHtml(val), {label, value:val, source:'rb_rushing_fan', statKey:k, context:ctx, player:notePlayer, team:notePlayer&&notePlayer.team}, 'note-tag-hit')}</b>${(typeof pcardRankTag==='function')?pcardRankTag(rk, k, 'RB'):''}</div>`;
   }).join('');
   return tiles ? `<div class="qpc-totals rbf-metrics">${tiles}</div>` : '';
+}
+// Carry share by quarter (Q1–Q4): the slice of the team's designed rushes that went to this
+// back each quarter — the shared splits helper (66b) over the carry map's per-game qc/qt.
+function _rbQuarterSplits(wnode, selWk){
+  return (typeof _qtrShareSplits==='function') ? _qtrShareSplits(wnode, selWk, 'Carry share by quarter', "· his cut of the team's designed runs", 'designed rushes') : '';
 }
 function setPcardRbFanSeason(season){
   pcardRbFanSeason=season;
