@@ -229,7 +229,7 @@ function _renderTargetTree(pid, node, season, seasonBtns, hasTree){
     </div>
     ${(typeof _qtrShareSplits==='function') ? _qtrShareSplits(node, selWk, 'Target share by quarter', "· his cut of the team's throws", 'targeted throws', 'TAR') : ''}
     ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('rec', norm, season, selWk) : ''}
-    <div class="pcard-src">Targets via nflverse play-by-play${live?', nightly':''}${(typeof _tmRouteLegend==='function' && _tmRouteLegend(season))?'; routes via nflverse participation charting':''}.${(typeof ngsChartLink==='function') ? ngsChartLink(node, pname, season, selWk) : ''}</div>
+    <div class="pcard-src">All data provided by nflverse.${(typeof ngsChartLink==='function') ? ngsChartLink(node, pname, season, selWk) : ''}</div>
   </div>`;
 }
 // The nflverse blocks are keyed by nflverse's display name, Sleeper by its own — and the two

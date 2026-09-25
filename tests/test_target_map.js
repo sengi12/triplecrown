@@ -13,7 +13,7 @@ const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`
   toast=function(){};
-  return { block:targetMapBlock, plays:_tmPlays, url:ngsChartUrl, link:ngsChartLink, btns:_pcardRouteViewBtns,
+  return { block:targetMapBlock, plays:_tmPlays, url:ngsChartUrl, hurl:ngsHighlightsUrl, link:ngsChartLink, btns:_pcardRouteViewBtns,
            view:()=>pcardTargetView, setView:setPcardTargetView, seasons:pcardRouteSeasons, setNV:(n)=>{NFLVERSE=n;},
            routePath:_tmRoutePath, qbBlock:qbPassMapBlock, qbView:()=>pcardQbView, setQbView:setPcardQbView, weekly:pcardWeeklyGames,
            rbBlock:rbCarryMapBlock, runPath:_cmRunPath, rbView:()=>pcardRbView, setRbView:setPcardRbView,
@@ -100,6 +100,11 @@ chk(JSON.stringify(app.seasons('test receiver'))==='["2026","2025"]', 'seasons =
 chk(app.url(node,'Jaxon Smith-Njigba',2026,1)==='https://nextgenstats.nfl.com/charts/single/all/team/2026/1/jaxon-smith-njigba/SMI829636', 'week deep link: season/week/slug/esb');
 chk(app.url(node,"Ja'Marr Chase",2026,null).endsWith('/2026/week/jamarr-chase/SMI829636'), 'season deep link drops the apostrophe and uses the week=all route');
 chk(app.url({esb:null},'X',2026,1)==='' && app.link({esb:null},'X',2026,1)==='', 'no ESB id → no link at all');
+chk(app.hurl(node,'Jaxon Smith-Njigba',2026)==='https://nextgenstats.nfl.com/highlights/play-list/type/team/2026/week/SMI829636/jaxon-smith-njigba', 'highlights deep link: the player view, keyed by ESB id, season-wide');
+let _ngsL=app.link(node,'Jaxon Smith-Njigba',2026,1);
+chk(_ngsL.includes('>CHARTS<') && _ngsL.includes('>HIGHLIGHTS<') && !_ngsL.includes('>STATS<') && !_ngsL.includes('Next Gen Stats charts ↗'), 'the two wordmarks read CHARTS and HIGHLIGHTS in the NGS style, not STATS or the old text');
+chk((_ngsL.match(/ngs-shield/g)||[]).length===1 && (_ngsL.match(/>NEXT GEN</g)||[]).length===2, 'one shared NFL shield sits under NEXT GEN over each label');
+chk(_ngsL.includes('/highlights/play-list/type/team/2026/week/SMI829636/') && _ngsL.includes('/charts/single/all/team/2026/1/'), 'HIGHLIGHTS opens the animated tracking, CHARTS the charts');
 chk(app.block('X', {games:[{wk:1,plays:[]}]}, 2026, 1, v, null).includes('next weekly bake'), 'a node without per-target rows says so instead of drawing an empty field');
 
 console.log('=== the QB pass map ===');

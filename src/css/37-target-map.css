@@ -10,8 +10,12 @@
 .tm-l-td{border:3px solid #2f6fe4;background:#39c15a;}
 .tm-l-int{border:2.5px solid #d33b2f;background:#101214;}
 .tm-l-los{width:22px!important;height:4px!important;border-radius:2px!important;background:#2f6fe4;}
-.tm-ngs-link{display:inline-block;margin-left:8px;font-weight:800;color:var(--accent);text-decoration:none;white-space:nowrap;}
-.tm-ngs-link:hover{text-decoration:underline;}
+.ngs-links{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;vertical-align:middle;margin-left:8px;}
+.ngs-words{display:inline-flex;align-items:center;gap:14px;}
+.ngs-shield{height:18px;width:auto;display:block;flex:none;}
+.ngs-word{height:18px;width:auto;display:block;}
+.ngs-word-link{display:inline-flex;text-decoration:none;line-height:0;}
+.ngs-word-link:hover .ngs-word{opacity:.75;}
 .tm-l-route{width:22px!important;height:3px!important;border-radius:2px!important;background:#fff;}
 /* The view toggle owns a row of its own, so Map ↔ Zones ↔ Tree never moves it; the
    metric buttons of the zone chart / route tree take the row beneath (absent on the map). */

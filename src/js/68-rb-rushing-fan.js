@@ -770,7 +770,7 @@ function renderPcardRbFan(pid){
     ${(!_rbIsProjSeason(season)) ? _rbMetricTiles(chart, season, notePlayer, _selWk) : ''}
     ${(!_rbIsProjSeason(season)) ? _rbQuarterSplits(_wnode, _selWk) : ''}
     ${(typeof pcardNgsStrip==='function' && !_rbIsProjSeason(season)) ? pcardNgsStrip('rb', norm, season, _selWk) : ''}
-    <div class="pcard-src">Rushing lanes from nflverse run-location/gap charting (regular season).${(typeof ngsChartLink==='function' && _wnode) ? ngsChartLink(_wnode, name, season, _selWk) : ''}</div>
+    <div class="pcard-src">All data provided by nflverse.${(typeof ngsChartLink==='function' && _wnode) ? ngsChartLink(_wnode, name, season, _selWk) : ''}</div>
   </div>`;
 }
 

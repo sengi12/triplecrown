@@ -267,7 +267,7 @@ function renderPcardQbPassing(pid){
     ${pcardQbDuressHTML(_game, _games, season, notePlayer)}
     ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('qb', norm, season, _selWk) : ''}
     ${pcardQbChartingBand(norm, season, notePlayer)}
-    <div class="pcard-src">*Located pass attempts (excl. sacks, 2-pt) · depth via air yards, location via nflverse charting.${(typeof ngsChartLink==='function' && _wnode) ? ngsChartLink(_wnode, name, season, _selWk) : ''}</div>
+    <div class="pcard-src">*Located pass attempts (excl. sacks, 2-pt). All data provided by nflverse.${(typeof ngsChartLink==='function' && _wnode) ? ngsChartLink(_wnode, name, season, _selWk) : ''}</div>
   </div>`;
 }
 

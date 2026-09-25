@@ -11514,7 +11514,7 @@ function _renderTargetTree(pid, node, season, seasonBtns, hasTree){
     </div>
     ${(typeof _qtrShareSplits==='function') ? _qtrShareSplits(node, selWk, 'Target share by quarter', "· his cut of the team's throws", 'targeted throws', 'TAR') : ''}
     ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('rec', norm, season, selWk) : ''}
-    <div class="pcard-src">Targets via nflverse play-by-play${live?', nightly':''}${(typeof _tmRouteLegend==='function' && _tmRouteLegend(season))?'; routes via nflverse participation charting':''}.${(typeof ngsChartLink==='function') ? ngsChartLink(node, pname, season, selWk) : ''}</div>
+    <div class="pcard-src">All data provided by nflverse.${(typeof ngsChartLink==='function') ? ngsChartLink(node, pname, season, selWk) : ''}</div>
   </div>`;
 }
 // The nflverse blocks are keyed by nflverse's display name, Sleeper by its own — and the two
@@ -12233,14 +12233,47 @@ function qbPassMapBlock(pname, node, season, selWk, label, tag){
 }
 // The real thing, one tap away: NGS keys its chart pages by the player's ESB id
 // (nflverse rosters carry it). Season → every chart that season; a game → that week.
+function _ngsPlayerSlug(name){
+  return String(name||'').toLowerCase().replace(/['’.]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'player';
+}
 function ngsChartUrl(node, name, season, selWk){
   if(!node || !node.esb) return '';
-  const slug=String(name||'').toLowerCase().replace(/['’.]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'player';
-  return `https://nextgenstats.nfl.com/charts/single/all/team/${season}/${selWk!=null?selWk:'week'}/${slug}/${encodeURIComponent(node.esb)}`;
+  return `https://nextgenstats.nfl.com/charts/single/all/team/${season}/${selWk!=null?selWk:'week'}/${_ngsPlayerSlug(name)}/${encodeURIComponent(node.esb)}`;
+}
+// Highlights are the animated version of the same tracking: every one of this player's
+// charted plays replayed frame-by-frame. NGS only exposes the player view season-wide.
+function ngsHighlightsUrl(node, name, season){
+  if(!node || !node.esb) return '';
+  return `https://nextgenstats.nfl.com/highlights/play-list/type/team/${season}/week/${encodeURIComponent(node.esb)}/${_ngsPlayerSlug(name)}`;
+}
+// The NGS marks, inlined so they render from file:// with the seed baked in: one shared
+// black-and-white NFL shield, then a wordmark per destination in the NEXT GEN / <label>
+// house style (CHARTS → the static charts, HIGHLIGHTS → the animated tracking).
+function _ngsShieldSVG(){
+  return `<svg class="ngs-shield" viewBox="0 0 28 26" width="19" height="18" role="img" aria-label="NFL">`
+    +`<path d="M2 2 H26 V13 Q26 20 14 25 Q2 20 2 13 Z" fill="#12213c"/>`
+    +`<text x="14" y="15" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="8" font-weight="900" font-style="italic" fill="#fff">NFL</text>`
+    +`</svg>`;
+}
+// Arial-bold cap advances (per em) — enough to size each label so its line spans the
+// NEXT GEN above it. Both lines are centred, so a mark reads as a tidy two-line block.
+const _NGS_ADV={A:.722,B:.722,C:.722,D:.722,E:.667,F:.611,G:.778,H:.722,I:.278,J:.556,K:.722,L:.611,M:.833,N:.722,O:.778,P:.667,Q:.778,R:.722,S:.667,T:.611,U:.722,V:.667,W:.944,X:.667,Y:.667,Z:.611,' ':.278};
+function _ngsWordSVG(label){
+  const W=50, cx=25, target=45.85, ls=.3;   // 45.85 = the rendered width of NEXT GEN
+  let em=0; for(const ch of label) em+=(_NGS_ADV[ch]!=null?_NGS_ADV[ch]:.6);
+  const fs=Math.max(6.5, Math.min(12, (target - ls*Math.max(0,label.length-1))/em));
+  return `<svg class="ngs-word" viewBox="0 0 ${W} 24" height="18" role="img" aria-label="Next Gen ${label}">`
+    +`<text x="${cx}" y="9" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="8.5" font-weight="800" font-style="italic" letter-spacing="${ls}" fill="#6cc24a">NEXT GEN</text>`
+    +`<text x="${cx}" y="22" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="${fs.toFixed(2)}" font-weight="900" font-style="italic" letter-spacing="${ls}" fill="#8f969c">${label}</text>`
+    +`</svg>`;
 }
 function ngsChartLink(node, name, season, selWk){
-  const u=ngsChartUrl(node, name, season, selWk);
-  return u ? `<a class="tm-ngs-link" href="${u}" target="_blank" rel="noopener" title="Open this player's Next Gen Stats charts (route charts from player tracking) in a new tab">Next Gen Stats charts ↗</a>` : '';
+  const c=ngsChartUrl(node, name, season, selWk), h=ngsHighlightsUrl(node, name, season);
+  if(!c) return '';
+  const nm=escHtml(String(name||'').toUpperCase());
+  const charts=`<a class="ngs-word-link" href="${c}" target="_blank" rel="noopener" title="${nm} on Next Gen Stats — route/pass charts from player tracking (opens in a new tab)">${_ngsWordSVG('CHARTS')}</a>`;
+  const hi=`<a class="ngs-word-link" href="${h}" target="_blank" rel="noopener" title="${nm} on Next Gen Stats — highlights, animated player-tracking replays of every charted play (opens in a new tab)">${_ngsWordSVG('HIGHLIGHTS')}</a>`;
+  return `<span class="ngs-links">${_ngsShieldSVG()}<span class="ngs-words">${charts}${hi}</span></span>`;
 }
 
 // ── QB passing chart (player-card "Passing Chart" tab) ─────────────────────
@@ -12512,7 +12545,7 @@ function renderPcardQbPassing(pid){
     ${pcardQbDuressHTML(_game, _games, season, notePlayer)}
     ${(typeof pcardNgsStrip==='function') ? pcardNgsStrip('qb', norm, season, _selWk) : ''}
     ${pcardQbChartingBand(norm, season, notePlayer)}
-    <div class="pcard-src">*Located pass attempts (excl. sacks, 2-pt) · depth via air yards, location via nflverse charting.${(typeof ngsChartLink==='function' && _wnode) ? ngsChartLink(_wnode, name, season, _selWk) : ''}</div>
+    <div class="pcard-src">*Located pass attempts (excl. sacks, 2-pt). All data provided by nflverse.${(typeof ngsChartLink==='function' && _wnode) ? ngsChartLink(_wnode, name, season, _selWk) : ''}</div>
   </div>`;
 }
 
@@ -13401,7 +13434,7 @@ function renderPcardRbFan(pid){
     ${(!_rbIsProjSeason(season)) ? _rbMetricTiles(chart, season, notePlayer, _selWk) : ''}
     ${(!_rbIsProjSeason(season)) ? _rbQuarterSplits(_wnode, _selWk) : ''}
     ${(typeof pcardNgsStrip==='function' && !_rbIsProjSeason(season)) ? pcardNgsStrip('rb', norm, season, _selWk) : ''}
-    <div class="pcard-src">Rushing lanes from nflverse run-location/gap charting (regular season).${(typeof ngsChartLink==='function' && _wnode) ? ngsChartLink(_wnode, name, season, _selWk) : ''}</div>
+    <div class="pcard-src">All data provided by nflverse.${(typeof ngsChartLink==='function' && _wnode) ? ngsChartLink(_wnode, name, season, _selWk) : ''}</div>
   </div>`;
 }
 
