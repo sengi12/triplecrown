@@ -961,6 +961,25 @@ function advPowerTrajectory(season, lo, hi){
     t.rows.forEach(r=>{ (out[r.team]=out[r.team]||[]).push({week:w, rank:r.leagueRank, avg:r.avg}); }); });
   return out;
 }
+// The six-metric table needs the lazy adv_weekly sidecar. A past season's Power Score badge
+// renders in the team header BEFORE the Advanced tab (the thing that used to kick the load),
+// so advPowerTable returned null and the badge fell back to a different number entirely — the
+// average of every Sharp table. Kick the load ourselves, once per season, and repaint when the
+// real table lands (mirrors the coaching-scheme snapshot's _schemeAdvKick).
+var _advPowerKick = {};
+function _advPowerAdvReady(s){ return !!(NFLVERSE && NFLVERSE[String(s)] && NFLVERSE[String(s)].adv_weekly); }
+function _advPowerKickLoad(season){
+  const s=String(season);
+  if(_advPowerKick[s] || _advPowerAdvReady(s)) return;
+  if(typeof ensureNflverseSection!=='function') return;
+  // Only a season nflverse actually covers (has a team table) will ever get an adv_weekly.
+  if(!(NFLVERSE && NFLVERSE[s] && NFLVERSE[s].team)) return;
+  _advPowerKick[s]=true;
+  ensureNflverseSection('adv_weekly', s).then(ok=>{
+    if(!ok || !_advPowerAdvReady(s)) return;
+    if(typeof renderContent==='function') renderContent();
+  }).catch(()=>{});
+}
 function _advTeamPowerScore(team, src, opts){
   const o = opts || {};
   const season = String(advTeamSeason());
@@ -999,7 +1018,15 @@ function _advTeamPowerScore(team, src, opts){
   if(o.stableFromSource) return fallbackFromSrc();
   const [lo, hi] = _advGetWeekRange(team);
   const tbl = advPowerTable(season, lo, hi);
-  if(!tbl) return fallbackFromSrc();
+  if(!tbl){
+    // A season nflverse covers just hasn't loaded its adv_weekly yet: kick it and show nothing
+    // until the real six-metric score lands, rather than the misleading Sharp-table average.
+    if(NFLVERSE && NFLVERSE[season] && NFLVERSE[season].team && !_advPowerAdvReady(season)){
+      _advPowerKickLoad(season);
+      return null;
+    }
+    return fallbackFromSrc();
+  }
   const me = tbl.rows.find(r=>String(r.team).toUpperCase()===String(team).toUpperCase());
   if(!me) return fallbackFromSrc();
   return { team: String(team).toUpperCase(), avgRank: me.avg, leagueRank: me.leagueRank, leagueSize: tbl.size, parts: me.parts };

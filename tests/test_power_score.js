@@ -11,6 +11,8 @@ const fs=require('fs');const code=fs.readFileSync(require('path').join(__dirname
 const app=new Function(code+`return {
   table:advPowerTable, traj:advPowerTrajectory, chip:_advTeamPowerScore, sos:renderSOSView, focus:(c)=>{ _sosPowerFocus=c; }, setTab:(t)=>{ _sosChartTab=t; }, tab:()=>_sosChartTab, setTeam:(t)=>{ currentTeam=t; },
   setPack:(season,pack)=>{ NFLVERSE[season]=Object.assign(NFLVERSE[season]||{}, {adv_weekly:pack, team:{}}); _advPowerMemo={}; },
+  nvTeamOnly:(y)=>{ NFLVERSE[String(y)]={team:{CIN:{}}}; _advPowerKick={}; _advPowerMemo={}; },
+  setEnsure:(f)=>{ ensureNflverseSection=f; },
   setSeason:(y)=>{ sharpSeasonOverride=String(y); _sharpSeasonAtOverride=String(activeSeason); },
   setSOS:(s)=>{SOS=s;}, setSchedLoaded:()=>{_sosSchedLoaded=true;}, setRange:(f)=>{ getSharedWeekRange=f; } };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -93,6 +95,21 @@ app.setRange(()=>[2,2]); g=app.sos();
 chk(/within weeks 2–2 only \(the week range above\)/.test(g) && (g.match(/class="pw-node"/g)||[]).length===3 && /class="pw-xlbl"[^>]*>2</.test(g) && !/class="pw-xlbl"[^>]*>1</.test(g), 'a narrowed range plots only those weeks, ranked on those weeks alone');
 chk(/sr-td-val">2nd<\/span>/.test(g) && /Power Score: average league rank[^<]*weeks 2–2/.test(g), 'the table column follows the same window');
 app.setRange(()=>[1,18]); app.setTab('sos');
+
+console.log('=== a covered past season shows nothing (not the wrong fallback) until adv_weekly loads ===');
+// The bug: the team-header badge rendered before the lazy adv_weekly sidecar loaded, so the
+// six-metric table was null and the badge fell back to an average of every Sharp table.
+let kicked=null;
+app.setEnsure((sec,season)=>{ kicked=[sec,String(season)]; return Promise.resolve(false); });
+app.nvTeamOnly('2024');                 // nflverse covers 2024 (team table) but adv_weekly isn't loaded
+app.setSeason('2024'); app.setRange(()=>[1,18]);
+const sharpSrc={ ol:{title:'O-Line',teams:{CIN:{ranks:{a:11,b:12}}}}, pace:{title:'Pace',teams:{CIN:{ranks:{a:12}}}} };
+chk(app.chip('CIN', sharpSrc, {})===null, 'no Sharp-table fallback badge while the real table is still loading');
+chk(kicked && kicked[0]==='adv_weekly' && kicked[1]==='2024', 'the badge kicks the adv_weekly load for that season');
+app.setPack('2024', pack); app.setSeason('2024');
+const real=app.chip('AAA', sharpSrc, {});
+chk(real && real.parts.length===6 && real.leagueRank>=1, 'once adv_weekly is in, the badge shows the real six-metric score');
+app.setSeason('2026'); app.setRange(()=>[1,18]);
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);
