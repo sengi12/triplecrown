@@ -231,11 +231,16 @@
 .pcard-season-title>span{white-space:nowrap;}
 /* pts/g chip: name row on wide screens, stats row on phones (the name wins the fight) */
 .fptsg-stat{display:none;}
+/* Share-row name: full first name on desktop, first initial on phones (see tcShareNameHtml).
+   The last name always shows — "J. Chase" beats a truncated "Ja'Ma…". */
+.share-name .nm-init{display:none;}
 @media (max-width:600px){
   .fptsg-top{display:none;}
   .fptsg-stat{display:inline;}
   .fptsg-stat b{color:var(--accent);}
   .share-name{min-width:72px;}
+  .share-name .nm-first{display:none;}
+  .share-name .nm-init{display:inline;}
 }
 /* Pace mode: the amber mark = where the player actually is (share to date / rate x projected games) */
 .pace-marker{position:absolute;top:-4px;bottom:-4px;width:3px;border-radius:2px;background:var(--warn);

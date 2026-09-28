@@ -87,6 +87,15 @@ function copyTeamToWorking(team){
   toast(`Copied ${copied} ${team} player${copied===1?'':'s'} from ${refSeason}${filterNote} ✓`,'ok');
 }
 
+// Whether the "copy to working set" ⤵ button belongs on a share row: only on a completed
+// historical season (copying real numbers as a projection baseline). The LIVE current season
+// is a read-only in-progress read — copying a partial line makes no sense — and 'proj' is the
+// working set itself, so neither shows it.
+function tcShowCopyBtn(){
+  return activeSeason!=='proj'
+    && !(typeof tcIsLiveSeason==='function' && tcIsLiveSeason(activeSeason));
+}
+
 // Copy a single player's reference line into the working set, on the team they're
 // projected to play for THIS season (falls back to their historical team).
 function copyPlayerToWorking(pid,pos){

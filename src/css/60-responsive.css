@@ -96,7 +96,9 @@
   .stats-grid{grid-template-columns:1fr 1fr;}
   .content{padding:9px 9px calc(40px + env(safe-area-inset-bottom, 0px));}
   .card{padding:11px;}
-  .share-name{max-width:90px;}
+  /* Names abbreviate to "F. Lastname" here (tcShareNameHtml), so a roomier cap still fits the
+     row while letting longer last names (A. St. Brown) show in full. */
+  .share-name{max-width:120px;}
 }
 /* Make the app usable in both orientations and avoid horizontal page scroll */
 *{-webkit-tap-highlight-color:transparent;}

@@ -305,7 +305,7 @@ function renderPassDerived(team,state,subTabs,metric){
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTagTop(p,'rec')}
+        <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${tcShareNameHtml(p.name)}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTagTop(p,'rec')}
         <span class="share-pct" id="dp-${i}">${sharePct}</span><span class="rk-slot" id="rk-dp-${i}">${_shrChip(p.pos, sh)}</span>
         <span class="share-vol" id="dv-${i}">${tagVal(v.toLocaleString()+' '+label, isYds?'Receiving Yards':'Receptions', isYds?'receiving_yards':'receptions')}</span><span class="rk-slot" id="rk-dv-${i}">${_rawChip(p.pos, v)}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,40):100)*100).toFixed(1)}%;background:${col}"></div>
@@ -383,6 +383,19 @@ function sortedIdx(shares,field){
   return shares.map((p,i)=>i).sort((a,b)=>shares[b][field]-shares[a][field]);
 }
 
+// Share-row player name: full name on desktop, "F. Lastname" on phones so the last name
+// always survives instead of the row truncating to "Ja'Ma…". The three spans are toggled by
+// CSS (.nm-first / .nm-init); the full name still rides the row's title attribute.
+function tcShareNameHtml(full){
+  const s=String(full||'').trim();
+  const i=s.indexOf(' ');
+  if(i<0) return escHtml(s);            // single token — nothing to abbreviate
+  const first=s.slice(0,i), last=s.slice(i+1);
+  return `<span class="nm-first">${escHtml(first)} </span>`
+       + `<span class="nm-init">${escHtml(first[0])}. </span>`
+       + `<span class="nm-last">${escHtml(last)}</span>`;
+}
+
 function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
   const lockStats = activeSeason!=='proj';
   const _rankLive=_rankChipsOn();
@@ -433,10 +446,10 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span>
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTagTop(p,'rec')}
+        <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${tcShareNameHtml(p.name)}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTagTop(p,'rec')}
         <span class="share-pct" id="pp-${i}">${sharePct}</span><span class="rk-slot" id="rk-pp-${i}">${_shrChip(p.pos,'receiving_targets', p.share)}</span>
         <span class="share-vol" id="pt-${i}">${tagVal(projTgts+' tgt','Targets','receiving_targets')}</span><span class="rk-slot" id="rk-pt-${i}">${_rawChip(p.pos,'receiving_targets', projTgts)}</span>
-        ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},${pcardArg(p.pos)})" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
+        ${activeSeason!=='proj'&&p.player_id&&tcShowCopyBtn()?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},${pcardArg(p.pos)})" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
       </div>
       <div class="slider-track">
         <div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,40):100)*100).toFixed(1)}%;background:${col}"></div>
@@ -510,7 +523,7 @@ function renderPassTDs(team,state,totalTDs,subTabs){
     return `<div class="share-block" id="pblk-${i}">
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
-        <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>
+        <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${tcShareNameHtml(p.name)}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>
         <span class="share-pct" id="tdp-${i}">${sharePct}</span><span class="rk-slot" id="rk-tdp-${i}">${_shrChip(p.pos, p.td_share)}</span>
         <span class="share-vol">${tagVal(projTDs+' TD','Receiving TDs','receiving_tds')}</span><span class="rk-slot" id="rk-tdv-${i}">${_rawChip(p.pos, +projTDs)}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,50):100)*100).toFixed(1)}%;background:${col}"></div>

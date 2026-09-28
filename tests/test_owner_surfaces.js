@@ -24,6 +24,7 @@ const app=new Function(code+`
   renderCarries:(t,st)=>{ rushingSubTab='carries'; return renderRushing(t,st); },
   renderRankingsHtml:()=>{ currentPhase='Rankings'; renderRankings(); return document.getElementById('content').innerHTML; },
   search:(q)=>{ psRender(q); return document.getElementById('psResults').innerHTML; },
+  setSeason:(s)=>{ activeSeason=s; }, setLive:(b)=>{ tcIsLiveSeason=()=>b; },
   tcOwnerPill, tcOwnerActive,
 };`)();
 
@@ -74,11 +75,11 @@ console.log('=== TEST: league synced → manager handle next to every name ===')
 app.setSnapshot(snap);
 chk(app.tcOwnerActive()===true,'owner lookup active');
 const tg=app.renderTargets('KC',st);
-chk(/Rashee Rice<\/span><span class="tc-own-chip tc-own-mine tc-own-sm tc-own-pill"[^>]*>★ <span class="tc-own-lbl">Sengi12</.test(tg),'targets row: my player → ★ my handle right after the name');
-chk(/Travis Kelce<\/span><span class="tc-own-chip tc-own-sm tc-own-pill"[^>]*><span class="tc-own-lbl">mstums1</.test(tg),'targets row: rival player → rival handle');
-chk(/Xavier Worthy<\/span>(?!<button class="tc-own)/.test(tg),'targets row: free agent → nothing');
-chk(/Rashee Rice<\/span><span class="tc-own-chip[^>]*>★ <span class="tc-own-lbl">Sengi12</.test(app.renderDerived('KC',st)),'receptions/yards rows carry the pill');
-chk(/Isiah Pacheco<\/span><span class="tc-own-chip[^>]*><span class="tc-own-lbl">mstums1</.test(app.renderCarries('KC',st)),'rushing rows carry the pill');
+chk(/nm-last">Rice<\/span><\/span><span class="tc-own-chip tc-own-mine tc-own-sm tc-own-pill"[^>]*>★ <span class="tc-own-lbl">Sengi12</.test(tg),'targets row: my player → ★ my handle right after the name');
+chk(/nm-last">Kelce<\/span><\/span><span class="tc-own-chip tc-own-sm tc-own-pill"[^>]*><span class="tc-own-lbl">mstums1</.test(tg),'targets row: rival player → rival handle');
+chk(/nm-last">Worthy<\/span><\/span>(?!<span class="tc-own)/.test(tg),'targets row: free agent → nothing');
+chk(/nm-last">Rice<\/span><\/span><span class="tc-own-chip[^>]*>★ <span class="tc-own-lbl">Sengi12</.test(app.renderDerived('KC',st)),'receptions/yards rows carry the pill');
+chk(/nm-last">Pacheco<\/span><\/span><span class="tc-own-chip[^>]*><span class="tc-own-lbl">mstums1</.test(app.renderCarries('KC',st)),'rushing rows carry the pill');
 const ps=app.renderPassing('KC',st);
 chk(/Patrick Mahomes<span class="tc-own-chip[^>]*>★ <span class="tc-own-lbl">Sengi12</.test(ps) || /Patrick Mahomes<\/span><span class="tc-own-chip[^>]*>★ <span class="tc-own-lbl">Sengi12</.test(ps),'passing view: QB row carries the pill');
 chk(/Bengal Mauler/.test(tg) && /title="[^"]*mstums1 \(Bengal Mauler\)/.test(tg),'team name is kept in the tooltip');
@@ -101,6 +102,15 @@ console.log('=== TEST: switching leagues re-renders rankings (cache key) ===');
 app.setSnapshot(Object.assign({},snap,{takenAt:2000,teamList:[{rosterId:3,ownerId:'x',owner:'newguy',teamName:'T',players:[{id:'wr2',name:'Xavier Worthy',pos:'WR'}]}]}));
 rk=app.renderRankingsHtml();
 chk(/newguy/.test(rk) && !/Sengi12/.test(rk),'rankings follow the new snapshot');
+
+console.log('=== TEST: the ⤵ copy button is for completed seasons, not the LIVE read-only tab ===');
+app.setSeason('2024'); app.setLive(false);
+chk(/copy-btn/.test(app.renderTargets('KC',st)),'a completed season offers the copy-to-working button');
+chk(/copy-btn/.test(app.renderCarries('KC',st)),'…in rushing too');
+app.setLive(true);
+chk(!/copy-btn/.test(app.renderTargets('KC',st)),'the LIVE season hides it (read-only, a partial line is not a baseline)');
+chk(!/copy-btn/.test(app.renderCarries('KC',st)),'…in rushing too');
+app.setSeason('proj'); app.setLive(false);
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);
