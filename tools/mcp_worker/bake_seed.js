@@ -44,6 +44,7 @@ export const DOC = {
   additions: "additions/{TEAM} → offseason free_agents, draft, trades, free_agents_lost (all positions, $M)",
   ktc: "KeepTradeCut slug per player (dynasty value pages)",
   dynasty_values: "dynasty trade value chart: players/{normalized name} → {v: 1QB value, sf: superflex value, pos, team}; picks/{year}; asof, source",
+  trade_values: "tradesourced dynasty blend: markets/{1qb|sf}/players/{normalized name} → {fp: FantasyPros chart value, trade: value fit from real Sleeper trades, n: trades seen, pos}; markets/{…}/picks/{token}; asof, source, trades",
   sharp: "team metrics for sharp_season: offense, tendencies, pace, defensive, defensive_line, defensive_tendencies, coverage_schemes, coverage_by_position, offensive_line → teams/{TEAM} {values, ranks}",
   coordinators: "coordinators/{TEAM} → offense/defense {name, since, prev_role, prev_team_name, is_new}",
   hc_history: "head coach per team {name, since, prev_role, prev_team_name, is_new}",
