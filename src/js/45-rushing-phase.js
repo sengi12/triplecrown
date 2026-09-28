@@ -25,6 +25,10 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
   const totalIncQB=(r.total_attempts||0)+qbRushAtt;
   const totalTDs=teamRushTDs(state);
   const order=sortedIdx(r.shares,'share');
+  const _rankLive=_rankChipsOn();
+  const _RBP=['RB'];
+  const _shrChip=(f,sh)=> _rankLive ? leagueShareRankChip(_RBP,f,sh,'RBs',['RB']) : '';
+  const _rawChip=(f,v)=> _rankLive ? leagueRankChip(_RBP,f,v,'hi',{who:'RBs'}) : '';
   const rows=order.map(i=>{
     const p=r.shares[i];
     const col=PCOLORS[i%PCOLORS.length];
@@ -60,7 +64,7 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
         <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTagTop(p,'rush')}
-        <span class="share-pct" id="rp-${i}">${sharePct}</span>
+        <span class="share-pct" id="rp-${i}">${sharePct}</span><span class="rk-slot" id="rk-rp-${i}">${_shrChip('rushing_attempts', p.share)}</span>
         <span class="share-vol" id="ra-${i}">${tagVal(att+' att','Rushing Attempts','rushing_attempts')}</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},'RB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
         </div>
@@ -68,17 +72,17 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
         <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,85):100}" step="1" value="${pct}"
           data-key="rs_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
-        <span class="share-stat">Att ${attCell}</span>
+        <span class="share-stat">Att ${attCell}<span class="rk-slot" id="rk-ratt-${i}">${_rawChip('rushing_attempts', att)}</span></span>
         <span class="share-stat">Y/Carry ${ypcCell}</span>
-        <span class="share-stat">Yds ${ydsCell}</span>
+        <span class="share-stat">Yds ${ydsCell}<span class="rk-slot" id="rk-ryd-${i}">${_rawChip('rushing_yards', yds)}</span></span>
         <span class="share-stat">TDs ${tdsCell}</span>${sidebarFptsStat(p,'rush')}
       </div></div>`;
   }).join('');
   return `<div class="card"><div class="card-title">Team Rushing Volume</div>
     <div class="tc-pool-line">Team totals feed every back below
       ${(typeof tcInfoBtn==='function')?tcInfoBtn('rushmodel','How the rushing model works'):''}</div>
-    ${sRow('rush_total_att','RB Carries (excl QB)',r.total_attempts,baseAtt,0,600,5,'var(--rb)',false,{ readOnly:lockStats, noteMeta:{ label:'Team RB Carries', source:'projection_builder_rushing', statKey:'team_rb_carries', context:totalsCtx, team:noteTeam, relevance:'RB' } })}
-    ${sRow('rush_total_yds','Total RB Rush Yards',r.total_yards,baseYds,0,3500,25,'var(--rb)',false,{ readOnly:lockStats, noteMeta:{ label:'Team RB Rushing Yards', source:'projection_builder_rushing', statKey:'team_rb_total_yards', context:totalsCtx, team:noteTeam, relevance:'RB' } })}
+    ${sRow('rush_total_att','RB Carries (excl QB)',r.total_attempts,baseAtt,0,600,5,'var(--rb)',false,{ readOnly:lockStats, rankHtml:_rankLive?leagueTeamRankChip(['RB'],'rushing_attempts',r.total_attempts,'hi'):'', noteMeta:{ label:'Team RB Carries', source:'projection_builder_rushing', statKey:'team_rb_carries', context:totalsCtx, team:noteTeam, relevance:'RB' } })}
+    ${sRow('rush_total_yds','Total RB Rush Yards',r.total_yards,baseYds,0,3500,25,'var(--rb)',false,{ readOnly:lockStats, rankHtml:_rankLive?leagueTeamRankChip(['RB'],'rushing_yards',r.total_yards,'hi'):'', noteMeta:{ label:'Team RB Rushing Yards', source:'projection_builder_rushing', statKey:'team_rb_total_yards', context:totalsCtx, team:noteTeam, relevance:'RB' } })}
     <div class="derived-note" id="rushDerived">${rushNote(state,{asHtml:true,team})}</div></div>
   <div class="card"><div class="card-title">RB Carry Share</div>${subTabs}
     <div class="tc-pool-line"><b>${Math.round(r.total_attempts).toLocaleString()}</b> carries · <b>${Math.round(r.total_yards).toLocaleString()}</b> rush yds
@@ -98,6 +102,10 @@ function renderRushTDs(team,state,subTabs){
   const r=state.rushing;
   const totalTDs=teamRushTDs(state);
   const order=sortedIdx(r.shares,'td_share');
+  const _rankLive=_rankChipsOn();
+  const _RBP=['RB'];
+  const _shrChip=(sh)=> _rankLive ? leagueShareRankChip(_RBP,'rushing_tds',sh,'RBs',['RB']) : '';
+  const _rawChip=(v)=> _rankLive ? leagueRankChip(_RBP,'rushing_tds',v,'hi',{who:'RBs'}) : '';
   const rows=order.map(i=>{
     const p=r.shares[i];
     const col=PCOLORS[i%PCOLORS.length];
@@ -122,8 +130,8 @@ function renderRushTDs(team,state,subTabs){
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
         <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTagTop(p,'rush')}
-        <span class="share-pct" id="rtdp-${i}">${sharePct}</span>
-        <span class="share-vol">${tagVal(projTDs+' TD','Rushing TDs','rushing_tds')}</span></div>
+        <span class="share-pct" id="rtdp-${i}">${sharePct}</span><span class="rk-slot" id="rk-rtdp-${i}">${_shrChip(p.td_share)}</span>
+        <span class="share-vol">${tagVal(projTDs+' TD','Rushing TDs','rushing_tds')}</span><span class="rk-slot" id="rk-rtdv-${i}">${_rawChip(+projTDs)}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,50):100)*100).toFixed(1)}%;background:${col}"></div>
         <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,50):100}" step="1" value="${pct}"
           data-key="rtds_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>

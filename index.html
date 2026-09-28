@@ -696,8 +696,8 @@ input.sl::-moz-range-thumb{width:15px;height:15px;border-radius:50%;
 .pace-info-pop-lbl{font-size:9px;font-weight:800;letter-spacing:.05em;color:var(--accent);text-transform:uppercase;}
 .pace-info-pop-close{margin-left:auto;background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;font-weight:800;padding:0 2px;}
 .pace-info-pop-body{white-space:normal;word-break:break-word;}
-.share-pct{font-size:12px;font-weight:800;font-family:var(--mono);width:42px;text-align:right;flex-shrink:0;}
-.share-vol{font-size:10px;color:var(--muted);font-family:var(--mono);width:46px;text-align:right;flex-shrink:0;}
+.share-pct{font-size:12px;font-weight:800;font-family:var(--mono);min-width:42px;text-align:right;flex-shrink:0;white-space:nowrap;}
+.share-vol{font-size:10px;color:var(--muted);font-family:var(--mono);min-width:46px;text-align:right;flex-shrink:0;white-space:nowrap;}
 .share-stats{display:flex;gap:8px;padding-left:30px;flex-wrap:wrap;align-items:center;}
 .share-stat{font-size:10px;color:var(--muted);font-family:var(--mono);
   display:flex;align-items:center;gap:3px;}
@@ -1916,10 +1916,14 @@ html.scheme-locked, html.scheme-locked body{overflow:hidden;overscroll-behavior:
 /* Advanced rankings header: routes-derived columns that are the in-season estimate */
 .th-est{font-size:9px;font-weight:900;color:var(--warn);margin-left:2px;}
 /* League rank tag beside chart totals */
-.pc-rank{display:inline-block;font-size:9px;font-weight:900;margin-left:5px;padding:1px 5px;border-radius:999px;background:var(--surface3);vertical-align:middle;letter-spacing:.02em;}
+.pc-rank{display:inline-block;font-size:9px;font-weight:900;margin-left:5px;padding:1px 5px;border-radius:999px;background:var(--surface3);vertical-align:middle;letter-spacing:.02em;cursor:pointer;}
 .pc-rank-n{opacity:.6;font-weight:700;}
 .pc-rank.rk-good{color:#2fae4e;} .pc-rank.rk-okhi{color:#84b93f;} .pc-rank.rk-oklo{color:#d8a51d;} .pc-rank.rk-bad{color:#d33b2f;}
 .qpc-tile .pc-rank{display:block;margin:3px auto 0;width:max-content;}
+/* Rank chips sit in their own slot so the in-place share/stat updaters never wipe them. */
+.rk-slot{flex:0 0 auto;}
+.rk-slot:empty{display:none;}
+.share-row>.rk-slot .pc-rank{margin-left:0;}
 /* ── Target map (Routes tab · per-target view) ── */
 .tm-view{display:inline-flex;gap:4px;margin-right:8px;padding-right:8px;border-right:1px solid var(--border);}
 .tm-view .rt-metric-btn.active{background:var(--accent);border-color:var(--accent);color:#fff;}
@@ -9375,6 +9379,7 @@ function resortAfterRelease(el){
   else if(key.startsWith('tds_')) reorderShareBlocks('shareControls','pblk-',state.passing_shares,'td_share');
   else if(key.startsWith('rs_')) reorderShareBlocks('rushShareControls','rblk-',state.rushing.shares,'share');
   else if(key.startsWith('rtds_')) reorderShareBlocks('rushShareControls','rblk-',state.rushing.shares,'td_share');
+  if(typeof tcRefreshRankChips==='function') tcRefreshRankChips(state, el.dataset.team);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -9404,6 +9409,7 @@ function sRow(key,label,cur,base,min,max,step,col,invert,opts){
         ${curHtml}
         <span class="stat-baseline">/ ${bDisp}</span>
         <span id="sd-${key}">${mkDelta(cur,base,invert)}</span>
+        <span class="rk-slot" id="rk-${key}">${opts.rankHtml||''}</span>
       </div>
     </div>
     <div class="slider-track">
@@ -12345,6 +12351,9 @@ function renderPassing(team,state){
     </div>`;
   }
   const games=Math.round(qb.games||0);
+  // League-rank chips live only on the LIVE tab, where the totals are season-to-date actuals.
+  const _rankLive=_rankChipsOn();
+  const _rk=_rankLive ? (field,val,dir)=>leagueRankChip('QB',field,val,dir) : ()=>'';
   const qbBoxAttrs=(label, value, statKey)=>noteTagAttrs({
     label,
     value,
@@ -12368,22 +12377,27 @@ function renderPassing(team,state){
       ${(typeof tcInfoBtn==='function')?tcInfoBtn('qbgames','How games scaling works'):''}</div>
     ${sRow('py','Passing Yards',Math.round(qb.passing_yards),Math.round(seed.passing_yards||4000),0,7500,50,undefined,false,{
       readOnly:historicalLocked,
+      rankHtml:_rk('passing_yards',Math.round(qb.passing_yards),'hi'),
       noteMeta:{ label:'Passing Yards', source:'projection_builder_qb', statKey:'passing_yards', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
     })}
     ${sRow('ptd','Passing TDs',Math.round(qb.passing_tds),Math.round(seed.passing_tds||25),0,65,1,undefined,false,{
       readOnly:historicalLocked,
+      rankHtml:_rk('passing_tds',Math.round(qb.passing_tds),'hi'),
       noteMeta:{ label:'Passing TDs', source:'projection_builder_qb', statKey:'passing_tds', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
     })}
     ${sRow('patt','Pass Attempts',Math.round(qb.passing_attempts),Math.round(seed.passing_attempts||560),0,800,5,undefined,false,{
       readOnly:historicalLocked,
+      rankHtml:_rk('passing_attempts',Math.round(qb.passing_attempts),'hi'),
       noteMeta:{ label:'Pass Attempts', source:'projection_builder_qb', statKey:'passing_attempts', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
     })}
     ${sRow('pcomp','Completions',Math.round(qb.passing_completions),Math.round(seed.passing_completions||360),0,680,5,undefined,false,{
       readOnly:historicalLocked,
+      rankHtml:_rk('passing_completions',Math.round(qb.passing_completions),'hi'),
       noteMeta:{ label:'Completions', source:'projection_builder_qb', statKey:'passing_completions', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
     })}
     ${sRow('int','Interceptions',Math.round(qb.interceptions_thrown),Math.round(seed.interceptions_thrown||10),0,40,1,'var(--danger)',true,{
       readOnly:historicalLocked,
+      rankHtml:_rk('interceptions_thrown',Math.round(qb.interceptions_thrown),'lo'),
       noteMeta:{ label:'Interceptions Thrown', source:'projection_builder_qb', statKey:'interceptions_thrown', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
     })}
     <div class="derived-note" id="qbDerived">${qbDerivedHtml(qb, team)}</div>
@@ -12391,14 +12405,17 @@ function renderPassing(team,state){
       <div class="card-title">QB Rushing</div>
       ${sRow('qbry','Rush Yards',Math.round(qb.qb_rush_yards),Math.round(seed.rushing_yards||0),0,1400,10,'var(--rb)',false,{
         readOnly:historicalLocked,
+        rankHtml:_rk('rushing_yards',Math.round(qb.qb_rush_yards),'hi'),
         noteMeta:{ label:'QB Rush Yards', source:'projection_builder_qb', statKey:'qb_rush_yards', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
       })}
       ${sRow('qbrtd','Rush TDs',Math.round(qb.qb_rush_tds),Math.round(seed.rushing_tds||0),0,22,1,'var(--rb)',false,{
         readOnly:historicalLocked,
+        rankHtml:_rk('rushing_tds',Math.round(qb.qb_rush_tds),'hi'),
         noteMeta:{ label:'QB Rush TDs', source:'projection_builder_qb', statKey:'qb_rush_tds', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
       })}
       ${sRow('qbratt','Rush Attempts',Math.round(qb.qb_rush_attempts),Math.round(seed.rushing_attempts||0),0,200,5,'var(--rb)',false,{
         readOnly:historicalLocked,
+        rankHtml:_rk('rushing_attempts',Math.round(qb.qb_rush_attempts),'hi'),
         noteMeta:{ label:'QB Rush Attempts', source:'projection_builder_qb', statKey:'qb_rush_attempts', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
       })}
     </div>
@@ -12719,6 +12736,11 @@ function renderPassDerived(team,state,subTabs,metric){
   ensureDerivedShares(state,metric);
   const totalTgts=teamTargetPool(state);
   const isYds = metric==='recyds';
+  const _rankLive=_rankChipsOn();
+  const _who=(pos)=> pos ? String(pos).toUpperCase()+'s' : 'players';
+  const _rcvF=isYds?'receiving_yards':'receptions';
+  const _shrChip=(pos,sh)=> _rankLive ? leagueShareRankChip(pos,_rcvF,sh,_who(pos)) : '';
+  const _rawChip=(pos,v)=> _rankLive ? leagueRankChip(pos,_rcvF,v,'hi',{who:_who(pos)}) : '';
   const field=isYds?'recyds_share':'rec_share';
   const key=isYds?'recyds':'rec';
   const label=isYds?'rec yds':'rec';
@@ -12770,8 +12792,8 @@ function renderPassDerived(team,state,subTabs,metric){
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTagTop(p,'rec')}
-        <span class="share-pct" id="dp-${i}">${sharePct}</span>
-        <span class="share-vol" id="dv-${i}">${tagVal(v.toLocaleString()+' '+label, isYds?'Receiving Yards':'Receptions', isYds?'receiving_yards':'receptions')}</span></div>
+        <span class="share-pct" id="dp-${i}">${sharePct}</span><span class="rk-slot" id="rk-dp-${i}">${_shrChip(p.pos, sh)}</span>
+        <span class="share-vol" id="dv-${i}">${tagVal(v.toLocaleString()+' '+label, isYds?'Receiving Yards':'Receptions', isYds?'receiving_yards':'receptions')}</span><span class="rk-slot" id="rk-dv-${i}">${_rawChip(p.pos, v)}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,40):100)*100).toFixed(1)}%;background:${col}"></div>
         <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,40):100}" step="0.5" value="${pct}" data-key="${key}_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
@@ -12849,6 +12871,10 @@ function sortedIdx(shares,field){
 
 function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
   const lockStats = activeSeason!=='proj';
+  const _rankLive=_rankChipsOn();
+  const _who=(pos)=> pos ? String(pos).toUpperCase()+'s' : 'players';
+  const _shrChip=(pos,f,sh)=> _rankLive ? leagueShareRankChip(pos,f,sh,_who(pos)) : '';
+  const _rawChip=(pos,f,v)=> _rankLive ? leagueRankChip(pos,f,v,'hi',{who:_who(pos)}) : '';
   const order=sortedIdx(state.passing_shares,'share');
   const rows=order.map(i=>{
     const p=state.passing_shares[i];
@@ -12894,8 +12920,8 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span>
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTagTop(p,'rec')}
-        <span class="share-pct" id="pp-${i}">${sharePct}</span>
-        <span class="share-vol" id="pt-${i}">${tagVal(projTgts+' tgt','Targets','receiving_targets')}</span>
+        <span class="share-pct" id="pp-${i}">${sharePct}</span><span class="rk-slot" id="rk-pp-${i}">${_shrChip(p.pos,'receiving_targets', p.share)}</span>
+        <span class="share-vol" id="pt-${i}">${tagVal(projTgts+' tgt','Targets','receiving_targets')}</span><span class="rk-slot" id="rk-pt-${i}">${_rawChip(p.pos,'receiving_targets', projTgts)}</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},${pcardArg(p.pos)})" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
       </div>
       <div class="slider-track">
@@ -12942,6 +12968,10 @@ function reconcileTargets(team){
 
 function renderPassTDs(team,state,totalTDs,subTabs){
   const lockStats = activeSeason!=='proj';
+  const _rankLive=_rankChipsOn();
+  const _who=(pos)=> pos ? String(pos).toUpperCase()+'s' : 'players';
+  const _shrChip=(pos,sh)=> _rankLive ? leagueShareRankChip(pos,'receiving_tds',sh,_who(pos)) : '';
+  const _rawChip=(pos,v)=> _rankLive ? leagueRankChip(pos,'receiving_tds',v,'hi',{who:_who(pos)}) : '';
   const order=sortedIdx(state.passing_shares,'td_share');
   const rows=order.map(i=>{
     const p=state.passing_shares[i];
@@ -12967,8 +12997,8 @@ function renderPassTDs(team,state,totalTDs,subTabs){
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>
-        <span class="share-pct" id="tdp-${i}">${sharePct}</span>
-        <span class="share-vol">${tagVal(projTDs+' TD','Receiving TDs','receiving_tds')}</span></div>
+        <span class="share-pct" id="tdp-${i}">${sharePct}</span><span class="rk-slot" id="rk-tdp-${i}">${_shrChip(p.pos, p.td_share)}</span>
+        <span class="share-vol">${tagVal(projTDs+' TD','Receiving TDs','receiving_tds')}</span><span class="rk-slot" id="rk-tdv-${i}">${_rawChip(p.pos, +projTDs)}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,50):100)*100).toFixed(1)}%;background:${col}"></div>
         <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,50):100}" step="1" value="${pct}" data-key="tds_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
@@ -13012,6 +13042,10 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
   const totalIncQB=(r.total_attempts||0)+qbRushAtt;
   const totalTDs=teamRushTDs(state);
   const order=sortedIdx(r.shares,'share');
+  const _rankLive=_rankChipsOn();
+  const _RBP=['RB'];
+  const _shrChip=(f,sh)=> _rankLive ? leagueShareRankChip(_RBP,f,sh,'RBs',['RB']) : '';
+  const _rawChip=(f,v)=> _rankLive ? leagueRankChip(_RBP,f,v,'hi',{who:'RBs'}) : '';
   const rows=order.map(i=>{
     const p=r.shares[i];
     const col=PCOLORS[i%PCOLORS.length];
@@ -13047,7 +13081,7 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
         <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTagTop(p,'rush')}
-        <span class="share-pct" id="rp-${i}">${sharePct}</span>
+        <span class="share-pct" id="rp-${i}">${sharePct}</span><span class="rk-slot" id="rk-rp-${i}">${_shrChip('rushing_attempts', p.share)}</span>
         <span class="share-vol" id="ra-${i}">${tagVal(att+' att','Rushing Attempts','rushing_attempts')}</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},'RB')" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
         </div>
@@ -13055,17 +13089,17 @@ function renderRushCarries(team,state,baseAtt,baseYds,subTabs){
         <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,85):100}" step="1" value="${pct}"
           data-key="rs_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
-        <span class="share-stat">Att ${attCell}</span>
+        <span class="share-stat">Att ${attCell}<span class="rk-slot" id="rk-ratt-${i}">${_rawChip('rushing_attempts', att)}</span></span>
         <span class="share-stat">Y/Carry ${ypcCell}</span>
-        <span class="share-stat">Yds ${ydsCell}</span>
+        <span class="share-stat">Yds ${ydsCell}<span class="rk-slot" id="rk-ryd-${i}">${_rawChip('rushing_yards', yds)}</span></span>
         <span class="share-stat">TDs ${tdsCell}</span>${sidebarFptsStat(p,'rush')}
       </div></div>`;
   }).join('');
   return `<div class="card"><div class="card-title">Team Rushing Volume</div>
     <div class="tc-pool-line">Team totals feed every back below
       ${(typeof tcInfoBtn==='function')?tcInfoBtn('rushmodel','How the rushing model works'):''}</div>
-    ${sRow('rush_total_att','RB Carries (excl QB)',r.total_attempts,baseAtt,0,600,5,'var(--rb)',false,{ readOnly:lockStats, noteMeta:{ label:'Team RB Carries', source:'projection_builder_rushing', statKey:'team_rb_carries', context:totalsCtx, team:noteTeam, relevance:'RB' } })}
-    ${sRow('rush_total_yds','Total RB Rush Yards',r.total_yards,baseYds,0,3500,25,'var(--rb)',false,{ readOnly:lockStats, noteMeta:{ label:'Team RB Rushing Yards', source:'projection_builder_rushing', statKey:'team_rb_total_yards', context:totalsCtx, team:noteTeam, relevance:'RB' } })}
+    ${sRow('rush_total_att','RB Carries (excl QB)',r.total_attempts,baseAtt,0,600,5,'var(--rb)',false,{ readOnly:lockStats, rankHtml:_rankLive?leagueTeamRankChip(['RB'],'rushing_attempts',r.total_attempts,'hi'):'', noteMeta:{ label:'Team RB Carries', source:'projection_builder_rushing', statKey:'team_rb_carries', context:totalsCtx, team:noteTeam, relevance:'RB' } })}
+    ${sRow('rush_total_yds','Total RB Rush Yards',r.total_yards,baseYds,0,3500,25,'var(--rb)',false,{ readOnly:lockStats, rankHtml:_rankLive?leagueTeamRankChip(['RB'],'rushing_yards',r.total_yards,'hi'):'', noteMeta:{ label:'Team RB Rushing Yards', source:'projection_builder_rushing', statKey:'team_rb_total_yards', context:totalsCtx, team:noteTeam, relevance:'RB' } })}
     <div class="derived-note" id="rushDerived">${rushNote(state,{asHtml:true,team})}</div></div>
   <div class="card"><div class="card-title">RB Carry Share</div>${subTabs}
     <div class="tc-pool-line"><b>${Math.round(r.total_attempts).toLocaleString()}</b> carries · <b>${Math.round(r.total_yards).toLocaleString()}</b> rush yds
@@ -13085,6 +13119,10 @@ function renderRushTDs(team,state,subTabs){
   const r=state.rushing;
   const totalTDs=teamRushTDs(state);
   const order=sortedIdx(r.shares,'td_share');
+  const _rankLive=_rankChipsOn();
+  const _RBP=['RB'];
+  const _shrChip=(sh)=> _rankLive ? leagueShareRankChip(_RBP,'rushing_tds',sh,'RBs',['RB']) : '';
+  const _rawChip=(v)=> _rankLive ? leagueRankChip(_RBP,'rushing_tds',v,'hi',{who:'RBs'}) : '';
   const rows=order.map(i=>{
     const p=r.shares[i];
     const col=PCOLORS[i%PCOLORS.length];
@@ -13109,8 +13147,8 @@ function renderRushTDs(team,state,subTabs){
         <div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, (p.pos||'RB'), (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-RB">RB</span>
         <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>${weekFilterPaceButton(state,p.player_id,'rush')}${sidebarFptsTagTop(p,'rush')}
-        <span class="share-pct" id="rtdp-${i}">${sharePct}</span>
-        <span class="share-vol">${tagVal(projTDs+' TD','Rushing TDs','rushing_tds')}</span></div>
+        <span class="share-pct" id="rtdp-${i}">${sharePct}</span><span class="rk-slot" id="rk-rtdp-${i}">${_shrChip(p.td_share)}</span>
+        <span class="share-vol">${tagVal(projTDs+' TD','Rushing TDs','rushing_tds')}</span><span class="rk-slot" id="rk-rtdv-${i}">${_rawChip(+projTDs)}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,50):100)*100).toFixed(1)}%;background:${col}"></div>
         <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,50):100}" step="1" value="${pct}"
           data-key="rtds_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
@@ -13744,6 +13782,7 @@ function liveQB(state,idx,team,changedKey){
     qbry:seed.rushing_yards||0,qbrtd:seed.rushing_tds||0,qbratt:seed.rushing_attempts||0};
   if(changedKey){const sd=document.getElementById(`sd-${changedKey}`);if(sd)sd.innerHTML=mkDelta(state.qbs[idx][({py:'passing_yards',ptd:'passing_tds',patt:'passing_attempts',pcomp:'passing_completions',int:'interceptions_thrown',qbry:'qb_rush_yards',qbrtd:'qb_rush_tds',qbratt:'qb_rush_attempts'})[changedKey]],bases[changedKey]||0,changedKey==='int');}
   const tot=document.getElementById('qbTeamTotals'); if(tot) tot.innerHTML=qbTotalsText(state,{asHtml:true,team});
+  if(typeof tcRefreshRankChips==='function' && !sliderDragging) tcRefreshRankChips(state, team);
 }
 
 // Update the workload card text (per-QB sub line, team-games budget, the active QB's
@@ -13806,6 +13845,7 @@ function livePassTargets(state,team){
   });
   const sub=document.getElementById('pieSub'); if(sub) sub.innerHTML=passPieSubHtml(state,totalTgts,team);
   reorderShareBlocks('shareControls','pblk-',state.passing_shares,'share');
+  if(typeof tcRefreshRankChips==='function' && !sliderDragging) tcRefreshRankChips(state, team);
 }
 
 // Reorder share-block DOM nodes so the category leader floats to the top.
@@ -13834,6 +13874,7 @@ function liveTDRows(pctId,volId,shares,totalTDs,keyPrefix,editable){
   // resort by TD share (on release / manual edit, not mid-drag)
   if(keyPrefix==='tds_') reorderShareBlocks('shareControls','pblk-',shares,'td_share');
   else if(keyPrefix==='rtds_') reorderShareBlocks('rushShareControls','rblk-',shares,'td_share');
+  if(typeof tcRefreshRankChips==='function' && !sliderDragging) tcRefreshRankChips(userProj[currentTeam], currentTeam);
 }
 
 function liveRush(state,team){
@@ -13865,6 +13906,7 @@ function liveRushRows(state,team){
   const ys=document.querySelector('input.sl[data-key="rush_total_yds"]');
   if(ys){ys.value=r.total_yards;setFill(ys,'var(--rb)');
     const ysv=document.getElementById('sv-rush_total_yds');if(ysv&&document.activeElement!==ysv)ysv.textContent=r.total_yards;}
+  if(typeof tcRefreshRankChips==='function' && !sliderDragging) tcRefreshRankChips(state, team);
 }
 
 function setTxt(id,v){const e=document.getElementById(id);if(e)e.textContent=v;}
@@ -15065,6 +15107,200 @@ function pcardRankTag(rk, key, pos){
   const cls = p<=0.25 ? 'rk-good' : p<=0.5 ? 'rk-okhi' : p<=0.75 ? 'rk-oklo' : 'rk-bad';
   const who = pos ? `${String(pos).toUpperCase()}s` : 'players';
   return `<small class="pc-rank ${cls}" title="Rank ${rank} of ${n} ${who} league-wide (season vs season, a game vs that week)">#${rank}<span class="pc-rank-n">/${n}</span></small>`;
+}
+
+// ── Live league-rank chips (projection / LIVE tab) ───────────────────────────
+// The live tab shows each player's running totals; these rank one such total against
+// the whole league's pool (buildPlayerList — every team's current per-player totals) so
+// a bare number carries its standing. `dir` 'lo' ranks fewer-is-better stats (INTs).
+// Distributions memoise on the buildPlayerList cache epoch, so a row of chips costs one
+// sort, not one per chip. Format is ordinal ("1st / 120"), colored by percentile.
+let _lgDistCache={}, _lgDistSig=null;
+function _lgPool(){ return (typeof buildPlayerList==='function')?buildPlayerList():[]; }
+function _lgPosMatch(p, posSel){ return !posSel ? true : (Array.isArray(posSel) ? posSel.indexOf(p.pos)>=0 : p.pos===posSel); }
+function _lgPosKey(posSel){ return Array.isArray(posSel)?posSel.join('+'):(posSel||'*'); }
+function _lgCache(k, build){
+  // Rebuild the pool first, then key the distribution cache on buildPlayerList's own one-slot
+  // list identity. Its epoch counter does NOT tick on an internal cache-miss rebuild (only on
+  // explicit invalidation), so a season switch swaps the pool under a stale epoch and a badge
+  // rendered right after would rank against the previous season. The list reference is replaced
+  // on every rebuild, so it's the reliable signal.
+  const list=_lgPool();
+  const sig=(typeof _buildPlayerCache!=='undefined' && _buildPlayerCache && _buildPlayerCache.list) ? _buildPlayerCache.list : list;
+  if(_lgDistSig!==sig){ _lgDistCache={}; _lgDistSig=sig; }
+  if(_lgDistCache[k]) return _lgDistCache[k];
+  const v=build(list); _lgDistCache[k]=v; return v;
+}
+// Sorted-ascending totals of one stat field across a position pool.
+function _lgDist(posSel, field){
+  return _lgCache('d|'+_lgPosKey(posSel)+'|'+field, (list)=>{
+    const vals=[];
+    for(let i=0;i<list.length;i++){ const p=list[i]; if(!_lgPosMatch(p,posSel)) continue; const v=+p[field]; if(Number.isFinite(v)) vals.push(v); }
+    return vals.sort((a,b)=>a-b);
+  });
+}
+// Sorted-ascending share-of-team (player stat ÷ team's summed stat) across a pool. The
+// denominator sums `denomPos` (default: everyone) — carry share must divide by RB carries
+// only, not the team's QB-inclusive rush attempts, or every lead back reads as 1st.
+function _lgShareDist(rankPos, field, denomPos){
+  return _lgCache('s|'+_lgPosKey(rankPos)+'|'+field+'|'+_lgPosKey(denomPos), (list)=>{
+    const tot={};
+    for(let i=0;i<list.length;i++){ const p=list[i]; if(denomPos && !_lgPosMatch(p,denomPos)) continue; tot[p.team]=(tot[p.team]||0)+(+p[field]||0); }
+    const vals=[];
+    for(let i=0;i<list.length;i++){ const p=list[i]; if(!_lgPosMatch(p,rankPos)) continue; const t=tot[p.team]; if(t>0) vals.push((+p[field]||0)/t); }
+    return vals.sort((a,b)=>a-b);
+  });
+}
+// Sorted-ascending per-team summed totals of a stat across a pool (32-team ranks).
+function _lgTeamTotals(posSel, field){
+  return _lgCache('t|'+_lgPosKey(posSel)+'|'+field, (list)=>{
+    const tot={};
+    for(let i=0;i<list.length;i++){ const p=list[i]; if(!_lgPosMatch(p,posSel)) continue; tot[p.team]=(tot[p.team]||0)+(+p[field]||0); }
+    return Object.keys(tot).map(t=>tot[t]).sort((a,b)=>a-b);
+  });
+}
+// Min-rank of `value` within a sorted-ascending array. 'hi' → rank 1 is the max.
+function _lgRankIn(vals, value, dir){
+  const n=vals.length;
+  if(!(n>0)) return null;
+  const v=+value;
+  let better=0;
+  if(dir==='lo'){ for(let i=0;i<n;i++){ if(vals[i]<v) better++; } }
+  else          { for(let i=0;i<n;i++){ if(vals[i]>v) better++; } }
+  return better+1;
+}
+function _lgRankChipHtml(rank, n, who, lessBetter){
+  if(!(n>1) || !(rank>=1)) return '';
+  const p=(rank-1)/(n-1);
+  const cls=p<=0.25?'rk-good':p<=0.5?'rk-okhi':p<=0.75?'rk-oklo':'rk-bad';
+  const ord=(typeof ordinal==='function')?ordinal(rank):('#'+rank);
+  const detail=`${ord} of ${n} ${who} league-wide${lessBetter?' \u00b7 fewer is better':''}`;
+  return `<span class="pc-rank ${cls}" role="button" tabindex="0" data-detail="${escAttr(detail)}" title="${escAttr(detail)}" onclick="tcRankPop(this,event)">${ord}</span>`;
+}
+// The chip shows only the ordinal to stay compact; a tap reveals "Nth of M …" (desktop
+// gets it on hover via the title, but touch has no hover). Reuses the pace-popover plumbing.
+function tcRankPop(btn, ev){
+  if(ev && ev.stopPropagation) ev.stopPropagation();
+  if(!btn || !btn.parentNode) return;
+  const open = btn.parentNode.querySelector && btn.parentNode.querySelector('.pace-info-pop');
+  closeWeekFilterPacePops();
+  if(open) return;   // second tap toggles it closed
+  const pop=document.createElement('div');
+  pop.className='pace-info-pop';
+  pop.onclick=(e)=>e.stopPropagation();
+  pop.innerHTML=`<div class="pace-info-pop-head"><span class="pace-info-pop-lbl">League rank</span>`
+    +`<button class="pace-info-pop-close" onclick="this.closest('.pace-info-pop').remove()" aria-label="Close">\u2715</button></div>`
+    +`<div class="pace-info-pop-body">${escAttr(btn.getAttribute('data-detail')||'')}</div>`;
+  btn.parentNode.appendChild(pop);
+  if(typeof _pacePopsMaybeOpen!=='undefined') _pacePopsMaybeOpen=true;
+  try{
+    const M=8, vp=(typeof tcViewportSize==='function')?tcViewportSize():{vw:360,vh:640};
+    const br=btn.getBoundingClientRect(), pr=pop.getBoundingClientRect();
+    let left=br.right-pr.width; if(left+pr.width>vp.vw-M) left=vp.vw-M-pr.width; if(left<M) left=M;
+    let top=br.bottom+6; if(top+pr.height>vp.vh-M) top=br.top-pr.height-6; if(top<M) top=M;
+    pop.style.position='fixed'; pop.style.left=left+'px'; pop.style.top=top+'px'; pop.style.right='auto';
+  }catch(e){}
+}
+// Rank one player's stat total against the league pool at his position(s).
+function leagueRankChip(posSel, field, value, dir, opts){
+  opts=opts||{};
+  if(value==null || !Number.isFinite(+value)) return '';
+  const vals=_lgDist(posSel, field);
+  const rank=_lgRankIn(vals, value, dir);
+  const who=opts.who || (Array.isArray(posSel)?'players':(posSel?(String(posSel).toUpperCase()+'s'):'players'));
+  return _lgRankChipHtml(rank, vals.length, who, dir==='lo');
+}
+// Rank a player's share-of-team against every player's share in the pool. `denomPos` scopes
+// the team-total denominator (see _lgShareDist).
+function leagueShareRankChip(rankPos, field, share, who, denomPos){
+  if(share==null || !Number.isFinite(+share)) return '';
+  const vals=_lgShareDist(rankPos, field, denomPos);
+  const rank=_lgRankIn(vals, +share, 'hi');
+  return _lgRankChipHtml(rank, vals.length, who||'players', false);
+}
+// Rank a team total against all 32 teams' summed totals for the stat.
+function leagueTeamRankChip(posSel, field, value, dir, who){
+  if(value==null || !Number.isFinite(+value)) return '';
+  const vals=_lgTeamTotals(posSel, field);
+  const rank=_lgRankIn(vals, +value, dir||'hi');
+  return _lgRankChipHtml(rank, vals.length, who||'teams', dir==='lo');
+}
+// Rank a value against a caller-supplied set (team totals, share %, …).
+function leagueRankChipFromArray(vals, value, dir, who, lessBetter){
+  if(value==null || !Number.isFinite(+value) || !Array.isArray(vals)) return '';
+  const sorted=vals.filter(v=>Number.isFinite(+v)).map(Number).sort((a,b)=>a-b);
+  const rank=_lgRankIn(sorted, value, dir);
+  return _lgRankChipHtml(rank, sorted.length, who||'players', !!lessBetter);
+}
+// Chips render on the live season, past seasons, AND the editable projection tab — anywhere
+// buildPlayerList has a pool to rank against.
+function _rankChipsOn(){ return typeof buildPlayerList==='function' && typeof leagueRankChip==='function'; }
+function _lgWho(pos){ return pos ? String(pos).toUpperCase()+'s' : 'players'; }
+function _setSlot(id, html){ const el=document.getElementById(id); if(el && el.innerHTML!==html) el.innerHTML=html; }
+// The share sliders update the value spans in place (55-live-dom.js) without a full re-render,
+// so each chip lives in its own `rk-*` slot that those updaters never touch; this recomputes
+// the slots for whatever projection card is on screen, called on slider release / manual edit.
+function tcRefreshRankChips(state, team){
+  if(!_rankChipsOn() || !state) return;
+  const ph=(typeof currentPhase!=='undefined')?currentPhase:'';
+  if(ph==='Passing'){
+    const q=state.qbs && state.qbs[state.activeQB||0]; if(!q) return;
+    _setSlot('rk-py', leagueRankChip('QB','passing_yards',Math.round(q.passing_yards),'hi'));
+    _setSlot('rk-ptd', leagueRankChip('QB','passing_tds',Math.round(q.passing_tds),'hi'));
+    _setSlot('rk-patt', leagueRankChip('QB','passing_attempts',Math.round(q.passing_attempts),'hi'));
+    _setSlot('rk-pcomp', leagueRankChip('QB','passing_completions',Math.round(q.passing_completions),'hi'));
+    _setSlot('rk-int', leagueRankChip('QB','interceptions_thrown',Math.round(q.interceptions_thrown),'lo'));
+    _setSlot('rk-qbry', leagueRankChip('QB','rushing_yards',Math.round(q.qb_rush_yards),'hi'));
+    _setSlot('rk-qbrtd', leagueRankChip('QB','rushing_tds',Math.round(q.qb_rush_tds),'hi'));
+    _setSlot('rk-qbratt', leagueRankChip('QB','rushing_attempts',Math.round(q.qb_rush_attempts),'hi'));
+    return;
+  }
+  if(ph==='Receiving'){
+    const shares=state.passing_shares||[];
+    const sub=(typeof passingSubTab!=='undefined')?passingSubTab:'targets';
+    const totalTgts=teamTargetPool(state), totalTDs=teamPassTDs(state);
+    const recPool=teamRecPool(state), ydsPool=teamRecYardsPool(state);
+    shares.forEach((p,i)=>{
+      const who=_lgWho(p.pos);
+      if(sub==='rec' || sub==='recyds'){
+        const isYds=sub==='recyds', f=isYds?'receiving_yards':'receptions';
+        const sh=isYds?(p.recyds_share||0):(p.rec_share||0);
+        const v=Math.round(sh*(isYds?ydsPool:recPool));
+        _setSlot('rk-dp-'+i, leagueShareRankChip(p.pos,f,sh,who));
+        _setSlot('rk-dv-'+i, leagueRankChip(p.pos,f,v,'hi',{who}));
+      } else if(sub==='rec_tds'){
+        _setSlot('rk-tdp-'+i, leagueShareRankChip(p.pos,'receiving_tds',p.td_share,who));
+        _setSlot('rk-tdv-'+i, leagueRankChip(p.pos,'receiving_tds',p.td_share*totalTDs,'hi',{who}));
+      } else {
+        const projTgts=Math.round(p.share*totalTgts);
+        _setSlot('rk-pp-'+i, leagueShareRankChip(p.pos,'receiving_targets',p.share,who));
+        _setSlot('rk-pt-'+i, leagueRankChip(p.pos,'receiving_targets',projTgts,'hi',{who}));
+      }
+    });
+    return;
+  }
+  if(ph==='Rushing'){
+    const r=state.rushing||{}, shares=r.shares||[];
+    const sub=(typeof rushingSubTab!=='undefined')?rushingSubTab:'carries';
+    if(sub==='carries'){
+      _setSlot('rk-rush_total_att', leagueTeamRankChip(['RB'],'rushing_attempts',r.total_attempts,'hi'));
+      _setSlot('rk-rush_total_yds', leagueTeamRankChip(['RB'],'rushing_yards',r.total_yards,'hi'));
+      shares.forEach((p,i)=>{
+        const att=Math.round(p.share*r.total_attempts);
+        const yds=Math.round(att*(p.ypc||r.ypa||4));
+        _setSlot('rk-rp-'+i, leagueShareRankChip(['RB'],'rushing_attempts',p.share,'RBs',['RB']));
+        _setSlot('rk-ratt-'+i, leagueRankChip(['RB'],'rushing_attempts',att,'hi',{who:'RBs'}));
+        _setSlot('rk-ryd-'+i, leagueRankChip(['RB'],'rushing_yards',yds,'hi',{who:'RBs'}));
+      });
+    } else {
+      const totalTDs=teamRushTDs(state);
+      shares.forEach((p,i)=>{
+        _setSlot('rk-rtdp-'+i, leagueShareRankChip(['RB'],'rushing_tds',p.td_share,'RBs',['RB']));
+        _setSlot('rk-rtdv-'+i, leagueRankChip(['RB'],'rushing_tds',p.td_share*totalTDs,'hi',{who:'RBs'}));
+      });
+    }
+    return;
+  }
 }
 // ── Player card modal ───────────────────────────────────────────────────────
 // Clicking any player name opens a card showing per-game stats by season, colored

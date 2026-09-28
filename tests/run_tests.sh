@@ -152,6 +152,7 @@ run_js_test test_input_injection "Input-injection regression coverage: HTML/JS c
 run_js_test test_supabase_validate "Cloud-save validation: prototype-pollution, bounds, size caps, field whitelist"
 run_js_test test_teamcolor      "Player card: team-color hero gradient, light-color darkening, watermark logo"
 run_js_test test_pcard_pos      "Player card positions: QB rushing group, RB/WR/TE schemas, YPC/YPT math, 3-group scroll"
+run_js_test test_league_rank    "League-rank badges: distinct raw/share/team ranks, fewer-is-better, carry-share excludes QB, stale-distribution regression across a season switch"
 run_js_test test_pcard_adv      "Player card advanced: RANK by format, QB/WR/RB new stats, season totals row (sum/max/rate)"
 run_js_test test_pcard_meta     "Player card meta: height format, age decimal, jersey, HT/WT/college, is_away_team + opp logo"
 run_js_test test_qb_passing     "QB passing consolidated: ATT|CMP|PCT|YD|LNG|RTG|RZ|TD order, ATT restored, totals"

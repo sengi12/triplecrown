@@ -250,6 +250,11 @@ function renderPassDerived(team,state,subTabs,metric){
   ensureDerivedShares(state,metric);
   const totalTgts=teamTargetPool(state);
   const isYds = metric==='recyds';
+  const _rankLive=_rankChipsOn();
+  const _who=(pos)=> pos ? String(pos).toUpperCase()+'s' : 'players';
+  const _rcvF=isYds?'receiving_yards':'receptions';
+  const _shrChip=(pos,sh)=> _rankLive ? leagueShareRankChip(pos,_rcvF,sh,_who(pos)) : '';
+  const _rawChip=(pos,v)=> _rankLive ? leagueRankChip(pos,_rcvF,v,'hi',{who:_who(pos)}) : '';
   const field=isYds?'recyds_share':'rec_share';
   const key=isYds?'recyds':'rec';
   const label=isYds?'rec yds':'rec';
@@ -301,8 +306,8 @@ function renderPassDerived(team,state,subTabs,metric){
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${ nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTagTop(p,'rec')}
-        <span class="share-pct" id="dp-${i}">${sharePct}</span>
-        <span class="share-vol" id="dv-${i}">${tagVal(v.toLocaleString()+' '+label, isYds?'Receiving Yards':'Receptions', isYds?'receiving_yards':'receptions')}</span></div>
+        <span class="share-pct" id="dp-${i}">${sharePct}</span><span class="rk-slot" id="rk-dp-${i}">${_shrChip(p.pos, sh)}</span>
+        <span class="share-vol" id="dv-${i}">${tagVal(v.toLocaleString()+' '+label, isYds?'Receiving Yards':'Receptions', isYds?'receiving_yards':'receptions')}</span><span class="rk-slot" id="rk-dv-${i}">${_rawChip(p.pos, v)}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,40):100)*100).toFixed(1)}%;background:${col}"></div>
         <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,40):100}" step="0.5" value="${pct}" data-key="${key}_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">
@@ -380,6 +385,10 @@ function sortedIdx(shares,field){
 
 function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
   const lockStats = activeSeason!=='proj';
+  const _rankLive=_rankChipsOn();
+  const _who=(pos)=> pos ? String(pos).toUpperCase()+'s' : 'players';
+  const _shrChip=(pos,f,sh)=> _rankLive ? leagueShareRankChip(pos,f,sh,_who(pos)) : '';
+  const _rawChip=(pos,f,v)=> _rankLive ? leagueRankChip(pos,f,v,'hi',{who:_who(pos)}) : '';
   const order=sortedIdx(state.passing_shares,'share');
   const rows=order.map(i=>{
     const p=state.passing_shares[i];
@@ -425,8 +434,8 @@ function renderPassTargets(team,state,totalTgts,totalTDs,subTabs){
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span>
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>${weekFilterPaceButton(state,p.player_id,'rec')}${sidebarFptsTagTop(p,'rec')}
-        <span class="share-pct" id="pp-${i}">${sharePct}</span>
-        <span class="share-vol" id="pt-${i}">${tagVal(projTgts+' tgt','Targets','receiving_targets')}</span>
+        <span class="share-pct" id="pp-${i}">${sharePct}</span><span class="rk-slot" id="rk-pp-${i}">${_shrChip(p.pos,'receiving_targets', p.share)}</span>
+        <span class="share-vol" id="pt-${i}">${tagVal(projTgts+' tgt','Targets','receiving_targets')}</span><span class="rk-slot" id="rk-pt-${i}">${_rawChip(p.pos,'receiving_targets', projTgts)}</span>
         ${activeSeason!=='proj'&&p.player_id?`<button class="copy-btn" onclick="copyPlayerToWorking(${pcardArg(p.player_id)},${pcardArg(p.pos)})" title="Copy to ${PROJ_SEASON} working set">⤵</button>`:''}
       </div>
       <div class="slider-track">
@@ -473,6 +482,10 @@ function reconcileTargets(team){
 
 function renderPassTDs(team,state,totalTDs,subTabs){
   const lockStats = activeSeason!=='proj';
+  const _rankLive=_rankChipsOn();
+  const _who=(pos)=> pos ? String(pos).toUpperCase()+'s' : 'players';
+  const _shrChip=(pos,sh)=> _rankLive ? leagueShareRankChip(pos,'receiving_tds',sh,_who(pos)) : '';
+  const _rawChip=(pos,v)=> _rankLive ? leagueRankChip(pos,'receiving_tds',v,'hi',{who:_who(pos)}) : '';
   const order=sortedIdx(state.passing_shares,'td_share');
   const rows=order.map(i=>{
     const p=state.passing_shares[i];
@@ -498,8 +511,8 @@ function renderPassTDs(team,state,totalTDs,subTabs){
       <div class="share-row"><div class="share-dot" style="background:${col}"></div>
         <span class="clickable-player" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${imgSm(hsPack(p))}</span><span class="pos-badge pos-${p.pos}">${p.pos}</span>
         <span class="tc-nm-wrap"><span class="share-name clickable-player" title="${nameAttr}" onclick="${pcardOnclick(p.player_id||p.name, p.pos, (p.team||currentTeam||''))}">${nameText}</span>${typeof tcOwnerPill==='function'?tcOwnerPill(p.player_id,p.name):''}${typeof tcInjuryTagBtn==='function'?tcInjuryTagBtn(p.player_id):''}</span>
-        <span class="share-pct" id="tdp-${i}">${sharePct}</span>
-        <span class="share-vol">${tagVal(projTDs+' TD','Receiving TDs','receiving_tds')}</span></div>
+        <span class="share-pct" id="tdp-${i}">${sharePct}</span><span class="rk-slot" id="rk-tdp-${i}">${_shrChip(p.pos, p.td_share)}</span>
+        <span class="share-vol">${tagVal(projTDs+' TD','Receiving TDs','receiving_tds')}</span><span class="rk-slot" id="rk-tdv-${i}">${_rawChip(p.pos, +projTDs)}</span></div>
       <div class="slider-track"><div class="slider-fill" style="width:${Math.min(100,pct/((typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,50):100)*100).toFixed(1)}%;background:${col}"></div>
         <input class="sl" type="range" min="0" max="${(typeof tcSliderScaleMax==="function")?tcSliderScaleMax(pct,0,100,50):100}" step="1" value="${pct}" data-key="tds_${i}" data-team="${team}" data-col="${col}" style="--col:${col}"${lockStats?' disabled':''}></div>
       <div class="share-stats">

@@ -114,6 +114,9 @@ function renderPassing(team,state){
     </div>`;
   }
   const games=Math.round(qb.games||0);
+  // League-rank chips live only on the LIVE tab, where the totals are season-to-date actuals.
+  const _rankLive=_rankChipsOn();
+  const _rk=_rankLive ? (field,val,dir)=>leagueRankChip('QB',field,val,dir) : ()=>'';
   const qbBoxAttrs=(label, value, statKey)=>noteTagAttrs({
     label,
     value,
@@ -137,22 +140,27 @@ function renderPassing(team,state){
       ${(typeof tcInfoBtn==='function')?tcInfoBtn('qbgames','How games scaling works'):''}</div>
     ${sRow('py','Passing Yards',Math.round(qb.passing_yards),Math.round(seed.passing_yards||4000),0,7500,50,undefined,false,{
       readOnly:historicalLocked,
+      rankHtml:_rk('passing_yards',Math.round(qb.passing_yards),'hi'),
       noteMeta:{ label:'Passing Yards', source:'projection_builder_qb', statKey:'passing_yards', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
     })}
     ${sRow('ptd','Passing TDs',Math.round(qb.passing_tds),Math.round(seed.passing_tds||25),0,65,1,undefined,false,{
       readOnly:historicalLocked,
+      rankHtml:_rk('passing_tds',Math.round(qb.passing_tds),'hi'),
       noteMeta:{ label:'Passing TDs', source:'projection_builder_qb', statKey:'passing_tds', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
     })}
     ${sRow('patt','Pass Attempts',Math.round(qb.passing_attempts),Math.round(seed.passing_attempts||560),0,800,5,undefined,false,{
       readOnly:historicalLocked,
+      rankHtml:_rk('passing_attempts',Math.round(qb.passing_attempts),'hi'),
       noteMeta:{ label:'Pass Attempts', source:'projection_builder_qb', statKey:'passing_attempts', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
     })}
     ${sRow('pcomp','Completions',Math.round(qb.passing_completions),Math.round(seed.passing_completions||360),0,680,5,undefined,false,{
       readOnly:historicalLocked,
+      rankHtml:_rk('passing_completions',Math.round(qb.passing_completions),'hi'),
       noteMeta:{ label:'Completions', source:'projection_builder_qb', statKey:'passing_completions', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
     })}
     ${sRow('int','Interceptions',Math.round(qb.interceptions_thrown),Math.round(seed.interceptions_thrown||10),0,40,1,'var(--danger)',true,{
       readOnly:historicalLocked,
+      rankHtml:_rk('interceptions_thrown',Math.round(qb.interceptions_thrown),'lo'),
       noteMeta:{ label:'Interceptions Thrown', source:'projection_builder_qb', statKey:'interceptions_thrown', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
     })}
     <div class="derived-note" id="qbDerived">${qbDerivedHtml(qb, team)}</div>
@@ -160,14 +168,17 @@ function renderPassing(team,state){
       <div class="card-title">QB Rushing</div>
       ${sRow('qbry','Rush Yards',Math.round(qb.qb_rush_yards),Math.round(seed.rushing_yards||0),0,1400,10,'var(--rb)',false,{
         readOnly:historicalLocked,
+        rankHtml:_rk('rushing_yards',Math.round(qb.qb_rush_yards),'hi'),
         noteMeta:{ label:'QB Rush Yards', source:'projection_builder_qb', statKey:'qb_rush_yards', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
       })}
       ${sRow('qbrtd','Rush TDs',Math.round(qb.qb_rush_tds),Math.round(seed.rushing_tds||0),0,22,1,'var(--rb)',false,{
         readOnly:historicalLocked,
+        rankHtml:_rk('rushing_tds',Math.round(qb.qb_rush_tds),'hi'),
         noteMeta:{ label:'QB Rush TDs', source:'projection_builder_qb', statKey:'qb_rush_tds', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
       })}
       ${sRow('qbratt','Rush Attempts',Math.round(qb.qb_rush_attempts),Math.round(seed.rushing_attempts||0),0,200,5,'var(--rb)',false,{
         readOnly:historicalLocked,
+        rankHtml:_rk('rushing_attempts',Math.round(qb.qb_rush_attempts),'hi'),
         noteMeta:{ label:'QB Rush Attempts', source:'projection_builder_qb', statKey:'qb_rush_attempts', context:noteCtx, player:notePlayerFor(qb), team:noteTeam, relevance:'QB' }
       })}
     </div>

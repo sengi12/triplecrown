@@ -254,6 +254,7 @@ function resortAfterRelease(el){
   else if(key.startsWith('tds_')) reorderShareBlocks('shareControls','pblk-',state.passing_shares,'td_share');
   else if(key.startsWith('rs_')) reorderShareBlocks('rushShareControls','rblk-',state.rushing.shares,'share');
   else if(key.startsWith('rtds_')) reorderShareBlocks('rushShareControls','rblk-',state.rushing.shares,'td_share');
+  if(typeof tcRefreshRankChips==='function') tcRefreshRankChips(state, el.dataset.team);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -283,6 +284,7 @@ function sRow(key,label,cur,base,min,max,step,col,invert,opts){
         ${curHtml}
         <span class="stat-baseline">/ ${bDisp}</span>
         <span id="sd-${key}">${mkDelta(cur,base,invert)}</span>
+        <span class="rk-slot" id="rk-${key}">${opts.rankHtml||''}</span>
       </div>
     </div>
     <div class="slider-track">

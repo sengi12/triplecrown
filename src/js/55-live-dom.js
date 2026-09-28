@@ -13,6 +13,7 @@ function liveQB(state,idx,team,changedKey){
     qbry:seed.rushing_yards||0,qbrtd:seed.rushing_tds||0,qbratt:seed.rushing_attempts||0};
   if(changedKey){const sd=document.getElementById(`sd-${changedKey}`);if(sd)sd.innerHTML=mkDelta(state.qbs[idx][({py:'passing_yards',ptd:'passing_tds',patt:'passing_attempts',pcomp:'passing_completions',int:'interceptions_thrown',qbry:'qb_rush_yards',qbrtd:'qb_rush_tds',qbratt:'qb_rush_attempts'})[changedKey]],bases[changedKey]||0,changedKey==='int');}
   const tot=document.getElementById('qbTeamTotals'); if(tot) tot.innerHTML=qbTotalsText(state,{asHtml:true,team});
+  if(typeof tcRefreshRankChips==='function' && !sliderDragging) tcRefreshRankChips(state, team);
 }
 
 // Update the workload card text (per-QB sub line, team-games budget, the active QB's
@@ -75,6 +76,7 @@ function livePassTargets(state,team){
   });
   const sub=document.getElementById('pieSub'); if(sub) sub.innerHTML=passPieSubHtml(state,totalTgts,team);
   reorderShareBlocks('shareControls','pblk-',state.passing_shares,'share');
+  if(typeof tcRefreshRankChips==='function' && !sliderDragging) tcRefreshRankChips(state, team);
 }
 
 // Reorder share-block DOM nodes so the category leader floats to the top.
@@ -103,6 +105,7 @@ function liveTDRows(pctId,volId,shares,totalTDs,keyPrefix,editable){
   // resort by TD share (on release / manual edit, not mid-drag)
   if(keyPrefix==='tds_') reorderShareBlocks('shareControls','pblk-',shares,'td_share');
   else if(keyPrefix==='rtds_') reorderShareBlocks('rushShareControls','rblk-',shares,'td_share');
+  if(typeof tcRefreshRankChips==='function' && !sliderDragging) tcRefreshRankChips(userProj[currentTeam], currentTeam);
 }
 
 function liveRush(state,team){
@@ -134,6 +137,7 @@ function liveRushRows(state,team){
   const ys=document.querySelector('input.sl[data-key="rush_total_yds"]');
   if(ys){ys.value=r.total_yards;setFill(ys,'var(--rb)');
     const ysv=document.getElementById('sv-rush_total_yds');if(ysv&&document.activeElement!==ysv)ysv.textContent=r.total_yards;}
+  if(typeof tcRefreshRankChips==='function' && !sliderDragging) tcRefreshRankChips(state, team);
 }
 
 function setTxt(id,v){const e=document.getElementById(id);if(e)e.textContent=v;}
