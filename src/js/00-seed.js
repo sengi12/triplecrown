@@ -34,6 +34,10 @@ const SEED_KTC = {};
 // FantasyPros dynasty trade values: {asof, source, players:{nameKey:{pos,team,v,sf?,tep?}},
 // picks:{season:[[label,v1qb,vSF],...]}}. Powers the League Analyzer. Empty by default.
 const SEED_DYNASTY_VALUES = {};
+// Tradesourced dynasty blend (tools/trade_corpus.py refresh): {asof, source, trades,
+// markets:{sf|1qb:{players:{nameKey:{fp,trade,n,pos}}, picks:{token:v}}}}. Nudges the FP
+// chart toward what real Sleeper trades pay. Empty by default (FP chart used verbatim).
+const SEED_TRADE_VALUES = {};
 // nflverse-computed advanced metrics (opt-in `build_seed.py --nflverse`): a parallel A/B source
 // shaped like Sharp (team tables) + Sumer (QB/RB player tables). Empty unless built with --nflverse.
 const SEED_NFLVERSE = {};

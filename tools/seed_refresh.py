@@ -803,12 +803,19 @@ def main():
     ap.add_argument("--check", action="store_true", help="report what is stale and exit")
     ap.add_argument("--dry-run", action="store_true", help="decide and invalidate nothing; no build")
     ap.add_argument("--force", default="", help="comma-separated sources to refresh regardless of schedule")
+    ap.add_argument("--force-build", action="store_true",
+                    help="rebuild even when nothing upstream is stale, to bake changed carried "
+                         "artifacts (market_model / trade_values) into the seed")
     ap.add_argument("--build-args", default="", help="extra args passed through to build_seed.py")
     args = ap.parse_args()
 
     state = load_state()
     now = time.time()
     forced = {s.strip() for s in args.force.split(",") if s.strip()}
+    # market_model / trade_values are carried artifacts refreshed by their own workflow gates
+    # (draft_corpus / trade_corpus), not build_seed sources — the seed just bakes whatever is
+    # on disk. The workflow forwards the same --force string here, so accept and drop them.
+    forced -= {"market_model", "trade_values"}
     unknown = forced - set(SOURCES)
     if unknown:
         log(f"unknown source(s): {', '.join(sorted(unknown))}")
@@ -888,7 +895,7 @@ def main():
             log(f"  {line}")
         step_summary(pulse)
 
-    if not stale:
+    if not stale and not args.force_build:
         log("\nNothing is stale. No build needed.")
         # Only rewrite the state file when a recorded timestamp actually moved — save_state
         # bumps updated_at, and committing a bookkeeping-only change would deploy for nothing.
@@ -899,7 +906,11 @@ def main():
             save_state(state)
         return 0
 
-    log(f"\n{len(stale)} source(s) to refresh: {', '.join(stale)}")
+    if stale:
+        log(f"\n{len(stale)} source(s) to refresh: {', '.join(stale)}")
+    else:
+        log("\nNothing upstream is stale, but --force-build was given: rebuilding so a changed")
+        log("carried artifact (market_model / trade_values) is baked into the seed.")
     if args.check or args.dry_run:
         log("(--check/--dry-run: stopping before any change)")
         return 0

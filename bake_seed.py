@@ -313,6 +313,7 @@ def main():
     sumer_seasons = seed.get("sumer_seasons", [])
     ktc = seed.get("ktc", {})
     dynasty_values = seed.get("dynasty_values", {})
+    trade_values = seed.get("trade_values", {})
     nflverse = seed.get("nflverse", {})
     cfb = seed.get("cfb", {})
 
@@ -395,6 +396,7 @@ def main():
         f"const SEED_SUMER_SEASONS = {j(sumer_seasons)};\n"
         f"const SEED_KTC = {j(ktc)};\n"
         f"const SEED_DYNASTY_VALUES = {j(dynasty_values)};\n"
+        f"const SEED_TRADE_VALUES = {j(trade_values)};\n"
         f"const SEED_NFLVERSE = {j(nflverse)};\n"
         f"const SEED_NFLVERSE_DEF_WEEKLY = {j(nflverse_def_weekly)};\n"
         f"const SEED_NFLVERSE_OL_WEEKLY = {j(nflverse_ol_weekly)};\n"

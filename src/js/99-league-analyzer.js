@@ -105,6 +105,46 @@ function laOnValuesLoaded(){
 // players, superflex QBs, TEP tight ends and PICKS must share one scale or the trade math,
 // the tier multipliers and the power scores all quietly disagree with each other.
 const LA_VAL_SCALE = 100;
+// The tradesourced blend: real Sleeper dynasty trades say the FP chart is a little off on some
+// players (it pays Gibbs/McBride/Allen less than the market does, Marvin Harrison more). The
+// trade_values seed carries, per market, a solved value and the FP value it was fit from — the
+// difference is the market's disagreement with the chart. We add a SHRUNK slice of that delta:
+//   • 'fp'      the chart verbatim (no market tilt)
+//   • 'blend'   chart + delta × n/(n+K) — thin trade counts barely move; well-traded players move
+//   • 'market'  chart + the full delta (the raw tradesourced value)
+// K is the trade count at which half the delta lands. The delta is applied to the CURRENT chart
+// value, so a fresh FP update still shows through even against a day-old trade fit.
+const LA_TRADE_CONF_K = 12;
+function laValSource(){
+  try{ const s=localStorage.getItem('la_val_source'); return (s==='fp'||s==='market')?s:'blend'; }
+  catch(e){ return 'blend'; }
+}
+function laSetValSource(s){
+  try{ localStorage.setItem('la_val_source', s); }catch(e){}
+  _laTierVals=null; _laPosRankCache=null;
+  if(typeof renderLeagueAnalyzer==='function') renderLeagueAnalyzer();
+}
+// Is there tradesourced data for the snapshot league's market? (Gates the Source control.)
+function laHasTradeData(){
+  const mk=(leagueSnapshot && leagueSnapshot.superflex) ? 'sf' : '1qb';
+  const tv=TRADE_VALUES && TRADE_VALUES.markets && TRADE_VALUES.markets[mk];
+  return !!(tv && tv.players && Object.keys(tv.players).length);
+}
+// Nudge a raw FP chart value (0-100 points) toward the market. Returns fpRaw unchanged when
+// the lens is the chart, the player isn't in the corpus, or the value basis isn't the chart.
+function laTradeBlend(fpRaw, name, pos){
+  if(fpRaw==null) return fpRaw;
+  const src=laValSource();
+  if(src==='fp' || laIsRedraft()) return fpRaw;   // VOR/redraft is its own basis; no market tilt
+  const mk=(leagueSnapshot && leagueSnapshot.superflex) ? 'sf' : '1qb';
+  const tv=TRADE_VALUES && TRADE_VALUES.markets && TRADE_VALUES.markets[mk];
+  const ent=tv && tv.players && tv.players[ecrNormName(name)];
+  if(!ent || ent.trade==null || ent.fp==null) return fpRaw;
+  if(pos && ent.pos && ent.pos!==pos) return fpRaw;
+  const n=ent.n||0;
+  const conf = src==='market' ? 1 : n/(n+LA_TRADE_CONF_K);
+  return fpRaw + (ent.trade-ent.fp)*conf;
+}
 // Dynasty value for one player under the SNAPSHOT league's format. Returns null when the
 // player is off the chart (deep depth pieces) — callers render those as unvalued, not 0,
 // because "not charted" and "worthless" are different claims.
@@ -119,9 +159,9 @@ function dynastyValueFor(name, pos){
   // The SF/TEP branches used to return the raw column while the base branch scaled — so in a
   // superflex league Josh Allen priced at 100 against Ja'Marr Chase's 8900, i.e. ~1% of his
   // real worth. Every return here now goes through the same multiplier.
-  if(e.pos==='QB' && snap.superflex && e.sf!=null) return e.sf*LA_VAL_SCALE;
-  if(e.pos==='TE' && snap.tep && e.tep!=null) return e.tep*LA_VAL_SCALE;
-    return e.v!=null ? e.v * LA_VAL_SCALE : null;
+  if(e.pos==='QB' && snap.superflex && e.sf!=null) return laTradeBlend(e.sf, name, pos)*LA_VAL_SCALE;
+  if(e.pos==='TE' && snap.tep && e.tep!=null) return laTradeBlend(e.tep, name, pos)*LA_VAL_SCALE;
+    return e.v!=null ? laTradeBlend(e.v, name, pos) * LA_VAL_SCALE : null;
 }
 // Value for a future rookie pick. Exact rows exist for the chart's listed seasons; later
 // seasons reuse the year-out table (dynasty convention: value the unknown like next year's).
@@ -266,9 +306,23 @@ function laValueBasisHTML(){
 }
 function laValPinBarHTML(){
   if(laHistoricalSeason() || (leagueSnapshot && (leagueSnapshot.leagueType===0 || leagueSnapshot.leagueType===3))) return '';
-  return `<span class="la-valmode" title="Keeper leagues sit between the two: they carry rosters forward like dynasty but reset like redraft. Pin whichever lens fits this league; the pin is remembered for this league only.">
+  const valBar = `<span class="la-valmode" title="Keeper leagues sit between the two: they carry rosters forward like dynasty but reset like redraft. Pin whichever lens fits this league; the pin is remembered for this league only.">
     <span class="la-lens-lbl">Value:</span>
     ${['auto','redraft','dynasty'].map(mv=>`<button class="format-btn ${laValPin()===mv?'active':''}" onclick="laSetValMode('${mv}')">${mv==='auto'?`Auto (${laValMode()})`:mv==='redraft'?'VOR':'Dynasty'}</button>`).join('')}
+  </span>`;
+  return valBar + laValSourceBarHTML();
+}
+// The Source control: chart vs the tradesourced blend. Only shown on the dynasty basis (the
+// blend is a chart tilt — it means nothing to VOR) and only when the corpus actually covers
+// this league's market. `n` on the win/loss of a whole market keeps thin days from moving much.
+function laValSourceBarHTML(){
+  if(laIsRedraft() || !laHasTradeData()) return '';
+  const src=laValSource();
+  const tvAsof=(TRADE_VALUES && TRADE_VALUES.asof) ? ` · ${TRADE_VALUES.asof}` : '';
+  const opts=[['fp','Chart'],['blend','Blend'],['market','Market']];
+  return `<span class="la-valmode la-valsrc" title="Chart is the FantasyPros dynasty values verbatim. Blend nudges each player toward what real Sleeper trades pay, weighted by how often they're traded (thinly-traded players barely move). Market applies the full trade-implied value${tvAsof}.">
+    <span class="la-lens-lbl">Source:</span>
+    ${opts.map(([k,lbl])=>`<button class="format-btn ${src===k?'active':''}" onclick="laSetValSource('${k}')">${lbl}</button>`).join('')}
   </span>`;
 }
 

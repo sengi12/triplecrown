@@ -93,6 +93,20 @@ jobs:
             echo "due=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # The trade calculator (tools/trade_corpus.py) re-crawls real Sleeper dynasty trades and
+      # re-fits the tradesourced blend DAILY — pinned to the single 06:37 slot so the in-season
+      # two-hourly looks don't each re-crawl. The crawl is incremental (completed-week legs cache
+      # forever), so day 2+ only pays for the current week's new trades and any new leagues.
+      - name: Is the daily trade-values refresh due?
+        id: tv
+        run: |
+          if [ "${{ github.event.schedule }}" = "37 6 * * *" ] \
+             || [ "${{ github.event.inputs.force }}" = "trade_values" ]; then
+            echo "due=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "due=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # The probe is tools/seed_refresh.py --check: it reads every upstream stamp,
       # prints the nflverse pulse (which games the live sidecar holds vs. what
       # nflverse has published since — also written to this run's summary), and
@@ -107,7 +121,7 @@ jobs:
             ARGS="--force ${{ github.event.inputs.force }}"
           fi
           python3 tools/seed_refresh.py --check $ARGS 2>&1 | tee probe.log
-          if grep -q '^Nothing is stale' probe.log && [ "${{ steps.mm.outputs.due }}" != "true" ]; then
+          if grep -q '^Nothing is stale' probe.log && [ "${{ steps.mm.outputs.due }}" != "true" ] && [ "${{ steps.tv.outputs.due }}" != "true" ]; then
             echo "stale=false" >> "$GITHUB_OUTPUT"
             echo "nothing moved upstream — stopping before the heavy steps"
           else
@@ -170,6 +184,17 @@ jobs:
         if: steps.mm.outputs.due == 'true'
         run: python3 tools/draft_corpus.py refresh --out seeds/market_model.json 2>&1 | tail -5
 
+      # Re-crawl real Sleeper dynasty trades and re-fit the tradesourced blend the League
+      # Analyzer bakes into seeds/trade_values.json. Incremental against the restored scrape
+      # cache; the fitter keeps the prior blob rather than publish a thin one, so a bad crawl
+      # day can't gut the calculator. --force-build below makes sure the new blob is baked.
+      - name: Refresh trade values (daily 06:37 slot)
+        if: steps.tv.outputs.due == 'true'
+        run: |
+          python3 tools/trade_corpus.py refresh \
+            --league 1390789974332284928 --league 1392212815044939776 \
+            --max-leagues 800 2>&1 | tail -8
+
       # A run can sit in the concurrency queue behind another refresh; its checkout is from
       # when it was CREATED, so it would decide on a stale state file, rebuild what the
       # earlier run just built, and collide on the push (2026-09-14, 13:17 UTC). Sync first.
@@ -188,6 +213,11 @@ jobs:
           fi
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             ARGS="$ARGS --dry-run"
+          fi
+          # A refit-only day (the weekly market model, or the daily trade values) can leave every
+          # upstream source unchanged; --force-build rebuilds anyway so the carried artifact lands.
+          if [ "${{ steps.mm.outputs.due }}" = "true" ] || [ "${{ steps.tv.outputs.due }}" = "true" ]; then
+            ARGS="$ARGS --force-build"
           fi
           python3 tools/seed_refresh.py $ARGS 2>&1 | tee refresh.log
 

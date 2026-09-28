@@ -114,6 +114,9 @@ function initPassingShares(team){
 
 function initRushingShares(team){
   const state=ensureTeam(team);
+  // A hand-injected or older persisted state can lack the rushing sub-object; the
+  // league-pool path (rank chips) now reaches here for every team, so don't assume it.
+  if(!state.rushing) state.rushing={mode:'carries',total_attempts:null,total_yards:null,ypa:null,shares:null};
   if(state.rushing.shares) return;
   let rbs=getBase(team,'RB');
   if(isWeekFilterActive(state) && state.weekFilterData) rbs=applyWeekFilterOverrides(rbs, state.weekFilterData);

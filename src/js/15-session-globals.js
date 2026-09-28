@@ -238,6 +238,8 @@ let SUMER_SEASONS = (typeof SEED_SUMER_SEASONS!=='undefined') ? SEED_SUMER_SEASO
 // KeepTradeCut dynasty player-page slugs (player-card links): {nameKey:{slug,pos}}
 let KTC = (typeof SEED_KTC!=='undefined') ? SEED_KTC : {};
 let DYNASTY_VALUES = (typeof SEED_DYNASTY_VALUES!=='undefined') ? SEED_DYNASTY_VALUES : {};
+// Tradesourced dynasty blend — pairs with DYNASTY_VALUES to tilt chart values toward the market.
+let TRADE_VALUES = (typeof SEED_TRADE_VALUES!=='undefined') ? SEED_TRADE_VALUES : {};
 // League Analyzer snapshot: a deliberate point-in-time capture of a synced Sleeper league
 // (rosters, owners, picks, settings). Deliberately NOT auto-refreshed — dynasty rosters move
 // slowly and stable numbers matter during a week of trade talks — so it only changes when the

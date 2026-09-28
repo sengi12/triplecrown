@@ -992,6 +992,8 @@ async function tryAutoLoadSeed(prefetched){
     if(j.ktc){ KTC=j.ktc; got=true; }   // KeepTradeCut dynasty player-page slugs (player-card links)
     if(j.dynasty_values){ DYNASTY_VALUES=j.dynasty_values; got=true;
       if(typeof laOnValuesLoaded==="function") laOnValuesLoaded(); }   // FP dynasty trade values → refresh analyzer
+    if(j.trade_values){ TRADE_VALUES=j.trade_values; got=true;
+      if(typeof laOnValuesLoaded==="function") laOnValuesLoaded(); }   // tradesourced dynasty blend → refresh analyzer
     if(j.nflverse){ NFLVERSE=j.nflverse; if(typeof resetNflverseLazy==='function') resetNflverseLazy(); got=true; }   // nflverse advanced metrics payload (heavy sections lazy-load)
     if(j.cfb){ CFB=j.cfb; if(typeof resetCfbLazy==='function') resetCfbLazy(); got=true; }   // college rookie profiles (game logs lazy-load)
     // Only adopt prebuilt projections/history if present and non-trivial.

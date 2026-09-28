@@ -3199,6 +3199,16 @@ def main():
                 market_model = json.load(_f)
         except Exception:
             market_model = None
+    # Trade values: the tradesourced dynasty blend (tools/trade_corpus.py refresh).
+    # Also a committed artifact the daily refresh workflow rewrites; a build carries it.
+    trade_values = None
+    _tv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "seeds", "trade_values.json")
+    if os.path.exists(_tv_path):
+        try:
+            with open(_tv_path) as _f:
+                trade_values = json.load(_f)
+        except Exception:
+            trade_values = None
     _fantasy_obj = {"season": args.season, "builder_version": BUILDER_VERSION,
                     "market_model": market_model,
                     # NFL state at build time: lets the app know the season phase/week without
@@ -3221,6 +3231,7 @@ def main():
                     "hc_playcallers": HC_PLAYCALLERS, "sharp_season": args.season-1,
                     "sumer": sumer, "sumer_seasons": sumer_seasons, "ktc": ktc,
                     "dynasty_values": dynasty_values,
+                    "trade_values": trade_values,
                     "nflverse": nflverse, "cfb": cfb}
     # Every seed also gets a pre-gzipped twin (.json.gz, gzip -9, deterministic mtime=0).
     # The app fetches the .gz first (DecompressionStream) and falls back to plain .json —
