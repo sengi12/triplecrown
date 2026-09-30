@@ -61,13 +61,51 @@ function tcParseBoard(board){
       const ls=Array.isArray(c.linescores)?c.linescores.map(l=>(l&&l.value!=null)?Number(l.value):null):[];
       return { code, home:c.homeAway==='home', rec:tot&&tot.summary?String(tot.summary):'', score:Number.isFinite(sc)?sc:null, ls };
     }).filter(s=>s.code);
+    // Vegas line → each side's implied point total. ESPN carries the total (over/under) and,
+    // via the favorite flags or the "DET -3.5" details string, the spread. A side's implied
+    // total = total/2 − spread/2: the favourite, laying points, is priced to score the extra
+    // half-margin. Rides the board's own poll, so it refreshes as the line moves.
+    const vegas = tcParseOdds(comp, sides);
     sides.forEach(s=>{
       const o=sides.find(x=>x!==s)||{};
+      const odds = tcSideOdds(vegas, s.code, o.code);
       // eid: ESPN's event id — the key to the game summary (plays, box score)
-      out[s.code]={ state, rec:s.rec, opp:o.code||'', home:s.home, score:s.score, oppScore:o.score!=null?o.score:null, detail, date:String(ev.date||comp.date||''), eid:String(ev.id||''), ls:s.ls, sit:situation };
+      out[s.code]={ state, rec:s.rec, opp:o.code||'', home:s.home, score:s.score, oppScore:o.score!=null?o.score:null, detail, date:String(ev.date||comp.date||''), eid:String(ev.id||''), ls:s.ls, sit:situation, odds };
     });
   });
   return out;
+}
+// The competition's odds → {total, fav(code), mag(|spread|), book}, or null when ESPN has no
+// line yet. Prefers the favorite flags; falls back to parsing the "DET -3.5" details string.
+function tcParseOdds(comp, sides){
+  const od = (comp && Array.isArray(comp.odds) && comp.odds.length) ? comp.odds[0] : null;
+  if(!od) return null;
+  let total = (od.overUnder!=null && od.overUnder!=='') ? Number(od.overUnder) : null;
+  if(total==null && od.current && od.current.total && od.current.total.value!=null) total=Number(od.current.total.value);
+  if(total==null || !Number.isFinite(total)) return null;
+  const home=sides.find(x=>x.home), away=sides.find(x=>!x.home);
+  let fav='', mag=null;
+  if(od.homeTeamOdds && od.homeTeamOdds.favorite && home) fav=home.code;
+  else if(od.awayTeamOdds && od.awayTeamOdds.favorite && away) fav=away.code;
+  if(od.spread!=null && od.spread!=='' && Number.isFinite(Number(od.spread))) mag=Math.abs(Number(od.spread));
+  const dm=String(od.details||'').match(/([A-Za-z]{2,4})\s*(-?\d+(?:\.\d+)?)/);
+  if(dm){ if(!fav){ const ab=dm[1].toUpperCase(); fav=TC_BOARD_ABBR[ab]||ab; } if(mag==null) mag=Math.abs(Number(dm[2])); }
+  else if(/\b(even|pk|pick)\b/i.test(String(od.details||''))){ if(mag==null) mag=0; }
+  return { total:Math.round(total*10)/10, fav, mag:(mag!=null&&Number.isFinite(mag))?mag:null, book:String((od.provider&&od.provider.name)||'') };
+}
+// One side's view of the line: its signed spread and implied team total.
+function tcSideOdds(vegas, code, oppCode){
+  if(!vegas || vegas.total==null) return null;
+  let spread=null, implied;
+  if(vegas.mag!=null){
+    const isFav = vegas.fav && vegas.fav===code;
+    const isDog = vegas.fav && vegas.fav===oppCode;
+    spread = isFav ? -vegas.mag : (isDog ? vegas.mag : 0);
+    implied = Math.round((vegas.total/2 - spread/2)*10)/10;
+  } else {
+    implied = Math.round((vegas.total/2)*10)/10;   // no spread known → split the total
+  }
+  return { total:vegas.total, spread, implied, fav:(vegas.fav===code), book:vegas.book };
 }
 // The board for the current week (possibly stale), refreshing in the background when due.
 function tcWeekBoard(){

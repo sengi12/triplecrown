@@ -89,7 +89,7 @@ function gcGames(board){
     if(seen.has(id)) return; seen.add(id);
     const h=board[home]||{}, a=board[away]||{};
     games.push({ id, home, away, state:g.state, detail:g.detail, date:String(g.date||''), hs:h.score!=null?h.score:(g.home?g.score:g.oppScore), as:a.score!=null?a.score:(g.home?g.oppScore:g.score), hrec:h.rec||'', arec:a.rec||'',
-      eid:String(g.eid||h.eid||a.eid||''), hls:h.ls||[], als:a.ls||[], sit:g.sit||h.sit||a.sit||null });   // ESPN's event id opens the game summary (plays, box score); sit = the live situation
+      eid:String(g.eid||h.eid||a.eid||''), hls:h.ls||[], als:a.ls||[], sit:g.sit||h.sit||a.sit||null, hodds:h.odds||null, aodds:a.odds||null });   // ESPN's event id opens the game summary (plays, box score); sit = the live situation; odds = Vegas line
   });
   // In the order they are played: Thursday night, the Sunday early window, the late window,
   // Sunday night, Monday night (the board's kickoff stamps); same kickoff → by matchup.
@@ -316,11 +316,13 @@ function gcGameHTML(game, rows, wk){
       <b class="gc-score">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}${ball(game.home)}</b>
       <div class="gc-side gc-side-home"><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${game.home}</span><span class="gc-rec">${escHtml(game.hrec)}</span>${dots(sit&&sit.to?sit.to.home:null)}</div>
     </div>`;
+  // The Vegas line under the banner: spread, over/under, each side's implied point total.
+  const oddsHtml=(typeof gcOddsHTML==='function') ? gcOddsHTML(game) : '';
   // The fantasy pane: the league switcher, then the week's rows by position.
   const fantasy=`${typeof gcLeagueSelectHTML==='function' ? gcLeagueSelectHTML() : ''}
     ${proj ? `<div class="gc-projnote">projected · Sleeper's week ${wk||gcWeek()} line under this scoring</div>` : ''}
     ${rows ? (groups || `<div class="ld-empty">${proj?'no projections yet for this game':'no stat lines yet'}</div>`) : `<div class="ld-empty">${proj?'loading the week\'s projections…':'loading the week\'s stat lines…'}</div>`}`;
-  if(typeof gcdTab!=='function') return hero+fantasy;
+  if(typeof gcdTab!=='function') return hero+oddsHtml+fantasy;
   // Feed | Stats (32b-game-detail.js): the play feed, or the quarter line with Away | Fantasy | Home.
   const sum=(typeof gcSummary==='function') ? gcSummary(game) : null;
   if(game.state==='in' && typeof gcLiveTick==='function') gcLiveTick(game);   // a game on: the feed polls on its own clock
@@ -331,10 +333,31 @@ function gcGameHTML(game, rows, wk){
   // Feed: on the desktop sidebar the hero, the field and the tabs stay put while the plays
   // scroll in their own window — so a play tapped for replay keeps animating in view (CSS
   // turns this off inside the phone's bottom sheet, where the whole sheet scrolls).
-  if(tab==='feed') return `<div class="gc-feedview"><div class="gc-feedview-head">${hero}${top}${tabs}</div><div class="gc-feedview-feed">${gcFeedHTML(game, sum)}</div></div>`;
+  if(tab==='feed') return `<div class="gc-feedview"><div class="gc-feedview-head">${hero}${oddsHtml}${top}${tabs}</div><div class="gc-feedview-feed">${gcFeedHTML(game, sum)}</div></div>`;
   const seg=`<div class="gc-seg"><button class="${side==='away'?'active':''}" onclick="gcdSetSide('away')"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${game.away}</button><button class="${side==='fantasy'?'active':''}" onclick="gcdSetSide('fantasy')">Fantasy</button><button class="${side==='home'?'active':''}" onclick="gcdSetSide('home')"><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'">${game.home}</button></div>`;
   const pane = side==='fantasy' ? fantasy : gcBoxHTML(game, sum, side==='home'?game.home:game.away);
-  return hero+top+tabs+(game.state==='pre'?'':gcLinescoreHTML(game, sum))+seg+pane;
+  return hero+oddsHtml+top+tabs+(game.state==='pre'?'':gcLinescoreHTML(game, sum))+seg+pane;
+}
+// The Vegas line under the hero: the spread (stated from the favourite laying points), the
+// over/under, and each team's implied point total — the market's forecast of how much each
+// side scores. Rides the board's own poll, so it tracks the line as it moves; nothing shows
+// until ESPN posts a line.
+function gcOddsHTML(game){
+  const a=game.aodds, h=game.hodds;
+  if(!a && !h) return '';
+  const total=(h&&h.total!=null)?h.total:(a&&a.total!=null?a.total:null);
+  const book=(h&&h.book)||(a&&a.book)||'';
+  let fav='';
+  if(a && a.spread!=null && a.spread<0) fav=`${game.away} ${a.spread}`;
+  else if(h && h.spread!=null && h.spread<0) fav=`${game.home} ${h.spread}`;
+  const pk = !fav && ((a&&a.spread===0)||(h&&h.spread===0));
+  const line = fav || (pk?'Pick’em':'');
+  const imp=(o,code)=> (o&&o.implied!=null)?`<span class="gc-odds-imp"><b>${code}</b> ${o.implied.toFixed(1)}</span>`:'';
+  if(!line && total==null && !(a&&a.implied!=null) && !(h&&h.implied!=null)) return '';
+  return `<div class="gc-odds" title="Vegas line${book?` · ${escAttr(book)}`:''} — implied team total = the over/under split by the spread, the market's forecast of each team's points">
+    <span class="gc-odds-mkt">${line?`<span class="gc-odds-spread">${escHtml(line)}</span>`:''}${total!=null?`<span class="gc-odds-ou">O/U ${total}</span>`:''}</span>
+    <span class="gc-odds-imps" title="Implied team totals"><span class="gc-odds-tag">Implied</span>${imp(a,game.away)}${imp(h,game.home)}</span>
+  </div>`;
 }
 function gcListHTML(games, picked){
   if(!games) return '<div class="ld-empty">loading games…</div>';

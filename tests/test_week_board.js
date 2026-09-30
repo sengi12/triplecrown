@@ -17,7 +17,7 @@ const app=new Function(code+`
     sidebar:()=>{ renderSidebar(); return document.getElementById('sidebar').innerHTML; },
     header:_thsHeaderPreviewHtml,
     setReply:(r)=>{ reply=r; }, calls, TC_SEASON, setSeason:(s)=>{ activeSeason=s; }, setTeam:(t)=>{ currentTeam=t; },
-    recCache:()=>espnRecordCache, raw:()=>_tcBoard, order:tcStandingsOrder, parseRec:tcParseRecord, setStarted:(v)=>{ hasSeasonStarted=()=>v; } };
+    recCache:()=>espnRecordCache, raw:()=>_tcBoard, order:tcStandingsOrder, parseRec:tcParseRecord, oddsHTML:gcOddsHTML, setStarted:(v)=>{ hasSeasonStarted=()=>v; } };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 
@@ -33,6 +33,28 @@ chk(b.NE.state==='post' && b.NE.rec==='0-1' && b.NE.home===false, 'the other sid
 chk(b.SF.state==='in' && b.SF.detail==='3rd 8:12', 'a game in progress carries its clock');
 chk(b.WAS && b.WAS.state==='pre' && !b.WSH, 'ESPN\'s WSH is the seed\'s WAS');
 chk(!b.KC, 'a team not on the board (bye) is absent');
+
+console.log('=== vegas odds → implied team totals ===');
+// ESPN carries the total (over/under) and the favourite's spread; a side's implied total is
+// the total split by the spread. SEA home, laying 3.5, total 47.5 → SEA 25.5 / NE 22.0.
+const withOdds=(home,away,odds)=>({competitions:[{status:{type:{state:'pre',shortDetail:'Sun 1:00 PM'}},odds,competitors:[
+  {homeAway:'home',team:{abbreviation:home},score:'0',records:[{type:'total',summary:'0-0'}]},
+  {homeAway:'away',team:{abbreviation:away},score:'0',records:[{type:'total',summary:'0-0'}]}]}]});
+const ob=app.parse({events:[
+  withOdds('SEA','NE',[{provider:{name:'ESPN BET'},details:'SEA -3.5',overUnder:47.5,homeTeamOdds:{favorite:true},awayTeamOdds:{favorite:false}}]),
+  withOdds('LAR','SF',[{provider:{name:'ESPN BET'},details:'EVEN',overUnder:44}]),
+  withOdds('KC','LV',[]),
+]});
+chk(ob.SEA.odds && ob.SEA.odds.spread===-3.5 && ob.SEA.odds.implied===25.5 && ob.SEA.odds.fav===true, 'the favourite: spread -3.5, implied 25.5, flagged favourite');
+chk(ob.NE.odds && ob.NE.odds.spread===3.5 && ob.NE.odds.implied===22 && ob.NE.odds.fav===false, 'the underdog: +3.5, implied 22.0');
+chk(ob.SEA.odds.total===47.5 && ob.SEA.odds.book==='ESPN BET', 'the over/under and the book ride along');
+chk(ob.LAR.odds && ob.LAR.odds.spread===0 && ob.LAR.odds.implied===22 && ob.SF.odds.implied===22, 'a pick’em splits the total evenly (22 each)');
+chk(!ob.KC.odds && !ob.LV.odds, 'no line posted yet → no odds');
+
+const oh=app.oddsHTML({away:'NE', home:'SEA', aodds:ob.NE.odds, hodds:ob.SEA.odds});
+chk(/gc-odds-spread">SEA -3.5</.test(oh) && /gc-odds-ou">O\/U 47.5</.test(oh), 'the strip states the spread from the favourite and the over/under');
+chk(/gc-odds-imp"><b>NE<\/b> 22.0</.test(oh) && /gc-odds-imp"><b>SEA<\/b> 25.5</.test(oh), 'each team’s implied point total, tagged by code');
+chk(app.oddsHTML({away:'KC', home:'LV', aodds:null, hodds:null})==='', 'no strip at all when there is no line');
 
 console.log('=== the board, fetched once and shared ===');
 app.TC_SEASON.year=2026; app.TC_SEASON.phase='regular'; app.TC_SEASON.week=1;

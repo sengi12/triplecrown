@@ -69,6 +69,19 @@
 .gc-score{font-family:var(--mono);font-size:30px;font-weight:900;color:var(--text);margin:0 4px;display:inline-flex;align-items:center;}
 .gc-status{font-size:9px;font-weight:900;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;padding:3px 8px;border:1px solid var(--border);border-radius:999px;white-space:nowrap;}
 .gc-status.gc-live{color:var(--danger);border-color:rgba(248,81,73,.5);}
+/* Vegas line strip under the hero: spread + over/under on the left, each team's implied
+   point total on the right (the over/under split by the spread — the market's per-team
+   scoring forecast). Wraps on a narrow rail. */
+.gc-odds{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:5px 12px;
+  padding:6px 12px;background:var(--surface);border-bottom:1px solid var(--border);
+  font-size:11px;color:var(--muted);}
+.gc-odds-mkt{display:inline-flex;align-items:center;gap:8px;min-width:0;}
+.gc-odds-spread{font-weight:800;color:var(--text);}
+.gc-odds-ou{font-family:var(--mono);}
+.gc-odds-imps{display:inline-flex;align-items:center;gap:8px;min-width:0;}
+.gc-odds-tag{font-size:8.5px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);}
+.gc-odds-imp{font-family:var(--mono);color:var(--text);white-space:nowrap;}
+.gc-odds-imp b{color:var(--accent);font-weight:900;margin-right:2px;}
 .gc-group{padding:6px 10px 2px;}
 .gc-gh{text-align:center;font-size:9px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);padding:8px 0 4px;}
 .gc-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;border-top:1px solid rgba(255,255,255,.04);}
