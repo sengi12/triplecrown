@@ -44834,8 +44834,15 @@ function laTrendsView(s){
     }
   } else if(tab==='teams'){
     const T=_laTeamTrends();
+    // The swing board compares the last 3 weeks to the season. Until a fourth week is in,
+    // that window IS the whole season (idx3===idxAll in _laTeamTrends), so every dRate/dEpa
+    // is exactly 0 and both filtered columns come up empty — hence "nobody in this scope yet".
+    // Gate on the weeks actually in the pack (not just completedWeeks) and fall back to the
+    // season-so-far board until there are more than 3, the same way the O-Line pane does.
+    const _pk=_laTeamPack();
+    const _nWk=(_pk && Array.isArray(_pk.weeks) && _pk.weeks.length) || wk;
     if(!T) body=needSidecar();
-    else if(wk<3){
+    else if(_nWk<4){
       // Not enough weeks for a swing against the season: show the season so far instead.
       const avgRate=T.reduce((a,t)=>a+t.rateA,0)/T.length;
       const byRate=[...T].sort((a,b)=>b.rateA-a.rateA);
