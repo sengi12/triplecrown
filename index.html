@@ -25887,6 +25887,8 @@ function _advTableForRange(key, baseTable, team){
   if(key==='offensive_line_pass' || key==='offensive_line_run'){
     const agg=_advComputeOlRangeTables(season, lo, hi);
     if(!agg) return baseTable;
+    if(key==='offensive_line_pass') agg.passTbl.title = baseTable.title;
+    if(key==='offensive_line_run') agg.runTbl.title = baseTable.title;
     return key==='offensive_line_pass' ? agg.passTbl : agg.runTbl;
   }
   if(key==='offense' || key==='defense' || key==='tendencies' || key==='pace'){
