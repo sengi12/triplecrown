@@ -72,8 +72,11 @@ def test_solver_lets_trades_override_a_wrong_prior():
     # assets, so we check the equality holds and A moved meaningfully, not an exact value.
     fp = {"A": 50.0, "B": 60.0, "C": 40.0}
     trades = [{"A": ["pA"], "B": ["pB", "pC"], "at": None} for _ in range(20)]
+    # This 3-asset slice is underdetermined (one equation, three unknowns), so the descent
+    # drifts slowly along the weakly-penalized direction; give it enough sweeps to actually
+    # reach the ridge optimum (A ~= 66.7) instead of a mid-flight point.
     vals = tc.solve_values(trades, fp, lambda rel, rnd: None,
-                           min_obs=1, lam=0.05, half_life_days=None, sweeps=200)
+                           min_obs=1, lam=0.05, half_life_days=None, sweeps=5000)
     check("the trade equality A ~= B+C is satisfied after the fit",
           abs(vals["pA"] - (vals["pB"] + vals["pC"])) < 3, (vals["pA"], vals["pB"] + vals["pC"]))
     check("A is dragged up off its wrong (50) prior toward the market",

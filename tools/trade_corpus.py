@@ -302,12 +302,16 @@ def solve_values(trades, fp_by_pid, pick_prior, min_obs=3, lam=0.25,
         for tok in set(t["A"]) | set(t["B"]):
             counts[tok] += 1
     solved = {tok for tok, c in counts.items() if c >= min_obs}
+    # Iterate assets in a STABLE order: a set's order follows PYTHONHASHSEED, which on a
+    # weakly-pinned slice moved where the descent settled — the daily refit would then drift
+    # run-to-run on identical trades. Sorted order makes the fit reproducible.
+    solved_order = sorted(solved)
 
     def prior_of(tok):
         p = _asset_prior(tok, fp_by_pid, pick_prior)
         return default_prior if p is None else p
 
-    v = {tok: prior_of(tok) for tok in solved}
+    v = {tok: prior_of(tok) for tok in solved_order}
     # Per-trade signed asset list (+1 side A, -1 side B) and the fixed-asset constant.
     rows = []
     for t in trades:
@@ -333,7 +337,7 @@ def solve_values(trades, fp_by_pid, pick_prior, min_obs=3, lam=0.25,
         row["r"] = sum(s * v[tok] for tok, s in row["signed"]) + row["const"]
     for _ in range(sweeps):
         max_delta = 0.0
-        for tok in solved:
+        for tok in solved_order:
             hits = idx.get(tok) or []
             denom = lam + sum(row["w"] for row, _ in hits)
             numer = lam * prior_of(tok)
@@ -346,7 +350,9 @@ def solve_values(trades, fp_by_pid, pick_prior, min_obs=3, lam=0.25,
             v[tok] = nv
             for row, s in hits:
                 row["r"] += s * d
-        if max_delta < 1e-4:
+        # Tight tolerance: on an underdetermined slice the descent drifts slowly along the
+        # weakly-penalized direction, and a loose stop halted it far from the ridge optimum.
+        if max_delta < 1e-7:
             break
     return v
 
