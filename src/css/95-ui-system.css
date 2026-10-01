@@ -114,6 +114,11 @@
 #toast{z-index:var(--z-toast);bottom:calc(var(--rt-h,0px) + 16px);}
 .rt-bar-host{z-index:var(--z-bar);}
 .inj-pop{z-index:var(--z-pop);}
+/* On a phone the persistent bottom tab bar would hide toasts behind it — lift every
+   notification above the bar (and above the draft tracker when that's up too). */
+@media (max-width:760px){
+  #toast{bottom:calc(var(--rt-h,0px) + 70px + env(safe-area-inset-bottom, 0px));}
+}
 
 /* ── Tap-target floor for the small interactive chrome ──────────────────────── */
 .season-tab{min-height:28px;display:inline-flex;align-items:center;}

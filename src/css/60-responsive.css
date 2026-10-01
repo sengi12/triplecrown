@@ -62,7 +62,17 @@
   .hdr-burger{display:none;}
   /* League Analyzer + Game Center have no use for the top header on a phone (the bottom bar
      is the nav) — drop it entirely and pad the content past the status bar instead. */
-  body.tc-noheader .header{display:none;}
+  /* League Analyzer + Game Center have no use for the top header on a phone (the bottom
+     bar is the nav) — collapse it to nothing. It must stay in the render tree, though: the
+     ☰ menu (a fixed bottom-sheet opened by the bottom bar's More button) lives inside the
+     header, and display:none would take the menu down with it. So zero the header's box and
+     hide every child except the chain that hosts the menu. */
+  body.tc-noheader .header{height:0;min-height:0;padding:0;border:0;overflow:visible;
+    box-shadow:none;background:none;}
+  body.tc-noheader .header > *{display:none;}
+  body.tc-noheader .header > .hdr-right{display:flex;}
+  body.tc-noheader .header .hdr-right > *{display:none;}
+  body.tc-noheader .header .hdr-right > .hdr-menu-wrap{display:inline-flex;}
   body.tc-noheader .content{padding-top:calc(10px + env(safe-area-inset-top, 0px));}
   .logo{font-size:0;gap:0;flex:none;}            /* icon only — the wordmark costs ~110px */
   .logo-icon{width:22px;height:22px;}

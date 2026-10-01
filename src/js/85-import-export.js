@@ -552,7 +552,9 @@ function closeAppMenu(){
 // loss of place.
 let _preLeagueView = null;
 function rememberProjectionsView(){
-  if(currentPhase==='League') return;   // already in the analyzer; don't overwrite the stash
+  // Only stash a real builder phase. A global view (the analyzer itself, or the Games tracker)
+  // must never land in the stash, or restoring it would trap the user back in that view.
+  if(currentPhase==='League' || currentPhase==='Games') return;
   _preLeagueView = {
     phase: currentPhase,
     team: currentTeam,
@@ -567,7 +569,7 @@ function showProjectionsView(){
     // currentTeam to still match silently discarded a valid stash whenever something
     // inside the analyzer touched the team, and the fallback then dumped users on the
     // full rankings ("← Projections" must mean the builder, not the rankings page).
-    if(v && v.phase && v.phase!=='League'){
+    if(v && v.phase && v.phase!=='League' && v.phase!=='Games'){
       if(v.team) currentTeam = v.team;
       currentPhase = v.phase;
       if(v.scope && typeof rankScope!=='undefined') rankScope = v.scope;
@@ -596,7 +598,7 @@ function showProjectionsView(){
   // projection builder phases instead of re-rendering the same global view.
   if(currentPhase==='Rankings' || currentPhase==='AdvancedLeague' || currentPhase==='Games'){
     const stashed = _preLeagueView && _preLeagueView.phase;
-    const usableStash = stashed && !['League','Rankings','AdvancedLeague'].includes(stashed);
+    const usableStash = stashed && !['League','Rankings','AdvancedLeague','Games'].includes(stashed);
     currentPhase = usableStash ? stashed : 'Passing';
   }
   renderContent();

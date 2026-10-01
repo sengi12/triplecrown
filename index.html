@@ -2534,7 +2534,17 @@ button.tc-keys-k:focus-visible{outline:2px solid var(--accent);outline-offset:2p
   .hdr-burger{display:none;}
   /* League Analyzer + Game Center have no use for the top header on a phone (the bottom bar
      is the nav) — drop it entirely and pad the content past the status bar instead. */
-  body.tc-noheader .header{display:none;}
+  /* League Analyzer + Game Center have no use for the top header on a phone (the bottom
+     bar is the nav) — collapse it to nothing. It must stay in the render tree, though: the
+     ☰ menu (a fixed bottom-sheet opened by the bottom bar's More button) lives inside the
+     header, and display:none would take the menu down with it. So zero the header's box and
+     hide every child except the chain that hosts the menu. */
+  body.tc-noheader .header{height:0;min-height:0;padding:0;border:0;overflow:visible;
+    box-shadow:none;background:none;}
+  body.tc-noheader .header > *{display:none;}
+  body.tc-noheader .header > .hdr-right{display:flex;}
+  body.tc-noheader .header .hdr-right > *{display:none;}
+  body.tc-noheader .header .hdr-right > .hdr-menu-wrap{display:inline-flex;}
   body.tc-noheader .content{padding-top:calc(10px + env(safe-area-inset-top, 0px));}
   .logo{font-size:0;gap:0;flex:none;}            /* icon only — the wordmark costs ~110px */
   .logo-icon{width:22px;height:22px;}
@@ -5317,6 +5327,11 @@ button.la-cliff:hover{filter:brightness(1.25);}
 #toast{z-index:var(--z-toast);bottom:calc(var(--rt-h,0px) + 16px);}
 .rt-bar-host{z-index:var(--z-bar);}
 .inj-pop{z-index:var(--z-pop);}
+/* On a phone the persistent bottom tab bar would hide toasts behind it — lift every
+   notification above the bar (and above the draft tracker when that's up too). */
+@media (max-width:760px){
+  #toast{bottom:calc(var(--rt-h,0px) + 70px + env(safe-area-inset-bottom, 0px));}
+}
 
 /* ── Tap-target floor for the small interactive chrome ──────────────────────── */
 .season-tab{min-height:28px;display:inline-flex;align-items:center;}
@@ -30660,7 +30675,9 @@ function closeAppMenu(){
 // loss of place.
 let _preLeagueView = null;
 function rememberProjectionsView(){
-  if(currentPhase==='League') return;   // already in the analyzer; don't overwrite the stash
+  // Only stash a real builder phase. A global view (the analyzer itself, or the Games tracker)
+  // must never land in the stash, or restoring it would trap the user back in that view.
+  if(currentPhase==='League' || currentPhase==='Games') return;
   _preLeagueView = {
     phase: currentPhase,
     team: currentTeam,
@@ -30675,7 +30692,7 @@ function showProjectionsView(){
     // currentTeam to still match silently discarded a valid stash whenever something
     // inside the analyzer touched the team, and the fallback then dumped users on the
     // full rankings ("← Projections" must mean the builder, not the rankings page).
-    if(v && v.phase && v.phase!=='League'){
+    if(v && v.phase && v.phase!=='League' && v.phase!=='Games'){
       if(v.team) currentTeam = v.team;
       currentPhase = v.phase;
       if(v.scope && typeof rankScope!=='undefined') rankScope = v.scope;
@@ -30704,7 +30721,7 @@ function showProjectionsView(){
   // projection builder phases instead of re-rendering the same global view.
   if(currentPhase==='Rankings' || currentPhase==='AdvancedLeague' || currentPhase==='Games'){
     const stashed = _preLeagueView && _preLeagueView.phase;
-    const usableStash = stashed && !['League','Rankings','AdvancedLeague'].includes(stashed);
+    const usableStash = stashed && !['League','Rankings','AdvancedLeague','Games'].includes(stashed);
     currentPhase = usableStash ? stashed : 'Passing';
   }
   renderContent();
