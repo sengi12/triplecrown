@@ -644,7 +644,7 @@ function syncAppChrome(){
   setCls(document.querySelector('.progress-wrap'), 'hidden-view', inLeague || inGames);
   // On a phone the bottom bar is the nav, so the whole top header is dead weight in the
   // League Analyzer and the Game Center — drop it there (CSS hides it only on phones).
-  if(document.body && document.body.classList) document.body.classList.toggle('tc-noheader', inLeague || inGames);
+  setCls(document.body, 'tc-noheader', inLeague || inGames);
   // The Game Center is a view now; its legacy slide-up sheet must stay closed everywhere else,
   // or it pops over the projections page / duplicates the leaders panel.
   if(!inGames && typeof _gcm!=='undefined' && _gcm && _gcm.open!=='closed'){
