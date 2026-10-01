@@ -144,6 +144,99 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gcm-sheet .gc-rec{white-space:nowrap;}
 .gcm-sheet .gc-logo{width:28px;height:28px;}
 @media (prefers-reduced-motion:reduce){ .gcm-sheet,.gcm-pill,.gcm-scrim{transition:none;} .gcm-dot{animation:none;} }
+
+/* ── Game Center as a full-page mobile view (bottom-bar "Games" tab) ─────────────
+   Reuses the sheet's phone layout, but in the normal content flow instead of a slide-up
+   overlay (the page scrolls, the bottom bar stays, nothing is locked), restyled to echo
+   Sleeper's modern game cards and hero. Only ever present on a phone. */
+.games-view{display:flex;flex-direction:column;min-height:0;}
+.games-view .gc{flex:1;min-height:0;display:flex;flex-direction:column;}
+.games-view .gc-head{padding:2px 2px 4px;}
+.games-view .gc-head .ld-title{font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+.games-view .gc-body{display:block;overflow:visible;}
+
+/* Game rail — rounded cards in a horizontal scroller (Sleeper's game nav). */
+.games-view .gc-list{display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding:6px 2px 10px;
+  border-right:none;border-bottom:none;scrollbar-width:none;overscroll-behavior-x:contain;}
+.games-view .gc-list::-webkit-scrollbar{display:none;}
+.games-view .gc-game,.games-view .gc-game.gc-pill{flex:0 0 auto;width:auto;min-width:134px;display:flex;
+  align-items:center;justify-content:space-between;gap:9px;padding:9px 12px;border-radius:14px;
+  border:1px solid var(--border);border-left:1px solid var(--border);background:var(--surface2);
+  box-shadow:0 1px 2px rgba(0,0,0,.25);transition:border-color .15s,box-shadow .15s;}
+.games-view .gc-game.gc-on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 3px 12px rgba(88,166,255,.22);}
+.games-view .gc-game.gc-in{border-color:rgba(248,81,73,.45);}
+.games-view .gc-pl,.games-view .gc-pr{font-size:14px;}
+.games-view .gc-glogo{width:22px;height:22px;}
+.games-view .gc-pmid{font-size:9px;}
+
+/* Hero — bigger, bolder, the two clubs' colours behind (Sleeper's game header). */
+.games-view .gc-detail{overflow:visible;}
+.games-view .gc-hero{padding:16px 14px 14px;border-radius:16px;margin:2px 0 10px;border-bottom:none;}
+.games-view .gc-hero-wm{font-size:58px;}
+.games-view .gc-logo{width:34px;height:34px;}
+.games-view .gc-team{font-size:18px;}
+.games-view .gc-score{font-size:36px;}
+.games-view .gc-status{font-size:9.5px;padding:4px 10px;}
+
+/* Odds strip + line score as clean rounded cards. */
+.games-view .gc-odds{border-radius:12px;border:1px solid var(--border);margin:0 0 10px;}
+.games-view .gcls-wrap{border:1px solid var(--border);border-radius:12px;background:var(--surface2);padding:2px 10px 5px;margin:4px 0 10px;}
+
+/* Segmented controls (Away | Fantasy | Home, Feed | Stats, Games | Live feed) — one pill group. */
+.games-view .gc-tabs,.games-view .gc-viewrow{background:var(--surface2);border:1px solid var(--border);border-radius:999px;padding:3px;gap:3px;margin:8px 0 10px;}
+.games-view .gc-tabs .gc-tab,.games-view .gc-viewrow .gc-vt{border:none;background:transparent;border-radius:999px;text-transform:none;letter-spacing:.02em;}
+.games-view .gc-tabs .gc-tab.active,.games-view .gc-viewrow .gc-vt.active{background:var(--text);color:var(--surface);}
+.games-view .gc-seg{margin:8px 0 10px;}
+
+/* Position group header — a centred badge between two dotted rules (Sleeper's QB/RB divider). */
+.games-view .gc-gh{display:flex;align-items:center;gap:10px;padding:12px 2px 6px;}
+.games-view .gc-gh::before,.games-view .gc-gh::after{content:"";flex:1;height:0;border-top:1px dotted var(--border2,#39414d);}
+
+/* Leaders inside the view. */
+.games-view .gcm-leaders{display:block;overflow:visible;}
+/* The full games view scrolls as one page (like the phone sheet). The desktop feed's inner
+   scroll window (.gc-detail:has(.gc-feedview){display:flex;overflow:hidden}) would otherwise
+   win here too — with no bounded height the flex:1 feed collapses and the live feed can't
+   scroll. Revert the detail pane to normal page flow so the whole view scrolls as one. */
+.games-view .gc-detail:has(.gc-feedview){display:block;overflow:visible;}
+.games-view .gc-feedview,.games-view .gc-feedview-head{display:block;flex:none;min-height:0;}
+.games-view .gc-feedview-feed{overflow:visible;min-height:0;}
+
+/* Week navigator — a horizontal rail of week pills (Sleeper's week slider). */
+.gc-wkrail{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 8px;overscroll-behavior-x:contain;}
+.gc-wkrail::-webkit-scrollbar{display:none;}
+.gc-wk{flex:0 0 auto;min-width:38px;display:inline-flex;align-items:center;justify-content:center;gap:4px;
+  border:1px solid var(--border);background:var(--surface2);color:var(--muted);font:inherit;font-size:12.5px;
+  font-weight:800;border-radius:999px;padding:7px 13px;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s,border-color .15s;}
+.gc-wk-cur{border-color:var(--border2);color:var(--text);}
+.gc-wk-on{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 2px 10px rgba(77,147,255,.3);}
+.gc-wk-dot{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.85;}
+
+/* Leaders as Sleeper-style player cards — stats under the name, tappable to sort. */
+.games-view .gcm-leaders .ld-list{display:flex;flex-direction:column;gap:8px;padding:4px 0 10px;}
+.games-view .ld-card{background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:10px 12px;cursor:pointer;transition:border-color .15s;}
+.games-view .ld-card:active{border-color:var(--accent);}
+.games-view .ld-card-top{display:flex;align-items:center;gap:10px;}
+.games-view .ld-card .ld-rank{font-size:12px;font-weight:900;color:var(--muted);min-width:16px;text-align:center;flex:none;}
+.games-view .ld-card .ld-hs{width:40px;height:40px;border-radius:50%;background:var(--surface3);object-fit:cover;flex:none;}
+.games-view .ld-card .ld-name{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}
+.games-view .ld-card .ld-nm{font-size:14.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.games-view .ld-card .ld-sub{font-size:11px;color:var(--muted);font-weight:700;}
+.games-view .ld-fpts{display:flex;flex-direction:column;align-items:center;gap:0;flex:none;border:1px solid var(--border);
+  background:var(--surface3);border-radius:11px;padding:4px 11px;cursor:pointer;font:inherit;transition:border-color .15s,background .15s;}
+.games-view .ld-fpts-l{font-size:8px;font-weight:900;letter-spacing:.08em;color:var(--muted);}
+.games-view .ld-fpts b{font-family:var(--mono);font-size:16px;font-weight:900;color:var(--text);line-height:1.1;}
+.games-view .ld-fpts.active{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 16%,var(--surface3));}
+.games-view .ld-fpts.active b{color:var(--accent);}
+.games-view .ld-card-stats{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin-top:9px;padding-top:9px;border-top:1px dotted var(--border2,#39414d);}
+.games-view .ld-card-stats::-webkit-scrollbar{display:none;}
+.games-view .ld-chip{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:52px;
+  border:none;background:none;font:inherit;cursor:pointer;padding:3px 6px;border-radius:9px;transition:background .15s;}
+.games-view .ld-chip-l{font-size:8.5px;font-weight:900;letter-spacing:.04em;color:var(--muted);white-space:nowrap;}
+.games-view .ld-chip-v{font-family:var(--mono);font-size:13.5px;font-weight:800;color:var(--text);}
+.games-view .ld-chip.active{background:color-mix(in srgb,var(--accent) 16%,transparent);}
+.games-view .ld-chip.active .ld-chip-l{color:var(--accent);}
+.games-view .ld-chip.active .ld-chip-v{color:var(--accent);}
 /* The selected team's score in the mobile team picker's toggle while its game is on. */
 .team-picker-live{display:inline-flex;align-items:center;gap:5px;margin-left:auto;padding-left:8px;font-family:var(--mono);font-size:10.5px;font-weight:800;color:var(--text);white-space:nowrap;flex:none;}
 .team-picker-live .team-picker-clock{font-family:var(--font);font-size:9px;font-weight:900;letter-spacing:.06em;color:var(--danger);}

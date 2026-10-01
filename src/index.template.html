@@ -14,7 +14,7 @@
 <link rel="icon" type="image/png" href="images/app-icon.png">
 <link rel="apple-touch-icon" href="images/app-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#0d1117">
+<meta name="theme-color" content="#0a0e17">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
@@ -91,6 +91,17 @@
     </div>
   </div>
 </div>
+<!-- Mobile primary navigation. On a phone the three top-level views (Projections / Rankings /
+     Leagues) used to hide behind the ☰ menu; a persistent bottom bar surfaces them the way
+     Sleeper does, within thumb reach. Hidden on desktop (the ☰ menu still drives views there).
+     Active state is kept in sync by syncAppChrome(). Search and More carry no active state. -->
+<nav class="tc-tabbar" id="tcTabbar" aria-label="Primary">
+  <button class="tc-tab" id="tabProj" onclick="showProjectionsView()" title="Projections" aria-label="Projections">@@ICON_chart@@<span class="tc-tab-lbl">Projections</span></button>
+  <button class="tc-tab" id="tabRank" onclick="showFullRankings()" title="Rankings" aria-label="Rankings">@@ICON_trophy@@<span class="tc-tab-lbl">Rankings</span></button>
+  <button class="tc-tab" id="tabLeague" onclick="openLeagueAnalyzer()" title="Leagues" aria-label="Leagues">@@ICON_stadium@@<span class="tc-tab-lbl">Leagues</span></button>
+  <button class="tc-tab" id="tabGames" onclick="showGamesView()" title="Games" aria-label="Games">@@ICON_scoreboard@@<span class="tc-tab-lbl">Games</span><span class="tc-tab-dot" aria-hidden="true"></span></button>
+  <button class="tc-tab" id="tabMore" onclick="toggleAppMenu(event)" title="More" aria-label="More">@@ICON_menu@@<span class="tc-tab-lbl">More</span></button>
+</nav>
 <div id="toast"></div>
 <input type="file" id="importFile" accept=".json" style="display:none" onchange="handleImport(event)">
 <!--@@SEED_UI@@-->

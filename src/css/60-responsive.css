@@ -29,7 +29,7 @@
   .team-item .team-rec{display:none;}
   .team-item.active{border-left-color:transparent;border-color:var(--accent);}
   .team-logo-sm{width:20px;height:20px;}
-  .content{padding:12px 12px calc(40px + env(safe-area-inset-bottom, 0px));height:auto;overflow-y:visible;overflow-x:hidden;}
+  .content{padding:12px 12px calc(70px + env(safe-area-inset-bottom, 0px));height:auto;overflow-y:visible;overflow-x:hidden;}
   .main{height:auto;}
   body,html{height:auto;overflow-y:auto;}
   /* Logo left, names right, on ONE row — the logo never sits on a line of its own. The nav
@@ -55,8 +55,15 @@
      menu onto its own full-width row, left-aligned and below the fold. Now that it's a
      single ☰, keep it on row 1 pinned right (margin-left:auto from the base rule).
      Layout: [icon] [scenario input — flexes] [progress] [☰], all inside the viewport. */
-  .header{gap:8px;padding:8px 12px;flex-wrap:nowrap;}
+  .header{gap:8px;padding:8px 12px;padding-top:calc(8px + env(safe-area-inset-top, 0px));flex-wrap:nowrap;}
   .hdr-right{width:auto;margin-left:auto;flex:none;flex-wrap:nowrap;}
+  /* The bottom bar's More button opens the menu now, so the top ☰ is redundant on a phone.
+     Hide the button only (not .hdr-menu-wrap) so #appMenu can still open as a bottom sheet. */
+  .hdr-burger{display:none;}
+  /* League Analyzer + Game Center have no use for the top header on a phone (the bottom bar
+     is the nav) — drop it entirely and pad the content past the status bar instead. */
+  body.tc-noheader .header{display:none;}
+  body.tc-noheader .content{padding-top:calc(10px + env(safe-area-inset-top, 0px));}
   .logo{font-size:0;gap:0;flex:none;}            /* icon only — the wordmark costs ~110px */
   .logo-icon{width:22px;height:22px;}
   .logo span{display:none;}
@@ -69,6 +76,17 @@
   .app-menu{min-width:200px;max-width:calc(100vw - 24px);}
   .scoring-grid{grid-template-columns:repeat(2,1fr)!important;}
   .share-stats{flex-wrap:wrap;gap:6px 10px;}
+  /* ── Share rows: the player's name must stay legible on a phone ────────────
+     The top row crams a lot in after the name (pace toggle, fpts tag, share %,
+     projected volume, two rank chips). On a narrow screen flex-shrink chewed the
+     name down to "D. Met…". Let the row wrap and hand the name most of the first
+     line, so every number flows onto the line beneath it instead of starving it.
+     With a full line to work with there's room for the whole name, not "F. Last". */
+  .share-row{flex-wrap:wrap;row-gap:4px;}
+  .share-row > .tc-nm-wrap{flex:1 1 72%;min-width:72%;}
+  .tc-nm-wrap .share-name{max-width:none;font-size:13px;font-weight:700;}
+  .tc-nm-wrap .share-name .nm-first{display:inline;}
+  .tc-nm-wrap .share-name .nm-init{display:none;}
   .rank-table{font-size:10px;}
   .format-btn,.pos-filter-btn{padding:5px 8px;font-size:10px;}
   .rank-search-wrap{width:100%;max-width:100%;}
@@ -83,6 +101,38 @@
   #seasonTabs{overflow-x:auto;scrollbar-width:none;}
   #seasonTabs::-webkit-scrollbar{display:none;}
 
+  /* ── Primary nav: persistent bottom tab bar (Sleeper-style) ───────────────
+     The three top-level views + Search + More, within thumb reach. Fixed to the
+     bottom and clearing the home-indicator inset; .content reserves room above. */
+  .tc-tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:300;
+    background:var(--surface);border-top:1px solid var(--border);
+    padding-bottom:env(safe-area-inset-bottom, 0px);
+    box-shadow:0 -4px 16px rgba(0,0,0,.28);}
+  .tc-tab{flex:1 1 0;min-width:0;position:relative;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:3px;padding:7px 2px 6px;border:none;background:none;
+    color:var(--muted2);cursor:pointer;font:inherit;-webkit-tap-highlight-color:transparent;}
+  .tc-tab .tc-ico{width:22px;height:22px;}
+  .tc-tab-lbl{font-size:9.5px;font-weight:800;letter-spacing:.2px;line-height:1;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+  .tc-tab.active{color:var(--accent);}
+  /* A clear top indicator bar on the active tab (the .tc-tab is position:relative). */
+  .tc-tab.active::before{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);
+    width:26px;height:3px;border-radius:0 0 3px 3px;background:var(--accent);}
+  .tc-tab:active{background:var(--surface2);}
+  /* Live-games dot on the Games tab (toggled by tcSyncGamesTab) — the glance the floating
+     pill used to give, now that the pill is hidden on mobile in favour of this tab. */
+  .tc-tab-dot{display:none;position:absolute;top:5px;left:calc(50% + 7px);width:7px;height:7px;
+    border-radius:50%;background:var(--danger);box-shadow:0 0 0 2px var(--surface);}
+  .tc-tab.tc-tab-live .tc-tab-dot{display:block;}
+  /* The Games tab replaces the floating pill as the way into the Game Center. */
+  .gcm-pill{display:none;}
+
+  /* The ☰ menu now opens from the bottom bar's More button — float it up as a bottom
+     sheet instead of anchoring to the header burger that's offscreen at the top. */
+  .app-menu{position:fixed;left:8px;right:8px;top:auto;
+    bottom:calc(60px + env(safe-area-inset-bottom, 0px));
+    min-width:0;max-width:none;max-height:60vh;overflow-y:auto;}
+
   /* Mobile safety: only the thumb is interactive. Touches that begin on the track
      should pass through for normal page scrolling without moving the slider value. */
   input.sl{pointer-events:none;}
@@ -94,12 +144,16 @@
 }
 @media (max-width: 420px){
   .stats-grid{grid-template-columns:1fr 1fr;}
-  .content{padding:9px 9px calc(40px + env(safe-area-inset-bottom, 0px));}
+  .content{padding:9px 9px calc(70px + env(safe-area-inset-bottom, 0px));}
   .card{padding:11px;}
   /* Names abbreviate to "F. Lastname" here (tcShareNameHtml), so a roomier cap still fits the
      row while letting longer last names (A. St. Brown) show in full. */
   .share-name{max-width:120px;}
 }
+/* The bottom tab bar is mobile-only chrome; the ☰ menu drives view switching on desktop.
+   Scoped to desktop so it never competes with the mobile `display:flex` rule above (equal
+   specificity — an unconditional hide would win by source order and blank the bar on phones). */
+@media (min-width: 761px){ .tc-tabbar{display:none;} }
 /* Make the app usable in both orientations and avoid horizontal page scroll */
 *{-webkit-tap-highlight-color:transparent;}
 /* Global guard against horizontal page scroll: a single too-wide child otherwise makes the

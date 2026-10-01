@@ -240,6 +240,7 @@ function renderContent(){
   if(currentPhase==='Rankings'){renderRankings();return;}
   if(currentPhase==='AdvancedLeague'){renderSharpLeague();return;}
   if(currentPhase==='League'){renderLeagueAnalyzer();return;}
+  if(currentPhase==='Games'){ if(typeof renderGamesView==='function') renderGamesView(); return; }
   if(!currentTeam){document.getElementById('content').innerHTML=emptyHTML();return;}
   const t=currentTeam,state=userProj[t];
   const tabs=tabBar();

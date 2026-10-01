@@ -89,7 +89,7 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(/gcm-tabs/.test(h) && /gcmSetTab\('games'\)[^>]*class="ld-pos active"|ld-pos active"[^>]*onclick="gcmSetTab\('games'\)"/.test(h.replace(/class="ld-pos active" onclick/g,'onclick="x" class="ld-pos active" onclick')) || /gcm-tabs[\s\S]*Games[\s\S]*Leaders/.test(h), 'the sheet carries Games | Leaders tabs, Games first');
   app.tab('leaders'); await settle(); await settle(); await settle(); h=app.html();
   chk(/gcm-leaders/.test(h) && /ld-title">Leaders</.test(h) && /ld-posrow/.test(h) && /ldSetPos\('QB'\)/.test(h), 'Leaders: the same panel as the desktop sidebar — position filters and the week dropdown');
-  chk(/ld-row/.test(h) && /ld-pts">/.test(h) && /Mayfield|Burrow/.test(h), 'ranked rows with points, from the same Sleeper week rows');
+  chk((/ld-card/.test(h) ? (/ld-fpts/.test(h) && /ld-chip/.test(h)) : (/ld-row/.test(h) && /ld-pts">/.test(h))) && /Mayfield|Burrow/.test(h), 'ranked players with points (Sleeper-style cards on a phone), from the same Sleeper week rows');
   chk(!/gcm-x/.test(h) && !/rsb-btns/.test(h), 'no close button and no size buttons: the handle and the scrim close the sheet');
   app.ldPos('QB'); await settle(); h=app.html();
   chk(/gcm-leaders/.test(h) && /ld-pos active"[^>]*>QB</.test(h) && !/Irving/.test(h), 'a position filter repaints the drawer, not the hidden sidebar');

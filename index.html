@@ -14,20 +14,20 @@
 <link rel="icon" type="image/png" href="images/app-icon.png">
 <link rel="apple-touch-icon" href="images/app-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#0d1117">
+<meta name="theme-color" content="#0a0e17">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
 
 :root{
-  --bg:#0d1117;--surface:#161b22;--surface2:#1c2330;--surface3:#212936;
-  --border:#2d3748;--border2:#374151;
-  --accent:#3d9bff;--accent2:#4a9eff;
-  --text:#e6edf3;--muted:#7d8590;--muted2:#9ca3af;
+  --bg:#0a0e17;--surface:#121724;--surface2:#19202e;--surface3:#232c3c;
+  --border:#283244;--border2:#394559;
+  --accent:#4d93ff;--accent2:#5aa0ff;
+  --text:#eaf0f7;--muted:#8591a3;--muted2:#9fb0c3;
   --qb:#ff4d6a;--wr:#56a5ff;--rb:#00cf9f;--te:#ffc94d;--k:#a855f7;--def:#b98a63;
   --danger:#f85149;--success:#3fb950;--warn:#d29922;--info:#4a9eff;
-  --font:'SF Pro Display','Segoe UI',system-ui,sans-serif;
-  --mono:'SF Mono','Fira Code',monospace;
+  --font:'Inter','SF Pro Display','Segoe UI Variable','Segoe UI',system-ui,-apple-system,Roboto,sans-serif;
+  --mono:'SF Mono','Fira Code','JetBrains Mono',ui-monospace,monospace;
   /* Design tokens (UI system — see 95-ui-system.css). Radius + tracking + z ladder. */
   --r-sm:6px;--r-md:9px;--r-lg:12px;--r-xl:16px;
   --tracking-label:.05em;
@@ -1514,6 +1514,99 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gcm-sheet .gc-rec{white-space:nowrap;}
 .gcm-sheet .gc-logo{width:28px;height:28px;}
 @media (prefers-reduced-motion:reduce){ .gcm-sheet,.gcm-pill,.gcm-scrim{transition:none;} .gcm-dot{animation:none;} }
+
+/* ── Game Center as a full-page mobile view (bottom-bar "Games" tab) ─────────────
+   Reuses the sheet's phone layout, but in the normal content flow instead of a slide-up
+   overlay (the page scrolls, the bottom bar stays, nothing is locked), restyled to echo
+   Sleeper's modern game cards and hero. Only ever present on a phone. */
+.games-view{display:flex;flex-direction:column;min-height:0;}
+.games-view .gc{flex:1;min-height:0;display:flex;flex-direction:column;}
+.games-view .gc-head{padding:2px 2px 4px;}
+.games-view .gc-head .ld-title{font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+.games-view .gc-body{display:block;overflow:visible;}
+
+/* Game rail — rounded cards in a horizontal scroller (Sleeper's game nav). */
+.games-view .gc-list{display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding:6px 2px 10px;
+  border-right:none;border-bottom:none;scrollbar-width:none;overscroll-behavior-x:contain;}
+.games-view .gc-list::-webkit-scrollbar{display:none;}
+.games-view .gc-game,.games-view .gc-game.gc-pill{flex:0 0 auto;width:auto;min-width:134px;display:flex;
+  align-items:center;justify-content:space-between;gap:9px;padding:9px 12px;border-radius:14px;
+  border:1px solid var(--border);border-left:1px solid var(--border);background:var(--surface2);
+  box-shadow:0 1px 2px rgba(0,0,0,.25);transition:border-color .15s,box-shadow .15s;}
+.games-view .gc-game.gc-on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 3px 12px rgba(88,166,255,.22);}
+.games-view .gc-game.gc-in{border-color:rgba(248,81,73,.45);}
+.games-view .gc-pl,.games-view .gc-pr{font-size:14px;}
+.games-view .gc-glogo{width:22px;height:22px;}
+.games-view .gc-pmid{font-size:9px;}
+
+/* Hero — bigger, bolder, the two clubs' colours behind (Sleeper's game header). */
+.games-view .gc-detail{overflow:visible;}
+.games-view .gc-hero{padding:16px 14px 14px;border-radius:16px;margin:2px 0 10px;border-bottom:none;}
+.games-view .gc-hero-wm{font-size:58px;}
+.games-view .gc-logo{width:34px;height:34px;}
+.games-view .gc-team{font-size:18px;}
+.games-view .gc-score{font-size:36px;}
+.games-view .gc-status{font-size:9.5px;padding:4px 10px;}
+
+/* Odds strip + line score as clean rounded cards. */
+.games-view .gc-odds{border-radius:12px;border:1px solid var(--border);margin:0 0 10px;}
+.games-view .gcls-wrap{border:1px solid var(--border);border-radius:12px;background:var(--surface2);padding:2px 10px 5px;margin:4px 0 10px;}
+
+/* Segmented controls (Away | Fantasy | Home, Feed | Stats, Games | Live feed) — one pill group. */
+.games-view .gc-tabs,.games-view .gc-viewrow{background:var(--surface2);border:1px solid var(--border);border-radius:999px;padding:3px;gap:3px;margin:8px 0 10px;}
+.games-view .gc-tabs .gc-tab,.games-view .gc-viewrow .gc-vt{border:none;background:transparent;border-radius:999px;text-transform:none;letter-spacing:.02em;}
+.games-view .gc-tabs .gc-tab.active,.games-view .gc-viewrow .gc-vt.active{background:var(--text);color:var(--surface);}
+.games-view .gc-seg{margin:8px 0 10px;}
+
+/* Position group header — a centred badge between two dotted rules (Sleeper's QB/RB divider). */
+.games-view .gc-gh{display:flex;align-items:center;gap:10px;padding:12px 2px 6px;}
+.games-view .gc-gh::before,.games-view .gc-gh::after{content:"";flex:1;height:0;border-top:1px dotted var(--border2,#39414d);}
+
+/* Leaders inside the view. */
+.games-view .gcm-leaders{display:block;overflow:visible;}
+/* The full games view scrolls as one page (like the phone sheet). The desktop feed's inner
+   scroll window (.gc-detail:has(.gc-feedview){display:flex;overflow:hidden}) would otherwise
+   win here too — with no bounded height the flex:1 feed collapses and the live feed can't
+   scroll. Revert the detail pane to normal page flow so the whole view scrolls as one. */
+.games-view .gc-detail:has(.gc-feedview){display:block;overflow:visible;}
+.games-view .gc-feedview,.games-view .gc-feedview-head{display:block;flex:none;min-height:0;}
+.games-view .gc-feedview-feed{overflow:visible;min-height:0;}
+
+/* Week navigator — a horizontal rail of week pills (Sleeper's week slider). */
+.gc-wkrail{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:2px 2px 8px;overscroll-behavior-x:contain;}
+.gc-wkrail::-webkit-scrollbar{display:none;}
+.gc-wk{flex:0 0 auto;min-width:38px;display:inline-flex;align-items:center;justify-content:center;gap:4px;
+  border:1px solid var(--border);background:var(--surface2);color:var(--muted);font:inherit;font-size:12.5px;
+  font-weight:800;border-radius:999px;padding:7px 13px;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s,border-color .15s;}
+.gc-wk-cur{border-color:var(--border2);color:var(--text);}
+.gc-wk-on{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 2px 10px rgba(77,147,255,.3);}
+.gc-wk-dot{width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.85;}
+
+/* Leaders as Sleeper-style player cards — stats under the name, tappable to sort. */
+.games-view .gcm-leaders .ld-list{display:flex;flex-direction:column;gap:8px;padding:4px 0 10px;}
+.games-view .ld-card{background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:10px 12px;cursor:pointer;transition:border-color .15s;}
+.games-view .ld-card:active{border-color:var(--accent);}
+.games-view .ld-card-top{display:flex;align-items:center;gap:10px;}
+.games-view .ld-card .ld-rank{font-size:12px;font-weight:900;color:var(--muted);min-width:16px;text-align:center;flex:none;}
+.games-view .ld-card .ld-hs{width:40px;height:40px;border-radius:50%;background:var(--surface3);object-fit:cover;flex:none;}
+.games-view .ld-card .ld-name{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;}
+.games-view .ld-card .ld-nm{font-size:14.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.games-view .ld-card .ld-sub{font-size:11px;color:var(--muted);font-weight:700;}
+.games-view .ld-fpts{display:flex;flex-direction:column;align-items:center;gap:0;flex:none;border:1px solid var(--border);
+  background:var(--surface3);border-radius:11px;padding:4px 11px;cursor:pointer;font:inherit;transition:border-color .15s,background .15s;}
+.games-view .ld-fpts-l{font-size:8px;font-weight:900;letter-spacing:.08em;color:var(--muted);}
+.games-view .ld-fpts b{font-family:var(--mono);font-size:16px;font-weight:900;color:var(--text);line-height:1.1;}
+.games-view .ld-fpts.active{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 16%,var(--surface3));}
+.games-view .ld-fpts.active b{color:var(--accent);}
+.games-view .ld-card-stats{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin-top:9px;padding-top:9px;border-top:1px dotted var(--border2,#39414d);}
+.games-view .ld-card-stats::-webkit-scrollbar{display:none;}
+.games-view .ld-chip{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:52px;
+  border:none;background:none;font:inherit;cursor:pointer;padding:3px 6px;border-radius:9px;transition:background .15s;}
+.games-view .ld-chip-l{font-size:8.5px;font-weight:900;letter-spacing:.04em;color:var(--muted);white-space:nowrap;}
+.games-view .ld-chip-v{font-family:var(--mono);font-size:13.5px;font-weight:800;color:var(--text);}
+.games-view .ld-chip.active{background:color-mix(in srgb,var(--accent) 16%,transparent);}
+.games-view .ld-chip.active .ld-chip-l{color:var(--accent);}
+.games-view .ld-chip.active .ld-chip-v{color:var(--accent);}
 /* The selected team's score in the mobile team picker's toggle while its game is on. */
 .team-picker-live{display:inline-flex;align-items:center;gap:5px;margin-left:auto;padding-left:8px;font-family:var(--mono);font-size:10.5px;font-weight:800;color:var(--text);white-space:nowrap;flex:none;}
 .team-picker-live .team-picker-clock{font-family:var(--font);font-size:9px;font-weight:900;letter-spacing:.06em;color:var(--danger);}
@@ -2408,7 +2501,7 @@ button.tc-keys-k:focus-visible{outline:2px solid var(--accent);outline-offset:2p
   .team-item .team-rec{display:none;}
   .team-item.active{border-left-color:transparent;border-color:var(--accent);}
   .team-logo-sm{width:20px;height:20px;}
-  .content{padding:12px 12px calc(40px + env(safe-area-inset-bottom, 0px));height:auto;overflow-y:visible;overflow-x:hidden;}
+  .content{padding:12px 12px calc(70px + env(safe-area-inset-bottom, 0px));height:auto;overflow-y:visible;overflow-x:hidden;}
   .main{height:auto;}
   body,html{height:auto;overflow-y:auto;}
   /* Logo left, names right, on ONE row — the logo never sits on a line of its own. The nav
@@ -2434,8 +2527,15 @@ button.tc-keys-k:focus-visible{outline:2px solid var(--accent);outline-offset:2p
      menu onto its own full-width row, left-aligned and below the fold. Now that it's a
      single ☰, keep it on row 1 pinned right (margin-left:auto from the base rule).
      Layout: [icon] [scenario input — flexes] [progress] [☰], all inside the viewport. */
-  .header{gap:8px;padding:8px 12px;flex-wrap:nowrap;}
+  .header{gap:8px;padding:8px 12px;padding-top:calc(8px + env(safe-area-inset-top, 0px));flex-wrap:nowrap;}
   .hdr-right{width:auto;margin-left:auto;flex:none;flex-wrap:nowrap;}
+  /* The bottom bar's More button opens the menu now, so the top ☰ is redundant on a phone.
+     Hide the button only (not .hdr-menu-wrap) so #appMenu can still open as a bottom sheet. */
+  .hdr-burger{display:none;}
+  /* League Analyzer + Game Center have no use for the top header on a phone (the bottom bar
+     is the nav) — drop it entirely and pad the content past the status bar instead. */
+  body.tc-noheader .header{display:none;}
+  body.tc-noheader .content{padding-top:calc(10px + env(safe-area-inset-top, 0px));}
   .logo{font-size:0;gap:0;flex:none;}            /* icon only — the wordmark costs ~110px */
   .logo-icon{width:22px;height:22px;}
   .logo span{display:none;}
@@ -2448,6 +2548,17 @@ button.tc-keys-k:focus-visible{outline:2px solid var(--accent);outline-offset:2p
   .app-menu{min-width:200px;max-width:calc(100vw - 24px);}
   .scoring-grid{grid-template-columns:repeat(2,1fr)!important;}
   .share-stats{flex-wrap:wrap;gap:6px 10px;}
+  /* ── Share rows: the player's name must stay legible on a phone ────────────
+     The top row crams a lot in after the name (pace toggle, fpts tag, share %,
+     projected volume, two rank chips). On a narrow screen flex-shrink chewed the
+     name down to "D. Met…". Let the row wrap and hand the name most of the first
+     line, so every number flows onto the line beneath it instead of starving it.
+     With a full line to work with there's room for the whole name, not "F. Last". */
+  .share-row{flex-wrap:wrap;row-gap:4px;}
+  .share-row > .tc-nm-wrap{flex:1 1 72%;min-width:72%;}
+  .tc-nm-wrap .share-name{max-width:none;font-size:13px;font-weight:700;}
+  .tc-nm-wrap .share-name .nm-first{display:inline;}
+  .tc-nm-wrap .share-name .nm-init{display:none;}
   .rank-table{font-size:10px;}
   .format-btn,.pos-filter-btn{padding:5px 8px;font-size:10px;}
   .rank-search-wrap{width:100%;max-width:100%;}
@@ -2462,6 +2573,38 @@ button.tc-keys-k:focus-visible{outline:2px solid var(--accent);outline-offset:2p
   #seasonTabs{overflow-x:auto;scrollbar-width:none;}
   #seasonTabs::-webkit-scrollbar{display:none;}
 
+  /* ── Primary nav: persistent bottom tab bar (Sleeper-style) ───────────────
+     The three top-level views + Search + More, within thumb reach. Fixed to the
+     bottom and clearing the home-indicator inset; .content reserves room above. */
+  .tc-tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:300;
+    background:var(--surface);border-top:1px solid var(--border);
+    padding-bottom:env(safe-area-inset-bottom, 0px);
+    box-shadow:0 -4px 16px rgba(0,0,0,.28);}
+  .tc-tab{flex:1 1 0;min-width:0;position:relative;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:3px;padding:7px 2px 6px;border:none;background:none;
+    color:var(--muted2);cursor:pointer;font:inherit;-webkit-tap-highlight-color:transparent;}
+  .tc-tab .tc-ico{width:22px;height:22px;}
+  .tc-tab-lbl{font-size:9.5px;font-weight:800;letter-spacing:.2px;line-height:1;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+  .tc-tab.active{color:var(--accent);}
+  /* A clear top indicator bar on the active tab (the .tc-tab is position:relative). */
+  .tc-tab.active::before{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);
+    width:26px;height:3px;border-radius:0 0 3px 3px;background:var(--accent);}
+  .tc-tab:active{background:var(--surface2);}
+  /* Live-games dot on the Games tab (toggled by tcSyncGamesTab) — the glance the floating
+     pill used to give, now that the pill is hidden on mobile in favour of this tab. */
+  .tc-tab-dot{display:none;position:absolute;top:5px;left:calc(50% + 7px);width:7px;height:7px;
+    border-radius:50%;background:var(--danger);box-shadow:0 0 0 2px var(--surface);}
+  .tc-tab.tc-tab-live .tc-tab-dot{display:block;}
+  /* The Games tab replaces the floating pill as the way into the Game Center. */
+  .gcm-pill{display:none;}
+
+  /* The ☰ menu now opens from the bottom bar's More button — float it up as a bottom
+     sheet instead of anchoring to the header burger that's offscreen at the top. */
+  .app-menu{position:fixed;left:8px;right:8px;top:auto;
+    bottom:calc(60px + env(safe-area-inset-bottom, 0px));
+    min-width:0;max-width:none;max-height:60vh;overflow-y:auto;}
+
   /* Mobile safety: only the thumb is interactive. Touches that begin on the track
      should pass through for normal page scrolling without moving the slider value. */
   input.sl{pointer-events:none;}
@@ -2473,12 +2616,16 @@ button.tc-keys-k:focus-visible{outline:2px solid var(--accent);outline-offset:2p
 }
 @media (max-width: 420px){
   .stats-grid{grid-template-columns:1fr 1fr;}
-  .content{padding:9px 9px calc(40px + env(safe-area-inset-bottom, 0px));}
+  .content{padding:9px 9px calc(70px + env(safe-area-inset-bottom, 0px));}
   .card{padding:11px;}
   /* Names abbreviate to "F. Lastname" here (tcShareNameHtml), so a roomier cap still fits the
      row while letting longer last names (A. St. Brown) show in full. */
   .share-name{max-width:120px;}
 }
+/* The bottom tab bar is mobile-only chrome; the ☰ menu drives view switching on desktop.
+   Scoped to desktop so it never competes with the mobile `display:flex` rule above (equal
+   specificity — an unconditional hide would win by source order and blank the bar on phones). */
+@media (min-width: 761px){ .tc-tabbar{display:none;} }
 /* Make the app usable in both orientations and avoid horizontal page scroll */
 *{-webkit-tap-highlight-color:transparent;}
 /* Global guard against horizontal page scroll: a single too-wide child otherwise makes the
@@ -5539,6 +5686,17 @@ input.sl::-moz-range-thumb{width:18px;height:18px;border:2.5px solid var(--surfa
     </div>
   </div>
 </div>
+<!-- Mobile primary navigation. On a phone the three top-level views (Projections / Rankings /
+     Leagues) used to hide behind the ☰ menu; a persistent bottom bar surfaces them the way
+     Sleeper does, within thumb reach. Hidden on desktop (the ☰ menu still drives views there).
+     Active state is kept in sync by syncAppChrome(). Search and More carry no active state. -->
+<nav class="tc-tabbar" id="tcTabbar" aria-label="Primary">
+  <button class="tc-tab" id="tabProj" onclick="showProjectionsView()" title="Projections" aria-label="Projections"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6"/></svg><span class="tc-tab-lbl">Projections</span></button>
+  <button class="tc-tab" id="tabRank" onclick="showFullRankings()" title="Rankings" aria-label="Rankings"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" fill="currentColor" stroke="none"/><path d="M8 5H5.5A2.5 2.5 0 0 0 8 8.5M16 5h2.5A2.5 2.5 0 0 1 16 8.5"/><path d="M12 13v3M9 20h6M10 20v-1.5a2 2 0 0 1 4 0V20"/></svg><span class="tc-tab-lbl">Rankings</span></button>
+  <button class="tc-tab" id="tabLeague" onclick="openLeagueAnalyzer()" title="Leagues" aria-label="Leagues"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="6"/><ellipse cx="12" cy="12" rx="5.5" ry="3"/></svg><span class="tc-tab-lbl">Leagues</span></button>
+  <button class="tc-tab" id="tabGames" onclick="showGamesView()" title="Games" aria-label="Games"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="11" rx="1.5"/><path d="M12 4v11M6.5 8h3M14.5 8h3M6.5 11.5h3M14.5 11.5h3M12 15v3M8 20h8"/></svg><span class="tc-tab-lbl">Games</span><span class="tc-tab-dot" aria-hidden="true"></span></button>
+  <button class="tc-tab" id="tabMore" onclick="toggleAppMenu(event)" title="More" aria-label="More"><svg viewBox="0 0 24 24" class="tc-ico" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span class="tc-tab-lbl">More</span></button>
+</nav>
 <div id="toast"></div>
 <input type="file" id="importFile" accept=".json" style="display:none" onchange="handleImport(event)">
 <script>
@@ -5768,6 +5926,7 @@ const TC_ICON = (() => {
             '<path d="M13 12l2.9 2.1-1.1 3.2"/>' +              // front leg, knee up
             '<path d="M13 12l-2.5 4.3-2 3.2"/>',                // trailing leg
     football:'<path d="M4 12c0-4 4-8 8-8s8 4 8 8-4 8-8 8-8-4-8-8Z"/><path d="M8 8s2 4 2 8M16 8s-2 4-2 8M9 12h6"/>',
+    scoreboard:'<rect x="3" y="4" width="18" height="11" rx="1.5"/><path d="M12 4v11M6.5 8h3M14.5 8h3M6.5 11.5h3M14.5 11.5h3M12 15v3M8 20h8"/>',
     export: '<path d="M12 15V4M8 8l4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/>',
     download:'<path d="M12 4v11M8 11l4 4 4-4M5 20h14"/>',
     globe:  '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4a12 12 0 0 1 0 16 12 12 0 0 1 0-16Z"/>',
@@ -9868,6 +10027,7 @@ function renderContent(){
   if(currentPhase==='Rankings'){renderRankings();return;}
   if(currentPhase==='AdvancedLeague'){renderSharpLeague();return;}
   if(currentPhase==='League'){renderLeagueAnalyzer();return;}
+  if(currentPhase==='Games'){ if(typeof renderGamesView==='function') renderGamesView(); return; }
   if(!currentTeam){document.getElementById('content').innerHTML=emptyHTML();return;}
   const t=currentTeam,state=userProj[t];
   const tabs=tabBar();
@@ -10102,7 +10262,10 @@ function ldRowsHTML(width, phone){
   const recs=_ld.rows||[];
   const pos=_ld.pos;
   width=width||200;
-  const cols=ldColsFor(width, phone), full=width>=(phone?LD_PHONE_FULL_W:LD_FULL_W);
+  // On a phone the stats live under each player (Sleeper-style cards), so every stat column
+  // for the position is available; the desktop sidebar fits as many as its width allows.
+  const cols = phone ? (LD_COLS[pos==='ROOKIE'?'ALL':pos] || LD_COLS.ALL) : ldColsFor(width, phone);
+  const full = phone ? true : width>=LD_FULL_W;
   const sortKey=(_ld.sort!=='pts' && cols.some(c=>c[0]===_ld.sort)) ? _ld.sort : 'pts';
   const list=recs.filter(r=> pos==='ALL' ? true : pos==='ROOKIE' ? ldRookie(r.pid) : r.pos===pos)
     .map(r=>({r, pts:ldPoints(r)})).filter(x=>x.pts>0)
@@ -10110,6 +10273,23 @@ function ldRowsHTML(width, phone){
     .slice(0, LD_TOP);
   if(!list.length) return `<div class="ld-empty">${_ld.rows?'nothing yet this week':'loading…'}</div>`;
   const bafl=(typeof scoringSettings!=='undefined' && scoringSettings.baflMode);
+  // Phone: each player a card — headshot + name + a boxed FPTS on top, the position's stats as
+  // tappable chips underneath; tapping a chip (or FPTS) re-sorts with the leaders on top.
+  if(phone){
+    return list.map((x,i)=>{
+      const mineCls=(typeof gcSideClass==='function')?gcSideClass(x.r.pid).replace('gc-','ld-'):((typeof gcIsMine==='function' && gcIsMine(x.r.pid))?' ld-mine':'');
+      const chips=cols.map(c=>`<button class="ld-chip ${sortKey===c[0]?'active':''}" onclick="event.stopPropagation();ldSort('${c[0]}')" title="Sort by ${escAttr(c[1])}"><span class="ld-chip-l">${escHtml(c[1])}</span><span class="ld-chip-v">${escHtml(ldStatText(x.r,c[0]))}</span></button>`).join('');
+      return `<div class="ld-card" onclick="${pcardOnclick(x.r.pid, x.r.pos, x.r.team||'')}">
+        <div class="ld-card-top">
+          <span class="ld-rank">${i+1}</span>
+          <img class="ld-hs" src="${SLEEPER_HEADSHOT(x.r.pid)}" loading="lazy" decoding="async" onerror="this.style.visibility='hidden'">
+          <span class="ld-name"><span class="ld-nm${mineCls}">${escHtml(x.r.name)}</span><span class="ld-sub"><span class="la-pos-${escAttr(x.r.pos)}">${escHtml(x.r.pos)}</span> ${escHtml(x.r.team||'FA')}</span></span>
+          <button class="ld-fpts ${sortKey==='pts'?'active':''}" onclick="event.stopPropagation();ldSort('pts')" title="Sort by points"><span class="ld-fpts-l">FPTS</span><b>${bafl?x.pts.toFixed(1):x.pts.toFixed(2)}</b></button>
+        </div>
+        <div class="ld-card-stats">${chips}</div>
+      </div>`;
+    }).join('');
+  }
   const head = cols.length ? `<div class="ld-row ld-hdr"><span class="ld-rank"></span><span class="ld-hs-sp"></span><span class="ld-name">Player</span>
     ${cols.map(c=>`<button class="ld-col ld-colh ${sortKey===c[0]?'active':''}" onclick="event.stopPropagation();ldSort('${c[0]}')" title="Sort by ${escAttr(c[1])}">${c[1].split(' ').map(w=>`<span>${escHtml(w)}</span>`).join('')}</button>`).join('')}
     <button class="ld-pts ld-colh ${sortKey==='pts'?'active':''}" onclick="event.stopPropagation();ldSort('pts')" title="Sort by points">PTS</button></div>` : '';
@@ -10144,6 +10324,8 @@ function ldPhoneOpen(){
   return typeof gcPhoneOn==='function' && gcPhoneOn() && typeof _gcm!=='undefined' && _gcm && _gcm.open!=='closed' && _gcm.tab==='leaders';
 }
 function renderLeaders(fromLoad){
+  // The Game Center is a full view now; refresh it in place rather than the retired sheet.
+  if(typeof gcInGamesView==='function' && gcInGamesView()){ if(typeof renderGamesView==='function'){ renderGamesView(); return; } }
   if(ldPhoneOpen()){ if(typeof renderGamesPhone==='function') renderGamesPhone(fromLoad); return; }
   const el=ldHost(); if(!el) return;
   if(!ldOn()){ el.hidden=true; if(_ld.timer){ clearTimeout(_ld.timer); _ld.timer=null; } return; }
@@ -10180,7 +10362,7 @@ function gcSetMode(m){ if(!GC_MODES.includes(m)) return; _gc.mode=m; try{ localS
 function gcSetWeek(v){ _gc.week = v==='current' ? 'current' : Number(v); _gc.game=null; renderRightSidebar(); }
 // Picking a game from the phone's half-open sheet also pulls the sheet up: the game list is
 // the half state's point, the picked game's lines are the full state's.
-function gcPick(id){ _gc.game=id; if(typeof _gcm!=='undefined' && _gcm.open==='half') _gcm.open='full'; renderRightSidebar(); }
+function gcPick(id){ _gc.game=id; if(!gcInGamesView() && typeof _gcm!=='undefined' && _gcm.open==='half') _gcm.open='full'; renderRightSidebar(); }
 // "Now" is the tracker's week: the finished week holds through Tuesday and until Wednesday
 // 06:00 Eastern (tcTrackerWeek), so Tuesday's look still opens on everything that happened.
 function gcCurWeek(){ return (typeof tcTrackerWeek==='function') ? tcTrackerWeek() : Math.max(1, Number(TC_SEASON.week||1)); }
@@ -10533,6 +10715,18 @@ function gcListHTML(games, picked){
     <span class="gc-pr">${g.state==='pre'?'':`<b class="${g.state==='post'&&g.hs>g.as?'gc-won':''}">${g.hs!=null?g.hs:'–'}</b>`}<img src="${NFL_LOGO(g.home)}" class="gc-glogo" onerror="this.style.display='none'"></span>
   </div>`).join('');
 }
+// Phone Game Center week navigator — a horizontal rail of week pills (Sleeper's week slider):
+// the viewed week filled accent, the live week marked with a dot. Tapping jumps the board.
+function gcWeekRailHTML(){
+  const cur=gcCurWeek(), wk=gcWeek(), last=gcLastWeek();
+  let out='';
+  for(let w=1; w<=last; w++){
+    const lbl = w<=18 ? String(w) : String(gcWeekLabel(w)||('W'+w)).replace(/^Week\s*/,'');
+    const on = w===wk, isCur = w===cur;
+    out += `<button class="gc-wk${on?' gc-wk-on':''}${isCur?' gc-wk-cur':''}" onclick="gcSetWeek(${w===cur?"'current'":w})"${on?' aria-current="true"':''} title="${escAttr(gcWeekLabel(w))}">${escHtml(lbl)}${isCur?'<span class="gc-wk-dot"></span>':''}</button>`;
+  }
+  return `<div class="gc-wkrail">${out}</div>`;
+}
 // The panel. `phone` swaps the sidebar's size buttons for the sheet's close button; the
 // markup is otherwise the same in both homes (the sheet's CSS turns the list into a rail).
 function gcHTML(phone){
@@ -10543,6 +10737,7 @@ function gcHTML(phone){
   const game=games ? games.find(g=>g.id===_gc.game) : null;
   const rows=gcRows(wk);
   const sel=`<select class="ld-sel" onchange="gcSetWeek(this.value)">${gcWeekOptions(cur).map(w=>`<option value="${w===cur?'current':w}" ${wk===w?'selected':''}>${gcWeekLabel(w)}${w===cur?' · now':w===cur+1?' · next':w>cur?' · upcoming':''}</option>`).join('')}</select>`;
+  const weekNav = phone ? gcWeekRailHTML() : '';
   const lgE=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
   const fmt=gcScoring() ? escHtml((lgE && lgE.name) || (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) || 'league scoring') : 'TripleCrown · Sleeper for K/DEF/IDP';
   // No position filter row here: the fantasy pane already groups every position, and a
@@ -10557,8 +10752,9 @@ function gcHTML(phone){
     </div>`;
   }
   return `<div class="gc">
-    <div class="gc-head"><div class="sidebar-section ld-title">Game Center</div>${sel}${btns}</div>
+    <div class="gc-head"><div class="sidebar-section ld-title">Game Center</div>${phone?'':sel}${btns}</div>
     ${gcViewRowHTML()}
+    ${weekNav}
     <div class="ld-fmt" title="Points under this scoring">${fmt}</div>
     <div class="gc-body"><div class="gc-list">${gcListHTML(games, _gc.game)}</div><div class="gc-detail">${game ? gcGameHTML(game, rows, wk) : (games && !games.length ? '<div class="ld-empty">no games this week</div>' : '')}</div></div>
   </div>`;
@@ -10573,6 +10769,7 @@ function rsbButtonsHTML(){
 // instead (every repaint funnels through here, the live timers included, so both homes stay
 // current from one place).
 function renderRightSidebar(){
+  if(gcInGamesView()){ renderGamesView(); return; }
   try{ renderGamesPhone(); }catch(e){}
   const el=(typeof ldHost==='function')?ldHost():null; if(!el) return;
   if(typeof ldOn==='function' && !ldOn()){ el.hidden=true; return; }
@@ -10694,8 +10891,59 @@ function gcmBindSwipe(sheet){
   sheet.addEventListener('touchcancel', end, {passive:true});
 }
 // The picker bar's live line and the pill both open straight to a game.
-function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; _gcm.open='full'; renderGamesPhone(); }
-// The current week's games, whatever week the sheet is showing — the pill reads the present.
+function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; if(gcInGamesView()){ renderGamesView(); return; } _gcm.open='full'; renderGamesPhone(); }
+// The mobile bottom bar's Games tab is a full top-level VIEW (like Projections / Rankings /
+// Leagues), rendered into #content — not the old slide-up sheet. These drive it.
+function gcInGamesView(){ return typeof currentPhase!=='undefined' && currentPhase==='Games'; }
+function showGamesView(e){
+  if(e && e.stopPropagation) e.stopPropagation();
+  if(typeof currentPhase==='undefined') return;
+  currentPhase='Games';
+  if(typeof renderContent==='function') renderContent();
+  if(typeof syncAppChrome==='function') syncAppChrome();
+}
+// Render the Game Center into the main content area. Same panel the sheet used (gcHTML(true))
+// plus the Games/Leaders tab row; the live timer keeps it fresh in place, as the sheet did.
+function renderGamesView(){
+  const host=(typeof document!=='undefined' && document.getElementById) ? document.getElementById('content') : null;
+  if(!host) return;
+  if(_gcm.timer){ clearTimeout(_gcm.timer); _gcm.timer=null; }
+  // The retired slide-up sheet must never also be up (nor its page lock).
+  const sheet=document.getElementById('gamesSheet'); if(sheet){ sheet.hidden=true; sheet.innerHTML=''; }
+  try{ document.documentElement.classList.remove('gcm-locked'); }catch(e){}
+  if(document.body && document.body.classList) document.body.classList.remove('gcm-open');
+  tcSyncGamesTab();
+  const body0=host.querySelector?host.querySelector('.gc-body'):null, rail0=host.querySelector?host.querySelector('.gc-list'):null;
+  const keep={ body:body0?body0.scrollTop:0, rail:rail0?rail0.scrollLeft:0 };
+  const tab=_gcm.tab||'games';
+  // Subtract the content padding so the leaders panel sizes its columns to the real width —
+  // on a phone an over-counted width added a stat column and squeezed the names to an ellipsis.
+  const width=Math.max(240, ((typeof window!=='undefined' && window.innerWidth) ? window.innerWidth : 390) - 28);
+  const page = tab==='leaders' && typeof ldPanelHTML==='function'
+    ? `<div class="gc gcm-leaders">${ldPanelHTML(width, '', false, true)}</div>`
+    : gcHTML(true);
+  host.innerHTML=`<div class="games-view">${gcmTabsHTML()}${page}</div>`;
+  const body=host.querySelector('.gc-body'), rail=host.querySelector('.gc-list');
+  if(body) body.scrollTop=keep.body;
+  if(rail){ const on=rail.querySelector('.gc-on'); if(on && on.scrollIntoView && !rail0) on.scrollIntoView({block:'nearest', inline:'center'}); else rail.scrollLeft=keep.rail; }
+  const wkOn=host.querySelector('.gc-wk-on'); if(wkOn && wkOn.scrollIntoView) wkOn.scrollIntoView({block:'nearest', inline:'center'});
+  if(gcWeek()===gcCurWeek() && typeof window!=='undefined' && typeof window.setTimeout==='function'
+     && (typeof document==='undefined' || document.visibilityState!=='hidden')){
+    _gcm.timer=window.setTimeout(()=>{ _gcm.timer=null; if(gcInGamesView()){ if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', renderGamesView); else renderGamesView(); } }, 61*1000);
+  }
+}
+// Repaint whichever Game-Center surface is live: the full view, or (legacy) the sheet.
+function gcSheetRepaint(){ if(gcInGamesView()) renderGamesView(); else if(typeof renderGamesPhone==='function') renderGamesPhone(); }
+// Keep the Games tab's live dot in sync with the board — the at-a-glance signal the floating
+// pill used to carry (now hidden on mobile). Safe to call any time; no-ops without the tab.
+function tcSyncGamesTab(){
+  if(typeof document==='undefined' || !document.getElementById) return;
+  const btn=document.getElementById('tabGames'); if(!btn) return;
+  const on = typeof gcPhoneOn==='function' && gcPhoneOn();
+  const games = (on && typeof gcmCurrentGames==='function') ? (gcmCurrentGames()||[]) : [];
+  const live = games.filter(g=>g && g.state==='in').length;
+  btn.classList.toggle('tc-tab-live', live>0);
+}// The current week's games, whatever week the sheet is showing — the pill reads the present.
 function gcmCurrentGames(){
   // The week the sheet is SHOWING — reading the current week here sent every swipe on a
   // past week to that week's first game, since the picked game was never in the list.
@@ -10705,7 +10953,7 @@ function gcmCurrentGames(){
 // The sheet's two pages: the week's games, and the Leaders — the same ranked list the
 // desktop sidebar shows (weekly high scores by position, sortable), in the phone's drawer.
 const GCM_TABS=[['games','Games'],['leaders','Leaders']];
-function gcmSetTab(t){ if(!GCM_TABS.some(x=>x[0]===t)) return; _gcm.tab=t; if(_gcm.open==='closed') _gcm.open='half'; renderGamesPhone(); }
+function gcmSetTab(t){ if(!GCM_TABS.some(x=>x[0]===t)) return; _gcm.tab=t; if(!gcInGamesView() && _gcm.open==='closed') _gcm.open='half'; gcSheetRepaint(); }
 function gcmTabsHTML(){
   const cur=_gcm.tab||'games';
   return `<div class="ld-posrow gcm-tabs">${GCM_TABS.map(([k,l])=>`<button class="ld-pos ${cur===k?'active':''}" onclick="gcmSetTab('${k}')">${l}</button>`).join('')}</div>`;
@@ -10759,6 +11007,7 @@ function gcmDragStart(ev){
 function renderGamesPhone(fromLoad){
   const host=(typeof document!=='undefined' && document.getElementById) ? gcmHost() : null; if(!host) return;
   if(_gcm.timer){ clearTimeout(_gcm.timer); _gcm.timer=null; }
+  tcSyncGamesTab();
   if(!gcPhoneOn()){ host.innerHTML=''; host.hidden=true; if(document.body&&document.body.classList) document.body.classList.remove('gcm-open'); try{ document.documentElement.classList.remove('gcm-locked'); }catch(e){} return; }
   if(_gcm.drag || _gcm.swiping) return;       // mid-gesture (a height drag or a page swipe): the markup is already there
   host.hidden=false;
@@ -30451,9 +30700,9 @@ function showProjectionsView(){
     }
     return;
   }
-  // From global views (Rankings / league-wide Advanced), jump back into the
+  // From global views (Rankings / league-wide Advanced / Games), jump back into the
   // projection builder phases instead of re-rendering the same global view.
-  if(currentPhase==='Rankings' || currentPhase==='AdvancedLeague'){
+  if(currentPhase==='Rankings' || currentPhase==='AdvancedLeague' || currentPhase==='Games'){
     const stashed = _preLeagueView && _preLeagueView.phase;
     const usableStash = stashed && !['League','Rankings','AdvancedLeague'].includes(stashed);
     currentPhase = usableStash ? stashed : 'Passing';
@@ -30482,23 +30731,46 @@ function syncAppChrome(){
     }
   };
   const phase = String((typeof currentPhase!=='undefined' && currentPhase) || '');
+  const inGames = phase==='Games';
   const inLeague = (phase==='League' || phase==='AdvancedLeague');
   const inRankings = phase==='Rankings';
-  const inProjections = !inLeague && !inRankings;
-  const viewLabel = inProjections ? 'Projections' : (inRankings ? 'Rankings' : 'Leagues');
+  const inProjections = !inLeague && !inRankings && !inGames;
+  const viewLabel = inProjections ? 'Projections' : (inRankings ? 'Rankings' : (inGames ? 'Games' : 'Leagues'));
   // Season tabs AND the NFL team sidebar are both projection-builder chrome: a snapshot
   // isn't a season, and picking the Lions does nothing to your dynasty league. Hiding both
   // in the analyzer removes two dead controls and ~75px of vertical space on a phone.
   const bar=document.getElementById('seasonBar');
-  setCls(bar, 'hidden-view', inLeague);
+  setCls(bar, 'hidden-view', inLeague || inGames);
   const side=document.getElementById('sidebar');
-  setCls(side, 'hidden-view', inLeague);
+  setCls(side, 'hidden-view', inLeague || inGames);
+  // The scenario name ("2026 Projections") is a projection-builder control; it has no meaning
+  // in the League Analyzer or the Game Center, so hide it there (kept on Projections + Rankings).
+  setCls(document.querySelector('.scenario-bar'), 'hidden-view', inLeague || inGames);
+  // Same for the edited-teams progress ("0/32 teams") — it only tracks projection edits.
+  setCls(document.querySelector('.progress-wrap'), 'hidden-view', inLeague || inGames);
+  // On a phone the bottom bar is the nav, so the whole top header is dead weight in the
+  // League Analyzer and the Game Center — drop it there (CSS hides it only on phones).
+  if(document.body && document.body.classList) document.body.classList.toggle('tc-noheader', inLeague || inGames);
+  // The Game Center is a view now; its legacy slide-up sheet must stay closed everywhere else,
+  // or it pops over the projections page / duplicates the leaders panel.
+  if(!inGames && typeof _gcm!=='undefined' && _gcm && _gcm.open!=='closed'){
+    _gcm.open='closed';
+    if(document.body && document.body.classList) document.body.classList.remove('gcm-open');
+    try{ document.documentElement.classList.remove('gcm-locked'); }catch(e){}
+    if(typeof renderGamesPhone==='function'){ try{ renderGamesPhone(); }catch(e){} }
+  }
   const mp=document.getElementById('menuProjView');
   const mr=document.getElementById('menuRankView');
   const ml=document.getElementById('menuLeagueView');
   setCls(mp, 'active', inProjections);
   setCls(mr, 'active', inRankings);
   setCls(ml, 'active', inLeague);
+
+  // Mobile bottom tab bar mirrors the same views (More carries no active state).
+  setCls(document.getElementById('tabProj'), 'active', inProjections);
+  setCls(document.getElementById('tabRank'), 'active', inRankings);
+  setCls(document.getElementById('tabLeague'), 'active', inLeague);
+  setCls(document.getElementById('tabGames'), 'active', inGames);
 
   document.querySelectorAll('.menu-view-proj').forEach(el=>{
     setHidden(el, !inProjections);

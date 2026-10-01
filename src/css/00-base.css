@@ -1,13 +1,13 @@
 
 :root{
-  --bg:#0d1117;--surface:#161b22;--surface2:#1c2330;--surface3:#212936;
-  --border:#2d3748;--border2:#374151;
-  --accent:#3d9bff;--accent2:#4a9eff;
-  --text:#e6edf3;--muted:#7d8590;--muted2:#9ca3af;
+  --bg:#0a0e17;--surface:#121724;--surface2:#19202e;--surface3:#232c3c;
+  --border:#283244;--border2:#394559;
+  --accent:#4d93ff;--accent2:#5aa0ff;
+  --text:#eaf0f7;--muted:#8591a3;--muted2:#9fb0c3;
   --qb:#ff4d6a;--wr:#56a5ff;--rb:#00cf9f;--te:#ffc94d;--k:#a855f7;--def:#b98a63;
   --danger:#f85149;--success:#3fb950;--warn:#d29922;--info:#4a9eff;
-  --font:'SF Pro Display','Segoe UI',system-ui,sans-serif;
-  --mono:'SF Mono','Fira Code',monospace;
+  --font:'Inter','SF Pro Display','Segoe UI Variable','Segoe UI',system-ui,-apple-system,Roboto,sans-serif;
+  --mono:'SF Mono','Fira Code','JetBrains Mono',ui-monospace,monospace;
   /* Design tokens (UI system — see 95-ui-system.css). Radius + tracking + z ladder. */
   --r-sm:6px;--r-md:9px;--r-lg:12px;--r-xl:16px;
   --tracking-label:.05em;

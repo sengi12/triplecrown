@@ -20,7 +20,7 @@ function gcSetMode(m){ if(!GC_MODES.includes(m)) return; _gc.mode=m; try{ localS
 function gcSetWeek(v){ _gc.week = v==='current' ? 'current' : Number(v); _gc.game=null; renderRightSidebar(); }
 // Picking a game from the phone's half-open sheet also pulls the sheet up: the game list is
 // the half state's point, the picked game's lines are the full state's.
-function gcPick(id){ _gc.game=id; if(typeof _gcm!=='undefined' && _gcm.open==='half') _gcm.open='full'; renderRightSidebar(); }
+function gcPick(id){ _gc.game=id; if(!gcInGamesView() && typeof _gcm!=='undefined' && _gcm.open==='half') _gcm.open='full'; renderRightSidebar(); }
 // "Now" is the tracker's week: the finished week holds through Tuesday and until Wednesday
 // 06:00 Eastern (tcTrackerWeek), so Tuesday's look still opens on everything that happened.
 function gcCurWeek(){ return (typeof tcTrackerWeek==='function') ? tcTrackerWeek() : Math.max(1, Number(TC_SEASON.week||1)); }
@@ -373,6 +373,18 @@ function gcListHTML(games, picked){
     <span class="gc-pr">${g.state==='pre'?'':`<b class="${g.state==='post'&&g.hs>g.as?'gc-won':''}">${g.hs!=null?g.hs:'–'}</b>`}<img src="${NFL_LOGO(g.home)}" class="gc-glogo" onerror="this.style.display='none'"></span>
   </div>`).join('');
 }
+// Phone Game Center week navigator — a horizontal rail of week pills (Sleeper's week slider):
+// the viewed week filled accent, the live week marked with a dot. Tapping jumps the board.
+function gcWeekRailHTML(){
+  const cur=gcCurWeek(), wk=gcWeek(), last=gcLastWeek();
+  let out='';
+  for(let w=1; w<=last; w++){
+    const lbl = w<=18 ? String(w) : String(gcWeekLabel(w)||('W'+w)).replace(/^Week\s*/,'');
+    const on = w===wk, isCur = w===cur;
+    out += `<button class="gc-wk${on?' gc-wk-on':''}${isCur?' gc-wk-cur':''}" onclick="gcSetWeek(${w===cur?"'current'":w})"${on?' aria-current="true"':''} title="${escAttr(gcWeekLabel(w))}">${escHtml(lbl)}${isCur?'<span class="gc-wk-dot"></span>':''}</button>`;
+  }
+  return `<div class="gc-wkrail">${out}</div>`;
+}
 // The panel. `phone` swaps the sidebar's size buttons for the sheet's close button; the
 // markup is otherwise the same in both homes (the sheet's CSS turns the list into a rail).
 function gcHTML(phone){
@@ -383,6 +395,7 @@ function gcHTML(phone){
   const game=games ? games.find(g=>g.id===_gc.game) : null;
   const rows=gcRows(wk);
   const sel=`<select class="ld-sel" onchange="gcSetWeek(this.value)">${gcWeekOptions(cur).map(w=>`<option value="${w===cur?'current':w}" ${wk===w?'selected':''}>${gcWeekLabel(w)}${w===cur?' · now':w===cur+1?' · next':w>cur?' · upcoming':''}</option>`).join('')}</select>`;
+  const weekNav = phone ? gcWeekRailHTML() : '';
   const lgE=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
   const fmt=gcScoring() ? escHtml((lgE && lgE.name) || (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) || 'league scoring') : 'TripleCrown · Sleeper for K/DEF/IDP';
   // No position filter row here: the fantasy pane already groups every position, and a
@@ -397,8 +410,9 @@ function gcHTML(phone){
     </div>`;
   }
   return `<div class="gc">
-    <div class="gc-head"><div class="sidebar-section ld-title">Game Center</div>${sel}${btns}</div>
+    <div class="gc-head"><div class="sidebar-section ld-title">Game Center</div>${phone?'':sel}${btns}</div>
     ${gcViewRowHTML()}
+    ${weekNav}
     <div class="ld-fmt" title="Points under this scoring">${fmt}</div>
     <div class="gc-body"><div class="gc-list">${gcListHTML(games, _gc.game)}</div><div class="gc-detail">${game ? gcGameHTML(game, rows, wk) : (games && !games.length ? '<div class="ld-empty">no games this week</div>' : '')}</div></div>
   </div>`;
@@ -413,6 +427,7 @@ function rsbButtonsHTML(){
 // instead (every repaint funnels through here, the live timers included, so both homes stay
 // current from one place).
 function renderRightSidebar(){
+  if(gcInGamesView()){ renderGamesView(); return; }
   try{ renderGamesPhone(); }catch(e){}
   const el=(typeof ldHost==='function')?ldHost():null; if(!el) return;
   if(typeof ldOn==='function' && !ldOn()){ el.hidden=true; return; }
@@ -534,8 +549,59 @@ function gcmBindSwipe(sheet){
   sheet.addEventListener('touchcancel', end, {passive:true});
 }
 // The picker bar's live line and the pill both open straight to a game.
-function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; _gcm.open='full'; renderGamesPhone(); }
-// The current week's games, whatever week the sheet is showing — the pill reads the present.
+function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; if(gcInGamesView()){ renderGamesView(); return; } _gcm.open='full'; renderGamesPhone(); }
+// The mobile bottom bar's Games tab is a full top-level VIEW (like Projections / Rankings /
+// Leagues), rendered into #content — not the old slide-up sheet. These drive it.
+function gcInGamesView(){ return typeof currentPhase!=='undefined' && currentPhase==='Games'; }
+function showGamesView(e){
+  if(e && e.stopPropagation) e.stopPropagation();
+  if(typeof currentPhase==='undefined') return;
+  currentPhase='Games';
+  if(typeof renderContent==='function') renderContent();
+  if(typeof syncAppChrome==='function') syncAppChrome();
+}
+// Render the Game Center into the main content area. Same panel the sheet used (gcHTML(true))
+// plus the Games/Leaders tab row; the live timer keeps it fresh in place, as the sheet did.
+function renderGamesView(){
+  const host=(typeof document!=='undefined' && document.getElementById) ? document.getElementById('content') : null;
+  if(!host) return;
+  if(_gcm.timer){ clearTimeout(_gcm.timer); _gcm.timer=null; }
+  // The retired slide-up sheet must never also be up (nor its page lock).
+  const sheet=document.getElementById('gamesSheet'); if(sheet){ sheet.hidden=true; sheet.innerHTML=''; }
+  try{ document.documentElement.classList.remove('gcm-locked'); }catch(e){}
+  if(document.body && document.body.classList) document.body.classList.remove('gcm-open');
+  tcSyncGamesTab();
+  const body0=host.querySelector?host.querySelector('.gc-body'):null, rail0=host.querySelector?host.querySelector('.gc-list'):null;
+  const keep={ body:body0?body0.scrollTop:0, rail:rail0?rail0.scrollLeft:0 };
+  const tab=_gcm.tab||'games';
+  // Subtract the content padding so the leaders panel sizes its columns to the real width —
+  // on a phone an over-counted width added a stat column and squeezed the names to an ellipsis.
+  const width=Math.max(240, ((typeof window!=='undefined' && window.innerWidth) ? window.innerWidth : 390) - 28);
+  const page = tab==='leaders' && typeof ldPanelHTML==='function'
+    ? `<div class="gc gcm-leaders">${ldPanelHTML(width, '', false, true)}</div>`
+    : gcHTML(true);
+  host.innerHTML=`<div class="games-view">${gcmTabsHTML()}${page}</div>`;
+  const body=host.querySelector('.gc-body'), rail=host.querySelector('.gc-list');
+  if(body) body.scrollTop=keep.body;
+  if(rail){ const on=rail.querySelector('.gc-on'); if(on && on.scrollIntoView && !rail0) on.scrollIntoView({block:'nearest', inline:'center'}); else rail.scrollLeft=keep.rail; }
+  const wkOn=host.querySelector('.gc-wk-on'); if(wkOn && wkOn.scrollIntoView) wkOn.scrollIntoView({block:'nearest', inline:'center'});
+  if(gcWeek()===gcCurWeek() && typeof window!=='undefined' && typeof window.setTimeout==='function'
+     && (typeof document==='undefined' || document.visibilityState!=='hidden')){
+    _gcm.timer=window.setTimeout(()=>{ _gcm.timer=null; if(gcInGamesView()){ if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', renderGamesView); else renderGamesView(); } }, 61*1000);
+  }
+}
+// Repaint whichever Game-Center surface is live: the full view, or (legacy) the sheet.
+function gcSheetRepaint(){ if(gcInGamesView()) renderGamesView(); else if(typeof renderGamesPhone==='function') renderGamesPhone(); }
+// Keep the Games tab's live dot in sync with the board — the at-a-glance signal the floating
+// pill used to carry (now hidden on mobile). Safe to call any time; no-ops without the tab.
+function tcSyncGamesTab(){
+  if(typeof document==='undefined' || !document.getElementById) return;
+  const btn=document.getElementById('tabGames'); if(!btn) return;
+  const on = typeof gcPhoneOn==='function' && gcPhoneOn();
+  const games = (on && typeof gcmCurrentGames==='function') ? (gcmCurrentGames()||[]) : [];
+  const live = games.filter(g=>g && g.state==='in').length;
+  btn.classList.toggle('tc-tab-live', live>0);
+}// The current week's games, whatever week the sheet is showing — the pill reads the present.
 function gcmCurrentGames(){
   // The week the sheet is SHOWING — reading the current week here sent every swipe on a
   // past week to that week's first game, since the picked game was never in the list.
@@ -545,7 +611,7 @@ function gcmCurrentGames(){
 // The sheet's two pages: the week's games, and the Leaders — the same ranked list the
 // desktop sidebar shows (weekly high scores by position, sortable), in the phone's drawer.
 const GCM_TABS=[['games','Games'],['leaders','Leaders']];
-function gcmSetTab(t){ if(!GCM_TABS.some(x=>x[0]===t)) return; _gcm.tab=t; if(_gcm.open==='closed') _gcm.open='half'; renderGamesPhone(); }
+function gcmSetTab(t){ if(!GCM_TABS.some(x=>x[0]===t)) return; _gcm.tab=t; if(!gcInGamesView() && _gcm.open==='closed') _gcm.open='half'; gcSheetRepaint(); }
 function gcmTabsHTML(){
   const cur=_gcm.tab||'games';
   return `<div class="ld-posrow gcm-tabs">${GCM_TABS.map(([k,l])=>`<button class="ld-pos ${cur===k?'active':''}" onclick="gcmSetTab('${k}')">${l}</button>`).join('')}</div>`;
@@ -599,6 +665,7 @@ function gcmDragStart(ev){
 function renderGamesPhone(fromLoad){
   const host=(typeof document!=='undefined' && document.getElementById) ? gcmHost() : null; if(!host) return;
   if(_gcm.timer){ clearTimeout(_gcm.timer); _gcm.timer=null; }
+  tcSyncGamesTab();
   if(!gcPhoneOn()){ host.innerHTML=''; host.hidden=true; if(document.body&&document.body.classList) document.body.classList.remove('gcm-open'); try{ document.documentElement.classList.remove('gcm-locked'); }catch(e){} return; }
   if(_gcm.drag || _gcm.swiping) return;       // mid-gesture (a height drag or a page swipe): the markup is already there
   host.hidden=false;

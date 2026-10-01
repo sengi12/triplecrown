@@ -225,6 +225,7 @@ const TC_ICON = (() => {
             '<path d="M13 12l2.9 2.1-1.1 3.2"/>' +              // front leg, knee up
             '<path d="M13 12l-2.5 4.3-2 3.2"/>',                // trailing leg
     football:'<path d="M4 12c0-4 4-8 8-8s8 4 8 8-4 8-8 8-8-4-8-8Z"/><path d="M8 8s2 4 2 8M16 8s-2 4-2 8M9 12h6"/>',
+    scoreboard:'<rect x="3" y="4" width="18" height="11" rx="1.5"/><path d="M12 4v11M6.5 8h3M14.5 8h3M6.5 11.5h3M14.5 11.5h3M12 15v3M8 20h8"/>',
     export: '<path d="M12 15V4M8 8l4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/>',
     download:'<path d="M12 4v11M8 11l4 4 4-4M5 20h14"/>',
     globe:  '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4a12 12 0 0 1 0 16 12 12 0 0 1 0-16Z"/>',
@@ -4325,6 +4326,7 @@ function renderContent(){
   if(currentPhase==='Rankings'){renderRankings();return;}
   if(currentPhase==='AdvancedLeague'){renderSharpLeague();return;}
   if(currentPhase==='League'){renderLeagueAnalyzer();return;}
+  if(currentPhase==='Games'){ if(typeof renderGamesView==='function') renderGamesView(); return; }
   if(!currentTeam){document.getElementById('content').innerHTML=emptyHTML();return;}
   const t=currentTeam,state=userProj[t];
   const tabs=tabBar();
@@ -4559,7 +4561,10 @@ function ldRowsHTML(width, phone){
   const recs=_ld.rows||[];
   const pos=_ld.pos;
   width=width||200;
-  const cols=ldColsFor(width, phone), full=width>=(phone?LD_PHONE_FULL_W:LD_FULL_W);
+  // On a phone the stats live under each player (Sleeper-style cards), so every stat column
+  // for the position is available; the desktop sidebar fits as many as its width allows.
+  const cols = phone ? (LD_COLS[pos==='ROOKIE'?'ALL':pos] || LD_COLS.ALL) : ldColsFor(width, phone);
+  const full = phone ? true : width>=LD_FULL_W;
   const sortKey=(_ld.sort!=='pts' && cols.some(c=>c[0]===_ld.sort)) ? _ld.sort : 'pts';
   const list=recs.filter(r=> pos==='ALL' ? true : pos==='ROOKIE' ? ldRookie(r.pid) : r.pos===pos)
     .map(r=>({r, pts:ldPoints(r)})).filter(x=>x.pts>0)
@@ -4567,6 +4572,23 @@ function ldRowsHTML(width, phone){
     .slice(0, LD_TOP);
   if(!list.length) return `<div class="ld-empty">${_ld.rows?'nothing yet this week':'loading…'}</div>`;
   const bafl=(typeof scoringSettings!=='undefined' && scoringSettings.baflMode);
+  // Phone: each player a card — headshot + name + a boxed FPTS on top, the position's stats as
+  // tappable chips underneath; tapping a chip (or FPTS) re-sorts with the leaders on top.
+  if(phone){
+    return list.map((x,i)=>{
+      const mineCls=(typeof gcSideClass==='function')?gcSideClass(x.r.pid).replace('gc-','ld-'):((typeof gcIsMine==='function' && gcIsMine(x.r.pid))?' ld-mine':'');
+      const chips=cols.map(c=>`<button class="ld-chip ${sortKey===c[0]?'active':''}" onclick="event.stopPropagation();ldSort('${c[0]}')" title="Sort by ${escAttr(c[1])}"><span class="ld-chip-l">${escHtml(c[1])}</span><span class="ld-chip-v">${escHtml(ldStatText(x.r,c[0]))}</span></button>`).join('');
+      return `<div class="ld-card" onclick="${pcardOnclick(x.r.pid, x.r.pos, x.r.team||'')}">
+        <div class="ld-card-top">
+          <span class="ld-rank">${i+1}</span>
+          <img class="ld-hs" src="${SLEEPER_HEADSHOT(x.r.pid)}" loading="lazy" decoding="async" onerror="this.style.visibility='hidden'">
+          <span class="ld-name"><span class="ld-nm${mineCls}">${escHtml(x.r.name)}</span><span class="ld-sub"><span class="la-pos-${escAttr(x.r.pos)}">${escHtml(x.r.pos)}</span> ${escHtml(x.r.team||'FA')}</span></span>
+          <button class="ld-fpts ${sortKey==='pts'?'active':''}" onclick="event.stopPropagation();ldSort('pts')" title="Sort by points"><span class="ld-fpts-l">FPTS</span><b>${bafl?x.pts.toFixed(1):x.pts.toFixed(2)}</b></button>
+        </div>
+        <div class="ld-card-stats">${chips}</div>
+      </div>`;
+    }).join('');
+  }
   const head = cols.length ? `<div class="ld-row ld-hdr"><span class="ld-rank"></span><span class="ld-hs-sp"></span><span class="ld-name">Player</span>
     ${cols.map(c=>`<button class="ld-col ld-colh ${sortKey===c[0]?'active':''}" onclick="event.stopPropagation();ldSort('${c[0]}')" title="Sort by ${escAttr(c[1])}">${c[1].split(' ').map(w=>`<span>${escHtml(w)}</span>`).join('')}</button>`).join('')}
     <button class="ld-pts ld-colh ${sortKey==='pts'?'active':''}" onclick="event.stopPropagation();ldSort('pts')" title="Sort by points">PTS</button></div>` : '';
@@ -4601,6 +4623,8 @@ function ldPhoneOpen(){
   return typeof gcPhoneOn==='function' && gcPhoneOn() && typeof _gcm!=='undefined' && _gcm && _gcm.open!=='closed' && _gcm.tab==='leaders';
 }
 function renderLeaders(fromLoad){
+  // The Game Center is a full view now; refresh it in place rather than the retired sheet.
+  if(typeof gcInGamesView==='function' && gcInGamesView()){ if(typeof renderGamesView==='function'){ renderGamesView(); return; } }
   if(ldPhoneOpen()){ if(typeof renderGamesPhone==='function') renderGamesPhone(fromLoad); return; }
   const el=ldHost(); if(!el) return;
   if(!ldOn()){ el.hidden=true; if(_ld.timer){ clearTimeout(_ld.timer); _ld.timer=null; } return; }
@@ -4637,7 +4661,7 @@ function gcSetMode(m){ if(!GC_MODES.includes(m)) return; _gc.mode=m; try{ localS
 function gcSetWeek(v){ _gc.week = v==='current' ? 'current' : Number(v); _gc.game=null; renderRightSidebar(); }
 // Picking a game from the phone's half-open sheet also pulls the sheet up: the game list is
 // the half state's point, the picked game's lines are the full state's.
-function gcPick(id){ _gc.game=id; if(typeof _gcm!=='undefined' && _gcm.open==='half') _gcm.open='full'; renderRightSidebar(); }
+function gcPick(id){ _gc.game=id; if(!gcInGamesView() && typeof _gcm!=='undefined' && _gcm.open==='half') _gcm.open='full'; renderRightSidebar(); }
 // "Now" is the tracker's week: the finished week holds through Tuesday and until Wednesday
 // 06:00 Eastern (tcTrackerWeek), so Tuesday's look still opens on everything that happened.
 function gcCurWeek(){ return (typeof tcTrackerWeek==='function') ? tcTrackerWeek() : Math.max(1, Number(TC_SEASON.week||1)); }
@@ -4990,6 +5014,18 @@ function gcListHTML(games, picked){
     <span class="gc-pr">${g.state==='pre'?'':`<b class="${g.state==='post'&&g.hs>g.as?'gc-won':''}">${g.hs!=null?g.hs:'–'}</b>`}<img src="${NFL_LOGO(g.home)}" class="gc-glogo" onerror="this.style.display='none'"></span>
   </div>`).join('');
 }
+// Phone Game Center week navigator — a horizontal rail of week pills (Sleeper's week slider):
+// the viewed week filled accent, the live week marked with a dot. Tapping jumps the board.
+function gcWeekRailHTML(){
+  const cur=gcCurWeek(), wk=gcWeek(), last=gcLastWeek();
+  let out='';
+  for(let w=1; w<=last; w++){
+    const lbl = w<=18 ? String(w) : String(gcWeekLabel(w)||('W'+w)).replace(/^Week\s*/,'');
+    const on = w===wk, isCur = w===cur;
+    out += `<button class="gc-wk${on?' gc-wk-on':''}${isCur?' gc-wk-cur':''}" onclick="gcSetWeek(${w===cur?"'current'":w})"${on?' aria-current="true"':''} title="${escAttr(gcWeekLabel(w))}">${escHtml(lbl)}${isCur?'<span class="gc-wk-dot"></span>':''}</button>`;
+  }
+  return `<div class="gc-wkrail">${out}</div>`;
+}
 // The panel. `phone` swaps the sidebar's size buttons for the sheet's close button; the
 // markup is otherwise the same in both homes (the sheet's CSS turns the list into a rail).
 function gcHTML(phone){
@@ -5000,6 +5036,7 @@ function gcHTML(phone){
   const game=games ? games.find(g=>g.id===_gc.game) : null;
   const rows=gcRows(wk);
   const sel=`<select class="ld-sel" onchange="gcSetWeek(this.value)">${gcWeekOptions(cur).map(w=>`<option value="${w===cur?'current':w}" ${wk===w?'selected':''}>${gcWeekLabel(w)}${w===cur?' · now':w===cur+1?' · next':w>cur?' · upcoming':''}</option>`).join('')}</select>`;
+  const weekNav = phone ? gcWeekRailHTML() : '';
   const lgE=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
   const fmt=gcScoring() ? escHtml((lgE && lgE.name) || (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) || 'league scoring') : 'TripleCrown · Sleeper for K/DEF/IDP';
   // No position filter row here: the fantasy pane already groups every position, and a
@@ -5014,8 +5051,9 @@ function gcHTML(phone){
     </div>`;
   }
   return `<div class="gc">
-    <div class="gc-head"><div class="sidebar-section ld-title">Game Center</div>${sel}${btns}</div>
+    <div class="gc-head"><div class="sidebar-section ld-title">Game Center</div>${phone?'':sel}${btns}</div>
     ${gcViewRowHTML()}
+    ${weekNav}
     <div class="ld-fmt" title="Points under this scoring">${fmt}</div>
     <div class="gc-body"><div class="gc-list">${gcListHTML(games, _gc.game)}</div><div class="gc-detail">${game ? gcGameHTML(game, rows, wk) : (games && !games.length ? '<div class="ld-empty">no games this week</div>' : '')}</div></div>
   </div>`;
@@ -5030,6 +5068,7 @@ function rsbButtonsHTML(){
 // instead (every repaint funnels through here, the live timers included, so both homes stay
 // current from one place).
 function renderRightSidebar(){
+  if(gcInGamesView()){ renderGamesView(); return; }
   try{ renderGamesPhone(); }catch(e){}
   const el=(typeof ldHost==='function')?ldHost():null; if(!el) return;
   if(typeof ldOn==='function' && !ldOn()){ el.hidden=true; return; }
@@ -5151,8 +5190,59 @@ function gcmBindSwipe(sheet){
   sheet.addEventListener('touchcancel', end, {passive:true});
 }
 // The picker bar's live line and the pill both open straight to a game.
-function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; _gcm.open='full'; renderGamesPhone(); }
-// The current week's games, whatever week the sheet is showing — the pill reads the present.
+function gcOpenGame(id){ _gc.week='current'; if(id) _gc.game=id; if(gcInGamesView()){ renderGamesView(); return; } _gcm.open='full'; renderGamesPhone(); }
+// The mobile bottom bar's Games tab is a full top-level VIEW (like Projections / Rankings /
+// Leagues), rendered into #content — not the old slide-up sheet. These drive it.
+function gcInGamesView(){ return typeof currentPhase!=='undefined' && currentPhase==='Games'; }
+function showGamesView(e){
+  if(e && e.stopPropagation) e.stopPropagation();
+  if(typeof currentPhase==='undefined') return;
+  currentPhase='Games';
+  if(typeof renderContent==='function') renderContent();
+  if(typeof syncAppChrome==='function') syncAppChrome();
+}
+// Render the Game Center into the main content area. Same panel the sheet used (gcHTML(true))
+// plus the Games/Leaders tab row; the live timer keeps it fresh in place, as the sheet did.
+function renderGamesView(){
+  const host=(typeof document!=='undefined' && document.getElementById) ? document.getElementById('content') : null;
+  if(!host) return;
+  if(_gcm.timer){ clearTimeout(_gcm.timer); _gcm.timer=null; }
+  // The retired slide-up sheet must never also be up (nor its page lock).
+  const sheet=document.getElementById('gamesSheet'); if(sheet){ sheet.hidden=true; sheet.innerHTML=''; }
+  try{ document.documentElement.classList.remove('gcm-locked'); }catch(e){}
+  if(document.body && document.body.classList) document.body.classList.remove('gcm-open');
+  tcSyncGamesTab();
+  const body0=host.querySelector?host.querySelector('.gc-body'):null, rail0=host.querySelector?host.querySelector('.gc-list'):null;
+  const keep={ body:body0?body0.scrollTop:0, rail:rail0?rail0.scrollLeft:0 };
+  const tab=_gcm.tab||'games';
+  // Subtract the content padding so the leaders panel sizes its columns to the real width —
+  // on a phone an over-counted width added a stat column and squeezed the names to an ellipsis.
+  const width=Math.max(240, ((typeof window!=='undefined' && window.innerWidth) ? window.innerWidth : 390) - 28);
+  const page = tab==='leaders' && typeof ldPanelHTML==='function'
+    ? `<div class="gc gcm-leaders">${ldPanelHTML(width, '', false, true)}</div>`
+    : gcHTML(true);
+  host.innerHTML=`<div class="games-view">${gcmTabsHTML()}${page}</div>`;
+  const body=host.querySelector('.gc-body'), rail=host.querySelector('.gc-list');
+  if(body) body.scrollTop=keep.body;
+  if(rail){ const on=rail.querySelector('.gc-on'); if(on && on.scrollIntoView && !rail0) on.scrollIntoView({block:'nearest', inline:'center'}); else rail.scrollLeft=keep.rail; }
+  const wkOn=host.querySelector('.gc-wk-on'); if(wkOn && wkOn.scrollIntoView) wkOn.scrollIntoView({block:'nearest', inline:'center'});
+  if(gcWeek()===gcCurWeek() && typeof window!=='undefined' && typeof window.setTimeout==='function'
+     && (typeof document==='undefined' || document.visibilityState!=='hidden')){
+    _gcm.timer=window.setTimeout(()=>{ _gcm.timer=null; if(gcInGamesView()){ if(typeof tcRepaintWhenIdle==='function') tcRepaintWhenIdle('rsb', renderGamesView); else renderGamesView(); } }, 61*1000);
+  }
+}
+// Repaint whichever Game-Center surface is live: the full view, or (legacy) the sheet.
+function gcSheetRepaint(){ if(gcInGamesView()) renderGamesView(); else if(typeof renderGamesPhone==='function') renderGamesPhone(); }
+// Keep the Games tab's live dot in sync with the board — the at-a-glance signal the floating
+// pill used to carry (now hidden on mobile). Safe to call any time; no-ops without the tab.
+function tcSyncGamesTab(){
+  if(typeof document==='undefined' || !document.getElementById) return;
+  const btn=document.getElementById('tabGames'); if(!btn) return;
+  const on = typeof gcPhoneOn==='function' && gcPhoneOn();
+  const games = (on && typeof gcmCurrentGames==='function') ? (gcmCurrentGames()||[]) : [];
+  const live = games.filter(g=>g && g.state==='in').length;
+  btn.classList.toggle('tc-tab-live', live>0);
+}// The current week's games, whatever week the sheet is showing — the pill reads the present.
 function gcmCurrentGames(){
   // The week the sheet is SHOWING — reading the current week here sent every swipe on a
   // past week to that week's first game, since the picked game was never in the list.
@@ -5162,7 +5252,7 @@ function gcmCurrentGames(){
 // The sheet's two pages: the week's games, and the Leaders — the same ranked list the
 // desktop sidebar shows (weekly high scores by position, sortable), in the phone's drawer.
 const GCM_TABS=[['games','Games'],['leaders','Leaders']];
-function gcmSetTab(t){ if(!GCM_TABS.some(x=>x[0]===t)) return; _gcm.tab=t; if(_gcm.open==='closed') _gcm.open='half'; renderGamesPhone(); }
+function gcmSetTab(t){ if(!GCM_TABS.some(x=>x[0]===t)) return; _gcm.tab=t; if(!gcInGamesView() && _gcm.open==='closed') _gcm.open='half'; gcSheetRepaint(); }
 function gcmTabsHTML(){
   const cur=_gcm.tab||'games';
   return `<div class="ld-posrow gcm-tabs">${GCM_TABS.map(([k,l])=>`<button class="ld-pos ${cur===k?'active':''}" onclick="gcmSetTab('${k}')">${l}</button>`).join('')}</div>`;
@@ -5216,6 +5306,7 @@ function gcmDragStart(ev){
 function renderGamesPhone(fromLoad){
   const host=(typeof document!=='undefined' && document.getElementById) ? gcmHost() : null; if(!host) return;
   if(_gcm.timer){ clearTimeout(_gcm.timer); _gcm.timer=null; }
+  tcSyncGamesTab();
   if(!gcPhoneOn()){ host.innerHTML=''; host.hidden=true; if(document.body&&document.body.classList) document.body.classList.remove('gcm-open'); try{ document.documentElement.classList.remove('gcm-locked'); }catch(e){} return; }
   if(_gcm.drag || _gcm.swiping) return;       // mid-gesture (a height drag or a page swipe): the markup is already there
   host.hidden=false;
@@ -20344,6 +20435,8 @@ function _advTableForRange(key, baseTable, team){
   if(key==='offensive_line_pass' || key==='offensive_line_run'){
     const agg=_advComputeOlRangeTables(season, lo, hi);
     if(!agg) return baseTable;
+    if(key==='offensive_line_pass') agg.passTbl.title = baseTable.title;
+    if(key==='offensive_line_run') agg.runTbl.title = baseTable.title;
     return key==='offensive_line_pass' ? agg.passTbl : agg.runTbl;
   }
   if(key==='offense' || key==='defense' || key==='tendencies' || key==='pace'){
@@ -24906,9 +24999,9 @@ function showProjectionsView(){
     }
     return;
   }
-  // From global views (Rankings / league-wide Advanced), jump back into the
+  // From global views (Rankings / league-wide Advanced / Games), jump back into the
   // projection builder phases instead of re-rendering the same global view.
-  if(currentPhase==='Rankings' || currentPhase==='AdvancedLeague'){
+  if(currentPhase==='Rankings' || currentPhase==='AdvancedLeague' || currentPhase==='Games'){
     const stashed = _preLeagueView && _preLeagueView.phase;
     const usableStash = stashed && !['League','Rankings','AdvancedLeague'].includes(stashed);
     currentPhase = usableStash ? stashed : 'Passing';
@@ -24937,23 +25030,46 @@ function syncAppChrome(){
     }
   };
   const phase = String((typeof currentPhase!=='undefined' && currentPhase) || '');
+  const inGames = phase==='Games';
   const inLeague = (phase==='League' || phase==='AdvancedLeague');
   const inRankings = phase==='Rankings';
-  const inProjections = !inLeague && !inRankings;
-  const viewLabel = inProjections ? 'Projections' : (inRankings ? 'Rankings' : 'Leagues');
+  const inProjections = !inLeague && !inRankings && !inGames;
+  const viewLabel = inProjections ? 'Projections' : (inRankings ? 'Rankings' : (inGames ? 'Games' : 'Leagues'));
   // Season tabs AND the NFL team sidebar are both projection-builder chrome: a snapshot
   // isn't a season, and picking the Lions does nothing to your dynasty league. Hiding both
   // in the analyzer removes two dead controls and ~75px of vertical space on a phone.
   const bar=document.getElementById('seasonBar');
-  setCls(bar, 'hidden-view', inLeague);
+  setCls(bar, 'hidden-view', inLeague || inGames);
   const side=document.getElementById('sidebar');
-  setCls(side, 'hidden-view', inLeague);
+  setCls(side, 'hidden-view', inLeague || inGames);
+  // The scenario name ("2026 Projections") is a projection-builder control; it has no meaning
+  // in the League Analyzer or the Game Center, so hide it there (kept on Projections + Rankings).
+  setCls(document.querySelector('.scenario-bar'), 'hidden-view', inLeague || inGames);
+  // Same for the edited-teams progress ("0/32 teams") — it only tracks projection edits.
+  setCls(document.querySelector('.progress-wrap'), 'hidden-view', inLeague || inGames);
+  // On a phone the bottom bar is the nav, so the whole top header is dead weight in the
+  // League Analyzer and the Game Center — drop it there (CSS hides it only on phones).
+  if(document.body && document.body.classList) document.body.classList.toggle('tc-noheader', inLeague || inGames);
+  // The Game Center is a view now; its legacy slide-up sheet must stay closed everywhere else,
+  // or it pops over the projections page / duplicates the leaders panel.
+  if(!inGames && typeof _gcm!=='undefined' && _gcm && _gcm.open!=='closed'){
+    _gcm.open='closed';
+    if(document.body && document.body.classList) document.body.classList.remove('gcm-open');
+    try{ document.documentElement.classList.remove('gcm-locked'); }catch(e){}
+    if(typeof renderGamesPhone==='function'){ try{ renderGamesPhone(); }catch(e){} }
+  }
   const mp=document.getElementById('menuProjView');
   const mr=document.getElementById('menuRankView');
   const ml=document.getElementById('menuLeagueView');
   setCls(mp, 'active', inProjections);
   setCls(mr, 'active', inRankings);
   setCls(ml, 'active', inLeague);
+
+  // Mobile bottom tab bar mirrors the same views (More carries no active state).
+  setCls(document.getElementById('tabProj'), 'active', inProjections);
+  setCls(document.getElementById('tabRank'), 'active', inRankings);
+  setCls(document.getElementById('tabLeague'), 'active', inLeague);
+  setCls(document.getElementById('tabGames'), 'active', inGames);
 
   document.querySelectorAll('.menu-view-proj').forEach(el=>{
     setHidden(el, !inProjections);

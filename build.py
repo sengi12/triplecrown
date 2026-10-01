@@ -100,9 +100,12 @@ _ICON_PATHS = {
     "keyboard": '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M17 10h.01M7 14h10"/>',
     "chat": '<path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4z"/><path d="M8.5 10.5h7M8.5 13.5h4"/>',
     "scale": '<path d="M12 4v15M8 19h8M6 7l12-2"/><path d="m6 7-2.3 5.2a2.6 2.6 0 0 0 4.6 0L6 7ZM18 5l-2.3 5.2a2.6 2.6 0 0 0 4.6 0L18 5Z"/>',
+    "menu": '<path d="M4 7h16M4 12h16M4 17h16"/>',
     "clipboard": '<rect x="8" y="3" width="8" height="4" rx="1"/><rect x="6" y="5" width="12" height="16" rx="2"/><path d="M9 10h6M9 14h6M9 18h4"/>',
     "chart": '<path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6"/>',
     "stadium": '<rect x="2.5" y="6" width="19" height="12" rx="6"/><ellipse cx="12" cy="12" rx="5.5" ry="3"/>',
+    "football": '<path d="M4 12c0-4 4-8 8-8s8 4 8 8-4 8-8 8-8-4-8-8Z"/><path d="M8 8s2 4 2 8M16 8s-2 4-2 8M9 12h6"/>',
+    "scoreboard": '<rect x="3" y="4" width="18" height="11" rx="1.5"/><path d="M12 4v11M6.5 8h3M14.5 8h3M6.5 11.5h3M14.5 11.5h3M12 15v3M8 20h8"/>',
     "trophy": ('<path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" fill="currentColor" stroke="none"/>'
                '<path d="M8 5H5.5A2.5 2.5 0 0 0 8 8.5M16 5h2.5A2.5 2.5 0 0 1 16 8.5"/>'
                '<path d="M12 13v3M9 20h6M10 20v-1.5a2 2 0 0 1 4 0V20"/>'),

@@ -592,9 +592,9 @@ function showProjectionsView(){
     }
     return;
   }
-  // From global views (Rankings / league-wide Advanced), jump back into the
+  // From global views (Rankings / league-wide Advanced / Games), jump back into the
   // projection builder phases instead of re-rendering the same global view.
-  if(currentPhase==='Rankings' || currentPhase==='AdvancedLeague'){
+  if(currentPhase==='Rankings' || currentPhase==='AdvancedLeague' || currentPhase==='Games'){
     const stashed = _preLeagueView && _preLeagueView.phase;
     const usableStash = stashed && !['League','Rankings','AdvancedLeague'].includes(stashed);
     currentPhase = usableStash ? stashed : 'Passing';
@@ -623,23 +623,46 @@ function syncAppChrome(){
     }
   };
   const phase = String((typeof currentPhase!=='undefined' && currentPhase) || '');
+  const inGames = phase==='Games';
   const inLeague = (phase==='League' || phase==='AdvancedLeague');
   const inRankings = phase==='Rankings';
-  const inProjections = !inLeague && !inRankings;
-  const viewLabel = inProjections ? 'Projections' : (inRankings ? 'Rankings' : 'Leagues');
+  const inProjections = !inLeague && !inRankings && !inGames;
+  const viewLabel = inProjections ? 'Projections' : (inRankings ? 'Rankings' : (inGames ? 'Games' : 'Leagues'));
   // Season tabs AND the NFL team sidebar are both projection-builder chrome: a snapshot
   // isn't a season, and picking the Lions does nothing to your dynasty league. Hiding both
   // in the analyzer removes two dead controls and ~75px of vertical space on a phone.
   const bar=document.getElementById('seasonBar');
-  setCls(bar, 'hidden-view', inLeague);
+  setCls(bar, 'hidden-view', inLeague || inGames);
   const side=document.getElementById('sidebar');
-  setCls(side, 'hidden-view', inLeague);
+  setCls(side, 'hidden-view', inLeague || inGames);
+  // The scenario name ("2026 Projections") is a projection-builder control; it has no meaning
+  // in the League Analyzer or the Game Center, so hide it there (kept on Projections + Rankings).
+  setCls(document.querySelector('.scenario-bar'), 'hidden-view', inLeague || inGames);
+  // Same for the edited-teams progress ("0/32 teams") — it only tracks projection edits.
+  setCls(document.querySelector('.progress-wrap'), 'hidden-view', inLeague || inGames);
+  // On a phone the bottom bar is the nav, so the whole top header is dead weight in the
+  // League Analyzer and the Game Center — drop it there (CSS hides it only on phones).
+  if(document.body && document.body.classList) document.body.classList.toggle('tc-noheader', inLeague || inGames);
+  // The Game Center is a view now; its legacy slide-up sheet must stay closed everywhere else,
+  // or it pops over the projections page / duplicates the leaders panel.
+  if(!inGames && typeof _gcm!=='undefined' && _gcm && _gcm.open!=='closed'){
+    _gcm.open='closed';
+    if(document.body && document.body.classList) document.body.classList.remove('gcm-open');
+    try{ document.documentElement.classList.remove('gcm-locked'); }catch(e){}
+    if(typeof renderGamesPhone==='function'){ try{ renderGamesPhone(); }catch(e){} }
+  }
   const mp=document.getElementById('menuProjView');
   const mr=document.getElementById('menuRankView');
   const ml=document.getElementById('menuLeagueView');
   setCls(mp, 'active', inProjections);
   setCls(mr, 'active', inRankings);
   setCls(ml, 'active', inLeague);
+
+  // Mobile bottom tab bar mirrors the same views (More carries no active state).
+  setCls(document.getElementById('tabProj'), 'active', inProjections);
+  setCls(document.getElementById('tabRank'), 'active', inRankings);
+  setCls(document.getElementById('tabLeague'), 'active', inLeague);
+  setCls(document.getElementById('tabGames'), 'active', inGames);
 
   document.querySelectorAll('.menu-view-proj').forEach(el=>{
     setHidden(el, !inProjections);

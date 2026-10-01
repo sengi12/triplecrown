@@ -149,7 +149,10 @@ function ldRowsHTML(width, phone){
   const recs=_ld.rows||[];
   const pos=_ld.pos;
   width=width||200;
-  const cols=ldColsFor(width, phone), full=width>=(phone?LD_PHONE_FULL_W:LD_FULL_W);
+  // On a phone the stats live under each player (Sleeper-style cards), so every stat column
+  // for the position is available; the desktop sidebar fits as many as its width allows.
+  const cols = phone ? (LD_COLS[pos==='ROOKIE'?'ALL':pos] || LD_COLS.ALL) : ldColsFor(width, phone);
+  const full = phone ? true : width>=LD_FULL_W;
   const sortKey=(_ld.sort!=='pts' && cols.some(c=>c[0]===_ld.sort)) ? _ld.sort : 'pts';
   const list=recs.filter(r=> pos==='ALL' ? true : pos==='ROOKIE' ? ldRookie(r.pid) : r.pos===pos)
     .map(r=>({r, pts:ldPoints(r)})).filter(x=>x.pts>0)
@@ -157,6 +160,23 @@ function ldRowsHTML(width, phone){
     .slice(0, LD_TOP);
   if(!list.length) return `<div class="ld-empty">${_ld.rows?'nothing yet this week':'loading…'}</div>`;
   const bafl=(typeof scoringSettings!=='undefined' && scoringSettings.baflMode);
+  // Phone: each player a card — headshot + name + a boxed FPTS on top, the position's stats as
+  // tappable chips underneath; tapping a chip (or FPTS) re-sorts with the leaders on top.
+  if(phone){
+    return list.map((x,i)=>{
+      const mineCls=(typeof gcSideClass==='function')?gcSideClass(x.r.pid).replace('gc-','ld-'):((typeof gcIsMine==='function' && gcIsMine(x.r.pid))?' ld-mine':'');
+      const chips=cols.map(c=>`<button class="ld-chip ${sortKey===c[0]?'active':''}" onclick="event.stopPropagation();ldSort('${c[0]}')" title="Sort by ${escAttr(c[1])}"><span class="ld-chip-l">${escHtml(c[1])}</span><span class="ld-chip-v">${escHtml(ldStatText(x.r,c[0]))}</span></button>`).join('');
+      return `<div class="ld-card" onclick="${pcardOnclick(x.r.pid, x.r.pos, x.r.team||'')}">
+        <div class="ld-card-top">
+          <span class="ld-rank">${i+1}</span>
+          <img class="ld-hs" src="${SLEEPER_HEADSHOT(x.r.pid)}" loading="lazy" decoding="async" onerror="this.style.visibility='hidden'">
+          <span class="ld-name"><span class="ld-nm${mineCls}">${escHtml(x.r.name)}</span><span class="ld-sub"><span class="la-pos-${escAttr(x.r.pos)}">${escHtml(x.r.pos)}</span> ${escHtml(x.r.team||'FA')}</span></span>
+          <button class="ld-fpts ${sortKey==='pts'?'active':''}" onclick="event.stopPropagation();ldSort('pts')" title="Sort by points"><span class="ld-fpts-l">FPTS</span><b>${bafl?x.pts.toFixed(1):x.pts.toFixed(2)}</b></button>
+        </div>
+        <div class="ld-card-stats">${chips}</div>
+      </div>`;
+    }).join('');
+  }
   const head = cols.length ? `<div class="ld-row ld-hdr"><span class="ld-rank"></span><span class="ld-hs-sp"></span><span class="ld-name">Player</span>
     ${cols.map(c=>`<button class="ld-col ld-colh ${sortKey===c[0]?'active':''}" onclick="event.stopPropagation();ldSort('${c[0]}')" title="Sort by ${escAttr(c[1])}">${c[1].split(' ').map(w=>`<span>${escHtml(w)}</span>`).join('')}</button>`).join('')}
     <button class="ld-pts ld-colh ${sortKey==='pts'?'active':''}" onclick="event.stopPropagation();ldSort('pts')" title="Sort by points">PTS</button></div>` : '';
@@ -191,6 +211,8 @@ function ldPhoneOpen(){
   return typeof gcPhoneOn==='function' && gcPhoneOn() && typeof _gcm!=='undefined' && _gcm && _gcm.open!=='closed' && _gcm.tab==='leaders';
 }
 function renderLeaders(fromLoad){
+  // The Game Center is a full view now; refresh it in place rather than the retired sheet.
+  if(typeof gcInGamesView==='function' && gcInGamesView()){ if(typeof renderGamesView==='function'){ renderGamesView(); return; } }
   if(ldPhoneOpen()){ if(typeof renderGamesPhone==='function') renderGamesPhone(fromLoad); return; }
   const el=ldHost(); if(!el) return;
   if(!ldOn()){ el.hidden=true; if(_ld.timer){ clearTimeout(_ld.timer); _ld.timer=null; } return; }
