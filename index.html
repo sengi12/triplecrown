@@ -1669,13 +1669,37 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gcf-owner{font-size:9px;color:var(--accent);font-weight:700;}
 .gcf-stat{white-space:nowrap;}
 .gcf-stat em{font-style:normal;color:#00d4aa;font-weight:700;}
+/* Play chips (first down, the extra-point / two-point result) and the tackler line. */
+.gcf-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:1px;}
+.gcf-chip{font-size:9px;font-weight:900;letter-spacing:.04em;border-radius:999px;padding:1px 7px;line-height:1.5;}
+.gcf-fd{background:color-mix(in srgb,#4fc26a 20%,transparent);color:#6fe08a;}
+.gcf-xtra-ok{background:color-mix(in srgb,#4f83cc 22%,transparent);color:#8fb4ea;}
+.gcf-xtra-no{background:color-mix(in srgb,#d64560 22%,transparent);color:#ff9aa8;}
+.gcf-yac{background:color-mix(in srgb,#e0a83a 18%,transparent);color:#f0c46a;}
+.gcf-conv-ok{background:color-mix(in srgb,#4fc26a 14%,transparent);color:#8fd9a2;}
+.gcf-conv-no{background:color-mix(in srgb,#9fb0c3 14%,transparent);color:var(--muted);}
+/* Halftime and the final: a card without a club, the sentence as its headline. */
+.gcf-phase{background:color-mix(in srgb,var(--surface3) 70%,transparent);border-style:dashed;}
+.gcf-phase-ico{width:22px;text-align:center;font-size:14px;font-weight:900;color:var(--muted);line-height:22px;}
+.gcf-phase .gcf-sit{text-transform:uppercase;letter-spacing:.06em;font-weight:800;}
+.gcf-tackle{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:10px;color:var(--muted);}
+.gcf-tkl-lbl{font-size:8px;font-weight:900;letter-spacing:.06em;color:var(--muted2,#9fb0c3);text-transform:uppercase;opacity:.8;}
+.gcf-tkl{color:var(--text);font-weight:600;}
+.gcf-tkl-pos{font-size:8px;font-weight:900;letter-spacing:.04em;color:var(--muted);}
+.gcf-tkl-n{font-family:var(--mono);font-size:9.5px;font-weight:700;color:var(--muted2,#9fb0c3);}
+/* Timeout — a slim centred divider in the feed (Sleeper's game stoppage marker). */
+.gcf-divider{display:flex;align-items:center;gap:8px;padding:5px 2px;}
+.gcf-div-l{flex:1;height:1px;background:var(--border);}
+.gcf-div-lbl{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);white-space:nowrap;}
+.gcf-div-logo{width:14px;height:14px;object-fit:contain;}
+.gcf-div-clock{font-family:var(--mono);font-weight:700;color:var(--muted2,#9fb0c3);text-transform:none;letter-spacing:0;}
 .gcf-right{display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:74px;}
 .gcf-clock{font-size:11px;font-weight:800;color:var(--text);}
 .gcf-score{font-size:11px;color:var(--muted);white-space:nowrap;}
 .gcf-sc-hit{color:var(--text);font-weight:800;}
 .gcf-dash{margin:0 3px;}
 .gcf-badge{font-size:9px;font-weight:900;letter-spacing:.05em;border-radius:999px;padding:2px 7px;background:var(--surface3);color:var(--muted);}
-.gcf-b-td{background:#00d4aa;color:#0d1117;} .gcf-b-fg,.gcf-b-xp{background:#4f83cc;color:#fff;} .gcf-b-to,.gcf-b-miss{background:#d64560;color:#fff;} .gcf-b-sack{background:#e0a83a;color:#0d1117;}
+.gcf-b-td{background:#00d4aa;color:#0d1117;} .gcf-b-fg,.gcf-b-xp{background:#4f83cc;color:#fff;} .gcf-b-2pt{background:#b07cd8;color:#0d1117;} .gcf-b-to,.gcf-b-miss{background:#d64560;color:#fff;} .gcf-b-sack{background:#e0a83a;color:#0d1117;}
 .gcls-wrap{overflow-x:auto;margin:2px 0 8px;}
 .gcls{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums;}
 .gcls th{font-size:10px;color:var(--muted);font-weight:700;text-align:center;padding:4px 6px;border-bottom:1px solid var(--border);}
@@ -1814,6 +1838,165 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-seg-pen{stroke:#f5c542!important;stroke-dasharray:4 4;opacity:.85;}
 .gc-seg-tb{opacity:.7;}
 .gc-seg-sack{stroke:#e5484d!important;stroke-dasharray:none;}
+
+/* ══ The Sleeper look: the game detail as a consumer app, not a data rail ══════════════════
+   Bigger, mixed-case type on a rounded face; tonal cards with no borders and a generous
+   radius; a headshot leading each play; the hero on a navy ground with the codes as faded
+   wordmarks (no club-colour wash); win probability on by default; the WIN bar at the foot.
+   Scoped to the game detail so the rest of the app keeps its own voice. */
+.gc-detail{--gcn:#0f1631;--gcn2:#151e3d;--gcn3:#1c2749;--gcline:rgba(255,255,255,.07);--gcmute:#9aa6c4;--gclive:#ff4d6a;--gcteal:#2fd3c6;
+  font-family:ui-rounded,-apple-system,"SF Pro Rounded",system-ui,"Segoe UI",Roboto,sans-serif;}
+/* the hero */
+.gc-detail .gc-hero,.games-view .gc-hero,.gcm-sheet .gc-hero{background:linear-gradient(180deg,var(--gcn3) 0%,var(--gcn) 100%);border:none;border-radius:20px;padding:18px 16px 16px;margin:2px 0 8px;gap:10px;}
+.gc-detail .gc-hero::before{display:none;}
+.gc-detail .gc-hero-wm{font-size:64px;opacity:.06;letter-spacing:-.05em;}
+.gc-detail .gc-logo{width:30px;height:30px;}
+.gc-detail .gc-team,.games-view .gc-team,.gcm-sheet .gc-team{font-size:19px;font-weight:800;letter-spacing:-.01em;line-height:1.1;}
+.gc-detail .gc-rec{font-size:12px;color:var(--gcmute);font-weight:600;}
+.gc-detail .gc-score,.games-view .gc-score,.gcm-sheet .gc-score{font-family:inherit;font-size:46px;font-weight:800;letter-spacing:-.03em;line-height:1;text-shadow:none;}
+.gc-detail .gc-status,.games-view .gc-status{font-size:13px;font-weight:700;letter-spacing:0;text-transform:none;border:none;background:none;padding:0;color:var(--text);}
+.gc-detail .gc-status.gc-live{color:var(--text);}
+.gc-detail .gc-status.gc-live::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--gclive);margin-right:6px;vertical-align:1px;animation:tcGsPulse 1.2s ease-in-out infinite;}
+.gc-detail .gc-spot{font-size:12px;font-weight:600;color:var(--gcmute);}
+.gc-src{font-size:11px;font-weight:600;color:var(--gcmute);opacity:.75;}
+.gc-detail .gc-to i{width:7px;height:7px;background:#2a3356;} .gc-detail .gc-to i.on{background:#e7ecf7;}
+.gc-detail .gc-ball{color:#fff;}
+/* the odds strip and the line score: tonal, no border */
+.games-view .gc-odds,.gc-detail .gc-odds{border:none;background:var(--gcn2);border-radius:14px;}
+.games-view .gcls-wrap{border:none;background:var(--gcn2);border-radius:14px;}
+/* the last play: a line, not a box */
+.gc-detail .gc-last{border:none;background:none;padding:4px 6px 2px;margin:4px 4px 0;}
+.gc-detail .gc-last-head{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--gcmute);text-transform:none;gap:7px;}
+.gc-detail .gc-last-lbl{text-transform:uppercase;letter-spacing:.06em;font-size:11px;}
+.gc-detail .gc-last-lbl .gcf-dot{background:var(--gclive);}
+.gc-detail .gc-last-spot{font-size:12.5px;font-weight:700;color:var(--text);}
+.gc-detail .gc-last-text{font-size:16px;font-weight:600;margin-top:4px;line-height:1.3;}
+.gc-detail .gc-drive-sum{font-size:12px;font-weight:500;color:var(--gcmute);}
+/* win probability: tonal, the numbers in the rounded face */
+.gc-detail .gc-wp{border:none;background:var(--gcn2);border-radius:14px;margin:6px 4px 4px;}
+.gc-detail .gc-wp-lbl{font-size:11px;letter-spacing:.06em;color:var(--gcmute);}
+.gc-detail .gc-wp-n{font-family:inherit;font-size:15px;font-weight:800;}
+.gc-detail .gc-wp-src{font-size:10px;letter-spacing:.02em;font-weight:500;text-transform:none;}
+/* Feed | Stats: text tabs with the teal underline */
+.gc-detail .gc-tabs,.games-view .gc-tabs{background:none;border:none;border-radius:0;padding:0;gap:22px;justify-content:center;margin:10px 0 6px;}
+.gc-detail .gc-tab,.games-view .gc-tabs .gc-tab{flex:0 0 auto;background:none;border:none;border-radius:0;font-size:15px;font-weight:700;text-transform:none;letter-spacing:0;color:var(--gcmute);padding:4px 2px 7px;position:relative;}
+.gc-detail .gc-tab.active,.games-view .gc-tabs .gc-tab.active{background:none;color:var(--text);}
+.gc-detail .gc-tab.active::after,.games-view .gc-tabs .gc-tab.active::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;border-radius:3px;background:var(--gcteal);}
+.gc-detail .gcf-bar{font-size:11px;color:var(--gcmute);margin:0 2px 8px;}
+.gc-detail .gcf-bar .ld-pos{border:none;background:var(--gcn2);color:var(--gcmute);font-size:11px;font-weight:700;letter-spacing:0;padding:4px 12px;border-radius:999px;flex:0 0 auto;}
+.gc-detail .gcf-bar .ld-pos.active{background:var(--text);color:var(--gcn);}
+/* the play rows */
+.gc-detail .gcf{gap:8px;}
+.gc-detail .gcf-row{grid-template-columns:40px minmax(0,1fr) auto;gap:10px;padding:12px 12px 12px 10px;border:none;border-radius:18px;background:var(--gcn2);}
+.gc-detail .gcf-row.gcf-active{background:color-mix(in srgb,var(--gcteal) 14%,var(--gcn2));}
+.gc-detail .gcf-click:hover{background:var(--gcn3);}
+.gcf-ava{position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;flex:none;margin-top:1px;}
+.gcf-hs{width:40px;height:40px;border-radius:50%;object-fit:cover;object-position:top;background:var(--gcn3);display:block;}
+.gcf-ava-logo{position:absolute;right:-3px;bottom:-2px;width:17px;height:17px;object-fit:contain;filter:drop-shadow(0 0 2px rgba(0,0,0,.7));}
+.gcf-ava-nohs .gcf-hs{display:none;}
+.gcf-ava-nohs .gcf-ava-logo{position:static;width:30px;height:30px;filter:none;}
+.gcf-ava-ico{font-size:18px;font-weight:800;color:var(--gcmute);}
+.gc-detail .gcf-main{gap:3px;}
+.gc-detail .gcf-sit{font-size:12.5px;color:var(--gcmute);letter-spacing:0;font-weight:500;}
+.gc-detail .gcf-title{font-size:16px;font-weight:800;letter-spacing:-.01em;line-height:1.2;}
+.gc-detail .gcf-who{font-size:12.5px;color:var(--gcmute);gap:4px 6px;}
+.gc-detail .gcf-name{font-weight:600;}
+.gc-detail .gcf-pos{font-size:11px;letter-spacing:.02em;}
+.gc-detail .gcf-pos::after{content:" •";color:var(--gcmute);font-weight:400;}
+.gc-detail .gcf-stat em{color:#3ee0a0;}
+.gcf-notes{display:flex;flex-direction:column;gap:2px;margin-top:2px;}
+.gcf-note,.gc-detail .gcf-note{font-size:12.5px;font-weight:500;color:var(--text);opacity:.92;background:none;padding:0;border-radius:0;letter-spacing:0;}
+.gcf-note.gcf-conv-no,.gcf-note.gcf-xtra-no{color:var(--gcmute);}
+.gc-detail .gcf-tackle{font-size:12px;gap:4px 8px;margin-top:1px;}
+.gc-detail .gcf-tkl-lbl{font-size:10px;letter-spacing:.04em;opacity:.7;}
+.gc-detail .gcf-tkl{font-weight:500;color:var(--text);opacity:.9;}
+.gc-detail .gcf-tkl-pos{font-size:10px;} .gc-detail .gcf-tkl-n{font-family:inherit;font-size:11px;font-weight:600;}
+.gc-detail .gcf-right{min-width:70px;gap:4px;}
+.gc-detail .gcf-clock{font-size:13px;font-weight:700;}
+.gc-detail .gcf-score{font-size:12.5px;font-weight:600;color:var(--gcmute);}
+.gc-detail .gcf-badge{font-size:10px;padding:3px 9px;}
+.gc-detail .gcf-phase{background:var(--gcn);border:none;box-shadow:inset 0 0 0 1px var(--gcline);}
+.gc-detail .gcf-phase .gcf-sit{font-size:11px;}
+.gc-detail .gcf-divider{padding:4px 2px;}
+.gc-detail .gcf-div-l{background:var(--gcline);}
+.gc-detail .gcf-div-lbl{font-size:11.5px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--gcmute);}
+.gc-detail .gcf-div-clock{font-family:inherit;font-weight:600;}
+.gc-detail .gcf-rz{font-size:10px;border-radius:5px;}
+.gc-detail .gcf-soon-tag{font-size:11px;}
+/* the WIN bar */
+.gc-winbar{position:sticky;bottom:0;display:flex;gap:10px;padding:10px 2px calc(8px + env(safe-area-inset-bottom,0px));margin-top:6px;
+  background:linear-gradient(180deg,transparent 0%,var(--bg) 35%);}
+.gc-wb{flex:1;display:flex;align-items:center;justify-content:center;gap:10px;padding:11px 12px;border-radius:999px;background:var(--gcn2);box-shadow:inset 0 0 0 1px var(--gcline);font-size:14px;font-weight:600;color:var(--gcmute);min-width:0;}
+.gc-wb-lead{color:var(--text);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--gcteal) 45%,transparent);}
+.gc-wb b{font-weight:800;letter-spacing:.02em;}
+.gc-wb-logo{width:26px;height:26px;object-fit:contain;flex:none;}
+.gc-wb-t{white-space:nowrap;}
+
+/* ── The Stats tab, Sleeper's way ───────────────────────────────────────────── */
+/* the winner's arrow beside FINAL */
+.gc-detail .gc-status.gc-won-away::before{content:"◀";font-size:11px;margin-right:4px;vertical-align:1px;}
+.gc-detail .gc-status.gc-won-home::after{content:"▶";font-size:11px;margin-left:4px;vertical-align:1px;}
+/* the line score: a card, the quarters in tinted columns, the total bold */
+.gc-detail .gcls-wrap,.games-view .gcls-wrap{border:none;background:var(--gcn2);border-radius:16px;padding:6px 12px 8px;margin:6px 0 10px;}
+.gc-detail .gcls{font-size:16px;font-weight:600;}
+.gc-detail .gcls th{font-size:13px;font-weight:700;color:var(--gcmute);border:none;padding:8px 6px;}
+.gc-detail .gcls th:first-child{font-size:14px;}
+.gc-detail .gcls td{padding:9px 6px;font-size:17px;}
+.gc-detail .gcls th:nth-child(2n),.gc-detail .gcls td:nth-child(2n){background:rgba(255,255,255,.035);}
+.gc-detail .gcls th:last-child,.gc-detail .gcls td:last-child{background:rgba(255,255,255,.07);}
+.gc-detail .gcls-t{font-size:17px;font-weight:700;gap:9px;} .gc-detail .gcls-t .gc-glogo{width:24px;height:24px;}
+.gc-detail .gcls-tot{font-weight:800;}
+/* the segmented control: the club nicknames, the active pill white */
+.gc-detail .gc-seg{border:none;background:var(--gcn2);padding:4px;margin:8px 0 12px;}
+.gc-detail .gc-seg button{font-size:13px;font-weight:700;letter-spacing:.06em;padding:11px 8px;border-radius:999px;color:var(--gcmute);gap:8px;}
+.gc-detail .gc-seg button img{width:20px;height:20px;}
+.gc-detail .gc-seg button.active{background:#fff;color:#0f1631;}
+/* the box score */
+.gcb-group{margin:4px 0 14px;}
+.gcb-head,.gcb-row{display:grid;grid-template-columns:minmax(0,1fr) repeat(var(--gcb-n,5),minmax(34px,auto));gap:0 4px;align-items:center;}
+.gcb-head{padding:8px 10px 8px 6px;}
+.gcb-lbl{font-size:17px;font-weight:700;color:var(--text);}
+.gcb-h{font-size:11px;font-weight:700;letter-spacing:.02em;color:var(--gcmute);text-align:center;text-transform:uppercase;}
+.gcb-row{padding:7px 10px 7px 6px;border-radius:12px;}
+.gcb-row:nth-child(odd){background:rgba(255,255,255,.035);}
+.gcb-click{cursor:pointer;} .gcb-click:hover{background:var(--gcn3);}
+.gcb-ava{flex:none;width:36px;height:36px;} .gcb-ava .gcf-hs{width:36px;height:36px;} .gcb-ava.gcf-ava-nohs .gcf-ava-logo{width:28px;height:28px;}
+.gcb-row{grid-template-columns:36px minmax(0,1fr) repeat(var(--gcb-n,5),minmax(34px,auto));}
+.gcb-row .gcb-n{display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-width:0;overflow:hidden;margin-left:4px;}
+.gcb-name{font-size:15px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+.gcb-sub{display:flex;flex-wrap:wrap;column-gap:5px;font-size:11.5px;color:var(--gcmute);font-weight:600;white-space:nowrap;max-width:100%;overflow:hidden;}
+.gcb-sub .gcf-pos{font-size:12px;letter-spacing:0;} .gcb-sub .gcf-pos::after{content:none;}
+.gcb-inj{font-weight:800;letter-spacing:.03em;margin-left:4px;} .gcb-inj-q{color:#f3d35b;} .gcb-inj-o{color:#ff7b7b;}
+.gcb-sub .gcf-owner{flex-basis:100%;margin:0;font-size:11px;}
+.gcb-v{font-size:14.5px;font-weight:600;color:var(--text);text-align:center;font-variant-numeric:tabular-nums;white-space:nowrap;}
+/* the fantasy pane: the league picker as a title row, position badges, bigger lines */
+.gc-detail .gc-lgrow{justify-content:space-between;margin:6px 2px 4px;}
+.gc-detail .gc-lglbl{font-size:16px;font-weight:700;letter-spacing:0;text-transform:none;color:var(--gcmute);}
+.gc-detail .gc-lgsel{flex:0 1 auto;max-width:58%;background:none;border:none;color:var(--text);font:700 15px/1.3 inherit;text-align:right;padding:4px 2px;}
+.gc-detail .gc-projnote{font-size:11px;letter-spacing:0;color:var(--gcmute);}
+.gc-detail .gc-gh,.games-view .gc-gh{padding:14px 2px 6px;gap:12px;}
+.gc-detail .gc-gh::before,.gc-detail .gc-gh::after{content:"";flex:1;height:0;border-top:1px dotted rgba(255,255,255,.22);}
+.gc-gh-badge{display:inline-block;padding:5px 14px;border-radius:10px;background:var(--gcn2);font-size:13px;font-weight:800;letter-spacing:.04em;color:var(--text);}
+.gc-gh-qb .gc-gh-badge{color:#ff6b8a;} .gc-gh-rb .gc-gh-badge{color:#5ee0a0;} .gc-gh-wr .gc-gh-badge{color:#6fa8ff;} .gc-gh-te .gc-gh-badge{color:#f0b64a;} .gc-gh-k .gc-gh-badge{color:#c79aff;} .gc-gh-def .gc-gh-badge,.gc-gh-idp .gc-gh-badge{color:var(--gcmute);}
+.gc-detail .gc-group{padding:0 2px;}
+.gc-detail .gc-row{border-top:none;gap:14px;}
+.gc-detail .gc-p{padding:9px 2px;gap:10px;}
+.gc-detail .gc-owner{font-size:12.5px;font-weight:600;color:var(--gcmute);}
+.gc-detail .gc-owner::before{content:"➜ ";color:#5b8def;}
+.gc-detail .gc-p-home .gc-owner::before{content:"➜ ";}
+.gc-detail .gc-pinfo:has(.gc-mine) .gc-owner,.gc-detail .gc-pname.gc-mine{color:#f3d35b;}
+.gc-detail .gc-pinfo:has(.gc-mine) .gc-owner::before{color:#f3d35b;}
+.gc-detail .gc-pname{font-size:17px;font-weight:700;}
+.gc-detail .gc-line{font-size:12.5px;color:var(--gcmute);font-variant-caps:all-small-caps;letter-spacing:.02em;line-height:1.35;}
+.gc-detail .gc-pts{font-family:inherit;font-size:17px;font-weight:800;padding-top:1px;}
+.gc-detail .gc-proj{font-size:13px;font-weight:600;}
+.gc-detail .gc-p-proj .gc-pts{font-style:normal;}
+/* The side colours restated LAST: the Sleeper block above re-sets .gc-pname / .gcf-name,
+   and the same-specificity rule must come after them to win (test_game_center pins it). */
+.gc-opp,.lf-who .gc-opp{color:#ff7a85;}
+.gc-mine,.gc-pname.gc-mine,.gcf-name.gc-mine,.lf-who .gc-mine,.gcb-n .gc-mine,.ld-nm.ld-mine{color:var(--accent);}
+/* inside the detail "mine" reads in Sleeper's yellow (the sidebar keeps the app's accent) */
+.gc-detail .gc-mine,.gc-detail .gc-pname.gc-mine,.gc-detail .gcf-name.gc-mine,.gc-detail .gcb-name.gc-mine,.gc-detail .gcb-sub .gcf-owner,.gc-detail .gcf-owner{color:#f3d35b;}
 /* ── Coaching Playbook Modal + Insights ───────────────────────────────────── */
 
 /* Click affordances for coaching-scheme entry points */
@@ -10651,7 +10834,7 @@ function gcGameHTML(game, rows, wk){
     if(!away.length && !home.length) return '';
     const n=Math.max(away.length, home.length);
     const rowsHtml=Array.from({length:n},(_,i)=>`<div class="gc-row">${away[i]?gcPlayerHTML(away[i],'away'):'<div class="gc-p gc-p-empty"></div>'}${home[i]?gcPlayerHTML(home[i],'home'):'<div class="gc-p gc-p-empty"></div>'}</div>`).join('');
-    return `<div class="gc-group"><div class="gc-gh">${g[1]}</div>${rowsHtml}</div>`;
+    return `<div class="gc-group"><div class="gc-gh gc-gh-${escAttr(g[0].toLowerCase())}"><span class="gc-gh-badge" title="${escAttr(g[1])}">${g[0]}</span></div>${rowsHtml}</div>`;
   }).join('');
   const st=game.state==='post'?'FINAL':game.state==='in'?(game.detail||'LIVE'):(game.detail||'');
   // The banner wears both clubs: the away colour from the left, the home colour from the
@@ -10665,13 +10848,18 @@ function gcGameHTML(game, rows, wk){
   const ball=(team)=> (sit && sit.poss===team) ? `<i class="gc-ball" title="${team} ball">${typeof TC_ICON==='function'?TC_ICON('football'):'●'}</i>` : '';
   const spot = sit ? (sit.phase ? '' : `${sit.ddt||''}${sit.spot?` @ ${sit.spot}`:''}${sit.rz?' <span class="gcf-rz">RZ</span>':''}`) : '';
   const mid = sit && sit.phase ? escHtml(sit.phase) : escHtml(st);
+  // the club's nickname ("Falcons") when the seed names it, the code otherwise; the code
+  // stays as the faded wordmark behind
+  const nick=(t)=>{ const n=(typeof TEAM_NAMES!=='undefined' && TEAM_NAMES && TEAM_NAMES[t]) ? String(TEAM_NAMES[t]) : ''; const i=n.lastIndexOf(' '); return i>0 ? n.slice(i+1) : t; };
+  const src = game.state==='pre' ? '' : `<div class="gc-src">ESPN</div>`;
+  const won = game.state==='post' && game.as!=null && game.hs!=null && game.as!==game.hs ? (game.as>game.hs?'away':'home') : '';
   const hero=`<div class="gc-hero" style="--ga:${escAttr(col(game.away))};--gh:${escAttr(col(game.home))}">
       <span class="gc-hero-wm gc-hero-wm-a" aria-hidden="true">${game.away}</span><span class="gc-hero-wm gc-hero-wm-h" aria-hidden="true">${game.home}</span>
-      <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${game.away}</span><span class="gc-rec">${escHtml(game.arec)}</span>${dots(sit&&sit.to?sit.to.away:null)}</div>
+      <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${escHtml(nick(game.away))}</span><span class="gc-rec">${escHtml(game.arec)}</span>${dots(sit&&sit.to?sit.to.away:null)}</div>
       <b class="gc-score">${game.state==='pre'?'':(game.as!=null?game.as:'–')}${ball(game.away)}</b>
-      <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}">${mid}</div>${spot?`<div class="gc-spot">${spot}</div>`:''}</div>
+      <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}${won?' gc-won-'+won:''}">${mid}</div>${spot?`<div class="gc-spot">${spot}</div>`:''}${src}</div>
       <b class="gc-score">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}${ball(game.home)}</b>
-      <div class="gc-side gc-side-home"><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${game.home}</span><span class="gc-rec">${escHtml(game.hrec)}</span>${dots(sit&&sit.to?sit.to.home:null)}</div>
+      <div class="gc-side gc-side-home"><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${escHtml(nick(game.home))}</span><span class="gc-rec">${escHtml(game.hrec)}</span>${dots(sit&&sit.to?sit.to.home:null)}</div>
     </div>`;
   // The Vegas line under the banner: spread, over/under, each side's implied point total.
   const oddsHtml=(typeof gcOddsHTML==='function') ? gcOddsHTML(game) : '';
@@ -10690,8 +10878,9 @@ function gcGameHTML(game, rows, wk){
   // Feed: on the desktop sidebar the hero, the field and the tabs stay put while the plays
   // scroll in their own window — so a play tapped for replay keeps animating in view (CSS
   // turns this off inside the phone's bottom sheet, where the whole sheet scrolls).
-  if(tab==='feed') return `<div class="gc-feedview"><div class="gc-feedview-head">${hero}${oddsHtml}${top}${tabs}</div><div class="gc-feedview-feed">${gcFeedHTML(game, sum)}</div></div>`;
-  const seg=`<div class="gc-seg"><button class="${side==='away'?'active':''}" onclick="gcdSetSide('away')"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${game.away}</button><button class="${side==='fantasy'?'active':''}" onclick="gcdSetSide('fantasy')">Fantasy</button><button class="${side==='home'?'active':''}" onclick="gcdSetSide('home')"><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'">${game.home}</button></div>`;
+  const winbar=(typeof gcWinBarHTML==='function') ? gcWinBarHTML(game, sum) : '';
+  if(tab==='feed') return `<div class="gc-feedview"><div class="gc-feedview-head">${hero}${oddsHtml}${top}${tabs}</div><div class="gc-feedview-feed">${gcFeedHTML(game, sum)}${winbar}</div></div>`;
+  const seg=`<div class="gc-seg"><button class="${side==='away'?'active':''}" onclick="gcdSetSide('away')"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${escHtml(nick(game.away))}</button><button class="${side==='fantasy'?'active':''}" onclick="gcdSetSide('fantasy')">Fantasy</button><button class="${side==='home'?'active':''}" onclick="gcdSetSide('home')"><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'">${escHtml(nick(game.home))}</button></div>`;
   const pane = side==='fantasy' ? fantasy : gcBoxHTML(game, sum, side==='home'?game.home:game.away);
   return hero+oddsHtml+top+tabs+(game.state==='pre'?'':gcLinescoreHTML(game, sum))+seg+pane;
 }
@@ -11107,6 +11296,10 @@ function gcStreamOnBoard(teams){
   else gcDetailRepaint();                                            // the down moved: the situation line
 }
 function gcPanelVisible(){
+  // The full-page Games view (mobile, and desktop when Games is the active phase) is a live
+  // surface too — without this the 5 s poll only armed for the maximised sidebar / the legacy
+  // phone sheet, so the Games view fell back to its 61 s repaint and looked frozen.
+  if(typeof gcInGamesView==='function' && gcInGamesView()) return true;
   if(typeof _gc!=='undefined' && _gc && _gc.mode==='max') return true;
   return !!(typeof _gcm!=='undefined' && _gcm && _gcm.open && _gcm.open!=='closed');
 }
@@ -11143,6 +11336,9 @@ function gcSummaryCatchUp(game){
   return true;
 }
 const GC_SKIP_TYPES = new Set(['Timeout','Official Timeout','End Period','End of Half','End of Game','Two-minute warning']);
+// The pauses the feed shows but nothing else counts: no drive-chart move, no last play, no
+// cross-game live-feed row.
+const GC_PAUSE_KINDS = new Set(['timeout','period','half','final']);
 const GC_BOX_GROUPS = [['passing','Passing'],['rushing','Rushing'],['receiving','Receiving'],['fumbles','Fumbles'],['defensive','Defense'],['interceptions','Interceptions'],['kickReturns','Kick returns'],['puntReturns','Punt returns'],['kicking','Kicking'],['punting','Punting']];
 
 // The summary for a game (cached; live games re-read every 30 s, finals rest).
@@ -11185,7 +11381,11 @@ function gcReplayPlay(eid, playId){
 function gcReplayClear(){ _gcd.replay=null; gcDetailRepaint(); }
 
 // ── ESPN ↔ app identities ────────────────────────────────────────────────────
-function gcAbbr(ab){ ab=String(ab||'').toUpperCase(); return (typeof TC_BOARD_ABBR!=='undefined' && TC_BOARD_ABBR[ab]) || ab; }
+// ESPN's play TEXT spells four clubs its own way ("Timeout #1 by CLV", "to HST 21"); the team
+// objects say CLE/BAL/HOU/ARI. Anything read out of the words goes through here before a logo
+// lookup or a side-of-the-field comparison.
+const GC_TEXT_ABBR = { CLV:'CLE', BLT:'BAL', HST:'HOU', ARZ:'ARI' };
+function gcAbbr(ab){ ab=String(ab||'').toUpperCase(); return (typeof TC_BOARD_ABBR!=='undefined' && TC_BOARD_ABBR[ab]) || GC_TEXT_ABBR[ab] || ab; }
 var _gcEspnIdx = null;
 function gcEspnIndex(){
   if(_gcEspnIdx) return _gcEspnIdx;
@@ -11360,12 +11560,30 @@ function gcPlayNames(text){
     recoverer: gcTok('RECOVERED by [A-Z]{2,3}-'+GC_TOKEN, t),
   };
 }
+// The tackler(s) from a play's trailing parenthesis — "… for 4 yards (B.Boettcher)." or
+// "… (E.Downs; C.McDonald).". Formation notes ride at the FRONT, so the last group is the stop.
+function gcTackler(text){
+  const m=String(text||'').match(/\(([^)]*)\)\s*\.?\s*$/);
+  if(!m) return '';
+  const inside=m[1].trim();
+  if(!/[A-Za-z]\.[A-Za-z]/.test(inside)) return '';                       // must read like name initials
+  if(/shotgun|huddle|formation|field goal|punt|kick|center|holder|penalty|declined|aborted/i.test(inside)) return '';
+  return inside;
+}
+function gcTacklerLabel(s){
+  return String(s||'').split(/\s*;\s*/).map(x=>gcShort(x.trim())).filter(Boolean).join(', ');
+}
 
 // ── The plays, flattened and typed ───────────────────────────────────────────
 function gcPlayKind(p){
   const t=String((p.type&&p.type.text)||'');
+  if(/^(?:Official )?Timeout$/.test(t)) return 'timeout';
+  if(t==='End of Half') return 'half';
+  if(t==='End of Game') return 'final';
+  if(t==='End Period') return 'period';
   if(GC_SKIP_TYPES.has(t)) return 'skip';
-  if(/Touchdown/.test(t) || (p.scoringPlay && /Two Point|Safety/.test(t))) return 'td';
+  if(/Two[\s-]?Point/i.test(t)) return '2pt';
+  if(/Touchdown/.test(t) || (p.scoringPlay && /Safety/.test(t))) return 'td';
   if(t==='Field Goal Good') return 'fg';
   if(t==='Extra Point Good') return 'xp';
   if(/Field Goal Missed|Blocked Field Goal|Extra Point Missed|Blocked Extra Point/.test(t)) return 'miss';
@@ -11383,8 +11601,10 @@ function gcPlays(sum){
   // came through twice, doubling the rows and the running lines. One pass per play id.
   const drives=[].concat(dr.previous||[], dr.current?[dr.current]:[]);
   const out=[], seen=new Set();
+  const byId={}; ((sum && sum.boxscore && sum.boxscore.teams)||[]).forEach(t=>{ if(t.team && t.team.id!=null) byId[String(t.team.id)]=gcAbbr(t.team.abbreviation); });
   drives.forEach(d=>{
     const team=gcAbbr(d.team && d.team.abbreviation);
+    if(d.team && d.team.id!=null && !byId[String(d.team.id)]) byId[String(d.team.id)]=team;
     (d.plays||[]).forEach(p=>{
       const pid=String(p.id||'');
       if(pid){ if(seen.has(pid)) return; seen.add(pid); }
@@ -11394,8 +11614,14 @@ function gcPlays(sum){
         q:Number((p.period&&p.period.number)||0), clock:String((p.clock&&p.clock.displayValue)||''),
         as:p.awayScore!=null?Number(p.awayScore):null, hs:p.homeScore!=null?Number(p.homeScore):null,
         yds:Number(p.statYardage||0), scoring:!!p.scoringPlay, turnover:!!p.isTurnover, team,
-        down:Number((p.start&&p.start.down)||0), ddt:String((p.start&&p.start.shortDownDistanceText)||''), spot:String((p.start&&p.start.possessionText)||''),
-        yte:(p.start&&p.start.yardsToEndzone!=null)?Number(p.start.yardsToEndzone):null });
+        down:Number((p.start&&p.start.down)||0), dist:(p.start&&p.start.distance!=null)?Number(p.start.distance):null, ddt:String((p.start&&p.start.shortDownDistanceText)||''), spot:String((p.start&&p.start.possessionText)||''),
+        yte:(p.start&&p.start.yardsToEndzone!=null)?Number(p.start.yardsToEndzone):null,
+        // the yards after the catch (ESPN charts them on every reception) and where the play
+        // left things: the next down and spot, and whether the ball changed hands
+        yac:(p.yardsAfterCatch!=null && p.yardsAfterCatch!=='')?Number(p.yardsAfterCatch):null,
+        end:(p.end && p.end.down!=null) ? { down:Number(p.end.down||0), dist:Number(p.end.distance||0), ddt:String(p.end.shortDownDistanceText||''), spot:String(p.end.possessionText||''),
+          same: !(p.end.team && p.end.team.id!=null && p.start && p.start.team && p.start.team.id!=null) || String(p.end.team.id)===String(p.start.team.id),
+          team: (p.end.team && p.end.team.id!=null) ? (byId[String(p.end.team.id)]||'') : '' } : null });
     });
   });
   return out.sort((a,b)=>a.seq-b.seq || a.id.localeCompare(b.id));
@@ -11406,6 +11632,8 @@ function gcFeedBuild(sum){
   const tot={};   // athlete id → running totals
   const T=(a)=>{ if(!tot[a.id]) tot[a.id]={cmp:0,att:0,pyds:0,ptd:0,int:0,car:0,ryds:0,rtd:0,rec:0,recyds:0,rectd:0,fgm:0,fga:0,xpm:0,xpa:0,sacked:0}; return tot[a.id]; };
   const plays=gcPlays(sum);
+  const sides=gcSides(sum);
+  const conv={};   // per club: third and fourth downs tried and made so far
   let pa=0, ph=0;
   plays.forEach(p=>{
     const n=gcPlayNames(p.text);
@@ -11422,22 +11650,40 @@ function gcFeedBuild(sum){
       who.push({ath:a, line:s, delta:delta||''}); };
     let title='';
     const nm=(a, tok)=>a?gcShort(a.name):(tok||'');
-    switch(p.type){
+    const dy=(n)=>`${n<0?'':'+'}${n} YD`;
+    if(p.kind==='timeout'){
+      const m=/by ([A-Z]{2,3})/.exec(p.text); p.toTeam=m?gcAbbr(m[1]):'';
+      title = /Official/i.test(p.type) ? 'Official timeout' : `Timeout${p.toTeam?` — ${p.toTeam}`:''}`;   // (CSS keeps the divider small caps)
+    } else if(p.kind==='period'){
+      title=`End of Q${p.q||''}`;
+    } else if(p.kind==='half' || p.kind==='final'){
+      // the score as it stands, in a sentence: who leads, by how much. After the game ESPN's
+      // own headline says it better, when there is one.
+      const a=p.as!=null?p.as:pa, h=p.hs!=null?p.hs:ph;
+      const lead = a===h ? '' : (a>h ? sides.away : sides.home), trail = a>h ? sides.home : sides.away, hi=Math.max(a,h), lo=Math.min(a,h);
+      const an=(n)=> (n===8 || n===11 || n===18 || (n>=80 && n<=89)) ? 'an' : 'a';   // "an 11-point lead"
+      if(p.kind==='half') title = lead ? `${lead} take ${an(hi-lo)} ${hi-lo}-point lead over ${trail} into halftime, ${hi}-${lo}` : `${sides.away} and ${sides.home} go to halftime tied at ${a}`;
+      else { const head=String((sum && sum.article && sum.article.headline)||'').trim();
+        title = head || (lead ? `Final: ${lead} beat ${trail} ${hi}-${lo}${p.q>4?' in overtime':''}` : `Final: ${sides.away} and ${sides.home} tie at ${a}`); }
+    } else if(p.kind==='2pt'){
+      const ok=!!p.scoring; const isPass=/Pass/i.test(p.type) || / to /.test(gcPlayBody(p.text));
+      title=`${nm(prim,n.primary)}${isPass&&recv?` to ${nm(recv,n.receiver)}`:''} 2-pt ${isPass?'pass':'run'} ${ok?'good':'no good'}`;
+    } else switch(p.type){
       case 'Rush': case 'Rushing Touchdown': {
-        if(prim){ const t=T(prim); t.car++; t.ryds+=y; if(p.type==='Rushing Touchdown') t.rtd++; line(prim,'rush',`+${y} YD`); }
+        if(prim){ const t=T(prim); t.car++; t.ryds+=y; if(p.type==='Rushing Touchdown') t.rtd++; line(prim,'rush',dy(y)); }
         title = p.type==='Rushing Touchdown' ? `${nm(prim,n.primary)} ${y} yd rush TD 🎉` : `${nm(prim,n.primary)} ${y} yd rush`; break; }
       case 'Pass Reception': case 'Passing Touchdown': {
         if(prim){ const t=T(prim); t.att++; t.cmp++; t.pyds+=y; if(p.type==='Passing Touchdown') t.ptd++; }
-        if(recv){ const t=T(recv); t.rec++; t.recyds+=y; if(p.type==='Passing Touchdown') t.rectd++; line(recv,'rec',`+${y} YD`); }
-        if(prim) line(prim,'pass',`+${y} YD`);
+        if(recv){ const t=T(recv); t.rec++; t.recyds+=y; if(p.type==='Passing Touchdown') t.rectd++; line(recv,'rec',dy(y)); }
+        if(prim) line(prim,'pass',dy(y));
         title = p.type==='Passing Touchdown' ? `${nm(recv,n.receiver)} ${y} yd TD catch 🎉` : `${nm(prim,n.primary)} ${y} yd pass to ${nm(recv,n.receiver)}`; break; }
       case 'Pass Incompletion': {
         if(prim){ const t=T(prim); t.att++; line(prim,'pass'); }
         title=`${nm(prim,n.primary)} incomplete${n.receiver?` to ${nm(recv,n.receiver)}`:''}`; break; }
-      case 'Interception Return': case 'Interception Return Touchdown': {
+      case 'Interception Return': case 'Interception Return Touchdown': case 'Pass Interception Return': case 'Pass Interception Return Touchdown': {
         if(prim){ const t=T(prim); t.att++; t.int++; line(prim,'pass'); }
-        if(picker) who.push({ath:picker, line:'INT'+(p.type==='Interception Return Touchdown'?`, ${y} yd TD`:''), delta:''});
-        title=`INT! ${nm(prim,n.primary)} picked off by ${nm(picker,n.picker)}${p.type==='Interception Return Touchdown'?' — pick six 🎉':''}`; break; }
+        if(picker) who.push({ath:picker, line:'INT'+(/Touchdown/.test(p.type)?`, ${y} yd TD`:''), delta:''});
+        title=`INT! ${nm(prim,n.primary)} picked off by ${nm(picker,n.picker)}${/Touchdown/.test(p.type)?' — pick six 🎉':''}`; break; }
       case 'Field Goal Good': case 'Field Goal Missed': case 'Blocked Field Goal': {
         if(prim){ const t=T(prim); t.fga++; if(p.type==='Field Goal Good') t.fgm++; line(prim,'kick'); }
         title = p.type==='Field Goal Good' ? `${nm(prim,n.primary)} ${y} yd FG 🙌` : `${nm(prim,n.primary)} ${y} yd FG, no good`; break; }
@@ -11451,23 +11697,52 @@ function gcFeedBuild(sum){
         title=`Fumble! ${nm(prim,n.primary)} loses it${n.recoverer?`, ${nm(A(n.recoverer,''),n.recoverer)} recovers`:''}${/Touchdown/.test(p.type)?' — TD 🎉':''}`; break; }
       case 'Punt': title=`${nm(prim,n.primary)} punts ${/punts (\d+)/.test(p.text)?RegExp.$1:''} yds`; break;
       case 'Kickoff': title=`${nm(prim,n.primary)} kicks off`; break;
-      case 'Penalty': { const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)(?:, (\d+) yards?)?(?:, (declined))?/i.exec(p.text); title = m ? `Flag: ${m[3]} on ${m[1]}${m[4]?`, ${m[4]} yds`:''}${m[5]?', declined':''}` : 'Penalty'; break; }
+      case 'Penalty': { const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)(?:, (\d+) yards?)?(?:, (declined))?/i.exec(p.text); title = m ? `Flag: ${m[3]} on ${gcAbbr(m[1])}${m[4]?`, ${m[4]} yds`:''}${m[5]?', declined':''}` : 'Penalty'; break; }
       default: title = p.text.replace(/^\s*(\([^)]*\)\s*)+/,'').slice(0, 90);
     }
     // The try rides in the touchdown's own text ("… TOUCHDOWN. E.McPherson extra point is
     // GOOD …"): count it for the kicker, and show him under the scorer.
     if(/Touchdown/.test(p.type)){
       const xp=new RegExp(GC_TOKEN+' extra point is (GOOD|No Good|BLOCKED|Aborted)', 'i').exec(p.text);
-      if(xp){ const k=A(`${xp[1]}.${xp[2]}`); if(k){ const t=T(k); t.xpa++; if(/good/i.test(xp[3]) && !/no good/i.test(xp[3])) t.xpm++; line(k,'kick'); } }
+      if(xp){ const k=A(`${xp[1]}.${xp[2]}`); if(k){ const t=T(k); t.xpa++; if(/good/i.test(xp[3]) && !/no good/i.test(xp[3])) t.xpm++; line(k,'kick'); }
+        p.xtra={ t:'XP', ok:/good/i.test(xp[3]) && !/no good/i.test(xp[3]) };
+      } else if(/TWO[\s-]POINT CONVERSION/i.test(p.text)){
+        p.xtra={ t:'2PT', ok:/ATTEMPT SUCCEEDS|CONVERSION (?:IS )?GOOD|CONVERSION SUCCEEDS/i.test(p.text) };
+      }
     }
     // whose score moved: the away side, the home side, or neither
     p.scoredBy = (p.as!=null && p.hs!=null) ? (p.as>pa?'away':(p.hs>ph?'home':'')) : '';
     if(p.as!=null) pa=p.as; if(p.hs!=null) ph=p.hs;
+    // moved the chains: a same-possession rush or catch that reached the distance to go —
+    // not a score (already badged), not a turnover. ESPN gives the yards to go on the snap.
+    // ESPN's `end` block says exactly what the play left: a new set of downs for the same
+    // club is a first down (a flag tacked on counts, a flag that wiped the gain does not).
+    // Without it, the snap's yards against the distance to go.
+    p.fd = p.end
+      ? !!(p.down>0 && p.end.down===1 && p.end.same && !p.scoring && !p.turnover && /^(Rush|Pass Reception|Penalty)$/.test(p.type))
+      : !!(p.down>0 && p.dist>0 && p.yds>=p.dist && !p.turnover && !/Touchdown/.test(p.type) && (p.type==='Rush' || p.type==='Pass Reception'));
+    // where the play left the ball: the next down (the chip already says "1st down"), or whose ball it is now
+    p.next = (p.end && p.end.down>0 && !p.scoring && !p.fd) ? (p.end.same ? p.end.ddt : `${p.end.team||'their'} ball`) : '';
+    // a third (or fourth) down tried: the club's count so far, made or not. A kick, a punt or
+    // a flag before the snap is not a try.
+    if((p.down===3 || p.down===4) && !/Penalty|Punt|Field Goal|Kickoff|Extra Point/.test(p.type) && !GC_PAUSE_KINDS.has(p.kind)){
+      const c=conv[p.team]=conv[p.team]||{t3:0,m3:0,t4:0,m4:0};
+      const made = p.fd || (p.scoring && /Touchdown/.test(p.type) && !p.turnover);
+      if(p.down===3){ c.t3++; if(made) c.m3++; p.conv={d:3, ok:made, m:c.m3, t:c.t3}; }
+      else { c.t4++; if(made) c.m4++; p.conv={d:4, ok:made, m:c.m4, t:c.t4}; }
+    }
+    if(/Rush|Reception|Return|Sack/.test(p.type)) p.tackler=gcTackler(p.text);
     p.title=title; p.who=who;
   });
   return plays;
 }
-const GC_KEY_KINDS = new Set(['td','fg','xp','miss','to','sack','big','fourth']);
+const GC_KEY_KINDS = new Set(['td','fg','xp','miss','to','sack','big','fourth','2pt','half','final']);
+// The two clubs' codes from the summary's header (away first).
+function gcSides(sum){
+  const comp=sum && sum.header && sum.header.competitions && sum.header.competitions[0];
+  const cs=(comp && comp.competitors)||[]; const ab=(c)=>gcAbbr(c && c.team && c.team.abbreviation);
+  return { away:ab(cs.find(c=>c.homeAway==='away')), home:ab(cs.find(c=>c.homeAway==='home')) };
+}
 function gcFeedRows(sum, all){
   const plays=gcFeedBuild(sum);
   return plays.filter(p=>all || GC_KEY_KINDS.has(p.kind)).reverse();
@@ -11507,19 +11782,56 @@ function gcFeedHTML(game, sum){
   // the running lines when the summary lands (the row then becomes the real one).
   const soon=gcProvisionalRow(game, sum);
   if(!rows.length && !soon) return now+toggle+`<div class="ld-empty">no plays yet</div>`;
-  const badge=(p)=>p.kind==='td'?'TD':p.kind==='fg'?'FG':p.kind==='xp'?'XP':p.kind==='to'?'TO':p.kind==='sack'?'SACK':p.kind==='big'?'BIG':p.kind==='fourth'?'4TH':p.kind==='miss'?'MISS':'';
+  const badge=(p)=>p.kind==='td'?'TD':p.kind==='fg'?'FG':p.kind==='xp'?'XP':p.kind==='2pt'?'2PT':p.kind==='to'?'TO':p.kind==='sack'?'SACK':p.kind==='big'?'BIG':p.kind==='fourth'?'4TH':p.kind==='miss'?'MISS':'';
+  // The tackler line: resolve the names in the play's trailing parenthesis to the box score —
+  // each defender's position and his tackles in THIS game (a man on the other team).
+  const _ath=(typeof gcAthletes==='function')?gcAthletes(sum):{bySur:{}};
+  const _boxByPid={}; if(typeof gcBoxRows==='function'){ try{ gcBoxRows(sum).forEach(b=>{ _boxByPid[String(b.player_id)]=b; }); }catch(e){} }
+  const tacklerHTML=(raw, offTeam)=>{
+    const toks=String(raw||'').split(/\s*;\s*/).map(s=>s.trim()).filter(Boolean);
+    if(!toks.length) return '';
+    const items=toks.map(tok=>{
+      const rec=(typeof gcFindAth==='function')?gcFindAth(_ath, offTeam, tok):null;
+      const pid=rec&&rec.pid; const pos=(rec&&rec.pos&&rec.pos!=='DEF')?rec.pos:'';
+      const b=pid?_boxByPid[String(pid)]:null; const tkl=(b&&b.stats&&b.stats.idp_tkl!=null)?b.stats.idp_tkl:null;
+      const cls=(pid&&typeof gcSideClass==='function')?gcSideClass(pid):'';
+      return `<span class="gcf-tkl${cls}">${escHtml(gcShort(rec?rec.name:tok))}${pos?` <span class="gcf-tkl-pos">${escHtml(pos)}</span>`:''}${tkl!=null?` <span class="gcf-tkl-n">${tkl} TKL</span>`:''}</span>`;
+    });
+    return `<div class="gcf-tackle"><span class="gcf-tkl-lbl">Tackle</span>${items.join('')}</div>`;
+  };
   const html=rows.map(p=>{
+    if(p.kind==='timeout' || p.kind==='period') return `<div class="gcf-divider gcf-div-${p.kind}"><span class="gcf-div-l"></span><span class="gcf-div-lbl">${p.toTeam?`<img src="${NFL_LOGO(p.toTeam)}" class="gcf-div-logo" onerror="this.style.display='none'">`:''}${escHtml(p.title)}${(p.clock && p.kind==='timeout')?`<span class="gcf-div-clock">${escHtml((p.q?('Q'+p.q+' '):'')+p.clock)}</span>`:''}</span><span class="gcf-div-l"></span></div>`;
+    if(p.kind==='half' || p.kind==='final'){
+      const sc=(p.as!=null && p.hs!=null) ? `${game.away} ${p.as}<span class="gcf-dash">–</span>${p.hs} ${game.home}` : '';
+      return `<div class="gcf-row gcf-phase gcf-${p.kind}${isNew(p)?' gcf-new':''}">
+        <span class="gcf-ava gcf-ava-ico">${p.kind==='half'?'½':'🏁'}</span>
+        <div class="gcf-main"><div class="gcf-sit">${p.kind==='half'?'Halftime':'Final'}</div><div class="gcf-title">${escHtml(p.title)}</div></div>
+        <div class="gcf-right"><div class="gcf-clock">${p.q?`Q${p.q}`:''} ${escHtml(p.clock)}</div><div class="gcf-score">${sc}</div></div>
+      </div>`;
+    }
     const rz = p.yte!=null && p.yte<=20 && p.type!=='Kickoff' && p.type!=='Punt';
-    const sit = p.down>0 ? `${p.ddt}${p.spot?` @ ${p.spot}`:''}` : (p.kind==='xp'||p.kind==='miss'&&/Extra/.test(p.type)?'End zone':(p.type==='Kickoff'?'Kickoff':''));
+    const sit = (p.down>0 ? `${p.ddt}${p.spot?` @ ${p.spot}`:''}` : (p.kind==='2pt'?'Two-point try':((p.kind==='xp'||(p.kind==='miss'&&/Extra/.test(p.type)))?'End zone':(p.type==='Kickoff'?'Kickoff':''))))
+              + (p.next ? ` ▸ ${p.next}` : '');
     const score = (p.as!=null && p.hs!=null) ? `<span class="${p.scoredBy==='away'?'gcf-sc-hit':''}">${game.away} ${p.as}</span><span class="gcf-dash">–</span><span class="${p.scoredBy==='home'?'gcf-sc-hit':''}">${p.hs} ${game.home}</span>` : '';
     const active = _gcd.replay && String(_gcd.replay.eid)===eid && String(_gcd.replay.playId)===String(p.id);
     const rowClick = p.id ? ` onclick="gcReplayPlay('${escAttr(eid)}','${escAttr(String(p.id))}')" title="Replay this play on the field"` : '';
+    const lead=(p.who||[]).find(w=>w.ath && w.ath.pid); const hs=(lead && typeof SLEEPER_HEADSHOT==='function') ? SLEEPER_HEADSHOT(lead.ath.pid) : '';
+    const ava = hs
+      ? `<span class="gcf-ava"><img src="${escAttr(hs)}" class="gcf-hs" loading="lazy" decoding="async" onerror="this.parentNode.classList.add('gcf-ava-nohs')"><img src="${NFL_LOGO(p.team||game.home)}" class="gcf-ava-logo" onerror="this.style.display='none'"></span>`
+      : `<span class="gcf-ava gcf-ava-nohs"><img src="${NFL_LOGO(p.team||game.home)}" class="gcf-ava-logo" onerror="this.style.display='none'"></span>`;
+    const notes=[];
+    if(p.fd) notes.push(`<span class="gcf-note gcf-fd">✅ 1st down</span>`);
+    if(p.xtra) notes.push(`<span class="gcf-note gcf-xtra gcf-xtra-${p.xtra.ok?'ok':'no'}">${p.xtra.ok?'✅':'❌'} ${p.xtra.t==='XP'?'Extra point':'Two-point try'} ${p.xtra.ok?'good':'no good'}</span>`);
+    if(p.yac>0) notes.push(`<span class="gcf-note gcf-yac">🏃 ${p.yac} yd${p.yac===1?'':'s'} after catch</span>`);
+    if(p.conv) notes.push(`<span class="gcf-note gcf-conv gcf-conv-${p.conv.ok?'ok':'no'}" title="${escAttr(p.team)} ${p.conv.d===3?'third':'fourth'} downs converted so far">${p.conv.ok?'🎯':'🚫'} ${escHtml(p.team)} ${p.conv.d===3?'3rd':'4th'} down ${p.conv.m}/${p.conv.t}</span>`);
     return `<div class="gcf-row gcf-${p.kind}${isNew(p)?' gcf-new':''}${p.id?' gcf-click':''}${active?' gcf-active':''}"${rowClick}>
-      <img src="${NFL_LOGO(p.team||game.home)}" class="gcf-logo" onerror="this.style.display='none'">
+      ${ava}
       <div class="gcf-main">
         <div class="gcf-sit">${escHtml(sit)}${rz?' <span class="gcf-rz">RZ</span>':''}</div>
         <div class="gcf-title">${(()=>{ let t=escHtml(p.title); (p.who||[]).forEach(w=>{ const pid=w.ath&&w.ath.pid; if(!pid||typeof gcSideClass!=='function') return; const c=gcSideClass(pid).trim(); if(!c) return; const esc=escHtml(gcShort(w.ath.name)); if(t.indexOf(esc)>=0) t=t.replace(esc, `<span class="${c}">${esc}</span>`); }); return t; })()}</div>
         ${p.who.map(w=>gcFeedPlayerHTML(w, game)).join('')}
+        ${notes.length?`<div class="gcf-notes">${notes.join('')}</div>`:''}
+        ${p.tackler?tacklerHTML(p.tackler, p.team||game.home):''}
       </div>
       <div class="gcf-right"><div class="gcf-clock">${p.q?`Q${p.q}`:''} ${escHtml(p.clock)}</div><div class="gcf-score">${score}</div>${badge(p)?`<span class="gcf-badge gcf-b-${p.kind}">${badge(p)}</span>`:''}</div>
     </div>`;
@@ -11542,7 +11854,7 @@ function gcProvisionalRow(game, sum){
   const score=`<span>${game.away} ${game.as!=null?game.as:'–'}</span><span class="gcf-dash">–</span><span>${game.hs!=null?game.hs:'–'} ${game.home}</span>`;
   const badge = kind==='td'?'TD':kind==='fg'?'FG':kind==='xp'?'XP':kind==='to'?'TO':kind==='sack'?'SACK':kind==='big'?'BIG':kind==='miss'?'MISS':'';
   return `<div class="gcf-row gcf-${kind} gcf-new gcf-soon" title="Just posted — the full line lands in a moment">
-      <img src="${NFL_LOGO(lp.team||game.home)}" class="gcf-logo" onerror="this.style.display='none'">
+      <span class="gcf-ava gcf-ava-nohs"><img src="${NFL_LOGO(lp.team||game.home)}" class="gcf-ava-logo" onerror="this.style.display='none'"></span>
       <div class="gcf-main">
         <div class="gcf-sit">${escHtml(sit)}${rz?' <span class="gcf-rz">RZ</span>':''}</div>
         <div class="gcf-title">${escHtml(title)}</div>
@@ -11565,20 +11877,44 @@ function gcLinescoreHTML(game, sum){
   const row=(code, arr, tot)=>`<tr><td class="gcls-t"><img src="${NFL_LOGO(code)}" class="gc-glogo" onerror="this.style.display='none'">${code}</td>${Array.from({length:n},(_,i)=>`<td>${arr[i]!=null?arr[i]:'–'}</td>`).join('')}<td class="gcls-tot">${tot!=null?tot:'–'}</td></tr>`;
   return `<div class="gcls-wrap"><table class="gcls"><thead><tr><th>Team</th>${head}<th>TOT</th></tr></thead><tbody>${row(game.away, la, game.as)}${row(game.home, lh, game.hs)}</tbody></table></div>`;
 }
+// The injury report, by ESPN athlete id → a short tag (Sleeper's "QUES" beside the position).
+function gcInjuries(sum){
+  if(sum && sum._gcInj) return sum._gcInj;
+  const out={}; const TAG={'Questionable':['QUES','q'], 'Doubtful':['DOUB','q'], 'Out':['OUT','o'], 'Injured Reserve':['IR','o']};
+  ((sum && sum.injuries)||[]).forEach(t=>(t.injuries||[]).forEach(i=>{ const id=String((i.athlete&&i.athlete.id)||''); const tg=TAG[String(i.status||'')]; if(id && tg) out[id]={tag:tg[0], cls:tg[1], why:String((i.details&&i.details.type)||'')}; }));
+  if(sum) sum._gcInj=out;
+  return out;
+}
+// A side's box score in Sleeper's shape: each group a list — the group's name on the left
+// and its columns on the right in the header row, then a headshot, the name with the
+// position, club and injury tag under it, and the numbers. Passing keeps six columns, a
+// catch shows receptions over targets ("11/16"); ESPN's labels are shortened to Sleeper's.
+const GC_BOX_LABEL = { 'C/ATT':'CMP', YDS:'YD', CAR:'ATT', SACKS:'SACK', 'QB HTS':'QBH', 'In 20':'IN20', TGTS:'TGT' };
 function gcBoxHTML(game, sum, team){
   if(!sum) return `<div class="ld-empty">${game.eid?'loading the box score…':'box score unavailable'}</div>`;
   const tp=((sum.boxscore&&sum.boxscore.players)||[]).find(t=>gcAbbr(t.team&&t.team.abbreviation)===team);
   if(!tp) return `<div class="ld-empty">no box score yet for ${escHtml(team)}</div>`;
-  const ath=gcAthletes(sum);
+  const ath=gcAthletes(sum), inj=gcInjuries(sum);
   const groups=GC_BOX_GROUPS.map(([key,label])=>{
     const g=(tp.statistics||[]).find(s=>s.name===key); if(!g || !(g.athletes||[]).length) return '';
-    const labels=g.labels||[]; const nCols=Math.min(labels.length, 8);
+    const labels=(g.labels||[]).map(String);
+    // the columns: an index into each athlete's stats, or a pair to show as "a/b"
+    let cols=labels.map((l,i)=>({l:GC_BOX_LABEL[l]||l, i}));
+    if(key==='passing') cols=cols.filter(c=>!/^(QBR|RTG)$/.test(labels[c.i]));
+    if(key==='receiving'){ const r=labels.indexOf('REC'), t=labels.indexOf('TGTS'); if(r>=0 && t>=0){ cols=cols.filter(c=>c.i!==t); cols[cols.findIndex(c=>c.i===r)]={l:'REC', i:r, over:t}; } }
+    cols=cols.slice(0, 6);
+    const cell=(st, c)=>{ const v=st[c.i]; if(v==null) return '–'; return c.over!=null && st[c.over]!=null ? `${v}/${st[c.over]}` : String(v); };
     const rows=g.athletes.map(a=>{
-      const A=a.athlete||{}; const rec=ath.byId[String(A.id||'')]; const pid=rec&&rec.pid; const pos=rec&&rec.pos;
+      const A=a.athlete||{}; const id=String(A.id||''); const rec=ath.byId[id]; const pid=rec&&rec.pid; const pos=(rec&&rec.pos)||'';
       const click=(pid && pos && pos!=='DEF' && typeof pcardOnclick==='function') ? ` onclick="${pcardOnclick(pid, pos, team)}"` : '';
-      return `<tr${click?' class="gcb-click"':''}${click}><td class="gcb-n"><span class="${pid&&typeof gcSideClass==='function'?gcSideClass(pid).trim():''}">${escHtml(gcShort(A.displayName||A.shortName||''))}</span>${pid&&gcOwnerOf(pid)?`<small class="gcf-owner">${escHtml(gcOwnerOf(pid))}</small>`:''}</td>${(a.stats||[]).slice(0,nCols).map(v=>`<td>${escHtml(String(v))}</td>`).join('')}</tr>`;
+      const hs=(pid && typeof SLEEPER_HEADSHOT==='function') ? SLEEPER_HEADSHOT(pid) : '';
+      const ava = hs ? `<span class="gcf-ava gcb-ava"><img src="${escAttr(hs)}" class="gcf-hs" loading="lazy" decoding="async" onerror="this.parentNode.classList.add('gcf-ava-nohs')"><img src="${NFL_LOGO(team)}" class="gcf-ava-logo" onerror="this.style.display='none'"></span>`
+                     : `<span class="gcf-ava gcb-ava gcf-ava-nohs"><img src="${NFL_LOGO(team)}" class="gcf-ava-logo" onerror="this.style.display='none'"></span>`;
+      const ij=inj[id]; const owner=pid?gcOwnerOf(pid):'';
+      const st=(a.stats||[]);
+      return `<div class="gcb-row${click?' gcb-click':''}"${click}>${ava}<div class="gcb-n"><span class="gcb-name${pid&&typeof gcSideClass==='function'?gcSideClass(pid):''}">${escHtml(gcShort(A.displayName||A.shortName||''))}</span><span class="gcb-sub">${pos&&pos!=='DEF'?`<span class="gcf-pos gcf-pos-${escAttr(pos.toLowerCase())}">${escHtml(pos)}</span> • `:''}${escHtml(team)}${ij?` <span class="gcb-inj gcb-inj-${ij.cls}" title="${escAttr(ij.why)}">${ij.tag}</span>`:''}${owner?`<small class="gcf-owner">${escHtml(owner)}</small>`:''}</span></div>${cols.map(c=>`<span class="gcb-v">${escHtml(cell(st, c))}</span>`).join('')}</div>`;
     }).join('');
-    return `<div class="gcb-group"><div class="gc-gh">${label}</div><div class="gcb-wrap"><table class="gcb"><thead><tr><th></th>${labels.slice(0,nCols).map(l=>`<th>${escHtml(l)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    return `<div class="gcb-group" style="--gcb-n:${cols.length}"><div class="gcb-head"><span class="gcb-lbl">${label}</span>${cols.map(c=>`<span class="gcb-h">${escHtml(c.l)}</span>`).join('')}</div>${rows}</div>`;
   }).join('');
   return groups || `<div class="ld-empty">no box score yet for ${escHtml(team)}</div>`;
 }
@@ -11640,12 +11976,13 @@ function gcDrives(sum){
     const team=gcAbbr(d.team && d.team.abbreviation); const plays=[]; const pseen=new Set();
     (d.plays||[]).forEach(p=>{
       const pid=String(p.id||''); if(pid && pseen.has(pid)) return; if(pid) pseen.add(pid);
-      const kind=gcPlayKind(p); if(kind==='skip') return;
+      const kind=gcPlayKind(p); if(kind==='skip' || GC_PAUSE_KINDS.has(kind)) return;
       plays.push({ id:pid, kind, type:String((p.type&&p.type.text)||''), text:String(p.text||''), yds:Number(p.statYardage||0),
         yte:(p.start && p.start.yardsToEndzone!=null)?Number(p.start.yardsToEndzone):null, scoring:!!p.scoringPlay, turnover:!!p.isTurnover,
         q:Number((p.period&&p.period.number)||0), clock:String((p.clock&&p.clock.displayValue)||'') });
     });
-    out.push({ id, team, plays, result:String(d.result||d.shortDisplayResult||''), desc:String(d.description||''), score:!!d.isScore, live:!!live });
+    out.push({ id, team, plays, result:String(d.result||d.shortDisplayResult||''), desc:String(d.description||''), score:!!d.isScore, live:!!live,
+      time:String((d.timeElapsed && d.timeElapsed.displayValue)||'') });
   };
   (dr.previous||[]).forEach(d=>add(d, false));
   if(dr.current){ const cid=String(dr.current.id||''); const i=out.findIndex(x=>x.id===cid); if(i>=0) out[i].live=true; else add(dr.current, true); }
@@ -11691,6 +12028,7 @@ function gcDriveSentence(d){
   if(rush) parts.push(`${rush} rush, ${rushY} yds`);
   if(att) parts.push(`${cmp}/${att} pass, ${passY} yds`);
   if(sacks) parts.push(`${sacks} sack${sacks===1?'':'s'}`);
+  if(d.time && !d.live) parts.push(`${d.time} off the clock`);
   const res = d.result ? ` ${escHtml(d.result)}${/TD/.test(d.result)?' 🎉':''}` : (d.live ? ' in progress' : '');
   return `${d.team}${from?' '+from:''}: ${parts.join('. ')}.${res}`;
 }
@@ -12063,7 +12401,7 @@ function gcWinProbHTML(game, sum){
   const wp=(sum && Array.isArray(sum.winprobability)) ? sum.winprobability.filter(w=>w && w.homeWinPercentage!=null) : [];
   if(wp.length<3) return '';
   const n=wp.length; const last=wp[n-1].homeWinPercentage, home=Math.round(last*100), away=100-home;
-  const open=!!_gcd.wpOpen;
+  const open=_gcd.wpOpen!==false;   // open unless folded by hand
   const nums=`<span class="gc-wp-n"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'"><b>${away}%</b></span><span class="gc-wp-n"><b>${home}%</b><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'"></span>`;
   const head=`<button class="gc-wp-head" onclick="gcWinProbToggle()" aria-expanded="${open?'true':'false'}" title="Win probability, play by play — ESPN's model"><span class="gc-wp-lbl">Win probability</span>${nums}<span class="rt-gp-caret">${open?'▴':'▾'}</span></button>`;
   if(!open) return `<div class="gc-wp">${head}</div>`;
@@ -12076,8 +12414,8 @@ function gcWinProbHTML(game, sum){
   // colour, so a 100% finish fills the whole chart
   const homeWinning = last>=0.5;
   const fill = homeWinning
-    ? `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${top} L${f1(x(0))},${top} Z" fill="${escAttr(col(game.home))}" opacity="0.45"/>`
-    : `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${bot} L${f1(x(0))},${bot} Z" fill="${escAttr(col(game.away))}" opacity="0.45"/>`;
+    ? `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${top} L${f1(x(0))},${top} Z" fill="${escAttr(col(game.home))}" opacity="0.22"/>`
+    : `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${bot} L${f1(x(0))},${bot} Z" fill="${escAttr(col(game.away))}" opacity="0.22"/>`;
   return `<div class="gc-wp gc-wp-open">${head}
     <svg viewBox="0 0 ${W} ${H}" class="gc-wp-svg" role="img" aria-label="Win probability">
       <image href="${escAttr(NFL_LOGO(game.away))}" x="${R+8}" y="${top-2}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
@@ -12087,6 +12425,16 @@ function gcWinProbHTML(game, sum){
       <polyline points="${pts.join(' ')}" fill="none" stroke="#f2f5f8" stroke-width="1.6" stroke-linejoin="round"/>
       <circle cx="${f1(x(n-1))}" cy="${f1(y(last))}" r="3.2" fill="#fff"/>
     </svg><div class="gc-wp-src">ESPN's model · ${escHtml(game.away)} at the top, ${escHtml(game.home)} at the bottom</div></div>`;
+}
+// Sleeper's bottom bar: each club's chance to win as a pill, the logo on the outside. Sticks
+// to the bottom of the feed while there is a feed to scroll.
+function gcWinBarHTML(game, sum){
+  if(!game || game.state==='pre') return '';
+  const wp=(sum && Array.isArray(sum.winprobability)) ? sum.winprobability.filter(w=>w && w.homeWinPercentage!=null) : [];
+  if(!wp.length) return '';
+  const home=Math.round(wp[wp.length-1].homeWinPercentage*100), away=100-home;
+  const lead=(n)=>n>=50?' gc-wb-lead':'';
+  return `<div class="gc-winbar"><span class="gc-wb${lead(away)}"><img src="${NFL_LOGO(game.away)}" class="gc-wb-logo" onerror="this.style.display='none'"><span class="gc-wb-t"><b>${game.state==='post'?(away>=50?'WON':'LOST'):'WIN'}</b> • ${away}%</span></span><span class="gc-wb${lead(home)}"><span class="gc-wb-t">${home}% • <b>${game.state==='post'?(home>=50?'WON':'LOST'):'WIN'}</b></span><img src="${NFL_LOGO(game.home)}" class="gc-wb-logo" onerror="this.style.display='none'"></span></div>`;
 }
 // One line: the play that just happened — the board's last play while the game is on (the
 // scoreboard names it first), else the summary's newest — with the freshness stamp.
@@ -12099,7 +12447,7 @@ function gcLastPlayHTML(game, sum){
     const read=(typeof lfReadPlay==='function') ? lfReadPlay(lp) : null; title=(read && read.title) || String(lp.text||'').slice(0,90);
     spot = lp.down>0 ? `${lp.ddt||''}${lp.spot?` @ ${lp.spot}`:''}` : (/Extra Point|Field Goal/.test(String(lp.type||'')) ? 'End zone' : (lp.type==='Kickoff'?'Kickoff':'')); team=lp.team||'';
   } else if(sum){
-    const rows=gcFeedRows(sum, true); const p=rows[0];
+    const rows=gcFeedRows(sum, true); const p=rows.find(r=>!GC_PAUSE_KINDS.has(r.kind));
     if(p){ title=p.title; spot=p.down>0 ? `${p.ddt}${p.spot?` @ ${p.spot}`:''}` : ''; team=p.team||''; }
   }
   if(!title && !(live && sit && sit.phase)) return '';
@@ -12250,7 +12598,7 @@ function lfReadPlay(lp){
   else if(/Fumble/.test(type)){ kind='fum'; title=`Fumble! ${nm('primary',names.primary)}`; }
   else if(type==='Punt'){ kind='punt'; title=`${nm('primary',names.primary)} punts`; }
   else if(type==='Kickoff'){ kind='ko'; title=`${nm('primary',names.primary)} kicks off`; }
-  else if(type==='Penalty'){ kind='pen'; const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)/i.exec(text); title=m?`Flag: ${m[3]} on ${m[1]}`:'Penalty'; }
+  else if(type==='Penalty'){ kind='pen'; const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)/i.exec(text); title=m?`Flag: ${m[3]} on ${(typeof gcAbbr==='function')?gcAbbr(m[1]):m[1]}`:'Penalty'; }
   else { title=text.replace(/^\s*(\([^)]*\)\s*)+/,'').slice(0,90); }
   return {kind, title, roles, stats:lfPlayStats(kind, yds, roles), tokens:roleTok};
 }
@@ -12335,6 +12683,7 @@ function lfIngestSummary(g, sum, hist){
   const eid=String(g.eid); let added=0; const now=Date.now();
   hist=!!hist;
   plays.forEach((p,i)=>{
+    if(typeof GC_PAUSE_KINDS!=='undefined' && GC_PAUSE_KINDS.has(p.kind)) return;   // the game feed shows the stoppages; this cross-game feed skips them
     const id=String(p.id||''); if(!id) return;
     const key=`${eid}:${id}`;
     const scoreValue = p.scoring ? (/Touchdown/.test(p.type)?6:(/Field Goal/.test(p.type)?3:1)) : 0;

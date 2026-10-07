@@ -141,7 +141,7 @@ function lfReadPlay(lp){
   else if(/Fumble/.test(type)){ kind='fum'; title=`Fumble! ${nm('primary',names.primary)}`; }
   else if(type==='Punt'){ kind='punt'; title=`${nm('primary',names.primary)} punts`; }
   else if(type==='Kickoff'){ kind='ko'; title=`${nm('primary',names.primary)} kicks off`; }
-  else if(type==='Penalty'){ kind='pen'; const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)/i.exec(text); title=m?`Flag: ${m[3]} on ${m[1]}`:'Penalty'; }
+  else if(type==='Penalty'){ kind='pen'; const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)/i.exec(text); title=m?`Flag: ${m[3]} on ${(typeof gcAbbr==='function')?gcAbbr(m[1]):m[1]}`:'Penalty'; }
   else { title=text.replace(/^\s*(\([^)]*\)\s*)+/,'').slice(0,90); }
   return {kind, title, roles, stats:lfPlayStats(kind, yds, roles), tokens:roleTok};
 }
@@ -226,6 +226,7 @@ function lfIngestSummary(g, sum, hist){
   const eid=String(g.eid); let added=0; const now=Date.now();
   hist=!!hist;
   plays.forEach((p,i)=>{
+    if(typeof GC_PAUSE_KINDS!=='undefined' && GC_PAUSE_KINDS.has(p.kind)) return;   // the game feed shows the stoppages; this cross-game feed skips them
     const id=String(p.id||''); if(!id) return;
     const key=`${eid}:${id}`;
     const scoreValue = p.scoring ? (/Touchdown/.test(p.type)?6:(/Field Goal/.test(p.type)?3:1)) : 0;

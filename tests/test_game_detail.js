@@ -74,7 +74,7 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
 
   console.log('=== the feed ===');
   const feed=app.feed(SUM, false);
-  chk(feed.length>=12 && feed[0].q===4 && feed[feed.length-1].q===1 && feed.every(p=>['td','fg','xp','miss','to','sack','big','fourth'].includes(p.kind)), `key plays newest first (${feed.length}); every one a score, miss, turnover, sack, 20+ or fourth down`);
+  chk(feed.length>=12 && feed[0].q===4 && feed[feed.length-1].q===1 && feed.every(p=>['td','fg','xp','miss','to','sack','big','fourth','2pt'].includes(p.kind)), `key plays newest first (${feed.length}); every one a score, miss, turnover, sack, 20+ or fourth down`);
   chk(app.feed(SUM, true).length>feed.length && app.feed(SUM, true).some(p=>p.kind==='play'), 'all plays adds the ordinary snaps');
   const titles=feed.map(p=>p.title);
   chk(titles.includes('M. Gesicki 2 yd TD catch 🎉') && titles.includes('C. Brown 5 yd rush TD 🎉') && titles.includes('C. McLaughlin 34 yd FG 🙌'), `headlines name the scorer, the yards and the play (${titles.slice(-3).join(' | ')})`);
@@ -127,8 +127,13 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const ls=app.ls(app.GAME(), SUM);
   chk(/<th>Q1<\/th><th>Q2<\/th><th>Q3<\/th><th>Q4<\/th><th>TOT<\/th>/.test(ls) && /TB<\/td><td>3<\/td><td>7<\/td><td>10<\/td><td>7<\/td><td class="gcls-tot">27/.test(ls) && /CIN<\/td><td>14<\/td><td>10<\/td><td>3<\/td><td>6<\/td><td class="gcls-tot">33/.test(ls), 'the quarter line, away then home, with totals');
   const box=app.box(app.GAME(), SUM, 'CIN');
-  chk(/Passing[\s\S]*<th>C\/ATT<\/th><th>YDS<\/th>[\s\S]*J\. Burrow[\s\S]*<td>25\/35<\/td><td>254<\/td>/.test(box) && /Receiving[\s\S]*M\. Gesicki[\s\S]*<td>5<\/td><td>78<\/td>/.test(box), 'the box score by stat group with ESPN\'s labels and lines');
-  chk(/M\. Gesicki<\/span><small class="gcf-owner">@RichBigMeechy/.test(box) && /gcb-click/.test(box), 'a rostered player shows his owner; a known player opens his card');
+  chk(/Passing[\s\S]*J\. Burrow[\s\S]*<span class="gcb-v">25\/35<\/span><span class="gcb-v">254<\/span>/.test(box) && /Receiving[\s\S]*M\. Gesicki[\s\S]*<span class="gcb-v">5\/\d+<\/span><span class="gcb-v">78<\/span>/.test(box), 'the box score by stat group, each man\'s line in order');
+  chk(/M\. Gesicki<\/span>[^]*?<small class="gcf-owner">@RichBigMeechy/.test(box) && /gcb-click/.test(box), 'a rostered player shows his owner; a known player opens his card');
+  chk(/gcb-head"><span class="gcb-lbl">Passing<\/span><span class="gcb-h">CMP<\/span><span class="gcb-h">YD<\/span><span class="gcb-h">AVG<\/span><span class="gcb-h">TD<\/span><span class="gcb-h">INT<\/span><span class="gcb-h">SACK<\/span><\/div>/.test(box), 'passing in Sleeper\'s six columns, ESPN\'s labels shortened');
+  chk(/Receiving<\/span><span class="gcb-h">REC<\/span><span class="gcb-h">YD<\/span>/.test(box) && /<span class="gcb-v">\d+\/\d+<\/span>/.test(box) && !/gcb-h">TGT/.test(box), 'receptions over targets in one column');
+  chk(/gcb-ava"><img src="https:\/\/sleepercdn\.com\/content\/nfl\/players\/t1\.jpg"/.test(box) && /gcf-pos gcf-pos-te">TE<\/span> • CIN/.test(box), 'a headshot leads each row, the position and club under the name');
+  const injSum=Object.assign({}, SUM, {_gcInj:undefined, injuries:[{team:{abbreviation:'CIN'}, injuries:[{athlete:{id:IDS.t1}, status:'Questionable', details:{type:'Knee'}}]}]});
+  chk(/gcb-inj gcb-inj-q" title="Knee">QUES<\/span>/.test(app.box(app.GAME(), injSum, 'CIN')), 'the injury tag beside the club, as Sleeper shows it');
   chk(/no box score yet for SEA/.test(app.box(app.GAME(), SUM, 'SEA')), 'a side the summary lacks says so');
 
   console.log('=== the game panel: Feed | Stats, Away | Fantasy | Home ===');
@@ -318,7 +323,9 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const good=app.drive(app.GAME('post'), fgD('Field Goal Good')), miss=app.drive(app.GAME('post'), fgD('Field Goal Missed'));
   chk(/gc-seg-fg" d="M[^"]*Q/.test(good) && !/gc-seg-miss/.test(good) && /E\. McPherson 43 yd FG/.test(good) && (good.match(/stroke="#e6b23c"/g)||[]).length===2, 'a made field goal flies from the spot through the uprights');
   chk(/gc-seg-fg gc-seg-miss/.test(miss) && /stroke="#e5484d"/.test(miss) && /no good/.test(miss), 'a miss flies wide, in red');
-  const toD=(plays, result)=>({drives:{previous:[{id:'t'+result, team:{abbreviation:'CIN'}, description:'x', result, plays}]}});
+  const toD=(plays, result)=>({drives:{previous:[{id:'t'+result, team:{id:'4', abbreviation:'CIN'}, description:'x', result, plays}]},
+    header:{competitions:[{competitors:[{homeAway:'home', team:{id:'4', abbreviation:'CIN'}},{homeAway:'away', team:{id:'22', abbreviation:'TB'}}]}]},
+    boxscore:{teams:[{team:{id:'4', abbreviation:'CIN'}},{team:{id:'22', abbreviation:'TB'}}], players:[]}});
   const P=(id,seq,type,text,yds,yte,extra)=>Object.assign({id, sequenceNumber:seq, type:{text:type}, text, statYardage:yds, period:{number:3}, clock:{displayValue:'5:00'}, start:{down:1, yardsToEndzone:yte, shortDownDistanceText:'1st & 10', possessionText:'CIN '+(100-yte)}}, extra||{});
   const intD=toD([P('i1',1,'Rush','C.Brown left end for 5 yards.',5,70), P('i2',2,'Interception Return','(Shotgun) J.Burrow pass deep left intended for M.Gesicki INTERCEPTED by J.Trotter [L.David] at TB 30. J.Trotter to TB 45 for 15 yards (M.Gesicki).',15,65,{isTurnover:true})], 'INT');
   const ih=app.drive(app.GAME('post'), intD);
@@ -337,6 +344,83 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk((fh.match(/class="gc-flag"/g)||[]).length===0 && /gc-seg gc-seg-prog/.test(fh) && (fh.match(/<circle /g)||[]).length===4, 'an older flag is gone once the next snap comes: the drive so far is one quiet line, the start dot, the newest snap, the ball and the pin');
   const flagLast=toD([P('h1',1,'Rush','C.Brown left end for 4 yards.',4,60), P('h2',2,'Penalty','PENALTY on TB-L.David, Defensive Offside, 5 yards, enforced at CIN 44 - No Play.',5,56)], '');
   chk((app.drive(app.GAME('post'), flagLast).match(/class="gc-flag"/g)||[]).length===1 && /Flag: Defensive Offside on TB/.test(app.drive(app.GAME('post'), flagLast)), 'a flag that just happened: the yellow marker at the spot, the ball waiting there');
+
+  console.log('=== extra points, two-point tries, first downs, tacklers ===');
+  const twoOk=app.build(toD([P('x1',1,'Two-Point Pass','(Shotgun) J.Burrow pass to J.Chase. TWO-POINT CONVERSION ATTEMPT. J.Burrow pass to J.Chase ATTEMPT SUCCEEDS.',0,3,{scoringPlay:true})], '2PT'))[0];
+  chk(twoOk.kind==='2pt' && /2-pt pass good/.test(twoOk.title), `a two-point conversion is typed and read (${twoOk.title})`);
+  const twoNo=app.build(toD([P('x2',1,'Two-Point Rush','J.Mixon up the middle. TWO-POINT CONVERSION ATTEMPT FAILS.',0,3)], '2PT'))[0];
+  chk(twoNo.kind==='2pt' && /2-pt run no good/.test(twoNo.title), `a failed two-point reads "no good" (${twoNo.title})`);
+  const tdGood=app.build(toD([P('y1',1,'Passing Touchdown','J.Burrow pass short to T.Higgins for 5 yards, TOUCHDOWN. E.McPherson extra point is GOOD, Center-C.Adomitis.',5,5,{scoringPlay:true})], 'TD'))[0];
+  chk(tdGood.xtra && tdGood.xtra.t==='XP' && tdGood.xtra.ok===true, 'a made extra point is recorded on the touchdown row');
+  const tdMiss=app.build(toD([P('y2',1,'Rushing Touchdown','J.Mixon up the middle for 2 yards, TOUCHDOWN. E.McPherson extra point is No Good.',2,2,{scoringPlay:true})], 'TD'))[0];
+  chk(tdMiss.xtra && tdMiss.xtra.t==='XP' && tdMiss.xtra.ok===false, 'a missed extra point too');
+  const fdYes=app.build(toD([P('z1',1,'Rush','C.Brown up the middle for 7 yards (B.Boettcher).',7,60,{start:{down:3,distance:5,yardsToEndzone:60,shortDownDistanceText:'3rd & 5',possessionText:'CIN 40'}})], ''))[0];
+  chk(fdYes.fd===true && fdYes.tackler==='B.Boettcher', `a run past the sticks is a first down, and the tackler comes out of the text (${fdYes.tackler})`);
+  const fdNo=app.build(toD([P('z2',1,'Rush','C.Brown up the middle for 2 yards (E.Downs; C.McDonald).',2,60,{start:{down:3,distance:5,yardsToEndzone:60,shortDownDistanceText:'3rd & 5',possessionText:'CIN 40'}})], ''))[0];
+  chk(fdNo.fd===false && fdNo.tackler==='E.Downs; C.McDonald', 'short of the sticks is not a first down; two tacklers both come through');
+  const toRow=app.build(toD([P('tm1',1,'Timeout','Timeout #1 by NO at 01:51.',0,57)], ''))[0];
+  chk(toRow.kind==='timeout' && toRow.title==='Timeout \u2014 NO', `a timeout is typed as a feed divider (${toRow.title})`);
+  const toSum=toD([P('tm2',1,'Rush','C.Brown up the middle for 3 yards.',3,60), P('tm3',2,'Timeout','Timeout #2 by CIN.',0,57)], '');
+  chk(app.feed(toSum,false).every(p=>p.kind!=='timeout') && app.feed(toSum,true).some(p=>p.kind==='timeout'), 'timeouts ride the All feed, not Key');
+  chk(/1-play/.test(app.sentence(app.drives(toSum)[0])), 'a timeout is not a play of the drive');
+  const pick=app.build(toD([P('pk1',1,'Pass Interception Return','D.Watson pass deep middle intended for D.Boston INTERCEPTED by R.Spears-Jennings [J.Sawyer] at PIT 40. R.Spears-Jennings to PIT 45 for 5 yards (D.Boston).',5,65,{isTurnover:true})], 'INT'))[0];
+  chk(pick.kind==='to' && /^INT! .*picked off by .*Spears-Jennings/.test(pick.title), `ESPN's "Pass Interception Return" reads as a pick, not raw text (${pick.title})`);
+
+  console.log('=== ESPN\'s own club codes, the after-catch yards, the exact first down, the next situation ===');
+  app.setAll(true);   // the HTML checks below read plain plays, which only the All feed shows
+  const clv=app.build(toD([P('c1',1,'Timeout','Timeout #1 by CLV at 01:51.',0,57)], ''))[0];
+  chk(clv.toTeam==='CLE' && clv.title==='Timeout \u2014 CLE', `"CLV" in the words is Cleveland (${clv.title})`);
+  const flagClv=app.build(toD([P('c2',1,'Penalty','PENALTY on HST-D.Stingley, Defensive Pass Interference, 8 yards, enforced at CIN 40.',8,60)], ''))[0];
+  chk(/on HOU/.test(flagClv.title), `and "HST" is Houston (${flagClv.title})`);
+  const snap=(down,dist,yte)=>({down, distance:dist, yardsToEndzone:yte, shortDownDistanceText:`${down}${down===1?'st':down===2?'nd':down===3?'rd':'th'} & ${dist}`, possessionText:'CIN '+(100-yte), team:{id:'4'}});
+  const after=(down,dist,yte,team)=>({down, distance:dist, yardsToEndzone:yte, shortDownDistanceText:`${down}${down===1?'st':down===2?'nd':down===3?'rd':'th'} & ${dist}`, possessionText:(team==='22'?'TB ':'CIN ')+(100-yte), team:{id:team||'4'}});
+  const yac=app.build(toD([P('v1',1,'Pass Reception','J.Burrow pass short left to T.Higgins to TB 44 for 12 yards (A.Winfield).',12,56,{yardsAfterCatch:9, start:snap(1,10,56), end:after(1,10,44)})], ''))[0];
+  chk(yac.yac===9 && yac.fd===true && yac.next==='', 'a catch carries its yards after the catch; a new set of downs is a first down, and the chip says so (no next line)');
+  chk(/9 yds after catch/.test(app.feedHTML(app.GAME('post'), toD([P('v1',1,'Pass Reception','J.Burrow pass short left to T.Higgins to TB 44 for 12 yards (A.Winfield).',12,56,{yardsAfterCatch:9, start:snap(1,10,56), end:after(1,10,44)})], ''))), 'the note reads "9 yds after catch"');
+  const wiped=app.build(toD([P('v2',1,'Rush','C.Brown up the middle for 7 yards (B.Boettcher).',7,60,{start:snap(3,5,60), end:after(3,15,70)})], ''))[0];
+  chk(wiped.fd===false && wiped.next==='3rd & 15', 'past the sticks but ESPN says 3rd & 15 after (a flag wiped it): no first down, and the next line says where things stand');
+  const tacked=app.build(toD([P('v3',1,'Rush','C.Brown up the middle for 2 yards (B.Boettcher).',2,60,{start:snap(3,5,60), end:after(1,10,50)})], ''))[0];
+  chk(tacked.fd===true, 'short of the sticks but 1st & 10 after (a flag tacked on): a first down');
+  const flipped=app.build(toD([P('v4',1,'Punt','M.Araiza punts 41 yards to TB 28, Center-J.Winchester. A.Bachman to TB 42 for 14 yards.',41,60,{start:snap(4,8,60), end:after(1,10,58,'22')})], 'PUNT'))[0];
+  chk(flipped.fd===false && flipped.next==='TB ball', `a punt: the next line says whose ball it is now (${flipped.next})`);
+  const nextHTML=app.feedHTML(app.GAME('post'), toD([P('v2',1,'Rush','C.Brown up the middle for 7 yards (B.Boettcher).',7,60,{start:snap(3,5,60), end:after(3,15,70)})], ''));
+  chk(/3rd &amp; 5 @ CIN 40 ▸ 3rd &amp; 15/.test(nextHTML), 'the situation line: the snap, then where the play left it');
+
+  console.log('=== third downs counted, halftime and the final as cards, the drive\'s time ===');
+  const thirds=toD([P('w1',1,'Rush','C.Brown up the middle for 7 yards.',7,60,{start:snap(3,5,60), end:after(1,10,53)}),
+    P('w2',2,'Pass Incompletion','J.Burrow pass incomplete short right to T.Higgins.',0,53,{start:snap(3,8,53), end:after(4,8,53)}),
+    P('w3',3,'Penalty','PENALTY on CIN-O.Cappa, False Start, 5 yards, enforced at TB 47 - No Play.',5,47,{start:snap(3,2,47), end:after(3,7,52)}),
+    P('w4',4,'Passing Touchdown','J.Burrow pass short to T.Higgins for 5 yards, TOUCHDOWN.',5,5,{scoringPlay:true, start:snap(3,2,5), end:after(0,0,0)}),
+    P('w5',5,'Rush','C.Brown up the middle for 1 yard.',1,60,{start:snap(4,1,60), end:after(1,10,59)})], '');
+  const tr=app.build(thirds);
+  chk(tr[0].conv && tr[0].conv.d===3 && tr[0].conv.ok===true && tr[0].conv.m===1 && tr[0].conv.t===1, 'a third down made: 1/1');
+  chk(tr[1].conv && tr[1].conv.ok===false && tr[1].conv.m===1 && tr[1].conv.t===2, 'one missed: 1/2');
+  chk(!tr[2].conv, 'a flag before the snap is not a try');
+  chk(tr[3].conv && tr[3].conv.ok===true && tr[3].conv.m===2 && tr[3].conv.t===3, 'a touchdown on third down counts as made: 2/3');
+  chk(tr[4].conv && tr[4].conv.d===4 && tr[4].conv.ok===true && tr[4].conv.m===1 && tr[4].conv.t===1, 'fourth downs have their own count');
+  chk(/CIN 3rd down 1\/2/.test(app.feedHTML(app.GAME('post'), thirds)) && /gcf-conv-no/.test(app.feedHTML(app.GAME('post'), thirds)) && /CIN 4th down 1\/1/.test(app.feedHTML(app.GAME('post'), thirds)), 'the notes read "CIN 3rd down 1/2" (missed) and "CIN 4th down 1/1"');
+  const hsHTML=app.feedHTML(app.GAME('post'), SUM);
+  chk(/gcf-ava"><img src="https:\/\/sleepercdn\.com\/content\/nfl\/players\/q2\.jpg" class="gcf-hs"/.test(hsHTML) && /gcf-ava-logo/.test(hsHTML), 'a play row leads with the named player\'s headshot, the club\'s logo as a badge');
+  app.setTab('feed'); const wbHTML=app.gameHTML(app.GAME('post'));
+  chk(/gc-winbar/.test(wbHTML) && /<b>LOST<\/b> • 6%/.test(wbHTML) && /94% • <b>WON<\/b>/.test(wbHTML), 'the WIN bar under the feed: each club\'s chance, the logo outside');
+  const halfSum=toD([P('e1',1,'Rush','C.Brown up the middle for 3 yards.',3,60), P('e2',2,'End Period','END QUARTER 1',0,57,{period:{number:1}}), P('e3',3,'End of Half','END QUARTER 2',0,57,{awayScore:7, homeScore:24, period:{number:2}})], '');
+  const hr=app.build(halfSum);
+  chk(hr[1].kind==='period' && hr[1].title==='End of Q1' && hr[2].kind==='half' && hr[2].title==='CIN take a 17-point lead over TB into halftime, 24-7', `the end of a quarter is a divider, halftime a sentence (${hr[2].title})`);
+  chk(app.feed(halfSum,false).some(p=>p.kind==='half') && !app.feed(halfSum,false).some(p=>p.kind==='period') && app.feed(halfSum,true).some(p=>p.kind==='period'), 'halftime is a key moment; the quarter divider rides All only');
+  chk(/gcf-row gcf-phase gcf-half/.test(app.feedHTML(app.GAME('post'), halfSum)) && /gcf-divider gcf-div-period/.test(app.feedHTML(app.GAME('post'), halfSum)), 'halftime is a card, the quarter a divider');
+  chk(/1-play/.test(app.sentence(app.drives(halfSum)[0])) && /C\.? ?Brown 3 yd rush/.test(app.lastPlay(app.GAME('post'), halfSum)), 'neither is a play of the drive, nor the final play');
+  const tie=app.build(toD([P('e4',1,'End of Half','END QUARTER 2',0,57,{awayScore:10, homeScore:10, period:{number:2}})], ''))[0];
+  chk(tie.title==='TB and CIN go to halftime tied at 10', `a tie says so (${tie.title})`);
+  const eleven=app.build(toD([P('e4b',1,'End of Half','END QUARTER 2',0,57,{awayScore:21, homeScore:10, period:{number:2}})], ''))[0];
+  chk(eleven.title==='TB take an 11-point lead over CIN into halftime, 21-10', `"an 11-point lead" (${eleven.title})`);
+  const loss=app.build(SUM).find(p=>(p.type==='Rush'||p.type==='Pass Reception') && p.yds<0 && p.who.length);
+  chk(loss && /^-\d+ YD$/.test(loss.who[0].delta), `a loss reads "-3 YD", not "+-3" (${loss&&loss.who[0].delta})`);
+  const finSum=toD([P('e5',1,'End of Game','END GAME',0,57,{awayScore:27, homeScore:33, period:{number:4}})], '');
+  chk(app.build(finSum)[0].kind==='final' && app.build(finSum)[0].title==='Final: CIN beat TB 33-27', `the final: who beat whom (${app.build(finSum)[0].title})`);
+  chk(app.build(Object.assign({article:{headline:'Burrow rallies Bengals past Bucs'}}, finSum))[0].title==='Burrow rallies Bengals past Bucs', 'ESPN\'s headline leads when there is one');
+  const timed=toD([P('e6',1,'Rush','C.Brown up the middle for 3 yards.',3,60)], 'PUNT'); timed.drives.previous[0].timeElapsed={displayValue:'2:13'};
+  chk(/3 yds\. 2:13 off the clock\. PUNT/.test(app.sentence(app.drives(timed)[0])), `the drive sentence carries the time it took (${app.sentence(app.drives(timed)[0])})`);
+  app.setAll(false);
 
   console.log('=== a punt: the kick to where it was fielded, then the return the other way ===');
   const punR=app.punt('M.Araiza punts 41 yards to TB 28, Center-J.Winchester. A.Bachman to TB 42 for 14 yards (E.Downs; C.McDonald).', 'CIN');
@@ -464,7 +548,7 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(app.sentence(app.drives(mini)[0])==='CIN from own 40: 2-plays. 1 rush, 12 yds. 1/1 pass, 48 yds. TD 🎉', `the sentence, Sleeper's wording: "${app.sentence(app.drives(mini)[0])}"`);
   app.wpOpen(false); app.setSum('401872925', SUM);
   const w0=app.wp(app.GAME('post'), SUM);
-  chk(/gc-wp-head/.test(w0) && /<b>6%<\/b>/.test(w0) && /<b>94%<\/b>/.test(w0) && !/<svg/.test(w0) && /aria-expanded="false"/.test(w0), 'win probability folded by default: the two numbers, no chart (TB 6%, CIN 94% at the end)');
+  chk(/gc-wp-head/.test(w0) && /<b>6%<\/b>/.test(w0) && /<b>94%<\/b>/.test(w0) && !/<svg/.test(w0) && /aria-expanded="false"/.test(w0), 'win probability folded by hand: the two numbers, no chart (TB 6%, CIN 94% at the end)');
   app.wpOpen(true); const w1=app.wp(app.GAME('post'), SUM);
   const cy=Number((w1.match(/<circle cx="[\d.]+" cy="([\d.]+)"/)||[])[1]);
   chk(/<svg/.test(w1) && cy>40 && /aria-expanded="true"/.test(w1) && (w1.match(/<image /g)||[]).length===2, 'open: the chart with both clubs\' marks on the axis, and the line ends near the bottom — the home side, who is winning');
