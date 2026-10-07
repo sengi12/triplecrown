@@ -1838,6 +1838,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-seg-pen{stroke:#f5c542!important;stroke-dasharray:4 4;opacity:.85;}
 .gc-seg-tb{opacity:.7;}
 .gc-seg-sack{stroke:#e5484d!important;stroke-dasharray:none;}
+.gc-seg-yac{stroke:#39c15a!important;stroke-dasharray:none;}
 
 /* ══ The Sleeper look: the game detail as a consumer app, not a data rail ══════════════════
    Bigger, mixed-case type on a rounded face; tonal cards with no borders and a generous
@@ -11978,6 +11979,7 @@ function gcDrives(sum){
       const pid=String(p.id||''); if(pid && pseen.has(pid)) return; if(pid) pseen.add(pid);
       const kind=gcPlayKind(p); if(kind==='skip' || GC_PAUSE_KINDS.has(kind)) return;
       plays.push({ id:pid, kind, type:String((p.type&&p.type.text)||''), text:String(p.text||''), yds:Number(p.statYardage||0),
+        yac:(p.yardsAfterCatch!=null && p.yardsAfterCatch!=='')?Number(p.yardsAfterCatch):null,
         yte:(p.start && p.start.yardsToEndzone!=null)?Number(p.start.yardsToEndzone):null, scoring:!!p.scoringPlay, turnover:!!p.isTurnover,
         q:Number((p.period&&p.period.number)||0), clock:String((p.clock&&p.clock.displayValue)||'') });
     });
@@ -12238,7 +12240,7 @@ function gcDriveChartHTML(game, sum){
     const inc=lp.type==='Pass Incompletion';
     let punt=null, pen=null;
     let fin=null, pre=null, connector=null, endX=null, endY=lane, retCol='#39c15a';
-    let marker=null, showFlag=false, flagX=0, incAt=false;
+    let marker=null, showFlag=false, flagX=0, incAt=false, yacRun=false;
     let pinTeam=d.team, pinToken='', pinRing='#fff';
     let big = kick || !!to || lp.scoring || Math.abs(lp.yds)>=20;
     const nn=(typeof gcPlayNames==='function') ? gcPlayNames(lp.text) : {primary:'',receiver:'',picker:'',recoverer:''};
@@ -12300,7 +12302,18 @@ function gcDriveChartHTML(game, sum){
       const sack=/^Sack/.test(lp.type);
       const endYd = Math.max(0, Math.min(100, last.yd+lp.yds));
       endX=X(endYd);
-      if(Math.abs(endYd-last.yd)>=0.01) fin = sack ? Object.assign(line(x0,endX), {cls:' gc-seg-sack'}) : (/Pass/.test(lp.type) ? Object.assign(quad(x0,endX,Math.min(24, Math.max(8, Math.abs(endX-x0)*0.4))), {cls:''}) : Object.assign(line(x0,endX), {cls:''}));
+      const isPass=/Pass/.test(lp.type);
+      if(isPass && lp.yac>0 && Math.abs(endYd-last.yd)>=0.01){
+        // ESPN charts the yards after the catch: the throw arcs to where the ball was caught
+        // (the play's yards less the run after — behind the line on a screen), then the run
+        // goes on along the ground in green, a dot at the catch
+        const catchYd=Math.max(0, Math.min(100, endYd-lp.yac)), xc=X(catchYd);
+        yacRun=true;
+        if(Math.abs(catchYd-last.yd)>=0.01) pre=Object.assign(quad(x0,xc,Math.min(24, Math.max(8, Math.abs(xc-x0)*0.4))), {cls:''});
+        fin=Object.assign(line(xc,endX), {cls:' gc-seg-yac'});
+        marker={x:xc, col:'#39c15a'};
+      }
+      else if(Math.abs(endYd-last.yd)>=0.01) fin = sack ? Object.assign(line(x0,endX), {cls:' gc-seg-sack'}) : (isPass ? Object.assign(quad(x0,endX,Math.min(24, Math.max(8, Math.abs(endX-x0)*0.4))), {cls:''}) : Object.assign(line(x0,endX), {cls:''}));
       pinToken=(/Pass Reception|Passing Touchdown/.test(lp.type) && nn.receiver) ? nn.receiver : nn.primary;
     }
     const animate = _gcd.driveSeen[eid]!==lp.id; _gcd.driveSeen[eid]=lp.id;
@@ -12308,7 +12321,7 @@ function gcDriveChartHTML(game, sum){
     // a two-stage play (the throw then the return, the kick then the return) draws its first
     // leg and the ball travels it — on an interception the pass arcs in, then it turns over and
     // the return picks up where the defender caught it — and only then does the second leg run
-    const preDur = ((punt||koData||to) && pre && fin) ? 0.8 : 0;
+    const preDur = ((punt||koData||to||yacRun) && pre && fin) ? 0.8 : 0;
     segs.forEach(sg=>parts.push(`<path class="gc-seg${sg.cls}" d="${sg.d}" fill="none" stroke="#39c15a" stroke-width="2" stroke-linecap="round" opacity="0.55"/>`));
     if(connector) parts.push(`<path class="gc-seg gc-seg-tb" d="${connector.d}" fill="none" stroke="#9aa5b1" stroke-width="1.6" stroke-dasharray="2 3" opacity="0.7"/>`);
     if(pre){
@@ -12382,6 +12395,9 @@ function gcDriveChartHTML(game, sum){
     } else {
       const t=(typeof lfReadPlay==='function') ? lfReadPlay({id:lp.id, type:lp.type, text:lp.text, yds:lp.yds, team:d.team, athletes:[]}).title : lp.text.slice(0,40);
       label=String(t||'').replace(/ 🎉| 🙌/g,'');
+      // with the run after the catch on the field, the label leads with the receiver so the
+      // yards after it fit: "D. Metcalf 15 yd catch · 16 YAC"
+      if(yacRun){ const m=/^(.+?) (-?\d+) yd pass to (.+)$/.exec(label); label = m ? `${m[3]} ${m[2]} yd catch · ${lp.yac} YAC` : `${label.slice(0,28)} · ${lp.yac} YAC`; }
     }
     label=label.slice(0,42);
     const anchor = endX>W*0.66 ? 'end' : (endX<W*0.34 ? 'start' : 'middle');

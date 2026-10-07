@@ -468,6 +468,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-seg-pen{stroke:#f5c542!important;stroke-dasharray:4 4;opacity:.85;}
 .gc-seg-tb{opacity:.7;}
 .gc-seg-sack{stroke:#e5484d!important;stroke-dasharray:none;}
+.gc-seg-yac{stroke:#39c15a!important;stroke-dasharray:none;}
 
 /* ══ The Sleeper look: the game detail as a consumer app, not a data rail ══════════════════
    Bigger, mixed-case type on a rounded face; tonal cards with no borders and a generous

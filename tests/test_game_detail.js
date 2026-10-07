@@ -422,6 +422,21 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(/3 yds\. 2:13 off the clock\. PUNT/.test(app.sentence(app.drives(timed)[0])), `the drive sentence carries the time it took (${app.sentence(app.drives(timed)[0])})`);
   app.setAll(false);
 
+  console.log('=== a catch with yards after it: the throw arcs to the catch, the run goes on in green ===');
+  const yacD=toD([P('yc1',1,'Rush','C.Brown left end for 5 yards.',5,60), P('yc2',2,'Pass Reception','J.Burrow pass short left to T.Higgins to TB 43 for 12 yards (A.Winfield).',12,55,{yardsAfterCatch:9})], '');
+  const yh=app.drive(app.GAME('post'), yacD);
+  chk(/gc-seg-pre" d="M[^"]*Q/.test(yh) && /gc-seg-last gc-seg-yac" d="M[^"]*L[^"]*" fill="none" stroke="#39c15a"/.test(yh), 'the throw is an arc to the catch, the run after it a green line on the ground');
+  chk(/gc-seg-last gc-seg-yac[^>]*><animate attributeName="stroke-dashoffset" from="[^"]*" to="0" begin="0.8s"/.test(yh), 'the run starts once the throw has landed (a two-stage play)');
+  const geom=(h)=>{ const pre=/gc-seg-pre" d="M([\d.]+),[\d.]+ Q[^ ]+ ([\d.]+),/.exec(h), fin=/gc-seg-yac" d="M([\d.]+),[\d.]+ L([\d.]+),/.exec(h); return {x0:+pre[1], xc:+pre[2], xf0:+fin[1], xe:+fin[2]}; };
+  const gm=geom(yh);
+  chk(Math.abs(gm.xc-gm.xf0)<0.05 && Math.abs((gm.xc-gm.x0)/(gm.xe-gm.x0)-3/12)<0.02, `the catch sits 3 of the 12 yards out, and the run takes the other 9 (${gm.x0}→${gm.xc}→${gm.xe})`);
+  chk(/>T\.? ?Higgins 12 yd catch · 9 YAC<\/text>/.test(yh), `the label leads with the receiver and says how much came after the catch (${(/paint-order="stroke">([^<]*)</.exec(yh)||[])[1]})`);
+  const screenD=toD([P('yc3',1,'Pass Reception','J.Burrow pass short left to C.Brown to CIN 48 for 8 yards (A.Winfield).',8,60,{yardsAfterCatch:11})], '');
+  const scrH=app.drive(app.GAME("post"), screenD); const sg=geom(scrH);
+  chk((sg.xc-sg.x0)*(sg.xe-sg.x0)<0, 'a screen caught behind the line: the arc goes back, the run comes forward past the snap (the home club drives right to left)');
+  const noYac=app.drive(app.GAME('post'), toD([P('yc4',1,'Pass Reception','J.Burrow pass deep left to T.Higgins to TB 20 for 40 yards.',40,60)], ''));
+  chk(!/gc-seg-yac/.test(noYac) && /gc-seg-last" d="M[^"]*Q/.test(noYac), 'no yards after the catch charted: one arc, as before');
+
   console.log('=== a punt: the kick to where it was fielded, then the return the other way ===');
   const punR=app.punt('M.Araiza punts 41 yards to TB 28, Center-J.Winchester. A.Bachman to TB 42 for 14 yards (E.Downs; C.McDonald).', 'CIN');
   chk(punR && punR.catchYd===72 && punR.returner==='A.Bachman', 'a punt read from the words: where it was fielded, and by whom');
