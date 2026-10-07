@@ -299,13 +299,37 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gcf-owner{font-size:9px;color:var(--accent);font-weight:700;}
 .gcf-stat{white-space:nowrap;}
 .gcf-stat em{font-style:normal;color:#00d4aa;font-weight:700;}
+/* Play chips (first down, the extra-point / two-point result) and the tackler line. */
+.gcf-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:1px;}
+.gcf-chip{font-size:9px;font-weight:900;letter-spacing:.04em;border-radius:999px;padding:1px 7px;line-height:1.5;}
+.gcf-fd{background:color-mix(in srgb,#4fc26a 20%,transparent);color:#6fe08a;}
+.gcf-xtra-ok{background:color-mix(in srgb,#4f83cc 22%,transparent);color:#8fb4ea;}
+.gcf-xtra-no{background:color-mix(in srgb,#d64560 22%,transparent);color:#ff9aa8;}
+.gcf-yac{background:color-mix(in srgb,#e0a83a 18%,transparent);color:#f0c46a;}
+.gcf-conv-ok{background:color-mix(in srgb,#4fc26a 14%,transparent);color:#8fd9a2;}
+.gcf-conv-no{background:color-mix(in srgb,#9fb0c3 14%,transparent);color:var(--muted);}
+/* Halftime and the final: a card without a club, the sentence as its headline. */
+.gcf-phase{background:color-mix(in srgb,var(--surface3) 70%,transparent);border-style:dashed;}
+.gcf-phase-ico{width:22px;text-align:center;font-size:14px;font-weight:900;color:var(--muted);line-height:22px;}
+.gcf-phase .gcf-sit{text-transform:uppercase;letter-spacing:.06em;font-weight:800;}
+.gcf-tackle{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:10px;color:var(--muted);}
+.gcf-tkl-lbl{font-size:8px;font-weight:900;letter-spacing:.06em;color:var(--muted2,#9fb0c3);text-transform:uppercase;opacity:.8;}
+.gcf-tkl{color:var(--text);font-weight:600;}
+.gcf-tkl-pos{font-size:8px;font-weight:900;letter-spacing:.04em;color:var(--muted);}
+.gcf-tkl-n{font-family:var(--mono);font-size:9.5px;font-weight:700;color:var(--muted2,#9fb0c3);}
+/* Timeout — a slim centred divider in the feed (Sleeper's game stoppage marker). */
+.gcf-divider{display:flex;align-items:center;gap:8px;padding:5px 2px;}
+.gcf-div-l{flex:1;height:1px;background:var(--border);}
+.gcf-div-lbl{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);white-space:nowrap;}
+.gcf-div-logo{width:14px;height:14px;object-fit:contain;}
+.gcf-div-clock{font-family:var(--mono);font-weight:700;color:var(--muted2,#9fb0c3);text-transform:none;letter-spacing:0;}
 .gcf-right{display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:74px;}
 .gcf-clock{font-size:11px;font-weight:800;color:var(--text);}
 .gcf-score{font-size:11px;color:var(--muted);white-space:nowrap;}
 .gcf-sc-hit{color:var(--text);font-weight:800;}
 .gcf-dash{margin:0 3px;}
 .gcf-badge{font-size:9px;font-weight:900;letter-spacing:.05em;border-radius:999px;padding:2px 7px;background:var(--surface3);color:var(--muted);}
-.gcf-b-td{background:#00d4aa;color:#0d1117;} .gcf-b-fg,.gcf-b-xp{background:#4f83cc;color:#fff;} .gcf-b-to,.gcf-b-miss{background:#d64560;color:#fff;} .gcf-b-sack{background:#e0a83a;color:#0d1117;}
+.gcf-b-td{background:#00d4aa;color:#0d1117;} .gcf-b-fg,.gcf-b-xp{background:#4f83cc;color:#fff;} .gcf-b-2pt{background:#b07cd8;color:#0d1117;} .gcf-b-to,.gcf-b-miss{background:#d64560;color:#fff;} .gcf-b-sack{background:#e0a83a;color:#0d1117;}
 .gcls-wrap{overflow-x:auto;margin:2px 0 8px;}
 .gcls{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums;}
 .gcls th{font-size:10px;color:var(--muted);font-weight:700;text-align:center;padding:4px 6px;border-bottom:1px solid var(--border);}
@@ -444,3 +468,96 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-seg-pen{stroke:#f5c542!important;stroke-dasharray:4 4;opacity:.85;}
 .gc-seg-tb{opacity:.7;}
 .gc-seg-sack{stroke:#e5484d!important;stroke-dasharray:none;}
+
+/* ══ The Sleeper look: the game detail as a consumer app, not a data rail ══════════════════
+   Bigger, mixed-case type on a rounded face; tonal cards with no borders and a generous
+   radius; a headshot leading each play; the hero on a navy ground with the codes as faded
+   wordmarks (no club-colour wash); win probability on by default; the WIN bar at the foot.
+   Scoped to the game detail so the rest of the app keeps its own voice. */
+.gc-detail{--gcn:#0f1631;--gcn2:#151e3d;--gcn3:#1c2749;--gcline:rgba(255,255,255,.07);--gcmute:#9aa6c4;--gclive:#ff4d6a;--gcteal:#2fd3c6;
+  font-family:ui-rounded,-apple-system,"SF Pro Rounded",system-ui,"Segoe UI",Roboto,sans-serif;}
+/* the hero */
+.gc-detail .gc-hero,.games-view .gc-hero,.gcm-sheet .gc-hero{background:linear-gradient(180deg,var(--gcn3) 0%,var(--gcn) 100%);border:none;border-radius:20px;padding:18px 16px 16px;margin:2px 0 8px;gap:10px;}
+.gc-detail .gc-hero::before{display:none;}
+.gc-detail .gc-hero-wm{font-size:64px;opacity:.06;letter-spacing:-.05em;}
+.gc-detail .gc-logo{width:30px;height:30px;}
+.gc-detail .gc-team,.games-view .gc-team,.gcm-sheet .gc-team{font-size:19px;font-weight:800;letter-spacing:-.01em;line-height:1.1;}
+.gc-detail .gc-rec{font-size:12px;color:var(--gcmute);font-weight:600;}
+.gc-detail .gc-score,.games-view .gc-score,.gcm-sheet .gc-score{font-family:inherit;font-size:46px;font-weight:800;letter-spacing:-.03em;line-height:1;text-shadow:none;}
+.gc-detail .gc-status,.games-view .gc-status{font-size:13px;font-weight:700;letter-spacing:0;text-transform:none;border:none;background:none;padding:0;color:var(--text);}
+.gc-detail .gc-status.gc-live{color:var(--text);}
+.gc-detail .gc-status.gc-live::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--gclive);margin-right:6px;vertical-align:1px;animation:tcGsPulse 1.2s ease-in-out infinite;}
+.gc-detail .gc-spot{font-size:12px;font-weight:600;color:var(--gcmute);}
+.gc-src{font-size:11px;font-weight:600;color:var(--gcmute);opacity:.75;}
+.gc-detail .gc-to i{width:7px;height:7px;background:#2a3356;} .gc-detail .gc-to i.on{background:#e7ecf7;}
+.gc-detail .gc-ball{color:#fff;}
+/* the odds strip and the line score: tonal, no border */
+.games-view .gc-odds,.gc-detail .gc-odds{border:none;background:var(--gcn2);border-radius:14px;}
+.games-view .gcls-wrap{border:none;background:var(--gcn2);border-radius:14px;}
+/* the last play: a line, not a box */
+.gc-detail .gc-last{border:none;background:none;padding:4px 6px 2px;margin:4px 4px 0;}
+.gc-detail .gc-last-head{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--gcmute);text-transform:none;gap:7px;}
+.gc-detail .gc-last-lbl{text-transform:uppercase;letter-spacing:.06em;font-size:11px;}
+.gc-detail .gc-last-lbl .gcf-dot{background:var(--gclive);}
+.gc-detail .gc-last-spot{font-size:12.5px;font-weight:700;color:var(--text);}
+.gc-detail .gc-last-text{font-size:16px;font-weight:600;margin-top:4px;line-height:1.3;}
+.gc-detail .gc-drive-sum{font-size:12px;font-weight:500;color:var(--gcmute);}
+/* win probability: tonal, the numbers in the rounded face */
+.gc-detail .gc-wp{border:none;background:var(--gcn2);border-radius:14px;margin:6px 4px 4px;}
+.gc-detail .gc-wp-lbl{font-size:11px;letter-spacing:.06em;color:var(--gcmute);}
+.gc-detail .gc-wp-n{font-family:inherit;font-size:15px;font-weight:800;}
+.gc-detail .gc-wp-src{font-size:10px;letter-spacing:.02em;font-weight:500;text-transform:none;}
+/* Feed | Stats: text tabs with the teal underline */
+.gc-detail .gc-tabs,.games-view .gc-tabs{background:none;border:none;border-radius:0;padding:0;gap:22px;justify-content:center;margin:10px 0 6px;}
+.gc-detail .gc-tab,.games-view .gc-tabs .gc-tab{flex:0 0 auto;background:none;border:none;border-radius:0;font-size:15px;font-weight:700;text-transform:none;letter-spacing:0;color:var(--gcmute);padding:4px 2px 7px;position:relative;}
+.gc-detail .gc-tab.active,.games-view .gc-tabs .gc-tab.active{background:none;color:var(--text);}
+.gc-detail .gc-tab.active::after,.games-view .gc-tabs .gc-tab.active::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;border-radius:3px;background:var(--gcteal);}
+.gc-detail .gcf-bar{font-size:11px;color:var(--gcmute);margin:0 2px 8px;}
+.gc-detail .gcf-bar .ld-pos{border:none;background:var(--gcn2);color:var(--gcmute);font-size:11px;font-weight:700;letter-spacing:0;padding:4px 12px;border-radius:999px;flex:0 0 auto;}
+.gc-detail .gcf-bar .ld-pos.active{background:var(--text);color:var(--gcn);}
+/* the play rows */
+.gc-detail .gcf{gap:8px;}
+.gc-detail .gcf-row{grid-template-columns:40px minmax(0,1fr) auto;gap:10px;padding:12px 12px 12px 10px;border:none;border-radius:18px;background:var(--gcn2);}
+.gc-detail .gcf-row.gcf-active{background:color-mix(in srgb,var(--gcteal) 14%,var(--gcn2));}
+.gc-detail .gcf-click:hover{background:var(--gcn3);}
+.gcf-ava{position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;flex:none;margin-top:1px;}
+.gcf-hs{width:40px;height:40px;border-radius:50%;object-fit:cover;object-position:top;background:var(--gcn3);display:block;}
+.gcf-ava-logo{position:absolute;right:-3px;bottom:-2px;width:17px;height:17px;object-fit:contain;filter:drop-shadow(0 0 2px rgba(0,0,0,.7));}
+.gcf-ava-nohs .gcf-hs{display:none;}
+.gcf-ava-nohs .gcf-ava-logo{position:static;width:30px;height:30px;filter:none;}
+.gcf-ava-ico{font-size:18px;font-weight:800;color:var(--gcmute);}
+.gc-detail .gcf-main{gap:3px;}
+.gc-detail .gcf-sit{font-size:12.5px;color:var(--gcmute);letter-spacing:0;font-weight:500;}
+.gc-detail .gcf-title{font-size:16px;font-weight:800;letter-spacing:-.01em;line-height:1.2;}
+.gc-detail .gcf-who{font-size:12.5px;color:var(--gcmute);gap:4px 6px;}
+.gc-detail .gcf-name{font-weight:600;}
+.gc-detail .gcf-pos{font-size:11px;letter-spacing:.02em;}
+.gc-detail .gcf-pos::after{content:" •";color:var(--gcmute);font-weight:400;}
+.gc-detail .gcf-stat em{color:#3ee0a0;}
+.gcf-notes{display:flex;flex-direction:column;gap:2px;margin-top:2px;}
+.gcf-note,.gc-detail .gcf-note{font-size:12.5px;font-weight:500;color:var(--text);opacity:.92;background:none;padding:0;border-radius:0;letter-spacing:0;}
+.gcf-note.gcf-conv-no,.gcf-note.gcf-xtra-no{color:var(--gcmute);}
+.gc-detail .gcf-tackle{font-size:12px;gap:4px 8px;margin-top:1px;}
+.gc-detail .gcf-tkl-lbl{font-size:10px;letter-spacing:.04em;opacity:.7;}
+.gc-detail .gcf-tkl{font-weight:500;color:var(--text);opacity:.9;}
+.gc-detail .gcf-tkl-pos{font-size:10px;} .gc-detail .gcf-tkl-n{font-family:inherit;font-size:11px;font-weight:600;}
+.gc-detail .gcf-right{min-width:70px;gap:4px;}
+.gc-detail .gcf-clock{font-size:13px;font-weight:700;}
+.gc-detail .gcf-score{font-size:12.5px;font-weight:600;color:var(--gcmute);}
+.gc-detail .gcf-badge{font-size:10px;padding:3px 9px;}
+.gc-detail .gcf-phase{background:var(--gcn);border:none;box-shadow:inset 0 0 0 1px var(--gcline);}
+.gc-detail .gcf-phase .gcf-sit{font-size:11px;}
+.gc-detail .gcf-divider{padding:4px 2px;}
+.gc-detail .gcf-div-l{background:var(--gcline);}
+.gc-detail .gcf-div-lbl{font-size:11.5px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--gcmute);}
+.gc-detail .gcf-div-clock{font-family:inherit;font-weight:600;}
+.gc-detail .gcf-rz{font-size:10px;border-radius:5px;}
+.gc-detail .gcf-soon-tag{font-size:11px;}
+/* the WIN bar */
+.gc-winbar{position:sticky;bottom:0;display:flex;gap:10px;padding:10px 2px calc(8px + env(safe-area-inset-bottom,0px));margin-top:6px;
+  background:linear-gradient(180deg,transparent 0%,var(--bg) 35%);}
+.gc-wb{flex:1;display:flex;align-items:center;justify-content:center;gap:10px;padding:11px 12px;border-radius:999px;background:var(--gcn2);box-shadow:inset 0 0 0 1px var(--gcline);font-size:14px;font-weight:600;color:var(--gcmute);min-width:0;}
+.gc-wb-lead{color:var(--text);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--gcteal) 45%,transparent);}
+.gc-wb b{font-weight:800;letter-spacing:.02em;}
+.gc-wb-logo{width:26px;height:26px;object-fit:contain;flex:none;}
+.gc-wb-t{white-space:nowrap;}

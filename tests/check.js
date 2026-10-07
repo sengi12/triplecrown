@@ -4949,13 +4949,17 @@ function gcGameHTML(game, rows, wk){
   const ball=(team)=> (sit && sit.poss===team) ? `<i class="gc-ball" title="${team} ball">${typeof TC_ICON==='function'?TC_ICON('football'):'●'}</i>` : '';
   const spot = sit ? (sit.phase ? '' : `${sit.ddt||''}${sit.spot?` @ ${sit.spot}`:''}${sit.rz?' <span class="gcf-rz">RZ</span>':''}`) : '';
   const mid = sit && sit.phase ? escHtml(sit.phase) : escHtml(st);
+  // the club's nickname ("Falcons") when the seed names it, the code otherwise; the code
+  // stays as the faded wordmark behind
+  const nick=(t)=>{ const n=(typeof TEAM_NAMES!=='undefined' && TEAM_NAMES && TEAM_NAMES[t]) ? String(TEAM_NAMES[t]) : ''; const i=n.lastIndexOf(' '); return i>0 ? n.slice(i+1) : t; };
+  const src = game.state==='pre' ? '' : `<div class="gc-src">ESPN</div>`;
   const hero=`<div class="gc-hero" style="--ga:${escAttr(col(game.away))};--gh:${escAttr(col(game.home))}">
       <span class="gc-hero-wm gc-hero-wm-a" aria-hidden="true">${game.away}</span><span class="gc-hero-wm gc-hero-wm-h" aria-hidden="true">${game.home}</span>
-      <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${game.away}</span><span class="gc-rec">${escHtml(game.arec)}</span>${dots(sit&&sit.to?sit.to.away:null)}</div>
+      <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${escHtml(nick(game.away))}</span><span class="gc-rec">${escHtml(game.arec)}</span>${dots(sit&&sit.to?sit.to.away:null)}</div>
       <b class="gc-score">${game.state==='pre'?'':(game.as!=null?game.as:'–')}${ball(game.away)}</b>
-      <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}">${mid}</div>${spot?`<div class="gc-spot">${spot}</div>`:''}</div>
+      <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}">${mid}</div>${spot?`<div class="gc-spot">${spot}</div>`:''}${src}</div>
       <b class="gc-score">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}${ball(game.home)}</b>
-      <div class="gc-side gc-side-home"><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${game.home}</span><span class="gc-rec">${escHtml(game.hrec)}</span>${dots(sit&&sit.to?sit.to.home:null)}</div>
+      <div class="gc-side gc-side-home"><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${escHtml(nick(game.home))}</span><span class="gc-rec">${escHtml(game.hrec)}</span>${dots(sit&&sit.to?sit.to.home:null)}</div>
     </div>`;
   // The Vegas line under the banner: spread, over/under, each side's implied point total.
   const oddsHtml=(typeof gcOddsHTML==='function') ? gcOddsHTML(game) : '';
@@ -4974,7 +4978,8 @@ function gcGameHTML(game, rows, wk){
   // Feed: on the desktop sidebar the hero, the field and the tabs stay put while the plays
   // scroll in their own window — so a play tapped for replay keeps animating in view (CSS
   // turns this off inside the phone's bottom sheet, where the whole sheet scrolls).
-  if(tab==='feed') return `<div class="gc-feedview"><div class="gc-feedview-head">${hero}${oddsHtml}${top}${tabs}</div><div class="gc-feedview-feed">${gcFeedHTML(game, sum)}</div></div>`;
+  const winbar=(typeof gcWinBarHTML==='function') ? gcWinBarHTML(game, sum) : '';
+  if(tab==='feed') return `<div class="gc-feedview"><div class="gc-feedview-head">${hero}${oddsHtml}${top}${tabs}</div><div class="gc-feedview-feed">${gcFeedHTML(game, sum)}${winbar}</div></div>`;
   const seg=`<div class="gc-seg"><button class="${side==='away'?'active':''}" onclick="gcdSetSide('away')"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${game.away}</button><button class="${side==='fantasy'?'active':''}" onclick="gcdSetSide('fantasy')">Fantasy</button><button class="${side==='home'?'active':''}" onclick="gcdSetSide('home')"><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'">${game.home}</button></div>`;
   const pane = side==='fantasy' ? fantasy : gcBoxHTML(game, sum, side==='home'?game.home:game.away);
   return hero+oddsHtml+top+tabs+(game.state==='pre'?'':gcLinescoreHTML(game, sum))+seg+pane;
@@ -5391,6 +5396,10 @@ function gcStreamOnBoard(teams){
   else gcDetailRepaint();                                            // the down moved: the situation line
 }
 function gcPanelVisible(){
+  // The full-page Games view (mobile, and desktop when Games is the active phase) is a live
+  // surface too — without this the 5 s poll only armed for the maximised sidebar / the legacy
+  // phone sheet, so the Games view fell back to its 61 s repaint and looked frozen.
+  if(typeof gcInGamesView==='function' && gcInGamesView()) return true;
   if(typeof _gc!=='undefined' && _gc && _gc.mode==='max') return true;
   return !!(typeof _gcm!=='undefined' && _gcm && _gcm.open && _gcm.open!=='closed');
 }
@@ -5427,6 +5436,9 @@ function gcSummaryCatchUp(game){
   return true;
 }
 const GC_SKIP_TYPES = new Set(['Timeout','Official Timeout','End Period','End of Half','End of Game','Two-minute warning']);
+// The pauses the feed shows but nothing else counts: no drive-chart move, no last play, no
+// cross-game live-feed row.
+const GC_PAUSE_KINDS = new Set(['timeout','period','half','final']);
 const GC_BOX_GROUPS = [['passing','Passing'],['rushing','Rushing'],['receiving','Receiving'],['fumbles','Fumbles'],['defensive','Defense'],['interceptions','Interceptions'],['kickReturns','Kick returns'],['puntReturns','Punt returns'],['kicking','Kicking'],['punting','Punting']];
 
 // The summary for a game (cached; live games re-read every 30 s, finals rest).
@@ -5469,7 +5481,11 @@ function gcReplayPlay(eid, playId){
 function gcReplayClear(){ _gcd.replay=null; gcDetailRepaint(); }
 
 // ── ESPN ↔ app identities ────────────────────────────────────────────────────
-function gcAbbr(ab){ ab=String(ab||'').toUpperCase(); return (typeof TC_BOARD_ABBR!=='undefined' && TC_BOARD_ABBR[ab]) || ab; }
+// ESPN's play TEXT spells four clubs its own way ("Timeout #1 by CLV", "to HST 21"); the team
+// objects say CLE/BAL/HOU/ARI. Anything read out of the words goes through here before a logo
+// lookup or a side-of-the-field comparison.
+const GC_TEXT_ABBR = { CLV:'CLE', BLT:'BAL', HST:'HOU', ARZ:'ARI' };
+function gcAbbr(ab){ ab=String(ab||'').toUpperCase(); return (typeof TC_BOARD_ABBR!=='undefined' && TC_BOARD_ABBR[ab]) || GC_TEXT_ABBR[ab] || ab; }
 var _gcEspnIdx = null;
 function gcEspnIndex(){
   if(_gcEspnIdx) return _gcEspnIdx;
@@ -5644,12 +5660,30 @@ function gcPlayNames(text){
     recoverer: gcTok('RECOVERED by [A-Z]{2,3}-'+GC_TOKEN, t),
   };
 }
+// The tackler(s) from a play's trailing parenthesis — "… for 4 yards (B.Boettcher)." or
+// "… (E.Downs; C.McDonald).". Formation notes ride at the FRONT, so the last group is the stop.
+function gcTackler(text){
+  const m=String(text||'').match(/\(([^)]*)\)\s*\.?\s*$/);
+  if(!m) return '';
+  const inside=m[1].trim();
+  if(!/[A-Za-z]\.[A-Za-z]/.test(inside)) return '';                       // must read like name initials
+  if(/shotgun|huddle|formation|field goal|punt|kick|center|holder|penalty|declined|aborted/i.test(inside)) return '';
+  return inside;
+}
+function gcTacklerLabel(s){
+  return String(s||'').split(/\s*;\s*/).map(x=>gcShort(x.trim())).filter(Boolean).join(', ');
+}
 
 // ── The plays, flattened and typed ───────────────────────────────────────────
 function gcPlayKind(p){
   const t=String((p.type&&p.type.text)||'');
+  if(/^(?:Official )?Timeout$/.test(t)) return 'timeout';
+  if(t==='End of Half') return 'half';
+  if(t==='End of Game') return 'final';
+  if(t==='End Period') return 'period';
   if(GC_SKIP_TYPES.has(t)) return 'skip';
-  if(/Touchdown/.test(t) || (p.scoringPlay && /Two Point|Safety/.test(t))) return 'td';
+  if(/Two[\s-]?Point/i.test(t)) return '2pt';
+  if(/Touchdown/.test(t) || (p.scoringPlay && /Safety/.test(t))) return 'td';
   if(t==='Field Goal Good') return 'fg';
   if(t==='Extra Point Good') return 'xp';
   if(/Field Goal Missed|Blocked Field Goal|Extra Point Missed|Blocked Extra Point/.test(t)) return 'miss';
@@ -5667,8 +5701,10 @@ function gcPlays(sum){
   // came through twice, doubling the rows and the running lines. One pass per play id.
   const drives=[].concat(dr.previous||[], dr.current?[dr.current]:[]);
   const out=[], seen=new Set();
+  const byId={}; ((sum && sum.boxscore && sum.boxscore.teams)||[]).forEach(t=>{ if(t.team && t.team.id!=null) byId[String(t.team.id)]=gcAbbr(t.team.abbreviation); });
   drives.forEach(d=>{
     const team=gcAbbr(d.team && d.team.abbreviation);
+    if(d.team && d.team.id!=null && !byId[String(d.team.id)]) byId[String(d.team.id)]=team;
     (d.plays||[]).forEach(p=>{
       const pid=String(p.id||'');
       if(pid){ if(seen.has(pid)) return; seen.add(pid); }
@@ -5678,8 +5714,14 @@ function gcPlays(sum){
         q:Number((p.period&&p.period.number)||0), clock:String((p.clock&&p.clock.displayValue)||''),
         as:p.awayScore!=null?Number(p.awayScore):null, hs:p.homeScore!=null?Number(p.homeScore):null,
         yds:Number(p.statYardage||0), scoring:!!p.scoringPlay, turnover:!!p.isTurnover, team,
-        down:Number((p.start&&p.start.down)||0), ddt:String((p.start&&p.start.shortDownDistanceText)||''), spot:String((p.start&&p.start.possessionText)||''),
-        yte:(p.start&&p.start.yardsToEndzone!=null)?Number(p.start.yardsToEndzone):null });
+        down:Number((p.start&&p.start.down)||0), dist:(p.start&&p.start.distance!=null)?Number(p.start.distance):null, ddt:String((p.start&&p.start.shortDownDistanceText)||''), spot:String((p.start&&p.start.possessionText)||''),
+        yte:(p.start&&p.start.yardsToEndzone!=null)?Number(p.start.yardsToEndzone):null,
+        // the yards after the catch (ESPN charts them on every reception) and where the play
+        // left things: the next down and spot, and whether the ball changed hands
+        yac:(p.yardsAfterCatch!=null && p.yardsAfterCatch!=='')?Number(p.yardsAfterCatch):null,
+        end:(p.end && p.end.down!=null) ? { down:Number(p.end.down||0), dist:Number(p.end.distance||0), ddt:String(p.end.shortDownDistanceText||''), spot:String(p.end.possessionText||''),
+          same: !(p.end.team && p.end.team.id!=null && p.start && p.start.team && p.start.team.id!=null) || String(p.end.team.id)===String(p.start.team.id),
+          team: (p.end.team && p.end.team.id!=null) ? (byId[String(p.end.team.id)]||'') : '' } : null });
     });
   });
   return out.sort((a,b)=>a.seq-b.seq || a.id.localeCompare(b.id));
@@ -5690,6 +5732,8 @@ function gcFeedBuild(sum){
   const tot={};   // athlete id → running totals
   const T=(a)=>{ if(!tot[a.id]) tot[a.id]={cmp:0,att:0,pyds:0,ptd:0,int:0,car:0,ryds:0,rtd:0,rec:0,recyds:0,rectd:0,fgm:0,fga:0,xpm:0,xpa:0,sacked:0}; return tot[a.id]; };
   const plays=gcPlays(sum);
+  const sides=gcSides(sum);
+  const conv={};   // per club: third and fourth downs tried and made so far
   let pa=0, ph=0;
   plays.forEach(p=>{
     const n=gcPlayNames(p.text);
@@ -5706,22 +5750,40 @@ function gcFeedBuild(sum){
       who.push({ath:a, line:s, delta:delta||''}); };
     let title='';
     const nm=(a, tok)=>a?gcShort(a.name):(tok||'');
-    switch(p.type){
+    const dy=(n)=>`${n<0?'':'+'}${n} YD`;
+    if(p.kind==='timeout'){
+      const m=/by ([A-Z]{2,3})/.exec(p.text); p.toTeam=m?gcAbbr(m[1]):'';
+      title = /Official/i.test(p.type) ? 'Official timeout' : `Timeout${p.toTeam?` — ${p.toTeam}`:''}`;   // (CSS keeps the divider small caps)
+    } else if(p.kind==='period'){
+      title=`End of Q${p.q||''}`;
+    } else if(p.kind==='half' || p.kind==='final'){
+      // the score as it stands, in a sentence: who leads, by how much. After the game ESPN's
+      // own headline says it better, when there is one.
+      const a=p.as!=null?p.as:pa, h=p.hs!=null?p.hs:ph;
+      const lead = a===h ? '' : (a>h ? sides.away : sides.home), trail = a>h ? sides.home : sides.away, hi=Math.max(a,h), lo=Math.min(a,h);
+      const an=(n)=> (n===8 || n===11 || n===18 || (n>=80 && n<=89)) ? 'an' : 'a';   // "an 11-point lead"
+      if(p.kind==='half') title = lead ? `${lead} take ${an(hi-lo)} ${hi-lo}-point lead over ${trail} into halftime, ${hi}-${lo}` : `${sides.away} and ${sides.home} go to halftime tied at ${a}`;
+      else { const head=String((sum && sum.article && sum.article.headline)||'').trim();
+        title = head || (lead ? `Final: ${lead} beat ${trail} ${hi}-${lo}${p.q>4?' in overtime':''}` : `Final: ${sides.away} and ${sides.home} tie at ${a}`); }
+    } else if(p.kind==='2pt'){
+      const ok=!!p.scoring; const isPass=/Pass/i.test(p.type) || / to /.test(gcPlayBody(p.text));
+      title=`${nm(prim,n.primary)}${isPass&&recv?` to ${nm(recv,n.receiver)}`:''} 2-pt ${isPass?'pass':'run'} ${ok?'good':'no good'}`;
+    } else switch(p.type){
       case 'Rush': case 'Rushing Touchdown': {
-        if(prim){ const t=T(prim); t.car++; t.ryds+=y; if(p.type==='Rushing Touchdown') t.rtd++; line(prim,'rush',`+${y} YD`); }
+        if(prim){ const t=T(prim); t.car++; t.ryds+=y; if(p.type==='Rushing Touchdown') t.rtd++; line(prim,'rush',dy(y)); }
         title = p.type==='Rushing Touchdown' ? `${nm(prim,n.primary)} ${y} yd rush TD 🎉` : `${nm(prim,n.primary)} ${y} yd rush`; break; }
       case 'Pass Reception': case 'Passing Touchdown': {
         if(prim){ const t=T(prim); t.att++; t.cmp++; t.pyds+=y; if(p.type==='Passing Touchdown') t.ptd++; }
-        if(recv){ const t=T(recv); t.rec++; t.recyds+=y; if(p.type==='Passing Touchdown') t.rectd++; line(recv,'rec',`+${y} YD`); }
-        if(prim) line(prim,'pass',`+${y} YD`);
+        if(recv){ const t=T(recv); t.rec++; t.recyds+=y; if(p.type==='Passing Touchdown') t.rectd++; line(recv,'rec',dy(y)); }
+        if(prim) line(prim,'pass',dy(y));
         title = p.type==='Passing Touchdown' ? `${nm(recv,n.receiver)} ${y} yd TD catch 🎉` : `${nm(prim,n.primary)} ${y} yd pass to ${nm(recv,n.receiver)}`; break; }
       case 'Pass Incompletion': {
         if(prim){ const t=T(prim); t.att++; line(prim,'pass'); }
         title=`${nm(prim,n.primary)} incomplete${n.receiver?` to ${nm(recv,n.receiver)}`:''}`; break; }
-      case 'Interception Return': case 'Interception Return Touchdown': {
+      case 'Interception Return': case 'Interception Return Touchdown': case 'Pass Interception Return': case 'Pass Interception Return Touchdown': {
         if(prim){ const t=T(prim); t.att++; t.int++; line(prim,'pass'); }
-        if(picker) who.push({ath:picker, line:'INT'+(p.type==='Interception Return Touchdown'?`, ${y} yd TD`:''), delta:''});
-        title=`INT! ${nm(prim,n.primary)} picked off by ${nm(picker,n.picker)}${p.type==='Interception Return Touchdown'?' — pick six 🎉':''}`; break; }
+        if(picker) who.push({ath:picker, line:'INT'+(/Touchdown/.test(p.type)?`, ${y} yd TD`:''), delta:''});
+        title=`INT! ${nm(prim,n.primary)} picked off by ${nm(picker,n.picker)}${/Touchdown/.test(p.type)?' — pick six 🎉':''}`; break; }
       case 'Field Goal Good': case 'Field Goal Missed': case 'Blocked Field Goal': {
         if(prim){ const t=T(prim); t.fga++; if(p.type==='Field Goal Good') t.fgm++; line(prim,'kick'); }
         title = p.type==='Field Goal Good' ? `${nm(prim,n.primary)} ${y} yd FG 🙌` : `${nm(prim,n.primary)} ${y} yd FG, no good`; break; }
@@ -5735,23 +5797,52 @@ function gcFeedBuild(sum){
         title=`Fumble! ${nm(prim,n.primary)} loses it${n.recoverer?`, ${nm(A(n.recoverer,''),n.recoverer)} recovers`:''}${/Touchdown/.test(p.type)?' — TD 🎉':''}`; break; }
       case 'Punt': title=`${nm(prim,n.primary)} punts ${/punts (\d+)/.test(p.text)?RegExp.$1:''} yds`; break;
       case 'Kickoff': title=`${nm(prim,n.primary)} kicks off`; break;
-      case 'Penalty': { const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)(?:, (\d+) yards?)?(?:, (declined))?/i.exec(p.text); title = m ? `Flag: ${m[3]} on ${m[1]}${m[4]?`, ${m[4]} yds`:''}${m[5]?', declined':''}` : 'Penalty'; break; }
+      case 'Penalty': { const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)(?:, (\d+) yards?)?(?:, (declined))?/i.exec(p.text); title = m ? `Flag: ${m[3]} on ${gcAbbr(m[1])}${m[4]?`, ${m[4]} yds`:''}${m[5]?', declined':''}` : 'Penalty'; break; }
       default: title = p.text.replace(/^\s*(\([^)]*\)\s*)+/,'').slice(0, 90);
     }
     // The try rides in the touchdown's own text ("… TOUCHDOWN. E.McPherson extra point is
     // GOOD …"): count it for the kicker, and show him under the scorer.
     if(/Touchdown/.test(p.type)){
       const xp=new RegExp(GC_TOKEN+' extra point is (GOOD|No Good|BLOCKED|Aborted)', 'i').exec(p.text);
-      if(xp){ const k=A(`${xp[1]}.${xp[2]}`); if(k){ const t=T(k); t.xpa++; if(/good/i.test(xp[3]) && !/no good/i.test(xp[3])) t.xpm++; line(k,'kick'); } }
+      if(xp){ const k=A(`${xp[1]}.${xp[2]}`); if(k){ const t=T(k); t.xpa++; if(/good/i.test(xp[3]) && !/no good/i.test(xp[3])) t.xpm++; line(k,'kick'); }
+        p.xtra={ t:'XP', ok:/good/i.test(xp[3]) && !/no good/i.test(xp[3]) };
+      } else if(/TWO[\s-]POINT CONVERSION/i.test(p.text)){
+        p.xtra={ t:'2PT', ok:/ATTEMPT SUCCEEDS|CONVERSION (?:IS )?GOOD|CONVERSION SUCCEEDS/i.test(p.text) };
+      }
     }
     // whose score moved: the away side, the home side, or neither
     p.scoredBy = (p.as!=null && p.hs!=null) ? (p.as>pa?'away':(p.hs>ph?'home':'')) : '';
     if(p.as!=null) pa=p.as; if(p.hs!=null) ph=p.hs;
+    // moved the chains: a same-possession rush or catch that reached the distance to go —
+    // not a score (already badged), not a turnover. ESPN gives the yards to go on the snap.
+    // ESPN's `end` block says exactly what the play left: a new set of downs for the same
+    // club is a first down (a flag tacked on counts, a flag that wiped the gain does not).
+    // Without it, the snap's yards against the distance to go.
+    p.fd = p.end
+      ? !!(p.down>0 && p.end.down===1 && p.end.same && !p.scoring && !p.turnover && /^(Rush|Pass Reception|Penalty)$/.test(p.type))
+      : !!(p.down>0 && p.dist>0 && p.yds>=p.dist && !p.turnover && !/Touchdown/.test(p.type) && (p.type==='Rush' || p.type==='Pass Reception'));
+    // where the play left the ball: the next down (the chip already says "1st down"), or whose ball it is now
+    p.next = (p.end && p.end.down>0 && !p.scoring && !p.fd) ? (p.end.same ? p.end.ddt : `${p.end.team||'their'} ball`) : '';
+    // a third (or fourth) down tried: the club's count so far, made or not. A kick, a punt or
+    // a flag before the snap is not a try.
+    if((p.down===3 || p.down===4) && !/Penalty|Punt|Field Goal|Kickoff|Extra Point/.test(p.type) && !GC_PAUSE_KINDS.has(p.kind)){
+      const c=conv[p.team]=conv[p.team]||{t3:0,m3:0,t4:0,m4:0};
+      const made = p.fd || (p.scoring && /Touchdown/.test(p.type) && !p.turnover);
+      if(p.down===3){ c.t3++; if(made) c.m3++; p.conv={d:3, ok:made, m:c.m3, t:c.t3}; }
+      else { c.t4++; if(made) c.m4++; p.conv={d:4, ok:made, m:c.m4, t:c.t4}; }
+    }
+    if(/Rush|Reception|Return|Sack/.test(p.type)) p.tackler=gcTackler(p.text);
     p.title=title; p.who=who;
   });
   return plays;
 }
-const GC_KEY_KINDS = new Set(['td','fg','xp','miss','to','sack','big','fourth']);
+const GC_KEY_KINDS = new Set(['td','fg','xp','miss','to','sack','big','fourth','2pt','half','final']);
+// The two clubs' codes from the summary's header (away first).
+function gcSides(sum){
+  const comp=sum && sum.header && sum.header.competitions && sum.header.competitions[0];
+  const cs=(comp && comp.competitors)||[]; const ab=(c)=>gcAbbr(c && c.team && c.team.abbreviation);
+  return { away:ab(cs.find(c=>c.homeAway==='away')), home:ab(cs.find(c=>c.homeAway==='home')) };
+}
 function gcFeedRows(sum, all){
   const plays=gcFeedBuild(sum);
   return plays.filter(p=>all || GC_KEY_KINDS.has(p.kind)).reverse();
@@ -5791,19 +5882,56 @@ function gcFeedHTML(game, sum){
   // the running lines when the summary lands (the row then becomes the real one).
   const soon=gcProvisionalRow(game, sum);
   if(!rows.length && !soon) return now+toggle+`<div class="ld-empty">no plays yet</div>`;
-  const badge=(p)=>p.kind==='td'?'TD':p.kind==='fg'?'FG':p.kind==='xp'?'XP':p.kind==='to'?'TO':p.kind==='sack'?'SACK':p.kind==='big'?'BIG':p.kind==='fourth'?'4TH':p.kind==='miss'?'MISS':'';
+  const badge=(p)=>p.kind==='td'?'TD':p.kind==='fg'?'FG':p.kind==='xp'?'XP':p.kind==='2pt'?'2PT':p.kind==='to'?'TO':p.kind==='sack'?'SACK':p.kind==='big'?'BIG':p.kind==='fourth'?'4TH':p.kind==='miss'?'MISS':'';
+  // The tackler line: resolve the names in the play's trailing parenthesis to the box score —
+  // each defender's position and his tackles in THIS game (a man on the other team).
+  const _ath=(typeof gcAthletes==='function')?gcAthletes(sum):{bySur:{}};
+  const _boxByPid={}; if(typeof gcBoxRows==='function'){ try{ gcBoxRows(sum).forEach(b=>{ _boxByPid[String(b.player_id)]=b; }); }catch(e){} }
+  const tacklerHTML=(raw, offTeam)=>{
+    const toks=String(raw||'').split(/\s*;\s*/).map(s=>s.trim()).filter(Boolean);
+    if(!toks.length) return '';
+    const items=toks.map(tok=>{
+      const rec=(typeof gcFindAth==='function')?gcFindAth(_ath, offTeam, tok):null;
+      const pid=rec&&rec.pid; const pos=(rec&&rec.pos&&rec.pos!=='DEF')?rec.pos:'';
+      const b=pid?_boxByPid[String(pid)]:null; const tkl=(b&&b.stats&&b.stats.idp_tkl!=null)?b.stats.idp_tkl:null;
+      const cls=(pid&&typeof gcSideClass==='function')?gcSideClass(pid):'';
+      return `<span class="gcf-tkl${cls}">${escHtml(gcShort(rec?rec.name:tok))}${pos?` <span class="gcf-tkl-pos">${escHtml(pos)}</span>`:''}${tkl!=null?` <span class="gcf-tkl-n">${tkl} TKL</span>`:''}</span>`;
+    });
+    return `<div class="gcf-tackle"><span class="gcf-tkl-lbl">Tackle</span>${items.join('')}</div>`;
+  };
   const html=rows.map(p=>{
+    if(p.kind==='timeout' || p.kind==='period') return `<div class="gcf-divider gcf-div-${p.kind}"><span class="gcf-div-l"></span><span class="gcf-div-lbl">${p.toTeam?`<img src="${NFL_LOGO(p.toTeam)}" class="gcf-div-logo" onerror="this.style.display='none'">`:''}${escHtml(p.title)}${(p.clock && p.kind==='timeout')?`<span class="gcf-div-clock">${escHtml((p.q?('Q'+p.q+' '):'')+p.clock)}</span>`:''}</span><span class="gcf-div-l"></span></div>`;
+    if(p.kind==='half' || p.kind==='final'){
+      const sc=(p.as!=null && p.hs!=null) ? `${game.away} ${p.as}<span class="gcf-dash">–</span>${p.hs} ${game.home}` : '';
+      return `<div class="gcf-row gcf-phase gcf-${p.kind}${isNew(p)?' gcf-new':''}">
+        <span class="gcf-ava gcf-ava-ico">${p.kind==='half'?'½':'🏁'}</span>
+        <div class="gcf-main"><div class="gcf-sit">${p.kind==='half'?'Halftime':'Final'}</div><div class="gcf-title">${escHtml(p.title)}</div></div>
+        <div class="gcf-right"><div class="gcf-clock">${p.q?`Q${p.q}`:''} ${escHtml(p.clock)}</div><div class="gcf-score">${sc}</div></div>
+      </div>`;
+    }
     const rz = p.yte!=null && p.yte<=20 && p.type!=='Kickoff' && p.type!=='Punt';
-    const sit = p.down>0 ? `${p.ddt}${p.spot?` @ ${p.spot}`:''}` : (p.kind==='xp'||p.kind==='miss'&&/Extra/.test(p.type)?'End zone':(p.type==='Kickoff'?'Kickoff':''));
+    const sit = (p.down>0 ? `${p.ddt}${p.spot?` @ ${p.spot}`:''}` : (p.kind==='2pt'?'Two-point try':((p.kind==='xp'||(p.kind==='miss'&&/Extra/.test(p.type)))?'End zone':(p.type==='Kickoff'?'Kickoff':''))))
+              + (p.next ? ` ▸ ${p.next}` : '');
     const score = (p.as!=null && p.hs!=null) ? `<span class="${p.scoredBy==='away'?'gcf-sc-hit':''}">${game.away} ${p.as}</span><span class="gcf-dash">–</span><span class="${p.scoredBy==='home'?'gcf-sc-hit':''}">${p.hs} ${game.home}</span>` : '';
     const active = _gcd.replay && String(_gcd.replay.eid)===eid && String(_gcd.replay.playId)===String(p.id);
     const rowClick = p.id ? ` onclick="gcReplayPlay('${escAttr(eid)}','${escAttr(String(p.id))}')" title="Replay this play on the field"` : '';
+    const lead=(p.who||[]).find(w=>w.ath && w.ath.pid); const hs=(lead && typeof SLEEPER_HEADSHOT==='function') ? SLEEPER_HEADSHOT(lead.ath.pid) : '';
+    const ava = hs
+      ? `<span class="gcf-ava"><img src="${escAttr(hs)}" class="gcf-hs" loading="lazy" decoding="async" onerror="this.parentNode.classList.add('gcf-ava-nohs')"><img src="${NFL_LOGO(p.team||game.home)}" class="gcf-ava-logo" onerror="this.style.display='none'"></span>`
+      : `<span class="gcf-ava gcf-ava-nohs"><img src="${NFL_LOGO(p.team||game.home)}" class="gcf-ava-logo" onerror="this.style.display='none'"></span>`;
+    const notes=[];
+    if(p.fd) notes.push(`<span class="gcf-note gcf-fd">✅ 1st down</span>`);
+    if(p.xtra) notes.push(`<span class="gcf-note gcf-xtra gcf-xtra-${p.xtra.ok?'ok':'no'}">${p.xtra.ok?'✅':'❌'} ${p.xtra.t==='XP'?'Extra point':'Two-point try'} ${p.xtra.ok?'good':'no good'}</span>`);
+    if(p.yac>0) notes.push(`<span class="gcf-note gcf-yac">🏃 ${p.yac} yd${p.yac===1?'':'s'} after catch</span>`);
+    if(p.conv) notes.push(`<span class="gcf-note gcf-conv gcf-conv-${p.conv.ok?'ok':'no'}" title="${escAttr(p.team)} ${p.conv.d===3?'third':'fourth'} downs converted so far">${p.conv.ok?'🎯':'🚫'} ${escHtml(p.team)} ${p.conv.d===3?'3rd':'4th'} down ${p.conv.m}/${p.conv.t}</span>`);
     return `<div class="gcf-row gcf-${p.kind}${isNew(p)?' gcf-new':''}${p.id?' gcf-click':''}${active?' gcf-active':''}"${rowClick}>
-      <img src="${NFL_LOGO(p.team||game.home)}" class="gcf-logo" onerror="this.style.display='none'">
+      ${ava}
       <div class="gcf-main">
         <div class="gcf-sit">${escHtml(sit)}${rz?' <span class="gcf-rz">RZ</span>':''}</div>
         <div class="gcf-title">${(()=>{ let t=escHtml(p.title); (p.who||[]).forEach(w=>{ const pid=w.ath&&w.ath.pid; if(!pid||typeof gcSideClass!=='function') return; const c=gcSideClass(pid).trim(); if(!c) return; const esc=escHtml(gcShort(w.ath.name)); if(t.indexOf(esc)>=0) t=t.replace(esc, `<span class="${c}">${esc}</span>`); }); return t; })()}</div>
         ${p.who.map(w=>gcFeedPlayerHTML(w, game)).join('')}
+        ${notes.length?`<div class="gcf-notes">${notes.join('')}</div>`:''}
+        ${p.tackler?tacklerHTML(p.tackler, p.team||game.home):''}
       </div>
       <div class="gcf-right"><div class="gcf-clock">${p.q?`Q${p.q}`:''} ${escHtml(p.clock)}</div><div class="gcf-score">${score}</div>${badge(p)?`<span class="gcf-badge gcf-b-${p.kind}">${badge(p)}</span>`:''}</div>
     </div>`;
@@ -5826,7 +5954,7 @@ function gcProvisionalRow(game, sum){
   const score=`<span>${game.away} ${game.as!=null?game.as:'–'}</span><span class="gcf-dash">–</span><span>${game.hs!=null?game.hs:'–'} ${game.home}</span>`;
   const badge = kind==='td'?'TD':kind==='fg'?'FG':kind==='xp'?'XP':kind==='to'?'TO':kind==='sack'?'SACK':kind==='big'?'BIG':kind==='miss'?'MISS':'';
   return `<div class="gcf-row gcf-${kind} gcf-new gcf-soon" title="Just posted — the full line lands in a moment">
-      <img src="${NFL_LOGO(lp.team||game.home)}" class="gcf-logo" onerror="this.style.display='none'">
+      <span class="gcf-ava gcf-ava-nohs"><img src="${NFL_LOGO(lp.team||game.home)}" class="gcf-ava-logo" onerror="this.style.display='none'"></span>
       <div class="gcf-main">
         <div class="gcf-sit">${escHtml(sit)}${rz?' <span class="gcf-rz">RZ</span>':''}</div>
         <div class="gcf-title">${escHtml(title)}</div>
@@ -5924,12 +6052,13 @@ function gcDrives(sum){
     const team=gcAbbr(d.team && d.team.abbreviation); const plays=[]; const pseen=new Set();
     (d.plays||[]).forEach(p=>{
       const pid=String(p.id||''); if(pid && pseen.has(pid)) return; if(pid) pseen.add(pid);
-      const kind=gcPlayKind(p); if(kind==='skip') return;
+      const kind=gcPlayKind(p); if(kind==='skip' || GC_PAUSE_KINDS.has(kind)) return;
       plays.push({ id:pid, kind, type:String((p.type&&p.type.text)||''), text:String(p.text||''), yds:Number(p.statYardage||0),
         yte:(p.start && p.start.yardsToEndzone!=null)?Number(p.start.yardsToEndzone):null, scoring:!!p.scoringPlay, turnover:!!p.isTurnover,
         q:Number((p.period&&p.period.number)||0), clock:String((p.clock&&p.clock.displayValue)||'') });
     });
-    out.push({ id, team, plays, result:String(d.result||d.shortDisplayResult||''), desc:String(d.description||''), score:!!d.isScore, live:!!live });
+    out.push({ id, team, plays, result:String(d.result||d.shortDisplayResult||''), desc:String(d.description||''), score:!!d.isScore, live:!!live,
+      time:String((d.timeElapsed && d.timeElapsed.displayValue)||'') });
   };
   (dr.previous||[]).forEach(d=>add(d, false));
   if(dr.current){ const cid=String(dr.current.id||''); const i=out.findIndex(x=>x.id===cid); if(i>=0) out[i].live=true; else add(dr.current, true); }
@@ -5975,6 +6104,7 @@ function gcDriveSentence(d){
   if(rush) parts.push(`${rush} rush, ${rushY} yds`);
   if(att) parts.push(`${cmp}/${att} pass, ${passY} yds`);
   if(sacks) parts.push(`${sacks} sack${sacks===1?'':'s'}`);
+  if(d.time && !d.live) parts.push(`${d.time} off the clock`);
   const res = d.result ? ` ${escHtml(d.result)}${/TD/.test(d.result)?' 🎉':''}` : (d.live ? ' in progress' : '');
   return `${d.team}${from?' '+from:''}: ${parts.join('. ')}.${res}`;
 }
@@ -6347,7 +6477,7 @@ function gcWinProbHTML(game, sum){
   const wp=(sum && Array.isArray(sum.winprobability)) ? sum.winprobability.filter(w=>w && w.homeWinPercentage!=null) : [];
   if(wp.length<3) return '';
   const n=wp.length; const last=wp[n-1].homeWinPercentage, home=Math.round(last*100), away=100-home;
-  const open=!!_gcd.wpOpen;
+  const open=_gcd.wpOpen!==false;   // open unless folded by hand
   const nums=`<span class="gc-wp-n"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'"><b>${away}%</b></span><span class="gc-wp-n"><b>${home}%</b><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'"></span>`;
   const head=`<button class="gc-wp-head" onclick="gcWinProbToggle()" aria-expanded="${open?'true':'false'}" title="Win probability, play by play — ESPN's model"><span class="gc-wp-lbl">Win probability</span>${nums}<span class="rt-gp-caret">${open?'▴':'▾'}</span></button>`;
   if(!open) return `<div class="gc-wp">${head}</div>`;
@@ -6360,8 +6490,8 @@ function gcWinProbHTML(game, sum){
   // colour, so a 100% finish fills the whole chart
   const homeWinning = last>=0.5;
   const fill = homeWinning
-    ? `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${top} L${f1(x(0))},${top} Z" fill="${escAttr(col(game.home))}" opacity="0.45"/>`
-    : `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${bot} L${f1(x(0))},${bot} Z" fill="${escAttr(col(game.away))}" opacity="0.45"/>`;
+    ? `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${top} L${f1(x(0))},${top} Z" fill="${escAttr(col(game.home))}" opacity="0.22"/>`
+    : `<path d="M${pts[0]} L${pts.join(' L')} L${f1(x(n-1))},${bot} L${f1(x(0))},${bot} Z" fill="${escAttr(col(game.away))}" opacity="0.22"/>`;
   return `<div class="gc-wp gc-wp-open">${head}
     <svg viewBox="0 0 ${W} ${H}" class="gc-wp-svg" role="img" aria-label="Win probability">
       <image href="${escAttr(NFL_LOGO(game.away))}" x="${R+8}" y="${top-2}" width="18" height="18" preserveAspectRatio="xMidYMid meet"/>
@@ -6371,6 +6501,16 @@ function gcWinProbHTML(game, sum){
       <polyline points="${pts.join(' ')}" fill="none" stroke="#f2f5f8" stroke-width="1.6" stroke-linejoin="round"/>
       <circle cx="${f1(x(n-1))}" cy="${f1(y(last))}" r="3.2" fill="#fff"/>
     </svg><div class="gc-wp-src">ESPN's model · ${escHtml(game.away)} at the top, ${escHtml(game.home)} at the bottom</div></div>`;
+}
+// Sleeper's bottom bar: each club's chance to win as a pill, the logo on the outside. Sticks
+// to the bottom of the feed while there is a feed to scroll.
+function gcWinBarHTML(game, sum){
+  if(!game || game.state==='pre') return '';
+  const wp=(sum && Array.isArray(sum.winprobability)) ? sum.winprobability.filter(w=>w && w.homeWinPercentage!=null) : [];
+  if(!wp.length) return '';
+  const home=Math.round(wp[wp.length-1].homeWinPercentage*100), away=100-home;
+  const lead=(n)=>n>=50?' gc-wb-lead':'';
+  return `<div class="gc-winbar"><span class="gc-wb${lead(away)}"><img src="${NFL_LOGO(game.away)}" class="gc-wb-logo" onerror="this.style.display='none'"><span class="gc-wb-t"><b>${game.state==='post'?(away>=50?'WON':'LOST'):'WIN'}</b> • ${away}%</span></span><span class="gc-wb${lead(home)}"><span class="gc-wb-t">${home}% • <b>${game.state==='post'?(home>=50?'WON':'LOST'):'WIN'}</b></span><img src="${NFL_LOGO(game.home)}" class="gc-wb-logo" onerror="this.style.display='none'"></span></div>`;
 }
 // One line: the play that just happened — the board's last play while the game is on (the
 // scoreboard names it first), else the summary's newest — with the freshness stamp.
@@ -6383,7 +6523,7 @@ function gcLastPlayHTML(game, sum){
     const read=(typeof lfReadPlay==='function') ? lfReadPlay(lp) : null; title=(read && read.title) || String(lp.text||'').slice(0,90);
     spot = lp.down>0 ? `${lp.ddt||''}${lp.spot?` @ ${lp.spot}`:''}` : (/Extra Point|Field Goal/.test(String(lp.type||'')) ? 'End zone' : (lp.type==='Kickoff'?'Kickoff':'')); team=lp.team||'';
   } else if(sum){
-    const rows=gcFeedRows(sum, true); const p=rows[0];
+    const rows=gcFeedRows(sum, true); const p=rows.find(r=>!GC_PAUSE_KINDS.has(r.kind));
     if(p){ title=p.title; spot=p.down>0 ? `${p.ddt}${p.spot?` @ ${p.spot}`:''}` : ''; team=p.team||''; }
   }
   if(!title && !(live && sit && sit.phase)) return '';
@@ -6534,7 +6674,7 @@ function lfReadPlay(lp){
   else if(/Fumble/.test(type)){ kind='fum'; title=`Fumble! ${nm('primary',names.primary)}`; }
   else if(type==='Punt'){ kind='punt'; title=`${nm('primary',names.primary)} punts`; }
   else if(type==='Kickoff'){ kind='ko'; title=`${nm('primary',names.primary)} kicks off`; }
-  else if(type==='Penalty'){ kind='pen'; const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)/i.exec(text); title=m?`Flag: ${m[3]} on ${m[1]}`:'Penalty'; }
+  else if(type==='Penalty'){ kind='pen'; const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)/i.exec(text); title=m?`Flag: ${m[3]} on ${(typeof gcAbbr==='function')?gcAbbr(m[1]):m[1]}`:'Penalty'; }
   else { title=text.replace(/^\s*(\([^)]*\)\s*)+/,'').slice(0,90); }
   return {kind, title, roles, stats:lfPlayStats(kind, yds, roles), tokens:roleTok};
 }
@@ -6619,6 +6759,7 @@ function lfIngestSummary(g, sum, hist){
   const eid=String(g.eid); let added=0; const now=Date.now();
   hist=!!hist;
   plays.forEach((p,i)=>{
+    if(typeof GC_PAUSE_KINDS!=='undefined' && GC_PAUSE_KINDS.has(p.kind)) return;   // the game feed shows the stoppages; this cross-game feed skips them
     const id=String(p.id||''); if(!id) return;
     const key=`${eid}:${id}`;
     const scoreValue = p.scoring ? (/Touchdown/.test(p.type)?6:(/Field Goal/.test(p.type)?3:1)) : 0;

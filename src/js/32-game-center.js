@@ -308,13 +308,17 @@ function gcGameHTML(game, rows, wk){
   const ball=(team)=> (sit && sit.poss===team) ? `<i class="gc-ball" title="${team} ball">${typeof TC_ICON==='function'?TC_ICON('football'):'●'}</i>` : '';
   const spot = sit ? (sit.phase ? '' : `${sit.ddt||''}${sit.spot?` @ ${sit.spot}`:''}${sit.rz?' <span class="gcf-rz">RZ</span>':''}`) : '';
   const mid = sit && sit.phase ? escHtml(sit.phase) : escHtml(st);
+  // the club's nickname ("Falcons") when the seed names it, the code otherwise; the code
+  // stays as the faded wordmark behind
+  const nick=(t)=>{ const n=(typeof TEAM_NAMES!=='undefined' && TEAM_NAMES && TEAM_NAMES[t]) ? String(TEAM_NAMES[t]) : ''; const i=n.lastIndexOf(' '); return i>0 ? n.slice(i+1) : t; };
+  const src = game.state==='pre' ? '' : `<div class="gc-src">ESPN</div>`;
   const hero=`<div class="gc-hero" style="--ga:${escAttr(col(game.away))};--gh:${escAttr(col(game.home))}">
       <span class="gc-hero-wm gc-hero-wm-a" aria-hidden="true">${game.away}</span><span class="gc-hero-wm gc-hero-wm-h" aria-hidden="true">${game.home}</span>
-      <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${game.away}</span><span class="gc-rec">${escHtml(game.arec)}</span>${dots(sit&&sit.to?sit.to.away:null)}</div>
+      <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${escHtml(nick(game.away))}</span><span class="gc-rec">${escHtml(game.arec)}</span>${dots(sit&&sit.to?sit.to.away:null)}</div>
       <b class="gc-score">${game.state==='pre'?'':(game.as!=null?game.as:'–')}${ball(game.away)}</b>
-      <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}">${mid}</div>${spot?`<div class="gc-spot">${spot}</div>`:''}</div>
+      <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}">${mid}</div>${spot?`<div class="gc-spot">${spot}</div>`:''}${src}</div>
       <b class="gc-score">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}${ball(game.home)}</b>
-      <div class="gc-side gc-side-home"><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${game.home}</span><span class="gc-rec">${escHtml(game.hrec)}</span>${dots(sit&&sit.to?sit.to.home:null)}</div>
+      <div class="gc-side gc-side-home"><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${escHtml(nick(game.home))}</span><span class="gc-rec">${escHtml(game.hrec)}</span>${dots(sit&&sit.to?sit.to.home:null)}</div>
     </div>`;
   // The Vegas line under the banner: spread, over/under, each side's implied point total.
   const oddsHtml=(typeof gcOddsHTML==='function') ? gcOddsHTML(game) : '';
@@ -333,7 +337,8 @@ function gcGameHTML(game, rows, wk){
   // Feed: on the desktop sidebar the hero, the field and the tabs stay put while the plays
   // scroll in their own window — so a play tapped for replay keeps animating in view (CSS
   // turns this off inside the phone's bottom sheet, where the whole sheet scrolls).
-  if(tab==='feed') return `<div class="gc-feedview"><div class="gc-feedview-head">${hero}${oddsHtml}${top}${tabs}</div><div class="gc-feedview-feed">${gcFeedHTML(game, sum)}</div></div>`;
+  const winbar=(typeof gcWinBarHTML==='function') ? gcWinBarHTML(game, sum) : '';
+  if(tab==='feed') return `<div class="gc-feedview"><div class="gc-feedview-head">${hero}${oddsHtml}${top}${tabs}</div><div class="gc-feedview-feed">${gcFeedHTML(game, sum)}${winbar}</div></div>`;
   const seg=`<div class="gc-seg"><button class="${side==='away'?'active':''}" onclick="gcdSetSide('away')"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${game.away}</button><button class="${side==='fantasy'?'active':''}" onclick="gcdSetSide('fantasy')">Fantasy</button><button class="${side==='home'?'active':''}" onclick="gcdSetSide('home')"><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'">${game.home}</button></div>`;
   const pane = side==='fantasy' ? fantasy : gcBoxHTML(game, sum, side==='home'?game.home:game.away);
   return hero+oddsHtml+top+tabs+(game.state==='pre'?'':gcLinescoreHTML(game, sum))+seg+pane;
