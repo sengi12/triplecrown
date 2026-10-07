@@ -621,20 +621,44 @@ function gcLinescoreHTML(game, sum){
   const row=(code, arr, tot)=>`<tr><td class="gcls-t"><img src="${NFL_LOGO(code)}" class="gc-glogo" onerror="this.style.display='none'">${code}</td>${Array.from({length:n},(_,i)=>`<td>${arr[i]!=null?arr[i]:'–'}</td>`).join('')}<td class="gcls-tot">${tot!=null?tot:'–'}</td></tr>`;
   return `<div class="gcls-wrap"><table class="gcls"><thead><tr><th>Team</th>${head}<th>TOT</th></tr></thead><tbody>${row(game.away, la, game.as)}${row(game.home, lh, game.hs)}</tbody></table></div>`;
 }
+// The injury report, by ESPN athlete id → a short tag (Sleeper's "QUES" beside the position).
+function gcInjuries(sum){
+  if(sum && sum._gcInj) return sum._gcInj;
+  const out={}; const TAG={'Questionable':['QUES','q'], 'Doubtful':['DOUB','q'], 'Out':['OUT','o'], 'Injured Reserve':['IR','o']};
+  ((sum && sum.injuries)||[]).forEach(t=>(t.injuries||[]).forEach(i=>{ const id=String((i.athlete&&i.athlete.id)||''); const tg=TAG[String(i.status||'')]; if(id && tg) out[id]={tag:tg[0], cls:tg[1], why:String((i.details&&i.details.type)||'')}; }));
+  if(sum) sum._gcInj=out;
+  return out;
+}
+// A side's box score in Sleeper's shape: each group a list — the group's name on the left
+// and its columns on the right in the header row, then a headshot, the name with the
+// position, club and injury tag under it, and the numbers. Passing keeps six columns, a
+// catch shows receptions over targets ("11/16"); ESPN's labels are shortened to Sleeper's.
+const GC_BOX_LABEL = { 'C/ATT':'CMP', YDS:'YD', CAR:'ATT', SACKS:'SACK', 'QB HTS':'QBH', 'In 20':'IN20', TGTS:'TGT' };
 function gcBoxHTML(game, sum, team){
   if(!sum) return `<div class="ld-empty">${game.eid?'loading the box score…':'box score unavailable'}</div>`;
   const tp=((sum.boxscore&&sum.boxscore.players)||[]).find(t=>gcAbbr(t.team&&t.team.abbreviation)===team);
   if(!tp) return `<div class="ld-empty">no box score yet for ${escHtml(team)}</div>`;
-  const ath=gcAthletes(sum);
+  const ath=gcAthletes(sum), inj=gcInjuries(sum);
   const groups=GC_BOX_GROUPS.map(([key,label])=>{
     const g=(tp.statistics||[]).find(s=>s.name===key); if(!g || !(g.athletes||[]).length) return '';
-    const labels=g.labels||[]; const nCols=Math.min(labels.length, 8);
+    const labels=(g.labels||[]).map(String);
+    // the columns: an index into each athlete's stats, or a pair to show as "a/b"
+    let cols=labels.map((l,i)=>({l:GC_BOX_LABEL[l]||l, i}));
+    if(key==='passing') cols=cols.filter(c=>!/^(QBR|RTG)$/.test(labels[c.i]));
+    if(key==='receiving'){ const r=labels.indexOf('REC'), t=labels.indexOf('TGTS'); if(r>=0 && t>=0){ cols=cols.filter(c=>c.i!==t); cols[cols.findIndex(c=>c.i===r)]={l:'REC', i:r, over:t}; } }
+    cols=cols.slice(0, 6);
+    const cell=(st, c)=>{ const v=st[c.i]; if(v==null) return '–'; return c.over!=null && st[c.over]!=null ? `${v}/${st[c.over]}` : String(v); };
     const rows=g.athletes.map(a=>{
-      const A=a.athlete||{}; const rec=ath.byId[String(A.id||'')]; const pid=rec&&rec.pid; const pos=rec&&rec.pos;
+      const A=a.athlete||{}; const id=String(A.id||''); const rec=ath.byId[id]; const pid=rec&&rec.pid; const pos=(rec&&rec.pos)||'';
       const click=(pid && pos && pos!=='DEF' && typeof pcardOnclick==='function') ? ` onclick="${pcardOnclick(pid, pos, team)}"` : '';
-      return `<tr${click?' class="gcb-click"':''}${click}><td class="gcb-n"><span class="${pid&&typeof gcSideClass==='function'?gcSideClass(pid).trim():''}">${escHtml(gcShort(A.displayName||A.shortName||''))}</span>${pid&&gcOwnerOf(pid)?`<small class="gcf-owner">${escHtml(gcOwnerOf(pid))}</small>`:''}</td>${(a.stats||[]).slice(0,nCols).map(v=>`<td>${escHtml(String(v))}</td>`).join('')}</tr>`;
+      const hs=(pid && typeof SLEEPER_HEADSHOT==='function') ? SLEEPER_HEADSHOT(pid) : '';
+      const ava = hs ? `<span class="gcf-ava gcb-ava"><img src="${escAttr(hs)}" class="gcf-hs" loading="lazy" decoding="async" onerror="this.parentNode.classList.add('gcf-ava-nohs')"><img src="${NFL_LOGO(team)}" class="gcf-ava-logo" onerror="this.style.display='none'"></span>`
+                     : `<span class="gcf-ava gcb-ava gcf-ava-nohs"><img src="${NFL_LOGO(team)}" class="gcf-ava-logo" onerror="this.style.display='none'"></span>`;
+      const ij=inj[id]; const owner=pid?gcOwnerOf(pid):'';
+      const st=(a.stats||[]);
+      return `<div class="gcb-row${click?' gcb-click':''}"${click}>${ava}<div class="gcb-n"><span class="gcb-name${pid&&typeof gcSideClass==='function'?gcSideClass(pid):''}">${escHtml(gcShort(A.displayName||A.shortName||''))}</span><span class="gcb-sub">${pos&&pos!=='DEF'?`<span class="gcf-pos gcf-pos-${escAttr(pos.toLowerCase())}">${escHtml(pos)}</span> • `:''}${escHtml(team)}${ij?` <span class="gcb-inj gcb-inj-${ij.cls}" title="${escAttr(ij.why)}">${ij.tag}</span>`:''}${owner?`<small class="gcf-owner">${escHtml(owner)}</small>`:''}</span></div>${cols.map(c=>`<span class="gcb-v">${escHtml(cell(st, c))}</span>`).join('')}</div>`;
     }).join('');
-    return `<div class="gcb-group"><div class="gc-gh">${label}</div><div class="gcb-wrap"><table class="gcb"><thead><tr><th></th>${labels.slice(0,nCols).map(l=>`<th>${escHtml(l)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    return `<div class="gcb-group" style="--gcb-n:${cols.length}"><div class="gcb-head"><span class="gcb-lbl">${label}</span>${cols.map(c=>`<span class="gcb-h">${escHtml(c.l)}</span>`).join('')}</div>${rows}</div>`;
   }).join('');
   return groups || `<div class="ld-empty">no box score yet for ${escHtml(team)}</div>`;
 }

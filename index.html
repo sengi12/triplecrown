@@ -1931,6 +1931,72 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-wb b{font-weight:800;letter-spacing:.02em;}
 .gc-wb-logo{width:26px;height:26px;object-fit:contain;flex:none;}
 .gc-wb-t{white-space:nowrap;}
+
+/* ── The Stats tab, Sleeper's way ───────────────────────────────────────────── */
+/* the winner's arrow beside FINAL */
+.gc-detail .gc-status.gc-won-away::before{content:"◀";font-size:11px;margin-right:4px;vertical-align:1px;}
+.gc-detail .gc-status.gc-won-home::after{content:"▶";font-size:11px;margin-left:4px;vertical-align:1px;}
+/* the line score: a card, the quarters in tinted columns, the total bold */
+.gc-detail .gcls-wrap,.games-view .gcls-wrap{border:none;background:var(--gcn2);border-radius:16px;padding:6px 12px 8px;margin:6px 0 10px;}
+.gc-detail .gcls{font-size:16px;font-weight:600;}
+.gc-detail .gcls th{font-size:13px;font-weight:700;color:var(--gcmute);border:none;padding:8px 6px;}
+.gc-detail .gcls th:first-child{font-size:14px;}
+.gc-detail .gcls td{padding:9px 6px;font-size:17px;}
+.gc-detail .gcls th:nth-child(2n),.gc-detail .gcls td:nth-child(2n){background:rgba(255,255,255,.035);}
+.gc-detail .gcls th:last-child,.gc-detail .gcls td:last-child{background:rgba(255,255,255,.07);}
+.gc-detail .gcls-t{font-size:17px;font-weight:700;gap:9px;} .gc-detail .gcls-t .gc-glogo{width:24px;height:24px;}
+.gc-detail .gcls-tot{font-weight:800;}
+/* the segmented control: the club nicknames, the active pill white */
+.gc-detail .gc-seg{border:none;background:var(--gcn2);padding:4px;margin:8px 0 12px;}
+.gc-detail .gc-seg button{font-size:13px;font-weight:700;letter-spacing:.06em;padding:11px 8px;border-radius:999px;color:var(--gcmute);gap:8px;}
+.gc-detail .gc-seg button img{width:20px;height:20px;}
+.gc-detail .gc-seg button.active{background:#fff;color:#0f1631;}
+/* the box score */
+.gcb-group{margin:4px 0 14px;}
+.gcb-head,.gcb-row{display:grid;grid-template-columns:minmax(0,1fr) repeat(var(--gcb-n,5),minmax(34px,auto));gap:0 4px;align-items:center;}
+.gcb-head{padding:8px 10px 8px 6px;}
+.gcb-lbl{font-size:17px;font-weight:700;color:var(--text);}
+.gcb-h{font-size:11px;font-weight:700;letter-spacing:.02em;color:var(--gcmute);text-align:center;text-transform:uppercase;}
+.gcb-row{padding:7px 10px 7px 6px;border-radius:12px;}
+.gcb-row:nth-child(odd){background:rgba(255,255,255,.035);}
+.gcb-click{cursor:pointer;} .gcb-click:hover{background:var(--gcn3);}
+.gcb-ava{flex:none;width:36px;height:36px;} .gcb-ava .gcf-hs{width:36px;height:36px;} .gcb-ava.gcf-ava-nohs .gcf-ava-logo{width:28px;height:28px;}
+.gcb-row{grid-template-columns:36px minmax(0,1fr) repeat(var(--gcb-n,5),minmax(34px,auto));}
+.gcb-row .gcb-n{display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-width:0;overflow:hidden;margin-left:4px;}
+.gcb-name{font-size:15px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+.gcb-sub{display:flex;flex-wrap:wrap;column-gap:5px;font-size:11.5px;color:var(--gcmute);font-weight:600;white-space:nowrap;max-width:100%;overflow:hidden;}
+.gcb-sub .gcf-pos{font-size:12px;letter-spacing:0;} .gcb-sub .gcf-pos::after{content:none;}
+.gcb-inj{font-weight:800;letter-spacing:.03em;margin-left:4px;} .gcb-inj-q{color:#f3d35b;} .gcb-inj-o{color:#ff7b7b;}
+.gcb-sub .gcf-owner{flex-basis:100%;margin:0;font-size:11px;}
+.gcb-v{font-size:14.5px;font-weight:600;color:var(--text);text-align:center;font-variant-numeric:tabular-nums;white-space:nowrap;}
+/* the fantasy pane: the league picker as a title row, position badges, bigger lines */
+.gc-detail .gc-lgrow{justify-content:space-between;margin:6px 2px 4px;}
+.gc-detail .gc-lglbl{font-size:16px;font-weight:700;letter-spacing:0;text-transform:none;color:var(--gcmute);}
+.gc-detail .gc-lgsel{flex:0 1 auto;max-width:58%;background:none;border:none;color:var(--text);font:700 15px/1.3 inherit;text-align:right;padding:4px 2px;}
+.gc-detail .gc-projnote{font-size:11px;letter-spacing:0;color:var(--gcmute);}
+.gc-detail .gc-gh,.games-view .gc-gh{padding:14px 2px 6px;gap:12px;}
+.gc-detail .gc-gh::before,.gc-detail .gc-gh::after{content:"";flex:1;height:0;border-top:1px dotted rgba(255,255,255,.22);}
+.gc-gh-badge{display:inline-block;padding:5px 14px;border-radius:10px;background:var(--gcn2);font-size:13px;font-weight:800;letter-spacing:.04em;color:var(--text);}
+.gc-gh-qb .gc-gh-badge{color:#ff6b8a;} .gc-gh-rb .gc-gh-badge{color:#5ee0a0;} .gc-gh-wr .gc-gh-badge{color:#6fa8ff;} .gc-gh-te .gc-gh-badge{color:#f0b64a;} .gc-gh-k .gc-gh-badge{color:#c79aff;} .gc-gh-def .gc-gh-badge,.gc-gh-idp .gc-gh-badge{color:var(--gcmute);}
+.gc-detail .gc-group{padding:0 2px;}
+.gc-detail .gc-row{border-top:none;gap:14px;}
+.gc-detail .gc-p{padding:9px 2px;gap:10px;}
+.gc-detail .gc-owner{font-size:12.5px;font-weight:600;color:var(--gcmute);}
+.gc-detail .gc-owner::before{content:"➜ ";color:#5b8def;}
+.gc-detail .gc-p-home .gc-owner::before{content:"➜ ";}
+.gc-detail .gc-pinfo:has(.gc-mine) .gc-owner,.gc-detail .gc-pname.gc-mine{color:#f3d35b;}
+.gc-detail .gc-pinfo:has(.gc-mine) .gc-owner::before{color:#f3d35b;}
+.gc-detail .gc-pname{font-size:17px;font-weight:700;}
+.gc-detail .gc-line{font-size:12.5px;color:var(--gcmute);font-variant-caps:all-small-caps;letter-spacing:.02em;line-height:1.35;}
+.gc-detail .gc-pts{font-family:inherit;font-size:17px;font-weight:800;padding-top:1px;}
+.gc-detail .gc-proj{font-size:13px;font-weight:600;}
+.gc-detail .gc-p-proj .gc-pts{font-style:normal;}
+/* The side colours restated LAST: the Sleeper block above re-sets .gc-pname / .gcf-name,
+   and the same-specificity rule must come after them to win (test_game_center pins it). */
+.gc-opp,.lf-who .gc-opp{color:#ff7a85;}
+.gc-mine,.gc-pname.gc-mine,.gcf-name.gc-mine,.lf-who .gc-mine,.gcb-n .gc-mine,.ld-nm.ld-mine{color:var(--accent);}
+/* inside the detail "mine" reads in Sleeper's yellow (the sidebar keeps the app's accent) */
+.gc-detail .gc-mine,.gc-detail .gc-pname.gc-mine,.gc-detail .gcf-name.gc-mine,.gc-detail .gcb-name.gc-mine,.gc-detail .gcb-sub .gcf-owner,.gc-detail .gcf-owner{color:#f3d35b;}
 /* ── Coaching Playbook Modal + Insights ───────────────────────────────────── */
 
 /* Click affordances for coaching-scheme entry points */
@@ -10768,7 +10834,7 @@ function gcGameHTML(game, rows, wk){
     if(!away.length && !home.length) return '';
     const n=Math.max(away.length, home.length);
     const rowsHtml=Array.from({length:n},(_,i)=>`<div class="gc-row">${away[i]?gcPlayerHTML(away[i],'away'):'<div class="gc-p gc-p-empty"></div>'}${home[i]?gcPlayerHTML(home[i],'home'):'<div class="gc-p gc-p-empty"></div>'}</div>`).join('');
-    return `<div class="gc-group"><div class="gc-gh">${g[1]}</div>${rowsHtml}</div>`;
+    return `<div class="gc-group"><div class="gc-gh gc-gh-${escAttr(g[0].toLowerCase())}"><span class="gc-gh-badge" title="${escAttr(g[1])}">${g[0]}</span></div>${rowsHtml}</div>`;
   }).join('');
   const st=game.state==='post'?'FINAL':game.state==='in'?(game.detail||'LIVE'):(game.detail||'');
   // The banner wears both clubs: the away colour from the left, the home colour from the
@@ -10786,11 +10852,12 @@ function gcGameHTML(game, rows, wk){
   // stays as the faded wordmark behind
   const nick=(t)=>{ const n=(typeof TEAM_NAMES!=='undefined' && TEAM_NAMES && TEAM_NAMES[t]) ? String(TEAM_NAMES[t]) : ''; const i=n.lastIndexOf(' '); return i>0 ? n.slice(i+1) : t; };
   const src = game.state==='pre' ? '' : `<div class="gc-src">ESPN</div>`;
+  const won = game.state==='post' && game.as!=null && game.hs!=null && game.as!==game.hs ? (game.as>game.hs?'away':'home') : '';
   const hero=`<div class="gc-hero" style="--ga:${escAttr(col(game.away))};--gh:${escAttr(col(game.home))}">
       <span class="gc-hero-wm gc-hero-wm-a" aria-hidden="true">${game.away}</span><span class="gc-hero-wm gc-hero-wm-h" aria-hidden="true">${game.home}</span>
       <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${escHtml(nick(game.away))}</span><span class="gc-rec">${escHtml(game.arec)}</span>${dots(sit&&sit.to?sit.to.away:null)}</div>
       <b class="gc-score">${game.state==='pre'?'':(game.as!=null?game.as:'–')}${ball(game.away)}</b>
-      <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}">${mid}</div>${spot?`<div class="gc-spot">${spot}</div>`:''}${src}</div>
+      <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}${won?' gc-won-'+won:''}">${mid}</div>${spot?`<div class="gc-spot">${spot}</div>`:''}${src}</div>
       <b class="gc-score">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}${ball(game.home)}</b>
       <div class="gc-side gc-side-home"><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${escHtml(nick(game.home))}</span><span class="gc-rec">${escHtml(game.hrec)}</span>${dots(sit&&sit.to?sit.to.home:null)}</div>
     </div>`;
@@ -10813,7 +10880,7 @@ function gcGameHTML(game, rows, wk){
   // turns this off inside the phone's bottom sheet, where the whole sheet scrolls).
   const winbar=(typeof gcWinBarHTML==='function') ? gcWinBarHTML(game, sum) : '';
   if(tab==='feed') return `<div class="gc-feedview"><div class="gc-feedview-head">${hero}${oddsHtml}${top}${tabs}</div><div class="gc-feedview-feed">${gcFeedHTML(game, sum)}${winbar}</div></div>`;
-  const seg=`<div class="gc-seg"><button class="${side==='away'?'active':''}" onclick="gcdSetSide('away')"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${game.away}</button><button class="${side==='fantasy'?'active':''}" onclick="gcdSetSide('fantasy')">Fantasy</button><button class="${side==='home'?'active':''}" onclick="gcdSetSide('home')"><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'">${game.home}</button></div>`;
+  const seg=`<div class="gc-seg"><button class="${side==='away'?'active':''}" onclick="gcdSetSide('away')"><img src="${NFL_LOGO(game.away)}" class="gc-glogo" onerror="this.style.display='none'">${escHtml(nick(game.away))}</button><button class="${side==='fantasy'?'active':''}" onclick="gcdSetSide('fantasy')">Fantasy</button><button class="${side==='home'?'active':''}" onclick="gcdSetSide('home')"><img src="${NFL_LOGO(game.home)}" class="gc-glogo" onerror="this.style.display='none'">${escHtml(nick(game.home))}</button></div>`;
   const pane = side==='fantasy' ? fantasy : gcBoxHTML(game, sum, side==='home'?game.home:game.away);
   return hero+oddsHtml+top+tabs+(game.state==='pre'?'':gcLinescoreHTML(game, sum))+seg+pane;
 }
@@ -11810,20 +11877,44 @@ function gcLinescoreHTML(game, sum){
   const row=(code, arr, tot)=>`<tr><td class="gcls-t"><img src="${NFL_LOGO(code)}" class="gc-glogo" onerror="this.style.display='none'">${code}</td>${Array.from({length:n},(_,i)=>`<td>${arr[i]!=null?arr[i]:'–'}</td>`).join('')}<td class="gcls-tot">${tot!=null?tot:'–'}</td></tr>`;
   return `<div class="gcls-wrap"><table class="gcls"><thead><tr><th>Team</th>${head}<th>TOT</th></tr></thead><tbody>${row(game.away, la, game.as)}${row(game.home, lh, game.hs)}</tbody></table></div>`;
 }
+// The injury report, by ESPN athlete id → a short tag (Sleeper's "QUES" beside the position).
+function gcInjuries(sum){
+  if(sum && sum._gcInj) return sum._gcInj;
+  const out={}; const TAG={'Questionable':['QUES','q'], 'Doubtful':['DOUB','q'], 'Out':['OUT','o'], 'Injured Reserve':['IR','o']};
+  ((sum && sum.injuries)||[]).forEach(t=>(t.injuries||[]).forEach(i=>{ const id=String((i.athlete&&i.athlete.id)||''); const tg=TAG[String(i.status||'')]; if(id && tg) out[id]={tag:tg[0], cls:tg[1], why:String((i.details&&i.details.type)||'')}; }));
+  if(sum) sum._gcInj=out;
+  return out;
+}
+// A side's box score in Sleeper's shape: each group a list — the group's name on the left
+// and its columns on the right in the header row, then a headshot, the name with the
+// position, club and injury tag under it, and the numbers. Passing keeps six columns, a
+// catch shows receptions over targets ("11/16"); ESPN's labels are shortened to Sleeper's.
+const GC_BOX_LABEL = { 'C/ATT':'CMP', YDS:'YD', CAR:'ATT', SACKS:'SACK', 'QB HTS':'QBH', 'In 20':'IN20', TGTS:'TGT' };
 function gcBoxHTML(game, sum, team){
   if(!sum) return `<div class="ld-empty">${game.eid?'loading the box score…':'box score unavailable'}</div>`;
   const tp=((sum.boxscore&&sum.boxscore.players)||[]).find(t=>gcAbbr(t.team&&t.team.abbreviation)===team);
   if(!tp) return `<div class="ld-empty">no box score yet for ${escHtml(team)}</div>`;
-  const ath=gcAthletes(sum);
+  const ath=gcAthletes(sum), inj=gcInjuries(sum);
   const groups=GC_BOX_GROUPS.map(([key,label])=>{
     const g=(tp.statistics||[]).find(s=>s.name===key); if(!g || !(g.athletes||[]).length) return '';
-    const labels=g.labels||[]; const nCols=Math.min(labels.length, 8);
+    const labels=(g.labels||[]).map(String);
+    // the columns: an index into each athlete's stats, or a pair to show as "a/b"
+    let cols=labels.map((l,i)=>({l:GC_BOX_LABEL[l]||l, i}));
+    if(key==='passing') cols=cols.filter(c=>!/^(QBR|RTG)$/.test(labels[c.i]));
+    if(key==='receiving'){ const r=labels.indexOf('REC'), t=labels.indexOf('TGTS'); if(r>=0 && t>=0){ cols=cols.filter(c=>c.i!==t); cols[cols.findIndex(c=>c.i===r)]={l:'REC', i:r, over:t}; } }
+    cols=cols.slice(0, 6);
+    const cell=(st, c)=>{ const v=st[c.i]; if(v==null) return '–'; return c.over!=null && st[c.over]!=null ? `${v}/${st[c.over]}` : String(v); };
     const rows=g.athletes.map(a=>{
-      const A=a.athlete||{}; const rec=ath.byId[String(A.id||'')]; const pid=rec&&rec.pid; const pos=rec&&rec.pos;
+      const A=a.athlete||{}; const id=String(A.id||''); const rec=ath.byId[id]; const pid=rec&&rec.pid; const pos=(rec&&rec.pos)||'';
       const click=(pid && pos && pos!=='DEF' && typeof pcardOnclick==='function') ? ` onclick="${pcardOnclick(pid, pos, team)}"` : '';
-      return `<tr${click?' class="gcb-click"':''}${click}><td class="gcb-n"><span class="${pid&&typeof gcSideClass==='function'?gcSideClass(pid).trim():''}">${escHtml(gcShort(A.displayName||A.shortName||''))}</span>${pid&&gcOwnerOf(pid)?`<small class="gcf-owner">${escHtml(gcOwnerOf(pid))}</small>`:''}</td>${(a.stats||[]).slice(0,nCols).map(v=>`<td>${escHtml(String(v))}</td>`).join('')}</tr>`;
+      const hs=(pid && typeof SLEEPER_HEADSHOT==='function') ? SLEEPER_HEADSHOT(pid) : '';
+      const ava = hs ? `<span class="gcf-ava gcb-ava"><img src="${escAttr(hs)}" class="gcf-hs" loading="lazy" decoding="async" onerror="this.parentNode.classList.add('gcf-ava-nohs')"><img src="${NFL_LOGO(team)}" class="gcf-ava-logo" onerror="this.style.display='none'"></span>`
+                     : `<span class="gcf-ava gcb-ava gcf-ava-nohs"><img src="${NFL_LOGO(team)}" class="gcf-ava-logo" onerror="this.style.display='none'"></span>`;
+      const ij=inj[id]; const owner=pid?gcOwnerOf(pid):'';
+      const st=(a.stats||[]);
+      return `<div class="gcb-row${click?' gcb-click':''}"${click}>${ava}<div class="gcb-n"><span class="gcb-name${pid&&typeof gcSideClass==='function'?gcSideClass(pid):''}">${escHtml(gcShort(A.displayName||A.shortName||''))}</span><span class="gcb-sub">${pos&&pos!=='DEF'?`<span class="gcf-pos gcf-pos-${escAttr(pos.toLowerCase())}">${escHtml(pos)}</span> • `:''}${escHtml(team)}${ij?` <span class="gcb-inj gcb-inj-${ij.cls}" title="${escAttr(ij.why)}">${ij.tag}</span>`:''}${owner?`<small class="gcf-owner">${escHtml(owner)}</small>`:''}</span></div>${cols.map(c=>`<span class="gcb-v">${escHtml(cell(st, c))}</span>`).join('')}</div>`;
     }).join('');
-    return `<div class="gcb-group"><div class="gc-gh">${label}</div><div class="gcb-wrap"><table class="gcb"><thead><tr><th></th>${labels.slice(0,nCols).map(l=>`<th>${escHtml(l)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    return `<div class="gcb-group" style="--gcb-n:${cols.length}"><div class="gcb-head"><span class="gcb-lbl">${label}</span>${cols.map(c=>`<span class="gcb-h">${escHtml(c.l)}</span>`).join('')}</div>${rows}</div>`;
   }).join('');
   return groups || `<div class="ld-empty">no box score yet for ${escHtml(team)}</div>`;
 }

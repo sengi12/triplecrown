@@ -127,8 +127,13 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const ls=app.ls(app.GAME(), SUM);
   chk(/<th>Q1<\/th><th>Q2<\/th><th>Q3<\/th><th>Q4<\/th><th>TOT<\/th>/.test(ls) && /TB<\/td><td>3<\/td><td>7<\/td><td>10<\/td><td>7<\/td><td class="gcls-tot">27/.test(ls) && /CIN<\/td><td>14<\/td><td>10<\/td><td>3<\/td><td>6<\/td><td class="gcls-tot">33/.test(ls), 'the quarter line, away then home, with totals');
   const box=app.box(app.GAME(), SUM, 'CIN');
-  chk(/Passing[\s\S]*<th>C\/ATT<\/th><th>YDS<\/th>[\s\S]*J\. Burrow[\s\S]*<td>25\/35<\/td><td>254<\/td>/.test(box) && /Receiving[\s\S]*M\. Gesicki[\s\S]*<td>5<\/td><td>78<\/td>/.test(box), 'the box score by stat group with ESPN\'s labels and lines');
-  chk(/M\. Gesicki<\/span><small class="gcf-owner">@RichBigMeechy/.test(box) && /gcb-click/.test(box), 'a rostered player shows his owner; a known player opens his card');
+  chk(/Passing[\s\S]*J\. Burrow[\s\S]*<span class="gcb-v">25\/35<\/span><span class="gcb-v">254<\/span>/.test(box) && /Receiving[\s\S]*M\. Gesicki[\s\S]*<span class="gcb-v">5\/\d+<\/span><span class="gcb-v">78<\/span>/.test(box), 'the box score by stat group, each man\'s line in order');
+  chk(/M\. Gesicki<\/span>[^]*?<small class="gcf-owner">@RichBigMeechy/.test(box) && /gcb-click/.test(box), 'a rostered player shows his owner; a known player opens his card');
+  chk(/gcb-head"><span class="gcb-lbl">Passing<\/span><span class="gcb-h">CMP<\/span><span class="gcb-h">YD<\/span><span class="gcb-h">AVG<\/span><span class="gcb-h">TD<\/span><span class="gcb-h">INT<\/span><span class="gcb-h">SACK<\/span><\/div>/.test(box), 'passing in Sleeper\'s six columns, ESPN\'s labels shortened');
+  chk(/Receiving<\/span><span class="gcb-h">REC<\/span><span class="gcb-h">YD<\/span>/.test(box) && /<span class="gcb-v">\d+\/\d+<\/span>/.test(box) && !/gcb-h">TGT/.test(box), 'receptions over targets in one column');
+  chk(/gcb-ava"><img src="https:\/\/sleepercdn\.com\/content\/nfl\/players\/t1\.jpg"/.test(box) && /gcf-pos gcf-pos-te">TE<\/span> • CIN/.test(box), 'a headshot leads each row, the position and club under the name');
+  const injSum=Object.assign({}, SUM, {_gcInj:undefined, injuries:[{team:{abbreviation:'CIN'}, injuries:[{athlete:{id:IDS.t1}, status:'Questionable', details:{type:'Knee'}}]}]});
+  chk(/gcb-inj gcb-inj-q" title="Knee">QUES<\/span>/.test(app.box(app.GAME(), injSum, 'CIN')), 'the injury tag beside the club, as Sleeper shows it');
   chk(/no box score yet for SEA/.test(app.box(app.GAME(), SUM, 'SEA')), 'a side the summary lacks says so');
 
   console.log('=== the game panel: Feed | Stats, Away | Fantasy | Home ===');
