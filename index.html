@@ -5252,6 +5252,110 @@ button.la-cliff:hover{filter:brightness(1.25);}
   .la-heat-team{max-width:110px;}
   .la-bld-starts{display:none;}
 }
+/* ══ The Trade Center, richer: situation cards, tonal sides, deal cards ═════════════════
+   Same voice as the Game Center: a rounded mixed-case face, tonal surfaces with no borders
+   and a generous radius, headshots on every row. Scoped to .la-trade so the rest of the
+   analyzer keeps its own look. */
+.la-trade{--ltn:#0f1631;--ltn2:#151e3d;--ltn3:#1c2749;--ltline:rgba(255,255,255,.07);--ltmute:#9aa6c4;--ltteal:#2fd3c6;--ltgold:#f3d35b;--ltred:#ff6b8a;--ltgreen:#5ee0a0;
+  font-family:ui-rounded,-apple-system,"SF Pro Rounded",system-ui,"Segoe UI",Roboto,sans-serif;}
+.la-trade .la-tc-grid{gap:14px;}
+.la-trade .la-tc-side,.la-trade .la-tc-mid,.la-trade .la-fnd{background:var(--ltn2);border:none;border-radius:18px;}
+.la-trade .la-tc-side{padding:12px;}
+.la-trade .la-tc-head{gap:10px;margin-bottom:10px;}
+.la-trade .la-tc-sel{background:var(--ltn3);border:none;border-radius:12px;font-size:14px;font-weight:700;padding:8px 10px;max-width:none;flex:1;min-width:0;}
+.la-trade .la-tc-gives{font-size:12px;letter-spacing:0;text-transform:none;color:var(--ltmute);font-weight:600;}
+.la-trade .la-tc-box{background:var(--ltn);border:none;border-radius:14px;padding:8px 10px;min-height:60px;}
+.la-trade .la-tc-empty{font-size:12.5px;font-style:normal;color:var(--ltmute);}
+.la-trade .la-tc-tot{font-size:12px;color:var(--ltmute);padding:4px 2px 0;}
+.la-trade .la-tc-tot b{color:var(--text);}
+.la-trade .la-tc-pool{margin-top:8px;}
+.la-trade .la-tc-row{padding:7px 4px;border-radius:12px;border:none;gap:10px;}
+.la-trade .la-tc-pool .la-tc-row:nth-child(odd){background:rgba(255,255,255,.03);}
+.la-trade .la-tc-row:hover{background:var(--ltn3);}
+.la-trade .la-tc-nm{font-size:14.5px;font-weight:700;}
+.la-trade .la-tc-meta{font-size:11.5px;letter-spacing:0;font-weight:500;color:var(--ltmute);}
+.la-trade .la-pval{font-family:inherit;font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;}
+.la-trade .la-pick{font-size:13px;font-weight:600;}
+.la-trade .la-tc-btn{width:30px;height:30px;border-radius:10px;border:none;background:var(--ltn3);color:var(--text);font-size:16px;font-weight:800;}
+.la-trade .la-tc-btn.rm{background:color-mix(in srgb,var(--ltred) 22%,transparent);color:var(--ltred);}
+.la-trade .la-tc-btn:hover{background:var(--ltteal);color:#0f1631;}
+/* the situation card under each team's name */
+.la-situ-card{background:var(--ltn);border-radius:14px;padding:9px 11px 10px;margin:0 0 10px;display:flex;flex-direction:column;gap:4px;box-shadow:inset 3px 0 0 var(--ltmute);}
+.la-situ-card-contend{box-shadow:inset 3px 0 0 var(--ltgreen);} .la-situ-card-rebuild{box-shadow:inset 3px 0 0 var(--ltred);} .la-situ-card-retool,.la-situ-card-swing{box-shadow:inset 3px 0 0 var(--ltgold);}
+.la-situ-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.la-situ{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.03em;border-radius:999px;padding:2px 9px;background:color-mix(in srgb,var(--ltmute) 20%,transparent);color:var(--text);}
+.la-situ-contend{background:color-mix(in srgb,var(--ltgreen) 20%,transparent);color:var(--ltgreen);}
+.la-situ-rebuild{background:color-mix(in srgb,var(--ltred) 20%,transparent);color:var(--ltred);}
+.la-situ-retool,.la-situ-swing{background:color-mix(in srgb,var(--ltgold) 20%,transparent);color:var(--ltgold);}
+.la-situ-title{font-size:13px;font-weight:700;color:var(--text);}
+.la-situ-rec{margin-left:auto;font-size:13px;font-weight:700;color:var(--ltmute);font-variant-numeric:tabular-nums;}
+.la-situ-wants{font-size:12.5px;color:var(--ltmute);} .la-situ-wants b{color:var(--text);font-weight:700;}
+.la-situ-facts{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:11.5px;color:var(--ltmute);}
+.la-situ-facts span::before{content:"·";margin-right:6px;opacity:.6;} .la-situ-facts span:first-child::before{content:none;}
+.la-situ-tend{color:var(--ltteal);}
+/* the verdict column */
+.la-trade .la-tc-mid{padding:14px;gap:10px;}
+.la-trade .la-vd-txt{font-size:15px;font-weight:700;line-height:1.3;}
+.la-trade .la-vd-sub{font-size:12px;color:var(--ltmute);font-weight:500;}
+.la-trade .la-bar{height:10px;border-radius:999px;background:var(--ltn);overflow:hidden;}
+.la-trade .la-bar-fill{background:linear-gradient(90deg,var(--ltteal),#6fa8ff);}
+.la-trade .la-tc-mid-lbls{font-size:11px;letter-spacing:0;font-weight:600;color:var(--ltmute);}
+.la-fit{background:var(--ltn);border-radius:14px;padding:9px 11px;display:flex;flex-direction:column;gap:6px;}
+.la-fit-lbl{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--ltmute);}
+.la-fit-line{display:grid;grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"who badge pct" "why why why";gap:2px 8px;align-items:center;font-size:12.5px;}
+.la-fit-who{grid-area:who;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.la-fit-line .la-situ{grid-area:badge;}
+.la-fit-pct{grid-area:pct;font-weight:800;font-variant-numeric:tabular-nums;color:var(--ltmute);}
+.la-fit-line.ok .la-fit-pct{color:var(--ltgreen);} .la-fit-line.no .la-fit-pct{color:var(--ltred);}
+.la-fit-why{grid-area:why;font-size:11.5px;color:var(--ltmute);}
+.la-trade .la-sug{gap:6px;} .la-trade .la-sug-lbl{font-size:11.5px;color:var(--ltmute);}
+.la-trade .la-sug-chip{background:var(--ltn3);border:none;border-radius:999px;font-size:12px;padding:5px 11px;}
+.la-trade .la-sug-chip b{font-family:inherit;color:var(--ltteal);} .la-trade .la-sug-chip:hover{background:var(--ltteal);color:#0f1631;}
+.la-trade .la-sug-none{font-style:normal;font-size:12px;color:var(--ltmute);}
+.la-trade .la-tc-faab{background:var(--ltn2);border-radius:12px;}
+/* the finder */
+.la-trade .la-fnd{padding:14px 14px 10px;margin-top:14px;}
+.la-trade .la-fnd-title{font-size:16px;font-weight:800;}
+.la-trade .la-fnd-sub{font-size:12px;color:var(--ltmute);font-weight:500;margin-left:0;flex-basis:100%;}
+.la-trade .la-fnd-size{font-size:11.5px;font-weight:500;}
+.la-trade .la-fnd-chips .format-btn{border-radius:999px;font-size:12px;}
+.la-fnd-me{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--ltmute);margin:4px 0 10px;}
+.la-fnd-me b{color:var(--text);}
+.la-fnd-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;margin-top:8px;}
+.la-fc{background:var(--ltn);border-radius:16px;padding:10px 12px 10px;display:flex;flex-direction:column;gap:8px;min-width:0;}
+.la-fc-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--ltmute);}
+.la-fc-partner{min-width:0;display:inline-flex;align-items:center;gap:6px;} .la-fc-partner b{color:var(--text);font-weight:700;}
+.la-fc-like{margin-left:auto;font-size:11px;font-weight:800;letter-spacing:.03em;border-radius:999px;padding:2px 9px;background:color-mix(in srgb,var(--ltmute) 20%,transparent);color:var(--ltmute);}
+.la-like-likely{background:color-mix(in srgb,var(--ltgreen) 20%,transparent);color:var(--ltgreen);}
+.la-like-plausible{background:color-mix(in srgb,var(--ltteal) 20%,transparent);color:var(--ltteal);}
+.la-like-possible{background:color-mix(in srgb,var(--ltgold) 20%,transparent);color:var(--ltgold);}
+.la-like-long-shot,.la-like-unlikely{background:color-mix(in srgb,var(--ltred) 16%,transparent);color:var(--ltred);}
+.la-like-their-favour{background:color-mix(in srgb,var(--ltmute) 20%,transparent);color:var(--ltmute);}
+.la-fc-body{display:grid;grid-template-columns:minmax(0,1fr) 22px minmax(0,1fr);gap:8px;align-items:start;}
+.la-fc-col{display:flex;flex-direction:column;gap:5px;min-width:0;}
+.la-fc-lbl{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ltmute);} .la-fc-lbl b{color:var(--text);font-variant-numeric:tabular-nums;}
+.la-fc-arrow{align-self:center;text-align:center;color:var(--ltmute);font-size:16px;padding-top:18px;}
+.la-fc-pl,.la-fc-pick{display:grid;grid-template-columns:30px minmax(0,1fr) auto;grid-template-areas:"hs nm nm" "hs meta v";column-gap:8px;row-gap:1px;align-items:center;min-width:0;}
+.la-fc-pick{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"nm nm" "meta v";background:var(--ltn2);border-radius:10px;padding:5px 9px;}
+.la-fc-pl .la-fc-hs,.la-fc-pl img{grid-area:hs;width:30px;height:30px;border-radius:50%;object-fit:cover;object-position:top;background:var(--ltn3);}
+.la-fc-nm{grid-area:nm;font-size:13.5px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.la-fc-meta{grid-area:meta;font-size:11px;color:var(--ltmute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+.la-fc-pos{font-weight:800;letter-spacing:.02em;background:none!important;padding:0!important;border:none!important;border-radius:0!important;display:inline!important;font-size:inherit!important;}
+.la-fc-pos.rt-pos-qb{color:#ff6b8a!important;} .la-fc-pos.rt-pos-rb{color:#5ee0a0!important;} .la-fc-pos.rt-pos-wr{color:#6fa8ff!important;} .la-fc-pos.rt-pos-te{color:#f0b64a!important;}
+.la-fc-pl b,.la-fc-pick b{grid-area:v;font-size:12px;font-weight:800;color:var(--ltmute);font-variant-numeric:tabular-nums;text-align:right;}
+.la-fc-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--ltmute);padding-top:4px;border-top:1px solid var(--ltline);}
+.la-trade .la-fnd-v{font-family:inherit;font-size:12px;}
+.la-fc-fit{font-weight:700;font-variant-numeric:tabular-nums;color:var(--ltmute);} .la-fc-fit.ok{color:var(--ltgreen);} .la-fc-fit.no{color:var(--ltred);}
+.la-fc-why{flex-basis:100%;font-size:11.5px;}
+.la-fc-tend{color:var(--ltteal);}
+.la-fc-load{margin-left:auto;border-radius:999px;}
+.la-trade .la-fnd-lane{font-size:10px;padding:3px 8px;border-radius:999px;border:none;}
+.la-lane-sell{background:color-mix(in srgb,var(--ltred) 18%,transparent);color:var(--ltred);}
+.la-lane-now{background:color-mix(in srgb,var(--ltgreen) 18%,transparent);color:var(--ltgreen);}
+@media (max-width:760px){
+  .la-fnd-cards{grid-template-columns:1fr;}
+  .la-trade .la-tc-grid{grid-template-columns:1fr;}
+}
 /* ─────────────────────────────────────────────────────────────────────────────
    Supabase Auth + Projections Manager styles
    ───────────────────────────────────────────────────────────────────────────── */
@@ -41305,7 +41409,7 @@ function laValSource(){
 }
 function laSetValSource(s){
   try{ localStorage.setItem('la_val_source', s); }catch(e){}
-  _laTierVals=null; _laPosRankCache=null;
+  _laTierVals=null; _laPosRankCache=null; if(typeof laSituReset==='function') laSituReset();
   if(typeof renderLeagueAnalyzer==='function') renderLeagueAnalyzer();
 }
 // Is there tradesourced data for the snapshot league's market? (Gates the Source control.)
@@ -43078,7 +43182,7 @@ function laBestAvailView(s){
 //  Tune LA_TC_* below to taste — every verdict in the UI flows from these four numbers.
 const LA_TC_W    = [1, .75, .55, .40, .30]; // per-asset weights, best-first
 const LA_TC_TAIL = .25;                     // weight for the 6th asset onward
-const LA_TC_STUD = .55;                     // stud premium: fraction of the best-asset gap
+const LA_TC_STUD = .55;                     // stud premium: fraction of the best-asset gap (the help copy quotes this)
 const LA_TC_BAND = (a,b)=>Math.max(4, .05*Math.max(a,b));   // fair window
 
 function laTcAdjusted(vals){
@@ -43153,7 +43257,7 @@ function laTradeToggle(side, key){
 }
 function laTradeClear(){ laState.trade.giveA=[]; laState.trade.giveB=[]; laState.trade.faabA=0; laState.trade.faabB=0; renderLeagueAnalyzer(); }
 function laLoadProposal(aId,bId,giveA,giveB){
-  laState.trade={a:aId,b:bId,giveA:giveA.slice(),giveB:giveB.slice()};
+  laState.trade={a:aId,b:bId,giveA:giveA.slice(),giveB:giveB.slice(),faabA:0,faabB:0};
   renderLeagueAnalyzer();
   const el=document.querySelector('.la-tc-grid'); if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
 }
@@ -43192,12 +43296,14 @@ function laTcSuggestions(s, pools, give, vals, otherVals, side){
 // top assets at my weak position — 1-for-1 first, then my-two-for-their-one (consolidating UP
 // pays the stud premium honestly). Only proposals whose verdict is already fair (or one
 // suggested add away from fair) survive.
-const LA_LANE_LABEL={big:'BIG FISH', mid:'UPGRADE', value:'VALUE', buy:'BREAKOUT'};
+const LA_LANE_LABEL={big:'BIG FISH', mid:'UPGRADE', value:'VALUE', buy:'BREAKOUT', sell:'SELL HIGH', now:'WIN NOW'};
 const LA_LANE_TIP={
   big:'A top-tier player at your weak spot — the biggest single upgrade, but it costs real assets.',
   mid:'A solid mid-priced starter — moves the needle without gutting another position.',
   value:'A cheap contributor — low cost, low risk; useful depth in a deeper league.',
-  buy:'A young player entering their breakout window, priced before the leap.'};
+  buy:'A young player entering their breakout window, priced before the leap.',
+  sell:'Move value your timeline discounts — a player at the age cliff — to a team that can use him, for the picks and youth you want.',
+  now:'Spend picks and prospects on a rebuilding team\'s proven starter — they want the future, you want the points.'};
 const LA_SHAPE_LABEL={
   ANY:'Any shape',
   BAL:'Balanced only (same number of assets each side)',
@@ -43389,6 +43495,9 @@ function laTradeFinder(s){
     });
   }
   proposals.push(...buys);
+  // deals shaped by the situations (SELL HIGH for a rebuild, WIN NOW for a contender) —
+  // every one already fair-or-near on the market and ahead in both chairs
+  if(typeof laSituProposals==='function'){ try{ proposals.push(...laSituProposals(s, mine.t.rosterId)); }catch(e){} }
   const seen=new Set();
   const uniq=proposals.filter(p=>{
     const k=p.b.rosterId+'|'+p.give.map(x=>x.key).sort().join(',')+'>'+p.get.map(x=>x.key).sort().join(',');
@@ -43411,11 +43520,16 @@ function laTradeFinder(s){
       ? teamGain >= -120
       : (Math.abs(p.v.diff)<=p.v.band*1.15 && teamGain >= 180);
     const improvesTeam = teamGain >= 0;
-    return {...p, tcPenalty, teamGain, realistic, improvesTeam};
+    // the same deal from each chair: a proposal both sides should want leads the board
+    const fit = p.fit || ((typeof laSituFitFor==='function') ? laSituFitFor(s, mine.t.rosterId, p.b.rosterId, p.give, p.get) : null);
+    const mutual = !!(fit && fit.mutual);
+    const likely = fit ? fit.likely : '';
+    return {...p, tcPenalty, teamGain, realistic, improvesTeam, fit, mutual, likely};
   })
     // Best NET improvement first — a cheap add that costs nothing you start can outrank a
     // blockbuster that guts another position. Ties broken by fairness.
     .sort((a,b)=>
+      (b.mutual-a.mutual) ||
       (b.improvesTeam-a.improvesTeam) ||
       (b.realistic-a.realistic) ||
       (a.coreCost-b.coreCost) ||
@@ -43435,11 +43549,14 @@ function laTradeFinder(s){
   // price points instead of all being blockbusters: a "big fish" (top-tier get), a "value"
   // add (mid), and breakout buys. The reader sees a menu, not six versions of the same swing.
   const laneOf=(p)=>{
+    if(p.lane) return p.lane;
     if(p.buy) return 'buy';
     const head = p.get.reduce((m,x)=>Math.max(m,+x.v||0),0);
     return head>=6000 ? 'big' : head>=3000 ? 'mid' : 'value';
   };
-  const viable = uniq.filter(x=>x.realistic || x.improvesTeam);
+  // a deal that costs me more than an eighth in my own chair is not a suggestion, whatever
+  // the chart says about it
+  const viable = uniq.filter(x=>(x.realistic || x.improvesTeam) && !(x.fit && x.fit.mine && x.fit.mine.pct < -0.12));
   const rankedPool = viable.length ? viable : uniq;
   const shapeMatch = (p)=>{
     if(shapeTarget==='ANY') return true;
@@ -43457,12 +43574,16 @@ function laTradeFinder(s){
   const scopedPool = rankedPool.filter(shapeMatch);
   const boardPool = scopedPool.length ? scopedPool : rankedPool;
   boardPool.forEach(p=>{ p.lane=laneOf(p); });
-  const buyPool=boardPool.filter(x=>x.lane==='buy');
-  const mainPool=boardPool.filter(x=>x.lane!=='buy');
+  // a breakout buy only earns its guaranteed seat when the seller would plausibly take it
+  const buyPool=boardPool.filter(x=>x.lane==='buy' && !(x.fit && x.fit.theirs && x.fit.theirs.pct < -0.08));
+  const situPool=boardPool.filter(x=>x.lane==='sell'||x.lane==='now');
+  const mainPool=boardPool.filter(x=>x.lane!=='buy' && x.lane!=='sell' && x.lane!=='now');
   const mainNoCore=mainPool.filter(x=>!x.coreCost);
   const mainCore=mainPool.filter(x=>x.coreCost);
   const pool=[...mainPool];
   const picksOut=[]; const usedPartner={}; const usedLane={};
+  // the situation's own deals lead: up to two seats, rotating with the seed
+  for(let k=0;k<Math.min(2,situPool.length);k++){ const c=situPool[(laState.fndSeed+k)%situPool.length]; if(!picksOut.includes(c)) picksOut.push(c); }
   // Guarantee spread: up to 2 breakout buys and at least one non-"big" (value/mid) seat, so a
   // stack of fair blockbusters can't monopolise the list — the exact thing you flagged.
   for(let k=0;k<Math.min(deep?2:1,buyPool.length);k++){
@@ -43510,8 +43631,10 @@ function laTradeFinder(s){
   }
     const fairCount = boardPool.filter(x=>x.v&&x.v.fair).length;
     const betterCount = boardPool.filter(x=>x.improvesTeam).length;
-    return {weak,strong,proposals:picksOut, total:boardPool.length, fairCount, betterCount, targeted:!!target,
-      deep, shallow, nTeams, myRosterId:mine.t.rosterId, shapeTarget};
+    const mutualCount = boardPool.filter(x=>x.mutual).length;
+    const mySit = (typeof laTeamSituation==='function') ? laTeamSituation(s, mine.t.rosterId) : null;
+    return {weak,strong,proposals:picksOut, total:boardPool.length, fairCount, betterCount, mutualCount, targeted:!!target,
+      deep, shallow, nTeams, myRosterId:mine.t.rosterId, shapeTarget, mySit, situCount:situPool.length};
 }
 
 // League-wide positional value ranks, computed live from the snapshot: every rostered player
@@ -43645,7 +43768,9 @@ function laTradeView(s){
   };
   // trade finder
   const fnd=laTradeFinder(s);
-  const fndHtml = fnd.proposals.length ? fnd.proposals.map(p=>`
+  const fndHtml = fnd.proposals.length ? ((typeof laFndCardHTML==='function')
+    ? `<div class="la-fnd-cards">${fnd.proposals.map(p=>laFndCardHTML(p, fnd)).join('')}</div>`
+    : fnd.proposals.map(p=>`
     <div class="la-fnd-row">
       <span class="la-fnd-lane la-lane-${p.lane}" title="${LA_LANE_TIP[p.lane]}">${LA_LANE_LABEL[p.lane]}</span>
       <span class="la-fnd-shape">${escHtml((p.shape||'1for1').replace('for','-for-'))}</span>
@@ -43653,13 +43778,17 @@ function laTradeView(s){
         \u2192 <b>${escHtml(p.b.teamName)}</b> for <b>${escHtml(p.get.map(x=>x.type==='k'?x.label:x.name).join(' + '))}</b></span>
       <span class="la-fnd-v ${p.v.fair?'ok':''}">${p.v.fair?'fair':(p.v.diff>0?'-':'+')+Math.abs(p.v.diff).toFixed(0)}</span>
       <button class="btn btn-sm btn-ghost" onclick="laLoadProposal(${fnd.myRosterId},${p.b.rosterId},[${p.give.map(x=>`'${escJsSingle(x.key)}'`).join(',')}],[${p.get.map(x=>`'${escJsSingle(x.key)}'`).join(',')}])">Load</button>
-    </div>`).join('')
+    </div>`).join(''))
     : `<div class="la-note">No viable upgrades found for ${escHtml(LA_SHAPE_LABEL[fnd.shapeTarget]||'this shape')} at ${escHtml(fnd.weak.pos)} right now. Try another shape or press refresh.</div>`;
-  return `
+  const situA=(typeof laSituCardHTML==='function')?laSituCardHTML(s, tr.a):'', situB=(typeof laSituCardHTML==='function')?laSituCardHTML(s, tr.b):'';
+  const fitHtml=(started && typeof laSituFitHTML==='function') ? laSituFitHTML(s, tr.a, tr.b, givenA, givenB) : '';
+  const meLine = fnd.mySit ? `<div class="la-fnd-me">You are ${laSituBadge(fnd.mySit)} <b>${escHtml(fnd.mySit.title||'')}</b> · you want <b>${escHtml(fnd.mySit.wants)}</b>${fnd.situCount?` · ${fnd.situCount} deal${fnd.situCount===1?'':'s'} work in both chairs`:''}</div>` : '';
+  return `<div class="la-trade">
     <div class="la-basis-row">${laValueBasisHTML()}${laValPinBarHTML()}</div>
     <div class="la-tc-grid">
       <div class="la-tc-side">
         <div class="la-tc-head">${sel('a',tr.a)} <span class="la-tc-gives">gives</span></div>
+        ${situA}
         <div class="la-tc-box">${givenA.length?givenA.map(x=>laAssetRow(x,'a',true)).join(''):'<div class="la-tc-empty">click + below to add</div>'}
           ${faabRow('a')}
           <div class="la-tc-tot">adjusted <b>${started?v.adjA:0}</b>${v.effA!==v.adjA&&started?` \u00b7 with stud premium <b>${v.effA}</b>`:''}</div></div>
@@ -43669,11 +43798,13 @@ function laTradeView(s){
         <div class="la-vd-txt">${verdictTxt}</div>
         <div class="la-bar"><div class="la-bar-fill" style="width:${lean}%"></div><div class="la-bar-mid"></div></div>
         <div class="la-tc-mid-lbls"><span>${escHtml(poolA.team.teamName)}</span><span>${escHtml(poolB.team.teamName)}</span></div>
+        ${fitHtml}
         ${sugHtml}
         ${started?`<button class="btn btn-sm btn-ghost la-tc-clear" onclick="laTradeClear()">clear trade</button>`:''}
       </div>
       <div class="la-tc-side">
         <div class="la-tc-head">${sel('b',tr.b)} <span class="la-tc-gives">gives</span></div>
+        ${situB}
         <div class="la-tc-box">${givenB.length?givenB.map(x=>laAssetRow(x,'b',true)).join(''):'<div class="la-tc-empty">click + below to add</div>'}
           ${faabRow('b')}
           <div class="la-tc-tot">adjusted <b>${started?v.adjB:0}</b>${v.effB!==v.adjB&&started?` \u00b7 with stud premium <b>${v.effB}</b>`:''}</div></div>
@@ -43687,10 +43818,11 @@ function laTradeView(s){
         <span class="la-fnd-chips">${['AUTO','QB','RB','WR','TE'].map(x=>`<button class="format-btn ${laState.fndPos===x?'active':''}" onclick="laState.fndPos='${x}';renderLeagueAnalyzer()" title="${x==='AUTO'?'Target my weakest position automatically':'Hunt deals at '+x}">${x}</button>`).join('')}</span>
         <span class="la-fnd-chips">${['ANY','BAL','1v1','2v2','3v3','xv1','1vx'].map(x=>`<button class="format-btn ${laState.fndShape===x?'active':''}" onclick="laState.fndShape='${x}';renderLeagueAnalyzer()" title="${LA_SHAPE_LABEL[x]}">${x}</button>`).join('')}</span>
         <button class="btn btn-sm btn-ghost la-fnd-refresh" onclick="laState.fndSeed++;renderLeagueAnalyzer()" title="Deal me different variations">${TC_ICON("refresh")} refresh</button></div>
+      ${meLine}
       ${fndHtml}
     </div>
     <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn('latrade','How verdicts are judged'):''}</div>
-    ${(typeof laTradeHistoryHTML==='function')?laTradeHistoryHTML(s):''}`;
+    ${(typeof laTradeHistoryHTML==='function')?laTradeHistoryHTML(s):''}</div>`;
 }
 
 // Switch analyzer tabs. Also scrolls back to the tab bar: these views differ wildly in
@@ -44278,8 +44410,11 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     is the classic dynasty waiver add.`};
   TC_INFO_BOOK.latrade={title:'Trade verdicts', body:`
     Consolidation-adjusted values: extra assets on a side count at 75/55/40/30/25%, and the side
-    holding the single best player gets a premium worth 25% of the best-asset gap \u2014 a stack of
-    depth can't buy a stud, but star + real piece can. Fair = within \u00b1max(4, 5%).`};
+    holding the single best player gets a premium worth 55% of the best-asset gap \u2014 a stack of
+    depth can't buy a stud, but star + real piece can. Fair = within \u00b1max(4, 5%).
+    Under the verdict, the same deal is judged from each chair: a rebuild prices picks and youth
+    up and the age cliff down, a contender the reverse. A deal both sides come out ahead on in
+    their own chair is one someone might actually make.`};
   TC_INFO_BOOK.lamyvalue={title:'Dynasty power score', body:`
     Tier-boosted FantasyPros values (T1 \u00d71.15), consolidation-adjusted \u2014 stars carry, depth
     decays. Power score = starters + 35% bench (+ 50% picks when synced), league best = 100.`};
@@ -48737,6 +48872,273 @@ function laTradeHistoryHTML(s){
     + (store.more.done?'' : ` <button class="la-th-more la-th-more-inline" onclick="laThLoadEarlier()"${store.more.busy?' disabled':''}>${store.more.busy?'loading earlier seasons…':'+ earlier seasons'}</button>`)
     + (store.more.err?` <span class="la-th-err">${escHtml(store.more.err)}</span>`:'');
   return head(filters+`<div class="la-th-list">${body}</div>`, sub);
+}
+// ═════════════════════════════════════════════════════════════════════════════
+// Trade situations — what each team WANTS, and whether a deal works in both chairs
+// ═════════════════════════════════════════════════════════════════════════════
+// A trade that balances on the chart is not a trade anyone makes unless both sides come out
+// ahead by their OWN lights. A rebuild wants youth and picks and has no use for a 29-year-old
+// receiver however good; a contender wants the receiver and would rather not hold a pick that
+// scores nothing this year. The persona engine (laTrajectories) already reads every roster's
+// clock; this file turns that into a MODE per team — contend / retool / rebuild (swing in
+// redraft) — prices every asset as that team would price it, and judges a proposal from each
+// side's chair. The finder then leads with deals both sides should want, and says why.
+//
+// The league's own ledger (99j) adds the one thing a model cannot: whether this manager
+// actually deals, and whether they buy or sell picks. That rides along as a tendency tag and
+// as the difference between "plausible" and "likely".
+
+var _laSitu = { sig:null, by:null };
+function _laSituSig(s){
+  return [String(s.leagueId||''), String(s.takenAt||''), (typeof laValSource==='function')?laValSource():'', (typeof laValMode==='function')?laValMode():''].join('|');
+}
+const LA_SITU_LABEL = { contend:'Contending', retool:'Retooling', rebuild:'Rebuilding', swing:'Swinging' };
+const LA_SITU_WANTS = { contend:'proven starters now', retool:'value either way', rebuild:'youth and draft picks', swing:'ceiling over floor' };
+// Mode per roster, from the persona plus the standings once there are games to read.
+function laTeamSituations(s){
+  if(!s || !Array.isArray(s.teamList)) return {};
+  const sig=_laSituSig(s);
+  if(_laSitu.by && _laSitu.sig===sig) return _laSitu.by;
+  const pm=(typeof laProjMap==='function') ? laProjMap() : new Map();
+  let traj={}; try{ traj=laTrajectories(s, pm)||{}; }catch(e){ traj={}; }
+  const n=s.teamList.length;
+  const redraft=(typeof laIsRedraft==='function') && laIsRedraft();
+  const byRec=[...s.teamList].sort((a,b)=>((b.wins||0)-(b.losses||0))-((a.wins||0)-(a.losses||0)) || ((b.fpts||0)-(a.fpts||0)));
+  const by={};
+  s.teamList.forEach(t=>{
+    const r=traj[t.rosterId]||{};
+    const games=(t.wins||0)+(t.losses||0)+(t.ties||0);
+    const winPct=games?((t.wins||0)+(t.ties||0)*0.5)/games:null;
+    const recRank=byRec.indexOf(t)+1;
+    const title=String(r.title||'');
+    let mode;
+    if(redraft){ mode=/Contender|One Piece|In the Hunt/.test(title) ? 'contend' : 'swing'; }
+    else {
+      if(/Hard Rebuild|Multi-Yr Rebuild/.test(title)) mode='rebuild';
+      else if(/Contender|One Piece Away/.test(title)) mode='contend';
+      else if(/Edge of the Cliff/.test(title)) mode=(winPct!=null && games>=4) ? (winPct>=0.5?'contend':'rebuild') : 'contend';
+      else mode='retool';   // Ascending, 1-Yr Reload, or no persona at all
+      // The standings talk once a third of the season is in: a persona contender sitting
+      // near the bottom is retooling whether it likes it or not, and a "rebuild" in the top
+      // third with a live lineup is in the hunt.
+      if(games>=4 && winPct!=null){
+        if(mode==='contend' && recRank>Math.ceil(n*0.6)) mode='retool';
+        if(mode==='rebuild' && recRank<=Math.ceil(n*0.34) && (r.now||0)>=0.7) mode='retool';
+      }
+    }
+    const reasons=[];
+    if(r.rank) reasons.push(`#${r.rank} of ${n} on the blend`);
+    if(games) reasons.push(`${t.wins||0}-${t.losses||0}${t.ties?'-'+t.ties:''}`);
+    if(r.coreAge!=null) reasons.push(`core age ${(+r.coreAge).toFixed(1)}`);
+    if(r.youth!=null) reasons.push(`${Math.round(r.youth*100)}% of value is 25 or under`);
+    if(r.pickStr!=null && !redraft) reasons.push(`picks at ${Math.round(r.pickStr*100)}% of the league's best`);
+    if(r.cliffShare!=null && r.cliffShare>=0.25) reasons.push(`${Math.round(r.cliffShare*100)}% of value near the cliff`);
+    by[t.rosterId]={ rid:t.rosterId, mode, label:LA_SITU_LABEL[mode], wants:LA_SITU_WANTS[mode], title, cls:String(r.cls||''), rank:r.rank||null, n,
+      winPct, recRank, games, coreAge:r.coreAge!=null?r.coreAge:null, youth:r.youth!=null?r.youth:null, pickStr:r.pickStr!=null?r.pickStr:null,
+      cliffShare:r.cliffShare!=null?r.cliffShare:null, now:r.now||0, fut:r.fut||0, advice:String(r.advice||''), reasons, redraft };
+  });
+  _laSitu={sig, by};
+  return by;
+}
+function laTeamSituation(s, rid){ return laTeamSituations(s)[rid]||null; }
+function laSituReset(){ _laSitu={sig:null, by:null}; }
+
+// How much an asset is worth TO a team in a given situation, as a multiple of its market
+// value. The multiples are deliberately modest: a situation bends a price, it does not
+// rewrite it. Picks are the currency of a rebuild and dead weight to a contender; youth fits
+// a long timeline; a player at the age cliff is a contender's starter and a rebuild's problem.
+function laSituMult(x, sit){
+  if(!x || !sit || sit.redraft) return {m:1, why:''};
+  const mode=sit.mode;
+  if(x.type==='k'){
+    const thisYear=Number((leagueSnapshot&&leagueSnapshot.season)||0);
+    const soon = !thisYear || Number(x.season)<=thisYear+1;
+    if(mode==='rebuild') return {m: x.round===1 ? 1.25 : 1.15, why:'picks are the currency of a rebuild'};
+    if(mode==='contend') return {m: soon ? 0.85 : 0.78, why:'a pick scores nothing this year'};
+    return {m:1.05, why:''};
+  }
+  const age=(x.age!=null)?x.age:((typeof laDynAge==='function')?laDynAge(x.name):null);
+  const cliff=(typeof LA_AGE_CLIFF!=='undefined' && LA_AGE_CLIFF[x.pos]!=null)?LA_AGE_CLIFF[x.pos]:null;
+  const past = age!=null && cliff!=null && age>=cliff;
+  const nearCliff = !past && age!=null && cliff!=null && age>=cliff-1;
+  const young = age!=null && age<=24.5;
+  // a starter by this league's own shape: the top (teams × slots at the position) at his
+  // position among rostered players, capped at twelve
+  const nT=(leagueSnapshot && Array.isArray(leagueSnapshot.teamList)) ? leagueSnapshot.teamList.length : 12;
+  const slots={QB:1, RB:2, WR:2, TE:1}[x.pos]||1;
+  const starter = x.posRank!=null && x.posRank<=Math.min(12, nT*slots);
+  const label=x.name||'';
+  if(mode==='rebuild'){
+    if(past) return {m:0.6, why:`${label} is past the ${x.pos} age cliff`};
+    if(nearCliff) return {m:0.75, why:`${label} is a year from the cliff`};
+    if(young) return {m:1.12, why:`${label} fits a long timeline`};
+    if(age!=null && age<=26) return {m:1.04, why:''};
+    return {m:0.95, why:''};
+  }
+  if(mode==='contend'){
+    // a contender buys this season: a starter is a starter whatever his birthday says, a
+    // prospect it cannot start is a luxury, and an aging reserve is nothing to it
+    if(starter) return {m:1.08, why:`${label} starts and scores now`};
+    if(young) return {m:0.85, why:`${label} is upside they cannot start yet`};
+    if(past) return {m:0.9, why:''};
+    return {m:1, why:''};
+  }
+  // retool: light touches either way
+  if(past) return {m:0.88, why:`${label} is aging`};
+  if(young) return {m:1.04, why:''};
+  return {m:1, why:''};
+}
+// The deal from one side's chair: what they receive against what they send, each priced by
+// their situation, through the same consolidation curve the verdict uses. `ok` allows a hair
+// of slack — nobody turns down a deal over three percent.
+function laSituFit(sit, getAssets, giveAssets){
+  const scaled=(arr)=>(arr||[]).map(x=>(+x.v||0)*laSituMult(x,sit).m);
+  const inV=laTcAdjusted(scaled(getAssets)), outV=laTcAdjusted(scaled(giveAssets));
+  const gain=inV-outV, base=Math.max(outV, inV, 1), pct=gain/base;
+  const why=[];
+  (getAssets||[]).forEach(x=>{ const r=laSituMult(x,sit); if(r.why && r.m>1) why.push(r.why); });
+  (giveAssets||[]).forEach(x=>{ const r=laSituMult(x,sit); if(r.why && r.m<1) why.push(`sends out: ${r.why}`); });
+  return { inV:Math.round(inV), outV:Math.round(outV), gain:Math.round(gain), pct, ok: inV >= outV*0.97, why:why.slice(0,3) };
+}
+// What this manager actually does, from the league's own ledger (loaded by the trade-history
+// section; null until it has). Counts this season's deals and whether picks flow in or out.
+function laPartnerTendency(s, rid){
+  if(!s) return null;
+  const st=(typeof _laTh!=='undefined' && _laTh && _laTh[String(s.leagueId)]) ? _laTh[String(s.leagueId)] : null;
+  const rows=(st && Array.isArray(st.rows)) ? st.rows : null;
+  if(!rows) return null;
+  const season=String(s.season||'');
+  let n=0, picksIn=0, picksOut=0, last=0; const partners={};
+  rows.forEach(r=>{
+    if(season && String(r.season)!==season) return;
+    const me=(r.teams||[]).find(x=>x.rid===rid); if(!me) return;
+    n++; last=Math.max(last, r.at||0);
+    (r.teams||[]).filter(x=>x.rid!==rid).forEach(o=>{ partners[o.rid]=(partners[o.rid]||0)+1; picksOut+=(o.picks||[]).length; });
+    picksIn+=(me.picks||[]).length;
+  });
+  const buysPicks=picksIn>picksOut, sellsPicks=picksOut>picksIn;
+  return { n, active:n>=3, quiet:n===0, picksIn, picksOut, buysPicks, sellsPicks, last, partners,
+    label: n===0 ? 'no trades this season' : `${n} trade${n===1?'':'s'} this season${buysPicks?' · buys picks':sellsPicks?' · sells picks':''}` };
+}
+// Both chairs at once, plus how likely the partner is to say yes.
+function laSituFitFor(s, myRid, theirRid, myGive, myGet){
+  const sits=laTeamSituations(s);
+  const mine=laSituFit(sits[myRid], myGet, myGive);
+  const theirs=laSituFit(sits[theirRid], myGive, myGet);
+  const tend=laPartnerTendency(s, theirRid);
+  // Likelihood reads the partner's chair first, then how often they deal, then how much is
+  // on the table: a three-for-three that balances to the point is still a blockbuster that
+  // most managers never pull the trigger on.
+  const LADDER=['unlikely','long shot','possible','plausible','likely'];
+  let step;
+  if(theirs.ok && mine.ok) step = (tend && tend.active) ? 4 : 3;
+  else if(theirs.ok) step = 2;                      // they would, you should not
+  else if(theirs.pct>=-0.06) step = 1;              // close in their chair
+  else step = 0;
+  if(tend && tend.quiet && step===4) step=3;
+  const pieces=(myGive||[]).length+(myGet||[]).length;
+  if(pieces>=5) step=Math.max(0, step-1);
+  if(pieces>=6) step=Math.max(0, step-1);
+  let likely=LADDER[step];
+  if(theirs.ok && !mine.ok) likely='their favour';
+  return { mine, theirs, mutual: mine.ok && theirs.ok, likely, tend, sitMine:sits[myRid]||null, sitTheirs:sits[theirRid]||null };
+}
+
+// ── Deals shaped by the situations themselves ────────────────────────────────
+//   SELL     a rebuild moves the value it discounts (age) to a team that can use it, for the
+//            picks and youth it wants
+//   WIN NOW  a contender spends picks and prospects on a rebuilder's proven starters
+// Every candidate must be fair-or-near on the market AND ahead in both chairs.
+function laSituProposals(s, myRid){
+  const sits=laTeamSituations(s); const me=sits[myRid];
+  if(!me || me.redraft) return [];
+  const myPool=laAssetPools(s, myRid); const out=[];
+  const combos=(arr,max)=>{ const o=[]; const a=arr.slice(0,max); for(let i=0;i<a.length;i++){ o.push([a[i]]); for(let j=i+1;j<a.length;j++) o.push([a[i],a[j]]); } return o; };
+  const push=(lane, partner, give, get)=>{
+    if(!give.length || !get.length) return;
+    const v=laTcVerdict(give.map(x=>x.v), get.map(x=>x.v));
+    if(!(v.fair || Math.abs(v.diff)<=v.band*1.35)) return;
+    const fit=laSituFitFor(s, myRid, partner.rosterId, give, get);
+    if(!fit.mutual) return;
+    out.push({ give, get, b:partner, v, near:!v.fair, lane, fit, mutual:true, likely:fit.likely, shape:`${give.length}for${get.length}` });
+  };
+  if(me.mode==='rebuild' || me.mode==='retool'){
+    const sell=myPool.players.filter(x=>x.v>0 && laSituMult(x,me).m<1).sort((a,b)=>b.v-a.v);
+    s.teamList.forEach(t=>{
+      if(t.rosterId===myRid) return; const st=sits[t.rosterId]; if(!st || st.mode==='rebuild') return;
+      const pool=laAssetPools(s, t.rosterId);
+      const want=[...pool.picks.filter(x=>x.v>0), ...pool.players.filter(x=>x.v>0 && laSituMult(x,me).m>1).slice(0,6)].sort((a,b)=>b.v-a.v).slice(0,8);
+      combos(sell,4).forEach(g=>combos(want,8).forEach(gt=>push('sell', t, g, gt)));
+    });
+  }
+  if(me.mode==='contend' || me.mode==='retool'){
+    const pay=[...myPool.picks.filter(x=>x.v>0), ...myPool.players.filter(x=>x.v>0 && laSituMult(x,me).m<1)].sort((a,b)=>b.v-a.v);
+    s.teamList.forEach(t=>{
+      if(t.rosterId===myRid) return; const st=sits[t.rosterId]; if(!st || st.mode==='contend') return;
+      const pool=laAssetPools(s, t.rosterId);
+      const buy=pool.players.filter(x=>x.v>0 && laSituMult(x,me).m>1 && laSituMult(x,st).m<1).sort((a,b)=>b.v-a.v);
+      combos(pay,6).forEach(g=>combos(buy,5).forEach(gt=>push('now', t, g, gt)));
+    });
+  }
+  const seen=new Set();
+  return out.filter(p=>{ const k=p.b.rosterId+'|'+p.give.map(x=>x.key).sort().join(',')+'>'+p.get.map(x=>x.key).sort().join(','); if(seen.has(k)) return false; seen.add(k); return true; });
+}
+
+// ── Rendering ────────────────────────────────────────────────────────────────
+function laSituBadge(sit){
+  if(!sit) return '';
+  return `<span class="la-situ la-situ-${escAttr(sit.mode)}" title="${escAttr(sit.title||'')}">${escHtml(sit.label||sit.mode)}</span>`;
+}
+// The card under a team's name on the calculator: mode, persona, record, what it wants, and
+// the facts behind the read.
+function laSituCardHTML(s, rid){
+  const sit=laTeamSituation(s, rid); const t=s.teamList.find(x=>x.rosterId===rid);
+  if(!sit || !t) return '';
+  const tend=laPartnerTendency(s, rid);
+  return `<div class="la-situ-card la-situ-card-${escAttr(sit.mode)}">
+    <div class="la-situ-row">${laSituBadge(sit)}${sit.title?`<span class="la-situ-title">${escHtml(sit.title)}</span>`:''}${sit.games?`<span class="la-situ-rec">${t.wins||0}-${t.losses||0}${t.ties?'-'+t.ties:''}</span>`:''}</div>
+    <div class="la-situ-wants">wants <b>${escHtml(sit.wants)}</b></div>
+    <div class="la-situ-facts">${sit.reasons.map(r=>`<span>${escHtml(r)}</span>`).join('')}${tend?`<span class="la-situ-tend">${escHtml(tend.label)}</span>`:''}</div>
+  </div>`;
+}
+// The verdict's second opinion: the same deal from each chair.
+function laSituFitHTML(s, aRid, bRid, givenA, givenB){
+  if(!((givenA&&givenA.length)||(givenB&&givenB.length))) return '';
+  const sits=laTeamSituations(s);
+  const a=s.teamList.find(x=>x.rosterId===aRid), b=s.teamList.find(x=>x.rosterId===bRid);
+  if(!a || !b || !sits[aRid] || !sits[bRid] || sits[aRid].redraft) return '';
+  const fa=laSituFit(sits[aRid], givenB, givenA), fb=laSituFit(sits[bRid], givenA, givenB);
+  const line=(t,f,sit)=>`<div class="la-fit-line ${f.ok?'ok':'no'}"><span class="la-fit-who">${escHtml(t.teamName)}</span>${laSituBadge(sit)}<span class="la-fit-pct">${f.gain>=0?'+':''}${Math.round(f.pct*100)}%</span><span class="la-fit-why">${escHtml(f.why.length?f.why[0]:(f.ok?'comes out ahead in its own chair':'gives up more than it wants'))}</span></div>`;
+  const both=fa.ok&&fb.ok;
+  return `<div class="la-fit"><div class="la-fit-lbl">${both?'Works in both chairs':(fa.ok||fb.ok?'Works for one side':'Works for neither side')}</div>${line(a,fa,sits[aRid])}${line(b,fb,sits[bRid])}</div>`;
+}
+// One suggested deal as a card: who, what goes each way, the market verdict, both chairs.
+function laFndCardHTML(p, fnd){
+  const asset=(x)=>x.type==='k'
+    ? `<span class="la-fc-pick"><span class="la-fc-nm">${escHtml(x.label)}</span><span class="la-fc-meta">rookie pick</span><b>${x.v||''}</b></span>`
+    : `<span class="la-fc-pl">${(typeof laPlayerImg==='function')?laPlayerImg(x,'la-fc-hs'):''}<span class="la-fc-nm">${escHtml(x.name)}</span><span class="la-fc-meta"><span class="la-fc-pos ${slotClass(x.pos)}">${escHtml(x.pos)}${x.posRank||''}</span>${x.age!=null?` · ${x.age.toFixed(0)}yo`:''}</span><b>${x.v||''}</b></span>`;
+  const sum=(arr)=>arr.reduce((a,x)=>a+(+x.v||0),0);
+  const lk=String(p.likely||'');
+  const lane=p.lane||'mid';
+  const sitB=p.fit&&p.fit.sitTheirs;
+  const fitTag=(f,who)=>f?`<span class="la-fc-fit ${f.ok?'ok':'no'}" title="${escAttr(who+' in their own chair: what comes in against what goes out, priced by their situation')}">${escHtml(who)} ${f.gain>=0?'+':''}${Math.round(f.pct*100)}%</span>`:'';
+  return `<div class="la-fc la-fc-${escAttr(lane)}">
+    <div class="la-fc-head"><span class="la-fnd-lane la-lane-${escAttr(lane)}" title="${escAttr((typeof LA_LANE_TIP!=='undefined'&&LA_LANE_TIP[lane])||'')}">${escHtml((typeof LA_LANE_LABEL!=='undefined'&&LA_LANE_LABEL[lane])||lane)}</span>
+      <span class="la-fc-partner">with <b>${escHtml(p.b.teamName)}</b>${sitB?laSituBadge(sitB):''}</span>
+      ${lk?`<span class="la-fc-like la-like-${escAttr(lk.replace(/\s+/g,'-'))}">${escHtml(lk)}</span>`:''}</div>
+    <div class="la-fc-body">
+      <div class="la-fc-col"><div class="la-fc-lbl">You send <b>${sum(p.give)}</b></div>${p.give.map(asset).join('')}</div>
+      <div class="la-fc-arrow">⇄</div>
+      <div class="la-fc-col"><div class="la-fc-lbl">You get <b>${sum(p.get)}</b></div>${p.get.map(asset).join('')}</div>
+    </div>
+    <div class="la-fc-foot">
+      <span class="la-fnd-v ${p.v.fair?'ok':''}">${p.v.fair?'fair on the market':(p.v.diff>0?'you overpay by ':'you win by ')+Math.abs(p.v.diff).toFixed(0)}</span>
+      ${p.fit?fitTag(p.fit.mine,'you')+fitTag(p.fit.theirs,'them'):''}
+      ${p.fit&&p.fit.theirs.why.length?`<span class="la-fc-why">${escHtml(p.fit.theirs.why[0])}</span>`:''}
+      ${p.fit&&p.fit.tend?`<span class="la-fc-tend">${escHtml(p.fit.tend.label)}</span>`:''}
+      <button class="btn btn-sm btn-ghost la-fc-load" onclick="laLoadProposal(${fnd.myRosterId},${p.b.rosterId},[${p.give.map(x=>`'${escJsSingle(x.key)}'`).join(',')}],[${p.get.map(x=>`'${escJsSingle(x.key)}'`).join(',')}])">Load</button>
+    </div>
+  </div>`;
 }
 </script>
 </body>

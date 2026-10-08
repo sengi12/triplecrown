@@ -281,6 +281,7 @@ run_js_test test_qb_games_only  "Games-only mode: games shift without rescaling 
 run_js_test test_swipe_la_preview "Tab swipe: laSetTab parsing, LA preview whitelist, cache-only previews (no fetch from a gesture)"
 run_js_test test_la_value_lens   "League Analyzer value lens: dynasty on the chart (games do not move it), redraft on ROS worth, the VOR/Dynasty pin kept per league, the trade page's basis tag, one week is noise in the blend"
 run_js_test test_la_trade_blend  "League Analyzer tradesourced blend: FP chart nudged toward real Sleeper trade values (confidence-weighted), the Chart/Blend/Market source pins, gated to the dynasty basis and covered players"
+run_js_test test_la_trade_situation "Trade situations: contend/retool/rebuild per roster from the persona + standings, assets priced by the chair, deals judged from both chairs, SELL HIGH / WIN NOW lanes, the ledger's tendency tag, the cards on the page"
 run_js_test test_inseason_sidecar "In-season sidecar: adoption + NFLVERSE merge, baked path, reset, gz URL with query"
 run_js_test test_live_freshness "Live-data provenance — which games the sidecar holds, when nflverse posted, when it was baked"
 run_js_test test_live_adv_cards "Advanced tab in-season: PFR pressures + missed tackles in the week window, ≈ on inferred personnel, pending coverage card, the season fallback at rollover, post-season weeks 19-22"
