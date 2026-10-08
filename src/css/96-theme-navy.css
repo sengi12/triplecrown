@@ -42,15 +42,15 @@
   color:var(--text);background:var(--surface3);box-shadow:inset 0 0 0 1px var(--border2);}
 .phase-tab.active,.sub-tab.active,.qb-tab.active,.pcard-tab.active,.sr-tab.active,.sr-cat.active,
 .format-btn.active,.ltype-btn.active,.pos-filter-btn.active,.rt-season-btn.active,.rt-metric-btn.active,.season-tab.active{
-  background:#fff;color:#0f1631;box-shadow:none;}
-.phase-tab.active .tc-ico{color:#0f1631;}
+  background:var(--chip-on);color:var(--chip-on-ink);box-shadow:none;}
+.phase-tab.active .tc-ico{color:var(--chip-on-ink);}
 .phase-tabs{gap:8px;}
 
 /* ── Buttons ───────────────────────────────────────────────────────────────── */
 .btn{border-radius:999px;font-size:11.5px;letter-spacing:0;}
 .btn-ghost{background:var(--surface2);border:none;box-shadow:inset 0 0 0 1px var(--border);color:var(--text);}
 .btn-ghost:hover{background:var(--surface3);box-shadow:inset 0 0 0 1px var(--border2);}
-.btn-accent{color:#0f1631;}
+.btn-accent{color:var(--on-accent);}
 .btn-accent:hover{background:var(--accent2);}
 .tc-info-btn{border:none;background:var(--surface3);}
 .vona-more,.tc-info-close,.vona-opt-close{border:none;}
@@ -65,16 +65,16 @@
 /* ── Tables ────────────────────────────────────────────────────────────────── */
 table th{letter-spacing:.03em;}
 .rankings-table th,.rankings-table td{border-color:var(--border);}
-.rankings-table tbody tr:nth-child(even) td{background:rgba(255,255,255,.02);}
+.rankings-table tbody tr:nth-child(even) td{background:var(--zebra);}
 .rankings-table tbody tr:hover td{background:var(--surface3);}
 .rank-toolbar{border-bottom:none;box-shadow:0 1px 0 var(--border);}
 .rank-toolbar-row + .rank-toolbar-row{border-top:none;box-shadow:inset 0 1px 0 var(--border);}
 
 /* ── Overlays: popups, menus, the player card ──────────────────────────────── */
 .tc-info-pop,.vona-opt-pop,.app-menu,.hdr-menu,.inj-pop,.note-info-modal,.ktc-modal{
-  border:none;border-radius:var(--r-xl);box-shadow:0 18px 50px rgba(0,0,0,.55),inset 0 0 0 1px var(--border);}
+  border:none;border-radius:var(--r-xl);box-shadow:0 18px 50px var(--shadow),inset 0 0 0 1px var(--border);}
 .tc-info-head,.vona-opt-head{border-bottom:none;box-shadow:inset 0 -1px 0 var(--border);}
-.pcard{border:none;border-radius:var(--r-xl);box-shadow:0 24px 70px rgba(0,0,0,.6),inset 0 0 0 1px var(--border);}
+.pcard{border:none;border-radius:var(--r-xl);box-shadow:0 24px 70px var(--shadow),inset 0 0 0 1px var(--border);}
 .pcard-hero,.pcard-hero-v2{border-bottom:none;}
 .app-menu .hdr-menu-item{border-radius:12px;font-size:12.5px;}
 .app-menu .hdr-menu-item.active{background:color-mix(in srgb,var(--accent) 14%,transparent);}
@@ -103,22 +103,4 @@ table th{letter-spacing:.03em;}
   .sidebar-division-block{border:none;border-radius:12px;}
   .team-item{margin:0;}
   .team-item.active{box-shadow:inset 0 0 0 1.5px var(--accent);border-color:transparent;}
-}
-
-/* Touch text-entry sizing lives HERE, in the last stylesheet (it moved from 95-ui-system.css when this theme sheet took the last slot), not in 60-responsive.css:
-   several per-feature files (70-widgets, 12-pcard-dock, …) come after 60 and would win the
-   cascade at equal specificity, which is exactly how the compare and chat boxes kept their
-   13px and kept zooming the page.
-   iOS zooms the whole page when a focused control's computed font-size is under 16px — and
-   never zooms back out, leaving the layout cropped. Bump every text-entry control to 16px on
-   touch devices only; desktop keeps the compact sizes. */
-@media (pointer:coarse){
-  .scenario-name,.rank-search-input,.lp-input,.la-row input,.tc-input,
-  .scoring-field input,.sumer-situational,.la-season-sel,.la-tc-sel{font-size:16px;}
-  input[data-rank-min-bucket]{font-size:16px !important;}  /* inline 12px style needs the override */
-  /* The rest of the text-entry controls, found by walking every view on a phone: the compare
-     and chat boxes (.ai-cmp-in covers the chat input and the MCP url), the analyzer's league
-     inputs, the player-card dock's add box, and the draft week/position selects. */
-  .ai-cmp-in,#laUsername,#laEspnLeague,.pcard-add-in,.ld-sel,
-  input[type=text],input[type=search],input[type=email],input[type=password],input[type=number],textarea,select{font-size:16px;}
 }

@@ -581,7 +581,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-detail .gc-seg{border:none;background:var(--gcn2);padding:4px;margin:8px 0 12px;}
 .gc-detail .gc-seg button{font-size:13px;font-weight:700;letter-spacing:.06em;padding:11px 8px;border-radius:999px;color:var(--gcmute);gap:8px;}
 .gc-detail .gc-seg button img{width:20px;height:20px;}
-.gc-detail .gc-seg button.active{background:#fff;color:#0f1631;}
+.gc-detail .gc-seg button.active{background:var(--chip-on);color:var(--chip-on-ink);}
 /* the box score */
 .gcb-group{margin:4px 0 14px;}
 .gcb-head,.gcb-row{display:grid;grid-template-columns:minmax(0,1fr) repeat(var(--gcb-n,5),minmax(34px,auto));gap:0 4px;align-items:center;}

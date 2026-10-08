@@ -24,7 +24,7 @@
 .la-trade .la-pick{font-size:13px;font-weight:600;}
 .la-trade .la-tc-btn{width:30px;height:30px;border-radius:14px;border:none;background:var(--ltn3);color:var(--text);font-size:16px;font-weight:800;}
 .la-trade .la-tc-btn.rm{background:color-mix(in srgb,var(--ltred) 22%,transparent);color:var(--ltred);}
-.la-trade .la-tc-btn:hover{background:var(--ltteal);color:#0f1631;}
+.la-trade .la-tc-btn:hover{background:var(--ltteal);color:var(--chip-on-ink);}
 /* the situation card under each team's name */
 .la-situ-card{background:var(--ltn);border-radius:18px;padding:9px 11px 10px;margin:0 0 10px;display:flex;flex-direction:column;gap:4px;box-shadow:inset 3px 0 0 var(--ltmute);}
 .la-situ-card-contend{box-shadow:inset 3px 0 0 var(--ltgreen);} .la-situ-card-rebuild{box-shadow:inset 3px 0 0 var(--ltred);} .la-situ-card-retool,.la-situ-card-swing{box-shadow:inset 3px 0 0 var(--ltgold);}

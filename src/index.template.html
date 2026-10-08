@@ -14,7 +14,11 @@
 <link rel="icon" type="image/png" href="images/app-icon.png">
 <link rel="apple-touch-icon" href="images/app-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#0a0e17">
+<meta name="theme-color" content="#0b1126">
+<!-- The chosen theme goes on <html> before the stylesheet paints, so a reload never flashes
+     navy under a light theme. The list of themes lives in 15d-theme.js; this only replays
+     what that code last stored. -->
+<script>try{var t=localStorage.getItem('tc_theme');if(t&&t!=='navy')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
@@ -62,6 +66,9 @@
         <button class="hdr-menu-item" id="menuChat"       onclick="closeAppMenu();openTcChat()" title="Chat over the app's numbers — start/sit, trades, waivers">@@ICON_chat@@ Ask TripleCrown</button>
         <button class="hdr-menu-item" id="menuMcp"        onclick="closeAppMenu();openMcpConnector()" title="TripleCrown's data as a connector for the Claude app">@@ICON_link@@ Ask Claude</button>
         <button class="hdr-menu-item" id="menuCompare"    onclick="closeAppMenu();openAiCompare()" title="Stuck between two players — pick both and get a grounded verdict">@@ICON_scale@@ Compare</button>
+
+        <div class="app-menu-sec">Theme</div>
+        <div class="app-menu-theme" id="menuThemeRow" role="radiogroup" aria-label="Theme"></div>
 
         <div class="app-menu-sec">General</div>
         <button class="hdr-menu-item" onclick="closeAppMenu();tcKeysHelp()" title="Keyboard shortcuts (?)">@@ICON_keyboard@@ Shortcuts <span class="menu-kbd">?</span></button>

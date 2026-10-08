@@ -6,6 +6,9 @@
   --border:rgba(255,255,255,.07);--border2:rgba(255,255,255,.13);
   --accent:#4d93ff;--accent2:#6fa8ff;
   --text:#e9edf3;--muted:#9aa6c4;--muted2:#b3bdd6;
+  /* the active chip, the ink on an accent fill, and the table zebra — a theme swaps these
+     along with the palette so a light ground gets a dark chip and white ink on blue */
+  --chip-on:#ffffff;--chip-on-ink:#0f1631;--on-accent:#0f1631;--zebra:rgba(255,255,255,.02);--shadow:rgba(0,0,0,.55);
   --qb:#ff4d6a;--wr:#56a5ff;--rb:#00cf9f;--te:#ffc94d;--k:#a855f7;--def:#b98a63;
   --danger:#f85149;--success:#3fb950;--warn:#d29922;--info:#4a9eff;
   /* One rounded face for words and numbers alike (SF Pro Rounded on Apple devices, the
