@@ -4,7 +4,7 @@
   .sidebar{width:100%;min-width:0;max-height:none;border-right:none;
     border-bottom:1px solid var(--border);display:block;overflow-x:hidden;padding:5px 6px;}
   .team-picker-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;
-    gap:8px;padding:6px 9px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);
+    gap:8px;padding:6px 9px;border-radius:12px;border:1px solid var(--border);background:var(--surface2);
     color:var(--text);font-size:11px;font-weight:800;letter-spacing:.2px;}
   .team-picker-toggle-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .team-picker-toggle-icon{font-size:12px;color:var(--muted2);}
@@ -12,17 +12,17 @@
   /* Selected team has edits → a dot after its name; N teams edited → a tiny count by the chevron. */
   .team-picker-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--success);
     margin-left:6px;vertical-align:middle;}
-  .team-picker-count{display:inline-block;min-width:14px;padding:0 4px;border-radius:7px;font-size:9px;
+  .team-picker-count{display:inline-block;min-width:14px;padding:0 4px;border-radius:10px;font-size:9px;
     font-weight:800;line-height:14px;text-align:center;color:#fff;background:var(--success);}
   .sidebar-groups{display:block;margin-top:5px;}
   .sidebar-groups.mobile-collapsed{display:none;}
   .sidebar-conference-block{margin-bottom:6px;}
   .sidebar-conference-title{padding:1px 2px 4px;font-size:8px;font-weight:900;color:var(--muted2);letter-spacing:1.3px;text-transform:uppercase;}
   .sidebar-division-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;}
-  .sidebar-division-block{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:4px;min-width:0;}
+  .sidebar-division-block{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:4px;min-width:0;}
   .sidebar-section{width:100%;padding:0 2px 4px;font-size:9px;}
   .sidebar-team-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;}
-  .team-item{padding:4px 1px;font-size:11px;justify-content:center;border-left:none;border:1px solid transparent;border-radius:6px;position:relative;}
+  .team-item{padding:4px 1px;font-size:11px;justify-content:center;border-left:none;border:1px solid transparent;border-radius:10px;position:relative;}
   /* Grid view hides names/dots; show a corner dot only for teams with edits (the desktop "done" dot). */
   .team-item .team-dot{display:none;}
   .team-item .team-dot.done{display:block;position:absolute;top:2px;right:2px;width:5px;height:5px;}

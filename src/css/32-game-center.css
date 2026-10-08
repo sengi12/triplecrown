@@ -2,7 +2,7 @@
 .rsb-btns{display:inline-flex;gap:3px;margin-left:auto;flex:none;}
 .ld-fmt{display:flex;align-items:center;gap:6px;min-width:0;}
 .ld-fmt>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.rsb-btn{font:inherit;font-size:11px;font-weight:900;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:6px;width:22px;height:22px;line-height:1;cursor:pointer;padding:0;}
+.rsb-btn{font:inherit;font-size:11px;font-weight:900;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:10px;width:22px;height:22px;line-height:1;cursor:pointer;padding:0;}
 .rsb-btn:hover{color:var(--text);border-color:var(--accent);}
 .sidebar.leaders{position:relative;}
 .sidebar.leaders.rsb-min{width:30px;min-width:30px;padding:8px 0;}
@@ -133,7 +133,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gcm-sheet .gc-list{position:sticky;top:0;z-index:1;display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;padding:8px 10px;border-right:none;border-bottom:1px solid var(--border);
   background:var(--surface);scrollbar-width:none;overscroll-behavior-x:contain;}
 .gcm-sheet .gc-list::-webkit-scrollbar{display:none;}
-.gcm-sheet .gc-game{flex:0 0 auto;width:92px;padding:6px 8px;border-radius:8px;border:1px solid var(--border);border-left:3px solid transparent;background:var(--surface2);}
+.gcm-sheet .gc-game{flex:0 0 auto;width:92px;padding:6px 8px;border-radius:12px;border:1px solid var(--border);border-left:3px solid transparent;background:var(--surface2);}
 .gcm-sheet .gc-game.gc-on{border-color:var(--accent);border-left-color:var(--accent);}
 .gcm-sheet .gc-gstate{font-size:8px;white-space:nowrap;}
 .gcm-sheet .gc-gline{font-size:11px;}
@@ -160,7 +160,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
   border-right:none;border-bottom:none;scrollbar-width:none;overscroll-behavior-x:contain;}
 .games-view .gc-list::-webkit-scrollbar{display:none;}
 .games-view .gc-game,.games-view .gc-game.gc-pill{flex:0 0 auto;width:auto;min-width:134px;display:flex;
-  align-items:center;justify-content:space-between;gap:9px;padding:9px 12px;border-radius:14px;
+  align-items:center;justify-content:space-between;gap:9px;padding:9px 12px;border-radius:18px;
   border:1px solid var(--border);border-left:1px solid var(--border);background:var(--surface2);
   box-shadow:0 1px 2px rgba(0,0,0,.25);transition:border-color .15s,box-shadow .15s;}
 .games-view .gc-game.gc-on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 3px 12px rgba(88,166,255,.22);}
@@ -171,7 +171,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 
 /* Hero — bigger, bolder, the two clubs' colours behind (Sleeper's game header). */
 .games-view .gc-detail{overflow:visible;}
-.games-view .gc-hero{padding:16px 14px 14px;border-radius:16px;margin:2px 0 10px;border-bottom:none;}
+.games-view .gc-hero{padding:16px 14px 14px;border-radius:20px;margin:2px 0 10px;border-bottom:none;}
 .games-view .gc-hero-wm{font-size:58px;}
 .games-view .gc-logo{width:34px;height:34px;}
 .games-view .gc-team{font-size:18px;}
@@ -179,8 +179,8 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .games-view .gc-status{font-size:9.5px;padding:4px 10px;}
 
 /* Odds strip + line score as clean rounded cards. */
-.games-view .gc-odds{border-radius:12px;border:1px solid var(--border);margin:0 0 10px;}
-.games-view .gcls-wrap{border:1px solid var(--border);border-radius:12px;background:var(--surface2);padding:2px 10px 5px;margin:4px 0 10px;}
+.games-view .gc-odds{border-radius:16px;border:1px solid var(--border);margin:0 0 10px;}
+.games-view .gcls-wrap{border:1px solid var(--border);border-radius:16px;background:var(--surface2);padding:2px 10px 5px;margin:4px 0 10px;}
 
 /* Segmented controls (Away | Fantasy | Home, Feed | Stats, Games | Live feed) — one pill group. */
 .games-view .gc-tabs,.games-view .gc-viewrow{background:var(--surface2);border:1px solid var(--border);border-radius:999px;padding:3px;gap:3px;margin:8px 0 10px;}
@@ -214,7 +214,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 
 /* Leaders as Sleeper-style player cards — stats under the name, tappable to sort. */
 .games-view .gcm-leaders .ld-list{display:flex;flex-direction:column;gap:8px;padding:4px 0 10px;}
-.games-view .ld-card{background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:10px 12px;cursor:pointer;transition:border-color .15s;}
+.games-view .ld-card{background:var(--surface2);border:1px solid var(--border);border-radius:18px;padding:10px 12px;cursor:pointer;transition:border-color .15s;}
 .games-view .ld-card:active{border-color:var(--accent);}
 .games-view .ld-card-top{display:flex;align-items:center;gap:10px;}
 .games-view .ld-card .ld-rank{font-size:12px;font-weight:900;color:var(--muted);min-width:16px;text-align:center;flex:none;}
@@ -223,7 +223,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .games-view .ld-card .ld-nm{font-size:14.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .games-view .ld-card .ld-sub{font-size:11px;color:var(--muted);font-weight:700;}
 .games-view .ld-fpts{display:flex;flex-direction:column;align-items:center;gap:0;flex:none;border:1px solid var(--border);
-  background:var(--surface3);border-radius:11px;padding:4px 11px;cursor:pointer;font:inherit;transition:border-color .15s,background .15s;}
+  background:var(--surface3);border-radius:14px;padding:4px 11px;cursor:pointer;font:inherit;transition:border-color .15s,background .15s;}
 .games-view .ld-fpts-l{font-size:8px;font-weight:900;letter-spacing:.08em;color:var(--muted);}
 .games-view .ld-fpts b{font-family:var(--mono);font-size:16px;font-weight:900;color:var(--text);line-height:1.1;}
 .games-view .ld-fpts.active{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 16%,var(--surface3));}
@@ -231,7 +231,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .games-view .ld-card-stats{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin-top:9px;padding-top:9px;border-top:1px dotted var(--border2,#39414d);}
 .games-view .ld-card-stats::-webkit-scrollbar{display:none;}
 .games-view .ld-chip{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:52px;
-  border:none;background:none;font:inherit;cursor:pointer;padding:3px 6px;border-radius:9px;transition:background .15s;}
+  border:none;background:none;font:inherit;cursor:pointer;padding:3px 6px;border-radius:12px;transition:background .15s;}
 .games-view .ld-chip-l{font-size:8.5px;font-weight:900;letter-spacing:.04em;color:var(--muted);white-space:nowrap;}
 .games-view .ld-chip-v{font-family:var(--mono);font-size:13.5px;font-weight:800;color:var(--text);}
 .games-view .ld-chip.active{background:color-mix(in srgb,var(--accent) 16%,transparent);}
@@ -265,7 +265,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 
 /* ── Game detail: Feed | Stats tabs, the play feed, the quarter line, the box score ── */
 .gc-tabs{display:flex;gap:4px;margin:8px 0 6px;}
-.gc-tab{flex:1 1 0;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:8px;padding:6px 8px;cursor:pointer;}
+.gc-tab{flex:1 1 0;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:12px;padding:6px 8px;cursor:pointer;}
 .gc-tab.active{background:var(--accent);color:#fff;border-color:var(--accent);}
 /* Desktop feed layout: the hero, the field and the tabs stay put; the plays scroll in their
    own window under them, so a play tapped for replay keeps animating in view. */
@@ -281,7 +281,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gcf-bar{display:flex;align-items:center;gap:6px;margin:2px 0 6px;font-size:10px;color:var(--muted);}
 .gcf-bar span{flex:1;}
 .gcf{display:flex;flex-direction:column;gap:6px;}
-.gcf-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:start;padding:8px 8px 8px 6px;border:1px solid var(--border);border-radius:10px;background:var(--surface2);}
+.gcf-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:start;padding:8px 8px 8px 6px;border:1px solid var(--border);border-radius:14px;background:var(--surface2);}
 .gcf-td{border-color:rgba(0,212,170,.55);}
 .gcf-to{border-color:rgba(255,99,99,.55);}
 .gcf-logo{width:22px;height:22px;object-fit:contain;margin-top:2px;}
@@ -358,7 +358,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-p-home .gc-ptsbox{align-items:flex-start;}
 
 /* the live situation line and a fresh play */
-.gcf-now{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:2px 0 6px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);font-size:11px;color:var(--muted);}
+.gcf-now{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:2px 0 6px;padding:6px 8px;border:1px solid var(--border);border-radius:12px;background:var(--surface2);font-size:11px;color:var(--muted);}
 .gcf-now b{color:var(--text);font-weight:800;}
 .gcf-now-dd{color:var(--text);}
 .gcf-now-clock{margin-left:auto;font-weight:800;color:var(--text);}
@@ -370,7 +370,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 
 /* ── The live feed: Games | Live feed, the league chips, the per-league tags ── */
 .gc-viewrow{display:flex;gap:4px;margin:6px 0 4px;}
-.gc-vt{flex:1 1 0;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:8px;padding:6px 8px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;}
+.gc-vt{flex:1 1 0;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:12px;padding:6px 8px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;}
 .gc-vt.active{background:var(--accent);color:#fff;border-color:var(--accent);}
 .gc-vt-live{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#ff4d4d;color:#fff;font-size:9px;font-weight:900;}
 .lf{display:flex;flex-direction:column;min-height:0;}
@@ -424,7 +424,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-mine,.gc-pname.gc-mine,.gcf-name.gc-mine,.lf-who .gc-mine,.gcb-n .gc-mine,.ld-nm.ld-mine{color:var(--accent);}
 
 /* ── Under the hero: the last play, the drive, the win probability ── */
-.gc-last{margin:8px 10px 2px;padding:6px 8px 7px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);}
+.gc-last{margin:8px 10px 2px;padding:6px 8px 7px;border:1px solid var(--border);border-radius:12px;background:var(--surface2);}
 .gc-last-head{display:flex;align-items:center;gap:6px;font-size:9.5px;font-weight:900;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;}
 .gc-last-lbl{display:inline-flex;align-items:center;gap:5px;}
 .gc-last-spot{color:var(--text);letter-spacing:.02em;text-transform:none;font-size:10.5px;}
@@ -436,13 +436,13 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gcf-click{cursor:pointer;-webkit-tap-highlight-color:transparent;transition:border-color .12s ease,background .12s ease;}
 .gcf-click:hover{border-color:var(--accent,#3d9bff);}
 .gcf-row.gcf-active{border-color:var(--accent,#3d9bff);background:color-mix(in srgb,var(--accent,#3d9bff) 12%,var(--surface2));}
-.gc-drive-replay{outline:1.5px solid color-mix(in srgb,var(--accent,#3d9bff) 55%,transparent);outline-offset:-1px;border-radius:10px;}
+.gc-drive-replay{outline:1.5px solid color-mix(in srgb,var(--accent,#3d9bff) 55%,transparent);outline-offset:-1px;border-radius:14px;}
 .gc-drive-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 4px 4px;}
 .gc-replay-tag{font-size:11px;font-weight:800;color:var(--accent,#3d9bff);letter-spacing:.3px;}
 .gc-live-btn{display:inline-flex;align-items:center;gap:4px;background:var(--danger,#e5484d);color:#fff;border:none;border-radius:999px;font:800 11px/1 inherit;letter-spacing:.5px;padding:5px 11px;cursor:pointer;-webkit-tap-highlight-color:transparent;}
 .gc-live-btn:hover{filter:brightness(1.08);}
 .gc-live-btn:active{transform:scale(.96);}
-.gc-wp{margin:2px 10px 4px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);}
+.gc-wp{margin:2px 10px 4px;border:1px solid var(--border);border-radius:12px;background:var(--surface2);}
 .gc-wp-head{display:flex;align-items:center;gap:10px;width:100%;box-sizing:border-box;padding:6px 9px;background:none;border:none;color:var(--text);font:inherit;cursor:pointer;text-align:left;-webkit-tap-highlight-color:transparent;}
 .gc-wp-lbl{font-size:9.5px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);flex:1;}
 .gc-wp-n{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:13px;font-weight:900;}
@@ -478,7 +478,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-detail{--gcn:#0f1631;--gcn2:#151e3d;--gcn3:#1c2749;--gcline:rgba(255,255,255,.07);--gcmute:#9aa6c4;--gclive:#ff4d6a;--gcteal:#2fd3c6;
   font-family:ui-rounded,-apple-system,"SF Pro Rounded",system-ui,"Segoe UI",Roboto,sans-serif;}
 /* the hero */
-.gc-detail .gc-hero,.games-view .gc-hero,.gcm-sheet .gc-hero{background:linear-gradient(180deg,var(--gcn3) 0%,var(--gcn) 100%);border:none;border-radius:20px;padding:18px 16px 16px;margin:2px 0 8px;gap:10px;}
+.gc-detail .gc-hero,.games-view .gc-hero,.gcm-sheet .gc-hero{background:linear-gradient(180deg,var(--gcn3) 0%,var(--gcn) 100%);border:none;border-radius:24px;padding:18px 16px 16px;margin:2px 0 8px;gap:10px;}
 .gc-detail .gc-hero::before{display:none;}
 .gc-detail .gc-hero-wm{font-size:64px;opacity:.06;letter-spacing:-.05em;}
 .gc-detail .gc-logo{width:30px;height:30px;}
@@ -493,8 +493,8 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-detail .gc-to i{width:7px;height:7px;background:#2a3356;} .gc-detail .gc-to i.on{background:#e7ecf7;}
 .gc-detail .gc-ball{color:#fff;}
 /* the odds strip and the line score: tonal, no border */
-.games-view .gc-odds,.gc-detail .gc-odds{border:none;background:var(--gcn2);border-radius:14px;}
-.games-view .gcls-wrap{border:none;background:var(--gcn2);border-radius:14px;}
+.games-view .gc-odds,.gc-detail .gc-odds{border:none;background:var(--gcn2);border-radius:18px;}
+.games-view .gcls-wrap{border:none;background:var(--gcn2);border-radius:18px;}
 /* the last play: a line, not a box */
 .gc-detail .gc-last{border:none;background:none;padding:4px 6px 2px;margin:4px 4px 0;}
 .gc-detail .gc-last-head{font-size:12px;font-weight:700;letter-spacing:.02em;color:var(--gcmute);text-transform:none;gap:7px;}
@@ -504,7 +504,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-detail .gc-last-text{font-size:16px;font-weight:600;margin-top:4px;line-height:1.3;}
 .gc-detail .gc-drive-sum{font-size:12px;font-weight:500;color:var(--gcmute);}
 /* win probability: tonal, the numbers in the rounded face */
-.gc-detail .gc-wp{border:none;background:var(--gcn2);border-radius:14px;margin:6px 4px 4px;}
+.gc-detail .gc-wp{border:none;background:var(--gcn2);border-radius:18px;margin:6px 4px 4px;}
 .gc-detail .gc-wp-lbl{font-size:11px;letter-spacing:.06em;color:var(--gcmute);}
 .gc-detail .gc-wp-n{font-family:inherit;font-size:15px;font-weight:800;}
 .gc-detail .gc-wp-src{font-size:10px;letter-spacing:.02em;font-weight:500;text-transform:none;}
@@ -518,7 +518,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-detail .gcf-bar .ld-pos.active{background:var(--text);color:var(--gcn);}
 /* the play rows */
 .gc-detail .gcf{gap:8px;}
-.gc-detail .gcf-row{grid-template-columns:40px minmax(0,1fr) auto;gap:10px;padding:12px 12px 12px 10px;border:none;border-radius:18px;background:var(--gcn2);}
+.gc-detail .gcf-row{grid-template-columns:40px minmax(0,1fr) auto;gap:10px;padding:12px 12px 12px 10px;border:none;border-radius:22px;background:var(--gcn2);}
 .gc-detail .gcf-row.gcf-active{background:color-mix(in srgb,var(--gcteal) 14%,var(--gcn2));}
 .gc-detail .gcf-click:hover{background:var(--gcn3);}
 .gcf-ava{position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;flex:none;margin-top:1px;}
@@ -568,7 +568,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-detail .gc-status.gc-won-away::before{content:"◀";font-size:11px;margin-right:4px;vertical-align:1px;}
 .gc-detail .gc-status.gc-won-home::after{content:"▶";font-size:11px;margin-left:4px;vertical-align:1px;}
 /* the line score: a card, the quarters in tinted columns, the total bold */
-.gc-detail .gcls-wrap,.games-view .gcls-wrap{border:none;background:var(--gcn2);border-radius:16px;padding:6px 12px 8px;margin:6px 0 10px;}
+.gc-detail .gcls-wrap,.games-view .gcls-wrap{border:none;background:var(--gcn2);border-radius:20px;padding:6px 12px 8px;margin:6px 0 10px;}
 .gc-detail .gcls{font-size:16px;font-weight:600;}
 .gc-detail .gcls th{font-size:13px;font-weight:700;color:var(--gcmute);border:none;padding:8px 6px;}
 .gc-detail .gcls th:first-child{font-size:14px;}
@@ -581,14 +581,14 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-detail .gc-seg{border:none;background:var(--gcn2);padding:4px;margin:8px 0 12px;}
 .gc-detail .gc-seg button{font-size:13px;font-weight:700;letter-spacing:.06em;padding:11px 8px;border-radius:999px;color:var(--gcmute);gap:8px;}
 .gc-detail .gc-seg button img{width:20px;height:20px;}
-.gc-detail .gc-seg button.active{background:#fff;color:#0f1631;}
+.gc-detail .gc-seg button.active{background:var(--chip-on);color:var(--chip-on-ink);}
 /* the box score */
 .gcb-group{margin:4px 0 14px;}
 .gcb-head,.gcb-row{display:grid;grid-template-columns:minmax(0,1fr) repeat(var(--gcb-n,5),minmax(34px,auto));gap:0 4px;align-items:center;}
 .gcb-head{padding:8px 10px 8px 6px;}
 .gcb-lbl{font-size:17px;font-weight:700;color:var(--text);}
 .gcb-h{font-size:11px;font-weight:700;letter-spacing:.02em;color:var(--gcmute);text-align:center;text-transform:uppercase;}
-.gcb-row{padding:7px 10px 7px 6px;border-radius:12px;}
+.gcb-row{padding:7px 10px 7px 6px;border-radius:16px;}
 .gcb-row:nth-child(odd){background:rgba(255,255,255,.035);}
 .gcb-click{cursor:pointer;} .gcb-click:hover{background:var(--gcn3);}
 .gcb-ava{flex:none;width:36px;height:36px;} .gcb-ava .gcf-hs{width:36px;height:36px;} .gcb-ava.gcf-ava-nohs .gcf-ava-logo{width:28px;height:28px;}
@@ -607,7 +607,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-detail .gc-projnote{font-size:11px;letter-spacing:0;color:var(--gcmute);}
 .gc-detail .gc-gh,.games-view .gc-gh{padding:14px 2px 6px;gap:12px;}
 .gc-detail .gc-gh::before,.gc-detail .gc-gh::after{content:"";flex:1;height:0;border-top:1px dotted rgba(255,255,255,.22);}
-.gc-gh-badge{display:inline-block;padding:5px 14px;border-radius:10px;background:var(--gcn2);font-size:13px;font-weight:800;letter-spacing:.04em;color:var(--text);}
+.gc-gh-badge{display:inline-block;padding:5px 14px;border-radius:14px;background:var(--gcn2);font-size:13px;font-weight:800;letter-spacing:.04em;color:var(--text);}
 .gc-gh-qb .gc-gh-badge{color:#ff6b8a;} .gc-gh-rb .gc-gh-badge{color:#5ee0a0;} .gc-gh-wr .gc-gh-badge{color:#6fa8ff;} .gc-gh-te .gc-gh-badge{color:#f0b64a;} .gc-gh-k .gc-gh-badge{color:#c79aff;} .gc-gh-def .gc-gh-badge,.gc-gh-idp .gc-gh-badge{color:var(--gcmute);}
 .gc-detail .gc-group{padding:0 2px;}
 .gc-detail .gc-row{border-top:none;gap:14px;}

@@ -3,12 +3,12 @@
 
 /* Season-bar mode segment (Live | Pace) */
 .season-mode{display:inline-flex;gap:0;margin:0 4px;flex-shrink:0;border:1px solid var(--border);
-  border-radius:6px;overflow:hidden;}
+  border-radius:10px;overflow:hidden;}
 .season-mode .mode-tab{border:none;border-radius:0;margin:0;}
 .season-mode .mode-tab+.mode-tab{border-left:1px solid var(--border);}
 
 /* Pace chips beside player names (team phase views, pace mode only) */
-.pace-chip{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:9px;
+.pace-chip{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:12px;
   font-size:10px;font-weight:800;vertical-align:1px;white-space:nowrap;}
 .pace-ahead{background:rgba(63,185,80,.15);color:var(--success);}
 .pace-behind{background:rgba(248,81,73,.15);color:var(--danger);}
@@ -63,7 +63,7 @@
 .la-mu-row{display:grid;grid-template-columns:1fr 54px 1fr;align-items:center;gap:6px;padding:7px 0;border-top:1px solid var(--border);}
 .la-mu-row-bn{opacity:.8;}
 .la-mu-slot{display:flex;justify-content:center;}
-.la-slot{display:inline-block;min-width:40px;text-align:center;padding:4px 6px;border-radius:8px;font-size:11px;font-weight:900;
+.la-slot{display:inline-block;min-width:40px;text-align:center;padding:4px 6px;border-radius:12px;font-size:11px;font-weight:900;
   background:var(--surface2);color:var(--muted2);letter-spacing:.3px;}
 .la-slot-QB{background:rgba(255,77,106,.18);color:var(--qb);} .la-slot-RB{background:rgba(0,207,159,.18);color:var(--rb);}
 .la-slot-WR{background:rgba(86,165,255,.18);color:var(--wr);} .la-slot-TE{background:rgba(255,201,77,.18);color:var(--te);}
@@ -99,7 +99,7 @@
 .la-gm-rk{font-weight:600;opacity:.85;} .la-gm-bye{color:var(--danger);font-weight:800;} .la-gm-none{opacity:.6;}
 /* Scoreboard */
 .la-mu-board{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;}
-.la-mu-game{border:1px solid var(--border);border-radius:10px;padding:8px 12px;background:var(--surface2);}
+.la-mu-game{border:1px solid var(--border);border-radius:14px;padding:8px 12px;background:var(--surface2);}
 .la-mu-game.la-mu-mine{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
 .la-mu-grow{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;color:var(--muted);min-width:0;}
 .la-mu-grow.la-mu-lead{color:var(--text);}
@@ -149,7 +149,7 @@
 .la-tm-proj b{font-size:17px;font-weight:900;color:var(--accent);}
 .la-tm-sep{font-size:10.5px;font-weight:800;letter-spacing:.4px;color:var(--muted);text-transform:uppercase;padding:10px 0 4px;border-bottom:1px solid var(--border);}
 .la-lh-swap{background:rgba(63,185,80,.07);margin:0 -12px;padding-left:12px;padding-right:12px;}
-.la-lh-flag{display:inline-block;padding:1px 7px;border-radius:9px;font-size:10px;font-weight:800;margin-right:4px;white-space:nowrap;}
+.la-lh-flag{display:inline-block;padding:1px 7px;border-radius:12px;font-size:10px;font-weight:800;margin-right:4px;white-space:nowrap;}
 .la-lh-start{background:rgba(63,185,80,.15);color:var(--success);}
 .la-lh-sit{background:rgba(248,81,73,.15);color:var(--danger);}
 .la-lh-thin{background:rgba(125,133,144,.15);color:var(--muted);}
@@ -196,9 +196,9 @@
 
 /* Per-category pace strips (pace mode): actual → 17-game pace / frozen projection */
 .pace-strip{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;margin:6px 0 2px;padding:6px 8px;
-  border-radius:8px;background:var(--surface2);border:1px dashed var(--border);}
+  border-radius:12px;background:var(--surface2);border:1px dashed var(--border);}
 .pace-strip-gp{font-size:10px;font-weight:800;color:var(--muted);letter-spacing:.3px;margin-right:2px;white-space:nowrap;}
-.pace-stat{display:inline-flex;align-items:baseline;gap:4px;padding:2px 7px;border-radius:9px;font-size:10.5px;
+.pace-stat{display:inline-flex;align-items:baseline;gap:4px;padding:2px 7px;border-radius:12px;font-size:10.5px;
   white-space:nowrap;font-family:var(--mono,ui-monospace,monospace);}
 .pace-stat .ps-l{font-weight:800;font-family:var(--font);font-size:10px;letter-spacing:.2px;opacity:.9;}
 .pace-stat .ps-a{color:var(--text);}
@@ -217,7 +217,7 @@
   .la-mu-row .la-nm{font-size:12.5px;}
 }
 /* Player card: the season in progress */
-.pcard-live-tag{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:9px;font-size:10px;font-weight:800;white-space:nowrap;
+.pcard-live-tag{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:12px;font-size:10px;font-weight:800;white-space:nowrap;
   background:rgba(74,158,255,.15);color:var(--accent);vertical-align:2px;letter-spacing:.3px;}
 .pcard-pace{display:flex;flex-direction:column;gap:2px;margin:2px 0 8px;}
 .pcard-pace-lbl{font-size:10px;font-weight:800;letter-spacing:.4px;color:var(--muted);text-transform:uppercase;}
@@ -258,7 +258,7 @@
 .la-trnd-klbl{font-size:10px;color:var(--muted);}
 /* Missed games on the card: opponent stays, a small "out" tag replaces the DNP wall */
 .pcard-dnp-row .pcard-opp{color:var(--muted);}
-.pcard-dnp-tag{display:inline-block;padding:0 5px;border-radius:7px;font-size:9px;font-weight:800;
+.pcard-dnp-tag{display:inline-block;padding:0 5px;border-radius:10px;font-size:9px;font-weight:800;
   background:rgba(248,81,73,.14);color:var(--danger);vertical-align:1px;}
 .pcard-dnp-opp{opacity:.8;}
 .pcard-live-row td{background:rgba(74,158,255,.06);}
@@ -275,7 +275,7 @@
 .la-icon-tabs .icon-tab .tab-lbl{white-space:nowrap;}
 .la-pane-tabs{display:flex;gap:8px;margin:12px 0 4px;overflow-x:auto;-webkit-overflow-scrolling:touch;}
 .la-pane-tabs .pane-tab{display:inline-flex;align-items:center;gap:7px;padding:7px 14px;
-  font-size:11px;font-weight:800;cursor:pointer;border:1px solid var(--border);border-radius:9px;
+  font-size:11px;font-weight:800;cursor:pointer;border:1px solid var(--border);border-radius:12px;
   background:var(--surface2);color:var(--muted);transition:all .15s;white-space:nowrap;flex-shrink:0;}
 .la-pane-tabs .pane-tab .tc-ico{width:15px;height:15px;}
 .la-pane-tabs .pane-tab:hover{color:var(--text);border-color:var(--accent);}
@@ -296,7 +296,7 @@
 .la-trnd-cap{font-size:9px;color:var(--muted);font-weight:600;white-space:nowrap;}
 
 /* ── Injury designations ── */
-.inj-tag{display:inline-block;margin-left:6px;padding:0 6px;border-radius:8px;
+.inj-tag{display:inline-block;margin-left:6px;padding:0 6px;border-radius:12px;
   font-size:9px;font-weight:900;letter-spacing:.3px;vertical-align:1px;white-space:nowrap;}
 .inj-q{background:rgba(210,153,34,.18);color:var(--warn);}
 .inj-d{background:rgba(255,107,53,.18);color:#ff8c5a;}
@@ -323,7 +323,7 @@
 
 /* Injury detail popup (player card) */
 .inj-pop{position:fixed;z-index:12000;max-width:260px;background:var(--surface2);
-  border:1px solid var(--border);border-radius:10px;padding:10px 12px;
+  border:1px solid var(--border);border-radius:14px;padding:10px 12px;
   box-shadow:0 8px 28px rgba(0,0,0,.5);font-size:12px;line-height:1.45;}
 .inj-pop b{display:block;margin-bottom:3px;}
 .inj-pop .inj-pop-sub{color:var(--muted);font-size:11px;}
@@ -398,7 +398,7 @@
 .la-wv-pair .la-wv-drop{padding:0 0 9px;opacity:.78;}
 .la-wv-pair .la-wv-drop .la-tm-hsimg{width:28px;height:28px;}
 .la-wv-net{font-size:10px;font-weight:800;color:var(--success);}
-.la-wv-bid{font-size:11px;font-weight:900;color:var(--text);background:var(--surface3);border-radius:6px;padding:1px 6px;margin-top:2px;}
+.la-wv-bid{font-size:11px;font-weight:900;color:var(--text);background:var(--surface3);border-radius:10px;padding:1px 6px;margin-top:2px;}
 .la-wv-faab{font-size:11px;color:var(--muted);cursor:help;} .la-wv-faab b{color:var(--text);}
 .la-wv-none{font-size:11px;color:var(--muted);padding:12px 0;}
 .la-lh-why{background:var(--surface3);color:var(--muted2);cursor:help;}

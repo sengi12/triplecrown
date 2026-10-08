@@ -1,0 +1,66 @@
+/* ═════════════════════════════════════════════════════════════════════════════
+   Themes — picked from the ☰ menu (15d-theme.js), stored as data-theme on <html>.
+   Navy is the base palette in 00-base.css and needs no block. Every other theme is a
+   token set: the components never changed, they read the variables. The two scoped
+   surfaces (Game Center, Trade Center) carry their own navy tokens, so a non-navy theme
+   points those at the global palette too.
+   ═════════════════════════════════════════════════════════════════════════════ */
+:root[data-theme="midnight"]{color-scheme:dark;
+  --bg:#05070d;--surface:#0b0e16;--surface2:#10141f;--surface3:#171c29;
+  --border:rgba(255,255,255,.06);--border2:rgba(255,255,255,.12);
+  --text:#edf0f5;--muted:#8d97ab;--muted2:#aab3c5;--accent:#5a9bff;--accent2:#7cb0ff;}
+:root[data-theme="graphite"]{color-scheme:dark;
+  --bg:#121316;--surface:#191a1e;--surface2:#202228;--surface3:#2a2d35;
+  --border:rgba(255,255,255,.07);--border2:rgba(255,255,255,.14);
+  --text:#eceef2;--muted:#9a9fab;--muted2:#b4b9c4;--accent:#7aa2ff;--accent2:#95b6ff;}
+:root[data-theme="light"]{color-scheme:light;
+  --bg:#eef1f7;--surface:#ffffff;--surface2:#f3f5fa;--surface3:#e6eaf3;
+  --border:rgba(16,23,46,.09);--border2:rgba(16,23,46,.18);
+  --text:#131a2e;--muted:#5b6478;--muted2:#454e64;--accent:#2f6fe4;--accent2:#4f86ea;
+  --chip-on:#131a2e;--chip-on-ink:#ffffff;--on-accent:#ffffff;--zebra:rgba(16,23,46,.03);--shadow:rgba(16,23,46,.22);}
+:root[data-theme="sand"]{color-scheme:light;
+  --bg:#f3ede2;--surface:#fffaf1;--surface2:#f3ecdd;--surface3:#e9dfcb;
+  --border:rgba(60,45,25,.10);--border2:rgba(60,45,25,.2);
+  --text:#2a2218;--muted:#7a6c58;--muted2:#5e5243;--accent:#b8542e;--accent2:#cf6a42;
+  --chip-on:#2a2218;--chip-on-ink:#fffaf1;--on-accent:#ffffff;--zebra:rgba(60,45,25,.035);--shadow:rgba(60,45,25,.22);}
+/* the scoped surfaces follow the palette on every theme but navy */
+:root[data-theme]:not([data-theme="navy"]) .gc-detail{--gcn:var(--surface);--gcn2:var(--surface2);--gcn3:var(--surface3);--gcline:var(--border);--gcmute:var(--muted);}
+:root[data-theme]:not([data-theme="navy"]) .la-trade{--ltn:var(--surface);--ltn2:var(--surface2);--ltn3:var(--surface3);--ltline:var(--border);--ltmute:var(--muted);}
+/* a light ground: the hero wordmarks and the team dots need ink, not white */
+:root[data-theme="light"] .gc-hero-wm,:root[data-theme="sand"] .gc-hero-wm{color:#000;opacity:.05;}
+:root[data-theme="light"] .gc-to i,:root[data-theme="sand"] .gc-to i{background:rgba(16,23,46,.15);}
+:root[data-theme="light"] .gc-to i.on,:root[data-theme="sand"] .gc-to i.on{background:#131a2e;}
+:root[data-theme="light"] .gc-ball,:root[data-theme="sand"] .gc-ball{color:#8a4b1c;}
+:root[data-theme="light"] .gcf-note,:root[data-theme="sand"] .gcf-note{color:var(--text);}
+:root[data-theme="light"] .gc-wp-svg polyline,:root[data-theme="sand"] .gc-wp-svg polyline{stroke:#131a2e;}
+:root[data-theme="light"] .gc-wb,:root[data-theme="sand"] .gc-wb{background:var(--surface);}
+:root[data-theme="light"] .gc-winbar,:root[data-theme="sand"] .gc-winbar{background:linear-gradient(180deg,transparent 0%,var(--bg) 35%);}
+:root[data-theme="light"] .tc-tabbar,:root[data-theme="sand"] .tc-tabbar{box-shadow:0 -1px 0 var(--border),0 -8px 24px rgba(16,23,46,.08);}
+/* light-blue accents on the season bar need the real accent on a light ground */
+:root[data-theme="light"] .season-power-text,:root[data-theme="sand"] .season-power-text{color:var(--accent);}
+/* the theme picker itself: a row of swatches in the menu */
+.app-menu-theme{display:flex;flex-wrap:wrap;gap:6px;padding:4px 9px 8px;}
+.tc-theme-opt{display:inline-flex;align-items:center;gap:7px;padding:5px 10px 5px 6px;border-radius:999px;border:none;
+  background:var(--surface2);color:var(--muted);font:inherit;font-size:12px;font-weight:700;cursor:pointer;box-shadow:inset 0 0 0 1px var(--border);}
+.tc-theme-opt:hover{color:var(--text);box-shadow:inset 0 0 0 1px var(--border2);}
+.tc-theme-opt.active{background:var(--chip-on);color:var(--chip-on-ink);box-shadow:none;}
+.tc-theme-sw{width:16px;height:16px;border-radius:50%;flex:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.25);
+  background:linear-gradient(135deg,var(--sw1) 0 50%,var(--sw2) 50% 100%);}
+
+/* Touch text-entry sizing lives HERE, in the last stylesheet (it rides whichever sheet loads last — the themes sheet now), not in 60-responsive.css:
+   several per-feature files (70-widgets, 12-pcard-dock, …) come after 60 and would win the
+   cascade at equal specificity, which is exactly how the compare and chat boxes kept their
+   13px and kept zooming the page.
+   iOS zooms the whole page when a focused control's computed font-size is under 16px — and
+   never zooms back out, leaving the layout cropped. Bump every text-entry control to 16px on
+   touch devices only; desktop keeps the compact sizes. */
+@media (pointer:coarse){
+  .scenario-name,.rank-search-input,.lp-input,.la-row input,.tc-input,
+  .scoring-field input,.sumer-situational,.la-season-sel,.la-tc-sel{font-size:16px;}
+  input[data-rank-min-bucket]{font-size:16px !important;}  /* inline 12px style needs the override */
+  /* The rest of the text-entry controls, found by walking every view on a phone: the compare
+     and chat boxes (.ai-cmp-in covers the chat input and the MCP url), the analyzer's league
+     inputs, the player-card dock's add box, and the draft week/position selects. */
+  .ai-cmp-in,#laUsername,#laEspnLeague,.pcard-add-in,.ld-sel,
+  input[type=text],input[type=search],input[type=email],input[type=password],input[type=number],textarea,select{font-size:16px;}
+}
