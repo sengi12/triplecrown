@@ -121,7 +121,7 @@ function laValSource(){
 }
 function laSetValSource(s){
   try{ localStorage.setItem('la_val_source', s); }catch(e){}
-  _laTierVals=null; _laPosRankCache=null;
+  _laTierVals=null; _laPosRankCache=null; _laPickTierCache=null; if(typeof laSituReset==='function') laSituReset();
   if(typeof renderLeagueAnalyzer==='function') renderLeagueAnalyzer();
 }
 // Is there tradesourced data for the snapshot league's market? (Gates the Source control.)
@@ -165,7 +165,13 @@ function dynastyValueFor(name, pos){
 }
 // Value for a future rookie pick. Exact rows exist for the chart's listed seasons; later
 // seasons reuse the year-out table (dynasty convention: value the unknown like next year's).
-function dynastyPickValue(season, round){
+// A first is three different assets depending on who it came from: a 1.02 and a 1.11 are not
+// the same thing. `tier` ('e' early, 'm' mid, 'l' late) picks the matching third of the
+// chart's listed slots (1.01 … 1.12); a round the chart lists as one row fans out by
+// LA_PICK_TIER_SPREAD. No tier → the middle row, as before.
+const LA_PICK_TIER_SPREAD = {e:1.18, m:1, l:0.84};
+const LA_PICK_TIER_LABEL = {e:'early', m:'mid', l:'late'};
+function dynastyPickValue(season, round, tier){
   const pk = DYNASTY_VALUES && DYNASTY_VALUES.picks;
   if(!pk) return null;
   const rows = pk[String(season)] || pk[String(Math.max(...Object.keys(pk).map(Number)))] || null;
@@ -175,8 +181,43 @@ function dynastyPickValue(season, round){
   const rx = round===1 ? /^1\.|1st/i : new RegExp(`${round}(nd|rd|th)`, 'i');
   const hits = rows.filter(r=>rx.test(r[0]));
   if(!hits.length) return round>=5 ? (rows[rows.length-1] ? rows[rows.length-1][col] : null) : null;
+  const t = (round===1 && tier && LA_PICK_TIER_SPREAD[tier]) ? tier : null;
+  if(t){
+    const slots=hits.filter(r=>/^\s*1\s*[.:]\s*\d/.test(String(r[0])));
+    if(slots.length>=3){
+      const n=slots.length, third=Math.max(1, Math.floor(n/3));
+      const part = t==='e' ? slots.slice(0,third) : t==='l' ? slots.slice(n-third) : slots.slice(third, n-third);
+      const use = part.length ? part : slots;
+      return use.reduce((a,r)=>a+(+r[col]||0),0)/use.length*LA_VAL_SCALE;
+    }
+    return hits[Math.floor(hits.length/2)][col]*LA_PICK_TIER_SPREAD[t]*LA_VAL_SCALE;
+  }
   // Use the MIDDLE row of the matching tier (mid-1st for an unknown future 1st, mid-2nd, …).
   return hits[Math.floor(hits.length/2)][col]*LA_VAL_SCALE;
+}
+// Which third of the draft a roster's own pick should land in: the standings once three
+// games are in, else the roster's player value (the thin roster drafts early). Only this
+// year's and next year's firsts are tiered; further out nobody knows.
+let _laPickTierCache=null;
+function laPickTier(s, origRosterId, season){
+  s = s || leagueSnapshot;
+  if(!s || !Array.isArray(s.teamList) || origRosterId==null) return null;
+  const cur=Number(s.season||0);
+  if(cur && Number(season)>cur+1) return null;
+  const sig=`${s.leagueId}|${s.takenAt}`;
+  if(!_laPickTierCache || _laPickTierCache.sig!==sig){
+    const teams=s.teamList;
+    const games=(t)=>(t.wins||0)+(t.losses||0)+(t.ties||0);
+    const played=teams.every(t=>games(t)>=3);
+    const score=(t)=> played
+      ? ((t.wins||0)-(t.losses||0))*1e6 + (t.fpts||0)
+      : laTcAdjusted(t.players.map(p=>laVal(p.name,p.pos,p.team)).filter(v=>v>0));
+    const order=[...teams].sort((a,b)=>score(a)-score(b));   // worst first
+    const n=order.length, by={};
+    order.forEach((t,i)=>{ by[t.rosterId] = i<n/3 ? 'e' : (i>=2*n/3 ? 'l' : 'm'); });
+    _laPickTierCache={sig, by, played};
+  }
+  return _laPickTierCache.by[origRosterId]||null;
 }
 
 // ── Pick tiering ─────────────────────────────────────────────────────────────
@@ -221,8 +262,9 @@ function laTierMultForValue(v){
 }
 // The pick equivalent of laDynVal(): chart value with its value-equivalent tier boost.
 // Every ranking view should use THIS for picks, never the raw dynastyPickValue().
-function laPickVal(season, round){
-  const v=dynastyPickValue(season, round);
+function laPickVal(season, round, origRosterId){
+  const tier = (origRosterId!=null && round===1) ? laPickTier(leagueSnapshot, origRosterId, season) : null;
+  const v=dynastyPickValue(season, round, tier);
   if(v==null) return 0;
   return v * laTierMultForValue(v);
 }
@@ -553,7 +595,7 @@ function laRedraftVal(name,pos,team){
 // whole analyzer coherently instead of one view at a time.
 function laVal(name,pos,team){ return laIsRedraft() ? laRedraftVal(name,pos,team) : laDynVal(name,pos); }
 // Rookie picks are dynasty capital; in a redraft league they don't exist as assets.
-function laPickValFor(season,round){ return laIsRedraft() ? 0 : laPickVal(season,round); }
+function laPickValFor(season,round,origRosterId){ return laIsRedraft() ? 0 : laPickVal(season,round,origRosterId); }
 
 // Player thumbnail. Team defenses have no headshot (they're not people and aren't in the
 // Sleeper player DB), so they render the club logo instead — Sleeper keys a DEF by its team
@@ -1577,7 +1619,7 @@ function laTeamValue(t){
     laTcAdjusted(t.players.map(p=>laVal(p.name,p.pos,p.team)).filter(v=>v>0)) +
     // laPickValFor is 0 in redraft — the snapshot still carries pick rows (Sleeper reports
     // them for every league) but they're not assets, so they must not inflate roster worth.
-    laTcAdjusted(t.picks.map(pk=>laPickValFor(pk.season,pk.round)).filter(v=>v>0)));
+    laTcAdjusted(t.picks.map(pk=>laPickValFor(pk.season,pk.round,pk.origRosterId)).filter(v=>v>0)));
 }
 function laTeamCard(t,s){
   const valued=[], depth=[];
@@ -1593,7 +1635,7 @@ function laTeamCard(t,s){
   const pickChips=(laIsRedraft()?[]:t.picks).map(pk=>{
     // laPickVal, not the raw chart value: players on this card are tier-boosted and scaled,
     // so a raw pick number here would be ~1% of a comparable player and read as worthless.
-    const v=Math.round(laPickVal(pk.season,pk.round))||null;
+    const v=Math.round(laPickVal(pk.season,pk.round,pk.origRosterId))||null;
     const label=`${pk.season} ${pk.round}${['','st','nd','rd','th'][pk.round]||'th'}`;
     const orig=pk.origRosterId!==t.rosterId?` (via ${laRosterName(s,pk.origRosterId)})`:'';
     return `<span class="la-pick" title="${label}${orig}${v!=null?` · value ${v}`:''}">${label}${orig?'*':''}${v!=null?` <b>${v}</b>`:''}</span>`;
@@ -1701,7 +1743,7 @@ function laCompareView(s){
         : t.players;
       srcP.forEach(p=>{ const v=laVal(p.name,p.pos,p.team); if(byPos[p.pos]&&v>0) byPos[p.pos].push(v); });
       POS.forEach(pos=>{ by[pos]=+laTcAdjusted(byPos[pos]).toFixed(0); });
-      picks=+laTcAdjusted(t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0)).toFixed(0);
+      picks=+laTcAdjusted(t.picks.map(pk=>laPickVal(pk.season,pk.round,pk.origRosterId)).filter(v=>v>0)).toFixed(0);
     }else{
       const withF=t.players.map(p=>({...p, fpts:pm.get(ecrNormName(p.name)+'|'+p.pos)||0}))
                            .sort((a,b)=>b.fpts-a.fpts);
@@ -1894,12 +1936,26 @@ function laBestAvailView(s){
 //  Tune LA_TC_* below to taste — every verdict in the UI flows from these four numbers.
 const LA_TC_W    = [1, .75, .55, .40, .30]; // per-asset weights, best-first
 const LA_TC_TAIL = .25;                     // weight for the 6th asset onward
-const LA_TC_STUD = .55;                     // stud premium: fraction of the best-asset gap
+const LA_TC_STUD = .55;                     // stud premium: fraction of the best-asset gap (the help copy quotes this)
 const LA_TC_BAND = (a,b)=>Math.max(4, .05*Math.max(a,b));   // fair window
 
+// The corpus can say what the market actually pays for consolidation (tools/trade_corpus.py
+// fits the second-asset weight and the stud premium from real x-for-1 trades). When it has,
+// and the lens is the market's, those numbers replace the constants — bounded, so a bad fit
+// can never flip the verdict's shape.
+function laTcCalib(){
+  const c=(typeof TRADE_VALUES!=='undefined' && TRADE_VALUES && TRADE_VALUES.calib) ? TRADE_VALUES.calib : null;
+  if(!c || !(c.n>=150)) return null;
+  if(typeof laValSource==='function' && laValSource()==='fp') return null;
+  if(typeof laIsRedraft==='function' && laIsRedraft()) return null;
+  const w2=+c.w2, stud=+c.stud;
+  if(!(w2>=0.45 && w2<=1) || !(stud>=0.1 && stud<=1)) return null;
+  return {w2, stud};
+}
 function laTcAdjusted(vals){
   const s=[...vals].sort((x,y)=>y-x);
-  return s.reduce((a,v,i)=>a+v*(LA_TC_W[i]!=null?LA_TC_W[i]:LA_TC_TAIL),0);
+  const c=laTcCalib();
+  return s.reduce((a,v,i)=>a+v*(i===1&&c ? c.w2 : (LA_TC_W[i]!=null?LA_TC_W[i]:LA_TC_TAIL)),0);
 }
 // Verdict for two sides of raw values. diff>0 → side A gives more (B is winning the trade).
 function laTcVerdict(valsA, valsB, faabA, faabB){
@@ -1908,8 +1964,9 @@ function laTcVerdict(valsA, valsB, faabA, faabB){
   // great player beats the same value spread across three good ones.
   const adjA=laTcAdjusted(valsA)+(+faabA||0), adjB=laTcAdjusted(valsB)+(+faabB||0);
   const bestA=valsA.length?Math.max(...valsA):0, bestB=valsB.length?Math.max(...valsB):0;
-  const effA=adjA + (bestA>bestB ? (bestA-bestB)*LA_TC_STUD : 0);
-  const effB=adjB + (bestB>bestA ? (bestB-bestA)*LA_TC_STUD : 0);
+  const c=laTcCalib(); const stud = c ? c.stud : LA_TC_STUD;
+  const effA=adjA + (bestA>bestB ? (bestA-bestB)*stud : 0);
+  const effB=adjB + (bestB>bestA ? (bestB-bestA)*stud : 0);
   const band=LA_TC_BAND(effA,effB);
   const diff=effA-effB;
   return { adjA:+adjA.toFixed(1), adjB:+adjB.toFixed(1),
@@ -1931,11 +1988,12 @@ function laAssetPools(s, rosterId){
   const picks=laIsRedraft() ? [] : t.picks.map(pk=>({
     key:`k|${pk.season}|${pk.round}|${pk.origRosterId}`, type:'k',
     season:pk.season, round:pk.round, orig:pk.origRosterId,
-    label:`${pk.season} ${pk.round}${['','st','nd','rd','th'][pk.round]||'th'}${pk.origRosterId!==t.rosterId?'*':''}`,
+    label:`${pk.season} ${pk.round}${['','st','nd','rd','th'][pk.round]||'th'}${pk.origRosterId!==t.rosterId?'*':''}${(()=>{ const tr=pk.round===1?laPickTier(s,pk.origRosterId,pk.season):null; return tr?` (${LA_PICK_TIER_LABEL[tr]})`:''; })()}`,
+    tier: pk.round===1 ? laPickTier(s,pk.origRosterId,pk.season) : null,
     // MUST match how players are priced two lines up (laDynVal = scaled + tier-boosted).
     // Mixing a raw pick value in here made every pick ~1% of a player's worth, so the
     // calculator happily called "your whole pick chest for my WR3" a fair trade.
-    v:Math.round(laPickVal(pk.season,pk.round)),
+    v:Math.round(laPickVal(pk.season,pk.round,pk.origRosterId)),
   }));
   return {players,picks,team:t};
 }
@@ -1969,7 +2027,7 @@ function laTradeToggle(side, key){
 }
 function laTradeClear(){ laState.trade.giveA=[]; laState.trade.giveB=[]; laState.trade.faabA=0; laState.trade.faabB=0; renderLeagueAnalyzer(); }
 function laLoadProposal(aId,bId,giveA,giveB){
-  laState.trade={a:aId,b:bId,giveA:giveA.slice(),giveB:giveB.slice()};
+  laState.trade={a:aId,b:bId,giveA:giveA.slice(),giveB:giveB.slice(),faabA:0,faabB:0};
   renderLeagueAnalyzer();
   const el=document.querySelector('.la-tc-grid'); if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
 }
@@ -2008,12 +2066,14 @@ function laTcSuggestions(s, pools, give, vals, otherVals, side){
 // top assets at my weak position — 1-for-1 first, then my-two-for-their-one (consolidating UP
 // pays the stud premium honestly). Only proposals whose verdict is already fair (or one
 // suggested add away from fair) survive.
-const LA_LANE_LABEL={big:'BIG FISH', mid:'UPGRADE', value:'VALUE', buy:'BREAKOUT'};
+const LA_LANE_LABEL={big:'BIG FISH', mid:'UPGRADE', value:'VALUE', buy:'BREAKOUT', sell:'SELL HIGH', now:'WIN NOW'};
 const LA_LANE_TIP={
   big:'A top-tier player at your weak spot — the biggest single upgrade, but it costs real assets.',
   mid:'A solid mid-priced starter — moves the needle without gutting another position.',
   value:'A cheap contributor — low cost, low risk; useful depth in a deeper league.',
-  buy:'A young player entering their breakout window, priced before the leap.'};
+  buy:'A young player entering their breakout window, priced before the leap.',
+  sell:'Move value your timeline discounts — a player at the age cliff — to a team that can use him, for the picks and youth you want.',
+  now:'Spend picks and prospects on a rebuilding team\'s proven starter — they want the future, you want the points.'};
 const LA_SHAPE_LABEL={
   ANY:'Any shape',
   BAL:'Balanced only (same number of assets each side)',
@@ -2205,6 +2265,9 @@ function laTradeFinder(s){
     });
   }
   proposals.push(...buys);
+  // deals shaped by the situations (SELL HIGH for a rebuild, WIN NOW for a contender) —
+  // every one already fair-or-near on the market and ahead in both chairs
+  if(typeof laSituProposals==='function'){ try{ proposals.push(...laSituProposals(s, mine.t.rosterId)); }catch(e){} }
   const seen=new Set();
   const uniq=proposals.filter(p=>{
     const k=p.b.rosterId+'|'+p.give.map(x=>x.key).sort().join(',')+'>'+p.get.map(x=>x.key).sort().join(',');
@@ -2227,11 +2290,16 @@ function laTradeFinder(s){
       ? teamGain >= -120
       : (Math.abs(p.v.diff)<=p.v.band*1.15 && teamGain >= 180);
     const improvesTeam = teamGain >= 0;
-    return {...p, tcPenalty, teamGain, realistic, improvesTeam};
+    // the same deal from each chair: a proposal both sides should want leads the board
+    const fit = p.fit || ((typeof laSituFitFor==='function') ? laSituFitFor(s, mine.t.rosterId, p.b.rosterId, p.give, p.get) : null);
+    const mutual = !!(fit && fit.mutual);
+    const likely = fit ? fit.likely : '';
+    return {...p, tcPenalty, teamGain, realistic, improvesTeam, fit, mutual, likely};
   })
     // Best NET improvement first — a cheap add that costs nothing you start can outrank a
     // blockbuster that guts another position. Ties broken by fairness.
     .sort((a,b)=>
+      (b.mutual-a.mutual) ||
       (b.improvesTeam-a.improvesTeam) ||
       (b.realistic-a.realistic) ||
       (a.coreCost-b.coreCost) ||
@@ -2251,11 +2319,14 @@ function laTradeFinder(s){
   // price points instead of all being blockbusters: a "big fish" (top-tier get), a "value"
   // add (mid), and breakout buys. The reader sees a menu, not six versions of the same swing.
   const laneOf=(p)=>{
+    if(p.lane) return p.lane;
     if(p.buy) return 'buy';
     const head = p.get.reduce((m,x)=>Math.max(m,+x.v||0),0);
     return head>=6000 ? 'big' : head>=3000 ? 'mid' : 'value';
   };
-  const viable = uniq.filter(x=>x.realistic || x.improvesTeam);
+  // a deal that costs me more than an eighth in my own chair is not a suggestion, whatever
+  // the chart says about it
+  const viable = uniq.filter(x=>(x.realistic || x.improvesTeam) && !(x.fit && x.fit.mine && x.fit.mine.pct < -0.12));
   const rankedPool = viable.length ? viable : uniq;
   const shapeMatch = (p)=>{
     if(shapeTarget==='ANY') return true;
@@ -2273,12 +2344,16 @@ function laTradeFinder(s){
   const scopedPool = rankedPool.filter(shapeMatch);
   const boardPool = scopedPool.length ? scopedPool : rankedPool;
   boardPool.forEach(p=>{ p.lane=laneOf(p); });
-  const buyPool=boardPool.filter(x=>x.lane==='buy');
-  const mainPool=boardPool.filter(x=>x.lane!=='buy');
+  // a breakout buy only earns its guaranteed seat when the seller would plausibly take it
+  const buyPool=boardPool.filter(x=>x.lane==='buy' && !(x.fit && x.fit.theirs && x.fit.theirs.pct < -0.08));
+  const situPool=boardPool.filter(x=>x.lane==='sell'||x.lane==='now');
+  const mainPool=boardPool.filter(x=>x.lane!=='buy' && x.lane!=='sell' && x.lane!=='now');
   const mainNoCore=mainPool.filter(x=>!x.coreCost);
   const mainCore=mainPool.filter(x=>x.coreCost);
   const pool=[...mainPool];
   const picksOut=[]; const usedPartner={}; const usedLane={};
+  // the situation's own deals lead: up to two seats, rotating with the seed
+  for(let k=0;k<Math.min(2,situPool.length);k++){ const c=situPool[(laState.fndSeed+k)%situPool.length]; if(!picksOut.includes(c)) picksOut.push(c); }
   // Guarantee spread: up to 2 breakout buys and at least one non-"big" (value/mid) seat, so a
   // stack of fair blockbusters can't monopolise the list — the exact thing you flagged.
   for(let k=0;k<Math.min(deep?2:1,buyPool.length);k++){
@@ -2326,8 +2401,10 @@ function laTradeFinder(s){
   }
     const fairCount = boardPool.filter(x=>x.v&&x.v.fair).length;
     const betterCount = boardPool.filter(x=>x.improvesTeam).length;
-    return {weak,strong,proposals:picksOut, total:boardPool.length, fairCount, betterCount, targeted:!!target,
-      deep, shallow, nTeams, myRosterId:mine.t.rosterId, shapeTarget};
+    const mutualCount = boardPool.filter(x=>x.mutual).length;
+    const mySit = (typeof laTeamSituation==='function') ? laTeamSituation(s, mine.t.rosterId) : null;
+    return {weak,strong,proposals:picksOut, total:boardPool.length, fairCount, betterCount, mutualCount, targeted:!!target,
+      deep, shallow, nTeams, myRosterId:mine.t.rosterId, shapeTarget, mySit, situCount:situPool.length};
 }
 
 // League-wide positional value ranks, computed live from the snapshot: every rostered player
@@ -2461,7 +2538,9 @@ function laTradeView(s){
   };
   // trade finder
   const fnd=laTradeFinder(s);
-  const fndHtml = fnd.proposals.length ? fnd.proposals.map(p=>`
+  const fndHtml = fnd.proposals.length ? ((typeof laFndCardHTML==='function')
+    ? `<div class="la-fnd-cards">${fnd.proposals.map(p=>laFndCardHTML(p, fnd)).join('')}</div>`
+    : fnd.proposals.map(p=>`
     <div class="la-fnd-row">
       <span class="la-fnd-lane la-lane-${p.lane}" title="${LA_LANE_TIP[p.lane]}">${LA_LANE_LABEL[p.lane]}</span>
       <span class="la-fnd-shape">${escHtml((p.shape||'1for1').replace('for','-for-'))}</span>
@@ -2469,13 +2548,17 @@ function laTradeView(s){
         \u2192 <b>${escHtml(p.b.teamName)}</b> for <b>${escHtml(p.get.map(x=>x.type==='k'?x.label:x.name).join(' + '))}</b></span>
       <span class="la-fnd-v ${p.v.fair?'ok':''}">${p.v.fair?'fair':(p.v.diff>0?'-':'+')+Math.abs(p.v.diff).toFixed(0)}</span>
       <button class="btn btn-sm btn-ghost" onclick="laLoadProposal(${fnd.myRosterId},${p.b.rosterId},[${p.give.map(x=>`'${escJsSingle(x.key)}'`).join(',')}],[${p.get.map(x=>`'${escJsSingle(x.key)}'`).join(',')}])">Load</button>
-    </div>`).join('')
+    </div>`).join(''))
     : `<div class="la-note">No viable upgrades found for ${escHtml(LA_SHAPE_LABEL[fnd.shapeTarget]||'this shape')} at ${escHtml(fnd.weak.pos)} right now. Try another shape or press refresh.</div>`;
-  return `
+  const situA=(typeof laSituCardHTML==='function')?laSituCardHTML(s, tr.a):'', situB=(typeof laSituCardHTML==='function')?laSituCardHTML(s, tr.b):'';
+  const fitHtml=(started && typeof laSituFitHTML==='function') ? laSituFitHTML(s, tr.a, tr.b, givenA, givenB) : '';
+  const meLine = fnd.mySit ? `<div class="la-fnd-me">You are ${laSituBadge(fnd.mySit)} <b>${escHtml(fnd.mySit.title||'')}</b> · you want <b>${escHtml(fnd.mySit.wants)}</b>${fnd.situCount?` · ${fnd.situCount} deal${fnd.situCount===1?'':'s'} work in both chairs`:''}</div>` : '';
+  return `<div class="la-trade">
     <div class="la-basis-row">${laValueBasisHTML()}${laValPinBarHTML()}</div>
     <div class="la-tc-grid">
       <div class="la-tc-side">
         <div class="la-tc-head">${sel('a',tr.a)} <span class="la-tc-gives">gives</span></div>
+        ${situA}
         <div class="la-tc-box">${givenA.length?givenA.map(x=>laAssetRow(x,'a',true)).join(''):'<div class="la-tc-empty">click + below to add</div>'}
           ${faabRow('a')}
           <div class="la-tc-tot">adjusted <b>${started?v.adjA:0}</b>${v.effA!==v.adjA&&started?` \u00b7 with stud premium <b>${v.effA}</b>`:''}</div></div>
@@ -2485,11 +2568,13 @@ function laTradeView(s){
         <div class="la-vd-txt">${verdictTxt}</div>
         <div class="la-bar"><div class="la-bar-fill" style="width:${lean}%"></div><div class="la-bar-mid"></div></div>
         <div class="la-tc-mid-lbls"><span>${escHtml(poolA.team.teamName)}</span><span>${escHtml(poolB.team.teamName)}</span></div>
+        ${fitHtml}
         ${sugHtml}
         ${started?`<button class="btn btn-sm btn-ghost la-tc-clear" onclick="laTradeClear()">clear trade</button>`:''}
       </div>
       <div class="la-tc-side">
         <div class="la-tc-head">${sel('b',tr.b)} <span class="la-tc-gives">gives</span></div>
+        ${situB}
         <div class="la-tc-box">${givenB.length?givenB.map(x=>laAssetRow(x,'b',true)).join(''):'<div class="la-tc-empty">click + below to add</div>'}
           ${faabRow('b')}
           <div class="la-tc-tot">adjusted <b>${started?v.adjB:0}</b>${v.effB!==v.adjB&&started?` \u00b7 with stud premium <b>${v.effB}</b>`:''}</div></div>
@@ -2503,10 +2588,11 @@ function laTradeView(s){
         <span class="la-fnd-chips">${['AUTO','QB','RB','WR','TE'].map(x=>`<button class="format-btn ${laState.fndPos===x?'active':''}" onclick="laState.fndPos='${x}';renderLeagueAnalyzer()" title="${x==='AUTO'?'Target my weakest position automatically':'Hunt deals at '+x}">${x}</button>`).join('')}</span>
         <span class="la-fnd-chips">${['ANY','BAL','1v1','2v2','3v3','xv1','1vx'].map(x=>`<button class="format-btn ${laState.fndShape===x?'active':''}" onclick="laState.fndShape='${x}';renderLeagueAnalyzer()" title="${LA_SHAPE_LABEL[x]}">${x}</button>`).join('')}</span>
         <button class="btn btn-sm btn-ghost la-fnd-refresh" onclick="laState.fndSeed++;renderLeagueAnalyzer()" title="Deal me different variations">${TC_ICON("refresh")} refresh</button></div>
+      ${meLine}
       ${fndHtml}
     </div>
     <div class="la-note la-note-min">${(typeof tcInfoBtn==='function')?tcInfoBtn('latrade','How verdicts are judged'):''}</div>
-    ${(typeof laTradeHistoryHTML==='function')?laTradeHistoryHTML(s):''}`;
+    ${(typeof laTradeHistoryHTML==='function')?laTradeHistoryHTML(s):''}</div>`;
 }
 
 // Switch analyzer tabs. Also scrolls back to the tab bar: these views differ wildly in
@@ -2548,7 +2634,7 @@ function laTeamEngine(s, t, lens, pm, opts){
   const starterIds = new Set(filled.filter(f=>f.player).map(f=>f.player.id));
   const starters = filled;
   const bench = ranked.filter(p=>!starterIds.has(p.id));
-  const pickVals = t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0);
+  const pickVals = t.picks.map(pk=>laPickVal(pk.season,pk.round,pk.origRosterId)).filter(v=>v>0);
   const sVals = starters.filter(f=>f.player).map(f=>f.player._v);
   let score = laTcAdjusted(sVals);
   if(!o.startersOnly) score += laTcAdjusted(bench.map(p=>p._v)) * LA_PW_BENCH;
@@ -2828,14 +2914,14 @@ function laTrajectories(s, pm){
   const maxNow=Math.max(...engNow.map(e=>e.score))||1;
   const maxFut=Math.max(...eng.map(e=>e.score))||1;
   const n=eng.length;
-  const maxPick=Math.max(...s.teamList.map(t=>laTcAdjusted(t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0))))||1;
+  const maxPick=Math.max(...s.teamList.map(t=>laTcAdjusted(t.picks.map(pk=>laPickVal(pk.season,pk.round,pk.origRosterId)).filter(v=>v>0))))||1;
   const rows=eng.map(e=>{
     const vals=e.t.players.map(p=>({v:laDynVal(p.name,p.pos), age:laDynAge(p.name)})).filter(x=>x.v>0);
     const tot=vals.reduce((a,x)=>a+x.v,0)||1;
     const aged=vals.filter(x=>x.age!=null);
     const coreAge=aged.length?aged.reduce((a,x)=>a+x.v*x.age,0)/aged.reduce((a,x)=>a+x.v,0):null;
     const youth=vals.filter(x=>x.age!=null&&x.age<=25).reduce((a,x)=>a+x.v,0)/tot;
-    const pickStr=laTcAdjusted(e.t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0))/maxPick;
+    const pickStr=laTcAdjusted(e.t.picks.map(pk=>laPickVal(pk.season,pk.round,pk.origRosterId)).filter(v=>v>0))/maxPick;
     // Cliff exposure: how much of this roster's VALUE sits on players at/near their
     // positional age-cliff (defiers included — they're still mortal), and how many defiers.
     let cliffVal=0, defiers=0;
@@ -3094,8 +3180,11 @@ if(typeof TC_INFO_BOOK!=='undefined'){
     is the classic dynasty waiver add.`};
   TC_INFO_BOOK.latrade={title:'Trade verdicts', body:`
     Consolidation-adjusted values: extra assets on a side count at 75/55/40/30/25%, and the side
-    holding the single best player gets a premium worth 25% of the best-asset gap \u2014 a stack of
-    depth can't buy a stud, but star + real piece can. Fair = within \u00b1max(4, 5%).`};
+    holding the single best player gets a premium worth 55% of the best-asset gap \u2014 a stack of
+    depth can't buy a stud, but star + real piece can. Fair = within \u00b1max(4, 5%).
+    Under the verdict, the same deal is judged from each chair: a rebuild prices picks and youth
+    up and the age cliff down, a contender the reverse. A deal both sides come out ahead on in
+    their own chair is one someone might actually make.`};
   TC_INFO_BOOK.lamyvalue={title:'Dynasty power score', body:`
     Tier-boosted FantasyPros values (T1 \u00d71.15), consolidation-adjusted \u2014 stars carry, depth
     decays. Power score = starters + 35% bench (+ 50% picks when synced), league best = 100.`};
