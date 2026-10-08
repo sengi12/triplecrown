@@ -121,7 +121,7 @@ function laValSource(){
 }
 function laSetValSource(s){
   try{ localStorage.setItem('la_val_source', s); }catch(e){}
-  _laTierVals=null; _laPosRankCache=null; if(typeof laSituReset==='function') laSituReset();
+  _laTierVals=null; _laPosRankCache=null; _laPickTierCache=null; if(typeof laSituReset==='function') laSituReset();
   if(typeof renderLeagueAnalyzer==='function') renderLeagueAnalyzer();
 }
 // Is there tradesourced data for the snapshot league's market? (Gates the Source control.)
@@ -165,7 +165,13 @@ function dynastyValueFor(name, pos){
 }
 // Value for a future rookie pick. Exact rows exist for the chart's listed seasons; later
 // seasons reuse the year-out table (dynasty convention: value the unknown like next year's).
-function dynastyPickValue(season, round){
+// A first is three different assets depending on who it came from: a 1.02 and a 1.11 are not
+// the same thing. `tier` ('e' early, 'm' mid, 'l' late) picks the matching third of the
+// chart's listed slots (1.01 … 1.12); a round the chart lists as one row fans out by
+// LA_PICK_TIER_SPREAD. No tier → the middle row, as before.
+const LA_PICK_TIER_SPREAD = {e:1.18, m:1, l:0.84};
+const LA_PICK_TIER_LABEL = {e:'early', m:'mid', l:'late'};
+function dynastyPickValue(season, round, tier){
   const pk = DYNASTY_VALUES && DYNASTY_VALUES.picks;
   if(!pk) return null;
   const rows = pk[String(season)] || pk[String(Math.max(...Object.keys(pk).map(Number)))] || null;
@@ -175,8 +181,43 @@ function dynastyPickValue(season, round){
   const rx = round===1 ? /^1\.|1st/i : new RegExp(`${round}(nd|rd|th)`, 'i');
   const hits = rows.filter(r=>rx.test(r[0]));
   if(!hits.length) return round>=5 ? (rows[rows.length-1] ? rows[rows.length-1][col] : null) : null;
+  const t = (round===1 && tier && LA_PICK_TIER_SPREAD[tier]) ? tier : null;
+  if(t){
+    const slots=hits.filter(r=>/^\s*1\s*[.:]\s*\d/.test(String(r[0])));
+    if(slots.length>=3){
+      const n=slots.length, third=Math.max(1, Math.floor(n/3));
+      const part = t==='e' ? slots.slice(0,third) : t==='l' ? slots.slice(n-third) : slots.slice(third, n-third);
+      const use = part.length ? part : slots;
+      return use.reduce((a,r)=>a+(+r[col]||0),0)/use.length*LA_VAL_SCALE;
+    }
+    return hits[Math.floor(hits.length/2)][col]*LA_PICK_TIER_SPREAD[t]*LA_VAL_SCALE;
+  }
   // Use the MIDDLE row of the matching tier (mid-1st for an unknown future 1st, mid-2nd, …).
   return hits[Math.floor(hits.length/2)][col]*LA_VAL_SCALE;
+}
+// Which third of the draft a roster's own pick should land in: the standings once three
+// games are in, else the roster's player value (the thin roster drafts early). Only this
+// year's and next year's firsts are tiered; further out nobody knows.
+let _laPickTierCache=null;
+function laPickTier(s, origRosterId, season){
+  s = s || leagueSnapshot;
+  if(!s || !Array.isArray(s.teamList) || origRosterId==null) return null;
+  const cur=Number(s.season||0);
+  if(cur && Number(season)>cur+1) return null;
+  const sig=`${s.leagueId}|${s.takenAt}`;
+  if(!_laPickTierCache || _laPickTierCache.sig!==sig){
+    const teams=s.teamList;
+    const games=(t)=>(t.wins||0)+(t.losses||0)+(t.ties||0);
+    const played=teams.every(t=>games(t)>=3);
+    const score=(t)=> played
+      ? ((t.wins||0)-(t.losses||0))*1e6 + (t.fpts||0)
+      : laTcAdjusted(t.players.map(p=>laVal(p.name,p.pos,p.team)).filter(v=>v>0));
+    const order=[...teams].sort((a,b)=>score(a)-score(b));   // worst first
+    const n=order.length, by={};
+    order.forEach((t,i)=>{ by[t.rosterId] = i<n/3 ? 'e' : (i>=2*n/3 ? 'l' : 'm'); });
+    _laPickTierCache={sig, by, played};
+  }
+  return _laPickTierCache.by[origRosterId]||null;
 }
 
 // ── Pick tiering ─────────────────────────────────────────────────────────────
@@ -221,8 +262,9 @@ function laTierMultForValue(v){
 }
 // The pick equivalent of laDynVal(): chart value with its value-equivalent tier boost.
 // Every ranking view should use THIS for picks, never the raw dynastyPickValue().
-function laPickVal(season, round){
-  const v=dynastyPickValue(season, round);
+function laPickVal(season, round, origRosterId){
+  const tier = (origRosterId!=null && round===1) ? laPickTier(leagueSnapshot, origRosterId, season) : null;
+  const v=dynastyPickValue(season, round, tier);
   if(v==null) return 0;
   return v * laTierMultForValue(v);
 }
@@ -553,7 +595,7 @@ function laRedraftVal(name,pos,team){
 // whole analyzer coherently instead of one view at a time.
 function laVal(name,pos,team){ return laIsRedraft() ? laRedraftVal(name,pos,team) : laDynVal(name,pos); }
 // Rookie picks are dynasty capital; in a redraft league they don't exist as assets.
-function laPickValFor(season,round){ return laIsRedraft() ? 0 : laPickVal(season,round); }
+function laPickValFor(season,round,origRosterId){ return laIsRedraft() ? 0 : laPickVal(season,round,origRosterId); }
 
 // Player thumbnail. Team defenses have no headshot (they're not people and aren't in the
 // Sleeper player DB), so they render the club logo instead — Sleeper keys a DEF by its team
@@ -1577,7 +1619,7 @@ function laTeamValue(t){
     laTcAdjusted(t.players.map(p=>laVal(p.name,p.pos,p.team)).filter(v=>v>0)) +
     // laPickValFor is 0 in redraft — the snapshot still carries pick rows (Sleeper reports
     // them for every league) but they're not assets, so they must not inflate roster worth.
-    laTcAdjusted(t.picks.map(pk=>laPickValFor(pk.season,pk.round)).filter(v=>v>0)));
+    laTcAdjusted(t.picks.map(pk=>laPickValFor(pk.season,pk.round,pk.origRosterId)).filter(v=>v>0)));
 }
 function laTeamCard(t,s){
   const valued=[], depth=[];
@@ -1593,7 +1635,7 @@ function laTeamCard(t,s){
   const pickChips=(laIsRedraft()?[]:t.picks).map(pk=>{
     // laPickVal, not the raw chart value: players on this card are tier-boosted and scaled,
     // so a raw pick number here would be ~1% of a comparable player and read as worthless.
-    const v=Math.round(laPickVal(pk.season,pk.round))||null;
+    const v=Math.round(laPickVal(pk.season,pk.round,pk.origRosterId))||null;
     const label=`${pk.season} ${pk.round}${['','st','nd','rd','th'][pk.round]||'th'}`;
     const orig=pk.origRosterId!==t.rosterId?` (via ${laRosterName(s,pk.origRosterId)})`:'';
     return `<span class="la-pick" title="${label}${orig}${v!=null?` · value ${v}`:''}">${label}${orig?'*':''}${v!=null?` <b>${v}</b>`:''}</span>`;
@@ -1701,7 +1743,7 @@ function laCompareView(s){
         : t.players;
       srcP.forEach(p=>{ const v=laVal(p.name,p.pos,p.team); if(byPos[p.pos]&&v>0) byPos[p.pos].push(v); });
       POS.forEach(pos=>{ by[pos]=+laTcAdjusted(byPos[pos]).toFixed(0); });
-      picks=+laTcAdjusted(t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0)).toFixed(0);
+      picks=+laTcAdjusted(t.picks.map(pk=>laPickVal(pk.season,pk.round,pk.origRosterId)).filter(v=>v>0)).toFixed(0);
     }else{
       const withF=t.players.map(p=>({...p, fpts:pm.get(ecrNormName(p.name)+'|'+p.pos)||0}))
                            .sort((a,b)=>b.fpts-a.fpts);
@@ -1897,9 +1939,23 @@ const LA_TC_TAIL = .25;                     // weight for the 6th asset onward
 const LA_TC_STUD = .55;                     // stud premium: fraction of the best-asset gap (the help copy quotes this)
 const LA_TC_BAND = (a,b)=>Math.max(4, .05*Math.max(a,b));   // fair window
 
+// The corpus can say what the market actually pays for consolidation (tools/trade_corpus.py
+// fits the second-asset weight and the stud premium from real x-for-1 trades). When it has,
+// and the lens is the market's, those numbers replace the constants — bounded, so a bad fit
+// can never flip the verdict's shape.
+function laTcCalib(){
+  const c=(typeof TRADE_VALUES!=='undefined' && TRADE_VALUES && TRADE_VALUES.calib) ? TRADE_VALUES.calib : null;
+  if(!c || !(c.n>=150)) return null;
+  if(typeof laValSource==='function' && laValSource()==='fp') return null;
+  if(typeof laIsRedraft==='function' && laIsRedraft()) return null;
+  const w2=+c.w2, stud=+c.stud;
+  if(!(w2>=0.45 && w2<=1) || !(stud>=0.1 && stud<=1)) return null;
+  return {w2, stud};
+}
 function laTcAdjusted(vals){
   const s=[...vals].sort((x,y)=>y-x);
-  return s.reduce((a,v,i)=>a+v*(LA_TC_W[i]!=null?LA_TC_W[i]:LA_TC_TAIL),0);
+  const c=laTcCalib();
+  return s.reduce((a,v,i)=>a+v*(i===1&&c ? c.w2 : (LA_TC_W[i]!=null?LA_TC_W[i]:LA_TC_TAIL)),0);
 }
 // Verdict for two sides of raw values. diff>0 → side A gives more (B is winning the trade).
 function laTcVerdict(valsA, valsB, faabA, faabB){
@@ -1908,8 +1964,9 @@ function laTcVerdict(valsA, valsB, faabA, faabB){
   // great player beats the same value spread across three good ones.
   const adjA=laTcAdjusted(valsA)+(+faabA||0), adjB=laTcAdjusted(valsB)+(+faabB||0);
   const bestA=valsA.length?Math.max(...valsA):0, bestB=valsB.length?Math.max(...valsB):0;
-  const effA=adjA + (bestA>bestB ? (bestA-bestB)*LA_TC_STUD : 0);
-  const effB=adjB + (bestB>bestA ? (bestB-bestA)*LA_TC_STUD : 0);
+  const c=laTcCalib(); const stud = c ? c.stud : LA_TC_STUD;
+  const effA=adjA + (bestA>bestB ? (bestA-bestB)*stud : 0);
+  const effB=adjB + (bestB>bestA ? (bestB-bestA)*stud : 0);
   const band=LA_TC_BAND(effA,effB);
   const diff=effA-effB;
   return { adjA:+adjA.toFixed(1), adjB:+adjB.toFixed(1),
@@ -1931,11 +1988,12 @@ function laAssetPools(s, rosterId){
   const picks=laIsRedraft() ? [] : t.picks.map(pk=>({
     key:`k|${pk.season}|${pk.round}|${pk.origRosterId}`, type:'k',
     season:pk.season, round:pk.round, orig:pk.origRosterId,
-    label:`${pk.season} ${pk.round}${['','st','nd','rd','th'][pk.round]||'th'}${pk.origRosterId!==t.rosterId?'*':''}`,
+    label:`${pk.season} ${pk.round}${['','st','nd','rd','th'][pk.round]||'th'}${pk.origRosterId!==t.rosterId?'*':''}${(()=>{ const tr=pk.round===1?laPickTier(s,pk.origRosterId,pk.season):null; return tr?` (${LA_PICK_TIER_LABEL[tr]})`:''; })()}`,
+    tier: pk.round===1 ? laPickTier(s,pk.origRosterId,pk.season) : null,
     // MUST match how players are priced two lines up (laDynVal = scaled + tier-boosted).
     // Mixing a raw pick value in here made every pick ~1% of a player's worth, so the
     // calculator happily called "your whole pick chest for my WR3" a fair trade.
-    v:Math.round(laPickVal(pk.season,pk.round)),
+    v:Math.round(laPickVal(pk.season,pk.round,pk.origRosterId)),
   }));
   return {players,picks,team:t};
 }
@@ -2576,7 +2634,7 @@ function laTeamEngine(s, t, lens, pm, opts){
   const starterIds = new Set(filled.filter(f=>f.player).map(f=>f.player.id));
   const starters = filled;
   const bench = ranked.filter(p=>!starterIds.has(p.id));
-  const pickVals = t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0);
+  const pickVals = t.picks.map(pk=>laPickVal(pk.season,pk.round,pk.origRosterId)).filter(v=>v>0);
   const sVals = starters.filter(f=>f.player).map(f=>f.player._v);
   let score = laTcAdjusted(sVals);
   if(!o.startersOnly) score += laTcAdjusted(bench.map(p=>p._v)) * LA_PW_BENCH;
@@ -2856,14 +2914,14 @@ function laTrajectories(s, pm){
   const maxNow=Math.max(...engNow.map(e=>e.score))||1;
   const maxFut=Math.max(...eng.map(e=>e.score))||1;
   const n=eng.length;
-  const maxPick=Math.max(...s.teamList.map(t=>laTcAdjusted(t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0))))||1;
+  const maxPick=Math.max(...s.teamList.map(t=>laTcAdjusted(t.picks.map(pk=>laPickVal(pk.season,pk.round,pk.origRosterId)).filter(v=>v>0))))||1;
   const rows=eng.map(e=>{
     const vals=e.t.players.map(p=>({v:laDynVal(p.name,p.pos), age:laDynAge(p.name)})).filter(x=>x.v>0);
     const tot=vals.reduce((a,x)=>a+x.v,0)||1;
     const aged=vals.filter(x=>x.age!=null);
     const coreAge=aged.length?aged.reduce((a,x)=>a+x.v*x.age,0)/aged.reduce((a,x)=>a+x.v,0):null;
     const youth=vals.filter(x=>x.age!=null&&x.age<=25).reduce((a,x)=>a+x.v,0)/tot;
-    const pickStr=laTcAdjusted(e.t.picks.map(pk=>laPickVal(pk.season,pk.round)).filter(v=>v>0))/maxPick;
+    const pickStr=laTcAdjusted(e.t.picks.map(pk=>laPickVal(pk.season,pk.round,pk.origRosterId)).filter(v=>v>0))/maxPick;
     // Cliff exposure: how much of this roster's VALUE sits on players at/near their
     // positional age-cliff (defiers included — they're still mortal), and how many defiers.
     let cliffVal=0, defiers=0;

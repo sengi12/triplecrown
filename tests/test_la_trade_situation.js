@@ -113,6 +113,17 @@ app.reset();
 const f2=app.fitFor(s, 1, 2, [oldWr], [pick27, app.pools(s,2).picks.find(x=>x.season==='2027'&&x.round===2)]);
 chk(f2.likely==='likely' && f2.tend && f2.tend.active, 'a deal both chairs want with an active partner is "likely"');
 
+console.log('=== a first is priced by whose it is ===');
+const pkMe=app.pools(s,1).picks, pkChamp=app.pools(s,2).picks;
+const myFirst=(()=>{ const t=snap({takenAt:9}); t.teamList[0].picks.push(pk(2027,1,1)); app.setSnap(t); const v=app.pools(t,1).picks.find(x=>x.season==='2027'&&x.round===1); app.setSnap(s); return v; })();
+const champFirst=pkChamp.find(x=>x.season==='2027'&&x.round===1);
+chk(myFirst && myFirst.tier==='e' && /\(early\)/.test(myFirst.label), `the 1-4 team's own 2027 first is an early pick (${myFirst&&myFirst.label})`);
+chk(champFirst && champFirst.tier==='l' && /\(late\)/.test(champFirst.label), `the 4-1 team's is a late one (${champFirst&&champFirst.label})`);
+chk(myFirst && champFirst && myFirst.v>champFirst.v, `and worth more: ${myFirst&&myFirst.v} vs ${champFirst&&champFirst.v}`);
+const far=pkChamp.find(x=>x.season==='2028'&&x.round===1);
+chk(far && !far.tier && !/\(/.test(far.label), 'two years out nobody knows: no tier');
+chk(!pkChamp.find(x=>x.round===2).tier, 'later rounds are not tiered');
+
 console.log('=== the page shows it ===');
 const html=app.view(s);
 chk(/class="la-trade"/.test(html) && (html.match(/la-situ-card/g)||[]).length>=2, 'the Trade Center wraps itself and shows a situation card on each side');
@@ -120,8 +131,12 @@ chk(/la-situ la-situ-rebuild[^>]*>Rebuilding</.test(html) && /wants <b>youth and
 chk(/la-fnd-cards/.test(html) && /la-fc la-fc-sell/.test(html) && /la-fnd-lane la-lane-sell[^>]*>SELL HIGH</.test(html), 'the suggestions are cards, the first lane SELL HIGH');
 chk(/la-fc-fit ok[^>]*>you \+\d+%/.test(html) && /la-fc-fit ok[^>]*>them \+\d+%/.test(html), 'each card shows both chairs');
 chk(/You are <span class="la-situ la-situ-rebuild/.test(html), 'the board header says what I am');
+// a late first alone does not buy a 70-point receiver off a rebuild; the first and the second do
+const second27=pkChamp.find(x=>x.season==='2027'&&x.round===2);
 app.laState.trade={a:1,b:2,giveA:[oldWr.key],giveB:[pick27.key],faabA:0,faabB:0};
+chk(/la-fit-lbl">Works for one side</.test(app.view(s)), 'a loaded deal is judged from both chairs under the verdict: the late first alone works for one side');
+app.laState.trade={a:1,b:2,giveA:[oldWr.key],giveB:[pick27.key, second27.key],faabA:0,faabB:0};
 const html2=app.view(s);
-chk(/la-fit-lbl">Works in both chairs</.test(html2) && (html2.match(/la-fit-line ok/g)||[]).length===2, 'a loaded deal is judged from both chairs under the verdict');
+chk(/la-fit-lbl">Works in both chairs</.test(html2) && (html2.match(/la-fit-line ok/g)||[]).length===2, 'with the second added it works in both');
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);

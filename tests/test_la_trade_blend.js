@@ -21,6 +21,7 @@ const app=new Function(code+`
     'marvin harrison':{fp:52,trade:40,n:20,pos:'WR'}}}}};
   return { dvf:dynastyValueFor, blend:laTradeBlend, hasTrade:laHasTradeData,
     src:laValSource, setSrc:laSetValSource, pinBar:laValPinBarHTML, K:LA_TRADE_CONF_K,
+    verdict:laTcVerdict, adj:laTcAdjusted, calib:laTcCalib, setCalib:(c)=>{ TRADE_VALUES.calib=c; },
     setSnap:(o)=>{ leagueSnapshot=o; } };`)();
 
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
@@ -66,6 +67,23 @@ app.setSnap(dynSF);
 chk(!/Source:/.test(app.pinBar()), 'no Source control when the corpus does not cover the market');
 app.setSnap(redraft);
 chk(app.pinBar()==='' , 'and none at all on a redraft league');
+
+console.log('=== the corpus calibrates the consolidation curve ===');
+app.setSnap(dyn1qb); app.setSrc('blend');
+chk(app.calib()===null && near(app.adj([100,60]), 100+60*.75), 'no calibration in the seed → the constants (second asset at 75%)');
+app.setCalib({stud:0.4, w2:0.85, n:500});
+chk(app.calib() && near(app.adj([100,60]), 100+60*.85), 'with one, the second asset weighs what the market pays (85%)');
+const vc=app.verdict([100],[70,40]);
+chk(near(vc.effA, 100+(100-70)*0.4) && near(vc.effB, 70+40*.85), 'and the stud premium is the fitted one (40% of the gap)');
+app.setSrc('fp');
+chk(app.calib()===null && near(app.adj([100,60]), 145), 'the Chart lens keeps the constants');
+app.setSrc('blend'); app.setSnap(redraft);
+chk(app.calib()===null, 'so does a redraft league');
+app.setSnap(dyn1qb); app.setCalib({stud:0.4, w2:0.85, n:40});
+chk(app.calib()===null, 'a calibration from too few trades is ignored');
+app.setCalib({stud:3, w2:0.85, n:500});
+chk(app.calib()===null, 'and one outside the bounds');
+app.setCalib(null);
 
 console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
 process.exit(pass===total?0:1);
