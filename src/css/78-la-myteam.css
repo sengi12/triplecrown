@@ -23,7 +23,7 @@
 
 /* this week strip */
 .la-tw{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);
-  border-radius:10px;padding:8px 12px;margin:0 0 12px;font-size:12px;}
+  border-radius:14px;padding:8px 12px;margin:0 0 12px;font-size:12px;}
 .la-tw-empty{color:var(--muted);}
 .la-tw-load{font-style:italic;}
 .la-tw-wk{font-size:9px;font-weight:900;letter-spacing:.08em;color:var(--accent);text-transform:uppercase;flex:none;}

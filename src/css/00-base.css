@@ -1,15 +1,20 @@
 
 :root{
-  --bg:#0a0e17;--surface:#121724;--surface2:#19202e;--surface3:#232c3c;
-  --border:#283244;--border2:#394559;
-  --accent:#4d93ff;--accent2:#5aa0ff;
-  --text:#eaf0f7;--muted:#8591a3;--muted2:#9fb0c3;
+  /* The navy, tonal palette (the Game Center and Trade Center set the voice; the whole app
+     now speaks it): surfaces separate by tone, the hairline is a whisper, not a frame. */
+  --bg:#0b1126;--surface:#10172e;--surface2:#151e3d;--surface3:#1c2749;
+  --border:rgba(255,255,255,.07);--border2:rgba(255,255,255,.13);
+  --accent:#4d93ff;--accent2:#6fa8ff;
+  --text:#e9edf3;--muted:#9aa6c4;--muted2:#b3bdd6;
   --qb:#ff4d6a;--wr:#56a5ff;--rb:#00cf9f;--te:#ffc94d;--k:#a855f7;--def:#b98a63;
   --danger:#f85149;--success:#3fb950;--warn:#d29922;--info:#4a9eff;
-  --font:'Inter','SF Pro Display','Segoe UI Variable','Segoe UI',system-ui,-apple-system,Roboto,sans-serif;
-  --mono:'SF Mono','Fira Code','JetBrains Mono',ui-monospace,monospace;
+  /* One rounded face for words and numbers alike (SF Pro Rounded on Apple devices, the
+     system sans elsewhere); the old monospace numerals now sit in the same face with
+     tabular figures, which is what keeps columns lined up. */
+  --font:ui-rounded,-apple-system,'SF Pro Rounded','SF Pro Display','Inter','Segoe UI Variable','Segoe UI',system-ui,Roboto,sans-serif;
+  --mono:ui-rounded,-apple-system,'SF Pro Rounded','SF Pro Display','Inter','Segoe UI',system-ui,Roboto,sans-serif;
   /* Design tokens (UI system — see 95-ui-system.css). Radius + tracking + z ladder. */
-  --r-sm:6px;--r-md:9px;--r-lg:12px;--r-xl:16px;
+  --r-sm:10px;--r-md:12px;--r-lg:16px;--r-xl:20px;
   --tracking-label:.05em;
   --z-bar:900;--z-overlay:1300;--z-modal:1800;--z-toast:2000;--z-pop:2100;
 }
@@ -19,7 +24,7 @@
    overscroll-behavior on the ROOT breaks page scrolling outright in some iOS Safari
    builds, so it must never be set on html/body. */
 html{background:var(--bg);}
-body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;font-size:14px;}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;font-size:14px;font-variant-numeric:tabular-nums;}
 /* No rubber-banding on a touch screen: every inner scroller (the rankings table, the
    Advanced tables, the tab strips, the Game Center's rails and sheet body) stops dead at
    its ends instead of flying past them and snapping back — the Android feel, on iOS too.
@@ -51,9 +56,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .scenario-bar{display:flex;align-items:center;gap:5px;}
 .scenario-label{font-size:10px;color:var(--muted);}
 .scenario-name{font-size:12px;font-weight:700;background:var(--surface2);border:1px solid var(--border);
-  padding:4px 9px;border-radius:6px;color:var(--text);width:150px;}
+  padding:4px 9px;border-radius:10px;color:var(--text);width:150px;}
 .scenario-name:focus{outline:1px solid var(--accent);border-color:var(--accent);}
-.btn{padding:5px 11px;border-radius:6px;font-size:11px;font-weight:700;border:none;
+.btn{padding:5px 11px;border-radius:10px;font-size:11px;font-weight:700;border:none;
   cursor:pointer;transition:all .15s;white-space:nowrap;letter-spacing:.2px;}
 .btn-accent{background:var(--accent);color:#000;}
 .btn-accent:hover{background:#2f83e6;}
@@ -64,10 +69,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 /* Header dropdown (⬇ Download → JSON / CSV) */
 .hdr-menu-wrap{position:relative;display:inline-flex;}
 .hdr-menu{position:absolute;top:calc(100% + 4px);right:0;z-index:210;min-width:120px;
-  background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:4px;
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:4px;
   box-shadow:0 12px 30px rgba(0,0,0,.4);display:flex;flex-direction:column;gap:2px;}
 .hdr-menu[hidden]{display:none;}
-.hdr-menu-item{padding:6px 10px;border-radius:6px;font-size:11px;font-weight:700;border:none;
+.hdr-menu-item{padding:6px 10px;border-radius:10px;font-size:11px;font-weight:700;border:none;
   background:none;color:var(--text);cursor:pointer;text-align:left;letter-spacing:.2px;}
 .hdr-menu-item:hover{background:var(--surface2);color:var(--accent);}
 .progress-wrap{min-width:120px;}
@@ -114,7 +119,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .team-abbr{font-size:24px;font-weight:900;letter-spacing:-1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 .team-qb-name{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 .team-nav{display:flex;gap:6px;margin-left:auto;}
-.ths-swipe-host{position:relative;overflow:hidden;border-radius:12px;isolation:isolate;}
+.ths-swipe-host{position:relative;overflow:hidden;border-radius:16px;isolation:isolate;}
 .ths-swipe-top{position:relative;will-change:transform;z-index:2;backface-visibility:hidden;transform:translateZ(0);}
 .ths-swipe-under{position:absolute;z-index:1;inset:0;pointer-events:none;
   transform:translateX(100%);transition:transform .16s ease-out;
@@ -123,12 +128,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .ths-swipe-under .team-header{margin-bottom:16px;}
 .ths-swipe-host.ths-swipe-committing{pointer-events:none;}
 .phase-tabs{display:flex;background:var(--surface);border:1px solid var(--border);
-  border-radius:8px;overflow:hidden;margin-bottom:14px;flex-wrap:wrap;}
+  border-radius:12px;overflow:hidden;margin-bottom:14px;flex-wrap:wrap;}
 .phase-tab{padding:6px 14px;font-size:11px;font-weight:700;cursor:pointer;
   border:none;background:none;color:var(--muted);transition:all .15s;white-space:nowrap;}
 .phase-tab.active{background:var(--surface2);color:var(--text);}
 .phase-tab:hover:not(.active){color:var(--text);}
-.ts-swipe-host{position:relative;overflow:hidden;border-radius:12px;isolation:isolate;}
+.ts-swipe-host{position:relative;overflow:hidden;border-radius:16px;isolation:isolate;}
 .ts-swipe-top{position:relative;will-change:transform;z-index:2;
   backface-visibility:hidden;transform:translateZ(0);}
 .ts-swipe-under{position:absolute;z-index:1;inset:0;overflow:hidden;
@@ -147,12 +152,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .ts-rankings-preview-table th:nth-child(5),.ts-rankings-preview-table td:nth-child(5){text-align:left;}
 .ts-rankings-preview-table .rank-name{font-weight:700;font-size:12px;}
 .card{background:var(--surface);border:1px solid var(--border);
-  border-radius:10px;padding:15px;margin-bottom:12px;}
+  border-radius:14px;padding:15px;margin-bottom:12px;}
 .card-title{font-size:9px;font-weight:800;color:var(--muted);
   letter-spacing:1.2px;text-transform:uppercase;margin-bottom:11px;
   display:flex;align-items:center;gap:8px;}
 .player-row{display:flex;align-items:center;gap:8px;margin-bottom:7px;
-  padding:7px 9px;background:var(--surface2);border-radius:8px;border:1px solid var(--border);}
+  padding:7px 9px;background:var(--surface2);border-radius:12px;border:1px solid var(--border);}
 .player-headshot{width:36px;height:36px;border-radius:50%;object-fit:cover;
   background:var(--surface2);border:1px solid var(--border);flex-shrink:0;}
 .ph-err{width:36px;height:36px;border-radius:50%;background:var(--surface3);
@@ -170,7 +175,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
    sync). On a phone that row wrapped onto two lines before any content was visible. */
 .hdr-burger{display:flex;flex-direction:column;justify-content:center;gap:4px;
   width:38px;height:34px;padding:0 8px;cursor:pointer;
-  background:var(--surface2);border:1px solid var(--border);border-radius:8px;}
+  background:var(--surface2);border:1px solid var(--border);border-radius:12px;}
 .hdr-burger span{display:block;height:2.5px;border-radius:2px;background:var(--text);
   transition:transform .18s ease, opacity .18s ease;}
 .hdr-burger:hover{border-color:var(--accent);}

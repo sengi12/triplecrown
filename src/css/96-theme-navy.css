@@ -1,0 +1,124 @@
+/* ═════════════════════════════════════════════════════════════════════════════
+   The navy theme — the Game Center's voice, app-wide.
+   Loads after the UI system and re-dresses the shared families it already unified:
+   tonal surfaces with a whisper of a hairline, generous radii, chips that are white
+   when active, headshots and numbers in the one rounded face. No class is renamed;
+   every rule here overrides by cascade order, so the tests' selectors still hold.
+   ═════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Shell ─────────────────────────────────────────────────────────────────── */
+.header{background:var(--surface);border-bottom:none;box-shadow:0 1px 0 var(--border);}
+.sidebar{background:var(--surface);border-right:none;box-shadow:1px 0 0 var(--border);}
+.sidebar-section{font-size:10px;letter-spacing:.08em;color:var(--muted);}
+.team-item{border-left:none;margin:1px 6px;border-radius:12px;padding:6px 10px;}
+.team-item:hover{background:var(--surface2);}
+.team-item.active{background:var(--surface3);border-left-color:transparent;color:var(--text);box-shadow:inset 3px 0 0 var(--accent);}
+.content{scrollbar-width:thin;}
+.hdr-burger{border:none;background:var(--surface2);border-radius:12px;}
+.scenario-name{border:none;background:var(--surface2);border-radius:10px;}
+.scenario-name:focus{outline:2px solid var(--accent);border-color:transparent;}
+
+/* ── Cards: tone, not frames ───────────────────────────────────────────────── */
+.card,.sr-card,.la-card,.la-my-card,.add-section,.week-range-card,.vona-box,.coord-carry-wrap,
+.stat-box,.player-row,.cfb-rel-row,.tc-model-row,.add-wrap .tc-collapse-head,
+.sidebar-division-block,.la-tc-side,.la-fnd{border-color:transparent;box-shadow:inset 0 0 0 1px var(--border);}
+.card{border-radius:var(--r-lg);padding:16px;}
+.card-title{font-size:10.5px;letter-spacing:.07em;color:var(--muted);}
+.player-row{background:var(--surface2);border-radius:14px;}
+.stat-box{border-radius:14px;}
+.stat-box-val{font-family:var(--font);font-weight:800;}
+.stat-box-label{font-size:10px;letter-spacing:.06em;}
+.player-headshot,.ph-err{border:none;background:var(--surface3);}
+
+/* ── Tabs and chips: white when active, tonal when not ─────────────────────── */
+.phase-tab,.sub-tab,.qb-tab,.pcard-tab,.sr-tab,.sr-cat,.format-btn,.ltype-btn,.pos-filter-btn,
+.rt-season-btn,.rt-metric-btn,.season-tab,.draft-mini-pill,.team-picker-toggle{
+  border:none;background:var(--surface2);color:var(--muted);box-shadow:inset 0 0 0 1px var(--border);}
+.phase-tab{border-radius:999px;font-size:12px;padding:8px 15px;}
+.sub-tab,.qb-tab,.pcard-tab,.sr-tab,.sr-cat{border-radius:999px;font-size:11.5px;}
+.format-btn,.ltype-btn,.pos-filter-btn{font-size:11px;}
+.phase-tab:hover,.sub-tab:hover,.qb-tab:hover,.pcard-tab:hover,.sr-tab:hover,.sr-cat:hover,
+.format-btn:hover,.ltype-btn:hover,.pos-filter-btn:hover,.rt-season-btn:hover,.rt-metric-btn:hover{
+  color:var(--text);background:var(--surface3);box-shadow:inset 0 0 0 1px var(--border2);}
+.phase-tab.active,.sub-tab.active,.qb-tab.active,.pcard-tab.active,.sr-tab.active,.sr-cat.active,
+.format-btn.active,.ltype-btn.active,.pos-filter-btn.active,.rt-season-btn.active,.rt-metric-btn.active,.season-tab.active{
+  background:#fff;color:#0f1631;box-shadow:none;}
+.phase-tab.active .tc-ico{color:#0f1631;}
+.phase-tabs{gap:8px;}
+
+/* ── Buttons ───────────────────────────────────────────────────────────────── */
+.btn{border-radius:999px;font-size:11.5px;letter-spacing:0;}
+.btn-ghost{background:var(--surface2);border:none;box-shadow:inset 0 0 0 1px var(--border);color:var(--text);}
+.btn-ghost:hover{background:var(--surface3);box-shadow:inset 0 0 0 1px var(--border2);}
+.btn-accent{color:#0f1631;}
+.btn-accent:hover{background:var(--accent2);}
+.tc-info-btn{border:none;background:var(--surface3);}
+.vona-more,.tc-info-close,.vona-opt-close{border:none;}
+
+/* ── Controls ──────────────────────────────────────────────────────────────── */
+.sumer-situational,.la-season-sel,.la-tc-sel,.ld-sel,select,input[type=text],input[type=search],input[type=number],input[type=email],input[type=password],textarea{
+  border:none!important;background-color:var(--surface2)!important;border-radius:var(--r-md);box-shadow:inset 0 0 0 1px var(--border);}
+.sumer-situational:focus,.la-season-sel:focus,.la-tc-sel:focus,.ld-sel:focus,input:focus,textarea:focus,select:focus{
+  box-shadow:inset 0 0 0 1px var(--border2),0 0 0 2px color-mix(in srgb,var(--accent) 30%,transparent);outline:none;}
+.qb-room-toggle{border-style:solid;border-color:transparent;box-shadow:inset 0 0 0 1px var(--border);border-radius:999px;}
+
+/* ── Tables ────────────────────────────────────────────────────────────────── */
+table th{letter-spacing:.03em;}
+.rankings-table th,.rankings-table td{border-color:var(--border);}
+.rankings-table tbody tr:nth-child(even) td{background:rgba(255,255,255,.02);}
+.rankings-table tbody tr:hover td{background:var(--surface3);}
+.rank-toolbar{border-bottom:none;box-shadow:0 1px 0 var(--border);}
+.rank-toolbar-row + .rank-toolbar-row{border-top:none;box-shadow:inset 0 1px 0 var(--border);}
+
+/* ── Overlays: popups, menus, the player card ──────────────────────────────── */
+.tc-info-pop,.vona-opt-pop,.app-menu,.hdr-menu,.inj-pop,.note-info-modal,.ktc-modal{
+  border:none;border-radius:var(--r-xl);box-shadow:0 18px 50px rgba(0,0,0,.55),inset 0 0 0 1px var(--border);}
+.tc-info-head,.vona-opt-head{border-bottom:none;box-shadow:inset 0 -1px 0 var(--border);}
+.pcard{border:none;border-radius:var(--r-xl);box-shadow:0 24px 70px rgba(0,0,0,.6),inset 0 0 0 1px var(--border);}
+.pcard-hero,.pcard-hero-v2{border-bottom:none;}
+.app-menu .hdr-menu-item{border-radius:12px;font-size:12.5px;}
+.app-menu .hdr-menu-item.active{background:color-mix(in srgb,var(--accent) 14%,transparent);}
+
+/* ── Labels: still small caps, a touch larger and looser ───────────────────── */
+.tc-label{font-size:10.5px;letter-spacing:.06em;}
+
+/* ── Position colours stay; their chips lose the frame ─────────────────────── */
+.pos-badge{border-radius:6px;letter-spacing:.03em;}
+
+/* ── Scrollbars match the ground ───────────────────────────────────────────── */
+*{scrollbar-color:var(--border2) transparent;}
+
+/* ── The phone's bottom bar ────────────────────────────────────────────────── */
+@media (max-width:760px){
+  .tc-tabbar{background:color-mix(in srgb,var(--surface) 92%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border-top:none;box-shadow:0 -1px 0 var(--border),0 -8px 24px rgba(0,0,0,.3);}
+  .tc-tab{color:var(--muted);}
+  .tc-tab.active{color:var(--text);}
+  .tc-tab.active::before{top:4px;width:30px;height:3px;border-radius:999px;background:var(--accent);}
+  .tc-tab-lbl{font-size:10px;letter-spacing:0;font-weight:700;}
+  .tc-tab:active{background:none;}
+  .app-menu{border-radius:var(--r-xl);}
+  .team-picker-toggle{border-radius:12px;}
+  .sidebar{box-shadow:none;border-bottom:none;}
+  .sidebar-division-block{border:none;border-radius:12px;}
+  .team-item{margin:0;}
+  .team-item.active{box-shadow:inset 0 0 0 1.5px var(--accent);border-color:transparent;}
+}
+
+/* Touch text-entry sizing lives HERE, in the last stylesheet (it moved from 95-ui-system.css when this theme sheet took the last slot), not in 60-responsive.css:
+   several per-feature files (70-widgets, 12-pcard-dock, …) come after 60 and would win the
+   cascade at equal specificity, which is exactly how the compare and chat boxes kept their
+   13px and kept zooming the page.
+   iOS zooms the whole page when a focused control's computed font-size is under 16px — and
+   never zooms back out, leaving the layout cropped. Bump every text-entry control to 16px on
+   touch devices only; desktop keeps the compact sizes. */
+@media (pointer:coarse){
+  .scenario-name,.rank-search-input,.lp-input,.la-row input,.tc-input,
+  .scoring-field input,.sumer-situational,.la-season-sel,.la-tc-sel{font-size:16px;}
+  input[data-rank-min-bucket]{font-size:16px !important;}  /* inline 12px style needs the override */
+  /* The rest of the text-entry controls, found by walking every view on a phone: the compare
+     and chat boxes (.ai-cmp-in covers the chat input and the MCP url), the analyzer's league
+     inputs, the player-card dock's add box, and the draft week/position selects. */
+  .ai-cmp-in,#laUsername,#laEspnLeague,.pcard-add-in,.ld-sel,
+  input[type=text],input[type=search],input[type=email],input[type=password],input[type=number],textarea,select{font-size:16px;}
+}

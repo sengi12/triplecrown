@@ -1,11 +1,11 @@
 /* ── Advanced Stats (Warren Sharp) ── */
 .sr-note{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 13px;margin-bottom:12px;
-  background:rgba(0,212,170,.07);border:1px solid rgba(0,212,170,.22);border-radius:8px;
+  background:rgba(0,212,170,.07);border:1px solid rgba(0,212,170,.22);border-radius:12px;
   font-size:11.5px;color:var(--muted);}
 .sr-note b{color:var(--text);}
 .adv-power-row{display:flex;align-items:center;margin:-2px 0 10px;}
 .adv-power-chip{display:inline-flex;align-items:center;gap:10px;padding:6px 10px;border:1px solid var(--border);
-  background:var(--surface2);border-radius:10px;}
+  background:var(--surface2);border-radius:14px;}
 .adv-power-shield-ico{position:relative;display:inline-flex;align-items:center;justify-content:center;width:62px;height:62px;}
 .adv-power-shield-ico .tc-ico{width:60px;height:60px;display:block;}
 .adv-power-shield-ico b{position:absolute;left:50%;top:54%;transform:translate(-50%,-50%);
@@ -26,7 +26,7 @@
 }
 .adv-week-range-card{margin-top:-4px;margin-bottom:12px;}
 .sr-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;}
-.sr-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:13px 15px;}
+.sr-card{background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:13px 15px;}
 .sr-card-title{font-size:12.5px;font-weight:800;color:var(--accent);margin-bottom:10px;
   text-transform:uppercase;letter-spacing:.03em;}
 .sr-proj-badge{display:inline-block;font-size:9.5px;font-weight:800;padding:2px 6px;border-radius:5px;
@@ -56,7 +56,7 @@
 .sr-source{font-size:10px;color:var(--muted);margin-top:12px;opacity:.7;}
 .sr-league-header{align-items:center;}
 .sr-league-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 6px;}
-.sr-tab{padding:6px 13px;font-size:11px;font-weight:700;cursor:pointer;border-radius:7px;
+.sr-tab{padding:6px 13px;font-size:11px;font-weight:700;cursor:pointer;border-radius:10px;
   border:1px solid var(--border);background:var(--surface);color:var(--muted);transition:all .12s;}
 .sr-tab:hover{border-color:var(--accent);color:var(--text);}
 .sr-tab.active{background:var(--accent);color:#08110e;border-color:var(--accent);}
@@ -110,7 +110,7 @@
   background:rgba(240,180,80,.14);padding:1px 6px;border-radius:4px;margin-left:4px;vertical-align:middle;}
 /* Coordinator carryover block */
 .coord-carry-wrap{border:1px solid rgba(240,180,80,.3);background:rgba(240,180,80,.05);
-  border-radius:12px;padding:14px 16px;margin-bottom:16px;}
+  border-radius:16px;padding:14px 16px;margin-bottom:16px;}
 .coord-carry-head{font-size:13px;font-weight:800;color:#e0b060;margin-bottom:5px;}
 .coord-carry-note{font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5;}
 .coord-carry-note b{color:var(--text);}

@@ -9,7 +9,7 @@
 .team-item.active .team-rec{color:var(--accent);}
 
 /* The header record: big and bold beside the team name once the season is on */
-.team-rec-hero{display:inline-block;vertical-align:middle;margin-left:10px;padding:1px 9px;border-radius:8px;
+.team-rec-hero{display:inline-block;vertical-align:middle;margin-left:10px;padding:1px 9px;border-radius:12px;
   background:var(--surface2);border:1px solid var(--border);color:var(--text);
   font-family:var(--mono);font-size:19px;font-weight:900;letter-spacing:0;line-height:1.35;}
 .team-rec-hero:empty{display:none;}
@@ -24,7 +24,7 @@
 /* Drawn at a fixed size; on a phone the frame scrolls SIDEWAYS only — a vertical swipe on
    the chart scrolls the page, as anywhere else (a two-axis frame with a capped height fought
    the page and felt stuck). Desktop scales the chart to the card. */
-.pw-scroll{overflow-x:auto;overflow-y:visible;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;touch-action:pan-x pan-y;border-radius:8px;}
+.pw-scroll{overflow-x:auto;overflow-y:visible;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;touch-action:pan-x pan-y;border-radius:12px;}
 .pw-chart{display:block;width:var(--pw-w);height:var(--pw-h);}
 /* Desktop: natural size (a one-week chart stays small); only a chart wider than the card shrinks to fit. */
 @media (min-width:760px){ .pw-scroll{overflow:visible;} .pw-chart{width:var(--pw-w);max-width:100%;height:auto;} }
