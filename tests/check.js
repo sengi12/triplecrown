@@ -4992,20 +4992,23 @@ function gcGameHTML(game, rows, wk){
   const dots=(n)=> (sit && sit.to && n!=null) ? `<span class="gc-to" title="${n} timeout${n===1?'':'s'} left">${[0,1,2].map(i=>`<i class="${i<n?'on':''}"></i>`).join('')}</span>` : '';
   const ball=(team)=> (sit && sit.poss===team) ? `<i class="gc-ball" title="${team} ball">${typeof TC_ICON==='function'?TC_ICON('football'):'●'}</i>` : '';
   const spot = sit ? (sit.phase ? '' : `${sit.ddt||''}${sit.spot?` @ ${sit.spot}`:''}${sit.rz?' <span class="gcf-rz">RZ</span>':''}`) : '';
+  // While a game is ON the spot line is always in the DOM, empty or not. It used to come and
+  // go with the down and distance — between plays, at a score, at a change of possession —
+  // and the whole last-play / drive / win-probability block under the hero hopped each time.
   const mid = sit && sit.phase ? escHtml(sit.phase) : escHtml(st);
   // the club's nickname ("Falcons") when the seed names it, the code otherwise; the code
   // stays as the faded wordmark behind
   const nick=(t)=>{ const n=(typeof TEAM_NAMES!=='undefined' && TEAM_NAMES && TEAM_NAMES[t]) ? String(TEAM_NAMES[t]) : ''; const i=n.lastIndexOf(' '); return i>0 ? n.slice(i+1) : t; };
   const src = game.state==='pre' ? '' : `<div class="gc-src">ESPN</div>`;
   const won = game.state==='post' && game.as!=null && game.hs!=null && game.as!==game.hs ? (game.as>game.hs?'away':'home') : '';
-  const hero=`<div class="gc-hero" style="--ga:${escAttr(col(game.away))};--gh:${escAttr(col(game.home))}">
+  const hero=`<div class="gc-herowrap"><div class="gc-hero" style="--ga:${escAttr(col(game.away))};--gh:${escAttr(col(game.home))}">
       <span class="gc-hero-wm gc-hero-wm-a" aria-hidden="true">${game.away}</span><span class="gc-hero-wm gc-hero-wm-h" aria-hidden="true">${game.home}</span>
       <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${escHtml(nick(game.away))}</span><span class="gc-rec">${escHtml(game.arec)}</span>${dots(sit&&sit.to?sit.to.away:null)}</div>
-      <b class="gc-score">${game.state==='pre'?'':(game.as!=null?game.as:'–')}${ball(game.away)}</b>
-      <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}${won?' gc-won-'+won:''}">${mid}</div>${spot?`<div class="gc-spot">${spot}</div>`:''}${src}</div>
-      <b class="gc-score">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}${ball(game.home)}</b>
+      <b class="gc-score gc-score-a">${game.state==='pre'?'':(game.as!=null?game.as:'–')}${ball(game.away)}</b>
+      <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}${won?' gc-won-'+won:''}">${mid}</div>${(spot||game.state==='in')?`<div class="gc-spot">${spot}</div>`:''}${src}</div>
+      <b class="gc-score gc-score-h">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}${ball(game.home)}</b>
       <div class="gc-side gc-side-home"><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${escHtml(nick(game.home))}</span><span class="gc-rec">${escHtml(game.hrec)}</span>${dots(sit&&sit.to?sit.to.home:null)}</div>
-    </div>`;
+    </div></div>`;
   // The Vegas line under the banner: spread, over/under, each side's implied point total.
   const oddsHtml=(typeof gcOddsHTML==='function') ? gcOddsHTML(game) : '';
   // The fantasy pane: the league switcher, then the week's rows by position.
@@ -5840,7 +5843,19 @@ function gcFeedBuild(sum){
         title = p.type==='Sack' ? `${nm(prim,n.primary)} sacked, ${y} yds` : `Fumble! ${nm(prim,n.primary)} sacked and stripped`; break; }
       case 'Fumble Recovery (Opponent)': case 'Fumble Return Touchdown': {
         title=`Fumble! ${nm(prim,n.primary)} loses it${n.recoverer?`, ${nm(A(n.recoverer,''),n.recoverer)} recovers`:''}${/Touchdown/.test(p.type)?' — TD 🎉':''}`; break; }
-      case 'Punt': title=`${nm(prim,n.primary)} punts ${/punts (\d+)/.test(p.text)?RegExp.$1:''} yds`; break;
+      case 'Punt': case 'Blocked Punt': case 'Blocked Punt Touchdown': {
+        // A punt whose words do not carry a distance used to read "A. Cole punts  yds" — an
+        // empty number and a double space — because the template filled the gap with ''. The
+        // commonest case is the one the sentence never mentions a distance for: a block.
+        const blk=new RegExp('punt is BLOCKED(?: by '+GC_TOKEN+')?','i').exec(p.text);
+        const pyd=/punts? (\d+) yards?/i.exec(p.text);
+        if(blk || /Blocked Punt/.test(p.type)){
+          const by=blk && blk[1] ? A(`${blk[1]}.${blk[2]}`) : null;
+          title=`Punt BLOCKED${by?` by ${nm(by, `${blk[1]}.${blk[2]}`)}`:''}${/Touchdown/i.test(p.type)?' — TD 🎉':''}`;
+        } else {
+          title=`${nm(prim,n.primary)} punts${pyd?` ${pyd[1]} yds`:''}`;
+        }
+        break; }
       case 'Kickoff': title=`${nm(prim,n.primary)} kicks off`; break;
       case 'Penalty': { const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)(?:, (\d+) yards?)?(?:, (declined))?/i.exec(p.text); title = m ? `Flag: ${m[3]} on ${gcAbbr(m[1])}${m[4]?`, ${m[4]} yds`:''}${m[5]?', declined':''}` : 'Penalty'; break; }
       default: title = p.text.replace(/^\s*(\([^)]*\)\s*)+/,'').slice(0, 90);
@@ -6361,6 +6376,20 @@ function gcDriveChartHTML(game, sum){
   };
   post(-10); post(110);
   [[20,'20'],[50,'50'],[80,'20']].forEach(([yd,lab])=>{ parts.push(`<text x="${f1(xAt(yd,top))}" y="${top-7}" fill="#8b94a3" font-size="9" font-weight="800" text-anchor="middle">${lab}</text>`); });
+  // The line to gain, the yellow one every broadcast draws: where this offense has to reach
+  // for a fresh set of downs. Only while THIS drive is the one in progress and this club has
+  // the ball — the chart also replays finished drives, and a line to gain on one of those
+  // would be describing a down that is long since over. Goal-to-go draws none, the way a
+  // broadcast draws none: the line to gain is the goal line, which is already on the field.
+  const sitNow = (game.state==='in' && game.sit && !game.sit.phase && d.live && game.sit.poss===d.team) ? game.sit : null;
+  if(sitNow && Number(sitNow.down)>0 && Number(sitNow.distance)>0 && sitNow.spot){
+    const ballYd=_gcSpotYd(sitNow.spot, d.team);
+    const gainYd = ballYd==null ? null : ballYd+Number(sitNow.distance);
+    if(gainYd!=null && gainYd>0 && gainYd<100){
+      const gx0=xAt(gainYd,top), gx1=xAt(gainYd,bot);
+      parts.push(`<line class="gc-togo" x1="${f1(gx0)}" y1="${top}" x2="${f1(gx1)}" y2="${bot}" stroke="#ffd21e" stroke-width="2.4" stroke-linecap="round"><title>${escAttr(`${sitNow.ddt||''} — the line to gain`)}</title></line>`);
+    }
+  }
   // the drive: the snap spots in order (kickoffs are not offensive snaps and never join them),
   // then the last play's own move
   const spots=d.plays.filter(p=>p.yte!=null && p.type!=='Kickoff').map(p=>({p, yd:100-p.yte}));
@@ -6602,12 +6631,23 @@ function gcLastPlayHTML(game, sum){
   if(!game || game.state==='pre') return '';
   const live=game.state==='in';
   const sit=game.sit||null; const lp=(live && sit && sit.lastPlay && sit.lastPlay.text) ? sit.lastPlay : null;
+  const rows=sum ? gcFeedRows(sum, true) : null;
+  // The words and the picture come from ONE feed. The scoreboard polls faster than the summary
+  // and keeps its own copy of the last play, so while the two were out of step the headline
+  // described a different play from the one the field was drawing — which is how a rush could
+  // read "-4 yds" over a ball that plainly moved forward. The chart reads the summary, so when
+  // the summary already holds the play the scoreboard is naming, the headline reads it there
+  // too. The scoreboard's copy still stands in, as the faster feed, until the summary catches up.
+  const lpId=lp ? String(lp.id||'') : '';
+  const sumRow=(rows && lpId) ? rows.find(r=>String(r.id)===lpId) : null;
   let title='', spot='', team='';
-  if(lp && !GC_SKIP_TYPES.has(String(lp.type||''))){
+  if(sumRow && !GC_PAUSE_KINDS.has(sumRow.kind)){
+    title=sumRow.title; spot=sumRow.down>0 ? `${sumRow.ddt}${sumRow.spot?` @ ${sumRow.spot}`:''}` : ''; team=sumRow.team||'';
+  } else if(lp && !GC_SKIP_TYPES.has(String(lp.type||''))){
     const read=(typeof lfReadPlay==='function') ? lfReadPlay(lp) : null; title=(read && read.title) || String(lp.text||'').slice(0,90);
     spot = lp.down>0 ? `${lp.ddt||''}${lp.spot?` @ ${lp.spot}`:''}` : (/Extra Point|Field Goal/.test(String(lp.type||'')) ? 'End zone' : (lp.type==='Kickoff'?'Kickoff':'')); team=lp.team||'';
-  } else if(sum){
-    const rows=gcFeedRows(sum, true); const p=rows.find(r=>!GC_PAUSE_KINDS.has(r.kind));
+  } else if(rows){
+    const p=rows.find(r=>!GC_PAUSE_KINDS.has(r.kind));
     if(p){ title=p.title; spot=p.down>0 ? `${p.ddt}${p.spot?` @ ${p.spot}`:''}` : ''; team=p.team||''; }
   }
   if(!title && !(live && sit && sit.phase)) return '';

@@ -52,13 +52,13 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   chk(/Game Center/.test(h) && !/gcm-x/.test(h) && !/gcStep\(/.test(h) && !/rsb-grip/.test(h), 'the same Game Center head, with a close button instead of the sidebar\'s size buttons and grip');
   const ids=[...h.matchAll(/gcPick\('([^']+)'\)/g)].map(m=>m[1]);
   chk(ids.join(' ')==='DEN@KC TB@CIN NE@SEA ATL@MIN', 'the games in kickoff order: Thursday, Sunday late, Sunday night, Monday night');
-  chk(/gc-game gc-pill gc-on gc-in[\s\S]*title="NE @ SEA/.test(h) && /gc-hero[\s\S]*gc-team">NE<[\s\S]*gc-score">10<[\s\S]*3rd 8:12[\s\S]*gc-score">13<[\s\S]*gc-team">SEA</.test(h), 'the game being played is picked and its banner reads NE 10 · 3rd 8:12 · 13 SEA');
+  chk(/gc-game gc-pill gc-on gc-in[\s\S]*title="NE @ SEA/.test(h) && /gc-hero[\s\S]*gc-team">NE<[\s\S]*gc-score gc-score-[ah]">10<[\s\S]*3rd 8:12[\s\S]*gc-score gc-score-[ah]">13<[\s\S]*gc-team">SEA</.test(h), 'the game being played is picked and its banner reads NE 10 · 3rd 8:12 · 13 SEA');
   chk(/Quarterback[\s\S]*S\. Darnold/.test(h) && !/B\. Mayfield/.test(h), 'its stat lines, not another game\'s');
 
   console.log('=== a chip from the half sheet pulls it up to full ===');
   app.pick('TB@CIN'); await settle(); h=app.html();
   chk(app.state().open==='full' && /gcm-sheet gcm-full/.test(h), 'picking a game from half opens full');
-  chk(/gc-team">TB<[\s\S]*gc-score">27<[\s\S]*FINAL[\s\S]*gc-score">33<[\s\S]*gc-team">CIN</.test(h) && /B\. Mayfield/.test(h) && /J\. Burrow/.test(h), 'TB 27 · FINAL · 33 CIN with both quarterbacks');
+  chk(/gc-team">TB<[\s\S]*gc-score gc-score-[ah]">27<[\s\S]*FINAL[\s\S]*gc-score gc-score-[ah]">33<[\s\S]*gc-team">CIN</.test(h) && /B\. Mayfield/.test(h) && /J\. Burrow/.test(h), 'TB 27 · FINAL · 33 CIN with both quarterbacks');
   app.pick('DEN@KC'); await settle(); chk(app.state().open==='full' && app.gc().game==='DEN@KC', 'picking from full stays full');
   app.set('closed'); h=app.html();
   chk(/gcm-sheet gcm-closed/.test(h) && !app.bodyCls().includes('gcm-open') && /gcm-pill/.test(h), 'closed again: the pill is back');

@@ -458,6 +458,63 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const oobh=app.drive(app.GAME('post'), oobD);
   chk(!/gc-seg-ret/.test(oobh) && (oobh.match(/gc-seg-kick/g)||[]).length===1 && /A\. Cole punts/.test(oobh), 'out of bounds names no returner: one arc from snap to the dead spot, the punter still gets the label');
 
+  console.log('=== a punt whose words carry no distance: a blocked kick ===');
+  // The template filled the gap with '' when /punts (\d+)/ missed, so a blocked punt read
+  // "A. Cole punts  yds" — an empty number and a double space, in the feed and the last-play
+  // line both. A block is the commonest sentence that never states a distance.
+  const puntTitle=(type,text)=>{ const r=app.build(toD([P('bp',1,type,text,0,60)],'PUNT')); return r[0]?r[0].title:''; };
+  const blocked=puntTitle('Punt','A.Cole punt is BLOCKED by J.Smith, RECOVERED by DEN-M.Jones at JAX 14.');
+  chk(/BLOCKED/.test(blocked) && !/\s{2,}/.test(blocked) && !/punts\s+yds/.test(blocked),
+      `a blocked punt reads as blocked, with no blank yardage (${blocked})`);
+  chk(/Punt BLOCKED/.test(puntTitle('Blocked Punt','M.Araiza punt is BLOCKED, RECOVERED by TB-K.Britt at CIN 30.')),
+      'ESPN\'s own "Blocked Punt" type is read the same way');
+  chk(/TD/.test(puntTitle('Blocked Punt Touchdown','A.Cole punt is BLOCKED by J.Smith, RECOVERED by DEN-M.Jones for a TOUCHDOWN.')),
+      'a block returned for a score says so');
+  const ordinary=puntTitle('Punt','M.Araiza punts 41 yards to TB 28, Center-J.Winchester.');
+  chk(/punts 41 yds/.test(ordinary) && !/\s{2,}/.test(ordinary), `an ordinary punt still names its distance (${ordinary})`);
+
+  console.log('=== the line to gain: the yellow line every broadcast draws ===');
+  // The same real drive, presented as the one in progress — which is what a live game looks like.
+  const LIVESUM=JSON.parse(JSON.stringify(SUM));
+  const lprev=LIVESUM.drives.previous||[]; LIVESUM.drives.current=lprev[lprev.length-1];
+  const togo=(sit)=>{ const g=Object.assign({}, app.GAME('in')); g.sit=sit; return app.drive(g, LIVESUM); };
+  const atX=(svg)=>{ const m=/<line class="gc-togo" x1="([\d.]+)"/.exec(svg); return m?Number(m[1]):null; };
+  const live2nd=togo({down:2, distance:6, ddt:'2nd & 6', spot:'CIN 42', poss:'CIN', phase:''});
+  chk(/class="gc-togo"/.test(live2nd), 'a live down with the ball draws the line to gain');
+  chk(/stroke="#ffd21e"/.test(live2nd), 'and it is yellow');
+  // CIN 42 is 42 from CIN's own goal; six more is 48, still shy of midfield.
+  const x48=atX(live2nd), x50=atX(togo({down:1, distance:8, ddt:'1st & 8', spot:'CIN 42', poss:'CIN', phase:''}));
+  chk(x48!=null && x50!=null && x48<x50, 'the line sits where the down actually ends: 2nd & 6 is nearer than 1st & 8 from the same spot');
+  // TB 44 is the opponent's 44 — the far half of the field, past the 50.
+  const xFar=atX(togo({down:4, distance:1, ddt:'4th & 1', spot:'TB 44', poss:'CIN', phase:''}));
+  chk(xFar!=null && xFar>x50, 'a spot in the other club\'s half puts the line past midfield');
+  chk(!/gc-togo/.test(togo({down:1, distance:4, ddt:'1st & Goal', spot:'TB 4', poss:'CIN', phase:''})),
+      'goal to go draws none — the line to gain IS the goal line, which is already on the field');
+  chk(!/gc-togo/.test(togo({down:2, distance:6, ddt:'2nd & 6', spot:'CIN 42', poss:'CIN', phase:'Halftime'})),
+      'no line at halftime');
+  chk(!/gc-togo/.test(togo({down:2, distance:6, ddt:'2nd & 6', spot:'CIN 42', poss:'TB', phase:''})),
+      'no line when the other club has the ball');
+  const gPost=Object.assign({}, app.GAME('post')); gPost.sit={down:2, distance:6, ddt:'2nd & 6', spot:'CIN 42', poss:'CIN', phase:''};
+  chk(!/gc-togo/.test(app.drive(gPost, LIVESUM)), 'and none once the game is over — a finished drive has no down left to gain');
+
+  console.log('=== the headline and the field read ONE feed ===');
+  // The scoreboard polls faster than the summary and keeps its own copy of the last play. While
+  // the two were out of step the headline described a different play from the one being drawn —
+  // a rush the words called "-4 yds" over a ball that moved forward.
+  const sumRows=app.feed(LIVESUM, true); const realRow=sumRows.find(r=>r.id && r.title && r.down>0);
+  const gSync=Object.assign({}, app.GAME('in'));
+  gSync.sit={ down:1, distance:10, ddt:'1st & 10', spot:'CIN 30', poss:'CIN', phase:'',
+    lastPlayId:String(realRow.id),
+    lastPlay:{ id:String(realRow.id), text:'Z.Nobody up the middle for -4 yards.', type:'Rush', yds:-4, down:1, ddt:'1st & 10', spot:'CIN 30', team:'CIN', athletes:[] } };
+  const synced=app.lastPlay(gSync, LIVESUM);
+  chk(synced.includes(realRow.title), `the headline takes the summary's reading of that play (${realRow.title})`);
+  chk(!/-4 yards|Z\. ?Nobody/.test(synced), 'not the scoreboard\'s stale copy of it');
+  // and the scoreboard still stands in while the summary has not caught up
+  const gAhead=Object.assign({}, app.GAME('in'));
+  gAhead.sit={ down:1, distance:10, ddt:'1st & 10', spot:'CIN 30', poss:'CIN', phase:'',
+    lastPlayId:'999999', lastPlay:{ id:'999999', text:'J.Burrow pass short right to J.Chase for 9 yards.', type:'Pass Reception', yds:9, down:1, ddt:'1st & 10', spot:'CIN 30', team:'CIN', athletes:[] } };
+  chk(/Chase|9 yd/.test(app.lastPlay(gAhead, LIVESUM)), 'a play the summary does not hold yet still comes from the faster feed');
+
   console.log('=== namesakes: ESPN widens the shared initial, and it must be read ===');
   chk(app.names('Bi.Robinson right end to ATL 25 for 6 yards (D.Wonnum).').primary==='Bi.Robinson' && app.names('Br.Robinson up the middle for 3 yards.').primary==='Br.Robinson', 'a two-letter lead (Bijan vs Brian Robinson) is read, not dropped to a blank rush');
   chk(app.names('(Shotgun) J.Burrow pass short right to Ja.Williams for 8 yards.').receiver==='Ja.Williams', 'the widened initial is read on the receiver too');

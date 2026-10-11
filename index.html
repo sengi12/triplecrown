@@ -367,7 +367,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 /* Icon + label per tab (the in-season tabs' grammar). On a phone the inactive tabs collapse
    to their icons so NFL · College · Passing Chart · Offensive Line · News fit one line. */
 .pcard-tab .tc-ico{width:14px;height:14px;flex-shrink:0;}
-.pcard-tab.active .tc-ico{color:#fff;}
+/* The icon takes the chip's OWN ink. It used to be pinned to #fff, which was right only
+   while an active chip was a solid accent — once the theme made the active chip WHITE the
+   icon went white on white, and the NFL and College tabs (which are the wordmark alone, no
+   label) rendered as blank pills. currentColor is what the mask icons paint with, so
+   inheriting keeps them legible in every theme. */
+.pcard-tab.active .tc-ico{color:inherit;}
 .pcard-tab .tab-lbl{white-space:nowrap;}
 @media (max-width:560px){
   .pcard-tab:not(.active) .tab-lbl{display:none;}
@@ -1421,7 +1426,16 @@ tr.rank-starred:hover{background:rgba(210,153,34,.12);}
 .gc-gline.gc-won{color:var(--text);}
 .gc-gline b{margin-left:auto;font-family:var(--mono);font-size:12px;}
 .gc-glogo{width:16px;height:16px;object-fit:contain;}
+/* The hero answers its OWN width, not the viewport's: it sits in a sidebar the reader can
+   drag from 200px to 620px and in a phone's full-width view, so a media query would dress
+   the sidebar as a desktop and get it wrong at every width but one. */
+.gc-herowrap{container-type:inline-size;}
 .gc-hero{display:grid;grid-template-columns:1fr auto auto auto 1fr;align-items:center;gap:8px;padding:12px 12px 10px;background:var(--surface2);border-bottom:1px solid var(--border);position:relative;overflow:hidden;}
+/* A club nickname is one long unbreakable word. The side is a grid item with min-width:0, so
+   the column shrinks under pressure — and the name used to simply spill out of it, straight
+   under the score ("Buccaneers" ran 80px into the 0). Clipping it is the floor: whatever else
+   happens, two pieces of type never sit on top of each other. */
+.gc-team{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 /* the codes as faded wordmarks behind each side */
 .gc-hero-wm{position:absolute;top:50%;transform:translateY(-52%);font-size:46px;font-weight:900;letter-spacing:-.04em;color:#fff;opacity:.07;pointer-events:none;line-height:1;}
 .gc-hero-wm-a{left:-6px;} .gc-hero-wm-h{right:-6px;}
@@ -2010,6 +2024,53 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gc-mine,.gc-pname.gc-mine,.gcf-name.gc-mine,.lf-who .gc-mine,.gcb-n .gc-mine,.ld-nm.ld-mine{color:var(--accent);}
 /* inside the detail "mine" reads in Sleeper's yellow (the sidebar keeps the app's accent) */
 .gc-detail .gc-mine,.gc-detail .gc-pname.gc-mine,.gc-detail .gcf-name.gc-mine,.gc-detail .gcb-name.gc-mine,.gc-detail .gcb-sub .gcf-owner,.gc-detail .gcf-owner{color:#f3d35b;}
+
+
+/* ── A narrow hero: the scoreline on top, the situation on its own line ───────
+   Under about 430px the five columns (name · score · clock+down+network · score · name)
+   want roughly twice the room there is, and the names and the mid block collide. Below that
+   the mid drops to a row of its own and the scoreline keeps the full width, so each club
+   gets about half of it and the nicknames fit. One line, never wrapping, so the hero is the
+   same height on every play — the block beneath it stopped hopping when this landed. */
+@container (max-width:430px){
+  /* The slack belongs in the MIDDLE, not at the edges: each score has to stay beside its own
+     club. With the names on 1fr the two scores were pushed together into the centre and read
+     as one number ("0 7"), with no telling whose was whose. */
+  .gc-hero{grid-template-columns:minmax(0,auto) auto minmax(10px,1fr) auto minmax(0,auto);
+    grid-template-areas:"a sa . sh h" "mid mid mid mid mid";column-gap:8px;row-gap:7px;}
+  .gc-side-away{grid-area:a;} .gc-score-a{grid-area:sa;}
+  .gc-score-h{grid-area:sh;} .gc-side-home{grid-area:h;}
+  /* centre, not baseline: between downs the spot is an empty element with no baseline of its
+     own, and aligning to it moved the whole line by 2px every time the down went away. */
+  .gc-mid{grid-area:mid;max-width:none;min-width:0;flex-direction:row;flex-wrap:nowrap;
+    align-items:center;justify-content:center;gap:0 9px;}
+  .gc-mid .gc-status{flex:none;}
+  .gc-mid .gc-spot{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;}
+  .gc-mid .gc-src{flex:none;}
+  .gc-score,.gc-detail .gc-score,.games-view .gc-score,.gcm-sheet .gc-score{margin:0;}
+}
+/* Narrower still (the sidebar dragged right in): the type steps down rather than clipping
+   a name that would otherwise lose most of its letters. */
+@container (max-width:300px){
+  .gc-detail .gc-team,.games-view .gc-team,.gcm-sheet .gc-team,.gc-team{font-size:15px;}
+  .gc-detail .gc-score,.games-view .gc-score,.gcm-sheet .gc-score,.gc-score{font-size:34px;}
+  .gc-detail .gc-logo,.gc-logo{width:24px;height:24px;}
+  .gc-mid{gap:0 6px;}
+}
+/* The spot line is in the DOM for the whole of a live game, empty between downs, so the
+   hero holds one height while the down and distance come and go. */
+.gc-hero .gc-spot:empty{display:block;}
+.gc-detail .gc-spot,.games-view .gc-spot{min-height:1.2em;}
+
+
+/* ── The block under the hero holds its height between plays ──────────────────
+   The last play and the drive sentence are both one sentence that wraps to two lines about
+   half the time ("J. Williams 4 yd rush" against "D. Prescott 21 yd pass to G. Pickens"), so
+   every update moved the field, the win probability and the whole feed under them by a line.
+   Reserving two lines costs nothing when the text is short and stops the hop; a rare third
+   line still grows rather than being clipped, because the words matter more than the pixel. */
+.gc-last-text,.gc-detail .gc-last-text{min-height:2.6em;}
+.gc-drive-sum,.gc-detail .gc-drive-sum{min-height:2.8em;}
 /* ── Coaching Playbook Modal + Insights ───────────────────────────────────── */
 
 /* Click affordances for coaching-scheme entry points */
@@ -11167,20 +11228,23 @@ function gcGameHTML(game, rows, wk){
   const dots=(n)=> (sit && sit.to && n!=null) ? `<span class="gc-to" title="${n} timeout${n===1?'':'s'} left">${[0,1,2].map(i=>`<i class="${i<n?'on':''}"></i>`).join('')}</span>` : '';
   const ball=(team)=> (sit && sit.poss===team) ? `<i class="gc-ball" title="${team} ball">${typeof TC_ICON==='function'?TC_ICON('football'):'●'}</i>` : '';
   const spot = sit ? (sit.phase ? '' : `${sit.ddt||''}${sit.spot?` @ ${sit.spot}`:''}${sit.rz?' <span class="gcf-rz">RZ</span>':''}`) : '';
+  // While a game is ON the spot line is always in the DOM, empty or not. It used to come and
+  // go with the down and distance — between plays, at a score, at a change of possession —
+  // and the whole last-play / drive / win-probability block under the hero hopped each time.
   const mid = sit && sit.phase ? escHtml(sit.phase) : escHtml(st);
   // the club's nickname ("Falcons") when the seed names it, the code otherwise; the code
   // stays as the faded wordmark behind
   const nick=(t)=>{ const n=(typeof TEAM_NAMES!=='undefined' && TEAM_NAMES && TEAM_NAMES[t]) ? String(TEAM_NAMES[t]) : ''; const i=n.lastIndexOf(' '); return i>0 ? n.slice(i+1) : t; };
   const src = game.state==='pre' ? '' : `<div class="gc-src">ESPN</div>`;
   const won = game.state==='post' && game.as!=null && game.hs!=null && game.as!==game.hs ? (game.as>game.hs?'away':'home') : '';
-  const hero=`<div class="gc-hero" style="--ga:${escAttr(col(game.away))};--gh:${escAttr(col(game.home))}">
+  const hero=`<div class="gc-herowrap"><div class="gc-hero" style="--ga:${escAttr(col(game.away))};--gh:${escAttr(col(game.home))}">
       <span class="gc-hero-wm gc-hero-wm-a" aria-hidden="true">${game.away}</span><span class="gc-hero-wm gc-hero-wm-h" aria-hidden="true">${game.home}</span>
       <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${escHtml(nick(game.away))}</span><span class="gc-rec">${escHtml(game.arec)}</span>${dots(sit&&sit.to?sit.to.away:null)}</div>
-      <b class="gc-score">${game.state==='pre'?'':(game.as!=null?game.as:'–')}${ball(game.away)}</b>
-      <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}${won?' gc-won-'+won:''}">${mid}</div>${spot?`<div class="gc-spot">${spot}</div>`:''}${src}</div>
-      <b class="gc-score">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}${ball(game.home)}</b>
+      <b class="gc-score gc-score-a">${game.state==='pre'?'':(game.as!=null?game.as:'–')}${ball(game.away)}</b>
+      <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}${won?' gc-won-'+won:''}">${mid}</div>${(spot||game.state==='in')?`<div class="gc-spot">${spot}</div>`:''}${src}</div>
+      <b class="gc-score gc-score-h">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}${ball(game.home)}</b>
       <div class="gc-side gc-side-home"><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${escHtml(nick(game.home))}</span><span class="gc-rec">${escHtml(game.hrec)}</span>${dots(sit&&sit.to?sit.to.home:null)}</div>
-    </div>`;
+    </div></div>`;
   // The Vegas line under the banner: spread, over/under, each side's implied point total.
   const oddsHtml=(typeof gcOddsHTML==='function') ? gcOddsHTML(game) : '';
   // The fantasy pane: the league switcher, then the week's rows by position.
@@ -12015,7 +12079,19 @@ function gcFeedBuild(sum){
         title = p.type==='Sack' ? `${nm(prim,n.primary)} sacked, ${y} yds` : `Fumble! ${nm(prim,n.primary)} sacked and stripped`; break; }
       case 'Fumble Recovery (Opponent)': case 'Fumble Return Touchdown': {
         title=`Fumble! ${nm(prim,n.primary)} loses it${n.recoverer?`, ${nm(A(n.recoverer,''),n.recoverer)} recovers`:''}${/Touchdown/.test(p.type)?' — TD 🎉':''}`; break; }
-      case 'Punt': title=`${nm(prim,n.primary)} punts ${/punts (\d+)/.test(p.text)?RegExp.$1:''} yds`; break;
+      case 'Punt': case 'Blocked Punt': case 'Blocked Punt Touchdown': {
+        // A punt whose words do not carry a distance used to read "A. Cole punts  yds" — an
+        // empty number and a double space — because the template filled the gap with ''. The
+        // commonest case is the one the sentence never mentions a distance for: a block.
+        const blk=new RegExp('punt is BLOCKED(?: by '+GC_TOKEN+')?','i').exec(p.text);
+        const pyd=/punts? (\d+) yards?/i.exec(p.text);
+        if(blk || /Blocked Punt/.test(p.type)){
+          const by=blk && blk[1] ? A(`${blk[1]}.${blk[2]}`) : null;
+          title=`Punt BLOCKED${by?` by ${nm(by, `${blk[1]}.${blk[2]}`)}`:''}${/Touchdown/i.test(p.type)?' — TD 🎉':''}`;
+        } else {
+          title=`${nm(prim,n.primary)} punts${pyd?` ${pyd[1]} yds`:''}`;
+        }
+        break; }
       case 'Kickoff': title=`${nm(prim,n.primary)} kicks off`; break;
       case 'Penalty': { const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)(?:, (\d+) yards?)?(?:, (declined))?/i.exec(p.text); title = m ? `Flag: ${m[3]} on ${gcAbbr(m[1])}${m[4]?`, ${m[4]} yds`:''}${m[5]?', declined':''}` : 'Penalty'; break; }
       default: title = p.text.replace(/^\s*(\([^)]*\)\s*)+/,'').slice(0, 90);
@@ -12536,6 +12612,20 @@ function gcDriveChartHTML(game, sum){
   };
   post(-10); post(110);
   [[20,'20'],[50,'50'],[80,'20']].forEach(([yd,lab])=>{ parts.push(`<text x="${f1(xAt(yd,top))}" y="${top-7}" fill="#8b94a3" font-size="9" font-weight="800" text-anchor="middle">${lab}</text>`); });
+  // The line to gain, the yellow one every broadcast draws: where this offense has to reach
+  // for a fresh set of downs. Only while THIS drive is the one in progress and this club has
+  // the ball — the chart also replays finished drives, and a line to gain on one of those
+  // would be describing a down that is long since over. Goal-to-go draws none, the way a
+  // broadcast draws none: the line to gain is the goal line, which is already on the field.
+  const sitNow = (game.state==='in' && game.sit && !game.sit.phase && d.live && game.sit.poss===d.team) ? game.sit : null;
+  if(sitNow && Number(sitNow.down)>0 && Number(sitNow.distance)>0 && sitNow.spot){
+    const ballYd=_gcSpotYd(sitNow.spot, d.team);
+    const gainYd = ballYd==null ? null : ballYd+Number(sitNow.distance);
+    if(gainYd!=null && gainYd>0 && gainYd<100){
+      const gx0=xAt(gainYd,top), gx1=xAt(gainYd,bot);
+      parts.push(`<line class="gc-togo" x1="${f1(gx0)}" y1="${top}" x2="${f1(gx1)}" y2="${bot}" stroke="#ffd21e" stroke-width="2.4" stroke-linecap="round"><title>${escAttr(`${sitNow.ddt||''} — the line to gain`)}</title></line>`);
+    }
+  }
   // the drive: the snap spots in order (kickoffs are not offensive snaps and never join them),
   // then the last play's own move
   const spots=d.plays.filter(p=>p.yte!=null && p.type!=='Kickoff').map(p=>({p, yd:100-p.yte}));
@@ -12777,12 +12867,23 @@ function gcLastPlayHTML(game, sum){
   if(!game || game.state==='pre') return '';
   const live=game.state==='in';
   const sit=game.sit||null; const lp=(live && sit && sit.lastPlay && sit.lastPlay.text) ? sit.lastPlay : null;
+  const rows=sum ? gcFeedRows(sum, true) : null;
+  // The words and the picture come from ONE feed. The scoreboard polls faster than the summary
+  // and keeps its own copy of the last play, so while the two were out of step the headline
+  // described a different play from the one the field was drawing — which is how a rush could
+  // read "-4 yds" over a ball that plainly moved forward. The chart reads the summary, so when
+  // the summary already holds the play the scoreboard is naming, the headline reads it there
+  // too. The scoreboard's copy still stands in, as the faster feed, until the summary catches up.
+  const lpId=lp ? String(lp.id||'') : '';
+  const sumRow=(rows && lpId) ? rows.find(r=>String(r.id)===lpId) : null;
   let title='', spot='', team='';
-  if(lp && !GC_SKIP_TYPES.has(String(lp.type||''))){
+  if(sumRow && !GC_PAUSE_KINDS.has(sumRow.kind)){
+    title=sumRow.title; spot=sumRow.down>0 ? `${sumRow.ddt}${sumRow.spot?` @ ${sumRow.spot}`:''}` : ''; team=sumRow.team||'';
+  } else if(lp && !GC_SKIP_TYPES.has(String(lp.type||''))){
     const read=(typeof lfReadPlay==='function') ? lfReadPlay(lp) : null; title=(read && read.title) || String(lp.text||'').slice(0,90);
     spot = lp.down>0 ? `${lp.ddt||''}${lp.spot?` @ ${lp.spot}`:''}` : (/Extra Point|Field Goal/.test(String(lp.type||'')) ? 'End zone' : (lp.type==='Kickoff'?'Kickoff':'')); team=lp.team||'';
-  } else if(sum){
-    const rows=gcFeedRows(sum, true); const p=rows.find(r=>!GC_PAUSE_KINDS.has(r.kind));
+  } else if(rows){
+    const p=rows.find(r=>!GC_PAUSE_KINDS.has(r.kind));
     if(p){ title=p.title; spot=p.down>0 ? `${p.ddt}${p.spot?` @ ${p.spot}`:''}` : ''; team=p.team||''; }
   }
   if(!title && !(live && sit && sit.phase)) return '';
