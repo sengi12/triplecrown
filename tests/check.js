@@ -4992,20 +4992,23 @@ function gcGameHTML(game, rows, wk){
   const dots=(n)=> (sit && sit.to && n!=null) ? `<span class="gc-to" title="${n} timeout${n===1?'':'s'} left">${[0,1,2].map(i=>`<i class="${i<n?'on':''}"></i>`).join('')}</span>` : '';
   const ball=(team)=> (sit && sit.poss===team) ? `<i class="gc-ball" title="${team} ball">${typeof TC_ICON==='function'?TC_ICON('football'):'●'}</i>` : '';
   const spot = sit ? (sit.phase ? '' : `${sit.ddt||''}${sit.spot?` @ ${sit.spot}`:''}${sit.rz?' <span class="gcf-rz">RZ</span>':''}`) : '';
+  // While a game is ON the spot line is always in the DOM, empty or not. It used to come and
+  // go with the down and distance — between plays, at a score, at a change of possession —
+  // and the whole last-play / drive / win-probability block under the hero hopped each time.
   const mid = sit && sit.phase ? escHtml(sit.phase) : escHtml(st);
   // the club's nickname ("Falcons") when the seed names it, the code otherwise; the code
   // stays as the faded wordmark behind
   const nick=(t)=>{ const n=(typeof TEAM_NAMES!=='undefined' && TEAM_NAMES && TEAM_NAMES[t]) ? String(TEAM_NAMES[t]) : ''; const i=n.lastIndexOf(' '); return i>0 ? n.slice(i+1) : t; };
   const src = game.state==='pre' ? '' : `<div class="gc-src">ESPN</div>`;
   const won = game.state==='post' && game.as!=null && game.hs!=null && game.as!==game.hs ? (game.as>game.hs?'away':'home') : '';
-  const hero=`<div class="gc-hero" style="--ga:${escAttr(col(game.away))};--gh:${escAttr(col(game.home))}">
+  const hero=`<div class="gc-herowrap"><div class="gc-hero" style="--ga:${escAttr(col(game.away))};--gh:${escAttr(col(game.home))}">
       <span class="gc-hero-wm gc-hero-wm-a" aria-hidden="true">${game.away}</span><span class="gc-hero-wm gc-hero-wm-h" aria-hidden="true">${game.home}</span>
       <div class="gc-side gc-side-away"><img src="${NFL_LOGO(game.away)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${escHtml(nick(game.away))}</span><span class="gc-rec">${escHtml(game.arec)}</span>${dots(sit&&sit.to?sit.to.away:null)}</div>
-      <b class="gc-score">${game.state==='pre'?'':(game.as!=null?game.as:'–')}${ball(game.away)}</b>
-      <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}${won?' gc-won-'+won:''}">${mid}</div>${spot?`<div class="gc-spot">${spot}</div>`:''}${src}</div>
-      <b class="gc-score">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}${ball(game.home)}</b>
+      <b class="gc-score gc-score-a">${game.state==='pre'?'':(game.as!=null?game.as:'–')}${ball(game.away)}</b>
+      <div class="gc-mid"><div class="gc-status ${game.state==='in'?'gc-live':''}${won?' gc-won-'+won:''}">${mid}</div>${(spot||game.state==='in')?`<div class="gc-spot">${spot}</div>`:''}${src}</div>
+      <b class="gc-score gc-score-h">${game.state==='pre'?'':(game.hs!=null?game.hs:'–')}${ball(game.home)}</b>
       <div class="gc-side gc-side-home"><img src="${NFL_LOGO(game.home)}" class="gc-logo" onerror="this.style.display='none'"><span class="gc-team">${escHtml(nick(game.home))}</span><span class="gc-rec">${escHtml(game.hrec)}</span>${dots(sit&&sit.to?sit.to.home:null)}</div>
-    </div>`;
+    </div></div>`;
   // The Vegas line under the banner: spread, over/under, each side's implied point total.
   const oddsHtml=(typeof gcOddsHTML==='function') ? gcOddsHTML(game) : '';
   // The fantasy pane: the league switcher, then the week's rows by position.
@@ -5840,7 +5843,19 @@ function gcFeedBuild(sum){
         title = p.type==='Sack' ? `${nm(prim,n.primary)} sacked, ${y} yds` : `Fumble! ${nm(prim,n.primary)} sacked and stripped`; break; }
       case 'Fumble Recovery (Opponent)': case 'Fumble Return Touchdown': {
         title=`Fumble! ${nm(prim,n.primary)} loses it${n.recoverer?`, ${nm(A(n.recoverer,''),n.recoverer)} recovers`:''}${/Touchdown/.test(p.type)?' — TD 🎉':''}`; break; }
-      case 'Punt': title=`${nm(prim,n.primary)} punts ${/punts (\d+)/.test(p.text)?RegExp.$1:''} yds`; break;
+      case 'Punt': case 'Blocked Punt': case 'Blocked Punt Touchdown': {
+        // A punt whose words do not carry a distance used to read "A. Cole punts  yds" — an
+        // empty number and a double space — because the template filled the gap with ''. The
+        // commonest case is the one the sentence never mentions a distance for: a block.
+        const blk=new RegExp('punt is BLOCKED(?: by '+GC_TOKEN+')?','i').exec(p.text);
+        const pyd=/punts? (\d+) yards?/i.exec(p.text);
+        if(blk || /Blocked Punt/.test(p.type)){
+          const by=blk && blk[1] ? A(`${blk[1]}.${blk[2]}`) : null;
+          title=`Punt BLOCKED${by?` by ${nm(by, `${blk[1]}.${blk[2]}`)}`:''}${/Touchdown/i.test(p.type)?' — TD 🎉':''}`;
+        } else {
+          title=`${nm(prim,n.primary)} punts${pyd?` ${pyd[1]} yds`:''}`;
+        }
+        break; }
       case 'Kickoff': title=`${nm(prim,n.primary)} kicks off`; break;
       case 'Penalty': { const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)(?:, (\d+) yards?)?(?:, (declined))?/i.exec(p.text); title = m ? `Flag: ${m[3]} on ${gcAbbr(m[1])}${m[4]?`, ${m[4]} yds`:''}${m[5]?', declined':''}` : 'Penalty'; break; }
       default: title = p.text.replace(/^\s*(\([^)]*\)\s*)+/,'').slice(0, 90);

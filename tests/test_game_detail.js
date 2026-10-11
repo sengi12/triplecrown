@@ -458,6 +458,21 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const oobh=app.drive(app.GAME('post'), oobD);
   chk(!/gc-seg-ret/.test(oobh) && (oobh.match(/gc-seg-kick/g)||[]).length===1 && /A\. Cole punts/.test(oobh), 'out of bounds names no returner: one arc from snap to the dead spot, the punter still gets the label');
 
+  console.log('=== a punt whose words carry no distance: a blocked kick ===');
+  // The template filled the gap with '' when /punts (\d+)/ missed, so a blocked punt read
+  // "A. Cole punts  yds" — an empty number and a double space, in the feed and the last-play
+  // line both. A block is the commonest sentence that never states a distance.
+  const puntTitle=(type,text)=>{ const r=app.build(toD([P('bp',1,type,text,0,60)],'PUNT')); return r[0]?r[0].title:''; };
+  const blocked=puntTitle('Punt','A.Cole punt is BLOCKED by J.Smith, RECOVERED by DEN-M.Jones at JAX 14.');
+  chk(/BLOCKED/.test(blocked) && !/\s{2,}/.test(blocked) && !/punts\s+yds/.test(blocked),
+      `a blocked punt reads as blocked, with no blank yardage (${blocked})`);
+  chk(/Punt BLOCKED/.test(puntTitle('Blocked Punt','M.Araiza punt is BLOCKED, RECOVERED by TB-K.Britt at CIN 30.')),
+      'ESPN\'s own "Blocked Punt" type is read the same way');
+  chk(/TD/.test(puntTitle('Blocked Punt Touchdown','A.Cole punt is BLOCKED by J.Smith, RECOVERED by DEN-M.Jones for a TOUCHDOWN.')),
+      'a block returned for a score says so');
+  const ordinary=puntTitle('Punt','M.Araiza punts 41 yards to TB 28, Center-J.Winchester.');
+  chk(/punts 41 yds/.test(ordinary) && !/\s{2,}/.test(ordinary), `an ordinary punt still names its distance (${ordinary})`);
+
   console.log('=== namesakes: ESPN widens the shared initial, and it must be read ===');
   chk(app.names('Bi.Robinson right end to ATL 25 for 6 yards (D.Wonnum).').primary==='Bi.Robinson' && app.names('Br.Robinson up the middle for 3 yards.').primary==='Br.Robinson', 'a two-letter lead (Bijan vs Brian Robinson) is read, not dropped to a blank rush');
   chk(app.names('(Shotgun) J.Burrow pass short right to Ja.Williams for 8 yards.').receiver==='Ja.Williams', 'the widened initial is read on the receiver too');

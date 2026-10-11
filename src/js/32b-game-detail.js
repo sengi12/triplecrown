@@ -439,7 +439,19 @@ function gcFeedBuild(sum){
         title = p.type==='Sack' ? `${nm(prim,n.primary)} sacked, ${y} yds` : `Fumble! ${nm(prim,n.primary)} sacked and stripped`; break; }
       case 'Fumble Recovery (Opponent)': case 'Fumble Return Touchdown': {
         title=`Fumble! ${nm(prim,n.primary)} loses it${n.recoverer?`, ${nm(A(n.recoverer,''),n.recoverer)} recovers`:''}${/Touchdown/.test(p.type)?' — TD 🎉':''}`; break; }
-      case 'Punt': title=`${nm(prim,n.primary)} punts ${/punts (\d+)/.test(p.text)?RegExp.$1:''} yds`; break;
+      case 'Punt': case 'Blocked Punt': case 'Blocked Punt Touchdown': {
+        // A punt whose words do not carry a distance used to read "A. Cole punts  yds" — an
+        // empty number and a double space — because the template filled the gap with ''. The
+        // commonest case is the one the sentence never mentions a distance for: a block.
+        const blk=new RegExp('punt is BLOCKED(?: by '+GC_TOKEN+')?','i').exec(p.text);
+        const pyd=/punts? (\d+) yards?/i.exec(p.text);
+        if(blk || /Blocked Punt/.test(p.type)){
+          const by=blk && blk[1] ? A(`${blk[1]}.${blk[2]}`) : null;
+          title=`Punt BLOCKED${by?` by ${nm(by, `${blk[1]}.${blk[2]}`)}`:''}${/Touchdown/i.test(p.type)?' — TD 🎉':''}`;
+        } else {
+          title=`${nm(prim,n.primary)} punts${pyd?` ${pyd[1]} yds`:''}`;
+        }
+        break; }
       case 'Kickoff': title=`${nm(prim,n.primary)} kicks off`; break;
       case 'Penalty': { const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)(?:, (\d+) yards?)?(?:, (declined))?/i.exec(p.text); title = m ? `Flag: ${m[3]} on ${gcAbbr(m[1])}${m[4]?`, ${m[4]} yds`:''}${m[5]?', declined':''}` : 'Penalty'; break; }
       default: title = p.text.replace(/^\s*(\([^)]*\)\s*)+/,'').slice(0, 90);

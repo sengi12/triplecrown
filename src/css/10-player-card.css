@@ -129,7 +129,12 @@
 /* Icon + label per tab (the in-season tabs' grammar). On a phone the inactive tabs collapse
    to their icons so NFL · College · Passing Chart · Offensive Line · News fit one line. */
 .pcard-tab .tc-ico{width:14px;height:14px;flex-shrink:0;}
-.pcard-tab.active .tc-ico{color:#fff;}
+/* The icon takes the chip's OWN ink. It used to be pinned to #fff, which was right only
+   while an active chip was a solid accent — once the theme made the active chip WHITE the
+   icon went white on white, and the NFL and College tabs (which are the wordmark alone, no
+   label) rendered as blank pills. currentColor is what the mask icons paint with, so
+   inheriting keeps them legible in every theme. */
+.pcard-tab.active .tc-ico{color:inherit;}
 .pcard-tab .tab-lbl{white-space:nowrap;}
 @media (max-width:560px){
   .pcard-tab:not(.active) .tab-lbl{display:none;}

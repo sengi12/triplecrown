@@ -6,6 +6,12 @@ this file is the merge history, newest first, one line per PR. Add a line when a
 
 Open work lives in [TODO.md](TODO.md).
 
+## 2026-10-11
+
+- fix(game-center): the hero answers its own width — a club nickname no longer sits on top of the score on a phone or in a narrowed sidebar, each score stays beside its own club, and the hero holds one height all game instead of hopping every time the down and distance come and go (#PR)
+- fix(cards): the player card's active tab keeps its icon — the navy theme made the active chip white while the icon was still pinned to white, so the NFL and College tabs (which are the wordmark alone) rendered as blank pills (#PR)
+- fix(game-center): a punt whose words carry no distance reads as what it is — a blocked kick said "A. Cole punts  yds", an empty number and a double space (#PR)
+
 ## 2026-09-19
 
 - fix(seed): the lazy sidecars are regressed against their previous copies like the main seed already was — a coaching season that loses its play-action, motion or no-huddle charting is rolled back to the copy that had it, and the bucket-to-per-play migration that got 44% smaller without losing anything still passes (#163)
