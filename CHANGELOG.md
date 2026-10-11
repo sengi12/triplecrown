@@ -8,7 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-10-11
 
-- fix(seed): a KeepTradeCut scrape that parses two players out of four hundred is a page that moved, not a fetch that worked — it used to print "ok (2 players)" and cache them; it now fails loudly, caches nothing, and names the field names the rows carry so the repair is a rename (#PR)
+- fix(seed): a KeepTradeCut scrape that parses two players out of four hundred is a page that moved, not a fetch that worked — it used to print "ok (2 players)" and cache them; it now fails loudly, caches nothing, and names the field names the rows carry so the repair is a rename (#170)
 - feat(game-center): the line to gain is drawn on the field, the yellow one every broadcast has — only while that drive is the one in progress and that club has the ball, and never on goal-to-go, where the line to gain is the goal line (#169)
 - fix(game-center): the last play's headline and the field read ONE feed — the scoreboard polls faster than the summary and kept its own copy, so a rush could read "-4 yds" over a ball that plainly moved forward (#169)
 - fix(game-center): the hero answers its own width — a club nickname no longer sits on top of the score on a phone or in a narrowed sidebar, each score stays beside its own club, and the hero holds one height all game instead of hopping every time the down and distance come and go (#169)
