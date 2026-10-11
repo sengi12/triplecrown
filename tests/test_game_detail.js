@@ -315,7 +315,7 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
     {id:'p1', sequenceNumber:1, type:{text:'Rush'}, text:'C.Brown left end for 12 yards.', statYardage:12, period:{number:1}, clock:{displayValue:'10:00'}, start:{down:1, yardsToEndzone:60, shortDownDistanceText:'1st & 10', possessionText:'CIN 40'}},
     {id:'p2', sequenceNumber:2, type:{text:'Passing Touchdown'}, text:'J.Burrow pass deep left to M.Gesicki for 48 yards, TOUCHDOWN.', statYardage:48, scoringPlay:true, period:{number:1}, clock:{displayValue:'9:20'}, start:{down:1, yardsToEndzone:48, shortDownDistanceText:'1st & 10', possessionText:'TB 48'}}]}]}};
   const mc=app.drive(app.GAME('post'), mini);
-  chk((mc.match(/class="gc-seg gc-seg-prog" d="M[^"]*L[^"]*" fill="none" stroke="#39c15a"/g)||[]).length===1 && (mc.match(/gc-seg-last" d="M[^"]*Q[^"]*" fill="none" stroke="#39c15a"/g)||[]).length===1 && /M\. Gesicki 48 yd TD catch/.test(mc) && /<animateMotion/.test(mc) && /<animate attributeName="stroke-dashoffset"/.test(mc), 'one continuous drive: the run a straight line to the next snap, the pass an arc to the end zone — and the newest play animates in (the segment draws, the ball travels it)');
+  chk((mc.match(/class="gc-seg gc-seg-prog" d="M[^"]*L[^"]*" fill="none" stroke="#39c15a"/g)||[]).length===1 && (mc.match(/gc-seg-last gc-seg-air" d="M[^"]*C[^"]*" fill="none" stroke="#39c15a"/g)||[]).length===1 && /M\. Gesicki 48 yd TD catch/.test(mc) && /<animateMotion/.test(mc) && /<animate attributeName="stroke-dashoffset"/.test(mc), 'one continuous drive: the run a straight line to the next snap, the pass an arc to the end zone — and the newest play animates in (the segment draws, the ball travels it)');
   chk(!/<animateMotion/.test(app.drive(app.GAME('post'), mini)), 'the same play again does not animate twice');
   const fgD=(type)=>({drives:{previous:[{id:'k'+type, team:{abbreviation:'CIN'}, description:'2 plays, 9 yards, 0:50', result:type==='Field Goal Good'?'FG':'MISSED FG', plays:[
     {id:'k1', sequenceNumber:1, type:{text:'Rush'}, text:'C.Brown up the middle for 9 yards.', statYardage:9, period:{number:2}, clock:{displayValue:'1:00'}, start:{down:1, yardsToEndzone:34, shortDownDistanceText:'1st & 10', possessionText:'TB 34'}},
@@ -331,7 +331,7 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const ih=app.drive(app.GAME('post'), intD);
   const ir=app.turnover({text:intD.drives.previous[0].plays[1].text, type:'Interception Return'}, 'CIN');
   chk(ir && ir.kind==='int' && ir.who==='J.Trotter' && ir.at===70 && ir.end===55 && ir.td===false && ir.ret===15, 'an interception read from the words: who, where (the offense\'s 70), carried back 15 to the 55');
-  chk(/gc-seg-pre" d="M[^"]*Q/.test(ih) && /gc-seg-last gc-seg-ret" d="M[^"]*" fill="none" stroke="#e5484d"/.test(ih) && /J\. Trotter INT · 15 yd return/.test(ih), 'the pass arcs to where it was picked, the return runs the other way in red, the label says who and how far');
+  chk(/gc-seg-pre" d="M[^"]*C/.test(ih) && /gc-seg-last gc-seg-ret" d="M[^"]*" fill="none" stroke="#e5484d"/.test(ih) && /J\. Trotter INT · 15 yd return/.test(ih), 'the pass arcs to where it was picked, the return runs the other way in red, the label says who and how far');
   chk(/gc-seg-pre[^>]*stroke-dashoffset="[^"]*"><animate attributeName="stroke-dashoffset"/.test(ih) && /gc-seg-last gc-seg-ret[^>]*><animate attributeName="stroke-dashoffset" from="[^"]*" to="0" begin="0.8s"/.test(ih), 'the throw animates in first, then the return picks up where it was caught (a two-stage interception)');
   const six=toD([P('s1',1,'Rush','C.Brown left end for 5 yards.',5,70), P('s2',2,'Interception Return Touchdown','J.Burrow pass short right INTERCEPTED by J.Trotter at TB 40. J.Trotter for 60 yards, TOUCHDOWN.',60,65,{isTurnover:true, scoringPlay:true})], 'INT TD');
   const sr=app.turnover({text:six.drives.previous[0].plays[1].text}, 'CIN');
@@ -425,17 +425,28 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   console.log('=== a catch with yards after it: the throw arcs to the catch, the run goes on in green ===');
   const yacD=toD([P('yc1',1,'Rush','C.Brown left end for 5 yards.',5,60), P('yc2',2,'Pass Reception','J.Burrow pass short left to T.Higgins to TB 43 for 12 yards (A.Winfield).',12,55,{yardsAfterCatch:9})], '');
   const yh=app.drive(app.GAME('post'), yacD);
-  chk(/gc-seg-pre" d="M[^"]*Q/.test(yh) && /gc-seg-last gc-seg-yac" d="M[^"]*L[^"]*" fill="none" stroke="#39c15a"/.test(yh), 'the throw is an arc to the catch, the run after it a green line on the ground');
+  chk(/gc-seg-pre gc-seg-air" d="M[^"]*C/.test(yh) && /gc-seg-last gc-seg-yac" d="M[^"]*L[^"]*" fill="none" stroke="#39c15a"/.test(yh), 'the throw is an arc to the catch, the run after it a green line on the ground');
   chk(/gc-seg-last gc-seg-yac[^>]*><animate attributeName="stroke-dashoffset" from="[^"]*" to="0" begin="0.8s"/.test(yh), 'the run starts once the throw has landed (a two-stage play)');
-  const geom=(h)=>{ const pre=/gc-seg-pre" d="M([\d.]+),[\d.]+ Q[^ ]+ ([\d.]+),/.exec(h), fin=/gc-seg-yac" d="M([\d.]+),[\d.]+ L([\d.]+),/.exec(h); return {x0:+pre[1], xc:+pre[2], xf0:+fin[1], xe:+fin[2]}; };
+  const geom=(h)=>{ const pre=/gc-seg-pre gc-seg-air" d="M([\d.]+),[\d.]+ C[^ ]+ [^ ]+ ([\d.]+),/.exec(h), fin=/gc-seg-yac" d="M([\d.]+),[\d.]+ L([\d.]+),/.exec(h); return {x0:+pre[1], xc:+pre[2], xf0:+fin[1], xe:+fin[2]}; };
+  // the hook's height: the apex of a cubic whose two handles sit at the same height is three
+  // quarters of the way up to them, which is what has to stay legible on a short throw
+  const hookH=(h)=>{ const m=/gc-seg-pre gc-seg-air" d="M[\d.]+,([\d.]+) C[\d.]+,([\d.]+)/.exec(h); return m ? (Number(m[1])-Number(m[2]))*0.75 : null; };
   const gm=geom(yh);
   chk(Math.abs(gm.xc-gm.xf0)<0.05 && Math.abs((gm.xc-gm.x0)/(gm.xe-gm.x0)-3/12)<0.02, `the catch sits 3 of the 12 yards out, and the run takes the other 9 (${gm.x0}→${gm.xc}→${gm.xe})`);
-  chk(/>T\.? ?Higgins 12 yd catch · 9 YAC<\/text>/.test(yh), `the label leads with the receiver and says how much came after the catch (${(/paint-order="stroke">([^<]*)</.exec(yh)||[])[1]})`);
+  chk(/>T\.? ?Higgins 12 yds · 3 air \+ 9 YAC<\/text>/.test(yh), `the label leads with the receiver and splits the gain the way the drawing does (${(/paint-order="stroke">([^<]*)</.exec(yh)||[])[1]})`);
+  // The complaint this answers: three air yards is seven pixels across, and an arc whose
+  // height followed its width was a smudge against the run beside it.
+  const shortD=toD([P('yc5',1,'Pass Reception','J.Burrow pass short left to T.Higgins to TB 40 for 18 yards (A.Winfield).',18,55,{yardsAfterCatch:15})], '');
+  const shortH=hookH(app.drive(app.GAME('post'), shortD));
+  chk(shortH!=null && shortH>=12, `a three-yard throw still draws a hook you can see — ${shortH&&shortH.toFixed(1)}px of it`);
+  chk(hookH(yh)!=null && Math.abs(hookH(yh)-shortH)<6, 'and a longer throw is not wildly taller: the hook grows with the throw but never collapses');
+  const atLineD=toD([P('yc6',1,'Pass Reception','J.Burrow pass short left to T.Higgins to TB 48 for 7 yards (A.Winfield).',7,55,{yardsAfterCatch:7})], '');
+  chk(/gc-seg-pre gc-seg-air/.test(app.drive(app.GAME('post'), atLineD)), 'a catch made at the line of scrimmage still has its hook — the ball left the quarterback\'s hand');
   const screenD=toD([P('yc3',1,'Pass Reception','J.Burrow pass short left to C.Brown to CIN 48 for 8 yards (A.Winfield).',8,60,{yardsAfterCatch:11})], '');
   const scrH=app.drive(app.GAME("post"), screenD); const sg=geom(scrH);
   chk((sg.xc-sg.x0)*(sg.xe-sg.x0)<0, 'a screen caught behind the line: the arc goes back, the run comes forward past the snap (the home club drives right to left)');
   const noYac=app.drive(app.GAME('post'), toD([P('yc4',1,'Pass Reception','J.Burrow pass deep left to T.Higgins to TB 20 for 40 yards.',40,60)], ''));
-  chk(!/gc-seg-yac/.test(noYac) && /gc-seg-last" d="M[^"]*Q/.test(noYac), 'no yards after the catch charted: one arc, as before');
+  chk(!/gc-seg-yac/.test(noYac) && /gc-seg-last gc-seg-air" d="M[^"]*C/.test(noYac), 'no yards after the catch charted: one arc, as before');
 
   console.log('=== a punt: the kick to where it was fielded, then the return the other way ===');
   const punR=app.punt('M.Araiza punts 41 yards to TB 28, Center-J.Winchester. A.Bachman to TB 42 for 14 yards (E.Downs; C.McDonald).', 'CIN');
@@ -479,15 +490,33 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const lprev=LIVESUM.drives.previous||[]; LIVESUM.drives.current=lprev[lprev.length-1];
   const togo=(sit)=>{ const g=Object.assign({}, app.GAME('in')); g.sit=sit; return app.drive(g, LIVESUM); };
   const atX=(svg)=>{ const m=/<line class="gc-togo" x1="([\d.]+)"/.exec(svg); return m?Number(m[1]):null; };
+  // The 50 is the only yard line drawn in its own colour, so it is the reference the line to
+  // gain gets measured against: which SIDE of midfield the line lands on is the thing a
+  // mirrored drawing gets wrong, and it is wrong in opposite directions for the two clubs.
+  const midX=(svg)=>{ const m=/<line x1="([\d.]+)" y1="[\d.]+" x2="[\d.]+" y2="[\d.]+" stroke="#5a6270"/.exec(svg); return m?Number(m[1]):null; };
   const live2nd=togo({down:2, distance:6, ddt:'2nd & 6', spot:'CIN 42', poss:'CIN', phase:''});
   chk(/class="gc-togo"/.test(live2nd), 'a live down with the ball draws the line to gain');
   chk(/stroke="#ffd21e"/.test(live2nd), 'and it is yellow');
-  // CIN 42 is 42 from CIN's own goal; six more is 48, still shy of midfield.
-  const x48=atX(live2nd), x50=atX(togo({down:1, distance:8, ddt:'1st & 8', spot:'CIN 42', poss:'CIN', phase:''}));
-  chk(x48!=null && x50!=null && x48<x50, 'the line sits where the down actually ends: 2nd & 6 is nearer than 1st & 8 from the same spot');
+  // The field never flips: the away club's end zone is always on the left, the home club's
+  // always on the right. CIN is the home club here, so a line to gain still in CIN's own half
+  // belongs to the RIGHT of midfield, and one in Tampa's half to the left.
+  const mid=midX(live2nd);
+  const x48=atX(live2nd);
+  chk(mid!=null && x48!=null && x48>mid, `the home club's own 48 is drawn in the home half, right of the 50 (line ${x48}, 50 at ${mid})`);
+  const x50=atX(togo({down:1, distance:8, ddt:'1st & 8', spot:'CIN 42', poss:'CIN', phase:''}));
+  chk(x50!=null && Math.abs(x50-mid)<0.6, `a down that ends exactly on the 50 draws the line on the 50 (${x50} vs ${mid})`);
   // TB 44 is the opponent's 44 — the far half of the field, past the 50.
   const xFar=atX(togo({down:4, distance:1, ddt:'4th & 1', spot:'TB 44', poss:'CIN', phase:''}));
-  chk(xFar!=null && xFar>x50, 'a spot in the other club\'s half puts the line past midfield');
+  chk(xFar!=null && xFar<mid, `and a spot in the other club's half puts the line past the 50, in their half (${xFar})`);
+  // The same offence-relative yard, for the AWAY club, has to land on the OTHER side of the 50
+  // — that is the whole of the mirror bug, and one club alone cannot catch it.
+  const AWAYSUM=JSON.parse(JSON.stringify(SUM));
+  const tbDrive=(AWAYSUM.drives.previous||[]).filter(dr=>dr.team && dr.team.abbreviation==='TB').pop();
+  AWAYSUM.drives.current=tbDrive;
+  const gTB=Object.assign({}, app.GAME('in'));
+  gTB.sit={down:2, distance:6, ddt:'2nd & 6', spot:'TB 42', poss:'TB', phase:''};
+  const awaySvg=app.drive(gTB, AWAYSUM), xAway=atX(awaySvg), midAway=midX(awaySvg);
+  chk(xAway!=null && midAway!=null && xAway<midAway, `the away club's own 48 is drawn in the away half, left of the 50 (line ${xAway}, 50 at ${midAway})`);
   chk(!/gc-togo/.test(togo({down:1, distance:4, ddt:'1st & Goal', spot:'TB 4', poss:'CIN', phase:''})),
       'goal to go draws none — the line to gain IS the goal line, which is already on the field');
   chk(!/gc-togo/.test(togo({down:2, distance:6, ddt:'2nd & 6', spot:'CIN 42', poss:'CIN', phase:'Halftime'})),
