@@ -8,6 +8,8 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-10-11
 
+- feat(game-center): the line to gain is drawn on the field, the yellow one every broadcast has — only while that drive is the one in progress and that club has the ball, and never on goal-to-go, where the line to gain is the goal line (#PR)
+- fix(game-center): the last play's headline and the field read ONE feed — the scoreboard polls faster than the summary and kept its own copy, so a rush could read "-4 yds" over a ball that plainly moved forward (#PR)
 - fix(game-center): the hero answers its own width — a club nickname no longer sits on top of the score on a phone or in a narrowed sidebar, each score stays beside its own club, and the hero holds one height all game instead of hopping every time the down and distance come and go (#PR)
 - fix(cards): the player card's active tab keeps its icon — the navy theme made the active chip white while the icon was still pinned to white, so the NFL and College tabs (which are the wordmark alone) rendered as blank pills (#PR)
 - fix(game-center): a punt whose words carry no distance reads as what it is — a blocked kick said "A. Cole punts  yds", an empty number and a double space (#PR)

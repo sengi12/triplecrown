@@ -6376,6 +6376,20 @@ function gcDriveChartHTML(game, sum){
   };
   post(-10); post(110);
   [[20,'20'],[50,'50'],[80,'20']].forEach(([yd,lab])=>{ parts.push(`<text x="${f1(xAt(yd,top))}" y="${top-7}" fill="#8b94a3" font-size="9" font-weight="800" text-anchor="middle">${lab}</text>`); });
+  // The line to gain, the yellow one every broadcast draws: where this offense has to reach
+  // for a fresh set of downs. Only while THIS drive is the one in progress and this club has
+  // the ball — the chart also replays finished drives, and a line to gain on one of those
+  // would be describing a down that is long since over. Goal-to-go draws none, the way a
+  // broadcast draws none: the line to gain is the goal line, which is already on the field.
+  const sitNow = (game.state==='in' && game.sit && !game.sit.phase && d.live && game.sit.poss===d.team) ? game.sit : null;
+  if(sitNow && Number(sitNow.down)>0 && Number(sitNow.distance)>0 && sitNow.spot){
+    const ballYd=_gcSpotYd(sitNow.spot, d.team);
+    const gainYd = ballYd==null ? null : ballYd+Number(sitNow.distance);
+    if(gainYd!=null && gainYd>0 && gainYd<100){
+      const gx0=xAt(gainYd,top), gx1=xAt(gainYd,bot);
+      parts.push(`<line class="gc-togo" x1="${f1(gx0)}" y1="${top}" x2="${f1(gx1)}" y2="${bot}" stroke="#ffd21e" stroke-width="2.4" stroke-linecap="round"><title>${escAttr(`${sitNow.ddt||''} — the line to gain`)}</title></line>`);
+    }
+  }
   // the drive: the snap spots in order (kickoffs are not offensive snaps and never join them),
   // then the last play's own move
   const spots=d.plays.filter(p=>p.yte!=null && p.type!=='Kickoff').map(p=>({p, yd:100-p.yte}));
@@ -6617,12 +6631,23 @@ function gcLastPlayHTML(game, sum){
   if(!game || game.state==='pre') return '';
   const live=game.state==='in';
   const sit=game.sit||null; const lp=(live && sit && sit.lastPlay && sit.lastPlay.text) ? sit.lastPlay : null;
+  const rows=sum ? gcFeedRows(sum, true) : null;
+  // The words and the picture come from ONE feed. The scoreboard polls faster than the summary
+  // and keeps its own copy of the last play, so while the two were out of step the headline
+  // described a different play from the one the field was drawing — which is how a rush could
+  // read "-4 yds" over a ball that plainly moved forward. The chart reads the summary, so when
+  // the summary already holds the play the scoreboard is naming, the headline reads it there
+  // too. The scoreboard's copy still stands in, as the faster feed, until the summary catches up.
+  const lpId=lp ? String(lp.id||'') : '';
+  const sumRow=(rows && lpId) ? rows.find(r=>String(r.id)===lpId) : null;
   let title='', spot='', team='';
-  if(lp && !GC_SKIP_TYPES.has(String(lp.type||''))){
+  if(sumRow && !GC_PAUSE_KINDS.has(sumRow.kind)){
+    title=sumRow.title; spot=sumRow.down>0 ? `${sumRow.ddt}${sumRow.spot?` @ ${sumRow.spot}`:''}` : ''; team=sumRow.team||'';
+  } else if(lp && !GC_SKIP_TYPES.has(String(lp.type||''))){
     const read=(typeof lfReadPlay==='function') ? lfReadPlay(lp) : null; title=(read && read.title) || String(lp.text||'').slice(0,90);
     spot = lp.down>0 ? `${lp.ddt||''}${lp.spot?` @ ${lp.spot}`:''}` : (/Extra Point|Field Goal/.test(String(lp.type||'')) ? 'End zone' : (lp.type==='Kickoff'?'Kickoff':'')); team=lp.team||'';
-  } else if(sum){
-    const rows=gcFeedRows(sum, true); const p=rows.find(r=>!GC_PAUSE_KINDS.has(r.kind));
+  } else if(rows){
+    const p=rows.find(r=>!GC_PAUSE_KINDS.has(r.kind));
     if(p){ title=p.title; spot=p.down>0 ? `${p.ddt}${p.spot?` @ ${p.spot}`:''}` : ''; team=p.team||''; }
   }
   if(!title && !(live && sit && sit.phase)) return '';
