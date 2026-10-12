@@ -15,7 +15,7 @@ function _paceSumStints(rec){
   const sum={passing_yards:0,passing_tds:0,passing_attempts:0,passing_completions:0,
     interceptions_thrown:0,rushing_yards:0,rushing_tds:0,rushing_attempts:0,
     receiving_yards:0,receiving_tds:0,receptions:0,receiving_targets:0,fumbles_lost:0,
-    games_played:0,pos:null};
+    two_point_conversions:0,games_played:0,pos:null};
   list.forEach(r=>{
     const s=(r&&r.stats)||{};
     sum.passing_yards+=s.passing_yards||0; sum.passing_tds+=s.passing_touchdowns||0;
@@ -26,6 +26,7 @@ function _paceSumStints(rec){
     sum.receiving_yards+=s.receiving_yards||0; sum.receiving_tds+=s.receiving_touchdowns||0;
     sum.receptions+=s.receptions||0; sum.receiving_targets+=s.receiving_targets||0;
     sum.fumbles_lost+=s.fumbles_lost||0;
+    sum.two_point_conversions+=(s.passing_2pt||0)+(s.rushing_2pt||0)+(s.receiving_2pt||0);
     sum.games_played+=(r.games_played!=null?r.games_played:(s.games_played||0));
     if(!sum.pos) sum.pos=r.pos||null;
   });

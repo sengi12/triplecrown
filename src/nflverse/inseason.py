@@ -100,7 +100,10 @@ PLAYER_WEEK_COLS = ["tgt", "rec", "rec_yd", "rec_td", "air_yd",
                     # as an integer percent. The app's snap tracker reads Sleeper's own snap
                     # fields first and falls back to these where Sleeper left a player-week
                     # blank; a player with snaps but no touches gets a row of zeros here.
-                    "snaps", "snap_pct"]
+                    "snaps", "snap_pct",
+                    # two-point conversions, split the way Sleeper splits them (the passer,
+                    # the rusher, the receiver each get one); scored, never a target/carry
+                    "pass_2pt", "rush_2pt", "rec_2pt"]
 # Defense-vs-position weekly columns — enough to score fantasy points allowed
 # under any league's settings client-side.
 DVP_COLS = ["tgt", "rec", "rec_yd", "rec_td",
@@ -170,8 +173,8 @@ def _weekly_frames(season):
             "pass_attempt", "complete_pass", "sack",
             "passing_yards", "receiving_yards", "rushing_yards", "air_yards",
             "pass_touchdown", "rush_touchdown", "interception", "epa",
-            "vegas_wp",
-            "passer_player_id", "receiver_player_id", "rusher_player_id"]
+            "vegas_wp", "two_point_attempt", "two_point_conv_result",
+            "passer_player_id", "receiver_player_id", "rusher_player_id", "td_player_id"]
     pbp = _nfl._load_pbp(season, cols)
     pbp = pbp[(pbp["season_type"] == "REG") & pbp["posteam"].notna()].copy()
     if pbp.empty:
@@ -184,13 +187,28 @@ def _weekly_frames(season):
     for c in ("passing_yards", "receiving_yards", "rushing_yards", "air_yards", "epa"):
         pbp[c] = pd.to_numeric(pbp[c], errors="coerce").fillna(0)
     for c in ("pass_attempt", "complete_pass", "sack", "pass_touchdown",
-              "rush_touchdown", "interception"):
+              "rush_touchdown", "interception", "two_point_attempt"):
         pbp[c] = pd.to_numeric(pbp[c], errors="coerce").fillna(0).astype(int)
     pbp["vegas_wp"] = pd.to_numeric(pbp["vegas_wp"], errors="coerce")
     pbp["_comp"] = pbp["vegas_wp"].between(0.05, 0.95, inclusive="both")
     pbp["_close"] = pbp["vegas_wp"].between(0.20, 0.80, inclusive="both")
     pbp["_garbage"] = pbp["vegas_wp"].notna() & ~pbp["_comp"]
     pbp["_over"] = pbp["vegas_wp"].notna() & ((pbp["vegas_wp"] <= 0.02) | (pbp["vegas_wp"] >= 0.98))
+    return pbp
+
+
+def _scoring_frame(pbp):
+    """The box-score columns the weekly builders score from, filled in where a frame (an
+    older cache, a test fixture) lacks them: `two_point_attempt` / `two_point_conv_result`
+    and `rec_td`, the receiving TD credited to the man who actually scored (see
+    nflverse._receiver_td — a lateral TD is not the targeted receiver's)."""
+    pbp = pbp.copy()
+    if "two_point_attempt" not in pbp.columns:
+        pbp["two_point_attempt"] = 0
+    pbp["two_point_attempt"] = pd.to_numeric(pbp["two_point_attempt"], errors="coerce").fillna(0).astype(int)
+    if "two_point_conv_result" not in pbp.columns:
+        pbp["two_point_conv_result"] = None
+    pbp["rec_td"] = _nfl._receiver_td(pbp)
     return pbp
 
 
@@ -212,9 +230,12 @@ def build_player_weekly(season, pbp):
         return p["w"].setdefault(str(int(wk)), [0] * len(PLAYER_WEEK_COLS))
 
     ci = {c: i for i, c in enumerate(PLAYER_WEEK_COLS)}
+    pbp = _scoring_frame(pbp)
 
-    # A target = a pass attempt (sacks excluded) with a charted receiver.
-    tgt = pbp[(pbp["pass_attempt"] == 1) & (pbp["sack"] == 0) & pbp["receiver_player_id"].notna()]
+    # A target = a pass attempt (sacks excluded) with a charted receiver. A two-point try is
+    # neither a target nor a carry in anyone's box score; it is counted below on its own.
+    tgt = pbp[(pbp["pass_attempt"] == 1) & (pbp["sack"] == 0) & pbp["receiver_player_id"].notna()
+              & (pbp["two_point_attempt"] == 0)]
     team_tgts = tgt.groupby(["posteam", "week"]).size()
     team_state_tgts = tgt.groupby(["posteam", "week"])[["_comp", "_garbage"]].sum()
     for (gid, team, wk), grp in tgt.groupby(["receiver_player_id", "posteam", "week"]):
@@ -222,7 +243,7 @@ def build_player_weekly(season, pbp):
         row[ci["tgt"]] += len(grp)
         row[ci["rec"]] += int(grp["complete_pass"].sum())
         row[ci["rec_yd"]] = _r1(row[ci["rec_yd"]] + grp["receiving_yards"].sum())
-        row[ci["rec_td"]] += int(grp["pass_touchdown"].sum())
+        row[ci["rec_td"]] += int(grp["rec_td"].sum())
         row[ci["air_yd"]] = _r1(row[ci["air_yd"]] + grp["air_yards"].sum())
         row[ci["epa_touch"]] = _r1(row[ci["epa_touch"]] + grp["epa"].sum())
         row[ci["team_tgt"]] = int(team_tgts.get((team, wk), 0))
@@ -234,7 +255,7 @@ def build_player_weekly(season, pbp):
             row[ci["team_comp_tgt"]] = int(team_state_tgts.loc[(team, wk), "_comp"])
             row[ci["team_garbage_tgt"]] = int(team_state_tgts.loc[(team, wk), "_garbage"])
 
-    rush = pbp[(pbp["play_type"] == "run") & pbp["rusher_player_id"].notna()]
+    rush = pbp[(pbp["play_type"] == "run") & pbp["rusher_player_id"].notna() & (pbp["two_point_attempt"] == 0)]
     team_state_carries = rush.groupby(["posteam", "week"])[["_comp", "_garbage"]].sum()
     for (gid, team, wk), grp in rush.groupby(["rusher_player_id", "posteam", "week"]):
         row = line(node(gid, team), wk)
@@ -250,13 +271,21 @@ def build_player_weekly(season, pbp):
             row[ci["team_comp_carry"]] = int(team_state_carries.loc[(team, wk), "_comp"])
             row[ci["team_garbage_carry"]] = int(team_state_carries.loc[(team, wk), "_garbage"])
 
-    qb = pbp[(pbp["pass_attempt"] == 1) & pbp["passer_player_id"].notna()]
+    qb = pbp[(pbp["pass_attempt"] == 1) & pbp["passer_player_id"].notna() & (pbp["two_point_attempt"] == 0)]
     for (gid, team, wk), grp in qb.groupby(["passer_player_id", "posteam", "week"]):
         row = line(node(gid, team), wk)
         row[ci["pass_att"]] += int((grp["sack"] == 0).sum())
         row[ci["pass_yd"]] = _r1(row[ci["pass_yd"]] + grp["passing_yards"].sum())
         row[ci["pass_td"]] += int(grp["pass_touchdown"].sum())
         row[ci["pass_int"]] += int(grp["interception"].sum())
+
+    # Two-point conversions that worked: the passer, the receiver and the rusher each get
+    # one, the way Sleeper (and every league's scoring) credits them.
+    conv = pbp[(pbp["two_point_attempt"] == 1) & (pbp["two_point_conv_result"] == "success")]
+    for col, idc in (("passer_player_id", "pass_2pt"), ("receiver_player_id", "rec_2pt"),
+                     ("rusher_player_id", "rush_2pt")):
+        for (gid, team, wk), grp in conv[conv[col].notna()].groupby([col, "posteam", "week"]):
+            line(node(gid, team), wk)[ci[idc]] += len(grp)
 
     try:
         merge_snaps(players, snap_counts_by_gsis(season), pos_map, name_map)
@@ -342,7 +371,9 @@ def build_def_vs_pos(season, pbp):
         return (teams.setdefault(dteam, {}).setdefault(pos, {})
                 .setdefault(str(int(wk)), [0] * len(DVP_COLS)))
 
-    tgt = pbp[(pbp["pass_attempt"] == 1) & (pbp["sack"] == 0) & pbp["receiver_player_id"].notna()]
+    pbp = _scoring_frame(pbp)
+    tgt = pbp[(pbp["pass_attempt"] == 1) & (pbp["sack"] == 0) & pbp["receiver_player_id"].notna()
+              & (pbp["two_point_attempt"] == 0)]
     for (dteam, wk, gid), grp in tgt.groupby(["defteam", "week", "receiver_player_id"]):
         pos = _fold_pos(pos_map.get(gid))
         if not pos:
@@ -351,9 +382,9 @@ def build_def_vs_pos(season, pbp):
         row[ci["tgt"]] += len(grp)
         row[ci["rec"]] += int(grp["complete_pass"].sum())
         row[ci["rec_yd"]] = _r1(row[ci["rec_yd"]] + grp["receiving_yards"].sum())
-        row[ci["rec_td"]] += int(grp["pass_touchdown"].sum())
+        row[ci["rec_td"]] += int(grp["rec_td"].sum())
 
-    rush = pbp[(pbp["play_type"] == "run") & pbp["rusher_player_id"].notna()]
+    rush = pbp[(pbp["play_type"] == "run") & pbp["rusher_player_id"].notna() & (pbp["two_point_attempt"] == 0)]
     for (dteam, wk, gid), grp in rush.groupby(["defteam", "week", "rusher_player_id"]):
         pos = _fold_pos(pos_map.get(gid))
         if not pos:
@@ -363,7 +394,7 @@ def build_def_vs_pos(season, pbp):
         row[ci["rush_yd"]] = _r1(row[ci["rush_yd"]] + grp["rushing_yards"].sum())
         row[ci["rush_td"]] += int(grp["rush_touchdown"].sum())
 
-    qb = pbp[(pbp["pass_attempt"] == 1) & pbp["passer_player_id"].notna()]
+    qb = pbp[(pbp["pass_attempt"] == 1) & pbp["passer_player_id"].notna() & (pbp["two_point_attempt"] == 0)]
     for (dteam, wk, gid), grp in qb.groupby(["defteam", "week", "passer_player_id"]):
         if _fold_pos(pos_map.get(gid)) != "QB":
             continue

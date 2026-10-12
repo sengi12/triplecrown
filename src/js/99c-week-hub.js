@@ -103,7 +103,8 @@ function hubFormMap(sc){
         receiving_tds:r[ci.rec_td]||0, receiving_targets:r[ci.tgt]||0,
         rushing_yards:r[ci.rush_yd]||0, rushing_tds:r[ci.rush_td]||0, rushing_attempts:r[ci.carry]||0,
         passing_yards:r[ci.pass_yd]||0, passing_tds:r[ci.pass_td]||0, passing_attempts:r[ci.pass_att]||0,
-        interceptions_thrown:r[ci.pass_int]||0, fumbles_lost:0}, sc);
+        interceptions_thrown:r[ci.pass_int]||0, fumbles_lost:0,
+        two_point_conversions:(r[ci.pass_2pt]||0)+(r[ci.rush_2pt]||0)+(r[ci.rec_2pt]||0)}, sc);
             const compTgt=r[ci.comp_tgt]||0, garbageTgt=r[ci.garbage_tgt]||0;
             const compCarry=r[ci.comp_carry]||0, garbageCarry=r[ci.garbage_carry]||0;
             const compTouches=compTgt+compCarry, garbageTouches=garbageTgt+garbageCarry;

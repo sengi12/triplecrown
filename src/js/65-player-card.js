@@ -169,6 +169,9 @@ function pcardFptsFromStats(s, scoringOverride){
   pts += (s.pass_cmp!=null?(s.pass_cmp*(sc.passing_completions||0)):0);
   pts += (s.rush_att!=null?(s.rush_att*(sc.rushing_attempts||0)):0);
   pts += (s.fum_lost||0)*(sc.fumbles_lost||0);
+  // Sleeper's week row splits the conversions by how they were scored; the league scores
+  // them alike. Left out, a 2-pt catch read as a plain catch and the week came up 2 short.
+  pts += ((s.pass_2pt||0)+(s.rush_2pt||0)+(s.rec_2pt||0))*(sc.two_point_conversions||0);
   return Math.round(pts*100)/100;
 }
 // Fixed full-PPR scoring the consistency benchmarks are defined in. The grade is meant to
@@ -180,7 +183,7 @@ const PCARD_PPR_SCORING = {
   passing_attempts:0, passing_completions:0,
   rushing_yards_yardage:10, rushing_yards_points:1, rushing_touchdowns:6, rushing_attempts:0,
   receiving_yards_yardage:10, receiving_yards_points:1, receiving_touchdowns:6, receptions:1, receptions_te_bonus:0,
-  fumbles_lost:-2,
+  fumbles_lost:-2, two_point_conversions:2,
 };
 // A game the player barely took part in (left hurt early, mop-up, Week 18 kneel-downs) is
 // not evidence about his consistency. Sleeper gives offensive snaps per week; below this

@@ -55,4 +55,15 @@ chk(html.includes('pcard-cell g')||html.includes('pcard-cell r')||html.includes(
 chk(html.includes('BYE'),'BYE row rendered');
 chk(html.includes('@BAL')||html.includes('BAL'),'opponent shown');
 
+console.log('\n=== two-point conversions count in the week’s points ===');
+app.setScoring({passing_yards_yardage:25, passing_touchdowns:4, interceptions_thrown:-2,
+  rushing_yards_yardage:10, rushing_touchdowns:6, receiving_yards_yardage:10, receptions:0.5,
+  receiving_touchdowns:6, passing_attempts:0, fumbles_lost:-2, two_point_conversions:2});
+const g2=app.pcardFptsFromStats({rec:6, rec_yd:80, rec_td:1, rec_2pt:1});
+chk(Math.abs(g2-(3+8+6+2))<0.01, `a 2-pt catch adds the league's 2 to the week (got ${g2})`);
+const g3=app.pcardFptsFromStats({pass_yd:250, pass_td:2, pass_2pt:1, rush_2pt:1});
+chk(Math.abs(g3-(10+8+4))<0.01, `a passed and a rushed conversion each count (got ${g3})`);
+app.setScoring({receiving_yards_yardage:10, receptions:1});
+chk(Math.abs(app.pcardFptsFromStats({rec:1, rec_yd:10, rec_2pt:1})-2)<0.01, 'no setting (an older saved scoring) → conversions score 0, nothing throws');
+
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

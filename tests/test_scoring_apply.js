@@ -51,4 +51,14 @@ const qbPts=app.calcFpts({passing_yards:5000,passing_tds:40,interceptions_thrown
 const expected = 5000/20 + 40*6 - 2*10;  // 250 + 240 - 20 = 470
 chk(near(qbPts,expected),`QB 5000yd/40td/10int → ${expected} pts (got ${qbPts.toFixed(1)})`);
 
+console.log('\n=== TEST 4: two-point conversions ===');
+app.resetScoring();
+app.applySleeperScoring(Object.assign({}, QCK_SCORING, {pass_2pt:2, rush_2pt:2, rec_2pt:2}));
+chk(near(app.getScoring().two_point_conversions,2),'rec_2pt / rush_2pt / pass_2pt → one two_point_conversions setting (2)');
+const wr2=app.calcFpts({pos:'WR',receiving_yards:100,receiving_tds:1,receptions:5,two_point_conversions:1});
+chk(near(wr2, 100/10 + 6 + 5 + 2),`a 2-pt catch adds the league's 2 on top of the catch (got ${wr2.toFixed(1)})`);
+app.applySleeperScoring({rec_2pt:0});
+chk(app.getScoring().two_point_conversions===0 && near(app.calcFpts({receiving_yards:100,two_point_conversions:1}),10),'a league that scores no conversions zeroes it');
+chk(app.applySleeperScoring({rec:1}) && app.getScoring().two_point_conversions===0,'a league payload without the keys leaves the setting alone');
+
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

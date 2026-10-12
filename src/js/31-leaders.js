@@ -112,7 +112,9 @@ function ldPoints(rec){
     passing_attempts:s.passing_attempts||s.pass_att||0, passing_completions:s.passing_completions||s.pass_cmp||0,
     rushing_yards:s.rushing_yards||s.rush_yd||0, rushing_tds:s.rush_td||s.rushing_touchdowns||0, rushing_attempts:s.rushing_attempts||s.rush_att||0,
     receptions:s.receptions||s.rec||0, receiving_yards:s.receiving_yards||s.rec_yd||0, receiving_tds:s.rec_td||s.receiving_touchdowns||0,
-    receiving_targets:s.receiving_targets||s.rec_tgt||0, fumbles_lost:s.fumbles_lost||s.fum_lost||0 };
+    receiving_targets:s.receiving_targets||s.rec_tgt||0, fumbles_lost:s.fumbles_lost||s.fum_lost||0,
+    two_point_conversions:(s.two_point_conversions!=null ? s.two_point_conversions
+      : (s.passing_2pt||s.pass_2pt||0)+(s.rushing_2pt||s.rush_2pt||0)+(s.receiving_2pt||s.rec_2pt||0)) };
   try{ return (typeof calcFpts==='function') ? Number(calcFpts(row)||0) : 0; }catch(e){ return 0; }
 }
 function ldRookie(pid){
