@@ -372,6 +372,9 @@ let scoringSettings = {
   rushing_yards_points:1, rushing_yards_yardage:10,
   rushing_touchdowns:6, rushing_attempts:0,
   fumbles_lost:-2,
+  // Two-point conversions, any kind (a QB's pass, a back's run, a receiver's catch): Sleeper
+  // scores pass_2pt / rush_2pt / rec_2pt separately but every league sets the three alike.
+  two_point_conversions:2,
   // BAFL Mode: value players by CATEGORY leverage (best-3-of-5 league) instead of points.
   baflMode:false,
 };

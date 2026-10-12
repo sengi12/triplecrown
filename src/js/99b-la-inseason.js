@@ -707,7 +707,8 @@ function laWeeklyFormMap(){
       receiving_tds:r[ci['rec_td']]||0, receiving_targets:r[ci['tgt']]||0,
       rushing_yards:r[ci['rush_yd']]||0, rushing_tds:r[ci['rush_td']]||0, rushing_attempts:r[ci['carry']]||0,
       passing_yards:r[ci['pass_yd']]||0, passing_tds:r[ci['pass_td']]||0, passing_attempts:r[ci['pass_att']]||0,
-      interceptions_thrown:r[ci['pass_int']]||0, fumbles_lost:0});
+      interceptions_thrown:r[ci['pass_int']]||0, fumbles_lost:0,
+      two_point_conversions:(r[ci['pass_2pt']]||0)+(r[ci['rush_2pt']]||0)+(r[ci['rec_2pt']]||0)});
     const last3=weeks.slice(-3);
     const f3=last3.reduce((a,w)=>a+score(pl.w[String(w)]||[]),0)/last3.length;
     const entry={f3, n3:last3.length, lastWk:weeks[weeks.length-1]};

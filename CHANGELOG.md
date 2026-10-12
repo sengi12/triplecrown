@@ -6,6 +6,10 @@ this file is the merge history, newest first, one line per PR. Add a line when a
 
 Open work lives in [TODO.md](TODO.md).
 
+## 2026-10-12
+
+- fix(scoring): two-point conversions count in fantasy points everywhere (one setting, a 2-PT CONV field, Sleeper's three keys and ESPN's ids map to it; the weekly sidecar gains pass/rush/rec 2-pt columns and stops counting a try as a target or carry) — and a completion lateralled on for the score is the lateral man's touchdown, not the targeted receiver's, in the route tab, the target map and the weekly lines (Evans → Samuel, 2026 wk 3) (#171)
+
 ## 2026-10-11
 
 - feat(game-center): the line to gain is drawn on the field, the yellow one every broadcast has — only while that drive is the one in progress and that club has the ball, and never on goal-to-go, where the line to gain is the goal line (#169)

@@ -346,6 +346,32 @@ def main():
     check("target_trees: the unlabelled play keeps its row (route null), nothing else moves",
           p2[3][:6] == [12, 0, 3, 0, 12, 3] and p2[3][6] is None and len(p2) == 4)
 
+    # ── a lateral touchdown is the lateral man's, not the targeted receiver's ──
+    # (2026 wk 3: Purdy to Evans for 2, lateral to Samuel for 80 and the score)
+    def _pbp_lateral():
+        rows = []
+        for i, (td, scorer) in enumerate(((1, "w1"), (1, "w9"), (0, None))):
+            rows.append(dict(season_type="REG", week=1, posteam="SF", defteam="ARI",
+                             receiver_player_id="w1", pass_attempt=1, complete_pass=1, air_yards=6,
+                             pass_location="left", receiving_yards=2, pass_touchdown=td, two_point_attempt=0,
+                             yards_after_catch=0, epa=0.5, first_down=1, interception=0, yardline_100=80, qtr=1,
+                             td_player_id=scorer, game_id="2026_01_ARI_SF", play_id=20 + i))
+        return pd.DataFrame(rows)
+    nv._load_pbp = lambda season, cols=None: _pbp_lateral()
+    nv._aux_csv = lambda url, **kw: (_ for _ in ()).throw(Exception("404"))
+    _lt = nv.target_trees_weekly(2026, min_targets_game=1, min_targets_season=1)["players"]["test receiver"]
+    check("target_trees: a completion lateralled on for the score is not the targeted man's TD — one TD, and the lateral play maps as a plain catch",
+          _lt["season"]["td"] == 1 and _lt["games"][0]["td"] == 1 and [p[2] for p in _lt["games"][0]["plays"]] == [2, 1, 1])
+    nv._load_pbp = lambda season, cols=None: _pbp_lateral().drop(columns=["td_player_id"])
+    _lt0 = nv.target_trees_weekly(2026, min_targets_game=1, min_targets_season=1)["players"]["test receiver"]
+    check("target_trees: a frame without td_player_id (an older cache) keeps the play flag", _lt0["season"]["td"] == 2)
+    nv._load_pbp = lambda season, cols=None: _pbp_lateral()
+    nv._aux_csv = lambda url, **kw: pd.DataFrame([dict(nflverse_game_id="2026_01_ARI_SF", play_id=20 + i, route="SLANT") for i in range(3)])
+    _rt = nv.route_trees(2026, min_routes=1)["test receiver"]
+    _rw = nv.routes_weekly(2026, min_routes_game=1)["test receiver"]["games"][0]["tree"]["SLANT"]
+    check("route_trees / routes_weekly: the lateral TD is not on the route either",
+          _rt["total_tds"] == 1 and _rt["route_tds"] == {"SLANT": 1} and _rw["td"] == 1 and _rw["rec"] == 3)
+
     total, passed = len(RESULTS), sum(RESULTS)
     print(f"\nRESULT: {passed}/{total} {'ALL PASS' if passed == total else 'SOME FAILED'}")
     sys.exit(0 if passed == total else 1)

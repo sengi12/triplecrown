@@ -798,6 +798,7 @@ function renderRankings(){
           <div class="scoring-field"><label>REC (PPR)</label><input id="sc_rec" type="number" value="${scoringSettings.receptions}" step="0.25"></div>
           <div class="scoring-field"><label>TE PREM</label><input id="sc_rec_te" type="number" value="${scoringSettings.receptions_te_bonus}" step="0.25" title="Extra points per reception for TEs only, on top of PPR. 0.5 here = a 1.5-PPR-TE league in full PPR."></div>
           <div class="scoring-field"><label>FUMBLE</label><input id="sc_fum" type="number" value="${scoringSettings.fumbles_lost}" step="0.5"></div>
+          <div class="scoring-field"><label>2-PT CONV</label><input id="sc_2pt" type="number" value="${scoringSettings.two_point_conversions!=null?scoringSettings.two_point_conversions:2}" step="0.5" title="Points per two-point conversion — passed, rushed or caught."></div>
           <div class="scoring-field"><label>PASS ATT</label><input id="sc_pass_att" type="number" value="${scoringSettings.passing_attempts}" step="0.1"></div>
           <div class="scoring-field"><label>PASS COMP</label><input id="sc_pass_comp" type="number" value="${scoringSettings.passing_completions}" step="0.1"></div>
           <div class="scoring-field"><label>RUSH ATT</label><input id="sc_rush_att" type="number" value="${scoringSettings.rushing_attempts}" step="0.1"></div>
@@ -1393,6 +1394,7 @@ function recalcRankings(){
   scoringSettings.receptions=g('sc_rec',0.5);
   scoringSettings.receptions_te_bonus=g('sc_rec_te',0);
   scoringSettings.fumbles_lost=g('sc_fum',-2);
+  scoringSettings.two_point_conversions=g('sc_2pt',2);
   scoringSettings.passing_attempts=g('sc_pass_att',0);
   scoringSettings.passing_completions=g('sc_pass_comp',0);
   scoringSettings.rushing_attempts=g('sc_rush_att',0);

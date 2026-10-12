@@ -1950,7 +1950,7 @@ _RB_COLS = ["season_type", "game_id", "play_id", "rusher_player_id", "rusher_pla
             "receiver_player_id", "receiver_player_name", "rush", "pass", "rush_attempt",
             "rushing_yards", "rush_touchdown", "epa", "success", "first_down_rush",
             "tackled_for_loss", "complete_pass", "receiving_yards", "yards_after_catch",
-            "pass_touchdown", "posteam"]
+            "pass_touchdown", "posteam", "td_player_id"]
 
 def sumer_rb(season, min_rush=40, refinement=None):
     min_rush = _scaled_min(min_rush, 5)
@@ -2010,7 +2010,7 @@ def sumer_rb(season, min_rush=40, refinement=None):
             "First Down %": round(d["first_down_rush"].mean() * 100, 2),
             "Receptions": int(len(rec)),
             "Rec. Yards": int(rec["receiving_yards"].sum()),
-            "Rec. TDs": int(rec["pass_touchdown"].sum()),
+            "Rec. TDs": int(_receiver_td(rec).sum()),
             "YAC": int(rec["yards_after_catch"].sum()),
             "Target Share": round(player_tgts.get(rid, 0) / team_tgts.get(player_team.get(rid), 1) * 100, 2) if rid in player_team else None,
         }
@@ -2023,7 +2023,19 @@ def sumer_rb(season, min_rush=40, refinement=None):
 _ROUTES_CACHE, _POS_CACHE, _CTX_CACHE = {}, {}, {}
 _REC_COLS = ["season_type", "game_id", "play_id", "receiver_player_id", "complete_pass",
              "receiving_yards", "yards_after_catch", "air_yards", "pass_touchdown", "epa",
-             "posteam", "pass"]
+             "posteam", "pass", "td_player_id"]
+
+def _receiver_td(frame):
+    """1 where the targeted receiver himself scored. `pass_touchdown` flags the PLAY, and a
+    completion lateralled on for the score (Purdy to Evans, lateral to Samuel, 2026 wk 3)
+    is a passing TD for the QB and a receiving TD for the lateral man — not for the man
+    targeted. nflverse names the scorer in td_player_id; a frame without it (older caches,
+    the synthetic test frames) keeps the play flag."""
+    td = pd.to_numeric(frame["pass_touchdown"], errors="coerce").fillna(0) == 1
+    if "td_player_id" in frame.columns:
+        scorer = frame["td_player_id"]
+        td = td & (scorer.isna() | (scorer == frame["receiver_player_id"]))
+    return td.astype(int)
 _WRTE_COLS = ["Routes Run", "Receptions", "Rec. Yards", "Target Share", "Touchdowns",
               "YAC", "ADoT", "Catch %", "Contested Catches", "Drops", "Total EPA",
               "Targets/Route Run", "YPRR"]
@@ -2222,7 +2234,7 @@ def _receivers(season, min_targets=15, refinement=None):
             "Receptions": rec,
             "Rec. Yards": ry,
             "Target Share": round(tgts / team_tgts.get(team, 1) * 100, 2) if team else None,
-            "Touchdowns": int(d["pass_touchdown"].sum()),
+            "Touchdowns": int(_receiver_td(d).sum()),
             "YAC": int(d["yards_after_catch"].sum()),
             "ADoT": round(d["air_yards"].mean(), 2),
             "Catch %": round(rec / tgts * 100, 2),
@@ -2259,14 +2271,15 @@ def route_trees(season, min_routes=12):
     per-route receiving outputs (TD/rec/yds/PPR FP) for richer route-tree displays."""
     pbp = _load_pbp(season, [
         "game_id", "play_id", "season_type", "receiver_player_id", "pass_touchdown",
-        "complete_pass", "receiving_yards"
+        "complete_pass", "receiving_yards", "td_player_id"
     ])
     pbp = pbp[(pbp["season_type"] == "REG") & pbp["receiver_player_id"].notna()]
     part = _aux_csv(PART_URL.format(season=season),
                     usecols=["nflverse_game_id", "play_id", "route"])
     m = pbp.merge(part, left_on=["game_id", "play_id"],
                   right_on=["nflverse_game_id", "play_id"], how="left")
-    m = m[m["route"].notna()]
+    m = m[m["route"].notna()].copy()
+    m["rec_td"] = _receiver_td(m)
     names, pos = _name_map(season), _pos_map(season)
     out = {}
     for rid, d in m.groupby("receiver_player_id"):
@@ -2274,13 +2287,13 @@ def route_trees(season, min_routes=12):
         if not name or len(d) < min_routes:
             continue
         tree = d["route"].value_counts().to_dict()
-        route_tds = d.groupby("route")["pass_touchdown"].sum().to_dict()
+        route_tds = d.groupby("route")["rec_td"].sum().to_dict()
         route_rec = d.groupby("route")["complete_pass"].sum().to_dict()
         route_yds = d.groupby("route")["receiving_yards"].sum().to_dict()
         out[name] = {
             "pos": pos.get(rid),
             "total": int(len(d)),
-            "total_tds": int(d["pass_touchdown"].sum()),
+            "total_tds": int(d["rec_td"].sum()),
             "total_rec": int(d["complete_pass"].sum()),
             "total_yds": int(d["receiving_yards"].sum()),
             "tree": {k: int(v) for k, v in tree.items()},
@@ -2935,6 +2948,7 @@ def routes_weekly(season, min_routes_game=3):
     pbp = _load_pbp(season, [
         "game_id", "play_id", "season_type", "week", "defteam",
         "receiver_player_id", "pass_touchdown", "complete_pass", "receiving_yards",
+        "td_player_id",
     ])
     pbp = pbp[(pbp["season_type"] == "REG") & pbp["receiver_player_id"].notna()]
     part = _aux_csv(PART_URL.format(season=season),
@@ -2944,6 +2958,7 @@ def routes_weekly(season, min_routes_game=3):
     m = m[m["route"].notna()].copy()
     if m.empty:
         return {}
+    m["rec_td"] = _receiver_td(m)
     m["defteam"] = m["defteam"].replace(NFLVERSE_TO_SEED)
     names, pos = _name_map(season), _pos_map(season)
     out = {}
@@ -2959,7 +2974,7 @@ def routes_weekly(season, min_routes_game=3):
                 "tgt": int(len(rg)),
                 "rec": int(rg["complete_pass"].sum()),
                 "yds": int(rg["receiving_yards"].fillna(0).sum()),
-                "td": int(rg["pass_touchdown"].sum()),
+                "td": int(rg["rec_td"].sum()),
             }
         node = out.setdefault(name, {"pos": pos.get(rid), "games": []})
         node["games"].append({
@@ -3106,13 +3121,14 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
         "pass_attempt", "complete_pass", "air_yards", "pass_location",
         "receiving_yards", "pass_touchdown", "two_point_attempt",
         "yards_after_catch", "epa", "first_down", "interception",
-        "yardline_100", "qtr", "shotgun", "out_of_bounds", "wp",
+        "yardline_100", "qtr", "shotgun", "out_of_bounds", "wp", "td_player_id",
     ])
     t = pbp[pbp["season_type"].isin(["REG", "POST"]) & (pbp["pass_attempt"] == 1)
             & (pbp["two_point_attempt"] == 0) & pbp["receiver_player_id"].notna()
             & pbp["pass_location"].notna()].copy()
     if t.empty or not (t["season_type"] == "REG").any():
         return {}
+    t["rec_td"] = _receiver_td(t)
     t["tsg"], t["toop"] = _throw_context(season, t)
     # Route labels: the post-season participation drop, joined play by play. Absent (in
     # season, or a season the file does not carry) the rows simply carry no route.
@@ -3155,7 +3171,7 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
             if pd.isna(ay):
                 continue
             comp = float(r.complete_pass or 0) == 1
-            res = 3 if float(r.interception or 0) == 1 else (2 if comp and float(r.pass_touchdown or 0) == 1 else (1 if comp else 0))
+            res = 3 if float(r.interception or 0) == 1 else (2 if comp and float(r.rec_td or 0) == 1 else (1 if comp else 0))
             yac = pd.to_numeric(r.yards_after_catch, errors="coerce")
             yl = pd.to_numeric(r.yardline_100, errors="coerce")
             q = pd.to_numeric(r.qtr, errors="coerce")
@@ -3178,7 +3194,7 @@ def target_trees_weekly(season, min_targets_game=2, min_targets_season=8):
         return {
             "tgt": int(len(z)), "rec": int(z["complete_pass"].sum()),
             "yds": int(z["receiving_yards"].fillna(0).sum()),
-            "td": int(z["pass_touchdown"].sum()),
+            "td": int(z["rec_td"].sum()),
             # per-catch context: yards after the catch, EPA per target, first downs
             "yac": int(pd.to_numeric(z["yards_after_catch"], errors="coerce").fillna(0).sum()),
             "epa": round(float(pd.to_numeric(z["epa"], errors="coerce").fillna(0).sum()), 2),

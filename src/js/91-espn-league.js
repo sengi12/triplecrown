@@ -79,6 +79,8 @@ const ESPN_STAT_MAP = {
   24:'rush_yd', 25:'rush_td', 23:'rush_att',
   42:'rec_yd', 43:'rec_td', 53:'rec', 58:'rec_tgt',
   72:'fum_lost',
+  // two-point conversions, split by kind the way Sleeper splits them
+  19:'pass_2pt', 26:'rush_2pt', 44:'rec_2pt',
 };
 // pointsOverrides is keyed by defaultPositionId. These are the two we read.
 const ESPN_OVR_TE = '4';
