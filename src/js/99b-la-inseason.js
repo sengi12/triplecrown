@@ -420,6 +420,8 @@ function laMatchupView(s){
       Object.assign(B, {big:B.pts.toFixed(2), sub:`proj ${(B.pts+B.rem).toFixed(1)}`, ytpText:B.ytp?`${B.ytp} to play · ${B.rem.toFixed(1)} left`:'all players done'});
       fscore=heroHTML(A, B, p1, decided);
     }
+    // How the chance moved across the week, from the left side's chair (mine, when it is my matchup).
+    const swing = (!bafl && typeof laSwingSectionHTML==='function') ? laSwingSectionHTML(wk, a, b, {meta, pm, dvp, names:{mine:A.name}}) : '';
     const rows=slotLabels.map((lbl,i)=>`<div class="la-mu-row">
         ${playerCell((a.starters||[])[i], (a.starters_points||[])[i], 'home')}
         <div class="la-mu-slot"><span class="la-slot la-slot-${lbl.replace(/[^A-Z]/g,'')||'X'}">${escHtml(lbl)}</span></div>
@@ -437,7 +439,7 @@ function laMatchupView(s){
       : '';
     featured = `<div class="card la-mu-hero" data-mu-total="${pairList.length}">
       <div class="la-mu-fhead"><span class="la-ins-lbl">${isMine?'MY MATCHUP':'MATCHUP'} · WEEK ${wk}</span>${wk===cur?`<span class="draft-live">LIVE</span>`:''}${pager}</div>
-      ${fscore}
+      ${fscore}${swing}
       <div class="la-mu-starters">
         <div class="la-mu-rowhead"><span>Starters</span><span class="la-ins-sub">${bafl?'stat line · → projected':'points · projected'}</span></div>
         ${rows}

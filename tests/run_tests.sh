@@ -274,6 +274,7 @@ run_js_test test_live_season    "Live current-season stats: raw keys survive int
 run_js_test test_pace_baseline  "Kickoff snapshot: freeze-once, wrong-year/reference guards, quota degradation, late frozenWeek"
 run_js_test test_pace_view      "Pace view: stint summing, badge thresholds, index vs frozen baseline, cache key varies by mode+epoch"
 run_js_test test_la_inseason    "LA in-season tabs: season gating, matchup pairing + featured card, ESPN empty state, poll gating"
+run_js_test test_la_swing       "LA matchup swing chart: plays replayed into a win-chance line (game fraction, projections shrinking as games run, finals snapping to Sleeper totals, the swings pinned by player), the windows of the weekend, the SVG + recap, loading states"
 run_js_test test_la_dvp_lineup  "DvP fppg under league scoring + rank direction; lineup adjustment clamps and degradation"
 run_js_test test_la_trends      "Trends overhaul: Season panes, team tendencies, real RZ regression input, ROS schedule multiplier, injury tags"
 run_js_test test_la_snaps       "Trends · Snaps: snap share week over week from Sleeper's cached weekly rows, the sidecar's nflverse snaps where Sleeper is blank, last season as the week-1 baseline, role tiers, season highs, scope; a missing week is unknown, never a benching"
