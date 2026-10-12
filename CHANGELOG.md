@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-10-12
 
+- feat(analyzer): the matchup card shows how the win chance moved, play by play — one line from the first kickoff to the final whistle, replayed from ESPN's play log under the league's own scoring, the biggest swings pinned by the player who made them, finals snapping to Sleeper's totals so the line ends on the scoreboard (#172)
 - fix(scoring): two-point conversions count in fantasy points everywhere (one setting, a 2-PT CONV field, Sleeper's three keys and ESPN's ids map to it; the weekly sidecar gains pass/rush/rec 2-pt columns and stops counting a try as a target or carry) — and a completion lateralled on for the score is the lateral man's touchdown, not the targeted receiver's, in the route tab, the target map and the weekly lines (Evans → Samuel, 2026 wk 3) (#171)
 
 ## 2026-10-11
