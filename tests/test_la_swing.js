@@ -1,5 +1,8 @@
 // The matchup swing chart: ESPN plays replayed into one line of win chance, the biggest
 // swings pinned to the man who made them, the weekend's windows on the x-axis.
+// The axis labels are the viewer's local clock; the fixture's kickoffs are Eastern, so the test
+// reads them the way the user does (CI runs in UTC, where the 1pm slate would say 5pm).
+process.env.TZ='America/New_York';
 const elStore={};
 function mkEl(id){if(!elStore[id])elStore[id]={innerHTML:'',style:{},textContent:'',value:'',classList:{add(){},remove(){}},children:[],appendChild(){},querySelectorAll:()=>[]};return elStore[id];}
 global.document={getElementById:(id)=>mkEl(id),querySelector:()=>null,querySelectorAll:()=>[],createElement:()=>({click(){},style:{},appendChild(){}}),activeElement:null,body:{appendChild(){},removeChild(){}},addEventListener(){},visibilityState:'visible'};
