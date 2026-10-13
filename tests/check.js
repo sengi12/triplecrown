@@ -4486,7 +4486,7 @@ function renderContent(){
     ? _renderAdvPowerScore(t, activeSharp(), { shieldOnly:true })
     : '';
   const powerScoreInline = isRef
-    ? `<div class="season-power">${powerScoreBadge}<span class="season-power-text">Power Score</span></div>`
+    ? `<div class="season-power">${powerScoreBadge}<span class="season-power-text">Power Score</span><button class="season-power-link" onclick="sosOpenPower('${t}')" title="Every team's Power Score through the season, ${t} lit">all teams ›</button></div>`
     : '';
   const seasonBanner = isRef
     ? `<div class="season-readonly">
@@ -22015,6 +22015,13 @@ function renderSOSView(){
 // over 18 weeks stay legible.
 var _sosPowerFocus = null, _sosChartTab = 'sos';
 function sosChartTab(t){ _sosChartTab = t==='power' ? 'power' : 'sos'; renderSharpLeague(); }
+// Straight to the league's Power Score through the season, this team's line lit — from the
+// badge on a team page, instead of Team → Adv Metrics → League → SOS → Power Score.
+function sosOpenPower(team){
+  _sosPowerFocus = team ? String(team).toUpperCase() : null;
+  _sosChartTab = 'power';
+  return showSharpLeague('sos');
+}
 function sosPowerFocus(code){
   _sosPowerFocus = (_sosPowerFocus===code) ? null : code;
   if(_sosPowerFocus) _sosChartTab='power';
