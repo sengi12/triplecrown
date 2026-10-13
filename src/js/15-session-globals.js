@@ -375,6 +375,9 @@ let scoringSettings = {
   // Two-point conversions, any kind (a QB's pass, a back's run, a receiver's catch): Sleeper
   // scores pass_2pt / rush_2pt / rec_2pt separately but every league sets the three alike.
   two_point_conversions:2,
+  // A fumble of any kind (Sleeper's fum), on top of fumbles_lost: many leagues dock every
+  // fumble a point and a lost one two more. Off by default, the way Sleeper ships it.
+  fumbles:0,
   // BAFL Mode: value players by CATEGORY leverage (best-3-of-5 league) instead of points.
   baflMode:false,
 };

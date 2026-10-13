@@ -30,7 +30,7 @@ const app=new Function(code+`
   leagueSnapshot={name:'Dirty Mikes', myUserId:'u1', scoringRaw:{pass_yd:0.04,pass_td:4,pass_int:-1,rush_yd:0.1,rush_td:6,rec:0.5,rec_yd:0.1,fgm:3,xpm:1,pts_allow:-0.1,sack:1,idp_tkl:1,idp_sack:2},
     teamList:[{rosterId:1, ownerId:'u1', owner:'Sengi12', teamName:'Sengi', players:[{id:'q1'},{id:'r2'}]},{rosterId:2, ownerId:'u2', owner:'RichBigMeechy', teamName:'Rich', players:[{id:'w2'}]}]};
   _gcd.tab='stats'; _gcd.side='fantasy';   // the fantasy pane, as before the Feed | Stats tabs
-  return { pts:tcSleeperPoints, mode:gcSetMode, step:gcStep, setPos:gcSetPos, sideClass:gcSideClass, setHub:(r)=>{ hubState.results=r; hubState.loadedAt=Date.now(); leagueSnapshot.leagueId='L1'; }, render:renderRightSidebar, html:()=>document.getElementById('leaders').innerHTML, cls:()=>[...document.getElementById('leaders').classList._s], pick:gcPick, week:gcSetWeek, load:gcLoadMode, state:()=>_gc, games:()=>gcGames(gcBoard(1)), mine:gcIsMine, maxW:gcMaxWidth, gameHTML:gcGameHTML, weekOpts:gcWeekOptions, gcWeek, setWeekProj:(wk,rows)=>{ const d=_laWpEntry(wk); d.rows=rows; d.at=Date.now(); d.fails=9; } };
+  return { pts:tcSleeperPoints, mode:gcSetMode, step:gcStep, setPos:gcSetPos, sideClass:gcSideClass, setHub:(r)=>{ hubState.results=r; hubState.loadedAt=Date.now(); leagueSnapshot.leagueId='L1'; }, render:renderRightSidebar, html:()=>document.getElementById('leaders').innerHTML, cls:()=>[...document.getElementById('leaders').classList._s], pick:gcPick, week:gcSetWeek, load:gcLoadMode, state:()=>_gc, games:()=>gcGames(gcBoard(1)), mine:gcIsMine, maxW:gcMaxWidth, gameHTML:gcGameHTML, weekOpts:gcWeekOptions, gcWeek, breakdown:tcPointsBreakdown, brkHTML:tcBreakdownHTML, playerHTML:gcPlayerHTML, setScoring:(s)=>{scoringSettings=s;}, setWeekProj:(wk,rows)=>{ const d=_laWpEntry(wk); d.rows=rows; d.at=Date.now(); d.fails=9; } };
 `)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const settle=()=>new Promise(r=>setTimeout(r,20));
@@ -114,6 +114,25 @@ console.log('=== a game still ahead shows each side with the week\'s projected l
 
   console.log('=== back to the list ===');
   app.mode('normal'); chk(!app.cls().includes('rsb-max') && /Leaders/.test(app.html()), 'normal: the Leaders list again');
-  console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
+    console.log('=== the score breakdown: a tap on the number ===');
+  const near=(a,b)=>Math.abs(a-b)<0.005;
+  const SC={rec:0.5, rec_yd:0.1, fum:-1, fum_lost:-2};
+  const b1=app.breakdown({rec:5, rec_yd:63, fum:1, fum_lost:1, gp:1}, 'WR', SC, 'Dirty Mikes');
+  chk(b1.rows.map(r=>r.key).join(',')==='rec_yd,rec,fum_lost,fum' && near(b1.total, 5.8) && near(b1.total, app.pts({rec:5, rec_yd:63, fum:1, fum_lost:1, gp:1}, SC)),
+      `under the league's table: every priced stat, biggest first, and the total is the card's number (${b1.rows.map(r=>r.label+' '+r.pts.toFixed(2)).join(' · ')} = ${b1.total})`);
+  chk(b1.rows.find(r=>r.key==='fum').label==='Fumble' && b1.rows.find(r=>r.key==='fum').per===-1 && b1.rows.find(r=>r.key==='fum_lost').pts===-2, 'a fumble and a lost fumble are two lines, each at its own price');
+  app.setScoring({passing_yards_points:1, passing_yards_yardage:25, passing_touchdowns:4, interceptions_thrown:-2, passing_attempts:0, passing_completions:0, receiving_yards_points:1, receiving_yards_yardage:10, receiving_touchdowns:6, receptions:0.5, receptions_te_bonus:0, rushing_yards_points:1, rushing_yards_yardage:10, rushing_touchdowns:6, rushing_attempts:0, fumbles_lost:-2, fumbles:-1, two_point_conversions:2});
+  const b2=app.breakdown({rush_yd:65, rush_td:1, rec:1, rec_yd:7, fum:1}, 'RB', null);
+  chk(near(b2.total, 12.7) && b2.rows.length===5 && b2.rows[0].key==='rush_yd' && near(b2.rows[0].per, 0.1) && b2.rows.some(r=>r.key==='fum' && r.pts===-1),
+      `under the app's scoring: James Cook's week 5 sheet — 65 rush yds, a TD, a catch for 7, a fumble = 12.70 (got ${b2.total})`);
+  const b3=app.breakdown({pts_half_ppr:9, fgm:2, xpm:3}, 'K', null);
+  chk(b3.rows.length===1 && /half-PPR/.test(b3.rows[0].label) && b3.total===9, "a kicker under the app's scoring is Sleeper's own number, one line");
+  const bh=app.brkHTML(b2);
+  chk(/<table class="tc-brk"/.test(bh) && /Fumble/.test(bh) && /class="neg"/.test(bh) && /<tfoot>.*12\.70/.test(bh) && /app scoring/.test(bh), 'the sheet: stat · # · pts per · points, the penalty row in red, the total, the scoring it was priced under');
+  const brow=app.playerHTML({r:{player_id:'w1', team:'TB', position:'WR', stats:{rec:5}}, pts:5.5, line:'5 rec', proj:null}, 'home');
+  chk(/gc-ptsbox gc-ptsbox-tap/.test(brow) && /onclick="gcPtsPop\(event,'w1'\)"/.test(brow), 'the points on a row are a tap that opens the breakdown');
+  chk(!/gc-ptsbox-tap/.test(app.playerHTML({r:{player_id:'w1', team:'TB', position:'WR', stats:{rec:5}, proj:true}, pts:5.5, line:'', proj:null}, 'home')), 'a projected line has nothing to break down');
+
+console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
   process.exit(pass===total?0:1);
 })();

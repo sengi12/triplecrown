@@ -1764,6 +1764,9 @@ let scoringSettings = {
   // Two-point conversions, any kind (a QB's pass, a back's run, a receiver's catch): Sleeper
   // scores pass_2pt / rush_2pt / rec_2pt separately but every league sets the three alike.
   two_point_conversions:2,
+  // A fumble of any kind (Sleeper's fum), on top of fumbles_lost: many leagues dock every
+  // fumble a point and a lost one two more. Off by default, the way Sleeper ships it.
+  fumbles:0,
   // BAFL Mode: value players by CATEGORY leverage (best-3-of-5 league) instead of points.
   baflMode:false,
 };
@@ -3558,7 +3561,7 @@ const TC_PACE_KEY = 'triplecrown.paceBaseline.v1';
 const _PB_FIELDS = ['passing_yards','passing_tds','passing_attempts','passing_completions',
   'interceptions_thrown','rushing_yards','rushing_tds','rushing_attempts',
   'receiving_yards','receiving_tds','receptions','receiving_targets','fumbles_lost',
-  'two_point_conversions',
+  'two_point_conversions','fumbles',
   // Projected games (QB timeshares carry one; everyone else defaults to 17 downstream).
   // Frozen so per-game comparisons honor the intended workload, not a blanket /17.
   'proj_games'];
@@ -3802,6 +3805,13 @@ function tcInfoBtn(key, label, icon){
 }
 var _infoPopOff=null;
 function tcInfoPop(ev, key){
+  const info=TC_INFO_BOOK[key]; if(!info) return;
+  const body=(typeof info.body==='function')?info.body():info.body;
+  tcPopShow(ev, key, info.title||'', body||'', `tcInfoPop(event,'${key}')`);
+}
+// Any popover in the info popover's clothes: a title, a body, placed by the tap, closed by a
+// tap anywhere else or the same control again. `key` tells a repeat tap apart from a new one.
+function tcPopShow(ev, key, title, bodyHtml, closeCall){
   try{ ev.stopPropagation(); }catch(e){}
   const old=document.getElementById('tcInfoPop');
   if(old){
@@ -3809,14 +3819,12 @@ function tcInfoPop(ev, key){
     if(_infoPopOff){ try{ document.removeEventListener('click',_infoPopOff,true); }catch(e){} _infoPopOff=null; }
     if(old.dataset && old.dataset.key===key) return;   // same button again = toggle closed
   }
-  const info=TC_INFO_BOOK[key]; if(!info) return;
   const div=document.createElement('div');
   div.id='tcInfoPop'; div.className='tc-info-pop';
   if(div.dataset) div.dataset.key=key;
-  const body=(typeof info.body==='function')?info.body():info.body;
-  div.innerHTML=`<div class="tc-info-head"><b>${info.title||''}</b>
-      <button class="tc-info-close" onclick="tcInfoPop(event,'${key}')" aria-label="Close">✕</button></div>
-    <div class="tc-info-body">${body||''}</div>`;
+  div.innerHTML=`<div class="tc-info-head"><b>${title}</b>
+      <button class="tc-info-close" onclick="${closeCall||'tcPopClose(event)'}" aria-label="Close">✕</button></div>
+    <div class="tc-info-body">${bodyHtml}</div>`;
   document.body.appendChild(div);
   const r=(ev.target&&ev.target.getBoundingClientRect)?ev.target.getBoundingClientRect():{left:20,right:40,top:60,bottom:80};
   const pw=div.offsetWidth||280, ph=div.offsetHeight||120;
@@ -3827,6 +3835,12 @@ function tcInfoPop(ev, key){
       if(e.target && e.target.closest && e.target.closest('.tc-info-btn')) return;   // buttons manage their own toggle
       if(!div.contains(e.target)){ div.remove(); document.removeEventListener('click',off,true); if(_infoPopOff===off) _infoPopOff=null; } };
     _infoPopOff=off; document.addEventListener('click',off,true); },0);
+}
+
+function tcPopClose(ev){
+  try{ ev.stopPropagation(); }catch(e){}
+  const old=document.getElementById('tcInfoPop'); if(old) old.remove();
+  if(_infoPopOff){ try{ document.removeEventListener('click',_infoPopOff,true); }catch(e){} _infoPopOff=null; }
 }
 
 function toast(msg,type=''){
@@ -4647,6 +4661,7 @@ function ldPoints(rec){
     rushing_yards:s.rushing_yards||s.rush_yd||0, rushing_tds:s.rush_td||s.rushing_touchdowns||0, rushing_attempts:s.rushing_attempts||s.rush_att||0,
     receptions:s.receptions||s.rec||0, receiving_yards:s.receiving_yards||s.rec_yd||0, receiving_tds:s.rec_td||s.receiving_touchdowns||0,
     receiving_targets:s.receiving_targets||s.rec_tgt||0, fumbles_lost:s.fumbles_lost||s.fum_lost||0,
+    fumbles:s.fumbles||s.fum||0,
     two_point_conversions:(s.two_point_conversions!=null ? s.two_point_conversions
       : (s.passing_2pt||s.pass_2pt||0)+(s.rushing_2pt||s.rush_2pt||0)+(s.receiving_2pt||s.rec_2pt||0)) };
   try{ return (typeof calcFpts==='function') ? Number(calcFpts(row)||0) : 0; }catch(e){ return 0; }
@@ -4824,6 +4839,86 @@ function gcPoints(row){
   const pos=gcPos(row)||String(row.pos||'').toUpperCase();
   if(['QB','RB','WR','TE'].includes(pos) && typeof ldPoints==='function') return ldPoints({pos, stats:st});
   return st.pts_half_ppr!=null ? +st.pts_half_ppr : (st.pts_std!=null ? +st.pts_std : null);
+}
+// ── Where the points came from ───────────────────────────────────────────────
+// Sleeper's score-breakdown sheet: each stat the scoring pays for, what it pays, what it
+// paid. Built the SAME way the number was — the league's own table (tcSleeperPoints: every
+// stat key the table prices) or the app's model (calcFpts, row by row) — so the rows always
+// sum to the figure on the card.
+const TC_STAT_LABELS = {
+  pass_yd:'Passing yards', pass_td:'Passing TD', pass_int:'Interception', pass_att:'Pass attempt', pass_cmp:'Completion', pass_2pt:'2-pt pass', pass_sack:'Sacked',
+  pass_fd:'Passing first down', pass_inc:'Incompletion', pass_cmp_40p:'40+ yd completion', pass_td_40p:'40+ yd passing TD', pass_td_50p:'50+ yd passing TD',
+  rush_yd:'Rushing yards', rush_td:'Rushing TD', rush_att:'Carry', rush_2pt:'2-pt run', rush_fd:'Rushing first down', rush_40p:'40+ yd run', rush_td_40p:'40+ yd rushing TD', rush_td_50p:'50+ yd rushing TD',
+  rec:'Reception', rec_yd:'Receiving yards', rec_td:'Receiving TD', rec_tgt:'Target', rec_2pt:'2-pt catch', rec_fd:'Receiving first down', rec_40p:'40+ yd catch', rec_td_40p:'40+ yd receiving TD', rec_td_50p:'50+ yd receiving TD',
+  bonus_rec_te:'TE reception bonus', bonus_rec_rb:'RB reception bonus', bonus_rec_wr:'WR reception bonus',
+  bonus_pass_yd_300:'300-yd passing game', bonus_pass_yd_400:'400-yd passing game', bonus_rush_yd_100:'100-yd rushing game', bonus_rush_yd_200:'200-yd rushing game', bonus_rec_yd_100:'100-yd receiving game', bonus_rec_yd_200:'200-yd receiving game',
+  fum:'Fumble', fum_lost:'Fumble lost', fum_rec_td:'Fumble recovery TD', kr_yd:'Kick return yards', pr_yd:'Punt return yards', kr_td:'Kick return TD', pr_td:'Punt return TD', st_td:'Special teams TD', st_fum_rec:'Special teams fumble recovery', st_ff:'Special teams forced fumble',
+  xpm:'Extra point', xpmiss:'Missed extra point', fgm:'Field goal', fgmiss:'Missed field goal', fgm_0_19:'FG 0–19', fgm_20_29:'FG 20–29', fgm_30_39:'FG 30–39', fgm_40_49:'FG 40–49', fgm_50p:'FG 50+', fgm_50_59:'FG 50–59', fgm_60p:'FG 60+', fgm_yds:'FG yards', fgmiss_0_19:'Missed FG 0–19', fgmiss_20_29:'Missed FG 20–29', fgmiss_30_39:'Missed FG 30–39', fgmiss_40_49:'Missed FG 40–49', fgmiss_50p:'Missed FG 50+',
+  sack:'Sack', int:'Interception', ff:'Forced fumble', fum_rec:'Fumble recovery', safe:'Safety', blk_kick:'Blocked kick', def_td:'Defensive TD', def_st_td:'Defense / ST TD', def_st_ff:'Defense / ST forced fumble', def_st_fum_rec:'Defense / ST fumble recovery', def_kr_yd:'Kick return yards', def_pr_yd:'Punt return yards', def_2pt:'Defensive 2-pt', def_4_and_stop:'4th-down stop', def_3_and_out:'Three and out',
+  pts_allow_0:'0 points allowed', pts_allow_1_6:'1–6 points allowed', pts_allow_7_13:'7–13 points allowed', pts_allow_14_20:'14–20 points allowed', pts_allow_21_27:'21–27 points allowed', pts_allow_28_34:'28–34 points allowed', pts_allow_35p:'35+ points allowed', pts_allow:'Points allowed',
+  yds_allow_0_100:'0–100 yards allowed', yds_allow_100_199:'100–199 yards allowed', yds_allow_200_299:'200–299 yards allowed', yds_allow_300_349:'300–349 yards allowed', yds_allow_350_399:'350–399 yards allowed', yds_allow_400_449:'400–449 yards allowed', yds_allow_450_499:'450–499 yards allowed', yds_allow_500_549:'500–549 yards allowed', yds_allow_550p:'550+ yards allowed', yds_allow:'Yards allowed',
+  idp_tkl:'Tackle', idp_tkl_solo:'Solo tackle', idp_tkl_ast:'Assisted tackle', idp_tkl_loss:'Tackle for loss', idp_sack:'Sack', idp_int:'Interception', idp_ff:'Forced fumble', idp_fum_rec:'Fumble recovery', idp_pass_def:'Pass defended', idp_qb_hit:'QB hit', idp_def_td:'Defensive TD', idp_safe:'Safety', idp_blk_kick:'Blocked kick',
+};
+function tcStatLabel(k){
+  if(TC_STAT_LABELS[k]) return TC_STAT_LABELS[k];
+  return String(k||'').replace(/_/g,' ').replace(/^./, c=>c.toUpperCase());
+}
+// → {rows:[{key,label,stat,per,pts}], total, source}; rows in the order they matter (biggest first).
+function tcPointsBreakdown(stats, pos, scRaw, srcName){
+  stats=stats||{}; pos=String(pos||'').toUpperCase();
+  const r2=(v)=>Math.round(v*100)/100;
+  const rows=[];
+  if(scRaw){
+    for(const k in scRaw){
+      const v=stats[k], per=scRaw[k];
+      if(typeof v!=='number' || typeof per!=='number' || !v) continue;
+      rows.push({key:k, label:tcStatLabel(k), stat:v, per, pts:v*per});
+    }
+    rows.sort((a,b)=>Math.abs(b.pts)-Math.abs(a.pts));
+    return {rows, total:r2(rows.reduce((a,r)=>a+r.pts,0)), source:srcName||'league scoring'};
+  }
+  const sc=(typeof scoringSettings!=='undefined' && scoringSettings) ? scoringSettings : {};
+  const s=stats;
+  if(['QB','RB','WR','TE'].includes(pos)){
+    const yd=(key, label, ydg, mult)=>{ const v=s[key]||0; if(!v || !(ydg>0)) return; const per=(mult!=null?mult:1)/ydg; rows.push({key, label, stat:v, per, pts:v*per}); };
+    const ct=(key, label, per)=>{ const v=s[key]||0; if(!v || !per) return; rows.push({key, label, stat:v, per, pts:v*per}); };
+    yd('pass_yd','Passing yards', sc.passing_yards_yardage, sc.passing_yards_points);
+    ct('pass_td','Passing TD', sc.passing_touchdowns); ct('pass_int','Interception', sc.interceptions_thrown);
+    ct('pass_att','Pass attempt', sc.passing_attempts); ct('pass_cmp','Completion', sc.passing_completions);
+    yd('rec_yd','Receiving yards', sc.receiving_yards_yardage, sc.receiving_yards_points);
+    ct('rec_td','Receiving TD', sc.receiving_touchdowns);
+    ct('rec','Reception', (sc.receptions||0) + (pos==='TE' ? (sc.receptions_te_bonus||0) : 0));
+    yd('rush_yd','Rushing yards', sc.rushing_yards_yardage, sc.rushing_yards_points);
+    ct('rush_td','Rushing TD', sc.rushing_touchdowns); ct('rush_att','Carry', sc.rushing_attempts);
+    ct('fum_lost','Fumble lost', sc.fumbles_lost); ct('fum','Fumble', sc.fumbles);
+    const tp=(s.pass_2pt||0)+(s.rush_2pt||0)+(s.rec_2pt||0);
+    if(tp && sc.two_point_conversions) rows.push({key:'2pt', label:'2-pt conversion', stat:tp, per:sc.two_point_conversions, pts:tp*sc.two_point_conversions});
+    rows.sort((a,b)=>Math.abs(b.pts)-Math.abs(a.pts));
+    return {rows, total:r2(rows.reduce((a,r)=>a+r.pts,0)), source:srcName||'app scoring'};
+  }
+  // kickers and defenses under the app's scoring: Sleeper's own total, one line
+  const rec=Number(sc.receptions||0); const k = rec>=1 ? 'pts_ppr' : rec>0 ? 'pts_half_ppr' : 'pts_std';
+  const v = s[k]!=null ? +s[k] : (s.pts_half_ppr!=null ? +s.pts_half_ppr : null);
+  if(v!=null) rows.push({key:k, label:`Sleeper ${k==='pts_ppr'?'PPR':k==='pts_std'?'standard':'half-PPR'} points`, stat:1, per:v, pts:v});
+  return {rows, total:r2(rows.reduce((a,r)=>a+r.pts,0)), source:srcName||'Sleeper'};
+}
+function tcBreakdownHTML(b){
+  const f=(v)=>(Math.round(v*100)/100).toFixed(2);
+  const per=(v)=>{ const a=Math.abs(v); return a<0.1 ? v.toFixed(3) : f(v); };
+  if(!b.rows.length) return `<div class="tc-brk-none">Nothing the scoring pays for yet.</div>`;
+  return `<table class="tc-brk"><thead><tr><th>Stat</th><th class="n">#</th><th class="n">Pts per</th><th class="n">Points</th></tr></thead><tbody>${
+    b.rows.map(r=>`<tr class="${r.pts<0?'neg':''}"><td>${escHtml(r.label)}</td><td class="n">${Number.isInteger(r.stat)?r.stat:r.stat}</td><td class="n">${per(r.per)}</td><td class="n"><b>${f(r.pts)}</b></td></tr>`).join('')
+  }</tbody><tfoot><tr><td>Total</td><td></td><td></td><td class="n"><b>${f(b.total)}</b></td></tr></tfoot></table>
+  <div class="tc-brk-src">${escHtml(b.source)}</div>`;
+}
+// The pane's rows, by player, for the tap on a number.
+var _gcBrk = {};
+function gcPtsPop(ev, pid){
+  const r=_gcBrk[String(pid)]; if(!r) return;
+  const sc=gcScoring(); const lgE=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
+  const src = sc ? ((lgE && lgE.name) || (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) || 'league scoring') : 'TripleCrown scoring';
+  const b=tcPointsBreakdown(r.stats||{}, gcPos(r), sc, src);
+  tcPopShow(ev, 'brk:'+pid, `${escHtml(gcName(r))} · ${b.total.toFixed(2)}`, tcBreakdownHTML(b));
 }
 // Who rosters him in the synced league.
 function gcOwnerOf(pid){
@@ -5021,9 +5116,12 @@ function gcPlayerHTML(x, side){
   const pid=String(r.player_id||''); const pos=gcPos(r);
   // a D/ST row opens the team defense's card (its id is the team code)
   const click = pos==='DEF' ? ` onclick="${pcardOnclick(String(r.team||pid).toUpperCase(), 'DEF', String(r.team||pid).toUpperCase())}"` : ` onclick="${pcardOnclick(pid, pos, r.team||'')}"`;
+  // the number is a tap: where the points came from (Sleeper's score breakdown)
+  _gcBrk[pid]=r;
+  const tap = (x.pts!=null && !r.proj) ? ` onclick="gcPtsPop(event,'${escAttr(pid)}')" title="How the points add up"` : '';
   return `<div class="gc-p gc-p-${side}${r.proj?' gc-p-proj':''}"${click}>
     <div class="gc-pinfo">${owner?`<span class="gc-owner">${escHtml(owner)}</span>`:''}<span class="gc-pname${gcSideClass(pid)}">${escHtml(gcName(r))}</span>${x.line?`<span class="gc-line">${escHtml(x.line)}</span>`:''}</div>
-    <span class="gc-ptsbox"><b class="gc-pts">${x.pts!=null?x.pts.toFixed(2):'–'}</b>${x.proj!=null?`<small class="gc-proj" title="projected">${x.proj.toFixed(2)}</small>`:''}</span>
+    <span class="gc-ptsbox${tap?' gc-ptsbox-tap':''}"${tap}><b class="gc-pts">${x.pts!=null?x.pts.toFixed(2):'–'}</b>${x.proj!=null?`<small class="gc-proj" title="projected">${x.proj.toFixed(2)}</small>`:''}</span>
   </div>`;
 }
 // A game not yet played shows each side's players with the week's PROJECTED line — Sleeper's
@@ -6871,6 +6969,7 @@ function lfReadPlay(lp){
   if(!yds){ const m=/for (-?\d+) yards?/.exec(text) || /(\d+) yard field goal/.exec(text); if(m) yds=Number(m[1]); }
   const names=(typeof gcPlayNames==='function') ? gcPlayNames(text) : {primary:'', receiver:'', picker:''};
   let kind='other', title='';
+  let fumbleBase='', fumbleBy='', fumbleLost=false;
   const ath=Array.isArray(lp.athletes)?lp.athletes:[];
   const roleTok={ primary:names.primary, receiver:names.receiver, picker:names.picker };
   const roles={};
@@ -6900,12 +6999,35 @@ function lfReadPlay(lp){
   else if(type==='Extra Point Good'){ kind='xp'; title=`${nm('primary',names.primary)} XP, good`; }
   else if(/Extra Point Missed|Blocked Extra Point/.test(type)){ kind='xpMiss'; title=`${nm('primary',names.primary)} XP, missed`; }
   else if(/^Sack/.test(type)){ kind='sack'; title=`${nm('primary',names.primary)} sacked, ${yds} yds`; }
-  else if(/Fumble/.test(type)){ kind='fum'; title=`Fumble! ${nm('primary',names.primary)}`; }
+  else if(/Fumble/.test(type)){
+    // The play was a run or a catch until the ball came out: those yards are the carrier's
+    // (ESPN's statYardage is the gain before the fumble), then the fumble itself — and the
+    // lost one, when the other club came up with it. Read for the right man: the receiver on
+    // a catch, the runner or the sacked passer otherwise.
+    kind='fum';
+    const body=(typeof gcPlayBody==='function') ? gcPlayBody(text) : text;
+    const caught=/ pass (?:short |deep )?(?:left|middle|right)?\s*to /i.test(body) && !/incomplete/i.test(body);
+    const sacked=/ sacked /i.test(body);
+    const carrier = caught ? 'receiver' : 'primary';
+    fumbleBase = caught ? 'rec' : (sacked ? 'sack' : 'rush');
+    const rec=/RECOVERED by ([A-Z]{2,3})-/i.exec(body);
+    const offense=(typeof gcAbbr==='function') ? gcAbbr(lp.team) : String(lp.team||'').toUpperCase();
+    const lostTo = rec ? ((typeof gcAbbr==='function') ? gcAbbr(rec[1]) : rec[1].toUpperCase()) : '';
+    fumbleLost = !!(lostTo && offense && lostTo!==offense);
+    fumbleBy = carrier;
+    title=`Fumble! ${nm(carrier, roleTok[carrier])}${fumbleLost?' loses it':' — recovered'}${/TOUCHDOWN/i.test(body)?' 🎉':''}`;
+  }
   else if(type==='Punt'){ kind='punt'; title=`${nm('primary',names.primary)} punts`; }
   else if(type==='Kickoff'){ kind='ko'; title=`${nm('primary',names.primary)} kicks off`; }
   else if(type==='Penalty'){ kind='pen'; const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)/i.exec(text); title=m?`Flag: ${m[3]} on ${(typeof gcAbbr==='function')?gcAbbr(m[1]):m[1]}`:'Penalty'; }
   else { title=text.replace(/^\s*(\([^)]*\)\s*)+/,'').slice(0,90); }
-  return {kind, title, roles, stats:lfPlayStats(kind, yds, roles), tokens:roleTok};
+  let stats=lfPlayStats(kind, yds, roles);
+  if(fumbleBase){
+    stats=lfPlayStats(fumbleBase, yds, roles);
+    const pid=roles[fumbleBy];
+    if(pid){ const s=stats[pid]=stats[pid]||{}; s.fum=(s.fum||0)+1; if(fumbleLost) s.fum_lost=(s.fum_lost||0)+1; }
+  }
+  return {kind, title, roles, stats, tokens:roleTok};
 }
 // The kinds the feed keeps when it is not showing everything.
 const LF_KEY_KINDS = new Set(['rushTd','recTd','fg','fgMiss','int','fum','sack','xp','xpMiss']);
@@ -8913,7 +9035,7 @@ function _paceSumStints(rec){
   const sum={passing_yards:0,passing_tds:0,passing_attempts:0,passing_completions:0,
     interceptions_thrown:0,rushing_yards:0,rushing_tds:0,rushing_attempts:0,
     receiving_yards:0,receiving_tds:0,receptions:0,receiving_targets:0,fumbles_lost:0,
-    two_point_conversions:0,games_played:0,pos:null};
+    two_point_conversions:0,fumbles:0,games_played:0,pos:null};
   list.forEach(r=>{
     const s=(r&&r.stats)||{};
     sum.passing_yards+=s.passing_yards||0; sum.passing_tds+=s.passing_touchdowns||0;
@@ -8925,6 +9047,7 @@ function _paceSumStints(rec){
     sum.receptions+=s.receptions||0; sum.receiving_targets+=s.receiving_targets||0;
     sum.fumbles_lost+=s.fumbles_lost||0;
     sum.two_point_conversions+=(s.passing_2pt||0)+(s.rushing_2pt||0)+(s.receiving_2pt||0);
+    sum.fumbles+=s.fumbles||0;
     sum.games_played+=(r.games_played!=null?r.games_played:(s.games_played||0));
     if(!sum.pos) sum.pos=r.pos||null;
   });
@@ -9323,6 +9446,7 @@ function calcFpts(p){
   // Two-point conversions of every kind, summed into one count by whoever built the row
   // (buildSeedEntry, ldPoints, the week-hub scorers). Projections never carry one.
   f+=(p.two_point_conversions||0)*(sc.two_point_conversions||0);
+  f+=(p.fumbles||0)*(sc.fumbles||0);
   return f;
 }
 // BAFL Mode: matchups are best-3-of-5 CATEGORIES (pass yds −20/INT · rush yds · rec yds ·
@@ -10463,6 +10587,7 @@ function pcardFptsFromStats(s, scoringOverride){
   // Sleeper's week row splits the conversions by how they were scored; the league scores
   // them alike. Left out, a 2-pt catch read as a plain catch and the week came up 2 short.
   pts += ((s.pass_2pt||0)+(s.rush_2pt||0)+(s.rec_2pt||0))*(sc.two_point_conversions||0);
+  pts += (s.fum||0)*(sc.fumbles||0);
   return Math.round(pts*100)/100;
 }
 // Fixed full-PPR scoring the consistency benchmarks are defined in. The grade is meant to
@@ -10474,7 +10599,7 @@ const PCARD_PPR_SCORING = {
   passing_attempts:0, passing_completions:0,
   rushing_yards_yardage:10, rushing_yards_points:1, rushing_touchdowns:6, rushing_attempts:0,
   receiving_yards_yardage:10, receiving_yards_points:1, receiving_touchdowns:6, receptions:1, receptions_te_bonus:0,
-  fumbles_lost:-2, two_point_conversions:2,
+  fumbles_lost:-2, two_point_conversions:2, fumbles:0,
 };
 // A game the player barely took part in (left hurt early, mop-up, Week 18 kneel-downs) is
 // not evidence about his consistency. Sleeper gives offensive snaps per week; below this
@@ -22847,6 +22972,7 @@ function renderRankings(){
           <div class="scoring-field"><label>REC (PPR)</label><input id="sc_rec" type="number" value="${scoringSettings.receptions}" step="0.25"></div>
           <div class="scoring-field"><label>TE PREM</label><input id="sc_rec_te" type="number" value="${scoringSettings.receptions_te_bonus}" step="0.25" title="Extra points per reception for TEs only, on top of PPR. 0.5 here = a 1.5-PPR-TE league in full PPR."></div>
           <div class="scoring-field"><label>FUMBLE</label><input id="sc_fum" type="number" value="${scoringSettings.fumbles_lost}" step="0.5"></div>
+          <div class="scoring-field"><label>ANY FUMBLE</label><input id="sc_fum_any" type="number" value="${scoringSettings.fumbles!=null?scoringSettings.fumbles:0}" step="0.5" title="Points per fumble, lost or not, on top of the lost-fumble penalty (Sleeper's fum)."></div>
           <div class="scoring-field"><label>2-PT CONV</label><input id="sc_2pt" type="number" value="${scoringSettings.two_point_conversions!=null?scoringSettings.two_point_conversions:2}" step="0.5" title="Points per two-point conversion — passed, rushed or caught."></div>
           <div class="scoring-field"><label>PASS ATT</label><input id="sc_pass_att" type="number" value="${scoringSettings.passing_attempts}" step="0.1"></div>
           <div class="scoring-field"><label>PASS COMP</label><input id="sc_pass_comp" type="number" value="${scoringSettings.passing_completions}" step="0.1"></div>
@@ -23444,6 +23570,7 @@ function recalcRankings(){
   scoringSettings.receptions_te_bonus=g('sc_rec_te',0);
   scoringSettings.fumbles_lost=g('sc_fum',-2);
   scoringSettings.two_point_conversions=g('sc_2pt',2);
+  scoringSettings.fumbles=g('sc_fum_any',0);
   scoringSettings.passing_attempts=g('sc_pass_att',0);
   scoringSettings.passing_completions=g('sc_pass_comp',0);
   scoringSettings.rushing_attempts=g('sc_rush_att',0);
@@ -27643,7 +27770,7 @@ const SLEEPER_STAT_MAP = {
   rush_yd:'rushing_yards', rush_td:'rushing_touchdowns', rush_att:'rushing_attempts',
   rec:'receptions', rec_yd:'receiving_yards', rec_td:'receiving_touchdowns',
   rec_tgt:'receiving_targets', fum_lost:'fumbles_lost', gp:'games_played',
-  pass_2pt:'passing_2pt', rush_2pt:'rushing_2pt', rec_2pt:'receiving_2pt',
+  pass_2pt:'passing_2pt', rush_2pt:'rushing_2pt', rec_2pt:'receiving_2pt', fum:'fumbles',
   adp_std:'adp', adp_ppr:'adp_ppr', adp_half_ppr:'adp_half_ppr', adp_2qb:'adp_2qb',
 };
 const POS_KEEP = {QB:1,RB:1,WR:1,TE:1};
@@ -27821,6 +27948,7 @@ function buildSeedEntry(pid, row, meta, isProjection){
     receiving_targets:st.receiving_targets||0, receptions:st.receptions||0,
     receiving_yards:st.receiving_yards||0, receiving_tds:st.receiving_touchdowns||0,
     two_point_conversions:(st.passing_2pt||0)+(st.rushing_2pt||0)+(st.receiving_2pt||0),
+    fumbles:st.fumbles||0,
     adp:ad.adp||999, adp_ppr:ad.adp_ppr||999, adp_half_ppr:ad.adp_half_ppr||999, adp_2qb:ad.adp_2qb||999, adp_std:ad.adp_std||999,
     bye_week:null, risk:5, upside:5,
     games_played: (row.games_played!=null?row.games_played:(st.games_played||0)),
@@ -28426,6 +28554,7 @@ const ESPN_STAT_MAP = {
   72:'fum_lost',
   // two-point conversions, split by kind the way Sleeper splits them
   19:'pass_2pt', 26:'rush_2pt', 44:'rec_2pt',
+  68:'fum',
 };
 // pointsOverrides is keyed by defaultPositionId. These are the two we read.
 const ESPN_OVR_TE = '4';
@@ -32633,6 +32762,7 @@ function applySleeperScoring(sc){
   if(sc.bonus_rec_te!=null) s.receptions_te_bonus = num(sc.bonus_rec_te, s.receptions_te_bonus);
   // Fumbles: Sleeper splits fum_lost (offensive player losing it) from fum; use fum_lost.
   if(sc.fum_lost!=null) s.fumbles_lost = num(sc.fum_lost, s.fumbles_lost);
+  if(sc.fum!=null) s.fumbles = num(sc.fum, s.fumbles);   // every fumble, lost or not
   // Two-point conversions: Sleeper keeps three keys (rec/rush/pass) that leagues set alike;
   // the model keeps one. The first of the three the league sends is the value.
   const twoPt = [sc.rec_2pt, sc.rush_2pt, sc.pass_2pt].find(v=>v!=null);

@@ -65,5 +65,7 @@ const g3=app.pcardFptsFromStats({pass_yd:250, pass_td:2, pass_2pt:1, rush_2pt:1}
 chk(Math.abs(g3-(10+8+4))<0.01, `a passed and a rushed conversion each count (got ${g3})`);
 app.setScoring({receiving_yards_yardage:10, receptions:1});
 chk(Math.abs(app.pcardFptsFromStats({rec:1, rec_yd:10, rec_2pt:1})-2)<0.01, 'no setting (an older saved scoring) → conversions score 0, nothing throws');
+app.setScoring({receiving_yards_yardage:10, receptions:0.5, fumbles:-1, fumbles_lost:-2});
+chk(Math.abs(app.pcardFptsFromStats({rec:6, rec_yd:80, fum:1})-10)<0.01 && Math.abs(app.pcardFptsFromStats({rec:6, rec_yd:80, fum:1, fum_lost:1})-8)<0.01, 'a fumble docks the week its point; a lost one two more');
 
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

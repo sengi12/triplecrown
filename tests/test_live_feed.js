@@ -227,6 +227,16 @@ const LP=app.LP, G=app.G;
   app.seed('E9', SUM9); app.clear(); app.markSeen(); await new Promise(r=>setTimeout(r,3));
   app.onBoard({NYJ:G({eid:'E9', score:7, oppScore:0, sit:{period:1, clock:'12:11', lastPlayId:'904', lastPlay:LP({id:'904', type:'Passing Touchdown', yds:30, scoreValue:6, text:'A.Rodgers pass deep right to G.Wilson for 30 yards, TOUCHDOWN.', team:'NYJ'})}})});
   chk(app.unseen()===1 && app.rows().filter(r=>r.eid==='E9').length===3, 'a game\'s first fill is history: only the play the board caught counts, not the two seeded behind it');
-  console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
+  console.log('=== a fumble: the play that was running, then the ball coming out ===');
+const fl=app.read({type:'Fumble Recovery (Opponent)', text:'B.Hall right end to BUF 11 for 2 yards (F.Warner). FUMBLES (F.Warner), RECOVERED by BUF-M.Mustapha at BUF 12.', yds:2, team:'NYJ', athletes:[]});
+chk(fl.kind==='fum' && fl.stats.r1 && fl.stats.r1.rush_yd===2 && fl.stats.r1.rush_att===1 && fl.stats.r1.fum===1 && fl.stats.r1.fum_lost===1 && /loses it/.test(fl.title),
+    `a run that ends in a lost fumble: the carry and its yards, the fumble, the loss (${fl.title})`);
+const fo=app.read({type:'Fumble Recovery (Own)', text:'(Shotgun) A.Rodgers pass short left to G.Wilson to NYJ 21 for 8 yards. FUMBLES, and recovers at NYJ 21.', yds:8, team:'NYJ', athletes:[]});
+chk(fo.stats.w1 && fo.stats.w1.rec===1 && fo.stats.w1.rec_yd===8 && fo.stats.w1.fum===1 && !fo.stats.w1.fum_lost && fo.stats.q1 && fo.stats.q1.pass_yd===8 && /recovered/.test(fo.title),
+    'a catch, then a fumble the offense keeps: the catch counts, the fumble counts, no loss');
+const fs2=app.read({type:'Fumble Recovery (Opponent)', text:'A.Rodgers sacked at NYJ 30 for -7 yards (V.Miller). FUMBLES (V.Miller), RECOVERED by BUF-E.Oliver at NYJ 30.', yds:-7, team:'NYJ', athletes:[]});
+chk(fs2.stats.q1 && fs2.stats.q1.fum===1 && fs2.stats.q1.fum_lost===1 && fs2.stats.q1.rush_yd==null && fs2.stats.q1.pass_att==null, 'a strip sack: the passer loses the ball, and nothing else moves');
+
+console.log(`\nRESULT: ${pass}/${total} ${pass===total?'ALL PASS':'SOME FAILED'}`);
   process.exit(pass===total?0:1);
 })();

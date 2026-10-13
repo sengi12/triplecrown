@@ -59,6 +59,86 @@ function gcPoints(row){
   if(['QB','RB','WR','TE'].includes(pos) && typeof ldPoints==='function') return ldPoints({pos, stats:st});
   return st.pts_half_ppr!=null ? +st.pts_half_ppr : (st.pts_std!=null ? +st.pts_std : null);
 }
+// ── Where the points came from ───────────────────────────────────────────────
+// Sleeper's score-breakdown sheet: each stat the scoring pays for, what it pays, what it
+// paid. Built the SAME way the number was — the league's own table (tcSleeperPoints: every
+// stat key the table prices) or the app's model (calcFpts, row by row) — so the rows always
+// sum to the figure on the card.
+const TC_STAT_LABELS = {
+  pass_yd:'Passing yards', pass_td:'Passing TD', pass_int:'Interception', pass_att:'Pass attempt', pass_cmp:'Completion', pass_2pt:'2-pt pass', pass_sack:'Sacked',
+  pass_fd:'Passing first down', pass_inc:'Incompletion', pass_cmp_40p:'40+ yd completion', pass_td_40p:'40+ yd passing TD', pass_td_50p:'50+ yd passing TD',
+  rush_yd:'Rushing yards', rush_td:'Rushing TD', rush_att:'Carry', rush_2pt:'2-pt run', rush_fd:'Rushing first down', rush_40p:'40+ yd run', rush_td_40p:'40+ yd rushing TD', rush_td_50p:'50+ yd rushing TD',
+  rec:'Reception', rec_yd:'Receiving yards', rec_td:'Receiving TD', rec_tgt:'Target', rec_2pt:'2-pt catch', rec_fd:'Receiving first down', rec_40p:'40+ yd catch', rec_td_40p:'40+ yd receiving TD', rec_td_50p:'50+ yd receiving TD',
+  bonus_rec_te:'TE reception bonus', bonus_rec_rb:'RB reception bonus', bonus_rec_wr:'WR reception bonus',
+  bonus_pass_yd_300:'300-yd passing game', bonus_pass_yd_400:'400-yd passing game', bonus_rush_yd_100:'100-yd rushing game', bonus_rush_yd_200:'200-yd rushing game', bonus_rec_yd_100:'100-yd receiving game', bonus_rec_yd_200:'200-yd receiving game',
+  fum:'Fumble', fum_lost:'Fumble lost', fum_rec_td:'Fumble recovery TD', kr_yd:'Kick return yards', pr_yd:'Punt return yards', kr_td:'Kick return TD', pr_td:'Punt return TD', st_td:'Special teams TD', st_fum_rec:'Special teams fumble recovery', st_ff:'Special teams forced fumble',
+  xpm:'Extra point', xpmiss:'Missed extra point', fgm:'Field goal', fgmiss:'Missed field goal', fgm_0_19:'FG 0–19', fgm_20_29:'FG 20–29', fgm_30_39:'FG 30–39', fgm_40_49:'FG 40–49', fgm_50p:'FG 50+', fgm_50_59:'FG 50–59', fgm_60p:'FG 60+', fgm_yds:'FG yards', fgmiss_0_19:'Missed FG 0–19', fgmiss_20_29:'Missed FG 20–29', fgmiss_30_39:'Missed FG 30–39', fgmiss_40_49:'Missed FG 40–49', fgmiss_50p:'Missed FG 50+',
+  sack:'Sack', int:'Interception', ff:'Forced fumble', fum_rec:'Fumble recovery', safe:'Safety', blk_kick:'Blocked kick', def_td:'Defensive TD', def_st_td:'Defense / ST TD', def_st_ff:'Defense / ST forced fumble', def_st_fum_rec:'Defense / ST fumble recovery', def_kr_yd:'Kick return yards', def_pr_yd:'Punt return yards', def_2pt:'Defensive 2-pt', def_4_and_stop:'4th-down stop', def_3_and_out:'Three and out',
+  pts_allow_0:'0 points allowed', pts_allow_1_6:'1–6 points allowed', pts_allow_7_13:'7–13 points allowed', pts_allow_14_20:'14–20 points allowed', pts_allow_21_27:'21–27 points allowed', pts_allow_28_34:'28–34 points allowed', pts_allow_35p:'35+ points allowed', pts_allow:'Points allowed',
+  yds_allow_0_100:'0–100 yards allowed', yds_allow_100_199:'100–199 yards allowed', yds_allow_200_299:'200–299 yards allowed', yds_allow_300_349:'300–349 yards allowed', yds_allow_350_399:'350–399 yards allowed', yds_allow_400_449:'400–449 yards allowed', yds_allow_450_499:'450–499 yards allowed', yds_allow_500_549:'500–549 yards allowed', yds_allow_550p:'550+ yards allowed', yds_allow:'Yards allowed',
+  idp_tkl:'Tackle', idp_tkl_solo:'Solo tackle', idp_tkl_ast:'Assisted tackle', idp_tkl_loss:'Tackle for loss', idp_sack:'Sack', idp_int:'Interception', idp_ff:'Forced fumble', idp_fum_rec:'Fumble recovery', idp_pass_def:'Pass defended', idp_qb_hit:'QB hit', idp_def_td:'Defensive TD', idp_safe:'Safety', idp_blk_kick:'Blocked kick',
+};
+function tcStatLabel(k){
+  if(TC_STAT_LABELS[k]) return TC_STAT_LABELS[k];
+  return String(k||'').replace(/_/g,' ').replace(/^./, c=>c.toUpperCase());
+}
+// → {rows:[{key,label,stat,per,pts}], total, source}; rows in the order they matter (biggest first).
+function tcPointsBreakdown(stats, pos, scRaw, srcName){
+  stats=stats||{}; pos=String(pos||'').toUpperCase();
+  const r2=(v)=>Math.round(v*100)/100;
+  const rows=[];
+  if(scRaw){
+    for(const k in scRaw){
+      const v=stats[k], per=scRaw[k];
+      if(typeof v!=='number' || typeof per!=='number' || !v) continue;
+      rows.push({key:k, label:tcStatLabel(k), stat:v, per, pts:v*per});
+    }
+    rows.sort((a,b)=>Math.abs(b.pts)-Math.abs(a.pts));
+    return {rows, total:r2(rows.reduce((a,r)=>a+r.pts,0)), source:srcName||'league scoring'};
+  }
+  const sc=(typeof scoringSettings!=='undefined' && scoringSettings) ? scoringSettings : {};
+  const s=stats;
+  if(['QB','RB','WR','TE'].includes(pos)){
+    const yd=(key, label, ydg, mult)=>{ const v=s[key]||0; if(!v || !(ydg>0)) return; const per=(mult!=null?mult:1)/ydg; rows.push({key, label, stat:v, per, pts:v*per}); };
+    const ct=(key, label, per)=>{ const v=s[key]||0; if(!v || !per) return; rows.push({key, label, stat:v, per, pts:v*per}); };
+    yd('pass_yd','Passing yards', sc.passing_yards_yardage, sc.passing_yards_points);
+    ct('pass_td','Passing TD', sc.passing_touchdowns); ct('pass_int','Interception', sc.interceptions_thrown);
+    ct('pass_att','Pass attempt', sc.passing_attempts); ct('pass_cmp','Completion', sc.passing_completions);
+    yd('rec_yd','Receiving yards', sc.receiving_yards_yardage, sc.receiving_yards_points);
+    ct('rec_td','Receiving TD', sc.receiving_touchdowns);
+    ct('rec','Reception', (sc.receptions||0) + (pos==='TE' ? (sc.receptions_te_bonus||0) : 0));
+    yd('rush_yd','Rushing yards', sc.rushing_yards_yardage, sc.rushing_yards_points);
+    ct('rush_td','Rushing TD', sc.rushing_touchdowns); ct('rush_att','Carry', sc.rushing_attempts);
+    ct('fum_lost','Fumble lost', sc.fumbles_lost); ct('fum','Fumble', sc.fumbles);
+    const tp=(s.pass_2pt||0)+(s.rush_2pt||0)+(s.rec_2pt||0);
+    if(tp && sc.two_point_conversions) rows.push({key:'2pt', label:'2-pt conversion', stat:tp, per:sc.two_point_conversions, pts:tp*sc.two_point_conversions});
+    rows.sort((a,b)=>Math.abs(b.pts)-Math.abs(a.pts));
+    return {rows, total:r2(rows.reduce((a,r)=>a+r.pts,0)), source:srcName||'app scoring'};
+  }
+  // kickers and defenses under the app's scoring: Sleeper's own total, one line
+  const rec=Number(sc.receptions||0); const k = rec>=1 ? 'pts_ppr' : rec>0 ? 'pts_half_ppr' : 'pts_std';
+  const v = s[k]!=null ? +s[k] : (s.pts_half_ppr!=null ? +s.pts_half_ppr : null);
+  if(v!=null) rows.push({key:k, label:`Sleeper ${k==='pts_ppr'?'PPR':k==='pts_std'?'standard':'half-PPR'} points`, stat:1, per:v, pts:v});
+  return {rows, total:r2(rows.reduce((a,r)=>a+r.pts,0)), source:srcName||'Sleeper'};
+}
+function tcBreakdownHTML(b){
+  const f=(v)=>(Math.round(v*100)/100).toFixed(2);
+  const per=(v)=>{ const a=Math.abs(v); return a<0.1 ? v.toFixed(3) : f(v); };
+  if(!b.rows.length) return `<div class="tc-brk-none">Nothing the scoring pays for yet.</div>`;
+  return `<table class="tc-brk"><thead><tr><th>Stat</th><th class="n">#</th><th class="n">Pts per</th><th class="n">Points</th></tr></thead><tbody>${
+    b.rows.map(r=>`<tr class="${r.pts<0?'neg':''}"><td>${escHtml(r.label)}</td><td class="n">${Number.isInteger(r.stat)?r.stat:r.stat}</td><td class="n">${per(r.per)}</td><td class="n"><b>${f(r.pts)}</b></td></tr>`).join('')
+  }</tbody><tfoot><tr><td>Total</td><td></td><td></td><td class="n"><b>${f(b.total)}</b></td></tr></tfoot></table>
+  <div class="tc-brk-src">${escHtml(b.source)}</div>`;
+}
+// The pane's rows, by player, for the tap on a number.
+var _gcBrk = {};
+function gcPtsPop(ev, pid){
+  const r=_gcBrk[String(pid)]; if(!r) return;
+  const sc=gcScoring(); const lgE=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
+  const src = sc ? ((lgE && lgE.name) || (typeof leagueSnapshot!=='undefined' && leagueSnapshot && leagueSnapshot.name) || 'league scoring') : 'TripleCrown scoring';
+  const b=tcPointsBreakdown(r.stats||{}, gcPos(r), sc, src);
+  tcPopShow(ev, 'brk:'+pid, `${escHtml(gcName(r))} · ${b.total.toFixed(2)}`, tcBreakdownHTML(b));
+}
 // Who rosters him in the synced league.
 function gcOwnerOf(pid){
   const L=(typeof gcLeagueEntry==='function') ? gcLeagueEntry() : null;
@@ -255,9 +335,12 @@ function gcPlayerHTML(x, side){
   const pid=String(r.player_id||''); const pos=gcPos(r);
   // a D/ST row opens the team defense's card (its id is the team code)
   const click = pos==='DEF' ? ` onclick="${pcardOnclick(String(r.team||pid).toUpperCase(), 'DEF', String(r.team||pid).toUpperCase())}"` : ` onclick="${pcardOnclick(pid, pos, r.team||'')}"`;
+  // the number is a tap: where the points came from (Sleeper's score breakdown)
+  _gcBrk[pid]=r;
+  const tap = (x.pts!=null && !r.proj) ? ` onclick="gcPtsPop(event,'${escAttr(pid)}')" title="How the points add up"` : '';
   return `<div class="gc-p gc-p-${side}${r.proj?' gc-p-proj':''}"${click}>
     <div class="gc-pinfo">${owner?`<span class="gc-owner">${escHtml(owner)}</span>`:''}<span class="gc-pname${gcSideClass(pid)}">${escHtml(gcName(r))}</span>${x.line?`<span class="gc-line">${escHtml(x.line)}</span>`:''}</div>
-    <span class="gc-ptsbox"><b class="gc-pts">${x.pts!=null?x.pts.toFixed(2):'–'}</b>${x.proj!=null?`<small class="gc-proj" title="projected">${x.proj.toFixed(2)}</small>`:''}</span>
+    <span class="gc-ptsbox${tap?' gc-ptsbox-tap':''}"${tap}><b class="gc-pts">${x.pts!=null?x.pts.toFixed(2):'–'}</b>${x.proj!=null?`<small class="gc-proj" title="projected">${x.proj.toFixed(2)}</small>`:''}</span>
   </div>`;
 }
 // A game not yet played shows each side's players with the week's PROJECTED line — Sleeper's

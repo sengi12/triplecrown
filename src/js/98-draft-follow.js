@@ -76,6 +76,7 @@ function applySleeperScoring(sc){
   if(sc.bonus_rec_te!=null) s.receptions_te_bonus = num(sc.bonus_rec_te, s.receptions_te_bonus);
   // Fumbles: Sleeper splits fum_lost (offensive player losing it) from fum; use fum_lost.
   if(sc.fum_lost!=null) s.fumbles_lost = num(sc.fum_lost, s.fumbles_lost);
+  if(sc.fum!=null) s.fumbles = num(sc.fum, s.fumbles);   // every fumble, lost or not
   // Two-point conversions: Sleeper keeps three keys (rec/rush/pass) that leagues set alike;
   // the model keeps one. The first of the three the league sends is the value.
   const twoPt = [sc.rec_2pt, sc.rush_2pt, sc.pass_2pt].find(v=>v!=null);
