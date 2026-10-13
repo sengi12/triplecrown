@@ -466,3 +466,20 @@
 .la-swing-dp{font-weight:900;font-size:13px;} .la-swing-up .la-swing-dp{color:var(--success);} .la-swing-dn .la-swing-dp{color:var(--danger);}
 .la-swing-none,.la-swing-wait{font-size:12px;color:var(--muted);padding:6px 0;}
 .la-swing-closed{margin-top:8px;}
+
+/* the chart beside its recap on a wide screen; the replay controls */
+.la-swing-body{display:flex;flex-direction:column;gap:6px;}
+.la-swing-chart{min-width:0;}
+.la-swing-state{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;}
+.la-swing-live b{color:var(--text);font-size:14px;}
+.la-swing-ctl{display:flex;align-items:center;gap:10px;margin-top:4px;}
+.la-swing-play{flex:none;}
+.la-swing-scrub{flex:1;min-width:120px;accent-color:var(--accent);}
+.la-swing-mark{transition:opacity .25s;}
+.la-swing-cursor{fill:var(--text);}
+@media (prefers-reduced-motion:reduce){ .la-swing-mark{transition:none;} }
+@media (min-width:900px){
+  .la-swing-body{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:6px 18px;align-items:start;}
+  .la-swing-recap{margin-top:0;max-height:300px;overflow-y:auto;}
+  .la-swing-svg{max-width:100%;}
+}

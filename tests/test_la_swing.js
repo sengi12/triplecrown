@@ -11,7 +11,7 @@ global.Chart=function(){return{destroy(){}}};global.confirm=()=>true;global.btoa
 const fs=require('fs');
 const code=fs.readFileSync(require('path').join(__dirname,'check.js'),'utf8');
 const app=new Function(code+`return {
-  laSwingBuild, laSwingSVG, laSwingRecapHTML, laSwingPlayEvents, laSwingGameFrac, laSwingWindows, laSwingX, laSwingSectionHTML, laState,
+  laSwingBuild, laSwingSVG, laSwingRecapHTML, laSwingPlayEvents, laSwingGameFrac, laSwingWindows, laSwingX, laSwingSectionHTML, laSwingDrawWidth, laState,
   setPlayers:(s)=>{sleeperPlayers=s;}, setSnapshot:(s)=>{leagueSnapshot=s;}, setSleeperFetch:(f)=>{sleeperFetch=f;} };`)();
 let pass=0,total=0;const chk=(c,l)=>{total++;if(c){pass++;console.log('  PASS:',l);}else console.log('  FAIL:',l);};
 const near=(a,b,e)=>Math.abs(a-b)<(e||1e-6);
@@ -70,6 +70,17 @@ chk(/>Final</.test(app.laSwingSVG(done, {})), 'a decided week ends the axis at F
 const recap=app.laSwingRecapHTML(B, {p1:'Joe Burrow', q1:'Tony Pollard'});
 chk((recap.match(/la-swing-row/g)||[]).length===2 && /Joe Burrow/.test(recap) && /Tony Pollard/.test(recap) && /\+5\.2 pts/.test(recap), 'the recap lists the swings with the player and his points');
 chk(/steady weekend/.test(app.laSwingRecapHTML(app.laSwingBuild(Object.assign({}, base, {plays:base.plays.slice(0,1)})), {})), 'no swing worth pinning says so');
+
+console.log('=== the replay controls and the wide drawing ===');
+const wide=app.laSwingSVG(B, {w:960});
+chk(/viewBox="0 0 960 220"/.test(wide) && /data-w="960"/.test(wide) && /la-swing-reveal/.test(wide) && /la-swing-cursor/.test(wide) && (wide.match(/data-x="/g)||[]).length===2,
+    'a wide screen gets a 960 × 220 drawing (the labels stay their size), with the reveal clip, a cursor and an x for every pinned swing');
+chk(/viewBox="0 0 640 250"/.test(svg), 'the phone keeps the 640 × 250 card');
+global.window.innerWidth=1200;
+app.laState.swingHide=false;
+chk(app.laSwingDrawWidth()===960, 'the drawing width follows the viewport: 960 from 900 px up');
+global.window.innerWidth=390;
+chk(app.laSwingDrawWidth()===640, '… and 640 on a phone');
 
 console.log('=== plays from an ESPN summary ===');
 app.setPlayers({p1:{name:'Joe Burrow', team:'CIN', pos:'QB'}, p2:{name:"Ja'Marr Chase", team:'CIN', pos:'WR'}});

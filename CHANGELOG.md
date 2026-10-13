@@ -6,6 +6,10 @@ this file is the merge history, newest first, one line per PR. Add a line when a
 
 Open work lives in [TODO.md](TODO.md).
 
+## 2026-10-13
+
+- feat(analyzer): the swing chart replays the week — a Replay button sweeps the line from the first kickoff with the swings appearing as it passes them and a readout of the chance, points and projections, a scrubber steps to any play — and on a desktop the drawing is 960 wide with the recap beside it instead of a phone card stretched across the page; the block no longer waits on the 45-second poll to notice the week's board has landed (#177)
+
 ## 2026-10-12
 
 - fix(game-center): kicks to the Rams land at the Rams' end — ESPN's play text calls them "LA" while its board says "LAR", so a kickoff to LA 4 read as the other club's 4 and drew at the wrong end of the field (#176)
