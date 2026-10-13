@@ -79,3 +79,7 @@
   .season-readonly-actions{order:3;margin-left:0;justify-content:flex-end;flex:1 1 auto;}
 }
 
+
+/* the badge's door to the league chart */
+.season-power-link{font:inherit;font-size:11px;font-weight:800;color:var(--accent);background:none;border:none;padding:0 2px;cursor:pointer;white-space:nowrap;}
+.season-power-link:hover{text-decoration:underline;}
