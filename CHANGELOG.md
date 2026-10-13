@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-10-12
 
+- fix(game-center): a punt's snap is where the play's words put it — ESPN stamps some punts' yardsToEndzone from the receiving side, which dragged the drive line across the field and arced the kick from the wrong end — and a punt or kickoff now hangs high, its arc rising with the distance (#174)
 - perf(live): a game on the phone repaints what moved, not the page — the live views are patched in place (one text node for a score, one row for a play), the live loop ticks every 10 s and stops in the background, the season refresh skips rebuilds between plays, pulses animate opacity only and the tab bar drops its backdrop blur; measured 90 s live: style recalcs 5,773 → 134, layouts 413 → 39, busy time 11.8 s → 1.2 s (#173)
 - feat(analyzer): the matchup card shows how the win chance moved, play by play — one line from the first kickoff to the final whistle, replayed from ESPN's play log under the league's own scoring, the biggest swings pinned by the player who made them, finals snapping to Sleeper's totals so the line ends on the scoreboard (#172)
 - fix(scoring): two-point conversions count in fantasy points everywhere (one setting, a 2-PT CONV field, Sleeper's three keys and ESPN's ids map to it; the weekly sidecar gains pass/rush/rec 2-pt columns and stops counting a try as a target or carry) — and a completion lateralled on for the score is the lateral man's touchdown, not the targeted receiver's, in the route tab, the target map and the weekly lines (Evans → Samuel, 2026 wk 3) (#171)

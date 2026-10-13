@@ -445,6 +445,20 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const rh=app.drive(app.GAME('post'), retD);
   chk(/gc-seg-kick" d="M[^"]*Q/.test(rh) && /gc-seg-last gc-seg-ret" d="M[^"]*L[^"]*" fill="none" stroke="#39c15a"/.test(rh) && /A\. Bachman 14 yd return/.test(rh), 'the punt arcs to where it was fielded (static), the return runs on in green (animated), the label names the returner and the yards');
   chk(rh.includes(`<image href="${app.esc(app.logo('TB'))}"`) && !rh.includes(`<image href="${app.esc(app.logo('CIN'))}"`), 'the pin wears the receiving club\'s own logo, not the punting team\'s');
+  // BUF @ LAR 2026 wk 5: ESPN stamped the punt's yardsToEndzone from the RECEIVING side (13 at
+  // the Rams' own 13), which put the snap at the far end of the field — the drive line ran the
+  // whole field to it and the kick arced from there. The words place the snap.
+  const flipD=toD([P('f1',1,'Rush','K.Williams up the middle to CIN 13 for 3 yards.',3,90),
+    P('f2',2,'Punt','E.Evans punts 62 yards to BUF 25, Center-J.Cardona. G.Dortch pushed ob at BUF 39 for 14 yards (D.Connors; T.Higbee).',62,13,{start:{down:4, distance:4, yardsToEndzone:13, possessionText:'CIN 13', shortDownDistanceText:'4th & 4'}})], 'PUNT');
+  const fpH=app.drive(app.GAME("post"), flipD);
+  const kick=/gc-seg-kick" d="M([\d.]+),([\d.]+) Q([\d.]+),([\d.]+) ([\d.]+),([\d.]+)"/.exec(fpH);
+  const ret=/gc-seg-last gc-seg-ret" d="M([\d.]+),[\d.]+ L([\d.]+),/.exec(fpH);
+  // CIN is the home side here, driving right → left: the snap sits at its own 13 on the right
+  chk(kick && Number(kick[1])>230 && Number(kick[5])<Number(kick[1])-100, `the snap sits at the kicking club's own 13 whatever yardsToEndzone says, and the kick flies downfield from there (x ${kick&&kick[1]} → ${kick&&kick[5]})`);
+  chk(ret && Number(ret[2])>Number(ret[1]) && Math.abs(Number(ret[1])-Number(kick[5]))<0.2, 'the return starts where the ball was fielded and runs back the other way');
+  chk(kick && Number(kick[4])<=31, `a punt hangs high: the arc's control point well above a throw's (y ${kick&&kick[4]}, a pass tops out at 43)`);
+  const prog=/gc-seg-prog" d="M([\d.]+),[\d.]+ L([\d.]+),/.exec(fpH);
+  chk(prog && Math.abs(Number(prog[2])-Number(kick[1]))<0.2, 'the drive line ends at the real snap, not across the field');
 
   console.log('=== a punt fair caught: no return, just the credit ===');
   const fcD=toD([P('c1',1,'Rush','C.Brown left end for 5 yards.',5,55),
@@ -538,7 +552,9 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   console.log('=== fixed orientation: away on the left, home on the right, never flipped ===');
   const teamD=(team,plays,result)=>({drives:{previous:[{id:'o'+team, team:{abbreviation:team}, description:'x', result:result||'', plays}]}});
   const one=[P('s1',1,'Rush','C.Brown left end for 5 yards.',5,55)];
-  const awayDrive=app.drive(app.GAME('post'), teamD('TB', JSON.parse(JSON.stringify(one))));
+  // the same own-45 yard line, named the way each club's play text names it
+  const oneAway=[P('s1',1,'Rush','C.Brown left end for 5 yards.',5,55,{start:{down:1, yardsToEndzone:55, shortDownDistanceText:'1st & 10', possessionText:'TB 45'}})];
+  const awayDrive=app.drive(app.GAME('post'), teamD('TB', oneAway));
   const homeDrive=app.drive(app.GAME('post'), teamD('CIN', JSON.parse(JSON.stringify(one))));
   const startX=(svg)=>Number((/<circle cx="([\d.]+)" cy="[\d.]+" r="3.4" fill="#39c15a"/.exec(svg)||[])[1]);
   chk(startX(awayDrive) < startX(homeDrive), `the away offense sits left of where the home offense would from the same yard line (${startX(awayDrive)} < ${startX(homeDrive)})`);
