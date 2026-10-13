@@ -964,10 +964,24 @@ function gcDriveChartHTML(game, sum){
   // round for whichever club has the ball, so a turnover or a punt return that runs back toward
   // the offense's own goal lands in the correct — fixed — end zone.
   const dir = (d.team===away) ? 1 : -1;
-  const X = (yd)=> dir>0 ? xAt(yd, lane) : xAt(100-yd, lane);
+  // XL lays an offence-relative yard on the field at any height; X is the same thing on the
+  // lane, which is all most of the drawing needs. Anything that spans the field's height — the
+  // line to gain — has to go through XL rather than xAt, or it comes out mirrored about
+  // midfield on every home-team drive.
+  const XL = (yd, ln)=> dir>0 ? xAt(yd, ln) : xAt(100-yd, ln);
+  const X = (yd)=> XL(yd, lane);
   const col=(t)=>(typeof pwTeamColor==='function' ? pwTeamColor(t) : '#556');
   const quad=(x0,x1,c)=>({x0,x1,d:`M${f1(x0)},${f1(lane)} Q${f1((x0+x1)/2)},${f1(lane-c)} ${f1(x1)},${f1(lane)}`, len:Math.abs(x1-x0)*1.15+c*0.6});
   const line=(x0,x1)=>({x0,x1,d:`M${f1(x0)},${f1(lane)} L${f1(x1)},${f1(lane)}`, len:Math.abs(x1-x0)});
+  // The ball in the air — every throw, and only a throw. It has to read as a throw beside the
+  // run that follows it, and an arc whose height follows its width cannot: three air yards is
+  // seven pixels across, and the bump it drew was lost against the thirty-pixel run next to it.
+  // So the height has a floor, and the handles reach sideways — on a short throw they cross,
+  // which turns the arc into a tall rounded hook instead of the needle a steep quadratic draws.
+  const air=(x0,x1)=>{
+    const w=Math.abs(x1-x0), h=Math.min(26, Math.max(18, w*0.38)), k=Math.max(16, w*0.3), s=x1>=x0?1:-1;
+    return {x0, x1, d:`M${f1(x0)},${f1(lane)} C${f1(x0+k*s)},${f1(lane-h)} ${f1(x1-k*s)},${f1(lane-h)} ${f1(x1)},${f1(lane)}`, len:w*1.1+h*1.2};
+  };
   const parts=[];
   parts.push(`<svg viewBox="0 0 ${W} ${H}" class="gc-drive-svg" role="img" aria-label="${escAttr(d.team)} drive">`);
   parts.push(`<defs><linearGradient id="gcFieldG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1c2330"/><stop offset="1" stop-color="#253040"/></linearGradient><linearGradient id="gcEzA" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${escAttr(col(away))}"/><stop offset="1" stop-color="${escAttr(col(away))}" stop-opacity="0.75"/></linearGradient><linearGradient id="gcEzH" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${escAttr(col(home))}" stop-opacity="0.75"/><stop offset="1" stop-color="${escAttr(col(home))}"/></linearGradient></defs>`);
@@ -999,7 +1013,7 @@ function gcDriveChartHTML(game, sum){
     const ballYd=_gcSpotYd(sitNow.spot, d.team);
     const gainYd = ballYd==null ? null : ballYd+Number(sitNow.distance);
     if(gainYd!=null && gainYd>0 && gainYd<100){
-      const gx0=xAt(gainYd,top), gx1=xAt(gainYd,bot);
+      const gx0=XL(gainYd,top), gx1=XL(gainYd,bot);
       parts.push(`<line class="gc-togo" x1="${f1(gx0)}" y1="${top}" x2="${f1(gx1)}" y2="${bot}" stroke="#ffd21e" stroke-width="2.4" stroke-linecap="round"><title>${escAttr(`${sitNow.ddt||''} — the line to gain`)}</title></line>`);
     }
   }
@@ -1043,7 +1057,7 @@ function gcDriveChartHTML(game, sum){
     } else if(to){
       // the offense's part to where it was taken, then the defender's return the other way, red
       const xa=X(to.at), xe=X(to.end);
-      pre = to.kind==='int' ? Object.assign(quad(x0,xa,Math.min(24, Math.max(8, Math.abs(xa-x0)*0.4))), {cls:''}) : Object.assign(line(x0,xa), {cls:''});
+      pre = to.kind==='int' ? Object.assign(air(x0,xa), {cls:''}) : Object.assign(line(x0,xa), {cls:''});
       retCol='#e5484d'; pinRing=retCol;
       fin = Math.abs(xe-xa)>=0.5 ? Object.assign(line(xa,xe), {cls:' gc-seg-ret'}) : null;
       endX=xe; marker={x:xa, col:retCol}; pinTeam=opp; pinToken=to.who;
@@ -1087,7 +1101,7 @@ function gcDriveChartHTML(game, sum){
       // all we have) and ends in a red X — the pass fell incomplete
       const depth=/deep/i.test(lp.text)?20:/short/i.test(lp.text)?7:13;
       const airYd=Math.max(3, Math.min(depth, 100-last.yd)), endYd=last.yd+airYd;
-      endX=X(endYd); fin=Object.assign(quad(x0,endX,Math.min(24,Math.max(8,Math.abs(endX-x0)*0.4))), {cls:' gc-seg-inc'});
+      endX=X(endYd); fin=Object.assign(air(x0,endX), {cls:' gc-seg-inc'});
       incAt=true; pinToken=nn.primary;
     } else {
       // a sack loses ground: a straight red line back to the new spot, no arc; everything else
@@ -1102,11 +1116,13 @@ function gcDriveChartHTML(game, sum){
         // goes on along the ground in green, a dot at the catch
         const catchYd=Math.max(0, Math.min(100, endYd-lp.yac)), xc=X(catchYd);
         yacRun=true;
-        if(Math.abs(catchYd-last.yd)>=0.01) pre=Object.assign(quad(x0,xc,Math.min(24, Math.max(8, Math.abs(xc-x0)*0.4))), {cls:''});
+        // even a catch made at the line of scrimmage gets its hook: the ball still left the
+        // quarterback's hand, and without it the whole play draws as a run
+        pre=Object.assign(air(x0,xc), {cls:' gc-seg-air'});
         fin=Object.assign(line(xc,endX), {cls:' gc-seg-yac'});
         marker={x:xc, col:'#39c15a'};
       }
-      else if(Math.abs(endYd-last.yd)>=0.01) fin = sack ? Object.assign(line(x0,endX), {cls:' gc-seg-sack'}) : (isPass ? Object.assign(quad(x0,endX,Math.min(24, Math.max(8, Math.abs(endX-x0)*0.4))), {cls:''}) : Object.assign(line(x0,endX), {cls:''}));
+      else if(Math.abs(endYd-last.yd)>=0.01) fin = sack ? Object.assign(line(x0,endX), {cls:' gc-seg-sack'}) : (isPass ? Object.assign(air(x0,endX), {cls:' gc-seg-air'}) : Object.assign(line(x0,endX), {cls:''}));
       pinToken=(/Pass Reception|Passing Touchdown/.test(lp.type) && nn.receiver) ? nn.receiver : nn.primary;
     }
     const animate = _gcd.driveSeen[eid]!==lp.id; _gcd.driveSeen[eid]=lp.id;
@@ -1188,9 +1204,12 @@ function gcDriveChartHTML(game, sum){
     } else {
       const t=(typeof lfReadPlay==='function') ? lfReadPlay({id:lp.id, type:lp.type, text:lp.text, yds:lp.yds, team:d.team, athletes:[]}).title : lp.text.slice(0,40);
       label=String(t||'').replace(/ 🎉| 🙌/g,'');
-      // with the run after the catch on the field, the label leads with the receiver so the
-      // yards after it fit: "D. Metcalf 15 yd catch · 16 YAC"
-      if(yacRun){ const m=/^(.+?) (-?\d+) yd pass to (.+)$/.exec(label); label = m ? `${m[3]} ${m[2]} yd catch · ${lp.yac} YAC` : `${label.slice(0,28)} · ${lp.yac} YAC`; }
+      // with the run after the catch on the field, the label leads with the receiver and
+      // splits the gain the way the drawing does — what the throw covered, what the run did:
+      // "D. Metcalf 16 yds · 1 air + 15 YAC". The words stay short because the label is cut
+      // at 42 characters and a hyphenated surname eats a dozen of them.
+      if(yacRun){ const m=/^(.+?) (-?\d+) yd pass to (.+)$/.exec(label), aird=m?(Number(m[2])-lp.yac):null;
+        label = m ? `${m[3]} ${m[2]} yds · ${aird} air + ${lp.yac} YAC` : `${label.slice(0,24)} · ${lp.yac} YAC`; }
     }
     label=label.slice(0,42);
     const anchor = endX>W*0.66 ? 'end' : (endX<W*0.34 ? 'start' : 'middle');

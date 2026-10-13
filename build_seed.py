@@ -801,6 +801,9 @@ def build_contracts(refresh):
 # it here and bundle the result into the seed. A miss (no match) simply hides the link.
 KTC_URL = "https://keeptradecut.com/dynasty-rankings"
 KTC_POS_KEEP = {"QB", "RB", "WR", "TE"}
+# The ranked dynasty pool runs ~450 deep. Anything near zero means the page moved, not that
+# the site had a quiet week — see build_ktc.
+KTC_MIN_PLAYERS = 100
 
 def _extract_js_array(html, varname):
     """Extract a `var <varname> = [ ... ]` JSON array from page HTML via bracket-counting
@@ -874,8 +877,24 @@ def build_ktc(refresh):
         print(f" FAILED ({type(e).__name__}: {e}) — KTC links will be omitted")
         return {}
     out = parse_ktc_players(html)
-    if not out:
-        print(" FAILED (couldn't parse playersArray) — KTC links will be omitted")
+    # A HANDFUL of players is not a success. The page answers 200 and playersArray is still
+    # there, but when KTC renames a field every row fails the pos/slug/name filter and the
+    # parse comes back with two or three stragglers. That printed " ok (2 players)" and
+    # CACHED it — the seed guard caught the 928 → 4 collapse and kept the previous block, so
+    # nothing bad shipped, but the log said the fetch had worked and the poisoned cache was
+    # handed to the next build. The ranked dynasty pool is ~450 deep; a tenth of that is a
+    # shape change, not a quiet week.
+    if len(out) < KTC_MIN_PLAYERS:
+        arr = _extract_js_array(html, "playersArray")
+        n = len(arr) if isinstance(arr, list) else 0
+        # Name what the rows carry NOW, so one refresh log says exactly which field moved and
+        # the fix is a rename rather than another round of guessing at a page we cannot reach.
+        shape = None
+        if isinstance(arr, list) and arr and isinstance(arr[0], dict):
+            shape = sorted(arr[0].keys())[:14]
+        print(f" FAILED (parsed {len(out)} of {n} rows"
+              + (f"; a row now carries {shape}" if shape else "; playersArray not found")
+              + ") — KTC's page shape has moved; links will be omitted until the parser follows it")
         return {}
     print(f" ok ({len(out)} players)")
     with open(cache_path, "w") as f:
