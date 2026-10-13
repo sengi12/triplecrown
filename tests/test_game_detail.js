@@ -253,7 +253,7 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   await settle();
   chk(app.behind(gLag)===true && app.catchUp(gLag)===true && nSum()===c0+2, 'still behind after it lands → the next tick reads again (until the play is there)');
   chk(app.behind(Object.assign(app.GAME('in'), {sit:{lastPlayId:''}}))===false && app.behind(app.GAME('post'))===false, 'no last play on the board, or no situation: never behind');
-  chk(app.POLL===5000, 'the live poll ticks every 5 seconds');
+  chk(app.POLL===10000, 'the live poll ticks every 10 seconds (a play lands every 20–40 s; the radio is what a phone pays for)');
 
   console.log('=== live: the fantasy pane scores the box score, not Sleeper\'s trailing rows ===');
   app.setSum('401872925', SUM);
@@ -273,7 +273,7 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   app.setBoardAt(Date.now()-4000); app.setSum('401872925', SUM);
   const st=app.fresh('401872925');
   chk(/class="tc-fresh"/.test(st) && /onclick="tcRefreshNow\(event\)"/.test(st) && /tc-ico/.test(st) && /tc-fresh-t">just now</.test(st), 'the stamp: the refresh mark and the age of the newest read (the summary, cached just now)');
-  chk(/tc-fresh-t">(3|4|5)s ago</.test(app.fresh('')), 'without a picked game it is the board\'s age — the ticking heartbeat');
+  chk(/tc-fresh-t">(just now|5s ago)</.test(app.fresh('')), 'without a picked game it is the board\'s age — the heartbeat, in five-second steps');
   const sitLive=app.sitHTML(Object.assign(app.GAME('in'), {sit:LIVE3.sit}));
   chk(/gcf-now-clock/.test(sitLive) && /tc-fresh/.test(sitLive) && !/tc-fresh/.test(app.sitHTML(app.GAME('post'))), 'the situation line carries the mark, live games only');
   const half=app.sitHTML(Object.assign(app.GAME('in'), {sit:Object.assign({}, LIVE3.sit, {phase:'Halftime', ddt:'', spot:'', poss:'', clock:'0:00'})}));

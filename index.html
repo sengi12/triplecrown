@@ -1759,7 +1759,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gcf-now-dd{color:var(--text);}
 .gcf-now-clock{margin-left:auto;font-weight:800;color:var(--text);}
 .gcf-dot{width:8px;height:8px;border-radius:50%;background:#ff4d4d;box-shadow:0 0 0 0 rgba(255,77,77,.6);animation:gcfPulse 1.4s ease-out infinite;}
-@keyframes gcfPulse{0%{box-shadow:0 0 0 0 rgba(255,77,77,.6);}100%{box-shadow:0 0 0 8px rgba(255,77,77,0);}}
+@keyframes gcfPulse{0%{opacity:1;}100%{opacity:.3;}}   /* opacity only — see tcGsPulse */
 .gcf-new{animation:gcfIn .9s ease-out;}
 @keyframes gcfIn{0%{background:rgba(0,212,170,.28);transform:translateY(-4px);}100%{background:var(--surface2);transform:none;}}
 @media (prefers-reduced-motion:reduce){ .gcf-dot,.gcf-new{animation:none;} }
@@ -4953,7 +4953,8 @@ button.la-cliff:hover{filter:brightness(1.25);}
 .team-gs{position:absolute;right:-3px;bottom:-2px;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--bg);box-sizing:border-box;}
 .team-gs-post{background:var(--success);}
 .team-gs-in{background:var(--danger);animation:tcGsPulse 1.2s ease-in-out infinite;}
-@keyframes tcGsPulse{0%,100%{box-shadow:0 0 0 0 rgba(248,81,73,.55);}50%{box-shadow:0 0 0 4px rgba(248,81,73,0);}}
+/* opacity only: a box-shadow pulse repaints every frame; opacity rides the compositor */
+@keyframes tcGsPulse{0%,100%{opacity:1;}50%{opacity:.35;}}
 @media (prefers-reduced-motion:reduce){ .team-gs-in{animation:none;} }
 .team-item .team-rec{margin-left:auto;font-family:var(--mono);font-size:10.5px;font-weight:800;color:var(--muted);flex-shrink:0;}
 .team-item.active .team-rec{color:var(--accent);}
@@ -6103,7 +6104,8 @@ table th{letter-spacing:.03em;}
 
 /* ── The phone's bottom bar ────────────────────────────────────────────────── */
 @media (max-width:760px){
-  .tc-tabbar{background:color-mix(in srgb,var(--surface) 92%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  /* no backdrop blur: a blurred bar over a surface that repaints all game keeps the GPU busy */
+  .tc-tabbar{background:color-mix(in srgb,var(--surface) 97%,transparent);
     border-top:none;box-shadow:0 -1px 0 var(--border),0 -8px 24px rgba(0,0,0,.3);}
   .tc-tab{color:var(--muted);}
   .tc-tab.active{color:var(--text);}
@@ -10243,6 +10245,80 @@ function manualEdit(key,raw,min,max){
 }
 
 
+// ═════════════════════════════════════════════════════════════════════════════
+// tcMorph — patch a live DOM subtree to match new markup, touching only what changed.
+//
+// The live surfaces (the Games view, the sidebar, the Leaders panel) are rendered as HTML
+// strings and used to land with `host.innerHTML = html` every few seconds while a game was
+// on. That threw the whole subtree away each time — 100–200 KB of markup re-parsed, every
+// node re-styled, laid out and painted — and on a phone that is the heat. This walks the
+// new markup against the old tree and makes the smallest edits that line them up: text that
+// changed, an attribute that changed, a row that arrived. Everything else is left alone, so
+// the browser repaints a score and a new row, not a page.
+//
+// Keys: an element with `data-key` (or an id) is matched by that key within its parent, so
+// a feed that gains a row at the top inserts one node instead of rewriting every row below
+// it. Unkeyed siblings match by position and tag. A focused form control keeps the value
+// the user is typing. The render functions themselves are unchanged — they still build the
+// full string; only the hand-off to the DOM is different.
+// ═════════════════════════════════════════════════════════════════════════════
+function tcMorph(host, html){
+  if(!host) return;
+  if(typeof document==='undefined' || !document.createElement || !host.childNodes || !host.insertBefore){ host.innerHTML=html; return; }
+  let tpl;
+  try{ tpl=document.createElement('template'); tpl.innerHTML=html; }catch(e){ host.innerHTML=html; return; }
+  if(!tpl.content){ host.innerHTML=html; return; }   // no <template> support: the old way
+  _tcMorphChildren(host, tpl.content);
+}
+function _tcMorphKey(n){
+  if(!n || n.nodeType!==1) return '';
+  const k=n.getAttribute && n.getAttribute('data-key');
+  return k || n.id || '';
+}
+function _tcMorphSame(f, t){
+  if(!f || f.nodeType!==t.nodeType) return false;
+  if(t.nodeType===1) return f.tagName===t.tagName && _tcMorphKey(f)===_tcMorphKey(t);
+  return true;
+}
+function _tcMorphChildren(from, to){
+  const keyed={};
+  for(let n=from.firstChild; n; n=n.nextSibling){ const k=_tcMorphKey(n); if(k && !keyed[k]) keyed[k]=n; }
+  let f=from.firstChild, t=to.firstChild;
+  while(t){
+    const next=t.nextSibling;
+    const tk=_tcMorphKey(t);
+    let match=null;
+    if(tk){ const k=keyed[tk]; if(k && k.tagName===t.tagName) match=k; }
+    else if(f && !_tcMorphKey(f) && _tcMorphSame(f, t)) match=f;
+    if(match){
+      if(match!==f) from.insertBefore(match, f);   // the keyed node belongs here now
+      _tcMorphNode(match, t);
+      f=match.nextSibling;
+    } else {
+      from.insertBefore(t, f);                      // new: adopted straight out of the template
+    }
+    t=next;
+  }
+  while(f){ const n=f.nextSibling; from.removeChild(f); f=n; }
+}
+function _tcMorphNode(f, t){
+  if(t.nodeType!==1){ if(f.nodeValue!==t.nodeValue) f.nodeValue=t.nodeValue; return; }
+  // attributes: set what differs, drop what is gone
+  const ta=t.attributes, fa=f.attributes;
+  for(let i=0; i<ta.length; i++){ const a=ta[i]; if(f.getAttribute(a.name)!==a.value) f.setAttribute(a.name, a.value); }
+  for(let i=fa.length-1; i>=0; i--){ const a=fa[i]; if(!t.hasAttribute(a.name)) f.removeAttribute(a.name); }
+  const tag=t.tagName;
+  if(tag==='INPUT' || tag==='SELECT' || tag==='TEXTAREA'){
+    const focused = typeof document!=='undefined' && document.activeElement===f;
+    if(!focused){
+      if(tag==='INPUT' && (t.type==='checkbox' || t.type==='radio')){ if(f.checked!==t.checked) f.checked=t.checked; }
+      else if(f.value!==t.value) f.value=t.value;
+    }
+    if(tag!=='SELECT') return;   // an input has no children worth walking
+  }
+  if(tag==='SCRIPT' || tag==='STYLE'){ if(f.textContent!==t.textContent) f.textContent=t.textContent; return; }
+  _tcMorphChildren(f, t);
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // State init
 // ─────────────────────────────────────────────────────────────────────────────
@@ -10954,7 +11030,8 @@ function renderLeaders(fromLoad){
   el.hidden=false;
   const cur=ldCurWeek(), wk=ldWeek();
   const btns=(typeof rsbButtonsHTML==='function')?rsbButtonsHTML():'';
-  el.innerHTML=ldPanelHTML(ldWidth(el), btns, fromLoad);
+  const grip=(el.querySelector && el.querySelector('.rsb-grip') && typeof rsbGripHTML==='function') ? rsbGripHTML() : '';
+  tcMorph(el, grip+ldPanelHTML(ldWidth(el), btns, fromLoad));   // in place: a minute repaint moves a few numbers, not the panel
   // The week in progress keeps up: a re-render a minute from now re-reads it.
   if(_ld.timer){ clearTimeout(_ld.timer); _ld.timer=null; }
   if(_ld.week!=='season' && wk===cur && typeof window!=='undefined' && typeof window.setTimeout==='function'
@@ -11340,7 +11417,7 @@ function gcListHTML(games, picked){
   const midOf=(g)=> g.state==='post' ? '<span class="gc-pfin">FINAL</span>'
     : g.state==='in' ? `<span class="gc-plive"><i class="gc-pdot"></i>${escHtml(String(g.detail||'LIVE').replace(/^(\d+:\d+) - (\d)(st|nd|rd|th)$/i,'Q$2'))}</span>`
     : when(g);
-  return games.map(g=>`<div class="gc-game gc-pill ${g.id===picked?'gc-on':''} gc-${g.state}" onclick="gcPick('${g.id}')" title="${g.away} @ ${g.home}${g.state==='in'?' · '+escAttr(g.detail||'live'):''}">
+  return games.map(g=>`<div class="gc-game gc-pill ${g.id===picked?'gc-on':''} gc-${g.state}" data-key="${escAttr(g.id)}" onclick="gcPick('${g.id}')" title="${g.away} @ ${g.home}${g.state==='in'?' · '+escAttr(g.detail||'live'):''}">
     <span class="gc-pl"><img src="${NFL_LOGO(g.away)}" class="gc-glogo" onerror="this.style.display='none'">${g.state==='pre'?'':`<b class="${g.state==='post'&&g.as>g.hs?'gc-won':''}">${g.as!=null?g.as:'–'}</b>`}</span>
     <span class="gc-pmid">${midOf(g)}</span>
     <span class="gc-pr">${g.state==='pre'?'':`<b class="${g.state==='post'&&g.hs>g.as?'gc-won':''}">${g.hs!=null?g.hs:'–'}</b>`}<img src="${NFL_LOGO(g.home)}" class="gc-glogo" onerror="this.style.display='none'"></span>
@@ -11408,8 +11485,9 @@ function renderRightSidebar(){
   el.classList.remove('rsb-min','rsb-max');
   gcApplyWidth(el);
   if(_gc.mode==='min'){ el.classList.add('rsb-min'); el.innerHTML=`<div class="rsb-rail"><button class="rsb-btn" onclick="gcStep(1)" title="Wider">+</button><span class="rsb-vert">LEADERS · GAMES</span></div>`; return; }
-  if(_gc.mode==='max'){ el.classList.add('rsb-max'); el.innerHTML=gcHTML(); }
-  else if(typeof renderLeaders==='function') renderLeaders();
+  if(_gc.mode==='max'){ el.classList.add('rsb-max'); tcMorph(el, rsbGripHTML()+gcHTML()); return; }
+  if(typeof renderLeaders==='function') renderLeaders();
+  if(el.querySelector && el.querySelector('.rsb-grip')) return;   // the grip persists across in-place repaints
   if(el.insertAdjacentHTML) el.insertAdjacentHTML('afterbegin', rsbGripHTML()); else el.innerHTML=rsbGripHTML()+el.innerHTML;
 }
 gcLoadMode();
@@ -11553,7 +11631,7 @@ function renderGamesView(){
   const page = tab==='leaders' && typeof ldPanelHTML==='function'
     ? `<div class="gc gcm-leaders">${ldPanelHTML(width, '', false, true)}</div>`
     : gcHTML(true);
-  host.innerHTML=`<div class="games-view">${gcmTabsHTML()}${page}</div>`;
+  tcMorph(host, `<div class="games-view">${gcmTabsHTML()}${page}</div>`);   // in place: only what moved repaints
   const body=host.querySelector('.gc-body'), rail=host.querySelector('.gc-list');
   if(body) body.scrollTop=keep.body;
   if(rail){ const on=rail.querySelector('.gc-on'); if(on && on.scrollIntoView && !rail0) on.scrollIntoView({block:'nearest', inline:'center'}); else rail.scrollLeft=keep.rail; }
@@ -11654,13 +11732,15 @@ function renderGamesPhone(fromLoad){
     : tab==='leaders' && typeof ldPanelHTML==='function'
       ? `<div class="gc gcm-leaders">${ldPanelHTML(width, closeBtn, fromLoad, true)}</div>`
       : gcHTML(true);
-  host.innerHTML=`${gcmPillHTML(games)}
+  // Patched in place (tcMorph): a live repaint lands as the few nodes that changed, not a
+  // fresh 200 KB subtree — the sheet element, its scroll and its swipe binding all persist.
+  tcMorph(host, `${gcmPillHTML(games)}
     <div class="gcm-scrim" onclick="gcmSet('closed')"></div>
     <div class="gcm-sheet gcm-${open}" aria-label="Game Center" aria-hidden="${open==='closed'}">
       <div class="gcm-grab" onpointerdown="gcmDragStart(event)"></div>
       ${open==='closed' ? '' : gcmTabsHTML()}
       ${page}
-    </div>`;
+    </div>`);
   if(document.body&&document.body.classList) document.body.classList.toggle('gcm-open', open!=='closed');
   // An open sheet locks the page behind it, like the player card does (html.pcard-locked):
   // nothing under an overlay scrolls, on any platform.
@@ -11703,7 +11783,9 @@ const GC_SUM_TTL_LIVE = 12*1000, GC_SUM_TTL_FINAL = 6*60*60*1000, GC_SUM_TTL_PRE
 // While a picked game is on and the panel is in view, the summary (and the scoreboard) are
 // re-read every GC_LIVE_POLL ms — ESPN posts a play within seconds; the sheet's own 61 s
 // repaint was the ceiling before. One timer, restarted by every repaint.
-const GC_LIVE_POLL = 5*1000;
+// Ten seconds: ESPN posts a play every 20–40 s, and each tick is a scoreboard read plus,
+// while the summary trails the board, a summary read — on a phone the radio is the cost.
+const GC_LIVE_POLL = 10*1000;
 var _gcLiveTimer = null;
 // Change-driven: the scoreboard's situation carries the last play's id. When the picked
 // game's changes, its summary is re-read at once (the plays land within seconds of ESPN
@@ -11733,6 +11815,10 @@ function gcPanelVisible(){
 function gcLiveTick(game){
   if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; }
   if(!game || game.state!=='in' || !gcPanelVisible()) return;
+  // Nothing while the app is in the background: no reads, no repaints. The visibility
+  // listener below re-arms the loop the moment the screen is back.
+  if(typeof document!=='undefined' && document.visibilityState==='hidden'){ _gcLiveGame=game; return; }
+  _gcLiveGame=game;
   _gcLiveTimer=setTimeout(()=>{
     _gcLiveTimer=null;
     if(typeof _gc==='undefined' || _gc.game!==game.id || !gcPanelVisible()) return;
@@ -11741,6 +11827,14 @@ function gcLiveTick(game){
     else { try{ gcSummaryCatchUp(game); }catch(e){} }                       // the summary posts a play later than the scoreboard: keep reading until it has it
     gcLiveTick(game);
   }, GC_LIVE_POLL);
+}
+var _gcLiveGame=null;
+if(typeof document!=='undefined' && document.addEventListener){
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState!=='visible' || !_gcLiveGame) return;
+    try{ if(typeof renderRightSidebar==='function') renderRightSidebar(); }catch(e){}   // one repaint with whatever landed, then the loop
+    try{ gcLiveTick(_gcLiveGame); }catch(e){}
+  });
 }
 // The scoreboard names the last play seconds before the summary carries it (verified live:
 // the summary was still on the timeout when the board had the kickoff). A summary read on
@@ -12242,7 +12336,7 @@ function gcFeedHTML(game, sum){
     if(p.kind==='timeout' || p.kind==='period') return `<div class="gcf-divider gcf-div-${p.kind}"><span class="gcf-div-l"></span><span class="gcf-div-lbl">${p.toTeam?`<img src="${NFL_LOGO(p.toTeam)}" class="gcf-div-logo" onerror="this.style.display='none'">`:''}${escHtml(p.title)}${(p.clock && p.kind==='timeout')?`<span class="gcf-div-clock">${escHtml((p.q?('Q'+p.q+' '):'')+p.clock)}</span>`:''}</span><span class="gcf-div-l"></span></div>`;
     if(p.kind==='half' || p.kind==='final'){
       const sc=(p.as!=null && p.hs!=null) ? `${game.away} ${p.as}<span class="gcf-dash">–</span>${p.hs} ${game.home}` : '';
-      return `<div class="gcf-row gcf-phase gcf-${p.kind}${isNew(p)?' gcf-new':''}">
+      return `<div class="gcf-row gcf-phase gcf-${p.kind}${isNew(p)?' gcf-new':''}"${p.id?` data-key="${escAttr(String(p.id))}"`:''}>
         <span class="gcf-ava gcf-ava-ico">${p.kind==='half'?'½':'🏁'}</span>
         <div class="gcf-main"><div class="gcf-sit">${p.kind==='half'?'Halftime':'Final'}</div><div class="gcf-title">${escHtml(p.title)}</div></div>
         <div class="gcf-right"><div class="gcf-clock">${p.q?`Q${p.q}`:''} ${escHtml(p.clock)}</div><div class="gcf-score">${sc}</div></div>
@@ -12263,7 +12357,7 @@ function gcFeedHTML(game, sum){
     if(p.xtra) notes.push(`<span class="gcf-note gcf-xtra gcf-xtra-${p.xtra.ok?'ok':'no'}">${p.xtra.ok?'✅':'❌'} ${p.xtra.t==='XP'?'Extra point':'Two-point try'} ${p.xtra.ok?'good':'no good'}</span>`);
     if(p.yac>0) notes.push(`<span class="gcf-note gcf-yac">🏃 ${p.yac} yd${p.yac===1?'':'s'} after catch</span>`);
     if(p.conv) notes.push(`<span class="gcf-note gcf-conv gcf-conv-${p.conv.ok?'ok':'no'}" title="${escAttr(p.team)} ${p.conv.d===3?'third':'fourth'} downs converted so far">${p.conv.ok?'🎯':'🚫'} ${escHtml(p.team)} ${p.conv.d===3?'3rd':'4th'} down ${p.conv.m}/${p.conv.t}</span>`);
-    return `<div class="gcf-row gcf-${p.kind}${isNew(p)?' gcf-new':''}${p.id?' gcf-click':''}${active?' gcf-active':''}"${rowClick}>
+    return `<div class="gcf-row gcf-${p.kind}${isNew(p)?' gcf-new':''}${p.id?' gcf-click':''}${active?' gcf-active':''}"${p.id?` data-key="${escAttr(String(p.id))}"`:''}${rowClick}>
       ${ava}
       <div class="gcf-main">
         <div class="gcf-sit">${escHtml(sit)}${rz?' <span class="gcf-rz">RZ</span>':''}</div>
@@ -13349,7 +13443,7 @@ function lfRowHTML(r, sides){
   const sit=r.down>0 ? `${r.ddt}${r.spot?` @ ${r.spot}`:''}` : '';
   const score=`<span>${r.away} ${r.as!=null?r.as:'–'}</span><span class="gcf-dash">–</span><span>${r.hs!=null?r.hs:'–'} ${r.home}</span>`;
   const tags=(r.tags||[]).map(lfTagHTML).join('');
-  return `<div class="gcf-row lf-row gcf-${r.kind==='rushTd'||r.kind==='recTd'?'td':(r.kind==='int'||r.kind==='fum'?'to':r.kind)}">
+  return `<div class="gcf-row lf-row gcf-${r.kind==='rushTd'||r.kind==='recTd'?'td':(r.kind==='int'||r.kind==='fum'?'to':r.kind)}" data-key="${escAttr(String(r.key||''))}">
     <img src="${NFL_LOGO(r.team||r.home)}" class="gcf-logo" onerror="this.style.display='none'">
     <div class="gcf-main">
       <div class="gcf-sit">${escHtml(sit)}${r.rz?' <span class="gcf-rz">RZ</span>':''}</div>
@@ -35040,6 +35134,13 @@ var _liveSeasonRetryTimer = null;
 var _liveSeasonWeek = -1;   // last completedWeeks() we fetched for — also the UI cache epoch
 var _liveSeasonAt = 0;      // when we last fetched — the aggregate moves DURING games
 var _liveSeasonBusy = false;
+var _liveSeasonSig = '';
+// djb2 over the serialized rows — a few milliseconds for a few megabytes, once a minute.
+function _tcRowsFingerprint(rows){
+  let s; try{ s=JSON.stringify(rows); }catch(e){ return String(Date.now()); }
+  let h=5381; for(let i=0;i<s.length;i++){ h=((h<<5)+h+s.charCodeAt(i))|0; }
+  return `${s.length}:${h}`;
+}
 // The completedWeeks() latch alone froze the season opener: completedWeeks() is 0 for all
 // of week 1, so one successful Thursday fetch latched and Sunday never refetched. Completed
 // weeks are immutable, but the aggregate always carries the week IN PROGRESS too — so the
@@ -35109,6 +35210,13 @@ async function refreshLiveSeasonStats(force){
     if(!tm && (rows===null || !rows.length)) rows = await sleeperFetch(SLEEPER_STATS_URL(yr));
     const records = liveSeasonRecordsFromRows(rows);
     if(!records.length) return false;
+    // The aggregate is re-read every minute during games, but between plays it is the same
+    // payload; rebuilding the season and repainting Rankings for an identical read was the
+    // one big job the phone did each minute. A cheap fingerprint of the rows says whether
+    // anything moved.
+    const sig=`${yr}|${liveWeek}|${_tcRowsFingerprint(rows)}`;
+    if(sig===_liveSeasonSig){ _liveSeasonWeek = completedWeeks(); _liveSeasonAt = Date.now(); return true; }
+    _liveSeasonSig=sig;
     const byPid={};
     records.forEach(r=>{ (byPid[r.pid]=byPid[r.pid]||[]).push({team:r.team, pos:r.pos, name:r.name,
       games_played:r.games_played, games_started:r.games_started, snap_pct:r.snap_pct, stats:r.stats}); });
@@ -35385,7 +35493,7 @@ function tcWeekLabel(week){ const w=Number(week); return TC_PLAYOFF_WEEKS[w] ? T
 // its line throws — every page load used to die inside boot right there.
 const TC_BOARD_URL = (season, week)=>{ const e=tcEspnWeek(week); return `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=${e.type}&week=${e.week}&dates=${season}`; };
 const TC_BOARD_ABBR = { WSH:'WAS' };          // ESPN spells one club differently
-const TC_BOARD_TTL_LIVE = 4*1000, TC_BOARD_TTL_IDLE = 5*60*1000;   // live: the Game Center's poll re-reads it every 5 s (one small request)
+const TC_BOARD_TTL_LIVE = 8*1000, TC_BOARD_TTL_IDLE = 5*60*1000;   // live: the Game Center's poll re-reads it every 5 s (one small request)
 
 function tcBoardWeek(){
   // The tracker's week: the finished week holds through Tuesday and until Wednesday morning
@@ -35544,14 +35652,15 @@ function tcFreshAt(eid){
 function tcFreshLabel(at){
   if(!at) return 'reading…';
   const s=Math.max(0, Math.round((Date.now()-at)/1000));
-  return s<1 ? 'just now' : `${s}s ago`;
+  return s<5 ? 'just now' : `${Math.round(s/5)*5}s ago`;   // five-second steps: the ticker runs every five
 }
 function tcFreshHTML(eid){
   const at=tcFreshAt(eid);
   tcFreshTick();
   return `<button class="tc-fresh${_tcFresh.busy?' busy':''}" data-eid="${escAttr(String(eid||''))}" onclick="tcRefreshNow(event)" title="When ESPN was last read — tap to read again now">${(typeof TC_ICON==='function')?TC_ICON('refresh'):'↻'}<span class="tc-fresh-t">${tcFreshLabel(at)}</span></button>`;
 }
-// The stamps on screen tick once a second — the text only, nothing else repaints.
+// The stamps on screen tick every five seconds — the text only, nothing else repaints. (Once
+// a second woke the page sixty times a minute for a number nobody reads to the second.)
 function tcFreshTick(){
   if(_tcFresh.timer || typeof window==='undefined' || typeof window.setInterval!=='function' || typeof document==='undefined' || !document.querySelectorAll) return;
   _tcFresh.timer=window.setInterval(()=>{
@@ -35562,7 +35671,7 @@ function tcFreshTick(){
       const t=el.querySelector('.tc-fresh-t'); if(t) t.textContent=tcFreshLabel(tcFreshAt(el.getAttribute('data-eid')));
       if(el.classList) el.classList.toggle('busy', !!_tcFresh.busy);
     });
-  }, 1000);
+  }, 5000);
 }
 function tcFreshPaint(){
   if(typeof document==='undefined' || !document.querySelectorAll) return;

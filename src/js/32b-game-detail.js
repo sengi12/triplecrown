@@ -20,7 +20,9 @@ const GC_SUM_TTL_LIVE = 12*1000, GC_SUM_TTL_FINAL = 6*60*60*1000, GC_SUM_TTL_PRE
 // While a picked game is on and the panel is in view, the summary (and the scoreboard) are
 // re-read every GC_LIVE_POLL ms — ESPN posts a play within seconds; the sheet's own 61 s
 // repaint was the ceiling before. One timer, restarted by every repaint.
-const GC_LIVE_POLL = 5*1000;
+// Ten seconds: ESPN posts a play every 20–40 s, and each tick is a scoreboard read plus,
+// while the summary trails the board, a summary read — on a phone the radio is the cost.
+const GC_LIVE_POLL = 10*1000;
 var _gcLiveTimer = null;
 // Change-driven: the scoreboard's situation carries the last play's id. When the picked
 // game's changes, its summary is re-read at once (the plays land within seconds of ESPN
@@ -50,6 +52,10 @@ function gcPanelVisible(){
 function gcLiveTick(game){
   if(_gcLiveTimer){ clearTimeout(_gcLiveTimer); _gcLiveTimer=null; }
   if(!game || game.state!=='in' || !gcPanelVisible()) return;
+  // Nothing while the app is in the background: no reads, no repaints. The visibility
+  // listener below re-arms the loop the moment the screen is back.
+  if(typeof document!=='undefined' && document.visibilityState==='hidden'){ _gcLiveGame=game; return; }
+  _gcLiveGame=game;
   _gcLiveTimer=setTimeout(()=>{
     _gcLiveTimer=null;
     if(typeof _gc==='undefined' || _gc.game!==game.id || !gcPanelVisible()) return;
@@ -58,6 +64,14 @@ function gcLiveTick(game){
     else { try{ gcSummaryCatchUp(game); }catch(e){} }                       // the summary posts a play later than the scoreboard: keep reading until it has it
     gcLiveTick(game);
   }, GC_LIVE_POLL);
+}
+var _gcLiveGame=null;
+if(typeof document!=='undefined' && document.addEventListener){
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState!=='visible' || !_gcLiveGame) return;
+    try{ if(typeof renderRightSidebar==='function') renderRightSidebar(); }catch(e){}   // one repaint with whatever landed, then the loop
+    try{ gcLiveTick(_gcLiveGame); }catch(e){}
+  });
 }
 // The scoreboard names the last play seconds before the summary carries it (verified live:
 // the summary was still on the timeout when the board had the kickoff). A summary read on
@@ -559,7 +573,7 @@ function gcFeedHTML(game, sum){
     if(p.kind==='timeout' || p.kind==='period') return `<div class="gcf-divider gcf-div-${p.kind}"><span class="gcf-div-l"></span><span class="gcf-div-lbl">${p.toTeam?`<img src="${NFL_LOGO(p.toTeam)}" class="gcf-div-logo" onerror="this.style.display='none'">`:''}${escHtml(p.title)}${(p.clock && p.kind==='timeout')?`<span class="gcf-div-clock">${escHtml((p.q?('Q'+p.q+' '):'')+p.clock)}</span>`:''}</span><span class="gcf-div-l"></span></div>`;
     if(p.kind==='half' || p.kind==='final'){
       const sc=(p.as!=null && p.hs!=null) ? `${game.away} ${p.as}<span class="gcf-dash">–</span>${p.hs} ${game.home}` : '';
-      return `<div class="gcf-row gcf-phase gcf-${p.kind}${isNew(p)?' gcf-new':''}">
+      return `<div class="gcf-row gcf-phase gcf-${p.kind}${isNew(p)?' gcf-new':''}"${p.id?` data-key="${escAttr(String(p.id))}"`:''}>
         <span class="gcf-ava gcf-ava-ico">${p.kind==='half'?'½':'🏁'}</span>
         <div class="gcf-main"><div class="gcf-sit">${p.kind==='half'?'Halftime':'Final'}</div><div class="gcf-title">${escHtml(p.title)}</div></div>
         <div class="gcf-right"><div class="gcf-clock">${p.q?`Q${p.q}`:''} ${escHtml(p.clock)}</div><div class="gcf-score">${sc}</div></div>
@@ -580,7 +594,7 @@ function gcFeedHTML(game, sum){
     if(p.xtra) notes.push(`<span class="gcf-note gcf-xtra gcf-xtra-${p.xtra.ok?'ok':'no'}">${p.xtra.ok?'✅':'❌'} ${p.xtra.t==='XP'?'Extra point':'Two-point try'} ${p.xtra.ok?'good':'no good'}</span>`);
     if(p.yac>0) notes.push(`<span class="gcf-note gcf-yac">🏃 ${p.yac} yd${p.yac===1?'':'s'} after catch</span>`);
     if(p.conv) notes.push(`<span class="gcf-note gcf-conv gcf-conv-${p.conv.ok?'ok':'no'}" title="${escAttr(p.team)} ${p.conv.d===3?'third':'fourth'} downs converted so far">${p.conv.ok?'🎯':'🚫'} ${escHtml(p.team)} ${p.conv.d===3?'3rd':'4th'} down ${p.conv.m}/${p.conv.t}</span>`);
-    return `<div class="gcf-row gcf-${p.kind}${isNew(p)?' gcf-new':''}${p.id?' gcf-click':''}${active?' gcf-active':''}"${rowClick}>
+    return `<div class="gcf-row gcf-${p.kind}${isNew(p)?' gcf-new':''}${p.id?' gcf-click':''}${active?' gcf-active':''}"${p.id?` data-key="${escAttr(String(p.id))}"`:''}${rowClick}>
       ${ava}
       <div class="gcf-main">
         <div class="gcf-sit">${escHtml(sit)}${rz?' <span class="gcf-rz">RZ</span>':''}</div>

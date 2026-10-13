@@ -36,6 +36,13 @@ var _liveSeasonRetryTimer = null;
 var _liveSeasonWeek = -1;   // last completedWeeks() we fetched for — also the UI cache epoch
 var _liveSeasonAt = 0;      // when we last fetched — the aggregate moves DURING games
 var _liveSeasonBusy = false;
+var _liveSeasonSig = '';
+// djb2 over the serialized rows — a few milliseconds for a few megabytes, once a minute.
+function _tcRowsFingerprint(rows){
+  let s; try{ s=JSON.stringify(rows); }catch(e){ return String(Date.now()); }
+  let h=5381; for(let i=0;i<s.length;i++){ h=((h<<5)+h+s.charCodeAt(i))|0; }
+  return `${s.length}:${h}`;
+}
 // The completedWeeks() latch alone froze the season opener: completedWeeks() is 0 for all
 // of week 1, so one successful Thursday fetch latched and Sunday never refetched. Completed
 // weeks are immutable, but the aggregate always carries the week IN PROGRESS too — so the
@@ -105,6 +112,13 @@ async function refreshLiveSeasonStats(force){
     if(!tm && (rows===null || !rows.length)) rows = await sleeperFetch(SLEEPER_STATS_URL(yr));
     const records = liveSeasonRecordsFromRows(rows);
     if(!records.length) return false;
+    // The aggregate is re-read every minute during games, but between plays it is the same
+    // payload; rebuilding the season and repainting Rankings for an identical read was the
+    // one big job the phone did each minute. A cheap fingerprint of the rows says whether
+    // anything moved.
+    const sig=`${yr}|${liveWeek}|${_tcRowsFingerprint(rows)}`;
+    if(sig===_liveSeasonSig){ _liveSeasonWeek = completedWeeks(); _liveSeasonAt = Date.now(); return true; }
+    _liveSeasonSig=sig;
     const byPid={};
     records.forEach(r=>{ (byPid[r.pid]=byPid[r.pid]||[]).push({team:r.team, pos:r.pos, name:r.name,
       games_played:r.games_played, games_started:r.games_started, snap_pct:r.snap_pct, stats:r.stats}); });

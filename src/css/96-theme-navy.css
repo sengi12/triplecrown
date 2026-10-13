@@ -90,7 +90,8 @@ table th{letter-spacing:.03em;}
 
 /* ── The phone's bottom bar ────────────────────────────────────────────────── */
 @media (max-width:760px){
-  .tc-tabbar{background:color-mix(in srgb,var(--surface) 92%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  /* no backdrop blur: a blurred bar over a surface that repaints all game keeps the GPU busy */
+  .tc-tabbar{background:color-mix(in srgb,var(--surface) 97%,transparent);
     border-top:none;box-shadow:0 -1px 0 var(--border),0 -8px 24px rgba(0,0,0,.3);}
   .tc-tab{color:var(--muted);}
   .tc-tab.active{color:var(--text);}

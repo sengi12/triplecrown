@@ -413,7 +413,7 @@ function lfRowHTML(r, sides){
   const sit=r.down>0 ? `${r.ddt}${r.spot?` @ ${r.spot}`:''}` : '';
   const score=`<span>${r.away} ${r.as!=null?r.as:'–'}</span><span class="gcf-dash">–</span><span>${r.hs!=null?r.hs:'–'} ${r.home}</span>`;
   const tags=(r.tags||[]).map(lfTagHTML).join('');
-  return `<div class="gcf-row lf-row gcf-${r.kind==='rushTd'||r.kind==='recTd'?'td':(r.kind==='int'||r.kind==='fum'?'to':r.kind)}">
+  return `<div class="gcf-row lf-row gcf-${r.kind==='rushTd'||r.kind==='recTd'?'td':(r.kind==='int'||r.kind==='fum'?'to':r.kind)}" data-key="${escAttr(String(r.key||''))}">
     <img src="${NFL_LOGO(r.team||r.home)}" class="gcf-logo" onerror="this.style.display='none'">
     <div class="gcf-main">
       <div class="gcf-sit">${escHtml(sit)}${r.rz?' <span class="gcf-rz">RZ</span>':''}</div>
