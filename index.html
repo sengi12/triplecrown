@@ -12512,7 +12512,7 @@ function gcDrives(sum){
       const kind=gcPlayKind(p); if(kind==='skip' || GC_PAUSE_KINDS.has(kind)) return;
       plays.push({ id:pid, kind, type:String((p.type&&p.type.text)||''), text:String(p.text||''), yds:Number(p.statYardage||0),
         yac:(p.yardsAfterCatch!=null && p.yardsAfterCatch!=='')?Number(p.yardsAfterCatch):null,
-        yte:(p.start && p.start.yardsToEndzone!=null)?Number(p.start.yardsToEndzone):null, scoring:!!p.scoringPlay, turnover:!!p.isTurnover,
+        yte:(p.start && p.start.yardsToEndzone!=null)?Number(p.start.yardsToEndzone):null, spot:String((p.start&&p.start.possessionText)||''), scoring:!!p.scoringPlay, turnover:!!p.isTurnover,
         q:Number((p.period&&p.period.number)||0), clock:String((p.clock&&p.clock.displayValue)||'') });
     });
     out.push({ id, team, plays, result:String(d.result||d.shortDisplayResult||''), desc:String(d.description||''), score:!!d.isScore, live:!!live,
@@ -12765,7 +12765,13 @@ function gcDriveChartHTML(game, sum){
   }
   // the drive: the snap spots in order (kickoffs are not offensive snaps and never join them),
   // then the last play's own move
-  const spots=d.plays.filter(p=>p.yte!=null && p.type!=='Kickoff').map(p=>({p, yd:100-p.yte}));
+  // Where each snap was, in the offense's own yards. The words ("LAR 13") are read first:
+  // ESPN's yardsToEndzone on a punt is sometimes the RECEIVING club's (13 at the Rams' own 13,
+  // where the kicking club's view is 87), which put the kick's snap at the wrong end of the
+  // field — the drive line stretched across the whole field to a spot the ball never was,
+  // and the kick arced from there. yardsToEndzone stands in only when the words are missing.
+  const snapYd=(p)=>{ const s=p.spot ? _gcSpotYd(p.spot, d.team) : null; return s!=null ? s : (p.yte!=null ? 100-p.yte : null); };
+  const spots=d.plays.filter(p=>p.type!=='Kickoff').map(p=>({p, yd:snapYd(p)})).filter(s=>s.yd!=null);
   // the newest play is a kickoff: it stands on its own (kickoffs never join the snap line),
   // drawn like a punt from where it was kicked — a spot at the kicking spot carries it in
   const rawLast=d.plays.length?d.plays[d.plays.length-1]:null;
@@ -12805,7 +12811,8 @@ function gcDriveChartHTML(game, sum){
       // the kick flies from the snap to where it was fielded (always), then a return runs back
       // the other way only when the returner actually gained ground
       big=true;
-      const xLand=X(punt.landYd), kickSeg=Object.assign(quad(x0,xLand,26), {cls:' gc-seg-kick'});
+      // a punt hangs high: the arc rises with the distance, well above a throw's
+      const xLand=X(punt.landYd), kickSeg=Object.assign(quad(x0,xLand,Math.min(58, Math.max(36, Math.abs(xLand-x0)*0.32))), {cls:' gc-seg-kick'});
       const returned=(punt.outcome==='return'||punt.outcome==='returnTd'||punt.outcome==='fumbleLost') && punt.returnYds>0;
       endX=X(punt.endYd);
       if(returned){ pre=kickSeg; fin=Object.assign(line(xLand,endX), {cls:' gc-seg-ret'}); retCol='#39c15a'; }
@@ -12818,7 +12825,7 @@ function gcDriveChartHTML(game, sum){
       // the kick flies from the kicking spot down to where it was fielded, then the return the
       // other way — the receiving team's own advance (green), only drawn when it gained ground
       big=true;
-      const xLand=X(koData.landYd), kickSeg=Object.assign(quad(x0,xLand,26), {cls:' gc-seg-kick'});
+      const xLand=X(koData.landYd), kickSeg=Object.assign(quad(x0,xLand,Math.min(48, Math.max(30, Math.abs(xLand-x0)*0.26))), {cls:' gc-seg-kick'});
       const returned=(koData.outcome==='return'||koData.outcome==='returnTd'||koData.outcome==='fumbleLost') && koData.returnYds>0;
       endX=X(koData.endYd);
       if(returned){ pre=kickSeg; fin=Object.assign(line(xLand,endX), {cls:' gc-seg-ret'}); retCol='#39c15a'; }
