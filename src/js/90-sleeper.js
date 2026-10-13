@@ -7,7 +7,7 @@ const SLEEPER_STAT_MAP = {
   rush_yd:'rushing_yards', rush_td:'rushing_touchdowns', rush_att:'rushing_attempts',
   rec:'receptions', rec_yd:'receiving_yards', rec_td:'receiving_touchdowns',
   rec_tgt:'receiving_targets', fum_lost:'fumbles_lost', gp:'games_played',
-  pass_2pt:'passing_2pt', rush_2pt:'rushing_2pt', rec_2pt:'receiving_2pt',
+  pass_2pt:'passing_2pt', rush_2pt:'rushing_2pt', rec_2pt:'receiving_2pt', fum:'fumbles',
   adp_std:'adp', adp_ppr:'adp_ppr', adp_half_ppr:'adp_half_ppr', adp_2qb:'adp_2qb',
 };
 const POS_KEEP = {QB:1,RB:1,WR:1,TE:1};
@@ -185,6 +185,7 @@ function buildSeedEntry(pid, row, meta, isProjection){
     receiving_targets:st.receiving_targets||0, receptions:st.receptions||0,
     receiving_yards:st.receiving_yards||0, receiving_tds:st.receiving_touchdowns||0,
     two_point_conversions:(st.passing_2pt||0)+(st.rushing_2pt||0)+(st.receiving_2pt||0),
+    fumbles:st.fumbles||0,
     adp:ad.adp||999, adp_ppr:ad.adp_ppr||999, adp_half_ppr:ad.adp_half_ppr||999, adp_2qb:ad.adp_2qb||999, adp_std:ad.adp_std||999,
     bye_week:null, risk:5, upside:5,
     games_played: (row.games_played!=null?row.games_played:(st.games_played||0)),

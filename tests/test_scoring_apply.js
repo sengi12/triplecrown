@@ -60,5 +60,7 @@ chk(near(wr2, 100/10 + 6 + 5 + 2),`a 2-pt catch adds the league's 2 on top of th
 app.applySleeperScoring({rec_2pt:0});
 chk(app.getScoring().two_point_conversions===0 && near(app.calcFpts({receiving_yards:100,two_point_conversions:1}),10),'a league that scores no conversions zeroes it');
 chk(app.applySleeperScoring({rec:1}) && app.getScoring().two_point_conversions===0,'a league payload without the keys leaves the setting alone');
+app.applySleeperScoring({fum:-1, fum_lost:-2});
+chk(app.getScoring().fumbles===-1 && near(app.calcFpts({receiving_yards:100, fumbles:1, fumbles_lost:1}), 10-1-2), 'fum is every fumble (−1 here), fum_lost the lost one on top (−2): a 100-yard day with a lost fumble is 7');
 
 console.log('\nRESULT: '+pass+'/'+total+' '+(pass===total?'ALL PASS':'SOME FAILED'));

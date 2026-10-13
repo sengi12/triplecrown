@@ -480,7 +480,7 @@ STAT_MAP = {
     "rush_yd": "rushing_yards", "rush_td": "rushing_touchdowns", "rush_att": "rushing_attempts",
     "rec": "receptions", "rec_yd": "receiving_yards", "rec_td": "receiving_touchdowns",
     "rec_tgt": "receiving_targets", "fum_lost": "fumbles_lost",
-    "pass_2pt": "passing_2pt", "rush_2pt": "rushing_2pt", "rec_2pt": "receiving_2pt",
+    "pass_2pt": "passing_2pt", "rush_2pt": "rushing_2pt", "rec_2pt": "receiving_2pt", "fum": "fumbles",
     "gp": "games_played", "gs": "games_started",
     "off_snp": "off_snaps", "tm_off_snp": "team_off_snaps",
 }

@@ -15,7 +15,7 @@ const TC_PACE_KEY = 'triplecrown.paceBaseline.v1';
 const _PB_FIELDS = ['passing_yards','passing_tds','passing_attempts','passing_completions',
   'interceptions_thrown','rushing_yards','rushing_tds','rushing_attempts',
   'receiving_yards','receiving_tds','receptions','receiving_targets','fumbles_lost',
-  'two_point_conversions',
+  'two_point_conversions','fumbles',
   // Projected games (QB timeshares carry one; everyone else defaults to 17 downstream).
   // Frozen so per-game comparisons honor the intended workload, not a blanket /17.
   'proj_games'];

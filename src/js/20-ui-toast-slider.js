@@ -145,6 +145,13 @@ function tcInfoBtn(key, label, icon){
 }
 var _infoPopOff=null;
 function tcInfoPop(ev, key){
+  const info=TC_INFO_BOOK[key]; if(!info) return;
+  const body=(typeof info.body==='function')?info.body():info.body;
+  tcPopShow(ev, key, info.title||'', body||'', `tcInfoPop(event,'${key}')`);
+}
+// Any popover in the info popover's clothes: a title, a body, placed by the tap, closed by a
+// tap anywhere else or the same control again. `key` tells a repeat tap apart from a new one.
+function tcPopShow(ev, key, title, bodyHtml, closeCall){
   try{ ev.stopPropagation(); }catch(e){}
   const old=document.getElementById('tcInfoPop');
   if(old){
@@ -152,14 +159,12 @@ function tcInfoPop(ev, key){
     if(_infoPopOff){ try{ document.removeEventListener('click',_infoPopOff,true); }catch(e){} _infoPopOff=null; }
     if(old.dataset && old.dataset.key===key) return;   // same button again = toggle closed
   }
-  const info=TC_INFO_BOOK[key]; if(!info) return;
   const div=document.createElement('div');
   div.id='tcInfoPop'; div.className='tc-info-pop';
   if(div.dataset) div.dataset.key=key;
-  const body=(typeof info.body==='function')?info.body():info.body;
-  div.innerHTML=`<div class="tc-info-head"><b>${info.title||''}</b>
-      <button class="tc-info-close" onclick="tcInfoPop(event,'${key}')" aria-label="Close">✕</button></div>
-    <div class="tc-info-body">${body||''}</div>`;
+  div.innerHTML=`<div class="tc-info-head"><b>${title}</b>
+      <button class="tc-info-close" onclick="${closeCall||'tcPopClose(event)'}" aria-label="Close">✕</button></div>
+    <div class="tc-info-body">${bodyHtml}</div>`;
   document.body.appendChild(div);
   const r=(ev.target&&ev.target.getBoundingClientRect)?ev.target.getBoundingClientRect():{left:20,right:40,top:60,bottom:80};
   const pw=div.offsetWidth||280, ph=div.offsetHeight||120;
@@ -170,6 +175,12 @@ function tcInfoPop(ev, key){
       if(e.target && e.target.closest && e.target.closest('.tc-info-btn')) return;   // buttons manage their own toggle
       if(!div.contains(e.target)){ div.remove(); document.removeEventListener('click',off,true); if(_infoPopOff===off) _infoPopOff=null; } };
     _infoPopOff=off; document.addEventListener('click',off,true); },0);
+}
+
+function tcPopClose(ev){
+  try{ ev.stopPropagation(); }catch(e){}
+  const old=document.getElementById('tcInfoPop'); if(old) old.remove();
+  if(_infoPopOff){ try{ document.removeEventListener('click',_infoPopOff,true); }catch(e){} _infoPopOff=null; }
 }
 
 function toast(msg,type=''){

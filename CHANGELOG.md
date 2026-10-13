@@ -8,6 +8,7 @@ Open work lives in [TODO.md](TODO.md).
 
 ## 2026-10-12
 
+- feat(game-center): a player's points in the fantasy pane are a tap — Sleeper's score-breakdown sheet, each stat the scoring pays for, what it pays, what it paid, priced the same way the card's number was — and every fumble counts: the model gains `fumbles` (Sleeper's fum, ESPN's 68) beside the lost one, and the Live feed reads a fumble play as the run or catch it was, then the fumble, then the loss (#175)
 - fix(game-center): a punt's snap is where the play's words put it — ESPN stamps some punts' yardsToEndzone from the receiving side, which dragged the drive line across the field and arced the kick from the wrong end — and a punt or kickoff now hangs high, its arc rising with the distance (#174)
 - perf(live): a game on the phone repaints what moved, not the page — the live views are patched in place (one text node for a score, one row for a play), the live loop ticks every 10 s and stops in the background, the season refresh skips rebuilds between plays, pulses animate opacity only and the tab bar drops its backdrop blur; measured 90 s live: style recalcs 5,773 → 134, layouts 413 → 39, busy time 11.8 s → 1.2 s (#173)
 - feat(analyzer): the matchup card shows how the win chance moved, play by play — one line from the first kickoff to the final whistle, replayed from ESPN's play log under the league's own scoring, the biggest swings pinned by the player who made them, finals snapping to Sleeper's totals so the line ends on the scoreboard (#172)

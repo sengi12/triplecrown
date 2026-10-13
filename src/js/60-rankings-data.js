@@ -27,6 +27,7 @@ function calcFpts(p){
   // Two-point conversions of every kind, summed into one count by whoever built the row
   // (buildSeedEntry, ldPoints, the week-hub scorers). Projections never carry one.
   f+=(p.two_point_conversions||0)*(sc.two_point_conversions||0);
+  f+=(p.fumbles||0)*(sc.fumbles||0);
   return f;
 }
 // BAFL Mode: matchups are best-3-of-5 CATEGORIES (pass yds −20/INT · rush yds · rec yds ·

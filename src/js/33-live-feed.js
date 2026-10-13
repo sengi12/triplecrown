@@ -109,6 +109,7 @@ function lfReadPlay(lp){
   if(!yds){ const m=/for (-?\d+) yards?/.exec(text) || /(\d+) yard field goal/.exec(text); if(m) yds=Number(m[1]); }
   const names=(typeof gcPlayNames==='function') ? gcPlayNames(text) : {primary:'', receiver:'', picker:''};
   let kind='other', title='';
+  let fumbleBase='', fumbleBy='', fumbleLost=false;
   const ath=Array.isArray(lp.athletes)?lp.athletes:[];
   const roleTok={ primary:names.primary, receiver:names.receiver, picker:names.picker };
   const roles={};
@@ -138,12 +139,35 @@ function lfReadPlay(lp){
   else if(type==='Extra Point Good'){ kind='xp'; title=`${nm('primary',names.primary)} XP, good`; }
   else if(/Extra Point Missed|Blocked Extra Point/.test(type)){ kind='xpMiss'; title=`${nm('primary',names.primary)} XP, missed`; }
   else if(/^Sack/.test(type)){ kind='sack'; title=`${nm('primary',names.primary)} sacked, ${yds} yds`; }
-  else if(/Fumble/.test(type)){ kind='fum'; title=`Fumble! ${nm('primary',names.primary)}`; }
+  else if(/Fumble/.test(type)){
+    // The play was a run or a catch until the ball came out: those yards are the carrier's
+    // (ESPN's statYardage is the gain before the fumble), then the fumble itself — and the
+    // lost one, when the other club came up with it. Read for the right man: the receiver on
+    // a catch, the runner or the sacked passer otherwise.
+    kind='fum';
+    const body=(typeof gcPlayBody==='function') ? gcPlayBody(text) : text;
+    const caught=/ pass (?:short |deep )?(?:left|middle|right)?\s*to /i.test(body) && !/incomplete/i.test(body);
+    const sacked=/ sacked /i.test(body);
+    const carrier = caught ? 'receiver' : 'primary';
+    fumbleBase = caught ? 'rec' : (sacked ? 'sack' : 'rush');
+    const rec=/RECOVERED by ([A-Z]{2,3})-/i.exec(body);
+    const offense=(typeof gcAbbr==='function') ? gcAbbr(lp.team) : String(lp.team||'').toUpperCase();
+    const lostTo = rec ? ((typeof gcAbbr==='function') ? gcAbbr(rec[1]) : rec[1].toUpperCase()) : '';
+    fumbleLost = !!(lostTo && offense && lostTo!==offense);
+    fumbleBy = carrier;
+    title=`Fumble! ${nm(carrier, roleTok[carrier])}${fumbleLost?' loses it':' — recovered'}${/TOUCHDOWN/i.test(body)?' 🎉':''}`;
+  }
   else if(type==='Punt'){ kind='punt'; title=`${nm('primary',names.primary)} punts`; }
   else if(type==='Kickoff'){ kind='ko'; title=`${nm('primary',names.primary)} kicks off`; }
   else if(type==='Penalty'){ kind='pen'; const m=/penalty on ([A-Z]{2,3})-([^,]+), ([^,.]+)/i.exec(text); title=m?`Flag: ${m[3]} on ${(typeof gcAbbr==='function')?gcAbbr(m[1]):m[1]}`:'Penalty'; }
   else { title=text.replace(/^\s*(\([^)]*\)\s*)+/,'').slice(0,90); }
-  return {kind, title, roles, stats:lfPlayStats(kind, yds, roles), tokens:roleTok};
+  let stats=lfPlayStats(kind, yds, roles);
+  if(fumbleBase){
+    stats=lfPlayStats(fumbleBase, yds, roles);
+    const pid=roles[fumbleBy];
+    if(pid){ const s=stats[pid]=stats[pid]||{}; s.fum=(s.fum||0)+1; if(fumbleLost) s.fum_lost=(s.fum_lost||0)+1; }
+  }
+  return {kind, title, roles, stats, tokens:roleTok};
 }
 // The kinds the feed keeps when it is not showing everything.
 const LF_KEY_KINDS = new Set(['rushTd','recTd','fg','fgMiss','int','fum','sack','xp','xpMiss']);

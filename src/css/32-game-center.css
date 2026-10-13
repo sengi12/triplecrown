@@ -684,3 +684,14 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
    line still grows rather than being clipped, because the words matter more than the pixel. */
 .gc-last-text,.gc-detail .gc-last-text{min-height:2.6em;}
 .gc-drive-sum,.gc-detail .gc-drive-sum{min-height:2.8em;}
+
+/* ── the score breakdown: a tap on the number ── */
+.gc-ptsbox-tap{cursor:pointer;border-radius:8px;padding:2px 4px;margin:-2px -4px;}
+.gc-ptsbox-tap:active{background:var(--surface3);}
+.tc-brk{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums;}
+.tc-brk th,.tc-brk td{padding:5px 6px;border-top:1px solid var(--border);text-align:left;}
+.tc-brk thead th{border-top:none;font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted);}
+.tc-brk .n{text-align:right;white-space:nowrap;}
+.tc-brk tr.neg td{color:var(--danger);}
+.tc-brk tfoot td{font-weight:900;border-top:2px solid var(--border2);}
+.tc-brk-src,.tc-brk-none{font-size:11px;color:var(--muted);margin-top:6px;}
