@@ -437,7 +437,15 @@ const settle=()=>new Promise(r=>setTimeout(r,20));
   const noYac=app.drive(app.GAME('post'), toD([P('yc4',1,'Pass Reception','J.Burrow pass deep left to T.Higgins to TB 20 for 40 yards.',40,60)], ''));
   chk(!/gc-seg-yac/.test(noYac) && /gc-seg-last" d="M[^"]*Q/.test(noYac), 'no yards after the catch charted: one arc, as before');
 
-  console.log('=== a punt: the kick to where it was fielded, then the return the other way ===');
+  console.log('=== the Rams are "LA" in the words: a kick to LA 4 is a kick to the Rams\' 4 ===');
+  // BUF @ LAR 2026 wk 5: every kickoff to the Rams drew at the Bills' end because "LA" was
+  // not the drive's "LAR" — the landing spot read as the other club's 4
+  const ko=app.kickoff('T.Bass kicks 61 yards from BUF 35 to LA 4. J.Whittington to LA 29 for 25 yards (M.Hoecht).', 'LAR');
+  chk(ko && ko.origin===65 && ko.landYd===4 && ko.endYd===29 && ko.returnYds===25 && ko.returner==='J.Whittington',
+      `kicked from the Bills' 35 (65 in the Rams' yards), fielded at the Rams' 4, returned to the 29 (${ko&&[ko.origin,ko.landYd,ko.endYd].join('/')})`);
+  const pLA=app.punt('E.Evans punts 45 yards to LA 20, Center-J.Cardona. J.Whittington to LA 31 for 11 yards.', 'BUF');
+  chk(pLA && pLA.landYd===80 && pLA.endYd===69, "a punt the other way reads the Rams' 20 as the Bills' 80");
+
   const punR=app.punt('M.Araiza punts 41 yards to TB 28, Center-J.Winchester. A.Bachman to TB 42 for 14 yards (E.Downs; C.McDonald).', 'CIN');
   chk(punR && punR.catchYd===72 && punR.returner==='A.Bachman', 'a punt read from the words: where it was fielded, and by whom');
   const retD=toD([P('r1',1,'Rush','C.Brown left end for 5 yards.',5,55),
