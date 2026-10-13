@@ -12014,7 +12014,10 @@ function gcReplayClear(){ _gcd.replay=null; gcDetailRepaint(); }
 // ESPN's play TEXT spells four clubs its own way ("Timeout #1 by CLV", "to HST 21"); the team
 // objects say CLE/BAL/HOU/ARI. Anything read out of the words goes through here before a logo
 // lookup or a side-of-the-field comparison.
-const GC_TEXT_ABBR = { CLV:'CLE', BLT:'BAL', HST:'HOU', ARZ:'ARI' };
+// ESPN's play text spells five clubs differently from its own board: the Rams are "LA" in every
+// "kicks 61 yards from BUF 35 to LA 4", so without this a kick to the Rams' 4 read as a kick to
+// the other club's 4 and landed at the wrong end of the field.
+const GC_TEXT_ABBR = { CLV:'CLE', BLT:'BAL', HST:'HOU', ARZ:'ARI', LA:'LAR' };
 function gcAbbr(ab){ ab=String(ab||'').toUpperCase(); return (typeof TC_BOARD_ABBR!=='undefined' && TC_BOARD_ABBR[ab]) || GC_TEXT_ABBR[ab] || ab; }
 var _gcEspnIdx = null;
 function gcEspnIndex(){
