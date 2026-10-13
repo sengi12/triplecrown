@@ -175,10 +175,23 @@ function laSwingBuild(inp){
 // One line — my chance to win — on a 0–100% field with the half-way mark drawn. Above it
 // is tinted my colour, below it the other side's, so the eye reads who was ahead without
 // a second line. The swings carry the player's headshot, up for mine, down for theirs.
+// The drawing's frame: a phone gets the tall card, a wide screen a flatter, wider one — the
+// text and the headshots are drawn in viewBox units, so a 640-wide picture stretched across a
+// desktop card scaled everything up with it; 960 wide keeps the labels the size they are.
+function laSwingGeom(W){
+  W=Number(W)||640;
+  const H = W>=900 ? 220 : 250;
+  const L=34, R=14, T=34, B=28;
+  return {W, H, L, R, T, B, pw:W-L-R, ph:H-T-B};
+}
+function laSwingDrawWidth(){
+  const vw=(typeof window!=='undefined' && window.innerWidth) ? window.innerWidth : 390;
+  return vw>=900 ? 960 : 640;
+}
 function laSwingSVG(built, ctx){
   ctx=ctx||{};
-  const W=640, H=250, L=34, R=14, T=34, B=28;
-  const pw=W-L-R, ph=H-T-B;
+  const G=laSwingGeom(ctx.w||640);
+  const {W, H, L, R, T, B, pw, ph}=G;
   const x=(t)=>L+laSwingX(built.windows, t)*pw;
   const y=(p)=>T+(1-p)*ph;
   const pts=built.series;
@@ -203,7 +216,7 @@ function laSwingSVG(built, ctx){
     const sign=(k.dp>0?'+':'−')+Math.round(Math.abs(k.dp)*100)+'%';
     const tip=`${k.title||'Play'} · ${k.delta>0?'+':''}${k.delta} pts · ${sign} to win`;
     const id=`laswc${i}`;
-    return `<g class="la-swing-mark ${my?'la-swing-mine':'la-swing-opp'} ${up?'la-swing-up':'la-swing-dn'}" ${k.pid?`onclick="pcardOnclick(${JSON.stringify(k.pid)},'','')"`:''}>
+    return `<g class="la-swing-mark ${my?'la-swing-mine':'la-swing-opp'} ${up?'la-swing-up':'la-swing-dn'}" data-x="${cx.toFixed(1)}" ${k.pid?`onclick="pcardOnclick(${JSON.stringify(k.pid)},'','')"`:''}>
       <title>${escHtml(tip)}</title>
       <line class="la-swing-stem" x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${cy.toFixed(1)}" y2="${ry.toFixed(1)}"/>
       <circle class="la-swing-dot" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4"/>
@@ -215,13 +228,18 @@ function laSwingSVG(built, ctx){
   }).join('');
   const last=pts[pts.length-1];
   const now=`<circle class="la-swing-now${built.decided?' la-swing-final':''}" cx="${endX.toFixed(1)}" cy="${y(last.p).toFixed(1)}" r="5"/>`;
-  return `<svg class="la-swing-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escAttr(ctx.label||'How the chance to win moved')}">
-    <defs><clipPath id="laswup"><rect x="0" y="0" width="${W}" height="${mid.toFixed(1)}"/></clipPath><clipPath id="laswdn"><rect x="0" y="${mid.toFixed(1)}" width="${W}" height="${H}"/></clipPath></defs>
+  // the reveal: a clip the replay widens from the first kickoff; at rest it shows the whole week
+  return `<svg class="la-swing-svg" viewBox="0 0 ${W} ${H}" data-w="${W}" role="img" aria-label="${escAttr(ctx.label||'How the chance to win moved')}">
+    <defs><clipPath id="laswup"><rect x="0" y="0" width="${W}" height="${mid.toFixed(1)}"/></clipPath><clipPath id="laswdn"><rect x="0" y="${mid.toFixed(1)}" width="${W}" height="${H}"/></clipPath>
+      <clipPath id="laswrev"><rect class="la-swing-reveal" x="0" y="0" width="${W}" height="${H}"/></clipPath></defs>
     ${grid}
-    <path class="la-swing-area la-swing-area-up" d="${area}" clip-path="url(#laswup)"/>
-    <path class="la-swing-area la-swing-area-dn" d="${area}" clip-path="url(#laswdn)"/>
-    <path class="la-swing-line" d="${d}"/>
+    <g clip-path="url(#laswrev)">
+      <path class="la-swing-area la-swing-area-up" d="${area}" clip-path="url(#laswup)"/>
+      <path class="la-swing-area la-swing-area-dn" d="${area}" clip-path="url(#laswdn)"/>
+      <path class="la-swing-line" d="${d}"/>
+    </g>
     ${marks}${now}
+    <circle class="la-swing-now la-swing-cursor" cx="0" cy="0" r="5" style="display:none"/>
     ${ticks}${finalTick}
   </svg>`;
 }
@@ -295,7 +313,18 @@ function laSwingSectionHTML(wk, a, b, o){
   if(laState.swingHide) return `<div class="la-swing la-swing-closed"><button class="btn btn-ghost btn-sm" onclick="laSwingToggle()">Show how the win chance moved</button></div>`;
   const inp=laSwingInputs(wk, a, b, o||{});
   const head=(sub)=>`<div class="la-swing-head"><span class="la-ins-lbl">WIN CHANCE · HOW IT MOVED</span>${sub?`<span class="la-ins-sub">${sub}</span>`:''}<button class="la-swing-x" onclick="laSwingToggle()" title="Hide">×</button></div>`;
-  if(inp.loading) return `<div class="la-swing">${head('')}<div class="la-swing-wait">reading the week's board…</div></div>`;
+  if(inp.loading){
+    // the board lands on the Game Center's own repaint, not the analyzer's: wait for it here,
+    // a look every second and a half for half a minute, and repaint once it is in
+    if(!_laSwing.boardWait && typeof setTimeout==='function'){
+      let tries=0;
+      const look=()=>{ _laSwing.boardWait=null; const b=(typeof gcBoard==='function') ? gcBoard(wk) : null;
+        if(b){ if(typeof _laInsRerender==='function') _laInsRerender(); return; }
+        if(++tries<20) _laSwing.boardWait=setTimeout(look, 1500); };
+      _laSwing.boardWait=setTimeout(look, 1500);
+    }
+    return `<div class="la-swing">${head('')}<div class="la-swing-wait">reading the week's board…</div></div>`;
+  }
   const stamps=Object.keys(inp.games).map(k=>{ const c=(typeof _gcd!=='undefined'&&_gcd&&_gcd.sum)?_gcd.sum[inp.games[k].eid]:null; return c?c.at:0; }).join(',');
   const sig=`${wk}|${a.roster_id}|${b.roster_id}|${a.points}|${b.points}|${stamps}|${inp.plays.length}`;
   let built=_laSwing.memo[sig];
@@ -306,10 +335,70 @@ function laSwingSectionHTML(wk, a, b, o){
     : `<b>${Math.min(99,Math.max(1,pct))}%</b> to win`;
   const sub = inp.pending ? `${inp.pending} game${inp.pending>1?'s':''} still loading` : (built.decided ? 'final' : (wk===laCurrentWeek()?'live':''));
   const myName=(o&&o.names&&o.names.mine)||'';
+  _laSwing.last=built; _laSwing.names=inp.names;
+  const n=built.series.length;
   return `<div class="la-swing">${head(sub)}
-    <div class="la-swing-state">${myName?`<span class="la-swing-who">${escHtml(myName)}</span> `:''}${state}</div>
-    ${laSwingSVG(built, {label:`${myName||'My'} chance to win across the week`})}
-    ${laSwingRecapHTML(built, inp.names)}
+    <div class="la-swing-body">
+      <div class="la-swing-chart">
+        <div class="la-swing-state"><span class="la-swing-rest">${myName?`<span class="la-swing-who">${escHtml(myName)}</span> `:''}${state}</span><span class="la-swing-live"></span></div>
+        ${laSwingSVG(built, {w:laSwingDrawWidth(), label:`${myName||'My'} chance to win across the week`})}
+        ${n>1?`<div class="la-swing-ctl"><button class="btn btn-ghost btn-sm la-swing-play" onclick="laSwingReplay(event)" title="Replay the week from the first kickoff">▶ Replay</button><input type="range" class="la-swing-scrub" min="0" max="${n-1}" value="${n-1}" aria-label="Scrub through the week" oninput="laSwingScrub(this.value)"></div>`:''}
+      </div>
+      ${laSwingRecapHTML(built, inp.names)}
+    </div>
   </div>`;
+}
+
+// ── The replay ───────────────────────────────────────────────────────────────
+// A ten-second sweep from the first kickoff: the reveal clip widens along the axis (evenly
+// along the x-axis, not the play count, so Thursday night takes its slice and Sunday its
+// own), the swings appear as the line passes them, a cursor rides the line and the readout
+// says where things stood. The scrubber stops it and steps to any play.
+var _laSwingPlay = { raf:null, t0:0, dur:10000 };
+function laSwingShow(i, atEnd){
+  const b=_laSwing.last; if(!b || !b.series.length) return;
+  const svg=document.querySelector('.la-swing-svg'); if(!svg) return;
+  const G=laSwingGeom(svg.getAttribute('data-w'));
+  i=Math.max(0, Math.min(b.series.length-1, Number(i)||0));
+  const s=b.series[i];
+  const px=G.L+laSwingX(b.windows, s.t)*G.pw, py=G.T+(1-s.p)*G.ph;
+  const rect=svg.querySelector('.la-swing-reveal'); if(rect) rect.setAttribute('width', atEnd?G.W:px.toFixed(1));
+  svg.querySelectorAll('.la-swing-mark').forEach(g=>{ g.style.opacity = (atEnd || Number(g.getAttribute('data-x'))<=px+0.5) ? '1' : '0'; });
+  const cur=svg.querySelector('.la-swing-cursor'); const end=svg.querySelector('.la-swing-now:not(.la-swing-cursor)');
+  if(cur){ cur.style.display=atEnd?'none':''; cur.setAttribute('cx', px.toFixed(1)); cur.setAttribute('cy', py.toFixed(1)); }
+  if(end) end.style.opacity=atEnd?'1':'0';
+  const live=document.querySelector('.la-swing-live'), rest=document.querySelector('.la-swing-rest');
+  if(live && rest){
+    if(atEnd){ live.textContent=''; rest.style.display=''; }
+    else { rest.style.display='none'; const pct=Math.min(99, Math.max(1, Math.round(s.p*100))); live.innerHTML=`${escHtml(laSwingTickLabel(s.t))} · <b>${pct}%</b> to win · ${s.pts.mine.toFixed(1)} <span class="la-ins-sub">(proj ${s.mine.toFixed(1)})</span> vs ${s.pts.opp.toFixed(1)} <span class="la-ins-sub">(proj ${s.opp.toFixed(1)})</span>`; }
+  }
+  const scrub=document.querySelector('.la-swing-scrub'); if(scrub) scrub.value=i;
+}
+function laSwingStop(){
+  if(_laSwingPlay.raf && typeof window!=='undefined' && window.cancelAnimationFrame) window.cancelAnimationFrame(_laSwingPlay.raf);
+  _laSwingPlay.raf=null;
+  const btn=document.querySelector('.la-swing-play'); if(btn) btn.textContent='▶ Replay';
+}
+function laSwingReplay(ev){
+  try{ ev.stopPropagation(); }catch(e){}
+  const b=_laSwing.last; if(!b || b.series.length<2) return;
+  if(_laSwingPlay.raf){ laSwingStop(); laSwingShow(b.series.length-1, true); return; }   // a second tap skips to now
+  const btn=document.querySelector('.la-swing-play'); if(btn) btn.textContent='■ Skip to now';
+  const reduce = typeof window!=='undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  _laSwingPlay.t0=performance.now(); const dur = reduce ? 1 : _laSwingPlay.dur;
+  const frame=(now)=>{
+    if(!document.querySelector('.la-swing-svg')){ laSwingStop(); return; }   // the card repainted under us
+    const f=Math.min(1, (now-_laSwingPlay.t0)/dur);
+    let lo=0, hi=b.series.length-1;
+    while(lo<hi){ const mid=(lo+hi)>>1; if(laSwingX(b.windows, b.series[mid].t)<f) lo=mid+1; else hi=mid; }
+    laSwingShow(lo, f>=1);
+    if(f<1) _laSwingPlay.raf=requestAnimationFrame(frame); else laSwingStop();
+  };
+  _laSwingPlay.raf=requestAnimationFrame(frame);
+}
+function laSwingScrub(v){
+  laSwingStop();
+  const b=_laSwing.last; if(!b) return;
+  const i=Number(v)||0; laSwingShow(i, i>=b.series.length-1);
 }
 function laSwingToggle(){ laState.swingHide=!laState.swingHide; if(typeof _laInsRerender==='function') _laInsRerender(); }
