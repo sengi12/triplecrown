@@ -372,7 +372,7 @@ body.gcm-open .gcm-scrim{background:rgba(0,0,0,.35);pointer-events:auto;}
 .gcf-now-dd{color:var(--text);}
 .gcf-now-clock{margin-left:auto;font-weight:800;color:var(--text);}
 .gcf-dot{width:8px;height:8px;border-radius:50%;background:#ff4d4d;box-shadow:0 0 0 0 rgba(255,77,77,.6);animation:gcfPulse 1.4s ease-out infinite;}
-@keyframes gcfPulse{0%{box-shadow:0 0 0 0 rgba(255,77,77,.6);}100%{box-shadow:0 0 0 8px rgba(255,77,77,0);}}
+@keyframes gcfPulse{0%{opacity:1;}100%{opacity:.3;}}   /* opacity only — see tcGsPulse */
 .gcf-new{animation:gcfIn .9s ease-out;}
 @keyframes gcfIn{0%{background:rgba(0,212,170,.28);transform:translateY(-4px);}100%{background:var(--surface2);transform:none;}}
 @media (prefers-reduced-motion:reduce){ .gcf-dot,.gcf-new{animation:none;} }

@@ -376,7 +376,7 @@ function gcListHTML(games, picked){
   const midOf=(g)=> g.state==='post' ? '<span class="gc-pfin">FINAL</span>'
     : g.state==='in' ? `<span class="gc-plive"><i class="gc-pdot"></i>${escHtml(String(g.detail||'LIVE').replace(/^(\d+:\d+) - (\d)(st|nd|rd|th)$/i,'Q$2'))}</span>`
     : when(g);
-  return games.map(g=>`<div class="gc-game gc-pill ${g.id===picked?'gc-on':''} gc-${g.state}" onclick="gcPick('${g.id}')" title="${g.away} @ ${g.home}${g.state==='in'?' · '+escAttr(g.detail||'live'):''}">
+  return games.map(g=>`<div class="gc-game gc-pill ${g.id===picked?'gc-on':''} gc-${g.state}" data-key="${escAttr(g.id)}" onclick="gcPick('${g.id}')" title="${g.away} @ ${g.home}${g.state==='in'?' · '+escAttr(g.detail||'live'):''}">
     <span class="gc-pl"><img src="${NFL_LOGO(g.away)}" class="gc-glogo" onerror="this.style.display='none'">${g.state==='pre'?'':`<b class="${g.state==='post'&&g.as>g.hs?'gc-won':''}">${g.as!=null?g.as:'–'}</b>`}</span>
     <span class="gc-pmid">${midOf(g)}</span>
     <span class="gc-pr">${g.state==='pre'?'':`<b class="${g.state==='post'&&g.hs>g.as?'gc-won':''}">${g.hs!=null?g.hs:'–'}</b>`}<img src="${NFL_LOGO(g.home)}" class="gc-glogo" onerror="this.style.display='none'"></span>
@@ -444,8 +444,9 @@ function renderRightSidebar(){
   el.classList.remove('rsb-min','rsb-max');
   gcApplyWidth(el);
   if(_gc.mode==='min'){ el.classList.add('rsb-min'); el.innerHTML=`<div class="rsb-rail"><button class="rsb-btn" onclick="gcStep(1)" title="Wider">+</button><span class="rsb-vert">LEADERS · GAMES</span></div>`; return; }
-  if(_gc.mode==='max'){ el.classList.add('rsb-max'); el.innerHTML=gcHTML(); }
-  else if(typeof renderLeaders==='function') renderLeaders();
+  if(_gc.mode==='max'){ el.classList.add('rsb-max'); tcMorph(el, rsbGripHTML()+gcHTML()); return; }
+  if(typeof renderLeaders==='function') renderLeaders();
+  if(el.querySelector && el.querySelector('.rsb-grip')) return;   // the grip persists across in-place repaints
   if(el.insertAdjacentHTML) el.insertAdjacentHTML('afterbegin', rsbGripHTML()); else el.innerHTML=rsbGripHTML()+el.innerHTML;
 }
 gcLoadMode();
@@ -589,7 +590,7 @@ function renderGamesView(){
   const page = tab==='leaders' && typeof ldPanelHTML==='function'
     ? `<div class="gc gcm-leaders">${ldPanelHTML(width, '', false, true)}</div>`
     : gcHTML(true);
-  host.innerHTML=`<div class="games-view">${gcmTabsHTML()}${page}</div>`;
+  tcMorph(host, `<div class="games-view">${gcmTabsHTML()}${page}</div>`);   // in place: only what moved repaints
   const body=host.querySelector('.gc-body'), rail=host.querySelector('.gc-list');
   if(body) body.scrollTop=keep.body;
   if(rail){ const on=rail.querySelector('.gc-on'); if(on && on.scrollIntoView && !rail0) on.scrollIntoView({block:'nearest', inline:'center'}); else rail.scrollLeft=keep.rail; }
@@ -690,13 +691,15 @@ function renderGamesPhone(fromLoad){
     : tab==='leaders' && typeof ldPanelHTML==='function'
       ? `<div class="gc gcm-leaders">${ldPanelHTML(width, closeBtn, fromLoad, true)}</div>`
       : gcHTML(true);
-  host.innerHTML=`${gcmPillHTML(games)}
+  // Patched in place (tcMorph): a live repaint lands as the few nodes that changed, not a
+  // fresh 200 KB subtree — the sheet element, its scroll and its swipe binding all persist.
+  tcMorph(host, `${gcmPillHTML(games)}
     <div class="gcm-scrim" onclick="gcmSet('closed')"></div>
     <div class="gcm-sheet gcm-${open}" aria-label="Game Center" aria-hidden="${open==='closed'}">
       <div class="gcm-grab" onpointerdown="gcmDragStart(event)"></div>
       ${open==='closed' ? '' : gcmTabsHTML()}
       ${page}
-    </div>`;
+    </div>`);
   if(document.body&&document.body.classList) document.body.classList.toggle('gcm-open', open!=='closed');
   // An open sheet locks the page behind it, like the player card does (html.pcard-locked):
   // nothing under an overlay scrolls, on any platform.

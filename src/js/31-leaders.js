@@ -221,7 +221,8 @@ function renderLeaders(fromLoad){
   el.hidden=false;
   const cur=ldCurWeek(), wk=ldWeek();
   const btns=(typeof rsbButtonsHTML==='function')?rsbButtonsHTML():'';
-  el.innerHTML=ldPanelHTML(ldWidth(el), btns, fromLoad);
+  const grip=(el.querySelector && el.querySelector('.rsb-grip') && typeof rsbGripHTML==='function') ? rsbGripHTML() : '';
+  tcMorph(el, grip+ldPanelHTML(ldWidth(el), btns, fromLoad));   // in place: a minute repaint moves a few numbers, not the panel
   // The week in progress keeps up: a re-render a minute from now re-reads it.
   if(_ld.timer){ clearTimeout(_ld.timer); _ld.timer=null; }
   if(_ld.week!=='season' && wk===cur && typeof window!=='undefined' && typeof window.setTimeout==='function'
